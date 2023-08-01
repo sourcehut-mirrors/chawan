@@ -13,8 +13,8 @@ Include Chame in your project using either Nimble or as a git submodule.
 requires "https://git.sr.ht/~bptato/chame"
 ```
 
-Then, check the nimdoc for the API. <- TODO: publish this somewhere as a
-separate document.
+Then, check the [documentation](https://bptato.srht.site/htmlparser.html) for
+a description of the API.
 
 ## Features
 
