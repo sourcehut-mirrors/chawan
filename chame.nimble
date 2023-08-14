@@ -4,7 +4,6 @@ version       = "0.9.1"
 author        = "bptato"
 description   = "HTML5 parser for Chawan"
 license       = "Unlicense"
-srcDir        = "src"
 
 
 # Dependencies
