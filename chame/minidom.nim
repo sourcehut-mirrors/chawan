@@ -2,9 +2,10 @@ import streams
 import tables
 import options
 
-import charset
 import htmlparser
 import tags
+
+import chakasu/charset
 
 export charset
 export tags

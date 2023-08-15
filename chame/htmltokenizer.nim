@@ -7,12 +7,13 @@ import macros
 import tables
 import unicode
 
-import decoderstream
 import entity
 import parseerror
 import tags
 import utils/radixtree
 import utils/twtstr
+
+import chakasu/decoderstream
 
 # Tokenizer
 type
