@@ -36,7 +36,6 @@ is planned, even if source code comments say otherwise.
 
 Other, non-standard-related tasks (in no particular order):
 
-* Split out the decoder library into a separate module.
 * Allow disabling non-UTF-8 decoders.
 * Document minidom.
 * Integrate html5lib-tests.
