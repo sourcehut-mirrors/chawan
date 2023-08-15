@@ -1415,7 +1415,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
 
   of IN_HEAD:
     match token:
-      AsciiWhitespace => (block: discard)
+      AsciiWhitespace => (block: parser.insertCharacter(token.c))
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
       "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
