@@ -24,6 +24,8 @@ type
     ## Must never be nil.
     finish*: DOMBuilderFinish[Handle]
     ## May be nil.
+    restart*: DOMBuilderRestart[Handle]
+    ## May be nil.
     parseError*: DOMBuilderParseError[Handle]
     ## May be nil.
     setQuirksMode*: DOMBuilderSetQuirksMode[Handle]
@@ -76,9 +78,12 @@ type
     ## Note: this only works if inputStream is seekable, i.e.
     ## inputStream.setPosition(0) must work correctly.
     ##
-    ## Note 2: when this canReinterpret is false, confidence is set to
-    ## certain, no BOM sniffing is performed and meta charset tags are
-    ## disregarded. Expect this to change in the future.
+    ## Note 2: when canReinterpret is false, confidence is set to certain,
+    ## no BOM sniffing is performed and meta charset tags are
+    ## disregarded.
+    ## Expect this to change in the future. (In particular, this should not
+    ## be necessary for ASCII-compatible decoders that have only seen ASCII
+    ## characters, i.e. for most <meta charset=...> tags.)
     charsets*: seq[Charset]
     ## Fallback charsets. If empty, UTF-8 is used. In most cases, an empty
     ## sequence or a single-element sequence consisting of a character set
@@ -111,6 +116,12 @@ type
     proc(builder: DOMBuilder[Handle]) {.nimcall.}
       ## Parsing has finished.
 
+  DOMBuilderRestart*[Handle] =
+    proc(builder: DOMBuilder[Handle]) {.nimcall.}
+      ## Parsing has been restarted. This is required if charset switching
+      ## is enabled; in this case, restart must reset all properties of the
+      ## document handle, and remove all of its child nodes.
+
   DOMBuilderParseError*[Handle] =
     proc(builder: DOMBuilder[Handle], message: ParseError) {.nimcall.}
       ## Parse error. `message` is an error code either specified by the
@@ -125,7 +136,9 @@ type
 
   DOMBuilderSetCharacterSet*[Handle] =
     proc(builder: DOMBuilder[Handle], charset: Charset) {.nimcall.}
-      ## Set the recognized charset, if it differs from the initial input.
+      ## Set the charset used in the current parsing attempt.
+      ## Note that this is called even for all attempts, i.e. at least once
+      ## for every parse.
 
   DOMBuilderElementPopped*[Handle] =
     proc(builder: DOMBuilder[Handle], element: Handle) {.nimcall.}
@@ -287,6 +300,10 @@ proc finish[Handle](parser: HTML5Parser[Handle]) =
   if parser.dombuilder.finish != nil:
     parser.dombuilder.finish(parser.dombuilder)
 
+proc restart[Handle](parser: HTML5Parser[Handle]) =
+  if parser.dombuilder.restart != nil:
+    parser.dombuilder.restart(parser.dombuilder)
+
 proc parseError(parser: HTML5Parser, e: ParseError) =
   if parser.dombuilder.parseError != nil:
     parser.dombuilder.parseError(parser.dombuilder, e)
@@ -295,6 +312,11 @@ proc setQuirksMode[Handle](parser: var HTML5Parser[Handle], mode: QuirksMode) =
   parser.quirksMode = mode
   if parser.dombuilder.setQuirksMode != nil:
     parser.dombuilder.setQuirksMode(parser.dombuilder, mode)
+
+proc setCharacterSet[Handle](parser: var HTML5Parser[Handle],
+    charset: Charset) =
+  if parser.dombuilder.setCharacterSet != nil:
+    parser.dombuilder.setCharacterSet(parser.dombuilder, charset)
 
 func document[Handle](parser: HTML5Parser[Handle]): Handle {.inline.} =
   return parser.dombuilder.document
@@ -2713,6 +2735,8 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
       canReinterpret = false
   if charsetStack.len == 0:
     charsetStack.add(DefaultCharset) # UTF-8
+  var previousCharset = CHARSET_UNKNOWN
+  var first = true
   while true:
     let charset = charsetStack.pop()
     var parser = HTML5Parser[Handle](
@@ -2721,6 +2745,13 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
       charset: charset,
       opts: opts
     )
+    if charset != previousCharset:
+      parser.setCharacterSet(charset)
+      previousCharset = charset
+    if first:
+      first = false
+    else:
+      parser.restart()
     confidence = CONFIDENCE_TENTATIVE # used in the next iteration
     if not canReinterpret:
       parser.confidence = CONFIDENCE_CERTAIN

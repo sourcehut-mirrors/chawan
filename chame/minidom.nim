@@ -44,8 +44,8 @@ type
 type
   MiniDOMBuilder = ref object of DOMBuilder[Node]
 
-proc finish(builder: DOMBuilder[Node]) =
-  let builder = cast[MiniDOMBuilder](builder)
+proc restart(builder: DOMBuilder[Node]) =
+  builder.document = Document(nodeType: DOCUMENT_NODE)
 
 proc getParentNode(builder: DOMBuilder[Node], handle: Node): Option[Node] =
   return option(handle.parentNode)
@@ -194,7 +194,7 @@ proc newMiniDOMBuilder(): MiniDOMBuilder =
   let document = Document(nodeType: DOCUMENT_NODE)
   return MiniDOMBuilder(
     document: document,
-    finish: finish,
+    restart: restart,
     getTagType: getTagType,
     getParentNode: getParentNode,
     getLocalName: getLocalName,
