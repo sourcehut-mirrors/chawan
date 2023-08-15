@@ -1036,6 +1036,8 @@ proc parseErrorByTokenType(parser: var HTML5Parser, tokenType: TokenType) =
     parser.parseError UNEXPECTED_END_TAG
   of EOF:
     parser.parseError UNEXPECTED_EOF
+  of CHARACTER_ASCII, CHARACTER:
+    parser.parseError UNEXPECTED_CHARACTER
   else:
     doAssert false
 

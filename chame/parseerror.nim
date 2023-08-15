@@ -68,3 +68,4 @@ type ParseError* = enum
   INVALID_TEXT_PARENT = "Invalid parent element for text node"
   NON_SPACE_TABLE_TEXT = "Non-space table text"
   UNEXPECTED_AFTER_BODY_TOKEN = "Unexpected token after body"
+  UNEXPECTED_CHARACTER = "Unexpected character token"
