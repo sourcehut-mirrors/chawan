@@ -732,7 +732,7 @@ proc adjustSVGAttributes(token: Token) =
 
 template insert_character_impl(parser: var HTML5Parser, data: typed) =
   let location = parser.appropriatePlaceForInsert()
-  if location.inside.nodeType == DOCUMENT_NODE:
+  if location.inside == parser.dombuilder.document:
     return
   insertText(parser, location.inside, $data, location.before)
 
