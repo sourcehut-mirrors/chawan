@@ -220,7 +220,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     tokenizer.rstate = tokenizer.state
     tokenizer.state = s
   template reconsume_in(s: TokenizerState) =
-    tokenizer.reconsume()
+    if not is_eof:
+      tokenizer.reconsume()
     switch_state s
   template parse_error(error: untyped) =
     if tokenizer.onParseError != nil:
@@ -1463,7 +1464,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           s &= rs
           return true
         )
-        tokenizer.reconsume()
+        if not tokenizer.atEof:
+          tokenizer.reconsume()
         tokenizer.tmp.setLen(lasti)
         if value.isSome:
           if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and peek_char in {'='} + AsciiAlpha:

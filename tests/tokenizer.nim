@@ -29,7 +29,7 @@ proc getToken(a: seq[JsonNode]): Token =
       t: END_TAG,
       tagname: a[1].getStr(),
       tagtype: tagType(a[1].getStr()),
-      attrs: getAttrs(a[2])
+      attrs: if a.len > 2: getAttrs(a[2]) else: Table[string, string]()
     )
   of "Character":
     return Token(
@@ -60,7 +60,8 @@ proc checkEquals(tok, otok: Token, desc: string) =
     doAssert tok.sysid == otok.sysid, desc
     doAssert tok.quirks == otok.quirks, desc
   of TokenType.START_TAG, TokenType.END_TAG:
-    doAssert tok.tagname == otok.tagname, desc
+    doAssert tok.tagname == otok.tagname, desc & " (tok tagname: " &
+      tok.tagname & " otok tagname " & otok.tagname & ")"
     doAssert tok.tagtype == otok.tagtype, desc
     doAssert tok.selfclosing == otok.selfclosing, desc
     doAssert tok.attrs == otok.attrs, desc
@@ -73,7 +74,6 @@ proc checkEquals(tok, otok: Token, desc: string) =
 
 proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
     state: TokenizerState = DATA) =
-  echo desc
   let ss = newStringStream(input)
   let ds = newDecoderStream(ss)
   proc onParseError(e: ParseError) =
@@ -90,7 +90,7 @@ proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
       checkEquals(chartok, otok, desc)
       inc i
       chartok = nil
-    elif tok.t == EOF:
+    if tok.t == EOF:
       break # html5lib-tests has no EOF tokens
     elif tok.t in {CHARACTER, CHARACTER_WHITESPACE}:
       if chartok == nil:
