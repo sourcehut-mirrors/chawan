@@ -62,7 +62,6 @@ proc getNamespace(builder: DOMBuilder[Node], handle: Node): Namespace =
 proc createElement(builder: DOMBuilder[Node], localName: string,
     namespace: Namespace, tagType: TagType,
     attrs: Table[string, string]): Node =
-  let builder = cast[MiniDOMBuilder](builder)
   let element = Element(
     nodeType: ELEMENT_NODE,
     localName: localName,
