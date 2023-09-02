@@ -183,6 +183,13 @@ proc remove(builder: DOMBuilder[Node], child: Node) =
     child.parentNode.childList.delete(i)
     child.parentNode = nil
 
+proc moveChildren(builder: DOMBuilder[Node], fromNode, toNode: Node) =
+  var tomove = fromNode.childList
+  for i in countdown(fromNode.childList.high, 0):
+    remove(builder, fromNode.childList[i])
+  for child in tomove:
+    insertBefore(builder, toNode, child, nil)
+
 proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
     attrs: Table[string, string]) =
   let element = Element(element)
@@ -205,6 +212,7 @@ proc newMiniDOMBuilder(): MiniDOMBuilder =
     insertBefore: insertBefore,
     insertText: insertText,
     remove: remove,
+    moveChildren: moveChildren,
     addAttrsIfMissing: addAttrsIfMissing,
   )
 

@@ -56,6 +56,8 @@ type
     ## Must never be nil.
     remove*: DOMBuilderRemove[Handle]
     ## Must never be nil.
+    moveChildren*: DOMBuilderMoveChildren[Handle]
+    ## Must never be nil.
     addAttrsIfMissing*: DOMBuilderAddAttrsIfMissing[Handle]
     ## May be nil. (If nil, some attributes may not be added to the HTML or
     ## BODY element if more than one of their respecting opening tags exist.)
@@ -219,11 +221,10 @@ type
       ## Remove `child` from its parent node, and do nothing if `child`
       ## has no parent node.
 
-  DOMBuilderReparent*[Handle] =
-    proc(builder: DOMBuilder[Handle], child, newParent: Handle) {.nimcall.}
-      ## Remove `child` from its parent node, and append it to `newParent`.
-      ## In terms of DOM operations, this should be equivalent to calling
-      ## `child.remove()`, followed by `newParent.append(child)`.
+  DOMBuilderMoveChildren*[Handle] =
+    proc(builder: DOMBuilder[Handle], fromHandle, toHandle: Handle) {.nimcall.}
+      ## Remove all children from the node `fromHandle`, then append them to
+      ## `toHandle`.
 
   DOMBuilderAddAttrsIfMissing*[Handle] =
     proc(builder: DOMBuilder[Handle], element: Handle,
@@ -379,6 +380,11 @@ proc insertText[Handle](parser: HTML5Parser[Handle], parent: Handle,
 proc remove[Handle](parser: HTML5Parser[Handle], child: Handle) =
   let dombuilder = parser.dombuilder
   dombuilder.remove(dombuilder, child)
+
+proc moveChildren[Handle](parser: HTML5Parser[Handle], handleFrom,
+    handleTo: Handle) =
+  let dombuilder = parser.dombuilder
+  dombuilder.moveChildren(dombuilder, handleFrom, handleTo)
 
 proc addAttrsIfMissing[Handle](parser: HTML5Parser, element: Handle,
     attrs: Table[string, string]) =
@@ -1134,15 +1140,7 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
     parser.insertBefore(location.inside, lastNode, location.before)
     let token = parser.activeFormatting[formattingIndex][1]
     let element = parser.createElement(token, Namespace.HTML, furthestBlock)
-    var tomove: seq[Handle]
-    j = furthestBlock.childList.high
-    while j >= 0:
-      let child = furthestBlock.childList[j]
-      tomove.add(child)
-      parser.remove(child)
-      dec j
-    for child in tomove:
-      parser.append(element, child)
+    parser.moveChildren(furthestBlock, element)
     parser.append(furthestBlock, element)
     parser.activeFormatting.insert((some(element), token), bookmark)
     parser.activeFormatting.delete(formattingIndex)
