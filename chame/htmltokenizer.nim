@@ -23,7 +23,7 @@ type
     tmp: string
     code: int
     tok: Token
-    laststart: Token
+    laststart*: Token
     attrn: string
     attrv: string
     attr: bool
@@ -226,7 +226,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     if tokenizer.onParseError != nil:
       tokenizer.onParseError(error)
   template is_appropriate_end_tag_token(): bool =
-    tokenizer.laststart != nil and tokenizer.laststart.tagname == tokenizer.tok.tagname
+    tokenizer.laststart != nil and
+      tokenizer.laststart.tagname == tokenizer.tok.tagname
   template start_new_attribute =
     if tokenizer.attr:
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
@@ -357,7 +358,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   const null = char(0)
 
   while running:
-    #eprint tokenizer.state #debug
     let is_eof = tokenizer.atEof # set eof here, otherwise we would exit at the last character
     let r = if not is_eof:
       tokenizer.consume()

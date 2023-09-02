@@ -65,12 +65,13 @@ proc checkEquals(tok, otok: Token, desc: string) =
     doAssert tok.selfclosing == otok.selfclosing, desc
     doAssert tok.attrs == otok.attrs, desc
   of TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE:
-    doAssert tok.s == otok.s, desc
+    doAssert tok.s == otok.s, desc & " (tok s: " & tok.s & " otok s: " &
+      otok.s & ")"
   of TokenType.COMMENT:
     doAssert tok.data == otok.data, desc
   of EOF: discard
 
-proc runTest(desc, input: string, output: seq[JsonNode],
+proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
     state: TokenizerState = DATA) =
   echo desc
   let ss = newStringStream(input)
@@ -78,6 +79,7 @@ proc runTest(desc, input: string, output: seq[JsonNode],
   proc onParseError(e: ParseError) =
     discard
   var tokenizer = newTokenizer(ds, onParseError)
+  tokenizer.laststart = Token(t: START_TAG, tagname: laststart)
   tokenizer.state = state
   var i = 0
   var chartok: Token = nil
@@ -124,12 +126,16 @@ proc runTests(filename: string) =
     let desc = t{"description"}.getStr()
     let input = t{"input"}.getStr()
     let output = t{"output"}.getElems()
+    let laststart = if "lastStartTag" in t:
+      t{"lastStartTag"}.getStr()
+    else:
+      ""
     if "initialStates" notin t:
-      runTest(desc, input, output)
+      runTest(desc, input, output, laststart)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(desc, input, output)
+        runTest(desc, input, output, laststart, state)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")
