@@ -381,7 +381,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of '&': switch_state_return CHARACTER_REFERENCE
       of '<': switch_state RCDATA_LESS_THAN_SIGN
-      of null: parse_error UNEXPECTED_NULL_CHARACTER
+      of null:
+        parse_error UNEXPECTED_NULL_CHARACTER
+        emit_replacement
       of eof: emit_eof
       else: emit_current
 
@@ -646,6 +648,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
+        emit_replacement
       of eof:
         parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
@@ -665,6 +668,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
+        emit_replacement
       of eof:
         parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
@@ -688,7 +692,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token(t: START_TAG)
+        new_token Token(t: END_TAG)
         reconsume_in SCRIPT_DATA_ESCAPED_END_TAG_NAME
       else:
         emit "</"
@@ -710,6 +714,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         if is_appropriate_end_tag_token:
           switch_state DATA
+          emit_tok
         else:
           anything_else
       of AsciiAlpha:
@@ -727,7 +732,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         else:
           switch_state SCRIPT_DATA_ESCAPED
-          emit_current
+        emit_current
       of AsciiAlpha: # note: merged upper & lower
         tokenizer.tmp &= c.tolower()
         emit_current
@@ -801,7 +806,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           switch_state SCRIPT_DATA_ESCAPED
         else:
           switch_state SCRIPT_DATA_DOUBLE_ESCAPED
-          emit_current
+        emit_current
       of AsciiAlpha: # note: merged upper & lower
         tokenizer.tmp &= c.tolower()
         emit_current
@@ -1466,7 +1471,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         )
         if not tokenizer.atEof:
           tokenizer.reconsume()
-        tokenizer.tmp.setLen(lasti)
+          tokenizer.tmp.setLen(lasti)
         if value.isSome:
           if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and peek_char in {'='} + AsciiAlpha:
             flush_code_points_consumed_as_a_character_reference

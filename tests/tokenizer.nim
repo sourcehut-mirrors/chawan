@@ -2,11 +2,13 @@ import json
 import options
 import streams
 import tables
+import unicode
 import unittest
 
-import chame/parseerror
 import chame/htmltokenizer
+import chame/parseerror
 import chame/tags
+import chame/utils/twtstr
 
 import chakasu/decoderstream
 
@@ -14,7 +16,37 @@ proc getAttrs(o: JsonNode): Table[string, string] =
   for k, v in o:
     result[k] = v.getStr()
 
-proc getToken(a: seq[JsonNode]): Token =
+func doubleEscape(input: string): string =
+  var s = ""
+  var esc = 0
+  var u: uint32 = 0
+  for c in input:
+    if esc == 0:
+      if c == '\\':
+        inc esc
+      else:
+        s &= c
+    elif esc == 1:
+      if c == 'u':
+        inc esc
+      else:
+        s &= '\\'
+        dec esc
+        s &= c
+    elif esc < 6: # 2 + 4
+      inc esc
+      if esc == 3:
+        u = 0x00
+      let n = hexValue(c)
+      doAssert n != -1
+      u *= 0x10
+      u += uint32(n)
+      if esc == 6:
+        s &= $cast[Rune](u)
+        esc = 0
+  return s
+
+proc getToken(a: seq[JsonNode], esc: bool): Token =
   case a[0].getStr()
   of "StartTag":
     return Token(
@@ -32,22 +64,30 @@ proc getToken(a: seq[JsonNode]): Token =
       attrs: if a.len > 2: getAttrs(a[2]) else: Table[string, string]()
     )
   of "Character":
+    let s = if esc:
+      doubleEscape(a[1].getStr())
+    else:
+      a[1].getStr()
     return Token(
       t: CHARACTER,
-      s: a[1].getStr()
+      s: s
     )
   of "DOCTYPE":
     return Token(
       t: DOCTYPE,
-      quirks: a[4].getBool(),
+      quirks: not a[4].getBool(), # yes, this is reversed. don't ask
       name: if a[1].kind == JNull: none(string) else: some(a[1].getStr()),
       pubid: if a[2].kind == JNull: none(string) else: some(a[1].getStr()),
       sysid: if a[3].kind == JNull: none(string) else: some(a[1].getStr())
     )
   of "Comment":
+    let s = if esc:
+      doubleEscape(a[1].getStr())
+    else:
+      a[1].getStr()
     return Token(
       t: COMMENT,
-      data: a[1].getStr()
+      data: s
     )
   else: discard
 
@@ -73,7 +113,7 @@ proc checkEquals(tok, otok: Token, desc: string) =
   of EOF: discard
 
 proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
-    state: TokenizerState = DATA) =
+    esc: bool, state: TokenizerState = DATA) =
   let ss = newStringStream(input)
   let ds = newDecoderStream(ss)
   proc onParseError(e: ParseError) =
@@ -86,7 +126,7 @@ proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
   for tok in tokenizer.tokenize:
     check tok != nil
     if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE}:
-      let otok = getToken(output[i].getElems())
+      let otok = getToken(output[i].getElems(), esc)
       checkEquals(chartok, otok, desc)
       inc i
       chartok = nil
@@ -97,7 +137,7 @@ proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
         chartok = Token(t: CHARACTER)
       chartok.s &= tok.s
     else:
-      let otok = getToken(output[i].getElems())
+      let otok = getToken(output[i].getElems(), esc)
       checkEquals(tok, otok, desc)
       inc i
 
@@ -124,18 +164,21 @@ proc runTests(filename: string) =
   let tests = parseFile(rootpath & filename){"tests"}
   for t in tests:
     let desc = t{"description"}.getStr()
-    let input = t{"input"}.getStr()
+    var input = t{"input"}.getStr()
+    let esc = "doubleEscaped" in t and t{"doubleEscaped"}.getBool()
+    if esc:
+      input = doubleEscape(input)
     let output = t{"output"}.getElems()
     let laststart = if "lastStartTag" in t:
       t{"lastStartTag"}.getStr()
     else:
       ""
     if "initialStates" notin t:
-      runTest(desc, input, output, laststart)
+      runTest(desc, input, output, laststart, esc)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(desc, input, output, laststart, state)
+        runTest(desc, input, output, laststart, esc, state)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")
