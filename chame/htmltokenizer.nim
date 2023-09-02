@@ -36,7 +36,7 @@ type
     eof_i: int
 
   TokenType* = enum
-    DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_ASCII, EOF
+    DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE, EOF
 
   TokenizerState* = enum
     DATA, CHARACTER_REFERENCE, TAG_OPEN, RCDATA, RCDATA_LESS_THAN_SIGN,
@@ -75,19 +75,17 @@ type
   Token* = ref object
     case t*: TokenType
     of DOCTYPE:
+      quirks*: bool
       name*: Option[string]
       pubid*: Option[string]
       sysid*: Option[string]
-      quirks*: bool
     of START_TAG, END_TAG:
+      selfclosing*: bool
       tagname*: string
       tagtype*: TagType
-      selfclosing*: bool
       attrs*: Table[string, string]
-    of CHARACTER:
-      r*: Rune
-    of CHARACTER_ASCII:
-      c*: char
+    of CHARACTER, CHARACTER_WHITESPACE:
+      s*: string
     of COMMENT:
       data*: string
     of EOF: discard
@@ -96,8 +94,7 @@ func `$`*(tok: Token): string =
   case tok.t
   of DOCTYPE: fmt"{tok.t} {tok.name} {tok.pubid} {tok.sysid} {tok.quirks}"
   of START_TAG, END_TAG: fmt"{tok.t} {tok.tagname} {tok.selfclosing} {tok.attrs}"
-  of CHARACTER: fmt"{tok.t} {tok.r}"
-  of CHARACTER_ASCII: fmt"{tok.t} {tok.c}"
+  of CHARACTER, CHARACTER_WHITESPACE: $tok.t & " " & tok.s
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
 
@@ -164,16 +161,44 @@ proc reconsume(t: var Tokenizer) =
 iterator tokenize*(tokenizer: var Tokenizer): Token =
   var tokqueue: seq[Token]
   var running = true
+  var charbuf = ""
+  var isws = false
+
+  template flush_chars =
+    if charbuf.len > 0:
+      let token = if not isws:
+        Token(t: CHARACTER, s: charbuf)
+      else:
+        Token(t: CHARACTER_WHITESPACE, s: charbuf)
+      tokqueue.add(token)
+      isws = false
+      charbuf.setLen(0)
 
   template emit(tok: Token) =
+    flush_chars
     if tok.t == START_TAG:
       tokenizer.laststart = tok
     if tok.t in {START_TAG, END_TAG}:
       tok.tagtype = tagType(tok.tagname)
     tokqueue.add(tok)
   template emit(tok: TokenType) = emit Token(t: tok)
-  template emit(rn: Rune) = emit Token(t: CHARACTER, r: rn)
-  template emit(ch: char) = emit Token(t: CHARACTER_ASCII, c: ch)
+  template emit(s: static string) =
+    static:
+      for c in s:
+        doAssert c notin AsciiWhitespace
+    if isws:
+      flush_chars
+    charbuf &= s
+  template emit(rn: Rune) =
+    if isws:
+      flush_chars
+    charbuf &= $rn
+  template emit(ch: char) =
+    let chisws = ch in AsciiWhitespace
+    if isws != chisws: # emit whitespace & non-whitespace separately.
+      flush_chars
+      isws = chisws
+    charbuf &= ch
   template emit_eof =
     emit EOF
     running = false
@@ -257,15 +282,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template consumed_as_an_attribute(): bool =
     tokenizer.rstate in {ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED, ATTRIBUTE_VALUE_UNQUOTED}
   template emit_tmp() =
-    var i = 0
-    while i < tokenizer.tmp.len:
-      if tokenizer.tmp[i] in Ascii:
-        emit tokenizer.tmp[i]
-        inc i
-      else:
-        var r: Rune
-        fastRuneAt(tokenizer.tmp, i, r)
-        emit r
+    for c in tokenizer.tmp:
+      emit c
   template flush_code_points_consumed_as_a_character_reference() =
     if consumed_as_an_attribute:
       append_to_current_attr_value tokenizer.tmp
@@ -422,8 +440,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
       of eof:
         parse_error EOF_BEFORE_TAG_NAME
-        emit '<'
-        emit '/'
+        emit "</"
         emit_eof
       else:
         parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
@@ -461,8 +478,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         new_token Token(t: END_TAG)
         reconsume_in RCDATA_END_TAG_NAME
       else:
-        emit '<'
-        emit '/'
+        emit "</"
         reconsume_in RCDATA
 
     of RCDATA_END_TAG_NAME:
@@ -489,8 +505,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tmp &= c
       else:
         new_token nil #TODO
-        emit '<'
-        emit '/'
+        emit "</"
         emit_tmp
         reconsume_in RCDATA
 
@@ -509,8 +524,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         new_token Token(t: END_TAG)
         reconsume_in RAWTEXT_END_TAG_NAME
       else:
-        emit '<'
-        emit '/'
+        emit "</"
         reconsume_in RAWTEXT
 
     of RAWTEXT_END_TAG_NAME:
@@ -537,10 +551,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tmp &= c
       else:
         new_token nil #TODO
-        emit '<'
-        emit '/'
-        for r in tokenizer.tmp.runes:
-          emit r
+        emit "</"
+        emit_tmp
         reconsume_in RAWTEXT
 
     of SCRIPT_DATA_LESS_THAN_SIGN:
@@ -550,8 +562,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state SCRIPT_DATA_END_TAG_OPEN
       of '!':
         switch_state SCRIPT_DATA_ESCAPE_START
-        emit '<'
-        emit '!'
+        emit "<!"
       else:
         emit '<'
         reconsume_in SCRIPT_DATA
@@ -562,8 +573,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         new_token Token(t: END_TAG)
         reconsume_in SCRIPT_DATA_END_TAG_NAME
       else:
-        emit '<'
-        emit '/'
+        emit "</"
         reconsume_in SCRIPT_DATA
 
     of SCRIPT_DATA_END_TAG_NAME:
@@ -589,8 +599,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.tagname &= c.tolower()
         tokenizer.tmp &= c
       else:
-        emit '<'
-        emit '/'
+        emit "</"
         emit_tmp
         reconsume_in SCRIPT_DATA
 
@@ -681,8 +690,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         new_token Token(t: START_TAG)
         reconsume_in SCRIPT_DATA_ESCAPED_END_TAG_NAME
       else:
-        emit '<'
-        emit '/'
+        emit "</"
         reconsume_in SCRIPT_DATA_ESCAPED
 
     of SCRIPT_DATA_ESCAPED_END_TAG_NAME:
@@ -707,8 +715,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.tagname &= c.tolower()
         tokenizer.tmp &= c
       else:
-        emit '<'
-        emit '/'
+        emit "</"
         emit_tmp
         reconsume_in SCRIPT_DATA_ESCAPED
 
@@ -1425,8 +1432,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of ']': emit ']'
       of '>': switch_state DATA
       else:
-        emit ']'
-        emit ']'
+        emit "]]"
         reconsume_in CDATA_SECTION
 
     of CHARACTER_REFERENCE:
