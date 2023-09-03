@@ -158,12 +158,13 @@ func hasPrefix*[T](node: RadixNode[T], prefix: string): bool =
 
   return true
 
-proc find*[T](root: RadixNode[T], get: proc(s: var string): bool): Option[T] =
+proc find*[T](root: RadixNode[T], get: proc(s: var string): bool,
+    lasti: var int): Option[T] =
   var n = root
   var buf = ""
-  var i = 0
   var nexti = -1
   var val = n.value
+  var tmplasti = 0
   while get(buf):
     if nexti == -1:
       for j in 0 ..< n.children.len:
@@ -173,7 +174,7 @@ proc find*[T](root: RadixNode[T], get: proc(s: var string): bool): Option[T] =
     if nexti == -1:
       break # not found
     # check if newly added characters match the next node
-    var k = i
+    var k = 0
     while k < buf.len:
       if n.children[nexti].k[k] != buf[k]:
         break
@@ -181,12 +182,13 @@ proc find*[T](root: RadixNode[T], get: proc(s: var string): bool): Option[T] =
     if k == n.children[nexti].k.len: # buf.len >= next.len
       n = n.children[nexti].v
       nexti = -1
+      tmplasti += k
       if n.value.isSome:
         val = n.value
+        lasti = tmplasti
       for l in k ..< buf.len:
         buf[l - k] = buf[l]
       buf.setLen(buf.len - k)
-      i = 0
     elif k != buf.len:
       break
   return val

@@ -203,7 +203,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     emit EOF
     running = false
   template emit_tok =
-    if tokenizer.attr:
+    if tokenizer.tok.t == START_TAG and tokenizer.attr and
+        tokenizer.attrn != "":
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
     emit tokenizer.tok
   template emit_current =
@@ -230,7 +231,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     tokenizer.laststart != nil and
       tokenizer.laststart.tagname == tokenizer.tok.tagname
   template start_new_attribute =
-    if tokenizer.attr:
+    if tokenizer.tok.t == START_TAG and tokenizer.attr:
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
     tokenizer.attrn = ""
     tokenizer.attrv = ""
@@ -260,7 +261,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     # WARNING: will break on strings with copyBufLen + 4 bytes
     # WARNING: only works with UPPER CASE ascii
     assert s.len < copyBufLen - 4 and s.len > 0
-    if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len >= tokenizer.eof_i:
+    if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len > tokenizer.eof_i:
       false
     else:
       var b = true
@@ -789,7 +790,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of eof:
         parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
         emit_eof
-      else: switch_state SCRIPT_DATA_DOUBLE_ESCAPED
+      else:
+        switch_state SCRIPT_DATA_DOUBLE_ESCAPED
+        emit_current
 
     of SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN:
       case c
@@ -820,6 +823,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '=':
         parse_error UNEXPECTED_EQUALS_SIGN_BEFORE_ATTRIBUTE_NAME
         start_new_attribute
+        tokenizer.attrn &= c
         switch_state ATTRIBUTE_NAME
       else:
         start_new_attribute
@@ -868,7 +872,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         parse_error MISSING_ATTRIBUTE_VALUE
         switch_state DATA
-        emit '>'
+        emit_tok
       else: reconsume_in ATTRIBUTE_VALUE_UNQUOTED
 
     of ATTRIBUTE_VALUE_DOUBLE_QUOTED:
@@ -949,16 +953,18 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of eof:
-        emit_tok
-        emit_eof
-      of null: parse_error UNEXPECTED_NULL_CHARACTER
+          emit_tok
+          emit_eof
+      of null:
+        parse_error UNEXPECTED_NULL_CHARACTER
+        tokenizer.tok.data &= $Rune(0xFFFD)
       else: tokenizer.tok.data &= r
 
     of MARKUP_DECLARATION_OPEN: # note: rewritten to fit case model as we consume a char anyway
       has_anything_else
       case c
       of '-':
-        if peek_char == '-':
+        if not tokenizer.atEof and peek_char == '-':
           new_token Token(t: COMMENT)
           tokenizer.state = COMMENT_START
           consume_and_discard 1
@@ -1060,7 +1066,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of COMMENT_END:
       case c
-      of '>': switch_state DATA
+      of '>':
+        switch_state DATA
+        emit_tok
       of '!': switch_state COMMENT_END_BANG
       of '-': tokenizer.tok.data &= '-'
       of eof:
@@ -1110,6 +1118,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         new_token Token(t: DOCTYPE, name: some($Rune(0xFFFD)))
+        switch_state DOCTYPE_NAME
       of '>':
         parse_error MISSING_DOCTYPE_NAME
         new_token Token(t: DOCTYPE, quirks: true)
@@ -1156,13 +1165,13 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       of 'p', 'P':
-        if peek_str("UBLIC"):
+        if peek_str_nocase("UBLIC"):
           consume_and_discard "UBLIC".len
           switch_state AFTER_DOCTYPE_PUBLIC_KEYWORD
         else:
           anything_else
       of 's', 'S':
-        if peek_str("YSTEM"):
+        if peek_str_nocase("YSTEM"):
           consume_and_discard "YSTEM".len
           switch_state AFTER_DOCTYPE_SYSTEM_KEYWORD
         else:
@@ -1179,6 +1188,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_PUBLIC_KEYWORD
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED
+      of '\'':
+        parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_PUBLIC_KEYWORD
+        tokenizer.tok.pubid = some("")
+        switch_state DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED
       of '>':
         parse_error MISSING_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1332,10 +1345,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of AsciiWhitespace: discard
       of '"':
-        tokenizer.tok.pubid = some("")
+        tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        tokenizer.tok.pubid = some("")
+        tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of '>':
         parse_error MISSING_DOCTYPE_SYSTEM_IDENTIFIER
@@ -1442,13 +1455,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         reconsume_in CDATA_SECTION
 
     of CHARACTER_REFERENCE:
-      tokenizer.tmp = "&"
       case c
-      of AsciiAlpha: reconsume_in NAMED_CHARACTER_REFERENCE
+      of AsciiAlpha:
+        tokenizer.tmp = "&"
+        reconsume_in NAMED_CHARACTER_REFERENCE
       of '#':
-        tokenizer.tmp &= '#'
+        tokenizer.tmp = "&#"
         switch_state NUMERIC_CHARACTER_REFERENCE
       else:
+        tokenizer.tmp = "&"
         flush_code_points_consumed_as_a_character_reference
         reconsume_in tokenizer.rstate
 
@@ -1460,20 +1475,21 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       else:
         var tokenizerp = addr tokenizer
         var lasti = 0
-        let value = entityMap.find(proc(s: var string): bool =
+        let value = entityMap.find((proc(s: var string): bool =
           if tokenizerp[].atEof:
             return false
           let rs = $tokenizerp[].consume()
-          lasti = tokenizerp[].tmp.len
           tokenizerp[].tmp &= rs
           s &= rs
           return true
-        )
-        if not tokenizer.atEof:
-          tokenizer.reconsume()
-          tokenizer.tmp.setLen(lasti)
+        ), lasti)
+        inc lasti # add 1, because we do not store the & in entityMap
+        # move back the pointer & shorten the buffer to the last match.
+        tokenizer.sbuf_i -= tokenizer.tmp.len - lasti
+        tokenizer.tmp.setLen(lasti)
         if value.isSome:
-          if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and peek_char in {'='} + AsciiAlpha:
+          if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and
+              not tokenizer.atEof and peek_char in {'='} + AsciiAlphaNumeric:
             flush_code_points_consumed_as_a_character_reference
             switch_state tokenizer.rstate
           else:
@@ -1525,8 +1541,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of HEXADECIMAL_CHARACTER_REFERENCE:
       case c
       of AsciiHexDigit: # note: merged digit, upper hex, lower hex
-        tokenizer.code *= 0x10
-        tokenizer.code += hexValue(c)
+        if tokenizer.code < 0x10FFFF:
+          tokenizer.code *= 0x10
+          tokenizer.code += hexValue(c)
       of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
       else:
         parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
@@ -1535,8 +1552,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of DECIMAL_CHARACTER_REFERENCE:
       case c
       of AsciiDigit:
-        tokenizer.code *= 10
-        tokenizer.code += decValue(c)
+        if tokenizer.code < 0x10FFFF:
+          tokenizer.code *= 10
+          tokenizer.code += decValue(c)
       of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
       else:
         parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
@@ -1557,7 +1575,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       elif Rune(tokenizer.code).isNonCharacter():
         parse_error NONCHARACTER_CHARACTER_REFERENCE
         # do nothing
-      elif tokenizer.code in 0..255 and char(tokenizer.code) in ((Controls - AsciiWhitespace) + {chr(0x0D)}):
+      elif tokenizer.code in 0 .. 0x7F and
+          char(tokenizer.code) in (Controls - AsciiWhitespace) + {chr(0x0D)} or
+          tokenizer.code in 0x80 .. 0x9F:
         const ControlMapTable = [
           (0x80, 0x20AC), (0x82, 0x201A), (0x83, 0x0192), (0x84, 0x201E),
           (0x85, 0x2026), (0x86, 0x2020), (0x87, 0x2021), (0x88, 0x02C6),
@@ -1567,7 +1587,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           (0x98, 0x02DC), (0x99, 0x2122), (0x9A, 0x0161), (0x9B, 0x203A),
           (0x9C, 0x0153), (0x9E, 0x017E), (0x9F, 0x0178),
         ].toTable()
-        if ControlMapTable.hasKey(tokenizer.code):
+        if tokenizer.code in ControlMapTable:
           tokenizer.code = ControlMapTable[tokenizer.code]
       tokenizer.tmp = $Rune(tokenizer.code)
       flush_code_points_consumed_as_a_character_reference #TODO optimize so we flush directly
