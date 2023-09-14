@@ -2738,6 +2738,7 @@ proc checkCallbacks(dombuilder: DOMBuilder) =
   doAssert dombuilder.insertBefore != nil
   doAssert dombuilder.insertText != nil
   doAssert dombuilder.remove != nil
+  doAssert dombuilder.moveChildren != nil
 
 proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     opts: HTML5ParserOpts[Handle]) =
