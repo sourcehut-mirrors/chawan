@@ -1,9 +1,10 @@
 {.experimental: "overloadableEnums".}
 
+import macros
 import options
+import streams
 import strformat
 import strutils
-import macros
 import tables
 import unicode
 
