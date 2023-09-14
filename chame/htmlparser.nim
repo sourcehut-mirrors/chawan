@@ -2009,7 +2009,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
 
   of TEXT:
     match token:
-      TokenType.CHARACTER => (block:
+      (TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE) => (block:
         parser.insertCharacter(token.s)
       )
       TokenType.EOF => (block:
@@ -2036,7 +2036,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         pop_current_node
 
     match token:
-      TokenType.CHARACTER => (block:
+      (TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE) => (block:
         const CanHaveText = {
           TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR
         }
