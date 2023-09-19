@@ -16,16 +16,6 @@ type
     DOCUMENT_FRAGMENT_NODE = 11,
     NOTATION_NODE = 12
 
-  InputType* = enum
-    INPUT_UNKNOWN, INPUT_BUTTON, INPUT_CHECKBOX, INPUT_COLOR, INPUT_DATE,
-    INPUT_DATETIME_LOCAL, INPUT_EMAIL, INPUT_FILE, INPUT_HIDDEN, INPUT_IMAGE,
-    INPUT_MONTH, INPUT_NUMBER, INPUT_PASSWORD, INPUT_RADIO, INPUT_RANGE,
-    INPUT_RESET, INPUT_SEARCH, INPUT_SUBMIT, INPUT_TEL, INPUT_TEXT, INPUT_TIME,
-    INPUT_URL, INPUT_WEEK
-
-  ButtonType* = enum
-    BUTTON_SUBMIT, BUTTON_RESET, BUTTON_BUTTON
-
   TagType* = enum
     TAG_UNKNOWN, TAG_APPLET, TAG_BIG, TAG_HTML, TAG_BASE, TAG_BASEFONT,
     TAG_BGSOUND, TAG_HEAD, TAG_LINK, TAG_LISTING, TAG_META, TAG_STYLE,
@@ -64,30 +54,16 @@ type
 func getTagTypeMap(): Table[string, TagType] =
   for i in TagType:
     let enumname = $TagType(i)
-    let tagname = enumname.split('_')[1..^1].join("_").tolower()
+    let tagname = enumname.split('_')[1..^1].join("_").toLowerAscii()
     result[tagname] = TagType(i)
 
-func getInputTypeMap(): Table[string, InputType] =
-  for i in InputType:
-    let enumname = $InputType(i)
-    let tagname = enumname.split('_')[1..^1].join("_").tolower()
-    result[tagname] = InputType(i)
-
 const tagTypeMap = getTagTypeMap()
-const inputTypeMap = getInputTypeMap()
-
 
 func tagType*(s: string): TagType =
   if tagTypeMap.hasKey(s):
     return tagTypeMap[s]
   else:
     return TAG_UNKNOWN
-
-func inputType*(s: string): InputType =
-  if inputTypeMap.hasKey(s):
-    return inputTypeMap[s]
-  else:
-    return INPUT_UNKNOWN
 
 const tagNameMap = (func(): Table[TagType, string] =
   for k, v in tagTypeMap:
@@ -102,29 +78,8 @@ const AllTagTypes* = (func(): set[TagType] =
 func tagName*(t: TagType): string =
   return tagNameMap[t]
 
-const SelfClosingTagTypes* = {
-  TAG_LI, TAG_P
-}
-
-const VoidTagTypes* = {
-  TAG_AREA, TAG_BASE, TAG_BR, TAG_COL, TAG_FRAME, TAG_HR, TAG_IMG, TAG_INPUT,
-  TAG_SOURCE, TAG_TRACK, TAG_LINK, TAG_META, TAG_PARAM, TAG_WBR, TAG_HR
-}
-
-const PClosingTagTypes* = {
-  TAG_ADDRESS, TAG_ARTICLE, TAG_ASIDE, TAG_BLOCKQUOTE, TAG_DETAILS, TAG_DIV,
-  TAG_DL, TAG_FIELDSET, TAG_FIGCAPTION, TAG_FIGURE, TAG_FOOTER, TAG_FORM,
-  TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6, TAG_HEADER, TAG_HGROUP,
-  TAG_HR, TAG_MAIN, TAG_MENU, TAG_NAV, TAG_OL, TAG_P, TAG_PRE, TAG_SECTION,
-  TAG_TABLE, TAG_UL
-}
-
 const HTagTypes* = {
   TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6
-}
-
-const HeadTagTypes* = {
-  TAG_BASE, TAG_LINK, TAG_META, TAG_TITLE, TAG_NOSCRIPT, TAG_SCRIPT, TAG_NOFRAMES, TAG_STYLE, TAG_HEAD
 }
 
 # 4.10.2 Categories
@@ -132,38 +87,12 @@ const FormAssociatedElements* = {
   TAG_BUTTON, TAG_FIELDSET, TAG_INPUT, TAG_OBJECT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA, TAG_IMG
 }
 
-#TODO support all the other ones
-const SupportedFormAssociatedElements* = {
-  TAG_BUTTON, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA
-}
-
 const ListedElements* = {
   TAG_FIELDSET, TAG_INPUT, TAG_OBJECT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA
 }
 
-const SubmittableElements* = {
-  TAG_BUTTON, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA
-}
-
-const ResettableElements* = {
-  TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA
-}
-
-const AutocapitalizeInheritingElements* = {
-  TAG_BUTTON, TAG_FIELDSET, TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA
-}
-
-const LabelableElements* = {
-  # input only if type not hidden
-  TAG_BUTTON, TAG_INPUT, TAG_METER, TAG_OUTPUT, TAG_PROGRESS, TAG_SELECT, TAG_TEXTAREA
-}
-
 const CharacterDataNodes* = {
   TEXT_NODE, CDATA_SECTION_NODE, PROCESSING_INSTRUCTION_NODE, COMMENT_NODE
-}
-
-const InputTypeWithSize* = {
-  INPUT_SEARCH, INPUT_TEXT, INPUT_EMAIL, INPUT_PASSWORD, INPUT_URL, INPUT_TEL
 }
 
 #https://html.spec.whatwg.org/multipage/parsing.html#the-stack-of-open-elements
