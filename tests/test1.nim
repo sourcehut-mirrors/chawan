@@ -34,7 +34,7 @@ func escapeText(s: string, attribute_mode = false): string =
       result &= c
 
 proc tostr(ftype: enum): string =
-  return ($ftype).split('_')[1..^1].join("-").tolower()
+  return ($ftype).split('_')[1..^1].join("-").toLowerAscii()
 
 func `$`*(node: Node): string =
   case node.nodeType
