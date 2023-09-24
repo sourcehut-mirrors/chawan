@@ -1,6 +1,5 @@
 import macros
 import options
-import sequtils
 import streams
 import strutils
 import tables
@@ -730,17 +729,11 @@ proc adjustSVGAttributes(token: Token) =
   for s in todo:
     token.attrs[adjusted[s]] = token.attrs[s]
 
-template insert_character_impl(parser: var HTML5Parser, data: typed) =
+proc insertCharacter(parser: var HTML5Parser, data: string) =
   let location = parser.appropriatePlaceForInsert()
   if location.inside == parser.dombuilder.document:
     return
   insertText(parser, location.inside, $data, location.before)
-
-proc insertCharacter(parser: var HTML5Parser, data: string) =
-  insert_character_impl(parser, data)
-
-proc insertCharacter(parser: var HTML5Parser, data: char) =
-  insert_character_impl(parser, data)
 
 proc insertComment[Handle](parser: var HTML5Parser[Handle], token: Token,
     position: AdjustedInsertionLocation[Handle]) =
