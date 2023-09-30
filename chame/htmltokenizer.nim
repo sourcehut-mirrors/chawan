@@ -273,7 +273,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           break
       b
   template peek_char(): char =
-    let r = tokenizer.sbuf[tokenizer.sbuf_i]
+    let r = tokenizer.consume()
+    tokenizer.reconsume()
     if r.isAscii():
       cast[char](r)
     else:
