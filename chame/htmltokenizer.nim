@@ -14,8 +14,6 @@ import tags
 import utils/radixtree
 import utils/twtstr
 
-import chakasu/decoderstream
-
 # Tokenizer
 type
   Tokenizer* = object
@@ -31,7 +29,7 @@ type
     hasnonhtml*: bool
     onParseError: proc(e: ParseError)
 
-    decoder: DecoderStream
+    stream: Stream
     sbuf: seq[Rune]
     sbuf_i: int
     eof_i: int
@@ -105,18 +103,21 @@ const copyBufLen = 16 # * 64 bytes
 proc readn(t: var Tokenizer) =
   let l = t.sbuf.len
   t.sbuf.setLen(bufLen)
-  let n = t.decoder.readData(addr t.sbuf[l], (bufLen - l) * sizeof(Rune))
+  let n = t.stream.readData(addr t.sbuf[l], (bufLen - l) * sizeof(Rune))
   t.sbuf.setLen(l + n div sizeof(Rune))
-  if t.decoder.atEnd:
+  if t.stream.atEnd:
     t.eof_i = t.sbuf.len
 
-proc newTokenizer*(s: DecoderStream, onParseError: proc(e: ParseError)): Tokenizer =
+# WARNING: Stream must return 32-bit unicode values.
+proc newTokenizer*(s: Stream, onParseError: proc(e: ParseError),
+    initialState = DATA): Tokenizer =
   var t = Tokenizer(
-    decoder: s,
+    stream: s,
     sbuf: newSeqOfCap[Rune](bufLen),
     eof_i: -1,
     sbuf_i: 0,
-    onParseError: onParseError
+    onParseError: onParseError,
+    state: initialState
   )
   t.readn()
   return t

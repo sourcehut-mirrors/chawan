@@ -112,6 +112,8 @@ type
     ctx*: Option[Handle]
     ## Context element for fragment parsing. When set to some Handle,
     ## the fragment case is used while parsing.
+    initialTokenizerState*: TokenizerState
+    ## The initial tokenizer state; by default, this is DATA.
 
   DOMBuilderFinish*[Handle] =
     proc(builder: DOMBuilder[Handle]) {.nimcall.}
@@ -2753,6 +2755,7 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     charsetStack.add(DefaultCharset) # UTF-8
   var previousCharset = CHARSET_UNKNOWN
   var first = true
+  let tokstate = opts.initialTokenizerState
   while true:
     let charset = charsetStack.pop()
     var parser = HTML5Parser[Handle](
@@ -2782,7 +2785,7 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
       x
     else:
       nil
-    parser.tokenizer = newTokenizer(decoder, onParseError)
+    parser.tokenizer = newTokenizer(decoder, onParseError, tokstate)
     parser.constructTree()
     if parser.needsreinterpret and canReinterpret:
       inputStream.setPosition(0)

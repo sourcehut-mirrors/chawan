@@ -5,6 +5,8 @@ import tables
 import unicode
 import unittest
 
+import runestream
+
 import chame/htmltokenizer
 import chame/parseerror
 import chame/tags
@@ -124,14 +126,19 @@ proc checkEquals(tok, otok: Token, desc: string) =
   of EOF: discard
 
 proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
-    esc: bool, state: TokenizerState = DATA) =
-  let ss = newStringStream(input)
-  let ds = newDecoderStream(ss)
+    esc: bool, state: TokenizerState = DATA, runes = false) =
+  let ds = if not runes:
+    let ss = newStringStream(input)
+    newDecoderStream(ss)
+  else:
+    var us: seq[uint32]
+    for r in input.runes:
+      us.add(uint32(r))
+    newRuneStream(us)
   proc onParseError(e: ParseError) =
     discard
-  var tokenizer = newTokenizer(ds, onParseError)
+  var tokenizer = newTokenizer(ds, onParseError, state)
   tokenizer.laststart = Token(t: START_TAG, tagname: laststart)
-  tokenizer.state = state
   var i = 0
   var chartok: Token = nil
   for tok in tokenizer.tokenize:
@@ -171,7 +178,7 @@ func getState(s: string): TokenizerState =
 
 const rootpath = "tests/html5lib-tests/tokenizer/"
 
-proc runTests(filename: string) =
+proc runTests(filename: string, runes = false) =
   let tests = parseFile(rootpath & filename){"tests"}
   for t in tests:
     let desc = t{"description"}.getStr()
@@ -185,11 +192,11 @@ proc runTests(filename: string) =
     else:
       ""
     if "initialStates" notin t:
-      runTest(desc, input, output, laststart, esc)
+      runTest(desc, input, output, laststart, esc, runes = runes)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(desc, input, output, laststart, esc, state)
+        runTest(desc, input, output, laststart, esc, state, runes)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")
@@ -227,16 +234,8 @@ test "test4":
 test "unicodeChars":
   runTests("unicodeChars.test")
 
-# Unfortunately, unicodeCharsProblematic contains invalid unicode characters
-# that would not round-trip if we first encoded them to UTF-8.
-# e.g. 0xDFFF encodes to 0xED 0xBF 0xBF, which is then decoded as three
-# errors -> 0xFFFD chars (despite the test requiring only one).
-# The easiest fix would be to add an "UTF-32" encoding to decoderstream,
-# but that would be quite ugly. The proper fix would be to make decoderstream
-# compatible with other stream implementations like RuneStream. (Maybe using
-# a better interface, like faststreams?)
-#test "unicodeCharsProblematic":
-#  runTests("unicodeCharsProblematic.test")
+test "unicodeCharsProblematic":
+  runTests("unicodeCharsProblematic.test", runes = true)
 
 #test "xmlViolation":
 #  runTests("xmlViolation.test")
