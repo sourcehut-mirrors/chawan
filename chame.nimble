@@ -9,4 +9,4 @@ license       = "Unlicense"
 # Dependencies
 
 requires "nim >= 1.6.10"
-requires "https://git.sr.ht/~bptato/chakasu >= 0.2.1"
+requires "https://git.sr.ht/~bptato/chakasu >= 0.3.1"
