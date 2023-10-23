@@ -114,6 +114,13 @@ type
     ## the fragment case is used while parsing.
     initialTokenizerState*: TokenizerState
     ## The initial tokenizer state; by default, this is DATA.
+    openElementsInit*: seq[Handle]
+    ## Initial state of the stack of open elements. By default, the stack
+    ## starts out empty.
+    ## Note: if this is initialized to a non-empty sequence, the parser will
+    ## start by resetting the insertion mode appropriately.
+    formInit*: Option[Handle]
+    ## Initial state of the parser's form pointer.
 
   DOMBuilderFinish*[Handle] =
     proc(builder: DOMBuilder[Handle]) {.nimcall.}
@@ -2762,8 +2769,12 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
       dombuilder: dombuilder,
       confidence: confidence,
       charset: charset,
-      opts: opts
+      opts: opts,
+      openElements: opts.openElementsInit,
+      form: opts.formInit
     )
+    if opts.openElementsInit.len > 0:
+      parser.resetInsertionMode()
     if charset != previousCharset:
       parser.setCharacterSet(charset)
       previousCharset = charset
