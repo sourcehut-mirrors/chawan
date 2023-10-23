@@ -121,6 +121,9 @@ type
     ## start by resetting the insertion mode appropriately.
     formInit*: Option[Handle]
     ## Initial state of the parser's form pointer.
+    pushInTemplate*: bool
+    ## When set to true, the "in template" insertion mode is pushed to the
+    ## stack of template insertion modes on parser start.
 
   DOMBuilderFinish*[Handle] =
     proc(builder: DOMBuilder[Handle]) {.nimcall.}
@@ -2779,6 +2782,8 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     )
     if opts.openElementsInit.len > 0:
       parser.resetInsertionMode()
+    if opts.pushInTemplate:
+      parser.templateModes.add(IN_TEMPLATE)
     if charset != previousCharset:
       parser.setCharacterSet(charset)
       previousCharset = charset
