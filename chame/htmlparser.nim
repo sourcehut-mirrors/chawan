@@ -59,7 +59,7 @@ type
     ## Must never be nil.
     addAttrsIfMissing*: DOMBuilderAddAttrsIfMissing[Handle]
     ## May be nil. (If nil, some attributes may not be added to the HTML or
-    ## BODY element if more than one of their respecting opening tags exist.)
+    ## BODY element if more than one of their respective opening tags exist.)
     setScriptAlreadyStarted*: DOMBuilderSetScriptAlreadyStarted[Handle]
     ## May be nil.
     associateWithForm*: DOMBuilderAssociateWithForm[Handle]
@@ -294,7 +294,10 @@ type
     pendingTableChars: string
     pendingTableCharsWhitespace: bool
 
-  AdjustedInsertionLocation[Handle] = tuple[inside, before: Handle]
+  AdjustedInsertionLocation[Handle] = tuple[
+    inside: Handle,
+    before: Option[Handle]
+  ]
 
 # 13.2.4.1
   InsertionMode = enum
@@ -499,8 +502,8 @@ func lastElementOfTag[Handle](parser: HTML5Parser[Handle],
       return (some(parser.openElements[i]), i)
   return (none(Handle), -1)
 
-template last_child_of[Handle](n: Handle): AdjustedInsertionLocation[Handle] =
-  (n, nil)
+func last_child_of[Handle](n: Handle): AdjustedInsertionLocation[Handle] =
+  (n, none(Handle))
 
 # https://html.spec.whatwg.org/multipage/#appropriate-place-for-inserting-a-node
 func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle],
@@ -520,14 +523,14 @@ func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle],
       return last_child_of(parser.openElements[0])
     let parentNode = parser.getParentNode(lastTable.element.get)
     if parentNode.isSome:
-      return (parentNode.get, lastTable.element.get)
+      return (parentNode.get, lastTable.element)
     let previousElement = parser.openElements[lastTable.pos - 1]
     result = last_child_of(previousElement)
   else:
     result = last_child_of(target)
   if parser.getTagType(result.inside) == TAG_TEMPLATE and
       parser.dombuilder.getTemplateContent != nil:
-    result = (parser.getTemplateContent(result.inside), nil)
+    result = (parser.getTemplateContent(result.inside), none(Handle))
 
 func appropriatePlaceForInsert[Handle](parser: HTML5Parser[Handle]):
     AdjustedInsertionLocation[Handle] =
@@ -652,7 +655,8 @@ template pop_current_node = discard parser.popElement()
 
 proc insert[Handle](parser: HTML5Parser[Handle],
     location: AdjustedInsertionLocation[Handle], node: Handle) =
-  parser.insertBefore(location.inside, node, location.before)
+  #TODO remove nil from insertBefore
+  parser.insertBefore(location.inside, node, location.before.get(nil))
 
 proc append[Handle](parser: HTML5Parser[Handle], parent, node: Handle) =
   parser.insertBefore(parent, node, nil)
@@ -742,7 +746,7 @@ proc insertCharacter(parser: var HTML5Parser, data: string) =
   let location = parser.appropriatePlaceForInsert()
   if location.inside == parser.dombuilder.document:
     return
-  insertText(parser, location.inside, $data, location.before)
+  insertText(parser, location.inside, $data, location.before.get(nil))
 
 proc insertComment[Handle](parser: var HTML5Parser[Handle], token: Token,
     position: AdjustedInsertionLocation[Handle]) =
@@ -1136,7 +1140,7 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
       parser.append(node, lastNode)
       lastNode = node
     let location = parser.appropriatePlaceForInsert(commonAncestor)
-    parser.insertBefore(location.inside, lastNode, location.before)
+    parser.insertBefore(location.inside, lastNode, location.before.get(nil))
     let token = parser.activeFormatting[formattingIndex][1]
     let element = parser.createElement(token, Namespace.HTML, furthestBlock)
     parser.moveChildren(furthestBlock, element)
