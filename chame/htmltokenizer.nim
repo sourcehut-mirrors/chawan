@@ -35,7 +35,8 @@ type
     eof_i: int
 
   TokenType* = enum
-    DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE, EOF
+    DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE,
+    CHARACTER_NULL, EOF
 
   TokenizerState* = enum
     DATA, CHARACTER_REFERENCE, TAG_OPEN, RCDATA, RCDATA_LESS_THAN_SIGN,
@@ -87,13 +88,14 @@ type
       s*: string
     of COMMENT:
       data*: string
-    of EOF: discard
+    of EOF, CHARACTER_NULL: discard
 
 func `$`*(tok: Token): string =
   case tok.t
   of DOCTYPE: fmt"{tok.t} {tok.name} {tok.pubid} {tok.sysid} {tok.quirks}"
   of START_TAG, END_TAG: fmt"{tok.t} {tok.tagname} {tok.selfclosing} {tok.attrs}"
   of CHARACTER, CHARACTER_WHITESPACE: $tok.t & " " & tok.s
+  of CHARACTER_NULL: $tok.t
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
 
@@ -186,8 +188,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template emit(tok: TokenType) = emit Token(t: tok)
   template emit(s: static string) =
     static:
-      for c in s:
-        doAssert c notin AsciiWhitespace
+      doAssert AsciiWhitespace notin s
     if isws:
       flush_chars
     charbuf &= s
@@ -197,10 +198,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     charbuf &= $rn
   template emit(ch: char) =
     let chisws = ch in AsciiWhitespace
-    if isws != chisws: # emit whitespace & non-whitespace separately.
+    if isws != chisws:
+      # Emit whitespace & non-whitespace separately.
       flush_chars
       isws = chisws
     charbuf &= ch
+  template emit_null =
+    flush_chars
+    emit Token(t: CHARACTER_NULL)
   template emit_eof =
     emit EOF
     running = false
@@ -377,7 +382,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '<': switch_state TAG_OPEN
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        emit_current
+        emit_null
       of eof: emit_eof
       else: emit_current
 
@@ -1438,6 +1443,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of eof:
         parse_error EOF_IN_CDATA
         emit_eof
+      of null:
+        # "U+0000 NULL characters are handled in the tree construction stage,
+        # as part of the in foreign content insertion mode, which is the only
+        # place where CDATA sections can appear."
+        emit_null
       else:
         emit_current
 

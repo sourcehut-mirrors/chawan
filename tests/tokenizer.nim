@@ -123,7 +123,7 @@ proc checkEquals(tok, otok: Token, desc: string) =
   of TokenType.COMMENT:
     doAssert tok.data == otok.data, desc & " (tok data: " & tok.data &
       "otok data: " & otok.data & ")"
-  of EOF: discard
+  of EOF, CHARACTER_NULL: discard
 
 proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
     esc: bool, state: TokenizerState = DATA, runes = false) =
@@ -143,7 +143,8 @@ proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
   var chartok: Token = nil
   for tok in tokenizer.tokenize:
     check tok != nil
-    if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE}:
+    if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE,
+        CHARACTER_NULL}:
       let otok = getToken(output[i].getElems(), esc)
       checkEquals(chartok, otok, desc)
       inc i
@@ -154,6 +155,10 @@ proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
       if chartok == nil:
         chartok = Token(t: CHARACTER)
       chartok.s &= tok.s
+    elif tok.t == CHARACTER_NULL:
+      if chartok == nil:
+        chartok = Token(t: CHARACTER)
+      chartok.s &= char(0)
     else:
       let otok = getToken(output[i].getElems(), esc)
       checkEquals(tok, otok, desc)

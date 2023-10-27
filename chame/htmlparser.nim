@@ -1050,7 +1050,9 @@ proc parseErrorByTokenType(parser: var HTML5Parser, tokenType: TokenType) =
     parser.parseError UNEXPECTED_EOF
   of CHARACTER, CHARACTER_WHITESPACE:
     parser.parseError UNEXPECTED_CHARACTER
-  else:
+  of CHARACTER_NULL:
+    parser.parseError UNEXPECTED_NULL
+  of DOCTYPE, COMMENT:
     doAssert false
 
 proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
@@ -1327,37 +1329,6 @@ macro match(token: Token, body: typed): untyped =
     stmts.add(stmt)
   result = newBlockStmt(ident("inside_not_else"), stmts)
 
-proc removeNullChar(parser: HTML5Parser, s: var string) =
-  #TODO this should be moved to the tokenizer.
-  var i = 0
-  var j = 0
-  while i + j < s.len:
-    if s[i + j] == '\0':
-      inc j
-      if parser.hasParseError():
-        parser.parseError(UNEXPECTED_NULL)
-      continue
-    s[i] = s[i + j]
-    inc i
-  s.setLen(i)
-
-proc replaceNullChar(parser: HTML5Parser, s: var string) =
-  #TODO this should be moved tokenizer.
-  block not_found:
-    for c in s:
-      if c == '\0':
-        break not_found
-    return # no need to replace
-  var buf = ""
-  for c in s:
-    if c == '\0':
-      buf &= $Rune(0xFFFD)
-      if parser.hasParseError():
-        parser.parseError(UNEXPECTED_NULL)
-    else:
-      buf &= c
-  s = buf
-
 proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
     token: Token, insertionMode: InsertionMode) =
   template pop_all_nodes =
@@ -1627,8 +1598,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         parser.reconstructActiveFormatting()
         parser.insertCharacter(token.s)
       )
+      TokenType.CHARACTER_NULL => (block: parse_error UNEXPECTED_NULL)
       TokenType.CHARACTER => (block:
-        parser.removeNullChar(token.s)
         parser.reconstructActiveFormatting()
         parser.insertCharacter(token.s)
         parser.framesetOk = false
@@ -2018,6 +1989,11 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
 
   of TEXT:
     match token:
+      TokenType.CHARACTER_NULL => (block:
+        # "This can never be a U+0000 NULL character; the tokenizer converts
+        # those to U+FFFD REPLACEMENT CHARACTER characters."
+        assert false
+      )
       (TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE) => (block:
         parser.insertCharacter(token.s)
       )
@@ -2045,7 +2021,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         pop_current_node
 
     match token:
-      (TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE) => (block:
+      (TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE,
+          TokenType.CHARACTER_NULL) => (block:
         const CanHaveText = {
           TAG_TABLE, TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TR
         }
@@ -2139,11 +2116,11 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
 
   of IN_TABLE_TEXT:
     match token:
+      TokenType.CHARACTER_NULL => (block: parse_error UNEXPECTED_NULL)
       TokenType.CHARACTER_WHITESPACE => (block:
         parser.pendingTableChars &= token.s
       )
       TokenType.CHARACTER => (block:
-        parser.removeNullChar(token.s)
         parser.pendingTableCharsWhitespace = false
         parser.pendingTableChars &= token.s
       )
@@ -2353,8 +2330,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
 
   of IN_SELECT:
     match token:
+      TokenType.CHARACTER_NULL => (block: parse_error UNEXPECTED_NULL)
       TokenType.CHARACTER => (block:
-        parser.removeNullChar(token.s)
         parser.insertCharacter(token.s)
       )
       TokenType.CHARACTER_WHITESPACE => (block:
@@ -2441,7 +2418,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
   of IN_TEMPLATE:
     match token:
       (TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE,
-          TokenType.DOCTYPE) => (block:
+          TokenType.CHARACTER_NULL, TokenType.DOCTYPE) => (block:
         parser.processInHTMLContent(token, IN_BODY)
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>",
@@ -2648,9 +2625,12 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
       parser.processInHTMLContent(token, parser.insertionMode)
 
   match token:
+    TokenType.CHARACTER_NULL => (block:
+      parse_error UNEXPECTED_NULL
+      parser.insertCharacter($Rune(0xFFFD))
+    )
     TokenType.CHARACTER_WHITESPACE => (block: parser.insertCharacter(token.s))
     TokenType.CHARACTER => (block:
-      parser.replaceNullChar(token.s)
       parser.insertCharacter(token.s)
     )
     TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
@@ -2701,7 +2681,7 @@ proc constructTree[Handle](parser: var HTML5Parser[Handle]) =
             continue
           else:
             token.s.delete(0..0)
-    let isTokenHTML = token.t in {START_TAG, CHARACTER}
+    let isTokenHTML = token.t in {START_TAG, CHARACTER, CHARACTER_NULL}
     if parser.openElements.len == 0 or
        parser.getNamespace(parser.adjustedCurrentNode) == Namespace.HTML or
        parser.isHTMLIntegrationPoint(parser.adjustedCurrentNode) and
