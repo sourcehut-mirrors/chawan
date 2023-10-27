@@ -28,6 +28,9 @@ type
     attr: bool
     hasnonhtml*: bool
     onParseError: proc(e: ParseError)
+    tokqueue: seq[Token]
+    charbuf: string
+    isws: bool
 
     stream: Stream
     sbuf: seq[Rune]
@@ -162,49 +165,46 @@ proc consume(t: var Tokenizer): Rune =
 proc reconsume(t: var Tokenizer) =
   dec t.sbuf_i
 
-iterator tokenize*(tokenizer: var Tokenizer): Token =
-  var tokqueue: seq[Token]
-  var running = true
-  var charbuf = ""
-  var isws = false
+proc flushChars(tokenizer: var Tokenizer) =
+  if tokenizer.charbuf.len > 0:
+    let token = if not tokenizer.isws:
+      Token(t: CHARACTER, s: tokenizer.charbuf)
+    else:
+      Token(t: CHARACTER_WHITESPACE, s: tokenizer.charbuf)
+    tokenizer.tokqueue.add(token)
+    tokenizer.isws = false
+    tokenizer.charbuf.setLen(0)
 
-  template flush_chars =
-    if charbuf.len > 0:
-      let token = if not isws:
-        Token(t: CHARACTER, s: charbuf)
-      else:
-        Token(t: CHARACTER_WHITESPACE, s: charbuf)
-      tokqueue.add(token)
-      isws = false
-      charbuf.setLen(0)
+iterator tokenize*(tokenizer: var Tokenizer): Token =
+  var running = true
 
   template emit(tok: Token) =
-    flush_chars
+    tokenizer.flushChars()
     if tok.t == START_TAG:
       tokenizer.laststart = tok
     if tok.t in {START_TAG, END_TAG}:
       tok.tagtype = tagType(tok.tagname)
-    tokqueue.add(tok)
+    tokenizer.tokqueue.add(tok)
   template emit(tok: TokenType) = emit Token(t: tok)
   template emit(s: static string) =
     static:
       doAssert AsciiWhitespace notin s
-    if isws:
-      flush_chars
-    charbuf &= s
+    if tokenizer.isws:
+      tokenizer.flushChars()
+    tokenizer.charbuf &= s
   template emit(rn: Rune) =
-    if isws:
-      flush_chars
-    charbuf &= $rn
+    if tokenizer.isws:
+      tokenizer.flushChars()
+    tokenizer.charbuf &= $rn
   template emit(ch: char) =
     let chisws = ch in AsciiWhitespace
-    if isws != chisws:
+    if tokenizer.isws != chisws:
       # Emit whitespace & non-whitespace separately.
-      flush_chars
-      isws = chisws
-    charbuf &= ch
+      tokenizer.flushChars()
+      tokenizer.isws = chisws
+    tokenizer.charbuf &= ch
   template emit_null =
-    flush_chars
+    tokenizer.flushChars()
     emit Token(t: CHARACTER_NULL)
   template emit_eof =
     emit EOF
@@ -1606,6 +1606,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       flush_code_points_consumed_as_a_character_reference #TODO optimize so we flush directly
       reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
 
-    for tok in tokqueue:
+    for tok in tokenizer.tokqueue:
       yield tok
-    tokqueue.setLen(0)
+    tokenizer.tokqueue.setLen(0)
