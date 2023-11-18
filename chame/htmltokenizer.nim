@@ -961,8 +961,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of eof:
-          emit_tok
-          emit_eof
+        emit_tok
+        emit_eof
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.data &= $Rune(0xFFFD)
