@@ -114,32 +114,11 @@ proc parseDoctype(s: string): DocumentType =
   return doctype
 
 proc parseComment(s: string): Comment =
-  type CommentState = enum
-    NORMAL, SINGLE_DASH, DOUBLE_DASH
-  var state = NORMAL
-  let comment = Comment(nodeType: COMMENT_NODE)
-  var i = "<!--".len
-  for c in s:
-    case state
-    of NORMAL:
-      if c == '-':
-        state = SINGLE_DASH
-      else:
-        comment.data &= c
-    of SINGLE_DASH:
-      if c == '-':
-        state = DOUBLE_DASH
-      else:
-        comment.data &= '-'
-        comment.data &= c
-    of DOUBLE_DASH:
-      if c == '>':
-        break
-      else:
-        comment.data &= '-'
-        comment.data &= '-'
-        comment.data &= c
-  return comment
+  assert s.startsWith("<!-- ") and s.endsWith(" -->")
+  return Comment(
+    nodeType: COMMENT_NODE,
+    data: s["<!-- ".len .. ^(" -->".len + 1)]
+  )
 
 
 proc parseTestDocument(ctx: var TCTestParser): Document =
@@ -269,6 +248,17 @@ proc runTests(filename: string) =
   for test in tests:
     let ss = newStringStream(test.data)
     let pdoc = parseHTML(ss)
+    #[
+    var ins = ""
+    for x in test.document.childList:
+      ins &= $x & '\n'
+    var ps = ""
+    for x in pdoc.childList:
+      ps &= $x & '\n'
+    echo "indoc ", $ins
+    echo "pdoc ", $ps
+    ]#
+    echo "data ", test.data
     checkTest(test.document, pdoc)
 
 test "tests1":
