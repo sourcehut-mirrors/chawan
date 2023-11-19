@@ -166,7 +166,11 @@ proc insertBefore(builder: DOMBuilder[Node], parent, child, before: Node) =
 proc insertText(builder: DOMBuilder[Node], parent: Node, text: string,
     before: Node) =
   let prevSibling = if before != nil:
-    parent.childList[parent.childList.find(before) - 1]
+    let i = parent.childList.find(before)
+    if i == 0:
+      nil
+    else:
+      parent.childList[i - 1]
   elif parent.childList.len > 0:
     parent.childList[^1]
   else:
