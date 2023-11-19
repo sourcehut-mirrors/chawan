@@ -137,7 +137,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
         thistext.data &= line.substr(0, line.high - 1)
         thistext = nil
       else:
-        thistext.data &= line
+        thistext.data &= line & "\n"
       continue
     assert line[0] == '|' and line[1] == ' '
     while indent >= line.len or not line.startsWith('|' & ' '.repeat(indent)):
@@ -168,8 +168,8 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
     elif str[0] == '"':
       let text = Text(nodeType: TEXT_NODE)
       top.childList.add(text)
-      if str[^1] != '"':
-        text.data = str.substr(1)
+      if str[^1] != '"' or str.len == 1:
+        text.data = str.substr(1) & "\n"
         thistext = text
       else:
         text.data = str.substr(1, str.high - 1)
@@ -263,3 +263,9 @@ proc runTests(filename: string) =
 
 test "tests1.dat":
   runTests("tests1.dat")
+
+test "tests2.dat":
+  runTests("tests2.dat")
+
+test "tests3.dat":
+  runTests("tests3.dat")
