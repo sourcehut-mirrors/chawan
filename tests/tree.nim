@@ -246,6 +246,7 @@ const rootpath = "tests/html5lib-tests/tree-construction/"
 proc runTests(filename: string) =
   let tests = parseTests(readFile(rootpath & filename))
   for test in tests:
+    #echo "TEST data ", test.data
     let ss = newStringStream(test.data)
     let pdoc = parseHTML(ss)
     #[
@@ -256,10 +257,9 @@ proc runTests(filename: string) =
     for x in pdoc.childList:
       ps &= $x & '\n'
     echo "indoc ", $ins
-    echo "pdoc ", $ps
+    echo "psdoc ", $ps
     ]#
-    echo "data ", test.data
     checkTest(test.document, pdoc)
 
-test "tests1":
+test "tests1.dat":
   runTests("tests1.dat")

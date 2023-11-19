@@ -890,6 +890,11 @@ proc popElementsIncl(parser: var HTML5Parser, tags: set[TagType]) =
   while parser.getTagType(parser.popElement()) notin tags:
     discard
 
+# Pop all elements, including the specified element.
+proc popElementsIncl[Handle](parser: var HTML5Parser[Handle], handle: Handle) =
+  while parser.popElement() != handle:
+    discard
+
 # https://html.spec.whatwg.org/multipage/parsing.html#closing-elements-that-have-implied-end-tags
 proc generateImpliedEndTags(parser: var HTML5Parser) =
   const tags = {TAG_DD, TAG_DT, TAG_LI, TAG_OPTGROUP, TAG_OPTION, TAG_P,
@@ -924,51 +929,60 @@ proc pushOntoActiveFormatting[Handle](parser: var HTML5Parser[Handle],
       continue
     if parser.getNamespace(it[0].get) != parser.getNamespace(element):
       continue
-    var fail = false
-    for k, v in it[1].attrs:
-      if k notin token.attrs:
-        fail = true
-        break
-      if v != token.attrs[k]:
-        fail = true
-        break
-    if fail: continue
-    for k, v in token.attrs:
-      if k notin it[1].attrs:
-        fail = true
-        break
-    if fail: continue
+    if it[1].attrs != token.attrs:
+      continue
     inc count
     if count == 3:
       parser.activeFormatting.delete(i)
       break
   parser.activeFormatting.add((some(element), token))
 
+#[
+proc tostr(ftype: enum): string =
+  return ($ftype).split('_')[1..^1].join("-").toLowerAscii()
+
+func handle2str[Handle](parser: HTML5Parser[Handle], node: Handle): string =
+  case node.nodeType
+  of ELEMENT_NODE:
+    let tt = parser.getTagType(node)
+    result = "<" & tt.tostr() & ">\n"
+    for node in node.childList:
+      let x = parser.handle2str(node)
+      for l in x.split('\n'):
+        result &= "  " & l & "\n"
+    result &= "</" & tt.tostr() & ">"
+  of TEXT_NODE:
+    result = "X"
+  else:
+    result = "Node of " & $node.nodeType
+
+proc dumpDocument[Handle](parser: var HTML5Parser[Handle]) =
+  let document = parser.dombuilder.document
+  var s = ""
+  for x in document.childList:
+    s &= parser.handle2str(x) & '\n'
+  echo s
+]#
+
 proc reconstructActiveFormatting[Handle](parser: var HTML5Parser[Handle]) =
   type State = enum
     REWIND, ADVANCE, CREATE
-  if parser.activeFormatting.len == 0:
-    return
-  if parser.activeFormatting[^1][0].isNone:
-    return
-  let tagType = parser.getTagType(parser.activeFormatting[^1][0].get)
-  if parser.hasElement(tagType):
+  if parser.activeFormatting.len == 0 or
+      parser.activeFormatting[^1][0].isNone or
+      parser.openElements.find(parser.activeFormatting[^1][0].get) != -1:
     return
   var i = parser.activeFormatting.high
   template entry: Option[Handle] = (parser.activeFormatting[i][0])
   var state = REWIND
   while true:
-    {.computedGoto.}
     case state
     of REWIND:
       if i == 0:
         state = CREATE
         continue
       dec i
-      if entry.isSome:
-        let tagType = parser.getTagType(entry.get)
-        if not parser.hasElement(tagType):
-          continue
+      if entry.isSome or parser.openElements.find(entry.get) != -1:
+        continue
       state = ADVANCE
     of ADVANCE:
       inc i
@@ -1055,43 +1069,77 @@ proc parseErrorByTokenType(parser: var HTML5Parser, tokenType: TokenType) =
   of DOCTYPE, COMMENT:
     doAssert false
 
+# Find a node in the list of active formatting elements, or return -1.
+func findLastActiveFormatting[Handle](parser: var HTML5Parser[Handle],
+    node: Handle): int =
+  for i in countdown(parser.activeFormatting.high, 0):
+    let it = parser.activeFormatting[i][0]
+    if it.isSome and it.get == node:
+      return i
+  return -1
+
+func findLastActiveFormatting(parser: var HTML5Parser, tagType: TagType): int =
+  for i in countdown(parser.activeFormatting.high, 0):
+    let it = parser.activeFormatting[i][0]
+    if it.isSome and parser.getTagType(it.get) == tagType:
+      return i
+  return -1
+
+# > the last element in the list of active formatting elements that:
+# > is between the end of the list and the last marker in the list, if any,
+# > or the start of the list otherwise, and has the tag name subject.
+func findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
+    token: Token): int =
+  for i in countdown(parser.activeFormatting.high, 0):
+    let it = parser.activeFormatting[i][0]
+    if it.isNone:
+      break
+    if parser.tagNameEquals(it.get, token):
+      return i
+  return -1
+
+func findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
+    tagType: TagType): int =
+  for i in countdown(parser.activeFormatting.high, 0):
+    let it = parser.activeFormatting[i][0]
+    if it.isNone:
+      break
+    if parser.getTagType(it.get) == tagType:
+      return i
+  return -1
+
+# > Let furthestBlock be the topmost node in the stack of open elements that
+# > is lower in the stack than formattingElement, and is an element in the
+# > special category. There might not be one.
+func findFurthestBlockAfter(parser: var HTML5Parser, stackIndex: int): int =
+  for i in stackIndex ..< parser.openElements.len:
+    if parser.getTagType(parser.openElements[i]) in SpecialElements:
+      return i
+  return -1
+
+func findLastActiveFormatting[Handle](parser: var HTML5Parser[Handle],
+    tagTypes: set[TagType]): int =
+  for i in countdown(parser.activeFormatting.high, 0):
+    let it = parser.activeFormatting[i][0]
+    if it.isSome and parser.getTagType(it.get) in tagTypes:
+      return i
+  return -1
+
 # If true is returned, call "any other end tag".
 proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
     token: Token): bool =
   template parse_error(e: ParseError) =
     parser.parseError(e)
-  if parser.tagNameEquals(parser.currentNode, token):
-    var fail = true
-    for it in parser.activeFormatting:
-      if it[0].isSome and it[0].get == parser.currentNode:
-        fail = false
-    if fail:
-      pop_current_node
-      return false
-  var i = 0
-  while true:
-    if i >= 8: return false
-    inc i
-    if parser.activeFormatting.len == 0:
+  if parser.tagNameEquals(parser.currentNode, token) and
+      parser.findLastActiveFormatting(parser.currentNode) == -1:
+    pop_current_node
+    return false
+  for i in 0 .. 8: # outer loop
+    var formattingIndex = parser.findLastActiveFormattingAfterMarker(token)
+    if formattingIndex == -1:
       # no such element
       return true
-    # > the last element in the list of active formatting elements that:
-    # > is between the end of the list and the last marker in the list, if any,
-    # > or the start of the list otherwise, and has the tag name subject.
-    var formatting: Handle
-    var formattingIndex: int
-    for j in countdown(parser.activeFormatting.high, 0):
-      let maybeElement = parser.activeFormatting[j][0]
-      if maybeElement.isNone:
-        # no such element
-        return true
-      let element = maybeElement.get
-      if parser.tagNameEquals(element, token):
-        formatting = element
-        formattingIndex = j
-        break
-      if j == 0:
-        return true
+    let formatting = parser.activeFormatting[formattingIndex][0].get
     let stackIndex = parser.openElements.find(formatting)
     if stackIndex < 0:
       parse_error ELEMENT_NOT_IN_OPEN_ELEMENTS
@@ -1103,16 +1151,12 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
     if formatting != parser.currentNode:
       parse_error ELEMENT_NOT_CURRENT_NODE
       # do not return
-    var furthestBlockIndex = -1
-    for j in stackIndex ..< parser.openElements.len:
-      if parser.getTagType(parser.openElements[j]) in SpecialElements:
-        furthestBlockIndex = j
-        break
+    var furthestBlockIndex = parser.findFurthestBlockAfter(stackIndex)
     if furthestBlockIndex == -1:
-      while parser.popElement() != formatting: discard
+      parser.popElementsIncl(formatting)
       parser.activeFormatting.delete(formattingIndex)
       return false
-    var furthestBlock = parser.openElements[furthestBlockIndex]
+    let furthestBlock = parser.openElements[furthestBlockIndex]
     let commonAncestor = parser.openElements[stackIndex - 1]
     var bookmark = formattingIndex
     var node = furthestBlock
@@ -1122,24 +1166,21 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
     while true:
       inc j
       node = aboveNode
+      if node == formatting:
+        break
       let nodeStackIndex = parser.openElements.find(node)
-      if node == formatting: break
-      var nodeFormattingIndex = -1
-      for i in countdown(parser.activeFormatting.high, 0):
-        if parser.activeFormatting[i][0].isSome and
-            parser.activeFormatting[i][0].get == node:
-          nodeFormattingIndex = i
-          break
+      var nodeFormattingIndex = parser.findLastActiveFormatting(node)
       if j > 3 and nodeFormattingIndex >= 0:
         parser.activeFormatting.delete(nodeFormattingIndex)
         if nodeFormattingIndex < bookmark:
-          dec bookmark # a previous node got deleted, so decrease bookmark by one
+          dec bookmark # a previous node got deleted, so decrement bookmark
+        nodeFormattingIndex = -1 # deleted, so set to -1
       if nodeFormattingIndex < 0:
         aboveNode = parser.openElements[nodeStackIndex - 1]
         parser.openElements.delete(nodeStackIndex)
         if nodeStackIndex < furthestBlockIndex:
           dec furthestBlockIndex
-          furthestBlock = parser.openElements[furthestBlockIndex]
+          assert furthestBlock == parser.openElements[furthestBlockIndex]
         continue
       let tok = parser.activeFormatting[nodeFormattingIndex][1]
       let element = parser.createElement(tok, Namespace.HTML, commonAncestor)
@@ -1149,8 +1190,10 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
       node = element
       if lastNode == furthestBlock:
         bookmark = nodeFormattingIndex + 1
+      parser.remove(lastNode)
       parser.append(node, lastNode)
       lastNode = node
+    parser.remove(lastNode)
     let location = parser.appropriatePlaceForInsert(commonAncestor)
     parser.insertBefore(location.inside, lastNode, location.before.get(nil))
     let token = parser.activeFormatting[formattingIndex][1]
@@ -1158,9 +1201,12 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
     parser.moveChildren(furthestBlock, element)
     parser.append(furthestBlock, element)
     parser.activeFormatting.insert((some(element), token), bookmark)
+    if formattingIndex >= bookmark:
+      inc formattingIndex # increment because of insert
     parser.activeFormatting.delete(formattingIndex)
-    parser.openElements.insert(element, furthestBlockIndex)
+    parser.openElements.insert(element, furthestBlockIndex + 1)
     parser.openElements.delete(stackIndex)
+  return false
 
 proc closeP(parser: var HTML5Parser) =
   parser.generateImpliedEndTags(TAG_P)
@@ -1824,28 +1870,19 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
         anything_else
       )
       "<a>" => (block:
-        var anchor: Option[Handle]
-        for i in countdown(parser.activeFormatting.high, 0):
-          let format = parser.activeFormatting[i]
-          if format[0].isNone:
-            break
-          if parser.getTagType(format[0].get) == TAG_A:
-            anchor = format[0]
-            break
-        if anchor.isSome:
-          let anchor = anchor.get
+        let i = parser.findLastActiveFormattingAfterMarker(TAG_A)
+        if i != -1:
+          let anchor = parser.activeFormatting[i][0].get
           parse_error NESTED_TAGS
           if parser.adoptionAgencyAlgorithm(token):
             any_other_end_tag
             return
-          for i in 0..parser.activeFormatting.high:
-            if parser.activeFormatting[i][0].isSome and
-                parser.activeFormatting[i][0].get == anchor:
-              parser.activeFormatting.delete(i)
-              break
-          let i = parser.openElements.find(anchor)
-          if i != -1:
-            parser.openElements.delete(i)
+          let j = parser.findLastActiveFormatting(anchor)
+          if j != -1:
+            parser.activeFormatting.delete(j)
+          let k = parser.openElements.find(anchor)
+          if k != -1:
+            parser.openElements.delete(k)
         parser.reconstructActiveFormatting()
         let element = parser.insertHTMLElement(token)
         parser.pushOntoActiveFormatting(element, token)
@@ -2055,8 +2092,16 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       )
       "<colgroup>" => (block:
         clear_the_stack_back_to_a_table_context
-        discard parser.insertHTMLElement(Token(t: START_TAG, tagtype: TAG_COLGROUP))
+        let colgroupTok = Token(t: START_TAG, tagtype: TAG_COLGROUP)
+        discard parser.insertHTMLElement(colgroupTok)
         parser.insertionMode = IN_COLUMN_GROUP
+      )
+      "<col>" => (block:
+        clear_the_stack_back_to_a_table_context
+        let colgroupTok = Token(t: START_TAG, tagtype: TAG_COLGROUP)
+        discard parser.insertHTMLElement(colgroupTok)
+        parser.insertionMode = IN_COLUMN_GROUP
+        reprocess token
       )
       ("<tbody>", "<tfoot>", "<thead>") => (block:
         clear_the_stack_back_to_a_table_context
@@ -2211,7 +2256,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
 
   of IN_TABLE_BODY:
     template clear_the_stack_back_to_a_table_body_context() =
-      while parser.getTagType(parser.currentNode) notin {TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TEMPLATE, TAG_HTML}:
+      const tags = {TAG_TBODY, TAG_TFOOT, TAG_THEAD, TAG_TEMPLATE, TAG_HTML}
+      while parser.getTagType(parser.currentNode) notin tags:
         pop_current_node
 
     match token:
@@ -2504,7 +2550,8 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
       "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
-      "<frameset>" => (block:
+      "<frameset>" => (block: discard parser.insertHTMLElement(token))
+      "</frameset>" => (block:
         if parser.getTagType(parser.currentNode) == TAG_HTML:
           parse_error UNEXPECTED_START_TAG
         else:

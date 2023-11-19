@@ -155,6 +155,7 @@ func preInsertionValidity*(parent, node, before: Node): bool =
 
 proc insertBefore(builder: DOMBuilder[Node], parent, child, before: Node) =
   if parent.preInsertionValidity(child, before):
+    assert child.parentNode == nil
     if before == nil:
       parent.childList.add(child)
     else:
@@ -183,10 +184,10 @@ proc remove(builder: DOMBuilder[Node], child: Node) =
     child.parentNode = nil
 
 proc moveChildren(builder: DOMBuilder[Node], fromNode, toNode: Node) =
-  var tomove = fromNode.childList
-  for i in countdown(fromNode.childList.high, 0):
-    remove(builder, fromNode.childList[i])
+  let tomove = @(fromNode.childList)
+  fromNode.childList.setLen(0)
   for child in tomove:
+    child.parentNode = nil
     insertBefore(builder, toNode, child, nil)
 
 proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
