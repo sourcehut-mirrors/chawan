@@ -1508,7 +1508,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           else:
             if tokenizer.tmp[^1] != ';':
               parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
-            tokenizer.tmp = value.get
+            tokenizer.tmp = $value.get
             flush_code_points_consumed_as_a_character_reference
             switch_state tokenizer.rstate
         else:

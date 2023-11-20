@@ -1,17 +1,10 @@
-import json
-
+include entity_gen
 import utils/radixtree
 
-const entity = staticRead"res/entity.json"
-proc genEntityMap(data: seq[tuple[a: cstring, b: cstring]]): RadixNode[string] =
-  result = newRadixTree[string]()
+proc genEntityMap(data: openArray[tuple[a: cstring, b: cstring]]):
+    RadixNode[cstring] =
+  result = newRadixTree[cstring]()
   for pair in data:
-    result[$pair.a] = $pair.b
+    result[$pair.a] = pair.b
 
-proc genEntityTable(): seq[tuple[a: cstring, b: cstring]] =
-  let entityJson = parseJson(entity)
-
-  for k, v in entityJson:
-    result.add((cstring(k.substr(1)), cstring(v{"characters"}.getStr())))
-const entityTable = genEntityTable()
 let entityMap* = genEntityMap(entityTable)
