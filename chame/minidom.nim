@@ -116,7 +116,7 @@ func hasNextSibling(node: Node, nodeType: NodeType): bool =
 
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
-func preInsertionValidity*(parent, node, before: Node): bool =
+func preInsertionValidity*(parent, node: Node, before: Node): bool =
   if parent.nodeType notin {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
     return false
   if node.isHostIncludingInclusiveAncestor(parent):
@@ -154,7 +154,9 @@ func preInsertionValidity*(parent, node, before: Node): bool =
     else: discard
   return true # no exception reached
 
-proc insertBefore(builder: DOMBuilder[Node], parent, child, before: Node) =
+proc insertBefore(builder: DOMBuilder[Node], parent, child: Node,
+    before: Option[Node]) =
+  let before = before.get(nil)
   if parent.preInsertionValidity(child, before):
     assert child.parentNode == nil
     if before == nil:
@@ -180,7 +182,7 @@ proc insertText(builder: DOMBuilder[Node], parent: Node, text: string,
     Text(prevSibling).data &= text
   else:
     let text = Text(nodeType: TEXT_NODE, data: text)
-    insertBefore(builder, parent, text, before)
+    insertBefore(builder, parent, text, option(before))
 
 proc remove(builder: DOMBuilder[Node], child: Node) =
   if child.parentNode != nil:
@@ -193,7 +195,7 @@ proc moveChildren(builder: DOMBuilder[Node], fromNode, toNode: Node) =
   fromNode.childList.setLen(0)
   for child in tomove:
     child.parentNode = nil
-    insertBefore(builder, toNode, child, nil)
+    insertBefore(builder, toNode, child, none(Node))
 
 proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
     attrs: Table[string, string]) =

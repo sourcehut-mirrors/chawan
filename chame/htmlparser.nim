@@ -214,12 +214,12 @@ type
     ## Create a new document type node.
 
   DOMBuilderInsertBefore*[Handle] =
-    proc(builder: DOMBuilder[Handle], parent, child, before: Handle)
-        {.nimcall.}
+    proc(builder: DOMBuilder[Handle], parent, child: Handle,
+        before: Option[Handle]) {.nimcall.}
       ## Insert node `child` before the node called `before`.
       ##
-      ## If `before` is nil, `child` is expected to be appended to `parent`'s
-      ## node list.
+      ## If `before` is none(Handle), `child` is expected to be appended to
+      ## `parent`'s node list.
       ##
       ## If `child` is a text, and its previous sibling after insertion is a
       ## text as well, then they should be merged. `before` is never a
@@ -380,8 +380,8 @@ proc createDocumentType[Handle](parser: HTML5Parser[Handle], name, publicId,
   let dombuilder = parser.dombuilder
   return dombuilder.createDocumentType(dombuilder, name, publicId, systemId)
 
-proc insertBefore[Handle](parser: HTML5Parser[Handle],
-    parent, node, before: Handle) =
+proc insertBefore[Handle](parser: HTML5Parser[Handle], parent, node: Handle,
+    before: Option[Handle]) =
   let dombuilder = parser.dombuilder
   dombuilder.insertBefore(dombuilder, parent, node, before)
 
@@ -659,11 +659,10 @@ template pop_current_node = discard parser.popElement()
 
 proc insert[Handle](parser: HTML5Parser[Handle],
     location: AdjustedInsertionLocation[Handle], node: Handle) =
-  #TODO remove nil from insertBefore
-  parser.insertBefore(location.inside, node, location.before.get(nil))
+  parser.insertBefore(location.inside, node, location.before)
 
 proc append[Handle](parser: HTML5Parser[Handle], parent, node: Handle) =
-  parser.insertBefore(parent, node, nil)
+  parser.insertBefore(parent, node, none(Handle))
 
 proc insertForeignElement[Handle](parser: var HTML5Parser[Handle], token: Token,
     namespace: Namespace): Handle =
@@ -1196,7 +1195,7 @@ proc adoptionAgencyAlgorithm[Handle](parser: var HTML5Parser[Handle],
       lastNode = node
     parser.remove(lastNode)
     let location = parser.appropriatePlaceForInsert(commonAncestor)
-    parser.insertBefore(location.inside, lastNode, location.before.get(nil))
+    parser.insert(location, lastNode)
     let token = parser.activeFormatting[formattingIndex][1]
     let element = parser.createElement(token, Namespace.HTML, furthestBlock)
     parser.moveChildren(furthestBlock, element)
