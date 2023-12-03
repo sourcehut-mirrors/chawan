@@ -278,7 +278,6 @@ type
     quirksMode: QuirksMode
     dombuilder: DOMBuilder[Handle]
     opts: HTML5ParserOpts[Handle]
-    ctx: Option[Handle]
     needsreinterpret: bool
     charset: Charset
     confidence: CharsetConfidence
@@ -443,7 +442,7 @@ func tagNameEquals[Handle](parser: HTML5Parser, a, b: Handle): bool =
   return parser.getLocalName(a) == parser.getLocalName(b)
 
 func fragment(parser: HTML5Parser): bool =
-  return parser.ctx.isSome
+  return parser.opts.ctx.isSome
 
 # https://html.spec.whatwg.org/multipage/parsing.html#reset-the-insertion-mode-appropriately
 proc resetInsertionMode(parser: var HTML5Parser) =
@@ -454,9 +453,10 @@ proc resetInsertionMode(parser: var HTML5Parser) =
     var node = parser.openElements[i]
     let last = i == 0
     if parser.fragment:
-      node = parser.ctx.get
+      node = parser.opts.ctx.get
     let tagType = parser.getTagType(node)
-    if tagType == TAG_SELECT:
+    case tagType
+    of TAG_SELECT:
       if not last:
         for j in countdown(parser.openElements.high, 1):
           let ancestor = parser.openElements[j]
@@ -465,12 +465,13 @@ proc resetInsertionMode(parser: var HTML5Parser) =
           of TAG_TABLE: switch_insertion_mode_and_return IN_SELECT_IN_TABLE
           else: discard
       switch_insertion_mode_and_return IN_SELECT
-    case tagType
     of TAG_TD, TAG_TH:
       if not last:
         switch_insertion_mode_and_return IN_CELL
     of TAG_TR: switch_insertion_mode_and_return IN_ROW
     of TAG_TBODY, TAG_THEAD, TAG_TFOOT:
+      switch_insertion_mode_and_return IN_TABLE_BODY
+    of TAG_CAPTION:
       switch_insertion_mode_and_return IN_CAPTION
     of TAG_COLGROUP: switch_insertion_mode_and_return IN_COLUMN_GROUP
     of TAG_TABLE: switch_insertion_mode_and_return IN_TABLE
@@ -494,7 +495,7 @@ func currentNode[Handle](parser: HTML5Parser[Handle]): Handle =
 
 func adjustedCurrentNode[Handle](parser: HTML5Parser[Handle]): Handle =
   if parser.fragment:
-    parser.ctx.get
+    parser.opts.ctx.get
   else:
     parser.currentNode
 
@@ -1302,25 +1303,40 @@ macro match(token: Token, body: typed): untyped =
         ofBranches[tokenTypes[pattern.strVal]].defaultBranch = action
         ofBranches[tokenTypes[pattern.strVal]].painted = true
       of nnkStrLit:
-        var tempTokenizer = newTokenizer(pattern.strVal)
-        for token in tempTokenizer.tokenize:
-          let tt = int(token.tagtype)
-          case token.t
-          of START_TAG, END_TAG:
-            var found = false
-            for i in 0..ofBranches[token.t].ofBranches.high:
-              if ofBranches[token.t].ofBranches[i][1] == action:
-                found = true
-                ofBranches[token.t].ofBranches[i][0].add((quote do: TagType(`tt`)))
-                ofBranches[token.t].painted = true
-                break
-            if not found:
-              ofBranches[token.t].ofBranches.add((@[(quote do: TagType(`tt`))], action))
-              ofBranches[token.t].painted = true
-          else:
-            error pattern.strVal & ": Unsupported token " & $token &
-              " of kind " & $token.t
-          break
+        let s = pattern.strVal
+        assert s[0] == '<'
+        var i = if s[1] == '/': 2 else: 1
+        var tagName = ""
+        while i < s.len:
+          if s[i] == '>':
+            assert i == s.high
+            break
+          assert s[i] in AsciiAlphaNumeric
+          tagName &= s[i]
+          inc i
+        let token = if s[1] == '/':
+          Token(
+            t: END_TAG,
+            tagname: tagName,
+            tagtype: tagType(tagName)
+          )
+        else:
+          Token(
+            t: START_TAG,
+            tagname: tagName,
+            tagtype: tagType(tagName)
+          )
+        let tt = int(token.tagtype)
+        var found = false
+        for i in 0..ofBranches[token.t].ofBranches.high:
+          if ofBranches[token.t].ofBranches[i][1] == action:
+            found = true
+            ofBranches[token.t].ofBranches[i][0].add((quote do: TagType(`tt`)))
+            ofBranches[token.t].painted = true
+            break
+        if not found:
+          ofBranches[token.t].ofBranches.add((@[(quote do: TagType(`tt`))], action))
+          ofBranches[token.t].painted = true
       of nnkDiscardStmt:
         defaultBranch = action
       of nnkTupleConstr:
@@ -1384,9 +1400,6 @@ macro match(token: Token, body: typed): untyped =
 
 proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
     token: Token, insertionMode: InsertionMode) =
-  template pop_all_nodes =
-    while parser.openElements.len > 1: pop_current_node
-
   template anything_else = discard "anything_else"
 
   macro `=>`(v: typed, body: untyped): untyped =
@@ -1687,7 +1700,9 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
           discard
         else:
           parser.remove(parser.openElements[1])
-          pop_all_nodes
+          while parser.openElements.len > 1:
+            pop_current_node
+          discard parser.insertHTMLElement(token)
       )
       TokenType.EOF => (block:
         if parser.templateModes.len > 0:
@@ -2787,6 +2802,7 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     opts: HTML5ParserOpts[Handle]) =
   ## Parse an HTML document, using the DOMBuilder object `dombuilder`, and
   ## parser options `opts`.
+  inputStream.setPosition(0)
   dombuilder.checkCallbacks()
   var charsetStack: seq[Charset]
   for i in countdown(opts.charsets.high, 0):
@@ -2812,7 +2828,8 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
       charset: charset,
       opts: opts,
       openElements: opts.openElementsInit,
-      form: opts.formInit
+      form: opts.formInit,
+      framesetOk: true
     )
     if opts.openElementsInit.len > 0:
       parser.resetInsertionMode()
@@ -2832,6 +2849,7 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
       DECODER_ERROR_MODE_REPLACEMENT
     else:
       DECODER_ERROR_MODE_FATAL
+    inputStream.setPosition(0)
     let decoder = newDecoderStream(inputStream, parser.charset, errormode = em)
     proc x(e: ParseError) =
       parser.parseError(e)

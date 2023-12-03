@@ -15,6 +15,10 @@ import utils/radixtree
 import utils/twtstr
 
 # Tokenizer
+
+const bufLen = 1024 # * 4096 bytes
+const copyBufLen = 16 # * 64 bytes
+
 type
   Tokenizer* = object
     state*: TokenizerState
@@ -33,8 +37,9 @@ type
     isws: bool
 
     stream: Stream
-    sbuf: seq[Rune]
+    sbuf: array[bufLen, Rune]
     sbuf_i: int
+    sbufLen: int
     eof_i: int
 
   TokenType* = enum
@@ -102,23 +107,18 @@ func `$`*(tok: Token): string =
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
 
-const bufLen = 1024 # * 4096 bytes
-const copyBufLen = 16 # * 64 bytes
-
 proc readn(t: var Tokenizer) =
-  let l = t.sbuf.len
-  t.sbuf.setLen(bufLen)
-  let n = t.stream.readData(addr t.sbuf[l], (bufLen - l) * sizeof(Rune))
-  t.sbuf.setLen(l + n div sizeof(Rune))
+  let needed = (bufLen - t.sbufLen) * sizeof(Rune)
+  let n = t.stream.readData(addr t.sbuf[t.sbufLen], needed)
+  t.sbufLen += n div sizeof(Rune)
   if t.stream.atEnd:
-    t.eof_i = t.sbuf.len
+    t.eof_i = t.sbufLen
 
 # WARNING: Stream must return 32-bit unicode values.
 proc newTokenizer*(s: Stream, onParseError: proc(e: ParseError),
     initialState = DATA): Tokenizer =
   var t = Tokenizer(
     stream: s,
-    sbuf: newSeqOfCap[Rune](bufLen),
     eof_i: -1,
     sbuf_i: 0,
     onParseError: onParseError,
@@ -127,25 +127,16 @@ proc newTokenizer*(s: Stream, onParseError: proc(e: ParseError),
   t.readn()
   return t
 
-proc newTokenizer*(s: string): Tokenizer =
-  let rs = s.toRunes()
-  var t = Tokenizer(
-    sbuf: rs,
-    eof_i: rs.len,
-    sbuf_i: 0
-  )
-  return t
-
 func atEof(t: Tokenizer): bool =
   t.eof_i != -1 and t.sbuf_i >= t.eof_i
 
 proc checkBufLen(t: var Tokenizer) =
-  if t.sbuf_i >= min(bufLen - copyBufLen, t.sbuf.len):
-    for i in t.sbuf_i ..< t.sbuf.len:
+  if t.sbuf_i >= min(bufLen - copyBufLen, t.sbufLen):
+    for i in t.sbuf_i ..< t.sbufLen:
       t.sbuf[i - t.sbuf_i] = t.sbuf[i]
-    t.sbuf.setLen(t.sbuf.len - t.sbuf_i)
+    t.sbufLen = t.sbufLen - t.sbuf_i
     t.sbuf_i = 0
-    if t.sbuf.len < bufLen:
+    if t.sbufLen < bufLen:
       t.readn()
 
 proc consume(t: var Tokenizer): Rune =
@@ -215,9 +206,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
     emit tokenizer.tok
   template emit_current =
-    if is_eof:
-      emit_eof
-    elif c in Ascii:
+    if c in Ascii:
       emit c
     else:
       emit r

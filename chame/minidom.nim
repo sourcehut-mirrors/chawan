@@ -3,6 +3,7 @@ import tables
 import options
 
 import htmlparser
+import htmltokenizer
 import tags
 
 import chakasu/charset
@@ -220,8 +221,17 @@ proc newMiniDOMBuilder(): MiniDOMBuilder =
     addAttrsIfMissing: addAttrsIfMissing,
   )
 
-proc parseHTML*(inputStream: Stream,
-    charsets: seq[Charset] = @[], canReinterpret = true): Document =
+proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
+    canReinterpret = true): Document =
+  ## Read, parse and return a HTML document from inputStream.
+  ##
+  ## `charsets` is a list of input character sets to try.
+  ##
+  ## `canReinterpret` signals to the parser whether the inputStream is seekable
+  ## (e.g. if inputStream.setPosition(0) is valid).
+  ##
+  ## For more information on character set handling, please consult the
+  ## documentation of chame/htmlparser.nim.
   let builder = newMiniDOMBuilder()
   let opts = HTML5ParserOpts[Node](
     isIframeSrcdoc: false,
@@ -231,3 +241,64 @@ proc parseHTML*(inputStream: Stream,
   )
   parseHTML(inputStream, builder, opts)
   return Document(builder.document)
+
+proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node]): Document =
+  ## Read, parse and return a HTML document from `inputStream`, using
+  ## parser options `opts`.
+  ##
+  ## For information on `opts` (a `HTML5ParserOpts` object), please consult
+  ## the documentation of chame/htmlparser.nim.
+  let builder = newMiniDOMBuilder()
+  parseHTML(inputStream, builder, opts)
+  return Document(builder.document)
+
+proc parseHTMLFragment*(inputStream: Stream, element: Element,
+    opts: HTML5ParserOpts[Node]): seq[Node] =
+  ## Read, parse and return the children of a HTML fragment from `inputStream`,
+  ## using context element `element` and parser options `opts`.
+  ##
+  ## For information on `opts` (a `HTML5ParserOpts` object), please consult
+  ## the documentation of chame/htmlparser.nim.
+  ##
+  ## For details on the HTML fragment parsing algorithm, see
+  ## https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
+  ##
+  ## Note: the members `ctx`, `initialTokenizerState`, `openElementsInit` and
+  ## `pushInTemplate` of `opts` are overridden (in accordance with the standard).
+  let builder = newMiniDOMBuilder()
+  let document = Document(builder.document)
+  let state = case element.tagType
+  of TAG_TITLE, TAG_TEXTAREA: RCDATA
+  of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES: RAWTEXT
+  of TAG_SCRIPT: SCRIPT_DATA
+  of TAG_NOSCRIPT: DATA # no scripting
+  of TAG_PLAINTEXT: PLAINTEXT
+  else: DATA
+  let root = Element(nodeType: ELEMENT_NODE, tagType: TAG_HTML, namespace: HTML)
+  document.childList = @[Node(root)]
+  var opts = opts
+  opts.ctx = some(Node(element))
+  opts.initialTokenizerState = state
+  opts.openElementsInit = @[Node(root)]
+  opts.pushInTemplate = element.tagType == TAG_TEMPLATE
+  parseHTML(inputStream, builder, opts)
+  return root.childList
+
+proc parseHTMLFragment*(s: string, element: Element): seq[Node] =
+  ## Convenience wrapper around parseHTMLFragment with opts.
+  ##
+  ## Read, parse and return the children of a HTML fragment from the string `s`,
+  ## using context element `element`.
+  ##
+  ## For details on the HTML fragment parsing algorithm, see
+  ## https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
+  let inputStream = newStringStream(s)
+  let opts = HTML5ParserOpts[Node](
+    isIframeSrcdoc: false,
+    scripting: false,
+    canReinterpret: false,
+    charsets: @[CHARSET_UTF_8],
+    ctx: some(Node(element)),
+    pushInTemplate: element.tagType == TAG_TEMPLATE
+  )
+  return parseHTMLFragment(inputStream, element, opts)
