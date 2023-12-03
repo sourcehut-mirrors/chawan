@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.12.0"
+version       = "0.13.0"
 author        = "bptato"
 description   = "HTML5 parser for Chawan"
 license       = "Unlicense"
