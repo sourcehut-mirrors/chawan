@@ -13,8 +13,8 @@ Include Chame in your project using either Nimble or as a git submodule.
 requires "https://git.sr.ht/~bptato/chame"
 ```
 
-Then, check the [documentation](https://bptato.srht.site/htmlparser.html) for
-a description of the API.
+Then, check the [documentation](https://chawan.net/doc/chame/) for a
+description of the API.
 
 ## Features
 
@@ -28,6 +28,7 @@ a description of the API.
 Some parts of the specification have not been implemented yet. These are:
 
 * document.write
+* parts of SVG parsing
 * MathML
 * Custom elements
 
@@ -38,12 +39,14 @@ Other, non-standard-related tasks (in no particular order):
 
 * Allow disabling non-UTF-8 decoders.
 * Document minidom.
-* Integrate html5lib-tests.
+* Finish integration of html5lib-tests.
 * Optimize inefficient parts of the library.
 
 ## Bugs, feedback, etc.
 
-Bug reports are accepted at SourceHut or the Nim forum thread.
+Feedback, complaints, etc. are accepted at
+[SourceHut](https://todo.sr.ht/~bptato/chawan) or the Nim forum
+[thread](https://forum.nim-lang.org/t/10367#69029).
 
 ## FAQ
 
@@ -69,10 +72,11 @@ pronounced as "cha-meh."
 
 ## Thanks
 
-SerenityOS's HTML parser has been used as a reference when I found some
-parts of the specification unclear.
+[SerenityOS](https://serenityos.org/)'s HTML parser has been used as a
+reference when I found some parts of the specification unclear.
 
-Servo's HTML parser (html5ever) has been the main inspiration for Chame's API.
+Servo's HTML parser [html5ever](https://github.com/servo/html5ever) has been
+the main inspiration for Chame's API.
 
 Finally, thanks to the standard writers for writing a very detailed
 specification of the HTML5 parsing algorithm. The bulk of Chame is a direct
