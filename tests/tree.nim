@@ -5,6 +5,7 @@ import tables
 import unittest
 
 import test1
+import chame/htmlparser
 import chame/minidom
 
 type
@@ -12,10 +13,11 @@ type
     s: string
 
   FragmentType = enum
-    HTML, SVG, MATHML
+    FT_HTML, FT_SVG, FT_MATHML
 
   TCFragment = object
     fragmentType: FragmentType
+    ctx: Element
 
   ScriptMode = enum
     SCRIPT_BOTH, SCRIPT_OFF, SCRIPT_ON
@@ -82,7 +84,26 @@ proc parseTestErrors(ctx: var TCTestParser): seq[TCError] =
 
 proc parseTestFragment(ctx: var TCTestParser): TCFragment =
   let line = ctx.consumeLine()
-  #TODO
+  let fragmentType = if line.startsWith("svg"):
+    FT_SVG
+  elif line.startsWith("math"):
+    FT_MATHML
+  else:
+    FT_HTML
+  let namespace = case fragmentType
+  of FT_SVG: Namespace.SVG
+  of FT_MATHML: Namespace.MATHML
+  of FT_HTML: Namespace.HTML
+  let element = Element(
+    nodeType: ELEMENT_NODE,
+    tagType: tagType(line),
+    namespace: namespace,
+    localName: line
+  )
+  return TCFragment(
+    fragmentType: fragmentType,
+    ctx: element
+  )
 
 proc parseDoctype(s: string): DocumentType =
   let doctype = DocumentType(nodeType: DOCUMENT_TYPE_NODE)
@@ -119,7 +140,6 @@ proc parseComment(s: string): Comment =
     nodeType: COMMENT_NODE,
     data: s["<!-- ".len .. ^(" -->".len + 1)]
   )
-
 
 proc parseTestDocument(ctx: var TCTestParser): Document =
   result = Document(nodeType: DOCUMENT_NODE)
@@ -243,23 +263,44 @@ proc checkTest(nodein, nodep: Node) =
 
 const rootpath = "tests/html5lib-tests/tree-construction/"
 
+proc runTest(test: TCTest, scripting: bool) =
+  let ss = newStringStream(test.data)
+  let opts = HTML5ParserOpts[Node](
+    scripting: scripting,
+    charsets: @[CHARSET_UTF_8]
+  )
+  let pdoc = if test.fragment.isNone:
+    parseHTML(ss, opts)
+  else:
+    let ctx = Element()
+    ctx[] = test.fragment.get.ctx[]
+    let childList = parseHTMLFragment(ss, ctx, opts)
+    for child in childList:
+      if ctx.preInsertionValidity(child, nil):
+        ctx.childList.add(child)
+    Document(nodeType: DOCUMENT_NODE, childList: ctx.childList)
+  var ins = ""
+  for x in test.document.childList:
+    ins &= $x & '\n'
+  var ps = ""
+  for x in pdoc.childList:
+    ps &= $x & '\n'
+  #echo "data ", test.data
+  #echo "indoc ", $ins
+  #echo "psdoc ", $ps
+  checkTest(test.document, pdoc)
+
 proc runTests(filename: string) =
   let tests = parseTests(readFile(rootpath & filename))
   for test in tests:
-    #echo "TEST data ", test.data
-    let ss = newStringStream(test.data)
-    let pdoc = parseHTML(ss)
-    #[
-    var ins = ""
-    for x in test.document.childList:
-      ins &= $x & '\n'
-    var ps = ""
-    for x in pdoc.childList:
-      ps &= $x & '\n'
-    echo "indoc ", $ins
-    echo "psdoc ", $ps
-    ]#
-    checkTest(test.document, pdoc)
+    case test.script
+    of SCRIPT_OFF:
+      test.runTest(scripting = false)
+    of SCRIPT_ON:
+      test.runTest(scripting = true)
+    of SCRIPT_BOTH:
+      test.runTest(scripting = false)
+      test.runTest(scripting = true)
 
 test "tests1.dat":
   runTests("tests1.dat")
@@ -269,3 +310,18 @@ test "tests2.dat":
 
 test "tests3.dat":
   runTests("tests3.dat")
+
+test "tests4.dat":
+  runTests("tests4.dat")
+
+test "tests5.dat":
+  runTests("tests5.dat")
+
+test "tests6.dat":
+  runTests("tests6.dat")
+
+test "tests7.dat":
+  runTests("tests7.dat")
+
+test "tests8.dat":
+  runTests("tests8.dat")
