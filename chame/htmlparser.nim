@@ -202,7 +202,7 @@ type
 
   DOMBuilderInsertText*[Handle] =
     proc(builder: DOMBuilder[Handle], parent: Handle, text: string,
-        before: Handle) {.nimcall.}
+        before: Option[Handle]) {.nimcall.}
       ## Insert a text node at the specified location with contents
       ## `text`. If the specified location has a previous sibling that is
       ## a text node, no new text node should be created, but instead `text`
@@ -386,7 +386,7 @@ proc insertBefore[Handle](parser: HTML5Parser[Handle], parent, node: Handle,
   dombuilder.insertBefore(dombuilder, parent, node, before)
 
 proc insertText[Handle](parser: HTML5Parser[Handle], parent: Handle,
-    text: string, before: Handle) =
+    text: string, before: Option[Handle]) =
   let dombuilder = parser.dombuilder
   dombuilder.insertText(dombuilder, parent, text, before)
 
@@ -749,7 +749,7 @@ proc insertCharacter(parser: var HTML5Parser, data: string) =
   let location = parser.appropriatePlaceForInsert()
   if location.inside == parser.dombuilder.document:
     return
-  insertText(parser, location.inside, $data, location.before.get(nil))
+  insertText(parser, location.inside, $data, location.before)
 
 proc insertComment[Handle](parser: var HTML5Parser[Handle], token: Token,
     position: AdjustedInsertionLocation[Handle]) =
