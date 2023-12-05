@@ -226,7 +226,7 @@ proc newMiniDOMBuilder(): MiniDOMBuilder =
 
 proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
     canReinterpret = true): Document =
-  ## Read, parse and return a HTML document from inputStream.
+  ## Read, parse and return an HTML document from inputStream.
   ##
   ## `charsets` is a list of input character sets to try.
   ##
@@ -246,10 +246,10 @@ proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
   return Document(builder.document)
 
 proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node]): Document =
-  ## Read, parse and return a HTML document from `inputStream`, using
+  ## Read, parse and return an HTML document from `inputStream`, using
   ## parser options `opts`.
   ##
-  ## For information on `opts` (a `HTML5ParserOpts` object), please consult
+  ## For information on `opts` (an `HTML5ParserOpts` object), please consult
   ## the documentation of chame/htmlparser.nim.
   let builder = newMiniDOMBuilder()
   parseHTML(inputStream, builder, opts)
@@ -257,10 +257,10 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node]): Document =
 
 proc parseHTMLFragment*(inputStream: Stream, element: Element,
     opts: HTML5ParserOpts[Node]): seq[Node] =
-  ## Read, parse and return the children of a HTML fragment from `inputStream`,
+  ## Read, parse and return the children of an HTML fragment from `inputStream`,
   ## using context element `element` and parser options `opts`.
   ##
-  ## For information on `opts` (a `HTML5ParserOpts` object), please consult
+  ## For information on `opts` (an `HTML5ParserOpts` object), please consult
   ## the documentation of chame/htmlparser.nim.
   ##
   ## For details on the HTML fragment parsing algorithm, see
@@ -290,7 +290,7 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
 proc parseHTMLFragment*(s: string, element: Element): seq[Node] =
   ## Convenience wrapper around parseHTMLFragment with opts.
   ##
-  ## Read, parse and return the children of a HTML fragment from the string `s`,
+  ## Read, parse and return the children of an HTML fragment from the string `s`,
   ## using context element `element`.
   ##
   ## For details on the HTML fragment parsing algorithm, see
