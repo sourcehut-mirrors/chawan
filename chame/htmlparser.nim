@@ -2801,7 +2801,6 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     opts: HTML5ParserOpts[Handle]) =
   ## Parse an HTML document, using the DOMBuilder object `dombuilder`, and
   ## parser options `opts`.
-  inputStream.setPosition(0)
   dombuilder.checkCallbacks()
   var charsetStack: seq[Charset]
   for i in countdown(opts.charsets.high, 0):
@@ -2848,7 +2847,6 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
       DECODER_ERROR_MODE_REPLACEMENT
     else:
       DECODER_ERROR_MODE_FATAL
-    inputStream.setPosition(0)
     let decoder = newDecoderStream(inputStream, parser.charset, errormode = em)
     proc x(e: ParseError) =
       parser.parseError(e)
