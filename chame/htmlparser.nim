@@ -67,6 +67,9 @@ type
     isSVGIntegrationPoint*: DOMBuilderIsSVGIntegrationPoint[Handle]
     ## May be nil. (If nil, the parser considers no Handle an SVG integration
     ## point.)
+    rewindStream*: DOMBuilderRewindStream[Handle]
+    ## May be nil. (If nil and canReinterpret is true, the parser will simply
+    ## call stream.setPosition(0) on the input stream.)
 
   HTML5ParserOpts*[Handle] = object
     isIframeSrcdoc*: bool
@@ -269,6 +272,15 @@ type
   DOMBuilderIsSVGIntegrationPoint*[Handle] =
     proc(builder: DOMBuilder[Handle], element: Handle): bool {.nimcall.}
       ## Check if element is an SVG integration point.
+
+  DOMBuilderRewindStream*[Handle] =
+    proc(builder: DOMBuilder[Handle]): Stream {.nimcall.}
+      ## Rewind the input stream to its beginning, e.g. by calling
+      ## stream.setPosition(0). May return the same stream that was used
+      ## before rewinding, or an entirely new stream.
+      ##
+      ## Note however, that even if a new stream is returned, its contents
+      ## are assumed to be identical to those of the old stream.
 
 type
   CharsetConfidence = enum
@@ -2768,7 +2780,7 @@ proc finishParsing(parser: var HTML5Parser) =
   if parser.dombuilder.finish != nil:
     parser.dombuilder.finish(parser.dombuilder)
 
-proc bomSniff(inputStream: Stream): Charset =
+proc bomSniff(inputStream: var Stream, dombuilder: DOMBuilder): Charset =
   # bom sniff
   const u8bom = char(0xEF) & char(0xBB) & char(0xBF)
   const bebom = char(0xFE) & char(0xFF)
@@ -2783,7 +2795,10 @@ proc bomSniff(inputStream: Stream): Charset =
     if bom == u8bom:
       return CHARSET_UTF_8
     else:
-      inputStream.setPosition(0)
+      if dombuilder.rewindStream != nil:
+        inputStream = dombuilder.rewindStream(dombuilder)
+      else:
+        inputStream.setPosition(0)
 
 # Any of these pointers being nil would later result in a crash.
 proc checkCallbacks(dombuilder: DOMBuilder) =
@@ -2807,8 +2822,9 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     charsetStack.add(opts.charsets[i])
   var canReinterpret = opts.canReinterpret
   var confidence: CharsetConfidence
+  var inputStream = inputStream
   if canReinterpret:
-    let scs = inputStream.bomSniff()
+    let scs = inputStream.bomSniff(dombuilder)
     if scs != CHARSET_UNKNOWN:
       charsetStack.add(scs)
       confidence = CONFIDENCE_CERTAIN
@@ -2857,12 +2873,18 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
     parser.tokenizer = newTokenizer(decoder, onParseError, tokstate)
     parser.constructTree()
     if parser.needsreinterpret and canReinterpret:
-      inputStream.setPosition(0)
+      if dombuilder.rewindStream != nil:
+        inputStream = dombuilder.rewindStream(dombuilder)
+      else:
+        inputStream.setPosition(0)
       charsetStack.add(parser.charset)
       canReinterpret = false
       continue
     if decoder.failed and canReinterpret:
-      inputStream.setPosition(0)
+      if dombuilder.rewindStream != nil:
+        inputStream = dombuilder.rewindStream(dombuilder)
+      else:
+        inputStream.setPosition(0)
       continue
     parser.finishParsing()
     break
