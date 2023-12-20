@@ -5,14 +5,21 @@ import tables
 import unicode
 import unittest
 
-import runestream
-
 import chame/htmltokenizer
 import chame/parseerror
 import chame/tags
-import chame/utils/twtstr
 
-import chakasu/decoderstream
+const hexCharMap = (func(): array[char, int] =
+  for i in 0..255:
+    case chr(i)
+    of '0'..'9': result[char(i)] = i - ord('0')
+    of 'a'..'f': result[char(i)] = i - ord('a') + 10
+    of 'A'..'F': result[char(i)] = i - ord('A') + 10
+    else: result[char(i)] = -1
+)()
+
+func hexValue(c: char): int =
+  return hexCharMap[c]
 
 func doubleEscape(input: string): string =
   var s = ""
@@ -127,14 +134,7 @@ proc checkEquals(tok, otok: Token, desc: string) =
 
 proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
     esc: bool, state: TokenizerState = DATA, runes = false) =
-  let ds = if not runes:
-    let ss = newStringStream(input)
-    newDecoderStream(ss)
-  else:
-    var us: seq[uint32]
-    for r in input.runes:
-      us.add(uint32(r))
-    newRuneStream(us)
+  let ds = newStringStream(input)
   proc onParseError(e: ParseError) =
     discard
   var tokenizer = newTokenizer(ds, onParseError, state)

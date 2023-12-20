@@ -90,7 +90,7 @@ Hello, world!
 
 </body></html>
 """
-  let document = parseHTML(newStringStream(inhtml), canReinterpret = false)
+  let document = parseHTML(newStringStream(inhtml))
   var s = ""
   for x in document.childList:
     s &= $x & '\n'

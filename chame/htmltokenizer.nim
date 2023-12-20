@@ -1,12 +1,12 @@
 {.experimental: "overloadableEnums".}
 
-import macros
-import options
-import streams
-import strformat
-import strutils
-import tables
-import unicode
+import std/macros
+import std/options
+import std/streams
+import std/strformat
+import std/strutils
+import std/tables
+import std/unicode
 
 import entity
 import parseerror
@@ -16,15 +16,16 @@ import utils/twtstr
 
 # Tokenizer
 
-const bufLen = 1024 # * 4096 bytes
-const copyBufLen = 16 # * 64 bytes
+# in bytes
+const bufLen = 4096
+const copyBufLen = 64
 
 type
   Tokenizer* = object
     state*: TokenizerState
     rstate: TokenizerState
     tmp: string
-    code: int
+    code: uint32
     tok: Token
     laststart*: Token
     attrn: string
@@ -35,9 +36,10 @@ type
     tokqueue: seq[Token]
     charbuf: string
     isws: bool
+    peekBuf: string
 
     stream: Stream
-    sbuf: array[bufLen, Rune]
+    sbuf: array[bufLen, char]
     sbuf_i: int
     sbufLen: int
     eof_i: int
@@ -107,14 +109,35 @@ func `$`*(tok: Token): string =
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
 
+const hexCharMap = (func(): array[char, uint32] =
+  for i in 0u32..255u32:
+    case chr(i)
+    of '0'..'9': result[char(i)] = i - ord('0')
+    of 'a'..'f': result[char(i)] = i - ord('a') + 10
+    of 'A'..'F': result[char(i)] = i - ord('A') + 10
+    else: result[char(i)] = -1
+)()
+
+const decCharMap = (func(): array[char, uint32] =
+  for i in 0u32..255u32:
+    case char(i)
+    of '0'..'9': result[char(i)] = i - ord('0')
+    else: result[char(i)] = -1
+)()
+
+func hexValue(c: char): uint32 =
+  return hexCharMap[c]
+
+func decValue(c: char): uint32 =
+  return decCharMap[c]
+
 proc readn(t: var Tokenizer) =
-  let needed = (bufLen - t.sbufLen) * sizeof(Rune)
+  let needed = (bufLen - t.sbufLen)
   let n = t.stream.readData(addr t.sbuf[t.sbufLen], needed)
-  t.sbufLen += n div sizeof(Rune)
+  t.sbufLen += n
   if t.stream.atEnd:
     t.eof_i = t.sbufLen
 
-# WARNING: Stream must return 32-bit unicode values.
 proc newTokenizer*(s: Stream, onParseError: proc(e: ParseError),
     initialState = DATA): Tokenizer =
   var t = Tokenizer(
@@ -139,15 +162,15 @@ proc checkBufLen(t: var Tokenizer) =
     if t.sbufLen < bufLen:
       t.readn()
 
-proc consume(t: var Tokenizer): Rune =
+proc consume(t: var Tokenizer): char =
   t.checkBufLen()
   ## Normalize newlines (\r\n -> \n, single \r -> \n)
-  if t.sbuf[t.sbuf_i] == Rune('\r'):
+  if t.sbuf[t.sbuf_i] == '\r':
     inc t.sbuf_i
     t.checkBufLen()
-    if t.atEof or t.sbuf[t.sbuf_i] != Rune('\n'):
+    if t.atEof or t.sbuf[t.sbuf_i] != '\n':
       # \r
-      result = Rune('\n')
+      result = '\n'
       return
     # else, \r\n so just return the \n
   result = t.sbuf[t.sbuf_i]
@@ -183,10 +206,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     if tokenizer.isws:
       tokenizer.flushChars()
     tokenizer.charbuf &= s
-  template emit(rn: Rune) =
-    if tokenizer.isws:
-      tokenizer.flushChars()
-    tokenizer.charbuf &= $rn
   template emit(ch: char) =
     let chisws = ch in AsciiWhitespace
     if tokenizer.isws != chisws:
@@ -206,11 +225,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
     emit tokenizer.tok
   template emit_current =
-    if c in Ascii:
-      emit c
-    else:
-      emit r
-  template emit_replacement = emit Rune(0xFFFD)
+    emit c
+  template emit_replacement = emit "\uFFFD"
   template switch_state(s: TokenizerState) =
     tokenizer.state = s
   template switch_state_return(s: TokenizerState) =
@@ -248,7 +264,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       var b = true
       for i in 0 ..< s.len:
         let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
-        if not c.isAscii() or cast[char](c) != s[i]:
+        if c notin Ascii or c != s[i]:
           b = false
           break
       b
@@ -263,17 +279,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       var b = true
       for i in 0 ..< s.len:
         let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
-        if not c.isAscii() or cast[char](c).toUpperAscii() != s[i]:
+        if c notin Ascii or c.toUpperAscii() != s[i]:
           b = false
           break
       b
   template peek_char(): char =
-    let r = tokenizer.consume()
+    let c = tokenizer.consume()
     tokenizer.reconsume()
-    if r.isAscii():
-      cast[char](r)
-    else:
-      char(128)
+    c
+
   template consume_and_discard(n: int) = #TODO optimize
     var i = 0
     while i < n:
@@ -358,12 +372,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
   while running:
     let is_eof = tokenizer.atEof # set eof here, otherwise we would exit at the last character
-    let r = if not is_eof:
+    let c = if not is_eof:
       tokenizer.consume()
     else:
       # avoid consuming eof...
-      Rune(null)
-    let c = if r.isAscii(): cast[char](r) else: char(128)
+      char(0)
     stateMachine: # => case tokenizer.state
     of DATA:
       case c
@@ -455,14 +468,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         switch_state DATA
         emit_tok
-      of AsciiUpperAlpha: tokenizer.tok.tagname &= c.tolower()
+      of AsciiUpperAlpha: tokenizer.tok.tagname &= c.toLowerAscii()
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.tagname &= Rune(0xFFFD)
+        tokenizer.tok.tagname &= "\uFFFD"
       of eof:
         parse_error EOF_IN_TAG
         emit_eof
-      else: tokenizer.tok.tagname &= r
+      else: tokenizer.tok.tagname &= c
 
     of RCDATA_LESS_THAN_SIGN:
       case c
@@ -502,7 +515,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= c.tolower()
+        tokenizer.tok.tagname &= c.toLowerAscii()
         tokenizer.tmp &= c
       else:
         new_token nil #TODO
@@ -548,7 +561,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= c.tolower()
+        tokenizer.tok.tagname &= c.toLowerAscii()
         tokenizer.tmp &= c
       else:
         new_token nil #TODO
@@ -597,7 +610,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= c.tolower()
+        tokenizer.tok.tagname &= c.toLowerAscii()
         tokenizer.tmp &= c
       else:
         emit "</"
@@ -716,7 +729,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha:
-        tokenizer.tok.tagname &= c.tolower()
+        tokenizer.tok.tagname &= c.toLowerAscii()
         tokenizer.tmp &= c
       else:
         emit "</"
@@ -732,7 +745,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           switch_state SCRIPT_DATA_ESCAPED
         emit_current
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tmp &= c.tolower()
+        tokenizer.tmp &= c.toLowerAscii()
         emit_current
       else: reconsume_in SCRIPT_DATA_ESCAPED
 
@@ -808,7 +821,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_current
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tmp &= c.tolower()
+        tokenizer.tmp &= c.toLowerAscii()
         emit_current
       else:
         reconsume_in SCRIPT_DATA_DOUBLE_ESCAPED
@@ -836,15 +849,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         leave_attribute_name_state
         switch_state BEFORE_ATTRIBUTE_VALUE
       of AsciiUpperAlpha:
-        tokenizer.attrn &= c.tolower()
+        tokenizer.attrn &= c.toLowerAscii()
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.attrn &= Rune(0xFFFD)
+        tokenizer.attrn &= "\uFFFD"
       of '"', '\'', '<':
         parse_error UNEXPECTED_CHARACTER_IN_ATTRIBUTE_NAME
         anything_else
       else:
-        tokenizer.attrn &= r
+        tokenizer.attrn &= c
 
     of AFTER_ATTRIBUTE_NAME:
       case c
@@ -878,11 +891,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '&': switch_state_return CHARACTER_REFERENCE
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        append_to_current_attr_value Rune(0xFFFD)
+        append_to_current_attr_value "\uFFFD"
       of eof:
         parse_error EOF_IN_TAG
         emit_eof
-      else: append_to_current_attr_value r
+      else: append_to_current_attr_value c
 
     of ATTRIBUTE_VALUE_SINGLE_QUOTED:
       case c
@@ -890,11 +903,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '&': switch_state_return CHARACTER_REFERENCE
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        append_to_current_attr_value Rune(0xFFFD)
+        append_to_current_attr_value "\uFFFD"
       of eof:
         parse_error EOF_IN_TAG
         emit_eof
-      else: append_to_current_attr_value r
+      else: append_to_current_attr_value c
 
     of ATTRIBUTE_VALUE_UNQUOTED:
       case c
@@ -905,14 +918,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        append_to_current_attr_value Rune(0xFFFD)
+        append_to_current_attr_value "\uFFFD"
       of '"', '\'', '<', '=', '`':
         parse_error UNEXPECTED_CHARACTER_IN_UNQUOTED_ATTRIBUTE_VALUE
         append_to_current_attr_value c
       of eof:
         parse_error EOF_IN_TAG
         emit_eof
-      else: append_to_current_attr_value r
+      else: append_to_current_attr_value c
 
     of AFTER_ATTRIBUTE_VALUE_QUOTED:
       case c
@@ -954,8 +967,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_eof
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.data &= $Rune(0xFFFD)
-      else: tokenizer.tok.data &= r
+        tokenizer.tok.data &= "\uFFFD"
+      else: tokenizer.tok.data &= c
 
     of MARKUP_DECLARATION_OPEN: # note: rewritten to fit case model as we consume a char anyway
       has_anything_else
@@ -1018,12 +1031,12 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '-': switch_state COMMENT_END_DASH
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.data &= Rune(0xFFFD)
+        tokenizer.tok.data &= "\uFFFD"
       of eof:
         parse_error EOF_IN_COMMENT
         emit_tok
         emit_eof
-      else: tokenizer.tok.data &= r
+      else: tokenizer.tok.data &= c
 
     of COMMENT_LESS_THAN_SIGN:
       case c
@@ -1110,11 +1123,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of AsciiWhitespace: discard
       of AsciiUpperAlpha:
-        new_token Token(t: DOCTYPE, name: some($c.tolower()))
+        new_token Token(t: DOCTYPE, name: some($c.toLowerAscii()))
         switch_state DOCTYPE_NAME
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        new_token Token(t: DOCTYPE, name: some($Rune(0xFFFD)))
+        new_token Token(t: DOCTYPE, name: some($"\uFFFD"))
         switch_state DOCTYPE_NAME
       of '>':
         parse_error MISSING_DOCTYPE_NAME
@@ -1127,7 +1140,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        new_token Token(t: DOCTYPE, name: some($r))
+        new_token Token(t: DOCTYPE, name: some($c))
         switch_state DOCTYPE_NAME
 
     of DOCTYPE_NAME:
@@ -1137,17 +1150,17 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of AsciiUpperAlpha:
-        tokenizer.tok.name.get &= c.tolower()
+        tokenizer.tok.name.get &= c.toLowerAscii()
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.name.get &= Rune(0xFFFD)
+        tokenizer.tok.name.get &= "\uFFFD"
       of eof:
         parse_error EOF_IN_DOCTYPE
         tokenizer.tok.quirks = true
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.name.get &= r
+        tokenizer.tok.name.get &= c
 
     of AFTER_DOCTYPE_NAME: # note: rewritten to fit case model as we consume a char anyway
       has_anything_else
@@ -1233,7 +1246,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '"': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.pubid.get &= Rune(0xFFFD)
+        tokenizer.tok.pubid.get &= "\uFFFD"
       of '>':
         parse_error ABRUPT_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1245,14 +1258,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.pubid.get &= r
+        tokenizer.tok.pubid.get &= c
 
     of DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.pubid.get &= Rune(0xFFFD)
+        tokenizer.tok.pubid.get &= "\uFFFD"
       of '>':
         parse_error ABRUPT_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1264,7 +1277,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.pubid.get &= r
+        tokenizer.tok.pubid.get &= c
 
     of AFTER_DOCTYPE_PUBLIC_IDENTIFIER:
       case c
@@ -1367,7 +1380,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '"': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.sysid.get &= Rune(0xFFFD)
+        tokenizer.tok.sysid.get &= "\uFFFD"
       of '>':
         parse_error ABRUPT_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1379,14 +1392,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.sysid.get &= r
+        tokenizer.tok.sysid.get &= c
 
     of DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.sysid.get &= Rune(0xFFFD)
+        tokenizer.tok.sysid.get &= "\uFFFD"
       of '>':
         parse_error ABRUPT_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1398,7 +1411,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
         emit_eof
       else:
-        tokenizer.tok.sysid.get &= r
+        tokenizer.tok.sysid.get &= c
 
     of AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
       case c
@@ -1571,23 +1584,25 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       elif tokenizer.code > 0x10FFFF:
         parse_error CHARACTER_REFERENCE_OUTSIDE_UNICODE_RANGE
         tokenizer.code = 0xFFFD
-      elif Rune(tokenizer.code).isSurrogate():
+      elif tokenizer.code.isSurrogate():
         parse_error SURROGATE_CHARACTER_REFERENCE
         tokenizer.code = 0xFFFD
-      elif Rune(tokenizer.code).isNonCharacter():
+      elif tokenizer.code.isNonCharacter():
         parse_error NONCHARACTER_CHARACTER_REFERENCE
         # do nothing
-      elif tokenizer.code in 0 .. 0x7F and
-          char(tokenizer.code) in (Controls - AsciiWhitespace) + {chr(0x0D)} or
-          tokenizer.code in 0x80 .. 0x9F:
+      elif tokenizer.code < 0x80 and
+          char(tokenizer.code) in (Controls - AsciiWhitespace) + {char(0x0D)} or
+          tokenizer.code in 0x80u32 .. 0x9Fu32:
         const ControlMapTable = [
-          (0x80, 0x20AC), (0x82, 0x201A), (0x83, 0x0192), (0x84, 0x201E),
-          (0x85, 0x2026), (0x86, 0x2020), (0x87, 0x2021), (0x88, 0x02C6),
-          (0x89, 0x2030), (0x8A, 0x0160), (0x8B, 0x2039), (0x8C, 0x0152),
-          (0x8E, 0x017D), (0x91, 0x2018), (0x92, 0x2019), (0x93, 0x201C),
-          (0x94, 0x201D), (0x95, 0x2022), (0x96, 0x2013), (0x97, 0x2014),
-          (0x98, 0x02DC), (0x99, 0x2122), (0x9A, 0x0161), (0x9B, 0x203A),
-          (0x9C, 0x0153), (0x9E, 0x017E), (0x9F, 0x0178),
+          (0x80u32, 0x20ACu32), (0x82u32, 0x201Au32), (0x83u32, 0x0192u32),
+          (0x84u32, 0x201Eu32), (0x85u32, 0x2026u32), (0x86u32, 0x2020u32),
+          (0x87u32, 0x2021u32), (0x88u32, 0x02C6u32), (0x89u32, 0x2030u32),
+          (0x8Au32, 0x0160u32), (0x8Bu32, 0x2039u32), (0x8Cu32, 0x0152u32),
+          (0x8Eu32, 0x017Du32), (0x91u32, 0x2018u32), (0x92u32, 0x2019u32),
+          (0x93u32, 0x201Cu32), (0x94u32, 0x201Du32), (0x95u32, 0x2022u32),
+          (0x96u32, 0x2013u32), (0x97u32, 0x2014u32), (0x98u32, 0x02DCu32),
+          (0x99u32, 0x2122u32), (0x9Au32, 0x0161u32), (0x9Bu32, 0x203Au32),
+          (0x9Cu32, 0x0153u32), (0x9Eu32, 0x017Eu32), (0x9Fu32, 0x0178u32),
         ].toTable()
         if tokenizer.code in ControlMapTable:
           tokenizer.code = ControlMapTable[tokenizer.code]

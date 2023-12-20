@@ -1,19 +1,22 @@
-import streams
-import tables
-import options
+## Minimal DOMBuilder example. Implements the absolute minimum required
+## for Chawan's HTML parser to work correctly.
+##
+## For an example of a complete implementation, see Chawan's chadombuilder.
+##
+## WARNING: this assumes *valid* UTF-8 to be the input encoding; text tokens
+## containing invalid UTF-8 are silently discarded.
+##
+## For a variant that can switch encodings when meta tags are encountered etc.
+## see `chame/minidom_cs <minidom.html>`.
+import std/streams
+import std/tables
+import std/options
 
 import htmlparser
 import htmltokenizer
 import tags
 
-import chakasu/charset
-
-export charset
 export tags
-
-# Minimal DOMBuilder example. Implements the absolute minimum required
-# for Chawan's HTML parser to work correctly.
-# For an example of a complete implementation, see Chawan's chadombuilder.
 
 # Node types
 type
@@ -43,14 +46,51 @@ type
     attrs*: Table[string, string]
 
 type
-  MiniDOMBuilder = ref object of DOMBuilder[Node]
-    document: Document
+  MiniDOMBuilder* = ref object of DOMBuilder[Node]
+    document*: Document
+
+# We use this to validate input strings, since htmltokenizer/htmlparser does no
+# input validation.
+proc toValidUTF8(s: string): string =
+  result = ""
+  var i = 0
+  while i < s.len:
+    let u = uint(s[i])
+    if int(s[i]) < 0x80:
+      result &= s[i]
+      inc i
+    elif int(s[i]) shr 3 == 0x18:
+      if i + 1 < s.len and int(s[i + 1]) shr 6 == 2:
+        result &= s[i]
+        result &= s[i + 1]
+      else:
+        result &= "\uFFFD"
+      i += 2
+    elif int(s[i]) shr 3 == 0x1C:
+      if i + 2 < s.len and int(s[i + 1]) shr 6 == 2 and
+          int(s[i + 2]) shr 6 == 2:
+        result &= s[i]
+        result &= s[i + 1]
+        result &= s[i + 2]
+      else:
+        result &= "\uFFFD"
+      i += 3
+    elif int(s[i]) shr 3 == 0x1E:
+      if i + 3 < s.len and int(s[i + 1]) shr 6 == 2 and
+          int(s[i + 2]) shr 6 == 2 and int(s[i + 3]) shr 6 == 2:
+        result &= s[i]
+        result &= s[i + 1]
+        result &= s[i + 2]
+        result &= s[i + 3]
+      else:
+        result &= "\uFFFD"
+      i += 4
+    else:
+      result &= "\uFFFD"
+      inc i
 
 proc getDocument(builder: DOMBuilder[Node]): Node =
   return MiniDOMBuilder(builder).document
-
-proc restart(builder: DOMBuilder[Node]) =
-  MiniDOMBuilder(builder).document = Document(nodeType: DOCUMENT_NODE)
 
 proc getParentNode(builder: DOMBuilder[Node], handle: Node): Option[Node] =
   return option(handle.parentNode)
@@ -69,20 +109,25 @@ proc createElement(builder: DOMBuilder[Node], localName: string,
     attrs: Table[string, string]): Node =
   let element = Element(
     nodeType: ELEMENT_NODE,
-    localName: localName,
+    localName: localName.toValidUTF8(),
     namespace: namespace,
-    tagType: tagType,
-    attrs: attrs
+    tagType: tagType
   )
+  for k, v in attrs:
+    element.attrs[k.toValidUTF8()] = v.toValidUTF8()
   return element
 
 proc createComment(builder: DOMBuilder[Node], text: string): Node =
-  return Comment(nodeType: COMMENT_NODE, data: text)
+  return Comment(nodeType: COMMENT_NODE, data: text.toValidUTF8())
 
 proc createDocumentType(builder: DOMBuilder[Node], name, publicId,
     systemId: string): Node =
-  return DocumentType(nodeType: DOCUMENT_TYPE_NODE, name: name, publicId: publicId,
-    systemId: systemId)
+  return DocumentType(
+    nodeType: DOCUMENT_TYPE_NODE,
+    name: name.toValidUTF8(),
+    publicId: publicId.toValidUTF8(),
+    systemId: systemId.toValidUTF8()
+  )
 
 func countChildren(node: Node, nodeType: NodeType): int =
   for child in node.childList:
@@ -172,6 +217,7 @@ proc insertBefore(builder: DOMBuilder[Node], parent, child: Node,
 
 proc insertText(builder: DOMBuilder[Node], parent: Node, text: string,
     before: Option[Node]) =
+  let text = text.toValidUTF8()
   let before = before.get(nil)
   let prevSibling = if before != nil:
     let i = parent.childList.find(before)
@@ -206,56 +252,39 @@ proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
     attrs: Table[string, string]) =
   let element = Element(element)
   for k, v in attrs:
+    let k = k.toValidUTF8()
     if k notin element.attrs:
-      element.attrs[k] = v
+      element.attrs[k] = v.toValidUTF8()
 
-proc newMiniDOMBuilder(): MiniDOMBuilder =
+proc initMiniDOMBuilder*(builder: MiniDOMBuilder) =
+  builder.getDocument = getDocument
+  builder.getTagType = getTagType
+  builder.getParentNode = getParentNode
+  builder.getLocalName = getLocalName
+  builder.getNamespace = getNamespace
+  builder.createElement = createElement
+  builder.createComment = createComment
+  builder.createDocumentType = createDocumentType
+  builder.insertBefore = insertBefore
+  builder.insertText = insertText
+  builder.remove = remove
+  builder.moveChildren = moveChildren
+  builder.addAttrsIfMissing = addAttrsIfMissing
+
+proc newMiniDOMBuilder*(): MiniDOMBuilder =
   let document = Document(nodeType: DOCUMENT_NODE)
-  return MiniDOMBuilder(
-    document: document,
-    getDocument: getDocument,
-    restart: restart,
-    getTagType: getTagType,
-    getParentNode: getParentNode,
-    getLocalName: getLocalName,
-    getNamespace: getNamespace,
-    createElement: createElement,
-    createComment: createComment,
-    createDocumentType: createDocumentType,
-    insertBefore: insertBefore,
-    insertText: insertText,
-    remove: remove,
-    moveChildren: moveChildren,
-    addAttrsIfMissing: addAttrsIfMissing,
-  )
+  let builder = MiniDOMBuilder(document: document)
+  builder.initMiniDOMBuilder()
+  return builder
 
-proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
-    canReinterpret = true): Document =
-  ## Read, parse and return an HTML document from inputStream.
-  ##
-  ## `charsets` is a list of input character sets to try.
-  ##
-  ## `canReinterpret` signals to the parser whether the inputStream is seekable
-  ## (e.g. if inputStream.setPosition(0) is valid).
-  ##
-  ## For more information on character set handling, please consult the
-  ## documentation of chame/htmlparser.nim.
-  let builder = newMiniDOMBuilder()
-  let opts = HTML5ParserOpts[Node](
-    isIframeSrcdoc: false,
-    scripting: false,
-    canReinterpret: canReinterpret,
-    charsets: charsets
-  )
-  parseHTML(inputStream, builder, opts)
-  return builder.document
-
-proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node]): Document =
+proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node]()): Document =
   ## Read, parse and return an HTML document from `inputStream`, using
   ## parser options `opts`.
   ##
-  ## For information on `opts` (an `HTML5ParserOpts` object), please consult
-  ## the documentation of chame/htmlparser.nim.
+  ## `inputStream` is not required to be seekable.
+  ##
+  ## For a description of `HTML5ParserOpts`, see the `htmlparser` module's
+  ## documentation.
   let builder = newMiniDOMBuilder()
   parseHTML(inputStream, builder, opts)
   return builder.document
@@ -304,8 +333,6 @@ proc parseHTMLFragment*(s: string, element: Element): seq[Node] =
   let opts = HTML5ParserOpts[Node](
     isIframeSrcdoc: false,
     scripting: false,
-    canReinterpret: false,
-    charsets: @[CHARSET_UTF_8],
     ctx: some(Node(element)),
     pushInTemplate: element.tagType == TAG_TEMPLATE
   )

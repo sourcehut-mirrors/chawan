@@ -20,8 +20,9 @@ description of the API.
 
 * Almost full compliance with the WHATWG standard. (Except for the few missing
   features listed in the following section.)
-* Supports all encodings specified in the WHATWG encoding standard.
 * Includes a minimal DOM implementation.
+* No mandatory dependencies other than the Nim standard library.
+* Optional character encoding support (see minidom_enc).
 
 ## To-do
 
@@ -37,8 +38,7 @@ is planned, even if source code comments say otherwise.
 
 Other, non-standard-related tasks (in no particular order):
 
-* Allow disabling non-UTF-8 decoders.
-* Document minidom.
+* Use string interning for tag/attribute local names.
 * Finish integration of html5lib-tests.
 * Optimize inefficient parts of the library.
 

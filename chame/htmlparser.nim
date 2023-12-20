@@ -1,17 +1,13 @@
-import macros
-import options
-import streams
-import strutils
-import tables
-import unicode
+import std/macros
+import std/options
+import std/streams
+import std/strutils
+import std/tables
 
 import htmltokenizer
 import parseerror
 import tags
 import utils/twtstr
-
-import chakasu/charset
-import chakasu/decoderstream
 
 # Generics break without exporting macros. Maybe a compiler bug?
 export macros
@@ -23,13 +19,11 @@ type
     ## Must never be nil.
     finish*: DOMBuilderFinish[Handle]
     ## May be nil.
-    restart*: DOMBuilderRestart[Handle]
-    ## May be nil.
     parseError*: DOMBuilderParseError[Handle]
     ## May be nil.
     setQuirksMode*: DOMBuilderSetQuirksMode[Handle]
-    ## May be nil.
-    setCharacterSet*: DOMBuilderSetCharacterSet[Handle]
+    ## May be nil
+    setEncoding*: DOMBuilderSetEncoding[Handle]
     ## May be nil.
     elementPopped*: DOMBuilderElementPopped[Handle]
     ## May be nil.
@@ -67,51 +61,15 @@ type
     isSVGIntegrationPoint*: DOMBuilderIsSVGIntegrationPoint[Handle]
     ## May be nil. (If nil, the parser considers no Handle an SVG integration
     ## point.)
-    rewindStream*: DOMBuilderRewindStream[Handle]
-    ## May be nil. (If nil and canReinterpret is true, the parser will simply
-    ## call stream.setPosition(0) on the input stream.)
+
+  SetEncodingResult* = enum
+    SET_ENCODING_STOP, SET_ENCODING_CONTINUE
 
   HTML5ParserOpts*[Handle] = object
     isIframeSrcdoc*: bool
     ## Is the document an iframe srcdoc?
     scripting*: bool
     ## Is scripting enabled for this document?
-    canReinterpret*: bool
-    ## Can we try to parse the document again with a different character set?
-    ##
-    ## Note: this only works if inputStream is seekable, i.e.
-    ## inputStream.setPosition(0) must work correctly.
-    ##
-    ## Note 2: when canReinterpret is false, confidence is set to certain,
-    ## no BOM sniffing is performed and meta charset tags are
-    ## disregarded.
-    ## Expect this to change in the future. (In particular, this should not
-    ## be necessary for ASCII-compatible decoders that have only seen ASCII
-    ## characters, i.e. for most <meta charset=...> tags.)
-    charsets*: seq[Charset]
-    ## Fallback charsets. If empty, UTF-8 is used. In most cases, an empty
-    ## sequence or a single-element sequence consisting of a character set
-    ## chosen based on the user's locale will suffice.
-    ##
-    ## The parser goes through fallback charsets in the following order:
-    ## * A charset stack is initialized to `charsets`, reversed. This
-    ##   means that the first charset specified in `charsets` is on top of
-    ##   the stack. (e.g. say `charsets = @[CHARSET_UTF_16_LE, CHARSET_UTF_8]`,
-    ##   then utf-16-le is tried before utf-8.)
-    ## * BOM sniffing is attempted. If successful, confidence is set to
-    ##   certain and the resulting charset is used (i.e. other character
-    ##   sets will not be tried for decoding this document.)
-    ## * If the charset stack is empty, UTF-8 is pushed on top.
-    ## * Attempt to parse the document with the first charset on top of
-    ##   the stack.
-    ## * If BOM sniffing was unsuccessful, and a <meta charset=...> tag
-    ##   is encountered, parsing is restarted with the specified charset.
-    ##   No further attempts are made to detect the encoding, and decoder
-    ##   errors are signaled by U+FFFD replacement characters.
-    ## * Otherwise, each charset on the charset stack is tried until either no
-    ##   decoding errors are encountered, or only one charset is left. For
-    ##   the last charset, decoder errors are signaled by U+FFFD replacement
-    ##   characters.
     ctx*: Option[Handle]
     ## Context element for fragment parsing. When set to some Handle,
     ## the fragment case is used while parsing.
@@ -137,12 +95,6 @@ type
     proc(builder: DOMBuilder[Handle]) {.nimcall.}
       ## Parsing has finished.
 
-  DOMBuilderRestart*[Handle] =
-    proc(builder: DOMBuilder[Handle]) {.nimcall.}
-      ## Parsing has been restarted. This is required if charset switching
-      ## is enabled; in this case, restart must reset all properties of the
-      ## document handle, and remove all of its child nodes.
-
   DOMBuilderParseError*[Handle] =
     proc(builder: DOMBuilder[Handle], message: ParseError) {.nimcall.}
       ## Parse error. `message` is an error code either specified by the
@@ -155,11 +107,17 @@ type
       ## Set quirks mode to either QUIRKS or LIMITED_QUIRKS. NO_QUIRKS
       ## is the default and is therefore never used here.
 
-  DOMBuilderSetCharacterSet*[Handle] =
-    proc(builder: DOMBuilder[Handle], charset: Charset) {.nimcall.}
-      ## Set the charset used in the current parsing attempt.
-      ## Note that this is called even for all attempts, i.e. at least once
-      ## for every parse.
+  DOMBuilderSetEncoding*[Handle] =
+    proc(builder: DOMBuilder[Handle], encoding: string): SetEncodingResult
+        {.nimcall.}
+      ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
+      ## containing a non-empty character set is encountered. A
+      ## SetEncodingResult is expected, which is either SET_ENCODING_STOP,
+      ## stopping the parser, or SET_ENCODING_CONTINUE, allowing the parser to
+      ## continue.
+      ##
+      ## Note that Chame no longer contains any encoding-related logic; this is
+      ## left to the caller.
 
   DOMBuilderElementPopped*[Handle] =
     proc(builder: DOMBuilder[Handle], element: Handle) {.nimcall.}
@@ -278,26 +236,12 @@ type
     proc(builder: DOMBuilder[Handle], element: Handle): bool {.nimcall.}
       ## Check if element is an SVG integration point.
 
-  DOMBuilderRewindStream*[Handle] =
-    proc(builder: DOMBuilder[Handle]): Stream {.nimcall.}
-      ## Rewind the input stream to its beginning, e.g. by calling
-      ## stream.setPosition(0). May return the same stream that was used
-      ## before rewinding, or an entirely new stream.
-      ##
-      ## Note however, that even if a new stream is returned, its contents
-      ## are assumed to be identical to those of the old stream.
-
 type
-  CharsetConfidence = enum
-    CONFIDENCE_TENTATIVE, CONFIDENCE_CERTAIN, CONFIDENCE_IRRELEVANT
-
   HTML5Parser[Handle] = object
     quirksMode: QuirksMode
     dombuilder: DOMBuilder[Handle]
     opts: HTML5ParserOpts[Handle]
-    needsreinterpret: bool
-    charset: Charset
-    confidence: CharsetConfidence
+    stopped: bool
     openElements: seq[Handle]
     insertionMode: InsertionMode
     oldInsertionMode: InsertionMode
@@ -331,10 +275,6 @@ proc finish[Handle](parser: HTML5Parser[Handle]) =
   if parser.dombuilder.finish != nil:
     parser.dombuilder.finish(parser.dombuilder)
 
-proc restart[Handle](parser: HTML5Parser[Handle]) =
-  if parser.dombuilder.restart != nil:
-    parser.dombuilder.restart(parser.dombuilder)
-
 proc parseError(parser: HTML5Parser, e: ParseError) =
   if parser.dombuilder.parseError != nil:
     parser.dombuilder.parseError(parser.dombuilder, e)
@@ -344,10 +284,11 @@ proc setQuirksMode[Handle](parser: var HTML5Parser[Handle], mode: QuirksMode) =
   if parser.dombuilder.setQuirksMode != nil:
     parser.dombuilder.setQuirksMode(parser.dombuilder, mode)
 
-proc setCharacterSet[Handle](parser: var HTML5Parser[Handle],
-    charset: Charset) =
-  if parser.dombuilder.setCharacterSet != nil:
-    parser.dombuilder.setCharacterSet(parser.dombuilder, charset)
+proc setEncoding(parser: var HTML5Parser, cs: string): SetEncodingResult =
+  let dombuilder = parser.dombuilder
+  if dombuilder.setEncoding != nil:
+    return dombuilder.setEncoding(dombuilder, cs)
+  return SET_ENCODING_CONTINUE
 
 func getDocument[Handle](parser: HTML5Parser[Handle]): Handle =
   let dombuilder = parser.dombuilder
@@ -1024,7 +965,7 @@ func isHTMLIntegrationPoint[Handle](parser: HTML5Parser[Handle],
     element: Handle): bool =
   return parser.isSVGIntegrationPoint(element) # (NOTE MathML not implemented)
 
-func extractEncFromMeta(s: string): Charset =
+func extractEncFromMeta(s: string): string =
   var i = 0
   while true: # Loop:
     var j = 0
@@ -1045,32 +986,19 @@ func extractEncFromMeta(s: string): Charset =
         break
       else: discard
       inc i
-    if j < 7: return CHARSET_UNKNOWN
+    if j < 7: return ""
     while i < s.len and s[i] in AsciiWhitespace: inc i
     if i >= s.len or s[i] != '=': continue
     while i < s.len and s[i] in AsciiWhitespace: inc i
     break
   inc i
-  if i >= s.len: return CHARSET_UNKNOWN
+  if i >= s.len: return ""
   if s[i] in {'"', '\''}:
     let s2 = s.substr(i + 1).until(s[i])
     if s2.len == 0 or s2[^1] != s[i]:
-      return CHARSET_UNKNOWN
-    return getCharset(s2)
-  return getCharset(s.substr(i).until({';', ' '}))
-
-proc changeEncoding(parser: var HTML5Parser, cs: Charset) =
-  if parser.charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
-    parser.confidence = CONFIDENCE_CERTAIN
-    return
-  parser.confidence = CONFIDENCE_CERTAIN
-  if cs == parser.charset:
-    return
-  if cs == CHARSET_X_USER_DEFINED:
-    parser.charset = CHARSET_WINDOWS_1252
-  else:
-    parser.charset = cs
-  parser.needsreinterpret = true
+      return ""
+    return s2
+  return s.substr(i).until({';', ' '})
 
 proc parseErrorByTokenType(parser: var HTML5Parser, tokenType: TokenType) =
   case tokenType
@@ -1529,16 +1457,23 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       "<meta>" => (block:
         discard parser.insertHTMLElement(token)
         pop_current_node
-        if parser.confidence == CONFIDENCE_TENTATIVE:
-          let cs = getCharset(token.attrs.getOrDefault("charset", ""))
-          if cs != CHARSET_UNKNOWN:
-            parser.changeEncoding(cs)
-          elif "http-equiv" in token.attrs:
-            if token.attrs["http-equiv"].equalsIgnoreCase("Content-Type") and
-                "content" in token.attrs:
-              let cs = extractEncFromMeta(token.attrs["content"])
-              if cs != CHARSET_UNKNOWN:
-                parser.changeEncoding(cs)
+        token.attrs.withValue("charset", p):
+          case parser.setEncoding(p[])
+          of SET_ENCODING_CONTINUE:
+            discard
+          of SET_ENCODING_STOP:
+            parser.stopped = true
+        do:
+          token.attrs.withValue("http-equiv", p):
+            if p[].equalsIgnoreCase("Content-Type"):
+              token.attrs.withValue("content", p2):
+                let cs = extractEncFromMeta(p2[])
+                if cs != "":
+                  case parser.setEncoding(cs)
+                  of SET_ENCODING_CONTINUE:
+                    discard
+                  of SET_ENCODING_STOP:
+                    parser.stopped = true
       )
       "<title>" => (block: parser.genericRCDATAElementParsingAlgorithm(token))
       "<noscript>" => (block:
@@ -2713,7 +2648,7 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
   match token:
     TokenType.CHARACTER_NULL => (block:
       parse_error UNEXPECTED_NULL
-      parser.insertCharacter($Rune(0xFFFD))
+      parser.insertCharacter("\uFFFD")
     )
     TokenType.CHARACTER_WHITESPACE => (block: parser.insertCharacter(token.s))
     TokenType.CHARACTER => (block:
@@ -2777,7 +2712,7 @@ proc constructTree[Handle](parser: var HTML5Parser[Handle]) =
       parser.processInHTMLContent(token, parser.insertionMode)
     else:
       parser.processInForeignContent(token)
-    if parser.needsreinterpret:
+    if parser.stopped:
       break
 
 proc finishParsing(parser: var HTML5Parser) =
@@ -2785,26 +2720,6 @@ proc finishParsing(parser: var HTML5Parser) =
     pop_current_node
   if parser.dombuilder.finish != nil:
     parser.dombuilder.finish(parser.dombuilder)
-
-proc bomSniff(inputStream: var Stream, dombuilder: DOMBuilder): Charset =
-  # bom sniff
-  const u8bom = char(0xEF) & char(0xBB) & char(0xBF)
-  const bebom = char(0xFE) & char(0xFF)
-  const lebom = char(0xFF) & char(0xFE)
-  var bom = inputStream.readStr(2)
-  if bom == bebom:
-    return CHARSET_UTF_16_BE
-  elif bom == lebom:
-    return CHARSET_UTF_16_LE
-  else:
-    bom &= inputStream.readChar()
-    if bom == u8bom:
-      return CHARSET_UTF_8
-    else:
-      if dombuilder.rewindStream != nil:
-        inputStream = dombuilder.rewindStream(dombuilder)
-      else:
-        inputStream.setPosition(0)
 
 # Any of these pointers being nil would later result in a crash.
 proc checkCallbacks(dombuilder: DOMBuilder) =
@@ -2824,74 +2739,24 @@ proc parseHTML*[Handle](inputStream: Stream, dombuilder: DOMBuilder[Handle],
   ## Parse an HTML document, using the DOMBuilder object `dombuilder`, and
   ## parser options `opts`.
   dombuilder.checkCallbacks()
-  var charsetStack: seq[Charset]
-  for i in countdown(opts.charsets.high, 0):
-    charsetStack.add(opts.charsets[i])
-  var canReinterpret = opts.canReinterpret
-  var confidence: CharsetConfidence
-  var inputStream = inputStream
-  if canReinterpret:
-    let scs = inputStream.bomSniff(dombuilder)
-    if scs != CHARSET_UNKNOWN:
-      charsetStack.add(scs)
-      confidence = CONFIDENCE_CERTAIN
-      canReinterpret = false
-  if charsetStack.len == 0:
-    charsetStack.add(DefaultCharset) # UTF-8
-  var previousCharset = CHARSET_UNKNOWN
-  var first = true
   let tokstate = opts.initialTokenizerState
-  while true:
-    let charset = charsetStack.pop()
-    var parser = HTML5Parser[Handle](
-      dombuilder: dombuilder,
-      confidence: confidence,
-      charset: charset,
-      opts: opts,
-      openElements: opts.openElementsInit,
-      form: opts.formInit,
-      framesetOk: true
-    )
-    if opts.openElementsInit.len > 0:
-      parser.resetInsertionMode()
-    if opts.pushInTemplate:
-      parser.templateModes.add(IN_TEMPLATE)
-    if charset != previousCharset:
-      parser.setCharacterSet(charset)
-      previousCharset = charset
-    if first:
-      first = false
-    else:
-      parser.restart()
-    confidence = CONFIDENCE_TENTATIVE # used in the next iteration
-    if not canReinterpret:
-      parser.confidence = CONFIDENCE_CERTAIN
-    let em = if charsetStack.len == 0 or not canReinterpret:
-      DECODER_ERROR_MODE_REPLACEMENT
-    else:
-      DECODER_ERROR_MODE_FATAL
-    let decoder = newDecoderStream(inputStream, parser.charset, errormode = em)
-    proc x(e: ParseError) =
-      parser.parseError(e)
-    let onParseError = if parser.hasParseError():
-      x
-    else:
-      nil
-    parser.tokenizer = newTokenizer(decoder, onParseError, tokstate)
-    parser.constructTree()
-    if parser.needsreinterpret and canReinterpret:
-      if dombuilder.rewindStream != nil:
-        inputStream = dombuilder.rewindStream(dombuilder)
-      else:
-        inputStream.setPosition(0)
-      charsetStack.add(parser.charset)
-      canReinterpret = false
-      continue
-    if decoder.failed and canReinterpret:
-      if dombuilder.rewindStream != nil:
-        inputStream = dombuilder.rewindStream(dombuilder)
-      else:
-        inputStream.setPosition(0)
-      continue
-    parser.finishParsing()
-    break
+  var parser = HTML5Parser[Handle](
+    dombuilder: dombuilder,
+    opts: opts,
+    openElements: opts.openElementsInit,
+    form: opts.formInit,
+    framesetOk: true
+  )
+  if opts.openElementsInit.len > 0:
+    parser.resetInsertionMode()
+  if opts.pushInTemplate:
+    parser.templateModes.add(IN_TEMPLATE)
+  proc x(e: ParseError) =
+    parser.parseError(e)
+  let onParseError = if parser.hasParseError():
+    x
+  else:
+    nil
+  parser.tokenizer = newTokenizer(inputStream, onParseError, tokstate)
+  parser.constructTree()
+  parser.finishParsing()

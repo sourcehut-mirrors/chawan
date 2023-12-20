@@ -1,5 +1,5 @@
-import tables
-import strutils
+import std/tables
+import std/strutils
 
 type
   NodeType* = enum
