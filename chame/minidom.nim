@@ -44,9 +44,13 @@ type
 
 type
   MiniDOMBuilder = ref object of DOMBuilder[Node]
+    document: Document
+
+proc getDocument(builder: DOMBuilder[Node]): Node =
+  return MiniDOMBuilder(builder).document
 
 proc restart(builder: DOMBuilder[Node]) =
-  builder.document = Document(nodeType: DOCUMENT_NODE)
+  MiniDOMBuilder(builder).document = Document(nodeType: DOCUMENT_NODE)
 
 proc getParentNode(builder: DOMBuilder[Node], handle: Node): Option[Node] =
   return option(handle.parentNode)
@@ -209,6 +213,7 @@ proc newMiniDOMBuilder(): MiniDOMBuilder =
   let document = Document(nodeType: DOCUMENT_NODE)
   return MiniDOMBuilder(
     document: document,
+    getDocument: getDocument,
     restart: restart,
     getTagType: getTagType,
     getParentNode: getParentNode,
@@ -243,7 +248,7 @@ proc parseHTML*(inputStream: Stream, charsets: seq[Charset] = @[],
     charsets: charsets
   )
   parseHTML(inputStream, builder, opts)
-  return Document(builder.document)
+  return builder.document
 
 proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node]): Document =
   ## Read, parse and return an HTML document from `inputStream`, using
@@ -253,7 +258,7 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node]): Document =
   ## the documentation of chame/htmlparser.nim.
   let builder = newMiniDOMBuilder()
   parseHTML(inputStream, builder, opts)
-  return Document(builder.document)
+  return builder.document
 
 proc parseHTMLFragment*(inputStream: Stream, element: Element,
     opts: HTML5ParserOpts[Node]): seq[Node] =
@@ -269,7 +274,7 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   ## Note: the members `ctx`, `initialTokenizerState`, `openElementsInit` and
   ## `pushInTemplate` of `opts` are overridden (in accordance with the standard).
   let builder = newMiniDOMBuilder()
-  let document = Document(builder.document)
+  let document = builder.document
   let state = case element.tagType
   of TAG_TITLE, TAG_TEXTAREA: RCDATA
   of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES: RAWTEXT

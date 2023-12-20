@@ -19,7 +19,7 @@ export macros
 # Heavily inspired by html5ever's TreeSink design.
 type
   DOMBuilder*[Handle] = ref object of RootObj
-    document*: Handle
+    getDocument*: DOMBuilderGetDocument[Handle]
     ## Must never be nil.
     finish*: DOMBuilderFinish[Handle]
     ## May be nil.
@@ -127,6 +127,11 @@ type
     pushInTemplate*: bool
     ## When set to true, the "in template" insertion mode is pushed to the
     ## stack of template insertion modes on parser start.
+
+  DOMBuilderGetDocument*[Handle] =
+    proc(builder: DOMBuilder[Handle]): Handle {.nimcall.}
+      ## Get the root document node's handle.
+      ## This must not return nil, not even in the fragment parsing case.
 
   DOMBuilderFinish*[Handle] =
     proc(builder: DOMBuilder[Handle]) {.nimcall.}
@@ -344,8 +349,9 @@ proc setCharacterSet[Handle](parser: var HTML5Parser[Handle],
   if parser.dombuilder.setCharacterSet != nil:
     parser.dombuilder.setCharacterSet(parser.dombuilder, charset)
 
-func document[Handle](parser: HTML5Parser[Handle]): Handle {.inline.} =
-  return parser.dombuilder.document
+func getDocument[Handle](parser: HTML5Parser[Handle]): Handle =
+  let dombuilder = parser.dombuilder
+  return dombuilder.getDocument(dombuilder)
 
 func getTemplateContent[Handle](parser: HTML5Parser[Handle],
     handle: Handle): Handle =
@@ -759,7 +765,7 @@ proc adjustSVGAttributes(token: Token) =
 
 proc insertCharacter(parser: var HTML5Parser, data: string) =
   let location = parser.appropriatePlaceForInsert()
-  if location.inside == parser.dombuilder.document:
+  if location.inside == parser.getDocument():
     return
   insertText(parser, location.inside, $data, location.before)
 
@@ -969,7 +975,7 @@ func handle2str[Handle](parser: HTML5Parser[Handle], node: Handle): string =
     result = "Node of " & $node.nodeType
 
 proc dumpDocument[Handle](parser: var HTML5Parser[Handle]) =
-  let document = parser.dombuilder.document
+  let document = parser.getDocument()
   var s = ""
   for x in document.childList:
     s &= parser.handle2str(x) & '\n'
@@ -1440,7 +1446,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
     match token:
       TokenType.CHARACTER_WHITESPACE => (block: discard)
       TokenType.COMMENT => (block:
-        parser.insertComment(token, last_child_of(parser.document))
+        parser.insertComment(token, last_child_of(parser.getDocument()))
       )
       TokenType.DOCTYPE => (block:
         if token.name.isNone or
@@ -1449,7 +1455,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
           parse_error INVALID_DOCTYPE
         let doctype = parser.createDocumentType(token.name.get(""),
           token.pubid.get(""), token.sysid.get(""))
-        parser.append(parser.document, doctype)
+        parser.append(parser.getDocument(), doctype)
         if not parser.opts.isIframeSrcdoc:
           if quirksConditions(token):
             parser.setQuirksMode(QUIRKS)
@@ -1469,13 +1475,13 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
     match token:
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
       TokenType.COMMENT => (block:
-        parser.insertComment(token, last_child_of(parser.document))
+        parser.insertComment(token, last_child_of(parser.getDocument()))
       )
       TokenType.CHARACTER_WHITESPACE => (block: discard)
       "<html>" => (block:
         let element = parser.createElement(token, Namespace.HTML,
-          parser.document)
-        parser.append(parser.document, element)
+          parser.getDocument())
+        parser.append(parser.getDocument(), element)
         parser.pushElement(element)
         parser.insertionMode = BEFORE_HEAD
       )
@@ -1483,7 +1489,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
       other => (block:
         let element = parser.createElement(TAG_HTML, Namespace.HTML)
-        parser.append(parser.document, element)
+        parser.append(parser.getDocument(), element)
         parser.pushElement(element)
         parser.insertionMode = BEFORE_HEAD
         reprocess token
@@ -2614,7 +2620,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
   of AFTER_AFTER_BODY:
     match token:
       TokenType.COMMENT => (block:
-        parser.insertComment(token, last_child_of(parser.document))
+        parser.insertComment(token, last_child_of(parser.getDocument()))
       )
       (TokenType.DOCTYPE, TokenType.CHARACTER_WHITESPACE, "<html>") => (block:
         parser.processInHTMLContent(token, IN_BODY)
@@ -2629,7 +2635,7 @@ proc processInHTMLContent[Handle](parser: var HTML5Parser[Handle],
   of AFTER_AFTER_FRAMESET:
     match token:
       TokenType.COMMENT => (block:
-        parser.insertComment(token, last_child_of(parser.document))
+        parser.insertComment(token, last_child_of(parser.getDocument()))
       )
       (TokenType.DOCTYPE, TokenType.CHARACTER_WHITESPACE, "<html>") => (block:
         parser.processInHTMLContent(token, IN_BODY)
@@ -2802,6 +2808,7 @@ proc bomSniff(inputStream: var Stream, dombuilder: DOMBuilder): Charset =
 
 # Any of these pointers being nil would later result in a crash.
 proc checkCallbacks(dombuilder: DOMBuilder) =
+  doAssert dombuilder.getDocument != nil
   doAssert dombuilder.getParentNode != nil
   doAssert dombuilder.getLocalName != nil
   doAssert dombuilder.createElement != nil
