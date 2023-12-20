@@ -940,7 +940,7 @@ proc reconstructActiveFormatting[Handle](parser: var HTML5Parser[Handle]) =
         state = CREATE
         continue
       dec i
-      if entry.isSome or parser.openElements.find(entry.get) != -1:
+      if entry.isSome and parser.openElements.find(entry.get) != -1:
         continue
       state = ADVANCE
     of ADVANCE:
