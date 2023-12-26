@@ -189,6 +189,71 @@ proc flushChars(tokenizer: var Tokenizer) =
     tokenizer.isws = false
     tokenizer.charbuf.setLen(0)
 
+proc parseError(tokenizer: Tokenizer, e: ParseError) =
+  if tokenizer.onParseError != nil:
+    tokenizer.onParseError(e)
+
+const AttributeStates = {
+  ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
+  ATTRIBUTE_VALUE_UNQUOTED
+}
+
+func consumedAsAnAttribute(tokenizer: Tokenizer): bool =
+  return tokenizer.rstate in AttributeStates
+
+proc appendToCurrentAttrValue(tokenizer: var Tokenizer, c: auto) =
+  if tokenizer.attr:
+    tokenizer.attrv &= c
+
+proc emit(tokenizer: var Tokenizer, c: char) =
+  let isws = c in AsciiWhitespace
+  if tokenizer.isws != isws:
+    # Emit whitespace & non-whitespace separately.
+    tokenizer.flushChars()
+    tokenizer.isws = isws
+  tokenizer.charbuf &= c
+
+proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
+  template parse_error(error: untyped) =
+    tokenizer.parseError(error)
+  template consumed_as_an_attribute(): bool =
+    tokenizer.consumedAsAnAttribute()
+  case tokenizer.code
+  of 0x00:
+    parse_error NULL_CHARACTER_REFERENCE
+    tokenizer.code = 0xFFFD
+  elif tokenizer.code > 0x10FFFF:
+    parse_error CHARACTER_REFERENCE_OUTSIDE_UNICODE_RANGE
+    tokenizer.code = 0xFFFD
+  elif tokenizer.code.isSurrogate():
+    parse_error SURROGATE_CHARACTER_REFERENCE
+    tokenizer.code = 0xFFFD
+  elif tokenizer.code.isNonCharacter():
+    parse_error NONCHARACTER_CHARACTER_REFERENCE
+    # do nothing
+  elif tokenizer.code < 0x80 and
+      char(tokenizer.code) in (Controls - AsciiWhitespace) + {char(0x0D)} or
+      tokenizer.code in 0x80u32 .. 0x9Fu32:
+    const ControlMapTable = [
+      (0x80u32, 0x20ACu32), (0x82u32, 0x201Au32), (0x83u32, 0x0192u32),
+      (0x84u32, 0x201Eu32), (0x85u32, 0x2026u32), (0x86u32, 0x2020u32),
+      (0x87u32, 0x2021u32), (0x88u32, 0x02C6u32), (0x89u32, 0x2030u32),
+      (0x8Au32, 0x0160u32), (0x8Bu32, 0x2039u32), (0x8Cu32, 0x0152u32),
+      (0x8Eu32, 0x017Du32), (0x91u32, 0x2018u32), (0x92u32, 0x2019u32),
+      (0x93u32, 0x201Cu32), (0x94u32, 0x201Du32), (0x95u32, 0x2022u32),
+      (0x96u32, 0x2013u32), (0x97u32, 0x2014u32), (0x98u32, 0x02DCu32),
+      (0x99u32, 0x2122u32), (0x9Au32, 0x0161u32), (0x9Bu32, 0x203Au32),
+      (0x9Cu32, 0x0153u32), (0x9Eu32, 0x017Eu32), (0x9Fu32, 0x0178u32),
+    ].toTable()
+    if tokenizer.code in ControlMapTable:
+      tokenizer.code = ControlMapTable[tokenizer.code]
+  let s = $Rune(tokenizer.code)
+  if consumed_as_an_attribute:
+    tokenizer.appendToCurrentAttrValue(s)
+  else:
+    for c in s:
+      tokenizer.emit(c)
+
 iterator tokenize*(tokenizer: var Tokenizer): Token =
   var running = true
 
@@ -207,12 +272,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       tokenizer.flushChars()
     tokenizer.charbuf &= s
   template emit(ch: char) =
-    let chisws = ch in AsciiWhitespace
-    if tokenizer.isws != chisws:
-      # Emit whitespace & non-whitespace separately.
-      tokenizer.flushChars()
-      tokenizer.isws = chisws
-    tokenizer.charbuf &= ch
+    tokenizer.emit(ch)
   template emit_null =
     tokenizer.flushChars()
     emit Token(t: CHARACTER_NULL)
@@ -224,21 +284,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.attrn != "":
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
     emit tokenizer.tok
-  template emit_current =
-    emit c
   template emit_replacement = emit "\uFFFD"
   template switch_state(s: TokenizerState) =
     tokenizer.state = s
   template switch_state_return(s: TokenizerState) =
     tokenizer.rstate = tokenizer.state
     tokenizer.state = s
-  template reconsume_in(s: TokenizerState) =
-    if not is_eof:
-      tokenizer.reconsume()
-    switch_state s
   template parse_error(error: untyped) =
-    if tokenizer.onParseError != nil:
-      tokenizer.onParseError(error)
+    tokenizer.parseError(error)
   template is_appropriate_end_tag_token(): bool =
     tokenizer.laststart != nil and
       tokenizer.laststart.tagname == tokenizer.tok.tagname
@@ -251,9 +304,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template leave_attribute_name_state =
     if tokenizer.attrn in tokenizer.tok.attrs:
       tokenizer.attr = false
-  template append_to_current_attr_value(c: typed) =
-    if tokenizer.attr:
-      tokenizer.attrv &= c
   template peek_str(s: string): bool =
     # WARNING: will break on strings with copyBufLen + 4 bytes
     # WARNING: only works with ascii
@@ -294,13 +344,13 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       discard tokenizer.consume()
       inc i
   template consumed_as_an_attribute(): bool =
-    tokenizer.rstate in {ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED, ATTRIBUTE_VALUE_UNQUOTED}
+    tokenizer.consumedAsAnAttribute()
   template emit_tmp() =
     for c in tokenizer.tmp:
       emit c
   template flush_code_points_consumed_as_a_character_reference() =
-    if consumed_as_an_attribute:
-      append_to_current_attr_value tokenizer.tmp
+    if tokenizer.consumedAsAnAttribute():
+      tokenizer.appendToCurrentAttrValue(tokenizer.tmp)
     else:
       emit_tmp
   template new_token(t: Token) =
@@ -321,62 +371,38 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
             mainstmtlist = state[i]
             mainstmtlist_i = i
             break
-        if mainstmtlist[0].kind == nnkIdent and mainstmtlist[0].strVal == "ignore_eof":
-          maincase.add(state)
-          continue
-
         var hasanythingelse = false
         if mainstmtlist[0].kind == nnkIdent and mainstmtlist[0].strVal == "has_anything_else":
           hasanythingelse = true
 
         let childcase = findChild(mainstmtlist, it.kind == nnkCaseStmt)
-        var haseof = false
-        var eofstmts: NimNode
         var elsestmts: NimNode
 
         for i in countdown(childcase.len-1, 0):
           let childof = childcase[i]
-          if childof.kind == nnkOfBranch:
-            for j in countdown(childof.len-1, 0):
-              if childof[j].kind == nnkIdent and childof[j].strVal == "eof":
-                haseof = true
-                eofstmts = childof.findChild(it.kind == nnkStmtList)
-                if childof.findChild(it.kind == nnkIdent and it.strVal != "eof") != nil:
-                  childof.del(j)
-                else:
-                  childcase.del(i)
-          elif childof.kind == nnkElse:
+          if childof.kind == nnkElse:
             elsestmts = childof.findChild(it.kind == nnkStmtList)
 
-        if not haseof:
-          eofstmts = elsestmts
         if hasanythingelse:
           let fake_anything_else = quote do:
             template anything_else =
               `elsestmts`
           mainstmtlist.insert(0, fake_anything_else)
-        let eofstmtlist = quote do:
-          if is_eof:
-            `eofstmts`
-          else:
-            `mainstmtlist`
-        state[mainstmtlist_i] = eofstmtlist
+        state[mainstmtlist_i] = mainstmtlist
       maincase.add(state)
     result = newNimNode(nnkStmtList)
     result.add(maincase)
 
-  template ignore_eof = discard # does nothing
   template has_anything_else = discard # does nothing
 
   const null = char(0)
 
-  while running:
-    let is_eof = tokenizer.atEof # set eof here, otherwise we would exit at the last character
-    let c = if not is_eof:
-      tokenizer.consume()
-    else:
-      # avoid consuming eof...
-      char(0)
+  while not tokenizer.atEof:
+    template reconsume_in(s: TokenizerState) =
+      tokenizer.reconsume()
+      switch_state s
+
+    let c = tokenizer.consume()
     stateMachine: # => case tokenizer.state
     of DATA:
       case c
@@ -385,8 +411,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_null
-      of eof: emit_eof
-      else: emit_current
+      else: emit c
 
     of RCDATA:
       case c
@@ -395,8 +420,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
-      of eof: emit_eof
-      else: emit_current
+      else: emit c
 
     of RAWTEXT:
       case c
@@ -404,8 +428,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
-      of eof: emit_eof
-      else: emit_current
+      else: emit c
 
     of SCRIPT_DATA:
       case c
@@ -413,16 +436,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
-      of eof: emit_eof
-      else: emit_current
+      else: emit c
 
     of PLAINTEXT:
       case c
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
-      of eof: emit_eof
-      else: emit_current
+      else: emit c
 
     of TAG_OPEN:
       case c
@@ -435,10 +456,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error UNEXPECTED_QUESTION_MARK_INSTEAD_OF_TAG_NAME
         new_token Token(t: COMMENT)
         reconsume_in BOGUS_COMMENT
-      of eof:
-        parse_error EOF_BEFORE_TAG_NAME
-        emit '<'
-        emit_eof
       else:
         parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
         emit '<'
@@ -452,10 +469,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         parse_error MISSING_END_TAG_NAME
         switch_state DATA
-      of eof:
-        parse_error EOF_BEFORE_TAG_NAME
-        emit "</"
-        emit_eof
       else:
         parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
         new_token Token(t: COMMENT)
@@ -472,9 +485,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.tagname &= "\uFFFD"
-      of eof:
-        parse_error EOF_IN_TAG
-        emit_eof
       else: tokenizer.tok.tagname &= c
 
     of RCDATA_LESS_THAN_SIGN:
@@ -643,11 +653,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
-      of eof:
-        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-        emit_eof
       else:
-        emit_current
+        emit c
 
     of SCRIPT_DATA_ESCAPED_DASH:
       case c
@@ -660,12 +667,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
         emit_replacement
-      of eof:
-        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-        emit_eof
       else:
         switch_state SCRIPT_DATA_ESCAPED
-        emit_current
+        emit c
 
     of SCRIPT_DATA_ESCAPED_DASH_DASH:
       case c
@@ -680,12 +684,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
         emit_replacement
-      of eof:
-        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-        emit_eof
       else:
         switch_state SCRIPT_DATA_ESCAPED
-        emit_current
+        emit c
 
     of SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN:
       case c
@@ -743,10 +744,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         else:
           switch_state SCRIPT_DATA_ESCAPED
-        emit_current
+        emit c
       of AsciiAlpha: # note: merged upper & lower
         tokenizer.tmp &= c.toLowerAscii()
-        emit_current
+        emit c
       else: reconsume_in SCRIPT_DATA_ESCAPED
 
     of SCRIPT_DATA_DOUBLE_ESCAPED:
@@ -760,10 +761,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
-      of eof:
-        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-        emit_eof
-      else: emit_current
+      else: emit c
 
     of SCRIPT_DATA_DOUBLE_ESCAPED_DASH:
       case c
@@ -777,12 +775,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_replacement
-      of eof:
-        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-        emit_eof
       else:
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
-        emit_current
+        emit c
 
     of SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH:
       case c
@@ -797,12 +792,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_replacement
-      of eof:
-        parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-        emit_eof
       else:
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
-        emit_current
+        emit c
 
     of SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN:
       case c
@@ -819,17 +811,17 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
           switch_state SCRIPT_DATA_ESCAPED
         else:
           switch_state SCRIPT_DATA_DOUBLE_ESCAPED
-        emit_current
+        emit c
       of AsciiAlpha: # note: merged upper & lower
         tokenizer.tmp &= c.toLowerAscii()
-        emit_current
+        emit c
       else:
         reconsume_in SCRIPT_DATA_DOUBLE_ESCAPED
 
     of BEFORE_ATTRIBUTE_NAME:
       case c
       of AsciiWhitespace: discard
-      of '/', '>', eof: reconsume_in AFTER_ATTRIBUTE_NAME
+      of '/', '>': reconsume_in AFTER_ATTRIBUTE_NAME
       of '=':
         parse_error UNEXPECTED_EQUALS_SIGN_BEFORE_ATTRIBUTE_NAME
         start_new_attribute
@@ -842,7 +834,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of ATTRIBUTE_NAME:
       has_anything_else
       case c
-      of AsciiWhitespace, '/', '>', eof:
+      of AsciiWhitespace, '/', '>':
         leave_attribute_name_state
         reconsume_in AFTER_ATTRIBUTE_NAME
       of '=':
@@ -867,9 +859,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_TAG
-        emit_eof
       else:
         start_new_attribute
         reconsume_in ATTRIBUTE_NAME
@@ -891,11 +880,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '&': switch_state_return CHARACTER_REFERENCE
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        append_to_current_attr_value "\uFFFD"
-      of eof:
-        parse_error EOF_IN_TAG
-        emit_eof
-      else: append_to_current_attr_value c
+        tokenizer.appendToCurrentAttrValue("\uFFFD")
+      else: tokenizer.appendToCurrentAttrValue(c)
 
     of ATTRIBUTE_VALUE_SINGLE_QUOTED:
       case c
@@ -903,11 +889,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '&': switch_state_return CHARACTER_REFERENCE
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        append_to_current_attr_value "\uFFFD"
-      of eof:
-        parse_error EOF_IN_TAG
-        emit_eof
-      else: append_to_current_attr_value c
+        tokenizer.appendToCurrentAttrValue("\uFFFD")
+      else: tokenizer.appendToCurrentAttrValue(c)
 
     of ATTRIBUTE_VALUE_UNQUOTED:
       case c
@@ -918,14 +901,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        append_to_current_attr_value "\uFFFD"
+        tokenizer.appendToCurrentAttrValue("\uFFFD")
       of '"', '\'', '<', '=', '`':
         parse_error UNEXPECTED_CHARACTER_IN_UNQUOTED_ATTRIBUTE_VALUE
-        append_to_current_attr_value c
-      of eof:
-        parse_error EOF_IN_TAG
-        emit_eof
-      else: append_to_current_attr_value c
+        tokenizer.appendToCurrentAttrValue(c)
+      else: tokenizer.appendToCurrentAttrValue(c)
 
     of AFTER_ATTRIBUTE_VALUE_QUOTED:
       case c
@@ -936,9 +916,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_TAG
-        emit_eof
       else:
         parse_error MISSING_WHITESPACE_BETWEEN_ATTRIBUTES
         reconsume_in BEFORE_ATTRIBUTE_NAME
@@ -949,9 +926,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.selfclosing = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_TAG
-        emit_eof
       else:
         parse_error UNEXPECTED_SOLIDUS_IN_TAG
         reconsume_in BEFORE_ATTRIBUTE_NAME
@@ -962,9 +936,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         switch_state DATA
         emit_tok
-      of eof:
-        emit_tok
-        emit_eof
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.data &= "\uFFFD"
@@ -1015,10 +986,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error ABRUPT_CLOSING_OF_EMPTY_COMMENT
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_COMMENT
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.data &= '-'
         reconsume_in COMMENT
@@ -1032,10 +999,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.data &= "\uFFFD"
-      of eof:
-        parse_error EOF_IN_COMMENT
-        emit_tok
-        emit_eof
       else: tokenizer.tok.data &= c
 
     of COMMENT_LESS_THAN_SIGN:
@@ -1058,7 +1021,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
 
     of COMMENT_LESS_THAN_SIGN_BANG_DASH_DASH:
       case c
-      of '>', eof: reconsume_in COMMENT_END
+      of '>': reconsume_in COMMENT_END
       else:
         parse_error NESTED_COMMENT
         reconsume_in COMMENT_END
@@ -1066,10 +1029,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of COMMENT_END_DASH:
       case c
       of '-': switch_state COMMENT_END
-      of eof:
-        parse_error EOF_IN_COMMENT
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.data &= '-'
         reconsume_in COMMENT
@@ -1081,10 +1040,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         emit_tok
       of '!': switch_state COMMENT_END_BANG
       of '-': tokenizer.tok.data &= '-'
-      of eof:
-        parse_error EOF_IN_COMMENT
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.data &= "--"
         reconsume_in COMMENT
@@ -1098,10 +1053,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error INCORRECTLY_CLOSED_COMMENT
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_COMMENT
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.data &= "--!"
         reconsume_in COMMENT
@@ -1110,11 +1061,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_NAME
       of '>': reconsume_in BEFORE_DOCTYPE_NAME
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        new_token Token(t: DOCTYPE, quirks: true)
-        emit_tok
-        emit_eof
       else:
         parse_error MISSING_WHITESPACE_BEFORE_DOCTYPE_NAME
         reconsume_in BEFORE_DOCTYPE_NAME
@@ -1134,11 +1080,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         new_token Token(t: DOCTYPE, quirks: true)
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        new_token Token(t: DOCTYPE, quirks: true)
-        emit_tok
-        emit_eof
       else:
         new_token Token(t: DOCTYPE, name: some($c))
         switch_state DOCTYPE_NAME
@@ -1154,11 +1095,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.name.get &= "\uFFFD"
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.name.get &= c
 
@@ -1169,11 +1105,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       of 'p', 'P':
         if peek_str_nocase("UBLIC"):
           consume_and_discard "UBLIC".len
@@ -1207,11 +1138,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         parse_error MISSING_QUOTE_BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1231,11 +1157,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         parse_error MISSING_QUOTE_BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1252,11 +1173,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.pubid.get &= c
 
@@ -1271,11 +1187,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.pubid.get &= c
 
@@ -1293,11 +1204,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error MISSING_WHITESPACE_BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1315,11 +1221,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '\'':
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1341,11 +1242,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1365,11 +1261,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
@@ -1386,11 +1277,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.sysid.get &= c
 
@@ -1405,11 +1291,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         tokenizer.tok.sysid.get &= c
 
@@ -1419,11 +1300,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         switch_state DATA
         emit_tok
-      of eof:
-        parse_error EOF_IN_DOCTYPE
-        tokenizer.tok.quirks = true
-        emit_tok
-        emit_eof
       else:
         parse_error UNEXPECTED_CHARACTER_AFTER_DOCTYPE_SYSTEM_IDENTIFIER
         reconsume_in BOGUS_DOCTYPE
@@ -1434,24 +1310,18 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         switch_state DATA
         emit_tok
       of null: parse_error UNEXPECTED_NULL_CHARACTER
-      of eof:
-        emit_tok
-        emit_eof
       else: discard
 
     of CDATA_SECTION:
       case c
       of ']': switch_state CDATA_SECTION_BRACKET
-      of eof:
-        parse_error EOF_IN_CDATA
-        emit_eof
       of null:
         # "U+0000 NULL characters are handled in the tree construction stage,
         # as part of the in foreign content insertion mode, which is the only
         # place where CDATA sections can appear."
         emit_null
       else:
-        emit_current
+        emit c
 
     of CDATA_SECTION_BRACKET:
       case c
@@ -1483,47 +1353,43 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         reconsume_in tokenizer.rstate
 
     of NAMED_CHARACTER_REFERENCE:
-      ignore_eof # we check for eof ourselves
       tokenizer.reconsume()
-      when nimvm:
-        error "Cannot evaluate character references at compile time"
-      else:
-        var tokenizerp = addr tokenizer
-        var lasti = 0
-        let value = entityMap.find((proc(s: var string): bool =
-          if tokenizerp[].atEof:
-            return false
-          let rs = $tokenizerp[].consume()
-          tokenizerp[].tmp &= rs
-          s &= rs
-          return true
-        ), lasti)
-        inc lasti # add 1, because we do not store the & in entityMap
-        # move back the pointer & shorten the buffer to the last match.
-        tokenizer.sbuf_i -= tokenizer.tmp.len - lasti
-        tokenizer.tmp.setLen(lasti)
-        if value.isSome:
-          if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and
-              not tokenizer.atEof and peek_char in {'='} + AsciiAlphaNumeric:
-            flush_code_points_consumed_as_a_character_reference
-            switch_state tokenizer.rstate
-          else:
-            if tokenizer.tmp[^1] != ';':
-              parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
-            tokenizer.tmp = $value.get
-            flush_code_points_consumed_as_a_character_reference
-            switch_state tokenizer.rstate
-        else:
+      var tokenizerp = addr tokenizer
+      var lasti = 0
+      let value = entityMap.find((proc(s: var string): bool =
+        if tokenizerp[].atEof:
+          return false
+        let rs = $tokenizerp[].consume()
+        tokenizerp[].tmp &= rs
+        s &= rs
+        return true
+      ), lasti)
+      inc lasti # add 1, because we do not store the & in entityMap
+      # move back the pointer & shorten the buffer to the last match.
+      tokenizer.sbuf_i -= tokenizer.tmp.len - lasti
+      tokenizer.tmp.setLen(lasti)
+      if value.isSome:
+        if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and
+            not tokenizer.atEof and peek_char in {'='} + AsciiAlphaNumeric:
           flush_code_points_consumed_as_a_character_reference
-          switch_state AMBIGUOUS_AMPERSAND_STATE
+          switch_state tokenizer.rstate
+        else:
+          if tokenizer.tmp[^1] != ';':
+            parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
+          tokenizer.tmp = $value.get
+          flush_code_points_consumed_as_a_character_reference
+          switch_state tokenizer.rstate
+      else:
+        flush_code_points_consumed_as_a_character_reference
+        switch_state AMBIGUOUS_AMPERSAND_STATE
 
     of AMBIGUOUS_AMPERSAND_STATE:
       case c
       of AsciiAlpha:
         if consumed_as_an_attribute:
-          append_to_current_attr_value c
+          tokenizer.appendToCurrentAttrValue(c)
         else:
-          emit_current
+          emit c
       of ';':
         parse_error UNKNOWN_NAMED_CHARACTER_REFERENCE
         reconsume_in tokenizer.rstate
@@ -1576,7 +1442,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         reconsume_in NUMERIC_CHARACTER_REFERENCE_END
 
     of NUMERIC_CHARACTER_REFERENCE_END:
-      ignore_eof # we reconsume anyway
       case tokenizer.code
       of 0x00:
         parse_error NULL_CHARACTER_REFERENCE
@@ -1613,3 +1478,174 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     for tok in tokenizer.tokqueue:
       yield tok
     tokenizer.tokqueue.setLen(0)
+
+  template reconsume_in(s: TokenizerState) =
+    tokenizer.reconsume()
+    switch_state s
+
+  # tokenizer.atEof is true here
+  while running:
+    case tokenizer.state
+    of DATA, RCDATA, RAWTEXT, SCRIPT_DATA, PLAINTEXT:
+      emit_eof
+    of TAG_OPEN:
+      parse_error EOF_BEFORE_TAG_NAME
+      emit '<'
+      emit_eof
+    of END_TAG_OPEN:
+      parse_error EOF_BEFORE_TAG_NAME
+      emit "</"
+      emit_eof
+    of TAG_NAME:
+      parse_error EOF_IN_TAG
+      emit_eof
+    of RCDATA_LESS_THAN_SIGN:
+      emit '<'
+      reconsume_in RCDATA
+    of RCDATA_END_TAG_OPEN:
+      emit "</"
+      reconsume_in RCDATA
+    of RCDATA_END_TAG_NAME:
+      new_token nil #TODO
+      emit "</"
+      emit_tmp
+      reconsume_in RCDATA
+    of RAWTEXT_LESS_THAN_SIGN:
+      emit '<'
+      reconsume_in RAWTEXT
+    of RAWTEXT_END_TAG_OPEN:
+      emit "</"
+      reconsume_in RAWTEXT
+    of RAWTEXT_END_TAG_NAME:
+      new_token nil #TODO
+      emit "</"
+      emit_tmp
+      reconsume_in RAWTEXT
+      emit_eof
+    of SCRIPT_DATA_LESS_THAN_SIGN:
+      emit '<'
+      reconsume_in SCRIPT_DATA
+    of SCRIPT_DATA_END_TAG_OPEN:
+      emit "</"
+      reconsume_in SCRIPT_DATA
+    of SCRIPT_DATA_END_TAG_NAME:
+      emit "</"
+      emit_tmp
+      reconsume_in SCRIPT_DATA
+    of SCRIPT_DATA_ESCAPE_START, SCRIPT_DATA_ESCAPE_START_DASH:
+      reconsume_in SCRIPT_DATA
+    of SCRIPT_DATA_ESCAPED, SCRIPT_DATA_ESCAPED_DASH,
+        SCRIPT_DATA_ESCAPED_DASH_DASH:
+      parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
+      emit_eof
+    of SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN:
+      emit '<'
+      reconsume_in SCRIPT_DATA_ESCAPED
+    of SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
+      emit "</"
+      reconsume_in SCRIPT_DATA_ESCAPED
+    of SCRIPT_DATA_ESCAPED_END_TAG_NAME:
+      emit "</"
+      emit_tmp
+      reconsume_in SCRIPT_DATA_ESCAPED
+    of SCRIPT_DATA_DOUBLE_ESCAPE_START:
+      reconsume_in SCRIPT_DATA_ESCAPED
+    of SCRIPT_DATA_DOUBLE_ESCAPED, SCRIPT_DATA_DOUBLE_ESCAPED_DASH,
+        SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH:
+      parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
+      emit_eof
+    of SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN, SCRIPT_DATA_DOUBLE_ESCAPE_END:
+      reconsume_in SCRIPT_DATA_DOUBLE_ESCAPED
+    of BEFORE_ATTRIBUTE_NAME, ATTRIBUTE_NAME:
+      reconsume_in AFTER_ATTRIBUTE_NAME
+    of AFTER_ATTRIBUTE_NAME:
+      parse_error EOF_IN_TAG
+      emit_eof
+    of BEFORE_ATTRIBUTE_VALUE:
+      reconsume_in ATTRIBUTE_VALUE_UNQUOTED
+    of ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
+        ATTRIBUTE_VALUE_UNQUOTED, AFTER_ATTRIBUTE_VALUE_QUOTED,
+        SELF_CLOSING_START_TAG:
+      parse_error EOF_IN_TAG
+      emit_eof
+    of BOGUS_COMMENT:
+      emit_tok
+      emit_eof
+    of MARKUP_DECLARATION_OPEN:
+      parse_error INCORRECTLY_OPENED_COMMENT
+      new_token Token(t: COMMENT)
+      reconsume_in BOGUS_COMMENT
+    of COMMENT_START:
+      reconsume_in COMMENT
+    of COMMENT_START_DASH, COMMENT:
+      parse_error EOF_IN_COMMENT
+      emit_tok
+      emit_eof
+    of COMMENT_LESS_THAN_SIGN, COMMENT_LESS_THAN_SIGN_BANG:
+      reconsume_in COMMENT
+    of COMMENT_LESS_THAN_SIGN_BANG_DASH:
+      reconsume_in COMMENT_END_DASH
+    of COMMENT_LESS_THAN_SIGN_BANG_DASH_DASH:
+      reconsume_in COMMENT_END
+    of COMMENT_END_DASH, COMMENT_END, COMMENT_END_BANG:
+      parse_error EOF_IN_COMMENT
+      emit_tok
+      emit_eof
+    of DOCTYPE, BEFORE_DOCTYPE_NAME:
+      parse_error EOF_IN_DOCTYPE
+      new_token Token(t: DOCTYPE, quirks: true)
+      emit_tok
+      emit_eof
+    of DOCTYPE_NAME, AFTER_DOCTYPE_NAME, AFTER_DOCTYPE_PUBLIC_KEYWORD,
+        BEFORE_DOCTYPE_PUBLIC_IDENTIFIER,
+        DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED,
+        DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED,
+        AFTER_DOCTYPE_PUBLIC_IDENTIFIER,
+        BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS,
+        AFTER_DOCTYPE_SYSTEM_KEYWORD, BEFORE_DOCTYPE_SYSTEM_IDENTIFIER,
+        DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED,
+        DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED,
+        AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
+      parse_error EOF_IN_DOCTYPE
+      tokenizer.tok.quirks = true
+      emit_tok
+      emit_eof
+    of BOGUS_DOCTYPE:
+      emit_tok
+      emit_eof
+    of CDATA_SECTION:
+      parse_error EOF_IN_CDATA
+      emit_eof
+    of CDATA_SECTION_BRACKET:
+      emit ']'
+      reconsume_in CDATA_SECTION
+    of CDATA_SECTION_END:
+      emit "]]"
+      reconsume_in CDATA_SECTION
+    of CHARACTER_REFERENCE:
+      tokenizer.tmp = "&"
+      flush_code_points_consumed_as_a_character_reference
+      reconsume_in tokenizer.rstate
+    of NAMED_CHARACTER_REFERENCE:
+      # No match for EOF
+      flush_code_points_consumed_as_a_character_reference
+      switch_state AMBIGUOUS_AMPERSAND_STATE
+    of AMBIGUOUS_AMPERSAND_STATE:
+      reconsume_in tokenizer.rstate
+    of NUMERIC_CHARACTER_REFERENCE:
+      reconsume_in DECIMAL_CHARACTER_REFERENCE_START
+    of HEXADECIMAL_CHARACTER_REFERENCE_START, DECIMAL_CHARACTER_REFERENCE_START:
+      parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
+      flush_code_points_consumed_as_a_character_reference
+      reconsume_in tokenizer.rstate
+    of HEXADECIMAL_CHARACTER_REFERENCE, DECIMAL_CHARACTER_REFERENCE:
+      parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
+      reconsume_in NUMERIC_CHARACTER_REFERENCE_END
+    of NUMERIC_CHARACTER_REFERENCE_END:
+      tokenizer.numericCharacterReferenceEndState()
+      reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
+
+  #TODO it would be nice to have one yield only, but then we would have to
+  # move the entire atEof thing in the while loop...
+  for tok in tokenizer.tokqueue:
+    yield tok
