@@ -133,7 +133,7 @@ proc checkEquals(tok, otok: Token, desc: string) =
   of EOF, CHARACTER_NULL: discard
 
 proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
-    esc: bool, state: TokenizerState = DATA, runes = false) =
+    esc: bool, state: TokenizerState = DATA) =
   let ds = newStringStream(input)
   proc onParseError(e: ParseError) =
     discard
@@ -183,7 +183,7 @@ func getState(s: string): TokenizerState =
 
 const rootpath = "tests/html5lib-tests/tokenizer/"
 
-proc runTests(filename: string, runes = false) =
+proc runTests(filename: string) =
   let tests = parseFile(rootpath & filename){"tests"}
   for t in tests:
     let desc = t{"description"}.getStr()
@@ -197,11 +197,11 @@ proc runTests(filename: string, runes = false) =
     else:
       ""
     if "initialStates" notin t:
-      runTest(desc, input, output, laststart, esc, runes = runes)
+      runTest(desc, input, output, laststart, esc)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(desc, input, output, laststart, esc, state, runes)
+        runTest(desc, input, output, laststart, esc, state)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")
@@ -240,7 +240,7 @@ test "unicodeChars":
   runTests("unicodeChars.test")
 
 test "unicodeCharsProblematic":
-  runTests("unicodeCharsProblematic.test", runes = true)
+  runTests("unicodeCharsProblematic.test")
 
 #test "xmlViolation":
 #  runTests("xmlViolation.test")
