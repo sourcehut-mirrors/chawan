@@ -13,7 +13,6 @@
 ## * `chame/minidom <minidom.html>`
 
 import std/streams
-import std/tables
 
 import minidom
 import htmlparser
@@ -36,7 +35,7 @@ type CharsetMiniDOMBuilder = ref object of MiniDOMBuilder
 # decoderstream + encoderstream will always produce valid UTF-8; we define
 # these separately from minidom to avoid calling toValidUTF8().
 proc createElement(builder: DOMBuilder[Node, MAtom], localName: MAtom,
-    namespace: Namespace, attrs: Table[string, string]): Node =
+    namespace: Namespace, attrs: seq[Attribute]): Node =
   let element = Element(
     nodeType: ELEMENT_NODE,
     localName: localName,
@@ -58,10 +57,17 @@ proc createDocumentType(builder: DOMBuilder[Node, MAtom], name, publicId,
   )
 
 proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
-    attrs: Table[string, string]) =
+    attrs: seq[Attribute]) =
   let element = Element(element)
-  for k, v in attrs:
-    discard element.attrs.hasKeyOrPut(k, v)
+  var newAttrs: seq[Attribute]
+  for attr in attrs:
+    block find:
+      for attr2 in element.attrs:
+        if attr.namespace == attr2.namespace and
+            attr.prefix == attr2.prefix and attr.name == attr2.name:
+          break find
+      newAttrs.add(attr)
+  element.attrs.add(newAttrs)
 
 proc setEncoding(builder: DOMBuilder[Node, MAtom], encoding: string):
     SetEncodingResult =

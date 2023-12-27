@@ -1,5 +1,6 @@
 {.experimental: "overloadableEnums".}
 
+import std/algorithm
 import std/macros
 import std/options
 import std/streams
@@ -31,6 +32,7 @@ type
     tok: Token[Atom]
     laststart*: Token[Atom]
     attrn: string
+    attrna: Atom
     attrv: string
     attr: bool
     hasnonhtml*: bool
@@ -84,6 +86,8 @@ type
     DECIMAL_CHARACTER_REFERENCE_START, HEXADECIMAL_CHARACTER_REFERENCE,
     DECIMAL_CHARACTER_REFERENCE, NUMERIC_CHARACTER_REFERENCE_END
 
+  TokenAttr*[Atom] = tuple[name: Atom, value: string]
+
   Token*[Atom] = ref object
     case t*: TokenType
     of DOCTYPE:
@@ -94,7 +98,7 @@ type
     of START_TAG, END_TAG:
       selfclosing*: bool
       tagname*: Atom
-      attrs*: Table[string, string]
+      attrs*: seq[TokenAttr[Atom]]
     of CHARACTER, CHARACTER_WHITESPACE:
       s*: string
     of COMMENT:
@@ -262,6 +266,19 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
     for c in s:
       tokenizer.emit(c)
 
+proc flushAttr[Atom](tokenizer: var Tokenizer[Atom]) =
+  let attr = (tokenizer.attrna, tokenizer.attrv)
+  tokenizer.tok.attrs.add(attr)
+
+proc dedupAttrs[Atom](tokenizer: var Tokenizer[Atom]) =
+  var oldAttrs = tokenizer.tok.attrs
+  oldAttrs.sort(func(a, b: TokenAttr[Atom]): int = cmp(a.name, b.name))
+  tokenizer.tok.attrs = @[]
+  for i, attr in oldAttrs:
+    if i > 0 and oldAttrs[i - 1].name == attr.name:
+      continue
+    tokenizer.tok.attrs.add(attr)
+
 iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
   var running = true
 
@@ -288,9 +305,12 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     emit EOF
     running = false
   template emit_tok =
+    #TODO this should only be checked for cases where a start tag could
+    # be emitted
     if tokenizer.tok.t == START_TAG and tokenizer.attr and
         tokenizer.attrn != "":
-      tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
+      tokenizer.flushAttr()
+      tokenizer.dedupAttrs()
     emit tokenizer.tok
   template emit_replacement = emit "\uFFFD"
   template switch_state(s: TokenizerState) =
@@ -306,13 +326,15 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       tokenizer.laststart.tagname == tokenizer.strToAtom(tokenizer.tagNameBuf)
   template start_new_attribute =
     if tokenizer.tok.t == START_TAG and tokenizer.attr:
-      tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
+      tokenizer.flushAttr()
     tokenizer.attrn = ""
     tokenizer.attrv = ""
     tokenizer.attr = true
   template leave_attribute_name_state =
-    if tokenizer.attrn in tokenizer.tok.attrs:
-      tokenizer.attr = false
+    tokenizer.attrna = tokenizer.strToAtom(tokenizer.attrn)
+    for x in tokenizer.tok.attrs:
+      if x.name == tokenizer.attrna:
+        tokenizer.attr = false
   template peek_str(s: string): bool =
     # WARNING: will break on strings with copyBufLen + 4 bytes
     # WARNING: only works with ascii

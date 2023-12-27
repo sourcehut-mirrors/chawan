@@ -2,7 +2,6 @@
 # (actually, I just copy-pasted a throwaway test project here)
 
 import unittest
-import tables
 import streams
 
 import chame/tags
@@ -37,7 +36,7 @@ func `$`*(node: Node): string =
   of ELEMENT_NODE:
     let element = Element(node)
     result = "<" & element.localNameStr
-    for k, v in element.attrs:
+    for k, v in element.attrsStr:
       result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
     result &= ">"
     for node in element.childList:

@@ -63,6 +63,12 @@ type
     ## May be nil. (If nil, the parser considers no Handle an SVG integration
     ## point.)
 
+  ParsedAttr*[Atom] = tuple
+    prefix: NamespacePrefix
+    namespace: Namespace
+    name: Atom
+    value: string
+
   SetEncodingResult* = enum
     SET_ENCODING_STOP, SET_ENCODING_CONTINUE
 
@@ -156,7 +162,7 @@ type
 
   DOMBuilderCreateElement*[Handle, Atom] =
     proc(builder: DOMBuilder[Handle, Atom], localName: Atom, namespace: Namespace,
-        attrs: Table[string, string]): Handle {.nimcall.}
+        attrs: seq[ParsedAttr[Atom]]): Handle {.nimcall.}
       ## Create a new element node.
       ##
       ## localName is the tag name of the token.
@@ -211,15 +217,15 @@ type
 
   DOMBuilderAddAttrsIfMissing*[Handle, Atom] =
     proc(builder: DOMBuilder[Handle, Atom], element: Handle,
-        attrs: Table[string, string]) {.nimcall.}
+        attrs: seq[ParsedAttr[Atom]]) {.nimcall.}
       ## Add the attributes in `attrs` to the element node `element`.
-      ## At the time of writing, called for HTML and BODY only. (This may
-      ## change in the future.)
+      ## This is called for HTML and BODY only.
+      ##
       ## An example implementation:
       ## ```nim
-      ## for k, v in attrs:
-      ##   if k notin element.attrs:
-      ##     element.attrs[k] = v
+      ## for attr in attrs:
+      ##   if attr.name notin element.attrs:
+      ##     element.attrs.add(attr)
       ## ```
 
   DOMBuilderSetScriptAlreadyStarted*[Handle, Atom] =
@@ -243,6 +249,13 @@ type
       ## Check if element is an SVG integration point.
 
 type
+  MappedAtom = enum
+    ATOM_FORM = "form"
+    ATOM_CHARSET = "charset"
+    ATOM_HTTP_EQUIV = "http-equiv"
+    ATOM_CONTENT = "content"
+    ATOM_TYPE = "type"
+
   HTML5Parser[Handle, Atom] = object
     quirksMode: QuirksMode
     dombuilder: DOMBuilder[Handle, Atom]
@@ -264,6 +277,8 @@ type
     pendingTableChars: string
     pendingTableCharsWhitespace: bool
     caseTable: Table[Atom, Atom]
+    adjustedTable: Table[Atom, Atom]
+    atomMap: array[MappedAtom, Atom]
 
   AdjustedInsertionLocation[Handle] = tuple[
     inside: Handle,
@@ -336,7 +351,7 @@ func getNamespace[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   return Namespace.HTML
 
 func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    localName: Atom, namespace: Namespace, attrs: Table[string, string]):
+    localName: Atom, namespace: Namespace, attrs: seq[ParsedAttr[Atom]]):
     Handle =
   return parser.dombuilder.createElement(parser.dombuilder, localName,
     namespace, attrs)
@@ -344,7 +359,7 @@ func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     tagType: TagType, namespace: Namespace): Handle =
   let atom = parser.tagTypeToAtom(tagType)
-  return parser.createElement(atom, namespace, Table[string, string]())
+  return parser.createElement(atom, namespace, @[])
 
 func createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom], text: string): Handle =
   let dombuilder = parser.dombuilder
@@ -375,7 +390,7 @@ proc moveChildren[Handle, Atom](parser: HTML5Parser[Handle, Atom], handleFrom,
   dombuilder.moveChildren(dombuilder, handleFrom, handleTo)
 
 proc addAttrsIfMissing[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    element: Handle, attrs: Table[string, string]) =
+    element: Handle, attrs: seq[ParsedAttr[Atom]]) =
   let dombuilder = parser.dombuilder
   if dombuilder.addAttrsIfMissing != nil:
     dombuilder.addAttrsIfMissing(dombuilder, element, attrs)
@@ -598,15 +613,35 @@ func hasElementInSelectScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       return false
   assert false
 
-func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom], token: Token,
-    namespace: Namespace, intendedParent: Handle): Handle =
+func findAttr[Atom](token: Token[Atom], atom: Atom): int =
+  for i, attr in token.attrs:
+    if attr.name == atom:
+      return i
+  return -1
+
+func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    token: Token, namespace: Namespace, intendedParent: Handle,
+    attrs: seq[ParsedAttr[Atom]]): Handle =
   #TODO custom elements
-  let element = parser.createElement(token.tagname, namespace, token.attrs)
+  let element = parser.createElement(token.tagname, namespace, attrs)
   if token.tagtype in FormAssociatedElements and parser.form.isSome and
       not parser.hasElement(TAG_TEMPLATE) and
-      (token.tagtype notin ListedElements or "form" notin token.attrs):
+      (token.tagtype notin ListedElements or
+        token.findAttr(parser.atomMap[ATOM_FORM]) == -1):
     parser.associateWithForm(element, parser.form.get, intendedParent)
   return element
+
+func toParsedAttrs[Atom](attrs: seq[TokenAttr[Atom]]): seq[ParsedAttr[Atom]] =
+  result = @[]
+  for attr in attrs:
+    #TODO is no namespace correct?
+    result.add((NO_PREFIX, NO_NAMESPACE, attr.name, attr.value))
+
+func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    token: Token, namespace: Namespace, intendedParent: Handle): Handle =
+  # attrs not adjusted
+  let attrs = token.attrs.toParsedAttrs()
+  return parser.createElement(token, namespace, intendedParent, attrs)
 
 proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom], node: Handle) =
   parser.openElements.add(node)
@@ -645,73 +680,11 @@ proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     token: Token): Handle =
   return parser.insertForeignElement(token, Namespace.HTML)
 
-proc adjustSVGAttributes(token: Token) =
-  const adjusted = {
-    "attributename": "attributeName",
-    "attributetype": "attributeType",
-    "basefrequency": "baseFrequency",
-    "baseprofile": "baseProfile",
-    "calcmode": "calcMode",
-    "clippathunits": "clipPathUnits",
-    "diffuseconstant": "diffuseConstant",
-    "edgemode": "edgeMode",
-    "filterunits": "filterUnits",
-    "glyphref": "glyphRef",
-    "gradienttransform": "gradientTransform",
-    "gradientunits": "gradientUnits",
-    "kernelmatrix": "kernelMatrix",
-    "kernelunitlength": "kernelUnitLength",
-    "keypoints": "keyPoints",
-    "keysplines": "keySplines",
-    "keytimes": "keyTimes",
-    "lengthadjust": "lengthAdjust",
-    "limitingconeangle": "limitingConeAngle",
-    "markerheight": "markerHeight",
-    "markerunits": "markerUnits",
-    "markerwidth": "markerWidth",
-    "maskcontentunits": "maskContentUnits",
-    "maskunits": "maskUnits",
-    "numoctaves": "numOctaves",
-    "pathlength": "pathLength",
-    "patterncontentunits": "patternContentUnits",
-    "patterntransform": "patternTransform",
-    "patternunits": "patternUnits",
-    "pointsatx": "pointsAtX",
-    "pointsaty": "pointsAtY",
-    "pointsatz": "pointsAtZ",
-    "preservealpha": "preserveAlpha",
-    "preserveaspectratio": "preserveAspectRatio",
-    "primitiveunits": "primitiveUnits",
-    "refx": "refX",
-    "refy": "refY",
-    "repeatcount": "repeatCount",
-    "repeatdur": "repeatDur",
-    "requiredextensions": "requiredExtensions",
-    "requiredfeatures": "requiredFeatures",
-    "specularconstant": "specularConstant",
-    "specularexponent": "specularExponent",
-    "spreadmethod": "spreadMethod",
-    "startoffset": "startOffset",
-    "stddeviation": "stdDeviation",
-    "stitchtiles": "stitchTiles",
-    "surfacescale": "surfaceScale",
-    "systemlanguage": "systemLanguage",
-    "tablevalues": "tableValues",
-    "targetx": "targetX",
-    "targety": "targetY",
-    "textlength": "textLength",
-    "viewbox": "viewBox",
-    "viewtarget": "viewTarget",
-    "xchannelselector": "xChannelSelector",
-    "ychannelselector": "yChannelSelector",
-    "zoomandpan": "zoomAndPan",
-  }.toTable()
-  var todo: seq[string]
-  for k in token.attrs.keys:
-    if k in adjusted:
-      todo.add(k)
-  for s in todo:
-    token.attrs[adjusted[s]] = token.attrs[s]
+proc adjustSVGAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
+    token: Token) =
+  for attr in token.attrs.mitems:
+    parser.adjustedTable.withValue(attr.name, p):
+      attr.name = p[]
 
 proc insertCharacter(parser: var HTML5Parser, data: string) =
   let location = parser.appropriatePlaceForInsert()
@@ -1459,23 +1432,25 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       "<meta>" => (block:
         discard parser.insertHTMLElement(token)
         pop_current_node
-        token.attrs.withValue("charset", p):
-          case parser.setEncoding(p[])
+        let i = token.findAttr(parser.atomMap[ATOM_CHARSET])
+        if i != -1:
+          case parser.setEncoding(token.attrs[i].value)
           of SET_ENCODING_CONTINUE:
             discard
           of SET_ENCODING_STOP:
             parser.stopped = true
-        do:
-          token.attrs.withValue("http-equiv", p):
-            if p[].equalsIgnoreCase("Content-Type"):
-              token.attrs.withValue("content", p2):
-                let cs = extractEncFromMeta(p2[])
-                if cs != "":
-                  case parser.setEncoding(cs)
-                  of SET_ENCODING_CONTINUE:
-                    discard
-                  of SET_ENCODING_STOP:
-                    parser.stopped = true
+        else:
+          let i = token.findAttr(parser.atomMap[ATOM_HTTP_EQUIV])
+          if i != -1 and token.attrs[i].value.equalsIgnoreCase("Content-Type"):
+            let i = token.findAttr(parser.atomMap[ATOM_CONTENT])
+            if i != -1:
+              let cs = extractEncFromMeta(token.attrs[i].value)
+              if cs != "":
+                case parser.setEncoding(cs)
+                of SET_ENCODING_CONTINUE:
+                  discard
+                of SET_ENCODING_STOP:
+                  parser.stopped = true
       )
       "<title>" => (block: parser.genericRCDATAElementParsingAlgorithm(token))
       "<noscript>" => (block:
@@ -1631,7 +1606,9 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         if parser.hasElement(TAG_TEMPLATE):
           discard
         else:
-          parser.addAttrsIfMissing(parser.openElements[0], token.attrs)
+          #TODO should probably take TokenAttr instead?
+          let attrs = token.attrs.toParsedAttrs()
+          parser.addAttrsIfMissing(parser.openElements[0], attrs)
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>",
         "<script>", "<style>", "<template>", "<title>",
@@ -1644,7 +1621,9 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           discard
         else:
           parser.framesetOk = false
-          parser.addAttrsIfMissing(parser.openElements[1], token.attrs)
+          #TODO should probably take TokenAttr instead?
+          let attrs = token.attrs.toParsedAttrs()
+          parser.addAttrsIfMissing(parser.openElements[1], attrs)
       )
       "<frameset>" => (block:
         parse_error UNEXPECTED_START_TAG
@@ -1917,7 +1896,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.reconstructActiveFormatting()
         discard parser.insertHTMLElement(token)
         pop_current_node
-        if not token.attrs.getOrDefault("type").equalsIgnoreCase("hidden"):
+        let i = token.findAttr(parser.atomMap[ATOM_TYPE])
+        if i == -1 or not token.attrs[i].value.equalsIgnoreCase("hidden"):
           parser.framesetOk = false
       )
       ("<param>", "<source>", "<track>") => (block:
@@ -2113,7 +2093,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       "<input>" => (block:
         parse_error UNEXPECTED_START_TAG
-        if not token.attrs.getOrDefault("type").equalsIgnoreCase("hidden"):
+        let i = token.findAttr(parser.atomMap[ATOM_TYPE])
+        if i == -1 or not token.attrs[i].value.equalsIgnoreCase("hidden"):
           # anything else
           parser.fosterParenting = true
           parser.processInHTMLContent(token, IN_BODY)
@@ -2641,7 +2622,7 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
       if namespace == Namespace.SVG:
         parser.caseTable.withValue(token.tagname, p):
           token.tagname = p[]
-        adjustSVGAttributes(token)
+        parser.adjustSVGAttributes(token)
       #TODO adjust foreign attributes
       discard parser.insertForeignElement(token, namespace)
       if token.selfclosing and namespace == Namespace.SVG:
@@ -2754,6 +2735,73 @@ proc createCaseTable[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
     let va = parser.strToAtom(v)
     parser.caseTable[ka] = va
 
+const AdjustedTable = {
+  "attributename": "attributeName",
+  "attributetype": "attributeType",
+  "basefrequency": "baseFrequency",
+  "baseprofile": "baseProfile",
+  "calcmode": "calcMode",
+  "clippathunits": "clipPathUnits",
+  "diffuseconstant": "diffuseConstant",
+  "edgemode": "edgeMode",
+  "filterunits": "filterUnits",
+  "glyphref": "glyphRef",
+  "gradienttransform": "gradientTransform",
+  "gradientunits": "gradientUnits",
+  "kernelmatrix": "kernelMatrix",
+  "kernelunitlength": "kernelUnitLength",
+  "keypoints": "keyPoints",
+  "keysplines": "keySplines",
+  "keytimes": "keyTimes",
+  "lengthadjust": "lengthAdjust",
+  "limitingconeangle": "limitingConeAngle",
+  "markerheight": "markerHeight",
+  "markerunits": "markerUnits",
+  "markerwidth": "markerWidth",
+  "maskcontentunits": "maskContentUnits",
+  "maskunits": "maskUnits",
+  "numoctaves": "numOctaves",
+  "pathlength": "pathLength",
+  "patterncontentunits": "patternContentUnits",
+  "patterntransform": "patternTransform",
+  "patternunits": "patternUnits",
+  "pointsatx": "pointsAtX",
+  "pointsaty": "pointsAtY",
+  "pointsatz": "pointsAtZ",
+  "preservealpha": "preserveAlpha",
+  "preserveaspectratio": "preserveAspectRatio",
+  "primitiveunits": "primitiveUnits",
+  "refx": "refX",
+  "refy": "refY",
+  "repeatcount": "repeatCount",
+  "repeatdur": "repeatDur",
+  "requiredextensions": "requiredExtensions",
+  "requiredfeatures": "requiredFeatures",
+  "specularconstant": "specularConstant",
+  "specularexponent": "specularExponent",
+  "spreadmethod": "spreadMethod",
+  "startoffset": "startOffset",
+  "stddeviation": "stdDeviation",
+  "stitchtiles": "stitchTiles",
+  "surfacescale": "surfaceScale",
+  "systemlanguage": "systemLanguage",
+  "tablevalues": "tableValues",
+  "targetx": "targetX",
+  "targety": "targetY",
+  "textlength": "textLength",
+  "viewbox": "viewBox",
+  "viewtarget": "viewTarget",
+  "xchannelselector": "xChannelSelector",
+  "ychannelselector": "yChannelSelector",
+  "zoomandpan": "zoomAndPan",
+}
+
+proc createAdjustedTable[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
+  for (k, v) in AdjustedTable:
+    let ka = parser.strToAtom(k)
+    let va = parser.strToAtom(v)
+    parser.adjustedTable[ka] = va
+
 proc parseHTML*[Handle, Atom](inputStream: Stream,
     dombuilder: DOMBuilder[Handle, Atom], opts: HTML5ParserOpts[Handle]) =
   ## Parse an HTML document, using the DOMBuilder object `dombuilder`, and
@@ -2770,6 +2818,9 @@ proc parseHTML*[Handle, Atom](inputStream: Stream,
     framesetOk: true
   )
   parser.createCaseTable()
+  parser.createAdjustedTable()
+  for mapped in MappedAtom:
+    parser.atomMap[mapped] = parser.strToAtom($mapped)
   if opts.openElementsInit.len > 0:
     parser.resetInsertionMode()
   if opts.pushInTemplate:

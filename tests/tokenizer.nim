@@ -51,12 +51,15 @@ func doubleEscape(input: string): string =
         esc = 0
   return s
 
-proc getAttrs(o: JsonNode, esc: bool): Table[string, string] =
+proc getAttrs(factory: MAtomFactory, o: JsonNode, esc: bool):
+    seq[TokenAttr[MAtom]] =
+  result = @[]
   for k, v in o:
+    let k = factory.strToAtom(k)
     if esc:
-      result[k] = doubleEscape(v.getStr())
+      result.add((k, v.getStr().doubleEscape()))
     else:
-      result[k] = v.getStr()
+      result.add((k, v.getStr()))
 
 proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     Token[MAtom] =
@@ -65,7 +68,7 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     return Token[MAtom](
       t: START_TAG,
       tagname: factory.strToAtom(a[1].getStr()),
-      attrs: getAttrs(a[2], esc),
+      attrs: getAttrs(factory, a[2], esc),
       selfclosing: a.len > 3 and a[3].getBool()
     )
   of "EndTag":
@@ -121,8 +124,22 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
       # be self-closing...
       # Maybe use a separate "self-closing tag" token type?
       doAssert tok.selfclosing == otok.selfclosing, desc
-    doAssert tok.attrs == otok.attrs, desc & " (tok attrs: " & $tok.attrs &
-      " otok attrs (" & $otok.attrs & ")"
+    var attrs = ""
+    for i, attr in tok.attrs:
+      if i > 0:
+        attrs &= " "
+      attrs &= factory.atomToStr(attr.name)
+      attrs &= "="
+      attrs &= "'" & attr.value & "'"
+    var oattrs = ""
+    for i, attr in otok.attrs:
+      if i > 0:
+        oattrs &= " "
+      oattrs &= factory.atomToStr(attr.name)
+      oattrs &= "="
+      oattrs &= "'" & attr.value & "'"
+    doAssert tok.attrs == otok.attrs, desc & " (tok attrs: " & attrs &
+      " otok attrs (" & oattrs & ")"
   of TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE:
     doAssert tok.s == otok.s, desc & " (tok s: " & tok.s & " otok s: " &
       otok.s & ")"

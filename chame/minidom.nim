@@ -9,10 +9,11 @@
 ## For a variant that can switch encodings when meta tags are encountered etc.
 ## see `chame/minidom_cs <minidom.html>`.
 
+import std/hashes
+import std/options
+import std/sets
 import std/streams
 import std/tables
-import std/options
-import std/hashes
 
 import atoms
 import htmlparser
@@ -89,6 +90,8 @@ func atomToStr*(factory: MAtomFactory, atom: MAtom): string =
 
 # Node types
 type
+  Attribute* = ParsedAttr[MAtom]
+
   Node* = ref object of RootObj
     nodeType*: NodeType
     childList*: seq[Node]
@@ -112,7 +115,7 @@ type
   Element* = ref object of Node
     localName*: MAtom
     namespace*: Namespace
-    attrs*: Table[string, string]
+    attrs*: seq[Attribute]
     document* {.cursor.}: Document
 
 type
@@ -165,6 +168,15 @@ proc toValidUTF8(s: string): string =
 proc localNameStr*(element: Element): string =
   return element.document.factory.atomToStr(element.localName)
 
+iterator attrsStr*(element: Element): tuple[name, value: string] =
+  let factory = element.document.factory
+  for attr in element.attrs:
+    var name = ""
+    if attr.prefix != NO_PREFIX:
+      name &= $attr.prefix & ':'
+    name &= factory.atomToStr(attr.name)
+    yield (name, attr.value)
+
 proc getDocument(builder: DOMBuilder[Node, MAtom]): Node =
   return MiniDOMBuilder(builder).document
 
@@ -181,16 +193,17 @@ proc getNamespace(builder: DOMBuilder[Node, MAtom], handle: Node): Namespace =
   return Element(handle).namespace
 
 proc createElement(builder: DOMBuilder[Node, MAtom], localName: MAtom,
-    namespace: Namespace, attrs: Table[string, string]): Node =
+    namespace: Namespace, attrs: seq[Attribute]): Node =
   let builder = cast[MiniDOMBuilder](builder)
   let element = Element(
     nodeType: ELEMENT_NODE,
     localName: localName,
     namespace: namespace,
-    document: builder.document
+    document: builder.document,
+    attrs: attrs
   )
-  for k, v in attrs:
-    element.attrs[k.toValidUTF8()] = v.toValidUTF8()
+  for attr in element.attrs.mitems:
+    attr.value = attr.value.toValidUTF8()
   return element
 
 proc createComment(builder: DOMBuilder[Node, MAtom], text: string): Node =
@@ -325,12 +338,15 @@ proc moveChildren(builder: DOMBuilder[Node, MAtom], fromNode, toNode: Node) =
     insertBefore(builder, toNode, child, none(Node))
 
 proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
-    attrs: Table[string, string]) =
+    attrs: seq[Attribute]) =
   let element = Element(element)
-  for k, v in attrs:
-    let k = k.toValidUTF8()
-    if k notin element.attrs:
-      element.attrs[k] = v.toValidUTF8()
+  var oldNames: HashSet[MAtom]
+  for attr in element.attrs:
+    oldNames.incl(attr.name)
+  for attr in attrs:
+    if attr.name notin oldNames:
+      element.attrs.add(attr)
+      element.attrs[^1].value = element.attrs[^1].value.toValidUTF8()
 
 proc initMiniDOMBuilder*(builder: MiniDOMBuilder) =
   builder.getDocument = getDocument

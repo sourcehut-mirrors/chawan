@@ -195,9 +195,9 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
     else:
       check '=' in str
       let ss = str.split('=')
-      let name = ss[0]
+      let name = ctx.factory.strToAtom(ss[0])
       let value = ss[1][1..^2]
-      Element(top).attrs[name] = value
+      Element(top).attrs.add((NO_PREFIX, NO_NAMESPACE, name, value))
 
 proc parseTest(ctx: var TCTestParser): TCTest =
   doAssert ctx.consumeLine() == "#data"

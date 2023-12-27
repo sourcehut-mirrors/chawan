@@ -23,7 +23,7 @@ description of the API.
 * Includes a minimal DOM implementation.
 * No mandatory dependencies other than the Nim standard library.
 * Optional character encoding support (see minidom_enc).
-* String interning support for tag names.
+* String interning support for tag and attribute names.
 
 ## To-do
 
