@@ -4,7 +4,7 @@ import std/streams
 
 proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool) =
   let ss = newStringStream(test.data)
-  let opts = HTML5ParserOpts[Node](
+  let opts = HTML5ParserOpts[Node, MAtom](
     scripting: scripting
   )
   let pdoc = if test.fragment.isNone:
@@ -68,3 +68,6 @@ test "tests7.dat":
 
 test "tests8.dat":
   runTests("tests8.dat")
+
+test "tests9.dat":
+  runTests("tests9.dat")

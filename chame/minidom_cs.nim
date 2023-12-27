@@ -12,6 +12,7 @@
 ## ========
 ## * `chame/minidom <minidom.html>`
 
+import std/sets
 import std/streams
 
 import minidom
@@ -57,17 +58,14 @@ proc createDocumentType(builder: DOMBuilder[Node, MAtom], name, publicId,
   )
 
 proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
-    attrs: seq[Attribute]) =
+    attrs: seq[TokenAttr[MAtom]]) =
   let element = Element(element)
-  var newAttrs: seq[Attribute]
+  var oldNames: HashSet[MAtom]
+  for attr in element.attrs:
+    oldNames.incl(attr.name)
   for attr in attrs:
-    block find:
-      for attr2 in element.attrs:
-        if attr.namespace == attr2.namespace and
-            attr.prefix == attr2.prefix and attr.name == attr2.name:
-          break find
-      newAttrs.add(attr)
-  element.attrs.add(newAttrs)
+    if attr.name notin oldNames:
+      element.attrs.add((NO_PREFIX, NO_NAMESPACE, attr.name, attr.value))
 
 proc setEncoding(builder: DOMBuilder[Node, MAtom], encoding: string):
     SetEncodingResult =
@@ -115,7 +113,7 @@ proc bomSniff(inputStream: var Stream): Charset =
     else:
       inputStream.setPosition(0)
 
-proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node],
+proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
     charsets: seq[Charset], seekable = true,
     factory = newMAtomFactory()): Document =
   ## Read, parse and return an HTML document from `inputStream`.

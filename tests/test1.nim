@@ -1,8 +1,8 @@
 # "simple" test to check if it compiles
 # (actually, I just copy-pasted a throwaway test project here)
 
-import unittest
-import streams
+import std/unittest
+import std/streams
 
 import chame/tags
 import chame/minidom

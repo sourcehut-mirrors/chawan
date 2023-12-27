@@ -88,6 +88,9 @@ func tagTypeToAtom(factory: AtomFactory[MAtom], tagType: TagType): MAtom =
 func atomToStr*(factory: MAtomFactory, atom: MAtom): string =
   return factory.atomMap[int(atom)]
 
+func atomToStr*(factory: AtomFactory[MAtom], atom: MAtom): string =
+  cast[MAtomFactory](factory).atomToStr(atom)
+
 # Node types
 type
   Attribute* = ParsedAttr[MAtom]
@@ -338,15 +341,15 @@ proc moveChildren(builder: DOMBuilder[Node, MAtom], fromNode, toNode: Node) =
     insertBefore(builder, toNode, child, none(Node))
 
 proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
-    attrs: seq[Attribute]) =
+    attrs: seq[TokenAttr[MAtom]]) =
   let element = Element(element)
   var oldNames: HashSet[MAtom]
   for attr in element.attrs:
     oldNames.incl(attr.name)
   for attr in attrs:
     if attr.name notin oldNames:
-      element.attrs.add(attr)
-      element.attrs[^1].value = element.attrs[^1].value.toValidUTF8()
+      let value = attr.value.toValidUTF8()
+      element.attrs.add((NO_PREFIX, NO_NAMESPACE, attr.name, value))
 
 proc initMiniDOMBuilder*(builder: MiniDOMBuilder) =
   builder.getDocument = getDocument
@@ -369,7 +372,7 @@ proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
   builder.initMiniDOMBuilder()
   return builder
 
-proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node](),
+proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node, MAtom](),
     factory = newMAtomFactory()): Document =
   ## Read, parse and return an HTML document from `inputStream`, using
   ## parser options `opts` and MAtom factory `factory`.
@@ -383,7 +386,8 @@ proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node](),
   return builder.document
 
 proc parseHTMLFragment*(inputStream: Stream, element: Element,
-    opts: HTML5ParserOpts[Node], factory = newMAtomFactory()): seq[Node] =
+    opts: HTML5ParserOpts[Node, MAtom], factory = newMAtomFactory()):
+    seq[Node] =
   ## Read, parse and return the children of an HTML fragment from `inputStream`,
   ## using context element `element` and parser options `opts`.
   ##
@@ -410,11 +414,13 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
     localName: htmlAtom,
     namespace: HTML
   )
+  let rootToken = Token[MAtom](t: START_TAG, tagname: htmlAtom)
   document.childList = @[Node(root)]
   var opts = opts
-  opts.ctx = some(Node(element))
+  let token = Token[MAtom](t: START_TAG, tagname: element.localName)
+  opts.ctx = some((Node(element), token))
   opts.initialTokenizerState = state
-  opts.openElementsInit = @[Node(root)]
+  opts.openElementsInit = @[(Node(root), rootToken)]
   opts.pushInTemplate = element.tagType == TAG_TEMPLATE
   parseHTML(inputStream, builder, opts)
   return root.childList
@@ -428,10 +434,9 @@ proc parseHTMLFragment*(s: string, element: Element): seq[Node] =
   ## For details on the HTML fragment parsing algorithm, see
   ## https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
   let inputStream = newStringStream(s)
-  let opts = HTML5ParserOpts[Node](
+  let opts = HTML5ParserOpts[Node, MAtom](
     isIframeSrcdoc: false,
     scripting: false,
-    ctx: some(Node(element)),
     pushInTemplate: element.tagType == TAG_TEMPLATE
   )
   return parseHTMLFragment(inputStream, element, opts)

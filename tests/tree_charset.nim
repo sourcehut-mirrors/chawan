@@ -7,9 +7,7 @@ import chakasu/charset
 proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
     labels: openArray[string]) =
   let ss = newStringStream(test.data)
-  let opts = HTML5ParserOpts[Node](
-    scripting: scripting
-  )
+  let opts = HTML5ParserOpts[Node, MAtom](scripting: scripting)
   assert test.fragment.isNone
   var charsets: seq[Charset]
   for s in labels:

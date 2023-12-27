@@ -155,6 +155,8 @@ type
     TAG_TT = "tt"
     TAG_TEMPLATE = "template"
     TAG_SARCASM = "sarcasm"
+    TAG_MATH = "math"
+    TAG_SVG = "svg"
 
   QuirksMode* = enum
     NO_QUIRKS, QUIRKS, LIMITED_QUIRKS

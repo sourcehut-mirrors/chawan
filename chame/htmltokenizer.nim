@@ -1,7 +1,6 @@
 {.experimental: "overloadableEnums".}
 
 import std/algorithm
-import std/macros
 import std/options
 import std/streams
 import std/strformat

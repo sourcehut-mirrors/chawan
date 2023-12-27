@@ -83,13 +83,14 @@ proc parseTestErrors(ctx: var TCTestParser): seq[TCError] =
     result.add(TCError(s: line))
 
 proc parseTestFragment(ctx: var TCTestParser): TCFragment =
-  let line = ctx.consumeLine()
-  let fragmentType = if line.startsWith("svg"):
-    FT_SVG
-  elif line.startsWith("math"):
-    FT_MATHML
-  else:
-    FT_HTML
+  var line = ctx.consumeLine()
+  var fragmentType = FT_HTML
+  if line.startsWith("svg "):
+    fragmentType = FT_SVG
+    line = line.substr("svg ".len)
+  elif line.startsWith("math "):
+    fragmentType = FT_MATHML
+    line = line.substr("math ".len)
   let namespace = case fragmentType
   of FT_SVG: Namespace.SVG
   of FT_MATHML: Namespace.MATHML
@@ -172,11 +173,18 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
     elif str.startsWith("<?"):
       assert false, "todo"
     elif str.startsWith("<"):
-      let tagName = ctx.factory.strToAtom(str.substr(1, str.high - 1))
+      var nameStr = str.substr(1, str.high - 1)
+      var namespace = Namespace.HTML
+      if nameStr.startsWith("svg "):
+        nameStr = nameStr.substr("svg ".len)
+        namespace = Namespace.SVG
+      elif nameStr.startsWith("math "):
+        nameStr = nameStr.substr("math ".len)
+        namespace = Namespace.MATHML
       let element = Element(
         nodeType: ELEMENT_NODE,
-        namespace: HTML,
-        localName: tagName,
+        namespace: namespace,
+        localName: ctx.factory.strToAtom(nameStr),
         document: result
       )
       top.childList.add(element)
@@ -193,11 +201,26 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       else:
         text.data = str.substr(1, str.high - 1)
     else:
-      check '=' in str
+      assert '=' in str
       let ss = str.split('=')
-      let name = ctx.factory.strToAtom(ss[0])
+      var name = ss[0]
+      var prefix = NO_PREFIX
+      var ns = NO_NAMESPACE
+      if name.startsWith("xml "):
+        ns = Namespace.XML
+        prefix = PREFIX_XML
+        name = name.substr("xml ".len)
+      elif name.startsWith("xmlns "):
+        ns = Namespace.XMLNS
+        prefix = PREFIX_XMLNS
+        name = name.substr("xmlns ".len)
+      elif name.startsWith("xlink "):
+        ns = Namespace.XLINK
+        prefix = PREFIX_XLINK
+        name = name.substr("xlink ".len)
+      let na = ctx.factory.strToAtom(name)
       let value = ss[1][1..^2]
-      Element(top).attrs.add((NO_PREFIX, NO_NAMESPACE, name, value))
+      Element(top).attrs.add((prefix, ns, na, value))
 
 proc parseTest(ctx: var TCTestParser): TCTest =
   doAssert ctx.consumeLine() == "#data"
@@ -234,6 +257,9 @@ proc parseTests*(s: string, factory: MAtomFactory): seq[TCTest] =
 proc checkTest(nodein, nodep: Node) =
   check nodein.nodeType == nodep.nodeType
   check nodein.childList.len == nodep.childList.len
+  if nodein.childList.len != nodep.childList.len:
+    echo nodein
+    echo nodep
   case nodein.nodeType
   of ELEMENT_NODE:
     let nodein = Element(nodein)
