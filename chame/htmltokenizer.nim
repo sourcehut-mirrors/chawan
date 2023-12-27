@@ -388,8 +388,6 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       tokenizer.attr = false
     tokenizer.tok = t
 
-  const null = char(0)
-
   while not tokenizer.atEof:
     template reconsume_in(s: TokenizerState) =
       tokenizer.reconsume()
@@ -401,7 +399,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       case c
       of '&': switch_state_return CHARACTER_REFERENCE
       of '<': switch_state TAG_OPEN
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_null
       else: emit c
@@ -410,7 +408,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       case c
       of '&': switch_state_return CHARACTER_REFERENCE
       of '<': switch_state RCDATA_LESS_THAN_SIGN
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       else: emit c
@@ -418,7 +416,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     of RAWTEXT:
       case c
       of '<': switch_state RAWTEXT_LESS_THAN_SIGN
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       else: emit c
@@ -426,14 +424,14 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     of SCRIPT_DATA:
       case c
       of '<': switch_state SCRIPT_DATA_LESS_THAN_SIGN
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       else: emit c
 
     of PLAINTEXT:
       case c
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       else: emit c
@@ -477,7 +475,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
         switch_state DATA
         emit_tok
       of AsciiUpperAlpha: tokenizer.tagNameBuf &= c.toLowerAscii()
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tagNameBuf &= "\uFFFD"
       else: tokenizer.tagNameBuf &= c
@@ -651,7 +649,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
         emit '-'
       of '<':
         switch_state SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       else:
@@ -664,7 +662,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
         emit '-'
       of '<':
         switch_state SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
         emit_replacement
@@ -681,7 +679,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       of '>':
         switch_state SCRIPT_DATA
         emit '>'
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
         emit_replacement
@@ -761,7 +759,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       of '<':
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN
         emit '<'
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         emit_replacement
       else: emit c
@@ -774,7 +772,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       of '<':
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN
         emit '<'
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_replacement
@@ -791,7 +789,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       of '>':
         switch_state SCRIPT_DATA
         emit '>'
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_replacement
@@ -846,7 +844,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
         switch_state BEFORE_ATTRIBUTE_VALUE
       of AsciiUpperAlpha:
         tokenizer.attrn &= c.toLowerAscii()
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.attrn &= "\uFFFD"
       of '"', '\'', '<':
@@ -882,7 +880,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       case c
       of '"': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.appendToCurrentAttrValue("\uFFFD")
       else: tokenizer.appendToCurrentAttrValue(c)
@@ -891,7 +889,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       case c
       of '\'': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.appendToCurrentAttrValue("\uFFFD")
       else: tokenizer.appendToCurrentAttrValue(c)
@@ -903,7 +901,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       of '>':
         switch_state DATA
         emit_tok
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.appendToCurrentAttrValue("\uFFFD")
       of '"', '\'', '<', '=', '`':
@@ -940,7 +938,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       of '>':
         switch_state DATA
         emit_tok
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.data &= "\uFFFD"
       else: tokenizer.tok.data &= c
@@ -1001,7 +999,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
         tokenizer.tok.data &= c
         switch_state COMMENT_LESS_THAN_SIGN
       of '-': switch_state COMMENT_END_DASH
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.data &= "\uFFFD"
       else: tokenizer.tok.data &= c
@@ -1076,7 +1074,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       of AsciiUpperAlpha:
         new_token Token[Atom](t: DOCTYPE, name: some($c.toLowerAscii()))
         switch_state DOCTYPE_NAME
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         new_token Token[Atom](t: DOCTYPE, name: some($"\uFFFD"))
         switch_state DOCTYPE_NAME
@@ -1097,7 +1095,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
         emit_tok
       of AsciiUpperAlpha:
         tokenizer.tok.name.get &= c.toLowerAscii()
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.name.get &= "\uFFFD"
       else:
@@ -1171,7 +1169,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     of DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED:
       case c
       of '"': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.pubid.get &= "\uFFFD"
       of '>':
@@ -1185,7 +1183,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     of DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.pubid.get &= "\uFFFD"
       of '>':
@@ -1275,7 +1273,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     of DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED:
       case c
       of '"': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.sysid.get &= "\uFFFD"
       of '>':
@@ -1289,7 +1287,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     of DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
-      of null:
+      of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tok.sysid.get &= "\uFFFD"
       of '>':
@@ -1315,13 +1313,13 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
       of '>':
         switch_state DATA
         emit_tok
-      of null: parse_error UNEXPECTED_NULL_CHARACTER
+      of '\0': parse_error UNEXPECTED_NULL_CHARACTER
       else: discard
 
     of CDATA_SECTION:
       case c
       of ']': switch_state CDATA_SECTION_BRACKET
-      of null:
+      of '\0':
         # "U+0000 NULL characters are handled in the tree construction stage,
         # as part of the in foreign content insertion mode, which is the only
         # place where CDATA sections can appear."
