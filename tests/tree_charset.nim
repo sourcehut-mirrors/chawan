@@ -4,7 +4,8 @@ import std/streams
 import chame/minidom_cs
 import chakasu/charset
 
-proc runTest(test: TCTest, scripting: bool, labels: openArray[string]) =
+proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
+    labels: openArray[string]) =
   let ss = newStringStream(test.data)
   let opts = HTML5ParserOpts[Node](
     scripting: scripting
@@ -32,16 +33,17 @@ proc runTest(test: TCTest, scripting: bool, labels: openArray[string]) =
 const rootpath = "tests/"
 
 proc runTests(filename: string, labels: openArray[string]) =
-  let tests = parseTests(readFile(rootpath & filename))
+  let factory = newMAtomFactory()
+  let tests = parseTests(readFile(rootpath & filename), factory)
   for test in tests:
     case test.script
     of SCRIPT_OFF:
-      test.runTest(scripting = false, labels)
+      test.runTest(factory, scripting = false, labels)
     of SCRIPT_ON:
-      test.runTest(scripting = true, labels)
+      test.runTest(factory, scripting = true, labels)
     of SCRIPT_BOTH:
-      test.runTest(scripting = false, labels)
-      test.runTest(scripting = true, labels)
+      test.runTest(factory, scripting = false, labels)
+      test.runTest(factory, scripting = true, labels)
 
 test "sjis.dat":
   runTests("sjis.dat", ["utf8", "sjis", "latin1"])

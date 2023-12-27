@@ -3,7 +3,6 @@
 
 import unittest
 import tables
-import strutils
 import streams
 
 import chame/tags
@@ -33,26 +32,17 @@ func escapeText(s: string, attribute_mode = false): string =
     else:
       result &= c
 
-proc tostr(ftype: enum): string =
-  return ($ftype).split('_')[1..^1].join("-").toLowerAscii()
-
 func `$`*(node: Node): string =
   case node.nodeType
   of ELEMENT_NODE:
     let element = Element(node)
-    if element.tagType != TAG_UNKNOWN:
-      result = "<" & $element.tagType.tostr()
-    else:
-      result = "<" & element.localName
+    result = "<" & element.localNameStr
     for k, v in element.attrs:
       result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
     result &= ">"
     for node in element.childList:
       result &= $node
-    if element.tagType != TAG_UNKNOWN:
-      result &= "</" & $element.tagType.tostr() & ">"
-    else:
-      result &= "</" & $element.localName & ">"
+    result &= "</" & element.localNameStr & ">"
   of TEXT_NODE:
     let text = Text(node)
     result = text.data.escapeText()

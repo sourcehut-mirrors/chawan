@@ -6,8 +6,8 @@ import unicode
 import unittest
 
 import chame/htmltokenizer
+import chame/minidom
 import chame/parseerror
-import chame/tags
 
 const hexCharMap = (func(): array[char, int] =
   for i in 0..255:
@@ -58,33 +58,32 @@ proc getAttrs(o: JsonNode, esc: bool): Table[string, string] =
     else:
       result[k] = v.getStr()
 
-proc getToken(a: seq[JsonNode], esc: bool): Token =
+proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
+    Token[MAtom] =
   case a[0].getStr()
   of "StartTag":
-    return Token(
+    return Token[MAtom](
       t: START_TAG,
-      tagname: a[1].getStr(),
-      tagtype: tagType(a[1].getStr()),
+      tagname: factory.strToAtom(a[1].getStr()),
       attrs: getAttrs(a[2], esc),
       selfclosing: a.len > 3 and a[3].getBool()
     )
   of "EndTag":
-    return Token(
+    return Token[MAtom](
       t: END_TAG,
-      tagname: a[1].getStr(),
-      tagtype: tagType(a[1].getStr()),
+      tagname: factory.strToAtom(a[1].getStr())
     )
   of "Character":
     let s = if esc:
       doubleEscape(a[1].getStr())
     else:
       a[1].getStr()
-    return Token(
+    return Token[MAtom](
       t: CHARACTER,
       s: s
     )
   of "DOCTYPE":
-    return Token(
+    return Token[MAtom](
       t: DOCTYPE,
       quirks: not a[4].getBool(), # yes, this is reversed. don't ask
       name: if a[1].kind == JNull: none(string) else: some(a[1].getStr()),
@@ -96,13 +95,13 @@ proc getToken(a: seq[JsonNode], esc: bool): Token =
       doubleEscape(a[1].getStr())
     else:
       a[1].getStr()
-    return Token(
+    return Token[MAtom](
       t: COMMENT,
       data: s
     )
   else: discard
 
-proc checkEquals(tok, otok: Token, desc: string) =
+proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
   doAssert otok.t == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
     $otok.t & ")"
   case tok.t
@@ -115,8 +114,8 @@ proc checkEquals(tok, otok: Token, desc: string) =
     doAssert tok.quirks == otok.quirks, desc
   of TokenType.START_TAG, TokenType.END_TAG:
     doAssert tok.tagname == otok.tagname, desc & " (tok tagname: " &
-      tok.tagname & " otok tagname " & otok.tagname & ")"
-    doAssert tok.tagtype == otok.tagtype, desc
+      factory.atomToStr(tok.tagname) & " otok tagname " &
+      factory.atomToStr(otok.tagname) & ")"
     if tok.t == TokenType.START_TAG:
       #TODO not sure if this is the best solution. but end tags can't really
       # be self-closing...
@@ -132,36 +131,36 @@ proc checkEquals(tok, otok: Token, desc: string) =
       "otok data: " & otok.data & ")"
   of EOF, CHARACTER_NULL: discard
 
-proc runTest(desc, input: string, output: seq[JsonNode], laststart: string,
-    esc: bool, state: TokenizerState = DATA) =
+proc runTest(factory: MAtomFactory, desc, input: string, output: seq[JsonNode],
+    laststart: MAtom, esc: bool, state: TokenizerState = DATA) =
   let ds = newStringStream(input)
   proc onParseError(e: ParseError) =
     discard
-  var tokenizer = newTokenizer(ds, onParseError, state)
-  tokenizer.laststart = Token(t: START_TAG, tagname: laststart)
+  var tokenizer = newTokenizer(ds, onParseError, factory, state)
+  tokenizer.laststart = Token[MAtom](t: START_TAG, tagname: laststart)
   var i = 0
-  var chartok: Token = nil
+  var chartok: Token[MAtom] = nil
   for tok in tokenizer.tokenize:
     check tok != nil
     if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE,
         CHARACTER_NULL}:
-      let otok = getToken(output[i].getElems(), esc)
-      checkEquals(chartok, otok, desc)
+      let otok = getToken(factory, output[i].getElems(), esc)
+      checkEquals(factory, chartok, otok, desc)
       inc i
       chartok = nil
     if tok.t == EOF:
       break # html5lib-tests has no EOF tokens
     elif tok.t in {CHARACTER, CHARACTER_WHITESPACE}:
       if chartok == nil:
-        chartok = Token(t: CHARACTER)
+        chartok = Token[MAtom](t: CHARACTER)
       chartok.s &= tok.s
     elif tok.t == CHARACTER_NULL:
       if chartok == nil:
-        chartok = Token(t: CHARACTER)
+        chartok = Token[MAtom](t: CHARACTER)
       chartok.s &= char(0)
     else:
-      let otok = getToken(output[i].getElems(), esc)
-      checkEquals(tok, otok, desc)
+      let otok = getToken(factory, output[i].getElems(), esc)
+      checkEquals(factory, tok, otok, desc)
       inc i
 
 func getState(s: string): TokenizerState =
@@ -192,16 +191,18 @@ proc runTests(filename: string) =
     if esc:
       input = doubleEscape(input)
     let output = t{"output"}.getElems()
-    let laststart = if "lastStartTag" in t:
+    let laststart0 = if "lastStartTag" in t:
       t{"lastStartTag"}.getStr()
     else:
       ""
+    let factory = newMAtomFactory()
+    let laststart = factory.strToAtom(laststart0)
     if "initialStates" notin t:
-      runTest(desc, input, output, laststart, esc)
+      runTest(factory, desc, input, output, laststart, esc)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(desc, input, output, laststart, esc, state)
+        runTest(factory, desc, input, output, laststart, esc, state)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")

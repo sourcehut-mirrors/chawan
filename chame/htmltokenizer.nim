@@ -8,6 +8,7 @@ import std/strutils
 import std/tables
 import std/unicode
 
+import atoms
 import entity
 import parseerror
 import tags
@@ -21,22 +22,23 @@ const bufLen = 4096
 const copyBufLen = 64
 
 type
-  Tokenizer* = object
+  Tokenizer*[Atom] = object
+    factory: AtomFactory[Atom]
     state*: TokenizerState
     rstate: TokenizerState
     tmp: string
     code: uint32
-    tok: Token
-    laststart*: Token
+    tok: Token[Atom]
+    laststart*: Token[Atom]
     attrn: string
     attrv: string
     attr: bool
     hasnonhtml*: bool
     onParseError: proc(e: ParseError)
-    tokqueue: seq[Token]
+    tokqueue: seq[Token[Atom]]
     charbuf: string
     isws: bool
-    peekBuf: string
+    tagNameBuf: string
 
     stream: Stream
     sbuf: array[bufLen, char]
@@ -82,7 +84,7 @@ type
     DECIMAL_CHARACTER_REFERENCE_START, HEXADECIMAL_CHARACTER_REFERENCE,
     DECIMAL_CHARACTER_REFERENCE, NUMERIC_CHARACTER_REFERENCE_END
 
-  Token* = ref object
+  Token*[Atom] = ref object
     case t*: TokenType
     of DOCTYPE:
       quirks*: bool
@@ -91,8 +93,7 @@ type
       sysid*: Option[string]
     of START_TAG, END_TAG:
       selfclosing*: bool
-      tagname*: string
-      tagtype*: TagType
+      tagname*: Atom
       attrs*: Table[string, string]
     of CHARACTER, CHARACTER_WHITESPACE:
       s*: string
@@ -108,6 +109,9 @@ func `$`*(tok: Token): string =
   of CHARACTER_NULL: $tok.t
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
+
+func tagtype*(tok: Token): TagType =
+  return tok.tagname.toTagType()
 
 const hexCharMap = (func(): array[char, uint32] =
   for i in 0u32..255u32:
@@ -138,14 +142,18 @@ proc readn(t: var Tokenizer) =
   if t.stream.atEnd:
     t.eof_i = t.sbufLen
 
-proc newTokenizer*(s: Stream, onParseError: proc(e: ParseError),
-    initialState = DATA): Tokenizer =
-  var t = Tokenizer(
+proc strToAtom[Atom](tokenizer: Tokenizer[Atom], s: string): Atom =
+  return tokenizer.factory.strToAtomImpl(tokenizer.factory, s)
+
+proc newTokenizer*[Atom](s: Stream, onParseError: proc(e: ParseError),
+    factory: AtomFactory[Atom], initialState = DATA): Tokenizer[Atom] =
+  var t = Tokenizer[Atom](
     stream: s,
     eof_i: -1,
     sbuf_i: 0,
     onParseError: onParseError,
-    state: initialState
+    state: initialState,
+    factory: factory
   )
   t.readn()
   return t
@@ -179,12 +187,12 @@ proc consume(t: var Tokenizer): char =
 proc reconsume(t: var Tokenizer) =
   dec t.sbuf_i
 
-proc flushChars(tokenizer: var Tokenizer) =
+proc flushChars[Atom](tokenizer: var Tokenizer[Atom]) =
   if tokenizer.charbuf.len > 0:
     let token = if not tokenizer.isws:
-      Token(t: CHARACTER, s: tokenizer.charbuf)
+      Token[Atom](t: CHARACTER, s: tokenizer.charbuf)
     else:
-      Token(t: CHARACTER_WHITESPACE, s: tokenizer.charbuf)
+      Token[Atom](t: CHARACTER_WHITESPACE, s: tokenizer.charbuf)
     tokenizer.tokqueue.add(token)
     tokenizer.isws = false
     tokenizer.charbuf.setLen(0)
@@ -254,7 +262,7 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
     for c in s:
       tokenizer.emit(c)
 
-iterator tokenize*(tokenizer: var Tokenizer): Token =
+iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
   var running = true
 
   template emit(tok: Token) =
@@ -262,9 +270,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     if tok.t == START_TAG:
       tokenizer.laststart = tok
     if tok.t in {START_TAG, END_TAG}:
-      tok.tagtype = tagType(tok.tagname)
+      tok.tagname = tokenizer.strToAtom(tokenizer.tagNameBuf)
     tokenizer.tokqueue.add(tok)
-  template emit(tok: TokenType) = emit Token(t: tok)
+  template emit(tok: TokenType) = emit Token[Atom](t: tok)
   template emit(s: static string) =
     static:
       doAssert AsciiWhitespace notin s
@@ -275,7 +283,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     tokenizer.emit(ch)
   template emit_null =
     tokenizer.flushChars()
-    emit Token(t: CHARACTER_NULL)
+    emit Token[Atom](t: CHARACTER_NULL)
   template emit_eof =
     emit EOF
     running = false
@@ -293,8 +301,9 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
   template parse_error(error: untyped) =
     tokenizer.parseError(error)
   template is_appropriate_end_tag_token(): bool =
+    #TODO this unnecessarily hashes twice
     tokenizer.laststart != nil and
-      tokenizer.laststart.tagname == tokenizer.tok.tagname
+      tokenizer.laststart.tagname == tokenizer.strToAtom(tokenizer.tagNameBuf)
   template start_new_attribute =
     if tokenizer.tok.t == START_TAG and tokenizer.attr:
       tokenizer.tok.attrs[tokenizer.attrn] = tokenizer.attrv
@@ -358,43 +367,6 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       tokenizer.attr = false
     tokenizer.tok = t
 
-  # Fake EOF as an actual character. Also replace anything_else with the else
-  # branch.
-  macro stateMachine(states: varargs[untyped]): untyped =
-    var maincase = newNimNode(nnkCaseStmt).add(quote do: tokenizer.state)
-    for state in states:
-      if state.kind == nnkOfBranch:
-        var mainstmtlist: NimNode
-        var mainstmtlist_i = -1
-        for i in 0 ..< state.len:
-          if state[i].kind == nnkStmtList:
-            mainstmtlist = state[i]
-            mainstmtlist_i = i
-            break
-        var hasanythingelse = false
-        if mainstmtlist[0].kind == nnkIdent and mainstmtlist[0].strVal == "has_anything_else":
-          hasanythingelse = true
-
-        let childcase = findChild(mainstmtlist, it.kind == nnkCaseStmt)
-        var elsestmts: NimNode
-
-        for i in countdown(childcase.len-1, 0):
-          let childof = childcase[i]
-          if childof.kind == nnkElse:
-            elsestmts = childof.findChild(it.kind == nnkStmtList)
-
-        if hasanythingelse:
-          let fake_anything_else = quote do:
-            template anything_else =
-              `elsestmts`
-          mainstmtlist.insert(0, fake_anything_else)
-        state[mainstmtlist_i] = mainstmtlist
-      maincase.add(state)
-    result = newNimNode(nnkStmtList)
-    result.add(maincase)
-
-  template has_anything_else = discard # does nothing
-
   const null = char(0)
 
   while not tokenizer.atEof:
@@ -403,7 +375,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       switch_state s
 
     let c = tokenizer.consume()
-    stateMachine: # => case tokenizer.state
+    case tokenizer.state
     of DATA:
       case c
       of '&': switch_state_return CHARACTER_REFERENCE
@@ -450,11 +422,12 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '!': switch_state MARKUP_DECLARATION_OPEN
       of '/': switch_state END_TAG_OPEN
       of AsciiAlpha:
-        new_token Token(t: START_TAG)
+        new_token Token[Atom](t: START_TAG)
+        tokenizer.tagNameBuf = ""
         reconsume_in TAG_NAME
       of '?':
         parse_error UNEXPECTED_QUESTION_MARK_INSTEAD_OF_TAG_NAME
-        new_token Token(t: COMMENT)
+        new_token Token[Atom](t: COMMENT)
         reconsume_in BOGUS_COMMENT
       else:
         parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
@@ -464,14 +437,15 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token(t: END_TAG)
+        new_token Token[Atom](t: END_TAG)
+        tokenizer.tagNameBuf = ""
         reconsume_in TAG_NAME
       of '>':
         parse_error MISSING_END_TAG_NAME
         switch_state DATA
       else:
         parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
-        new_token Token(t: COMMENT)
+        new_token Token[Atom](t: COMMENT)
         reconsume_in BOGUS_COMMENT
 
     of TAG_NAME:
@@ -481,11 +455,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       of '>':
         switch_state DATA
         emit_tok
-      of AsciiUpperAlpha: tokenizer.tok.tagname &= c.toLowerAscii()
+      of AsciiUpperAlpha: tokenizer.tagNameBuf &= c.toLowerAscii()
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.tagname &= "\uFFFD"
-      else: tokenizer.tok.tagname &= c
+        tokenizer.tagNameBuf &= "\uFFFD"
+      else: tokenizer.tagNameBuf &= c
 
     of RCDATA_LESS_THAN_SIGN:
       case c
@@ -499,14 +473,19 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of RCDATA_END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token(t: END_TAG)
+        new_token Token[Atom](t: END_TAG)
+        tokenizer.tagNameBuf = ""
         reconsume_in RCDATA_END_TAG_NAME
       else:
         emit "</"
         reconsume_in RCDATA
 
     of RCDATA_END_TAG_NAME:
-      has_anything_else
+      template anything_else =
+        new_token nil #TODO
+        emit "</"
+        emit_tmp
+        reconsume_in RCDATA
       case c
       of AsciiWhitespace:
         if is_appropriate_end_tag_token:
@@ -525,13 +504,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= c.toLowerAscii()
+        tokenizer.tagNameBuf &= c.toLowerAscii()
         tokenizer.tmp &= c
       else:
-        new_token nil #TODO
-        emit "</"
-        emit_tmp
-        reconsume_in RCDATA
+        anything_else
 
     of RAWTEXT_LESS_THAN_SIGN:
       case c
@@ -545,14 +521,19 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of RAWTEXT_END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token(t: END_TAG)
+        new_token Token[Atom](t: END_TAG)
+        tokenizer.tagNameBuf = ""
         reconsume_in RAWTEXT_END_TAG_NAME
       else:
         emit "</"
         reconsume_in RAWTEXT
 
     of RAWTEXT_END_TAG_NAME:
-      has_anything_else
+      template anything_else =
+        new_token nil #TODO
+        emit "</"
+        emit_tmp
+        reconsume_in RAWTEXT
       case c
       of AsciiWhitespace:
         if is_appropriate_end_tag_token:
@@ -571,13 +552,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= c.toLowerAscii()
+        tokenizer.tagNameBuf &= c.toLowerAscii()
         tokenizer.tmp &= c
       else:
-        new_token nil #TODO
-        emit "</"
-        emit_tmp
-        reconsume_in RAWTEXT
+        anything_else
 
     of SCRIPT_DATA_LESS_THAN_SIGN:
       case c
@@ -594,14 +572,18 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of SCRIPT_DATA_END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token(t: END_TAG)
+        new_token Token[Atom](t: END_TAG)
+        tokenizer.tagNameBuf = ""
         reconsume_in SCRIPT_DATA_END_TAG_NAME
       else:
         emit "</"
         reconsume_in SCRIPT_DATA
 
     of SCRIPT_DATA_END_TAG_NAME:
-      has_anything_else
+      template anything_else =
+        emit "</"
+        emit_tmp
+        reconsume_in SCRIPT_DATA
       case c
       of AsciiWhitespace:
         if is_appropriate_end_tag_token:
@@ -620,12 +602,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha: # note: merged upper & lower
-        tokenizer.tok.tagname &= c.toLowerAscii()
+        tokenizer.tagNameBuf &= c.toLowerAscii()
         tokenizer.tmp &= c
       else:
-        emit "</"
-        emit_tmp
-        reconsume_in SCRIPT_DATA
+        anything_else
 
     of SCRIPT_DATA_ESCAPE_START:
       case c
@@ -704,14 +684,18 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
     of SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token(t: END_TAG)
+        new_token Token[Atom](t: END_TAG)
+        tokenizer.tagNameBuf = ""
         reconsume_in SCRIPT_DATA_ESCAPED_END_TAG_NAME
       else:
         emit "</"
         reconsume_in SCRIPT_DATA_ESCAPED
 
     of SCRIPT_DATA_ESCAPED_END_TAG_NAME:
-      has_anything_else
+      template anything_else =
+        emit "</"
+        emit_tmp
+        reconsume_in SCRIPT_DATA_ESCAPED
       case c
       of AsciiWhitespace:
         if is_appropriate_end_tag_token:
@@ -730,12 +714,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       of AsciiAlpha:
-        tokenizer.tok.tagname &= c.toLowerAscii()
+        tokenizer.tagNameBuf &= c.toLowerAscii()
         tokenizer.tmp &= c
       else:
-        emit "</"
-        emit_tmp
-        reconsume_in SCRIPT_DATA_ESCAPED
+        anything_else
 
     of SCRIPT_DATA_DOUBLE_ESCAPE_START:
       case c
@@ -832,7 +814,8 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         reconsume_in ATTRIBUTE_NAME
 
     of ATTRIBUTE_NAME:
-      has_anything_else
+      template anything_else =
+        tokenizer.attrn &= c
       case c
       of AsciiWhitespace, '/', '>':
         leave_attribute_name_state
@@ -849,7 +832,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         parse_error UNEXPECTED_CHARACTER_IN_ATTRIBUTE_NAME
         anything_else
       else:
-        tokenizer.attrn &= c
+        anything_else
 
     of AFTER_ATTRIBUTE_NAME:
       case c
@@ -942,11 +925,14 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       else: tokenizer.tok.data &= c
 
     of MARKUP_DECLARATION_OPEN: # note: rewritten to fit case model as we consume a char anyway
-      has_anything_else
+      template anything_else =
+        parse_error INCORRECTLY_OPENED_COMMENT
+        new_token Token[Atom](t: COMMENT)
+        reconsume_in BOGUS_COMMENT
       case c
       of '-':
         if not tokenizer.atEof and peek_char == '-':
-          new_token Token(t: COMMENT)
+          new_token Token[Atom](t: COMMENT)
           tokenizer.state = COMMENT_START
           consume_and_discard 1
         else: anything_else
@@ -962,13 +948,11 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
             switch_state CDATA_SECTION
           else:
             parse_error CDATA_IN_HTML_CONTENT
-            new_token Token(t: COMMENT, data: "[CDATA[")
+            new_token Token[Atom](t: COMMENT, data: "[CDATA[")
             switch_state BOGUS_COMMENT
         else: anything_else
       else:
-        parse_error INCORRECTLY_OPENED_COMMENT
-        new_token Token(t: COMMENT)
-        reconsume_in BOGUS_COMMENT
+        anything_else
 
     of COMMENT_START:
       case c
@@ -1069,19 +1053,19 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       case c
       of AsciiWhitespace: discard
       of AsciiUpperAlpha:
-        new_token Token(t: DOCTYPE, name: some($c.toLowerAscii()))
+        new_token Token[Atom](t: DOCTYPE, name: some($c.toLowerAscii()))
         switch_state DOCTYPE_NAME
       of null:
         parse_error UNEXPECTED_NULL_CHARACTER
-        new_token Token(t: DOCTYPE, name: some($"\uFFFD"))
+        new_token Token[Atom](t: DOCTYPE, name: some($"\uFFFD"))
         switch_state DOCTYPE_NAME
       of '>':
         parse_error MISSING_DOCTYPE_NAME
-        new_token Token(t: DOCTYPE, quirks: true)
+        new_token Token[Atom](t: DOCTYPE, quirks: true)
         switch_state DATA
         emit_tok
       else:
-        new_token Token(t: DOCTYPE, name: some($c))
+        new_token Token[Atom](t: DOCTYPE, name: some($c))
         switch_state DOCTYPE_NAME
 
     of DOCTYPE_NAME:
@@ -1099,7 +1083,10 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         tokenizer.tok.name.get &= c
 
     of AFTER_DOCTYPE_NAME: # note: rewritten to fit case model as we consume a char anyway
-      has_anything_else
+      template anything_else =
+        parse_error INVALID_CHARACTER_SEQUENCE_AFTER_DOCTYPE_NAME
+        tokenizer.tok.quirks = true
+        reconsume_in BOGUS_DOCTYPE
       case c
       of AsciiWhitespace: discard
       of '>':
@@ -1118,9 +1105,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
         else:
           anything_else
       else:
-        parse_error INVALID_CHARACTER_SEQUENCE_AFTER_DOCTYPE_NAME
-        tokenizer.tok.quirks = true
-        reconsume_in BOGUS_DOCTYPE
+        anything_else
 
     of AFTER_DOCTYPE_PUBLIC_KEYWORD:
       case c
@@ -1573,7 +1558,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       emit_eof
     of MARKUP_DECLARATION_OPEN:
       parse_error INCORRECTLY_OPENED_COMMENT
-      new_token Token(t: COMMENT)
+      new_token Token[Atom](t: COMMENT)
       reconsume_in BOGUS_COMMENT
     of COMMENT_START:
       reconsume_in COMMENT
@@ -1593,7 +1578,7 @@ iterator tokenize*(tokenizer: var Tokenizer): Token =
       emit_eof
     of DOCTYPE, BEFORE_DOCTYPE_NAME:
       parse_error EOF_IN_DOCTYPE
-      new_token Token(t: DOCTYPE, quirks: true)
+      new_token Token[Atom](t: DOCTYPE, quirks: true)
       emit_tok
       emit_eof
     of DOCTYPE_NAME, AFTER_DOCTYPE_NAME, AFTER_DOCTYPE_PUBLIC_KEYWORD,

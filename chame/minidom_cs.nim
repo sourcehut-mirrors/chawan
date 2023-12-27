@@ -11,6 +11,7 @@
 ## See also
 ## ========
 ## * `chame/minidom <minidom.html>`
+
 import std/streams
 import std/tables
 
@@ -34,22 +35,20 @@ type CharsetMiniDOMBuilder = ref object of MiniDOMBuilder
 
 # decoderstream + encoderstream will always produce valid UTF-8; we define
 # these separately from minidom to avoid calling toValidUTF8().
-proc createElement(builder: DOMBuilder[Node], localName: string,
-    namespace: Namespace, tagType: TagType,
-    attrs: Table[string, string]): Node =
+proc createElement(builder: DOMBuilder[Node, MAtom], localName: MAtom,
+    namespace: Namespace, attrs: Table[string, string]): Node =
   let element = Element(
     nodeType: ELEMENT_NODE,
     localName: localName,
     namespace: namespace,
-    tagType: tagType,
     attrs: attrs
   )
   return element
 
-proc createComment(builder: DOMBuilder[Node], text: string): Node =
+proc createComment(builder: DOMBuilder[Node, MAtom], text: string): Node =
   return Comment(nodeType: COMMENT_NODE, data: text)
 
-proc createDocumentType(builder: DOMBuilder[Node], name, publicId,
+proc createDocumentType(builder: DOMBuilder[Node, MAtom], name, publicId,
     systemId: string): Node =
   return DocumentType(
     nodeType: DOCUMENT_TYPE_NODE,
@@ -58,13 +57,13 @@ proc createDocumentType(builder: DOMBuilder[Node], name, publicId,
     systemId: systemId
   )
 
-proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
+proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
     attrs: Table[string, string]) =
   let element = Element(element)
   for k, v in attrs:
     discard element.attrs.hasKeyOrPut(k, v)
 
-proc setEncoding(builder: DOMBuilder[Node], encoding: string):
+proc setEncoding(builder: DOMBuilder[Node, MAtom], encoding: string):
     SetEncodingResult =
   let builder = CharsetMiniDOMBuilder(builder)
   let charset = getCharset(encoding)
@@ -82,11 +81,15 @@ proc setEncoding(builder: DOMBuilder[Node], encoding: string):
     builder.charset = charset
   return SET_ENCODING_STOP
 
-proc newCharsetMiniDOMBuilder(): CharsetMiniDOMBuilder =
+proc newCharsetMiniDOMBuilder(factory: MAtomFactory): CharsetMiniDOMBuilder =
   let document = Document(nodeType: DOCUMENT_NODE)
-  let builder = CharsetMiniDOMBuilder(document: document)
+  let builder = CharsetMiniDOMBuilder(document: document, factory: factory)
   builder.initMiniDOMBuilder()
   builder.setEncoding = setEncoding
+  builder.createElement = createElement
+  builder.createComment = createComment
+  builder.createDocumentType = createDocumentType
+  builder.addAttrsIfMissing = addAttrsIfMissing
   return builder
 
 #TODO this should probably be in decoderstream
@@ -107,7 +110,8 @@ proc bomSniff(inputStream: var Stream): Charset =
       inputStream.setPosition(0)
 
 proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node],
-    charsets: seq[Charset], seekable = true): Document =
+    charsets: seq[Charset], seekable = true,
+    factory = newMAtomFactory()): Document =
   ## Read, parse and return an HTML document from `inputStream`.
   ##
   ## `charsets` is a list of input character sets to try. If empty, it will be
@@ -141,7 +145,7 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node],
   ## even `<meta charset=...` tags will be disregarded.
   ## (TODO: this should be improved in the future; theoretically we could still
   ## switch between ASCII-compatible charsets before non-ASCII is encountered.)
-  let builder = newCharsetMiniDOMBuilder()
+  let builder = newCharsetMiniDOMBuilder(factory)
   var charsetStack: seq[Charset]
   for i in countdown(charsets.high, 0):
     charsetStack.add(charsets[i])

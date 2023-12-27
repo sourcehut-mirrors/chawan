@@ -2,17 +2,17 @@ include shared/tree_common
 
 import std/streams
 
-proc runTest(test: TCTest, scripting: bool) =
+proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool) =
   let ss = newStringStream(test.data)
   let opts = HTML5ParserOpts[Node](
     scripting: scripting
   )
   let pdoc = if test.fragment.isNone:
-    parseHTML(ss, opts)
+    parseHTML(ss, opts, factory)
   else:
     let ctx = Element()
     ctx[] = test.fragment.get.ctx[]
-    let childList = parseHTMLFragment(ss, ctx, opts)
+    let childList = parseHTMLFragment(ss, ctx, opts, factory)
     for child in childList:
       if ctx.preInsertionValidity(child, nil):
         ctx.childList.add(child)
@@ -33,16 +33,17 @@ proc runTest(test: TCTest, scripting: bool) =
 const rootpath = "tests/html5lib-tests/tree-construction/"
 
 proc runTests(filename: string) =
-  let tests = parseTests(readFile(rootpath & filename))
+  let factory = newMAtomFactory()
+  let tests = parseTests(readFile(rootpath & filename), factory)
   for test in tests:
     case test.script
     of SCRIPT_OFF:
-      test.runTest(scripting = false)
+      test.runTest(factory, scripting = false)
     of SCRIPT_ON:
-      test.runTest(scripting = true)
+      test.runTest(factory, scripting = true)
     of SCRIPT_BOTH:
-      test.runTest(scripting = false)
-      test.runTest(scripting = true)
+      test.runTest(factory, scripting = false)
+      test.runTest(factory, scripting = true)
 
 test "tests1.dat":
   runTests("tests1.dat")

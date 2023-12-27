@@ -8,15 +8,84 @@
 ##
 ## For a variant that can switch encodings when meta tags are encountered etc.
 ## see `chame/minidom_cs <minidom.html>`.
+
 import std/streams
 import std/tables
 import std/options
+import std/hashes
 
+import atoms
 import htmlparser
 import htmltokenizer
 import tags
 
 export tags
+
+# Atom implementation
+#TODO maybe we should use a better hash map.
+const MAtomFactoryStrMapLength = 1024 # must be a power of 2
+static:
+  doAssert (MAtomFactoryStrMapLength and (MAtomFactoryStrMapLength - 1)) == 0
+
+type
+  MAtom* = distinct int
+
+  MAtomFactory* = ref object of AtomFactory[MAtom]
+    strMap: array[MAtomFactoryStrMapLength, seq[MAtom]]
+    atomMap: seq[string]
+
+# Mandatory Atom functions
+func `==`*(a, b: MAtom): bool {.borrow.}
+func toTagType*(atom: MAtom): TagType {.inline.} =
+  #TODO should probably get AtomFactory too...
+  if int(atom) <= int(high(TagType)):
+    return TagType(atom)
+  return TAG_UNKNOWN
+func cmp*(a, b: MAtom): int {.inline.} = cmp(int(a), int(b))
+func hash*(atom: MAtom): Hash {.borrow.}
+
+func strToAtom(factory: AtomFactory[MAtom], s: string): MAtom
+func tagTypeToAtom(factory: AtomFactory[MAtom], tagType: TagType): MAtom
+
+proc newMAtomFactory*(): MAtomFactory =
+  const minCap = int(TagType.high) + 1
+  let factory = MAtomFactory(
+    atomMap: newSeqOfCap[string](minCap),
+    strToAtomImpl: strToAtom,
+    tagTypeToAtomImpl: tagTypeToAtom
+  )
+  factory.atomMap.add("") # skip TAG_UNKNOWN
+  for tagType in TagType(int(TAG_UNKNOWN) + 1) .. TagType.high:
+    discard factory.strToAtom($tagType)
+  return factory
+
+func strToAtom*(factory: MAtomFactory, s: string): MAtom =
+  let h = s.hash()
+  let i = h and (factory.strMap.len - 1)
+  for atom in factory.strMap[i]:
+    if factory.atomMap[int(atom)] == s:
+      # Found
+      return atom
+  # Not found
+  let atom = MAtom(factory.atomMap.len)
+  factory.atomMap.add(s)
+  factory.strMap[i].add(atom)
+  return atom
+
+func strToAtom(factory: AtomFactory[MAtom], s: string): MAtom =
+  let factory = cast[MAtomFactory](factory)
+  return factory.strToAtom(s)
+
+func tagTypeToAtom*(factory: MAtomFactory, tagType: TagType): MAtom =
+  assert tagType != TAG_UNKNOWN
+  return MAtom(tagType)
+
+func tagTypeToAtom(factory: AtomFactory[MAtom], tagType: TagType): MAtom =
+  let factory = cast[MAtomFactory](factory)
+  return factory.tagTypeToAtom(tagType)
+
+func atomToStr*(factory: MAtomFactory, atom: MAtom): string =
+  return factory.atomMap[int(atom)]
 
 # Node types
 type
@@ -31,6 +100,7 @@ type
   Comment* = ref object of CharacterData
 
   Document* = ref object of Node
+    factory*: MAtomFactory
 
   Text* = ref object of CharacterData
 
@@ -40,14 +110,18 @@ type
     systemId*: string
 
   Element* = ref object of Node
-    tagType*: TagType
-    localName*: string
+    localName*: MAtom
     namespace*: Namespace
     attrs*: Table[string, string]
+    document* {.cursor.}: Document
 
 type
-  MiniDOMBuilder* = ref object of DOMBuilder[Node]
+  MiniDOMBuilder* = ref object of DOMBuilder[Node, MAtom]
     document*: Document
+    factory*: MAtomFactory
+
+func tagType*(element: Element): TagType =
+  return element.localName.toTagType()
 
 # We use this to validate input strings, since htmltokenizer/htmlparser does no
 # input validation.
@@ -55,7 +129,6 @@ proc toValidUTF8(s: string): string =
   result = ""
   var i = 0
   while i < s.len:
-    let u = uint(s[i])
     if int(s[i]) < 0x80:
       result &= s[i]
       inc i
@@ -89,38 +162,41 @@ proc toValidUTF8(s: string): string =
       result &= "\uFFFD"
       inc i
 
-proc getDocument(builder: DOMBuilder[Node]): Node =
+proc localNameStr*(element: Element): string =
+  return element.document.factory.atomToStr(element.localName)
+
+proc getDocument(builder: DOMBuilder[Node, MAtom]): Node =
   return MiniDOMBuilder(builder).document
 
-proc getParentNode(builder: DOMBuilder[Node], handle: Node): Option[Node] =
+proc getAtomFactory(builder: DOMBuilder[Node, MAtom]): AtomFactory[MAtom] =
+  return MiniDOMBuilder(builder).factory
+
+proc getParentNode(builder: DOMBuilder[Node, MAtom], handle: Node): Option[Node] =
   return option(handle.parentNode)
 
-proc getTagType(builder: DOMBuilder[Node], handle: Node): TagType =
-  return Element(handle).tagType
-
-proc getLocalName(builder: DOMBuilder[Node], handle: Node): string =
+proc getLocalName(builder: DOMBuilder[Node, MAtom], handle: Node): MAtom =
   return Element(handle).localName
 
-proc getNamespace(builder: DOMBuilder[Node], handle: Node): Namespace =
+proc getNamespace(builder: DOMBuilder[Node, MAtom], handle: Node): Namespace =
   return Element(handle).namespace
 
-proc createElement(builder: DOMBuilder[Node], localName: string,
-    namespace: Namespace, tagType: TagType,
-    attrs: Table[string, string]): Node =
+proc createElement(builder: DOMBuilder[Node, MAtom], localName: MAtom,
+    namespace: Namespace, attrs: Table[string, string]): Node =
+  let builder = cast[MiniDOMBuilder](builder)
   let element = Element(
     nodeType: ELEMENT_NODE,
-    localName: localName.toValidUTF8(),
+    localName: localName,
     namespace: namespace,
-    tagType: tagType
+    document: builder.document
   )
   for k, v in attrs:
     element.attrs[k.toValidUTF8()] = v.toValidUTF8()
   return element
 
-proc createComment(builder: DOMBuilder[Node], text: string): Node =
+proc createComment(builder: DOMBuilder[Node, MAtom], text: string): Node =
   return Comment(nodeType: COMMENT_NODE, data: text.toValidUTF8())
 
-proc createDocumentType(builder: DOMBuilder[Node], name, publicId,
+proc createDocumentType(builder: DOMBuilder[Node, MAtom], name, publicId,
     systemId: string): Node =
   return DocumentType(
     nodeType: DOCUMENT_TYPE_NODE,
@@ -203,7 +279,7 @@ func preInsertionValidity*(parent, node: Node, before: Node): bool =
     else: discard
   return true # no exception reached
 
-proc insertBefore(builder: DOMBuilder[Node], parent, child: Node,
+proc insertBefore(builder: DOMBuilder[Node, MAtom], parent, child: Node,
     before: Option[Node]) =
   let before = before.get(nil)
   if parent.preInsertionValidity(child, before):
@@ -215,7 +291,7 @@ proc insertBefore(builder: DOMBuilder[Node], parent, child: Node,
       parent.childList.insert(child, i)
     child.parentNode = parent
 
-proc insertText(builder: DOMBuilder[Node], parent: Node, text: string,
+proc insertText(builder: DOMBuilder[Node, MAtom], parent: Node, text: string,
     before: Option[Node]) =
   let text = text.toValidUTF8()
   let before = before.get(nil)
@@ -235,20 +311,20 @@ proc insertText(builder: DOMBuilder[Node], parent: Node, text: string,
     let text = Text(nodeType: TEXT_NODE, data: text)
     insertBefore(builder, parent, text, option(before))
 
-proc remove(builder: DOMBuilder[Node], child: Node) =
+proc remove(builder: DOMBuilder[Node, MAtom], child: Node) =
   if child.parentNode != nil:
     let i = child.parentNode.childList.find(child)
     child.parentNode.childList.delete(i)
     child.parentNode = nil
 
-proc moveChildren(builder: DOMBuilder[Node], fromNode, toNode: Node) =
+proc moveChildren(builder: DOMBuilder[Node, MAtom], fromNode, toNode: Node) =
   let tomove = @(fromNode.childList)
   fromNode.childList.setLen(0)
   for child in tomove:
     child.parentNode = nil
     insertBefore(builder, toNode, child, none(Node))
 
-proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
+proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
     attrs: Table[string, string]) =
   let element = Element(element)
   for k, v in attrs:
@@ -258,7 +334,7 @@ proc addAttrsIfMissing(builder: DOMBuilder[Node], element: Node,
 
 proc initMiniDOMBuilder*(builder: MiniDOMBuilder) =
   builder.getDocument = getDocument
-  builder.getTagType = getTagType
+  builder.getAtomFactory = getAtomFactory
   builder.getParentNode = getParentNode
   builder.getLocalName = getLocalName
   builder.getNamespace = getNamespace
@@ -271,26 +347,27 @@ proc initMiniDOMBuilder*(builder: MiniDOMBuilder) =
   builder.moveChildren = moveChildren
   builder.addAttrsIfMissing = addAttrsIfMissing
 
-proc newMiniDOMBuilder*(): MiniDOMBuilder =
-  let document = Document(nodeType: DOCUMENT_NODE)
-  let builder = MiniDOMBuilder(document: document)
+proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
+  let document = Document(nodeType: DOCUMENT_NODE, factory: factory)
+  let builder = MiniDOMBuilder(document: document, factory: factory)
   builder.initMiniDOMBuilder()
   return builder
 
-proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node]()): Document =
+proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node](),
+    factory = newMAtomFactory()): Document =
   ## Read, parse and return an HTML document from `inputStream`, using
-  ## parser options `opts`.
+  ## parser options `opts` and MAtom factory `factory`.
   ##
   ## `inputStream` is not required to be seekable.
   ##
   ## For a description of `HTML5ParserOpts`, see the `htmlparser` module's
   ## documentation.
-  let builder = newMiniDOMBuilder()
+  let builder = newMiniDOMBuilder(factory)
   parseHTML(inputStream, builder, opts)
   return builder.document
 
 proc parseHTMLFragment*(inputStream: Stream, element: Element,
-    opts: HTML5ParserOpts[Node]): seq[Node] =
+    opts: HTML5ParserOpts[Node], factory = newMAtomFactory()): seq[Node] =
   ## Read, parse and return the children of an HTML fragment from `inputStream`,
   ## using context element `element` and parser options `opts`.
   ##
@@ -302,7 +379,7 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   ##
   ## Note: the members `ctx`, `initialTokenizerState`, `openElementsInit` and
   ## `pushInTemplate` of `opts` are overridden (in accordance with the standard).
-  let builder = newMiniDOMBuilder()
+  let builder = newMiniDOMBuilder(factory)
   let document = builder.document
   let state = case element.tagType
   of TAG_TITLE, TAG_TEXTAREA: RCDATA
@@ -311,7 +388,12 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   of TAG_NOSCRIPT: DATA # no scripting
   of TAG_PLAINTEXT: PLAINTEXT
   else: DATA
-  let root = Element(nodeType: ELEMENT_NODE, tagType: TAG_HTML, namespace: HTML)
+  let htmlAtom = builder.factory.tagTypeToAtom(TAG_HTML)
+  let root = Element(
+    nodeType: ELEMENT_NODE,
+    localName: htmlAtom,
+    namespace: HTML
+  )
   document.childList = @[Node(root)]
   var opts = opts
   opts.ctx = some(Node(element))

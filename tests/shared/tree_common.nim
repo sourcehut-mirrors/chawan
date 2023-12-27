@@ -33,6 +33,7 @@ type
     s: string
     i: int
     pi: int
+    factory: MAtomFactory
 
 func has(ctx: TCTestParser): bool =
   return ctx.i < ctx.s.len
@@ -95,9 +96,8 @@ proc parseTestFragment(ctx: var TCTestParser): TCFragment =
   of FT_HTML: Namespace.HTML
   let element = Element(
     nodeType: ELEMENT_NODE,
-    tagType: tagType(line),
     namespace: namespace,
-    localName: line
+    localName: ctx.factory.strToAtom(line)
   )
   return TCFragment(
     fragmentType: fragmentType,
@@ -141,7 +141,7 @@ proc parseComment(s: string): Comment =
   )
 
 proc parseTestDocument(ctx: var TCTestParser): Document =
-  result = Document(nodeType: DOCUMENT_NODE)
+  result = Document(nodeType: DOCUMENT_NODE, factory: ctx.factory)
   var stack: seq[Node]
   stack.add(result)
   template top: auto = stack[^1]
@@ -172,12 +172,12 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
     elif str.startsWith("<?"):
       assert false, "todo"
     elif str.startsWith("<"):
-      let tag = str.substr(1, str.high - 1)
+      let tagName = ctx.factory.strToAtom(str.substr(1, str.high - 1))
       let element = Element(
         nodeType: ELEMENT_NODE,
-        tagType: tagType(tag),
         namespace: HTML,
-        localName: tag
+        localName: tagName,
+        document: result
       )
       top.childList.add(element)
       stack.add(element)
@@ -221,9 +221,9 @@ proc parseTest(ctx: var TCTestParser): TCTest =
       break
   return t
 
-proc parseTests*(s: string): seq[TCTest] =
+proc parseTests*(s: string, factory: MAtomFactory): seq[TCTest] =
   result = @[]
-  var parser = TCTestParser(s: s)
+  var parser = TCTestParser(s: s, factory: factory)
   while parser.i < s.len:
     let test = parser.parseTest()
     result.add(test)
@@ -238,10 +238,7 @@ proc checkTest(nodein, nodep: Node) =
   of ELEMENT_NODE:
     let nodein = Element(nodein)
     let nodep = Element(nodep)
-    check nodein.tagType == nodep.tagType
-    #TODO figure out a better scheme
-    if nodein.tagType == TAG_UNKNOWN:
-      check nodein.localName == nodep.localName
+    check nodein.localName == nodep.localName
     check nodein.namespace == nodep.namespace
     check nodein.attrs == nodep.attrs
   of ATTRIBUTE_NODE, ENTITY_REFERENCE_NODE, ENTITY_NODE,

@@ -1,5 +1,4 @@
 import std/tables
-import std/strutils
 
 type
   NodeType* = enum
@@ -17,27 +16,145 @@ type
     NOTATION_NODE = 12
 
   TagType* = enum
-    TAG_UNKNOWN, TAG_APPLET, TAG_BIG, TAG_HTML, TAG_BASE, TAG_BASEFONT,
-    TAG_BGSOUND, TAG_HEAD, TAG_LINK, TAG_LISTING, TAG_META, TAG_STYLE,
-    TAG_TITLE, TAG_BODY, TAG_ADDRESS, TAG_ARTICLE, TAG_ASIDE, TAG_FOOTER,
-    TAG_HEADER, TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6, TAG_HGROUP,
-    TAG_MAIN, TAG_NAV, TAG_SEARCH, TAG_SECTION, TAG_BLOCKQUOTE, TAG_DD,
-    TAG_DIV, TAG_DL, TAG_DT, TAG_FIGCAPTION, TAG_FIGURE, TAG_HR, TAG_LI,
-    TAG_OL, TAG_P, TAG_PRE, TAG_UL, TAG_A, TAG_ABBR, TAG_B, TAG_BDI, TAG_BDO,
-    TAG_BR, TAG_NOBR, TAG_CITE, TAG_CODE, TAG_DATA, TAG_DFN, TAG_EM, TAG_EMBED,
-    TAG_I, TAG_KBD, TAG_MARK, TAG_MARQUEE, TAG_Q, TAG_RB, TAG_RP, TAG_RT,
-    TAG_RTC, TAG_RUBY, TAG_S, TAG_SAMP, TAG_SMALL, TAG_SPAN, TAG_STRONG,
-    TAG_SUB, TAG_SUP, TAG_TIME, TAG_U, TAG_VAR, TAG_WBR, TAG_AREA,
-    TAG_AUDIO, TAG_IMG, TAG_IMAGE, TAG_MAP, TAG_TRACK, TAG_VIDEO, TAG_IFRAME,
-    TAG_OBJECT, TAG_PARAM, TAG_PICTURE, TAG_PORTAL, TAG_SOURCE, TAG_CANVAS,
-    TAG_NOSCRIPT, TAG_NOEMBED, TAG_PLAINTEXT, TAG_XMP, TAG_SCRIPT, TAG_DEL,
-    TAG_INS, TAG_CAPTION, TAG_COL, TAG_COLGROUP, TAG_TABLE, TAG_TBODY,
-    TAG_TD, TAG_TFOOT, TAG_TH, TAG_THEAD, TAG_TR, TAG_BUTTON, TAG_DATALIST,
-    TAG_FIELDSET, TAG_FORM, TAG_INPUT, TAG_KEYGEN, TAG_LABEL, TAG_LEGEND,
-    TAG_METER, TAG_OPTGROUP, TAG_OPTION, TAG_OUTPUT, TAG_PROGRESS, TAG_SELECT,
-    TAG_TEXTAREA, TAG_DETAILS, TAG_DIALOG, TAG_MENU, TAG_SUMMARY, TAG_BLINK,
-    TAG_CENTER, TAG_CONTENT, TAG_DIR, TAG_FONT, TAG_FRAME, TAG_NOFRAMES,
-    TAG_FRAMESET, TAG_STRIKE, TAG_TT, TAG_TEMPLATE, TAG_SARCASM
+    TAG_UNKNOWN = ""
+    TAG_APPLET = "applet"
+    TAG_BIG = "big"
+    TAG_HTML = "html"
+    TAG_BASE = "base"
+    TAG_BASEFONT = "basefont"
+    TAG_BGSOUND = "bgsound"
+    TAG_HEAD = "head"
+    TAG_LINK = "link"
+    TAG_LISTING = "listing"
+    TAG_META = "meta"
+    TAG_STYLE = "style"
+    TAG_TITLE = "title"
+    TAG_BODY = "body"
+    TAG_ADDRESS = "address"
+    TAG_ARTICLE = "article"
+    TAG_ASIDE = "aside"
+    TAG_FOOTER = "footer"
+    TAG_HEADER = "header"
+    TAG_H1 = "h1"
+    TAG_H2 = "h2"
+    TAG_H3 = "h3"
+    TAG_H4 = "h4"
+    TAG_H5 = "h5"
+    TAG_H6 = "h6"
+    TAG_HGROUP = "hgroup"
+    TAG_MAIN = "main"
+    TAG_NAV = "nav"
+    TAG_SEARCH = "search"
+    TAG_SECTION = "section"
+    TAG_BLOCKQUOTE = "blockquote"
+    TAG_DD = "dd"
+    TAG_DIV = "div"
+    TAG_DL = "dl"
+    TAG_DT = "dt"
+    TAG_FIGCAPTION = "figcaption"
+    TAG_FIGURE = "figure"
+    TAG_HR = "hr"
+    TAG_LI = "li"
+    TAG_OL = "ol"
+    TAG_P = "p"
+    TAG_PRE = "pre"
+    TAG_UL = "ul"
+    TAG_A = "a"
+    TAG_ABBR = "abbr"
+    TAG_B = "b"
+    TAG_BDI = "bdi"
+    TAG_BDO = "bdo"
+    TAG_BR = "br"
+    TAG_NOBR = "nobr"
+    TAG_CITE = "cite"
+    TAG_CODE = "code"
+    TAG_DATA = "data"
+    TAG_DFN = "dfn"
+    TAG_EM = "em"
+    TAG_EMBED = "embed"
+    TAG_I = "i"
+    TAG_KBD = "kbd"
+    TAG_MARK = "mark"
+    TAG_MARQUEE = "marquee"
+    TAG_Q = "q"
+    TAG_RB = "rb"
+    TAG_RP = "rp"
+    TAG_RT = "rt"
+    TAG_RTC = "rtc"
+    TAG_RUBY = "ruby"
+    TAG_S = "s"
+    TAG_SAMP = "samp"
+    TAG_SMALL = "small"
+    TAG_SPAN = "span"
+    TAG_STRONG = "strong"
+    TAG_SUB = "sub"
+    TAG_SUP = "sup"
+    TAG_TIME = "time"
+    TAG_U = "u"
+    TAG_VAR = "var"
+    TAG_WBR = "wbr"
+    TAG_AREA = "area"
+    TAG_AUDIO = "audio"
+    TAG_IMG = "img"
+    TAG_IMAGE = "image"
+    TAG_MAP = "map"
+    TAG_TRACK = "track"
+    TAG_VIDEO = "video"
+    TAG_IFRAME = "iframe"
+    TAG_OBJECT = "object"
+    TAG_PARAM = "param"
+    TAG_PICTURE = "picture"
+    TAG_PORTAL = "portal"
+    TAG_SOURCE = "source"
+    TAG_CANVAS = "canvas"
+    TAG_NOSCRIPT = "noscript"
+    TAG_NOEMBED = "noembed"
+    TAG_PLAINTEXT = "plaintext"
+    TAG_XMP = "xmp"
+    TAG_SCRIPT = "script"
+    TAG_DEL = "del"
+    TAG_INS = "ins"
+    TAG_CAPTION = "caption"
+    TAG_COL = "col"
+    TAG_COLGROUP = "colgroup"
+    TAG_TABLE = "table"
+    TAG_TBODY = "tbody"
+    TAG_TD = "td"
+    TAG_TFOOT = "tfoot"
+    TAG_TH = "th"
+    TAG_THEAD = "thead"
+    TAG_TR = "tr"
+    TAG_BUTTON = "button"
+    TAG_DATALIST = "datalist"
+    TAG_FIELDSET = "fieldset"
+    TAG_FORM = "form"
+    TAG_INPUT = "input"
+    TAG_KEYGEN = "keygen"
+    TAG_LABEL = "label"
+    TAG_LEGEND = "legend"
+    TAG_METER = "meter"
+    TAG_OPTGROUP = "optgroup"
+    TAG_OPTION = "option"
+    TAG_OUTPUT = "output"
+    TAG_PROGRESS = "progress"
+    TAG_SELECT = "select"
+    TAG_TEXTAREA = "textarea"
+    TAG_DETAILS = "details"
+    TAG_DIALOG = "dialog"
+    TAG_MENU = "menu"
+    TAG_SUMMARY = "summary"
+    TAG_BLINK = "blink"
+    TAG_CENTER = "center"
+    TAG_CONTENT = "content"
+    TAG_DIR = "dir"
+    TAG_FONT = "font"
+    TAG_FRAME = "frame"
+    TAG_NOFRAMES = "noframes"
+    TAG_FRAMESET = "frameset"
+    TAG_STRIKE = "strike"
+    TAG_TT = "tt"
+    TAG_TEMPLATE = "template"
+    TAG_SARCASM = "sarcasm"
 
   QuirksMode* = enum
     NO_QUIRKS, QUIRKS, LIMITED_QUIRKS
@@ -53,30 +170,19 @@ type
 
 func getTagTypeMap(): Table[string, TagType] =
   for i in TagType:
-    let enumname = $TagType(i)
-    let tagname = enumname.split('_')[1..^1].join("_").toLowerAscii()
-    result[tagname] = TagType(i)
+    result[$TagType(i)] = TagType(i)
 
 const tagTypeMap = getTagTypeMap()
 
 func tagType*(s: string): TagType =
-  if tagTypeMap.hasKey(s):
+  if s in tagTypeMap:
     return tagTypeMap[s]
-  else:
-    return TAG_UNKNOWN
-
-const tagNameMap = (func(): Table[TagType, string] =
-  for k, v in tagTypeMap:
-    result[v] = k
-)()
+  return TAG_UNKNOWN
 
 const AllTagTypes* = (func(): set[TagType] =
   for tag in TagType:
     result.incl(tag)
 )()
-
-func tagName*(t: TagType): string =
-  return tagNameMap[t]
 
 const HTagTypes* = {
   TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6
