@@ -2,8 +2,8 @@
 
 ## WARNING
 
-This library is still in beta stage. The API may undergo significant changes
-before the 1.0 release.
+This library is still in beta stage. The API **will** undergo significant
+changes before the 1.0 release.
 
 ## Usage
 
@@ -30,8 +30,6 @@ description of the API.
 Some parts of the specification have not been implemented yet. These are:
 
 * document.write
-* parts of SVG parsing
-* MathML
 * Custom elements
 
 ...and anything else we might have forgotten about. Support for these features
@@ -39,7 +37,7 @@ is planned, even if source code comments say otherwise.
 
 Other, non-standard-related tasks (in no particular order):
 
-* Finish integration of html5lib-tests.
+* Get all of html5lib-tests to pass.
 * Optimize inefficient parts of the library.
 
 ## Bugs, feedback, etc.
@@ -67,7 +65,7 @@ can redirect users to it in this section.
 
 ### How do you pronounce Chame?
 
-It is an acronym of "*Cha*wan HTML (aitch-tee-e*m-e*l)." Accordingly, it is
+It is an acronym of "**Cha**wan HT**M**L (aitch-tee-e**m-e**l)." Accordingly, it is
 pronounced as "cha-meh."
 
 ## Thanks
