@@ -88,8 +88,11 @@ func tagTypeToAtom(factory: AtomFactory[MAtom], tagType: TagType): MAtom =
 func atomToStr*(factory: MAtomFactory, atom: MAtom): string =
   return factory.atomMap[int(atom)]
 
+# Overload useful for testing in htmlparser:
+#[
 func atomToStr*(factory: AtomFactory[MAtom], atom: MAtom): string =
   cast[MAtomFactory](factory).atomToStr(atom)
+]#
 
 # Node types
 type
