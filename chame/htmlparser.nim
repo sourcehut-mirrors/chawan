@@ -1075,7 +1075,9 @@ func isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     if localName == parser.atomMap[ATOM_ANNOTATION_XML]:
       let i = token.findAttr(parser.atomMap[ATOM_ENCODING])
       if i != -1:
-        return token.attrs[i].value in ["text/html", "application/xhtml+xml"]
+        let value = token.attrs[i].value
+        return value.equalsIgnoreCase("text/html") or
+          value.equalsIgnoreCase("application/xhtml+xml")
   elif namespace == Namespace.SVG:
     let elements = [
       parser.atomMap[ATOM_FOREIGNOBJECT],
@@ -2484,7 +2486,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         else:
           clear_the_stack_back_to_a_table_row_context
           pop_current_node
-          parser.insertionMode = IN_BODY
+          parser.insertionMode = IN_TABLE_BODY
           reprocess token
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>", "</td>",
@@ -2808,6 +2810,7 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
       parser.insertCharacter(token.s)
       parser.framesetOk = false
     )
+    TokenType.COMMENT => (block: parser.insertComment(token))
     TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
     ("<b>", "<big>", "<blockquote>", "<body>", "<br>", "<center>", "<code>",
      "<dd>", "<div>", "<dl>", "<dt>", "<em>", "<embed>", "<h1>", "<h2>",
@@ -2884,7 +2887,7 @@ proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
       if ismmlip and token.t in CharacterToken or
           ismmlip and token.t == START_TAG and token.tagname notin mmlnoatoms or
           namespace == Namespace.MATHML and localName == annotationXml and
-            token.tagtype == TAG_SVG or
+            token.t == START_TAG and token.tagtype == TAG_SVG or
           ishtmlip and token.t == START_TAG or
           ishtmlip and token.t in CharacterToken:
         parser.processInHTMLContent(token, parser.insertionMode)

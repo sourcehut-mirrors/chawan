@@ -123,6 +123,11 @@ type
     attrs*: seq[Attribute]
     document*: Document
 
+  DocumentFragment* = ref object of Node
+
+  HTMLTemplateElement* = ref object of Element
+    content*: DocumentFragment
+
 type
   MiniDOMBuilder* = ref object of DOMBuilder[Node, MAtom]
     document*: Document
@@ -188,8 +193,12 @@ proc getDocument(builder: DOMBuilder[Node, MAtom]): Node =
 proc getAtomFactory(builder: DOMBuilder[Node, MAtom]): AtomFactory[MAtom] =
   return MiniDOMBuilder(builder).factory
 
-proc getParentNode(builder: DOMBuilder[Node, MAtom], handle: Node): Option[Node] =
+proc getParentNode(builder: DOMBuilder[Node, MAtom], handle: Node):
+    Option[Node] =
   return option(handle.parentNode)
+
+proc getTemplateContent(builder: DOMBuilder[Node, MAtom], handle: Node): Node =
+  return HTMLTemplateElement(handle).content
 
 proc getLocalName(builder: DOMBuilder[Node, MAtom], handle: Node): MAtom =
   return Element(handle).localName
@@ -200,14 +209,17 @@ proc getNamespace(builder: DOMBuilder[Node, MAtom], handle: Node): Namespace =
 proc createElement(builder: DOMBuilder[Node, MAtom], localName: MAtom,
     namespace: Namespace, attrs: seq[Attribute]): Node =
   let builder = cast[MiniDOMBuilder](builder)
-  let element = Element(
-    nodeType: ELEMENT_NODE,
-    localName: localName,
-    namespace: namespace,
-    document: builder.document,
-    attrs: attrs
-  )
-  assert element.document != nil and element.document.factory != nil
+  let element = if localName.toTagType() == TAG_TEMPLATE:
+    HTMLTemplateElement(
+      content: DocumentFragment()
+    )
+  else:
+    Element()
+  element.nodeType = ELEMENT_NODE
+  element.localName = localName
+  element.namespace = namespace
+  element.document = builder.document
+  element.attrs = attrs
   for attr in element.attrs.mitems:
     attr.value = attr.value.toValidUTF8()
   return element
@@ -359,6 +371,7 @@ proc initMiniDOMBuilder*(builder: MiniDOMBuilder) =
   builder.getDocument = getDocument
   builder.getAtomFactory = getAtomFactory
   builder.getParentNode = getParentNode
+  builder.getTemplateContent = getTemplateContent
   builder.getLocalName = getLocalName
   builder.getNamespace = getNamespace
   builder.createElement = createElement
@@ -419,7 +432,6 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
     namespace: HTML,
     document: document
   )
-  assert root.document != nil and root.document.factory != nil
   let rootToken = Token[MAtom](t: START_TAG, tagname: htmlAtom)
   document.childList = @[Node(root)]
   var opts = opts

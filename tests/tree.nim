@@ -94,3 +94,12 @@ test "tests16.dat":
 
 test "tests17.dat":
   runTests("tests17.dat")
+
+test "tests18.dat":
+  runTests("tests18.dat")
+
+test "tests19.dat":
+  runTests("tests19.dat")
+
+test "tests20.dat":
+  runTests("tests20.dat")

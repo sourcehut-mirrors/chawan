@@ -7,6 +7,7 @@ import std/unittest
 import test1
 import chame/htmlparser
 import chame/minidom
+import chame/utils/twtstr
 
 type
   TCError = object
@@ -189,17 +190,22 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       elif nameStr.startsWith("math "):
         nameStr = nameStr.substr("math ".len)
         namespace = Namespace.MATHML
-      let element = Element(
-        nodeType: ELEMENT_NODE,
-        namespace: namespace,
-        localName: ctx.factory.strToAtom(nameStr),
-        document: result
-      )
+      let element = if nameStr == "template":
+        HTMLTemplateElement()
+      else:
+        Element()
+      element.nodeType = ELEMENT_NODE
+      element.localName = ctx.factory.strToAtom(nameStr)
+      element.namespace = namespace
+      element.document = result
       top.childList.add(element)
       stack.add(element)
       indent += 2
     elif str == "content":
-      assert false, "todo"
+      let fragment = DocumentFragment()
+      HTMLTemplateElement(top).content = fragment
+      stack.add(fragment)
+      indent += 2
     elif str[0] == '"':
       let text = Text(nodeType: TEXT_NODE)
       top.childList.add(text)
@@ -210,8 +216,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
         text.data = str.substr(1, str.high - 1)
     else:
       assert '=' in str
-      let ss = str.split('=')
-      var name = ss[0]
+      var name = str.until('=')
       var prefix = NO_PREFIX
       var ns = NO_NAMESPACE
       if name.startsWith("xml "):
@@ -227,7 +232,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
         prefix = PREFIX_XLINK
         name = name.substr("xlink ".len)
       let na = ctx.factory.strToAtom(name)
-      let value = ss[1][1..^2]
+      let value = str.after('=')[1..^2]
       Element(top).attrs.add((prefix, ns, na, value))
   while indent > 1:
     pop_node

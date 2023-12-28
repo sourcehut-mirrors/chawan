@@ -34,6 +34,15 @@ func until*(s: string, c: set[char]): string =
 
 func until*(s: string, c: char): string = s.until({c})
 
+func after*(s: string, c: set[char]): string =
+  var i = 0
+  while i < s.len:
+    if s[i] in c:
+      return s.substr(i + 1)
+    inc i
+
+func after*(s: string, c: char): string = s.after({c})
+
 func isSurrogate*(u: uint32): bool = u in 0xD800u32..0xDFFFu32
 func isNonCharacter*(u: uint32): bool =
   u in 0xFDD0u32..0xFDEFu32 or
