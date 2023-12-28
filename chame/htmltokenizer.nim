@@ -334,10 +334,10 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     for x in tokenizer.tok.attrs:
       if x.name == tokenizer.attrna:
         tokenizer.attr = false
-  template peek_str(s: string): bool =
-    # WARNING: will break on strings with copyBufLen + 4 bytes
-    # WARNING: only works with ascii
-    assert s.len < copyBufLen - 4 and s.len > 0
+  template peek_str(s: static string): bool =
+    static:
+      doAssert s.len < copyBufLen - 4 and s.len > 0
+      # This breaks on strings with copyBufLen + 4 bytes.
     if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len >= tokenizer.eof_i:
       false
     else:
@@ -349,10 +349,13 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
           break
       b
 
-  template peek_str_nocase(s: string): bool =
-    # WARNING: will break on strings with copyBufLen + 4 bytes
-    # WARNING: only works with UPPER CASE ascii
-    assert s.len < copyBufLen - 4 and s.len > 0
+  template peek_str_nocase(s: static string): bool =
+    static:
+      doAssert s.len < copyBufLen - 4 and s.len > 0
+      # This breaks on strings with copyBufLen + 4 bytes.
+      for c in s:
+        doAssert c in AsciiUpperAlpha
+        # This requires strings with ASCII upper-case characters to work.
     if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len > tokenizer.eof_i:
       false
     else:
