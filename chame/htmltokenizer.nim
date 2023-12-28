@@ -278,6 +278,33 @@ proc dedupAttrs[Atom](tokenizer: var Tokenizer[Atom]) =
       continue
     tokenizer.tok.attrs.add(attr)
 
+func peekStr(tokenizer: Tokenizer, s: static string): bool =
+  static:
+    doAssert s.len < copyBufLen - 4 and s.len > 0
+    # This breaks on strings with copyBufLen + 4 bytes.
+  if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len >= tokenizer.eof_i:
+    return false
+  for i in 0 ..< s.len:
+    let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
+    if c notin Ascii or c != s[i]:
+      return false
+  return true
+
+func peekStrNoCase(tokenizer: Tokenizer, s: static string): bool =
+  static:
+    doAssert s.len < copyBufLen - 4 and s.len > 0
+    # This breaks on strings with copyBufLen + 4 bytes.
+    for c in s:
+      doAssert c in AsciiUpperAlpha
+      # This requires strings with ASCII upper-case characters to work.
+  if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len > tokenizer.eof_i:
+    return false
+  for i in 0 ..< s.len:
+    let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
+    if c notin Ascii or c.toUpperAscii() != s[i]:
+      return false
+  return true
+
 iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
   var running = true
 
@@ -334,53 +361,18 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     for x in tokenizer.tok.attrs:
       if x.name == tokenizer.attrna:
         tokenizer.attr = false
-  template peek_str(s: static string): bool =
-    static:
-      doAssert s.len < copyBufLen - 4 and s.len > 0
-      # This breaks on strings with copyBufLen + 4 bytes.
-    if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len >= tokenizer.eof_i:
-      false
-    else:
-      var b = true
-      for i in 0 ..< s.len:
-        let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
-        if c notin Ascii or c != s[i]:
-          b = false
-          break
-      b
-
-  template peek_str_nocase(s: static string): bool =
-    static:
-      doAssert s.len < copyBufLen - 4 and s.len > 0
-      # This breaks on strings with copyBufLen + 4 bytes.
-      for c in s:
-        doAssert c in AsciiUpperAlpha
-        # This requires strings with ASCII upper-case characters to work.
-    if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len > tokenizer.eof_i:
-      false
-    else:
-      var b = true
-      for i in 0 ..< s.len:
-        let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
-        if c notin Ascii or c.toUpperAscii() != s[i]:
-          b = false
-          break
-      b
   template peek_char(): char =
     let c = tokenizer.consume()
     tokenizer.reconsume()
     c
-
   template consume_and_discard(n: int) = #TODO optimize
-    var i = 0
-    while i < n:
+    for i in 0 ..< n:
       discard tokenizer.consume()
-      inc i
   template consumed_as_an_attribute(): bool =
     tokenizer.consumedAsAnAttribute()
   template emit_tmp() =
     for c in tokenizer.tmp:
-      emit c
+      tokenizer.emit(c)
   template flush_code_points_consumed_as_a_character_reference() =
     if tokenizer.consumedAsAnAttribute():
       tokenizer.appendToCurrentAttrValue(tokenizer.tmp)
@@ -959,12 +951,12 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
           consume_and_discard 1
         else: anything_else
       of 'D', 'd':
-        if peek_str_nocase("OCTYPE"):
+        if tokenizer.peekStrNoCase("OCTYPE"):
           consume_and_discard "OCTYPE".len
           switch_state DOCTYPE
         else: anything_else
       of '[':
-        if peek_str("CDATA["):
+        if tokenizer.peekStr("CDATA["):
           consume_and_discard "CDATA[".len
           if tokenizer.hasnonhtml:
             switch_state CDATA_SECTION
@@ -1115,13 +1107,13 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
         switch_state DATA
         emit_tok
       of 'p', 'P':
-        if peek_str_nocase("UBLIC"):
+        if tokenizer.peekStrNoCase("UBLIC"):
           consume_and_discard "UBLIC".len
           switch_state AFTER_DOCTYPE_PUBLIC_KEYWORD
         else:
           anything_else
       of 's', 'S':
-        if peek_str_nocase("YSTEM"):
+        if tokenizer.peekStrNoCase("YSTEM"):
           consume_and_discard "YSTEM".len
           switch_state AFTER_DOCTYPE_SYSTEM_KEYWORD
         else:
