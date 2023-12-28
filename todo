@@ -1,0 +1,10 @@
+optimizations:
+* use tagNameEquals/getLocalName less (we could just compare start tags most
+  of the time?)
+* go through TODOs in htmltokenizer
+* replace "bag of function pointers" with mixins
+* on-demand creation of attribute name atoms (most documents don't even
+  need atomMap); use ref array/Option?
+* htmltokenizer: do something with copyBuf, it's ugly and probably broken
+etc:
+* turn test1 into a serializer module

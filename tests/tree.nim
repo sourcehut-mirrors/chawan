@@ -71,3 +71,26 @@ test "tests8.dat":
 
 test "tests9.dat":
   runTests("tests9.dat")
+
+test "tests10.dat":
+  runTests("tests10.dat")
+
+test "tests11.dat":
+  runTests("tests11.dat")
+
+test "tests12.dat":
+  runTests("tests12.dat")
+
+# no tests13 in html5lib-tests :)
+
+test "tests14.dat":
+  runTests("tests14.dat")
+
+test "tests15.dat":
+  runTests("tests15.dat")
+
+test "tests16.dat":
+  runTests("tests16.dat")
+
+test "tests17.dat":
+  runTests("tests17.dat")

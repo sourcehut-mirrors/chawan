@@ -9,6 +9,7 @@
 ## For a variant that can switch encodings when meta tags are encountered etc.
 ## see `chame/minidom_cs <minidom.html>`.
 
+import std/algorithm
 import std/hashes
 import std/options
 import std/sets
@@ -88,11 +89,9 @@ func tagTypeToAtom(factory: AtomFactory[MAtom], tagType: TagType): MAtom =
 func atomToStr*(factory: MAtomFactory, atom: MAtom): string =
   return factory.atomMap[int(atom)]
 
-# Overload useful for testing in htmlparser:
-#[
+# Overload for debugging htmlparser:
 func atomToStr*(factory: AtomFactory[MAtom], atom: MAtom): string =
   cast[MAtomFactory](factory).atomToStr(atom)
-]#
 
 # Node types
 type
@@ -122,7 +121,7 @@ type
     localName*: MAtom
     namespace*: Namespace
     attrs*: seq[Attribute]
-    document* {.cursor.}: Document
+    document*: Document
 
 type
   MiniDOMBuilder* = ref object of DOMBuilder[Node, MAtom]
@@ -208,6 +207,7 @@ proc createElement(builder: DOMBuilder[Node, MAtom], localName: MAtom,
     document: builder.document,
     attrs: attrs
   )
+  assert element.document != nil and element.document.factory != nil
   for attr in element.attrs.mitems:
     attr.value = attr.value.toValidUTF8()
   return element
@@ -353,6 +353,7 @@ proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
     if attr.name notin oldNames:
       let value = attr.value.toValidUTF8()
       element.attrs.add((NO_PREFIX, NO_NAMESPACE, attr.name, value))
+  element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
 
 proc initMiniDOMBuilder*(builder: MiniDOMBuilder) =
   builder.getDocument = getDocument
@@ -415,8 +416,10 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   let root = Element(
     nodeType: ELEMENT_NODE,
     localName: htmlAtom,
-    namespace: HTML
+    namespace: HTML,
+    document: document
   )
+  assert root.document != nil and root.document.factory != nil
   let rootToken = Token[MAtom](t: START_TAG, tagname: htmlAtom)
   document.childList = @[Node(root)]
   var opts = opts

@@ -1,3 +1,4 @@
+import std/algorithm
 import std/options
 import std/strutils
 import std/tables
@@ -148,6 +149,11 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
   template top: auto = stack[^1]
   var thistext: Text
   var indent = 1
+  template pop_node =
+    let node = stack.pop()
+    if node of Element:
+      Element(node).attrs.sort(proc(a, b: Attribute): int = cmp(a.name, b.name))
+    indent -= 2
   while ctx.has:
     let line = ctx.consumeLine()
     if line == "":
@@ -161,7 +167,9 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       continue
     assert line[0] == '|' and line[1] == ' '
     while indent >= line.len or not line.startsWith('|' & ' '.repeat(indent)):
-      discard stack.pop()
+      let node = stack.pop()
+      if node of Element:
+        Element(node).attrs.sort(proc(a, b: Attribute): int = cmp(a.name, b.name))
       indent -= 2
     let str = line.substr(indent + 1)
     if str.startsWith("<!DOCTYPE "):
@@ -221,6 +229,8 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       let na = ctx.factory.strToAtom(name)
       let value = ss[1][1..^2]
       Element(top).attrs.add((prefix, ns, na, value))
+  while indent > 1:
+    pop_node
 
 proc parseTest(ctx: var TCTestParser): TCTest =
   doAssert ctx.consumeLine() == "#data"
@@ -266,6 +276,9 @@ proc checkTest(nodein, nodep: Node) =
     let nodep = Element(nodep)
     check nodein.localName == nodep.localName
     check nodein.namespace == nodep.namespace
+    if nodein.attrs != nodep.attrs:
+      echo "NODEIN", $nodein
+      echo "NODEP", $nodep
     check nodein.attrs == nodep.attrs
   of ATTRIBUTE_NODE, ENTITY_REFERENCE_NODE, ENTITY_NODE,
       DOCUMENT_FRAGMENT_NODE, NOTATION_NODE:
