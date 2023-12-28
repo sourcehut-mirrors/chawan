@@ -282,11 +282,11 @@ func peekStr(tokenizer: Tokenizer, s: static string): bool =
   static:
     doAssert s.len < copyBufLen - 4 and s.len > 0
     # This breaks on strings with copyBufLen + 4 bytes.
-  if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len >= tokenizer.eof_i:
+  if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len > tokenizer.eof_i:
     return false
   for i in 0 ..< s.len:
     let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
-    if c notin Ascii or c != s[i]:
+    if c != s[i]:
       return false
   return true
 
@@ -294,14 +294,12 @@ func peekStrNoCase(tokenizer: Tokenizer, s: static string): bool =
   static:
     doAssert s.len < copyBufLen - 4 and s.len > 0
     # This breaks on strings with copyBufLen + 4 bytes.
-    for c in s:
-      doAssert c in AsciiUpperAlpha
-      # This requires strings with ASCII upper-case characters to work.
+  const s = s.toLowerAscii()
   if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len > tokenizer.eof_i:
     return false
   for i in 0 ..< s.len:
     let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
-    if c notin Ascii or c.toUpperAscii() != s[i]:
+    if c.toLowerAscii() != s[i]:
       return false
   return true
 
@@ -951,8 +949,8 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
           consume_and_discard 1
         else: anything_else
       of 'D', 'd':
-        if tokenizer.peekStrNoCase("OCTYPE"):
-          consume_and_discard "OCTYPE".len
+        if tokenizer.peekStrNoCase("octype"):
+          consume_and_discard "octype".len
           switch_state DOCTYPE
         else: anything_else
       of '[':
@@ -1107,14 +1105,14 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
         switch_state DATA
         emit_tok
       of 'p', 'P':
-        if tokenizer.peekStrNoCase("UBLIC"):
-          consume_and_discard "UBLIC".len
+        if tokenizer.peekStrNoCase("ublic"):
+          consume_and_discard "ublic".len
           switch_state AFTER_DOCTYPE_PUBLIC_KEYWORD
         else:
           anything_else
       of 's', 'S':
-        if tokenizer.peekStrNoCase("YSTEM"):
-          consume_and_discard "YSTEM".len
+        if tokenizer.peekStrNoCase("ystem"):
+          consume_and_discard "ystem".len
           switch_state AFTER_DOCTYPE_SYSTEM_KEYWORD
         else:
           anything_else
@@ -1325,7 +1323,6 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     of CDATA_SECTION_BRACKET:
       case c
       of ']': switch_state CDATA_SECTION_END
-      of '>': switch_state DATA
       else:
         emit ']'
         reconsume_in CDATA_SECTION

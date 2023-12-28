@@ -1093,8 +1093,10 @@ func extractEncFromMeta(s: string): string =
     var j = 0
     while i < s.len:
       template check(c: static char) =
-        if s[i] in {c, c.toUpperAscii()}: inc j
-        else: j = 0
+        if s[i].toLowerAscii() == c:
+          inc j
+        else:
+          j = 0
       case j
       of 0: check 'c'
       of 1: check 'h'

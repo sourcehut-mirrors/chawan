@@ -103,3 +103,6 @@ test "tests19.dat":
 
 test "tests20.dat":
   runTests("tests20.dat")
+
+test "tests21.dat":
+  runTests("tests21.dat")
