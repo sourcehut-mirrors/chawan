@@ -35,13 +35,18 @@ func `$`*(node: Node): string =
   case node.nodeType
   of ELEMENT_NODE:
     let element = Element(node)
-    result = "<" & element.localNameStr
+    var x = ""
+    if element.namespace == Namespace.SVG:
+      x = "svg "
+    elif element.namespace == Namespace.MATHML:
+      x = "math "
+    result = "<" & x & element.localNameStr
     for k, v in element.attrsStr:
       result &= ' ' & k & "=\"" & v.escapeText(true) & "\""
     result &= ">"
     for node in element.childList:
       result &= $node
-    result &= "</" & element.localNameStr & ">"
+    result &= "</" & x & element.localNameStr & ">"
   of TEXT_NODE:
     let text = Text(node)
     result = text.data.escapeText()

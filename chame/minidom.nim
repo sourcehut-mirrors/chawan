@@ -145,14 +145,14 @@ proc toValidUTF8(s: string): string =
     if int(s[i]) < 0x80:
       result &= s[i]
       inc i
-    elif int(s[i]) shr 3 == 0x18:
+    elif int(s[i]) shr 5 == 0x6:
       if i + 1 < s.len and int(s[i + 1]) shr 6 == 2:
         result &= s[i]
         result &= s[i + 1]
       else:
         result &= "\uFFFD"
       i += 2
-    elif int(s[i]) shr 3 == 0x1C:
+    elif int(s[i]) shr 4 == 0xE:
       if i + 2 < s.len and int(s[i + 1]) shr 6 == 2 and
           int(s[i + 2]) shr 6 == 2:
         result &= s[i]
@@ -418,13 +418,16 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   ## `pushInTemplate` of `opts` are overridden (in accordance with the standard).
   let builder = newMiniDOMBuilder(factory)
   let document = builder.document
-  let state = case element.tagType
-  of TAG_TITLE, TAG_TEXTAREA: RCDATA
-  of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES: RAWTEXT
-  of TAG_SCRIPT: SCRIPT_DATA
-  of TAG_NOSCRIPT: DATA # no scripting
-  of TAG_PLAINTEXT: PLAINTEXT
-  else: DATA
+  let state = if element.namespace != Namespace.HTML:
+    DATA
+  else:
+    case element.tagType
+    of TAG_TITLE, TAG_TEXTAREA: RCDATA
+    of TAG_STYLE, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES: RAWTEXT
+    of TAG_SCRIPT: SCRIPT_DATA
+    of TAG_NOSCRIPT: DATA # no scripting
+    of TAG_PLAINTEXT: PLAINTEXT
+    else: DATA
   let htmlAtom = builder.factory.tagTypeToAtom(TAG_HTML)
   let root = Element(
     nodeType: ELEMENT_NODE,

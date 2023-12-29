@@ -36,15 +36,18 @@ type
     i: int
     pi: int
     factory: MAtomFactory
+    linei: int
 
 func has(ctx: TCTestParser): bool =
   return ctx.i < ctx.s.len
 
 proc reconsumeLine(ctx: var TCTestParser) =
   ctx.i = ctx.pi
+  dec ctx.linei
 
 proc consumeLine(ctx: var TCTestParser): string =
   ctx.pi = ctx.i
+  inc ctx.linei
   while ctx.has:
     if ctx.s[ctx.i] == '\n':
       inc ctx.i
@@ -107,16 +110,16 @@ proc parseTestFragment(ctx: var TCTestParser): TCFragment =
     ctx: element
   )
 
-proc parseDoctype(s: string): DocumentType =
+proc parseDoctype(ctx: TCTestParser, s: string): DocumentType =
   let doctype = DocumentType(nodeType: DOCUMENT_TYPE_NODE)
   var i = "<!DOCTYPE ".len
   while i < s.len and s[i] != ' ' and s[i] != '>':
     doctype.name &= s[i]
     inc i
+  while s[i] == ' ':
+    inc i
   if s[i] == '>':
     return doctype
-  assert s[i] == ' '
-  inc i
   assert s[i] == '"'
   inc i
   while i < s.len and s[i] != '"':
@@ -131,17 +134,13 @@ proc parseDoctype(s: string): DocumentType =
   while i < s.len and s[i] != '"':
     doctype.systemId &= s[i]
     inc i
+  while i + 1 < s.len and s[i + 1] == '"':
+    doctype.systemId &= s[i]
+    inc i
   assert s[i] == '"'
   inc i
   assert s[i] == '>'
   return doctype
-
-proc parseComment(s: string): Comment =
-  assert s.startsWith("<!-- ") and s.endsWith(" -->")
-  return Comment(
-    nodeType: COMMENT_NODE,
-    data: s["<!-- ".len .. ^(" -->".len + 1)]
-  )
 
 proc parseTestDocument(ctx: var TCTestParser): Document =
   result = Document(nodeType: DOCUMENT_NODE, factory: ctx.factory)
@@ -149,6 +148,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
   stack.add(result)
   template top: auto = stack[^1]
   var thistext: Text
+  var thiscomment: Comment
   var indent = 1
   template pop_node =
     let node = stack.pop()
@@ -157,15 +157,22 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
     indent -= 2
   while ctx.has:
     let line = ctx.consumeLine()
-    if line == "":
-      break
     if thistext != nil:
-      if line[^1] == '"':
+      if line.endsWith("\""):
         thistext.data &= line.substr(0, line.high - 1)
         thistext = nil
       else:
         thistext.data &= line & "\n"
       continue
+    if thiscomment != nil:
+      if line.endsWith(" -->"):
+        thiscomment.data &= line.substr(0, line.high - " -->".len)
+        thiscomment = nil
+      else:
+        thiscomment.data &= line & "\n"
+      continue
+    if line == "":
+      break
     assert line[0] == '|' and line[1] == ' '
     while indent >= line.len or not line.startsWith('|' & ' '.repeat(indent)):
       let node = stack.pop()
@@ -174,14 +181,19 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       indent -= 2
     let str = line.substr(indent + 1)
     if str.startsWith("<!DOCTYPE "):
-      let doctype = parseDoctype(str)
+      let doctype = ctx.parseDoctype(str)
       top.childList.add(doctype)
-    elif str.startsWith("<!--"):
-      let comment = parseComment(str)
+    elif str.startsWith("<!-- "):
+      let comment = Comment(nodeType: COMMENT_NODE)
       top.childList.add(comment)
+      if not str.endsWith(" -->"):
+        comment.data = str.substr("<!-- ".len) & "\n"
+        thiscomment = comment
+      else:
+        comment.data = str.substr("<!-- ".len, str.high - " -->".len)
     elif str.startsWith("<?"):
       assert false, "todo"
-    elif str.startsWith("<"):
+    elif str.startsWith("<") and str.endsWith(">"):
       var nameStr = str.substr(1, str.high - 1)
       var namespace = Namespace.HTML
       if nameStr.startsWith("svg "):

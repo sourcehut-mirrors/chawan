@@ -20,10 +20,14 @@ description of the API.
 
 * Almost full compliance with the WHATWG standard. (Except for the few missing
   features listed in the following section.)
+* Passes all tokenizer and tree builder tests in html5lib-tests.[^1]
 * Includes a minimal DOM implementation.
 * No mandatory dependencies other than the Nim standard library.
 * Optional character encoding support (see minidom_enc).
 * String interning support for tag and attribute names.
+
+[^1]: Except for tree builder tests requiring JavaScript and xmlViolation
+tokenizer tests.
 
 ## To-do
 
@@ -37,8 +41,12 @@ is planned, even if source code comments say otherwise.
 
 Other, non-standard-related tasks (in no particular order):
 
-* Get all of html5lib-tests to pass.
-* Optimize inefficient parts of the library.
+* Re-design the `htmlparser` interface. (This will be a breaking change in
+  the next version.)
+* Decide if we really want to validate strings in minidom
+* Document minidom/minidom_enc
+* Document the new interface (also explain what `Atom` does etc.)
+* Optimize inefficient parts of the library
 
 ## Bugs, feedback, etc.
 
@@ -54,13 +62,14 @@ Chame just parses HTML and calls the callbacks supplied to it. JavaScript,
 DOM manipulation, etc. are technically outside the scope of this project.
 
 However, Chame includes a minimal DOM interface (intuitively named minidom)
-for demonstration & testing purposes. This only implements the very basics
-needed for the parser to function, and does not have any convenience functions
-(like querySelector, getElementById, etc.) Please refer to the
-[Chawan](https://sr.ht/~bptato/chawan/) web browser for an example of a
-complete DOM implementation that depends on Chame.
+for demonstration and testing purposes. This only implements the very basics
+needed for the parser to function (and for the tests to pass), and does not
+have any convenience functions (like querySelector, getElementById, etc.)
 
-Please notify me if you implement a DOM library based on Chame, so that I
+Please refer to the [Chawan](https://sr.ht/~bptato/chawan/) web browser for
+an example of a complete DOM implementation that depends on Chame.
+
+If you implement a DOM library based on Chame, please notify me, so that I
 can redirect users to it in this section.
 
 ### How do you pronounce Chame?
