@@ -1,6 +1,12 @@
+interface:
+* pass TokenAttr to createElement, then append adjusted attributes with a
+  separate callback
+* get rid of getParentNode (replace with an insertBeforeOrAppendTo?)
+* optional callbacks without function pointers (when compiles?)
 optimizations:
+* reduce use of getNamespace (maybe store ns on the stack of open elements?)
+* reduce atomToTagType calls (store tagType before the case statement in match?)
 * go through TODOs in htmltokenizer
-* replace "bag of function pointers" with mixins
 * on-demand creation of attribute name atoms (most documents don't even
   need atomMap); use ref array/Option?
 * htmltokenizer: do something with copyBuf, it's ugly and probably broken

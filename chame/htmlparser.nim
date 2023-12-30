@@ -4,7 +4,7 @@ import std/streams
 import std/strutils
 import std/tables
 
-import atoms
+import dombuilder
 import htmltokenizer
 import parseerror
 import tags
@@ -12,64 +12,11 @@ import utils/twtstr
 
 # Generics break without exporting macros. Maybe a compiler bug?
 export macros
+export dombuilder
 export TokenAttr
 
 # Heavily inspired by html5ever's TreeSink design.
 type
-  DOMBuilder*[Handle, Atom] = ref object of RootObj
-    getDocument*: DOMBuilderGetDocument[Handle, Atom]
-    ## Must never be nil.
-    getAtomFactory*: DOMBuilderGetAtomFactory[Handle, Atom]
-    ## Must never be nil.
-    finish*: DOMBuilderFinish[Handle, Atom]
-    ## May be nil.
-    parseError*: DOMBuilderParseError[Handle, Atom]
-    ## May be nil.
-    setQuirksMode*: DOMBuilderSetQuirksMode[Handle, Atom]
-    ## May be nil
-    setEncoding*: DOMBuilderSetEncoding[Handle, Atom]
-    ## May be nil.
-    elementPopped*: DOMBuilderElementPopped[Handle, Atom]
-    ## May be nil.
-    getTemplateContent*: DOMBuilderGetTemplateContent[Handle, Atom]
-    ## May be nil. (If nil, templates are treated as regular elements.)
-    getParentNode*: DOMBuilderGetParentNode[Handle, Atom]
-    ## Must never be nil.
-    getLocalName*: DOMBuilderGetLocalName[Handle, Atom]
-    ## Must never be nil.
-    getNamespace*: DOMBuilderGetNamespace[Handle, Atom]
-    ## May be nil. (If nil, the parser always uses the HTML namespace.)
-    createElement*: DOMBuilderCreateElement[Handle, Atom]
-    ## Must never be nil.
-    createComment*: DOMBuilderCreateComment[Handle, Atom]
-    ## Must never be nil.
-    createDocumentType*: DOMBuilderCreateDocumentType[Handle, Atom]
-    ## Must never be nil.
-    insertBefore*: DOMBuilderInsertBefore[Handle, Atom]
-    ## Must never be nil.
-    insertText*: DOMBuilderInsertText[Handle, Atom]
-    ## Must never be nil.
-    remove*: DOMBuilderRemove[Handle, Atom]
-    ## Must never be nil.
-    moveChildren*: DOMBuilderMoveChildren[Handle, Atom]
-    ## Must never be nil.
-    addAttrsIfMissing*: DOMBuilderAddAttrsIfMissing[Handle, Atom]
-    ## May be nil. (If nil, some attributes may not be added to the HTML or
-    ## BODY element if more than one of their respective opening tags exist.)
-    setScriptAlreadyStarted*: DOMBuilderSetScriptAlreadyStarted[Handle, Atom]
-    ## May be nil.
-    associateWithForm*: DOMBuilderAssociateWithForm[Handle, Atom]
-    ## May be nil.
-
-  ParsedAttr*[Atom] = tuple
-    prefix: NamespacePrefix
-    namespace: Namespace
-    name: Atom
-    value: string
-
-  SetEncodingResult* = enum
-    SET_ENCODING_STOP, SET_ENCODING_CONTINUE
-
   HTML5ParserOpts*[Handle, Atom] = object
     isIframeSrcdoc*: bool
     ## Is the document an iframe srcdoc?
@@ -96,158 +43,6 @@ type
   OpenElement*[Handle, Atom] = tuple
     element: Handle
     token: Token[Atom] ## the element's start tag token; must not be nil.
-
-  DOMBuilderGetDocument*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom]): Handle {.nimcall.}
-      ## Get the root document node's handle.
-      ## This must not return nil, not even in the fragment parsing case.
-
-  DOMBuilderGetAtomFactory*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom]): AtomFactory[Atom] {.nimcall.}
-      ## Get the root document node's handle.
-      ## This must not return nil, not even in the fragment parsing case.
-
-  DOMBuilderFinish*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom]) {.nimcall.}
-      ## Parsing has finished.
-
-  DOMBuilderParseError*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], message: ParseError) {.nimcall.}
-      ## Parse error. `message` is an error code either specified by the
-      ## standard (in this case, message < LAST_SPECIFIED_ERROR) or named
-      ## arbitrarily. (At the time of writing, only tokenizer errors have
-      ## specified error codes.)
-
-  DOMBuilderSetQuirksMode*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], quirksMode: QuirksMode) {.nimcall.}
-      ## Set quirks mode to either QUIRKS or LIMITED_QUIRKS. NO_QUIRKS
-      ## is the default and is therefore never used here.
-
-  DOMBuilderSetEncoding*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], encoding: string): SetEncodingResult
-        {.nimcall.}
-      ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
-      ## containing a non-empty character set is encountered. A
-      ## SetEncodingResult is expected, which is either SET_ENCODING_STOP,
-      ## stopping the parser, or SET_ENCODING_CONTINUE, allowing the parser to
-      ## continue.
-      ##
-      ## Note that Chame no longer contains any encoding-related logic; this is
-      ## left to the caller.
-
-  DOMBuilderElementPopped*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], element: Handle) {.nimcall.}
-      ## Called when an element is popped from the stack of open elements
-      ## (i.e. when it has been closed.)
-
-  DOMBuilderGetTemplateContent*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], handle: Handle): Handle {.nimcall.}
-      ## Retrieve a handle to the template element's contents.
-      ## Note: this function must never return nil.
-
-  DOMBuilderGetParentNode*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], handle: Handle): Option[Handle]
-        {.nimcall.}
-      ## Retrieve a handle to the parent node.
-      ## May return none(Handle) if no parent node exists.
-
-  DOMBuilderGetTagType*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], handle: Handle): TagType {.nimcall.}
-      ## Retrieve the tag type of element.
-
-  DOMBuilderGetLocalName*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], handle: Handle): Atom {.nimcall.}
-      ## Retrieve the local name of element. (This is tagName(getTagType),
-      ## unless the tag is unknown.
-
-  DOMBuilderGetNamespace*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], handle: Handle): Namespace {.nimcall.}
-      ## Retrieve the namespace of element.
-
-  DOMBuilderCreateElement*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], localName: Atom, namespace: Namespace,
-        attrs: seq[ParsedAttr[Atom]]): Handle {.nimcall.}
-      ## Create a new element node.
-      ##
-      ## localName is the tag name of the token.
-      ##
-      ## namespace is the namespace passed to the function. (For HTML elements,
-      ## it's HTML.)
-      ## tagType is set based on localName. (This saves the consumer from
-      ## having to interpret localName again.)
-      ##
-      ## attrs is a table of the token's attributes.
-
-  DOMBuilderCreateComment*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], text: string): Handle {.nimcall.}
-      ## Create a new comment node.
-
-  DOMBuilderInsertText*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], parent: Handle, text: string,
-        before: Option[Handle]) {.nimcall.}
-      ## Insert a text node at the specified location with contents
-      ## `text`. If the specified location has a previous sibling that is
-      ## a text node, no new text node should be created, but instead `text`
-      ## should be appended to the previous sibling's character data.
-
-  DOMBuilderCreateDocumentType*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], name, publicId,
-        systemId: string): Handle {.nimcall.}
-    ## Create a new document type node.
-
-  DOMBuilderInsertBefore*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], parent, child: Handle,
-        before: Option[Handle]) {.nimcall.}
-      ## Insert node `child` before the node called `before`.
-      ##
-      ## If `before` is none(Handle), `child` is expected to be appended to
-      ## `parent`'s node list.
-      ##
-      ## If `child` is a text, and its previous sibling after insertion is a
-      ## text as well, then they should be merged. `before` is never a
-      ## text node (and thus never has to be merged).
-      ##
-      ## Note: parent may either be an Element or a Document node.
-
-  DOMBuilderRemove*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], child: Handle) {.nimcall.}
-      ## Remove `child` from its parent node, and do nothing if `child`
-      ## has no parent node.
-
-  DOMBuilderMoveChildren*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], fromHandle, toHandle: Handle)
-        {.nimcall.}
-      ## Remove all children from the node `fromHandle`, then append them to
-      ## `toHandle`.
-
-  DOMBuilderAddAttrsIfMissing*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], element: Handle,
-        attrs: seq[TokenAttr[Atom]]) {.nimcall.}
-      ## Add the attributes in `attrs` to the element node `element`.
-      ## This is called for HTML and BODY only.
-      ##
-      ## Pseudocode implementation:
-      ## ```nim
-      ## for attr in attrs:
-      ##   if attr.name notin element.attrs:
-      ##     element.attrs.add(attr)
-      ## ```
-
-  DOMBuilderSetScriptAlreadyStarted*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], script: Handle) {.nimcall.}
-      ## Set the "already started" flag for the script element.
-      ##
-      ## Note: this flag is not togglable, so this callback should just set it
-      ## to true.
-
-  DOMBuilderAssociateWithForm*[Handle, Atom] =
-    proc(builder: DOMBuilder[Handle, Atom], element, form, intendedParent: Handle)
-        {.nimcall.}
-      ## Called after createElement. Attempts to set form for form-associated
-      ## elements.
-      ##
-      ## Note: the DOM builder is responsible for checking whether the
-      ## intended parent and the form element are in the same tree.
 
 type
   MappedAtom = enum
@@ -282,7 +77,6 @@ type
   HTML5Parser[Handle, Atom] = object
     quirksMode: QuirksMode
     dombuilder: DOMBuilder[Handle, Atom]
-    factory: AtomFactory[Atom]
     opts: HTML5ParserOpts[Handle, Atom]
     stopped: bool
     openElements: seq[OpenElement[Handle, Atom]]
@@ -290,7 +84,7 @@ type
     oldInsertionMode: InsertionMode
     templateModes: seq[InsertionMode]
     head: Option[OpenElement[Handle, Atom]]
-    tokenizer: Tokenizer[Atom]
+    tokenizer: Tokenizer[Handle, Atom]
     form: Option[Handle]
     fosterParenting: bool
     # Handle is an element. nil => marker
@@ -317,16 +111,22 @@ type
     AFTER_BODY, IN_FRAMESET, AFTER_FRAMESET, AFTER_AFTER_BODY,
     AFTER_AFTER_FRAMESET
 
-# AtomFactory interface functions
+# DOMBuilder interface functions
 proc strToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom], s: string):
     Atom =
-  return parser.factory.strToAtomImpl(parser.factory, s)
+  mixin strToAtomImpl
+  return parser.dombuilder.strToAtomImpl(s)
 
 proc tagTypeToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     tagType: TagType): Atom =
-  return parser.factory.tagTypeToAtomImpl(parser.factory, tagType)
+  mixin tagTypeToAtomImpl
+  return parser.dombuilder.tagTypeToAtomImpl(tagType)
 
-# DOMBuilder interface functions
+proc atomToTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    atom: Atom): TagType =
+  mixin atomToTagTypeImpl
+  return parser.dombuilder.atomToTagTypeImpl(atom)
+
 proc finish[Handle, Atom](parser: HTML5Parser[Handle, Atom]) =
   if parser.dombuilder.finish != nil:
     parser.dombuilder.finish(parser.dombuilder)
@@ -346,23 +146,25 @@ proc setEncoding(parser: var HTML5Parser, cs: string): SetEncodingResult =
     return dombuilder.setEncoding(dombuilder, cs)
   return SET_ENCODING_CONTINUE
 
-func getDocument[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
-  let dombuilder = parser.dombuilder
-  return dombuilder.getDocument(dombuilder)
+proc getDocument[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
+  mixin getDocumentImpl
+  return parser.dombuilder.getDocumentImpl()
 
 func getTemplateContent[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): Handle =
   let dombuilder = parser.dombuilder
   return dombuilder.getTemplateContent(dombuilder, handle)
 
+#TODO remove/replace
 func getParentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): Option[Handle] =
-  let dombuilder = parser.dombuilder
-  return dombuilder.getParentNode(dombuilder, handle)
+  mixin getParentNodeImpl
+  return parser.dombuilder.getParentNodeImpl(handle)
 
 func getLocalName[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): Atom =
-  return parser.dombuilder.getLocalName(parser.dombuilder, handle)
+  mixin getLocalNameImpl
+  return parser.dombuilder.getLocalNameImpl(handle)
 
 func getNamespace[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): Namespace =
@@ -374,46 +176,47 @@ func getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): TagType =
   if parser.getNamespace(handle) != Namespace.HTML:
     return TAG_UNKNOWN
-  return parser.getLocalName(handle).toTagType()
+  return parser.atomToTagType(parser.getLocalName(handle))
 
 func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     localName: Atom, namespace: Namespace, attrs: seq[ParsedAttr[Atom]]):
     Handle =
-  return parser.dombuilder.createElement(parser.dombuilder, localName,
-    namespace, attrs)
+  mixin createElementImpl
+  return parser.dombuilder.createElementImpl(localName, namespace, attrs)
 
 func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     tagType: TagType, namespace: Namespace): Handle =
   let atom = parser.tagTypeToAtom(tagType)
   return parser.createElement(atom, namespace, @[])
 
-func createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom], text: string): Handle =
-  let dombuilder = parser.dombuilder
-  return dombuilder.createComment(dombuilder, text)
+func createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    text: string): Handle =
+  mixin createCommentImpl
+  return parser.dombuilder.createCommentImpl(text)
 
-proc createDocumentType[Handle, Atom](parser: HTML5Parser[Handle, Atom], name, publicId,
-    systemId: string): Handle =
-  let dombuilder = parser.dombuilder
-  return dombuilder.createDocumentType(dombuilder, name, publicId, systemId)
+proc createDocumentType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    name, publicId, systemId: string): Handle =
+  mixin createDocumentTypeImpl
+  return parser.dombuilder.createDocumentTypeImpl(name, publicId, systemId)
 
-proc insertBefore[Handle, Atom](parser: HTML5Parser[Handle, Atom], parent, node: Handle,
-    before: Option[Handle]) =
-  let dombuilder = parser.dombuilder
-  dombuilder.insertBefore(dombuilder, parent, node, before)
+proc insertBefore[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    parent, child: Handle, before: Option[Handle]) =
+  mixin insertBeforeImpl
+  parser.dombuilder.insertBeforeImpl(parent, child, before)
 
 proc insertText[Handle, Atom](parser: HTML5Parser[Handle, Atom], parent: Handle,
     text: string, before: Option[Handle]) =
-  let dombuilder = parser.dombuilder
-  dombuilder.insertText(dombuilder, parent, text, before)
+  mixin insertTextImpl
+  parser.dombuilder.insertTextImpl(parent, text, before)
 
 proc remove[Handle, Atom](parser: HTML5Parser[Handle, Atom], child: Handle) =
-  let dombuilder = parser.dombuilder
-  dombuilder.remove(dombuilder, child)
+  mixin removeImpl
+  parser.dombuilder.removeImpl(child)
 
 proc moveChildren[Handle, Atom](parser: HTML5Parser[Handle, Atom], handleFrom,
     handleTo: Handle) =
-  let dombuilder = parser.dombuilder
-  dombuilder.moveChildren(dombuilder, handleFrom, handleTo)
+  mixin moveChildrenImpl
+  parser.dombuilder.moveChildrenImpl(handleFrom, handleTo)
 
 proc addAttrsIfMissing[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     element: Handle, attrs: seq[TokenAttr[Atom]]) =
@@ -580,7 +383,7 @@ func hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     case parser.getNamespace(element)
     of Namespace.HTML:
       {.linearScanEnd.}
-      if localName.toTagType() in list:
+      if parser.atomToTagType(localName) in list:
         return false
     of Namespace.MATHML:
       let elements = [
@@ -607,7 +410,7 @@ func hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     case parser.getNamespace(element)
     of Namespace.HTML:
       {.linearScanEnd.}
-      let tagType = localName.toTagType()
+      let tagType = parser.atomToTagType(localName)
       if tagType in target:
         return true
       if tagType in list:
@@ -639,7 +442,12 @@ func hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 
 func hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType): bool =
-  return parser.hasElementInScopeWithXML({target}, Scope)
+  return parser.hasElementInScope({target})
+
+func hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    localName: Atom): bool =
+  let target = parser.atomToTagType(localName)
+  return parser.hasElementInScope(target)
 
 func hasElementInListItemScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType): bool =
@@ -715,7 +523,7 @@ func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     attrs: seq[ParsedAttr[Atom]]): Handle =
   #TODO custom elements
   let element = parser.createElement(localName, namespace, attrs)
-  let tagType = localName.toTagType()
+  let tagType = parser.atomToTagType(localName)
   if namespace == Namespace.HTML and tagType in FormAssociatedElements and
       parser.form.isSome and not parser.hasElement(TAG_TEMPLATE) and
       (tagType notin ListedElements or
@@ -810,7 +618,7 @@ proc insertCharacter(parser: var HTML5Parser, data: string) =
   let location = parser.appropriatePlaceForInsert()
   if location.inside == parser.getDocument():
     return
-  insertText(parser, location.inside, $data, location.before)
+  parser.insertText(location.inside, $data, location.before)
 
 proc insertComment[Handle, Atom](parser: var HTML5Parser[Handle, Atom], token: Token,
     position: AdjustedInsertionLocation[Handle]) =
@@ -1209,7 +1017,7 @@ func isSpecialElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   case namespace
   of Namespace.HTML:
     {.linearScanEnd.}
-    return localName.toTagType() in SpecialElements
+    return parser.atomToTagType(localName) in SpecialElements
   of Namespace.MATHML:
     let elements = [
       parser.atomMap[ATOM_MI],
@@ -1372,7 +1180,7 @@ proc newStartTagToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 #       echo "comment"
 #       break inside_not_else
 #     of TokenType.START_TAG:
-#       case token.tagtype
+#       case parser.atomToTagName(token.tagname)
 #       of {TAG_P, TAG_A}:
 #         echo "p, a or closing div"
 #         break inside_not_else
@@ -1381,7 +1189,7 @@ proc newStartTagToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 #         assert false
 #         break inside_not_else
 #     of TokenType.END_TAG:
-#       case token.tagtype
+#       case parser.atomToTagName(token.tagname)
 #       of TAG_DIV:
 #         echo "p, a or closing div"
 #         break inside_not_else
@@ -1462,7 +1270,7 @@ macro match(token: Token, body: typed): untyped =
   func tokenBranchOn(tok: TokenType): NimNode =
     case tok
     of START_TAG, END_TAG:
-      return quote do: token.tagtype
+      return quote do: parser.atomToTagType(token.tagname)
     else:
       error "Unsupported branching of token " & $tok
 
@@ -1530,7 +1338,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
   template parse_error_if_mismatch(tagtype: TagType) =
     if parser.hasParseError():
-      if parser.getTagType(parser.currentNode) != TAG_DD:
+      if parser.getTagType(parser.currentNode) != tagtype:
         parse_error MISMATCHED_TAGS
 
   template parse_error_if_mismatch(tagtypes: set[TagType]) =
@@ -1763,7 +1571,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       for i in countdown(parser.openElements.high, 0):
         let (node, itToken) = parser.openElements[i]
         if itToken.tagname == token.tagname:
-          parser.generateImpliedEndTags(token.tagtype)
+          parser.generateImpliedEndTags(parser.atomToTagType(token.tagname))
           if node != parser.currentNode:
             parse_error ELEMENT_NOT_CURRENT_NODE
           while parser.popElement() != node:
@@ -1951,12 +1759,13 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
        "</fieldset>", "</figcaption>", "</figure>", "</footer>", "</header>",
        "</hgroup>", "</listing>", "</main>", "</menu>", "</nav>", "</ol>",
        "</pre>", "</search>", "</section>", "</summary>", "</ul>") => (block:
-        if not parser.hasElementInScope(token.tagtype):
+        if not parser.hasElementInScope(token.tagname):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch token.tagtype
-          parser.popElementsIncl(token.tagtype)
+          let tagType = parser.atomToTagType(token.tagname)
+          parse_error_if_mismatch tagType
+          parser.popElementsIncl(tagType)
       )
       "</form>" => (block:
         if not parser.hasElement(TAG_TEMPLATE):
@@ -1994,19 +1803,20 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.popElementsIncl(TAG_LI)
       )
       ("</dd>", "</dt>") => (block:
-        if not parser.hasElementInScope(token.tagtype):
+        let tagType = parser.atomToTagType(token.tagname)
+        if not parser.hasElementInScope(tagType):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
-          parser.generateImpliedEndTags(token.tagtype)
-          parse_error_if_mismatch token.tagtype
-          parser.popElementsIncl(token.tagtype)
+          parser.generateImpliedEndTags(tagType)
+          parse_error_if_mismatch tagType
+          parser.popElementsIncl(tagType)
       )
       ("</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>") => (block:
         if not parser.hasElementInScope(HTagTypes):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch token.tagtype
+          parse_error_if_mismatch parser.atomToTagType(token.tagname)
           parser.popElementsIncl(HTagTypes)
       )
       "</sarcasm>" => (block:
@@ -2062,12 +1872,13 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.framesetOk = false
       )
       ("</applet>", "</marquee>", "</object>") => (block:
-        if not parser.hasElementInScope(token.tagtype):
+        let tagType = parser.atomToTagType(token.tagname)
+        if not parser.hasElementInScope(tagType):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch token.tagtype
-          while parser.getTagType(parser.popElement()) != token.tagtype: discard
+          parse_error_if_mismatch tagType
+          parser.popElementsIncl(tagType)
           parser.clearActiveFormattingTillMarker()
       )
       "<table>" => (block:
@@ -2452,7 +2263,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         reprocess token
       )
       ("</tbody>", "</tfoot>", "</thead>") => (block:
-        if not parser.hasElementInTableScope(token.tagtype):
+        let tagType = parser.atomToTagType(token.tagname)
+        if not parser.hasElementInTableScope(tagType):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
           clear_the_stack_back_to_a_table_body_context
@@ -2506,7 +2318,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           reprocess token
       )
       ("</tbody>", "</tfoot>", "</thead>") => (block:
-        if not parser.hasElementInTableScope(token.tagtype):
+        let tagType = parser.atomToTagType(token.tagname)
+        if not parser.hasElementInTableScope(tagType):
           parse_error ELEMENT_NOT_IN_SCOPE
         elif not parser.hasElementInTableScope(TAG_TR):
           discard
@@ -2530,12 +2343,13 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
     match token:
       ("</td>", "</th>") => (block:
-        if not parser.hasElementInTableScope(token.tagtype):
+        let tagType = parser.atomToTagType(token.tagname)
+        if not parser.hasElementInTableScope(tagType):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch token.tagtype
-          parser.popElementsIncl(token.tagtype)
+          parse_error_if_mismatch tagType
+          parser.popElementsIncl(tagType)
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = IN_ROW
       )
@@ -2551,7 +2365,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parse_error UNEXPECTED_END_TAG
       )
       ("</table>", "</tbody>", "</tfoot>", "</thead>", "</tr>") => (block:
-        if not parser.hasElementInTableScope(token.tagtype):
+        let tagType = parser.atomToTagType(token.tagname)
+        if not parser.hasElementInTableScope(tagType):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
           close_cell
@@ -2647,7 +2462,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       ("</caption>", "</table>", "</tbody>", "</tfoot>", "</thead>", "</tr>",
        "</td>", "</th>") => (block:
         parse_error UNEXPECTED_END_TAG
-        if not parser.hasElementInTableScope(token.tagtype):
+        let tagType = parser.atomToTagType(token.tagname)
+        if not parser.hasElementInTableScope(tagType):
           discard
         else:
           parser.popElementsIncl(TAG_SELECT)
@@ -2875,7 +2691,7 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
      "<sup>", "<table>", "<tt>", "<u>", "<ul>", "<var>",
      "<font>", # only if has "color", "face", or "size"
      "</br>", "</p>") => (block:
-      if token.tagtype == TAG_FONT:
+      if parser.atomToTagType(token.tagname) == TAG_FONT:
         const AttrsToCheck = [ATOM_COLOR, ATOM_FACE, ATOM_SIZE]
         block notfound:
           for attr in token.attrs:
@@ -2899,7 +2715,8 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
       let localName = parser.currentToken.tagname
       # Any atom corresponding to the string "script" must have the same
       # value as TAG_SCRIPT, so this is correct.
-      if namespace == Namespace.SVG and localName.toTagType() == TAG_SCRIPT:
+      if namespace == Namespace.SVG and
+          parser.atomToTagType(localName) == TAG_SCRIPT:
         script_end_tag
       else:
         any_other_end_tag
@@ -2934,7 +2751,8 @@ proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
       if ismmlip and token.t == START_TAG and token.tagname notin mmlnoatoms or
           ismmlip and token.t in CharacterToken or
           namespace == Namespace.MATHML and localName == annotationXml and
-            token.t == START_TAG and token.tagtype == TAG_SVG or
+            token.t == START_TAG and
+              parser.atomToTagType(token.tagname) == TAG_SVG or
           ishtmlip and token.t == START_TAG or
           ishtmlip and token.t in CharacterToken:
         parser.processInHTMLContent(token, parser.insertionMode)
@@ -2949,24 +2767,6 @@ proc finishParsing(parser: var HTML5Parser) =
     pop_current_node
   if parser.dombuilder.finish != nil:
     parser.dombuilder.finish(parser.dombuilder)
-
-# Any of these pointers being nil would later result in a crash.
-proc checkCallbacks(dombuilder: DOMBuilder) =
-  doAssert dombuilder.getDocument != nil
-  doAssert dombuilder.getAtomFactory != nil
-  doAssert dombuilder.getParentNode != nil
-  doAssert dombuilder.getLocalName != nil
-  doAssert dombuilder.createElement != nil
-  doAssert dombuilder.createComment != nil
-  doAssert dombuilder.createDocumentType != nil
-  doAssert dombuilder.insertBefore != nil
-  doAssert dombuilder.insertText != nil
-  doAssert dombuilder.remove != nil
-  doAssert dombuilder.moveChildren != nil
-
-proc checkCallbacks(factory: AtomFactory) =
-  doAssert factory.strToAtomImpl != nil
-  doAssert factory.tagTypeToAtomImpl != nil
 
 const CaseTable = {
   "altglyph": "altGlyph",
@@ -3111,12 +2911,9 @@ proc parseHTML*[Handle, Atom](inputStream: Stream,
   ## generic `Atom` must be the interned string type of the DOM builder.
   ##
   ## The input stream does not have to be seekable for this function.
-  dombuilder.checkCallbacks()
   let tokstate = opts.initialTokenizerState
-  let factory = dombuilder.getAtomFactory(dombuilder)
   var parser = HTML5Parser[Handle, Atom](
     dombuilder: dombuilder,
-    factory: factory,
     opts: opts,
     openElements: opts.openElementsInit,
     form: opts.formInit,
@@ -3131,16 +2928,9 @@ proc parseHTML*[Handle, Atom](inputStream: Stream,
     parser.templateModes.add(IN_TEMPLATE)
   if opts.openElementsInit.len > 0:
     parser.resetInsertionMode()
-  proc x(e: ParseError) =
-    parser.parseError(e)
-  let onParseError = if parser.hasParseError():
-    x
-  else:
-    nil
-  parser.tokenizer = newTokenizer[Atom](
+  parser.tokenizer = newTokenizer[Handle, Atom](
     inputStream,
-    onParseError,
-    factory,
+    dombuilder,
     tokstate
   )
   parser.constructTree()

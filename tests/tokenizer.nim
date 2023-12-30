@@ -5,9 +5,9 @@ import tables
 import unicode
 import unittest
 
+import chame/dombuilder
 import chame/htmltokenizer
 import chame/minidom
-import chame/parseerror
 
 const hexCharMap = (func(): array[char, int] =
   for i in 0..255:
@@ -148,12 +148,12 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
       "otok data: " & otok.data & ")"
   of EOF, CHARACTER_NULL: discard
 
-proc runTest(factory: MAtomFactory, desc, input: string, output: seq[JsonNode],
-    laststart: MAtom, esc: bool, state: TokenizerState = DATA) =
+proc runTest(builder: MiniDOMBuilder, desc, input: string,
+    output: seq[JsonNode], laststart: MAtom, esc: bool,
+    state = TokenizerState.DATA) =
   let ds = newStringStream(input)
-  proc onParseError(e: ParseError) =
-    discard
-  var tokenizer = newTokenizer(ds, onParseError, factory, state)
+  let factory = builder.factory
+  var tokenizer = newTokenizer(ds, builder, state)
   tokenizer.laststart = Token[MAtom](t: START_TAG, tagname: laststart)
   var i = 0
   var chartok: Token[MAtom] = nil
@@ -213,13 +213,14 @@ proc runTests(filename: string) =
     else:
       ""
     let factory = newMAtomFactory()
-    let laststart = factory.strToAtom(laststart0)
+    let builder = newMiniDOMBuilder(factory)
+    let laststart = builder.factory.strToAtom(laststart0)
     if "initialStates" notin t:
-      runTest(factory, desc, input, output, laststart, esc)
+      runTest(builder, desc, input, output, laststart, esc)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(factory, desc, input, output, laststart, esc, state)
+        runTest(builder, desc, input, output, laststart, esc, state)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")

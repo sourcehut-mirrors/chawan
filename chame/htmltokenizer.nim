@@ -8,10 +8,9 @@ import std/strutils
 import std/tables
 import std/unicode
 
-import atoms
+import dombuilder
 import entity
 import parseerror
-import tags
 import utils/radixtree
 import utils/twtstr
 
@@ -22,8 +21,8 @@ const bufLen = 4096
 const copyBufLen = 64
 
 type
-  Tokenizer*[Atom] = object
-    factory: AtomFactory[Atom]
+  Tokenizer*[Handle, Atom] = object
+    dombuilder: DOMBuilder[Handle, Atom]
     state*: TokenizerState
     rstate: TokenizerState
     tmp: string
@@ -35,7 +34,6 @@ type
     attrv: string
     attr: bool
     hasnonhtml*: bool
-    onParseError: proc(e: ParseError)
     tokqueue: seq[Token[Atom]]
     charbuf: string
     isws: bool
@@ -85,8 +83,6 @@ type
     DECIMAL_CHARACTER_REFERENCE_START, HEXADECIMAL_CHARACTER_REFERENCE,
     DECIMAL_CHARACTER_REFERENCE, NUMERIC_CHARACTER_REFERENCE_END
 
-  TokenAttr*[Atom] = tuple[name: Atom, value: string]
-
   Token*[Atom] = ref object
     case t*: TokenType
     of DOCTYPE:
@@ -112,9 +108,6 @@ func `$`*(tok: Token): string =
   of CHARACTER_NULL: $tok.t
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
-
-func tagtype*(tok: Token): TagType =
-  return tok.tagname.toTagType()
 
 const hexCharMap = (func(): array[char, uint32] =
   for i in 0u32..255u32:
@@ -145,18 +138,19 @@ proc readn(t: var Tokenizer) =
   if t.stream.atEnd:
     t.eof_i = t.sbufLen
 
-proc strToAtom[Atom](tokenizer: Tokenizer[Atom], s: string): Atom =
-  return tokenizer.factory.strToAtomImpl(tokenizer.factory, s)
+proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom],
+    s: string): Atom =
+  return tokenizer.dombuilder.strToAtomImpl(s)
 
-proc newTokenizer*[Atom](s: Stream, onParseError: proc(e: ParseError),
-    factory: AtomFactory[Atom], initialState = DATA): Tokenizer[Atom] =
-  var t = Tokenizer[Atom](
+proc newTokenizer*[Handle, Atom](s: Stream,
+    dombuilder: DOMBuilder[Handle, Atom], initialState = DATA):
+    Tokenizer[Handle, Atom] =
+  var t = Tokenizer[Handle, Atom](
     stream: s,
     eof_i: -1,
     sbuf_i: 0,
-    onParseError: onParseError,
     state: initialState,
-    factory: factory
+    dombuilder: dombuilder
   )
   t.readn()
   return t
@@ -190,7 +184,7 @@ proc consume(t: var Tokenizer): char =
 proc reconsume(t: var Tokenizer) =
   dec t.sbuf_i
 
-proc flushChars[Atom](tokenizer: var Tokenizer[Atom]) =
+proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
   if tokenizer.charbuf.len > 0:
     let token = if not tokenizer.isws:
       Token[Atom](t: CHARACTER, s: tokenizer.charbuf)
@@ -201,8 +195,8 @@ proc flushChars[Atom](tokenizer: var Tokenizer[Atom]) =
     tokenizer.charbuf.setLen(0)
 
 proc parseError(tokenizer: Tokenizer, e: ParseError) =
-  if tokenizer.onParseError != nil:
-    tokenizer.onParseError(e)
+  if tokenizer.dombuilder.parseError != nil:
+    tokenizer.dombuilder.parseError(tokenizer.dombuilder, e)
 
 const AttributeStates = {
   ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
@@ -265,11 +259,11 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
     for c in s:
       tokenizer.emit(c)
 
-proc flushAttr[Atom](tokenizer: var Tokenizer[Atom]) =
+proc flushAttr(tokenizer: var Tokenizer) =
   let attr = (tokenizer.attrna, tokenizer.attrv)
   tokenizer.tok.attrs.add(attr)
 
-proc dedupAttrs[Atom](tokenizer: var Tokenizer[Atom]) =
+proc dedupAttrs[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
   var oldAttrs = tokenizer.tok.attrs
   oldAttrs.sort(func(a, b: TokenAttr[Atom]): int = cmp(a.name, b.name))
   tokenizer.tok.attrs = @[]
@@ -303,7 +297,8 @@ func peekStrNoCase(tokenizer: Tokenizer, s: static string): bool =
       return false
   return true
 
-iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
+iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
+    Token[Atom] =
   var running = true
 
   template emit(tok: Token) =

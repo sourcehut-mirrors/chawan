@@ -33,30 +33,6 @@ type CharsetMiniDOMBuilder = ref object of MiniDOMBuilder
   charset: Charset
   confidence: CharsetConfidence
 
-# decoderstream + encoderstream will always produce valid UTF-8; we define
-# these separately from minidom to avoid calling toValidUTF8().
-proc createElement(builder: DOMBuilder[Node, MAtom], localName: MAtom,
-    namespace: Namespace, attrs: seq[Attribute]): Node =
-  let element = Element(
-    nodeType: ELEMENT_NODE,
-    localName: localName,
-    namespace: namespace,
-    attrs: attrs
-  )
-  return element
-
-proc createComment(builder: DOMBuilder[Node, MAtom], text: string): Node =
-  return Comment(nodeType: COMMENT_NODE, data: text)
-
-proc createDocumentType(builder: DOMBuilder[Node, MAtom], name, publicId,
-    systemId: string): Node =
-  return DocumentType(
-    nodeType: DOCUMENT_TYPE_NODE,
-    name: name,
-    publicId: publicId,
-    systemId: systemId
-  )
-
 proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
     attrs: seq[TokenAttr[MAtom]]) =
   let element = Element(element)
@@ -90,9 +66,6 @@ proc newCharsetMiniDOMBuilder(factory: MAtomFactory): CharsetMiniDOMBuilder =
   let builder = CharsetMiniDOMBuilder(document: document, factory: factory)
   builder.initMiniDOMBuilder()
   builder.setEncoding = setEncoding
-  builder.createElement = createElement
-  builder.createComment = createComment
-  builder.createDocumentType = createDocumentType
   builder.addAttrsIfMissing = addAttrsIfMissing
   return builder
 
