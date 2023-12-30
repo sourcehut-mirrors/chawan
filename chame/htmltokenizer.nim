@@ -326,7 +326,7 @@ iterator tokenize*[Atom](tokenizer: var Tokenizer[Atom]): Token[Atom] =
     tokenizer.flushChars()
     emit Token[Atom](t: CHARACTER_NULL)
   template emit_eof =
-    emit EOF
+    tokenizer.flushChars()
     running = false
   template emit_tok =
     #TODO this should only be checked for cases where a start tag could

@@ -2917,8 +2917,7 @@ proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
           else:
             token.s.delete(0..0)
     if parser.openElements.len == 0 or
-        parser.getNamespace(parser.adjustedCurrentNode) == Namespace.HTML or
-        token.t == EOF:
+        parser.getNamespace(parser.adjustedCurrentNode) == Namespace.HTML:
       parser.processInHTMLContent(token, parser.insertionMode)
     else:
       let oe = parser.adjustedCurrentNodeToken
@@ -2942,7 +2941,8 @@ proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
       else:
         parser.processInForeignContent(token)
     if parser.stopped:
-      break
+      return
+  parser.processInHTMLContent(Token[Atom](t: EOF), parser.insertionMode)
 
 proc finishParsing(parser: var HTML5Parser) =
   while parser.openElements.len > 0:
