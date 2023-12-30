@@ -981,8 +981,7 @@ proc generateImpliedEndTags(parser: var HTML5Parser, exclude: TagType) =
     TAG_DD, TAG_DT, TAG_LI, TAG_OPTGROUP, TAG_OPTION, TAG_P, TAG_RB, TAG_RP,
     TAG_RT, TAG_RTC
   } - {exclude}
-  while parser.getNamespace(parser.currentNode) == Namespace.HTML and
-      parser.getTagType(parser.currentNode) in tags:
+  while parser.getTagType(parser.currentNode) in tags:
     discard parser.popElement()
 
 proc generateImpliedEndTagsThoroughly(parser: var HTML5Parser) =
@@ -2245,8 +2244,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
   of IN_TABLE:
     template clear_the_stack_back_to_a_table_context() =
       const tags = {TAG_TABLE, TAG_TEMPLATE, TAG_HTML}
-      while parser.getNamespace(parser.currentNode) == Namespace.HTML and
-          parser.getTagType(parser.currentNode) notin tags:
+      while parser.getTagType(parser.currentNode) notin tags:
         pop_current_node
 
     match token:
