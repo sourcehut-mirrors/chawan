@@ -1,6 +1,4 @@
 optimizations:
-* use tagNameEquals/getLocalName less (we could just compare start tags most
-  of the time?)
 * go through TODOs in htmltokenizer
 * replace "bag of function pointers" with mixins
 * on-demand creation of attribute name atoms (most documents don't even

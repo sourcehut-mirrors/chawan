@@ -437,14 +437,6 @@ proc associateWithForm[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 func hasParseError(parser: HTML5Parser): bool =
   return parser.dombuilder.parseError != nil
 
-func tagNameEquals[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    handle: Handle, token: Token): bool =
-  return parser.getLocalName(handle) == token.tagname
-
-func tagNameEquals[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    a, b: Handle): bool =
-  return parser.getLocalName(a) == parser.getLocalName(b)
-
 func fragment(parser: HTML5Parser): bool =
   return parser.opts.ctx.isSome
 
@@ -999,8 +991,9 @@ proc pushOntoActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom
   var count = 0
   for i in countdown(parser.activeFormatting.high, 0):
     let it = parser.activeFormatting[i]
-    if it[0].isNone: break
-    if not parser.tagNameEquals(it[0].get, element):
+    if it[0].isNone: # marker
+      break
+    if it[1].tagname != token.tagname:
       continue
     if parser.getNamespace(it[0].get) != parser.getNamespace(element):
       continue
@@ -1192,10 +1185,10 @@ func findLastActiveFormatting(parser: var HTML5Parser, tagType: TagType): int =
 func findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
     token: Token): int =
   for i in countdown(parser.activeFormatting.high, 0):
-    let it = parser.activeFormatting[i][0]
-    if it.isNone:
-      break
-    if parser.tagNameEquals(it.get, token):
+    let it = parser.activeFormatting[i][1]
+    if it == nil:
+      break # marker
+    if it.tagname == token.tagname:
       return i
   return -1
 
@@ -1259,7 +1252,7 @@ proc adoptionAgencyAlgorithm[Handle, Atom](parser: var HTML5Parser[Handle, Atom]
     token: Token): bool =
   template parse_error(e: ParseError) =
     parser.parseError(e)
-  if parser.tagNameEquals(parser.currentNode, token) and
+  if parser.currentToken.tagname == token.tagname and
       parser.findLastActiveFormatting(parser.currentNode) == -1:
     pop_current_node
     return false
@@ -2903,7 +2896,7 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
     )
     "</script>" => (block:
       let namespace = parser.getNamespace(parser.currentNode)
-      let localName = parser.getLocalName(parser.currentNode)
+      let localName = parser.currentToken.tagname
       # Any atom corresponding to the string "script" must have the same
       # value as TAG_SCRIPT, so this is correct.
       if namespace == Namespace.SVG and localName.toTagType() == TAG_SCRIPT:
@@ -2929,16 +2922,15 @@ proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
       parser.processInHTMLContent(token, parser.insertionMode)
     else:
       let oe = parser.adjustedCurrentNodeToken
-      let node = oe.element
-      let localName = parser.getLocalName(node)
-      let namespace = parser.getNamespace(node)
+      let localName = oe.token.tagname
+      let namespace = parser.getNamespace(oe.element)
       const CharacterToken = {CHARACTER, CHARACTER_WHITESPACE, CHARACTER_NULL}
       let mmlnoatoms = [
         parser.atomMap[ATOM_MGLYPH],
         parser.atomMap[ATOM_MALIGNMARK]
       ]
       let annotationXml = parser.atomMap[ATOM_ANNOTATION_XML]
-      let ismmlip = parser.isMathMLIntegrationPoint(node)
+      let ismmlip = parser.isMathMLIntegrationPoint(oe.element)
       let ishtmlip = parser.isHTMLIntegrationPoint(oe)
       if ismmlip and token.t == START_TAG and token.tagname notin mmlnoatoms or
           ismmlip and token.t in CharacterToken or
