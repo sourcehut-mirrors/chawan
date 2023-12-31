@@ -195,8 +195,8 @@ proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
     tokenizer.charbuf.setLen(0)
 
 proc parseError(tokenizer: Tokenizer, e: ParseError) =
-  if tokenizer.dombuilder.parseError != nil:
-    tokenizer.dombuilder.parseError(tokenizer.dombuilder, e)
+  mixin parseErrorImpl
+  tokenizer.dombuilder.parseErrorImpl(e)
 
 const AttributeStates = {
   ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
@@ -345,6 +345,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
       tokenizer.laststart.tagname == tokenizer.strToAtom(tokenizer.tagNameBuf)
   template start_new_attribute =
     if tokenizer.tok.t == START_TAG and tokenizer.attr:
+      #TODO when is this false?
       tokenizer.flushAttr()
     tokenizer.attrn = ""
     tokenizer.attrv = ""

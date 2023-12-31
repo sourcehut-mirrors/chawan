@@ -1,5 +1,13 @@
 ## Interface definitions for htmlparser.
 ##
+## This exists to make implementing the DOMBuilder interface less painful. Two
+## categories of hooks exist:
+## 1. Mandatory hooks: these must be implemented using static dispatch as procs.
+##    Not implementing any of them will result in a compilation error.
+## 2. Optional hooks: these may be omitted if your DOM does not need them. They
+##    are implemented using dynamic dispatch as methods, so we can provide
+##    a default implementation (that does nothing).
+##
 ## Usage:
 ## 1. Put a type clause with your generic types in your DOM builder interface:
 ## ```nim
@@ -27,6 +35,8 @@
 ##
 ## Also, make sure that parameter names match the ones defined here,
 ## otherwise you are likely to get strange compilation errors.
+
+import parseerror
 
 # DOMBuilder
 static:
@@ -65,11 +75,7 @@ proc getParentNodeImpl(builder: DOMBuilderImpl, handle: HandleImpl):
   ## Retrieve a handle to the parent node.
   ## May return none(Handle) if no parent node exists.
 
-proc getLocalNameImpl(builder: DOMBuilderImpl, handle: HandleImpl): AtomImpl
-  ## Retrieve the local name (also known as the tag name) of the element
-  ## represented by `handle`.
-
-#TODO perhaps add a separate createElement for SVG/MathML?
+#TODO use a separate "addAdjustedAttrs" for SVG/MathML
 proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
     namespace: Namespace, attrs: seq[ParsedAttr[AtomImpl]]): HandleImpl
   ## Create a new element node.
@@ -80,10 +86,36 @@ proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
   ## it's HTML; for embedded SVG/MathML elements, it is Namespace.SVG or
   ## Namespace.MATHML. No other namespace is used currently.
   ##
-  ## attrs is a seq of the new elements attributes. For HTML elements, it
+  ## `attrs` is a seq of the new elements attributes. For HTML elements, it
   ## only contains attributes with prefix NO_PREFIX and namespace NO_NAMESPACE;
   ## for adjusted attributes of embedded SVG/MathML elements, it may contain
   ## any other prefix and/or namespace.
+  ##
+  ## Note that the parser determines the TagType of an element by its namespace
+  ## and localName; for non-HTML elements it is always considered TAG_UNKNOWN.
+  ##
+  ## (This technically means that TAG_SVG and TAG_MATH are not valid element tag
+  ## types by the parser. Practically, these tags are only used on tokens, which
+  ## have no namespace.)
+
+proc getLocalNameImpl(builder: DOMBuilderImpl, handle: HandleImpl): AtomImpl
+  ## Retrieve the local name (also known as the tag name) of the element
+  ## represented by `handle`.
+
+proc getNamespaceImpl(builder: DOMBuilderImpl, handle: HandleImpl): Namespace
+  ## Retrieve the namespace of element. For HTML elements, this should be
+  ## `Namespace.HTML`. For embedded SVG or MathML elements, it should be
+  ## `Namespace.SVG` or `Namespace.MathML`, respectively.
+  ##
+  ## (In general, you should just return the namespace that was passed to
+  ## `createElement`.)
+
+proc getTemplateContentImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+    HandleImpl
+  ## Retrieve a handle to the template element's contents. Every element
+  ## where `builder.atomToTagTypeImpl(element.localName)` equals TAG_TEMPLATE
+  ## and `builder.getNamespaceImpl(element)` equals `Namespace.HTML` must have
+  ## an associated "template contents" node which this function must return.
 
 proc createCommentImpl(builder: DOMBuilderImpl, text: string): HandleImpl
   ## Create a new comment node. `text` is a string representing the new comment
@@ -122,6 +154,87 @@ proc moveChildrenImpl(builder: DOMBuilderImpl, fromNode, toNode: HandleImpl)
   ## Remove all children from the node `fromHandle`, then append them to
   ## `toHandle`.
 
+# Optional hooks (implemented using dynamic dispatch)
+#
+# Generic methods are not supported, so we cheat.
+# The idea is that we define a base method on a non-generic ancestor of
+# DOMBuilderImpl. Then users interested in implementing the hook just override
+# it with their own implementation on DOMBuilderImpl (which is also not
+# generic).
+#TODO but this cannot be statically detected... would be nice to figure out
+# something for this...
+method parseErrorImpl(builder: DOMBuilderBase, e: ParseError) {.base.} =
+  ## Optional hook.
+  ##
+  ## Parse error. `message` is an error code either specified by the
+  ## standard (in this case, `e` < `LAST_SPECIFIED_ERROR`) or named
+  ## arbitrarily. (At the time of writing, only tokenizer errors have
+  ## specified error codes.)
+  discard
+
+method setQuirksModeImpl(builder: DOMBuilderBase, quirksMode: QuirksMode)
+    {.base.} =
+  ## Optional hook.
+  ##
+  ## Set quirks mode to either `QUIRKS` or `LIMITED_QUIRKS`. `NO_QUIRKS` is the
+  ## default and is therefore never passed here.
+  discard
+
+method setEncodingImpl(builder: DOMBuilderBase, encoding: string):
+    SetEncodingResult {.base.} =
+  ## Optional hook.
+  ##
+  ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
+  ## containing a non-empty character set is encountered. A SetEncodingResult
+  ## return value is expected, which is either `SET_ENCODING_STOP`, stopping
+  ## the parser, or `SET_ENCODING_CONTINUE`, allowing the parser to continue.
+  ##
+  ## Note that htmlparser no longer contains any encoding-related logic, not
+  ## even UTF-8 validation. Implementing this is left to the caller. (For an
+  ## example, see minidom_cs which implements decoding of all character sets
+  ## in the WHATWG recommendation.)
+  return SET_ENCODING_CONTINUE
+
+method elementPoppedImpl(builder: DOMBuilderBase, handle: HandleImpl) {.base.} =
+  ## Optional hook.
+  ##
+  ## Called when an element is popped from the stack of open elements
+  ## (i.e. when it has been closed.)
+  discard
+
+method addAttrsIfMissingImpl(builder: DOMBuilderBase, handle: HandleImpl,
+    attrs: seq[TokenAttr[AtomImpl]]) {.base.} =
+  ## Optional hook.
+  ##
+  ## Add the attributes in `attrs` to the element node `element`.
+  ## This is only called with the HTML and BODY tags, when more than one
+  ## exists in a document.
+  ##
+  ## Pseudocode implementation:
+  ## ```nim
+  ## for attr in attrs:
+  ##   if attr.name notin element.attrs:
+  ##     element.attrs.add(attr)
+  ## ```
+  discard
+
+method setScriptAlreadyStartedImpl(builder: DOMBuilderBase, handle: HandleImpl)
+    {.base.} =
+  ## Set the "already started" flag for the script element.
+  ##
+  ## Note: this flag is not togglable, so implementations of this callback
+  ## should just set the flag to true.
+  discard
+
+method associateWithFormImpl(builder: DOMBuilderBase, element, form,
+    intendedParent: HandleImpl) {.base.} =
+  ## Called after createElement. Attempts to set form for form-associated
+  ## elements.
+  ##
+  ## Note: the DOM builder is responsible for checking whether the intended
+  ## parent and the form element are in the same tree.
+  discard
+
 # Declarations for the parser. These casts are safe, as checked by the static
 # assertion above.
 template toDBImpl(builder: typed): DOMBuilderImpl =
@@ -142,13 +255,21 @@ proc atomToTagTypeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
 proc getDocumentImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom]): Handle =
   return toDBImpl(builder).getDocumentImpl()
 
-proc getParentNodeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    handle: Handle): Option[Handle] =
-  return toDBImpl(builder).getParentNodeImpl(handle)
-
 proc getLocalNameImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
     handle: Handle): Atom =
   return toDBImpl(builder).getLocalNameImpl(handle)
+
+proc getNamespaceImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
+    handle: Handle): Namespace =
+  return toDBImpl(builder).getNamespaceImpl(handle)
+
+proc getTemplateContentImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
+    handle: Handle): Handle =
+  return toDBImpl(builder).getTemplateContentImpl(handle)
+
+proc getParentNodeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
+    handle: Handle): Option[Handle] =
+  return toDBImpl(builder).getParentNodeImpl(handle)
 
 proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
     namespace: Namespace, attrs: seq[ParsedAttr[AtomImpl]]): HandleImpl =

@@ -194,19 +194,11 @@ proc getDocumentImpl(builder: MiniDOMBuilder): Node =
 proc getParentNodeImpl(builder: MiniDOMBuilder, handle: Node): Option[Node] =
   return option(handle.parentNode)
 
-proc getTemplateContent(builder: DOMBuilder[Node, MAtom], handle: Node): Node =
-  return HTMLTemplateElement(handle).content
-
-proc getLocalNameImpl(builder: MiniDOMBuilder, handle: Node): MAtom =
-  return Element(handle).localName
-
-proc getNamespace(builder: DOMBuilder[Node, MAtom], handle: Node): Namespace =
-  return Element(handle).namespace
-
 proc createElementImpl(builder: DOMBuilder[Node, MAtom], localName: MAtom,
     namespace: Namespace, attrs: seq[Attribute]): Node =
   let builder = cast[MiniDOMBuilder](builder)
-  let element = if localName.toTagType() == TAG_TEMPLATE:
+  let element = if localName.toTagType() == TAG_TEMPLATE and
+      namespace == Namespace.HTML:
     HTMLTemplateElement(
       content: DocumentFragment()
     )
@@ -220,6 +212,15 @@ proc createElementImpl(builder: DOMBuilder[Node, MAtom], localName: MAtom,
   for attr in element.attrs.mitems:
     attr.value = attr.value.toValidUTF8()
   return element
+
+proc getLocalNameImpl(builder: MiniDOMBuilder, handle: Node): MAtom =
+  return Element(handle).localName
+
+proc getNamespaceImpl(builder: MiniDOMBuilder, handle: Node): Namespace =
+  return Element(handle).namespace
+
+proc getTemplateContentImpl(builder: MiniDOMBuilder, handle: Node): Node =
+  return HTMLTemplateElement(handle).content
 
 proc createCommentImpl(builder: MiniDOMBuilder, text: string): Node =
   return Comment(nodeType: COMMENT_NODE, data: text.toValidUTF8())
@@ -355,7 +356,7 @@ proc moveChildrenImpl(builder: MiniDOMBuilder, fromNode, toNode: Node) =
     child.parentNode = nil
     toNode.insertBefore(child, none(Node))
 
-proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
+method addAttrsIfMissingImpl(builder: MiniDOMBuilder, element: Node,
     attrs: seq[TokenAttr[MAtom]]) =
   let element = Element(element)
   var oldNames: HashSet[MAtom]
@@ -367,15 +368,9 @@ proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
       element.attrs.add((NO_PREFIX, NO_NAMESPACE, attr.name, value))
   element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
 
-proc initMiniDOMBuilder*(builder: MiniDOMBuilder) =
-  builder.getTemplateContent = getTemplateContent
-  builder.getNamespace = getNamespace
-  builder.addAttrsIfMissing = addAttrsIfMissing
-
 proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
   let document = Document(nodeType: DOCUMENT_NODE, factory: factory)
   let builder = MiniDOMBuilder(document: document, factory: factory)
-  builder.initMiniDOMBuilder()
   return builder
 
 proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node, MAtom](),

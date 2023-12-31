@@ -127,33 +127,21 @@ proc atomToTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   mixin atomToTagTypeImpl
   return parser.dombuilder.atomToTagTypeImpl(atom)
 
-proc finish[Handle, Atom](parser: HTML5Parser[Handle, Atom]) =
-  if parser.dombuilder.finish != nil:
-    parser.dombuilder.finish(parser.dombuilder)
-
 proc parseError(parser: HTML5Parser, e: ParseError) =
-  if parser.dombuilder.parseError != nil:
-    parser.dombuilder.parseError(parser.dombuilder, e)
+  mixin parseErrorImpl
+  parser.dombuilder.parseErrorImpl(e)
 
 proc setQuirksMode[Handle, Atom](parser: var HTML5Parser[Handle, Atom], mode: QuirksMode) =
   parser.quirksMode = mode
-  if parser.dombuilder.setQuirksMode != nil:
-    parser.dombuilder.setQuirksMode(parser.dombuilder, mode)
+  parser.dombuilder.setQuirksModeImpl(mode)
 
 proc setEncoding(parser: var HTML5Parser, cs: string): SetEncodingResult =
-  let dombuilder = parser.dombuilder
-  if dombuilder.setEncoding != nil:
-    return dombuilder.setEncoding(dombuilder, cs)
-  return SET_ENCODING_CONTINUE
+  mixin setEncodingImpl
+  return parser.dombuilder.setEncodingImpl(cs)
 
 proc getDocument[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
   mixin getDocumentImpl
   return parser.dombuilder.getDocumentImpl()
-
-func getTemplateContent[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    handle: Handle): Handle =
-  let dombuilder = parser.dombuilder
-  return dombuilder.getTemplateContent(dombuilder, handle)
 
 #TODO remove/replace
 func getParentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom],
@@ -168,9 +156,13 @@ func getLocalName[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 
 func getNamespace[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): Namespace =
-  if parser.dombuilder.getNamespace != nil:
-    return parser.dombuilder.getNamespace(parser.dombuilder, handle)
-  return Namespace.HTML
+  mixin getNamespaceImpl
+  return parser.dombuilder.getNamespaceImpl(handle)
+
+proc getTemplateContent[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    handle: Handle): Handle =
+  mixin getTemplateContentImpl
+  return parser.dombuilder.getTemplateContentImpl(handle)
 
 func getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): TagType =
@@ -220,25 +212,22 @@ proc moveChildren[Handle, Atom](parser: HTML5Parser[Handle, Atom], handleFrom,
 
 proc addAttrsIfMissing[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     element: Handle, attrs: seq[TokenAttr[Atom]]) =
-  let dombuilder = parser.dombuilder
-  if dombuilder.addAttrsIfMissing != nil:
-    dombuilder.addAttrsIfMissing(dombuilder, element, attrs)
+  mixin addAttrsIfMissingImpl
+  parser.dombuilder.addAttrsIfMissingImpl(element, attrs)
 
 proc setScriptAlreadyStarted[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     script: Handle) =
-  let dombuilder = parser.dombuilder
-  if dombuilder.setScriptAlreadyStarted != nil:
-    dombuilder.setScriptAlreadyStarted(dombuilder, script)
+  mixin setScriptAlreadyStartedImpl
+  parser.dombuilder.setScriptAlreadyStartedImpl(script)
 
 proc associateWithForm[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     element, form, intendedParent: Handle) =
-  let dombuilder = parser.dombuilder
-  if dombuilder.associateWithForm != nil:
-    dombuilder.associateWithForm(dombuilder, element, form, intendedParent)
+  mixin associateWithFormImpl
+  parser.dombuilder.associateWithFormImpl(element, form, intendedParent)
 
 # Parser
 func hasParseError(parser: HTML5Parser): bool =
-  return parser.dombuilder.parseError != nil
+  return true #TODO TODO TODO
 
 func fragment(parser: HTML5Parser): bool =
   return parser.opts.ctx.isSome
@@ -327,7 +316,7 @@ func last_child_of[Handle, Atom](n: OpenElement[Handle, Atom]):
   last_child_of(n.element)
 
 # https://html.spec.whatwg.org/multipage/#appropriate-place-for-inserting-a-node
-func appropriatePlaceForInsert[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc appropriatePlaceForInsert[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: Handle): AdjustedInsertionLocation[Handle] =
   assert parser.getTagType(parser.openElements[0].element) == TAG_HTML
   let targetTagType = parser.getTagType(target)
@@ -336,7 +325,6 @@ func appropriatePlaceForInsert[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     let lastTemplate = parser.lastElementOfTag(TAG_TEMPLATE)
     let lastTable = parser.lastElementOfTag(TAG_TABLE)
     if lastTemplate.element.isSome and
-        parser.dombuilder.getTemplateContent != nil and
         (lastTable.element.isNone or lastTable.pos < lastTemplate.pos):
       let content = parser.getTemplateContent(lastTemplate.element.get)
       return last_child_of(content)
@@ -349,11 +337,10 @@ func appropriatePlaceForInsert[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     result = last_child_of(previousElement.element)
   else:
     result = last_child_of(target)
-  if parser.getTagType(result.inside) == TAG_TEMPLATE and
-      parser.dombuilder.getTemplateContent != nil:
+  if parser.getTagType(result.inside) == TAG_TEMPLATE:
     result = (parser.getTemplateContent(result.inside), none(Handle))
 
-func appropriatePlaceForInsert[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
+proc appropriatePlaceForInsert[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     AdjustedInsertionLocation[Handle] =
   parser.appropriatePlaceForInsert(parser.currentNode)
 
@@ -550,9 +537,9 @@ proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
   parser.tokenizer.hasnonhtml = parser.getNamespace(node) != Namespace.HTML
 
 proc popElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom]): Handle =
+  mixin elementPoppedImpl
   result = parser.openElements.pop().element
-  if parser.dombuilder.elementPopped != nil:
-    parser.dombuilder.elementPopped(parser.dombuilder, result)
+  parser.dombuilder.elementPoppedImpl(result)
   if parser.openElements.len == 0:
     parser.tokenizer.hasnonhtml = false
   else:
@@ -2427,13 +2414,13 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         if not parser.hasElementInSelectScope(TAG_SELECT):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
-          while parser.getTagType(parser.popElement()) != TAG_SELECT: discard
+          parser.popElementsIncl(TAG_SELECT)
           parser.resetInsertionMode()
       )
       "<select>" => (block:
         parse_error NESTED_TAGS
         if parser.hasElementInSelectScope(TAG_SELECT):
-          while parser.getTagType(parser.popElement()) != TAG_SELECT: discard
+          parser.popElementsIncl(TAG_SELECT)
           parser.resetInsertionMode()
       )
       ("<input>", "<keygen>", "<textarea>") => (block:
@@ -2441,7 +2428,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         if not parser.hasElementInSelectScope(TAG_SELECT):
           discard
         else:
-          while parser.getTagType(parser.popElement()) != TAG_SELECT: discard
+          parser.popElementsIncl(TAG_SELECT)
           parser.resetInsertionMode()
           reprocess token
       )
@@ -2765,8 +2752,6 @@ proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
 proc finishParsing(parser: var HTML5Parser) =
   while parser.openElements.len > 0:
     pop_current_node
-  if parser.dombuilder.finish != nil:
-    parser.dombuilder.finish(parser.dombuilder)
 
 const CaseTable = {
   "altglyph": "altGlyph",

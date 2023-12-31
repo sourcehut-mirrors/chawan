@@ -12,7 +12,6 @@
 ## ========
 ## * `chame/minidom <minidom.html>`
 
-import std/sets
 import std/streams
 
 import minidom
@@ -33,19 +32,8 @@ type CharsetMiniDOMBuilder = ref object of MiniDOMBuilder
   charset: Charset
   confidence: CharsetConfidence
 
-proc addAttrsIfMissing(builder: DOMBuilder[Node, MAtom], element: Node,
-    attrs: seq[TokenAttr[MAtom]]) =
-  let element = Element(element)
-  var oldNames: HashSet[MAtom]
-  for attr in element.attrs:
-    oldNames.incl(attr.name)
-  for attr in attrs:
-    if attr.name notin oldNames:
-      element.attrs.add((NO_PREFIX, NO_NAMESPACE, attr.name, attr.value))
-
-proc setEncoding(builder: DOMBuilder[Node, MAtom], encoding: string):
+method setEncodingImpl(builder: CharsetMiniDOMBuilder, encoding: string):
     SetEncodingResult =
-  let builder = CharsetMiniDOMBuilder(builder)
   let charset = getCharset(encoding)
   if charset == CHARSET_UNKNOWN:
     return SET_ENCODING_CONTINUE
@@ -64,9 +52,6 @@ proc setEncoding(builder: DOMBuilder[Node, MAtom], encoding: string):
 proc newCharsetMiniDOMBuilder(factory: MAtomFactory): CharsetMiniDOMBuilder =
   let document = Document(nodeType: DOCUMENT_NODE)
   let builder = CharsetMiniDOMBuilder(document: document, factory: factory)
-  builder.initMiniDOMBuilder()
-  builder.setEncoding = setEncoding
-  builder.addAttrsIfMissing = addAttrsIfMissing
   return builder
 
 #TODO this should probably be in decoderstream
