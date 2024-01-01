@@ -1,6 +1,5 @@
 import std/macros
 import std/options
-import std/streams
 import std/strutils
 import std/tables
 
@@ -132,6 +131,7 @@ proc parseError(parser: HTML5Parser, e: ParseError) =
   parser.dombuilder.parseErrorImpl(e)
 
 proc setQuirksMode[Handle, Atom](parser: var HTML5Parser[Handle, Atom], mode: QuirksMode) =
+  mixin setQuirksModeImpl
   parser.quirksMode = mode
   parser.dombuilder.setQuirksModeImpl(mode)
 
@@ -2887,10 +2887,10 @@ proc createForeignTable[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
     let newNameAtom = parser.strToAtom(newName)
     parser.foreignTable[oldNameAtom] = (prefix, ns, newNameAtom)
 
-proc parseHTML*[Handle, Atom](inputStream: Stream,
-    dombuilder: DOMBuilder[Handle, Atom], opts: HTML5ParserOpts[Handle, Atom]) =
-  ## Read and parse an HTML document from input stream `inputStream`, using
-  ## the DOMBuilder object `dombuilder`, and parser options `opts`.
+proc parseHTML*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
+    opts: HTML5ParserOpts[Handle, Atom]) =
+  ## Read and parse an HTML document using the DOMBuilder object `dombuilder`
+  ## and parser options `opts`.
   ##
   ## The generic `Handle` must be the node handle type of the DOM builder. The
   ## generic `Atom` must be the interned string type of the DOM builder.
@@ -2914,7 +2914,6 @@ proc parseHTML*[Handle, Atom](inputStream: Stream,
   if opts.openElementsInit.len > 0:
     parser.resetInsertionMode()
   parser.tokenizer = newTokenizer[Handle, Atom](
-    inputStream,
     dombuilder,
     tokstate
   )

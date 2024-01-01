@@ -148,12 +148,11 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
       "otok data: " & otok.data & ")"
   of EOF, CHARACTER_NULL: discard
 
-proc runTest(builder: MiniDOMBuilder, desc, input: string,
+proc runTest(builder: MiniDOMBuilder, desc: string,
     output: seq[JsonNode], laststart: MAtom, esc: bool,
     state = TokenizerState.DATA) =
-  let ds = newStringStream(input)
   let factory = builder.factory
-  var tokenizer = newTokenizer(ds, builder, state)
+  var tokenizer = newTokenizer(builder, state)
   tokenizer.laststart = Token[MAtom](t: START_TAG, tagname: laststart)
   var i = 0
   var chartok: Token[MAtom] = nil
@@ -213,14 +212,14 @@ proc runTests(filename: string) =
     else:
       ""
     let factory = newMAtomFactory()
-    let builder = newMiniDOMBuilder(factory)
+    let builder = newMiniDOMBuilder(newStringStream(input), factory)
     let laststart = builder.factory.strToAtom(laststart0)
     if "initialStates" notin t:
-      runTest(builder, desc, input, output, laststart, esc)
+      runTest(builder, desc, output, laststart, esc)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(builder, desc, input, output, laststart, esc, state)
+        runTest(builder, desc, output, laststart, esc, state)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")

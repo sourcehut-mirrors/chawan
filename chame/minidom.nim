@@ -111,6 +111,7 @@ type
   MiniDOMBuilder* = ref object of DOMBuilder[Node, MAtom]
     document*: Document
     factory*: MAtomFactory
+    stream*: Stream
 
 type
   DOMBuilderImpl = MiniDOMBuilder
@@ -179,6 +180,12 @@ iterator attrsStr*(element: Element): tuple[name, value: string] =
     yield (name, attr.value)
 
 # htmlparseriface implementation
+proc getCharImpl(builder: MiniDOMBuilder): char =
+  return builder.stream.readChar()
+
+proc atEndImpl(builder: MiniDOMBuilder): bool =
+  return builder.stream.atEnd()
+
 proc strToAtomImpl(builder: MiniDOMBuilder, s: string): MAtom =
   return builder.factory.strToAtom(s)
 
@@ -368,9 +375,13 @@ method addAttrsIfMissingImpl(builder: MiniDOMBuilder, element: Node,
       element.attrs.add((NO_PREFIX, NO_NAMESPACE, attr.name, value))
   element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
 
-proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
+proc newMiniDOMBuilder*(stream: Stream, factory: MAtomFactory): MiniDOMBuilder =
   let document = Document(nodeType: DOCUMENT_NODE, factory: factory)
-  let builder = MiniDOMBuilder(document: document, factory: factory)
+  let builder = MiniDOMBuilder(
+    document: document,
+    factory: factory,
+    stream: stream
+  )
   return builder
 
 proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node, MAtom](),
@@ -382,8 +393,8 @@ proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node, MAtom](),
   ##
   ## For a description of `HTML5ParserOpts`, see the `htmlparser` module's
   ## documentation.
-  let builder = newMiniDOMBuilder(factory)
-  parseHTML(inputStream, builder, opts)
+  let builder = newMiniDOMBuilder(inputStream, factory)
+  parseHTML(builder, opts)
   return builder.document
 
 proc parseHTMLFragment*(inputStream: Stream, element: Element,
@@ -400,7 +411,7 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   ##
   ## Note: the members `ctx`, `initialTokenizerState`, `openElementsInit` and
   ## `pushInTemplate` of `opts` are overridden (in accordance with the standard).
-  let builder = newMiniDOMBuilder(factory)
+  let builder = newMiniDOMBuilder(inputStream, factory)
   let document = builder.document
   let state = if element.namespace != Namespace.HTML:
     DATA
@@ -427,7 +438,7 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   opts.initialTokenizerState = state
   opts.openElementsInit = @[(Node(root), rootToken)]
   opts.pushInTemplate = element.tagType == TAG_TEMPLATE
-  parseHTML(inputStream, builder, opts)
+  parseHTML(builder, opts)
   return root.childList
 
 proc parseHTMLFragment*(s: string, element: Element): seq[Node] =

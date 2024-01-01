@@ -2,7 +2,6 @@
 
 import std/algorithm
 import std/options
-import std/streams
 import std/strformat
 import std/strutils
 import std/tables
@@ -15,35 +14,26 @@ import utils/radixtree
 import utils/twtstr
 
 # Tokenizer
-
-# in bytes
-const bufLen = 4096
-const copyBufLen = 64
-
 type
   Tokenizer*[Handle, Atom] = object
     dombuilder: DOMBuilder[Handle, Atom]
     state*: TokenizerState
-    rstate: TokenizerState
-    tmp: string
-    code: uint32
-    tok: Token[Atom]
-    laststart*: Token[Atom]
-    attrn: string
-    attrna: Atom
-    attrv: string
-    attr: bool
-    hasnonhtml*: bool
-    tokqueue: seq[Token[Atom]]
-    charbuf: string
-    isws: bool
-    tagNameBuf: string
-
-    stream: Stream
-    sbuf: array[bufLen, char]
-    sbuf_i: int
-    sbufLen: int
-    eof_i: int
+    rstate: TokenizerState # return state
+    tmp: string # temporary buffer (mentioned by the standard)
+    code: uint32 # codepoint of current numeric character reference
+    tok: Token[Atom] # current token to be emitted
+    laststart*: Token[Atom] # last start tag token
+    attrn: string # buffer for attribute names
+    attrna: Atom # atom representing attrn after the attribute name is closed
+    attrv: string # buffer for attribute values
+    attr: bool # is there already an attr in the previous values?
+    hasnonhtml*: bool # does the stack of open elements have a non-HTML node?
+    tokqueue: seq[Token[Atom]] # queue of tokens to be emitted in this iteration
+    charbuf: string # buffer for character tokens
+    isws: bool # is the current character token whitespace-only?
+    tagNameBuf: string # buffer for storing the tag name
+    peekBuf: array[64, char] # a stack with the last element at peekBufLen - 1
+    peekBufLen: int
 
   TokenType* = enum
     DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE,
@@ -131,58 +121,56 @@ func hexValue(c: char): uint32 =
 func decValue(c: char): uint32 =
   return decCharMap[c]
 
-proc readn(t: var Tokenizer) =
-  let needed = (bufLen - t.sbufLen)
-  let n = t.stream.readData(addr t.sbuf[t.sbufLen], needed)
-  t.sbufLen += n
-  if t.stream.atEnd:
-    t.eof_i = t.sbufLen
-
 proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom],
     s: string): Atom =
+  mixin strToAtomImpl
   return tokenizer.dombuilder.strToAtomImpl(s)
 
-proc newTokenizer*[Handle, Atom](s: Stream,
-    dombuilder: DOMBuilder[Handle, Atom], initialState = DATA):
-    Tokenizer[Handle, Atom] =
+proc newTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
+    initialState = DATA): Tokenizer[Handle, Atom] =
   var t = Tokenizer[Handle, Atom](
-    stream: s,
-    eof_i: -1,
-    sbuf_i: 0,
     state: initialState,
     dombuilder: dombuilder
   )
-  t.readn()
   return t
 
-func atEof(t: Tokenizer): bool =
-  t.eof_i != -1 and t.sbuf_i >= t.eof_i
+proc atEnd(tokenizer: Tokenizer): bool =
+  mixin atEndImpl
+  if tokenizer.peekBufLen > 0:
+    return false
+  return tokenizer.dombuilder.atEndImpl()
 
-proc checkBufLen(t: var Tokenizer) =
-  if t.sbuf_i >= min(bufLen - copyBufLen, t.sbufLen):
-    for i in t.sbuf_i ..< t.sbufLen:
-      t.sbuf[i - t.sbuf_i] = t.sbuf[i]
-    t.sbufLen = t.sbufLen - t.sbuf_i
-    t.sbuf_i = 0
-    if t.sbufLen < bufLen:
-      t.readn()
+proc reconsume(tokenizer: var Tokenizer, s: string) =
+  for i in countdown(s.high, 0):
+    tokenizer.peekBuf[tokenizer.peekBufLen] = s[i]
+    inc tokenizer.peekBufLen
 
-proc consume(t: var Tokenizer): char =
-  t.checkBufLen()
-  ## Normalize newlines (\r\n -> \n, single \r -> \n)
-  if t.sbuf[t.sbuf_i] == '\r':
-    inc t.sbuf_i
-    t.checkBufLen()
-    if t.atEof or t.sbuf[t.sbuf_i] != '\n':
-      # \r
-      result = '\n'
-      return
-    # else, \r\n so just return the \n
-  result = t.sbuf[t.sbuf_i]
-  inc t.sbuf_i
+proc reconsume(tokenizer: var Tokenizer, c: char) =
+  tokenizer.peekBuf[tokenizer.peekBufLen] = c
+  inc tokenizer.peekBufLen
 
-proc reconsume(t: var Tokenizer) =
-  dec t.sbuf_i
+proc getChar(tokenizer: var Tokenizer): char =
+  mixin getCharImpl
+  if tokenizer.peekBufLen > 0:
+    dec tokenizer.peekBufLen
+    return tokenizer.peekBuf[tokenizer.peekBufLen]
+  return tokenizer.dombuilder.getCharImpl()
+
+proc consume(tokenizer: var Tokenizer): char =
+  let c = tokenizer.getChar()
+  if c == '\r': # \r\n -> \n, \r -> \n
+    if not tokenizer.atEnd(): # may be \r\n
+      let c = tokenizer.getChar()
+      if c != '\n': # single \r
+        tokenizer.reconsume(c) # keep next c
+    return '\n'
+  return c
+
+proc consumeDiscard(tokenizer: var Tokenizer, n: int) =
+  # We only call this with n <= peekBufLen, because peekBuf has already been
+  # filled with characters.
+  assert tokenizer.peekBufLen >= n
+  tokenizer.peekBufLen -= n
 
 proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
   if tokenizer.charbuf.len > 0:
@@ -272,29 +260,33 @@ proc dedupAttrs[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
       continue
     tokenizer.tok.attrs.add(attr)
 
-func peekStr(tokenizer: Tokenizer, s: static string): bool =
-  static:
-    doAssert s.len < copyBufLen - 4 and s.len > 0
-    # This breaks on strings with copyBufLen + 4 bytes.
-  if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len > tokenizer.eof_i:
-    return false
+proc peekStr(tokenizer: var Tokenizer, s: static string): bool =
+  var cs = ""
   for i in 0 ..< s.len:
-    let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
-    if c != s[i]:
+    if tokenizer.atEnd():
+      tokenizer.reconsume(cs)
       return false
+    let c = tokenizer.consume()
+    cs &= c
+    if c != s[i]:
+      tokenizer.reconsume(cs)
+      return false
+  tokenizer.reconsume(cs)
   return true
 
-func peekStrNoCase(tokenizer: Tokenizer, s: static string): bool =
-  static:
-    doAssert s.len < copyBufLen - 4 and s.len > 0
-    # This breaks on strings with copyBufLen + 4 bytes.
+proc peekStrNoCase(tokenizer: var Tokenizer, s: static string): bool =
   const s = s.toLowerAscii()
-  if tokenizer.eof_i != -1 and tokenizer.sbuf_i + s.len > tokenizer.eof_i:
-    return false
+  var cs = ""
   for i in 0 ..< s.len:
-    let c = tokenizer.sbuf[tokenizer.sbuf_i + i]
-    if c.toLowerAscii() != s[i]:
+    if tokenizer.atEnd():
+      tokenizer.reconsume(cs)
       return false
+    let c = tokenizer.consume()
+    cs &= c
+    if c.toLowerAscii() != s[i]:
+      tokenizer.reconsume(cs)
+      return false
+  tokenizer.reconsume(cs)
   return true
 
 iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
@@ -357,13 +349,8 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         tokenizer.attr = false
   template peek_char(): char =
     let c = tokenizer.consume()
-    tokenizer.reconsume()
+    tokenizer.reconsume(c)
     c
-  template consume_and_discard(n: int) = #TODO optimize
-    for i in 0 ..< n:
-      discard tokenizer.consume()
-  template consumed_as_an_attribute(): bool =
-    tokenizer.consumedAsAnAttribute()
   template emit_tmp() =
     for c in tokenizer.tmp:
       tokenizer.emit(c)
@@ -377,12 +364,12 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
       tokenizer.attr = false
     tokenizer.tok = t
 
-  while not tokenizer.atEof:
+  while not tokenizer.atEnd():
+    let c = tokenizer.consume()
     template reconsume_in(s: TokenizerState) =
-      tokenizer.reconsume()
+      tokenizer.reconsume(c)
       switch_state s
 
-    let c = tokenizer.consume()
     case tokenizer.state
     of DATA:
       case c
@@ -939,19 +926,19 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         reconsume_in BOGUS_COMMENT
       case c
       of '-':
-        if not tokenizer.atEof and peek_char == '-':
+        if not tokenizer.atEnd() and peek_char == '-':
           new_token Token[Atom](t: COMMENT)
           tokenizer.state = COMMENT_START
-          consume_and_discard 1
+          tokenizer.consumeDiscard(1)
         else: anything_else
       of 'D', 'd':
         if tokenizer.peekStrNoCase("octype"):
-          consume_and_discard "octype".len
+          tokenizer.consumeDiscard("octype".len)
           switch_state DOCTYPE
         else: anything_else
       of '[':
         if tokenizer.peekStr("CDATA["):
-          consume_and_discard "CDATA[".len
+          tokenizer.consumeDiscard("CDATA[".len)
           if tokenizer.hasnonhtml:
             switch_state CDATA_SECTION
           else:
@@ -1102,13 +1089,13 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         emit_tok
       of 'p', 'P':
         if tokenizer.peekStrNoCase("ublic"):
-          consume_and_discard "ublic".len
+          tokenizer.consumeDiscard("ublic".len)
           switch_state AFTER_DOCTYPE_PUBLIC_KEYWORD
         else:
           anything_else
       of 's', 'S':
         if tokenizer.peekStrNoCase("ystem"):
-          consume_and_discard "ystem".len
+          tokenizer.consumeDiscard("ystem".len)
           switch_state AFTER_DOCTYPE_SYSTEM_KEYWORD
         else:
           anything_else
@@ -1345,24 +1332,24 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         reconsume_in tokenizer.rstate
 
     of NAMED_CHARACTER_REFERENCE:
-      tokenizer.reconsume()
+      tokenizer.reconsume(c)
       var tokenizerp = addr tokenizer
       var lasti = 0
       let value = entityMap.find((proc(s: var string): bool =
-        if tokenizerp[].atEof:
+        if tokenizerp[].atEnd():
           return false
-        let rs = $tokenizerp[].consume()
-        tokenizerp[].tmp &= rs
-        s &= rs
+        let c = tokenizerp[].consume()
+        tokenizerp[].tmp &= c
+        s &= c
         return true
       ), lasti)
       inc lasti # add 1, because we do not store the & in entityMap
       # move back the pointer & shorten the buffer to the last match.
-      tokenizer.sbuf_i -= tokenizer.tmp.len - lasti
+      tokenizer.reconsume(tokenizer.tmp.substr(lasti))
       tokenizer.tmp.setLen(lasti)
       if value.isSome:
-        if consumed_as_an_attribute and tokenizer.tmp[^1] != ';' and
-            not tokenizer.atEof and peek_char in {'='} + AsciiAlphaNumeric:
+        if tokenizer.consumedAsAnAttribute() and tokenizer.tmp[^1] != ';' and
+            not tokenizer.atEnd() and peek_char in {'='} + AsciiAlphaNumeric:
           flush_code_points_consumed_as_a_character_reference
           switch_state tokenizer.rstate
         else:
@@ -1378,7 +1365,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
     of AMBIGUOUS_AMPERSAND_STATE:
       case c
       of AsciiAlpha:
-        if consumed_as_an_attribute:
+        if tokenizer.consumedAsAnAttribute():
           tokenizer.appendToCurrentAttrValue(c)
         else:
           emit c
@@ -1472,10 +1459,9 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
     tokenizer.tokqueue.setLen(0)
 
   template reconsume_in(s: TokenizerState) =
-    tokenizer.reconsume()
     switch_state s
 
-  # tokenizer.atEof is true here
+  # tokenizer.atEnd() is true here
   while running:
     case tokenizer.state
     of DATA, RCDATA, RAWTEXT, SCRIPT_DATA, PLAINTEXT:
@@ -1638,6 +1624,6 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
       reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
 
   #TODO it would be nice to have one yield only, but then we would have to
-  # move the entire atEof thing in the while loop...
+  # move the entire atEnd thing in the while loop...
   for tok in tokenizer.tokqueue:
     yield tok

@@ -44,6 +44,14 @@ static:
   # HandleImpl and atom type AtomImpl.
   doAssert DOMBuilderImpl is DOMBuilder[HandleImpl, AtomImpl]
 
+proc getCharImpl(builder: DOMBuilderImpl): char
+  ## Read a character from the input stream.
+  ## This is only called if `atEndImpl` returns false.
+
+proc atEndImpl(builder: DOMBuilderImpl): bool
+  ## Returns true if there is no bytes left in the input stream, false if there
+  ## are still bytes left.
+
 proc strToAtomImpl(builder: DOMBuilderImpl, s: string): AtomImpl
   ## Turn a string `s` into an Atom.
   ##
@@ -239,6 +247,12 @@ method associateWithFormImpl(builder: DOMBuilderBase, element, form,
 # assertion above.
 template toDBImpl(builder: typed): DOMBuilderImpl =
   cast[DOMBuilderImpl](builder)
+
+proc getCharImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom]): char =
+  return toDBImpl(builder).getCharImpl()
+
+proc atEndImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom]): bool =
+  return toDBImpl(builder).atEndImpl()
 
 proc strToAtomImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
     s: string): Atom =

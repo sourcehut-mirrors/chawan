@@ -134,7 +134,8 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
     let decoder = newDecoderStream(inputStream, builder.charset, errormode = em)
     let encoder = newEncoderStream(decoder, CHARSET_UTF_8,
       errormode = ENCODER_ERROR_MODE_FATAL)
-    parseHTML(encoder, builder, opts)
+    builder.stream = encoder
+    parseHTML(builder, opts)
     if builder.confidence == CONFIDENCE_CERTAIN and seekable:
       # A meta tag describing the charset has been found; force use of this
       # charset.
