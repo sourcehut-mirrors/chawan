@@ -289,6 +289,9 @@ proc peekStrNoCase(tokenizer: var Tokenizer, s: static string): bool =
   tokenizer.reconsume(cs)
   return true
 
+proc flushTagName(tokenizer: var Tokenizer) =
+  tokenizer.tok.tagname = tokenizer.strToAtom(tokenizer.tagNameBuf)
+
 iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
     Token[Atom] =
   var running = true
@@ -297,8 +300,6 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
     tokenizer.flushChars()
     if tok.t == START_TAG:
       tokenizer.laststart = tok
-    if tok.t in {START_TAG, END_TAG}:
-      tok.tagname = tokenizer.strToAtom(tokenizer.tagNameBuf)
     tokenizer.tokqueue.add(tok)
   template emit(tok: TokenType) = emit Token[Atom](t: tok)
   template emit(s: static string) =
@@ -315,13 +316,12 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
   template emit_eof =
     tokenizer.flushChars()
     running = false
-  template emit_tok =
-    #TODO this should only be checked for cases where a start tag could
-    # be emitted
+  template prepare_attrs_if_start =
     if tokenizer.tok.t == START_TAG and tokenizer.attr and
         tokenizer.attrn != "":
       tokenizer.flushAttr()
       tokenizer.dedupAttrs()
+  template emit_tok =
     emit tokenizer.tok
   template emit_replacement = emit "\uFFFD"
   template switch_state(s: TokenizerState) =
@@ -332,12 +332,12 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
   template parse_error(error: untyped) =
     tokenizer.parseError(error)
   template is_appropriate_end_tag_token(): bool =
-    #TODO this unnecessarily hashes twice
     tokenizer.laststart != nil and
-      tokenizer.laststart.tagname == tokenizer.strToAtom(tokenizer.tagNameBuf)
+      tokenizer.laststart.tagname == tokenizer.tok.tagname
   template start_new_attribute =
     if tokenizer.tok.t == START_TAG and tokenizer.attr:
-      #TODO when is this false?
+      # This can also be called with tok.t == END_TAG, in that case we do
+      # not want to flush attributes.
       tokenizer.flushAttr()
     tokenizer.attrn = ""
     tokenizer.attrv = ""
@@ -445,10 +445,15 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
 
     of TAG_NAME:
       case c
-      of AsciiWhitespace: switch_state BEFORE_ATTRIBUTE_NAME
-      of '/': switch_state SELF_CLOSING_START_TAG
+      of AsciiWhitespace:
+        tokenizer.flushTagName()
+        switch_state BEFORE_ATTRIBUTE_NAME
+      of '/':
+        tokenizer.flushTagName()
+        switch_state SELF_CLOSING_START_TAG
       of '>':
         switch_state DATA
+        tokenizer.flushTagName()
         emit_tok
       of AsciiUpperAlpha: tokenizer.tagNameBuf &= c.toLowerAscii()
       of '\0':
@@ -483,16 +488,19 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         reconsume_in RCDATA
       case c
       of AsciiWhitespace:
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state BEFORE_ATTRIBUTE_NAME
         else:
           anything_else
       of '/':
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state SELF_CLOSING_START_TAG
         else:
           anything_else
       of '>':
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state DATA
           emit_tok
@@ -531,16 +539,19 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         reconsume_in RAWTEXT
       case c
       of AsciiWhitespace:
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state BEFORE_ATTRIBUTE_NAME
         else:
           anything_else
       of '/':
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state SELF_CLOSING_START_TAG
         else:
           anything_else
       of '>':
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state DATA
           emit_tok
@@ -581,16 +592,19 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         reconsume_in SCRIPT_DATA
       case c
       of AsciiWhitespace:
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state BEFORE_ATTRIBUTE_NAME
         else:
           anything_else
       of '/':
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state SELF_CLOSING_START_TAG
         else:
           anything_else
       of '>':
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state DATA
           emit_tok
@@ -693,16 +707,19 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         reconsume_in SCRIPT_DATA_ESCAPED
       case c
       of AsciiWhitespace:
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state BEFORE_ATTRIBUTE_NAME
         else:
           anything_else
       of '/':
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state SELF_CLOSING_START_TAG
         else:
           anything_else
       of '>':
+        tokenizer.flushTagName()
         if is_appropriate_end_tag_token:
           switch_state DATA
           emit_tok
@@ -836,6 +853,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
       of '=': switch_state BEFORE_ATTRIBUTE_VALUE
       of '>':
         switch_state DATA
+        prepare_attrs_if_start
         emit_tok
       else:
         start_new_attribute
@@ -849,6 +867,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
       of '>':
         parse_error MISSING_ATTRIBUTE_VALUE
         switch_state DATA
+        prepare_attrs_if_start
         emit_tok
       else: reconsume_in ATTRIBUTE_VALUE_UNQUOTED
 
@@ -876,6 +895,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
       of '&': switch_state_return CHARACTER_REFERENCE
       of '>':
         switch_state DATA
+        prepare_attrs_if_start
         emit_tok
       of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
@@ -893,6 +913,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         switch_state SELF_CLOSING_START_TAG
       of '>':
         switch_state DATA
+        prepare_attrs_if_start
         emit_tok
       else:
         parse_error MISSING_WHITESPACE_BETWEEN_ATTRIBUTES
@@ -903,6 +924,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
       of '>':
         tokenizer.tok.selfclosing = true
         switch_state DATA
+        prepare_attrs_if_start
         emit_tok
       else:
         parse_error UNEXPECTED_SOLIDUS_IN_TAG
@@ -1421,37 +1443,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         reconsume_in NUMERIC_CHARACTER_REFERENCE_END
 
     of NUMERIC_CHARACTER_REFERENCE_END:
-      case tokenizer.code
-      of 0x00:
-        parse_error NULL_CHARACTER_REFERENCE
-        tokenizer.code = 0xFFFD
-      elif tokenizer.code > 0x10FFFF:
-        parse_error CHARACTER_REFERENCE_OUTSIDE_UNICODE_RANGE
-        tokenizer.code = 0xFFFD
-      elif tokenizer.code.isSurrogate():
-        parse_error SURROGATE_CHARACTER_REFERENCE
-        tokenizer.code = 0xFFFD
-      elif tokenizer.code.isNonCharacter():
-        parse_error NONCHARACTER_CHARACTER_REFERENCE
-        # do nothing
-      elif tokenizer.code < 0x80 and
-          char(tokenizer.code) in (Controls - AsciiWhitespace) + {char(0x0D)} or
-          tokenizer.code in 0x80u32 .. 0x9Fu32:
-        const ControlMapTable = [
-          (0x80u32, 0x20ACu32), (0x82u32, 0x201Au32), (0x83u32, 0x0192u32),
-          (0x84u32, 0x201Eu32), (0x85u32, 0x2026u32), (0x86u32, 0x2020u32),
-          (0x87u32, 0x2021u32), (0x88u32, 0x02C6u32), (0x89u32, 0x2030u32),
-          (0x8Au32, 0x0160u32), (0x8Bu32, 0x2039u32), (0x8Cu32, 0x0152u32),
-          (0x8Eu32, 0x017Du32), (0x91u32, 0x2018u32), (0x92u32, 0x2019u32),
-          (0x93u32, 0x201Cu32), (0x94u32, 0x201Du32), (0x95u32, 0x2022u32),
-          (0x96u32, 0x2013u32), (0x97u32, 0x2014u32), (0x98u32, 0x02DCu32),
-          (0x99u32, 0x2122u32), (0x9Au32, 0x0161u32), (0x9Bu32, 0x203Au32),
-          (0x9Cu32, 0x0153u32), (0x9Eu32, 0x017Eu32), (0x9Fu32, 0x0178u32),
-        ].toTable()
-        if tokenizer.code in ControlMapTable:
-          tokenizer.code = ControlMapTable[tokenizer.code]
-      tokenizer.tmp = $Rune(tokenizer.code)
-      flush_code_points_consumed_as_a_character_reference #TODO optimize so we flush directly
+      tokenizer.numericCharacterReferenceEndState()
       reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
 
     for tok in tokenizer.tokqueue:
