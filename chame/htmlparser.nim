@@ -521,7 +521,6 @@ func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 func toParsedAttrs[Atom](attrs: seq[TokenAttr[Atom]]): seq[ParsedAttr[Atom]] =
   result = @[]
   for attr in attrs:
-    #TODO is no namespace correct?
     result.add((NO_PREFIX, NO_NAMESPACE, attr.name, attr.value))
 
 func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
@@ -1906,13 +1905,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.framesetOk = false
       )
       "<image>" => (block:
-        #TODO ew
-        let token = Token(
-          t: START_TAG,
-          tagname: parser.tagTypeToAtom(TAG_IMG),
-          selfclosing: token.selfclosing,
-          attrs: token.attrs
-        )
+        token.tagname = parser.tagTypeToAtom(TAG_IMG)
         reprocess token
       )
       "<textarea>" => (block:
@@ -2023,7 +2016,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         reprocess token
       )
       "</script>" => (block:
-        #TODO microtask (?)
         pop_current_node
         parser.insertionMode = parser.oldInsertionMode
       )
