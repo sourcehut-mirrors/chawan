@@ -1560,8 +1560,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.generateImpliedEndTags(parser.atomToTagType(token.tagname))
           if node != parser.currentNode:
             parse_error ELEMENT_NOT_CURRENT_NODE
-          while parser.popElement() != node:
-            discard
+          parser.popElementsIncl(node)
           break
         elif parser.isSpecialElement(node):
           parse_error UNEXPECTED_SPECIAL_ELEMENT
@@ -2085,7 +2084,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         if not parser.hasElementInTableScope(TAG_TABLE):
           discard
         else:
-          while parser.getTagType(parser.popElement()) != TAG_TABLE: discard
+          parser.popElementsIncl(TAG_TABLE)
           parser.resetInsertionMode()
           reprocess token
       )
@@ -2093,7 +2092,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         if not parser.hasElementInTableScope(TAG_TABLE):
           parse_error ELEMENT_NOT_IN_SCOPE
         else:
-          while parser.getTagType(parser.popElement()) != TAG_TABLE: discard
+          parser.popElementsIncl(TAG_TABLE)
           parser.resetInsertionMode()
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>", "</tbody>",
