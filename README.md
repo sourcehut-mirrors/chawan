@@ -34,7 +34,6 @@ tokenizer tests.
 Some parts of the specification have not been implemented yet. These are:
 
 * document.write
-* Custom elements
 * SVG script element
 
 ...and anything else we might have forgotten about. Support for these features
