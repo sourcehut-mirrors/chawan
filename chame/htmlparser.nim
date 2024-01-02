@@ -148,17 +148,17 @@ proc getDocument[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
   return parser.dombuilder.getDocumentImpl()
 
 #TODO remove/replace
-func getParentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc getParentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): Option[Handle] =
   mixin getParentNodeImpl
   return parser.dombuilder.getParentNodeImpl(handle)
 
-func getLocalName[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc getLocalName[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): Atom =
   mixin getLocalNameImpl
   return parser.dombuilder.getLocalNameImpl(handle)
 
-func getNamespace[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc getNamespace[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): Namespace =
   mixin getNamespaceImpl
   return parser.dombuilder.getNamespaceImpl(handle)
@@ -168,7 +168,7 @@ proc getTemplateContent[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   mixin getTemplateContentImpl
   return parser.dombuilder.getTemplateContentImpl(handle)
 
-func getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     handle: Handle): TagType =
   if parser.getNamespace(handle) != Namespace.HTML:
     return TAG_UNKNOWN
@@ -186,7 +186,7 @@ proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   let atom = parser.tagTypeToAtom(tagType)
   return parser.createElement(atom, namespace, Table[Atom, string]())
 
-func createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     text: string): Handle =
   mixin createCommentImpl
   return parser.dombuilder.createCommentImpl(text)
@@ -305,7 +305,7 @@ func adjustedCurrentNode[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     Handle =
   return parser.adjustedCurrentNodeToken.element
 
-func lastElementOfTag[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc lastElementOfTag[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     tagType: TagType): tuple[element: Option[Handle], pos: int] =
   for i in countdown(parser.openElements.high, 0):
     let element = parser.openElements[i].element
@@ -349,14 +349,14 @@ proc appropriatePlaceForInsert[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     AdjustedInsertionLocation[Handle] =
   parser.appropriatePlaceForInsert(parser.currentNode)
 
-func hasElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     tags: set[TagType]): bool =
   for (element, _) in parser.openElements:
     if parser.getTagType(element) in tags:
       return true
   return false
 
-func hasElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     tag: TagType): bool =
   return parser.hasElement({tag})
 
@@ -365,7 +365,7 @@ const Scope = {
   TAG_OBJECT, TAG_TEMPLATE # (+ SVG, MathML)
 }
 
-func hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: Handle, list: set[TagType]): bool =
   for i in countdown(parser.openElements.high, 0):
     let element = parser.openElements[i].element
@@ -394,7 +394,7 @@ func hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
         return false
     else: discard
 
-func hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: set[TagType], list: set[TagType]): bool =
   for i in countdown(parser.openElements.high, 0):
     let element = parser.openElements[i].element
@@ -424,35 +424,35 @@ func hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
         return false
     else: discard
 
-func hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: Handle): bool =
   return parser.hasElementInScopeWithXML(target, Scope)
 
-func hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: set[TagType]): bool =
   return parser.hasElementInScopeWithXML(target, Scope)
 
-func hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType): bool =
   return parser.hasElementInScope({target})
 
-func hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     localName: Atom): bool =
   let target = parser.atomToTagType(localName)
   return parser.hasElementInScope(target)
 
-func hasElementInListItemScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInListItemScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType): bool =
   const ListItemScope = Scope + {TAG_OL, TAG_UL}
   return parser.hasElementInScopeWithXML({target}, ListItemScope)
 
-func hasElementInButtonScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInButtonScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType): bool =
   const ButtonScope = Scope + {TAG_BUTTON}
   return parser.hasElementInScopeWithXML({target}, ButtonScope)
 
 # Note: these do not include the "Scope" tags.
-func hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: Handle, list: set[TagType]): bool =
   for i in countdown(parser.openElements.high, 0):
     let element = parser.openElements[i].element
@@ -462,7 +462,7 @@ func hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       return false
   assert false
 
-func hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: set[TagType], list: set[TagType]): bool =
   for i in countdown(parser.openElements.high, 0):
     let tagType = parser.getTagType(parser.openElements[i].element)
@@ -472,20 +472,20 @@ func hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       return false
   assert false
 
-func hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType, list: set[TagType]): bool =
   return parser.hasElementInSpecificScope({target}, list)
 
 const TableScope = {TAG_HTML, TAG_TABLE, TAG_TEMPLATE}
-func hasElementInTableScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInTableScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType): bool =
   return parser.hasElementInSpecificScope(target, TableScope)
 
-func hasElementInTableScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInTableScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: set[TagType]): bool =
   return parser.hasElementInSpecificScope(target, TableScope)
 
-func hasElementInSelectScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc hasElementInSelectScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType): bool =
   for i in countdown(parser.openElements.high, 0):
     let tagType = parser.getTagType(parser.openElements[i].element)
@@ -495,7 +495,7 @@ func hasElementInSelectScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       return false
   assert false
 
-func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     localName: Atom, namespace: Namespace, intendedParent: Handle,
     htmlAttrs: Table[Atom, string], xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
   #TODO custom elements
@@ -507,7 +507,7 @@ func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     parser.associateWithForm(element, parser.form.get, intendedParent)
   return element
 
-func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     token: Token, namespace: Namespace, intendedParent: Handle): Handle =
   # attrs not adjusted
   return parser.createElement(token.tagname, namespace, intendedParent,
@@ -859,7 +859,7 @@ proc clearActiveFormattingTillMarker(parser: var HTML5Parser) =
       parser.activeFormatting.pop()[0].isSome:
     discard
 
-func isMathMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc isMathMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     element: Handle): bool =
   if parser.getNamespace(element) != Namespace.MATHML:
     return false
@@ -872,7 +872,7 @@ func isMathMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   ]
   return parser.getLocalName(element) in elements
 
-func isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     oe: OpenElement[Handle, Atom]): bool =
   let (element, token) = oe
   let localName = parser.getLocalName(element)
@@ -952,13 +952,6 @@ func findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom
       return i
   return -1
 
-func findLastActiveFormatting(parser: var HTML5Parser, tagType: TagType): int =
-  for i in countdown(parser.activeFormatting.high, 0):
-    let it = parser.activeFormatting[i][0]
-    if it.isSome and parser.getTagType(it.get) == tagType:
-      return i
-  return -1
-
 # > the last element in the list of active formatting elements that:
 # > is between the end of the list and the last marker in the list, if any,
 # > or the start of the list otherwise, and has the tag name subject.
@@ -972,7 +965,7 @@ func findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
       return i
   return -1
 
-func findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
+proc findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
     tagType: TagType): int =
   for i in countdown(parser.activeFormatting.high, 0):
     let it = parser.activeFormatting[i][0]
@@ -982,7 +975,7 @@ func findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
       return i
   return -1
 
-func isSpecialElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc isSpecialElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     element: Handle): bool =
   let localName = parser.getLocalName(element)
   let namespace = parser.getNamespace(element)
@@ -1013,13 +1006,13 @@ func isSpecialElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 # > Let furthestBlock be the topmost node in the stack of open elements that
 # > is lower in the stack than formattingElement, and is an element in the
 # > special category. There might not be one.
-func findFurthestBlockAfter(parser: HTML5Parser, stackIndex: int): int =
+proc findFurthestBlockAfter(parser: HTML5Parser, stackIndex: int): int =
   for i in stackIndex ..< parser.openElements.len:
     if parser.isSpecialElement(parser.openElements[i].element):
       return i
   return -1
 
-func findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
+proc findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     tagTypes: set[TagType]): int =
   for i in countdown(parser.activeFormatting.high, 0):
     let it = parser.activeFormatting[i][0]
