@@ -181,6 +181,10 @@ proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
     tokenizer.isws = false
     tokenizer.charbuf.setLen(0)
 
+when not defined(parseErrorImpl):
+  proc parseErrorImpl(builder: DOMBuilderBase, e: ParseError) =
+    discard
+
 proc parseError(tokenizer: Tokenizer, e: ParseError) =
   mixin parseErrorImpl
   tokenizer.dombuilder.parseErrorImpl(e)

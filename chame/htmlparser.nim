@@ -132,16 +132,22 @@ proc atomToTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 
 proc parseError(parser: HTML5Parser, e: ParseError) =
   mixin parseErrorImpl
-  parser.dombuilder.parseErrorImpl(e)
+  when compiles(parser.dombuilder.parseErrorImpl(e)):
+    parser.dombuilder.parseErrorImpl(e)
 
-proc setQuirksMode[Handle, Atom](parser: var HTML5Parser[Handle, Atom], mode: QuirksMode) =
+proc setQuirksMode[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
+    mode: QuirksMode) =
   mixin setQuirksModeImpl
   parser.quirksMode = mode
-  parser.dombuilder.setQuirksModeImpl(mode)
+  when compiles(parser.dombuilder.setQuirksModeImpl(mode)):
+    parser.dombuilder.setQuirksModeImpl(mode)
 
 proc setEncoding(parser: var HTML5Parser, cs: string): SetEncodingResult =
   mixin setEncodingImpl
-  return parser.dombuilder.setEncodingImpl(cs)
+  when compiles(parser.dombuilder.setEncodingImpl(cs)):
+    return parser.dombuilder.setEncodingImpl(cs)
+  else:
+    return SET_ENCODING_CONTINUE
 
 proc getDocument[Handle, Atom](parser: HTML5Parser[Handle, Atom]): Handle =
   mixin getDocumentImpl
@@ -223,16 +229,20 @@ proc addAttrsIfMissing[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 proc setScriptAlreadyStarted[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     script: Handle) =
   mixin setScriptAlreadyStartedImpl
-  parser.dombuilder.setScriptAlreadyStartedImpl(script)
+  when compiles(parser.dombuilder.setScriptAlreadyStartedImpl(script)):
+    parser.dombuilder.setScriptAlreadyStartedImpl(script)
 
 proc associateWithForm[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     element, form, intendedParent: Handle) =
   mixin associateWithFormImpl
-  parser.dombuilder.associateWithFormImpl(element, form, intendedParent)
+  when compiles(parser.dombuilder.associateWithFormImpl(element, form,
+      intendedParent)):
+    parser.dombuilder.associateWithFormImpl(element, form, intendedParent)
 
 # Parser
 func hasParseError(parser: HTML5Parser): bool =
-  return true #TODO TODO TODO
+  mixin parseErrorImpl
+  return compiles(parser.dombuilder.parseErrorImpl(default(ParseError)))
 
 func fragment(parser: HTML5Parser): bool =
   return parser.opts.ctx.isSome
@@ -522,7 +532,8 @@ proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 proc popElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom]): Handle =
   mixin elementPoppedImpl
   result = parser.openElements.pop().element
-  parser.dombuilder.elementPoppedImpl(result)
+  when compiles(parser.dombuilder.elementPoppedImpl(result)):
+    parser.dombuilder.elementPoppedImpl(result)
   if parser.openElements.len == 0:
     parser.tokenizer.hasnonhtml = false
   else:

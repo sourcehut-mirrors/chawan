@@ -378,6 +378,11 @@ proc addAttrsIfMissingImpl(builder: MiniDOMBuilder, handle: Node,
       element.attrs.add((NO_PREFIX, NO_NAMESPACE, name, value))
   element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
 
+method setEncodingImpl(builder: MiniDOMBuilder, encoding: string):
+    SetEncodingResult {.base.} =
+  # Provided as a method for minidom_cs to override.
+  return SET_ENCODING_CONTINUE
+
 proc newMiniDOMBuilder*(stream: Stream, factory: MAtomFactory): MiniDOMBuilder =
   let document = Document(nodeType: DOCUMENT_NODE, factory: factory)
   let builder = MiniDOMBuilder(

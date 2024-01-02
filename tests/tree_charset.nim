@@ -14,7 +14,7 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
     let cs = getCharset(s)
     assert cs != CHARSET_UNKNOWN
     charsets.add(cs)
-  let pdoc = parseHTML(ss, opts, charsets)
+  let pdoc = parseHTML(ss, opts, charsets, factory = factory)
   #[
   var ins = ""
   for x in test.document.childList:
@@ -45,3 +45,6 @@ proc runTests(filename: string, labels: openArray[string]) =
 
 test "sjis.dat":
   runTests("sjis.dat", ["utf8", "sjis", "latin1"])
+
+test "latin1.dat":
+  runTests("latin1.dat", ["utf8"])

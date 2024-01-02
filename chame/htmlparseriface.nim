@@ -184,67 +184,68 @@ proc moveChildrenImpl(builder: DOMBuilderImpl, fromNode, toNode: HandleImpl)
   ## Remove all children from the node `fromHandle`, then append them to
   ## `toHandle`.
 
-# Optional hooks (implemented using dynamic dispatch)
-#
-# Generic methods are not supported, so we cheat.
-# The idea is that we define a base method on a non-generic ancestor of
-# DOMBuilderImpl. Then users interested in implementing the hook just override
-# it with their own implementation on DOMBuilderImpl (which is also not
-# generic).
-#TODO but this cannot be statically detected... would be nice to figure out
-# something for this...
-method parseErrorImpl(builder: DOMBuilderBase, e: ParseError) {.base.} =
-  ## Optional hook.
-  ##
-  ## Parse error. `message` is an error code either specified by the
-  ## standard (in this case, `e` < `LAST_SPECIFIED_ERROR`) or named
-  ## arbitrarily. (At the time of writing, only tokenizer errors have
-  ## specified error codes.)
-  discard
-
-method setQuirksModeImpl(builder: DOMBuilderBase, quirksMode: QuirksMode)
-    {.base.} =
-  ## Optional hook.
-  ##
-  ## Set quirks mode to either `QUIRKS` or `LIMITED_QUIRKS`. `NO_QUIRKS` is the
-  ## default and is therefore never passed here.
-  discard
-
-method setEncodingImpl(builder: DOMBuilderBase, encoding: string):
-    SetEncodingResult {.base.} =
-  ## Optional hook.
-  ##
-  ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
-  ## containing a non-empty character set is encountered. A SetEncodingResult
-  ## return value is expected, which is either `SET_ENCODING_STOP`, stopping
-  ## the parser, or `SET_ENCODING_CONTINUE`, allowing the parser to continue.
-  ##
-  ## Note that htmlparser no longer contains any encoding-related logic, not
-  ## even UTF-8 validation. Implementing this is left to the caller. (For an
-  ## example, see minidom_cs which implements decoding of all character sets
-  ## in the WHATWG recommendation.)
-  return SET_ENCODING_CONTINUE
-
-method elementPoppedImpl(builder: DOMBuilderBase, handle: HandleImpl) {.base.} =
-  ## Optional hook.
-  ##
-  ## Called when an element is popped from the stack of open elements
-  ## (i.e. when it has been closed.)
-  discard
-
-method setScriptAlreadyStartedImpl(builder: DOMBuilderBase, handle: HandleImpl)
-    {.base.} =
-  ## Set the "already started" flag for the script element.
-  ##
-  ## Note: this flag is not togglable, so implementations of this callback
-  ## should just set the flag to true.
-  discard
-
-method associateWithFormImpl(builder: DOMBuilderBase, element, form,
-    intendedParent: HandleImpl) {.base.} =
-  ## Called after createElement. Attempts to set form for form-associated
-  ## elements.
-  ##
-  ## Note: the DOM builder is responsible for checking whether the intended
-  ## parent and the form element are in the same tree.
-  discard
+## Following methods are optional hooks; implementations of this interface
+## can choose to leave them out without getting compilation errors.
+##
+## ```nim
+## proc parseErrorImpl(builder: DOMBuilderBase, e: ParseError)
+## ```
+##
+## Parse error. `message` is an error code either specified by the
+## standard (in this case, `e` < `LAST_SPECIFIED_ERROR`) or named
+## arbitrarily. (At the time of writing, only tokenizer errors have
+## specified error codes.)
+##
+##
+## ```nim
+## proc setQuirksModeImpl(builder: DOMBuilderBase, quirksMode: QuirksMode)
+## ```
+##
+## Set quirks mode to either `QUIRKS` or `LIMITED_QUIRKS`. `NO_QUIRKS` is the
+## default and is therefore never passed here.
+##
+##
+## ```nim
+## proc setEncodingImpl(builder: DOMBuilderBase, encoding: string):
+##    SetEncodingResult
+## ```
+##
+## Called whenever a <meta charset=... or a <meta http-equiv=... tag
+## containing a non-empty character set is encountered. A SetEncodingResult
+## return value is expected, which is either `SET_ENCODING_STOP`, stopping
+## the parser, or `SET_ENCODING_CONTINUE`, allowing the parser to continue.
+##
+## Note that htmlparser no longer contains any encoding-related logic, not
+## even UTF-8 validation. Implementing this is left to the caller. (For an
+## example, see minidom_cs which implements decoding of all character sets
+## in the WHATWG recommendation.)
+##
+##
+## ```nim
+## proc elementPoppedImpl(builder: DOMBuilderBase, handle: HandleImpl)
+## ```
+##
+## Called when an element is popped from the stack of open elements
+## (i.e. when it has been closed.)
+##
+##
+## ```nim
+## proc setScriptAlreadyStartedImpl(builder: DOMBuilderBase, handle: HandleImpl)
+## ```
+##
+## Set the "already started" flag for the script element.
+##
+## Note: this flag is not togglable, so implementations of this callback
+## should just set the flag to true.
+##
+##
+## ```nim
+## proc associateWithFormImpl(builder: DOMBuilderBase, element, form,
+##    intendedParent: HandleImpl)
+## ```
+##
+## Called after createElement. Attempts to set form for form-associated
+## elements.
+##
+## Note: the DOM builder is responsible for checking whether the intended
+## parent and the form element are in the same tree.

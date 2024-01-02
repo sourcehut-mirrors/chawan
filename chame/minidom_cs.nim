@@ -50,7 +50,7 @@ method setEncodingImpl(builder: CharsetMiniDOMBuilder, encoding: string):
   return SET_ENCODING_STOP
 
 proc newCharsetMiniDOMBuilder(factory: MAtomFactory): CharsetMiniDOMBuilder =
-  let document = Document(nodeType: DOCUMENT_NODE)
+  let document = Document(nodeType: DOCUMENT_NODE, factory: factory)
   let builder = CharsetMiniDOMBuilder(document: document, factory: factory)
   return builder
 
@@ -140,14 +140,14 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
       # A meta tag describing the charset has been found; force use of this
       # charset.
       inputStream.setPosition(0)
-      builder.document = Document(nodeType: DOCUMENT_NODE)
+      builder.document = Document(nodeType: DOCUMENT_NODE, factory: factory)
       charsetStack.add(builder.charset)
       seekable = false
       continue
     if decoder.failed and seekable:
       # Retry with another charset.
       inputStream.setPosition(0)
-      builder.document = Document(nodeType: DOCUMENT_NODE)
+      builder.document = Document(nodeType: DOCUMENT_NODE, factory: factory)
       continue
     break
   return builder.document

@@ -1,7 +1,5 @@
 interface:
 * get rid of getParentNode (replace with an insertBeforeOrAppendTo?)
-* use converter + proc for optional callbacks instead of method?
-optimizations:
 * reduce use of getNamespace (maybe store ns on the stack of open elements?)
 * reduce atomToTagType calls (store tagType before the case statement in match?)
 * on-demand creation of attribute name atoms (most documents don't even
