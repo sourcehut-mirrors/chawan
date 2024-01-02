@@ -42,6 +42,10 @@ static:
   # HandleImpl and atom type AtomImpl.
   doAssert DOMBuilderImpl is DOMBuilder[HandleImpl, AtomImpl]
 
+converter toDOMBuilderImpl(dombuilder: DOMBuilder[HandleImpl, AtomImpl]):
+    DOMBuilderImpl =
+  return DOMBuilderImpl(dombuilder)
+
 proc getCharImpl(builder: DOMBuilderImpl): char
   ## Read a character from the input stream.
   ## This is only called if `atEndImpl` returns false.
@@ -247,75 +251,3 @@ method associateWithFormImpl(builder: DOMBuilderBase, element, form,
   ## Note: the DOM builder is responsible for checking whether the intended
   ## parent and the form element are in the same tree.
   discard
-
-# Declarations for the parser. These casts are safe, as checked by the static
-# assertion above.
-template toDBImpl(builder: typed): DOMBuilderImpl =
-  cast[DOMBuilderImpl](builder)
-
-proc getCharImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom]): char =
-  return toDBImpl(builder).getCharImpl()
-
-proc atEndImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom]): bool =
-  return toDBImpl(builder).atEndImpl()
-
-proc strToAtomImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    s: string): Atom =
-  return toDBImpl(builder).strToAtomImpl(s)
-
-proc tagTypeToAtomImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    tagType: TagType): Atom =
-  return toDBImpl(builder).tagTypeToAtomImpl(tagType)
-
-proc atomToTagTypeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    atom: Atom): TagType =
-  return toDBImpl(builder).atomToTagTypeImpl(atom)
-
-proc getDocumentImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom]): Handle =
-  return toDBImpl(builder).getDocumentImpl()
-
-proc getLocalNameImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    handle: Handle): Atom =
-  return toDBImpl(builder).getLocalNameImpl(handle)
-
-proc getNamespaceImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    handle: Handle): Namespace =
-  return toDBImpl(builder).getNamespaceImpl(handle)
-
-proc getTemplateContentImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    handle: Handle): Handle =
-  return toDBImpl(builder).getTemplateContentImpl(handle)
-
-proc getParentNodeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    handle: Handle): Option[Handle] =
-  return toDBImpl(builder).getParentNodeImpl(handle)
-
-proc createElementImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    localName: Atom, namespace: Namespace, htmlAttrs: Table[Atom, string],
-    xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
-  return toDBImpl(builder).createElementImpl(localName, namespace, htmlAttrs,
-    xmlAttrs)
-
-proc createCommentImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    text: string): Handle =
-  return toDBImpl(builder).createCommentImpl(text)
-
-proc createDocumentTypeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    name, publicId, systemId: string): Handle =
-  return toDBImpl(builder).createDocumentTypeImpl(name, publicId, systemId)
-
-proc insertBeforeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    parent, node: Handle, before: Option[Handle]) =
-  toDBImpl(builder).insertBeforeImpl(parent, node, before)
-
-proc insertTextImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    parent: Handle, text: string, before: Option[Handle]) =
-  toDBImpl(builder).insertTextImpl(parent, text, before)
-
-proc removeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    child: Handle) =
-  toDBImpl(builder).removeImpl(child)
-
-proc moveChildrenImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
-    fromNode, toNode: Handle) =
-  toDBImpl(builder).moveChildrenImpl(fromNode, toNode)
