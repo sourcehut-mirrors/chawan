@@ -37,7 +37,6 @@ type
 
 # Mandatory Atom functions
 func `==`*(a, b: MAtom): bool {.borrow.}
-func cmp*(a, b: MAtom): int {.inline.} = cmp(int(a), int(b))
 func hash*(atom: MAtom): Hash {.borrow.}
 
 func strToAtom*(factory: MAtomFactory, s: string): MAtom
@@ -128,6 +127,9 @@ func toTagType*(atom: MAtom): TagType {.inline.} =
 func tagType*(element: Element): TagType =
   return element.localName.toTagType()
 
+func cmp*(a, b: MAtom): int {.inline.} =
+  return cmp(int(a), int(b))
+
 # We use this to validate input strings, since htmltokenizer/htmlparser does no
 # input validation.
 proc toValidUTF8(s: string): string =
@@ -201,9 +203,9 @@ proc getDocumentImpl(builder: MiniDOMBuilder): Node =
 proc getParentNodeImpl(builder: MiniDOMBuilder, handle: Node): Option[Node] =
   return option(handle.parentNode)
 
-proc createElementImpl(builder: DOMBuilder[Node, MAtom], localName: MAtom,
-    namespace: Namespace, attrs: seq[Attribute]): Node =
-  let builder = cast[MiniDOMBuilder](builder)
+proc createElementImpl(builder: MiniDOMBuilder, localName: MAtom,
+    namespace: Namespace, htmlAttrs: Table[MAtom, string],
+    xmlAttrs: seq[Attribute]): Node =
   let element = if localName.toTagType() == TAG_TEMPLATE and
       namespace == Namespace.HTML:
     HTMLTemplateElement(
@@ -215,9 +217,10 @@ proc createElementImpl(builder: DOMBuilder[Node, MAtom], localName: MAtom,
   element.localName = localName
   element.namespace = namespace
   element.document = builder.document
-  element.attrs = attrs
-  for attr in element.attrs.mitems:
-    attr.value = attr.value.toValidUTF8()
+  element.attrs = xmlAttrs
+  for k, v in htmlAttrs:
+    element.attrs.add((NO_PREFIX, NO_NAMESPACE, k, v.toValidUTF8()))
+  element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
   return element
 
 proc getLocalNameImpl(builder: MiniDOMBuilder, handle: Node): MAtom =
@@ -364,15 +367,15 @@ proc moveChildrenImpl(builder: MiniDOMBuilder, fromNode, toNode: Node) =
     toNode.insertBefore(child, none(Node))
 
 method addAttrsIfMissingImpl(builder: MiniDOMBuilder, element: Node,
-    attrs: seq[TokenAttr[MAtom]]) =
+    attrs: Table[MAtom, string]) =
   let element = Element(element)
   var oldNames: HashSet[MAtom]
   for attr in element.attrs:
     oldNames.incl(attr.name)
-  for attr in attrs:
-    if attr.name notin oldNames:
-      let value = attr.value.toValidUTF8()
-      element.attrs.add((NO_PREFIX, NO_NAMESPACE, attr.name, value))
+  for name, value in attrs:
+    if name notin oldNames:
+      let value = value.toValidUTF8()
+      element.attrs.add((NO_PREFIX, NO_NAMESPACE, name, value))
   element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
 
 proc newMiniDOMBuilder*(stream: Stream, factory: MAtomFactory): MiniDOMBuilder =

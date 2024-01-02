@@ -1,6 +1,4 @@
 interface:
-* pass TokenAttr to createElement, then append adjusted attributes with a
-  separate callback
 * get rid of getParentNode (replace with an insertBeforeOrAppendTo?)
 * use converter + proc for optional callbacks instead of method?
 optimizations:

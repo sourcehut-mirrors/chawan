@@ -11,8 +11,12 @@ import utils/twtstr
 
 # Generics break without exporting macros. Maybe a compiler bug?
 export macros
+
+# Export these so that htmlparseriface works seamlessly.
 export dombuilder
-export TokenAttr
+export options
+export parseerror
+export tags
 
 # Heavily inspired by html5ever's TreeSink design.
 type
@@ -170,16 +174,17 @@ func getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     return TAG_UNKNOWN
   return parser.atomToTagType(parser.getLocalName(handle))
 
-func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    localName: Atom, namespace: Namespace, attrs: seq[ParsedAttr[Atom]]):
-    Handle =
+proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    localName: Atom, namespace: Namespace, htmlAttrs: Table[Atom, string],
+    xmlAttrs: seq[ParsedAttr[Atom]] = @[]): Handle =
   mixin createElementImpl
-  return parser.dombuilder.createElementImpl(localName, namespace, attrs)
+  return parser.dombuilder.createElementImpl(localName, namespace, htmlAttrs,
+    xmlAttrs)
 
-func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     tagType: TagType, namespace: Namespace): Handle =
   let atom = parser.tagTypeToAtom(tagType)
-  return parser.createElement(atom, namespace, @[])
+  return parser.createElement(atom, namespace, Table[Atom, string]())
 
 func createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     text: string): Handle =
@@ -211,7 +216,7 @@ proc moveChildren[Handle, Atom](parser: HTML5Parser[Handle, Atom], handleFrom,
   parser.dombuilder.moveChildrenImpl(handleFrom, handleTo)
 
 proc addAttrsIfMissing[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    element: Handle, attrs: seq[TokenAttr[Atom]]) =
+    element: Handle, attrs: Table[Atom, string]) =
   mixin addAttrsIfMissingImpl
   parser.dombuilder.addAttrsIfMissingImpl(element, attrs)
 
@@ -490,44 +495,23 @@ func hasElementInSelectScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       return false
   assert false
 
-func findAttr[Atom](attrs: seq[TokenAttr[Atom]], atom: Atom): int =
-  for i, attr in attrs:
-    if attr.name == atom:
-      return i
-  return -1
-
-func findAttr[Atom](token: Token[Atom], atom: Atom): int =
-  return token.attrs.findAttr(atom)
-
-func findAttr[Atom](attrs: seq[ParsedAttr[Atom]], atom: Atom): int =
-  for i, attr in attrs:
-    if attr.name == atom:
-      return i
-  return -1
-
 func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     localName: Atom, namespace: Namespace, intendedParent: Handle,
-    attrs: seq[ParsedAttr[Atom]]): Handle =
+    htmlAttrs: Table[Atom, string], xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
   #TODO custom elements
-  let element = parser.createElement(localName, namespace, attrs)
+  let element = parser.createElement(localName, namespace, htmlAttrs, xmlAttrs)
   let tagType = parser.atomToTagType(localName)
   if namespace == Namespace.HTML and tagType in FormAssociatedElements and
       parser.form.isSome and not parser.hasElement(TAG_TEMPLATE) and
-      (tagType notin ListedElements or
-        attrs.findAttr(parser.atomMap[ATOM_FORM]) == -1):
+      (tagType notin ListedElements or parser.atomMap[ATOM_FORM] in htmlAttrs):
     parser.associateWithForm(element, parser.form.get, intendedParent)
   return element
-
-func toParsedAttrs[Atom](attrs: seq[TokenAttr[Atom]]): seq[ParsedAttr[Atom]] =
-  result = @[]
-  for attr in attrs:
-    result.add((NO_PREFIX, NO_NAMESPACE, attr.name, attr.value))
 
 func createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     token: Token, namespace: Namespace, intendedParent: Handle): Handle =
   # attrs not adjusted
-  let attrs = token.attrs.toParsedAttrs()
-  return parser.createElement(token.tagname, namespace, intendedParent, attrs)
+  return parser.createElement(token.tagname, namespace, intendedParent,
+    token.attrs, @[])
 
 proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     node: Handle, token: Token[Atom]) =
@@ -556,10 +540,11 @@ proc append[Handle, Atom](parser: HTML5Parser[Handle, Atom], parent, node: Handl
 
 proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     token: Token, localName: Atom, namespace: Namespace, stackOnly: bool,
-    attrs: seq[ParsedAttr[Atom]]): Handle =
+    xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
   let location = parser.appropriatePlaceForInsert()
   let parent = location.inside
-  let element = parser.createElement(localName, namespace, parent, attrs)
+  let element = parser.createElement(localName, namespace, parent, token.attrs,
+    xmlAttrs)
   #TODO custom elements
   if not stackOnly:
     parser.insert(location, element)
@@ -568,37 +553,40 @@ proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
 proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     token: Token, namespace: Namespace, stackOnly: bool): Handle =
-  let attrs = token.attrs.toParsedAttrs()
-  let localName = token.tagname
-  parser.insertForeignElement(token, localName, namespace, stackOnly, attrs)
+  parser.insertForeignElement(token, token.tagname, namespace, stackOnly, @[])
 
 proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     token: Token): Handle =
   return parser.insertForeignElement(token, Namespace.HTML, false)
 
+# Note: adjustMathMLAttributes and adjustSVGAttributes both include the "adjust
+# foreign attributes" step as well.
 proc adjustMathMLAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
-    attrs: var seq[ParsedAttr[Atom]]) =
-  let i = attrs.findAttr(parser.atomMap[ATOM_DEFINITION_URL_LOWER])
-  if i != -1:
-    attrs[i].name = parser.atomMap[ATOM_DEFINITION_URL_FIXED]
-
-proc adjustForeignAttributes[H, Atom](parser: var HTML5Parser[H, Atom],
-    attrs: var seq[ParsedAttr[Atom]]) =
-  for attr in attrs.mitems:
-    parser.foreignTable.withValue(attr.name, p):
-      attr.prefix = p[].prefix
-      attr.namespace = p[].namespace
-      attr.name = p[].localName
+    htmlAttrs: var Table[Atom, string], xmlAttrs: var seq[ParsedAttr[Atom]]) =
+  var deleted: seq[Atom]
+  for k, v in htmlAttrs.mpairs:
+    parser.foreignTable.withValue(k, p):
+      xmlAttrs.add((p[].prefix, p[].namespace, p[].localName, v))
+      deleted.add(k)
+  var v: string
+  if htmlAttrs.pop(parser.atomMap[ATOM_DEFINITION_URL_LOWER], v):
+    htmlAttrs[parser.atomMap[ATOM_DEFINITION_URL_FIXED]] = v
+  for k in deleted:
+    htmlAttrs.del(k)
 
 proc adjustSVGAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
-    attrs: var seq[ParsedAttr[Atom]]) =
-  for attr in attrs.mitems:
-    parser.adjustedTable.withValue(attr.name, p):
-      attr.name = p[]
-
-proc sortAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
-    attrs: var seq[ParsedAttr[Atom]]) =
-  attrs.sort(func(a, b: ParsedAttr[Atom]): int = cmp(a.name, b.name))
+    htmlAttrs: var Table[Atom, string], xmlAttrs: var seq[ParsedAttr[Atom]]) =
+  var deleted: seq[Atom]
+  for k, v in htmlAttrs:
+    parser.foreignTable.withValue(k, p):
+      xmlAttrs.add((p[].prefix, p[].namespace, p[].localName, v))
+      deleted.add(k)
+  for k, ak in parser.adjustedTable:
+    var v: string
+    if htmlAttrs.pop(k, v):
+      htmlAttrs[ak] = v
+  for k in deleted:
+    htmlAttrs.del(k)
 
 proc insertCharacter(parser: var HTML5Parser, data: string) =
   let location = parser.appropriatePlaceForInsert()
@@ -891,11 +879,9 @@ func isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   let namespace = parser.getNamespace(element)
   if namespace == Namespace.MATHML:
     if localName == parser.atomMap[ATOM_ANNOTATION_XML]:
-      let i = token.findAttr(parser.atomMap[ATOM_ENCODING])
-      if i != -1:
-        let value = token.attrs[i].value
-        return value.equalsIgnoreCase("text/html") or
-          value.equalsIgnoreCase("application/xhtml+xml")
+      token.attrs.withValue(parser.atomMap[ATOM_ENCODING], p):
+        return p[].equalsIgnoreCase("text/html") or
+          p[].equalsIgnoreCase("application/xhtml+xml")
   elif namespace == Namespace.SVG:
     let elements = [
       parser.atomMap[ATOM_FOREIGNOBJECT],
@@ -1420,25 +1406,23 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       "<meta>" => (block:
         discard parser.insertHTMLElement(token)
         pop_current_node
-        let i = token.findAttr(parser.atomMap[ATOM_CHARSET])
-        if i != -1:
-          case parser.setEncoding(token.attrs[i].value)
+        token.attrs.withValue(parser.atomMap[ATOM_CHARSET], p):
+          case parser.setEncoding(p[])
           of SET_ENCODING_CONTINUE:
             discard
           of SET_ENCODING_STOP:
             parser.stopped = true
-        else:
-          let i = token.findAttr(parser.atomMap[ATOM_HTTP_EQUIV])
-          if i != -1 and token.attrs[i].value.equalsIgnoreCase("Content-Type"):
-            let i = token.findAttr(parser.atomMap[ATOM_CONTENT])
-            if i != -1:
-              let cs = extractEncFromMeta(token.attrs[i].value)
-              if cs != "":
-                case parser.setEncoding(cs)
-                of SET_ENCODING_CONTINUE:
-                  discard
-                of SET_ENCODING_STOP:
-                  parser.stopped = true
+        do:
+          token.attrs.withValue(parser.atomMap[ATOM_HTTP_EQUIV], p):
+            if p[].equalsIgnoreCase("Content-Type"):
+              token.attrs.withValue(parser.atomMap[ATOM_CONTENT], p2):
+                let cs = extractEncFromMeta(p2[])
+                if cs != "":
+                  case parser.setEncoding(cs)
+                  of SET_ENCODING_CONTINUE:
+                    discard
+                  of SET_ENCODING_STOP:
+                    parser.stopped = true
       )
       "<title>" => (block: parser.genericRCDATAElementParsingAlgorithm(token))
       "<noscript>" => (block:
@@ -1888,8 +1872,10 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.reconstructActiveFormatting()
         discard parser.insertHTMLElement(token)
         pop_current_node
-        let i = token.findAttr(parser.atomMap[ATOM_TYPE])
-        if i == -1 or not token.attrs[i].value.equalsIgnoreCase("hidden"):
+        token.attrs.withValue(parser.atomMap[ATOM_TYPE], p):
+          if not p[].equalsIgnoreCase("hidden"):
+            parser.framesetOk = false
+        do:
           parser.framesetOk = false
       )
       ("<param>", "<source>", "<track>") => (block:
@@ -1967,25 +1953,19 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       "<math>" => (block:
         parser.reconstructActiveFormatting()
-        var attrs = token.attrs.toParsedAttrs()
-        parser.adjustMathMLAttributes(attrs)
-        parser.adjustForeignAttributes(attrs)
-        parser.sortAttributes(attrs)
-        const ns = Namespace.MATHML
-        let localName = token.tagname
-        discard parser.insertForeignElement(token, localName, ns, false, attrs)
+        var xmlAttrs: seq[ParsedAttr[Atom]]
+        parser.adjustMathMLAttributes(token.attrs, xmlAttrs)
+        discard parser.insertForeignElement(token, token.tagname,
+          Namespace.MATHML, false, xmlAttrs)
         if token.selfclosing:
           pop_current_node
       )
       "<svg>" => (block:
         parser.reconstructActiveFormatting()
-        var attrs = token.attrs.toParsedAttrs()
-        parser.adjustSVGAttributes(attrs)
-        parser.adjustForeignAttributes(attrs)
-        parser.sortAttributes(attrs)
-        const ns = Namespace.SVG
-        let localName = token.tagname
-        discard parser.insertForeignElement(token, localName, ns, false, attrs)
+        var xmlAttrs: seq[ParsedAttr[Atom]]
+        parser.adjustSVGAttributes(token.attrs, xmlAttrs)
+        discard parser.insertForeignElement(token, token.tagname, Namespace.SVG,
+          false, xmlAttrs)
         if token.selfclosing:
           pop_current_node
       )
@@ -2104,15 +2084,20 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       "<input>" => (block:
         parse_error UNEXPECTED_START_TAG
-        let i = token.findAttr(parser.atomMap[ATOM_TYPE])
-        if i == -1 or not token.attrs[i].value.equalsIgnoreCase("hidden"):
+        token.attrs.withValue(parser.atomMap[ATOM_TYPE], p):
+          if not p[].equalsIgnoreCase("hidden"):
+            # anything else
+            parser.fosterParenting = true
+            parser.processInHTMLContent(token, IN_BODY)
+            parser.fosterParenting = false
+          else:
+            discard parser.insertHTMLElement(token)
+            pop_current_node
+        do:
           # anything else
           parser.fosterParenting = true
           parser.processInHTMLContent(token, IN_BODY)
           parser.fosterParenting = false
-        else:
-          discard parser.insertHTMLElement(token)
-          pop_current_node
       )
       "<form>" => (block:
         parse_error UNEXPECTED_START_TAG
@@ -2596,7 +2581,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       "<noframes>" => (block: parser.processInHTMLContent(token, IN_HEAD))
       other => (block: parser.parseErrorByTokenType(token.t))
 
-proc processInForeignContent(parser: var HTML5Parser, token: Token) =
+proc processInForeignContent[Handle, Atom](
+    parser: var HTML5Parser[Handle, Atom], token: Token) =
   macro `=>`(v: typed, body: untyped): untyped =
     quote do:
       discard (`v`, proc() = `body`)
@@ -2611,18 +2597,16 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
 
   template any_other_start_tag() =
     let namespace = parser.getNamespace(parser.adjustedCurrentNode)
-    var attrs = token.attrs.toParsedAttrs()
     var tagname = token.tagname
+    var xmlAttrs: seq[ParsedAttr[Atom]]
     if namespace == Namespace.SVG:
       parser.caseTable.withValue(tagname, p):
         tagname = p[]
-      parser.adjustSVGAttributes(attrs)
+      parser.adjustSVGAttributes(token.attrs, xmlAttrs)
     elif namespace == Namespace.MATHML:
-      parser.adjustMathMLAttributes(attrs)
-    parser.adjustForeignAttributes(attrs)
-    parser.sortAttributes(attrs)
+      parser.adjustMathMLAttributes(token.attrs, xmlAttrs)
     discard parser.insertForeignElement(token, tagname, namespace, false,
-      attrs)
+      xmlAttrs)
     if token.selfclosing:
       if namespace == Namespace.SVG:
         script_end_tag
@@ -2672,10 +2656,9 @@ proc processInForeignContent(parser: var HTML5Parser, token: Token) =
       if parser.atomToTagType(token.tagname) == TAG_FONT:
         const AttrsToCheck = [ATOM_COLOR, ATOM_FACE, ATOM_SIZE]
         block notfound:
-          for attr in token.attrs:
-            for x in AttrsToCheck:
-              if attr.name == parser.atomMap[x]:
-                break notfound
+          for x in AttrsToCheck:
+            if parser.atomMap[x] in token.attrs:
+              break notfound
           any_other_start_tag
           return
       parse_error UNEXPECTED_START_TAG #TODO this makes no sense

@@ -5,7 +5,6 @@ import tables
 import unicode
 import unittest
 
-import chame/dombuilder
 import chame/htmltokenizer
 import chame/minidom
 
@@ -52,14 +51,14 @@ func doubleEscape(input: string): string =
   return s
 
 proc getAttrs(factory: MAtomFactory, o: JsonNode, esc: bool):
-    seq[TokenAttr[MAtom]] =
-  result = @[]
+    Table[MAtom, string] =
+  result = Table[MAtom, string]()
   for k, v in o:
     let k = factory.strToAtom(k)
     if esc:
-      result.add((k, v.getStr().doubleEscape()))
+      result[k] = v.getStr().doubleEscape()
     else:
-      result.add((k, v.getStr()))
+      result[k] = v.getStr()
 
 proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     Token[MAtom] =
@@ -125,19 +124,23 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
       # Maybe use a separate "self-closing tag" token type?
       doAssert tok.selfclosing == otok.selfclosing, desc
     var attrs = ""
-    for i, attr in tok.attrs:
+    var i = 0
+    for name, value in tok.attrs:
       if i > 0:
         attrs &= " "
-      attrs &= factory.atomToStr(attr.name)
+      attrs &= factory.atomToStr(name)
       attrs &= "="
-      attrs &= "'" & attr.value & "'"
+      attrs &= "'" & value & "'"
+      inc i
     var oattrs = ""
-    for i, attr in otok.attrs:
+    i = 0
+    for name, value in otok.attrs:
       if i > 0:
         oattrs &= " "
-      oattrs &= factory.atomToStr(attr.name)
+      oattrs &= factory.atomToStr(name)
       oattrs &= "="
-      oattrs &= "'" & attr.value & "'"
+      oattrs &= "'" & value & "'"
+      inc i
     doAssert tok.attrs == otok.attrs, desc & " (tok attrs: " & attrs &
       " otok attrs (" & oattrs & ")"
   of TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE:

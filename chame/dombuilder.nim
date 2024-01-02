@@ -10,10 +10,6 @@ type
     name: Atom
     value: string
 
-  TokenAttr*[Atom] = tuple
-    name: Atom
-    value: string
-
   DOMBuilderBase* = ref object of RootObj
 
   DOMBuilder*[Handle, Atom] = ref object of DOMBuilderBase

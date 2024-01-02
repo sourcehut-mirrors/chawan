@@ -1,6 +1,5 @@
 {.experimental: "overloadableEnums".}
 
-import std/algorithm
 import std/options
 import std/strformat
 import std/strutils
@@ -83,7 +82,7 @@ type
     of START_TAG, END_TAG:
       selfclosing*: bool
       tagname*: Atom
-      attrs*: seq[TokenAttr[Atom]]
+      attrs*: Table[Atom, string]
     of CHARACTER, CHARACTER_WHITESPACE:
       s*: string
     of COMMENT:
@@ -248,17 +247,7 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
       tokenizer.emit(c)
 
 proc flushAttr(tokenizer: var Tokenizer) =
-  let attr = (tokenizer.attrna, tokenizer.attrv)
-  tokenizer.tok.attrs.add(attr)
-
-proc dedupAttrs[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
-  var oldAttrs = tokenizer.tok.attrs
-  oldAttrs.sort(func(a, b: TokenAttr[Atom]): int = cmp(a.name, b.name))
-  tokenizer.tok.attrs = @[]
-  for i, attr in oldAttrs:
-    if i > 0 and oldAttrs[i - 1].name == attr.name:
-      continue
-    tokenizer.tok.attrs.add(attr)
+  tokenizer.tok.attrs[tokenizer.attrna] = tokenizer.attrv
 
 proc peekStr(tokenizer: var Tokenizer, s: static string): bool =
   var cs = ""
@@ -320,7 +309,6 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
     if tokenizer.tok.t == START_TAG and tokenizer.attr and
         tokenizer.attrn != "":
       tokenizer.flushAttr()
-      tokenizer.dedupAttrs()
   template emit_tok =
     emit tokenizer.tok
   template emit_replacement = emit "\uFFFD"
@@ -344,9 +332,8 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
     tokenizer.attr = true
   template leave_attribute_name_state =
     tokenizer.attrna = tokenizer.strToAtom(tokenizer.attrn)
-    for x in tokenizer.tok.attrs:
-      if x.name == tokenizer.attrna:
-        tokenizer.attr = false
+    if tokenizer.attrna in tokenizer.tok.attrs:
+      tokenizer.attr = false
   template peek_char(): char =
     let c = tokenizer.consume()
     tokenizer.reconsume(c)
@@ -360,8 +347,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
     else:
       emit_tmp
   template new_token(t: Token) =
-    if tokenizer.attr:
-      tokenizer.attr = false
+    tokenizer.attr = false
     tokenizer.tok = t
 
   while not tokenizer.atEnd():

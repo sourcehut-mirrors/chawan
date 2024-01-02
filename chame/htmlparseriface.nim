@@ -36,8 +36,6 @@
 ## Also, make sure that parameter names match the ones defined here,
 ## otherwise you are likely to get strange compilation errors.
 
-import parseerror
-
 # DOMBuilder
 static:
   # DOMBuilderImpl must be an instance of DOMBuilder with the handle type
@@ -83,28 +81,35 @@ proc getParentNodeImpl(builder: DOMBuilderImpl, handle: HandleImpl):
   ## Retrieve a handle to the parent node.
   ## May return none(Handle) if no parent node exists.
 
-#TODO use a separate "addAdjustedAttrs" for SVG/MathML
 proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
-    namespace: Namespace, attrs: seq[ParsedAttr[AtomImpl]]): HandleImpl
+    namespace: Namespace, htmlAttrs: Table[AtomImpl, string],
+    xmlAttrs: seq[ParsedAttr[AtomImpl]]): HandleImpl
   ## Create a new element node.
   ##
   ## `localName` is an Atom representing the tag name of the start token.
+  ##
+  ## Note that the parser determines the TagType of an element by its namespace
+  ## and localName; for non-HTML elements it is always considered TAG_UNKNOWN.
+  ##
+  ## (However, tokens have no namespace, so TAG_SVG and TAG_MATHML can still
+  ## used on them.)
   ##
   ## `namespace` is the namespace of the new element. For HTML elements,
   ## it's HTML; for embedded SVG/MathML elements, it is Namespace.SVG or
   ## Namespace.MATHML. No other namespace is used currently.
   ##
-  ## `attrs` is a seq of the new elements attributes. For HTML elements, it
-  ## only contains attributes with prefix NO_PREFIX and namespace NO_NAMESPACE;
-  ## for adjusted attributes of embedded SVG/MathML elements, it may contain
-  ## any other prefix and/or namespace.
+  ## `htmlAttrs` is a seq of the new elements attributes. It only contains
+  ## attributes with prefix NO_PREFIX and namespace NO_NAMESPACE; adjusted
+  ## foreign of embedded SVG/MathML elements that *do* have namespaces are
+  ## *not* included, these can be found in `xmlAttrs`. All attribute names in
+  ## `htmlAttrs` are guaranteed to be unique, but the parser makes no guarantees
+  ## about the order of the attributes. (TODO maybe attrs should be a hash
+  ## table after all?)
   ##
-  ## Note that the parser determines the TagType of an element by its namespace
-  ## and localName; for non-HTML elements it is always considered TAG_UNKNOWN.
-  ##
-  ## (This technically means that TAG_SVG and TAG_MATH are not valid element tag
-  ## types by the parser. Practically, these tags are only used on tokens, which
-  ## have no namespace.)
+  ## `xmlAttrs` is a list of (XML) adjusted attributes. They are only set
+  ## for elements in the MathML or SVG namespace, for which there are
+  ## pre-defined attributes in the standard with names whose casing, namespace,
+  ## and namespace prefixes must be adjusted by the parser.
 
 proc getLocalNameImpl(builder: DOMBuilderImpl, handle: HandleImpl): AtomImpl
   ## Retrieve the local name (also known as the tag name) of the element
@@ -211,7 +216,7 @@ method elementPoppedImpl(builder: DOMBuilderBase, handle: HandleImpl) {.base.} =
   discard
 
 method addAttrsIfMissingImpl(builder: DOMBuilderBase, handle: HandleImpl,
-    attrs: seq[TokenAttr[AtomImpl]]) {.base.} =
+    attrs: Table[AtomImpl, string]) {.base.} =
   ## Optional hook.
   ##
   ## Add the attributes in `attrs` to the element node `element`.
@@ -285,9 +290,11 @@ proc getParentNodeImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
     handle: Handle): Option[Handle] =
   return toDBImpl(builder).getParentNodeImpl(handle)
 
-proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
-    namespace: Namespace, attrs: seq[ParsedAttr[AtomImpl]]): HandleImpl =
-  return toDBImpl(builder).createElementImpl(localName, namespace, attrs)
+proc createElementImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
+    localName: Atom, namespace: Namespace, htmlAttrs: Table[Atom, string],
+    xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
+  return toDBImpl(builder).createElementImpl(localName, namespace, htmlAttrs,
+    xmlAttrs)
 
 proc createCommentImpl[Handle, Atom](builder: DOMBuilder[Handle, Atom],
     text: string): Handle =
