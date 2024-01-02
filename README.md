@@ -35,15 +35,13 @@ Some parts of the specification have not been implemented yet. These are:
 
 * document.write
 * Custom elements
+* SVG script element
 
 ...and anything else we might have forgotten about. Support for these features
 is planned, even if source code comments say otherwise.
 
 Other, non-standard-related tasks (in no particular order):
 
-* Re-design the `htmlparser` interface. (This will be a breaking change in
-  the next version.)
-* Decide if we really want to validate strings in minidom
 * Document minidom/minidom_enc
 * Document the new interface (also explain what `Atom` does etc.)
 * Optimize inefficient parts of the library
