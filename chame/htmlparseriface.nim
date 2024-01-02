@@ -134,6 +134,19 @@ proc getTemplateContentImpl(builder: DOMBuilderImpl, handle: HandleImpl):
   ## and `builder.getNamespaceImpl(element)` equals `Namespace.HTML` must have
   ## an associated "template contents" node which this function must return.
 
+proc addAttrsIfMissingImpl(builder: DOMBuilderImpl, handle: HandleImpl,
+    attrs: Table[AtomImpl, string])
+  ## Add the attributes in `attrs` to the element node `element`.
+  ## This is only called with the HTML and BODY tags, when more than one
+  ## exists in a document.
+  ##
+  ## Pseudocode implementation:
+  ## ```nim
+  ## for attr in attrs:
+  ##   if attr.name notin element.attrs:
+  ##     element.attrs.add(attr)
+  ## ```
+
 proc createCommentImpl(builder: DOMBuilderImpl, text: string): HandleImpl
   ## Create a new comment node. `text` is a string representing the new comment
   ## node's character data.
@@ -217,22 +230,6 @@ method elementPoppedImpl(builder: DOMBuilderBase, handle: HandleImpl) {.base.} =
   ##
   ## Called when an element is popped from the stack of open elements
   ## (i.e. when it has been closed.)
-  discard
-
-method addAttrsIfMissingImpl(builder: DOMBuilderBase, handle: HandleImpl,
-    attrs: Table[AtomImpl, string]) {.base.} =
-  ## Optional hook.
-  ##
-  ## Add the attributes in `attrs` to the element node `element`.
-  ## This is only called with the HTML and BODY tags, when more than one
-  ## exists in a document.
-  ##
-  ## Pseudocode implementation:
-  ## ```nim
-  ## for attr in attrs:
-  ##   if attr.name notin element.attrs:
-  ##     element.attrs.add(attr)
-  ## ```
   discard
 
 method setScriptAlreadyStartedImpl(builder: DOMBuilderBase, handle: HandleImpl)

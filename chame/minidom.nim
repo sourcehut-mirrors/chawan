@@ -366,9 +366,9 @@ proc moveChildrenImpl(builder: MiniDOMBuilder, fromNode, toNode: Node) =
     child.parentNode = nil
     toNode.insertBefore(child, none(Node))
 
-method addAttrsIfMissingImpl(builder: MiniDOMBuilder, element: Node,
+proc addAttrsIfMissingImpl(builder: MiniDOMBuilder, handle: Node,
     attrs: Table[MAtom, string]) =
-  let element = Element(element)
+  let element = Element(handle)
   var oldNames: HashSet[MAtom]
   for attr in element.attrs:
     oldNames.incl(attr.name)
