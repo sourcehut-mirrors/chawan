@@ -374,8 +374,7 @@ proc addAttrsIfMissingImpl(builder: MiniDOMBuilder, handle: Node,
     oldNames.incl(attr.name)
   for name, value in attrs:
     if name notin oldNames:
-      let value = value.toValidUTF8()
-      element.attrs.add((NO_PREFIX, NO_NAMESPACE, name, value))
+      element.attrs.add((NO_PREFIX, NO_NAMESPACE, name, value.toValidUTF8()))
   element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
 
 method setEncodingImpl(builder: MiniDOMBuilder, encoding: string):
