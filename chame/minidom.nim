@@ -203,9 +203,8 @@ proc getDocumentImpl(builder: MiniDOMBuilder): Node =
 proc getParentNodeImpl(builder: MiniDOMBuilder, handle: Node): Option[Node] =
   return option(handle.parentNode)
 
-proc createElementImpl(builder: MiniDOMBuilder, localName: MAtom,
-    namespace: Namespace, intendedParent: Option[Node],
-    htmlAttrs: Table[MAtom, string], xmlAttrs: seq[Attribute]): Node =
+proc createElement(document: Document, localName: MAtom, namespace: Namespace):
+    Element =
   let element = if localName.toTagType() == TAG_TEMPLATE and
       namespace == Namespace.HTML:
     HTMLTemplateElement(
@@ -216,7 +215,17 @@ proc createElementImpl(builder: MiniDOMBuilder, localName: MAtom,
   element.nodeType = ELEMENT_NODE
   element.localName = localName
   element.namespace = namespace
-  element.document = builder.document
+  element.document = document
+  return element
+
+proc createHTMLElementImpl(builder: MiniDOMBuilder): Node =
+  let localName = builder.factory.tagTypeToAtom(TAG_HTML)
+  return builder.document.createElement(localName, Namespace.HTML)
+
+proc createElementForTokenImpl(builder: MiniDOMBuilder, localName: MAtom,
+    namespace: Namespace, intendedParent: Node, htmlAttrs: Table[MAtom, string],
+    xmlAttrs: seq[Attribute]): Node =
+  let element = builder.document.createElement(localName, namespace)
   element.attrs = xmlAttrs
   for k, v in htmlAttrs:
     element.attrs.add((NO_PREFIX, NO_NAMESPACE, k, v.toValidUTF8()))

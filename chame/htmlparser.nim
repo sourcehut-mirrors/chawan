@@ -180,20 +180,10 @@ proc getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     return TAG_UNKNOWN
   return parser.atomToTagType(parser.getLocalName(handle))
 
-proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    localName: Atom, namespace: Namespace, intendedParent: Option[Handle],
-    htmlAttrs: Table[Atom, string], xmlAttrs: seq[ParsedAttr[Atom]] = @[]):
+proc createHTMLElement[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     Handle =
-  mixin createElementImpl
-  return parser.dombuilder.createElementImpl(localName, namespace,
-    intendedParent, htmlAttrs, xmlAttrs)
-
-proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    tagType: TagType, namespace: Namespace, intendedParent: Option[Handle]):
-    Handle =
-  let atom = parser.tagTypeToAtom(tagType)
-  return parser.createElement(atom, namespace, intendedParent,
-    Table[Atom, string]())
+  mixin createHTMLElementImpl
+  return parser.dombuilder.createHTMLElementImpl()
 
 proc createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     text: string): Handle =
@@ -508,11 +498,13 @@ proc hasElementInSelectScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       return false
   assert false
 
-proc createElementToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc createElementForToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     localName: Atom, namespace: Namespace, intendedParent: Handle,
     htmlAttrs: Table[Atom, string], xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
-  let element = parser.createElement(localName, namespace, some(intendedParent),
-    htmlAttrs, xmlAttrs)
+  mixin createElementForTokenImpl
+  let element = parser.dombuilder.createElementForTokenImpl(
+    localName, namespace, intendedParent, htmlAttrs, xmlAttrs
+  )
   let tagType = parser.atomToTagType(localName)
   if namespace == Namespace.HTML and tagType in FormAssociatedElements and
       parser.form.isSome and not parser.hasElement(TAG_TEMPLATE) and
@@ -520,11 +512,18 @@ proc createElementToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     parser.associateWithForm(element, parser.form.get, intendedParent)
   return element
 
-proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc createElementForToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     token: Token, namespace: Namespace, intendedParent: Handle): Handle =
   # attrs not adjusted
-  return parser.createElementToken(token.tagname, namespace, intendedParent,
+  return parser.createElementForToken(token.tagname, namespace, intendedParent,
     token.attrs, @[])
+
+proc createHTMLElementForToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+    token: Token, intendedParent: Handle): Handle =
+  # attrs not adjusted
+  return parser.createElementForToken(
+    token.tagname, Namespace.HTML, intendedParent, token.attrs, @[]
+  )
 
 proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     node: Handle, token: Token[Atom]) =
@@ -557,7 +556,7 @@ proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
   let location = parser.appropriatePlaceForInsert()
   let parent = location.inside
-  let element = parser.createElementToken(localName, namespace, parent,
+  let element = parser.createElementForToken(localName, namespace, parent,
     token.attrs, xmlAttrs)
   if not stackOnly:
     parser.insert(location, element)
@@ -1092,7 +1091,7 @@ proc adoptionAgencyAlgorithm[Handle, Atom](parser: var HTML5Parser[Handle, Atom]
           assert furthestBlock == element
         continue
       let tok = parser.activeFormatting[nodeFormattingIndex][1]
-      let element = parser.createElement(tok, Namespace.HTML, commonAncestor)
+      let element = parser.createHTMLElementForToken(tok, commonAncestor)
       parser.activeFormatting[nodeFormattingIndex] = (some(element), tok)
       parser.openElements[nodeStackIndex] = (element, tok)
       aboveNode = parser.openElements[nodeStackIndex - 1].element
@@ -1106,7 +1105,7 @@ proc adoptionAgencyAlgorithm[Handle, Atom](parser: var HTML5Parser[Handle, Atom]
     let location = parser.appropriatePlaceForInsert(commonAncestor)
     parser.insert(location, lastNode)
     let token = parser.activeFormatting[formattingIndex][1]
-    let element = parser.createElement(token, Namespace.HTML, furthestBlock)
+    let element = parser.createHTMLElementForToken(token, furthestBlock)
     parser.moveChildren(furthestBlock, element)
     parser.append(furthestBlock, element)
     parser.activeFormatting.insert((some(element), token), bookmark)
@@ -1361,8 +1360,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.CHARACTER_WHITESPACE => (block: discard)
       "<html>" => (block:
-        let element = parser.createElement(token, Namespace.HTML,
-          parser.getDocument())
+        let intendedParent = parser.getDocument()
+        let element = parser.createHTMLElementForToken(token, intendedParent)
         parser.append(parser.getDocument(), element)
         parser.pushElement(element, token)
         parser.insertionMode = BEFORE_HEAD
@@ -1370,8 +1369,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
       other => (block:
-        let element = parser.createElement(TAG_HTML, Namespace.HTML,
-          none(Handle))
+        let element = parser.createHTMLElement()
         parser.append(parser.getDocument(), element)
         let html = parser.newStartTagToken(TAG_HTML)
         parser.pushElement(element, html)
@@ -1442,7 +1440,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       ("<noframes>", "<style>") => (block: parser.genericRawtextElementParsingAlgorithm(token))
       "<script>" => (block:
         let location = parser.appropriatePlaceForInsert()
-        let element = parser.createElement(token, Namespace.HTML, location.inside)
+        let element = parser.createElementForToken(token, Namespace.HTML,
+          location.inside)
         #TODO document.write (?)
         parser.insert(location, element)
         parser.pushElement(element, token)

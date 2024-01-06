@@ -85,8 +85,15 @@ proc getParentNodeImpl(builder: DOMBuilderImpl, handle: HandleImpl):
   ## Retrieve a handle to the parent node.
   ## May return none(Handle) if no parent node exists.
 
-proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
-    namespace: Namespace, intendedParent: Option[HandleImpl],
+proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl
+  ## Create a new <html> element node. The tag type of the created element must
+  ## be TAG_HTML, and its namespace must be Namespace.HTML.
+  ##
+  ## This should not be confused with the "create an element for a token"
+  ## step, which is not executed here.
+
+proc createElementForTokenImpl(builder: DOMBuilderImpl, localName: AtomImpl,
+    namespace: Namespace, intendedParent: HandleImpl,
     htmlAttrs: Table[AtomImpl, string], xmlAttrs: seq[ParsedAttr[AtomImpl]]):
     HandleImpl
   ## Create a new element node.
@@ -118,14 +125,13 @@ proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
   ##
   ## `intendedParent` is the intended parent of the element, as passed to the
   ## "create an element for a token" step. This may be used for looking up
-  ## custom element definitions. Note that this may be none, which indicates
-  ## that no custom elements should be created.
+  ## custom element definitions.
   ##
   ## Implementers of this function are encouraged to consult the
   ## [create an element for a token](https://html.spec.whatwg.org/multipage/parsing.html#create-an-element-for-the-token)
-  ## section of the standard. In particular, when intendedParent is not
-  ## none(Handle), steps 3 (Let document be intended parent's node document.) to
-  ## 13 (If element is a resettable element...) should be implemented.
+  ## section of the standard. In particular, steps 3 (Let document be intended
+  ## parent's node document.) to 13 (If element is a resettable element...)
+  ## should be implemented.
   ##
   ## Note that step 14. (If element is a form-associated element...) should
   ## *not* be implemented here. In fact, it is impossible to do so without
