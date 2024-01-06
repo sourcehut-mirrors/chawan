@@ -204,8 +204,8 @@ proc getParentNodeImpl(builder: MiniDOMBuilder, handle: Node): Option[Node] =
   return option(handle.parentNode)
 
 proc createElementImpl(builder: MiniDOMBuilder, localName: MAtom,
-    namespace: Namespace, htmlAttrs: Table[MAtom, string],
-    xmlAttrs: seq[Attribute]): Node =
+    namespace: Namespace, intendedParent: Option[Node],
+    htmlAttrs: Table[MAtom, string], xmlAttrs: seq[Attribute]): Node =
   let element = if localName.toTagType() == TAG_TEMPLATE and
       namespace == Namespace.HTML:
     HTMLTemplateElement(

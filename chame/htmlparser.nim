@@ -181,16 +181,19 @@ proc getTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   return parser.atomToTagType(parser.getLocalName(handle))
 
 proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    localName: Atom, namespace: Namespace, htmlAttrs: Table[Atom, string],
-    xmlAttrs: seq[ParsedAttr[Atom]] = @[]): Handle =
+    localName: Atom, namespace: Namespace, intendedParent: Option[Handle],
+    htmlAttrs: Table[Atom, string], xmlAttrs: seq[ParsedAttr[Atom]] = @[]):
+    Handle =
   mixin createElementImpl
-  return parser.dombuilder.createElementImpl(localName, namespace, htmlAttrs,
-    xmlAttrs)
+  return parser.dombuilder.createElementImpl(localName, namespace,
+    intendedParent, htmlAttrs, xmlAttrs)
 
 proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    tagType: TagType, namespace: Namespace): Handle =
+    tagType: TagType, namespace: Namespace, intendedParent: Option[Handle]):
+    Handle =
   let atom = parser.tagTypeToAtom(tagType)
-  return parser.createElement(atom, namespace, Table[Atom, string]())
+  return parser.createElement(atom, namespace, intendedParent,
+    Table[Atom, string]())
 
 proc createComment[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     text: string): Handle =
@@ -505,11 +508,11 @@ proc hasElementInSelectScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       return false
   assert false
 
-proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+proc createElementToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     localName: Atom, namespace: Namespace, intendedParent: Handle,
     htmlAttrs: Table[Atom, string], xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
-  #TODO custom elements
-  let element = parser.createElement(localName, namespace, htmlAttrs, xmlAttrs)
+  let element = parser.createElement(localName, namespace, some(intendedParent),
+    htmlAttrs, xmlAttrs)
   let tagType = parser.atomToTagType(localName)
   if namespace == Namespace.HTML and tagType in FormAssociatedElements and
       parser.form.isSome and not parser.hasElement(TAG_TEMPLATE) and
@@ -520,7 +523,7 @@ proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 proc createElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     token: Token, namespace: Namespace, intendedParent: Handle): Handle =
   # attrs not adjusted
-  return parser.createElement(token.tagname, namespace, intendedParent,
+  return parser.createElementToken(token.tagname, namespace, intendedParent,
     token.attrs, @[])
 
 proc pushElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
@@ -554,9 +557,8 @@ proc insertForeignElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     xmlAttrs: seq[ParsedAttr[Atom]]): Handle =
   let location = parser.appropriatePlaceForInsert()
   let parent = location.inside
-  let element = parser.createElement(localName, namespace, parent, token.attrs,
-    xmlAttrs)
-  #TODO custom elements
+  let element = parser.createElementToken(localName, namespace, parent,
+    token.attrs, xmlAttrs)
   if not stackOnly:
     parser.insert(location, element)
   parser.pushElement(element, token)
@@ -1368,7 +1370,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
       other => (block:
-        let element = parser.createElement(TAG_HTML, Namespace.HTML)
+        let element = parser.createElement(TAG_HTML, Namespace.HTML,
+          none(Handle))
         parser.append(parser.getDocument(), element)
         let html = parser.newStartTagToken(TAG_HTML)
         parser.pushElement(element, html)

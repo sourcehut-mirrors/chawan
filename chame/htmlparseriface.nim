@@ -86,8 +86,9 @@ proc getParentNodeImpl(builder: DOMBuilderImpl, handle: HandleImpl):
   ## May return none(Handle) if no parent node exists.
 
 proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
-    namespace: Namespace, htmlAttrs: Table[AtomImpl, string],
-    xmlAttrs: seq[ParsedAttr[AtomImpl]]): HandleImpl
+    namespace: Namespace, intendedParent: Option[HandleImpl],
+    htmlAttrs: Table[AtomImpl, string], xmlAttrs: seq[ParsedAttr[AtomImpl]]):
+    HandleImpl
   ## Create a new element node.
   ##
   ## `localName` is an Atom representing the tag name of the start token.
@@ -114,6 +115,24 @@ proc createElementImpl(builder: DOMBuilderImpl, localName: AtomImpl,
   ## for elements in the MathML or SVG namespace, for which there are
   ## pre-defined attributes in the standard with names whose casing, namespace,
   ## and namespace prefixes must be adjusted by the parser.
+  ##
+  ## `intendedParent` is the intended parent of the element, as passed to the
+  ## "create an element for a token" step. This may be used for looking up
+  ## custom element definitions. Note that this may be none, which indicates
+  ## that no custom elements should be created.
+  ##
+  ## Implementers of this function are encouraged to consult the
+  ## [create an element for a token](https://html.spec.whatwg.org/multipage/parsing.html#create-an-element-for-the-token)
+  ## section of the standard. In particular, when intendedParent is not
+  ## none(Handle), steps 3 (Let document be intended parent's node document.) to
+  ## 13 (If element is a resettable element...) should be implemented.
+  ##
+  ## Note that step 14. (If element is a form-associated element...) should
+  ## *not* be implemented here. In fact, it is impossible to do so without
+  ## access to the parser internals, so for this step, the parser will call
+  ## associateWithFormImpl if all conditions (except "the intended parent is
+  ## in the same tree as the element pointed to by the form element pointer")
+  ## are fulfilled.
 
 proc getLocalNameImpl(builder: DOMBuilderImpl, handle: HandleImpl): AtomImpl
   ## Retrieve the local name (also known as the tag name) of the element
