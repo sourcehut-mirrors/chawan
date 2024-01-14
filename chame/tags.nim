@@ -169,12 +169,14 @@ type
     XLINK = "http://www.w3.org/1999/xlink",
     XML = "http://www.w3.org/XML/1998/namespace",
     XMLNS = "http://www.w3.org/2000/xmlns/"
+    NAMESPACE_UNKNOWN = ""
 
   NamespacePrefix* = enum
     NO_PREFIX = ""
     PREFIX_XLINK = "xlink"
     PREFIX_XML = "xml"
     PREFIX_XMLNS = "xmlns"
+    PREFIX_UNKNOWN = ""
 
 func getTagTypeMap(): Table[string, TagType] =
   for i in TagType:
