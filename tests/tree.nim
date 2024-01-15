@@ -16,7 +16,7 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting, print: bool) =
     for child in childList:
       if ctx.preInsertionValidity(child, nil):
         ctx.childList.add(child)
-    Document(nodeType: DOCUMENT_NODE, childList: ctx.childList)
+    Document(childList: ctx.childList)
   if print:
     var ins = ""
     for x in test.document.childList:

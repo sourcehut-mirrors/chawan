@@ -75,7 +75,6 @@ type
   Attribute* = ParsedAttr[MAtom]
 
   Node* = ref object of RootObj
-    nodeType*: NodeType
     childList*: seq[Node]
     parentNode* {.cursor.}: Node
 
@@ -211,7 +210,6 @@ proc createElement(document: Document, localName: MAtom, namespace: Namespace):
     )
   else:
     Element()
-  element.nodeType = ELEMENT_NODE
   element.localName = localName
   element.namespace = namespace
   element.document = document
@@ -241,26 +239,38 @@ proc getTemplateContentImpl(builder: MiniDOMBuilder, handle: Node): Node =
   return HTMLTemplateElement(handle).content
 
 proc createCommentImpl(builder: MiniDOMBuilder, text: string): Node =
-  return Comment(nodeType: COMMENT_NODE, data: text.toValidUTF8())
+  return Comment(data: text.toValidUTF8())
 
 proc createDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
     systemId: string): Node =
   return DocumentType(
-    nodeType: DOCUMENT_TYPE_NODE,
     name: name.toValidUTF8(),
     publicId: publicId.toValidUTF8(),
     systemId: systemId.toValidUTF8()
   )
 
-func countChildren(node: Node, nodeType: NodeType): int =
+func countElementChildren(node: Node): int =
   for child in node.childList:
-    if child.nodeType == nodeType:
+    if child of Element:
       inc result
 
-func hasChild(node: Node, nodeType: NodeType): bool =
+func hasTextChild(node: Node): bool =
   for child in node.childList:
-    if child.nodeType == nodeType:
+    if child of Text:
       return true
+  return false
+
+func hasElementChild(node: Node): bool =
+  for child in node.childList:
+    if child of Element:
+      return true
+  return false
+
+func hasDocumentTypeChild(node: Node): bool =
+  for child in node.childList:
+    if child of DocumentType:
+      return true
+  return false
 
 func isHostIncludingInclusiveAncestor(a, b: Node): bool =
   var b = b
@@ -269,61 +279,64 @@ func isHostIncludingInclusiveAncestor(a, b: Node): bool =
       return true
     b = b.parentNode
 
-func hasPreviousSibling(node: Node, nodeType: NodeType): bool =
+func hasPreviousElementSibling(node: Node): bool =
   for n in node.parentNode.childList:
     if n == node:
       break
-    if n.nodeType == nodeType:
+    if n of Element:
       return true
   return false
 
-func hasNextSibling(node: Node, nodeType: NodeType): bool =
+func hasNextDocumentTypeSibling(node: Node): bool =
   for i in countdown(node.parentNode.childList.len, 0):
     let n = node.parentNode.childList[i]
     if n == node:
       break
-    if n.nodeType == nodeType:
+    if n of DocumentType:
       return true
   return false
+
+func isValidParent(node: Node): bool =
+  return node of Element or node of Document or node of DocumentFragment
+
+func isValidChild(node: Node): bool =
+  return node.isValidParent or node of DocumentType or node of CharacterData
 
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
 func preInsertionValidity*(parent, node: Node, before: Node): bool =
-  if parent.nodeType notin {DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE}:
+  if not parent.isValidParent:
     return false
   if node.isHostIncludingInclusiveAncestor(parent):
     return false
   if before != nil and before.parentNode != parent:
     return false
-  if node.nodeType notin {DOCUMENT_FRAGMENT_NODE, DOCUMENT_TYPE_NODE,
-      ELEMENT_NODE} + CharacterDataNodes:
+  if not node.isValidChild:
     return false
-  if node.nodeType == TEXT_NODE and parent.nodeType == DOCUMENT_NODE:
+  if node of Text and parent of Document:
     return false
-  if node.nodeType == DOCUMENT_TYPE_NODE and parent.nodeType != DOCUMENT_NODE:
+  if node of DocumentType and not (parent of Document):
     return false
-  if parent.nodeType == DOCUMENT_NODE:
-    case node.nodeType
-    of DOCUMENT_FRAGMENT_NODE:
-      let elems = node.countChildren(ELEMENT_NODE)
-      if elems > 1 or node.hasChild(TEXT_NODE):
+  if parent of Document:
+    if node of DocumentFragment:
+      let elems = node.countElementChildren()
+      if elems > 1 or node.hasTextChild():
         return false
-      elif elems == 1 and (parent.hasChild(ELEMENT_NODE) or
-          before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or
-          before.hasNextSibling(DOCUMENT_TYPE_NODE))):
+      elif elems == 1 and (parent.hasElementChild() or
+          before != nil and
+          (before of DocumentType or before.hasNextDocumentTypeSibling())):
         return false
-    of ELEMENT_NODE:
-      if parent.hasChild(ELEMENT_NODE):
+    elif node of Element:
+      if parent.hasElementChild():
         return false
-      elif before != nil and (before.nodeType == DOCUMENT_TYPE_NODE or
-            before.hasNextSibling(DOCUMENT_TYPE_NODE)):
+      elif before != nil and (before of DocumentType or
+            before.hasNextDocumentTypeSibling()):
         return false
-    of DOCUMENT_TYPE_NODE:
-      if parent.hasChild(DOCUMENT_TYPE_NODE) or
-          before != nil and before.hasPreviousSibling(ELEMENT_NODE) or
-          before == nil and parent.hasChild(ELEMENT_NODE):
+    elif node of DocumentType:
+      if parent.hasDocumentTypeChild() or
+          before != nil and before.hasPreviousElementSibling() or
+          before == nil and parent.hasElementChild():
         return false
-    else: discard
   return true # no exception reached
 
 proc insertBefore(parent, child: Node, before: Option[Node]) =
@@ -355,10 +368,10 @@ proc insertTextImpl(builder: MiniDOMBuilder, parent: Node, text: string,
     parent.childList[^1]
   else:
     nil
-  if prevSibling != nil and prevSibling.nodeType == TEXT_NODE:
+  if prevSibling != nil and prevSibling of Text:
     Text(prevSibling).data &= text
   else:
-    let text = Text(nodeType: TEXT_NODE, data: text)
+    let text = Text(data: text)
     parent.insertBefore(text, option(before))
 
 proc removeImpl(builder: MiniDOMBuilder, child: Node) =
@@ -391,7 +404,7 @@ method setEncodingImpl(builder: MiniDOMBuilder, encoding: string):
   return SET_ENCODING_CONTINUE
 
 proc newMiniDOMBuilder*(stream: Stream, factory: MAtomFactory): MiniDOMBuilder =
-  let document = Document(nodeType: DOCUMENT_NODE, factory: factory)
+  let document = Document(factory: factory)
   let builder = MiniDOMBuilder(
     document: document,
     factory: factory,
@@ -440,7 +453,6 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
     else: DATA
   let htmlAtom = builder.factory.tagTypeToAtom(TAG_HTML)
   let root = Element(
-    nodeType: ELEMENT_NODE,
     localName: htmlAtom,
     namespace: HTML,
     document: document

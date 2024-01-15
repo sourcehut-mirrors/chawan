@@ -1,20 +1,4 @@
-import std/tables
-
 type
-  NodeType* = enum
-    ELEMENT_NODE = 1,
-    ATTRIBUTE_NODE = 2,
-    TEXT_NODE = 3,
-    CDATA_SECTION_NODE = 4,
-    ENTITY_REFERENCE_NODE = 5,
-    ENTITY_NODE = 6
-    PROCESSING_INSTRUCTION_NODE = 7,
-    COMMENT_NODE = 8,
-    DOCUMENT_NODE = 9,
-    DOCUMENT_TYPE_NODE = 10,
-    DOCUMENT_FRAGMENT_NODE = 11,
-    NOTATION_NODE = 12
-
   TagType* = enum
     TAG_UNKNOWN = ""
     TAG_APPLET = "applet"
@@ -178,21 +162,7 @@ type
     PREFIX_XMLNS = "xmlns"
     PREFIX_UNKNOWN = ""
 
-func getTagTypeMap(): Table[string, TagType] =
-  for i in TagType:
-    result[$TagType(i)] = TagType(i)
-
-const tagTypeMap = getTagTypeMap()
-
-func tagType*(s: string): TagType =
-  if s in tagTypeMap:
-    return tagTypeMap[s]
-  return TAG_UNKNOWN
-
-const AllTagTypes* = (func(): set[TagType] =
-  for tag in TagType:
-    result.incl(tag)
-)()
+const AllTagTypes* = {TagType.low..TagType.high}
 
 const HTagTypes* = {
   TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6
@@ -200,32 +170,10 @@ const HTagTypes* = {
 
 # 4.10.2 Categories
 const FormAssociatedElements* = {
-  TAG_BUTTON, TAG_FIELDSET, TAG_INPUT, TAG_OBJECT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA, TAG_IMG
+  TAG_BUTTON, TAG_FIELDSET, TAG_INPUT, TAG_OBJECT, TAG_OUTPUT, TAG_SELECT,
+  TAG_TEXTAREA, TAG_IMG
 }
 
 const ListedElements* = {
   TAG_FIELDSET, TAG_INPUT, TAG_OBJECT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA
-}
-
-const CharacterDataNodes* = {
-  TEXT_NODE, CDATA_SECTION_NODE, PROCESSING_INSTRUCTION_NODE, COMMENT_NODE
-}
-
-#https://html.spec.whatwg.org/multipage/parsing.html#the-stack-of-open-elements
-#NOTE MathML not implemented
-#TODO SVG foreignObject, SVG desc, SVG title
-const SpecialElements* = {
- TAG_ADDRESS, TAG_APPLET, TAG_AREA, TAG_ARTICLE, TAG_ASIDE, TAG_BASE,
- TAG_BASEFONT, TAG_BGSOUND, TAG_BLOCKQUOTE, TAG_BODY, TAG_BR, TAG_BUTTON,
- TAG_CAPTION, TAG_CENTER, TAG_COL, TAG_COLGROUP, TAG_DD, TAG_DETAILS, TAG_DIR,
- TAG_DIV, TAG_DL, TAG_DT, TAG_EMBED, TAG_FIELDSET, TAG_FIGCAPTION, TAG_FIGURE,
- TAG_FOOTER, TAG_FORM, TAG_FRAME, TAG_FRAMESET, TAG_H1, TAG_H2, TAG_H3, TAG_H4,
- TAG_H5, TAG_H6, TAG_HEAD, TAG_HEADER, TAG_HGROUP, TAG_HR, TAG_HTML,
- TAG_IFRAME, TAG_IMG, TAG_INPUT, TAG_KEYGEN, TAG_LI, TAG_LINK, TAG_LISTING,
- TAG_MAIN, TAG_MARQUEE, TAG_MENU, TAG_META, TAG_NAV, TAG_NOEMBED, TAG_NOFRAMES,
- TAG_NOSCRIPT, TAG_OBJECT, TAG_OL, TAG_P, TAG_PARAM, TAG_PLAINTEXT, TAG_PRE,
- TAG_SCRIPT, TAG_SEARCH, TAG_SECTION, TAG_SELECT, TAG_SOURCE, TAG_STYLE,
- TAG_SUMMARY, TAG_TABLE, TAG_TBODY, TAG_TD, TAG_TEMPLATE, TAG_TEXTAREA,
- TAG_TFOOT, TAG_TH, TAG_THEAD, TAG_TITLE, TAG_TR, TAG_TRACK, TAG_UL, TAG_WBR,
- TAG_XMP
 }

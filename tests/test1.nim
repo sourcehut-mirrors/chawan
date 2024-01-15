@@ -32,8 +32,7 @@ func escapeText(s: string, attribute_mode = false): string =
       result &= c
 
 func `$`*(node: Node): string =
-  case node.nodeType
-  of ELEMENT_NODE:
+  if node of Element:
     let element = Element(node)
     var x = ""
     if element.namespace == Namespace.SVG:
@@ -47,17 +46,17 @@ func `$`*(node: Node): string =
     for node in element.childList:
       result &= $node
     result &= "</" & x & element.localNameStr & ">"
-  of TEXT_NODE:
+  elif node of Text:
     let text = Text(node)
     result = text.data.escapeText()
-  of COMMENT_NODE:
+  elif node of Comment:
     result = "<!-- " & Comment(node).data & "-->"
-  of PROCESSING_INSTRUCTION_NODE:
-    result = "" #TODO
-  of DOCUMENT_TYPE_NODE:
+  elif node of DocumentType:
     result = "<!DOCTYPE" & ' ' & DocumentType(node).name & ">"
+  elif node of Document:
+    result = "Node of Document"
   else:
-    result = "Node of " & $node.nodeType
+    assert false
 
 # This is, in fact, standards-compliant behavior.
 # Don't ask.

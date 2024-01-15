@@ -101,7 +101,6 @@ proc parseTestFragment(ctx: var TCTestParser): TCFragment =
   of FT_MATHML: Namespace.MATHML
   of FT_HTML: Namespace.HTML
   let element = Element(
-    nodeType: ELEMENT_NODE,
     namespace: namespace,
     localName: ctx.factory.strToAtom(line)
   )
@@ -111,7 +110,7 @@ proc parseTestFragment(ctx: var TCTestParser): TCFragment =
   )
 
 proc parseDoctype(ctx: TCTestParser, s: string): DocumentType =
-  let doctype = DocumentType(nodeType: DOCUMENT_TYPE_NODE)
+  let doctype = DocumentType()
   var i = "<!DOCTYPE ".len
   while i < s.len and s[i] != ' ' and s[i] != '>':
     doctype.name &= s[i]
@@ -143,7 +142,7 @@ proc parseDoctype(ctx: TCTestParser, s: string): DocumentType =
   return doctype
 
 proc parseTestDocument(ctx: var TCTestParser): Document =
-  result = Document(nodeType: DOCUMENT_NODE, factory: ctx.factory)
+  result = Document(factory: ctx.factory)
   var stack: seq[Node]
   stack.add(result)
   template top: auto = stack[^1]
@@ -184,7 +183,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       let doctype = ctx.parseDoctype(str)
       top.childList.add(doctype)
     elif str.startsWith("<!-- "):
-      let comment = Comment(nodeType: COMMENT_NODE)
+      let comment = minidom.Comment()
       top.childList.add(comment)
       if not str.endsWith(" -->"):
         comment.data = str.substr("<!-- ".len) & "\n"
@@ -206,7 +205,6 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
         HTMLTemplateElement()
       else:
         Element()
-      element.nodeType = ELEMENT_NODE
       element.localName = ctx.factory.strToAtom(nameStr)
       element.namespace = namespace
       element.document = result
@@ -219,7 +217,7 @@ proc parseTestDocument(ctx: var TCTestParser): Document =
       stack.add(fragment)
       indent += 2
     elif str[0] == '"':
-      let text = Text(nodeType: TEXT_NODE)
+      let text = Text()
       top.childList.add(text)
       if str[^1] != '"' or str.len == 1:
         text.data = str.substr(1) & "\n"
@@ -282,13 +280,12 @@ proc parseTests*(s: string, factory: MAtomFactory): seq[TCTest] =
       s &= $x & '\n'
 
 proc checkTest(nodein, nodep: Node) =
-  check nodein.nodeType == nodep.nodeType
   check nodein.childList.len == nodep.childList.len
   if nodein.childList.len != nodep.childList.len:
     echo nodein
     echo nodep
-  case nodein.nodeType
-  of ELEMENT_NODE:
+  if nodein of Element:
+    check nodep of Element
     let nodein = Element(nodein)
     let nodep = Element(nodep)
     check nodein.localName == nodep.localName
@@ -297,19 +294,18 @@ proc checkTest(nodein, nodep: Node) =
       echo "NODEIN", $nodein
       echo "NODEP", $nodep
     check nodein.attrs == nodep.attrs
-  of ATTRIBUTE_NODE, ENTITY_REFERENCE_NODE, ENTITY_NODE,
-      DOCUMENT_FRAGMENT_NODE, NOTATION_NODE:
+  elif nodein of DocumentFragment:
     assert false
-  of TEXT_NODE, CDATA_SECTION_NODE, COMMENT_NODE:
+  elif nodein of CharacterData:
+    check nodep of CharacterData
     check CharacterData(nodein).data == CharacterData(nodep).data
-  of PROCESSING_INSTRUCTION_NODE: assert false, "todo"
-  of DOCUMENT_TYPE_NODE:
+  elif nodein of DocumentType:
+    check nodep of DocumentType
     let nodein = DocumentType(nodein)
     let nodep = DocumentType(nodep)
     check nodein.name == nodep.name
     check nodein.publicId == nodep.publicId
     check nodein.systemId == nodep.systemId
-  of DOCUMENT_NODE: discard
   for i in 0 ..< nodein.childList.len:
     checkTest(nodein.childList[i], nodep.childList[i])
 

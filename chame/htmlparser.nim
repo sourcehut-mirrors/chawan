@@ -996,6 +996,23 @@ proc findLastActiveFormattingAfterMarker(parser: var HTML5Parser,
       return i
   return -1
 
+#https://html.spec.whatwg.org/multipage/parsing.html#the-stack-of-open-elements
+const SpecialElements = {
+  TAG_ADDRESS, TAG_APPLET, TAG_AREA, TAG_ARTICLE, TAG_ASIDE, TAG_BASE,
+  TAG_BASEFONT, TAG_BGSOUND, TAG_BLOCKQUOTE, TAG_BODY, TAG_BR, TAG_BUTTON,
+  TAG_CAPTION, TAG_CENTER, TAG_COL, TAG_COLGROUP, TAG_DD, TAG_DETAILS, TAG_DIR,
+  TAG_DIV, TAG_DL, TAG_DT, TAG_EMBED, TAG_FIELDSET, TAG_FIGCAPTION, TAG_FIGURE,
+  TAG_FOOTER, TAG_FORM, TAG_FRAME, TAG_FRAMESET, TAG_H1, TAG_H2, TAG_H3, TAG_H4,
+  TAG_H5, TAG_H6, TAG_HEAD, TAG_HEADER, TAG_HGROUP, TAG_HR, TAG_HTML,
+  TAG_IFRAME, TAG_IMG, TAG_INPUT, TAG_KEYGEN, TAG_LI, TAG_LINK, TAG_LISTING,
+  TAG_MAIN, TAG_MARQUEE, TAG_MENU, TAG_META, TAG_NAV, TAG_NOEMBED, TAG_NOFRAMES,
+  TAG_NOSCRIPT, TAG_OBJECT, TAG_OL, TAG_P, TAG_PARAM, TAG_PLAINTEXT, TAG_PRE,
+  TAG_SCRIPT, TAG_SEARCH, TAG_SECTION, TAG_SELECT, TAG_SOURCE, TAG_STYLE,
+  TAG_SUMMARY, TAG_TABLE, TAG_TBODY, TAG_TD, TAG_TEMPLATE, TAG_TEXTAREA,
+  TAG_TFOOT, TAG_TH, TAG_THEAD, TAG_TITLE, TAG_TR, TAG_TRACK, TAG_UL, TAG_WBR,
+  TAG_XMP
+}
+
 proc isSpecialElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     element: Handle): bool =
   let localName = parser.getLocalName(element)
@@ -1233,7 +1250,7 @@ macro match(token: Token, body: typed): untyped =
           assert s[i] in AsciiAlphaNumeric
           tagName &= s[i]
           inc i
-        let tt = int(tagType(tagName))
+        let tt = int(parseEnum[TagType](tagName))
         let tokt = if s[1] != '/': START_TAG else: END_TAG
         var found = false
         for i in 0..ofBranches[tokt].ofBranches.high:
@@ -1567,12 +1584,12 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
     template parse_error_if_body_has_disallowed_open_elements =
       if parser.hasParseError():
-        const Disallowed = AllTagTypes - {
+        const Allowed = {
           TAG_DD, TAG_DT, TAG_LI, TAG_OPTGROUP, TAG_OPTION, TAG_P, TAG_RB,
           TAG_RP, TAG_RT, TAG_RTC, TAG_TBODY, TAG_TD, TAG_TFOOT, TAG_TH,
           TAG_THEAD, TAG_TR, TAG_BODY, TAG_HTML
         }
-        if parser.hasElement(Disallowed):
+        if parser.hasElement(AllTagTypes - Allowed):
           parse_error MISMATCHED_TAGS
 
     match token:
