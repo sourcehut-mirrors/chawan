@@ -7,6 +7,7 @@ import dombuilder
 import htmltokenizer
 import parseerror
 import tags
+import tokstate
 import utils/twtstr
 
 # Generics break without exporting macros. Maybe a compiler bug?
@@ -18,6 +19,9 @@ export options
 export parseerror
 export tags
 
+# Export tokstate too; it is needed for fragment parsing.
+export tokstate
+
 # Heavily inspired by html5ever's TreeSink design.
 type
   HTML5ParserOpts*[Handle, Atom] = object
@@ -25,14 +29,14 @@ type
     ## Is the document an iframe srcdoc?
     scripting*: bool
     ## Is scripting enabled for this document?
-    ctx*: Option[OpenElement[Handle, Atom]]
+    ctx*: Option[OpenElementInit[Handle, Atom]]
     ## Context element for fragment parsing. When set to some Handle,
     ## the fragment case is used while parsing.
     ##
     ## `token` must be a valid starting token for this element.
     initialTokenizerState*: TokenizerState
     ## The initial tokenizer state; by default, this is DATA.
-    openElementsInit*: seq[OpenElement[Handle, Atom]]
+    openElementsInit*: seq[OpenElementInit[Handle, Atom]]
     ## Initial state of the stack of open elements. By default, the stack
     ## starts out empty.
     ## Note: if this is initialized to a non-empty sequence, the parser will
@@ -46,6 +50,10 @@ type
   OpenElement*[Handle, Atom] = tuple
     element: Handle
     token: Token[Atom] ## the element's start tag token; must not be nil.
+
+  OpenElementInit*[Handle, Atom] = tuple
+    element: Handle
+    startTagName: Atom ## the element's start tag token's name.
 
 type
   MappedAtom = enum
@@ -82,6 +90,7 @@ type
     dombuilder: DOMBuilder[Handle, Atom]
     opts: HTML5ParserOpts[Handle, Atom]
     stopped: bool
+    ctx: Option[OpenElement[Handle, Atom]]
     openElements: seq[OpenElement[Handle, Atom]]
     insertionMode: InsertionMode
     oldInsertionMode: InsertionMode
@@ -238,7 +247,7 @@ func hasParseError(parser: HTML5Parser): bool =
   return compiles(parser.dombuilder.parseErrorImpl(default(ParseError)))
 
 func fragment(parser: HTML5Parser): bool =
-  return parser.opts.ctx.isSome
+  return parser.ctx.isSome
 
 # https://html.spec.whatwg.org/multipage/parsing.html#reset-the-insertion-mode-appropriately
 proc resetInsertionMode(parser: var HTML5Parser) =
@@ -249,7 +258,7 @@ proc resetInsertionMode(parser: var HTML5Parser) =
     var node = parser.openElements[i]
     let last = i == 0
     if parser.fragment:
-      node = parser.opts.ctx.get
+      node = parser.ctx.get
     let tagType = parser.getTagType(node.element)
     case tagType
     of TAG_SELECT:
@@ -300,7 +309,7 @@ func currentToken[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
 func adjustedCurrentNodeToken[Handle, Atom](parser: HTML5Parser[Handle, Atom]):
     OpenElement[Handle, Atom] =
   if parser.fragment and parser.openElements.len == 1:
-    return parser.opts.ctx.get
+    return parser.ctx.get
   else:
     return parser.currentNodeToken
 
@@ -2880,10 +2889,18 @@ proc parseHTML*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
   var parser = HTML5Parser[Handle, Atom](
     dombuilder: dombuilder,
     opts: opts,
-    openElements: opts.openElementsInit,
     form: opts.formInit,
     framesetOk: true
   )
+  if opts.ctx.isSome:
+    let ctxInit = opts.ctx.get
+    var ctx: OpenElement[Handle, Atom]
+    ctx.element = ctxInit.element
+    ctx.token = Token[Atom](t: START_TAG, tagname: ctxInit.startTagName)
+    parser.ctx = some(ctx)
+  for (element, tagName) in opts.openElementsInit:
+    let it = (element, Token[Atom](t: START_TAG, tagname: tagName))
+    parser.openElements.add(it)
   parser.createCaseTable()
   parser.createAdjustedTable()
   parser.createForeignTable()

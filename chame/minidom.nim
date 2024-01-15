@@ -17,7 +17,6 @@ import std/streams
 import std/tables
 
 import htmlparser
-import htmltokenizer
 import tags
 
 export tags
@@ -446,13 +445,11 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
     namespace: HTML,
     document: document
   )
-  let rootToken = Token[MAtom](t: START_TAG, tagname: htmlAtom)
   document.childList = @[Node(root)]
   var opts = opts
-  let token = Token[MAtom](t: START_TAG, tagname: element.localName)
-  opts.ctx = some((Node(element), token))
+  opts.ctx = some((Node(element), element.localName))
   opts.initialTokenizerState = state
-  opts.openElementsInit = @[(Node(root), rootToken)]
+  opts.openElementsInit = @[(Node(root), htmlAtom)]
   opts.pushInTemplate = element.tagType == TAG_TEMPLATE
   parseHTML(builder, opts)
   return root.childList
