@@ -7,10 +7,9 @@ import std/tables
 import std/unicode
 
 import dombuilder
-import entity
+import entity_gen
 import parseerror
 import tokstate
-import utils/radixtree
 import utils/twtstr
 
 export tokstate
@@ -177,6 +176,64 @@ proc emit(tokenizer: var Tokenizer, c: char) =
     tokenizer.flushChars()
     tokenizer.isws = isws
   tokenizer.charbuf &= c
+
+type CharRefResult = tuple[i, ci: int, entry: cstring]
+
+proc findCharRef(tokenizer: var Tokenizer, c: char): CharRefResult =
+  var i = charMap[c]
+  if i == -1:
+    return (0, 0, nil)
+  tokenizer.tmp &= c
+  var entry = entityMap[i].name
+  var ci = 1
+  let oc = c
+  while entry != nil and entry[ci] != '\0':
+    let isend = tokenizer.atEnd()
+    let c = if isend:
+      # Maybe there's a shorter matching ref?
+      # (Use NUL as a placeholder.)
+      '\0'
+    else:
+      tokenizer.consume()
+    if c != entry[ci]:
+      entry = nil
+      # i is not the right entry.
+      while entry == nil and i > 0:
+        dec i
+        entry = entityMap[i].name
+        if oc != entry[0]:
+          # Out of entries that start with the character `oc'; give up.
+          entry = nil
+          break
+        var j = 1
+        while j < tokenizer.tmp.len - 1:
+          if entry[j] == '\0':
+            # Full match: entry is a prefix of the previous entry we inspected.
+            break
+          if tokenizer.tmp[j + 1] != entry[j]:
+            # Characters consumed until now are not a prefix of entry.
+            # Try the next one instead.
+            entry = nil
+            break
+          inc j
+        if entry != nil:
+          if entry[j] == '\0':
+            # Full match: make sure the outer loop exits.
+            ci = j - 1
+          elif entry[j] == c:
+            # Partial match, *including c*. (This is never reached with isend.)
+            ci = j
+          else:
+            # Continue with the loop.
+            # If entry is set to non-nil after this iteration, then ci will
+            # also be set appropriately.
+            # Otherwise, if entry remains nil, ci will point to the first
+            # non-matching character in tmp; this will be reconsumed.
+            entry = nil
+    if not isend:
+      tokenizer.tmp &= c
+    inc ci
+  return (i, ci, entry)
 
 proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
   template parse_error(error: untyped) =
@@ -1313,22 +1370,13 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         reconsume_in tokenizer.rstate
 
     of NAMED_CHARACTER_REFERENCE:
-      tokenizer.reconsume(c)
-      var tokenizerp = addr tokenizer
-      var lasti = 0
-      let value = entityMap.find((proc(s: var string): bool =
-        if tokenizerp[].atEnd():
-          return false
-        let c = tokenizerp[].consume()
-        tokenizerp[].tmp &= c
-        s &= c
-        return true
-      ), lasti)
-      inc lasti # add 1, because we do not store the & in entityMap
-      # move back the pointer & shorten the buffer to the last match.
-      tokenizer.reconsume(tokenizer.tmp.substr(lasti))
-      tokenizer.tmp.setLen(lasti)
-      if value.isSome:
+      let (i, ci, entry) = tokenizer.findCharRef(c)
+      # Move back the pointer & shorten the buffer to the last match.
+      # (Add 1, because we do not store the starting & char in entityMap,
+      # but tmp starts with an &.)
+      tokenizer.reconsume(tokenizer.tmp.substr(ci + 1))
+      tokenizer.tmp.setLen(ci + 1)
+      if entry != nil and entry[ci] == '\0':
         if tokenizer.consumedAsAnAttribute() and tokenizer.tmp[^1] != ';' and
             not tokenizer.atEnd() and peek_char in {'='} + AsciiAlphaNumeric:
           flush_code_points_consumed_as_a_character_reference
@@ -1336,7 +1384,7 @@ iterator tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
         else:
           if tokenizer.tmp[^1] != ';':
             parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
-          tokenizer.tmp = $value.get
+          tokenizer.tmp = $entityMap[i].value
           flush_code_points_consumed_as_a_character_reference
           switch_state tokenizer.rstate
       else:

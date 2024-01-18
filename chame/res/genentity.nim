@@ -1,6 +1,7 @@
-import json
-import streams
-import strutils
+import std/algorithm
+import std/json
+import std/streams
+import std/strutils
 
 type LineWriter = object
   s: Stream
@@ -19,11 +20,29 @@ proc flush(writer: var LineWriter) =
 proc main() =
   let entityJson = parseJson(readFile("entity.json"))
   echo "type Z = cstring"
-  echo "const entityTable = ["
   var writer = LineWriter(s: newFileStream(stdout))
+  var cc: char
+  var charMap: array[char, int]
+  for i in charMap.mitems:
+    i = -1
+  var entityMap: seq[tuple[name, value: string]]
   for k, v in entityJson:
-    let s = v{"characters"}.getStr().escape()
-    writer.write("(Z\"" & k.substr(1) & "\"," & s & ".Z),")
+    entityMap.add((k.substr(1), v{"characters"}.getStr()))
+  let n = entityMap.len
+  echo "const entityMap*: array[" & $n & ", tuple[name, value: Z]] = ["
+  var i = 0
+  for (k, v) in entityMap:
+    if k[0] != cc:
+      charMap[cc] = i - 1
+      cc = k[0]
+    writer.write("(Z\"" & k & "\"," & v.escape() & ".Z),")
+    inc i
+  writer.flush()
+  echo "]"
+  echo ""
+  echo "const charMap*: array[char, int] = ["
+  for c in char.low..char.high:
+    writer.write($charMap[c] & ",")
   writer.flush()
   echo "]"
 main()
