@@ -1468,7 +1468,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         let location = parser.appropriatePlaceForInsert()
         let element = parser.createElementForToken(token, Namespace.HTML,
           location.inside)
-        if builder.isFragment:
+        if parser.fragment:
           parser.setScriptAlreadyStarted(script)
         parser.insert(location, element)
         parser.pushElement(element, token)
