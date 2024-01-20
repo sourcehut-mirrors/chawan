@@ -1468,7 +1468,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         let location = parser.appropriatePlaceForInsert()
         let element = parser.createElementForToken(token, Namespace.HTML,
           location.inside)
-        #TODO document.write (?)
+        if builder.isFragment:
+          parser.setScriptAlreadyStarted(script)
         parser.insert(location, element)
         parser.pushElement(element, token)
         parser.tokenizer.state = SCRIPT_DATA
