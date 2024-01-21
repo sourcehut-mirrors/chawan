@@ -2717,43 +2717,50 @@ proc processInForeignContent[Handle, Atom](
     )
     TokenType.END_TAG => (block: any_other_end_tag)
 
-proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
-  for token in parser.tokenizer.tokenize:
-    if parser.ignoreLF:
-      parser.ignoreLF = false
-      if token.t == CHARACTER_WHITESPACE:
-        if token.s[0] == '\n':
-          if token.s.len == 1:
-            continue
-          else:
-            token.s.delete(0..0)
-    if parser.openElements.len == 0 or
-        parser.getNamespace(parser.adjustedCurrentNode) == Namespace.HTML:
+proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
+    token: Token[Atom]) =
+  if parser.ignoreLF:
+    parser.ignoreLF = false
+    if token.t == CHARACTER_WHITESPACE:
+      if token.s[0] == '\n':
+        if token.s.len == 1:
+          return
+        else:
+          token.s.delete(0..0)
+  if parser.openElements.len == 0 or
+      parser.getNamespace(parser.adjustedCurrentNode) == Namespace.HTML:
+    parser.processInHTMLContent(token, parser.insertionMode)
+  else:
+    let oe = parser.adjustedCurrentNodeToken
+    let localName = oe.token.tagname
+    let namespace = parser.getNamespace(oe.element)
+    const CharacterToken = {CHARACTER, CHARACTER_WHITESPACE, CHARACTER_NULL}
+    let mmlnoatoms = [
+      parser.atomMap[ATOM_MGLYPH],
+      parser.atomMap[ATOM_MALIGNMARK]
+    ]
+    let annotationXml = parser.atomMap[ATOM_ANNOTATION_XML]
+    let ismmlip = parser.isMathMLIntegrationPoint(oe.element)
+    let ishtmlip = parser.isHTMLIntegrationPoint(oe)
+    if ismmlip and token.t == START_TAG and token.tagname notin mmlnoatoms or
+        ismmlip and token.t in CharacterToken or
+        namespace == Namespace.MATHML and localName == annotationXml and
+          token.t == START_TAG and
+            parser.atomToTagType(token.tagname) == TAG_SVG or
+        ishtmlip and token.t == START_TAG or
+        ishtmlip and token.t in CharacterToken:
       parser.processInHTMLContent(token, parser.insertionMode)
     else:
-      let oe = parser.adjustedCurrentNodeToken
-      let localName = oe.token.tagname
-      let namespace = parser.getNamespace(oe.element)
-      const CharacterToken = {CHARACTER, CHARACTER_WHITESPACE, CHARACTER_NULL}
-      let mmlnoatoms = [
-        parser.atomMap[ATOM_MGLYPH],
-        parser.atomMap[ATOM_MALIGNMARK]
-      ]
-      let annotationXml = parser.atomMap[ATOM_ANNOTATION_XML]
-      let ismmlip = parser.isMathMLIntegrationPoint(oe.element)
-      let ishtmlip = parser.isHTMLIntegrationPoint(oe)
-      if ismmlip and token.t == START_TAG and token.tagname notin mmlnoatoms or
-          ismmlip and token.t in CharacterToken or
-          namespace == Namespace.MATHML and localName == annotationXml and
-            token.t == START_TAG and
-              parser.atomToTagType(token.tagname) == TAG_SVG or
-          ishtmlip and token.t == START_TAG or
-          ishtmlip and token.t in CharacterToken:
-        parser.processInHTMLContent(token, parser.insertionMode)
-      else:
-        parser.processInForeignContent(token)
-    if parser.stopped:
-      return
+      parser.processInForeignContent(token)
+
+proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
+  var running = true
+  while running:
+    running = parser.tokenizer.tokenize()
+    for token in parser.tokenizer.tokqueue:
+      parser.processToken(token)
+      if parser.stopped:
+        return
   parser.processInHTMLContent(Token[Atom](t: EOF), parser.insertionMode)
 
 proc finishParsing(parser: var HTML5Parser) =

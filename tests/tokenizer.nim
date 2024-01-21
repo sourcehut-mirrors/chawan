@@ -159,28 +159,31 @@ proc runTest(builder: MiniDOMBuilder, desc: string,
   tokenizer.laststart = Token[MAtom](t: START_TAG, tagname: laststart)
   var i = 0
   var chartok: Token[MAtom] = nil
-  for tok in tokenizer.tokenize:
-    check tok != nil
-    if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE,
-        CHARACTER_NULL}:
-      let otok = getToken(factory, output[i].getElems(), esc)
-      checkEquals(factory, chartok, otok, desc)
-      inc i
-      chartok = nil
-    if tok.t == EOF:
-      break # html5lib-tests has no EOF tokens
-    elif tok.t in {CHARACTER, CHARACTER_WHITESPACE}:
-      if chartok == nil:
-        chartok = Token[MAtom](t: CHARACTER)
-      chartok.s &= tok.s
-    elif tok.t == CHARACTER_NULL:
-      if chartok == nil:
-        chartok = Token[MAtom](t: CHARACTER)
-      chartok.s &= char(0)
-    else:
-      let otok = getToken(factory, output[i].getElems(), esc)
-      checkEquals(factory, tok, otok, desc)
-      inc i
+  var running = true
+  while running:
+    running = tokenizer.tokenize()
+    for tok in tokenizer.tokqueue:
+      check tok != nil
+      if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE,
+          CHARACTER_NULL}:
+        let otok = getToken(factory, output[i].getElems(), esc)
+        checkEquals(factory, chartok, otok, desc)
+        inc i
+        chartok = nil
+      if tok.t == EOF:
+        break # html5lib-tests has no EOF tokens
+      elif tok.t in {CHARACTER, CHARACTER_WHITESPACE}:
+        if chartok == nil:
+          chartok = Token[MAtom](t: CHARACTER)
+        chartok.s &= tok.s
+      elif tok.t == CHARACTER_NULL:
+        if chartok == nil:
+          chartok = Token[MAtom](t: CHARACTER)
+        chartok.s &= char(0)
+      else:
+        let otok = getToken(factory, output[i].getElems(), esc)
+        checkEquals(factory, tok, otok, desc)
+        inc i
 
 func getState(s: string): TokenizerState =
   case s
