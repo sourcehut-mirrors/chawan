@@ -5,3 +5,4 @@ interface:
   need atomMap); use ref array/Option?
 etc:
 * turn test1 into a serializer module
+* optimize tokenizer consume stuff (e.g. eatStr...)

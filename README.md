@@ -16,6 +16,8 @@ requires "https://git.sr.ht/~bptato/chame"
 Then, check the [documentation](https://chawan.net/doc/chame/) for a
 description of the API.
 
+Note: only Nim 1.6.10+ is supported.
+
 ## Features
 
 * Almost full compliance with the WHATWG standard. (Except for the few missing

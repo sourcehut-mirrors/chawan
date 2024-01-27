@@ -6,3 +6,12 @@
 |   <head>
 |   <body>
 |     ">rsim"
+
+#data
+&gt
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     ">"

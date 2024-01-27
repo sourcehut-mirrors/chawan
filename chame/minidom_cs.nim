@@ -54,22 +54,18 @@ proc newCharsetMiniDOMBuilder(factory: MAtomFactory): CharsetMiniDOMBuilder =
   let builder = CharsetMiniDOMBuilder(document: document, factory: factory)
   return builder
 
-#TODO this should probably be in decoderstream
-proc bomSniff(inputStream: var Stream): Charset =
-  const u8bom = "\xEF\xBB\BF"
-  const bebom = char(0xFE) & char(0xFF)
-  const lebom = char(0xFF) & char(0xFE)
-  var bom = inputStream.readStr(2)
-  if bom == bebom:
+#TODO this should be handled by decoderstream
+proc bomSniff(inputStream: Stream): Charset =
+  let bom = inputStream.readStr(2)
+  if bom == "\xFE\xFF":
     return CHARSET_UTF_16_BE
-  elif bom == lebom:
+  if bom == "\xFF\xFE":
     return CHARSET_UTF_16_LE
-  else:
-    bom &= inputStream.readChar()
-    if bom == u8bom:
+  if bom == "\xEF\xBB":
+    if inputStream.readChar() == '\xBF':
       return CHARSET_UTF_8
-    else:
-      inputStream.setPosition(0)
+  inputStream.setPosition(0)
+  return CHARSET_UNKNOWN
 
 proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
     charsets: seq[Charset], seekable = true,
@@ -134,8 +130,23 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
     let decoder = newDecoderStream(inputStream, builder.charset, errormode = em)
     let encoder = newEncoderStream(decoder, CHARSET_UTF_8,
       errormode = ENCODER_ERROR_MODE_FATAL)
-    builder.stream = encoder
-    parseHTML(builder, opts)
+    var parser = initHTML5Parser(builder, opts)
+    var buffer: array[4096, char]
+    while true:
+      let n = encoder.readData(addr buffer[0], buffer.len)
+      if n == 0: break
+      # res can be PRES_SCRIPT, PRES_STOP or PRES_CONTINUE.
+      var res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
+      # For PRES_SCRIPT, we must re-feed the same chunk as in minidom, but
+      # starting from the current insertion point.
+      var ip = 0
+      while res == PRES_SCRIPT and (ip += parser.getInsertionPoint(); ip != n):
+        res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
+      # PRES_STOP is returned when we return SET_ENCODING_STOP from
+      # setEncodingImpl. We immediately stop parsing in this case.
+      if res == PRES_STOP:
+        break
+    parser.finish()
     if builder.confidence == CONFIDENCE_CERTAIN and seekable:
       # A meta tag describing the charset has been found; force use of this
       # charset.

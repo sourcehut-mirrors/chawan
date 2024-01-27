@@ -176,7 +176,7 @@ test "pending-spec-changes.dat":
   runTests("pending-spec-changes.dat")
 
 test "pending-spec-changes-plain-text-unsafe.dat":
-  runTests("pending-spec-changes.dat")
+  runTests("pending-spec-changes-plain-text-unsafe.dat")
 
 test "plain-text-unsafe.dat":
   runTests("plain-text-unsafe.dat")

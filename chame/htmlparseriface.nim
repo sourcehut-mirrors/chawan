@@ -46,14 +46,6 @@ converter toDOMBuilderImpl(dombuilder: DOMBuilder[HandleImpl, AtomImpl]):
     DOMBuilderImpl =
   return DOMBuilderImpl(dombuilder)
 
-proc getCharImpl(builder: DOMBuilderImpl): char
-  ## Read a character from the input stream.
-  ## This is only called if `atEndImpl` returns false.
-
-proc atEndImpl(builder: DOMBuilderImpl): bool
-  ## Returns true if there is no bytes left in the input stream, false if there
-  ## are still bytes left.
-
 proc strToAtomImpl(builder: DOMBuilderImpl, s: string): AtomImpl
   ## Turn a string `s` into an Atom.
   ##

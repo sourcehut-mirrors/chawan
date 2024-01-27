@@ -108,7 +108,6 @@ type
   MiniDOMBuilder* = ref object of DOMBuilder[Node, MAtom]
     document*: Document
     factory*: MAtomFactory
-    stream*: Stream
 
 type
   DOMBuilderImpl = MiniDOMBuilder
@@ -180,12 +179,6 @@ iterator attrsStr*(element: Element): tuple[name, value: string] =
     yield (name, attr.value)
 
 # htmlparseriface implementation
-proc getCharImpl(builder: MiniDOMBuilder): char =
-  return builder.stream.readChar()
-
-proc atEndImpl(builder: MiniDOMBuilder): bool =
-  return builder.stream.atEnd()
-
 proc strToAtomImpl(builder: MiniDOMBuilder, s: string): MAtom =
   return builder.factory.strToAtom(s)
 
@@ -403,14 +396,32 @@ method setEncodingImpl(builder: MiniDOMBuilder, encoding: string):
   # Provided as a method for minidom_cs to override.
   return SET_ENCODING_CONTINUE
 
-proc newMiniDOMBuilder*(stream: Stream, factory: MAtomFactory): MiniDOMBuilder =
+proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
   let document = Document(factory: factory)
   let builder = MiniDOMBuilder(
     document: document,
-    factory: factory,
-    stream: stream
+    factory: factory
   )
   return builder
+
+proc parseFromStream(parser: var HTML5Parser[Node, MAtom],
+    inputStream: Stream) =
+  var buffer: array[4096, char]
+  while true:
+    let n = inputStream.readData(addr buffer[0], buffer.len)
+    if n == 0: break
+    # res can be PRES_CONTINUE or PRES_SCRIPTING. PRES_STOP is only returned
+    # on charset switching, and minidom does not support that.
+    var res = parser.parseChunk(toOpenArray(buffer, 0, n - 1))
+    # Important: we must repeat parseChunk with the same contents for the script
+    # end tag result, with reprocess = true.
+    #
+    # (This is only relevant for calls where scripting = true; with scripting =
+    # false, PRES_SCRIPT would never be returned.)
+    var ip = 0
+    while res == PRES_SCRIPT and (ip += parser.getInsertionPoint(); ip != n):
+      res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
+  parser.finish()
 
 proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node, MAtom](),
     factory = newMAtomFactory()): Document =
@@ -421,8 +432,9 @@ proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node, MAtom](),
   ##
   ## For a description of `HTML5ParserOpts`, see the `htmlparser` module's
   ## documentation.
-  let builder = newMiniDOMBuilder(inputStream, factory)
-  parseHTML(builder, opts)
+  let builder = newMiniDOMBuilder(factory)
+  var parser = initHTML5Parser(builder, opts)
+  parser.parseFromStream(inputStream)
   return builder.document
 
 proc parseHTMLFragment*(inputStream: Stream, element: Element,
@@ -439,7 +451,7 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   ##
   ## Note: the members `ctx`, `initialTokenizerState`, `openElementsInit` and
   ## `pushInTemplate` of `opts` are overridden (in accordance with the standard).
-  let builder = newMiniDOMBuilder(inputStream, factory)
+  let builder = newMiniDOMBuilder(factory)
   let document = builder.document
   let state = if element.namespace != Namespace.HTML:
     DATA
@@ -463,7 +475,8 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   opts.initialTokenizerState = state
   opts.openElementsInit = @[(Node(root), htmlAtom)]
   opts.pushInTemplate = element.tagType == TAG_TEMPLATE
-  parseHTML(builder, opts)
+  var parser = initHTML5Parser(builder, opts)
+  parser.parseFromStream(inputStream)
   return root.childList
 
 proc parseHTMLFragment*(s: string, element: Element): seq[Node] =

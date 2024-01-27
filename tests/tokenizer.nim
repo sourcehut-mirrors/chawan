@@ -1,9 +1,8 @@
-import json
-import options
-import streams
-import tables
-import unicode
-import unittest
+import std/json
+import std/options
+import std/tables
+import std/unicode
+import std/unittest
 
 import chame/htmltokenizer
 import chame/minidom
@@ -86,7 +85,7 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     )
   of "DOCTYPE":
     return Token[MAtom](
-      t: DOCTYPE,
+      t: TokenType.DOCTYPE,
       quirks: not a[4].getBool(), # yes, this is reversed. don't ask
       name: if a[1].kind == JNull: none(string) else: some(a[1].getStr()),
       pubid: if a[2].kind == JNull: none(string) else: some(a[2].getStr()),
@@ -98,7 +97,7 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     else:
       a[1].getStr()
     return Token[MAtom](
-      t: COMMENT,
+      t: TokenType.COMMENT,
       data: s
     )
   else: discard
@@ -148,42 +147,48 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
       otok.s & ")"
   of TokenType.COMMENT:
     doAssert tok.data == otok.data, desc & " (tok data: " & tok.data &
-      "otok data: " & otok.data & ")"
+      " otok data: " & otok.data & ")"
   of EOF, CHARACTER_NULL: discard
 
 proc runTest(builder: MiniDOMBuilder, desc: string,
     output: seq[JsonNode], laststart: MAtom, esc: bool,
-    state = TokenizerState.DATA) =
+    input: string, state = TokenizerState.DATA) =
   let factory = builder.factory
   var tokenizer = newTokenizer(builder, state)
   tokenizer.laststart = Token[MAtom](t: START_TAG, tagname: laststart)
   var i = 0
   var chartok: Token[MAtom] = nil
-  var running = true
-  while running:
-    running = tokenizer.tokenize()
-    for tok in tokenizer.tokqueue:
-      check tok != nil
-      if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE,
-          CHARACTER_NULL}:
-        let otok = getToken(factory, output[i].getElems(), esc)
-        checkEquals(factory, chartok, otok, desc)
-        inc i
-        chartok = nil
-      if tok.t == EOF:
-        break # html5lib-tests has no EOF tokens
-      elif tok.t in {CHARACTER, CHARACTER_WHITESPACE}:
-        if chartok == nil:
-          chartok = Token[MAtom](t: CHARACTER)
-        chartok.s &= tok.s
-      elif tok.t == CHARACTER_NULL:
-        if chartok == nil:
-          chartok = Token[MAtom](t: CHARACTER)
-        chartok.s &= char(0)
-      else:
-        let otok = getToken(factory, output[i].getElems(), esc)
-        checkEquals(factory, tok, otok, desc)
-        inc i
+  var toks = newSeq[Token[MAtom]]()
+  while true:
+    let res = tokenizer.tokenize(input.toOpenArray(0, input.high))
+    toks.add(tokenizer.tokqueue)
+    if res == trDone:
+      break
+  while true:
+    let res = tokenizer.finish()
+    toks.add(tokenizer.tokqueue)
+    if res == trDone:
+      break
+  for tok in toks:
+    check tok != nil
+    if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE,
+        CHARACTER_NULL}:
+      let otok = getToken(factory, output[i].getElems(), esc)
+      checkEquals(factory, chartok, otok, desc)
+      inc i
+      chartok = nil
+    if tok.t in {CHARACTER, CHARACTER_WHITESPACE}:
+      if chartok == nil:
+        chartok = Token[MAtom](t: CHARACTER)
+      chartok.s &= tok.s
+    elif tok.t == CHARACTER_NULL:
+      if chartok == nil:
+        chartok = Token[MAtom](t: CHARACTER)
+      chartok.s &= char(0)
+    else:
+      let otok = getToken(factory, output[i].getElems(), esc)
+      checkEquals(factory, tok, otok, desc)
+      inc i
 
 func getState(s: string): TokenizerState =
   case s
@@ -218,14 +223,14 @@ proc runTests(filename: string) =
     else:
       ""
     let factory = newMAtomFactory()
-    let builder = newMiniDOMBuilder(newStringStream(input), factory)
+    let builder = newMiniDOMBuilder(factory)
     let laststart = builder.factory.strToAtom(laststart0)
     if "initialStates" notin t:
-      runTest(builder, desc, output, laststart, esc)
+      runTest(builder, desc, output, laststart, esc, input)
     else:
       for state in t{"initialStates"}:
         let state = getState(state.getStr())
-        runTest(builder, desc, output, laststart, esc, state)
+        runTest(builder, desc, output, laststart, esc, input, state)
 
 test "contentModelFlags":
   runTests("contentModelFlags.test")

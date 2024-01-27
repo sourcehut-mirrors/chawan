@@ -85,11 +85,10 @@ type
     namespace: Namespace
     localName: Atom
 
-  HTML5Parser[Handle, Atom] = object
+  HTML5Parser*[Handle, Atom] = object
     quirksMode: QuirksMode
     dombuilder: DOMBuilder[Handle, Atom]
     opts: HTML5ParserOpts[Handle, Atom]
-    stopped: bool
     ctx: Option[OpenElement[Handle, Atom]]
     openElements: seq[OpenElement[Handle, Atom]]
     insertionMode: InsertionMode
@@ -101,7 +100,7 @@ type
     fosterParenting: bool
     # Handle is an element. nil => marker
     activeFormatting: seq[(Option[Handle], Token[Atom])]
-    framesetok: bool
+    framesetOk: bool
     ignoreLF: bool
     pendingTableChars: string
     pendingTableCharsWhitespace: bool
@@ -123,6 +122,33 @@ type
     AFTER_BODY, IN_FRAMESET, AFTER_FRAMESET, AFTER_AFTER_BODY,
     AFTER_AFTER_FRAMESET
 
+type TokenResult = enum
+  TRES_CONTINUE
+  TRES_STOP
+  TRES_SCRIPT
+  TRES_REPROCESS
+
+type ParseResult* = enum
+  ## Result of parsing the passed chunk.
+  ## PRES_CONTINUE is returned when it is OK to continue parsing.
+  ##
+  ## PRES_STOP is returned when the parser has been stopped from
+  ## setEncodingImpl.
+  ##
+  ## PRES_SCRIPT is returned when a script end tag is encountered. For
+  ## implementations that do not support scripting, this can be treated
+  ## equivalently to PRES_CONTINUE.
+  ##
+  ## Implementations that *do* support scripting and implement `document.write`
+  ## can instead use PRES_SCRIPT to process string injected into the input
+  ## stream by `document.write` before continuing with parsing from the
+  ## network stream. In this case, script elements should be stored in e.g. the
+  ## DOM builder from `elementPoppedImpl`, and processed accordingly after
+  ## PRES_SCRIPT has been returned.
+  PRES_CONTINUE
+  PRES_STOP
+  PRES_SCRIPT
+
 # DOMBuilder interface functions
 proc strToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom], s: string):
     Atom =
@@ -134,7 +160,9 @@ proc tagTypeToAtom[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   mixin tagTypeToAtomImpl
   return parser.dombuilder.tagTypeToAtomImpl(tagType)
 
-proc atomToTagType[Handle, Atom](parser: HTML5Parser[Handle, Atom],
+# Declared as extern, because Nim 1.6.10 does not recognize it in macros
+# otherwise.
+proc atomToTagType*[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     atom: Atom): TagType =
   mixin atomToTagTypeImpl
   return parser.dombuilder.atomToTagTypeImpl(atom)
@@ -961,7 +989,7 @@ proc parseErrorByTokenType(parser: var HTML5Parser, tokenType: TokenType) =
     parser.parseError UNEXPECTED_CHARACTER
   of CHARACTER_NULL:
     parser.parseError UNEXPECTED_NULL
-  of DOCTYPE, COMMENT:
+  of DOCTYPE, TokenType.COMMENT:
     doAssert false
 
 # Find a node in the list of active formatting elements, or return -1.
@@ -1205,136 +1233,176 @@ proc newStartTagToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 #
 # This duplicates any code that applies for several token types, except for the
 # else branch.
-macro match(token: Token, body: typed): untyped =
-  type OfBranchStore = object
-    ofBranches: seq[(seq[NimNode], NimNode)]
+type
+  OfBranch = (seq[NimNode], NimNode)
+
+  OfBranchStore = object
+    ofBranches: seq[OfBranch]
     defaultBranch: NimNode
     painted: bool
 
+  PatternType = enum
+    ptTokenType, ptTagType, ptOther, ptCombined
+
+  Pattern = object
+    case t: PatternType
+    of ptTokenType:
+      tokt: TokenType
+    of ptTagType:
+      isend: bool
+      tagt: TagType
+    of ptCombined:
+      children: seq[Pattern]
+    of ptOther: discard
+
+proc toPattern(s: string): Pattern =
+  if s == "_":
+    return Pattern(t: ptOther)
+  assert s[0] == '<' and s[^1] == '>'
+  let isend = s[1] == '/'
+  let i = if not isend: 1 else: 2
+  let tagType = parseEnum[TagType](s[i..^2])
+  assert tagType != TAG_UNKNOWN
+  return Pattern(t: ptTagType, isend: isend, tagt: tagType)
+
+proc toPattern(tt: TokenType): Pattern =
+  return Pattern(
+    t: ptTokenType,
+    tokt: tt
+  )
+
+proc toPattern(s: tuple): Pattern =
+  result = Pattern(t: ptCombined)
+  for _, x in s.fieldPairs:
+    result.children.add(toPattern(x))
+
+macro toNimNode(p: untyped): NimNode =
+  return p
+
+type MatchBuilder = object
   # Stores 'of' branches
-  var ofBranches: array[TokenType, OfBranchStore]
+  ofBranches: array[TokenType, OfBranchStore]
   # Stores 'else', 'elif' branches
-  var defaultBranch: NimNode
+  defaultBranch: NimNode
 
-  const tokenTypes = (func(): Table[string, TokenType] =
-    for tt in TokenType:
-      result[$tt] = tt)()
+func tokenBranchOn(tok: TokenType): NimNode =
+  assert tok in {START_TAG, END_TAG}
+  return quote do: parser.atomToTagType(token.tagname)
 
-  for disc in body:
-    let tup = disc[0] # access actual tuple
-    let pattern = `tup`[0]
-    let lambda = `tup`[1]
-    var action = lambda.findChild(it.kind notin {nnkSym, nnkEmpty, nnkFormalParams})
-    if pattern.kind != nnkDiscardStmt and not (action.len == 2 and action[1].kind == nnkDiscardStmt and action[1][0] == newStrLitNode("anything_else")):
-      action = quote do:
-        `action`
-        #eprint token #debug
-        break inside_not_else
+proc addToCase(tokenCase: NimNode, branch: OfBranch) =
+  if branch[0].len == 1:
+    tokenCase.add(newNimNode(nnkOfBranch).add(branch[0][0]).add(branch[1]))
+  else:
+    var curly = newNimNode(nnkCurly)
+    for node in branch[0]:
+      curly.add(node)
+    tokenCase.add(newNimNode(nnkOfBranch).add(curly).add(branch[1]))
 
+func findAction(ofBranches: seq[OfBranch], action: NimNode): int =
+  for i, branch in ofBranches:
+    if branch[1] == action:
+      return i
+  return -1
+
+proc buildBranches(builder: var MatchBuilder, patterns: openArray[Pattern],
+    lambdas: NimNode) =
+  for i in 0 ..< patterns.len:
+    let pattern = patterns[i]
+    let lambda = lambdas[i]
+    const noAction = {nnkSym, nnkEmpty, nnkFormalParams}
+    let action = lambda.findChild(it.kind notin noAction)
     var patterns = @[pattern]
     while patterns.len > 0:
       let pattern = patterns.pop()
-      case pattern.kind
-      of nnkSym: # simple symbols; we assume these are the enums
-        ofBranches[tokenTypes[pattern.strVal]].defaultBranch = action
-        ofBranches[tokenTypes[pattern.strVal]].painted = true
-      of nnkStrLit:
-        let s = pattern.strVal
-        assert s[0] == '<'
-        var i = if s[1] == '/': 2 else: 1
-        var tagName = ""
-        while i < s.len:
-          if s[i] == '>':
-            assert i == s.high
-            break
-          assert s[i] in AsciiAlphaNumeric
-          tagName &= s[i]
-          inc i
-        let tt = int(parseEnum[TagType](tagName))
-        let tokt = if s[1] != '/': START_TAG else: END_TAG
-        var found = false
-        for i in 0..ofBranches[tokt].ofBranches.high:
-          if ofBranches[tokt].ofBranches[i][1] == action:
-            found = true
-            ofBranches[tokt].ofBranches[i][0].add((quote do: TagType(`tt`)))
-            ofBranches[tokt].painted = true
-            break
-        if not found:
-          ofBranches[tokt].ofBranches.add((@[(quote do: TagType(`tt`))], action))
-          ofBranches[tokt].painted = true
-      of nnkDiscardStmt:
-        defaultBranch = action
-      of nnkTupleConstr:
-        for child in pattern:
+      case pattern.t
+      of ptTokenType:
+        builder.ofBranches[pattern.tokt].defaultBranch = action
+        builder.ofBranches[pattern.tokt].painted = true
+      of ptTagType:
+        let tt = int(pattern.tagt)
+        let tokt = if not pattern.isend: START_TAG else: END_TAG
+        let i = builder.ofBranches[tokt].ofBranches.findAction(action)
+        if i != -1:
+          builder.ofBranches[tokt].ofBranches[i][0].add(quote do: TagType(`tt`))
+        else:
+          let tup = (@[(quote do: TagType(`tt`))], action)
+          builder.ofBranches[tokt].ofBranches.add(tup)
+        builder.ofBranches[tokt].painted = true
+      of ptCombined:
+        for child in pattern.children:
           patterns.add(child)
-      else:
-        error pattern.strVal & ": Unsupported pattern of kind " & $pattern.kind
+      of ptOther:
+        builder.defaultBranch = action
 
-  func tokenBranchOn(tok: TokenType): NimNode =
-    case tok
-    of START_TAG, END_TAG:
-      return quote do: parser.atomToTagType(token.tagname)
-    else:
-      error "Unsupported branching of token " & $tok
-
-  template add_to_case(branch: typed) =
-    if branch[0].len == 1:
-      tokenCase.add(newNimNode(nnkOfBranch).add(branch[0][0]).add(branch[1]))
-    else:
-      var curly = newNimNode(nnkCurly)
-      for node in branch[0]:
-        curly.add(node)
-      tokenCase.add(newNimNode(nnkOfBranch).add(curly).add(branch[1]))
-
-  # Build case statements
-  var mainCase = newNimNode(nnkCaseStmt).add(quote do: `token`.t)
+proc generateCaseStmts(builder: MatchBuilder, token: NimNode): NimNode =
+  let mainCase = newNimNode(nnkCaseStmt).add(quote do: `token`.t)
   for tt in TokenType:
     let ofBranch = newNimNode(nnkOfBranch).add(quote do: TokenType(`tt`))
     let tokenCase = newNimNode(nnkCaseStmt)
-    if ofBranches[tt].defaultBranch != nil:
-      if ofBranches[tt].ofBranches.len > 0:
+    if builder.ofBranches[tt].defaultBranch != nil:
+      if builder.ofBranches[tt].ofBranches.len > 0:
         tokenCase.add(tokenBranchOn(tt))
-        for branch in ofBranches[tt].ofBranches:
-          add_to_case branch
-        tokenCase.add(newNimNode(nnkElse).add(ofBranches[tt].defaultBranch))
+        for branch in builder.ofBranches[tt].ofBranches:
+          tokenCase.addToCase(branch)
+        tokenCase.add(newNimNode(nnkElse)
+          .add(builder.ofBranches[tt].defaultBranch))
         ofBranch.add(tokenCase)
         mainCase.add(ofBranch)
       else:
-        ofBranch.add(ofBranches[tt].defaultBranch)
+        ofBranch.add(builder.ofBranches[tt].defaultBranch)
         mainCase.add(ofBranch)
-    else:
-      if ofBranches[tt].ofBranches.len > 0:
-        tokenCase.add(tokenBranchOn(tt))
-        for branch in ofBranches[tt].ofBranches:
-          add_to_case branch
-        ofBranch.add(tokenCase)
-        tokenCase.add(newNimNode(nnkElse).add(quote do: discard))
-        mainCase.add(ofBranch)
-      else:
-        discard
+    elif builder.ofBranches[tt].ofBranches.len > 0:
+      tokenCase.add(tokenBranchOn(tt))
+      for branch in builder.ofBranches[tt].ofBranches:
+        tokenCase.addToCase(branch)
+      ofBranch.add(tokenCase)
+      tokenCase.add(newNimNode(nnkElse).add(quote do: discard))
+      mainCase.add(ofBranch)
+  return mainCase
 
+macro match0(token: Token, patterns: static openArray[Pattern],
+    lambdas: seq[NimNode]) =
+  var builder = MatchBuilder()
+  builder.buildBranches(patterns, lambdas)
+  let mainCase = builder.generateCaseStmts(token)
   for t in TokenType:
-    if not ofBranches[t].painted:
+    if not builder.ofBranches[t].painted:
       mainCase.add(newNimNode(nnkElse).add(quote do: discard))
       break
-
   var stmts = newStmtList().add(mainCase)
-  for stmt in defaultBranch:
+  for stmt in builder.defaultBranch:
     stmts.add(stmt)
   result = newBlockStmt(ident("inside_not_else"), stmts)
 
+macro match(token: Token, bodyIn: untyped): untyped =
+  result = newStmtList()
+  var patterns = newTree(nnkBracket)
+  var lambdas: seq[NimNode]
+  for child in bodyIn:
+    if unlikely(child.kind != nnkInfix or child[0].strVal != "=>"):
+      error("=> expected")
+    let sel = child[1]
+    let body = child[2]
+    let pattern = quote do:
+      toPattern(`sel`)
+    let lambda0 = quote do:
+      toNimNode:
+        `body`
+        break inside_not_else
+    patterns.add(pattern)
+    lambdas.add(lambda0)
+  result = quote do:
+    match0(`token`, `patterns`, `lambdas`)
+
 proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
-    token: Token, insertionMode: InsertionMode) =
-  template anything_else = discard "anything_else"
-
-  macro `=>`(v: typed, body: untyped): untyped =
-    quote do:
-      discard (`v`, proc() = `body`)
-
-  template other = discard
+    token: Token, insertionMode: InsertionMode): TokenResult =
+  template other: string = "_"
 
   template reprocess(tok: Token) =
-    parser.processInHTMLContent(tok, parser.insertionMode)
+    return parser.processInHTMLContent(tok, parser.insertionMode)
+
+  template reprocess(mode: InsertionMode): TokenResult =
+    parser.processInHTMLContent(token, mode)
 
   template parse_error(e: ParseError) =
     parser.parseError(e)
@@ -1392,9 +1460,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.pushElement(element, token)
         parser.insertionMode = BEFORE_HEAD
       )
-      ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
-      other => (block:
+      ("</head>", "</body>", "</html>", "</br>", other) => (block:
         let element = parser.createHTMLElement()
         parser.append(parser.getDocument(), element)
         let html = parser.newStartTagToken(TAG_HTML)
@@ -1408,14 +1475,13 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       TokenType.CHARACTER_WHITESPACE => (block: discard)
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       "<head>" => (block:
         parser.head = some((parser.insertHTMLElement(token), token))
         parser.insertionMode = IN_HEAD
       )
-      ("</head>", "</body>", "</html>", "</br>") => (block: anything_else)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
-      other => (block:
+      ("</head>", "</body>", "</html>", "</br>", other) => (block:
         let head = parser.newStartTagToken(TAG_HEAD)
         parser.head = some((parser.insertHTMLElement(head), head))
         parser.insertionMode = IN_HEAD
@@ -1429,7 +1495,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       ("<base>", "<basefont>", "<bgsound>", "<link>") => (block:
         discard parser.insertHTMLElement(token)
         pop_current_node
@@ -1442,7 +1508,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           of SET_ENCODING_CONTINUE:
             discard
           of SET_ENCODING_STOP:
-            parser.stopped = true
+            return TRES_STOP
         do:
           token.attrs.withValue(parser.atomMap[ATOM_HTTP_EQUIV], p):
             if p[].equalsIgnoreCase("Content-Type"):
@@ -1453,7 +1519,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
                   of SET_ENCODING_CONTINUE:
                     discard
                   of SET_ENCODING_STOP:
-                    parser.stopped = true
+                    return TRES_STOP
       )
       "<title>" => (block: parser.genericRCDATAElementParsingAlgorithm(token))
       "<noscript>" => (block:
@@ -1480,11 +1546,10 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         pop_current_node
         parser.insertionMode = AFTER_HEAD
       )
-      ("</body>", "</html>", "</br>") => (block: anything_else)
       "<template>" => (block:
         discard parser.insertHTMLElement(token)
         parser.activeFormatting.add((none(Handle), nil))
-        parser.framesetok = false
+        parser.framesetOk = false
         parser.insertionMode = IN_TEMPLATE
         parser.templateModes.add(IN_TEMPLATE)
       )
@@ -1501,7 +1566,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.resetInsertionMode()
       )
       ("<head>", TokenType.END_TAG) => (block: parse_error UNEXPECTED_END_TAG)
-      other => (block:
+      ("</body>", "</html>", "</br>", other) => (block:
         pop_current_node
         parser.insertionMode = AFTER_HEAD
         reprocess token
@@ -1510,7 +1575,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
   of IN_HEAD_NOSCRIPT:
     match token:
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       "</noscript>" => (block:
         pop_current_node
         parser.insertionMode = IN_HEAD
@@ -1518,11 +1583,11 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       (TokenType.CHARACTER_WHITESPACE, TokenType.COMMENT,
          "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>",
          "<style>") => (block:
-        parser.processInHTMLContent(token, IN_HEAD))
-      "</br>" => (block: anything_else)
+        return reprocess IN_HEAD
+      )
       ("<head>", "<noscript>") => (block: parse_error UNEXPECTED_START_TAG)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
-      other => (block:
+      ("</br>", other) => (block:
         pop_current_node
         parser.insertionMode = IN_HEAD
         reprocess token
@@ -1535,10 +1600,10 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       "<body>" => (block:
         discard parser.insertHTMLElement(token)
-        parser.framesetok = false
+        parser.framesetOk = false
         parser.insertionMode = IN_BODY
       )
       "<frameset>" => (block:
@@ -1550,16 +1615,20 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parse_error UNEXPECTED_START_TAG
         let (head, headTok) = parser.head.get
         parser.pushElement(head, headTok)
-        parser.processInHTMLContent(token, IN_HEAD)
+        result = reprocess IN_HEAD
+        var j = -1
         for i in countdown(parser.openElements.high, 0):
           if parser.openElements[i] == parser.head.get:
-            parser.openElements.delete(i)
+            j = i
+        if j != -1:
+          parser.openElements.delete(j)
       )
-      "</template>" => (block: parser.processInHTMLContent(token, IN_HEAD))
-      ("</body>", "</html>", "</br>") => (block: anything_else)
+      "</template>" => (block:
+        return reprocess IN_HEAD
+      )
       ("<head>") => (block: parse_error UNEXPECTED_START_TAG)
       (TokenType.END_TAG) => (block: parse_error UNEXPECTED_END_TAG)
-      other => (block:
+      ("</body>", "</html>", "</br>", other) => (block:
         discard parser.insertHTMLElement(parser.newStartTagToken(TAG_BODY))
         parser.insertionMode = IN_BODY
         reprocess token
@@ -1615,7 +1684,9 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>",
         "<script>", "<style>", "<template>", "<title>",
-         "</template>") => (block: parser.processInHTMLContent(token, IN_HEAD))
+        "</template>") => (block:
+          return reprocess IN_HEAD
+      )
       "<body>" => (block:
         parse_error UNEXPECTED_START_TAG
         if parser.openElements.len == 1 or
@@ -1641,7 +1712,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.EOF => (block:
         if parser.templateModes.len > 0:
-          parser.processInHTMLContent(token, IN_TEMPLATE)
+          return reprocess IN_TEMPLATE
         else:
           parse_error_if_body_has_disallowed_open_elements
           # stop
@@ -1820,10 +1891,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.generateImpliedEndTags()
           parse_error_if_mismatch parser.atomToTagType(token.tagname)
           parser.popElementsIncl(HTagTypes)
-      )
-      "</sarcasm>" => (block:
-        #*deep breath*
-        anything_else
       )
       "<a>" => (block:
         let i = parser.findLastActiveFormattingAfterMarker(TAG_A)
@@ -2027,13 +2094,13 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertionMode = parser.oldInsertionMode
         reprocess token
       )
-      "</script>" => (block:
-        pop_current_node
-        parser.insertionMode = parser.oldInsertionMode
-      )
       TokenType.END_TAG => (block:
         pop_current_node
         parser.insertionMode = parser.oldInsertionMode
+        if parser.opts.scripting:
+          let tagType = parser.atomToTagType(token.tagname)
+          if tagType == TAG_SCRIPT:
+            return TRES_SCRIPT
       )
 
   of IN_TABLE:
@@ -2057,7 +2124,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         else: # anything else
           parse_error INVALID_TEXT_PARENT
           parser.fosterParenting = true
-          parser.processInHTMLContent(token, IN_BODY)
+          result = reprocess IN_BODY
           parser.fosterParenting = false
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
@@ -2113,7 +2180,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parse_error UNEXPECTED_END_TAG
       )
       ("<style>", "<script>", "<template>", "</template>") => (block:
-        parser.processInHTMLContent(token, IN_HEAD)
+        return reprocess IN_HEAD
       )
       "<input>" => (block:
         parse_error UNEXPECTED_START_TAG
@@ -2121,7 +2188,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           if not p[].equalsIgnoreCase("hidden"):
             # anything else
             parser.fosterParenting = true
-            parser.processInHTMLContent(token, IN_BODY)
+            result = reprocess IN_BODY
             parser.fosterParenting = false
           else:
             discard parser.insertHTMLElement(token)
@@ -2129,7 +2196,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         do:
           # anything else
           parser.fosterParenting = true
-          parser.processInHTMLContent(token, IN_BODY)
+          result = reprocess IN_BODY
           parser.fosterParenting = false
       )
       "<form>" => (block:
@@ -2140,13 +2207,11 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.form = some(parser.insertHTMLElement(token))
           pop_current_node
       )
-      TokenType.EOF => (block:
-        parser.processInHTMLContent(token, IN_BODY)
-      )
+      TokenType.EOF => (block: return reprocess IN_BODY)
       other => (block:
         parse_error UNEXPECTED_START_TAG
         parser.fosterParenting = true
-        parser.processInHTMLContent(token, IN_BODY)
+        result = reprocess IN_BODY
         parser.fosterParenting = false
       )
 
@@ -2204,7 +2269,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
        "</tfoot>", "</th>", "</thead>", "</tr>") => (block:
         parse_error UNEXPECTED_END_TAG
       )
-      other => (block: parser.processInHTMLContent(token, IN_BODY))
+      other => (block: return reprocess IN_BODY)
 
   of IN_COLUMN_GROUP:
     match token:
@@ -2213,7 +2278,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       "<col>" => (block:
         discard parser.insertHTMLElement(token)
         pop_current_node
@@ -2226,10 +2291,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.insertionMode = IN_TABLE
       )
       "</col>" => (block: parse_error UNEXPECTED_END_TAG)
-      ("<template>", "</template>") => (block:
-        parser.processInHTMLContent(token, IN_HEAD)
-      )
-      TokenType.EOF => (block: parser.processInHTMLContent(token, IN_BODY))
+      ("<template>", "</template>") => (block: return reprocess IN_HEAD)
+      TokenType.EOF => (block: return reprocess IN_BODY)
       other => (block:
         if parser.getTagType(parser.currentNode) != TAG_COLGROUP:
           parse_error MISMATCHED_TAGS
@@ -2281,7 +2344,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
        "</th>", "</tr>") => (block:
         parse_error ELEMENT_NOT_IN_SCOPE
       )
-      other => (block: parser.processInHTMLContent(token, IN_TABLE))
+      other => (block: return reprocess IN_TABLE)
 
   of IN_ROW:
     template clear_the_stack_back_to_a_table_row_context() =
@@ -2327,7 +2390,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>", "</td>",
        "</th>") => (block: parse_error UNEXPECTED_END_TAG)
-      other => (block: parser.processInHTMLContent(token, IN_TABLE))
+      other => (block: return reprocess IN_TABLE)
 
   of IN_CELL:
     template close_cell() =
@@ -2368,7 +2431,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           close_cell
           reprocess token
       )
-      other => (block: parser.processInHTMLContent(token, IN_BODY))
+      other => (block: return reprocess IN_BODY)
 
   of IN_SELECT:
     match token:
@@ -2381,7 +2444,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       "<option>" => (block:
         if parser.getTagType(parser.currentNode) == TAG_OPTION:
           pop_current_node
@@ -2441,8 +2504,10 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.resetInsertionMode()
           reprocess token
       )
-      ("<script>", "<template>", "</template>") => (block: parser.processInHTMLContent(token, IN_HEAD))
-      TokenType.EOF => (block: parser.processInHTMLContent(token, IN_BODY))
+      ("<script>", "<template>", "</template>") => (block:
+        return reprocess IN_HEAD
+      )
+      TokenType.EOF => (block: return reprocess IN_BODY)
       TokenType.START_TAG => (block: parse_error UNEXPECTED_START_TAG)
       TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
 
@@ -2466,17 +2531,17 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.resetInsertionMode()
           reprocess token
       )
-      other => (block: parser.processInHTMLContent(token, IN_SELECT))
+      other => (block: return reprocess IN_SELECT)
 
   of IN_TEMPLATE:
     match token:
       (TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE,
           TokenType.CHARACTER_NULL, TokenType.DOCTYPE) => (block:
-        parser.processInHTMLContent(token, IN_BODY)
+        return reprocess IN_BODY
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>",
        "<script>", "<style>", "<template>", "<title>", "</template>") => (block:
-        parser.processInHTMLContent(token, IN_HEAD)
+        return reprocess IN_HEAD
       )
       ("<caption>", "<colgroup>", "<tbody>", "<tfoot>", "<thead>") => (block:
         discard parser.templateModes.pop()
@@ -2524,13 +2589,13 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
   of AFTER_BODY:
     match token:
       TokenType.CHARACTER_WHITESPACE => (block:
-        parser.processInHTMLContent(token, IN_BODY)
+        return reprocess IN_BODY
       )
       TokenType.COMMENT => (block:
         parser.insertComment(token, last_child_of(parser.openElements[0]))
       )
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       "</html>" => (block:
         if parser.fragment:
           parse_error UNEXPECTED_END_TAG
@@ -2551,7 +2616,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       "<frameset>" => (block: discard parser.insertHTMLElement(token))
       "</frameset>" => (block:
         if parser.getTagType(parser.currentNode) == TAG_HTML:
@@ -2566,7 +2631,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         discard parser.insertHTMLElement(token)
         pop_current_node
       )
-      "<noframes>" => (block: parser.processInHTMLContent(token, IN_HEAD))
+      "<noframes>" => (block: return reprocess IN_HEAD)
       TokenType.EOF => (block:
         if parser.getTagType(parser.currentNode) != TAG_HTML:
           parse_error UNEXPECTED_EOF
@@ -2581,9 +2646,9 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
       TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
-      "<html>" => (block: parser.processInHTMLContent(token, IN_BODY))
+      "<html>" => (block: return reprocess IN_BODY)
       "</html>" => (block: parser.insertionMode = AFTER_AFTER_FRAMESET)
-      "<noframes>" => (block: parser.processInHTMLContent(token, IN_HEAD))
+      "<noframes>" => (block: return reprocess IN_HEAD)
       TokenType.EOF => (block: discard) # stop
       other => (block: parser.parseErrorByTokenType(token.t))
 
@@ -2593,7 +2658,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertComment(token, last_child_of(parser.getDocument()))
       )
       (TokenType.DOCTYPE, TokenType.CHARACTER_WHITESPACE, "<html>") => (block:
-        parser.processInHTMLContent(token, IN_BODY)
+        return reprocess IN_BODY
       )
       TokenType.EOF => (block: discard) # stop
       other => (block:
@@ -2608,18 +2673,15 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertComment(token, last_child_of(parser.getDocument()))
       )
       (TokenType.DOCTYPE, TokenType.CHARACTER_WHITESPACE, "<html>") => (block:
-        parser.processInHTMLContent(token, IN_BODY)
+        return reprocess IN_BODY
       )
       TokenType.EOF => (block: discard) # stop
-      "<noframes>" => (block: parser.processInHTMLContent(token, IN_HEAD))
+      "<noframes>" => (block: return reprocess IN_HEAD)
       other => (block: parser.parseErrorByTokenType(token.t))
+  return TRES_CONTINUE
 
 proc processInForeignContent[Handle, Atom](
-    parser: var HTML5Parser[Handle, Atom], token: Token) =
-  macro `=>`(v: typed, body: untyped): untyped =
-    quote do:
-      discard (`v`, proc() = `body`)
-
+    parser: var HTML5Parser[Handle, Atom], token: Token): TokenResult =
   template script_end_tag() =
     pop_current_node
     #TODO document.write (?)
@@ -2658,8 +2720,7 @@ proc processInForeignContent[Handle, Atom](
       let (node, nodeToken) = parser.openElements[i]
       if i != parser.openElements.high and
           parser.getNamespace(node) == Namespace.HTML:
-        parser.processInHTMLContent(token, parser.insertionMode)
-        break
+        return parser.processInHTMLContent(token, parser.insertionMode)
       if nodeToken.tagname == token.tagname:
         # Compare the start tag token, since it is guaranteed to be lower case.
         # (The local name might have been adjusted to a non-lower-case string.)
@@ -2699,7 +2760,7 @@ proc processInForeignContent[Handle, Atom](
           not parser.isHTMLIntegrationPoint(parser.currentNodeToken) and
           parser.getNamespace(parser.currentNode) != Namespace.HTML:
         pop_current_node
-      parser.processInHTMLContent(token, parser.insertionMode)
+      return parser.processInHTMLContent(token, parser.insertionMode)
     )
     TokenType.START_TAG => (block:
       any_other_start_tag
@@ -2718,7 +2779,7 @@ proc processInForeignContent[Handle, Atom](
     TokenType.END_TAG => (block: any_other_end_tag)
 
 proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
-    token: Token[Atom]) =
+    token: Token[Atom]): TokenResult =
   if parser.ignoreLF:
     parser.ignoreLF = false
     if token.t == CHARACTER_WHITESPACE:
@@ -2729,7 +2790,7 @@ proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           token.s.delete(0..0)
   if parser.openElements.len == 0 or
       parser.getNamespace(parser.adjustedCurrentNode) == Namespace.HTML:
-    parser.processInHTMLContent(token, parser.insertionMode)
+    return parser.processInHTMLContent(token, parser.insertionMode)
   else:
     let oe = parser.adjustedCurrentNodeToken
     let localName = oe.token.tagname
@@ -2749,23 +2810,9 @@ proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
             parser.atomToTagType(token.tagname) == TAG_SVG or
         ishtmlip and token.t == START_TAG or
         ishtmlip and token.t in CharacterToken:
-      parser.processInHTMLContent(token, parser.insertionMode)
+      return parser.processInHTMLContent(token, parser.insertionMode)
     else:
-      parser.processInForeignContent(token)
-
-proc constructTree[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
-  var running = true
-  while running:
-    running = parser.tokenizer.tokenize()
-    for token in parser.tokenizer.tokqueue:
-      parser.processToken(token)
-      if parser.stopped:
-        return
-  parser.processInHTMLContent(Token[Atom](t: EOF), parser.insertionMode)
-
-proc finishParsing(parser: var HTML5Parser) =
-  while parser.openElements.len > 0:
-    pop_current_node
+      return parser.processInForeignContent(token)
 
 const CaseTable = {
   "altglyph": "altGlyph",
@@ -2901,16 +2948,13 @@ proc createForeignTable[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
     let newNameAtom = parser.strToAtom(newName)
     parser.foreignTable[oldNameAtom] = (prefix, ns, newNameAtom)
 
-proc parseHTML*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
-    opts: HTML5ParserOpts[Handle, Atom]) =
-  ## Read and parse an HTML document using the DOMBuilder object `dombuilder`
+proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
+    opts: HTML5ParserOpts[Handle, Atom]): HTML5Parser[Handle, Atom] =
+  ## Create and initialize a new HTML5Parser object from dombuilder `dombuilder`
   ## and parser options `opts`.
   ##
   ## The generic `Handle` must be the node handle type of the DOM builder. The
   ## generic `Atom` must be the interned string type of the DOM builder.
-  ##
-  ## The input stream does not have to be seekable for this function.
-  let tokstate = opts.initialTokenizerState
   var parser = HTML5Parser[Handle, Atom](
     dombuilder: dombuilder,
     opts: opts,
@@ -2935,9 +2979,73 @@ proc parseHTML*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
     parser.templateModes.add(IN_TEMPLATE)
   if opts.openElementsInit.len > 0:
     parser.resetInsertionMode()
-  parser.tokenizer = newTokenizer[Handle, Atom](
-    dombuilder,
-    tokstate
-  )
-  parser.constructTree()
-  parser.finishParsing()
+  let tokstate = opts.initialTokenizerState
+  parser.tokenizer = newTokenizer[Handle, Atom](dombuilder, tokstate)
+  return parser
+
+proc parseChunk*[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
+    inputBuf: openArray[char]): ParseResult =
+  ## Parse a chunk of characters stored in `inputBuf` with `parser`.
+  var running = true
+  parser.tokenizer.inputBufIdx = 0
+  while running:
+    running = parser.tokenizer.tokenize(inputBuf) != trDone
+    for i, token in parser.tokenizer.tokqueue:
+      while true:
+        case parser.processToken(token)
+        of TRES_CONTINUE:
+          break
+        of TRES_REPROCESS:
+          continue
+        of TRES_STOP:
+          return PRES_STOP
+        of TRES_SCRIPT:
+          assert i == parser.tokenizer.tokqueue.high
+          return PRES_SCRIPT
+          {.linearScanEnd.}
+        break
+  return PRES_CONTINUE
+
+func getInsertionPoint*(parser: HTML5Parser): int =
+  return parser.tokenizer.inputBufIdx
+
+proc finish*[Handle, Atom](parser: var HTML5Parser[Handle, Atom]) =
+  ## Finish parsing the document associated with `parser`.
+  ## This will process an EOF token, and pop all elements from the stack of
+  ## open elements one by one.
+  var running = true
+  while running:
+    running = parser.tokenizer.finish() != trDone
+    for token in parser.tokenizer.tokqueue:
+      while true:
+        case parser.processToken(token)
+        of TRES_CONTINUE:
+          break
+        of TRES_REPROCESS:
+          continue
+        of TRES_SCRIPT:
+          # This is unreachable.
+          # * Tokenizer's tokenizeEOF() can not emit end tag tokens, ergo no
+          #   </script> will be processed here.
+          # * In some cases, tokenize() is called before tokenizeEOF(), to flush
+          #   characters stuck in the internal peekBuf. This can happen if:
+          #   1. eatStr returns esrRetry in a previous pass. Here, peekBuf can
+          #      contain any prefix of strings passed to eatStr/NoCase(), which
+          #      crucially is never a potential </script> tag (or indeed,
+          #      nothing that can start with </).
+          #   2. The "named character reference" state is interrupted. In this
+          #      case, peekBuf is a prefix of at least one named character reference;
+          #      obviously these can not be </script> tags either, since they
+          #      all match the regex `&[a-zA-Z]+'.
+          assert false
+        of TRES_STOP:
+          # Unreachable for reasons almost identical to those outlined in
+          # TRES_SCRIPT. TRES_STOP can only be returned after a <meta> tag is
+          # processed; just like with end tags, the tokenizer cannot emit start
+          # tags in finish().
+          assert false
+          {.linearScanEnd.}
+        break
+  discard parser.processInHTMLContent(Token[Atom](t: EOF), parser.insertionMode)
+  while parser.openElements.len > 0:
+    pop_current_node

@@ -35,6 +35,9 @@ type
     tagNameBuf: string # buffer for storing the tag name
     peekBuf: array[64, char] # a stack with the last element at peekBufLen - 1
     peekBufLen: int
+    inputBufIdx*: int
+    isend: bool
+    ignoreLF: bool
 
   TokenType* = enum
     DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE,
@@ -66,28 +69,6 @@ func `$`*(tok: Token): string =
   of COMMENT: fmt"{tok.t} {tok.data}"
   of EOF: fmt"{tok.t}"
 
-const hexCharMap = (func(): array[char, uint32] =
-  for i in 0u32..255u32:
-    case chr(i)
-    of '0'..'9': result[char(i)] = i - ord('0')
-    of 'a'..'f': result[char(i)] = i - ord('a') + 10
-    of 'A'..'F': result[char(i)] = i - ord('A') + 10
-    else: result[char(i)] = -1
-)()
-
-const decCharMap = (func(): array[char, uint32] =
-  for i in 0u32..255u32:
-    case char(i)
-    of '0'..'9': result[char(i)] = i - ord('0')
-    else: result[char(i)] = -1
-)()
-
-func hexValue(c: char): uint32 =
-  return hexCharMap[c]
-
-func decValue(c: char): uint32 =
-  return decCharMap[c]
-
 proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom],
     s: string): Atom =
   mixin strToAtomImpl
@@ -101,12 +82,6 @@ proc newTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
   )
   return t
 
-proc atEnd(tokenizer: Tokenizer): bool =
-  mixin atEndImpl
-  if tokenizer.peekBufLen > 0:
-    return false
-  return tokenizer.dombuilder.atEndImpl()
-
 proc reconsume(tokenizer: var Tokenizer, s: string) =
   for i in countdown(s.high, 0):
     tokenizer.peekBuf[tokenizer.peekBufLen] = s[i]
@@ -116,28 +91,25 @@ proc reconsume(tokenizer: var Tokenizer, c: char) =
   tokenizer.peekBuf[tokenizer.peekBufLen] = c
   inc tokenizer.peekBufLen
 
-proc getChar(tokenizer: var Tokenizer): char =
-  mixin getCharImpl
+proc consume(tokenizer: var Tokenizer, ibuf: openArray[char]): int =
   if tokenizer.peekBufLen > 0:
     dec tokenizer.peekBufLen
-    return tokenizer.peekBuf[tokenizer.peekBufLen]
-  return tokenizer.dombuilder.getCharImpl()
-
-proc consume(tokenizer: var Tokenizer): char =
-  let c = tokenizer.getChar()
-  if c == '\r': # \r\n -> \n, \r -> \n
-    if not tokenizer.atEnd(): # may be \r\n
-      let c = tokenizer.getChar()
-      if c != '\n': # single \r
-        tokenizer.reconsume(c) # keep next c
-    return '\n'
-  return c
-
-proc consumeDiscard(tokenizer: var Tokenizer, n: int) =
-  # We only call this with n <= peekBufLen, because peekBuf has already been
-  # filled with characters.
-  assert tokenizer.peekBufLen >= n
-  tokenizer.peekBufLen -= n
+    return int(tokenizer.peekBuf[tokenizer.peekBufLen])
+  if tokenizer.inputBufIdx >= ibuf.len:
+    return -1
+  var c = ibuf[tokenizer.inputBufIdx]
+  inc tokenizer.inputBufIdx
+  if tokenizer.ignoreLF:
+    if c == '\n':
+      if tokenizer.inputBufIdx >= ibuf.len:
+        return -1
+      c = ibuf[tokenizer.inputBufIdx]
+      inc tokenizer.inputBufIdx
+    tokenizer.ignoreLF = false
+  if c == '\r':
+    tokenizer.ignoreLF = true
+    c = '\n'
+  return int(c)
 
 proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
   if tokenizer.charbuf.len > 0:
@@ -179,7 +151,8 @@ proc emit(tokenizer: var Tokenizer, c: char) =
 
 type CharRefResult = tuple[i, ci: int, entry: cstring]
 
-proc findCharRef(tokenizer: var Tokenizer, c: char): CharRefResult =
+proc findCharRef(tokenizer: var Tokenizer, c: char,
+    ibuf: openArray[char]): CharRefResult =
   var i = charMap[c]
   if i == -1:
     return (0, 0, nil)
@@ -188,14 +161,12 @@ proc findCharRef(tokenizer: var Tokenizer, c: char): CharRefResult =
   var ci = 1
   let oc = c
   while entry != nil and entry[ci] != '\0':
-    let isend = tokenizer.atEnd()
-    let c = if isend:
-      # Maybe there's a shorter matching ref?
-      # (Use NUL as a placeholder.)
-      '\0'
-    else:
-      tokenizer.consume()
-    if c != entry[ci]:
+    let n = tokenizer.consume(ibuf)
+    if n == -1 and not tokenizer.isend:
+      # We must retry at the next iteration :/
+      #TODO it would be nice to save state in this case
+      return (-1, 0, nil)
+    if n != int(entry[ci]):
       entry = nil
       # i is not the right entry.
       while entry == nil and i > 0:
@@ -220,8 +191,8 @@ proc findCharRef(tokenizer: var Tokenizer, c: char): CharRefResult =
           if entry[j] == '\0':
             # Full match: make sure the outer loop exits.
             ci = j - 1
-          elif entry[j] == c:
-            # Partial match, *including c*. (This is never reached with isend.)
+          elif int(entry[j]) == n:
+            # Partial match, *including c*. (This is never reached with n == -1)
             ci = j
           else:
             # Continue with the loop.
@@ -230,8 +201,8 @@ proc findCharRef(tokenizer: var Tokenizer, c: char): CharRefResult =
             # Otherwise, if entry remains nil, ci will point to the first
             # non-matching character in tmp; this will be reconsumed.
             entry = nil
-    if not isend:
-      tokenizer.tmp &= c
+    if n != -1:
+      tokenizer.tmp &= cast[char](n)
     inc ci
   return (i, ci, entry)
 
@@ -279,34 +250,37 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
 proc flushAttr(tokenizer: var Tokenizer) =
   tokenizer.tok.attrs[tokenizer.attrna] = tokenizer.attrv
 
-proc peekStr(tokenizer: var Tokenizer, s: static string): bool =
-  var cs = ""
-  for i in 0 ..< s.len:
-    if tokenizer.atEnd():
-      tokenizer.reconsume(cs)
-      return false
-    let c = tokenizer.consume()
-    cs &= c
-    if c != s[i]:
-      tokenizer.reconsume(cs)
-      return false
-  tokenizer.reconsume(cs)
-  return true
+type EatStrResult = enum
+  esrFail, esrSuccess, esrRetry
 
-proc peekStrNoCase(tokenizer: var Tokenizer, s: static string): bool =
-  const s = s.toLowerAscii()
-  var cs = ""
+proc eatStr(tokenizer: var Tokenizer, c: char, s: string,
+    ibuf: openArray[char]): EatStrResult =
+  var cs = $c
   for i in 0 ..< s.len:
-    if tokenizer.atEnd():
+    let n = tokenizer.consume(ibuf)
+    if n != -1:
+      cs &= cast[char](n)
+    if n != int(s[i]):
       tokenizer.reconsume(cs)
-      return false
-    let c = tokenizer.consume()
-    cs &= c
-    if c.toLowerAscii() != s[i]:
+      if n == -1 and not tokenizer.isend:
+        return esrRetry
+      return esrFail
+  return esrSuccess
+
+proc eatStrNoCase(tokenizer: var Tokenizer, c: char, s: static string,
+    ibuf: openArray[char]): EatStrResult =
+  const s = s.toLowerAscii()
+  var cs = $c
+  for i in 0 ..< s.len:
+    let n = tokenizer.consume(ibuf)
+    if n != -1:
+      cs &= cast[char](n)
+    if n == -1 or cast[char](n).toLowerAscii() != s[i]:
       tokenizer.reconsume(cs)
-      return false
-  tokenizer.reconsume(cs)
-  return true
+      if n == -1 and not tokenizer.isend:
+        return esrRetry
+      return esrFail
+  return esrSuccess
 
 proc flushTagName(tokenizer: var Tokenizer) =
   tokenizer.tok.tagname = tokenizer.strToAtom(tokenizer.tagNameBuf)
@@ -351,7 +325,8 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
       tokenizer.flushChars()
     tokenizer.charbuf &= s
 
-  # tokenizer.atEnd() is true here
+  tokenizer.tokqueue.setLen(0)
+
   while true:
     case tokenizer.state
     of DATA, RCDATA, RAWTEXT, SCRIPT_DATA, PLAINTEXT:
@@ -513,7 +488,11 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
       tokenizer.numericCharacterReferenceEndState()
       reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
 
-proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
+type TokenizeResult* = enum
+  trDone, trEmit
+
+proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
+    ibuf: openArray[char]): TokenizeResult =
   template emit(tok: Token) =
     tokenizer.flushChars()
     if tok.t == START_TAG:
@@ -560,21 +539,19 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
     tokenizer.attrna = tokenizer.strToAtom(tokenizer.attrn)
     if tokenizer.attrna in tokenizer.tok.attrs:
       tokenizer.attr = false
-  template peek_char(): char =
-    let c = tokenizer.consume()
-    tokenizer.reconsume(c)
-    c
   template new_token(t: Token) =
     tokenizer.attr = false
     tokenizer.tok = t
 
   tokenizer.tokqueue.setLen(0)
 
-  while tokenizer.tokqueue.len == 0:
-    if tokenizer.atEnd():
-      tokenizer.tokenizeEOF()
-      return false
-    let c = tokenizer.consume()
+  while true:
+    if tokenizer.tokqueue.len > 0:
+      return trEmit
+    let n = tokenizer.consume(ibuf)
+    if n == -1:
+      break # trDone
+    let c = cast[char](n)
     template reconsume_in(s: TokenizerState) =
       tokenizer.reconsume(c)
       switch_state s
@@ -1154,30 +1131,34 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
       template anything_else =
         parse_error INCORRECTLY_OPENED_COMMENT
         new_token Token[Atom](t: COMMENT)
-        reconsume_in BOGUS_COMMENT
+        switch_state BOGUS_COMMENT
       case c
       of '-':
-        if not tokenizer.atEnd() and peek_char == '-':
+        case tokenizer.eatStr(c, "-", ibuf)
+        of esrSuccess:
           new_token Token[Atom](t: COMMENT)
           tokenizer.state = COMMENT_START
-          tokenizer.consumeDiscard(1)
-        else: anything_else
+        of esrRetry: break
+        of esrFail: anything_else
       of 'D', 'd':
-        if tokenizer.peekStrNoCase("octype"):
-          tokenizer.consumeDiscard("octype".len)
-          switch_state DOCTYPE
-        else: anything_else
+        case tokenizer.eatStrNoCase(c, "octype", ibuf)
+        of esrSuccess: switch_state DOCTYPE
+        of esrRetry: break
+        of esrFail: anything_else
       of '[':
-        if tokenizer.peekStr("CDATA["):
-          tokenizer.consumeDiscard("CDATA[".len)
+        case tokenizer.eatStr(c, "CDATA[", ibuf)
+        of esrSuccess:
           if tokenizer.hasnonhtml:
             switch_state CDATA_SECTION
           else:
             parse_error CDATA_IN_HTML_CONTENT
             new_token Token[Atom](t: COMMENT, data: "[CDATA[")
             switch_state BOGUS_COMMENT
-        else: anything_else
+        of esrRetry: break
+        of esrFail: anything_else
       else:
+        # eat didn't reconsume, do it ourselves
+        tokenizer.reconsume(c)
         anything_else
 
     of COMMENT_START:
@@ -1312,25 +1293,25 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
       template anything_else =
         parse_error INVALID_CHARACTER_SEQUENCE_AFTER_DOCTYPE_NAME
         tokenizer.tok.quirks = true
-        reconsume_in BOGUS_DOCTYPE
+        switch_state BOGUS_DOCTYPE
       case c
       of AsciiWhitespace: discard
       of '>':
         switch_state DATA
         emit_tok
       of 'p', 'P':
-        if tokenizer.peekStrNoCase("ublic"):
-          tokenizer.consumeDiscard("ublic".len)
-          switch_state AFTER_DOCTYPE_PUBLIC_KEYWORD
-        else:
-          anything_else
+        case tokenizer.eatStrNoCase(c, "ublic", ibuf)
+        of esrSuccess: switch_state AFTER_DOCTYPE_PUBLIC_KEYWORD
+        of esrRetry: break
+        of esrFail: anything_else
       of 's', 'S':
-        if tokenizer.peekStrNoCase("ystem"):
-          tokenizer.consumeDiscard("ystem".len)
-          switch_state AFTER_DOCTYPE_SYSTEM_KEYWORD
-        else:
-          anything_else
+        case tokenizer.eatStrNoCase(c, "ystem", ibuf)
+        of esrSuccess: switch_state AFTER_DOCTYPE_SYSTEM_KEYWORD
+        of esrRetry: break
+        of esrFail: anything_else
       else:
+        # eat didn't reconsume, do it ourselves
+        tokenizer.reconsume(c)
         anything_else
 
     of AFTER_DOCTYPE_PUBLIC_KEYWORD:
@@ -1563,18 +1544,33 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
         reconsume_in tokenizer.rstate
 
     of NAMED_CHARACTER_REFERENCE:
-      let (i, ci, entry) = tokenizer.findCharRef(c)
+      let (i, ci, entry) = tokenizer.findCharRef(c, ibuf)
+      if entry == nil and i == -1:
+        # -1 encountered without isend
+        tokenizer.reconsume(tokenizer.tmp.substr(1))
+        tokenizer.tmp = "&"
+        break
       # Move back the pointer & shorten the buffer to the last match.
       # (Add 1, because we do not store the starting & char in entityMap,
       # but tmp starts with an &.)
       tokenizer.reconsume(tokenizer.tmp.substr(ci + 1))
       tokenizer.tmp.setLen(ci + 1)
       if entry != nil and entry[ci] == '\0':
-        if tokenizer.consumedAsAnAttribute() and tokenizer.tmp[^1] != ';' and
-            not tokenizer.atEnd() and peek_char in {'='} + AsciiAlphaNumeric:
+        let n = tokenizer.consume(ibuf)
+        let sc = tokenizer.consumedAsAnAttribute() and tokenizer.tmp[^1] != ';'
+        if sc and n != -1 and cast[char](n) in {'='} + AsciiAlphaNumeric:
+          tokenizer.reconsume(cast[char](n))
           tokenizer.flushCodePointsConsumedAsCharRef()
           switch_state tokenizer.rstate
+        elif sc and n == -1 and not tokenizer.isend:
+          # We have to redo the above check.
+          #TODO it would be great to not completely lose our state here...
+          tokenizer.reconsume(tokenizer.tmp.substr(1))
+          tokenizer.tmp = "&"
+          break
         else:
+          if n != -1:
+            tokenizer.reconsume(cast[char](n))
           if tokenizer.tmp[^1] != ';':
             parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
           tokenizer.tmp = $entityMap[i].value
@@ -1622,10 +1618,18 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
 
     of HEXADECIMAL_CHARACTER_REFERENCE:
       case c
-      of AsciiHexDigit: # note: merged digit, upper hex, lower hex
+      of AsciiDigit:
         if tokenizer.code < 0x10FFFF:
           tokenizer.code *= 0x10
-          tokenizer.code += hexValue(c)
+          tokenizer.code += uint32(c) - uint32('0')
+      of 'a'..'f':
+        if tokenizer.code < 0x10FFFF:
+          tokenizer.code *= 0x10
+          tokenizer.code += uint32(c) - uint32('a') + 10
+      of 'A'..'F':
+        if tokenizer.code < 0x10FFFF:
+          tokenizer.code *= 0x10
+          tokenizer.code += uint32(c) - uint32('A') + 10
       of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
       else:
         parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
@@ -1636,7 +1640,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
       of AsciiDigit:
         if tokenizer.code < 0x10FFFF:
           tokenizer.code *= 10
-          tokenizer.code += decValue(c)
+          tokenizer.code += uint32(c) - uint32('0')
       of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
       else:
         parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
@@ -1645,4 +1649,14 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
     of NUMERIC_CHARACTER_REFERENCE_END:
       tokenizer.numericCharacterReferenceEndState()
       reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
-  return true
+
+  return trDone
+
+proc finish*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
+    TokenizeResult =
+  if tokenizer.peekBufLen > 0:
+    tokenizer.isend = true
+    if tokenizer.tokenize([]) != trDone:
+      return trEmit
+  tokenizer.tokenizeEOF()
+  return trDone
