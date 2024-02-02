@@ -1,40 +1,115 @@
-## Interface definitions for htmlparser.
-##
-## This exists to make implementing the DOMBuilder interface less painful. Two
-## categories of hooks exist:
-## 1. Mandatory hooks: these must be implemented using static dispatch as procs.
-##    Not implementing any of them will result in a compilation error.
-## 2. Optional hooks: these may be omitted if your DOM does not need them. They
-##    are implemented using dynamic dispatch as methods, so we can provide
-##    a default implementation (that does nothing).
-##
-## Usage:
-## 1. Put a type clause with your generic types in your DOM builder interface:
-## ```nim
-## type
-##   DOMBuilderImpl = MyDOMBuilder
-##   AtomImpl = MyAtom
-##   HandleImpl = MyHandle
-## ```
-## 2. **Include** (**not** import) this file:
-## ```nim
-## include chame/htmlparseriface
-## ```
-## 3. Implement all `*Impl` functions until the compiler no longer complains.
-##
-## Then you can call `parseHTML` with your custom DOMBuilder.
-##
-## You can also just implement the required functions without including
-## this interface, but then you will have to do the casting from
-## `DOMBuilder[HandleImpl, AtomImpl]` -> `DOMBuilderImpl` manually and will
-## get uglier error messages when a function is missing.
-##
-## Note that when using this interface you can't use procs with different side
-## effects than declared, so e.g. `func getDocumentImpl(...` **will not work**.
-## You must use `proc getDocumentImpl(...` instead.
-##
-## Also, make sure that parameter names match the ones defined here,
-## otherwise you are likely to get strange compilation errors.
+when defined(nimdocdummy):
+  ## Interface definitions for htmlparser.
+  ##
+  ## This exists to make implementing the DOMBuilder interface less painful. Two
+  ## categories of hooks exist:
+  ## 1. Mandatory hooks: these must be implemented using static dispatch as procs.
+  ##    Not implementing any of them will result in a compilation error.
+  ## 2. Optional hooks: these may be omitted if your DOM does not need them. They
+  ##    are implemented using dynamic dispatch as methods, so we can provide
+  ##    a default implementation (that does nothing).
+  ##
+  ## Usage:
+  ## 1. Put a type clause with your generic types in your DOM builder interface:
+  ##    ```nim
+  ##    type
+  ##      DOMBuilderImpl = MyDOMBuilder
+  ##      AtomImpl = MyAtom
+  ##      HandleImpl = MyHandle
+  ##    ```
+  ## 2. **Include** (**not** import) this file:
+  ##    ```nim
+  ##    include chame/htmlparseriface
+  ##    ```
+  ## 3. Implement all `*Impl` functions until the compiler no longer complains.
+  ##
+  ## Then you can call `parseHTML` with your custom DOMBuilder.
+  ##
+  ## You can also just implement the required functions without including
+  ## this interface, but then you will have to do the casting from
+  ## `DOMBuilder[HandleImpl, AtomImpl]` -> `DOMBuilderImpl` manually and will
+  ## get uglier error messages when a function is missing.
+  ##
+  ## Note that when using this interface you can't use procs with different side
+  ## effects than declared, so e.g. `func getDocumentImpl(...` **will not work**.
+  ## You must use `proc getDocumentImpl(...` instead.
+  ##
+  ## Also, make sure that parameter names match the ones defined here,
+  ## otherwise you are likely to get strange compilation errors.
+  ##
+  ## ## Optional hooks
+  ## Following methods are optional hooks; implementations of this interface
+  ## can choose to leave them out without getting compilation errors.
+  ##
+  ## ```nim
+  ## proc parseErrorImpl(builder: DOMBuilderBase, e: ParseError)
+  ## ```
+  ##
+  ## Parse error. `message` is an error code either specified by the
+  ## standard (in this case, `e` < `LAST_SPECIFIED_ERROR`) or named
+  ## arbitrarily. (At the time of writing, only tokenizer errors have
+  ## specified error codes.)
+  ##
+  ##
+  ## ```nim
+  ## proc setQuirksModeImpl(builder: DOMBuilderBase, quirksMode: QuirksMode)
+  ## ```
+  ##
+  ## Set quirks mode to either `QUIRKS` or `LIMITED_QUIRKS`. `NO_QUIRKS` is the
+  ## default and is therefore never passed here.
+  ##
+  ##
+  ## ```nim
+  ## proc setEncodingImpl(builder: DOMBuilderBase, encoding: string):
+  ##    SetEncodingResult
+  ## ```
+  ##
+  ## Called whenever a <meta charset=... or a <meta http-equiv=... tag
+  ## containing a non-empty character set is encountered. A SetEncodingResult
+  ## return value is expected, which is either `SET_ENCODING_STOP`, stopping
+  ## the parser, or `SET_ENCODING_CONTINUE`, allowing the parser to continue.
+  ##
+  ## Note that htmlparser no longer contains any encoding-related logic, not
+  ## even UTF-8 validation. Implementing this is left to the caller. (For an
+  ## example, see minidom_cs which implements decoding of all character sets
+  ## in the WHATWG recommendation.)
+  ##
+  ##
+  ## ```nim
+  ## proc elementPoppedImpl(builder: DOMBuilderBase, handle: HandleImpl)
+  ## ```
+  ##
+  ## Called when an element is popped from the stack of open elements
+  ## (i.e. when it has been closed.)
+  ##
+  ##
+  ## ```nim
+  ## proc setScriptAlreadyStartedImpl(builder: DOMBuilderBase, handle: HandleImpl)
+  ## ```
+  ##
+  ## Set the "already started" flag for the script element.
+  ##
+  ## Note: this flag is not togglable, so implementations of this callback
+  ## should just set the flag to true.
+  ##
+  ##
+  ## ```nim
+  ## proc associateWithFormImpl(builder: DOMBuilderBase, element, form,
+  ##    intendedParent: HandleImpl)
+  ## ```
+  ##
+  ## Called after createElement. Attempts to set form for form-associated
+  ## elements.
+  ##
+  ## Note: the DOM builder is responsible for checking whether the intended
+  ## parent and the form element are in the same tree.
+  # Dummy definitions
+  import std/tables
+  import htmlparser
+  type
+    HandleImpl = int
+    AtomImpl = int
+    DOMBuilderImpl = DOMBuilder[HandleImpl, AtomImpl]
 
 # DOMBuilder
 static:
@@ -46,7 +121,16 @@ converter toDOMBuilderImpl(dombuilder: DOMBuilder[HandleImpl, AtomImpl]):
     DOMBuilderImpl =
   return DOMBuilderImpl(dombuilder)
 
-proc strToAtomImpl(builder: DOMBuilderImpl, s: string): AtomImpl
+when defined(nimdocdummy):
+  import std/macros
+
+  macro doc(f: untyped) =
+    f[0] = newNimNode(nnkPostfix).add(ident("*")).add(f[0])
+    f
+else:
+  macro doc(f: untyped) = f
+
+proc strToAtomImpl(builder: DOMBuilderImpl, s: string): AtomImpl {.doc.}
   ## Turn a string `s` into an Atom.
   ##
   ## This must always convert *every* string with the same value into the
@@ -54,30 +138,31 @@ proc strToAtomImpl(builder: DOMBuilderImpl, s: string): AtomImpl
   ## (see e.g. MAtomFactory).
 
 proc tagTypeToAtomImpl(builder: DOMBuilderImpl, tagType: TagType): AtomImpl
+    {.doc.}
   ## Turn a TagType `tagType` into an Atom.
   ##
   ## Every TagType `tagType` must always be converted into the same atom as
-  ## that represented by its stringifier. So an example implementation could be:
+  ## that represented by its stringifier. An implementation could be:
   ## ```nim
   ## proc tagTypeToAtomImpl(builder: DOMBuilderImpl, tt: TagType): AtomImpl =
   ##   assert tt != TAG_UNKNOWN # parser never calls this with TAG_UNKNOWN.
   ##   return builder.strToAtomImpl($tt)
   ## ```
 
-proc atomToTagTypeImpl(builder: DOMBuilderImpl, atom: AtomImpl): TagType
+proc atomToTagTypeImpl(builder: DOMBuilderImpl, atom: AtomImpl): TagType {.doc.}
   ## Turn an Atom `atom` into a TagType. This is the inverse function of
   ## `tagTypeToAtomImpl`.
 
-proc getDocumentImpl(builder: DOMBuilderImpl): HandleImpl
+proc getDocumentImpl(builder: DOMBuilderImpl): HandleImpl {.doc.}
   ## Get the root document node's handle.
   ## This must not return nil, not even in the fragment parsing case.
 
 proc getParentNodeImpl(builder: DOMBuilderImpl, handle: HandleImpl):
-    Option[HandleImpl]
+    Option[HandleImpl] {.doc.}
   ## Retrieve a handle to the parent node.
   ## May return none(Handle) if no parent node exists.
 
-proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl
+proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl {.doc.}
   ## Create a new <html> element node. The tag type of the created element must
   ## be TAG_HTML, and its namespace must be Namespace.HTML.
   ##
@@ -87,7 +172,7 @@ proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl
 proc createElementForTokenImpl(builder: DOMBuilderImpl, localName: AtomImpl,
     namespace: Namespace, intendedParent: HandleImpl,
     htmlAttrs: Table[AtomImpl, string], xmlAttrs: seq[ParsedAttr[AtomImpl]]):
-    HandleImpl
+    HandleImpl {.doc.}
   ## Create a new element node.
   ##
   ## `localName` is an Atom representing the tag name of the start token.
@@ -133,10 +218,12 @@ proc createElementForTokenImpl(builder: DOMBuilderImpl, localName: AtomImpl,
   ## are fulfilled.
 
 proc getLocalNameImpl(builder: DOMBuilderImpl, handle: HandleImpl): AtomImpl
+    {.doc.}
   ## Retrieve the local name (also known as the tag name) of the element
   ## represented by `handle`.
 
 proc getNamespaceImpl(builder: DOMBuilderImpl, handle: HandleImpl): Namespace
+    {.doc.}
   ## Retrieve the namespace of element. For HTML elements, this should be
   ## `Namespace.HTML`. For embedded SVG or MathML elements, it should be
   ## `Namespace.SVG` or `Namespace.MathML`, respectively.
@@ -145,14 +232,14 @@ proc getNamespaceImpl(builder: DOMBuilderImpl, handle: HandleImpl): Namespace
   ## `createElement`.)
 
 proc getTemplateContentImpl(builder: DOMBuilderImpl, handle: HandleImpl):
-    HandleImpl
+    HandleImpl {.doc.}
   ## Retrieve a handle to the template element's contents. Every element
   ## where `builder.atomToTagTypeImpl(element.localName)` equals TAG_TEMPLATE
   ## and `builder.getNamespaceImpl(element)` equals `Namespace.HTML` must have
   ## an associated "template contents" node which this function must return.
 
 proc addAttrsIfMissingImpl(builder: DOMBuilderImpl, handle: HandleImpl,
-    attrs: Table[AtomImpl, string])
+    attrs: Table[AtomImpl, string]) {.doc.}
   ## Add the attributes in `attrs` to the element node `element`.
   ## This is only called with the HTML and BODY tags, when more than one
   ## exists in a document.
@@ -165,15 +252,16 @@ proc addAttrsIfMissingImpl(builder: DOMBuilderImpl, handle: HandleImpl,
   ## ```
 
 proc createCommentImpl(builder: DOMBuilderImpl, text: string): HandleImpl
+    {.doc.}
   ## Create a new comment node. `text` is a string representing the new comment
   ## node's character data.
 
 proc createDocumentTypeImpl(builder: DOMBuilderImpl, name, publicId,
-    systemId: string): HandleImpl
+    systemId: string): HandleImpl {.doc.}
   ## Create a new document type node.
 
 proc insertBeforeImpl(builder: DOMBuilderImpl, parent, child: HandleImpl,
-    before: Option[HandleImpl])
+    before: Option[HandleImpl]) {.doc.}
   ## Insert node `child` before the node called `before`.
   ##
   ## If `before` is `none(Handle)`, `child` is expected to be appended to
@@ -186,83 +274,79 @@ proc insertBeforeImpl(builder: DOMBuilderImpl, parent, child: HandleImpl,
   ## Note: parent may be either an Element or a Document node.
 
 proc insertTextImpl(builder: DOMBuilderImpl, parent: HandleImpl, text: string,
-    before: Option[HandleImpl])
+    before: Option[HandleImpl]) {.doc.}
   ## Insert a text node at the specified location with contents `text`. If
   ## the specified location has a previous sibling that is a text node, no new
   ## text node should be created, but instead `text` should be appended to the
   ## previous sibling's character data (or if `before` is `none(Handle)`,
   ## to the last element).
 
-proc removeImpl(builder: DOMBuilderImpl, child: HandleImpl)
+proc removeImpl(builder: DOMBuilderImpl, child: HandleImpl) {.doc.}
   ## If `child` does not have a parent node, do nothing. Otherwise, remove
   ## `child` from its parent node.
 
 proc moveChildrenImpl(builder: DOMBuilderImpl, fromNode, toNode: HandleImpl)
+    {.doc.}
   ## Remove all children from the node `fromHandle`, then append them to
   ## `toHandle`.
 
-## Following methods are optional hooks; implementations of this interface
-## can choose to leave them out without getting compilation errors.
-##
-## ```nim
-## proc parseErrorImpl(builder: DOMBuilderBase, e: ParseError)
-## ```
-##
-## Parse error. `message` is an error code either specified by the
-## standard (in this case, `e` < `LAST_SPECIFIED_ERROR`) or named
-## arbitrarily. (At the time of writing, only tokenizer errors have
-## specified error codes.)
-##
-##
-## ```nim
-## proc setQuirksModeImpl(builder: DOMBuilderBase, quirksMode: QuirksMode)
-## ```
-##
-## Set quirks mode to either `QUIRKS` or `LIMITED_QUIRKS`. `NO_QUIRKS` is the
-## default and is therefore never passed here.
-##
-##
-## ```nim
-## proc setEncodingImpl(builder: DOMBuilderBase, encoding: string):
-##    SetEncodingResult
-## ```
-##
-## Called whenever a <meta charset=... or a <meta http-equiv=... tag
-## containing a non-empty character set is encountered. A SetEncodingResult
-## return value is expected, which is either `SET_ENCODING_STOP`, stopping
-## the parser, or `SET_ENCODING_CONTINUE`, allowing the parser to continue.
-##
-## Note that htmlparser no longer contains any encoding-related logic, not
-## even UTF-8 validation. Implementing this is left to the caller. (For an
-## example, see minidom_cs which implements decoding of all character sets
-## in the WHATWG recommendation.)
-##
-##
-## ```nim
-## proc elementPoppedImpl(builder: DOMBuilderBase, handle: HandleImpl)
-## ```
-##
-## Called when an element is popped from the stack of open elements
-## (i.e. when it has been closed.)
-##
-##
-## ```nim
-## proc setScriptAlreadyStartedImpl(builder: DOMBuilderBase, handle: HandleImpl)
-## ```
-##
-## Set the "already started" flag for the script element.
-##
-## Note: this flag is not togglable, so implementations of this callback
-## should just set the flag to true.
-##
-##
-## ```nim
-## proc associateWithFormImpl(builder: DOMBuilderBase, element, form,
-##    intendedParent: HandleImpl)
-## ```
-##
-## Called after createElement. Attempts to set form for form-associated
-## elements.
-##
-## Note: the DOM builder is responsible for checking whether the intended
-## parent and the form element are in the same tree.
+when defined(nimdocdummy):
+  # Dummy definitions
+  proc strToAtomImpl(builder: DOMBuilderImpl, s: string): AtomImpl =
+    discard
+
+  proc tagTypeToAtomImpl(builder: DOMBuilderImpl, tagType: TagType): AtomImpl =
+    discard
+
+  proc atomToTagTypeImpl(builder: DOMBuilderImpl, atom: AtomImpl): TagType =
+    discard
+
+  proc getDocumentImpl(builder: DOMBuilderImpl): HandleImpl =
+    discard
+
+  proc getParentNodeImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+      Option[HandleImpl] =
+    discard
+
+  proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl = discard
+
+  proc createElementForTokenImpl(builder: DOMBuilderImpl, localName: AtomImpl,
+      namespace: Namespace, intendedParent: HandleImpl,
+      htmlAttrs: Table[AtomImpl, string], xmlAttrs: seq[ParsedAttr[AtomImpl]]):
+      HandleImpl = discard
+
+  proc getLocalNameImpl(builder: DOMBuilderImpl, handle: HandleImpl): AtomImpl =
+    discard
+
+  proc getNamespaceImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+      Namespace =
+    discard
+
+  proc getTemplateContentImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+      HandleImpl =
+    discard
+
+  proc addAttrsIfMissingImpl(builder: DOMBuilderImpl, handle: HandleImpl,
+      attrs: Table[AtomImpl, string]) =
+    discard
+
+  proc createCommentImpl(builder: DOMBuilderImpl, text: string): HandleImpl =
+    discard
+
+  proc createDocumentTypeImpl(builder: DOMBuilderImpl, name, publicId,
+      systemId: string): HandleImpl =
+    discard
+
+  proc insertBeforeImpl(builder: DOMBuilderImpl, parent, child: HandleImpl,
+      before: Option[HandleImpl]) =
+    discard
+
+  proc insertTextImpl(builder: DOMBuilderImpl, parent: HandleImpl, text: string,
+      before: Option[HandleImpl]) =
+    discard
+
+  proc removeImpl(builder: DOMBuilderImpl, child: HandleImpl) =
+    discard
+
+  proc moveChildrenImpl(builder: DOMBuilderImpl, fromNode, toNode: HandleImpl) =
+    discard

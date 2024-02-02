@@ -8,9 +8,8 @@
 ## Note: this is not implemented for the fragment parsing algorithm, because it
 ## is only defined for the UTF-8 character set.
 ##
-## See also
-## ========
-## * `chame/minidom <minidom.html>`
+## For a version without the encoding library dependency, see
+## [minidom](minidom.html).
 
 import std/streams
 

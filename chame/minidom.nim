@@ -7,7 +7,7 @@
 ## containing invalid UTF-8 are silently discarded.
 ##
 ## For a variant that can switch encodings when meta tags are encountered etc.
-## see `chame/minidom_cs <minidom.html>`.
+## see [chame/minidom_cs](minidom_cs.html).
 
 import std/algorithm
 import std/hashes

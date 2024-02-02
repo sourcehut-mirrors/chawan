@@ -1,2 +1,3 @@
-tests/*
-!tests/*.*
+/tests/*
+!/tests/*.*
+/.obj/
