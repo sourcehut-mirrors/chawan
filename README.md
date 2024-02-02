@@ -27,6 +27,8 @@ Note: only Nim 1.6.10+ is supported.
 * No mandatory dependencies other than the Nim standard library.
 * Optional character encoding support (see minidom_enc).
 * String interning support for tag and attribute names.
+* Support for chunked parsing.
+* document.write (WIP)
 
 [^1]: Except for tree builder tests requiring JavaScript and xmlViolation
 tokenizer tests.
@@ -35,11 +37,9 @@ tokenizer tests.
 
 Some parts of the specification have not been implemented yet. These are:
 
-* document.write
 * SVG script element
 
-...and anything else we might have forgotten about. Support for these features
-is planned, even if source code comments say otherwise.
+Support for this feature is planned.
 
 Other, non-standard-related tasks (in no particular order):
 
