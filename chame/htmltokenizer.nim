@@ -605,12 +605,14 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '/': switch_state END_TAG_OPEN
       of AsciiAlpha:
         new_token Token[Atom](t: START_TAG)
-        tokenizer.tagNameBuf = ""
-        reconsume_in TAG_NAME
+        tokenizer.tagNameBuf = $c.toLowerAscii()
+        # note: was reconsume
+        switch_state TAG_NAME
       of '?':
         parse_error UNEXPECTED_QUESTION_MARK_INSTEAD_OF_TAG_NAME
-        new_token Token[Atom](t: COMMENT)
-        reconsume_in BOGUS_COMMENT
+        new_token Token[Atom](t: COMMENT, data: "?")
+        # note: was reconsume
+        switch_state BOGUS_COMMENT
       else:
         parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
         emit '<'
@@ -620,8 +622,9 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiAlpha:
         new_token Token[Atom](t: END_TAG)
-        tokenizer.tagNameBuf = ""
-        reconsume_in TAG_NAME
+        tokenizer.tagNameBuf = $c.toLowerAscii()
+        # note: was reconsume
+        switch_state TAG_NAME
       of '>':
         parse_error MISSING_END_TAG_NAME
         switch_state DATA
@@ -661,8 +664,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiAlpha:
         new_token Token[Atom](t: END_TAG)
-        tokenizer.tagNameBuf = ""
-        reconsume_in RCDATA_END_TAG_NAME
+        tokenizer.tagNameBuf = $c.toLowerAscii()
+        tokenizer.tmp &= c
+        # note: was reconsume
+        switch_state RCDATA_END_TAG_NAME
       else:
         emit "</"
         reconsume_in RCDATA
@@ -712,8 +717,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiAlpha:
         new_token Token[Atom](t: END_TAG)
-        tokenizer.tagNameBuf = ""
-        reconsume_in RAWTEXT_END_TAG_NAME
+        tokenizer.tagNameBuf = $c.toLowerAscii()
+        tokenizer.tmp &= c
+        # note: was reconsume
+        switch_state RAWTEXT_END_TAG_NAME
       else:
         emit "</"
         reconsume_in RAWTEXT
@@ -766,8 +773,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiAlpha:
         new_token Token[Atom](t: END_TAG)
-        tokenizer.tagNameBuf = ""
-        reconsume_in SCRIPT_DATA_END_TAG_NAME
+        tokenizer.tagNameBuf = $c.toLowerAscii()
+        tokenizer.tmp &= c
+        # note: was reconsume
+        switch_state SCRIPT_DATA_END_TAG_NAME
       else:
         emit "</"
         reconsume_in SCRIPT_DATA
@@ -870,9 +879,11 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.tmp = ""
         switch_state SCRIPT_DATA_ESCAPED_END_TAG_OPEN
       of AsciiAlpha:
-        tokenizer.tmp = ""
+        tokenizer.tmp = $c.toLowerAscii()
         emit '<'
-        reconsume_in SCRIPT_DATA_DOUBLE_ESCAPE_START
+        emit c
+        # note: was reconsume
+        switch_state SCRIPT_DATA_DOUBLE_ESCAPE_START
       else:
         emit '<'
         reconsume_in SCRIPT_DATA_ESCAPED
@@ -881,8 +892,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiAlpha:
         new_token Token[Atom](t: END_TAG)
-        tokenizer.tagNameBuf = ""
-        reconsume_in SCRIPT_DATA_ESCAPED_END_TAG_NAME
+        tokenizer.tagNameBuf = $c.toLowerAscii()
+        tokenizer.tmp &= c
+        # note: was reconsume
+        switch_state SCRIPT_DATA_ESCAPED_END_TAG_NAME
       else:
         emit "</"
         reconsume_in SCRIPT_DATA_ESCAPED
@@ -1213,7 +1226,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of COMMENT_LESS_THAN_SIGN_BANG_DASH_DASH:
       case c
-      of '>': reconsume_in COMMENT_END
+      of '>':
+        # note: was reconsume (comment end)
+        switch_state DATA
+        emit_tok
       else:
         parse_error NESTED_COMMENT
         reconsume_in COMMENT_END
@@ -1603,7 +1619,18 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of HEXADECIMAL_CHARACTER_REFERENCE_START:
       case c
-      of AsciiHexDigit: reconsume_in HEXADECIMAL_CHARACTER_REFERENCE
+      of AsciiDigit:
+        tokenizer.code = uint32(c) - uint32('0')
+        # note: was reconsume
+        switch_state HEXADECIMAL_CHARACTER_REFERENCE
+      of 'a'..'f':
+        tokenizer.code = uint32(c) - uint32('a') + 10
+        # note: was reconsume
+        switch_state HEXADECIMAL_CHARACTER_REFERENCE
+      of 'A'..'F':
+        tokenizer.code = uint32(c) - uint32('A') + 10
+        # note: was reconsume
+        switch_state HEXADECIMAL_CHARACTER_REFERENCE
       else:
         parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
         tokenizer.flushCodePointsConsumedAsCharRef()
@@ -1611,7 +1638,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of DECIMAL_CHARACTER_REFERENCE_START:
       case c
-      of AsciiDigit: reconsume_in DECIMAL_CHARACTER_REFERENCE
+      of AsciiDigit:
+        tokenizer.code = uint32(c) - uint32('0')
+        # note: was reconsume
+        switch_state DECIMAL_CHARACTER_REFERENCE
       else:
         parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
         tokenizer.flushCodePointsConsumedAsCharRef()
