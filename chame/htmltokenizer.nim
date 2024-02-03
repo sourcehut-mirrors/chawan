@@ -20,24 +20,25 @@ type
     dombuilder: DOMBuilder[Handle, Atom]
     state*: TokenizerState
     rstate: TokenizerState # return state
-    tmp: string # temporary buffer (mentioned by the standard)
+    # temporary buffer (mentioned by the standard, but also used for attribute
+    # names)
+    tmp: string
     code: uint32 # codepoint of current numeric character reference
     tok: Token[Atom] # current token to be emitted
     laststart*: Token[Atom] # last start tag token
-    attrn: string # buffer for attribute names
     attrna: Atom # atom representing attrn after the attribute name is closed
     attrv: string # buffer for attribute values
     attr: bool # is there already an attr in the previous values?
     hasnonhtml*: bool # does the stack of open elements have a non-HTML node?
     tokqueue*: seq[Token[Atom]] # queue of tokens to be emitted in this iteration
     charbuf: string # buffer for character tokens
-    isws: bool # is the current character token whitespace-only?
     tagNameBuf: string # buffer for storing the tag name
     peekBuf: array[64, char] # a stack with the last element at peekBufLen - 1
     peekBufLen: int
-    inputBufIdx*: int
-    isend: bool
-    ignoreLF: bool
+    inputBufIdx*: int # last character consumed in input buf
+    ignoreLF: bool # ignore the next consumed line feed (for CRLF normalization)
+    isend: bool # if consume returns -1 and isend, we are at EOF
+    isws: bool # is the current character token whitespace-only?
 
   TokenType* = enum
     DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE,
@@ -512,7 +513,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
     emit Token[Atom](t: CHARACTER_NULL)
   template prepare_attrs_if_start =
     if tokenizer.tok.t == START_TAG and tokenizer.attr and
-        tokenizer.attrn != "":
+        tokenizer.tmp != "":
       tokenizer.flushAttr()
   template emit_tok =
     emit tokenizer.tok
@@ -532,11 +533,11 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       # This can also be called with tok.t == END_TAG, in that case we do
       # not want to flush attributes.
       tokenizer.flushAttr()
-    tokenizer.attrn = ""
+    tokenizer.tmp = ""
     tokenizer.attrv = ""
     tokenizer.attr = true
   template leave_attribute_name_state =
-    tokenizer.attrna = tokenizer.strToAtom(tokenizer.attrn)
+    tokenizer.attrna = tokenizer.strToAtom(tokenizer.tmp)
     if tokenizer.attrna in tokenizer.tok.attrs:
       tokenizer.attr = false
   template new_token(t: Token) =
@@ -1005,7 +1006,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '=':
         parse_error UNEXPECTED_EQUALS_SIGN_BEFORE_ATTRIBUTE_NAME
         start_new_attribute
-        tokenizer.attrn &= c
+        tokenizer.tmp &= c
         switch_state ATTRIBUTE_NAME
       else:
         start_new_attribute
@@ -1013,7 +1014,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of ATTRIBUTE_NAME:
       template anything_else =
-        tokenizer.attrn &= c
+        tokenizer.tmp &= c
       case c
       of AsciiWhitespace, '/', '>':
         leave_attribute_name_state
@@ -1022,10 +1023,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         leave_attribute_name_state
         switch_state BEFORE_ATTRIBUTE_VALUE
       of AsciiUpperAlpha:
-        tokenizer.attrn &= c.toLowerAscii()
+        tokenizer.tmp &= c.toLowerAscii()
       of '\0':
         parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.attrn &= "\uFFFD"
+        tokenizer.tmp &= "\uFFFD"
       of '"', '\'', '<':
         parse_error UNEXPECTED_CHARACTER_IN_ATTRIBUTE_NAME
         anything_else
