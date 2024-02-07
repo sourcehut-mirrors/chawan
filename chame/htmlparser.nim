@@ -8,7 +8,6 @@ import htmltokenizer
 import parseerror
 import tags
 import tokstate
-import utils/twtstr
 
 # Generics break without exporting macros. Maybe a compiler bug?
 export macros
@@ -731,6 +730,18 @@ const SystemIdentifierNotMissingAndPublicIdentifierStartsWith = [
   "-//W3C//DTD HTML 4.01 Transitional//"
 ]
 
+func startsWithNoCase(str, prefix: string): bool =
+  if str.len < prefix.len: return false
+  # prefix.len is always lower
+  var i = 0
+  while true:
+    if i == prefix.len: return true
+    if str[i].toLowerAscii() != prefix[i].toLowerAscii(): return false
+    inc i
+
+func equalsIgnoreCase(s1, s2: string): bool {.inline.} =
+  return s1.cmpIgnoreCase(s2) == 0
+
 func quirksConditions(token: Token): bool =
   if token.quirks:
     return true
@@ -939,6 +950,18 @@ proc isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     ]
     return localName in elements
   return false
+
+func until(s: string, c: set[char]): string =
+  var i = 0
+  while i < s.len:
+    if s[i] in c:
+      break
+    result.add(s[i])
+    inc i
+
+func until(s: string, c: char): string = s.until({c})
+
+const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
 func extractEncFromMeta(s: string): string =
   var i = 0

@@ -7,7 +7,6 @@ import std/unittest
 import test1
 import chame/htmlparser
 import chame/minidom
-import chame/utils/twtstr
 
 type
   TCError = object
@@ -140,6 +139,25 @@ proc parseDoctype(ctx: TCTestParser, s: string): DocumentType =
   inc i
   assert s[i] == '>'
   return doctype
+
+func until(s: string, c: set[char]): string =
+  var i = 0
+  while i < s.len:
+    if s[i] in c:
+      break
+    result.add(s[i])
+    inc i
+
+func until(s: string, c: char): string = s.until({c})
+
+func after(s: string, c: set[char]): string =
+  var i = 0
+  while i < s.len:
+    if s[i] in c:
+      return s.substr(i + 1)
+    inc i
+
+func after(s: string, c: char): string = s.after({c})
 
 proc parseTestDocument(ctx: var TCTestParser): Document =
   result = Document(factory: ctx.factory)

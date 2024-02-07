@@ -10,7 +10,6 @@ import dombuilder
 import entity_gen
 import parseerror
 import tokstate
-import utils/twtstr
 
 export tokstate
 
@@ -60,6 +59,15 @@ type
     of COMMENT:
       data*: string
     of EOF, CHARACTER_NULL: discard
+
+const C0Controls = {chr(0x00)..chr(0x1F)}
+const Controls = (C0Controls + {chr(0x7F)})
+const AsciiUpperAlpha = {'A'..'Z'}
+const AsciiLowerAlpha = {'a'..'z'}
+const AsciiAlpha = (AsciiUpperAlpha + AsciiLowerAlpha)
+const AsciiDigit = {'0'..'9'}
+const AsciiAlphaNumeric = AsciiAlpha + AsciiDigit
+const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
 func `$`*(tok: Token): string =
   case tok.t
@@ -206,6 +214,16 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
       tokenizer.tmp &= cast[char](n)
     inc ci
   return (i, ci, entry)
+
+func isSurrogate(u: uint32): bool = u in 0xD800u32..0xDFFFu32
+func isNonCharacter(u: uint32): bool =
+  u in 0xFDD0u32..0xFDEFu32 or
+  u in [0xFFFEu32, 0xFFFFu32, 0x1FFFEu32, 0x1FFFFu32, 0x2FFFEu32, 0x2FFFFu32,
+    0x3FFFEu32, 0x3FFFFu32, 0x4FFFEu32, 0x4FFFFu32, 0x5FFFEu32, 0x5FFFFu32,
+    0x6FFFEu32, 0x6FFFFu32, 0x7FFFEu32, 0x7FFFFu32, 0x8FFFEu32, 0x8FFFFu32,
+    0x9FFFEu32, 0x9FFFFu32, 0xAFFFEu32, 0xAFFFFu32, 0xBFFFEu32, 0xBFFFFu32,
+    0xCFFFEu32, 0xCFFFFu32, 0xDFFFEu32, 0xDFFFFu32, 0xEFFFEu32, 0xEFFFFu32,
+    0xFFFFEu32, 0xFFFFFu32, 0x10FFFEu32, 0x10FFFFu32]
 
 proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
   template parse_error(error: untyped) =
