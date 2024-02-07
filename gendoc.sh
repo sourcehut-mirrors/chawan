@@ -10,3 +10,16 @@ do	if test "$f" = "chame/htmlparseriface.nim"
           -e 's/theindex.html/index.html/g' \
           ".obj/doc/$(basename "$f" .nim).html"
 done
+makehtml() {
+	printf '<!DOCTYPE html>
+<head>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>%s</title>
+</head>
+<body>
+' "$2"
+	cat "$1" | pandoc
+	printf '</body>\n'
+}
+makehtml doc/manual.md "Chame manual" > .obj/doc/manual.html
+makehtml doc/.index.md "Chame documentation" > .obj/doc/index.html

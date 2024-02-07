@@ -1,10 +1,5 @@
 # Chame: an HTML5 parser library in Nim
 
-## WARNING
-
-This library is still in beta stage. The API **will** undergo significant
-changes before the 1.0 release.
-
 ## Usage
 
 Include Chame in your project using either Nimble or as a git submodule.
@@ -22,16 +17,21 @@ Note: only Nim 1.6.10+ is supported.
 
 * Almost full compliance with the WHATWG standard. (Except for the few missing
   features listed in the following section.)
-* Passes all tokenizer and tree builder tests in html5lib-tests.[^1]
-* Includes a minimal DOM implementation.
-* No mandatory dependencies other than the Nim standard library.
-* Optional character encoding support (see minidom_enc).
-* String interning support for tag and attribute names.
-* Support for chunked parsing.
-* document.write (WIP)
+* Passes all tokenizer and tree builder tests in html5lib-tests[^1]
+* Includes a minimal DOM implementation
+* No mandatory dependencies other than the Nim standard library
+* Optional character encoding support (see minidom_enc)
+* String interning support for tag and attribute names
+* Support for chunked parsing
+* document.write (no actual implementation here, but it's possible to implement
+  it on top of Chame)
 
 [^1]: Except for tree builder tests requiring JavaScript and xmlViolation
 tokenizer tests.
+
+## Manual
+
+There is a manual available at [doc/manual.md](doc/manual.md).
 
 ## To-do
 
@@ -41,10 +41,8 @@ Some parts of the specification have not been implemented yet. These are:
 
 Support for this feature is planned.
 
-Other, non-standard-related tasks (in no particular order):
+Other, non-standard-related tasks:
 
-* Document minidom/minidom_enc
-* Document the new interface (also explain what `Atom` does etc.)
 * Optimize inefficient parts of the library
 
 ## Bugs, feedback, etc.
@@ -70,6 +68,15 @@ an example of a complete DOM implementation that depends on Chame.
 
 If you implement a DOM library based on Chame, please notify me, so that I
 can redirect users to it in this section.
+
+### I read the manual, but it's too complex, I don't understand anything, help
+
+Just call minidom.parseHTML on an std/stream.Stream object and forget about
+everything else. Chances are this is enough for whatever you want to do.
+
+### How do I implement speculative parsing?
+
+No idea. Let me know if you figure something out.
 
 ### How do you pronounce Chame?
 
