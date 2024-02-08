@@ -544,7 +544,8 @@ proc createElementForToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   let tagType = parser.atomToTagType(localName)
   if namespace == Namespace.HTML and tagType in FormAssociatedElements and
       parser.form.isSome and not parser.hasElement(TAG_TEMPLATE) and
-      (tagType notin ListedElements or parser.atomMap[ATOM_FORM] in htmlAttrs):
+      (tagType notin ListedElements or
+        parser.atomMap[ATOM_FORM] notin htmlAttrs):
     parser.associateWithForm(element, parser.form.get, intendedParent)
   return element
 
