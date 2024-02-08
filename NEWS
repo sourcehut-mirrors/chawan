@@ -1,4 +1,9 @@
-0.14 (2024.02.07)
+0.14.1 (2024.02.08)
+* Fix associateWithFormImpl callback regression (it was not being called for
+  input elements)
+* Misc refactorings
+
+0.14.0 (2024.02.07)
 
 * The "bag of pointers" interface design has been dropped
 * Tag and attribute names are now treated as interned strings (a user-defined

@@ -49,7 +49,7 @@ Other, non-standard-related tasks:
 
 Feedback, complaints, etc. are accepted at
 [SourceHut](https://todo.sr.ht/~bptato/chawan) or the Nim forum
-[thread](https://forum.nim-lang.org/t/10367#69029).
+[thread](https://forum.nim-lang.org/t/10963).
 
 ## FAQ
 
