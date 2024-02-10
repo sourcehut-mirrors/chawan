@@ -3,11 +3,11 @@ when defined(nimdocdummy):
   ##
   ## This exists to make implementing the DOMBuilder interface less painful. Two
   ## categories of hooks exist:
-  ## 1. Mandatory hooks: these must be implemented using static dispatch as procs.
-  ##    Not implementing any of them will result in a compilation error.
-  ## 2. Optional hooks: these may be omitted if your DOM does not need them. They
-  ##    are implemented using dynamic dispatch as methods, so we can provide
-  ##    a default implementation (that does nothing).
+  ## 1. Mandatory hooks: these must be implemented by all users, or Chame will
+  ##    not compile.
+  ## 2. Optional hooks: these may be omitted if your DOM does not need
+  ##    them. (You do not have to do anything special for this, just don't
+  ##    implement them.)
   ##
   ## Usage:
   ## 1. Put a type clause with your generic types in your DOM builder interface:
@@ -38,7 +38,7 @@ when defined(nimdocdummy):
   ## otherwise you are likely to get strange compilation errors.
   ##
   ## ## Optional hooks
-  ## Following methods are optional hooks; implementations of this interface
+  ## Following procedures are optional hooks; implementations of this interface
   ## can choose to leave them out without getting compilation errors.
   ##
   ## ```nim

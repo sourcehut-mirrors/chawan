@@ -20,7 +20,7 @@ Note: only Nim 1.6.10+ is supported.
 * Passes all tokenizer and tree builder tests in html5lib-tests[^1]
 * Includes a minimal DOM implementation
 * No mandatory dependencies other than the Nim standard library
-* Optional character encoding support (see minidom_enc)
+* Optional character encoding support (see [minidom_cs](chame/minidom_cs.nim))
 * String interning support for tag and attribute names
 * Support for chunked parsing
 * document.write (no actual implementation here, but it's possible to implement
