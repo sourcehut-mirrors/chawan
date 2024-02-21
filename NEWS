@@ -1,3 +1,6 @@
+0.14.3 (2024.02.21)
+* Fix another instance of the same bug
+
 0.14.2 (2024.02.21)
 * Fix a character reference parsing bug: e.g. in `&g<a>', the <
   character was being flushed as text instead of being interpreted as
