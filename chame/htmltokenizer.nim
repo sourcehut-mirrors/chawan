@@ -183,6 +183,10 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
         entry = entityMap[i].name
         if oc != entry[0]:
           # Out of entries that start with the character `oc'; give up.
+          # We must not flush the last character consumed as a character
+          # reference, since it is not a prefix of any entry (and can indeed be
+          # markup; e.g. in the case of `&g<'), so decrement `ci' here.
+          dec ci
           entry = nil
           break
         var j = 1

@@ -15,3 +15,13 @@
 |   <head>
 |   <body>
 |     ">"
+
+#data
+<h2>&g</h2>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <h2>
+|       "&g"
