@@ -178,7 +178,12 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
     if n != int(entry[ci]):
       entry = nil
       # i is not the right entry.
-      while entry == nil and i > 0:
+      while entry == nil:
+        if i == 0:
+          # See below; we avoid flushing the last character consumed by
+          # decrementing `ci'.
+          dec ci
+          break
         dec i
         entry = entityMap[i].name
         if oc != entry[0]:
