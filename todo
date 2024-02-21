@@ -1,0 +1,5 @@
+* more tests
+	- wpt? (seems hard to implement for now)
+	- test the single-byte encodings
+* fuzzing
+* we could reduce EUC-KR and GBK table sizes more; see https://hsivonen.fi/encoding_rs/

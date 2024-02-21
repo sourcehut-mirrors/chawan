@@ -1,0 +1,30 @@
+#!/bin/sh
+
+if ! test "$1"
+then	echo "Usage: updver [version]" >&2
+	exit 1
+fi
+
+vv=$(printf '%s\n' "$1" | sed 's/v//')
+
+major=$(printf '%s\n' "$vv" | sed 's/\..*//')
+minor=$(printf '%s\n' "$vv" | sed 's/[^.]*\.\([^.]*\)\..*/\1/')
+patch=$(printf '%s\n' "$vv" | sed 's/.*\.//')
+
+vs="$major.$minor.$patch"
+
+echo "/version/c
+version       = \"$vs\"
+.
+p
+wq" | ed -s chagashi.nimble
+
+echo "/Major/s/[0-9]*$/$major/
+/Minor/s/[0-9]*$/$minor/
+/Patch/s/[0-9]*$/$patch/
+g/.*/p
+wq" | ed -s chagashi/version.nim
+
+git add .
+git commit -m "Version $vs"
+git tag -a "v$vs"

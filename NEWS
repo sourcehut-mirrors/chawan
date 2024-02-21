@@ -1,0 +1,13 @@
+0.4.0 (?)
+
+* Renamed project
+* Re-designed interface: it's now push-based
+* We now encode/decode from/to UTF-8
+	- actually, encoding accepts WTF-8 too
+* Added multibyte tests from https://github.com/hsivonen/encoding_rs
+* Fixed lots of bugs in multi-byte encoding:
+	- EUC-KR encoding was completely broken (it was using the wrong map)
+	- GB18030 encoding was completely broken (it didn't handle ASCII)
+	- all 16-bit maps were somewhat broken, as they had no de-duplication
+* Various other correctness bugfixes
+* Reduced binary size somewhat
