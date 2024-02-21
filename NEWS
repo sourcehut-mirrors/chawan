@@ -1,3 +1,8 @@
+0.14.2 (2024.02.21)
+* Fix a character reference parsing bug: e.g. in `&g<a>', the <
+  character was being flushed as text instead of being interpreted as
+  markup.
+
 0.14.1 (2024.02.08)
 * Fix associateWithFormImpl callback regression (it was not being called for
   input elements)
