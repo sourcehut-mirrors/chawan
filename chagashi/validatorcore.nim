@@ -19,8 +19,15 @@ proc validate*(tv: var TextValidatorUTF8, iq: openArray[uint8], n: var int):
     TextValidatorResult =
   ## Validate the UTF-8 encoded input queue `iq`.
   ##
-  ## On success, tvrDone is returned, `n` is set to the length of `iq` (i.e. the
-  ## whole buffer is consumed), and `tv.i` is set to 0.
+  ## On success, tvrDone is returned, and `n` is set to the last valid consumed
+  ## index of `iq`. BEWARE: this may be lower than the highest index of `iq`;
+  ## for example, if the first byte is valid, `n` is set to -1.
+  ##
+  ## If `n` is less than `iq.high`, the following steps must be taken:
+  ## * If no more bytes exist in the queue, output an error.
+  ## * Store the bytes `n..iq.high` in a temporary buffer
+  ## * If the next call to `validate` returns tvrDone, output these
+  ##   bytes. Otherwise, discard the bytes and output U+FFFD as usual.
   ##
   ## On failure, tvrError is returned. In this case, `n` signifies the last
   ## valid input byte, while `tv.i` signifies the next byte to be consumed in
@@ -34,6 +41,7 @@ proc validate*(tv: var TextValidatorUTF8, iq: openArray[uint8], n: var int):
   ## 3. Output all bytes between the previously saved `tv.i` value and `n - 1`
   ## 4. Output a U+FFFD replacement character
   ## 5. Go to 1 (call with the same `iq` until no `tvrError` is returned).
+  n = -1
   if tv.bounds.a == 0: # unset
     tv.bounds = 0x80u8 .. 0xBFu8
   while (let i = tv.i; i < iq.len):
@@ -69,7 +77,6 @@ proc validate*(tv: var TextValidatorUTF8, iq: openArray[uint8], n: var int):
         n = tv.i
       tv.bounds = 0x80u8 .. 0xBFu8
     inc tv.i
-  n = tv.i
   tv.i = 0
   tvrDone
 

@@ -26,13 +26,11 @@ test "validate UTF-8 in parts":
   var r = uv.validate(ss0.toOpenArrayByte(0, ss0.high), n)
   # read Hell (0xC3 is not consumed yet)
   check r == tvrDone
-  check n == ss0.len
+  check n == 3
   let ss1 = "\xB6, world!\xC3"
   # read 0xB6 + , world! => Hellö world!
   check uv.validate(ss1.toOpenArrayByte(0, ss1.high), n) == tvrDone
-  check n == ss1.len
-  # finish
-  check uv.finish() == tvrError
+  check n == ss1.high - 1
 
 test "validate valid UTF-8":
   const utf8_valid = [
