@@ -1,3 +1,6 @@
+0.4.1 (2024.02.23)
+* Fixed horribly broken validatorcore API
+
 0.4.0 (2024.02.21)
 
 * Renamed project
