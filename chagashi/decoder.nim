@@ -48,7 +48,7 @@ proc newTextDecoder*(charset: Charset): TextDecoder =
   of CHARSET_X_USER_DEFINED: return TextDecoderXUserDefined()
   of CHARSET_UTF_8, CHARSET_UNKNOWN: doAssert false
 
-proc decodeAll*(td: TextDecoder, iq: openArray[uint8], success: out bool):
+proc decodeAll*(td: TextDecoder, iq: openArray[uint8], success: var bool):
     string =
   result = newString(iq.len)
   var n = 0
@@ -66,7 +66,7 @@ proc decodeAll*(td: TextDecoder, iq: openArray[uint8], success: out bool):
       return ""
   success = true
 
-proc decodeAll*(td: TextDecoder, iq: string, success: out bool): string =
+proc decodeAll*(td: TextDecoder, iq: string, success: var bool): string =
   success = false
   return td.decodeAll(iq.toOpenArrayByte(0, iq.high), success)
 

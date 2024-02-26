@@ -47,7 +47,7 @@ proc newTextEncoder*(charset: Charset): TextEncoder =
       CHARSET_REPLACEMENT, CHARSET_UNKNOWN:
     doAssert false
 
-proc encodeAll*(te: TextEncoder, iq: openArray[uint8], success: out bool):
+proc encodeAll*(te: TextEncoder, iq: openArray[uint8], success: var bool):
     string =
   result = newString(iq.len)
   var n = 0
@@ -68,7 +68,7 @@ proc encodeAll*(te: TextEncoder, iq: openArray[uint8], success: out bool):
       return ""
   success = true
 
-proc encodeAll*(td: TextEncoder, iq: string, success: out bool): string =
+proc encodeAll*(td: TextEncoder, iq: string, success: var bool): string =
   success = false
   return td.encodeAll(iq.toOpenArrayByte(0, iq.high), success)
 

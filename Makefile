@@ -1,4 +1,5 @@
-TESTDIR = /tmp/chagashi_test
+NIM ?= nim
+TESTDIR ?= /tmp/chagashi_test
 
 .PHONY: all
 all:
