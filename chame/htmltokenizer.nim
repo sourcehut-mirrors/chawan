@@ -323,25 +323,19 @@ proc flushCodePointsConsumedAsCharRef(tokenizer: var Tokenizer) =
   else:
     tokenizer.emitTmp()
 
-proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
+# if true, redo
+proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
   template emit(tok: Token) =
     tokenizer.flushChars()
-    if tok.t == START_TAG:
-      tokenizer.laststart = tok
     tokenizer.tokqueue.add(tok)
   template emit(tok: TokenType) = emit Token[Atom](t: tok)
-  template switch_state(s: TokenizerState) =
-    tokenizer.state = s
   template reconsume_in(s: TokenizerState) =
-    switch_state s
+    tokenizer.state = s
+    return true
   template parse_error(error: untyped) =
     tokenizer.parseError(error)
   template emit_eof =
     tokenizer.flushChars()
-    break
-  template new_token(t: Token) =
-    tokenizer.attr = false
-    tokenizer.tok = t
   template emit_tok =
     emit tokenizer.tok
   template emit(ch: char) =
@@ -355,166 +349,142 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
 
   tokenizer.tokqueue.setLen(0)
 
-  while true:
-    case tokenizer.state
-    of DATA, RCDATA, RAWTEXT, SCRIPT_DATA, PLAINTEXT:
-      emit_eof
-    of TAG_OPEN:
-      parse_error EOF_BEFORE_TAG_NAME
-      emit '<'
-      emit_eof
-    of END_TAG_OPEN:
-      parse_error EOF_BEFORE_TAG_NAME
-      emit "</"
-      emit_eof
-    of TAG_NAME:
-      parse_error EOF_IN_TAG
-      emit_eof
-    of RCDATA_LESS_THAN_SIGN:
-      emit '<'
-      reconsume_in RCDATA
-    of RCDATA_END_TAG_OPEN:
-      emit "</"
-      reconsume_in RCDATA
-    of RCDATA_END_TAG_NAME:
-      new_token nil #TODO
-      emit "</"
-      tokenizer.emitTmp()
-      reconsume_in RCDATA
-    of RAWTEXT_LESS_THAN_SIGN:
-      emit '<'
-      reconsume_in RAWTEXT
-    of RAWTEXT_END_TAG_OPEN:
-      emit "</"
-      reconsume_in RAWTEXT
-    of RAWTEXT_END_TAG_NAME:
-      new_token nil #TODO
-      emit "</"
-      tokenizer.emitTmp()
-      reconsume_in RAWTEXT
-      emit_eof
-    of SCRIPT_DATA_LESS_THAN_SIGN:
-      emit '<'
-      reconsume_in SCRIPT_DATA
-    of SCRIPT_DATA_END_TAG_OPEN:
-      emit "</"
-      reconsume_in SCRIPT_DATA
-    of SCRIPT_DATA_END_TAG_NAME:
-      emit "</"
-      tokenizer.emitTmp()
-      reconsume_in SCRIPT_DATA
-    of SCRIPT_DATA_ESCAPE_START, SCRIPT_DATA_ESCAPE_START_DASH:
-      reconsume_in SCRIPT_DATA
-    of SCRIPT_DATA_ESCAPED, SCRIPT_DATA_ESCAPED_DASH,
-        SCRIPT_DATA_ESCAPED_DASH_DASH:
-      parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-      emit_eof
-    of SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN:
-      emit '<'
-      reconsume_in SCRIPT_DATA_ESCAPED
-    of SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
-      emit "</"
-      reconsume_in SCRIPT_DATA_ESCAPED
-    of SCRIPT_DATA_ESCAPED_END_TAG_NAME:
-      emit "</"
-      tokenizer.emitTmp()
-      reconsume_in SCRIPT_DATA_ESCAPED
-    of SCRIPT_DATA_DOUBLE_ESCAPE_START:
-      reconsume_in SCRIPT_DATA_ESCAPED
-    of SCRIPT_DATA_DOUBLE_ESCAPED, SCRIPT_DATA_DOUBLE_ESCAPED_DASH,
-        SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH:
-      parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-      emit_eof
-    of SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN, SCRIPT_DATA_DOUBLE_ESCAPE_END:
-      reconsume_in SCRIPT_DATA_DOUBLE_ESCAPED
-    of BEFORE_ATTRIBUTE_NAME, ATTRIBUTE_NAME:
-      reconsume_in AFTER_ATTRIBUTE_NAME
-    of AFTER_ATTRIBUTE_NAME:
-      parse_error EOF_IN_TAG
-      emit_eof
-    of BEFORE_ATTRIBUTE_VALUE:
-      reconsume_in ATTRIBUTE_VALUE_UNQUOTED
-    of ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
-        ATTRIBUTE_VALUE_UNQUOTED, AFTER_ATTRIBUTE_VALUE_QUOTED,
-        SELF_CLOSING_START_TAG:
-      parse_error EOF_IN_TAG
-      emit_eof
-    of BOGUS_COMMENT:
-      emit_tok
-      emit_eof
-    of MARKUP_DECLARATION_OPEN:
-      parse_error INCORRECTLY_OPENED_COMMENT
-      new_token Token[Atom](t: COMMENT)
-      reconsume_in BOGUS_COMMENT
-    of COMMENT_START:
-      reconsume_in COMMENT
-    of COMMENT_START_DASH, COMMENT:
-      parse_error EOF_IN_COMMENT
-      emit_tok
-      emit_eof
-    of COMMENT_LESS_THAN_SIGN, COMMENT_LESS_THAN_SIGN_BANG:
-      reconsume_in COMMENT
-    of COMMENT_LESS_THAN_SIGN_BANG_DASH:
-      reconsume_in COMMENT_END_DASH
-    of COMMENT_LESS_THAN_SIGN_BANG_DASH_DASH:
-      reconsume_in COMMENT_END
-    of COMMENT_END_DASH, COMMENT_END, COMMENT_END_BANG:
-      parse_error EOF_IN_COMMENT
-      emit_tok
-      emit_eof
-    of DOCTYPE, BEFORE_DOCTYPE_NAME:
-      parse_error EOF_IN_DOCTYPE
-      new_token Token[Atom](t: DOCTYPE, quirks: true)
-      emit_tok
-      emit_eof
-    of DOCTYPE_NAME, AFTER_DOCTYPE_NAME, AFTER_DOCTYPE_PUBLIC_KEYWORD,
-        BEFORE_DOCTYPE_PUBLIC_IDENTIFIER,
-        DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED,
-        DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED,
-        AFTER_DOCTYPE_PUBLIC_IDENTIFIER,
-        BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS,
-        AFTER_DOCTYPE_SYSTEM_KEYWORD, BEFORE_DOCTYPE_SYSTEM_IDENTIFIER,
-        DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED,
-        DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED,
-        AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
-      parse_error EOF_IN_DOCTYPE
-      tokenizer.tok.quirks = true
-      emit_tok
-      emit_eof
-    of BOGUS_DOCTYPE:
-      emit_tok
-      emit_eof
-    of CDATA_SECTION:
-      parse_error EOF_IN_CDATA
-      emit_eof
-    of CDATA_SECTION_BRACKET:
-      emit ']'
-      reconsume_in CDATA_SECTION
-    of CDATA_SECTION_END:
-      emit "]]"
-      reconsume_in CDATA_SECTION
-    of CHARACTER_REFERENCE:
-      tokenizer.tmp = "&"
-      tokenizer.flushCodePointsConsumedAsCharRef()
-      reconsume_in tokenizer.rstate
-    of NAMED_CHARACTER_REFERENCE:
-      # No match for EOF
-      tokenizer.flushCodePointsConsumedAsCharRef()
-      switch_state AMBIGUOUS_AMPERSAND_STATE
-    of AMBIGUOUS_AMPERSAND_STATE:
-      reconsume_in tokenizer.rstate
-    of NUMERIC_CHARACTER_REFERENCE:
-      reconsume_in DECIMAL_CHARACTER_REFERENCE_START
-    of HEXADECIMAL_CHARACTER_REFERENCE_START, DECIMAL_CHARACTER_REFERENCE_START:
-      parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
-      tokenizer.flushCodePointsConsumedAsCharRef()
-      reconsume_in tokenizer.rstate
-    of HEXADECIMAL_CHARACTER_REFERENCE, DECIMAL_CHARACTER_REFERENCE:
-      parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
-      reconsume_in NUMERIC_CHARACTER_REFERENCE_END
-    of NUMERIC_CHARACTER_REFERENCE_END:
-      tokenizer.numericCharacterReferenceEndState()
-      reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
+  case tokenizer.state
+  of DATA, RCDATA, RAWTEXT, SCRIPT_DATA, PLAINTEXT, SCRIPT_DATA_ESCAPE_START,
+      SCRIPT_DATA_ESCAPE_START_DASH:
+    emit_eof
+  of TAG_OPEN:
+    parse_error EOF_BEFORE_TAG_NAME
+    emit '<'
+    emit_eof
+  of END_TAG_OPEN:
+    parse_error EOF_BEFORE_TAG_NAME
+    emit "</"
+    emit_eof
+  of TAG_NAME:
+    parse_error EOF_IN_TAG
+    emit_eof
+  of RCDATA_LESS_THAN_SIGN, RAWTEXT_LESS_THAN_SIGN,
+      SCRIPT_DATA_LESS_THAN_SIGN:
+    emit '<'
+    # note: was reconsume (rcdata/rawtext/script data)
+    emit_eof
+  of RCDATA_END_TAG_OPEN, RAWTEXT_END_TAG_OPEN, SCRIPT_DATA_END_TAG_OPEN:
+    emit "</"
+    # note: was reconsume (rcdata/rawtext/script data)
+    emit_eof
+  of RCDATA_END_TAG_NAME, RAWTEXT_END_TAG_NAME, SCRIPT_DATA_END_TAG_NAME:
+    emit "</"
+    tokenizer.emitTmp()
+    # note: was reconsume (rcdata/rawtext/script data)
+    emit_eof
+  of SCRIPT_DATA_ESCAPED, SCRIPT_DATA_ESCAPED_DASH,
+      SCRIPT_DATA_ESCAPED_DASH_DASH, SCRIPT_DATA_DOUBLE_ESCAPE_START:
+    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
+    emit_eof
+  of SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN:
+    emit '<'
+    # note: was reconsume (script data escaped)
+    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
+    emit_eof
+  of SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
+    emit "</"
+    # note: was reconsume (script data escaped)
+    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
+    emit_eof
+  of SCRIPT_DATA_ESCAPED_END_TAG_NAME:
+    emit "</"
+    tokenizer.emitTmp()
+    # note: was reconsume (script data escaped)
+    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
+    emit_eof
+  of SCRIPT_DATA_DOUBLE_ESCAPED, SCRIPT_DATA_DOUBLE_ESCAPED_DASH,
+      SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH,
+      SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN,
+      SCRIPT_DATA_DOUBLE_ESCAPE_END:
+    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
+    emit_eof
+  of AFTER_ATTRIBUTE_NAME, BEFORE_ATTRIBUTE_NAME, ATTRIBUTE_NAME:
+    parse_error EOF_IN_TAG
+    emit_eof
+  of ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
+      ATTRIBUTE_VALUE_UNQUOTED, AFTER_ATTRIBUTE_VALUE_QUOTED,
+      SELF_CLOSING_START_TAG, BEFORE_ATTRIBUTE_VALUE:
+    parse_error EOF_IN_TAG
+    emit_eof
+  of BOGUS_COMMENT, BOGUS_DOCTYPE:
+    emit_tok
+    emit_eof
+  of MARKUP_DECLARATION_OPEN:
+    parse_error INCORRECTLY_OPENED_COMMENT
+    # note: was reconsume (bogus comment)
+    emit Token[Atom](t: COMMENT)
+    emit_eof
+  of COMMENT_END_DASH, COMMENT_END, COMMENT_END_BANG,
+      COMMENT_LESS_THAN_SIGN_BANG_DASH, COMMENT_LESS_THAN_SIGN_BANG_DASH_DASH,
+      COMMENT_START_DASH, COMMENT, COMMENT_START, COMMENT_LESS_THAN_SIGN,
+      COMMENT_LESS_THAN_SIGN_BANG:
+    parse_error EOF_IN_COMMENT
+    emit_tok
+    emit_eof
+  of DOCTYPE, BEFORE_DOCTYPE_NAME:
+    parse_error EOF_IN_DOCTYPE
+    emit Token[Atom](t: DOCTYPE, quirks: true)
+    emit_eof
+  of DOCTYPE_NAME, AFTER_DOCTYPE_NAME, AFTER_DOCTYPE_PUBLIC_KEYWORD,
+      BEFORE_DOCTYPE_PUBLIC_IDENTIFIER,
+      DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED,
+      DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED,
+      AFTER_DOCTYPE_PUBLIC_IDENTIFIER,
+      BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS,
+      AFTER_DOCTYPE_SYSTEM_KEYWORD, BEFORE_DOCTYPE_SYSTEM_IDENTIFIER,
+      DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED,
+      DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED,
+      AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
+    parse_error EOF_IN_DOCTYPE
+    tokenizer.tok.quirks = true
+    emit_tok
+    emit_eof
+  of CDATA_SECTION:
+    parse_error EOF_IN_CDATA
+    emit_eof
+  of CDATA_SECTION_BRACKET:
+    emit ']'
+    # note: was reconsume (CDATA section)
+    parse_error EOF_IN_CDATA
+    emit_eof
+  of CDATA_SECTION_END:
+    emit "]]"
+    # note: was reconsume (CDATA section)
+    parse_error EOF_IN_CDATA
+    emit_eof
+  of CHARACTER_REFERENCE:
+    tokenizer.tmp = "&"
+    tokenizer.flushCodePointsConsumedAsCharRef()
+    reconsume_in tokenizer.rstate
+  of NAMED_CHARACTER_REFERENCE:
+    # No match for EOF
+    tokenizer.flushCodePointsConsumedAsCharRef()
+    # note: was switch state (ambiguous ampersand state)
+    reconsume_in tokenizer.rstate
+  of AMBIGUOUS_AMPERSAND_STATE:
+    reconsume_in tokenizer.rstate
+  of HEXADECIMAL_CHARACTER_REFERENCE_START, DECIMAL_CHARACTER_REFERENCE_START,
+      NUMERIC_CHARACTER_REFERENCE:
+    parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
+    tokenizer.flushCodePointsConsumedAsCharRef()
+    reconsume_in tokenizer.rstate
+  of HEXADECIMAL_CHARACTER_REFERENCE, DECIMAL_CHARACTER_REFERENCE:
+    parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
+    # note: was reconsume (numeric character reference end)
+    tokenizer.numericCharacterReferenceEndState()
+    # we unnecessarily consumed once so reconsume
+    reconsume_in tokenizer.rstate
+  of NUMERIC_CHARACTER_REFERENCE_END:
+    tokenizer.numericCharacterReferenceEndState()
+    # we unnecessarily consumed once so reconsume
+    reconsume_in tokenizer.rstate
+  false
 
 type TokenizeResult* = enum
   trDone, trEmit
@@ -1716,5 +1686,7 @@ proc finish*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]):
     tokenizer.isend = true
     if tokenizer.tokenize([]) != trDone:
       return trEmit
-  tokenizer.tokenizeEOF()
+  if tokenizer.tokenizeEOF():
+    let r = tokenizer.tokenizeEOF()
+    assert not r
   return trDone
