@@ -50,6 +50,7 @@ test "validate invalid UTF-8":
     "\uD8FF": "\uFFFD\uFFFD\uFFFD", # highest surrogate
     "\uD83E\uDD72": "\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD", # paired surrogates
     "\uD83C": "\uFFFD\uFFFD\uFFFD", # some unpaired surrogate
+    "r\xC8sum\xC8s": "r\uFFFDsum\uFFFDs", # latin-1 mis-declared as UTF-8
   }
   for (s, t) in utf8_error:
     check s.toValidUTF8() == t
