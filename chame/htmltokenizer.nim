@@ -91,7 +91,7 @@ proc newTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
   )
   return t
 
-proc reconsume(tokenizer: var Tokenizer, s: string) =
+proc reconsume(tokenizer: var Tokenizer, s: openArray[char]) =
   for i in countdown(s.high, 0):
     tokenizer.peekBuf[tokenizer.peekBufLen] = s[i]
     inc tokenizer.peekBufLen
@@ -224,52 +224,41 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
     inc ci
   return (i, ci, entry)
 
-func isSurrogate(u: uint32): bool = u in 0xD800u32..0xDFFFu32
-func isNonCharacter(u: uint32): bool =
-  u in 0xFDD0u32..0xFDEFu32 or
-  u in [0xFFFEu32, 0xFFFFu32, 0x1FFFEu32, 0x1FFFFu32, 0x2FFFEu32, 0x2FFFFu32,
-    0x3FFFEu32, 0x3FFFFu32, 0x4FFFEu32, 0x4FFFFu32, 0x5FFFEu32, 0x5FFFFu32,
-    0x6FFFEu32, 0x6FFFFu32, 0x7FFFEu32, 0x7FFFFu32, 0x8FFFEu32, 0x8FFFFu32,
-    0x9FFFEu32, 0x9FFFFu32, 0xAFFFEu32, 0xAFFFFu32, 0xBFFFEu32, 0xBFFFFu32,
-    0xCFFFEu32, 0xCFFFFu32, 0xDFFFEu32, 0xDFFFFu32, 0xEFFFEu32, 0xEFFFFu32,
-    0xFFFFEu32, 0xFFFFFu32, 0x10FFFEu32, 0x10FFFFu32]
-
 proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
   template parse_error(error: untyped) =
     tokenizer.parseError(error)
-  template consumed_as_an_attribute(): bool =
-    tokenizer.consumedAsAnAttribute()
-  case tokenizer.code
-  of 0x00:
+  var c = tokenizer.code
+  if c == 0x00:
     parse_error NULL_CHARACTER_REFERENCE
-    tokenizer.code = 0xFFFD
-  elif tokenizer.code > 0x10FFFF:
+    c = 0xFFFD
+  elif c > 0x10FFFF:
     parse_error CHARACTER_REFERENCE_OUTSIDE_UNICODE_RANGE
-    tokenizer.code = 0xFFFD
-  elif tokenizer.code.isSurrogate():
+    c = 0xFFFD
+  elif c in 0xD800u32..0xDFFFu32: # surrogates
     parse_error SURROGATE_CHARACTER_REFERENCE
-    tokenizer.code = 0xFFFD
-  elif tokenizer.code.isNonCharacter():
+    c = 0xFFFD
+  elif c in 0xFDD0u32..0xFDEFu32 or (c and 0xFFFF) in 0xFFFEu32..0xFFFFu32:
     parse_error NONCHARACTER_CHARACTER_REFERENCE
     # do nothing
-  elif tokenizer.code < 0x80 and
-      char(tokenizer.code) in (Controls - AsciiWhitespace) + {char(0x0D)} or
-      tokenizer.code in 0x80u32 .. 0x9Fu32:
+  elif c < 0x80 and char(c) in (Controls - AsciiWhitespace) + {char(0x0D)}:
+    parse_error CONTROL_CHARACTER_REFERENCE
+  elif c in 0x80u32 .. 0x9Fu32:
+    parse_error CONTROL_CHARACTER_REFERENCE
     const ControlMapTable = [
-      (0x80u32, 0x20ACu32), (0x82u32, 0x201Au32), (0x83u32, 0x0192u32),
-      (0x84u32, 0x201Eu32), (0x85u32, 0x2026u32), (0x86u32, 0x2020u32),
-      (0x87u32, 0x2021u32), (0x88u32, 0x02C6u32), (0x89u32, 0x2030u32),
-      (0x8Au32, 0x0160u32), (0x8Bu32, 0x2039u32), (0x8Cu32, 0x0152u32),
-      (0x8Eu32, 0x017Du32), (0x91u32, 0x2018u32), (0x92u32, 0x2019u32),
-      (0x93u32, 0x201Cu32), (0x94u32, 0x201Du32), (0x95u32, 0x2022u32),
-      (0x96u32, 0x2013u32), (0x97u32, 0x2014u32), (0x98u32, 0x02DCu32),
-      (0x99u32, 0x2122u32), (0x9Au32, 0x0161u32), (0x9Bu32, 0x203Au32),
-      (0x9Cu32, 0x0153u32), (0x9Eu32, 0x017Eu32), (0x9Fu32, 0x0178u32),
-    ].toTable()
-    if tokenizer.code in ControlMapTable:
-      tokenizer.code = ControlMapTable[tokenizer.code]
-  let s = $Rune(tokenizer.code)
-  if consumed_as_an_attribute:
+      0x80_00_20ACu32, 0x82_00_201Au32, 0x83_00_0192u32, 0x84_00_201Eu32,
+      0x85_00_2026u32, 0x86_00_2020u32, 0x87_00_2021u32, 0x88_00_02C6u32,
+      0x89_00_2030u32, 0x8A_00_0160u32, 0x8B_00_2039u32, 0x8C_00_0152u32,
+      0x8E_00_017Du32, 0x91_00_2018u32, 0x92_00_2019u32, 0x93_00_201Cu32,
+      0x94_00_201Du32, 0x95_00_2022u32, 0x96_00_2013u32, 0x97_00_2014u32,
+      0x98_00_02DCu32, 0x99_00_2122u32, 0x9A_00_0161u32, 0x9B_00_203Au32,
+      0x9C_00_0153u32, 0x9E_00_017Eu32, 0x9F_00_0178u32,
+    ]
+    for it in ControlMapTable:
+      if it shr 24 == c:
+        c = it and 0xFFFF
+        break
+  let s = $Rune(c)
+  if tokenizer.consumedAsAnAttribute():
     tokenizer.appendToCurrentAttrValue(s)
   else:
     for c in s:
@@ -295,9 +284,8 @@ proc eatStr(tokenizer: var Tokenizer, c: char, s: string,
       return esrFail
   return esrSuccess
 
-proc eatStrNoCase(tokenizer: var Tokenizer, c: char, s: static string,
+proc eatStrNoCase0(tokenizer: var Tokenizer, c: char, s: string,
     ibuf: openArray[char]): EatStrResult =
-  const s = s.toLowerAscii()
   var cs = $c
   for i in 0 ..< s.len:
     let n = tokenizer.consume(ibuf)
@@ -309,6 +297,12 @@ proc eatStrNoCase(tokenizer: var Tokenizer, c: char, s: static string,
         return esrRetry
       return esrFail
   return esrSuccess
+
+# convenience template for eatStrNoCase0 (to make sure it's called correctly)
+template eatStrNoCase(tokenizer: var Tokenizer, c: char, s: static string,
+    ibuf: openArray[char]): EatStrResult =
+  const s0 = s.toLowerAscii()
+  tokenizer.eatStrNoCase0(c, s0, ibuf)
 
 proc flushTagName(tokenizer: var Tokenizer) =
   tokenizer.tok.tagname = tokenizer.strToAtom(tokenizer.tagNameBuf)
@@ -671,7 +665,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of RCDATA_END_TAG_NAME:
       template anything_else =
-        new_token nil #TODO
         emit "</"
         tokenizer.emitTmp()
         reconsume_in RCDATA
@@ -724,7 +717,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of RAWTEXT_END_TAG_NAME:
       template anything_else =
-        new_token nil #TODO
         emit "</"
         tokenizer.emitTmp()
         reconsume_in RAWTEXT
@@ -1561,13 +1553,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       let (i, ci, entry) = tokenizer.findCharRef(c, ibuf)
       if entry == nil and i == -1:
         # -1 encountered without isend
-        tokenizer.reconsume(tokenizer.tmp.substr(1))
+        tokenizer.reconsume(tokenizer.tmp.toOpenArray(1, tokenizer.tmp.high))
         tokenizer.tmp = "&"
         break
       # Move back the pointer & shorten the buffer to the last match.
       # (Add 1, because we do not store the starting & char in entityMap,
       # but tmp starts with an &.)
-      tokenizer.reconsume(tokenizer.tmp.substr(ci + 1))
+      tokenizer.reconsume(tokenizer.tmp.toOpenArray(ci + 1, tokenizer.tmp.high))
       tokenizer.tmp.setLen(ci + 1)
       if entry != nil and entry[ci] == '\0':
         let n = tokenizer.consume(ibuf)
@@ -1579,7 +1571,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         elif sc and n == -1 and not tokenizer.isend:
           # We have to redo the above check.
           #TODO it would be great to not completely lose our state here...
-          tokenizer.reconsume(tokenizer.tmp.substr(1))
+          tokenizer.reconsume(tokenizer.tmp.toOpenArray(1, tokenizer.tmp.high))
           tokenizer.tmp = "&"
           break
         else:

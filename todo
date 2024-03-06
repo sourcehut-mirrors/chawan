@@ -1,8 +1,6 @@
 interface:
 * reduce use of getNamespace (maybe store ns on the stack of open elements?)
-* reduce atomToTagType calls (store tagType before the case statement in match?)
-* on-demand creation of attribute name atoms (most documents don't even
-  need atomMap); use ref array/Option?
 etc:
 * turn test1 into a serializer module
 * optimize tokenizer consume stuff (e.g. eatStr...)
+* add getElementById and some more basic stuff to minidom

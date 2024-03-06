@@ -169,7 +169,7 @@ Also note that `minidom` does not handle `PRES_STOP`, since it does support
 character encodings. For an implementation that *does* handle `PRES_STOP`, see
 `minidom_cs`.
 
-#### Option 2: Parse buffers passed by `document.write`
+##### Option 2: Parse buffers passed by `document.write`
 
 Per standard, it is possible to insert buffers into the stream from scripts
 using the `document.write` function.
@@ -178,7 +178,7 @@ It is possible to implement this, but it is somewhat too involved to give a
 detailed explanation of it here. Please refer to Chawan's implementation in
 html/chadombuilder and html/dom.
 
-### finish
+#### finish
 
 After having parsed all chunks of your document with `parseChunk`, you **must**
 call the `finish` function. This is necessary because the parser may still have
