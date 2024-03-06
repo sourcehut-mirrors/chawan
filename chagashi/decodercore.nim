@@ -137,7 +137,7 @@ template try_put_utf8(oq: var openArray[uint8], c: uint32, n: var int) =
     oq[n] = cast[uint8](c and 0x3F or 0x80)
     inc n
   else:
-    assert c < 0x10FFFF
+    assert c <= 0x10FFFF
     if n + 3 >= oq.len:
       return tdrReqOutput
     oq[n] = cast[uint8](c shr 18 or 0xF0)
