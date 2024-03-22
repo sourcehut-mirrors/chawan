@@ -66,6 +66,10 @@ have any convenience functions (like querySelector, getElementById, etc.)
 Please refer to the [Chawan](https://sr.ht/~bptato/chawan/) web browser for
 an example of a complete DOM implementation that depends on Chame.
 
+Also see [CSS3Selectors](https://github.com/Niminem/CSS3Selectors/), a CSS
+selector library for Chame's minidom which allows you to run querySelector
+like you can in JS.
+
 If you implement a DOM library based on Chame, please notify me, so that I
 can redirect users to it in this section.
 
