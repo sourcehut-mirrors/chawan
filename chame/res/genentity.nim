@@ -1,4 +1,3 @@
-import std/algorithm
 import std/json
 import std/streams
 import std/strutils
@@ -37,6 +36,8 @@ proc main() =
       cc = k[0]
     writer.write("(Z\"" & k & "\"," & v.escape() & ".Z),")
     inc i
+  assert cc == 'z'
+  charMap[cc] = i - 1
   writer.flush()
   echo "]"
   echo ""
