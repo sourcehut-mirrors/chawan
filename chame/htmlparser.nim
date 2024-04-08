@@ -392,7 +392,7 @@ proc hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       if tagType in elements:
         return false
     of Namespace.SVG:
-      const elements = {TAG_FOREIGNOBJECT, TAG_DESC, TAG_TITLE}
+      const elements = {TAG_FOREIGN_OBJECT, TAG_DESC, TAG_TITLE}
       if tagType in elements:
         return false
     else: discard
@@ -415,7 +415,7 @@ proc hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       if tagType in elements:
         return false
     of Namespace.SVG:
-      const elements = {TAG_FOREIGNOBJECT, TAG_DESC, TAG_TITLE}
+      const elements = {TAG_FOREIGN_OBJECT, TAG_DESC, TAG_TITLE}
       if tagType in elements:
         return false
     else: discard
@@ -575,8 +575,8 @@ proc adjustMathMLAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       xmlAttrs.add((p[].prefix, p[].namespace, p[].localName, v))
       deleted.add(k)
   var v: string
-  if htmlAttrs.pop(parser.tagTypeToAtom(TAG_DEFINITION_URL_LOWER), v):
-    htmlAttrs[parser.tagTypeToAtom(TAG_DEFINITION_URL_FIXED)] = v
+  if htmlAttrs.pop(parser.tagTypeToAtom(TAG_DEFINITION_URL), v):
+    htmlAttrs[parser.strToAtom("definitionURL")] = v
   for k in deleted:
     htmlAttrs.del(k)
 
@@ -871,7 +871,7 @@ proc isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
         return p[].equalsIgnoreCase("text/html") or
           p[].equalsIgnoreCase("application/xhtml+xml")
   elif namespace == Namespace.SVG:
-    return tagType in {TAG_FOREIGNOBJECT, TAG_DESC, TAG_TITLE}
+    return tagType in {TAG_FOREIGN_OBJECT, TAG_DESC, TAG_TITLE}
   return false
 
 const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
@@ -996,7 +996,7 @@ proc isSpecialElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     }
     return tagType in elements
   of Namespace.SVG:
-    return tagType in {TAG_FOREIGNOBJECT, TAG_DESC, TAG_TITLE}
+    return tagType in {TAG_FOREIGN_OBJECT, TAG_DESC, TAG_TITLE}
   else:
     return false
 
