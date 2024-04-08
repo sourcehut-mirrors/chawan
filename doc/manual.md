@@ -56,8 +56,14 @@ low-level htmlparser API instead.
 
 minidom (and minidom_cs) implements string interning using `MAtomFactory`, and
 interned strings in minidom are represented using `MAtom`s. Every `MAtom` is
-guaranteed to be a valid UTF-8 string. To convert a `MAtom` into a Nim string,
-use the MAtomFactory.atomToStr function.
+guaranteed to be a valid UTF-8 string. To convert a Nim string into an `MAtom`,
+use the `MAtomFactory.strToAtom` function. To convert an `MAtom` into a Nim
+string, use the `MAtomFactory.atomToStr` function.
+
+Note: it is always more efficient to convert strings to atoms (i.e. to use
+`strToAtom`) than to do it the other way. `MAtom`s are just integers, so
+storing, copying, and comparing them is a lot cheaper than the same operations
+with strings.
 
 The output is a DOM tree, with the root node being a `Document`. The root
 Document node also contains a `MAtomFactory` instance, which can be used to
@@ -221,7 +227,7 @@ A simple example of minidom: dumps all text on a page.
 
 ```Nim
 # Compile with nim c -d:ssl
-# List strings found on the target website.
+# List text found between HTML tags on the target website.
 import std/httpclient
 import std/os
 import std/strutils
