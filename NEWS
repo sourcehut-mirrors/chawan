@@ -1,3 +1,9 @@
+0.14.5 (2024.04.09)
+* Fix broken parsing of HTML entities starting with a lower `z'
+* Fix nimble test execution on old Nim versions
+* Various refactorings: reduce duplicated code, get rid of some dead code,
+  move some atom mappings to compile time
+
 0.14.4 (2024.03.03)
 * Clean up tokenizeEOF so that it's compiled correctly on old Nim + ARM
 
