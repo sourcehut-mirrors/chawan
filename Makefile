@@ -11,19 +11,19 @@ $(TESTDIR)/data:
 
 .PHONY: test_basic
 test_basic:
-	nim r -p:. test/basic.nim
+	$(NIM) r -p:. test/basic.nim
 
 .PHONY: test_data
 test_data: $(TESTDIR)/data
-	CGS_TESTDIR=$(TESTDIR)/data nim r -p:. test/data.nim
+	CGS_TESTDIR=$(TESTDIR)/data $(NIM) r -p:. test/data.nim
 
 .PHONY: test
 test: test_basic test_data
 
 .PHONY: bench
 bench:
-	nim r -p:. -d:release test/bench.nim
+	$(NIM) r -p:. -d:release test/bench.nim
 
 .PHONY: map
 map:
-	nim r res/createmap.nim > chagashi/charset_map.nim
+	$(NIM) r res/createmap.nim > chagashi/charset_map.nim
