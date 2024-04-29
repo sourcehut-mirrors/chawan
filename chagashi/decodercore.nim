@@ -123,30 +123,30 @@ template try_put_utf8(oq: var openArray[uint8], c: uint32, n: var int) =
   elif c < 0x800:
     if n + 1 >= oq.len:
       return tdrReqOutput
-    oq[n] = cast[uint8](c shr 6 or 0xC0)
+    oq[n] = uint8(c shr 6 or 0xC0)
     inc n
-    oq[n] = cast[uint8](c and 0x3F or 0x80)
+    oq[n] = uint8(c and 0x3F or 0x80)
     inc n
   elif c < 0x10000:
     if n + 2 >= oq.len:
       return tdrReqOutput
-    oq[n] = cast[uint8](c shr 12 or 0xE0)
+    oq[n] = uint8(c shr 12 or 0xE0)
     inc n
-    oq[n] = cast[uint8](c shr 6 and 0x3F or 0x80)
+    oq[n] = uint8(c shr 6 and 0x3F or 0x80)
     inc n
-    oq[n] = cast[uint8](c and 0x3F or 0x80)
+    oq[n] = uint8(c and 0x3F or 0x80)
     inc n
   else:
     assert c <= 0x10FFFF
     if n + 3 >= oq.len:
       return tdrReqOutput
-    oq[n] = cast[uint8](c shr 18 or 0xF0)
+    oq[n] = uint8(c shr 18 or 0xF0)
     inc n
-    oq[n] = cast[uint8](c shr 12 and 0x3F or 0x80)
+    oq[n] = uint8(c shr 12 and 0x3F or 0x80)
     inc n
-    oq[n] = cast[uint8](c shr 6 and 0x3F or 0x80)
+    oq[n] = uint8(c shr 6 and 0x3F or 0x80)
     inc n
-    oq[n] = cast[uint8](c and 0x3F or 0x80)
+    oq[n] = uint8(c and 0x3F or 0x80)
     inc n
 
 template try_put_byte(oq: var openArray[uint8], b: uint8, n: var int) =

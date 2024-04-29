@@ -317,7 +317,7 @@ const CharsetMap = {
 
 func normalizeLocale(s: string): string =
   for i in 0 ..< s.len:
-    if cast[uint8](s[i]) > 0x20 and s[i] != '_' and s[i] != '-':
+    if uint8(s[i]) > 0x20 and s[i] != '_' and s[i] != '-':
       result &= s[i].toLowerAscii()
 
 func after(s: string, c: set[char]): string =
