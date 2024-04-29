@@ -15,7 +15,7 @@ type
     needed: int
     bounds: Slice[uint8]
 
-proc validate*(tv: var TextValidatorUTF8, iq: openArray[uint8], n: var int):
+proc validate*(tv: var TextValidatorUTF8; iq: openArray[uint8]; n: var int):
     TextValidatorResult =
   ## Validate the UTF-8 encoded input queue `iq`.
   ##

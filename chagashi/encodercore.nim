@@ -103,7 +103,7 @@ proc gb18030RangesPointer(c: uint32): uint32 =
     # is found.
     # We want the last that is <=, so decrease index by one.
     let i = upperBound(GB18030RangesEncode, c,
-      func(a: tuple[ucs, p: uint16], b: uint32): int =
+      func(a: tuple[ucs, p: uint16]; b: uint32): int =
         cmp(uint32(a.ucs), b)
     )
     let elem = GB18030RangesEncode[i - 1]
@@ -111,39 +111,39 @@ proc gb18030RangesPointer(c: uint32): uint32 =
     p = elem.p
   return p + c - offset
 
-func searchInMap(a: openArray[UCS16x16], u: uint16): int =
-  binarySearch(a, u, proc(x: UCS16x16, y: uint16): int = cmp(x[0], y))
+func searchInMap(a: openArray[UCS16x16]; u: uint16): int =
+  binarySearch(a, u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
 
-func searchInMap(a: openArray[(uint16, char)], u: uint16): int =
-  binarySearch(a, u, proc(x: (uint16, char), y: uint16): int = cmp(x[0], y))
+func searchInMap(a: openArray[(uint16, char)]; u: uint16): int =
+  binarySearch(a, u, proc(x: (uint16, char); y: uint16): int = cmp(x[0], y))
 
-func searchInMap(a: openArray[UCS32x16], u: uint32): int =
-  binarySearch(a, u, proc(x: UCS32x16, y: uint32): int = cmp(x[0], y))
+func searchInMap(a: openArray[UCS32x16]; u: uint32): int =
+  binarySearch(a, u, proc(x: UCS32x16; y: uint32): int = cmp(x[0], y))
 
-func findPair(map: openArray[UCS32x16], c: uint32): int {.inline.} =
+func findPair(map: openArray[UCS32x16]; c: uint32): int {.inline.} =
   return searchInMap(map, c)
 
-func findPair(map: openArray[UCS16x16], c: uint16): int {.inline.} =
+func findPair(map: openArray[UCS16x16]; c: uint16): int {.inline.} =
   return searchInMap(map, c)
 
-func findPair16(map: openArray[UCS16x16], c: uint32): int {.inline.} =
+func findPair16(map: openArray[UCS16x16]; c: uint32): int {.inline.} =
   if c > uint16.high:
     return -1
   return searchInMap(map, uint16(c))
 
-func findPair16(map: openArray[tuple[ucs: uint16, val: char]], c: uint32): int
+func findPair16(map: openArray[tuple[ucs: uint16; val: char]]; c: uint32): int
     {.inline.} =
   if c > uint16.high:
     return -1
   return searchInMap(map, uint16(c))
 
-template try_put_byte(oq: var openArray[uint8], b: uint8, n: var int) =
+template try_put_byte(oq: var openArray[uint8]; b: uint8; n: var int) =
   if n + 1 > oq.len:
     return terReqOutput
   oq[n] = b
   inc n
 
-template try_put_bytes(oq: var openArray[uint8], bs: openArray[uint8],
+template try_put_bytes(oq: var openArray[uint8]; bs: openArray[uint8];
     n: var int) =
   if n + bs.len > oq.len:
     return terReqOutput
@@ -152,7 +152,7 @@ template try_put_bytes(oq: var openArray[uint8], bs: openArray[uint8],
     inc n
 
 # returns the consumed character's length in bytes
-template try_get_utf8(te: TextEncoder, iq: openArray[uint8], b: uint8): int =
+template try_get_utf8(te: TextEncoder; iq: openArray[uint8]; b: uint8): int =
   if b shr 5 == 0x6:
     if te.i + 1 >= iq.len:
       return terReqOutput
@@ -183,15 +183,15 @@ template try_get_utf8(te: TextEncoder, iq: openArray[uint8], b: uint8): int =
     te.c = 0xFFFD # invalid
     1
 
-method encode*(te: TextEncoder, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult {.base.} =
+method encode*(te: TextEncoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult {.base.} =
   assert false
 
 method finish*(te: TextEncoder): TextEncoderFinishResult {.base.} =
   tefrDone
 
-proc encodeGB18030(te: TextEncoder, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int, isGBK: bool): TextEncoderResult =
+proc encodeGB18030(te: TextEncoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; isGBK: bool): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -231,16 +231,16 @@ proc encodeGB18030(te: TextEncoder, iq: openArray[uint8],
   te.i = 0
   terDone
 
-method encode*(te: TextEncoderGB18030, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult =
+method encode*(te: TextEncoderGB18030; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult =
   te.encodeGB18030(iq, oq, n, isGBK = false)
 
-method encode*(te: TextEncoderGBK, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult =
+method encode*(te: TextEncoderGBK; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult =
   te.encodeGB18030(iq, oq, n, isGBK = true)
 
-method encode*(te: TextEncoderBig5, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult =
+method encode*(te: TextEncoderBig5; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -269,8 +269,8 @@ method encode*(te: TextEncoderBig5, iq: openArray[uint8],
   te.i = 0
   terDone
 
-method encode*(te: TextEncoderEUC_JP, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult =
+method encode*(te: TextEncoderEUC_JP; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -300,8 +300,8 @@ method encode*(te: TextEncoderEUC_JP, iq: openArray[uint8],
   te.i = 0
   terDone
 
-method encode*(te: TextEncoderISO2022_JP, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult =
+method encode*(te: TextEncoderISO2022_JP; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80: # ASCII
@@ -367,8 +367,8 @@ method finish*(te: TextEncoderISO2022_JP): TextEncoderFinishResult =
     return tefrOutputISO2022JPSetAscii
   tefrDone
 
-method encode*(te: TextEncoderShiftJIS, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult =
+method encode*(te: TextEncoderShiftJIS; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -399,8 +399,8 @@ method encode*(te: TextEncoderShiftJIS, iq: openArray[uint8],
   te.i = 0
   terDone
 
-method encode*(te: TextEncoderEUC_KR, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult =
+method encode*(te: TextEncoderEUC_KR; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -420,8 +420,8 @@ method encode*(te: TextEncoderEUC_KR, iq: openArray[uint8],
   te.i = 0
   terDone
 
-method encode*(te: TextEncoderXUserDefined, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextEncoderResult =
+method encode*(te: TextEncoderXUserDefined; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -439,9 +439,9 @@ method encode*(te: TextEncoderXUserDefined, iq: openArray[uint8],
   te.i = 0
   terDone
 
-proc encode0(te: TextEncoder, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int,
-    map: openArray[tuple[ucs: uint16, val: char]]): TextEncoderResult =
+proc encode0(te: TextEncoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int;
+    map: openArray[tuple[ucs: uint16; val: char]]): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -461,8 +461,8 @@ proc encode0(te: TextEncoder, iq: openArray[uint8],
 template makeSingleByte(name: untyped) {.dirty.} =
   type `TextEncoder name`* = ref object of TextEncoder
 
-  method encode*(td: `TextEncoder name`, iq: openArray[uint8],
-      oq: var openArray[uint8], n: var int): TextEncoderResult =
+  method encode*(td: `TextEncoder name`; iq: openArray[uint8];
+      oq: var openArray[uint8]; n: var int): TextEncoderResult =
     td.encode0(iq, oq, n, `name Encode`)
 
 makeSingleByte IBM866

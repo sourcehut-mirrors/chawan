@@ -320,14 +320,14 @@ func normalizeLocale(s: string): string =
     if uint8(s[i]) > 0x20 and s[i] != '_' and s[i] != '-':
       result &= s[i].toLowerAscii()
 
-func after(s: string, c: set[char]): string =
+func after(s: string; c: set[char]): string =
   var i = 0
   while i < s.len:
     if s[i] in c:
       return s.substr(i + 1)
     inc i
 
-func after(s: string, c: char): string = s.after({c})
+func after(s: string; c: char): string = s.after({c})
 
 const NormalizedCharsetMap = (func(): Table[string, Charset] =
   for k, v in CharsetMap:

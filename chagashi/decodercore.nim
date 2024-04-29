@@ -109,14 +109,14 @@ type
 #   repeat the computation on the previous state in the next call (after
 #   receiving more place.)
 
-method decode*(td: TextDecoder, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult {.base.} =
+method decode*(td: TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult {.base.} =
   assert false
 
 method finish*(td: TextDecoder): TextDecoderFinishResult {.base.} =
   tdfrDone
 
-template try_put_utf8(oq: var openArray[uint8], c: uint32, n: var int) =
+template try_put_utf8(oq: var openArray[uint8]; c: uint32; n: var int) =
   if c < 0x80:
     oq[n] = uint8(c)
     inc n
@@ -149,13 +149,13 @@ template try_put_utf8(oq: var openArray[uint8], c: uint32, n: var int) =
     oq[n] = uint8(c and 0x3F or 0x80)
     inc n
 
-template try_put_byte(oq: var openArray[uint8], b: uint8, n: var int) =
+template try_put_byte(oq: var openArray[uint8]; b: uint8; n: var int) =
   if n + 1 > oq.len:
     return tdrReqOutput
   oq[n] = b
   inc n
 
-template try_put_str(oq: var openArray[uint8], s: static string, n: var int) =
+template try_put_str(oq: var openArray[uint8]; s: static string; n: var int) =
   if n + s.len > oq.len:
     return tdrReqOutput
   for c in s:
@@ -193,8 +193,8 @@ proc gb18030RangesCodepoint(p: uint32): uint32 =
     c = elem.ucs
   c + p - offset
 
-method decode*(td: TextDecoderGB18030, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len or td.hasbuf):
     template consume =
       if td.hasbuf:
@@ -281,8 +281,8 @@ method finish*(td: TextDecoderGB18030): TextDecoderFinishResult =
   td.second = 0
   td.third = 0
 
-method decode*(td: TextDecoderBig5, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderBig5; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
     if b < 0x80 and td.lead == 0:
@@ -335,8 +335,8 @@ method finish*(td: TextDecoderBig5): TextDecoderFinishResult =
     result = tdfrError
   td.lead = 0
 
-method decode*(td: TextDecoderEUC_JP, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderEUC_JP; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
     if b < 0x80 and td.lead == 0:
@@ -383,8 +383,8 @@ method finish*(td: TextDecoderEUC_JP): TextDecoderFinishResult =
   td.lead = 0
   td.jis0212 = false
 
-method decode*(td: TextDecoderISO2022_JP, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderISO2022_JP; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len or td.hasbuf):
     template consume =
       if td.hasbuf:
@@ -515,8 +515,8 @@ method finish*(td: TextDecoderISO2022_JP): TextDecoderFinishResult =
   td.state = i2jsAscii
   td.outputstate = i2jsAscii
 
-method decode*(td: TextDecoderShiftJIS, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderShiftJIS; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
     if b < 0x80 and td.lead == 0: # ASCII
@@ -561,8 +561,8 @@ method finish*(td: TextDecoderShiftJIS): TextDecoderFinishResult =
     result = tdfrError
   td.lead = 0
 
-method decode*(td: TextDecoderEUC_KR, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderEUC_KR; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
     if td.lead == 0 and b < 0x80:
@@ -596,8 +596,8 @@ method finish*(td: TextDecoderEUC_KR): TextDecoderFinishResult =
     result = tdfrError
   td.lead = 0
 
-proc decode0(td: TextDecoderUTF16_BE|TextDecoderUTF16_LE, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int, be: static bool): TextDecoderResult =
+proc decode0(td: TextDecoderUTF16_BE|TextDecoderUTF16_LE; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; be: static bool): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     if not td.haslead:
       td.haslead = true
@@ -633,8 +633,8 @@ proc decode0(td: TextDecoderUTF16_BE|TextDecoderUTF16_LE, iq: openArray[uint8],
   td.i = 0
   tdrDone
 
-method decode*(td: TextDecoderUTF16_BE, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderUTF16_BE; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   td.decode0(iq, oq, n, be = true)
 
 method finish*(td: TextDecoderUTF16_BE): TextDecoderFinishResult =
@@ -644,8 +644,8 @@ method finish*(td: TextDecoderUTF16_BE): TextDecoderFinishResult =
   td.haslead = false
   td.hassurr = false
 
-method decode*(td: TextDecoderUTF16_LE, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderUTF16_LE; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   td.decode0(iq, oq, n, be = false)
 
 method finish*(td: TextDecoderUTF16_LE): TextDecoderFinishResult =
@@ -655,8 +655,8 @@ method finish*(td: TextDecoderUTF16_LE): TextDecoderFinishResult =
   td.haslead = false
   td.hassurr = false
 
-method decode*(td: TextDecoderXUserDefined, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderXUserDefined; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
     if b < 0x80:
@@ -667,8 +667,8 @@ method decode*(td: TextDecoderXUserDefined, iq: openArray[uint8],
   td.i = 0
   tdrDone
 
-proc decode0(td: TextDecoder, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int, map: openArray[uint16]):
+proc decode0(td: TextDecoder; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int; map: openArray[uint16]):
     TextDecoderResult =
   while (let i = td.i; i < iq.len):
     let b = iq[i]
@@ -690,8 +690,8 @@ proc decode0(td: TextDecoder, iq: openArray[uint8],
 template makeSingleByte(name: untyped) {.dirty.} =
   type `TextDecoder name`* = ref object of TextDecoder
 
-  method decode*(td: `TextDecoder name`, iq: openArray[uint8],
-      oq: var openArray[uint8], n: var int): TextDecoderResult =
+  method decode*(td: `TextDecoder name`; iq: openArray[uint8];
+      oq: var openArray[uint8]; n: var int): TextDecoderResult =
     td.decode0(iq, oq, n, `name Decode`)
 
 makeSingleByte IBM866
@@ -722,8 +722,8 @@ makeSingleByte Windows1257
 makeSingleByte Windows1258
 makeSingleByte XMacCyrillic
 
-method decode*(td: TextDecoderReplacement, iq: openArray[uint8],
-    oq: var openArray[uint8], n: var int): TextDecoderResult =
+method decode*(td: TextDecoderReplacement; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
   if not td.reported:
     td.reported = true
     return tdrError

@@ -2,7 +2,7 @@ import validatorcore
 
 export validatorcore
 
-proc validateUTF8Surr*(s: string, start = 0): int =
+proc validateUTF8Surr*(s: string; start = 0): int =
   ## Analogous to std/unicode's validateUtf8, but also reports surrogates and
   ## has an optional `start` parameter.
   var tv = TextValidatorUTF8()
