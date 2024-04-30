@@ -315,19 +315,11 @@ const CharsetMap = {
   "x-user-defined": CHARSET_X_USER_DEFINED
 }.toTable()
 
-func normalizeLocale(s: string): string =
-  for i in 0 ..< s.len:
-    if uint8(s[i]) > 0x20 and s[i] != '_' and s[i] != '-':
-      result &= s[i].toLowerAscii()
-
-func after(s: string; c: set[char]): string =
-  var i = 0
-  while i < s.len:
-    if s[i] in c:
-      return s.substr(i + 1)
-    inc i
-
-func after(s: string; c: char): string = s.after({c})
+func normalizeLocale(s: openArray[char]): string =
+  result = ""
+  for c in s:
+    if uint8(c) > 0x20 and c notin {'_', '-'}:
+      result &= c.toLowerAscii()
 
 const NormalizedCharsetMap = (func(): Table[string, Charset] =
   for k, v in CharsetMap:
@@ -349,10 +341,10 @@ proc getCharset*(s: string): Charset =
 proc getLocaleCharset*(s: string): Charset =
   ## Extract a charset from a locale. e.g. returns EUC_JP for the string
   ## LC_ALL=ja_JP.EUC_JP.
-  let ss = s.after('.')
-  if ss != "":
-    return NormalizedCharsetMap.getOrDefault(ss.normalizeLocale(),
-      CHARSET_UNKNOWN)
+  let i = s.find('.')
+  if i != -1 and i < s.high:
+    let ss = s.toOpenArray(i + 1, s.high).normalizeLocale()
+    return NormalizedCharsetMap.getOrDefault(ss, CHARSET_UNKNOWN)
   # We could try to guess the charset based on the language here, like w3m
   # does.
   # However, these days it is more likely for any system to be using UTF-8

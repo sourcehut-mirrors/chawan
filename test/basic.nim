@@ -173,3 +173,8 @@ test "roundtrip ISO-8859-2":
   let td = TextDecoderISO8859_2()
   let sdecoded = td.decodeAll(sencoded)
   check sdecoded == tisztaszivvel
+
+test "getLocaleCharset":
+  check getLocaleCharset("ja_JP.EUC_JP") == CHARSET_EUC_JP
+  check getLocaleCharset("ja_JP.UTF-8") == CHARSET_UTF_8
+  check getLocaleCharset("") == CHARSET_UTF_8
