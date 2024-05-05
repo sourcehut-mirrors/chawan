@@ -5,7 +5,6 @@ import std/tables
 
 import dombuilder
 import htmltokenizer
-import parseerror
 import tags
 import tokstate
 
@@ -15,7 +14,6 @@ export macros
 # Export these so that htmlparseriface works seamlessly.
 export dombuilder
 export options
-export parseerror
 export tags
 
 # Export tokstate too; it is needed for fragment parsing.
@@ -135,11 +133,6 @@ proc atomToTagType*[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   mixin atomToTagTypeImpl
   return parser.dombuilder.atomToTagTypeImpl(atom)
 
-proc parseError(parser: HTML5Parser, e: ParseError) =
-  mixin parseErrorImpl
-  when compiles(parser.dombuilder.parseErrorImpl(e)):
-    parser.dombuilder.parseErrorImpl(e)
-
 proc setQuirksMode[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     mode: QuirksMode) =
   mixin setQuirksModeImpl
@@ -237,10 +230,6 @@ proc associateWithForm[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     parser.dombuilder.associateWithFormImpl(element, form, intendedParent)
 
 # Parser
-func hasParseError(parser: HTML5Parser): bool =
-  mixin parseErrorImpl
-  return compiles(parser.dombuilder.parseErrorImpl(default(ParseError)))
-
 func fragment(parser: HTML5Parser): bool =
   return parser.ctx.isSome
 
@@ -919,21 +908,6 @@ func extractEncFromMeta(s: string): string =
     return s2
   return s.until(';', ' ', i)
 
-proc parseErrorByTokenType(parser: var HTML5Parser, tokenType: TokenType) =
-  case tokenType
-  of START_TAG:
-    parser.parseError UNEXPECTED_START_TAG
-  of END_TAG:
-    parser.parseError UNEXPECTED_END_TAG
-  of EOF:
-    parser.parseError UNEXPECTED_EOF
-  of CHARACTER, CHARACTER_WHITESPACE:
-    parser.parseError UNEXPECTED_CHARACTER
-  of CHARACTER_NULL:
-    parser.parseError UNEXPECTED_NULL
-  of DOCTYPE, TokenType.COMMENT:
-    doAssert false
-
 # Find a node in the list of active formatting elements, or return -1.
 func findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     node: Handle): int =
@@ -1020,8 +994,6 @@ proc findLastActiveFormatting[Handle, Atom](parser: var HTML5Parser[Handle, Atom
 # If true is returned, call "any other end tag".
 proc adoptionAgencyAlgorithm[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     token: Token): bool =
-  template parse_error(e: ParseError) =
-    parser.parseError(e)
   if parser.currentToken.tagname == token.tagname and
       parser.findLastActiveFormatting(parser.currentNode) == -1:
     pop_current_node
@@ -1034,15 +1006,10 @@ proc adoptionAgencyAlgorithm[Handle, Atom](parser: var HTML5Parser[Handle, Atom]
     let formatting = parser.activeFormatting[formattingIndex][0].get
     let stackIndex = parser.findOpenElement(formatting)
     if stackIndex < 0:
-      parse_error ELEMENT_NOT_IN_OPEN_ELEMENTS
       parser.activeFormatting.delete(formattingIndex)
       return false
     if not parser.hasElementInScope(formatting):
-      parse_error ELEMENT_NOT_IN_SCOPE
       return false
-    if formatting != parser.currentNode:
-      parse_error ELEMENT_NOT_CURRENT_NODE
-      # do not return
     var furthestBlockIndex = parser.findFurthestBlockAfter(stackIndex)
     if furthestBlockIndex == -1:
       parser.popElementsIncl(formatting)
@@ -1104,8 +1071,6 @@ proc adoptionAgencyAlgorithm[Handle, Atom](parser: var HTML5Parser[Handle, Atom]
 proc closeP(parser: var HTML5Parser, sure = false) =
   if sure or parser.hasElementInButtonScope(TAG_P):
     parser.generateImpliedEndTags(TAG_P)
-    if parser.getTagType(parser.currentNode) != TAG_P:
-      parser.parseError(MISMATCHED_TAGS)
     parser.popElementsIncl(TAG_P)
 
 proc newStartTagToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
@@ -1346,19 +1311,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
   template reprocess(mode: InsertionMode): ParseResult =
     parser.processInHTMLContent(token, mode)
 
-  template parse_error(e: ParseError) =
-    parser.parseError(e)
-
-  template parse_error_if_mismatch(tagtype: TagType) =
-    if parser.hasParseError():
-      if parser.getTagType(parser.currentNode) != tagtype:
-        parse_error MISMATCHED_TAGS
-
-  template parse_error_if_mismatch(tagtypes: set[TagType]) =
-    if parser.hasParseError():
-      if parser.getTagType(parser.currentNode) notin tagtypes:
-        parse_error MISMATCHED_TAGS
-
   case insertionMode
   of INITIAL:
     match token:
@@ -1367,9 +1319,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertComment(token, last_child_of(parser.getDocument()))
       )
       TokenType.DOCTYPE => (block:
-        if token.name.get("") != "html" or token.pubid.isSome or
-            token.sysid.isSome and token.sysid.get != "about:legacy-compat":
-          parse_error INVALID_DOCTYPE
         let doctype = parser.createDocumentType(token.name.get(""),
           token.pubid.get(""), token.sysid.get(""))
         parser.append(parser.getDocument(), doctype)
@@ -1381,8 +1330,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertionMode = BEFORE_HTML
       )
       other => (block:
-        if not parser.opts.isIframeSrcdoc:
-          parse_error UNEXPECTED_INITIAL_TOKEN
         parser.setQuirksMode(QUIRKS)
         parser.insertionMode = BEFORE_HTML
         reprocess token
@@ -1390,11 +1337,11 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
   of BEFORE_HTML:
     match token:
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+      (TokenType.DOCTYPE, TokenType.END_TAG,
+        TokenType.CHARACTER_WHITESPACE) => (block: discard)
       TokenType.COMMENT => (block:
         parser.insertComment(token, last_child_of(parser.getDocument()))
       )
-      TokenType.CHARACTER_WHITESPACE => (block: discard)
       "<html>" => (block:
         let intendedParent = parser.getDocument()
         let element = parser.createHTMLElementForToken(token, intendedParent)
@@ -1402,7 +1349,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.pushElement(element, token)
         parser.insertionMode = BEFORE_HEAD
       )
-      TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
       ("</head>", "</body>", "</html>", "</br>", other) => (block:
         let element = parser.createHTMLElement()
         parser.append(parser.getDocument(), element)
@@ -1414,15 +1360,14 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
   of BEFORE_HEAD:
     match token:
-      TokenType.CHARACTER_WHITESPACE => (block: discard)
+      (TokenType.CHARACTER_WHITESPACE, TokenType.DOCTYPE,
+        TokenType.END_TAG) => (block: discard)
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
       "<html>" => (block: return reprocess IN_BODY)
       "<head>" => (block:
         parser.head = some((parser.insertHTMLElement(token), token))
         parser.insertionMode = IN_HEAD
       )
-      TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
       ("</head>", "</body>", "</html>", "</br>", other) => (block:
         let head = parser.newStartTagToken(TAG_HEAD)
         parser.head = some((parser.insertHTMLElement(head), head))
@@ -1436,7 +1381,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertCharacter(token.s)
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+      TokenType.DOCTYPE => (block: discard)
       "<html>" => (block: return reprocess IN_BODY)
       ("<base>", "<basefont>", "<bgsound>", "<link>") => (block:
         discard parser.insertHTMLElement(token)
@@ -1496,18 +1441,14 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.templateModes.add(IN_TEMPLATE)
       )
       "</template>" => (block:
-        if not parser.hasElement(TAG_TEMPLATE):
-          parse_error ELEMENT_NOT_IN_OPEN_ELEMENTS
-        else:
+        if parser.hasElement(TAG_TEMPLATE):
           parser.generateImpliedEndTagsThoroughly()
-          if parser.getTagType(parser.currentNode) != TAG_TEMPLATE:
-            parse_error MISMATCHED_TAGS
           parser.popElementsIncl(TAG_TEMPLATE)
           parser.clearActiveFormattingTillMarker()
           discard parser.templateModes.pop()
           parser.resetInsertionMode()
       )
-      ("<head>", TokenType.END_TAG) => (block: parse_error UNEXPECTED_END_TAG)
+      ("<head>", TokenType.END_TAG) => (block: discard)
       ("</body>", "</html>", "</br>", other) => (block:
         pop_current_node
         parser.insertionMode = AFTER_HEAD
@@ -1516,7 +1457,9 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
   of IN_HEAD_NOSCRIPT:
     match token:
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+      (TokenType.DOCTYPE, "<head>", "<noscript>", TokenType.END_TAG) => (block:
+        discard
+      )
       "<html>" => (block: return reprocess IN_BODY)
       "</noscript>" => (block:
         pop_current_node
@@ -1527,8 +1470,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
          "<style>") => (block:
         return reprocess IN_HEAD
       )
-      ("<head>", "<noscript>") => (block: parse_error UNEXPECTED_START_TAG)
-      TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
       ("</br>", other) => (block:
         pop_current_node
         parser.insertionMode = IN_HEAD
@@ -1541,7 +1482,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertCharacter(token.s)
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+      (TokenType.DOCTYPE, "<head>", TokenType.END_TAG) => (block: discard)
       "<html>" => (block: return reprocess IN_BODY)
       "<body>" => (block:
         discard parser.insertHTMLElement(token)
@@ -1554,7 +1495,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>",
       "<script>", "<style>", "<template>", "<title>") => (block:
-        parse_error UNEXPECTED_START_TAG
         let (head, headTok) = parser.head.get
         parser.pushElement(head, headTok)
         result = reprocess IN_HEAD
@@ -1565,11 +1505,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         if j != -1:
           parser.openElements.delete(j)
       )
-      "</template>" => (block:
-        return reprocess IN_HEAD
-      )
-      ("<head>") => (block: parse_error UNEXPECTED_START_TAG)
-      (TokenType.END_TAG) => (block: parse_error UNEXPECTED_END_TAG)
+      "</template>" => (block: return reprocess IN_HEAD)
       ("</body>", "</html>", "</br>", other) => (block:
         discard parser.insertHTMLElement(parser.newStartTagToken(TAG_BODY))
         parser.insertionMode = IN_BODY
@@ -1586,42 +1522,25 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         let (node, itToken) = parser.openElements[i]
         if itToken.tagname == token.tagname:
           parser.generateImpliedEndTags(tokenTagType)
-          if node != parser.currentNode:
-            parse_error ELEMENT_NOT_CURRENT_NODE
           parser.popElementsIncl(node)
           break
         elif parser.isSpecialElement(node):
-          parse_error UNEXPECTED_SPECIAL_ELEMENT
           return
-
-    template parse_error_if_body_has_disallowed_open_elements =
-      if parser.hasParseError():
-        const Allowed = {
-          TAG_DD, TAG_DT, TAG_LI, TAG_OPTGROUP, TAG_OPTION, TAG_P, TAG_RB,
-          TAG_RP, TAG_RT, TAG_RTC, TAG_TBODY, TAG_TD, TAG_TFOOT, TAG_TH,
-          TAG_THEAD, TAG_TR, TAG_BODY, TAG_HTML
-        }
-        if parser.hasElement(AllTagTypes - Allowed):
-          parse_error MISMATCHED_TAGS
 
     match token:
       TokenType.CHARACTER_WHITESPACE => (block:
         parser.reconstructActiveFormatting()
         parser.insertCharacter(token.s)
       )
-      TokenType.CHARACTER_NULL => (block: parse_error UNEXPECTED_NULL)
+      (TokenType.CHARACTER_NULL, TokenType.DOCTYPE) => (block: discard)
       TokenType.CHARACTER => (block:
         parser.reconstructActiveFormatting()
         parser.insertCharacter(token.s)
         parser.framesetOk = false
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
       "<html>" => (block:
-        parse_error UNEXPECTED_START_TAG
-        if parser.hasElement(TAG_TEMPLATE):
-          discard
-        else:
+        if not parser.hasElement(TAG_TEMPLATE):
           parser.addAttrsIfMissing(parser.openElements[0].element, token.attrs)
       )
       ("<base>", "<basefont>", "<bgsound>", "<link>", "<meta>", "<noframes>",
@@ -1630,7 +1549,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           return reprocess IN_HEAD
       )
       "<body>" => (block:
-        parse_error UNEXPECTED_START_TAG
         if parser.openElements.len == 1 or
             parser.getTagType(parser.openElements[1].element) != TAG_BODY or
             parser.hasElement(TAG_TEMPLATE):
@@ -1640,7 +1558,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.addAttrsIfMissing(parser.openElements[1].element, token.attrs)
       )
       "<frameset>" => (block:
-        parse_error UNEXPECTED_START_TAG
         if parser.openElements.len == 1 or
             parser.getTagType(parser.openElements[1].element) != TAG_BODY or
             not parser.framesetOk:
@@ -1655,22 +1572,14 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       TokenType.EOF => (block:
         if parser.templateModes.len > 0:
           return reprocess IN_TEMPLATE
-        else:
-          parse_error_if_body_has_disallowed_open_elements
-          # stop
+        # stop
       )
       "</body>" => (block:
-        if not parser.hasElementInScope(TAG_BODY):
-          parse_error UNEXPECTED_END_TAG
-        else:
-          parse_error_if_body_has_disallowed_open_elements
+        if parser.hasElementInScope(TAG_BODY):
           parser.insertionMode = AFTER_BODY
       )
       "</html>" => (block:
-        if not parser.hasElementInScope(TAG_BODY):
-          parse_error UNEXPECTED_END_TAG
-        else:
-          parse_error_if_body_has_disallowed_open_elements
+        if parser.hasElementInScope(TAG_BODY):
           parser.insertionMode = AFTER_BODY
           reprocess token
       )
@@ -1685,7 +1594,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       ("<h1>", "<h2>", "<h3>", "<h4>", "<h5>", "<h6>") => (block:
         parser.closeP()
         if parser.getTagType(parser.currentNode) in HTagTypes:
-          parse_error NESTED_TAGS
           pop_current_node
         discard parser.insertHTMLElement(token)
       )
@@ -1697,9 +1605,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       "<form>" => (block:
         let hasTemplate = parser.hasElement(TAG_TEMPLATE)
-        if parser.form.isSome and not hasTemplate:
-          parse_error NESTED_TAGS
-        else:
+        if parser.form.isNone or hasTemplate:
           parser.closeP()
           let element = parser.insertHTMLElement(token)
           if not hasTemplate:
@@ -1713,7 +1619,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           case tagType
           of TAG_LI:
             parser.generateImpliedEndTags(TAG_LI)
-            parse_error_if_mismatch TAG_LI
             parser.popElementsIncl(TAG_LI)
             break
           of TAG_ADDRESS, TAG_DIV, TAG_P:
@@ -1732,12 +1637,10 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           case tagType
           of TAG_DD:
             parser.generateImpliedEndTags(TAG_DD)
-            parse_error_if_mismatch TAG_DD
             parser.popElementsIncl(TAG_DD)
             break
           of TAG_DT:
             parser.generateImpliedEndTags(TAG_DT)
-            parse_error_if_mismatch TAG_DT
             parser.popElementsIncl(TAG_DT)
             break
           of TAG_ADDRESS, TAG_DIV, TAG_P:
@@ -1755,7 +1658,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       "<button>" => (block:
         if parser.hasElementInScope(TAG_BUTTON):
-          parse_error NESTED_TAGS
           parser.generateImpliedEndTags()
           parser.popElementsIncl(TAG_BUTTON)
         parser.reconstructActiveFormatting()
@@ -1767,11 +1669,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
        "</fieldset>", "</figcaption>", "</figure>", "</footer>", "</header>",
        "</hgroup>", "</listing>", "</main>", "</menu>", "</nav>", "</ol>",
        "</pre>", "</search>", "</section>", "</summary>", "</ul>") => (block:
-        if not parser.hasElementInScope(token.tagname):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInScope(token.tagname):
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch tokenTagType
           parser.popElementsIncl(tokenTagType)
       )
       "</form>" => (block:
@@ -1779,57 +1678,40 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           let form = parser.form
           parser.form = none(Handle)
           if form.isNone or not parser.hasElementInScope(form.get):
-            parse_error ELEMENT_NOT_IN_SCOPE
             return
           let node = form.get
           parser.generateImpliedEndTags()
-          if parser.currentNode != node:
-            parse_error ELEMENT_NOT_CURRENT_NODE
           let i = parser.findOpenElement(node)
           parser.openElements.delete(i)
         else:
-          if not parser.hasElementInScope(TAG_FORM):
-            parse_error ELEMENT_NOT_IN_SCOPE
-          else:
+          if parser.hasElementInScope(TAG_FORM):
             parser.generateImpliedEndTags()
-            parse_error_if_mismatch TAG_FORM
             parser.popElementsIncl(TAG_FORM)
       )
       "</p>" => (block:
         if not parser.hasElementInButtonScope(TAG_P):
-          parse_error ELEMENT_NOT_IN_SCOPE
           discard parser.insertHTMLElement(parser.newStartTagToken(TAG_P))
         parser.closeP(sure = true)
       )
       "</li>" => (block:
-        if not parser.hasElementInListItemScope(TAG_LI):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInListItemScope(TAG_LI):
           parser.generateImpliedEndTags(TAG_LI)
-          parse_error_if_mismatch TAG_LI
           parser.popElementsIncl(TAG_LI)
       )
       ("</dd>", "</dt>") => (block:
-        if not parser.hasElementInScope(tokenTagType):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInScope(tokenTagType):
           parser.generateImpliedEndTags(tokenTagType)
-          parse_error_if_mismatch tokenTagType
           parser.popElementsIncl(tokenTagType)
       )
       ("</h1>", "</h2>", "</h3>", "</h4>", "</h5>", "</h6>") => (block:
-        if not parser.hasElementInScope(HTagTypes):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInScope(HTagTypes):
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch tokenTagType
           parser.popElementsIncl(HTagTypes)
       )
       "<a>" => (block:
         let i = parser.findLastActiveFormattingAfterMarker(TAG_A)
         if i != -1:
           let anchor = parser.activeFormatting[i][0].get
-          parse_error NESTED_TAGS
           if parser.adoptionAgencyAlgorithm(token):
             any_other_end_tag tokenTagType
             return
@@ -1852,7 +1734,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       "<nobr>" => (block:
         parser.reconstructActiveFormatting()
         if parser.hasElementInScope(TAG_NOBR):
-          parse_error NESTED_TAGS
           if parser.adoptionAgencyAlgorithm(token):
             any_other_end_tag tokenTagType
             return
@@ -1874,11 +1755,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.framesetOk = false
       )
       ("</applet>", "</marquee>", "</object>") => (block:
-        if not parser.hasElementInScope(tokenTagType):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInScope(tokenTagType):
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch tokenTagType
           parser.popElementsIncl(tokenTagType)
           parser.clearActiveFormattingTillMarker()
       )
@@ -1889,10 +1767,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.framesetOk = false
         parser.insertionMode = IN_TABLE
       )
-      "</br>" => (block:
-        parse_error UNEXPECTED_END_TAG
-        reprocess parser.newStartTagToken(TAG_BR)
-      )
+      "</br>" => (block: reprocess parser.newStartTagToken(TAG_BR))
       ("<area>", "<br>", "<embed>", "<img>", "<keygen>", "<wbr>") => (block:
         parser.reconstructActiveFormatting()
         discard parser.insertHTMLElement(token)
@@ -1971,13 +1846,11 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       ("<rb>", "<rtc>") => (block:
         if parser.hasElementInScope(TAG_RUBY):
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch TAG_RUBY
         discard parser.insertHTMLElement(token)
       )
       ("<rp>", "<rt>") => (block:
         if parser.hasElementInScope(TAG_RUBY):
           parser.generateImpliedEndTags(TAG_RTC)
-          parse_error_if_mismatch {TAG_RUBY, TAG_RTC}
         discard parser.insertHTMLElement(token)
       )
       "<math>" => (block:
@@ -2000,7 +1873,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       ("<caption>", "<col>", "<colgroup>", "<frame>", "<head>", "<tbody>",
        "<td>", "<tfoot>", "<th>", "<thead>", "<tr>") => (block:
-        parse_error UNEXPECTED_START_TAG
+        discard
       )
       TokenType.START_TAG => (block: any_other_start_tag)
       TokenType.END_TAG => (block:
@@ -2019,7 +1892,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertCharacter(token.s)
       )
       TokenType.EOF => (block:
-        parse_error UNEXPECTED_EOF
         if parser.getTagType(parser.currentNode) == TAG_SCRIPT:
           parser.setScriptAlreadyStarted(parser.currentNode)
         pop_current_node
@@ -2053,13 +1925,12 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.insertionMode = IN_TABLE_TEXT
           reprocess token
         else: # anything else
-          parse_error INVALID_TEXT_PARENT
           parser.fosterParenting = true
           result = reprocess IN_BODY
           parser.fosterParenting = false
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+      TokenType.DOCTYPE => (block: discard)
       "<caption>" => (block:
         clear_the_stack_back_to_a_table_context
         parser.activeFormatting.add((none(Handle), nil))
@@ -2091,30 +1962,22 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         reprocess token
       )
       "<table>" => (block:
-        parse_error NESTED_TAGS
-        if not parser.hasElementInTableScope(TAG_TABLE):
-          discard
-        else:
+        if parser.hasElementInTableScope(TAG_TABLE):
           parser.popElementsIncl(TAG_TABLE)
           parser.resetInsertionMode()
           reprocess token
       )
       "</table>" => (block:
-        if not parser.hasElementInTableScope(TAG_TABLE):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope(TAG_TABLE):
           parser.popElementsIncl(TAG_TABLE)
           parser.resetInsertionMode()
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>", "</tbody>",
-       "</td>", "</tfoot>", "</th>", "</thead>", "</tr>") => (block:
-        parse_error UNEXPECTED_END_TAG
-      )
+       "</td>", "</tfoot>", "</th>", "</thead>", "</tr>") => (block: discard)
       ("<style>", "<script>", "<template>", "</template>") => (block:
         return reprocess IN_HEAD
       )
       "<input>" => (block:
-        parse_error UNEXPECTED_START_TAG
         token.attrs.withValue(parser.tagTypeToAtom(TAG_TYP), p):
           if not p[].equalsIgnoreCase("hidden"):
             # anything else
@@ -2131,16 +1994,12 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
           parser.fosterParenting = false
       )
       "<form>" => (block:
-        parse_error UNEXPECTED_START_TAG
-        if parser.form.isSome or parser.hasElement(TAG_TEMPLATE):
-          discard
-        else:
+        if parser.form.isNone and not parser.hasElement(TAG_TEMPLATE):
           parser.form = some(parser.insertHTMLElement(token))
           pop_current_node
       )
       TokenType.EOF => (block: return reprocess IN_BODY)
       other => (block:
-        parse_error UNEXPECTED_START_TAG
         parser.fosterParenting = true
         result = reprocess IN_BODY
         parser.fosterParenting = false
@@ -2148,7 +2007,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
   of IN_TABLE_TEXT:
     match token:
-      TokenType.CHARACTER_NULL => (block: parse_error UNEXPECTED_NULL)
+      TokenType.CHARACTER_NULL => (block: discard)
       TokenType.CHARACTER_WHITESPACE => (block:
         parser.pendingTableChars &= token.s
       )
@@ -2160,7 +2019,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         if not parser.pendingTableCharsWhitespace:
           # I *think* this is effectively the same thing the specification
           # wants...
-          parse_error NON_SPACE_TABLE_TEXT
           parser.fosterParenting = true
           parser.reconstructActiveFormatting()
           parser.insertCharacter(parser.pendingTableChars)
@@ -2175,31 +2033,23 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
   of IN_CAPTION:
     match token:
       "</caption>" => (block:
-        if not parser.hasElementInTableScope(TAG_CAPTION):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope(TAG_CAPTION):
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch TAG_CAPTION
           parser.popElementsIncl(TAG_CAPTION)
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = IN_TABLE
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<td>", "<tfoot>",
        "<th>", "<thead>", "<tr>", "</table>") => (block:
-        if not parser.hasElementInTableScope(TAG_CAPTION):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope(TAG_CAPTION):
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch TAG_CAPTION
           parser.popElementsIncl(TAG_CAPTION)
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = IN_TABLE
           reprocess token
       )
       ("</body>", "</col>", "</colgroup>", "</html>", "</tbody>", "</td>",
-       "</tfoot>", "</th>", "</thead>", "</tr>") => (block:
-        parse_error UNEXPECTED_END_TAG
-      )
+       "</tfoot>", "</th>", "</thead>", "</tr>") => (block: discard)
       other => (block: return reprocess IN_BODY)
 
   of IN_COLUMN_GROUP:
@@ -2208,26 +2058,21 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertCharacter(token.s)
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+      (TokenType.DOCTYPE, "</col>") => (block: discard)
       "<html>" => (block: return reprocess IN_BODY)
       "<col>" => (block:
         discard parser.insertHTMLElement(token)
         pop_current_node
       )
       "</colgroup>" => (block:
-        if parser.getTagType(parser.currentNode) != TAG_COLGROUP:
-          parse_error MISMATCHED_TAGS
-        else:
+        if parser.getTagType(parser.currentNode) == TAG_COLGROUP:
           pop_current_node
           parser.insertionMode = IN_TABLE
       )
-      "</col>" => (block: parse_error UNEXPECTED_END_TAG)
       ("<template>", "</template>") => (block: return reprocess IN_HEAD)
       TokenType.EOF => (block: return reprocess IN_BODY)
       other => (block:
-        if parser.getTagType(parser.currentNode) != TAG_COLGROUP:
-          parse_error MISMATCHED_TAGS
-        else:
+        if parser.getTagType(parser.currentNode) == TAG_COLGROUP:
           pop_current_node
           parser.insertionMode = IN_TABLE
           reprocess token
@@ -2246,34 +2091,27 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertionMode = IN_ROW
       )
       ("<th>", "<td>") => (block:
-        parse_error UNEXPECTED_START_TAG
         clear_the_stack_back_to_a_table_body_context
         discard parser.insertHTMLElement(parser.newStartTagToken(TAG_TR))
         parser.insertionMode = IN_ROW
         reprocess token
       )
       ("</tbody>", "</tfoot>", "</thead>") => (block:
-        if not parser.hasElementInTableScope(tokenTagType):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope(tokenTagType):
           clear_the_stack_back_to_a_table_body_context
           pop_current_node
           parser.insertionMode = IN_TABLE
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<tfoot>", "<thead>",
        "</table>") => (block:
-        if not parser.hasElementInTableScope({TAG_TBODY, TAG_THEAD, TAG_TFOOT}):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope({TAG_TBODY, TAG_THEAD, TAG_TFOOT}):
           clear_the_stack_back_to_a_table_body_context
           pop_current_node
           parser.insertionMode = IN_TABLE
           reprocess token
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>", "</td>",
-       "</th>", "</tr>") => (block:
-        parse_error ELEMENT_NOT_IN_SCOPE
-      )
+       "</th>", "</tr>") => (block: discard)
       other => (block: return reprocess IN_TABLE)
 
   of IN_ROW:
@@ -2289,72 +2127,56 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.activeFormatting.add((none(Handle), nil))
       )
       "</tr>" => (block:
-        if not parser.hasElementInTableScope(TAG_TR):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope(TAG_TR):
           clear_the_stack_back_to_a_table_row_context
           pop_current_node
           parser.insertionMode = IN_TABLE_BODY
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<tfoot>", "<thead>",
        "<tr>", "</table>") => (block:
-        if not parser.hasElementInTableScope(TAG_TR):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope(TAG_TR):
           clear_the_stack_back_to_a_table_row_context
           pop_current_node
           parser.insertionMode = IN_TABLE_BODY
           reprocess token
       )
       ("</tbody>", "</tfoot>", "</thead>") => (block:
-        if not parser.hasElementInTableScope(tokenTagType):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        elif not parser.hasElementInTableScope(TAG_TR):
-          discard
-        else:
+        if parser.hasElementInTableScope({tokenTagType, TAG_TR}):
           clear_the_stack_back_to_a_table_row_context
           pop_current_node
           parser.insertionMode = IN_TABLE_BODY
           reprocess token
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>", "</td>",
-       "</th>") => (block: parse_error UNEXPECTED_END_TAG)
+       "</th>") => (block: discard)
       other => (block: return reprocess IN_TABLE)
 
   of IN_CELL:
     template close_cell() =
       parser.generateImpliedEndTags()
-      parse_error_if_mismatch {TAG_TD, TAG_TH}
       parser.popElementsIncl({TAG_TD, TAG_TH})
       parser.clearActiveFormattingTillMarker()
       parser.insertionMode = IN_ROW
 
     match token:
       ("</td>", "</th>") => (block:
-        if not parser.hasElementInTableScope(tokenTagType):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope(tokenTagType):
           parser.generateImpliedEndTags()
-          parse_error_if_mismatch tokenTagType
           parser.popElementsIncl(tokenTagType)
           parser.clearActiveFormattingTillMarker()
           parser.insertionMode = IN_ROW
       )
       ("<caption>", "<col>", "<colgroup>", "<tbody>", "<td>", "<tfoot>",
        "<th>", "<thead>", "<tr>") => (block:
-        if not parser.hasElementInTableScope({TAG_TD, TAG_TH}):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope({TAG_TD, TAG_TH}):
           close_cell
           reprocess token
       )
       ("</body>", "</caption>", "</col>", "</colgroup>", "</html>") => (block:
-        parse_error UNEXPECTED_END_TAG
+        discard
       )
       ("</table>", "</tbody>", "</tfoot>", "</thead>", "</tr>") => (block:
-        if not parser.hasElementInTableScope(tokenTagType):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInTableScope(tokenTagType):
           close_cell
           reprocess token
       )
@@ -2362,15 +2184,10 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
   of IN_SELECT:
     match token:
-      TokenType.CHARACTER_NULL => (block: parse_error UNEXPECTED_NULL)
-      TokenType.CHARACTER => (block:
-        parser.insertCharacter(token.s)
-      )
-      TokenType.CHARACTER_WHITESPACE => (block:
+      (TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE) => (block:
         parser.insertCharacter(token.s)
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
       "<html>" => (block: return reprocess IN_BODY)
       "<option>" => (block:
         if parser.getTagType(parser.currentNode) == TAG_OPTION:
@@ -2400,33 +2217,23 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
               pop_current_node
         if parser.getTagType(parser.currentNode) == TAG_OPTGROUP:
           pop_current_node
-        else:
-          parse_error MISMATCHED_TAGS
       )
       "</option>" => (block:
         if parser.getTagType(parser.currentNode) == TAG_OPTION:
           pop_current_node
-        else:
-          parse_error MISMATCHED_TAGS
       )
       "</select>" => (block:
-        if not parser.hasElementInSelectScope(TAG_SELECT):
-          parse_error ELEMENT_NOT_IN_SCOPE
-        else:
+        if parser.hasElementInSelectScope(TAG_SELECT):
           parser.popElementsIncl(TAG_SELECT)
           parser.resetInsertionMode()
       )
       "<select>" => (block:
-        parse_error NESTED_TAGS
         if parser.hasElementInSelectScope(TAG_SELECT):
           parser.popElementsIncl(TAG_SELECT)
           parser.resetInsertionMode()
       )
       ("<input>", "<keygen>", "<textarea>") => (block:
-        parse_error UNEXPECTED_START_TAG
-        if not parser.hasElementInSelectScope(TAG_SELECT):
-          discard
-        else:
+        if parser.hasElementInSelectScope(TAG_SELECT):
           parser.popElementsIncl(TAG_SELECT)
           parser.resetInsertionMode()
           reprocess token
@@ -2435,24 +2242,19 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         return reprocess IN_HEAD
       )
       TokenType.EOF => (block: return reprocess IN_BODY)
-      TokenType.START_TAG => (block: parse_error UNEXPECTED_START_TAG)
-      TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
+      other => (block: discard)
 
   of IN_SELECT_IN_TABLE:
     match token:
       ("<caption>", "<table>", "<tbody>", "<tfoot>", "<thead>", "<tr>", "<td>",
        "<th>") => (block:
-        parse_error UNEXPECTED_START_TAG
         parser.popElementsIncl(TAG_SELECT)
         parser.resetInsertionMode()
         reprocess token
       )
       ("</caption>", "</table>", "</tbody>", "</tfoot>", "</thead>", "</tr>",
        "</td>", "</th>") => (block:
-        parse_error UNEXPECTED_END_TAG
-        if not parser.hasElementInTableScope(tokenTagType):
-          discard
-        else:
+        if parser.hasElementInTableScope(tokenTagType):
           parser.popElementsIncl(TAG_SELECT)
           parser.resetInsertionMode()
           reprocess token
@@ -2499,12 +2301,11 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertionMode = IN_BODY
         reprocess token
       )
-      TokenType.END_TAG => (block: parse_error UNEXPECTED_END_TAG)
+      TokenType.END_TAG => (block: discard)
       TokenType.EOF => (block:
         if not parser.hasElement(TAG_TEMPLATE):
           discard # stop
         else:
-          parse_error UNEXPECTED_EOF
           parser.popElementsIncl(TAG_TEMPLATE)
           parser.clearActiveFormattingTillMarker()
           discard parser.templateModes.pop()
@@ -2520,17 +2321,14 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       TokenType.COMMENT => (block:
         parser.insertComment(token, last_child_of(parser.openElements[0]))
       )
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+      TokenType.DOCTYPE => (block: discard)
       "<html>" => (block: return reprocess IN_BODY)
       "</html>" => (block:
-        if parser.fragment:
-          parse_error UNEXPECTED_END_TAG
-        else:
+        if not parser.fragment:
           parser.insertionMode = AFTER_AFTER_BODY
       )
       TokenType.EOF => (block: discard) # stop
       other => (block:
-        parse_error UNEXPECTED_AFTER_BODY_TOKEN
         parser.insertionMode = IN_BODY
         reprocess token
       )
@@ -2541,13 +2339,11 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertCharacter(token.s)
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+      TokenType.DOCTYPE => (block: discard)
       "<html>" => (block: return reprocess IN_BODY)
       "<frameset>" => (block: discard parser.insertHTMLElement(token))
       "</frameset>" => (block:
-        if parser.getTagType(parser.currentNode) == TAG_HTML:
-          parse_error UNEXPECTED_START_TAG
-        else:
+        if parser.getTagType(parser.currentNode) != TAG_HTML:
           pop_current_node
         if not parser.fragment and
             parser.getTagType(parser.currentNode) != TAG_FRAMESET:
@@ -2559,11 +2355,9 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       "<noframes>" => (block: return reprocess IN_HEAD)
       TokenType.EOF => (block:
-        if parser.getTagType(parser.currentNode) != TAG_HTML:
-          parse_error UNEXPECTED_EOF
         # stop
       )
-      other => (block: parser.parseErrorByTokenType(token.t))
+      other => (block: discard)
 
   of AFTER_FRAMESET:
     match token:
@@ -2571,12 +2365,10 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertCharacter(token.s)
       )
       TokenType.COMMENT => (block: parser.insertComment(token))
-      TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
       "<html>" => (block: return reprocess IN_BODY)
       "</html>" => (block: parser.insertionMode = AFTER_AFTER_FRAMESET)
       "<noframes>" => (block: return reprocess IN_HEAD)
-      TokenType.EOF => (block: discard) # stop
-      other => (block: parser.parseErrorByTokenType(token.t))
+      other => (block: discard)
 
   of AFTER_AFTER_BODY:
     match token:
@@ -2588,7 +2380,6 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       TokenType.EOF => (block: discard) # stop
       other => (block:
-        parser.parseErrorByTokenType(token.t)
         parser.insertionMode = IN_BODY
         reprocess token
       )
@@ -2601,9 +2392,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       (TokenType.DOCTYPE, TokenType.CHARACTER_WHITESPACE, "<html>") => (block:
         return reprocess IN_BODY
       )
-      TokenType.EOF => (block: discard) # stop
       "<noframes>" => (block: return reprocess IN_HEAD)
-      other => (block: parser.parseErrorByTokenType(token.t))
+      other => (block: discard)
   return PRES_CONTINUE
 
 proc processInForeignContent[Handle, Atom](
@@ -2612,9 +2402,6 @@ proc processInForeignContent[Handle, Atom](
     pop_current_node
     #TODO document.write (?)
     #TODO SVG
-
-  template parse_error(e: ParseError) =
-    parser.parseError(e)
 
   template any_other_start_tag() =
     let namespace = parser.getNamespace(parser.adjustedCurrentNode)
@@ -2635,10 +2422,6 @@ proc processInForeignContent[Handle, Atom](
         pop_current_node
 
   template any_other_end_tag() =
-    if parser.currentToken.tagname != token.tagname:
-      # Compare the start tag token, since it is guaranteed to be lower case.
-      # (The local name might have been adjusted to a non-lower-case string.)
-      parse_error UNEXPECTED_END_TAG
     for i in countdown(parser.openElements.high, 0): # loop
       if i == 0: # fragment case
         assert parser.fragment
@@ -2654,17 +2437,14 @@ proc processInForeignContent[Handle, Atom](
         break
 
   match token:
-    TokenType.CHARACTER_NULL => (block:
-      parse_error UNEXPECTED_NULL
-      parser.insertCharacter("\uFFFD")
-    )
+    TokenType.CHARACTER_NULL => (block: parser.insertCharacter("\uFFFD"))
     TokenType.CHARACTER_WHITESPACE => (block: parser.insertCharacter(token.s))
     TokenType.CHARACTER => (block:
       parser.insertCharacter(token.s)
       parser.framesetOk = false
     )
     TokenType.COMMENT => (block: parser.insertComment(token))
-    TokenType.DOCTYPE => (block: parse_error UNEXPECTED_DOCTYPE)
+    TokenType.DOCTYPE => (block: discard)
     ("<b>", "<big>", "<blockquote>", "<body>", "<br>", "<center>", "<code>",
      "<dd>", "<div>", "<dl>", "<dt>", "<em>", "<embed>", "<h1>", "<h2>",
      "<h3>", "<h4>", "<h5>", "<h6>", "<head>", "<hr>", "<i>", "<img>", "<li>",
@@ -2681,7 +2461,6 @@ proc processInForeignContent[Handle, Atom](
             atSize notin token.attrs:
           any_other_start_tag
           return
-      parse_error UNEXPECTED_START_TAG #TODO this makes no sense
       while not parser.isMathMLIntegrationPoint(parser.currentNode) and
           not parser.isHTMLIntegrationPoint(parser.currentNodeToken) and
           parser.getNamespace(parser.currentNode) != Namespace.HTML:

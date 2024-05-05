@@ -8,7 +8,6 @@ import std/unicode
 
 import dombuilder
 import entity_gen
-import parseerror
 import tokstate
 
 export tokstate
@@ -129,14 +128,6 @@ proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
     tokenizer.isws = false
     tokenizer.charbuf.setLen(0)
 
-when not defined(parseErrorImpl):
-  proc parseErrorImpl(builder: DOMBuilderBase, e: ParseError) =
-    discard
-
-proc parseError(tokenizer: Tokenizer, e: ParseError) =
-  mixin parseErrorImpl
-  tokenizer.dombuilder.parseErrorImpl(e)
-
 const AttributeStates = {
   ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
   ATTRIBUTE_VALUE_UNQUOTED
@@ -224,25 +215,14 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
   return (i, ci, entry)
 
 proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
-  template parse_error(error: untyped) =
-    tokenizer.parseError(error)
   var c = tokenizer.code
-  if c == 0x00:
-    parse_error NULL_CHARACTER_REFERENCE
-    c = 0xFFFD
-  elif c > 0x10FFFF:
-    parse_error CHARACTER_REFERENCE_OUTSIDE_UNICODE_RANGE
-    c = 0xFFFD
-  elif c in 0xD800u32..0xDFFFu32: # surrogates
-    parse_error SURROGATE_CHARACTER_REFERENCE
+  if c == 0x00 or c > 0x10FFFF or c in 0xD800u32..0xDFFFu32:
     c = 0xFFFD
   elif c in 0xFDD0u32..0xFDEFu32 or (c and 0xFFFF) in 0xFFFEu32..0xFFFFu32:
-    parse_error NONCHARACTER_CHARACTER_REFERENCE
-    # do nothing
+    discard # noncharacter, do nothing
   elif c < 0x80 and char(c) in (Controls - AsciiWhitespace) + {char(0x0D)}:
-    parse_error CONTROL_CHARACTER_REFERENCE
+    discard # control, do nothing
   elif c in 0x80u32 .. 0x9Fu32:
-    parse_error CONTROL_CHARACTER_REFERENCE
     const ControlMapTable = [
       0x80_00_20ACu32, 0x82_00_201Au32, 0x83_00_0192u32, 0x84_00_201Eu32,
       0x85_00_2026u32, 0x86_00_2020u32, 0x87_00_2021u32, 0x88_00_02C6u32,
@@ -321,16 +301,9 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
   template emit(tok: Token) =
     tokenizer.flushChars()
     tokenizer.tokqueue.add(tok)
-  template emit(tok: TokenType) = emit Token[Atom](t: tok)
   template reconsume_in(s: TokenizerState) =
     tokenizer.state = s
     return true
-  template parse_error(error: untyped) =
-    tokenizer.parseError(error)
-  template emit_eof =
-    tokenizer.flushChars()
-  template emit_tok =
-    emit tokenizer.tok
   template emit(ch: char) =
     tokenizer.emit(ch)
   template emit(s: static string) =
@@ -343,87 +316,26 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
   tokenizer.tokqueue.setLen(0)
 
   case tokenizer.state
-  of DATA, RCDATA, RAWTEXT, SCRIPT_DATA, PLAINTEXT, SCRIPT_DATA_ESCAPE_START,
-      SCRIPT_DATA_ESCAPE_START_DASH:
-    emit_eof
-  of TAG_OPEN:
-    parse_error EOF_BEFORE_TAG_NAME
+  of TAG_OPEN, RCDATA_LESS_THAN_SIGN, RAWTEXT_LESS_THAN_SIGN,
+      SCRIPT_DATA_LESS_THAN_SIGN, SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN:
     emit '<'
-    emit_eof
-  of END_TAG_OPEN:
-    parse_error EOF_BEFORE_TAG_NAME
+  of END_TAG_OPEN, RCDATA_END_TAG_OPEN, RAWTEXT_END_TAG_OPEN,
+      SCRIPT_DATA_END_TAG_OPEN, SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
     emit "</"
-    emit_eof
-  of TAG_NAME:
-    parse_error EOF_IN_TAG
-    emit_eof
-  of RCDATA_LESS_THAN_SIGN, RAWTEXT_LESS_THAN_SIGN,
-      SCRIPT_DATA_LESS_THAN_SIGN:
-    emit '<'
-    # note: was reconsume (rcdata/rawtext/script data)
-    emit_eof
-  of RCDATA_END_TAG_OPEN, RAWTEXT_END_TAG_OPEN, SCRIPT_DATA_END_TAG_OPEN:
-    emit "</"
-    # note: was reconsume (rcdata/rawtext/script data)
-    emit_eof
-  of RCDATA_END_TAG_NAME, RAWTEXT_END_TAG_NAME, SCRIPT_DATA_END_TAG_NAME:
+  of RCDATA_END_TAG_NAME, RAWTEXT_END_TAG_NAME, SCRIPT_DATA_END_TAG_NAME,
+      SCRIPT_DATA_ESCAPED_END_TAG_NAME:
     emit "</"
     tokenizer.emitTmp()
-    # note: was reconsume (rcdata/rawtext/script data)
-    emit_eof
-  of SCRIPT_DATA_ESCAPED, SCRIPT_DATA_ESCAPED_DASH,
-      SCRIPT_DATA_ESCAPED_DASH_DASH, SCRIPT_DATA_DOUBLE_ESCAPE_START:
-    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-    emit_eof
-  of SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN:
-    emit '<'
-    # note: was reconsume (script data escaped)
-    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-    emit_eof
-  of SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
-    emit "</"
-    # note: was reconsume (script data escaped)
-    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-    emit_eof
-  of SCRIPT_DATA_ESCAPED_END_TAG_NAME:
-    emit "</"
-    tokenizer.emitTmp()
-    # note: was reconsume (script data escaped)
-    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-    emit_eof
-  of SCRIPT_DATA_DOUBLE_ESCAPED, SCRIPT_DATA_DOUBLE_ESCAPED_DASH,
-      SCRIPT_DATA_DOUBLE_ESCAPED_DASH_DASH,
-      SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN,
-      SCRIPT_DATA_DOUBLE_ESCAPE_END:
-    parse_error EOF_IN_SCRIPT_HTML_COMMENT_LIKE_TEXT
-    emit_eof
-  of AFTER_ATTRIBUTE_NAME, BEFORE_ATTRIBUTE_NAME, ATTRIBUTE_NAME:
-    parse_error EOF_IN_TAG
-    emit_eof
-  of ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
-      ATTRIBUTE_VALUE_UNQUOTED, AFTER_ATTRIBUTE_VALUE_QUOTED,
-      SELF_CLOSING_START_TAG, BEFORE_ATTRIBUTE_VALUE:
-    parse_error EOF_IN_TAG
-    emit_eof
-  of BOGUS_COMMENT, BOGUS_DOCTYPE:
-    emit_tok
-    emit_eof
+  of BOGUS_COMMENT, BOGUS_DOCTYPE, COMMENT_END_DASH,
+      COMMENT_END, COMMENT_END_BANG, COMMENT_LESS_THAN_SIGN_BANG_DASH,
+      COMMENT_LESS_THAN_SIGN_BANG_DASH_DASH, COMMENT_START_DASH, COMMENT,
+      COMMENT_START, COMMENT_LESS_THAN_SIGN, COMMENT_LESS_THAN_SIGN_BANG:
+    emit tokenizer.tok
   of MARKUP_DECLARATION_OPEN:
-    parse_error INCORRECTLY_OPENED_COMMENT
     # note: was reconsume (bogus comment)
     emit Token[Atom](t: COMMENT)
-    emit_eof
-  of COMMENT_END_DASH, COMMENT_END, COMMENT_END_BANG,
-      COMMENT_LESS_THAN_SIGN_BANG_DASH, COMMENT_LESS_THAN_SIGN_BANG_DASH_DASH,
-      COMMENT_START_DASH, COMMENT, COMMENT_START, COMMENT_LESS_THAN_SIGN,
-      COMMENT_LESS_THAN_SIGN_BANG:
-    parse_error EOF_IN_COMMENT
-    emit_tok
-    emit_eof
   of DOCTYPE, BEFORE_DOCTYPE_NAME:
-    parse_error EOF_IN_DOCTYPE
     emit Token[Atom](t: DOCTYPE, quirks: true)
-    emit_eof
   of DOCTYPE_NAME, AFTER_DOCTYPE_NAME, AFTER_DOCTYPE_PUBLIC_KEYWORD,
       BEFORE_DOCTYPE_PUBLIC_IDENTIFIER,
       DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED,
@@ -434,23 +346,14 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
       DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED,
       DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED,
       AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
-    parse_error EOF_IN_DOCTYPE
     tokenizer.tok.quirks = true
-    emit_tok
-    emit_eof
-  of CDATA_SECTION:
-    parse_error EOF_IN_CDATA
-    emit_eof
+    emit tokenizer.tok
   of CDATA_SECTION_BRACKET:
     emit ']'
     # note: was reconsume (CDATA section)
-    parse_error EOF_IN_CDATA
-    emit_eof
   of CDATA_SECTION_END:
     emit "]]"
     # note: was reconsume (CDATA section)
-    parse_error EOF_IN_CDATA
-    emit_eof
   of CHARACTER_REFERENCE:
     tokenizer.tmp = "&"
     tokenizer.flushCodePointsConsumedAsCharRef()
@@ -464,19 +367,15 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
     reconsume_in tokenizer.rstate
   of HEXADECIMAL_CHARACTER_REFERENCE_START, DECIMAL_CHARACTER_REFERENCE_START,
       NUMERIC_CHARACTER_REFERENCE:
-    parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
     tokenizer.flushCodePointsConsumedAsCharRef()
     reconsume_in tokenizer.rstate
-  of HEXADECIMAL_CHARACTER_REFERENCE, DECIMAL_CHARACTER_REFERENCE:
-    parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
-    # note: was reconsume (numeric character reference end)
+  of HEXADECIMAL_CHARACTER_REFERENCE, DECIMAL_CHARACTER_REFERENCE,
+      NUMERIC_CHARACTER_REFERENCE_END:
     tokenizer.numericCharacterReferenceEndState()
     # we unnecessarily consumed once so reconsume
     reconsume_in tokenizer.rstate
-  of NUMERIC_CHARACTER_REFERENCE_END:
-    tokenizer.numericCharacterReferenceEndState()
-    # we unnecessarily consumed once so reconsume
-    reconsume_in tokenizer.rstate
+  else: discard
+  tokenizer.flushChars()
   false
 
 type TokenizeResult* = enum
@@ -513,8 +412,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
   template switch_state_return(s: TokenizerState) =
     tokenizer.rstate = tokenizer.state
     tokenizer.state = s
-  template parse_error(error: untyped) =
-    tokenizer.parseError(error)
   template is_appropriate_end_tag_token(): bool =
     tokenizer.laststart != nil and
       tokenizer.laststart.tagname == tokenizer.tok.tagname
@@ -552,41 +449,31 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of '&': switch_state_return CHARACTER_REFERENCE
       of '<': switch_state TAG_OPEN
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        emit_null
+      of '\0': emit_null
       else: emit c
 
     of RCDATA:
       case c
       of '&': switch_state_return CHARACTER_REFERENCE
       of '<': switch_state RCDATA_LESS_THAN_SIGN
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        emit_replacement
+      of '\0': emit_replacement
       else: emit c
 
     of RAWTEXT:
       case c
       of '<': switch_state RAWTEXT_LESS_THAN_SIGN
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        emit_replacement
+      of '\0': emit_replacement
       else: emit c
 
     of SCRIPT_DATA:
       case c
       of '<': switch_state SCRIPT_DATA_LESS_THAN_SIGN
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        emit_replacement
+      of '\0': emit_replacement
       else: emit c
 
     of PLAINTEXT:
       case c
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        emit_replacement
+      of '\0': emit_replacement
       else: emit c
 
     of TAG_OPEN:
@@ -599,12 +486,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         # note: was reconsume
         switch_state TAG_NAME
       of '?':
-        parse_error UNEXPECTED_QUESTION_MARK_INSTEAD_OF_TAG_NAME
         new_token Token[Atom](t: COMMENT, data: "?")
         # note: was reconsume
         switch_state BOGUS_COMMENT
       else:
-        parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
         emit '<'
         reconsume_in DATA
 
@@ -615,11 +500,8 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.tagNameBuf = $c.toLowerAscii()
         # note: was reconsume
         switch_state TAG_NAME
-      of '>':
-        parse_error MISSING_END_TAG_NAME
-        switch_state DATA
+      of '>': switch_state DATA
       else:
-        parse_error INVALID_FIRST_CHARACTER_OF_TAG_NAME
         new_token Token[Atom](t: COMMENT)
         reconsume_in BOGUS_COMMENT
 
@@ -636,9 +518,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.flushTagName()
         emit_tok
       of AsciiUpperAlpha: tokenizer.tagNameBuf &= c.toLowerAscii()
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tagNameBuf &= "\uFFFD"
+      of '\0': tokenizer.tagNameBuf &= "\uFFFD"
       else: tokenizer.tagNameBuf &= c
 
     of RCDATA_LESS_THAN_SIGN:
@@ -821,13 +701,9 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '-':
         switch_state SCRIPT_DATA_ESCAPED_DASH
         emit '-'
-      of '<':
-        switch_state SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        emit_replacement
-      else:
-        emit c
+      of '<': switch_state SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN
+      of '\0': emit_replacement
+      else: emit c
 
     of SCRIPT_DATA_ESCAPED_DASH:
       case c
@@ -837,7 +713,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '<':
         switch_state SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN
       of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
         emit_replacement
       else:
@@ -854,7 +729,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state SCRIPT_DATA
         emit '>'
       of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_ESCAPED
         emit_replacement
       else:
@@ -940,9 +814,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '<':
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN
         emit '<'
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        emit_replacement
+      of '\0': emit_replacement
       else: emit c
 
     of SCRIPT_DATA_DOUBLE_ESCAPED_DASH:
@@ -954,7 +826,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED_LESS_THAN_SIGN
         emit '<'
       of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_replacement
       else:
@@ -971,7 +842,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state SCRIPT_DATA
         emit '>'
       of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
         switch_state SCRIPT_DATA_DOUBLE_ESCAPED
         emit_replacement
       else:
@@ -1005,7 +875,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of AsciiWhitespace: discard
       of '/', '>': reconsume_in AFTER_ATTRIBUTE_NAME
       of '=':
-        parse_error UNEXPECTED_EQUALS_SIGN_BEFORE_ATTRIBUTE_NAME
         start_new_attribute
         tokenizer.tmp &= c
         switch_state ATTRIBUTE_NAME
@@ -1014,8 +883,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         reconsume_in ATTRIBUTE_NAME
 
     of ATTRIBUTE_NAME:
-      template anything_else =
-        tokenizer.tmp &= c
       case c
       of AsciiWhitespace, '/', '>':
         leave_attribute_name_state
@@ -1026,13 +893,9 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of AsciiUpperAlpha:
         tokenizer.tmp &= c.toLowerAscii()
       of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
         tokenizer.tmp &= "\uFFFD"
-      of '"', '\'', '<':
-        parse_error UNEXPECTED_CHARACTER_IN_ATTRIBUTE_NAME
-        anything_else
       else:
-        anything_else
+        tokenizer.tmp &= c
 
     of AFTER_ATTRIBUTE_NAME:
       case c
@@ -1053,7 +916,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '"': switch_state ATTRIBUTE_VALUE_DOUBLE_QUOTED
       of '\'': switch_state ATTRIBUTE_VALUE_SINGLE_QUOTED
       of '>':
-        parse_error MISSING_ATTRIBUTE_VALUE
         switch_state DATA
         prepare_attrs_if_start
         emit_tok
@@ -1063,18 +925,14 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of '"': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.appendToCurrentAttrValue("\uFFFD")
+      of '\0': tokenizer.appendToCurrentAttrValue("\uFFFD")
       else: tokenizer.appendToCurrentAttrValue(c)
 
     of ATTRIBUTE_VALUE_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.appendToCurrentAttrValue("\uFFFD")
+      of '\0': tokenizer.appendToCurrentAttrValue("\uFFFD")
       else: tokenizer.appendToCurrentAttrValue(c)
 
     of ATTRIBUTE_VALUE_UNQUOTED:
@@ -1085,12 +943,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         prepare_attrs_if_start
         emit_tok
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.appendToCurrentAttrValue("\uFFFD")
-      of '"', '\'', '<', '=', '`':
-        parse_error UNEXPECTED_CHARACTER_IN_UNQUOTED_ATTRIBUTE_VALUE
-        tokenizer.appendToCurrentAttrValue(c)
+      of '\0': tokenizer.appendToCurrentAttrValue("\uFFFD")
       else: tokenizer.appendToCurrentAttrValue(c)
 
     of AFTER_ATTRIBUTE_VALUE_QUOTED:
@@ -1103,9 +956,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         prepare_attrs_if_start
         emit_tok
-      else:
-        parse_error MISSING_WHITESPACE_BETWEEN_ATTRIBUTES
-        reconsume_in BEFORE_ATTRIBUTE_NAME
+      else: reconsume_in BEFORE_ATTRIBUTE_NAME
 
     of SELF_CLOSING_START_TAG:
       case c
@@ -1114,9 +965,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         prepare_attrs_if_start
         emit_tok
-      else:
-        parse_error UNEXPECTED_SOLIDUS_IN_TAG
-        reconsume_in BEFORE_ATTRIBUTE_NAME
+      else: reconsume_in BEFORE_ATTRIBUTE_NAME
 
     of BOGUS_COMMENT:
       assert tokenizer.tok.t == COMMENT
@@ -1124,14 +973,11 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.data &= "\uFFFD"
+      of '\0': tokenizer.tok.data &= "\uFFFD"
       else: tokenizer.tok.data &= c
 
     of MARKUP_DECLARATION_OPEN: # note: rewritten to fit case model as we consume a char anyway
       template anything_else =
-        parse_error INCORRECTLY_OPENED_COMMENT
         new_token Token[Atom](t: COMMENT)
         switch_state BOGUS_COMMENT
       case c
@@ -1153,7 +999,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
           if tokenizer.hasnonhtml:
             switch_state CDATA_SECTION
           else:
-            parse_error CDATA_IN_HTML_CONTENT
             new_token Token[Atom](t: COMMENT, data: "[CDATA[")
             switch_state BOGUS_COMMENT
         of esrRetry: break
@@ -1167,7 +1012,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of '-': switch_state COMMENT_START_DASH
       of '>':
-        parse_error ABRUPT_CLOSING_OF_EMPTY_COMMENT
         switch_state DATA
         emit_tok
       else: reconsume_in COMMENT
@@ -1176,7 +1020,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of '-': switch_state COMMENT_END
       of '>':
-        parse_error ABRUPT_CLOSING_OF_EMPTY_COMMENT
         switch_state DATA
         emit_tok
       else:
@@ -1189,9 +1032,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.tok.data &= c
         switch_state COMMENT_LESS_THAN_SIGN
       of '-': switch_state COMMENT_END_DASH
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.data &= "\uFFFD"
+      of '\0': tokenizer.tok.data &= "\uFFFD"
       else: tokenizer.tok.data &= c
 
     of COMMENT_LESS_THAN_SIGN:
@@ -1218,9 +1059,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         # note: was reconsume (comment end)
         switch_state DATA
         emit_tok
-      else:
-        parse_error NESTED_COMMENT
-        reconsume_in COMMENT_END
+      else: reconsume_in COMMENT_END
 
     of COMMENT_END_DASH:
       case c
@@ -1246,7 +1085,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.tok.data &= "--!"
         switch_state COMMENT_END_DASH
       of '>':
-        parse_error INCORRECTLY_CLOSED_COMMENT
         switch_state DATA
         emit_tok
       else:
@@ -1257,9 +1095,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_NAME
       of '>': reconsume_in BEFORE_DOCTYPE_NAME
-      else:
-        parse_error MISSING_WHITESPACE_BEFORE_DOCTYPE_NAME
-        reconsume_in BEFORE_DOCTYPE_NAME
+      else: reconsume_in BEFORE_DOCTYPE_NAME
 
     of BEFORE_DOCTYPE_NAME:
       case c
@@ -1268,11 +1104,9 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         new_token Token[Atom](t: DOCTYPE, name: some($c.toLowerAscii()))
         switch_state DOCTYPE_NAME
       of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
         new_token Token[Atom](t: DOCTYPE, name: some($"\uFFFD"))
         switch_state DOCTYPE_NAME
       of '>':
-        parse_error MISSING_DOCTYPE_NAME
         new_token Token[Atom](t: DOCTYPE, quirks: true)
         switch_state DATA
         emit_tok
@@ -1286,17 +1120,12 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      of AsciiUpperAlpha:
-        tokenizer.tok.name.get &= c.toLowerAscii()
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.name.get &= "\uFFFD"
-      else:
-        tokenizer.tok.name.get &= c
+      of AsciiUpperAlpha: tokenizer.tok.name.get &= c.toLowerAscii()
+      of '\0': tokenizer.tok.name.get &= "\uFFFD"
+      else: tokenizer.tok.name.get &= c
 
     of AFTER_DOCTYPE_NAME: # note: rewritten to fit case model as we consume a char anyway
       template anything_else =
-        parse_error INVALID_CHARACTER_SEQUENCE_AFTER_DOCTYPE_NAME
         tokenizer.tok.quirks = true
         switch_state BOGUS_DOCTYPE
       case c
@@ -1323,20 +1152,16 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
       of '"':
-        parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_PUBLIC_KEYWORD
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_PUBLIC_KEYWORD
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED
       of '>':
-        parse_error MISSING_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       else:
-        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1350,59 +1175,47 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.tok.pubid = some("")
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED
       of '>':
-        parse_error MISSING_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       else:
-        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
     of DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED:
       case c
       of '"': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.pubid.get &= "\uFFFD"
+      of '\0': tokenizer.tok.pubid.get &= "\uFFFD"
       of '>':
-        parse_error ABRUPT_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      else:
-        tokenizer.tok.pubid.get &= c
+      else: tokenizer.tok.pubid.get &= c
 
     of DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.pubid.get &= "\uFFFD"
+      of '\0': tokenizer.tok.pubid.get &= "\uFFFD"
       of '>':
-        parse_error ABRUPT_DOCTYPE_PUBLIC_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      else:
-        tokenizer.tok.pubid.get &= c
+      else: tokenizer.tok.pubid.get &= c
 
     of AFTER_DOCTYPE_PUBLIC_IDENTIFIER:
       case c
-      of AsciiWhitespace: switch_state BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
+      of AsciiWhitespace:
+        switch_state BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
       of '>':
         switch_state DATA
         emit_tok
       of '"':
-        parse_error MISSING_WHITESPACE_BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        parse_error MISSING_WHITESPACE_BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       else:
-        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1419,7 +1232,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       else:
-        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1427,20 +1239,16 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
       of '"':
-        parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_SYSTEM_KEYWORD
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        parse_error MISSING_WHITESPACE_AFTER_DOCTYPE_SYSTEM_KEYWORD
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of '>':
-        parse_error MISSING_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       else:
-        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
@@ -1454,37 +1262,28 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.tok.sysid = some("")
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of '>':
-        parse_error MISSING_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       else:
-        parse_error MISSING_QUOTE_BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         reconsume_in BOGUS_DOCTYPE
 
     of DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED:
       case c
       of '"': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.sysid.get &= "\uFFFD"
+      of '\0': tokenizer.tok.sysid.get &= "\uFFFD"
       of '>':
-        parse_error ABRUPT_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      else:
-        tokenizer.tok.sysid.get &= c
+      else: tokenizer.tok.sysid.get &= c
 
     of DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
-      of '\0':
-        parse_error UNEXPECTED_NULL_CHARACTER
-        tokenizer.tok.sysid.get &= "\uFFFD"
+      of '\0': tokenizer.tok.sysid.get &= "\uFFFD"
       of '>':
-        parse_error ABRUPT_DOCTYPE_SYSTEM_IDENTIFIER
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
@@ -1497,16 +1296,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      else:
-        parse_error UNEXPECTED_CHARACTER_AFTER_DOCTYPE_SYSTEM_IDENTIFIER
-        reconsume_in BOGUS_DOCTYPE
+      else: reconsume_in BOGUS_DOCTYPE
 
     of BOGUS_DOCTYPE:
       case c
       of '>':
         switch_state DATA
         emit_tok
-      of '\0': parse_error UNEXPECTED_NULL_CHARACTER
       else: discard
 
     of CDATA_SECTION:
@@ -1576,8 +1372,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         else:
           if n != -1:
             tokenizer.reconsume(cast[char](n))
-          if tokenizer.tmp[^1] != ';':
-            parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
           tokenizer.tmp = ""
           var ci = ci + 1
           while (let c = entry[ci]; c != '\0'):
@@ -1596,9 +1390,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
           tokenizer.appendToCurrentAttrValue(c)
         else:
           emit c
-      of ';':
-        parse_error UNKNOWN_NAMED_CHARACTER_REFERENCE
-        reconsume_in tokenizer.rstate
+      of ';': reconsume_in tokenizer.rstate
       else: reconsume_in tokenizer.rstate
 
     of NUMERIC_CHARACTER_REFERENCE:
@@ -1624,7 +1416,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         # note: was reconsume
         switch_state HEXADECIMAL_CHARACTER_REFERENCE
       else:
-        parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
         tokenizer.flushCodePointsConsumedAsCharRef()
         reconsume_in tokenizer.rstate
 
@@ -1635,7 +1426,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         # note: was reconsume
         switch_state DECIMAL_CHARACTER_REFERENCE
       else:
-        parse_error ABSENCE_OF_DIGITS_IN_NUMERIC_CHARACTER_REFERENCE
         tokenizer.flushCodePointsConsumedAsCharRef()
         reconsume_in tokenizer.rstate
 
@@ -1654,9 +1444,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
           tokenizer.code *= 0x10
           tokenizer.code += uint32(c) - uint32('A') + 10
       of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
-      else:
-        parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
-        reconsume_in NUMERIC_CHARACTER_REFERENCE_END
+      else: reconsume_in NUMERIC_CHARACTER_REFERENCE_END
 
     of DECIMAL_CHARACTER_REFERENCE:
       case c
@@ -1665,9 +1453,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
           tokenizer.code *= 10
           tokenizer.code += uint32(c) - uint32('0')
       of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
-      else:
-        parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
-        reconsume_in NUMERIC_CHARACTER_REFERENCE_END
+      else: reconsume_in NUMERIC_CHARACTER_REFERENCE_END
 
     of NUMERIC_CHARACTER_REFERENCE_END:
       tokenizer.numericCharacterReferenceEndState()

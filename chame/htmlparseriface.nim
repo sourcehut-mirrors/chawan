@@ -41,15 +41,6 @@ when defined(nimdocdummy):
   ## Following procedures are optional hooks; implementations of this interface
   ## can choose to leave them out without getting compilation errors.
   ##
-  ## ```nim
-  ## proc parseErrorImpl(builder: DOMBuilderBase, e: ParseError)
-  ## ```
-  ##
-  ## Parse error. `message` is an error code either specified by the
-  ## standard (in this case, `e` < `LAST_SPECIFIED_ERROR`) or named
-  ## arbitrarily. (At the time of writing, only tokenizer errors have
-  ## specified error codes.)
-  ##
   ##
   ## ```nim
   ## proc setQuirksModeImpl(builder: DOMBuilderBase, quirksMode: QuirksMode)
