@@ -13,7 +13,6 @@ import tokstate
 
 export tokstate
 
-# Tokenizer
 type
   Tokenizer*[Handle, Atom] = object
     dombuilder: DOMBuilder[Handle, Atom]
@@ -166,10 +165,10 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
   if i == -1:
     return (0, 0, nil)
   tokenizer.tmp &= c
-  var entry = entityMap[i].name
+  var entry = entityMap[i]
   var ci = 1
   let oc = c
-  while entry != nil and entry[ci] != '\0':
+  while entry != nil and entry[ci] != ':':
     let n = tokenizer.consume(ibuf)
     if n == -1 and not tokenizer.isend:
       # We must retry at the next iteration :/
@@ -185,7 +184,7 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
           dec ci
           break
         dec i
-        entry = entityMap[i].name
+        entry = entityMap[i]
         if oc != entry[0]:
           # Out of entries that start with the character `oc'; give up.
           # We must not flush the last character consumed as a character
@@ -196,7 +195,7 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
           break
         var j = 1
         while j < tokenizer.tmp.len - 1:
-          if entry[j] == '\0':
+          if entry[j] == ':':
             # Full match: entry is a prefix of the previous entry we inspected.
             break
           if tokenizer.tmp[j + 1] != entry[j]:
@@ -206,7 +205,7 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
             break
           inc j
         if entry != nil:
-          if entry[j] == '\0':
+          if entry[j] == ':':
             # Full match: make sure the outer loop exits.
             ci = j - 1
           elif int(entry[j]) == n:
@@ -1561,7 +1560,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       # but tmp starts with an &.)
       tokenizer.reconsume(tokenizer.tmp.toOpenArray(ci + 1, tokenizer.tmp.high))
       tokenizer.tmp.setLen(ci + 1)
-      if entry != nil and entry[ci] == '\0':
+      if entry != nil and entry[ci] == ':':
         let n = tokenizer.consume(ibuf)
         let sc = tokenizer.consumedAsAnAttribute() and tokenizer.tmp[^1] != ';'
         if sc and n != -1 and cast[char](n) in {'='} + AsciiAlphaNumeric:
@@ -1579,7 +1578,11 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
             tokenizer.reconsume(cast[char](n))
           if tokenizer.tmp[^1] != ';':
             parse_error MISSING_SEMICOLON_AFTER_CHARACTER_REFERENCE
-          tokenizer.tmp = $entityMap[i].value
+          tokenizer.tmp = ""
+          var ci = ci + 1
+          while (let c = entry[ci]; c != '\0'):
+            tokenizer.tmp &= c
+            inc ci
           tokenizer.flushCodePointsConsumedAsCharRef()
           switch_state tokenizer.rstate
       else:

@@ -28,13 +28,13 @@ proc main() =
   for k, v in entityJson:
     entityMap.add((k.substr(1), v{"characters"}.getStr()))
   let n = entityMap.len
-  echo "const entityMap*: array[" & $n & ", tuple[name, value: Z]] = ["
+  echo "const entityMap*: array[" & $n & ", Z] = ["
   var i = 0
   for (k, v) in entityMap:
     if k[0] != cc:
       charMap[cc] = i - 1
       cc = k[0]
-    writer.write("(Z\"" & k & "\"," & v.escape() & ".Z),")
+    writer.write((k & ":" & v).escape() & ",")
     inc i
   assert cc == 'z'
   charMap[cc] = i - 1
