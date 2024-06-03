@@ -1,3 +1,13 @@
+from std/os import parentDir
+
+{.used.}
+# used so that we can import it from libregexp.nim
+
+const CFLAGS = "-O2 -fwrapv"
+
+{.compile("qjs/libunicode.c", CFLAGS).}
+{.compile("qjs/cutils.c", CFLAGS).}
+
 type
   DynBufReallocFunc = proc(opaque, p: pointer; size: csize_t): pointer {.cdecl.}
 
@@ -11,9 +21,9 @@ type
   UnicodeNormalizationEnum* {.size: sizeof(cint).} = enum
     UNICODE_NFC, UNICODE_NFD, UNICODE_NKFC, UNICODE_NKFD
 
-{.passc: "-Ilib/".}
+{.passc: "-I" & currentSourcePath().parentDir().}
 
-{.push header: "quickjs/libunicode.h", importc.}
+{.push header: "qjs/libregexp.h", importc.}
 
 proc cr_init*(cr: ptr CharRange; mem_opaque: pointer;
   realloc_func: DynBufReallocFunc)
@@ -39,6 +49,6 @@ const LRE_CC_RES_LEN_MAX* = 3
 proc lre_case_conv*(res: ptr UncheckedArray[uint32]; c: uint32;
   conv_type: cint): cint
 
-proc lre_is_space*(c: uint32): cint
+proc lre_is_space_non_ascii*(c: uint32): cint {.importc.}
 
 {.pop.}

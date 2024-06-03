@@ -3,11 +3,11 @@ from std/os import parentDir
 {.used.}
 # used so that we can import it from quickjs.nim
 
+import libunicode
+
 const CFLAGS = "-O2 -fwrapv"
 
 {.compile("qjs/libregexp.c", CFLAGS).}
-{.compile("qjs/libunicode.c", CFLAGS).}
-{.compile("qjs/cutils.c", CFLAGS).}
 
 # this is hardcoded into quickjs, so we must override it here.
 proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
