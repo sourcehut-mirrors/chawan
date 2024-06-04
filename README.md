@@ -3,12 +3,12 @@
 Monoucha is a wrapper library to simplify the process of embedding the QuickJS
 JavaScript engine into Nim programs.
 
-Quick start:
+## Quick start
 
 Include Monoucha in your project using either Nimble or as a git submodule.
 
 ```
-requires "https://git.sr.ht/~bptato/monoucha"
+requires "monoucha"
 ```
 
 Then,
@@ -16,12 +16,13 @@ Then,
 * There is a [manual](doc/manual.md). Please read the manual.
 * [Examples](test/manual.nim) from the manual, organized as unit tests.
 
-Example:
+## Example
 
 ```nim
 # Compile with nim c --mm:refc!
 import monoucha/fromjs
 import monoucha/javascript
+import results
 
 type
   MyGlobal = ref object
