@@ -5,7 +5,7 @@
 Include Chame in your project using either Nimble or as a git submodule.
 
 ```
-requires "https://git.sr.ht/~bptato/chame"
+requires "chame"
 ```
 
 Then, check the [documentation](https://chawan.net/doc/chame/) for a

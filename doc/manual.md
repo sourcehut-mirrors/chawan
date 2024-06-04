@@ -7,6 +7,21 @@ they give consumers less control than htmlparser.
 
 Here we describe both APIs.
 
+## Table of Contents
+
+* [Basic concepts](#basic-concepts)
+	- [Standards](#standards)
+	- [String interning](#string-interning)
+	- [String validation](#string-validation)
+* [High-level API (minidom, minidom_cs)](#high-level-api-minidom-minidom_cs)
+* [Low-level API (htmlparser)](#low-level-api-htmlparser)
+	- [Functions and procedures](#functions-and-procedures)
+		* [initHTML5Parser](#inithtml5parser)
+		* [parseChunk](#parsechunk)
+		* [finish](#finish)
+	- [Generic parameters](#generic-parameters)
+* [Example](#example)
+
 ## Basic concepts
 
 ### Standards
