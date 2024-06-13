@@ -7,6 +7,9 @@ type EncoderErrorMode* = enum
   eemFatal, eemHtml
 
 proc newTextEncoder*(charset: Charset): TextEncoder =
+  ## Create a new TextEncoder instance from the charset.
+  ## Note: UTF-8 and UTF-16 encoders are not supported. (For UTF-8, please use
+  ## a TextDecoder instead.)
   case charset
   of CHARSET_IBM866: return TextEncoderIBM866()
   of CHARSET_ISO_8859_2: return TextEncoderISO8859_2()
@@ -101,3 +104,6 @@ proc encodeAll*(te: TextEncoder; iq: openArray[uint8]): string =
 
 proc encodeAll*(td: TextEncoder; iq: string): string =
   return td.encodeAll(iq.toOpenArrayByte(0, iq.high))
+
+proc encodeAll*(iq: string; charset: Charset): string =
+  return newTextEncoder(charset).encodeAll(iq.toOpenArrayByte(0, iq.high))

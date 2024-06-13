@@ -20,6 +20,16 @@
 ## consumed; bytes before that may be safely discarded, provided you adjust `i`
 ## accordingly (subtracting the removed input bytes).
 ##
+## `tdrReadInput` instructs the consumer to read the input queue between the
+## bytes `pi..ri` (warning: it's inclusive!) as decoded output. Typically this
+## is returned when the input queue contains ASCII characters only.
+##
+## WARNING: this does not mean that `oq` is left unmodified. In particular, in
+## the UTF-8 decoder, if the previous `iq` ended with a split up UTF-8
+## character, then the next pass fills `oq` with its remains before it would
+## return tdrReadInput. Make sure to process `oq` to `n` before you process
+## `iq`.
+##
 ## `tdrError` is returned for *all* decoding errors encountered. For compliance
 ## with the encoding standard, callers must either abort decoding the input
 ## stream (error mode "fatal"), or manually append a `U+FFFD` replacement
@@ -43,7 +53,10 @@ import charset_map
 
 type
   TextDecoderResult* = enum
-    tdrDone, tdrReqOutput, tdrError
+    tdrDone, tdrReadInput, tdrReqOutput, tdrError
+
+  TextDecoderUTF8Flag = enum
+    tdufDone, tdufError, tdufErrorConsume
 
   TextDecoderFinishResult* = enum
     tdfrDone, tdfrError
@@ -54,6 +67,17 @@ type
 
   TextDecoder* = ref object of RootObj
     i*: int
+    ri*: int
+    pi*: int
+    ppi: int
+
+  TextDecoderUTF8* = ref object of TextDecoder
+    flag: TextDecoderUTF8Flag
+    seen: int
+    needed: int
+    bounds: Slice[uint8]
+    buf: array[3, uint8]
+    bufLen: int
 
   TextDecoderGB18030* = ref object of TextDecoder
     buf: uint8
@@ -118,6 +142,8 @@ method finish*(td: TextDecoder): TextDecoderFinishResult {.base.} =
 
 template try_put_utf8(oq: var openArray[uint8]; c: uint32; n: var int) =
   if c < 0x80:
+    if n >= oq.len:
+      return tdrReqOutput
     oq[n] = uint8(c)
     inc n
   elif c < 0x800:
@@ -150,7 +176,7 @@ template try_put_utf8(oq: var openArray[uint8]; c: uint32; n: var int) =
     inc n
 
 template try_put_byte(oq: var openArray[uint8]; b: uint8; n: var int) =
-  if n + 1 > oq.len:
+  if n >= oq.len:
     return tdrReqOutput
   oq[n] = b
   inc n
@@ -192,6 +218,100 @@ proc gb18030RangesCodepoint(p: uint32): uint32 =
     offset = elem.p
     c = elem.ucs
   c + p - offset
+
+method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
+    oq: var openArray[uint8]; n: var int): TextDecoderResult =
+  template read_input(f: TextDecoderUTF8Flag) =
+    if td.bufLen > 0 and td.needed == 0:
+      if td.bufLen > oq.len:
+        return tdrReqOutput
+      for i in 0 ..< td.bufLen:
+        oq[n] = td.buf[i]
+        inc n
+    td.flag = f
+    if td.ppi <= td.ri or td.bufLen > 0 and td.needed == 0:
+      td.bufLen = 0
+      td.pi = td.ppi
+      td.ppi = td.i
+      return tdrReadInput
+  if td.bounds.a == 0: # unset
+    td.bounds = 0x80u8 .. 0xBFu8
+    td.ri = -1
+  if td.flag == tdufDone:
+    while (let i = td.i; i < iq.len):
+      let b = iq[i]
+      if td.needed == 0:
+        case b
+        of 0x00u8 .. 0x7Fu8: td.ri = td.i
+        of 0xC2u8 .. 0xDFu8:
+          td.needed = 1
+        of 0xE0u8 .. 0xEFu8:
+          if b == 0xE0: td.bounds.a = 0xA0
+          if b == 0xED: td.bounds.b = 0x9F
+          td.needed = 2
+        of 0xF0u8 .. 0xF4u8:
+          if b == 0xF0: td.bounds.a = 0x90
+          if b == 0xF4: td.bounds.b = 0x8F
+          td.needed = 3
+        else:
+          # needs consume
+          if td.ri == -1:
+            td.bufLen = 0 # no valid character seen yet; clear buffer
+          read_input tdufErrorConsume
+          break
+          {.linearScanEnd.}
+      else:
+        if b notin td.bounds:
+          td.needed = 0
+          td.seen = 0
+          td.bounds = 0x80u8 .. 0xBFu8
+          # prepend, no consume
+          if td.ri == -1:
+            td.bufLen = 0 # no valid character seen yet; clear buffer
+          read_input tdufError
+          break
+        inc td.seen
+        if td.seen == td.needed:
+          td.needed = 0
+          td.seen = 0
+          td.ri = td.i
+        td.bounds = 0x80u8 .. 0xBFu8
+      inc td.i
+  let flag = td.flag
+  td.flag = tdufDone
+  case flag
+  of tdufError:
+    td.pi = td.ppi
+    td.ppi = td.i
+    return tdrError
+  of tdufErrorConsume:
+    inc td.i
+    td.pi = td.ppi
+    td.ppi = td.i
+    return tdrError
+  of tdufDone:
+    read_input tdufDone
+    if td.needed > 0:
+      for i in max(iq.len - td.seen - 1, 0) ..< iq.len:
+        td.buf[td.bufLen] = iq[i]
+        inc td.bufLen
+    td.ri = -1
+    td.i = 0
+    td.ppi = 0
+    return tdrDone
+
+method finish*(td: TextDecoderUTF8): TextDecoderFinishResult =
+  result = tdfrDone
+  if td.needed != 0:
+    result = tdfrError
+  td.needed = 0
+  td.seen = 0
+  td.i = 0
+  td.pi = 0
+  td.ri = -1
+  td.ppi = 0
+  td.bufLen = 0
+  td.bounds = 0x80u8 .. 0xBFu8
 
 method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =

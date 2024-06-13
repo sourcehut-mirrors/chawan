@@ -1,4 +1,5 @@
 NIM ?= nim
+FLAGS ?=
 TESTDIR ?= /tmp/chagashi_test
 
 .PHONY: all
@@ -11,7 +12,7 @@ $(TESTDIR)/data:
 
 .PHONY: test_basic
 test_basic:
-	$(NIM) r -p:. test/basic.nim
+	$(NIM) $(FLAGS) r -p:. test/basic.nim
 
 .PHONY: test_data
 test_data: $(TESTDIR)/data
@@ -22,8 +23,8 @@ test: test_basic test_data
 
 .PHONY: bench
 bench:
-	$(NIM) r -p:. -d:release test/bench.nim
+	$(NIM) $(FLAGS) r -p:. -d:release test/bench.nim
 
 .PHONY: map
 map:
-	$(NIM) r res/createmap.nim > chagashi/charset_map.nim
+	$(NIM) $(FLAGS) r res/createmap.nim > chagashi/charset_map.nim

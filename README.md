@@ -5,31 +5,34 @@ standards for [Chawan](https://sr.ht/~bptato/chawan).
 
 ## Minimal example
 
-Note that this uses the high-level interface, which is rather inefficient. For
-most use-cases, encodercore, decodercore and validatorcore are preferable (and
-much faster).
+First, include it in your nimble file:
+
+```
+requires "chame"
+```
+
+Note: following code uses the (very) high-level interface, which is rather
+inefficient. Lower level interfaces are normally faster.
 
 ```Nim
-# Makeshift iconv (without error handling for invalid parameters).
+# Makeshift iconv.
 # Usage: nim r whatever.nim -f fromCharset -t toCharset <infile.txt >outfile.txt
-import std/os, chagashi/[encoder, decoder, charset, validator]
+import std/os, chagashi/[encoder, decoder, charset]
 
 var fromCharset = CHARSET_UTF_8
 var toCharset = CHARSET_UTF_8
 for i in 1..paramCount():
-  if paramStr(i) == "-f": fromCharset = getCharset(paramStr(i + 1))
-  elif paramStr(i) == "-t": toCharset = getCharset(paramStr(i + 1))
+  case paramStr(i)
+  of "-f": fromCharset = getCharset(paramStr(i + 1))
+  of "-t": toCharset = getCharset(paramStr(i + 1))
+  else: assert false, "wrong parameter"
 assert fromCharset != CHARSET_UNKNOWN and toCharset != CHARSET_UNKNOWN
 let ins = stdin.readAll()
-let insDecoded = if fromCharset == CHARSET_UTF_8:
-  ins.toValidUTF8()
+let insDecoded = ins.decodeAll(fromCharset)
+if toCharset == CHARSET_UTF_8: # insDecoded is already UTF-8, nothing to do
+  stdout.write(insDecoded)
 else:
-  newTextDecoder(fromCharset).decodeAll(ins)
-let insEncoded = if toCharset == CHARSET_UTF_8:
-  insDecoded
-else:
-  newTextEncoder(toCharset).encodeAll(insDecoded)
-stdout.write(insEncoded)
+  stdout.write(insDecoded.encodeAll(toCharset))
 ```
 
 ## Q&A
@@ -46,18 +49,30 @@ A: UTF-8, because it is the native encoding of Nim. In general, you can just
 take whatever non-UTF-8 string you want to decode, pass it to the decoder, and
 use the result immediately.
 
+Q: What API should I use?
+
+For decoding: the TextDecoderContext.decode() iterator provides a fairly
+high-level API that does no unnecessary copying, and I recommend using that
+where you can.
+
+You may also use `decodeAll` when performance is less of a concern and/or you
+need the output to be in a string, or reach to `decodercore` directly if you
+really need the best performance. (In the latter case I recommend you study the
+`decoder` module first, because it's very easy to get it wrong.)
+
+For encoding: sorry, at the moment you need to use `encodercore` or stick with
+the (non-optimal) `encodeAll`. I'll see if I can add an in-between API in the
+future.
+
 Q: Is it correct?
 
-A: At the moment, Chagashi only uses memory-safe operations, so at the very
-least it cannot have memory errors.
-
-Testing is still somewhat inadequate: many single-byte encodings are not
-tested yet, and we do not have fuzzing either. This will be improved over time.
+A: To my knowledge, yes. However, testing is still somewhat inadequate: many
+single-byte encodings are not covered yet, and we do not have fuzzing either.
 
 Q: Is it fast?
 
-A: Reduced code size and/or complexity is generally preferred to performance.
-However, it is still reasonably fast in the most common cases.
+A: Not really, I have done very little optimization because it's not necessary
+for my use case.
 
 To check whether it is fast enough for your needs, you can try something like
 
@@ -71,15 +86,12 @@ look into it. Patches are welcome, too.
 
 Q: How do I decode UTF-8?
 
-A: Obviously you can't decode UTF-8 into UTF-8; therefore there is no
-`TextDecoderUTF8` type either, and calling `newTextDecoder` with the UTF-8
-charset will panic.
+A: Like any other character set. Obviously, it won't be "decoded", just
+validated, because the target charset is UTF-8 as well.
 
-Instead, use the `TextValidatorUTF8` object (in chagashi/validatorcore &
-chagashi/validator) and its `validate` function. This works almost exactly like
-TextDecoder, except it does not copy anything; it just goes through the input
-stream, reports the number of valid characters read in the `n` variable, and
-returns tdrError on error.
+Previously, the API did not have a way to return views into the input data, so
+we had a separate UTF-8 validator API. This turned out to be very annoying to
+use, so the two APIs have been unified.
 
 Q: How do I encode UTF-8?
 
@@ -97,24 +109,7 @@ std/encodings.
 
 Q: Why replace your previous character decoding library?
 
-A: It suffered from lots of serious problems:
-
-* Its intermediate format is UTF-32, which makes the common use-case (decoding
-  from/to UTF-8) rather inefficient.
-* It requires copying of the input buffer, another source of inefficiency. It
-  does that with non-memory-safe operations, too.
-* It's based on std/streams, which is a pull-based interface: you give it a data
-  source, then take whatever data you need. This works so long as you don't mind
-  blocking, but gets unusable for asynchronous text decoding. Chakasu did have
-  somewhat of a non-blocking interface too, but it's a kludge and requires even
-  more copying.
-
-The readme did say "no stable API", but if I'm going to completely re-design
-the interface, I might as well make it a new library.
-
-Q: I don't believe you.
-
-A: OK, here's the real reason: it annoyed me that its name was a verb.
+A: Because it didn't work.
 
 ## Thanks
 

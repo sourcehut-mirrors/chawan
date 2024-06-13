@@ -2,8 +2,8 @@ import std/unittest
 
 import chagashi/charset
 import chagashi/decoder
+import chagashi/decodercore
 import chagashi/encoder
-import chagashi/validator
 
 const iroha = "いろはにほへとちりぬるをわかよたれそつねならむうゐのおくやまけふこえてあさきゆめみしゑひもせす"
 test "roundtrip iroha":
@@ -21,16 +21,22 @@ test "roundtrip iroha":
 test "validate UTF-8 in parts":
   # Validate "Hellö, world!".
   let ss0 = "Hell\xC3"
-  var uv = TextValidatorUTF8()
+  var td = newTextDecoder(CHARSET_UTF_8)
   var n = 0
-  var r = uv.validate(ss0.toOpenArrayByte(0, ss0.high), n)
+  var oq = newSeq[uint8](16)
+  check td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrReadInput
   # read Hell (0xC3 is not consumed yet)
-  check r == tvrDone
-  check n == 3
-  let ss1 = "\xB6, world!\xC3"
+  check td.decode(ss0.toOpenArrayByte(0, ss0.high), oq, n) == tdrDone
+  # n is still 0, but 0xC3 is now buffered
+  check n == 0
   # read 0xB6 + , world! => Hellö world!
-  check uv.validate(ss1.toOpenArrayByte(0, ss1.high), n) == tvrDone
-  check n == ss1.high - 1
+  let ss1 = "\xB6, world!\xC3"
+  check td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n) == tdrReadInput
+  # 0xC3 got moved from the internal buffer to oq
+  check n == 1
+  check oq[0] == 0xC3
+  check td.decode(ss1.toOpenArrayByte(0, ss1.high), oq, n) == tdrDone
+  check td.finish() == tdfrError
 
 test "validate valid UTF-8":
   const utf8_valid = [
