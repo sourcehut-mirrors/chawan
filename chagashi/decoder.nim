@@ -100,7 +100,9 @@ iterator decode*(ctx: var TextDecoderContext; iq: openArray[uint8];
       yield ctx.oq.toOpenArray(ctx.pn, ctx.n - 1).toUnsafeSlice()
       if finish:
         if td.finish() == tdfrError:
-          yield "\uFFFD".toUnsafeSlice()
+          case ctx.errorMode
+          of demReplacement: yield "\uFFFD".toUnsafeSlice()
+          of demFatal: ctx.failed = true
       break
     of tdrReadInput:
       yield ctx.oq.toOpenArray(ctx.pn, ctx.n - 1).toUnsafeSlice()
