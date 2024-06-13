@@ -1,3 +1,9 @@
+1.0.0 (2024.06.13)
+* Drop support for parse error handling
+* Switch from legacy character decoder library to Chagashi
+* Return PRES_SCRIPT for the SVG script element too
+First stable version.
+
 0.14.5 (2024.04.09)
 * Fix broken parsing of HTML entities starting with a lower `z'
 * Fix nimble test execution on old Nim versions
