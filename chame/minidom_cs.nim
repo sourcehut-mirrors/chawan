@@ -17,15 +17,14 @@ import minidom
 import htmlparser
 import tags
 
-import chakasu/charset
-import chakasu/decoderstream
-import chakasu/encoderstream
+import chagashi/charset
+import chagashi/decoder
 
 export minidom
 export tags
 
 type CharsetConfidence = enum
-  CONFIDENCE_TENTATIVE, CONFIDENCE_CERTAIN, CONFIDENCE_IRRELEVANT
+  ccTentative, ccCertain
 
 type CharsetMiniDOMBuilder = ref object of MiniDOMBuilder
   charset: Charset
@@ -37,9 +36,9 @@ method setEncodingImpl(builder: CharsetMiniDOMBuilder, encoding: string):
   if charset == CHARSET_UNKNOWN:
     return SET_ENCODING_CONTINUE
   if builder.charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
-    builder.confidence = CONFIDENCE_CERTAIN
+    builder.confidence = ccCertain
     return SET_ENCODING_CONTINUE
-  builder.confidence = CONFIDENCE_CERTAIN
+  builder.confidence = ccCertain
   if charset == builder.charset:
     return SET_ENCODING_CONTINUE
   if charset == CHARSET_X_USER_DEFINED:
@@ -112,41 +111,45 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
     let scs = inputStream.bomSniff()
     if scs != CHARSET_UNKNOWN:
       charsetStack.add(scs)
-      builder.confidence = CONFIDENCE_CERTAIN
+      builder.confidence = ccCertain
       seekable = false
   if charsetStack.len == 0:
     charsetStack.add(DefaultCharset) # UTF-8
   while true:
     builder.charset = charsetStack.pop()
-    if seekable:
-      builder.confidence = CONFIDENCE_TENTATIVE # used in the next iteration
+    if seekable and charsetStack.len > 0:
+      builder.confidence = ccTentative # used in the next iteration
     else:
-      builder.confidence = CONFIDENCE_CERTAIN
-    let em = if charsetStack.len == 0 or not seekable:
-      DECODER_ERROR_MODE_REPLACEMENT
-    else:
-      DECODER_ERROR_MODE_FATAL
-    let decoder = newDecoderStream(inputStream, builder.charset, errormode = em)
-    let encoder = newEncoderStream(decoder, CHARSET_UTF_8,
-      errormode = ENCODER_ERROR_MODE_FATAL)
+      builder.confidence = ccCertain
     var parser = initHTML5Parser(builder, opts)
-    var buffer: array[4096, char]
+    var iq: array[4096, char]
+    let decoder = newTextDecoder(builder.charset)
+    let errorMode = [
+      ccTentative: demFatal,
+      ccCertain: demReplacement
+    ][builder.confidence]
+    var ctx = initTextDecoderContext(decoder, errorMode)
     while true:
-      let n = encoder.readData(addr buffer[0], buffer.len)
-      if n == 0: break
-      # res can be PRES_SCRIPT, PRES_STOP or PRES_CONTINUE.
-      var res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
-      # For PRES_SCRIPT, we must re-feed the same chunk as in minidom, but
-      # starting from the current insertion point.
-      var ip = 0
-      while res == PRES_SCRIPT and (ip += parser.getInsertionPoint(); ip != n):
-        res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
-      # PRES_STOP is returned when we return SET_ENCODING_STOP from
-      # setEncodingImpl. We immediately stop parsing in this case.
-      if res == PRES_STOP:
+      let n = inputStream.readData(addr iq[0], iq.len)
+      var finish = n < iq.len
+      for chunk in ctx.decode(iq.toOpenArrayByte(0, n - 1), finish = finish):
+        # res can be PRES_SCRIPT, PRES_STOP or PRES_CONTINUE.
+        var res = parser.parseChunk(chunk.toOpenArray())
+        # For PRES_SCRIPT, we must re-feed the same chunk as in minidom, but
+        # starting from the current insertion point.
+        var ip = 0
+        while res == PRES_SCRIPT and
+            (ip += parser.getInsertionPoint(); ip != chunk.len):
+          res = parser.parseChunk(chunk.toOpenArray(ip, chunk.high))
+        # PRES_STOP is returned when we return SET_ENCODING_STOP from
+        # setEncodingImpl. We immediately stop parsing in this case.
+        if res == PRES_STOP:
+          finish = true
+          break
+      if finish:
         break
     parser.finish()
-    if builder.confidence == CONFIDENCE_CERTAIN and seekable:
+    if builder.confidence == ccCertain and seekable:
       # A meta tag describing the charset has been found; force use of this
       # charset.
       inputStream.setPosition(0)
@@ -154,7 +157,7 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
       charsetStack.add(builder.charset)
       seekable = false
       continue
-    if decoder.failed and seekable:
+    if ctx.failed and seekable:
       # Retry with another charset.
       inputStream.setPosition(0)
       builder.document = Document(factory: factory)

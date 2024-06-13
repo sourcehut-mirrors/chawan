@@ -10,4 +10,4 @@ license       = "Unlicense"
 
 requires "nim >= 1.6.10"
 when declared(taskRequires):
-  taskRequires "test", "https://git.sr.ht/~bptato/chakasu"
+  taskRequires "test", "chagashi >= 0.5.0"
