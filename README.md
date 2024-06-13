@@ -5,7 +5,9 @@
 Include Chame in your project using either Nimble or as a git submodule.
 
 ```
-requires "chame"
+requires "chame >= 1.0.0"
+# optional, if you want support for charsets other than UTF-8
+requires "chagashi >= 0.5.0"
 ```
 
 Then, check the [documentation](https://chawan.net/doc/chame/) for a
@@ -17,7 +19,8 @@ Note: only Nim 1.6.10+ is supported.
 
 * Almost full compliance with the WHATWG standard. (Except for the few missing
   features listed in the following section.)
-* Passes all tokenizer and tree builder tests in html5lib-tests[^1]
+* Passes all tokenizer and tree builder tests in html5lib-tests (except for the
+  JS ones)
 * Includes a minimal DOM implementation
 * No mandatory dependencies other than the Nim standard library
 * Optional character encoding support (see [minidom_cs](chame/minidom_cs.nim))
@@ -26,24 +29,14 @@ Note: only Nim 1.6.10+ is supported.
 * document.write (no actual implementation here, but it's possible to implement
   it on top of Chame)
 
-[^1]: Except for tree builder tests requiring JavaScript and xmlViolation
-tokenizer tests.
-
 ## Manual
 
 There is a manual available at [doc/manual.md](doc/manual.md).
 
 ## To-do
 
-Some parts of the specification have not been implemented yet. These are:
-
-* SVG script element
-
-Support for this feature is planned.
-
-Other, non-standard-related tasks:
-
-* Optimize inefficient parts of the library
+At this point the library is complete. The only remaining tasks are
+optimization-related.
 
 ## Bugs, feedback, etc.
 
