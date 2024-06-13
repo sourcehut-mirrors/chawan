@@ -20,7 +20,7 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool) =
   ]#
   checkTest(test.document, pdoc)
 
-const rootpath = "tests/"
+const rootpath = "test/"
 
 proc runTests(filename: string) =
   let factory = newMAtomFactory()

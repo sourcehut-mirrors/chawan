@@ -207,7 +207,7 @@ func getState(s: string): TokenizerState =
   else:
     doAssert false, "Unknown state: " & s
 
-const rootpath = "tests/html5lib-tests/tokenizer/"
+const rootpath = "test/html5lib-tests/tokenizer/"
 
 proc runTests(filename: string) =
   let tests = parseFile(rootpath & filename){"tests"}

@@ -29,7 +29,7 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting, print: bool) =
     echo "psdoc ", $ps
   checkTest(test.document, pdoc)
 
-const rootpath = "tests/html5lib-tests/tree-construction/"
+const rootpath = "test/html5lib-tests/tree-construction/"
 
 proc runTests(filename: string, print = false) =
   let factory = newMAtomFactory()

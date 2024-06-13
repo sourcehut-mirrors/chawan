@@ -2,7 +2,7 @@ include shared/tree_common
 
 import std/streams
 import chame/minidom_cs
-import chakasu/charset
+import chagashi/charset
 
 proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
     labels: openArray[string]) =
@@ -28,7 +28,7 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
   ]#
   checkTest(test.document, pdoc)
 
-const rootpath = "tests/"
+const rootpath = "test/"
 
 proc runTests(filename: string, labels: openArray[string]) =
   let factory = newMAtomFactory()
