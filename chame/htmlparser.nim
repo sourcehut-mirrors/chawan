@@ -1169,10 +1169,7 @@ proc toPattern(s: string): Pattern =
   return Pattern(t: ptTagType, isend: isend, tagt: tagType)
 
 proc toPattern(tt: TokenType): Pattern =
-  return Pattern(
-    t: ptTokenType,
-    tokt: tt
-  )
+  return Pattern(t: ptTokenType, tokt: tt)
 
 proc toPattern(s: tuple): Pattern =
   result = Pattern(t: ptCombined)
@@ -1498,12 +1495,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         let (head, headTok) = parser.head.get
         parser.pushElement(head, headTok)
         result = reprocess IN_HEAD
-        var j = -1
-        for i in countdown(parser.openElements.high, 0):
-          if parser.openElements[i] == parser.head.get:
-            j = i
-        if j != -1:
-          parser.openElements.delete(j)
+        if (let i = parser.findOpenElement(head); i != -1):
+          parser.openElements.delete(i)
       )
       "</template>" => (block: return reprocess IN_HEAD)
       ("</body>", "</html>", "</br>", other) => (block:
@@ -2400,8 +2393,7 @@ proc processInForeignContent[Handle, Atom](
     parser: var HTML5Parser[Handle, Atom], token: Token): ParseResult =
   template script_end_tag() =
     pop_current_node
-    #TODO document.write (?)
-    #TODO SVG
+    return PRES_SCRIPT
 
   template any_other_start_tag() =
     let namespace = parser.getNamespace(parser.adjustedCurrentNode)
@@ -2416,7 +2408,8 @@ proc processInForeignContent[Handle, Atom](
     discard parser.insertForeignElement(token, tagname, namespace, false,
       xmlAttrs)
     if token.selfclosing:
-      if namespace == Namespace.SVG:
+      if namespace == Namespace.SVG and
+          parser.atomToTagType(token.tagname) == TAG_SCRIPT:
         script_end_tag
       else:
         pop_current_node
