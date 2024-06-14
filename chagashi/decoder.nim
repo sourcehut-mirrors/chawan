@@ -71,7 +71,6 @@ proc toUnsafeSlice(s: string): UnsafeSlice =
 type TextDecoderContext* = object
   td*: TextDecoder
   n*: int
-  pn*: int
   oq*: seq[char]
   failed*: bool
   errorMode*: DecoderErrorMode
@@ -94,35 +93,36 @@ iterator decode*(ctx: var TextDecoderContext; iq: openArray[uint8];
   ## If called with finish = true, then this is assumed to be the last call.
   ## Streaming consumers should call `finish` only on the last call.
   let td = ctx.td
-  while true:
+  var done = false
+  while not done:
+    var slices: array[2, UnsafeSlice]
     case td.decode(iq, ctx.oq.toOpenArrayByte(0, ctx.oq.high), ctx.n)
     of tdrDone:
-      yield ctx.oq.toOpenArray(ctx.pn, ctx.n - 1).toUnsafeSlice()
+      slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
       if finish:
         if td.finish() == tdfrError:
           case ctx.errorMode
-          of demReplacement: yield "\uFFFD".toUnsafeSlice()
+          of demReplacement: slices[1] = "\uFFFD".toUnsafeSlice()
           of demFatal: ctx.failed = true
-      break
+      done = true
     of tdrReadInput:
-      yield ctx.oq.toOpenArray(ctx.pn, ctx.n - 1).toUnsafeSlice()
-      yield iq.toOpenArray(td.pi, td.ri).toUnsafeSlice()
-      ctx.pn = ctx.n
+      if ctx.n > 0:
+        slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
+      slices[1] = iq.toOpenArray(td.pi, td.ri).toUnsafeSlice()
     of tdrReqOutput:
-      yield ctx.oq.toOpenArray(ctx.pn, ctx.n - 1).toUnsafeSlice()
-      ctx.n = 0
-      ctx.pn = 0
+      slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
     of tdrError:
-      yield ctx.oq.toOpenArray(ctx.pn, ctx.n - 1).toUnsafeSlice()
+      slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
       case ctx.errorMode
       of demReplacement:
-        #TODO we could squash \uFFFD into oq but I'm too lazy
-        ctx.n = 0
-        ctx.pn = 0
-        yield "\uFFFD".toUnsafeSlice()
+        slices[1] = "\uFFFD".toUnsafeSlice()
       of demFatal:
         ctx.failed = true
-        break
+        done = true
+    for slice in slices:
+      if slice.p != nil:
+        yield slice
+    ctx.n = 0
 
 proc `&=`*(s: var string; sl: UnsafeSlice) =
   if sl.p != nil:

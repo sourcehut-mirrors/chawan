@@ -222,14 +222,14 @@ proc gb18030RangesCodepoint(p: uint32): uint32 =
 method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
   template read_input(f: TextDecoderUTF8Flag) =
-    if td.bufLen > 0 and td.needed == 0:
+    if td.bufLen > 0 and td.ri != -1:
       if td.bufLen > oq.len:
         return tdrReqOutput
       for i in 0 ..< td.bufLen:
         oq[n] = td.buf[i]
         inc n
     td.flag = f
-    if td.ppi <= td.ri or td.bufLen > 0 and td.needed == 0:
+    if td.ppi <= td.ri or td.bufLen > 0 and td.ri != -1:
       td.bufLen = 0
       td.pi = td.ppi
       td.ppi = td.i
