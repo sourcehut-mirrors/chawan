@@ -1,3 +1,6 @@
+0.5.2 (2024.06.14)
+* Misc. bugfixes and improvements
+
 0.5.0, 0.5.1 (2024.06.13)
 * Re-designed API:
 	- Unified validator/validatorcore with decoder/decodercore
