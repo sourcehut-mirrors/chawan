@@ -8,6 +8,7 @@ type DecoderErrorMode* = enum
 
 proc newTextDecoder*(charset: Charset): TextDecoder =
   ## Create a new TextDecoder instance from the charset.
+  ## `charset` may be any value except CHARSET_UNKNOWN.
   case charset
   of CHARSET_UTF_8: return TextDecoderUTF8()
   of CHARSET_IBM866: return TextDecoderIBM866()
@@ -48,7 +49,7 @@ proc newTextDecoder*(charset: Charset): TextDecoder =
   of CHARSET_UTF_16_LE: return TextDecoderUTF16_LE()
   of CHARSET_UTF_16_BE: return TextDecoderUTF16_BE()
   of CHARSET_X_USER_DEFINED: return TextDecoderXUserDefined()
-  of CHARSET_UNKNOWN: doAssert false
+  of CHARSET_UNKNOWN: assert false
 
 type UnsafeSlice* = object
   p*: ptr UncheckedArray[char]
@@ -84,6 +85,18 @@ type TextDecoderContext* = object
 
 proc initTextDecoderContext*(td: TextDecoder; errorMode = demReplacement;
     bufLen = 4096): TextDecoderContext =
+  ## Initialize a new text decoder context.
+  ##
+  ## `td` is an existing `TextDecoder` object, created with
+  ## e.g. `newTextDecoder`.
+  ##
+  ## `errorMode` affects how errors are handled.
+  ## For `demReplacement`, a U+FFFD replacement character is output when an
+  ## error is encountered.
+  ## For `demFatal`, decoding is aborted and the `failed` member of the
+  ## `TextDecoderContext` is set to `true`.
+  ##
+  ## `bufLen` is the size of the internal buffer in bytes.
   return TextDecoderContext(
     td: td,
     oq: newSeq[char](bufLen),
@@ -97,8 +110,14 @@ proc initTextDecoderContext*(charset: Charset; errorMode = demReplacement;
 iterator decode*(ctx: var TextDecoderContext; iq: openArray[uint8];
     finish: bool): UnsafeSlice =
   ## Decodes the bytes provided in `iq` (input queue).
-  ## If called with finish = true, then this is assumed to be the last call.
-  ## Streaming consumers should call `finish` only on the last call.
+  ##
+  ## If called with `finish = true`, then this is assumed to be the last
+  ## call. Streaming consumers should set `finish` on the last call.
+  ##
+  ## Returns an `UnsafeSlice` object, which can be further processed as an
+  ## openArray or a string. WARNING: these are simply pointers into the input
+  ## data and/or the output buffer. Never use an `UnsafeSlice` object after the
+  ## iteration you received it in.
   let td = ctx.td
   var done = false
   while not done:
@@ -132,6 +151,10 @@ iterator decode*(ctx: var TextDecoderContext; iq: openArray[uint8];
     ctx.n = 0
 
 proc `&=`*(s: var string; sl: UnsafeSlice) =
+  ## Append the slice `sl` to `s` without unnecessary copying.
+  ##
+  ## Note that setLen is called on the string, which may zero out the target
+  ## space before the copy.
   if sl.p != nil:
     let L = s.len
     s.setLen(s.len + sl.len)
@@ -154,50 +177,40 @@ template toOpenArrayByte*(sl: UnsafeSlice): openArray[uint8] =
 
 proc decodeAll*(td: TextDecoder; iq: openArray[uint8]; success: var bool):
     string =
-  result = newString(iq.len)
-  var n = 0
-  while true:
-    case td.decode(iq, result.toOpenArrayByte(0, result.high), n)
-    of tdrDone:
-      if td.finish() == tdfrError:
-        success = false
-        return ""
-      break
-    of tdrReadInput:
-      let L = td.ri - td.pi + 1
-      if result.len < n + L:
-        result.setLen(n + L)
-      for c in iq.toOpenArray(td.pi, td.ri):
-        result[n] = char(c)
-        inc n
-    of tdrReqOutput:
-      result.setLen(result.len * 2)
-    of tdrError:
-      success = false
-      return ""
-  success = true
-
-proc decodeAll*(td: TextDecoder; iq: string; success: var bool): string =
+  ## Use `td` to decode `iq`, representing a complete contiguous input queue.
+  ## When a decoding error occurs, `success` is set to `false` and an empty
+  ## string is returned; otherwise, it is set to `true` and the decoder's full
+  ## output is returned.
   result = newStringOfCap(iq.len)
   var ctx = initTextDecoderContext(td, errorMode = demFatal)
-  for s in ctx.decode(iq.toOpenArrayByte(0, iq.high), finish = true):
+  for s in ctx.decode(iq, finish = true):
     result &= s
   success = not ctx.failed
 
+proc decodeAll*(td: TextDecoder; iq: string; success: var bool): string =
+  return td.decodeAll(iq, success)
+
 proc decodeAll*(td: TextDecoder; iq: openArray[uint8]): string =
+  ## Use `td` to decode `iq`, representing a complete contiguous input queue.
+  ## When a decoding error occurs, a U+FFFD replacement character is appended to
+  ## the output.
   result = newStringOfCap(iq.len)
   var ctx = initTextDecoderContext(td)
   for s in ctx.decode(iq, finish = true):
     result &= s
 
 proc decodeAll*(td: TextDecoder; iq: string): string =
+  ## See above.
   return td.decodeAll(iq.toOpenArrayByte(0, iq.high))
 
 proc decodeAll*(iq: string; charset: Charset): string =
+  ## Decode the string `iq` as a string encoded with `charset`.
   return newTextDecoder(charset).decodeAll(iq)
 
 proc toValidUTF8*(iq: string): string =
-  return TextDecoderUTF8().decodeAll(iq.toOpenArrayByte(0, iq.high))
+  ## Validate the UTF-8 string `iq`, replacing invalid characters with U+FFFD
+  ## replacement characters.
+  return iq.decodeAll(CHARSET_UTF_8)
 
 proc validateUTF8Surr*(s: string; start = 0): int =
   ## Analogous to std/unicode's validateUtf8, but also reports surrogates and
