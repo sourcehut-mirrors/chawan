@@ -17,10 +17,9 @@ Note: only Nim 1.6.10+ is supported.
 
 ## Features
 
-* Almost full compliance with the WHATWG standard. (Except for the few missing
-  features listed in the following section.)
-* Passes all tokenizer and tree builder tests in html5lib-tests (except for the
-  JS ones)
+* Full compliance with the WHATWG HTML parsing standard
+* Passes all tokenizer and tree builder tests in html5lib-tests (except for ones
+  requiring JS)
 * Includes a minimal DOM implementation
 * No mandatory dependencies other than the Nim standard library
 * Optional character encoding support (see [minidom_cs](chame/minidom_cs.nim))
@@ -37,6 +36,8 @@ There is a manual available at [doc/manual.md](doc/manual.md).
 
 At this point the library is complete. The only remaining tasks are
 optimization-related.
+
+Also, a small module for basic minidom utilities is planned.
 
 ## Bugs, feedback, etc.
 
