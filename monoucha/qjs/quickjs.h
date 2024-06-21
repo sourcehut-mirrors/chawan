@@ -726,6 +726,7 @@ void JS_FreeCString(JSContext *ctx, const char *ptr);
 JSValue JS_NewNarrowStringLen(JSContext *ctx, const char *str, size_t len);
 JS_BOOL JS_IsStringWideChar(JSValue value);
 uint8_t *JS_GetNarrowStringBuffer(JSValue value);
+uint32_t JS_GetStringLength(JSValue value);
 
 JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto, JSClassID class_id);
 JSValue JS_NewObjectClass(JSContext *ctx, int class_id);
