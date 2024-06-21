@@ -55,5 +55,26 @@ proc newInternalError*(message: string): JSError =
 proc newAggregateError*(message: string): JSError =
   return JSError(e: jeAggregateError, message: message)
 
+template errEvalError*(message: string): untyped =
+  err(newEvalError(message))
+
+template errRangeError*(message: string): untyped =
+  err(newRangeError(message))
+
+template errReferenceError*(message: string): untyped =
+  err(newReferenceError(message))
+
+template errSyntaxError*(message: string): untyped =
+  err(newSyntaxError(message))
+
 template errTypeError*(message: string): untyped =
   err(newTypeError(message))
+
+template errURIError*(message: string): untyped =
+  err(newURIError(message))
+
+template errInternalError*(message: string): untyped =
+  err(newInternalError(message))
+
+template errAggregateError*(message: string): untyped =
+  err(newAggregateError(message))
