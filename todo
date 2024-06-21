@@ -1,9 +1,6 @@
-* make regex captures a seq of seqs?
-* integrate nim-results
 * use JSAtoms everywhere
 * JSValueConst
 * iterator_next in JSCFunctionType
 * look into generating bindings with Futhark
-* is -O2 needed?
 * add something like -d:libquickjs:lib/libquickjs.a
 * move in jsmodules?
