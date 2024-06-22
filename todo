@@ -4,3 +4,4 @@
 * look into generating bindings with Futhark
 * add something like -d:libquickjs:lib/libquickjs.a
 * move in jsmodules?
+* import QJS test suite

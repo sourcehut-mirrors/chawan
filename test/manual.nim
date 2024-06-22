@@ -1,4 +1,5 @@
 import std/os
+import std/posix
 import std/strutils
 import std/unittest
 
@@ -155,13 +156,18 @@ console.log('Hello, world!')
 
 type
   JSFile = ref object
+    buffer: pointer # some internal buffer handled as managed memory
     path {.jsget.}: string
 
 jsDestructor(JSFile)
 
+proc newJSFile(path: string): JSFile {.jsctor.} =
+  return JSFile(
+    path: path,
+    buffer: alloc(4096)
+  )
+
 test "jsctor: constructors":
-  proc newJSFile(path: string): JSFile {.jsctor.} =
-    return JSFile(path: path)
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(Window, asglobal = true)
@@ -217,3 +223,63 @@ assert(File.exists("doc/manual.md"));
   JS_FreeValue(ctx, res)
   ctx.free()
   rt.free()
+
+# this will always return the result of the fstat call.
+proc owner(file: JSFile): int {.jsuffget.} =
+  let fd = open(cstring(file.path), O_RDONLY, 0)
+  if fd == -1: return -1
+  var stats: Stat
+  if fstat(fd, stats) == -1:
+    discard close(fd)
+    return -1
+  return int(stats.st_uid)
+
+proc getOwner(file: JSFile): int {.jsuffget.} =
+  return file.owner
+
+test "jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property":
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  ctx.registerType(Window, asglobal = true)
+  ctx.registerType(JSFile, name = "File")
+  const code = """
+const file = new File("doc/manual.md");
+const oldGetOwner = file.getOwner;
+file.getOwner = () => -2; /* doesn't work */
+assert(oldGetOwner == file.getOwner);
+Object.defineProperty(file, "owner", { value: -2 }); /* throws */
+  """
+  let res = ctx.eval(code, "<test>")
+  check JS_IsException(res)
+  JS_FreeValue(ctx, res)
+  ctx.free()
+  rt.free()
+
+var unrefd {.global.} = 0
+proc finalize(file: JSFile) {.jsfin.} =
+  if file.buffer != nil:
+    dealloc(file.buffer)
+    # Note: it is not necessary to nil out the pointer; it's just me being
+    # paranoid :P
+    file.buffer = nil
+    inc unrefd
+
+test "jsfin: object finalizers":
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  ctx.registerType(Window, asglobal = true)
+  ctx.registerType(JSFile, name = "File")
+  const code = """
+/* this doesn't leak. yay :D */
+{ const file = new File("doc/manual.md"); }
+/* note that I put the above call in a separate scope, so QJS can unref
+ * it immediately. in contrast, following file will not be deallocated until
+ * the runtime is gone. */
+const file = new File("doc/manual.md");
+  """
+  JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+  check unrefd == 1 # deallocated once, all good :)
+  ctx.free()
+  check unrefd == 1 # still available...
+  rt.free()
+  check unrefd == 2 # runtime is free'd; deallocated twice!

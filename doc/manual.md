@@ -513,3 +513,111 @@ console.log(File.exists("doc/manual.md")); /* true */
 """
 JS_FreeValue(ctx, ctx.eval(code, "<test>"))
 ```
+
+### jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property
+
+The pragmas `.jsuffunc`, `.jsufget` and `.jsuffget` correspond to the WebIDL
+[`[LegacyUnforgeable]`](https://webidl.spec.whatwg.org/#LegacyUnforgeable)
+property.
+
+Concretely, this means that the function (or getter) is defined on *instances*
+of the interface, not on the interface (i.e. object prototype) as a
+non-configurable property. Even more concretely, this simply means that the
+function (or getter) cannot be changed by JavaScript code.
+
+```nim
+# this will always return the result of the fstat call.
+proc owner(file: JSFile): int {.jsuffget.} =
+  let fd = open(cstring(file.path), O_RDONLY, 0)
+  if fd == -1: return -1
+  var stats: Stat
+  if fstat(fd, stats) == -1:
+    discard close(fd)
+    return -1
+  return int(stats.st_uid)
+
+proc getOwner(file: JSFile): int {.jsuffget.} =
+  return file.owner
+
+# [...]
+
+const code = """
+const file = new File("doc/manual.md");
+const oldGetOwner = file.getOwner;
+file.getOwner = () => -2; /* doesn't work */
+assert(oldGetOwner == file.getOwner);
+Object.defineProperty(file, "owner", { value: -2 }); /* throws */
+"""
+JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+```
+
+### jsgetprop, jssetprop, jsdelprop, jshasprop, jspropnames: magic functions
+
+`.jsgetprop`, `.jssetprop`, `.jsdelprop`, `.jshasprop` and `.jspropnames`
+generate bindings for magic functions. These are mainly useful for collections,
+where you want to provide custom behavior for property accesses.
+
+(TODO elaborate...)
+
+### jsfin: object finalizers
+
+The `.jsfin` pragma can be used to clean up resources used by objects at the
+end of their lifetime.
+
+In principle, this is just like the Nim `=destroy` property, except it also
+tracks the lifetime of possible JS objects which the Nim object may back. (In
+other words, it's a cross-GC finalizer.)
+
+The first parameter must be a reference to the object in question. Only one
+`.jsfin` procedure per reference type is allowed, and `.jsfin` is *not*
+inherited. This means that you must set up separate `.jsfin` functions for each
+child object in the inheritance chain.
+
+To free up JS objects, you may precede your reference type parameter with a
+`JSRuntime` parameter.
+
+WARNING: like Nim `=destroy`, this pragma is very easy to misuse. In particular,
+you must make sure to **NEVER ALLOCATE** in a `.jsfin` finalizer, because this
+[breaks](https://github.com/nim-lang/Nim/issues/4851) Nim refc. (I don't know if
+this problem is still present in ORC, but at the moment Monoucha does not work
+with ORC anyway.)
+
+Example:
+
+```nim
+type JSFile = ref object
+  path: string
+  buffer: pointer # some internal buffer handled as managed memory
+
+proc newJSFile(path: string): JSFile {.jsctor.} =
+  return JSFile(
+    path: path,
+    buffer: alloc(4096)
+  )
+
+var unrefd {.global.} = 0
+proc finalize(file: JSFile) {.jsfin.} =
+  if file.buffer != nil:
+    dealloc(file.buffer)
+    # Note: it is not necessary to nil out the pointer; it's just me being
+    # paranoid :P
+    file.buffer = nil
+    inc unrefd
+
+# [...]
+
+const code = """
+/* this doesn't leak. yay :D */
+{ const file = new File("doc/manual.md"); }
+/* note that I put the above call in a separate scope, so QJS can unref
+ * it immediately. in contrast, following file will not be deallocated until
+ * the runtime is gone. */
+const file = new File("doc/manual.md");
+"""
+JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+assert unrefd == 1 # deallocated once, all good :)
+ctx.free()
+assert unrefd == 1 # still available...
+rt.free()
+assert unrefd == 2 # runtime is free'd; now we have deallocated twice!
+```
