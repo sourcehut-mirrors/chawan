@@ -1,3 +1,8 @@
+0.2.0 (2024.06.22)
+* include missing QuickJS bindings
+* add missing err...Error templates
+* update manual
+
 0.1.1 (2024.06.03)
 libunicode wrapper fixes
 
