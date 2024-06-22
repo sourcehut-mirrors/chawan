@@ -248,7 +248,8 @@ proc addClassUnforgeable(ctx: JSContext; proto: JSValue;
     merged.add(uf[])
   if merged.len > 0:
     ctxOpaque.unforgeable[classid] = merged
-    let ufp = addr ctxOpaque.unforgeable[classid][0]
+    let ufp0 = addr ctxOpaque.unforgeable[classid][0]
+    let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
     JS_SetPropertyFunctionList(ctx, proto, ufp, cint(merged.len))
 
 func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
@@ -283,8 +284,9 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
     # (QuickJS uses the pointer later.)
     #TODO maybe put them in ctxOpaque instead?
     rtOpaque.flist.add(@funcs)
-    JS_SetPropertyFunctionList(ctx, proto, addr rtOpaque.flist[^1][0],
-      cint(funcs.len))
+    let fp0 = addr rtOpaque.flist[^1][0]
+    let fp = cast[ptr UncheckedArray[JSCFunctionListEntry]](fp0)
+    JS_SetPropertyFunctionList(ctx, proto, fp, cint(funcs.len))
   #TODO check if this is an indexed property getter
   if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
     let val = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
@@ -308,15 +310,17 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
         $cdef.class_name)
     # Global already exists, so set unforgeable functions here
     ctxOpaque.unforgeable.withValue(result, uf):
-      JS_SetPropertyFunctionList(ctx, global, addr uf[][0], cint(uf[].len))
+      let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](addr uf[][0])
+      JS_SetPropertyFunctionList(ctx, global, ufp, cint(uf[].len))
     JS_FreeValue(ctx, global)
   JS_FreeValue(ctx, news)
   let jctor = JS_NewCFunction2(ctx, ctor, cstring($cdef.class_name), 0,
     JS_CFUNC_constructor, 0)
   if staticfuns.len > 0:
     rtOpaque.flist.add(@staticfuns)
-    JS_SetPropertyFunctionList(ctx, jctor, addr rtOpaque.flist[^1][0],
-      cint(staticfuns.len))
+    let fp0 = addr rtOpaque.flist[^1][0]
+    let fp = cast[ptr UncheckedArray[JSCFunctionListEntry]](fp0)
+    JS_SetPropertyFunctionList(ctx, jctor, fp, cint(staticfuns.len))
   JS_SetConstructor(ctx, jctor, proto)
   if errid.isSome:
     ctx.getOpaque().errCtorRefs[errid.get] = JS_DupValue(ctx, jctor)

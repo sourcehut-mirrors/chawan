@@ -694,8 +694,30 @@ proc JS_EnqueueJob*(ctx: JSContext; job_func: JSJobFunc; argc: cint;
 proc JS_IsJobPending*(rt: JSRuntime): JS_BOOL
 proc JS_ExecutePendingJob*(rt: JSRuntime; pctx: ptr JSContext): cint
 
-#TODO object writer/reader
+# Object Writer/Reader (currently only used to handle precompiled code)
+const JS_WRITE_OBJ_BYTECODE* = (1 shl 0) # allow function/module
+const JS_WRITE_OBJ_BSWAP* = (1 shl 1) # byte swapped output
+const JS_WRITE_OBJ_SAB* = (1 shl 2) # allow SharedArrayBuffer
+const JS_WRITE_OBJ_REFERENCE* = (1 shl 3) # allow object references to encode
+                                          # arbitrary object graph
+proc JS_WriteObject*(ctx: JSContext; psize: ptr csize_t; obj: JSValue;
+  flags: cint): ptr uint8
+proc JS_WriteObject2*(ctx: JSContext; psize: ptr csize_t; obj: JSValue;
+  flags: cint; psab_tab: ptr ptr ptr uint8; psab_tab_len: ptr csize_t):
+  ptr uint8
+
+const JS_READ_OBJ_BYTECODE* = (1 shl 0) # allow function/module
+const JS_READ_OBJ_ROM_DATA* = (1 shl 1) # avoid duplicating 'buf' data
+const JS_READ_OBJ_SAB* = (1 shl 2) # allow SharedArrayBuffer
+const JS_READ_OBJ_REFERENCE* = (1 shl 3) # allow object references
+proc JS_ReadObject*(ctx: JSContext; buf: ptr uint8; buf_len: csize_t;
+  flags: cint): JSValue
+# instantiate and evaluate a bytecode function. Only used when reading a script
+# or module with JS_ReadObject()
 proc JS_EvalFunction*(ctx: JSContext; val: JSValue): JSValue
+# load the dependencies of the module 'obj'. Useful when JS_ReadObject() returns
+# a module.
+proc JS_ResolveModule*(ctx: JSContext; obj: JSValue): cint
 
 # only exported for os.Worker()
 proc JS_GetScriptOrModuleName*(ctx: JSContext; n_stack_levels: cint): JSAtom
@@ -713,8 +735,21 @@ proc JS_SetConstructor*(ctx: JSContext; func_obj: JSValue; proto: JSValue)
 
 # C property definition
 proc JS_SetPropertyFunctionList*(ctx: JSContext; obj: JSValue;
-  tab: ptr JSCFunctionListEntry; len: cint)
+  tab: ptr UncheckedArray[JSCFunctionListEntry]; len: cint)
 
-#TODO C module
+# C module definition
+type JSModuleInitFunc* = proc(ctx: JSContext; m: JSModuleDef): cint
+proc JS_NewCModule*(ctx: JSContext; name_str: cstringConst;
+  fun: JSModuleInitFunc): JSModuleDef
+# can only be called before the module is instantiated
+proc JS_AddModuleExport*(ctx: JSContext; m: JSModuleDef; name_str: cstringConst):
+  cint
+proc JS_AddModuleExportList*(ctx: JSContext; m: JSModuleDef;
+  tab: ptr UncheckedArray[JSCFunctionListEntry]; len: cint): cint
+# can only be called after the module is instantiated
+proc JS_SetModuleExport*(ctx: JSContext; m: JSModuleDef;
+  export_name: cstringConst; val: JSValue): cint
+proc JS_SetModuleExportList*(ctx: JSContext; m: JSModuleDef;
+  tab: ptr UncheckedArray[JSCFunctionListEntry]; len: cint): cint
 
 {.pop.}

@@ -267,7 +267,8 @@ proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValue;
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
   ctxOpaque.unforgeable.withValue(class, uf):
-    JS_SetPropertyFunctionList(ctx, jsObj, addr uf[][0], cint(uf[].len))
+    let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](addr uf[][0])
+    JS_SetPropertyFunctionList(ctx, jsObj, ufp, cint(uf[].len))
   needsref = true
   if unlikely(ctxOpaque.htmldda == class):
     JS_SetIsHTMLDDA(ctx, jsObj)
