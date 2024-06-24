@@ -29,7 +29,7 @@ code and possible inaccuracies ahead.
 	- [jsstfunc: static functions](#jsstfunc-static-functions)
 	- [jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property](#jsuffunc-jsufget-jsuffget-the-legacyunforgeable-property)
 	- [jsgetprop, jssetprop, jsdelprop, jshasprop, jspropnames: magic functions](#jsgetprop-jssetprop-jsdelprop-jshasprop-jspropnames-magic-functions)
-        - [jsfin: object finalizers](#jsfin-object-finalizers)
+	- [jsfin: object finalizers](#jsfin-object-finalizers)
 * [toJS, fromJS](#tojs-fromjs)
 	- [Using raw JSValues](#using-raw-jsvalues)
 	- [Using toJS](#using-tojs)
@@ -95,8 +95,8 @@ let res = ctx.eval(code, "<test>")
 ```
 
 If you try to convert this into a string, you will get an err(nil) result.
-Obviously you want to print your errors *somewhere*, but since Monoucha does not
-know (or care) where you log error messages, it leaves this task to you.
+Obviously, you want to print your errors *somewhere*, but since Monoucha does
+not know (or care) where you log error messages, it leaves this task to you.
 
 What we *do* provide is an easy way to retrieve the current error message:
 
@@ -106,7 +106,7 @@ if JS_IsException(res):
 ```
 
 In most cases, you should wrap `eval` in a function that deals with exceptions
-in the appropriate way for your application.
+in the most appropriate way for your application.
 
 Alternatively, a self-contained evalConvert can be written as follows:
 
@@ -141,9 +141,9 @@ So far we have talked about running JS code and getting its result, which is
 nice, but not enough for most use cases. If you are embedding QuickJS, you
 probably want some sort of interoperability between JS and Nim code.
 
-JS is an object-oriented language, where objects are passed *by reference*.
-Monoucha allows you to transparently use Nim object references in JS, provided
-you register their interface first.
+In JavaScript, all objects are passed *by reference*. Monoucha allows you to
+transparently use Nim object references in JS, provided you register their
+interface first.
 
 ### registerType: registering type interfaces
 
@@ -588,6 +588,7 @@ Example:
 type JSFile = ref object
   path: string
   buffer: pointer # some internal buffer handled as managed memory
+jsDestructor(JSFile)
 
 proc newJSFile(path: string): JSFile {.jsctor.} =
   return JSFile(
@@ -607,17 +608,108 @@ proc finalize(file: JSFile) {.jsfin.} =
 # [...]
 
 const code = """
-/* this doesn't leak. yay :D */
-{ const file = new File("doc/manual.md"); }
-/* note that I put the above call in a separate scope, so QJS can unref
- * it immediately. in contrast, following file will not be deallocated until
- * the runtime is gone. */
+{
+	/* following call is in a separate code, so QJS can unref it
+	 * immediately. */
+	const file = new File("doc/manual.md");
+}
+/* in contrast, following file will not be deallocated until the runtime is
+ * gone. */
 const file = new File("doc/manual.md");
 """
 JS_FreeValue(ctx, ctx.eval(code, "<test>"))
-assert unrefd == 1 # deallocated once, all good :)
+assert unrefd == 1 # first file is already deallocated
 ctx.free()
-assert unrefd == 1 # still available...
+assert unrefd == 1 # the second file is still available
 rt.free()
-assert unrefd == 2 # runtime is free'd; now we have deallocated twice!
+assert unrefd == 2 # runtime is freed, so the second file gets deallocated too
 ```
+
+## toJS, fromJS
+
+This section covers the handling and conversion of JSValue types.
+
+While in most cases it is possible to avoid using JSValues, Monoucha does not go
+out of its way to completely eliminate them.
+
+In particular, handling JSValues is unavoidable when:
+
+* You want to do something with `eval()`'s result
+* You need to call a QuickJS API not wrapped by Monoucha (e.g. JS function calls)
+* You want a dynamically typed variable (e.g. instead of "union" types, to avoid
+  code duplication from generics)
+
+### Using raw JSValues
+
+When passing around raw JSValues, it is important to make sure you
+reference/unreference appropriately. For this, use the `JS_DupValue` and
+`JS_FreeValue` functions from QuickJS. (When you only have access to a
+`JSRuntime`, use the `JS_FreeValueRT` and `JS_DupValueRT` variants instead.)
+
+To get raw JSValues in `.jsfunc` (or similar) bound functions, you can simply
+set the desired parameter's type to `JSValue`. This way, you get a "borrowed"
+JSValue; to keep a reference to these after the function exits, reference them
+with `JS_DupValue` first. (Analogously, you do not have to free such JSValues as
+long as you don't call `JS_DupValue` on them, either.)
+
+Since JSValues need a JSContext to do anything useful, you may want to set the
+first parameter of such functions to a `JSContext` type; this passes the current
+JSContext on to the bound function. (For details, see
+[above](#jsfunc-regular-functions).)
+
+### Using toJS
+
+Monoucha internally uses the overloaded `toJS` function to convert bound
+function return values to JS values. This is available to user code too; simply
+import the `monoucha/tojs` module.
+
+Naturally, JSValues you get from toJS are owned by you, so you have to
+`JS_FreeValue` these when you no longer need them.
+
+The `tojs` module also includes some other convenience functions:
+
+* `defineProperty`, `definePropertyC`, `definePropertyE`, `definePropertyCW`,
+  `definePropertyCWE`: simple wrappers around `JS_DefineProperty*` functions
+  from the QuickJS API. Unlike the QuickJS versions, they panic on errors, so
+  only use these if you are 100% sure that they always succeed.  
+  The `C`, `E`, `CW`, `CWE` represent the "configurable", "enumerable",
+  and "writable" flags of the property.  
+  Warning: like in QuickJS, these functions *consume* a JSValue; that is, if
+  you pass a JSValue, then be aware that the function will call `JS_FreeValue`
+  on it.
+* `newFunction`: creates a new JavaScript function. `args` is a list of
+  parameter names, `body` is the JavaScript function body.
+
+### Using fromJS
+
+`fromJS` is the opposite of `toJS`: it converts JSValues into Nim values. To use
+it, import the `monoucha/fromjs` module.
+
+Since it is generic over its return value only, you must call it using the
+syntax `fromJS[T](ctx, val)`. e.g. to get the string representation of a
+JSValue, use `fromJS[string](ctx, val)`.
+
+The result is a `Result[T, JSError]` object, where `T` is the desired type and
+the `JSError` is either a `JSError` reference or `nil`. When it's `nil`, that
+means the error was returned from QuickJS code, i.e. it's equivalent to the
+`JS_EXCEPTION` return type. Otherwise, you may decide to discard the error, or
+throw it as `ctx.toJS(res.error)`.
+
+### Custom type converters
+
+In Monoucha, object reference types are automatically converted to JS reference
+types. However, value types are different:
+
+* A non-reference `object` is converted to a JS reference by implicitly turning
+  it into `ptr object`, as noted [above](#non-reference-objects).
+* Trying to pass any other type to/from JS errors out at compilation.
+
+To work around this limitation, you can override `toJS` and `fromJS` for
+specific types. For `toJS` this is very simple; just add a `toJS` overload that
+accepts your type, and you're set. (Just make sure this function is available
+in the module you run `registerType` in.)
+
+`fromJS` is a little bit different; for this, create a procedure `fromJSMyType`
+where `MyType` is the name of your type. Also, if your type is an object (or ref
+object), you must mark it as "distinct", so that fromJS does not pick it up
+as an object reference.
