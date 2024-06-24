@@ -50,17 +50,6 @@ func isInstanceOf*(ctx: JSContext; val: JSValue; class: string): bool =
   return ctx.isInstanceOfGlobal(val, class) or
     ctx.isInstanceOfNonGlobal(val, class)
 
-func toString(ctx: JSContext; val: JSValue): Opt[string] =
-  var plen: csize_t
-  let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
-  if outp != nil:
-    var ret = newString(plen)
-    if plen != 0:
-      prepareMutation(ret)
-      copyMem(addr ret[0], outp, plen)
-    result = ok(ret)
-    JS_FreeCString(ctx, outp)
-
 func fromJSString(ctx: JSContext; val: JSValue): JSResult[string] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
@@ -69,7 +58,7 @@ func fromJSString(ctx: JSContext; val: JSValue): JSResult[string] =
   var ret = newString(plen)
   if plen != 0:
     prepareMutation(ret)
-    copyMem(addr ret[0], outp, plen)
+    copyMem(addr ret[0], cstring(outp), plen)
   JS_FreeCString(ctx, outp)
   return ok(ret)
 
@@ -313,7 +302,7 @@ func strictParseEnum[T: enum](s: string): Opt[T] =
 proc fromJSEnum[T: enum](ctx: JSContext; val: JSValue): JSResult[T] =
   if JS_IsException(val):
     return err()
-  let s = ?toString(ctx, val)
+  let s = ?fromJS[string](ctx, val)
   let r = strictParseEnum[T](s)
   if r.isSome:
     return ok(r.get)
