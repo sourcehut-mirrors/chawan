@@ -4,7 +4,7 @@ version       = "1.0.0"
 author        = "bptato"
 description   = "HTML5 parser for Chawan"
 license       = "Unlicense"
-
+skipDirs      = @["test"]
 
 # Dependencies
 

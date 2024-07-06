@@ -457,14 +457,10 @@ proc hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       return false
   assert false
 
-proc hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
-    target: TagType, list: set[TagType]): bool =
-  return parser.hasElementInSpecificScope({target}, list)
-
 const TableScope = {TAG_HTML, TAG_TABLE, TAG_TEMPLATE}
 proc hasElementInTableScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: TagType): bool =
-  return parser.hasElementInSpecificScope(target, TableScope)
+  return parser.hasElementInSpecificScope({target}, TableScope)
 
 proc hasElementInTableScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: set[TagType]): bool =
@@ -587,10 +583,10 @@ proc insertCharacter(parser: var HTML5Parser, data: string) =
   let location = parser.appropriatePlaceForInsert()
   if location.inside == parser.getDocument():
     return
-  parser.insertText(location.inside, $data, location.before)
+  parser.insertText(location.inside, data, location.before)
 
-proc insertComment[Handle, Atom](parser: var HTML5Parser[Handle, Atom], token: Token,
-    position: AdjustedInsertionLocation[Handle]) =
+proc insertComment[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
+    token: Token, position: AdjustedInsertionLocation[Handle]) =
   let comment = parser.createComment(token.data)
   parser.insert(position, comment)
 
@@ -1413,7 +1409,9 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         else:
           parser.genericRawtextElementParsingAlgorithm(token)
       )
-      ("<noframes>", "<style>") => (block: parser.genericRawtextElementParsingAlgorithm(token))
+      ("<noframes>", "<style>") => (block:
+        parser.genericRawtextElementParsingAlgorithm(token)
+      )
       "<script>" => (block:
         let location = parser.appropriatePlaceForInsert()
         let element = parser.createElementForToken(token, Namespace.HTML,
