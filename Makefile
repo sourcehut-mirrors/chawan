@@ -46,7 +46,7 @@ endif
 
 .PHONY: all
 all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
-	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
+	$(OUTDIR_CGI_BIN)/gemini $(OUTDIR_LIBEXEC)/gmi2html \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp $(OUTDIR_CGI_BIN)/sftp \
@@ -85,16 +85,11 @@ res/map/charwidth_gen.nim: $(OBJDIR)/gencharwidth res/map/EastAsianWidth.txt
 
 src/utils/strwidth.nim: res/map/charwidth_gen.nim src/utils/proptable.nim
 
-GMIFETCH_CFLAGS = -Wall -Wextra -std=c89 -pedantic -g -O2 $$(pkg-config --cflags libssl) $$(pkg-config --cflags libcrypto)
-GMIFETCH_LDFLAGS = $$(pkg-config --libs libssl) $$(pkg-config --libs libcrypto)
-$(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
-	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch" $(GMIFETCH_LDFLAGS)
-
 twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim \
 	src/utils/twtuni.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim src/io/serversocket.nim
 lcgi = $(dynstream) $(twtstr) adapter/protocol/lcgi.nim
+lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 curl = adapter/protocol/curl.nim adapter/protocol/curlerrors.nim
 $(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
 		lib/monoucha/monoucha/libregexp.nim $(twtstr)
@@ -104,6 +99,7 @@ $(OUTDIR_CGI_BIN)/file: $(twtstr) adapter/protocol/dirlist.nim src/utils/strwidt
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi) adapter/protocol/dirlist.nim src/utils/strwidth.nim
 $(OUTDIR_CGI_BIN)/sftp: $(curl) $(twtstr) src/utils/strwidth.nim adapter/protocol/dirlist.nim
 $(OUTDIR_CGI_BIN)/gopher: adapter/gophertypes.nim $(lcgi)
+$(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim $(dynstream)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \
@@ -171,7 +167,7 @@ manpages = $(manpages1) $(manpages5)
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
-protocols = http about file ftp sftp gopher gmifetch cha-finger man spartan stbi \
+protocols = http about file ftp sftp gopher gemini cha-finger man spartan stbi \
 	jebp sixel canvas resize
 converters = gopher2html md2html ansi2html gmi2html
 tools = urlenc
@@ -206,6 +202,8 @@ uninstall:
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
 # note: data has been moved back into the main binary.
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
+# note: gmifetch has been replaced by gemini
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 # urldec is just a symlink to urlenc

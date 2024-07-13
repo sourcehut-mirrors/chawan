@@ -215,7 +215,8 @@ proc main() =
     quit(1)
   warnings.add(res.warnings)
   for opt in ctx.opts:
-    let res = config.parseConfig(getCurrentDir(), opt, laxnames = true)
+    let res = config.parseConfig(getCurrentDir(), opt, laxnames = true,
+      setdir = false)
     if not res.success:
       stderr.writeLine(res.errorMsg)
       quit(1)

@@ -71,9 +71,9 @@ covered by the Match field are ignored.
 
 ## Gopher
 
-Gopher is supported through the `adapter/protocol/gopher.nim` adapter.
-Gopher directories are passed as the `text/gopher` type, and
-`adapter/format/gopher.nim` takes care of converting this to HTML.
+Chawan supports the Gopher protocol through the gopher CGI program.
+Gopher directories are passed as the `text/gopher` type, and gopher2html
+takes care of converting this to HTML.
 
 Gopher selector types are converted to MIME types when possible; note however,
 that this is very limited, as most of them (like `s` sound, or `I` image)
@@ -83,19 +83,14 @@ case may end up with `application/octet-stream`.
 
 ## Gemini
 
-Chawan's gemini adapter (in `adapter/protocol/gmifetch.c`) is a C program. It
-requires OpenSSL to work.
+Chawan's Gemini adapter has been rewritten as a Nim program. It still requires
+OpenSSL to work.
 
-It still has some limitations:
+A limitation that remains is that the Gemini adapter does not support sites that
+require private key authentication.
 
-* It does not support proxies yet.
-* It does not support sites that require private key authentication.
-
-`adapter/format/gmi2html.nim` is its companion program to convert the
-`text/gemini` file format to HTML. Note that the gemtext specification insists
-on line breaks being visually significant, and forbids their collapsing onto
-a single line; gmi2html respects this. However, inline whitespace is still
-collapsed outside of preformatted blocks.
+gmi2html is its companion program to convert the `text/gemini` file format to
+HTML.
 
 ## Finger
 

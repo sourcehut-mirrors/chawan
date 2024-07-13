@@ -3,7 +3,7 @@
 http:			cgi-bin:http
 https:			cgi-bin:http
 finger:			cgi-bin:cha-finger
-gemini:			cgi-bin:gmifetch
+gemini:			cgi-bin:gemini
 about:			cgi-bin:about
 file:			cgi-bin:file
 ftp:			cgi-bin:ftp

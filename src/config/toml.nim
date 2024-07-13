@@ -1,5 +1,4 @@
 import std/options
-import std/streams
 import std/tables
 import std/times
 
@@ -563,10 +562,10 @@ proc consumeValue(state: var TomlParser): TomlResult =
     return ok(TomlValue(t: tvtString, s: ""))
   return state.err("unexpected end of file")
 
-proc parseToml*(inputStream: Stream; filename = "<input>"; laxnames = false):
+proc parseToml*(buf: string; filename = "<input>"; laxnames = false):
     TomlResult =
   var state = TomlParser(
-    buf: inputStream.readAll(),
+    buf: buf,
     line: 1,
     root: TomlTable(),
     filename: filename,
@@ -588,5 +587,4 @@ proc parseToml*(inputStream: Stream; filename = "<input>"; laxnames = false):
       of '\t', ' ': discard
       else: return state.err("invalid character after value: " & c)
   ?state.flushLine()
-  inputStream.close()
   return ok(TomlValue(t: tvtTable, tab: state.root))

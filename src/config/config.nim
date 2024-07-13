@@ -162,7 +162,7 @@ type
   Config* = ref object
     jsctx: JSContext
     jsvfns*: seq[JSValueFunction]
-    configdir {.jsget.}: string
+    configdir* {.jsget.}: string
     `include` {.jsget.}: seq[ChaPathResolved]
     start* {.jsget.}: StartConfig
     buffer* {.jsget.}: BufferSectionConfig
@@ -611,7 +611,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(MimeTypes)
   for p in paths:
-    let f = openFileExpand(ctx.config.configdir, p)
+    let f = openFileExpand(ctx.dir, p)
     if f != nil:
       x.parseMimeTypes(f)
 
@@ -625,7 +625,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(Mailcap)
   for p in paths:
-    let f = openFileExpand(ctx.config.configdir, p)
+    let f = openFileExpand(ctx.dir, p)
     if f != nil:
       let res = parseMailcap(f)
       if res.isSome:
@@ -642,7 +642,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(URIMethodMap)
   for p in paths:
-    let f = openFileExpand(ctx.config.configdir, p)
+    let f = openFileExpand(ctx.dir, p)
     if f != nil:
       x.parseURIMethodMap(f.readAll())
   x.append(DefaultURIMethodMap)
@@ -673,12 +673,14 @@ type ParseConfigResult* = object
   warnings*: seq[string]
   errorMsg*: string
 
-proc parseConfig(config: Config; dir: string; stream: Stream; name = "<input>";
-  laxnames = false): ParseConfigResult
+proc parseConfig*(config: Config; dir, buf: string; name = "<input>";
+  laxnames = false; setdir = true): ParseConfigResult
 
-proc parseConfig(config: Config; dir: string; t: TomlValue): ParseConfigResult =
+proc parseConfig(config: Config; dir: string; t: TomlValue; setdir: bool):
+    ParseConfigResult =
   var ctx = ConfigParser(config: config, dir: dir)
-  config.configdir = dir
+  if setdir:
+    config.configdir = dir
   try:
     var myRes = ParseConfigResult(success: true)
     ctx.parseConfigValue(config[], t, "")
@@ -695,7 +697,7 @@ proc parseConfig(config: Config; dir: string; t: TomlValue): ParseConfigResult =
             warnings: ctx.warnings,
             errorMsg: "include file not found: " & s
           )
-        let res = config.parseConfig(dir, fs)
+        let res = config.parseConfig(dir, fs.readAll())
         if not res.success:
           return res
         myRes.warnings.add(res.warnings)
@@ -708,41 +710,16 @@ proc parseConfig(config: Config; dir: string; t: TomlValue): ParseConfigResult =
       errorMsg: e.msg
     )
 
-proc parseConfig(config: Config; dir: string; stream: Stream; name = "<input>";
-    laxnames = false): ParseConfigResult =
-  let toml = parseToml(stream, dir / name, laxnames)
+proc parseConfig*(config: Config; dir, buf: string; name = "<input>";
+    laxnames = false; setdir = true): ParseConfigResult =
+  let toml = parseToml(buf, dir / name, laxnames)
   if toml.isSome:
-    return config.parseConfig(dir, toml.get)
+    return config.parseConfig(dir, toml.get, setdir)
   else:
     return ParseConfigResult(
       success: false,
       errorMsg: "Fatal error: failed to parse config\n" & toml.error & '\n'
     )
-
-proc parseConfig*(config: Config; dir, s: string; name = "<input>";
-    laxnames = false): ParseConfigResult =
-  return config.parseConfig(dir, newStringStream(s), name, laxnames)
-
-const defaultConfig = staticRead"res/config.toml"
-
-proc readConfig(config: Config; dir, name: string): ParseConfigResult =
-  let path = if name.len > 0 and name[0] == '/':
-    name
-  else:
-    dir / name
-  let fs = newFileStream(path)
-  if fs != nil:
-    return config.parseConfig(parentDir(path), fs)
-  return ParseConfigResult(success: true)
-
-proc loadConfig*(config: Config; s: string) {.jsfunc.} =
-  let s = if s.len > 0 and s[0] == '/':
-    s
-  else:
-    getCurrentDir() / s
-  if not fileExists(s):
-    return
-  discard config.parseConfig(parentDir(s), newFileStream(s))
 
 proc getNormalAction*(config: Config; s: string): string =
   return config.page.getOrDefault(s)
@@ -754,20 +731,32 @@ type ReadConfigResult = tuple
   config: Config
   res: ParseConfigResult
 
+const defaultConfig = staticRead"res/config.toml"
+
+proc readConfig0(config: Config; dir, name: string): ParseConfigResult =
+  let path = if name.len > 0 and name[0] == '/':
+    name
+  else:
+    dir / name
+  let fs = newFileStream(path)
+  if fs != nil:
+    return config.parseConfig(parentDir(path), fs.readAll())
+  return ParseConfigResult(success: true)
+
 proc readConfig*(pathOverride: Option[string]; jsctx: JSContext):
     ReadConfigResult =
   let config = Config(jsctx: jsctx)
-  var res = config.parseConfig("res", newStringStream(defaultConfig))
+  var res = config.parseConfig("res", defaultConfig)
   if not res.success:
     return (nil, res)
   if pathOverride.isNone:
     when defined(debug):
-      res = config.readConfig(getCurrentDir() / "res", "config.toml")
+      res = config.readConfig0(getCurrentDir() / "res", "config.toml")
       if not res.success:
         return (nil, res)
-    res = config.readConfig(getConfigDir() / "chawan", "config.toml")
+    res = config.readConfig0(getConfigDir() / "chawan", "config.toml")
   else:
-    res = config.readConfig(getCurrentDir(), pathOverride.get)
+    res = config.readConfig0(getCurrentDir(), pathOverride.get)
   if not res.success:
     return (nil, res)
   return (config, res)

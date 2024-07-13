@@ -11,8 +11,12 @@ export twtstr
 
 export STDIN_FILENO, STDOUT_FILENO
 
-proc die*(os: PosixStream; s: string) =
-  os.sendDataLoop("Cha-Control: ConnectionError " & s)
+proc die*(os: PosixStream; name: string; s = "") =
+  var buf = "Cha-Control: ConnectionError " & name
+  if s != "":
+    buf &= ' ' & s
+  buf &= '\n'
+  os.sendDataLoop(buf)
   quit(1)
 
 proc openSocket(os: PosixStream; host, port, resFail, connFail: string;
@@ -28,10 +32,10 @@ proc openSocket(os: PosixStream; host, port, resFail, connFail: string;
     if err == 0:
       break
   if err < 0:
-    os.die(resFail & ' ' & $gai_strerror(err))
+    os.die(resFail, $gai_strerror(err))
   let sock = socket(res.ai_family, res.ai_socktype, res.ai_protocol)
   if cint(sock) < 0:
-    os.die("InternalError could not open socket")
+    os.die("InternalError", "could not open socket")
   return sock
 
 proc connectSocket(os: PosixStream; host, port, resFail, connFail: string;
@@ -49,19 +53,19 @@ proc connectSocket(os: PosixStream; host, port, resFail, connFail: string;
 proc authenticateSocks5(os, ps: PosixStream; buf: array[2, uint8];
     user, pass: string) =
   if buf[0] != 5:
-    os.die("ProxyInvalidResponse wrong socks version")
+    os.die("ProxyInvalidResponse", "wrong socks version")
   case buf[1]
   of 0x00:
     discard # no auth
   of 0x02:
     if user.len > 255 or pass.len > 255:
-      os.die("InternalError username or password too long")
+      os.die("InternalError", "username or password too long")
     let sbuf = "\x01" & char(user.len) & user & char(pass.len) & pass
     ps.sendDataLoop(sbuf)
     var rbuf = default(array[2, uint8])
     ps.recvDataLoop(rbuf)
     if rbuf[0] != 1:
-      os.die("ProxyInvalidResponse wrong auth version")
+      os.die("ProxyInvalidResponse", "wrong auth version")
     if rbuf[1] != 0:
       os.die("ProxyAuthFail")
   of 0xFF:
@@ -71,11 +75,11 @@ proc authenticateSocks5(os, ps: PosixStream; buf: array[2, uint8];
 
 proc sendSocks5Domain(os, ps: PosixStream; host, port: string) =
   if host.len > 255:
-    os.die("InternalError host too long to send to proxy")
+    os.die("InternalError", "host too long to send to proxy")
   let dstaddr = "\x03" & char(host.len) & host
   let x = parseUInt16(port)
   if x.isNone:
-    os.die("InternalError wrong port")
+    os.die("InternalError", "wrong port")
   let port = x.get
   let sbuf = "\x05\x01\x00" & dstaddr & char(port shr 8) & char(port and 0xFF)
   ps.sendDataLoop(sbuf)
@@ -121,7 +125,7 @@ proc connectProxySocket(os: PosixStream; host, port, proxy: string;
   let scheme = proxy.until(':')
   # We always use socks5h, actually.
   if scheme != "socks5" and scheme != "socks5h":
-    os.die("InternalError only socks5 proxy is supported")
+    os.die("InternalError", "only socks5 proxy is supported")
   var i = scheme.len + 1
   while i < proxy.len and proxy[i] == '/':
     inc i

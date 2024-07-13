@@ -79,6 +79,7 @@ type
     w3mCGICompat*: bool
     tmpdir*: string
     sockdir*: string
+    configdir*: string
 
 func isPrivileged(ctx: LoaderContext; client: ClientData): bool =
   return ctx.pagerClient == client
@@ -1220,6 +1221,8 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   putEnv("REMOTE_ADDR", "127.0.0.1")
   putEnv("GATEWAY_INTERFACE", "CGI/1.1")
   putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
+  putEnv("CHA_TMP_DIR", config.tmpdir)
+  putEnv("CHA_CONFIG_DIR", config.configdir)
   return ctx
 
 # This is only called when an OutputHandle could not read enough of one (or

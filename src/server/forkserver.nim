@@ -47,7 +47,8 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
       w3mCGICompat: config.external.w3m_cgi_compat,
       cgiDir: seq[string](config.external.cgi_dir),
       tmpdir: config.external.tmpdir,
-      sockdir: config.external.sockdir
+      sockdir: config.external.sockdir,
+      configdir: config.configdir
     ))
   var r = forkserver.istream.initPacketReader()
   var process: int
