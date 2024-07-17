@@ -8,7 +8,7 @@ JavaScript engine into Nim programs.
 Include Monoucha in your project using either Nimble or as a git submodule.
 
 ```
-requires "monoucha"
+requires "monoucha >= 0.2.1"
 ```
 
 Then,

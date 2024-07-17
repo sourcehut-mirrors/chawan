@@ -1,3 +1,8 @@
+0.2.1 (2024.07.17)
+* fix a memory corruption bug
+* add JSValueConst to bindings (for documentation purposes)
+* update manual
+
 0.2.0 (2024.06.22)
 * include missing QuickJS bindings
 * add missing err...Error templates
