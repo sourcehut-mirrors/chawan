@@ -106,14 +106,16 @@ proc defineProperty(ctx: JSContext; this: JSValue; name: JSAtom;
   if JS_DefinePropertyValue(ctx, this, name, prop, flags) <= 0:
     raise newException(Defect, "Failed to define property string")
 
-proc defineProperty(ctx: JSContext; this, name, prop: JSValue;
-    flags = cint(0)) =
-  let atom = JS_ValueToAtom(ctx, prop);
-  JS_FreeValue(ctx, prop);
+# Note: this consumes `prop'.
+proc defineProperty(ctx: JSContext; this: JSValue; name: int64;
+    prop: JSValue; flags = cint(0)) =
+  let name = JS_NewInt64(ctx, name)
+  let atom = JS_ValueToAtom(ctx, name)
+  JS_FreeValue(ctx, name)
   if unlikely(atom == JS_ATOM_NULL):
     raise newException(Defect, "Failed to define property string")
   ctx.defineProperty(this, atom, prop, flags)
-  JS_FreeAtom(ctx, atom);
+  JS_FreeAtom(ctx, atom)
 
 proc definePropertyC*(ctx: JSContext; this: JSValue; name: JSAtom;
     prop: JSValue) =
@@ -223,8 +225,7 @@ proc toJS*(ctx: JSContext; s: seq): JSValue =
       let val = toJS(ctx, x)
       if JS_IsException(val):
         return val
-      ctx.defineProperty(a, JS_NewInt64(ctx, int64(i)), val,
-        JS_PROP_C_W_E or JS_PROP_THROW)
+      ctx.defineProperty(a, int64(i), val, JS_PROP_C_W_E or JS_PROP_THROW)
   return a
 
 proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
@@ -248,8 +249,7 @@ proc toJS(ctx: JSContext; t: tuple): JSValue =
       let val = toJS(ctx, f)
       if JS_IsException(val):
         return val
-      ctx.defineProperty(a, JS_NewInt64(ctx, int64(i)), val,
-        JS_PROP_C_W_E or JS_PROP_THROW)
+      ctx.defineProperty(a, int64(i), val, JS_PROP_C_W_E or JS_PROP_THROW)
       inc i
   return a
 
