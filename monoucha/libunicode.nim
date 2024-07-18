@@ -23,7 +23,7 @@ type
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
-{.push header: "qjs/libregexp.h", importc.}
+{.push header: "qjs/libunicode.h", importc.}
 
 proc cr_init*(cr: ptr CharRange; mem_opaque: pointer;
   realloc_func: DynBufReallocFunc)
@@ -50,5 +50,7 @@ proc lre_case_conv*(res: ptr UncheckedArray[uint32]; c: uint32;
   conv_type: cint): cint
 
 proc lre_is_space_non_ascii*(c: uint32): cint {.importc.}
+
+proc lre_is_space*(c: uint32): cint {.importc.}
 
 {.pop.}
