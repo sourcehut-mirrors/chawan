@@ -1,3 +1,6 @@
+0.2.2 (2024.07.18)
+* fix wrong header used in libunicode binding
+
 0.2.1 (2024.07.17)
 * fix a memory corruption bug
 * add JSValueConst to bindings (for documentation purposes)
