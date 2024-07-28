@@ -343,8 +343,7 @@ type FuncParam = tuple
   isptr: bool
 
 func getMinArgs(params: seq[FuncParam]): int =
-  for i in 0..<params.len:
-    let it = params[i]
+  for i, it in params:
     if it[2].isSome:
       return i
     let t = it.t
@@ -406,10 +405,11 @@ proc getGenerics(fun: NimNode): Table[string, seq[NimNode]] =
   if node.kind == nnkNilLit:
     return # no generics
   node = node.findChild(it.kind == nnkIdentDefs)
-  var stack: seq[NimNode]
-  for i in countdown(node.len - 1, 0): stack.add(node[i])
-  var gen_name: NimNode
-  var gen_types: seq[NimNode]
+  var stack: seq[NimNode] = @[]
+  for i in countdown(node.len - 1, 0):
+    stack.add(node[i])
+  var gen_name: NimNode = nil
+  var gen_types: seq[NimNode] = @[]
   template add_gen =
     if gen_name != nil:
       assert gen_types.len != 0
@@ -590,12 +590,12 @@ proc addUnionParamBranch(gen: var JSFuncGenerator; query, newBranch: NimNode;
   let query = if fallback == nil: query else:
     quote do: (`i` < argc and `query`)
   let newBranch = newStmtList(newBranch)
-  for i in 0..gen.jsFunCallLists.high:
+  for list in gen.jsFunCallLists.mitems:
     var ifstmt = newIfStmt((query, newBranch))
     let oldBranch = newStmtList()
     ifstmt.add(newTree(nnkElse, oldBranch))
-    gen.jsFunCallLists[i].add(ifstmt)
-    gen.jsFunCallLists[i] = oldBranch
+    list.add(ifstmt)
+    list = oldBranch
   gen.newBranchList.add(newBranch)
 
 func isSequence*(ctx: JSContext; o: JSValue): bool =
@@ -756,15 +756,19 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
     var s = ident("arg_" & $gen.i)
     let tt = gen.funcParams[gen.i].t
     if tt.typeKind == varargs.getType().typeKind: # pray it's not a generic...
-      let vt = tt[1].getType()
-      for i in 0..gen.jsFunCallLists.high:
-        gen.jsFunCallLists[i].add(newLetStmt(s, quote do:
-          var valist: seq[`vt`] = @[]
-          for i in `j`..<argc:
-            let it = fromJS_or_return(`vt`, ctx, argv[i])
-            valist.add(it)
-          valist
-        ))
+      let vt = tt[1]
+      if vt.sameType(JSValue.getType()) or JSValue.getType().sameType(vt):
+        s = quote do:
+          argv.toOpenArray(`j`, argc - `j` - 1)
+      else:
+        for list in gen.jsFunCallLists:
+          list.add(newLetStmt(s, quote do:
+            var valist: seq[`vt`] = @[]
+            for i in `j`..<argc:
+              let it = fromJS_or_return(`vt`, ctx, argv[i])
+              valist.add(it)
+            valist
+          ))
     else:
       if gen.funcParams[gen.i][2].isNone:
         error("No fallback value. Maybe a non-optional parameter follows an " &
