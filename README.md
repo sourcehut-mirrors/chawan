@@ -8,7 +8,7 @@ standards for [Chawan](https://sr.ht/~bptato/chawan).
 First, include it in your nimble file:
 
 ```
-requires "chame"
+requires "chagashi >= 0.5.3"
 ```
 
 Note: following code uses the (very) high-level interface, which is rather

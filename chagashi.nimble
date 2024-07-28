@@ -1,10 +1,10 @@
 # Package
 
-version       = "0.5.2"
+version       = "0.5.3"
 author        = "bptato"
 description   = "Text encoders and decoders for Chawan (take 2)"
 license       = "Unlicense"
-skipDirs      = @["tests"]
+skipDirs      = @["test"]
 
 
 # Dependencies
