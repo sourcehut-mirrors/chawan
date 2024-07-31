@@ -788,7 +788,6 @@ proc finishFunCallList(gen: var JSFuncGenerator) =
   for branch in gen.jsFunCallLists:
     branch.add(gen.jsFunCall)
 
-var existingFuncs {.compileTime.}: HashSet[string]
 var jsDtors {.compileTime.}: HashSet[string]
 
 proc registerFunction(typ: string; nf: BoundFunction) =
@@ -796,7 +795,6 @@ proc registerFunction(typ: string; nf: BoundFunction) =
     val[].add(nf)
   do:
     BoundFunctions[typ] = @[nf]
-  existingFuncs.incl(nf.id.strVal)
 
 proc registerFunction(typ: string; t: BoundFunctionType; name: string;
     id: NimNode; magic: uint16 = 0; uf = false; isstatic = false;
@@ -827,7 +825,7 @@ proc newJSProcBody(gen: var JSFuncGenerator; isva: bool): NimNode =
   let fn = gen.funcName
   let ma = gen.actualMinArgs
   result = newStmtList()
-  if isva:
+  if isva and ma > 0:
     result.add(quote do:
       if argc < `ma`:
         return JS_ThrowTypeError(ctx,
@@ -968,9 +966,6 @@ proc makeCtorJSCallAndRet(gen: var JSFuncGenerator; errstmt: NimNode) =
 
 macro jsctor*(fun: typed) =
   var gen = initGenerator(fun, bfConstructor, thisname = none(string))
-  if gen.newName.strVal in existingFuncs:
-    #TODO TODO TODO implement function overloading
-    error("Function overloading hasn't been implemented yet...")
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
@@ -983,9 +978,6 @@ macro jsctor*(fun: typed) =
 
 macro jshasprop*(fun: typed) =
   var gen = initGenerator(fun, bfPropertyHas, thisname = some("obj"))
-  if gen.newName.strVal in existingFuncs:
-    #TODO TODO TODO ditto
-    error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("obj")
   gen.addFixParam("atom")
   gen.finishFunCallList()
@@ -1002,9 +994,6 @@ macro jshasprop*(fun: typed) =
 
 macro jsgetprop*(fun: typed) =
   var gen = initGenerator(fun, bfPropertyGet, thisname = some("obj"))
-  if gen.newName.strVal in existingFuncs:
-    #TODO TODO TODO ditto
-    error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("obj")
   gen.addFixParam("prop")
   gen.finishFunCallList()
@@ -1031,9 +1020,6 @@ macro jsgetprop*(fun: typed) =
 
 macro jssetprop*(fun: typed) =
   var gen = initGenerator(fun, bfPropertySet, thisname = some("obj"))
-  if gen.newName.strVal in existingFuncs:
-    #TODO TODO TODO ditto
-    error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("receiver")
   gen.addFixParam("atom")
   gen.addFixParam("value")
@@ -1059,9 +1045,6 @@ macro jssetprop*(fun: typed) =
 
 macro jsdelprop*(fun: typed) =
   var gen = initGenerator(fun, bfPropertyDel, thisname = some("obj"))
-  if gen.newName.strVal in existingFuncs:
-    #TODO TODO TODO ditto
-    error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("obj")
   gen.addFixParam("prop")
   gen.finishFunCallList()
@@ -1078,9 +1061,6 @@ macro jsdelprop*(fun: typed) =
 
 macro jspropnames*(fun: typed) =
   var gen = initGenerator(fun, bfPropertyNames, thisname = some("obj"))
-  if gen.newName.strVal in existingFuncs:
-    #TODO TODO TODO ditto
-    error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("obj")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
@@ -1102,9 +1082,6 @@ macro jsfgetn(jsname: static string; uf: static bool; fun: typed) =
     error("jsfget functions must only accept one parameter.")
   if gen.returnType.isNone:
     error("jsfget functions must have a return type.")
-  if gen.newName.strVal in existingFuncs:
-    #TODO TODO TODO ditto
-    error("Function overloading hasn't been implemented yet...")
   gen.addFixParam("this")
   gen.finishFunCallList()
   gen.makeJSCallAndRet(nil, quote do: discard)
