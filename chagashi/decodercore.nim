@@ -210,7 +210,7 @@ proc gb18030RangesCodepoint(p: uint32): uint32 =
     # Find the first range that is greater than p, or last if no such element
     # is found.
     # We want the last that is <=, so decrease index by one.
-    let i = upperBound(GB18030RangesDecode, p,
+    let i = GB18030RangesDecode.upperBound(p,
       func(a: tuple[p, ucs: uint16], b: uint32): int =
         cmp(uint32(a.p), b)
     )
@@ -313,6 +313,46 @@ method finish*(td: TextDecoderUTF8): TextDecoderFinishResult =
   td.bufLen = 0
   td.bounds = 0x80u8 .. 0xBFu8
 
+func findInRuns(runs: openArray[uint32]; offset, p: uint16): uint16 =
+  let i = runs.upperBound(p, proc(x: uint32; y: uint16): int =
+    let x = x and 0x1FFF # mask off first 13 bits; this is the pointer
+    return cmp(x, y)
+  )
+  let u = runs[i - 1]
+  var op = uint16(u and 0x1FFF)
+  let len = u shr 25
+  if p < op + len:
+    let diff = uint16((u shr 13) and 0xFFF) # UCS - pointer - offset
+    return offset + p + diff
+  return 0
+
+func gb18030ToU16(row, col: uint16): uint16 =
+  if row <= 0x1F:
+    let p = row * 190 + col
+    return GB18030Runs.findInRuns(GB18030RunsOffset, p)
+  if row <= 0x26:
+    if col <= 0x5F:
+      # PUA section
+      if row == 0x22 and col == 0x5F:
+        # 6555 ideographic space
+        return 0x3000
+      return 0xE4C6 + (row - 0x20) * 96 + col
+    let p = (row - 0x20) * 190 + col - (row - 0x1F) * 96
+    return GB18030Decode[p]
+  if row <= 0x28:
+    let p = (row - 0x20) * 190 + col - 7 * 96
+    return GB18030Decode[p]
+  if row <= 0x7B:
+    if col <= 0x5F:
+      let p = (row - 0x29) * 0x60 + col
+      return GB18030Runs2.findInRuns(GB18030RunsOffset2, p)
+    let p = (row - 0x20) * 190 + col - 7 * 96 - (row - 0x28) * 96
+    return GB18030Decode[p]
+  let p = (row - 0x20) * 190 + col - 7 * 96 - 83 * 96
+  if p < GB18030Decode.len:
+    return GB18030Decode[p]
+  return 0
+
 method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len or td.hasbuf):
@@ -368,10 +408,11 @@ method decode*(td: TextDecoderGB18030; iq: openArray[uint8];
         td.second = b
       else:
         if b in {0x40u8..0x7Eu8, 0x80..0xFE}:
-          let offset = if b < 0x7F: 0x40u32 else: 0x41u32
-          let p = (uint16(td.first) - 0x81) * 190 + (uint16(b) - offset)
-          if p < GB18030Decode.len:
-            oq.try_put_utf8 GB18030Decode[p], n
+          let offset = if b < 0x7F: 0x40u16 else: 0x41u16
+          let row = (uint16(td.first) - 0x81)
+          let col = (uint16(b) - offset)
+          if (let c = gb18030ToU16(row, col); c != 0):
+            oq.try_put_utf8 c, n
             td.first = 0
             consume
             continue
@@ -455,6 +496,35 @@ method finish*(td: TextDecoderBig5): TextDecoderFinishResult =
     result = tdfrError
   td.lead = 0
 
+func jis0212ToU16(row, col: uint16): uint16 =
+  let p = row * 94 + col
+  if p < Jis0212Decode.len:
+    return Jis0212Decode[p]
+  return 0
+
+func jis0208ToU16(row, col: uint16): uint16 =
+  var row = row
+  if row >= 0x5C:
+    if row <= 0x71:
+      return 0
+    row -= 32
+  elif row >= 0x54:
+    if row <= 0x57:
+      return 0
+    row -= 10
+  elif row >= 0xD:
+    if row <= 0xE:
+      return 0
+    row -= 6
+  elif row >= 0x8:
+    if row <= 0xB:
+      return 0
+    row -= 4
+  let p = row * 94 + col
+  if p < Jis0208Decode.len:
+    return Jis0208Decode[p]
+  return 0
+
 method decode*(td: TextDecoderEUC_JP; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len):
@@ -471,14 +541,12 @@ method decode*(td: TextDecoderEUC_JP; iq: openArray[uint8];
       td.lead = b
     elif td.lead != 0:
       if td.lead in 0xA1u8 .. 0xFEu8 and b in 0xA1u8 .. 0xFEu8:
-        let p = (uint16(td.lead) - 0xA1) * 94 + uint16(b) - 0xA1
-        var c: uint16
-        if td.jis0212:
-          if p < Jis0212Decode.len:
-            c = Jis0212Decode[p]
+        let row = (uint16(td.lead) - 0xA1)
+        let col = uint16(b) - 0xA1
+        let c = if td.jis0212:
+          jis0212ToU16(row, col)
         else:
-          if p < Jis0208Decode.len:
-            c = Jis0208Decode[p]
+          jis0208ToU16(row, col)
         if c != 0:
           oq.try_put_utf8 c, n
           td.jis0212 = false
@@ -571,8 +639,9 @@ method decode*(td: TextDecoderISO2022_JP; iq: openArray[uint8];
         consume
         return tdrError
       of 0x21u8..0x7Eu8:
-        let p = (uint16(td.lead) - 0x21) * 94 + uint16(b) - 0x21
-        if p < Jis0208Decode.len and (let c = Jis0208Decode[p]; c != 0):
+        let row = (uint16(td.lead) - 0x21)
+        let col = uint16(b) - 0x21
+        if (let c = jis0208ToU16(row, col); c != 0):
           oq.try_put_utf8 c, n
           td.state = i2jsLeadByte
         else:
@@ -644,19 +713,27 @@ method decode*(td: TextDecoderShiftJIS; iq: openArray[uint8];
       inc td.i
       continue
     if td.lead != 0:
-      var p = -1
-      let offset = if b < 0x7Fu8: 0x40 else: 0x41
-      let leadoffset = if td.lead < 0xA0: 0x81 else: 0xC1
+      let offset = if b < 0x7Fu8: 0x40u16 else: 0x41u16
+      let leadoffset = if td.lead < 0xA0: 0x81u16 else: 0xC1u16
       if b in 0x40u8..0x7Eu8 or b in 0x80u8..0xFCu8:
-        p = (int(td.lead) - leadoffset) * 188 + int(b) - offset
-      if p in 8836..10715:
-        oq.try_put_utf8 uint16(0xE000 - 8836 + p), n
-        td.lead = 0
-        inc td.i
-        continue
-      elif p != -1 and p < Jis0208Decode.len and Jis0208Decode[p] != 0:
-        oq.try_put_utf8 Jis0208Decode[p], n
-        td.lead = 0
+        var row = (uint16(td.lead) - leadoffset) * 2
+        var col = uint16(b) - offset
+        if col >= 94:
+          col -= 94
+          inc row
+        if 0x5E <= row and row < 0x72:
+          oq.try_put_utf8 0xE000 - 8836 + row * 94 + col, n
+          td.lead = 0
+          inc td.i
+          continue
+        elif (let c = jis0208ToU16(row, col); c != 0):
+          oq.try_put_utf8 c, n
+          td.lead = 0
+        else:
+          td.lead = 0
+          if b >= 0x80: # prepend if ASCII (only inc if 8th bit of b is set)
+            inc td.i
+          return tdrError
       else:
         td.lead = 0
         if b >= 0x80: # prepend if ASCII (only inc if 8th bit of b is set)
@@ -681,6 +758,41 @@ method finish*(td: TextDecoderShiftJIS): TextDecoderFinishResult =
     result = tdfrError
   td.lead = 0
 
+func eucKRToU16(row, col: uint16): uint16 =
+  var col = col
+  var row = row
+  if row <= 0x1F: # runs 1
+    # Skip empty columns 0x1A..0x1F and 0x3A..0x3F
+    if col >= 0x3A:
+      if col <= 0x3F:
+        return 0
+      col -= 12
+    elif col >= 0x1A:
+      if col <= 0x1F:
+        return 0
+      col -= 6
+    let p = row * 178 + col
+    return EUCKRRuns.findInRuns(EUCKRRunsOffset, p)
+  row -= 0x20
+  if col < 0x60: # runs 2
+    # Skip empty columns 0x1A..0x1F and 0x3A..0x3F
+    if col >= 0x3A:
+      if col <= 0x3F:
+        return 0
+      col -= 12
+    elif col >= 0x1A:
+      if col <= 0x1F:
+        return 0
+      col -= 6
+    let p = row * 0x54 + col
+    return EUCKRRuns2.findInRuns(EUCKRRunsOffset2, p)
+  # bottom right quadrant
+  col -= 0x60
+  let p = row * 94 + col
+  if p < EUCKRDecode.len:
+    return EUCKRDecode[p]
+  return 0
+
 method decode*(td: TextDecoderEUC_KR; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
   while (let i = td.i; i < iq.len):
@@ -691,9 +803,10 @@ method decode*(td: TextDecoderEUC_KR; iq: openArray[uint8];
       continue
     if td.lead != 0:
       if b in 0x41u8..0xFEu8:
-        let p = (uint16(td.lead) - 0x81) * 190 + (uint16(b) - 0x41)
-        if p < EUCKRDecode.len and EUCKRDecode[p] != 0:
-          oq.try_put_utf8 EUCKRDecode[p], n
+        let col = (uint16(b) - 0x41)
+        let row = (uint16(td.lead) - 0x81)
+        if (let c = eucKRToU16(row, col); c != 0):
+          oq.try_put_utf8 c, n
           inc td.i
           td.lead = 0
           continue

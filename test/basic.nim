@@ -184,3 +184,7 @@ test "getLocaleCharset":
   check getLocaleCharset("ja_JP.EUC_JP") == CHARSET_EUC_JP
   check getLocaleCharset("ja_JP.UTF-8") == CHARSET_UTF_8
   check getLocaleCharset("") == CHARSET_UTF_8
+
+test "Shift_JIS U+2212":
+  check "\u2212".encodeAll(CHARSET_SHIFT_JIS) ==
+    "\uFF0D".encodeAll(CHARSET_SHIFT_JIS)

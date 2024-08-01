@@ -74,11 +74,10 @@ Q: Is it fast?
 A: Not really, I have done very little optimization because it's not necessary
 for my use case.
 
-To check whether it is fast enough for your needs, you can try something like
-
-```
-$ BENCH_FILE=my_test_file BENCH_CHARSET=SomeCharset BENCH_ITER=10000 make bench
-```
+Also, similarly to encoding_rs, Chagashi uses RLE compressed tables to reduce
+binary size. In particular, this makes encoding EUC-KR and GBK very slow, since
+it depends on a linear search. For decoding the same ranges, binary search is
+used, which should be fast enough although is still slower than a lookup table.
 
 If you need better performance, feel free to complain in the
 [tickets](https://todo.sr.ht/~bptato/chawan) with a specific input and I may
@@ -117,7 +116,9 @@ To the standard authors for writing a detailed, easy to implement specification.
 
 Chagashi's multibyte test files (test/data.tar.xz) were borrowed from Henri
 Sivonen's excellent [encoding_rs](https://github.com/hsivonen/encoding_rs)
-library.
+library. His [writeup](https://hsivonen.fi/encoding_rs/) on compressing the
+encoding data was also very helpful, and Chagashi applies similar
+techniques.
 
 ## License
 

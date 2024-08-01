@@ -111,31 +111,41 @@ proc gb18030RangesPointer(c: uint32): uint32 =
     p = elem.p
   return p + c - offset
 
-func searchInMap(a: openArray[UCS16x16]; u: uint16): int =
-  binarySearch(a, u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
+func findPair(map: openArray[UCS32x16]; u: uint32): int =
+  return map.binarySearch(u, proc(x: UCS32x16; y: uint32): int = cmp(x[0], y))
 
-func searchInMap(a: openArray[(uint16, char)]; u: uint16): int =
-  binarySearch(a, u, proc(x: (uint16, char); y: uint16): int = cmp(x[0], y))
+func findPair(map: openArray[UCS16x16]; u: uint16): int =
+  return map.binarySearch(u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
 
-func searchInMap(a: openArray[UCS32x16]; u: uint32): int =
-  binarySearch(a, u, proc(x: UCS32x16; y: uint32): int = cmp(x[0], y))
-
-func findPair(map: openArray[UCS32x16]; c: uint32): int {.inline.} =
-  return searchInMap(map, c)
-
-func findPair(map: openArray[UCS16x16]; c: uint16): int {.inline.} =
-  return searchInMap(map, c)
-
-func findPair16(map: openArray[UCS16x16]; c: uint32): int {.inline.} =
-  if c > uint16.high:
+func findPair16(map: openArray[UCS16x16]; u: uint32): int =
+  if u > uint16.high:
     return -1
-  return searchInMap(map, uint16(c))
+  let u = uint16(u)
+  return map.binarySearch(u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
 
-func findPair16(map: openArray[tuple[ucs: uint16; val: char]]; c: uint32): int
-    {.inline.} =
-  if c > uint16.high:
+func findPair16(map: openArray[tuple[ucs: uint16; val: char]]; u: uint32): int =
+  if u > uint16.high:
     return -1
-  return searchInMap(map, uint16(c))
+  let u = uint16(u)
+  return map.binarySearch(u, proc(x: (uint16, char); y: uint16): int =
+    cmp(x[0], y)
+  )
+
+func findRun(runs: openArray[uint32]; offset, ic: uint16): uint16 =
+  let i = runs.upperBound(ic, proc(x: uint32; y: uint16): int =
+    let op = x and 0x1FFF # this is the pointer
+    let diff = (x shr 13) and 0xFFF # difference between op and the point
+    let ucs = offset + op + diff # UCS
+    return cmp(ucs, y)
+  )
+  let x = runs[i - 1]
+  let op = x and 0x1FFF # this is the pointer
+  let diff = (x shr 13) and 0xFFF # difference between op and the point
+  let ucs = offset + op + diff # UCS
+  let len = x shr 25
+  if ucs <= ic and ic < ucs + len:
+    return uint16(ic - offset - diff + 1)
+  return 0
 
 template try_put_byte(oq: var openArray[uint8]; b: uint8; n: var int) =
   if n + 1 > oq.len:
@@ -204,29 +214,42 @@ proc encodeGB18030(te: TextEncoder; iq: openArray[uint8];
       oq.try_put_byte 0x80, n
       te.i += cl
       continue
-    if (let i = GB18030Encode.findPair16(c); i != -1):
+    if c >= 0x4E02 and c <= 0x72DB and
+        (let p0 = GB18030Runs.findRun(GB18030RunsOffset, uint16(c)); p0 != 0):
+      let p = p0 - 1
+      let lead = p div 190 + 0x81
+      let trail = p mod 190
+      let offset = if trail < 0x3F: 0x40u8 else: 0x41u8
+      oq.try_put_bytes [uint8(lead), uint8(trail) + offset], n
+    elif c >= 0x72DC and c <= 0x9F31 and
+        (let p0 = GB18030Runs2.findRun(GB18030RunsOffset2, uint16(c)); p0 != 0):
+      let p = p0 - 1
+      let lead = p div 96 + 0xAA
+      let trail = p mod 96
+      let offset = if trail < 0x3F: 0x40u8 else: 0x41u8
+      oq.try_put_bytes [uint8(lead), uint8(trail) + offset], n
+    elif (let i = GB18030Encode.findPair16(c); i != -1):
       let p = GB18030Encode[i].p
       let lead = p div 190 + 0x81
       let trail = p mod 190
-      let offset: uint8 = if trail < 0x3F: 0x40 else: 0x41
+      let offset = if trail < 0x3F: 0x40u8 else: 0x41u8
       oq.try_put_bytes [uint8(lead), uint8(trail) + offset], n
-      te.i += cl
-      continue
-    if isGBK:
+    elif isGBK:
       te.i += cl
       return terError
-    var p = gb18030RangesPointer(c)
-    let b1 = p div (10 * 126 * 10)
-    p = p mod (10 * 126 * 10)
-    let b2 = p div (10 * 126)
-    p = p mod (10 * 126)
-    let b3 = p div 10
-    let b4 = p mod 10
-    let b1b = uint8(b1 + 0x81)
-    let b2b = uint8(b2 + 0x30)
-    let b3b = uint8(b3 + 0x81)
-    let b4b = uint8(b4 + 0x30)
-    oq.try_put_bytes [b1b, b2b, b3b, b4b], n
+    else:
+      var p = gb18030RangesPointer(c)
+      let b1 = p div (10 * 126 * 10)
+      p = p mod (10 * 126 * 10)
+      let b2 = p div (10 * 126)
+      p = p mod (10 * 126)
+      let b3 = p div 10
+      let b4 = p mod 10
+      let b1b = uint8(b1 + 0x81)
+      let b2b = uint8(b2 + 0x30)
+      let b3b = uint8(b3 + 0x81)
+      let b4b = uint8(b4 + 0x30)
+      oq.try_put_bytes [b1b, b2b, b3b, b4b], n
     te.i += cl
   te.i = 0
   terDone
@@ -269,6 +292,11 @@ method encode*(te: TextEncoderBig5; iq: openArray[uint8];
   te.i = 0
   terDone
 
+func ucsToJis0208(c: uint16): uint16 =
+  if (let i = Jis0208Encode.findPair16(c); i != -1):
+    return Jis0208Encode[i].p + 1
+  return 0
+
 method encode*(te: TextEncoderEUC_JP; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult =
   while te.i < iq.len:
@@ -285,20 +313,23 @@ method encode*(te: TextEncoderEUC_JP; iq: openArray[uint8];
       oq.try_put_byte 0x7E, n
     elif c in 0xFF61u32..0xFF9Fu32:
       oq.try_put_bytes [0x8Eu8, uint8(c - 0xFF61 + 0xA1)], n
+    elif c < uint16.high and (let p0 = ucsToJis0208(uint16(c)); p0 != 0):
+      let p = p0 - 1
+      let lead = p div 94 + 0xA1
+      let trail = p mod 94 + 0xA1
+      oq.try_put_bytes [uint8(lead), uint8(trail)], n
     else:
-      if c == 0x2212:
-        c = 0xFF0Du32
-      if (let i = Jis0208Encode.findPair16(c); i != -1):
-        let p = Jis0208Encode[i].p
-        let lead = p div 94 + 0xA1
-        let trail = p mod 94 + 0xA1
-        oq.try_put_bytes [uint8(lead), uint8(trail)], n
-      else:
-        te.i += cl
-        return terError
+      te.i += cl
+      return terError
     te.i += cl
   te.i = 0
   terDone
+
+func ucsToISO2022JP(c: uint16): uint16 =
+  var c = c
+  if c in 0xFF61u32..0xFF9Fu32:
+    c = ISO2022JPKatakanaMap[uint8(c - 0xFF61)]
+  return ucsToJis0208(c)
 
 method encode*(te: TextEncoderISO2022_JP; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult =
@@ -332,31 +363,24 @@ method encode*(te: TextEncoderISO2022_JP; iq: openArray[uint8];
       te.state = i2jsRoman
       # prepend (no inc i)
       continue
-    else:
-      let c = if c == 0x2212:
-        0xFF0Du32
-      elif c in 0xFF61u32..0xFF9Fu32:
-        uint32(ISO2022JPKatakanaMap[uint8(c - 0xFF61)])
-      else:
-        c
-      if (let j = Jis0208Encode.findPair16(c); j != -1):
-        let p = Jis0208Encode[j].p
-        if te.state != i2jsJis0208:
-          oq.try_put_bytes [0x1Bu8, 0x24u8, 0x42u8], n
-          te.state = i2jsJis0208
-          # prepend (no inc i)
-          continue
-        let lead = p div 94 + 0x21
-        let trail = p mod 94 + 0x21
-        oq.try_put_bytes [uint8(lead), uint8(trail)], n
-      else: # pointer is null
-        if te.state == i2jsJis0208:
-          oq.try_put_bytes [0x1Bu8, 0x28u8, 0x42u8], n
-          te.state = i2jsAscii
-          # prepend (no inc i)
-          continue
-        te.i += cl
-        return terError
+    elif c < uint16.high and (let p0 = ucsToISO2022JP(uint16(c)); p0 != 0):
+      let p = p0 - 1
+      if te.state != i2jsJis0208:
+        oq.try_put_bytes [0x1Bu8, 0x24u8, 0x42u8], n
+        te.state = i2jsJis0208
+        # prepend (no inc i)
+        continue
+      let lead = p div 94 + 0x21
+      let trail = p mod 94 + 0x21
+      oq.try_put_bytes [uint8(lead), uint8(trail)], n
+    else: # pointer is null
+      if te.state == i2jsJis0208:
+        oq.try_put_bytes [0x1Bu8, 0x28u8, 0x42u8], n
+        te.state = i2jsAscii
+        # prepend (no inc i)
+        continue
+      te.i += cl
+      return terError
     te.i += cl
   te.i = 0
   terDone
@@ -366,6 +390,11 @@ method finish*(te: TextEncoderISO2022_JP): TextEncoderFinishResult =
     te.state = i2jsAscii
     return tefrOutputISO2022JPSetAscii
   tefrDone
+
+func ucsToSJIS(c: uint16): uint16 =
+  if (let i = ShiftJISEncode.findPair16(c); i != -1):
+    return ShiftJISEncode[i].p + 1
+  return ucsToJis0208(c)
 
 method encode*(te: TextEncoderShiftJIS; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult =
@@ -383,18 +412,16 @@ method encode*(te: TextEncoderShiftJIS; iq: openArray[uint8];
       oq.try_put_byte 0x7E, n
     elif c in 0xFF61u32..0xFF9Fu32:
       oq.try_put_byte uint8(c - 0xFF61 + 0xA1), n
+    elif c < uint16.high and (let p0 = ucsToSJIS(uint16(c)); p0 != 0):
+      let p = p0 - 1
+      let lead = uint8(p div 188)
+      let lead_offset = if lead < 0x1F: 0x81u8 else: 0xC1u8
+      let trail = uint8(p mod 188)
+      let offset = if trail < 0x3F: 0x40u8 else: 0x41u8
+      oq.try_put_bytes [lead + lead_offset, trail + offset], n
     else:
-      let c = if c == 0x2212: 0xFF0Du32 else: c
-      if (let j = ShiftJISEncode.findPair16(c); j != -1):
-        let p = ShiftJISEncode[j].p
-        let lead = uint8(p div 188)
-        let lead_offset = if lead < 0x1F: 0x81u8 else: 0xC1u8
-        let trail = uint8(p mod 188)
-        let offset = if trail < 0x3F: 0x40u8 else: 0x41u8
-        oq.try_put_bytes [lead + lead_offset, trail + offset], n
-      else:
-        te.i += cl
-        return terError
+      te.i += cl
+      return terError
     te.i += cl
   te.i = 0
   terDone
@@ -408,15 +435,40 @@ method encode*(te: TextEncoderEUC_KR; iq: openArray[uint8];
       inc te.i
       continue
     let cl = te.try_get_utf8(iq, b)
-    if (let i = EUCKREncode.findPair16(te.c); i != -1):
+    let c = te.c
+    if c >= 0xAC02 and c <= 0xC8A4 and
+        (let p0 = EUCKRRuns.findRun(EUCKRRunsOffset, uint16(c)); p0 != 0):
+      let p = p0 - 1
+      let row = p div 178
+      var col = p mod 178
+      if col >= 0x34:
+        col += 12
+      elif col >= 0x1A:
+        col += 6
+      let lead = row + 0x81
+      let trail = col + 0x41
+      oq.try_put_bytes [uint8(lead), uint8(trail)], n
+    elif c >= 0xC8A5 and c <= 0xD7A3 and
+        (let p0 = EUCKRRuns2.findRun(EUCKRRunsOffset2, uint16(c)); p0 != 0):
+      let p = p0 - 1
+      let row = p div 84 + 32
+      var col = p mod 84
+      if col >= 0x34:
+        col += 12
+      elif col >= 0x1A:
+        col += 6
+      let lead = row + 0x81
+      let trail = col + 0x41
+      oq.try_put_bytes [uint8(lead), uint8(trail)], n
+    elif (let i = EUCKREncode.findPair16(c); i != -1):
       let p = EUCKREncode[i].p
       let lead = p div 190 + 0x81
       let trail = p mod 190 + 0x41
       oq.try_put_bytes [uint8(lead), uint8(trail)], n
-      te.i += cl
     else:
       te.i += cl
       return terError
+    te.i += cl
   te.i = 0
   terDone
 

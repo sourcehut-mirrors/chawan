@@ -5,7 +5,7 @@ import std/streams
 import std/strutils
 import std/tables
 
-iterator mappairs(path: string): tuple[a, b: int] =
+iterator mapPairs(path: string): tuple[a, b: int] =
   let s = readFile("res/" / path)
   var k = 0
   while k < s.len:
@@ -33,17 +33,17 @@ iterator mappairs(path: string): tuple[a, b: int] =
 # All single-byte encodings map to ucs-2.
 proc loadCharsetMap8(path: string): tuple[
       decode: seq[uint16],
-      encode: seq[tuple[ucs: uint16, val: char]]
+      encode: seq[tuple[ucs: uint16; val: char]]
     ] =
-  for index, n in mappairs(path):
+  for index, n in mapPairs(path):
     while result.decode.len < index:
       result.decode.add(0)
     result.decode.add(uint16(n))
     result.encode.add((uint16(n), char(index)))
   result.encode.sort()
 
-proc loadCharsetMap8Decode(path: string): array[char, uint16] =
-  for index, n in mappairs(path):
+proc loadCharsetMapISO2022JPKatakana(path: string): array[char, uint16] =
+  for index, n in mapPairs(path):
     result[char(index)] = uint16(n)
 
 type UCS16x16* = tuple[ucs, p: uint16]
@@ -53,7 +53,7 @@ proc loadGB18030Ranges(path: string): tuple[
       decode: seq[PUCS16x16],
       encode: seq[UCS16x16]
     ] =
-  for index, n in mappairs(path):
+  for index, n in mapPairs(path):
     if uint32(index) > uint32(high(uint16)): break
     result.decode.add((uint16(index), uint16(n)))
     result.encode.add((uint16(n), uint16(index)))
@@ -63,8 +63,24 @@ proc loadCharsetMap16(path: string): tuple[
       decode: seq[uint16],
       encode: seq[UCS16x16]
     ] =
-  var found: HashSet[int]
-  for index, n in mappairs(path):
+  var found = initHashSet[int]()
+  for index, n in mapPairs(path):
+    while result.decode.len < index:
+      result.decode.add(0)
+    result.decode.add(uint16(n))
+    if n notin found:
+      found.incl(n)
+      result.encode.add((uint16(n), uint16(index)))
+  result.encode.sort()
+
+proc loadCharsetMapJis0208(path: string): tuple[
+      decode: seq[uint16],
+      encode: seq[UCS16x16]
+    ] =
+  var found = initHashSet[int]()
+  found.incl(0x2212)
+  result.encode.add((0x2212u16, 60u16))
+  for index, n in mapPairs(path):
     while result.decode.len < index:
       result.decode.add(0)
     result.decode.add(uint16(n))
@@ -74,10 +90,14 @@ proc loadCharsetMap16(path: string): tuple[
   result.encode.sort()
 
 proc loadCharsetMapSJIS(path: string): seq[UCS16x16] =
-  var found: HashSet[int]
-  for index, n in mappairs(path):
-    if index in 8272..8835:
+  var found = initHashSet[int]()
+  result.add((0x2212u16, 60u16))
+  for index, n in mapPairs(path):
+    if index < 8272:
+      found.incl(n)
       continue
+    if index in 8272..8835:
+      continue # skip
     if n in found:
       continue
     found.incl(n)
@@ -86,13 +106,13 @@ proc loadCharsetMapSJIS(path: string): seq[UCS16x16] =
 
 type UCS32x16* = tuple[ucs: uint32, p: uint16]
 
-proc loadBig5Map(path: string, offset: static uint16): tuple[
-        decode: array[19782u16 - offset, uint16],
-        encodeLow: seq[UCS16x16],
-        encodeHigh: seq[UCS32x16]
-      ] =
-  var found: HashSet[int]
-  for index, n in mappairs(path):
+proc loadBig5Map(path: string; offset: static uint16): tuple[
+      decode: array[19782u16 - offset, uint16];
+      encodeLow: seq[UCS16x16];
+      encodeHigh: seq[UCS32x16]
+    ] =
+  var found = initHashSet[int]()
+  for index, n in mapPairs(path):
     # Set high mappings to 1, then linear search encodeHigh.
     # Note that this means encodeHigh cannot be de-duped. Luckily, there appear
     # to be no duplicates in there.
@@ -122,7 +142,7 @@ type LineWriter = object
   s: Stream
   line: string
 
-proc write(writer: var LineWriter, s: string) =
+proc write(writer: var LineWriter; s: string) =
   if s.len + writer.line.len > 80:
     writer.s.writeLine(writer.line)
     writer.line = ""
@@ -132,7 +152,7 @@ proc flush(writer: var LineWriter) =
   writer.s.writeLine(writer.line)
   writer.line = ""
 
-proc writeCharsetMap8(s: Stream, path, outname: string) =
+proc writeCharsetMap8(s: Stream; path, outname: string) =
   let (decode, encode) = loadCharsetMap8(path)
   s.write("const " & outname & "Decode*: array[" & $decode.len &
     ", uint16] = [\n")
@@ -148,12 +168,144 @@ proc writeCharsetMap8(s: Stream, path, outname: string) =
   writer.flush()
   s.write("]\n\n")
 
-proc writeCharsetMap16(s: Stream, path, outname: string) =
+type Run = tuple[p, ucs: uint16; len: uint8]
+
+# Writes a list of runs in the following format:
+# * rightmost 13 bits: pointer
+# * middle 12 bits: UCS codepoint offset - pointer
+# * top 7 bits: run length
+# The codepoint offset is the first UCS codepoint found in the run list minus
+# the first pointer, so that you get the codepoint again as
+# "offset + pointer + diff".
+proc writeRuns(writer: var LineWriter; runs: seq[Run];
+    isJis0212 = false): uint16 =
+  var ucslo = uint16.high
+  var pucs = 0u16
+  var pp = 0u16
+  for (p, ucs, len) in runs:
+    ucslo = min(ucslo, ucs)
+    if not isJis0212:
+      assert ucs >= pucs
+    assert p >= pp
+    assert len < 128
+    pp = p
+    pucs = ucs
+  for (p, ucs, len) in runs:
+    let diff0 = int(ucs) - int(p) - int(ucslo)
+    let diff = uint16(diff0)
+    assert diff0 >= 0
+    assert (p and 0x1FFF) == p
+    assert (diff and 0xFFF) == diff
+    let pack32 = (uint32(p) and 0x1FFF) or # 13 bits
+      ((uint32(diff) and 0xFFF) shl 13) or # 12 bits
+      (uint32(len) shl 25) # 7 bits
+    assert pack32 shr 25 == len
+    # 13 + 12 + 7 = 32
+    writer.write($pack32 & "u32,")
+  writer.flush()
+  return ucslo
+
+proc writeGB18030Map(s: Stream; path, outname: string) =
   let (decode, encode) = loadCharsetMap16(path)
-  s.write("const " & outname & "Decode*: array[" & $decode.len &
-    ", uint16] = [\n")
+  var runs: seq[Run] = @[]
+  var runs2: seq[Run] = @[]
+  var L = 0u16
+  var L2 = 0u16
+  var runc = 0u16
+  var runp = 0u16
+  var runlen = 0u8
+  var runvals: set[uint16] = {}
+  for i, val in decode:
+    let row = i div 190
+    let col = i mod 190
+    if row <= 0x1F:
+      if runlen == 0 or runc + uint16(runlen) != val:
+        if runlen != 0:
+          runs.add((runp, runc, runlen))
+          runlen = 0
+        runc = val
+        runp = L2
+      runvals.incl(val)
+      assert runlen < 255
+      inc runlen
+      inc L2
+      continue
+    if row == 0x20 and col == 0: # finish final run1
+      assert runlen > 0
+      runs.add((runp, runc, runlen))
+      runlen = 0
+    if row <= 0x26 and col <= 0x5F:
+      continue
+    if row >= 0x29 and col <= 0x5F and row < 0x7C:
+      if row == 0x29 and col == 0:
+        L2 = 0
+      if runlen == 0 or runc + uint16(runlen) != val or runlen >= 127:
+        if runlen != 0:
+          runs2.add((runp, runc, runlen))
+          runlen = 0
+        runc = val
+        runp = L2
+      runvals.incl(val)
+      inc L2
+      inc runlen
+      continue
+    elif row >= 0x7C and runlen > 0:
+      runs2.add((runp, runc, runlen))
+      runlen = 0
+    inc L
+  s.writeLine("const " & outname & "Runs*: array[" & $runs.len &
+    ", uint32] = [")
   var writer = LineWriter(s: s)
-  for val in decode:
+  let ucslo = writer.writeRuns(runs)
+  s.writeLine("]")
+  s.writeLine("const " & outname & "RunsOffset* = " & $ucslo & "u16")
+  s.writeLine("const " & outname & "Runs2*: array[" & $runs2.len &
+    ", uint32] = [")
+  let ucslo2 = writer.writeRuns(runs2)
+  s.writeLine("]")
+  s.writeLine("const " & outname & "RunsOffset2* = " & $ucslo2 & "u16")
+  s.writeLine("const " & outname & "Decode*: array[" & $L & ", uint16] = [")
+  for i, val in decode:
+    let row = i div 190
+    if row <= 0x1F:
+      continue # runs
+    let col = i mod 190
+    if row <= 0x26 and col <= 0x5F:
+      continue # PUA
+    if row >= 0x29 and col <= 0x5F and row < 0x7C:
+      continue # runs 2
+    writer.write($val & ",")
+  writer.flush()
+  s.writeLine("]")
+  var EL = 0
+  for (val, index) in encode:
+    if val in runvals:
+      continue
+    inc EL
+  s.writeLine("const " & outname & "Encode*: array[" & $EL & ", UCS16x16] = [")
+  for (val, index) in encode:
+    if val in runvals:
+      continue
+    writer.write("(" & $val & "," & $index & "),")
+  writer.flush()
+  s.write("]\n\n")
+
+proc writeJis0208Map(s: Stream; path, outname: string) =
+  let (decode, encode) = loadCharsetMapJis0208(path)
+  var L = 0
+  for i in 0 ..< decode.len:
+    let row = i div 94
+    if row in 0x8 .. 0xB or row in 0xD .. 0xE or row in 0x54 .. 0x57 or
+        row in 0x5C .. 0x71:
+      continue
+    inc L
+  s.write("const " & outname & "Decode*: array[" & $L & ", uint16] = [\n")
+  var writer = LineWriter(s: s)
+  for i, val in decode:
+    let row = i div 94
+    if row in 0x8 .. 0xB or row in 0xD .. 0xE or row in 0x54 .. 0x57 or
+        row in 0x5C .. 0x71:
+      continue
     writer.write($val & ",")
   writer.flush()
   s.write("]\n")
@@ -164,7 +316,103 @@ proc writeCharsetMap16(s: Stream, path, outname: string) =
   writer.flush()
   s.write("]\n\n")
 
-proc writeGB18030RangesMap(s: Stream, path, outname: string) =
+proc writeJis0212Map(s: Stream; path, outname: string) =
+  let (decode, _) = loadCharsetMap16(path)
+  var writer = LineWriter(s: s)
+  s.writeLine("const " & outname & "Decode*: array[" & $decode.len &
+    ", uint16] = [")
+  for i, val in decode:
+    writer.write($val & ",")
+  writer.flush()
+  s.writeLine("]")
+
+proc writeEUCKRMap(s: Stream; path, outname: string) =
+  let (decode, encode) = loadCharsetMap16(path)
+  var runs: seq[tuple[p, ucs: uint16; len: uint8]] = @[]
+  var runs2: seq[tuple[p, ucs: uint16; len: uint8]] = @[]
+  var runc = 0u16
+  var runp = 0u16
+  var runlen = 0u8
+  var L = 0
+  var L2 = 0u16
+  var runvals: set[uint16] = {}
+  for i, val in decode:
+    let col = i mod 190
+    if col in 0x1A .. 0x1F or col in 0x3A .. 0x3F:
+      continue
+    let row = i div 190
+    if row <= 0x1F:
+      if runlen == 0 or runc + uint16(runlen) != val:
+        if runlen != 0:
+          runs.add((runp, runc, runlen))
+          runlen = 0
+        runc = val
+        runp = L2
+      runvals.incl(val)
+      inc runlen
+      inc L2
+      continue
+    if col < 0x60:
+      if val == 0:
+        continue
+      if row == 0x20 and col == 0:
+        runs.add((runp, runc, runlen))
+        runlen = 0
+        L2 = 0
+      if runlen == 0 or runc + uint16(runlen) != val:
+        if runlen != 0:
+          runs2.add((runp, runc, runlen))
+          runlen = 0
+        runc = val
+        runp = L2
+      runvals.incl(val)
+      inc runlen
+      inc L2
+    else:
+      if row > 0x45 and runlen > 0:
+        runs2.add((runp, runc, runlen))
+        runlen = 0
+      inc L
+  var writer = LineWriter(s: s)
+  s.writeLine("const " & outname & "Runs*: array[" & $runs.len &
+    ", uint32] = [")
+  let ucslo = writer.writeRuns(runs)
+  s.write("]\n")
+  s.writeLine("const " & outname & "RunsOffset* = " & $ucslo & "u16")
+  s.writeLine("const " & outname & "Runs2*: array[" & $runs2.len &
+    ", uint32] = [")
+  let ucslo2 = writer.writeRuns(runs2)
+  s.write("]\n")
+  s.writeLine("const " & outname & "RunsOffset2* = " & $ucslo2 & "u16")
+  s.writeLine("const " & outname & "Decode*: array[" & $L & ", uint16] = [")
+  for i, val in decode:
+    let col = i mod 190
+    if col in 0x1A .. 0x1F:
+      continue
+    if col in 0x3A .. 0x3F:
+      continue
+    let row = i div 190
+    if row <= 0x1F:
+      continue # runs
+    if col < 0x60:
+      continue # runs2 / empty space
+    writer.write($val & ",")
+  writer.flush()
+  s.write("]\n")
+  var EL = 0
+  for (val, index) in encode:
+    if val in runvals:
+      continue
+    inc EL
+  s.writeLine("const " & outname & "Encode*: array[" & $EL & ", UCS16x16] = [")
+  for (val, index) in encode:
+    if val in runvals:
+      continue
+    writer.write("(" & $val & "," & $index & "),")
+  writer.flush()
+  s.write("]\n\n")
+
+proc writeGB18030RangesMap(s: Stream; path, outname: string) =
   let (decode, encode) = loadGB18030Ranges(path)
   s.write("const " & outname & "Decode*: array[" & $decode.len &
     ", PUCS16x16] = [\n")
@@ -180,7 +428,7 @@ proc writeGB18030RangesMap(s: Stream, path, outname: string) =
   writer.flush()
   s.write("]\n\n")
 
-proc writeBig5Map(s: Stream, path, outname: string, offset: static uint16) =
+proc writeBig5Map(s: Stream; path, outname: string; offset: static uint16) =
   let (decode, encode0, encode1) = loadBig5Map(path, offset)
   s.write("const " & outname & "Decode*: array[" & $decode.len &
     ", uint16] = [\n")
@@ -202,7 +450,7 @@ proc writeBig5Map(s: Stream, path, outname: string, offset: static uint16) =
   writer.flush()
   s.write("]\n\n")
 
-proc writeShiftJISMap(s: Stream, path, outname: string) =
+proc writeShiftJISMap(s: Stream; path, outname: string) =
   let encode = loadCharsetMapSJIS(path)
   s.write("const " & outname & "Encode*: array[" & $encode.len &
     ", UCS16x16] = [\n")
@@ -212,8 +460,8 @@ proc writeShiftJISMap(s: Stream, path, outname: string) =
   writer.flush()
   s.write("]\n\n")
 
-proc writeISO2022JPKatakanaEncode(s: Stream, path: string) =
-  let encode = loadCharsetMap8Decode(path)
+proc writeISO2022JPKatakanaEncode(s: Stream; path: string) =
+  let encode = loadCharsetMapISO2022JPKatakana(path)
   s.write("const ISO2022JPKatakanaMap*: array[uint8, uint16] = [\n")
   var writer = LineWriter(s: s)
   for index in encode:
@@ -254,10 +502,10 @@ s.writeCharsetMap8("index-windows-1256.txt", "Windows1256")
 s.writeCharsetMap8("index-windows-1257.txt", "Windows1257")
 s.writeCharsetMap8("index-windows-1258.txt", "Windows1258")
 s.writeCharsetMap8("index-x-mac-cyrillic.txt", "XMacCyrillic")
-s.writeCharsetMap16("index-gb18030.txt", "GB18030")
-s.writeCharsetMap16("index-jis0208.txt", "Jis0208")
-s.writeCharsetMap16("index-jis0212.txt", "Jis0212")
-s.writeCharsetMap16("index-euc-kr.txt", "EUCKR")
+s.writeGB18030Map("index-gb18030.txt", "GB18030")
+s.writeJis0208Map("index-jis0208.txt", "Jis0208")
+s.writeJis0212Map("index-jis0212.txt", "Jis0212")
+s.writeEUCKRMap("index-euc-kr.txt", "EUCKR")
 s.writeGB18030RangesMap("index-gb18030-ranges.txt", "GB18030Ranges")
 const Big5DecodeOffset* = 942
 s.writeBig5Map("index-big5.txt", "Big5", offset = Big5DecodeOffset)
