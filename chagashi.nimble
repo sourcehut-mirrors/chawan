@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.5.3"
+version       = "0.5.4"
 author        = "bptato"
 description   = "Text encoders and decoders for Chawan (take 2)"
 license       = "Unlicense"

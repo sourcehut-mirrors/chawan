@@ -1,3 +1,7 @@
+0.5.4 (2024.08.01)
+* Reduce map sizes
+* Promise no exceptions in public APIs
+
 0.5.3 (2024.07.28)
 * Fix skipDirs
 
