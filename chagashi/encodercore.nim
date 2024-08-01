@@ -47,6 +47,8 @@
 ## called. However, it is invalid (and broken) to call `finish` without having
 ## received a `terDone` result from the encoder first.
 
+{.push raises: [].}
+
 import std/algorithm
 
 import charset_map
@@ -544,3 +546,5 @@ makeSingleByte Windows1256
 makeSingleByte Windows1257
 makeSingleByte Windows1258
 makeSingleByte XMacCyrillic
+
+{.pop.}

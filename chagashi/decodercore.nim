@@ -47,6 +47,8 @@
 ## TextDecoder objects. It is however incorrect to call `finish` unless the last
 ## `decode` call has returned `tdrDone`.
 
+{.push raises: [].}
+
 import std/algorithm
 
 import charset_map
@@ -961,3 +963,5 @@ method decode*(td: TextDecoderReplacement; iq: openArray[uint8];
     td.reported = true
     return tdrError
   tdrDone
+
+{.pop.}

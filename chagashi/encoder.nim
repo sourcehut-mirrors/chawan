@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import charset
 import encodercore
 
@@ -107,3 +109,5 @@ proc encodeAll*(td: TextEncoder; iq: string): string =
 
 proc encodeAll*(iq: string; charset: Charset): string =
   return newTextEncoder(charset).encodeAll(iq.toOpenArrayByte(0, iq.high))
+
+{.pop.}

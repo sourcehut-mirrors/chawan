@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import charset
 import decodercore
 
@@ -221,3 +223,5 @@ proc validateUTF8Surr*(s: string; start = 0): int =
   if ctx.failed:
     return ctx.td.ri + 1
   return -1
+
+{.pop.}

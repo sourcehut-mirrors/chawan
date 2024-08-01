@@ -1,6 +1,8 @@
 ## This module contains the `Charset` enum used by [encoder](encoder.html) and
 ## [decoder](decoder.html).
 
+{.push raises: [].}
+
 import std/strutils
 import std/tables
 
@@ -351,3 +353,5 @@ proc getLocaleCharset*(s: string): Charset =
   # than any other charset, irrespective of the language. So we just assume
   # UTF-8.
   return DefaultCharset
+
+{.pop.}
