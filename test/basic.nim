@@ -18,7 +18,9 @@ test "hello JS":
   ctx.setGlobal(global)
   const code = "testFun()"
   let val = ctx.eval(code, "<test>", 0)
-  check fromJS[string](ctx, val).get == "Hello, world!"
+  var res: string
+  check ctx.fromJS(val, res).isSome
+  check res == "Hello, world!"
   JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()

@@ -369,7 +369,8 @@ proc toJS*(ctx: JSContext; dict: JSDict): JSValue =
   if JS_IsException(obj):
     return obj
   for k, v in dict.fieldPairs:
-    ctx.defineProperty(obj, k, v)
+    when k != "toFree":
+      ctx.defineProperty(obj, k, v)
   return obj
 
 proc toJSP(ctx: JSContext; parent: ref object; child: var object): JSValue =

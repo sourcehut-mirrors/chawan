@@ -19,5 +19,10 @@ test_manual:
 	$(NIM) $(FLAGS) r -p:. test/manual.nim
 	$(NIM) $(FLAGS) r -p:. -d:monouchaUseOpt=1 test/manual.nim
 
+.PHONY: test_etc
+test_etc:
+	$(NIM) $(FLAGS) r -p:. test/etc.nim
+	$(NIM) $(FLAGS) r -p:. -d:monouchaUseOpt=1 test/etc.nim
+
 .PHONY: test
-test: test_basic test_regexonly test_manual
+test: test_basic test_regexonly test_manual test_etc

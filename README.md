@@ -16,54 +16,6 @@ Then,
 * There is a [manual](doc/manual.md). Please read the manual.
 * [Examples](test/manual.nim) from the manual, organized as unit tests.
 
-## Example
-
-```nim
-# Compile with nim c --mm:refc!
-import monoucha/fromjs
-import monoucha/javascript
-import results
-
-type
-  MyGlobal = ref object
-    console {.jsget.}: Console
-
-  Console = ref object
-
-jsDestructor(Console)
-
-proc log(console: Console; s: string) {.jsfunc.} =
-  echo s
-
-proc main() =
-  let global = MyGlobal(console: Console())
-  let rt = newJSRuntime()
-  let ctx = rt.newJSContext()
-  ctx.registerType(MyGlobal, asglobal = true)
-  ctx.registerType(Console)
-  ctx.setGlobal(global)
-  const code = """
-console.log("Hello from Nim!");
-"Hello from JS!";
-"""
-  let res = ctx.eval(code, "<test>") # Hello from Nim!
-  echo fromJS[string](ctx, res).get # Hello from JS!
-  JS_FreeValue(ctx, res)
-  ctx.free()
-  rt.free()
-
-main()
-```
-
-Above code does the following:
-
-* Create a new QuickJS runtime & a QuickJS context in that runtime
-* Register the MyGlobal and Console types, and generate bindings for the
-  `console` property of MyGlobal and the `log` function of Console
-* Evaluate JS code in this context
-* Convert the result of the evaluated JS code to a Nim string, and print it
-* Free the result, then free the context
-
 ## Warning
 
 At the time of writing, Monoucha only works with refc. This means you have to

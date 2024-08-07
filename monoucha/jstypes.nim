@@ -3,7 +3,33 @@ import quickjs
 # This is the WebIDL dictionary type.
 # We only use it for type inference in generics.
 #TODO required members
-type JSDict* = object of RootObj
+type
+  # JSDictToFreeAux is a hack to ensure JSValues are freed only
+  # when the JSDict goes out of scope. Ugly and sub-optimal, but it does
+  # the job.
+  JSDictToFreeAux* = ref JSDictToFreeAuxObj
+  JSDictToFreeAuxObj = object
+    ctx*: JSContext
+    vals*: seq[JSValue]
+
+  JSDict* = object of RootObj
+    toFree*: JSDictToFreeAux
+
+{.warning[Deprecated]:off.}:
+  proc `=destroy`*(x: var JSDictToFreeAuxObj) =
+    for val in x.vals:
+      JS_FreeValue(x.ctx, val)
+
+# Example usage:
+#
+# type MyOptions = object of JSDict
+#   x {.jsdefault: 1.}: int
+#   y {.jsdefault.}: bool
+#
+# For the above JSDict, no exception will be thrown if `x` is missing; instead,
+# it gets set to `1'.
+template jsdefault*(x: untyped) {.pragma.}
+template jsdefault*() {.pragma.}
 
 # Containers compatible with the internal representation of strings in QuickJS.
 # To convert these, a copy is still needed; however, they remove the UTF-8

@@ -63,9 +63,11 @@ import monoucha/javascript
 let rt = newJSRuntime()
 let ctx = rt.newJSContext()
 const code = "'Hello from JS!'"
-let res = ctx.eval(code, "<test>")
-echo fromJS[string](ctx, res).get # Hello from JS!
-JS_FreeValue(ctx, res)
+let val = ctx.eval(code, "<test>")
+var res: string
+assert ctx.fromJS(val, res).isSome # no error
+echo res # Hello from JS!
+JS_FreeValue(ctx, val)
 ctx.free()
 rt.free()
 ```
@@ -91,14 +93,15 @@ Let's get ourselves a ReferenceError:
 
 ```nim
 const code = "abcd"
-let res = ctx.eval(code, "<test>")
+let val = ctx.eval(code, "<test>")
 ```
 
-If you try to convert this into a string, you will get an err(nil) result.
+If you try to convert this into a string, you will get an err() result.
 Obviously, you want to print your errors *somewhere*, but since Monoucha does
 not know (or care) where you log error messages, it leaves this task to you.
 
-What we *do* provide is an easy way to retrieve the current error message:
+However, Monoucha does provide an easy way to retrieve the current error
+message:
 
 ```nim
 if JS_IsException(res):
@@ -111,25 +114,19 @@ in the most appropriate way for your application.
 Alternatively, a self-contained evalConvert can be written as follows:
 
 ```nim
+import results
 import monoucha/tojs
 
 proc evalConvert[T](ctx: JSContext; code, file: string): Result[T, string] =
-  let res = ctx.eval(code, file, flags)
-  if JS_IsException(res):
-    # Exception in eval; return the message.
+  let val = ctx.eval(code, file, flags)
+  var res: T
+  if ctx.fromJS(val, res).isNone:
+    # Exception when converting the value.
+    JS_FreeValue(ctx, val)
     return err(ctx.getExceptionMsg())
-  let val = fromJS[T]ctx, (res)
-  JS_FreeValue(ctx, res)
-  if val.isNone:
-    # Conversion failed; convert the error value into an exception and then
-    # return its message.
-    #
-    # Important: toJS here does not only convert the error (a JSError object),
-    # but also *throws it*
-    JS_FreeValue(ctx, toJS(ctx, val.error))
-    return err(ctx.getExceptionMsg())
+  JS_FreeValue(ctx, val)
   # All ok! Return the converted object.
-  return ok(val.get)
+  return ok(res)
 ```
 
 However, it is usually more efficient (and simpler) to immediately log
@@ -172,9 +169,11 @@ jsDestructor(Moon)
 # [...]
 ctx.registerType(Moon)
 const code = "Moon"
-let res = ctx.eval(code, "<test>")
-echo fromJS[string](ctx, res).get # function Moon() [...]
-JS_FreeValue(ctx, res)
+let val = ctx.eval(code, "<test>")
+var res: string
+assert ctx.fromJS(val, res).isSome # no error
+echo res # function Moon() [...]
+JS_FreeValue(ctx, val)
 ```
 
 Quite straightforward; just call `registerType`.
@@ -199,10 +198,10 @@ type Earth = ref object
 let earth = Earth()
 ctx.registerType(Earth, asglobal = true)
 ctx.setGlobal(earth)
-const code = "globalThis instanceof Earth"
-let res = ctx.eval(code, "<test>")
-echo fromJS[bool](ctx, res).get # true
-JS_FreeValue(ctx, res)
+const code = "assert(globalThis instanceof Earth)"
+let val = ctx.eval(code, "<test>")
+assert not JS_IsException(val)
+JS_FreeValue(ctx, val)
 ```
 
 You may notice two things:
@@ -229,10 +228,10 @@ type
 let planetCID = ctx.registerType(Planet)
 ctx.registerType(Earth, parent = planetCID, asglobal = true)
 ctx.registerType(Moon, parent = planetCID)
-const code = "globalThis instanceof Planet"
-let res = ctx.eval(code, "<test>")
-echo fromJS[bool](ctx, res).get # true
-JS_FreeValue(ctx, res)
+const code = "assert(globalThis instanceof Planet)"
+let val = ctx.eval(code, "<test>")
+assert not JS_IsException(val)
+JS_FreeValue(ctx, val)
 ```
 
 In this model, the inheritance tree looks like:
@@ -295,10 +294,12 @@ const code = """
 globalThis.population = 8e9;
 "name: " + globalThis.name + ", moon: " + globalThis.moon;
 """
-let res = ctx.eval(code, "<test>")
-echo fromJS[string](ctx, res).get # name: Earth, moon: [object Moon]
+let val = ctx.eval(code, "<test>")
+var res: string
+assert ctx.fromJS(val, res).isSome # no error
+echo res # name: Earth, moon: [object Moon]
 echo earth.population # 8e9
-JS_FreeValue(ctx, res)
+JS_FreeValue(ctx, val)
 ```
 
 In the above example, we expose an Earth instance as the global object, and
@@ -330,9 +331,11 @@ ctx.registerType(Earth, asglobal = true)
 ctx.registerType(Moon)
 ctx.setGlobal(earth)
 const code = "globalThis.moon"
-let res = ctx.eval(code, "<test>")
-echo fromJS[string](ctx, res).get # [object Moon]
-JS_FreeValue(ctx, res)
+let val = ctx.eval(code, "<test>")
+var res: string
+assert ctx.fromJS(val, res).isSome # no error
+echo res # [object Moon]
+JS_FreeValue(ctx, val)
 ```
 
 Do note that this has some restrictions: for example, you cannot return a
@@ -401,15 +404,16 @@ type Console2 = object # not ref!
 proc log(console: var Console2; s: string) {.jsfunc.} = # [...]
 ```
 
-However, it is possible to insert a "zeroeth" parameter to get a reference to
-the current JS context. This is useful if you want to access state global to the
+It is also possible to insert a "zeroeth" parameter to get a reference to the
+current JS context. This is useful if you want to access state global to the
 JS context without storing a backreference to the global object:
 
 ```nim
 proc log(ctx: JSContext; console: Console; s: string) {.jsfunc.} =
   # This assumes you have already setGlobal a Window instance.
   let global = JS_GetGlobalObject(ctx)
-  let window = fromJS[Window](ctx, global).get
+  var window: Window
+  assert ctx.fromJS(global, window).isSome # no error
   JS_FreeValue(ctx, global)
   # Now you can do something with the window, e.g.
   window.outFile.writeLine(s)
@@ -659,12 +663,16 @@ JSContext on to the bound function. (For details, see
 
 ### Using toJS
 
+```nim
+proc toJS[T](ctx: JSContext; val: T): JSValue
+```
+
 Monoucha internally uses the overloaded `toJS` function to convert bound
 function return values to JS values. This is available to user code too; simply
 import the `monoucha/tojs` module.
 
-Naturally, JSValues you get from toJS are owned by you, so you have to
-`JS_FreeValue` these when you no longer need them.
+Naturally, JSValues you get from toJS are owned by you, so you should call
+`JS_FreeValue` on these when you no longer need them.
 
 The `tojs` module also includes some other convenience functions:
 
@@ -682,18 +690,25 @@ The `tojs` module also includes some other convenience functions:
 
 ### Using fromJS
 
+```nim
+proc fromJS[T](ctx: JSContext; val: JSValue; res: var T): Err[void]
+```
+
 `fromJS` is the opposite of `toJS`: it converts JSValues into Nim values. To use
 it, import the `monoucha/fromjs` module.
 
-Since it is generic over its return value only, you must call it using the
-syntax `fromJS[T](ctx, val)`. e.g. to get the string representation of a
-JSValue, use `fromJS[string](ctx, val)`.
+On success, `fromJS` fills res and returns `Opt[void].some()`.
 
-The result is a `Result[T, JSError]` object, where `T` is the desired type and
-the `JSError` is either a `JSError` reference or `nil`. When it's `nil`, that
-means the error was returned from QuickJS code, i.e. it's equivalent to the
-`JS_EXCEPTION` return type. Otherwise, you may decide to discard the error, or
-throw it as `ctx.toJS(res.error)`.
+On failure, `res` is left in its initial state, **except if it's a JSDict (see
+below!)**, a QuickJS exception is thrown (using `JS_Throw()`), and
+`Opt[void].none()` is returned.
+
+**Warning**: since fromJS is mainly meant to be used by automatic wrappers, it
+performs the following optimization: for `JSDict` values, `res` is left in
+a modified state.
+
+Passing `JS_EXCEPTION` to `fromJS` is valid, and results in no new exception
+being thrown.
 
 ### Custom type converters
 
@@ -705,11 +720,6 @@ types. However, value types are different:
 * Trying to pass any other type to/from JS errors out at compilation.
 
 To work around this limitation, you can override `toJS` and `fromJS` for
-specific types. For `toJS` this is very simple; just add a `toJS` overload that
-accepts your type, and you're set. (Just make sure this function is available
-in the module you run `registerType` in.)
-
-`fromJS` is a little bit different; for this, create a procedure `fromJSMyType`
-where `MyType` is the name of your type. Also, if your type is an object (or ref
-object), you must mark it as "distinct", so that fromJS does not pick it up
-as an object reference.
+specific types. In both cases, it is enough to add an overload for the
+respective function and expose it to the module where the converter is needed
+(i.e. where you call `registerType`).

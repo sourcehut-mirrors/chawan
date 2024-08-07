@@ -12,26 +12,23 @@ test "Hello, world":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   const code = "'Hello from JS!'"
-  let res = ctx.eval(code, "<test>")
-  check fromJS[string](ctx, res).get == "Hello from JS!"
-  JS_FreeValue(ctx, res)
+  let val = ctx.eval(code, "<test>")
+  var res: string
+  check ctx.fromJS(val, res).isSome
+  check res == "Hello from JS!"
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 proc evalConvert[T](ctx: JSContext; code, file: string): Result[T, string] =
-  let res = ctx.eval(code, file)
-  if JS_IsException(res):
-    # Exception in eval; return the message.
-    return err(ctx.getExceptionMsg())
-  let val = fromJS[T](ctx, res)
-  JS_FreeValue(ctx, res)
-  if val.isNone:
-    # Conversion failed; convert the error value into an exception and then
-    # return its message.
-    JS_FreeValue(ctx, toJS(ctx, val.error))
+  let val = ctx.eval(code, file)
+  defer: JS_FreeValue(ctx, val) # unref result before returning
+  var res: T
+  if ctx.fromJS(val, res).isNone:
+    # Conversion failed; return the exception message.
     return err(ctx.getExceptionMsg())
   # All ok! Return the converted object.
-  return ok(val.get)
+  return ok(res)
 
 test "Error handling":
   let rt = newJSRuntime()
@@ -49,6 +46,11 @@ ReferenceError: 'abcd' is not defined
   ctx.free()
   rt.free()
 
+type Earth = ref object
+
+proc jsAssert(earth: Earth; pred: bool) {.jsfunc: "assert".} =
+  assert pred
+
 test "registerType: registering type interfaces":
   type Moon = ref object
   jsDestructor(Moon)
@@ -56,26 +58,27 @@ test "registerType: registering type interfaces":
   let ctx = rt.newJSContext()
   ctx.registerType(Moon)
   const code = "Moon"
-  let res = ctx.eval(code, "<test>")
-  check fromJS[string](ctx, res).get == """
+  let val = ctx.eval(code, "<test>")
+  var res: string
+  check ctx.fromJS(val, res).isSome
+  check res == """
 function Moon() {
     [native code]
 }"""
-  JS_FreeValue(ctx, res)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
 test "Global objects":
-  type Earth = ref object
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   let earth = Earth()
   ctx.registerType(Earth, asglobal = true)
   ctx.setGlobal(earth)
-  const code = "globalThis instanceof Earth"
-  let res = ctx.eval(code, "<test>")
-  check fromJS[bool](ctx, res).get
-  JS_FreeValue(ctx, res)
+  const code = "assert(globalThis instanceof Earth)"
+  let val = ctx.eval(code, "<test>")
+  check not JS_IsException(val)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -91,10 +94,10 @@ test "Inheritance":
   let planetCID = ctx.registerType(Planet)
   ctx.registerType(Earth, parent = planetCID, asglobal = true)
   ctx.registerType(Moon, parent = planetCID)
-  const code = "globalThis instanceof Planet"
-  let res = ctx.eval(code, "<test>")
-  check fromJS[bool](ctx, res).get
-  JS_FreeValue(ctx, res)
+  const code = "assert(globalThis instanceof Planet)"
+  let val = ctx.eval(code, "<test>")
+  check not JS_IsException(val)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -118,10 +121,12 @@ test "jsget, jsset: basic property reflectors":
 globalThis.population = 8e9;
 "name: " + globalThis.name + ", moon: " + globalThis.moon;
 """
-  let res = ctx.eval(code, "<test>")
-  check fromJS[string](ctx, res).get == "name: Earth, moon: [object Moon]"
+  let val = ctx.eval(code, "<test>")
+  var res: string
+  check ctx.fromJS(val, res).isSome
+  check res == "name: Earth, moon: [object Moon]"
   check earth.population == int64(8e9)
-  JS_FreeValue(ctx, res)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -148,9 +153,9 @@ test "jsfunc: regular functions":
   const code = """
 console.log('Hello, world!')
 """
-  let res = ctx.eval(code, "<test>")
-  check not JS_IsException(res)
-  JS_FreeValue(ctx, res)
+  let val = ctx.eval(code, "<test>")
+  check not JS_IsException(val)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -175,9 +180,9 @@ test "jsctor: constructors":
   const code = """
 assert(new File('/path/to/file') + '' == '[object File]')
 """
-  let res = ctx.eval(code, "<test>")
-  check not JS_IsException(res)
-  JS_FreeValue(ctx, res)
+  let val = ctx.eval(code, "<test>")
+  check not JS_IsException(val)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -201,9 +206,9 @@ assert(file.name === "file"); /* file */
 file.name = "new-name";
 assert(file.path === "/path/to/new-name");
   """
-  let res = ctx.eval(code, "<test>")
-  check not JS_IsException(res)
-  JS_FreeValue(ctx, res)
+  let val = ctx.eval(code, "<test>")
+  check not JS_IsException(val)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -218,9 +223,9 @@ test "jsstfunc: static functions":
   const code = """
 assert(File.exists("doc/manual.md"));
   """
-  let res = ctx.eval(code, "<test>")
-  check not JS_IsException(res)
-  JS_FreeValue(ctx, res)
+  let val = ctx.eval(code, "<test>")
+  check not JS_IsException(val)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 
@@ -249,9 +254,9 @@ file.getOwner = () => -2; /* doesn't work */
 assert(oldGetOwner == file.getOwner);
 Object.defineProperty(file, "owner", { value: -2 }); /* throws */
   """
-  let res = ctx.eval(code, "<test>")
-  check JS_IsException(res)
-  JS_FreeValue(ctx, res)
+  let val = ctx.eval(code, "<test>")
+  check JS_IsException(val)
+  JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()
 

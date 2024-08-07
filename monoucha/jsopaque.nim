@@ -1,7 +1,6 @@
 import std/tables
 
 import jserror
-import optshim
 import quickjs
 
 type
@@ -25,7 +24,7 @@ type
     jsvFunction = "Function"
 
   JSContextOpaque* = ref object
-    creg*: Table[string, JSClassID]
+    creg*: Table[cstring, JSClassID]
     typemap*: Table[pointer, JSClassID]
     ctors*: Table[JSClassID, JSValue]
     parents*: Table[JSClassID, JSClassID]
@@ -33,8 +32,8 @@ type
     # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
     # `unforgeable[classid]'.)
     unforgeable*: Table[JSClassID, seq[JSCFunctionListEntry]]
-    gclaz*: string
-    gparent*: JSClassID
+    gclass*: JSClassID # class ID of the global object
+    global*: JSValue
     symRefs*: array[JSSymbolRef, JSAtom]
     strRefs*: array[JSStrRef, JSAtom]
     valRefs*: array[JSValueRef, JSValue]
@@ -53,10 +52,9 @@ type
     destroying*: pointer
 
 func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
-  let opaque = JSContextOpaque()
+  let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))
   block: # get well-known symbols and other functions
-    let global = JS_GetGlobalObject(ctx)
-    let sym = JS_GetPropertyStr(ctx, global, "Symbol")
+    let sym = JS_GetPropertyStr(ctx, opaque.global, "Symbol")
     for s in JSSymbolRef:
       let name = $s
       let val = JS_GetPropertyStr(ctx, sym, cstring(name))
@@ -74,9 +72,8 @@ func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
       opaque.valRefs[s] = ret
     for e in JSErrorEnum:
       let s = $e
-      let err = JS_GetPropertyStr(ctx, global, cstring(s))
+      let err = JS_GetPropertyStr(ctx, opaque.global, cstring(s))
       opaque.errCtorRefs[e] = err
-    JS_FreeValue(ctx, global)
   return opaque
 
 func getOpaque*(ctx: JSContext): JSContextOpaque =
@@ -85,9 +82,8 @@ func getOpaque*(ctx: JSContext): JSContextOpaque =
 func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
   return cast[JSRuntimeOpaque](JS_GetRuntimeOpaque(rt))
 
-func isGlobal*(ctx: JSContext; class: string): bool =
-  assert class != ""
-  return ctx.getOpaque().gclaz == class
+func isGlobal*(ctx: JSContext; class: JSClassID): bool =
+  return ctx.getOpaque().gclass == class
 
 proc setOpaque*(ctx: JSContext; val: JSValue; opaque: pointer) =
   let rt = JS_GetRuntime(ctx)
@@ -96,33 +92,7 @@ proc setOpaque*(ctx: JSContext; val: JSValue; opaque: pointer) =
   rtOpaque.plist[opaque] = p
   JS_SetOpaque(val, opaque)
 
-# getOpaque, but doesn't work for global objects.
-func getOpaque0*(val: JSValue): pointer =
+func getOpaque*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
-
-func getGlobalOpaque0*(ctx: JSContext; val = JS_UNDEFINED): Opt[pointer] =
-  let global = JS_GetGlobalObject(ctx)
-  if JS_IsUndefined(val) or val == global:
-    let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
-    JS_FreeValue(ctx, global)
-    return ok(opaque)
-  JS_FreeValue(ctx, global)
-  return err()
-
-func getGlobalOpaque*(ctx: JSContext; T: typedesc; val = JS_UNDEFINED): Opt[T] =
-  return ok(cast[T](?getGlobalOpaque0(ctx, val)))
-
-func getOpaque*(ctx: JSContext; val: JSValue; class: string): pointer =
-  # Unfortunately, we can't change the global object's class.
-  #TODO: or maybe we can, but I'm afraid of breaking something.
-  # This needs further investigation.
-  if ctx.isGlobal(class):
-    let global = JS_GetGlobalObject(ctx)
-    let opaque = JS_GetOpaque(global, JS_CLASS_OBJECT)
-    JS_FreeValue(ctx, global)
-    return opaque
-  return getOpaque0(val)
-
-func getOpaque*[T: ref object](ctx: JSContext; val: JSValue): T =
-  cast[T](getOpaque(ctx, val, $T))
+  return nil

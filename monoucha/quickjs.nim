@@ -135,16 +135,26 @@ type
     setter*: JSValue
 
   JSClassExoticMethods* {.importc, header: qjsheader.} =  object
+    # Return -1 if exception (can only happen in case of Proxy object),
+    # FALSE if the property does not exists, TRUE if it exists. If 1 is
+    # returned, the property descriptor 'desc' is filled if != NULL.
     get_own_property*: proc(ctx: JSContext; desc: ptr JSPropertyDescriptor;
       obj: JSValueConst; prop: JSAtom): cint {.cdecl.}
+    # '*ptab' should hold the '*plen' property keys. Return 0 if OK,
+    # -1 if exception. The 'is_enumerable' field is ignored.
     get_own_property_names*: proc(ctx: JSContext;
       ptab: ptr ptr UncheckedArray[JSPropertyEnum]; plen: ptr uint32;
       obj: JSValueConst): cint {.cdecl.}
+    # return < 0 if exception, or TRUE/FALSE
     delete_property*: proc(ctx: JSContext; obj: JSValue; prop: JSAtom): cint
       {.cdecl.}
+    # return < 0 if exception or TRUE/FALSE
     define_own_property*: proc(ctx: JSContext; this_obj: JSValueConst;
       prop: JSAtom; val, getter, setter: JSValueConst; flags: cint): cint
       {.cdecl.}
+    # The following methods can be emulated with the previous ones,
+    # so they are usually not needed
+    # return < 0 if exception or TRUE/FALSE
     has_property*: proc(ctx: JSContext; obj: JSValueConst; atom: JSAtom): cint
       {.cdecl.}
     get_property*: proc(ctx: JSContext; obj: JSValueConst; atom: JSAtom;

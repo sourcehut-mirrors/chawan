@@ -185,6 +185,7 @@ proc free*(ctx: JSContext) =
       JS_FreeValue(ctx, v)
     if opaque.globalUnref != nil:
       opaque.globalUnref()
+    JS_FreeValue(ctx, opaque.global)
     GC_unref(opaque)
   JS_FreeContext(ctx)
 
@@ -194,15 +195,14 @@ proc free*(rt: JSRuntime) =
 
 proc setGlobal*[T](ctx: JSContext; obj: T) =
   # Add JSValue reference.
-  let global = JS_GetGlobalObject(ctx)
+  let ctxOpaque = ctx.getOpaque()
   let opaque = cast[pointer](obj)
-  ctx.setOpaque(global, opaque)
+  ctx.setOpaque(ctxOpaque.global, opaque)
   GC_ref(obj)
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   ctx.getOpaque().globalUnref = proc() =
     GC_unref(obj)
     rtOpaque.plist.del(opaque)
-  JS_FreeValue(ctx, global)
 
 proc setInterruptHandler*(rt: JSRuntime; cb: JSInterruptHandler;
     opaque: pointer = nil) =
@@ -211,23 +211,18 @@ proc setInterruptHandler*(rt: JSRuntime; cb: JSInterruptHandler;
 proc getExceptionMsg*(ctx: JSContext): string =
   result = ""
   let ex = JS_GetException(ctx)
-  let str = fromJS[string](ctx, ex)
-  if str.isSome:
-    result &= str.get & '\n'
+  if fromJS(ctx, ex, result).isSome:
+    result &= '\n'
   let stack = JS_GetPropertyStr(ctx, ex, cstring("stack"));
-  if not JS_IsUndefined(stack):
-    result &= fromJS[string](ctx, stack).get("")
+  var s: string
+  if not JS_IsUndefined(stack) and ctx.fromJS(stack, s).isSome:
+    result &= s
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
 
-proc getExceptionMsg*(ctx: JSContext; err: JSError): string =
-  if err != nil:
-    JS_FreeValue(ctx, ctx.toJS(err)) # note: this implicitly throws
-  return ctx.getExceptionMsg()
-
 # Returns early with err(JSContext) if an exception was thrown in a
 # context.
-proc runJSJobs*(rt: JSRuntime): Err[JSContext] =
+proc runJSJobs*(rt: JSRuntime): Result[void, JSContext] =
   while JS_IsJobPending(rt):
     var ctx: JSContext
     let r = JS_ExecutePendingJob(rt, addr ctx)
@@ -299,10 +294,9 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
   JS_SetClassProto(ctx, result, proto)
   ctx.addClassUnforgeable(proto, result, parent, unforgeable)
   if asglobal:
-    let global = JS_GetGlobalObject(ctx)
-    assert ctxOpaque.gclaz == ""
-    ctxOpaque.gclaz = tname
-    ctxOpaque.gparent = parent
+    let global = ctxOpaque.global
+    assert ctxOpaque.gclass == 0
+    ctxOpaque.gclass = result
     ctx.definePropertyC(global, ctxOpaque.symRefs[jsyToStringTag],
       JS_DupValue(ctx, news))
     if JS_SetPrototype(ctx, global, proto) != 1:
@@ -312,7 +306,6 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
     ctxOpaque.unforgeable.withValue(result, uf):
       let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](addr uf[][0])
       JS_SetPropertyFunctionList(ctx, global, ufp, cint(uf[].len))
-    JS_FreeValue(ctx, global)
   JS_FreeValue(ctx, news)
   let jctor = JS_NewCFunction2(ctx, ctor, cstring($cdef.class_name), 0,
     JS_CFUNC_constructor, 0)
@@ -327,9 +320,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
     if JS_IsNull(namespace):
-      let global = JS_GetGlobalObject(ctx)
-      ctx.definePropertyCW(global, $cdef.class_name, jctor)
-      JS_FreeValue(ctx, global)
+      ctx.definePropertyCW(ctxOpaque.global, $cdef.class_name, jctor)
     else:
       ctx.definePropertyCW(namespace, $cdef.class_name, jctor)
   else:
@@ -353,9 +344,6 @@ func getMinArgs(params: seq[FuncParam]): int =
         return i
   return params.len
 
-func fromJSP[T: string|uint32](ctx: JSContext; atom: JSAtom): Opt[T] =
-  return fromJS[T](ctx, atom)
-
 proc defineConsts*[T](ctx: JSContext; classid: JSClassID;
     consts: static openArray[(string, T)]) =
   let proto = ctx.getOpaque().ctors[classid]
@@ -371,7 +359,7 @@ proc defineConsts*(ctx: JSContext; classid: JSClassID;
 type
   JSFuncGenerator = ref object
     t: BoundFunctionType
-    thisname: Option[string]
+    thisName: Option[string]
     funcName: string
     generics: Table[string, seq[NimNode]]
     funcParams: seq[FuncParam]
@@ -438,11 +426,11 @@ proc getGenerics(fun: NimNode): Table[string, seq[NimNode]] =
 
 proc getParams(fun: NimNode): seq[FuncParam] =
   let formalParams = fun.findChild(it.kind == nnkFormalParams)
-  var funcParams: seq[FuncParam]
+  var funcParams: seq[FuncParam] = @[]
   var returnType = none(NimNode)
   if formalParams[0].kind != nnkEmpty:
     returnType = some(formalParams[0])
-  for i in 1..<fun.params.len:
+  for i in 1 ..< fun.params.len:
     let it = formalParams[i]
     let tt = it[^2]
     var t: NimNode
@@ -455,8 +443,10 @@ proc getParams(fun: NimNode): seq[FuncParam] =
     else:
       error("?? " & treeRepr(it))
     let isptr = t.kind == nnkVarTy
-    if t.kind in {nnkRefTy, nnkVarTy}:
+    if t.kind == nnkRefTy:
       t = t[0]
+    elif t.kind == nnkVarTy:
+      t = newNimNode(nnkPtrTy).add(t[0])
     let val = if it[^1].kind != nnkEmpty:
       let x = it[^1]
       some(newPar(x))
@@ -545,39 +535,29 @@ template getJSPropNamesParams(): untyped =
     newIdentDefs(ident("obj"), quote do: JSValue)
   ]
 
-template fromJS_or_return*(t, ctx, val: untyped): untyped =
-  let x = fromJS[t](ctx, val)
-  if x.isNone:
-    return toJS(ctx, x.error)
-  x.get
-
-template fromJSP_or_return*(t, ctx, val: untyped): untyped =
-  let x = fromJSP[t](ctx, val)
-  if x.isNone:
-    return toJS(ctx, x.error)
-  x.get
-
-template fromJS_or_die*(t, ctx, val, dl: untyped): untyped =
-  let x = fromJSP[t](ctx, val)
-  if x.isNone:
+template fromJS_or_die*(ctx, val, res, dl: untyped) =
+  if ctx.fromJS(val, res).isNone:
     break dl
-  x.get
 
 proc addParam2(gen: var JSFuncGenerator; s, t, val: NimNode;
     fallback: NimNode = nil) =
   let dl = gen.dielabel
-  let stmt = quote do:
-    fromJS_or_die(`t`, ctx, `val`, `dl`)
-  for i in 0..gen.jsFunCallLists.high:
-    if fallback == nil:
-      gen.jsFunCallLists[i].add(newLetStmt(s, stmt))
-    else:
-      let j = gen.j
-      gen.jsFunCallLists[i].add(newLetStmt(s, quote do:
+  if fallback == nil:
+    for list in gen.jsFunCallLists.mitems:
+      list.add(quote do:
+        var `s`: `t`
+        fromJS_or_die(ctx, `val`, `s`, `dl`)
+      )
+  else:
+    let j = gen.j
+    for list in gen.jsFunCallLists.mitems:
+      list.add(quote do:
+        var `s`: `t`
         if `j` < argc and not JS_IsUndefined(argv[`j`]):
-          `stmt`
+          fromJS_or_die(ctx, `val`, `s`, `dl`)
         else:
-          `fallback`))
+          `s` = `fallback`
+      )
 
 proc addValueParam(gen: var JSFuncGenerator; s, t: NimNode;
     fallback: NimNode = nil) =
@@ -646,13 +626,10 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
   # 5. If V is a platform object, then:
   if objg.isSome:
     let t = objg.get
-    let x = ident("x")
     let query = quote do:
-      let `x` = fromJS[`t`](ctx, `val`)
-      `x`.isSome
-    gen.addUnionParamBranch(query, quote do:
-      let `s` = `x`.get,
-      fallback)
+      var `s`: `t`
+      ctx.fromJS(`val`, `s`).isSome
+    gen.addUnionParamBranch(query, quote do: discard, fallback)
   # 10. If Type(V) is Object, then:
   # Sequence:
   if seqg.isSome:
@@ -660,7 +637,8 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
       isSequence(ctx, `val`)
     let a = seqg.get[1]
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(seq[`a`], ctx, `val`, `dl`),
+      var `s`: seq[`a`]
+      fromJS_or_die(ctx, `val`, `s`, `dl`),
       fallback)
   # Record:
   if tableg.isSome:
@@ -669,7 +647,8 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
     let query = quote do:
       JS_IsObject(`val`)
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(Table[`a`, `b`], ctx, `val`, `dl`),
+      var `s`: Table[`a`, `b`]
+      fromJS_or_die(ctx, `val`, `s`, `dl`),
       fallback)
   # Object (JSObject variant):
   #TODO non-JS objects (i.e. ref object)
@@ -677,14 +656,16 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
     let query = quote do:
       JS_IsObject(`val`)
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(JSValue, ctx, `val`, `dl`),
+      var `s`: JSValue
+      fromJS_or_die(ctx, `val`, `s`, `dl`),
       fallback)
   # 11. If Type(V) is Boolean, then:
   if hasBoolean:
     let query = quote do:
       JS_IsBool(`val`)
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(bool, ctx, `val`, `dl`),
+      var `s`: bool
+      fromJS_or_die(ctx, `val`, `s`, `dl`),
       fallback)
   # 12. If Type(V) is Number, then:
   if numg.isSome:
@@ -692,7 +673,8 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
     let query = quote do:
       JS_IsNumber(`val`)
     gen.addUnionParamBranch(query, quote do:
-      let `s` = fromJS_or_die(`ng`, ctx, `val`, `dl`),
+      var `s`: `ng`
+      fromJS_or_die(ctx, `val`, `s`, `dl`),
       fallback)
   # 14. If types includes a string type, then return the result of converting V
   # to that type.
@@ -722,6 +704,26 @@ proc addUnionParam(gen: var JSFuncGenerator; tt, s: NimNode;
     fallback: NimNode = nil) =
   let j = gen.j
   gen.addUnionParam0(tt, s, quote do: argv[`j`], fallback)
+
+proc addThisParam(gen: var JSFuncGenerator) =
+  var s = ident("arg_" & $gen.i)
+  let t = gen.funcParams[gen.i].t
+  let id = ident("this")
+  let tt = gen.thisType
+  let fn = gen.funcName
+  let ev = gen.errval
+  for list in gen.jsFunCallLists.mitems:
+    list.add(quote do:
+      var `s`: `t`
+      if ctx.fromJSThis(`id`, `s`).isNone:
+        discard JS_ThrowTypeError(ctx,
+          "'%s' called on an object that is not an instance of %s", `fn`, `tt`)
+        return `ev`
+    )
+  if gen.funcParams[gen.i].isptr:
+    s = quote do: `s`[]
+  gen.jsFunCall.add(s)
+  inc gen.i
 
 proc addFixParam(gen: var JSFuncGenerator; name: string) =
   var s = ident("arg_" & $gen.i)
@@ -765,7 +767,9 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
           list.add(newLetStmt(s, quote do:
             var valist: seq[`vt`] = @[]
             for i in `j`..<argc:
-              let it = fromJS_or_return(`vt`, ctx, argv[i])
+              var it: `vt`
+              if ctx.fromJS(argv[i], it).isNone:
+                return JS_EXCEPTION
               valist.add(it)
             valist
           ))
@@ -821,8 +825,6 @@ export JS_ThrowTypeError, JS_ThrowRangeError, JS_ThrowSyntaxError,
        JS_ThrowInternalError, JS_ThrowReferenceError
 
 proc newJSProcBody(gen: var JSFuncGenerator; isva: bool): NimNode =
-  let tt = gen.thisType
-  let fn = gen.funcName
   let ma = gen.actualMinArgs
   result = newStmtList()
   if isva and ma > 0:
@@ -831,15 +833,6 @@ proc newJSProcBody(gen: var JSFuncGenerator; isva: bool): NimNode =
         return JS_ThrowTypeError(ctx,
           "At least %d arguments required, but only %d passed", cint(`ma`),
           cint(argc))
-    )
-  if gen.thisname.isSome and not gen.isstatic:
-    let tn = ident(gen.thisname.get)
-    let ev = gen.errval
-    result.add(quote do:
-      if not ctx.isInstanceOf(`tn`, `tt`):
-        discard JS_ThrowTypeError(ctx,
-          "'%s' called on an object that is not an instance of %s", `fn`, `tt`)
-        return `ev`
     )
   result.add(gen.jsCallAndRet)
 
@@ -877,10 +870,13 @@ proc addJSContext(gen: var JSFuncGenerator) =
     elif gen.funcParams[gen.i].t.eqIdent(ident("JSRuntime")):
       inc gen.i # special case for finalizers that have a JSRuntime param
 
-proc addThisName(gen: var JSFuncGenerator; thisname: Option[string]) =
-  if thisname.isSome:
-    gen.thisTypeNode = gen.funcParams[gen.i].t
-    gen.thisType = $gen.funcParams[gen.i].t
+proc addThisName(gen: var JSFuncGenerator; thisName: Option[string]) =
+  if thisName.isSome:
+    var t = gen.funcParams[gen.i].t
+    if t.kind == nnkPtrTy:
+      t = t[0]
+    gen.thisTypeNode = t
+    gen.thisType = $t
     gen.newName = ident($gen.t & "_" & gen.thisType & "_" & gen.funcName)
   else:
     let rt = gen.returnType.get
@@ -898,7 +894,7 @@ proc addThisName(gen: var JSFuncGenerator; thisname: Option[string]) =
 
 func getActualMinArgs(gen: var JSFuncGenerator): int =
   var ma = gen.minArgs
-  if gen.thisname.isSome and not gen.isstatic:
+  if gen.thisName.isSome and not gen.isstatic:
     dec ma
   if gen.passCtx:
     dec ma
@@ -912,7 +908,7 @@ func until(s: string; c: char; starti = 0): string =
       break
     result &= cc
 
-proc initGenerator(fun: NimNode; t: BoundFunctionType; thisname = some("this");
+proc initGenerator(fun: NimNode; t: BoundFunctionType; thisName = some("this");
     jsname = ""; unforgeable = false; staticName = ""): JSFuncGenerator =
   let jsFunCallList = newStmtList()
   let funcParams = getParams(fun)
@@ -923,7 +919,7 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; thisname = some("this");
     funcParams: funcParams,
     returnType: getReturn(fun),
     minArgs: funcParams.getMinArgs(),
-    thisname: thisname,
+    thisName: thisName,
     errval: getErrVal(t),
     dielabel: ident("ondie"),
     jsFunCallList: jsFunCallList,
@@ -935,7 +931,7 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; thisname = some("this");
   gen.addJSContext()
   gen.actualMinArgs = gen.getActualMinArgs() # must come after passctx is set
   if staticName == "":
-    gen.addThisName(thisname)
+    gen.addThisName(thisName)
   else:
     gen.thisType = staticName.until('.')
     gen.newName = ident($gen.t & "_" & gen.funcName)
@@ -965,7 +961,7 @@ proc makeCtorJSCallAndRet(gen: var JSFuncGenerator; errstmt: NimNode) =
     `errstmt`
 
 macro jsctor*(fun: typed) =
-  var gen = initGenerator(fun, bfConstructor, thisname = none(string))
+  var gen = initGenerator(fun, bfConstructor, thisName = none(string))
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
@@ -977,7 +973,7 @@ macro jsctor*(fun: typed) =
   return fun
 
 macro jshasprop*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertyHas, thisname = some("obj"))
+  var gen = initGenerator(fun, bfPropertyHas, thisName = some("obj"))
   gen.addFixParam("obj")
   gen.addFixParam("atom")
   gen.finishFunCallList()
@@ -987,13 +983,13 @@ macro jshasprop*(fun: typed) =
     block `dl`:
       let retv = `jfcl`
       return cint(retv)
-    doAssert false # TODO?
+    return cint(-1)
   let jsProc = gen.newJSProc(getJSHasPropParams(), false)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
 macro jsgetprop*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertyGet, thisname = some("obj"))
+  var gen = initGenerator(fun, bfPropertyGet, thisName = some("obj"))
   gen.addFixParam("obj")
   gen.addFixParam("prop")
   gen.finishFunCallList()
@@ -1019,7 +1015,7 @@ macro jsgetprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jssetprop*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertySet, thisname = some("obj"))
+  var gen = initGenerator(fun, bfPropertySet, thisName = some("obj"))
   gen.addFixParam("receiver")
   gen.addFixParam("atom")
   gen.addFixParam("value")
@@ -1044,7 +1040,7 @@ macro jssetprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jsdelprop*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertyDel, thisname = some("obj"))
+  var gen = initGenerator(fun, bfPropertyDel, thisName = some("obj"))
   gen.addFixParam("obj")
   gen.addFixParam("prop")
   gen.finishFunCallList()
@@ -1060,7 +1056,7 @@ macro jsdelprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jspropnames*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertyNames, thisname = some("obj"))
+  var gen = initGenerator(fun, bfPropertyNames, thisName = some("obj"))
   gen.addFixParam("obj")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
@@ -1082,7 +1078,7 @@ macro jsfgetn(jsname: static string; uf: static bool; fun: typed) =
     error("jsfget functions must only accept one parameter.")
   if gen.returnType.isNone:
     error("jsfget functions must have a return type.")
-  gen.addFixParam("this")
+  gen.addThisParam()
   gen.finishFunCallList()
   gen.makeJSCallAndRet(nil, quote do: discard)
   let jsProc = gen.newJSProc(getJSGetterParams(), false)
@@ -1090,16 +1086,17 @@ macro jsfgetn(jsname: static string; uf: static bool; fun: typed) =
   return newStmtList(fun, jsProc)
 
 # "Why?" So the compiler doesn't cry.
-template jsfget*(fun: typed) =
+# Warning: make these typed and you will cry instead.
+template jsfget*(fun: untyped) =
   jsfgetn("", false, fun)
 
-template jsuffget*(fun: typed) =
+template jsuffget*(fun: untyped) =
   jsfgetn("", true, fun)
 
-template jsfget*(jsname: static string; fun: typed) =
+template jsfget*(jsname, fun: untyped) =
   jsfgetn(jsname, false, fun)
 
-template jsuffget*(jsname: static string; fun: typed) =
+template jsuffget*(jsname, fun: untyped) =
   jsfgetn(jsname, true, fun)
 
 # Ideally we could simulate JS setters using nim setters, but nim setters
@@ -1108,14 +1105,8 @@ macro jsfsetn(jsname: static string; fun: typed) =
   var gen = initGenerator(fun, bfSetter, jsname = jsname)
   if gen.actualMinArgs != 1 or gen.funcParams.len != gen.minArgs:
     error("jsfset functions must accept two parameters")
-  if gen.returnType.isSome:
-    let rt = gen.returnType.get
-    #TODO ??
-    let rtType = rt[0]
-    let errType = getTypeInst(Err)
-    if not errType.sameType(rtType) and not rtType.sameType(errType):
-      error("jsfset functions must not have a return type")
-  gen.addFixParam("this")
+  #TODO should check if result is JSResult[void]
+  gen.addThisParam()
   gen.addFixParam("val")
   gen.finishFunCallList()
   # return param anyway
@@ -1126,10 +1117,10 @@ macro jsfsetn(jsname: static string; fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-template jsfset*(fun: typed) =
+template jsfset*(fun: untyped) =
   jsfsetn("", fun)
 
-template jsfset*(jsname: static string; fun: typed) =
+template jsfset*(jsname, fun: untyped) =
   jsfsetn(jsname, fun)
 
 macro jsfuncn*(jsname: static string; uf: static bool;
@@ -1140,7 +1131,7 @@ macro jsfuncn*(jsname: static string; uf: static bool;
     error("Zero-parameter functions are not supported. " &
       "(Maybe pass Window or Client?)")
   if not gen.isstatic:
-    gen.addFixParam("this")
+    gen.addThisParam()
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
@@ -1153,23 +1144,23 @@ macro jsfuncn*(jsname: static string; uf: static bool;
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-template jsfunc*(fun: typed) =
+template jsfunc*(fun: untyped) =
   jsfuncn("", false, "", fun)
 
-template jsuffunc*(fun: typed) =
+template jsuffunc*(fun: untyped) =
   jsfuncn("", true, "", fun)
 
-template jsfunc*(jsname: static string; fun: typed) =
+template jsfunc*(jsname, fun: untyped) =
   jsfuncn(jsname, false, "", fun)
 
-template jsuffunc*(jsname: static string; fun: typed) =
+template jsuffunc*(jsname, fun: untyped) =
   jsfuncn(jsname, true, "", fun)
 
-template jsstfunc*(name: static string; fun: typed) =
+template jsstfunc*(name, fun: untyped) =
   jsfuncn("", false, name, fun)
 
 macro jsfin*(fun: typed) =
-  var gen = initGenerator(fun, bfFinalizer, thisname = some("fin"))
+  var gen = initGenerator(fun, bfFinalizer, thisName = some("fin"))
   let finName = gen.newName
   let finFun = ident(gen.funcName)
   let t = gen.thisTypeNode
@@ -1238,11 +1229,11 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
     impl = typ.getImpl()
   # stolen from std's macros.customPragmaNode
   var identDefsStack = newSeq[NimNode](impl[2].len)
-  for i in 0 ..< identDefsStack.len:
-    identDefsStack[i] = impl[2][i]
-  var pragmas: JSObjectPragmas
+  for i, it in identDefsStack.mpairs:
+    it = impl[2][i]
+  var pragmas = JSObjectPragmas()
   while identDefsStack.len > 0:
-    var identDefs = identDefsStack.pop()
+    let identDefs = identDefsStack.pop()
     case identDefs.kind
     of nnkRecList:
       for child in identDefs.children:
@@ -1254,14 +1245,14 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
       for i in 1 ..< identDefs.len:
         identDefsStack.add(identDefs[i].last)
     else:
-      for i in 0 .. identDefs.len - 3:
+      for i in 0 ..< identDefs.len - 2:
         let varNode = identDefs[i]
         if varNode.kind == nnkPragmaExpr:
           var varName = varNode[0]
           if varName.kind == nnkPostfix:
             # This is a public field. We are skipping the postfix *
             varName = varName[1]
-          var varPragmas = varNode[1]
+          let varPragmas = varNode[1]
           for varPragma in varPragmas:
             let pragmaName = getPragmaName(varPragma)
             var op = JSObjectPragma(
@@ -1385,11 +1376,14 @@ proc registerGetters(stmts: NimNode; info: RegistryInfo;
     let id = ident($bfGetter & "_" & tname & "_" & fn)
     stmts.add(quote do:
       proc `id`(ctx: JSContext; this: JSValue): JSValue {.cdecl.} =
-        if not ctx.isInstanceOf(this, `tname`):
+        when `t` is object:
+          var arg_0: ptr `t`
+        else:
+          var arg_0: `t`
+        if ctx.fromJSThis(this, arg_0).isNone:
           return JS_ThrowTypeError(ctx,
             "'%s' called on an object that is not an instance of %s", `fn`,
             `jsname`)
-        let arg_0 = fromJSP_or_return(`t`, ctx, this)
         when typeof(arg_0.`node`) is object:
           return toJSP(ctx, arg_0, arg_0.`node`)
         else:
@@ -1414,16 +1408,20 @@ proc registerSetters(stmts: NimNode; info: RegistryInfo;
     stmts.add(quote do:
       proc `id`(ctx: JSContext; this: JSValue; val: JSValue): JSValue
           {.cdecl.} =
-        if not ctx.isInstanceOf(this, `tname`):
+        when `t` is object:
+          var arg_0: ptr `t`
+        else:
+          var arg_0: `t`
+        if ctx.fromJS(this, arg_0).isNone:
           return JS_ThrowTypeError(ctx,
             "'%s' called on an object that is not an instance of %s", `fn`,
             `jsname`)
-        let arg_0 = fromJSP_or_return(`t`, ctx, this)
-        let arg_1 = val
-        # Note: if you get a compiler error that leads back to here, that
-        # might be because you added jsset to a non-ref object type.
-        arg_0.`node` = fromJS_or_return(typeof(arg_0.`node`), ctx, arg_1)
-        return JS_DupValue(ctx, arg_1)
+        # We can't just set arg_0.`node` directly, or fromJS may damage it.
+        var nodeVal: typeof(arg_0.`node`)
+        if ctx.fromJS(val, nodeVal).isNone:
+          return JS_EXCEPTION
+        arg_0.`node` = move(nodeVal)
+        return JS_DupValue(ctx, val)
     )
     registerFunction(tname, bfSetter, fn, id)
 
