@@ -12,7 +12,7 @@ test "Hello, world":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   const code = "'Hello from JS!'"
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   var res: string
   check ctx.fromJS(val, res).isSome
   check res == "Hello from JS!"
@@ -20,7 +20,8 @@ test "Hello, world":
   ctx.free()
   rt.free()
 
-proc evalConvert[T](ctx: JSContext; code, file: string): Result[T, string] =
+proc evalConvert[T](ctx: JSContext; code: string;
+    file = "<input>"): Result[T, string] =
   let val = ctx.eval(code, file)
   defer: JS_FreeValue(ctx, val) # unref result before returning
   var res: T
@@ -58,7 +59,7 @@ test "registerType: registering type interfaces":
   let ctx = rt.newJSContext()
   ctx.registerType(Moon)
   const code = "Moon"
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   var res: string
   check ctx.fromJS(val, res).isSome
   check res == """
@@ -76,7 +77,7 @@ test "Global objects":
   ctx.registerType(Earth, asglobal = true)
   ctx.setGlobal(earth)
   const code = "assert(globalThis instanceof Earth)"
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   check not JS_IsException(val)
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -95,7 +96,7 @@ test "Inheritance":
   ctx.registerType(Earth, parent = planetCID, asglobal = true)
   ctx.registerType(Moon, parent = planetCID)
   const code = "assert(globalThis instanceof Planet)"
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   check not JS_IsException(val)
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -121,7 +122,7 @@ test "jsget, jsset: basic property reflectors":
 globalThis.population = 8e9;
 "name: " + globalThis.name + ", moon: " + globalThis.moon;
 """
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   var res: string
   check ctx.fromJS(val, res).isSome
   check res == "name: Earth, moon: [object Moon]"
@@ -153,7 +154,7 @@ test "jsfunc: regular functions":
   const code = """
 console.log('Hello, world!')
 """
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   check not JS_IsException(val)
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -180,7 +181,7 @@ test "jsctor: constructors":
   const code = """
 assert(new File('/path/to/file') + '' == '[object File]')
 """
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   check not JS_IsException(val)
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -206,7 +207,7 @@ assert(file.name === "file"); /* file */
 file.name = "new-name";
 assert(file.path === "/path/to/new-name");
   """
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   check not JS_IsException(val)
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -223,7 +224,7 @@ test "jsstfunc: static functions":
   const code = """
 assert(File.exists("doc/manual.md"));
   """
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   check not JS_IsException(val)
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -254,7 +255,7 @@ file.getOwner = () => -2; /* doesn't work */
 assert(oldGetOwner == file.getOwner);
 Object.defineProperty(file, "owner", { value: -2 }); /* throws */
   """
-  let val = ctx.eval(code, "<test>")
+  let val = ctx.eval(code)
   check JS_IsException(val)
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -282,7 +283,7 @@ test "jsfin: object finalizers":
  * the runtime is gone. */
 const file = new File("doc/manual.md");
   """
-  JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+  JS_FreeValue(ctx, ctx.eval(code))
   check unrefd == 1 # deallocated once, all good :)
   ctx.free()
   check unrefd == 1 # still available...

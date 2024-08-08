@@ -63,7 +63,7 @@ import monoucha/javascript
 let rt = newJSRuntime()
 let ctx = rt.newJSContext()
 const code = "'Hello from JS!'"
-let val = ctx.eval(code, "<test>")
+let val = ctx.eval(code)
 var res: string
 assert ctx.fromJS(val, res).isSome # no error
 echo res # Hello from JS!
@@ -93,7 +93,7 @@ Let's get ourselves a ReferenceError:
 
 ```nim
 const code = "abcd"
-let val = ctx.eval(code, "<test>")
+let val = ctx.eval(code)
 ```
 
 If you try to convert this into a string, you will get an err() result.
@@ -117,7 +117,8 @@ Alternatively, a self-contained evalConvert can be written as follows:
 import results
 import monoucha/tojs
 
-proc evalConvert[T](ctx: JSContext; code, file: string): Result[T, string] =
+proc evalConvert[T](ctx: JSContext; code: string;
+    file = "<input>"): Result[T, string] =
   let val = ctx.eval(code, file, flags)
   var res: T
   if ctx.fromJS(val, res).isNone:
@@ -169,7 +170,7 @@ jsDestructor(Moon)
 # [...]
 ctx.registerType(Moon)
 const code = "Moon"
-let val = ctx.eval(code, "<test>")
+let val = ctx.eval(code)
 var res: string
 assert ctx.fromJS(val, res).isSome # no error
 echo res # function Moon() [...]
@@ -199,7 +200,7 @@ let earth = Earth()
 ctx.registerType(Earth, asglobal = true)
 ctx.setGlobal(earth)
 const code = "assert(globalThis instanceof Earth)"
-let val = ctx.eval(code, "<test>")
+let val = ctx.eval(code)
 assert not JS_IsException(val)
 JS_FreeValue(ctx, val)
 ```
@@ -229,7 +230,7 @@ let planetCID = ctx.registerType(Planet)
 ctx.registerType(Earth, parent = planetCID, asglobal = true)
 ctx.registerType(Moon, parent = planetCID)
 const code = "assert(globalThis instanceof Planet)"
-let val = ctx.eval(code, "<test>")
+let val = ctx.eval(code)
 assert not JS_IsException(val)
 JS_FreeValue(ctx, val)
 ```
@@ -294,7 +295,7 @@ const code = """
 globalThis.population = 8e9;
 "name: " + globalThis.name + ", moon: " + globalThis.moon;
 """
-let val = ctx.eval(code, "<test>")
+let val = ctx.eval(code)
 var res: string
 assert ctx.fromJS(val, res).isSome # no error
 echo res # name: Earth, moon: [object Moon]
@@ -331,7 +332,7 @@ ctx.registerType(Earth, asglobal = true)
 ctx.registerType(Moon)
 ctx.setGlobal(earth)
 const code = "globalThis.moon"
-let val = ctx.eval(code, "<test>")
+let val = ctx.eval(code)
 var res: string
 assert ctx.fromJS(val, res).isSome # no error
 echo res # [object Moon]
@@ -375,7 +376,7 @@ ctx.registerType(Window, asglobal = true)
 ctx.registerType(Console)
 ctx.setGlobal(window)
 const code = "console.log('Hello, world!')"
-JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+JS_FreeValue(ctx, ctx.eval(code))
 ```
 
 As you can see, `log` has been exposed as a member of the JS interface
@@ -455,7 +456,7 @@ proc newJSFile(path: string): JSFile {.jsctor.} =
 # in Nim.
 ctx.registerType(JSFile, name = "File")
 const code = "console.log(new File('/path/to/file'))"
-JS_FreeValue(ctx, ctx.eval(code, "<test>")) # [object File]
+JS_FreeValue(ctx, ctx.eval(code)) # [object File]
 ```
 
 Note that `.jsctor`, like other pragmas, supports the same "zeroeth" JSContext
@@ -491,7 +492,7 @@ console.log(file.name); /* file */
 file.name = "new-name";
 console.log(file.path); /* /path/to/new-name */
 """
-JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+JS_FreeValue(ctx, ctx.eval(code))
 ```
 
 ### jsstfunc: static functions
@@ -515,7 +516,7 @@ proc jsExists(path: string): bool {.jsstfunc: "JSFile.exists".} =
 const code = """
 console.log(File.exists("doc/manual.md")); /* true */
 """
-JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+JS_FreeValue(ctx, ctx.eval(code))
 ```
 
 ### jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property
@@ -552,7 +553,7 @@ file.getOwner = () => -2; /* doesn't work */
 assert(oldGetOwner == file.getOwner);
 Object.defineProperty(file, "owner", { value: -2 }); /* throws */
 """
-JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+JS_FreeValue(ctx, ctx.eval(code))
 ```
 
 ### jsgetprop, jssetprop, jsdelprop, jshasprop, jspropnames: magic functions
@@ -621,7 +622,7 @@ const code = """
  * gone. */
 const file = new File("doc/manual.md");
 """
-JS_FreeValue(ctx, ctx.eval(code, "<test>"))
+JS_FreeValue(ctx, ctx.eval(code))
 assert unrefd == 1 # first file is already deallocated
 ctx.free()
 assert unrefd == 1 # the second file is still available

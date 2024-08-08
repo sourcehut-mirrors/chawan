@@ -1684,15 +1684,15 @@ proc getMemoryUsage*(rt: JSRuntime): string =
       $m.binary_object_size
   return s
 
-proc eval*(ctx: JSContext; s, file: string; evalFlags = JS_EVAL_TYPE_GLOBAL):
-    JSValue =
+proc eval*(ctx: JSContext; s: string; file = "<input>";
+    evalFlags = JS_EVAL_TYPE_GLOBAL): JSValue =
   return JS_Eval(ctx, cstring(s), csize_t(s.len), cstring(file),
     cint(evalFlags))
 
-proc compileScript*(ctx: JSContext; s, file: string): JSValue =
+proc compileScript*(ctx: JSContext; s: string; file = "<input>"): JSValue =
   return ctx.eval(s, file, JS_EVAL_FLAG_COMPILE_ONLY)
 
-proc compileModule*(ctx: JSContext; s, file: string): JSValue =
+proc compileModule*(ctx: JSContext; s: string; file = "<input>"): JSValue =
   return ctx.eval(s, file, JS_EVAL_TYPE_MODULE or JS_EVAL_FLAG_COMPILE_ONLY)
 
 proc evalFunction*(ctx: JSContext; val: JSValue): JSValue =
