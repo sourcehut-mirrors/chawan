@@ -1,4 +1,4 @@
-0.3.0 (2024.08.09)
+0.3.0, 0.3.1 (2024.08.09)
 * redesign fromJS API to reduce copying
 	- fromJS now returns an Opt[void] to signal errors, and fills
 	  the third `res` parameter if it succeeded
@@ -8,6 +8,7 @@
 This is a breaking change.
 * allow eval without file name
 * sync with upstream
+* fix NUL handling in toJS(string)
 
 0.2.3 (2024.07.28)
 * fix and optimize varargs[JSValue] jsfunc params
