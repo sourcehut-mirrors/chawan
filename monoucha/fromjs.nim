@@ -265,29 +265,39 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: var bool): Opt[void] =
   res = ret != 0
   return ok()
 
-type IdentMapItem = tuple[s: cstring; n: int]
+type IdentMapItem = tuple[s: string; n: int]
 
 func getIdentMap[T: enum](e: typedesc[T]): seq[IdentMapItem] =
   result = @[]
   for e in T.low .. T.high:
-    result.add((cstring($e), int(e)))
+    result.add(($e, int(e)))
   result.sort(proc(x, y: IdentMapItem): int = cmp(x[0], y[0]))
 
-proc fromJS*[T: enum](ctx: JSContext; val: JSValue; res: var T): Opt[void] =
-  var s: string
-  ?ctx.fromJS(val, s)
-  const IdentMap = getIdentMap(T)
-  let i = IdentMap.binarySearch(cstring(s), proc(x: IdentMapItem; y: cstring):
-      int =
-    return x[0].cmp(y)
+proc fromJSEnumBody(map: openArray[IdentMapItem]; ctx: JSContext; val: JSValue;
+    tname: cstring): int =
+  var plen: csize_t
+  let s = JS_ToCStringLen(ctx, addr plen, val)
+  if s == nil:
+    return -1
+  let i = map.binarySearch(s.toOpenArray(0, int(plen - 1)),
+      proc(x: IdentMapItem; y: openArray[char]): int =
+    let x = x[0]
+    if (let n = cmpMem(cstring(x), unsafeAddr y[0], min(x.len, y.len)); n != 0):
+      return n
+    return x.len - y.len
   )
   if i == -1:
-    const tname = cstring($T)
     JS_ThrowTypeError(ctx, "`%s' is not a valid value for enumeration %s",
-      cstring(s), tname)
-    return err()
-  res = cast[T](IdentMap[i].n)
-  return ok()
+      s, tname)
+  return i
+
+proc fromJS*[T: enum](ctx: JSContext; val: JSValue; res: var T): Opt[void] =
+  const IdentMap = getIdentMap(T)
+  const tname = cstring($T)
+  if (let i = fromJSEnumBody(IdentMap, ctx, val, tname); i > 0):
+    res = cast[T](IdentMap[i].n)
+    return ok()
+  return err()
 
 proc fromJS(ctx: JSContext; val: JSValue; t: cstring; res: var pointer):
     Opt[void] =

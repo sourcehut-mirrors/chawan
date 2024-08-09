@@ -163,7 +163,7 @@ proc toJS*(ctx: JSContext; s: cstring): JSValue =
   return JS_NewString(ctx, s)
 
 proc toJS*(ctx: JSContext; s: string): JSValue =
-  return toJS(ctx, cstring(s))
+  return JS_NewStringLen(ctx, cstring(s), csize_t(s.len))
 
 proc toJS*(ctx: JSContext; r: Rune): JSValue =
   return toJS(ctx, $r)

@@ -1,7 +1,7 @@
-* use JSAtoms everywhere
 * JSValueConst
-* iterator_next in JSCFunctionType
+* remove toJS for Rune
+* do not truncate ints in conversion
+* qjs-ng
 * look into generating bindings with Futhark
-* add something like -d:libquickjs:lib/libquickjs.a
 * move in jsmodules?
 * import QJS test suite

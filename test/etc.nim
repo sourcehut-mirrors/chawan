@@ -20,6 +20,15 @@ test "enums":
   ctx.free()
   rt.free()
 
+test "enums null":
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  let val = ctx.toJS("b\0c")
+  var e: TestEnum
+  assert ctx.fromJS(val, e).isNone
+  ctx.free()
+  rt.free()
+
 type
   TestDict0 = object of JSDict
     a {.jsdefault: true.}: bool
