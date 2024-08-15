@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 type
   cstringConstImpl {.importc: "const char*".} = cstring
   cstringConst* = distinct cstringConstImpl
@@ -10,3 +12,5 @@ converter toCstring*(s: cstringConst): cstring {.inline.} =
 
 converter toCstringConst*(s: cstring): cstringConst {.inline.} =
   return cstringConst(s)
+
+{.pop.} # raises

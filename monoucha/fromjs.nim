@@ -1,5 +1,3 @@
-{.push raises: [].}
-
 import std/algorithm
 import std/macros
 import std/options
@@ -55,6 +53,14 @@ func isInstanceOf*(ctx: JSContext; val: JSValue; class: cstring): bool =
       break
   return found
 
+func isSequence*(ctx: JSContext; o: JSValue): bool =
+  if not JS_IsObject(o):
+    return false
+  let prop = JS_GetProperty(ctx, o, ctx.getOpaque().symRefs[jsyIterator])
+  # prop can't be exception (throws_ref_error is 0 and tag is object)
+  result = not JS_IsUndefined(prop)
+  JS_FreeValue(ctx, prop)
+
 proc fromJS*(ctx: JSContext; val: JSValue; res: var string): Opt[void] =
   var plen: csize_t
   let outp = JS_ToCStringLen(ctx, addr plen, val) # cstring
@@ -82,10 +88,10 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: var uint32): Opt[void] =
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var int): Opt[void] =
-  # Always int32, so we don't risk 32-bit only breakage.
-  # If int64 is needed, specify it explicitly.
-  #TODO maybe it's better to follow pointer size anyway...?
-  var x: int32
+  when sizeof(int) > 4:
+    var x: int64
+  else:
+    var x: int32
   ?ctx.fromJS(val, x)
   res = int(x)
   return ok()
@@ -295,7 +301,7 @@ proc fromJS*[T: enum](ctx: JSContext; val: JSValue; res: var T): Opt[void] =
   const IdentMap = getIdentMap(T)
   const tname = cstring($T)
   if (let i = fromJSEnumBody(IdentMap, ctx, val, tname); i > 0):
-    res = cast[T](IdentMap[i].n)
+    res = T(IdentMap[i].n)
     return ok()
   return err()
 
@@ -483,5 +489,3 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): Opt[void] =
   res = $cs
   JS_FreeCString(ctx, cs)
   return ok()
-
-{.pop.}

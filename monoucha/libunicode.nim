@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 from std/os import parentDir
 
 {.used.}
@@ -53,4 +55,5 @@ proc lre_is_space_non_ascii*(c: uint32): cint {.importc.}
 
 proc lre_is_space*(c: uint32): cint {.importc.}
 
-{.pop.}
+{.pop.} # header, importc
+{.pop.} # raises

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import optshim
 
 type
@@ -78,3 +80,5 @@ template errInternalError*(message: string): untyped =
 
 template errAggregateError*(message: string): untyped =
   err(newAggregateError(message))
+
+{.pop.} # raises

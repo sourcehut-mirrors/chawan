@@ -1,6 +1,4 @@
 * JSValueConst
-* remove toJS for Rune
-* do not truncate ints in conversion
 * qjs-ng
 * look into generating bindings with Futhark
 * move in jsmodules?

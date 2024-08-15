@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 from std/os import parentDir
 
 {.used.}
@@ -57,4 +59,5 @@ proc lre_exec*(capture: ptr ptr uint8; bc_buf, cbuf: ptr uint8;
 proc lre_get_capture_count*(bc_buf: ptr uint8): cint
 
 proc lre_get_flags*(bc_buf: ptr uint8): cint
-{.pop.}
+{.pop.} # header, importc
+{.pop.} # raises

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/tables
 
 import jserror
@@ -39,16 +41,18 @@ type
     valRefs*: array[JSValueRef, JSValue]
     errCtorRefs*: array[JSErrorEnum, JSValue]
     htmldda*: JSClassID # only one of these exists: document.all.
-    globalUnref*: proc() {.closure.}
+    globalUnref*: JSEmptyOpaqueCallback
 
   JSFinalizerFunction* = proc(rt: JSRuntime; val: JSValue) {.nimcall,
     raises: [].}
+
+  JSEmptyOpaqueCallback* = (proc() {.closure, raises: [].})
 
   JSRuntimeOpaque* = ref object
     plist*: Table[pointer, pointer] # Nim, JS
     flist*: seq[seq[JSCFunctionListEntry]]
     fins*: Table[JSClassID, JSFinalizerFunction]
-    refmap*: Table[pointer, tuple[cref, cunref: (proc() {.closure.})]]
+    refmap*: Table[pointer, tuple[cref, cunref: JSEmptyOpaqueCallback]]
     destroying*: pointer
 
 func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
@@ -96,3 +100,5 @@ func getOpaque*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
   return nil
+
+{.pop.} # raises

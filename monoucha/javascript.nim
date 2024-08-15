@@ -41,12 +41,13 @@
 # {.jspropnames.} overrides get_own_property_names. Must return a
 #   JSPropertyEnumList object.
 
+{.push raises: [].}
+
 import std/macros
 import std/options
 import std/sets
 import std/strutils
 import std/tables
-import std/unicode
 
 import fromjs
 import jserror
@@ -58,9 +59,7 @@ import tojs
 export options
 
 export
-  JS_NULL, JS_UNDEFINED, JS_FALSE, JS_TRUE, JS_EXCEPTION, JS_UNINITIALIZED
-
-export
+  JS_NULL, JS_UNDEFINED, JS_FALSE, JS_TRUE, JS_EXCEPTION, JS_UNINITIALIZED,
   JS_EVAL_TYPE_GLOBAL,
   JS_EVAL_TYPE_MODULE,
   JS_EVAL_TYPE_DIRECT,
@@ -69,13 +68,12 @@ export
   JS_EVAL_FLAG_SHEBANG,
   JS_EVAL_FLAG_STRICT,
   JS_EVAL_FLAG_STRIP,
-  JS_EVAL_FLAG_COMPILE_ONLY
-
-export JSRuntime, JSContext, JSValue, JSClassID, JSAtom
-
-export
+  JS_EVAL_FLAG_COMPILE_ONLY,
+  JSRuntime, JSContext, JSValue, JSClassID, JSAtom,
   JS_GetGlobalObject, JS_FreeValue, JS_IsException, JS_GetPropertyStr,
-  JS_IsFunction, JS_NewCFunctionData, JS_Call, JS_DupValue, JS_IsUndefined
+  JS_IsFunction, JS_NewCFunctionData, JS_Call, JS_DupValue, JS_IsUndefined,
+  JS_ThrowTypeError, JS_ThrowRangeError, JS_ThrowSyntaxError,
+  JS_ThrowInternalError, JS_ThrowReferenceError
 
 when sizeof(int) < sizeof(int64):
   export quickjs.`==`
@@ -126,7 +124,7 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
   for p in rtOpaque.plist.values:
     ps.add(p)
   rtOpaque.plist.clear()
-  var unrefs: seq[proc() {.closure.}] = @[]
+  var unrefs: seq[JSEmptyOpaqueCallback] = @[]
   for (_, unref) in rtOpaque.refmap.values:
     unrefs.add(unref)
   rtOpaque.refmap.clear()
@@ -140,6 +138,7 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
   JS_RunGC(rt)
 
 proc newJSRuntime*(): JSRuntime =
+  ## Instantiate a Monoucha `JSRuntime`.
   var mf {.global.} = JSMallocFunctions(
     js_malloc: bindMalloc,
     js_free: bindFree,
@@ -157,6 +156,9 @@ proc newJSRuntime*(): JSRuntime =
   return rt
 
 proc newJSContext*(rt: JSRuntime): JSContext =
+  ## Instantiate a Monoucha `JSContext`.
+  ## It is only valid to call Monoucha procedures on contexts initialized with
+  ## `newJSContext`, as it does extra initialization over `JS_NewContext`.
   let ctx = JS_NewContext(rt)
   let opaque = newJSContextOpaque(ctx)
   GC_ref(opaque)
@@ -164,13 +166,22 @@ proc newJSContext*(rt: JSRuntime): JSContext =
   return ctx
 
 func getClass*(ctx: JSContext; class: string): JSClassID =
-  # This function *should* never fail.
-  ctx.getOpaque().creg[class]
+  ## Get the class ID of the registered class `class'.
+  ## Note: this uses the Nim type's name, **not** the JS type's name.
+  try:
+    return ctx.getOpaque().creg[class]
+  except KeyError:
+    raise newException(Defect, "Class does not exist")
 
 func hasClass*(ctx: JSContext; class: type): bool =
+  ## Check if `class' is registered.
+  ## Note: this uses the Nim type's name, **not** the JS type's name.
   return $class in ctx.getOpaque().creg
 
 proc free*(ctx: JSContext) =
+  ## Free the JSContext and associated resources.
+  ## Note: this is not an alias of `JS_FreeContext`; `free` also frees various
+  ## JSValues stored on context startup by `newJSContext`.
   var opaque = ctx.getOpaque()
   if opaque != nil:
     for a in opaque.symRefs:
@@ -190,10 +201,14 @@ proc free*(ctx: JSContext) =
   JS_FreeContext(ctx)
 
 proc free*(rt: JSRuntime) =
+  ## Free the `JSRuntime` rt and remove it from the global JSRuntime pool.
   JS_FreeRuntime(rt)
   runtimes.del(runtimes.find(rt))
 
 proc setGlobal*[T](ctx: JSContext; obj: T) =
+  ## Set the global variable to the reference `obj`.
+  ## Note: you must call `ctx.registerType(T, asglobal = true)` for this to
+  ## work, `T` being the type of `obj`.
   # Add JSValue reference.
   let ctxOpaque = ctx.getOpaque()
   let opaque = cast[pointer](obj)
@@ -203,10 +218,6 @@ proc setGlobal*[T](ctx: JSContext; obj: T) =
   ctx.getOpaque().globalUnref = proc() =
     GC_unref(obj)
     rtOpaque.plist.del(opaque)
-
-proc setInterruptHandler*(rt: JSRuntime; cb: JSInterruptHandler;
-    opaque: pointer = nil) =
-  JS_SetInterruptHandler(rt, cb, opaque)
 
 proc getExceptionMsg*(ctx: JSContext): string =
   result = ""
@@ -242,17 +253,24 @@ proc addClassUnforgeable(ctx: JSContext; proto: JSValue;
   ctxOpaque.unforgeable.withValue(parent, uf):
     merged.add(uf[])
   if merged.len > 0:
-    ctxOpaque.unforgeable[classid] = merged
-    let ufp0 = addr ctxOpaque.unforgeable[classid][0]
+    let ufp0 = addr ctxOpaque.unforgeable.mgetOrPut(classid, merged)[0]
     let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
     JS_SetPropertyFunctionList(ctx, proto, ufp, cint(merged.len))
 
-func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
+proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID): JSValue =
+  if parent != 0:
+    let parentProto = JS_GetClassProto(ctx, parent)
+    let proto = JS_NewObjectProtoClass(ctx, parentProto, parent)
+    JS_FreeValue(ctx, parentProto)
+    return proto
+  return JS_NewObject(ctx)
+
+func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
     nimt: pointer; ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
     asglobal: bool; nointerface: bool; finalizer: JSFinalizerFunction;
     namespace: JSValue; errid: Opt[JSErrorEnum];
-    unforgeable, staticfuns: JSFunctionList;
-    ishtmldda: bool): JSClassID {.discardable.} =
+    unforgeable, staticfuns: JSFunctionList; ishtmldda: bool): JSClassID
+    {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   discard JS_NewClassID(addr result)
   var ctxOpaque = ctx.getOpaque()
@@ -267,13 +285,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: string;
     ctxOpaque.htmldda = result
   if finalizer != nil:
     rtOpaque.fins[result] = finalizer
-  let proto = if parent != 0:
-    let parentProto = JS_GetClassProto(ctx, parent)
-    let x = JS_NewObjectProtoClass(ctx, parentProto, parent)
-    JS_FreeValue(ctx, parentProto)
-    x
-  else:
-    JS_NewObject(ctx)
+  let proto = ctx.newProtoFromParentClass(parent)
   if funcs.len > 0:
     # We avoid funcs being GC'ed by putting the list in rtOpaque.
     # (QuickJS uses the pointer later.)
@@ -346,15 +358,21 @@ func getMinArgs(params: seq[FuncParam]): int =
 
 proc defineConsts*[T](ctx: JSContext; classid: JSClassID;
     consts: static openArray[(string, T)]) =
-  let proto = ctx.getOpaque().ctors[classid]
-  for (k, v) in consts:
-    ctx.definePropertyE(proto, k, v)
+  try:
+    let proto = ctx.getOpaque().ctors[classid]
+    for (k, v) in consts:
+      ctx.definePropertyE(proto, k, v)
+  except KeyError:
+    raise newException(Defect, "Class does not exist")
 
 proc defineConsts*(ctx: JSContext; classid: JSClassID;
     consts: typedesc[enum]; astype: typedesc) =
-  let proto = ctx.getOpaque().ctors[classid]
-  for e in consts:
-    ctx.definePropertyE(proto, $e, astype(e))
+  try:
+    let proto = ctx.getOpaque().ctors[classid]
+    for e in consts:
+      ctx.definePropertyE(proto, $e, astype(e))
+  except KeyError:
+    raise newException(Defect, "Class does not exist")
 
 type
   JSFuncGenerator = ref object
@@ -578,16 +596,8 @@ proc addUnionParamBranch(gen: var JSFuncGenerator; query, newBranch: NimNode;
     list = oldBranch
   gen.newBranchList.add(newBranch)
 
-func isSequence*(ctx: JSContext; o: JSValue): bool =
-  if not JS_IsObject(o):
-    return false
-  let prop = JS_GetProperty(ctx, o, ctx.getOpaque().symRefs[jsyIterator])
-  # prop can't be exception (throws_ref_error is 0 and tag is object)
-  result = not JS_IsUndefined(prop)
-  JS_FreeValue(ctx, prop)
-
 proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
-    fallback: NimNode = nil) =
+    fallback: NimNode = nil) = {.cast(raises: []).}:
   # Union types.
   #TODO quite a few types are still missing.
   let flattened = gen.generics[tt.strVal] # flattened member types
@@ -761,7 +771,7 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
       let vt = tt[1]
       if vt.sameType(JSValue.getType()) or JSValue.getType().sameType(vt):
         s = quote do:
-          argv.toOpenArray(`j`, argc - `j` - 1)
+          argv.toOpenArray(`j`, argc - 1)
       else:
         for list in gen.jsFunCallLists:
           list.add(newLetStmt(s, quote do:
@@ -820,9 +830,6 @@ proc registerConstructor(gen: JSFuncGenerator; jsProc: NimNode) =
 proc registerFunction(gen: JSFuncGenerator) =
   registerFunction(gen.thisType, gen.t, gen.funcName, gen.newName,
     uf = gen.unforgeable, isstatic = gen.isstatic)
-
-export JS_ThrowTypeError, JS_ThrowRangeError, JS_ThrowSyntaxError,
-       JS_ThrowInternalError, JS_ThrowReferenceError
 
 proc newJSProcBody(gen: var JSFuncGenerator; isva: bool): NimNode =
   let ma = gen.actualMinArgs
@@ -901,13 +908,6 @@ func getActualMinArgs(gen: var JSFuncGenerator): int =
   assert ma >= 0
   return ma
 
-func until(s: string; c: char; starti = 0): string =
-  result = ""
-  for i, cc in s:
-    if cc == c:
-      break
-    result &= cc
-
 proc initGenerator(fun: NimNode; t: BoundFunctionType; thisName = some("this");
     jsname = ""; unforgeable = false; staticName = ""): JSFuncGenerator =
   let jsFunCallList = newStmtList()
@@ -933,7 +933,9 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; thisName = some("this");
   if staticName == "":
     gen.addThisName(thisName)
   else:
-    gen.thisType = staticName.until('.')
+    gen.thisType = staticName
+    if (let i = gen.thisType.find('.'); i != -1):
+      gen.thisType.setLen(i)
     gen.newName = ident($gen.t & "_" & gen.funcName)
   return gen
 
@@ -998,6 +1000,10 @@ macro jsgetprop*(fun: typed) =
   gen.jsCallAndRet = quote do:
     block `dl`:
       let retv = ctx.toJS(`jfcl`)
+      if JS_IsException(retv):
+        break `dl`
+      #TODO what if I want to return null from jsgetprop?
+      # maybe check for JS_IsUninitialized?
       if not JS_IsNull(retv):
         if desc != nil:
           # From quickjs.h:
@@ -1009,7 +1015,8 @@ macro jsgetprop*(fun: typed) =
           desc[].value = retv
           desc[].flags = 0
         return cint(1)
-    return cint(0)
+      return cint(0)
+    return cint(-1)
   let jsProc = gen.newJSProc(getJSGetPropParams(), false)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
@@ -1164,24 +1171,19 @@ macro jsfin*(fun: typed) =
   let finName = gen.newName
   let finFun = ident(gen.funcName)
   let t = gen.thisTypeNode
-  if gen.minArgs == 1:
-    let jsProc = quote do:
-      proc `finName`(rt: JSRuntime; val: JSValue) =
-        let opaque = JS_GetOpaque(val, JS_GetClassID(val))
-        if opaque != nil:
-          `finFun`(cast[`t`](opaque))
-    gen.registerFunction()
-    result = newStmtList(fun, jsProc)
+  let finStmt = if gen.minArgs == 1:
+    quote do: `finFun`(cast[`t`](opaque))
   elif gen.minArgs == 2:
-    let jsProc = quote do:
-      proc `finName`(rt: JSRuntime; val: JSValue) =
-        let opaque = JS_GetOpaque(val, JS_GetClassID(val))
-        if opaque != nil:
-          `finFun`(rt, cast[`t`](opaque))
-    gen.registerFunction()
-    result = newStmtList(fun, jsProc)
+    quote do: `finFun`(rt, cast[`t`](opaque))
   else:
     error("Expected one or two parameters")
+  let jsProc = quote do:
+    proc `finName`(rt {.inject.}: JSRuntime; val: JSValue) =
+      let opaque {.inject.} = JS_GetOpaque(val, JS_GetClassID(val))
+      if opaque != nil:
+        `finStmt`
+  gen.registerFunction()
+  return newStmtList(fun, jsProc)
 
 # Having the same names for these and the macros leads to weird bugs, so the
 # macros get an additional f.
@@ -1643,10 +1645,10 @@ proc getMemoryUsage*(rt: JSRuntime): string =
   JS_ComputeMemoryUsage(rt, addr m)
   template row(title: string; count, size, sz2, cnt2: int64, name: string):
       string =
-    let fv0 = $(float(sz2) / float(cnt2))
-    var fv = fv0.until('.')
-    if fv.len < fv0.len:
-      fv &= '.' & fv0[fv.len + 1]
+    var fv = $(float(sz2) / float(cnt2))
+    let i = fv.find('.')
+    if i != -1:
+      fv.setLen(i + 1)
     else:
       fv &= ".0"
     title & ": " & $count & " " & $size & " (" & fv & ")" & name & "\n"
@@ -1697,3 +1699,5 @@ proc compileModule*(ctx: JSContext; s: string; file = "<input>"): JSValue =
 
 proc evalFunction*(ctx: JSContext; val: JSValue): JSValue =
   return JS_EvalFunction(ctx, val)
+
+{.pop.} # raises

@@ -1,6 +1,5 @@
 # Interface for QuickJS libregexp.
-
-import std/unicode
+{.push raises: [].}
 
 import libregexp
 import optshim
@@ -25,6 +24,10 @@ when defined(debug):
     regex.buf
 
 proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
+  ## Compile a regular expression using QuickJS's libregexp library.
+  ## The result is either a regex, or the error message emitted by libregexp.
+  ##
+  ## Use `exec` to actually use the resulting bytecode on a string.
   var errorMsg = newString(64)
   var plen: cint
   let bytecode = lre_compile(addr plen, cstring(errorMsg), cint(errorMsg.len),
@@ -80,10 +83,14 @@ proc exec*(regex: Regex; str: string; start = 0; length = -1; nocaps = false):
       break
     if start >= str.len:
       break
-    if ps == start:
-      start += runeLenAt(str, start)
+    if ps == start: # avoid infinite loop: skip the first UTF-8 char.
+      inc start
+      while start < str.len and uint8(str[start]) in 0x80u8 .. 0xBFu8:
+        inc start
   if captureCount > 0:
     dealloc(capture)
 
 proc match*(regex: Regex; str: string; start = 0; length = str.len): bool =
   return regex.exec(str, start, length, nocaps = true).success
+
+{.pop.} # raises

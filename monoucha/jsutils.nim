@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import quickjs
 
 template toJSValueArray*(a: openArray[JSValue]): ptr UncheckedArray[JSValue] =
@@ -10,3 +12,5 @@ template toJSValueArray*(a: openArray[JSValue]): ptr UncheckedArray[JSValue] =
 # the passed value, and Nim is pass-by-value.
 template toJSValueArray*(a: JSValue): ptr UncheckedArray[JSValue] =
   cast[ptr UncheckedArray[JSValue]](unsafeAddr a)
+
+{.pop.} # raises

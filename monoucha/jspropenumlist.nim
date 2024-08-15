@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import quickjs
 
 type
@@ -40,3 +42,5 @@ proc add*(this: var JSPropertyEnumList; val: string) =
   if this.size < this.len:
     this.grow()
   this.buffer[i].atom = JS_NewAtomLen(this.ctx, cstring(val), csize_t(val.len))
+
+{.pop.} # raises

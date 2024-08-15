@@ -2,6 +2,7 @@ import std/unittest
 
 import monoucha/fromjs
 import monoucha/javascript
+import monoucha/jspropenumlist
 import monoucha/jstypes
 import monoucha/optshim
 import monoucha/quickjs
@@ -98,5 +99,18 @@ val"""
     assert res.d.a.isNone
     ctx.defineProperty(res.f.get, "x", JS_NewInt32(ctx, 9))
   JS_FreeValue(ctx, val)
+  ctx.free()
+  rt.free()
+
+test "jspropenumlist":
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  var list = newJSPropertyEnumList(ctx, 3)
+  list.add(1)
+  list.add("hi")
+  list.add(3)
+  list.add(4)
+  assert list.len == 4
+  js_free(ctx, list.buffer)
   ctx.free()
   rt.free()

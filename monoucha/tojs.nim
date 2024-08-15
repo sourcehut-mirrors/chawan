@@ -36,7 +36,6 @@
 
 import std/options
 import std/tables
-import std/unicode
 
 import jserror
 import jsopaque
@@ -48,7 +47,6 @@ import quickjs
 # Convert Nim types to the corresponding JavaScript type.
 # This does not work with var objects.
 proc toJS*(ctx: JSContext; s: string): JSValue
-proc toJS*(ctx: JSContext; r: Rune): JSValue
 proc toJS*(ctx: JSContext; n: int64): JSValue
 proc toJS*(ctx: JSContext; n: int32): JSValue
 proc toJS*(ctx: JSContext; n: int): JSValue
@@ -165,18 +163,17 @@ proc toJS*(ctx: JSContext; s: cstring): JSValue =
 proc toJS*(ctx: JSContext; s: string): JSValue =
   return JS_NewStringLen(ctx, cstring(s), csize_t(s.len))
 
-proc toJS*(ctx: JSContext; r: Rune): JSValue =
-  return toJS(ctx, $r)
-
 proc toJS*(ctx: JSContext; n: int32): JSValue =
   return JS_NewInt32(ctx, n)
 
 proc toJS*(ctx: JSContext; n: int64): JSValue =
   return JS_NewInt64(ctx, n)
 
-# Always int32, so we don't risk 32-bit only breakage.
 proc toJS*(ctx: JSContext; n: int): JSValue =
-  return toJS(ctx, int32(n))
+  when sizeof(int) > 4:
+    return toJS(ctx, int64(n))
+  else:
+    return toJS(ctx, int32(n))
 
 proc toJS*(ctx: JSContext; n: uint16): JSValue =
   return JS_NewUint32(ctx, uint32(n))
@@ -259,7 +256,7 @@ proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValue;
     # a JSValue already points to this object.
     return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, obj[]))
   let ctxOpaque = ctx.getOpaque()
-  let class = ctxOpaque.typemap[tp]
+  let class = ctxOpaque.typemap.getOrDefault(tp, 0)
   let jsObj = JS_NewObjectFromCtor(ctx, ctor, class)
   if JS_IsException(jsObj):
     return jsObj

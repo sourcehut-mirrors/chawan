@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 from std/os import parentDir
 
 import constcharp
@@ -416,7 +418,7 @@ template JS_CGETSET_MAGIC_DEF*(n: string; fgetter, fsetter: typed;
                            get: JSCFunctionType(getter_magic: fgetter),
                            set: JSCFunctionType(setter_magic: fsetter))))
 
-{.push header: qjsheader, importc, cdecl.}
+{.push header: qjsheader, importc.}
 
 proc JS_NewRuntime*(): JSRuntime
 proc JS_SetRuntimeInfo*(rt: JSRuntime; info: cstringConst)
@@ -584,7 +586,7 @@ proc JS_GetStringLength*(str: JSValueConst): uint32
 
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
   class_id: JSClassID): JSValue
-proc JS_NewObjectClass*(ctx: JSContext; class_id: JSClassID): JSValue
+proc JS_NewObjectClass*(ctx: JSContext; class_id: cint): JSValue
 proc JS_NewObjectProto*(ctx: JSContext; proto: JSValueConst): JSValue
 proc JS_NewObject*(ctx: JSContext): JSValue
 
@@ -781,4 +783,5 @@ proc JS_SetModuleExport*(ctx: JSContext; m: JSModuleDef;
 proc JS_SetModuleExportList*(ctx: JSContext; m: JSModuleDef;
   tab: ptr UncheckedArray[JSCFunctionListEntry]; len: cint): cint
 
-{.pop.}
+{.pop.} # header, importc
+{.pop.} # raises

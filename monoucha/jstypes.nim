@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import quickjs
 
 # This is the WebIDL dictionary type.
@@ -67,3 +69,5 @@ type JSValueFunction* = ref object
 
 converter toJSValue*(f: JSValueFunction): JSValue =
   f.fun
+
+{.pop.} # raises
