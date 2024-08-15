@@ -1,3 +1,10 @@
+0.4.0 (2024.08.15)
+* remove toJS(Rune)
+* remove setInteruptHandler wrapper
+* properly convert to pointer-sized int depending on pointer size
+* fix incorrect varargs slicing
+* misc refactoring
+
 0.3.0, 0.3.1 (2024.08.09)
 * redesign fromJS API to reduce copying
 	- fromJS now returns an Opt[void] to signal errors, and fills
