@@ -1,3 +1,6 @@
+0.4.1 (2024.08.22)
+* fix compilation on Nim 2.0.4
+
 0.4.0 (2024.08.15)
 * remove toJS(Rune)
 * remove setInteruptHandler wrapper

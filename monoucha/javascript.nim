@@ -1171,10 +1171,11 @@ macro jsfin*(fun: typed) =
   let finName = gen.newName
   let finFun = ident(gen.funcName)
   let t = gen.thisTypeNode
-  let finStmt = if gen.minArgs == 1:
-    quote do: `finFun`(cast[`t`](opaque))
+  var finStmt: NimNode = nil # warning: won't compile on 2.0.4 with let
+  if gen.minArgs == 1:
+    finStmt = quote do: `finFun`(cast[`t`](opaque))
   elif gen.minArgs == 2:
-    quote do: `finFun`(rt, cast[`t`](opaque))
+    finStmt = quote do: `finFun`(rt, cast[`t`](opaque))
   else:
     error("Expected one or two parameters")
   let jsProc = quote do:
