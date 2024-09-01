@@ -1,3 +1,4 @@
+import std/strutils
 import std/unittest
 
 import chagashi/charset
@@ -11,12 +12,22 @@ test "roundtrip iroha":
     CHARSET_SHIFT_JIS, CHARSET_ISO_2022_JP, CHARSET_EUC_JP, CHARSET_EUC_KR,
     CHARSET_GB18030, CHARSET_GBK, CHARSET_BIG5
   ]
+  let iroha100 = iroha.repeat(100)
   for cs in css:
     let te = newTextEncoder(cs)
     let sencoded = te.encodeAll(iroha)
     let td = newTextDecoder(cs)
     let sdecoded = td.decodeAll(sencoded)
     check sdecoded == iroha
+    var ctx = initTextDecoderContext(cs)
+    var dec2 = ""
+    for i in 0 ..< 100:
+      for slice in ctx.decode(sencoded.toOpenArrayByte(0, sencoded.high),
+          finish = false):
+        dec2 &= slice
+      for slice in ctx.decode([], finish = true):
+        dec2 &= slice
+    check dec2 == iroha100
 
 test "validate UTF-8 in parts":
   # Validate "Hellö, world!".

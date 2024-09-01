@@ -565,6 +565,8 @@ method decode*(td: TextDecoderEUC_JP; iq: openArray[uint8];
       inc td.i
       return tdrError
     inc td.i
+  td.i = 0
+  tdrDone
 
 method finish*(td: TextDecoderEUC_JP): TextDecoderFinishResult =
   result = tdfrDone
