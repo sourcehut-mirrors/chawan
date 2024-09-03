@@ -298,7 +298,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
   if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
     let val = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
     let itSym = ctxOpaque.symRefs[jsyIterator]
-    doAssert JS_SetProperty(ctx, proto, itSym, val) == 1
+    ctx.defineProperty(proto, itSym, val)
   let news = JS_NewAtomString(ctx, cdef.class_name)
   doAssert not JS_IsException(news)
   ctx.definePropertyC(proto, ctxOpaque.symRefs[jsyToStringTag],

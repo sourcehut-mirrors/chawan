@@ -99,7 +99,7 @@ makeToJSP(JSValue)
 makeToJSP(JSDict)
 
 # Note: this consumes `prop'.
-proc defineProperty(ctx: JSContext; this: JSValue; name: JSAtom;
+proc defineProperty*(ctx: JSContext; this: JSValue; name: JSAtom;
     prop: JSValue; flags = cint(0)) =
   if JS_DefinePropertyValue(ctx, this, name, prop, flags) <= 0:
     raise newException(Defect, "Failed to define property string")
