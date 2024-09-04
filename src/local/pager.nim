@@ -218,15 +218,6 @@ proc setContainer*(pager: Pager; c: Container) {.jsfunc.} =
     c.queueDraw()
     pager.term.setTitle(c.getTitle())
 
-proc hasprop(ctx: JSContext; pager: Pager; s: string): bool {.jshasprop.} =
-  result = false
-  if pager.container != nil:
-    let cval = toJS(ctx, pager.container)
-    let val = JS_GetPropertyStr(ctx, cval, s)
-    if val != JS_UNDEFINED:
-      result = true
-    JS_FreeValue(ctx, val)
-
 proc reflect(ctx: JSContext; this_val: JSValue; argc: cint;
     argv: ptr UncheckedArray[JSValue]; magic: cint;
     func_data: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
@@ -1186,6 +1177,8 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
       res.charsets = sc.document_charset
     if sc.images.isSome:
       res.images = sc.images.get
+    if sc.styling.isSome:
+      res.styling = sc.styling.get
     if sc.stylesheet.isSome:
       res.userstyle &= "\n"
       res.userstyle &= sc.stylesheet.get

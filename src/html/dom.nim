@@ -128,8 +128,7 @@ type
     element: Element
     attrlist: seq[Attr]
 
-  Collection = ref CollectionObj
-  CollectionObj = object of RootObj
+  Collection = ref object of RootObj
     islive: bool
     childonly: bool
     root: Node
@@ -140,6 +139,10 @@ type
   NodeList = ref object of Collection
 
   HTMLCollection = ref object of Collection
+
+  HTMLFormControlsCollection = ref object of HTMLCollection
+
+  RadioNodeList = ref object of NodeList
 
   HTMLAllCollection = ref object of Collection
 
@@ -207,6 +210,7 @@ type
     cachedSheets: seq[CSSStylesheet]
     cachedSheetsInvalid*: bool
     cachedChildren: HTMLCollection
+    cachedForms: HTMLCollection
     #TODO I hate this but I really don't want to put chadombuilder into dom too
     parser*: pointer
 
@@ -244,11 +248,11 @@ type
     prefix*: string
     localName*: CAtom
 
-    id*: CAtom
-    name*: CAtom
+    id* {.jsget.}: CAtom
+    name* {.jsget.}: CAtom
     classList* {.jsget.}: DOMTokenList
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
-    attributesInternal: NamedNodeMap
+    internalAttributes: NamedNodeMap
     internalHover: bool
     invalid*: bool
     cachedStyle*: CSSStyleDeclaration
@@ -314,6 +318,7 @@ type
   HTMLFormElement* = ref object of HTMLElement
     constructingEntryList*: bool
     controls*: seq[FormAssociatedElement]
+    cachedElements: HTMLFormControlsCollection
     relList {.jsget.}: DOMTokenList
 
   HTMLTemplateElement* = ref object of HTMLElement
@@ -437,6 +442,8 @@ jsDestructor(HTMLAudioElement)
 jsDestructor(Node)
 jsDestructor(NodeList)
 jsDestructor(HTMLCollection)
+jsDestructor(HTMLFormControlsCollection)
+jsDestructor(RadioNodeList)
 jsDestructor(HTMLAllCollection)
 jsDestructor(Location)
 jsDestructor(Document)
@@ -466,6 +473,7 @@ proc delAttr(element: Element; i: int; keep = false)
 proc getImageId(window: Window): int
 proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
+proc setInvalid*(element: Element)
 
 # Forward declaration hacks
 # set in css/cascade
@@ -1066,7 +1074,7 @@ func localNameStr*(element: Element): string =
   return element.document.toStr(element.localName)
 
 func findAttr(element: Element; qualifiedName: CAtom): int =
-  for i, attr in element.attrs:
+  for i, attr in element.attrs.mpairs:
     if attr.qualifiedName == qualifiedName:
       return i
   return -1
@@ -1075,7 +1083,7 @@ func findAttr(element: Element; qualifiedName: StaticAtom): int =
   return element.findAttr(element.document.toAtom(qualifiedName))
 
 func findAttrNS(element: Element; namespace, qualifiedName: CAtom): int =
-  for i, attr in element.attrs:
+  for i, attr in element.attrs.mpairs:
     if attr.namespace == namespace and attr.qualifiedName == qualifiedName:
       return i
   return -1
@@ -1276,6 +1284,12 @@ proc finalize(collection: HTMLCollection) {.jsfin.} =
 proc finalize(collection: NodeList) {.jsfin.} =
   collection.finalize0()
 
+proc finalize(collection: HTMLFormControlsCollection) {.jsfin.} =
+  collection.finalize0()
+
+proc finalize(collection: RadioNodeList) {.jsfin.} =
+  collection.finalize0()
+
 proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
 
@@ -1287,7 +1301,7 @@ func ownerDocument(node: Node): Document {.jsfget.} =
 func hasChildNodes(node: Node): bool {.jsfunc.} =
   return node.childList.len > 0
 
-func len(collection: Collection): int =
+proc len(collection: Collection): int =
   collection.refreshCollection()
   return collection.snapshot.len
 
@@ -1360,6 +1374,19 @@ func childNodes(node: Node): NodeList {.jsfget.} =
       childonly = true
     )
   return node.cachedChildNodes
+
+func isForm(node: Node): bool =
+  return node of HTMLFormElement
+
+func forms(document: Document): HTMLCollection {.jsfget.} =
+  if document.cachedForms == nil:
+    document.cachedForms = newCollection[HTMLCollection](
+      root = document,
+      match = isForm,
+      islive = true,
+      childonly = false
+    )
+  return document.cachedForms
 
 # DOMTokenList
 func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
@@ -1493,10 +1520,6 @@ func validateAttributeQName(name: string): Err[DOMException] =
   return errDOMException("Invalid character in attribute name",
     "InvalidCharacterError")
 
-func hasprop(map: var DOMStringMap; name: string): bool {.jshasprop.} =
-  let name = map.target.document.toAtom("data-" & name)
-  return map.target.attrb(name)
-
 proc delete(map: var DOMStringMap; name: string): bool {.jsfunc.} =
   let name = map.target.document.toAtom("data-" & name.camelToKebabCase())
   let i = map.target.findAttr(name)
@@ -1537,60 +1560,52 @@ func names(ctx: JSContext; map: var DOMStringMap): JSPropertyEnumList
   return list
 
 # NodeList
-func length(nodeList: NodeList): uint32 {.jsfget.} =
-  return uint32(nodeList.len)
+func length(this: NodeList): uint32 {.jsfget.} =
+  return uint32(this.len)
 
-func hasprop(nodeList: NodeList; i: uint32): bool {.jshasprop.} =
-  return int(i) < nodeList.len
-
-func item(nodeList: NodeList; i: int): Node {.jsfunc.} =
-  if i < nodeList.len:
-    return nodeList.snapshot[i]
+func item(this: NodeList; u: uint32): Node {.jsfunc.} =
+  let i = int(u)
+  if i < this.len:
+    return this.snapshot[i]
   return nil
 
-func getter(ctx: JSContext; nodeList: NodeList; atom: JSAtom): Node
-    {.jsgetprop.} =
+func getter(ctx: JSContext; this: NodeList; atom: JSAtom): Node {.jsgetprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return nodeList.item(int(u))
+    return this.item(u)
   return nil
 
-func names(ctx: JSContext; nodeList: NodeList): JSPropertyEnumList
-    {.jspropnames.} =
-  let L = nodeList.length
+func names(ctx: JSContext; this: NodeList): JSPropertyEnumList {.jspropnames.} =
+  let L = this.length
   var list = newJSPropertyEnumList(ctx, L)
   for u in 0 ..< L:
     list.add(u)
   return list
 
 # HTMLCollection
-proc length(collection: HTMLCollection): uint32 {.jsfget.} =
-  return uint32(collection.len)
+proc length(this: HTMLCollection): uint32 {.jsfget.} =
+  return uint32(this.len)
 
-func hasprop(collection: HTMLCollection; u: uint32): bool {.jshasprop.} =
-  return u < collection.length
-
-func item(collection: HTMLCollection; u: uint32): Element {.jsfunc.} =
-  if u < collection.length:
-    return Element(collection.snapshot[int(u)])
+func item(this: HTMLCollection; u: uint32): Element {.jsfunc.} =
+  if u < this.length:
+    return Element(this.snapshot[int(u)])
   return nil
 
-func namedItem(collection: HTMLCollection; s: string): Element {.jsfunc.} =
-  let a = collection.root.document.toAtom(s)
-  for it in collection.snapshot:
+func namedItem(this: HTMLCollection; atom: CAtom): Element {.jsfunc.} =
+  for it in this.snapshot:
     let it = Element(it)
-    if it.id == a or it.namespace == Namespace.HTML and it.name == a:
+    if it.id == atom or it.namespace == Namespace.HTML and it.name == atom:
       return it
   return nil
 
-func getter(ctx: JSContext; collection: HTMLCollection; atom: JSAtom): Element
+proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): Element
     {.jsgetprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return collection.item(u)
-  var s: string
+    return this.item(u)
+  var s: CAtom
   if ctx.fromJS(atom, s).isSome:
-    return collection.namedItem(s)
+    return this.namedItem(s)
   return nil
 
 func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
@@ -1609,16 +1624,43 @@ func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     list.add(collection.root.document.toStr(id))
   return list
 
+# HTMLFormControlsCollection
+proc namedItem(ctx: JSContext; this: HTMLFormControlsCollection; name: CAtom):
+    JSValue {.jsfunc.} =
+  let nodes = newCollection[RadioNodeList](
+    this.root,
+    func(node: Node): bool =
+      if not this.match(node):
+        return false
+      let element = Element(node)
+      return element.id == name or
+        element.namespace == Namespace.HTML and element.name == name,
+    islive = true,
+    childonly = false
+  )
+  if nodes.len == 0:
+    return JS_NULL
+  if nodes.len == 1:
+    return ctx.toJS(nodes.snapshot[0])
+  return ctx.toJS(nodes)
+
+proc names(ctx: JSContext; this: HTMLFormControlsCollection): JSPropertyEnumList
+    {.jspropnames.} =
+  return ctx.names(HTMLCollection(this))
+
+proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
+    JSValue {.jsgetprop.} =
+  var u: uint32
+  if ctx.fromJS(atom, u).isSome:
+    return ctx.toJS(this.item(u))
+  var s: CAtom
+  if ctx.fromJS(atom, s).isSome:
+    return ctx.namedItem(this, s)
+  return JS_NULL
+
 # HTMLAllCollection
 proc length(this: HTMLAllCollection): uint32 {.jsfget.} =
   return uint32(this.len)
-
-func hasprop(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): bool
-    {.jshasprop.} =
-  var u: uint32
-  if ctx.fromJS(atom, u).isSome:
-    return int(u) < this.len
-  return false
 
 func item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
   let i = int(u)
@@ -1847,17 +1889,17 @@ func hasAttributes(element: Element): bool {.jsfunc.} =
   return element.attrs.len > 0
 
 func attributes(element: Element): NamedNodeMap {.jsfget.} =
-  if element.attributesInternal != nil:
-    return element.attributesInternal
-  element.attributesInternal = NamedNodeMap(element: element)
-  for i, attr in element.attrs:
-    element.attributesInternal.attrlist.add(Attr(
+  if element.internalAttributes != nil:
+    return element.internalAttributes
+  element.internalAttributes = NamedNodeMap(element: element)
+  for i, attr in element.attrs.mpairs:
+    element.internalAttributes.attrlist.add(Attr(
       internalDocument: element.document,
       index: -1,
       dataIdx: i,
       ownerElement: element
     ))
-  return element.attributesInternal
+  return element.internalAttributes
 
 func findAttr(element: Element; qualifiedName: string): int =
   return element.findAttr(element.normalizeAttrQName(qualifiedName))
@@ -1918,13 +1960,6 @@ func getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): Opt[Attr]
   var s: string
   ?ctx.fromJS(atom, s)
   return ok(map.getNamedItem(s))
-
-func hasprop(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): cint
-    {.jshasprop.} =
-  var x = ctx.getter(map, atom)
-  if x.isNone:
-    return -1
-  return cint(x.get != nil)
 
 func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
     {.jspropnames.} =
@@ -2381,9 +2416,6 @@ func serializeFragment*(node: Node): string =
   return s
 
 # Element attribute reflection (getters)
-func jsId(element: Element): string {.jsfget: "id".} =
-  return element.document.toStr(element.id)
-
 func innerHTML(element: Element): string {.jsfget.} =
   #TODO xml
   return element.serializeFragment()
@@ -2707,9 +2739,28 @@ proc setRelList(link: HTMLLinkElement; s: string) {.jsfset: "relList".} =
 proc setRelList(form: HTMLFormElement; s: string) {.jsfset: "relList".} =
   form.attr(satRel, s)
 
+func elements(form: HTMLFormElement): HTMLFormControlsCollection {.jsfget.} =
+  if form.cachedElements == nil:
+    form.cachedElements = newCollection[HTMLFormControlsCollection](
+      root = form.rootNode,
+      match = func(node: Node): bool =
+        if node of FormAssociatedElement:
+          let element = FormAssociatedElement(node)
+          if element.tagType in ListedElements:
+            return element.form == form
+        return false,
+      islive = true,
+      childonly = false
+    )
+  return form.cachedElements
+
 # <input>
 func jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
+
+proc setValue(this: HTMLInputElement; value: string) {.jsfset: "value".} =
+  this.value = value
+  this.setInvalid()
 
 # <select>
 func jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
@@ -2972,7 +3023,7 @@ proc setInvalid*(element: Element) =
     element.document.invalid = true
 
 proc delAttr(element: Element; i: int; keep = false) =
-  let map = element.attributesInternal
+  let map = element.internalAttributes
   let name = element.attrs[i].qualifiedName
   element.attrs.delete(i) # ordering matters
   if map != nil:
@@ -3552,6 +3603,7 @@ proc remove*(node: Node; suppressObservers: bool) =
     parent.childList[i].index = i
   parent.childList.setLen(parent.childList.len - 1)
   parent.invalidateCollections()
+  node.invalidateCollections()
   if parent of Element:
     Element(parent).setInvalid()
   node.parentNode = nil
@@ -3565,7 +3617,8 @@ proc remove*(node: Node; suppressObservers: bool) =
   #TODO not suppress observers => queue tree mutation record
 
 proc remove*(node: Node) {.jsfunc.} =
-  node.remove(suppressObservers = false)
+  if node.parentNode != nil:
+    node.remove(suppressObservers = false)
 
 proc adopt(document: Document; node: Node) =
   let oldDocument = node.document
@@ -4396,7 +4449,7 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
         node.localName != other.localName or
         node.attrs.len != other.attrs.len:
       return false
-    for i, attr in node.attrs:
+    for i, attr in node.attrs.mpairs:
       if not attr.equals(other.attrs[i]):
         return false
   elif node of Attr:
@@ -4743,9 +4796,11 @@ proc addDOMModule*(ctx: JSContext) =
   let eventTargetCID = ctx.getClass("EventTarget")
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
   ctx.defineConsts(nodeCID, NodeType, uint16)
-  ctx.registerType(NodeList)
-  ctx.registerType(HTMLCollection)
+  let nodeListCID = ctx.registerType(NodeList)
+  let htmlCollectionCID = ctx.registerType(HTMLCollection)
   ctx.registerType(HTMLAllCollection, ishtmldda = true)
+  ctx.registerType(HTMLFormControlsCollection, parent = htmlCollectionCID)
+  ctx.registerType(RadioNodeList, parent = nodeListCID)
   ctx.registerType(Location)
   ctx.registerType(Document, parent = nodeCID)
   ctx.registerType(DOMImplementation)

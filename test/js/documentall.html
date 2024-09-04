@@ -1,19 +1,19 @@
 <!doctype html>
 <title>HTMLCollection test</title>
 <div id="result">Fail</div>
+<script src=asserts.js></script>
 <style>style 1</style>
 <style>style 2</style>
 <style>style 3</style>
 <script>
-(function() {
-	const abc = document.all;
-	if (document.all || abc) return; /* document.all must be falsy */
-	if (abc.length !== 9) return;
-	const styles = [abc[5], abc[6], abc[7]];
-	if (styles[0].textContent !== "style 1") return;
-	if (styles[1].textContent !== "style 2") return;
-	if (styles[2].textContent !== "style 3") return;
-	const result = document.getElementById("result");
-	result.textContent = "Success";
-})()
+const abc = document.all;
+assert(!document.all, "document.all must be falsy");
+assert(!abc, "document.all must be falsy");
+assert_equals(document.all.length, 10);
+const styles = [abc[6], abc[7], abc[8]];
+assert_equals(styles[0].textContent, "style 1");
+assert_equals(styles[1].textContent, "style 2");
+assert_equals(styles[2].textContent, "style 3");
+const result = document.getElementById("result");
+result.textContent = "Success";
 </script>

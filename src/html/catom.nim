@@ -198,7 +198,8 @@ func toStaticAtom*(factory: CAtomFactory; atom: CAtom): StaticAtom =
     return StaticAtom(i)
   return atUnknown
 
-var getFactory*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect.}
+var getFactory*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect,
+  raises: [].}
 
 proc toAtom*(ctx: JSContext; atom: StaticAtom): CAtom =
   return ctx.getFactory().toAtom(atom)
@@ -207,6 +208,12 @@ proc toStaticAtom*(ctx: JSContext; atom: CAtom): StaticAtom =
   return ctx.getFactory().toStaticAtom(atom)
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
+  var s: string
+  ?ctx.fromJS(val, s)
+  res = ctx.getFactory().toAtom(s)
+  return ok()
+
+proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
   var s: string
   ?ctx.fromJS(val, s)
   res = ctx.getFactory().toAtom(s)

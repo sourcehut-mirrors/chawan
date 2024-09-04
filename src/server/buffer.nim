@@ -397,11 +397,15 @@ func getCursorStyledNode(buffer: Buffer; cursorx, cursory: int): StyledNode =
 
 func getCursorElement(buffer: Buffer; cursorx, cursory: int): Element =
   let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
-  if styledNode == nil or styledNode.node == nil:
+  if styledNode == nil:
     return nil
-  if styledNode.t == stElement:
-    return Element(styledNode.node)
-  return styledNode.node.parentElement
+  if styledNode.node != nil:
+    if styledNode.t == stElement:
+      return Element(styledNode.node)
+    return styledNode.node.parentElement
+  if styledNode.parent != nil and styledNode.parent.t == stElement:
+    return Element(styledNode.parent.node)
+  return nil
 
 func getCursorClickable(buffer: Buffer; cursorx, cursory: int): Element =
   let styledNode = buffer.getCursorStyledNode(cursorx, cursory)

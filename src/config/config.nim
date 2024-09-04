@@ -292,9 +292,6 @@ proc bindPagerKey(config: Config; key, action: string) {.jsfunc.} =
 proc bindLineKey(config: Config; key, action: string) {.jsfunc.} =
   config.line.setter(key, action)
 
-proc hasprop(a: var ActionMap; s: string): bool {.jshasprop.} =
-  return s in a
-
 proc openFileExpand(dir, file: string): FileStream =
   if file.len == 0:
     return nil
