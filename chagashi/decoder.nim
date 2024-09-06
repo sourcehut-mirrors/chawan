@@ -190,7 +190,7 @@ proc decodeAll*(td: TextDecoder; iq: openArray[uint8]; success: var bool):
   success = not ctx.failed
 
 proc decodeAll*(td: TextDecoder; iq: string; success: var bool): string =
-  return td.decodeAll(iq, success)
+  return td.decodeAll(iq.toOpenArrayByte(0, iq.high), success)
 
 proc decodeAll*(td: TextDecoder; iq: openArray[uint8]): string =
   ## Use `td` to decode `iq`, representing a complete contiguous input queue.
