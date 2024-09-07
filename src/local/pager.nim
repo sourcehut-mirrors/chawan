@@ -478,10 +478,10 @@ proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
   var format = Format()
   container.readLines(proc(line: SimpleFlexibleLine) =
     if line.formats.len == 0:
-      ofile.write(line.str & "\n")
+      ofile.writeLine(line.str)
     else:
       var x = 0
-      var w = 0
+      var w = -1
       var i = 0
       var s = ""
       for f in line.formats:
@@ -489,13 +489,14 @@ proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
         while x < f.pos:
           let u = line.str.nextUTF8(i)
           x += u.width()
-        let outstr = line.str.substr(si, i - 1)
-        s &= pager.term.processOutputString(outstr, w)
-        s &= pager.term.processFormat(format, f.format)
+        s.processOutputString(pager.term, line.str.toOpenArray(si, i - 1), w)
+        s.processFormat(pager.term, format, f.format)
       if i < line.str.len:
-        s &= pager.term.processOutputString(line.str.substr(i), w)
-      s &= pager.term.processFormat(format, Format()) & "\n"
-      ofile.write(s))
+        s.processOutputString(pager.term,
+          line.str.toOpenArray(i, line.str.high), w)
+      s.processFormat(pager.term, format, Format())
+      ofile.writeLine(s)
+  )
   ofile.flushFile()
 
 proc redraw(pager: Pager) {.jsfunc.} =

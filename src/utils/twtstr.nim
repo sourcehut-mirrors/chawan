@@ -105,6 +105,9 @@ func toHexLower*(u: uint16): string =
     x = x shr 4
   return s
 
+proc add*(s: var string; u: uint8) =
+  s.addInt(uint64(u))
+
 func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
 

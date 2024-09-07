@@ -19,6 +19,7 @@ import types/opt
 import types/winattrs
 import utils/strwidth
 import utils/twtstr
+import utils/twtuni
 
 #TODO switch away from termcap...
 
@@ -82,6 +83,7 @@ type
 
   Terminal* = ref object
     cs*: Charset
+    te: TextEncoder
     config: Config
     istream*: PosixStream
     outfile: File
@@ -112,31 +114,30 @@ type
     colorMap: array[16, RGBColor]
 
 # control sequence introducer
-template CSI(s: varargs[string, `$`]): string =
-  "\e[" & s.join(';')
+const CSI = "\e["
 
 # primary device attributes
-const DA1 = CSI("c")
+const DA1 = CSI & 'c'
 
 # push/pop current title to/from the terminal's title stack
-const XTPUSHTITLE = CSI(22, "t")
-const XTPOPTITLE = CSI(23, "t")
+const XTPUSHTITLE = CSI & "22t"
+const XTPOPTITLE = CSI & "23t"
 
 # report xterm text area size in pixels
-const GEOMPIXEL = CSI(14, "t")
+const GEOMPIXEL = CSI & "14t"
 
 # report cell size
-const CELLSIZE = CSI(16, "t")
+const CELLSIZE = CSI & "16t"
 
 # report window size in chars
-const GEOMCELL = CSI(18, "t")
+const GEOMCELL = CSI & "18t"
 
 # allow shift-key to override mouse protocol
-const XTSHIFTESCAPE = CSI(">0s")
+const XTSHIFTESCAPE = CSI & ">0s"
 
 # query sixel register number
 template XTSMGRAPHICS(pi, pa, pv: untyped): string =
-  CSI("?" & $pi, $pa, $pv & "S")
+  CSI & '?' & $pi & ';' & $pa & ';' & $pv & 'S'
 
 # number of color registers
 const XTNUMREGS = XTSMGRAPHICS(1, 1, 0)
@@ -145,31 +146,23 @@ const XTNUMREGS = XTSMGRAPHICS(1, 1, 0)
 const XTIMGDIMS = XTSMGRAPHICS(2, 1, 0)
 
 # horizontal & vertical position
-template HVP(s: varargs[string, `$`]): string =
-  CSI(s) & "f"
+template HVP(y, x: int): string =
+  CSI & $y & ';' & $x & 'f'
 
 # erase line
-template EL(): string =
-  CSI() & "K"
+const EL = CSI & 'K'
 
 # erase display
-template ED(): string =
-  CSI() & "J"
-
-# select graphic rendition
-template SGR*(s: varargs[string, `$`]): string =
-  CSI(s) & "m"
+const ED = CSI & 'J'
 
 # device control string
-const DCSSTART = "\eP"
+const DCS = "\eP"
 
-template DCS(a, b: char; s: varargs[string]): string =
-  DCSSTART & a & b & s.join(';') & "\e\\"
+# string terminator
+const ST = "\e\\"
 
-template XTGETTCAP(s: varargs[string, `$`]): string =
-  DCS('+', 'q', s)
-
-const XTGETRGB = XTGETTCAP("524742")
+# xterm get terminal capability rgb
+const XTGETTCAPRGB = DCS & "+q524742" & ST
 
 # OS command
 template OSC(s: varargs[string, `$`]): string =
@@ -207,11 +200,7 @@ const CNORM = DECSET(25)
 const CIVIS = DECRST(25)
 
 # application program command
-
-# This is only used in kitty images, and join()'ing kilobytes of base64
-# is rather inefficient so we don't use a template.
 const APC = "\e_"
-const ST = "\e\\"
 
 const KITTYQUERY = APC & "Gi=1,a=q;" & ST
 
@@ -251,13 +240,13 @@ proc clearEnd(term: Terminal): string =
   when TermcapFound:
     if term.tc != nil:
       return term.cap ce
-  return EL()
+  return EL
 
 proc clearDisplay(term: Terminal): string =
   when TermcapFound:
     if term.tc != nil:
       return term.cap cd
-  return ED()
+  return ED
 
 proc isatty*(file: File): bool =
   return file.getFileHandle().isatty() != 0
@@ -268,15 +257,15 @@ proc isatty*(term: Terminal): bool =
 
 proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
-    term.outfile.write(term.clearEnd() & msg)
-    term.outfile.flushFile()
+    term.write(term.clearEnd() & msg)
+    term.flush()
     discard term.istream.sreadChar()
 
 proc resetFormat(term: Terminal): string =
   when TermcapFound:
     if term.tc != nil:
       return term.cap me
-  return SGR()
+  return CSI & 'm'
 
 proc startFormat(term: Terminal; flag: FormatFlag): string =
   when TermcapFound:
@@ -288,7 +277,7 @@ proc startFormat(term: Terminal; flag: FormatFlag): string =
       of ffBlink: return term.cap mb
       of ffItalic: return term.cap ZH
       else: discard
-  return SGR(FormatCodes[flag].s)
+  return CSI & $FormatCodes[flag].s & 'm'
 
 proc endFormat(term: Terminal; flag: FormatFlag): string =
   when TermcapFound:
@@ -297,7 +286,7 @@ proc endFormat(term: Terminal; flag: FormatFlag): string =
       of ffUnderline: return term.cap ue
       of ffItalic: return term.cap ZR
       else: discard
-  return SGR(FormatCodes[flag].e)
+  return CSI & $FormatCodes[flag].e & 'm'
 
 proc setCursor*(term: Terminal; x, y: int) =
   assert x >= 0 and y >= 0
@@ -317,9 +306,6 @@ proc disableAltScreen(term: Terminal): string =
     if term.tc != nil and term.hascap te:
       return term.cap te
   return RMCUP
-
-func mincontrast(term: Terminal): int32 =
-  return term.config.display.minimum_contrast
 
 proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
   case a.t
@@ -360,9 +346,10 @@ proc approximateANSIColor(term: Terminal; rgb, termDefault: RGBColor):
       a = b
   return if n == -1: defaultColor else: ANSIColor(n).cellColor()
 
-# Return a fgcolor contrasted to the background by term.mincontrast.
+# Return a fgcolor contrasted to the background by the minimum configured
+# contrast.
 proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
-  let contrast = term.mincontrast
+  let contrast = term.config.display.minimum_contrast
   let cfgcolor = fgcolor
   let bgcolor = term.getRGB(bgcolor, term.defaultBackground)
   let fgcolor = term.getRGB(fgcolor, term.defaultForeground)
@@ -391,35 +378,40 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
     of cmEightBit:
       return cellColor(newrgb.toEightBit())
     of cmMonochrome:
-      doAssert false
+      assert false
   return cfgcolor
 
-template ansiSGR(n: uint8, bgmod: int): string =
-  if n < 8:
-    SGR(30 + bgmod + n)
-  else:
-    SGR(82 + bgmod + n)
+proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
+  res &= CSI
+  case c.t
+  of ctNone:
+    res &= 39 + bgmod
+  of ctANSI:
+    let n = c.color
+    if n < 16:
+      if n < 8:
+        res &= 30 + bgmod + n
+      else:
+        res &= 82 + bgmod + n
+    else:
+      res &= 38 + bgmod
+      res &= ";5;"
+      res &= n
+  of ctRGB:
+    let rgb = c.rgbcolor
+    res &= 38 + bgmod
+    res &= ";2;"
+    res &= rgb.r
+    res &= ';'
+    res &= rgb.g
+    res &= ';'
+    res &= rgb.b
+  res &= 'm'
 
-template eightBitSGR(n: uint8, bgmod: int): string =
-  if n < 16:
-    ansiSGR(n, bgmod)
-  else:
-    SGR(38 + bgmod, 5, n)
-
-template rgbSGR(rgb: RGBColor; bgmod: int): string =
-  SGR(38 + bgmod, 2, rgb.r, rgb.g, rgb.b)
-
-proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
-  for flag in FormatFlag:
-    if flag in term.formatMode:
-      if flag in format.flags and flag notin cellf.flags:
-        result &= term.endFormat(flag)
-      if flag notin format.flags and flag in cellf.flags:
-        result &= term.startFormat(flag)
-  var cellf = cellf
+# If needed, quantize colors based on the color mode.
+proc reduceColors(term: Terminal; cellf: var Format) =
   case term.colorMode
   of cmANSI:
-    # quantize
     if cellf.bgcolor.t == ctANSI and cellf.bgcolor.color > 15:
       cellf.bgcolor = cellf.fgcolor.eightbit.toRGB().cellColor()
     if cellf.bgcolor.t == ctRGB:
@@ -434,59 +426,35 @@ proc processFormat*(term: Terminal; format: var Format; cellf: Format): string =
       else:
         # ANSI fgcolor + bgcolor at the same time is broken
         cellf.fgcolor = defaultColor
-    # correct
-    cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
-    if cellf.fgcolor != format.fgcolor:
-      # print
-      case cellf.fgcolor.t
-      of ctNone: result &= SGR(39)
-      of ctANSI: result &= ansiSGR(cellf.fgcolor.color, 0)
-      else: discard
-    if cellf.bgcolor != format.bgcolor:
-      case cellf.bgcolor.t
-      of ctNone: result &= SGR(49)
-      of ctANSI: result &= ansiSGR(cellf.bgcolor.color, 10)
-      else: discard
   of cmEightBit:
-    # quantize
     if cellf.bgcolor.t == ctRGB:
       cellf.bgcolor = cellf.bgcolor.rgbcolor.toEightBit().cellColor()
     if cellf.fgcolor.t == ctRGB:
       cellf.fgcolor = cellf.fgcolor.rgbcolor.toEightBit().cellColor()
-    # correct
-    cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
-    # print
-    if cellf.fgcolor != format.fgcolor:
-      case cellf.fgcolor.t
-      of ctNone: result &= SGR(39)
-      of ctANSI: result &= eightBitSGR(cellf.fgcolor.color, 0)
-      of ctRGB: discard
-    if cellf.bgcolor != format.bgcolor:
-      case cellf.bgcolor.t
-      of ctNone: result &= SGR(49)
-      of ctANSI: result &= eightBitSGR(cellf.bgcolor.color, 10)
-      of ctRGB: discard
-  of cmTrueColor:
-    # correct
-    cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
-    # print
-    if cellf.fgcolor != format.fgcolor:
-      case cellf.fgcolor.t
-      of ctNone: result &= SGR(39)
-      of ctANSI: result &= eightBitSGR(cellf.fgcolor.color, 0)
-      of ctRGB: result &= rgbSGR(cellf.fgcolor.rgbcolor, 0)
-    if cellf.bgcolor != format.bgcolor:
-      case cellf.bgcolor.t
-      of ctNone: result &= SGR(49)
-      of ctANSI: result &= eightBitSGR(cellf.bgcolor.color, 10)
-      of ctRGB: result &= rgbSGR(cellf.bgcolor.rgbcolor, 10)
-  of cmMonochrome:
+  of cmMonochrome, cmTrueColor:
     discard # nothing to do
+
+proc processFormat*(res: var string; term: Terminal; format: var Format;
+    cellf: Format) =
+  for flag in FormatFlag:
+    if flag in term.formatMode:
+      if flag in format.flags and flag notin cellf.flags:
+        res &= term.endFormat(flag)
+      if flag notin format.flags and flag in cellf.flags:
+        res &= term.startFormat(flag)
+  var cellf = cellf
+  term.reduceColors(cellf)
+  if term.colorMode != cmMonochrome:
+    cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
+    if cellf.fgcolor != format.fgcolor:
+      res.addColorSGR(cellf.fgcolor, bgmod = 0)
+    if cellf.bgcolor != format.bgcolor:
+      res.addColorSGR(cellf.bgcolor, bgmod = 10)
   format = cellf
 
 proc setTitle*(term: Terminal; title: string) =
   if term.setTitle:
-    term.outfile.write(XTSETTITLE(title.replaceControls()))
+    term.write(XTSETTITLE(title.replaceControls()))
 
 proc enableMouse*(term: Terminal) =
   term.write(XTSHIFTESCAPE & SGRMOUSEBTNON)
@@ -494,26 +462,63 @@ proc enableMouse*(term: Terminal) =
 proc disableMouse*(term: Terminal) =
   term.write(SGRMOUSEBTNOFF)
 
-proc processOutputString*(term: Terminal; str: string; w: var int): string =
-  if str.validateUTF8Surr() != -1:
-    return "?"
-  # twidth wouldn't work here, the view may start at the nth character.
-  # pager must ensure tabs are converted beforehand.
-  w += str.notwidth()
-  let str = if Controls in str:
-    str.replaceControls()
-  else:
-    str
-  if term.cs == CHARSET_UTF_8:
+proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
+    iq: openArray[uint8]; w: var int) =
+  var n = 0
+  while true:
+    case te.encode(iq, res.toOpenArrayByte(0, res.high), n)
+    of terDone:
+      res.setLen(n)
+      case te.finish()
+      of tefrOutputISO2022JPSetAscii:
+        res &= "\e(B"
+      of tefrDone:
+        discard
+      break
+    of terReqOutput:
+      res.setLen(res.len * 2)
+    of terError:
+      res.setLen(n)
+      res &= '?'
+      # fix up width if char was double width
+      if w != -1:
+        w += 1 - te.c.width()
+        n = res.len
+
+proc validateUTF8Surr(s: openArray[char]; start = 0): int =
+  #TODO move to chagashi
+  var ctx = initTextDecoderContext(CHARSET_UTF_8, errorMode = demFatal)
+  for chunk in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
+    discard
+  if ctx.failed:
+    return ctx.td.ri + 1
+  return -1
+
+proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
+    w: var int) =
+  if s.len == 0:
+    return
+  if s.validateUTF8Surr() != -1:
+    res &= '?'
+    if w != -1:
+      inc w
+    return
+  if w != -1:
+    for u in s.points:
+      assert u > 0x7F or char(u) notin Controls
+      w += u.width()
+  let L = res.len
+  res.setLen(L + s.len)
+  if term.te == nil:
     # The output encoding matches the internal representation.
-    return str
-  # Output is not utf-8, so we must encode it first.
-  var success = false
-  return newTextEncoder(term.cs).encodeAll(str, success)
+    copyMem(addr res[L], unsafeAddr s[0], s.len)
+  else:
+    # Output is not utf-8, so we must encode it first.
+    res.encodeAllQMark(L, term.te, s.toOpenArrayByte(0, s.high), w)
 
 proc generateFullOutput(term: Terminal): string =
   var format = Format()
-  result &= term.cursorGoto(0, 0)
+  result = term.cursorGoto(0, 0)
   result &= term.resetFormat()
   result &= term.clearDisplay()
   for y in 0 ..< term.attrs.height:
@@ -524,12 +529,13 @@ proc generateFullOutput(term: Terminal): string =
       while w < x:
         result &= " "
         inc w
-      let cell = term.canvas[y * term.attrs.width + x]
-      result &= term.processFormat(format, cell.format)
-      result &= term.processOutputString(cell.str, w)
+      let cell = addr term.canvas[y * term.attrs.width + x]
+      result.processFormat(term, format, cell.format)
+      result.processOutputString(term, cell.str, w)
     term.lineDamage[y] = term.attrs.width
 
 proc generateSwapOutput(term: Terminal): string =
+  result = ""
   var vy = -1
   for y in 0 ..< term.attrs.height:
     # set cx to x of the first change
@@ -551,8 +557,8 @@ proc generateSwapOutput(term: Terminal): string =
           result &= ' '
           inc w
         let cell = term.canvas[y * term.attrs.width + x]
-        result &= term.processFormat(format, cell.format)
-        result &= term.processOutputString(cell.str, w)
+        result.processFormat(term, format, cell.format)
+        result.processOutputString(term, cell.str, w)
       if w < term.attrs.width:
         result &= term.clearEnd()
       # damage is gone
@@ -642,15 +648,20 @@ proc applyConfig(term: Terminal) =
       if cs != CHARSET_UNKNOWN:
         term.cs = cs
         break
+    if term.cs in {CHARSET_UTF_8, CHARSET_UTF_16_LE, CHARSET_UTF_16_BE,
+        CHARSET_REPLACEMENT}:
+      term.cs = CHARSET_UTF_8
+    else:
+      term.te = newTextEncoder(term.cs)
   term.applyConfigDimensions()
 
 proc outputGrid*(term: Terminal) =
-  term.outfile.write(term.resetFormat())
+  term.write(term.resetFormat())
   if term.config.display.force_clear or not term.cleared:
-    term.outfile.write(term.generateFullOutput())
+    term.write(term.generateFullOutput())
     term.cleared = true
   else:
-    term.outfile.write(term.generateSwapOutput())
+    term.write(term.generateSwapOutput())
   term.cursorx = -1
   term.cursory = -1
 
@@ -792,7 +803,7 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   # of rows; omit it otherwise, for then some terminals (e.g. foot)
   # handle the image more efficiently
   let trans = realh mod 6 != 0
-  outs &= DCSSTART & "0;" & $int(trans) & 'q'
+  outs &= DCS & "0;" & $int(trans) & 'q'
   # set raster attributes
   outs &= "\"1;1;" & $realw & ';' & $realh
   if data.len < 4: # bounds check
@@ -1061,7 +1072,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       outs &= XTNUMREGS
       outs &= XTIMGDIMS
     if term.config.display.color_mode.isNone:
-      outs &= XTGETRGB
+      outs &= XTGETTCAPRGB
     outs &=
       XTGETANSI &
       GEOMPIXEL &
@@ -1097,7 +1108,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       case (let c = term.consume; c)
       of '?': # DA1, XTSMGRAPHICS
         var params = newSeq[int]()
-        var lastc: char
+        var lastc = char(0)
         while lastc notin {'c', 'S'}:
           let n = term.consumeIntGreedy(lastc)
           if lastc notin {'c', 'S', ';'}:
@@ -1254,7 +1265,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       if qaRGB in r.attrs:
         term.colorMode = cmTrueColor
       if qaSyncTermFix in r.attrs:
-        term.write(static CSI("=5h"))
+        term.write(static(CSI & "=5h"))
       # just assume the terminal doesn't choke on these.
       term.formatMode = {ffStrike, ffOverline}
       if r.bgcolor.isSome:
