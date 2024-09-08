@@ -1,32 +1,32 @@
 func nextUTF8*(s: openArray[char]; i: var int): uint32 =
   let j = i
-  var u = uint32(s[j])
+  let u = uint32(s[j])
   if u <= 0x7F:
     inc i
+    return u
   elif u shr 5 == 0b110:
     let e = j + 2
     if likely(e <= s.len):
-      u = (u and 0x1F) shl 6 or (uint32(s[j + 1]) and 0x3F)
-    i = e
+      i = e
+      return (u and 0x1F) shl 6 or
+        (uint32(s[j + 1]) and 0x3F)
   elif u shr 4 == 0b1110:
     let e = j + 3
     if likely(e <= s.len):
-      u = (u and 0xF) shl 12 or
+      i = e
+      return (u and 0xF) shl 12 or
         (uint32(s[j + 1]) and 0x3F) shl 6 or
         (uint32(s[j + 2]) and 0x3F)
-    i = e
   elif u shr 3 == 0b11110:
     let e = j + 4
     if likely(e <= s.len):
-      u = (u and 7) shl 18 or
+      i = e
+      return (u and 7) shl 18 or
         (uint32(s[j + 1]) and 0x3F) shl 12 or
         (uint32(s[j + 2]) and 0x3F) shl 6 or
         (uint32(s[j + 3]) and 0x3F)
-    i = e
-  else:
-    u = 0xFFFD
-    inc i
-  return u
+  inc i
+  return 0xFFFD
 
 func prevUTF8*(s: openArray[char]; i: var int): uint32 =
   var j = i - 1
