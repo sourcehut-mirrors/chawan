@@ -49,7 +49,6 @@ proc putU32BE(s: var string; n: uint32) =
   s &= char(n and 0xFF)
 
 type Node {.acyclic.} = ref object
-  leaf: bool
   c: RGBColor
   n: uint32
   r: uint32
@@ -73,13 +72,12 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap; level = 0;
     n = 1u32): bool =
   # max level is 7, because we only have ~6.5 bits (0..100, inclusive)
   # (it *is* 0-indexed, but one extra level is needed for the final leaves)
-  assert not parent.leaf and level < 8
+  assert level < 8
   let idx = c.getIdx(level)
   let old = parent.children[idx]
   if old == nil:
     if level == 7:
       parent.children[idx] = Node(
-        leaf: true,
         c: c,
         n: n,
         r: uint32(c.r) * n,
@@ -88,11 +86,11 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap; level = 0;
       )
       return true
     else:
-      let container = Node(leaf: false)
+      let container = Node(idx: -1)
       parent.children[idx] = container
       trimMap[level].add(container)
       return container.insert(c, trimMap, level + 1, n)
-  elif old.leaf:
+  elif old.idx != -1:
     if old.c == c:
       old.n += n
       old.r += uint32(c.r) * n
@@ -100,7 +98,7 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap; level = 0;
       old.b += uint32(c.b) * n
       return false
     else:
-      let container = Node(leaf: false)
+      let container = Node(idx: -1)
       parent.children[idx] = container
       let nlevel = level + 1
       container.children[old.c.getIdx(nlevel)] = old # skip an alloc :)
@@ -109,7 +107,7 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap; level = 0;
   else:
     return old.insert(c, trimMap, level + 1, n)
 
-proc trim(trimMap: var TrimMap; K: var int) =
+proc trim(trimMap: var TrimMap; K: var uint) =
   var node: Node = nil
   for i in countdown(trimMap.high, 0):
     if trimMap[i].len > 0:
@@ -123,14 +121,13 @@ proc trim(trimMap: var TrimMap; K: var int) =
   var k = K + 1
   for child in node.children.mitems:
     if child != nil:
-      assert child.leaf
       r += child.r
       g += child.g
       b += child.b
       n += child.n
       child = nil
       dec k
-  node.leaf = true
+  node.idx = 0
   node.c = rgb(uint8(r div n), uint8(g div n), uint8(b div n))
   node.r = r
   node.g = g
@@ -140,47 +137,44 @@ proc trim(trimMap: var TrimMap; K: var int) =
 
 proc getPixel(img: seq[RGBAColorBE]; m: int; bgcolor: ARGBColor): RGBColor
     {.inline.} =
-  var c0 = img[m]
+  let c0 = img[m].toARGBColor()
   if c0.a != 255:
     let c1 = bgcolor.blend(c0)
-    return RGBColor(uint32(rgb(c1.r, c1.g, c1.b)).fastmul(100))
-  return RGBColor(uint32(rgb(c0.r, c0.g, c0.b)).fastmul(100))
+    return RGBColor(uint32(c1).fastmul(100))
+  return RGBColor(uint32(c0).fastmul(100))
 
-proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; palette: int): Node =
-  let root = Node(leaf: false)
+proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint): Node =
+  let root = Node(idx: -1)
   # number of leaves
-  var K = 0
+  let palette = outk
+  var K = 0u
   # map of non-leaves for each level.
   # (note: somewhat confusingly, this actually starts at level 1.)
   var trimMap: array[7, seq[Node]]
   # batch together insertions of color runs
   var pc = img.getPixel(0, bgcolor)
   var pn = 1u32
-  for m in 1 ..< img.len:
-    let c = img.getPixel(m, bgcolor)
-    if pc != c:
-      K += int(root.insert(pc, trimMap, n = pn))
+  for i in 1 ..< img.len:
+    let c = img.getPixel(i, bgcolor)
+    if pc != c or i == img.len:
+      K += uint(root.insert(pc, trimMap, n = pn))
       pc = c
       pn = 0
     inc pn
     while K > palette:
-      # trim the tree.
       trimMap.trim(K)
-  K += int(root.insert(pc, trimMap, n = pn))
-  while K > palette:
-    # trim the tree.
-    trimMap.trim(K)
+  outk = K
   return root
 
 proc flatten(node: Node; cols: var seq[Node]) =
-  if node.leaf:
+  if node.idx != -1:
     cols.add(node)
   else:
     for child in node.children:
       if child != nil:
         child.flatten(cols)
 
-proc flatten(node: Node; outs: var string; palette: int): seq[Node] =
+proc flatten(node: Node; outs: var string; palette: uint): seq[Node] =
   var cols = newSeqOfCap[Node](palette)
   node.flatten(cols)
   # try to set the most common colors as the smallest numbers (so we write less)
@@ -219,13 +213,6 @@ proc getColor(nodes: seq[Node]; c: RGBColor; diff: var DitherDiff): Node =
 
 proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff;
     level: int): Node =
-  if node.leaf:
-    let ic = node.c
-    let r = int32(c.r) - int32(ic.r)
-    let g = int32(c.g) - int32(ic.g)
-    let b = int32(c.b) - int32(ic.b)
-    diff = (r, g, b)
-    return node
   let idx = int(c.getIdx(level))
   var child = node.children[idx]
   let nlevel = level + 1
@@ -233,6 +220,13 @@ proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff;
     let child = nodes.getColor(c, diff)
     node.children[idx] = child
     return child
+  if node.idx != -1:
+    let ic = node.c
+    let r = int32(c.r) - int32(ic.r)
+    let g = int32(c.g) - int32(ic.g)
+    let b = int32(c.b) - int32(ic.b)
+    diff = (r, g, b)
+    return node
   return child.getColor(c, nodes, diff, nlevel)
 
 proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff):
@@ -256,9 +250,14 @@ proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff):
 
 proc correctDither(c: RGBColor; x: int; dither: Dither): RGBColor =
   let (rd, gd, bd) = dither.d1[x + 1]
-  let r = uint8(clamp(int32(c.r) + rd div 16, 0, 100))
-  let g = uint8(clamp(int32(c.g) + gd div 16, 0, 100))
-  let b = uint8(clamp(int32(c.b) + bd div 16, 0, 100))
+  let pr = (uint32(c) shr 12) and 0xFF0
+  let pg = (uint32(c) shr 4) and 0xFF0
+  let pb = (uint32(c) shl 4) and 0xFF0
+  {.push overflowChecks: off.}
+  let r = uint8(uint32(clamp(int32(pr) + rd, 0, 1600)) shr 4)
+  let g = uint8(uint32(clamp(int32(pg) + gd, 0, 1600)) shr 4)
+  let b = uint8(uint32(clamp(int32(pb) + bd, 0, 1600)) shr 4)
+  {.pop.}
   return rgb(r, g, b)
 
 proc fs(dither: var Dither; x: int; d: DitherDiff) =
@@ -266,10 +265,12 @@ proc fs(dither: var Dither; x: int; d: DitherDiff) =
   template at(p, mul: untyped) =
     var (rd, gd, bd) = p
     p = (rd + d.r * mul, gd + d.g * mul, bd + d.b * mul)
+  {.push overflowChecks: off.}
   at(dither.d1[x + 1], 7)
   at(dither.d2[x - 1], 3)
   at(dither.d2[x], 5)
   at(dither.d2[x + 1], 1)
+  {.pop.}
 
 type
   SixelBand = seq[ptr SixelChunk]
@@ -277,7 +278,7 @@ type
   SixelChunk = object
     x: int
     c: int
-    nrow: int
+    nrow: uint
     data: seq[uint8]
 
 # data is binary 0..63; the output is the final ASCII form.
@@ -312,8 +313,7 @@ proc compressSixel(outs: var string; band: SixelBand) =
       for i in 0 ..< n:
         outs &= c
 
-proc createBands(bands: var seq[SixelBand]; activeChunks: seq[ptr SixelChunk];
-    nrow: int) =
+proc createBands(bands: var seq[SixelBand]; activeChunks: seq[ptr SixelChunk]) =
   for chunk in activeChunks:
     let x = chunk.x
     let ex = chunk.x + chunk.data.len
@@ -335,7 +335,8 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
   # reserve one entry for transparency
   # (this is necessary so that cropping works properly when the last
   # sixel would not fit on the screen, and also for images with !(height % 6).)
-  let palette = palette - 1
+  assert palette > 2
+  var palette = uint(palette - 1)
   let node = img.quantize(bgcolor, palette)
   # prelude
   var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n"
@@ -364,7 +365,7 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
   )
   var chunkMap = newSeq[SixelChunk](palette)
   var activeChunks: seq[ptr SixelChunk] = @[]
-  var nrow = 1
+  var nrow = 1u
   # buffer to 64k, just because.
   const MaxBuffer = 65546
   while true:
@@ -409,7 +410,7 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
       dither.d2 = move(tmp)
       zeroMem(addr dither.d2[0], dither.d2.len * sizeof(dither.d2[0]))
     var bands: seq[SixelBand] = @[]
-    bands.createBands(activeChunks, nrow)
+    bands.createBands(activeChunks)
     let olen = outs.len
     for i in 0 ..< bands.len:
       if i > 0:
