@@ -821,8 +821,9 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
 
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
   var p = cast[ptr UncheckedArray[char]](image.data.buffer)
-  let H = int(image.data.size - 1)
-  term.outputSixelImage(x, y, image, p.toOpenArray(0, H))
+  if image.data.size > 0:
+    let H = int(image.data.size - 1)
+    term.outputSixelImage(x, y, image, p.toOpenArray(0, H))
 
 proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   var outs = term.cursorGoto(x, y) &

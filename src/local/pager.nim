@@ -575,8 +575,8 @@ proc initImages(pager: Pager; container: Container) =
       dispw = min(width + xpx, maxwpx) - xpx
       let ypx = (image.y - container.fromy) * pager.attrs.ppl
       erry = -min(ypx, 0) mod 6
-    if dispw <= offx:
-      continue
+      if dispw <= offx:
+        continue
     let cached = container.findCachedImage(image, offx, erry, dispw)
     let imageId = image.bmp.imageId
     if cached == nil:
