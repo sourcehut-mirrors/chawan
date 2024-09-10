@@ -870,10 +870,10 @@ Examples:
 'C-M-j' = 'cmd.pager.load'
 # go to the first line of the page when g is pressed twice without a preceding
 # number, or to the line when a preceding number is given.
-'gg' = 'cmd.pager.gotoLineOrStart'
+'gg' = 'cmd.buffer.gotoLineOrStart'
 ```
 
-### Browser actions
+### Pager actions
 
 <table>
 
@@ -894,123 +894,6 @@ Note: this also suspends e.g. buffer processes or CGI scripts. So if you are
 downloading something, that will be delayed until you restart the process.</td>
 </tr>
 
-</table>
-
-### Pager actions
-
-Note: `n` in the following text refers to a number preceding the action.  e.g.
-in `10gg`, n = 10.  If no preceding number is input, then it is left
-unspecified.
-
-<table>
-
-<tr>
-<th>Name</th>
-<th>Function</th>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorUp`, `cmd.pager.cursorDown`</td>
-<td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
-1.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorLeft`, `cmd.pager.cursorRight`</td>
-<td>Move the cursor to the left/right by n cells, or if n is unspecified, by
-1.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorLineBegin`</td>
-<td>Move the cursor to the first cell of the line.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorLineTextStart`</td>
-<td>Move the cursor to the first non-blank character of the line.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorLineEnd`</td>
-<td>Move the cursor to the last cell of the line.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorNextWord`, `cmd.pager.cursorNextViWord`,
-`cmd.pager.cursorNextBigWord`</td>
-<td>Move the cursor to the beginning of the next [word](#word-types).</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorPrevWord`, `cmd.pager.cursorPrevViWord`,
-`cmd.pager.cursorPrevBigWord`</td>
-<td>Move the cursor to the end of the previous [word](#word-types).</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorWordEnd`, `cmd.pager.cursorViWordEnd`,
-`cmd.pager.cursorBigWordEnd`</td>
-<td>Move the cursor to the end of the current [word](#word-types), or if already
-there, to the end of the next word.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorWordBegin`, `cmd.pager.cursorViWordBegin`,
-`cmd.pager.cursorBigWordBegin`</td>
-<td>Move the cursor to the beginning of the current [word](#word-types), or if
-already there, to the end of the previous word.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorPrevLink`, `cmd.pager.cursorNextLink`</td>
-<td>Move the cursor to the end/beginning of the previous/next clickable
-element (e.g. link, input field, etc).</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorPrevParagraph`, `cmd.pager.cursorNextParagraph`</td>
-<td>Move the cursor to the end/beginning of the nth previous/next
-paragraph.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorRevNthLink`</td>
-<td>Move the cursor to the nth link of the document, counting backwards
-from the document's last line.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorNthLink`</td>
-<td>Move the cursor to the nth link of the document.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.pageUp`, `cmd.pager.pageDown`, `cmd.pager.pageLeft`,
-`cmd.pager.pageRight`</td>
-<td>Scroll up/down/left/right by n pages, or if n is unspecified, by one
-page.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.halfPageUp`, `cmd.pager.halfPageDown`, `cmd.pager.halfPageLeft`,
-`pager.halfPageUp`</td>
-<td>Scroll up/down/left/right by n half pages, or if n is unspecified, by one
-page.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.scrollUp`, `cmd.pager.scrollDown`, `cmd.pager.scrollLeft`,
-`cmd.pager.scrollRight`</td>
-<td>Scroll up/down/left/right by n lines, or if n is unspecified, by one
-line.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.click`</td>
-<td>Click the HTML element currently under the cursor.</td>
-</tr>
-
 <tr>
 <td>`cmd.pager.load`</td>
 <td>Open the current address in the URL bar.</td>
@@ -1019,27 +902,29 @@ line.</td>
 <tr>
 <td>`cmd.pager.webSearch`</td>
 <td>Open the URL bar with an arbitrary search engine. At the moment, this is
-DuckDuckGo Lite. (Note: Chawan developers aren't affiliated with DuckDuckGo the
-company or their product in any way.)</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.nextBuffer`, `cmd.pager.prevBuffer`,
-`cmd.pager.prevSiblingBuffer`, `cmd.pager.nextSiblingBufer`,
-`cmd.pager.parentBuffer`</td>
-<td>Traverse the buffer tree.<br>
-`nextBuffer` and `prevBuffer` are the most intuitive, traversing the tree as if
-it were a linked list.<br>
-`prevSiblingBuffer` and `nextSiblingBuffer` cycle through the buffers opened
-from the same buffer.<br>
-Finally, `parentBuffer` always returns to the buffer the current buffer was
-opened from, even if e.g. the user returns and opens another page "in between".
-</td>
+DuckDuckGo Lite, but this may change in the future.</td>
 </tr>
 
 <tr>
 <td>`cmd.pager.dupeBuffer`</td>
 <td>Duplicate the current buffer by loading its source to a new buffer.</td>
+</tr>
+
+<tr>
+<td>`cmd.pager.reloadBuffer`</td>
+<td>Open a new buffer with the current buffer's URL, replacing the current
+buffer.</td>
+</tr>
+
+<tr>
+<td>`cmd.pager.lineInfo`</td>
+<td>Display information about the current line on the status line.</td>
+</tr>
+
+<tr>
+<td>`cmd.pager.toggleSource`</td>
+<td>If viewing an HTML buffer, open a new buffer with its source. Otherwise,
+open the current buffer's contents as HTML.</td>
 </tr>
 
 <tr>
@@ -1060,93 +945,23 @@ open the link under the cursor.</td>
 </tr>
 
 <tr>
-<td>`cmd.pager.reload`</td>
-<td>Open a new buffer with the current buffer's URL, replacing the current
-buffer.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.reshape`</td>
-<td>Reshape the current buffer (=render the current page anew.)</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.redraw`</td>
-<td>Redraw screen contents. Useful if something messed up the display.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.toggleSource`</td>
-<td>If viewing an HTML buffer, open a new buffer with its source. Otherwise,
-open the current buffer's contents as HTML.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorFirstLine`, `cmd.pager.cursorLastLine`</td>
-<td>Move to the beginning/end in the buffer.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorTop`</td>
-<td>Move to the first line on the screen. (Equivalent to H in vi.)</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorMiddle`</td>
-<td>Move to the line in the middle of the screen. (Equivalent to M in vi.)</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorBottom`</td>
-<td>Move to the last line on the screen. (Equivalent to L in vi.)</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.raisePage`, `cmd.pager.raisePageBegin`,
-`cmd.pager.centerLine`, `cmd.pager.centerLineBegin`,
-`cmd.pager.lowerPage`, `cmd.pager.lowerPageBegin`</td>
-<td>If n is specified, move cursor to line n. Then,
-
-* `raisePage` scrolls down so that the cursor is on the top line of the screen.
-  (vi `z<CR>`, vim `zt`.)
-* `centerLine` shifts the screen so that the cursor is in the middle of the
-  screen. (vi `z.`, vim `zz`.)
-* `lowerPage` scrolls up so that the cursor is on the bottom line of the screen.
-  (vi `z-`, vim `zb`.)
-
-The -`Begin` variants also move the cursor to the line's first non-blank
-character, as the variants originating from vi do.
+<td>`cmd.pager.nextBuffer`, `cmd.pager.prevBuffer`,
+`cmd.pager.prevSiblingBuffer`, `cmd.pager.nextSiblingBufer`,
+`cmd.pager.parentBuffer`</td>
+<td>Traverse the buffer tree.<br>
+`nextBuffer` and `prevBuffer` are the most intuitive, traversing the tree as if
+it were a linked list.<br>
+`prevSiblingBuffer` and `nextSiblingBuffer` cycle through the buffers opened
+from the same buffer.<br>
+Finally, `parentBuffer` always returns to the buffer the current buffer was
+opened from, even if e.g. the user returns and opens another page "in between".
 </td>
 </tr>
 
 <tr>
-<td>`cmd.pager.nextPageBegin`</td>
-<td>If n is specified, move to the screen before the nth line and raise the page.
-Otherwise, go to the previous screen's last line and raise the page. (`z+`
-in vi.)</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.previousPageBegin`</td>
-<td>If n is specified, move to the screen before the nth line and raise the
-page.  Otherwise, go to the previous screen's last line and raise the page.
-(`z+` in vi.)</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.cursorLeftEdge`, `cmd.pager.cursorMiddleColumn`,
-`cmd.pager.cursorRightEdge`</td>
-<td>Move to the first/middle/last column on the screen.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.centerColumn`</td>
-<td>Center screen around the current column. (w3m `Z`.)</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.lineInfo`</td>
-<td>Display information about the current line on the status line.</td>
+<td>`cmd.pager.enterCommand`</td>
+<td>Directly enter a JavaScript command. Note that this interacts with
+the pager, not the website being displayed.</td>
 </tr>
 
 <tr>
@@ -1158,12 +973,6 @@ page.  Otherwise, go to the previous screen's last line and raise the page.
 <td>`cmd.pager.isearchForward`, `cmd.pager.searchBackward`</td>
 <td>Incremental-search for a string, highlighting the first result, forwards or
 backwards.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.gotoLineOrStart`, `cmd.pager.gotoLineOrEnd`</td>
-<td>If n is specified, jump to line n. Otherwise, jump to the start/end of the
-page.</td>
 </tr>
 
 <tr>
@@ -1184,34 +993,6 @@ title, press again -> URL)</td>
 </tr>
 
 <tr>
-<td>`cmd.pager.setMark`</td>
-<td>Wait for a character `x` and then set a mark with the ID `x`.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.gotoMark`, `cmd.pager.gotoMarkY`</td>
-<td>Wait for a character `x` and then jump to the mark with the ID `x` (if it
-exists on the page).<br>
-`gotoMark` sets both the X and Y positions; gotoMarkY only sets the Y
-position.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.markURL`</td>
-<td>Convert URL-like strings to anchors on the current page.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.saveLink`</td>
-<td>Save resource from the URL pointed to by the cursor to the disk.</td>
-</tr>
-
-<tr>
-<td>`cmd.pager.saveSource`</td>
-<td>Save the source of the current buffer to the disk.</td>
-</tr>
-
-<tr>
 <td>`cmd.pager.copyURL`</td>
 <td>Copy the current buffer's URL to the system clipboard.</td>
 </tr>
@@ -1224,6 +1005,235 @@ position.</td>
 <tr>
 <td>`cmd.pager.copyCursorImage`</td>
 <td>Copy the URL of the image under the cursor to the system clipboard.</td>
+</tr>
+
+<tr>
+<td>`cmd.pager.gotoClipboardURL`</td>
+<td>Go to the URL currently on the clipboard.</td>
+</tr>
+
+</table>
+
+### Buffer actions
+
+Note: `n` in the following text refers to a number preceding the action.  e.g.
+in `10gg`, n = 10.  If no preceding number is input, then it is left
+unspecified.
+
+<table>
+
+<tr>
+<th>Name</th>
+<th>Function</th>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorUp`, `cmd.buffer.cursorDown`</td>
+<td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
+1.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorLeft`, `cmd.buffer.cursorRight`</td>
+<td>Move the cursor to the left/right by n cells, or if n is unspecified, by
+1.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorLineBegin`</td>
+<td>Move the cursor to the first cell of the line.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorLineTextStart`</td>
+<td>Move the cursor to the first non-blank character of the line.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorLineEnd`</td>
+<td>Move the cursor to the last cell of the line.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorNextWord`, `cmd.buffer.cursorNextViWord`,
+`cmd.buffer.cursorNextBigWord`</td>
+<td>Move the cursor to the beginning of the next [word](#word-types).</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorPrevWord`, `cmd.buffer.cursorPrevViWord`,
+`cmd.buffer.cursorPrevBigWord`</td>
+<td>Move the cursor to the end of the previous [word](#word-types).</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorWordEnd`, `cmd.buffer.cursorViWordEnd`,
+`cmd.buffer.cursorBigWordEnd`</td>
+<td>Move the cursor to the end of the current [word](#word-types), or if already
+there, to the end of the next word.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorWordBegin`, `cmd.buffer.cursorViWordBegin`,
+`cmd.buffer.cursorBigWordBegin`</td>
+<td>Move the cursor to the beginning of the current [word](#word-types), or if
+already there, to the end of the previous word.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorPrevLink`, `cmd.buffer.cursorNextLink`</td>
+<td>Move the cursor to the end/beginning of the previous/next clickable
+element (e.g. link, input field, etc).</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorPrevParagraph`, `cmd.buffer.cursorNextParagraph`</td>
+<td>Move the cursor to the end/beginning of the nth previous/next
+paragraph.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorRevNthLink`</td>
+<td>Move the cursor to the nth link of the document, counting backwards
+from the document's last line.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorNthLink`</td>
+<td>Move the cursor to the nth link of the document.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.pageUp`, `cmd.buffer.pageDown`, `cmd.buffer.pageLeft`,
+`cmd.buffer.pageRight`</td>
+<td>Scroll up/down/left/right by n pages, or if n is unspecified, by one
+page.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.halfPageUp`, `cmd.buffer.halfPageDown`, `cmd.buffer.halfPageLeft`,
+`cmd.buffer.halfPageUp`</td>
+<td>Scroll up/down/left/right by n half pages, or if n is unspecified, by one
+page.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.scrollUp`, `cmd.buffer.scrollDown`, `cmd.buffer.scrollLeft`,
+`cmd.buffer.scrollRight`</td>
+<td>Scroll up/down/left/right by n lines, or if n is unspecified, by one
+line.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.click`</td>
+<td>Click the HTML element currently under the cursor.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.reshape`</td>
+<td>Reshape the current buffer (=render the current page anew.)</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.redraw`</td>
+<td>Redraw screen contents. Useful if something messed up the display.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorFirstLine`, `cmd.buffer.cursorLastLine`</td>
+<td>Move to the beginning/end in the buffer.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorTop`</td>
+<td>Move to the first line on the screen. (Equivalent to H in vi.)</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorMiddle`</td>
+<td>Move to the line in the middle of the screen. (Equivalent to M in vi.)</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorBottom`</td>
+<td>Move to the last line on the screen. (Equivalent to L in vi.)</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.raisePage`, `cmd.buffer.raisePageBegin`,
+`cmd.buffer.centerLine`, `cmd.buffer.centerLineBegin`,
+`cmd.buffer.lowerPage`, `cmd.buffer.lowerPageBegin`</td>
+<td>If n is specified, move cursor to line n. Then,
+
+* `raisePage` scrolls down so that the cursor is on the top line of the screen.
+  (vi `z<CR>`, vim `zt`.)
+* `centerLine` shifts the screen so that the cursor is in the middle of the
+  screen. (vi `z.`, vim `zz`.)
+* `lowerPage` scrolls up so that the cursor is on the bottom line of the screen.
+  (vi `z-`, vim `zb`.)
+
+The -`Begin` variants also move the cursor to the line's first non-blank
+character, as the variants originating from vi do.
+</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.nextPageBegin`</td>
+<td>If n is specified, move to the screen before the nth line and raise the page.
+Otherwise, go to the previous screen's last line and raise the page. (`z+`
+in vi.)</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.previousPageBegin`</td>
+<td>If n is specified, move to the screen before the nth line and raise the
+page.  Otherwise, go to the previous screen's last line and raise the page.
+(`z+` in vi.)</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.cursorLeftEdge`, `cmd.buffer.cursorMiddleColumn`,
+`cmd.buffer.cursorRightEdge`</td>
+<td>Move to the first/middle/last column on the screen.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.centerColumn`</td>
+<td>Center screen around the current column. (w3m `Z`.)</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.gotoLineOrStart`, `cmd.buffer.gotoLineOrEnd`</td>
+<td>If n is specified, jump to line n. Otherwise, jump to the start/end of the
+page.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.mark`</td>
+<td>Wait for a character `x` and then set a mark with the ID `x`.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.gotoMark`, `cmd.buffer.gotoMarkY`</td>
+<td>Wait for a character `x` and then jump to the mark with the ID `x` (if it
+exists on the page).<br>
+`gotoMark` sets both the X and Y positions; gotoMarkY only sets the Y
+position.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.markURL`</td>
+<td>Convert URL-like strings to anchors on the current page.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.saveLink`</td>
+<td>Save resource from the URL pointed to by the cursor to the disk.</td>
+</tr>
+
+<tr>
+<td>`cmd.buffer.saveSource`</td>
+<td>Save the source of the current buffer to the disk.</td>
 </tr>
 
 </table>
