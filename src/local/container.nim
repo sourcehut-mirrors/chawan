@@ -61,6 +61,7 @@ type
     of cetOpen:
       request*: Request
       save*: bool
+      url*: URL
     of cetAnchor, cetNoAnchor:
       anchor*: string
     of cetAlert:
@@ -1892,7 +1893,8 @@ proc saveSource*(container: Container) {.jsfunc.} =
   container.triggerEvent(ContainerEvent(
     t: cetOpen,
     request: newRequest(newURL("cache:" & $container.cacheId).get),
-    save: true
+    save: true,
+    url: container.url
   ))
 
 proc windowChange*(container: Container; attrs: WindowAttributes) =

@@ -1218,14 +1218,14 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
 proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     contentType = none(string); cs = CHARSET_UNKNOWN; replace: Container = nil;
     replaceBackup: Container = nil; redirectDepth = 0;
-    referrer: Container = nil; save = false): Container =
+    referrer: Container = nil; save = false; url: URL = nil): Container =
   pager.navDirection = ndNext
   if referrer != nil and referrer.config.refererFrom:
     request.referrer = referrer.url
   var loaderConfig: LoaderClientConfig
   var bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig)
   if prevurl.isNone or not prevurl.get.equals(request.url, true) or
-      request.url.hash == "" or request.httpMethod != hmGet:
+      request.url.hash == "" or request.httpMethod != hmGet or save:
     # Basically, we want to reload the page *only* when
     # a) we force a reload (by setting prevurl to none)
     # b) or the new URL isn't just the old URL + an anchor
@@ -1244,7 +1244,9 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       redirectDepth = redirectDepth,
       contentType = contentType,
       flags = flags,
-      url = request.url
+      # override the URL so that the file name is correct for saveSource
+      # (but NOT up above, so that rewrite-url works too)
+      url = if url != nil: url else: request.url
     )
     if replace != nil:
       pager.replace(replace, container)
@@ -2085,7 +2087,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       )
     else:
       discard pager.gotoURL(event.request, some(container.url),
-        referrer = pager.container, save = event.save)
+        referrer = pager.container, save = event.save, url = event.url)
   of cetStatus:
     if pager.container == container:
       pager.showAlerts()
