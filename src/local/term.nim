@@ -618,6 +618,9 @@ proc applyConfig(term: Terminal) =
       term.formatMode.excl(fm)
   if term.config.display.image_mode.isSome:
     term.imageMode = term.config.display.image_mode.get
+  if term.imageMode == imSixel and term.config.display.sixel_colors.isSome:
+    let n = term.config.display.sixel_colors.get
+    term.sixelRegisterNum = clamp(n, 3, 65535)
   if term.isatty():
     if term.config.display.alt_screen.isSome:
       term.smcup = term.config.display.alt_screen.get

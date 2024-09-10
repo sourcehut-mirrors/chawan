@@ -292,6 +292,7 @@ color-mode = "auto"
 format-mode = "auto"
 no-format-mode = ["overline"]
 image-mode = "auto"
+sixel-colors = "auto"
 alt-screen = "auto"
 highlight-color = "cyan"
 highlight-marks = true

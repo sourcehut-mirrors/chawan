@@ -483,6 +483,16 @@ images.
 </tr>
 
 <tr>
+<td>sixel-colors</td>
+<td>"auto" / 3..65535</td>
+<td>Only applies when `display.image-mode="sixel"`. Setting a number
+overrides the number of sixel color registers reported by the terminal,
+while "auto" leaves color detection to Chawan.<br>
+Defaults to "auto".
+</td>
+</tr>
+
+<tr>
 <td>alt-screen</td>
 <td>"auto" / boolean</td>
 <td>Enable/disable the alternative screen.</td>

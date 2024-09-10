@@ -127,6 +127,7 @@ type
     format_mode* {.jsgetset.}: Option[set[FormatFlag]]
     no_format_mode* {.jsgetset.}: set[FormatFlag]
     image_mode* {.jsgetset.}: Option[ImageMode]
+    sixel_colors* {.jsgetset.}: Option[int32]
     alt_screen* {.jsgetset.}: Option[bool]
     highlight_color* {.jsgetset.}: ARGBColor
     highlight_marks* {.jsgetset.}: bool
