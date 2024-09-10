@@ -1218,11 +1218,10 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
 proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     contentType = none(string); cs = CHARSET_UNKNOWN; replace: Container = nil;
     replaceBackup: Container = nil; redirectDepth = 0;
-    referrer: Container = nil; save = false; url: URL = nil): Container =
+    referrer: Container = nil; save = false): Container =
   pager.navDirection = ndNext
   if referrer != nil and referrer.config.refererFrom:
     request.referrer = referrer.url
-  let url = if url != nil: url else: request.url
   var loaderConfig: LoaderClientConfig
   var bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig)
   if prevurl.isNone or not prevurl.get.equals(request.url, true) or
@@ -1245,7 +1244,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       redirectDepth = redirectDepth,
       contentType = contentType,
       flags = flags,
-      url = url
+      url = request.url
     )
     if replace != nil:
       pager.replace(replace, container)
@@ -2085,9 +2084,8 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
             referrer = pager.container, save = event.save)
       )
     else:
-      let url = if event.url != nil: event.url else: event.request.url
       discard pager.gotoURL(event.request, some(container.url),
-        referrer = pager.container, save = event.save, url = url)
+        referrer = pager.container, save = event.save)
   of cetStatus:
     if pager.container == container:
       pager.showAlerts()
