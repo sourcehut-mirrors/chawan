@@ -3119,9 +3119,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
         if res.getContentType() == "text/css":
           return res.text()
         res.close()
-      let p = newPromise[JSResult[string]]()
-      p.resolve(JSResult[string].err(res.error))
-      return p
+      return newResolvedPromise(JSResult[string].err(nil))
     ).then(proc(s: JSResult[string]) =
       if s.isSome:
         #TODO non-utf-8 css?
