@@ -89,6 +89,7 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap): uint =
   # (it *is* 0-indexed, but one extra level is needed for the final leaves)
   var level = 0
   var parent = parent
+  var split = false
   while true:
     assert level < 8
     let idx = c.getIdx(level)
@@ -106,7 +107,8 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap): uint =
       parent.u.children[idx] = node
       return 1
     elif old.idx != -1:
-      if level == 7:
+      # split just once with identical colors
+      if level == 7 or split and old.u.leaf.c == c:
         inc old.u.leaf.n
         old.u.leaf.r += uint32(c.r)
         old.u.leaf.g += uint32(c.g)
@@ -120,6 +122,7 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap): uint =
       zeroMem(addr old.u.children, sizeof(old.u.children))
       old.u.children[oc.getIdx(level + 1)] = child
       trimMap[level].add(old)
+      split = true
     inc level
     parent = old
 
@@ -209,6 +212,7 @@ type
 proc getColor(nodes: seq[Node]; c: RGBColor; diff: var DitherDiff): Node =
   var child: Node = nil
   var minDist = uint32.high
+  var mdiff = default(DitherDiff)
   for node in nodes:
     let ic = node.u.leaf.c
     let rd = int32(c.r) - int32(ic.r)
@@ -218,28 +222,11 @@ proc getColor(nodes: seq[Node]; c: RGBColor; diff: var DitherDiff): Node =
     if d < minDist:
       minDist = d
       child = node
-      diff = (rd, gd, bd)
+      mdiff = (rd, gd, bd)
       if ic == c:
         break
+  diff = mdiff
   return child
-
-proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff;
-    level: int): Node =
-  let idx = int(c.getIdx(level))
-  let child = node.u.children[idx]
-  let nlevel = level + 1
-  if child == nil:
-    let child = nodes.getColor(c, diff)
-    node.u.children[idx] = child
-    return child
-  if node.idx != -1:
-    let ic = node.u.leaf.c
-    let r = int32(c.r) - int32(ic.r)
-    let g = int32(c.g) - int32(ic.g)
-    let b = int32(c.b) - int32(ic.b)
-    diff = (r, g, b)
-    return node
-  return child.getColor(c, nodes, diff, nlevel)
 
 proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff):
     int =
@@ -258,7 +245,28 @@ proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff):
     # registers in the first place. I do like the aesthetics, though;
     # would be a shame if it didn't work :P)
     return nodes.getColor(c, diff).idx
-  return node.getColor(c, nodes, diff, 0).idx
+  # Find a matching color in the octree.
+  # Not as accurate as a linear search, but good enough (and much
+  # faster) for palettes that reach this path.
+  var level = 0
+  var node = node
+  while true:
+    let idx = c.getIdx(level)
+    let child = node.u.children[idx]
+    if child == nil:
+      let child = nodes.getColor(c, diff)
+      node.u.children[idx] = child
+      return child.idx
+    if node.idx != -1:
+      let ic = node.u.leaf.c
+      let r = int32(c.r) - int32(ic.r)
+      let g = int32(c.g) - int32(ic.g)
+      let b = int32(c.b) - int32(ic.b)
+      diff = (r, g, b)
+      break
+    inc level
+    node = child
+  return node.idx
 
 proc correctDither(c: RGBColor; x: int; dither: Dither): RGBColor =
   let (rd, gd, bd) = dither.d1[x + 1]
@@ -285,18 +293,24 @@ proc fs(dither: var Dither; x: int; d: DitherDiff) =
   {.pop.}
 
 type
-  SixelBand = seq[ptr SixelChunk]
+  SixelBand = object
+    head: ptr SixelChunk
+    tail: ptr SixelChunk
 
   SixelChunk = object
     x: int
     c: int
     nrow: uint
+    # data is binary 0..63; compressSixel creates the final ASCII form
     data: seq[uint8]
+    # linked list for chaining together bands
+    # (yes, this *is* faster than a seq.)
+    next: ptr SixelChunk
 
-# data is binary 0..63; the output is the final ASCII form.
 proc compressSixel(outs: var string; band: SixelBand) =
   var x = 0
-  for chunk in band:
+  var chunk = band.head
+  while chunk != nil:
     outs &= '#'
     outs &= $chunk.c
     let diff = chunk.x - x
@@ -324,23 +338,26 @@ proc compressSixel(outs: var string; band: SixelBand) =
     else:
       for i in 0 ..< n:
         outs &= c
+    let next = chunk.next
+    chunk.next = nil
+    chunk = next
 
 proc createBands(bands: var seq[SixelBand]; activeChunks: seq[ptr SixelChunk]) =
   for chunk in activeChunks:
-    let x = chunk.x
-    let ex = chunk.x + chunk.data.len
     var found = false
     for band in bands.mitems:
-      if band[0].x > ex:
-        band.insert(chunk, 0)
+      if band.head.x > chunk.x + chunk.data.len:
+        chunk.next = band.head
+        band.head = chunk
         found = true
         break
-      elif band[^1].x + band[^1].data.len <= x:
-        band.add(chunk)
+      elif band.tail.x + band.tail.data.len <= chunk.x:
+        band.tail.next = chunk
+        band.tail = chunk
         found = true
         break
     if not found:
-      bands.add(@[chunk])
+      bands.add(SixelBand(head: chunk, tail: chunk))
 
 proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
     halfdump: bool; bgcolor: ARGBColor; palette: int) =
