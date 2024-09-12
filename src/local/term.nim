@@ -620,7 +620,7 @@ proc applyConfig(term: Terminal) =
     term.imageMode = term.config.display.image_mode.get
   if term.imageMode == imSixel and term.config.display.sixel_colors.isSome:
     let n = term.config.display.sixel_colors.get
-    term.sixelRegisterNum = clamp(n, 3, 65535)
+    term.sixelRegisterNum = clamp(n, 2, 65535)
   if term.isatty():
     if term.config.display.alt_screen.isSome:
       term.smcup = term.config.display.alt_screen.get
@@ -1210,12 +1210,12 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
           term.imageMode = imKitty
       if term.imageMode == imSixel: # adjust after windowChange
         if r.registers != 0:
-          # I need at least 3 registers (1 for transparency), and can't do
-          # anything with more than 101 ^ 3.
+          # I need at least 2 registers, and can't do anything with more
+          # than 101 ^ 3.
           # In practice, terminals I've seen have between 256 - 65535; for now,
           # I'll stick with 65535 as the upper limit, because I have no way
           # to test if encoding time explodes with more or something.
-          term.sixelRegisterNum = clamp(r.registers, 3, 65535)
+          term.sixelRegisterNum = clamp(r.registers, 2, 65535)
         if term.sixelRegisterNum == 0:
           # assume 256 - tell me if you have more.
           term.sixelRegisterNum = 256

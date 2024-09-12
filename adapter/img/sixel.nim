@@ -168,6 +168,13 @@ proc getPixel(img: seq[RGBAColorBE]; m: int; bgcolor: ARGBColor): RGBColor
 proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint):
     NodeChildren =
   var root = default(NodeChildren)
+  if outk <= 2: # monochrome; not much we can do with an octree...
+    root[0] = cast[Node](alloc0(sizeof(NodeObj)))
+    root[0].u.leaf.c = rgb(0, 0, 0)
+    root[7] = cast[Node](alloc0(sizeof(NodeObj)))
+    root[7].u.leaf.c = rgb(100, 100, 100)
+    outk = 2
+    return root
   # number of leaves
   let palette = outk
   var K = 0u
@@ -197,7 +204,6 @@ proc flatten(root: NodeChildren; outs: var string; palette: uint): seq[Node] =
   cols.sort(proc(a, b: Node): int = cmp(a.u.leaf.n, b.u.leaf.n),
     order = Descending)
   for n, it in cols:
-    let n = n + 1 # skip 0 - that's transparent
     let c = it.u.leaf.c
     # 2 is RGB
     outs &= '#' & $n & ";2;" & $c.r & ';' & $c.g & ';' & $c.b
@@ -232,13 +238,13 @@ proc getColor(nodes: seq[Node]; c: RGBColor; diff: var DitherDiff): Node =
 
 proc getColor(root: var NodeChildren; c: RGBColor; nodes: seq[Node];
     diff: var DitherDiff): int =
-  if nodes.len < 63:
+  if nodes.len < 64:
     # Octree-based nearest neighbor search creates really ugly artifacts
     # with a low amount of colors, which is exactly the case where
     # linear search is still acceptable.
     #
     # 64 is the first power of 2 that gives OK results on my test images
-    # with the octree; we must also subtract one for transparency.
+    # with the octree.
     #
     # (In practice, I assume no sane terminal would pick a palette (> 2)
     # that isn't a multiple of 4, so really only 16 is relevant here.
@@ -362,10 +368,7 @@ proc createBands(bands: var seq[SixelBand]; activeChunks: seq[ptr SixelChunk]) =
 
 proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
     halfdump: bool; bgcolor: ARGBColor; palette: int) =
-  # Reserve one entry for transparency. (This is necessary for images
-  # with !(height % 6), which any image may become through cropping.)
-  assert palette > 2
-  var palette = uint(palette - 1)
+  var palette = uint(palette)
   var root = img.quantize(bgcolor, palette)
   # prelude
   var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n"
@@ -412,7 +415,7 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
         let c = root.getColor(c0, nodes, diff)
         dither.fs(j, diff)
         if chunk == nil or chunk.c != c:
-          chunk = addr chunkMap[c - 1]
+          chunk = addr chunkMap[c]
           if chunk.nrow < nrow:
             chunk.c = c
             chunk.nrow = nrow
