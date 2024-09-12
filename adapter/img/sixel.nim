@@ -66,7 +66,9 @@ type
 
   NodeUnion {.union.} = object
     leaf: NodeLeaf
-    children: array[8, Node]
+    children: NodeChildren
+
+  NodeChildren = array[8, Node]
 
   NodeLeaf = object
     c: RGBColor
@@ -84,16 +86,16 @@ proc getIdx(c: RGBColor; level: int): uint8 {.inline.} =
 
 type TrimMap = array[7, seq[Node]]
 
-proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap): uint =
+proc insert(root: var NodeChildren; c: RGBColor; trimMap: var TrimMap): uint =
   # max level is 7, because we only have ~6.5 bits (0..100, inclusive)
   # (it *is* 0-indexed, but one extra level is needed for the final leaves)
   var level = 0
-  var parent = parent
+  var parent = addr root
   var split = false
   while true:
     assert level < 8
     let idx = c.getIdx(level)
-    let old = parent.u.children[idx]
+    let old = parent[idx]
     if old == nil:
       let node = cast[Node](alloc(sizeof(NodeObj)))
       node.idx = 0
@@ -104,7 +106,7 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap): uint =
         g: uint32(c.g),
         b: uint32(c.b)
       )
-      parent.u.children[idx] = node
+      parent[idx] = node
       return 1
     elif old.idx != -1:
       # split just once with identical colors
@@ -124,7 +126,7 @@ proc insert(parent: Node; c: RGBColor; trimMap: var TrimMap): uint =
       trimMap[level].add(old)
       split = true
     inc level
-    parent = old
+    parent = addr old.u.children
 
 proc trim(trimMap: var TrimMap; K: var uint) =
   var node: Node = nil
@@ -163,9 +165,9 @@ proc getPixel(img: seq[RGBAColorBE]; m: int; bgcolor: ARGBColor): RGBColor
     return RGBColor(uint32(c1).fastmul(100))
   return RGBColor(uint32(c0).fastmul(100))
 
-proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint): Node =
-  let root = cast[Node](alloc0(sizeof(NodeObj)))
-  root.idx = -1
+proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint):
+    NodeChildren =
+  var root = default(NodeChildren)
   # number of leaves
   let palette = outk
   var K = 0u
@@ -180,17 +182,17 @@ proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint): Node =
   outk = K
   return root
 
-proc flatten(node: Node; cols: var seq[Node]) =
-  if node.idx != -1:
-    cols.add(node)
-  else:
-    for child in node.u.children:
-      if child != nil:
-        child.flatten(cols)
+proc flatten(children: NodeChildren; cols: var seq[Node]) =
+  for node in children:
+    if node != nil:
+      if node.idx != -1:
+        cols.add(node)
+      else:
+        node.u.children.flatten(cols)
 
-proc flatten(node: Node; outs: var string; palette: uint): seq[Node] =
+proc flatten(root: NodeChildren; outs: var string; palette: uint): seq[Node] =
   var cols = newSeqOfCap[Node](palette)
-  node.flatten(cols)
+  root.flatten(cols)
   # try to set the most common colors as the smallest numbers (so we write less)
   cols.sort(proc(a, b: Node): int = cmp(a.u.leaf.n, b.u.leaf.n),
     order = Descending)
@@ -228,8 +230,8 @@ proc getColor(nodes: seq[Node]; c: RGBColor; diff: var DitherDiff): Node =
   diff = mdiff
   return child
 
-proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff):
-    int =
+proc getColor(root: var NodeChildren; c: RGBColor; nodes: seq[Node];
+    diff: var DitherDiff): int =
   if nodes.len < 63:
     # Octree-based nearest neighbor search creates really ugly artifacts
     # with a low amount of colors, which is exactly the case where
@@ -249,24 +251,23 @@ proc getColor(node: Node; c: RGBColor; nodes: seq[Node]; diff: var DitherDiff):
   # Not as accurate as a linear search, but good enough (and much
   # faster) for palettes that reach this path.
   var level = 0
-  var node = node
+  var children = addr root
   while true:
     let idx = c.getIdx(level)
-    let child = node.u.children[idx]
+    let child = children[idx]
     if child == nil:
       let child = nodes.getColor(c, diff)
-      node.u.children[idx] = child
+      children[idx] = child
       return child.idx
-    if node.idx != -1:
-      let ic = node.u.leaf.c
+    if child.idx != -1:
+      let ic = child.u.leaf.c
       let r = int32(c.r) - int32(ic.r)
       let g = int32(c.g) - int32(ic.g)
       let b = int32(c.b) - int32(ic.b)
       diff = (r, g, b)
-      break
+      return child.idx
     inc level
-    node = child
-  return node.idx
+    children = addr child.u.children
 
 proc correctDither(c: RGBColor; x: int; dither: Dither): RGBColor =
   let (rd, gd, bd) = dither.d1[x + 1]
@@ -365,7 +366,7 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
   # with !(height % 6), which any image may become through cropping.)
   assert palette > 2
   var palette = uint(palette - 1)
-  let root = img.quantize(bgcolor, palette)
+  var root = img.quantize(bgcolor, palette)
   # prelude
   var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n"
   let preludeLenPos = outs.len
@@ -412,8 +413,8 @@ proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
         dither.fs(j, diff)
         if chunk == nil or chunk.c != c:
           chunk = addr chunkMap[c - 1]
-          chunk.c = c
           if chunk.nrow < nrow:
+            chunk.c = c
             chunk.nrow = nrow
             chunk.x = j
             chunk.data.setLen(0)
