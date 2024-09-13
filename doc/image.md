@@ -23,15 +23,15 @@ In most cases, all you need to do is to set "buffer.images" to true;
 with the default image-mode, Chawan will find the best image display
 method supported by your terminal.
 
-However, there are terminals (such as yaft) that support an image output
-method but do not advertise it (and are therefore left undetected). For
-such terminals, you also have to set "display.image-mode" appropriately.
+If your terminal does not tell Chawan that it can display sixels, you may also
+have to set "display.image-mode" appropriately.  See below for further
+discussion of sixel configuration.
 
 ## Output formats
 
 Supported output formats are:
 
-* The DEC SIXEL format
+* The DEC Sixel format
 * The Kitty terminal graphics protocol
 
 The former is supported because it's ubiquitiously adopted; the latter
@@ -42,6 +42,38 @@ knowledge, all image-capable terminals support at least one of the
 above two anyways.)
 
 Support for hacks such as w3mimgdisplay, ueberzug, etc. is not planned.
+
+### Sixel
+
+Sixel is the most widely supported image format. See <https://arewesixelyet.com>
+to find a terminal that supports it.
+
+Known quirks and implementation details:
+
+* XTerm needs extensive configuration for ideal sixel support. In particular,
+  you will want to set the "decTerminalID", "numColorRegisters",
+  and "maxGraphicSize" attributes. See `man xterm` for details.
+* We assume private color registers are supported. On terminals where they
+  aren't (e.g. SyncTERM or hardware terminals), colors will get messed up with
+  multiple images on screen.
+* We send XTSMGRAPHICS for retrieving the number of color registers; on failure,
+  we fall back to 256. You can override color register count using the
+  `display.sixel-colors` configuration value.
+* For the most efficient sixel display, you will want a cell height that
+  is a multiple of 6. Otherwise, the images will have to be re-coded several
+  times on scroll.
+* Normally, Sixel encoding runs in two passes. On slow computers, you can try
+  setting `display.sixel-colors = 2`, which will skip the first pass.
+* Transparency is currently not supported; you will get strange results with
+  transparent images.
+
+### Kitty
+
+On terminals that support it, Kitty is preferred over Sixel. The Kitty
+protocol has the benefit that it can reuse images we have sent at least once,
+so it is normally more efficient than the former.
+
+To minimize transfer size, we encode images to PNG before displaying them.
 
 ## Input formats
 

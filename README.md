@@ -93,21 +93,6 @@ If you're interested in modifying the code:
 * architecture: [doc/architecture.md](doc/architecture.md)
 * style guide, debugging tips, etc.: [doc/hacking.md](doc/hacking.md)
 
-## Neighbors
-
-Many other text-based web browsers exist. Here's some recommendations if you
-want to try more established ones:
-
-* [w3m](https://github.com/tats/w3m) - A text-mode browser, extensible using
-  local-cgi. Also has inline image display and very good table support.
-  Main source of inspiration for Chawan.
-* [elinks](https://github.com/rkd77/elinks) - Has CSS and JavaScript support,
-  and incremental rendering (it's pretty fast.)
-* [lynx](https://lynx.invisible-island.net/) - "THE text-based web browser."
-* [edbrowse](http://edbrowse.org/) - This one looks more like `ed` than
-  `less` or `vi`. Mainly designed for blind users.
-* [browsh](https://www.brow.sh/) - Firefox in your terminal.
-
 ## FAQ
 
 ### I have encountered a bug/technical issue while using Chawan.
@@ -150,12 +135,36 @@ initially intended to (like CSS). Now it is mainly focused on:
 * Simplicity, as much as "modern standards" permit. Chawan has very few external
   dependencies, and favors reduced code size over speed. This lowers the risk
   of supply chain attacks, and helps me understand what my browser is doing.
-* Privacy & security. The default configuration sacrifices usability in favor of
-  privacy on purpose, and unsafe features like JS, cookies, etc. must be enabled
-  separately. The multi-processed design enables effective sandboxing of
-  critical processes.
+* Secure defaults over convenience. Like w3m, extra configuration is
+  needed to enable dangerous features (JS, cookies, etc.) Unlike w3m, we
+  also run buffers in separate, sandboxed processes.
 * Adding the rest of missing w3m features, and improving upon those.
 * Most importantly: having fun in the process :)
+
+## Neighbors
+
+Many other text-based web browsers exist. Here's some recommendations
+(not meant to be an exhaustive list):
+
+* [w3m](https://github.com/tats/w3m) - A text-mode browser, extensible using
+  local-cgi. Also has inline image display and very good table support.
+  Main source of inspiration for Chawan.
+* [elinks](https://github.com/rkd77/elinks) - Has CSS and JavaScript support,
+  and incremental rendering (it's pretty fast.)
+* [links](http://links.twibright.com/) - Precursor of elinks, but it's still
+  being developed. Has a graphical mode.
+* [lynx](https://lynx.invisible-island.net/) - Doesn't need an introduction.
+* [edbrowse](http://edbrowse.org/) - This one looks more like `ed` than
+  `less` or `vi`. Originally designed for blind users.
+* [telescope](https://github.com/telescope-browser/telescope) - A "small
+  internet" (Gemini, Gopher, etc.) browser. Has a very cool UI.
+* [browsh](https://www.brow.sh/) - Firefox in your terminal.
+* [Carbonyl](https://github.com/fathyb/carbonyl) - Chromium in your terminal.
+
+## Relatives
+
+[Ferus](https://github.com/ferus-web/ferus) is a graphical browser
+engine written in Nim that uses Chawan's HTML parser.
 
 ## License
 
