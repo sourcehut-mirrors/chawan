@@ -257,22 +257,22 @@ proc setRowWord(grid: var FlexibleGrid; state: var RenderState;
   grid.setText(word.str, x, y, format, node)
 
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
-    color: CellColor; startx, starty, endx, endy: int; node: StyledNode) =
+    color: CellColor; startx, starty, endx, endy: int; node: StyledNode;
+    noPaint = false) =
   var starty = starty div state.attrs.ppl
   var endy = endy div state.attrs.ppl
-
   if starty > endy:
     swap(starty, endy)
-
-  if endy <= 0: return # highest y is outside canvas, no need to paint
-  if starty < 0: starty = 0
-  if starty == endy: return # height is 0, no need to paint
-
+  if endy <= 0:
+    return # highest y is outside canvas, no need to paint
+  if starty < 0:
+    starty = 0
+  if starty == endy:
+    return # height is 0, no need to paint
   var startx = startx div state.attrs.ppc
-
   var endx = endx div state.attrs.ppc
-  if endy < 0: endy = 0
-
+  if endy < 0:
+    endy = 0
   if startx > endx:
     swap(startx, endx)
 
@@ -328,7 +328,8 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
       if grid[y].formats[fi].pos >= endx:
         break
       if grid[y].formats[fi].pos >= startx:
-        grid[y].formats[fi].format.bgcolor = color
+        if not noPaint:
+          grid[y].formats[fi].format.bgcolor = color
         grid[y].formats[fi].node = node
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
@@ -353,7 +354,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
   of ctRGB:
     bgcolor0 = bgcolor0.blend(bgcolor.argbcolor)
     if bgcolor0.a > 0:
-      grid.paintInlineFragment(state, fragment, offset, cellColor(bgcolor0))
+      grid.paintInlineFragment(state, fragment, offset, bgcolor0.cellColor())
   if fragment.t == iftParent:
     for child in fragment.children:
       grid.renderInlineFragment(state, child, offset, bgcolor0)
@@ -370,7 +371,9 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
         let y1 = offset.y.toInt
         let x2 = (offset.x + atom.size.w).toInt
         let y2 = (offset.y + atom.size.h).toInt
-        grid.paintBackground(state, bgcolor, x1, y1, x2, y2, fragment.node)
+        # "paint" background, i.e. add formatting (but don't actually color it)
+        grid.paintBackground(state, defaultColor, x1, y1, x2, y2, fragment.node,
+          noPaint = true)
         state.images.add(PosBitmap(
           x: (offset.x div state.attrs.ppc).toInt,
           y: (offset.y div state.attrs.ppl).toInt,
