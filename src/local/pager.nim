@@ -592,6 +592,7 @@ proc initImages(pager: Pager; container: Container) =
       newImages.add(canvasImage)
   pager.term.clearImages(pager.bufHeight)
   pager.term.canvasImages = newImages
+  pager.term.checkImageDamage(pager.bufHeight)
 
 proc draw*(pager: Pager) =
   var redraw = false

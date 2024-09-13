@@ -683,8 +683,9 @@ proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
   var width = image.width
   var height = image.height
   if term.imageMode == imSixel:
-    #TODO a better solution would be to split up the image here so that it
-    # still gets fully displayed on the screen, or at least downscale it...
+    # we *could* scale the images down, but this doesn't really look
+    # like a problem worth solving. just set the max sizes in xterm
+    # appropriately.
     width = min(width - image.offx, term.sixelMaxWidth) + image.offx
     height = min(height - image.offy, term.sixelMaxHeight) + image.offy
   image.dispw = min(width + xpx, maxwpx) - xpx
@@ -692,15 +693,16 @@ proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
   image.damaged = true
   return image.dispw > image.offx and image.disph > image.offy
 
-proc clearImage*(term: Terminal; image: CanvasImage; maxh: int) =
+proc clearImage(term: Terminal; image: CanvasImage; maxh: int) =
   case term.imageMode
   of imNone: discard
   of imSixel:
     # we must clear sixels the same way as we clear text.
-    let ey = min(image.y + image.height, maxh)
+    let h = (image.height + term.attrs.ppl - 1) div term.attrs.ppl # ceil
+    let ey = min(image.y + h, maxh)
     let x = max(image.x, 0)
     for y in max(image.y, 0) ..< ey:
-      term.lineDamage[y] = min(x, term.lineDamage[y])
+      term.lineDamage[y] = min(term.lineDamage[y], x)
   of imKitty:
     term.imagesToClear.add(image)
 
@@ -709,6 +711,34 @@ proc clearImages*(term: Terminal; maxh: int) =
     if not image.marked:
       term.clearImage(image, maxh)
     image.marked = false
+
+proc checkImageDamage*(term: Terminal; maxh: int) =
+  if term.imageMode == imSixel:
+    for image in term.canvasImages:
+      # check if any line of our image is damaged
+      let h = (image.height + term.attrs.ppl - 1) div term.attrs.ppl # ceil
+      let ey0 = min(image.y + h, maxh)
+      # here we floor, so that a last line with rounding error (which
+      # will not fully cover text) is always cleared
+      let ey1 = min(image.y + image.height div term.attrs.ppl, maxh)
+      let mx = image.x + (image.dispw - image.offx) div term.attrs.ppc
+      for y in max(image.y, 0) ..< ey0:
+        let od = term.lineDamage[y]
+        if od < mx:
+          image.damaged = true
+          if y >= ey1:
+            break
+          if od >= image.x:
+            # damage starts inside this image; skip clear (but only if
+            # the damage was not caused by a printing character)
+            var textFound = false
+            let si = y * term.attrs.width
+            for i in si + od ..< si + term.attrs.width:
+              if term.canvas[i].str.len > 0 and term.canvas[i].str[0] != ' ':
+                textFound = true
+                break
+            if not textFound:
+              term.lineDamage[y] = mx
 
 proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
     rx, ry, maxw, maxh, erry, offx, dispw: int): CanvasImage =
@@ -723,14 +753,6 @@ proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
         # no longer on screen
         image.dead = true
         return nil
-    elif term.imageMode == imSixel:
-      # check if any line of our image is damaged
-      let ey = min(image.y + image.height, maxh)
-      let mx = (image.offx + image.dispw) div term.attrs.ppc
-      for y in max(image.y, 0) ..< ey:
-        if term.lineDamage[y] < mx:
-          image.damaged = true
-          break
     # only mark old images; new images will not be checked until the next
     # initImages call.
     image.marked = true
@@ -926,6 +948,10 @@ proc quit*(term: Terminal) =
     if term.config.input.use_mouse:
       term.disableMouse()
     if term.smcup:
+      if term.imageMode == imSixel:
+        # xterm seems to keep sixels in the alt screen; clear these so
+        # it doesn't flash in the user's face the next time they do smcup
+        term.write(term.clearDisplay())
       term.write(term.disableAltScreen())
     else:
       term.write(term.cursorGoto(0, term.attrs.height - 1) &
@@ -1204,10 +1230,10 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         elif r.heightPx != 0:
           term.attrs.ppl = r.heightPx div r.height
       if not windowOnly: # we don't check for kitty, so don't override this
-        if qaSixel in r.attrs:
-          term.imageMode = imSixel
         if qaKittyImage in r.attrs:
           term.imageMode = imKitty
+        elif qaSixel in r.attrs or getEnv("TERM").startsWith("yaft"): # meh
+          term.imageMode = imSixel
       if term.imageMode == imSixel: # adjust after windowChange
         if r.registers != 0:
           # I need at least 2 registers, and can't do anything with more
