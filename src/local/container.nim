@@ -505,6 +505,9 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
 func location(container: Container): URL {.jsfget.} =
   return container.url
 
+proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
+  header: "<stdio.h>".}
+
 proc clone*(container: Container; newurl: URL; loader: FileLoader):
     Promise[Container] =
   if container.iface == nil:
@@ -527,7 +530,8 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
       return nil
     let newPath = getSocketPath(loader.sockDir, pid)
     let oldPath = getSocketPath(loader.sockDir, loader.clientPid)
-    moveFile(oldPath, newPath)
+    if c_rename(cstring(oldPath), cstring(newPath)) == -1:
+      return nil
     let nc = Container()
     nc[] = container[]
     nc.url = url

@@ -484,7 +484,6 @@ proc redraw(pager: Pager) {.jsfunc.} =
 proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     offx, erry, dispw: int) =
   let bmp = image.bmp
-  let request = newRequest(newURL("cache:" & $bmp.cacheId).get)
   let cachedImage = CachedImage(
     bmp: bmp,
     width: image.width,
@@ -496,27 +495,16 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
   pager.loader.shareCachedItem(bmp.cacheId, pager.loader.clientPid,
     container.process)
   let imageMode = pager.term.imageMode
-  pager.loader.fetch(request).then(proc(res: JSResult[Response]):
-      Promise[JSResult[Response]] =
-    if res.isNone:
-      pager.loader.removeCachedItem(bmp.cacheId)
-      return
-    let response = res.get
-    let headers = newHeaders()
-    if image.width != bmp.width or image.height != bmp.height:
-      headers.add("Cha-Image-Target-Dimensions", $image.width & 'x' &
-        $image.height)
-    let request = newRequest(
-      newURL("img-codec+" & bmp.contentType.after('/') & ":decode").get,
-      httpMethod = hmPost,
-      headers = headers,
-      body = RequestBody(t: rbtOutput, outputId: response.outputId),
-    )
-    let r = pager.loader.fetch(request)
-    response.resume()
-    response.close()
-    return r
-  ).then(proc(res: JSResult[Response]) =
+  let headers = newHeaders()
+  if image.width != bmp.width or image.height != bmp.height:
+    headers.add("Cha-Image-Target-Dimensions", $image.width & 'x' &
+      $image.height)
+  pager.loader.fetch(newRequest(
+    newURL("img-codec+" & bmp.contentType.after('/') & ":decode").get,
+    httpMethod = hmPost,
+    headers = headers,
+    body = RequestBody(t: rbtCache, cacheId: bmp.cacheId),
+  )).then(proc(res: JSResult[Response]) =
     if res.isNone:
       pager.loader.removeCachedItem(bmp.cacheId)
       return

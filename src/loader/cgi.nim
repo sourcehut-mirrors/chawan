@@ -59,7 +59,7 @@ proc setupEnv(cmd, scriptName, pathInfo, requestURI, myDir: string;
 type ControlResult = enum
   crDone, crContinue, crError
 
-proc handleFirstLine(handle: LoaderHandle; line: string; headers: Headers;
+proc handleFirstLine(handle: InputHandle; line: string; headers: Headers;
     status: var uint16): ControlResult =
   let k = line.until(':')
   if k.len == line.len:
@@ -98,7 +98,7 @@ proc handleFirstLine(handle: LoaderHandle; line: string; headers: Headers;
   headers.add(k, v)
   return crDone
 
-proc handleControlLine(handle: LoaderHandle; line: string; headers: Headers;
+proc handleControlLine(handle: InputHandle; line: string; headers: Headers;
     status: var uint16): ControlResult =
   let k = line.until(':')
   if k.len == line.len:
@@ -116,7 +116,7 @@ proc handleControlLine(handle: LoaderHandle; line: string; headers: Headers;
   return crDone
 
 # returns false if transfer was interrupted
-proc handleLine(handle: LoaderHandle; line: string; headers: Headers) =
+proc handleLine(handle: InputHandle; line: string; headers: Headers) =
   let k = line.until(':')
   if k.len == line.len:
     # invalid
@@ -124,8 +124,9 @@ proc handleLine(handle: LoaderHandle; line: string; headers: Headers) =
   let v = line.substr(k.len + 1).strip()
   headers.add(k, v)
 
-proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
-    prevURL: URL; insecureSSLNoVerify: bool; ostream: var PosixStream) =
+proc loadCGI*(handle: InputHandle; request: Request; cgiDir: seq[string];
+    prevURL: URL; insecureSSLNoVerify: bool; handleMap: openArray[LoaderHandle];
+    istream: PosixStream; ostream: var PosixStream) =
   if cgiDir.len == 0:
     handle.sendResult(ERROR_NO_CGI_DIR)
     return
@@ -180,7 +181,7 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     return
   # Pipe the request body as stdin for POST.
   var pipefd_read: array[0..1, cint] # parent -> child
-  if request.body.t != rbtNone:
+  if request.body.t notin {rbtNone, rbtCache}:
     if pipe(pipefd_read) == -1:
       handle.sendResult(ERROR_FAIL_SETUP_CGI)
       return
@@ -193,7 +194,11 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
   elif pid == 0:
     discard close(pipefd[0]) # close read
     discard dup2(pipefd[1], 1) # dup stdout
-    if request.body.t != rbtNone:
+    discard close(pipefd[1])
+    if istream != nil: # cached input (file)
+      discard dup2(istream.fd, 0) # dup stdin
+      istream.sclose()
+    elif request.body.t notin {rbtNone, rbtCache}:
       discard close(pipefd_read[1]) # close write
       if pipefd_read[0] != 0:
         discard dup2(pipefd_read[0], 0) # dup stdin
@@ -207,6 +212,10 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     # expects SIGCHLD to be untouched. (e.g. git dies a horrible death with
     # SIGCHLD as SIG_IGN)
     signal(SIGCHLD, SIG_DFL)
+    # close the parent handles
+    for i in 0 ..< handleMap.len:
+      if handleMap[i] != nil:
+        discard close(cint(i))
     discard execl(cstring(cmd), cstring(basename), nil)
     let code = int(ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT)
     stdout.write("Cha-Control: ConnectionError " & $code & " " &
@@ -214,26 +223,29 @@ proc loadCGI*(handle: LoaderHandle; request: Request; cgiDir: seq[string];
     quit(1)
   else:
     discard close(pipefd[1]) # close write
-    if request.body.t != rbtNone:
+    var ps: PosixStream = nil
+    if request.body.t notin {rbtNone, rbtCache}:
       discard close(pipefd_read[0]) # close read
-      let ps = newPosixStream(pipefd_read[1])
-      case request.body.t
-      of rbtString:
-        ps.write(request.body.s)
-        ps.sclose()
-      of rbtMultipart:
-        let boundary = request.body.multipart.boundary
-        for entry in request.body.multipart.entries:
-          ps.writeEntry(entry, boundary)
-        ps.writeEnd(boundary)
-        ps.sclose()
-      of rbtOutput:
-        ostream = ps
-      of rbtNone: discard
+      ps = newPosixStream(pipefd_read[1])
+    case request.body.t
+    of rbtString:
+      ps.write(request.body.s)
+      ps.sclose()
+    of rbtMultipart:
+      let boundary = request.body.multipart.boundary
+      for entry in request.body.multipart.entries:
+        ps.writeEntry(entry, boundary)
+      ps.writeEnd(boundary)
+      ps.sclose()
+    of rbtOutput:
+      ostream = ps
+    of rbtCache:
+      istream.sclose()
+    of rbtNone: discard
     handle.parser = HeaderParser(headers: newHeaders())
-    handle.istream = newPosixStream(pipefd[0])
+    handle.stream = newPosixStream(pipefd[0])
 
-proc parseHeaders0(handle: LoaderHandle; buffer: LoaderBuffer): int =
+proc parseHeaders0(handle: InputHandle; buffer: LoaderBuffer): int =
   let parser = handle.parser
   var s = parser.lineBuffer
   let L = if buffer == nil: 1 else: buffer.len
@@ -280,12 +292,12 @@ proc parseHeaders0(handle: LoaderHandle; buffer: LoaderBuffer): int =
     parser.lineBuffer = s
   return L
 
-proc parseHeaders*(handle: LoaderHandle; buffer: LoaderBuffer): int =
+proc parseHeaders*(handle: InputHandle; buffer: LoaderBuffer): int =
   try:
     return handle.parseHeaders0(buffer)
   except ErrorBrokenPipe:
     handle.parser = nil
     return -1
 
-proc finishParse*(handle: LoaderHandle) =
+proc finishParse*(handle: InputHandle) =
   discard handle.parseHeaders(nil)

@@ -60,7 +60,7 @@ type
       window*: EnvironmentSettings
 
   RequestBodyType* = enum
-    rbtNone, rbtString, rbtMultipart, rbtOutput
+    rbtNone, rbtString, rbtMultipart, rbtOutput, rbtCache
 
   RequestBody* = object
     case t*: RequestBodyType
@@ -72,6 +72,8 @@ type
       multipart*: FormData
     of rbtOutput:
       outputId*: int
+    of rbtCache:
+      cacheId*: int
 
   Request* = ref object
     httpMethod*: HttpMethod
@@ -99,6 +101,7 @@ proc swrite*(writer: var BufferedWriter; o: RequestBody) =
   of rbtString: writer.swrite(o.s)
   of rbtMultipart: writer.swrite(o.multipart)
   of rbtOutput: writer.swrite(o.outputId)
+  of rbtCache: writer.swrite(o.cacheId)
 
 proc sread*(reader: var BufferedReader; o: var RequestBody) =
   var t: RequestBodyType
@@ -109,6 +112,7 @@ proc sread*(reader: var BufferedReader; o: var RequestBody) =
   of rbtString: reader.sread(o.s)
   of rbtMultipart: reader.sread(o.multipart)
   of rbtOutput: reader.sread(o.outputId)
+  of rbtCache: reader.sread(o.cacheId)
 
 proc contentLength*(body: RequestBody): int =
   case body.t
@@ -116,6 +120,7 @@ proc contentLength*(body: RequestBody): int =
   of rbtString: return body.s.len
   of rbtMultipart: return body.multipart.calcLength()
   of rbtOutput: return 0
+  of rbtCache: return 0
 
 func headers(this: JSRequest): Headers {.jsfget.} =
   return this.request.headers

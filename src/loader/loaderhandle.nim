@@ -18,20 +18,28 @@ type
 
   LoaderBuffer* = ref LoaderBufferObj
 
-  OutputHandle* = ref object
-    parent*: LoaderHandle
+  LoaderHandle* = ref object of RootObj
+    registered*: bool # track registered state
+    stream*: PosixStream # input/output stream depending on type
+    when defined(debug):
+      url*: URL
+
+  InputHandle* = ref object of LoaderHandle
+    outputs*: seq[OutputHandle] # list of outputs to be streamed into
+    cacheId*: int # if cached, our ID in a client cacheMap
+    parser*: HeaderParser # only exists for CGI handles
+    rstate: ResponseState # track response state
+
+  OutputHandle* = ref object of LoaderHandle
+    parent*: InputHandle
     currentBuffer*: LoaderBuffer
     currentBufferIdx*: int
     buffers*: Deque[LoaderBuffer]
-    ostream*: PosixStream
     istreamAtEnd*: bool
     ownerPid*: int
     outputId*: int
-    registered*: bool
     suspended*: bool
     dead*: bool
-    when defined(debug):
-      url*: URL
 
   HandleParserState* = enum
     hpsBeforeLines, hpsAfterFirstLine, hpsControlDone
@@ -47,16 +55,6 @@ type
     rsBeforeResult, rsAfterFailure, rsBeforeStatus, rsBeforeHeaders,
     rsAfterHeaders
 
-  LoaderHandle* = ref object
-    istream*: PosixStream # stream for taking input
-    outputs*: seq[OutputHandle] # list of outputs to be streamed into
-    cacheId*: int # if cached, our ID in a client cacheMap
-    parser*: HeaderParser # only exists for CGI handles
-    rstate: ResponseState # track response state
-    registered*: bool # track registered state
-    when defined(debug):
-      url*: URL
-
 proc `=destroy`(buffer: var LoaderBufferObj) =
   if buffer.page != nil:
     dealloc(buffer.page)
@@ -70,10 +68,10 @@ when defined(debug):
     return s
 
 # Create a new loader handle, with the output stream ostream.
-proc newLoaderHandle*(ostream: PosixStream; outputId, pid: int): LoaderHandle =
-  let handle = LoaderHandle(cacheId: -1)
+proc newInputHandle*(ostream: PosixStream; outputId, pid: int): InputHandle =
+  let handle = InputHandle(cacheId: -1)
   handle.outputs.add(OutputHandle(
-    ostream: ostream,
+    stream: ostream,
     parent: handle,
     outputId: outputId,
     ownerPid: pid,
@@ -81,9 +79,9 @@ proc newLoaderHandle*(ostream: PosixStream; outputId, pid: int): LoaderHandle =
   ))
   return handle
 
-proc findOutputHandle*(handle: LoaderHandle; fd: int): OutputHandle =
+proc findOutputHandle*(handle: InputHandle; fd: int): OutputHandle =
   for output in handle.outputs:
-    if output.ostream.fd == fd:
+    if output.stream.fd == fd:
       return output
   return nil
 
@@ -112,7 +110,7 @@ proc tee*(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int):
   assert outputIn.suspended
   let output = OutputHandle(
     parent: outputIn.parent,
-    ostream: ostream,
+    stream: ostream,
     currentBuffer: outputIn.currentBuffer,
     currentBufferIdx: outputIn.currentBufferIdx,
     buffers: outputIn.buffers,
@@ -128,16 +126,16 @@ proc tee*(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int):
     outputIn.parent.outputs.add(output)
   return output
 
-template output*(handle: LoaderHandle): OutputHandle =
+template output*(handle: InputHandle): OutputHandle =
   handle.outputs[0]
 
-proc sendResult*(handle: LoaderHandle; res: int; msg = "") =
+proc sendResult*(handle: InputHandle; res: int; msg = "") =
   assert handle.rstate == rsBeforeResult
   inc handle.rstate
   let output = handle.output
-  let blocking = output.ostream.blocking
-  output.ostream.setBlocking(true)
-  output.ostream.withPacketWriter w:
+  let blocking = output.stream.blocking
+  output.stream.setBlocking(true)
+  output.stream.withPacketWriter w:
     w.swrite(res)
     if res == 0: # success
       assert msg == ""
@@ -145,25 +143,25 @@ proc sendResult*(handle: LoaderHandle; res: int; msg = "") =
       inc handle.rstate
     else: # error
       w.swrite(msg)
-  output.ostream.setBlocking(blocking)
+  output.stream.setBlocking(blocking)
 
-proc sendStatus*(handle: LoaderHandle; status: uint16) =
+proc sendStatus*(handle: InputHandle; status: uint16) =
   assert handle.rstate == rsBeforeStatus
   inc handle.rstate
-  let blocking = handle.output.ostream.blocking
-  handle.output.ostream.setBlocking(true)
-  handle.output.ostream.withPacketWriter w:
+  let blocking = handle.output.stream.blocking
+  handle.output.stream.setBlocking(true)
+  handle.output.stream.withPacketWriter w:
     w.swrite(status)
-  handle.output.ostream.setBlocking(blocking)
+  handle.output.stream.setBlocking(blocking)
 
-proc sendHeaders*(handle: LoaderHandle; headers: Headers) =
+proc sendHeaders*(handle: InputHandle; headers: Headers) =
   assert handle.rstate == rsBeforeHeaders
   inc handle.rstate
-  let blocking = handle.output.ostream.blocking
-  handle.output.ostream.setBlocking(true)
-  handle.output.ostream.withPacketWriter w:
+  let blocking = handle.output.stream.blocking
+  handle.output.stream.setBlocking(true)
+  handle.output.stream.withPacketWriter w:
     w.swrite(headers)
-  handle.output.ostream.setBlocking(blocking)
+  handle.output.stream.setBlocking(blocking)
 
 proc recvData*(ps: PosixStream; buffer: LoaderBuffer): int {.inline.} =
   let n = ps.recvData(addr buffer.page[0], buffer.cap)
@@ -174,8 +172,8 @@ proc sendData*(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   assert buffer.len - si > 0
   return ps.sendData(addr buffer.page[si], buffer.len - si)
 
-proc iclose*(handle: LoaderHandle) =
-  if handle.istream != nil:
+proc iclose*(handle: InputHandle) =
+  if handle.stream != nil:
     assert not handle.registered
     if handle.rstate notin {rsBeforeResult, rsAfterFailure, rsAfterHeaders}:
       assert handle.outputs.len == 1
@@ -186,21 +184,21 @@ proc iclose*(handle: LoaderHandle) =
           handle.sendStatus(500)
         if handle.rstate == rsBeforeHeaders:
           handle.sendHeaders(newHeaders())
-        handle.output.ostream.setBlocking(true)
+        handle.output.stream.setBlocking(true)
         const msg = "Error: malformed header in CGI script"
-        discard handle.output.ostream.sendData(msg)
+        discard handle.output.stream.sendData(msg)
       except ErrorBrokenPipe:
         discard # receiver is dead
-    handle.istream.sclose()
-    handle.istream = nil
+    handle.stream.sclose()
+    handle.stream = nil
 
 proc oclose*(output: OutputHandle) =
   assert not output.registered
-  output.ostream.sclose()
-  output.ostream = nil
+  output.stream.sclose()
+  output.stream = nil
 
-proc close*(handle: LoaderHandle) =
+proc close*(handle: InputHandle) =
   handle.iclose()
   for output in handle.outputs:
-    if output.ostream != nil:
+    if output.stream != nil:
       output.oclose()

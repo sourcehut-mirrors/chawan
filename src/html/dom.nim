@@ -4565,6 +4565,7 @@ proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
 # backwards compat, but I don't care.
 proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
     contentType = "image/png"; quality = none(float64)) {.jsfunc.} =
+  let contentType = contentType.toLowerAscii()
   if not contentType.startsWith("image/") or this.bitmap.cacheId == 0:
     return
   let url0 = newURL("img-codec+" & contentType.after('/') & ":encode")
@@ -4582,21 +4583,11 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
   let callback = JS_DupValue(ctx, callback)
   let window = this.document.window
   let loader = window.loader
-  let contentType = contentType.toLowerAscii()
-  let cacheReq = newRequest(newURL("cache:" & $this.bitmap.cacheId).get)
-  loader.fetch(cacheReq).then(proc(res: JSResult[Response]): FetchPromise =
-    if res.isNone:
-      return newResolvedPromise(res)
-    let res = res.get
-    let p = loader.fetch(newRequest(
-      newURL("img-codec+x-cha-canvas:decode").get,
-      httpMethod = hmPost,
-      body = RequestBody(t: rbtOutput, outputId: res.outputId)
-    ))
-    res.resume()
-    res.close()
-    return p
-  ).then(proc(res: JSResult[Response]): FetchPromise =
+  loader.fetch(newRequest(
+    newURL("img-codec+x-cha-canvas:decode").get,
+    httpMethod = hmPost,
+    body = RequestBody(t: rbtCache, cacheId: this.bitmap.cacheId)
+  )).then(proc(res: JSResult[Response]): FetchPromise =
     if res.isNone:
       return newResolvedPromise(res)
     let res = res.get

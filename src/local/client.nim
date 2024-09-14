@@ -483,11 +483,10 @@ proc handleRead(client: Client; fd: int) =
     if not hadlf:
       client.console.err.write('\n')
     client.console.err.sflush()
-  elif fd in client.loader.connecting:
-    client.loader.onConnected(fd)
-    client.runJSJobs()
-  elif fd in client.loader.ongoing:
+  elif (let data = client.loader.get(fd); data != nil):
     client.loader.onRead(fd)
+    if data of ConnectData:
+      client.runJSJobs()
   elif fd in client.loader.unregistered:
     discard # ignore
   else:
@@ -517,11 +516,8 @@ proc handleError(client: Client; fd: int) =
     #TODO do something here...
     stderr.write("Fork server crashed :(\n")
     client.quit(1)
-  elif fd in client.loader.connecting:
-    #TODO handle error?
-    discard
-  elif fd in client.loader.ongoing:
-    client.loader.onError(fd)
+  elif client.loader.map[fd] != nil:
+    discard client.loader.onError(fd) #TODO handle connection error?
   elif fd in client.loader.unregistered:
     discard # already unregistered...
   elif (let i = client.pager.findConnectingContainer(fd); i != -1):
@@ -594,8 +590,7 @@ proc inputLoop(client: Client) =
 func hasSelectFds(client: Client): bool =
   return not client.timeouts.empty or
     client.pager.numload > 0 or
-    client.loader.connecting.len > 0 or
-    client.loader.ongoing.len > 0 or
+    client.loader.mapFds > 0 or
     client.pager.procmap.len > 0
 
 proc headlessLoop(client: Client) =
