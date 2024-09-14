@@ -119,7 +119,7 @@ elif SandboxMode == stLibSeccomp:
         let syscall = seccomp_syscall_resolve_name("mprotect")
         let arg2 = scmp_arg_cmp(
           arg: 2, # attr
-          op: SCMP_CMP_LE, # less or equals
+          op: SCMP_CMP_LE, # less than or equals
           datum_a: 3 # PROT_READ | PROT_WRITE
         )
         # Note that libseccomp can't really express multiple comparisons.
@@ -148,6 +148,19 @@ elif SandboxMode == stLibSeccomp:
       let syscall = seccomp_syscall_resolve_name(it)
       doAssert seccomp_rule_add(ctx, err, syscall, 0) == 0
 
+  proc allowFcntl(ctx: scmp_filter_ctx) =
+    # only allow F_DUPFD, F_GETFD, F_SETFD, F_GETFL, F_SETFL
+    # (F_SETFL is 4, the other ones are 0-3)
+    let syscall = seccomp_syscall_resolve_name("fcntl")
+    let syscall2 = seccomp_syscall_resolve_name("fcntl64")
+    let arg1 = scmp_arg_cmp(
+      arg: 1, # cmd
+      op: SCMP_CMP_LE, # less than or equals
+      datum_a: 4 # F_SETFL (includes the above mentioned ones)
+    )
+    doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall, 1, arg1) == 0
+    doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall2, 1, arg1) == 0
+
   proc enterBufferSandbox*(sockPath: string) =
     onSignal SIGSYS:
       discard sig
@@ -166,7 +179,6 @@ elif SandboxMode == stLibSeccomp:
       "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", # epoll stuff
       "eventfd", # used by Nim selectors
       "exit_group", # for quit
-      "fcntl", "fcntl64", # for changing blocking status
       "fork", # for when fork is really fork
       "futex", # bionic libc & WSL both need it
       "getpid", # for determining current PID after we fork
@@ -205,6 +217,7 @@ elif SandboxMode == stLibSeccomp:
         datum_a: 1 # PF_LOCAL == PF_UNIX == AF_UNIX
       )
       doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW, syscall, 1, arg0) == 0
+    ctx.allowFcntl()
     ctx.blockStat()
     when defined(android):
       ctx.allowBionic()
@@ -215,13 +228,12 @@ elif SandboxMode == stLibSeccomp:
     onSignal SIGSYS:
       discard sig
       raise newException(Defect, "Sandbox violation in network process")
-    let ctx = seccomp_init(SCMP_ACT_TRAP)
+    let ctx = seccomp_init(SCMP_ACT_KILL_PROCESS)
     doAssert pointer(ctx) != nil
     const allowList = [
       cstring"close", "exit_group", # duh
       "read", "write", "recv", "send", "recvfrom", "sendto", # socket i/o
       "lseek", # glibc calls lseek on open files at exit
-      "fcntl", "fcntl64", # so we can set nonblock etc.
       "mmap", "mmap2", "mremap", "munmap", "brk", # memory allocation
       "poll", # curl needs poll
       "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
@@ -233,6 +245,7 @@ elif SandboxMode == stLibSeccomp:
     for it in allowList:
       doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW,
         seccomp_syscall_resolve_name(it), 0) == 0
+    ctx.allowFcntl()
     ctx.blockStat()
     when defined(android):
       ctx.allowBionic()
