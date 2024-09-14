@@ -60,7 +60,7 @@ type
     key*: ClientKey
     process*: int
     clientPid*: int
-    map*: seq[LoaderData]
+    map: seq[LoaderData]
     mapFds*: int # number of fds in map
     unregistered*: seq[int]
     registerFun*: proc(fd: int)
@@ -1060,9 +1060,14 @@ proc startRequest*(loader: FileLoader; request: Request;
     w.swrite(config)
   return stream
 
-iterator ongoing*(loader: FileLoader): OngoingData =
+iterator data*(loader: FileLoader): LoaderData {.inline.} =
   for it in loader.map:
-    if it != nil and it of OngoingData:
+    if it != nil:
+      yield it
+
+iterator ongoing*(loader: FileLoader): OngoingData {.inline.} =
+  for it in loader.data:
+    if it of OngoingData:
       yield OngoingData(it)
 
 func fd*(data: LoaderData): int =

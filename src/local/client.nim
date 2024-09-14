@@ -516,7 +516,7 @@ proc handleError(client: Client; fd: int) =
     #TODO do something here...
     stderr.write("Fork server crashed :(\n")
     client.quit(1)
-  elif client.loader.map[fd] != nil:
+  elif client.loader.get(fd) != nil:
     discard client.loader.onError(fd) #TODO handle connection error?
   elif fd in client.loader.unregistered:
     discard # already unregistered...

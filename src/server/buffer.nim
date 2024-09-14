@@ -975,18 +975,17 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     #TODO set buffer.window.timeouts.selector
     var connecting: seq[ConnectData] = @[]
     var ongoing: seq[OngoingData] = @[]
-    for it in buffer.loader.map:
-      if it != nil:
-        if it of ConnectData:
-          connecting.add(ConnectData(it))
-        else:
-          let it = OngoingData(it)
-          ongoing.add(it)
-          it.response.body.sclose()
-        buffer.loader.unregistered.add(it.fd)
-        buffer.loader.unset(it)
+    for it in buffer.loader.data:
+      if it of ConnectData:
+        connecting.add(ConnectData(it))
+      else:
+        let it = OngoingData(it)
+        ongoing.add(it)
+        it.response.body.sclose()
+      buffer.loader.unregistered.add(it.fd)
+      buffer.loader.unset(it)
     let myPid = getCurrentProcessId()
-    for it in ongoing.mitems:
+    for it in ongoing:
       let response = it.response
       # tee ongoing streams
       let (stream, outputId) = buffer.loader.tee(response.outputId, myPid)
@@ -1175,13 +1174,12 @@ proc forceRender*(buffer: Buffer) {.proxy.} =
 proc cancel*(buffer: Buffer) {.proxy.} =
   if buffer.state == bsLoaded:
     return
-  for it in buffer.loader.map:
-    if it != nil:
-      let fd = it.fd
-      buffer.selector.unregister(fd)
-      buffer.loader.unregistered.add(fd)
-      it.stream.sclose()
-      buffer.loader.unset(it)
+  for it in buffer.loader.data:
+    let fd = it.fd
+    buffer.selector.unregister(fd)
+    buffer.loader.unregistered.add(fd)
+    it.stream.sclose()
+    buffer.loader.unset(it)
   if buffer.istream != nil:
     buffer.selector.unregister(buffer.fd)
     buffer.loader.unregistered.add(buffer.fd)
