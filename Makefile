@@ -69,7 +69,7 @@ $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/mancha" $(FLAGS) \
 		-o:"$(OUTDIR_BIN)/mancha" $(FLAGS) adapter/tools/mancha.nim
 
-$(OBJDIR)/genidna: res/genidna.nim
+$(OBJDIR)/genidna: res/genidna.nim res/map/IdnaMappingTable.txt
 	$(NIMC) --nimcache:"$(OBJDIR)/idna_gen_cache" -d:danger \
 		-o:"$(OBJDIR)/genidna" res/genidna.nim
 
