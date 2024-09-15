@@ -89,7 +89,6 @@ elif SandboxMode == stLibSeccomp:
       # Things needed for bionic libc. Tested with Termux.
       const androidAllowList = [
         cstring"rt_sigprocmask",
-        "epoll_pwait",
         "madvise"
       ]
       for it in androidAllowList:
@@ -177,6 +176,7 @@ elif SandboxMode == stLibSeccomp:
       "close", # duh
       "connect", # for outgoing requests to loader
       "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", # epoll stuff
+      "epoll_pwait", # for bionic & musl
       "eventfd", # used by Nim selectors
       "exit_group", # for quit
       "fork", # for when fork is really fork
