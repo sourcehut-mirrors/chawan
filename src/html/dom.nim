@@ -19,9 +19,8 @@ import html/catom
 import html/enums
 import html/event
 import html/script
-import img/bitmap
-import img/painter
-import img/path
+import types/bitmap
+import types/path
 import io/bufwriter
 import io/dynstream
 import io/promise
@@ -40,6 +39,7 @@ import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/blob
+import types/canvastypes
 import types/color
 import types/line
 import types/matrix
@@ -63,10 +63,10 @@ type
     fetMultipart = "multipart/form-data",
     fetTextPlain = "text/plain"
 
-type DocumentReadyState* = enum
-  rsLoading = "loading"
-  rsInteractive = "interactive"
-  rsComplete = "complete"
+  DocumentReadyState* = enum
+    rsLoading = "loading"
+    rsInteractive = "interactive"
+    rsComplete = "complete"
 
 type
   DependencyType* = enum
@@ -368,7 +368,7 @@ type
 
   CanvasRenderingContext2D = ref object of RenderingContext
     canvas {.jsget.}: HTMLCanvasElement
-    bitmap: Bitmap
+    bitmap: NetworkBitmap
     state: DrawingState
     stateStack: seq[DrawingState]
     ps*: PosixStream

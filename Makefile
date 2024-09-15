@@ -112,9 +112,9 @@ $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \
 		src/utils/sandbox.nim
 $(OUTDIR_CGI_BIN)/sixel: src/types/color.nim src/utils/sandbox.nim $(twtstr) $(dynstream)
-$(OUTDIR_CGI_BIN)/canvas: src/img/bitmap.nim src/img/painter.nim \
-	src/img/path.nim src/io/bufreader.nim src/types/color.nim \
-	src/types/line.nim src/utils/sandbox.nim $(dynstream) $(twtstr)
+$(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
+	src/io/bufreader.nim src/types/color.nim src/types/line.nim \
+	src/utils/sandbox.nim $(dynstream) $(twtstr)
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim $(twtstr)

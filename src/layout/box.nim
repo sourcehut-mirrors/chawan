@@ -1,6 +1,6 @@
 import css/cssvalues
 import css/stylednode
-import img/bitmap
+import types/bitmap
 import layout/layoutunit
 
 type

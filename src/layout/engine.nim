@@ -3,7 +3,7 @@ import std/math
 
 import css/cssvalues
 import css/stylednode
-import img/bitmap
+import types/bitmap
 import layout/box
 import layout/layoutunit
 import types/winattrs

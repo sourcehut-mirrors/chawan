@@ -2,7 +2,7 @@ import std/strutils
 
 import css/cssvalues
 import css/stylednode
-import img/bitmap
+import types/bitmap
 import layout/box
 import layout/engine
 import layout/layoutunit

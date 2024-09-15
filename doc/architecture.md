@@ -30,8 +30,6 @@ Explanation for the separate directories found in `src/`:
 * css: styling-related code; CSS parsing and cascading.
 * html: DOM building, DOM functions, the DOM itself, forms, etc. Note that it
   does not include the [HTML parser](https://git.sr.ht/~bptato/chame) itself.
-* img: image-related code. Mostly useless because we can't draw images to the
-  screen yet. (One day...)
 * io: code for IPC, interaction with the file system, etc.
 * js: modules mainly for use by JS code.
 * layout: the layout engine and its renderer.

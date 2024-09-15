@@ -12,7 +12,7 @@ import chagashi/charset
 import config/chapath
 import config/config
 import config/mailcap
-import img/bitmap
+import types/bitmap
 import io/bufreader
 import io/dynstream
 import io/promise

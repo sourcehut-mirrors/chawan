@@ -7,7 +7,7 @@ import std/tables
 import chagashi/charset
 import config/config
 import config/mimetypes
-import img/bitmap
+import types/bitmap
 import io/dynstream
 import io/promise
 import io/serversocket

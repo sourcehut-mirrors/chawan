@@ -6,7 +6,7 @@ import std/tables
 
 import css/cssparser
 import css/selectorparser
-import img/bitmap
+import types/bitmap
 import layout/layoutunit
 import types/color
 import types/opt
