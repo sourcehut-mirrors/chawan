@@ -571,42 +571,51 @@ proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
         break
   return cpath
 
-# Returns a stream on rbtOutput body type.
 proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
-    request: Request; prevURL: URL; insecureSSLNoVerify: bool): PosixStream =
+    request: Request; prevURL: URL; insecureSSLNoVerify: bool) =
   if ctx.config.cgiDir.len == 0:
     handle.sendResult(ERROR_NO_CGI_DIR)
-    return nil
+    return
   let cpath = ctx.parseCGIPath(request)
   if cpath.cmd == "" or cpath.basename in ["", ".", ".."] or
       cpath.basename[0] == '~':
     handle.sendResult(ERROR_INVALID_CGI_PATH)
-    return nil
+    return
   if not fileExists(cpath.cmd):
     handle.sendResult(ERROR_CGI_FILE_NOT_FOUND)
-    return nil
+    return
   var pipefd: array[0..1, cint] # child -> parent
   if pipe(pipefd) == -1:
     handle.sendResult(ERROR_FAIL_SETUP_CGI)
-    return nil
+    return
   # Pipe the request body as stdin for POST.
   var istream: PosixStream = nil # child end (read)
   var ostream: PosixStream = nil # parent end (write)
-  case request.body.t
-  of rbtString, rbtMultipart, rbtOutput:
+  var istream2: PosixStream = nil # child end (read) for rbtCache
+  var cachedHandle: InputHandle = nil # for rbtCache
+  var outputIn: OutputHandle = nil # for rbtOutput
+  if request.body.t == rbtCache:
+    var n: int
+    (istream, n) = client.openCachedItem(request.body.cacheId)
+    if istream == nil:
+      handle.sendResult(ERROR_CGI_CACHED_BODY_NOT_FOUND)
+      return
+    cachedHandle = ctx.findCachedHandle(request.body.cacheId)
+    if cachedHandle != nil: # cached item still open, switch to streaming mode
+      istream2 = istream
+  elif request.body.t == rbtOutput:
+    outputIn = ctx.findOutput(request.body.outputId, client)
+    if outputIn == nil:
+      handle.sendResult(ERROR_FAIL_SETUP_CGI)
+      return
+  if request.body.t in {rbtString, rbtMultipart, rbtOutput} or
+      request.body.t == rbtCache and istream2 != nil:
     var pipefdRead: array[2, cint] # parent -> child
     if pipe(pipefdRead) == -1:
       handle.sendResult(ERROR_FAIL_SETUP_CGI)
       return
     istream = newPosixStream(pipefdRead[0])
     ostream = newPosixStream(pipefdRead[1])
-  of rbtCache:
-    var n: int
-    (istream, n) = client.openCachedItem(request.body.cacheId)
-    if istream == nil:
-      handle.sendResult(ERROR_FAIL_SETUP_CGI)
-      return
-  of rbtNone: discard
   let contentLen = request.body.contentLength()
   stdout.flushFile()
   stderr.flushFile()
@@ -619,6 +628,8 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     discard close(pipefd[1])
     if ostream != nil:
       ostream.sclose() # close write
+    if istream2 != nil:
+      istream2.sclose() # close cache file; we aren't reading it directly
     if istream != nil:
       if istream.fd != 0:
         discard dup2(istream.fd, 0) # dup stdin
@@ -650,18 +661,30 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     of rbtString:
       ostream.write(request.body.s)
       ostream.sclose()
-      return nil
     of rbtMultipart:
       let boundary = request.body.multipart.boundary
       for entry in request.body.multipart.entries:
         ostream.writeEntry(entry, boundary)
       ostream.writeEnd(boundary)
       ostream.sclose()
-      return nil
     of rbtOutput:
-      return ostream
-    of rbtCache, rbtNone:
-      return nil
+      ostream.setBlocking(false)
+      let output = outputIn.tee(ostream, ctx.getOutputId(), client.pid)
+      ctx.put(output)
+      output.suspended = false
+      if not output.isEmpty:
+        ctx.register(output)
+    of rbtCache:
+      if ostream != nil:
+        let handle = newInputHandle(ostream, ctx.getOutputId(), client.pid,
+          suspended = false)
+        handle.stream = istream2
+        ostream.setBlocking(false)
+        ctx.loadStreamRegular(handle, cachedHandle)
+        assert handle.stream == nil
+        handle.close()
+    of rbtNone:
+      discard
 
 proc loadStream(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request) =
@@ -775,23 +798,10 @@ proc loadResource(ctx: LoaderContext; client: ClientData;
           redo = true
           continue
     if request.url.scheme == "cgi-bin":
-      let ostream = ctx.loadCGI(client, handle, request, prevurl,
-        config.insecureSSLNoVerify)
+      ctx.loadCGI(client, handle, request, prevurl, config.insecureSSLNoVerify)
       if handle.stream != nil:
-        if ostream != nil:
-          let outputIn = ctx.findOutput(request.body.outputId, client)
-          if outputIn != nil:
-            ostream.setBlocking(false)
-            let output = outputIn.tee(ostream, ctx.getOutputId(), client.pid)
-            ctx.put(output)
-            output.suspended = false
-            if not output.isEmpty:
-              ctx.register(output)
-          else:
-            ostream.sclose()
         ctx.addFd(handle)
       else:
-        assert ostream == nil
         handle.close()
     elif request.url.scheme == "stream":
       ctx.loadStream(client, handle, request)

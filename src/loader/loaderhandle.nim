@@ -1,5 +1,6 @@
 import std/deques
 import std/net
+import std/posix
 import std/tables
 
 import io/bufwriter
@@ -68,14 +69,15 @@ when defined(debug):
     return s
 
 # Create a new loader handle, with the output stream ostream.
-proc newInputHandle*(ostream: PosixStream; outputId, pid: int): InputHandle =
+proc newInputHandle*(ostream: PosixStream; outputId, pid: int;
+    suspended = true): InputHandle =
   let handle = InputHandle(cacheId: -1)
   handle.outputs.add(OutputHandle(
     stream: ostream,
     parent: handle,
     outputId: outputId,
     ownerPid: pid,
-    suspended: true
+    suspended: suspended
   ))
   return handle
 
