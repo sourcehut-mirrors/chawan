@@ -13,7 +13,7 @@ type
   DeallocFun = proc(opaque, p: pointer) {.nimcall, raises: [].}
 
   Blob* = ref object of RootObj
-    size* {.jsget.}: uint64
+    size* {.jsget.}: int
     ctype* {.jsget: "type".}: string
     buffer*: pointer
     opaque*: pointer
@@ -43,7 +43,7 @@ proc swrite*(writer: var BufferedWriter; blob: Blob) =
   writer.swrite(blob.ctype)
   writer.swrite(blob.size)
   if blob.size > 0:
-    writer.writeData(blob.buffer, int(blob.size))
+    writer.writeData(blob.buffer, blob.size)
 
 proc sread*(reader: var BufferedReader; blob: var Blob) =
   var isWebFile: bool
@@ -59,7 +59,7 @@ proc sread*(reader: var BufferedReader; blob: var Blob) =
   reader.sread(blob.size)
   if blob.size > 0:
     let buffer = alloc(blob.size)
-    reader.readData(blob.buffer, int(blob.size))
+    reader.readData(blob.buffer, blob.size)
     blob.buffer = buffer
     blob.deallocFun = deallocBlob
 
@@ -67,7 +67,7 @@ proc newBlob*(buffer: pointer; size: int; ctype: string;
     deallocFun: DeallocFun; opaque: pointer = nil): Blob =
   return Blob(
     buffer: buffer,
-    size: uint64(size),
+    size: size,
     ctype: ctype,
     deallocFun: deallocFun,
     opaque: opaque
@@ -119,7 +119,7 @@ proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     if blobPart.len > 0:
       copyMem(addr buf[i], unsafeAddr blobPart[0], blobPart.len)
       i += blobPart.len
-  file.size = uint64(len)
+  file.size = len
   block ctype:
     for c in options.`type`:
       if c notin char(0x20)..char(0x7E):
@@ -129,15 +129,15 @@ proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
 
 #TODO File, Blob constructors
 
-proc getSize*(this: Blob): uint64 =
+proc getSize*(this: Blob): int =
   if this.fd.isSome:
     var statbuf: Stat
     if fstat(this.fd.get, statbuf) < 0:
       return 0
-    return uint64(statbuf.st_size)
+    return int(statbuf.st_size)
   return this.size
 
-proc size*(this: WebFile): uint64 {.jsfget.} =
+proc size*(this: WebFile): int {.jsfget.} =
   return this.getSize()
 
 #TODO lastModified

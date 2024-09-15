@@ -847,7 +847,7 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
   var p = cast[ptr UncheckedArray[char]](image.data.buffer)
   if image.data.size > 0:
-    let H = int(image.data.size - 1)
+    let H = image.data.size - 1
     term.outputSixelImage(x, y, image, p.toOpenArray(0, H))
 
 proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
@@ -870,7 +870,7 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   var i = MaxBytes
   # transcode to RGB
   let p = cast[ptr UncheckedArray[uint8]](image.data.buffer)
-  let L = int(image.data.size)
+  let L = image.data.size
   let m = if i < L: '1' else: '0'
   outs &= ",a=T,f=100,m=" & m & ';'
   outs.btoa(p.toOpenArray(0, min(L, i) - 1))

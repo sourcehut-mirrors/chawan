@@ -111,7 +111,7 @@ proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
           if n < buf.len:
             break
     else:
-      stream.sendDataLoop(blob.buffer, int(blob.size))
+      stream.sendDataLoop(blob.buffer, blob.size)
     stream.write("\r\n")
 
 proc writeEnd*(stream: DynStream; boundary: string) =
