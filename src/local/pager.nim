@@ -12,7 +12,6 @@ import chagashi/charset
 import config/chapath
 import config/config
 import config/mailcap
-import types/bitmap
 import io/bufreader
 import io/dynstream
 import io/promise
@@ -23,8 +22,9 @@ import js/timeout
 import layout/renderdocument
 import loader/connecterror
 import loader/headers
-import loader/loader
+import loader/loaderiface
 import loader/request
+import loader/response
 import local/container
 import local/lineedit
 import local/term
@@ -39,6 +39,7 @@ import monoucha/quickjs
 import monoucha/tojs
 import server/buffer
 import server/forkserver
+import types/bitmap
 import types/blob
 import types/cell
 import types/color

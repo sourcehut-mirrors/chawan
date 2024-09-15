@@ -28,8 +28,9 @@ import js/intl
 import js/jsmodule
 import js/timeout
 import loader/headers
-import loader/loader
+import loader/loaderiface
 import loader/request
+import loader/response
 import local/container
 import local/lineedit
 import local/pager

@@ -35,7 +35,8 @@ import js/console
 import js/timeout
 import layout/renderdocument
 import loader/headers
-import loader/loader
+import loader/loaderiface
+import loader/request
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jsregex

@@ -17,7 +17,7 @@ import js/encoding
 import js/intl
 import js/timeout
 import loader/headers
-import loader/loader
+import loader/loaderiface
 import loader/request
 import loader/response
 import monoucha/javascript

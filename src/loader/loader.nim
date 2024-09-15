@@ -33,19 +33,19 @@ import std/tables
 import io/bufreader
 import io/bufwriter
 import io/dynstream
-import io/promise
 import io/serversocket
+import io/stdio
 import io/tempfile
 import io/urlfilter
-import loader/cgi
 import loader/connecterror
 import loader/headers
 import loader/loaderhandle
+import loader/loaderiface
 import loader/request
 import loader/response
 import monoucha/javascript
-import monoucha/jserror
 import types/cookie
+import types/formdata
 import types/opt
 import types/referrer
 import types/urimethodmap
@@ -56,55 +56,6 @@ export request
 export response
 
 type
-  FileLoader* = ref object
-    key*: ClientKey
-    process*: int
-    clientPid*: int
-    map: seq[LoaderData]
-    mapFds*: int # number of fds in map
-    unregistered*: seq[int]
-    registerFun*: proc(fd: int)
-    unregisterFun*: proc(fd: int)
-    # directory where we store UNIX domain sockets
-    sockDir*: string
-    # (FreeBSD only) fd for the socket directory so we can connectat() on it
-    sockDirFd*: int
-
-  ConnectDataState = enum
-    cdsBeforeResult, cdsBeforeStatus, cdsBeforeHeaders
-
-  LoaderData = ref object of RootObj
-    stream*: SocketStream
-
-  ConnectData* = ref object of LoaderData
-    state: ConnectDataState
-    status: uint16
-    res: int
-    outputId: int
-    redirectNum: int
-    promise: Promise[JSResult[Response]]
-    request: Request
-
-  OngoingData* = ref object of LoaderData
-    response*: Response
-
-  LoaderCommand = enum
-    lcAddCacheFile
-    lcAddClient
-    lcGetCacheFile
-    lcLoad
-    lcLoadConfig
-    lcPassFd
-    lcRedirectToFile
-    lcRemoveCachedItem
-    lcRemoveClient
-    lcResume
-    lcShareCachedItem
-    lcSuspend
-    lcTee
-
-  ClientKey* = array[32, uint8]
-
   CachedItem = ref object
     id: int
     path: string
@@ -137,16 +88,6 @@ type
     w3mCGICompat*: bool
     tmpdir*: string
     sockdir*: string
-
-  LoaderClientConfig* = object
-    cookieJar*: CookieJar
-    defaultHeaders*: Headers
-    filter*: URLFilter
-    proxy*: URL
-    referrerPolicy*: ReferrerPolicy
-    insecureSSLNoVerify*: bool
-
-  FetchPromise* = Promise[JSResult[Response]]
 
 func isPrivileged(ctx: LoaderContext; client: ClientData): bool =
   return ctx.pagerClient == client
@@ -191,6 +132,12 @@ func findCachedHandle(ctx: LoaderContext; cacheId: int): InputHandle =
     if it.cacheId == cacheId:
       return it
   return nil
+
+func find(cacheMap: seq[CachedItem]; id: int): int =
+  for i, it in cacheMap:
+    if it.id == id:
+      return i
+  -1
 
 type PushBufferResult = enum
   pbrDone, pbrUnregister
@@ -316,6 +263,12 @@ proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
     return cacheId
   return -1
 
+proc openCachedItem(client: ClientData; id: int): (PosixStream, int) =
+  let n = client.cacheMap.find(id)
+  if n != -1:
+    return (newPosixStream(client.cacheMap[n].path, O_RDONLY, 0), n)
+  return (nil, -1)
+
 proc put(ctx: LoaderContext; handle: LoaderHandle) =
   let fd = int(handle.stream.fd)
   if ctx.handleMap.len <= fd:
@@ -335,6 +288,131 @@ proc addFd(ctx: LoaderContext; handle: InputHandle) =
   ctx.register(handle)
   ctx.put(handle)
   ctx.put(output)
+
+type ControlResult = enum
+  crDone, crContinue, crError
+
+proc handleFirstLine(handle: InputHandle; line: string; headers: Headers;
+    status: var uint16): ControlResult =
+  let k = line.until(':')
+  if k.len == line.len:
+    # invalid
+    handle.sendResult(ERROR_CGI_MALFORMED_HEADER)
+    return crError
+  let v = line.substr(k.len + 1).strip()
+  if k.equalsIgnoreCase("Status"):
+    handle.sendResult(0) # success
+    status = parseUInt16(v, allowSign = false).get(0)
+    return crContinue
+  if k.equalsIgnoreCase("Cha-Control"):
+    if v.startsWithIgnoreCase("Connected"):
+      handle.sendResult(0) # success
+      return crContinue
+    elif v.startsWithIgnoreCase("ConnectionError"):
+      let errs = v.split(' ')
+      if errs.len <= 1:
+        handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
+      else:
+        let fb = int32(ERROR_CGI_INVALID_CHA_CONTROL)
+        let code = int(parseInt32(errs[1]).get(fb))
+        var message = ""
+        if errs.len > 2:
+          message &= errs[2]
+          for i in 3 ..< errs.len:
+            message &= ' '
+            message &= errs[i]
+        handle.sendResult(code, message)
+      return crError
+    elif v.startsWithIgnoreCase("ControlDone"):
+      return crDone
+    handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
+    return crError
+  handle.sendResult(0) # success
+  headers.add(k, v)
+  return crDone
+
+proc handleControlLine(handle: InputHandle; line: string; headers: Headers;
+    status: var uint16): ControlResult =
+  let k = line.until(':')
+  if k.len == line.len:
+    # invalid
+    return crError
+  let v = line.substr(k.len + 1).strip()
+  if k.equalsIgnoreCase("Status"):
+    status = parseUInt16(v, allowSign = false).get(0)
+    return crContinue
+  if k.equalsIgnoreCase("Cha-Control"):
+    if v.startsWithIgnoreCase("ControlDone"):
+      return crDone
+    return crError
+  headers.add(k, v)
+  return crDone
+
+# returns false if transfer was interrupted
+proc handleLine(handle: InputHandle; line: string; headers: Headers) =
+  let k = line.until(':')
+  if k.len == line.len:
+    # invalid
+    return
+  let v = line.substr(k.len + 1).strip()
+  headers.add(k, v)
+
+proc parseHeaders0(handle: InputHandle; buffer: LoaderBuffer): int =
+  let parser = handle.parser
+  var s = parser.lineBuffer
+  let L = if buffer == nil: 1 else: buffer.len
+  for i in 0 ..< L:
+    template die =
+      handle.parser = nil
+      return -1
+    let c = if buffer != nil:
+      char(buffer.page[i])
+    else:
+      '\n'
+    if parser.crSeen and c != '\n':
+      die
+    parser.crSeen = false
+    if c == '\r':
+      parser.crSeen = true
+    elif c == '\n':
+      if s == "":
+        if parser.state == hpsBeforeLines:
+          # body comes immediately, so we haven't had a chance to send result
+          # yet.
+          handle.sendResult(0)
+        handle.sendStatus(parser.status)
+        handle.sendHeaders(parser.headers)
+        handle.parser = nil
+        return i + 1 # +1 to skip \n
+      case parser.state
+      of hpsBeforeLines:
+        case handle.handleFirstLine(s, parser.headers, parser.status)
+        of crDone: parser.state = hpsControlDone
+        of crContinue: parser.state = hpsAfterFirstLine
+        of crError: die
+      of hpsAfterFirstLine:
+        case handle.handleControlLine(s, parser.headers, parser.status)
+        of crDone: parser.state = hpsControlDone
+        of crContinue: discard
+        of crError: die
+      of hpsControlDone:
+        handle.handleLine(s, parser.headers)
+      s = ""
+    else:
+      s &= c
+  if s != "":
+    parser.lineBuffer = s
+  return L
+
+proc parseHeaders(handle: InputHandle; buffer: LoaderBuffer): int =
+  try:
+    return handle.parseHeaders0(buffer)
+  except ErrorBrokenPipe:
+    handle.parser = nil
+    return -1
+
+proc finishParse(handle: InputHandle) =
+  discard handle.parseHeaders(nil)
 
 type HandleReadResult = enum
   hrrDone, hrrUnregister, hrrBrokenPipe
@@ -410,6 +488,181 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: InputHandle) =
   handle.outputs.setLen(0)
   handle.iclose()
 
+proc putMappedURL(url: URL) =
+  putEnv("MAPPED_URI_SCHEME", url.scheme)
+  putEnv("MAPPED_URI_USERNAME", url.username)
+  putEnv("MAPPED_URI_PASSWORD", url.password)
+  putEnv("MAPPED_URI_HOST", url.hostname)
+  putEnv("MAPPED_URI_PORT", url.port)
+  putEnv("MAPPED_URI_PATH", url.path.serialize())
+  putEnv("MAPPED_URI_QUERY", url.query.get(""))
+
+type CGIPath = object
+  basename: string
+  pathInfo: string
+  cmd: string
+  scriptName: string
+  requestURI: string
+  myDir: string
+
+proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
+    insecureSSLNoVerify: bool) =
+  let url = request.url
+  putEnv("SCRIPT_NAME", cpath.scriptName)
+  putEnv("SCRIPT_FILENAME", cpath.cmd)
+  putEnv("REQUEST_URI", cpath.requestURI)
+  putEnv("REQUEST_METHOD", $request.httpMethod)
+  var headers = ""
+  for k, v in request.headers:
+    headers &= k & ": " & v & "\r\n"
+  putEnv("REQUEST_HEADERS", headers)
+  if prevURL != nil:
+    putMappedURL(prevURL)
+  if cpath.pathInfo != "":
+    putEnv("PATH_INFO", cpath.pathInfo)
+  if url.query.isSome:
+    putEnv("QUERY_STRING", url.query.get)
+  if request.httpMethod == hmPost:
+    if request.body.t == rbtMultipart:
+      putEnv("CONTENT_TYPE", request.body.multipart.getContentType())
+    else:
+      putEnv("CONTENT_TYPE", request.headers.getOrDefault("Content-Type", ""))
+    putEnv("CONTENT_LENGTH", $contentLen)
+  if "Cookie" in request.headers:
+    putEnv("HTTP_COOKIE", request.headers["Cookie"])
+  if request.referrer != nil:
+    putEnv("HTTP_REFERER", $request.referrer)
+  if request.proxy != nil:
+    putEnv("ALL_PROXY", $request.proxy)
+  if insecureSSLNoVerify:
+    putEnv("CHA_INSECURE_SSL_NO_VERIFY", "1")
+  setCurrentDir(cpath.myDir)
+
+proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
+  var path = percentDecode(request.url.pathname)
+  if path.startsWith("/cgi-bin/"):
+    path.delete(0 .. "/cgi-bin/".high)
+  elif path.startsWith("/$LIB/"):
+    path.delete(0 .. "/$LIB/".high)
+  var cpath = CGIPath()
+  if path == "" or request.url.hostname != "":
+    return cpath
+  if path[0] == '/':
+    for dir in ctx.config.cgiDir:
+      if path.startsWith(dir):
+        cpath.basename = path.substr(dir.len).until('/')
+        cpath.pathInfo = path.substr(dir.len + cpath.basename.len)
+        cpath.cmd = dir / cpath.basename
+        if not fileExists(cpath.cmd):
+          continue
+        cpath.myDir = dir
+        cpath.scriptName = path.substr(0, dir.len + cpath.basename.len)
+        cpath.requestURI = cpath.cmd / cpath.pathInfo & request.url.search
+        break
+  else:
+    cpath.basename = path.until('/')
+    cpath.pathInfo = path.substr(cpath.basename.len)
+    cpath.scriptName = "/cgi-bin/" & cpath.basename
+    cpath.requestURI = "/cgi-bin/" & path & request.url.search
+    for dir in ctx.config.cgiDir:
+      cpath.cmd = dir / cpath.basename
+      if fileExists(cpath.cmd):
+        cpath.myDir = dir
+        break
+  return cpath
+
+# Returns a stream on rbtOutput body type.
+proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
+    request: Request; prevURL: URL; insecureSSLNoVerify: bool): PosixStream =
+  if ctx.config.cgiDir.len == 0:
+    handle.sendResult(ERROR_NO_CGI_DIR)
+    return nil
+  let cpath = ctx.parseCGIPath(request)
+  if cpath.cmd == "" or cpath.basename in ["", ".", ".."] or
+      cpath.basename[0] == '~':
+    handle.sendResult(ERROR_INVALID_CGI_PATH)
+    return nil
+  if not fileExists(cpath.cmd):
+    handle.sendResult(ERROR_CGI_FILE_NOT_FOUND)
+    return nil
+  var pipefd: array[0..1, cint] # child -> parent
+  if pipe(pipefd) == -1:
+    handle.sendResult(ERROR_FAIL_SETUP_CGI)
+    return nil
+  # Pipe the request body as stdin for POST.
+  var istream: PosixStream = nil # child end (read)
+  var ostream: PosixStream = nil # parent end (write)
+  case request.body.t
+  of rbtString, rbtMultipart, rbtOutput:
+    var pipefdRead: array[2, cint] # parent -> child
+    if pipe(pipefdRead) == -1:
+      handle.sendResult(ERROR_FAIL_SETUP_CGI)
+      return
+    istream = newPosixStream(pipefdRead[0])
+    ostream = newPosixStream(pipefdRead[1])
+  of rbtCache:
+    var n: int
+    (istream, n) = client.openCachedItem(request.body.cacheId)
+    if istream == nil:
+      handle.sendResult(ERROR_FAIL_SETUP_CGI)
+      return
+  of rbtNone: discard
+  let contentLen = request.body.contentLength()
+  stdout.flushFile()
+  stderr.flushFile()
+  let pid = fork()
+  if pid == -1:
+    handle.sendResult(ERROR_FAIL_SETUP_CGI)
+  elif pid == 0:
+    discard close(pipefd[0]) # close read
+    discard dup2(pipefd[1], 1) # dup stdout
+    discard close(pipefd[1])
+    if ostream != nil:
+      ostream.sclose() # close write
+    if istream != nil:
+      if istream.fd != 0:
+        discard dup2(istream.fd, 0) # dup stdin
+        istream.sclose()
+    else:
+      closeStdin()
+    # we leave stderr open, so it can be seen in the browser console
+    setupEnv(cpath, request, contentLen, prevURL, insecureSSLNoVerify)
+    # reset SIGCHLD to the default handler. this is useful if the child process
+    # expects SIGCHLD to be untouched. (e.g. git dies a horrible death with
+    # SIGCHLD as SIG_IGN)
+    signal(SIGCHLD, SIG_DFL)
+    # close the parent handles
+    for i in 0 ..< ctx.handleMap.len:
+      if ctx.handleMap[i] != nil:
+        discard close(cint(i))
+    discard execl(cstring(cpath.cmd), cstring(cpath.basename), nil)
+    let code = int(ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT)
+    stdout.write("Cha-Control: ConnectionError " & $code & " " &
+      ($strerror(errno)).deleteChars({'\n', '\r'}))
+    quit(1)
+  else:
+    discard close(pipefd[1]) # close write
+    if request.body.t != rbtNone:
+      istream.sclose() # close read
+    handle.parser = HeaderParser(headers: newHeaders())
+    handle.stream = newPosixStream(pipefd[0])
+    case request.body.t
+    of rbtString:
+      ostream.write(request.body.s)
+      ostream.sclose()
+      return nil
+    of rbtMultipart:
+      let boundary = request.body.multipart.boundary
+      for entry in request.body.multipart.entries:
+        ostream.writeEntry(entry, boundary)
+      ostream.writeEnd(boundary)
+      ostream.sclose()
+      return nil
+    of rbtOutput:
+      return ostream
+    of rbtCache, rbtNone:
+      return nil
+
 proc loadStream(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request) =
   client.passedFdMap.withValue(request.url.pathname, fdp):
@@ -429,18 +682,6 @@ proc loadStream(ctx: LoaderContext; client: ClientData; handle: InputHandle;
       ctx.loadStreamRegular(handle, nil)
   do:
     handle.sendResult(ERROR_FILE_NOT_FOUND, "stream not found")
-
-func find(cacheMap: seq[CachedItem]; id: int): int =
-  for i, it in cacheMap:
-    if it.id == id:
-      return i
-  -1
-
-proc openCachedItem(client: ClientData; id: int): (PosixStream, int) =
-  let n = client.cacheMap.find(id)
-  if n != -1:
-    return (newPosixStream(client.cacheMap[n].path, O_RDONLY, 0), n)
-  return (nil, -1)
 
 proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request) =
@@ -534,13 +775,8 @@ proc loadResource(ctx: LoaderContext; client: ClientData;
           redo = true
           continue
     if request.url.scheme == "cgi-bin":
-      var istream: PosixStream = nil # for rbtCache
-      var ostream: PosixStream = nil # for rbtOutput
-      if request.body.t == rbtCache:
-        var n: int
-        (istream, n) = client.openCachedItem(request.body.cacheId)
-      handle.loadCGI(request, ctx.config.cgiDir, prevurl,
-        config.insecureSSLNoVerify, ctx.handleMap, istream, ostream)
+      let ostream = ctx.loadCGI(client, handle, request, prevurl,
+        config.insecureSSLNoVerify)
       if handle.stream != nil:
         if ostream != nil:
           let outputIn = ctx.findOutput(request.body.outputId, client)
@@ -1015,351 +1251,3 @@ proc runFileLoader*(fd: cint; config: LoaderConfig) =
           unregWrite.add(OutputHandle(handle))
     ctx.finishCycle(unregRead, unregWrite)
   ctx.exitLoader()
-
-proc getRedirect*(response: Response; request: Request): Request =
-  if "Location" in response.headers.table:
-    if response.status in 301u16..303u16 or response.status in 307u16..308u16:
-      let location = response.headers.table["Location"][0]
-      let url = parseURL(location, option(request.url))
-      if url.isSome:
-        let status = response.status
-        if status == 303 and request.httpMethod notin {hmGet, hmHead} or
-            status == 301 or
-            status == 302 and request.httpMethod == hmPost:
-          return newRequest(url.get, hmGet)
-        else:
-          return newRequest(url.get, request.httpMethod, body = request.body)
-  return nil
-
-template withLoaderPacketWriter(stream: SocketStream; loader: FileLoader;
-    w, body: untyped) =
-  stream.withPacketWriter w:
-    w.swrite(loader.clientPid)
-    w.swrite(loader.key)
-    body
-
-proc connect(loader: FileLoader): SocketStream =
-  return connectSocketStream(loader.sockDir, loader.sockDirFd, loader.process,
-    blocking = true)
-
-# Start a request. This should not block (not for a significant amount of time
-# anyway).
-proc startRequest(loader: FileLoader; request: Request): SocketStream =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcLoad)
-    w.swrite(request)
-  return stream
-
-proc startRequest*(loader: FileLoader; request: Request;
-    config: LoaderClientConfig): SocketStream =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcLoadConfig)
-    w.swrite(request)
-    w.swrite(config)
-  return stream
-
-iterator data*(loader: FileLoader): LoaderData {.inline.} =
-  for it in loader.map:
-    if it != nil:
-      yield it
-
-iterator ongoing*(loader: FileLoader): OngoingData {.inline.} =
-  for it in loader.data:
-    if it of OngoingData:
-      yield OngoingData(it)
-
-func fd*(data: LoaderData): int =
-  return int(data.stream.fd)
-
-proc put*(loader: FileLoader; data: LoaderData) =
-  let fd = int(data.stream.fd)
-  if loader.map.len <= fd:
-    loader.map.setLen(fd + 1)
-  assert loader.map[fd] == nil
-  loader.map[fd] = data
-  inc loader.mapFds
-
-proc get*(loader: FileLoader; fd: int): LoaderData =
-  if fd < loader.map.len:
-    return loader.map[fd]
-  return nil
-
-proc unset*(loader: FileLoader; data: LoaderData) =
-  let fd = int(data.stream.fd)
-  if loader.get(fd) != nil:
-    dec loader.mapFds
-    loader.map[fd] = nil
-
-proc fetch0(loader: FileLoader; input: Request; promise: FetchPromise;
-    redirectNum: int) =
-  let stream = loader.startRequest(input)
-  loader.registerFun(int(stream.fd))
-  loader.put(ConnectData(
-    promise: promise,
-    request: input,
-    stream: stream,
-    redirectNum: redirectNum
-  ))
-
-proc fetch*(loader: FileLoader; input: Request): FetchPromise =
-  let promise = FetchPromise()
-  loader.fetch0(input, promise, 0)
-  return promise
-
-proc reconnect*(loader: FileLoader; data: ConnectData) =
-  data.stream.sclose()
-  let stream = loader.startRequest(data.request)
-  let data = ConnectData(
-    promise: data.promise,
-    request: data.request,
-    stream: stream
-  )
-  loader.put(data)
-  loader.registerFun(data.fd)
-
-proc suspend*(loader: FileLoader; fds: seq[int]) =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcSuspend)
-    w.swrite(fds)
-  stream.sclose()
-
-proc resume*(loader: FileLoader; fds: openArray[int]) =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcResume)
-    w.swrite(fds)
-  stream.sclose()
-
-proc resume*(loader: FileLoader; fds: int) =
-  loader.resume([fds])
-
-proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcTee)
-    w.swrite(sourceId)
-    w.swrite(targetPid)
-  var outputId: int
-  var r = stream.initPacketReader()
-  r.sread(outputId)
-  return (stream, outputId)
-
-proc addCacheFile*(loader: FileLoader; outputId, targetPid: int): int =
-  let stream = loader.connect()
-  if stream == nil:
-    return -1
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcAddCacheFile)
-    w.swrite(outputId)
-    w.swrite(targetPid)
-  var r = stream.initPacketReader()
-  var outputId: int
-  r.sread(outputId)
-  stream.sclose()
-  return outputId
-
-proc getCacheFile*(loader: FileLoader; cacheId: int): string =
-  let stream = loader.connect()
-  if stream == nil:
-    return ""
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcGetCacheFile)
-    w.swrite(cacheId)
-  var r = stream.initPacketReader()
-  var s: string
-  r.sread(s)
-  stream.sclose()
-  return s
-
-proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
-    bool =
-  let stream = loader.connect()
-  if stream == nil:
-    return false
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcRedirectToFile)
-    w.swrite(outputId)
-    w.swrite(targetPath)
-  var r = stream.initPacketReader()
-  var res: bool
-  r.sread(res)
-  stream.sclose()
-  return res
-
-proc onConnected(loader: FileLoader; connectData: ConnectData) =
-  let stream = connectData.stream
-  let promise = connectData.promise
-  let request = connectData.request
-  var r = stream.initPacketReader()
-  case connectData.state
-  of cdsBeforeResult:
-    var res: int
-    r.sread(res) # packet 1
-    if res == 0:
-      r.sread(connectData.outputId) # packet 1
-      inc connectData.state
-    else:
-      var msg: string
-      # msg is discarded.
-      #TODO maybe print if called from trusted code (i.e. global == client)?
-      r.sread(msg) # packet 1
-      let fd = connectData.fd
-      loader.unregisterFun(fd)
-      loader.unregistered.add(fd)
-      stream.sclose()
-      # delete before resolving the promise
-      loader.unset(connectData)
-      let err = newTypeError("NetworkError when attempting to fetch resource")
-      promise.resolve(JSResult[Response].err(err))
-  of cdsBeforeStatus:
-    r.sread(connectData.status) # packet 2
-    inc connectData.state
-  of cdsBeforeHeaders:
-    let response = newResponse(connectData.res, request, stream,
-      connectData.outputId, connectData.status)
-    r.sread(response.headers) # packet 3
-    # Only a stream of the response body may arrive after this point.
-    response.body = stream
-    # delete before resolving the promise
-    loader.unset(connectData)
-    let data = OngoingData(response: response, stream: stream)
-    loader.put(data)
-    assert loader.unregisterFun != nil
-    response.unregisterFun = proc() =
-      loader.unset(data)
-      let fd = data.fd
-      loader.unregistered.add(fd)
-      loader.unregisterFun(fd)
-    response.resumeFun = proc(outputId: int) =
-      loader.resume(outputId)
-    stream.setBlocking(false)
-    let redirect = response.getRedirect(request)
-    if redirect != nil:
-      response.unregisterFun()
-      stream.sclose()
-      let redirectNum = connectData.redirectNum + 1
-      if redirectNum < 5: #TODO use config.network.max_redirect?
-        loader.fetch0(redirect, promise, redirectNum)
-      else:
-        let err = newTypeError("NetworkError when attempting to fetch resource")
-        promise.resolve(JSResult[Response].err(err))
-    else:
-      promise.resolve(JSResult[Response].ok(response))
-
-proc onRead*(loader: FileLoader; data: OngoingData) =
-  let response = data.response
-  response.onRead(response)
-  if response.body.isend:
-    if response.onFinish != nil:
-      response.onFinish(response, true)
-    response.onFinish = nil
-    response.close()
-
-proc onRead*(loader: FileLoader; fd: int) =
-  let data = loader.map[fd]
-  if data of ConnectData:
-    loader.onConnected(ConnectData(data))
-  else:
-    loader.onRead(OngoingData(data))
-
-proc onError*(loader: FileLoader; data: OngoingData) =
-  let response = data.response
-  if response.onFinish != nil:
-    response.onFinish(response, false)
-  response.onFinish = nil
-  response.close()
-
-proc onError*(loader: FileLoader; fd: int): bool =
-  let data = loader.map[fd]
-  if data of ConnectData:
-    # probably shouldn't happen. TODO
-    return false
-  else:
-    loader.onError(OngoingData(data))
-    return true
-
-# Note: this blocks until headers are received.
-proc doRequest*(loader: FileLoader; request: Request): Response =
-  let stream = loader.startRequest(request)
-  let response = Response(url: request.url)
-  var r = stream.initPacketReader()
-  r.sread(response.res) # packet 1
-  if response.res == 0:
-    r.sread(response.outputId) # packet 1
-    r = stream.initPacketReader()
-    r.sread(response.status) # packet 2
-    r = stream.initPacketReader()
-    r.sread(response.headers) # packet 3
-    # Only a stream of the response body may arrive after this point.
-    response.body = stream
-    response.resumeFun = proc(outputId: int) =
-      loader.resume(outputId)
-  else:
-    var msg: string
-    r.sread(msg) # packet 1
-    stream.sclose()
-  return response
-
-proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1) =
-  let stream = loader.connect()
-  if stream != nil:
-    let sourcePid = if sourcePid != -1: sourcePid else: loader.clientPid
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcShareCachedItem)
-      w.swrite(sourcePid)
-      w.swrite(targetPid)
-      w.swrite(id)
-    stream.sclose()
-
-proc passFd*(loader: FileLoader; id: string; fd: FileHandle) =
-  let stream = loader.connect()
-  if stream != nil:
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcPassFd)
-      w.swrite(id)
-    stream.sendFileHandle(fd)
-    stream.sclose()
-
-proc removeCachedItem*(loader: FileLoader; cacheId: int) =
-  let stream = loader.connect()
-  if stream != nil:
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcRemoveCachedItem)
-      w.swrite(cacheId)
-    stream.sclose()
-
-proc addClient*(loader: FileLoader; key: ClientKey; pid: int;
-    config: LoaderClientConfig; clonedFrom: int): bool =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
-    w.swrite(lcAddClient)
-    w.swrite(key)
-    w.swrite(pid)
-    w.swrite(config)
-    w.swrite(clonedFrom)
-  var r = stream.initPacketReader()
-  var res: bool
-  r.sread(res)
-  stream.sclose()
-  return res
-
-proc removeClient*(loader: FileLoader; pid: int) =
-  let stream = loader.connect()
-  if stream != nil:
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcRemoveClient)
-      w.swrite(pid)
-    stream.sclose()
-
-when defined(freebsd):
-  let O_DIRECTORY* {.importc, header: "<fcntl.h>", noinit.}: cint
-
-proc setSocketDir*(loader: FileLoader; path: string) =
-  loader.sockDir = path
-  when defined(freebsd):
-    loader.sockDirFd = open(cstring(path), O_DIRECTORY)
-  else:
-    loader.sockDirFd = -1

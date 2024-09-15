@@ -13,6 +13,7 @@ import io/dynstream
 import io/serversocket
 import io/stdio
 import loader/loader
+import loader/loaderiface
 import server/buffer
 import types/urimethodmap
 import types/url

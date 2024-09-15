@@ -19,8 +19,6 @@ import html/catom
 import html/enums
 import html/event
 import html/script
-import types/bitmap
-import types/path
 import io/bufwriter
 import io/dynstream
 import io/promise
@@ -28,8 +26,9 @@ import js/console
 import js/domexception
 import js/timeout
 import loader/headers
-import loader/loader
+import loader/loaderiface
 import loader/request
+import loader/response
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -38,12 +37,14 @@ import monoucha/jspropenumlist
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
+import types/bitmap
 import types/blob
 import types/canvastypes
 import types/color
 import types/line
 import types/matrix
 import types/opt
+import types/path
 import types/referrer
 import types/url
 import types/vector

@@ -13,7 +13,7 @@ import io/dynstream
 import io/promise
 import js/domexception
 import loader/headers
-import loader/loader
+import loader/loaderiface
 import loader/request
 import loader/response
 import monoucha/fromjs
