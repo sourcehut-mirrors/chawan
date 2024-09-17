@@ -11,6 +11,9 @@ import monoucha/tojs
 type TestEnum = enum
   teA = "a", teB = "b", teC = "c"
 
+type TestEnum2 = enum
+  te2C = "c", te2B = "b", te2A = "a"
+
 test "enums":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
@@ -18,6 +21,10 @@ test "enums":
   var e: TestEnum
   assert ctx.fromJS(val, e).isSome
   assert e == teB
+  var e2: TestEnum2
+  let val2 = ctx.toJS(te2A)
+  assert ctx.fromJS(val2, e2).isSome
+  assert e2 == te2A
   ctx.free()
   rt.free()
 

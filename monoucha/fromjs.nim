@@ -277,7 +277,16 @@ func getIdentMap[T: enum](e: typedesc[T]): seq[IdentMapItem] =
   result = @[]
   for e in T.low .. T.high:
     result.add(($e, int(e)))
-  result.sort(proc(x, y: IdentMapItem): int = cmp(x[0], y[0]))
+  result.sort(proc(x, y: IdentMapItem): int = cmp(x.s, y.s))
+
+proc cmpItemOA(x: IdentMapItem; y: openArray[char]): int =
+  let xlen = x.s.len
+  let L = min(xlen, y.len)
+  if L > 0:
+    let n = cmpMem(unsafeAddr x.s[0], unsafeAddr y[0], L)
+    if n != 0:
+      return n
+  return xlen - y.len
 
 proc fromJSEnumBody(map: openArray[IdentMapItem]; ctx: JSContext; val: JSValue;
     tname: cstring): int =
@@ -285,13 +294,7 @@ proc fromJSEnumBody(map: openArray[IdentMapItem]; ctx: JSContext; val: JSValue;
   let s = JS_ToCStringLen(ctx, addr plen, val)
   if s == nil:
     return -1
-  let i = map.binarySearch(s.toOpenArray(0, int(plen - 1)),
-      proc(x: IdentMapItem; y: openArray[char]): int =
-    let x = x[0]
-    if (let n = cmpMem(cstring(x), unsafeAddr y[0], min(x.len, y.len)); n != 0):
-      return n
-    return x.len - y.len
-  )
+  let i = map.binarySearch(s.toOpenArray(0, int(plen) - 1), cmpItemOA)
   if i == -1:
     JS_ThrowTypeError(ctx, "`%s' is not a valid value for enumeration %s",
       s, tname)
@@ -300,7 +303,7 @@ proc fromJSEnumBody(map: openArray[IdentMapItem]; ctx: JSContext; val: JSValue;
 proc fromJS*[T: enum](ctx: JSContext; val: JSValue; res: var T): Opt[void] =
   const IdentMap = getIdentMap(T)
   const tname = cstring($T)
-  if (let i = fromJSEnumBody(IdentMap, ctx, val, tname); i > 0):
+  if (let i = fromJSEnumBody(IdentMap, ctx, val, tname); i >= 0):
     res = T(IdentMap[i].n)
     return ok()
   return err()
@@ -319,7 +322,6 @@ proc fromJS(ctx: JSContext; val: JSValue; t: cstring; res: var pointer):
     JS_ThrowTypeError(ctx, "%s expected", t)
     var s: string
     discard ctx.fromJS(val, s)
-    eprint "val", s
     return err()
   res = p
   return ok()
