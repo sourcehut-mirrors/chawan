@@ -1,3 +1,7 @@
+0.4.2 (2024.09.17)
+* throw on trying to call bound functions on prototypes
+* fix inherited jsgetprop
+
 0.4.1 (2024.08.22)
 * fix compilation on Nim 2.0.4
 
