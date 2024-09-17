@@ -229,6 +229,7 @@ type
 let planetCID = ctx.registerType(Planet)
 ctx.registerType(Earth, parent = planetCID, asglobal = true)
 ctx.registerType(Moon, parent = planetCID)
+ctx.setGlobal(Earth()) # make sure to set a global so global functions work
 const code = "assert(globalThis instanceof Planet)"
 let val = ctx.eval(code)
 assert not JS_IsException(val)

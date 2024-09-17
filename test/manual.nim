@@ -95,6 +95,7 @@ test "Inheritance":
   let planetCID = ctx.registerType(Planet)
   ctx.registerType(Earth, parent = planetCID, asglobal = true)
   ctx.registerType(Moon, parent = planetCID)
+  ctx.setGlobal(Earth())
   const code = "assert(globalThis instanceof Planet)"
   let val = ctx.eval(code)
   check not JS_IsException(val)
@@ -178,6 +179,7 @@ test "jsctor: constructors":
   let ctx = rt.newJSContext()
   ctx.registerType(Window, asglobal = true)
   ctx.registerType(JSFile, name = "File")
+  ctx.setGlobal(Window())
   const code = """
 assert(new File('/path/to/file') + '' == '[object File]')
 """
@@ -195,11 +197,11 @@ proc setName(file: JSFile; s: string) {.jsfset: "name".} =
   file.path = file.path.substr(0, i) & s
 
 test "jsfget, jsfset: custom property reflectors":
-
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   ctx.registerType(Window, asglobal = true)
   ctx.registerType(JSFile, name = "File")
+  ctx.setGlobal(Window())
   const code = """
 const file = new File("/path/to/file");
 assert(file.path === "/path/to/file");
@@ -221,6 +223,7 @@ test "jsstfunc: static functions":
   let ctx = rt.newJSContext()
   ctx.registerType(Window, asglobal = true)
   ctx.registerType(JSFile, name = "File")
+  ctx.setGlobal(Window())
   const code = """
 assert(File.exists("doc/manual.md"));
   """

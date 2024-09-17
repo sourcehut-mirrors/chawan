@@ -999,6 +999,8 @@ macro jsgetprop*(fun: typed) =
   let dl = gen.dielabel
   gen.jsCallAndRet = quote do:
     block `dl`:
+      if JS_GetOpaque(obj, JS_GetClassID(obj)) == nil:
+        return cint(0)
       let retv = ctx.toJS(`jfcl`)
       if JS_IsException(retv):
         break `dl`

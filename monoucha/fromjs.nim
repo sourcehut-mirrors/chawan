@@ -314,10 +314,14 @@ proc fromJS(ctx: JSContext; val: JSValue; t: cstring; res: var pointer):
     if not JS_IsException(val):
       JS_ThrowTypeError(ctx, "value is not an object")
     return err()
-  if not ctx.isInstanceOf(val, t):
+  let p = JS_GetOpaque(val, JS_GetClassID(val))
+  if p == nil or not ctx.isInstanceOf(val, t):
     JS_ThrowTypeError(ctx, "%s expected", t)
+    var s: string
+    discard ctx.fromJS(val, s)
+    eprint "val", s
     return err()
-  res = JS_GetOpaque(val, JS_GetClassID(val))
+  res = p
   return ok()
 
 proc fromJS*[T](ctx: JSContext; val: JSValue; res: var ptr T): Opt[void] =
