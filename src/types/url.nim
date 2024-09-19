@@ -1169,11 +1169,11 @@ proc update(params: URLSearchParams) =
   else:
     params.url.query = some(serializedQuery)
 
-proc append*(params: URLSearchParams; name, value: string) {.jsfunc.} =
+proc append(params: URLSearchParams; name, value: string) {.jsfunc.} =
   params.list.add((name, value))
   params.update()
 
-proc delete*(params: URLSearchParams; name: string) {.jsfunc.} =
+proc delete(params: URLSearchParams; name: string) {.jsfunc.} =
   for i in countdown(params.list.high, 0):
     if params.list[i][0] == name:
       params.list.delete(i)
@@ -1182,13 +1182,15 @@ proc get*(params: URLSearchParams; name: string): Option[string] {.jsfunc.} =
   for it in params.list:
     if it[0] == name:
       return some(it[1])
+  return none(string)
 
-proc getAll*(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
+proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
+  result = @[]
   for it in params.list:
     if it[0] == name:
       result.add(it[1])
 
-proc set*(params: URLSearchParams; name, value: string) {.jsfunc.} =
+proc set(params: URLSearchParams; name, value: string) {.jsfunc.} =
   var first = true
   for i in 0..params.list.high:
     if params.list[i][0] == name:

@@ -67,6 +67,7 @@ type
     lcShareCachedItem
     lcSuspend
     lcTee
+    lcOpenCachedItem
 
   ClientKey* = array[32, uint8]
 
@@ -77,8 +78,6 @@ type
     proxy*: URL
     referrerPolicy*: ReferrerPolicy
     insecureSSLNoVerify*: bool
-
-  FetchPromise* = Promise[JSResult[Response]]
 
 proc getRedirect*(response: Response; request: Request): Request =
   if "Location" in response.headers.table:
@@ -377,6 +376,23 @@ proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1) =
       w.swrite(targetPid)
       w.swrite(id)
     stream.sclose()
+
+proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
+  let stream = loader.connect()
+  if stream != nil:
+    stream.withLoaderPacketWriter loader, w:
+      w.swrite(lcOpenCachedItem)
+      w.swrite(cacheId)
+    var fd = FileHandle(-1)
+    stream.withPacketReader r:
+      var success: bool
+      r.sread(success)
+      if success:
+        fd = r.recvAux.pop()
+    stream.sclose()
+    if fd != -1:
+      return newPosixStream(fd)
+  return nil
 
 proc passFd*(loader: FileLoader; id: string; fd: FileHandle) =
   let stream = loader.connect()

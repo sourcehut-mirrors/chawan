@@ -58,8 +58,9 @@ export response
 type
   CachedItem = ref object
     id: int
-    path: string
     refc: int
+    offset: int
+    path: string
 
   ClientData = ref object
     pid: int
@@ -263,10 +264,41 @@ proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
     return cacheId
   return -1
 
+proc findOffset(ps: PosixStream): int =
+  try:
+    var buffer = default(array[512, char])
+    var off = 0
+    var lf = 1u # we start at EOL
+    while true:
+      let n = ps.recvData(buffer)
+      if n == 0:
+        return off
+      for i in 0 ..< n:
+        let c = buffer[i]
+        if c == '\n':
+          inc lf
+          if lf == 2:
+            return off + i + 1
+        elif c != '\r':
+          lf = 0
+      off += n
+  except IOError:
+    discard
+  return -1
+
 proc openCachedItem(client: ClientData; id: int): (PosixStream, int) =
   let n = client.cacheMap.find(id)
   if n != -1:
-    return (newPosixStream(client.cacheMap[n].path, O_RDONLY, 0), n)
+    let item = client.cacheMap[n]
+    let ps = newPosixStream(client.cacheMap[n].path, O_RDONLY, 0)
+    if item.offset == -1:
+      let offset = ps.findOffset()
+      if offset == -1:
+        client.cacheMap.del(n)
+        return (nil, -1)
+      item.offset = offset
+    ps.seek(item.offset)
+    return (ps, n)
   return (nil, -1)
 
 proc put(ctx: LoaderContext; handle: LoaderHandle) =
@@ -357,18 +389,13 @@ proc handleLine(handle: InputHandle; line: string; headers: Headers) =
   let v = line.substr(k.len + 1).strip()
   headers.add(k, v)
 
-proc parseHeaders0(handle: InputHandle; buffer: LoaderBuffer): int =
+proc parseHeaders0(handle: InputHandle; data: openArray[char]): int =
   let parser = handle.parser
   var s = parser.lineBuffer
-  let L = if buffer == nil: 1 else: buffer.len
-  for i in 0 ..< L:
+  for i, c in data:
     template die =
       handle.parser = nil
       return -1
-    let c = if buffer != nil:
-      char(buffer.page[i])
-    else:
-      '\n'
     if parser.crSeen and c != '\n':
       die
     parser.crSeen = false
@@ -402,11 +429,15 @@ proc parseHeaders0(handle: InputHandle; buffer: LoaderBuffer): int =
       s &= c
   if s != "":
     parser.lineBuffer = s
-  return L
+  return data.len
 
 proc parseHeaders(handle: InputHandle; buffer: LoaderBuffer): int =
   try:
-    return handle.parseHeaders0(buffer)
+    if buffer == nil:
+      return handle.parseHeaders0(['\n'])
+    assert buffer.page != nil
+    let p = cast[ptr UncheckedArray[char]](buffer.page)
+    return handle.parseHeaders0(p.toOpenArray(0, buffer.len - 1))
   except ErrorBrokenPipe:
     handle.parser = nil
     return -1
@@ -457,9 +488,10 @@ proc handleRead(ctx: LoaderContext; handle: InputHandle;
   hrrDone
 
 # stream is a regular file, so we can't select on it.
-# cachedHandle is used for attaching the output handle to a different
-# InputHandle when loadFromCache is called while a download is still ongoing
-# (and thus some parts of the document are not cached yet).
+#
+# cachedHandle is used for attaching the output handle to another
+# InputHandle when loadFromCache is called while a download is still
+# ongoing (and thus some parts of the document are not cached yet).
 proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: InputHandle) =
   assert handle.parser == nil # parser is only used with CGI
   var unregWrite: seq[OutputHandle] = @[]
@@ -482,7 +514,7 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: InputHandle) =
       output.istreamAtEnd = true
       ctx.put(output)
     else:
-      assert output.stream.fd < ctx.handleMap.len or
+      assert output.stream.fd >= ctx.handleMap.len or
         ctx.handleMap[output.stream.fd] == nil
       output.oclose()
   handle.outputs.setLen(0)
@@ -506,7 +538,7 @@ type CGIPath = object
   myDir: string
 
 proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
-    insecureSSLNoVerify: bool) =
+    config: LoaderClientConfig) =
   let url = request.url
   putEnv("SCRIPT_NAME", cpath.scriptName)
   putEnv("SCRIPT_FILENAME", cpath.cmd)
@@ -532,9 +564,9 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
     putEnv("HTTP_COOKIE", request.headers["Cookie"])
   if request.referrer != nil:
     putEnv("HTTP_REFERER", $request.referrer)
-  if request.proxy != nil:
-    putEnv("ALL_PROXY", $request.proxy)
-  if insecureSSLNoVerify:
+  if config.proxy != nil:
+    putEnv("ALL_PROXY", $config.proxy)
+  if config.insecureSSLNoVerify:
     putEnv("CHA_INSECURE_SSL_NO_VERIFY", "1")
   setCurrentDir(cpath.myDir)
 
@@ -572,7 +604,7 @@ proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
   return cpath
 
 proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
-    request: Request; prevURL: URL; insecureSSLNoVerify: bool) =
+    request: Request; prevURL: URL; config: LoaderClientConfig) =
   if ctx.config.cgiDir.len == 0:
     handle.sendResult(ERROR_NO_CGI_DIR)
     return
@@ -584,10 +616,31 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
   if not fileExists(cpath.cmd):
     handle.sendResult(ERROR_CGI_FILE_NOT_FOUND)
     return
-  var pipefd: array[0..1, cint] # child -> parent
+  # Pipe the response body as stdout.
+  var pipefd: array[2, cint] # child -> parent
   if pipe(pipefd) == -1:
     handle.sendResult(ERROR_FAIL_SETUP_CGI)
     return
+  let istreamOut = newPosixStream(pipefd[0]) # read by loader
+  var ostreamOut = newPosixStream(pipefd[1]) # written by child
+  var ostreamOut2: PosixStream = nil
+  if request.tocache:
+    # Set stdout to a file, and repurpose the pipe as a dummy to detect when
+    # the process ends. outputId is the cache id.
+    let tmpf = getTempFile(ctx.config.tmpdir)
+    ostreamOut2 = ostreamOut
+    # RDWR, otherwise mmap won't work
+    ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR, 0o600)
+    if ostreamOut == nil:
+      handle.sendResult(ERROR_FAIL_SETUP_CGI)
+      return
+    let cacheId = handle.output.outputId # welp
+    client.cacheMap.add(CachedItem(
+      id: cacheId,
+      path: tmpf,
+      refc: 1,
+      offset: -1
+    ))
   # Pipe the request body as stdin for POST.
   var istream: PosixStream = nil # child end (read)
   var ostream: PosixStream = nil # parent end (write)
@@ -617,15 +670,14 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     istream = newPosixStream(pipefdRead[0])
     ostream = newPosixStream(pipefdRead[1])
   let contentLen = request.body.contentLength()
-  stdout.flushFile()
   stderr.flushFile()
   let pid = fork()
   if pid == -1:
     handle.sendResult(ERROR_FAIL_SETUP_CGI)
   elif pid == 0:
-    discard close(pipefd[0]) # close read
-    discard dup2(pipefd[1], 1) # dup stdout
-    discard close(pipefd[1])
+    istreamOut.sclose() # close read
+    discard dup2(ostreamOut.fd, 1) # dup stdout
+    ostreamOut.sclose()
     if ostream != nil:
       ostream.sclose() # close write
     if istream2 != nil:
@@ -637,7 +689,7 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     else:
       closeStdin()
     # we leave stderr open, so it can be seen in the browser console
-    setupEnv(cpath, request, contentLen, prevURL, insecureSSLNoVerify)
+    setupEnv(cpath, request, contentLen, prevURL, config)
     # reset SIGCHLD to the default handler. this is useful if the child process
     # expects SIGCHLD to be untouched. (e.g. git dies a horrible death with
     # SIGCHLD as SIG_IGN)
@@ -652,11 +704,13 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
       ($strerror(errno)).deleteChars({'\n', '\r'}))
     quit(1)
   else:
-    discard close(pipefd[1]) # close write
+    ostreamOut.sclose() # close write
+    if ostreamOut2 != nil:
+      ostreamOut2.sclose() # close write
     if request.body.t != rbtNone:
       istream.sclose() # close read
     handle.parser = HeaderParser(headers: newHeaders())
-    handle.stream = newPosixStream(pipefd[0])
+    handle.stream = istreamOut
     case request.body.t
     of rbtString:
       ostream.write(request.body.s)
@@ -709,10 +763,7 @@ proc loadStream(ctx: LoaderContext; client: ClientData; handle: InputHandle;
 proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request) =
   let id = parseInt32(request.url.pathname).get(-1)
-  let startFrom = if request.url.query.isSome:
-    parseInt32(request.url.query.get).get(0)
-  else:
-    0
+  let startFrom = parseInt32(request.url.query.get("")).get(0)
   let (ps, n) = client.openCachedItem(id)
   if ps != nil:
     if startFrom != 0:
@@ -798,7 +849,7 @@ proc loadResource(ctx: LoaderContext; client: ClientData;
           redo = true
           continue
     if request.url.scheme == "cgi-bin":
-      ctx.loadCGI(client, handle, request, prevurl, config.insecureSSLNoVerify)
+      ctx.loadCGI(client, handle, request, prevurl, config)
       if handle.stream != nil:
         ctx.addFd(handle)
       else:
@@ -852,8 +903,6 @@ proc load(ctx: LoaderContext; stream: SocketStream; request: Request;
     handle.rejectHandle(ERROR_DISALLOWED_URL)
   else:
     request.setupRequestDefaults(config)
-    if request.proxy == nil or not ctx.isPrivileged(client):
-      request.proxy = config.proxy
     ctx.loadResource(client, config, request, handle)
 
 proc load(ctx: LoaderContext; stream: SocketStream; client: ClientData;
@@ -969,6 +1018,18 @@ proc shareCachedItem(ctx: LoaderContext; stream: SocketStream;
   targetClient.cacheMap.add(item)
   stream.sclose()
 
+proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
+    client: ClientData; r: var BufferedReader) =
+  # open a cached item
+  var id: int
+  r.sread(id)
+  let (ps, _) = client.openCachedItem(id)
+  stream.withPacketWriter w:
+    w.swrite(ps != nil)
+    if ps != nil:
+      w.sendAux.add(FileHandle(ps.fd))
+  stream.sclose()
+
 proc passFd(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     r: var BufferedReader) =
   var id: string
@@ -1076,6 +1137,9 @@ proc acceptConnection(ctx: LoaderContext) =
       of lcShareCachedItem:
         privileged_command
         ctx.shareCachedItem(stream, r)
+      of lcOpenCachedItem:
+        privileged_command
+        ctx.openCachedItem(stream, client, r)
       of lcRedirectToFile:
         privileged_command
         ctx.redirectToFile(stream, r)
@@ -1123,7 +1187,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   ctx.ssock = initServerSocket(config.sockdir, -1, myPid, blocking = true)
   let sfd = int(ctx.ssock.sock.getFd())
   ctx.selector.registerHandle(sfd, {Read}, 0)
-  if ctx.handleMap.len <= sfd:
+  if sfd >= ctx.handleMap.len:
     ctx.handleMap.setLen(sfd + 1)
   ctx.handleMap[sfd] = LoaderHandle() # pseudo handle
   # The server has been initialized, so the main process can resume execution.

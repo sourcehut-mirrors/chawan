@@ -42,6 +42,9 @@ type
     suspended*: bool
     dead*: bool
 
+  SigchldHandle* = ref object of LoaderHandle
+    notifyMap*: seq[tuple[pid: int; input: InputHandle]]
+
   HandleParserState* = enum
     hpsBeforeLines, hpsAfterFirstLine, hpsControlDone
 

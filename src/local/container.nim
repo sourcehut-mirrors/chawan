@@ -101,11 +101,15 @@ type
   ContainerFlag* = enum
     cfCloned, cfUserRequested, cfHasStart, cfCanReinterpret, cfSave, cfIsHTML
 
+  CachedImageState* = enum
+    cisLoading, cisCanceled, cisLoaded
+
   CachedImage* = ref object
-    loaded*: bool
+    state*: CachedImageState
     width*: int
     height*: int
-    data*: Blob
+    data*: Blob # mmapped blob of image data
+    cacheId*: int # cache id of the file backing "data"
     bmp*: NetworkBitmap
     # Following variables are always 0 in kitty mode; they exist to support
     # sixel cropping.

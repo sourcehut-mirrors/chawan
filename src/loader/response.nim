@@ -47,6 +47,8 @@ type
     opaque*: RootRef
     flags*: set[ResponseFlag]
 
+  FetchPromise* = Promise[JSResult[Response]]
+
 jsDestructor(Response)
 
 proc newResponse*(res: int; request: Request; stream: SocketStream;
@@ -58,6 +60,9 @@ proc newResponse*(res: int; request: Request; stream: SocketStream;
     outputId: outputId,
     status: status
   )
+
+proc newFetchPromise*(): FetchPromise =
+  return newPromise[JSResult[Response]]()
 
 func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
   #TODO use "create" function
@@ -115,6 +120,10 @@ func getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =
   this.headers.table.withValue("Referrer-Policy", p):
     return strictParseEnum[ReferrerPolicy](p[][0])
 
+proc resume*(response: Response) =
+  response.resumeFun(response.outputId)
+  response.resumeFun = nil
+
 type TextOpaque = ref object of RootObj
   buf: string
   bodyRead: Promise[JSResult[string]]
@@ -145,15 +154,9 @@ proc onFinishText(response: Response; success: bool) =
     let err = newTypeError("NetworkError when attempting to fetch resource")
     bodyRead.resolve(JSResult[string].err(err))
 
-proc resume*(response: Response) =
-  response.resumeFun(response.outputId)
-  response.resumeFun = nil
-
 proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   if response.body == nil:
-    let p = newPromise[JSResult[string]]()
-    p.resolve(JSResult[string].ok(""))
-    return p
+    return newResolvedPromise(JSResult[string].ok(""))
   if response.bodyUsed:
     let p = newPromise[JSResult[string]]()
     let err = JSResult[string]
@@ -179,12 +182,12 @@ proc onReadBlob(response: Response) =
   let opaque = BlobOpaque(response.opaque)
   while true:
     try:
-      let targetLen = opaque.len + BufferSize
-      if targetLen > opaque.size:
-        opaque.size = targetLen
-        opaque.p = realloc(opaque.p, targetLen)
+      if opaque.len + BufferSize > opaque.size:
+        opaque.size *= 2
+        opaque.p = realloc(opaque.p, opaque.size)
       let p = cast[ptr UncheckedArray[uint8]](opaque.p)
-      let n = response.body.recvData(addr p[opaque.len], BufferSize)
+      let diff = opaque.size - opaque.len
+      let n = response.body.recvData(addr p[opaque.len], diff)
       opaque.len += n
       if n == 0:
         break
@@ -211,13 +214,13 @@ proc onFinishBlob(response: Response; success: bool) =
 
 proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
   if response.bodyUsed:
-    let p = newPromise[JSResult[Blob]]()
     let err = JSResult[Blob].err(newTypeError("Body has already been consumed"))
-    p.resolve(err)
-    return p
+    return newResolvedPromise(err)
   let opaque = BlobOpaque(
     bodyRead: newPromise[JSResult[Blob]](),
-    contentType: response.getContentType()
+    contentType: response.getContentType(),
+    p: alloc(BufferSize),
+    size: BufferSize
   )
   response.opaque = opaque
   response.onRead = onReadBlob

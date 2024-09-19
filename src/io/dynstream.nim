@@ -169,6 +169,88 @@ proc newPosixStream*(path: string; flags, mode: cint): PosixStream =
     return nil
   return newPosixStream(fd)
 
+type
+  MaybeMappedMemory* = ptr MaybeMappedMemoryObj
+
+  MaybeMappedMemoryObj = object
+    p0: pointer
+    p0len: int
+    fromMmap: bool
+    p*: ptr UncheckedArray[uint8]
+    len*: int
+
+# Read data of size "len", or mmap it if the stream is a file.
+proc recvDataLoopOrMmap*(ps: PosixStream; len = -1): MaybeMappedMemory =
+  var stats: Stat
+  if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
+    let srcOff = lseek(ps.fd, 0, SEEK_CUR) # skip headers
+    if len != -1:
+      doAssert len == stats.st_size - srcOff
+    let len = int(stats.st_size) - srcOff
+    let p0 = mmap(nil, len, PROT_READ, MAP_SHARED, ps.fd, 0)
+    if p0 == MAP_FAILED:
+      return nil
+    let p1 = addr cast[ptr UncheckedArray[uint8]](p0)[srcOff]
+    let res = create(MaybeMappedMemoryObj)
+    res[] = MaybeMappedMemoryObj(
+      p0: p0,
+      p0len: int(stats.st_size),
+      p: cast[ptr UncheckedArray[uint8]](p1),
+      len: len,
+      fromMmap: true
+    )
+    return res
+  let p = cast[ptr UncheckedArray[uint8]](alloc(len))
+  ps.recvDataLoop(p, len)
+  let res = create(MaybeMappedMemoryObj)
+  res[] = MaybeMappedMemoryObj(
+    p0: p,
+    p0len: len,
+    p: p,
+    len: len,
+    fromMmap: false
+  )
+  return res
+
+proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
+  var stats: Stat
+  if fstat(0, stats) != -1 and S_ISREG(stats.st_mode):
+    let p0 = mmap(nil, len, PROT_WRITE, MAP_SHARED, ps.fd, 0)
+    if p0 == MAP_FAILED:
+      return nil
+    ps.seek(len - 1)
+    ps.sendDataLoop([char(0)])
+    let res = create(MaybeMappedMemoryObj)
+    res[] = MaybeMappedMemoryObj(
+      p0: p0,
+      p0len: int(stats.st_size),
+      p: cast[ptr UncheckedArray[uint8]](p0),
+      len: len,
+      fromMmap: true
+    )
+    return res
+  let p = cast[ptr UncheckedArray[uint8]](alloc(len))
+  let res = create(MaybeMappedMemoryObj)
+  res[] = MaybeMappedMemoryObj(
+    p0: p,
+    p0len: len,
+    p: p,
+    len: len,
+    fromMmap: false
+  )
+  return res
+
+proc sendDataLoop*(ps: PosixStream; mem: MaybeMappedMemory) =
+  # only send if not mmapped; otherwise everything is already where it should be
+  if not mem.fromMmap:
+    ps.sendDataLoop(mem.p, mem.len)
+
+proc dealloc*(mem: MaybeMappedMemory) =
+  if mem.fromMmap:
+    discard munmap(mem.p0, mem.p0len)
+  else:
+    dealloc(mem.p0)
+
 type SocketStream* = ref object of PosixStream
   source*: Socket
 

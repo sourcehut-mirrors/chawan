@@ -58,13 +58,6 @@ proc myRead(data: pointer; size: csize_t; user: pointer): csize_t {.cdecl.} =
     n += csize_t(i)
   return n
 
-{.push header: "stb_image_resize.h".}
-proc stbir_resize_uint8(input_pixels: ptr uint8;
-  input_w, input_h, input_stride_in_bytes: cint; output_pixels: ptr uint8;
-  output_w, output_h, output_stride_in_bytes, num_channels: cint): cint
-  {.importc.}
-{.pop.}
-
 proc writeAll(data: pointer; size: int) =
   var n = 0
   while n < size:
@@ -123,17 +116,6 @@ proc main() =
     if res != 0:
       die("Cha-Control: ConnectionError 1 jebp error " &
         $jebp_error_string(res))
-    elif targetWidth != -1 and targetHeight != -1:
-      let hdr = "Cha-Image-Dimensions: " & $targetWidth & "x" & $targetHeight &
-        "\n\n"
-      let p2 = cast[ptr UncheckedArray[uint8]](alloc(hdr.len +
-        targetWidth * targetHeight * 4))
-      copyMem(addr p2[0], unsafeAddr hdr[0], hdr.len)
-      doAssert stbir_resize_uint8(cast[ptr uint8](image.pixels), image.width,
-        image.height, 0, addr p2[hdr.len], targetWidth, targetHeight, 0, 4) == 1
-      writeAll(p2, hdr.len + targetWidth * targetHeight * 4)
-      dealloc(p2)
-      jebp_free_image(addr image)
     else:
       puts("Cha-Image-Dimensions: " & $image.width & "x" & $image.height &
         "\n\n")

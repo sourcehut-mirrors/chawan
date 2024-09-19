@@ -7,9 +7,6 @@ MANOFF -->
 On terminals that support images, Chawan can display various bit-mapped
 image formats.
 
-Warning: both this document and the implementation is very much WIP.
-Anything described in this document may change in the near future.
-
 ## Enabling images
 
 There are actually two switches for images in the config:
@@ -69,11 +66,13 @@ Known quirks and implementation details:
 
 ### Kitty
 
-On terminals that support it, Kitty is preferred over Sixel. The Kitty
-protocol has the benefit that it can reuse images we have sent at least once,
-so it is normally more efficient than the former.
+On terminals that support it, Kitty's protocol is preferred over
+Sixel. Its main benefit is that images do not have to be sent again
+every time they move on the screen (i.e. on scroll), but the initial
+transfer should also be faster (because PNG's compression tends to
+outperform Sixel's RLE).
 
-To minimize transfer size, we encode images to PNG before displaying them.
+Unlike Sixel, the Kitty protocol fully supports transparency.
 
 ## Input formats
 
@@ -91,15 +90,18 @@ like stbi is OK to vendor.)
 
 All image codec implementations are specified by the URL scheme
 "img-codec+name:", where "name" is the MIME subtype. e.g. for image/png,
-it is "img-codec+png:". Like all schemes, these are defined (and
-overridable) in the urimethodmap file, and are implemented as local CGI
-programs. These programs take an encoded image on stdin, and dump the
-decoded RGBA data to stdout - when encoding, vice versa.
+it is "img-codec+png:". (This indeed means that only "image" MIME types
+can be used.)
 
-This means that it is possible (although rarely practical) for users
-to define image decoders for their preferred formats, or even override
-the built-in ones. (If you actually end up doing this for some reason,
-please shoot me a mail so I can add it to the bonus directory.)
+Like all schemes, these are defined (and overridable) in the
+urimethodmap file, and are implemented as local CGI programs. These
+programs take an encoded image on stdin, and dump the decoded RGBA data
+to stdout - when encoding, vice versa.
+
+This means that it is possible for users to define image decoders for
+their preferred formats, or even override the built-in ones. (If you
+actually end up doing this for some reason, please shoot me a mail so I
+can add it to the bonus directory.)
 
 A codec can have one of, or both, "decode" and "encode" instructions;
 these are set in the path name. So "img-codec+png:decode" is called for
@@ -116,8 +118,6 @@ stream of an encoded image on its standard input and print the
 equivalent binary stream of big-endian 8-bit (per component) RGBA values
 to stdout.
 
-If specified, it also has to resize said image first.
-
 Input headers:
 
 * Cha-Image-Info-Only: 1
@@ -126,30 +126,14 @@ This tells the image decoder to only send image metadata (i.e. size).
 Technically, the decoder is free to actually decode the image too, but
 the browser will ignore any output after headers.
 
-* Cha-Image-Target-Dimensions: {width}x{height}
-
-Mutually exclusive with Cha-Image-Info-Only; this instructs the decoder
-to also resize the output image. The dimension format is such that for
-e.g. 123x456, 123 is width and 456 is height.
-
-(Readers of good taste might consider this header to be a questionable
-design decision, but remember that both the decoder and encoder
-effectively require copying the output image (thru stdio). Combined with
-the current file loader implementation, this means that in-browser image
-resizing would require at least two unnecessary copies.
-
-A future design might solve this problem better through shared memory.)
-
 Output headers:
 
 * Cha-Image-Dimensions: {width}x{height}
 
-The final size of the decoded image. If the image was resized through
-Cha-Image-Target-Dimensions, then this header's value will match the
-value specified there.
+The size of the decoded image.
 
-Again, the dimension format is such that e.g. for 123x456, 123 is width
-and 456 is height.
+The dimension format is such that e.g. for 123x456, 123 is width and 456
+is height.
 
 #### encoding
 
@@ -177,3 +161,25 @@ The requested encoding quality, ranging from 1 to 100 inclusive
 Output headers:
 
 Currently, no output headers are defined for encoders.
+
+### Skipping copies with mmap
+
+The naive implementation of the above system would have to copy the
+output at least twice when an image is resized. To skip these copies,
+stdin and/or stdout is (currently) a file in the tmp directory for:
+
+* decode stdin, when the image is already downloaded
+* decode stdout, always
+* encode stdin, always
+
+This makes it possible to mmap(2) stdin/stdout instead of streaming
+through them with read(2) and write(2). When doing this, mind the
+following:
+
+* When reading, you must check your initial position in the file with
+  lseek(2).
+* When writing, your headers are part of the output. At the very least,
+  you must place a newline at the file's beginning.
+* This *is* an implementation detail, and might change at any time in
+  the future (e.g. if we add a "no cache files" mode). Always check
+  for S_ISREG to ensure that you are actually dealing with a file.

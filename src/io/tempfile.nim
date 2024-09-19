@@ -1,6 +1,6 @@
 import std/os
 
-var tmpf_seq: int
+var tmpf_seq = 0
 proc getTempFile*(tmpdir: string; ext = ""): string =
   if not dirExists(tmpdir):
     createDir(tmpdir)

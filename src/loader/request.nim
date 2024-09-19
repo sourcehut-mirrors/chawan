@@ -81,7 +81,7 @@ type
     headers*: Headers
     body*: RequestBody
     referrer*: URL
-    proxy*: URL #TODO do something with this
+    tocache*: bool
 
   JSRequest* = ref object
     request*: Request
@@ -143,14 +143,14 @@ iterator pairs*(headers: Headers): (string, string) =
       yield (k, v)
 
 func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders();
-    body = RequestBody(); proxy: URL = nil; referrer: URL = nil): Request =
+    body = RequestBody(); referrer: URL = nil; tocache = false): Request =
   return Request(
     url: url,
     httpMethod: httpMethod,
     headers: headers,
     body: body,
     referrer: referrer,
-    proxy: proxy
+    tocache: tocache
   )
 
 func createPotentialCORSRequest*(url: URL; destination: RequestDestination;

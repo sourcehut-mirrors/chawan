@@ -356,7 +356,7 @@ proc input(client: Client): EmptyPromise =
     p.resolve()
   return p
 
-when not defined(android):
+when ioselSupportedPlatform:
   let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
 proc showConsole(client: Client) {.jsfunc.} =
@@ -542,7 +542,7 @@ proc handleError(client: Client; fd: int) =
 proc inputLoop(client: Client) =
   let selector = client.selector
   selector.registerHandle(int(client.pager.term.istream.fd), {Read}, 0)
-  when not defined(android):
+  when ioselSupportedPlatform:
     let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
   var keys: array[64, ReadyKey]
   while true:
@@ -554,7 +554,7 @@ proc inputLoop(client: Client) =
         client.handleWrite(event.fd)
       if Error in event.events:
         client.handleError(event.fd)
-      when not defined(android):
+      when ioselSupportedPlatform:
         if Signal in event.events:
           assert event.fd == sigwinch
           client.pager.windowChange()

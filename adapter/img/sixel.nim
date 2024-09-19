@@ -157,7 +157,7 @@ proc trim(trimMap: var TrimMap; K: var uint) =
   )
   K = k
 
-proc getPixel(img: seq[RGBAColorBE]; m: int; bgcolor: ARGBColor): RGBColor
+proc getPixel(img: openArray[RGBAColorBE]; m: int; bgcolor: ARGBColor): RGBColor
     {.inline.} =
   let c0 = img[m].toARGBColor()
   if c0.a != 255:
@@ -165,7 +165,7 @@ proc getPixel(img: seq[RGBAColorBE]; m: int; bgcolor: ARGBColor): RGBColor
     return RGBColor(uint32(c1).fastmul(100))
   return RGBColor(uint32(c0).fastmul(100))
 
-proc quantize(img: seq[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint):
+proc quantize(img: openArray[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint):
     NodeChildren =
   var root = default(NodeChildren)
   if outk <= 2: # monochrome; not much we can do with an octree...
@@ -366,7 +366,7 @@ proc createBands(bands: var seq[SixelBand]; activeChunks: seq[ptr SixelChunk]) =
     if not found:
       bands.add(SixelBand(head: chunk, tail: chunk))
 
-proc encode(img: seq[RGBAColorBE]; width, height, offx, offy, cropw: int;
+proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
     halfdump: bool; bgcolor: ARGBColor; palette: int) =
   var palette = uint(palette)
   var root = img.quantize(bgcolor, palette)
@@ -478,7 +478,6 @@ proc parseDimensions(s: string): (int, int) =
   return (int(w.get), int(h.get))
 
 proc main() =
-  enterNetworkSandbox()
   let scheme = getEnv("MAPPED_URI_SCHEME")
   let f = scheme.after('+')
   if f != "x-sixel":
@@ -487,7 +486,6 @@ proc main() =
   of "decode":
     die("Cha-Control: ConnectionError 1 not implemented\n")
   of "encode":
-    let headers = getEnv("REQUEST_HEADERS")
     var width = 0
     var height = 0
     var offx = 0
@@ -497,7 +495,7 @@ proc main() =
     var bgcolor = rgb(0, 0, 0)
     var cropw = -1
     var quality = -1
-    for hdr in headers.split('\n'):
+    for hdr in getEnv("REQUEST_HEADERS").split('\n'):
       let s = hdr.after(':').strip()
       case hdr.until(':')
       of "Cha-Image-Dimensions":
@@ -537,9 +535,15 @@ proc main() =
       os.sendDataLoop("Cha-Image-Dimensions: 0x0\n")
       quit(0) # done...
     let n = width * height
-    var img = cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](n))
+    let L = n * 4
     let ps = newPosixStream(STDIN_FILENO)
-    ps.recvDataLoop(addr img[0], n * 4)
-    img.encode(width, height, offx, offy, cropw, halfdump, bgcolor, palette)
+    let src = ps.recvDataLoopOrMmap(L)
+    if src == nil:
+      die("Cha-Control: ConnectionError 1 failed to read input\n")
+    enterNetworkSandbox() # don't swallow stat
+    let p = cast[ptr UncheckedArray[RGBAColorBE]](src.p)
+    p.toOpenArray(0, n - 1).encode(width, height, offx, offy, cropw, halfdump,
+      bgcolor, palette)
+    dealloc(src)
 
 main()

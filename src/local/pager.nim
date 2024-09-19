@@ -214,6 +214,10 @@ proc clearStatus(pager: Pager) =
 
 proc setContainer*(pager: Pager; c: Container) {.jsfunc.} =
   if pager.term.imageMode != imNone and pager.container != nil:
+    for cachedImage in pager.container.cachedImages:
+      if cachedImage.state == cisLoaded:
+        pager.loader.removeCachedItem(cachedImage.cacheId)
+      cachedImage.state = cisCanceled
     pager.container.cachedImages.setLen(0)
   pager.container = c
   if c != nil:
@@ -503,6 +507,9 @@ proc redraw(pager: Pager) {.jsfunc.} =
     if pager.container.select != nil:
       pager.container.select.redraw = true
 
+proc getTempFile(pager: Pager; ext = ""): string =
+  return getTempFile(pager.config.external.tmpdir, ext)
+
 proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     offx, erry, dispw: int) =
   let bmp = image.bmp
@@ -517,20 +524,53 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
   pager.loader.shareCachedItem(bmp.cacheId, pager.loader.clientPid,
     container.process)
   let imageMode = pager.term.imageMode
-  let headers = newHeaders()
-  if image.width != bmp.width or image.height != bmp.height:
-    headers.add("Cha-Image-Target-Dimensions", $image.width & 'x' &
-      $image.height)
   pager.loader.fetch(newRequest(
     newURL("img-codec+" & bmp.contentType.after('/') & ":decode").get,
     httpMethod = hmPost,
-    headers = headers,
     body = RequestBody(t: rbtCache, cacheId: bmp.cacheId),
-  )).then(proc(res: JSResult[Response]) =
+    tocache = true
+  )).then(proc(res: JSResult[Response]): FetchPromise =
+    # remove previous step
+    pager.loader.removeCachedItem(bmp.cacheId)
     if res.isNone:
-      pager.loader.removeCachedItem(bmp.cacheId)
+      return nil
+    let response = res.get
+    let cacheId = response.outputId # set by loader in tocache
+    if cachedImage.state == cisCanceled: # container is no longer visible
+      pager.loader.removeCachedItem(cacheId)
+      return nil
+    if image.width == bmp.width and image.height == bmp.height:
+      # skip resize
+      return newResolvedPromise(res)
+    # resize
+    # use a temp file, so that img-resize can mmap its output
+    let headers = newHeaders({
+      "Cha-Image-Dimensions": $bmp.width & 'x' & $bmp.height,
+      "Cha-Image-Target-Dimensions": $image.width & 'x' & $image.height
+    })
+    let p = pager.loader.fetch(newRequest(
+      newURL("cgi-bin:resize").get,
+      httpMethod = hmPost,
+      headers = headers,
+      body = RequestBody(t: rbtCache, cacheId: cacheId),
+      tocache = true
+    )).then(proc(res: JSResult[Response]): FetchPromise =
+      # ugh. I must remove the previous cached item, but only after
+      # resize is done...
+      pager.loader.removeCachedItem(cacheId)
+      return newResolvedPromise(res)
+    )
+    response.resume()
+    response.close()
+    return p
+  ).then(proc(res: JSResult[Response]) =
+    if res.isNone:
       return
     let response = res.get
+    let cacheId = response.outputId
+    if cachedImage.state == cisCanceled:
+      pager.loader.removeCachedItem(cacheId)
+      return
     let headers = newHeaders({
       "Cha-Image-Dimensions": $image.width & 'x' & $image.height
     })
@@ -550,23 +590,40 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       url,
       httpMethod = hmPost,
       headers = headers,
-      body = RequestBody(t: rbtOutput, outputId: response.outputId),
+      body = RequestBody(t: rbtCache, cacheId: cacheId),
+      tocache = true
     )
     let r = pager.loader.fetch(request)
     response.resume()
     response.close()
-    r.then(proc(res: JSResult[Response]): Promise[JSResult[Blob]] =
+    r.then(proc(res: JSResult[Response]) =
+      # remove previous step
+      pager.loader.removeCachedItem(cacheId)
       if res.isNone:
-        let p = newPromise[JSResult[Blob]]()
-        p.resolve(JSResult[Blob].err(res.error))
-        return p
-      return res.get.blob()
-    ).then(proc(res: JSResult[Blob]) =
-      if res.isSome:
-        container.redraw = true
-        cachedImage.data = res.get
-        cachedImage.loaded = true
-      pager.loader.removeCachedItem(bmp.cacheId)
+        return
+      let cacheId = res.get.outputId
+      if cachedImage.state == cisCanceled:
+        pager.loader.removeCachedItem(cacheId)
+        return
+      let ps = pager.loader.openCachedItem(cacheId)
+      if ps == nil:
+        pager.loader.removeCachedItem(cacheId)
+        return
+      let mem = ps.recvDataLoopOrMmap()
+      ps.sclose()
+      if mem == nil:
+        pager.loader.removeCachedItem(cacheId)
+        return
+      let blob = newBlob(mem.p, mem.len, "image/x-sixel",
+        (proc(opaque, p: pointer) =
+          let mem = cast[MaybeMappedMemory](opaque)
+          dealloc(mem)
+        ), mem
+      )
+      container.redraw = true
+      cachedImage.data = blob
+      cachedImage.state = cisLoaded
+      cachedImage.cacheId = cacheId
     )
   )
   container.cachedImages.add(cachedImage)
@@ -592,7 +649,7 @@ proc initImages(pager: Pager; container: Container) =
     if cached == nil:
       pager.loadCachedImage(container, image, offx, erry, dispw)
       continue
-    if not cached.loaded:
+    if cached.state != cisLoaded:
       continue # loading
     let canvasImage = pager.term.loadImage(cached.data, container.process,
       imageId, image.x - container.fromx, image.y - container.fromy,
@@ -1110,7 +1167,7 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
 
 proc openInEditor(pager: Pager; input: var string): bool =
   try:
-    let tmpf = getTempFile(pager.config.external.tmpdir)
+    let tmpf = pager.getTempFile()
     if input != "":
       writeFile(tmpf, input)
     let cmd = pager.getEditorCommand(tmpf)
@@ -1815,7 +1872,7 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
   if entry == nil:
     return CheckMailcapResult(connect: true, fdout: stream.fd, found: false)
   let ext = url.pathname.afterLast('.')
-  let tempfile = getTempFile(pager.config.external.tmpdir, ext)
+  let tempfile = pager.getTempFile(ext)
   let outpath = if entry.nametemplate != "":
     unquoteCommand(entry.nametemplate, contentType, tempfile, url)
   else:
