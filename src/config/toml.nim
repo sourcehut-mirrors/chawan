@@ -387,17 +387,17 @@ proc consumeNoState(state: var TomlParser): Result[bool, TomlError] =
   return state.err("unexpected end of file")
 
 type ParsedNumberType = enum
-  NUMBER_INTEGER, NUMBER_FLOAT, NUMBER_HEX, NUMBER_OCT
+  pntInteger, pntFloat, pntHex, pntOct
 
 proc consumeNumber(state: var TomlParser; c: char): TomlResult =
   var repr = ""
-  var numType = NUMBER_INTEGER
+  var numType = pntInteger
   if c == '0' and state.has():
     let c = state.consume()
     if c == 'x':
-      numType = NUMBER_HEX
+      numType = pntHex
     elif c == 'o':
-      numType = NUMBER_OCT
+      numType = pntOct
     else:
       state.reconsume()
       repr &= c
@@ -418,15 +418,15 @@ proc consumeNumber(state: var TomlParser; c: char): TomlResult =
   if state.has(1) and state.peek(0) == '.' and state.peek(1) in AsciiDigit:
     repr &= state.consume()
     repr &= state.consume()
-    if numType notin {NUMBER_INTEGER, NUMBER_FLOAT}:
+    if numType notin {pntInteger, pntFloat}:
       return state.err("invalid floating point number")
-    numType = NUMBER_FLOAT
+    numType = pntFloat
     while state.has() and state.peek(0) in AsciiDigit:
       repr &= state.consume()
   if state.has(1) and state.peek(0) in {'E', 'e'}:
-    if numType notin {NUMBER_INTEGER, NUMBER_FLOAT}:
+    if numType notin {pntInteger, pntFloat}:
       return state.err("invalid floating point number")
-    numType = NUMBER_FLOAT
+    numType = pntFloat
     var j = 2
     if state.peek(1) == '-' or state.peek(1) == '+':
       inc j
@@ -437,22 +437,22 @@ proc consumeNumber(state: var TomlParser; c: char): TomlResult =
       while state.has() and state.peek(0) in AsciiDigit:
         repr &= state.consume()
   case numType
-  of NUMBER_INTEGER:
+  of pntInteger:
     let val = parseInt64(repr)
     if val.isNone:
       return state.err("invalid integer")
     return ok(TomlValue(t: tvtInteger, i: val.get))
-  of NUMBER_HEX:
+  of pntHex:
     let val = parseHexInt64(repr)
     if val.isNone:
       return state.err("invalid hexadecimal number")
     return ok(TomlValue(t: tvtInteger, i: val.get))
-  of NUMBER_OCT:
+  of pntOct:
     let val = parseOctInt64(repr)
     if val.isNone:
       return state.err("invalid octal number")
     return ok(TomlValue(t: tvtInteger, i: val.get))
-  of NUMBER_FLOAT:
+  of pntFloat:
     let val = parseFloat64(repr)
     return ok(TomlValue(t: tvtFloat, f: val))
 
