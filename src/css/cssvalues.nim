@@ -67,7 +67,6 @@ type
     cptPaddingRight = "padding-right"
     cptPaddingBottom = "padding-bottom"
     cptVerticalAlign = "vertical-align"
-    cptLineHeight = "line-height"
     cptTextAlign = "text-align"
     cptListStylePosition = "list-style-position"
     cptBackgroundColor = "background-color"
@@ -426,7 +425,6 @@ const ValueTypes = [
   cptPaddingRight: cvtLength,
   cptPaddingBottom: cvtLength,
   cptVerticalAlign: cvtVerticalAlign,
-  cptLineHeight: cvtLength,
   cptTextAlign: cvtTextAlign,
   cptListStylePosition: cvtListStylePosition,
   cptBackgroundColor: cvtColor,
@@ -463,9 +461,9 @@ const ValueTypes = [
 
 const InheritedProperties = {
   cptColor, cptFontStyle, cptWhiteSpace, cptFontWeight, cptTextDecoration,
-  cptWordBreak, cptListStyleType, cptLineHeight, cptTextAlign,
-  cptListStylePosition, cptCaptionSide, cptBorderSpacing, cptBorderCollapse,
-  cptQuotes, cptVisibility, cptTextTransform
+  cptWordBreak, cptListStyleType, cptTextAlign, cptListStylePosition,
+  cptCaptionSide, cptBorderSpacing, cptBorderCollapse, cptQuotes,
+  cptVisibility, cptTextTransform
 }
 
 func shorthandType(s: string): CSSShorthandType =
@@ -1068,19 +1066,6 @@ func cssVerticalAlign(cval: CSSComponentValue): Opt[CSSVerticalAlign] =
       ))
   return err()
 
-func cssLineHeight(cval: CSSComponentValue): Opt[CSSLength] =
-  if cval of CSSToken:
-    let tok = CSSToken(cval)
-    case tok.tokenType
-    of cttNumber:
-      return cssLength(tok.nvalue * 100, "%")
-    of cttIdent:
-      if tok.value.equalsIgnoreCase("normal"):
-        return ok(CSSLengthAuto)
-    else:
-      return cssLength(tok, has_auto = false)
-  return err()
-
 func cssCounterReset(cvals: openArray[CSSComponentValue]):
     Opt[seq[CSSCounterReset]] =
   template die =
@@ -1183,8 +1168,6 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
   of cvtColor: return_new color, ?cssColor(cval)
   of cvtLength:
     case t
-    of cptLineHeight:
-      return_new length, ?cssLineHeight(cval)
     of cptMaxWidth, cptMaxHeight, cptMinWidth, cptMinHeight:
       return_new length, ?cssMaxMinSize(cval)
     of cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom:
@@ -1243,8 +1226,8 @@ func getInitialColor(t: CSSPropertyType): CellColor =
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t
-  of cptWidth, cptHeight, cptLineHeight, cptLeft, cptRight, cptTop, cptBottom,
-      cptMaxWidth, cptMaxHeight, cptMinWidth, cptMinHeight, cptFlexBasis:
+  of cptWidth, cptHeight, cptLeft, cptRight, cptTop, cptBottom, cptMaxWidth,
+      cptMaxHeight, cptMinWidth, cptMinHeight, cptFlexBasis:
     return CSSLengthAuto
   else:
     return CSSLength(auto: false, unit: cuPx, num: 0)

@@ -213,7 +213,6 @@ type
   LineBoxState = object
     atomStates: seq[InlineAtomState]
     baseline: LayoutUnit
-    lineHeight: LayoutUnit
     paddingTop: LayoutUnit
     paddingBottom: LayoutUnit
     hasExclusion: bool
@@ -259,8 +258,6 @@ type
     fragment: InlineFragment
     firstLine: bool
     startOffsetTop: Offset
-    # computed line-height of fragment
-    lineHeight: LayoutUnit
     # we do not want to collapse newlines over tag boundaries, so these are
     # in state
     lastrw: int # last rune width of the previous word
@@ -279,9 +276,6 @@ func cellWidth(lctx: LayoutContext): int =
 
 func cellWidth(ictx: InlineContext): int =
   ictx.lctx.cellWidth
-
-func cellHeight(lctx: LayoutContext): int =
-  lctx.attrs.ppl
 
 func cellHeight(ictx: InlineContext): int =
   ictx.lctx.attrs.ppl
@@ -313,16 +307,10 @@ func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
 proc applyLineHeight(ictx: InlineContext; state: var LineBoxState;
     computed: CSSComputedValues) =
   let lctx = ictx.lctx
-  let lineHeight = if computed{"line-height"}.auto: # ergo normal
-    lctx.cellHeight.toLayoutUnit()
-  else:
-    # Percentage: refers to the font size of the element itself.
-    computed{"line-height"}.px(lctx, lctx.cellHeight)
   let paddingTop = computed{"padding-top"}.px(lctx, ictx.space.w)
   let paddingBottom = computed{"padding-bottom"}.px(lctx, ictx.space.w)
   state.paddingTop = max(paddingTop, state.paddingTop)
   state.paddingBottom = max(paddingBottom, state.paddingBottom)
-  state.lineHeight = max(lineHeight, state.lineHeight)
 
 proc newWord(ictx: var InlineContext) =
   ictx.word = InlineAtom(
@@ -486,13 +474,11 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
 
 # Align atoms (inline boxes, text, etc.) on both axes.
 proc alignLine(ictx: var InlineContext) =
-  # Start with line-height as the baseline and line height.
-  let lineHeight = ictx.lbstate.lineHeight
-  ictx.lbstate.size.h = lineHeight
-  let ch = ictx.cellHeight
-  # Baseline is what we computed in addAtom, or lineHeight if that's greater.
-  ictx.lbstate.baseline = max(ictx.lbstate.baseline, lineHeight)
-    .round(ch)
+  # Start with cell height as the baseline and line height.
+  let ch = ictx.cellHeight.toLayoutUnit()
+  ictx.lbstate.size.h = ch
+  # Baseline is what we computed in addAtom, or cell height if that's greater.
+  ictx.lbstate.baseline = max(ictx.lbstate.baseline, ch).round(ictx.cellHeight)
   # Resize according to the baseline and atom sizes.
   ictx.lbstate.size.h = ictx.lbstate.resizeLine(ictx.lctx)
   # Now we can calculate the actual position of atoms inside the line.
@@ -504,14 +490,11 @@ proc alignLine(ictx: var InlineContext) =
   ictx.shiftAtoms(marginTop)
   # Ensure that the line is exactly as high as its highest atom demands,
   # rounded up to the next line.
-  # (This is almost the same as completely ignoring line height. However, there
-  # *is* a difference, because line height is still taken into account when
-  # positioning the atoms.)
-  ictx.lbstate.size.h = ictx.lbstate.minHeight.ceilTo(ch)
-  # Now, if we got a height that is lower than cell height *and* line height,
-  # then set it back to the cell height. (This is to avoid the situation where
-  # we would swallow hard line breaks with <br>.)
-  if lineHeight >= ch and ictx.lbstate.size.h < ch:
+  ictx.lbstate.size.h = ictx.lbstate.minHeight.ceilTo(ictx.cellHeight)
+  # Now, if we got a height that is lower than cell height, then set it
+  # back to the cell height. (This is to avoid the situation where we
+  # would swallow hard line breaks with <br>.)
+  if ictx.lbstate.size.h < ch:
     ictx.lbstate.size.h = ch
   # Set the line height to size.h.
   ictx.lbstate.height = ictx.lbstate.size.h
@@ -659,8 +642,6 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     #TODO this is inefficient
     while ictx.shouldWrap2(atom.size.w + shift):
       ictx.applyLineHeight(ictx.lbstate, state.fragment.computed)
-      ictx.lbstate.lineHeight = max(ictx.lbstate.lineHeight,
-        ictx.cellHeight)
       ictx.finishLine(state, wrap = false, force = true)
       # Recompute on newline
       shift = ictx.computeShift(state)
@@ -684,7 +665,7 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     ictx.lbstate.size.w += atom.size.w
     let baseline = case iastate.vertalign.keyword
     of VerticalAlignBaseline:
-      let len = iastate.vertalign.length.px(ictx.lctx, state.lineHeight)
+      let len = iastate.vertalign.length.px(ictx.lctx, ictx.cellHeight)
       iastate.baseline + len
     of VerticalAlignTop, VerticalAlignBottom:
       atom.size.h
@@ -1504,13 +1485,6 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
         computed{"min-width"}.unit != cuPerc:
       ictx.root.state.xminwidth = max(ictx.root.state.xminwidth, atom.size.w)
 
-func calcLineHeight(computed: CSSComputedValues; lctx: LayoutContext):
-    LayoutUnit =
-  if computed{"line-height"}.auto: # ergo normal
-    return lctx.cellHeight.toLayoutUnit()
-  # Percentage: refers to the font size of the element itself.
-  return computed{"line-height"}.px(lctx, lctx.cellHeight)
-
 proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   let lctx = ictx.lctx
   let computed = fragment.computed
@@ -1535,8 +1509,7 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
     startOffsetTop: offset(
       x = ictx.lbstate.widthAfterWhitespace,
       y = ictx.lbstate.offsety
-    ),
-    lineHeight: computed.calcLineHeight(lctx)
+    )
   )
   ictx.applyLineHeight(ictx.lbstate, computed)
   case fragment.t
@@ -1576,10 +1549,7 @@ proc layoutRootInline0(bctx: var BlockContext; ictx: var InlineContext;
   ictx.layoutInline(root.fragment)
   if ictx.lastTextFragment != nil:
     let fragment = ictx.lastTextFragment
-    var state = InlineState(
-      fragment: fragment,
-      lineHeight: fragment.computed.calcLineHeight(ictx.lctx)
-    )
+    var state = InlineState(fragment: fragment)
     ictx.finishLine(state, wrap = false)
 
 proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
