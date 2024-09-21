@@ -2,10 +2,8 @@ import std/algorithm
 import std/math
 import std/options
 import std/os
+import std/posix
 import std/strutils
-
-when defined(posix):
-  import std/posix
 
 import types/opt
 import utils/charcategory
@@ -117,7 +115,7 @@ func startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
       return false
   return true
 
-func endsWithIgnoreCase*(s1, s2: string): bool =
+func endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
   if s1.len < s2.len: return false
   for i in countdown(s2.high, 0):
     if s1[i].toLowerAscii() != s2[i].toLowerAscii():
@@ -212,90 +210,70 @@ func convertSize*(size: int): string =
   discard c_sprintf(cstring(result), cstring("%.3g%s"), f, SizeUnit[sizepos])
   result.setLen(cstring(result).len)
 
-# Implements https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#signed-integers
-func parseIntImpl[T: SomeSignedInt](s: string; allowed: set[char]; radix: T):
-    Option[T] =
-  var sign: T = 1
+# https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#numbers
+func parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
+    radix: T): Option[T] =
   var i = 0
-  if i < s.len and s[i] == '-':
-    sign = -1
+  if i < s.len and allowSign and s[i] == '+':
     inc i
-  elif i < s.len and s[i] == '+':
-    inc i
-  if i == s.len:
-    return none(T)
+  var fail = i == s.len # fail on empty input
   var integer: T = 0
-  while i < s.len:
-    if s[i] notin allowed:
-      return none(T) # invalid
-    let c = T(hexValue(s[i]))
-    if unlikely((T.high - c) div radix < integer):
-      return none(T) # overflow
-    integer *= radix
-    integer += c
-    inc i
-  return some(sign * integer)
-
-func parseIntImpl[T: SomeSignedInt](s: string): Option[T] =
-  return parseIntImpl[T](s, AsciiDigit, 10)
-
-func parseInt32*(s: string): Option[int32] =
-  return parseIntImpl[int32](s)
-
-func parseInt64*(s: string): Option[int64] =
-  return parseIntImpl[int64](s)
-
-func parseOctInt64*(s: string): Option[int64] =
-  return parseIntImpl[int64](s, AsciiOctDigit, 8)
-
-func parseHexInt64*(s: string): Option[int64] =
-  return parseIntImpl[int64](s, AsciiHexDigit, 16)
-
-func parseUIntImpl[T: SomeUnsignedInt](s: string; allowSign: static bool;
-    allowed: set[char]; radix: T): Option[T] =
-  var i = 0
-  when allowSign:
-    if i < s.len and s[i] == '+':
-      inc i
-  if i == s.len:
-    return none(T)
-  var integer: T = 0
-  while i < s.len:
-    if s[i] notin allowed:
-      return none(T) # invalid
-    let c = T(hexValue(s[i]))
-    if unlikely((T.high - c) div radix < integer):
-      return none(T) # overflow
-    integer *= radix
-    integer += c
-    inc i
+  for i in i ..< s.len:
+    let u = T(hexValue(s[i]))
+    let n = integer * radix + u
+    fail = fail or u >= radix or n < integer # overflow check
+    integer = n
+  if fail:
+    return none(T) # invalid or overflow
   return some(integer)
 
-func parseUIntImpl[T: SomeUnsignedInt](s: string; allowSign: static bool):
-    Option[T] =
-  return parseUIntImpl[T](s, allowSign, AsciiDigit, 10)
+func parseUInt8*(s: openArray[char]; allowSign = false): Option[uint8] =
+  return parseUIntImpl[uint8](s, allowSign, 10)
 
-func parseUInt8*(s: string; allowSign: static bool): Option[uint8] =
-  return parseUIntImpl[uint8](s, allowSign)
+func parseUInt16*(s: openArray[char]; allowSign = false): Option[uint16] =
+  return parseUIntImpl[uint16](s, allowSign, 10)
 
-func parseUInt16*(s: string; allowSign: static bool): Option[uint16] =
-  return parseUIntImpl[uint16](s, allowSign)
+func parseUInt32*(s: openArray[char]; allowSign = false): Option[uint32] =
+  return parseUIntImpl[uint32](s, allowSign, 10)
 
-func parseUInt32*(s: string; allowSign: static bool): Option[uint32] =
-  return parseUIntImpl[uint32](s, allowSign)
+func parseOctUInt32*(s: openArray[char]; allowSign = false): Option[uint32] =
+  return parseUIntImpl[uint32](s, allowSign, 8)
 
-func parseOctUInt32*(s: string; allowSign: static bool): Option[uint32] =
-  return parseUIntImpl[uint32](s, allowSign, AsciiOctDigit, 8)
+func parseHexUInt32*(s: openArray[char]; allowSign = false): Option[uint32] =
+  return parseUIntImpl[uint32](s, allowSign, 16)
 
-func parseHexUInt32*(s: string; allowSign: static bool): Option[uint32] =
-  return parseUIntImpl[uint32](s, allowSign, AsciiHexDigit, 16)
+func parseUInt64*(s: openArray[char]; allowSign = false): Option[uint64] =
+  return parseUIntImpl[uint64](s, allowSign, 10)
 
-func parseUInt64*(s: string; allowSign: static bool): Option[uint64] =
-  return parseUIntImpl[uint64](s, allowSign)
+func parseIntImpl[T: SomeSignedInt; U: SomeUnsignedInt](s: openArray[char];
+    radix: U): Option[T] =
+  var sign: T = 1
+  var i = 0
+  if s.len > 0 and s[0] == '-':
+    sign = -1
+    inc i
+  let res = parseUIntImpl[U](s.toOpenArray(i, s.high), allowSign = true, radix)
+  let u = res.get(U.high)
+  if sign == -1 and u == U(T.high) + 1:
+    return some(T.low) # negative has one more valid int
+  if u <= U(T.high):
+    return some(T(u) * sign)
+  return none(T)
 
-#TODO not sure where this algorithm is from...
-# (probably from CSS)
-func parseFloat64*(s: string): float64 =
+func parseInt32*(s: openArray[char]): Option[int32] =
+  return parseIntImpl[int32, uint32](s, 10)
+
+func parseInt64*(s: openArray[char]): Option[int64] =
+  return parseIntImpl[int64, uint64](s, 10)
+
+func parseOctInt64*(s: openArray[char]): Option[int64] =
+  return parseIntImpl[int64, uint64](s, 8)
+
+func parseHexInt64*(s: openArray[char]): Option[int64] =
+  return parseIntImpl[int64, uint64](s, 16)
+
+# https://www.w3.org/TR/css-syntax-3/#convert-string-to-number
+func parseFloat64*(s: openArray[char]): float64 =
   var sign = 1f64
   var t = 1
   var d = 0
@@ -362,15 +340,17 @@ proc percentEncode*(append: var string; c: char; set: set[char];
     append &= '%'
     append.pushHex(c)
 
-proc percentEncode*(append: var string; s: string; set: set[char];
+proc percentEncode*(append: var string; s: openArray[char]; set: set[char];
     spaceAsPlus = false) =
   for c in s:
     append.percentEncode(c, set, spaceAsPlus)
 
-func percentEncode*(s: string; set: set[char]; spaceAsPlus = false): string =
+func percentEncode*(s: openArray[char]; set: set[char]; spaceAsPlus = false):
+    string =
+  result = ""
   result.percentEncode(s, set, spaceAsPlus)
 
-func percentDecode*(input: string; si = 0): string =
+func percentDecode*(input: openArray[char]; si = 0): string =
   var i = si
   while i < input.len:
     let c = input[i]
@@ -397,7 +377,7 @@ func htmlEscape*(s: openArray[char]): string =
     of '\'': result &= "&apos;"
     else: result &= c
 
-func dqEscape*(s: string): string =
+func dqEscape*(s: openArray[char]): string =
   result = newStringOfCap(s.len)
   for c in s:
     if c == '"':
@@ -439,7 +419,7 @@ const NameCharRanges = [ # + NameStartCharRanges
 ]
 const NameStartCharAscii = {':', '_'} + AsciiAlpha
 const NameCharAscii = NameStartCharAscii + {'-', '.'} + AsciiDigit
-func matchNameProduction*(s: string): bool =
+func matchNameProduction*(s: openArray[char]): bool =
   if s.len == 0:
     return false
   # NameStartChar
@@ -464,7 +444,7 @@ func matchNameProduction*(s: string): bool =
         return false
   return true
 
-func matchQNameProduction*(s: string): bool =
+func matchQNameProduction*(s: openArray[char]): bool =
   if s.len == 0:
     return false
   if s[0] == ':':
@@ -479,7 +459,7 @@ func matchQNameProduction*(s: string): bool =
       colon = true
   return s.matchNameProduction()
 
-func utf16Len*(s: string): int =
+func utf16Len*(s: openArray[char]): int =
   result = 0
   for u in s.points:
     if u < 0x10000: # ucs-2
@@ -495,11 +475,10 @@ proc expandPath*(path: string): string =
   elif path[1] == '/':
     return getHomeDir() / path.substr(2)
   else:
-    when defined(posix):
-      let usr = path.until({'/'}, 1)
-      let p = getpwnam(cstring(usr))
-      if p != nil:
-        return $p.pw_dir / path.substr(usr.len)
+    let usr = path.until({'/'}, 1)
+    let p = getpwnam(cstring(usr))
+    if p != nil:
+      return $p.pw_dir / path.substr(usr.len)
     return path
 
 func deleteChars*(s: openArray[char]; todel: set[char]): string =
@@ -508,7 +487,7 @@ func deleteChars*(s: openArray[char]; todel: set[char]): string =
     if c notin todel:
       result &= c
 
-func replaceControls*(s: string): string =
+func replaceControls*(s: openArray[char]): string =
   result = newStringOfCap(s.len)
   for c in s:
     if c in Controls:
@@ -518,7 +497,7 @@ func replaceControls*(s: string): string =
       result &= c
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
-proc makeCRLF*(s: string): string =
+proc makeCRLF*(s: openArray[char]): string =
   result = newStringOfCap(s.len)
   var i = 0
   while i < s.len - 1:
