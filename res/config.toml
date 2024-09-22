@@ -47,7 +47,7 @@ gotoClipboardURL = '''
 }
 '''
 peek = '() => pager.alert(pager.url)'
-peekCursor = '() => pager.peekCursor()'
+peekCursor = 'n => pager.peekCursor(n)'
 toggleWrap = '''
 () => {
 	config.search.wrap = !config.search.wrap;
@@ -85,6 +85,7 @@ toggleCommandMode = '''
 		console.hide();
 }
 '''
+showFullAlert = '() => pager.showFullAlert()'
 
 [cmd.buffer]
 cursorLeft = 'n => pager.cursorLeft(n)'
@@ -420,6 +421,7 @@ n = 'cmd.pager.searchNext'
 N = 'cmd.pager.searchPrev'
 c = 'cmd.pager.peek'
 u = 'cmd.pager.peekCursor'
+su = 'cmd.pager.showFullAlert'
 C-w = 'cmd.pager.toggleWrap'
 M-y = 'cmd.pager.copyURL'
 yc = 'pager.alert("Please use `yu` to copy URLs")'

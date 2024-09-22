@@ -484,7 +484,7 @@ images.
 
 <tr>
 <td>sixel-colors</td>
-<td>"auto" / 3..65535</td>
+<td>"auto" / 2..65535</td>
 <td>Only applies when `display.image-mode="sixel"`. Setting a number
 overrides the number of sixel color registers reported by the terminal,
 while "auto" leaves color detection to Chawan.<br>
@@ -888,16 +888,19 @@ Examples:
 <table>
 
 <tr>
+<th>Default key</th>
 <th>Name</th>
 <th>Function</th>
 </tr>
 
 <tr>
+<td><kbd>q</kbd></td>
 <td>`cmd.pager.quit`</td>
 <td>Exit the browser.</td>
 </tr>
 
 <tr>
+<td><kbd>C-z</kbd></td>
 <td>`cmd.pager.suspend`</td>
 <td>Temporarily suspend the browser<br>
 Note: this also suspends e.g. buffer processes or CGI scripts. So if you are
@@ -905,56 +908,67 @@ downloading something, that will be delayed until you restart the process.</td>
 </tr>
 
 <tr>
+<td><kbd>C-l</kbd></td>
 <td>`cmd.pager.load`</td>
 <td>Open the current address in the URL bar.</td>
 </tr>
 
 <tr>
+<td><kbd>C-k</kbd></td>
 <td>`cmd.pager.webSearch`</td>
 <td>Open the URL bar with an arbitrary search engine. At the moment, this is
 DuckDuckGo Lite, but this may change in the future.</td>
 </tr>
 
 <tr>
+<td><kbd>M-u</kbd></td>
 <td>`cmd.pager.dupeBuffer`</td>
 <td>Duplicate the current buffer by loading its source to a new buffer.</td>
 </tr>
 
 <tr>
+<td><kbd>U</kbd></td>
 <td>`cmd.pager.reloadBuffer`</td>
 <td>Open a new buffer with the current buffer's URL, replacing the current
 buffer.</td>
 </tr>
 
 <tr>
+<td><kbd>C-g</kbd></td>
 <td>`cmd.pager.lineInfo`</td>
 <td>Display information about the current line on the status line.</td>
 </tr>
 
 <tr>
+<td><kbd>&bsol;</kbd></td>
 <td>`cmd.pager.toggleSource`</td>
 <td>If viewing an HTML buffer, open a new buffer with its source. Otherwise,
 open the current buffer's contents as HTML.</td>
 </tr>
 
 <tr>
+<td><kbd>D</kbd></td>
 <td>`cmd.pager.discardBuffer`</td>
 <td>Discard the current buffer, and move back to the previous/next buffer
 depending on what the previously viewed buffer was.</td>
 </tr>
 
 <tr>
+<td><kbd>d,</kbd>, <kbd>d.</kbd></td>
 <td>`cmd.pager.discardBufferPrev`, `cmd.pager.discardBufferNext`</td>
 <td>Discard the current buffer, and move back to the previous/next buffer, or
 open the link under the cursor.</td>
 </tr>
 
 <tr>
+<td><kbd>M-d</kbd></td>
 <td>`cmd.pager.discardTree`</td>
 <td>Discard all child buffers of the current buffer.</td>
 </tr>
 
 <tr>
+<td><kbd>.</kbd>, <kbd>,</kbd>, <kbd>M-,</kbd>, <kbd>M-.</kbd>,
+<kbd>M-/</kbd></td>
 <td>`cmd.pager.nextBuffer`, `cmd.pager.prevBuffer`,
 `cmd.pager.prevSiblingBuffer`, `cmd.pager.nextSiblingBufer`,
 `cmd.pager.parentBuffer`</td>
@@ -969,33 +983,39 @@ opened from, even if e.g. the user returns and opens another page "in between".
 </tr>
 
 <tr>
+<td><kbd>M-c</kbd></td>
 <td>`cmd.pager.enterCommand`</td>
 <td>Directly enter a JavaScript command. Note that this interacts with
 the pager, not the website being displayed.</td>
 </tr>
 
 <tr>
+<td>None</td>
 <td>`cmd.pager.searchForward`, `cmd.pager.searchBackward`</td>
 <td>Search for a string in the current buffer, forwards or backwards.</td>
 </tr>
 
 <tr>
+<td><kbd>/</kbd>, <kbd>?</kbd></td>
 <td>`cmd.pager.isearchForward`, `cmd.pager.searchBackward`</td>
 <td>Incremental-search for a string, highlighting the first result, forwards or
 backwards.</td>
 </tr>
 
 <tr>
+<td><kbd>n</kbd>, <kbd>N</kbd></td>
 <td>`cmd.pager.searchNext`, `cmd.pager.searchPrev`</td>
 <td>Jump to the nth (or if unspecified, first) next/previous search result.</td>
 </tr>
 
 <tr>
+<td><kbd>c</kbd></td>
 <td>`cmd.pager.peek`</td>
 <td>Display a message of the current buffer's URL on the status line.</td>
 </tr>
 
 <tr>
+<td><kbd>u</kbd></td>
 <td>`cmd.pager.peekCursor`</td>
 <td>Display a message of the URL or title under the cursor on the status line.
 Multiple calls allow cycling through the two. (i.e. by default, press u once ->
@@ -1003,21 +1023,32 @@ title, press again -> URL)</td>
 </tr>
 
 <tr>
+<td><kbd>su</kbd></td>
+<td>`cmd.pager.showFullAlert`</td>
+<td>Show the last alert inside the line editor. You can also view previous
+ones using C-p or C-n.</td>
+</tr>
+
+<tr>
+<td><kbd>M-y</kbd></td>
 <td>`cmd.pager.copyURL`</td>
 <td>Copy the current buffer's URL to the system clipboard.</td>
 </tr>
 
 <tr>
+<td><kbd>yu</kbd></td>
 <td>`cmd.pager.copyCursorLink`</td>
 <td>Copy the link under the cursor to the system clipboard.</td>
 </tr>
 
 <tr>
+<td><kbd>yI</kbd></td>
 <td>`cmd.pager.copyCursorImage`</td>
 <td>Copy the URL of the image under the cursor to the system clipboard.</td>
 </tr>
 
 <tr>
+<td><kbd>M-p</kbd></td>
 <td>`cmd.pager.gotoClipboardURL`</td>
 <td>Go to the URL currently on the clipboard.</td>
 </tr>

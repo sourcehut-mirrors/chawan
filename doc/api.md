@@ -223,6 +223,11 @@ press again -> URL)</td>
 </tr>
 
 <tr>
+<td>`showFullAlert()`</td>
+<td>Show the last alert inside the line editor.</td>
+</tr>
+
+<tr>
 <td>`ask(prompt)`</td>
 <td>Ask the user for confirmation. Returns a promise which resolves to a
 boolean value indicating whether the user responded with yes.<br>

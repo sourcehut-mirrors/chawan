@@ -68,6 +68,7 @@ type
     lmGotoLine = "Goto line: "
     lmDownload = "(Download)Save file to: "
     lmBufferFile = "(Upload)Filename: "
+    lmAlert = "Alert: "
 
   # fdin is the original fd; fdout may be the same, or different if mailcap
   # is used.
@@ -129,15 +130,15 @@ type
     devRandom: PosixStream
     display: Surface
     forkserver*: ForkServer
-    formRequestMap*: Table[string, FormRequestType]
     hasload*: bool # has a page been successfully loaded since startup?
     inputBuffer*: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
     jsctx: JSContext
+    lastAlert: string # last alert seen by the user
     lineData: LineData
     lineedit*: LineEdit
-    linehist: array[LineMode, LineHistory]
+    lineHist: array[LineMode, LineHistory]
     linemode: LineMode
     loader*: FileLoader
     luctx: LUContext
@@ -160,6 +161,7 @@ jsDestructor(Pager)
 
 # Forward declarations
 proc alert*(pager: Pager; msg: string)
+proc getLineHist(pager: Pager; mode: LineMode): LineHistory
 
 template attrs(pager: Pager): WindowAttributes =
   pager.term.attrs
@@ -266,9 +268,9 @@ proc searchPrev(pager: Pager; n = 1) {.jsfunc.} =
     pager.alert("No previous regular expression")
 
 proc getLineHist(pager: Pager; mode: LineMode): LineHistory =
-  if pager.linehist[mode] == nil:
-    pager.linehist[mode] = newLineHistory()
-  return pager.linehist[mode]
+  if pager.lineHist[mode] == nil:
+    pager.lineHist[mode] = newLineHistory()
+  return pager.lineHist[mode]
 
 proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
     extraPrompt = "") =
@@ -278,6 +280,11 @@ proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
   pager.lineedit = readLine($mode & extraPrompt, current, pager.attrs.width,
     {}, hide, hist, pager.luctx)
   pager.linemode = mode
+
+# Reuse the line editor as an alert message viewer.
+proc showFullAlert(pager: Pager) {.jsfunc.} =
+  if pager.lastAlert != "":
+    pager.setLineEdit(lmAlert, pager.lastAlert)
 
 proc clearLineEdit(pager: Pager) =
   pager.lineedit = nil
@@ -368,38 +375,41 @@ proc launchPager*(pager: Pager; istream: PosixStream; selector: Selector[int]) =
 proc buffer(pager: Pager): Container {.jsfget, inline.} =
   return pager.container
 
-# Note: this function does not work correctly if start < i of last written char
+# Note: this function does not work correctly if start < x of last written char
 proc writeStatusMessage(pager: Pager; str: string; format = Format();
-    start = 0; maxwidth = -1; clip = '$'): int {.discardable.} =
+    start = 0; maxwidth = -1; clip = '$'): int =
   var maxwidth = maxwidth
   if maxwidth == -1:
     maxwidth = pager.status.grid.len
-  var i = start
+  var x = start
   let e = min(start + maxwidth, pager.status.grid.width)
-  if i >= e:
-    return i
+  if x >= e:
+    return x
   pager.status.redraw = true
+  var lx = 0
   for u in str.points:
     let w = u.width()
-    if i + w >= e:
-      pager.status.grid[i].format = format
-      pager.status.grid[i].str = $clip
-      inc i # Note: we assume `clip' is 1 cell wide
+    if x + w > e: # clip if we overflow (but not on exact fit)
+      if lx < e:
+        pager.status.grid[lx].format = format
+        pager.status.grid[lx].str = $clip
+      x = lx + 1 # clip must be 1 cell wide
       break
     if u.isControlChar():
-      pager.status.grid[i].str = "^"
-      pager.status.grid[i + 1].str = $getControlLetter(char(u))
-      pager.status.grid[i + 1].format = format
+      pager.status.grid[x].str = "^"
+      pager.status.grid[x + 1].str = $getControlLetter(char(u))
+      pager.status.grid[x + 1].format = format
     else:
-      pager.status.grid[i].str = u.toUTF8()
-    pager.status.grid[i].format = format
-    i += w
-  result = i
+      pager.status.grid[x].str = u.toUTF8()
+    pager.status.grid[x].format = format
+    lx = x
+    x += w
+  result = x
   var def = Format()
-  while i < e:
-    pager.status.grid[i].str = ""
-    pager.status.grid[i].format = def
-    inc i
+  while x < e:
+    pager.status.grid[x].str = ""
+    pager.status.grid[x].format = def
+    inc x
 
 # Note: should only be called directly after user interaction.
 proc refreshStatusMsg*(pager: Pager) =
@@ -407,29 +417,49 @@ proc refreshStatusMsg*(pager: Pager) =
   if container == nil: return
   if pager.askpromise != nil: return
   if pager.precnum != 0:
-    pager.writeStatusMessage($pager.precnum & pager.inputBuffer)
+    discard pager.writeStatusMessage($pager.precnum & pager.inputBuffer)
   elif pager.inputBuffer != "":
-    pager.writeStatusMessage(pager.inputBuffer)
+    discard pager.writeStatusMessage(pager.inputBuffer)
   elif pager.alerts.len > 0:
     pager.alertState = pasAlertOn
-    pager.writeStatusMessage(pager.alerts[0])
+    discard pager.writeStatusMessage(pager.alerts[0])
+    # save to alert history
+    if pager.lastAlert != "":
+      let hist = pager.getLineHist(lmAlert)
+      if hist.lines.len == 0 or hist.lines[^1] != pager.lastAlert:
+        if hist.lines.len > 19:
+          hist.lines.delete(0)
+        hist.lines.add(move(pager.lastAlert))
+    pager.lastAlert = move(pager.alerts[0])
     pager.alerts.delete(0)
   else:
     var format = Format(flags: {ffReverse})
     pager.alertState = pasNormal
     container.clearHover()
-    var msg = $(container.cursory + 1) & "/" & $container.numLines & " (" &
-              $container.atPercentOf() & "%)"
-    let mw = pager.writeStatusMessage(msg, format)
-    let title = " <" & container.getTitle() & ">"
+    var msg = $(container.cursory + 1) & "/" & $container.numLines &
+      " (" & $container.atPercentOf() & "%)" &
+      " <" & container.getTitle()
     let hover = container.getHoverText()
-    if hover.len == 0:
-      pager.writeStatusMessage(title, format, mw)
-    else:
-      let hover2 = " " & hover
-      let maxwidth = pager.status.grid.width - hover2.width() - mw
-      let tw = pager.writeStatusMessage(title, format, mw, maxwidth, '>')
-      pager.writeStatusMessage(hover2, format, tw)
+    let sl = hover.notwidth()
+    var l = 0
+    var i = 0
+    var maxw = pager.status.grid.width - 1 # -1 for '>'
+    if sl > 0:
+      maxw -= 1 # plus one blank
+    while i < msg.len:
+      let pi = i
+      let u = msg.nextUTF8(i)
+      l += u.width()
+      if l + sl >= maxw:
+        i = pi
+        break
+    msg.setLen(i)
+    if i > 0:
+      msg &= ">"
+      if sl > 0:
+        msg &= ' '
+    msg &= hover
+    discard pager.writeStatusMessage(msg, format)
 
 # Call refreshStatusMsg if no alert is being displayed on the screen.
 # Alerts take precedence over load info, but load info is preserved when no
@@ -671,7 +701,7 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
     if container.loadinfo == "":
       pager.alertState = pasNormal
     else:
-      pager.writeStatusMessage(container.loadinfo)
+      discard pager.writeStatusMessage(container.loadinfo)
       pager.alertState = pasLoadInfo
 
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
@@ -897,7 +927,8 @@ proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
   return true
 
 proc alert*(pager: Pager; msg: string) {.jsfunc.} =
-  pager.alerts.add(msg)
+  if msg != "":
+    pager.alerts.add(msg)
 
 # replace target with container in the tree
 proc replace*(pager: Pager; target, container: Container) =
@@ -1451,7 +1482,7 @@ proc updateReadLine*(pager: Pager) =
           )
         else:
           pager.saveTo(data, lineedit.news)
-      of lmISearchF, lmISearchB: discard
+      of lmISearchF, lmISearchB, lmAlert: discard
     of lesCancel:
       case pager.linemode
       of lmUsername, lmPassword: pager.discardBuffer()

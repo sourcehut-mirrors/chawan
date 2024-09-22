@@ -1,7 +1,6 @@
 compilation:
 - reduce binary size
 	* fbf for unifont
-	* maybe use system wcwidth?
 charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
@@ -14,14 +13,13 @@ display:
 config:
 - important: fix crash on missing /tmp dir with default config
 - important: config editor
-- completely replace siteconf; the new solution should:
-	* not be based on table arrays
-	* allow overriding pretty much every global value per URL
-	* allow better URL matching (regexes aren't great for this task)
-	* be called url-config
-	* allow matching $TERM string, buffer groups (but maybe this should
-	  be a separate setting?)
-- add per-scheme configuration (e.g. proto.gemini.known-hosts = '/some/path')
+- switch from table arrays to tables
+- better siteconf URL matching
+- $TERM-based display config
+* better path handling (e.g. inline files, so we could get rid of css
+  "include/inline" etc.)
+- add per-scheme env var configuration (e.g.
+  proto.gemini.known-hosts = '/some/path'; maybe also with inline JS?)
 - add RPC for CGI scripts e.g. toggle settings/issue downloads/etc
 	* also some way to set permissions for RPC calls
 buffer:
@@ -51,7 +49,7 @@ javascript:
 - add support for JS mixins
 - distinguish double from unrestricted double
 - better dom support: more events, CSSOM, ...
-- implement ReadableStream, XHR
+- ReadableStream
 - separate console for each buffer
 - buffer selection
 layout engine:
@@ -72,12 +70,13 @@ layout engine:
 - writing-mode, grid, ruby, ... (i.e. cool new stuff)
 images:
 - z order, proper image blending
-- incremental decoding, interlaced images, animation
+- animation
 man:
 - add a DOM -> man page converter so that we do not depend on pandoc
   for man page conversion
+- move default keybinding definitions to man page
 gmifetch:
 - rewrite in Nim
-etc:
-- orc support
-- maybe windows support? (blocker: needs a windows machine)
+tests:
+- network/XHR (make net test async?)
+- pager? (how?)

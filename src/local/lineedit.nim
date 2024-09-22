@@ -18,7 +18,7 @@ type
     lesEdit, lesFinish, lesCancel
 
   LineHistory* = ref object
-    lines: seq[string]
+    lines*: seq[string]
 
   LineEdit* = ref object
     news*: string
@@ -299,6 +299,7 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
     edit.begin()
     edit.end()
     edit.histtmp = ""
+    edit.redraw = true
 
 proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1

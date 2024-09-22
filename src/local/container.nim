@@ -1930,7 +1930,8 @@ proc peekCursor(container: Container) {.jsfunc.} =
       p = low(HoverType)
     if container.hoverText[p] != "" or p == container.lastPeek:
       break
-  container.alert($p & ": " & container.hoverText[p])
+  if container.hoverText[p] != "":
+    container.alert($p & ": " & container.hoverText[p])
   container.lastPeek = p
 
 func hoverLink(container: Container): string {.jsfget.} =
