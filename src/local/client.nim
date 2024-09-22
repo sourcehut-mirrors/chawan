@@ -57,7 +57,7 @@ type
     alive: bool
     config {.jsget.}: Config
     consoleWrapper: ConsoleWrapper
-    fdmap: Table[int, Container]
+    fdmap: seq[Container]
     feednext: bool
     pager {.jsget.}: Pager
     pressed: tuple[col: int; row: int]
@@ -380,7 +380,7 @@ proc acceptBuffers(client: Client) =
       let stream = container.iface.stream
       let fd = int(stream.source.fd)
       client.selector.unregister(fd)
-      client.fdmap.del(fd)
+      client.fdmap[fd] = nil
       stream.sclose()
     elif container.process != -1: # connecting to buffer process
       let i = pager.findProcMapItem(container.process)
@@ -441,6 +441,8 @@ proc acceptBuffers(client: Client) =
       loader.shareCachedItem(container.cacheId, loader.clientPid)
       container.setCloneStream(stream, registerFun)
     let fd = int(stream.fd)
+    if client.fdmap.len <= fd:
+      client.fdmap.setLen(fd + 1)
     client.fdmap[fd] = container
     client.selector.registerHandle(fd, {Read}, 0)
     pager.handleEvents(container)
@@ -524,14 +526,14 @@ proc handleError(client: Client; fd: int) =
   elif (let i = client.pager.findConnectingContainer(fd); i != -1):
     client.pager.handleConnectingContainerError(i)
   else:
-    if fd in client.fdmap:
+    if fd < client.fdmap.len and client.fdmap[fd] != nil:
       let container = client.fdmap[fd]
       if container != client.consoleWrapper.container:
         client.console.error("Error in buffer", $container.url)
       else:
         client.consoleWrapper.container = nil
       client.selector.unregister(fd)
-      client.fdmap.del(fd)
+      client.fdmap[fd] = nil
     if client.consoleWrapper.container != nil:
       client.showConsole()
     else:
