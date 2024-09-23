@@ -168,6 +168,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
       gpstream.sclose()
       gssock.close(unlink = false)
       exitnow(1)
+    signal(SIGPIPE, SIG_DFL)
     enterBufferSandbox(sockDir)
     let loader = FileLoader(
       process: loaderPid,
@@ -202,6 +203,7 @@ proc runForkServer() =
     sockDirFd: -1
   )
   signal(SIGCHLD, SIG_IGN)
+  signal(SIGPIPE, SIG_IGN)
   while true:
     try:
       ctx.istream.withPacketReader r:
@@ -231,7 +233,7 @@ proc runForkServer() =
           let r = ctx.forkBuffer(r)
           ctx.ostream.withPacketWriter w:
             w.swrite(r)
-    except EOFError:
+    except EOFError, ErrorBrokenPipe:
       # EOF
       break
   ctx.istream.sclose()

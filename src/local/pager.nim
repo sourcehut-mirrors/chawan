@@ -85,10 +85,9 @@ type
   ContainerConnectionState = enum
     ccsBeforeResult, ccsBeforeStatus, ccsBeforeHeaders
 
-  ConnectingContainerItem = ref object
+  ConnectingContainer* = ref object of MapData
     state: ContainerConnectionState
     container: Container
-    stream*: SocketStream
     res: int
     outputId: int
     status: uint16
@@ -124,7 +123,6 @@ type
     askprompt: string
     commandMode {.jsget.}: bool
     config*: Config
-    connectingContainers*: seq[ConnectingContainerItem]
     container*: Container
     cookiejars: Table[string, CookieJar]
     devRandom: PosixStream
@@ -788,7 +786,7 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     cacheId,
     pager.config
   )
-  pager.connectingContainers.add(ConnectingContainerItem(
+  pager.loader.put(ConnectingContainer(
     state: ccsBeforeResult,
     container: container,
     stream: stream
@@ -808,17 +806,14 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     url = container.url
   )
 
-func findConnectingContainer*(pager: Pager; fd: int): int =
-  for i, item in pager.connectingContainers:
-    if item.stream.fd == fd:
-      return i
-  -1
-
-func findConnectingContainer*(pager: Pager; container: Container): int =
-  for i, item in pager.connectingContainers:
-    if item.container == container:
-      return i
-  -1
+func findConnectingContainer*(pager: Pager; container: Container):
+    ConnectingContainer =
+  for item in pager.loader.data:
+    if item of ConnectingContainer:
+      let item = ConnectingContainer(item)
+      if item.container == container:
+        return item
+  return nil
 
 func findProcMapItem*(pager: Pager; pid: int): int =
   for i, item in pager.procmap:
@@ -2053,9 +2048,7 @@ proc unregisterFd(pager: Pager; fd: int) =
   pager.selector.unregister(fd)
   pager.loader.unregistered.add(fd)
 
-# true if done, false if keep
-proc handleConnectingContainer*(pager: Pager; i: int) =
-  let item = pager.connectingContainers[i]
+proc handleRead*(pager: Pager; item: ConnectingContainer) =
   let container = item.container
   let stream = item.stream
   case item.state
@@ -2076,7 +2069,7 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
         msg = getLoaderErrorMessage(res)
       pager.fail(container, msg)
       # done
-      pager.connectingContainers.del(i)
+      pager.loader.unset(item)
       pager.unregisterFd(int(item.stream.fd))
       stream.sclose()
   of ccsBeforeStatus:
@@ -2090,7 +2083,7 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
     var r = stream.initPacketReader()
     r.sread(response.headers)
     # done
-    pager.connectingContainers.del(i)
+    pager.loader.unset(item)
     pager.unregisterFd(int(item.stream.fd))
     let redirect = response.getRedirect(container.request)
     if redirect != nil:
@@ -2099,12 +2092,11 @@ proc handleConnectingContainer*(pager: Pager; i: int) =
     else:
       pager.connected(container, response)
 
-proc handleConnectingContainerError*(pager: Pager; i: int) =
-  let item = pager.connectingContainers[i]
+proc handleError*(pager: Pager; item: ConnectingContainer) =
   pager.fail(item.container, "loader died while loading")
   pager.unregisterFd(int(item.stream.fd))
   item.stream.sclose()
-  pager.connectingContainers.del(i)
+  pager.loader.unset(item)
 
 proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
   let ctx = pager.jsctx
@@ -2174,16 +2166,15 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
     if pager.container == container:
       pager.alert(event.msg)
   of cetCancel:
-    let i = pager.findConnectingContainer(container)
-    if i == -1:
+    let item = pager.findConnectingContainer(container)
+    if item == nil:
       # whoops. we tried to cancel, but the event loop did not favor us...
       # at least cancel it in the buffer
       container.remoteCancel()
     else:
-      let item = pager.connectingContainers[i]
       dec pager.numload
       pager.deleteContainer(container, container.find(ndAny))
-      pager.connectingContainers.del(i)
+      pager.loader.unset(item)
       pager.unregisterFd(int(item.stream.fd))
       item.stream.sclose()
   of cetMetaRefresh:

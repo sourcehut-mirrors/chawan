@@ -694,6 +694,8 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     # expects SIGCHLD to be untouched. (e.g. git dies a horrible death with
     # SIGCHLD as SIG_IGN)
     signal(SIGCHLD, SIG_DFL)
+    # let's also reset SIGPIPE, which we ignored in forkserver
+    signal(SIGPIPE, SIG_DFL)
     # close the parent handles
     for i in 0 ..< ctx.handleMap.len:
       if ctx.handleMap[i] != nil:

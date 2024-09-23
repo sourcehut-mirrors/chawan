@@ -25,7 +25,7 @@ type
     key*: ClientKey
     process*: int
     clientPid*: int
-    map: seq[LoaderData]
+    map: seq[MapData]
     mapFds*: int # number of fds in map
     unregistered*: seq[int]
     registerFun*: proc(fd: int)
@@ -38,8 +38,10 @@ type
   ConnectDataState = enum
     cdsBeforeResult, cdsBeforeStatus, cdsBeforeHeaders
 
-  LoaderData = ref object of RootObj
+  MapData* = ref object of RootObj
     stream*: SocketStream
+
+  LoaderData = ref object of MapData
 
   ConnectData* = ref object of LoaderData
     state: ConnectDataState
@@ -123,7 +125,7 @@ proc startRequest*(loader: FileLoader; request: Request;
     w.swrite(config)
   return stream
 
-iterator data*(loader: FileLoader): LoaderData {.inline.} =
+iterator data*(loader: FileLoader): MapData {.inline.} =
   for it in loader.map:
     if it != nil:
       yield it
@@ -133,27 +135,32 @@ iterator ongoing*(loader: FileLoader): OngoingData {.inline.} =
     if it of OngoingData:
       yield OngoingData(it)
 
-func fd*(data: LoaderData): int =
+func fd*(data: MapData): int =
   return int(data.stream.fd)
 
-proc put*(loader: FileLoader; data: LoaderData) =
+proc put*(loader: FileLoader; data: MapData) =
   let fd = int(data.stream.fd)
   if loader.map.len <= fd:
     loader.map.setLen(fd + 1)
   assert loader.map[fd] == nil
   loader.map[fd] = data
-  inc loader.mapFds
+  if data of LoaderData:
+    inc loader.mapFds
 
-proc get*(loader: FileLoader; fd: int): LoaderData =
+proc get*(loader: FileLoader; fd: int): MapData =
   if fd < loader.map.len:
     return loader.map[fd]
   return nil
 
-proc unset*(loader: FileLoader; data: LoaderData) =
+proc unset*(loader: FileLoader; fd: int) =
+  if loader.map[fd] != nil and loader.map[fd] of LoaderData:
+    dec loader.mapFds
+  loader.map[fd] = nil
+
+proc unset*(loader: FileLoader; data: MapData) =
   let fd = int(data.stream.fd)
   if loader.get(fd) != nil:
-    dec loader.mapFds
-    loader.map[fd] = nil
+    loader.unset(fd)
 
 proc fetch0(loader: FileLoader; input: Request; promise: FetchPromise;
     redirectNum: int) =

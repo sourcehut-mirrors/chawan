@@ -57,12 +57,14 @@ type
     alive: bool
     config {.jsget.}: Config
     consoleWrapper: ConsoleWrapper
-    fdmap: seq[Container]
     feednext: bool
     pager {.jsget.}: Pager
-    pressed: tuple[col: int; row: int]
+    pressed: tuple[col, row: int]
     exitCode: int
     inEval: bool
+
+  ContainerData = ref object of MapData
+    container: Container
 
   ConsoleWrapper = object
     console: Console
@@ -380,17 +382,17 @@ proc acceptBuffers(client: Client) =
       let stream = container.iface.stream
       let fd = int(stream.source.fd)
       client.selector.unregister(fd)
-      client.fdmap[fd] = nil
+      client.loader.unset(fd)
       stream.sclose()
     elif container.process != -1: # connecting to buffer process
       let i = pager.findProcMapItem(container.process)
       pager.procmap.del(i)
-    elif (let i = pager.findConnectingContainer(container); i != -1):
+    elif (let item = pager.findConnectingContainer(container); item != nil):
       # connecting to URL
-      let stream = pager.connectingContainers[i].stream
+      let stream = item.stream
       client.selector.unregister(int(stream.fd))
       stream.sclose()
-      pager.connectingContainers.del(i)
+      client.loader.unset(item)
   let registerFun = proc(fd: int) =
     client.selector.unregister(fd)
     client.selector.registerHandle(fd, {Read, Write}, 0)
@@ -441,63 +443,67 @@ proc acceptBuffers(client: Client) =
       loader.shareCachedItem(container.cacheId, loader.clientPid)
       container.setCloneStream(stream, registerFun)
     let fd = int(stream.fd)
-    if client.fdmap.len <= fd:
-      client.fdmap.setLen(fd + 1)
-    client.fdmap[fd] = container
+    client.loader.put(ContainerData(stream: stream, container: container))
     client.selector.registerHandle(fd, {Read}, 0)
     pager.handleEvents(container)
   pager.procmap.setLen(0)
+
+proc handleStderr(client: Client) =
+  const BufferSize = 4096
+  const prefix = "STDERR: "
+  var buffer {.noinit.}: array[BufferSize, char]
+  let estream = client.forkserver.estream
+  var hadlf = true
+  while true:
+    try:
+      let n = estream.recvData(buffer)
+      if n == 0:
+        break
+      var i = 0
+      while i < n:
+        var j = n
+        var found = false
+        for k in i ..< n:
+          if buffer[k] == '\n':
+            j = k + 1
+            found = true
+            break
+        if hadlf:
+          client.console.err.write(prefix)
+        if j - i > 0:
+          client.console.err.write(buffer.toOpenArray(i, j - 1))
+        i = j
+        hadlf = found
+    except ErrorAgain:
+      break
+  if not hadlf:
+    client.console.err.write('\n')
+  client.console.err.sflush()
 
 proc handleRead(client: Client; fd: int) =
   if client.pager.term.istream != nil and fd == client.pager.term.istream.fd:
     client.input().then(proc() =
       client.pager.handleEvents()
     )
-  elif (let i = client.pager.findConnectingContainer(fd); i != -1):
-    client.pager.handleConnectingContainer(i)
   elif fd == client.forkserver.estream.fd:
-    const BufferSize = 4096
-    const prefix = "STDERR: "
-    var buffer {.noinit.}: array[BufferSize, char]
-    let estream = client.forkserver.estream
-    var hadlf = true
-    while true:
-      try:
-        let n = estream.recvData(buffer)
-        if n == 0:
-          break
-        var i = 0
-        while i < n:
-          var j = n
-          var found = false
-          for k in i ..< n:
-            if buffer[k] == '\n':
-              j = k + 1
-              found = true
-              break
-          if hadlf:
-            client.console.err.write(prefix)
-          if j - i > 0:
-            client.console.err.write(buffer.toOpenArray(i, j - 1))
-          i = j
-          hadlf = found
-      except ErrorAgain:
-        break
-    if not hadlf:
-      client.console.err.write('\n')
-    client.console.err.sflush()
+    client.handleStderr()
   elif (let data = client.loader.get(fd); data != nil):
-    client.loader.onRead(fd)
-    if data of ConnectData:
-      client.runJSJobs()
+    if data of ConnectingContainer:
+      client.pager.handleRead(ConnectingContainer(data))
+    elif data of ContainerData:
+      let container = ContainerData(data).container
+      client.pager.handleEvent(container)
+    else:
+      client.loader.onRead(fd)
+      if data of ConnectData:
+        client.runJSJobs()
   elif fd in client.loader.unregistered:
     discard # ignore
   else:
-    let container = client.fdmap[fd]
-    client.pager.handleEvent(container)
+    assert false
 
 proc handleWrite(client: Client; fd: int) =
-  let container = client.fdmap[fd]
+  let container = ContainerData(client.loader.get(fd)).container
   if container.iface.stream.flushWrite():
     client.selector.unregister(fd)
     client.selector.registerHandle(fd, {Read}, 0)
@@ -519,25 +525,26 @@ proc handleError(client: Client; fd: int) =
     #TODO do something here...
     stderr.write("Fork server crashed :(\n")
     client.quit(1)
-  elif client.loader.get(fd) != nil:
-    discard client.loader.onError(fd) #TODO handle connection error?
-  elif fd in client.loader.unregistered:
-    discard # already unregistered...
-  elif (let i = client.pager.findConnectingContainer(fd); i != -1):
-    client.pager.handleConnectingContainerError(i)
-  else:
-    if fd < client.fdmap.len and client.fdmap[fd] != nil:
-      let container = client.fdmap[fd]
+  elif (let data = client.loader.get(fd); data != nil):
+    if data of ConnectingContainer:
+      client.pager.handleError(ConnectingContainer(data))
+    elif data of ContainerData:
+      let container = ContainerData(data).container
       if container != client.consoleWrapper.container:
         client.console.error("Error in buffer", $container.url)
       else:
         client.consoleWrapper.container = nil
       client.selector.unregister(fd)
-      client.fdmap[fd] = nil
-    if client.consoleWrapper.container != nil:
+      client.loader.unset(fd)
+      doAssert client.consoleWrapper.container != nil
       client.showConsole()
     else:
-      doAssert false
+      discard client.loader.onError(fd) #TODO handle connection error?
+  elif fd in client.loader.unregistered:
+    discard # already unregistered...
+  else:
+    doAssert client.consoleWrapper.container != nil
+    client.showConsole()
 
 proc inputLoop(client: Client) =
   let selector = client.selector

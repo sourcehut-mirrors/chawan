@@ -186,7 +186,7 @@ proc recvDataLoopOrMmap*(ps: PosixStream; len = -1): MaybeMappedMemory =
     let srcOff = lseek(ps.fd, 0, SEEK_CUR) # skip headers
     if len != -1:
       doAssert len == stats.st_size - srcOff
-    let len = int(stats.st_size) - srcOff
+    let len = int(stats.st_size - srcOff)
     let p0 = mmap(nil, len, PROT_READ, MAP_SHARED, ps.fd, 0)
     if p0 == MAP_FAILED:
       return nil
