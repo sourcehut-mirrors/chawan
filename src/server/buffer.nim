@@ -319,6 +319,9 @@ func isClickable(styledNode: StyledNode): bool =
   let element = Element(styledNode.node)
   if element of HTMLAnchorElement:
     return HTMLAnchorElement(element).href != ""
+  if element of FormAssociatedElement:
+    if FormAssociatedElement(element).form == nil:
+      return false
   return element.tagType in ClickableElements
 
 func getClickable(styledNode: StyledNode): Element =
@@ -327,6 +330,7 @@ func getClickable(styledNode: StyledNode): Element =
     if styledNode.isClickable():
       return Element(styledNode.node)
     styledNode = styledNode.parent
+  return nil
 
 proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element):
   Request
