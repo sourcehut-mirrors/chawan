@@ -231,6 +231,7 @@ type
     width*: int
     height*: int
     bmp*: NetworkBitmap
+    bgcolor*: RGBColor
 
   AbsolutePos = object
     offset: Offset
@@ -379,7 +380,8 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
           y: (offset.y div state.attrs.ppl).toInt,
           width: atom.size.w.toInt,
           height: atom.size.h.toInt,
-          bmp: atom.bmp
+          bmp: atom.bmp,
+          bgcolor: bgcolor0.toRGBColor()
         ))
   if fragment.computed{"position"} != PositionStatic:
     if fragment.splitType != {stSplitStart, stSplitEnd}:

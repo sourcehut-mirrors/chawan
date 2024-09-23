@@ -578,7 +578,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       url = newURL("img-codec+x-sixel:encode").get
       headers.add("Cha-Image-Sixel-Halfdump", "1")
       headers.add("Cha-Image-Sixel-Palette", $pager.term.sixelRegisterNum)
-      headers.add("Cha-Image-Background-Color", $pager.term.defaultBackground)
+      headers.add("Cha-Image-Background-Color", $image.bgcolor)
       headers.add("Cha-Image-Offset", $offx & 'x' & $erry)
       headers.add("Cha-Image-Crop-Width", $dispw)
     of imKitty:

@@ -102,7 +102,7 @@ type
     stdinUnblocked: bool
     stdinWasUnblocked: bool
     origTermios: Termios
-    defaultBackground*: RGBColor
+    defaultBackground: RGBColor
     defaultForeground: RGBColor
     ibuf*: string # buffer for chars when we can't process them
     sixelRegisterNum*: int

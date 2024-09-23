@@ -436,9 +436,6 @@ func toEightBit*(c: RGBColor): EightBitColor =
 func toEightBit*(c: RGBAColorBE): EightBitColor =
   return toEightBit(c.r, c.g, c.b)
 
-template `$`*(rgbcolor: RGBColor): string =
-  "rgb(" & $rgbcolor.r & ", " & $rgbcolor.g & ", " & $rgbcolor.b & ")"
-
 template `$`*(color: CellColor): string =
   case color.t
   of ctNone: "none"
