@@ -1,4 +1,3 @@
-import std/selectors
 import std/tables
 
 import html/catom
@@ -265,25 +264,22 @@ proc addWindowModule2*(ctx: JSContext) =
   ctx.registerType(Window, parent = eventTargetCID, asglobal = true,
     globalparent = true)
 
-proc addScripting*(window: Window; selector: Selector[int]) =
+proc evalJSFree(opaque: RootRef; src, file: string) =
+  let window = Window(opaque)
+  let ret = window.jsctx.eval(src, file, JS_EVAL_TYPE_GLOBAL)
+  if JS_IsException(ret):
+    window.console.log("Exception in document", $window.document.url,
+      window.jsctx.getExceptionMsg())
+  else:
+    JS_FreeValue(window.jsctx, ret)
+
+proc addScripting*(window: Window) =
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   window.jsrt = rt
   window.jsctx = ctx
   window.importMapsAllowed = true
-  window.timeouts = newTimeoutState(
-    selector = selector,
-    jsctx = ctx,
-    err = window.console.err,
-    evalJSFree = (proc(src, file: string) =
-      let ret = window.jsctx.eval(src, file, JS_EVAL_TYPE_GLOBAL)
-      if JS_IsException(ret):
-        window.console.log("Exception in document", $window.document.url,
-          window.jsctx.getExceptionMsg())
-      else:
-        JS_FreeValue(ctx, ret)
-    )
-  )
+  window.timeouts = newTimeoutState(ctx, window.console.err, evalJSFree, window)
   ctx.addWindowModule()
   ctx.setGlobal(window)
   ctx.addDOMExceptionModule()
@@ -309,9 +305,8 @@ proc runJSJobs*(window: Window) =
     let ctx = r.error
     ctx.writeException(window.console.err)
 
-proc newWindow*(scripting, images, styling: bool; selector: Selector[int];
-    attrs: WindowAttributes; factory: CAtomFactory; loader: FileLoader;
-    url: URL): Window =
+proc newWindow*(scripting, images, styling: bool; attrs: WindowAttributes;
+    factory: CAtomFactory; loader: FileLoader; url: URL): Window =
   let err = newDynFileStream(stderr)
   let window = Window(
     attrs: attrs,
@@ -328,5 +323,5 @@ proc newWindow*(scripting, images, styling: bool; selector: Selector[int];
   )
   window.location = window.newLocation()
   if scripting:
-    window.addScripting(selector)
+    window.addScripting()
   return window

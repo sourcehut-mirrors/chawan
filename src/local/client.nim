@@ -4,7 +4,6 @@ import std/net
 import std/options
 import std/os
 import std/posix
-import std/selectors
 import std/strutils
 import std/tables
 
@@ -19,6 +18,7 @@ import html/formdata
 import html/xmlhttprequest
 import io/bufwriter
 import io/dynstream
+import io/poll
 import io/promise
 import io/serversocket
 import js/console
@@ -74,8 +74,8 @@ type
 func console(client: Client): Console {.jsfget.} =
   return client.consoleWrapper.console
 
-template selector(client: Client): Selector[int] =
-  client.pager.selector
+template pollData(client: Client): PollData =
+  client.pager.pollData
 
 template forkserver(client: Client): ForkServer =
   client.pager.forkserver
@@ -143,6 +143,10 @@ proc evalJS(client: Client; src, filename: string; module = false): JSValue =
 
 proc evalJSFree(client: Client; src, filename: string) =
   JS_FreeValue(client.jsctx, client.evalJS(src, filename))
+
+proc evalJSFree2(opaque: RootRef; src, filename: string) =
+  let client = Client(opaque)
+  client.evalJSFree(src, filename)
 
 proc command0(client: Client; src: string; filename = "<command>";
     silence = false; module = false) =
@@ -358,9 +362,6 @@ proc input(client: Client): EmptyPromise =
     p.resolve()
   return p
 
-when ioselSupportedPlatform:
-  let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
-
 proc showConsole(client: Client) {.jsfunc.} =
   let container = client.consoleWrapper.container
   if client.pager.container != container:
@@ -381,7 +382,7 @@ proc acceptBuffers(client: Client) =
     if container.iface != nil: # fully connected
       let stream = container.iface.stream
       let fd = int(stream.source.fd)
-      client.selector.unregister(fd)
+      client.pollData.unregister(fd)
       client.loader.unset(fd)
       stream.sclose()
     elif container.process != -1: # connecting to buffer process
@@ -390,12 +391,12 @@ proc acceptBuffers(client: Client) =
     elif (let item = pager.findConnectingContainer(container); item != nil):
       # connecting to URL
       let stream = item.stream
-      client.selector.unregister(int(stream.fd))
+      client.pollData.unregister(int(stream.fd))
       stream.sclose()
       client.loader.unset(item)
   let registerFun = proc(fd: int) =
-    client.selector.unregister(fd)
-    client.selector.registerHandle(fd, {Read, Write}, 0)
+    client.pollData.unregister(fd)
+    client.pollData.register(fd, POLLIN or POLLOUT)
   for item in pager.procmap:
     let container = item.container
     let stream = connectSocketStream(client.config.external.sockdir,
@@ -444,7 +445,7 @@ proc acceptBuffers(client: Client) =
       container.setCloneStream(stream, registerFun)
     let fd = int(stream.fd)
     client.loader.put(ContainerData(stream: stream, container: container))
-    client.selector.registerHandle(fd, {Read}, 0)
+    client.pollData.register(fd, POLLIN)
     pager.handleEvents(container)
   pager.procmap.setLen(0)
 
@@ -505,8 +506,8 @@ proc handleRead(client: Client; fd: int) =
 proc handleWrite(client: Client; fd: int) =
   let container = ContainerData(client.loader.get(fd)).container
   if container.iface.stream.flushWrite():
-    client.selector.unregister(fd)
-    client.selector.registerHandle(fd, {Read}, 0)
+    client.pollData.unregister(fd)
+    client.pollData.register(fd, POLLIN)
 
 proc flushConsole*(client: Client) {.jsfunc.} =
   if client.console == nil:
@@ -534,7 +535,7 @@ proc handleError(client: Client; fd: int) =
         client.console.error("Error in buffer", $container.url)
       else:
         client.consoleWrapper.container = nil
-      client.selector.unregister(fd)
+      client.pollData.unregister(fd)
       client.loader.unset(fd)
       doAssert client.consoleWrapper.container != nil
       client.showConsole()
@@ -546,31 +547,48 @@ proc handleError(client: Client; fd: int) =
     doAssert client.consoleWrapper.container != nil
     client.showConsole()
 
+let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
+
+proc setupSigwinch(client: Client): PosixStream =
+  var pipefd {.noinit.}: array[2, cint]
+  doAssert pipe(pipefd) != -1
+  let writer = newPosixStream(pipefd[1])
+  writer.setBlocking(false)
+  var gwriter {.global.}: PosixStream = nil
+  gwriter = writer
+  onSignal SIGWINCH:
+    discard sig
+    try:
+      gwriter.sendDataLoop([0u8])
+    except ErrorAgain:
+      discard
+  let reader = newPosixStream(pipefd[0])
+  reader.setBlocking(false)
+  return reader
+
 proc inputLoop(client: Client) =
-  let selector = client.selector
-  selector.registerHandle(int(client.pager.term.istream.fd), {Read}, 0)
-  when ioselSupportedPlatform:
-    let sigwinch = selector.registerSignal(int(SIGWINCH), 0)
-  var keys: array[64, ReadyKey]
+  client.pollData.register(client.pager.term.istream.fd, POLLIN)
+  let sigwinch = client.setupSigwinch()
+  client.pollData.register(sigwinch.fd, POLLIN)
   while true:
-    let count = client.selector.selectInto(-1, keys)
-    for event in keys.toOpenArray(0, count - 1):
-      if Read in event.events:
-        client.handleRead(event.fd)
-      if Write in event.events:
-        client.handleWrite(event.fd)
-      if Error in event.events:
-        client.handleError(event.fd)
-      when ioselSupportedPlatform:
-        if Signal in event.events:
-          assert event.fd == sigwinch
+    let timeout = client.timeouts.sortAndGetTimeout()
+    client.pollData.poll(timeout)
+    for event in client.pollData.events:
+      let efd = int(event.fd)
+      if (event.revents and POLLIN) != 0:
+        if event.fd == sigwinch.fd:
+          sigwinch.drain()
           client.pager.windowChange()
-      if selectors.Event.Timer in event.events:
-        let r = client.timeouts.runTimeoutFd(event.fd)
-        assert r
-        let container = client.consoleWrapper.container
-        if container != nil:
-          container.tailOnLoad = true
+        else:
+          client.handleRead(efd)
+      if (event.revents and POLLOUT) != 0:
+        client.handleWrite(efd)
+      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+        client.handleError(efd)
+    if client.timeouts.run():
+      let container = client.consoleWrapper.container
+      if container != nil:
+        container.tailOnLoad = true
     client.runJSJobs()
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
@@ -604,19 +622,18 @@ func hasSelectFds(client: Client): bool =
     client.pager.procmap.len > 0
 
 proc headlessLoop(client: Client) =
-  var keys: array[64, ReadyKey]
   while client.hasSelectFds():
-    let count = client.selector.selectInto(-1, keys)
-    for event in keys.toOpenArray(0, count - 1):
-      if Read in event.events:
-        client.handleRead(event.fd)
-      if Write in event.events:
-        client.handleWrite(event.fd)
-      if Error in event.events:
-        client.handleError(event.fd)
-      if selectors.Event.Timer in event.events:
-        let r = client.timeouts.runTimeoutFd(event.fd)
-        assert r
+    let timeout = client.timeouts.sortAndGetTimeout()
+    client.pollData.poll(timeout)
+    for event in client.pollData.events:
+      let efd = int(event.fd)
+      if (event.revents and POLLIN) != 0:
+        client.handleRead(efd)
+      if (event.revents and POLLOUT) != 0:
+        client.handleWrite(efd)
+      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+        client.handleError(efd)
+    discard client.timeouts.run()
     client.runJSJobs()
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
@@ -721,26 +738,25 @@ proc launchClient*(client: Client; pages: seq[string];
         dump = false
     else:
       dump = true
-  let selector = newSelector[int]()
-  let efd = int(client.forkserver.estream.fd)
-  selector.registerHandle(efd, {Read}, 0)
+  let pager = client.pager
+  pager.pollData.register(client.forkserver.estream.fd, POLLIN)
   client.loader.registerFun = proc(fd: int) =
-    selector.registerHandle(fd, {Read}, 0)
+    pager.pollData.register(fd, POLLIN)
   client.loader.unregisterFun = proc(fd: int) =
-    selector.unregister(fd)
-  client.pager.launchPager(istream, selector)
+    pager.pollData.unregister(fd)
+  pager.launchPager(istream)
   let clearFun = proc() =
     client.clearConsole()
   let showFun = proc() =
     client.showConsole()
   let hideFun = proc() =
     client.hideConsole()
-  client.consoleWrapper = client.pager.addConsole(interactive = istream != nil,
+  client.consoleWrapper = pager.addConsole(interactive = istream != nil,
     clearFun, showFun, hideFun)
   #TODO passing console.err here makes it impossible to change it later. maybe
   # better associate it with jsctx
-  client.timeouts = newTimeoutState(client.selector, client.jsctx,
-    client.console.err, proc(src, file: string) = client.evalJSFree(src, file))
+  client.timeouts = newTimeoutState(client.jsctx, client.console.err,
+    evalJSFree2, client)
   client.pager.timeouts = client.timeouts
   addExitProc((proc() = client.cleanup()))
   if client.config.start.startup_script != "":

@@ -2,7 +2,6 @@
 # Each packet is prefixed with its length as a pointer-sized integer.
 
 import std/options
-import std/sets
 import std/tables
 
 import io/dynstream

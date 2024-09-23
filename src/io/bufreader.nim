@@ -1,5 +1,4 @@
 import std/options
-import std/sets
 import std/tables
 
 import io/dynstream

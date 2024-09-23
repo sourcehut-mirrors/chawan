@@ -6,7 +6,6 @@ import std/net
 import std/options
 import std/os
 import std/posix
-import std/selectors
 import std/tables
 
 import chagashi/charset
@@ -29,6 +28,7 @@ import html/formdata as formdata_impl
 import io/bufreader
 import io/bufwriter
 import io/dynstream
+import io/poll
 import io/promise
 import io/serversocket
 import js/console
@@ -76,45 +76,44 @@ type
     y*: int
     str*: string
 
-  Buffer* = ref object
-    rfd: int # file descriptor of command pipe
-    fd: int # file descriptor of buffer source
-    url: URL # URL before readFromFd
-    pstream: SocketStream # control stream
-    savetask: bool
-    ishtml: bool
-    firstBufferRead: bool
-    lines: FlexibleGrid
-    images: seq[PosBitmap]
+  Buffer = ref object
     attrs: WindowAttributes
-    window: Window
-    document: Document
-    prevStyled: StyledNode
-    selector: Selector[int]
-    istream: PosixStream
-    bytesRead: int
-    reportedBytesRead: int
-    state: BufferState
-    prevnode: StyledNode
-    loader: FileLoader
-    config: BufferConfig
-    tasks: array[BufferCommand, int] #TODO this should have arguments
-    hoverText: array[HoverType, string]
-    estream: DynFileStream # error stream
-    ssock: ServerSocket
-    factory: CAtomFactory
-    uastyle: CSSStylesheet
-    quirkstyle: CSSStylesheet
-    userstyle: CSSStylesheet
-    htmlParser: HTML5ParserWrapper
     bgcolor: CellColor
-    needsBOMSniff: bool
-    ctx: TextDecoderContext
-    charsetStack: seq[Charset]
-    charset: Charset
+    bytesRead: int
     cacheId: int
+    charset: Charset
+    charsetStack: seq[Charset]
+    config: BufferConfig
+    ctx: TextDecoderContext
+    document: Document
+    estream: DynFileStream # error stream
+    factory: CAtomFactory
+    fd: int # file descriptor of buffer source
+    firstBufferRead: bool
+    hoverText: array[HoverType, string]
+    htmlParser: HTML5ParserWrapper
+    images: seq[PosBitmap]
+    ishtml: bool
+    istream: PosixStream
+    lines: FlexibleGrid
+    loader: FileLoader
+    needsBOMSniff: bool
     outputId: int
-    emptySel: Selector[int]
+    pollData: PollData
+    prevStyled: StyledNode
+    prevnode: StyledNode
+    pstream: SocketStream # control stream
+    quirkstyle: CSSStylesheet
+    reportedBytesRead: int
+    rfd: int # file descriptor of command pipe
+    savetask: bool
+    ssock: ServerSocket
+    state: BufferState
+    tasks: array[BufferCommand, int] #TODO this should have arguments
+    uastyle: CSSStylesheet
+    url: URL # URL before readFromFd
+    userstyle: CSSStylesheet
+    window: Window
 
   InterfaceOpaque = ref object
     stream: SocketStream
@@ -900,23 +899,15 @@ proc rewind(buffer: Buffer; offset: int; unregister = true): bool =
     return false
   buffer.loader.resume(response.outputId)
   if unregister:
-    buffer.selector.unregister(buffer.fd)
+    buffer.pollData.unregister(buffer.fd)
     buffer.loader.unregistered.add(buffer.fd)
   buffer.istream.sclose()
   buffer.istream = response.body
   buffer.istream.setBlocking(false)
   buffer.fd = response.body.fd
-  buffer.selector.registerHandle(buffer.fd, {Read}, 0)
+  buffer.pollData.register(buffer.fd, POLLIN)
   buffer.bytesRead = offset
   return true
-
-# As defined in std/selectors: this determines whether kqueue is being used.
-# On these platforms, we must not close the selector after fork, since kqueue
-# fds are not inherited after a fork.
-const bsdPlatform = defined(macosx) or defined(freebsd) or defined(netbsd) or
-  defined(openbsd) or defined(dragonfly)
-
-proc onload(buffer: Buffer)
 
 when defined(freebsd) or defined(openbsd):
   # necessary for an ugly hack we will do later
@@ -951,33 +942,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     let sockFd = buffer.pstream.recvFileHandle()
     discard close(pipefd[0]) # close read
     let ps = newPosixStream(pipefd[1])
-    # We must allocate a new selector for this new process. (Otherwise we
-    # would interfere with operation of the other one.)
-    # Closing seems to suffice here.
-    when not bsdPlatform:
-      buffer.selector.close()
-    when defined(freebsd) or defined(openbsd):
-      # Hack necessary because newSelector calls sysctl, but Capsicum really
-      # dislikes that and we don't want to request sysctl capabilities
-      # from pledge either.
-      #
-      # To make this work we
-      # * allocate a new Selector object on buffer startup
-      # * copy into it the initial state of the real selector we will use
-      # * on fork, reset the selector object's state by writing the dummy
-      #   selector into it
-      # * override the file handle with a new kqueue().
-      #
-      # Warning: this breaks when threading is enabled; then fds is no longer a
-      # seq, so it's copied by reference (+ leaks). We explicitly disable
-      # threading, so for now we should be fine.
-      let fd = kqueue()
-      doAssert fd != -1
-      buffer.selector[] = buffer.emptySel[]
-      cast[ptr cint](buffer.selector)[] = fd
-    else:
-      buffer.selector = newSelector[int]()
-    #TODO set buffer.window.timeouts.selector
+    buffer.pollData.clear()
     var connecting: seq[ConnectData] = @[]
     var ongoing: seq[OngoingData] = @[]
     for it in buffer.loader.data:
@@ -1000,7 +965,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       response.body = stream
       let data = OngoingData(response: response, stream: stream)
       let fd = data.fd
-      buffer.selector.registerHandle(fd, {Read}, 0)
+      buffer.pollData.register(fd, POLLIN)
       buffer.loader.put(data)
     if buffer.istream != nil:
       # We do not own our input stream, so we can't tee it.
@@ -1025,7 +990,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     var r = buffer.pstream.initPacketReader()
     r.sread(buffer.loader.key)
     buffer.rfd = buffer.pstream.fd
-    buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
+    buffer.pollData.register(buffer.rfd, POLLIN)
     # must reconnect after the new client is set up, or the client pids get
     # mixed up.
     for it in connecting:
@@ -1070,7 +1035,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
   buffer.document.readyState = rsInteractive
   if buffer.config.scripting:
     buffer.dispatchDOMContentLoadedEvent()
-  buffer.selector.unregister(buffer.fd)
+  buffer.pollData.unregister(buffer.fd)
   buffer.loader.unregistered.add(buffer.fd)
   buffer.loader.removeCachedItem(buffer.cacheId)
   buffer.cacheId = -1
@@ -1181,12 +1146,12 @@ proc cancel*(buffer: Buffer) {.proxy.} =
     return
   for it in buffer.loader.data:
     let fd = it.fd
-    buffer.selector.unregister(fd)
+    buffer.pollData.unregister(fd)
     buffer.loader.unregistered.add(fd)
     it.stream.sclose()
     buffer.loader.unset(it)
   if buffer.istream != nil:
-    buffer.selector.unregister(buffer.fd)
+    buffer.pollData.unregister(buffer.fd)
     buffer.loader.unregistered.add(buffer.fd)
     buffer.loader.removeCachedItem(buffer.cacheId)
     buffer.fd = -1
@@ -1397,8 +1362,8 @@ proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
 
 proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
   let repaint = buffer.setFocus(select)
-  var options: seq[string]
-  var selected: seq[int]
+  var options: seq[string] = @[]
+  var selected: seq[int] = @[]
   var i = 0
   for option in select.options:
     options.add(option.textContent.stripAndCollapse())
@@ -1806,7 +1771,7 @@ proc handleRead(buffer: Buffer; fd: int): bool =
     assert false
   true
 
-proc handleError(buffer: Buffer; fd: int; err: OSErrorCode): bool =
+proc handleError(buffer: Buffer; fd: int): bool =
   if fd == buffer.rfd:
     # Connection reset by peer, probably. Close the buffer.
     return false
@@ -1815,32 +1780,36 @@ proc handleError(buffer: Buffer; fd: int; err: OSErrorCode): bool =
   elif buffer.loader.get(fd) != nil:
     if not buffer.loader.onError(fd):
       #TODO handle connection error
-      assert false, $fd & ": " & $err
+      assert false, $fd
     if buffer.config.scripting:
       buffer.window.runJSJobs()
   elif fd in buffer.loader.unregistered:
     discard # ignore
   else:
-    assert false, $fd & ": " & $err
+    assert false, $fd
   true
+
+proc getPollTimeout(buffer: Buffer): cint =
+  if not buffer.config.scripting:
+    return -1
+  return buffer.window.timeouts.sortAndGetTimeout()
 
 proc runBuffer(buffer: Buffer) =
   var alive = true
-  var keys: array[64, ReadyKey]
   while alive:
-    let count = buffer.selector.selectInto(-1, keys)
-    for event in keys.toOpenArray(0, count - 1):
-      if Read in event.events:
+    let timeout = buffer.getPollTimeout()
+    buffer.pollData.poll(timeout)
+    for event in buffer.pollData.events:
+      if (event.revents and POLLIN) != 0:
         if not buffer.handleRead(event.fd):
           alive = false
           break
-      if Error in event.events:
-        if not buffer.handleError(event.fd, event.errorCode):
+      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+        if not buffer.handleError(event.fd):
           alive = false
           break
-      if selectors.Event.Timer in event.events:
-        let r = buffer.window.timeouts.runTimeoutFd(event.fd)
-        assert r
+    if buffer.config.scripting:
+      if buffer.window.timeouts.run():
         buffer.window.runJSJobs()
         buffer.maybeReshape()
     buffer.loader.unregistered.setLen(0)
@@ -1853,9 +1822,7 @@ proc cleanup(buffer: Buffer) =
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
-    ssock: ServerSocket; pstream: SocketStream; selector: Selector[int]) =
-  let emptySel = Selector[int]()
-  emptySel[] = selector[]
+    ssock: ServerSocket; pstream: SocketStream) =
   let factory = newCAtomFactory()
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
@@ -1870,16 +1837,14 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
     pstream: pstream,
     rfd: pstream.fd,
-    selector: selector,
     ssock: ssock,
     url: url,
     charsetStack: charsetStack,
     cacheId: -1,
     outputId: -1,
-    emptySel: emptySel,
     factory: factory,
-    window: newWindow(config.scripting, config.images, config.styling, selector,
-      attrs, factory, loader, url)
+    window: newWindow(config.scripting, config.images, config.styling, attrs,
+      factory, loader, url)
   )
   if buffer.config.scripting:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
@@ -1891,12 +1856,12 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   buffer.fd = int(fd)
   buffer.istream = newPosixStream(fd)
   buffer.istream.setBlocking(false)
-  buffer.selector.registerHandle(int(fd), {Read}, 0)
+  buffer.pollData.register(fd, POLLIN)
   loader.registerFun = proc(fd: int) =
-    buffer.selector.registerHandle(fd, {Read}, 0)
+    buffer.pollData.register(fd, POLLIN)
   loader.unregisterFun = proc(fd: int) =
-    buffer.selector.unregister(fd)
-  buffer.selector.registerHandle(buffer.rfd, {Read}, 0)
+    buffer.pollData.unregister(fd)
+  buffer.pollData.register(buffer.rfd, POLLIN)
   const css = staticRead"res/ua.css"
   const quirk = css & staticRead"res/quirk.css"
   buffer.initDecoder()

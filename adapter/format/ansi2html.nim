@@ -1,8 +1,9 @@
 import std/options
 import std/os
 import std/posix
-import std/selectors
 
+import io/dynstream
+import io/poll
 import types/color
 import utils/twtstr
 
@@ -381,27 +382,23 @@ proc main() =
   if standalone:
     state.puts("<body>\n")
   state.puts("<pre style='margin: 0'>\n")
-  let ofl = fcntl(STDIN_FILENO, F_GETFL, 0)
-  doAssert ofl != -1
-  discard fcntl(STDIN_FILENO, F_SETFL, ofl and not O_NONBLOCK)
+  let ps = newPosixStream(STDIN_FILENO)
+  ps.setBlocking(false)
   var buffer {.noinit.}: array[4096, char]
-  var selector = newSelector[int]()
-  block mainloop:
-    while true:
-      let n = read(STDIN_FILENO, addr buffer[0], buffer.high)
-      if n != -1:
-        if n == 0:
-          break
-        state.processData(buffer.toOpenArray(0, n - 1))
-      else:
-        doAssert errno == EAGAIN or errno == EWOULDBLOCK
-        state.flushOutbuf()
-        selector.registerHandle(STDIN_FILENO, {Read}, 0)
-        discard selector.select(-1)
-        selector.unregister(STDIN_FILENO)
+  var pollData = PollData()
+  while true:
+    try:
+      let n = ps.recvData(buffer)
+      if n == 0:
+        break
+      state.processData(buffer.toOpenArray(0, n - 1))
+    except ErrorAgain:
+      state.flushOutbuf()
+      pollData.register(ps.fd, POLLIN)
+      pollData.poll(-1)
+      pollData.unregister(ps.fd)
   if standalone:
     state.puts("</body>")
   state.flushOutbuf()
-  discard fcntl(STDIN_FILENO, F_SETFL, ofl)
 
 main()

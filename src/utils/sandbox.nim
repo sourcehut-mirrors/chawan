@@ -175,14 +175,10 @@ elif SandboxMode == stLibSeccomp:
       "clone", # for when fork is implemented as clone
       "close", # duh
       "connect", # for outgoing requests to loader
-      "epoll_create", "epoll_create1", "epoll_ctl", "epoll_wait", # epoll stuff
-      "epoll_pwait", # for bionic & musl
-      "eventfd", # used by Nim selectors
       "exit_group", # for quit
       "fork", # for when fork is really fork
       "futex", # bionic libc & WSL both need it
       "getpid", # for determining current PID after we fork
-      "getrlimit", # glibc uses it after fork it seems
       "getsockname", # Nim needs it for connecting
       "gettimeofday", # used by QuickJS in Date.now()
       "lseek", # glibc calls lseek on open files at exit
@@ -192,17 +188,12 @@ elif SandboxMode == stLibSeccomp:
       "munmap", # memory allocation
       "pipe", # for pipes to child process
       "pipe2", # for when pipe is implemented as pipe2
-      "prlimit64", # for when getrlimit is implemented as prlimit64
+      "poll", "ppoll", # for polling (sometimes implemented as ppoll, see musl)
       "read", "recv", "recvfrom", "recvmsg", # for reading from sockets
       "rt_sigreturn", # for when sigreturn is implemented as rt_sigreturn
       "send", "sendmsg", "sendto", # for writing to sockets
       "set_robust_list", # glibc seems to need it for whatever reason
-      "setrlimit", # glibc seems to use it for whatever reason
       "sigreturn", # called by signal trampoline
-      "timerfd_create", # used by Nim selectors
-      "timerfd_gettime", # not actually used by Nim but may be in the future
-      "timerfd_settime", # used by Nim selectors
-      "ugetrlimit", # glibc uses it after fork it seems
       "write" # for writing to sockets
     ]
     for it in allowList:
@@ -235,7 +226,7 @@ elif SandboxMode == stLibSeccomp:
       "read", "write", "recv", "send", "recvfrom", "sendto", # socket i/o
       "lseek", # glibc calls lseek on open files at exit
       "mmap", "mmap2", "mremap", "munmap", "brk", # memory allocation
-      "poll", # curl needs poll
+      "poll", "ppoll", # curl needs poll
       "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
       "futex", # bionic libc & WSL both need it
       # we either have to use CURLOPT_NOSIGNAL or allow signals.

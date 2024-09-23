@@ -251,6 +251,15 @@ proc dealloc*(mem: MaybeMappedMemory) =
   else:
     dealloc(mem.p0)
 
+proc drain*(ps: PosixStream) =
+  assert not ps.blocking
+  var buffer {.noinit.}: array[4096, uint8]
+  try:
+    while true:
+      discard ps.recvData(addr buffer[0], buffer.len)
+  except ErrorAgain:
+    discard
+
 type SocketStream* = ref object of PosixStream
   source*: Socket
 

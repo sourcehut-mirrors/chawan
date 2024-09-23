@@ -1,5 +1,5 @@
-import std/selectors
-import std/tables
+import std/algorithm
+import std/times
 
 import io/dynstream
 import js/console
@@ -15,59 +15,76 @@ type
 
   TimeoutEntry = ref object
     t: TimeoutType
-    fd: int
+    id: int32
     val: JSValue
     args: seq[JSValue]
+    expires: int64
+    timeout: int32
+
+  EvalJSFree* = proc(opaque: RootRef; src, file: string) {.nimcall.}
 
   TimeoutState* = ref object
     timeoutid: int32
-    timeouts: Table[int32, TimeoutEntry]
-    timeoutFds: Table[int, int32]
-    selector: Selector[int] #TODO would be better with void...
+    timeouts: seq[TimeoutEntry]
     jsctx: JSContext
     err: DynStream #TODO shouldn't be needed
-    evalJSFree: proc(src, file: string) #TODO ew
+    evalJSFree: EvalJSFree
+    opaque: RootRef
+    sorted: bool
 
-func newTimeoutState*(selector: Selector[int]; jsctx: JSContext; err: DynStream;
-    evalJSFree: proc(src, file: string)): TimeoutState =
+func newTimeoutState*(jsctx: JSContext; err: DynStream;
+    evalJSFree: EvalJSFree; opaque: RootRef): TimeoutState =
   return TimeoutState(
-    selector: selector,
     jsctx: jsctx,
     err: err,
-    evalJSFree: evalJSFree
+    evalJSFree: evalJSFree,
+    opaque: opaque,
+    sorted: true
   )
 
 func empty*(state: TimeoutState): bool =
   return state.timeouts.len == 0
 
-proc clearTimeout*(state: var TimeoutState; id: int32) =
-  if id in state.timeouts:
-    let entry = state.timeouts[id]
-    state.selector.unregister(entry.fd)
-    JS_FreeValue(state.jsctx, entry.val)
-    for arg in entry.args:
-      JS_FreeValue(state.jsctx, arg)
-    state.timeoutFds.del(entry.fd)
-    state.timeouts.del(id)
+proc clearTimeout0(state: var TimeoutState; i: int) =
+  let entry = state.timeouts[i]
+  JS_FreeValue(state.jsctx, entry.val)
+  for arg in entry.args:
+    JS_FreeValue(state.jsctx, arg)
+  state.timeouts.del(i)
+  if state.timeouts.len != i: # only set if we del'd in the middle
+    state.sorted = false
 
-#TODO varargs
+proc clearTimeout*(state: var TimeoutState; id: int32) =
+  var j = -1
+  for i in 0 ..< state.timeouts.len:
+    if state.timeouts[i].id == id:
+      j = i
+      break
+  if j != -1:
+    state.clearTimeout0(j)
+
+proc getUnixMillis(): int64 =
+  let now = getTime()
+  return now.toUnix() * 1000 + now.nanosecond div 1_000_000
+
 proc setTimeout*(state: var TimeoutState; t: TimeoutType; handler: JSValue;
     timeout: int32; args: openArray[JSValue]): int32 =
   let id = state.timeoutid
   inc state.timeoutid
-  let fd = state.selector.registerTimer(max(timeout, 1), t == ttTimeout, 0)
-  state.timeoutFds[fd] = id
   let entry = TimeoutEntry(
     t: t,
-    fd: fd,
-    val: JS_DupValue(state.jsctx, handler)
+    id: id,
+    val: JS_DupValue(state.jsctx, handler),
+    expires: getUnixMillis() + int64(timeout),
+    timeout: timeout
   )
   for arg in args:
     entry.args.add(JS_DupValue(state.jsctx, arg))
-  state.timeouts[id] = entry
+  state.timeouts.add(entry)
+  state.sorted = false
   return id
 
-proc runEntry(state: var TimeoutState; entry: TimeoutEntry; name: string) =
+proc runEntry(state: var TimeoutState; entry: TimeoutEntry) =
   if JS_IsFunction(state.jsctx, entry.val):
     let ret = JS_Call(state.jsctx, entry.val, JS_UNDEFINED,
       cint(entry.args.len), entry.args.toJSValueArray())
@@ -77,23 +94,39 @@ proc runEntry(state: var TimeoutState; entry: TimeoutEntry; name: string) =
   else:
     var s: string
     if state.jsctx.fromJS(entry.val, s).isSome:
-      state.evalJSFree(s, name)
+      state.evalJSFree(state.opaque, s, $entry.t)
 
-proc runTimeoutFd*(state: var TimeoutState; fd: int): bool =
-  if fd notin state.timeoutFds:
-    return false
-  let id = state.timeoutFds[fd]
-  let entry = state.timeouts[id]
-  state.runEntry(entry, $entry.t)
-  if entry.t == ttTimeout:
-    state.clearTimeout(id)
-  return true
+# for poll
+proc sortAndGetTimeout*(state: var TimeoutState): cint =
+  if state.timeouts.len == 0:
+    return -1
+  if not state.sorted:
+    state.timeouts.sort(proc(a, b: TimeoutEntry): int =
+      cmp(a.expires, b.expires), order = Descending)
+    state.sorted = true
+  let now = getUnixMillis()
+  return cint(max(state.timeouts[^1].expires - now, -1))
+
+proc run*(state: var TimeoutState): bool =
+  let H = state.timeouts.high
+  let now = getUnixMillis()
+  var found = false
+  for i in countdown(H, 0):
+    if state.timeouts[i].expires > now:
+      break
+    let entry = state.timeouts[i]
+    state.runEntry(entry)
+    found = true
+    case entry.t
+    of ttTimeout: state.clearTimeout0(i)
+    of ttInterval:
+      entry.expires = now + entry.timeout
+      state.sorted = false
+  return found
 
 proc clearAll*(state: var TimeoutState) =
-  for entry in state.timeouts.values:
-    state.selector.unregister(entry.fd)
+  for entry in state.timeouts:
     JS_FreeValue(state.jsctx, entry.val)
     for arg in entry.args:
       JS_FreeValue(state.jsctx, arg)
-  state.timeouts.clear()
-  state.timeoutFds.clear()
+  state.timeouts.setLen(0)

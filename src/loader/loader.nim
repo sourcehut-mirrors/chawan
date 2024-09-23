@@ -26,13 +26,13 @@ import std/net
 import std/options
 import std/os
 import std/posix
-import std/selectors
 import std/strutils
 import std/tables
 
 import io/bufreader
 import io/bufwriter
 import io/dynstream
+import io/poll
 import io/serversocket
 import io/stdio
 import io/tempfile
@@ -42,7 +42,6 @@ import loader/headers
 import loader/loaderhandle
 import loader/loaderiface
 import loader/request
-import loader/response
 import monoucha/javascript
 import types/cookie
 import types/formdata
@@ -51,9 +50,6 @@ import types/referrer
 import types/urimethodmap
 import types/url
 import utils/twtstr
-
-export request
-export response
 
 type
   CachedItem = ref object
@@ -77,7 +73,7 @@ type
     alive: bool
     config: LoaderConfig
     handleMap: seq[LoaderHandle]
-    selector: Selector[int]
+    pollData: PollData
     # List of existing clients (buffer or pager) that may make requests.
     clientData: Table[int, ClientData] # pid -> data
     # ID of next output. TODO: find a better allocation scheme
@@ -145,40 +141,22 @@ type PushBufferResult = enum
 
 proc register(ctx: LoaderContext; handle: InputHandle) =
   assert not handle.registered
-  ctx.selector.registerHandle(int(handle.stream.fd), {Read}, 0)
+  ctx.pollData.register(handle.stream.fd, cshort(POLLIN))
   handle.registered = true
 
 proc unregister(ctx: LoaderContext; handle: InputHandle) =
   assert handle.registered
-  ctx.selector.unregister(int(handle.stream.fd))
+  ctx.pollData.unregister(int(handle.stream.fd))
   handle.registered = false
 
 proc register(ctx: LoaderContext; output: OutputHandle) =
   assert not output.registered
-  ctx.selector.registerHandle(int(output.stream.fd), {Write}, 0)
+  ctx.pollData.register(int(output.stream.fd), cshort(POLLOUT))
   output.registered = true
 
-const bsdPlatform = defined(macosx) or defined(freebsd) or defined(netbsd) or
-  defined(openbsd) or defined(dragonfly)
 proc unregister(ctx: LoaderContext; output: OutputHandle) =
   assert output.registered
-  # so kqueue-based selectors raise when we try to unregister a pipe whose
-  # reader is at EOF. "solution": clean up this mess ourselves.
-  let fd = int(output.stream.fd)
-  when bsdPlatform:
-    let oc = ctx.selector.count
-    try:
-      ctx.selector.unregister(fd)
-    except IOSelectorsException:
-      # ????
-      for name, f in ctx.selector[].fieldPairs:
-        when name == "fds":
-          cast[ptr int](addr f[fd])[] = -1
-        elif name == "changes":
-          f.setLen(0)
-      ctx.selector.count = oc - 1
-  else:
-    ctx.selector.unregister(fd)
+  ctx.pollData.unregister(int(output.stream.fd))
   output.registered = false
 
 # Either write data to the target output, or append it to the list of buffers to
@@ -1178,17 +1156,13 @@ proc exitLoader(ctx: LoaderContext) =
 
 var gctx: LoaderContext
 proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
-  var ctx = LoaderContext(
-    alive: true,
-    config: config,
-    selector: newSelector[int]()
-  )
+  var ctx = LoaderContext(alive: true, config: config)
   gctx = ctx
   let myPid = getCurrentProcessId()
   # we don't capsicumize loader, so -1 is appropriate here
   ctx.ssock = initServerSocket(config.sockdir, -1, myPid, blocking = true)
   let sfd = int(ctx.ssock.sock.getFd())
-  ctx.selector.registerHandle(sfd, {Read}, 0)
+  ctx.pollData.register(sfd, POLLIN)
   if sfd >= ctx.handleMap.len:
     ctx.handleMap.setLen(sfd + 1)
   ctx.handleMap[sfd] = LoaderHandle() # pseudo handle
@@ -1302,25 +1276,26 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[InputHandle];
 proc runFileLoader*(fd: cint; config: LoaderConfig) =
   var ctx = initLoaderContext(fd, config)
   let fd = int(ctx.ssock.sock.getFd())
-  var keys: array[64, ReadyKey]
   while ctx.alive:
-    let count = ctx.selector.selectInto(-1, keys)
+    ctx.pollData.poll(-1)
     var unregRead: seq[InputHandle] = @[]
     var unregWrite: seq[OutputHandle] = @[]
-    for event in keys.toOpenArray(0, count - 1):
-      let handle = ctx.handleMap[event.fd]
-      if Read in event.events:
-        if event.fd == fd: # incoming connection
+    for event in ctx.pollData.events:
+      let efd = int(event.fd)
+      if (event.revents and POLLIN) != 0:
+        if efd == fd: # incoming connection
           ctx.acceptConnection()
         else:
-          let handle = InputHandle(ctx.handleMap[event.fd])
+          let handle = InputHandle(ctx.handleMap[efd])
           case ctx.handleRead(handle, unregWrite)
           of hrrDone: discard
           of hrrUnregister, hrrBrokenPipe: unregRead.add(handle)
-      if Write in event.events:
+      if (event.revents and POLLOUT) != 0:
+        let handle = ctx.handleMap[efd]
         ctx.handleWrite(OutputHandle(handle), unregWrite)
-      if Error in event.events:
-        assert event.fd != fd
+      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+        assert efd != fd
+        let handle = ctx.handleMap[efd]
         if handle of InputHandle: # istream died
           unregRead.add(InputHandle(handle))
         else: # ostream died

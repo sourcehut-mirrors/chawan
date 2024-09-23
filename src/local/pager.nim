@@ -4,7 +4,6 @@ import std/options
 import std/os
 import std/osproc
 import std/posix
-import std/selectors
 import std/sets
 import std/tables
 
@@ -14,6 +13,7 @@ import config/config
 import config/mailcap
 import io/bufreader
 import io/dynstream
+import io/poll
 import io/promise
 import io/stdio
 import io/tempfile
@@ -135,21 +135,21 @@ type
     jsctx: JSContext
     lastAlert: string # last alert seen by the user
     lineData: LineData
-    lineedit*: LineEdit
     lineHist: array[LineMode, LineHistory]
+    lineedit*: LineEdit
     linemode: LineMode
     loader*: FileLoader
     luctx: LUContext
     navDirection {.jsget.}: NavDirection
     notnum*: bool # has a non-numeric character been input already?
     numload*: int # number of pages currently being loaded
+    pollData*: PollData
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     procmap*: seq[ProcMapItem]
     refreshAllowed: HashSet[string]
     regex: Opt[Regex]
     reverseSearch: bool
     scommand*: string
-    selector*: Selector[int]
     status: Surface
     term*: Terminal
     timeouts*: TimeoutState
@@ -365,8 +365,7 @@ proc setLoader*(pager: Pager; loader: FileLoader) =
   )
   loader.key = pager.addLoaderClient(pager.loader.clientPid, config)
 
-proc launchPager*(pager: Pager; istream: PosixStream; selector: Selector[int]) =
-  pager.selector = selector
+proc launchPager*(pager: Pager; istream: PosixStream) =
   case pager.term.start(istream)
   of tsrSuccess: discard
   of tsrDA1Fail:
@@ -2045,7 +2044,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
     pager.refreshStatusMsg()
 
 proc unregisterFd(pager: Pager; fd: int) =
-  pager.selector.unregister(fd)
+  pager.pollData.unregister(fd)
   pager.loader.unregistered.add(fd)
 
 proc handleRead*(pager: Pager; item: ConnectingContainer) =

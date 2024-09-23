@@ -1,7 +1,6 @@
 import std/options
 import std/os
 import std/posix
-import std/selectors
 import std/tables
 
 import chagashi/charset
@@ -149,10 +148,6 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     discard close(pipefd[0]) # close read
     closeStdin()
     closeStdout()
-    # must call before entering the sandbox, or capsicum cries because of Nim
-    # calling sysctl
-    # also lets us deny sysctl call with pledge
-    let selector = newSelector[int]()
     setBufferProcessTitle(url)
     let pid = getCurrentProcessId()
     let ssock = initServerSocket(sockDir, sockDirFd, pid)
@@ -178,7 +173,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     )
     try:
       launchBuffer(config, url, attrs, ishtml, charsetStack, loader,
-        ssock, pstream, selector)
+        ssock, pstream)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim
