@@ -293,7 +293,7 @@ func fastmul*(c, ca: uint32): uint32 =
   return ga or (rb shr 8)
 
 # fastmul, but preserves alpha
-func fastmul1(c, ca: uint32): uint32 =
+func fastmul1*(c, ca: uint32): uint32 =
   let u = c
   var rb = u and 0x00FF00FFu32
   rb *= ca

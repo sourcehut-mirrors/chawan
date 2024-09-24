@@ -73,6 +73,7 @@ type
     damaged: bool
     marked*: bool
     dead: bool
+    transparent: bool # note: this is only set in outputSixelImage
     kittyId: int
     # 0 if kitty
     erry: int
@@ -735,7 +736,12 @@ proc checkImageDamage*(term: Terminal; maxh: int) =
       let mx = image.x + (image.dispw - image.offx) div term.attrs.ppc
       for y in max(image.y, 0) ..< ey0:
         let od = term.lineDamage[y]
-        if od < mx:
+        if image.transparent and od > image.x:
+          image.damaged = true
+          if od < mx:
+            # damage starts inside this image; move it to its beginning.
+            term.lineDamage[y] = image.x
+        elif not image.transparent and od < mx:
           image.damaged = true
           if y >= ey1:
             break
@@ -752,7 +758,8 @@ proc checkImageDamage*(term: Terminal; maxh: int) =
               term.lineDamage[y] = mx
 
 proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
-    rx, ry, maxw, maxh, erry, offx, dispw: int): CanvasImage =
+    rx, ry, maxw, maxh, erry, offx, dispw: int; transparent: bool):
+    CanvasImage =
   if (let image = term.findImage(pid, imageId, rx, ry, width, height, erry,
         offx, dispw); image != nil):
     # reuse image on screen
@@ -777,7 +784,8 @@ proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
     ry: ry,
     width: width,
     height: height,
-    erry: erry
+    erry: erry,
+    transparent: transparent
   )
   if term.positionImage(image, x, y, maxw, maxh):
     return image
@@ -796,26 +804,22 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let offy = image.offy
   let dispw = image.dispw
   let disph = image.disph
-  var outs = term.cursorGoto(x, y)
   let realw = dispw - offx
   let realh = disph - offy
-  # set transparency if we want to draw a non-6-divisible number
-  # of rows; omit it otherwise, for then some terminals (e.g. foot)
-  # handle the image more efficiently
-  let trans = realh mod 6 != 0
-  outs &= DCS & "0;" & $int(trans) & 'q'
-  # set raster attributes
-  outs &= "\"1;1;" & $realw & ';' & $realh
-  if data.len < 4: # bounds check
-    outs &= ST
-    term.write(outs)
+  if data.len < 5: # bounds check
     return
   let sraLen = int(data.getU32BE(0))
-  let preludeLen = sraLen + 4
+  let preludeLen = sraLen + 5
   if preludeLen > data.len:
-    outs &= ST
-    term.write(outs)
     return
+  var outs = term.cursorGoto(x, y)
+  # set transparency if we want to draw a non-6-divisible number
+  # of rows *or* the image is transparent; omit it otherwise, for then
+  # some terminals (e.g. foot) handle the image more efficiently
+  let trans = realh mod 6 != 0 or image.transparent
+  outs &= DCS & "0;" & $int(trans) & "q"
+  # set raster attributes
+  outs &= "\"1;1;" & $realw & ';' & $realh
   term.write(outs)
   term.write(data.toOpenArray(4, preludeLen - 1))
   let lookupTableLen = int(data.getU32BE(data.len - 4))

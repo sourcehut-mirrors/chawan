@@ -586,7 +586,6 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       url = newURL("img-codec+x-sixel:encode").get
       headers.add("Cha-Image-Sixel-Halfdump", "1")
       headers.add("Cha-Image-Sixel-Palette", $pager.term.sixelRegisterNum)
-      headers.add("Cha-Image-Background-Color", $image.bgcolor)
       headers.add("Cha-Image-Offset", $offx & 'x' & $erry)
       headers.add("Cha-Image-Crop-Width", $dispw)
     of imKitty:
@@ -630,6 +629,11 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       cachedImage.data = blob
       cachedImage.state = cisLoaded
       cachedImage.cacheId = cacheId
+      if imageMode == imSixel and 4 < blob.size:
+        #TODO this should be a response header, but loader can't send us
+        # those yet...
+        let u = cast[ptr UncheckedArray[uint8]](blob.buffer)[4]
+        cachedImage.transparent = u == 1
     )
   )
   container.cachedImages.add(cachedImage)
@@ -660,7 +664,7 @@ proc initImages(pager: Pager; container: Container) =
     let canvasImage = pager.term.loadImage(cached.data, container.process,
       imageId, image.x - container.fromx, image.y - container.fromy,
       image.width, image.height, image.x, image.y, pager.bufWidth,
-      pager.bufHeight, erry, offx, dispw)
+      pager.bufHeight, erry, offx, dispw, cached.transparent)
     if canvasImage != nil:
       newImages.add(canvasImage)
   pager.term.clearImages(pager.bufHeight)

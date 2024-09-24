@@ -122,6 +122,8 @@ type
     offx*: int # same as CanvasImage.offx
     dispw*: int # same as CanvasImage.dispw
     erry*: int # same as CanvasImage.offy % 6
+    # whether the image has transparency, *disregarding the last row*
+    transparent*: bool
 
   Container* = ref object of RootObj
     # note: this is not the same as source.request.url (but should be synced

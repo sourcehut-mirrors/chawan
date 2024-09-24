@@ -42,7 +42,7 @@ proc die(s: string) {.noreturn.} =
   os.puts(s)
   quit(1)
 
-const DCSSTART = "\eP"
+const DCS = "\eP"
 const ST = "\e\\"
 
 proc setU32BE(s: var string; n: uint32; at: int) =
@@ -157,16 +157,8 @@ proc trim(trimMap: var TrimMap; K: var uint) =
   )
   K = k
 
-proc getPixel(img: openArray[RGBAColorBE]; m: int; bgcolor: ARGBColor): RGBColor
-    {.inline.} =
-  let c0 = img[m].toARGBColor()
-  if c0.a != 255:
-    let c1 = bgcolor.blend(c0)
-    return RGBColor(uint32(c1).fastmul(100))
-  return RGBColor(uint32(c0).fastmul(100))
-
-proc quantize(img: openArray[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint):
-    NodeChildren =
+proc quantize(img: openArray[RGBAColorBE]; outk: var uint;
+    outTransparent: var bool): NodeChildren =
   var root = default(NodeChildren)
   if outk <= 2: # monochrome; not much we can do with an octree...
     root[0] = cast[Node](alloc0(sizeof(NodeObj)))
@@ -181,12 +173,16 @@ proc quantize(img: openArray[RGBAColorBE]; bgcolor: ARGBColor; outk: var uint):
   # map of non-leaves for each level.
   # (note: somewhat confusingly, this actually starts at level 1.)
   var trimMap: array[7, seq[Node]]
-  for i in 0 ..< img.len:
-    let c = img.getPixel(i, bgcolor)
+  var transparent = false
+  for c0 in img:
+    let c0 = c0.toARGBColor()
+    transparent = transparent or c0.a != 255
+    let c = RGBColor(uint32(c0).fastmul(100))
     K += root.insert(c, trimMap)
     while K > palette:
       trimMap.trim(K)
   outk = K
+  outTransparent = transparent
   return root
 
 proc flatten(children: NodeChildren; cols: var seq[Node]) =
@@ -211,18 +207,19 @@ proc flatten(root: NodeChildren; outs: var string; palette: uint): seq[Node] =
   return cols
 
 type
-  DitherDiff = tuple[r, g, b: int32]
+  DitherDiff = tuple[a, r, g, b: int32]
 
   Dither = object
     d1: seq[DitherDiff]
     d2: seq[DitherDiff]
 
-proc getColor(nodes: seq[Node]; c: RGBColor; diff: var DitherDiff): Node =
+proc getColor(nodes: seq[Node]; c: ARGBColor; diff: var DitherDiff): Node =
   var child: Node = nil
   var minDist = uint32.high
   var mdiff = default(DitherDiff)
   for node in nodes:
     let ic = node.u.leaf.c
+    let ad = int32(c.a) - 100
     let rd = int32(c.r) - int32(ic.r)
     let gd = int32(c.g) - int32(ic.g)
     let bd = int32(c.b) - int32(ic.b)
@@ -230,13 +227,13 @@ proc getColor(nodes: seq[Node]; c: RGBColor; diff: var DitherDiff): Node =
     if d < minDist:
       minDist = d
       child = node
-      mdiff = (rd, gd, bd)
+      mdiff = (ad, rd, gd, bd)
       if ic == c:
         break
   diff = mdiff
   return child
 
-proc getColor(root: var NodeChildren; c: RGBColor; nodes: seq[Node];
+proc getColor(root: var NodeChildren; c: ARGBColor; nodes: seq[Node];
     diff: var DitherDiff): int =
   if nodes.len < 64:
     # Octree-based nearest neighbor search creates really ugly artifacts
@@ -259,7 +256,7 @@ proc getColor(root: var NodeChildren; c: RGBColor; nodes: seq[Node];
   var level = 0
   var children = addr root
   while true:
-    let idx = c.getIdx(level)
+    let idx = RGBColor(c).getIdx(level)
     let child = children[idx]
     if child == nil:
       let child = nodes.getColor(c, diff)
@@ -267,31 +264,34 @@ proc getColor(root: var NodeChildren; c: RGBColor; nodes: seq[Node];
       return child.idx
     if child.idx != -1:
       let ic = child.u.leaf.c
+      let a = int32(c.a) - 100
       let r = int32(c.r) - int32(ic.r)
       let g = int32(c.g) - int32(ic.g)
       let b = int32(c.b) - int32(ic.b)
-      diff = (r, g, b)
+      diff = (a, r, g, b)
       return child.idx
     inc level
     children = addr child.u.children
 
-proc correctDither(c: RGBColor; x: int; dither: Dither): RGBColor =
-  let (rd, gd, bd) = dither.d1[x + 1]
+proc correctDither(c: ARGBColor; x: int; dither: Dither): ARGBColor =
+  let (ad, rd, gd, bd) = dither.d1[x + 1]
+  let pa = (uint32(c) shr 20) and 0xFF0
   let pr = (uint32(c) shr 12) and 0xFF0
   let pg = (uint32(c) shr 4) and 0xFF0
   let pb = (uint32(c) shl 4) and 0xFF0
   {.push overflowChecks: off.}
+  let a = uint8(uint32(clamp(int32(pa) + ad, 0, 1600)) shr 4)
   let r = uint8(uint32(clamp(int32(pr) + rd, 0, 1600)) shr 4)
   let g = uint8(uint32(clamp(int32(pg) + gd, 0, 1600)) shr 4)
   let b = uint8(uint32(clamp(int32(pb) + bd, 0, 1600)) shr 4)
   {.pop.}
-  return rgb(r, g, b)
+  return rgba(r, g, b, a)
 
 proc fs(dither: var Dither; x: int; d: DitherDiff) =
   let x = x + 1 # skip first bounds check
   template at(p, mul: untyped) =
-    var (rd, gd, bd) = p
-    p = (rd + d.r * mul, gd + d.g * mul, bd + d.b * mul)
+    var (ad, rd, gd, bd) = p
+    p = (ad + d.a * mul, rd + d.r * mul, gd + d.g * mul, bd + d.b * mul)
   {.push overflowChecks: off.}
   at(dither.d1[x + 1], 7)
   at(dither.d2[x - 1], 3)
@@ -367,16 +367,18 @@ proc createBands(bands: var seq[SixelBand]; activeChunks: seq[ptr SixelChunk]) =
       bands.add(SixelBand(head: chunk, tail: chunk))
 
 proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
-    halfdump: bool; bgcolor: ARGBColor; palette: int) =
+    halfdump: bool; palette: int) =
   var palette = uint(palette)
-  var root = img.quantize(bgcolor, palette)
+  var transparent = false
+  var root = img.quantize(palette, transparent)
   # prelude
   var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n"
   let preludeLenPos = outs.len
   if halfdump: # reserve size for prelude
     outs &= "\0\0\0\0"
+    outs &= char(transparent)
   else:
-    outs &= DCSSTART & 'q'
+    outs &= DCS & 'q'
     # set raster attributes
     outs &= "\"1;1;" & $width & ';' & $height
   let nodes = root.flatten(outs, palette)
@@ -410,9 +412,15 @@ proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
       var chunk: ptr SixelChunk = nil
       for j in 0 ..< realw:
         let m = n + offx + j
-        let c0 = img.getPixel(m, bgcolor).correctDither(j, dither)
+        let c0 = img[m].toARGBColor()
+        let c1 = ARGBColor(uint32(c0).fastmul1(100))
+        let c2 = c1.correctDither(j, dither)
+        if c2.a < 50: # transparent
+          let diff = (int32(c2.a), 0i32, 0i32, 0i32)
+          dither.fs(j, diff)
+          continue
         var diff: DitherDiff
-        let c = root.getColor(c0, nodes, diff)
+        let c = root.getColor(c2, nodes, diff)
         dither.fs(j, diff)
         if chunk == nil or chunk.c != c:
           chunk = addr chunkMap[c]
@@ -492,7 +500,6 @@ proc main() =
     var offy = 0
     var halfdump = false
     var palette = -1
-    var bgcolor = rgb(0, 0, 0)
     var cropw = -1
     var quality = -1
     for hdr in getEnv("REQUEST_HEADERS").split('\n'):
@@ -519,8 +526,6 @@ proc main() =
         if q.isNone:
           die("Cha-Control: ConnectionError 1 wrong quality\n")
         quality = int(q.get)
-      of "Cha-Image-Background-Color":
-        bgcolor = parseLegacyColor0(s)
     if cropw == -1:
       cropw = width
     if palette == -1:
@@ -543,7 +548,7 @@ proc main() =
     enterNetworkSandbox() # don't swallow stat
     let p = cast[ptr UncheckedArray[RGBAColorBE]](src.p)
     p.toOpenArray(0, n - 1).encode(width, height, offx, offy, cropw, halfdump,
-      bgcolor, palette)
+      palette)
     dealloc(src)
 
 main()

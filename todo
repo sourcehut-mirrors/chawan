@@ -69,7 +69,7 @@ layout engine:
 - iframe
 - writing-mode, grid, ruby, ... (i.e. cool new stuff)
 images:
-- z order, proper image blending
+- z order
 - animation
 man:
 - add a DOM -> man page converter so that we do not depend on pandoc

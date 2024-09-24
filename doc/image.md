@@ -47,22 +47,23 @@ to find a terminal that supports it.
 
 Known quirks and implementation details:
 
-* XTerm needs extensive configuration for ideal sixel support. In particular,
-  you will want to set the "decTerminalID", "numColorRegisters",
-  and "maxGraphicSize" attributes. See `man xterm` for details.
-* We assume private color registers are supported. On terminals where they
-  aren't (e.g. SyncTERM or hardware terminals), colors will get messed up with
-  multiple images on screen.
-* We send XTSMGRAPHICS for retrieving the number of color registers; on failure,
-  we fall back to 256. You can override color register count using the
-  `display.sixel-colors` configuration value.
-* For the most efficient sixel display, you will want a cell height that
-  is a multiple of 6. Otherwise, the images will have to be re-coded several
-  times on scroll.
-* Normally, Sixel encoding runs in two passes. On slow computers, you can try
-  setting `display.sixel-colors = 2`, which will skip the first pass.
-* Transparency is currently not supported; you will get strange results with
-  transparent images.
+* XTerm needs extensive configuration for ideal sixel support. In
+  particular, you will want to set the decTerminalID, numColorRegisters,
+  and maxGraphicSize attributes. See `man xterm` for details.
+* We assume private color registers are supported. On terminals where
+  they aren't (e.g. SyncTERM or hardware terminals), colors will get
+  messed up with multiple images on screen.
+* We send XTSMGRAPHICS for retrieving the number of color registers;
+  on failure, we fall back to 256. You can override color register count
+  using the `display.sixel-colors` configuration value.
+* For the most efficient sixel display, you will want a cell height
+  that is a multiple of 6. Otherwise, the images will have to be re-coded
+  several times on scroll.
+* Normally, Sixel encoding runs in two passes. On slow computers, you
+  can try setting `display.sixel-colors = 2`, which will skip the first
+  pass (but will also display everything in monochrome).
+* Transparency *is* supported, but looks weird because we approximate an
+  8-bit alpha channel with Sixel's 1-bit alpha channel.
 
 ### Kitty
 
