@@ -1618,6 +1618,7 @@ proc displaySelect(container: Container; selectResult: SelectResult) =
     selectResult.selected,
     container.acursorx,
     container.acursory,
+    container.width,
     container.height,
     selectFinish,
     container
@@ -1671,7 +1672,7 @@ proc windowChange*(container: Container; attrs: WindowAttributes) =
       container.needslines = true
     )
   if container.select != nil:
-    container.select.windowChange(container.height)
+    container.select.windowChange(container.width, container.height)
 
 proc peek(container: Container) {.jsfunc.} =
   container.alert($container.url)

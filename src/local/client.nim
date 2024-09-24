@@ -58,6 +58,7 @@ type
     pressed: tuple[col, row: int]
     exitCode: int
     inEval: bool
+    blockTillRelease: bool
 
   ContainerData = ref object of MapData
     container: Container
@@ -214,6 +215,130 @@ proc evalAction(client: Client; action: string; arg0: int32): EmptyPromise =
   JS_FreeValue(ctx, ret)
   return p
 
+#TODO move mouse input handling somewhere else...
+proc handleMouseInputGeneric(client: Client; input: MouseInput) =
+  case input.button
+  of mibLeft:
+    case input.t
+    of mitPress:
+      client.pressed = (input.col, input.row)
+    of mitRelease:
+      if client.pressed != (-1, -1):
+        let diff = (input.col - client.pressed.col,
+          input.row - client.pressed.row)
+        if diff[0] > 0:
+          discard client.evalAction("cmd.buffer.scrollLeft", int32(diff[0]))
+        elif diff[0] < 0:
+          discard client.evalAction("cmd.buffer.scrollRight", -int32(diff[0]))
+        if diff[1] > 0:
+          discard client.evalAction("cmd.buffer.scrollUp", int32(diff[1]))
+        elif diff[1] < 0:
+          discard client.evalAction("cmd.buffer.scrollDown", -int32(diff[1]))
+        client.pressed = (-1, -1)
+    else: discard
+  of mibWheelUp:
+    if input.t == mitPress:
+      discard client.evalAction("cmd.buffer.scrollUp", 5)
+  of mibWheelDown:
+    if input.t == mitPress:
+      discard client.evalAction("cmd.buffer.scrollDown", 5)
+  of mibWheelLeft:
+    if input.t == mitPress:
+      discard client.evalAction("cmd.buffer.scrollLeft", 5)
+  of mibWheelRight:
+    if input.t == mitPress:
+      discard client.evalAction("cmd.buffer.scrollRight", 5)
+  else: discard
+
+proc handleMouseInput(client: Client; input: MouseInput; select: Select) =
+  let y = select.fromy + input.row - select.y - 1 # one off because of border
+  case input.button
+  of mibRight:
+    if (input.col, input.row) != client.pressed:
+      # Prevent immediate movement/submission in case the menu appeared under
+      # the cursor.
+      select.setCursorY(y)
+    case input.t
+    of mitPress:
+      # Do not include borders, so that a double right click closes the
+      # menu again.
+      if input.row notin select.y + 1 ..< select.y + select.height - 1 or
+          input.col notin select.x + 1 ..< select.x + select.width - 1:
+        client.blockTillRelease = true
+        select.cursorLeft()
+    of mitRelease:
+      if input.row in select.y + 1 ..< select.y + select.height - 1 and
+          input.col in select.x + 1 ..< select.x + select.width - 1 and
+          (input.col, input.row) != client.pressed:
+        select.click()
+      # forget about where we started once btn3 is released
+      client.pressed = (-1, -1)
+    of mitMove: discard
+  of mibLeft:
+    case input.t
+    of mitPress:
+      if input.row notin select.y ..< select.y + select.height or
+          input.col notin select.x ..< select.x + select.width:
+        # clicked outside the select
+        client.blockTillRelease = true
+        select.cursorLeft()
+    of mitRelease:
+      let at = (input.col, input.row)
+      if at == client.pressed and
+          (input.row in select.y + 1 ..< select.y + select.height - 1 and
+            input.col in select.x + 1 ..< select.x + select.width - 1 or
+          select.multiple and at == (select.x, select.y)):
+        # clicked inside the select
+        select.setCursorY(y)
+        select.click()
+    of mitMove: discard
+  else: discard
+
+proc handleMouseInput(client: Client; input: MouseInput; container: Container) =
+  case input.button
+  of mibLeft:
+    if input.t == mitRelease and client.pressed == (input.col, input.row):
+      let prevx = container.cursorx
+      let prevy = container.cursory
+      #TODO I wish we could avoid setCursorXY if we're just going to
+      # click, but that doesn't work with double-width chars
+      container.setCursorXY(container.fromx + input.col,
+        container.fromy + input.row)
+      if container.cursorx == prevx and container.cursory == prevy:
+        discard client.evalAction("cmd.buffer.click", 0)
+  of mibMiddle:
+    if input.t == mitRelease: # release, to emulate w3m
+      discard client.evalAction("cmd.pager.discardBuffer", 0)
+  of mibRight:
+    if input.t == mitPress: # w3m uses release, but I like this better
+      client.pressed = (input.col, input.row)
+      container.setCursorXY(container.fromx + input.col,
+        container.fromy + input.row)
+      client.pager.openMenu(input.col, input.row)
+  of mibThumbInner:
+    if input.t == mitPress:
+      discard client.evalAction("cmd.pager.prevBuffer", 0)
+  of mibThumbTip:
+    if input.t == mitPress:
+      discard client.evalAction("cmd.pager.nextBuffer", 0)
+  else: discard
+
+proc handleMouseInput(client: Client; input: MouseInput) =
+  if client.blockTillRelease:
+    if input.t == mitRelease:
+      client.blockTillRelease = false
+    else:
+      return
+  if client.pager.menu != nil:
+    client.handleMouseInput(input, client.pager.menu)
+  elif (let container = client.pager.container; container != nil):
+    if container.select != nil:
+      client.handleMouseInput(input, container.select)
+    else:
+      client.handleMouseInput(input, container)
+  if not client.blockTillRelease:
+    client.handleMouseInputGeneric(input)
+
 # The maximum number we are willing to accept.
 # This should be fine for 32-bit signed ints (which precnum currently is).
 # We can always increase it further (e.g. by switching to uint32, uint64...) if
@@ -243,62 +368,7 @@ proc handleCommandInput(client: Client; c: char): EmptyPromise =
       let input = client.pager.term.parseMouseInput()
       if input.isSome:
         let input = input.get
-        let container = client.pager.container
-        if container != nil:
-          case input.button
-          of mibLeft:
-            case input.t
-            of mitPress:
-              client.pressed = (input.col, input.row)
-            of mitRelease:
-              if client.pressed == (input.col, input.row):
-                let prevx = container.cursorx
-                let prevy = container.cursory
-                #TODO I wish we could avoid setCursorXY if we're just going to
-                # click, but that doesn't work with double-width chars
-                container.setCursorXY(container.fromx + input.col,
-                  container.fromy + input.row)
-                if container.cursorx == prevx and container.cursory == prevy:
-                  discard client.evalAction("cmd.buffer.click", 0)
-              else:
-                let diff = (input.col - client.pressed.col,
-                  input.row - client.pressed.row)
-                if diff[0] > 0:
-                  discard client.evalAction("cmd.buffer.scrollLeft",
-                    int32(diff[0]))
-                else:
-                  discard client.evalAction("cmd.buffer.scrollRight",
-                    -int32(diff[0]))
-                if diff[1] > 0:
-                  discard client.evalAction("cmd.buffer.scrollUp",
-                    int32(diff[1]))
-                else:
-                  discard client.evalAction("cmd.buffer.scrollDown",
-                    -int32(diff[1]))
-              client.pressed = (-1, -1)
-            else: discard
-          of mibMiddle:
-            if input.t == mitRelease: # release, to emulate w3m
-              discard client.evalAction("cmd.pager.discardBuffer", 0)
-          of mibWheelUp:
-            if input.t == mitPress:
-              discard client.evalAction("cmd.buffer.scrollUp", 5)
-          of mibWheelDown:
-            if input.t == mitPress:
-              discard client.evalAction("cmd.buffer.scrollDown", 5)
-          of mibWheelLeft:
-            if input.t == mitPress:
-              discard client.evalAction("cmd.buffer.scrollLeft", 5)
-          of mibWheelRight:
-            if input.t == mitPress:
-              discard client.evalAction("cmd.buffer.scrollRight", 5)
-          of mibThumbInner:
-            if input.t == mitPress:
-              discard client.evalAction("cmd.pager.prevBuffer", 0)
-          of mibThumbTip:
-            if input.t == mitPress:
-              discard client.evalAction("cmd.pager.nextBuffer", 0)
-          else: discard
+        client.handleMouseInput(input)
       client.pager.inputBuffer = ""
     elif "\e[<".startsWith(client.pager.inputBuffer):
       client.feednext = true
