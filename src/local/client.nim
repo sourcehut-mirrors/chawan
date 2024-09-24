@@ -34,6 +34,7 @@ import loader/response
 import local/container
 import local/lineedit
 import local/pager
+import local/select
 import local/term
 import monoucha/constcharp
 import monoucha/fromjs
@@ -820,6 +821,7 @@ proc addJSModules(client: Client; ctx: JSContext) =
   ctx.addConfigModule()
   ctx.addPagerModule()
   ctx.addContainerModule()
+  ctx.addSelectModule()
   ctx.addCookieModule()
 
 func getClient(client: Client): Client {.jsfget: "client".} =

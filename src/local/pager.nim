@@ -27,6 +27,7 @@ import loader/request
 import loader/response
 import local/container
 import local/lineedit
+import local/select
 import local/term
 import monoucha/fromjs
 import monoucha/javascript
@@ -231,7 +232,10 @@ proc reflect(ctx: JSContext; this_val: JSValue; argc: cint;
 
 proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetprop.} =
   if pager.container != nil:
-    let cval = ctx.toJS(pager.container)
+    let cval = if pager.container.select != nil:
+      ctx.toJS(pager.container.select)
+    else:
+      ctx.toJS(pager.container)
     let val = JS_GetProperty(ctx, cval, a)
     if JS_IsFunction(ctx, val):
       let func_data = @[cval, val]
