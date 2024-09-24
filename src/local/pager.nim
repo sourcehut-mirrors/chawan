@@ -404,12 +404,16 @@ proc writeStatusMessage(pager: Pager; str: string; format = Format();
       pager.status.grid[x].str = u.toUTF8()
     pager.status.grid[x].format = format
     lx = x
-    x += w
+    let nx = x + w
+    inc x
+    while x < nx: # clear unset cells
+      pager.status.grid[x].str = ""
+      pager.status.grid[x].format = Format()
+      inc x
   result = x
-  var def = Format()
   while x < e:
     pager.status.grid[x].str = ""
-    pager.status.grid[x].format = def
+    pager.status.grid[x].format = Format()
     inc x
 
 # Note: should only be called directly after user interaction.

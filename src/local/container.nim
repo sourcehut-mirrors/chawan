@@ -468,12 +468,16 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
     while j < select.options[i].len:
       let pj = j
       let u = select.options[i].nextUTF8(j)
-      let ox = x
-      x += u.twidth(x)
-      if x > ex:
+      let nx = x + u.twidth(x)
+      if nx > ex:
         break
-      display[dls + ox].str = select.options[i].substr(pj, j - 1)
-      display[dls + ox].format = format
+      display[dls + x].str = select.options[i].substr(pj, j - 1)
+      display[dls + x].format = format
+      inc x
+      while x < nx:
+        display[dls + x].str = ""
+        display[dls + x].format = format
+        inc x
     while x < ex:
       display[dls + x].str = " "
       display[dls + x].format = format
@@ -774,6 +778,7 @@ proc setNumLines(container: Container; lines: int; finish = false) =
     if container.startpos.isSome and finish:
       container.pos = container.startpos.get
       container.startpos = none(CursorPosition)
+      container.needslines = true
     container.updateCursor()
 
 proc queueDraw*(container: Container) =
