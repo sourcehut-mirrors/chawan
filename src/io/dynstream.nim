@@ -180,34 +180,35 @@ type
     len*: int
 
 # Read data of size "len", or mmap it if the stream is a file.
-proc recvDataLoopOrMmap*(ps: PosixStream; len = -1): MaybeMappedMemory =
+proc recvDataLoopOrMmap*(ps: PosixStream; ilen = -1): MaybeMappedMemory =
   var stats: Stat
   if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
     let srcOff = lseek(ps.fd, 0, SEEK_CUR) # skip headers
-    if len != -1:
-      doAssert len == stats.st_size - srcOff
+    let p0len = int(stats.st_size)
     let len = int(stats.st_size - srcOff)
-    let p0 = mmap(nil, len, PROT_READ, MAP_SHARED, ps.fd, 0)
+    if ilen != -1:
+      doAssert ilen == len
+    let p0 = mmap(nil, p0len, PROT_READ, MAP_SHARED, ps.fd, 0)
     if p0 == MAP_FAILED:
       return nil
     let p1 = addr cast[ptr UncheckedArray[uint8]](p0)[srcOff]
     let res = create(MaybeMappedMemoryObj)
     res[] = MaybeMappedMemoryObj(
       p0: p0,
-      p0len: int(stats.st_size),
+      p0len: p0len,
       p: cast[ptr UncheckedArray[uint8]](p1),
       len: len,
       fromMmap: true
     )
     return res
-  let p = cast[ptr UncheckedArray[uint8]](alloc(len))
-  ps.recvDataLoop(p, len)
+  let p = cast[ptr UncheckedArray[uint8]](alloc(ilen))
+  ps.recvDataLoop(p, ilen)
   let res = create(MaybeMappedMemoryObj)
   res[] = MaybeMappedMemoryObj(
     p0: p,
-    p0len: len,
+    p0len: ilen,
     p: p,
-    len: len,
+    len: ilen,
     fromMmap: false
   )
   return res
@@ -215,15 +216,18 @@ proc recvDataLoopOrMmap*(ps: PosixStream; len = -1): MaybeMappedMemory =
 proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
   var stats: Stat
   if fstat(0, stats) != -1 and S_ISREG(stats.st_mode):
+    try:
+      ps.seek(len - 1)
+      ps.sendDataLoop([char(0)])
+    except IOError:
+      return nil
     let p0 = mmap(nil, len, PROT_WRITE, MAP_SHARED, ps.fd, 0)
     if p0 == MAP_FAILED:
       return nil
-    ps.seek(len - 1)
-    ps.sendDataLoop([char(0)])
     let res = create(MaybeMappedMemoryObj)
     res[] = MaybeMappedMemoryObj(
       p0: p0,
-      p0len: int(stats.st_size),
+      p0len: len,
       p: cast[ptr UncheckedArray[uint8]](p0),
       len: len,
       fromMmap: true
