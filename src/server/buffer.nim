@@ -319,9 +319,8 @@ func isClickable(styledNode: StyledNode): bool =
   let element = Element(styledNode.node)
   if element of HTMLAnchorElement:
     return HTMLAnchorElement(element).href != ""
-  if element of FormAssociatedElement:
-    if FormAssociatedElement(element).form == nil:
-      return false
+  if element.isButton() and FormAssociatedElement(element).form == nil:
+    return false
   return element.tagType in ClickableElements
 
 func getClickable(styledNode: StyledNode): Element =
