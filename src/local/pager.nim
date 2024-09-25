@@ -606,6 +606,9 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       pager.loader.removeCachedItem(cacheId)
       if res.isNone:
         return
+      let response = res.get
+      response.resume()
+      response.close()
       let cacheId = res.get.outputId
       if cachedImage.state == cisCanceled:
         pager.loader.removeCachedItem(cacheId)

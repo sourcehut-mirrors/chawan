@@ -1008,6 +1008,8 @@ proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
     w.swrite(ps != nil)
     if ps != nil:
       w.sendAux.add(FileHandle(ps.fd))
+  if ps != nil:
+    ps.sclose()
   stream.sclose()
 
 proc passFd(ctx: LoaderContext; stream: SocketStream; client: ClientData;
