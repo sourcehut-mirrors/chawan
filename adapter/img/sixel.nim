@@ -8,7 +8,11 @@
 # follows:
 #
 # * DCS q set-raster-attributes is omitted.
-# * 32-bit binary number in header indicates length of following palette.
+# * 32-bit binary number in header indicates the end of the following
+#   palette. (Note: this includes this 32-bit number's and the following 8-bit
+#   number's length as well.)
+# * This is followed by an 8-bit number indicating whether the image includes
+#   transparent pixels.
 # * A lookup table is appended to the file end, which includes (height + 5) / 6
 #   32-bit binary numbers indicating the start index of every 6th row.
 #
@@ -384,7 +388,7 @@ proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
   let nodes = root.flatten(outs, palette)
   if halfdump:
     # prepend prelude size
-    let L = outs.len - 4 - preludeLenPos # subtract length field
+    let L = outs.len - preludeLenPos
     outs.setU32BE(uint32(L), preludeLenPos)
   let os = newPosixStream(STDOUT_FILENO)
   let L = width * height

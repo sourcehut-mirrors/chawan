@@ -724,7 +724,7 @@ proc clearImages*(term: Terminal; maxh: int) =
       term.clearImage(image, maxh)
     image.marked = false
 
-proc checkImageDamage*(term: Terminal; maxh: int) =
+proc checkImageDamage*(term: Terminal; maxw, maxh: int) =
   if term.imageMode == imSixel:
     for image in term.canvasImages:
       # check if any line of our image is damaged
@@ -733,14 +733,15 @@ proc checkImageDamage*(term: Terminal; maxh: int) =
       # here we floor, so that a last line with rounding error (which
       # will not fully cover text) is always cleared
       let ey1 = min(image.y + image.height div term.attrs.ppl, maxh)
-      let mx = image.x + (image.dispw - image.offx) div term.attrs.ppc
+      let x = max(image.x, 0)
+      let mx = min(image.x + image.dispw div term.attrs.ppc, maxw)
       for y in max(image.y, 0) ..< ey0:
         let od = term.lineDamage[y]
-        if image.transparent and od > image.x:
+        if image.transparent and od > x:
           image.damaged = true
           if od < mx:
             # damage starts inside this image; move it to its beginning.
-            term.lineDamage[y] = image.x
+            term.lineDamage[y] = x
         elif not image.transparent and od < mx:
           image.damaged = true
           if y >= ey1:
@@ -807,10 +808,9 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let disph = image.disph
   let realw = dispw - offx
   let realh = disph - offy
-  if data.len < 5: # bounds check
+  if data.len < 4: # bounds check
     return
-  let sraLen = int(data.getU32BE(0))
-  let preludeLen = sraLen + 5
+  let preludeLen = int(data.getU32BE(0))
   if preludeLen > data.len:
     return
   var outs = term.cursorGoto(x, y)
@@ -822,7 +822,7 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   # set raster attributes
   outs &= "\"1;1;" & $realw & ';' & $realh
   term.write(outs)
-  term.write(data.toOpenArray(4, preludeLen - 1))
+  term.write(data.toOpenArray(5, preludeLen - 1))
   let lookupTableLen = int(data.getU32BE(data.len - 4))
   let L = data.len - lookupTableLen - 4
   # Note: we only crop images when it is possible to do so in near constant
