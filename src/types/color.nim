@@ -493,11 +493,12 @@ func parseLegacyColor0*(s: string): RGBColor =
   assert s != ""
   if (let x = namedRGBColor(s); x.isSome):
     return x.get
-  if s.find(AllChars - AsciiHexDigit) == -1:
-    let c = (hexValue(s[0]) * 17 shl 16) or
-      (hexValue(s[1]) * 17 shl 8) or
-      (hexValue(s[2]) * 17)
-    return RGBColor(c)
+  if s.len == 4 and s[0] == '#':
+    let r = hexValue(s[1])
+    let g = hexValue(s[2])
+    let b = hexValue(s[3])
+    if r != -1 and g != -1 and b != -1:
+      return rgb(uint8(r * 17), uint8(g * 17), uint8(b * 17))
   # o_0
   var s2 = if s[0] == '#':
     s.substr(1)
