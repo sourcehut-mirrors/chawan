@@ -3273,6 +3273,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           cachedURL.bmp = bmp
           for share in cachedURL.shared:
             share.bitmap = bmp
+            share.setInvalid()
           image.setInvalid()
         )
       )
