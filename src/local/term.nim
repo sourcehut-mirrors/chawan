@@ -758,12 +758,12 @@ proc checkImageDamage*(term: Terminal; maxh: int) =
               term.lineDamage[y] = mx
 
 proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
-    rx, ry, maxw, maxh, erry, offx, dispw: int; transparent: bool):
-    CanvasImage =
+    rx, ry, maxw, maxh, erry, offx, dispw: int; transparent: bool;
+    redrawNext: var bool): CanvasImage =
   if (let image = term.findImage(pid, imageId, rx, ry, width, height, erry,
         offx, dispw); image != nil):
     # reuse image on screen
-    if image.x != x or image.y != y:
+    if image.x != x or image.y != y or redrawNext:
       # only clear sixels; with kitty we just move the existing image
       if term.imageMode == imSixel:
         term.clearImage(image, maxh)
@@ -788,6 +788,7 @@ proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
     transparent: transparent
   )
   if term.positionImage(image, x, y, maxw, maxh):
+    redrawNext = true
     return image
   # no longer on screen
   return nil

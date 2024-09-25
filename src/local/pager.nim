@@ -640,6 +640,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
 
 proc initImages(pager: Pager; container: Container) =
   var newImages: seq[CanvasImage] = @[]
+  var redrawNext = false # redraw images if a new one was loaded before
   for image in container.images:
     var erry = 0
     var offx = 0
@@ -664,7 +665,7 @@ proc initImages(pager: Pager; container: Container) =
     let canvasImage = pager.term.loadImage(cached.data, container.process,
       imageId, image.x - container.fromx, image.y - container.fromy,
       image.width, image.height, image.x, image.y, pager.bufWidth,
-      pager.bufHeight, erry, offx, dispw, cached.transparent)
+      pager.bufHeight, erry, offx, dispw, cached.transparent, redrawNext)
     if canvasImage != nil:
       newImages.add(canvasImage)
   pager.term.clearImages(pager.bufHeight)
