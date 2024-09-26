@@ -447,6 +447,6 @@ when defined(freebsd):
 proc setSocketDir*(loader: FileLoader; path: string) =
   loader.sockDir = path
   when defined(freebsd):
-    loader.sockDirFd = open(cstring(path), O_DIRECTORY)
+    loader.sockDirFd = int(newPosixStream(path, O_DIRECTORY, 0).fd)
   else:
     loader.sockDirFd = -1

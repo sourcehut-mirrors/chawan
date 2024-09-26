@@ -37,4 +37,8 @@ proc clear*(ctx: var PollData) =
 
 proc poll*(ctx: var PollData; timeout: cint) =
   ctx.trim()
-  discard poll(addr ctx.fds[0], Tnfds(ctx.fds.len), cint(timeout))
+  let fds = addr ctx.fds[0]
+  let nfds = cint(ctx.fds.len)
+  {.emit: """
+  poll(`fds`, `nfds`, `timeout`);
+  """.}

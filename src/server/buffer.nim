@@ -912,10 +912,6 @@ proc rewind(buffer: Buffer; offset: int; unregister = true): bool =
   buffer.bytesRead = offset
   return true
 
-when defined(freebsd) or defined(openbsd):
-  # necessary for an ugly hack we will do later
-  import std/kqueue
-
 var gssock* {.global.}: ServerSocket
 var gpstream* {.global.}: SocketStream
 
