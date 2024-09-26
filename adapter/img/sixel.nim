@@ -422,6 +422,7 @@ proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
         if c2.a < 50: # transparent
           let diff = (int32(c2.a), 0i32, 0i32, 0i32)
           dither.fs(j, diff)
+          chunk = nil
           continue
         var diff: DitherDiff
         let c = root.getColor(c2, nodes, diff)
