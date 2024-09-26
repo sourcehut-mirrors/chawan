@@ -146,7 +146,7 @@ initially intended to (like CSS). Now it is mainly focused on:
 Many other text-based web browsers exist. Here's some recommendations
 (not meant to be an exhaustive list):
 
-* [w3m](https://github.com/tats/w3m) - A text-mode browser, extensible using
+* [w3m](https://sr.ht/~rkta/w3m/) - A text-mode browser, extensible using
   local-cgi. Also has inline image display and very good table support.
   Main source of inspiration for Chawan.
 * [elinks](https://github.com/rkd77/elinks) - Has CSS and JavaScript support,
@@ -157,14 +157,16 @@ Many other text-based web browsers exist. Here's some recommendations
 * [edbrowse](http://edbrowse.org/) - This one looks more like `ed` than
   `less` or `vi`. Originally designed for blind users.
 * [telescope](https://github.com/telescope-browser/telescope) - A "small
-  internet" (Gemini, Gopher, etc.) browser. Has a very cool UI.
+  internet" (Gemini, Gopher, Finger) browser. Has a very cool UI.
+* [offpunk](https://sr.ht/~lioploum/offpunk/) - An offline-first browser
+  for Web, Gemini, Gopher, Spartan. Separates "downloading" from "browsing".
 * [browsh](https://www.brow.sh/) - Firefox in your terminal.
 * [Carbonyl](https://github.com/fathyb/carbonyl) - Chromium in your terminal.
 
 ## Relatives
 
-[Ferus](https://github.com/ferus-web/ferus) is a graphical browser
-engine written in Nim that uses Chawan's HTML parser.
+[Ferus](https://github.com/ferus-web/ferus) is a separate graphical browser
+engine written in Nim, which uses Chawan's HTML parser.
 
 ## License
 

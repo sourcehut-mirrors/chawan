@@ -555,6 +555,17 @@ images.
 T}@T{
 T}
 T{
+sixel\-colors
+T}@T{
+\[lq]auto\[rq] / 2..65535
+T}@T{
+Only applies when \f[CR]display.image\-mode=\[dq]sixel\[dq]\f[R].
+Setting a number overrides the number of sixel color registers reported
+by the terminal, while \[lq]auto\[rq] leaves color detection to Chawan.
+Defaults to \[lq]auto\[rq].
+T}@T{
+T}
+T{
 alt\-screen
 T}@T{
 \[lq]auto\[rq] / boolean
@@ -1022,14 +1033,16 @@ Examples:
 \[aq]C\-M\-j\[aq] = \[aq]cmd.pager.load\[aq]
 \f[I]# go to the first line of the page when g is pressed twice without a preceding\f[R]
 \f[I]# number, or to the line when a preceding number is given.\f[R]
-\[aq]gg\[aq] = \[aq]cmd.pager.gotoLineOrStart\[aq]
+\[aq]gg\[aq] = \[aq]cmd.buffer.gotoLineOrStart\[aq]
 .EE
-.SS Browser actions
+.SS Pager actions
 .PP
 .TS
 tab(@);
-lw(21.5n) lw(43.1n) lw(5.4n).
+lw(32.1n) lw(11.7n) lw(23.3n) lw(2.9n).
 T{
+Default key
+T}@T{
 Name
 T}@T{
 Function
@@ -1037,12 +1050,16 @@ T}@T{
 T}
 _
 T{
+q
+T}@T{
 \f[CR]cmd.pager.quit\f[R]
 T}@T{
 Exit the browser.
 T}@T{
 T}
 T{
+C\-z
+T}@T{
 \f[CR]cmd.pager.suspend\f[R]
 T}@T{
 Temporarily suspend the browser Note: this also suspends e.g.\ buffer
@@ -1051,163 +1068,88 @@ So if you are downloading something, that will be delayed until you
 restart the process.
 T}@T{
 T}
-.TE
-.SS Pager actions
-Note: \f[CR]n\f[R] in the following text refers to a number preceding
-the action.
-e.g.
-in \f[CR]10gg\f[R], n = 10.
-If no preceding number is input, then it is left unspecified.
-.PP
-.TS
-tab(@);
-lw(21.5n) lw(43.1n) lw(5.4n).
 T{
-Name
+C\-l
 T}@T{
-Function
-T}@T{
-T}
-_
-T{
-\f[CR]cmd.pager.cursorUp\f[R], \f[CR]cmd.pager.cursorDown\f[R]
-T}@T{
-Move the cursor upwards/downwards by n lines, or if n is unspecified, by
-1.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorLeft\f[R], \f[CR]cmd.pager.cursorRight\f[R]
-T}@T{
-Move the cursor to the left/right by n cells, or if n is unspecified, by
-1.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorLineBegin\f[R]
-T}@T{
-Move the cursor to the first cell of the line.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorLineTextStart\f[R]
-T}@T{
-Move the cursor to the first non\-blank character of the line.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorLineEnd\f[R]
-T}@T{
-Move the cursor to the last cell of the line.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorNextWord\f[R],
-\f[CR]cmd.pager.cursorNextViWord\f[R],
-\f[CR]cmd.pager.cursorNextBigWord\f[R]
-T}@T{
-Move the cursor to the beginning of the next word.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorPrevWord\f[R],
-\f[CR]cmd.pager.cursorPrevViWord\f[R],
-\f[CR]cmd.pager.cursorPrevBigWord\f[R]
-T}@T{
-Move the cursor to the end of the previous word.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorWordEnd\f[R],
-\f[CR]cmd.pager.cursorViWordEnd\f[R],
-\f[CR]cmd.pager.cursorBigWordEnd\f[R]
-T}@T{
-Move the cursor to the end of the current word, or if already there, to
-the end of the next word.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorWordBegin\f[R],
-\f[CR]cmd.pager.cursorViWordBegin\f[R],
-\f[CR]cmd.pager.cursorBigWordBegin\f[R]
-T}@T{
-Move the cursor to the beginning of the current word, or if already
-there, to the end of the previous word.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorPrevLink\f[R], \f[CR]cmd.pager.cursorNextLink\f[R]
-T}@T{
-Move the cursor to the end/beginning of the previous/next clickable
-element (e.g.\ link, input field, etc).
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorPrevParagraph\f[R],
-\f[CR]cmd.pager.cursorNextParagraph\f[R]
-T}@T{
-Move the cursor to the end/beginning of the nth previous/next paragraph.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorRevNthLink\f[R]
-T}@T{
-Move the cursor to the nth link of the document, counting backwards from
-the document\[cq]s last line.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorNthLink\f[R]
-T}@T{
-Move the cursor to the nth link of the document.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.pageUp\f[R], \f[CR]cmd.pager.pageDown\f[R],
-\f[CR]cmd.pager.pageLeft\f[R], \f[CR]cmd.pager.pageRight\f[R]
-T}@T{
-Scroll up/down/left/right by n pages, or if n is unspecified, by one
-page.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.halfPageUp\f[R], \f[CR]cmd.pager.halfPageDown\f[R],
-\f[CR]cmd.pager.halfPageLeft\f[R], \f[CR]pager.halfPageUp\f[R]
-T}@T{
-Scroll up/down/left/right by n half pages, or if n is unspecified, by
-one page.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.scrollUp\f[R], \f[CR]cmd.pager.scrollDown\f[R],
-\f[CR]cmd.pager.scrollLeft\f[R], \f[CR]cmd.pager.scrollRight\f[R]
-T}@T{
-Scroll up/down/left/right by n lines, or if n is unspecified, by one
-line.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.click\f[R]
-T}@T{
-Click the HTML element currently under the cursor.
-T}@T{
-T}
-T{
 \f[CR]cmd.pager.load\f[R]
 T}@T{
 Open the current address in the URL bar.
 T}@T{
 T}
 T{
+C\-k
+T}@T{
 \f[CR]cmd.pager.webSearch\f[R]
 T}@T{
 Open the URL bar with an arbitrary search engine.
-At the moment, this is DuckDuckGo Lite.
-(Note: Chawan developers aren\[cq]t affiliated with DuckDuckGo the
-company or their product in any way.)
+At the moment, this is DuckDuckGo Lite, but this may change in the
+future.
 T}@T{
 T}
 T{
+M\-u
+T}@T{
+\f[CR]cmd.pager.dupeBuffer\f[R]
+T}@T{
+Duplicate the current buffer by loading its source to a new buffer.
+T}@T{
+T}
+T{
+U
+T}@T{
+\f[CR]cmd.pager.reloadBuffer\f[R]
+T}@T{
+Open a new buffer with the current buffer\[cq]s URL, replacing the
+current buffer.
+T}@T{
+T}
+T{
+C\-g
+T}@T{
+\f[CR]cmd.pager.lineInfo\f[R]
+T}@T{
+Display information about the current line on the status line.
+T}@T{
+T}
+T{
+\[rs]
+T}@T{
+\f[CR]cmd.pager.toggleSource\f[R]
+T}@T{
+If viewing an HTML buffer, open a new buffer with its source.
+Otherwise, open the current buffer\[cq]s contents as HTML.
+T}@T{
+T}
+T{
+D
+T}@T{
+\f[CR]cmd.pager.discardBuffer\f[R]
+T}@T{
+Discard the current buffer, and move back to the previous/next buffer
+depending on what the previously viewed buffer was.
+T}@T{
+T}
+T{
+d,, d.
+T}@T{
+\f[CR]cmd.pager.discardBufferPrev\f[R],
+\f[CR]cmd.pager.discardBufferNext\f[R]
+T}@T{
+Discard the current buffer, and move back to the previous/next buffer,
+or open the link under the cursor.
+T}@T{
+T}
+T{
+M\-d
+T}@T{
+\f[CR]cmd.pager.discardTree\f[R]
+T}@T{
+Discard all child buffers of the current buffer.
+T}@T{
+T}
+T{
+\&., ,, M\-,, M\-., M\-/
+T}@T{
 \f[CR]cmd.pager.nextBuffer\f[R], \f[CR]cmd.pager.prevBuffer\f[R],
 \f[CR]cmd.pager.prevSiblingBuffer\f[R],
 \f[CR]cmd.pager.nextSiblingBufer\f[R], \f[CR]cmd.pager.parentBuffer\f[R]
@@ -1223,91 +1165,338 @@ another page \[lq]in between\[rq].
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.dupeBuffer\f[R]
+M\-c
 T}@T{
-Duplicate the current buffer by loading its source to a new buffer.
+\f[CR]cmd.pager.enterCommand\f[R]
 T}@T{
-T}
-T{
-\f[CR]cmd.pager.discardBuffer\f[R]
-T}@T{
-Discard the current buffer, and move back to the previous/next buffer
-depending on what the previously viewed buffer was.
+Directly enter a JavaScript command.
+Note that this interacts with the pager, not the website being
+displayed.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.discardBufferPrev\f[R],
-\f[CR]cmd.pager.discardBufferNext\f[R]
+None
 T}@T{
-Discard the current buffer, and move back to the previous/next buffer,
-or open the link under the cursor.
+\f[CR]cmd.pager.searchForward\f[R], \f[CR]cmd.pager.searchBackward\f[R]
 T}@T{
-T}
-T{
-\f[CR]cmd.pager.discardTree\f[R]
-T}@T{
-Discard all child buffers of the current buffer.
+Search for a string in the current buffer, forwards or backwards.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.reload\f[R]
+/, ?
 T}@T{
-Open a new buffer with the current buffer\[cq]s URL, replacing the
-current buffer.
+\f[CR]cmd.pager.isearchForward\f[R], \f[CR]cmd.pager.searchBackward\f[R]
+T}@T{
+Incremental\-search for a string, highlighting the first result,
+forwards or backwards.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.reshape\f[R]
+n, N
+T}@T{
+\f[CR]cmd.pager.searchNext\f[R], \f[CR]cmd.pager.searchPrev\f[R]
+T}@T{
+Jump to the nth (or if unspecified, first) next/previous search result.
+T}@T{
+T}
+T{
+c
+T}@T{
+\f[CR]cmd.pager.peek\f[R]
+T}@T{
+Display a message of the current buffer\[cq]s URL on the status line.
+T}@T{
+T}
+T{
+u
+T}@T{
+\f[CR]cmd.pager.peekCursor\f[R]
+T}@T{
+Display a message of the URL or title under the cursor on the status
+line.
+Multiple calls allow cycling through the two.
+(i.e.\ by default, press u once \-> title, press again \-> URL)
+T}@T{
+T}
+T{
+su
+T}@T{
+\f[CR]cmd.pager.showFullAlert\f[R]
+T}@T{
+Show the last alert inside the line editor.
+You can also view previous ones using C\-p or C\-n.
+T}@T{
+T}
+T{
+M\-y
+T}@T{
+\f[CR]cmd.pager.copyURL\f[R]
+T}@T{
+Copy the current buffer\[cq]s URL to the system clipboard.
+T}@T{
+T}
+T{
+yu
+T}@T{
+\f[CR]cmd.pager.copyCursorLink\f[R]
+T}@T{
+Copy the link under the cursor to the system clipboard.
+T}@T{
+T}
+T{
+yI
+T}@T{
+\f[CR]cmd.pager.copyCursorImage\f[R]
+T}@T{
+Copy the URL of the image under the cursor to the system clipboard.
+T}@T{
+T}
+T{
+M\-p
+T}@T{
+\f[CR]cmd.pager.gotoClipboardURL\f[R]
+T}@T{
+Go to the URL currently on the clipboard.
+T}@T{
+T}
+.TE
+.SS Buffer actions
+Note: \f[CR]n\f[R] in the following text refers to a number preceding
+the action.
+e.g.
+in \f[CR]10gg\f[R], n = 10.
+If no preceding number is input, then it is left unspecified.
+.PP
+.TS
+tab(@);
+lw(32.1n) lw(11.7n) lw(23.3n) lw(2.9n).
+T{
+Default key
+T}@T{
+Name
+T}@T{
+Function
+T}@T{
+T}
+_
+T{
+j, k
+T}@T{
+\f[CR]cmd.buffer.cursorUp\f[R], \f[CR]cmd.buffer.cursorDown\f[R]
+T}@T{
+Move the cursor upwards/downwards by n lines, or if n is unspecified, by
+1.
+T}@T{
+T}
+T{
+h, l
+T}@T{
+\f[CR]cmd.buffer.cursorLeft\f[R], \f[CR]cmd.buffer.cursorRight\f[R]
+T}@T{
+Move the cursor to the left/right by n cells, or if n is unspecified, by
+1.
+T}@T{
+T}
+T{
+0
+T}@T{
+\f[CR]cmd.buffer.cursorLineBegin\f[R]
+T}@T{
+Move the cursor to the first cell of the line.
+T}@T{
+T}
+T{
+\[ha]
+T}@T{
+\f[CR]cmd.buffer.cursorLineTextStart\f[R]
+T}@T{
+Move the cursor to the first non\-blank character of the line.
+T}@T{
+T}
+T{
+$
+T}@T{
+\f[CR]cmd.buffer.cursorLineEnd\f[R]
+T}@T{
+Move the cursor to the last cell of the line.
+T}@T{
+T}
+T{
+w, W
+T}@T{
+\f[CR]cmd.buffer.cursorNextWord\f[R],
+\f[CR]cmd.buffer.cursorNextViWord\f[R],
+\f[CR]cmd.buffer.cursorNextBigWord\f[R]
+T}@T{
+Move the cursor to the beginning of the next word.
+T}@T{
+T}
+T{
+None
+T}@T{
+\f[CR]cmd.buffer.cursorPrevWord\f[R],
+\f[CR]cmd.buffer.cursorPrevViWord\f[R],
+\f[CR]cmd.buffer.cursorPrevBigWord\f[R]
+T}@T{
+Move the cursor to the end of the previous word.
+T}@T{
+T}
+T{
+e, E
+T}@T{
+\f[CR]cmd.buffer.cursorWordEnd\f[R],
+\f[CR]cmd.buffer.cursorViWordEnd\f[R],
+\f[CR]cmd.buffer.cursorBigWordEnd\f[R]
+T}@T{
+Move the cursor to the end of the current word, or if already there, to
+the end of the next word.
+T}@T{
+T}
+T{
+b, B
+T}@T{
+\f[CR]cmd.buffer.cursorWordBegin\f[R],
+\f[CR]cmd.buffer.cursorViWordBegin\f[R],
+\f[CR]cmd.buffer.cursorBigWordBegin\f[R]
+T}@T{
+Move the cursor to the beginning of the current word, or if already
+there, to the end of the previous word.
+T}@T{
+T}
+T{
+[, ]
+T}@T{
+\f[CR]cmd.buffer.cursorPrevLink\f[R],
+\f[CR]cmd.buffer.cursorNextLink\f[R]
+T}@T{
+Move the cursor to the end/beginning of the previous/next clickable
+element (e.g.\ link, input field, etc).
+T}@T{
+T}
+T{
+{, }
+T}@T{
+\f[CR]cmd.buffer.cursorPrevParagraph\f[R],
+\f[CR]cmd.buffer.cursorNextParagraph\f[R]
+T}@T{
+Move the cursor to the end/beginning of the nth previous/next paragraph.
+T}@T{
+T}
+T{
+None
+T}@T{
+\f[CR]cmd.buffer.cursorRevNthLink\f[R]
+T}@T{
+Move the cursor to the nth link of the document, counting backwards from
+the document\[cq]s last line.
+T}@T{
+T}
+T{
+None
+T}@T{
+\f[CR]cmd.buffer.cursorNthLink\f[R]
+T}@T{
+Move the cursor to the nth link of the document.
+T}@T{
+T}
+T{
+C\-b, C\-f, zH, zL
+T}@T{
+\f[CR]cmd.buffer.pageUp\f[R], \f[CR]cmd.buffer.pageDown\f[R],
+\f[CR]cmd.buffer.pageLeft\f[R], \f[CR]cmd.buffer.pageRight\f[R]
+T}@T{
+Scroll up/down/left/right by n pages, or if n is unspecified, by one
+page.
+T}@T{
+T}
+T{
+C\-u, C\-d
+T}@T{
+\f[CR]cmd.buffer.halfPageUp\f[R], \f[CR]cmd.buffer.halfPageDown\f[R],
+\f[CR]cmd.buffer.halfPageLeft\f[R], \f[CR]cmd.buffer.halfPageUp\f[R]
+T}@T{
+Scroll up/down/left/right by n half pages, or if n is unspecified, by
+one page.
+T}@T{
+T}
+T{
+K/C\-y, J/C\-e, zh, zl
+T}@T{
+\f[CR]cmd.buffer.scrollUp\f[R], \f[CR]cmd.buffer.scrollDown\f[R],
+\f[CR]cmd.buffer.scrollLeft\f[R], \f[CR]cmd.buffer.scrollRight\f[R]
+T}@T{
+Scroll up/down/left/right by n lines, or if n is unspecified, by one
+line.
+T}@T{
+T}
+T{
+Enter/Return
+T}@T{
+\f[CR]cmd.buffer.click\f[R]
+T}@T{
+Click the HTML element currently under the cursor.
+T}@T{
+T}
+T{
+R
+T}@T{
+\f[CR]cmd.buffer.reshape\f[R]
 T}@T{
 Reshape the current buffer (=render the current page anew.)
+Useful if the layout is not updating even though it should have.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.redraw\f[R]
+r
+T}@T{
+\f[CR]cmd.buffer.redraw\f[R]
 T}@T{
 Redraw screen contents.
 Useful if something messed up the display.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.toggleSource\f[R]
+None (see gotoLineOrStart/End instead)
 T}@T{
-If viewing an HTML buffer, open a new buffer with its source.
-Otherwise, open the current buffer\[cq]s contents as HTML.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.cursorFirstLine\f[R],
-\f[CR]cmd.pager.cursorLastLine\f[R]
+\f[CR]cmd.buffer.cursorFirstLine\f[R],
+\f[CR]cmd.buffer.cursorLastLine\f[R]
 T}@T{
 Move to the beginning/end in the buffer.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.cursorTop\f[R]
+H
+T}@T{
+\f[CR]cmd.buffer.cursorTop\f[R]
 T}@T{
 Move to the first line on the screen.
 (Equivalent to H in vi.)
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.cursorMiddle\f[R]
+M
+T}@T{
+\f[CR]cmd.buffer.cursorMiddle\f[R]
 T}@T{
 Move to the line in the middle of the screen.
 (Equivalent to M in vi.)
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.cursorBottom\f[R]
+L
+T}@T{
+\f[CR]cmd.buffer.cursorBottom\f[R]
 T}@T{
 Move to the last line on the screen.
 (Equivalent to L in vi.)
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.raisePage\f[R], \f[CR]cmd.pager.raisePageBegin\f[R],
-\f[CR]cmd.pager.centerLine\f[R], \f[CR]cmd.pager.centerLineBegin\f[R],
-\f[CR]cmd.pager.lowerPage\f[R], \f[CR]cmd.pager.lowerPageBegin\f[R]
+zt, z Return, zz, z., zb, z\-
+T}@T{
+\f[CR]cmd.buffer.raisePage\f[R], \f[CR]cmd.buffer.raisePageBegin\f[R],
+\f[CR]cmd.buffer.centerLine\f[R], \f[CR]cmd.buffer.centerLineBegin\f[R],
+\f[CR]cmd.buffer.lowerPage\f[R], \f[CR]cmd.buffer.lowerPageBegin\f[R]
 T}@T{
 If n is specified, move cursor to line n.\ Then, * \f[CR]raisePage\f[R]
 scrolls down so that the cursor is on the top line of the screen.
@@ -1323,94 +1512,67 @@ first non\-blank character, as the variants originating from vi do.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.nextPageBegin\f[R]
+z+
+T}@T{
+\f[CR]cmd.buffer.nextPageBegin\f[R]
 T}@T{
 If n is specified, move to the screen before the nth line and raise the
 page.
 Otherwise, go to the previous screen\[cq]s last line and raise the page.
-(\f[CR]z+\f[R] in vi.)
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.previousPageBegin\f[R]
+z\[ha]
+T}@T{
+\f[CR]cmd.buffer.previousPageBegin\f[R]
 T}@T{
 If n is specified, move to the screen before the nth line and raise the
 page.
 Otherwise, go to the previous screen\[cq]s last line and raise the page.
-(\f[CR]z+\f[R] in vi.)
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.cursorLeftEdge\f[R],
-\f[CR]cmd.pager.cursorMiddleColumn\f[R],
-\f[CR]cmd.pager.cursorRightEdge\f[R]
+g0, gc, g$
+T}@T{
+\f[CR]cmd.buffer.cursorLeftEdge\f[R],
+\f[CR]cmd.buffer.cursorMiddleColumn\f[R],
+\f[CR]cmd.buffer.cursorRightEdge\f[R]
 T}@T{
 Move to the first/middle/last column on the screen.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.centerColumn\f[R]
+None
+T}@T{
+\f[CR]cmd.buffer.centerColumn\f[R]
 T}@T{
 Center screen around the current column.
 (w3m \f[CR]Z\f[R].)
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.lineInfo\f[R]
+gg, G
 T}@T{
-Display information about the current line on the status line.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.searchForward\f[R], \f[CR]cmd.pager.searchBackward\f[R]
-T}@T{
-Search for a string in the current buffer, forwards or backwards.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.isearchForward\f[R], \f[CR]cmd.pager.searchBackward\f[R]
-T}@T{
-Incremental\-search for a string, highlighting the first result,
-forwards or backwards.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.gotoLineOrStart\f[R], \f[CR]cmd.pager.gotoLineOrEnd\f[R]
+\f[CR]cmd.buffer.gotoLineOrStart\f[R],
+\f[CR]cmd.buffer.gotoLineOrEnd\f[R]
 T}@T{
 If n is specified, jump to line n.\ Otherwise, jump to the start/end of
 the page.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.searchNext\f[R], \f[CR]cmd.pager.searchPrev\f[R]
+m
 T}@T{
-Jump to the nth (or if unspecified, first) next/previous search result.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.peek\f[R]
-T}@T{
-Display a message of the current buffer\[cq]s URL on the status line.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.peekCursor\f[R]
-T}@T{
-Display a message of the URL or title under the cursor on the status
-line.
-Multiple calls allow cycling through the two.
-(i.e.\ by default, press u once \-> title, press again \-> URL)
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.setMark\f[R]
+\f[CR]cmd.buffer.mark\f[R]
 T}@T{
 Wait for a character \f[CR]x\f[R] and then set a mark with the ID
 \f[CR]x\f[R].
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.gotoMark\f[R], \f[CR]cmd.pager.gotoMarkY\f[R]
+\[ga], \[cq]
+T}@T{
+\f[CR]cmd.buffer.gotoMark\f[R], \f[CR]cmd.buffer.gotoMarkY\f[R]
 T}@T{
 Wait for a character \f[CR]x\f[R] and then jump to the mark with the ID
 \f[CR]x\f[R] (if it exists on the page).
@@ -1419,39 +1581,27 @@ the Y position.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.markURL\f[R]
+:
+T}@T{
+\f[CR]cmd.buffer.markURL\f[R]
 T}@T{
 Convert URL\-like strings to anchors on the current page.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.saveLink\f[R]
+s Return
+T}@T{
+\f[CR]cmd.buffer.saveLink\f[R]
 T}@T{
 Save resource from the URL pointed to by the cursor to the disk.
 T}@T{
 T}
 T{
-\f[CR]cmd.pager.saveSource\f[R]
+sS
+T}@T{
+\f[CR]cmd.buffer.saveSource\f[R]
 T}@T{
 Save the source of the current buffer to the disk.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.copyURL\f[R]
-T}@T{
-Copy the current buffer\[cq]s URL to the system clipboard.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.copyCursorLink\f[R]
-T}@T{
-Copy the link under the cursor to the system clipboard.
-T}@T{
-T}
-T{
-\f[CR]cmd.pager.copyCursorImage\f[R]
-T}@T{
-Copy the URL of the image under the cursor to the system clipboard.
 T}@T{
 T}
 .TE
@@ -1459,8 +1609,10 @@ T}
 .PP
 .TS
 tab(@);
-lw(21.5n) lw(43.1n) lw(5.4n).
+lw(32.1n) lw(11.7n) lw(23.3n) lw(2.9n).
 T{
+Default key
+T}@T{
 Name
 T}@T{
 Function
@@ -1468,60 +1620,80 @@ T}@T{
 T}
 _
 T{
+Return
+T}@T{
 \f[CR]cmd.line.submit\f[R]
 T}@T{
 Submit the line.
 T}@T{
 T}
 T{
+C\-c
+T}@T{
 \f[CR]cmd.line.cancel\f[R]
 T}@T{
 Cancel the current operation.
 T}@T{
 T}
 T{
+C\-h, C\-d
+T}@T{
 \f[CR]cmd.line.backspace\f[R], \f[CR]cmd.line.delete\f[R]
 T}@T{
 Delete character before (backspace)/after (delete) the cursor.
 T}@T{
 T}
 T{
+C\-u, C\-k
+T}@T{
 \f[CR]cmd.line.clear\f[R], \f[CR]cmd.line.kill\f[R]
 T}@T{
 Delete text before (clear)/after (kill) the cursor.
 T}@T{
 T}
 T{
+C\-w, M\-d
+T}@T{
 \f[CR]cmd.line.clearWord\f[R], \f[CR]cmd.line.killWord\f[R]
 T}@T{
 Delete word before (clear)/after (kill) the cursor.
 T}@T{
 T}
 T{
+C\-b, C\-f
+T}@T{
 \f[CR]cmd.line.backward\f[R], \f[CR]cmd.line.forward\f[R]
 T}@T{
 Move cursor backward/forward by one character.
 T}@T{
 T}
 T{
+M\-b, M\-f
+T}@T{
 \f[CR]cmd.line.prevWord\f[R], \f[CR]cmd.line.nextWord\f[R]
 T}@T{
 Move cursor to the previous/next word by one character
 T}@T{
 T}
 T{
+C\-a, C\-e
+T}@T{
 \f[CR]cmd.line.begin\f[R], \f[CR]cmd.line.end\f[R]
 T}@T{
 Move cursor to the beginning/end of the line.
 T}@T{
 T}
 T{
+C\-v
+T}@T{
 \f[CR]cmd.line.escape\f[R]
 T}@T{
 Ignore keybindings for next character.
 T}@T{
 T}
 T{
+C\-p, C\-n
+T}@T{
 \f[CR]cmd.line.prevHist\f[R], \f[CR]cmd.line.nextHist\f[R]
 T}@T{
 Jump to the previous/next history entry

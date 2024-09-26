@@ -4,9 +4,6 @@
 .SH Inline images
 On terminals that support images, Chawan can display various bit\-mapped
 image formats.
-.PP
-Warning: both this document and the implementation is very much WIP.
-Anything described in this document may change in the near future.
 .SS Enabling images
 There are actually two switches for images in the config:
 .IP \[bu] 2
@@ -21,14 +18,13 @@ In most cases, all you need to do is to set \[lq]buffer.images\[rq] to
 true; with the default image\-mode, Chawan will find the best image
 display method supported by your terminal.
 .PP
-However, there are terminals (such as yaft) that support an image output
-method but do not advertise it (and are therefore left undetected).
-For such terminals, you also have to set \[lq]display.image\-mode\[rq]
-appropriately.
+If your terminal does not tell Chawan that it can display sixels, you
+may also have to set \[lq]display.image\-mode\[rq] appropriately.
+See below for further discussion of sixel configuration.
 .SS Output formats
 Supported output formats are:
 .IP \[bu] 2
-The DEC SIXEL format
+The DEC Sixel format
 .IP \[bu] 2
 The Kitty terminal graphics protocol
 .PP
@@ -42,6 +38,50 @@ the above two anyways.)
 .PP
 Support for hacks such as w3mimgdisplay, ueberzug, etc.
 is not planned.
+.SS Sixel
+Sixel is the most widely supported image format.
+See \c
+.UR https://arewesixelyet.com
+.UE \c
+\ to find a terminal that supports it.
+.PP
+Known quirks and implementation details:
+.IP \[bu] 2
+XTerm needs extensive configuration for ideal sixel support.
+In particular, you will want to set the decTerminalID,
+numColorRegisters, and maxGraphicSize attributes.
+See \f[CR]man xterm\f[R] for details.
+.IP \[bu] 2
+We assume private color registers are supported.
+On terminals where they aren\[cq]t (e.g.\ SyncTERM or hardware
+terminals), colors will get messed up with multiple images on screen.
+.IP \[bu] 2
+We send XTSMGRAPHICS for retrieving the number of color registers; on
+failure, we fall back to 256.
+You can override color register count using the
+\f[CR]display.sixel\-colors\f[R] configuration value.
+.IP \[bu] 2
+For the most efficient sixel display, you will want a cell height that
+is a multiple of 6.
+Otherwise, the images will have to be re\-coded several times on scroll.
+.IP \[bu] 2
+Normally, Sixel encoding runs in two passes.
+On slow computers, you can try setting
+\f[CR]display.sixel\-colors = 2\f[R], which will skip the first pass
+(but will also display everything in monochrome).
+.IP \[bu] 2
+Transparency \f[I]is\f[R] supported, but looks weird because we
+approximate an 8\-bit alpha channel with Sixel\[cq]s 1\-bit alpha
+channel.
+.SS Kitty
+On terminals that support it, Kitty\[cq]s protocol is preferred over
+Sixel.
+Its main benefit is that images do not have to be sent again every time
+they move on the screen (i.e.\ on scroll), but the initial transfer
+should also be faster (because PNG\[cq]s compression tends to outperform
+Sixel\[cq]s RLE).
+.PP
+Unlike Sixel, the Kitty protocol fully supports transparency.
 .SS Input formats
 Currently, the supported input formats are:
 .IP \[bu] 2
@@ -57,14 +97,15 @@ something like stbi is OK to vendor.)
 All image codec implementations are specified by the URL scheme
 \[lq]img\-codec+name:\[rq], where \[lq]name\[rq] is the MIME subtype.
 e.g.\ for image/png, it is \[lq]img\-codec+png:\[rq].
+(This indeed means that only \[lq]image\[rq] MIME types can be used.)
+.PP
 Like all schemes, these are defined (and overridable) in the
 urimethodmap file, and are implemented as local CGI programs.
 These programs take an encoded image on stdin, and dump the decoded RGBA
 data to stdout \- when encoding, vice versa.
 .PP
-This means that it is possible (although rarely practical) for users to
-define image decoders for their preferred formats, or even override the
-built\-in ones.
+This means that it is possible for users to define image decoders for
+their preferred formats, or even override the built\-in ones.
 (If you actually end up doing this for some reason, please shoot me a
 mail so I can add it to the bonus directory.)
 .PP
@@ -82,8 +123,6 @@ binary stream of an encoded image on its standard input and print the
 equivalent binary stream of big\-endian 8\-bit (per component) RGBA
 values to stdout.
 .PP
-If specified, it also has to resize said image first.
-.PP
 Input headers:
 .IP \[bu] 2
 Cha\-Image\-Info\-Only: 1
@@ -91,33 +130,15 @@ Cha\-Image\-Info\-Only: 1
 This tells the image decoder to only send image metadata (i.e.\ size).
 Technically, the decoder is free to actually decode the image too, but
 the browser will ignore any output after headers.
-.IP \[bu] 2
-Cha\-Image\-Target\-Dimensions: {width}x{height}
-.PP
-Mutually exclusive with Cha\-Image\-Info\-Only; this instructs the
-decoder to also resize the output image.
-The dimension format is such that for e.g.\ 123x456, 123 is width and
-456 is height.
-.PP
-(Readers of good taste might consider this header to be a questionable
-design decision, but remember that both the decoder and encoder
-effectively require copying the output image (thru stdio).
-Combined with the current file loader implementation, this means that
-in\-browser image resizing would require at least two unnecessary
-copies.
-.PP
-A future design might solve this problem better through shared memory.)
 .PP
 Output headers:
 .IP \[bu] 2
 Cha\-Image\-Dimensions: {width}x{height}
 .PP
-The final size of the decoded image.
-If the image was resized through Cha\-Image\-Target\-Dimensions, then
-this header\[cq]s value will match the value specified there.
+The size of the decoded image.
 .PP
-Again, the dimension format is such that e.g.\ for 123x456, 123 is width
-and 456 is height.
+The dimension format is such that e.g.\ for 123x456, 123 is width and
+456 is height.
 .SS encoding
 When the path equals \[lq]encode\[rq], a codec CGI script must take a
 binary stream of big\-endian 8\-bit (per component) RGBA values on its
@@ -146,3 +167,29 @@ It is up to the encoder to interpret this number.
 Output headers:
 .PP
 Currently, no output headers are defined for encoders.
+.SS Skipping copies with mmap
+The naive implementation of the above system would have to copy the
+output at least twice when an image is resized.
+To skip these copies, stdin and/or stdout is (currently) a file in the
+tmp directory for:
+.IP \[bu] 2
+decode stdin, when the image is already downloaded
+.IP \[bu] 2
+decode stdout, always
+.IP \[bu] 2
+encode stdin, always
+.PP
+This makes it possible to mmap(2) stdin/stdout instead of streaming
+through them with read(2) and write(2).
+When doing this, mind the following:
+.IP \[bu] 2
+When reading, you must check your initial position in the file with
+lseek(2).
+.IP \[bu] 2
+When writing, your headers are part of the output.
+At the very least, you must place a newline at the file\[cq]s beginning.
+.IP \[bu] 2
+This \f[I]is\f[R] an implementation detail, and might change at any time
+in the future (e.g.\ if we add a \[lq]no cache files\[rq] mode).
+Always check for S_ISREG to ensure that you are actually dealing with a
+file.
