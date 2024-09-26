@@ -14,7 +14,10 @@ iterator events*(ctx: PollData): TPollFd =
 
 proc register*(ctx: var PollData; fd: int; events: cshort) =
   if fd >= ctx.fds.len:
+    let olen = ctx.fds.len
     ctx.fds.setLen(fd + 1)
+    for i in olen ..< fd:
+      ctx.fds[i].fd = -1
   ctx.fds[fd].fd = cint(fd)
   ctx.fds[fd].events = events
 
