@@ -38,7 +38,6 @@ buffer:
 pager:
 - better horizontal line handling: allow viewing content positioned before page
   start, handle long lines, etc
-- figure out a way to show long messages on the status line
 - history, bookmarks (w3m format?)
 - save/edit buffer output
 - alert on external command failure
