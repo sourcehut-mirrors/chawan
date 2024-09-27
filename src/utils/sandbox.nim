@@ -190,6 +190,7 @@ elif SandboxMode == stLibSeccomp:
       "pipe2", # for when pipe is implemented as pipe2
       "poll", "ppoll", # for polling (sometimes implemented as ppoll, see musl)
       "read", "recv", "recvfrom", "recvmsg", # for reading from sockets
+      "restart_syscall", # for resuming poll on SIGCONT
       "rt_sigreturn", # for when sigreturn is implemented as rt_sigreturn
       "send", "sendmsg", "sendto", # for writing to sockets
       "set_robust_list", # glibc seems to need it for whatever reason
@@ -226,7 +227,8 @@ elif SandboxMode == stLibSeccomp:
       "read", "write", "recv", "send", "recvfrom", "sendto", # socket i/o
       "lseek", # glibc calls lseek on open files at exit
       "mmap", "mmap2", "mremap", "munmap", "brk", # memory allocation
-      "poll", "ppoll", # curl needs poll
+      "poll", "ppoll", # curl, ansi2html needs poll
+      "restart_syscall", # for resuming poll on SIGCONT
       "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
       "futex", # bionic libc & WSL both need it
       # we either have to use CURLOPT_NOSIGNAL or allow signals.
