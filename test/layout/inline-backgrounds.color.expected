@@ -26,3 +26,6 @@ final stage
                                     [48;2;255;0;0mnew line[49m
                              [48;2;255;0;0mdone[49mnow another thing
 
+
+test1 [48;2;0;128;0m test2[49m   [48;2;0;0;255m test3 [49m   [48;2;255;0;0m test4[49m
+

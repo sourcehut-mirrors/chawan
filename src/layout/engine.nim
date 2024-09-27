@@ -280,6 +280,9 @@ func cellWidth(ictx: InlineContext): int =
 func cellHeight(ictx: InlineContext): int =
   ictx.lctx.attrs.ppl
 
+func size(ictx: InlineContext): Size =
+  ictx.root.state.size
+
 func size(ictx: var InlineContext): var Size =
   ictx.root.state.size
 
@@ -399,18 +402,14 @@ proc positionAtoms(lbstate: LineBoxState; lctx: LayoutContext): LayoutUnit =
     marginTop = max(iastate.marginTop - atom.offset.y, marginTop)
   return marginTop
 
-proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
-  #TODO this is an abomination
-  # actually so is alignLine at this point :(
-  let offsety = ictx.lbstate.offsety
-  let shiftTop = marginTop + ictx.lbstate.paddingTop
-  let root = ictx.root
-  let cellHeight = ictx.cellHeight
-  let width = case ictx.space.w.t
+func getLineWidth(ictx: InlineContext): LayoutUnit =
+  return case ictx.space.w.t
   of scMinContent, scMaxContent: ictx.size.w
   of scFitContent: ictx.space.w.u
   of scStretch: max(ictx.size.w, ictx.space.w.u)
-  let xshift = case ictx.computed{"text-align"}
+
+func getLineXShift(ictx: InlineContext; width: LayoutUnit): LayoutUnit =
+  return case ictx.computed{"text-align"}
   of TextAlignNone: LayoutUnit(0)
   of TextAlignEnd, TextAlignRight, TextAlignChaRight:
     let width = min(width, ictx.lbstate.availableWidth)
@@ -418,31 +417,42 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
   of TextAlignCenter, TextAlignChaCenter:
     let width = min(width, ictx.lbstate.availableWidth)
     max((max(width, ictx.lbstate.size.w)) div 2 - ictx.lbstate.size.w div 2, 0)
+
+proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
+  let offsety = ictx.lbstate.offsety
+  let shiftTop = marginTop + ictx.lbstate.paddingTop
+  let cellHeight = ictx.cellHeight
+  let width = ictx.getLineWidth()
+  let xshift = ictx.getLineXShift(width)
   var totalWidth: LayoutUnit = 0
   var currentAreaOffsetX: LayoutUnit = 0
   var currentFragment: InlineFragment = nil
   let offsetyShifted = shiftTop + offsety
-  let areaY = offsetyShifted + ictx.lbstate.baseline - cellHeight
+  var areaY: LayoutUnit = 0
   for i, atom in ictx.lbstate.atoms:
     atom.offset.y = (atom.offset.y + offsetyShifted).round(cellHeight)
+    areaY = max(atom.offset.y, areaY)
     #TODO why not offsetyShifted here?
     let minHeight = atom.offset.y - offsety + atom.size.h
     ictx.lbstate.minHeight = max(ictx.lbstate.minHeight, minHeight)
     # Y is always final, so it is safe to calculate Y overflow
-    root.state.overflow[dtVertical].expand(atom.overflow(dtVertical))
+    ictx.root.state.overflow[dtVertical].expand(atom.overflow(dtVertical))
     # now position on the inline axis
     atom.offset.x += xshift
     totalWidth += atom.size.w
-    root.state.overflow[dtHorizontal].expand(atom.overflow(dtHorizontal))
+    ictx.root.state.overflow[dtHorizontal].expand(atom.overflow(dtHorizontal))
     let fragment = ictx.lbstate.atomStates[i].fragment
     if currentFragment != fragment:
       if currentFragment != nil:
         # flush area
-        currentFragment.state.areas.add(Area(
-          offset: offset(x = currentAreaOffsetX, y = areaY),
-          # it seems cellHeight is what other browsers use here too
-          size: size(w = atom.offset.x - currentAreaOffsetX, h = cellHeight)
-        ))
+        let lastAtom = ictx.lbstate.atoms[i - 1]
+        let w = lastAtom.offset.x + lastAtom.size.w - currentAreaOffsetX
+        if w != 0:
+          currentFragment.state.areas.add(Area(
+            offset: offset(x = currentAreaOffsetX, y = areaY),
+            # it seems cellHeight is what other browsers use here too
+            size: size(w = w, h = cellHeight)
+          ))
       currentFragment = fragment
       # init new fragment
       currentAreaOffsetX = if fragment.state.areas.len == 0:
@@ -452,6 +462,7 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
   if currentFragment != nil:
     # flush area
     let atom = ictx.lbstate.atoms[^1]
+    areaY = max(atom.offset.y, areaY)
     # it seems cellHeight is what other browsers use here too?
     let w = atom.offset.x + atom.size.w - currentAreaOffsetX
     let offset = offset(x = currentAreaOffsetX, y = areaY)
@@ -1490,7 +1501,9 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   let computed = fragment.computed
   var padding = Span()
   if stSplitStart in fragment.splitType:
-    ictx.lbstate.size.w += computed{"margin-left"}.px(lctx, ictx.space.w)
+    let w = computed{"margin-left"}.px(lctx, ictx.space.w)
+    ictx.lbstate.size.w += w
+    ictx.lbstate.widthAfterWhitespace += w
     padding = Span(
       start: computed{"padding-left"}.px(lctx, ictx.space.w),
       send: computed{"padding-right"}.px(lctx, ictx.space.w)
@@ -1498,7 +1511,7 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   fragment.state = InlineFragmentState()
   if padding.start != 0:
     fragment.state.areas.add(Area(
-      offset: offset(x = ictx.lbstate.size.w, y = 0),
+      offset: offset(x = ictx.lbstate.widthAfterWhitespace, y = 0),
       size: size(w = padding.start, h = ictx.cellHeight)
     ))
     ictx.lbstate.paddingTodo.add((fragment, 0))

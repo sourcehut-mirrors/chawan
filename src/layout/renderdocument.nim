@@ -1,5 +1,3 @@
-import std/strutils
-
 import css/cssvalues
 import css/stylednode
 import types/bitmap
@@ -259,37 +257,22 @@ proc setRowWord(grid: var FlexibleGrid; state: var RenderState;
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     color: CellColor; startx, starty, endx, endy: int; node: StyledNode;
     noPaint = false) =
-  var starty = starty div state.attrs.ppl
-  var endy = endy div state.attrs.ppl
+  var starty = max(starty div state.attrs.ppl, 0)
+  var endy = max(endy div state.attrs.ppl, 0)
+  var startx = max(startx div state.attrs.ppc, 0)
+  var endx = max(endx div state.attrs.ppc, 0)
+  if starty == endy or startx == endx:
+    return # size is 0, no need to paint
   if starty > endy:
     swap(starty, endy)
-  if endy <= 0:
-    return # highest y is outside canvas, no need to paint
-  if starty < 0:
-    starty = 0
-  if starty == endy:
-    return # height is 0, no need to paint
-  var startx = startx div state.attrs.ppc
-  var endx = endx div state.attrs.ppc
-  if endy < 0:
-    endy = 0
   if startx > endx:
     swap(startx, endx)
-
-  if endx <= 0: return # highest x is outside the canvas, no need to paint
-  if startx < 0: startx = 0
-  if startx == endx: return # width is 0, no need to paint
-
-  # make sure we have line y
-  if grid.high < endy:
+  if grid.high < endy: # make sure we have line y
     grid.addLines(endy - grid.high)
-
   for y in starty..<endy:
     # Make sure line.width() >= endx
-    let linewidth = grid[y].str.width()
-    if linewidth < endx:
-      grid[y].str &= ' '.repeat(endx - linewidth)
-
+    for i in grid[y].str.width() ..< endx:
+      grid[y].str &= ' '
     # Process formatting around startx
     if grid[y].formats.len == 0:
       # No formats
@@ -307,7 +290,6 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
         let copy = grid[y].formats[fi]
         grid[y].formats[fi].pos = startx
         grid[y].insertFormat(fi, copy)
-
     # Process formatting around endx
     assert grid[y].formats.len > 0
     let fi = grid[y].findFormatN(endx) - 1
@@ -316,15 +298,10 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
       discard
     elif grid[y].formats[fi].pos != endx:
       let copy = grid[y].formats[fi]
-      if linewidth != endx:
-        grid[y].formats[fi].pos = endx
-        grid[y].insertFormat(fi, copy)
-      else:
-        grid[y].formats.delete(fi)
-        grid[y].insertFormat(fi, copy)
-
+      grid[y].formats[fi].pos = endx
+      grid[y].insertFormat(fi, copy)
     # Paint format backgrounds between startx and endx
-    for fi in 0..grid[y].formats.high:
+    for fi in 0 ..< grid[y].formats.len:
       if grid[y].formats[fi].pos >= endx:
         break
       if grid[y].formats[fi].pos >= startx:
