@@ -80,6 +80,9 @@ proc recvDataLoop*(s: DynStream; buffer: pointer; len: int) =
 proc recvDataLoop*(s: DynStream; buffer: var openArray[uint8]) {.inline.} =
   s.recvDataLoop(addr buffer[0], buffer.len)
 
+proc recvDataLoop*(s: DynStream; buffer: var openArray[char]) {.inline.} =
+  s.recvDataLoop(addr buffer[0], buffer.len)
+
 proc recvAll*(s: DynStream): string =
   var buffer = newString(4096)
   var idx = 0
@@ -161,7 +164,10 @@ method sclose*(s: PosixStream) =
   s.closed = true
 
 proc newPosixStream*(fd: FileHandle): PosixStream =
-  return PosixStream(fd: fd, blocking: true)
+  return PosixStream(fd: cint(fd), blocking: true)
+
+proc newPosixStream*(fd: SocketHandle): PosixStream =
+  return PosixStream(fd: cint(fd), blocking: true)
 
 proc newPosixStream*(path: string; flags, mode: cint): PosixStream =
   let fd = open(cstring(path), flags, mode)

@@ -93,6 +93,7 @@ $(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
 
 twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim src/utils/twtuni.nim
 dynstream = src/io/dynstream.nim src/io/serversocket.nim
+lcgi = $(dynstream) $(twtstr) adapter/protocol/lcgi.nim
 $(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
 		lib/monoucha/monoucha/libregexp.nim src/types/opt.nim $(twtstr)
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/curlwrap.nim \
@@ -102,9 +103,7 @@ $(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
 $(OUTDIR_CGI_BIN)/file: adapter/protocol/dirlist.nim $(twtstr) src/utils/strwidth.nim
 $(OUTDIR_CGI_BIN)/ftp: adapter/protocol/dirlist.nim $(twtstr) src/utils/strwidth.nim \
 		src/types/opt.nim adapter/protocol/curl.nim
-$(OUTDIR_CGI_BIN)/gopher: adapter/protocol/curlwrap.nim adapter/protocol/curlerrors.nim \
-		adapter/gophertypes.nim adapter/protocol/curl.nim \
-		$(twtstr)
+$(OUTDIR_CGI_BIN)/gopher: adapter/gophertypes.nim $(lcgi)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim $(dynstream)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \

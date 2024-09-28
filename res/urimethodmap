@@ -10,7 +10,6 @@ ftp:			cgi-bin:ftp
 sftp:			cgi-bin:ftp
 ftps:			cgi-bin:ftp
 gopher:			cgi-bin:gopher
-gophers:		cgi-bin:gophers
 spartan:		cgi-bin:spartan
 man:			cgi-bin:man
 man-k:			cgi-bin:man

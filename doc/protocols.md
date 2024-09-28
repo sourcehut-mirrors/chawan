@@ -63,8 +63,8 @@ In theory, FTPS should work too, but it is completely untested.
 
 ## Gopher
 
-Gopher is supported through the `adapter/protocol/gopher.nim` libcurl
-adapter. Gopher directories are passed as the `text/gopher` type, and
+Gopher is supported through the `adapter/protocol/gopher.nim` adapter.
+Gopher directories are passed as the `text/gopher` type, and
 `adapter/format/gopher.nim` takes care of converting this to HTML.
 
 Gopher selector types are converted to MIME types when possible; note however,

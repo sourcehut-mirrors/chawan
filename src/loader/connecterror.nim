@@ -25,6 +25,9 @@ type ConnectionError* = enum
   ceProxyRefusedToConnect = (6, "ProxyRefusedToConnect")
   ceFailedToResolveHost = (7, "FailedToResolveHost")
   ceFailedToResolveProxy = (8, "FailedToResolveProxy")
+  ceProxyAuthFail = (9, "ProxyAuthFail")
+  ceInvalidResponse = (10, "InvalidResponse")
+  ceProxyInvalidResponse = (11, "ProxyInvalidResponse")
 
 const ErrorMessages* = [
   ceCGIOutputHandleNotFound: "request body output handle not found",
@@ -53,6 +56,9 @@ const ErrorMessages* = [
   ceProxyRefusedToConnect: "proxy refused to connect",
   ceFailedToResolveHost: "failed to resolve host",
   ceFailedToResolveProxy: "failed to resolve proxy",
+  ceProxyAuthFail: "proxy authentication failed",
+  ceInvalidResponse: "received an invalid response",
+  ceProxyInvalidResponse: "proxy returned an invalid response",
 ]
 
 converter toInt*(code: ConnectionError): int =
