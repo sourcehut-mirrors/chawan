@@ -58,7 +58,7 @@ type
     # List of cached resources.
     cacheMap: seq[CachedItem]
     # List of file descriptors passed by the client.
-    passedFdMap: Table[string, FileHandle] # host -> fd
+    passedFdMap: seq[tuple[name: string; fd: FileHandle]] # host -> fd
     config: LoaderClientConfig
 
   LoaderContext = ref object
@@ -715,25 +715,33 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     of rbtNone:
       discard
 
+func findPassedFd(client: ClientData; name: string): int =
+  for i in 0 ..< client.passedFdMap.len:
+    if client.passedFdMap[i].name == name:
+      return i
+  return -1
+
 proc loadStream(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request) =
-  client.passedFdMap.withValue(request.url.pathname, fdp):
-    handle.sendResult(0)
-    handle.sendStatus(200)
-    handle.sendHeaders(newHeaders())
-    let ps = newPosixStream(fdp[])
-    var stats: Stat
-    doAssert fstat(fdp[], stats) != -1
-    handle.stream = ps
-    client.passedFdMap.del(request.url.pathname)
-    if S_ISCHR(stats.st_mode) or S_ISREG(stats.st_mode):
-      # regular file: e.g. cha <file
-      # or character device: e.g. cha </dev/null
-      handle.output.stream.setBlocking(false)
-      # not loading from cache, so cachedHandle is nil
-      ctx.loadStreamRegular(handle, nil)
-  do:
+  let i = client.findPassedFd(request.url.pathname)
+  if i == -1:
     handle.sendResult(ceFileNotFound, "stream not found")
+    return
+  handle.sendResult(0)
+  handle.sendStatus(200)
+  handle.sendHeaders(newHeaders())
+  let fd = client.passedFdMap[i].fd
+  let ps = newPosixStream(fd)
+  var stats: Stat
+  doAssert fstat(fd, stats) != -1
+  handle.stream = ps
+  client.passedFdMap.del(i)
+  if S_ISCHR(stats.st_mode) or S_ISREG(stats.st_mode):
+    # regular file: e.g. cha <file
+    # or character device: e.g. cha </dev/null
+    handle.output.stream.setBlocking(false)
+    # not loading from cache, so cachedHandle is nil
+    ctx.loadStreamRegular(handle, nil)
 
 proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request) =
@@ -1012,7 +1020,7 @@ proc passFd(ctx: LoaderContext; stream: SocketStream; client: ClientData;
   var id: string
   r.sread(id)
   let fd = stream.recvFileHandle()
-  client.passedFdMap[id] = fd
+  client.passedFdMap.add((id, fd))
   stream.sclose()
 
 proc removeCachedItem(ctx: LoaderContext; stream: SocketStream;
