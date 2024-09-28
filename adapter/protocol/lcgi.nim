@@ -117,7 +117,7 @@ proc connectProxySocket(os: PosixStream; host, port, proxy: string):
   let scheme = proxy.until(':')
   # We always use socks5h, actually.
   if scheme != "socks5" and scheme != "socks5h":
-    os.die("Only socks5 proxy is supported")
+    os.die("InternalError only socks5 proxy is supported")
   var i = scheme.len + 1
   while i < proxy.len and proxy[i] == '/':
     inc i
