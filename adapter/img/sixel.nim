@@ -483,21 +483,21 @@ proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
 proc parseDimensions(s: string): (int, int) =
   let s = s.split('x')
   if s.len != 2:
-    die("Cha-Control: ConnectionError 1 wrong dimensions\n")
+    die("Cha-Control: ConnectionError InternalError wrong dimensions\n")
   let w = parseUInt32(s[0], allowSign = false)
   let h = parseUInt32(s[1], allowSign = false)
   if w.isNone or w.isNone:
-    die("Cha-Control: ConnectionError 1 wrong dimensions\n")
+    die("Cha-Control: ConnectionError InternalError wrong dimensions\n")
   return (int(w.get), int(h.get))
 
 proc main() =
   let scheme = getEnv("MAPPED_URI_SCHEME")
   let f = scheme.after('+')
   if f != "x-sixel":
-    die("Cha-Control: ConnectionError 1 unknown format " & f)
+    die("Cha-Control: ConnectionError InternalError unknown format " & f)
   case getEnv("MAPPED_URI_PATH")
   of "decode":
-    die("Cha-Control: ConnectionError 1 not implemented\n")
+    die("Cha-Control: ConnectionError InternalError not implemented\n")
   of "encode":
     var width = 0
     var height = 0
@@ -517,19 +517,19 @@ proc main() =
       of "Cha-Image-Crop-Width":
         let q = parseUInt32(s, allowSign = false)
         if q.isNone:
-          die("Cha-Control: ConnectionError 1 wrong palette\n")
+          die("Cha-Control: ConnectionError InternalError wrong palette\n")
         cropw = int(q.get)
       of "Cha-Image-Sixel-Halfdump":
         halfdump = true
       of "Cha-Image-Sixel-Palette":
         let q = parseUInt16(s, allowSign = false)
         if q.isNone:
-          die("Cha-Control: ConnectionError 1 wrong palette\n")
+          die("Cha-Control: ConnectionError InternalError wrong palette\n")
         palette = int(q.get)
       of "Cha-Image-Quality":
         let q = parseUInt16(s, allowSign = false)
         if q.isNone:
-          die("Cha-Control: ConnectionError 1 wrong quality\n")
+          die("Cha-Control: ConnectionError InternalError wrong quality\n")
         quality = int(q.get)
     if cropw == -1:
       cropw = width
@@ -549,7 +549,7 @@ proc main() =
     let ps = newPosixStream(STDIN_FILENO)
     let src = ps.recvDataLoopOrMmap(L)
     if src == nil:
-      die("Cha-Control: ConnectionError 1 failed to read input\n")
+      die("Cha-Control: ConnectionError InternalError failed to read input\n")
     enterNetworkSandbox() # don't swallow stat
     let p = cast[ptr UncheckedArray[RGBAColorBE]](src.p)
     p.toOpenArray(0, n - 1).encode(width, height, offx, offy, cropw, halfdump,

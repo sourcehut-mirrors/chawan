@@ -4,7 +4,6 @@ import std/times
 
 import dirlist
 
-import loader/connecterror
 import utils/twtstr
 
 proc loadDir(path, opath: string) =
@@ -79,11 +78,6 @@ proc loadFile(f: File) =
       break
 
 proc main() =
-  if getEnv("MAPPED_URI_HOST") != "":
-    let code = int(ERROR_INVALID_URL)
-    stdout.write("Cha-Control: ConnectionError " & $code &
-      " cannot use host in file")
-    return
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
   var f: File
@@ -92,7 +86,6 @@ proc main() =
   elif dirExists(path):
     loadDir(path, opath)
   else:
-    let code = int(ERROR_FILE_NOT_FOUND)
-    stdout.write("Cha-Control: ConnectionError " & $code)
+    stdout.write("Cha-Control: ConnectionError FileNotFound")
 
 main()

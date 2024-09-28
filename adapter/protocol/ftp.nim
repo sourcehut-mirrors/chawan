@@ -7,7 +7,6 @@ import curlerrors
 import curlwrap
 import dirlist
 
-import loader/connecterror
 import utils/twtstr
 
 type FtpHandle = ref object
@@ -280,7 +279,7 @@ proc main() =
   if op.dirmode:
     let surl = url.get(CURLUPART_URL, cuint(CURLU_PUNY2IDN))
     if surl == nil:
-      stdout.write("Cha-Control: ConnectionError " & $int(ERROR_INVALID_URL))
+      stdout.write("Cha-Control: ConnectionError InvalidURL\n")
       curl_url_cleanup(url)
       curl_easy_cleanup(curl)
       return
@@ -306,8 +305,7 @@ proc main() =
     curl.setopt(CURLOPT_PROXY, purl)
   if getEnv("REQUEST_METHOD") != "GET":
     # fail
-    let code = $int(ERROR_INVALID_METHOD)
-    stdout.write("Cha-Control: ConnectionError " & $code & "\n")
+    stdout.write("Cha-Control: ConnectionError InvalidMethod\n")
   else:
     let res = curl_easy_perform(curl)
     if res != CURLE_OK:

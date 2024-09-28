@@ -99,14 +99,12 @@ $(OUTDIR_CGI_BIN)/http: adapter/protocol/curlwrap.nim \
 		adapter/protocol/curlerrors.nim adapter/protocol/curl.nim \
 		src/utils/sandbox.nim $(twtstr)
 $(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
-$(OUTDIR_CGI_BIN)/file: adapter/protocol/dirlist.nim $(twtstr) \
-		src/utils/strwidth.nim src/loader/connecterror.nim
-$(OUTDIR_CGI_BIN)/ftp: adapter/protocol/dirlist.nim $(twtstr) \
-		src/utils/strwidth.nim src/loader/connecterror.nim src/types/opt.nim \
-		adapter/protocol/curl.nim
+$(OUTDIR_CGI_BIN)/file: adapter/protocol/dirlist.nim $(twtstr) src/utils/strwidth.nim
+$(OUTDIR_CGI_BIN)/ftp: adapter/protocol/dirlist.nim $(twtstr) src/utils/strwidth.nim \
+		src/types/opt.nim adapter/protocol/curl.nim
 $(OUTDIR_CGI_BIN)/gopher: adapter/protocol/curlwrap.nim adapter/protocol/curlerrors.nim \
 		adapter/gophertypes.nim adapter/protocol/curl.nim \
-		src/loader/connecterror.nim $(twtstr)
+		$(twtstr)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim $(dynstream)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \

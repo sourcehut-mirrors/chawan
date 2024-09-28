@@ -9,7 +9,6 @@ import curlwrap
 
 import ../gophertypes
 
-import loader/connecterror
 import utils/twtstr
 
 type GopherHandle = ref object
@@ -58,7 +57,7 @@ proc main() =
   let curl = curl_easy_init()
   doAssert curl != nil
   if getEnv("REQUEST_METHOD") != "GET":
-    stdout.write("Cha-Control: ConnectionError " & $int(ERROR_INVALID_METHOD))
+    stdout.write("Cha-Control: ConnectionError InvalidMethod")
     return
   var path = getEnv("MAPPED_URI_PATH")
   if path.len < 1:
@@ -84,7 +83,7 @@ proc main() =
     const flags = cuint(CURLU_PUNY2IDN)
     let surl = url.get(CURLUPART_URL, flags)
     if surl == nil:
-      stdout.write("Cha-Control: ConnectionError " & $int(ERROR_INVALID_URL))
+      stdout.write("Cha-Control: ConnectionError InvalidURL")
     else:
       op.loadSearch($surl)
   else:

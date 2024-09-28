@@ -100,7 +100,7 @@ func canRewriteForCGICompat(ctx: LoaderContext; path: string): bool =
       return true
   return false
 
-proc rejectHandle(handle: InputHandle; code: ConnectErrorCode; msg = "") =
+proc rejectHandle(handle: InputHandle; code: ConnectionError; msg = "") =
   handle.sendResult(code, msg)
   handle.close()
 
@@ -307,7 +307,7 @@ proc handleFirstLine(handle: InputHandle; line: string; headers: Headers;
   let k = line.until(':')
   if k.len == line.len:
     # invalid
-    handle.sendResult(ERROR_CGI_MALFORMED_HEADER)
+    handle.sendResult(ceCGIMalformedHeader)
     return crError
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
@@ -321,10 +321,13 @@ proc handleFirstLine(handle: InputHandle; line: string; headers: Headers;
     elif v.startsWithIgnoreCase("ConnectionError"):
       let errs = v.split(' ')
       if errs.len <= 1:
-        handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
+        handle.sendResult(ceCGIInvalidChaControl)
       else:
-        let fb = int32(ERROR_CGI_INVALID_CHA_CONTROL)
-        let code = int(parseInt32(errs[1]).get(fb))
+        var code = int32(ceCGIInvalidChaControl)
+        if (let x = parseInt32(errs[1]); x.isSome):
+          code = x.get
+        elif (let x = strictParseEnum[ConnectionError](errs[1]); x.isSome):
+          code = int32(x.get)
         var message = ""
         if errs.len > 2:
           message &= errs[2]
@@ -335,7 +338,7 @@ proc handleFirstLine(handle: InputHandle; line: string; headers: Headers;
       return crError
     elif v.startsWithIgnoreCase("ControlDone"):
       return crDone
-    handle.sendResult(ERROR_CGI_INVALID_CHA_CONTROL)
+    handle.sendResult(ceCGIInvalidChaControl)
     return crError
   handle.sendResult(0) # success
   headers.add(k, v)
@@ -584,20 +587,20 @@ proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
 proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request; prevURL: URL; config: LoaderClientConfig) =
   if ctx.config.cgiDir.len == 0:
-    handle.sendResult(ERROR_NO_CGI_DIR)
+    handle.sendResult(ceNoCGIDir)
     return
   let cpath = ctx.parseCGIPath(request)
   if cpath.cmd == "" or cpath.basename in ["", ".", ".."] or
       cpath.basename[0] == '~':
-    handle.sendResult(ERROR_INVALID_CGI_PATH)
+    handle.sendResult(ceInvalidCGIPath)
     return
   if not fileExists(cpath.cmd):
-    handle.sendResult(ERROR_CGI_FILE_NOT_FOUND)
+    handle.sendResult(ceCGIFileNotFound)
     return
   # Pipe the response body as stdout.
   var pipefd: array[2, cint] # child -> parent
   if pipe(pipefd) == -1:
-    handle.sendResult(ERROR_FAIL_SETUP_CGI)
+    handle.sendResult(ceFailedToSetUpCGI)
     return
   let istreamOut = newPosixStream(pipefd[0]) # read by loader
   var ostreamOut = newPosixStream(pipefd[1]) # written by child
@@ -610,7 +613,7 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     # RDWR, otherwise mmap won't work
     ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR, 0o600)
     if ostreamOut == nil:
-      handle.sendResult(ERROR_FAIL_SETUP_CGI)
+      handle.sendResult(ceCGIFailedToOpenCacheOutput)
       return
     let cacheId = handle.output.outputId # welp
     client.cacheMap.add(CachedItem(
@@ -629,7 +632,7 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     var n: int
     (istream, n) = client.openCachedItem(request.body.cacheId)
     if istream == nil:
-      handle.sendResult(ERROR_CGI_CACHED_BODY_NOT_FOUND)
+      handle.sendResult(ceCGICachedBodyNotFound)
       return
     cachedHandle = ctx.findCachedHandle(request.body.cacheId)
     if cachedHandle != nil: # cached item still open, switch to streaming mode
@@ -637,13 +640,13 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
   elif request.body.t == rbtOutput:
     outputIn = ctx.findOutput(request.body.outputId, client)
     if outputIn == nil:
-      handle.sendResult(ERROR_FAIL_SETUP_CGI)
+      handle.sendResult(ceCGIOutputHandleNotFound)
       return
   if request.body.t in {rbtString, rbtMultipart, rbtOutput} or
       request.body.t == rbtCache and istream2 != nil:
     var pipefdRead: array[2, cint] # parent -> child
     if pipe(pipefdRead) == -1:
-      handle.sendResult(ERROR_FAIL_SETUP_CGI)
+      handle.sendResult(ceFailedToSetUpCGI)
       return
     istream = newPosixStream(pipefdRead[0])
     ostream = newPosixStream(pipefdRead[1])
@@ -651,7 +654,7 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
   stderr.flushFile()
   let pid = fork()
   if pid == -1:
-    handle.sendResult(ERROR_FAIL_SETUP_CGI)
+    handle.sendResult(ceFailedToSetUpCGI)
   elif pid == 0:
     istreamOut.sclose() # close read
     discard dup2(ostreamOut.fd, 1) # dup stdout
@@ -679,7 +682,7 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
       if ctx.handleMap[i] != nil:
         discard close(cint(i))
     discard execl(cstring(cpath.cmd), cstring(cpath.basename), nil)
-    let code = int(ERROR_FAILED_TO_EXECUTE_CGI_SCRIPT)
+    let code = int(ceFailedToExecuteCGIScript)
     stdout.write("Cha-Control: ConnectionError " & $code & " " &
       ($strerror(errno)).deleteChars({'\n', '\r'}))
     quit(1)
@@ -738,7 +741,7 @@ proc loadStream(ctx: LoaderContext; client: ClientData; handle: InputHandle;
       # not loading from cache, so cachedHandle is nil
       ctx.loadStreamRegular(handle, nil)
   do:
-    handle.sendResult(ERROR_FILE_NOT_FOUND, "stream not found")
+    handle.sendResult(ceFileNotFound, "stream not found")
 
 proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request) =
@@ -750,7 +753,7 @@ proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: InputHandle;
       ps.seek(startFrom)
     handle.stream = ps
     if ps == nil:
-      handle.rejectHandle(ERROR_FILE_NOT_IN_CACHE)
+      handle.rejectHandle(ceFileNotInCache)
       client.cacheMap.del(n)
       return
     handle.sendResult(0)
@@ -760,7 +763,7 @@ proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     let cachedHandle = ctx.findCachedHandle(id)
     ctx.loadStreamRegular(handle, cachedHandle)
   else:
-    handle.sendResult(ERROR_URL_NOT_IN_CACHE)
+    handle.sendResult(ceURLNotInCache)
 
 # Data URL handler.
 # Moved back into loader from CGI, because data URLs can get extremely long
@@ -796,7 +799,7 @@ proc loadData(ctx: LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
   var ct = url.path.s.until(',')
   if AllChars - Ascii + Controls - {'\t', ' '} in ct:
-    handle.sendResult(ERROR_INVALID_URL, "invalid data URL")
+    handle.sendResult(ceInvalidURL, "invalid data URL")
     handle.close()
     return
   let sd = ct.len + 1 # data start
@@ -804,7 +807,7 @@ proc loadData(ctx: LoaderContext; handle: InputHandle; request: Request) =
   if ct.endsWith(";base64"):
     let d = atob0(body) # decode from ct end + 1
     if d.isNone:
-      handle.sendResult(ERROR_INVALID_URL, "invalid data URL")
+      handle.sendResult(ceInvalidURL, "invalid data URL")
       handle.close()
       return
     ct.setLen(ct.len - ";base64".len) # remove base64 indicator
@@ -853,11 +856,11 @@ proc loadResource(ctx: LoaderContext; client: ClientData;
         inc tries
         redo = true
       of ummrWrongURL:
-        handle.rejectHandle(ERROR_INVALID_URI_METHOD_ENTRY)
+        handle.rejectHandle(ceInvalidURIMethodEntry)
       of ummrNotFound:
-        handle.rejectHandle(ERROR_UNKNOWN_SCHEME)
+        handle.rejectHandle(ceUnknownScheme)
   if tries >= MaxRewrites:
-    handle.rejectHandle(ERROR_TOO_MANY_REWRITES)
+    handle.rejectHandle(ceTooManyRewrites)
 
 proc setupRequestDefaults(request: Request; config: LoaderClientConfig) =
   for k, v in config.defaultHeaders.table:
@@ -880,7 +883,7 @@ proc load(ctx: LoaderContext; stream: SocketStream; request: Request;
     handle.url = request.url
     handle.output.url = request.url
   if not config.filter.match(request.url):
-    handle.rejectHandle(ERROR_DISALLOWED_URL)
+    handle.rejectHandle(ceDisallowedURL)
   else:
     request.setupRequestDefaults(config)
     ctx.loadResource(client, config, request, handle)

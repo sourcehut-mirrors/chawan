@@ -77,25 +77,26 @@ Currently available commands are:
   take external input. For example, an HTTP client would have to send
   `Cha-Control: ControlDone` before returning the retrieved headers.
 
-List of public error codes:
+Following is a list of error codes and their string counterparts. CGI scripts
+may use either (but not both) in a ConnectionError header.
 
-* `1 internal error`: An internal error prevented the script from retrieving
+* `1 InternalError`: An internal error prevented the script from retrieving
   the requested resource. CGI scripts can also use this to signal that they
   have no information on what went wrong.
-* `2 invalid method`: The client requested data using a method not supported
+* `2 InvalidMethod`: The client requested data using a method not supported
   by this protocol.
-* `3 invalid URL`: The request URL could not be interpreted as a valid URL
+* `3 InvalidURL`: The request URL could not be interpreted as a valid URL
   for this format.
-* `4 file not found`: No file was found at the requested address, and thus
+* `4 FileNotFound`: No file was found at the requested address, and thus
   the request is meaningless. Note: this should only be used by protocols
   that do not rely on a client-server architecture, e.g. local file access,
   local databases, or peer-to-peer file retrieval mechanisms. A server
   responding with "no file found" is NOT a connection error, and is better
   represented as a response with a 404 status code.
-* `5 failed to resolve host`: The hostname could not be resolved.
-* `6 failed to resolve proxy`: The proxy could not be resolved.
-* `7 connection refused`: The server refused to establish a connection.
-* `8 proxy refused to connect`: The proxy refused to establish a connection.
+* `5 FailedToResolveHost`: The hostname could not be resolved.
+* `6 FailedToResolveProxy`: The proxy could not be resolved.
+* `7 ConnectionRefused`: The server refused to establish a connection.
+* `8 ProxyRefusedToConnect`: The proxy refused to establish a connection.
 
 ## Environment variables
 
