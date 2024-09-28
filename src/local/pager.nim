@@ -632,11 +632,8 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       cachedImage.data = blob
       cachedImage.state = cisLoaded
       cachedImage.cacheId = cacheId
-      if imageMode == imSixel and 4 < blob.size:
-        #TODO this should be a response header, but loader can't send us
-        # those yet...
-        let u = cast[ptr UncheckedArray[uint8]](blob.buffer)[4]
-        cachedImage.transparent = u == 1
+      let trns = response.headers.getOrDefault("Cha-Image-Sixel-Transparent", "0")
+      cachedImage.transparent = trns == "1"
     )
   )
   container.cachedImages.add(cachedImage)

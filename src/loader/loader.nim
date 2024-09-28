@@ -52,12 +52,6 @@ import types/url
 import utils/twtstr
 
 type
-  CachedItem = ref object
-    id: int
-    refc: int
-    offset: int
-    path: string
-
   ClientData = ref object
     pid: int
     key: ClientKey
@@ -242,39 +236,12 @@ proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
     return cacheId
   return -1
 
-proc findOffset(ps: PosixStream): int =
-  try:
-    var buffer = default(array[512, char])
-    var off = 0
-    var lf = 1u # we start at EOL
-    while true:
-      let n = ps.recvData(buffer)
-      if n == 0:
-        return off
-      for i in 0 ..< n:
-        let c = buffer[i]
-        if c == '\n':
-          inc lf
-          if lf == 2:
-            return off + i + 1
-        elif c != '\r':
-          lf = 0
-      off += n
-  except IOError:
-    discard
-  return -1
-
 proc openCachedItem(client: ClientData; id: int): (PosixStream, int) =
   let n = client.cacheMap.find(id)
   if n != -1:
     let item = client.cacheMap[n]
     let ps = newPosixStream(client.cacheMap[n].path, O_RDONLY, 0)
-    if item.offset == -1:
-      let offset = ps.findOffset()
-      if offset == -1:
-        client.cacheMap.del(n)
-        return (nil, -1)
-      item.offset = offset
+    assert item.offset != -1
     ps.seek(item.offset)
     return (ps, n)
   return (nil, -1)
@@ -424,7 +391,27 @@ proc parseHeaders(handle: InputHandle; buffer: LoaderBuffer): int =
     return -1
 
 proc finishParse(handle: InputHandle) =
-  discard handle.parseHeaders(nil)
+  if handle.cacheRef != nil:
+    assert handle.cacheRef.offset == -1
+    let ps = newPosixStream(handle.cacheRef.path, O_RDONLY, 0)
+    if ps != nil:
+      var buffer {.noinit.}: array[4096, char]
+      var off = 0
+      while true:
+        let n = ps.recvData(buffer)
+        if n == 0:
+          break
+        let pn = handle.parseHeaders0(buffer.toOpenArray(0, n - 1))
+        if pn == -1:
+          break
+        off += pn
+        if pn < n:
+          handle.parser = nil
+          break
+      handle.cacheRef.offset = off
+      handle.cacheRef = nil
+  if handle.parser != nil:
+    discard handle.parseHeaders(nil)
 
 type HandleReadResult = enum
   hrrDone, hrrUnregister, hrrBrokenPipe
@@ -616,12 +603,14 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
       handle.sendResult(ceCGIFailedToOpenCacheOutput)
       return
     let cacheId = handle.output.outputId # welp
-    client.cacheMap.add(CachedItem(
+    let item = CachedItem(
       id: cacheId,
       path: tmpf,
       refc: 1,
       offset: -1
-    ))
+    )
+    handle.cacheRef = item
+    client.cacheMap.add(item)
   # Pipe the request body as stdin for POST.
   var istream: PosixStream = nil # child end (read)
   var ostream: PosixStream = nil # parent end (write)
@@ -636,6 +625,9 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
       return
     cachedHandle = ctx.findCachedHandle(request.body.cacheId)
     if cachedHandle != nil: # cached item still open, switch to streaming mode
+      if client.cacheMap[n].offset == -1:
+        handle.sendResult(ceCGICachedBodyUnavailable)
+        return
       istream2 = istream
   elif request.body.t == rbtOutput:
     outputIn = ctx.findOutput(request.body.outputId, client)

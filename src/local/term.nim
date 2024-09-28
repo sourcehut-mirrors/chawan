@@ -822,7 +822,7 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   # set raster attributes
   outs &= "\"1;1;" & $realw & ';' & $realh
   term.write(outs)
-  term.write(data.toOpenArray(5, preludeLen - 1))
+  term.write(data.toOpenArray(4, preludeLen - 1))
   let lookupTableLen = int(data.getU32BE(data.len - 4))
   let L = data.len - lookupTableLen - 4
   # Note: we only crop images when it is possible to do so in near constant

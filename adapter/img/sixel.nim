@@ -376,11 +376,13 @@ proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
   var transparent = false
   var root = img.quantize(palette, transparent)
   # prelude
-  var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n"
+  var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n"
+  if transparent:
+    outs &= "Cha-Image-Sixel-Transparent: 1\n"
+  outs &= '\n'
   let preludeLenPos = outs.len
   if halfdump: # reserve size for prelude
     outs &= "\0\0\0\0"
-    outs &= char(transparent)
   else:
     outs &= DCS & 'q'
     # set raster attributes

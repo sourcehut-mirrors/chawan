@@ -17,6 +17,12 @@ type
     page*: ptr UncheckedArray[uint8]
     len*: int
 
+  CachedItem* = ref object
+    id*: int
+    refc*: int
+    offset*: int
+    path*: string
+
   LoaderBuffer* = ref LoaderBufferObj
 
   LoaderHandle* = ref object of RootObj
@@ -28,6 +34,7 @@ type
   InputHandle* = ref object of LoaderHandle
     outputs*: seq[OutputHandle] # list of outputs to be streamed into
     cacheId*: int # if cached, our ID in a client cacheMap
+    cacheRef*: CachedItem # if this is a tocache handle, a ref to our cache item
     parser*: HeaderParser # only exists for CGI handles
     rstate: ResponseState # track response state
 
