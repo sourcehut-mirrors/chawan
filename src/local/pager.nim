@@ -449,7 +449,7 @@ proc refreshStatusMsg*(pager: Pager) =
       " (" & $container.atPercentOf() & "%)" &
       " <" & container.getTitle()
     let hover = container.getHoverText()
-    let sl = hover.notwidth()
+    let sl = hover.width()
     var l = 0
     var i = 0
     var maxw = pager.status.grid.width - 1 # -1 for '>'

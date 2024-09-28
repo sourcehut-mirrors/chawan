@@ -183,7 +183,7 @@ proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
         display[y * display.width + x].str = " "
         inc x
       else:
-        #x = display[y * display.width + x].str.twidth(x)
+        #x = display[y * display.width + x].str.width()
         inc x
   # Draw corners.
   let tl = if upmore: VerticalBar else: CornerTopLeft
@@ -261,7 +261,7 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
     while j < select.options[i].len:
       let pj = j
       let u = select.options[i].nextUTF8(j)
-      let nx = x + u.twidth(x)
+      let nx = x + u.width()
       if nx > ex:
         break
       display[dls + x].str = select.options[i].substr(pj, j - 1)

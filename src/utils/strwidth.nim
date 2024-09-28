@@ -27,17 +27,10 @@ func width*(u: uint32): int =
         return 2
   return 1
 
-# Width, but also works with tabs.
-# Needs the column width of the text so far.
-func twidth*(u: uint32; w: int): int =
-  if u != uint32('\t'):
-    return u.width()
-  return ((w div 8) + 1) * 8 - w
-
 func width*(s: openArray[char]): int =
   var w = 0
   for u in s.points:
-    w += u.twidth(w)
+    w += u.width()
   return w
 
 func width*(s: string; start, len: int): int =
@@ -48,20 +41,8 @@ func width*(s: string; start, len: int): int =
     m = s.len
   while i < m:
     let u = s.nextUTF8(i)
-    w += u.twidth(w)
-  return w
-
-func notwidth*(s: openArray[char]): int =
-  var w = 0
-  for u in s.points:
     w += u.width()
   return w
-
-func twidth*(s: string; w: int): int =
-  var i = w
-  for u in s.points:
-    i += u.twidth(w)
-  return i - w
 
 func padToWidth*(s: string; size: int; schar = '$'): string =
   result = newStringOfCap(s.len)

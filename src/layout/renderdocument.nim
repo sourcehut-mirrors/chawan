@@ -77,7 +77,7 @@ proc findFirstX(line: var FlexibleLine; x: int; outi: var int): int =
   while cx < x and i < line.str.len:
     let pi = i
     let u = line.str.nextUTF8(i)
-    let w = u.twidth(cx)
+    let w = u.width()
     # we must ensure x is max(cx, x), otherwise our assumption of cx <= x
     # breaks down
     if cx + w > x:
@@ -194,13 +194,13 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; ostr: string;
 proc setText(line: var FlexibleLine; linestr: string; x: int; format: Format;
     node: StyledNode) =
   assert x >= 0 and linestr.len != 0
-  var targetX = x + linestr.twidth(x)
+  var targetX = x + linestr.width()
   var i = 0
   var cx = line.findFirstX(x, i) # first x of new string (before padding)
   var j = i
   var nx = x # last x of new string
   while nx < targetX and j < line.str.len:
-    nx += line.str.nextUTF8(j).twidth(nx)
+    nx += line.str.nextUTF8(j).width()
   let ostr = line.str.substr(j)
   line.setTextStr(linestr, ostr, i, x, cx, nx, targetX)
   line.setTextFormat(x, cx, nx, ostr, format, node)
@@ -210,7 +210,7 @@ proc setText(grid: var FlexibleGrid; linestr: string; x, y: int; format: Format;
   var x = x
   var i = 0
   while x < 0 and i < linestr.len:
-    x += linestr.nextUTF8(i).twidth(x)
+    x += linestr.nextUTF8(i).width()
   if x < 0:
     # highest x is outside the canvas, no need to draw
     return

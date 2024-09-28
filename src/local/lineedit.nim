@@ -26,9 +26,9 @@ type
     promptw: int
     state*: LineEditState
     escNext*: bool
-    cursorx: int # 0 ..< news.notwidth
+    cursorx: int # 0 ..< news.width
     cursori: int # 0 ..< news.len
-    shiftx: int # 0 ..< news.notwidth
+    shiftx: int # 0 ..< news.width
     shifti: int # 0 ..< news.len
     padding: int # 0 or 1
     maxwidth: int
@@ -127,7 +127,7 @@ proc insertCharseq(edit: LineEdit; s: string) =
     return
   edit.news.insert(s, edit.cursori)
   edit.cursori += s.len
-  edit.cursorx += s.notwidth()
+  edit.cursorx += s.width()
   edit.redraw = true
 
 proc cancel(edit: LineEdit) {.jsfunc.} =
@@ -270,7 +270,7 @@ proc begin(edit: LineEdit) {.jsfunc.} =
 proc `end`(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
     edit.cursori = edit.news.len
-    edit.cursorx = edit.news.notwidth()
+    edit.cursorx = edit.news.width()
     if edit.cursorx >= edit.shiftx + edit.maxwidth:
       edit.redraw = true
 
@@ -315,7 +315,7 @@ proc readLine*(prompt, current: string; termwidth: int; disallowed: set[char];
     hide: hide,
     redraw: true,
     cursori: current.len,
-    cursorx: current.notwidth(),
+    cursorx: current.width(),
     # - 1, so that the cursor always has place
     maxwidth: termwidth - promptw - 1,
     hist: hist,

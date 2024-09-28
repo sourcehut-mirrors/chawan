@@ -420,7 +420,7 @@ func cursorBytes(buffer: Buffer; y, cc: int): int =
   var i = 0
   while i < line.len and w < cc:
     let u = line.nextUTF8(i)
-    w += u.twidth(w)
+    w += u.width()
   return i
 
 proc navigate(buffer: Buffer; url: URL) =

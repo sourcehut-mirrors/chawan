@@ -308,7 +308,7 @@ func findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
   var i = starti
   while i < s.len and w < endx:
     let u = s.nextUTF8(i)
-    w += u.twidth(w)
+    w += u.width()
   return i
 
 func cursorBytes(container: Container; y: int; cc = container.cursorx): int =
@@ -327,7 +327,7 @@ func cursorFirstX(container: Container): int =
   let cc = container.cursorx
   while i < line.len:
     let u = line.nextUTF8(i)
-    let tw = u.twidth(w)
+    let tw = u.width()
     if w + tw > cc:
       return w
     w += tw
@@ -343,7 +343,7 @@ func cursorLastX(container: Container): int =
   let cc = container.cursorx
   while i < line.len and w <= cc:
     let u = line.nextUTF8(i)
-    w += u.twidth(w)
+    w += u.width()
   return max(w - 1, 0)
 
 # Last cell for tab, first cell for everything else (e.g. double width.)
@@ -361,7 +361,7 @@ func cursorDispX(container: Container): int =
   while i < line.len and w <= cc:
     u = line.nextUTF8(i)
     pw = w
-    w += u.twidth(w)
+    w += u.width()
   if u == uint32('\t'):
     return max(w - 1, 0)
   return pw
@@ -640,7 +640,7 @@ proc cursorLineTextStart(container: Container) {.jsfunc.} =
   for u in container.currentLine.points:
     if not container.luctx.isWhiteSpaceLU(u):
       break
-    x += u.twidth(x)
+    x += u.width()
   if x == 0:
     dec x
   container.setCursorX(x)
@@ -745,7 +745,7 @@ proc skipCat(container: Container; b, x: var int; breakFunc: BreakFunc;
     if container.luctx.breakFunc(u) != cat:
       b = pb
       break
-    x += u.twidth(x)
+    x += u.width()
 
 proc skipSpace(container: Container; b, x: var int; breakFunc: BreakFunc) =
   container.skipCat(b, x, breakFunc, bcSpace)
@@ -858,7 +858,7 @@ proc cursorWordEnd(container: Container; breakFunc: BreakFunc) =
       b = pb
     else:
       px = x
-      x += u.twidth(x)
+      x += u.width()
   container.skipSpace(b, x, breakFunc)
   # move to the last char in the current category
   let ob = b
@@ -873,7 +873,7 @@ proc cursorWordEnd(container: Container; breakFunc: BreakFunc) =
         b = pb
         break
       px = x
-      x += u.twidth(x)
+      x += u.width()
     x = px
   if b < container.currentLine.len or ob != b:
     container.setCursorX(x)
@@ -1255,7 +1255,7 @@ proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
     container.setCursorXYCenter(res.x, res.y, refresh)
     if container.hlon:
       container.clearSearchHighlights()
-      let ex = res.x + res.str.twidth(res.x) - 1
+      let ex = res.x + res.str.width() - 1
       let hl = Highlight(
         t: hltSearch,
         x1: res.x,
@@ -1723,7 +1723,7 @@ proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor
     # Skip cells till fromx.
     while w < container.fromx and i < line.str.len:
       let u = line.str.nextUTF8(i)
-      w += u.twidth(w)
+      w += u.width()
     let dls = by * display.width # starting position of row in display
     # Fill in the gap in case we skipped more cells than fromx mandates (i.e.
     # we encountered a double-width character.)
@@ -1740,25 +1740,20 @@ proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor
       let pw = w
       let pi = i
       let u = line.str.nextUTF8(i)
-      let uw = u.twidth(w)
+      let uw = u.width()
       w += uw
       if w > container.fromx + display.width:
         break # die on exceeding the width limit
       if nf.pos != -1 and nf.pos <= pw:
         cf = nf
         nf = line.findNextFormat(pw)
-      if u == uint32('\t'):
-        # Needs to be replaced with spaces, otherwise bgcolor isn't displayed.
-        let tk = k + uw
-        while k < tk:
-          display[dls + k].str &= ' '
-          set_fmt display[dls + k], cf
-          inc k
+      if u <= 0xFF and char(u) in Controls:
+        display[dls + k].str &= '^' & char(u).getControlLetter()
       else:
         for j in pi ..< i:
           display[dls + k].str &= line.str[j]
-        set_fmt display[dls + k], cf
-        k += uw
+      set_fmt display[dls + k], cf
+      k += uw
     if bgcolor != defaultColor:
       # Fill the screen if bgcolor is not default.
       while k < display.width:
