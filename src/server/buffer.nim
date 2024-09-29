@@ -144,12 +144,12 @@ proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
     r.sread(promise.res)
     iface.len = 0
 
-proc addPromise*[T](iface: BufferInterface; id: int): Promise[T] =
+proc addPromise[T](iface: BufferInterface; id: int): Promise[T] =
   let promise = Promise[T]()
   iface.map.add((id, promise, getFromStream[T]))
   return promise
 
-proc addEmptyPromise*(iface: BufferInterface; id: int): EmptyPromise =
+proc addEmptyPromise(iface: BufferInterface; id: int): EmptyPromise =
   let promise = EmptyPromise()
   iface.map.add((id, promise, nil))
   return promise
