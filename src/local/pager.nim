@@ -1604,8 +1604,9 @@ proc reload(pager: Pager) {.jsfunc.} =
 
 proc setEnvVars(pager: Pager) {.jsfunc.} =
   try:
-    putEnv("CHA_URL", $pager.container.url)
-    putEnv("CHA_CHARSET", $pager.container.charset)
+    if pager.container != nil:
+      putEnv("CHA_URL", $pager.container.url)
+      putEnv("CHA_CHARSET", $pager.container.charset)
   except OSError:
     pager.alert("Warning: failed to set some environment variables")
 
