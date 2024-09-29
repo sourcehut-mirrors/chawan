@@ -1,0 +1,78 @@
+#!/usr/bin/env -S qjs --std
+/* show all images in a directory.
+ * usage:
+ * - put it in your cgi-bin folder
+ * - add to ~/.urimethodmap:
+
+filei:	/cgi-bin/filei.cgi
+
+ * then visit filei:directory for a directory of images
+ *
+ * - you will notice this only works with absolute paths. as a workaround,
+ *   add this to config.toml:
+
+[[siteconf]]
+url = '^filei:'
+rewrite-url = '''
+x => {
+	if (x.pathname[0] != '/')
+		return new URL(`filei:${pager.externCapture('pwd')}/${x.pathname}`);
+}
+'''
+
+ * now you can use it like "cha filei:." to view images in the current dir.
+ *
+ * TODO:
+ * - add zoom functionality to viewer (maybe in JS?)
+ * - add some way to open any cached image here
+ * - rewrite in Nim & move into Chawan proper (maybe merge with dirlist?)
+ */
+
+const path = decodeURI(std.getenv("MAPPED_URI_PATH"));
+const viewer = std.getenv("MAPPED_URI_QUERY") == "viewer";
+const [stat, err1] = os.stat(path);
+switch (stat.mode & os.S_IFMT) {
+case os.S_IFREG: {
+	if (viewer) {
+		std.out.puts("Content-Type: text/html\n\n");
+		std.out.puts(`<center><img src=${path}></center>`);
+	} else {
+		std.out.puts("\n");
+		const f = std.open(path, 'rb');
+		const buffer = new ArrayBuffer(4096);
+		let n;
+		while ((n = f.read(buffer, 0, 4096))) {
+			std.out.write(buffer, 0, n);
+		}
+	}
+	break;
+} case os.S_IFDIR: {
+	std.out.puts("Content-Type: text/html\n\n");
+	std.out.puts("<html><body><center>")
+	const [files, err2] = os.readdir(path);
+	let dirs = "";
+	let first = true;
+	for (const file of files.map(encodeURIComponent)) {
+		if (file == '.' || file == '..')
+			continue;
+		const [stat2, err2] = os.stat(path + file);
+		if (!stat2)
+			continue;
+		switch (stat2.mode & os.S_IFMT) {
+		case os.S_IFREG:
+			if (!first)
+				std.out.puts("<br>\n");
+			first = false;
+			/* note: the CSS wouldn't be necessary if we had quirks mode... */
+			std.out.puts(`<a href='${file}?viewer'><img height=100% style="height: 100vh" src='${file}'></a>`);
+			break;
+		case os.S_IFDIR:
+			dirs += `<a href='${file}/'>${file}/</a><br>\n`;
+			break;
+		}
+	}
+	if (dirs)
+		std.out.puts("<p>Subdirs:<p>" + dirs + "\n");
+	std.out.puts("</center></body></html>");
+	break;
+}}
