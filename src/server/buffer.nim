@@ -115,15 +115,11 @@ type
     userstyle: CSSStylesheet
     window: Window
 
-  InterfaceOpaque = ref object
-    stream: SocketStream
+  BufferInterface* = ref object
+    map: seq[tuple[promiseid: int; p: EmptyPromise; get: GetValueProc]]
+    packetid: int
     len: int
     auxLen: int
-
-  BufferInterface* = ref object
-    map: PromiseMap
-    packetid: int
-    opaque: InterfaceOpaque
     stream*: BufStream
 
   BufferConfig* = object
@@ -139,20 +135,44 @@ type
     autofocus*: bool
     metaRefresh*: MetaRefresh
 
-proc getFromOpaque[T](opaque: pointer; res: var T) =
-  let opaque = cast[InterfaceOpaque](opaque)
-  if opaque.len != 0:
-    var r = opaque.stream.initReader(opaque.len, opaque.auxLen)
-    r.sread(res)
-    opaque.len = 0
+  GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.nimcall.}
+
+proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
+  if iface.len != 0:
+    let promise = Promise[T](promise)
+    var r = iface.stream.initReader(iface.len, iface.auxLen)
+    r.sread(promise.res)
+    iface.len = 0
+
+proc addPromise*[T](iface: BufferInterface; id: int): Promise[T] =
+  let promise = Promise[T]()
+  iface.map.add((id, promise, getFromStream[T]))
+  return promise
+
+proc addEmptyPromise*(iface: BufferInterface; id: int): EmptyPromise =
+  let promise = EmptyPromise()
+  iface.map.add((id, promise, nil))
+  return promise
+
+func findPromise(iface: BufferInterface; promiseid: int): int =
+  for i in 0 ..< iface.map.len:
+    if iface.map[i].promiseid == promiseid:
+      return i
+  return -1
+
+proc resolve(iface: BufferInterface; promiseid: int) =
+  let i = iface.findPromise(promiseid)
+  if i != -1:
+    let (_, promise, get) = iface.map[i]
+    if get != nil:
+      get(iface, promise)
+    promise.resolve()
+    iface.map.del(i)
 
 proc newBufferInterface*(stream: SocketStream; registerFun: proc(fd: int)):
     BufferInterface =
-  let opaque = InterfaceOpaque(stream: stream)
   return BufferInterface(
-    map: newPromiseMap(cast[pointer](opaque)),
     packetid: 1, # ids below 1 are invalid
-    opaque: opaque,
     stream: newBufStream(stream, registerFun)
   )
 
@@ -172,17 +192,17 @@ proc cloneInterface*(stream: SocketStream; registerFun: proc(fd: int)):
   return iface
 
 proc resolve*(iface: BufferInterface; packetid, len, auxLen: int) =
-  iface.opaque.len = len
-  iface.opaque.auxLen = auxLen
-  iface.map.resolve(packetid)
+  iface.len = len
+  iface.auxLen = auxLen
+  iface.resolve(packetid)
   # Protection against accidentally not exhausting data available to read,
-  # by setting opaque len to 0 in getFromOpaque.
+  # by setting len to 0 in getFromStream.
   # (If this assertion is failing, then it means you then()'ed a promise which
   # should read something from the stream with an empty function.)
-  assert iface.opaque.len == 0
+  assert iface.len == 0
 
 proc hasPromises*(iface: BufferInterface): bool =
-  return not iface.map.empty()
+  return iface.map.len > 0
 
 # get enum identifier of proxy function
 func getFunId(fun: NimNode): string =
@@ -199,18 +219,17 @@ proc buildInterfaceProc(fun: NimNode; funid: string):
   let nup = ident(funid) # add this to enums
   let this2 = newIdentDefs(ident("iface"), ident("BufferInterface"))
   let thisval = this2[0]
-  var params2: seq[NimNode]
+  var params2: seq[NimNode] = @[]
   var retval2: NimNode
   var addfun: NimNode
   if retval.kind == nnkEmpty:
     addfun = quote do:
-      `thisval`.map.addEmptyPromise(`thisval`.packetid)
+      `thisval`.addEmptyPromise(`thisval`.packetid)
     retval2 = ident("EmptyPromise")
   else:
     addfun = quote do:
-      addPromise[`retval`](`thisval`.map, `thisval`.packetid,
-        getFromOpaque[`retval`])
-    retval2 = newNimNode(nnkBracketExpr).add(ident"Promise", retval)
+      addPromise[`retval`](`thisval`, `thisval`.packetid)
+    retval2 = newNimNode(nnkBracketExpr).add(ident("Promise"), retval)
   params2.add(retval2)
   params2.add(this2)
   # flatten args

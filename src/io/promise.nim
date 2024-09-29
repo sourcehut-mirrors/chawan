@@ -14,37 +14,13 @@ type
   EmptyPromise* = ref object of RootObj
     cb: (proc())
     next: EmptyPromise
-    opaque: pointer
     state*: PromiseState
 
   Promise*[T] = ref object of EmptyPromise
-    res: T
-    get: GetValueProc[T]
-
-  GetValueProc[T] = (proc(opaque: pointer; res: var T))
-
-  PromiseMap* = object
-    tab: Table[int, EmptyPromise]
-    opaque*: pointer
+    res*: T
 
 proc newPromise*[T](): Promise[T] =
   return Promise[T]()
-
-proc newPromiseMap*(opaque: pointer): PromiseMap =
-  return PromiseMap(
-    opaque: opaque
-  )
-
-proc addPromise*[T](map: var PromiseMap; id: int; get: GetValueProc[T]):
-    Promise[T] =
-  let promise = Promise[T](get: get, opaque: map.opaque)
-  map.tab[id] = promise
-  return promise
-
-proc addEmptyPromise*(map: var PromiseMap; id: int): EmptyPromise =
-  let promise = EmptyPromise(opaque: map.opaque)
-  map.tab[id] = promise
-  return promise
 
 proc resolve*(promise: EmptyPromise) =
   var promise = promise
@@ -59,16 +35,8 @@ proc resolve*(promise: EmptyPromise) =
     promise.next = nil
 
 proc resolve*[T](promise: Promise[T]; res: T) =
-  if promise.get != nil:
-    promise.get(promise.opaque, promise.res)
-    promise.get = nil
   promise.res = res
   promise.resolve()
-
-proc resolve*(map: var PromiseMap; promiseid: int) =
-  var promise: EmptyPromise
-  if map.tab.pop(promiseid, promise):
-    promise.resolve()
 
 proc newResolvedPromise*(): EmptyPromise =
   let res = EmptyPromise()
@@ -79,9 +47,6 @@ proc newResolvedPromise*[T](x: T): Promise[T] =
   let res = newPromise[T]()
   res.resolve(x)
   return res
-
-func empty*(map: PromiseMap): bool =
-  map.tab.len == 0
 
 proc then*(promise: EmptyPromise; cb: (proc())): EmptyPromise {.discardable.} =
   promise.cb = cb
@@ -104,11 +69,7 @@ proc then*(promise: EmptyPromise; cb: (proc(): EmptyPromise)): EmptyPromise
 
 proc then*[T](promise: Promise[T]; cb: (proc(x: T))): EmptyPromise
     {.discardable.} =
-  return promise.then(proc() =
-    if promise.get != nil:
-      promise.get(promise.opaque, promise.res)
-      promise.get = nil
-    cb(promise.res))
+  return promise.then(proc() = cb(promise.res))
 
 proc then*[T](promise: EmptyPromise; cb: (proc(): Promise[T])): Promise[T]
     {.discardable.} =
@@ -189,8 +150,8 @@ proc all*(promises: seq[EmptyPromise]): EmptyPromise =
     res.resolve()
   return res
 
-# * Promise is converted to a JS promise which will be resolved when the Nim
-#   promise is resolved.
+# Promise is converted to a JS promise which will be resolved when the Nim
+# promise is resolved.
 
 proc promiseThenCallback(ctx: JSContext; this_val: JSValue; argc: cint;
     argv: ptr UncheckedArray[JSValue]; magic: cint;
@@ -279,8 +240,7 @@ proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
         JS_UNDEFINED
       else:
         toJS(ctx, x.error)
-      let res = JS_Call(ctx, resolvingFuncs[1], JS_UNDEFINED, 1,
-        x.toJSValueArray())
+      let res = JS_Call(ctx, resolvingFuncs[1], JS_UNDEFINED, 1, x.toJSValueArray())
       JS_FreeValue(ctx, res)
       JS_FreeValue(ctx, x)
     JS_FreeValue(ctx, resolvingFuncs[0])
