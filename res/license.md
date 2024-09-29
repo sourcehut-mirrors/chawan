@@ -18,7 +18,7 @@ the vendored Punycode library).
 Table of contents:
 
 * [Chawan](#chawan)
-* [QuickJS](#quickjs)
+* [QuickJS-NG](#quickjs-ng)
 * [Punycode library](#punycode-library)
 * [STB image](#stb-image)
 * [JebP](#jebp)
@@ -52,7 +52,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 For more information, please refer to <http://unlicense.org/>
 ```
 
-## QuickJS
+## QuickJS-NG
 
 Note that our vendored copy is not identical to upstream, as we include some
 patches for integration of the QuickJS and Nim runtimes.
@@ -61,10 +61,12 @@ Special thanks to zamfofex, Bo Yao, Nick Vatamaniuc and Saúl Ibarra Corretgé
 for their patches which we used during inactivity of upstream developers.
 
 ```
-QuickJS Javascript Engine
+The MIT License (MIT)
 
 Copyright (c) 2017-2021 Fabrice Bellard
 Copyright (c) 2017-2021 Charlie Gordon
+Copyright (c) 2023 Ben Noordhuis
+Copyright (c) 2023 Saúl Ibarra Corretgé
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

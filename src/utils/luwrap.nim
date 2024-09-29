@@ -2,6 +2,7 @@ import std/algorithm
 import std/strutils
 
 import monoucha/libunicode
+import monoucha/libregexp
 import utils/charcategory
 import utils/twtuni
 

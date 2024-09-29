@@ -108,8 +108,8 @@ Here's some:
 * The browser engine (HTML parsing, rendering, etc.) has been developed
   from scratch in the memory-safe Nim programming language. Some of these
   modules are now also available as separate libraries.
-* Uses [QuickJS](https://bellard.org/quickjs) for JavaScript execution and regex
-  matching.
+* Uses [QuickJS-NG](https://github.com/quickjs-ng/quickjs) for JavaScript
+  execution and regex matching.
 * Each buffer (page) is isolated in a separate process. File loading is done
   through dedicated loader processes.
 * termcap for basic terminal capability querying, and terminal queries where
