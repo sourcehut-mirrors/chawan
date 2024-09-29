@@ -1,3 +1,13 @@
+0.5.0 (2024.09.29)
+* switch to QuickJS-NG
+
+QuickJS-NG is a better maintained QuickJS fork. It has some useful
+features like support for recent standards and column tracking for
+errors.
+
+We import their latest release, which is 0.6.1. I plan to update this
+for every new QJS-NG release.
+
 0.4.3 (2024.09.17)
 * fix broken enum conversion
 
