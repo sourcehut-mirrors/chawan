@@ -67,7 +67,6 @@ export
   JS_EVAL_TYPE_MASK,
   JS_EVAL_FLAG_SHEBANG,
   JS_EVAL_FLAG_STRICT,
-  JS_EVAL_FLAG_STRIP,
   JS_EVAL_FLAG_COMPILE_ONLY,
   JSRuntime, JSContext, JSValue, JSClassID, JSAtom,
   JS_GetGlobalObject, JS_FreeValue, JS_IsException, JS_GetPropertyStr,
@@ -104,16 +103,20 @@ type
 
 var runtimes {.threadvar.}: seq[JSRuntime]
 
-proc bindMalloc(s: ptr JSMallocState; size: csize_t): pointer {.cdecl.} =
+proc bindCalloc(s: pointer; count, size: csize_t): pointer {.cdecl.} =
+  let n = count * size
+  if n > size:
+    return nil
+  return alloc0(count * size)
+
+proc bindMalloc(s: pointer; size: csize_t): pointer {.cdecl.} =
   return alloc(size)
 
-proc bindFree(s: ptr JSMallocState; p: pointer) {.cdecl.} =
-  if p == nil:
-    return
-  dealloc(p)
+proc bindFree(s: pointer; p: pointer) {.cdecl.} =
+  if p != nil:
+    dealloc(p)
 
-proc bindRealloc(s: ptr JSMallocState; p: pointer; size: csize_t): pointer
-    {.cdecl.} =
+proc bindRealloc(s: pointer; p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
 proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
@@ -140,6 +143,7 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
 proc newJSRuntime*(): JSRuntime =
   ## Instantiate a Monoucha `JSRuntime`.
   var mf {.global.} = JSMallocFunctions(
+    js_calloc: bindCalloc,
     js_malloc: bindMalloc,
     js_free: bindFree,
     js_realloc: bindRealloc,
@@ -272,7 +276,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
     unforgeable, staticfuns: JSFunctionList; ishtmldda: bool): JSClassID
     {.discardable.} =
   let rt = JS_GetRuntime(ctx)
-  discard JS_NewClassID(addr result)
+  discard JS_NewClassID(rt, addr result)
   var ctxOpaque = ctx.getOpaque()
   var rtOpaque = rt.getOpaque()
   if JS_NewClass(rt, result, cdef) != 0:

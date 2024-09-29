@@ -1,5 +1,3 @@
-* JSValueConst
-* qjs-ng
-* look into generating bindings with Futhark
 * move in jsmodules?
 * import QJS test suite
+* re-enable timezone offset as external hook

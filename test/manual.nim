@@ -38,8 +38,8 @@ test "Error handling":
   let res = ctx.eval(code, "<test>")
   check JS_IsException(res)
   const ex = """
-ReferenceError: 'abcd' is not defined
-    at <eval> (<test>)
+ReferenceError: abcd is not defined
+    at <eval> (<test>:1:1)
 """
   check ctx.getExceptionMsg() == ex
   check evalConvert[string](ctx, code, "<test>").error == ex

@@ -1,7 +1,8 @@
 # Monoucha: seamless Nim-QuickJS integration
 
-Monoucha is a wrapper library to simplify the process of embedding the QuickJS
-JavaScript engine into Nim programs.
+Monoucha is a wrapper library to simplify the process of embedding the
+[QuickJS-NG](https://github.com/quickjs-ng/quickjs) JavaScript engine into Nim
+programs.
 
 ## Quick start
 
@@ -33,7 +34,7 @@ grows.
 monoucha depends on the [nim-results](https://github.com/arnetheduck/nim-results.git)
 library.
 
-QuickJS is already included in this repository; you do not need to install it
+QuickJS-NG is already included in this repository; you do not need to install it
 separately.
 
 ## Q&A
@@ -49,11 +50,16 @@ You did not read the above instructions, you have to set --mm:refc.
 Monoucha does not (and never did) work with ORC, or other memory managers for
 that matter. You must use refc.
 
-* I already have QuickJS, why are you not linking to my system library?
+(If you are still experiencing issues, please open a ticket
+[here](https://todo.sr.ht/~bptato/chawan/) and I'll look into it.)
 
-Monoucha does not actually use stock QuickJS, but a fork that tracks upstream.
-This fork includes some GC hacks necessary for proper integration of the Nim and
-QuickJS runtimes.
+* I already have QuickJS-NG, why are you not linking to my system library?
+
+Monoucha does not actually use stock QuickJS-NG, but a fork that tracks
+upstream.
+
+This fork includes some GC modifications necessary for the synchronization
+of the Nim and QuickJS runtimes.
 
 * Can I compile Nim to JS and execute Nim from Nim?
 
@@ -73,9 +79,11 @@ Yes, it's a [pun](https://en.wikipedia.org/w/index.php?title=SpiderMonkey&oldid=
 
 ## License
 
-QuickJS was written by Fabrice Bellard and Charlie Gordon, and is distributed
-in this repository under the terms of the MIT license. See the
-[monoucha/qjs/LICENSE](monoucha/qjs/LICENSE) file for details.
+QuickJS was written by Fabrice Bellard and Charlie Gordon, and is maintained as
+QuickJS-NG by Ben Noordhuis and Saúl Ibarra Corretgé.
+
+QuickJS-NG is distributed in this repository under the terms of the MIT
+license. See the [monoucha/qjs/LICENSE](monoucha/qjs/LICENSE) file for details.
 
 Monoucha is released into the public domain. See the [UNLICENSE](UNLICENSE) file
 for details.

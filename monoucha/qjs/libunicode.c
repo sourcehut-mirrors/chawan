@@ -240,7 +240,7 @@ int lre_canonicalize(uint32_t c, BOOL is_unicode)
     } else {
         uint32_t v, code, len;
         int idx, idx_min, idx_max;
-
+        
         idx_min = 0;
         idx_max = countof(case_conv_table1) - 1;
         while (idx_min <= idx_max) {
@@ -313,14 +313,6 @@ static BOOL lre_is_in_table(uint32_t c, const uint8_t *table,
         return FALSE; /* outside the table */
     p = table + pos;
     bit = 0;
-    /* Compressed run length encoding:
-       00..3F: 2 packed lengths: 3-bit + 3-bit
-       40..5F: 5-bits plus extra byte for length
-       60..7F: 5-bits plus 2 extra bytes for length
-       80..FF: 7-bit length
-       lengths must be incremented to get character count
-       Ranges alternate between false and true return value.
-     */
     for(;;) {
         b = *p++;
         if (b < 64) {
@@ -536,8 +528,6 @@ int cr_invert(CharRange *cr)
     cr_compress(cr);
     return 0;
 }
-
-#ifdef CONFIG_ALL_UNICODE
 
 BOOL lre_is_id_start(uint32_t c)
 {
@@ -837,13 +827,6 @@ static int unicode_get_cc(uint32_t c)
     if (pos < 0)
         return 0;
     p = unicode_cc_table + pos;
-    /* Compressed run length encoding:
-       - 2 high order bits are combining class type
-       -         0:0, 1:230, 2:extra byte linear progression, 3:extra byte
-       - 00..2F: range length (add 1)
-       - 30..37: 3-bit range-length + 1 extra byte
-       - 38..3F: 3-bit range-length + 2 extra byte
-     */
     for(;;) {
         b = *p++;
         type = b >> 6;
@@ -908,13 +891,6 @@ static void sort_cc(int *buf, int len)
                 buf[k + 1] = ch1;
                 j++;
             }
-#if 0
-            printf("cc:");
-            for(k = start; k < j; k++) {
-                printf(" %3d", unicode_get_cc(buf[k]));
-            }
-            printf("\n");
-#endif
             i = j;
         }
     }
@@ -1074,8 +1050,8 @@ int unicode_script(CharRange *cr,
     int script_idx;
     const uint8_t *p, *p_end;
     uint32_t c, c1, b, n, v, v_len, i, type;
-    CharRange cr1_s, *cr1;
-    CharRange cr2_s, *cr2 = &cr2_s;
+    CharRange cr1_s = { 0 }, *cr1 = NULL;
+    CharRange cr2_s = { 0 }, *cr2 = &cr2_s;
     BOOL is_common;
 
     script_idx = unicode_find_name(unicode_script_name_table, script_name);
@@ -1196,15 +1172,6 @@ static int unicode_general_category1(CharRange *cr, uint32_t gc_mask)
     p = unicode_gc_table;
     p_end = unicode_gc_table + countof(unicode_gc_table);
     c = 0;
-    /* Compressed range encoding:
-       initial byte:
-       bits 0..4: category number (special case 31)
-       bits 5..7: range length (add 1)
-       special case bits 5..7 == 7: read an extra byte
-       - 00..7F: range length (add 7 + 1)
-       - 80..BF: 6-bits plus extra byte for range length (add 7 + 128)
-       - C0..FF: 6-bits plus 2 extra bytes for range length (add 7 + 128 + 16384)
-     */
     while (p < p_end) {
         b = *p++;
         n = b >> 5;
@@ -1258,14 +1225,6 @@ static int unicode_prop1(CharRange *cr, int prop_idx)
     p_end = p + unicode_prop_len_table[prop_idx];
     c = 0;
     bit = 0;
-    /* Compressed range encoding:
-       00..3F: 2 packed lengths: 3-bit + 3-bit
-       40..5F: 5-bits plus extra byte for length
-       60..7F: 5-bits plus 2 extra bytes for length
-       80..FF: 7-bit length
-       lengths must be incremented to get character count
-       Ranges alternate between false and true return value.
-     */
     while (p < p_end) {
         c0 = c;
         b = *p++;
@@ -1759,42 +1718,6 @@ int unicode_prop(CharRange *cr, const char *prop_name)
                                POP_XOR,
                                POP_END);
         break;
-#if 0
-    case UNICODE_PROP_ID_Start:
-        ret = unicode_prop_ops(cr,
-                               POP_GC, M(Lu) | M(Ll) | M(Lt) | M(Lm) | M(Lo) | M(Nl),
-                               POP_PROP, UNICODE_PROP_Other_ID_Start,
-                               POP_UNION,
-                               POP_PROP, UNICODE_PROP_Pattern_Syntax,
-                               POP_PROP, UNICODE_PROP_Pattern_White_Space,
-                               POP_UNION,
-                               POP_INVERT,
-                               POP_INTER,
-                               POP_END);
-        break;
-    case UNICODE_PROP_ID_Continue:
-        ret = unicode_prop_ops(cr,
-                               POP_GC, M(Lu) | M(Ll) | M(Lt) | M(Lm) | M(Lo) | M(Nl) |
-                               M(Mn) | M(Mc) | M(Nd) | M(Pc),
-                               POP_PROP, UNICODE_PROP_Other_ID_Start,
-                               POP_UNION,
-                               POP_PROP, UNICODE_PROP_Other_ID_Continue,
-                               POP_UNION,
-                               POP_PROP, UNICODE_PROP_Pattern_Syntax,
-                               POP_PROP, UNICODE_PROP_Pattern_White_Space,
-                               POP_UNION,
-                               POP_INVERT,
-                               POP_INTER,
-                               POP_END);
-        break;
-    case UNICODE_PROP_Case_Ignorable:
-        ret = unicode_prop_ops(cr,
-                               POP_GC, M(Mn) | M(Cf) | M(Lm) | M(Sk),
-                               POP_PROP, UNICODE_PROP_Case_Ignorable1,
-                               POP_XOR,
-                               POP_END);
-        break;
-#else
         /* we use the existing tables */
     case UNICODE_PROP_ID_Continue:
         ret = unicode_prop_ops(cr,
@@ -1803,7 +1726,6 @@ int unicode_prop(CharRange *cr, const char *prop_name)
                                POP_XOR,
                                POP_END);
         break;
-#endif
     default:
         if (prop_idx >= countof(unicode_prop_table))
             return -2;
@@ -1811,100 +1733,4 @@ int unicode_prop(CharRange *cr, const char *prop_name)
         break;
     }
     return ret;
-}
-
-#endif /* CONFIG_ALL_UNICODE */
-
-/*---- lre codepoint categorizing functions ----*/
-
-#define S  UNICODE_C_SPACE
-#define D  UNICODE_C_DIGIT
-#define X  UNICODE_C_XDIGIT
-#define U  UNICODE_C_UPPER
-#define L  UNICODE_C_LOWER
-#define _  UNICODE_C_UNDER
-#define d  UNICODE_C_DOLLAR
-
-uint8_t const lre_ctype_bits[256] = {
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, S, S, S, S, S, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-
-    S, 0, 0, 0, d, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    X|D, X|D, X|D, X|D, X|D, X|D, X|D, X|D,
-    X|D, X|D, 0, 0, 0, 0, 0, 0,
-
-    0, X|U, X|U, X|U, X|U, X|U, X|U, U,
-    U, U, U, U, U, U, U, U,
-    U, U, U, U, U, U, U, U,
-    U, U, U, 0, 0, 0, 0, _,
-
-    0, X|L, X|L, X|L, X|L, X|L, X|L, L,
-    L, L, L, L, L, L, L, L,
-    L, L, L, L, L, L, L, L,
-    L, L, L, 0, 0, 0, 0, 0,
-
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-
-    S, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-};
-
-#undef S
-#undef D
-#undef X
-#undef U
-#undef L
-#undef _
-#undef d
-
-/* code point ranges for Zs,Zl or Zp property */
-static const uint16_t char_range_s[] = {
-    10,
-    0x0009, 0x000D + 1,
-    0x0020, 0x0020 + 1,
-    0x00A0, 0x00A0 + 1,
-    0x1680, 0x1680 + 1,
-    0x2000, 0x200A + 1,
-    /* 2028;LINE SEPARATOR;Zl;0;WS;;;;;N;;;;; */
-    /* 2029;PARAGRAPH SEPARATOR;Zp;0;B;;;;;N;;;;; */
-    0x2028, 0x2029 + 1,
-    0x202F, 0x202F + 1,
-    0x205F, 0x205F + 1,
-    0x3000, 0x3000 + 1,
-    /* FEFF;ZERO WIDTH NO-BREAK SPACE;Cf;0;BN;;;;;N;BYTE ORDER MARK;;;; */
-    0xFEFF, 0xFEFF + 1,
-};
-
-BOOL lre_is_space_non_ascii(uint32_t c)
-{
-    size_t i, n;
-
-    n = countof(char_range_s);
-    for(i = 5; i < n; i += 2) {
-        uint32_t low = char_range_s[i];
-        uint32_t high = char_range_s[i + 1];
-        if (c < low)
-            return FALSE;
-        if (c < high)
-            return TRUE;
-    }
-    return FALSE;
 }

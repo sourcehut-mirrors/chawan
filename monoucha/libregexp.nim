@@ -59,5 +59,20 @@ proc lre_exec*(capture: ptr ptr uint8; bc_buf, cbuf: ptr uint8;
 proc lre_get_capture_count*(bc_buf: ptr uint8): cint
 
 proc lre_get_flags*(bc_buf: ptr uint8): cint
+
+const LRE_CC_RES_LEN_MAX* = 3
+
+# conv_type:
+# 0 = to upper
+# 1 = to lower
+# 2 = case folding
+# res must be an array of LRE_CC_RES_LEN_MAX
+proc lre_case_conv*(res: ptr UncheckedArray[uint32]; c: uint32;
+  conv_type: cint): cint
+
+proc lre_is_space_non_ascii*(c: uint32): cint {.importc.}
+
+proc lre_is_space*(c: uint32): cint {.importc.}
+
 {.pop.} # header, importc
 {.pop.} # raises

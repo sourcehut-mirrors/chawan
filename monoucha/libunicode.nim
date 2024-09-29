@@ -40,20 +40,5 @@ proc unicode_script*(cr: ptr CharRange; script_name: cstring; is_ext: cint):
   cint
 proc unicode_prop*(cr: ptr CharRange; prop_name: cstring): cint
 proc unicode_general_category*(cr: ptr CharRange; gc_name: cstring): cint
-
-const LRE_CC_RES_LEN_MAX* = 3
-
-# conv_type:
-# 0 = to upper
-# 1 = to lower
-# 2 = case folding
-# res must be an array of LRE_CC_RES_LEN_MAX
-proc lre_case_conv*(res: ptr UncheckedArray[uint32]; c: uint32;
-  conv_type: cint): cint
-
-proc lre_is_space_non_ascii*(c: uint32): cint {.importc.}
-
-proc lre_is_space*(c: uint32): cint {.importc.}
-
 {.pop.} # header, importc
 {.pop.} # raises
