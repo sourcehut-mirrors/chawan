@@ -56,7 +56,7 @@ toggleWrap = '''
 '''
 dupeBuffer = '() => pager.dupeBuffer()'
 load = '() => pager.load()'
-webSearch = '() => pager.load("ddg:")'
+webSearch = '() => pager.load("go:")'
 openBookmarks = '() => pager.loadSubmit("~/.w3m/bookmark.html")'
 reloadBuffer = '() => pager.reload()'
 lineInfo = '() => pager.lineInfo()'
@@ -318,6 +318,22 @@ force-pixels-per-line = false
 [[omnirule]]
 match = '^ddg:'
 substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
+
+[[omnirule]]
+match = '^go:'
+substitute-url = 'x => `https://www.google.com/search?gbv=1&ucbcb=1&q=${x.split(":").slice(1).join(":")}`'
+
+# strip tracking
+[[siteconf]]
+url = '^https?://(www\.)?google\.com'
+rewrite-url = '''
+x => {
+	if (x.pathname == "/url")
+		return new URL(x.searchParams.get("q"));
+	for (const name of ["sca_esv", "sca_upv", "oq", "aqs", "ved", "sa", "source", "ei"])
+		x.searchParams.delete(name);
+}
+'''
 
 [page]
 # buffer commands

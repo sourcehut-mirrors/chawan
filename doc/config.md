@@ -612,7 +612,9 @@ omni-rules. These are to be placed in the table array `[[omnirule]]`.
 
 Examples:
 ```
-# Search using DuckDuckGo Lite. (Bound to C-k by default.)
+# Search using DuckDuckGo Lite.
+# (This rule is included in the default config, although C-k now invokes
+# Google search.)
 [[omnirule]]
 match = '^ddg:'
 substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
@@ -879,9 +881,16 @@ Examples:
 ```toml
 # show change URL when Control, Escape and j are pressed
 'C-M-j' = 'cmd.pager.load'
+
 # go to the first line of the page when g is pressed twice without a preceding
 # number, or to the line when a preceding number is given.
 'gg' = 'cmd.buffer.gotoLineOrStart'
+
+# JS functions and expressions are accepted too. Following replaces the
+# default search engine with DuckDuckGo Lite.
+# (See api.md for a list of available functions, and a discussion on how
+# to add your own "namespaced" commands like above.)
+'C-k' = '() => pager.load("ddg:")'
 ```
 
 ### Pager actions
@@ -918,7 +927,7 @@ downloading something, that will be delayed until you restart the process.</td>
 <td><kbd>C-k</kbd></td>
 <td>`cmd.pager.webSearch`</td>
 <td>Open the URL bar with an arbitrary search engine. At the moment, this is
-DuckDuckGo Lite, but this may change in the future.</td>
+Google Search, but this may change in the future.</td>
 </tr>
 
 <tr>
