@@ -1206,8 +1206,8 @@ proc windowChange*(pager: Pager) =
 
 # Apply siteconf settings to a request.
 # Note that this may modify the URL passed.
-proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
-    loaderConfig: var LoaderClientConfig): BufferConfig =
+proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
+    loaderConfig: var LoaderClientConfig; ourl: var URL): BufferConfig =
   let host = url.host
   let ctx = pager.jsctx
   var res = BufferConfig(
@@ -1234,14 +1234,16 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
     ),
     insecureSSLNoVerify: false
   )
+  let surl = $url
   for sc in pager.config.siteconf:
-    if sc.url.isSome and not sc.url.get.match($url):
+    if sc.url.isSome and not sc.url.get.match(surl):
       continue
     elif sc.host.isSome and not sc.host.get.match(host):
       continue
     if sc.rewrite_url.isSome:
       let fun = sc.rewrite_url.get
-      var arg0 = ctx.toJS(url)
+      var tmpUrl = newURL(url)
+      var arg0 = ctx.toJS(tmpUrl)
       let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
       if not JS_IsException(ret):
         # Warning: we must only print exceptions if the *call* returned one.
@@ -1249,12 +1251,15 @@ proc applySiteconf(pager: Pager; url: var URL; charsetOverride: Charset;
         # new URL, and that's fine.
         var nu: URL
         if ctx.fromJS(ret, nu).isSome and nu != nil:
-          url = nu
+          tmpUrl = nu
       else:
         #TODO should writeException the message to console
         pager.alert("Error rewriting URL: " & ctx.getExceptionMsg())
       JS_FreeValue(ctx, arg0)
       JS_FreeValue(ctx, ret)
+      if $tmpUrl != surl:
+        ourl = tmpUrl
+        return
     if sc.cookie.isSome:
       if sc.cookie.get:
         # host/url might have changed by now
@@ -1302,7 +1307,13 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
   if referrer != nil and referrer.config.refererFrom:
     request.referrer = referrer.url
   var loaderConfig: LoaderClientConfig
-  var bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig)
+  var bufferConfig: BufferConfig
+  for i in 0 ..< pager.config.network.max_redirect:
+    var ourl: URL = nil
+    bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig, ourl)
+    if ourl == nil:
+      break
+    request.url = ourl
   if prevurl.isNone or not prevurl.get.equals(request.url, true) or
       request.url.hash == "" or request.httpMethod != hmGet or save:
     # Basically, we want to reload the page *only* when
@@ -1404,7 +1415,8 @@ proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
   pager.loader.passFd(url.pathname, fd)
   safeClose(fd)
   var loaderConfig: LoaderClientConfig
-  let bufferConfig = pager.applySiteconf(url, cs, loaderConfig)
+  var ourl: URL
+  let bufferConfig = pager.applySiteconf(url, cs, loaderConfig, ourl)
   return pager.newContainer(
     bufferConfig,
     loaderConfig,

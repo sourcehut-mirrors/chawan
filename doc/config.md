@@ -714,8 +714,9 @@ handling rules.</td>
 <tr>
 <td>rewrite-url</td>
 <td>JavaScript function</td>
-<td>A JavaScript function Chawan will pass the URL to. If a new URL is
-returned, it will replace the old one.</td>
+<td>A JavaScript function Chawan will pass the site's URL object to. If
+a new URL is returned, or the URL object is modified in any way, Chawan
+will transparently redirect the user to this new URL.</td>
 </tr>
 
 <tr>
