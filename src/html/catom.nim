@@ -124,7 +124,7 @@ static:
   doAssert (CAtomFactoryStrMapLength and (CAtomFactoryStrMapLength - 1)) == 0
 
 type
-  CAtom* = distinct int
+  CAtom* = distinct uint32
 
   CAtomFactoryInit = object
     obj: CAtomFactoryObj

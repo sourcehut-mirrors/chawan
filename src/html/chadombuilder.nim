@@ -22,12 +22,10 @@ type CharsetConfidence* = enum
   ccTentative, ccCertain, ccIrrelevant
 
 type
-  HTML5ParserWrapper* = ref object
+  HTML5ParserWrapper* = ref object of RootObj
     parser: HTML5Parser[Node, CAtom]
     builder*: ChaDOMBuilder
     opts: HTML5ParserOpts[Node, CAtom]
-    # hack so we don't have to worry about leaks or the GC deallocating parser
-    refs: seq[Document]
     stoppedFromScript: bool
 
   ChaDOMBuilder = ref object of DOMBuilder[Node, CAtom]
@@ -37,7 +35,6 @@ type
     factory: CAtomFactory
     poppedScript: HTMLScriptElement
 
-type
   DOMBuilderImpl = ChaDOMBuilder
   HandleImpl = Node
   AtomImpl = CAtom
@@ -48,10 +45,8 @@ type DOMParser = ref object # JS interface
 
 jsDestructor(DOMParser)
 
-#TODO this is disgusting and should be removed
 proc setActiveParser(document: Document; wrapper: HTML5ParserWrapper) =
-  document.parser = cast[pointer](wrapper)
-  wrapper.refs.add(document)
+  document.parser = wrapper
 
 proc getDocumentImpl(builder: ChaDOMBuilder): Node =
   return builder.document
@@ -77,7 +72,6 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   let document = newDocument(builder.factory)
   document.charset = charset
   document.setActiveParser(wrapper)
-  wrapper.refs.add(document)
   document.contentType = "text/html"
   let oldDocument = builder.document
   document.url = oldDocument.url
@@ -262,9 +256,6 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
   builder.finish()
   return root.childList
 
-# Forward declaration hack
-domParseHTMLFragment = parseHTMLFragment
-
 proc newHTML5ParserWrapper*(window: Window; url: URL; factory: CAtomFactory;
     confidence: CharsetConfidence; charset: Charset): HTML5ParserWrapper =
   let opts = HTML5ParserOpts[Node, CAtom](scripting: window.settings.scripting)
@@ -276,6 +267,9 @@ proc newHTML5ParserWrapper*(window: Window; url: URL; factory: CAtomFactory;
   )
   builder.document.setActiveParser(wrapper)
   return wrapper
+
+template toOA(writeBuffer: DocumentWriteBuffer): openArray[char] =
+  writeBuffer.data.toOpenArray(writeBuffer.i, writeBuffer.data.high)
 
 proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
     ParseResult =
@@ -312,8 +306,8 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
 
 # Called from dom whenever document.write is executed.
 # We consume everything pushed into the top buffer.
-proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.exportc.} =
-  let wrapper = cast[HTML5ParserWrapper](wrapper)
+proc parseDocumentWriteChunk(wrapper: RootRef) =
+  let wrapper = HTML5ParserWrapper(wrapper)
   let builder = wrapper.builder
   let document = builder.document
   let buffer = document.writeBuffers[^1]
@@ -345,9 +339,6 @@ proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.exportc.} =
 proc finish*(wrapper: HTML5ParserWrapper) =
   wrapper.parser.finish()
   wrapper.builder.finish()
-  for r in wrapper.refs:
-    r.parser = nil
-  wrapper.refs.setLen(0)
 
 proc newDOMParser*(): DOMParser {.jsctor.} =
   return DOMParser()
@@ -372,6 +363,10 @@ proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
     return errInternalError("XML parsing is not supported yet")
   else:
     return errTypeError("Invalid mime type")
+
+# Forward declaration hack
+domParseHTMLFragment = parseHTMLFragment
+domParseDocumentWriteChunk = parseDocumentWriteChunk
 
 proc addHTMLModule*(ctx: JSContext) =
   ctx.registerType(DOMParser)

@@ -161,7 +161,7 @@ type
     # Live collection cache: pointers to live collections are saved in all
     # nodes they refer to. These are removed when the collection is destroyed,
     # and invalidated when the owner node's children or attributes change.
-    liveCollections: HashSet[pointer]
+    liveCollections: seq[pointer]
     cachedChildNodes: NodeList
     internalDocument: Document # not nil
 
@@ -211,8 +211,7 @@ type
     cachedSheetsInvalid*: bool
     cachedChildren: HTMLCollection
     cachedForms: HTMLCollection
-    #TODO I hate this but I really don't want to put chadombuilder into dom too
-    parser*: pointer
+    parser*: RootRef
 
   CharacterData* = ref object of Node
     data* {.jsget.}: string
@@ -245,21 +244,19 @@ type
   Element* = ref object of Node
     namespace*: Namespace
     namespacePrefix*: NamespacePrefix
-    prefix*: string
-    localName*: CAtom
-
-    id* {.jsget.}: CAtom
-    name* {.jsget.}: CAtom
-    classList* {.jsget.}: DOMTokenList
-    attrs*: seq[AttrData] # sorted by int(qualifiedName)
-    internalAttributes: NamedNodeMap
     internalHover: bool
     invalid*: bool
-    cachedStyle*: CSSStyleDeclaration
-    cachedChildren: HTMLCollection
     # The owner StyledNode is marked as invalid when one of these no longer
     # matches the DOM value.
     invalidDeps*: set[DependencyType]
+    localName*: CAtom
+    id* {.jsget.}: CAtom
+    name {.jsget.}: CAtom
+    classList* {.jsget.}: DOMTokenList
+    attrs*: seq[AttrData] # sorted by int(qualifiedName)
+    cachedAttributes: NamedNodeMap
+    cachedStyle*: CSSStyleDeclaration
+    cachedChildren: HTMLCollection
 
   AttrDummyElement = ref object of Element
 
@@ -485,6 +482,7 @@ var doqs*: proc (node: Node; q: string): Element {.nimcall.} = nil
 # set in html/chadombuilder
 var domParseHTMLFragment*: proc(element: Element; s: string): seq[Node]
   {.nimcall.}
+var domParseDocumentWriteChunk*: proc(wrapper: RootRef) {.nimcall.}
 # set in html/env
 var windowFetch*: proc(window: Window; input: JSValue;
   init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
@@ -519,7 +517,7 @@ proc reset(state: var DrawingState) =
   state.strokeStyle = rgba(0, 0, 0, 255)
   state.path = newPath()
 
-proc create2DContext*(jctx: JSContext; target: HTMLCanvasElement;
+proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
     options = JS_UNDEFINED) =
   var pipefd: array[2, cint]
   if pipe(pipefd) == -1:
@@ -1112,36 +1110,36 @@ func escapeText(s: string; attribute_mode = false): string =
     else:
       result &= c
 
-func `$`*(node: Node): string =
-  # Note: this function should only be used for debugging.
-  if node == nil:
-    return "null"
-  if node of Element:
-    let element = Element(node)
-    result = "<" & element.localNameStr
-    for attr in element.attrs:
-      let k = element.document.toStr(attr.localName)
-      result &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
-    result &= ">\n"
-    for node in element.childList:
-      for line in ($node).split('\n'):
-        result &= "\t" & line & "\n"
-    result &= "</" & element.localNameStr & ">"
-  elif node of Text:
-    let text = Text(node)
-    result = text.data.escapeText()
-  elif node of Comment:
-    result = "<!-- " & Comment(node).data & "-->"
-  elif node of ProcessingInstruction:
-    result = "" #TODO
-  elif node of DocumentType:
-    result = "<!DOCTYPE" & ' ' & DocumentType(node).name & ">"
-  elif node of Document:
-    result = "Node of Document"
-  elif node of DocumentFragment:
-    result = "Node of DocumentFragment"
-  else:
-    result = "Unknown node"
+when defined(debug):
+  func `$`*(node: Node): string =
+    if node == nil:
+      return "null"
+    if node of Element:
+      let element = Element(node)
+      result = "<" & element.localNameStr
+      for attr in element.attrs:
+        let k = element.document.toStr(attr.localName)
+        result &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
+      result &= ">\n"
+      for node in element.childList:
+        for line in ($node).split('\n'):
+          result &= "\t" & line & "\n"
+      result &= "</" & element.localNameStr & ">"
+    elif node of Text:
+      let text = Text(node)
+      result = text.data.escapeText()
+    elif node of Comment:
+      result = "<!-- " & Comment(node).data & "-->"
+    elif node of ProcessingInstruction:
+      result = "" #TODO
+    elif node of DocumentType:
+      result = "<!DOCTYPE" & ' ' & DocumentType(node).name & ">"
+    elif node of Document:
+      result = "Node of Document"
+    elif node of DocumentFragment:
+      result = "Node of DocumentFragment"
+    else:
+      result = "Unknown node"
 
 func parentElement*(node: Node): Element {.jsfget.} =
   let p = node.parentNode
@@ -1258,15 +1256,16 @@ proc populateCollection(collection: Collection) =
         collection.snapshot.add(desc)
   if collection.islive:
     for child in collection.snapshot:
-      child.liveCollections.incl(collection.id)
-    collection.root.liveCollections.incl(collection.id)
+      child.liveCollections.add(collection.id)
+    collection.root.liveCollections.add(collection.id)
 
 proc refreshCollection(collection: Collection) =
   let document = collection.root.document
   if collection.id in document.invalidCollections:
     for child in collection.snapshot:
-      assert collection.id in child.liveCollections
-      child.liveCollections.excl(collection.id)
+      let i = child.liveCollections.find(collection.id)
+      assert i != -1
+      child.liveCollections.del(i)
     collection.snapshot.setLen(0)
     collection.populateCollection()
     document.invalidCollections.excl(collection.id)
@@ -1274,8 +1273,9 @@ proc refreshCollection(collection: Collection) =
 proc finalize0(collection: Collection) =
   if collection.islive:
     for child in collection.snapshot:
-      assert collection.id in child.liveCollections
-      child.liveCollections.excl(collection.id)
+      let i = child.liveCollections.find(collection.id)
+      assert i != -1
+      child.liveCollections.del(i)
     collection.root.document.invalidCollections.excl(collection.id)
 
 proc finalize(collection: HTMLCollection) {.jsfin.} =
@@ -1889,17 +1889,17 @@ func hasAttributes(element: Element): bool {.jsfunc.} =
   return element.attrs.len > 0
 
 func attributes(element: Element): NamedNodeMap {.jsfget.} =
-  if element.internalAttributes != nil:
-    return element.internalAttributes
-  element.internalAttributes = NamedNodeMap(element: element)
+  if element.cachedAttributes != nil:
+    return element.cachedAttributes
+  element.cachedAttributes = NamedNodeMap(element: element)
   for i, attr in element.attrs.mpairs:
-    element.internalAttributes.attrlist.add(Attr(
+    element.cachedAttributes.attrlist.add(Attr(
       internalDocument: element.document,
       index: -1,
       dataIdx: i,
       ownerElement: element
     ))
-  return element.internalAttributes
+  return element.cachedAttributes
 
 func findAttr(element: Element; qualifiedName: string): int =
   return element.findAttr(element.normalizeAttrQName(qualifiedName))
@@ -2016,7 +2016,7 @@ func scriptingEnabled*(document: Document): bool =
     return false
   return document.window.settings.scripting
 
-func scriptingEnabled*(element: Element): bool =
+func scriptingEnabled(element: Element): bool =
   return element.document.scriptingEnabled
 
 func isSubmitButton*(element: Element): bool =
@@ -2045,18 +2045,6 @@ func canSubmitImplicitly*(form: HTMLFormElement): bool =
       return false
   return true
 
-func qualifiedName*(element: Element): string =
-  if element.namespacePrefix != NO_PREFIX:
-    $element.namespacePrefix & ':' & element.localNameStr
-  else:
-    element.localNameStr
-
-template toOA*(writeBuffer: DocumentWriteBuffer): openArray[char] =
-  writeBuffer.data.toOpenArray(writeBuffer.i, writeBuffer.data.high)
-
-#TODO :(
-proc CDB_parseDocumentWriteChunk(wrapper: pointer) {.importc.}
-
 # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
 proc write(ctx: JSContext; document: Document; args: varargs[JSValue]):
     Err[DOMException] {.jsfunc.} =
@@ -2080,7 +2068,7 @@ proc write(ctx: JSContext; document: Document; args: varargs[JSValue]):
     text &= s
   buffer.data &= text
   if document.parserBlockingScript == nil:
-    CDB_parseDocumentWriteChunk(document.parser)
+    domParseDocumentWriteChunk(document.parser)
   return ok()
 
 func findFirst*(document: Document; tagType: TagType): HTMLElement =
@@ -2658,15 +2646,6 @@ proc parseColor(element: Element; s: string): ARGBColor =
     return ec
   return color.argbcolor
 
-#TODO ??
-func target0*(element: Element): string =
-  if element.attrb(satTarget):
-    return element.attr(satTarget)
-  for base in element.document.elements(TAG_BASE):
-    if base.attrb(satTarget):
-      return base.attr(satTarget)
-  return ""
-
 # HTMLHyperlinkElementUtils (for <a> and <area>)
 func href0(element: HTMLElement): string =
   if not element.attrb(satHref):
@@ -3023,7 +3002,7 @@ proc setInvalid*(element: Element) =
     element.document.invalid = true
 
 proc delAttr(element: Element; i: int; keep = false) =
-  let map = element.internalAttributes
+  let map = element.cachedAttributes
   let name = element.attrs[i].qualifiedName
   element.attrs.delete(i) # ordering matters
   if map != nil:
@@ -3416,7 +3395,7 @@ func cmpAttrName(a: AttrData; b: CAtom): int =
 # Returns the attr index if found, or the negation - 1 of an upper bound
 # (where a new attr with the passed name may be inserted).
 func findAttrOrNext(element: Element; qualName: CAtom): int =
-  for i, data in element.attrs:
+  for i, data in element.attrs.mpairs:
     if data.qualifiedName == qualName:
       return i
     if int(data.qualifiedName) > int(qualName):
@@ -3954,7 +3933,7 @@ proc reset*(form: HTMLFormElement) =
     control.resetElement()
     control.setInvalid()
 
-proc renderBlocking*(element: Element): bool =
+proc renderBlocking(element: Element): bool =
   if "render" in element.attr(satBlocking).split(AsciiWhitespace):
     return true
   if element of HTMLScriptElement:
@@ -3964,7 +3943,7 @@ proc renderBlocking*(element: Element): bool =
       return true
   return false
 
-proc blockRendering*(element: Element) =
+proc blockRendering(element: Element) =
   let document = element.document
   if document.contentType == "text/html" and document.body == nil:
     element.document.renderBlockingElements.add(element)

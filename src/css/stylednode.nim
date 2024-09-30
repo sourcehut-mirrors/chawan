@@ -58,19 +58,19 @@ type
 template textData*(styledNode: StyledNode): string =
   CharacterData(styledNode.node).data
 
-# For debugging
-func `$`*(node: StyledNode): string =
-  if node == nil:
-    return "nil"
-  case node.t
-  of stText:
-    return "#text " & node.textData
-  of stElement:
-    if node.node != nil:
-      return $node.node
-    return $node.pseudo
-  of stReplacement:
-    return "#replacement"
+when defined(debug):
+  func `$`*(node: StyledNode): string =
+    if node == nil:
+      return "nil"
+    case node.t
+    of stText:
+      return "#text " & node.textData
+    of stElement:
+      if node.node != nil:
+        return $node.node
+      return $node.pseudo
+    of stReplacement:
+      return "#replacement"
 
 iterator branch*(node: StyledNode): StyledNode {.inline.} =
   var node = node
