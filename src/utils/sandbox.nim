@@ -171,7 +171,8 @@ elif SandboxMode == stLibSeccomp:
       "accept4", # for when accept is implemented as accept4
       "bind", # for outgoing requests to loader
       "brk", # memory allocation
-      "clock_gettime", # used by QuickJS in atomics
+      "clock_gettime", # used by QuickJS in atomics and cpuTime()
+      "clock_gettime64", # used instead of clock_gettime on some platforms
       "clone", # for when fork is implemented as clone
       "close", # duh
       "connect", # for outgoing requests to loader
