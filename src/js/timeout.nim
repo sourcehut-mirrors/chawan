@@ -27,16 +27,14 @@ type
     timeoutid: int32
     timeouts: seq[TimeoutEntry]
     jsctx: JSContext
-    err: DynStream #TODO shouldn't be needed
     evalJSFree: EvalJSFree
     opaque: RootRef
     sorted: bool
 
-func newTimeoutState*(jsctx: JSContext; err: DynStream;
-    evalJSFree: EvalJSFree; opaque: RootRef): TimeoutState =
+func newTimeoutState*(jsctx: JSContext; evalJSFree: EvalJSFree;
+    opaque: RootRef): TimeoutState =
   return TimeoutState(
     jsctx: jsctx,
-    err: err,
     evalJSFree: evalJSFree,
     opaque: opaque,
     sorted: true
@@ -84,12 +82,12 @@ proc setTimeout*(state: var TimeoutState; t: TimeoutType; handler: JSValue;
   state.sorted = false
   return id
 
-proc runEntry(state: var TimeoutState; entry: TimeoutEntry) =
+proc runEntry(state: var TimeoutState; entry: TimeoutEntry; err: DynStream) =
   if JS_IsFunction(state.jsctx, entry.val):
     let ret = JS_Call(state.jsctx, entry.val, JS_UNDEFINED,
       cint(entry.args.len), entry.args.toJSValueArray())
     if JS_IsException(ret):
-      state.jsctx.writeException(state.err)
+      state.jsctx.writeException(err)
     JS_FreeValue(state.jsctx, ret)
   else:
     var s: string
@@ -107,7 +105,7 @@ proc sortAndGetTimeout*(state: var TimeoutState): cint =
   let now = getUnixMillis()
   return cint(max(state.timeouts[^1].expires - now, -1))
 
-proc run*(state: var TimeoutState): bool =
+proc run*(state: var TimeoutState; err: DynStream): bool =
   let H = state.timeouts.high
   let now = getUnixMillis()
   var found = false
@@ -115,7 +113,7 @@ proc run*(state: var TimeoutState): bool =
     if state.timeouts[i].expires > now:
       break
     let entry = state.timeouts[i]
-    state.runEntry(entry)
+    state.runEntry(entry, err)
     found = true
     case entry.t
     of ttTimeout: state.clearTimeout0(i)

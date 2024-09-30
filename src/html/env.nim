@@ -279,7 +279,7 @@ proc addScripting*(window: Window) =
   window.jsrt = rt
   window.jsctx = ctx
   window.importMapsAllowed = true
-  window.timeouts = newTimeoutState(ctx, window.console.err, evalJSFree, window)
+  window.timeouts = newTimeoutState(ctx, evalJSFree, window)
   ctx.addWindowModule()
   ctx.setGlobal(window)
   ctx.addDOMExceptionModule()

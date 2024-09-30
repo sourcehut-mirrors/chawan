@@ -1829,7 +1829,7 @@ proc runBuffer(buffer: Buffer) =
           alive = false
           break
     if buffer.config.scripting:
-      if buffer.window.timeouts.run():
+      if buffer.window.timeouts.run(buffer.estream):
         buffer.window.runJSJobs()
         buffer.maybeReshape()
     buffer.loader.unregistered.setLen(0)

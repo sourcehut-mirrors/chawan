@@ -586,7 +586,7 @@ proc inputLoop(client: Client) =
         client.handleWrite(efd)
       if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
         client.handleError(efd)
-    if client.timeouts.run():
+    if client.timeouts.run(client.console.err):
       let container = client.consoleWrapper.container
       if container != nil:
         container.tailOnLoad = true
@@ -634,7 +634,7 @@ proc headlessLoop(client: Client) =
         client.handleWrite(efd)
       if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
         client.handleError(efd)
-    discard client.timeouts.run()
+    discard client.timeouts.run(client.console.err)
     client.runJSJobs()
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
@@ -754,10 +754,7 @@ proc launchClient*(client: Client; pages: seq[string];
     client.hideConsole()
   client.consoleWrapper = pager.addConsole(interactive = istream != nil,
     clearFun, showFun, hideFun)
-  #TODO passing console.err here makes it impossible to change it later. maybe
-  # better associate it with jsctx
-  client.timeouts = newTimeoutState(client.jsctx, client.console.err,
-    evalJSFree2, client)
+  client.timeouts = newTimeoutState(client.jsctx, evalJSFree2, client)
   client.pager.timeouts = client.timeouts
   addExitProc((proc() = client.cleanup()))
   if client.config.start.startup_script != "":
