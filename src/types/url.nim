@@ -1177,6 +1177,7 @@ proc delete(params: URLSearchParams; name: string) {.jsfunc.} =
   for i in countdown(params.list.high, 0):
     if params.list[i][0] == name:
       params.list.delete(i)
+  params.update()
 
 proc get*(params: URLSearchParams; name: string): Option[string] {.jsfunc.} =
   for it in params.list:

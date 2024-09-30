@@ -62,6 +62,8 @@ assert_equals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://e
 	assert_equals(x.pathname, "/path");
 	assert_equals(x.search, "?search");
 	assert_equals(x.hash, "#hash");
+	x.searchParams.delete("search");
+	assert_equals(x.search, "");
 }
 document.getElementById("x").textContent = "Success";
 </script>
