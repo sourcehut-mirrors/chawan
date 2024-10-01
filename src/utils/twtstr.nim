@@ -353,8 +353,8 @@ func percentEncode*(s: openArray[char]; set: set[char]; spaceAsPlus = false):
   result = ""
   result.percentEncode(s, set, spaceAsPlus)
 
-func percentDecode*(input: openArray[char]; si = 0): string =
-  var i = si
+func percentDecode*(input: openArray[char]): string =
+  var i = 0
   while i < input.len:
     let c = input[i]
     if c != '%' or i + 2 >= input.len:
@@ -627,7 +627,7 @@ func atob(c: char): uint8 {.inline.} =
     return 63
   return uint8.high
 
-func atob0*(data: string): Result[string, string] =
+func atob0*(data: string): Result[string, cstring] =
   var outs = newStringOfCap(data.len div 4 * 3)
   var buf: array[4, uint8]
   var i = 0

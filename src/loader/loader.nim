@@ -806,7 +806,7 @@ proc loadData(ctx: LoaderContext; handle: InputHandle; request: Request) =
     handle.close()
     return
   let sd = ct.len + 1 # data start
-  let body = percentDecode(url.path.s, sd)
+  let body = percentDecode(url.path.s.toOpenArray(sd, url.path.s.high))
   if ct.endsWith(";base64"):
     let d = atob0(body) # decode from ct end + 1
     if d.isNone:

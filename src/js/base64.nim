@@ -12,7 +12,7 @@ proc atob*(data: string): DOMResult[NarrowString] =
   # Note: the actual atob implementation (atob0) is in twtstr.
   let r = atob0(data)
   if r.isNone:
-    return errDOMException(r.error, "InvalidCharacterError")
+    return errDOMException($r.error, "InvalidCharacterError")
   return ok(NarrowString(r.get))
 
 const AMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
