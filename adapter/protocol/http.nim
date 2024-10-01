@@ -10,8 +10,6 @@ import curl
 import curlerrors
 import curlwrap
 
-import utils/twtstr
-
 type
   EarlyHintState = enum
     ehsNone, ehsStarted, ehsDone
@@ -90,6 +88,13 @@ proc curlPreRequest(clientp: pointer; conn_primary_ip, conn_local_ip: cstring;
   enterNetworkSandbox()
   return 0 # ok
 
+func startsWithIgnoreCase(s1, s2: openArray[char]): bool =
+  if s1.len < s2.len: return false
+  for i in 0 ..< s2.len:
+    if s1[i].toLowerAscii() != s2[i].toLowerAscii():
+      return false
+  return true
+
 proc main() =
   let curl = curl_easy_init()
   doAssert curl != nil
@@ -147,8 +152,9 @@ proc main() =
   else: discard #TODO
   let headers = getEnv("REQUEST_HEADERS")
   for line in headers.split("\r\n"):
-    if line.startsWithIgnoreCase("Accept-Encoding: "):
-      let s = line.after(' ')
+    const needle = "Accept-Encoding: "
+    if line.startsWithIgnoreCase(needle):
+      let s = line.substr(needle.len)
       # From the CURLOPT_ACCEPT_ENCODING manpage:
       # > The application does not have to keep the string around after
       # > setting this option.

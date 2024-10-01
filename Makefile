@@ -91,18 +91,18 @@ $(OUTDIR_CGI_BIN)/gmifetch: adapter/protocol/gmifetch.c
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(CC) $(GMIFETCH_CFLAGS) adapter/protocol/gmifetch.c -o "$(OUTDIR_CGI_BIN)/gmifetch" $(GMIFETCH_LDFLAGS)
 
-twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim src/utils/twtuni.nim
+twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim \
+	src/utils/twtuni.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim src/io/serversocket.nim
 lcgi = $(dynstream) $(twtstr) adapter/protocol/lcgi.nim
+curl = adapter/protocol/curl.nim adapter/protocol/curlerrors.nim
 $(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
-		lib/monoucha/monoucha/libregexp.nim src/types/opt.nim $(twtstr)
-$(OUTDIR_CGI_BIN)/http: adapter/protocol/curlwrap.nim \
-		adapter/protocol/curlerrors.nim adapter/protocol/curl.nim \
-		src/utils/sandbox.nim $(twtstr)
+		lib/monoucha/monoucha/libregexp.nim $(twtstr)
+$(OUTDIR_CGI_BIN)/http: $(curl) src/utils/sandbox.nim
 $(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
-$(OUTDIR_CGI_BIN)/file: adapter/protocol/dirlist.nim $(twtstr) src/utils/strwidth.nim
-$(OUTDIR_CGI_BIN)/ftp: adapter/protocol/dirlist.nim $(twtstr) src/utils/strwidth.nim \
-		src/types/opt.nim adapter/protocol/curl.nim
+$(OUTDIR_CGI_BIN)/file: $(twtstr) adapter/protocol/dirlist.nim src/utils/strwidth.nim
+$(OUTDIR_CGI_BIN)/ftp: $(lcgi) adapter/protocol/dirlist.nim src/utils/strwidth.nim
+$(OUTDIR_CGI_BIN)/sftp: $(curl) $(twtstr) src/utils/strwidth.nim adapter/protocol/dirlist.nim
 $(OUTDIR_CGI_BIN)/gopher: adapter/gophertypes.nim $(lcgi)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h src/utils/sandbox.nim $(dynstream)
