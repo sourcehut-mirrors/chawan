@@ -113,6 +113,7 @@ type
     cursorx: int
     cursory: int
     colorMap: array[16, RGBColor]
+    tname: string
 
 # control sequence introducer
 const CSI = "\e["
@@ -983,11 +984,8 @@ proc quit*(term: Terminal) =
 
 when TermcapFound:
   proc loadTermcap(term: Terminal) =
-    var tname = getEnv("TERM")
-    if tname == "":
-      tname = "dosansi"
     let tc = Termcap()
-    var res = tgetent(cast[cstring](addr tc.bp), cstring(tname))
+    var res = tgetent(cast[cstring](addr tc.bp), cstring(term.tname))
     if res == 0: # retry as dosansi
       res = tgetent(cast[cstring](addr tc.bp), "dosansi")
     if res > 0: # success
@@ -1065,10 +1063,20 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
   if not windowOnly:
     var outs = ""
-    if term.config.display.default_background_color.isNone:
-      outs &= XTGETBG
-    if term.config.display.default_foreground_color.isNone:
-      outs &= XTGETFG
+    if term.tname != "screen":
+      # screen has a horrible bug (feature?) where the responses to
+      # bg/fg queries are printed out of order (presumably because it
+      # must ask the terminal first).
+      #
+      # Of course, I can't work around this either, because screen won't
+      # respond from terminals that don't support this query. So I'll
+      # do the sole reasonable thing and skip default color queries.
+      #
+      # (By the way, tmux works as expected. Sigh.)
+      if term.config.display.default_background_color.isNone:
+        outs &= XTGETBG
+      if term.config.display.default_foreground_color.isNone:
+        outs &= XTGETFG
     if term.config.display.image_mode.isNone:
       outs &= KITTYQUERY
       outs &= XTNUMREGS
@@ -1224,6 +1232,11 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
   var res = tsrSuccess
   if not term.isatty():
     return res
+  if not windowOnly:
+    # set tname here because queryAttrs depends on it
+    term.tname = getEnv("TERM")
+    if term.tname == "":
+      term.tname = "dosansi"
   var win: IOctl_WinSize
   if ioctl(term.istream.fd, TIOCGWINSZ, addr win) != -1:
     term.attrs.width = int(win.ws_col)
@@ -1248,7 +1261,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       if not windowOnly: # we don't check for kitty, so don't override this
         if qaKittyImage in r.attrs:
           term.imageMode = imKitty
-        elif qaSixel in r.attrs or getEnv("TERM").startsWith("yaft"): # meh
+        elif qaSixel in r.attrs or term.tname.startsWith("yaft"): # meh
           term.imageMode = imSixel
       if term.imageMode == imSixel: # adjust after windowChange
         if r.registers != 0:
