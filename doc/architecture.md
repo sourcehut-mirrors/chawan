@@ -135,9 +135,10 @@ Scenario: the user attempts to navigate to <https://example.org>.
 1. pager creates a new container for the target URL.
 2. pager sends a request for "https://example.org" to the loader. Then, it
    registers the file descriptor in its selector, and does something else until
-   select() reports activity on the file descriptor.
+   poll() reports activity on the file descriptor.
 3. loader rewrites "https://example.org" into "cgi-bin:http". It then runs the
-   http CGI script with the appropriate environment variables set.
+   http CGI script with the appropriate environment variables set to parts of
+   this URL and request headers.
 4. The http CGI script opens a connection to example.org. When connected, it
    starts printing out headers it receives to stdout.
 5. loader parses these headers, and sends them to pager.
@@ -150,9 +151,49 @@ Scenario: the user attempts to navigate to <https://example.org>.
 	* If Content-Type is text/html, then a new buffer process is created,
 	  which then parses the response body as HTML. If it is any `text/*`
 	  subtype, then the response is simply inserted into a `<plaintext>` tag.
-	* If Content-Type is not a `text/*` type, and no mailcap entry for it
+	* If Content-Type is not a `text/*` subtype, and no mailcap entry for it
 	  is found, then the user is prompted about where they wish to save the
 	  file.
+
+## Cache
+
+Chawan's caching mechanism is largely inspired by that of w3m, which does not
+have a network cache. Instead, it simply saves source files to the disk before
+displaying them, and lets users view/edit the source without another network
+request.
+
+Chawan improves upon this by simultaneously streaming files to the cache and
+buffers:
+
+1. Client (pager or buffer) initiates request by sending a message to loader.
+2. Loader starts CGI script, reads headers, sends a response, and waits.
+3. Client now may send an "addCacheFile" message, which prompts loader to add a
+   cache file for this request.
+4. Client sends resume, now loader will stream the response both to the client
+   and the cache.
+
+Cached items may be shared between clients; this is how rewinding on wrong
+charset guess is implemented. They are also manually reference counted and are
+unlinked when their reference count drops to zero.
+
+The cache is used in the following ways:
+
+* For view source and edit source operations.
+* For rewinding buffers on incorrect charset guess. (In practice, this is almost
+  never used, because the first chunk we read tends to determine the charset
+  unambiguously.)
+* For reading images multiple times after download. (At least two reads are
+  needed, because the first pass only parses the headers.)
+* As a memory buffer for image coding processes to mmap. (For details, see
+  [image.md](image.md).)
+
+Crucially, the cache *does not* understand Cache-Control headers, and will never
+skip a download when requested by a user. Similarly, loading a "cache:" URL
+(e.g. view source) is guaranteed to never make a network request.
+
+Future directions: for non-JS buffers, we could kill idle processes and reload
+them on-demand from the cache. This could solve the problem of spawning too many
+processes that then do nothing.
 
 ## Parsing HTML
 

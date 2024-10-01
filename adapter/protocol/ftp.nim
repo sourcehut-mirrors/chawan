@@ -1,94 +1,16 @@
 import std/options
 import std/os
+import std/posix
 import std/strutils
 
-import curl
-import curlerrors
-import curlwrap
+import lcgi
 import dirlist
 
 import utils/twtstr
 
-type FtpHandle = ref object
-  curl: CURL
-  buffer: string
-  dirmode: bool
-  base: string
-  path: string
-  statusline: bool
-
-proc printHeader(op: FtpHandle) =
-    if op.dirmode:
-      stdout.write("""Content-Type: text/html
-
-<HTML>
-<HEAD>
-<BASE HREF=""" & op.base & """>
-<TITLE>""" & op.path & """</TITLE>
-</HEAD>
-<BODY>
-<H1>Index of """ & htmlEscape(op.path) & """</H1>
-<PRE>
-""")
-    else:
-      stdout.write('\n')
-
-proc curlWriteHeader(p: cstring; size, nitems: csize_t; userdata: pointer):
-    csize_t {.cdecl.} =
-  var line = newString(nitems)
-  if nitems > 0:
-    copyMem(addr line[0], p, nitems)
-  let op = cast[FtpHandle](userdata)
-  if not op.statusline:
-    if line.startsWith("150") or line.startsWith("125"):
-      op.statusline = true
-      var status: clong
-      op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-      stdout.write("Status: " & $status & "\n")
-      op.printHeader()
-      return nitems
-    elif line.startsWith("530"): # login incorrect
-      op.statusline = true
-      var status: clong
-      op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-      # unauthorized (shim http)
-      stdout.write("""
-Status: 401
-Content-Type: text/html
-
-<HTML>
-<HEAD>
-<TITLE>Unauthorized</TITLE>
-</HEAD>
-<BODY>
-<PRE>
-""" & htmlEscape(line) & """
-</PRE>
-</BODY>
-</HTML>
-""")
-  return nitems
-
-# From the documentation: size is always 1.
-proc curlWriteBody(p: cstring; size, nmemb: csize_t; userdata: pointer):
-    csize_t {.cdecl.} =
-  let op = cast[FtpHandle](userdata)
-  if not op.statusline:
-    op.statusline = true
-    op.printHeader()
-  if nmemb > 0:
-    if op.dirmode:
-      let i = op.buffer.len
-      op.buffer.setLen(op.buffer.len + int(nmemb))
-      copyMem(addr op.buffer[i], p, nmemb)
-    else:
-      return csize_t(stdout.writeBuffer(p, int(nmemb)))
-  return nmemb
-
-proc finish(op: FtpHandle) =
-  let op = op
+proc finish(buffer: string) =
   var items: seq[DirlistItem] = @[]
-  for line in op.buffer.split('\n'):
+  for line in buffer.split('\n'):
     if line.len == 0: continue
     var i = 10 # permission
     template skip_till_space =
@@ -122,7 +44,10 @@ proc finish(op: FtpHandle) =
     skip_till_space # y
     let dates = line.substr(datestarti, i)
     inc i
-    let name = line.substr(i)
+    var j = line.len
+    if line[^1] == '\r':
+      dec j
+    let name = line.substr(i, j - 1)
     if name == "." or name == "..": continue
     case line[0]
     of 'l': # link
@@ -151,172 +76,133 @@ proc finish(op: FtpHandle) =
   stdout.write(makeDirlist(items))
   stdout.write("\n</PRE>\n</BODY>\n</HTML>\n")
 
-proc matchesPattern(s, pat: openArray[char]): bool =
-  var i = 0
-  for j, c in pat:
-    if c == '*':
-      while i < s.len:
-        if s.toOpenArray(i, s.high).matchesPattern(pat.toOpenArray(j + 1,
-            pat.high)):
-          return true
-        inc i
-      return false
-    if i >= s.len or c != '?' and c != s[i]:
-      return false
-    inc i
-  return true
+proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
+    int32 =
+  if cmd != "":
+    if param == "":
+      ps.sendDataLoop(cmd & "\r\n")
+    else:
+      ps.sendDataLoop(cmd & ' ' & param & "\r\n")
+  var buf = newString(4)
+  try:
+    ps.recvDataLoop(buf)
+  except EOFError:
+    os.die("InvalidResponse")
+  if buf.len < 4:
+    os.die("InvalidResponse")
+  outs = ""
+  while (let c = ps.sreadChar(); c != '\n'):
+    outs &= c
+  let status = parseInt32(buf.toOpenArray(0, 2)).get(-1)
+  if buf[3] == ' ':
+    return status
+  buf[3] = ' '
+  while true: # multiline
+    var lbuf = ""
+    while (let c = ps.sreadChar(); c != '\n'):
+      lbuf &= c
+    outs &= lbuf
+    if lbuf.startsWith(buf):
+      break
+  return status
 
-proc matchesPattern(s: string; pats: openArray[string]): bool =
-  for pat in pats:
-    if s.matchesPattern(pat):
-      return true
-  return false
+proc sdie(os: PosixStream; status: int; s, obuf: string) {.noreturn.} =
+  os.sendDataLoop("Status: " & $status & "\nContent-Type: text/html\n\n" & """
+<h1>""" & s & """</h1>
 
-proc parseSSHConfig(f: File; curl: CURL; host: string; idSet: var bool) =
-  var skipTillNext = false
-  var line: string
-  var certificateFile = ""
-  var identityFile = ""
-  while f.readLine(line):
-    var i = line.skipBlanks(0)
-    if i == line.len or line[i] == '#':
-      continue
-    let k = line.until(AsciiWhitespace, i)
-    i = line.skipBlanks(i + k.len)
-    if i < line.len and line[i] == '=':
-      i = line.skipBlanks(i + 1)
-    if i == line.len or line[i] == '#':
-      continue
-    var args = newSeq[string]()
-    while i < line.len:
-      let isStr = line[i] in {'"', '\''}
-      if isStr:
-        inc i
-      var quot = false
-      var arg = ""
-      while i < line.len:
-        if not quot:
-          if line[i] == '\\':
-            quot = true
-            continue
-          elif line[i] == '"' and isStr or line[i] == ' ' and not isStr:
-            inc i
-            break
-        quot = false
-        arg &= line[i]
-        inc i
-      if arg.len > 0:
-        args.add(arg)
-    if k == "Match": #TODO support this
-      skipTillNext = true
-    elif k == "Host":
-      skipTillNext = not host.matchesPattern(args)
-    elif skipTillNext:
-      continue
-    elif k == "IdentityFile":
-      if args.len != 1:
-        continue # error
-      identityFile = expandTilde(args[0])
-    elif k == "CertificateFile":
-      if args.len != 1:
-        continue # error
-      certificateFile = expandTilde(args[0])
-  if identityFile != "":
-    curl.setopt(CURLOPT_SSH_PRIVATE_KEYFILE, identityFile)
-    idSet = true
-  if certificateFile != "":
-    curl.setopt(CURLOPT_SSH_PUBLIC_KEYFILE, certificateFile)
-  f.close()
+The server has returned the following message:
+
+<plaintext>
+""" & obuf)
+
+const Success = 200 .. 299
+proc passiveMode(os, ps: PosixStream; host: string; ipv6: bool): PosixStream =
+  var obuf = ""
+  if ipv6:
+    if os.sendCommand(ps, "EPSV", "", obuf) != 229:
+      os.die("InvalidResponse")
+    var i = obuf.find('(')
+    if i == -1:
+      os.die("InvalidResponse")
+    i += 4 # skip delims
+    let j = obuf.find(')', i)
+    if j == -1:
+      os.die("InvalidResponse")
+    let port = obuf.substr(i, j - 2)
+    return os.connectSocket(host, port)
+  if os.sendCommand(ps, "PASV", "", obuf) notin Success:
+    os.sdie(500, "Couldn't enter passive mode", obuf)
+  let i = obuf.find(AsciiDigit)
+  if i == -1:
+    os.die("InvalidResponse")
+  var j = obuf.find(AllChars - AsciiDigit - {','}, i)
+  if j == -1:
+    j = obuf.len
+  let ss = obuf.substr(i, j - 1).split(',')
+  if ss.len < 6:
+    os.die("InvalidResponse")
+  var ipv4 = ss[0]
+  for x in ss.toOpenArray(1, 3):
+    ipv4 &= '.'
+    ipv4 &= x
+  let x = parseUInt16(ss[4])
+  let y = parseUInt16(ss[5])
+  if x.isNone or y.isNone:
+    os.die("InvalidResponse")
+  let port = $((x.get shl 8) or y.get)
+  return os.connectSocket(host, port)
 
 proc main() =
-  let curl = curl_easy_init()
-  doAssert curl != nil
+  let os = newPosixStream(STDOUT_FILENO)
   var opath = getEnv("MAPPED_URI_PATH")
   if opath == "":
     opath = "/"
   let path = percentDecode(opath)
-  let op = FtpHandle(
-    curl: curl,
-    dirmode: path.len > 0 and path[^1] == '/'
-  )
-  let url = curl_url()
-  const flags = cuint(CURLU_PATH_AS_IS)
-  let scheme = getEnv("MAPPED_URI_SCHEME")
-  url.set(CURLUPART_SCHEME, scheme, flags)
-  let username = getEnv("MAPPED_URI_USERNAME")
-  if username != "":
-    url.set(CURLUPART_USER, username, flags)
+  let dirmode = path.len > 0 and path[^1] == '/'
   let host = getEnv("MAPPED_URI_HOST")
+  let username = getEnv("MAPPED_URI_USERNAME")
   let password = getEnv("MAPPED_URI_PASSWORD")
-  var idSet = false
-  # Parse SSH config for sftp.
-  if scheme == "sftp":
-    let systemConfig = "/etc/ssh/ssh_config"
-    if fileExists(systemConfig):
-      var f: File
-      if f.open(systemConfig):
-        parseSSHConfig(f, curl, host, idSet)
-    let userConfig = expandTilde("~/.ssh/config")
-    if fileExists(userConfig):
-      var f: File
-      if f.open(userConfig):
-        parseSSHConfig(f, curl, host, idSet)
-    if idSet:
-      curl.setopt(CURLOPT_KEYPASSWD, password)
-  url.set(CURLUPART_PASSWORD, password, flags)
-  url.set(CURLUPART_HOST, host, flags)
-  let port = getEnv("MAPPED_URI_PORT")
-  if port != "":
-    url.set(CURLUPART_PORT, port, flags)
-  # By default, cURL CWD's into relative paths, and an extra slash is
-  # necessary to specify absolute paths.
-  # This is incredibly confusing, and probably not what the user wanted.
-  # So we work around it by adding the extra slash ourselves.
-  #
-  # But before that, we take the serialized URL without the path for
-  # setting the base URL:
-  url.set(CURLUPART_PATH, opath, flags)
-  if op.dirmode:
-    let surl = url.get(CURLUPART_URL, cuint(CURLU_PUNY2IDN))
-    if surl == nil:
-      stdout.write("Cha-Control: ConnectionError InvalidURL\n")
-      curl_url_cleanup(url)
-      curl_easy_cleanup(curl)
-      return
-    op.base = $surl
-    op.path = path
-    curl_free(surl)
-  # Now for the workaround:
-  if scheme != "sftp" and (opath.len <= 1 or opath[1] != '~'):
-    url.set(CURLUPART_PATH, '/' & opath, flags)
-  # Another hack: if password was set for the identity file, then clear it from
-  # the URL.
-  if idSet:
-    url.set(CURLUPART_PASSWORD, nil, flags)
-  # Set opts for the request
-  curl.setopt(CURLOPT_CURLU, url)
-  curl.setopt(CURLOPT_HEADERDATA, op)
-  curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
-  curl.setopt(CURLOPT_WRITEDATA, op)
-  curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
-  curl.setopt(CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD)
-  let purl = getEnv("ALL_PROXY")
-  if purl != "":
-    curl.setopt(CURLOPT_PROXY, purl)
+  var port = getEnv("MAPPED_URI_PORT")
+  if port == "":
+    port = "21"
   if getEnv("REQUEST_METHOD") != "GET":
     # fail
-    stdout.write("Cha-Control: ConnectionError InvalidMethod\n")
+    os.die("InvalidMethod")
+  var ipv6: bool
+  let ps = os.connectSocket(host, port, ipv6)
+  var obuf = ""
+  if os.sendCommand(ps, "", "", obuf) != 220:
+    let s = obuf.deleteChars({'\n', '\r'})
+    os.die("ConnectionRefused " & s)
+  var ustatus = os.sendCommand(ps, "USER", username, obuf)
+  if ustatus == 331:
+    ustatus = os.sendCommand(ps, "PASS", password, obuf)
+  if ustatus in Success:
+    discard # no need for pass
   else:
-    let res = curl_easy_perform(curl)
-    if res != CURLE_OK:
-      if not op.statusline:
-        if res == CURLE_LOGIN_DENIED:
-          stdout.write("Status: 401\n")
-        else:
-          stdout.write(getCurlConnectionError(res))
-    elif op.dirmode:
-      op.finish()
-  curl_url_cleanup(url)
-  curl_easy_cleanup(curl)
+    os.sdie(401, "Unauthorized", obuf)
+  discard os.sendCommand(ps, "TYPE", "I", obuf) # request raw data
+  let passive = os.passiveMode(ps, host, ipv6)
+  if dirmode:
+    if os.sendCommand(ps, "LIST", "", obuf) == 550:
+      os.sdie(404, "Not found", obuf)
+    os.sendDataLoop("""Content-Type: text/html
+
+<HTML>
+<BODY>
+<H1>Index of """ & htmlEscape(path) & """</H1>
+<PRE>""")
+    let buffer = passive.recvAll()
+    finish(buffer)
+  else:
+    if os.sendCommand(ps, "RETR", path, obuf) == 550:
+      os.sdie(404, "Not found", obuf)
+    os.sendDataLoop("\n")
+    var buffer {.noinit.}: array[4096, uint8]
+    while true:
+      let n = passive.recvData(buffer)
+      if n == 0:
+        break
+      os.sendDataLoop(buffer.toOpenArray(0, n - 1))
 
 main()

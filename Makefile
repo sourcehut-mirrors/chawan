@@ -49,7 +49,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gmifetch $(OUTDIR_LIBEXEC)/gmi2html \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
-	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp \
+	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp $(OUTDIR_CGI_BIN)/sftp \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
 	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp $(OUTDIR_CGI_BIN)/canvas \
 	$(OUTDIR_CGI_BIN)/sixel $(OUTDIR_CGI_BIN)/resize \
@@ -171,7 +171,8 @@ manpages = $(manpages1) $(manpages5)
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
-protocols = http about file ftp gopher gmifetch cha-finger man spartan stbi jebp sixel canvas resize
+protocols = http about file ftp sftp gopher gmifetch cha-finger man spartan stbi \
+	jebp sixel canvas resize
 converters = gopher2html md2html ansi2html gmi2html
 tools = urlenc
 

@@ -9,12 +9,14 @@ import utils/twtstr
 export dynstream
 export twtstr
 
+export STDIN_FILENO, STDOUT_FILENO
+
 proc die*(os: PosixStream; s: string) =
   os.sendDataLoop("Cha-Control: ConnectionError " & s)
   quit(1)
 
 proc openSocket(os: PosixStream; host, port, resFail, connFail: string;
-    res: var ptr AddrInfo): SocketHandle =
+    res: var ptr AddrInfo; outIpv6: var bool): SocketHandle =
   var err: cint
   for family in [AF_INET, AF_INET6, AF_UNSPEC]:
     var hints = AddrInfo(
@@ -28,19 +30,20 @@ proc openSocket(os: PosixStream; host, port, resFail, connFail: string;
   if err < 0:
     os.die(resFail & ' ' & $gai_strerror(err))
   let sock = socket(res.ai_family, res.ai_socktype, res.ai_protocol)
-  freeaddrinfo(res)
   if cint(sock) < 0:
     os.die("InternalError could not open socket")
   return sock
 
-proc connectSocket(os: PosixStream; host, port, resFail, connFail: string):
-    PosixStream =
+proc connectSocket(os: PosixStream; host, port, resFail, connFail: string;
+    outIpv6: var bool): PosixStream =
   var res: ptr AddrInfo
-  let sock = os.openSocket(host, port, resFail, connFail, res)
+  let sock = os.openSocket(host, port, resFail, connFail, res, outIpv6)
   let ps = newPosixStream(sock)
   if connect(sock, res.ai_addr, res.ai_addrlen) < 0:
     ps.sclose()
     os.die(connFail)
+  outIpv6 = res.ai_family == AF_INET6
+  freeaddrinfo(res)
   return ps
 
 proc authenticateSocks5(os, ps: PosixStream; buf: array[2, uint8];
@@ -101,8 +104,9 @@ proc sendSocks5Domain(os, ps: PosixStream; host, port: string) =
 
 proc connectSocks5Socket(os: PosixStream; host, port, proxyHost, proxyPort,
     proxyUser, proxyPass: string): PosixStream =
+  var dummy = false
   let ps = os.connectSocket(proxyHost, proxyPort, "FailedToResolveProxy",
-    "ProxyRefusedToConnect")
+    "ProxyRefusedToConnect", dummy)
   const NoAuth = "\x05\x01\x00"
   const WithAuth = "\x05\x02\x00\x02"
   ps.sendDataLoop(if proxyUser != "": NoAuth else: WithAuth)
@@ -112,8 +116,8 @@ proc connectSocks5Socket(os: PosixStream; host, port, proxyHost, proxyPort,
   os.sendSocks5Domain(ps, host, port)
   return ps
 
-proc connectProxySocket(os: PosixStream; host, port, proxy: string):
-    PosixStream =
+proc connectProxySocket(os: PosixStream; host, port, proxy: string;
+    outIpv6: var bool): PosixStream =
   let scheme = proxy.until(':')
   # We always use socks5h, actually.
   if scheme != "socks5" and scheme != "socks5h":
@@ -141,9 +145,17 @@ proc connectProxySocket(os: PosixStream; host, port, proxy: string):
   let proxyPort = proxy.substr(i)
   return os.connectSocks5Socket(host, port, proxyHost, proxyPort, user, pass)
 
-proc connectSocket*(os: PosixStream; host, port: string): PosixStream =
+# Note: outIpv6 is not read; it just indicates whether the socket's
+# address is IPv6.
+# In case we connect to a proxy, only the target matters.
+proc connectSocket*(os: PosixStream; host, port: string; outIpv6: var bool):
+    PosixStream =
   let proxy = getEnv("ALL_PROXY")
   if proxy != "":
-    return os.connectProxySocket(host, port, proxy)
+    return os.connectProxySocket(host, port, proxy, outIpv6)
   return os.connectSocket(host, port, "FailedToResolveHost",
-    "ConnectionRefused")
+    "ConnectionRefused", outIpv6)
+
+proc connectSocket*(os: PosixStream; host, port: string): PosixStream =
+  var dummy = false
+  return os.connectSocket(host, port, dummy)

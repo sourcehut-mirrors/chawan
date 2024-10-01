@@ -7,8 +7,7 @@ gemini:			cgi-bin:gmifetch
 about:			cgi-bin:about
 file:			cgi-bin:file
 ftp:			cgi-bin:ftp
-sftp:			cgi-bin:ftp
-ftps:			cgi-bin:ftp
+sftp:			cgi-bin:sftp
 gopher:			cgi-bin:gopher
 spartan:		cgi-bin:spartan
 man:			cgi-bin:man

@@ -14,6 +14,7 @@ this document.
 
 * [HTTP](#http)
 * [FTP](#ftp)
+* [SFTP](#sftp)
 * [Gopher](#gopher)
 * [Gemini](#gemini)
 * [Finger](#finger)
@@ -34,7 +35,7 @@ to use passed userinfo data (`https://username:password@example.org`), and
 returns all headers and response body it receives from libcurl without
 exception.
 
-It is possible to build these adapters using
+It is possible to build the HTTP adapter using
 [curl-impersonate](https://github.com/lwthiker/curl-impersonate) by setting
 the compile-time variable CURLLIBNAME to `libcurl-impersonate.so`. Note that
 for curl-impersonate to work, you must set `network.default-headers = {}`
@@ -49,17 +50,20 @@ not work.
 
 ## FTP
 
-Chawan supports FTP through the `adapter/protocol/ftp.nim` libcurl adapter. For
-directory listings, it assumes UNIX output style, and will probably break
-horribly on receiving anything else. Otherwise, the directory listing view
-is identical to the file:// directory listing.
+Chawan supports FTP through the `adapter/protocol/ftp.nim` adapter. Only
+passive mode is supported.
 
-SFTP "works" too, but YMMV. Note that if an IdentityFile declaration is found in
-your ssh config, then it will prompt for the identity file password, but there
-is no way to tell whether it is really asking for that. Also, settings covered
-by the Match field are ignored.
+For directory listings, it assumes UNIX output style, and will probably
+break horribly on receiving anything else. Otherwise, the directory
+listing view is identical to the file:// directory listing.
 
-In theory, FTPS should work too, but it is completely untested.
+## SFTP
+
+The sftp adapter wraps libcurl. It works for me, but YMMV. Note that if
+an IdentityFile declaration is found in your ssh config, then it will
+prompt for the identity file password, but there is no way to tell
+whether it is really asking for that. Also, settings covered by the
+Match field are ignored.
 
 ## Gopher
 
@@ -78,7 +82,7 @@ case may end up with `application/octet-stream`.
 Chawan's gemini adapter (in `adapter/protocol/gmifetch.c`) is a C program. It
 requires OpenSSL to work.
 
-Currently, it still has some limitations:
+It still has some limitations:
 
 * It does not support proxies yet.
 * It does not support sites that require private key authentication.
