@@ -241,6 +241,9 @@ proc openCachedItem(client: ClientData; id: int): (PosixStream, int) =
   if n != -1:
     let item = client.cacheMap[n]
     let ps = newPosixStream(client.cacheMap[n].path, O_RDONLY, 0)
+    if ps == nil:
+      client.cacheMap.del(n)
+      return (nil, -1)
     assert item.offset != -1
     ps.seek(item.offset)
     return (ps, n)
@@ -409,7 +412,7 @@ proc finishParse(handle: InputHandle) =
           handle.parser = nil
           break
       handle.cacheRef.offset = off
-      handle.cacheRef = nil
+    handle.cacheRef = nil
   if handle.parser != nil:
     discard handle.parseHeaders(nil)
 
