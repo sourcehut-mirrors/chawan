@@ -7,9 +7,12 @@ import libregexp
 
 export constcharp
 
-const CFLAGS = "-O2 -fwrapv"
-
 {.passc: "-DNOT_LRE_ONLY".}
+
+when not compileOption("threads"):
+  const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
+else:
+  const CFLAGS = "-O2 -fwrapv"
 
 {.compile("qjs/quickjs.c", CFLAGS).}
 {.compile("qjs/libbf.c", CFLAGS).}

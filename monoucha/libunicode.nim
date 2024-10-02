@@ -5,7 +5,10 @@ from std/os import parentDir
 {.used.}
 # used so that we can import it from libregexp.nim
 
-const CFLAGS = "-O2 -fwrapv"
+when not compileOption("threads"):
+  const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
+else:
+  const CFLAGS = "-O2 -fwrapv"
 
 {.compile("qjs/libunicode.c", CFLAGS).}
 {.compile("qjs/cutils.c", CFLAGS).}

@@ -7,7 +7,10 @@ from std/os import parentDir
 
 import libunicode
 
-const CFLAGS = "-O2 -fwrapv"
+when not compileOption("threads"):
+  const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
+else:
+  const CFLAGS = "-O2 -fwrapv"
 
 {.compile("qjs/libregexp.c", CFLAGS).}
 

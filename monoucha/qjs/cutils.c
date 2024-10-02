@@ -1194,7 +1194,7 @@ int64_t js__gettimeofday_us(void) {
 
 /*--- Cross-platform threading APIs. ----*/
 
-#if !defined(EMSCRIPTEN) && !defined(__wasi__)
+#if !defined(EMSCRIPTEN) && !defined(__wasi__) && !defined(MNC_NO_THREADS)
 
 #if defined(_WIN32)
 typedef void (*js__once_cb)(void);
