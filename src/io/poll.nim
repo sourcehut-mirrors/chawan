@@ -42,6 +42,10 @@ proc poll*(ctx: var PollData; timeout: cint) =
   ctx.trim()
   let fds = addr ctx.fds[0]
   let nfds = cint(ctx.fds.len)
+  var res: cint
   {.emit: """
-  poll(`fds`, `nfds`, `timeout`);
+  `res` = (int)poll(`fds`, `nfds`, `timeout`);
   """.}
+  if res < 0: # error
+    for event in ctx.fds.mitems:
+      event.revents = 0
