@@ -47,12 +47,24 @@ case os.S_IFREG: {
 	}
 	break;
 } case os.S_IFDIR: {
+	if (path.at(-1) != '/') {
+		const scheme = std.getenv("MAPPED_URI_SCHEME", "filei");
+		std.out.puts(`Status: 303
+Location: ${scheme}:${path}/\n`);
+		std.exit(0)
+	}
 	std.out.puts("Content-Type: text/html\n\n");
 	std.out.puts("<html><body><center>")
 	const [files, err2] = os.readdir(path);
 	let dirs = "";
 	let first = true;
-	for (const file of files.map(encodeURIComponent)) {
+	files.sort((a, b) => {
+		const [ai, bi] = [a, b].map(x => parseInt(x.replace(/[^0-9]/g, "")));
+		if (!isNaN(ai) && !isNaN(bi))
+			return ai - bi;
+		return a.localeCompare(b)
+	});
+	for (const file of files) {
 		if (file == '.' || file == '..')
 			continue;
 		const [stat2, err2] = os.stat(path + file);
@@ -64,7 +76,7 @@ case os.S_IFREG: {
 				std.out.puts("<br>\n");
 			first = false;
 			/* note: the CSS wouldn't be necessary if we had quirks mode... */
-			std.out.puts(`<a href='${file}?viewer'><img height=100% style="height: 100vh" src='${file}'></a>`);
+			std.out.puts(`<a href='${encodeURIComponent(file)}?viewer'><img height=100% style="height: 100vh" src='${file}'></a>`);
 			break;
 		case os.S_IFDIR:
 			dirs += `<a href='${file}/'>${file}/</a><br>\n`;
