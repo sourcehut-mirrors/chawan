@@ -261,6 +261,19 @@ proc getColor(root: var NodeChildren; c: ARGBColor; nodes: seq[Node];
     let child = children[idx]
     if child == nil:
       let child = nodes.getColor(c, diff)
+      # No child found in this corner of the octree. This is caused by
+      # dithering.
+      # Allocate at least 4 ancestors, so that other colors with the
+      # same initial bits don't end up using something wildly different
+      # than the dither intended.
+      while level < 4:
+        let idx = RGBColor(c).getIdx(level)
+        let node = cast[Node](alloc0(sizeof(NodeObj)))
+        node.idx = -1
+        children[idx] = node
+        children = addr node.u.children
+        inc level
+      let idx = RGBColor(c).getIdx(level)
       children[idx] = child
       return child.idx
     if child.idx != -1:
