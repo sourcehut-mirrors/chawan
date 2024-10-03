@@ -9,10 +9,7 @@
 #
 # * DCS q set-raster-attributes is omitted.
 # * 32-bit binary number in header indicates the end of the following
-#   palette. (Note: this includes this 32-bit number's and the following 8-bit
-#   number's length as well.)
-# * This is followed by an 8-bit number indicating whether the image includes
-#   transparent pixels.
+#   palette. (Note: this includes this 32-bit number's length as well.)
 # * A lookup table is appended to the file end, which includes (height + 5) / 6
 #   32-bit binary numbers indicating the start index of every 6th row.
 #
@@ -384,7 +381,10 @@ proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
   if halfdump: # reserve size for prelude
     outs &= "\0\0\0\0"
   else:
-    outs &= DCS & 'q'
+    outs &= DCS
+    if transparent:
+      outs &= "0;1"
+    outs &= 'q'
     # set raster attributes
     outs &= "\"1;1;" & $width & ';' & $height
   let nodes = root.flatten(outs, palette)

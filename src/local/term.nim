@@ -815,10 +815,10 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   if preludeLen > data.len:
     return
   var outs = term.cursorGoto(x, y)
-  # set transparency if we want to draw a non-6-divisible number
-  # of rows *or* the image is transparent; omit it otherwise, for then
-  # some terminals (e.g. foot) handle the image more efficiently
-  let trans = realh mod 6 != 0 or image.transparent
+  # set transparency if the image has transparent sixels; omit it
+  # otherwise, for then some terminals (e.g. foot) handle the image more
+  # efficiently
+  let trans = image.transparent
   outs &= DCS & "0;" & $int(trans) & "q"
   # set raster attributes
   outs &= "\"1;1;" & $realw & ';' & $realh
