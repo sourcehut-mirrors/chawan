@@ -347,7 +347,7 @@ proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
     elif c == ' ':
       inc depth
     else:
-      if c in {'*', '-'}:
+      if c in {'*', '-', '+'}:
         let i = i + 1
         if i < line.len and line[i] in {'\t', ' '}:
           return (depth, i, ltUl)
@@ -428,8 +428,9 @@ proc parseNone(state: var ParseState; line: string) =
   elif line[0] == '<' and line.find('>') == line.high:
     state.blockType = if line.matchHTMLPreStart(): btHTMLPre else: btHTML
     state.reprocess = true
-  elif line.startsWith("```"):
+  elif line.startsWith("```") or line.startsWith("~~~"):
     state.blockType = btPre
+    state.blockData = line.substr(0, 2)
     stdout.write("<PRE>")
   elif line[0] == '\t':
     state.blockType = btTabPre
@@ -465,8 +466,9 @@ proc parseNone(state: var ParseState; line: string) =
     state.reprocess = true
 
 proc parsePre(state: var ParseState; line: string) =
-  if line.startsWith("```"):
+  if line.startsWith(state.blockData):
     state.blockType = btNone
+    state.blockData = ""
     stdout.write("</PRE>\n")
   else:
     stdout.write(line.htmlEscape() & '\n')
@@ -507,9 +509,9 @@ proc parsePar(state: var ParseState; line: string) =
     else:
       state.blockType = btHTML
     state.reprocess = true
-  elif line.len >= 3 and line.startsWith("```"):
+  elif line.startsWith("```") or line.startsWith("~~~"):
     state.blockData.parseInline()
-    state.blockData = ""
+    state.blockData = line.substr(0, 2)
     state.blockType = btPre
     state.hasp = false
     stdout.write("<PRE>")
