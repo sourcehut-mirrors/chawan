@@ -632,8 +632,11 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       cachedImage.data = blob
       cachedImage.state = cisLoaded
       cachedImage.cacheId = cacheId
-      let trns = response.headers.getOrDefault("Cha-Image-Sixel-Transparent", "0")
-      cachedImage.transparent = trns == "1"
+      cachedImage.transparent =
+        response.headers.getOrDefault("Cha-Image-Sixel-Transparent", "0") == "1"
+      let plens = response.headers.getOrDefault("Cha-Image-Sixel-Prelude-Len")
+      if (let plen = parseInt64(plens).get(0); plen <= int64(int.high)):
+        cachedImage.preludeLen = plen
     )
   )
   container.cachedImages.add(cachedImage)
@@ -665,7 +668,8 @@ proc initImages(pager: Pager; container: Container) =
     let canvasImage = pager.term.loadImage(cached.data, container.process,
       imageId, image.x - container.fromx, image.y - container.fromy,
       image.width, image.height, image.x, image.y, pager.bufWidth,
-      pager.bufHeight, erry, offx, dispw, cached.transparent, redrawNext)
+      pager.bufHeight, erry, offx, dispw, cached.preludeLen, cached.transparent,
+      redrawNext)
     if canvasImage != nil:
       newImages.add(canvasImage)
   pager.term.clearImages(pager.bufHeight)

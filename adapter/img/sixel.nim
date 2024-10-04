@@ -4,25 +4,22 @@
 # Cha-Image-Sixel-Palette colors. If that isn't given, it's set
 # according to Cha-Image-Quality.
 #
-# The encoder also has a "half-dump" mode, where the output is modified as
-# follows:
+# The encoder also has a "half-dump" mode, where a binary lookup table
+# is appended to the file end to allow vertical cropping in ~constant
+# time.
 #
-# * DCS q set-raster-attributes is omitted.
-# * 32-bit binary number in header indicates the end of the following
-#   palette. (Note: this includes this 32-bit number's length as well.)
-# * A lookup table is appended to the file end, which includes (height + 5) / 6
-#   32-bit binary numbers indicating the start index of every 6th row.
+# This table is an array of 32-bit big-endian integers indicating the
+# start index of every sixel, and finally a 32-bit big-endian integer
+# indicating the number of sixels in the image.
 #
-# This way, the image can be vertically cropped in ~constant time.
+# Warning: we intentionally leak the final octree. Be careful if you
+# want to integrate this module into a larger program. Deallocation
+# would (currently) look like:
 #
-# Warning: we intentionally leak the final octree. Be careful if you want to
-# integrate this module into a larger program.
-#
-# (FWIW, deallocation would (currently) look like:
-# * free the leaves first, since they might have been inserted more than once
-#   (iterate over "nodes" seq)
-# * recurse to free the parent nodes (start from root, dealloc each node where
-#   idx == -1))
+# * Free the leaves first, since they might have been inserted more
+#   than once (iterate over "nodes" seq)
+# * Recurse to free the parent nodes (start from root, dealloc each
+#   node where idx == -1)
 
 import std/algorithm
 import std/options
@@ -38,19 +35,12 @@ import utils/twtstr
 proc puts(os: PosixStream; s: string) =
   os.sendDataLoop(s)
 
-proc die(s: string) {.noreturn.} =
-  let os = newPosixStream(STDOUT_FILENO)
+proc die(os: PosixStream; s: string) {.noreturn.} =
   os.puts(s)
   quit(1)
 
 const DCS = "\eP"
 const ST = "\e\\"
-
-proc setU32BE(s: var string; n: uint32; at: int) =
-  s[at] = char((n shr 24) and 0xFF)
-  s[at + 1] = char((n shr 16) and 0xFF)
-  s[at + 2] = char((n shr 8) and 0xFF)
-  s[at + 3] = char(n and 0xFF)
 
 proc putU32BE(s: var string; n: uint32) =
   s &= char((n shr 24) and 0xFF)
@@ -380,32 +370,31 @@ proc createBands(bands: var seq[SixelBand]; activeChunks: seq[ptr SixelChunk]) =
     if not found:
       bands.add(SixelBand(head: chunk, tail: chunk))
 
-proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
-    halfdump: bool; palette: int) =
+proc encode(os: PosixStream; img: openArray[RGBAColorBE];
+    width, height, offx, offy, cropw, palette: int; halfdump: bool) =
   var palette = uint(palette)
   var transparent = false
   var root = img.quantize(palette, transparent)
   # prelude
-  var outs = "Cha-Image-Dimensions: " & $width & 'x' & $height & "\n"
-  if transparent:
-    outs &= "Cha-Image-Sixel-Transparent: 1\n"
-  outs &= '\n'
+  var outs = "Cha-Image-Sixel-Transparent: " & $int(transparent) & "\n"
+  outs &= "Cha-Image-Sixel-Prelude-Len: "
+  const PreludePad = "666 666 666"
   let preludeLenPos = outs.len
-  if halfdump: # reserve size for prelude
-    outs &= "\0\0\0\0"
-  else:
-    outs &= DCS
-    if transparent:
-      outs &= "0;1"
-    outs &= 'q'
-    # set raster attributes
-    outs &= "\"1;1;" & $width & ';' & $height
+  outs &= PreludePad & "\n\n"
+  let dcsPos = outs.len
+  outs &= DCS
+  if transparent:
+    outs &= "0;1" # P2=1 -> image has transparency
+  outs &= 'q'
+  # set raster attributes
+  outs &= "\"1;1;" & $width & ';' & $height
   let nodes = root.flatten(outs, palette)
-  if halfdump:
-    # prepend prelude size
-    let L = outs.len - preludeLenPos
-    outs.setU32BE(uint32(L), preludeLenPos)
-  let os = newPosixStream(STDOUT_FILENO)
+  # prepend prelude size
+  var ps = $(outs.len - dcsPos)
+  while ps.len < PreludePad.len:
+    ps &= ' '
+  for i, c in ps:
+    outs[preludeLenPos + i] = c
   let L = width * height
   let realw = cropw - offx
   var n = offy * width
@@ -495,24 +484,21 @@ proc encode(img: openArray[RGBAColorBE]; width, height, offx, offy, cropw: int;
   os.sendDataLoop(outs)
   # Note: we leave octree deallocation to the OS. See the header for details.
 
-proc parseDimensions(s: string): (int, int) =
+proc parseDimensions(os: PosixStream; s: string): (int, int) =
   let s = s.split('x')
   if s.len != 2:
-    die("Cha-Control: ConnectionError InternalError wrong dimensions\n")
+    os.die("Cha-Control: ConnectionError InternalError wrong dimensions")
   let w = parseUInt32(s[0], allowSign = false)
   let h = parseUInt32(s[1], allowSign = false)
   if w.isNone or w.isNone:
-    die("Cha-Control: ConnectionError InternalError wrong dimensions\n")
+    os.die("Cha-Control: ConnectionError InternalError wrong dimensions")
   return (int(w.get), int(h.get))
 
 proc main() =
-  let scheme = getEnv("MAPPED_URI_SCHEME")
-  let f = scheme.after('+')
-  if f != "x-sixel":
-    die("Cha-Control: ConnectionError InternalError unknown format " & f)
+  let os = newPosixStream(STDOUT_FILENO)
   case getEnv("MAPPED_URI_PATH")
   of "decode":
-    die("Cha-Control: ConnectionError InternalError not implemented\n")
+    os.die("Cha-Control: ConnectionError InternalError not implemented")
   of "encode":
     var width = 0
     var height = 0
@@ -526,25 +512,25 @@ proc main() =
       let s = hdr.after(':').strip()
       case hdr.until(':')
       of "Cha-Image-Dimensions":
-        (width, height) = parseDimensions(s)
+        (width, height) = os.parseDimensions(s)
       of "Cha-Image-Offset":
-        (offx, offy) = parseDimensions(s)
+        (offx, offy) = os.parseDimensions(s)
       of "Cha-Image-Crop-Width":
         let q = parseUInt32(s, allowSign = false)
         if q.isNone:
-          die("Cha-Control: ConnectionError InternalError wrong palette\n")
+          os.die("Cha-Control: ConnectionError InternalError wrong crop width")
         cropw = int(q.get)
       of "Cha-Image-Sixel-Halfdump":
         halfdump = true
       of "Cha-Image-Sixel-Palette":
         let q = parseUInt16(s, allowSign = false)
         if q.isNone:
-          die("Cha-Control: ConnectionError InternalError wrong palette\n")
+          os.die("Cha-Control: ConnectionError InternalError wrong palette")
         palette = int(q.get)
       of "Cha-Image-Quality":
         let q = parseUInt16(s, allowSign = false)
         if q.isNone:
-          die("Cha-Control: ConnectionError InternalError wrong quality\n")
+          os.die("Cha-Control: ConnectionError InternalError wrong quality")
         quality = int(q.get)
     if cropw == -1:
       cropw = width
@@ -556,19 +542,17 @@ proc main() =
       else:
         palette = 1024
     if width == 0 or height == 0:
-      let os = newPosixStream(STDOUT_FILENO)
-      os.sendDataLoop("Cha-Image-Dimensions: 0x0\n")
       quit(0) # done...
     let n = width * height
     let L = n * 4
     let ps = newPosixStream(STDIN_FILENO)
     let src = ps.recvDataLoopOrMmap(L)
     if src == nil:
-      die("Cha-Control: ConnectionError InternalError failed to read input\n")
+      os.die("Cha-Control: ConnectionError InternalError failed to read input")
     enterNetworkSandbox() # don't swallow stat
     let p = cast[ptr UncheckedArray[RGBAColorBE]](src.p)
-    p.toOpenArray(0, n - 1).encode(width, height, offx, offy, cropw, halfdump,
-      palette)
+    os.encode(p.toOpenArray(0, n - 1), width, height, offx, offy, cropw,
+      palette, halfdump)
     dealloc(src)
 
 main()

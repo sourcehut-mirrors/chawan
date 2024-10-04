@@ -124,6 +124,8 @@ type
     erry*: int # same as CanvasImage.offy % 6
     # whether the image has transparency, *disregarding the last row*
     transparent*: bool
+    # length of introducer, raster, palette data before pixel data
+    preludeLen*: int
 
   Container* = ref object of RootObj
     # note: this is not the same as source.request.url (but should be synced

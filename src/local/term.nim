@@ -73,7 +73,8 @@ type
     damaged: bool
     marked*: bool
     dead: bool
-    transparent: bool # note: this is only set in outputSixelImage
+    transparent: bool
+    preludeLen: int
     kittyId: int
     # 0 if kitty
     erry: int
@@ -760,7 +761,7 @@ proc checkImageDamage*(term: Terminal; maxw, maxh: int) =
               term.lineDamage[y] = mx
 
 proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
-    rx, ry, maxw, maxh, erry, offx, dispw: int; transparent: bool;
+    rx, ry, maxw, maxh, erry, offx, dispw, preludeLen: int; transparent: bool;
     redrawNext: var bool): CanvasImage =
   if (let image = term.findImage(pid, imageId, rx, ry, width, height, erry,
         offx, dispw); image != nil):
@@ -787,7 +788,8 @@ proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
     width: width,
     height: height,
     erry: erry,
-    transparent: transparent
+    transparent: transparent,
+    preludeLen: preludeLen
   )
   if term.positionImage(image, x, y, maxw, maxh):
     redrawNext = true
@@ -801,6 +803,23 @@ func getU32BE(data: openArray[char]; i: int): uint32 =
     (uint32(data[i + 1]) shl 16) or
     (uint32(data[i]) shl 24)
 
+proc appendSixelAttrs(outs: var string; data: openArray[char];
+    realw, realh: int) =
+  var i = 0
+  while i < data.len:
+    let c = data[i]
+    outs &= c
+    inc i
+    if c == '"': # set raster attrs
+      break
+  while i < data.len and data[i] != '#': # skip aspect ratio attrs
+    inc i
+  outs &= "1;1;" & $realw & ';' & $realh
+  if i < data.len:
+    let ol = outs.len
+    outs.setLen(ol + data.len - i)
+    copyMem(addr outs[ol], unsafeAddr data[i], data.len - i)
+
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
     data: openArray[char]) =
   let offx = image.offx
@@ -809,28 +828,18 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let disph = image.disph
   let realw = dispw - offx
   let realh = disph - offy
-  if data.len < 4: # bounds check
+  let preludeLen = image.preludeLen
+  if preludeLen > data.len or data.len < 4:
     return
-  let preludeLen = int(data.getU32BE(0))
-  if preludeLen > data.len:
+  let L = data.len - int(data.getU32BE(data.len - 4)) - 4
+  if L < 0:
     return
   var outs = term.cursorGoto(x, y)
-  # set transparency if the image has transparent sixels; omit it
-  # otherwise, for then some terminals (e.g. foot) handle the image more
-  # efficiently
-  let trans = image.transparent
-  outs &= DCS & "0;" & $int(trans) & "q"
-  # set raster attributes
-  outs &= "\"1;1;" & $realw & ';' & $realh
+  outs.appendSixelAttrs(data.toOpenArray(0, preludeLen - 1), realw, realh)
   term.write(outs)
-  term.write(data.toOpenArray(4, preludeLen - 1))
-  let lookupTableLen = int(data.getU32BE(data.len - 4))
-  let L = data.len - lookupTableLen - 4
   # Note: we only crop images when it is possible to do so in near constant
   # time. Otherwise, the image is re-coded in a cropped form.
-  if preludeLen >= data.len or L < 0: # bounds check
-    term.write(ST)
-  elif realh == image.height: # don't crop
+  if realh == image.height: # don't crop
     term.write(data.toOpenArray(preludeLen, L - 1))
   else:
     let si = preludeLen + int(data.getU32BE(L + (offy div 6) * 4))
