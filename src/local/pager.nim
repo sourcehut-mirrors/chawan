@@ -624,8 +624,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
         return
       let blob = newBlob(mem.p, mem.len, "image/x-sixel",
         (proc(opaque, p: pointer) =
-          let mem = cast[MaybeMappedMemory](opaque)
-          dealloc(mem)
+          deallocMem(cast[MaybeMappedMemory](opaque))
         ), mem
       )
       container.redraw = true

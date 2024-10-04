@@ -170,6 +170,6 @@ proc main() =
     of "jpeg":
       stbi_write_jpg_to_func(myWriteFunc, nil, cint(width), cint(height), 4, p,
         quality)
-    dealloc(src)
+    deallocMem(src)
 
 main()

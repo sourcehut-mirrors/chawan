@@ -11,7 +11,7 @@ type
     blocking*: bool #TODO move to posixstream
     closed: bool
 
-# Semantics of this function are those of POSIX read(2): that is, it may return
+# Semantics of this function are those of POSIX read(3): that is, it may return
 # a result that is lower than `len`, and that does not mean the stream is
 # finished.
 # isend must be set by implementations when the end of the stream is reached.
@@ -255,11 +255,14 @@ proc sendDataLoop*(ps: PosixStream; mem: MaybeMappedMemory) =
   if not mem.fromMmap:
     ps.sendDataLoop(mem.p, mem.len)
 
-proc dealloc*(mem: MaybeMappedMemory) =
+template dealloc*(mem: MaybeMappedMemory) {.error: "use deallocMem".} = discard
+
+proc deallocMem*(mem: MaybeMappedMemory) =
   if mem.fromMmap:
     discard munmap(mem.p0, mem.p0len)
   else:
     dealloc(mem.p0)
+  dealloc(pointer(mem))
 
 proc drain*(ps: PosixStream) =
   assert not ps.blocking

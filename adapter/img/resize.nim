@@ -54,7 +54,7 @@ proc main() =
   doAssert stbir_resize_uint8(addr src.p[0], srcWidth, srcHeight, 0,
     addr dst.p[1], dstWidth, dstHeight, 0, 4) == 1
   os.sendDataLoop(dst)
-  dealloc(src)
-  dealloc(dst)
+  deallocMem(src)
+  deallocMem(dst)
 
 main()
