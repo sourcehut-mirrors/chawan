@@ -322,23 +322,15 @@ proc compressSixel(outs: var string; band: SixelBand) =
   var x = 0
   var chunk = band.head
   while chunk != nil:
-    outs &= '#'
-    outs &= $chunk.c
-    let diff = chunk.x - x
-    if diff > 3:
-      outs &= '!' & $diff & '?'
-    else:
-      for i in 0 ..< diff:
-        outs &= '?'
-    x = chunk.x + chunk.data.len
-    var n = 0
-    var c = char(0)
+    outs &= '#' & $chunk.c
+    var n = chunk.x - x
+    var c = '?'
     for u in chunk.data:
       let cc = char(u + 0x3F)
       if c != cc:
         if n > 3:
           outs &= '!' & $n & c
-        else: # for char(0) n is also 0, so it is ignored.
+        else:
           for i in 0 ..< n:
             outs &= c
         c = cc
@@ -349,6 +341,7 @@ proc compressSixel(outs: var string; band: SixelBand) =
     else:
       for i in 0 ..< n:
         outs &= c
+    x = chunk.x + chunk.data.len
     let next = chunk.next
     chunk.next = nil
     chunk = next
