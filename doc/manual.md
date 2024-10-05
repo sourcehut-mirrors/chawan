@@ -143,7 +143,7 @@ appropriate functions (`createElementImpl`, etc.) will be called by the parser.
   pass the **same** buffer (`inputBuf`) as in the current one. For details,
   see below.
 
-Special care is required when implementing that have scripting support. The
+Special care is required when implementing programs with scripting support. The
 HTML5 standard requires the parser to be re-entrant for supporting the
 `document.write` JavaScript function; therefore the parser suspends itself upon
 encountering a `</script>` end tag, returning a `PRES_SCRIPT` `ParseResult`.
@@ -154,7 +154,7 @@ At this point, implementations have two options.
 
 If either:
 
-* your implementation either does not support `document.write`, or
+* your implementation does not support `document.write`, or
 * no `document.write` call has been issued by the script, or
 * parsing of all buffers passed by `document.write` calls has finished,
 
@@ -265,8 +265,9 @@ while stack.len > 0:
     stack.add(node.childList[i])
 ```
 
-For more advanced usage of minidom, please study the tests/tree.nim and
-tests/shared/tree_common.nim which together are a runner of html5lib-tests.
+For more advanced usage of minidom, please study tests/tree.nim and
+tests/shared/tree_common.nim which together constitute a test runner of
+html5lib-tests.
 
 For an example implementation of [htmlparseriface](htmlparseriface.html), please
 check the source code of [minidom](minidom.html) (and of

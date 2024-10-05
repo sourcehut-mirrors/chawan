@@ -3,7 +3,7 @@ mkdir -p .obj/doc
 for f in chame/*.nim
 do	if test "$f" = "chame/htmlparseriface.nim"
 	then	nim doc -d:nimdocdummy --outdir:.obj/doc "$f"
-	else	nim doc --outdir:.obj/doc "$f"
+	else	nim doc -p:test/chagashi/ --outdir:.obj/doc "$f"
 	fi
         sed -i \
           -e '/<\!-- Google fonts -->/,+2d' \
