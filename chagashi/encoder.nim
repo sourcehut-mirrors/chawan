@@ -73,7 +73,8 @@ proc encodeAll*(te: TextEncoder; iq: openArray[uint8]; success: var bool):
       return ""
   success = true
 
-proc encodeAll*(td: TextEncoder; iq: string; success: var bool): string =
+proc encodeAll*(td: TextEncoder; iq: openArray[char]; success: var bool):
+    string =
   success = false
   return td.encodeAll(iq.toOpenArrayByte(0, iq.high), success)
 
@@ -104,10 +105,10 @@ proc encodeAll*(te: TextEncoder; iq: openArray[uint8]): string =
       result &= ';'
       n = result.len
 
-proc encodeAll*(td: TextEncoder; iq: string): string =
+proc encodeAll*(td: TextEncoder; iq: openArray[char]): string =
   return td.encodeAll(iq.toOpenArrayByte(0, iq.high))
 
-proc encodeAll*(iq: string; charset: Charset): string =
+proc encodeAll*(iq: openArray[char]; charset: Charset): string =
   return newTextEncoder(charset).encodeAll(iq.toOpenArrayByte(0, iq.high))
 
 {.pop.}

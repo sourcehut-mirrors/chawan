@@ -189,7 +189,8 @@ proc decodeAll*(td: TextDecoder; iq: openArray[uint8]; success: var bool):
     result &= s
   success = not ctx.failed
 
-proc decodeAll*(td: TextDecoder; iq: string; success: var bool): string =
+proc decodeAll*(td: TextDecoder; iq: openArray[char]; success: var bool):
+    string =
   return td.decodeAll(iq.toOpenArrayByte(0, iq.high), success)
 
 proc decodeAll*(td: TextDecoder; iq: openArray[uint8]): string =
@@ -201,20 +202,20 @@ proc decodeAll*(td: TextDecoder; iq: openArray[uint8]): string =
   for s in ctx.decode(iq, finish = true):
     result &= s
 
-proc decodeAll*(td: TextDecoder; iq: string): string =
+proc decodeAll*(td: TextDecoder; iq: openArray[char]): string =
   ## See above.
   return td.decodeAll(iq.toOpenArrayByte(0, iq.high))
 
-proc decodeAll*(iq: string; charset: Charset): string =
+proc decodeAll*(iq: openArray[char]; charset: Charset): string =
   ## Decode the string `iq` as a string encoded with `charset`.
   return newTextDecoder(charset).decodeAll(iq)
 
-proc toValidUTF8*(iq: string): string =
+proc toValidUTF8*(iq: openArray[char]): string =
   ## Validate the UTF-8 string `iq`, replacing invalid characters with U+FFFD
   ## replacement characters.
   return iq.decodeAll(CHARSET_UTF_8)
 
-proc validateUTF8Surr*(s: string; start = 0): int =
+proc validateUTF8Surr*(s: openArray[char]; start = 0): int =
   ## Analogous to std/unicode's validateUtf8, but also reports surrogates and
   ## has an optional `start` parameter.
   var ctx = initTextDecoderContext(CHARSET_UTF_8, errorMode = demFatal)
