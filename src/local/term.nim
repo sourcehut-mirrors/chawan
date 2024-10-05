@@ -488,15 +488,6 @@ proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
         w += 1 - te.c.width()
         n = res.len
 
-proc validateUTF8Surr(s: openArray[char]; start = 0): int =
-  #TODO move to chagashi
-  var ctx = initTextDecoderContext(CHARSET_UTF_8, errorMode = demFatal)
-  for chunk in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
-    discard
-  if ctx.failed:
-    return ctx.td.ri + 1
-  return -1
-
 proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
     w: var int) =
   if s.len == 0:
