@@ -1,3 +1,3 @@
 const Major* = 0
-const Minor* = 5
-const Patch* = 6
+const Minor* = 6
+const Patch* = 0
