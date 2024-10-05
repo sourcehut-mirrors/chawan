@@ -568,8 +568,9 @@ proc initLine(ictx: var InlineContext) =
           left = ex.offset.x + ex.size.w
         else:
           right = ex.offset.x
-    ictx.lbstate.size.w = left - bfcOffset.x
-    ictx.lbstate.availableWidth = right - bfcOffset.x
+    ictx.lbstate.size.w = max(left - bfcOffset.x, 0)
+    ictx.lbstate.availableWidth = min(right - bfcOffset.x,
+      ictx.lbstate.availableWidth)
 
 proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     force = false) =
