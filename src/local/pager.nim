@@ -635,7 +635,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
         response.headers.getOrDefault("Cha-Image-Sixel-Transparent", "0") == "1"
       let plens = response.headers.getOrDefault("Cha-Image-Sixel-Prelude-Len")
       if (let plen = parseInt64(plens).get(0); plen <= int64(int.high)):
-        cachedImage.preludeLen = plen
+        cachedImage.preludeLen = int(plen)
     )
   )
   container.cachedImages.add(cachedImage)
