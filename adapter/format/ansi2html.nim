@@ -67,10 +67,7 @@ proc parseSGRDefColor(parser: AnsiCodeParser; format: var Format;
       set_color cellColor(gray(param0))
   elif u == 5:
     let param0 = parser.getParamU8(i, colon = true)
-    if param0 in 0u8..15u8:
-      set_color cellColor(ANSIColor(param0))
-    elif param0 in 16u8..255u8:
-      set_color cellColor(EightBitColor(param0))
+    set_color ANSIColor(param0).cellColor()
   else:
     return false
 
@@ -188,15 +185,15 @@ proc flushFmt(state: var State) =
       buf &= "color: "
       case fmt.fgcolor.t
       of ctNone: discard
-      of ctANSI: buf &= "-cha-ansi(" & $fmt.fgcolor.color & ")"
-      of ctRGB: buf &= $fmt.fgcolor
+      of ctANSI: buf &= "-cha-ansi(" & $uint8(fmt.fgcolor.ansi) & ")"
+      of ctRGB: buf &= $fmt.fgcolor.rgb.argb
       buf &= ";"
     if fmt.bgcolor.t != ctNone:
       buf &= "background-color: "
       case fmt.bgcolor.t
       of ctNone: discard
-      of ctANSI: buf &= "-cha-ansi(" & $fmt.bgcolor.color & ")"
-      of ctRGB: buf &= $fmt.bgcolor
+      of ctANSI: buf &= "-cha-ansi(" & $uint8(fmt.bgcolor.ansi) & ")"
+      of ctRGB: buf &= $fmt.bgcolor.rgb.argb
       buf &= ";"
     if ffOverline in fmt.flags or ffUnderline in fmt.flags or
         ffStrike in fmt.flags or ffBlink in fmt.flags:

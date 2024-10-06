@@ -330,7 +330,7 @@ type
   CSSComputedValue* = ref object
     case v*: CSSValueType
     of cvtColor:
-      color*: CellColor
+      color*: CSSColor
     of cvtLength:
       length*: CSSLength
     of cvtFontStyle:
@@ -817,7 +817,7 @@ func skipWhitespace(vals: openArray[CSSComponentValue]; i: var int) =
       break
     inc i
 
-func parseARGB(value: openArray[CSSComponentValue]): Opt[CellColor] =
+func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
   var i = 0
   var commaMode = false
   template check_err(slash: bool) =
@@ -858,12 +858,12 @@ func parseARGB(value: openArray[CSSComponentValue]): Opt[CellColor] =
   value.skipWhitespace(i)
   if i < value.len:
     return err()
-  return ok(rgba(int(r), int(g), int(b), int(a * 255)).cellColor())
+  return ok(rgba(int(r), int(g), int(b), int(a * 255)).cssColor())
 
 # syntax: -cha-ansi( number | ident )
 # where number is an ANSI color (0..255)
 # and ident is in NameTable and may start with "bright-"
-func parseANSI(value: openArray[CSSComponentValue]): Opt[CellColor] =
+func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
   var i = 0
   value.skipWhitespace(i)
   if i != value.high or not (value[i] of CSSToken): # only 1 param is valid
@@ -873,11 +873,11 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CellColor] =
   if tok.tokenType == cttNumber:
     if tok.tflagb != tflagbInteger or int(tok.nvalue) notin 0..255:
       return err() # invalid numeric ANSI color
-    return ok(ANSIColor(tok.nvalue).cellColor())
+    return ok(ANSIColor(tok.nvalue).cssColor())
   elif tok.tokenType == cttIdent:
     var name = tok.value
     if name.equalsIgnoreCase("default"):
-      return ok(defaultColor)
+      return ok(defaultColor.cssColor())
     var bright = false
     if name.startsWithIgnoreCase("bright-"):
       bright = true
@@ -897,23 +897,23 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CellColor] =
         var i = int(i)
         if bright:
           i += 8
-        return ok(ANSIColor(i).cellColor())
+        return ok(ANSIColor(i).cssColor())
   return err()
 
-func cssColor*(val: CSSComponentValue): Opt[CellColor] =
+func cssColor*(val: CSSComponentValue): Opt[CSSColor] =
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.tokenType
     of cttHash:
       let c = parseHexColor(tok.value)
       if c.isSome:
-        return ok(c.get.cellColor())
+        return ok(c.get.cssColor())
     of cttIdent:
       if tok.value.equalsIgnoreCase("transparent"):
-        return ok(rgba(0, 0, 0, 0).cellColor())
+        return ok(rgba(0, 0, 0, 0).cssColor())
       let x = namedRGBColor(tok.value)
       if x.isSome:
-        return ok(x.get.cellColor())
+        return ok(x.get.cssColor())
     else: discard
   elif val of CSSFunction:
     let f = CSSFunction(val)
@@ -1219,10 +1219,10 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
   of cvtOverflow: return_new overflow, ?parseIdent[CSSOverflow](cval)
   of cvtNone: return err()
 
-func getInitialColor(t: CSSPropertyType): CellColor =
+func getInitialColor(t: CSSPropertyType): CSSColor =
   if t == cptBackgroundColor:
-    return rgba(0, 0, 0, 0).cellColor()
-  return defaultColor
+    return rgba(0, 0, 0, 0).cssColor()
+  return defaultColor.cssColor()
 
 func getInitialLength(t: CSSPropertyType): CSSLength =
   case t

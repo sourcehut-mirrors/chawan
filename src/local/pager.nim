@@ -682,7 +682,7 @@ proc draw*(pager: Pager) =
   if container != nil:
     if container.redraw:
       pager.clearDisplay()
-      let hlcolor = cellColor(pager.config.display.highlight_color)
+      let hlcolor = cellColor(pager.config.display.highlight_color.rgb)
       container.drawLines(pager.display.grid, hlcolor)
       if pager.config.display.highlight_marks:
         container.highlightMarks(pager.display.grid, hlcolor)

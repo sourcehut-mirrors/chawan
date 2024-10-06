@@ -61,7 +61,7 @@ proc setpxb(bmp: Bitmap; x, y: int; c: RGBAColorBE) {.inline.} =
   if c.a == 255:
     bmp.setpx(x, y, c)
   else:
-    bmp.setpx(x, y, bmp.getpx(x, y).blend(c))
+    bmp.setpx(x, y, bmp.getpx(x, y).argb.blend(c.argb))
 
 proc setpxb(bmp: Bitmap; x, y: int; c: ARGBColor) {.inline.} =
   bmp.setpxb(x, y, rgba_be(c.r, c.g, c.b, c.a))

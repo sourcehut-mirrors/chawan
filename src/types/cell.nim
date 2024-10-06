@@ -50,16 +50,6 @@ iterator items*(grid: FixedGrid): FixedCell {.inline.} =
   for cell in grid.cells:
     yield cell
 
-const FormatCodes*: array[FormatFlag, tuple[s, e: uint8]] = [
-  ffBold: (1u8, 22u8),
-  ffItalic: (3u8, 23u8),
-  ffUnderline: (4u8, 24u8),
-  ffReverse: (7u8, 27u8),
-  ffStrike: (9u8, 29u8),
-  ffOverline: (53u8, 55u8),
-  ffBlink: (5u8, 25u8),
-]
-
 func newFixedGrid*(w: int; h: int = 1): FixedGrid =
   return FixedGrid(width: w, height: h, cells: newSeq[FixedCell](w * h))
 
@@ -78,13 +68,11 @@ func findFormatN*(line: SimpleFlexibleLine; pos: int): int =
 func findFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
   let i = line.findFormatN(pos) - 1
   if i != -1:
-    result = line.formats[i]
-  else:
-    result.pos = -1
+    return line.formats[i]
+  return SimpleFormatCell(pos: -1)
 
 func findNextFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
   let i = line.findFormatN(pos)
   if i < line.formats.len:
-    result = line.formats[i]
-  else:
-    result.pos = -1
+    return line.formats[i]
+  return SimpleFormatCell(pos: -1)

@@ -24,7 +24,7 @@ proc sread*(reader: var BufferedReader; obj: var ref object)
 proc sread*[T](reader: var BufferedReader; o: var Option[T])
 proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E])
 proc sread*(reader: var BufferedReader; c: var ARGBColor)
-proc sread*(reader: var BufferedReader; c: var RGBColor)
+proc sread*(reader: var BufferedReader; c: var CellColor)
 
 proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
   assert len != 0
@@ -151,5 +151,5 @@ proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E]) =
 proc sread*(reader: var BufferedReader; c: var ARGBColor) =
   reader.sread(uint32(c))
 
-proc sread*(reader: var BufferedReader; c: var RGBColor) =
+proc sread*(reader: var BufferedReader; c: var CellColor) =
   reader.sread(uint32(c))

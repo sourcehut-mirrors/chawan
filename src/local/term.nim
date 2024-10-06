@@ -270,6 +270,16 @@ proc resetFormat(term: Terminal): string =
       return term.cap me
   return CSI & 'm'
 
+const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
+  ffBold: (1u8, 22u8),
+  ffItalic: (3u8, 23u8),
+  ffUnderline: (4u8, 24u8),
+  ffReverse: (7u8, 27u8),
+  ffStrike: (9u8, 29u8),
+  ffOverline: (53u8, 55u8),
+  ffBlink: (5u8, 25u8),
+]
+
 proc startFormat(term: Terminal; flag: FormatFlag): string =
   when TermcapFound:
     if term.tc != nil:
@@ -315,11 +325,12 @@ proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
   of ctNone:
     return termDefault
   of ctANSI:
-    if a.color >= 16:
-      return EightBitColor(a.color).toRGB()
-    return term.colorMap[a.color]
+    let n = a.ansi
+    if uint8(n) >= 16:
+      return n.toRGB()
+    return term.colorMap[uint8(n)]
   of ctRGB:
-    return a.rgbcolor
+    return a.rgb
 
 # Use euclidian distance to quantize RGB colors.
 proc approximateANSIColor(term: Terminal; rgb, termDefault: RGBColor):
@@ -390,7 +401,7 @@ proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
   of ctNone:
     res &= 39 + bgmod
   of ctANSI:
-    let n = c.color
+    let n = uint8(c.ansi)
     if n < 16:
       if n < 8:
         res &= 30 + bgmod + n
@@ -401,7 +412,7 @@ proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
       res &= ";5;"
       res &= n
   of ctRGB:
-    let rgb = c.rgbcolor
+    let rgb = c.rgb
     res &= 38 + bgmod
     res &= ";2;"
     res &= rgb.r
@@ -415,25 +426,25 @@ proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
 proc reduceColors(term: Terminal; cellf: var Format) =
   case term.colorMode
   of cmANSI:
-    if cellf.bgcolor.t == ctANSI and cellf.bgcolor.color > 15:
-      cellf.bgcolor = cellf.fgcolor.eightbit.toRGB().cellColor()
+    if cellf.bgcolor.t == ctANSI and uint8(cellf.bgcolor.ansi) > 15:
+      cellf.bgcolor = cellf.fgcolor.ansi.toRGB().cellColor()
     if cellf.bgcolor.t == ctRGB:
-      cellf.bgcolor = term.approximateANSIColor(cellf.bgcolor.rgbcolor,
+      cellf.bgcolor = term.approximateANSIColor(cellf.bgcolor.rgb,
         term.defaultBackground)
-    if cellf.fgcolor.t == ctANSI and cellf.fgcolor.color > 15:
-      cellf.fgcolor = cellf.fgcolor.eightbit.toRGB().cellColor()
+    if cellf.fgcolor.t == ctANSI and uint8(cellf.fgcolor.ansi) > 15:
+      cellf.fgcolor = cellf.fgcolor.ansi.toRGB().cellColor()
     if cellf.fgcolor.t == ctRGB:
       if cellf.bgcolor.t == ctNone:
-        cellf.fgcolor = term.approximateANSIColor(cellf.fgcolor.rgbcolor,
+        cellf.fgcolor = term.approximateANSIColor(cellf.fgcolor.rgb,
           term.defaultForeground)
       else:
         # ANSI fgcolor + bgcolor at the same time is broken
         cellf.fgcolor = defaultColor
   of cmEightBit:
     if cellf.bgcolor.t == ctRGB:
-      cellf.bgcolor = cellf.bgcolor.rgbcolor.toEightBit().cellColor()
+      cellf.bgcolor = cellf.bgcolor.rgb.toEightBit().cellColor()
     if cellf.fgcolor.t == ctRGB:
-      cellf.fgcolor = cellf.fgcolor.rgbcolor.toEightBit().cellColor()
+      cellf.fgcolor = cellf.fgcolor.rgb.toEightBit().cellColor()
   of cmMonochrome, cmTrueColor:
     discard # nothing to do
 

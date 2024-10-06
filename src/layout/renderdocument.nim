@@ -67,7 +67,8 @@ func toFormat(computed: CSSComputedValues): Format =
   if TextDecorationBlink in computed{"text-decoration"}:
     flags.incl(ffBlink)
   return Format(
-    fgcolor: computed{"color"},
+    #TODO this ignores alpha; we should blend somewhere.
+    fgcolor: computed{"color"}.cellColor(),
     flags: flags
   )
 
@@ -325,13 +326,15 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset; bgcolor0: ARGBColor) =
   let bgcolor = fragment.computed{"background-color"}
   var bgcolor0 = bgcolor0
-  case bgcolor.t
-  of ctNone: discard
-  of ctANSI: grid.paintInlineFragment(state, fragment, offset, bgcolor)
-  of ctRGB:
-    bgcolor0 = bgcolor0.blend(bgcolor.argbcolor)
+  if bgcolor.isCell:
+    let bgcolor = bgcolor.cellColor()
+    if bgcolor.t != ctNone:
+      grid.paintInlineFragment(state, fragment, offset, bgcolor)
+  else:
+    bgcolor0 = bgcolor0.blend(bgcolor.argb)
     if bgcolor0.a > 0:
-      grid.paintInlineFragment(state, fragment, offset, bgcolor0.cellColor())
+      grid.paintInlineFragment(state, fragment, offset,
+        bgcolor0.rgb.cellColor())
   if fragment.t == iftParent:
     for child in fragment.children:
       grid.renderInlineFragment(state, child, offset, bgcolor0)
@@ -402,13 +405,14 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       ))
       stack.add((nil, offset(-1, -1)))
     if box.computed{"visibility"} == VisibilityVisible:
-      let bgcolor = box.computed{"background-color"}
-      if bgcolor.t == ctANSI or bgcolor.t == ctRGB and bgcolor.argbcolor.a > 0:
+      #TODO maybe blend with the terminal background?
+      let bgcolor = box.computed{"background-color"}.cellColor()
+      if bgcolor != defaultColor:
         if box.computed{"-cha-bgcolor-is-canvas"} and
             state.bgcolor == defaultColor:
           #TODO bgimage
+          # note: this eats the alpha
           state.bgcolor = bgcolor
-        #TODO color blending
         let ix = toInt(offset.x)
         let iy = toInt(offset.y)
         let e = offset + box.state.size
@@ -444,7 +448,11 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
   if styledRoot == nil:
     # no HTML element when we run cascade; just clear all lines.
     return
-  var state = RenderState(absolutePos: @[AbsolutePos()], attrsp: attrsp)
+  var state = RenderState(
+    absolutePos: @[AbsolutePos()],
+    attrsp: attrsp,
+    bgcolor: defaultColor
+  )
   let rootBox = styledRoot.layout(attrsp)
   grid.renderBlockBox(state, rootBox, offset(0, 0))
   if grid.len == 0:

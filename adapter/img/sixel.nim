@@ -166,7 +166,7 @@ proc quantize(img: openArray[RGBAColorBE]; outk: var uint;
   var trimMap: array[7, seq[Node]]
   var transparent = false
   for c0 in img:
-    let c0 = c0.toARGBColor()
+    let c0 = c0.argb()
     transparent = transparent or c0.a != 255
     let c = RGBColor(uint32(c0).fastmul(100))
     K += root.insert(c, trimMap)
@@ -219,7 +219,7 @@ proc getColor(nodes: seq[Node]; c: ARGBColor; diff: var DitherDiff): Node =
       minDist = d
       child = node
       mdiff = (ad, rd, gd, bd)
-      if ic == c:
+      if ic == c.rgb():
         break
   diff = mdiff
   return child
@@ -413,7 +413,7 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
       var chunk: ptr SixelChunk = nil
       for j in 0 ..< realw:
         let m = n + offx + j
-        let c0 = img[m].toARGBColor()
+        let c0 = img[m].argb()
         let c1 = ARGBColor(uint32(c0).fastmul1(100))
         let c2 = c1.correctDither(j, dither)
         if c2.a < 50: # transparent

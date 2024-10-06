@@ -19,9 +19,9 @@ type
     b*: uint8
     a*: uint8
 
+  # Either a 3-bit ANSI color (0..7), a 3-bit bright ANSI color (8..15),
+  # a color on the RGB cube (16..231), or a grayscale color (232..255).
   ANSIColor* = distinct uint8
-
-  EightBitColor* = distinct uint8
 
   # ctNone: default color (intentionally 0), n is unused
   # ctANSI: ANSI color, as selected by SGR 38/48
@@ -29,54 +29,91 @@ type
   ColorTag* = enum
     ctNone, ctANSI, ctRGB
 
-  CellColor* = object
-    t*: ColorTag
+  # Color that can be represented by a terminal cell.
+  # Crucially, this does not include colors with an alpha channel.
+  CellColor* = distinct uint32
+
+  # Color that can be represented in CSS.
+  # As an extension, we also recognize ANSI colors, so ARGB does not suffice.
+  # (Actually, it would, but then we'd have to copy over the ANSI color
+  # table and then re-quantize on render. I'm fine with wasting a few
+  # bytes instead.)
+  CSSColor* = object
+    isCell*: bool # if true, n is a CellColor. otherwise, it's ARGBColor.
     n: uint32
 
 func rgba*(r, g, b, a: uint8): ARGBColor
 
-func toRGBColor*(i: ARGBColor): RGBColor =
-  return RGBColor(uint32(i) and 0xFFFFFFu32)
+func r*(c: ARGBColor): uint8 =
+  return uint8(uint32(c) shr 16)
 
-converter toARGBColor*(i: RGBColor): ARGBColor =
-  return ARGBColor(uint32(i) or 0xFF000000u32)
+func g*(c: ARGBColor): uint8 =
+  return uint8(uint32(c) shr 8)
 
-converter toARGBColor*(c: RGBAColorBE): ARGBColor =
+func b*(c: ARGBColor): uint8 =
+  return uint8(uint32(c))
+
+func a*(c: ARGBColor): uint8 =
+  return uint8(uint32(c) shr 24)
+
+func rgb*(c: ARGBColor): RGBColor =
+  return RGBColor(uint32(c) and 0xFFFFFFu32)
+
+func argb*(c: RGBColor): ARGBColor =
+  return ARGBColor(uint32(c) or 0xFF000000u32)
+
+proc argb*(c: RGBAColorBE): ARGBColor =
   return rgba(c.r, c.g, c.b, c.a)
 
 func `==`*(a, b: ARGBColor): bool {.borrow.}
 
+func `==`*(a, b: RGBColor): bool {.borrow.}
+
 func `==`*(a, b: ANSIColor): bool {.borrow.}
 
-func `==`*(a, b: EightBitColor): bool {.borrow.}
+func `==`*(a, b: CellColor): bool {.borrow.}
 
-func rgbcolor*(color: CellColor): RGBColor =
-  cast[RGBColor](color.n)
+func t*(color: CellColor): ColorTag =
+  return cast[ColorTag](uint32(color) shr 24)
 
-func argbcolor*(color: CellColor): ARGBColor =
-  cast[ARGBColor](color.n)
+func rgb*(color: CellColor): RGBColor =
+  return RGBColor(uint32(color) and 0xFFFFFF)
 
-func color*(color: CellColor): uint8 =
-  uint8(color.n)
+func ansi*(color: CellColor): ANSIColor =
+  return ANSIColor(color)
 
-func eightbit*(color: CellColor): EightBitColor =
-  EightBitColor(color.color)
+func cellColor(t: ColorTag; n: uint32): CellColor =
+  return CellColor((uint32(t) shl 24) or (n and 0xFFFFFF))
 
 func cellColor*(rgb: RGBColor): CellColor =
-  return CellColor(t: ctRGB, n: uint32(rgb) or 0xFF000000u32)
-
-func cellColor*(rgba: ARGBColor): CellColor =
-  return CellColor(t: ctRGB, n: uint32(rgba))
-
-#TODO bright ANSI colors (8..15)
+  return cellColor(ctRGB, uint32(rgb))
 
 func cellColor*(c: ANSIColor): CellColor =
-  return CellColor(t: ctANSI, n: uint32(c))
+  return cellColor(ctANSI, uint32(c))
 
-func cellColor*(c: EightBitColor): CellColor =
-  return CellColor(t: ctANSI, n: uint32(c))
+const defaultColor* = cellColor(ctNone, 0)
 
-const defaultColor* = CellColor(t: ctNone, n: 0)
+func cssColor*(c: ARGBColor): CSSColor =
+  return CSSColor(isCell: false, n: uint32(c))
+
+func cssColor*(c: RGBColor): CSSColor =
+  return c.argb.cssColor()
+
+func cssColor*(c: CellColor): CSSColor =
+  return CSSColor(isCell: true, n: uint32(c))
+
+func cssColor*(c: ANSIColor): CSSColor =
+  return c.cellColor().cssColor()
+
+func argb*(c: CSSColor): ARGBColor =
+  return ARGBColor(c.n)
+
+func cellColor*(c: CSSColor): CellColor =
+  if c.isCell:
+    return CellColor(c.n)
+  if c.argb.a == 0:
+    return defaultColor
+  return cellColor(ctRGB, c.n)
 
 const ColorsRGBMap = {
   "aliceblue": 0xF0F8FFu32,
@@ -238,30 +275,6 @@ func namedRGBColor*(s: string): Option[RGBColor] =
     return some(RGBColor(ColorsRGBMap[i][1]))
   return none(RGBColor)
 
-func r*(c: ARGBColor): uint8 =
-  return uint8(uint32(c) shr 16)
-
-func g*(c: ARGBColor): uint8 =
-  return uint8(uint32(c) shr 8)
-
-func b*(c: ARGBColor): uint8 =
-  return uint8(uint32(c))
-
-func a*(c: ARGBColor): uint8 =
-  return uint8(uint32(c) shr 24)
-
-proc `r=`*(c: var ARGBColor, r: uint8) =
-  c = ARGBColor(uint32(c) or (uint32(r) shl 16))
-
-proc `g=`*(c: var ARGBColor, g: uint8) =
-  c = ARGBColor(uint32(c) or (uint32(g) shl 8))
-
-proc `b=`*(c: var ARGBColor, b: uint8) =
-  c = ARGBColor(uint32(c) or uint32(b))
-
-proc `a=`*(c: var ARGBColor, a: uint8) =
-  c = ARGBColor(uint32(c) or (uint32(a) shl 24))
-
 # https://html.spec.whatwg.org/#serialisation-of-a-color
 func serialize*(color: ARGBColor): string =
   if color.a == 255:
@@ -398,7 +411,7 @@ func gray_be*(n: uint8): RGBAColorBE =
   return rgb_be(n, n, n)
 
 # NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
-func toRGB*(param0: EightBitColor): RGBColor =
+func toRGB*(param0: ANSIColor): RGBColor =
   doAssert uint8(param0) notin 0u8..15u8
   let u = uint8(param0)
   if u in 16u8..231u8:
@@ -413,7 +426,7 @@ func toRGB*(param0: EightBitColor): RGBColor =
     let n = (u - 232) * 10 + 8
     return gray(n)
 
-func toEightBit(r, g, b: uint8): EightBitColor =
+func toEightBit(r, g, b: uint8): ANSIColor =
   let r = int(r)
   let g = int(g)
   let b = int(b)
@@ -422,24 +435,24 @@ func toEightBit(r, g, b: uint8): EightBitColor =
   # abs(U - 128) < 5 & abs(V - 128 < 5), but is definitely faster.
   if r shr 4 == g shr 4 and g shr 4 == b shr 4:
     if r < 8:
-      return EightBitColor(16)
+      return ANSIColor(16)
     if r > 248:
-      return EightBitColor(231)
-    return EightBitColor(uint8(((r - 8) * 24 div 247) + 232))
+      return ANSIColor(231)
+    return ANSIColor(uint8(((r - 8) * 24 div 247) + 232))
   #16 + 36 * r + 6 * g + b
-  return EightBitColor(uint8(16 + 36 * (r * 5 div 255) +
-    6 * (g * 5 div 255) + (b * 5 div 255)))
+  return ANSIColor(uint8(16 + 36 * (r * 5 div 255) + 6 * (g * 5 div 255) +
+    (b * 5 div 255)))
 
-func toEightBit*(c: RGBColor): EightBitColor =
+func toEightBit*(c: RGBColor): ANSIColor =
   return toEightBit(c.r, c.g, c.b)
 
-func toEightBit*(c: RGBAColorBE): EightBitColor =
+func toEightBit*(c: RGBAColorBE): ANSIColor =
   return toEightBit(c.r, c.g, c.b)
 
 template `$`*(color: CellColor): string =
   case color.t
   of ctNone: "none"
-  of ctRGB: $color.argbcolor
+  of ctRGB: $color.rgb
   of ctANSI: "ansi" & $color.n
 
 func parseHexColor*(s: openArray[char]): Option[ARGBColor] =
@@ -476,7 +489,7 @@ func parseHexColor*(s: openArray[char]): Option[ARGBColor] =
 
 func parseARGBColor*(s: string): Option[ARGBColor] =
   if (let x = namedRGBColor(s); x.isSome):
-    return some(x.get.toARGBColor())
+    return some(x.get.argb)
   if (s.len == 3 or s.len == 4 or s.len == 6 or s.len == 8) and s[0] == '#':
     return parseHexColor(s.toOpenArray(1, s.high))
   if s.len > 2 and s[0] == '0' and s[1] == 'x':

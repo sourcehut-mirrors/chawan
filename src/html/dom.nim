@@ -2635,16 +2635,16 @@ proc parseColor(element: Element; s: string): ARGBColor =
   let cval = parseComponentValue(s)
   #TODO return element style
   # For now we just use white.
-  let ec = rgb(255, 255, 255)
+  let ec = rgba(255, 255, 255, 255)
   if cval.isNone:
     return ec
   let color0 = cssColor(cval.get)
   if color0.isNone:
     return ec
   let color = color0.get
-  if color.t != ctRGB:
+  if color.isCell:
     return ec
-  return color.argbcolor
+  return color.argb
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
 func href0(element: HTMLElement): string =

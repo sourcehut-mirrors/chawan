@@ -34,7 +34,7 @@ proc swrite*(writer: var BufferedWriter; obj: ref object)
 proc swrite*[T](writer: var BufferedWriter; o: Option[T])
 proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E])
 proc swrite*(writer: var BufferedWriter; c: ARGBColor)
-proc swrite*(writer: var BufferedWriter; c: RGBColor)
+proc swrite*(writer: var BufferedWriter; c: CellColor)
 
 const InitLen = sizeof(int) * 2
 const SizeInit = max(64, InitLen)
@@ -153,5 +153,5 @@ proc swrite*[T, E](writer: var BufferedWriter; o: Result[T, E]) =
 proc swrite*(writer: var BufferedWriter; c: ARGBColor) =
   writer.swrite(uint32(c))
 
-proc swrite*(writer: var BufferedWriter; c: RGBColor) =
+proc swrite*(writer: var BufferedWriter; c: CellColor) =
   writer.swrite(uint32(c))
