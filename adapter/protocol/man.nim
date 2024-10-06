@@ -125,10 +125,13 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
   # message to stdout. But it's much better (faster) than not streaming the
   # output.
   if not ofile.readLine(line) or ofile.endOfFile():
-    stdout.write("Cha-Control: ConnectionError 4 " & efile.readErrorMsg(line))
-    ofile.close()
-    efile.close()
-    quit(1)
+    var wstatus: cint
+    discard wait(addr wstatus)
+    if not WIFEXITED(wstatus) or WEXITSTATUS(wstatus) != 0:
+      stdout.write("Cha-Control: ConnectionError 4 " & efile.readErrorMsg(line))
+      ofile.close()
+      efile.close()
+      quit(1)
   # skip formatting of line 0, like w3mman does
   # this is useful because otherwise the header would get caught in the man
   # regex, and that makes navigation slightly more annoying
@@ -301,10 +304,13 @@ proc doKeyword(man, keyword, section: string) =
     quit(1)
   var line: string
   if not ofile.readLine(line) or ofile.endOfFile():
-    stdout.write("Cha-Control: ConnectionError 4 " & efile.readErrorMsg(line))
-    ofile.close()
-    efile.close()
-    quit(1)
+    var wstatus: cint
+    discard wait(addr wstatus)
+    if not WIFEXITED(wstatus) or WEXITSTATUS(wstatus) != 0:
+      stdout.write("Cha-Control: ConnectionError 4 " & efile.readErrorMsg(line))
+      ofile.close()
+      efile.close()
+      quit(1)
   stdout.write("Content-Type: text/html\n\n")
   stdout.write("<title>man" & sectionOpt & " -k " & keyword & "</title>\n")
   stdout.write("<h1>man" & sectionOpt & " -k <b>" & keyword & "</b></h1>\n")
