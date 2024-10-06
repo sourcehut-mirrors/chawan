@@ -345,7 +345,7 @@ func processIdna(str: string; beStrict: bool): string =
     let r = unicode_general_category(addr cr, "Mark")
     assert r == 0
   var labels = ""
-  for label in ($mapped).split('.'):
+  for label in mapped.toUTF8().split('.'):
     if label.startsWith("xn--"):
       try:
         let s = punycode.decode(label.substr("xn--".len))
@@ -386,7 +386,7 @@ func unicodeToAscii(s: string; beStrict: bool): string =
   var all = 0
   for label in processed.split('.'):
     var s = ""
-    if AllChars - Ascii in s:
+    if AllChars - Ascii in label:
       try:
         s = "xn--" & punycode.encode(label)
       except PunyError:

@@ -32,6 +32,8 @@ assert_equals(new URL("  h\nt\tt\np\ts\n:\t/\n/\tu\ns\ne\nr\nn\na\n\nm\ne\n:\np\
 assert_equals(new URL("abcd?efgh", "https://example.com/") + "", "https://example.com/abcd?efgh");
 assert_equals(new URL("abcd#ijkl", "https://example.com/") + "", "https://example.com/abcd#ijkl");
 assert_equals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://example.com/abcd?efgh#ijkl");
+assert_equals(new URL("https://テスト") + "", "https://xn--zckzah/");
+assert_equals(new URL("https://xn--zckzah") + "", "https://xn--zckzah/");
 {
 	const x = new URL("file:/test");
 	x.protocol = "abcd";
