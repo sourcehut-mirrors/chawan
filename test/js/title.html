@@ -1,0 +1,10 @@
+<!doctype html>
+<title id=t>
+   Title    test
+   </title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+assert_equals(document.title, "Title test");
+document.getElementById("x").textContent = "Success";
+</script>

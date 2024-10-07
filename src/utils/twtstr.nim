@@ -130,19 +130,17 @@ func skipBlanks*(buf: openArray[char]; at: int): int =
   while result < buf.len and buf[result] in AsciiWhitespace:
     inc result
 
-func stripAndCollapse*(s: string): string =
+func stripAndCollapse*(s: openArray[char]): string =
+  var res = newStringOfCap(s.len)
   var space = false
-  result = ""
-  for i in s.skipBlanks(0) ..< s.len:
-    if s[i] notin AsciiWhitespace:
+  for c in s.toOpenArray(s.skipBlanks(0), s.high):
+    let cspace = c in AsciiWhitespace
+    if not cspace:
       if space:
-        result &= ' '
-        space = false
-      result &= s[i]
-    elif not space:
-      space = true
-    else:
-      result &= ' '
+        res &= ' '
+      res &= c
+    space = cspace
+  return res
 
 func until*(s: openArray[char]; c: set[char]; starti = 0): string =
   result = ""
