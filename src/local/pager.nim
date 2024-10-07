@@ -1169,7 +1169,7 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
       editor = uqEditor.get & " +%d"
   var canpipe = true
   var s = unquoteCommand(editor, "", file, nil, canpipe, line)
-  if canpipe:
+  if s.len > 0 and canpipe:
     # %s not in command; add file name ourselves
     if s[^1] != ' ':
       s &= ' '
@@ -1182,7 +1182,9 @@ proc openInEditor(pager: Pager; input: var string): bool =
     if input != "":
       writeFile(tmpf, input)
     let cmd = pager.getEditorCommand(tmpf)
-    if pager.term.runProcess(cmd):
+    if cmd == "":
+      pager.alert("invalid external.editor command")
+    elif pager.term.runProcess(cmd):
       if fileExists(tmpf):
         input = readFile(tmpf)
         removeFile(tmpf)
