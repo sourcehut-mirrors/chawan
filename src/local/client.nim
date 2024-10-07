@@ -447,6 +447,11 @@ proc acceptBuffers(client: Client) =
     let fd = int(stream.fd)
     client.loader.put(ContainerData(stream: stream, container: container))
     client.pollData.register(fd, POLLIN)
+    # clear replacement references, because we can't fail to load this
+    # buffer anymore
+    container.replaceRef = nil
+    container.replace = nil
+    container.replaceBackup = nil
     pager.handleEvents(container)
   pager.procmap.setLen(0)
 
