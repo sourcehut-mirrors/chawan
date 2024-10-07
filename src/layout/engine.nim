@@ -1763,12 +1763,11 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
       # Add spacing.
       ctx.width += pctx.inlineSpacing
       # Figure out this cell's effect on the column's width.
-      # Four cases exits:
+      # Four cases exist:
       # 1. colwidth already fixed, cell width is fixed: take maximum
       # 2. colwidth already fixed, cell width is auto: take colwidth
       # 3. colwidth is not fixed, cell width is fixed: take cell width
       # 4. neither of colwidth or cell width are fixed: take maximum
-      if ctx.reflow.len <= i: ctx.reflow.setLen(i + 1)
       if pctx.cols[i].wspecified:
         if space.w.isDefinite():
           # A specified column already exists; we take the larger width.
@@ -1777,19 +1776,17 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
             ctx.reflow[i] = true
         if pctx.cols[i].width != w:
           wrapper.reflow = true
+      elif space.w.isDefinite():
+        # This is the first specified column. Replace colwidth with whatever
+        # we have.
+        ctx.reflow[i] = true
+        pctx.cols[i].wspecified = true
+        pctx.cols[i].width = w
+      elif w > pctx.cols[i].width:
+        pctx.cols[i].width = w
+        ctx.reflow[i] = true
       else:
-        if space.w.isDefinite():
-          # This is the first specified column. Replace colwidth with whatever
-          # we have.
-          ctx.reflow[i] = true
-          pctx.cols[i].wspecified = true
-          pctx.cols[i].width = w
-        else:
-          if w > pctx.cols[i].width:
-            pctx.cols[i].width = w
-            ctx.reflow[i] = true
-          else:
-            wrapper.reflow = true
+        wrapper.reflow = true
       if pctx.cols[i].minwidth < minw:
         pctx.cols[i].minwidth = minw
         if pctx.cols[i].width < minw:
