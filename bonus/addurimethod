@@ -1,0 +1,53 @@
+#!/bin/sh
+
+if test $# -ne 2
+then	printf 'Usage: addurimethod [scheme] [program name]' >&2
+	exit 1
+fi
+
+urimethodmap=$HOME/.urimethodmap
+scheme="$1:"
+cgi="/cgi-bin/$2%s"
+
+if ! test -f "$urimethodmap"
+then	printf '%s:	%s\n' "$scheme" "$cgi" > "$urimethodmap"
+	exit 0
+fi
+
+grep -- "^$1:" "$urimethodmap" >/dev/null && exit 0
+
+space_kind=$(grep -oE '^[a-zA-Z+-]+:[[:space:]]+' "$urimethodmap" | \
+	grep -oE '[[:space:]]+' | \
+	tail -c2)
+space_num=$(grep -oE '^[a-zA-Z+-]+:[[:space:]]+' "$urimethodmap" | \
+	grep -oE '[[:space:]]+' | \
+	while IFS= read -r line; do printf '%d\n' "${#line}"; done | \
+	sort -r | \
+	head -1)
+
+space_mul=1
+if test "$space_kind" = '	'; then	space_mul=8; fi
+
+space_num=$((($space_num * $space_mul + ($space_mul - 1) - ${#scheme}) / $space_mul))
+
+spaces=
+if test "$space_num" -gt 0
+then	spaces=$(printf "%${space_num}s" | sed "s/ /$space_kind/g")
+fi
+
+tmpf=$(mktemp)
+
+printf "%s:${spaces}%s\n" "$1" "/cgi-bin/$2?%s" > "$tmpf"
+cat "$urimethodmap" >> "$tmpf"
+
+{
+	printf 'Updating %s to:\n\n' "$urimethodmap"
+	cat "$tmpf"
+} | $PAGER
+printf 'OK? (y/n) '
+read -r res
+
+if test "$res" = y
+then	cp "$tmpf" "$urimethodmap"
+else	printf 'Aborting. (temp file is %s)\n' "$tmpf"
+fi
