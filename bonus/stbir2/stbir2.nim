@@ -10,7 +10,7 @@ import utils/twtstr
 {.compile("stb_image_resize2.c", "-O3").}
 
 {.push header: "stb_image_resize2.h".}
-proc stbir_resize_uint8_linear(input_pixels: ptr uint8;
+proc stbir_resize_uint8_srgb(input_pixels: ptr uint8;
   input_w, input_h, input_stride_in_bytes: cint; output_pixels: ptr uint8;
   output_w, output_h, output_stride_in_bytes, num_channels: cint): ptr char
   {.importc.}
@@ -51,7 +51,7 @@ proc main() =
     die("Cha-Control: ConnectionError 1 failed to open i/o\n")
   dst.p[0] = uint8('\n') # for CGI
   enterNetworkSandbox()
-  doAssert stbir_resize_uint8_linear(addr src.p[0], srcWidth, srcHeight,
+  doAssert stbir_resize_uint8_srgb(addr src.p[0], srcWidth, srcHeight,
     0, addr dst.p[1], dstWidth, dstHeight, 0, 4) != nil
   os.sendDataLoop(dst)
   deallocMem(src)
