@@ -238,7 +238,7 @@ proc alert(window: Window; s: string) {.jsfunc.} =
   window.console.error(s)
 
 proc getComputedStyle(window: Window; element: Element;
-    pseudoElt = none(Element)): JSResult[CSSStyleDeclaration] {.jsfunc.} =
+    pseudoElt = none(string)): JSResult[CSSStyleDeclaration] {.jsfunc.} =
   #TODO implement this properly
   return ok(element.style)
 
