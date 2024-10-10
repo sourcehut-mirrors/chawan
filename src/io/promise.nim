@@ -19,9 +19,6 @@ type
   Promise*[T] = ref object of EmptyPromise
     res*: T
 
-proc newPromise*[T](): Promise[T] =
-  return Promise[T]()
-
 proc resolve*(promise: EmptyPromise) =
   var promise = promise
   while true:
@@ -44,7 +41,7 @@ proc newResolvedPromise*(): EmptyPromise =
   return res
 
 proc newResolvedPromise*[T](x: T): Promise[T] =
-  let res = newPromise[T]()
+  let res = Promise[T]()
   res.resolve(x)
   return res
 

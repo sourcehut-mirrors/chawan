@@ -61,9 +61,6 @@ proc newResponse*(res: int; request: Request; stream: SocketStream;
     status: status
   )
 
-proc newFetchPromise*(): FetchPromise =
-  return newPromise[JSResult[Response]]()
-
 func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
   #TODO use "create" function
   return Response(
@@ -158,12 +155,9 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   if response.body == nil:
     return newResolvedPromise(JSResult[string].ok(""))
   if response.bodyUsed:
-    let p = newPromise[JSResult[string]]()
-    let err = JSResult[string]
-      .err(newTypeError("Body has already been consumed"))
-    p.resolve(err)
-    return p
-  let opaque = TextOpaque(bodyRead: newPromise[JSResult[string]]())
+    let err = newTypeError("Body has already been consumed")
+    return newResolvedPromise(JSResult[string].err(err))
+  let opaque = TextOpaque(bodyRead: Promise[JSResult[string]]())
   response.opaque = opaque
   response.onRead = onReadText
   response.onFinish = onFinishText
@@ -217,7 +211,7 @@ proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
     let err = JSResult[Blob].err(newTypeError("Body has already been consumed"))
     return newResolvedPromise(err)
   let opaque = BlobOpaque(
-    bodyRead: newPromise[JSResult[Blob]](),
+    bodyRead: Promise[JSResult[Blob]](),
     contentType: response.getContentType(),
     p: alloc(BufferSize),
     size: BufferSize

@@ -169,10 +169,8 @@ proc fetch(window: Window; input: JSValue;
   let input = ?newRequest(window.jsctx, input, init)
   #TODO cors requests?
   if not window.settings.origin.isSameOrigin(input.request.url.origin):
-    let promise = newPromise[JSResult[Response]]()
     let err = newTypeError("NetworkError when attempting to fetch resource")
-    promise.resolve(JSResult[Response].err(err))
-    return ok(promise)
+    return ok(newResolvedPromise(JSResult[Response].err(err)))
   return ok(window.loader.fetch(input.request))
 
 # Forward declaration hack
