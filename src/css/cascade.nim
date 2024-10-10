@@ -538,7 +538,7 @@ proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
 # Builds a StyledNode tree, optionally based on a previously cached version.
 proc applyRules(document: Document; ua, user: CSSStylesheet;
     cachedTree: StyledNode): StyledNode =
-  let html = document.html
+  let html = document.documentElement
   if html == nil:
     return
   let author = document.getAuthorSheets()

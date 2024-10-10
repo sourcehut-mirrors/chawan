@@ -2076,9 +2076,6 @@ func findFirst*(document: Document; tagType: TagType): HTMLElement =
     return HTMLElement(element)
   nil
 
-func html*(document: Document): HTMLElement =
-  return document.findFirst(TAG_HTML)
-
 func head*(document: Document): HTMLElement {.jsfget.} =
   return document.findFirst(TAG_HEAD)
 
@@ -2306,8 +2303,8 @@ func nextElementSibling*(elem: Element): Element {.jsfget.} =
       return Element(node)
   return nil
 
-func documentElement(document: Document): Element {.jsfget.} =
-  document.firstElementChild()
+func documentElement*(document: Document): Element {.jsfget.} =
+  return document.firstElementChild()
 
 func attr*(element: Element; s: CAtom): string =
   let i = element.findAttr(s)
@@ -2435,7 +2432,7 @@ func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
 proc sheets*(document: Document): seq[CSSStylesheet] =
   if document.cachedSheetsInvalid and document.window.styling:
     document.cachedSheets.setLen(0)
-    for elem in document.html.descendants:
+    for elem in document.documentElement.descendants:
       if elem of HTMLStyleElement:
         let style = HTMLStyleElement(elem)
         style.sheet = parseStylesheet(style.textContent, document.factory)
@@ -2601,7 +2598,7 @@ isDefaultPassive = func(target: EventTarget): bool =
     return false
   let node = Node(target)
   return EventTarget(node.document) == target or
-    EventTarget(node.document.html) == target or
+    EventTarget(node.document.documentElement) == target or
     EventTarget(node.document.body) == target
 
 getParent = proc(ctx: JSContext; eventTarget: EventTarget; event: Event):

@@ -84,7 +84,7 @@ func pseudoSelectorMatches[T: Element|StyledNode](elem: T; sel: Selector;
   of pcHover:
     when selem is StyledNode: felem.addDependency(elem, dtHover)
     return elem.hover
-  of pcRoot: return elem == elem.document.html
+  of pcRoot: return elem == elem.document.documentElement
   of pcNthChild:
     if sel.pseudo.ofsels.len != 0 and
         not selem.selectorsMatch(sel.pseudo.ofsels, felem):
