@@ -10,11 +10,12 @@ This document lists common problems you may run into when using Chawan.
 
 Your options are:
 
-* Use `v` (and copy with `y`). Drawback: requires keyboard
+* Press `v` (and copy with `y`). You can then expand the selection with the
+  mouse.
 * Hold down the shift key while selecting. Drawback: can only select text
-  currently on the screen
+  currently on the screen, and you can't select tabs.
 * Disable mouse support (`input.use-mouse = false` in config.toml). Drawback:
-  see above (plus now you can't use the mouse to move on the screen)
+  see above.
 
 ## Why do I get strange/incorrect/ugly colors?
 
@@ -22,13 +23,13 @@ Chawan's display capabilities depend on what your terminal reports. In
 particular:
 
 * if the `$COLORTERM` variable is not set, then it may fall back to 8-bit or
-  ANSI colors
+  ANSI colors. Make sure you export it as `COLORTERM=truecolor`.
 * if it does not respond to querying the background color, then Chawan's color
-  contrast correction will likely malfunction
+  contrast correction will likely malfunction. you can correct this using the
+  `display.default-background-color`/`display.default-foreground-color`
+  variables.
 
-You can fix this manually by exporting `COLORTERM=truecolor` and
-`display.default-background-color`/`display.default-foreground-color`
-variables. See [config.md](config.md#display) for details.
+See [config.md](config.md#display) for details.
 
 ## Can I view Markdown files using Chawan?
 
@@ -43,7 +44,7 @@ Chawan *can* parse if they are passed through standard input.
 Unfortunately, mandoc passes us the formatted document as a *file*, which Chawan
 reasonably interprets as plain text without formatting.
 
-At this point you have two options:
+At this point, you have two options:
 
 * `export PAGER='cha -T text/x-ansi'` and see that man suddenly works as
   expected.
@@ -51,6 +52,17 @@ At this point you have two options:
 
 Ideally you should do both, to deal with cases like git help which shells out to
 man directly.
+
+There is still one problem with this solution: some programs will try to call
+`$PAGER` without shell expansion, breaking the `-T text/x-ansi` trick. To fix
+this, put a script somewhere in your `PATH`:
+
+```sh
+#!/bin/sh
+exec cha -T text/x-ansi "$@"
+```
+
+and `export PAGER=pcha`.
 
 ## Where are the keybindings?
 

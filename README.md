@@ -64,7 +64,7 @@ Currently implemented features are:
   reasons)
 * supports several [protocols](doc/protocols.md): HTTP(S), FTP, Gopher, Gemini,
   Finger, etc.
-* can load user-defined [protocols](doc/urimethodmap.md) and
+* [user-defined](doc/urimethodmap.md) protocols and
   [file formats](doc/mailcap.md)
 * markdown viewer, man page viewer
 * sixel/kitty image support

@@ -9,6 +9,10 @@ Gopher, Gemini, and Finger. Details on these protocols, and information
 on how users can add support to their preferred protocols is outlined in
 this document.
 
+In general, you can find network adapters in the `adapter/protocol` directory.
+For protocol-specific file formats (like gemtext or gopher directories) you will
+also find an appropriate HTML converter in `adapter/format`.
+
 <!-- MANOFF -->
 **Table of contents**
 
@@ -28,7 +32,7 @@ this document.
 ## HTTP
 
 HTTP/s support is based on libcurl; supported features largely depend on
-your libcurl version. The adapter is found at `adapter/protocol/http.nim`.
+your libcurl version.
 
 The libcurl HTTP adapter can take arbitrary headers and POST data, is able
 to use passed userinfo data (`https://username:password@example.org`), and
@@ -42,16 +46,14 @@ for curl-impersonate to work, you must set `network.default-headers = {}`
 in the Chawan config. (Otherwise, the libcurl adapter will happily override
 curl-impersonate headers, which is probably not what you want.)
 
-The `bonus/libfetch` directory contains an alternative HTTP client, which is
-based on FreeBSD libfetch. It is mostly a proof of concept, as FreeBSD
-libfetch HTTP support is very limited; in particular, it does not support
-HTTP headers (beyond some basic request headers), so e.g. cookies will
-not work.
+The `bonus` directory contains an alternative HTTP client based on FreeBSD
+libfetch. It is mostly a proof of concept, as FreeBSD libfetch HTTP support is
+very limited; in particular, it does not support arbitrary HTTP headers, so e.g.
+cookies will not work.
 
 ## FTP
 
-Chawan supports FTP through the `adapter/protocol/ftp.nim` adapter. Only
-passive mode is supported.
+Chawan supports FTP passive mode browsing and downloads.
 
 For directory listings, it assumes UNIX output style, and will probably
 break horribly on receiving anything else. Otherwise, the directory
@@ -59,11 +61,13 @@ listing view is identical to the file:// directory listing.
 
 ## SFTP
 
-The sftp adapter wraps libcurl. It works for me, but YMMV. Note that if
-an IdentityFile declaration is found in your ssh config, then it will
-prompt for the identity file password, but there is no way to tell
-whether it is really asking for that. Also, settings covered by the
-Match field are ignored.
+The sftp adapter (`adapter/protocol/sftp.nim`) wraps libcurl. It works for me,
+but YMMV.
+
+Note that if an IdentityFile declaration is found in your ssh config, then it
+will prompt for the identity file password, but there is no way to tell whether
+it is really asking for that (or just normal password auth). Also, settings
+covered by the Match field are ignored.
 
 ## Gopher
 

@@ -16,7 +16,7 @@ config:
 - switch from table arrays to tables
 - better siteconf URL matching
 - $TERM-based display config
-* better path handling (e.g. inline files, so we could get rid of css
+- better path handling (e.g. inline files, so we could get rid of css
   "include/inline" etc.)
 - add per-scheme env var configuration (e.g.
   proto.gemini.known-hosts = '/some/path'; maybe also with inline JS?)
