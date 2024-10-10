@@ -339,6 +339,14 @@ proc processData(state: var State; buf: openArray[char]) =
     of '\'': state.puts("&apos;")
     of '"': state.puts("&quot;")
     of '&': state.puts("&amp;")
+    of '\t':
+      let obgcolor = state.currentFmt.bgcolor
+      state.pendingFmt = state.currentFmt
+      state.pendingFmt.bgcolor = defaultColor
+      state.flushFmt()
+      state.putc('\t')
+      state.pendingFmt.bgcolor = obgcolor
+      state.flushFmt()
     of '\e': state.parser.reset()
     of '\b': state.parser.state = acpsBackspace
     of '\0': state.puts("\uFFFD") # HTML eats NUL, so replace it here

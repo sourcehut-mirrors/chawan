@@ -1346,9 +1346,7 @@ proc getSelectionText(container: Container; hl: Highlight = nil):
   if hl == nil:
     return nil
   if hl.t != hltSelect:
-    let p = newPromise[string]()
-    p.resolve("")
-    return p
+    return newResolvedPromise("")
   let startx = hl.startx
   let starty = hl.starty
   let endx = hl.endx
@@ -1381,7 +1379,7 @@ proc getSelectionText(container: Container; hl: Highlight = nil):
         if i > 0:
           s &= '\n'
         s &= line.str
-    return s
+    return s.expandPUATabsHard()
   )
 
 proc markURL(container: Container) {.jsfunc.} =
@@ -1751,6 +1749,9 @@ proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor
         nf = line.findNextFormat(pw)
       if u <= 0xFF and char(u) in Controls:
         display[dls + k].str &= '^' & char(u).getControlLetter()
+      elif u in TabPUARange:
+        for i in 0 ..< uw:
+          display[dls + k].str &= ' '
       else:
         for j in pi ..< i:
           display[dls + k].str &= line.str[j]

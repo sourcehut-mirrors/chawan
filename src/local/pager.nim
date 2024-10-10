@@ -479,28 +479,49 @@ proc showAlerts*(pager: Pager) =
       pager.inputBuffer == "" and pager.precnum == 0:
     pager.refreshStatusMsg()
 
+proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
+    ex: int): string =
+  var ls = newStringOfCap(s.len)
+  var i = oi
+  var x = ox
+  while x < ex and i < s.len:
+    let pi = i
+    let u = s.nextUTF8(i)
+    let uw = u.width()
+    x += uw
+    if u in TabPUARange:
+      # PUA tabs can be expanded to hard tabs if
+      # * they are correctly aligned
+      # * they don't have a bgcolor (terminals will fail to output bgcolor with
+      #   tabs)
+      if bgcolor == defaultColor and (x and 7) == 0:
+        ls &= '\t'
+      else:
+        for i in 0 ..< uw:
+          ls &= ' '
+    else:
+      for i in pi ..< i:
+        ls &= s[i]
+  oi = i
+  ox = x
+  return ls
+
 proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
   var format = Format()
   container.readLines(proc(line: SimpleFlexibleLine) =
-    if line.formats.len == 0:
-      ofile.writeLine(line.str)
-    else:
-      var x = 0
-      var w = -1
-      var i = 0
-      var s = ""
-      for f in line.formats:
-        let si = i
-        while x < f.pos:
-          let u = line.str.nextUTF8(i)
-          x += u.width()
-        s.processOutputString(pager.term, line.str.toOpenArray(si, i - 1), w)
-        s.processFormat(pager.term, format, f.format)
-      if i < line.str.len:
-        s.processOutputString(pager.term,
-          line.str.toOpenArray(i, line.str.high), w)
-      s.processFormat(pager.term, format, Format())
-      ofile.writeLine(s)
+    var x = 0
+    var w = -1
+    var i = 0
+    var s = ""
+    for f in line.formats:
+      let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, f.pos)
+      s.processOutputString(pager.term, ls, w)
+      s.processFormat(pager.term, format, f.format)
+    if i < line.str.len:
+      let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, int.high)
+      s.processOutputString(pager.term, ls, w)
+    s.processFormat(pager.term, format, Format())
+    ofile.writeLine(s)
   )
   ofile.flushFile()
 

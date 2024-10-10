@@ -4,6 +4,32 @@ import utils/twtuni
 
 include res/map/charwidth_gen
 
+# Tabs are a bit of a problem: depending on their position in text, they may
+# represent one to eight characters. Inferring their size after layout is wrong
+# because a rendered line is obviously not equivalent to a CSS line.
+#
+# In the past, we worked around this by always passing the string's current
+# width to width(), but this only ever worked properly for plain text documents,
+# which we no longer distinguish from HTML.
+#
+# So now, to preserve tabs, we do the following:
+#
+# * Define Unicode PUA U+E000 to U+E007 as a tab range. The final digit
+#   represents the number of characters the tab occupies, minus one. (Tab size
+#   ranges from 1 char to 8 chars.)
+# * In layout, replace characters in this range with U+FFFD. Then, translate
+#   literal tabs into the range depending on their width in the document.
+# * In width(), substitute the size of these characters accordingly.
+# * Finally, in buffer drawing code, translate the range back into the necessary
+#   number of spaces - except in dump mode, where properly aligned tabs become
+#   hard tabs, and in selection mode, where *all* tabs become hard tabs.
+const TabPUARange* = 0xE000u32 .. 0xE007u32
+
+func tabPUAPoint*(n: int): uint32 =
+  let u = 0xE000 + uint32(n) - 1
+  assert u in TabPUARange
+  return u
+
 # One of the few global variables in the code. Honestly, it should not exist.
 var isCJKAmbiguous* = false
 
@@ -14,6 +40,8 @@ func width*(u: uint32): int =
       return 0
     if u in DoubleWidthTable:
       return 2
+    if u in TabPUARange:
+      return int(((u - TabPUARange.a) and 7) + 1)
     {.cast(noSideEffect).}:
       if isCJKAmbiguous and DoubleWidthAmbiguousRanges.isInRange(u):
         return 2
@@ -65,3 +93,18 @@ func padToWidth*(s: string; size: int; schar = '$'): string =
   while w < size:
     result &= ' '
     inc w
+
+# Expand all PUA tabs into hard tabs, disregarding their position.
+# (This is mainly intended for copy/paste, where the actual characters
+# are more interesting than cell alignment.)
+func expandPUATabsHard*(s: openArray[char]): string =
+  var res = newStringOfCap(s.len)
+  var i = 0
+  while i < s.len:
+    let pi = i
+    if s.nextUTF8(i) in TabPUARange:
+      res &= '\t'
+    else:
+      for j in pi ..< i:
+        res &= s[j]
+  return res

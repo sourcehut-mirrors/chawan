@@ -767,17 +767,21 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
       ictx.whitespacenum = 1
       ictx.whitespaceFragment = state.fragment
   of WhitespacePre, WhitespacePreWrap:
-    #TODO whitespace type should be preserved here. (it isn't, because
-    # it would break tabs in the current buffer model.)
     ictx.whitespaceIsLF = false
     if c == '\n':
       ictx.flushLine(state)
     elif c == '\t':
       let realWidth = ictx.lbstate.charwidth + ictx.whitespacenum
-      let targetTabStops = realWidth div 8 + 1
-      let targetWidth = targetTabStops * 8
-      ictx.whitespacenum += targetWidth - realWidth
-      ictx.whitespaceFragment = state.fragment
+      # We must flush first, because addWord would otherwise try to wrap the
+      # line. (I think.)
+      ictx.flushWhitespace(state)
+      let w = ((realWidth + 8) and not 7) - realWidth
+      ictx.word.str.addUTF8(tabPUAPoint(w))
+      ictx.word.size.w += w * ictx.cellWidth
+      ictx.lbstate.charwidth += w
+      # Ditto here - we don't want the tab stop to get merged into the next
+      # word's atom.
+      discard ictx.addWord(state)
     else:
       inc ictx.whitespacenum
       ictx.whitespaceFragment = state.fragment
@@ -824,6 +828,9 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
       if u == 0xAD: # soft hyphen
         ictx.wrappos = ictx.word.str.len
         ictx.hasshy = true
+      elif u in TabPUARange: # filter out chars placed in our PUA range
+        ictx.word.str &= "\uFFFD"
+        ictx.word.size.w += 0xFFFD.width() * ictx.cellWidth
       else:
         for j in pi ..< i:
           ictx.word.str &= str[j]

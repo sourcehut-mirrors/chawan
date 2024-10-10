@@ -2,5 +2,12 @@
 [48;2;255;0;0mx       y                                                                       [49m
 [48;2;255;0;0mx       y                                                                       [49m
 [48;2;255;0;0mx       y                                                                       [49m
-[48;2;255;0;0m^ The above rows should be aligned                                              [49m
+[48;2;255;0;0m^ The above rows should be aligned, and dump mode should output spaces.         [49m
 
+Without bgcolor:
+
+x	y
+x    	y
+x       y
+^ The above rows should be aligned, and dump mode should output real tab
+characters.
