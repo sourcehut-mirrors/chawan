@@ -115,8 +115,13 @@ type
     userstyle: CSSStylesheet
     window: Window
 
+  BufferIfaceItem = object
+    id: int
+    p: EmptyPromise
+    get: GetValueProc
+
   BufferInterface* = ref object
-    map: seq[tuple[promiseid: int; p: EmptyPromise; get: GetValueProc]]
+    map: seq[BufferIfaceItem]
     packetid: int
     len: int
     auxLen: int
@@ -146,27 +151,27 @@ proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
 
 proc addPromise[T](iface: BufferInterface; id: int): Promise[T] =
   let promise = Promise[T]()
-  iface.map.add((id, promise, getFromStream[T]))
+  iface.map.add(BufferIfaceItem(id: id, p: promise, get: getFromStream[T]))
   return promise
 
 proc addEmptyPromise(iface: BufferInterface; id: int): EmptyPromise =
   let promise = EmptyPromise()
-  iface.map.add((id, promise, nil))
+  iface.map.add(BufferIfaceItem(id: id, p: promise, get: nil))
   return promise
 
-func findPromise(iface: BufferInterface; promiseid: int): int =
+func findPromise(iface: BufferInterface; id: int): int =
   for i in 0 ..< iface.map.len:
-    if iface.map[i].promiseid == promiseid:
+    if iface.map[i].id == id:
       return i
   return -1
 
-proc resolve(iface: BufferInterface; promiseid: int) =
-  let i = iface.findPromise(promiseid)
+proc resolve(iface: BufferInterface; id: int) =
+  let i = iface.findPromise(id)
   if i != -1:
-    let (_, promise, get) = iface.map[i]
-    if get != nil:
-      get(iface, promise)
-    promise.resolve()
+    let it = iface.map[i]
+    if it.get != nil:
+      it.get(iface, it.p)
+    it.p.resolve()
     iface.map.del(i)
 
 proc newBufferInterface*(stream: SocketStream; registerFun: proc(fd: int)):

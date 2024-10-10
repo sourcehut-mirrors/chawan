@@ -3,7 +3,7 @@ import algorithm
 import utils/strwidth
 import utils/twtstr
 
-type DirlistItemType = enum
+type DirlistItemType* = enum
   ditFile, ditLink, ditDir
 
 type DirlistItem* = object
