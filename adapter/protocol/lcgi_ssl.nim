@@ -17,10 +17,10 @@ type
   ENGINE* = pointer
 
 type
-  SSL_CTX* {.importc, header: "<openssl/types.h>", incompleteStruct.} = object
-  BIO* {.importc, header: "<openssl/types.h>", incompleteStruct.} = object
-  SSL* {.importc, header: "<openssl/types.h>", incompleteStruct.} = object
-  X509* {.importc, header: "<openssl/types.h>", incompleteStruct.} = object
+  SSL_CTX* {.importc, header: "<openssl/ssl.h>", incompleteStruct.} = object
+  BIO* {.importc, header: "<openssl/bio.h>", incompleteStruct.} = object
+  SSL* {.importc, header: "<openssl/ssl.h>", incompleteStruct.} = object
+  X509* {.importc, header: "<openssl/x509.h>", incompleteStruct.} = object
 
 {.push importc.}
 
@@ -36,6 +36,7 @@ proc X509_get0_pubkey*(x: ptr X509): EVP_PKEY
 proc X509_get0_notAfter*(x: ptr X509): ASN1_TIME
 proc X509_get0_notBefore*(x: ptr X509): ASN1_TIME
 proc X509_cmp_current_time*(asn1_time: ASN1_TIME): cint
+proc X509_free*(x: ptr X509)
 
 proc i2d_PUBKEY*(a: EVP_PKEY; pp: ptr ptr uint8): cint
 {.pop.}
@@ -83,7 +84,7 @@ proc SSL_new*(ctx: ptr SSL_CTX): ptr SSL
 proc TLS_client_method*(): ptr SSL_METHOD
 proc SSL_CTX_set_min_proto_version*(ctx: ptr SSL_CTX; version: cint): cint
 proc SSL_CTX_set_cipher_list*(ctx: ptr SSL_CTX; str: cstring): cint
-proc SSL_get0_peer_certificate*(ssl: ptr SSL): ptr X509
+proc SSL_get_peer_certificate*(ssl: ptr SSL): ptr X509
 proc SSL_connect*(ssl: ptr SSL): cint
 proc SSL_do_handshake*(ssl: ptr SSL): cint
 proc SSL_set1_host*(ssl: ptr SSL; hostname: cstring): cint

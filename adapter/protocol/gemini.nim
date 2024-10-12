@@ -138,7 +138,7 @@ proc connect(os: PosixStream; ssl: ptr SSL; host, port: string;
     sdie("failed to connect")
   if SSL_do_handshake(ssl) <= 0:
     sdie("failed handshake")
-  let cert = SSL_get0_peer_certificate(ssl)
+  let cert = SSL_get_peer_certificate(ssl)
   if cert == nil:
     sdie("failed to get peer certificate")
   let pkey = X509_get0_pubkey(cert)
@@ -161,6 +161,7 @@ proc connect(os: PosixStream; ssl: ptr SSL; host, port: string;
         X509_cmp_current_time(notAfter) <= 0:
       os.die("InvalidResponse", "received an expired certificate");
   theirTime = mktime(theirTm)
+  X509_free(cert)
   return os.checkCert(theirDigest, host, storedDigest, theirTime, knownHosts,
     tmpEntry)
 
