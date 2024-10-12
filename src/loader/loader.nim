@@ -413,8 +413,8 @@ proc finishParse(handle: InputHandle) =
           handle.parser = nil
           break
       handle.cacheRef.offset = off
+      ps.sclose()
     handle.cacheRef = nil
-    ps.sclose()
   if handle.parser != nil:
     discard handle.parseHeaders(nil)
 
