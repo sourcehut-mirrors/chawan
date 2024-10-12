@@ -353,7 +353,7 @@ proc processData(state: var State; buf: openArray[char]) =
     else: state.putc(c)
 
 proc usage() =
-  stderr.write("Usage: ansihtml [-s] [-t title]\n")
+  stderr.write("Usage: ansi2html [-s] [-t title]\n")
   quit(1)
 
 proc main() =

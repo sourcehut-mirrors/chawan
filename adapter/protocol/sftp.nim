@@ -1,11 +1,9 @@
-import std/options
 import std/os
 import std/strutils
 
 import curl
 import curlerrors
 import curlwrap
-import dirlist
 
 import utils/twtstr
 
@@ -19,17 +17,9 @@ type FtpHandle = ref object
 
 proc printHeader(op: FtpHandle) =
     if op.dirmode:
-      stdout.write("""Content-Type: text/html
-
-<HTML>
-<HEAD>
-<BASE HREF=""" & op.base & """>
-<TITLE>""" & op.path & """</TITLE>
-</HEAD>
-<BODY>
-<H1>Index of """ & htmlEscape(op.path) & """</H1>
-<PRE>
-""")
+      let title = percentEncode("Index of " & op.path,
+        ComponentPercentEncodeSet)
+      stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
     else:
       stdout.write('\n')
 
@@ -77,79 +67,8 @@ proc curlWriteBody(p: cstring; size, nmemb: csize_t; userdata: pointer):
     op.statusline = true
     op.printHeader()
   if nmemb > 0:
-    if op.dirmode:
-      let i = op.buffer.len
-      op.buffer.setLen(op.buffer.len + int(nmemb))
-      copyMem(addr op.buffer[i], p, nmemb)
-    else:
-      return csize_t(stdout.writeBuffer(p, int(nmemb)))
+    return csize_t(stdout.writeBuffer(p, int(nmemb)))
   return nmemb
-
-proc finish(op: FtpHandle) =
-  let op = op
-  var items: seq[DirlistItem] = @[]
-  for line in op.buffer.split('\n'):
-    if line.len == 0: continue
-    var i = 10 # permission
-    template skip_till_space =
-      while i < line.len and line[i] != ' ':
-        inc i
-    # link count
-    i = line.skipBlanks(i)
-    while i < line.len and line[i] in AsciiDigit:
-      inc i
-    # owner
-    i = line.skipBlanks(i)
-    skip_till_space
-    # group
-    i = line.skipBlanks(i)
-    while i < line.len and line[i] != ' ':
-      inc i
-    # size
-    i = line.skipBlanks(i)
-    var sizes = ""
-    while i < line.len and line[i] in AsciiDigit:
-      sizes &= line[i]
-      inc i
-    let nsize = parseInt64(sizes).get(-1)
-    # date
-    i = line.skipBlanks(i)
-    let datestarti = i
-    skip_till_space # m
-    i = line.skipBlanks(i)
-    skip_till_space # d
-    i = line.skipBlanks(i)
-    skip_till_space # y
-    let dates = line.substr(datestarti, i)
-    inc i
-    let name = line.substr(i)
-    if name == "." or name == "..": continue
-    case line[0]
-    of 'l': # link
-      let linki = name.find(" -> ")
-      let linkfrom = name.substr(0, linki - 1)
-      let linkto = name.substr(linki + 4) # you?
-      items.add(DirlistItem(
-        t: ditLink,
-        name: linkfrom,
-        modified: dates,
-        linkto: linkto
-      ))
-    of 'd': # directory
-      items.add(DirlistItem(
-        t: ditDir,
-        name: name,
-        modified: dates
-      ))
-    else: # file
-      items.add(DirlistItem(
-        t: ditFile,
-        name: name,
-        modified: dates,
-        nsize: int(nsize)
-      ))
-  stdout.write(makeDirlist(items))
-  stdout.write("\n</PRE>\n</BODY>\n</HTML>\n")
 
 proc matchesPattern(s, pat: openArray[char]): bool =
   var i = 0
@@ -310,8 +229,6 @@ proc main() =
           stdout.write("Status: 401\n")
         else:
           stdout.write(getCurlConnectionError(res))
-    elif op.dirmode:
-      op.finish()
   curl_url_cleanup(url)
   curl_easy_cleanup(curl)
 

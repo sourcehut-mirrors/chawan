@@ -50,6 +50,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
 	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp $(OUTDIR_CGI_BIN)/sftp \
+	$(OUTDIR_LIBEXEC)/dirlist2html \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
 	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp $(OUTDIR_CGI_BIN)/canvas \
 	$(OUTDIR_CGI_BIN)/sixel $(OUTDIR_CGI_BIN)/resize \
@@ -91,13 +92,14 @@ dynstream = src/io/dynstream.nim src/io/serversocket.nim
 lcgi = $(dynstream) $(twtstr) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 curl = adapter/protocol/curl.nim adapter/protocol/curlerrors.nim
+
 $(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
 		lib/monoucha/monoucha/libregexp.nim $(twtstr)
 $(OUTDIR_CGI_BIN)/http: $(curl) src/utils/sandbox.nim
 $(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
-$(OUTDIR_CGI_BIN)/file: $(twtstr) adapter/protocol/dirlist.nim src/utils/strwidth.nim
-$(OUTDIR_CGI_BIN)/ftp: $(lcgi) adapter/protocol/dirlist.nim src/utils/strwidth.nim
-$(OUTDIR_CGI_BIN)/sftp: $(curl) $(twtstr) src/utils/strwidth.nim adapter/protocol/dirlist.nim
+$(OUTDIR_CGI_BIN)/file: $(twtstr)
+$(OUTDIR_CGI_BIN)/ftp: $(lcgi)
+$(OUTDIR_CGI_BIN)/sftp: $(curl) $(twtstr)
 $(OUTDIR_CGI_BIN)/gopher: adapter/gophertypes.nim $(lcgi)
 $(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
@@ -114,6 +116,7 @@ $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim src/io/poll.nim $(twtstr) $(dynstream)
 $(OUTDIR_LIBEXEC)/md2html: $(twtstr)
+$(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr) src/utils/strwidth.nim
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
@@ -169,7 +172,7 @@ manpage: $(manpages:%=doc/%)
 
 protocols = http about file ftp sftp gopher gemini cha-finger man spartan stbi \
 	jebp sixel canvas resize
-converters = gopher2html md2html ansi2html gmi2html
+converters = gopher2html md2html ansi2html gmi2html dirlist2html
 tools = urlenc
 
 .PHONY: install

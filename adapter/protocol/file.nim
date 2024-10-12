@@ -1,8 +1,5 @@
-import std/algorithm
 import std/os
 import std/times
-
-import dirlist
 
 import utils/twtstr
 
@@ -13,56 +10,54 @@ proc loadDir(path, opath: string) =
   var base = "file://" & opath
   if base[^1] != '/': #TODO dos/windows
     base &= '/'
-  stdout.write("Content-Type: text/html\n\n")
-  stdout.write("""
-<HTML>
-<HEAD>
-<BASE HREF="""" & base & """">
-<TITLE>Directory list of """ & path & """</TITLE>
-</HEAD>
-<BODY>
-<H1>Directory list of """ & path & """</H1>
-<PRE>
-""")
-  var fs: seq[(PathComponent, string)]
+  let title = percentEncode("Directory list of " & path,
+    ComponentPercentEncodeSet)
+  stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   for pc, file in walkDir(path, relative = true):
-    fs.add((pc, file))
-  fs.sort(cmp = proc(a, b: (PathComponent, string)): int = cmp(a[1], b[1]))
-  var items: seq[DirlistItem]
-  for (pc, file) in fs:
     let fullpath = path / file
     var info: FileInfo
     try:
       info = getFileInfo(fullpath, followSymlink = false)
     except OSError:
       continue
-    let modified = $info.lastWriteTime.local().format("MMM/dd/yyyy HH:MM")
-    case pc
-    of pcDir:
-      items.add(DirlistItem(
-        t: ditDir,
-        name: file,
-        modified: modified
-      ))
-    of pcFile:
-      items.add(DirlistItem(
-        t: ditFile,
-        name: file,
-        modified: modified,
-        nsize: int(info.size)
-      ))
-    of pcLinkToDir, pcLinkToFile:
+    const TypeMap = [
+      pcFile: '-',
+      pcLinkToFile: 'l',
+      pcDir: 'd',
+      pcLinkToDir: 'l'
+    ]
+    var line = $TypeMap[pc]
+    const PermMap = {
+      fpUserRead: 'r',
+      fpUserWrite: 'w',
+      fpUserExec: 'x',
+      fpGroupRead: 'r',
+      fpGroupWrite: 'w',
+      fpGroupExec: 'x',
+      fpOthersRead: 'r',
+      fpOthersWrite: 'w',
+      fpOthersExec: 'x'
+    }
+    for (perm, c) in PermMap:
+      if perm in info.permissions:
+        line &= c
+      else:
+        line &= '-'
+    line &= ' ' & $info.linkCount & ' '
+    line &= "0 " # owner, currently unused
+    line &= "0 " # group, currently unused
+    line &= $info.size & ' '
+    #TODO if new enough, send time instead of year
+    let modified = $info.lastWriteTime.local().format("MMM dd yyyy")
+    line &= $modified & ' '
+    if pc in {pcLinkToDir, pcLinkToFile}:
       var target = expandSymlink(fullpath)
-      if pc == pcLinkToDir:
+      if pc == pcLinkToDir and target.len == 0 or target[^1] != '/':
         target &= '/'
-      items.add(DirlistItem(
-        t: ditLink,
-        name: file,
-        modified: modified,
-        linkto: target
-      ))
-  stdout.write(makeDirlist(items))
-  stdout.write("\n</PRE>\n</BODY>\n</HTML>\n")
+      line &= file & " -> " & target
+    else:
+      line &= file
+    stdout.writeLine(line)
 
 proc loadFile(f: File) =
   # No headers, we'll let the browser figure out the file type.

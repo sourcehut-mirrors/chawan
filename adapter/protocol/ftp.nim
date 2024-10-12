@@ -4,77 +4,8 @@ import std/posix
 import std/strutils
 
 import lcgi
-import dirlist
 
 import utils/twtstr
-
-proc finish(buffer: string) =
-  var items: seq[DirlistItem] = @[]
-  for line in buffer.split('\n'):
-    if line.len == 0: continue
-    var i = 10 # permission
-    template skip_till_space =
-      while i < line.len and line[i] != ' ':
-        inc i
-    # link count
-    i = line.skipBlanks(i)
-    while i < line.len and line[i] in AsciiDigit:
-      inc i
-    # owner
-    i = line.skipBlanks(i)
-    skip_till_space
-    # group
-    i = line.skipBlanks(i)
-    while i < line.len and line[i] != ' ':
-      inc i
-    # size
-    i = line.skipBlanks(i)
-    var sizes = ""
-    while i < line.len and line[i] in AsciiDigit:
-      sizes &= line[i]
-      inc i
-    let nsize = parseInt64(sizes).get(-1)
-    # date
-    i = line.skipBlanks(i)
-    let datestarti = i
-    skip_till_space # m
-    i = line.skipBlanks(i)
-    skip_till_space # d
-    i = line.skipBlanks(i)
-    skip_till_space # y
-    let dates = line.substr(datestarti, i)
-    inc i
-    var j = line.len
-    if line[^1] == '\r':
-      dec j
-    let name = line.substr(i, j - 1)
-    if name == "." or name == "..": continue
-    case line[0]
-    of 'l': # link
-      let linki = name.find(" -> ")
-      let linkfrom = name.substr(0, linki - 1)
-      let linkto = name.substr(linki + 4) # you?
-      items.add(DirlistItem(
-        t: ditLink,
-        name: linkfrom,
-        modified: dates,
-        linkto: linkto
-      ))
-    of 'd': # directory
-      items.add(DirlistItem(
-        t: ditDir,
-        name: name,
-        modified: dates
-      ))
-    else: # file
-      items.add(DirlistItem(
-        t: ditFile,
-        name: name,
-        modified: dates,
-        nsize: int(nsize)
-      ))
-  stdout.write(makeDirlist(items))
-  stdout.write("\n</PRE>\n</BODY>\n</HTML>\n")
 
 proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
     int32 =
@@ -186,23 +117,17 @@ proc main() =
   if dirmode:
     if os.sendCommand(ps, "LIST", "", obuf) == 550:
       os.sdie(404, "Not found", obuf)
-    os.sendDataLoop("""Content-Type: text/html
-
-<HTML>
-<BODY>
-<H1>Index of """ & htmlEscape(path) & """</H1>
-<PRE>""")
-    let buffer = passive.recvAll()
-    finish(buffer)
+    let title = percentEncode("Index of " & path, ComponentPercentEncodeSet)
+    os.sendDataLoop("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   else:
     if os.sendCommand(ps, "RETR", path, obuf) == 550:
       os.sdie(404, "Not found", obuf)
     os.sendDataLoop("\n")
-    var buffer {.noinit.}: array[4096, uint8]
-    while true:
-      let n = passive.recvData(buffer)
-      if n == 0:
-        break
-      os.sendDataLoop(buffer.toOpenArray(0, n - 1))
+  var buffer {.noinit.}: array[4096, uint8]
+  while true:
+    let n = passive.recvData(buffer)
+    if n == 0:
+      break
+    os.sendDataLoop(buffer.toOpenArray(0, n - 1))
 
 main()
