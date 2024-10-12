@@ -273,8 +273,17 @@ proc addFd(ctx: LoaderContext; handle: InputHandle) =
 type ControlResult = enum
   crDone, crContinue, crError
 
-proc handleFirstLine(handle: InputHandle; line: string; headers: Headers;
-    status: var uint16): ControlResult =
+proc handleFirstLine(handle: InputHandle; line: string): ControlResult =
+  if line.startsWithIgnoreCase("HTTP/1.0") or
+      line.startsWithIgnoreCase("HTTP/1.1"):
+    let codes = line.until(' ', "HTTP/1.0 ".len)
+    let code = parseUInt16(codes)
+    if codes.len > 3 or code.isNone:
+      handle.sendResult(ceCGIMalformedHeader)
+      return crError
+    handle.sendResult(0) # Success
+    handle.parser.status = code.get
+    return crDone
   let k = line.until(':')
   if k.len == line.len:
     # invalid
@@ -283,67 +292,67 @@ proc handleFirstLine(handle: InputHandle; line: string; headers: Headers;
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
     handle.sendResult(0) # success
-    status = parseUInt16(v, allowSign = false).get(0)
+    let code = parseUInt16(v)
+    if v.len > 3 or code.isNone:
+      handle.sendResult(ceCGIMalformedHeader)
+      return crError
+    handle.parser.status = code.get
     return crContinue
   if k.equalsIgnoreCase("Cha-Control"):
     if v.startsWithIgnoreCase("Connected"):
       handle.sendResult(0) # success
       return crContinue
-    elif v.startsWithIgnoreCase("ConnectionError"):
+    if v.startsWithIgnoreCase("ConnectionError"):
       let errs = v.split(' ')
-      if errs.len <= 1:
-        handle.sendResult(ceCGIInvalidChaControl)
-      else:
-        var code = int32(ceCGIInvalidChaControl)
+      var code = int32(ceCGIInvalidChaControl)
+      var message = ""
+      if errs.len > 1:
         if (let x = parseInt32(errs[1]); x.isSome):
           code = x.get
         elif (let x = strictParseEnum[ConnectionError](errs[1]); x.isSome):
           code = int32(x.get)
-        var message = ""
         if errs.len > 2:
           message &= errs[2]
           for i in 3 ..< errs.len:
             message &= ' '
             message &= errs[i]
-        handle.sendResult(code, message)
+      handle.sendResult(code, message)
       return crError
-    elif v.startsWithIgnoreCase("ControlDone"):
+    if v.startsWithIgnoreCase("ControlDone"):
       return crDone
     handle.sendResult(ceCGIInvalidChaControl)
     return crError
   handle.sendResult(0) # success
-  headers.add(k, v)
+  handle.parser.headers.add(k, v)
   return crDone
 
-proc handleControlLine(handle: InputHandle; line: string; headers: Headers;
-    status: var uint16): ControlResult =
+proc handleControlLine(handle: InputHandle; line: string): ControlResult =
   let k = line.until(':')
   if k.len == line.len:
     # invalid
     return crError
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
-    status = parseUInt16(v, allowSign = false).get(0)
+    let code = parseUInt16(v)
+    if v.len > 3 or code.isNone:
+      return crError
+    handle.parser.status = parseUInt16(v).get(0)
     return crContinue
   if k.equalsIgnoreCase("Cha-Control"):
     if v.startsWithIgnoreCase("ControlDone"):
       return crDone
     return crError
-  headers.add(k, v)
+  handle.parser.headers.add(k, v)
   return crDone
 
-# returns false if transfer was interrupted
-proc handleLine(handle: InputHandle; line: string; headers: Headers) =
+proc handleLine(handle: InputHandle; line: string) =
   let k = line.until(':')
-  if k.len == line.len:
-    # invalid
-    return
-  let v = line.substr(k.len + 1).strip()
-  headers.add(k, v)
+  if k.len < line.len:
+    let v = line.substr(k.len + 1).strip()
+    handle.parser.headers.add(k, v)
 
 proc parseHeaders0(handle: InputHandle; data: openArray[char]): int =
   let parser = handle.parser
-  var s = parser.lineBuffer
   for i, c in data:
     template die =
       handle.parser = nil
@@ -354,7 +363,7 @@ proc parseHeaders0(handle: InputHandle; data: openArray[char]): int =
     if c == '\r':
       parser.crSeen = true
     elif c == '\n':
-      if s == "":
+      if parser.lineBuffer == "":
         if parser.state == hpsBeforeLines:
           # body comes immediately, so we haven't had a chance to send result
           # yet.
@@ -365,22 +374,20 @@ proc parseHeaders0(handle: InputHandle; data: openArray[char]): int =
         return i + 1 # +1 to skip \n
       case parser.state
       of hpsBeforeLines:
-        case handle.handleFirstLine(s, parser.headers, parser.status)
+        case handle.handleFirstLine(parser.lineBuffer)
         of crDone: parser.state = hpsControlDone
         of crContinue: parser.state = hpsAfterFirstLine
         of crError: die
       of hpsAfterFirstLine:
-        case handle.handleControlLine(s, parser.headers, parser.status)
+        case handle.handleControlLine(parser.lineBuffer)
         of crDone: parser.state = hpsControlDone
         of crContinue: discard
         of crError: die
       of hpsControlDone:
-        handle.handleLine(s, parser.headers)
-      s = ""
+        handle.handleLine(parser.lineBuffer)
+      parser.lineBuffer = ""
     else:
-      s &= c
-  if s != "":
-    parser.lineBuffer = s
+      parser.lineBuffer &= c
   return data.len
 
 proc parseHeaders(handle: InputHandle; buffer: LoaderBuffer): int =
