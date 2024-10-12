@@ -1,22 +1,13 @@
 #!/bin/sh
 # Adapter for the spartan protocol. See: spartan://mozz.us
-# Requires netcat (nc).
-#
-# Usage: add the following line to your urimethodmap:
-#
-# spartan: /cgi-bin/spartan.cgi
 
-if ! type nc >/dev/null 2>/dev/null
-then	printf 'Cha-Control: ConnectionError 1 nc not found\n'
-	exit 1
-fi
 MAPPED_URI_PORT=${MAPPED_URI_PORT:=300} # default port is 300
 MAPPED_URI_PATH=${MAPPED_URI_PATH:=/} # needs / for root
 if test "$REQUEST_METHOD" != POST && test "$MAPPED_URI_QUERY" = "input"
 then	printf "Content-Type: text/html
 
 <!DOCTYPE html>
-<form method=POST action=\"$MAPPED_URI_PATH\">
+<form method=POST action='\"$MAPPED_URI_PATH\"'>
 Input text to upload:
 <p>
 <textarea name=q></textarea>
@@ -30,7 +21,7 @@ CONTENT_LENGTH=${CONTENT_LENGTH:=0} # if missing, set to 0
 {
 	printf '%s %d\n' "$MAPPED_URI_HOST $MAPPED_URI_PATH" "$CONTENT_LENGTH"
 	tail -c+3 # skip q=
-} | nc "$MAPPED_URI_HOST" "$MAPPED_URI_PORT" 2>/dev/null | {
+} | "$CHA_LIBEXEC_DIR"/nc "$MAPPED_URI_HOST" "$MAPPED_URI_PORT" | {
 	IFS= read -r line
 	case $line in
 	'2 '*)	ctype=${line#2 }
@@ -42,6 +33,6 @@ CONTENT_LENGTH=${CONTENT_LENGTH:=0} # if missing, set to 0
 	'3 '*)	printf "Status: 301\nLocation: %s\n" "${line#3 }" ;;
 	'4 '*)	printf "Status: 403\n\n%s" "${line#4 }" ;;
 	'5 '*)	printf "Status: 500\n\n%s" "${line#5 }" ;;
-	*)	printf "Cha-Control: ConnectionError 1 malformed response\n"
+	*)	printf "Cha-Control: ConnectionError InvalidResponse\n"
 	esac
 }

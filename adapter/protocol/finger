@@ -1,0 +1,29 @@
+#!/bin/sh
+# Finger protocol adapter for Chawan.
+
+die() {
+	echo "Cha-Control: ConnectionError $1 $2"
+	exit 1
+}
+
+PORT=${MAPPED_URI_PORT:-79}
+test "$PORT" = 79 || die InvalidURL "wrong port, only port 79 is supported"
+
+# Parse the URL. Roughly based on Lynx finger URL parsing, but less
+# sophisticated.
+USER=$MAPPED_URI_USERNAME
+if test -z "$USER"
+then	case "$MAPPED_URI_PATH" in
+	/w/*)	USER="/w ${MAPPED_URI_PATH#/w/}" ;;
+	*)	USER=${MAPPED_URI_PATH#/} ;;
+	esac
+fi
+
+# Headers.
+printf 'Content-Type: text/plain\n'
+
+# Newline; from here on we are sending the content body.
+printf '\n'
+
+# Finger request, the output of which goes to stdout.
+printf '%s\r\n' "$USER" | "$CHA_LIBEXEC_DIR"/nc "$MAPPED_URI_HOST" "$PORT"

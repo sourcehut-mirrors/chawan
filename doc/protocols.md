@@ -94,19 +94,17 @@ HTML.
 
 ## Finger
 
-Finger is supported through the `adapter/protocol/cha-finger` shell script.
-It is implemented as a shell script because of the protocol's simplicity.
-cha-finger uses the `curl` program's telnet:// protocol to make requests.
-As such, it will not work if `curl` is not installed.
+Finger is supported through the `finger` shell script. It is implemented
+as a shell script because of the protocol's simplicity.
 
-Aspiring protocol adapter writers are encouraged to study cha-finger for
-a simple example of how a custom protocol handler could be written.
+For portability, `finger` uses Chawan's `nc` tool (a very limited netcat
+clone) to make requests.
 
 ## Spartan
 
 Spartan is a protocol similar to Gemini, but without TLS. It is supported
-through the `adapter/protocol/spartan` shell script, which uses `nc` to make
-requests.
+through the `spartan` shell script, and like Finger, it uses Chawan's `nc` to
+make requests.
 
 Spartan has the very strange property of extending gemtext with a
 protocol-specific line type. This is sort of supported through a sed filter

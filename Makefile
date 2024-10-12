@@ -48,13 +48,13 @@ endif
 all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gemini $(OUTDIR_LIBEXEC)/gmi2html \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
-	$(OUTDIR_CGI_BIN)/cha-finger $(OUTDIR_CGI_BIN)/about \
+	$(OUTDIR_CGI_BIN)/finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp $(OUTDIR_CGI_BIN)/sftp \
 	$(OUTDIR_LIBEXEC)/dirlist2html \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
 	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp $(OUTDIR_CGI_BIN)/canvas \
 	$(OUTDIR_CGI_BIN)/sixel $(OUTDIR_CGI_BIN)/resize \
-	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc \
+	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc $(OUTDIR_LIBEXEC)/nc \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
@@ -170,10 +170,10 @@ manpages = $(manpages1) $(manpages5)
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
-protocols = http about file ftp sftp gopher gemini cha-finger man spartan stbi \
+protocols = http about file ftp sftp gopher gemini finger man spartan stbi \
 	jebp sixel canvas resize
 converters = gopher2html md2html ansi2html gmi2html dirlist2html
-tools = urlenc
+tools = urlenc nc
 
 .PHONY: install
 install:
@@ -201,12 +201,15 @@ uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/mancha"
 # intentionally not quoted
 	for f in $(protocols); do rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/$$f; done
-# note: png has been removed in favor of stbi.
+# notes:
+# * png has been removed in favor of stbi
+# * data has been moved back into the main binary
+# * gmifetch has been replaced by gemini
+# * cha-finger has been renamed to finger
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
-# note: data has been moved back into the main binary.
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
-# note: gmifetch has been replaced by gemini
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 # urldec is just a symlink to urlenc
