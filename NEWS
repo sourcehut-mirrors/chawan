@@ -1,3 +1,6 @@
+0.5.2 (2024.10.12)
+* fix a bug in our libregexp patch
+
 0.5.1 (2024.10.02)
 * fix build with --threads:off
 
