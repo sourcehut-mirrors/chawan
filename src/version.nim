@@ -16,10 +16,10 @@ macro tryImport(x: untyped; name: static string) =
 macro checkVersion(xs: static string; major, minor, patch: int) =
   let x = ident(xs & "Version")
   quote do:
-    when (`x`.Major, `x`.Minor, `x`.Patch) < (`major`, `minor`, `patch`):
+    when (`x`.Major, `x`.Minor, `x`.Patch) != (`major`, `minor`, `patch`):
       var es = $`major` & "." & $`minor` & "." & $`patch`
       var gs = $`x`.Major & "." & $`x`.Minor & "." & $`x`.Patch
-      error("Version of " & `xs` & " too low (expected " & es & ", got " &
+      error("Incorrect version of " & `xs` & " (expected " & es & ", got " &
         gs & "). Please run `make submodule` to update.")
 
 tryImport chagashi/version, "chagashi"
@@ -29,4 +29,4 @@ tryImport monoucha/version, "monoucha"
 static:
   checkVersion("chagashi", 0, 6, 0)
   checkVersion("chame", 1, 0, 1)
-  checkVersion("monoucha", 0, 5, 1)
+  checkVersion("monoucha", 0, 5, 2)
