@@ -3134,11 +3134,11 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
   if url.isSome:
     let url = url.get
     let media = link.media
+    var applies = true
     if media != "":
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals)
-      if not media.appliesFwdDecl(window):
-        return
+      applies = media.appliesFwdDecl(window)
     let p = window.loader.fetch(
       newRequest(url)
     ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
@@ -3149,7 +3149,8 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
         res.close()
       return newResolvedPromise(JSResult[string].err(nil))
     ).then(proc(s: JSResult[string]) =
-      if s.isSome:
+      # Check applies here, to avoid leaking the window size.
+      if s.isSome and applies:
         #TODO non-utf-8 css?
         link.sheet = parseStylesheet(s.get, window.factory)
         window.document.cachedSheetsInvalid = true
