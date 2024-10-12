@@ -1934,7 +1934,7 @@ static BOOL is_word_char(uint32_t c)
                             c = from_surrogate(*--_p, c);               \
         } else {                                                        \
             const uint8_t *__cpt2 = cptr;                               \
-            int __i = 0;                                                \
+            int __i = 1;                                                \
             while (__cpt2 > cbuf_start && ((*__cpt2-- >> 6) & 2))       \
                 __i++;                                                  \
             c = utf8_decode_len(__cpt2, __i, &__cpt2);                  \
@@ -1958,7 +1958,7 @@ static BOOL is_word_char(uint32_t c)
             cptr = (const void *)_p;                                    \
         } else {                                                        \
             const uint8_t *__cpt2;                                      \
-            int __i = 0;                                                \
+            int __i = 1;                                                \
             while (cptr > cbuf_start && ((*cptr-- >> 6) & 2))           \
                 __i++;                                                  \
             c = utf8_decode_len(cptr, __i, &__cpt2);                    \
