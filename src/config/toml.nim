@@ -12,7 +12,6 @@ type
     tvtInteger = "integer"
     tvtFloat = "float"
     tvtBoolean = "boolean"
-    tvtDateTime = "datetime"
     tvtTable = "table"
     tvtArray = "array"
 
@@ -43,8 +42,6 @@ type
       b*: bool
     of tvtTable:
       tab*: TomlTable
-    of tvtDateTime:
-      dt*: DateTime
     of tvtArray:
       a*: seq[TomlValue]
       ad*: bool
@@ -102,8 +99,6 @@ func `$`*(val: TomlValue): string =
     result = $val.b
   of tvtTable:
     result = $val.t
-  of tvtDateTime:
-    result = $val.dt
   of tvtArray:
     #TODO if ad table array probably
     result = "["

@@ -273,6 +273,9 @@ func parseOctInt64*(s: openArray[char]): Option[int64] =
 func parseHexInt64*(s: openArray[char]): Option[int64] =
   return parseIntImpl[int64, uint64](s, 16)
 
+func parseIntP*(s: openArray[char]): Option[int] =
+  return parseIntImpl[int, uint](s, 10)
+
 # https://www.w3.org/TR/css-syntax-3/#convert-string-to-number
 func parseFloat64*(s: openArray[char]): float64 =
   var sign = 1f64

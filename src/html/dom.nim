@@ -3233,15 +3233,14 @@ proc loadResource(window: Window; image: HTMLImageElement) =
               $response.url)
             return
           let dims = response.headers.table["Cha-Image-Dimensions"][0]
-          let width = parseUInt64(dims.until('x'), allowSign = false)
-          let height = parseUInt64(dims.after('x'), allowSign = false)
-          if width.isNone or height.isNone or width.get > uint64(int.high) or
-              height.get > uint64(int.high):
+          let width = parseIntP(dims.until('x'))
+          let height = parseIntP(dims.after('x'))
+          if width.get(-1) < 0 or height.get(-1) < 0:
             window.console.error("wrong Cha-Image-Dimensions in", $response.url)
             return
           let bmp = NetworkBitmap(
-            width: int(width.get),
-            height: int(height.get),
+            width: width.get,
+            height: height.get,
             cacheId: cacheId,
             imageId: window.getImageId(),
             contentType: contentType
