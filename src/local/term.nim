@@ -11,7 +11,6 @@ import chagashi/decoder
 import chagashi/encoder
 import config/config
 import io/dynstream
-import js/base64
 import types/blob
 import types/cell
 import types/color

@@ -9,7 +9,6 @@ import html/script
 import html/xmlhttprequest
 import io/dynstream
 import io/promise
-import js/base64
 import js/console
 import js/domexception
 import js/encoding
@@ -29,6 +28,7 @@ import types/blob
 import types/opt
 import types/url
 import types/winattrs
+import utils/twtstr
 
 # NavigatorID
 proc appCodeName(navigator: var Navigator): string {.jsfget.} = "Mozilla"
@@ -227,12 +227,33 @@ func getTop(window: Window): Window {.jsuffget: "top".} =
 func getParent(window: Window): Window {.jsfget: "parent".} =
   return window #TODO frames?
 
-proc atob(window: Window; data: string): DOMResult[NarrowString] {.jsfunc.} =
-  return atob(data)
+# See twtstr for the actual implementations.
+proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
+  let r = atob0(data)
+  if r.isNone:
+    let ex = newDOMException($r.error, "InvalidCharacterError")
+    return JS_Throw(ctx, ctx.toJS(ex))
+  return ctx.toJS(NarrowString(r.get))
 
-proc btoa(ctx: JSContext; window: Window; data: JSValue): DOMResult[string]
+proc btoa(ctx: JSContext; window: Window; data: JSValue): JSValue
     {.jsfunc.} =
-  return btoa(ctx, data)
+  let data = JS_ToString(ctx, data)
+  if JS_IsException(data):
+    return JS_EXCEPTION
+  doAssert JS_IsString(data)
+  if JS_IsStringWideChar(data):
+    JS_FreeValue(ctx, data)
+    let ex = newDOMException("Invalid character in string",
+      "InvalidCharacterError")
+    return JS_Throw(ctx, ctx.toJS(ex))
+  let len = int(JS_GetStringLength(data))
+  if len == 0:
+    JS_FreeValue(ctx, data)
+    return ctx.toJS("")
+  let buf = JS_GetNarrowStringBuffer(data)
+  let res = btoa(buf.toOpenArray(0, len - 1))
+  JS_FreeValue(ctx, data)
+  return ctx.toJS(res)
 
 proc alert(window: Window; s: string) {.jsfunc.} =
   window.console.error(s)
