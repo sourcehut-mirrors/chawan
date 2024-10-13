@@ -1,0 +1,19 @@
+
+Note: the absolute box is sized differently than boxes in other engines, because
+the CSS standard explicitly specifies this as UB and I *really* don't want to
+make this even more complex.
+
+I don't care, but feel free to fix it ;)
+
+(Also, position: absolute should overprint inline boxes after it, but it
+doesn't. This needs further investigation.)
+
+
+
+test test test testadsfasdf
+test test [48;2;255;0;0m2t 2tt[49mest
+asdfasd fa[48;2;255;0;0msd    [49m
+          [48;2;255;0;0m      [49m
+
+
+test 

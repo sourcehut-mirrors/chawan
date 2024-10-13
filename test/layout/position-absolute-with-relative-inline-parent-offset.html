@@ -1,0 +1,24 @@
+<!-- don't ask -->
+<p>
+Note: the absolute box is sized differently than boxes in other engines,
+because the CSS standard explicitly specifies this as UB and I *really*
+don't want to make this even more complex.
+<p>
+I don't care, but feel free to fix it ;)
+<p>
+(Also, position: absolute should overprint inline boxes after it, but it
+doesn't. This needs further investigation.)
+</p>
+<br>
+<br>test test <span style="position:relative">test test<div style="display: inline-block">adsfasdf</div><BR>
+test test test test
+<div>
+<div style="display: block; position: absolute; top: 0em; left: 0; height: 100%; background: red; width: 3em">2t 2t 2</div>
+asdfasd fasd
+</div>
+</div>
+<br>
+<br>
+<br>
+test
+</span>

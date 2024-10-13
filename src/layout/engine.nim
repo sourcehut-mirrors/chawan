@@ -14,9 +14,33 @@ import utils/twtuni
 import utils/widthconv
 
 type
+  # position: absolute is annoying in that its layout depends on its
+  # containing box's size, which of course is rarely its parent box.
+  # e.g. in
+  # <div style="position: relative; display: inline-block">
+  #   <div>
+  #     <div style="position: absolute; width: 100%; color: red">
+  #     blah
+  #     </div>
+  #   <div>
+  # blah blah
+  # </div>
+  # the width of the absolute box is the same as "blah blah", but we
+  # only know that after the outermost box has been layouted.
+  #
+  # So we must delay this layout until before the outermost box is
+  # popped off the stack, and we do this by queuing up absolute boxes in
+  # the initial pass.
+  QueuedAbsolute = object
+    offset: Offset
+    child: BlockBox
+
+  PositionedItem = ref object
+    queue: seq[QueuedAbsolute]
+
   LayoutContext = ref object
     attrsp: ptr WindowAttributes
-    positioned: seq[AvailableSpace]
+    positioned: seq[PositionedItem]
     myRootProperties: CSSComputedValues
     # placeholder text data
     imgText: StyledNode
@@ -159,14 +183,6 @@ func minClamp(x: LayoutUnit; span: Span): LayoutUnit =
 const PositionStaticLike = {
   PositionStatic, PositionFixed, PositionSticky
 }
-
-proc pushPositioned(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
-  if box.computed{"position"} notin PositionStaticLike:
-    lctx.positioned.add(sizes.space)
-
-proc popPositioned(lctx: LayoutContext; box: BlockBox) =
-  if box.computed{"position"} notin PositionStaticLike:
-    lctx.positioned.setLen(lctx.positioned.len - 1)
 
 type
   BlockContext = object
@@ -597,13 +613,6 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
       ictx.lbstate.availableWidth
     else:
       ictx.lbstate.size.w
-    if state.firstLine:
-      #TODO padding top
-      state.fragment.state.startOffset = offset(
-        x = state.startOffsetTop.x,
-        y = y + ictx.lbstate.size.h
-      )
-      state.firstLine = false
     ictx.size.w = max(ictx.size.w, lineWidth)
     ictx.lbstate = LineBoxState(offsety: y + ictx.lbstate.size.h)
     ictx.initLine()
@@ -636,6 +645,19 @@ proc flushLine(ictx: var InlineContext; state: var InlineState) =
   ictx.applyLineHeight(ictx.lbstate, state.fragment.computed)
   ictx.finishLine(state, wrap = false, force = true)
 
+func getBaseline(ictx: InlineContext; iastate: InlineAtomState;
+    atom: InlineAtom): LayoutUnit =
+  return case iastate.vertalign.keyword
+  of VerticalAlignBaseline:
+    let len = iastate.vertalign.length.px(ictx.lctx, ictx.cellHeight)
+    iastate.baseline + len
+  of VerticalAlignTop, VerticalAlignBottom:
+    atom.size.h
+  of VerticalAlignMiddle:
+    atom.size.h div 2
+  else:
+    iastate.baseline
+
 # Add an inline atom atom, with state iastate.
 # Returns true on newline.
 proc addAtom(ictx: var InlineContext; state: var InlineState;
@@ -657,7 +679,7 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
       ictx.finishLine(state, wrap = false, force = true)
       # Recompute on newline
       shift = ictx.computeShift(state)
-  if atom.size.w > 0 and atom.size.h > 0:
+  if atom.size.w > 0 and atom.size.h > 0 or atom.t == iatInlineBlock:
     if shift > 0:
       ictx.addSpacing(shift, state)
     ictx.root.state.xminwidth = max(ictx.root.state.xminwidth, atom.xminwidth)
@@ -675,17 +697,8 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     ictx.lbstate.putAtom(atom, iastate, state.fragment)
     atom.offset.x += ictx.lbstate.size.w
     ictx.lbstate.size.w += atom.size.w
-    let baseline = case iastate.vertalign.keyword
-    of VerticalAlignBaseline:
-      let len = iastate.vertalign.length.px(ictx.lctx, ictx.cellHeight)
-      iastate.baseline + len
-    of VerticalAlignTop, VerticalAlignBottom:
-      atom.size.h
-    of VerticalAlignMiddle:
-      atom.size.h div 2
-    else:
-      iastate.baseline
     # store for later use in resizeLine/shiftAtoms
+    let baseline = ictx.getBaseline(iastate, atom)
     atom.offset.y = baseline
     ictx.lbstate.baseline = max(ictx.lbstate.baseline, baseline)
 
@@ -1012,8 +1025,7 @@ proc resolveAbsoluteSize(sizes: var ResolvedSizes; space: AvailableSpace;
   let cvalSize = computed[CvalSizeMap[dim]].length
   if cvalSize.auto:
     if space[dim].isDefinite:
-      let u = max(space[dim].u - sizes.positioned[dim].sum() -
-        sizes.margin[dim].sum() - sizes.padding[dim].sum(), 0)
+      let u = max(space[dim].u - sizes.positioned[dim].sum(), 0)
       let cvalStart = computed[CvalStartMap[dim]].length
       let cvalEnd = computed[CvalEndMap[dim]].length
       if not cvalStart.auto and not cvalEnd.auto:
@@ -1063,9 +1075,8 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
 
 # Calculate and resolve available width & height for absolutely positioned
 # boxes.
-proc resolveAbsoluteSizes(lctx: LayoutContext; computed: CSSComputedValues):
-    ResolvedSizes =
-  let space = lctx.positioned[^1]
+proc resolveAbsoluteSizes(lctx: LayoutContext; space: AvailableSpace;
+    computed: CSSComputedValues): ResolvedSizes =
   var sizes = ResolvedSizes(
     margin: resolveMargins(space.w, lctx, computed),
     padding: resolvePadding(space.w, lctx, computed),
@@ -1133,7 +1144,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
 proc resolveSizes(lctx: LayoutContext; space: AvailableSpace;
     computed: CSSComputedValues): ResolvedSizes =
   if computed{"position"} == PositionAbsolute:
-    return lctx.resolveAbsoluteSizes(computed)
+    return lctx.resolveAbsoluteSizes(space, computed)
   elif computed{"float"} != FloatNone:
     return lctx.resolveFloatSizes(space, computed)
   else:
@@ -1257,6 +1268,38 @@ proc clearFloats(offset: var Offset; bctx: var BlockContext; clear: CSSClear) =
   bctx.clearOffset = y
   offset.y = y - bctx.bfcOffset.y
 
+proc applyOverflowDimensions(parent: var Overflow; child: BlockBox) =
+  var childOverflow = child.state.overflow
+  for dim in DimensionType:
+    childOverflow[dim] += child.state.offset[dim]
+    parent[dim].expand(childOverflow[dim])
+
+proc applyOverflowDimensions(box, child: BlockBox) =
+  box.state.overflow.applyOverflowDimensions(child)
+
+proc pushPositioned(lctx: LayoutContext) =
+  lctx.positioned.add(PositionedItem())
+
+proc popPositioned(lctx: LayoutContext; overflow: var Overflow;
+    space: AvailableSpace) =
+  let item = lctx.positioned.pop()
+  for it in item.queue:
+    let child = it.child
+    var marginBottomOut: LayoutUnit
+    lctx.layoutRootBlock(child, space, it.offset, marginBottomOut)
+    child.state.offset.y += child.state.margin.top
+    if not child.computed{"left"}.auto:
+      child.state.offset.x = child.state.positioned.left
+    elif not child.computed{"right"}.auto:
+      child.state.offset.x = -child.state.positioned.right -
+        child.state.size.w - child.state.margin.right
+    if not child.computed{"top"}.auto:
+      child.state.offset.y = child.state.positioned.top
+    elif not child.computed{"bottom"}.auto:
+      child.state.offset.y = -child.state.positioned.bottom -
+        child.state.size.h - child.state.margin.bottom
+    overflow.applyOverflowDimensions(child)
+
 type
   BlockState = object
     offset: Offset
@@ -1341,12 +1384,6 @@ proc positionFloat(bctx: var BlockContext; child: BlockBox;
   bctx.exclusions.add(ex)
   bctx.maxFloatHeight = max(bctx.maxFloatHeight, ex.offset.y + ex.size.h)
 
-proc applyOverflowDimensions(box, child: BlockBox) =
-  var childOverflow = child.state.overflow
-  for dim in DimensionType:
-    childOverflow[dim] += child.state.offset[dim]
-    box.state.overflow[dim].expand(childOverflow[dim])
-
 proc positionFloats(bctx: var BlockContext) =
   for f in bctx.unpositionedFloats:
     bctx.positionFloat(f.box, f.space, f.parentBps.offset)
@@ -1396,6 +1433,9 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
   of ListStylePositionInside:
     bctx.layoutFlow(box, sizes)
 
+const DisplayOuterInline = {
+  DisplayInlineBlock, DisplayInlineTableWrapper, DisplayInlineFlex
+}
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
   let lctx = ictx.lctx
@@ -1404,38 +1444,45 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     margin: sizes.margin,
     positioned: sizes.positioned
   )
-  var bctx = BlockContext(lctx: lctx)
-  bctx.marginTodo.append(sizes.margin.top)
-  case box.computed{"display"}
-  of DisplayInlineBlock: bctx.layoutFlow(box, sizes)
-  of DisplayInlineTableWrapper: bctx.layoutTableWrapper(box, sizes)
-  of DisplayInlineFlex: bctx.layoutFlex(box, sizes)
-  else: assert false
-  assert bctx.unpositionedFloats.len == 0
-  bctx.marginTodo.append(sizes.margin.bottom)
-  let marginTop = box.state.offset.y
-  let marginBottom = bctx.marginTodo.sum()
-  # If the highest float edge is higher than the box itself, set that as
-  # the box height.
-  box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight - marginBottom)
-  box.state.offset.y = 0
-  # Apply the block box's properties to the atom itself.
-  let iblock = InlineAtom(
-    t: iatInlineBlock,
-    innerbox: box,
-    offset: offset(x = sizes.margin.left, y = 0),
-    size: size(
-      w = box.outerSize(dtHorizontal),
-      h = box.state.size.h
+  if box.computed{"position"} != PositionAbsolute:
+    assert box.computed{"display"} in {DisplayInlineBlock,
+      DisplayInlineTableWrapper, DisplayInlineFlex}
+    var marginBottom: LayoutUnit = 0
+    lctx.layoutRootBlock(box, sizes.space, offset(x = 0, y = 0), marginBottom)
+    # Apply the block box's properties to the atom itself.
+    let iblock = InlineAtom(
+      t: iatInlineBlock,
+      innerbox: box,
+      offset: offset(x = 0, y = 0),
+      size: size(w = box.outerSize(dtHorizontal), h = box.state.size.h)
     )
-  )
-  let iastate = InlineAtomState(
-    baseline: box.state.baseline,
-    vertalign: box.computed{"vertical-align"},
-    marginTop: marginTop,
-    marginBottom: bctx.marginTodo.sum()
-  )
-  discard ictx.addAtom(state, iastate, iblock)
+    let iastate = InlineAtomState(
+      baseline: box.state.baseline,
+      vertalign: box.computed{"vertical-align"},
+      marginTop: sizes.margin.top,
+      marginBottom: marginBottom
+    )
+    discard ictx.addAtom(state, iastate, iblock)
+  else:
+    # This doesn't really have to be an inline block. I just want to
+    # handle its positioning here.
+    #TODO figure out how to do this for fully inline boxes too... (maybe
+    # just skip positioning for those?)
+    state.fragment.state.atoms.add(InlineAtom(
+      t: iatInlineBlock,
+      innerbox: box
+    ))
+    var offset = offset(x = 0, y = ictx.lbstate.offsety)
+    if box.computed{"display"} in DisplayOuterInline:
+      # inline-block or similar. put it on the current line.
+      # (I don't add pending spacing because other browsers don't add
+      # it either.)
+      offset.x += ictx.lbstate.size.w
+    elif ictx.lbstate.atoms.len > 0:
+      # flush if there is already something on the line *and* our outer
+      # display is block.
+      offset.y += ictx.cellHeight
+    lctx.positioned[^1].queue.add(QueuedAbsolute(child: box, offset: offset))
   ictx.whitespacenum = 0
 
 proc addInlineImage(ictx: var InlineContext; state: var InlineState;
@@ -1523,15 +1570,17 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
       size: size(w = padding.start, h = ictx.cellHeight)
     ))
     ictx.lbstate.paddingTodo.add((fragment, 0))
-  ictx.lbstate.size.w += padding.start
-  var state = InlineState(
-    fragment: fragment,
-    firstLine: true,
-    startOffsetTop: offset(
-      x = ictx.lbstate.widthAfterWhitespace,
-      y = ictx.lbstate.offsety
-    )
+  fragment.state.startOffset = offset(
+    x = ictx.lbstate.widthAfterWhitespace,
+    y = ictx.lbstate.offsety
   )
+  if ictx.lbstate.atoms.len > 0:
+    fragment.state.startOffset.y += ictx.cellHeight
+  ictx.lbstate.size.w += padding.start
+  var state = InlineState(fragment: fragment)
+  if stSplitStart in fragment.splitType and
+      computed{"position"} notin PositionStaticLike:
+    lctx.pushPositioned()
   ictx.applyLineHeight(ictx.lbstate, computed)
   case fragment.t
   of iftNewline: ictx.flushLine(state)
@@ -1550,18 +1599,25 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   if stSplitEnd in fragment.splitType:
     ictx.lbstate.size.w += padding.send
     ictx.lbstate.size.w += computed{"margin-right"}.px(lctx, ictx.space.w)
-  if state.firstLine:
-    fragment.state.startOffset = offset(
-      x = state.startOffsetTop.x,
-      y = ictx.lbstate.offsety
-    )
-  else:
-    fragment.state.startOffset = offset(x = 0, y = ictx.lbstate.offsety)
   if fragment.t != iftParent:
     if not ictx.textFragmentSeen:
       ictx.textFragmentSeen = true
-      ictx.root.fragment.state.startOffset = fragment.state.startOffset
     ictx.lastTextFragment = fragment
+  if stSplitEnd in fragment.splitType and
+      computed{"position"} notin PositionStaticLike:
+    # This is UB in CSS 2.1, I can't find a newer spec about it,
+    # and Gecko can't even layout it consistently (???)
+    #
+    # So I'm trying to follow Blink, though it's still not quite right.
+    # For one, space should really be the sum of all splits of this
+    # inline box, but I've wasted enough time on this already so I'm
+    # gonna stop here and say "good enough".
+    let space = availableSpace(
+      w = stretch(0),
+      h = stretch(ictx.root.state.size.h)
+    )
+    #TODO this overflow calculation looks wrong
+    lctx.popPositioned(ictx.root.state.overflow, space)
 
 proc layoutRootInline0(bctx: var BlockContext; ictx: var InlineContext;
     root: RootInlineFragment; space: AvailableSpace;
@@ -1593,18 +1649,6 @@ proc layoutRootInline(bctx: var BlockContext; root: RootInlineFragment;
     ictx = bctx.initInlineContext(space, bfcOffset, root, computed)
     bctx.layoutRootInline0(ictx, root, space, computed, offset, bfcOffset)
   ictx.root.state.overflow.finalize(ictx.root.state.size)
-
-proc positionAbsolute(box: BlockBox) =
-  if not box.computed{"left"}.auto:
-    box.state.offset.x = box.state.positioned.left + box.state.margin.left
-  elif not box.computed{"right"}.auto:
-    box.state.offset.x = -box.state.positioned.right - box.state.size.w -
-      box.state.margin.right
-  if not box.computed{"top"}.auto:
-    box.state.offset.y = box.state.positioned.top + box.state.margin.top
-  elif not box.computed{"bottom"}.auto:
-    box.state.offset.y = -box.state.positioned.bottom - box.state.size.h -
-      box.state.margin.bottom
 
 proc positionRelative(lctx: LayoutContext; parent, box: BlockBox) =
   if not box.computed{"left"}.auto:
@@ -2109,13 +2153,13 @@ proc postAlignChild(box, child: BlockBox; width: LayoutUnit) =
 
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   case box.computed{"display"}
-  of DisplayBlock, DisplayFlowRoot, DisplayTableCaption:
+  of DisplayBlock, DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock:
     bctx.layoutFlow(box, sizes)
   of DisplayListItem:
     bctx.layoutListItem(box, sizes)
-  of DisplayTableWrapper:
+  of DisplayTableWrapper, DisplayInlineTableWrapper:
     bctx.layoutTableWrapper(box, sizes)
-  of DisplayFlex:
+  of DisplayFlex, DisplayInlineFlex:
     bctx.layoutFlex(box, sizes)
   else:
     assert false
@@ -2255,7 +2299,8 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   assert box.inline == nil
   let lctx = bctx.lctx
-  lctx.pushPositioned(box, sizes)
+  if box.computed{"position"} notin PositionStaticLike:
+    lctx.pushPositioned()
   var fctx = FlexContext(
     lctx: lctx,
     box: box,
@@ -2283,8 +2328,10 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       lctx.layoutFlexChild(child, childSizes)
     if child.computed{"position"} == PositionAbsolute:
       # Absolutely positioned flex children do not participate in flex layout.
-      # I suspect this is a bit too simplistic, but seems to work?
-      child.positionAbsolute()
+      lctx.positioned[^1].queue.add(QueuedAbsolute(
+        child: child,
+        offset: offset(x = 0, y = 0)
+      ))
       continue
     if canWrap and (sizes.space[dim].t == scMinContent or
         sizes.space[dim].isDefinite and
@@ -2309,7 +2356,12 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     lctx.positionRelative(box, child)
     box.applyOverflowDimensions(child)
   box.state.overflow.finalize(box.state.size)
-  lctx.popPositioned(box)
+  if box.computed{"position"} notin PositionStaticLike:
+    let space = availableSpace(
+      w = stretch(box.state.size.w),
+      h = stretch(box.state.size.h)
+    )
+    lctx.popPositioned(box.state.overflow, space)
 
 # Build an outer block box inside an existing block formatting context.
 proc layoutBlockChild(bctx: var BlockContext; box: BlockBox;
@@ -2370,27 +2422,17 @@ func isParentResolved(state: BlockState; bctx: BlockContext): bool =
   return bctx.marginTarget != state.initialMarginTarget or
     state.prevParentBps != nil and state.prevParentBps.resolved
 
-# Note: this does not include display types that cannot appear as block
-# children.
-func establishesBFC(computed: CSSComputedValues): bool =
-  return computed{"float"} != FloatNone or
-    computed{"position"} == PositionAbsolute or
-    computed{"display"} in {DisplayFlowRoot, DisplayTable, DisplayTableWrapper,
-      DisplayFlex} or
-    computed{"overflow"} notin {OverflowVisible, OverflowClip}
-    #TODO contain, grid, multicol, column-span
-
 # Outer layout for block-level children that establish a BFC.
 # Returns the vertical size used (incl. margins).
 proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
     child: BlockBox): LayoutUnit =
+  assert child.computed{"position"} != PositionAbsolute
   var marginBottomOut: LayoutUnit
   bctx.lctx.layoutRootBlock(child, state.space, state.offset,
     marginBottomOut)
   # Do not collapse margins of elements that do not participate in
   # the flow.
-  if child.computed{"position"} != PositionAbsolute and
-      child.computed{"float"} == FloatNone:
+  if child.computed{"float"} == FloatNone:
     bctx.marginTodo.append(child.state.margin.top)
     bctx.flushMargins(child)
     bctx.positionFloats()
@@ -2438,9 +2480,18 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
       # float's initial offset.
       child.state.offset.y += bctx.marginTodo.sum()
   # delta y is difference between old and new offsets (margin-top), sum
-  # of margin todo in bctx2 (margin-bottom) + height.
+  # of margin todo in bctx (margin-bottom) + height.
   return child.state.offset.y - state.offset.y + child.state.size.h +
     marginBottomOut
+
+# Note: this does not include display types that cannot appear as block
+# children.
+func establishesBFC(computed: CSSComputedValues): bool =
+  return computed{"float"} != FloatNone or
+    computed{"display"} in {DisplayFlowRoot, DisplayTable, DisplayTableWrapper,
+      DisplayFlex} or
+    computed{"overflow"} notin {OverflowVisible, OverflowClip}
+    #TODO contain, grid, multicol, column-span
 
 # Layout and place all children in the block box.
 # Box placement must occur during this pass, since child box layout in the
@@ -2450,6 +2501,21 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
     parent: BlockBox) =
   for child in parent.nested:
     var dy: LayoutUnit = 0 # delta
+    if child.computed{"position"} == PositionAbsolute:
+      # Delay this block's layout until its parent's dimensions are
+      # actually known.
+      var offset = state.offset
+      # I *think* this is right, because we want to freeze the box at
+      # the layout's current position. So even if a next child increased
+      # the margin todo, that should not change the absolute block's
+      # position.
+      #TODO but I'm not sure if this is really what the standard says...
+      offset.y += bctx.marginTodo.sum()
+      bctx.lctx.positioned[^1].queue.add(QueuedAbsolute(
+        child: child,
+        offset: offset
+      ))
+      continue
     if child.computed.establishesBFC():
       dy = state.layoutBlockChildBFC(bctx, child)
     else:
@@ -2461,25 +2527,23 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
     let childWidth = child.outerSize(dtHorizontal)
     state.xminwidth = max(state.xminwidth, child.state.xminwidth)
     let isfloat = child.computed{"float"} != FloatNone
-    if child.computed{"position"} != PositionAbsolute and not isfloat:
-      # Not absolute, and not a float.
+    if not isfloat:
       state.maxChildWidth = max(state.maxChildWidth, childWidth)
       state.offset.y += dy
-    elif isfloat:
-      if state.space.w.t == scFitContent:
-        # Float position depends on the available width, but in this case
-        # the parent width is not known.
-        #
-        # Set the "re-layout" flag, and skip this box.
-        # (If child boxes with fit-content have floats, those will be
-        # re-layouted too first, so we do not have to consider those here.)
-        state.needsReLayout = true
-        # Since we emulate max-content here, the float will not contribute to
-        # maxChildWidth in this iteration; instead, its outer width will be
-        # summed up in totalFloatWidth and added to maxChildWidth in
-        # initReLayout.
-        state.totalFloatWidth += childWidth
-        continue
+    elif state.space.w.t == scFitContent:
+      # Float position depends on the available width, but in this case
+      # the parent width is not known.
+      #
+      # Set the "re-layout" flag, and skip this box.
+      # (If child boxes with fit-content have floats, those will be
+      # re-layouted too first, so we do not have to consider those here.)
+      state.needsReLayout = true
+      # Since we emulate max-content here, the float will not contribute to
+      # maxChildWidth in this iteration; instead, its outer width will be
+      # summed up in totalFloatWidth and added to maxChildWidth in
+      # initReLayout.
+      state.totalFloatWidth += childWidth
+    else:
       state.maxChildWidth = max(state.maxChildWidth, childWidth)
       # Two cases exist:
       # a) The float cannot be positioned, because `box' has not resolved
@@ -2550,20 +2614,16 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
 # so we cannot do this in the first pass.
 proc repositionChildren(state: BlockState; box: BlockBox; lctx: LayoutContext) =
   for child in box.nested:
-    if child.computed{"position"} != PositionAbsolute:
-      box.postAlignChild(child, box.state.size.w)
-    case child.computed{"position"}
-    of PositionRelative:
+    box.postAlignChild(child, box.state.size.w)
+    if child.computed{"position"} == PositionRelative:
       lctx.positionRelative(box, child)
-    of PositionAbsolute:
-      child.positionAbsolute()
-    else: discard #TODO
     # Set overflow here, after the child has been positioned.
     box.applyOverflowDimensions(child)
 
 proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
-  lctx.pushPositioned(box, sizes)
+  if box.computed{"position"} notin PositionStaticLike:
+    lctx.pushPositioned()
   var state = BlockState(
     offset: offset(x = sizes.padding.left, y = sizes.padding.top),
     space: sizes.space,
@@ -2599,7 +2659,12 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.state.overflow.finalize(box.state.size)
   # Reset parentBps to the previous node.
   bctx.parentBps = state.prevParentBps
-  lctx.popPositioned(box)
+  if box.computed{"position"} notin PositionStaticLike:
+    let space = availableSpace(
+      w = stretch(box.state.size.w),
+      h = stretch(box.state.size.h)
+    )
+    lctx.popPositioned(box.state.overflow, space)
 
 # 1st pass: build tree
 
@@ -2666,6 +2731,8 @@ proc buildTableCaption(parent: var InnerBlockContext; styledNode: StyledNode;
 proc newInnerBlockContext(styledNode: StyledNode; box: BlockBox;
   lctx: LayoutContext; parent: ptr InnerBlockContext): InnerBlockContext
 proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment)
+proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
+  computed: CSSComputedValues)
 
 func toTableWrapper(display: CSSDisplay): CSSDisplay =
   if display == DisplayTable:
@@ -2806,10 +2873,14 @@ proc buildSomeBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
 # Note: these also pop
 proc pushBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSComputedValues) =
-  ctx.iflush()
-  ctx.flush()
-  let box = ctx.buildSomeBlock(styledNode, computed)
-  ctx.outer.nested.add(box)
+  if computed{"position"} == PositionAbsolute and
+      (ctx.inline != nil or ctx.inlineStack.len > 0):
+    ctx.pushInlineBlock(styledNode, computed)
+  else:
+    ctx.iflush()
+    ctx.flush()
+    let box = ctx.buildSomeBlock(styledNode, computed)
+    ctx.outer.nested.add(box)
 
 proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment) =
   if ctx.inlineStack.len == 0:
@@ -3233,7 +3304,7 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   )
   let lctx = LayoutContext(
     attrsp: attrsp,
-    positioned: @[space],
+    positioned: @[PositionedItem()],
     myRootProperties: rootProperties(),
     imgText: newStyledText("[img]"),
     videoText: newStyledText("[video]"),
@@ -3244,4 +3315,5 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   ctx.buildBlock()
   var marginBottomOut: LayoutUnit
   lctx.layoutRootBlock(box, space, offset(x = 0, y = 0), marginBottomOut)
+  lctx.popPositioned(box.state.overflow, space)
   return box

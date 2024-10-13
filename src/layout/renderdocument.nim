@@ -335,6 +335,12 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     if bgcolor0.a > 0:
       grid.paintInlineFragment(state, fragment, offset,
         bgcolor0.rgb.cellColor())
+  if fragment.computed{"position"} != PositionStatic:
+    if stSplitStart in fragment.splitType:
+      state.absolutePos.add(AbsolutePos(
+        offset: offset + fragment.state.startOffset,
+        # looks like it's OK to set size to 0 here
+      ))
   if fragment.t == iftParent:
     for child in fragment.children:
       grid.renderInlineFragment(state, child, offset, bgcolor0)
@@ -362,14 +368,8 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
           bmp: atom.bmp
         ))
   if fragment.computed{"position"} != PositionStatic:
-    if fragment.splitType != {stSplitStart, stSplitEnd}:
-      if stSplitStart in fragment.splitType:
-        state.absolutePos.add(AbsolutePos(
-          offset: offset + fragment.state.startOffset,
-          # looks like it's OK to set size to 0 here
-        ))
-      if stSplitEnd in fragment.splitType:
-        discard state.absolutePos.pop()
+    if stSplitEnd in fragment.splitType:
+      discard state.absolutePos.pop()
 
 proc renderRootInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     root: RootInlineFragment; offset: Offset) =

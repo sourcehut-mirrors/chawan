@@ -55,10 +55,10 @@ layout engine:
 - box borders
 	* will probably need special treatment, as borders must round to
 	  1ch in x direction and 1em in y direction.
-- do not break inline boxes with out-of-flow block boxes (float, absolute, etc.)
-	* this seems hard to fix properly :(
+- do not break inline boxes with float block boxes
+	* maybe just handle it like position: absolute?
 	* reminder: this does *not* apply to flexbox; in fact it has the inverse
-	  problem AFAICT.
+	  problem AFAICT. (does it still?)
 - table layout: include caption in width calculation
 - flexbox: align-self, align-items, justify-content, proper margin handling,
   proper flex base size resolution
