@@ -306,16 +306,14 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   var canpipe: bool
   return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
 
-proc getMailcapEntry*(mailcap: Mailcap; contentType, outpath: string; url: URL):
-    ptr MailcapEntry =
+proc findMailcapEntry*(mailcap: var Mailcap; contentType, outpath: string;
+    url: URL): int =
   let mt = contentType.until('/')
-  if mt.len + 1 >= contentType.len:
-    return nil
   let st = contentType.until(AsciiWhitespace + {';'}, mt.len + 1)
-  for entry in mailcap:
-    if not (entry.mt.len == 1 and entry.mt[0] == '*') and entry.mt != mt:
+  for i, entry in mailcap.mpairs:
+    if entry.mt != "*" and not entry.mt.equalsIgnoreCase(mt):
       continue
-    if not (entry.subt.len == 1 and entry.subt[0] == '*') and entry.subt != st:
+    if entry.subt != "*" and not entry.subt.equalsIgnoreCase(st):
       continue
     if entry.test != "":
       var canpipe = true
@@ -324,4 +322,5 @@ proc getMailcapEntry*(mailcap: Mailcap; contentType, outpath: string; url: URL):
         continue
       if execCmd(cmd) != 0:
         continue
-    return unsafeAddr entry
+    return i
+  return -1

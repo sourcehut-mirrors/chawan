@@ -163,6 +163,34 @@ method sclose*(s: PosixStream) =
   discard close(s.fd)
   s.closed = true
 
+proc closeHandle(fd, flags: cint) =
+  let devnull = open("/dev/null", flags)
+  doAssert devnull != -1
+  if devnull != fd:
+    discard dup2(devnull, fd)
+    discard close(devnull)
+
+proc closeStdin*() =
+  closeHandle(0, O_RDONLY)
+
+proc closeStdout*() =
+  closeHandle(1, O_WRONLY)
+
+proc closeStderr*() =
+  closeHandle(2, O_WRONLY)
+
+# When closing, ensure that no standard input stream ends up without a
+# handle to write to.
+#TODO do we really need this? I'm pretty sure I dup2 to every stream on
+# fork in all processes...
+proc safeClose*(ps: PosixStream) =
+  if ps.fd == 0:
+    closeStdin()
+  elif ps.fd == 1 or ps.fd == 2:
+    closeHandle(ps.fd, O_WRONLY)
+  else:
+    ps.sclose()
+
 proc newPosixStream*(fd: FileHandle): PosixStream =
   return PosixStream(fd: cint(fd), blocking: true)
 

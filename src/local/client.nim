@@ -57,7 +57,6 @@ type
   Client* = ref object of Window
     alive: bool
     config {.jsget.}: Config
-    consoleWrapper: ConsoleWrapper
     feednext: bool
     pager {.jsget.}: Pager
     pressed: tuple[col, row: int]
@@ -67,14 +66,6 @@ type
   ContainerData = ref object of MapData
     container: Container
 
-  ConsoleWrapper = object
-    console: Console
-    container: Container
-    prev: Container
-
-func console(client: Client): Console {.jsfget.} =
-  return client.consoleWrapper.console
-
 template pollData(client: Client): PollData =
   client.pager.pollData
 
@@ -83,6 +74,12 @@ template forkserver(client: Client): ForkServer =
 
 template readChar(client: Client): char =
   client.pager.term.readChar()
+
+template consoleWrapper(client: Client): ConsoleWrapper =
+  client.pager.consoleWrapper
+
+func console(client: Client): Console {.jsfget.} =
+  return client.consoleWrapper.console
 
 proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
   let client = cast[Client](opaque)
@@ -363,16 +360,6 @@ proc input(client: Client): EmptyPromise =
     p.resolve()
   return p
 
-proc showConsole(client: Client) {.jsfunc.} =
-  let container = client.consoleWrapper.container
-  if client.pager.container != container:
-    client.consoleWrapper.prev = client.pager.container
-    client.pager.setContainer(container)
-
-proc hideConsole(client: Client) {.jsfunc.} =
-  if client.pager.container == client.consoleWrapper.container:
-    client.pager.setContainer(client.consoleWrapper.prev)
-
 proc consoleBuffer(client: Client): Container {.jsfget.} =
   return client.consoleWrapper.container
 
@@ -411,33 +398,34 @@ proc acceptBuffers(client: Client) =
     let key = pager.addLoaderClient(container.process, container.loaderConfig,
       container.clonedFrom)
     let loader = pager.loader
-    stream.withPacketWriter w:
-      w.swrite(key)
-      if item.fdin != -1:
-        let outputId = item.istreamOutputId
-        if container.cacheId == -1:
-          container.cacheId = loader.addCacheFile(outputId, loader.clientPid)
-        if container.request.url.scheme == "cache":
-          # loading from cache; now both the buffer and us hold a new reference
-          # to the cached item, but it's only shared with the buffer. add a
-          # pager ref too.
-          loader.shareCachedItem(container.cacheId, loader.clientPid)
-        var outCacheId = container.cacheId
-        let pid = container.process
-        if item.fdout == item.fdin:
-          loader.shareCachedItem(container.cacheId, pid)
-          loader.resume(item.istreamOutputId)
-        else:
-          outCacheId = loader.addCacheFile(item.ostreamOutputId, pid)
-          loader.resume([item.istreamOutputId, item.ostreamOutputId])
+    if item.istreamOutputId != -1: # new buffer
+      if container.cacheId == -1:
+        container.cacheId = loader.addCacheFile(item.istreamOutputId,
+          loader.clientPid)
+      if container.request.url.scheme == "cache":
+        # loading from cache; now both the buffer and us hold a new reference
+        # to the cached item, but it's only shared with the buffer. add a
+        # pager ref too.
+        loader.shareCachedItem(container.cacheId, loader.clientPid)
+      let pid = container.process
+      var outCacheId = container.cacheId
+      if not item.redirected:
+        loader.shareCachedItem(container.cacheId, pid)
+        loader.resume(item.istreamOutputId)
+      else:
+        outCacheId = loader.addCacheFile(item.ostreamOutputId, pid)
+        loader.resume([item.istreamOutputId, item.ostreamOutputId])
+      stream.withPacketWriter w:
+        w.swrite(key)
         w.swrite(outCacheId)
-    if item.fdin != -1:
-      # pass down fdout
+      # pass down ostream
       # must come after the previous block so the first packet is flushed
-      stream.sendFileHandle(item.fdout)
-      discard close(item.fdout)
+      stream.sendFileHandle(FileHandle(item.ostream.fd))
+      item.ostream.sclose()
       container.setStream(stream, registerFun)
-    else:
+    else: # cloned buffer
+      stream.withPacketWriter w:
+        w.swrite(key)
       # buffer is cloned, just share the parent's cached source
       loader.shareCachedItem(container.cacheId, container.process)
       # also add a reference here; it will be removed when the container is
@@ -516,11 +504,7 @@ proc handleWrite(client: Client; fd: int) =
     client.pollData.register(fd, POLLIN)
 
 proc flushConsole*(client: Client) {.jsfunc.} =
-  if client.console == nil:
-    # hack for when client crashes before console has been initialized
-    client.consoleWrapper = ConsoleWrapper(
-      console: newConsole(newDynFileStream(stderr))
-    )
+  client.pager.flushConsole()
   client.handleRead(client.forkserver.estream.fd)
 
 proc handleError(client: Client; fd: int) =
@@ -544,14 +528,14 @@ proc handleError(client: Client; fd: int) =
       client.pollData.unregister(fd)
       client.loader.unset(fd)
       doAssert client.consoleWrapper.container != nil
-      client.showConsole()
+      client.pager.showConsole()
     else:
       discard client.loader.onError(fd) #TODO handle connection error?
   elif fd in client.loader.unregistered:
     discard # already unregistered...
   else:
     doAssert client.consoleWrapper.container != nil
-    client.showConsole()
+    client.pager.showConsole()
 
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
 
@@ -684,40 +668,6 @@ proc readFile(client: Client; path: string): string {.jsfunc.} =
 proc writeFile(client: Client; path, content: string) {.jsfunc.} =
   writeFile(path, content)
 
-const ConsoleTitle = "Browser Console"
-
-proc addConsole(pager: Pager; interactive: bool; clearFun, showFun, hideFun:
-    proc()): ConsoleWrapper =
-  if interactive and pager.config.start.console_buffer:
-    var pipefd: array[0..1, cint]
-    if pipe(pipefd) == -1:
-      raise newException(Defect, "Failed to open console pipe.")
-    let url = newURL("stream:console").get
-    let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
-      url, ConsoleTitle, {})
-    let err = newPosixStream(pipefd[1])
-    err.write("Type (M-c) console.hide() to return to buffer mode.\n")
-    let console = newConsole(err, clearFun, showFun, hideFun)
-    return ConsoleWrapper(console: console, container: container)
-  else:
-    let err = newPosixStream(stderr.getFileHandle())
-    return ConsoleWrapper(console: newConsole(err))
-
-proc clearConsole(client: Client) =
-  var pipefd: array[0..1, cint]
-  if pipe(pipefd) == -1:
-    raise newException(Defect, "Failed to open console pipe.")
-  let url = newURL("stream:console").get
-  let pager = client.pager
-  let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pipefd[0],
-    url, ConsoleTitle, {})
-  replacement.replace = client.consoleWrapper.container
-  pager.replace(client.consoleWrapper.container, replacement)
-  client.consoleWrapper.container = replacement
-  let console = client.consoleWrapper.console
-  console.err.sclose()
-  console.err = newPosixStream(pipefd[1])
-
 proc dumpBuffers(client: Client) =
   client.headlessLoop()
   for container in client.pager.containers:
@@ -751,14 +701,6 @@ proc launchClient*(client: Client; pages: seq[string];
   client.loader.unregisterFun = proc(fd: int) =
     pager.pollData.unregister(fd)
   pager.launchPager(istream)
-  let clearFun = proc() =
-    client.clearConsole()
-  let showFun = proc() =
-    client.showConsole()
-  let hideFun = proc() =
-    client.hideConsole()
-  client.consoleWrapper = pager.addConsole(interactive = istream != nil,
-    clearFun, showFun, hideFun)
   client.timeouts = newTimeoutState(client.jsctx, evalJSFree2, client)
   client.pager.timeouts = client.timeouts
   addExitProc((proc() = client.cleanup()))
@@ -773,7 +715,8 @@ proc launchClient*(client: Client; pages: seq[string];
   if not stdin.isatty():
     # stdin may very well receive ANSI text
     let contentType = contentType.get("text/x-ansi")
-    client.pager.readPipe(contentType, cs, stdin.getFileHandle(), "*stdin*")
+    let ps = newPosixStream(STDIN_FILENO)
+    client.pager.readPipe(contentType, cs, ps, "*stdin*")
   for page in pages:
     client.pager.loadURL(page, ctype = contentType, cs = cs)
   client.pager.showAlerts()

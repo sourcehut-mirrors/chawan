@@ -10,7 +10,6 @@ import io/bufreader
 import io/bufwriter
 import io/dynstream
 import io/serversocket
-import io/stdio
 import loader/loader
 import loader/loaderiface
 import server/buffer

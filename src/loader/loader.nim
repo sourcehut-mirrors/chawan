@@ -34,7 +34,6 @@ import io/bufwriter
 import io/dynstream
 import io/poll
 import io/serversocket
-import io/stdio
 import io/tempfile
 import io/urlfilter
 import loader/connecterror
