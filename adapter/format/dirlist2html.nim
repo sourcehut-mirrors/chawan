@@ -26,11 +26,8 @@ proc printDirlist(f: File; items: seq[DirlistItem]; maxw: int) =
   f.writeLine("<a href=\"../\">[Upper Directory]</a>")
   for item in items:
     var path = percentEncode(item.name, PathPercentEncodeSet)
-    if item.t == ditLink:
-      if item.linkto.len > 0 and item.linkto[^1] == '/':
-        # If the target is a directory, treat it as a directory. (For FTP.)
-        path &= '/'
-    elif item.t == ditDir:
+    if item.t == ditLink and item.linkto.len > 0 and item.linkto[^1] == '/':
+      # If the target is a directory, treat it as a directory. (For FTP.)
       path &= '/'
     var line = "<a href=\"" & path & "\">" & htmlEscape(item.dname) & "</a>"
     var width = item.width
