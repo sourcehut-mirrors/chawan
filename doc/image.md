@@ -16,13 +16,19 @@ There are actually two switches for images in the config:
 * display.image-mode: sets the inline image display method. Defaults to
   "auto", but may also be set to "sixel" or "kitty" manually.
 
-In most cases, all you need to do is to set "buffer.images" to true;
-with the default image-mode, Chawan will find the best image display
-method supported by your terminal.
+In most cases, all you need to do is to set "buffer.images" to true:
 
-If your terminal does not tell Chawan that it can display sixels, you may also
-have to set "display.image-mode" appropriately.  See below for further
-discussion of sixel configuration.
+```toml
+# in ~/.config/chawan/config.toml
+[buffer]
+images = true
+```
+
+With the default image-mode, Chawan will find the best image display
+method supported by your terminal. However, if your terminal fails
+to tell Chawan that it can display sixels, you may also have to set
+"display.image-mode" appropriately.  See below for further discussion of
+sixel configuration.
 
 ## Output formats
 
@@ -63,7 +69,9 @@ Known quirks and implementation details:
   can try setting `display.sixel-colors = 2`, which will skip the first
   pass (but will also display everything in monochrome).
 * Transparency *is* supported, but looks weird because we approximate an
-  8-bit alpha channel with Sixel's 1-bit alpha channel.
+  8-bit alpha channel with Sixel's 1-bit alpha channel. Also, some
+  terminals don't emulate it correctly - when in doubt, try XTerm (which
+  does).
 
 ### Kitty
 
@@ -184,3 +192,10 @@ following:
 * This *is* an implementation detail, and might change at any time in
   the future (e.g. if we add a "no cache files" mode). Always check
   for S_ISREG to ensure that you are actually dealing with a file.
+
+<!-- MANON
+
+## See also
+
+**cha**(1)
+MANOFF -->

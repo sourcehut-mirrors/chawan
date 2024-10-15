@@ -106,6 +106,21 @@ appearing on your screen.</td>
 
 Buffer options are to be placed in the `[buffer]` section.
 
+These options are global to all buffers. For more granular filtering,
+use `[[siteconf]]`.
+
+Example:
+
+```toml
+[buffer]
+# show images on all websites
+images = true
+# disable website CSS
+styling = false
+# You *can* set scripting to true here, but I strongly recommend using
+# [[siteconf]] to enable it on a per-site basis instead.
+```
+
 Following is a list of buffer options:
 
 <table>
@@ -243,8 +258,8 @@ correctly.
 <td>string</td>
 <td>Character set for keyboard input and displaying documents.<br>
 Used in dump mode as well.<br>
-(This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is equivalent to `iconv
--f EUC-JP -t UTF-8`.)</td>
+(This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is roughly equivalent to
+`iconv -f EUC-JP -t UTF-8`.)</td>
 </tr>
 
 </table>
@@ -683,6 +698,23 @@ host = '(.*\.)?sr\.ht' # either 'something.sr.ht' or 'sr.ht'
 cookie = true # enable cookies
 share-cookie-jar = 'sr.ht' # use the cookie jar of 'sr.ht' for all matched hosts
 third-party-cookie = '.*\.sr\.ht' # allow cookies from subdomains
+
+# Use the "vector" skin on Wikipedia, which Chawan can handle better.
+[[siteconf]]
+url = '^https?://[a-z]+\.wikipedia\.org/wiki/(?!.*useskin=.*)'
+rewrite-url = 'x => x.searchParams.append("useskin", "vector")'
+
+# Make imgur send us images.
+[[siteconf]]
+host = '(i\.)?imgur\.com'
+default-headers = {
+	User-Agent = "Mozilla/5.0 chawan",
+	Accept = "*/*",
+	Accept-Encoding = "gzip, deflate",
+	Accept-Language = "en;q=1.0",
+	Pragma = "no-cache",
+	Cache-Control = "no-cache"
+}
 ```
 
 Siteconf options:

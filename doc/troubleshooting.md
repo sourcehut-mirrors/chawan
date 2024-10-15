@@ -31,11 +31,6 @@ particular:
 
 See [config.md](config.md#display) for details.
 
-## Can I view Markdown files using Chawan?
-
-Yes; Chawan now has a built-in markdown converter. If you don't like it, you
-can always [replace it](mailcap.md) with e.g. pandoc.
-
 ## I set my `$PAGER` to `cha` and now man pages are unreadable.
 
 Most `man` implementations print formatted manual pages by default, which
@@ -63,14 +58,6 @@ exec cha -T text/x-ansi "$@"
 ```
 
 and `export PAGER=pcha`.
-
-## Where are the keybindings?
-
-Please run `cha about:chawan` for a list of default keybindings. Users familiar
-with *vi*, *vim*, etc. should find these defaults familiar.
-
-A w3m-like keymap also exists at [bonus/w3m.toml](bonus/w3m.toml). Note that not
-every w3m feature is implemented yet, so it's not 100% compatible.
 
 ## How do I view text files with wrapping?
 
@@ -130,3 +117,9 @@ Some potential fixes:
   console, then follow step 3. of the previous answer.<br>
   Warning: remote JavaScript execution is inherently unsafe. Please only enable
   JavaScript on websites you trust.
+
+<!-- MANON
+## See also
+
+**cha**(1)
+MANOFF -->
