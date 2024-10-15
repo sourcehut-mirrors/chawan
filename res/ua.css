@@ -14,6 +14,10 @@ noscript, ol, p, plaintext, pre, search, section, ul, xmp {
 	display: block;
 }
 
+code {
+	text-decoration: -cha-reverse;
+}
+
 @media (scripting: enabled) {
 noscript {
 	display: none;

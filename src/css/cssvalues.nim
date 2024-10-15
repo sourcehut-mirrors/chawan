@@ -188,6 +188,7 @@ type
     TextDecorationOverline = "overline"
     TextDecorationLineThrough = "line-through"
     TextDecorationBlink = "blink"
+    TextDecorationReverse = "-cha-reverse"
 
   CSSWordBreak* = enum
     WordBreakNormal = "normal"

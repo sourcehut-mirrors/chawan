@@ -66,6 +66,8 @@ func toFormat(computed: CSSComputedValues): Format =
     flags.incl(ffStrike)
   if TextDecorationBlink in computed{"text-decoration"}:
     flags.incl(ffBlink)
+  if TextDecorationReverse in computed{"text-decoration"}:
+    flags.incl(ffReverse)
   return Format(
     #TODO this ignores alpha; we should blend somewhere.
     fgcolor: computed{"color"}.cellColor(),
