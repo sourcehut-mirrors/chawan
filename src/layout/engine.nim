@@ -1514,14 +1514,15 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
 
 proc addBox(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
-  if box.computed{"float"} != FloatNone:
-    # This will trigger a re-layout for this inline root.
-    if not ictx.secondPass:
-      ictx.addInlineFloat(state, box)
-  elif box.computed{"position"} == PositionAbsolute:
+  if box.computed{"position"} == PositionAbsolute:
     # This doesn't really have to be an inline block. I just want to
     # handle its positioning here.
     ictx.addInlineAbsolute(state, box)
+  elif box.computed{"float"} != FloatNone:
+    # (Must check after `position: absolute', as that has higher precedence.)
+    # This will trigger a re-layout for this inline root.
+    if not ictx.secondPass:
+      ictx.addInlineFloat(state, box)
   else:
     # This is an inline block.
     assert box.computed{"display"} in DisplayOuterInline
