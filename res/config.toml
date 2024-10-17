@@ -328,8 +328,12 @@ substitute-url = 'x => `https://www.google.com/search?gbv=1&ucbcb=1&q=${x.split(
 url = '^https?://(www\.)?google\.com'
 rewrite-url = '''
 x => {
-	if (x.pathname == "/url")
-		return new URL(x.searchParams.get("q"));
+	if (x.pathname == "/url") {
+		let q = x.searchParams.get("q");
+		if (q[0] == '/')
+			q = x.protocol + x.host + q;
+		return new URL(q);
+	}
 	for (const name of ["sca_esv", "sca_upv", "oq", "aqs", "ved", "sa", "source", "ei"])
 		x.searchParams.delete(name);
 }
