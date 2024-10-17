@@ -128,6 +128,7 @@ proc main() =
   curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
   curl.setopt(CURLOPT_PREREQDATA, op)
   curl.setopt(CURLOPT_PREREQFUNCTION, curlPreRequest)
+  curl.setopt(CURLOPT_NOSIGNAL, 1)
   let proxy = getEnv("ALL_PROXY")
   if proxy != "":
     curl.setopt(CURLOPT_PROXY, proxy)

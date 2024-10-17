@@ -215,6 +215,7 @@ proc main() =
   curl.setopt(CURLOPT_WRITEDATA, op)
   curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
   curl.setopt(CURLOPT_FTP_FILEMETHOD, CURLFTPMETHOD_SINGLECWD)
+  curl.setopt(CURLOPT_NOSIGNAL, 1)
   let purl = getEnv("ALL_PROXY")
   if purl != "":
     curl.setopt(CURLOPT_PROXY, purl)

@@ -232,9 +232,6 @@ elif SandboxMode == stLibSeccomp:
       "restart_syscall", # for resuming poll on SIGCONT
       "getpid", # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
       "futex", # bionic libc & WSL both need it
-      # we either have to use CURLOPT_NOSIGNAL or allow signals.
-      # do the latter, otherwise the default name resolver will never time out.
-      "signal", "sigaction", "rt_sigaction",
     ]
     for it in allowList:
       doAssert seccomp_rule_add(ctx, SCMP_ACT_ALLOW,
