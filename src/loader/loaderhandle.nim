@@ -1,5 +1,4 @@
 import std/deques
-import std/net
 import std/posix
 import std/tables
 

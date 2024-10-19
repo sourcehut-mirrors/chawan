@@ -180,7 +180,6 @@ elif SandboxMode == stLibSeccomp:
       "fork", # for when fork is really fork
       "futex", # bionic libc & WSL both need it
       "getpid", # for determining current PID after we fork
-      "getsockname", # Nim needs it for connecting
       "gettimeofday", # used by QuickJS in Date.now()
       "lseek", # glibc calls lseek on open files at exit
       "mmap", # memory allocation
@@ -190,10 +189,11 @@ elif SandboxMode == stLibSeccomp:
       "pipe", # for pipes to child process
       "pipe2", # for when pipe is implemented as pipe2
       "poll", "ppoll", # for polling (sometimes implemented as ppoll, see musl)
-      "read", "recv", "recvfrom", "recvmsg", # for reading from sockets
+      "read", # for reading from sockets
+      "recvmsg", # for passing fds
       "restart_syscall", # for resuming poll on SIGCONT
       "rt_sigreturn", # for when sigreturn is implemented as rt_sigreturn
-      "send", "sendmsg", "sendto", # for writing to sockets
+      "sendmsg", # for passing fds
       "set_robust_list", # glibc seems to need it for whatever reason
       "sigreturn", # called by signal trampoline
       "write" # for writing to sockets

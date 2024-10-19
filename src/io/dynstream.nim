@@ -1,9 +1,5 @@
-import std/nativesockets
-import std/net
 import std/os
 import std/posix
-
-import io/serversocket
 
 type
   DynStream* = ref object of RootObj
@@ -302,29 +298,11 @@ proc drain*(ps: PosixStream) =
     discard
 
 type SocketStream* = ref object of PosixStream
-  source*: Socket
-
-method recvData*(s: SocketStream; buffer: pointer; len: int): int =
-  let n = s.source.recv(buffer, len)
-  if n < 0:
-    raisePosixIOError()
-  if n == 0:
-    if unlikely(s.isend):
-      raise newException(EOFError, "eof")
-    s.isend = true
-  return n
-
-method sendData*(s: SocketStream; buffer: pointer; len: int): int =
-  let n = s.source.send(buffer, len)
-  if n < 0:
-    raisePosixIOError()
-  return n
 
 {.compile: "sendfd.c".}
 proc sendfd(sock, fd: cint): int {.importc.}
 
 proc sendFileHandle*(s: SocketStream; fd: FileHandle) =
-  assert not s.source.hasDataBuffered
   let n = sendfd(s.fd, cint(fd))
   if n < 0:
     raisePosixIOError()
@@ -334,24 +312,14 @@ proc sendFileHandle*(s: SocketStream; fd: FileHandle) =
 proc recvfd(sock: cint; fdout: ptr cint): int {.importc.}
 
 proc recvFileHandle*(s: SocketStream): FileHandle =
-  assert not s.source.hasDataBuffered
   var fd: cint
   let n = recvfd(s.fd, addr fd)
   if n < 0:
     raisePosixIOError()
   return FileHandle(fd)
 
-method setBlocking*(s: SocketStream; blocking: bool) =
-  s.blocking = blocking
-  s.source.getFd().setBlocking(blocking)
-
 method seek*(s: SocketStream; off: int) =
   doAssert false
-
-method sclose*(s: SocketStream) =
-  assert not s.closed
-  s.source.close()
-  s.closed = true
 
 # see serversocket.nim for an explanation
 {.compile: "connect_unix.c".}
@@ -362,32 +330,34 @@ when defined(freebsd):
   proc connectat_unix_from_c(baseFd, sockFd: cint; rel_path: cstring;
     rel_pathlen: cint): cint {.importc.}
 
+const SocketPathPrefix = "cha_sock_"
+proc getSocketName*(pid: int): string =
+  SocketPathPrefix & $pid
+
+proc getSocketPath*(socketDir: string; pid: int): string =
+  socketDir / getSocketName(pid)
+
 proc connectAtSocketStream0(socketDir: string; baseFd, pid: int;
     blocking = true): SocketStream =
-  let sock = newSocket(Domain.AF_UNIX, SockType.SOCK_STREAM,
-    Protocol.IPPROTO_IP, buffered = false)
+  let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
+  let ss = SocketStream(fd: fd, blocking: true)
   if not blocking:
-    sock.getFd().setBlocking(false)
+    ss.setBlocking(false)
   let path = getSocketPath(socketDir, pid)
   if baseFd == -1:
-    if connect_unix_from_c(cint(sock.getFd()), cstring(path),
-        cint(path.len)) != 0:
+    if connect_unix_from_c(fd, cstring(path), cint(path.len)) != 0:
       raiseOSError(osLastError())
   else:
     when defined(freebsd):
       doAssert baseFd != -1
       let name = getSocketName(pid)
-      if connectat_unix_from_c(cint(baseFd), cint(sock.getFd()), cstring(name),
+      if connectat_unix_from_c(cint(baseFd), fd, cstring(name),
           cint(name.len)) != 0:
         raiseOSError(osLastError())
     else:
       # shouldn't have sockDirFd on other architectures
       doAssert false
-  return SocketStream(
-    source: sock,
-    fd: cint(sock.getFd()),
-    blocking: blocking
-  )
+  return ss
 
 proc connectSocketStream*(socketDir: string; baseFd, pid: int;
     blocking = true): SocketStream =
@@ -395,17 +365,6 @@ proc connectSocketStream*(socketDir: string; baseFd, pid: int;
     return connectAtSocketStream0(socketDir, baseFd, pid, blocking)
   except OSError:
     return nil
-
-proc acceptSocketStream*(ssock: ServerSocket; blocking = true): SocketStream =
-  var sock: Socket
-  ssock.sock.accept(sock, inheritable = true)
-  if not blocking:
-    sock.getFd().setBlocking(false)
-  return SocketStream(
-    blocking: blocking,
-    source: sock,
-    fd: cint(sock.getFd())
-  )
 
 type
   BufStream* = ref object of DynStream

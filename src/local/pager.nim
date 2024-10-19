@@ -1,5 +1,4 @@
 import std/deques
-import std/net
 import std/options
 import std/os
 import std/osproc

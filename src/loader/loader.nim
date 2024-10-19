@@ -21,8 +21,6 @@
 # addCacheFile commands there.)
 
 import std/deques
-import std/nativesockets
-import std/net
 import std/options
 import std/os
 import std/posix
@@ -1176,8 +1174,8 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   gctx = ctx
   let myPid = getCurrentProcessId()
   # we don't capsicumize loader, so -1 is appropriate here
-  ctx.ssock = initServerSocket(config.sockdir, -1, myPid, blocking = true)
-  let sfd = int(ctx.ssock.sock.getFd())
+  ctx.ssock = newServerSocket(config.sockdir, -1, myPid)
+  let sfd = int(ctx.ssock.fd)
   ctx.pollData.register(sfd, POLLIN)
   if sfd >= ctx.handleMap.len:
     ctx.handleMap.setLen(sfd + 1)
@@ -1217,7 +1215,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
     ctx.clientData[pid] = ctx.pagerClient
     stream.sclose()
   # unblock main socket
-  ctx.ssock.sock.getFd().setBlocking(false)
+  ctx.ssock.setBlocking(false)
   # for CGI
   putEnv("SERVER_SOFTWARE", "Chawan")
   putEnv("SERVER_PROTOCOL", "HTTP/1.0")
@@ -1293,7 +1291,7 @@ proc finishCycle(ctx: LoaderContext; unregRead: var seq[InputHandle];
 
 proc runFileLoader*(fd: cint; config: LoaderConfig) =
   var ctx = initLoaderContext(fd, config)
-  let fd = int(ctx.ssock.sock.getFd())
+  let fd = int(ctx.ssock.fd)
   while ctx.alive:
     ctx.pollData.poll(-1)
     var unregRead: seq[InputHandle] = @[]

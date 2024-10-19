@@ -150,7 +150,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     closeStdout()
     setBufferProcessTitle(url)
     let pid = getCurrentProcessId()
-    let ssock = initServerSocket(sockDir, sockDirFd, pid)
+    let ssock = newServerSocket(sockDir, sockDirFd, pid)
     let ps = newPosixStream(pipefd[1])
     ps.write(char(0))
     ps.sclose()

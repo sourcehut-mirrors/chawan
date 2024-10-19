@@ -248,10 +248,10 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   # create a server socket, pass it on to the buffer, then move it to
   # the expected path after the buffer forked itself
   #TODO this is very ugly
-  let ssock = initServerSocket(loader.sockDir, loader.sockDirFd,
+  let ssock = newServerSocket(loader.sockDir, loader.sockDirFd,
     loader.clientPid)
   SocketStream(container.iface.stream.source)
-    .sendFileHandle(FileHandle(ssock.getFd()))
+    .sendFileHandle(FileHandle(ssock.fd))
   ssock.close(unlink = false)
   return p.then(proc(pid: int): Container =
     if pid == -1:

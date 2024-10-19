@@ -1,6 +1,4 @@
 import std/exitprocs
-import std/nativesockets
-import std/net
 import std/options
 import std/os
 import std/posix
@@ -20,7 +18,6 @@ import io/bufwriter
 import io/dynstream
 import io/poll
 import io/promise
-import io/serversocket
 import js/console
 import js/domexception
 import js/encoding

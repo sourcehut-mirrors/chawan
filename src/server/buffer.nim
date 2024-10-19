@@ -1,8 +1,6 @@
 from std/strutils import split, toUpperAscii, find, AllChars
 
 import std/macros
-import std/nativesockets
-import std/net
 import std/options
 import std/os
 import std/posix
@@ -998,8 +996,8 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       discard buffer.rewind(buffer.bytesRead, unregister = false)
     buffer.pstream.sclose()
     buffer.ssock.close(unlink = false)
-    let ssock = initServerSocket(SocketHandle(sockFd), buffer.loader.sockDir,
-      buffer.loader.sockDirFd, myPid)
+    let ssock = newServerSocket(sockFd, buffer.loader.sockDir, myPid,
+      buffer.loader.sockDirFd)
     buffer.ssock = ssock
     gssock = ssock
     ps.write(char(0))
