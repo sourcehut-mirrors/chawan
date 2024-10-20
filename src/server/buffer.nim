@@ -28,7 +28,6 @@ import io/bufwriter
 import io/dynstream
 import io/poll
 import io/promise
-import io/serversocket
 import js/console
 import js/timeout
 import layout/renderdocument
@@ -960,7 +959,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     buffer.estream.write("Failed to clone buffer.\n")
     return -1
   if pid == 0: # child
-    let sockFd = buffer.pstream.recvFileHandle()
+    let sockFd = buffer.pstream.recvFd()
     discard close(pipefd[0]) # close read
     let ps = newPosixStream(pipefd[1])
     buffer.pollData.clear()
@@ -996,8 +995,8 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       discard buffer.rewind(buffer.bytesRead, unregister = false)
     buffer.pstream.sclose()
     buffer.ssock.close(unlink = false)
-    let ssock = newServerSocket(sockFd, buffer.loader.sockDir, myPid,
-      buffer.loader.sockDirFd)
+    let ssock = newServerSocket(sockFd, buffer.loader.sockDir,
+      buffer.loader.sockDirFd, myPid)
     buffer.ssock = ssock
     gssock = ssock
     ps.write(char(0))
@@ -1343,10 +1342,10 @@ proc implicitSubmit(buffer: Buffer; input: HTMLInputElement): Request =
 
 proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
     {.proxy.} =
-  var fd: FileHandle = -1
+  var fd: cint = -1
   var res = ReadSuccessResult()
   if hasFd:
-    fd = buffer.pstream.recvFileHandle()
+    fd = buffer.pstream.recvFd()
   if buffer.document.focus != nil:
     case buffer.document.focus.tagType
     of TAG_INPUT:
@@ -1875,7 +1874,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   var r = pstream.initPacketReader()
   r.sread(buffer.loader.key)
   r.sread(buffer.cacheId)
-  let fd = pstream.recvFileHandle()
+  let fd = pstream.recvFd()
   buffer.fd = int(fd)
   buffer.istream = newPosixStream(fd)
   buffer.istream.setBlocking(false)

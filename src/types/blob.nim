@@ -18,7 +18,7 @@ type
     buffer*: pointer
     opaque*: pointer
     deallocFun*: DeallocFun
-    fd*: Option[FileHandle]
+    fd*: Option[cint]
 
   WebFile* = ref object of Blob
     webkitRelativePath {.jsget.}: string
@@ -87,7 +87,7 @@ proc finalize(blob: Blob) {.jsfin.} =
 proc finalize(file: WebFile) {.jsfin.} =
   Blob(file).finalize()
 
-proc newWebFile*(name: string; fd: FileHandle): WebFile =
+proc newWebFile*(name: string; fd: cint): WebFile =
   return WebFile(
     name: name,
     fd: some(fd),

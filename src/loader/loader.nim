@@ -31,7 +31,6 @@ import io/bufreader
 import io/bufwriter
 import io/dynstream
 import io/poll
-import io/serversocket
 import io/tempfile
 import io/urlfilter
 import loader/connecterror
@@ -55,7 +54,7 @@ type
     # List of cached resources.
     cacheMap: seq[CachedItem]
     # List of file descriptors passed by the client.
-    passedFdMap: seq[tuple[name: string; fd: FileHandle]] # host -> fd
+    passedFdMap: seq[tuple[name: string; fd: cint]] # host -> fd
     config: LoaderClientConfig
 
   LoaderContext = ref object
@@ -1019,7 +1018,7 @@ proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
   stream.withPacketWriter w:
     w.swrite(ps != nil)
     if ps != nil:
-      w.sendAux.add(FileHandle(ps.fd))
+      w.sendAux.add(ps.fd)
   if ps != nil:
     ps.sclose()
   stream.sclose()
@@ -1028,7 +1027,7 @@ proc passFd(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     r: var BufferedReader) =
   var id: string
   r.sread(id)
-  let fd = stream.recvFileHandle()
+  let fd = stream.recvFd()
   client.passedFdMap.add((id, fd))
   stream.sclose()
 

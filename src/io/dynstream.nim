@@ -4,7 +4,6 @@ import std/posix
 type
   DynStream* = ref object of RootObj
     isend*: bool
-    blocking*: bool #TODO move to posixstream
     closed: bool
 
 # Semantics of this function are those of POSIX read(3): that is, it may return
@@ -95,6 +94,7 @@ proc recvAll*(s: DynStream): string =
 type
   PosixStream* = ref object of DynStream
     fd*: cint
+    blocking*: bool
 
   ErrorAgain* = object of IOError
   ErrorBadFD* = object of IOError
@@ -187,11 +187,11 @@ proc safeClose*(ps: PosixStream) =
   else:
     ps.sclose()
 
-proc newPosixStream*(fd: FileHandle): PosixStream =
-  return PosixStream(fd: cint(fd), blocking: true)
+proc newPosixStream*(fd: cint): PosixStream =
+  return PosixStream(fd: fd, blocking: true)
 
 proc newPosixStream*(fd: SocketHandle): PosixStream =
-  return PosixStream(fd: cint(fd), blocking: true)
+  return newPosixStream(cint(fd))
 
 proc newPosixStream*(path: string; flags, mode: cint): PosixStream =
   let fd = open(cstring(path), flags, mode)
@@ -299,36 +299,41 @@ proc drain*(ps: PosixStream) =
 
 type SocketStream* = ref object of PosixStream
 
-{.compile: "sendfd.c".}
-proc sendfd(sock, fd: cint): int {.importc.}
+# Auxiliary functions in C, because writing them portably in Nim is
+# a pain.
+{.compile: "dynstream_aux.c".}
 
-proc sendFileHandle*(s: SocketStream; fd: FileHandle) =
-  let n = sendfd(s.fd, cint(fd))
+proc bind_unix_from_c(fd: cint; path: cstring; pathlen: cint): cint {.importc.}
+proc connect_unix_from_c(fd: cint; path: cstring; pathlen: cint): cint
+  {.importc.}
+
+when defined(freebsd):
+  # capsicum stuff
+  proc unlinkat(dfd: cint; path: cstring; flag: cint): cint
+    {.importc, header: "<unistd.h>".}
+  proc bindat_unix_from_c(dfd, sock: cint; path: cstring; pathlen: cint): cint
+    {.importc.}
+  proc connectat_unix_from_c(baseFd, sockFd: cint; rel_path: cstring;
+    rel_pathlen: cint): cint {.importc.}
+
+proc sendfd(sock, fd: cint): int {.importc.}
+proc recvfd(sock: cint; fdout: var cint): int {.importc.}
+
+proc sendFd*(s: SocketStream; fd: cint) =
+  let n = sendfd(s.fd, fd)
   if n < 0:
     raisePosixIOError()
   assert n == 1 # we send a single nul byte as buf
 
-{.compile: "recvfd.c".}
-proc recvfd(sock: cint; fdout: ptr cint): int {.importc.}
-
-proc recvFileHandle*(s: SocketStream): FileHandle =
+proc recvFd*(s: SocketStream): cint =
   var fd: cint
-  let n = recvfd(s.fd, addr fd)
+  let n = recvfd(s.fd, fd)
   if n < 0:
     raisePosixIOError()
-  return FileHandle(fd)
+  return fd
 
 method seek*(s: SocketStream; off: int) =
   doAssert false
-
-# see serversocket.nim for an explanation
-{.compile: "connect_unix.c".}
-proc connect_unix_from_c(fd: cint; path: cstring; pathlen: cint): cint
-  {.importc.}
-when defined(freebsd):
-  # for FreeBSD/capsicum
-  proc connectat_unix_from_c(baseFd, sockFd: cint; rel_path: cstring;
-    rel_pathlen: cint): cint {.importc.}
 
 const SocketPathPrefix = "cha_sock_"
 proc getSocketName*(pid: int): string =
@@ -417,7 +422,7 @@ proc reallyFlush*(s: BufStream) =
     s.source.sendDataLoop(s.writeBuffer)
 
 proc newBufStream*(ps: PosixStream; registerFun: proc(fd: int)): BufStream =
-  return BufStream(source: ps, blocking: ps.blocking, registerFun: registerFun)
+  return BufStream(source: ps, registerFun: registerFun)
 
 type
   DynFileStream* = ref object of DynStream
@@ -446,10 +451,65 @@ method sflush*(s: DynFileStream) =
   s.file.flushFile()
 
 proc newDynFileStream*(file: File): DynFileStream =
-  return DynFileStream(file: file, blocking: true)
+  return DynFileStream(file: file)
 
 proc newDynFileStream*(path: string): DynFileStream =
   var file: File
   if file.open(path):
     return newDynFileStream(path)
   return nil
+
+type ServerSocket* = ref object
+  fd*: cint
+  path*: string
+  dfd: cint
+
+proc setBlocking*(ssock: ServerSocket; blocking: bool) =
+  let ofl = fcntl(ssock.fd, F_GETFL, 0)
+  if blocking:
+    discard fcntl(ssock.fd, F_SETFL, ofl and not O_NONBLOCK)
+  else:
+    discard fcntl(ssock.fd, F_SETFL, ofl and O_NONBLOCK)
+
+proc newServerSocket*(fd: cint; sockDir: string; sockDirFd: cint; pid: int):
+    ServerSocket =
+  let path = getSocketPath(sockDir, pid)
+  return ServerSocket(fd: cint(fd), path: path, dfd: sockDirFd)
+
+proc newServerSocket*(sockDir: string; sockDirFd: cint; pid: int): ServerSocket =
+  let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
+  let ssock = newServerSocket(fd, sockDir, sockDirFd, pid)
+  if sockDirFd == -1:
+    discard tryRemoveFile(ssock.path)
+    if bind_unix_from_c(fd, cstring(ssock.path), cint(ssock.path.len)) != 0:
+      raiseOSError(osLastError())
+  else:
+    when defined(freebsd):
+      let name = getSocketName(pid)
+      discard unlinkat(sockDirFd, cstring(name), 0)
+      if bindat_unix_from_c(sockDirFd, fd, cstring(name), cint(name.len)) != 0:
+        raiseOSError(osLastError())
+    else:
+      # shouldn't have sockDirFd on other architectures
+      doAssert false
+  if listen(SocketHandle(fd), 128) != 0:
+    raiseOSError(osLastError())
+  return ssock
+
+proc close*(ssock: ServerSocket; unlink = true) =
+  discard close(ssock.fd)
+  if unlink:
+    when defined(freebsd):
+      if ssock.dfd != -1:
+        discard unlinkat(ssock.dfd, cstring(ssock.path), 0)
+        return
+    discard tryRemoveFile(ssock.path)
+
+proc acceptSocketStream*(ssock: ServerSocket; blocking = true): SocketStream =
+  let fd = cint(accept(SocketHandle(ssock.fd), nil, nil))
+  if fd == -1:
+    return nil
+  let ss = SocketStream(fd: fd, blocking: false)
+  if not blocking:
+    ss.setBlocking(false)
+  return ss

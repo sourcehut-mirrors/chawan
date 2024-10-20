@@ -13,7 +13,7 @@ type BufferedWriter* = object
   buffer: ptr UncheckedArray[uint8]
   bufSize: int
   bufLen: int
-  sendAux*: seq[FileHandle]
+  sendAux*: seq[cint]
 
 proc `=destroy`(writer: var BufferedWriter) =
   if writer.buffer != nil:
@@ -53,7 +53,7 @@ proc flush*(writer: var BufferedWriter) =
   copyMem(writer.buffer, unsafeAddr len[0], sizeof(len))
   writer.stream.sendDataLoop(writer.buffer, writer.bufLen)
   for i in countdown(writer.sendAux.high, 0):
-    SocketStream(writer.stream).sendFileHandle(writer.sendAux[i])
+    SocketStream(writer.stream).sendFd(writer.sendAux[i])
   writer.bufLen = 0
   writer.stream.sflush()
 

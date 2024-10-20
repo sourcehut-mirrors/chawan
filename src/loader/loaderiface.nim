@@ -33,7 +33,7 @@ type
     # directory where we store UNIX domain sockets
     sockDir*: string
     # (FreeBSD only) fd for the socket directory so we can connectat() on it
-    sockDirFd*: int
+    sockDirFd*: cint
 
   ConnectDataState = enum
     cdsBeforeResult, cdsBeforeStatus, cdsBeforeHeaders
@@ -390,7 +390,7 @@ proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
     stream.withLoaderPacketWriter loader, w:
       w.swrite(lcOpenCachedItem)
       w.swrite(cacheId)
-    var fd = FileHandle(-1)
+    var fd = cint(-1)
     stream.withPacketReader r:
       var success: bool
       r.sread(success)
@@ -401,13 +401,13 @@ proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
       return newPosixStream(fd)
   return nil
 
-proc passFd*(loader: FileLoader; id: string; fd: FileHandle) =
+proc passFd*(loader: FileLoader; id: string; fd: cint) =
   let stream = loader.connect()
   if stream != nil:
     stream.withLoaderPacketWriter loader, w:
       w.swrite(lcPassFd)
       w.swrite(id)
-    stream.sendFileHandle(fd)
+    stream.sendFd(fd)
     stream.sclose()
 
 proc removeCachedItem*(loader: FileLoader; cacheId: int) =
@@ -447,6 +447,6 @@ when defined(freebsd):
 proc setSocketDir*(loader: FileLoader; path: string) =
   loader.sockDir = path
   when defined(freebsd):
-    loader.sockDirFd = int(newPosixStream(path, O_DIRECTORY, 0).fd)
+    loader.sockDirFd = newPosixStream(path, O_DIRECTORY, 0).fd
   else:
     loader.sockDirFd = -1

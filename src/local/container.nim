@@ -9,7 +9,6 @@ import config/config
 import config/mimetypes
 import io/dynstream
 import io/promise
-import io/serversocket
 import layout/renderdocument
 import loader/headers
 import loader/loaderiface
@@ -250,8 +249,7 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   #TODO this is very ugly
   let ssock = newServerSocket(loader.sockDir, loader.sockDirFd,
     loader.clientPid)
-  SocketStream(container.iface.stream.source)
-    .sendFileHandle(FileHandle(ssock.fd))
+  SocketStream(container.iface.stream.source).sendFd(ssock.fd)
   ssock.close(unlink = false)
   return p.then(proc(pid: int): Container =
     if pid == -1:
@@ -1534,11 +1532,11 @@ proc readCanceled*(container: Container) =
     if repaint:
       container.needslines = true)
 
-proc readSuccess*(container: Container; s: string; fd = -1) =
+proc readSuccess*(container: Container; s: string; fd: cint = -1) =
   let p = container.iface.readSuccess(s, fd != -1)
   if fd != -1:
     container.iface.stream.reallyFlush()
-    SocketStream(container.iface.stream.source).sendFileHandle(FileHandle(fd))
+    SocketStream(container.iface.stream.source).sendFd(fd)
   p.then(proc(res: ReadSuccessResult) =
     if res.repaint:
       container.needslines = true

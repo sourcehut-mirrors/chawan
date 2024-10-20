@@ -417,7 +417,7 @@ proc acceptBuffers(client: Client) =
         w.swrite(outCacheId)
       # pass down ostream
       # must come after the previous block so the first packet is flushed
-      stream.sendFileHandle(FileHandle(item.ostream.fd))
+      stream.sendFd(item.ostream.fd)
       item.ostream.sclose()
       container.setStream(stream, registerFun)
     else: # cloned buffer

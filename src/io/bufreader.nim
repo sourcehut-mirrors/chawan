@@ -8,7 +8,7 @@ import types/opt
 type BufferedReader* = object
   buffer: seq[uint8]
   bufIdx: int
-  recvAux*: seq[FileHandle] #TODO assert on unused ones
+  recvAux*: seq[cint] #TODO assert on unused ones
 
 proc sread*(reader: var BufferedReader; n: var SomeNumber)
 proc sread*[T](reader: var BufferedReader; s: var set[T])
@@ -34,7 +34,7 @@ proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
   )
   stream.recvDataLoop(reader.buffer)
   for i in 0 ..< auxLen:
-    reader.recvAux.add(SocketStream(stream).recvFileHandle())
+    reader.recvAux.add(SocketStream(stream).recvFd())
   return reader
 
 proc initPacketReader*(stream: DynStream): BufferedReader =

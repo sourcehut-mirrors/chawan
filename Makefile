@@ -88,7 +88,7 @@ src/utils/strwidth.nim: res/map/charwidth_gen.nim src/utils/proptable.nim
 
 twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim \
 	src/utils/twtuni.nim src/types/opt.nim
-dynstream = src/io/dynstream.nim src/io/serversocket.nim
+dynstream = src/io/dynstream.nim src/io/dynstream_aux.c
 lcgi = $(dynstream) $(twtstr) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 curl = adapter/protocol/curl.nim adapter/protocol/curlerrors.nim

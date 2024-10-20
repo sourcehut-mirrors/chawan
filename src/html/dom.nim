@@ -525,9 +525,9 @@ proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
   let window = jctx.getWindow()
   let imageId = target.bitmap.imageId
   let loader = window.loader
-  loader.passFd("canvas-ctl-" & $imageId, FileHandle(pipefd[0]))
+  loader.passFd("canvas-ctl-" & $imageId, pipefd[0])
   discard close(pipefd[0])
-  let ps = newPosixStream(FileHandle(pipefd[1]))
+  let ps = newPosixStream(pipefd[1])
   let ctlreq = newRequest(newURL("stream:canvas-ctl-" & $imageId).get)
   let ctlres = loader.doRequest(ctlreq)
   doAssert ctlres.res == 0

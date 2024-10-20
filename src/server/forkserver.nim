@@ -9,7 +9,6 @@ import html/formdata
 import io/bufreader
 import io/bufwriter
 import io/dynstream
-import io/serversocket
 import loader/loader
 import loader/loaderiface
 import server/buffer
@@ -34,7 +33,7 @@ type
     ostream: PosixStream
     children: seq[int]
     loaderPid: int
-    sockDirFd: int
+    sockDirFd: cint
     sockDir: string
 
 proc loadConfig*(forkserver: ForkServer; config: Config): int =

@@ -1447,7 +1447,7 @@ proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
     ps: PosixStream; url: URL; title: string; flags: set[ContainerFlag]):
     Container =
   var url = url
-  pager.loader.passFd(url.pathname, FileHandle(ps.fd))
+  pager.loader.passFd(url.pathname, ps.fd)
   ps.safeClose()
   var loaderConfig: LoaderClientConfig
   var ourl: URL
@@ -1902,7 +1902,7 @@ proc filterBuffer(pager: Pager; ps: SocketStream; cmd: string;
   if pid == -1:
     return CheckMailcapResult(connect: false)
   let url = parseURL("stream:" & $pid).get
-  pager.loader.passFd(url.pathname, FileHandle(pins.fd))
+  pager.loader.passFd(url.pathname, pins.fd)
   pins.safeClose()
   let response = pager.loader.doRequest(newRequest(url))
   return CheckMailcapResult(
@@ -1963,7 +1963,7 @@ proc checkMailcap0(pager: Pager; url: URL; stream: SocketStream;
       pins = pager.ansiDecode(url, ishtml, pins)
     delEnv("MAILCAP_URL")
     let url = parseURL("stream:" & $pid).get
-    pager.loader.passFd(url.pathname, FileHandle(pins.fd))
+    pager.loader.passFd(url.pathname, pins.fd)
     pins.safeClose()
     let response = pager.loader.doRequest(newRequest(url))
     return CheckMailcapResult(
