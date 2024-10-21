@@ -5,9 +5,9 @@
 Include Chame in your project using either Nimble or as a git submodule.
 
 ```
-requires "chame >= 1.0.1"
+requires "chame"
 # optional, if you want support for charsets other than UTF-8
-requires "chagashi >= 0.5.3"
+requires "chagashi"
 ```
 
 Then, check the [documentation](https://chawan.net/doc/chame/) for a

@@ -36,13 +36,12 @@ of the standard while implementing hooks provided by htmlparser.
 
 ### String interning
 
-To achieve O(1) comparisons of certain categories of strings (tag and attribute
-names) and a lower memory footprint, Chame uses
-[string interning](https://en.wikipedia.org/wiki/String_interning). This means
-that while minidom users will only have to call the appropriate conversion
-functions on Document.factory for converting the output to string, consumers
-of htmlparser must implement string interning themselves (be that through
-MAtomFactory or a custom solution).
+To achieve O(1) comparisons of tag and attribute names and a lower memory
+footprint, Chame uses
+[string interning](https://en.wikipedia.org/wiki/String_interning). While
+minidom users can deal with simply by calling the appropriate conversion
+functions on Document.factory, consumers of htmlparser must implement string
+interning themselves (be that through MAtomFactory or a custom solution).
 
 ### String validation
 
@@ -71,9 +70,9 @@ low-level htmlparser API instead.
 
 minidom (and minidom_cs) implements string interning using `MAtomFactory`, and
 interned strings in minidom are represented using `MAtom`s. Every `MAtom` is
-guaranteed to be a valid UTF-8 string. To convert a Nim string into an `MAtom`,
-use the `MAtomFactory.strToAtom` function. To convert an `MAtom` into a Nim
-string, use the `MAtomFactory.atomToStr` function.
+guaranteed to point to a valid UTF-8 string. To convert a Nim string into an
+`MAtom`, use the `MAtomFactory.strToAtom` function. To convert an `MAtom` into a
+Nim string, use the `MAtomFactory.atomToStr` function.
 
 Note: it is always more efficient to convert strings to atoms (i.e. to use
 `strToAtom`) than to do it the other way. `MAtom`s are just integers, so
@@ -183,8 +182,8 @@ while true:
 parser.finish()
 ```
 
-Note the while loop; `parseChunk` may return `PRES_SCRIPT` multiple times
-for a single buffer, as it one buffer can contain several scripts.
+Note the while loop; `parseChunk` will return `PRES_SCRIPT` multiple times
+for a single chunk if it contains several scripts.
 
 Also note that `minidom` does not handle `PRES_STOP`, since it does support
 character encodings. For an implementation that *does* handle `PRES_STOP`, see
@@ -238,7 +237,7 @@ cases, but it need not be exposed.)
 
 ## Example
 
-A simple example of minidom: dumps all text on a page.
+A simple example with minidom: dumps all text on a page.
 
 ```Nim
 # Compile with nim c -d:ssl
@@ -270,5 +269,5 @@ tests/shared/tree_common.nim which together constitute a test runner of
 html5lib-tests.
 
 For an example implementation of [htmlparseriface](htmlparseriface.html), please
-check the source code of [minidom](minidom.html) (and of
-[minidom_cs](minidom_cs.html), if you need non-UTF-8 support).
+check the source code of [minidom](minidom.html) (and if you need legacy charset
+support, [minidom_cs](minidom_cs.html)).
