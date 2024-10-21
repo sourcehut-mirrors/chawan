@@ -2044,24 +2044,21 @@ proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LayoutUnit;
     weight: var float64): seq[int] =
   let specifiedRatio = tctx.calcSpecifiedRatio(W)
   # Spacing for each column:
-  var avail = newSeqUninitialized[int](tctx.cols.len)
-  var j = 0
+  var avail = newSeqOfCap[int](tctx.cols.len)
   for i, col in tctx.cols.mpairs:
     if not col.wspecified:
-      avail[j] = i
+      avail.add(i)
       let w = if col.width < W:
         toFloat64(col.width)
       else:
         toFloat64(W) * (ln(toFloat64(col.width) / toFloat64(W)) + 1)
       col.weight = w
       weight += w
-      inc j
     else:
       if specifiedRatio != 1:
         col.width *= specifiedRatio
         col.reflow = true
       W -= col.width
-      avail.del(j)
   return avail
 
 func needsRedistribution(tctx: TableContext; computed: CSSComputedValues):
