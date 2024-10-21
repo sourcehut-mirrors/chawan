@@ -351,7 +351,7 @@ proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
         let i = i + 1
         if i < line.len and line[i] in {'\t', ' '}:
           return (depth, i, ltUl)
-      elif c in {'0'..'9'}:
+      elif c in AsciiDigit:
         let i = i + 1
         if i < line.len and line[i] == '.':
           let i = i + 1
@@ -362,17 +362,13 @@ proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
 
 proc matchHTMLPreStart(line: string): bool =
   var tagn = ""
-  for i, c in line:
-    if i == 0:
-      if c != '<':
-        return false
-      continue
+  for c in line.toOpenArray(1, line.high):
     if c in {' ', '\t', '>'}:
       break
-    if c notin {'A'..'Z', 'a'..'z'}:
+    if c notin AsciiAlpha:
       return false
     tagn &= c.toLowerAscii()
-  return tagn in ["pre", "script", "style", "textarea"]
+  return tagn in ["pre", "script", "style", "textarea", "head"]
 
 proc matchHTMLPreEnd(line: string): bool =
   var tagn = ""
@@ -387,10 +383,10 @@ proc matchHTMLPreEnd(line: string): bool =
       continue
     if c in {' ', '\t', '>'}:
       break
-    if c notin {'A'..'Z', 'a'..'z'}:
+    if c notin AsciiAlpha:
       return false
     tagn &= c.toLowerAscii()
-  return tagn in ["pre", "script", "style", "textarea"]
+  return tagn in ["pre", "script", "style", "textarea", "head"]
 
 type
   BlockType = enum
@@ -535,6 +531,7 @@ proc parseHTMLPre(state: var ParseState; line: string) =
     stdout.write("</P>\n")
   if line.matchHTMLPreEnd():
     stdout.write(state.blockData)
+    stdout.write(line)
     state.blockData = ""
     state.blockType = btNone
   else:
