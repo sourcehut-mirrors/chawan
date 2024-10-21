@@ -4,7 +4,6 @@ import std/options
 import std/strformat
 import std/strutils
 import std/tables
-import std/unicode
 
 import dombuilder
 import entity_gen
@@ -58,8 +57,6 @@ type
       data*: string
     of EOF, CHARACTER_NULL: discard
 
-const C0Controls = {chr(0x00)..chr(0x1F)}
-const Controls = (C0Controls + {chr(0x7F)})
 const AsciiUpperAlpha = {'A'..'Z'}
 const AsciiLowerAlpha = {'a'..'z'}
 const AsciiAlpha = (AsciiUpperAlpha + AsciiLowerAlpha)
@@ -150,8 +147,8 @@ proc emit(tokenizer: var Tokenizer, c: char) =
 
 type CharRefResult = tuple[i, ci: int, entry: cstring]
 
-proc findCharRef(tokenizer: var Tokenizer, c: char,
-    ibuf: openArray[char]): CharRefResult =
+proc findCharRef(tokenizer: var Tokenizer, c: char, ibuf: openArray[char]):
+    CharRefResult =
   var i = charMap[c]
   if i == -1:
     return (0, 0, nil)
@@ -215,28 +212,33 @@ proc findCharRef(tokenizer: var Tokenizer, c: char,
   return (i, ci, entry)
 
 proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
-  var c = tokenizer.code
-  if c == 0x00 or c > 0x10FFFF or c in 0xD800u32..0xDFFFu32:
-    c = 0xFFFD
-  elif c in 0xFDD0u32..0xFDEFu32 or (c and 0xFFFF) in 0xFFFEu32..0xFFFFu32:
-    discard # noncharacter, do nothing
-  elif c < 0x80 and char(c) in (Controls - AsciiWhitespace) + {char(0x0D)}:
-    discard # control, do nothing
-  elif c in 0x80u32 .. 0x9Fu32:
-    const ControlMapTable = [
-      0x80_00_20ACu32, 0x82_00_201Au32, 0x83_00_0192u32, 0x84_00_201Eu32,
-      0x85_00_2026u32, 0x86_00_2020u32, 0x87_00_2021u32, 0x88_00_02C6u32,
-      0x89_00_2030u32, 0x8A_00_0160u32, 0x8B_00_2039u32, 0x8C_00_0152u32,
-      0x8E_00_017Du32, 0x91_00_2018u32, 0x92_00_2019u32, 0x93_00_201Cu32,
-      0x94_00_201Du32, 0x95_00_2022u32, 0x96_00_2013u32, 0x97_00_2014u32,
-      0x98_00_02DCu32, 0x99_00_2122u32, 0x9A_00_0161u32, 0x9B_00_203Au32,
-      0x9C_00_0153u32, 0x9E_00_017Eu32, 0x9F_00_0178u32,
-    ]
-    for it in ControlMapTable:
-      if it shr 24 == c:
-        c = it and 0xFFFF
-        break
-  let s = $Rune(c)
+  const ControlMap = [
+    0x20ACu16, 0, 0x201A, 0x192, 0x201E, 0x2026, 0x2020, 0x2021,
+    0x2C6, 0x2030, 0x160, 0x2039, 0x152, 0, 0x17D, 0,
+    0, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
+    0x2DC, 0x2122, 0x161, 0x203A, 0x153, 0, 0x17E, 0x178
+  ]
+  var u = tokenizer.code
+  let cc = u - 0x80
+  if cc < ControlMap.len and ControlMap[cc] != 0:
+    u = ControlMap[cc]
+  elif u == 0x00 or u > 0x10FFFF or u in 0xD800u32..0xDFFFu32:
+    u = 0xFFFD
+  var s = ""
+  if u < 0x80:
+    s = $char(u)
+  elif u < 0x800:
+    s = char(u shr 6 or 0xC0) &
+      char(u and 0x3F or 0x80)
+  elif u < 0x10000:
+    s = char(u shr 12 or 0xE0) &
+      char(u shr 6 and 0x3F or 0x80) &
+      char(u and 0x3F or 0x80)
+  else:
+    s = char(u shr 18 or 0xF0) &
+      char(u shr 12 and 0x3F or 0x80) &
+      char(u shr 6 and 0x3F or 0x80) &
+      char(u and 0x3F or 0x80)
   if tokenizer.consumedAsAnAttribute():
     tokenizer.appendToCurrentAttrValue(s)
   else:
@@ -249,28 +251,28 @@ proc flushAttr(tokenizer: var Tokenizer) =
 type EatStrResult = enum
   esrFail, esrSuccess, esrRetry
 
-proc eatStr(tokenizer: var Tokenizer, c: char, s: string,
-    ibuf: openArray[char]): EatStrResult =
+proc eatStr(tokenizer: var Tokenizer, c: char, s, ibuf: openArray[char]):
+    EatStrResult =
   var cs = $c
-  for i in 0 ..< s.len:
+  for c in s:
     let n = tokenizer.consume(ibuf)
     if n != -1:
       cs &= cast[char](n)
-    if n != int(s[i]):
+    if n != int(c):
       tokenizer.reconsume(cs)
       if n == -1 and not tokenizer.isend:
         return esrRetry
       return esrFail
   return esrSuccess
 
-proc eatStrNoCase0(tokenizer: var Tokenizer, c: char, s: string,
-    ibuf: openArray[char]): EatStrResult =
+proc eatStrNoCase0(tokenizer: var Tokenizer, c: char, s, ibuf: openArray[char]):
+    EatStrResult =
   var cs = $c
-  for i in 0 ..< s.len:
+  for c in s:
     let n = tokenizer.consume(ibuf)
     if n != -1:
       cs &= cast[char](n)
-    if n == -1 or cast[char](n).toLowerAscii() != s[i]:
+    if n == -1 or cast[char](n).toLowerAscii() != c:
       tokenizer.reconsume(cs)
       if n == -1 and not tokenizer.isend:
         return esrRetry
