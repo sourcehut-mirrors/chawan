@@ -18,6 +18,10 @@ code {
 	text-decoration: -cha-reverse;
 }
 
+pre code {
+	text-decoration: none;
+}
+
 @media (scripting: enabled) {
 noscript {
 	display: none;
