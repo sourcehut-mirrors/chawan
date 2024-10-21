@@ -80,11 +80,7 @@ proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom],
 
 proc newTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
     initialState = DATA): Tokenizer[Handle, Atom] =
-  var t = Tokenizer[Handle, Atom](
-    state: initialState,
-    dombuilder: dombuilder
-  )
-  return t
+  return Tokenizer[Handle, Atom](state: initialState, dombuilder: dombuilder)
 
 proc reconsume(tokenizer: var Tokenizer, s: openArray[char]) =
   for i in countdown(s.high, 0):
@@ -117,11 +113,13 @@ proc consume(tokenizer: var Tokenizer, ibuf: openArray[char]): int =
 
 proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
   if tokenizer.charbuf.len > 0:
-    let token = if not tokenizer.isws:
-      Token[Atom](t: CHARACTER, s: tokenizer.charbuf)
+    if tokenizer.isws:
+      tokenizer.tokqueue.add(Token[Atom](
+        t: CHARACTER_WHITESPACE,
+        s: tokenizer.charbuf
+      ))
     else:
-      Token[Atom](t: CHARACTER_WHITESPACE, s: tokenizer.charbuf)
-    tokenizer.tokqueue.add(token)
+      tokenizer.tokqueue.add(Token[Atom](t: CHARACTER, s: tokenizer.charbuf))
     tokenizer.isws = false
     tokenizer.charbuf.setLen(0)
 
@@ -130,12 +128,13 @@ const AttributeStates = {
   ATTRIBUTE_VALUE_UNQUOTED
 }
 
-func consumedAsAnAttribute(tokenizer: Tokenizer): bool =
+func consumedAsAttribute(tokenizer: Tokenizer): bool =
   return tokenizer.rstate in AttributeStates
 
-proc appendToCurrentAttrValue(tokenizer: var Tokenizer, c: auto) =
+proc appendToAttrValue(tokenizer: var Tokenizer, s: openArray[char]) =
   if tokenizer.attr:
-    tokenizer.attrv &= c
+    for c in s:
+      tokenizer.attrv &= c
 
 proc emit(tokenizer: var Tokenizer, c: char) =
   let isws = c in AsciiWhitespace
@@ -211,6 +210,13 @@ proc findCharRef(tokenizer: var Tokenizer, c: char, ibuf: openArray[char]):
     inc ci
   return (i, ci, entry)
 
+proc appendAttrOrEmit(tokenizer: var Tokenizer, s: openArray[char]) =
+  if tokenizer.consumedAsAttribute():
+    tokenizer.appendToAttrValue(s)
+  else:
+    for c in s:
+      tokenizer.emit(c)
+
 proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
   const ControlMap = [
     0x20ACu16, 0, 0x201A, 0x192, 0x201E, 0x2026, 0x2020, 0x2021,
@@ -239,11 +245,7 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
       char(u shr 12 and 0x3F or 0x80) &
       char(u shr 6 and 0x3F or 0x80) &
       char(u and 0x3F or 0x80)
-  if tokenizer.consumedAsAnAttribute():
-    tokenizer.appendToCurrentAttrValue(s)
-  else:
-    for c in s:
-      tokenizer.emit(c)
+  tokenizer.appendAttrOrEmit(s)
 
 proc flushAttr(tokenizer: var Tokenizer) =
   tokenizer.tok.attrs[tokenizer.attrna] = tokenizer.attrv
@@ -289,55 +291,38 @@ proc flushTagName(tokenizer: var Tokenizer) =
   tokenizer.tok.tagname = tokenizer.strToAtom(tokenizer.tagNameBuf)
 
 proc emitTmp(tokenizer: var Tokenizer) =
-  for c in tokenizer.tmp:
-    tokenizer.emit(c)
-
-proc flushCodePointsConsumedAsCharRef(tokenizer: var Tokenizer) =
-  if tokenizer.consumedAsAnAttribute():
-    tokenizer.appendToCurrentAttrValue(tokenizer.tmp)
-  else:
-    tokenizer.emitTmp()
+  if tokenizer.isws:
+    tokenizer.flushChars()
+  tokenizer.charbuf &= "</"
+  tokenizer.charbuf &= tokenizer.tmp
 
 # if true, redo
 proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
-  template emit(tok: Token) =
-    tokenizer.flushChars()
-    tokenizer.tokqueue.add(tok)
-  template reconsume_in(s: TokenizerState) =
-    tokenizer.state = s
-    return true
-  template emit(ch: char) =
-    tokenizer.emit(ch)
-  template emit(s: static string) =
-    static:
-      doAssert AsciiWhitespace notin s
-    if tokenizer.isws:
-      tokenizer.flushChars()
-    tokenizer.charbuf &= s
-
   tokenizer.tokqueue.setLen(0)
-
+  if tokenizer.isws:
+    tokenizer.flushChars()
   case tokenizer.state
   of TAG_OPEN, RCDATA_LESS_THAN_SIGN, RAWTEXT_LESS_THAN_SIGN,
       SCRIPT_DATA_LESS_THAN_SIGN, SCRIPT_DATA_ESCAPED_LESS_THAN_SIGN:
-    emit '<'
+    tokenizer.charbuf &= '<'
   of END_TAG_OPEN, RCDATA_END_TAG_OPEN, RAWTEXT_END_TAG_OPEN,
       SCRIPT_DATA_END_TAG_OPEN, SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
-    emit "</"
+    tokenizer.charbuf &= "</"
   of RCDATA_END_TAG_NAME, RAWTEXT_END_TAG_NAME, SCRIPT_DATA_END_TAG_NAME,
       SCRIPT_DATA_ESCAPED_END_TAG_NAME:
-    emit "</"
     tokenizer.emitTmp()
   of BOGUS_COMMENT, BOGUS_DOCTYPE, COMMENT_END_DASH,
       COMMENT_END, COMMENT_END_BANG, COMMENT_LESS_THAN_SIGN_BANG_DASH,
       COMMENT_LESS_THAN_SIGN_BANG_DASH_DASH, COMMENT_START_DASH, COMMENT,
       COMMENT_START, COMMENT_LESS_THAN_SIGN, COMMENT_LESS_THAN_SIGN_BANG:
-    emit tokenizer.tok
+    tokenizer.flushChars()
+    tokenizer.tokqueue.add(tokenizer.tok)
   of MARKUP_DECLARATION_OPEN:
-    # note: was reconsume (bogus comment)
-    emit Token[Atom](t: COMMENT)
+    tokenizer.flushChars()
+    tokenizer.tokqueue.add(Token[Atom](t: COMMENT))
   of DOCTYPE, BEFORE_DOCTYPE_NAME:
-    emit Token[Atom](t: DOCTYPE, quirks: true)
+    tokenizer.flushChars()
+    tokenizer.tokqueue.add(Token[Atom](t: DOCTYPE, quirks: true))
   of DOCTYPE_NAME, AFTER_DOCTYPE_NAME, AFTER_DOCTYPE_PUBLIC_KEYWORD,
       BEFORE_DOCTYPE_PUBLIC_IDENTIFIER,
       DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED,
@@ -349,33 +334,29 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
       DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED,
       AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
     tokenizer.tok.quirks = true
-    emit tokenizer.tok
+    tokenizer.flushChars()
+    tokenizer.tokqueue.add(tokenizer.tok)
   of CDATA_SECTION_BRACKET:
-    emit ']'
-    # note: was reconsume (CDATA section)
+    tokenizer.charbuf &= ']'
   of CDATA_SECTION_END:
-    emit "]]"
-    # note: was reconsume (CDATA section)
+    tokenizer.charbuf &= "]]"
   of CHARACTER_REFERENCE:
-    tokenizer.tmp = "&"
-    tokenizer.flushCodePointsConsumedAsCharRef()
-    reconsume_in tokenizer.rstate
-  of NAMED_CHARACTER_REFERENCE:
-    # No match for EOF
-    tokenizer.flushCodePointsConsumedAsCharRef()
-    # note: was switch state (ambiguous ampersand state)
-    reconsume_in tokenizer.rstate
+    tokenizer.appendAttrOrEmit("&")
+    tokenizer.state = tokenizer.rstate
+    return true
   of AMBIGUOUS_AMPERSAND_STATE:
-    reconsume_in tokenizer.rstate
-  of HEXADECIMAL_CHARACTER_REFERENCE_START, DECIMAL_CHARACTER_REFERENCE_START,
+    tokenizer.state = tokenizer.rstate
+    return true
+  of NAMED_CHARACTER_REFERENCE, HEXADECIMAL_CHARACTER_REFERENCE_START,
       NUMERIC_CHARACTER_REFERENCE:
-    tokenizer.flushCodePointsConsumedAsCharRef()
-    reconsume_in tokenizer.rstate
-  of HEXADECIMAL_CHARACTER_REFERENCE, DECIMAL_CHARACTER_REFERENCE,
-      NUMERIC_CHARACTER_REFERENCE_END:
+    tokenizer.appendAttrOrEmit(tokenizer.tmp)
+    tokenizer.state = tokenizer.rstate
+    return true
+  of HEXADECIMAL_CHARACTER_REFERENCE, DECIMAL_CHARACTER_REFERENCE:
     tokenizer.numericCharacterReferenceEndState()
     # we unnecessarily consumed once so reconsume
-    reconsume_in tokenizer.rstate
+    tokenizer.state = tokenizer.rstate
+    return true
   else: discard
   tokenizer.flushChars()
   false
@@ -385,12 +366,6 @@ type TokenizeResult* = enum
 
 proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
     ibuf: openArray[char]): TokenizeResult =
-  template emit(tok: Token) =
-    tokenizer.flushChars()
-    if tok.t == START_TAG:
-      tokenizer.laststart = tok
-    tokenizer.tokqueue.add(tok)
-  template emit(tok: TokenType) = emit Token[Atom](t: tok)
   template emit(s: static string) =
     static:
       doAssert AsciiWhitespace notin s
@@ -401,13 +376,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
     tokenizer.emit(ch)
   template emit_null =
     tokenizer.flushChars()
-    emit Token[Atom](t: CHARACTER_NULL)
+    tokenizer.tokqueue.add(Token[Atom](t: CHARACTER_NULL))
   template prepare_attrs_if_start =
-    if tokenizer.tok.t == START_TAG and tokenizer.attr and
-        tokenizer.tmp != "":
+    if tokenizer.tok.t == START_TAG and tokenizer.attr:
       tokenizer.flushAttr()
   template emit_tok =
-    emit tokenizer.tok
+    tokenizer.flushChars()
+    tokenizer.tokqueue.add(tokenizer.tok)
   template emit_replacement = emit "\uFFFD"
   template switch_state(s: TokenizerState) =
     tokenizer.state = s
@@ -484,6 +459,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '/': switch_state END_TAG_OPEN
       of AsciiAlpha:
         new_token Token[Atom](t: START_TAG)
+        tokenizer.laststart = tokenizer.tok
         tokenizer.tagNameBuf = $c.toLowerAscii()
         # note: was reconsume
         switch_state TAG_NAME
@@ -519,9 +495,8 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         tokenizer.flushTagName()
         emit_tok
-      of AsciiUpperAlpha: tokenizer.tagNameBuf &= c.toLowerAscii()
       of '\0': tokenizer.tagNameBuf &= "\uFFFD"
-      else: tokenizer.tagNameBuf &= c
+      else: tokenizer.tagNameBuf &= c.toLowerAscii()
 
     of RCDATA_LESS_THAN_SIGN:
       case c
@@ -546,7 +521,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of RCDATA_END_TAG_NAME:
       template anything_else =
-        emit "</"
         tokenizer.emitTmp()
         reconsume_in RCDATA
       case c
@@ -598,7 +572,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of RAWTEXT_END_TAG_NAME:
       template anything_else =
-        emit "</"
         tokenizer.emitTmp()
         reconsume_in RAWTEXT
       case c
@@ -653,7 +626,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of SCRIPT_DATA_END_TAG_NAME:
       template anything_else =
-        emit "</"
         tokenizer.emitTmp()
         reconsume_in SCRIPT_DATA
       case c
@@ -753,8 +725,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         reconsume_in SCRIPT_DATA_ESCAPED
 
     of SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
-      case c
-      of AsciiAlpha:
+      if c in AsciiAlpha:
         new_token Token[Atom](t: END_TAG)
         tokenizer.tagNameBuf = $c.toLowerAscii()
         tokenizer.tmp &= c
@@ -766,7 +737,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of SCRIPT_DATA_ESCAPED_END_TAG_NAME:
       template anything_else =
-        emit "</"
         tokenizer.emitTmp()
         reconsume_in SCRIPT_DATA_ESCAPED
       case c
@@ -892,12 +862,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '=':
         leave_attribute_name_state
         switch_state BEFORE_ATTRIBUTE_VALUE
-      of AsciiUpperAlpha:
-        tokenizer.tmp &= c.toLowerAscii()
       of '\0':
         tokenizer.tmp &= "\uFFFD"
       else:
-        tokenizer.tmp &= c
+        tokenizer.tmp &= c.toLowerAscii()
 
     of AFTER_ATTRIBUTE_NAME:
       case c
@@ -927,15 +895,15 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of '"': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
-      of '\0': tokenizer.appendToCurrentAttrValue("\uFFFD")
-      else: tokenizer.appendToCurrentAttrValue(c)
+      of '\0': tokenizer.appendToAttrValue("\uFFFD")
+      else: tokenizer.appendToAttrValue([c])
 
     of ATTRIBUTE_VALUE_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
-      of '\0': tokenizer.appendToCurrentAttrValue("\uFFFD")
-      else: tokenizer.appendToCurrentAttrValue(c)
+      of '\0': tokenizer.appendToAttrValue("\uFFFD")
+      else: tokenizer.appendToAttrValue([c])
 
     of ATTRIBUTE_VALUE_UNQUOTED:
       case c
@@ -945,8 +913,8 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         prepare_attrs_if_start
         emit_tok
-      of '\0': tokenizer.appendToCurrentAttrValue("\uFFFD")
-      else: tokenizer.appendToCurrentAttrValue(c)
+      of '\0': tokenizer.appendToAttrValue("\uFFFD")
+      else: tokenizer.appendToAttrValue([c])
 
     of AFTER_ATTRIBUTE_VALUE_QUOTED:
       case c
@@ -1094,26 +1062,22 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         reconsume_in COMMENT
 
     of DOCTYPE:
-      case c
-      of AsciiWhitespace: switch_state BEFORE_DOCTYPE_NAME
-      of '>': reconsume_in BEFORE_DOCTYPE_NAME
-      else: reconsume_in BEFORE_DOCTYPE_NAME
+      if c notin AsciiWhitespace:
+        tokenizer.reconsume(c)
+      switch_state BEFORE_DOCTYPE_NAME
 
     of BEFORE_DOCTYPE_NAME:
       case c
       of AsciiWhitespace: discard
-      of AsciiUpperAlpha:
-        new_token Token[Atom](t: DOCTYPE, name: some($c.toLowerAscii()))
-        switch_state DOCTYPE_NAME
       of '\0':
-        new_token Token[Atom](t: DOCTYPE, name: some($"\uFFFD"))
+        new_token Token[Atom](t: DOCTYPE, name: some("\uFFFD"))
         switch_state DOCTYPE_NAME
       of '>':
         new_token Token[Atom](t: DOCTYPE, quirks: true)
         switch_state DATA
         emit_tok
       else:
-        new_token Token[Atom](t: DOCTYPE, name: some($c))
+        new_token Token[Atom](t: DOCTYPE, name: some($c.toLowerAscii()))
         switch_state DOCTYPE_NAME
 
     of DOCTYPE_NAME:
@@ -1122,9 +1086,8 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      of AsciiUpperAlpha: tokenizer.tok.name.get &= c.toLowerAscii()
       of '\0': tokenizer.tok.name.get &= "\uFFFD"
-      else: tokenizer.tok.name.get &= c
+      else: tokenizer.tok.name.get &= c.toLowerAscii()
 
     of AFTER_DOCTYPE_NAME: # note: rewritten to fit case model as we consume a char anyway
       template anything_else =
@@ -1298,14 +1261,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      else: reconsume_in BOGUS_DOCTYPE
+      else:
+        switch_state BOGUS_DOCTYPE
 
     of BOGUS_DOCTYPE:
-      case c
-      of '>':
-        switch_state DATA
+      if c == '>':
         emit_tok
-      else: discard
+        switch_state DATA
 
     of CDATA_SECTION:
       case c
@@ -1319,8 +1281,8 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         emit c
 
     of CDATA_SECTION_BRACKET:
-      case c
-      of ']': switch_state CDATA_SECTION_END
+      if c == ']':
+        switch_state CDATA_SECTION_END
       else:
         emit ']'
         reconsume_in CDATA_SECTION
@@ -1342,8 +1304,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         tokenizer.tmp = "&#"
         switch_state NUMERIC_CHARACTER_REFERENCE
       else:
-        tokenizer.tmp = "&"
-        tokenizer.flushCodePointsConsumedAsCharRef()
+        tokenizer.appendAttrOrEmit("&")
         reconsume_in tokenizer.rstate
 
     of NAMED_CHARACTER_REFERENCE:
@@ -1360,14 +1321,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       tokenizer.tmp.setLen(ci + 1)
       if entry != nil and entry[ci] == ':':
         let n = tokenizer.consume(ibuf)
-        let sc = tokenizer.consumedAsAnAttribute() and tokenizer.tmp[^1] != ';'
+        let sc = tokenizer.consumedAsAttribute() and tokenizer.tmp[^1] != ';'
         if sc and n != -1 and cast[char](n) in {'='} + AsciiAlphaNumeric:
           tokenizer.reconsume(cast[char](n))
-          tokenizer.flushCodePointsConsumedAsCharRef()
+          tokenizer.appendAttrOrEmit(tokenizer.tmp)
           switch_state tokenizer.rstate
         elif sc and n == -1 and not tokenizer.isend:
           # We have to redo the above check.
-          #TODO it would be great to not completely lose our state here...
           tokenizer.reconsume(tokenizer.tmp.toOpenArray(1, tokenizer.tmp.high))
           tokenizer.tmp = "&"
           break
@@ -1379,21 +1339,17 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
           while (let c = entry[ci]; c != '\0'):
             tokenizer.tmp &= c
             inc ci
-          tokenizer.flushCodePointsConsumedAsCharRef()
+          tokenizer.appendAttrOrEmit(tokenizer.tmp)
           switch_state tokenizer.rstate
       else:
-        tokenizer.flushCodePointsConsumedAsCharRef()
+        tokenizer.appendAttrOrEmit(tokenizer.tmp)
         switch_state AMBIGUOUS_AMPERSAND_STATE
 
     of AMBIGUOUS_AMPERSAND_STATE:
-      case c
-      of AsciiAlpha:
-        if tokenizer.consumedAsAnAttribute():
-          tokenizer.appendToCurrentAttrValue(c)
-        else:
-          emit c
-      of ';': reconsume_in tokenizer.rstate
-      else: reconsume_in tokenizer.rstate
+      if c in AsciiAlpha:
+        tokenizer.appendAttrOrEmit([c])
+      else:
+        reconsume_in tokenizer.rstate
 
     of NUMERIC_CHARACTER_REFERENCE:
       tokenizer.code = 0
@@ -1401,65 +1357,56 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of 'x', 'X':
         tokenizer.tmp &= c
         switch_state HEXADECIMAL_CHARACTER_REFERENCE_START
-      else: reconsume_in DECIMAL_CHARACTER_REFERENCE_START
-
-    of HEXADECIMAL_CHARACTER_REFERENCE_START:
-      case c
-      of AsciiDigit:
-        tokenizer.code = uint32(c) - uint32('0')
-        # note: was reconsume
-        switch_state HEXADECIMAL_CHARACTER_REFERENCE
-      of 'a'..'f':
-        tokenizer.code = uint32(c) - uint32('a') + 10
-        # note: was reconsume
-        switch_state HEXADECIMAL_CHARACTER_REFERENCE
-      of 'A'..'F':
-        tokenizer.code = uint32(c) - uint32('A') + 10
-        # note: was reconsume
-        switch_state HEXADECIMAL_CHARACTER_REFERENCE
-      else:
-        tokenizer.flushCodePointsConsumedAsCharRef()
-        reconsume_in tokenizer.rstate
-
-    of DECIMAL_CHARACTER_REFERENCE_START:
-      case c
       of AsciiDigit:
         tokenizer.code = uint32(c) - uint32('0')
         # note: was reconsume
         switch_state DECIMAL_CHARACTER_REFERENCE
       else:
-        tokenizer.flushCodePointsConsumedAsCharRef()
+        tokenizer.appendAttrOrEmit(tokenizer.tmp)
+        reconsume_in tokenizer.rstate
+
+    of HEXADECIMAL_CHARACTER_REFERENCE_START:
+      let c2 = c.toLowerAscii()
+      case c2
+      of AsciiDigit:
+        tokenizer.code = uint32(c2) - uint32('0')
+        # note: was reconsume
+        switch_state HEXADECIMAL_CHARACTER_REFERENCE
+      of 'a'..'f':
+        tokenizer.code = uint32(c2) - uint32('a') + 10
+        # note: was reconsume
+        switch_state HEXADECIMAL_CHARACTER_REFERENCE
+      else:
+        tokenizer.appendAttrOrEmit(tokenizer.tmp)
         reconsume_in tokenizer.rstate
 
     of HEXADECIMAL_CHARACTER_REFERENCE:
-      case c
+      let c2 = c.toLowerAscii()
+      case c2
       of AsciiDigit:
         if tokenizer.code < 0x10FFFF:
           tokenizer.code *= 0x10
-          tokenizer.code += uint32(c) - uint32('0')
+          tokenizer.code += uint32(c2) - uint32('0')
       of 'a'..'f':
         if tokenizer.code < 0x10FFFF:
           tokenizer.code *= 0x10
-          tokenizer.code += uint32(c) - uint32('a') + 10
-      of 'A'..'F':
-        if tokenizer.code < 0x10FFFF:
-          tokenizer.code *= 0x10
-          tokenizer.code += uint32(c) - uint32('A') + 10
-      of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
-      else: reconsume_in NUMERIC_CHARACTER_REFERENCE_END
+          tokenizer.code += uint32(c2) - uint32('a') + 10
+      else:
+        if c != ';':
+          tokenizer.reconsume(c)
+        tokenizer.numericCharacterReferenceEndState()
+        switch_state tokenizer.rstate
 
     of DECIMAL_CHARACTER_REFERENCE:
-      case c
-      of AsciiDigit:
+      if c in AsciiDigit:
         if tokenizer.code < 0x10FFFF:
           tokenizer.code *= 10
           tokenizer.code += uint32(c) - uint32('0')
-      of ';': switch_state NUMERIC_CHARACTER_REFERENCE_END
-      else: reconsume_in NUMERIC_CHARACTER_REFERENCE_END
-
-    of NUMERIC_CHARACTER_REFERENCE_END:
-      tokenizer.numericCharacterReferenceEndState()
-      reconsume_in tokenizer.rstate # we unnecessarily consumed once so reconsume
+      else:
+        if c != ';':
+          tokenizer.reconsume(c)
+        tokenizer.numericCharacterReferenceEndState()
+        switch_state tokenizer.rstate
 
   return trDone
 
