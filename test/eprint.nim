@@ -7,7 +7,7 @@ template eprint0(s: varargs[string]) =
       if i != 0:
         o &= ' '
       o &= s[i]
-    when nimVm or not declared(stderr):
+    when not declared(stderr):
       echo o
     else:
       o &= '\n'
