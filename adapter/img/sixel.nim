@@ -168,7 +168,7 @@ proc quantize(img: openArray[RGBAColorBE]; outk: var uint;
   for c0 in img:
     let c0 = c0.argb()
     transparent = transparent or c0.a != 255
-    let c = RGBColor(uint32(c0).fastmul(100))
+    let c = RGBColor(ARGBColor(uint32(c0) or 0xFF000000u32).fastmul(100))
     K += root.insert(c, trimMap)
     while K > palette:
       trimMap.trim(K)
@@ -414,7 +414,7 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
       for j in 0 ..< realw:
         let m = n + offx + j
         let c0 = img[m].argb()
-        let c1 = ARGBColor(uint32(c0).fastmul1(100))
+        let c1 = c0.fastmul(100)
         let c2 = c1.correctDither(j, dither)
         if c2.a < 50: # transparent
           let diff = (int32(c2.a), 0i32, 0i32, 0i32)

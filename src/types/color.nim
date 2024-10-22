@@ -290,41 +290,22 @@ func serialize*(color: ARGBColor): string =
 func `$`*(argbcolor: ARGBColor): string =
   return argbcolor.serialize()
 
-# https://arxiv.org/pdf/2202.02864.pdf
-func fastmul*(c, ca: uint32): uint32 =
-  let u = c or 0xFF000000u32
-  var rb = u and 0x00FF00FFu32
-  rb *= ca
-  rb += 0x00800080
-  rb += (rb shr 8) and 0x00FF00FFu32
-  rb = rb and 0xFF00FF00u32
-  var ga = (u shr 8) and 0x00FF00FFu32
-  ga *= ca
-  ga += 0x00800080
-  ga += (ga shr 8) and 0x00FF00FFu32
-  ga = ga and 0xFF00FF00u32
-  return ga or (rb shr 8)
-
-# fastmul, but preserves alpha
-func fastmul1*(c, ca: uint32): uint32 =
-  let u = c
-  var rb = u and 0x00FF00FFu32
-  rb *= ca
-  rb += 0x00800080
-  rb += (rb shr 8) and 0x00FF00FFu32
-  rb = rb and 0xFF00FF00u32
-  var ga = (u shr 8) and 0x00FF00FFu32
-  ga *= ca
-  ga += 0x00800080
-  ga += (ga shr 8) and 0x00FF00FFu32
-  ga = ga and 0xFF00FF00u32
-  return ga or (rb shr 8)
-
-func fastmul1(c: ARGBColor; ca: uint32): ARGBColor =
-  return ARGBColor(fastmul1(uint32(c), ca))
+# Divide each component by 255, multiply them by n, and discard the fractions.
+# See https://arxiv.org/pdf/2202.02864.pdf for details.
+func fastmul*(c: ARGBColor; n: uint32): ARGBColor =
+  var c = (uint64(c) shl 24) or uint64(c)
+  c = c and 0x00FF00FF00FF00FFu64
+  c *= n
+  c += 0x80008000800080u64
+  c += (c shr 8) and 0x00FF00FF00FF00FFu64
+  c = c and 0xFF00FF00FF00FF00u64
+  c = (c shr 32) or (c shr 8)
+  return ARGBColor(c)
 
 func premul(c: ARGBColor): ARGBColor =
-  return ARGBColor(fastmul(uint32(c), uint32(c.a)))
+  let a = uint32(c.a)
+  let c = ARGBColor(uint32(c) or 0xFF000000u32)
+  return c.fastmul(a)
 
 # This is somewhat faster than floats or a lookup table, and is correct for
 # all inputs.
@@ -342,7 +323,7 @@ func blend*(c0, c1: ARGBColor): ARGBColor =
   let pc0 = c0.premul()
   let pc1 = c1.premul()
   let k = 255 - pc1.a
-  let mc = fastmul1(pc0, uint32(k))
+  let mc = pc0.fastmul(uint32(k))
   let rr = pc1.r + mc.r
   let rg = pc1.g + mc.g
   let rb = pc1.b + mc.b
