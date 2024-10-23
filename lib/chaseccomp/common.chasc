@@ -1,0 +1,74 @@
+load arch
+ifne CHASECCOMP_AUDIT_ARCH_NR deny
+
+# load syscall nr
+load nr
+
+# socket/file i/o
+ifeqdef SYS_read allow
+ifeqdef SYS_write allow
+
+# polling
+ifeqdef SYS_poll allow
+ifeqdef SYS_ppoll allow # poll is sometimes implemented as ppoll, e.g. musl
+
+# memory allocation
+ifeqdef SYS_mmap allow
+ifeqdef SYS_mmap2 allow
+ifeqdef SYS_mremap allow
+ifeqdef SYS_munmap allow
+ifeqdef SYS_brk allow
+
+# less common socket/file i/o
+ifeqdef SYS_lseek allow
+ifeqdef SYS_close allow
+
+# prevent glibc from getting our process murdered
+ifeqdef SYS_fstat eperm
+ifeqdef SYS_fstat64 eperm
+ifeqdef SYS_fstatat64 eperm
+ifeqdef SYS_newfstatat eperm
+ifeqdef SYS_statx eperm
+
+# accept fcntl(2), but only with F_DUPFD, F_GETFD, F_SETFD, F_GETFL, F_SETFL.
+# (F_SETFL is 4, others are 0..3)
+ifeqdef SYS_fcntl64 is_fcntl64
+ifne SYS_fcntl not_fcntl
+# additional test for fcntl64 on 32-bit systems
+: is_fcntl64
+load args[1]
+ifle F_SETFL allow
+load nr
+: not_fcntl
+
+# following syscalls are rarely called
+ifeqdef SYS_futex allow	# bionic libc & WSL both need it
+ifeqdef SYS_exit allow	# for quit
+ifeqdef SYS_exit_group allow	# for quit
+ifeqdef SYS_restart_syscall allow # for resuming poll on SIGCONT
+ifeqdef SYS_getrandom allow	# glibc calls it when initializing its malloc
+
+# bionic-specific stuff
+ifdef __BIONIC__
+ifeqdef SYS_rt_sigprocmap allow
+ifeqdef SYS_madvise allow #TODO can we make this less broad?
+
+# bionic uses prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME) for its pages.
+ifne SYS_prctl not_prctl
+load args[0]
+ifne PR_SET_VMA deny
+load args[1]
+ifeq PR_SET_VMA_ANON_NAME allow
+load nr
+: not_prctl
+
+# bionic also calls mprotect(2) with PROT_READ and PROT_WRITE flags.
+# Crucially, we don't want to allow PROT_EXEC.
+ifne SYS_mprotect not_mprotect
+define CHA_PROT_READ_OR_PROT_WRITE (PROT_READ | PROT_WRITE)
+load args[2]
+ifne CHA_PROT_READ_OR_PROT_WRITE allow
+load nr
+: not_mprotect
+
+endif /* __BIONIC__ */

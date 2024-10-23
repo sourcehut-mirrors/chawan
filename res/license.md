@@ -7,9 +7,8 @@ depends on projects with different licensing terms.
 
 This document attempts to list licensing terms of projects included in the
 Chawan repository. Note that Chawan is dynamically linked against your copy
-of libcurl, (on Linux) libseccomp, your C library, and if exists, your termcap
-library. For licensing terms of these, please consult the appropriate library's
-documentation.
+of libcurl, your C library, and if exists, your termcap library. For licensing
+terms of these, please consult the appropriate library's documentation.
 
 Also, Chawan is statically linked to the Nim standard library. At the time
 of writing, (i.e. as of Nim 2.0.8) this is the MIT license (same terms as

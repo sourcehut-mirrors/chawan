@@ -43,7 +43,7 @@ also override them by setting an environment variable with the same name.
   it would resolve to `/usr/local/libexec`.) <BR>
   WARNING: Unlike other path names, this must be quoted if your path contains
   spaces!
-* `DANGER_DISABLE_SANDBOX`: Set it to 1 to disable OS-level sandboxing even
+* `DANGER_DISABLE_SANDBOX`: Set it to 1 to disable syscall sandboxing even
   on systems where we have built-in sandboxing support. Note that this is
   *not* taken from the environment variables; you must use it like
   `make DANGER_DISABLE_SANDBOX=1`.<BR>

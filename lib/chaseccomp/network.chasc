@@ -1,0 +1,21 @@
+include common.chasc
+
+# syscall nr is loaded in common.chasc
+
+# for curl
+ifeqdef SYS_send allow
+ifeqdef SYS_recv allow
+ifeqdef SYS_recvfrom allow
+ifeqdef SYS_sendto allow
+ifeqdef SYS_recvmsg allow
+ifeqdef SYS_sendmsg allow
+
+# used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
+ifeqdef SYS_getpid allow
+
+: deny
+ret kill
+: eperm
+ret errno EPERM
+: allow
+ret allow

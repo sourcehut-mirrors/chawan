@@ -58,8 +58,16 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
+ifeq ($(shell uname), Linux)
+chaseccomp = lib/chaseccomp/chaseccomp.o
+
+lib/chaseccomp/chaseccomp.o: .FORCE
+	(cd lib/chaseccomp; $(MAKE))
+.FORCE:
+endif
+
 $(OUTDIR_BIN)/cha: src/*.nim src/**/*.nim src/**/*.c res/* res/**/* \
-		res/map/idna_gen.nim nim.cfg
+		$(chaseccomp) res/map/idna_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) $(FLAGS) \
@@ -92,10 +100,10 @@ dynstream = src/io/dynstream.nim src/io/dynstream_aux.c
 lcgi = $(dynstream) $(twtstr) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 curl = adapter/protocol/curl.nim adapter/protocol/curlerrors.nim
+sandbox = src/utils/sandbox.nim $(chaseccomp)
 
-$(OUTDIR_CGI_BIN)/man: lib/monoucha/monoucha/jsregex.nim \
-		lib/monoucha/monoucha/libregexp.nim $(twtstr)
-$(OUTDIR_CGI_BIN)/http: $(curl) src/utils/sandbox.nim
+$(OUTDIR_CGI_BIN)/man: $(twtstr)
+$(OUTDIR_CGI_BIN)/http: $(curl) $(sandbox)
 $(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
 $(OUTDIR_CGI_BIN)/file: $(twtstr)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
@@ -103,9 +111,8 @@ $(OUTDIR_CGI_BIN)/sftp: $(curl) $(twtstr)
 $(OUTDIR_CGI_BIN)/gopher: adapter/gophertypes.nim $(lcgi)
 $(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
-		adapter/img/stb_image.h src/utils/sandbox.nim $(dynstream)
-$(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h \
-		src/utils/sandbox.nim
+		adapter/img/stb_image.h $(sandbox) $(dynstream)
+$(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h $(sandbox)
 $(OUTDIR_CGI_BIN)/sixel: src/types/color.nim src/utils/sandbox.nim $(twtstr) $(dynstream)
 $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
 	src/io/bufreader.nim src/types/color.nim src/types/line.nim \
@@ -156,6 +163,7 @@ doc/cha-%.5: $(OBJDIR)/man/cha-%.md
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)"
+	(cd lib/chaseccomp; $(MAKE) clean)
 
 .PHONY: distclean
 distclean: clean

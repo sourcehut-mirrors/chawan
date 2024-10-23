@@ -1,0 +1,6 @@
+/chasc_*.h
+/chasc_*.c
+/*.expanded
+/chaseccomp
+*.o
+*.d
