@@ -4,7 +4,6 @@ import std/options
 import std/os
 import std/posix
 
-import bindings/termcap
 import chagashi/charset
 import config/chapath
 import config/config
