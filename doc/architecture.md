@@ -24,8 +24,6 @@ This document describes some aspects of how Chawan works.
 
 Explanation for the separate directories found in `src/`:
 
-* bindings: bindings for various C libraries. (Not wrappers, just the plain
-  C API as Nim procedure prototypes.)
 * config: configuration-related code. Mainly parsers for config files.
 * css: styling-related code; CSS parsing and cascading.
 * html: DOM building, DOM functions, the DOM itself, forms, etc. Note that it
@@ -46,8 +44,8 @@ Additionally, "adapters" of various protocols and file formats can be found in
 * protocol: includes support for every protocol supported by Chawan.
 * format: HTML converters for various text-based file formats.
 * img: image decoders and encoders. In general, these just read and output
-  RGBA data through standard I/O. (This is not very efficient, and therefore
-  subject to change.)
+  RGBA data through standard I/O (which may actually be a cache file; see the
+  [image docs](image.md) for details).
 
 ## Process model
 

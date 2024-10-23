@@ -181,8 +181,8 @@ stdin and/or stdout is (currently) a file in the tmp directory for:
 * decode stdout, always
 * encode stdin, always
 
-This makes it possible to mmap(2) stdin/stdout instead of streaming
-through them with read(2) and write(2). When doing this, mind the
+This makes it possible to mmap(3) stdin/stdout instead of streaming
+through them with read(3) and write(3). When doing this, mind the
 following:
 
 * When reading, you must check your initial position in the file with
@@ -192,6 +192,8 @@ following:
 * This *is* an implementation detail, and might change at any time in
   the future (e.g. if we add a "no cache files" mode). Always check
   for S_ISREG to ensure that you are actually dealing with a file.
+  (Use io/dynstream.nim's recvDataLoopOrMmap and maybeMmapForSend
+  to deal with this automatically.)
 
 <!-- MANON
 
