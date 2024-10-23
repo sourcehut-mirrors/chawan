@@ -79,7 +79,12 @@ elif SandboxMode == stPledge:
     doAssert pledge("stdio", nil) == 0
 
 elif SandboxMode == stSeccomp:
-  {.passl: "lib/chaseccomp/chaseccomp.o".}
+  proc sourceParent(): string =
+    var s = currentSourcePath()
+    while s.len > 0 and s[^1] != '/':
+      s.setLen(s.len - 1)
+    return s
+  {.passl: sourceParent() & "../../lib/chaseccomp/chaseccomp.o".}
 
   import std/posix
 
