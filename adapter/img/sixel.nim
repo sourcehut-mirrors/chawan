@@ -69,11 +69,10 @@ type
     b: uint32
 
 proc getIdx(c: RGBColor; level: int): uint8 {.inline.} =
-  let sl = 7 - level
-  let idx = (((c.r shr sl) and 1) shl 2) or
-    (((c.g shr sl) and 1) shl 1) or
-    (c.b shr sl) and 1
-  return idx
+  let c = uint32(c) and (0x80808080u32 shr uint32(level))
+  return uint8((c shr (21 - level)) or
+    (c shr (14 - level)) or
+    (c shr (7 - level)))
 
 type TrimMap = array[7, seq[Node]]
 
@@ -166,9 +165,9 @@ proc quantize(img: openArray[RGBAColorBE]; outk: var uint;
   var trimMap: array[7, seq[Node]]
   var transparent = false
   for c0 in img:
-    let c0 = c0.argb()
-    transparent = transparent or c0.a != 255
-    let c = RGBColor(ARGBColor(uint32(c0) or 0xFF000000u32).fastmul(100))
+    let c0 = c0.argb().fastmul(100)
+    transparent = transparent or c0.a != 100
+    let c = RGBColor(c0)
     K += root.insert(c, trimMap)
     while K > palette:
       trimMap.trim(K)
@@ -413,16 +412,14 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
       var chunk: ptr SixelChunk = nil
       for j in 0 ..< realw:
         let m = n + offx + j
-        let c0 = img[m].argb()
-        let c1 = c0.fastmul(100)
-        let c2 = c1.correctDither(j, dither)
-        if c2.a < 50: # transparent
-          let diff = (int32(c2.a), 0i32, 0i32, 0i32)
+        let c0 = img[m].argb().fastmul(100).correctDither(j, dither)
+        if c0.a < 50: # transparent
+          let diff = (int32(c0.a), 0i32, 0i32, 0i32)
           dither.fs(j, diff)
           chunk = nil
           continue
         var diff: DitherDiff
-        let c = root.getColor(c2, nodes, diff)
+        let c = root.getColor(c0, nodes, diff)
         dither.fs(j, diff)
         if chunk == nil or chunk.c != c:
           chunk = addr chunkMap[c]
