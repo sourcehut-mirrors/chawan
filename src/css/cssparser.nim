@@ -647,6 +647,7 @@ proc consumeDeclarations(state: var CSSParseState): seq[CSSParsedItem] =
         discard state.consumeComponentValue()
 
 proc consumeDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
+  result = @[]
   while state.has():
     let t = state.consume()
     if t == cttWhitespace or t == cttSemicolon:
@@ -655,7 +656,7 @@ proc consumeDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
       state.reconsume()
       discard state.consumeAtRule()
     elif t == cttIdent:
-      var tempList: seq[CSSParsedItem]
+      var tempList: seq[CSSParsedItem] = @[]
       let tok = CSSToken(t)
       tempList.add(tok)
       while state.has() and state.peek() != cttSemicolon:
@@ -666,7 +667,7 @@ proc consumeDeclarations2(state: var CSSParseState): seq[CSSDeclaration] =
         result.add(decl.get)
     else:
       state.reconsume()
-      if state.peek() != cttSemicolon:
+      while state.has() and state.peek() != cttSemicolon:
         discard state.consumeComponentValue()
 
 proc consumeListOfRules(state: var CSSParseState; topLevel = false):
