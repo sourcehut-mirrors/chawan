@@ -309,33 +309,6 @@ proc parseInline(line: openArray[char]) =
   if ifDel in ctx.flags:
     stdout.write("</DEL>")
 
-proc parseHash(line: openArray[char]): bool =
-  var n = -1
-  for i, c in line:
-    if line[i] != '#':
-      if line[i] != ' ':
-        return false
-      n = i + 1
-      break
-  if n == -1:
-    return false
-  n = min(n, 6)
-  let L = n
-  var H = line.high
-  for i in countdown(line.high, L):
-    if line[i] != '#':
-      if line[i] != ' ':
-        break
-      H = i - 1
-      break
-  H = max(L - 1, H)
-  let id = line.toOpenArray(L, H).getId()
-  stdout.write("<H" & $n & " id='" & id & "'><A HREF='#" & id & "'>" &
-    '#'.repeat(n) & "</A> ")
-  line.toOpenArray(L, H).parseInline()
-  stdout.write("</H" & $n & ">\n")
-  return true
-
 type ListType = enum
   ltOl, ltUl
 
@@ -416,8 +389,21 @@ proc popList(state: var ParseState) =
 proc parseNone(state: var ParseState; line: string) =
   if line == "":
     discard
-  elif line[0] == '#' and line.toOpenArray(1, line.high).parseHash():
-    discard
+  elif (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
+    if state.hasp:
+      stdout.write("</P>")
+      state.hasp = false
+    let L = n + 1
+    var H = line.rfind(AllChars - {'#'})
+    if H != -1 and line[H] == ' ':
+      H = max(L - 1, H - 1)
+    else:
+      H = line.high
+    let id = line.toOpenArray(L, H).getId()
+    stdout.write("<H" & $n & " id='" & id & "'><A HREF='#" & id & "'>" &
+      '#'.repeat(n) & "</A> ")
+    line.toOpenArray(L, H).parseInline()
+    stdout.write("</H" & $n & ">\n")
   elif line.startsWith("<!--"):
     state.blockType = btComment
     state.reprocess = true
