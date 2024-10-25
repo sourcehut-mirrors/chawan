@@ -89,7 +89,6 @@ type
     # padding size
     size*: Size
     margin*: RelativeRect #TODO get rid of this?
-    positioned*: RelativeRect #TODO ditto
     # overflow relative to offset
     overflow*: Overflow
     # minimum content width (usually shortest word)
