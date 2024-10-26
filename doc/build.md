@@ -38,6 +38,7 @@ also override them by setting an environment variable with the same name.
 * `LIBEXECDIR`: Path to your libexec directory; by default, it is
   relative to wherever the binary is placed when it is executed. (i.e.
   after installation it would resolve to `/usr/local/libexec`.)
+* `STATIC_LINK`: Set it to 1 for static linking.
 * `DANGER_DISABLE_SANDBOX`: Set it to 1 to forcibly disable syscall
   filtering. Note that this is *not* taken from the environment
   variables, and you must use it like `make DANGER_DISABLE_SANDBOX=1`.  
@@ -72,7 +73,7 @@ a limited set of C compilers. If you want to override the C compiler:
 ## Cross-compiling
 
 [Apparently](https://todo.sr.ht/~bptato/chawan/37) it's possible.
-From user cutenice:
+From user cutenice (with dependencies updated):
 
 > With the latest changes, I could simply run
 > `CFLAGS=-m32 LDFLAGS=-m32 FLAGS=--cpu:i386 make` to cross-compile!
@@ -85,8 +86,32 @@ From user cutenice:
 >     seems. I think it's related to #12 (at least i got similar looking
 >     errors)
 > - enable the multilib repository in `/etc/pacman.conf`
-> - `pacman -S lib32-openssl lib32-libxcrypt lib32-ncurses lib32-libssh2`
+> - `pacman -S lib32-openssl lib32-libxcrypt lib32-libssh2`
 >   - most of these packages pull packages like `lib32-gcc-libs` and
 >     `lib32-glibc` which might be useful as well haha
 > - the rest can be eluded from the PKGBUILD in the
 >   [AUR](https://aur.archlinux.org/packages/chawan-git)
+
+## Static linking
+
+Tested with musl as follows:
+
+* Install musl to the default path (`/usr/local/musl`)
+* Add the following to `$HOME/nim.cfg`:
+
+```
+cc:gcc
+gcc.path = "/usr/local/musl/bin"
+gcc.exe = "musl-gcc"
+gcc.linkerexe = "musl-gcc"
+```
+
+* Compile and install OpenSSL and libssh2 to `/usr/local/musl`.
+* Compile Chawan:
+
+```sh
+$ export PKG_CONFIG_PATH=/usr/local/musl/lib/pkgconfig:/usr/local/musl/lib64/pkgconfig
+$ export CC=musl-gcc STATIC_LINK=1
+$ make distclean
+$ make
+```

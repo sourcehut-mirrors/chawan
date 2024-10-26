@@ -32,6 +32,14 @@ else
 LIBEXECDIR_CHAWAN = $(LIBEXECDIR)
 endif
 
+# Static linking.
+STATIC_LINK ?= 0
+
+# I won't take this from the environment for obvious reasons. Please override it
+# in the make command if you must, or (preferably) fix your environment so it's
+# not needed.
+DANGER_DISABLE_SANDBOX = 0
+
 # These paths are quoted in recipes.
 OUTDIR_TARGET = $(OUTDIR)/$(TARGET)
 OUTDIR_BIN = $(OUTDIR_TARGET)/bin
@@ -50,12 +58,19 @@ else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
+ifeq ($(STATIC_LINK),1)
+FLAGS += -d:staticLink=$(STATIC_LINK)
+LDFLAGS += -static
+endif
+
 ifneq ($(CFLAGS),)
 FLAGS += $(foreach flag,$(CFLAGS),--passc:$(flag))
 endif
 ifneq ($(LDFLAGS),)
 FLAGS += $(foreach flag,$(LDFLAGS),--passl:$(flag))
 endif
+
+export CC CFLAGS LDFLAGS
 
 .PHONY: all
 all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
