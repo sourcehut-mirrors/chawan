@@ -386,24 +386,28 @@ proc popList(state: var ParseState) =
   of ltOl: stdout.write("</OL>\n")
   of ltUl: stdout.write("</UL>\n")
 
+proc writeHeading(state: var ParseState; n: int; text: openArray[char]) =
+  state.hasp = false
+  let id = text.getId()
+  stdout.write("<H" & $n & " id='" & id & "'><A HREF='#" & id & "'>" &
+    '#'.repeat(n) & "</A> ")
+  text.parseInline()
+  stdout.write("</H" & $n & ">\n")
+
 proc parseNone(state: var ParseState; line: string) =
   if line == "":
     discard
   elif (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
     if state.hasp:
-      stdout.write("</P>")
       state.hasp = false
+      stdout.write("</P>")
     let L = n + 1
     var H = line.rfind(AllChars - {'#'})
     if H != -1 and line[H] == ' ':
       H = max(L - 1, H - 1)
     else:
       H = line.high
-    let id = line.toOpenArray(L, H).getId()
-    stdout.write("<H" & $n & " id='" & id & "'><A HREF='#" & id & "'>" &
-      '#'.repeat(n) & "</A> ")
-    line.toOpenArray(L, H).parseInline()
-    stdout.write("</H" & $n & ">\n")
+    state.writeHeading(n, line.toOpenArray(L, H))
   elif line.startsWith("<!--"):
     state.blockType = btComment
     state.reprocess = true
@@ -443,8 +447,6 @@ proc parseNone(state: var ParseState; line: string) =
     state.blockData = line.substr(len + 1) & '\n'
   else:
     state.blockType = btPar
-    state.hasp = true
-    stdout.write("<P>\n")
     state.reprocess = true
 
 proc parsePre(state: var ParseState; line: string) =
@@ -478,25 +480,39 @@ proc parseList(state: var ParseState; line: string) =
   else:
     state.blockData &= line & '\n'
 
+proc flushPar(state: var ParseState) =
+  if state.blockData != "":
+    state.hasp = true
+    stdout.write("<P>\n")
+    state.blockData.parseInline()
+    state.blockData = ""
+
 proc parsePar(state: var ParseState; line: string) =
   if line == "":
-    state.blockData.parseInline()
-    state.blockData = ""
+    state.flushPar()
     state.blockType = btNone
   elif line[0] == '<' and line.find('>') == line.high:
-    state.blockData.parseInline()
-    state.blockData = ""
+    state.flushPar()
     if line.matchHTMLPreStart():
       state.blockType = btHTMLPre
     else:
       state.blockType = btHTML
     state.reprocess = true
   elif line.startsWith("```") or line.startsWith("~~~"):
-    state.blockData.parseInline()
+    state.flushPar()
     state.blockData = line.substr(0, 2)
     state.blockType = btPre
     state.hasp = false
     stdout.write("<PRE>")
+  elif line[0] in {'-', '=', '*', '_'} and AllChars - {line[0]} notin line:
+    if state.blockData == "" and line[0] in {'-', '*', '_'}: # thematic break
+      state.blockData &= "<HR>\n"
+    elif state.blockData != "" and line[0] in {'-', '='}: # setext heading
+      let n = if line[0] == '=': 1 else: 2
+      state.writeHeading(n, state.blockData)
+      state.blockData = ""
+    else:
+      state.blockData = line & '\n'
   else:
     state.blockData &= line & '\n'
 
@@ -574,10 +590,17 @@ proc parseComment(state: var ParseState; line: string) =
   else:
     stdout.write(line & '\n')
 
+proc readLine(state: ParseState; line: var string): bool =
+  let hadLine = line != ""
+  if stdin.readLine(line):
+    return true
+  line = ""
+  return hadLine # add one last iteration with a blank after EOF
+
 proc main() =
   var line: string
   var state = ParseState(listDepth: -1)
-  while state.reprocess or stdin.readLine(line):
+  while state.reprocess or state.readLine(line):
     state.reprocess = false
     case state.blockType
     of btNone: state.parseNone(line)
@@ -590,6 +613,5 @@ proc main() =
     of btHTML: state.parseHTML(line)
     of btHTMLPre: state.parseHTMLPre(line)
     of btComment: state.parseComment(line)
-  state.blockData.parseInline()
 
 main()
