@@ -46,8 +46,9 @@ type
     selectors: seq[ComplexSelector]
     cvals: seq[CSSComponentValue]
     at: int
-    failed: bool
     factory: CAtomFactory
+    failed: bool
+    nested: bool
 
   RelationType* {.size: sizeof(int) div 2.} = enum
     rtExists, rtEquals, rtToken, rtBeginDash,
@@ -271,17 +272,19 @@ template get_tok(cval: CSSComponentValue): CSSToken =
   if not (c of CSSToken): fail
   CSSToken(c)
 
-proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
-  SelectorList
+proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
+  nested, forgiving: bool): SelectorList
 
 # Functions that may contain other selectors, functions, etc.
 proc parseRecursiveSelectorFunction(state: var SelectorParser;
-    class: PseudoClass; body: seq[CSSComponentValue]): Selector =
+    class: PseudoClass; body: seq[CSSComponentValue]; forgiving: bool):
+    Selector =
   var fun = Selector(
     t: stPseudoClass,
     pseudo: PseudoData(t: class),
   )
-  fun.pseudo.fsels = parseSelectorList(body, state.factory)
+  fun.pseudo.fsels = parseSelectorList(body, state.factory, nested = true,
+    forgiving)
   if fun.pseudo.fsels.len == 0: fail
   return fun
 
@@ -301,7 +304,7 @@ proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
     fail
   if i == cssfunction.value.len: fail
   nthchild.pseudo.ofsels = cssfunction.value[i..^1]
-    .parseSelectorList(state.factory)
+    .parseSelectorList(state.factory, nested = true, forgiving = false)
   if nthchild.pseudo.ofsels.len == 0: fail
   return nthchild
 
@@ -322,11 +325,14 @@ proc parseSelectorFunction(state: var SelectorParser; cssfunction: CSSFunction):
     Selector =
   return case cssfunction.name.toLowerAscii()
   of "not":
-    state.parseRecursiveSelectorFunction(pcNot, cssfunction.value)
+    state.parseRecursiveSelectorFunction(pcNot, cssfunction.value,
+      forgiving = false)
   of "is":
-    state.parseRecursiveSelectorFunction(pcIs, cssfunction.value)
+    state.parseRecursiveSelectorFunction(pcIs, cssfunction.value,
+      forgiving = true)
   of "where":
-    state.parseRecursiveSelectorFunction(pcWhere, cssfunction.value)
+    state.parseRecursiveSelectorFunction(pcWhere, cssfunction.value,
+      forgiving = true)
   of "nth-child":
     state.parseNthChild(cssfunction, PseudoData(t: pcNthChild))
   of "nth-last-child":
@@ -340,6 +346,8 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
   let cval = state.consume()
   if cval of CSSToken:
     template add_pseudo_element(element: PseudoElem) =
+      state.skipWhitespace()
+      if state.nested or state.has() and state.peek() != cttComma: fail
       return Selector(t: stPseudoElement, elem: element)
     let tok = CSSToken(cval)
     case tok.tokenType
@@ -509,18 +517,29 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
   if result.len == 0 or result[^1].ct != ctNone:
     fail
 
-proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
-    SelectorList =
-  var state = SelectorParser(cvals: cvals, factory: factory)
+proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
+    nested, forgiving: bool): SelectorList =
+  var state = SelectorParser(
+    cvals: cvals,
+    factory: factory,
+    nested: nested
+  )
   var res: SelectorList = @[]
   while state.has():
-    res.add(state.parseComplexSelector())
-  if not state.failed:
-    return res
+    let csel = state.parseComplexSelector()
+    if state.failed:
+      if not forgiving:
+        return @[]
+      state.failed = false
+      while state.has() and state.consume() != cttComma:
+        discard
+    else:
+      res.add(csel)
+  return res
 
 proc parseSelectors*(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
     seq[ComplexSelector] =
-  return parseSelectorList(cvals, factory)
+  return parseSelectorList(cvals, factory, nested = false, forgiving = false)
 
 proc parseSelectors*(ibuf: string; factory: CAtomFactory):
     seq[ComplexSelector] =

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<style>
+#x { color: green }
+#x::before { content: "should" }
+:is(#x::before) { color: pink }
+#x::before span { color: magenta }
+::before#x { color: blue }
+:is(#x::before, #y) { color: purple }
+:is(#x::before) span { color: red }
+</style>
+<span id=x>
+be
+<span>
+green
+</span>
+</span>
+<div id=y>
+should be purple
+</div>
