@@ -6,7 +6,6 @@ export lcgi, dynstream, twtstr
 
 const libssl = staticExec("pkg-config --libs --silence-errors libssl libcrypto")
 
-{.passc: libssl.}
 {.passl: libssl.}
 
 type

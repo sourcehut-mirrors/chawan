@@ -7,8 +7,36 @@ import std/strutils
 import utils/sandbox
 
 import curl
-import curlerrors
-import curlwrap
+
+template setopt(curl: CURL; opt: CURLoption; arg: typed) =
+  discard curl_easy_setopt(curl, opt, arg)
+
+template setopt(curl: CURL; opt: CURLoption; arg: string) =
+  discard curl_easy_setopt(curl, opt, cstring(arg))
+
+template getinfo(curl: CURL; info: CURLINFO; arg: typed) =
+  discard curl_easy_getinfo(curl, info, arg)
+
+template set(url: CURLU; part: CURLUPart; content: cstring; flags: cuint) =
+  discard curl_url_set(url, part, content, flags)
+
+template set(url: CURLU; part: CURLUPart; content: string; flags: cuint) =
+  url.set(part, cstring(content), flags)
+
+func curlErrorToChaError(res: CURLcode): string =
+  return case res
+  of CURLE_OK: ""
+  of CURLE_URL_MALFORMAT: "InvalidURL" #TODO should never occur...
+  of CURLE_COULDNT_CONNECT: "ConnectionRefused"
+  of CURLE_COULDNT_RESOLVE_PROXY: "FailedToResolveProxy"
+  of CURLE_COULDNT_RESOLVE_HOST: "FailedToResolveHost"
+  of CURLE_PROXY: "ProxyRefusedToConnect"
+  else: "InternalError"
+
+proc getCurlConnectionError(res: CURLcode): string =
+  let e = curlErrorToChaError(res)
+  let msg = $curl_easy_strerror(res)
+  return "Cha-Control: ConnectionError " & e & " " & msg & "\n"
 
 type
   EarlyHintState = enum

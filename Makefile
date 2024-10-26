@@ -99,15 +99,14 @@ twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim \
 dynstream = src/io/dynstream.nim src/io/dynstream_aux.c
 lcgi = $(dynstream) $(twtstr) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
-curl = adapter/protocol/curl.nim adapter/protocol/curlerrors.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)
 
 $(OUTDIR_CGI_BIN)/man: $(twtstr)
-$(OUTDIR_CGI_BIN)/http: $(curl) $(sandbox)
+$(OUTDIR_CGI_BIN)/http: adapter/protocol/curl.nim $(sandbox)
 $(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
 $(OUTDIR_CGI_BIN)/file: $(twtstr)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
-$(OUTDIR_CGI_BIN)/sftp: $(curl) $(twtstr)
+$(OUTDIR_CGI_BIN)/sftp: $(lcgi) $(twtstr)
 $(OUTDIR_CGI_BIN)/gopher: adapter/gophertypes.nim $(lcgi)
 $(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \

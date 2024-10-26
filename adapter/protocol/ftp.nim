@@ -85,19 +85,11 @@ proc passiveMode(os, ps: PosixStream; host: string; ipv6: bool): PosixStream =
 
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
-  var opath = getEnv("MAPPED_URI_PATH")
-  if opath == "":
-    opath = "/"
-  let path = percentDecode(opath)
-  let dirmode = path.len > 0 and path[^1] == '/'
   let host = getEnv("MAPPED_URI_HOST")
   let username = getEnv("MAPPED_URI_USERNAME")
   let password = getEnv("MAPPED_URI_PASSWORD")
-  var port = getEnv("MAPPED_URI_PORT")
-  if port == "":
-    port = "21"
+  let port = getEnvEmpty("MAPPED_URI_PORT", "21")
   if getEnv("REQUEST_METHOD") != "GET":
-    # fail
     os.die("InvalidMethod")
   var ipv6: bool
   let ps = os.connectSocket(host, port, ipv6)
@@ -114,9 +106,12 @@ proc main() =
     os.sdie(401, "Unauthorized", obuf)
   discard os.sendCommand(ps, "TYPE", "I", obuf) # request raw data
   let passive = os.passiveMode(ps, host, ipv6)
-  if dirmode:
-    if os.sendCommand(ps, "LIST", "", obuf) == 550:
-      os.sdie(404, "Not found", obuf)
+  var path = percentDecode(getEnvEmpty("MAPPED_URI_PATH", "/"))
+  if os.sendCommand(ps, "CWD", path, obuf) == 250:
+    if path[^1] != '/':
+      os.sendDataLoop("Status: 301\nLocation: " & path & "/\n")
+      quit(0)
+    discard os.sendCommand(ps, "LIST", "", obuf)
     let title = percentEncode("Index of " & path, ComponentPercentEncodeSet)
     os.sendDataLoop("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   else:

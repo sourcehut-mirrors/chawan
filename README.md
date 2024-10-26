@@ -22,14 +22,16 @@ Note: a POSIX-compliant operating system is required.
 	  will not work. (You can check your Nim compiler's version using
 	  `nim -v`.)
 3. Install the following dependencies:
-	* libcurl: <https://curl.se/libcurl/>
+	* [libcurl](https://curl.se/libcurl/)
+	* [OpenSSL](https://www.openssl.org/) (or
+	  [LibreSSL](https://www.libressl.org/))
+	* [libssh2](https://libssh2.org/)
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config" in your
 	  `$PATH`)
-	* GNU make. On systems where it is not the default make, use `gmake`
-	  in the following steps.
-	* Recommended: a termcap library. e.g. ncurses comes with one.
+	* GNU make
+	* Recommended: a termcap library; e.g. ncurses comes with one
 	* TL;DR for Debian:
-	  `apt install libcurl4-openssl-dev pkg-config make ncurses-base`
+	  `apt install libssh2-1-dev libcurl4-openssl-dev pkg-config make ncurses-base`
 4. Download parts of Chawan found in other repositories: `make submodule`
 5. Run `make` (without arguments).
 6. Install using `make install` (e.g. `sudo make install`).

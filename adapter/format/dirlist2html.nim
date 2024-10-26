@@ -102,7 +102,9 @@ proc parseInput(f: File; items: var seq[DirlistItem]; maxw: var int) =
       continue
     case line[0]
     of 'l': # link
-      let linki = name.find(" -> ")
+      var linki = name.find(" -> ")
+      if linki == -1:
+        linki = name.len
       let linkfrom = name.substr(0, linki - 1)
       let linkto = name.substr(linki + 4) # you?
       items.addItem(DirlistItem(
