@@ -32,10 +32,10 @@ order of usage frequency and then checking each syscall with ifeqdef.
 
 The assembler runs in three steps:
 
-* gen_defs generates a C file from $<.chasc (and any chasc file it
+* gen_defs generates a C file from `$<.chasc` (and any chasc file it
   includes)
 * The C file is compiled and executed, thereby disabling filters for
   syscalls that do not apply to this platform. The output is in
-  $<.chasc.expanded.
-* gen_syscalls takes $<.chasc.expanded and outputs chasc_$<.h.
+  `$<.chasc.expanded`.
+* gen_syscalls takes `$<.chasc.expanded` and outputs `chasc_$<.h`.
   This is the final header file we include in the actual program.
