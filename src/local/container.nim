@@ -1095,7 +1095,7 @@ proc pushCursorPos*(container: Container) =
 proc popCursorPos*(container: Container; nojump = false) =
   if container.select != nil:
     container.select.popCursorPos(nojump)
-  else:
+  elif container.bpos.len > 0:
     container.pos = container.bpos.pop()
     if not nojump:
       container.updateCursor()
