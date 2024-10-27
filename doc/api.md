@@ -255,12 +255,14 @@ Like `pager.ask`, but the return value is a character.</td>
 </tr>
 
 <tr>
-<td>`extern(cmd, options = {setenv: true, suspend: true, wait: false})`
+<td>`extern(cmd, options = {env: { ... }, suspend: true, wait: false})`
 </td>
-<td>Run an external command `cmd`. The `$CHA_URL` and `$CHA_CHARSET` variables
-are set when `options.setenv` is true. `options.suspend` suspends the pager
-while the command is being executed, and `options.wait` makes it so the user
-must press a key before the pager is resumed.<br>
+<td>Run an external command `cmd`.<br>
+By default, the `$CHA_URL` and `$CHA_CHARSET` variables are set; change
+this using the `env` option.<br>
+`options.suspend` suspends the pager while the command is being
+executed, and `options.wait` makes it so the user must press a key
+before the pager is resumed.<br>
 Returns true if the command exit successfully, false otherwise.<br>
 Warning: this has a bug where the output is written to stdout even if suspend
 is true. Redirect to /dev/null in the command if this is not desired. (This

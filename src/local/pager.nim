@@ -1107,30 +1107,82 @@ proc discardTree(pager: Pager; container = none(Container)) {.jsfunc.} =
   else:
     pager.alert("Buffer has no children!")
 
-proc c_system(cmd: cstring): cint {.importc: "system", header: "<stdlib.h>".}
+template myFork(): cint =
+  stdout.flushFile()
+  stderr.flushFile()
+  fork()
 
-# Run process (without suspending the terminal controller).
-proc runProcess(cmd: string): bool =
-  let wstatus = c_system(cstring(cmd))
-  if wstatus == -1:
-    result = false
-  else:
-    result = WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0
-    if not result:
-      # Hack.
-      #TODO this is a very bad idea, e.g. say the editor is writing into the
-      # file, then receives SIGINT, now the file is corrupted but Chawan will
-      # happily read it as if nothing happened.
-      # We should find a proper solution for this.
-      result = WIFSIGNALED(wstatus) and WTERMSIG(wstatus) == SIGINT
+template myExec(cmd: string) =
+  discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
+  exitnow(127)
+
+proc setEnvVars(pager: Pager; env: JSValue) =
+  try:
+    if pager.container != nil and JS_IsUndefined(env):
+      putEnv("CHA_URL", $pager.container.url)
+      putEnv("CHA_CHARSET", $pager.container.charset)
+    else:
+      var tab: Table[string, string]
+      if pager.jsctx.fromJS(env, tab).isSome:
+        for k, v in tab:
+          putEnv(k, v)
+  except OSError:
+    pager.alert("Warning: failed to set some environment variables")
 
 # Run process (and suspend the terminal controller).
-proc runProcess(term: Terminal; cmd: string; wait = false): bool =
-  term.quit()
-  result = runProcess(cmd)
-  if wait:
-    term.anyKey()
-  term.restart()
+# For the most part, this emulates system(3).
+proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
+    env: JSValue): bool =
+  if suspend:
+    pager.term.quit()
+  var oldint, oldquit, act: Sigaction
+  var oldmask, dummy: Sigset
+  act.sa_handler = SIG_IGN
+  act.sa_flags = SA_RESTART
+  if sigemptyset(act.sa_mask) < -1 or
+      sigaction(SIGINT, act, oldint) < 0 or
+      sigaction(SIGQUIT, act, oldquit) < 0 or
+      sigaddset(act.sa_mask, SIGCHLD) < 0 or
+      sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
+    pager.alert("Failed to run process")
+    return
+  case (let pid = myFork(); pid)
+  of -1:
+    pager.alert("Failed to run process")
+  of 0:
+    act.sa_handler = SIG_DFL
+    discard sigemptyset(act.sa_mask)
+    discard sigaction(SIGINT, oldint, act)
+    discard sigaction(SIGQUIT, oldquit, act)
+    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
+    for it in pager.loader.data:
+      if it.stream.fd > 2:
+        it.stream.sclose()
+    #TODO this is probably a bad idea: we are interacting with a js
+    # context in a forked process.
+    # likely not much of a problem unless the user does something very
+    # stupid, but may still be surprising.
+    pager.setEnvVars(env)
+    if not suspend:
+      newPosixStream(STDOUT_FILENO).safeClose()
+      newPosixStream(STDERR_FILENO).safeClose()
+      newPosixStream(STDIN_FILENO).safeClose()
+    else:
+      discard dup2(pager.term.istream.fd, STDIN_FILENO)
+    discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
+    exitnow(127)
+  else:
+    var wstatus: cint
+    while waitpid(pid, wstatus, 0) == -1:
+      if errno != EINTR:
+        return false
+    discard sigaction(SIGINT, oldint, act)
+    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
+    if suspend:
+      if wait:
+        pager.term.anyKey()
+      pager.term.restart()
+    return WIFEXITED(wstatus) and WEXITSTATUS(wstatus) == 0
 
 # Run process, and capture its output.
 proc runProcessCapture(cmd: string; outs: var string): bool =
@@ -1153,10 +1205,6 @@ proc runProcessInto(cmd, ins: string): bool =
   if rv == -1:
     return false
   return rv == 0
-
-template myExec(cmd: string) =
-  discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
-  exitnow(127)
 
 proc toggleSource(pager: Pager) {.jsfunc.} =
   if cfCanReinterpret notin pager.container.flags:
@@ -1207,7 +1255,7 @@ proc openInEditor(pager: Pager; input: var string): bool =
     let cmd = pager.getEditorCommand(tmpf)
     if cmd == "":
       pager.alert("invalid external.editor command")
-    elif pager.term.runProcess(cmd):
+    elif pager.runCommand(cmd, suspend = true, wait = false, JS_UNDEFINED):
       if fileExists(tmpf):
         input = readFile(tmpf)
         removeFile(tmpf)
@@ -1700,38 +1748,27 @@ proc reload(pager: Pager) {.jsfunc.} =
   discard pager.gotoURL(newRequest(pager.container.url), none(URL),
     pager.container.contentType, replace = pager.container)
 
-proc setEnvVars(pager: Pager) {.jsfunc.} =
-  try:
-    if pager.container != nil:
-      putEnv("CHA_URL", $pager.container.url)
-      putEnv("CHA_CHARSET", $pager.container.charset)
-  except OSError:
-    pager.alert("Warning: failed to set some environment variables")
-
 type ExternDict = object of JSDict
-  setenv {.jsdefault: true.}: bool
+  env {.jsdefault: JS_UNDEFINED.}: JSValue
   suspend {.jsdefault: true.}: bool
   wait {.jsdefault: false.}: bool
 
 #TODO we should have versions with retval as int?
+# or perhaps just an extern2 that can use JS readablestreams and returns
+# retval, then deprecate the rest.
 proc extern(pager: Pager; cmd: string;
-    t = ExternDict(setenv: true, suspend: true)): bool {.jsfunc.} =
-  if t.setenv:
-    pager.setEnvVars()
-  if t.suspend:
-    return runProcess(pager.term, cmd, t.wait)
-  else:
-    return runProcess(cmd)
+    t = ExternDict(env: JS_UNDEFINED, suspend: true)): bool {.jsfunc.} =
+  return pager.runCommand(cmd, t.suspend, t.wait, t.env)
 
 proc externCapture(pager: Pager; cmd: string): Option[string] {.jsfunc.} =
-  pager.setEnvVars()
+  pager.setEnvVars(JS_UNDEFINED)
   var s: string
   if not runProcessCapture(cmd, s):
     return none(string)
   return some(s)
 
 proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
-  pager.setEnvVars()
+  pager.setEnvVars(JS_UNDEFINED)
   return runProcessInto(cmd, ins)
 
 proc externFilterSource(pager: Pager; cmd: string; c: Container = nil;
@@ -1750,11 +1787,6 @@ type CheckMailcapResult = object
   ishtml: bool
   found: bool
   redirected: bool # whether or not ostream is the same as istream
-
-template myFork(): cint =
-  stdout.flushFile()
-  stderr.flushFile()
-  fork()
 
 proc execPipe(pager: Pager; cmd: string; ps, os, closeme: PosixStream): int =
   case (let pid = myFork(); pid)
@@ -1800,7 +1832,7 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; istream: PosixStream):
 
 # Pipe input into the mailcap command, and discard its output.
 # If needsterminal, leave stderr and stdout open and wait for the process.
-proc runMailcapWritePipe(pager: Pager; stream: SocketStream;
+proc runMailcapWritePipe(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd: string) =
   if needsterminal:
     pager.term.quit()
@@ -1823,7 +1855,7 @@ proc runMailcapWritePipe(pager: Pager; stream: SocketStream;
       discard waitpid(pid, x, 0)
       pager.term.restart()
 
-proc writeToFile(istream: SocketStream; outpath: string): bool =
+proc writeToFile(istream: PosixStream; outpath: string): bool =
   let ps = newPosixStream(outpath, O_WRONLY or O_CREAT, 0o600)
   if ps == nil:
     return false
@@ -1839,7 +1871,7 @@ proc writeToFile(istream: SocketStream; outpath: string): bool =
 # Save input in a file, run the command, and redirect its output to a
 # new buffer.
 # needsterminal is ignored.
-proc runMailcapReadFile(pager: Pager; stream: SocketStream;
+proc runMailcapReadFile(pager: Pager; stream: PosixStream;
     cmd, outpath: string; pins, pouts: PosixStream): int =
   case (let pid = myFork(); pid)
   of -1:
@@ -1864,7 +1896,7 @@ proc runMailcapReadFile(pager: Pager; stream: SocketStream;
 
 # Save input in a file, run the command, and discard its output.
 # If needsterminal, leave stderr and stdout open and wait for the process.
-proc runMailcapWriteFile(pager: Pager; stream: SocketStream;
+proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd, outpath: string) =
   if needsterminal:
     pager.term.quit()
@@ -1892,27 +1924,15 @@ proc runMailcapWriteFile(pager: Pager; stream: SocketStream;
     # parent
     stream.sclose()
 
-proc filterBuffer(pager: Pager; ps: SocketStream; cmd: string;
-    ishtml: bool): CheckMailcapResult =
-  pager.setEnvVars()
+proc filterBuffer(pager: Pager; ps: PosixStream; cmd: string): PosixStream =
+  pager.setEnvVars(JS_UNDEFINED)
   let (pins, pouts) = pager.createPipe()
   if pins == nil:
-    return CheckMailcapResult(connect: false)
+    return nil
   let pid = pager.execPipe(cmd, ps, pouts, pins)
   if pid == -1:
-    return CheckMailcapResult(connect: false)
-  let url = parseURL("stream:" & $pid).get
-  pager.loader.passFd(url.pathname, pins.fd)
-  pins.safeClose()
-  let response = pager.loader.doRequest(newRequest(url))
-  return CheckMailcapResult(
-    connect: true,
-    ostream: response.body,
-    ostreamOutputId: response.outputId,
-    ishtml: ishtml,
-    found: true,
-    redirected: true
-  )
+    return nil
+  return pins
 
 # Search for a mailcap entry, and if found, execute the specified command
 # and pipeline the input and output appropriately.
@@ -1924,7 +1944,7 @@ proc filterBuffer(pager: Pager; ps: SocketStream; cmd: string;
 # If needsterminal is specified, and stdout is not being read, then the
 # pager is suspended until the command exits.
 #TODO add support for edit/compose, better error handling
-proc checkMailcap0(pager: Pager; url: URL; stream: SocketStream;
+proc checkMailcap0(pager: Pager; url: URL; stream: PosixStream;
     istreamOutputId: int; contentType: string; entry: MailcapEntry):
     CheckMailcapResult =
   let ext = url.pathname.afterLast('.')
@@ -1977,16 +1997,14 @@ proc checkMailcap0(pager: Pager; url: URL; stream: SocketStream;
   delEnv("MAILCAP_URL")
   return CheckMailcapResult(connect: false, found: true)
 
-proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
+proc checkMailcap(pager: Pager; container: Container; stream: PosixStream;
     istreamOutputId: int; contentType: string): CheckMailcapResult =
   # contentType must exist, because we set it in applyResponse
   let shortContentType = container.contentType.get
+  var stream = stream
+  var redirected = false
   if container.filter != nil:
-    return pager.filterBuffer(
-      stream,
-      container.filter.cmd,
-      shortContentType.equalsIgnoreCase("text/html")
-    )
+    stream = pager.filterBuffer(stream, container.filter.cmd)
   if shortContentType.equalsIgnoreCase("text/html"):
     # We support text/html natively, so it would make little sense to execute
     # mailcap filters for it.
@@ -1994,17 +2012,28 @@ proc checkMailcap(pager: Pager; container: Container; stream: SocketStream;
       connect: true,
       ostream: stream,
       ishtml: true,
-      found: true
+      found: true,
+      redirected: redirected
     )
   if shortContentType.equalsIgnoreCase("text/plain"):
     # text/plain could potentially be useful. Unfortunately, many mailcaps
     # include a text/plain entry with less by default, so it's probably better
     # to ignore this.
-    return CheckMailcapResult(connect: true, ostream: stream, found: true)
+    return CheckMailcapResult(
+      connect: true,
+      ostream: stream,
+      found: true,
+      redirected: redirected
+    )
   let url = container.url
   let i = pager.config.external.mailcap.findMailcapEntry(contentType, "", url)
   if i == -1:
-    return CheckMailcapResult(connect: true, ostream: stream, found: false)
+    return CheckMailcapResult(
+      connect: true,
+      ostream: stream,
+      found: false,
+      redirected: redirected
+    )
   return pager.checkMailcap0(url, stream, istreamOutputId, contentType,
     pager.config.external.mailcap[i])
 
