@@ -1191,6 +1191,14 @@ proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
     if it[0] == name:
       result.add(it[1])
 
+proc has(params: URLSearchParams; name: string; value = none(string)): bool
+    {.jsfunc.} =
+  for it in params.list:
+    if it.name == name:
+      if value.isNone or value.get == it.value:
+        return true
+  return false
+
 proc set(params: URLSearchParams; name, value: string) {.jsfunc.} =
   var first = true
   for i in 0..params.list.high:

@@ -66,6 +66,9 @@ assert_equals(new URL("https://xn--zckzah") + "", "https://xn--zckzah/");
 	assert_equals(x.hash, "#hash");
 	x.searchParams.delete("search");
 	assert_equals(x.search, "");
+	x.searchParams.append("hi", "world");
+	assert(x.searchParams.has("hi"));
+	assert(x.searchParams.has("hi", "world"));
 }
 document.getElementById("x").textContent = "Success";
 </script>
