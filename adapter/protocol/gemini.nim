@@ -208,7 +208,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
     if meta == "":
       meta = "text/gemini"
     os.sendDataLoop("Content-Type: " & meta & "\n\n")
-    os.sendDataLoop(buffer.toOpenArray(i + 2, buffer.high))
+    os.sendDataLoop(buffer.toOpenArray(i + 2, n - 1))
     while true:
       let n = SSL_read(ssl, addr buffer[0], cint(buffer.len))
       if n == 0:
