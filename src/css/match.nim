@@ -244,14 +244,14 @@ func selectorsMatch*[T: Element|StyledNode](elem: T; cxsel: ComplexSelector;
   return elem.complexSelectorMatches(cxsel, felem)
 
 # Forward declaration hack
-doqsa = proc(node: Node; q: string): seq[Element] =
+querySelectorAllImpl = proc(node: Node; q: string): seq[Element] =
   result = @[]
   let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
     if element.selectorsMatch(selectors):
       result.add(element)
 
-doqs = proc(node: Node; q: string): Element =
+querySelectorImpl = proc(node: Node; q: string): Element =
   let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
     if element.selectorsMatch(selectors):

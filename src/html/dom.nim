@@ -474,17 +474,19 @@ proc setInvalid*(element: Element)
 
 # Forward declaration hacks
 # set in css/cascade
-var appliesFwdDecl*: proc(mqlist: MediaQueryList; window: Window): bool
+var appliesImpl*: proc(mqlist: MediaQueryList; window: Window): bool
   {.nimcall, noSideEffect.}
 # set in css/match
-var doqsa*: proc (node: Node; q: string): seq[Element] {.nimcall.} = nil
-var doqs*: proc (node: Node; q: string): Element {.nimcall.} = nil
+var querySelectorAllImpl*: proc (node: Node; q: string): seq[Element]
+  {.nimcall.} = nil
+var querySelectorImpl*: proc (node: Node; q: string): Element
+  {.nimcall.} = nil
 # set in html/chadombuilder
-var domParseHTMLFragment*: proc(element: Element; s: string): seq[Node]
+var parseHTMLFragmentImpl*: proc(element: Element; s: string): seq[Node]
   {.nimcall.}
-var domParseDocumentWriteChunk*: proc(wrapper: RootRef) {.nimcall.}
+var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall.}
 # set in html/env
-var windowFetch*: proc(window: Window; input: JSValue;
+var fetchImpl*: proc(window: Window; input: JSValue;
   init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
   {.nimcall.} = nil
 
@@ -2068,7 +2070,7 @@ proc write(ctx: JSContext; document: Document; args: varargs[JSValue]):
     text &= s
   buffer.data &= text
   if document.parserBlockingScript == nil:
-    domParseDocumentWriteChunk(document.parser)
+    parseDocumentWriteChunkImpl(document.parser)
   return ok()
 
 func findFirst*(document: Document; tagType: TagType): HTMLElement =
@@ -2590,40 +2592,6 @@ func findAutoFocus*(document: Document): Element =
       return child
   return nil
 
-# Forward declaration hack
-isDefaultPassive = func(target: EventTarget): bool =
-  if target of Window:
-    return true
-  if not (target of Node):
-    return false
-  let node = Node(target)
-  return EventTarget(node.document) == target or
-    EventTarget(node.document.documentElement) == target or
-    EventTarget(node.document.body) == target
-
-getParent = proc(ctx: JSContext; eventTarget: EventTarget; event: Event):
-    EventTarget =
-  if eventTarget of Node:
-    if eventTarget of Document:
-      if event.ctype == ctx.toAtom(satLoad):
-        return nil
-      # if no browsing context, then window will be nil anyway
-      return Document(eventTarget).window
-    return Node(eventTarget).parentNode
-  return nil
-
-getFactory = proc(ctx: JSContext): CAtomFactory =
-  return ctx.getGlobal().factory
-
-windowConsoleError = proc(ctx: JSContext; ss: varargs[string]) =
-  ctx.getGlobal().console.error(ss)
-
-getAPIBaseURLImpl = func(ctx: JSContext): URL =
-  let window = ctx.getWindow()
-  if window == nil or window.document == nil:
-    return nil
-  return window.document.baseURL
-
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
   let event = newEvent(window.toAtom(name), target)
   discard window.jsctx.dispatch(target, event)
@@ -3138,7 +3106,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     if media != "":
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals)
-      applies = media.appliesFwdDecl(window)
+      applies = media.appliesImpl(window)
     let p = window.loader.fetch(
       newRequest(url)
     ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
@@ -4043,7 +4011,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   #TODO performFetch
   let ctx = window.jsctx
   let v = ctx.toJS(request)
-  let p = window.windowFetch(v)
+  let p = window.fetchImpl(v)
   JS_FreeValue(ctx, v)
   if p.isSome:
     p.get.then(proc(res: JSResult[Response]) =
@@ -4455,10 +4423,10 @@ func isSameNode(node, other: Node): bool {.jsfunc.} =
   return node == other
 
 proc querySelectorAll(node: Node; q: string): seq[Element] {.jsfunc.} =
-  return doqsa(node, q)
+  return node.querySelectorAllImpl(q)
 
 proc querySelector(node: Node; q: string): Element {.jsfunc.} =
-  return doqs(node, q)
+  return node.querySelectorImpl(q)
 
 const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
     seq[ReflectEntry],
@@ -4657,7 +4625,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
 # https://w3c.github.io/DOM-Parsing/#dfn-fragment-parsing-algorithm
 proc fragmentParsingAlgorithm*(element: Element; s: string): DocumentFragment =
   #TODO xml
-  let newChildren = domParseHTMLFragment(element, s)
+  let newChildren = parseHTMLFragmentImpl(element, s)
   let fragment = element.document.newDocumentFragment()
   for child in newChildren:
     fragment.append(child)
@@ -4796,3 +4764,37 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(TextMetrics)
   ctx.registerType(CSSStyleDeclaration)
   ctx.registerElements(nodeCID)
+
+# Forward declaration hack
+isDefaultPassiveImpl = func(target: EventTarget): bool =
+  if target of Window:
+    return true
+  if not (target of Node):
+    return false
+  let node = Node(target)
+  return EventTarget(node.document) == target or
+    EventTarget(node.document.documentElement) == target or
+    EventTarget(node.document.body) == target
+
+getParentImpl = proc(ctx: JSContext; eventTarget: EventTarget; event: Event):
+    EventTarget =
+  if eventTarget of Node:
+    if eventTarget of Document:
+      if event.ctype == ctx.toAtom(satLoad):
+        return nil
+      # if no browsing context, then window will be nil anyway
+      return Document(eventTarget).window
+    return Node(eventTarget).parentNode
+  return nil
+
+getFactoryImpl = proc(ctx: JSContext): CAtomFactory =
+  return ctx.getGlobal().factory
+
+errorImpl = proc(ctx: JSContext; ss: varargs[string]) =
+  ctx.getGlobal().console.error(ss)
+
+getAPIBaseURLImpl = func(ctx: JSContext): URL =
+  let window = ctx.getWindow()
+  if window == nil or window.document == nil:
+    return nil
+  return window.document.baseURL

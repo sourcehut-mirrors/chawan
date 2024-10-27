@@ -79,7 +79,7 @@ type
 
 # Forward declaration hack
 # set in html/dom
-var windowConsoleError*: proc(ctx: JSContext; ss: varargs[string]) {.nimcall.}
+var errorImpl*: proc(ctx: JSContext; ss: varargs[string]) {.nimcall.}
 
 proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
   let surl = $url
@@ -134,4 +134,4 @@ proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
   )
 
 proc logException*(ctx: JSContext) =
-  windowConsoleError(ctx, ctx.getExceptionMsg())
+  ctx.errorImpl(ctx.getExceptionMsg())

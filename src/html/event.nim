@@ -66,9 +66,9 @@ jsDestructor(CustomEvent)
 jsDestructor(EventTarget)
 
 # Forward declaration hack
-var isDefaultPassive*: proc(target: EventTarget): bool {.nimcall,
+var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
   noSideEffect.} = nil
-var getParent*: proc(ctx: JSContext; target: EventTarget; event: Event):
+var getParentImpl*: proc(ctx: JSContext; target: EventTarget; event: Event):
   EventTarget {.nimcall.}
 
 type
@@ -187,7 +187,7 @@ proc defaultPassiveValue(ctx: JSContext; ctype: CAtom;
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
   if ctx.toStaticAtom(ctype) in check:
     return true
-  return eventTarget.isDefaultPassive()
+  return eventTarget.isDefaultPassiveImpl()
 
 proc findEventListener(eventTarget: EventTarget; ctype: CAtom;
     callback: EventListenerCallback; capture: bool): int =
@@ -321,7 +321,7 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
   var target = target
   while target != nil and not stop:
     ctx.dispatchEvent0(event, target, stop, canceled)
-    target = ctx.getParent(target, event)
+    target = ctx.getParentImpl(target, event)
   event.flags.excl(efDispatch)
   return canceled
 

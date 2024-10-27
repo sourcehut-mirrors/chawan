@@ -173,9 +173,6 @@ proc fetch(window: Window; input: JSValue;
     return ok(newResolvedPromise(JSResult[Response].err(err)))
   return ok(window.loader.fetch(input.request))
 
-# Forward declaration hack
-windowFetch = fetch
-
 proc setTimeout(window: Window; handler: JSValue; timeout = 0i32;
     args: varargs[JSValue]): int32 {.jsfunc.} =
   return window.timeouts.setTimeout(ttTimeout, handler, timeout, args)
@@ -344,3 +341,6 @@ proc newWindow*(scripting, images, styling: bool; attrs: WindowAttributes;
   if scripting:
     window.addScripting()
   return window
+
+# Forward declaration hack
+fetchImpl = fetch

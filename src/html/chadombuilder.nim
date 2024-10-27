@@ -365,8 +365,8 @@ proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
     return errTypeError("Invalid mime type")
 
 # Forward declaration hack
-domParseHTMLFragment = parseHTMLFragment
-domParseDocumentWriteChunk = parseDocumentWriteChunk
+parseHTMLFragmentImpl = parseHTMLFragment
+parseDocumentWriteChunkImpl = parseDocumentWriteChunk
 
 proc addHTMLModule*(ctx: JSContext) =
   ctx.registerType(DOMParser)

@@ -76,8 +76,6 @@ func applies*(mqlist: MediaQueryList; window: Window): bool =
       return true
   return false
 
-appliesFwdDecl = applies
-
 type
   ToSorts = array[PseudoElem, seq[(int, CSSRuleDef)]]
 
@@ -577,3 +575,6 @@ proc applyStylesheets*(document: Document; uass, userss: CSSStylesheet;
   let uass = uass.applyMediaQuery(document.window)
   let userss = userss.applyMediaQuery(document.window)
   return document.applyRules(uass, userss, previousStyled)
+
+# Forward declaration hack
+appliesImpl = applies

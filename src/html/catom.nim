@@ -198,29 +198,30 @@ func toStaticAtom*(factory: CAtomFactory; atom: CAtom): StaticAtom =
     return StaticAtom(i)
   return atUnknown
 
-var getFactory*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect,
+# Forward declaration hack
+var getFactoryImpl*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect,
   raises: [].}
 
 proc toAtom*(ctx: JSContext; atom: StaticAtom): CAtom =
-  return ctx.getFactory().toAtom(atom)
+  return ctx.getFactoryImpl().toAtom(atom)
 
 proc toStaticAtom*(ctx: JSContext; atom: CAtom): StaticAtom =
-  return ctx.getFactory().toStaticAtom(atom)
+  return ctx.getFactoryImpl().toStaticAtom(atom)
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
   var s: string
   ?ctx.fromJS(val, s)
-  res = ctx.getFactory().toAtom(s)
+  res = ctx.getFactoryImpl().toAtom(s)
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
   var s: string
   ?ctx.fromJS(val, s)
-  res = ctx.getFactory().toAtom(s)
+  res = ctx.getFactoryImpl().toAtom(s)
   return ok()
 
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
-  return ctx.toJS(ctx.getFactory().toStr(atom))
+  return ctx.toJS(ctx.getFactoryImpl().toStr(atom))
 
 proc toJS*(ctx: JSContext; atom: StaticAtom): JSValue =
   return ctx.toJS($atom)

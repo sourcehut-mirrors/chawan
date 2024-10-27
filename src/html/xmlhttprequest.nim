@@ -309,7 +309,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): JSResult[void]
   if xhrfSync notin this.flags: # async
     window.fireProgressEvent(this, satLoadstart, 0, 0)
     let v = ctx.toJS(jsRequest)
-    let p = window.windowFetch(v)
+    let p = window.fetchImpl(v)
     JS_FreeValue(ctx, v)
     if p.isNone:
       return err(p.error)
