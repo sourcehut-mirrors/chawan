@@ -238,15 +238,15 @@ proc onReadXHR(response: Response) =
   let this = opaque.this
   let window = opaque.window
   while true:
+    let olen = this.received.len
+    this.received.setLen(olen + BufferSize)
     try:
-      let olen = this.received.len
-      this.received.setLen(olen + BufferSize)
       let n = response.body.recvData(addr this.received[olen], BufferSize)
-      if n < BufferSize:
-        this.received.setLen(olen + n)
+      this.received.setLen(olen + n)
       if n == 0:
         break
     except ErrorAgain:
+      this.received.setLen(olen)
       break
   if this.readyState == xhrsHeadersReceived:
     this.readyState = xhrsLoading
