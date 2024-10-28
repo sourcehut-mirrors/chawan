@@ -1,3 +1,6 @@
+0.5.3 (2024.10.28)
+* fix assertion on creating 0-length property enum list
+
 0.5.2 (2024.10.12)
 * fix a bug in our libregexp patch
 
