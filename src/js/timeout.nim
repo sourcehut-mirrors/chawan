@@ -20,16 +20,17 @@ type
     args: seq[JSValue]
     expires: int64
     timeout: int32
+    dead: bool
 
   EvalJSFree* = proc(opaque: RootRef; src, file: string) {.nimcall.}
 
   TimeoutState* = ref object
     timeoutid: int32
+    sorted: bool
     timeouts: seq[TimeoutEntry]
     jsctx: JSContext
     evalJSFree: EvalJSFree
     opaque: RootRef
-    sorted: bool
 
 func newTimeoutState*(jsctx: JSContext; evalJSFree: EvalJSFree;
     opaque: RootRef): TimeoutState =
@@ -53,13 +54,10 @@ proc clearTimeout0(state: var TimeoutState; i: int) =
     state.sorted = false
 
 proc clearTimeout*(state: var TimeoutState; id: int32) =
-  var j = -1
-  for i in 0 ..< state.timeouts.len:
-    if state.timeouts[i].id == id:
-      j = i
+  for entry in state.timeouts:
+    if entry.id == id:
+      entry.dead = true
       break
-  if j != -1:
-    state.clearTimeout0(j)
 
 proc getUnixMillis(): int64 =
   let now = getTime()
@@ -106,20 +104,29 @@ proc sortAndGetTimeout*(state: var TimeoutState): cint =
   return cint(max(state.timeouts[^1].expires - now, -1))
 
 proc run*(state: var TimeoutState; err: DynStream): bool =
-  let H = state.timeouts.high
   let now = getUnixMillis()
   var found = false
+  var H = state.timeouts.high
   for i in countdown(H, 0):
     if state.timeouts[i].expires > now:
       break
     let entry = state.timeouts[i]
+    if entry.dead:
+      continue
     state.runEntry(entry, err)
     found = true
     case entry.t
-    of ttTimeout: state.clearTimeout0(i)
+    of ttTimeout:
+      entry.dead = true
     of ttInterval:
       entry.expires = now + entry.timeout
       state.sorted = false
+  # we can't just delete timeouts in the above loop, because the JS
+  # timeout handler may clear them in an arbitrary order
+  H = state.timeouts.high
+  for i in countdown(H, 0):
+    if state.timeouts[i].dead:
+      state.clearTimeout0(i)
   return found
 
 proc clearAll*(state: var TimeoutState) =
