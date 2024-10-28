@@ -1179,17 +1179,17 @@ proc delete(params: URLSearchParams; name: string) {.jsfunc.} =
       params.list.delete(i)
   params.update()
 
-proc get*(params: URLSearchParams; name: string): Option[string] {.jsfunc.} =
+proc get(params: URLSearchParams; name: string): Option[string] {.jsfunc.} =
   for it in params.list:
-    if it[0] == name:
-      return some(it[1])
+    if it.name == name:
+      return some(it.value)
   return none(string)
 
 proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
   result = @[]
   for it in params.list:
-    if it[0] == name:
-      result.add(it[1])
+    if it.name == name:
+      result.add(it.value)
 
 proc has(params: URLSearchParams; name: string; value = none(string)): bool
     {.jsfunc.} =
@@ -1200,12 +1200,10 @@ proc has(params: URLSearchParams; name: string; value = none(string)): bool
   return false
 
 proc set(params: URLSearchParams; name, value: string) {.jsfunc.} =
-  var first = true
-  for i in 0..params.list.high:
-    if params.list[i][0] == name:
-      if first:
-        first = false
-        params.list[i][1] = value
+  for param in params.list.mitems:
+    if param.name == name:
+      param.value = value
+      break
 
 proc parseAPIURL(s: string; base: Option[string]): JSResult[URL] =
   let baseURL = if base.isSome:
