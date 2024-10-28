@@ -226,7 +226,8 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     mainConfig: mainConfig,
     flags: flags,
     luctx: luctx,
-    redraw: true
+    redraw: true,
+    lastPeek: HoverType.high
   )
 
 func location(container: Container): URL {.jsfget.} =
@@ -1630,15 +1631,15 @@ proc peek(container: Container) {.jsfunc.} =
   container.alert($container.url)
 
 proc clearHover*(container: Container) =
-  container.lastPeek = low(HoverType)
+  container.lastPeek = HoverType.high
 
 proc peekCursor(container: Container) {.jsfunc.} =
   var p = container.lastPeek
   while true:
-    if p < high(HoverType):
+    if p < HoverType.high:
       inc p
     else:
-      p = low(HoverType)
+      p = HoverType.low
     if container.hoverText[p] != "" or p == container.lastPeek:
       break
   if container.hoverText[p] != "":
