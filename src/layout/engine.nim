@@ -179,9 +179,9 @@ func outerSize(box: BlockBox; dim: DimensionType): LayoutUnit =
 func minClamp(x: LayoutUnit; span: Span): LayoutUnit =
   return max(min(x, span.send), span.start)
 
-#TODO these are not really static-like, just unimplemented
+#TODO implement sticky
 const PositionStaticLike = {
-  PositionStatic, PositionFixed, PositionSticky
+  PositionStatic, PositionSticky
 }
 
 type
@@ -1229,7 +1229,7 @@ const DisplayBlockLike = {DisplayBlock, DisplayListItem, DisplayInlineBlock}
 
 # Return true if no more margin collapsing can occur for the current strut.
 func canFlushMargins(box: BlockBox; sizes: ResolvedSizes): bool =
-  if box.computed{"position"} == PositionAbsolute:
+  if box.computed{"position"} in {PositionAbsolute, PositionFixed}:
     return false
   return sizes.padding.top != 0 or sizes.padding.bottom != 0 or
     box.inline != nil or box.computed{"display"} notin DisplayBlockLike or
@@ -1317,6 +1317,14 @@ proc popPositioned(lctx: LayoutContext; overflow: var Overflow;
     )
     #TODO this overflow looks wrong too
     lctx.popPositioned(overflow, space)
+
+proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
+  case box.computed{"position"}
+  of PositionAbsolute:
+    lctx.positioned[^1].queue.add(QueuedAbsolute(child: box, offset: offset))
+  of PositionFixed:
+    lctx.positioned[0].queue.add(QueuedAbsolute(child: box, offset: offset))
+  else: assert false
 
 type
   BlockState = object
@@ -1491,7 +1499,7 @@ proc addInlineAbsolute(ictx: var InlineContext; state: var InlineState;
     # flush if there is already something on the line *and* our outer
     # display is block.
     offset.y += ictx.cellHeight
-  lctx.positioned[^1].queue.add(QueuedAbsolute(child: box, offset: offset))
+  lctx.queueAbsolute(box, offset)
 
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
@@ -1520,7 +1528,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
 
 proc addBox(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
-  if box.computed{"position"} == PositionAbsolute:
+  if box.computed{"position"} in {PositionAbsolute, PositionFixed}:
     # This doesn't really have to be an inline block. I just want to
     # handle its positioning here.
     ictx.addInlineAbsolute(state, box)
@@ -2390,12 +2398,9 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
         # basis was e.g. 0. Try to resize it to something more usable.
         childSizes.space[dim] = stretch(minu)
       lctx.layoutFlexChild(child, childSizes)
-    if child.computed{"position"} == PositionAbsolute:
+    if child.computed{"position"} in {PositionAbsolute, PositionFixed}:
       # Absolutely positioned flex children do not participate in flex layout.
-      lctx.positioned[^1].queue.add(QueuedAbsolute(
-        child: child,
-        offset: offset(x = 0, y = 0)
-      ))
+      lctx.queueAbsolute(child, offset(x = 0, y = 0))
       continue
     if canWrap and (sizes.space[dim].t == scMinContent or
         sizes.space[dim].isDefinite and
@@ -2560,7 +2565,7 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
     parent: BlockBox) =
   for child in parent.nested:
     var dy: LayoutUnit = 0 # delta
-    if child.computed{"position"} == PositionAbsolute:
+    if child.computed{"position"} in {PositionAbsolute, PositionFixed}:
       # Delay this block's layout until its parent's dimensions are
       # actually known.
       var offset = state.offset
@@ -2570,10 +2575,7 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
       # position.
       #TODO but I'm not sure if this is really what the standard says...
       offset.y += bctx.marginTodo.sum()
-      bctx.lctx.positioned[^1].queue.add(QueuedAbsolute(
-        child: child,
-        offset: offset
-      ))
+      bctx.lctx.queueAbsolute(child, offset)
       continue
     if child.computed.establishesBFC():
       dy = state.layoutBlockChildBFC(bctx, child)
