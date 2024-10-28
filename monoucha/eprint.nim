@@ -7,11 +7,14 @@ template eprint0(s: varargs[string]) =
       if i != 0:
         o &= ' '
       o &= s[i]
-    when nimVm or not declared(stderr):
+    when nimVm:
       echo o
     else:
-      o &= '\n'
-      stderr.write(o)
+      when not declared(stderr):
+        echo o
+      else:
+        o &= '\n'
+        stderr.write(o)
 
 when defined(release):
   func eprint*(s: varargs[string, `$`])
