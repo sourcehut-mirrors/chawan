@@ -16,15 +16,19 @@ type
     name: string
 
 func newJSPropertyEnumList*(ctx: JSContext; size: uint32): JSPropertyEnumList =
-  let p = js_malloc(ctx, csize_t(sizeof(JSPropertyEnum)) * csize_t(size))
-  let buffer = cast[JSPropertyEnumArray](p)
+  let p = if size != 0:
+    js_malloc(ctx, csize_t(sizeof(JSPropertyEnum)) * csize_t(size))
+  else:
+    nil
   return JSPropertyEnumList(
     ctx: ctx,
-    buffer: buffer,
+    buffer: cast[JSPropertyEnumArray](p),
     size: size
   )
 
 proc grow(this: var JSPropertyEnumList) =
+  if this.size == 0:
+    this.size = 1
   this.size *= 2
   let p = js_realloc(this.ctx, this.buffer, csize_t(this.size))
   this.buffer = cast[JSPropertyEnumArray](p)
