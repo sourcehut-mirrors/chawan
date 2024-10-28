@@ -3,6 +3,7 @@ import version
 import std/options
 import std/os
 import std/posix
+import std/streams
 
 import chagashi/charset
 import config/chapath
@@ -200,6 +201,28 @@ proc parse(ctx: var ParamParseContext) =
       ctx.pages.add(param)
     inc ctx.i
 
+const defaultConfig = staticRead"res/config.toml"
+
+proc initConfig(ctx: ParamParseContext; config: Config;
+    warnings: var seq[string]): Err[string] =
+  let fs = openConfig(config.configdir, ctx.configPath)
+  if fs == nil and ctx.configPath.isSome:
+    # The user specified a non-existent config file.
+    return err("Failed to open config file " & ctx.configPath.get)
+  putEnv("CHA_CONFIG_DIR", config.configdir)
+  ?config.parseConfig("res", defaultConfig, warnings)
+  when defined(debug):
+    if (let fs = newFileStream(getCurrentDir() / "res/config.toml"); fs != nil):
+      ?config.parseConfig(getCurrentDir(), fs.readAll(), warnings)
+  if fs != nil:
+    ?config.parseConfig(config.configdir, fs.readAll(), warnings)
+  for opt in ctx.opts:
+    ?config.parseConfig(getCurrentDir(), opt, warnings, laxnames = true)
+  config.css.stylesheet &= ctx.stylesheet
+  ?config.initCommands()
+  isCJKAmbiguous = config.display.double_width_ambiguous
+  return ok()
+
 proc main() =
   putEnv("CHA_LIBEXEC_DIR", ChaPath"${%CHA_LIBEXEC_DIR}".unquoteGet())
   let forkserver = newForkServer()
@@ -208,25 +231,10 @@ proc main() =
   let jsrt = newJSRuntime()
   let jsctx = jsrt.newJSContext()
   var warnings = newSeq[string]()
-  let (config, res) = readConfig(ctx.configPath, jsctx)
-  if not res.success:
-    stderr.writeLine(res.errorMsg)
+  let config = Config(jsctx: jsctx)
+  if (let res = ctx.initConfig(config, warnings); res.isNone):
+    stderr.writeLine(res.error)
     quit(1)
-  warnings.add(res.warnings)
-  for opt in ctx.opts:
-    let res = config.parseConfig(getCurrentDir(), opt, laxnames = true,
-      setdir = false)
-    if not res.success:
-      stderr.writeLine(res.errorMsg)
-      quit(1)
-    warnings.add(res.warnings)
-  config.css.stylesheet &= ctx.stylesheet
-  block commands:
-    let res = config.initCommands()
-    if res.isNone:
-      stderr.writeLine("Error parsing commands: " & res.error)
-      quit(1)
-  isCJKAmbiguous = config.display.double_width_ambiguous
   if ctx.pages.len == 0 and stdin.isatty():
     if ctx.visual:
       ctx.pages.add(config.start.visual_home)

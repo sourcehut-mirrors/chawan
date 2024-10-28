@@ -200,9 +200,3 @@ proc connectSocket*(os: PosixStream; host, port: string; outIpv6: var bool):
 proc connectSocket*(os: PosixStream; host, port: string): PosixStream =
   var dummy = false
   return os.connectSocket(host, port, dummy)
-
-proc getEnvEmpty*(name: string; fallback = ""): string =
-  let res = getEnv(name, fallback)
-  if res != "":
-    return res
-  return fallback

@@ -160,7 +160,7 @@ type
     meta_refresh* {.jsgetset.}: MetaRefresh
 
   Config* = ref object
-    jsctx: JSContext
+    jsctx*: JSContext
     jsvfns*: seq[JSValueFunction]
     configdir* {.jsget.}: string
     `include` {.jsget.}: seq[ChaPathResolved]
@@ -668,21 +668,13 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
     else: # tvtString
       x.init.add((kkk.substr("cmd.".len), vv.s))
 
-type ParseConfigResult* = object
-  success*: bool
-  warnings*: seq[string]
-  errorMsg*: string
+proc parseConfig*(config: Config; dir, buf: string; warnings: var seq[string];
+  name = "<input>"; laxnames = false): Err[string]
 
-proc parseConfig*(config: Config; dir, buf: string; name = "<input>";
-  laxnames = false; setdir = true): ParseConfigResult
-
-proc parseConfig(config: Config; dir: string; t: TomlValue; setdir: bool):
-    ParseConfigResult =
+proc parseConfig(config: Config; dir: string; t: TomlValue;
+    warnings: var seq[string]): Err[string] =
   var ctx = ConfigParser(config: config, dir: dir)
-  if setdir:
-    config.configdir = dir
   try:
-    var myRes = ParseConfigResult(success: true)
     ctx.parseConfigValue(config[], t, "")
     #TODO: for omnirule/siteconf, check if substitution rules are specified?
     while config.`include`.len > 0:
@@ -692,34 +684,19 @@ proc parseConfig(config: Config; dir: string; t: TomlValue; setdir: bool):
       for s in includes:
         let fs = openFileExpand(dir, s)
         if fs == nil:
-          return ParseConfigResult(
-            success: false,
-            warnings: ctx.warnings,
-            errorMsg: "include file not found: " & s
-          )
-        let res = config.parseConfig(dir, fs.readAll())
-        if not res.success:
-          return res
-        myRes.warnings.add(res.warnings)
-    myRes.warnings.add(ctx.warnings)
-    return myRes
+          return err("include file not found: " & s)
+        ?config.parseConfig(dir, fs.readAll(), warnings)
+    warnings.add(ctx.warnings)
+    return ok()
   except ValueError as e:
-    return ParseConfigResult(
-      success: false,
-      warnings: ctx.warnings,
-      errorMsg: e.msg
-    )
+    return err(e.msg)
 
-proc parseConfig*(config: Config; dir, buf: string; name = "<input>";
-    laxnames = false; setdir = true): ParseConfigResult =
+proc parseConfig*(config: Config; dir, buf: string; warnings: var seq[string];
+    name = "<input>"; laxnames = false): Err[string] =
   let toml = parseToml(buf, dir / name, laxnames)
   if toml.isSome:
-    return config.parseConfig(dir, toml.get, setdir)
-  else:
-    return ParseConfigResult(
-      success: false,
-      errorMsg: "Fatal error: failed to parse config\n" & toml.error & '\n'
-    )
+    return config.parseConfig(dir, toml.get, warnings)
+  return err("Fatal error: failed to parse config\n" & toml.error)
 
 proc getNormalAction*(config: Config; s: string): string =
   return config.page.getOrDefault(s)
@@ -727,39 +704,26 @@ proc getNormalAction*(config: Config; s: string): string =
 proc getLinedAction*(config: Config; s: string): string =
   return config.line.getOrDefault(s)
 
-type ReadConfigResult = tuple
-  config: Config
-  res: ParseConfigResult
-
-const defaultConfig = staticRead"res/config.toml"
-
-proc readConfig0(config: Config; dir, name: string): ParseConfigResult =
-  let path = if name.len > 0 and name[0] == '/':
-    name
-  else:
-    dir / name
-  let fs = newFileStream(path)
-  if fs != nil:
-    return config.parseConfig(parentDir(path), fs.readAll())
-  return ParseConfigResult(success: true)
-
-proc readConfig*(pathOverride: Option[string]; jsctx: JSContext):
-    ReadConfigResult =
-  let config = Config(jsctx: jsctx)
-  var res = config.parseConfig("res", defaultConfig)
-  if not res.success:
-    return (nil, res)
-  if pathOverride.isNone:
-    when defined(debug):
-      res = config.readConfig0(getCurrentDir() / "res", "config.toml")
-      if not res.success:
-        return (nil, res)
-    res = config.readConfig0(getConfigDir() / "chawan", "config.toml")
-  else:
-    res = config.readConfig0(getCurrentDir(), pathOverride.get)
-  if not res.success:
-    return (nil, res)
-  return (config, res)
+proc openConfig*(dir: var string; override: Option[string]): FileStream =
+  if override.isSome:
+    if override.get.len > 0 and override.get[0] == '/':
+      dir = parentDir(override.get)
+      return newFileStream(override.get)
+    else:
+      dir = getCurrentDir()
+      return newFileStream(dir / override.get)
+  dir = getEnv("CHA_CONFIG_DIR")
+  if dir != "":
+    return newFileStream(dir / "config.toml")
+  dir = getEnv("XDG_CONFIG_HOME")
+  if dir != "":
+    dir = dir / "chawan"
+    return newFileStream(dir / "config.toml")
+  dir = expandTilde("~/.config/chawan")
+  if (let fs = newFileStream(dir / "config.toml"); fs != nil):
+    return fs
+  dir = expandTilde("~/.chawan")
+  return newFileStream(dir / "config.toml")
 
 # called after parseConfig returns
 proc initCommands*(config: Config): Err[string] =

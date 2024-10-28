@@ -15,15 +15,10 @@ proc fopen(filename, mode: cstring): pointer {.importc, nodecl.}
 proc openKnownHosts(os: PosixStream): (File, string) =
   var path = getEnv("GMIFETCH_KNOWN_HOSTS")
   if path == "":
-    let oldPath = getConfigDir() & "gmifetch/known_hosts"
     let ourDir = getEnv("CHA_CONFIG_DIR")
     if ourDir == "":
       os.die("InternalError", "config dir missing")
     path = ourDir & '/' & "gemini_known_hosts"
-    # for backwards compat, TODO eventually remove this
-    # (this has a race, but oh well.)
-    if fileExists(oldPath) and not fileExists(path):
-      moveFile(oldPath, path)
   createDir(path.beforeLast('/'))
   let f = cast[File](fopen(cstring(path), "a+"))
   if f == nil:

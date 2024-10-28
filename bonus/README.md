@@ -12,16 +12,9 @@ Warning: some of the installers will modify your ~/.urimethodmap file.
 Because the entries are inserted to the file's start, you can usually
 just remove these if you no longer want to use the script.
 
-Also, the /cgi-bin/ directory is assumed to be configured to ~/cgi-bin.
+Also, the /cgi-bin/ directory is assumed to be configured as the default
+(~/.chawan/cgi-bin or ~/.config/chawan/cgi-bin if you use XDG basedir).
 Use `make CHA_CGI_DIR=...` to override this.
-
-If you haven't configured a CGI directory yet, then please add the
-following to your ~/.config/chawan/config.toml:
-
-```
-[external]
-cgi-dir = ["~/cgi-bin", "${%CHA_LIBEXEC_DIR}/cgi-bin"]
-```
 
 ## Summary
 

@@ -9,7 +9,9 @@ used in the following way:
 
 * All local CGI scripts must be placed in a directory specified in
   `external.cgi-dir`. Multiple directories can be specified in an array too,
-  and directories specified first have higher precedence.
+  and directories specified first have higher precedence.  
+  By default, this is set to ~/.chawan/cgi-bin and
+  /usr/local/libexec/chawan/cgi-bin.
 * Then, a CGI script in one of these directories can be executed by visiting
   the URL `cgi-bin:script-name`. $PATH_INFO and $QUERY_STRING are set as
   normal, i.e. `cgi-bin:script-name/abcd?defgh=ijkl` will set $PATH_INFO to

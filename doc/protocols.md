@@ -197,19 +197,8 @@ of the retrieved resource. If an error is encountered, it prints a
 Here we will add a protocol called "cowsay", so that the URL cowsay:text
 prints the output of `cowsay text` after a second of waiting.
 
-First, make sure you have a local CGI path `~/cgi-bin` set up in your
-`~/.config/chawan/config.toml`:
-
-```toml
-cgi-dir = ["~/cgi-bin", "${%CHA_LIBEXEC_DIR}/cgi-bin"]
-```
-
-It is also possible to just put your CGI scripts to
-`/usr/local/libexec/chawan/cgi-bin`; this is enabled by default, so you need no
-edits in your config. But it seems more convenient to use a dedicated cgi-bin in
-your home directory.
-
-`mkdir ~/cgi-bin`, and create a CGI script in `~/cgi-bin` called `cowsay.cgi`:
+`mkdir -p ~/.chawan/cgi-bin`, and create a CGI script in
+`~/.chawan/cgi-bin/cowsay.cgi`:
 
 ```sh
 #!/bin/sh

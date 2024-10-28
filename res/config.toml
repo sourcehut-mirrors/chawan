@@ -269,7 +269,7 @@ urimethodmap = [
 tmpdir = "/tmp/cha-tmp-$LOGNAME"
 sockdir = "/tmp/cha-sock-$LOGNAME"
 editor = "${EDITOR:-vi}"
-cgi-dir = "${%CHA_LIBEXEC_DIR}/cgi-bin"
+cgi-dir = ["$CHA_CONFIG_DIR/cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
 download-dir = "/tmp/"
 w3m-cgi-compat = false
 

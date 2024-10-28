@@ -5,8 +5,8 @@ MANOFF -->
 # Configuration of Chawan
 
 Chawan supports configuration of various options like keybindings, user
-stylesheets, site preferences, etc. The configuration format is very similar
-to toml, with the following exceptions:
+stylesheets, site preferences, etc. The configuration format is almost
+toml, with the following exceptions:
 
 * Inline tables may span across multiple lines.
 * Table arrays can be cleared by setting a variable by the same to the
@@ -19,11 +19,14 @@ omnirule = [] # note: this must be placed at the beginning of the file.
 [[omnirule]] # this is legal. all default omni-rules are now disabled.
 ```
 
-Chawan will look for a config file in the $XDG_CONFIG_HOME/chawan/ directory
-called `config.toml`. (Chawan defaults to ~/.config if the XDG_CONFIG_HOME
-environment variable is not set.) See the default configuration file in the
-res/ folder, and bonus configuration files in the bonus/ folder for further
-examples.
+The canonical configuration file path is ~/.chawan/config.toml, but
+the search path accomodates XDG basedirs as well:
+
+1. config file specified through -C switch -> use that
+2. $CHA_CONFIG_DIR is set -> use $CHA_CONFIG_DIR/config.toml
+3. $XDG_CONFIG_HOME is set -> use $XDG_CONFIG_HOME/chawan/config.toml
+4. ~/.config/chawan/config.toml exists -> use that
+5. ~/.chawan/config.toml exists -> use that
 
 <!-- MANOFF -->
 **Table of contents**

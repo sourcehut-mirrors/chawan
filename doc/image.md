@@ -19,7 +19,7 @@ There are actually two switches for images in the config:
 In most cases, all you need to do is to set "buffer.images" to true:
 
 ```toml
-# in ~/.config/chawan/config.toml
+# in ~/.chawan/config.toml (or ~/.config/chawan/config.toml)
 [buffer]
 images = true
 ```

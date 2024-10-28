@@ -717,3 +717,9 @@ func btoa*(data: openArray[uint8]): string =
 
 func btoa*(data: openArray[char]): string =
   return btoa(data.toOpenArrayByte(0, data.len - 1))
+
+proc getEnvEmpty*(name: string; fallback = ""): string =
+  let res = getEnv(name, fallback)
+  if res != "":
+    return res
+  return fallback

@@ -91,7 +91,7 @@ w3mdict.cgi in the file viewer. (Unlike in w3m, where it could run
 # Following sets the urimethodmap search path to the path relative to the
 # configuration file. So if your configuration file is in
 # ~/.config/chawan/config.toml, Chawan will use ~/.config/chawan/urimethodmap.
-# in the same directory.
+# If it's in ~/.chawan/config.toml, then it uses ~/.chawan/urimethodmap.
 [external]
 urimethodmap = "urimethodmap"
 ```

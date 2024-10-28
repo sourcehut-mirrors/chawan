@@ -1168,7 +1168,8 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
       newPosixStream(STDERR_FILENO).safeClose()
       newPosixStream(STDIN_FILENO).safeClose()
     else:
-      discard dup2(pager.term.istream.fd, STDIN_FILENO)
+      if pager.term.istream != nil:
+        discard dup2(pager.term.istream.fd, STDIN_FILENO)
     discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
     exitnow(127)
   else:

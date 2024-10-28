@@ -1,7 +1,7 @@
 # w3m-like keybindings for Chawan.
 # Copy-paste this into your config file, or just include it (place it in
-# ~/.config/chawan/w3m.toml, then at the beginning of
-# ~/.config/chawan/chawan.toml, include = "w3m.toml".)
+# ~/.chawan/w3m.toml ~/.config/chawan/w3m.toml, then at the beginning of
+# ~/.chawan/config.toml, include = "w3m.toml".)
 
 [cmd.w3m.buffer]
 pageDown = 'n => pager.scrollDown(pager.height * (n ?? 1))'

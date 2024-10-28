@@ -1,5 +1,4 @@
-#TODO curse XDG
-CHA_CGI_DIR ?= "$$HOME/cgi-bin"
+CHA_CGI_DIR ?= "$$(cha -r 'pager.extern(`echo "$$CHA_CONFIG_DIR/cgi-bin"`)')"
 
 prefix = /usr/local
 
