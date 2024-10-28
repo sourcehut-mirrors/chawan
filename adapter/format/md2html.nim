@@ -166,13 +166,17 @@ proc parseTitle(title: var string; line: openArray[char]; i: int): int =
   return line.skipBlanks(i)
 
 proc parseLink(ctx: var ParseInlineContext; line: openArray[char]) =
-  let i = ctx.i + 1
+  var i = ctx.i + 1
   if i >= line.len or line[i] != '(':
     #TODO reference links
     stdout.write('[' & ctx.bracketChars & ']')
     return
+  i = line.skipBlanks(i + 1)
+  if i >= line.len:
+    stdout.write('[' & ctx.bracketChars & ']')
+    return
   var url = ""
-  var j = url.parseLinkDestination(line, line.skipBlanks(i + 1))
+  var j = url.parseLinkDestination(line, i)
   var title = ""
   if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
     j = title.parseTitle(line, j)
