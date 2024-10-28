@@ -2569,12 +2569,16 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
       # Delay this block's layout until its parent's dimensions are
       # actually known.
       var offset = state.offset
-      # I *think* this is right, because we want to freeze the box at
-      # the layout's current position. So even if a next child increased
-      # the margin todo, that should not change the absolute block's
-      # position.
-      #TODO but I'm not sure if this is really what the standard says...
-      offset.y += bctx.marginTodo.sum()
+      # We want to get the child to a Y position where it would have
+      # been placed had it not been absolutely positioned.
+      #
+      # Like with floats, we must consider both the case where the
+      # parent's position is resolved, and the case where it isn't.
+      # Here our job is much easier in the unresolved case, because
+      # subsequent children's layout doesn't depend on our position;
+      # so we can just defer margin resolution to the parent.
+      if bctx.marginTarget != state.initialMarginTarget:
+        offset.y += bctx.marginTodo.sum()
       bctx.lctx.queueAbsolute(child, offset)
       continue
     if child.computed.establishesBFC():
