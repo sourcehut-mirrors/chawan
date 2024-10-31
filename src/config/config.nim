@@ -710,8 +710,9 @@ proc openConfig*(dir: var string; override: Option[string]): FileStream =
       dir = parentDir(override.get)
       return newFileStream(override.get)
     else:
-      dir = getCurrentDir()
-      return newFileStream(dir / override.get)
+      let path = getCurrentDir() / override.get
+      dir = parentDir(path)
+      return newFileStream(path)
   dir = getEnv("CHA_CONFIG_DIR")
   if dir != "":
     return newFileStream(dir / "config.toml")
