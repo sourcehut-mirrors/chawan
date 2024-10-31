@@ -14,6 +14,8 @@ ifeqdef SYS_sendmsg allow
 ifeqdef SYS_getpid allow
 
 : deny
+ret trap
+: kill
 ret kill
 : eperm
 ret errno EPERM

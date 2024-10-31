@@ -9,7 +9,7 @@ test "$1" || die "usage: gen_syscalls [file]"
 
 find_label() {
 	printf '%s\n' "$labels" | while read -r line
-	do	case $line in
+	do	case "$line" in
 		"$1 "*)	printf '%d\n' "${line#* }"
 			break
 			;;
@@ -24,23 +24,19 @@ line_cut_next() {
 	if test "$line" = "$oline"; then line= ; fi
 }
 
-cut_label() {
+put_cmp() {
+	line_cut_next
+	val=$next
 	line_cut_next
 	label=$(find_label "$next")
 	test "$label" || die "missing label $next"
 	label=$(($label - 1 - $ip))
-}
-
-put_cmp() {
-	line_cut_next
-	val=$next
-	cut_label
-	printf '\t%s(%s, %d),\n' "$inst" "$val" "$label"
+	printf '\t%s(%s, %d),\n' "$1" "$val" "$label"
 }
 
 put_load() {
 	line_cut_next
-	printf '\t%s(%s),\n' "$inst" "$next"
+	printf '\tCHA_BPF_LOAD(%s),\n' "$next"
 }
 
 put_ret() {
@@ -52,13 +48,13 @@ put_ret() {
 	errno)	val="SECCOMP_RET_ERRNO | ($line & SECCOMP_RET_DATA)" ;;
 	*)	die "wrong retval $line" ;;
 	esac
-	printf '\t%s(%s),\n' "$inst" "$val"
+	printf '\tCHA_BPF_RET(%s),\n' "$val"
 }
 
 ip=0
 while read -r line
 do	line=${line%%#*}
-	case $line in
+	case "$line" in
 	''|define' '*) ;;
 	': '*)	line_cut_next
 		if test -n "$labels"
@@ -76,13 +72,15 @@ while read -r line
 do	line_cut_next
 	case $next in
 	:)	continue ;;
-	define)	printf '#%s %s\n' "$next $line" ; continue ;;
-	ret)	inst=CHA_BPF_RET put_ret ;;
-	ifeq)	inst=CHA_BPF_JE put_cmp ;;
-	ifne)	inst=CHA_BPF_JNE put_cmp ;;
-	ifle)	inst=CHA_BPF_JLE put_cmp ;;
-	load)	inst=CHA_BPF_LOAD put_load ;;
-	*)	die "unexpected instruction $inst" ;;
+	define)	printf '#%s %s\n' "$next" "$line" ; continue ;;
+	ret)	put_ret ;;
+	ifeq)	put_cmp CHA_BPF_JE;;
+	ifne)	put_cmp CHA_BPF_JNE;;
+	ifle)	put_cmp CHA_BPF_JLE;;
+	load)	put_load;;
+	*)	die "unexpected instruction $next" ;;
 	esac
 	ip=$(($ip + 1))
 done < "$1"
+
+printf '#define EXPECTED_COUNT %d\n' "$ip"

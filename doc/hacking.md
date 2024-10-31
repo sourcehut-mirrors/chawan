@@ -212,18 +212,16 @@ Use `config.color.toml` and `my-test-case.color.expected` to preserve colors.
 
 ### Sandbox violations
 
-First, note that a nil deref can also trigger a sandbox violation. Read
-the stack trace to make sure you aren't dealing with that.
+You got a syscall number (assuming you're on Linux); look it up in the
+Linux syscall table for your architecture.
 
-Then, figure out if it's happening in a CGI process or a buffer
-process. If your buffer was swapped out for the console, it's likely the
-latter; otherwise, the former.
+To get more context on what happened, you can run
+`strace -f ./cha -o start.console-buffer [...] 2>a`, trigger the crash,
+then search for the last occurrence of "--- SIGSYS". Then search
+backwards on the PID to see the last syscalls.
 
-Now change the appropriate sandbox handler from `SCMP_ACT_TRAP` to
-`SCMP_ACT_KILL_PROCESS`. Run `strace -f ./cha -o start.console-buffer [...] 2>a`,
-trigger the crash, then search for "killed by SIGSYS" in `a`. Copy the
-logged PID, then search backwards once; you should now see the syscall
-that got your process killed.
+(Incidentally, strace also shows the syscall name, so it may be easier
+to check like that than looking it up in the syscall table.)
 
 ## Resources
 

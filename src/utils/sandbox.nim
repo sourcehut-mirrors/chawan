@@ -92,9 +92,6 @@ elif SandboxMode == stSeccomp:
   proc cha_enter_network_sandbox(): cint {.importc, cdecl.}
 
   proc enterBufferSandbox*(sockPath: string) =
-    onSignal SIGSYS:
-      discard sig
-      raise newException(Defect, "Sandbox violation in buffer")
     doAssert cha_enter_buffer_sandbox() == 1
 
   proc enterNetworkSandbox*() =

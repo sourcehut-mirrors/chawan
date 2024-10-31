@@ -22,6 +22,7 @@ ifeqdef SYS_brk allow
 # less common socket/file i/o
 ifeqdef SYS_lseek allow
 ifeqdef SYS_close allow
+ifeqdef SYS_shutdown allow
 
 # prevent glibc from getting our process murdered
 ifeqdef SYS_fstat eperm
@@ -47,6 +48,13 @@ ifeqdef SYS_exit allow	# for quit
 ifeqdef SYS_exit_group allow	# for quit
 ifeqdef SYS_restart_syscall allow # for resuming poll on SIGCONT
 ifeqdef SYS_getrandom allow	# glibc calls it when initializing its malloc
+
+# so we don't trap on crash
+ifeqdef SYS_sigaction eperm
+ifeqdef SYS_rt_sigaction eperm
+ifeqdef SYS_rt_sigprocmask eperm
+ifeqdef SYS_gettid eperm
+ifeqdef SYS_tgkill kill
 
 # bionic-specific stuff
 ifdef __BIONIC__

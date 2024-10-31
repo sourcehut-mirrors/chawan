@@ -33,6 +33,8 @@ ifeqdef SYS_sigreturn allow	# called by signal trampoline
 
 : deny
 ret trap
+: kill
+ret kill
 : eperm
 ret errno EPERM
 : allow
