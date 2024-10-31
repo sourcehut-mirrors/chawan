@@ -1139,7 +1139,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
   var oldmask, dummy: Sigset
   act.sa_handler = SIG_IGN
   act.sa_flags = SA_RESTART
-  if sigemptyset(act.sa_mask) < -1 or
+  if sigemptyset(act.sa_mask) < 0 or
       sigaction(SIGINT, act, oldint) < 0 or
       sigaction(SIGQUIT, act, oldquit) < 0 or
       sigaddset(act.sa_mask, SIGCHLD) < 0 or
