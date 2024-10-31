@@ -257,7 +257,7 @@ proc add*(headers: Headers; k, v: string) =
   do:
     headers.table[k] = @[v]
 
-proc `[]=`*(headers: Headers; k: static string, v: string) =
+proc `[]=`*(headers: Headers; k: static string; v: string) =
   const k = k.toHeaderCase()
   headers.table[k] = @[v]
 
