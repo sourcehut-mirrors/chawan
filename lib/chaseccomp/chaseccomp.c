@@ -56,6 +56,7 @@ static void sigsys_handler_network(int sig, siginfo_t *info, void *ucontext)
 {
 	fprintf(stderr, "Sandbox violation in network: syscall #%d\n",
 		info->si_syscall);
+	abort();
 }
 
 int cha_enter_network_sandbox(void)

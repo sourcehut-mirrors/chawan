@@ -9,7 +9,7 @@ test "$1" || die "usage: gen_syscalls [file]"
 
 find_label() {
 	printf '%s\n' "$labels" | while read -r line
-	do	case "$line" in
+	do	case $line in
 		"$1 "*)	printf '%d\n' "${line#* }"
 			break
 			;;
@@ -54,8 +54,8 @@ put_ret() {
 ip=0
 while read -r line
 do	line=${line%%#*}
-	case "$line" in
-	''|define' '*) ;;
+	case $line in
+	''|'define '*) ;;
 	': '*)	line_cut_next
 		if test -n "$labels"
 		then	labels="$labels
