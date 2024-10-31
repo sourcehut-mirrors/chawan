@@ -142,6 +142,8 @@ type
 
   HTMLFormControlsCollection = ref object of HTMLCollection
 
+  HTMLOptionsCollection = ref object of HTMLCollection
+
   RadioNodeList = ref object of NodeList
 
   HTMLAllCollection = ref object of Collection
@@ -283,6 +285,8 @@ type
     relList {.jsget.}: DOMTokenList
 
   HTMLSelectElement* = ref object of FormAssociatedElement
+    cachedOptions: HTMLOptionsCollection
+    cachedSelectedOptions: HTMLCollection
 
   HTMLSpanElement* = ref object of HTMLElement
 
@@ -442,6 +446,7 @@ jsDestructor(HTMLCollection)
 jsDestructor(HTMLFormControlsCollection)
 jsDestructor(RadioNodeList)
 jsDestructor(HTMLAllCollection)
+jsDestructor(HTMLOptionsCollection)
 jsDestructor(Location)
 jsDestructor(Document)
 jsDestructor(DOMImplementation)
@@ -471,6 +476,7 @@ proc getImageId(window: Window): int
 proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc setInvalid*(element: Element)
+func value*(option: HTMLOptionElement): string
 
 # Forward declaration hacks
 # set in css/cascade
@@ -1303,7 +1309,7 @@ func ownerDocument(node: Node): Document {.jsfget.} =
 func hasChildNodes(node: Node): bool {.jsfunc.} =
   return node.childList.len > 0
 
-proc len(collection: Collection): int =
+proc getLength(collection: Collection): int =
   collection.refreshCollection()
   return collection.snapshot.len
 
@@ -1389,6 +1395,9 @@ func forms(document: Document): HTMLCollection {.jsfget.} =
       childonly = false
     )
   return document.cachedForms
+
+func cookie(document: Document): string {.jsfget.} =
+  return ""
 
 # DOMTokenList
 func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
@@ -1563,11 +1572,11 @@ func names(ctx: JSContext; map: var DOMStringMap): JSPropertyEnumList
 
 # NodeList
 func length(this: NodeList): uint32 {.jsfget.} =
-  return uint32(this.len)
+  return uint32(this.getLength())
 
 func item(this: NodeList; u: uint32): Node {.jsfunc.} =
   let i = int(u)
-  if i < this.len:
+  if i < this.getLength():
     return this.snapshot[i]
   return nil
 
@@ -1586,7 +1595,7 @@ func names(ctx: JSContext; this: NodeList): JSPropertyEnumList {.jspropnames.} =
 
 # HTMLCollection
 proc length(this: HTMLCollection): uint32 {.jsfget.} =
-  return uint32(this.len)
+  return uint32(this.getLength())
 
 func item(this: HTMLCollection; u: uint32): Element {.jsfunc.} =
   if u < this.length:
@@ -1640,9 +1649,9 @@ proc namedItem(ctx: JSContext; this: HTMLFormControlsCollection; name: CAtom):
     islive = true,
     childonly = false
   )
-  if nodes.len == 0:
+  if nodes.getLength() == 0:
     return JS_NULL
-  if nodes.len == 1:
+  if nodes.getLength() == 1:
     return ctx.toJS(nodes.snapshot[0])
   return ctx.toJS(nodes)
 
@@ -1662,11 +1671,11 @@ proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
 
 # HTMLAllCollection
 proc length(this: HTMLAllCollection): uint32 {.jsfget.} =
-  return uint32(this.len)
+  return uint32(this.getLength())
 
 func item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
   let i = int(u)
-  if i < this.len:
+  if i < this.getLength():
     return Element(this.snapshot[i])
   return nil
 
@@ -2709,6 +2718,64 @@ proc setValue(this: HTMLInputElement; value: string) {.jsfset: "value".} =
 # <select>
 func jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
+
+func jsType(this: HTMLSelectElement): string {.jsfget: "type".} =
+  if this.attrb(satMultiple):
+    return "select-multiple"
+  return "select-one"
+
+func isOptionOf(node: Node; select: HTMLSelectElement): bool =
+  if node of HTMLOptionElement:
+    let parent = node.parentNode
+    return parent == select or
+      parent of HTMLOptGroupElement and parent.parentNode == select
+  return false
+
+func jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
+    {.jsfget: "options".} =
+  if this.cachedOptions == nil:
+    this.cachedOptions = newCollection[HTMLOptionsCollection](
+      root = this,
+      match = func(node: Node): bool =
+        return node.isOptionOf(this),
+      islive = true,
+      childonly = false
+    )
+  return this.cachedOptions
+
+proc length(this: HTMLSelectElement): int {.jsfget.} =
+  return this.jsOptions.getLength()
+
+#TODO length setter
+
+proc getter(ctx: JSContext; this: HTMLSelectElement; u: JSAtom): Element
+    {.jsgetprop.} =
+  return ctx.getter(this.jsOptions, u)
+
+proc item(this: HTMLSelectElement; u: uint32): Node {.jsfunc.} =
+  return this.jsOptions.item(u)
+
+func namedItem(this: HTMLSelectElement; atom: CAtom): Element {.jsfunc.} =
+  return this.jsOptions.namedItem(atom)
+
+proc selectedOptions(this: HTMLSelectElement): HTMLCollection {.jsfget.} =
+  if this.cachedSelectedOptions == nil:
+    this.cachedSelectedOptions = newCollection[HTMLCollection](
+      root = this,
+      match = func(node: Node): bool =
+        return node.isOptionOf(this) and HTMLOptionElement(node).selected,
+      islive = true,
+      childonly = false
+    )
+  return this.cachedSelectedOptions
+
+proc value(this: HTMLSelectElement): string {.jsfget.} =
+  let first = this.selectedOptions.item(0)
+  if first != nil:
+    return HTMLOptionElement(first).value
+  return ""
+
+#TODO add, selectedIndex, value setter, showPicker
 
 # <button>
 func jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
@@ -4745,6 +4812,7 @@ proc addDOMModule*(ctx: JSContext) =
   let htmlCollectionCID = ctx.registerType(HTMLCollection)
   ctx.registerType(HTMLAllCollection, ishtmldda = true)
   ctx.registerType(HTMLFormControlsCollection, parent = htmlCollectionCID)
+  ctx.registerType(HTMLOptionsCollection, parent = htmlCollectionCID)
   ctx.registerType(RadioNodeList, parent = nodeListCID)
   ctx.registerType(Location)
   ctx.registerType(Document, parent = nodeCID)
