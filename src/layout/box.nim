@@ -27,23 +27,19 @@ type
     of iatImage:
       bmp*: NetworkBitmap
 
-  RootInlineFragmentState* = object
+  BoxLayoutState* = object
     # offset relative to parent
     offset*: Offset
     # padding size
     size*: Size
     # overflow relative to offset
     overflow*: Overflow
-    # minimum content width
+    # minimum content width (usually shortest word)
     xminwidth*: LayoutUnit
-    # baseline of the first line box
+    # baseline of the first line box of all descendants
     firstBaseline*: LayoutUnit
-    # baseline of the last line box
+    # baseline of the last line box of all descendants
     baseline*: LayoutUnit
-
-  RootInlineFragment* = ref object
-    fragment*: InlineFragment # root fragment
-    state*: RootInlineFragmentState
 
   SplitType* = enum
     stSplitStart, stSplitEnd
@@ -83,27 +79,12 @@ type
 
   RelativeRect* = array[DimensionType, Span]
 
-  BlockBoxLayoutState* = object
-    # offset relative to parent
-    offset*: Offset
-    # padding size
-    size*: Size
-    margin*: RelativeRect #TODO get rid of this?
-    # overflow relative to offset
-    overflow*: Overflow
-    # minimum content width (usually shortest word)
-    xminwidth*: LayoutUnit
-    # baseline of the first line box of all descendants
-    firstBaseline*: LayoutUnit
-    # baseline of the last line box of all descendants
-    baseline*: LayoutUnit
-
   BlockBox* = ref object
-    state*: BlockBoxLayoutState
+    state*: BoxLayoutState
     computed*: CSSComputedValues
     node*: StyledNode
-    inline*: RootInlineFragment
-    nested*: seq[BlockBox]
+    inline*: InlineFragment
+    children*: seq[BlockBox]
 
 func offset*(x, y: LayoutUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]

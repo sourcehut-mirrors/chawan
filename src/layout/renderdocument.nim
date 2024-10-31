@@ -373,11 +373,6 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     if stSplitEnd in fragment.splitType:
       discard state.absolutePos.pop()
 
-proc renderRootInlineFragment(grid: var FlexibleGrid; state: var RenderState;
-    root: RootInlineFragment; offset: Offset) =
-  grid.renderInlineFragment(state, root.fragment, root.state.offset + offset,
-    rgba(0, 0, 0, 0))
-
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset) =
   var stack = newSeqOfCap[tuple[
@@ -436,12 +431,12 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         if y >= 0 and x + w >= 0:
           grid.setText(s, x, y, box.computed.toFormat(), box.node)
     if box.inline != nil:
-      assert box.nested.len == 0
+      assert box.children.len == 0
       if box.computed{"visibility"} == VisibilityVisible:
-        grid.renderRootInlineFragment(state, box.inline, offset)
+        grid.renderInlineFragment(state, box.inline, offset, rgba(0, 0, 0, 0))
     else:
-      for i in countdown(box.nested.high, 0):
-        stack.add((box.nested[i], offset))
+      for i in countdown(box.children.high, 0):
+        stack.add((box.children[i], offset))
 
 proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     styledRoot: StyledNode; attrsp: ptr WindowAttributes;
