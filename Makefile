@@ -62,7 +62,7 @@ ifeq ($(shell uname), Linux)
 chaseccomp = lib/chaseccomp/chaseccomp.o
 
 lib/chaseccomp/chaseccomp.o: .FORCE
-	(cd lib/chaseccomp; $(MAKE))
+	(cd lib/chaseccomp && $(MAKE))
 .FORCE:
 endif
 
@@ -150,7 +150,7 @@ $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim
 		-o:"$@" $<
 
 $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
-	(cd "$(OUTDIR_LIBEXEC)"; ln -sf urlenc urldec)
+	(cd "$(OUTDIR_LIBEXEC)" && ln -sf urlenc urldec)
 
 $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	@mkdir -p "$(OBJDIR)/man"
@@ -162,7 +162,7 @@ doc/cha-%.5: $(OBJDIR)/man/cha-%.md
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)"
-	(cd lib/chaseccomp; $(MAKE) clean)
+	(cd lib/chaseccomp && $(MAKE) clean)
 
 .PHONY: distclean
 distclean: clean
@@ -197,7 +197,7 @@ install:
 	do install -m755 "$(OUTDIR_LIBEXEC)/$$f" $(LIBEXECDIR_CHAWAN); \
 	done
 # urldec is just a symlink to urlenc
-	(cd $(LIBEXECDIR_CHAWAN); ln -sf urlenc urldec)
+	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc urldec)
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"
 	for f in $(manpages1); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX1)"; done
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
@@ -235,15 +235,15 @@ test/net/run: test/net/run.nim
 
 .PHONY: test_js
 test_js:
-	(cd test/js; ./run_js_tests.sh)
+	(cd test/js && ./run_js_tests.sh)
 
 .PHONY: test_layout
 test_layout:
-	(cd test/layout; ./run_layout_tests.sh)
+	(cd test/layout && ./run_layout_tests.sh)
 
 .PHONY: test_net
 test_net: test/net/run
-	(cd test/net; ./run)
+	(cd test/net && ./run)
 
 .PHONY: test
 test: test_js test_layout test_net
