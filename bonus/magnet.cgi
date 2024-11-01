@@ -57,7 +57,7 @@ POST)	read line
 	URL=*) line="${line#*=}" ;;
 	*) die 'Invalid POST 2; this is probably a bug in the magnet script.' ;;
 	esac
-	line=$(printf '%s' "$line" | "$CHA_LIBEXEC_DIR"/urldec)
+	line=$(printf '%s\n' "$line" | "$CHA_LIBEXEC_DIR"/urldec)
 	auth=$CHA_TRANSMISSION_AUTH
 	address=${CHA_TRANSMISSION_ADDRESS:-localhost:9091}
 	output=$(transmission-remote "$address" ${auth:+ --auth="$auth"} \

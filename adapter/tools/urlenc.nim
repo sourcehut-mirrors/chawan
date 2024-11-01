@@ -1,6 +1,8 @@
 # Percent-encode or decode input received on stdin with a specified
 # percent-encoding set.
-#TODO a streaming implementation of this could be useful
+#
+# Note: the last newline is trimmed from the input. Add another one if
+# you wish to keep it.
 
 import std/os
 
@@ -8,36 +10,48 @@ import utils/twtstr
 
 proc usage() {.noreturn.} =
   stderr.write("""
-Usage: urlenc [set]
-The input to be decoded is read from stdin.
-[set] decides which characters are encoded. It can be:
-    control
-    fragment
-    query
-    path
-    userinfo
-    component
-    application-x-www-form-urlencoded
+Usage: urlenc [-s] [set]
+The input to be decoded is read from stdin, with the last line feed removed.
+[set] decides which characters are encoded, and defaults to "form".
+    control: controls, non-ascii
+    fragment: control + space, ", <, >, `
+    query: control + space, ", <, >, #
+    special-query: query + '
+    path: query + ?, `, {, }
+    userinfo: path + /, :, ;, =, @, [, \, ], ^, |
+    component: userinfo + $, &, plus, comma
+    form: component + !, ', (, ), ~
+[-s] encodes spaces to plus signs (as application/x-www-form-urlencoded).
 """)
   quit(1)
 
 proc main() =
   let isdec = paramStr(0).afterLast('/') == "urldec"
-  if not isdec and paramCount() != 1:
+  let npars = paramCount()
+  if not isdec and npars > 2:
     usage()
-  let s = stdin.readAll()
+  var set = ApplicationXWWWFormUrlEncodedSet
+  var spacesAsPlus = false
+  if not isdec:
+    for i in 1 .. npars:
+      case paramStr(i)
+      of "control": set = ControlPercentEncodeSet
+      of "fragment": set = FragmentPercentEncodeSet
+      of "query": set = QueryPercentEncodeSet
+      of "special-query": set = SpecialQueryPercentEncodeSet
+      of "path": set = PathPercentEncodeSet
+      of "userinfo": set = UserInfoPercentEncodeSet
+      of "component": set = ComponentPercentEncodeSet
+      of "", "form", "application-x-www-form-urlencoded":
+        set = ApplicationXWWWFormUrlEncodedSet
+      of "-s": spacesAsPlus = true
+      else: usage()
+  var s = stdin.readAll()
+  if s.len > 0 and s[^1] == '\n':
+    s.setLen(s.len - 1)
   if isdec:
-    stdout.write(s.percentDecode())
+    stdout.writeLine(s.percentDecode())
   else:
-    let set = case paramStr(1)
-    of "control": ControlPercentEncodeSet
-    of "fragment": FragmentPercentEncodeSet
-    of "query": QueryPercentEncodeSet
-    of "path": PathPercentEncodeSet
-    of "userinfo": UserInfoPercentEncodeSet
-    of "component": ComponentPercentEncodeSet
-    of "application-x-www-form-urlencoded": ApplicationXWWWFormUrlEncodedSet
-    else: usage()
-    stdout.write(s.percentEncode(set))
+    stdout.writeLine(s.percentEncode(set, spacesAsPlus))
 
 main()

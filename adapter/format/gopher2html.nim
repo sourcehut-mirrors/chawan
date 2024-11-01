@@ -8,20 +8,6 @@ include ../gophertypes
 
 import utils/twtstr
 
-const ControlPercentEncodeSet = {char(0x00)..char(0x1F), char(0x7F)..char(0xFF)}
-const QueryPercentEncodeSet = (ControlPercentEncodeSet + {' ', '"', '#', '<', '>'})
-const PathPercentEncodeSet = (QueryPercentEncodeSet + {'?', '`', '{', '}'})
-const HexCharsUpper = "0123456789ABCDEF"
-proc percentEncode(s: string): string =
-  result = ""
-  for c in s:
-    if c notin PathPercentEncodeSet:
-      result &= c
-    else:
-      result &= '%'
-      result &= HexCharsUpper[uint8(c) shr 4]
-      result &= HexCharsUpper[uint8(c) and 0xF]
-
 # returns URL
 proc parseParams(): string =
   result = ""
@@ -91,7 +77,7 @@ proc main() =
       let ourls = if not file.startsWith("URL:"):
         if file.len == 0 or file[0] != '/':
           file = '/' & file
-        let pefile = percentEncode(file)
+        let pefile = file.percentEncode(PathPercentEncodeSet)
         "gopher://" & host & ":" & port & "/" & tc & pefile
       else:
         file.substr("URL:".len)
