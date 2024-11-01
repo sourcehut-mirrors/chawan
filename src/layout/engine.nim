@@ -1382,7 +1382,10 @@ proc positionFloats(bctx: var BlockContext) =
   bctx.unpositionedFloats.setLen(0)
 
 proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  let bfcOffset = bctx.bfcOffset + box.state.offset
+  let bfcOffset = if bctx.parentBps != nil:
+    bctx.parentBps.offset + box.state.offset
+  else: # this block establishes a new BFC.
+    offset(0, 0)
   var ictx = bctx.initInlineContext(sizes.space, bfcOffset, sizes.padding,
     box.computed)
   ictx.initLine()
