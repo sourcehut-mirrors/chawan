@@ -3660,26 +3660,20 @@ proc resetElement*(element: Element) =
     input.setInvalid()
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
-    if not select.attrb(satMultiple):
-      if select.attrul(satSize).get(1) == 1:
-        var i = 0
-        var firstOption: HTMLOptionElement
-        for option in select.options:
-          if firstOption == nil:
-            firstOption = option
-          if option.selected:
-            inc i
-        if i == 0 and firstOption != nil:
-          firstOption.selected = true
-        elif i > 2:
-          # Set the selectedness of all but the last selected option element to
-          # false.
-          var j = 0
-          for option in select.options:
-            if j == i: break
-            if option.selected:
-              option.selected = false
-              inc j
+    var firstOption: HTMLOptionElement = nil
+    var prevSelected: HTMLOptionElement = nil
+    let multiple = select.attrb(satMultiple)
+    for option in select.options:
+      if firstOption == nil:
+        firstOption = option
+      option.selected = option.attrb(satSelected)
+      if option.selected:
+        if not multiple and prevSelected != nil:
+          prevSelected.selected = false
+        prevSelected = option
+    if not multiple and select.attrul(satSize).get(1) == 1 and
+        prevSelected == nil and firstOption != nil:
+      firstOption.selected = true
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
     textarea.value = textarea.childTextContent()
