@@ -233,14 +233,10 @@ type
     height*: int
     bmp*: NetworkBitmap
 
-  AbsolutePos = object
-    offset: Offset
-    size: Size
-
   RenderState = object
     # Position of the absolute positioning containing block:
     # https://drafts.csswg.org/css-position/#absolute-positioning-containing-block
-    absolutePos: seq[AbsolutePos]
+    absolutePos: seq[Offset]
     bgcolor: CellColor
     attrsp: ptr WindowAttributes
     images: seq[PosBitmap]
@@ -339,10 +335,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
         bgcolor0.rgb.cellColor())
   if fragment.computed{"position"} != PositionStatic:
     if stSplitStart in fragment.splitType:
-      state.absolutePos.add(AbsolutePos(
-        offset: offset + fragment.state.startOffset,
-        # looks like it's OK to set size to 0 here
-      ))
+      state.absolutePos.add(offset + fragment.state.startOffset)
   if fragment.t == iftParent:
     for child in fragment.children:
       grid.renderInlineFragment(state, child, offset, bgcolor0)
@@ -386,20 +379,13 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       discard state.absolutePos.pop()
       continue
     if box.computed{"position"} in {PositionAbsolute, PositionFixed}:
-      if not box.computed{"left"}.auto:
-        offset.x = state.absolutePos[^1].offset.x
-      elif not box.computed{"right"}.auto:
-        offset.x = state.absolutePos[^1].offset.x + state.absolutePos[^1].size.w
-      if not box.computed{"top"}.auto:
-        offset.y = state.absolutePos[^1].offset.y
-      elif not box.computed{"bottom"}.auto:
-        offset.y = state.absolutePos[^1].offset.y + state.absolutePos[^1].size.h
+      if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
+        offset.x = state.absolutePos[^1].x
+      if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
+        offset.y = state.absolutePos[^1].y
     offset += box.state.offset
     if box.computed{"position"} != PositionStatic:
-      state.absolutePos.add(AbsolutePos(
-        offset: offset,
-        size: box.state.size
-      ))
+      state.absolutePos.add(offset)
       stack.add((nil, offset(-1, -1)))
     if box.computed{"visibility"} == VisibilityVisible:
       #TODO maybe blend with the terminal background?
@@ -446,7 +432,7 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     # no HTML element when we run cascade; just clear all lines.
     return
   var state = RenderState(
-    absolutePos: @[AbsolutePos()],
+    absolutePos: @[offset(0, 0)],
     attrsp: attrsp,
     bgcolor: defaultColor
   )
