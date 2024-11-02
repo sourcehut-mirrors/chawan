@@ -454,7 +454,7 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
   let offsetyShifted = shiftTop + offsety
   var areaY: LayoutUnit = 0
   for i, atom in ictx.lbstate.atoms:
-    atom.offset.y = (atom.offset.y + offsetyShifted).round(cellHeight)
+    atom.offset.y = atom.offset.y + offsetyShifted
     areaY = max(atom.offset.y, areaY)
     #TODO why not offsetyShifted here?
     let minHeight = atom.offset.y - offsety + atom.size.h
@@ -513,12 +513,11 @@ proc alignLine(ictx: var InlineContext) =
   let ch = ictx.cellHeight.toLayoutUnit()
   ictx.lbstate.size.h = ch
   # Baseline is what we computed in addAtom, or cell height if that's greater.
-  ictx.lbstate.baseline = max(ictx.lbstate.baseline, ch).round(ictx.cellHeight)
+  ictx.lbstate.baseline = max(ictx.lbstate.baseline, ch)
   # Resize according to the baseline and atom sizes.
   ictx.lbstate.size.h = ictx.lbstate.resizeLine(ictx.lctx)
   # Now we can calculate the actual position of atoms inside the line.
   let marginTop = ictx.lbstate.positionAtoms(ictx.lctx)
-  #TODO this does not really work with rounding :/
   ictx.lbstate.baseline += ictx.lbstate.paddingTop
   # Finally, offset all atoms' y position by the largest top margin and the
   # line box's top padding.

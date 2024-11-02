@@ -48,8 +48,5 @@ func `$`*(a: LayoutUnit): string =
 func min*(a, b: LayoutUnit): LayoutUnit {.borrow.}
 func max*(a, b: LayoutUnit): LayoutUnit {.borrow.}
 
-func round*(a: LayoutUnit; prec: int): LayoutUnit =
-  return (a div prec).toInt * prec
-
 func ceilTo*(a: LayoutUnit; prec: int): LayoutUnit =
   return (1 + ((a - 1) div prec).toInt) * prec
