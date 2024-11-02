@@ -283,7 +283,7 @@ proc consumeIdentSequence(state: var CSSTokenizerState): string =
       s &= c
     else:
       state.reconsume()
-      return s
+      break
   return s
 
 proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
@@ -514,9 +514,7 @@ proc skipWhitespace(state: var CSSParseState) =
 
 proc consumeComponentValue(state: var CSSParseState): CSSComponentValue
 
-proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
-  state.reconsume()
-  let t = CSSToken(state.consume())
+proc consumeSimpleBlock(state: var CSSParseState; t: CSSToken): CSSSimpleBlock =
   var ending: CSSTokenType
   case t.tokenType
   of cttLbrace: ending = cttRbrace
@@ -527,14 +525,12 @@ proc consumeSimpleBlock(state: var CSSParseState): CSSSimpleBlock =
   while state.at < state.tokens.len:
     let t = state.consume()
     if t == ending:
-      return result
+      break
+    elif t == cttLbrace or t == cttLbracket or t == cttLparen:
+      result.value.add(state.consumeSimpleBlock(CSSToken(t)))
     else:
-      if t == cttLbrace or t == cttLbracket or t == cttLparen:
-        result.value.add(state.consumeSimpleBlock())
-      else:
-        state.reconsume()
-        result.value.add(state.consumeComponentValue())
-  return result
+      state.reconsume()
+      result.value.add(state.consumeComponentValue())
 
 proc consumeFunction(state: var CSSParseState): CSSFunction =
   let t = (CSSToken)state.consume()
@@ -550,7 +546,7 @@ proc consumeFunction(state: var CSSParseState): CSSFunction =
 proc consumeComponentValue(state: var CSSParseState): CSSComponentValue =
   let t = state.consume()
   if t == cttLbrace or t == cttLbracket or t == cttLparen:
-    return state.consumeSimpleBlock()
+    return state.consumeSimpleBlock(CSSToken(t))
   elif t == cttFunction:
     state.reconsume()
     return state.consumeFunction()
@@ -564,7 +560,7 @@ proc consumeQualifiedRule(state: var CSSParseState): Option[CSSQualifiedRule] =
       r.oblock = CSSSimpleBlock(t)
       return some(r)
     elif t == cttLbrace:
-      r.oblock = state.consumeSimpleBlock()
+      r.oblock = state.consumeSimpleBlock(CSSToken(t))
       return some(r)
     else:
       state.reconsume()
@@ -578,11 +574,12 @@ proc consumeAtRule(state: var CSSParseState): CSSAtRule =
     let t = state.consume()
     if t of CSSSimpleBlock:
       result.oblock = CSSSimpleBlock(t)
+      break
     elif t == cttSemicolon:
-      return result
-    elif t ==  cttLbrace:
-      result.oblock = state.consumeSimpleBlock()
-      return result
+      break
+    elif t == cttLbrace:
+      result.oblock = state.consumeSimpleBlock(CSSToken(t))
+      break
     else:
       state.reconsume()
       result.prelude.add(state.consumeComponentValue())
@@ -679,11 +676,10 @@ proc consumeListOfRules(state: var CSSParseState; topLevel = false):
     elif t == cttCdo or t == cttCdc:
       if topLevel:
         continue
-      else:
-        state.reconsume()
-        let q = state.consumeQualifiedRule()
-        if q.isSome:
-          result.add(q.get)
+      state.reconsume()
+      let q = state.consumeQualifiedRule()
+      if q.isSome:
+        result.add(q.get)
     elif t == cttAtKeyword:
       state.reconsume()
       result.add(state.consumeAtRule())

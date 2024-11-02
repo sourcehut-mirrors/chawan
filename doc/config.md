@@ -702,7 +702,7 @@ cookie = true # enable cookies
 share-cookie-jar = 'sr.ht' # use the cookie jar of 'sr.ht' for all matched hosts
 third-party-cookie = '.*\.sr\.ht' # allow cookies from subdomains
 
-# Use the "vector" skin on Wikipedia, which Chawan can handle better.
+# Use the "vector" skin on Wikipedia.
 [[siteconf]]
 url = '^https?://[a-z]+\.wikipedia\.org/wiki/(?!.*useskin=.*)'
 rewrite-url = 'x => x.searchParams.append("useskin", "vector")'

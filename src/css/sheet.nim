@@ -194,10 +194,9 @@ proc addRule(stylesheet: CSSStylesheet; rule: CSSQualifiedRule) =
     inc stylesheet.len
 
 proc addAtRule(stylesheet: CSSStylesheet; atrule: CSSAtRule) =
+  if atrule.oblock == nil: # invalid at-rule
+    return
   if atrule.name.equalsIgnoreCase("media"):
-    if atrule.oblock == nil:
-      # invalid at-rule
-      return
     let query = parseMediaQueryList(atrule.prelude)
     let rules = atrule.oblock.value.parseListOfRules()
     if rules.len > 0:
