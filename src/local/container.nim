@@ -1506,9 +1506,10 @@ proc applyResponse*(container: Container; response: Response;
   container.charset = container.charsetStack[^1]
 
 proc remoteCancel*(container: Container) =
-  container.iface.cancel().then(proc() =
-    container.needslines = true
-  )
+  if container.iface != nil:
+    container.iface.cancel().then(proc() =
+      container.needslines = true
+    )
   container.setLoadInfo("")
   container.alert("Canceled loading")
 
