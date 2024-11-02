@@ -251,7 +251,7 @@ type
     # The owner StyledNode is marked as invalid when one of these no longer
     # matches the DOM value.
     invalidDeps*: set[DependencyType]
-    localName*: CAtom
+    localName* {.jsget.}: CAtom
     id* {.jsget.}: CAtom
     name {.jsget.}: CAtom
     classList* {.jsget.}: DOMTokenList
@@ -1076,9 +1076,6 @@ func tagType*(element: Element): TagType =
     return TAG_UNKNOWN
   return element.tagTypeNoNS
 
-func localNameStr*(element: Element): string =
-  return element.document.toStr(element.localName)
-
 func findAttr(element: Element; qualifiedName: CAtom): int =
   for i, attr in element.attrs.mpairs:
     if attr.qualifiedName == qualifiedName:
@@ -1119,6 +1116,9 @@ func escapeText(s: string; attribute_mode = false): string =
       result &= c
 
 when defined(debug):
+  func localNameStr*(element: Element): string =
+    return element.document.toStr(element.localName)
+
   func `$`*(node: Node): string =
     if node == nil:
       return "null"
@@ -1857,20 +1857,20 @@ func jsOwnerElement(attr: Attr): Element {.jsfget: "ownerElement".} =
 func data(attr: Attr): lent AttrData =
   return attr.ownerElement.attrs[attr.dataIdx]
 
-proc jsNamespaceURI(attr: Attr): string {.jsfget: "namespaceURI".} =
-  return attr.ownerElement.document.toStr(attr.data.namespace)
+proc namespaceURI(attr: Attr): CAtom {.jsfget.} =
+  return attr.data.namespace
 
-proc jsPrefix(attr: Attr): string {.jsfget: "prefix".} =
-  return attr.ownerElement.document.toStr(attr.data.prefix)
+proc prefix(attr: Attr): CAtom {.jsfget.} =
+  return attr.data.prefix
 
-proc jsLocalName(attr: Attr): string {.jsfget: "localName".} =
-  return attr.ownerElement.document.toStr(attr.data.localName)
+proc localName(attr: Attr): CAtom {.jsfget.} =
+  return attr.data.localName
 
-proc jsValue(attr: Attr): string {.jsfget: "value".} =
+proc value(attr: Attr): string {.jsfget.} =
   return attr.data.value
 
-func jsName(attr: Attr): string {.jsfget: "name".} =
-  return attr.ownerElement.document.toStr(attr.data.qualifiedName)
+func name(attr: Attr): CAtom {.jsfget.} =
+  return attr.data.qualifiedName
 
 func findAttr(map: NamedNodeMap; dataIdx: int): int =
   for i, attr in map.attrlist:
@@ -2050,8 +2050,7 @@ func canSubmitImplicitly*(form: HTMLFormElement): bool =
       if input.inputType in BlocksImplicitSubmission:
         if found:
           return false
-        else:
-          found = true
+        found = true
     elif control.isSubmitButton():
       return false
   return true
@@ -2359,7 +2358,7 @@ func serializeFragmentInner(child: Node; parentType: TagType): string =
   result = ""
   if child of Element:
     let element = Element(child)
-    let tags = element.localNameStr
+    let tags = element.document.toStr(element.localName)
     result &= '<'
     #TODO qualified name if not HTML, SVG or MathML
     result &= tags
