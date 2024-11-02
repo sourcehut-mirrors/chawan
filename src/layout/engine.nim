@@ -3273,8 +3273,8 @@ proc buildTableRowGroupChildWrappers(box: BlockBox) =
       if child.computed{"display"} != DisplayTableRow:
         if wrapper == nil:
           wrapper = BlockBox(computed: wrapperVals, children: @[child])
+          children.add(wrapper)
         wrapper.children.add(child)
-        children.add(wrapper)
       else:
         if wrapper != nil:
           wrapper.buildTableRowChildWrappers()
@@ -3319,8 +3319,8 @@ proc buildTableChildWrappers(box: BlockBox; computed: CSSComputedValues) =
     else:
       if wrapper == nil:
         wrapper = BlockBox(computed: wrapperVals)
+        innerTable.children.add(wrapper)
       wrapper.children.add(child)
-      innerTable.children.add(wrapper)
   if wrapper != nil:
     wrapper.buildTableRowChildWrappers()
   box.children = @[innerTable]
