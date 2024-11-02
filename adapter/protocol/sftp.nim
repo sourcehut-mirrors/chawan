@@ -251,6 +251,7 @@ proc main() =
     os.die("InternalError", "handshake failed")
   #TODO check known hosts file...
   os.authenticate(session, host)
+  enterNetworkSandbox()
   let sftpSession = libssh2_sftp_init(session)
   let path = percentDecode(getEnvEmpty("MAPPED_URI_PATH", "/"))
   let handle = sftpSession.libssh2_sftp_opendir(cstring(path))

@@ -4,10 +4,12 @@ import std/posix
 import std/strutils
 
 import io/dynstream
+import utils/sandbox
 import utils/twtstr
 
 export dynstream
 export twtstr
+export sandbox
 
 export STDIN_FILENO, STDOUT_FILENO
 

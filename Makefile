@@ -97,7 +97,7 @@ src/utils/strwidth.nim: res/map/charwidth_gen.nim src/utils/proptable.nim
 twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim \
 	src/utils/twtuni.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim src/io/dynstream_aux.c
-lcgi = $(dynstream) $(twtstr) adapter/protocol/lcgi.nim
+lcgi = $(dynstream) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)
 
@@ -112,12 +112,12 @@ $(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h $(sandbox) $(dynstream)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h $(sandbox)
-$(OUTDIR_CGI_BIN)/sixel: src/types/color.nim src/utils/sandbox.nim $(twtstr) $(dynstream)
+$(OUTDIR_CGI_BIN)/sixel: src/types/color.nim $(sandbox) $(twtstr) $(dynstream)
 $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
 	src/io/bufreader.nim src/types/color.nim src/types/line.nim \
-	src/utils/sandbox.nim $(dynstream) $(twtstr)
+	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h adapter/img/stb_image_resize.c \
-	src/utils/sandbox.nim $(dynstream) $(twtstr)
+	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)

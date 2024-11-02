@@ -165,7 +165,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
   var n = 0
   while n < buffer.len:
     let m = SSL_read(ssl, addr buffer[n], cint(buffer.len - n))
-    if m == 0:
+    if m <= 0:
       break
     n += m
   let status0 = buffer[0]
@@ -174,7 +174,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
     os.die("InvalidResponse", "invalid status code")
   while n < 1024 + 3: # max meta len is 1024
     let m = SSL_read(ssl, addr buffer[n], cint(buffer.len - n))
-    if m == 0:
+    if m <= 0:
       break
     n += m
   let i = buffer.find("\r\n")
@@ -211,11 +211,10 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
       os.sendDataLoop(buffer.toOpenArray(0, int(n) - 1))
   of '3': # redirect
     # META is the redirection URL.
-    let c = if status1 == '0':
-      '7' # temporary
-    else:
-      '1' # permanent
-    os.sendDataLoop("Status: 30" & c & "\nLocation: " & meta & "\n\n")
+    # Using an HTTP permanent redirect would send another POST and
+    # break redirection after form submission (search), so we send
+    # See Other.
+    os.sendDataLoop("Status: 303\nLocation: " & meta & "\n\n")
   of '4': # temporary failure
     # META is additional information.
     let tmp = case status1
@@ -284,8 +283,10 @@ proc main() =
   var storedDigest: string
   var theirDigest: string
   var theirTime: Time
-  case os.connect(ssl, host, port, knownHosts, storedDigest, theirDigest,
+  let res = os.connect(ssl, host, port, knownHosts, storedDigest, theirDigest,
     theirTime, tmpEntry)
+  enterNetworkSandbox()
+  case res
   of ccrFoundValid:
     discard SSL_write(ssl, cstring(reqBuf), cint(reqBuf.len))
     os.readResponse(ssl, reqBuf)

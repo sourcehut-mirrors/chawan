@@ -28,8 +28,6 @@ buffer:
 	  buffer
 	* this also includes not crashing when the buffer dies while
 	  container is reading...
-- important: improve sandboxing
-	* sandbox more built-in CGI protocol handlers
 - configurable/better url filtering in loader
 - when the log buffer crashes, print its contents to stderr
 	* easiest way seems to be to just dump its cache file

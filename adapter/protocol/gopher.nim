@@ -27,6 +27,7 @@ Content-Type: text/html
 proc loadRegular(os: PosixStream; t: GopherType; path: var string;
     host, port, query: string) =
   let ps = os.connectSocket(host, port)
+  enterNetworkSandbox()
   if query != "":
     path &= '\t'
     path &= query

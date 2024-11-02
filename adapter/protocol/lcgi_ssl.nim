@@ -2,7 +2,7 @@ import std/posix
 
 import lcgi
 
-export lcgi, dynstream, twtstr
+export lcgi, dynstream, twtstr, sandbox
 
 const libssl = staticExec("pkg-config --libs --silence-errors libssl libcrypto")
 

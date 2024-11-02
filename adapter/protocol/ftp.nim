@@ -106,6 +106,7 @@ proc main() =
     os.sdie(401, "Unauthorized", obuf)
   discard os.sendCommand(ps, "TYPE", "I", obuf) # request raw data
   let passive = os.passiveMode(ps, host, ipv6)
+  enterNetworkSandbox()
   var path = percentDecode(getEnvEmpty("MAPPED_URI_PATH", "/"))
   if os.sendCommand(ps, "CWD", path, obuf) == 250:
     if path[^1] != '/':
