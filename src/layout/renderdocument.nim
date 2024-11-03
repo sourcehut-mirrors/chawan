@@ -368,61 +368,54 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset) =
-  var stack = newSeqOfCap[tuple[
-    box: BlockBox,
-    offset: Offset
-  ]](100)
-  stack.add((box, offset))
-  while stack.len > 0:
-    var (box, offset) = stack.pop()
-    if box == nil: # positioned marker
-      discard state.absolutePos.pop()
-      continue
-    if box.computed{"position"} in {PositionAbsolute, PositionFixed}:
-      if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
-        offset.x = state.absolutePos[^1].x
-      if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
-        offset.y = state.absolutePos[^1].y
-    offset += box.state.offset
-    if box.computed{"position"} != PositionStatic:
-      state.absolutePos.add(offset)
-      stack.add((nil, offset(-1, -1)))
+  let position = box.computed{"position"}
+  var offset = offset
+  if position in {PositionAbsolute, PositionFixed}:
+    if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
+      offset.x = state.absolutePos[^1].x
+    if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
+      offset.y = state.absolutePos[^1].y
+  offset += box.state.offset
+  if position != PositionStatic:
+    state.absolutePos.add(offset)
+  if box.computed{"visibility"} == VisibilityVisible:
+    #TODO maybe blend with the terminal background?
+    let bgcolor = box.computed{"background-color"}.cellColor()
+    if bgcolor != defaultColor:
+      if box.computed{"-cha-bgcolor-is-canvas"} and
+          state.bgcolor == defaultColor:
+        #TODO bgimage
+        # note: this eats the alpha
+        state.bgcolor = bgcolor
+      let ix = toInt(offset.x)
+      let iy = toInt(offset.y)
+      let e = offset + box.state.size
+      let iex = toInt(e.x)
+      let iey = toInt(e.y)
+      grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node)
+    if box.computed{"background-image"}.t == ContentImage and
+        box.computed{"background-image"}.s != "":
+      # ugly hack for background-image display... TODO actually display images
+      let s = "[img]"
+      let w = s.len * state.attrs.ppc
+      var ix = offset.x
+      if box.state.size.w < w:
+        # text is larger than image; center it to minimize error
+        ix -= w div 2
+        ix += box.state.size.w div 2
+      let x = toInt(ix div state.attrs.ppc)
+      let y = toInt(offset.y div state.attrs.ppl)
+      if y >= 0 and x + w >= 0:
+        grid.setText(s, x, y, box.computed.toFormat(), box.node)
+  if box.inline != nil:
+    assert box.children.len == 0
     if box.computed{"visibility"} == VisibilityVisible:
-      #TODO maybe blend with the terminal background?
-      let bgcolor = box.computed{"background-color"}.cellColor()
-      if bgcolor != defaultColor:
-        if box.computed{"-cha-bgcolor-is-canvas"} and
-            state.bgcolor == defaultColor:
-          #TODO bgimage
-          # note: this eats the alpha
-          state.bgcolor = bgcolor
-        let ix = toInt(offset.x)
-        let iy = toInt(offset.y)
-        let e = offset + box.state.size
-        let iex = toInt(e.x)
-        let iey = toInt(e.y)
-        grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node)
-      if box.computed{"background-image"}.t == ContentImage and
-          box.computed{"background-image"}.s != "":
-        # ugly hack for background-image display... TODO actually display images
-        let s = "[img]"
-        let w = s.len * state.attrs.ppc
-        var ix = offset.x
-        if box.state.size.w < w:
-          # text is larger than image; center it to minimize error
-          ix -= w div 2
-          ix += box.state.size.w div 2
-        let x = toInt(ix div state.attrs.ppc)
-        let y = toInt(offset.y div state.attrs.ppl)
-        if y >= 0 and x + w >= 0:
-          grid.setText(s, x, y, box.computed.toFormat(), box.node)
-    if box.inline != nil:
-      assert box.children.len == 0
-      if box.computed{"visibility"} == VisibilityVisible:
-        grid.renderInlineFragment(state, box.inline, offset, rgba(0, 0, 0, 0))
-    else:
-      for i in countdown(box.children.high, 0):
-        stack.add((box.children[i], offset))
+      grid.renderInlineFragment(state, box.inline, offset, rgba(0, 0, 0, 0))
+  else:
+    for child in box.children:
+      grid.renderBlockBox(state, child, offset)
+  if position != PositionStatic:
+    discard state.absolutePos.pop()
 
 proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     styledRoot: StyledNode; attrsp: ptr WindowAttributes;
