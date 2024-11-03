@@ -4,7 +4,6 @@ import std/times
 
 import types/opt
 import utils/twtstr
-import utils/twtuni
 
 type
   TomlValueType* = enum

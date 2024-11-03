@@ -3,7 +3,6 @@ import std/options
 import js/domexception
 import types/opt
 import utils/twtstr
-import utils/twtuni
 
 type
   CSSTokenType* = enum

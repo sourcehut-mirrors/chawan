@@ -15,7 +15,7 @@ import io/dynstream
 import io/poll
 import io/promise
 import io/tempfile
-import io/urlfilter
+import loader/urlfilter
 import js/console
 import js/timeout
 import layout/renderdocument
@@ -52,7 +52,6 @@ import utils/mimeguess
 import utils/regexutils
 import utils/strwidth
 import utils/twtstr
-import utils/twtuni
 
 type
   LineMode* = enum

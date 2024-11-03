@@ -16,10 +16,8 @@ import io/bufreader
 import io/dynstream
 import types/canvastypes
 import types/color
-import types/line
-import types/vector
 import utils/sandbox
-import utils/twtuni
+import utils/twtstr
 
 {.compile: "canvas.c".}
 

@@ -32,7 +32,7 @@ import io/bufwriter
 import io/dynstream
 import io/poll
 import io/tempfile
-import io/urlfilter
+import loader/urlfilter
 import loader/connecterror
 import loader/headers
 import loader/loaderhandle

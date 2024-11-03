@@ -48,7 +48,6 @@ import types/url
 import types/winattrs
 import utils/strwidth
 import utils/twtstr
-import utils/twtuni
 
 type
   BufferCommand* = enum

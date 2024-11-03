@@ -6,7 +6,6 @@ import monoucha/quickjs
 import monoucha/tojs
 import types/color
 import types/opt
-import utils/charcategory
 import utils/twtstr
 
 func parseLegacyColor*(s: string): Result[RGBColor, cstring] =

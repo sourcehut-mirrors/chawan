@@ -3,7 +3,7 @@ import monoucha/jsregex
 import types/cell
 import utils/luwrap
 import utils/strwidth
-import utils/twtuni
+import utils/twtstr
 
 type
   SelectFinish* = proc(opaque: RootRef; select: Select; res: SubmitResult)

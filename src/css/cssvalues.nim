@@ -12,7 +12,6 @@ import types/color
 import types/opt
 import types/winattrs
 import utils/twtstr
-import utils/twtuni
 
 export selectorparser.PseudoElem
 

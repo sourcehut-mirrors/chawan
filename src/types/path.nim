@@ -2,8 +2,143 @@ import std/algorithm
 import std/deques
 import std/math
 
-import types/line
-import types/vector
+type Vector2D* = object
+  x*: float64
+  y*: float64
+
+func `-`(v1, v2: Vector2D): Vector2D =
+  return Vector2D(x: v1.x - v2.x, y: v1.y - v2.y)
+
+func `+`(v1, v2: Vector2D): Vector2D =
+  return Vector2D(x: v1.x + v2.x, y: v1.y + v2.y)
+
+# scalar multiplication
+func `*`(v: Vector2D, s: float64): Vector2D =
+  return Vector2D(x: v.x * s, y: v.y * s)
+
+func `/`(v: Vector2D, s: float64): Vector2D =
+  return Vector2D(x: v.x / s, y: v.y / s)
+
+# dot product
+func `*`(v1, v2: Vector2D): float64 =
+  return v1.x * v2.x + v1.y * v2.y
+
+func norm(v: Vector2D): float64 =
+  return sqrt(v.x * v.x + v.y * v.y)
+
+# kind of a cross product?
+func cross(v1, v2: Vector2D): float64 =
+  return v1.x * v2.y - v1.y * v2.x
+
+# https://en.wikipedia.org/wiki/Inner_product_space
+func innerAngle(v1, v2: Vector2D): float64 =
+  return arccos((v1 * v2) / (v1.norm() * v2.norm()))
+
+func rotate(v: Vector2D, alpha: float64): Vector2D =
+  let sa = sin(alpha)
+  let ca = cos(alpha)
+  return Vector2D(
+    x: v.x * ca - v.y * sa,
+    y: v.x * sa + v.y * ca
+  )
+
+func collinear(v1, v2, v3: Vector2D): bool =
+  return almostEqual((v1.y - v2.y) * (v1.x - v3.x),
+    (v1.y - v3.y) * (v1.x - v2.x))
+
+type
+  Line* = object
+    p0*: Vector2D
+    p1*: Vector2D
+
+  LineSegment* = object
+    line: Line
+    miny*: float64
+    maxy*: float64
+    minyx*: float64
+    islope*: float64
+
+func minyx(line: Line): float64 =
+  if line.p0.y < line.p1.y:
+    return line.p0.x
+  return line.p1.x
+
+func miny(line: Line): float64 =
+  return min(line.p0.y, line.p1.y)
+
+func maxy(line: Line): float64 =
+  return max(line.p0.y, line.p1.y)
+
+# inverse slope
+func islope(line: Line): float64 =
+  let ydiff = (line.p0.y - line.p1.y)
+  if ydiff == 0:
+    return 0
+  return (line.p0.x - line.p1.x) / ydiff
+
+proc cmpLineSegmentY*(l1, l2: LineSegment): int =
+  return cmp(l1.miny, l2.miny)
+
+proc cmpLineSegmentX*(l1, l2: LineSegment): int =
+  return cmp(l1.minyx, l2.minyx)
+
+func p0*(ls: LineSegment): Vector2D {.inline.} = ls.line.p0
+func p1*(ls: LineSegment): Vector2D {.inline.} = ls.line.p1
+
+proc toLineSegment*(line: Line): LineSegment =
+  LineSegment(
+    line: line,
+    miny: line.miny,
+    maxy: line.maxy,
+    minyx: line.minyx,
+    islope: line.islope
+  )
+
+type Matrix* = object
+  me*: seq[float64]
+  w: int
+  h: int
+
+proc newMatrix*(me: seq[float64]; w, h: int): Matrix =
+  return Matrix(
+    me: me,
+    w: w,
+    h: h
+  )
+
+proc newIdentityMatrix*(n: int): Matrix =
+  var me = newSeq[float64](n * n)
+  for i in 0 ..< n:
+    me[n * i + i] = 1
+  return Matrix(
+    me: me,
+    w: n,
+    h: n
+  )
+
+proc newMatrixUninitialized(w, h: int): Matrix =
+  return Matrix(
+    me: newSeqUninitialized[float64](w * h),
+    w: w,
+    h: h
+  )
+
+proc `*`*(a, b: Matrix): Matrix =
+  assert a.w == b.h
+  let h = a.h
+  let w = b.w
+  let n = a.w
+  var c = newMatrixUninitialized(w, h)
+  for x in 0 ..< w:
+    for y in 0 ..< h:
+      var val: float64 = 0
+      for i in 0 ..< n:
+        val += a.me[y * a.w + i] * b.me[i * b.w + x]
+      c.me[y * c.w + x] = val
+  return c
+
+proc `*=`*(a: var Matrix; b: Matrix) =
+  a = a * b
 
 type
   Path* = ref object
@@ -113,7 +248,6 @@ iterator items*(pl: PathLines): LineSegment {.inline.} =
 
 func `[]`*(pl: PathLines; i: int): LineSegment = pl.lines[i]
 func `[]`*(pl: PathLines; i: BackwardsIndex): LineSegment = pl.lines[i]
-func `[]`*(pl: PathLines; s: Slice[int]): seq[LineSegment] = pl.lines[s]
 func len*(pl: PathLines): int = pl.lines.len
 
 iterator quadraticLines(a, b, c: Vector2D): Line {.inline.} =
@@ -169,9 +303,7 @@ iterator arcLines(p0, p1, o: Vector2D; r: float64; i: bool): Line {.inline.} =
     theta = PI * 2 - theta
   while theta > 0:
     let step = if theta > PI / 2: PI / 2 else: theta
-    var p1 = p0 - o
-    p1 = p1.rotate(step)
-    p1 += o
+    let p1 = (p0 - o).rotate(step) + o
     let (c0, c1) = arcControlPoints(p0, p1, o)
     for line in bezierLines(p0, p1, c0, c1):
       yield line
@@ -183,7 +315,7 @@ proc addLines(lines: var seq[Line]; subpath: Subpath; i: int) =
   let p1 = subpath.points[i + 1]
   case subpath.segments[i].t
   of pstStraight:
-    if line.p0 != line.p1:
+    if p0 != p1:
       lines.add(Line(p0: p0, p1: p1))
   of pstQuadratic:
     let c = subpath.segments[i].cp
@@ -329,9 +461,10 @@ proc arcTo*(path: Path; x1, y1, x2, y2, radius: float64) =
     path.addStraightSegment(tv0)
     path.addArcSegment(origin, tv2, radius, true) #TODO always inner?
 
+# Ref. https://math.stackexchange.com/a/22067
+# (Originally found it in SerenityOS.)
 func resolveEllipsePoint(o: Vector2D; angle, radiusX, radiusY,
     rotation: float64): Vector2D =
-  # Stolen from SerenityOS
   let tanrel = tan(angle)
   let tan2 = tanrel * tanrel
   let ab = radiusX * radiusY
@@ -352,9 +485,7 @@ proc arc*(path: Path; x, y, radius, startAngle, endAngle: float64;
   var s = resolveEllipsePoint(o, startAngle, radius, radius, 0)
   var e = resolveEllipsePoint(o, endAngle, radius, radius, 0)
   if counterclockwise:
-    let tmp = s
-    e = s
-    s = tmp
+    swap(s, e)
   if path.subpaths.len > 0:
     path.addStraightSegment(s)
   else:
@@ -370,9 +501,7 @@ proc ellipse*(path: Path; x, y, radiusX, radiusY, rotation, startAngle,
   var s = resolveEllipsePoint(o, startAngle, radiusX, radiusY, rotation)
   var e = resolveEllipsePoint(o, endAngle, radiusX, radiusY, rotation)
   if counterclockwise:
-    let tmp = s
-    s = e
-    e = tmp
+    swap(s, e)
   if path.subpaths.len > 0:
     path.addStraightSegment(s)
   else:

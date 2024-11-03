@@ -9,7 +9,7 @@ import io/bufreader
 import io/bufwriter
 import io/dynstream
 import io/promise
-import io/urlfilter
+import loader/urlfilter
 import loader/headers
 import loader/request
 import loader/response

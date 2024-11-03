@@ -8,7 +8,7 @@ import types/cell
 import types/color
 import types/winattrs
 import utils/strwidth
-import utils/twtuni
+import utils/twtstr
 
 type
   # A FormatCell *starts* a new terminal formatting context.

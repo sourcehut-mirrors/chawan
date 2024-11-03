@@ -17,7 +17,6 @@ import types/opt
 import types/winattrs
 import utils/strwidth
 import utils/twtstr
-import utils/twtuni
 
 #TODO switch away from termcap...
 const Termlib* = (proc(): string =

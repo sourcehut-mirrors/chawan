@@ -94,8 +94,7 @@ res/map/charwidth_gen.nim: $(OBJDIR)/gencharwidth res/map/EastAsianWidth.txt
 
 src/utils/strwidth.nim: res/map/charwidth_gen.nim src/utils/proptable.nim
 
-twtstr = src/utils/twtstr.nim src/utils/charcategory.nim src/utils/map.nim \
-	src/utils/twtuni.nim src/types/opt.nim
+twtstr = src/utils/twtstr.nim src/utils/map.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim src/io/dynstream_aux.c
 lcgi = $(dynstream) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
@@ -114,8 +113,7 @@ $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.c adapter/img/jebp.h $(sandbox)
 $(OUTDIR_CGI_BIN)/sixel: src/types/color.nim $(sandbox) $(twtstr) $(dynstream)
 $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
-	src/io/bufreader.nim src/types/color.nim src/types/line.nim \
-	$(sandbox) $(dynstream) $(twtstr)
+	src/io/bufreader.nim src/types/color.nim $(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h adapter/img/stb_image_resize.c \
 	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)

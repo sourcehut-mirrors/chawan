@@ -3,7 +3,7 @@ import std/options
 import monoucha/jsregex
 import monoucha/libregexp
 import types/opt
-import utils/charcategory
+import utils/twtstr
 
 func countBackslashes(buf: string; i: int): int =
   var j = 0

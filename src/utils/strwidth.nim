@@ -1,6 +1,6 @@
 import utils/map
 import utils/proptable
-import utils/twtuni
+import utils/twtstr
 
 include res/map/charwidth_gen
 

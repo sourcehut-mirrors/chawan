@@ -32,7 +32,6 @@ import utils/luwrap
 import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
-import utils/twtuni
 import utils/wordbreak
 
 type

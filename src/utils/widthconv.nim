@@ -1,7 +1,7 @@
 import std/strutils
 
 import utils/map
-import utils/twtuni
+import utils/twtstr
 
 const CanHaveDakuten = ("かきくけこさしすせそたちつてとはひふへほカキクケコ" &
   "サシスセソタチツテトハヒフヘホ").toPoints()

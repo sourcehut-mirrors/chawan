@@ -3,8 +3,7 @@ import std/strutils
 
 import monoucha/libunicode
 import monoucha/libregexp
-import utils/charcategory
-import utils/twtuni
+import utils/twtstr
 
 proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)

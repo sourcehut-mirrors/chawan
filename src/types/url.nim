@@ -17,7 +17,6 @@ import types/opt
 import utils/luwrap
 import utils/map
 import utils/twtstr
-import utils/twtuni
 
 include res/map/idna_gen
 

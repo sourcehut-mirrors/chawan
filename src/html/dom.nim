@@ -41,13 +41,10 @@ import types/bitmap
 import types/blob
 import types/canvastypes
 import types/color
-import types/line
-import types/matrix
 import types/opt
 import types/path
 import types/referrer
 import types/url
-import types/vector
 import types/winattrs
 import utils/mimeguess
 import utils/strwidth

@@ -1,6 +1,6 @@
-import utils/charcategory
 import utils/luwrap
 import utils/strwidth
+import utils/twtstr
 
 type BreakCategory* = enum
   bcAlpha, bcSpace, bcSymbol, bcHan, bcHiragana, bcKatakana, bcHangul

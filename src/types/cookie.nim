@@ -1,7 +1,7 @@
 import std/strutils
 import std/times
 
-import io/urlfilter
+import loader/urlfilter
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/jsregex

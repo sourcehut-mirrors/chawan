@@ -1,8 +1,8 @@
 import std/streams
 import std/strutils
 
-import utils/charcategory
 import utils/proptable
+import utils/twtstr
 
 var DoubleWidthRanges: seq[(uint32, uint32)]
 var DoubleWidthAmbiguousRanges: seq[(uint32, uint32)]
