@@ -479,7 +479,10 @@ proc newServerSocket*(fd: cint; sockDir: string; sockDirFd: cint; pid: int):
 proc newServerSocket*(sockDir: string; sockDirFd: cint; pid: int): ServerSocket =
   let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
   let ssock = newServerSocket(fd, sockDir, sockDirFd, pid)
-  doAssert fchmod(fd, 0o700) == 0
+  # POSIX leaves the result of fchmod on a socket undefined, and while
+  # it works on Linux, it returns an error on BSD descendants.
+  when defined(linux):
+    doAssert fchmod(fd, 0o700) == 0
   if sockDirFd == -1:
     discard tryRemoveFile(ssock.path)
     if bind_unix_from_c(fd, cstring(ssock.path), cint(ssock.path.len)) != 0:
