@@ -420,7 +420,7 @@ func parseHost(input: string; special: bool): Host =
   if input.len == 0:
     return Host(t: htNone)
   if input[0] == '[':
-    if input[^1] != ']':
+    if input[^1] != ']' or input.len < 3:
       return Host(t: htNone)
     let ipv6 = parseIpv6(input.toOpenArray(1, input.high - 1))
     if ipv6.isNone:
