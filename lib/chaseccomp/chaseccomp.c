@@ -3,6 +3,8 @@
  * also bpf(4), except I can't find it on Linux... check a BSD.
  */
 
+#define _GNU_SOURCE
+#include <sched.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <sys/prctl.h>

@@ -55,7 +55,6 @@ ip=0
 while read -r line
 do	line=${line%%#*}
 	case $line in
-	''|'define '*) ;;
 	': '*)	line_cut_next
 		if test -n "$labels"
 		then	labels="$labels
@@ -72,7 +71,6 @@ while read -r line
 do	line_cut_next
 	case $next in
 	:)	continue ;;
-	define)	printf '#%s %s\n' "$next" "$line" ; continue ;;
 	ret)	put_ret ;;
 	ifeq)	put_cmp CHA_BPF_JE;;
 	ifne)	put_cmp CHA_BPF_JNE;;

@@ -20,9 +20,7 @@ ifeqdef SYS_accept4 allow	# for when accept is implemented as accept4
 ifeqdef SYS_bind allow		# for outgoing requests to loader
 ifeqdef SYS_clock_gettime allow # used by QuickJS in atomics and cpuTime()
 ifeqdef SYS_clock_gettime64 allow # 64-bit clock_gettime on 32-bit platforms
-ifeqdef SYS_clone allow	# for when fork is implemented as clone
 ifeqdef SYS_connect allow	# for outgoing requests to loader
-ifeqdef SYS_fork allow		# for when fork is really fork
 ifeqdef SYS_getpid allow	# for determining current PID after we fork
 ifeqdef SYS_gettimeofday allow 	# used by QuickJS in Date.now()
 ifeqdef SYS_pipe allow		# for pipes to child process
@@ -30,6 +28,25 @@ ifeqdef SYS_pipe2 allow	# for when pipe is implemented as pipe2
 ifeqdef SYS_rt_sigreturn allow 	# newer kernels have this instead of sigreturn
 ifeqdef SYS_set_robust_list allow # glibc seems to need it for whatever reason
 ifeqdef SYS_sigreturn allow	# called by signal trampoline
+
+ifeqdef SYS_fork allow
+# It would be great if this were enough to allow fork and only fork,
+# but some Linuxen do not have fork, so most libcs prefer clone.
+ifne SYS_clone not_clone
+load args[0]	# flags
+# musl only passes SIGCHLD.
+# glibc and bionic also pass settid, cleartid.
+ifeq SIGCHLD clone_musl
+ifne CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD deny
+: clone_musl
+load args[1]	# child_stack
+ifne 0 deny
+load args[2]	# parent_tid
+ifne 0 deny
+# 3 is child_tid. Let through whatever we got.
+load args[4]	# tls
+ifeq 0 allow
+: not_clone
 
 : deny
 ret trap

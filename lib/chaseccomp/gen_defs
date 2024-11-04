@@ -13,7 +13,7 @@ cat <<EOF
 
 static void determine_audit_arch(int sig, siginfo_t *info, void *ucontext)
 {
-	printf("define CHASECCOMP_AUDIT_ARCH_NR %u\n", info->si_arch);
+	printf("load arch\nifne %u deny\n", info->si_arch);
 }
 
 #define DIE(s) do { perror(s); exit(1); } while (0)

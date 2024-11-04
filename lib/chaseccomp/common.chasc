@@ -1,6 +1,3 @@
-load arch
-ifne CHASECCOMP_AUDIT_ARCH_NR deny
-
 # load syscall nr
 load nr
 
@@ -73,9 +70,8 @@ load nr
 # bionic also calls mprotect(2) with PROT_READ and PROT_WRITE flags.
 # Crucially, we don't want to allow PROT_EXEC.
 ifne SYS_mprotect not_mprotect
-define CHA_PROT_READ_OR_PROT_WRITE (PROT_READ | PROT_WRITE)
 load args[2]
-ifne CHA_PROT_READ_OR_PROT_WRITE allow
+ifle PROT_READ|PROT_WRITE allow
 load nr
 : not_mprotect
 
