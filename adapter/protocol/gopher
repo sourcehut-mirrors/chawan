@@ -1,0 +1,39 @@
+#!/bin/sh
+
+if test "$REQUEST_METHOD" != GET
+then	printf 'Cha-Control: InvalidMethod\n'
+	exit 1
+fi
+opath=/${MAPPED_URI_PATH#"${MAPPED_URI_PATH%%[!/]*}"}
+path=/${opath##/?/}
+t=${opath%%"$path"}
+t=${t##?}
+
+if test "$t" = 7 && test -z "$MAPPED_URI_QUERY"
+then	exec cat <<EOF
+Content-Type: text/html
+
+<!DOCTYPE html>
+<h1>Search $MAPPED_URI_SCHEME://$MAPPED_URI_HOST:$MAPPED_URI_PORT$path</h1>
+<form><input type=search name=name></form>
+EOF
+else	LF='
+'
+	case $t in
+	1|7)	msg="Content-Type: text/gopher$LF";;
+	h)	msg="Content-Type: text/html$LF";;
+	g)	msg="Content-Type: image/gif$LF";;
+	p)	msg="Content-Type: image/png$LF";;
+	t|3)	msg="Content-Type: text/plain$LF";;
+	?)	msg=;;
+	*)	exec cat <<EOF
+HTTP/1.0 301 fixup url
+Location: /1$opath
+EOF
+		;;
+	esac
+	tab='	'
+	"$CHA_LIBEXEC_DIR"/nc -m "$msg$LF" "$MAPPED_URI_HOST" "${MAPPED_URI_PORT:-70}" <<EOF
+$path${MAPPED_URI_QUERY:+"$tab"}${MAPPED_URI_QUERY##*=}
+EOF
+fi

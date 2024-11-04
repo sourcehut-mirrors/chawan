@@ -106,7 +106,6 @@ $(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
 $(OUTDIR_CGI_BIN)/file: $(twtstr)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
 $(OUTDIR_CGI_BIN)/sftp: $(lcgi) $(twtstr)
-$(OUTDIR_CGI_BIN)/gopher: adapter/gophertypes.nim $(lcgi)
 $(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.c \
 		adapter/img/stb_image.h $(sandbox) $(dynstream)
@@ -118,7 +117,7 @@ $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h adapter/img/stb_image_r
 	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
-$(OUTDIR_LIBEXEC)/gopher2html: adapter/gophertypes.nim $(twtstr)
+$(OUTDIR_LIBEXEC)/gopher2html: $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim src/io/poll.nim $(twtstr) $(dynstream)
 $(OUTDIR_LIBEXEC)/md2html: $(twtstr)
 $(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr) src/utils/strwidth.nim
@@ -130,7 +129,7 @@ $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	cp $< "$(OUTDIR_CGI_BIN)"
+	install -m755 $< "$(OUTDIR_CGI_BIN)"
 
 $(OUTDIR_CGI_BIN)/%: adapter/img/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"

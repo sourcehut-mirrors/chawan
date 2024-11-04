@@ -1,8 +1,8 @@
 #!/bin/sh
 # Adapter for the spartan protocol. See: spartan://mozz.us
 
-MAPPED_URI_PORT=${MAPPED_URI_PORT:=300} # default port is 300
-MAPPED_URI_PATH=${MAPPED_URI_PATH:=/} # needs / for root
+MAPPED_URI_PORT=${MAPPED_URI_PORT:-300} # default port is 300
+MAPPED_URI_PATH=${MAPPED_URI_PATH:-/} # needs / for root
 if test "$REQUEST_METHOD" != POST && test "$MAPPED_URI_QUERY" = "input"
 then	printf "Content-Type: text/html
 
@@ -17,7 +17,7 @@ Input text to upload:
 	exit 0
 fi
 CONTENT_LENGTH=${CONTENT_LENGTH:+$(($CONTENT_LENGTH - 2))} # skip q=
-CONTENT_LENGTH=${CONTENT_LENGTH:=0} # if missing, set to 0
+CONTENT_LENGTH=${CONTENT_LENGTH:-0} # if missing, set to 0
 {
 	printf '%s %d\n' "$MAPPED_URI_HOST $MAPPED_URI_PATH" "$CONTENT_LENGTH"
 	tail -c+3 # skip q=
