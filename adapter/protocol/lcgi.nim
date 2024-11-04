@@ -172,9 +172,16 @@ proc connectProxySocket(os: PosixStream; host, port, proxy: string;
     pass = auth.after(':')
     i = authi + 1
   var proxyHost = ""
-  while i < proxy.len and proxy[i] notin {':', '/'}:
-    proxyHost &= proxy[i]
+  if i < proxy.len and proxy[i] == '[':
     inc i
+    while i < proxy.len and proxy[i] != ']':
+      proxyHost &= proxy[i]
+      inc i
+    inc i
+  else:
+    while i < proxy.len and proxy[i] notin {':', '/'}:
+      proxyHost &= proxy[i]
+      inc i
   inc i
   var proxyPort = ""
   while i < proxy.len and proxy[i] in AsciiDigit:
@@ -193,6 +200,13 @@ proc connectProxySocket(os: PosixStream; host, port, proxy: string;
 # In case we connect to a proxy, only the target matters.
 proc connectSocket*(os: PosixStream; host, port: string; outIpv6: var bool):
     PosixStream =
+  if host.len == 0:
+    os.die("InvalidURL", "missing hostname")
+  var host = host
+  if host.len > 0 and host[0] == '[' and host[^1] == ']':
+    #TODO set outIpv6?
+    host.delete(0..0)
+    host.setLen(host.high)
   let proxy = getEnv("ALL_PROXY")
   if proxy != "":
     return os.connectProxySocket(host, port, proxy, outIpv6)

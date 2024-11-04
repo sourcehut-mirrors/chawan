@@ -1,4 +1,3 @@
-import std/options
 import std/os
 import std/posix
 import std/strutils
@@ -54,13 +53,8 @@ proc main() =
   if getEnv("REQUEST_METHOD") != "GET":
     os.die("InvalidMethod")
   let scheme = getEnv("MAPPED_URI_SCHEME")
-  var host = getEnv("MAPPED_URI_HOST")
-  if host == "":
-    os.die("InvalidURL missing hostname")
-  if host[0] == '[' and host[^1] == ']':
-    host.delete(0..0)
-    host.setLen(host.high)
-  let port = $parseInt32(getEnv("MAPPED_URI_PORT")).get(70)
+  let host = getEnv("MAPPED_URI_HOST")
+  let port = getEnvEmpty("MAPPED_URI_PORT", "70")
   let query = getEnv("MAPPED_URI_QUERY").after('=')
   var path = getEnv("MAPPED_URI_PATH")
   var i = 0
