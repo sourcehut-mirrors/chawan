@@ -503,9 +503,6 @@ func join*(ss: openArray[string]; sep: char): string =
     s &= ss[i]
   return s
 
-proc passRealloc*(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
-  return realloc(p, size)
-
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [
   (0xC0u32, 0xD6u32),

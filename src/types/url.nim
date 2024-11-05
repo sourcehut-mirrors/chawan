@@ -320,7 +320,7 @@ func getIdnaMapped(u: uint32): string =
   let e = MappedMapData.find('\0', idx)
   return MappedMapData[idx ..< e]
 
-func processIdna(str: string; beStrict: bool): string =
+proc processIdna(str: string; beStrict: bool): string =
   # CheckHyphens = false
   # CheckBidi = true
   # CheckJoiners = true
@@ -338,11 +338,7 @@ func processIdna(str: string; beStrict: bool): string =
     of itsValid: mapped &= u
   if mapped.len == 0: return
   mapped = mapped.normalize()
-  var cr: CharRange
-  {.cast(noSideEffect).}:
-    cr_init(addr cr, nil, passRealloc)
-    let r = unicode_general_category(addr cr, "Mark")
-    assert r == 0
+  let luctx = LUContext()
   var labels = ""
   for label in mapped.toUTF8().split('.'):
     if label.startsWith("xn--"):
@@ -353,12 +349,8 @@ func processIdna(str: string; beStrict: bool): string =
         if x0 != x1:
           return "" #error
         # CheckHyphens is false
-        if x0.len > 0:
-          let cps = cast[ptr UncheckedArray[u32pair]](cr.points)
-          let c = uint32(x0[0])
-          let L = cr.len div 2 - 1
-          if cps.toOpenArray(0, L).binarySearch(c, cmpRange) != -1:
-            return "" #error
+        if x0.len > 0 and luctx.isMark(x0[0]):
+          return "" #error
         for u in x0:
           if u == uint32('.'):
             return "" #error
@@ -376,7 +368,6 @@ func processIdna(str: string; beStrict: bool): string =
       if labels.len > 0:
         labels &= '.'
       labels &= label
-  cr_free(addr cr)
   return labels
 
 func unicodeToAscii(s: string; beStrict: bool): string =

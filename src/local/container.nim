@@ -638,7 +638,7 @@ proc cursorLineTextStart(container: Container) {.jsfunc.} =
   if container.numLines == 0: return
   var x = 0
   for u in container.currentLine.points:
-    if not container.luctx.isWhiteSpaceLU(u):
+    if not container.luctx.isWhiteSpace(u):
       break
     x += u.width()
   if x == 0:

@@ -9,7 +9,7 @@ func isDigitAscii(u: uint32): bool =
   return u < 128 and char(u) in AsciiDigit
 
 proc breaksWord*(ctx: LUContext; u: uint32): bool =
-  return not u.isDigitAscii() and u.width() != 0 and not ctx.isAlphaLU(u)
+  return not u.isDigitAscii() and u.width() != 0 and not ctx.isAlpha(u)
 
 proc breaksViWordCat*(ctx: LUContext; u: uint32): BreakCategory =
   if u < 0x80: # ASCII
@@ -18,9 +18,9 @@ proc breaksViWordCat*(ctx: LUContext; u: uint32): BreakCategory =
       return bcAlpha
     elif c in AsciiWhitespace:
       return bcSpace
-  elif ctx.isWhiteSpaceLU(u):
+  elif ctx.isWhiteSpace(u):
     return bcSpace
-  elif ctx.isAlphaLU(u):
+  elif ctx.isAlpha(u):
     if ctx.isHiragana(u):
       return bcHiragana
     elif ctx.isKatakana(u):
@@ -38,6 +38,6 @@ proc breaksWordCat*(ctx: LUContext; u: uint32): BreakCategory =
   return bcSpace
 
 proc breaksBigWordCat*(ctx: LUContext; u: uint32): BreakCategory =
-  if not ctx.isWhiteSpaceLU(u):
+  if not ctx.isWhiteSpace(u):
     return bcAlpha
   return bcSpace

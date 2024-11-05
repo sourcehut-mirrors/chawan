@@ -80,6 +80,7 @@ type
   LURangeType = enum
     lurLetter = "Letter"
     lurSeparator = "Separator"
+    lurMark = "Mark"
     lurHan = "Han"
     lurHiragana = "Hiragana"
     lurKatakana = "Katakana"
@@ -111,13 +112,17 @@ proc initScript(ctx: LUContext; lur: LURangeType) =
     doAssert unicode_script(p, cstring($lur), 0) == 0
     ctx.inited.incl(lur)
 
-proc isAlphaLU*(ctx: LUContext; u: uint32): bool =
+proc isAlpha*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurLetter)
   return u in ctx.crs[lurLetter]
 
-proc isWhiteSpaceLU*(ctx: LUContext; u: uint32): bool =
+proc isWhiteSpace*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurSeparator)
   return u in ctx.crs[lurSeparator]
+
+proc isMark*(ctx: LUContext; u: uint32): bool =
+  ctx.initGeneralCategory(lurMark)
+  return u in ctx.crs[lurMark]
 
 proc isHan*(ctx: LUContext; u: uint32): bool =
   ctx.initScript(lurHan)
