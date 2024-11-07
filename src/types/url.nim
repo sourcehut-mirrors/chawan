@@ -370,7 +370,7 @@ proc processIdna(str: string; beStrict: bool): string =
       labels &= label
   return labels
 
-func unicodeToAscii(s: string; beStrict: bool): string =
+proc unicodeToAscii(s: string; beStrict: bool): string =
   let processed = s.processIdna(beStrict)
   var labels = ""
   var all = 0
@@ -396,7 +396,7 @@ func unicodeToAscii(s: string; beStrict: bool): string =
       return "" #error
   return labels
 
-func domainToAscii(domain: string; bestrict = false): string =
+proc domainToAscii(domain: string; bestrict = false): string =
   var needsprocessing = false
   for s in domain.split('.'):
     if s.startsWith("xn--") or AllChars - Ascii in s:
@@ -407,7 +407,7 @@ func domainToAscii(domain: string; bestrict = false): string =
     return domain.unicodeToAscii(bestrict)
   return domain.toLowerAscii()
 
-func parseHost(input: string; special: bool): Host =
+proc parseHost(input: string; special: bool): Host =
   if input.len == 0:
     return Host(t: htNone)
   if input[0] == '[':

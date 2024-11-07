@@ -479,7 +479,7 @@ func getHoverText*(container: Container): string =
       return container.hoverText[t]
   ""
 
-func isHoverURL*(container: Container; url: URL): bool =
+proc isHoverURL*(container: Container; url: URL): bool =
   let hoverurl = parseURL(container.hoverText[htLink])
   return hoverurl.isSome and url.host == hoverurl.get.host
 

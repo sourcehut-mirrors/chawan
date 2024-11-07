@@ -465,7 +465,7 @@ jsDestructor(CSSStyleDeclaration)
 # Forward declarations
 func attr*(element: Element; s: StaticAtom): string
 func attrb*(element: Element; s: CAtom): bool
-func baseURL*(document: Document): URL
+proc baseURL*(document: Document): URL
 proc attr*(element: Element; name: CAtom; value: string)
 proc attr*(element: Element; name: StaticAtom; value: string)
 proc delAttr(element: Element; i: int; keep = false)
@@ -1722,7 +1722,7 @@ func location(document: Document): Location {.jsfget.} =
 func document(location: Location): Document =
   return location.window.document
 
-func url(location: Location): URL =
+proc url(location: Location): URL =
   let document = location.document
   if document != nil:
     return document.url
@@ -1740,10 +1740,10 @@ proc setLocation*(document: Document; s: string): Err[JSError]
 
 # Note: we do not implement security checks (as documents are in separate
 # windows anyway).
-func `$`(location: Location): string {.jsuffunc.} =
+proc `$`(location: Location): string {.jsuffunc.} =
   return location.url.serialize()
 
-func href(location: Location): string {.jsuffget.} =
+proc href(location: Location): string {.jsuffget.} =
   return $location
 
 proc setHref(location: Location; s: string): Err[JSError]
@@ -1763,10 +1763,10 @@ proc reload(location: Location) {.jsuffunc.} =
     return
   location.document.window.navigate(location.url)
 
-func origin(location: Location): string {.jsuffget.} =
+proc origin(location: Location): string {.jsuffget.} =
   return location.url.jsOrigin
 
-func protocol(location: Location): string {.jsuffget.} =
+proc protocol(location: Location): string {.jsuffget.} =
   return location.url.protocol
 
 proc protocol(location: Location; s: string): Err[DOMException] {.jsfset.} =
@@ -1780,7 +1780,7 @@ proc protocol(location: Location; s: string): Err[DOMException] {.jsfset.} =
   document.window.navigate(copyURL)
   return ok()
 
-func host(location: Location): string {.jsuffget.} =
+proc host(location: Location): string {.jsuffget.} =
   return location.url.host
 
 proc setHost(location: Location; s: string) {.jsfset: "host".} =
@@ -2617,7 +2617,7 @@ proc parseColor(element: Element; s: string): ARGBColor =
   return color.argb
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
-func href0(element: HTMLElement): string =
+proc href0(element: HTMLElement): string =
   if not element.attrb(satHref):
     return ""
   let url = parseURL(element.attr(satHref), some(element.document.baseURL))
@@ -2626,7 +2626,7 @@ func href0(element: HTMLElement): string =
   return ""
 
 # <base>
-func href(base: HTMLBaseElement): string {.jsfget.} =
+proc href(base: HTMLBaseElement): string {.jsfget.} =
   #TODO with fallback base url
   let url = parseURL(base.attr(satHref))
   if url.isSome:
@@ -2634,26 +2634,26 @@ func href(base: HTMLBaseElement): string {.jsfget.} =
   return ""
 
 # <a>
-func href*(anchor: HTMLAnchorElement): string {.jsfget.} =
+proc href*(anchor: HTMLAnchorElement): string {.jsfget.} =
   return anchor.href0
 
 proc setHref(anchor: HTMLAnchorElement; href: string) {.jsfset: "href".} =
   anchor.attr(satHref, href)
 
-func `$`(anchor: HTMLAnchorElement): string {.jsfunc.} =
+proc `$`(anchor: HTMLAnchorElement): string {.jsfunc.} =
   return anchor.href
 
 proc setRelList(anchor: HTMLAnchorElement; s: string) {.jsfset: "relList".} =
   anchor.attr(satRel, s)
 
 # <area>
-func href(area: HTMLAreaElement): string {.jsfget.} =
+proc href(area: HTMLAreaElement): string {.jsfget.} =
   return area.href0
 
 proc setHref(area: HTMLAreaElement; href: string) {.jsfset: "href".} =
   area.attr(satHref, href)
 
-func `$`(area: HTMLAreaElement): string {.jsfunc.} =
+proc `$`(area: HTMLAreaElement): string {.jsfunc.} =
   return area.href
 
 proc setRelList(area: HTMLAreaElement; s: string) {.jsfset: "relList".} =
@@ -2934,7 +2934,7 @@ proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
   let localName = document.toAtom(tagType)
   return document.newHTMLElement(localName, Namespace.HTML, NO_PREFIX)
 
-func newDocument*(factory: CAtomFactory): Document =
+proc newDocument*(factory: CAtomFactory): Document =
   assert factory != nil
   let document = Document(
     url: newURL("about:blank").get,
@@ -2945,7 +2945,7 @@ func newDocument*(factory: CAtomFactory): Document =
   document.contentType = "application/xml"
   return document
 
-func newDocument(ctx: JSContext): Document {.jsctor.} =
+proc newDocument(ctx: JSContext): Document {.jsctor.} =
   return newDocument(ctx.getGlobal().factory)
 
 func newDocumentType*(document: Document; name, publicId, systemId: string):
@@ -2969,7 +2969,7 @@ func isHostIncludingInclusiveAncestor*(a, b: Node): bool =
         return true
   return false
 
-func baseURL*(document: Document): URL =
+proc baseURL*(document: Document): URL =
   #TODO frozen base url...
   var href = ""
   for base in document.elements(TAG_BASE):
@@ -2984,10 +2984,10 @@ func baseURL*(document: Document): URL =
     return document.url
   return url.get
 
-func baseURI(node: Node): string {.jsfget.} =
+proc baseURI(node: Node): string {.jsfget.} =
   return $node.document.baseURL
 
-func parseURL*(document: Document; s: string): Option[URL] =
+proc parseURL*(document: Document; s: string): Option[URL] =
   #TODO encodings
   return parseURL(s, some(document.baseURL))
 
@@ -4851,7 +4851,7 @@ getFactoryImpl = proc(ctx: JSContext): CAtomFactory =
 errorImpl = proc(ctx: JSContext; ss: varargs[string]) =
   ctx.getGlobal().console.error(ss)
 
-getAPIBaseURLImpl = func(ctx: JSContext): URL =
+getAPIBaseURLImpl = proc(ctx: JSContext): URL =
   let window = ctx.getWindow()
   if window == nil or window.document == nil:
     return nil

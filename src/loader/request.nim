@@ -212,7 +212,7 @@ proc fromJS(ctx: JSContext; val: JSValue; res: var BodyInit): Opt[void] =
   JS_ThrowTypeError(ctx, "invalid body init type")
   return err()
 
-var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.noSideEffect, nimcall.}
+var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall.}
 
 proc newRequest*(ctx: JSContext; resource: JSValue;
     init = RequestInit(window: JS_UNDEFINED)): JSResult[JSRequest] {.jsctor.} =

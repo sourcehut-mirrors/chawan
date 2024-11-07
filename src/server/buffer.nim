@@ -331,7 +331,7 @@ const ClickableElements = {
   TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL
 }
 
-func isClickable(styledNode: StyledNode): bool =
+proc isClickable(styledNode: StyledNode): bool =
   if styledNode.t != stElement or styledNode.node == nil:
     return false
   if styledNode.computed{"visibility"} != VisibilityVisible:
@@ -343,7 +343,7 @@ func isClickable(styledNode: StyledNode): bool =
     return false
   return element.tagType in ClickableElements
 
-func getClickable(styledNode: StyledNode): Element =
+proc getClickable(styledNode: StyledNode): Element =
   var styledNode = styledNode
   while styledNode != nil:
     if styledNode.isClickable():
@@ -429,10 +429,11 @@ func getCursorElement(buffer: Buffer; cursorx, cursory: int): Element =
     return Element(styledNode.parent.node)
   return nil
 
-func getCursorClickable(buffer: Buffer; cursorx, cursory: int): Element =
+proc getCursorClickable(buffer: Buffer; cursorx, cursory: int): Element =
   let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
   if styledNode != nil:
     return styledNode.getClickable()
+  return nil
 
 func cursorBytes(buffer: Buffer; y, cc: int): int =
   let line = buffer.lines[y].str
@@ -1399,7 +1400,7 @@ proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
     select: some(select)
   )
 
-func baseURL(buffer: Buffer): URL =
+proc baseURL(buffer: Buffer): URL =
   return buffer.document.baseURL
 
 proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
