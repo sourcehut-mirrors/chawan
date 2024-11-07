@@ -86,8 +86,6 @@ elif SandboxMode == stSeccomp:
     return s
   {.passl: sourceParent() & "../../lib/chaseccomp/chaseccomp.o".}
 
-  import std/posix
-
   proc cha_enter_buffer_sandbox(): cint {.importc, cdecl.}
   proc cha_enter_network_sandbox(): cint {.importc, cdecl.}
 

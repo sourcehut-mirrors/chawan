@@ -3,6 +3,7 @@
 /*
  * seccomp
  */
+
 #define SECCOMP_SET_MODE_FILTER	1
 
 #define SECCOMP_RET_KILL_PROCESS	0x80000000u
@@ -61,8 +62,6 @@ struct sock_fprog {
 #define CHA_BPF_LOAD(field) \
 	BPF_STMT(BPF_LD | BPF_W | BPF_ABS, \
 	    (offsetof(struct seccomp_data, field)))
-
-/* Note: we always operate in BPF_K source mode, which equals 0. */
 
 #define CHA_BPF_RET(val)	BPF_STMT(BPF_RET | BPF_K, val)
 #define CHA_BPF_JE(data, n)	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, data, n, 0)
