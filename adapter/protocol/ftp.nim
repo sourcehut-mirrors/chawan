@@ -15,27 +15,25 @@ proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
     else:
       ps.sendDataLoop(cmd & ' ' & param & "\r\n")
   var buf = newString(4)
+  outs = ""
   try:
     ps.recvDataLoop(buf)
+    while (let c = ps.sreadChar(); c != '\n'):
+      outs &= c
+    let status = parseInt32(buf.toOpenArray(0, 2)).get(-1)
+    if buf[3] == ' ':
+      return status
+    buf[3] = ' '
+    while true: # multiline
+      var lbuf = ""
+      while (let c = ps.sreadChar(); c != '\n'):
+        lbuf &= c
+      outs &= lbuf
+      if lbuf.startsWith(buf):
+        break
+    return status
   except EOFError:
     os.die("InvalidResponse")
-  if buf.len < 4:
-    os.die("InvalidResponse")
-  outs = ""
-  while (let c = ps.sreadChar(); c != '\n'):
-    outs &= c
-  let status = parseInt32(buf.toOpenArray(0, 2)).get(-1)
-  if buf[3] == ' ':
-    return status
-  buf[3] = ' '
-  while true: # multiline
-    var lbuf = ""
-    while (let c = ps.sreadChar(); c != '\n'):
-      lbuf &= c
-    outs &= lbuf
-    if lbuf.startsWith(buf):
-      break
-  return status
 
 proc sdie(os: PosixStream; status: int; s, obuf: string) {.noreturn.} =
   os.sendDataLoop("Status: " & $status & "\nContent-Type: text/html\n\n" & """
