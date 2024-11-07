@@ -984,8 +984,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       response.outputId = outputId
       response.body = stream
       let data = OngoingData(response: response, stream: stream)
-      let fd = data.fd
-      buffer.pollData.register(fd, POLLIN)
+      buffer.pollData.register(data.fd, POLLIN)
       buffer.loader.put(data)
     if buffer.istream != nil:
       # We do not own our input stream, so we can't tee it.

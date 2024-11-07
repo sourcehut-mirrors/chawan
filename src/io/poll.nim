@@ -54,7 +54,11 @@ proc trim(ctx: var PollData) =
   ctx.fds.setLen(i + 1)
 
 proc clear*(ctx: var PollData) =
-  ctx.fds.setLen(0)
+  # Do *not* set fds' len to 0, because this is called from inside the
+  # `events' iterator.
+  for it in ctx.fds.mitems:
+    it.fd = -1
+    it.revents = 0
 
 proc poll*(ctx: var PollData; timeout: cint) =
   ctx.trim()
