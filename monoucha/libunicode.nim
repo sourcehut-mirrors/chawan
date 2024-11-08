@@ -13,10 +13,12 @@ else:
 {.compile("qjs/libunicode.c", CFLAGS).}
 {.compile("qjs/cutils.c", CFLAGS).}
 
+const luheader = "qjs/libunicode.h"
+
 type
   DynBufReallocFunc = proc(opaque, p: pointer; size: csize_t): pointer {.cdecl.}
 
-  CharRange* = object
+  CharRange* {.importc, header: luheader.} = object
     len*: cint # in points, always even
     size*: cint
     points*: ptr uint32 # points sorted by increasing value
@@ -28,7 +30,7 @@ type
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
-{.push header: "qjs/libunicode.h", importc.}
+{.push header: luheader, importc.}
 
 proc cr_init*(cr: ptr CharRange; mem_opaque: pointer;
   realloc_func: DynBufReallocFunc)

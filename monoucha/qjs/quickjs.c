@@ -42330,9 +42330,9 @@ static int getTimezoneOffset(int64_t time) {
 #else
     return -tm.tm_gmtoff / 60;
 #endif /* NO_TM_GMTOFF */
+#endif /* _WIN32 */
 #endif /* 0 */
     return 0;
-#endif
 }
 
 /* RegExp */

@@ -9,10 +9,13 @@ export constcharp
 
 {.passc: "-DNOT_LRE_ONLY".}
 
+{.passl: "-lm".}
+
 when not compileOption("threads"):
   const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
 else:
   const CFLAGS = "-O2 -fwrapv"
+  {.passl: "-lpthread".}
 
 {.compile("qjs/quickjs.c", CFLAGS).}
 {.compile("qjs/libbf.c", CFLAGS).}
@@ -20,8 +23,6 @@ else:
 {.passc: "-I" & currentSourcePath().parentDir().}
 
 const qjsheader = "qjs/quickjs.h"
-
-{.passl: "-lm -lpthread".}
 
 const                         ##  all tags with a reference count are negative
   JS_TAG_FIRST* = -9           ##  first negative tag
@@ -181,7 +182,7 @@ type
   JSClassDefConst* {.importc: "const JSClassDef *",
     header: qjsheader.} = ptr JSClassDef
 
-  JSMemoryUsage* = object
+  JSMemoryUsage* {.importc, header: qjsheader.} = object
     malloc_size*, malloc_limit*, memory_used_size*: int64
     malloc_count*: int64
     memory_used_count*: int64
