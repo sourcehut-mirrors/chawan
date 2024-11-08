@@ -56,4 +56,4 @@ do	if test "$line" = "$oldhdr"; then break; fi
 	printf '%s\n' "$line"
 done <NEWS >"$tmp2"
 
-git tag -aeF "$tmp2" "v$vs"
+git tag -faeF "$tmp2" "v$vs"
