@@ -7,48 +7,55 @@ Chawan uses GNU make for builds.
 Following is a list of variables which may be safely overridden. You can
 also override them by setting an environment variable with the same name.
 
-* `TARGET`: the build target. By default, this is `release`; for development,
-  `debug` is recommended.<br>
-  This variable changes flags passed to the Nim compiler as follows:
-	- `debug`: Generate a debug build, with --debugger:native (embedded
-	  debugging symbols) enabled. This is useful for debugging, but
-	  generates huge and slow executables.
-	- `release`: This is the default target. We use LTO and strip the
-	  final binary.
-	- `release0`: A release build with stack traces enabled. Useful when
-	  you need to debug a crash that needs a lot of processing to manifest.
-	  Note: this does not enable line traces, so you only get the function
-	  name in stack traces.
-	- `release1`: A release build with --debugger:native enabled. May
-	  be useful for profiling with cachegrind, or debugging a release
-	  build with with gdb.
+* `TARGET`: the build target.
+	- `debug`: Generate a debug build, with stack traces and
+	  debugging symbols enabled. Useful for debugging, but generates
+	  huge and slow executables.
+	- `release`: The default target. Uses LTO and strips the final
+	  binaries.
+	- `release0`: A release build with stack traces enabled. Useful
+	  when you need to debug a crash that needs a lot of processing
+	  to manifest. Note: this does not enable line traces.
+	- `release1`: A release build with debugging symbols enabled.
+	  Useful for profiling with cachegrind, or debugging a release
+	  build with gdb.
 * `OUTDIR`: where to output the files.
-* `NIMC`: path to the Nim compiler. Note that you need to include the flag
-  for compilation; by default it is set to `nim c`.
+* `NIM`: path to the Nim compiler.
+* `CFLAGS`, `LDFLAGS`: flags to pass to the C compiler at compile or
+  link time.
 * `OBJDIR`: directory to output compilation artifacts. By default, it is
-  set to `.obj`.<br>
-  You may be able to speed up compilation somewhat by setting it to an
-  in-memory file system.
+  `.obj`.
 * `PREFIX`: installation prefix, by default it is `/usr/local`.
-* `DESTDIR`: directory prepended to `$(PREFIX)`. e.g. we can set it to
+* `DESTDIR`: directory prepended to `$(PREFIX)`. e.g. you can set it to
   `/tmp`, so that `make install` installs the binary to the path
   `/tmp/usr/local/bin/cha`.
-* `MANPREFIX`, `MANPREFIX1`, `MANPREFIX5`: prefixes for the installation of
-  man pages. The default setting expands to `/usr/local/share/man/man1`, etc.
-  (Normally you shouldn't have to set `MANPREFIX1` or `MANPREFIX5` at all,
-  as these are derived from `MANPREFIX`.)
+* `MANPREFIX`, `MANPREFIX1`, `MANPREFIX5`: prefixes for the installation
+  of man pages. The default setting expands to
+  `/usr/local/share/man/man1`, etc.  (Normally you shouldn't have to
+  set `MANPREFIX1` or `MANPREFIX5` at all, as these are derived from
+  `MANPREFIX`.)
 * `CURLLIBNAME`: Change the name of the libcurl shared object file.
-* `LIBEXECDIR`: Path to your libexec directory; by default, it is relative
-  to wherever the binary is placed when it is executed. (i.e. after installation
-  it would resolve to `/usr/local/libexec`.) <BR>
+* `LIBEXECDIR`: Path to your libexec directory; by default, it is
+  relative to wherever the binary is placed when it is executed. (i.e.
+  after installation it would resolve to `/usr/local/libexec`.)<BR>
   WARNING: Unlike other path names, this must be quoted if your path contains
-  spaces!
-* `DANGER_DISABLE_SANDBOX`: Set it to 1 to disable syscall sandboxing even
-  on systems where we have built-in sandboxing support. Note that this is
-  *not* taken from the environment variables; you must use it like
-  `make DANGER_DISABLE_SANDBOX=1`.<BR>
-  WARNING: as the name suggests, this is rarely an optimal solution to whatever
-  problem you are facing.
+  spaces.
+* `DANGER_DISABLE_SANDBOX`: Set it to 1 to forcibly disable syscall
+  filtering. Note that this is *not* taken from the environment
+  variables, and you must use it like `make DANGER_DISABLE_SANDBOX=1`.  
+  **Warning**: as the name suggests, this is rarely an optimal solution
+  to whatever problem you are facing.
+
+This list does not include the `CC` variable, because Nim only supports
+a limited set of C compilers. If you want to override the C compiler:
+
+1. Set `CC` to the respective compiler anyways, because it is used by
+   chaseccomp.
+2. If your compiler is supported by Nim, then set e.g. `FLAGS=--cc:clang`.
+   Check the list of supported compilers with `nim --cc:help`.
+3. If your compiler is not supported by Nim, but emulates another
+   compiler driver, then add e.g.
+   `FLAGS=--gcc.path=/usr/local/musl/bin --gcc.exe=musl-gcc --gcc.linkerexe=musl-gcc`
 
 ## Phony targets
 

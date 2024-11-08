@@ -29,4 +29,4 @@ tryImport monoucha/version, "monoucha"
 static:
   checkVersion("chagashi", 0, 6, 0)
   checkVersion("chame", 1, 0, 1)
-  checkVersion("monoucha", 0, 5, 3)
+  checkVersion("monoucha", 0, 5, 4)

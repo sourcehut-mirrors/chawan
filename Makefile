@@ -1,4 +1,5 @@
-NIMC ?= nim c
+NIM ?= nim
+NIMC ?= $(NIM) c
 OBJDIR ?= .obj
 OUTDIR ?= target
 # These paths are quoted in recipes.
@@ -42,6 +43,13 @@ else ifeq ($(TARGET),release0)
 FLAGS += -d:release --stacktrace:on
 else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
+endif
+
+ifneq ($(CFLAGS),)
+FLAGS += $(foreach flag,$(CFLAGS),--passc:$(flag))
+endif
+ifneq ($(LDFLAGS),)
+FLAGS += $(foreach flag,$(LDFLAGS),--passl:$(flag))
 endif
 
 .PHONY: all
@@ -125,7 +133,8 @@ $(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr) src/utils/strwidth.nim
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
-		-d:disableSandbox=$(DANGER_DISABLE_SANDBOX) -o:"$@" $<
+		-d:disableSandbox=$(DANGER_DISABLE_SANDBOX) -d:curlLibName=$(CURLLIBNAME) \
+		-o:"$@" $<
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%
 	@mkdir -p "$(OUTDIR_CGI_BIN)"

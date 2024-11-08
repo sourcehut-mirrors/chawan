@@ -1,4 +1,4 @@
-CFLAGS += -Wall
+CFLAGS += -Wall -Wextra
 
 all: chaseccomp.o
 
@@ -14,8 +14,7 @@ chasc_defs_%: chasc_defs_%.c
 chasc_%.h: %.chasc.expanded gen_syscalls
 	./gen_syscalls $< >$@
 
-chaseccomp.o: chaseccomp.c chaseccomp.h chasc_network.h chasc_buffer.h
-	$(CC) $(CFLAGS) chaseccomp.c -c -o $@
+chaseccomp.o: chaseccomp.h chasc_network.h chasc_buffer.h
 
 clean:
 	rm -f *.d *.o

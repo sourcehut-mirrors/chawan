@@ -104,7 +104,7 @@ proc checkCert(os: PosixStream; theirDigest, host: string;
 proc hashBuf(ibuf: openArray[uint8]): string =
   const HexTable = "0123456789ABCDEF"
   var len2: cuint = 0
-  var buf = newSeq[char](EVP_MAX_MD_SIZE)
+  var buf = newSeq[uint8](EVP_MAX_MD_SIZE)
   let mdctx = EVP_MD_CTX_new()
   if mdctx == nil:
     sdie("failed to initialize MD_CTX")
@@ -120,7 +120,7 @@ proc hashBuf(ibuf: openArray[uint8]): string =
   for i in 0 ..< int(len2):
     if i != 0:
       result &= ':'
-    let u = uint8(buf[i])
+    let u = buf[i]
     result &= HexTable[(u shr 4) and 0xF]
     result &= HexTable[u and 0xF]
 

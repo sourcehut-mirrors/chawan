@@ -45,7 +45,7 @@ proc EVP_MD_CTX_new*(): EVP_MD_CTX
 proc EVP_MD_CTX_free*(ctx: EVP_MD_CTX)
 proc EVP_DigestInit_ex*(ctx: EVP_MD_CTX; t: EVP_MD; impl: ENGINE): cint
 proc EVP_DigestUpdate*(ctx: EVP_MD_CTX; d: pointer; cnt: csize_t): cint
-proc EVP_DigestFinal_ex*(ctx: EVP_MD_CTX; md: ptr char; s: var cuint): cint
+proc EVP_DigestFinal_ex*(ctx: EVP_MD_CTX; md: ptr uint8; s: var cuint): cint
 
 proc EVP_sha256*(): EVP_MD
 {.pop.}
