@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<div style="display: flex">
+<div>flex item 1</div>
+<div style="position: relative; background: pink">
+<div style="display: inline-block; width: 100%; background: red">a</div>
+<!--
+this part is a more or less unrelated test for whether setting relative
+on an inline root block box marks it as the containing block.
+-->
+<div style="right: 0; position: absolute">
+absolute

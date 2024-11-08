@@ -54,8 +54,7 @@ layout engine:
 	* will probably need special treatment, as borders must round to
 	  1ch in x direction and 1em in y direction.
 - table layout: include caption in width calculation
-- flexbox: align-self, align-items, justify-content, proper margin handling,
-  proper flex base size resolution
+- flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
 - overflow
 - partial layout, layout caching
