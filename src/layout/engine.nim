@@ -1110,7 +1110,10 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
   let length = computed[CvalSizeMap[dim]].length
   if length.canpx(space[dim]):
     let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
-    sizes.space[dim] = stretch(minClamp(u, sizes.minMaxSizes[dim]))
+    sizes.space[dim] = SizeConstraint(
+      t: sizes.space[dim].t,
+      u: minClamp(u, sizes.minMaxSizes[dim])
+    )
   else:
     # Ensure that space is indefinite in the first pass if no width has
     # been specified.
@@ -1122,7 +1125,10 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     sizes.space[odim] = stretch(minClamp(u, sizes.minMaxSizes[odim]))
   elif sizes.space[odim].isDefinite():
     let u = sizes.space[odim].u - sizes.margin[odim].sum() - paddingSum[odim]
-    sizes.space[odim] = stretch(minClamp(u, sizes.minMaxSizes[odim]))
+    sizes.space[odim] = SizeConstraint(
+      t: sizes.space[odim].t,
+      u: minClamp(u, sizes.minMaxSizes[odim])
+    )
   return sizes
 
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
@@ -1190,6 +1196,14 @@ proc applyHeight(box: BlockBox; sizes: ResolvedSizes;
 proc applyPadding(box: BlockBox; padding: RelativeRect) =
   box.state.size.w += padding[dtHorizontal].sum()
   box.state.size.h += padding[dtVertical].sum()
+
+proc applyBaseline(box: BlockBox) =
+  if box.children.len > 0:
+    let firstNested = box.children[0]
+    let lastNested = box.children[^1]
+    box.state.firstBaseline = firstNested.state.offset.y +
+      firstNested.state.baseline
+    box.state.baseline = lastNested.state.offset.y + lastNested.state.baseline
 
 func bfcOffset(bctx: BlockContext): Offset =
   if bctx.parentBps != nil:
@@ -2221,6 +2235,7 @@ type
     totalMaxSize: Size
     box: BlockBox
     relativeChildren: seq[BlockBox]
+    redistSpace: SizeConstraint
 
   FlexMainContext = object
     totalSize: Size
@@ -2249,65 +2264,68 @@ proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox;
     mctx.maxMargin[dim].send = max(mctx.maxMargin[dim].send,
       sizes.margin[dim].send)
 
-proc redistributeMainSize(mctx: var FlexMainContext; sizes: ResolvedSizes;
-    dim: DimensionType; lctx: LayoutContext) =
+proc redistributeMainSize(mctx: var FlexMainContext; diff: LayoutUnit;
+    wt: FlexWeightType; dim: DimensionType; lctx: LayoutContext) =
+  var diff = diff
+  var totalWeight = mctx.totalWeight[wt]
   let odim = dim.opposite
-  if sizes.space[dim].isDefinite:
-    var diff = sizes.space[dim].u - mctx.totalSize[dim]
-    let wt = if diff > 0: fwtGrow else: fwtShrink
-    var totalWeight = mctx.totalWeight[wt]
-    while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
-        totalWeight > 0:
-      # redo maxSize calculation; we only need height here
-      mctx.maxSize[odim] = 0
-      var udiv = totalWeight
-      if wt == fwtShrink:
-        udiv *= mctx.shrinkSize.toFloat64() / totalWeight
-      let unit = if udiv != 0:
-        diff.toFloat64() / udiv
-      else:
-        0
-      # reset total weight & available diff for the next iteration (if there is
-      # one)
-      totalWeight = 0
-      diff = 0
-      for it in mctx.pending.mitems:
-        if it.weights[wt] == 0:
-          mctx.updateMaxSizes(it.child, it.sizes)
-          continue
-        var uw = unit * it.weights[wt]
-        if wt == fwtShrink:
-          uw *= it.child.state.size[dim].toFloat64()
-        var u = it.child.state.size[dim] + uw.toLayoutUnit()
-        # check for min/max violation
-        var minu = it.sizes.minMaxSizes[dim].start
-        minu = max(it.child.state.minFlexItemSize(dim), minu)
-        if minu > u:
-          # min violation
-          if wt == fwtShrink: # freeze
-            diff += u - minu
-            it.weights[wt] = 0
-            mctx.shrinkSize -= it.child.state.size[dim]
-          u = minu
-        let maxu = it.sizes.minMaxSizes[dim].send
-        if maxu < u:
-          # max violation
-          if wt == fwtGrow: # freeze
-            diff += u - maxu
-            it.weights[wt] = 0
-          u = maxu
-        it.sizes.space[dim] = stretch(u - it.sizes.padding[dim].sum())
-        totalWeight += it.weights[wt]
-        #TODO we should call this only on freeze, and then put another loop to
-        # the end for non-frozen items
-        lctx.layoutFlexChild(it.child, it.sizes)
+  while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
+      totalWeight > 0:
+    # redo maxSize calculation; we only need height here
+    mctx.maxSize[odim] = 0
+    var udiv = totalWeight
+    if wt == fwtShrink:
+      udiv *= mctx.shrinkSize.toFloat64() / totalWeight
+    let unit = if udiv != 0:
+      diff.toFloat64() / udiv
+    else:
+      0
+    # reset total weight & available diff for the next iteration (if there is
+    # one)
+    totalWeight = 0
+    diff = 0
+    for it in mctx.pending.mitems:
+      if it.weights[wt] == 0:
         mctx.updateMaxSizes(it.child, it.sizes)
+        continue
+      var uw = unit * it.weights[wt]
+      if wt == fwtShrink:
+        uw *= it.child.state.size[dim].toFloat64()
+      var u = it.child.state.size[dim] + uw.toLayoutUnit()
+      # check for min/max violation
+      var minu = it.sizes.minMaxSizes[dim].start
+      minu = max(it.child.state.minFlexItemSize(dim), minu)
+      if minu > u:
+        # min violation
+        if wt == fwtShrink: # freeze
+          diff += u - minu
+          it.weights[wt] = 0
+          mctx.shrinkSize -= it.child.state.size[dim]
+        u = minu
+      let maxu = it.sizes.minMaxSizes[dim].send
+      if maxu < u:
+        # max violation
+        if wt == fwtGrow: # freeze
+          diff += u - maxu
+          it.weights[wt] = 0
+        u = maxu
+      it.sizes.space[dim] = stretch(u - it.sizes.padding[dim].sum())
+      totalWeight += it.weights[wt]
+      #TODO we should call this only on freeze, and then put another loop to
+      # the end for non-frozen items
+      lctx.layoutFlexChild(it.child, it.sizes)
+      mctx.updateMaxSizes(it.child, it.sizes)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     sizes: ResolvedSizes; dim: DimensionType) =
   let odim = dim.opposite
   let lctx = fctx.lctx
-  mctx.redistributeMainSize(sizes, dim, lctx)
+  if fctx.redistSpace.isDefinite:
+    let diff = fctx.redistSpace.u - mctx.totalSize[dim]
+    let wt = if diff > 0: fwtGrow else: fwtShrink
+    # Do not grow shrink-to-fit sizes.
+    if wt == fwtShrink or fctx.redistSpace.t == scStretch:
+      mctx.redistributeMainSize(diff, wt, dim, lctx)
   let h = mctx.maxSize[odim] + mctx.maxMargin[odim].sum()
   var offset = fctx.offset
   for it in mctx.pending.mitems:
@@ -2336,15 +2354,21 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
   if box.computed{"position"} notin PositionStaticLike:
     lctx.pushPositioned()
+  let flexDir = box.computed{"flex-direction"}
+  let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
+  let odim = dim.opposite()
   var fctx = FlexContext(
     lctx: lctx,
     box: box,
-    offset: offset(x = sizes.padding.left, y = sizes.padding.top)
+    offset: offset(x = sizes.padding.left, y = sizes.padding.top),
+    redistSpace: sizes.space[dim]
   )
+  if fctx.redistSpace.t != scStretch and sizes.minMaxSizes[dim].start > 0:
+    fctx.redistSpace = stretch(sizes.minMaxSizes[dim].start)
+  if fctx.redistSpace.isDefinite:
+    fctx.redistSpace.u = fctx.redistSpace.u.minClamp(sizes.minMaxSizes[dim])
   var mctx = FlexMainContext()
-  let flexDir = box.computed{"flex-direction"}
   let canWrap = box.computed{"flex-wrap"} != FlexWrapNowrap
-  let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
   for child in box.children:
     var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
     let flexBasis = child.computed{"flex-basis"}
@@ -2386,8 +2410,9 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     ))
   if mctx.pending.len > 0:
     fctx.flushMain(mctx, sizes, dim)
+  box.applyBaseline()
   box.applySize(sizes, fctx.totalMaxSize[dim], sizes.space, dim)
-  box.applySize(sizes, fctx.offset[dim.opposite], sizes.space, dim.opposite)
+  box.applySize(sizes, fctx.offset[odim], sizes.space, odim)
   for child in fctx.relativeChildren:
     lctx.positionRelative(box, child)
     box.applyOverflowDimensions(child)
@@ -2694,9 +2719,7 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   if state.needsReLayout:
     state.initReLayout(bctx, box, sizes)
     state.layoutBlockChildren(bctx, box)
-  if box.children.len > 0:
-    let lastNested = box.children[^1]
-    box.state.baseline = lastNested.state.offset.y + lastNested.state.baseline
+  box.applyBaseline()
   # Apply width, and height. For height, temporarily remove padding we have
   # applied before so that percentage resolution works correctly.
   box.applyWidth(sizes, state.maxChildWidth, state.space)
