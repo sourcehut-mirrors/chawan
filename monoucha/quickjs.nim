@@ -615,7 +615,7 @@ proc JS_GetOwnPropertyNames*(ctx: JSContext;
 proc JS_GetOwnProperty*(ctx: JSContext; desc: ptr JSPropertyDescriptor;
   obj: JSValue; prop: JSAtom): cint
 proc JS_FreePropertyEnum*(ctx: JSContext;
-  tab: ptr UncheckedArray[JSPropertyEnum]; len: uint32): cint
+  tab: ptr UncheckedArray[JSPropertyEnum]; len: uint32)
 
 proc JS_Call*(ctx: JSContext; func_obj, this_obj: JSValue; argc: cint;
   argv: ptr UncheckedArray[JSValue]): JSValue

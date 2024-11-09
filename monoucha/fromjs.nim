@@ -232,9 +232,7 @@ proc fromJS*[A, B](ctx: JSContext; val: JSValue; res: var Table[A, B]):
     # exception
     return err()
   defer:
-    for i in 0 ..< plen:
-      JS_FreeAtom(ctx, ptab[i].atom)
-    js_free(ctx, ptab)
+    JS_FreePropertyEnum(ctx, ptab, plen)
   var tmp = initTable[A, B]()
   for i in 0 ..< plen:
     let atom = ptab[i].atom
