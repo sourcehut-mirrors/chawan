@@ -21,6 +21,7 @@ macro makeStaticAtom =
       satAction = "action"
       satAlign = "align"
       satAlt = "alt"
+      satAlternate = "alternate"
       satAsync = "async"
       satAutofocus = "autofocus"
       satBgcolor = "bgcolor"

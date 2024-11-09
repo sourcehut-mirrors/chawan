@@ -312,6 +312,7 @@ type
     sheet*: CSSStylesheet
     relList {.jsget.}: DOMTokenList
     fetchStarted: bool
+    enabled: Option[bool]
 
   HTMLFormElement* = ref object of HTMLElement
     constructingEntryList*: bool
@@ -1017,6 +1018,7 @@ const ReflectTable0 = [
   #TODO can we add crossOrigin here?
   makes("usemap", "useMap", TAG_IMG),
   makeb("ismap", "isMap", TAG_IMG),
+  makeb("disabled", TAG_LINK),
   # "super-global" attributes
   makes("slot", AllTagTypes),
   makes("class", "className", AllTagTypes),
@@ -2447,7 +2449,8 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
           document.cachedSheets.add(style.sheet)
       elif elem of HTMLLinkElement:
         let link = HTMLLinkElement(elem)
-        if link.sheet != nil:
+        if link.sheet != nil and
+            link.enabled.get(satAlternate notin link.relList):
           document.cachedSheets.add(link.sheet)
       else: discard
     document.cachedSheetsInvalid = false
@@ -3179,9 +3182,9 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window; link: HTMLLinkElement) =
-  if not window.styling or satStylesheet notin link.relList:
-    return
-  if link.fetchStarted:
+  if not window.styling or satStylesheet notin link.relList or
+      link.fetchStarted or
+      not link.enabled.get(satAlternate notin link.relList):
     return
   link.fetchStarted = true
   let href = link.attr(satHref)
@@ -3399,8 +3402,12 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
     let link = HTMLLinkElement(element)
     if name == satRel:
       link.reflect_domtoklist0 relList # do not return
-    if link.isConnected and satStylesheet in link.relList and
-        name in {satHref, satRel}:
+    if name == satDisabled:
+      # IE won :(
+      if link.enabled.isNone:
+        link.document.cachedSheetsInvalid = true
+      link.enabled = some(value.isNone)
+    if link.isConnected and name in {satHref, satRel, satDisabled}:
       link.fetchStarted = false
       let window = link.document.window
       if window != nil:
