@@ -3383,7 +3383,7 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   )
   let lctx = LayoutContext(
     attrsp: attrsp,
-    positioned: @[PositionedItem()],
+    positioned: @[PositionedItem(), PositionedItem()],
     myRootProperties: rootProperties(),
     imgText: newStyledText("[img]"),
     videoText: newStyledText("[video]"),
@@ -3395,6 +3395,16 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   let sizes = lctx.resolveBlockSizes(space, box.computed)
   # the bottom margin is unused.
   discard lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
-  let size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
+  var size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
+  # Last absolute layer.
+  lctx.popPositioned(box.state.overflow, size)
+  # Fixed containing block.
+  # The idea is to move fixed boxes to the real edges of the page,
+  # so that they do not overlap with other boxes *and* we don't have
+  # to move them on scroll. It's still not compatible with what desktop
+  # browsers do, but the alternative would completely break search (and
+  # slow down the renderer to a crawl.)
+  size.w = max(size.w, box.state.size.w)
+  size.h = max(size.h, box.state.size.h)
   lctx.popPositioned(box.state.overflow, size)
   return box
