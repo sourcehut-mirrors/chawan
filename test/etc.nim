@@ -121,3 +121,15 @@ test "jspropenumlist":
   js_free(ctx, list.buffer)
   ctx.free()
   rt.free()
+
+test "fromjs-seq":
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  var test = @[1, 2, 3, 4]
+  let jsTest = ctx.toJS(test)
+  var test2: seq[int]
+  assert ctx.fromJS(jsTest, test2).isSome
+  assert test2 == test
+  JS_FreeValue(ctx, jsTest)
+  ctx.free()
+  rt.free()

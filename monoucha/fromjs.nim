@@ -186,7 +186,7 @@ proc fromJS*[T](ctx: JSContext; val: JSValue; res: var seq[T]): Opt[void] =
     let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstValue])
     defer: JS_FreeValue(ctx, valueVal)
     tmp.add(default(T))
-    ?ctx.fromJS(valueVal, res[^1])
+    ?ctx.fromJS(valueVal, tmp[^1])
   res = move(tmp)
   return ok()
 
