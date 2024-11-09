@@ -5,14 +5,11 @@ make this even more complex.
 
 I don't care, but feel free to fix it ;)
 
-(Also, position: absolute should overprint inline boxes after it, but it
-doesn't. This needs further investigation.)
-
 
 
 test test test testadsfasdf
 test test [48;2;255;0;0m2t 2tt[49mest
-asdfasd fa[48;2;255;0;0msd    [49m
+asdfasd fa[48;2;255;0;0m2d    [49m
           [48;2;255;0;0m      [49m
 
 

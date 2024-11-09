@@ -98,6 +98,7 @@ type
     cptFlexShrink = "flex-shrink"
     cptFlexBasis = "flex-basis"
     cptOverflow = "overflow"
+    cptZIndex = "z-index"
 
   CSSValueType* = enum
     cvtNone = ""
@@ -456,7 +457,8 @@ const ValueTypes = [
   cptFlexGrow: cvtNumber,
   cptFlexShrink: cvtNumber,
   cptFlexBasis: cvtLength,
-  cptOverflow: cvtOverflow
+  cptOverflow: cvtOverflow,
+  cptZIndex: cvtInteger
 ]
 
 const InheritedProperties = {
@@ -464,6 +466,11 @@ const InheritedProperties = {
   cptWordBreak, cptListStyleType, cptTextAlign, cptListStylePosition,
   cptCaptionSide, cptBorderSpacing, cptBorderCollapse, cptQuotes,
   cptVisibility, cptTextTransform
+}
+
+#TODO implement sticky
+const PositionStaticLike* = {
+  PositionStatic, PositionSticky
 }
 
 func shorthandType(s: string): CSSShorthandType =
@@ -1184,6 +1191,7 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
     of cptFontWeight: return_new integer, ?cssFontWeight(cval)
     of cptChaColspan: return_new integer, ?cssInteger(cval, 1 .. 1000)
     of cptChaRowspan: return_new integer, ?cssInteger(cval, 0 .. 65534)
+    of cptZIndex: return_new integer, ?cssInteger(cval, -65534 .. 65534)
     else: assert false
   of cvtTextDecoration: return_new textdecoration, ?cssTextDecoration(cvals)
   of cvtWordBreak: return_new wordBreak, ?parseIdent[CSSWordBreak](cval)

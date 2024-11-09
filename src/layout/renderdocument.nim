@@ -1,9 +1,11 @@
+import std/algorithm
+
 import css/cssvalues
 import css/stylednode
-import types/bitmap
 import layout/box
 import layout/engine
 import layout/layoutunit
+import types/bitmap
 import types/cell
 import types/color
 import types/winattrs
@@ -233,6 +235,12 @@ type
     height*: int
     bmp*: NetworkBitmap
 
+  StackItem = ref object
+    box: BlockBox
+    offset: Offset
+    apos: Offset
+    index: int
+
   RenderState = object
     # Position of the absolute positioning containing block:
     # https://drafts.csswg.org/css-position/#absolute-positioning-containing-block
@@ -240,6 +248,7 @@ type
     bgcolor: CellColor
     attrsp: ptr WindowAttributes
     images: seq[PosBitmap]
+    nstack: seq[StackItem]
 
 template attrs(state: RenderState): WindowAttributes =
   state.attrsp[]
@@ -309,7 +318,7 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
         grid[y].formats[fi].node = node
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
-  box: BlockBox; offset: Offset)
+  box: BlockBox; offset: Offset; pass2 = false)
 
 proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     fragment: InlineFragment; offset: Offset; bgcolor: CellColor) =
@@ -321,7 +330,10 @@ proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     grid.paintBackground(state, bgcolor, x1, y1, x2, y2, fragment.node)
 
 proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
-    fragment: InlineFragment; offset: Offset; bgcolor0: ARGBColor) =
+    fragment: InlineFragment; offset: Offset; bgcolor0: ARGBColor;
+    pass2 = false) =
+  let position = fragment.computed{"position"}
+  #TODO stacking contexts
   let bgcolor = fragment.computed{"background-color"}
   var bgcolor0 = bgcolor0
   if bgcolor.isCell:
@@ -333,9 +345,8 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     if bgcolor0.a > 0:
       grid.paintInlineFragment(state, fragment, offset,
         bgcolor0.rgb.cellColor())
-  if fragment.computed{"position"} != PositionStatic:
-    if stSplitStart in fragment.splitType:
-      state.absolutePos.add(offset + fragment.state.startOffset)
+  if position notin PositionStaticLike and stSplitStart in fragment.splitType:
+    state.absolutePos.add(offset + fragment.state.startOffset)
   if fragment.t == iftParent:
     for child in fragment.children:
       grid.renderInlineFragment(state, child, offset, bgcolor0)
@@ -362,13 +373,22 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
           height: atom.size.h.toInt,
           bmp: atom.bmp
         ))
-  if fragment.computed{"position"} != PositionStatic:
-    if stSplitEnd in fragment.splitType:
-      discard state.absolutePos.pop()
+  if position notin PositionStaticLike and stSplitEnd in fragment.splitType:
+    discard state.absolutePos.pop()
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
-    box: BlockBox; offset: Offset) =
+    box: BlockBox; offset: Offset; pass2 = false) =
   let position = box.computed{"position"}
+  #TODO handle negative z-index
+  let zindex = box.computed{"z-index"}
+  if position notin PositionStaticLike and not pass2 and zindex >= 0:
+    state.nstack.add(StackItem(
+      box: box,
+      offset: offset,
+      apos: state.absolutePos[^1],
+      index: zindex
+    ))
+    return
   var offset = offset
   if position in {PositionAbsolute, PositionFixed}:
     if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
@@ -376,7 +396,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
       offset.y = state.absolutePos[^1].y
   offset += box.state.offset
-  if position != PositionStatic:
+  if position notin PositionStaticLike:
     state.absolutePos.add(offset)
   if box.computed{"visibility"} == VisibilityVisible:
     #TODO maybe blend with the terminal background?
@@ -414,7 +434,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
   else:
     for child in box.children:
       grid.renderBlockBox(state, child, offset)
-  if position != PositionStatic:
+  if position notin PositionStaticLike:
     discard state.absolutePos.pop()
 
 proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
@@ -424,13 +444,21 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
   if styledRoot == nil:
     # no HTML element when we run cascade; just clear all lines.
     return
+  let rootBox = styledRoot.layout(attrsp)
   var state = RenderState(
     absolutePos: @[offset(0, 0)],
     attrsp: attrsp,
     bgcolor: defaultColor
   )
-  let rootBox = styledRoot.layout(attrsp)
-  grid.renderBlockBox(state, rootBox, offset(0, 0))
+  var stack = @[StackItem(box: rootBox)]
+  while stack.len > 0:
+    for it in stack:
+      state.absolutePos.add(it.apos)
+      grid.renderBlockBox(state, it.box, it.offset, true)
+      discard state.absolutePos.pop()
+    stack = move(state.nstack)
+    stack.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
+    state.nstack = @[]
   if grid.len == 0:
     grid.addLines(1)
   bgcolor = state.bgcolor
