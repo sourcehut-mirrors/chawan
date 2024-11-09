@@ -43,6 +43,7 @@ macro makeStaticAtom =
       satEnctype = "enctype"
       satError = "error"
       satEvent = "event"
+      satEvents = "events"
       satFor = "for"
       satForm = "form"
       satFormaction = "formaction"
@@ -92,6 +93,7 @@ macro makeStaticAtom =
       satSrcset = "srcset"
       satStyle = "style"
       satStylesheet = "stylesheet"
+      satSvgevents = "svgevents"
       satTarget = "target"
       satText = "text"
       satTimeout = "timeout"
@@ -99,6 +101,7 @@ macro makeStaticAtom =
       satTouchmove = "touchmove"
       satTouchstart = "touchstart"
       satType = "type"
+      satUEvent = "Event"
       satUsemap = "usemap"
       satUsername = "username"
       satValign = "valign"
@@ -215,6 +218,9 @@ var getFactoryImpl*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect,
 
 proc toAtom*(ctx: JSContext; atom: StaticAtom): CAtom =
   return ctx.getFactoryImpl().toAtom(atom)
+
+proc toAtom*(ctx: JSContext; s: string): CAtom =
+  return ctx.getFactoryImpl().toAtom(s)
 
 proc toStaticAtom*(ctx: JSContext; atom: CAtom): StaticAtom =
   return ctx.getFactoryImpl().toStaticAtom(atom)

@@ -1602,6 +1602,7 @@ func item(this: HTMLCollection; u: uint32): Element {.jsfunc.} =
   return nil
 
 func namedItem(this: HTMLCollection; atom: CAtom): Element {.jsfunc.} =
+  this.refreshCollection()
   for it in this.snapshot:
     let it = Element(it)
     if it.id == atom or it.namespace == Namespace.HTML and it.name == atom:
@@ -2732,6 +2733,10 @@ func elements(form: HTMLFormElement): HTMLFormControlsCollection {.jsfget.} =
     )
   return form.cachedElements
 
+proc getter(ctx: JSContext; this: HTMLFormElement; atom: JSAtom): JSValue
+    {.jsgetprop.} =
+  return ctx.getter(this.elements, atom)
+
 # <input>
 func jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
@@ -2755,6 +2760,14 @@ func isOptionOf(node: Node; select: HTMLSelectElement): bool =
     return parent == select or
       parent of HTMLOptGroupElement and parent.parentNode == select
   return false
+
+proc names(ctx: JSContext; this: HTMLOptionsCollection): JSPropertyEnumList
+    {.jspropnames.} =
+  return ctx.names(HTMLCollection(this))
+
+proc getter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom): Element
+    {.jsgetprop.} =
+  return ctx.getter(HTMLCollection(this), atom)
 
 func jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
     {.jsfget: "options".} =
@@ -4378,6 +4391,12 @@ proc createProcessingInstruction(document: Document; target, data: string):
       "InvalidCharacterError")
   return ok(newProcessingInstruction(document, target, data))
 
+proc createEvent(ctx: JSContext; document: Document; t: StaticAtom):
+    DOMResult[Event] {.jsfunc.} =
+  if t notin {satUEvent, satEvent, satEvents, satSvgevents}:
+    return errDOMException("Event not supported", "NotSupportedError")
+  return ok(newEvent(ctx.toAtom(""), nil))
+
 proc clone(node: Node; document = none(Document), deep = false): Node =
   let document = document.get(node.document)
   let copy = if node of Element:
@@ -4385,6 +4404,9 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
     let element = Element(node)
     let x = document.newHTMLElement(element.localName, element.namespace,
       element.namespacePrefix)
+    x.id = element.id
+    x.name = element.name
+    x.classList = DOMTokenList(element: x, localName: element.localName)
     x.attrs = element.attrs
     #TODO namespaced attrs?
     # Cloning steps
