@@ -1586,8 +1586,8 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
   )
   let computed = state.fragment.computed
   let lctx = ictx.lctx
-  var hasWidth = computed{"width"}.canpx(ictx.space.w)
-  var hasHeight = computed{"height"}.canpx(ictx.space.h)
+  let hasWidth = computed{"width"}.canpx(ictx.space.w)
+  let hasHeight = computed{"height"}.canpx(ictx.space.h)
   let osize = atom.size
   if hasWidth:
     atom.size.w = computed{"width"}.spx(lctx, ictx.space.w, computed, padding)
@@ -1595,39 +1595,31 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
     atom.size.h = computed{"height"}.spx(lctx, ictx.space.h, computed, padding)
   if computed{"max-width"}.canpx(ictx.space.w):
     let w = computed{"max-width"}.spx(lctx, ictx.space.w, computed, padding)
-    if atom.size.w > w:
-      atom.size.w = w
-      hasWidth = true
+    atom.size.w = min(atom.size.w, w)
   if computed{"min-width"}.canpx(ictx.space.w):
     let w = computed{"min-width"}.spx(lctx, ictx.space.w, computed, padding)
-    if atom.size.w < w:
-      atom.size.w = w
-      hasWidth = true
+    atom.size.w = max(atom.size.w, w)
   if computed{"max-height"}.canpx(ictx.space.h):
     let h = computed{"max-height"}.spx(lctx, ictx.space.h, computed, padding)
-    if atom.size.h > h:
-      atom.size.h = h
-      hasHeight = true
+    atom.size.h = min(atom.size.h, h)
   if computed{"min-height"}.canpx(ictx.space.h):
     let h = computed{"min-height"}.spx(lctx, ictx.space.h, computed, padding)
-    if atom.size.h < h:
-      atom.size.h = h
-      hasHeight = true
-  if not hasWidth and not hasHeight:
-    if ictx.space.w.isDefinite() and atom.size.w > ictx.space.w.u:
-      atom.size.w = ictx.space.w.u
+    atom.size.h = max(atom.size.h, h)
+  if not hasWidth and ictx.space.w.isDefinite():
+    atom.size.w = min(ictx.space.w.u, atom.size.w)
+  if not hasHeight and ictx.space.h.isDefinite():
+    atom.size.h = min(ictx.space.h.u, atom.size.h)
+  if not hasHeight and not hasWidth:
+    if osize.w >= osize.h:
       if osize.w > 0:
         atom.size.h = osize.h div osize.w * atom.size.w
-    if ictx.space.h.isDefinite() and atom.size.h > ictx.space.h.u:
-      atom.size.h = ictx.space.h.u
-      if osize.w > 0:
+    else:
+      if osize.h > 0:
         atom.size.w = osize.w div osize.h * atom.size.h
   elif not hasHeight:
-    if osize.w > 0:
-      atom.size.h = osize.h div osize.w * atom.size.w
+    atom.size.h = osize.h div osize.w * atom.size.w
   elif not hasWidth:
-    if osize.h > 0:
-      atom.size.w = osize.w div osize.h * atom.size.h
+    atom.size.w = osize.w div osize.h * atom.size.h
   let iastate = InlineAtomState(
     vertalign: state.fragment.computed{"vertical-align"},
     baseline: atom.size.h
