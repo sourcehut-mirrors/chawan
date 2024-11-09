@@ -47,7 +47,10 @@ macro makeStaticAtom =
       satFormaction = "formaction"
       satFormenctype = "formenctype"
       satFormmethod = "formmethod"
+      satHash = "hash"
       satHeight = "height"
+      satHost = "host"
+      satHostname = "hostname"
       satHref = "href"
       satId = "id"
       satIntegrity = "integrity"
@@ -67,13 +70,19 @@ macro makeStaticAtom =
       satNovalidate = "novalidate"
       satOnclick = "onclick"
       satOnload = "onload"
+      satOrigin = "origin"
+      satPassword = "password"
+      satPathname = "pathname"
+      satPort = "port"
       satProgress = "progress"
+      satProtocol = "protocol"
       satReadystatechange = "readystatechange"
       satReferrerpolicy = "referrerpolicy"
       satRel = "rel"
       satRequired = "required"
       satRows = "rows"
       satRowspan = "rowspan"
+      satSearch = "search"
       satSelected = "selected"
       satSize = "size"
       satSizes = "sizes"
@@ -90,6 +99,7 @@ macro makeStaticAtom =
       satTouchstart = "touchstart"
       satType = "type"
       satUsemap = "usemap"
+      satUsername = "username"
       satValign = "valign"
       satValue = "value"
       satWheel = "wheel"
@@ -218,6 +228,12 @@ proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
   var s: string
   ?ctx.fromJS(val, s)
   res = ctx.getFactoryImpl().toAtom(s)
+  return ok()
+
+proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): Opt[void] =
+  var ca: CAtom
+  ?ctx.fromJS(val, ca)
+  res = ctx.getFactoryImpl().toStaticAtom(ca)
   return ok()
 
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =

@@ -5,8 +5,8 @@
 <script>
 const x = new Headers();
 x.append("hi", "world");
-assert_equals(x.get("hi"), "world");
-assert_equals(x.get("Hi"), "world");
-assert_equals(x.get("hI"), "world");
+assertEquals(x.get("hi"), "world");
+assertEquals(x.get("Hi"), "world");
+assertEquals(x.get("hI"), "world");
 document.getElementById("x").textContent = "Success";
 </script>

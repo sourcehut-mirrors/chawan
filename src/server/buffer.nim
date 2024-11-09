@@ -338,7 +338,7 @@ proc isClickable(styledNode: StyledNode): bool =
     return false
   let element = Element(styledNode.node)
   if element of HTMLAnchorElement:
-    return HTMLAnchorElement(element).href != ""
+    return HTMLAnchorElement(element).reinitURL().isSome
   if element.isButton() and FormAssociatedElement(element).form == nil:
     return false
   return element.tagType in ClickableElements
@@ -370,7 +370,9 @@ proc getClickHover(buffer: Buffer; styledNode: StyledNode): string =
   let clickable = styledNode.getClickable()
   if clickable != nil:
     if clickable of HTMLAnchorElement:
-      return HTMLAnchorElement(clickable).href
+      let url = HTMLAnchorElement(clickable).reinitURL()
+      if url.isSome:
+        return $url.get
     elif clickable of FormAssociatedElement:
       #TODO this is inefficient and also quite stupid
       let fae = FormAssociatedElement(clickable)
@@ -1420,7 +1422,7 @@ proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
 
 proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
   var repaint = buffer.restoreFocus()
-  let url = parseURL(anchor.href, some(buffer.baseURL))
+  let url = anchor.reinitURL()
   if url.isSome:
     var url = url.get
     if url.scheme == "javascript":

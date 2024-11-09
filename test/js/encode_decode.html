@@ -19,7 +19,7 @@ function bytesToBase64(bytes) {
 
 const utf8 = new TextEncoder().encode("a Ā 𐀀 文 🦄")
 const b64utf8 = bytesToBase64(utf8);
-assert_equals(b64utf8, "YSDEgCDwkICAIOaWhyDwn6aE")
+assertEquals(b64utf8, "YSDEgCDwkICAIOaWhyDwn6aE")
 const dec = new TextDecoder();
 const bytes = base64ToBytes(b64utf8);
 const a = [];
@@ -27,6 +27,6 @@ let res = "";
 for (const c of bytes)
 	res += dec.decode(c, {stream: true});
 res += dec.decode();
-assert_equals(res, "a Ā 𐀀 文 🦄");
+assertEquals(res, "a Ā 𐀀 文 🦄");
 document.getElementById("success").textContent = "Success";
 </script>

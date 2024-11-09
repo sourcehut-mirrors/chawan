@@ -5,13 +5,13 @@
 <script>
 const x = document.getElementById("abc")
 const a = document.getElementsByTagName("a")[0];
-assert_equals(a.target, "abcd");
+assertEquals(a.target, "abcd");
 a.target = "defg";
-assert_equals(a.target, "defg");
-assert_equals(a.relList + "", "");
+assertEquals(a.target, "defg");
+assertEquals(a.relList + "", "");
 a.relList = "...";
-assert_equals(a.relList + "", "...");
-assert_equals(a.className, "claz");
+assertEquals(a.relList + "", "...");
+assertEquals(a.className, "claz");
 x.textContent = "Success";
 a.remove(); /* ignore target... */
 </script>

@@ -9,15 +9,15 @@
 <script>
 const x = document.getElementById("x");
 const test = document.getElementById("test");
-assert_equals(document.forms[0], test);
-assert_equals(document.forms["test"], test);
+assertEquals(document.forms[0], test);
+assertEquals(document.forms["test"], test);
 const elements = test.elements;
-assert_equals(elements["a"], undefined);
-assert_instanceof(elements[0], HTMLInputElement);
-assert_equals(elements[0].id, "1");
-assert_equals(elements["0"].id, "1");
-assert_equals(elements[0].name, "input");
-assert_instanceof(elements["input"], RadioNodeList);
+assertEquals(elements["a"], undefined);
+assertInstanceof(elements[0], HTMLInputElement);
+assertEquals(elements[0].id, "1");
+assertEquals(elements["0"].id, "1");
+assertEquals(elements[0].name, "input");
+assertInstanceof(elements["input"], RadioNodeList);
 let el = elements[0];
 el.remove();
 el.remove();

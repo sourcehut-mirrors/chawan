@@ -3,16 +3,16 @@
 <div id=x>Fail</div>
 <script src=asserts.js></script>
 <script>
-assert_equals(window.toString(), "[object Window]");
+assertEquals(window.toString(), "[object Window]");
 const desc = Object.getOwnPropertyDescriptor(window, "window");
 assert(desc.enumerable, "window must be enumerable");
 assert(!desc.configurable, "window must not be configurable");
-assert_equals(window.history.state, null);
+assertEquals(window.history.state, null);
 window.localStorage.setItem("a", "x");
 window.localStorage["b"] = "y";
-assert_equals(window.localStorage["b"], "y")
+assertEquals(window.localStorage["b"], "y")
 delete window.localStorage.b;
-assert_equals(window.localStorage["b"], undefined);
+assertEquals(window.localStorage["b"], undefined);
 window.localStorage["b"] = "y";
 assert(window.sessionStorage instanceof Storage);
 document.getElementById("x").textContent = "Success";

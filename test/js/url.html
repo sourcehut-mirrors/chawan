@@ -3,70 +3,70 @@
 <div id=x>Fail</div>
 <script src=asserts.js></script>
 <script>
-assert_equals(new URL("https:example.org") + "", "https://example.org/");
-assert_equals(new URL("https://////example.com///") + "", "https://example.com///");
-assert_equals(new URL("https://example.com/././foo") + "", "https://example.com/foo");
-assert_equals(new URL("hello:world", "https://example.com/") + "", "hello:world");
-assert_equals(new URL("https:example.org", "https://example.com/") + "", "https://example.com/example.org");
-assert_equals(new URL(String.raw`\example\..\demo/.\ `, "https://example.com/") + "", "https://example.com/demo/");
-assert_equals(new URL("example", "https://example.com/demo") + "", "https://example.com/example");
-assert_equals(new URL('file:///C|/demo') + "", "file:///C:/demo");
-assert_equals(new URL('..', 'file:///C:/demo') + "", "file:///C:/");
-assert_equals(new URL('file://loc%61lhost/') + "", "file:///");
-assert_equals(new URL("https://user:password@example.org/") + "", "https://user:password@example.org/");
-assert_equals(new URL("https://example.org/foo bar") + "", "https://example.org/foo%20bar");
-assert_equals(new URL("https://EXAMPLE.com/../x") + "", "https://example.com/x");
-assert_throws('new URL("https://ex ample.org/")');
-assert_throws('new URL("example")');
-assert_throws('new URL("https://example.com:demo")');
-assert_throws('new URL("https://[www.example.com]")');
-assert_equals(new URL("https://example.org//") + "", "https://example.org//");
-assert_equals(new URL("https://example.com/[]?[]#[]") + "", "https://example.com/[]?[]#[]");
-assert_equals(new URL("https://example/%?%#%") + "", "https://example/%?%#%");
-assert_equals(new URL("https://example/%25?%25#%25") + "", "https://example/%25?%25#%25");
-assert_throws('new URL("https:example\r.org")');
-assert_equals(new URL("  https:exa\tmple\n.org\n/  ") + "", "https://example.org/");
-assert_equals(new URL("  https:exa\tmple.org\n:\n2\n4\n5\n2\n\n/  ") + "", "https://example.org:2452/");
-assert_equals(new URL("  h\nt\tt\np\ts\n:\t/\n/\te\nx\ta\nm\tp\nl\te\n/\tp\na\tt\n\nh\t?\nq\tu\ne\tr\ny\t#\nf\tr\na\tg\nm\te\nnt") + "", "https://example/path?query#fragment");
-assert_equals(new URL("  h\nt\tt\np\ts\n:\t/\n/\tu\ns\ne\nr\nn\na\n\nm\ne\n:\np\na\ns\ns\nw\no\nr\nd\n@\ne\nx\ta\nm\tp\nl\te\n/\tp\na\tt\n\nh\t?\nq\tu\ne\tr\ny\t#\nf\tr\na\tg\nm\te\nnt") + "", "https://username:password@example/path?query#fragment");
-assert_equals(new URL("abcd?efgh", "https://example.com/") + "", "https://example.com/abcd?efgh");
-assert_equals(new URL("abcd#ijkl", "https://example.com/") + "", "https://example.com/abcd#ijkl");
-assert_equals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://example.com/abcd?efgh#ijkl");
-assert_equals(new URL("https://テスト") + "", "https://xn--zckzah/");
-assert_equals(new URL("https://xn--zckzah") + "", "https://xn--zckzah/");
-assert_throws('new URL("https://[]")');
+assertEquals(new URL("https:example.org") + "", "https://example.org/");
+assertEquals(new URL("https://////example.com///") + "", "https://example.com///");
+assertEquals(new URL("https://example.com/././foo") + "", "https://example.com/foo");
+assertEquals(new URL("hello:world", "https://example.com/") + "", "hello:world");
+assertEquals(new URL("https:example.org", "https://example.com/") + "", "https://example.com/example.org");
+assertEquals(new URL(String.raw`\example\..\demo/.\ `, "https://example.com/") + "", "https://example.com/demo/");
+assertEquals(new URL("example", "https://example.com/demo") + "", "https://example.com/example");
+assertEquals(new URL('file:///C|/demo') + "", "file:///C:/demo");
+assertEquals(new URL('..', 'file:///C:/demo') + "", "file:///C:/");
+assertEquals(new URL('file://loc%61lhost/') + "", "file:///");
+assertEquals(new URL("https://user:password@example.org/") + "", "https://user:password@example.org/");
+assertEquals(new URL("https://example.org/foo bar") + "", "https://example.org/foo%20bar");
+assertEquals(new URL("https://EXAMPLE.com/../x") + "", "https://example.com/x");
+assertThrows('new URL("https://ex ample.org/")');
+assertThrows('new URL("example")');
+assertThrows('new URL("https://example.com:demo")');
+assertThrows('new URL("https://[www.example.com]")');
+assertEquals(new URL("https://example.org//") + "", "https://example.org//");
+assertEquals(new URL("https://example.com/[]?[]#[]") + "", "https://example.com/[]?[]#[]");
+assertEquals(new URL("https://example/%?%#%") + "", "https://example/%?%#%");
+assertEquals(new URL("https://example/%25?%25#%25") + "", "https://example/%25?%25#%25");
+assertThrows('new URL("https:example\r.org")');
+assertEquals(new URL("  https:exa\tmple\n.org\n/  ") + "", "https://example.org/");
+assertEquals(new URL("  https:exa\tmple.org\n:\n2\n4\n5\n2\n\n/  ") + "", "https://example.org:2452/");
+assertEquals(new URL("  h\nt\tt\np\ts\n:\t/\n/\te\nx\ta\nm\tp\nl\te\n/\tp\na\tt\n\nh\t?\nq\tu\ne\tr\ny\t#\nf\tr\na\tg\nm\te\nnt") + "", "https://example/path?query#fragment");
+assertEquals(new URL("  h\nt\tt\np\ts\n:\t/\n/\tu\ns\ne\nr\nn\na\n\nm\ne\n:\np\na\ns\ns\nw\no\nr\nd\n@\ne\nx\ta\nm\tp\nl\te\n/\tp\na\tt\n\nh\t?\nq\tu\ne\tr\ny\t#\nf\tr\na\tg\nm\te\nnt") + "", "https://username:password@example/path?query#fragment");
+assertEquals(new URL("abcd?efgh", "https://example.com/") + "", "https://example.com/abcd?efgh");
+assertEquals(new URL("abcd#ijkl", "https://example.com/") + "", "https://example.com/abcd#ijkl");
+assertEquals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://example.com/abcd?efgh#ijkl");
+assertEquals(new URL("https://テスト") + "", "https://xn--zckzah/");
+assertEquals(new URL("https://xn--zckzah") + "", "https://xn--zckzah/");
+assertThrows('new URL("https://[]")');
 {
 	const x = new URL("file:/test");
 	x.protocol = "abcd";
-	assert_equals(x.protocol, "file:");
+	assertEquals(x.protocol, "file:");
 }
 {
 	const x = new URL("efgh:/test");
 	x.protocol = "abcd";
-	assert_equals(x.protocol, "abcd:");
+	assertEquals(x.protocol, "abcd:");
 	x.protocol = " efgh";
-	assert_equals(x.protocol, "abcd:");
+	assertEquals(x.protocol, "abcd:");
 }
 {
 	const x = new URL("http:/test");
 	x.protocol = "abcd";
-	assert_equals(x.protocol, "http:");
+	assertEquals(x.protocol, "http:");
 	x.protocol = "https";
-	assert_equals(x.protocol, "https:");
+	assertEquals(x.protocol, "https:");
 }
 {
 	const x = new URL("https://user:password@example.org:1234/path?search#hash");
-	assert_equals(x.protocol, "https:");
-	assert_equals(x.username, "user");
-	assert_equals(x.password, "password");
-	assert_equals(x.hostname, "example.org");
-	assert_equals(x.port, "1234");
-	assert_equals(x.host, "example.org:1234");
-	assert_equals(x.pathname, "/path");
-	assert_equals(x.search, "?search");
-	assert_equals(x.hash, "#hash");
+	assertEquals(x.protocol, "https:");
+	assertEquals(x.username, "user");
+	assertEquals(x.password, "password");
+	assertEquals(x.hostname, "example.org");
+	assertEquals(x.port, "1234");
+	assertEquals(x.host, "example.org:1234");
+	assertEquals(x.pathname, "/path");
+	assertEquals(x.search, "?search");
+	assertEquals(x.hash, "#hash");
 	x.searchParams.delete("search");
-	assert_equals(x.search, "");
+	assertEquals(x.search, "");
 	x.searchParams.append("hi", "world");
 	assert(x.searchParams.has("hi"));
 	assert(x.searchParams.has("hi", "world"));

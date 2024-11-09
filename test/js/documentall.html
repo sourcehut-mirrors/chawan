@@ -9,11 +9,11 @@
 const abc = document.all;
 assert(!document.all, "document.all must be falsy");
 assert(!abc, "document.all must be falsy");
-assert_equals(document.all.length, 10);
+assertEquals(document.all.length, 10);
 const styles = [abc[6], abc[7], abc[8]];
-assert_equals(styles[0].textContent, "style 1");
-assert_equals(styles[1].textContent, "style 2");
-assert_equals(styles[2].textContent, "style 3");
+assertEquals(styles[0].textContent, "style 1");
+assertEquals(styles[1].textContent, "style 2");
+assertEquals(styles[2].textContent, "style 3");
 const result = document.getElementById("result");
 result.textContent = "Success";
 </script>

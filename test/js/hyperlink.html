@@ -1,0 +1,24 @@
+<!doctype html>
+<title>Test template</title>
+<a id=invalid>invalid</a>
+<a id=valid href='https://username:password@example.org/path?search#hash'>valid</a>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const invalid = document.getElementById("invalid");
+assertEquals(invalid.href, "");
+assertEquals(invalid.protocol, ":");
+assertEquals(invalid.search, "");
+assertEquals(invalid.hostname, "");
+assertEquals(invalid.hash, "");
+const valid = document.getElementById("valid");
+const url = new URL("https://username:password@example.org/path?search#hash");
+assertEquals(valid.protocol, "https:");
+for (const x in ["href", "origin", "protocol", "username", "password", "host",
+	"hostname", "port", "pathname", "search", "hash"]) {
+	assertEquals(valid[x], url[x]);
+}
+invalid.remove();
+valid.remove();
+document.getElementById("x").textContent = "Success";
+</script>

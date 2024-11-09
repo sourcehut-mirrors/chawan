@@ -5,22 +5,22 @@
 <script>
 
 const div = document.getElementById("x");
-assert_equals(atob(""), "");
-assert_equals(atob(" "), "");
-assert_equals(atob("YQ"), "a");
-assert_equals(atob("YR"), "a");
-assert_throws('atob("!")', DOMException);
-assert_throws('atob("a")', DOMException);
-assert_throws('atob("aaaaa")', DOMException);
-assert_throws('atob("Aaa==")', DOMException);
-assert_throws('atob("Aaaa==")', DOMException);
-assert_throws('atob("Aaaaa==")', DOMException);
-assert_throws('atob("Aa aaa= = ")', DOMException);
-assert_equals(atob("AAAAAA=="), atob("AAAAAA"));
-assert_equals(atob("AAAAAA"), atob("A A A A A A"));
-assert_equals(atob("AAAAAA"), "\u0000\u0000\u0000\u0000");
-assert_equals(atob("ABCDEF"), "\u0000\u0010\u0083\u0010");
-assert_equals(atob("//////"), "ÿÿÿÿ");
+assertEquals(atob(""), "");
+assertEquals(atob(" "), "");
+assertEquals(atob("YQ"), "a");
+assertEquals(atob("YR"), "a");
+assertThrows('atob("!")', DOMException);
+assertThrows('atob("a")', DOMException);
+assertThrows('atob("aaaaa")', DOMException);
+assertThrows('atob("Aaa==")', DOMException);
+assertThrows('atob("Aaaa==")', DOMException);
+assertThrows('atob("Aaaaa==")', DOMException);
+assertThrows('atob("Aa aaa= = ")', DOMException);
+assertEquals(atob("AAAAAA=="), atob("AAAAAA"));
+assertEquals(atob("AAAAAA"), atob("A A A A A A"));
+assertEquals(atob("AAAAAA"), "\u0000\u0000\u0000\u0000");
+assertEquals(atob("ABCDEF"), "\u0000\u0010\u0083\u0010");
+assertEquals(atob("//////"), "ÿÿÿÿ");
 const longa =
 	"TWFuIGlzIGRpc3Rpbmd1aXNoZWQsIG5vdCBvbmx5IGJ5IGhpcyByZWFzb24sIGJ1dCBieSB0aGlz" +
 	"IHNpbmd1bGFyIHBhc3Npb24gZnJvbSBvdGhlciBhbmltYWxzLCB3aGljaCBpcyBhIGx1c3Qgb2Yg" +
@@ -32,13 +32,13 @@ const longb = "Man is distinguished, not only by his reason, but by this " +
 	"that by a perseverance of delight in the continued and " +
 	"indefatigable generation of knowledge, exceeds the short vehemence " +
 	"of any carnal pleasure.\n";
-assert_equals(atob(longa), longb);
-assert_equals(btoa(""), "");
-assert_equals(btoa("a"), "YQ==");
-assert_equals(btoa("aa"), "YWE=");
-assert_equals(btoa("aaa"), "YWFh");
-assert_equals(btoa("aaazdxfksljdf"), "YWFhemR4ZmtzbGpkZg==");
-assert_equals(btoa(longb), longa);
-assert_throws('btoa("őÉéeé")', DOMException);
+assertEquals(atob(longa), longb);
+assertEquals(btoa(""), "");
+assertEquals(btoa("a"), "YQ==");
+assertEquals(btoa("aa"), "YWE=");
+assertEquals(btoa("aaa"), "YWFh");
+assertEquals(btoa("aaazdxfksljdf"), "YWFhemR4ZmtzbGpkZg==");
+assertEquals(btoa(longb), longa);
+assertThrows('btoa("őÉéeé")', DOMException);
 div.textContent = "Success";
 </script>

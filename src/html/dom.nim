@@ -2617,13 +2617,31 @@ proc parseColor(element: Element; s: string): ARGBColor =
   return color.argb
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
-proc href0(element: HTMLElement): string =
-  if not element.attrb(satHref):
-    return ""
-  let url = parseURL(element.attr(satHref), some(element.document.baseURL))
-  if url.isSome:
-    return $url.get
-  return ""
+proc reinitURL*(element: HTMLElement): Option[URL] =
+  if element.attrb(satHref):
+    let url = parseURL(element.attr(satHref), some(element.document.baseURL))
+    if url.isSome and url.get.scheme != "blob":
+      return url
+  return none(URL)
+
+proc hyperlinkGetProp(ctx: JSContext; element: HTMLElement; a: JSAtom):
+    JSValue =
+  let href = element.reinitURL()
+  var res = JS_NULL
+  var ca: StaticAtom
+  if ctx.fromJS(a, ca).isSome:
+    if ca in {satHref, satOrigin, satProtocol, satUsername, satPassword,
+        satHost, satHostname, satPort, satPathname, satSearch, satHash}:
+      if href.isSome:
+        let url = ctx.toJS(href.get)
+        if not JS_IsException(url):
+          res = JS_GetProperty(ctx, url, a)
+          JS_FreeValue(ctx, url)
+      elif ca == satProtocol:
+        res = ctx.toJS(":")
+      else:
+        res = ctx.toJS("")
+  return res
 
 # <base>
 proc href(base: HTMLBaseElement): string {.jsfget.} =
@@ -2634,27 +2652,35 @@ proc href(base: HTMLBaseElement): string {.jsfget.} =
   return ""
 
 # <a>
-proc href*(anchor: HTMLAnchorElement): string {.jsfget.} =
-  return anchor.href0
-
 proc setHref(anchor: HTMLAnchorElement; href: string) {.jsfset: "href".} =
   anchor.attr(satHref, href)
 
-proc `$`(anchor: HTMLAnchorElement): string {.jsfunc.} =
-  return anchor.href
+proc getter(ctx: JSContext; anchor: HTMLAnchorElement; a: JSAtom): JSValue
+    {.jsgetprop.} =
+  return ctx.hyperlinkGetProp(anchor, a)
+
+proc toString(anchor: HTMLAnchorElement): string {.jsfunc.} =
+  let href = anchor.reinitURL()
+  if href.isSome:
+    return $href.get
+  return ""
 
 proc setRelList(anchor: HTMLAnchorElement; s: string) {.jsfset: "relList".} =
   anchor.attr(satRel, s)
 
 # <area>
-proc href(area: HTMLAreaElement): string {.jsfget.} =
-  return area.href0
-
 proc setHref(area: HTMLAreaElement; href: string) {.jsfset: "href".} =
   area.attr(satHref, href)
 
-proc `$`(area: HTMLAreaElement): string {.jsfunc.} =
-  return area.href
+proc getter(ctx: JSContext; anchor: HTMLAreaElement; a: JSAtom): JSValue
+    {.jsgetprop.} =
+  return ctx.hyperlinkGetProp(anchor, a)
+
+proc toString(area: HTMLAreaElement): string {.jsfunc.} =
+  let href = area.reinitURL()
+  if href.isSome:
+    return $href.get
+  return ""
 
 proc setRelList(area: HTMLAreaElement; s: string) {.jsfset: "relList".} =
   area.attr(satRel, s)
