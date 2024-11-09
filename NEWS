@@ -1,3 +1,7 @@
+0.5.5 (2024.11.09)
+* fix fromJS with seq
+* fix JS_FreePropertyEnum binding
+
 0.5.4 (2024.11.08)
 * fix some C warnings
 * do not link to pthread with --threads:off

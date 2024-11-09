@@ -1,6 +1,6 @@
 # Package
 
-version       = "0.5.4"
+version       = "0.5.5"
 author        = "bptato"
 description   = "Seamless Nim-QuickJS integration"
 license       = "Unlicense"
