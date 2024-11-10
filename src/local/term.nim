@@ -666,6 +666,7 @@ proc applyConfig(term: Terminal) =
     term.defaultBackground = term.config.display.default_background_color.get
   if term.config.display.default_foreground_color.isSome:
     term.defaultForeground = term.config.display.default_foreground_color.get
+  term.attrs.prefersDark = term.defaultBackground.Y < 125
   # charsets
   if term.config.encoding.display_charset.isSome:
     term.cs = term.config.encoding.display_charset.get

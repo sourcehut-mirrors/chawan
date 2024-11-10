@@ -206,8 +206,15 @@ p {
 	margin-bottom: 1em;
 }
 
+@media (prefers-color-scheme: light) {
+a[href] {
+	color: -cha-ansi(blue);
+}
+}
+@media (prefers-color-scheme: dark) {
 a[href] {
 	color: -cha-ansi(yellow);
+}
 }
 
 a[href]:hover {

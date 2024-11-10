@@ -5,3 +5,4 @@ type WindowAttributes* = object
   ppl*: int # cell height (pixels per line)
   widthPx*: int
   heightPx*: int
+  prefersDark*: bool # prefers-color-scheme accepts "dark" (not "light")
