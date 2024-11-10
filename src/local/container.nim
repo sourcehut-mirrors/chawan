@@ -7,9 +7,9 @@ import std/tables
 import chagashi/charset
 import config/config
 import config/mimetypes
+import css/render
 import io/dynstream
 import io/promise
-import layout/renderdocument
 import loader/headers
 import loader/loaderiface
 import loader/request

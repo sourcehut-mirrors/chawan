@@ -14,6 +14,7 @@ import config/config
 import css/cascade
 import css/cssparser
 import css/cssvalues
+import css/render
 import css/sheet
 import css/stylednode
 import html/catom
@@ -30,7 +31,6 @@ import io/poll
 import io/promise
 import js/console
 import js/timeout
-import layout/renderdocument
 import loader/headers
 import loader/loaderiface
 import loader/request

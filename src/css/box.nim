@@ -1,7 +1,7 @@
 import css/cssvalues
+import css/lunit
 import css/stylednode
 import types/bitmap
-import layout/layoutunit
 
 type
   DimensionType* = enum
