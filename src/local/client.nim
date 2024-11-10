@@ -260,41 +260,45 @@ proc handleCommandInput(client: Client; c: char): EmptyPromise =
                 container.setCursorXY(container.fromx + input.col,
                   container.fromy + input.row)
                 if container.cursorx == prevx and container.cursory == prevy:
-                  container.click()
+                  discard client.evalAction("cmd.buffer.click", 0)
               else:
                 let diff = (input.col - client.pressed.col,
                   input.row - client.pressed.row)
                 if diff[0] > 0:
-                  container.scrollLeft(diff[0])
+                  discard client.evalAction("cmd.buffer.scrollLeft",
+                    int32(diff[0]))
                 else:
-                  container.scrollRight(-diff[0])
+                  discard client.evalAction("cmd.buffer.scrollRight",
+                    -int32(diff[0]))
                 if diff[1] > 0:
-                  container.scrollUp(diff[1])
+                  discard client.evalAction("cmd.buffer.scrollUp",
+                    int32(diff[1]))
                 else:
-                  container.scrollDown(-diff[1])
+                  discard client.evalAction("cmd.buffer.scrollDown",
+                    -int32(diff[1]))
               client.pressed = (-1, -1)
             else: discard
           of mibMiddle:
             if input.t == mitRelease: # release, to emulate w3m
-              client.pager.discardBuffer()
+              discard client.evalAction("cmd.pager.discardBuffer", 0)
           of mibWheelUp:
             if input.t == mitPress:
-              container.scrollUp(5)
+              discard client.evalAction("cmd.buffer.scrollUp", 5)
           of mibWheelDown:
             if input.t == mitPress:
-              container.scrollDown(5)
+              discard client.evalAction("cmd.buffer.scrollDown", 5)
           of mibWheelLeft:
             if input.t == mitPress:
-              container.scrollLeft(5)
+              discard client.evalAction("cmd.buffer.scrollLeft", 5)
           of mibWheelRight:
             if input.t == mitPress:
-              container.scrollRight(5)
+              discard client.evalAction("cmd.buffer.scrollRight", 5)
           of mibThumbInner:
             if input.t == mitPress:
-              discard client.pager.prevBuffer()
+              discard client.evalAction("cmd.pager.prevBuffer", 0)
           of mibThumbTip:
             if input.t == mitPress:
-              discard client.pager.nextBuffer()
+              discard client.evalAction("cmd.pager.nextBuffer", 0)
           else: discard
       client.pager.inputBuffer = ""
     elif "\e[<".startsWith(client.pager.inputBuffer):
