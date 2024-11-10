@@ -255,6 +255,15 @@ proc btoa(ctx: JSContext; window: Window; data: JSValue): JSValue
 proc alert(window: Window; s: string) {.jsfunc.} =
   window.console.error(s)
 
+proc requestAnimationFrame(ctx: JSContext; window: Window; callback: JSValue):
+    JSValue {.jsfunc.} =
+  if not JS_IsFunction(ctx, callback):
+    return JS_ThrowTypeError(ctx, "callback is not a function")
+  let handler = ctx.newFunction(["callback"], """
+callback(new Event("").timeStamp);
+""")
+  return ctx.toJS(window.setTimeout(handler, 0, callback))
+
 proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(string)): JSResult[CSSStyleDeclaration] {.jsfunc.} =
   #TODO implement this properly

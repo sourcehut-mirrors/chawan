@@ -59,7 +59,7 @@ proc clearTimeout*(state: var TimeoutState; id: int32) =
       entry.dead = true
       break
 
-proc getUnixMillis(): int64 =
+proc getUnixMillis*(): int64 =
   let now = getTime()
   return now.toUnix() * 1000 + now.nanosecond div 1_000_000
 

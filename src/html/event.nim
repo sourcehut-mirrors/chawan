@@ -1,10 +1,10 @@
 import std/math
 import std/options
-import std/times
 
 import html/catom
 import html/script
 import js/domexception
+import js/timeout
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -83,9 +83,8 @@ type
 # Event
 proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
   event.flags = {efInitialized}
-  #TODO this is probably incorrect?
-  # I think it measures the time since the first fork. not sure though
-  event.timeStamp = round(cpuTime())
+  #TODO this should measure time starting from when the script was started.
+  event.timeStamp = float64(getUnixMillis())
   event.bubbles = eventInitDict.bubbles
   event.cancelable = eventInitDict.cancelable
   if eventInitDict.composed:

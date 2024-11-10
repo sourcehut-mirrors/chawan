@@ -3906,8 +3906,6 @@ proc appendChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
 proc append*(parent, node: Node) =
   discard parent.appendChild(node)
 
-#TODO replaceChild
-
 proc removeChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
   if node.parentNode != parent:
     return errDOMException("Node is not a child of parent", "NotFoundError")
@@ -3980,6 +3978,10 @@ proc replaceAll(parent, node: Node) =
     else:
       parent.append(node)
   #TODO tree mutation record
+
+proc replaceChild(parent, node, child: Node): DOMResult[Node] {.jsfunc.} =
+  ?parent.replace(child, node)
+  return ok(child)
 
 proc createTextNode*(document: Document; data: string): Text {.jsfunc.} =
   return newText(document, data)
