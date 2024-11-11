@@ -79,7 +79,10 @@ proc main() =
   if f.open(path, fmRead):
     loadFile(f)
   elif dirExists(path):
-    loadDir(path, opath)
+    if path[^1] != '/':
+      stdout.write("Status: 301\nLocation: " & path & "/\n")
+    else:
+      loadDir(path, opath)
   else:
     stdout.write("Cha-Control: ConnectionError FileNotFound")
 

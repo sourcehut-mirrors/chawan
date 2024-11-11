@@ -1427,7 +1427,7 @@ proc onload(container: Container; res: int) =
     container.setLoadInfo("")
     container.triggerEvent(cetStatus)
     container.triggerEvent(cetLoaded)
-    if cfHasStart notin container.flags and (container.url.anchor != "" or
+    if cfHasStart notin container.flags and (container.url.hash != "" or
         container.config.autofocus):
       container.requestLines().then(proc(): Promise[GotoAnchorResult] =
         return container.iface.gotoAnchor()

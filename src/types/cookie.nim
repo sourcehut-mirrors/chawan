@@ -125,7 +125,7 @@ proc `$`*(cookiejar: CookieJar): string =
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.1.4
 func defaultCookiePath(url: URL): string =
-  let path = ($url.path).beforeLast('/')
+  let path = url.pathname.beforeLast('/')
   if path == "" or path[0] != '/':
     return "/"
   return path
@@ -197,7 +197,7 @@ proc serialize*(cookiejar: CookieJar; url: URL): string =
       continue
     if cookie.secure and url.scheme != "https":
       continue
-    if not cookiePathMatches(cookie.path, $url.path):
+    if not cookiePathMatches(cookie.path, url.pathname):
       continue
     if not cookieDomainMatches(cookie.domain, url):
       continue

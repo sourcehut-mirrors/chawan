@@ -502,8 +502,8 @@ proc putMappedURL(url: URL) =
   putEnv("MAPPED_URI_PASSWORD", url.password)
   putEnv("MAPPED_URI_HOST", url.hostname)
   putEnv("MAPPED_URI_PORT", url.port)
-  putEnv("MAPPED_URI_PATH", url.path.serialize())
-  putEnv("MAPPED_URI_QUERY", url.query.get(""))
+  putEnv("MAPPED_URI_PATH", url.pathname)
+  putEnv("MAPPED_URI_QUERY", url.search.substr(1))
 
 type CGIPath = object
   basename: string
@@ -528,8 +528,8 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
     putMappedURL(prevURL)
   if cpath.pathInfo != "":
     putEnv("PATH_INFO", cpath.pathInfo)
-  if url.query.isSome:
-    putEnv("QUERY_STRING", url.query.get)
+  if url.search != "":
+    putEnv("QUERY_STRING", url.search.substr(1))
   if request.httpMethod == hmPost:
     if request.body.t == rbtMultipart:
       putEnv("CONTENT_TYPE", request.body.multipart.getContentType())
@@ -754,7 +754,7 @@ proc loadStream(ctx: LoaderContext; client: ClientData; handle: InputHandle;
 proc loadFromCache(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request) =
   let id = parseInt32(request.url.pathname).get(-1)
-  let startFrom = parseInt32(request.url.query.get("")).get(0)
+  let startFrom = parseInt32(request.url.search.substr(1)).get(0)
   let (ps, n) = client.openCachedItem(id)
   if ps != nil:
     if startFrom != 0:
@@ -805,13 +805,13 @@ proc loadDataSend(ctx: LoaderContext; handle: InputHandle; s, ct: string) =
 
 proc loadData(ctx: LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
-  var ct = url.path.s.until(',')
+  var ct = url.pathname.until(',')
   if AllChars - Ascii + Controls - {'\t', ' '} in ct:
     handle.sendResult(ceInvalidURL, "invalid data URL")
     handle.close()
     return
   let sd = ct.len + 1 # data start
-  let body = percentDecode(url.path.s.toOpenArray(sd, url.path.s.high))
+  let body = percentDecode(url.pathname.toOpenArray(sd, url.pathname.high))
   if ct.endsWith(";base64"):
     let d = atob0(body) # decode from ct end + 1
     if d.isNone:
@@ -831,7 +831,7 @@ proc loadResource(ctx: LoaderContext; client: ClientData;
   while redo and tries < MaxRewrites:
     redo = false
     if ctx.config.w3mCGICompat and request.url.scheme == "file":
-      let path = request.url.path.serialize_unicode()
+      let path = request.url.pathname.percentDecode()
       if ctx.canRewriteForCGICompat(path):
         let newURL = newURL("cgi-bin:" & path & request.url.search)
         if newURL.isSome:

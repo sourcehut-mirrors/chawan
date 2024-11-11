@@ -645,7 +645,7 @@ proc clientLoadJSModule(ctx: JSContext; module_name: cstringConst;
     JS_ThrowTypeError(ctx, "Invalid URL: %s", module_name)
     return nil
   try:
-    let f = readFile($x.get.path)
+    let f = readFile(x.get.pathname)
     return finishLoadModule(ctx, f, cstring(module_name))
   except IOError:
     JS_ThrowTypeError(ctx, "Failed to open file %s", module_name)

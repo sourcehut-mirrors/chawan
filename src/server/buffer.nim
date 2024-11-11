@@ -707,7 +707,7 @@ type GotoAnchorResult* = object
 proc gotoAnchor*(buffer: Buffer): GotoAnchorResult {.proxy.} =
   if buffer.document == nil:
     return GotoAnchorResult(found: false)
-  var anchor = buffer.document.findAnchor(buffer.url.anchor)
+  var anchor = buffer.document.findAnchor(buffer.url.hash)
   var focus: ReadLineResult = nil
   if buffer.config.autofocus:
     let autofocus = buffer.document.findAutoFocus()
@@ -1232,7 +1232,7 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      parsedAction.query = some(serializeFormURLEncoded(kvlist))
+      parsedAction.setSearch(serializeFormURLEncoded(kvlist, qmark = true))
       return newRequest(parsedAction, httpMethod)
     return newRequest(parsedAction) # get action URL
   of frtMailto:
@@ -1240,8 +1240,8 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       # mailWithHeaders
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      let headers = serializeFormURLEncoded(kvlist, spaceAsPlus = false)
-      parsedAction.query = some(headers)
+      parsedAction.setSearch(serializeFormURLEncoded(kvlist,
+        spaceAsPlus = false, qmark = true))
       return newRequest(parsedAction, httpMethod)
     # mail as body
     let kvlist = entryList.toNameValuePairs()
@@ -1250,19 +1250,19 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
     else:
       #TODO with charset
       serializeFormURLEncoded(kvlist)
-    if parsedAction.query.isNone:
-      parsedAction.query = some("")
-    if parsedAction.query.get != "":
-      parsedAction.query.get &= '&'
-    parsedAction.query.get &= "body=" & body
+    if parsedAction.search == "":
+      parsedAction.search = "?"
+    if parsedAction.search != "?":
+      parsedAction.search &= '&'
+    parsedAction.search &= "body=" & body
     return newRequest(parsedAction, httpMethod)
   of frtHttp:
     if httpMethod == hmGet:
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      let query = serializeFormURLEncoded(kvlist)
-      parsedAction.query = some(query)
+      let query = serializeFormURLEncoded(kvlist, qmark = true)
+      parsedAction.setSearch(query)
       return newRequest(parsedAction, httpMethod)
     # submit as entity body
     let body = case enctype

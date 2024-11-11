@@ -1390,7 +1390,8 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     if ourl == nil:
       break
     request.url = ourl
-  if prevurl.isNone or not prevurl.get.equals(request.url, true) or
+  if prevurl.isNone or
+      not prevurl.get.equals(request.url, excludeHash = true) or
       request.url.hash == "" or request.httpMethod != hmGet or save:
     # Basically, we want to reload the page *only* when
     # a) we force a reload (by setting prevurl to none)
@@ -1428,7 +1429,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     inc pager.numload
     return container
   else:
-    pager.container.findAnchor(request.url.anchor)
+    pager.container.findAnchor(request.url.hash)
     return nil
 
 proc omniRewrite(pager: Pager; s: string): string =
