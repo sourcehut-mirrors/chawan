@@ -32,8 +32,10 @@ Location: /1$opath
 EOF
 		;;
 	esac
+	path=$(printf '%s\n' "$path" | "$CHA_LIBEXEC_DIR"/urldec)
+	query=$(printf '%s\n' "${MAPPED_URI_QUERY##*=}" | "$CHA_LIBEXEC_DIR"/urldec)
 	tab='	'
 	"$CHA_LIBEXEC_DIR"/nc -m "$msg$LF" "$MAPPED_URI_HOST" "${MAPPED_URI_PORT:-70}" <<EOF
-$path${MAPPED_URI_QUERY:+"$tab"}${MAPPED_URI_QUERY##*=}
+$path${query:+"$tab"}${query##*=}
 EOF
 fi
