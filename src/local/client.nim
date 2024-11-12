@@ -687,14 +687,13 @@ proc launchClient*(client: Client; pages: seq[string];
   var dump = dump
   if not dump:
     if stdin.isatty():
-      istream = newPosixStream(stdin.getFileHandle())
-    dump = istream == nil
+      istream = newPosixStream(STDIN_FILENO)
     if stdout.isatty():
-      istream = newPosixStream("/dev/tty", O_RDONLY, 0)
-      if istream != nil:
-        dump = false
+      if istream == nil:
+        istream = newPosixStream("/dev/tty", O_RDONLY, 0)
     else:
-      dump = true
+      istream = nil
+    dump = istream == nil
   let pager = client.pager
   pager.pollData.register(client.forkserver.estream.fd, POLLIN)
   client.loader.registerFun = proc(fd: int) =
