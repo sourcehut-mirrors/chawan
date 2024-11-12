@@ -266,11 +266,11 @@ urimethodmap = [
 	"/etc/urimethodmap",
 	"/usr/local/etc/w3m/urimethodmap"
 ]
-tmpdir = "/tmp/cha-tmp-$LOGNAME"
-sockdir = "/tmp/cha-sock-$LOGNAME"
+tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
+sockdir = "${TMPDIR:-/tmp}/cha-sock-$LOGNAME"
 editor = "${EDITOR:-vi}"
 cgi-dir = ["$CHA_CONFIG_DIR/cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
-download-dir = "/tmp/"
+download-dir = "${TMPDIR:-/tmp}/"
 w3m-cgi-compat = false
 
 [network]

@@ -28,7 +28,7 @@ type
 
   UnquoteState = enum
     usNormal, usTilde, usDollar, usIdent, usBslash, usCurlyStart, usCurly,
-    usCurlyHash, usCurlyPerc, usCurlyColon, usCurlyExpand, usDone
+    usCurlyHash, usCurlyPerc, usCurlyColon, usCurlyExpand
 
   ChaPathError = string
 
@@ -38,7 +38,7 @@ proc unquote*(p: ChaPath): ChaPathResult[string]
 proc unquote(p: string; starti: var int; terminal: Option[char]):
     ChaPathResult[string]
 
-proc stateNormal(ctx: var UnquoteContext; c: char) =
+proc stateNormal(ctx: var UnquoteContext; c: char): bool =
   case c
   of '$': ctx.state = usDollar
   of '\\': ctx.state = usBslash
@@ -48,9 +48,10 @@ proc stateNormal(ctx: var UnquoteContext; c: char) =
     else:
       ctx.s &= c
   elif ctx.terminal.isSome and ctx.terminal.get == c:
-    ctx.state = usDone
+    return false
   else:
     ctx.s &= c
+  return true
 
 proc flushTilde(ctx: var UnquoteContext) =
   if ctx.identStr == "":
@@ -136,6 +137,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   case c
   of '}':
     ctx.s &= $getEnv(ctx.identStr)
+    ctx.identStr = ""
     ctx.state = usNormal
     return ok()
   of '$': # allow $ as first char only
@@ -233,6 +235,7 @@ proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
         ctx.s &= word
   else: assert false
   ctx.subChar = '\0'
+  ctx.identStr = ""
   ctx.hasColon = false
   ctx.state = usNormal
   return ok()
@@ -249,7 +252,9 @@ proc unquote(p: string; starti: var int; terminal: Option[char]):
   while ctx.i < p.len:
     let c = p[ctx.i]
     case ctx.state
-    of usNormal: ctx.stateNormal(c)
+    of usNormal:
+      if not ctx.stateNormal(c):
+        break
     of usTilde: ctx.stateTilde(c)
     of usBslash: ctx.stateBSlash(c)
     of usDollar: ?ctx.stateDollar(c)
@@ -260,10 +265,9 @@ proc unquote(p: string; starti: var int; terminal: Option[char]):
     of usCurlyPerc: ?ctx.stateCurlyPerc(c)
     of usCurlyColon: ?ctx.stateCurlyColon(c)
     of usCurlyExpand: ?ctx.stateCurlyExpand(c)
-    of usDone: break
     inc ctx.i
   case ctx.state
-  of usNormal, usDone: discard
+  of usNormal: discard
   of usTilde: ctx.flushTilde()
   of usBslash: ctx.s &= '\\'
   of usDollar: ctx.s &= '$'
