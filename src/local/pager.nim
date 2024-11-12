@@ -865,7 +865,7 @@ proc dupeBuffer(pager: Pager; container: Container; url: URL) =
   if p == nil:
     pager.alert("Failed to duplicate buffer.")
   else:
-    p.then(proc(container: Container) =
+    p.then(proc(container: Container): Container =
       if container == nil:
         pager.alert("Failed to duplicate buffer.")
       else:
@@ -1423,13 +1423,21 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       else:
         container.replaceBackup = replaceBackup
         replaceBackup.replaceRef = container
-      container.copyCursorPos(replace)
+      container.setStartingPos(replace.pos)
     else:
       pager.addContainer(container)
     inc pager.numload
     return container
   else:
-    pager.container.findAnchor(request.url.hash)
+    let container = pager.container
+    let url = request.url
+    let anchor = url.hash.substr(1)
+    container.iface.gotoAnchor(anchor, false).then(proc(res: GotoAnchorResult) =
+      if res.found:
+        pager.dupeBuffer(container, url)
+      else:
+        pager.alert("Anchor " & url.hash & " not found")
+    )
     return nil
 
 proc omniRewrite(pager: Pager; s: string): string =
@@ -2231,12 +2239,6 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
   case event.t
   of cetLoaded:
     dec pager.numload
-  of cetAnchor:
-    let url2 = newURL(container.url)
-    url2.setHash(event.anchor)
-    pager.dupeBuffer(container, url2)
-  of cetNoAnchor:
-    pager.alert("Couldn't find anchor " & event.anchor)
   of cetReadLine:
     if container == pager.container:
       pager.setLineEdit(lmBuffer, event.value, hide = event.password,

@@ -2,7 +2,6 @@ import std/algorithm
 
 import css/box
 import css/cssvalues
-import css/layout
 import css/lunit
 import css/stylednode
 import types/bitmap
@@ -345,8 +344,10 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
     if bgcolor0.a > 0:
       grid.paintInlineFragment(state, fragment, offset,
         bgcolor0.rgb.cellColor())
+  let startOffset = offset + fragment.state.startOffset
+  fragment.render.offset = startOffset
   if position notin PositionStaticLike and stSplitStart in fragment.splitType:
-    state.absolutePos.add(offset + fragment.state.startOffset)
+    state.absolutePos.add(startOffset)
   if fragment.t == iftParent:
     for child in fragment.children:
       grid.renderInlineFragment(state, child, offset, bgcolor0)
@@ -396,6 +397,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
       offset.y = state.absolutePos[^1].y
   offset += box.state.offset
+  box.render.offset = offset
   if position notin PositionStaticLike:
     state.absolutePos.add(offset)
   if box.computed{"visibility"} == VisibilityVisible:
@@ -438,13 +440,12 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     discard state.absolutePos.pop()
 
 proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
-    styledRoot: StyledNode; attrsp: ptr WindowAttributes;
+    rootBox: BlockBox; attrsp: ptr WindowAttributes;
     images: var seq[PosBitmap]) =
   grid.setLen(0)
-  if styledRoot == nil:
+  if rootBox == nil:
     # no HTML element when we run cascade; just clear all lines.
     return
-  let rootBox = styledRoot.layout(attrsp)
   var state = RenderState(
     absolutePos: @[offset(0, 0)],
     attrsp: attrsp,

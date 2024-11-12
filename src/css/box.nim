@@ -58,6 +58,7 @@ type
 
   InlineFragment* = ref object
     state*: InlineFragmentState
+    render*: BoxRenderState
     computed*: CSSComputedValues
     node*: StyledNode
     splitType*: set[SplitType]
@@ -79,8 +80,12 @@ type
 
   RelativeRect* = array[DimensionType, Span]
 
+  BoxRenderState* = object
+    offset*: Offset
+
   BlockBox* = ref object
     state*: BoxLayoutState
+    render*: BoxRenderState
     computed*: CSSComputedValues
     node*: StyledNode
     inline*: InlineFragment

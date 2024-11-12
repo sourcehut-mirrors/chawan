@@ -46,9 +46,8 @@ type
     setxsave: bool
 
   ContainerEventType* = enum
-    cetAnchor, cetNoAnchor, cetReadLine, cetReadArea, cetReadFile, cetOpen,
-    cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle, cetCancel,
-    cetMetaRefresh
+    cetReadLine, cetReadArea, cetReadFile, cetOpen, cetSetLoadInfo, cetStatus,
+    cetAlert, cetLoaded, cetTitle, cetCancel, cetMetaRefresh
 
   ContainerEvent* = object
     case t*: ContainerEventType
@@ -62,8 +61,6 @@ type
       request*: Request
       save*: bool
       url*: URL
-    of cetAnchor, cetNoAnchor:
-      anchor*: string
     of cetAlert:
       msg*: string
     of cetMetaRefresh:
@@ -151,7 +148,7 @@ type
     # if set, this *overrides* any content type received from the network. (this
     # is because it stores the content type from the -T flag.)
     contentType* {.jsget.}: Option[string]
-    pos: CursorPosition
+    pos*: CursorPosition
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
     process* {.jsget.}: int
@@ -489,13 +486,16 @@ proc triggerEvent(container: Container; event: ContainerEvent) =
 proc triggerEvent(container: Container; t: ContainerEventType) =
   container.triggerEvent(ContainerEvent(t: t))
 
-proc setNumLines(container: Container; lines: int; finish = false) =
+proc gotoStart(container: Container) =
+  container.pos = container.startpos.get
+  container.startpos = none(CursorPosition)
+  container.needslines = true
+
+proc setNumLines(container: Container; lines: int) =
   if container.numLines != lines:
     container.numLines = lines
-    if container.startpos.isSome and finish:
-      container.pos = container.startpos.get
-      container.startpos = none(CursorPosition)
-      container.needslines = true
+    if container.startpos.isSome and lines >= container.startpos.get.cursory:
+      container.gotoStart()
     container.updateCursor()
 
 proc queueDraw*(container: Container) =
@@ -514,7 +514,7 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
     if isBgNew:
       container.bgcolor = res.bgcolor
     if res.numLines != container.numLines:
-      container.setNumLines(res.numLines, true)
+      container.setNumLines(res.numLines)
       if container.loadState != lsLoading:
         container.triggerEvent(cetStatus)
     if res.numLines > 0:
@@ -706,7 +706,7 @@ proc setCursorYCenter(container: Container; y: int; refresh = true)
   if fy != container.fromy:
     container.centerLine()
 
-proc setCursorXYCenter(container: Container; x, y: int; refresh = true)
+proc setCursorXYCenter*(container: Container; x, y: int; refresh = true)
     {.jsfunc.} =
   let fy = container.fromy
   let fx = container.fromx
@@ -1102,9 +1102,12 @@ proc popCursorPos*(container: Container; nojump = false) =
       container.sendCursorPosition()
       container.needslines = true
 
-proc copyCursorPos*(container, c2: Container) =
-  container.startpos = some(c2.pos)
+proc setStartingPos*(container: Container; pos: CursorPosition) =
+  container.startpos = some(pos)
   container.flags.incl(cfHasStart)
+
+proc setStartingPos*(container: Container; x, y: int) =
+  container.setStartingPos(CursorPosition(setx: -1, cursorx: x, cursory: y))
 
 proc cursorNextLink*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
@@ -1427,18 +1430,21 @@ proc onload(container: Container; res: int) =
     container.setLoadInfo("")
     container.triggerEvent(cetStatus)
     container.triggerEvent(cetLoaded)
-    if cfHasStart notin container.flags and (container.url.hash != "" or
-        container.config.autofocus):
-      container.requestLines().then(proc(): Promise[GotoAnchorResult] =
-        return container.iface.gotoAnchor()
-      ).then(proc(res: GotoAnchorResult) =
-        if res.found:
-          container.setCursorXYCenter(res.x, res.y)
-          if res.focus != nil:
-            container.onReadLine(res.focus)
-      )
+    if cfHasStart in container.flags:
+      if container.startpos.isSome:
+        container.gotoStart()
     else:
-      container.needslines = true
+      let anchor = container.url.hash.substr(1)
+      if anchor != "" or container.config.autofocus:
+        container.requestLines().then(proc(): Promise[GotoAnchorResult] =
+          return container.iface.gotoAnchor(anchor, container.config.autofocus)
+        ).then(proc(res: GotoAnchorResult) =
+          if res.found:
+            container.setCursorXYCenter(res.x, res.y)
+            if res.focus != nil:
+              container.onReadLine(res.focus)
+        )
+    container.needslines = true
     if container.config.metaRefresh != mrNever:
       container.iface.checkRefresh().then(proc(res: CheckRefreshResult) =
         if res.n >= 0:
@@ -1519,14 +1525,6 @@ proc cancel*(container: Container) {.jsfunc.} =
       container.remoteCancel()
     else:
       container.triggerEvent(cetCancel)
-
-proc findAnchor*(container: Container; anchor: string) =
-  container.iface.findAnchor(anchor).then(proc(found: bool) =
-    if found:
-      container.triggerEvent(ContainerEvent(t: cetAnchor, anchor: anchor))
-    else:
-      container.triggerEvent(ContainerEvent(t: cetNoAnchor, anchor: anchor))
-  )
 
 proc readCanceled*(container: Container) =
   container.iface.readCanceled().then(proc(repaint: bool) =
@@ -1694,7 +1692,7 @@ proc onreadline(container: Container; w: Slice[int];
     container.iface.getLines(w).then(proc(res: GetLinesResult) =
       container.onreadline(w, handle, res))
   else:
-    container.setNumLines(res.numLines, true)
+    container.setNumLines(res.numLines)
 
 # Synchronously read all lines in the buffer.
 proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =

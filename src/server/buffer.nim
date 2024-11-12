@@ -11,9 +11,12 @@ import chagashi/decoder
 import chagashi/decodercore
 import chame/tags
 import config/config
+import css/box
 import css/cascade
 import css/cssparser
 import css/cssvalues
+import css/layout
+import css/lunit
 import css/render
 import css/sheet
 import css/stylednode
@@ -51,12 +54,11 @@ import utils/twtstr
 
 type
   BufferCommand* = enum
-    bcLoad, bcForceRender, bcWindowChange, bcFindAnchor, bcReadSuccess,
-    bcReadCanceled, bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink,
-    bcFindRevNthLink, bcFindNextMatch, bcFindPrevMatch, bcGetLines,
-    bcUpdateHover, bcGotoAnchor, bcCancel, bcGetTitle, bcSelect, bcClone,
-    bcFindPrevParagraph, bcFindNextParagraph, bcMarkURL, bcToggleImages,
-    bcCheckRefresh
+    bcLoad, bcForceRender, bcWindowChange, bcReadSuccess, bcReadCanceled,
+    bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink, bcFindRevNthLink,
+    bcFindNextMatch, bcFindPrevMatch, bcGetLines, bcUpdateHover, bcGotoAnchor,
+    bcCancel, bcGetTitle, bcSelect, bcClone, bcFindPrevParagraph,
+    bcFindNextParagraph, bcMarkURL, bcToggleImages, bcCheckRefresh
 
   BufferState = enum
     bsLoadingPage, bsLoadingResources, bsLoaded
@@ -98,6 +100,7 @@ type
     pollData: PollData
     prevStyled: StyledNode
     prevnode: StyledNode
+    rootBox: BlockBox
     pstream: SocketStream # control stream
     quirkstyle: CSSStylesheet
     reportedBytesRead: int
@@ -463,12 +466,12 @@ proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
 
   var ly = 0 #last y
   var lx = 0 #last x
-  template link_beginning() =
-    #go to beginning of link
+  template link_beginning(y: int) =
+    # go to beginning of link
     ly = y #last y
     lx = format.pos #last x
 
-    #on the current line
+    # on the current line
     let line = buffer.lines[y]
     while i >= 0:
       let format = line.formats[i]
@@ -477,7 +480,7 @@ proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
         lx = format.pos
       dec i
 
-    #on previous lines
+    # on previous lines
     for iy in countdown(ly - 1, 0):
       let line = buffer.lines[iy]
       i = line.formats.len - 1
@@ -507,8 +510,7 @@ proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
     let format = line.formats[i]
     let fl = format.node.getClickable()
     if fl != nil and fl != link:
-      let y = cursory
-      link_beginning
+      link_beginning cursory
       found_pos lx, ly, fl
     dec i
 
@@ -519,7 +521,7 @@ proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
       let format = line.formats[i]
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
-        link_beginning
+        link_beginning y
         found_pos lx, ly, fl
       dec i
   return (-1, -1)
@@ -704,12 +706,44 @@ type GotoAnchorResult* = object
   y*: int
   focus*: ReadLineResult
 
-proc gotoAnchor*(buffer: Buffer): GotoAnchorResult {.proxy.} =
+proc findAnchor(box: BlockBox; anchor: Element): Offset
+
+proc findAnchor(fragment: InlineFragment; anchor: Element): Offset =
+  if fragment.t == iftBox:
+    let off = fragment.box.findAnchor(anchor)
+    if off.y >= 0:
+      return off
+  elif fragment.t == iftParent:
+    for child in fragment.children:
+      let off = child.findAnchor(anchor)
+      if off.y >= 0:
+        return off
+  if fragment.node != nil and fragment.node.node == anchor:
+    return fragment.render.offset
+  return offset(-1, -1)
+
+proc findAnchor(box: BlockBox; anchor: Element): Offset =
+  if box.inline != nil:
+    let off = box.inline.findAnchor(anchor)
+    if off.y >= 0:
+      return off
+  for child in box.children:
+    let off = child.findAnchor(anchor)
+    if off.y >= 0:
+      return off
+  if box.node != nil and box.node.node == anchor:
+    return box.render.offset
+  return offset(-1, -1)
+
+proc gotoAnchor*(buffer: Buffer; anchor: string; autofocus: bool):
+    GotoAnchorResult {.proxy.} =
   if buffer.document == nil:
     return GotoAnchorResult(found: false)
-  var anchor = buffer.document.findAnchor(buffer.url.hash)
+  var anchor = buffer.document.findAnchor(anchor)
   var focus: ReadLineResult = nil
-  if buffer.config.autofocus:
+  # Do not use buffer.config.autofocus when we just want to check if the
+  # anchor can be found.
+  if autofocus:
     let autofocus = buffer.document.findAutoFocus()
     if autofocus != nil:
       if anchor == nil:
@@ -718,18 +752,10 @@ proc gotoAnchor*(buffer: Buffer): GotoAnchorResult {.proxy.} =
       focus = res.readline.get(nil)
   if anchor == nil:
     return GotoAnchorResult(found: false)
-  for y in 0 ..< buffer.lines.len:
-    let line = buffer.lines[y]
-    for i in 0 ..< line.formats.len:
-      let format = line.formats[i]
-      if format.node != nil and format.node.node in anchor:
-        return GotoAnchorResult(
-          found: true,
-          x: format.pos,
-          y: y,
-          focus: focus
-        )
-  return GotoAnchorResult(found: false)
+  let offset = buffer.rootBox.findAnchor(anchor)
+  let x = max(offset.x div buffer.attrs.ppc, 0).toInt
+  let y = max(offset.y div buffer.attrs.ppl, 0).toInt
+  return GotoAnchorResult(found: true, x: x, y: y, focus: focus)
 
 type CheckRefreshResult* = object
   # n is timeout in millis. -1 => not found
@@ -788,8 +814,12 @@ proc reshape(buffer: Buffer) =
     buffer.prevStyled = nil
   let styledRoot = buffer.document.applyStylesheets(uastyle,
     buffer.userstyle, buffer.prevStyled)
-  buffer.lines.renderDocument(buffer.bgcolor, styledRoot, addr buffer.attrs,
-    buffer.images)
+  # applyStylesheets may return nil if there is no <html> element.
+  buffer.rootBox = nil
+  if styledRoot != nil:
+    buffer.rootBox = styledRoot.layout(addr buffer.attrs)
+  buffer.lines.renderDocument(buffer.bgcolor, buffer.rootBox,
+    addr buffer.attrs, buffer.images)
   buffer.prevStyled = styledRoot
 
 proc maybeReshape(buffer: Buffer) =
@@ -1088,9 +1118,9 @@ proc hasTask(buffer: Buffer; cmd: BufferCommand): bool =
 proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
   let packetid = buffer.tasks[cmd]
   assert packetid != 0
-  buffer.pstream.withPacketWriter w:
-    w.swrite(packetid)
-    w.swrite(res)
+  buffer.pstream.withPacketWriter wt:
+    wt.swrite(packetid)
+    wt.swrite(res)
   buffer.tasks[cmd] = 0
 
 proc onload(buffer: Buffer) =
@@ -1610,9 +1640,6 @@ proc select*(buffer: Buffer; selected: seq[int]): ClickResult {.proxy.} =
 proc readCanceled*(buffer: Buffer): bool {.proxy.} =
   return buffer.restoreFocus()
 
-proc findAnchor*(buffer: Buffer; anchor: string): bool {.proxy.} =
-  return buffer.document != nil and buffer.document.findAnchor(anchor) != nil
-
 type GetLinesResult* = tuple
   numLines: int
   lines: seq[SimpleFlexibleLine]
@@ -1741,14 +1768,14 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     var resolve = newStmtList()
     if rval == nil:
       resolve.add(quote do:
-        buffer.pstream.withPacketWriter w:
-          w.swrite(`packetid`)
+        buffer.pstream.withPacketWriter wt:
+          wt.swrite(`packetid`)
       )
     else:
       resolve.add(quote do:
-        buffer.pstream.withPacketWriter w:
-          w.swrite(`packetid`)
-          w.swrite(`rval`)
+        buffer.pstream.withPacketWriter wt:
+          wt.swrite(`packetid`)
+          wt.swrite(`rval`)
       )
     if v.istask:
       let en = v.ename
