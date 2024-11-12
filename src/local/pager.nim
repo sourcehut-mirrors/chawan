@@ -1423,7 +1423,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       else:
         container.replaceBackup = replaceBackup
         replaceBackup.replaceRef = container
-      container.setStartingPos(replace.pos)
+      container.copyCursorPos(replace)
     else:
       pager.addContainer(container)
     inc pager.numload

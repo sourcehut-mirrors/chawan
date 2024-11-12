@@ -148,7 +148,7 @@ type
     # if set, this *overrides* any content type received from the network. (this
     # is because it stores the content type from the -T flag.)
     contentType* {.jsget.}: Option[string]
-    pos*: CursorPosition
+    pos: CursorPosition
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
     process* {.jsget.}: int
@@ -486,18 +486,6 @@ proc triggerEvent(container: Container; event: ContainerEvent) =
 proc triggerEvent(container: Container; t: ContainerEventType) =
   container.triggerEvent(ContainerEvent(t: t))
 
-proc gotoStart(container: Container) =
-  container.pos = container.startpos.get
-  container.startpos = none(CursorPosition)
-  container.needslines = true
-
-proc setNumLines(container: Container; lines: int) =
-  if container.numLines != lines:
-    container.numLines = lines
-    if container.startpos.isSome and lines >= container.startpos.get.cursory:
-      container.gotoStart()
-    container.updateCursor()
-
 proc queueDraw*(container: Container) =
   container.redraw = true
 
@@ -514,7 +502,13 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
     if isBgNew:
       container.bgcolor = res.bgcolor
     if res.numLines != container.numLines:
-      container.setNumLines(res.numLines)
+      container.numLines = res.numLines
+      container.updateCursor()
+      if container.startpos.isSome and
+          res.numLines >= container.startpos.get.cursory:
+        container.pos = container.startpos.get
+        container.needslines = true
+        container.startpos = none(CursorPosition)
       if container.loadState != lsLoading:
         container.triggerEvent(cetStatus)
     if res.numLines > 0:
@@ -1102,12 +1096,12 @@ proc popCursorPos*(container: Container; nojump = false) =
       container.sendCursorPosition()
       container.needslines = true
 
-proc setStartingPos*(container: Container; pos: CursorPosition) =
-  container.startpos = some(pos)
+proc copyCursorPos*(container, c2: Container) =
+  if c2.startpos.isSome:
+    container.startpos = c2.startpos
+  else:
+    container.startpos = some(c2.pos)
   container.flags.incl(cfHasStart)
-
-proc setStartingPos*(container: Container; x, y: int) =
-  container.setStartingPos(CursorPosition(setx: -1, cursorx: x, cursory: y))
 
 proc cursorNextLink*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
@@ -1430,10 +1424,7 @@ proc onload(container: Container; res: int) =
     container.setLoadInfo("")
     container.triggerEvent(cetStatus)
     container.triggerEvent(cetLoaded)
-    if cfHasStart in container.flags:
-      if container.startpos.isSome:
-        container.gotoStart()
-    else:
+    if cfHasStart notin container.flags:
       let anchor = container.url.hash.substr(1)
       if anchor != "" or container.config.autofocus:
         container.requestLines().then(proc(): Promise[GotoAnchorResult] =
@@ -1692,7 +1683,7 @@ proc onreadline(container: Container; w: Slice[int];
     container.iface.getLines(w).then(proc(res: GetLinesResult) =
       container.onreadline(w, handle, res))
   else:
-    container.setNumLines(res.numLines)
+    container.numLines = res.numLines
 
 # Synchronously read all lines in the buffer.
 proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =
