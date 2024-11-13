@@ -230,8 +230,6 @@ type
   LineBoxState = object
     atomStates: seq[InlineAtomState]
     baseline: LayoutUnit
-    paddingTop: LayoutUnit
-    paddingBottom: LayoutUnit
     hasExclusion: bool
     charwidth: int
     # Set at the end of layoutText. It helps determine the beginning of the
@@ -329,14 +327,6 @@ func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
     if atom.t == iatWord and atom.str[^1] == ' ':
       return 0
   return ictx.cellWidth * ictx.whitespacenum
-
-proc applyLineHeight(ictx: InlineContext; state: var LineBoxState;
-    computed: CSSComputedValues) =
-  let lctx = ictx.lctx
-  let paddingTop = computed{"padding-top"}.px(lctx, ictx.space.w)
-  let paddingBottom = computed{"padding-bottom"}.px(lctx, ictx.space.w)
-  state.paddingTop = max(paddingTop, state.paddingTop)
-  state.paddingBottom = max(paddingBottom, state.paddingBottom)
 
 proc newWord(ictx: var InlineContext) =
   ictx.word = InlineAtom(
@@ -443,7 +433,7 @@ func getLineXShift(ictx: InlineContext; width: LayoutUnit): LayoutUnit =
 
 proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
   let offsety = ictx.lbstate.offsety
-  let shiftTop = marginTop + ictx.lbstate.paddingTop
+  let shiftTop = marginTop
   let cellHeight = ictx.cellHeight
   let width = ictx.getLineWidth()
   let xshift = ictx.getLineXShift(width)
@@ -517,7 +507,6 @@ proc alignLine(ictx: var InlineContext) =
   ictx.lbstate.size.h = ictx.lbstate.resizeLine(ictx.lctx)
   # Now we can calculate the actual position of atoms inside the line.
   let marginTop = ictx.lbstate.positionAtoms(ictx.lctx)
-  ictx.lbstate.baseline += ictx.lbstate.paddingTop
   # Finally, offset all atoms' y position by the largest top margin and the
   # line box's top padding.
   ictx.shiftAtoms(marginTop)
@@ -649,11 +638,6 @@ func shouldWrap2(ictx: InlineContext; w: LayoutUnit): bool =
     return false
   return ictx.lbstate.size.w + w > ictx.lbstate.availableWidth
 
-# Start a new line, even if the previous one is empty
-proc flushLine(ictx: var InlineContext; state: var InlineState) =
-  ictx.applyLineHeight(ictx.lbstate, state.fragment.computed)
-  ictx.finishLine(state, wrap = false, force = true)
-
 func getBaseline(ictx: InlineContext; iastate: InlineAtomState;
     atom: InlineAtom): LayoutUnit =
   return case iastate.vertalign.keyword
@@ -677,14 +661,13 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
   ictx.whitespacenum = 0
   # Line wrapping
   if ictx.shouldWrap(atom.size.w + shift, state.fragment.computed):
-    ictx.finishLine(state, wrap = true, force = false)
+    ictx.finishLine(state, wrap = true)
     result = true
     # Recompute on newline
     shift = ictx.computeShift(state)
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
     while ictx.shouldWrap2(atom.size.w + shift):
-      ictx.applyLineHeight(ictx.lbstate, state.fragment.computed)
       ictx.finishLine(state, wrap = false, force = true)
       # Recompute on newline
       shift = ictx.computeShift(state)
@@ -692,7 +675,6 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     if shift > 0:
       ictx.addSpacing(shift, state)
     ictx.state.xminwidth = max(ictx.state.xminwidth, atom.xminwidth)
-    ictx.applyLineHeight(ictx.lbstate, state.fragment.computed)
     if atom.t == iatWord:
       if ictx.lbstate.atoms.len > 0 and state.fragment.state.atoms.len > 0:
         let oatom = ictx.lbstate.atoms[^1]
@@ -783,7 +765,7 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
       ictx.whitespaceIsLF = false
   of WhitespacePreLine:
     if c == '\n':
-      ictx.flushLine(state)
+      ictx.finishLine(state, wrap = false, force = true)
     elif ictx.whitespacenum < 1:
       ictx.whitespaceIsLF = false
       ictx.whitespacenum = 1
@@ -791,7 +773,7 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
   of WhitespacePre, WhitespacePreWrap:
     ictx.whitespaceIsLF = false
     if c == '\n':
-      ictx.flushLine(state)
+      ictx.finishLine(state, wrap = false, force = true)
     elif c == '\t':
       let realWidth = ictx.lbstate.charwidth + ictx.whitespacenum
       # We must flush first, because addWord would otherwise try to wrap the
@@ -1665,9 +1647,8 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   if stSplitStart in fragment.splitType and
       computed{"position"} notin PositionStaticLike:
     lctx.pushPositioned()
-  ictx.applyLineHeight(ictx.lbstate, computed)
   case fragment.t
-  of iftNewline: ictx.flushLine(state)
+  of iftNewline: ictx.finishLine(state, wrap = false, force = true)
   of iftBox: ictx.addBox(state, fragment.box)
   of iftBitmap: ictx.addInlineImage(state, fragment.bmp, padding.sum())
   of iftText: ictx.layoutText(state, fragment.text.textData)
