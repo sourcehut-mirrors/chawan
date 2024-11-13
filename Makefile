@@ -86,18 +86,18 @@ $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/mancha" $(FLAGS) \
 		-o:"$(OUTDIR_BIN)/mancha" $(FLAGS) adapter/tools/mancha.nim
 
-$(OBJDIR)/genidna: res/genidna.nim res/map/IdnaMappingTable.txt
-	$(NIMC) --nimcache:"$(OBJDIR)/idna_gen_cache" -d:danger \
-		-o:"$(OBJDIR)/genidna" res/genidna.nim
+unicode_version = 16.0.0
 
-res/map/idna_gen.nim: $(OBJDIR)/genidna
+.PHONY: unicode_gen
+unicode_gen: $(OBJDIR)/genidna $(OBJDIR)/gencharwidth res/map/EastAsianWidth.txt
+	@printf 'Download EastAsianWidth.txt and IdnaMappingTable.txt from www.unicode.org? (y/n)'
+	@read res; if test "$$res" = "y"; then \
+	cha -d 'https://www.unicode.org/Public/idna/$(unicode_version)/IdnaMappingTable.txt' >$@; \
+	cha -d 'https://www.unicode.org/Public/$(unicode_version)/ucd/EastAsianWidth.txt' >$@; \
+	else exit 1; fi
+	$(NIMC) --nimcache:"$(OBJDIR)/idna_gen_cache" -d:danger -o:"$(OBJDIR)/genidna" res/genidna.nim
+	$(NIMC) --nimcache:"$(OBJDIR)/charwidth_gen_cache" -d:danger -o:"$(OBJDIR)/gencharwidth" res/gencharwidth.nim
 	$(OBJDIR)/genidna > res/map/idna_gen.nim
-
-$(OBJDIR)/gencharwidth: res/gencharwidth.nim
-	$(NIMC) --nimcache:"$(OBJDIR)/charwidth_gen_cache" -d:danger \
-		-o:"$(OBJDIR)/gencharwidth" res/gencharwidth.nim
-
-res/map/charwidth_gen.nim: $(OBJDIR)/gencharwidth res/map/EastAsianWidth.txt
 	$(OBJDIR)/gencharwidth > res/map/charwidth_gen.nim
 
 src/utils/strwidth.nim: res/map/charwidth_gen.nim src/utils/proptable.nim
