@@ -1500,13 +1500,14 @@ Rules for path handling are similar to how strings in the shell are handled.
 * Environment variables can be used like `$ENV_VAR`.
 * Relative paths are relative to the Chawan configuration directory.
 
-Some internal variables are also defined by Chawan. These can be accessed using
-the non-standard syntax `${%VARIABLE}`:
+Some environment variables are also exported by Chawan:
 
-* `${%CHA_BIN_DIR}`: the directory which the `cha` binary resides in. Note
-  that symbolic links are automatically resolved to determine this path.
-* `${%CHA_LIBEXEC_DIR}`: the directory for all executables Chawan uses
-  for operation. By default, this is `${%CHA_BIN_DIR}/../libexec/chawan`.
+* `$CHA_BIN_DIR`: the directory which the `cha` binary resides in.
+  Symbolic links are automatically resolved to determine this path.
+* `$CHA_LIBEXEC_DIR`: the directory for all executables Chawan uses
+  for operation. By default, this is `$CHA_BIN_DIR/../libexec/chawan`.
+* `$CHA_CONFIG_DIR`: the configuration directory. (This can also be set
+  by the user; see the top section for details.)
 
 ### Word types
 

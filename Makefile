@@ -13,10 +13,10 @@ TARGET ?= release
 # You may override it with any path if your system does not have a libexec
 # directory, but make sure to surround it with quotes if it contains spaces.
 # (This way, the cha binary can be directly executed without installation.)
-LIBEXECDIR ?= '$${%CHA_BIN_DIR}/../libexec/chawan'
+LIBEXECDIR ?= '$$CHA_BIN_DIR/../libexec/chawan'
 # If overridden, take libexecdir that was specified.
 # Otherwise, just install to libexec/chawan.
-ifeq ($(LIBEXECDIR),'$${%CHA_BIN_DIR}/../libexec/chawan')
+ifeq ($(LIBEXECDIR),'$$CHA_BIN_DIR/../libexec/chawan')
 LIBEXECDIR_CHAWAN = "$(DESTDIR)$(PREFIX)/libexec/chawan"
 else
 LIBEXECDIR_CHAWAN = $(LIBEXECDIR)

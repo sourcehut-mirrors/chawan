@@ -1,14 +1,11 @@
 import std/options
 import std/os
-import std/posix
 
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/tojs
 import types/opt
 import utils/twtstr
-
-const libexecPath {.strdefine.} = "${%CHA_BIN_DIR}/../libexec/chawan"
 
 type ChaPath* = distinct string
 
@@ -24,11 +21,10 @@ type
     identStr: string
     subChar: char
     hasColon: bool
-    terminal: Option[char]
 
   UnquoteState = enum
-    usNormal, usTilde, usDollar, usIdent, usBslash, usCurlyStart, usCurly,
-    usCurlyHash, usCurlyPerc, usCurlyColon, usCurlyExpand
+    usNormal, usTilde, usDollar, usIdent, usBslash, usCurly, usCurlyHash,
+    usCurlyColon, usCurlyExpand
 
   ChaPathError = string
 
@@ -37,37 +33,27 @@ type
 proc unquote*(p: ChaPath): ChaPathResult[string]
 proc unquote(p: string; starti: var int; terminal: Option[char]):
     ChaPathResult[string]
+proc stateCurlyStart(ctx: var UnquoteContext; c: char): ChaPathResult[void]
 
-proc stateNormal(ctx: var UnquoteContext; c: char): bool =
+proc stateNormal(ctx: var UnquoteContext; c: char) =
   case c
   of '$': ctx.state = usDollar
   of '\\': ctx.state = usBslash
   of '~':
     if ctx.i == 0:
+      ctx.identStr = "~"
       ctx.state = usTilde
     else:
       ctx.s &= c
-  elif ctx.terminal.isSome and ctx.terminal.get == c:
-    return false
   else:
     ctx.s &= c
-  return true
-
-proc flushTilde(ctx: var UnquoteContext) =
-  if ctx.identStr == "":
-    ctx.s &= getHomeDir()
-  else:
-    let p = getpwnam(cstring(ctx.identStr))
-    if p != nil:
-      ctx.s &= $p.pw_dir
-    ctx.identStr = ""
-  ctx.state = usNormal
 
 proc stateTilde(ctx: var UnquoteContext; c: char) =
   if c != '/':
     ctx.identStr &= c
   else:
-    ctx.flushTilde()
+    ctx.s &= expandPath(ctx.identStr)
+    ctx.state = usNormal
 
 # Kind of a hack. We special case `\$' (backslash-dollar) in TOML, so that
 # it produces itself in dquote strings.
@@ -89,18 +75,17 @@ proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     # are resolved.
     ctx.s &= getAppFileName()
     ctx.state = usNormal
-  of '1'..'9':
-    return err("Parameter substitution is not supported")
   of AsciiAlpha:
     ctx.identStr = $c
     ctx.state = usIdent
   of '{':
-    ctx.state = usCurlyStart
+    inc ctx.i
+    if ctx.i >= ctx.p.len:
+      return err("} expected")
+    let c = ctx.p[ctx.i]
+    return ctx.stateCurlyStart(c)
   else:
-    # > If an unquoted '$' is followed by a character that is not one of
-    # > the following: [...] the result is unspecified.
-    # just error out here to be safe
-    return err("Invalid dollar substitution")
+    return err("Unrecognized dollar substitution $" & c)
   ok()
 
 proc flushIdent(ctx: var UnquoteContext) =
@@ -123,11 +108,11 @@ proc stateCurlyStart(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   case c
   of '#':
     ctx.state = usCurlyHash
-  of '%':
-    ctx.state = usCurlyPerc
-  of BareChars:
+  of '%': # backwards compat
     ctx.state = usCurly
+  of BareChars - {'1'..'9'}:
     dec ctx.i
+    ctx.state = usCurly
   else:
     return err("unexpected character in substitution: '" & c & "'")
   return ok()
@@ -136,7 +121,10 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${ident
   case c
   of '}':
-    ctx.s &= $getEnv(ctx.identStr)
+    if ctx.identStr == "0":
+      ctx.s &= getAppFileName()
+    else:
+      ctx.s &= $getEnv(ctx.identStr)
     ctx.identStr = ""
     ctx.state = usNormal
     return ok()
@@ -179,23 +167,6 @@ proc stateCurlyHash(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   ctx.identStr &= c
   return ok()
 
-proc stateCurlyPerc(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
-  # ${%ident
-  if c == '}':
-    if ctx.identStr == "CHA_BIN_DIR":
-      ctx.s &= getAppFileName().beforeLast('/')
-    elif ctx.identStr == "CHA_LIBEXEC_DIR":
-      ctx.s &= ?ChaPath(libexecPath).unquote()
-    else:
-      return err("Unknown internal variable " & ctx.identStr)
-    ctx.identStr = ""
-    ctx.state = usNormal
-    return ok()
-  if c notin BareChars:
-    return err("unexpected character in substitution: '" & c & "'")
-  ctx.identStr &= c
-  return ok()
-
 proc stateCurlyColon(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${ident:
   if c notin {'-', '?', '+'}: # Note: we don't support `=' (assign)
@@ -210,12 +181,9 @@ proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
   case ctx.subChar
   of '-':
     if ctx.hasColon:
-      ctx.s &= getEnv(ctx.identStr, word)
+      ctx.s &= getEnvEmpty(ctx.identStr, word)
     else:
-      if existsEnv(ctx.identStr):
-        ctx.s &= getEnv(ctx.identStr)
-      else:
-        ctx.s &= word
+      ctx.s &= getEnv(ctx.identStr, word)
   of '?':
     if ctx.hasColon:
       let s = getEnv(ctx.identStr)
@@ -248,34 +216,32 @@ proc stateCurlyExpand(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
 
 proc unquote(p: string; starti: var int; terminal: Option[char]):
     ChaPathResult[string] =
-  var ctx = UnquoteContext(p: p, i: starti, terminal: terminal)
+  var ctx = UnquoteContext(p: p, i: starti)
   while ctx.i < p.len:
     let c = p[ctx.i]
+    if ctx.state in {usNormal, usTilde, usDollar, usIdent} and
+        terminal.isSome and terminal.get == c:
+      break
     case ctx.state
-    of usNormal:
-      if not ctx.stateNormal(c):
-        break
+    of usNormal: ctx.stateNormal(c)
     of usTilde: ctx.stateTilde(c)
     of usBslash: ctx.stateBSlash(c)
     of usDollar: ?ctx.stateDollar(c)
     of usIdent: ctx.stateIdent(c)
-    of usCurlyStart: ?ctx.stateCurlyStart(c)
     of usCurly: ?ctx.stateCurly(c)
     of usCurlyHash: ?ctx.stateCurlyHash(c)
-    of usCurlyPerc: ?ctx.stateCurlyPerc(c)
     of usCurlyColon: ?ctx.stateCurlyColon(c)
     of usCurlyExpand: ?ctx.stateCurlyExpand(c)
     inc ctx.i
   case ctx.state
   of usNormal: discard
-  of usTilde: ctx.flushTilde()
+  of usTilde: ctx.s &= expandPath(ctx.identStr)
   of usBslash: ctx.s &= '\\'
   of usDollar: ctx.s &= '$'
   of usIdent: ctx.flushIdent()
-  of usCurlyStart, usCurly, usCurlyHash, usCurlyPerc, usCurlyColon:
+  of usCurly, usCurlyHash, usCurlyColon:
     return err("} expected")
-  of usCurlyExpand:
-    ?ctx.flushCurlyExpand("")
+  of usCurlyExpand: ?ctx.flushCurlyExpand("")
   starti = ctx.i
   return ok(ctx.s)
 

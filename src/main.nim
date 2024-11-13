@@ -223,8 +223,11 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   isCJKAmbiguous = config.display.double_width_ambiguous
   return ok()
 
+const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
+
 proc main() =
-  putEnv("CHA_LIBEXEC_DIR", ChaPath"${%CHA_LIBEXEC_DIR}".unquoteGet())
+  putEnv("CHA_BIN_DIR", getAppFileName().beforeLast('/'))
+  putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
   let forkserver = newForkServer()
   var ctx = ParamParseContext(params: commandLineParams(), i: 0)
   ctx.parse()
