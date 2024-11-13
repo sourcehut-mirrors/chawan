@@ -61,7 +61,7 @@ To fix this, put a script somewhere in your \f[CR]PATH\f[R]:
 exec cha \-T text/x\-ansi \[dq]$\[at]\[dq]
 .EE
 .PP
-and \f[CR]export PAGER=pcha\f[R].
+and \f[CR]export PAGER=pcha\f[R] (or whatever you named the script).
 .SS How do I view text files with wrapping?
 By default, text files are not auto\-wrapped, so viewing plain text
 files that were not wrapped properly by the authors is somewhat
@@ -100,7 +100,7 @@ rdrview
 \&.
 Then bind the following command to a key of your choice in the config
 (e.g.\ \f[CR]<space> r\f[R]):
-\f[CR]\[aq] r\[aq] = \[dq]pager.externFilterSource(\[aq]rdrview \-H \-u \[dq]$CHA_URL\[dq]\[aq])\[dq]\f[R]
+\f[CR]\[aq] r\[aq] = \[dq]pager.externFilterSource(\[aq]rdrview \-Hu \[rs]\[dq]$CHA_URL\[rs]\[dq]\[aq])\[dq]\f[R]
 This does not fix the core problem, but will significantly improve your
 reading experience anyway.
 .IP "2." 3
@@ -134,5 +134,27 @@ follow step 3.
 of the previous answer.
 Warning: remote JavaScript execution is inherently unsafe.
 Please only enable JavaScript on websites you trust.
+.SS Text areas discard my edits when I type C\-c in my editor!
+This is a bug in your shell: \c
+.UR https://people.freebsd.org/~cracauer/homepage-mirror/sigint.html
+.UE \c
+.PP
+When Chawan runs an external text editor, it simply passes the
+\f[CR]$EDITOR\f[R] command to the shell, and then examines its \f[I]wait
+status\f[R] to determine if your editor exited gracefully.
+This works if either the editor never receives a signal, or your shell
+implements WCE.
+.PP
+However, if the editor (e.g.\ nvi) catches SIGINT on C\-c, and the shell
+reports that the program was killed by a signal (WUE), then Chawan will
+discard your changes (as it believes that the program has crashed).
+.PP
+The easiest workaround is to remove the shell from the equation using
+\f[CR]exec\f[R]:
+.IP
+.EX
+[external]
+editor = \[aq]exec vi +%d\[aq]
+.EE
 .SS See also
 \f[B]cha\f[R](1)

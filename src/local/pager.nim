@@ -2093,8 +2093,10 @@ proc redirect(pager: Pager; container: Container; response: Response;
     pager.deleteContainer(container, failTarget)
 
 proc askDownloadPath(pager: Pager; container: Container; response: Response) =
-  var buf = pager.config.external.download_dir
+  var buf = string(pager.config.external.download_dir)
   let pathname = container.url.pathname
+  if buf.len == 0 or buf[^1] != '/':
+    buf &= '/'
   if pathname[^1] == '/':
     buf &= "index.html"
   else:

@@ -345,9 +345,8 @@ details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
 
 <tr>
 <td>download-dir</td>
-<td>string</td>
-<td>Path to pre-fill for "Save to:" prompts. This is not validated, you can set
-it to whatever you find useful.</td>
+<td>path</td>
+<td>Path to pre-fill for "Save to:" prompts.</td>
 </tr>
 
 </table>

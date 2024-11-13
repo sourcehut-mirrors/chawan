@@ -57,7 +57,7 @@ this, put a script somewhere in your `PATH`:
 exec cha -T text/x-ansi "$@"
 ```
 
-and `export PAGER=pcha`.
+and `export PAGER=pcha` (or whatever you named the script).
 
 ## How do I view text files with wrapping?
 
@@ -95,7 +95,7 @@ There are three ways of dealing with this:
    [rdrview](https://github.com/eafer/rdrview). Then bind the following command
    to a key of your choice in the [config](config.md#keybindings)
    (e.g. `<space> r`):<br>
-   `' r' = "pager.externFilterSource('rdrview -H -u \"$CHA_URL\"')"`<br>
+   `' r' = "pager.externFilterSource('rdrview -Hu \"$CHA_URL\"')"`<br>
    This does not fix the core problem, but will significantly improve your
    reading experience anyway.
 2. Complain [here](https://todo.sr.ht/~bptato/chawan), and wait until the
@@ -117,6 +117,28 @@ Some potential fixes:
   console, then follow step 3. of the previous answer.<br>
   Warning: remote JavaScript execution is inherently unsafe. Please only enable
   JavaScript on websites you trust.
+
+## Text areas discard my edits when I type C-c in my editor!
+
+This is a bug in your shell:
+<https://people.freebsd.org/~cracauer/homepage-mirror/sigint.html>
+
+When Chawan runs an external text editor, it simply passes the `$EDITOR`
+command to the shell, and then examines its *wait status* to determine
+if your editor exited gracefully. This works if either the editor never
+receives a signal, or your shell implements WCE.
+
+However, if the editor (e.g. nvi) catches SIGINT on C-c, and the shell
+reports that the program was killed by a signal (WUE), then Chawan will
+discard your changes (as it believes that the program has crashed).
+
+The easiest workaround is to remove the shell from the equation using
+`exec`:
+
+```sh
+[external]
+editor = 'exec vi +%d'
+```
 
 <!-- MANON
 ## See also

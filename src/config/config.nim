@@ -108,7 +108,7 @@ type
     mime_types*: MimeTypes
     cgi_dir* {.jsgetset.}: seq[ChaPathResolved]
     urimethodmap*: URIMethodMap
-    download_dir* {.jsgetset.}: string
+    download_dir* {.jsgetset.}: ChaPathResolved
     w3m_cgi_compat* {.jsgetset.}: bool
 
   InputConfig = object

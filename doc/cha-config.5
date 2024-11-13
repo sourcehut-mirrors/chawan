@@ -240,8 +240,8 @@ When set to \[lq]auto\[rq], searches are only case\-sensitive when the
 search term includes a capital letter.
 Defaults to \[lq]auto\[rq].
 Note: this can also be overridden inline in the search bar (vim\-style),
-with the escape sequences \f[CR]c\f[R] (ignore case) and \f[CR]C\f[R]
-(strict case).
+with the escape sequences \f[CR]\[rs]c\f[R] (ignore case) and
+\f[CR]\[rs]C\f[R] (strict case).
 See search mode for details.)
 T}@T{
 T}
@@ -381,10 +381,9 @@ T}
 T{
 download\-dir
 T}@T{
-string
+path
 T}@T{
 Path to pre\-fill for \[lq]Save to:\[rq] prompts.
-This is not validated, you can set it to whatever you find useful.
 T}@T{
 T}
 .TE
@@ -794,12 +793,12 @@ Examples:
 .EX
 # Enable cookies on the orange website for log\-in.
 [[siteconf]]
-url = \[aq]https://news.ycombinator.com/.*\[aq]
+url = \[aq]https://news\[rs].ycombinator\[rs].com/.*\[aq]
 cookie = true
 
 # Redirect npr.org to text.npr.org.
 [[siteconf]]
-host = \[aq](www.)?npr.org\[aq]
+host = \[aq](www\[rs].)?npr\[rs].org\[aq]
 rewrite\-url = \[aq]\[aq]\[aq]
 (x) => {
 x.host = \[dq]text.npr.org\[dq];
@@ -811,19 +810,19 @@ x.pathname = s.at(s.length > 2 ? \-2 : 1);
 
 # Allow cookie sharing on *sr.ht domains.
 [[siteconf]]
-host = \[aq](.*.)?sr.ht\[aq] # either \[aq]something.sr.ht\[aq] or \[aq]sr.ht\[aq]
+host = \[aq](.*\[rs].)?sr\[rs].ht\[aq] # either \[aq]something.sr.ht\[aq] or \[aq]sr.ht\[aq]
 cookie = true # enable cookies
 share\-cookie\-jar = \[aq]sr.ht\[aq] # use the cookie jar of \[aq]sr.ht\[aq] for all matched hosts
-third\-party\-cookie = \[aq].*.sr.ht\[aq] # allow cookies from subdomains
+third\-party\-cookie = \[aq].*\[rs].sr\[rs].ht\[aq] # allow cookies from subdomains
 
-# Use the \[dq]vector\[dq] skin on Wikipedia, which Chawan can handle better.
+# Use the \[dq]vector\[dq] skin on Wikipedia.
 [[siteconf]]
-url = \[aq]\[ha]https?://[a\-z]+.wikipedia.org/wiki/(?!.*useskin=.*)\[aq]
+url = \[aq]\[ha]https?://[a\-z]+\[rs].wikipedia\[rs].org/wiki/(?!.*useskin=.*)\[aq]
 rewrite\-url = \[aq]x => x.searchParams.append(\[dq]useskin\[dq], \[dq]vector\[dq])\[aq]
 
 # Make imgur send us images.
 [[siteconf]]
-host = \[aq](i.)?imgur.com\[aq]
+host = \[aq](i\[rs].)?imgur\[rs].com\[aq]
 default\-headers = {
 User\-Agent = \[dq]Mozilla/5.0 chawan\[dq],
 Accept = \[dq]*/*\[dq],
@@ -1057,7 +1056,7 @@ with or without modifiers.
 Modifiers are the prefixes \f[CR]C\-\f[R] and \f[CR]M\-\f[R], which add
 control or escape to the keybinding respectively (essentially making
 \f[CR]M\-\f[R] the same as \f[CR]C\-[\f[R]).
-Modifiers can be escaped with the \[ga]\[ga] sign.
+Modifiers can be escaped with the \f[CR]\[rs]\f[R] sign.
 .PP
 \f[CR]<action>\f[R] is either a command defined in the \f[CR][cmd]\f[R]
 section, or a JavaScript expression.
@@ -1797,16 +1796,16 @@ lines.
 .PP
 \[lq]Search\[rq] mode also has some other convenience transformations:
 .IP \[bu] 2
-The string \f[CR]c\f[R] (backslash + lower\-case c) inside a
+The string \f[CR]\[rs]c\f[R] (backslash + lower\-case c) inside a
 search\-mode regex enables case\-insensitive matching.
 .IP \[bu] 2
-Conversely, \f[CR]C\f[R] (backslash + capital C) disables
+Conversely, \f[CR]\[rs]C\f[R] (backslash + capital C) disables
 case\-insensitive matching.
 (Useful if you have \f[CR]ignore\-case\f[R] set to true, which is the
 default.)
 .IP \[bu] 2
-\f[CR]<\f[R] and \f[CR]>\f[R] is converted to \f[CR]b\f[R] (as in vi,
-grep, etc.)
+\f[CR]\[rs]<\f[R] and \f[CR]\[rs]>\f[R] is converted to
+\f[CR]\[rs]b\f[R] (as in vi, grep, etc.)
 .PP
 Note that none of these work in \[lq]match\[rq] mode.
 .SS Path handling
