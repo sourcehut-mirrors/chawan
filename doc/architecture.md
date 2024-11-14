@@ -16,36 +16,38 @@ This document describes some aspects of how Chawan works.
 	* [General](#general)
 	* [JS in the pager](#js-in-the-pager)
 	* [JS in the buffer](#js-in-the-buffer)
-* [Styling](#styling)
-* [Layout](#layout)
-* [Rendering](#rendering)
+* [CSS](#css)
+	* [Parsing, cascading](#parsing-cascading)
+	* [Layout](#layout)
+	* [Rendering](#rendering)
 
 ## Module organization
 
 Explanation for the separate directories found in `src/`:
 
 * config: configuration-related code. Mainly parsers for config files.
-* css: styling-related code; CSS parsing and cascading.
-* html: DOM building, DOM functions, the DOM itself, forms, etc. Note that it
-  does not include the [HTML parser](https://git.sr.ht/~bptato/chame) itself.
+* css: CSS parsing, cascading, layout, rendering.
+* html: DOM building, DOM functions, the DOM itself, forms, etc. It does
+  not include the [HTML parser](https://git.sr.ht/~bptato/chame) itself.
 * io: code for IPC, interaction with the file system, etc.
 * js: modules mainly for use by JS code.
-* layout: the layout engine and its renderer.
 * loader: code for the file loader server (?).
 * local: code for the main process (i.e. the pager).
-* server: code for processes other than the main process, e.g. buffer and
-  forkserver. (Why is loader not here? idk)
-* types: mainly definitions of data types and things I didn't know where to put.
+* server: code for processes other than the main process, e.g. buffer
+  and forkserver. (Why is loader not here? idk)
+* types: mainly definitions of data types and things I didn't know where
+  to put.
 * utils: things I didn't know where to put part 2
 
 Additionally, "adapters" of various protocols and file formats can be found in
 `adapter/`:
 
 * protocol: includes support for every protocol supported by Chawan.
-* format: HTML converters for various text-based file formats.
-* img: image decoders and encoders. In general, these just read and output
-  RGBA data through standard I/O (which may actually be a cache file; see the
-  [image docs](image.md) for details).
+* format: HTML converters for various text-based file formats,
+  e.g. Markdown.
+* img: image decoders and encoders. In general, these just read and
+  output RGBA data through standard I/O (which may actually be a cache
+  file; see the [image docs](image.md) for details).
 
 ## Process model
 
@@ -91,171 +93,178 @@ space is replaced by exec anyway. (Also, it would be slow.)
 ### Loader
 
 The loader process takes requests from the main process and the buffer
-processes. Then, depending on the scheme, it responds by performing one of the
+processes. Then, depending on the scheme, it performs one of the
 following steps:
 
-* `cgi-bin:` Start a CGI script, and read out its stdout into the response body.
-  For the main contents of text-based buffers, it also saves the response
-  into the cache.  
-  This is also used for schemes like http/s, ftp, etc. by internally rewriting
-  them into the appropriate `cgi-bin:` URL.
-* `stream:` Do the same thing as above, but read from a file descriptor passed
-  to the loader beforehand. This is used when stdin is a file, e.g.
-  `echo test | cha`. It is also used for mailcap entries with an x-htmloutput
-  field.
-* `cache:` Read the file from the cache. This is used by the pager for the
-  "view source" operation, and by buffers in the rare situation where their
-  initial character encoding guess proves to be incorrect and they need to
-  rewind the source.
+* `cgi-bin:` Start a CGI script, and read out its stdout into the
+  response body. In certain cases it also streams the response into
+  the cache.  
+  This is also used for schemes like http/s, ftp, etc. by internally
+  rewriting them into the appropriate `cgi-bin:` URL.
+* `stream:` Do the same thing as above, but read from a file descriptor
+  passed to the loader beforehand. This is used when stdin is a file,
+  e.g. `echo test | cha`. It is also used for mailcap entries with an
+  x-htmloutput field.
+* `cache:` Read the file from the cache. This is used by the pager
+  for the "view source" operation, and by buffers in the rare situation
+  where their initial character encoding guess proves to be incorrect
+  and they need to rewind the source.
 * `data:` Decode a data URL. This is done directly in the loader process
   because very long data URLs wouldn't fit into the environment. (Plus,
   obviously, it's more efficient this way.)
 
-The loader process distinguishes between clients (i.e the main process or
-buffers) through client keys. In theory this should help against rogue clients,
-though in practice it is still trivial to crash the loader as a client. It also
-helps us block further requests from buffers that have been discarded by the
-pager, but still haven't found out yet that their life time has ended.
+The loader process distinguishes between clients (i.e processes) through
+client keys (session cookies). In theory this should help against rogue
+clients, though in practice it is still trivial to crash the loader as
+a client. It also helps us block further requests from buffers that have
+been discarded by the pager, but still haven't found out yet that their
+life time has ended.
 
 ### Buffer
 
-Buffer processes parse HTML, optionally query external resources from loader,
-run styling, JS, and finally render the page to an internal canvas.
+Buffer processes parse HTML, optionally query external resources from
+loader, run styling, JS, and finally render the page to an internal
+canvas.
 
-Buffers are managed by the pager through Container objects. A UNIX domain socket
-is established between each buffer and the pager to enable communication between
-them.
+Buffers are managed by the pager through Container objects. A UNIX
+domain socket is established between each buffer and the pager for
+IPC.
 
 ## Opening buffers
 
 Scenario: the user attempts to navigate to <https://example.org>.
 
 1. pager creates a new container for the target URL.
-2. pager sends a request for "https://example.org" to the loader. Then, it
-   registers the file descriptor in its selector, and does something else until
-   poll() reports activity on the file descriptor.
-3. loader rewrites "https://example.org" into "cgi-bin:http". It then runs the
-   http CGI script with the appropriate environment variables set to parts of
-   this URL and request headers.
-4. The http CGI script opens a connection to example.org. When connected, it
-   starts printing out headers it receives to stdout.
+2. pager sends a request for "https://example.org" to the loader. Then,
+   it registers the file descriptor in its selector, and does something
+   else until poll() reports activity on the file descriptor.
+3. loader rewrites "https://example.org" into "cgi-bin:http". It then
+   runs the http CGI script with the appropriate environment variables
+   set to parts of this URL and request headers.
+4. The http CGI script opens a connection to example.org. When
+   connected, it starts writing headers it receives to stdout.
 5. loader parses these headers, and sends them to pager.
-6. pager reads in the headers, and decides what to do based on the Content-Type.
-	* If Content-Type is found in mailcap, then the command in that
-	  mailcap entry is executed, with the response body dup2'd onto its
-	  stdin. If the entry has x-htmloutput, then the command's stdout is
-	  taken instead of the response body, and Content-Type is set to
+6. pager reads in the headers, and decides what to do based on the
+   Content-Type:
+	* If Content-Type is found in mailcap, then the response body
+	  is piped into the command in that mailcap entry. If the
+	  entry has x-htmloutput, then the command's stdout is taken
+	  instead of the response body, and Content-Type is set to
 	  text/html. Otherwise, the container is discarded.
-	* If Content-Type is text/html, then a new buffer process is created,
-	  which then parses the response body as HTML. If it is any `text/*`
-	  subtype, then the response is simply inserted into a `<plaintext>` tag.
-	* If Content-Type is not a `text/*` subtype, and no mailcap entry for it
-	  is found, then the user is prompted about where they wish to save the
-	  file.
+	* If Content-Type is text/html, then a new buffer process is
+	  created, which then parses the response body as HTML. If it
+	  is any `text/*` subtype, then the response is simply inserted
+	  into a `<plaintext>` tag.
+	* If Content-Type is not a `text/*` subtype, and no mailcap
+	  entry for it is found, then the user is prompted about where
+	  they wish to save the file.
 
 ## Cache
 
-Chawan's caching mechanism is largely inspired by that of w3m, which does not
-have a network cache. Instead, it simply saves source files to the disk before
-displaying them, and lets users view/edit the source without another network
-request.
+Chawan's caching mechanism is largely inspired by that of w3m, which
+does not have a network cache. Instead, it simply saves source files
+to the disk before displaying them, and lets users view/edit the source
+without another network request.
 
-Chawan improves upon this by simultaneously streaming files to the cache and
-buffers:
+The only difference in Chawan is that it simultaneously streams files
+to the cache *and* buffers:
 
-1. Client (pager or buffer) initiates request by sending a message to loader.
+1. Client (pager or buffer) initiates request by sending a message to
+   loader.
 2. Loader starts CGI script, reads headers, sends a response, and waits.
-3. Client now may send an "addCacheFile" message, which prompts loader to add a
-   cache file for this request.
-4. Client sends resume, now loader will stream the response both to the client
-   and the cache.
+3. Client now may send an "addCacheFile" message, which prompts loader
+   to add a cache file for this request.
+4. Client sends "resume", now loader will stream the response both to
+   the client and the cache.
 
-Cached items may be shared between clients; this is how rewinding on wrong
-charset guess is implemented. They are also manually reference counted and are
-unlinked when their reference count drops to zero.
+Cached items may be shared between clients; this is how rewinding on
+wrong charset guess is implemented. They are also manually reference
+counted and are unlinked when their reference count drops to zero.
 
 The cache is used in the following ways:
 
 * For view source and edit source operations.
-* For rewinding buffers on incorrect charset guess. (In practice, this is almost
-  never used, because the first chunk we read tends to determine the charset
-  unambiguously.)
-* For reading images multiple times after download. (At least two reads are
-  needed, because the first pass only parses the headers.)
-* As a memory buffer for image coding processes to mmap. (For details, see
-  [image.md](image.md).)
+* For rewinding buffers on incorrect charset guess. (In practice,
+  this is almost never used, because the first chunk we read tends to
+  determine the charset unambiguously.)
+* For reading images multiple times after download. (At least two reads
+  are needed, because the first pass only parses the headers.)
+* As a memory buffer for image coding processes to mmap. (For details,
+  see [image.md](image.md).)
 
-Crucially, the cache *does not* understand Cache-Control headers, and will never
-skip a download when requested by a user. Similarly, loading a "cache:" URL
-(e.g. view source) is guaranteed to never make a network request.
+Crucially, the cache *does not* understand Cache-Control headers, and
+will never skip a download when requested by a user. Similarly, loading
+a "cache:" URL (e.g. view source) is guaranteed to never make a network
+request.
 
-Future directions: for non-JS buffers, we could kill idle processes and reload
-them on-demand from the cache. This could solve the problem of spawning too many
-processes that then do nothing.
+Future directions: for non-JS buffers, we could kill idle processes and
+reload them on-demand from the cache. This could solve the problem of
+spawning too many processes that then do nothing.
 
 ## Parsing HTML
 
-The character decoder and the HTML parser are implementations of the WHATWG
-standard, and are available as [separate](https://git.sr.ht/~bptato/chagashi)
+The character decoder and the HTML parser are implementations of the
+WHATWG standards, and are available as
+[separate](https://git.sr.ht/~bptato/chagashi)
 [libraries](https://git.sr.ht/~bptato/chame).
 
-The decoding and parsing of HTML documents happens in buffer processes. This
-operation is asynchronous; when bytes from the network are exhausted, the buffer
-will 1) partially render the current document as-is, 2) return it to the pager
-so that the user can interact with the document.
+Buffer processes decode and parse HTML documents asynchronously. When
+bytes from the network are exhausted, the buffer will 1) partially
+render the current document as-is, 2) return it to the pager so that the
+user can interact with the document.
 
 Character encoding detection is rather primitive; the list specified in
-`encoding.document-charset` is enumerated until either no errors are produced by
-the decoder, or no more charsets exist. In some edge cases, the document must be
-(and is) re-downloaded from the cache, but this pretty much never happens in
-real-world scenarios. (The most common case is that the UTF-8 validator just
-runs through the entire document without reporting errors.)
+`encoding.document-charset` is enumerated until either no errors are
+produced by the decoder, or no more charsets exist. In some extremely
+rare edge cases, the document is re-downloaded from the cache, but this
+pretty much never happens. (The most common case is that the UTF-8
+validator just runs through the entire document without reporting
+errors.)
 
-The HTML parser then consumes the input buffer, which on the happy path (valid
-UTF-8) is just whatever we pulled from the network as-is. In some cases, a
-script calls document.write and then the parser is called re-entrantly.
-(Debugging this is not very fun.)
+The HTML parser then consumes the decoded (or validated) input buffer.
+In some cases, a script calls document.write and then the parser is
+called recursively. (Debugging this is not very fun.)
 
 ## JavaScript
 
-QuickJS is used by both the pager as a scripting language, and by buffers for
-running on-page scripts when JavaScript is enabled.
+QuickJS is used by both the pager as a scripting language, and by
+buffers for running on-page scripts when JavaScript is enabled.
 
 The core JS related functionality has been separated out into the
-[Monoucha](https://git.sr.ht/~bptato/monoucha) library, so it can be used
-outside of Chawan too. Interested readers are invited to read the Monoucha
-[manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md) as well.
+[Monoucha](https://git.sr.ht/~bptato/monoucha) library, so it can be
+used outside of Chawan too. Interested readers are invited to read the
+[manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md).
 
 ### General
 
-To avoid having to type out all the type conversion & error handling code
-manually, we have JS pragmas to automagically turn Nim procedures into
-JavaScript functions. An explanation of what these pragmas are & what they do
-can be found in the header of js/javascript.nim.
+To avoid having to type out all the type conversion & error handling
+code manually, we have JS pragmas to automagically turn Nim procedures
+into JavaScript functions. An explanation of what these pragmas are &
+what they do can be found in the header of js/javascript.nim.
 
-The type conversion itself is handled by the overloaded toJS function and the
-generic fromJS function. toJS returns a JSValue, the native data type of
-QuickJS. fromJS returns a Result[T, JSError], which is interpreted as follows:
+The type conversion itself is handled by the overloaded toJS function
+and the generic fromJS function. toJS returns a JSValue, the native
+data type of QuickJS. fromJS returns a Result[T, JSError], which is
+interpreted as follows:
 
 * ok(T) is successful conversion.
 * err(JSError) is an error in the conversion.
 * ok(nil) for reference types is null. For non-nullable types, null is
   ok(none(T)).
-* err(nil) is JS_EXCEPTION, i.e. an exception has been thrown and is being
-  propagated.
+* err(nil) is JS_EXCEPTION, i.e. an exception has been thrown and is
+  being propagated.
 
 An additional point of interest is reference types: ref types registered
-with the registerType macro can be freely passed to JS, and the function-
-defining macros set functions on their JS prototypes. When a ref type is passed
-to JS, a shim JS object is associated with the Nim object, and will remain in
-memory until neither Nim nor JS has references to it.
+with the registerType macro can be freely passed to JS, and the
+function-defining macros set functions on their JS prototypes. When
+a ref type is passed to JS, a shim JS object is associated with the
+Nim object, and will remain in memory until neither Nim nor JS has
+references to it.
 
-Effectively, this means that you can expose Nim objects to JS and take Nim
-objects as arguments through the automagical .jsfunc pragma (& friends) without
-having to bother with error-prone manual reference counting. How this is
-achieved is detailed below. (You generally don't need the following info
-unless you're debugging the JS type conversion logic, in which case I offer my
-condolences.)
+This means that you can expose Nim objects to JS and take Nim objects
+as arguments through the .jsfunc pragma (& friends) without having
+to bother with manual reference counting. How this is achieved is
+detailed below. (TODO: this probably belongs in the Monoucha manual...)
 
 In fact, there is a complication in this system: QuickJS has a reference-
 counting GC, but Nim also has a reference-counting GC. Associating two objects
@@ -265,19 +274,21 @@ cycle collector can break up. A cross-GC cycle collector is obviously out of
 question; then it would be easier to just replace the entire GC in one of the
 runtimes.
 
-So instead, we hook into the QuickJS cycle collector (through a custom
-patch). Every time a JS companion object of a Nim object would be freed, we
-first check if the Nim object still has references from Nim, and if yes, prevent
-the JS object from being freed by "moving" a reference to the JS object
+So instead, we patch a hook into the QuickJS cycle collector. Every time
+a JS companion object of a Nim object would be freed, we first check if
+the Nim object still has references from Nim, and if yes, prevent the JS
+object from being freed by "moving" a reference to the JS object
 (i.e. unref Nim, ref JS).
 
-Then, if we want to pass the object to JS again, we add no references to the JS
-object, only to the Nim object. By this, we "moved" the reference back to JS.
+Then, if we want to pass the object to JS again, we add no references to
+the JS object, only to the Nim object. By this, we "moved" the reference
+back to JS.
 
-This way, the Nim cycle collector can destroy the object without problems if no
-more references to it exist. But also, if you set some properties on the JS
-companion object, it will remain even if no more references exist to it in JS
-for some time, only in Nim. i.e. this works:
+This way, the Nim cycle collector can destroy the object without
+problems if no more references to it exist. But also, if you set some
+properties on the JS companion object, it will remain even if no more
+references exist to it in JS for some time, only in Nim. i.e. this
+works:
 
 ```js
 document.querySelector("html").canary = "chirp";
@@ -286,81 +297,83 @@ console.log(document.querySelector("html").canary); /* chirp */
 
 ### JS in the pager
 
-Keybindings can be assigned JavaScript functions in the config, and then the
-pager executes those when the keybindings are pressed.
+Keybindings can be assigned JavaScript functions in the config, and
+then the pager executes those when the keybindings are pressed.
 
-Also, contents of the start.startup-script option are executed at startup. This
-is used when `cha` is called with the `-r` flag.
+Also, contents of the start.startup-script option are executed at
+startup. This is used when `cha` is called with the `-r` flag.
 
-There *is* an API, described at [api.md](api.md). Web APIs are exposed to
-pager too, but you cannot operate on the DOMs themselves from the pager, unless
-you create one yourself with DOMParser.parseFromString.
+There *is* an API, described at [api.md](api.md). Web APIs are exposed
+to pager too, but you cannot operate on the DOMs themselves from the
+pager, unless you create one yourself with DOMParser.parseFromString.
 
-[config.md](config.md) describes all commands that are used in the default
-config.
+[config.md](config.md) describes all commands that are used in the
+default config.
 
 ### JS in the buffer
 
-The DOM is implemented through the same wrappers as those in pager. (Obviously,
-the pager modules are not exposed to buffer JS.)
+The DOM is implemented through the same wrappers as those in pager,
+except the pager modules are not exposed to buffer JS.
 
-Aside from document.write, it is mostly straightforward, and usually works OK,
-though too many things are missing to really make it useful.
+Aside from document.write, it is mostly straightforward, and usually
+works OK, though too many things are missing to really make it useful.
 
-As for document.write: don't ask. It works as far as I can tell, but I wouldn't
-know why.
+As for document.write: don't ask. It works as far as I can tell, but
+I wouldn't know why.
 
-## Styling
+## Styling, layout
 
-css/ contains everything related to styling: CSS parsing and cascading.
+css/ contains CSS parsing, cascading, layout, and rendering.
 
-The parser is not very interesting, it's just an implementation of the CSS 3
-parsing module. The latest iteration of the selector parser is pretty good. The
-media query parser and the CSS value parser both work OK, but are missing
-some commonly used features like variables.
+Note that CSS (at least 2.0 and onward) was designed for pixel-based
+displays, not for character-based ones. So we have to round a lot,
+and sometimes this goes wrong. (This is mostly solved by the omission of
+certain problematic properties and some heuristics in the layout engine.)
 
-Cascading is slow, though it could be slower. Chawan has style caching, so
-re-styles are normally very fast. Also, a hash map is used for reducing initial
-style calculation times. However, we don't have a Bloom filter yet.
+Also, some (now) commonly used features like CSS grid are not
+implemented yet, so websites using those look ugly.
 
-## Layout
+### Parsing, cascading
 
-Layout can be found in the layout/ module.
+The parser is not very interesting, it's just an implementation of the
+CSS 3 parsing module. The latest iteration of the selector parser is
+pretty good. The media query parser and the CSS value parser both work
+OK, but are missing some commonly used features like variables.
 
-It has some problems:
+Cascading is slow, though it could be slower. Chawan caches the style
+tree, so re-styles are normally very fast. Also, a hash map is used for
+reducing initial style calculation times. However, we don't have a Bloom
+filter yet.
 
-* CSS was designed for pixel-based displays, not for character-based ones. So we
-  have to round a lot, and sometimes this goes wrong. (This is mostly solved by
-  some basic heuristics inside the layout engine.)
-* Some (now) commonly used features like grid are not implemented, so websites
-  using those look ugly.
-* It's slow on large documents, because we don't have partial layouting
-  capabilities.
+### Layout
 
-Our layout engine is a rather simple procedural layout implementation. It runs
-in two passes.
+Our layout engine is a rather simple procedural layout implementation.
+It runs in two passes.
 
-In the first pass, it generates the layout tree; this is important because rules
-for generating anonymous boxes are surprisingly involved. (Specifically,
-anonymous inline box handling is kind of a mess.)
+* Build a layout tree. Anonymous boxes are generated here. After this
+  pass, the tree is no longer mutated, only the `state` and `render`
+  fields of the respective boxes.
+* Position said boxes, always relative to their parent. This pass
+  sets the values in the `state` field.
 
-The second pass then does the actual arrangement of the boxes on the screen. The
-output tree uses relative coordinates; that is, every box is positioned relative
-to its parent.
+Layout is fully recursive. This means that after a certain nesting
+depth, the buffer will run out of stack space and promptly crash.
 
-Layout is fully recursive. This means that after a certain nesting depth, the
-buffer will run out of stack space and promptly crash.
-
-Since we do not cache layout results, and the whole page is layouted (no partial
-layouting), it gets quite slow on large documents.
+Since we do not cache layout results, and the whole page is layouted,
+it gets quite slow on large documents. (Layout is being incrementally
+refactored to make implementing a cache simpler.)
 
 ### Rendering
 
-After layout is finished, the document is rendered onto a text-based canvas,
-which is represented as a sequence of strings associated with their formatting.
+After layout is finished, the document is rendered onto a text-based
+canvas, which is represented as a sequence of strings associated with
+their formatting.
 
-Again, the entire document is rendered, which is the main reason why Chawan
-performs poorly on large documents.
+The entire document is rendered, and this is our main performance
+bottleneck right now. (In fact, rendering takes much longer than
+layout. Styling is even slower, but that's less of a problem because
+it's cached.)
 
-The positive side of this is that search is very simple (and fast), since we are
-just running regexes over a linear sequence of strings.
+The positive side of this design is that search is very simple (and
+fast), since we are just running regexes over a linear sequence of
+strings.
