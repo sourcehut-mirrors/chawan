@@ -822,10 +822,13 @@ proc reshape(buffer: Buffer) =
     addr buffer.attrs, buffer.images)
   buffer.prevStyled = styledRoot
 
-proc maybeReshape(buffer: Buffer) =
-  if buffer.document != nil and buffer.document.invalid:
-    buffer.reshape()
-    buffer.document.invalid = false
+proc maybeReshape(buffer: Buffer): bool =
+  if buffer.document != nil:
+    if buffer.document.invalid or buffer.document.cachedSheetsInvalid:
+      buffer.reshape()
+      buffer.document.invalid = false
+      return true
+  return false
 
 proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
   if buffer.ishtml:
@@ -1062,13 +1065,13 @@ proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satDOMContentLoaded), buffer.document)
   discard window.jsctx.dispatch(buffer.document, event)
-  buffer.maybeReshape()
+  discard buffer.maybeReshape()
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satLoad), window)
   discard window.jsctx.dispatch(window, event)
-  buffer.maybeReshape()
+  discard buffer.maybeReshape()
 
 proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.state != bsLoadingPage:
@@ -1152,7 +1155,7 @@ proc onload(buffer: Buffer) =
       reprocess = false
     else: # EOF
       buffer.finishLoad().then(proc() =
-        buffer.reshape()
+        discard buffer.maybeReshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
         if buffer.config.scripting:
@@ -1171,7 +1174,7 @@ proc onload(buffer: Buffer) =
   # pass
   if not buffer.config.isdump and buffer.tasks[bcLoad] != 0:
     # only makes sense when not in dump mode (and the user has requested a load)
-    buffer.reshape()
+    discard buffer.maybeReshape()
     buffer.reportedBytesRead = buffer.bytesRead
     if buffer.hasTask(bcGetTitle):
       buffer.resolveTask(bcGetTitle, buffer.document.title)
@@ -1213,7 +1216,7 @@ proc cancel*(buffer: Buffer) {.proxy.} =
     buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
   buffer.state = bsLoaded
-  buffer.reshape()
+  discard buffer.maybeReshape()
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc serializeMultipart(entries: seq[FormDataEntry]): FormData =
@@ -1344,14 +1347,18 @@ proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Requ
 proc setFocus(buffer: Buffer; e: Element): bool =
   if buffer.document.focus != e:
     buffer.document.setFocus(e)
-    buffer.reshape()
+    e.setInvalid()
+    discard buffer.maybeReshape()
     return true
+  return false
 
 proc restoreFocus(buffer: Buffer): bool =
   if buffer.document.focus != nil:
+    buffer.document.focus.setInvalid()
     buffer.document.setFocus(nil)
-    buffer.reshape()
+    discard buffer.maybeReshape()
     return true
+  return false
 
 type ReadSuccessResult* = object
   open*: Request
@@ -1459,8 +1466,8 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
       if not buffer.config.scripting:
         return ClickResult(repaint: repaint)
       let s = buffer.evalJSURL(url)
-      buffer.reshape()
-      repaint = true
+      if buffer.maybeReshape():
+        repaint = true
       if s.isNone:
         return ClickResult(repaint: repaint)
       let urls = newURL("data:text/html," & s.get)
@@ -1484,8 +1491,7 @@ proc click(buffer: Buffer; button: HTMLButtonElement): ClickResult =
       open = buffer.submitForm(button.form, button)
     of btReset:
       button.form.reset()
-      buffer.reshape()
-      return ClickResult(repaint: true)
+      return ClickResult(repaint: buffer.maybeReshape())
     of btButton: discard
     let repaint = buffer.setFocus(button)
     return ClickResult(open: open, repaint: repaint)
@@ -1539,21 +1545,18 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
   of itCheckbox:
     input.setChecked(not input.checked)
     input.setInvalid()
-    buffer.reshape()
-    return ClickResult(repaint: true)
+    return ClickResult(repaint: buffer.maybeReshape())
   of itRadio:
     for radio in input.radiogroup:
       radio.setChecked(false)
       radio.setInvalid()
     input.setChecked(true)
     input.setInvalid()
-    buffer.reshape()
-    return ClickResult(repaint: true)
+    return ClickResult(repaint: buffer.maybeReshape())
   of itReset:
     if input.form != nil:
       input.form.reset()
-      buffer.reshape()
-      return ClickResult(repaint: true)
+      return ClickResult(repaint: buffer.maybeReshape())
     return ClickResult(repaint: false)
   of itSubmit, itButton:
     if input.form != nil:
@@ -1606,9 +1609,7 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
       let window = buffer.window
       let event = newEvent(window.toAtom(satClick), element)
       canceled = window.jsctx.dispatch(element, event)
-      if buffer.document.invalid:
-        buffer.reshape()
-        buffer.document.invalid = false
+      if buffer.maybeReshape():
         repaint = true
   if not canceled:
     if clickable != nil:
@@ -1861,7 +1862,7 @@ proc runBuffer(buffer: Buffer) =
     if buffer.config.scripting:
       if buffer.window.timeouts.run(buffer.estream):
         buffer.window.runJSJobs()
-        buffer.maybeReshape()
+        discard buffer.maybeReshape()
     buffer.loader.unregistered.setLen(0)
 
 proc cleanup(buffer: Buffer) =
