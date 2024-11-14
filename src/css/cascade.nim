@@ -147,7 +147,7 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
   template map_size =
     let s = element.attrul(satSize)
     if s.isSome:
-      set_cv "width", CSSLength(num: float64(s.get), unit: cuCh)
+      set_cv "width", CSSLength(num: float64(s.get), u: cuCh)
   template map_text =
     let s = element.attr(satText)
     if s != "":
@@ -207,8 +207,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let textarea = HTMLTextAreaElement(element)
     let cols = textarea.attrul(satCols).get(20)
     let rows = textarea.attrul(satRows).get(1)
-    set_cv "width", CSSLength(unit: cuCh, num: float64(cols))
-    set_cv "height", CSSLength(unit: cuEm, num: float64(rows))
+    set_cv "width", CSSLength(u: cuCh, num: float64(cols))
+    set_cv "height", CSSLength(u: cuEm, num: float64(rows))
   of TAG_FONT:
     map_color
   of TAG_INPUT:
@@ -405,10 +405,8 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
         styledText.pseudo = pseudo
         styledParent.children.add(styledText)
     of peImage:
-      let src = Element(styledParent.node).attr(satSrc)
       let content = CSSContent(
         t: ContentImage,
-        s: src,
         bmp: HTMLImageElement(styledParent.node).bitmap
       )
       let styledText = styledParent.newStyledReplacement(content, pseudo)
@@ -418,7 +416,6 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       if bmp != nil and bmp.cacheId != 0:
         let content = CSSContent(
           t: ContentImage,
-          s: "canvas://",
           bmp: bmp
         )
         let styledText = styledParent.newStyledReplacement(content, pseudo)

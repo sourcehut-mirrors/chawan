@@ -392,9 +392,9 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     return
   var offset = offset
   if position in {PositionAbsolute, PositionFixed}:
-    if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
+    if box.computed{"left"}.u != cuAuto or box.computed{"right"}.u != cuAuto:
       offset.x = state.absolutePos[^1].x
-    if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
+    if box.computed{"top"}.u != cuAuto or box.computed{"bottom"}.u != cuAuto:
       offset.y = state.absolutePos[^1].y
   offset += box.state.offset
   box.render.offset = offset
@@ -415,8 +415,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       let iex = toInt(e.x)
       let iey = toInt(e.y)
       grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node)
-    if box.computed{"background-image"}.t == ContentImage and
-        box.computed{"background-image"}.s != "":
+    if box.computed{"background-image"}.t == ContentImage:
       # ugly hack for background-image display... TODO actually display images
       let s = "[img]"
       let w = s.len * state.attrs.ppc

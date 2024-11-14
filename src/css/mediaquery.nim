@@ -254,10 +254,10 @@ proc parseLengthRange(parser: var MediaQueryParser; ismin, ismax: bool):
     Opt[LengthRange] =
   if ismin:
     let a = ?parser.parseLength()
-    let b = CSSLength(num: Inf, unit: cuPx)
+    let b = CSSLength(num: Inf, u: cuPx)
     return ok(LengthRange(s: a .. b, aeq: true, beq: false))
   if ismax:
-    let a = CSSLength(num: 0, unit: cuPx)
+    let a = CSSLength(num: 0, u: cuPx)
     let b = ?parser.parseLength()
     return ok(LengthRange(s: a .. b, aeq: false, beq: true))
   let comparison = ?parser.parseComparison()
@@ -267,10 +267,10 @@ proc parseLengthRange(parser: var MediaQueryParser; ismin, ismax: bool):
   of mqcEq:
     return ok(LengthRange(s: len .. len, aeq: true, beq: true))
   of mqcGt, mqcGe:
-    let b = CSSLength(num: Inf, unit: cuPx)
+    let b = CSSLength(num: Inf, u: cuPx)
     return ok(LengthRange(s: len .. b, aeq: comparison == mqcGe, beq: false))
   of mqcLt, mqcLe:
-    let a = CSSLength(num: 0, unit: cuPx)
+    let a = CSSLength(num: 0, u: cuPx)
     return ok(LengthRange(s: a .. len, aeq: false, beq: comparison == mqcLe))
 
 proc parseFeature0(parser: var MediaQueryParser; t: MediaFeatureType;
