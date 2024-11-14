@@ -2299,6 +2299,13 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     # Do not grow shrink-to-fit sizes.
     if wt == fwtShrink or fctx.redistSpace.t == scStretch:
       mctx.redistributeMainSize(diff, wt, dim, lctx)
+  elif sizes.minMaxSizes[dim].start > 0:
+    # Override with min-width/min-height, but *only* if we are smaller
+    # than the desired size. (Otherwise, we would incorrectly limit
+    # max-content size when only a min-width is requested.)
+    if sizes.minMaxSizes[dim].start > mctx.totalSize[dim]:
+      let diff = sizes.minMaxSizes[dim].start - mctx.totalSize[dim]
+      mctx.redistributeMainSize(diff, fwtGrow, dim, lctx)
   let h = mctx.maxSize[odim] + mctx.maxMargin[odim].sum()
   var offset = fctx.offset
   for it in mctx.pending.mitems:
@@ -2336,7 +2343,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     offset: offset(x = sizes.padding.left, y = sizes.padding.top),
     redistSpace: sizes.space[dim]
   )
-  if fctx.redistSpace.t != scStretch and sizes.minMaxSizes[dim].start > 0:
+  if fctx.redistSpace.t == scFitContent and sizes.minMaxSizes[dim].start > 0:
     fctx.redistSpace = stretch(sizes.minMaxSizes[dim].start)
   if fctx.redistSpace.isDefinite:
     fctx.redistSpace.u = fctx.redistSpace.u.minClamp(sizes.minMaxSizes[dim])
