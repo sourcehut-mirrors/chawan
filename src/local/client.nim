@@ -11,19 +11,18 @@ import config/config
 import html/catom
 import html/chadombuilder
 import html/dom
+import html/domexception
 import html/env
 import html/formdata
+import html/jsencoding
+import html/jsintl
 import html/xmlhttprequest
 import io/bufwriter
+import io/console
 import io/dynstream
 import io/poll
 import io/promise
-import js/console
-import js/domexception
-import js/encoding
-import js/intl
-import js/jsmodule
-import js/timeout
+import io/timeout
 import loader/headers
 import loader/loaderiface
 import loader/request
@@ -628,6 +627,29 @@ proc headlessLoop(client: Client) =
     client.runJSJobs()
     client.loader.unregistered.setLen(0)
     client.acceptBuffers()
+
+proc setImportMeta(ctx: JSContext; funcVal: JSValue; isMain: bool) =
+  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  let moduleNameAtom = JS_GetModuleName(ctx, m)
+  let metaObj = JS_GetImportMeta(ctx, m)
+  definePropertyCWE(ctx, metaObj, "url", JS_AtomToValue(ctx, moduleNameAtom))
+  definePropertyCWE(ctx, metaObj, "main", isMain)
+  JS_FreeValue(ctx, metaObj)
+  JS_FreeAtom(ctx, moduleNameAtom)
+
+proc finishLoadModule(ctx: JSContext; f: string; name: cstring): JSModuleDef =
+  let funcVal = compileModule(ctx, f, $name)
+  if JS_IsException(funcVal):
+    return nil
+  setImportMeta(ctx, funcVal, false)
+  # "the module is already referenced, so we must free it"
+  # idk how this works, so for now let's just do what qjs does
+  result = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  JS_FreeValue(ctx, funcVal)
+
+proc normalizeModuleName(ctx: JSContext; base_name, name: cstringConst;
+    opaque: pointer): cstring {.cdecl.} =
+  return js_strdup(ctx, cstring(name))
 
 proc clientLoadJSModule(ctx: JSContext; module_name: cstringConst;
     opaque: pointer): JSModuleDef {.cdecl.} =

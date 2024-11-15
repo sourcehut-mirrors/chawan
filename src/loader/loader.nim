@@ -27,23 +27,23 @@ import std/posix
 import std/strutils
 import std/tables
 
+import config/urimethodmap
 import io/bufreader
 import io/bufwriter
 import io/dynstream
 import io/poll
 import io/tempfile
-import loader/urlfilter
 import loader/connecterror
 import loader/headers
 import loader/loaderhandle
 import loader/loaderiface
 import loader/request
+import loader/urlfilter
 import monoucha/javascript
 import types/cookie
 import types/formdata
 import types/opt
 import types/referrer
-import types/urimethodmap
 import types/url
 import utils/twtstr
 

@@ -12,12 +12,12 @@ import config/config
 import config/mailcap
 import css/render
 import io/bufreader
+import io/console
 import io/dynstream
 import io/poll
 import io/promise
 import io/tempfile
-import js/console
-import js/timeout
+import io/timeout
 import loader/connecterror
 import loader/headers
 import loader/loaderiface

@@ -2,9 +2,9 @@ import std/math
 import std/options
 
 import html/catom
+import html/domexception
 import html/script
-import js/domexception
-import js/timeout
+import io/timeout
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror

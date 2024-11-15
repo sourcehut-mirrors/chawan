@@ -1,6 +1,6 @@
 import std/options
 
-import js/domexception
+import html/domexception
 import types/opt
 import utils/twtstr
 

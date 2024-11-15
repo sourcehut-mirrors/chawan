@@ -5,6 +5,7 @@ import std/tables
 
 import chagashi/charset
 import config/config
+import config/urimethodmap
 import html/formdata
 import io/bufreader
 import io/bufwriter
@@ -12,7 +13,6 @@ import io/dynstream
 import loader/loader
 import loader/loaderiface
 import server/buffer
-import types/urimethodmap
 import types/url
 import types/winattrs
 import utils/proctitle

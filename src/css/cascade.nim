@@ -14,8 +14,8 @@ import css/stylednode
 import html/catom
 import html/dom
 import html/enums
-import js/jscolor
 import types/color
+import types/jscolor
 import types/opt
 
 type

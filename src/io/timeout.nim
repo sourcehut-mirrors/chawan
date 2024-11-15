@@ -1,8 +1,8 @@
 import std/algorithm
 import std/times
 
+import io/console
 import io/dynstream
-import js/console
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jsutils

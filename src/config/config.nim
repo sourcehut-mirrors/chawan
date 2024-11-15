@@ -9,7 +9,7 @@ import config/chapath
 import config/mailcap
 import config/mimetypes
 import config/toml
-import js/jscolor
+import config/urimethodmap
 import loader/headers
 import monoucha/fromjs
 import monoucha/javascript
@@ -21,8 +21,8 @@ import monoucha/tojs
 import types/cell
 import types/color
 import types/cookie
+import types/jscolor
 import types/opt
-import types/urimethodmap
 import types/url
 import utils/regexutils
 import utils/twtstr

@@ -29,11 +29,11 @@ import html/event
 import html/formdata as formdata_impl
 import io/bufreader
 import io/bufwriter
+import io/console
 import io/dynstream
 import io/poll
 import io/promise
-import js/console
-import js/timeout
+import io/timeout
 import loader/headers
 import loader/loaderiface
 import loader/request

@@ -1,9 +1,9 @@
 import chame/tags
 import html/catom
 import html/dom
+import html/domexception
 import html/enums
 import io/dynstream
-import js/domexception
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/tojs

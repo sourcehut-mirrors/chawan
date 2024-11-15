@@ -27,10 +27,9 @@ Explanation for the separate directories found in `src/`:
 
 * config: configuration-related code. Mainly parsers for config files.
 * css: CSS parsing, cascading, layout, rendering.
-* html: DOM building, DOM functions, the DOM itself, forms, etc. It does
-  not include the [HTML parser](https://git.sr.ht/~bptato/chame) itself.
+* html: DOM building, the DOM itself, forms, misc. JS APIs, etc. (It
+  does not include the [HTML parser](https://git.sr.ht/~bptato/chame).)
 * io: code for IPC, interaction with the file system, etc.
-* js: modules mainly for use by JS code.
 * loader: code for the file loader server (?).
 * local: code for the main process (i.e. the pager).
 * server: code for processes other than the main process, e.g. buffer
@@ -232,15 +231,14 @@ buffers for running on-page scripts when JavaScript is enabled.
 
 The core JS related functionality has been separated out into the
 [Monoucha](https://git.sr.ht/~bptato/monoucha) library, so it can be
-used outside of Chawan too. Interested readers are invited to read the
-[manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md).
+used outside of Chawan too.
 
 ### General
 
 To avoid having to type out all the type conversion & error handling
 code manually, we have JS pragmas to automagically turn Nim procedures
-into JavaScript functions. An explanation of what these pragmas are &
-what they do can be found in the header of js/javascript.nim.
+into JavaScript functions. (For details on the specific pragmas, see the
+[manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md).)
 
 The type conversion itself is handled by the overloaded toJS function
 and the generic fromJS function. toJS returns a JSValue, the native
@@ -321,7 +319,7 @@ works OK, though too many things are missing to really make it useful.
 As for document.write: don't ask. It works as far as I can tell, but
 I wouldn't know why.
 
-## Styling, layout
+## CSS
 
 css/ contains CSS parsing, cascading, layout, and rendering.
 
@@ -350,11 +348,14 @@ filter yet.
 Our layout engine is a rather simple procedural layout implementation.
 It runs in two passes.
 
-* Build a layout tree. Anonymous boxes are generated here. After this
-  pass, the tree is no longer mutated, only the `state` and `render`
-  fields of the respective boxes.
-* Position said boxes, always relative to their parent. This pass
-  sets the values in the `state` field.
+1. Build a layout tree. Anonymous boxes are generated here. After this
+   pass, the tree is no longer mutated, only the `state` and `render`
+   fields of the respective boxes.
+2. Position said boxes, always relative to their parent. This pass
+   sets the values in the `state` field.
+
+In practice, step 2 is often repeated for subsections of the tree
+to resolve cyclic dependencies in CSS layout (e.g. in table, flex).
 
 Layout is fully recursive. This means that after a certain nesting
 depth, the buffer will run out of stack space and promptly crash.
@@ -368,6 +369,9 @@ refactored to make implementing a cache simpler.)
 After layout is finished, the document is rendered onto a text-based
 canvas, which is represented as a sequence of strings associated with
 their formatting.
+
+Additionally, boxes are assigned an offset in the `render` field here,
+which is used when jumping to anchors.
 
 The entire document is rendered, and this is our main performance
 bottleneck right now. (In fact, rendering takes much longer than
