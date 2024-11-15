@@ -379,17 +379,11 @@ func rgba*(r, g, b, a: uint8): ARGBColor =
 func rgba_be*(r, g, b, a: uint8): RGBAColorBE =
   return RGBAColorBE(r: r, g: g, b: b, a: a)
 
-func rgb_be*(r, g, b: uint8): RGBAColorBE =
-  return RGBAColorBE(r: r, g: g, b: b, a: 0xFF)
-
 func rgba*(r, g, b, a: int): ARGBColor =
   return rgba(uint8(r), uint8(g), uint8(b), uint8(a))
 
 func gray*(n: uint8): RGBColor =
   return rgb(n, n, n)
-
-func gray_be*(n: uint8): RGBAColorBE =
-  return rgb_be(n, n, n)
 
 # NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
 func toRGB*(param0: ANSIColor): RGBColor =
@@ -407,10 +401,10 @@ func toRGB*(param0: ANSIColor): RGBColor =
     let n = (u - 232) * 10 + 8
     return gray(n)
 
-func toEightBit(r, g, b: uint8): ANSIColor =
-  let r = int(r)
-  let g = int(g)
-  let b = int(b)
+func toEightBit*(c: RGBColor): ANSIColor =
+  let r = int(c.r)
+  let g = int(c.g)
+  let b = int(c.b)
   # Idea from here: https://github.com/Qix-/color-convert/pull/75
   # This seems to work about as well as checking for
   # abs(U - 128) < 5 & abs(V - 128 < 5), but is definitely faster.
@@ -423,12 +417,6 @@ func toEightBit(r, g, b: uint8): ANSIColor =
   #16 + 36 * r + 6 * g + b
   return ANSIColor(uint8(16 + 36 * (r * 5 div 255) + 6 * (g * 5 div 255) +
     (b * 5 div 255)))
-
-func toEightBit*(c: RGBColor): ANSIColor =
-  return toEightBit(c.r, c.g, c.b)
-
-func toEightBit*(c: RGBAColorBE): ANSIColor =
-  return toEightBit(c.r, c.g, c.b)
 
 template `$`*(color: CellColor): string =
   case color.t
