@@ -1034,37 +1034,28 @@ proc setHref(ctx: JSContext; url: URL; s: string) {.jsfset: "href".} =
 func isIP*(url: URL): bool =
   return url.hostType in {htIpv4, htIpv6}
 
-#https://url.spec.whatwg.org/#concept-urlencoded-serializer
+# https://url.spec.whatwg.org/#urlencoded-parsing
 proc parseFromURLEncoded(input: string): seq[(string, string)] =
+  result = @[]
   for s in input.split('&'):
     if s == "":
       continue
-    var name = ""
-    var value = ""
-    for i in 0..<s.len:
-      if s[i] == '=':
-        name = s.substr(0, i - 1)
-        value = s.substr(i + 1)
-        break
-    if name == "":
-      name = s
-    for i in 0..<name.len:
-      if name[i] == '+':
-        name[i] = ' '
-    for i in 0..<value.len:
-      if value[i] == '+':
-        value[i] = ' '
-    result.add((percentDecode(name), percentDecode(value)))
+    var name = s.until('=')
+    var value = s.after('=')
+    for c in name.mitems:
+      if c == '+':
+        c = ' '
+    for c in value.mitems:
+      if c == '+':
+        c = ' '
+    result.add((name.percentDecode(), value.percentDecode()))
 
-#https://url.spec.whatwg.org/#concept-urlencoded-serializer
-proc serializeFormURLEncoded*(kvs: seq[(string, string)]; spaceAsPlus = true;
-    qmark = false): string =
+# https://url.spec.whatwg.org/#urlencoded-serializing
+proc serializeFormURLEncoded*(kvs: seq[(string, string)]; spaceAsPlus = true):
+    string =
   result = ""
-  if qmark:
-    result &= '?'
-  for it in kvs:
-    let (name, value) = it
-    if result != "":
+  for (name, value) in kvs:
+    if result.len > 0:
       result &= '&'
     result.percentEncode(name, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
     result &= '='

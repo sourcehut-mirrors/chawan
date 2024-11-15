@@ -1266,7 +1266,7 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      parsedAction.setSearch(serializeFormURLEncoded(kvlist, qmark = true))
+      parsedAction.setSearch('?' & serializeFormURLEncoded(kvlist))
       return newRequest(parsedAction, httpMethod)
     return newRequest(parsedAction) # get action URL
   of frtMailto:
@@ -1274,8 +1274,8 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       # mailWithHeaders
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      parsedAction.setSearch(serializeFormURLEncoded(kvlist,
-        spaceAsPlus = false, qmark = true))
+      parsedAction.setSearch('?' & serializeFormURLEncoded(kvlist,
+        spaceAsPlus = false))
       return newRequest(parsedAction, httpMethod)
     # mail as body
     let kvlist = entryList.toNameValuePairs()
@@ -1295,8 +1295,8 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
       #TODO with charset
-      let query = serializeFormURLEncoded(kvlist, qmark = true)
-      parsedAction.setSearch(query)
+      let search = '?' & serializeFormURLEncoded(kvlist)
+      parsedAction.setSearch(search)
       return newRequest(parsedAction, httpMethod)
     # submit as entity body
     let body = case enctype
