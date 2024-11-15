@@ -19,7 +19,7 @@ proc openKnownHosts(os: PosixStream): (File, string) =
     if ourDir == "":
       os.die("InternalError", "config dir missing")
     path = ourDir & '/' & "gemini_known_hosts"
-  createDir(path.beforeLast('/'))
+  createDir(path.untilLast('/'))
   let f = cast[File](fopen(cstring(path), "a+"))
   if f == nil:
     os.die("InternalError", "error opening open known hosts file")

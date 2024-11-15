@@ -286,7 +286,7 @@ func afterLast*(s: string; c: set[char]; n = 1): string =
 
 func afterLast*(s: string; c: char; n = 1): string = s.afterLast({c}, n)
 
-func beforeLast*(s: string; c: set[char]; n = 1): string =
+func untilLast*(s: string; c: set[char]; n = 1): string =
   var j = 0
   for i in countdown(s.high, 0):
     if s[i] in c:
@@ -295,7 +295,7 @@ func beforeLast*(s: string; c: set[char]; n = 1): string =
         return s.substr(0, i)
   return s
 
-func beforeLast*(s: string; c: char; n = 1): string = s.beforeLast({c}, n)
+func untilLast*(s: string; c: char; n = 1): string = s.untilLast({c}, n)
 
 proc c_sprintf(buf, fm: cstring): cint
   {.header: "<stdio.h>", importc: "sprintf", varargs}

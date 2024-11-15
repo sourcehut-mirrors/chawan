@@ -125,7 +125,7 @@ proc `$`*(cookiejar: CookieJar): string =
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.1.4
 func defaultCookiePath(url: URL): string =
-  let path = url.pathname.beforeLast('/')
+  let path = url.pathname.untilLast('/')
   if path == "" or path[0] != '/':
     return "/"
   return path
