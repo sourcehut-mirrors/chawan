@@ -318,8 +318,6 @@ proc fromJS(ctx: JSContext; val: JSValue; t: cstring; res: var pointer):
   let p = JS_GetOpaque(val, JS_GetClassID(val))
   if p == nil or not ctx.isInstanceOf(val, t):
     JS_ThrowTypeError(ctx, "%s expected", t)
-    var s: string
-    discard ctx.fromJS(val, s)
     return err()
   res = p
   return ok()
