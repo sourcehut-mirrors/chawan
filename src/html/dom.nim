@@ -1188,7 +1188,7 @@ iterator branch*(node: Node): Node {.inline.} =
 
 # Returns the node's descendants
 iterator descendants*(node: Node): Node {.inline.} =
-  var stack: seq[Node]
+  var stack: seq[Node] = @[]
   for i in countdown(node.childList.high, 0):
     stack.add(node.childList[i])
   while stack.len > 0:
@@ -1197,17 +1197,33 @@ iterator descendants*(node: Node): Node {.inline.} =
     for i in countdown(node.childList.high, 0):
       stack.add(node.childList[i])
 
+# Descendants, and the node itself.
+iterator descendantsIncl(node: Node): Node {.inline.} =
+  var stack = @[node]
+  while stack.len > 0:
+    let node = stack.pop()
+    yield node
+    for i in countdown(node.childList.high, 0):
+      stack.add(node.childList[i])
+
+# Element descendants.
 iterator elements*(node: Node): Element {.inline.} =
   for child in node.descendants:
     if child of Element:
       yield Element(child)
 
-iterator elements*(node: Node; tag: TagType): Element {.inline.} =
+# Element descendants, and the node itself (if it's an element).
+iterator elementsIncl(node: Node): Element {.inline.} =
+  for child in node.descendantsIncl:
+    if child of Element:
+      yield Element(child)
+
+iterator elements(node: Node; tag: TagType): Element {.inline.} =
   for desc in node.elements:
     if desc.tagType == tag:
       yield desc
 
-iterator elements*(node: Node; tag: set[TagType]): Element {.inline.} =
+iterator elements(node: Node; tag: set[TagType]): Element {.inline.} =
   for desc in node.elements:
     if desc.tagType in tag:
       yield desc
@@ -3787,11 +3803,6 @@ proc elementInsertionSteps(element: Element) =
       let image = HTMLImageElement(element)
       window.loadResource(image)
 
-proc insertionSteps(insertedNode: Node) =
-  if insertedNode of Element:
-    let element = Element(insertedNode)
-    element.elementInsertionSteps()
-
 func isValidParent(node: Node): bool =
   return node of Element or node of Document or node of DocumentFragment
 
@@ -3867,9 +3878,9 @@ proc insertNode(parent, node, before: Node) =
   if node.document != nil and (node of HTMLStyleElement or
       node of HTMLLinkElement):
     node.document.cachedSheetsInvalid = true
-  if node of Element:
+  for el in node.elementsIncl:
     #TODO shadow root
-    insertionSteps(node)
+    el.elementInsertionSteps()
 
 # WARNING ditto
 proc insert*(parent, node, before: Node; suppressObservers = false) =
