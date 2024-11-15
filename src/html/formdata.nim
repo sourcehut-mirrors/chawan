@@ -15,23 +15,20 @@ import utils/twtstr
 proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
     encoding = "UTF-8"): seq[FormDataEntry]
 
-var urandom* {.global.}: PosixStream
-
-proc generateBoundary(): string =
+proc generateBoundary(urandom: PosixStream): string =
   var s: array[33, uint8]
   urandom.recvDataLoop(s)
   # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
   return "----WebKitFormBoundary" & btoa(s)
 
-proc newFormData0*(): FormData =
-  return FormData(boundary: generateBoundary())
+proc newFormData0*(entries: seq[FormDataEntry]; urandom: PosixStream):
+    FormData =
+  return FormData(boundary: urandom.generateBoundary(), entries: entries)
 
-proc newFormData0*(entries: seq[FormDataEntry]): FormData =
-  return FormData(boundary: generateBoundary(), entries: entries)
-
-proc newFormData(form: HTMLFormElement = nil; submitter: HTMLElement = nil):
-    DOMResult[FormData] {.jsctor.} =
-  let this = newFormData0()
+proc newFormData(ctx: JSContext; form: HTMLFormElement = nil;
+    submitter: HTMLElement = nil): DOMResult[FormData] {.jsctor.} =
+  let urandom = ctx.getGlobal().urandom
+  let this = FormData(boundary: urandom.generateBoundary())
   if form != nil:
     if submitter != nil:
       if not submitter.isSubmitButton():

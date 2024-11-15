@@ -8,6 +8,7 @@ import std/streams
 import chagashi/charset
 import config/chapath
 import config/config
+import io/dynstream
 import local/client
 import local/term
 import monoucha/javascript
@@ -229,6 +230,7 @@ proc main() =
   putEnv("CHA_BIN_DIR", getAppFileName().beforeLast('/'))
   putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
   let forkserver = newForkServer()
+  let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   var ctx = ParamParseContext(params: commandLineParams(), i: 0)
   ctx.parse()
   let jsrt = newJSRuntime()
@@ -253,7 +255,8 @@ proc main() =
   discard mkdir(cstring(config.external.tmpdir), 0o700)
   discard mkdir(cstring(config.external.sockdir), 0o700)
   let loaderPid = forkserver.loadConfig(config)
-  let client = newClient(config, forkserver, loaderPid, jsctx, warnings)
+  let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
+    urandom)
   try:
     client.launchClient(ctx.pages, ctx.contentType, ctx.charset, ctx.dump)
   except CatchableError:

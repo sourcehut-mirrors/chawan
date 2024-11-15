@@ -105,6 +105,7 @@ type
     imageId: int
     # list of streams that must be closed for canvas rendering on load
     pendingCanvasCtls*: seq[CanvasRenderingContext2D]
+    urandom*: PosixStream
 
   # Navigator stuff
   Navigator* = object

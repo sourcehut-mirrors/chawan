@@ -331,7 +331,8 @@ proc runJSJobs*(window: Window) =
     ctx.writeException(window.console.err)
 
 proc newWindow*(scripting, images, styling: bool; attrs: WindowAttributes;
-    factory: CAtomFactory; loader: FileLoader; url: URL): Window =
+    factory: CAtomFactory; loader: FileLoader; url: URL; urandom: PosixStream):
+    Window =
   let err = newDynFileStream(stderr)
   let window = Window(
     attrs: attrs,
@@ -344,7 +345,8 @@ proc newWindow*(scripting, images, styling: bool; attrs: WindowAttributes;
       scripting: scripting,
       origin: url.origin
     ),
-    factory: factory
+    factory: factory,
+    urandom: urandom
   )
   window.location = window.newLocation()
   if scripting:

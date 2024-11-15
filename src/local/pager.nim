@@ -128,7 +128,6 @@ type
     consoleWrapper*: ConsoleWrapper
     container*: Container
     cookiejars: Table[string, CookieJar]
-    devRandom: PosixStream
     display: Surface
     forkserver*: ForkServer
     hasload*: bool # has a page been successfully loaded since startup?
@@ -157,6 +156,7 @@ type
     term*: Terminal
     timeouts*: TimeoutState
     unreg*: seq[Container]
+    urandom: PosixStream
 
 jsDestructor(Pager)
 
@@ -340,19 +340,20 @@ proc quit*(pager: Pager) =
   pager.dumpAlerts()
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
-    alerts: seq[string]): Pager =
+    alerts: seq[string]; urandom: PosixStream): Pager =
   return Pager(
     config: config,
     forkserver: forkserver,
     term: newTerminal(stdout, config),
     alerts: alerts,
     jsctx: ctx,
-    luctx: LUContext()
+    luctx: LUContext(),
+    urandom: urandom
   )
 
 proc genClientKey(pager: Pager): ClientKey =
   var key: ClientKey
-  pager.devRandom.recvDataLoop(key)
+  pager.urandom.recvDataLoop(key)
   return key
 
 proc addLoaderClient*(pager: Pager; pid: int; config: LoaderClientConfig;
@@ -363,7 +364,6 @@ proc addLoaderClient*(pager: Pager; pid: int; config: LoaderClientConfig;
   return key
 
 proc setLoader*(pager: Pager; loader: FileLoader) =
-  pager.devRandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   pager.loader = loader
   let config = LoaderClientConfig(
     defaultHeaders: newHeaders(pager.config.network.default_headers),

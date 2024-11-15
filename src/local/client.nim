@@ -795,11 +795,11 @@ func getClient(client: Client): Client {.jsfget: "client".} =
   return client
 
 proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
-    jsctx: JSContext; warnings: seq[string]): Client =
+    jsctx: JSContext; warnings: seq[string]; urandom: PosixStream): Client =
   setControlCHook(proc() {.noconv.} = quit(1))
   let jsrt = JS_GetRuntime(jsctx)
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
-  let pager = newPager(config, forkserver, jsctx, warnings)
+  let pager = newPager(config, forkserver, jsctx, warnings, urandom)
   let loader = FileLoader(process: loaderPid, clientPid: getCurrentProcessId())
   loader.setSocketDir(config.external.sockdir)
   pager.setLoader(loader)
@@ -811,7 +811,8 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     exitCode: -1,
     alive: true,
     factory: newCAtomFactory(),
-    loader: loader
+    loader: loader,
+    urandom: urandom
   )
   JS_SetInterruptHandler(jsrt, interruptHandler, cast[pointer](client))
   let global = JS_GetGlobalObject(jsctx)

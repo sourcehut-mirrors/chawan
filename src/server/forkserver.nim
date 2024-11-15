@@ -6,7 +6,6 @@ import std/tables
 import chagashi/charset
 import config/config
 import config/urimethodmap
-import html/formdata
 import io/bufreader
 import io/bufwriter
 import io/dynstream
@@ -153,7 +152,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     let ps = newPosixStream(pipefd[1])
     ps.write(char(0))
     ps.sclose()
-    urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
+    let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
     let pstream = ssock.acceptSocketStream()
     gssock = ssock
     gpstream = pstream
@@ -172,7 +171,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     )
     try:
       launchBuffer(config, url, attrs, ishtml, charsetStack, loader,
-        ssock, pstream)
+        ssock, pstream, urandom)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim

@@ -1219,8 +1219,9 @@ proc cancel*(buffer: Buffer) {.proxy.} =
   discard buffer.maybeReshape()
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
-proc serializeMultipart(entries: seq[FormDataEntry]): FormData =
-  let formData = newFormData0(entries)
+proc serializeMultipart(entries: seq[FormDataEntry]; urandom: PosixStream):
+    FormData =
+  let formData = newFormData0(entries, urandom)
   for entry in formData.entries.mitems:
     entry.name = makeCRLF(entry.name)
   return formData
@@ -1305,7 +1306,8 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       RequestBody(t: rbtString, s: serializeFormURLEncoded(kvlist))
     of fetMultipart:
       #TODO with charset
-      RequestBody(t: rbtMultipart, multipart: serializeMultipart(entryList))
+      let multipart = serializeMultipart(entryList, buffer.window.urandom)
+      RequestBody(t: rbtMultipart, multipart: multipart)
     of fetTextPlain:
       #TODO with charset
       let kvlist = entryList.toNameValuePairs()
@@ -1867,13 +1869,13 @@ proc runBuffer(buffer: Buffer) =
 
 proc cleanup(buffer: Buffer) =
   buffer.pstream.sclose()
-  urandom.sclose()
+  buffer.window.urandom.sclose()
   # no unlink access on Linux, so just hope that the pager could clean it up
   buffer.ssock.close(unlink = false)
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
-    ssock: ServerSocket; pstream: SocketStream) =
+    ssock: ServerSocket; pstream: SocketStream; urandom: PosixStream) =
   let factory = newCAtomFactory()
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
@@ -1895,7 +1897,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     outputId: -1,
     factory: factory,
     window: newWindow(config.scripting, config.images, config.styling, attrs,
-      factory, loader, url)
+      factory, loader, url, urandom)
   )
   if buffer.config.scripting:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
