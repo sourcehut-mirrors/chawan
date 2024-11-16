@@ -45,10 +45,10 @@ func isInstanceOf*(ctx: JSContext; val: JSValue; class: cstring): bool =
     if classid == tclassid:
       found = true
       break
-    ctxOpaque.parents.withValue(classid, val):
-      classid = val[]
-    do:
-      classid = 0 # not defined by Chawan; assume parent is Object.
+    if int(classid) < ctxOpaque.parents.len:
+      classid = ctxOpaque.parents[int(classid)]
+    else:
+      classid = 0 # not defined by us; assume parent is Object.
     if classid == 0:
       break
   return found

@@ -28,12 +28,12 @@ type
   JSContextOpaque* = ref object
     creg*: Table[cstring, JSClassID]
     typemap*: Table[pointer, JSClassID]
-    ctors*: Table[JSClassID, JSValue]
-    parents*: Table[JSClassID, JSClassID]
+    ctors*: seq[JSValue] # JSClassID -> JSValue
+    parents*: seq[JSClassID] # JSClassID -> JSClassID
     # Parent unforgeables are merged on class creation.
     # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
     # `unforgeable[classid]'.)
-    unforgeable*: Table[JSClassID, seq[JSCFunctionListEntry]]
+    unforgeable*: seq[seq[JSCFunctionListEntry]] # JSClassID -> seq
     gclass*: JSClassID # class ID of the global object
     global*: JSValue
     symRefs*: array[JSSymbolRef, JSAtom]

@@ -254,10 +254,13 @@ proc addClassUnforgeable(ctx: JSContext; proto: JSValue;
     classid, parent: JSClassID; ourUnforgeable: JSFunctionList) =
   let ctxOpaque = ctx.getOpaque()
   var merged = @ourUnforgeable
-  ctxOpaque.unforgeable.withValue(parent, uf):
-    merged.add(uf[])
+  if int(parent) < ctxOpaque.unforgeable.len:
+    merged.add(ctxOpaque.unforgeable[int(parent)])
   if merged.len > 0:
-    let ufp0 = addr ctxOpaque.unforgeable.mgetOrPut(classid, merged)[0]
+    if int(classid) >= ctxOpaque.unforgeable.len:
+      ctxOpaque.unforgeable.setLen(int(classid) + 1)
+    ctxOpaque.unforgeable[int(classid)] = move(merged)
+    let ufp0 = addr ctxOpaque.unforgeable[int(classid)][0]
     let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
     JS_SetPropertyFunctionList(ctx, proto, ufp, cint(merged.len))
 
@@ -284,6 +287,8 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
       $cdef.class_name)
   ctxOpaque.typemap[nimt] = result
   ctxOpaque.creg[tname] = result
+  if ctxOpaque.parents.len <= int(result):
+    ctxOpaque.parents.setLen(int(result) + 1)
   ctxOpaque.parents[result] = parent
   if ishtmldda:
     ctxOpaque.htmldda = result
@@ -319,9 +324,12 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
       raise newException(Defect, "Failed to set global prototype: " &
         $cdef.class_name)
     # Global already exists, so set unforgeable functions here
-    ctxOpaque.unforgeable.withValue(result, uf):
-      let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](addr uf[][0])
-      JS_SetPropertyFunctionList(ctx, global, ufp, cint(uf[].len))
+    if int(result) < ctxOpaque.unforgeable.len and
+        ctxOpaque.unforgeable[int(result)].len > 0:
+      let ufp0 = addr ctxOpaque.unforgeable[int(result)][0]
+      let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
+      JS_SetPropertyFunctionList(ctx, global, ufp,
+        cint(ctxOpaque.unforgeable[int(result)].len))
   JS_FreeValue(ctx, news)
   let jctor = JS_NewCFunction2(ctx, ctor, cstring($cdef.class_name), 0,
     JS_CFUNC_constructor, 0)
@@ -333,6 +341,8 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
   JS_SetConstructor(ctx, jctor, proto)
   if errid.isSome:
     ctx.getOpaque().errCtorRefs[errid.get] = JS_DupValue(ctx, jctor)
+  while ctxOpaque.ctors.len <= int(result):
+    ctxOpaque.ctors.add(JS_UNDEFINED)
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
     if JS_IsNull(namespace):
@@ -362,12 +372,13 @@ func getMinArgs(params: seq[FuncParam]): int =
 
 proc defineConsts*[T](ctx: JSContext; classid: JSClassID;
     consts: static openArray[(string, T)]) =
-  try:
-    let proto = ctx.getOpaque().ctors[classid]
-    for (k, v) in consts:
-      ctx.definePropertyE(proto, k, v)
-  except KeyError:
+  let ctxOpaque = ctx.getOpaque()
+  if int(classid) >= ctxOpaque.ctors.len or
+      JS_IsUndefined(ctxOpaque.ctors[int(classid)]):
     raise newException(Defect, "Class does not exist")
+  let proto = ctx.getOpaque().ctors[classid]
+  for (k, v) in consts:
+    ctx.definePropertyE(proto, k, v)
 
 proc defineConsts*(ctx: JSContext; classid: JSClassID;
     consts: typedesc[enum]; astype: typedesc) =
