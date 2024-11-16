@@ -2242,6 +2242,15 @@ func getElementById(document: Document; id: string): Element {.jsfunc.} =
       return child
   return nil
 
+func getElementsByName(document: Document; name: CAtom): NodeList {.jsfunc.} =
+  return newCollection[NodeList](
+    document,
+    func(node: Node): bool =
+      return node of Element and Element(node).name == name,
+    islive = true,
+    childonly = false
+  )
+
 func getElementsByTagName0(root: Node; tagName: string): HTMLCollection =
   if tagName == "*":
     return newCollection[HTMLCollection](
@@ -3697,7 +3706,7 @@ proc adopt(document: Document; node: Node) =
     remove(node)
   if oldDocument != document:
     #TODO shadow root
-    for desc in node.descendants:
+    for desc in node.descendantsIncl:
       desc.internalDocument = document
       if desc of Element:
         for attr in Element(desc).attributes.attrlist:

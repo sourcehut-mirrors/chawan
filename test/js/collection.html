@@ -7,6 +7,8 @@
 <input id=0 name=input>
 </form>
 <script>
+assertEquals(document.getElementsByName("").length, 0);
+assertEquals(document.getElementsByName("input").length, 2);
 const x = document.getElementById("x");
 const test = document.getElementById("test");
 assertEquals(document.forms[0], test);
