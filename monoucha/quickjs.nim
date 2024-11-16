@@ -245,9 +245,6 @@ type
     magic*: int16
     u* {.importc.}: JSCFunctionListEntryU
 
-  JSRefCountHeader* {.importc.} = object
-    ref_count* {.importc.}: cint
-
   JS_BOOL* = distinct cint
 
   JSPropertyEnum* {.importc.} = object
@@ -647,8 +644,8 @@ proc JS_DefinePropertyValueStr*(ctx: JSContext; this_obj: JSValue;
   prop: cstring; val: JSValue; flags: cint): cint
 proc JS_DefinePropertyValueGetSet*(ctx: JSContext; this_obj: JSValue;
   prop: JSAtom; getter, setter: JSValue; flags: cint): cint
-# Note: SetOpaque does *not* consume a reference.
-proc JS_SetOpaque*(obj: JSValue; opaque: pointer)
+# Always returns 1.
+proc JS_SetOpaque*(obj: JSValue; opaque: pointer): cint {.discardable.}
 proc JS_GetOpaque*(obj: JSValue; class_id: JSClassID): pointer
 proc JS_GetOpaque2*(ctx: JSContext; obj: JSValue; class_id: JSClassID):
   pointer
