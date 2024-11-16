@@ -264,6 +264,7 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     nc.retry = @[]
     nc.parent = nil
     nc.children = @[]
+    nc.cachedImages = @[]
     return nc
   )
 
