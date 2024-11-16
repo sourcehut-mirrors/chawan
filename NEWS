@@ -1,3 +1,7 @@
+0.6.0 (2024.11.16)
+* update QuickJS-NG to 0.7.0
+* misc optimizations
+
 0.5.5 (2024.11.09)
 * fix fromJS with seq
 * fix JS_FreePropertyEnum binding
