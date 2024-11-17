@@ -13,7 +13,6 @@ import chame/tags
 import config/config
 import css/box
 import css/cascade
-import css/cssparser
 import css/cssvalues
 import css/layout
 import css/lunit
@@ -451,112 +450,88 @@ func cursorBytes(buffer: Buffer; y, cc: int): int =
 
 proc navigate(buffer: Buffer; url: URL) =
   #TODO how?
+  # maybe we could reuse meta refresh for the time being
   stderr.write("navigate to " & $url & "\n")
 
+#TODO rewrite findPrevLink, findNextLink to use the box tree instead
 proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
     tuple[x, y: int] {.proxy.} =
-  if cursory >= buffer.lines.len: return (-1, -1)
+  if cursory >= buffer.lines.len:
+    return (-1, -1)
   var found = 0
-  let line = buffer.lines[cursory]
-  var i = line.findFormatN(cursorx) - 1
+  var i = buffer.lines[cursory].findFormatN(cursorx) - 1
   var link: Element = nil
   if i >= 0:
-    link = line.formats[i].node.getClickable()
+    link = buffer.lines[cursory].formats[i].node.getClickable()
   dec i
-
-  var ly = 0 #last y
-  var lx = 0 #last x
-  template link_beginning(y: int) =
-    # go to beginning of link
-    ly = y #last y
-    lx = format.pos #last x
-
-    # on the current line
+  var ly = 0 # last y
+  var lx = 0 # last x
+  for y in countdown(cursory, 0):
     let line = buffer.lines[y]
-    while i >= 0:
-      let format = line.formats[i]
-      let nl = format.node.getClickable()
-      if nl == fl:
-        lx = format.pos
-      dec i
-
-    # on previous lines
-    for iy in countdown(ly - 1, 0):
-      let line = buffer.lines[iy]
+    if y != cursory:
       i = line.formats.len - 1
-      let oly = iy
-      let olx = lx
-      while i >= 0:
-        let format = line.formats[i]
-        let nl = format.node.getClickable()
-        if nl == fl:
-          ly = iy
-          lx = format.pos
-        dec i
-      if iy == oly and olx == lx:
-        # Assume multiline anchors are always placed on consecutive lines.
-        # This is not true, but otherwise we would have to loop through
-        # the entire document, which would be rather inefficient. TODO: find
-        # an efficient and correct way to do this.
-        break
-
-  template found_pos(x, y: int; fl: Element) =
-    inc found
-    link = fl
-    if found == n:
-      return (x, y)
-
-  while i >= 0:
-    let format = line.formats[i]
-    let fl = format.node.getClickable()
-    if fl != nil and fl != link:
-      link_beginning cursory
-      found_pos lx, ly, fl
-    dec i
-
-  for y in countdown(cursory - 1, 0):
-    let line = buffer.lines[y]
-    i = line.formats.len - 1
     while i >= 0:
       let format = line.formats[i]
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
-        link_beginning y
-        found_pos lx, ly, fl
+        # go to beginning of link
+        ly = y
+        lx = format.pos
+        # on the current line
+        while i >= 0:
+          let format = line.formats[i]
+          let nl = format.node.getClickable()
+          if nl == fl:
+            lx = format.pos
+          dec i
+        # on previous lines
+        for iy in countdown(ly - 1, 0):
+          let line = buffer.lines[iy]
+          i = line.formats.len - 1
+          let oly = iy
+          let olx = lx
+          while i >= 0:
+            let format = line.formats[i]
+            let nl = format.node.getClickable()
+            if nl == fl:
+              ly = iy
+              lx = format.pos
+            dec i
+          if iy == oly and olx == lx:
+            # Assume all multiline anchors are placed on consecutive
+            # lines.
+            # This is not true, but otherwise we would have to loop
+            # through the entire document.
+            # TODO: find an efficient and correct way to do this.
+            break
+        inc found
+        if found == n:
+          return (lx, ly)
+        link = fl
       dec i
   return (-1, -1)
 
 proc findNextLink*(buffer: Buffer; cursorx, cursory, n: int):
     tuple[x, y: int] {.proxy.} =
-  if cursory >= buffer.lines.len: return (-1, -1)
-  let line = buffer.lines[cursory]
-  var i = line.findFormatN(cursorx) - 1
+  if cursory >= buffer.lines.len:
+    return (-1, -1)
+  var found = 0
+  var i = buffer.lines[cursory].findFormatN(cursorx) - 1
   var link: Element = nil
   if i >= 0:
-    link = line.formats[i].node.getClickable()
+    link = buffer.lines[cursory].formats[i].node.getClickable()
   inc i
-
-  var found = 0
-  template found_pos(x, y: int; fl: Element) =
-    inc found
-    link = fl
-    if found == n:
-      return (x, y)
-
-  while i < line.formats.len:
-    let format = line.formats[i]
-    let fl = format.node.getClickable()
-    if fl != nil and fl != link:
-      found_pos format.pos, cursory, fl
-    inc i
-
-  for y in cursory + 1 .. buffer.lines.len - 1:
-    let line = buffer.lines[y]
-    for i in 0 ..< line.formats.len:
+  for j, line in buffer.lines.toOpenArray(cursory, buffer.lines.high).mpairs:
+    while i < line.formats.len:
       let format = line.formats[i]
       let fl = format.node.getClickable()
       if fl != nil and fl != link:
-        found_pos format.pos, y, fl
+        inc found
+        if found == n:
+          return (format.pos, cursory + j)
+        link = fl
+      inc i
+    i = 0
   return (-1, -1)
 
 proc findPrevParagraph*(buffer: Buffer; cursory, n: int): int {.proxy.} =
