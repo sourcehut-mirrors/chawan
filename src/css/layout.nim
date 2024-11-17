@@ -1788,8 +1788,9 @@ proc growRowspan(pctx: var TableContext; ctx: var RowContext;
     if cellw.coli > n:
       break
     dec cellw.grown
+    let colspan = cellw.colspan - (n - cellw.coli)
     let rowspanFiller = CellWrapper(
-      colspan: cellw.colspan,
+      colspan: colspan,
       rowspan: cellw.rowspan,
       coli: n,
       real: cellw,
@@ -1797,7 +1798,7 @@ proc growRowspan(pctx: var TableContext; ctx: var RowContext;
     )
     ctx.cells.add(nil)
     ctx.cells[i] = rowspanFiller
-    for i in n ..< n + cellw.colspan:
+    for i in n ..< n + colspan:
       ctx.width += pctx.cols[i].width
       ctx.width += pctx.inlineSpacing * 2
     n += cellw.colspan
