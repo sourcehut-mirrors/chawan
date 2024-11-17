@@ -13,7 +13,6 @@ import chame/tags
 import config/config
 import css/box
 import css/cascade
-import css/cssvalues
 import css/layout
 import css/lunit
 import css/render
@@ -97,13 +96,13 @@ type
     needsBOMSniff: bool
     outputId: int
     pollData: PollData
+    prevHover: Element
     prevStyled: StyledNode
-    prevnode: StyledNode
-    rootBox: BlockBox
     pstream: SocketStream # control stream
     quirkstyle: CSSStylesheet
     reportedBytesRead: int
     rfd: int # file descriptor of command pipe
+    rootBox: BlockBox
     savetask: bool
     ssock: ServerSocket
     state: BufferState
@@ -139,6 +138,10 @@ type
     metaRefresh*: MetaRefresh
 
   GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.nimcall.}
+
+# Forward declarations
+proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element):
+  Request
 
 proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
   if iface.len != 0:
@@ -314,47 +317,37 @@ macro task(fun: typed) =
   pfun.istask = true
   fun
 
-func getTitleAttr(buffer: Buffer; node: StyledNode): string =
-  if node == nil:
-    return ""
-  if node.t == stElement and node.node != nil:
-    let element = Element(node.node)
-    if element.attrb(satTitle):
-      return element.attr(satTitle)
-  if node.node != nil:
-    var node = node.node
-    for element in node.ancestors:
+func getTitleAttr(buffer: Buffer; element: Element): string =
+  if element != nil:
+    for element in element.branchElems:
       if element.attrb(satTitle):
         return element.attr(satTitle)
-  #TODO pseudo-elements
   return ""
 
 const ClickableElements = {
   TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL
 }
 
-proc isClickable(styledNode: StyledNode): bool =
-  if styledNode.t != stElement or styledNode.node == nil:
-    return false
-  if styledNode.computed{"visibility"} != VisibilityVisible:
-    return false
-  let element = Element(styledNode.node)
+proc isClickable(element: Element): bool =
   if element of HTMLAnchorElement:
     return HTMLAnchorElement(element).reinitURL().isSome
   if element.isButton() and FormAssociatedElement(element).form == nil:
     return false
   return element.tagType in ClickableElements
 
+proc getClickable(element: Element): Element =
+  for element in element.branchElems:
+    if element.isClickable():
+      return element
+  return nil
+
 proc getClickable(styledNode: StyledNode): Element =
   var styledNode = styledNode
   while styledNode != nil:
-    if styledNode.isClickable():
-      return Element(styledNode.node)
+    if styledNode.node of Element:
+      return Element(styledNode.node).getClickable()
     styledNode = styledNode.parent
   return nil
-
-proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element):
-  Request
 
 func canSubmitOnClick(fae: FormAssociatedElement): bool =
   if fae.form == nil:
@@ -368,8 +361,8 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
     return true
   return false
 
-proc getClickHover(buffer: Buffer; styledNode: StyledNode): string =
-  let clickable = styledNode.getClickable()
+proc getClickHover(buffer: Buffer; element: Element): string =
+  let clickable = element.getClickable()
   if clickable != nil:
     if clickable of HTMLAnchorElement:
       let url = HTMLAnchorElement(clickable).reinitURL()
@@ -387,39 +380,36 @@ proc getClickHover(buffer: Buffer; styledNode: StyledNode): string =
       return "<option>"
   ""
 
-proc getImageHover(buffer: Buffer; styledNode: StyledNode): string =
-  var styledNode = styledNode
-  while styledNode != nil:
-    if styledNode.t == stElement:
-      if styledNode.node of HTMLImageElement:
-        let image = HTMLImageElement(styledNode.node)
-        let src = image.attr(satSrc)
-        if src != "":
-          let url = image.document.parseURL(src)
-          if url.isSome:
-            return $url.get
-      elif styledNode.node of HTMLVideoElement:
-        let video = HTMLVideoElement(styledNode.node)
-        let src = video.getSrc()
-        if src != "":
-          let url = video.document.parseURL(src)
-          if url.isSome:
-            return $url.get
-      elif styledNode.node of HTMLAudioElement:
-        let audio = HTMLAudioElement(styledNode.node)
-        let src = audio.getSrc()
-        if src != "":
-          let url = audio.document.parseURL(src)
-          if url.isSome:
-            return $url.get
-    styledNode = styledNode.parent
+proc getImageHover(buffer: Buffer; element: Element): string =
+  for element in element.branchElems:
+    if element of HTMLImageElement:
+      let image = HTMLImageElement(element)
+      let src = image.attr(satSrc)
+      if src != "":
+        let url = image.document.parseURL(src)
+        if url.isSome:
+          return $url.get
+    elif element of HTMLVideoElement:
+      let video = HTMLVideoElement(element)
+      let src = video.getSrc()
+      if src != "":
+        let url = video.document.parseURL(src)
+        if url.isSome:
+          return $url.get
+    elif element of HTMLAudioElement:
+      let audio = HTMLAudioElement(element)
+      let src = audio.getSrc()
+      if src != "":
+        let url = audio.document.parseURL(src)
+        if url.isSome:
+          return $url.get
   ""
 
 func getCursorStyledNode(buffer: Buffer; cursorx, cursory: int): StyledNode =
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
     return buffer.lines[cursory].formats[i].node
-  nil
+  return nil
 
 func getCursorElement(buffer: Buffer; cursorx, cursory: int): Element =
   let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
@@ -434,9 +424,9 @@ func getCursorElement(buffer: Buffer; cursorx, cursory: int): Element =
   return nil
 
 proc getCursorClickable(buffer: Buffer; cursorx, cursory: int): Element =
-  let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
-  if styledNode != nil:
-    return styledNode.getClickable()
+  let element = buffer.getCursorElement(cursorx, cursory)
+  if element != nil:
+    return element.getClickable()
   return nil
 
 func cursorBytes(buffer: Buffer; y, cc: int): int =
@@ -892,35 +882,28 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
     {.proxy.} =
   if cursory >= buffer.lines.len:
     return UpdateHoverResult()
-  var thisnode: StyledNode = nil
-  let i = buffer.lines[cursory].findFormatN(cursorx) - 1
-  if i >= 0:
-    thisnode = buffer.lines[cursory].formats[i].node
+  let thisNode = buffer.getCursorElement(cursorx, cursory)
   var hover: seq[tuple[t: HoverType, s: string]] = @[]
   var repaint = false
-  let prevnode = buffer.prevnode
-  if thisnode != prevnode and (thisnode == nil or prevnode == nil or
-      thisnode.node != prevnode.node):
-    for styledNode in prevnode.branch:
-      if styledNode.t == stElement and styledNode.node != nil:
-        let elem = Element(styledNode.node)
-        if elem.hover:
-          elem.setHover(false)
-          repaint = true
+  let prevNode = buffer.prevHover
+  if thisNode != prevNode and (thisNode == nil or prevNode == nil or
+      thisNode != prevNode):
+    for element in prevNode.branchElems:
+      if element.hover:
+        element.setHover(false)
+        repaint = true
     for ht in HoverType:
-      let s = HoverFun[ht](buffer, thisnode)
+      let s = HoverFun[ht](buffer, thisNode)
       if buffer.hoverText[ht] != s:
         hover.add((ht, s))
         buffer.hoverText[ht] = s
-    for styledNode in thisnode.branch:
-      if styledNode.t == stElement and styledNode.node != nil:
-        let elem = Element(styledNode.node)
-        if not elem.hover:
-          elem.setHover(true)
-          repaint = true
+    for element in thisNode.branchElems:
+      if not element.hover:
+        element.setHover(true)
+        repaint = true
   if repaint:
     buffer.reshape()
-  buffer.prevnode = thisnode
+  buffer.prevHover = thisNode
   return UpdateHoverResult(repaint: repaint, hover: hover)
 
 proc loadResources(buffer: Buffer): EmptyPromise =

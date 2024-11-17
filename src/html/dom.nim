@@ -1186,6 +1186,11 @@ iterator branch*(node: Node): Node {.inline.} =
     yield node
     node = node.parentNode
 
+iterator branchElems*(node: Node): Element {.inline.} =
+  for node in node.branch:
+    if node of Element:
+      yield Element(node)
+
 # Returns the node's descendants
 iterator descendants*(node: Node): Node {.inline.} =
   var stack: seq[Node] = @[]
