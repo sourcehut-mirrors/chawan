@@ -134,7 +134,7 @@ Similarly, `varargs[string]` works, but is less efficient than
 `varargs[JSValue]`. (The former is first converted into a seq, while the
 latter is just a slice.)
 
-Use `?ctx.fromJS(ctx, val, res)` on JSValues manually instead.
+Use `?ctx.fromJS(val, res)` on JSValues manually instead.
 
 ### Fixing cyclic imports
 
