@@ -214,6 +214,7 @@ proc recvDataLoopOrMmap*(ps: PosixStream; ilen = -1): MaybeMappedMemory =
   var stats: Stat
   if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
     let srcOff = lseek(ps.fd, 0, SEEK_CUR) # skip headers
+    doAssert srcOff >= 0
     let p0len = int(stats.st_size)
     let len = int(stats.st_size - srcOff)
     if ilen != -1:
