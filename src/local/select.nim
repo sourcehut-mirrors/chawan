@@ -72,6 +72,12 @@ proc cursorUp(select: Select) {.jsfunc.} =
   elif select.multiple and select.cursor > -1:
     select.cursor = -1
 
+proc cursorPrevLink(select: Select) {.jsfunc.} =
+  select.cursorUp()
+
+proc cursorNextLink(select: Select) {.jsfunc.} =
+  select.cursorDown()
+
 proc cancel(select: Select) {.jsfunc.} =
   select.finishImpl(select.opaque, select, srCancel)
 
