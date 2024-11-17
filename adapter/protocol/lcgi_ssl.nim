@@ -54,16 +54,7 @@ proc EVP_sha256*(): EVP_MD
 proc ASN1_TIME_to_tm*(s: ASN1_TIME; tm: ptr Tm): cint
 {.pop.}
 
-{.push header: "<openssl/bio.h>", header: "<openssl/ssl.h>".}
-proc BIO_get_ssl*(b: ptr BIO; sslp: var ptr SSL): clong
-proc BIO_new_ssl_connect*(ctx: ptr SSL_CTX): ptr BIO
-proc BIO_do_handshake*(b: ptr BIO): clong
-{.pop.}
-
 {.push header: "<openssl/bio.h>".}
-proc BIO_new_socket*(sock, close_flag: cint): ptr BIO
-proc BIO_set_conn_hostname*(b: ptr BIO; name: cstring): clong
-proc BIO_do_connect*(b: ptr BIO): clong
 proc BIO_read*(b: ptr BIO; data: pointer; dlen: cint): cint
 proc BIO_write*(b: ptr BIO; data: cstring; dlen: cint): cint
 
@@ -76,22 +67,23 @@ type SSL_METHOD* {.incompleteStruct.} = object
 
 let TLS1_2_VERSION* {.nodecl, header: "<openssl/ssl.h>"}: cint
 
-proc SSL_CTX_new*(m: ptr SSL_METHOD): ptr SSL_CTX
-proc SSL_CTX_free*(ctx: ptr SSL_CTX)
-proc SSL_get_SSL_CTX*(ssl: ptr SSL): ptr SSL_CTX
-proc SSL_new*(ctx: ptr SSL_CTX): ptr SSL
-proc TLS_client_method*(): ptr SSL_METHOD
-proc SSL_CTX_set_min_proto_version*(ctx: ptr SSL_CTX; version: cint): cint
-proc SSL_CTX_set_cipher_list*(ctx: ptr SSL_CTX; str: cstring): cint
+proc SSL_CTX_new(m: ptr SSL_METHOD): ptr SSL_CTX
+proc SSL_CTX_free(ctx: ptr SSL_CTX)
+proc SSL_get_SSL_CTX(ssl: ptr SSL): ptr SSL_CTX
+proc SSL_new(ctx: ptr SSL_CTX): ptr SSL
+proc TLS_client_method(): ptr SSL_METHOD
+proc SSL_CTX_set_min_proto_version(ctx: ptr SSL_CTX; version: cint): cint
+proc SSL_CTX_set_cipher_list(ctx: ptr SSL_CTX; str: cstring): cint
+proc SSL_set_tlsext_host_name(ssl: ptr SSL; name: cstring): cint
 proc SSL_get_peer_certificate*(ssl: ptr SSL): ptr X509
-proc SSL_connect*(ssl: ptr SSL): cint
-proc SSL_do_handshake*(ssl: ptr SSL): cint
-proc SSL_set1_host*(ssl: ptr SSL; hostname: cstring): cint
+proc SSL_connect(ssl: ptr SSL): cint
+proc SSL_do_handshake(ssl: ptr SSL): cint
+proc SSL_set1_host(ssl: ptr SSL; hostname: cstring): cint
 proc SSL_read*(ssl: ptr SSL; buf: pointer; num: cint): cint
 proc SSL_write*(ssl: ptr SSL; buf: pointer; num: cint): cint
-proc SSL_set_fd*(ssl: ptr SSL; fd: cint): cint
-proc SSL_shutdown*(ssl: ptr SSL): cint
-proc SSL_free*(ssl: ptr SSL)
+proc SSL_set_fd(ssl: ptr SSL; fd: cint): cint
+proc SSL_shutdown(ssl: ptr SSL): cint
+proc SSL_free(ssl: ptr SSL)
 
 {.pop.} # <openssl/ssl.h>
 
@@ -108,8 +100,20 @@ proc connectSSLSocket*(os: PosixStream; host, port: string): ptr SSL =
   if ctx.SSL_CTX_set_cipher_list(preferredCiphers) == 0:
     os.die("InternalError", "failed to set cipher list")
   let ssl = SSL_new(ctx)
-  if SSL_set_fd(ssl, ps.fd) == 0:
+  if SSL_set_fd(ssl, ps.fd) != 1:
     os.die("InternalError", "failed to set SSL fd")
+  if SSL_set1_host(ssl, cstring(host)) == 0:
+    os.die("InternalError", "failed to set host")
+  if SSL_set_tlsext_host_name(ssl, cstring(host)) == 0:
+    os.die("InternalError", "failed to set tlsext host name")
+  if SSL_connect(ssl) <= 0:
+    stdout.write("Cha-Control: ConnectionError 5 connect: ")
+    ERR_print_errors_fp(stdout)
+    quit(1)
+  if SSL_do_handshake(ssl) <= 0:
+    stdout.write("Cha-Control: ConnectionError 5 handshake: ")
+    ERR_print_errors_fp(stdout)
+    quit(1)
   return ssl
 
 proc closeSSLSocket*(ssl: ptr SSL) =

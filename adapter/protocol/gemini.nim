@@ -76,7 +76,7 @@ proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
 type CheckCertResult = enum
   ccrNotFound, ccrNewExpiration, ccrFoundInvalid, ccrFoundValid
 
-proc checkCert(os: PosixStream; theirDigest, host: string;
+proc checkCert0(os: PosixStream; theirDigest, host: string;
     storedDigest: var string; theirTime: var Time; knownHosts: File;
     tmpEntry: string): CheckCertResult =
   var line = tmpEntry
@@ -124,15 +124,9 @@ proc hashBuf(ibuf: openArray[uint8]): string =
     result &= HexTable[(u shr 4) and 0xF]
     result &= HexTable[u and 0xF]
 
-proc connect(os: PosixStream; ssl: ptr SSL; host, port: string;
+proc checkCert(os: PosixStream; ssl: ptr SSL; host, port: string;
     knownHosts: File; storedDigest, theirDigest: var string;
     theirTime: var Time; tmpEntry: string): CheckCertResult =
-  let hostname = host & ':' & port
-  discard SSL_set1_host(ssl, cstring(hostname))
-  if SSL_connect(ssl) <= 0:
-    sdie("failed to connect")
-  if SSL_do_handshake(ssl) <= 0:
-    sdie("failed handshake")
   let cert = SSL_get_peer_certificate(ssl)
   if cert == nil:
     sdie("failed to get peer certificate")
@@ -157,7 +151,7 @@ proc connect(os: PosixStream; ssl: ptr SSL; host, port: string;
       os.die("InvalidResponse", "received an expired certificate");
   theirTime = mktime(theirTm)
   X509_free(cert)
-  return os.checkCert(theirDigest, host, storedDigest, theirTime, knownHosts,
+  return os.checkCert0(theirDigest, host, storedDigest, theirTime, knownHosts,
     tmpEntry)
 
 proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
@@ -265,12 +259,8 @@ proc main() =
   let os = newPosixStream(STDOUT_FILENO)
   let host = getEnv("MAPPED_URI_HOST")
   var (knownHosts, knownHostsPath) = os.openKnownHosts()
-  var port = getEnv("MAPPED_URI_PORT")
-  if port == "":
-    port = "1965"
-  var path = getEnv("MAPPED_URI_PATH")
-  if path == "":
-    path = "/"
+  let port = getEnvEmpty("MAPPED_URI_PORT", "1965")
+  let path = getEnvEmpty("MAPPED_URI_PATH", "/")
   var reqBuf = "gemini://" & host & path
   var query = getEnv("MAPPED_URI_QUERY")
   var tmpEntry = "" # for accepting a self signed cert "once"
@@ -283,7 +273,7 @@ proc main() =
   var storedDigest: string
   var theirDigest: string
   var theirTime: Time
-  let res = os.connect(ssl, host, port, knownHosts, storedDigest, theirDigest,
+  let res = os.checkCert(ssl, host, port, knownHosts, storedDigest, theirDigest,
     theirTime, tmpEntry)
   enterNetworkSandbox()
   case res
