@@ -10,6 +10,12 @@ ifeqdef SYS_sendto allow
 ifeqdef SYS_recvmsg allow
 ifeqdef SYS_sendmsg allow
 
+# curl also seems to call clock_gettime in some cases - but I have no
+# idea how to reproduce this.
+# anyway, it does no harm, so let it live.
+ifeqdef SYS_clock_gettime allow
+ifeqdef SYS_clock_gettime64 allow
+
 # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
 ifeqdef SYS_getpid allow
 
