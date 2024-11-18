@@ -1,3 +1,7 @@
+0.7.0 (2024.11.18)
+* clean up and complete exotic pragmas
+Now the Monoucha API can express all exotics that QJS provides.
+
 0.6.0 (2024.11.16)
 * update QuickJS-NG to 0.7.0
 * misc optimizations
