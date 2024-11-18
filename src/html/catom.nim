@@ -98,6 +98,7 @@ macro makeStaticAtom =
       satText = "text"
       satTimeout = "timeout"
       satTitle = "title"
+      satToString = "toString"
       satTouchmove = "touchmove"
       satTouchstart = "touchstart"
       satType = "type"
@@ -200,6 +201,9 @@ func toAtom*(factory: CAtomFactory; attrType: StaticAtom): CAtom =
 func toStr*(factory: CAtomFactory; atom: CAtom): string =
   return factory.atomMap[int(atom)]
 
+func toStr*(factory: CAtomFactory; sa: StaticAtom): string =
+  return factory.toStr(factory.toAtom(sa))
+
 func toTagType*(factory: CAtomFactory; atom: CAtom): TagType =
   let i = int(atom)
   if i <= int(TagType.high):
@@ -211,6 +215,9 @@ func toStaticAtom*(factory: CAtomFactory; atom: CAtom): StaticAtom =
   if i <= int(StaticAtom.high):
     return StaticAtom(i)
   return atUnknown
+
+func toStaticAtom*(factory: CAtomFactory; s: string): StaticAtom =
+  return factory.toStaticAtom(factory.toAtom(s))
 
 # Forward declaration hack
 var getFactoryImpl*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect,
@@ -224,6 +231,15 @@ proc toAtom*(ctx: JSContext; s: string): CAtom =
 
 proc toStaticAtom*(ctx: JSContext; atom: CAtom): StaticAtom =
   return ctx.getFactoryImpl().toStaticAtom(atom)
+
+proc toStaticAtom*(ctx: JSContext; s: string): StaticAtom =
+  return ctx.getFactoryImpl().toStaticAtom(s)
+
+proc toStr*(ctx: JSContext; atom: CAtom): string =
+  return ctx.getFactoryImpl().toStr(atom)
+
+proc toStr*(ctx: JSContext; sa: StaticAtom): string =
+  return ctx.getFactoryImpl().toStr(sa)
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
   var s: string

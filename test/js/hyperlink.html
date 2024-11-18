@@ -20,5 +20,17 @@ for (const x in ["href", "origin", "protocol", "username", "password", "host",
 }
 invalid.remove();
 valid.remove();
+const a = document.createElement("a");
+a.href = "https://example.org";
+assertEquals(a + "", "https://example.org/");
+assertEquals(a.protocol, "https:");
+a.protocol = "http"
+assertEquals(a + "", "http://example.org/")
+assertEquals(a.href, "http://example.org/");
+a.protocol = "ftp"
+a.protocol = "http"
+assertEquals(a.href, "http://example.org/");
+assertEquals(a.toString(), "http://example.org/");
+assertEquals(JSON.stringify(Object.getOwnPropertyDescriptors(a)), "{}");
 document.getElementById("x").textContent = "Success";
 </script>
