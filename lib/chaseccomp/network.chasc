@@ -15,6 +15,9 @@ ifeqdef SYS_sendmsg allow
 # anyway, it does no harm, so let it live.
 ifeqdef SYS_clock_gettime allow
 ifeqdef SYS_clock_gettime64 allow
+# apparently it needs gettimeofday too
+# (TODO: now I'm not even sure if this is curl...)
+ifeqdef SYS_gettimeofday allow
 
 # used indirectly by OpenSSL EVP_RAND_CTX_new (through drbg)
 ifeqdef SYS_getpid allow
