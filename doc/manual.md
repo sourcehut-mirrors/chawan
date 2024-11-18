@@ -28,7 +28,7 @@ code and possible inaccuracies ahead.
 	- [jsfget, jsfset: custom property reflectors](#jsfget-jsfset-custom-property-reflectors)
 	- [jsstfunc: static functions](#jsstfunc-static-functions)
 	- [jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property](#jsuffunc-jsufget-jsuffget-the-legacyunforgeable-property)
-	- [jsgetprop, jssetprop, jsdelprop, jshasprop, jspropnames: magic functions](#jsgetprop-jssetprop-jsdelprop-jshasprop-jspropnames-magic-functions)
+	- [jsgetownprop, jsgetprop, jssetprop, jsdelprop, jshasprop, jspropnames: magic functions](#jsgetownprop-jsgetprop-jssetprop-jsdelprop-jshasprop-jspropnames-magic-functions)
 	- [jsfin: object finalizers](#jsfin-object-finalizers)
 * [toJS, fromJS](#tojs-fromjs)
 	- [Using raw JSValues](#using-raw-jsvalues)
@@ -557,11 +557,12 @@ Object.defineProperty(file, "owner", { value: -2 }); /* throws */
 JS_FreeValue(ctx, ctx.eval(code))
 ```
 
-### jsgetprop, jssetprop, jsdelprop, jshasprop, jspropnames: magic functions
+### jsgetownprop, jsgetprop, jssetprop, jsdelprop, jshasprop, jspropnames: magic functions
 
-`.jsgetprop`, `.jssetprop`, `.jsdelprop`, `.jshasprop` and `.jspropnames`
-generate bindings for magic functions. These are mainly useful for collections,
-where you want to provide custom behavior for property accesses.
+`.jsgetownprop`, `.jsgetprop`, `.jssetprop`, `.jsdelprop`, `.jshasprop`
+and `.jspropnames` generate bindings for magic functions. These are
+mainly useful for collections, where you want to provide custom behavior
+for property accesses.
 
 (TODO elaborate...)
 

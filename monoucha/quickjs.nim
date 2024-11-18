@@ -154,7 +154,7 @@ type
     has_property*: proc(ctx: JSContext; obj: JSValue; atom: JSAtom): cint
       {.cdecl.}
     get_property*: proc(ctx: JSContext; obj: JSValue; atom: JSAtom;
-      receiver: JSValue; flags: cint): JSValue {.cdecl.}
+      receiver: JSValue): JSValue {.cdecl.}
     set_property*: proc(ctx: JSContext; obj: JSValue; atom: JSAtom;
       value, receiver: JSValue; flags: cint): cint {.cdecl.}
 

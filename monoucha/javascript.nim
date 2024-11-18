@@ -29,15 +29,18 @@
 # {.jsfget.} and {.jsfset.} for getters/setters. Note the `f'; bare jsget/jsset
 #   can only be used on object fields. (I initially wanted to use the same
 #   keyword, unfortunately that didn't work out.)
-# {.jsgetprop.} for property getters. Called when GetOwnProperty would return
-#   nothing. The key must be either a JSAtom, uint32 or string.  (Note that the
-#   string option copies.)
+# {.jsgetownprop.} Called when GetOwnProperty would return nothing. The key must
+#   be either a JSAtom, uint32 or string. (Note that the string option copies.)
+# {.jsgetprop.} for property getters. Called on GetProperty.
+#   (In fact, this can be emulated using get_own_property, but this might still
+#   be faster.)
 # {.jssetprop.} for property setters. Called on SetProperty - in fact this
 #   is the set() method of Proxy, except it always returns true. Same rules as
 #   jsgetprop for keys.
 # {.jsdelprop.} for property deletion. It is like the deleteProperty method
 #   of Proxy. Must return true if deleted, false if not deleted.
-# {.jshasprop.} for overriding has_property. Must return a boolean.
+# {.jshasprop.} for overriding has_property. Must return a boolean, or one of
+#   the integers "-1, 0, 1".
 # {.jspropnames.} overrides get_own_property_names. Must return a
 #   JSPropertyEnumList object.
 
@@ -94,6 +97,7 @@ type
     bfConstructor = "js_ctor"
     bfGetter = "js_get"
     bfSetter = "js_set"
+    bfPropertyGetOwn = "js_prop_get_own"
     bfPropertyGet = "js_prop_get"
     bfPropertySet = "js_prop_set"
     bfPropertyDel = "js_prop_del"
@@ -392,7 +396,7 @@ proc defineConsts*(ctx: JSContext; classid: JSClassID;
 type
   JSFuncGenerator = ref object
     t: BoundFunctionType
-    thisName: Option[string]
+    hasThis: bool
     funcName: string
     generics: Table[string, seq[NimNode]]
     funcParams: seq[FuncParam]
@@ -514,20 +518,29 @@ template getJSGetterParams(): untyped =
     newIdentDefs(ident("this"), quote do: JSValue),
   ]
 
-template getJSGetPropParams(): untyped =
+template getJSGetOwnPropParams(): untyped =
   [
     (quote do: cint),
     newIdentDefs(ident("ctx"), quote do: JSContext),
     newIdentDefs(ident("desc"), quote do: ptr JSPropertyDescriptor),
-    newIdentDefs(ident("obj"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValue),
     newIdentDefs(ident("prop"), quote do: JSAtom),
+  ]
+
+template getJSGetPropParams(): untyped =
+  [
+    (quote do: JSValue),
+    newIdentDefs(ident("ctx"), quote do: JSContext),
+    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("prop"), quote do: JSAtom),
+    newIdentDefs(ident("receiver"), quote do: JSValue),
   ]
 
 template getJSSetPropParams(): untyped =
   [
     (quote do: cint),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("obj"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValue),
     newIdentDefs(ident("atom"), quote do: JSAtom),
     newIdentDefs(ident("value"), quote do: JSValue),
     newIdentDefs(ident("receiver"), quote do: JSValue),
@@ -538,7 +551,7 @@ template getJSDelPropParams(): untyped =
   [
     (quote do: cint),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("obj"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValue),
     newIdentDefs(ident("prop"), quote do: JSAtom),
   ]
 
@@ -546,7 +559,7 @@ template getJSHasPropParams(): untyped =
   [
     (quote do: cint),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("obj"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValue),
     newIdentDefs(ident("atom"), quote do: JSAtom),
   ]
 
@@ -565,7 +578,7 @@ template getJSPropNamesParams(): untyped =
     newIdentDefs(ident("ctx"), quote do: JSContext),
     newIdentDefs(ident("ptab"), quote do: ptr JSPropertyEnumArray),
     newIdentDefs(ident("plen"), quote do: ptr uint32),
-    newIdentDefs(ident("obj"), quote do: JSValue)
+    newIdentDefs(ident("this"), quote do: JSValue)
   ]
 
 template fromJS_or_die*(ctx, val, res, dl: untyped) =
@@ -730,10 +743,10 @@ proc addUnionParam(gen: var JSFuncGenerator; tt, s: NimNode;
   let j = gen.j
   gen.addUnionParam0(tt, s, quote do: argv[`j`], fallback)
 
-proc addThisParam(gen: var JSFuncGenerator) =
+proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
-  let id = ident("this")
+  let id = ident(thisName)
   let tt = gen.thisType
   let fn = gen.funcName
   let ev = gen.errval
@@ -878,7 +891,7 @@ func getFuncName(fun: NimNode; jsname, staticName: string): string =
   return x
 
 func getErrVal(t: BoundFunctionType): NimNode =
-  if t in {bfPropertyGet, bfPropertySet, bfPropertyDel, bfPropertyHas,
+  if t in {bfPropertyGetOwn, bfPropertySet, bfPropertyDel, bfPropertyHas,
       bfPropertyNames}:
     return quote do: cint(-1)
   return quote do: JS_EXCEPTION
@@ -892,8 +905,8 @@ proc addJSContext(gen: var JSFuncGenerator) =
     elif gen.funcParams[gen.i].t.eqIdent(ident("JSRuntime")):
       inc gen.i # special case for finalizers that have a JSRuntime param
 
-proc addThisName(gen: var JSFuncGenerator; thisName: Option[string]) =
-  if thisName.isSome:
+proc addThisName(gen: var JSFuncGenerator; hasThis: bool) =
+  if hasThis:
     var t = gen.funcParams[gen.i].t
     if t.kind == nnkPtrTy:
       t = t[0]
@@ -916,14 +929,14 @@ proc addThisName(gen: var JSFuncGenerator; thisName: Option[string]) =
 
 func getActualMinArgs(gen: var JSFuncGenerator): int =
   var ma = gen.minArgs
-  if gen.thisName.isSome and not gen.isstatic:
+  if gen.hasThis and not gen.isstatic:
     dec ma
   if gen.passCtx:
     dec ma
   assert ma >= 0
   return ma
 
-proc initGenerator(fun: NimNode; t: BoundFunctionType; thisName = some("this");
+proc initGenerator(fun: NimNode; t: BoundFunctionType; hasThis: bool;
     jsname = ""; unforgeable = false; staticName = ""): JSFuncGenerator =
   let jsFunCallList = newStmtList()
   let funcParams = getParams(fun)
@@ -934,7 +947,7 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; thisName = some("this");
     funcParams: funcParams,
     returnType: getReturn(fun),
     minArgs: funcParams.getMinArgs(),
-    thisName: thisName,
+    hasThis: hasThis,
     errval: getErrVal(t),
     dielabel: ident("ondie"),
     jsFunCallList: jsFunCallList,
@@ -946,7 +959,7 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; thisName = some("this");
   gen.addJSContext()
   gen.actualMinArgs = gen.getActualMinArgs() # must come after passctx is set
   if staticName == "":
-    gen.addThisName(thisName)
+    gen.addThisName(hasThis)
   else:
     gen.thisType = staticName
     if (let i = gen.thisType.find('.'); i != -1):
@@ -978,7 +991,7 @@ proc makeCtorJSCallAndRet(gen: var JSFuncGenerator; errstmt: NimNode) =
     `errstmt`
 
 macro jsctor*(fun: typed) =
-  var gen = initGenerator(fun, bfConstructor, thisName = none(string))
+  var gen = initGenerator(fun, bfConstructor, hasThis = false)
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
@@ -990,8 +1003,8 @@ macro jsctor*(fun: typed) =
   return fun
 
 macro jshasprop*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertyHas, thisName = some("obj"))
-  gen.addFixParam("obj")
+  var gen = initGenerator(fun, bfPropertyHas, hasThis = true)
+  gen.addThisParam()
   gen.addFixParam("atom")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
@@ -1005,44 +1018,102 @@ macro jshasprop*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jsgetprop*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertyGet, thisName = some("obj"))
-  gen.addFixParam("obj")
+macro jsgetownprop*(fun: typed) =
+  var gen = initGenerator(fun, bfPropertyGetOwn, hasThis = true)
+  gen.addThisParam()
+  gen.addFixParam("prop")
+  var handleRetv: NimNode = nil
+  if gen.i < gen.funcParams.len:
+    handleRetv = quote do: discard
+    gen.jsFunCall.add(ident("desc"))
+  else:
+    handleRetv = quote do:
+      if desc != nil:
+        # From quickjs.h:
+        # > If 1 is returned, the property descriptor 'desc' is filled
+        # > if != NULL.
+        # So desc may be nil.
+        desc[].setter = JS_UNDEFINED
+        desc[].getter = JS_UNDEFINED
+        desc[].value = retv
+        desc[].flags = 0
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      if JS_GetOpaque(this, JS_GetClassID(this)) == nil:
+        return cint(0)
+      let retv {.inject.} = ctx.toJS(`jfcl`)
+      if JS_IsException(retv):
+        break `dl`
+      if JS_IsUninitialized(retv):
+        return cint(0)
+      `handleRetv`
+      return cint(1)
+    return cint(-1)
+  let jsProc = gen.newJSProc(getJSGetOwnPropParams(), false)
+  gen.registerFunction()
+  return newStmtList(fun, jsProc)
+
+macro jsgetprop*(fun: typed) {.deprecated: "use jsgetownprop instead".} =
+  var gen = initGenerator(fun, bfPropertyGetOwn, hasThis = true)
+  gen.addThisParam()
   gen.addFixParam("prop")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
   gen.jsCallAndRet = quote do:
     block `dl`:
-      if JS_GetOpaque(obj, JS_GetClassID(obj)) == nil:
+      if JS_GetOpaque(this, JS_GetClassID(this)) == nil:
         return cint(0)
       let retv = ctx.toJS(`jfcl`)
       if JS_IsException(retv):
         break `dl`
-      #TODO what if I want to return null from jsgetprop?
-      # maybe check for JS_IsUninitialized?
-      if not JS_IsNull(retv):
-        if desc != nil:
-          # From quickjs.h:
-          # > If 1 is returned, the property descriptor 'desc' is filled
-          # > if != NULL.
-          # So desc may be nil.
-          desc[].setter = JS_UNDEFINED
-          desc[].getter = JS_UNDEFINED
-          desc[].value = retv
-          desc[].flags = 0
-        return cint(1)
-      return cint(0)
+      if JS_IsNull(retv):
+        return cint(0)
+      if desc != nil:
+        # From quickjs.h:
+        # > If 1 is returned, the property descriptor 'desc' is filled
+        # > if != NULL.
+        # So desc may be nil.
+        let fun = ctx.newFunction([], "return () => this;")
+        let val = JS_Call(ctx, fun, retv, 0, nil)
+        JS_FreeValue(ctx, fun)
+        desc[].setter = JS_UNDEFINED
+        desc[].getter = val
+        desc[].value = JS_UNDEFINED
+        desc[].flags = JS_PROP_GETSET
+      return cint(1)
     return cint(-1)
+  let jsProc = gen.newJSProc(getJSGetOwnPropParams(), false)
+  gen.registerFunction()
+  return newStmtList(fun, jsProc)
+
+macro jsgetrealprop*(fun: typed) =
+  var gen = initGenerator(fun, bfPropertyGet, hasThis = true)
+  gen.addThisParam("receiver")
+  gen.addFixParam("prop")
+  if gen.i < gen.funcParams.len:
+    gen.addFixParam("this")
+  gen.finishFunCallList()
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      return ctx.toJS(`jfcl`)
+    return JS_EXCEPTION
   let jsProc = gen.newJSProc(getJSGetPropParams(), false)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
 macro jssetprop*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertySet, thisName = some("obj"))
-  gen.addFixParam("receiver")
+  var gen = initGenerator(fun, bfPropertySet, hasThis = true)
+  gen.addThisParam("receiver")
   gen.addFixParam("atom")
   gen.addFixParam("value")
+  if gen.i < gen.funcParams.len:
+    gen.addFixParam("this")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
@@ -1052,6 +1123,8 @@ macro jssetprop*(fun: typed) =
         let v = toJS(ctx, `jfcl`)
         if not JS_IsException(v):
           return cint(1)
+        if JS_IsUninitialized(v):
+          return cint(0)
       return cint(-1)
   else:
     quote do:
@@ -1064,8 +1137,8 @@ macro jssetprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jsdelprop*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertyDel, thisName = some("obj"))
-  gen.addFixParam("obj")
+  var gen = initGenerator(fun, bfPropertyDel, hasThis = true)
+  gen.addThisParam()
   gen.addFixParam("prop")
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
@@ -1080,8 +1153,8 @@ macro jsdelprop*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jspropnames*(fun: typed) =
-  var gen = initGenerator(fun, bfPropertyNames, thisName = some("obj"))
-  gen.addFixParam("obj")
+  var gen = initGenerator(fun, bfPropertyNames, hasThis = true)
+  gen.addThisParam()
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
@@ -1097,7 +1170,8 @@ macro jspropnames*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jsfgetn(jsname: static string; uf: static bool; fun: typed) =
-  var gen = initGenerator(fun, bfGetter, jsname = jsname, unforgeable = uf)
+  var gen = initGenerator(fun, bfGetter, hasThis = true, jsname = jsname,
+    unforgeable = uf)
   if gen.actualMinArgs != 0 or gen.funcParams.len != gen.minArgs:
     error("jsfget functions must only accept one parameter.")
   if gen.returnType.isNone:
@@ -1126,7 +1200,7 @@ template jsuffget*(jsname, fun: untyped) =
 # Ideally we could simulate JS setters using nim setters, but nim setters
 # won't accept types that don't match their reflected field's type.
 macro jsfsetn(jsname: static string; fun: typed) =
-  var gen = initGenerator(fun, bfSetter, jsname = jsname)
+  var gen = initGenerator(fun, bfSetter, hasThis = true, jsname = jsname)
   if gen.actualMinArgs != 1 or gen.funcParams.len != gen.minArgs:
     error("jsfset functions must accept two parameters")
   #TODO should check if result is JSResult[void]
@@ -1149,8 +1223,8 @@ template jsfset*(jsname, fun: untyped) =
 
 macro jsfuncn*(jsname: static string; uf: static bool;
     staticName: static string; fun: typed) =
-  var gen = initGenerator(fun, bfFunction, jsname = jsname, unforgeable = uf,
-    staticName = staticName)
+  var gen = initGenerator(fun, bfFunction, hasThis = true, jsname = jsname,
+    unforgeable = uf, staticName = staticName)
   if gen.minArgs == 0 and not gen.isstatic:
     error("Zero-parameter functions are not supported. " &
       "(Maybe pass Window or Client?)")
@@ -1184,7 +1258,7 @@ template jsstfunc*(name, fun: untyped) =
   jsfuncn("", false, name, fun)
 
 macro jsfin*(fun: typed) =
-  var gen = initGenerator(fun, bfFinalizer, thisName = some("fin"))
+  var gen = initGenerator(fun, bfFinalizer, hasThis = true)
   let finName = gen.newName
   let finFun = ident(gen.funcName)
   let t = gen.thisTypeNode
@@ -1340,6 +1414,7 @@ type RegistryInfo = object
   ctorImpl: NimNode # definition & body of constructor
   ctorFun: NimNode # constructor ident
   getset: Table[string, (NimNode, NimNode, bool)] # name -> get, set, uf
+  propGetOwnFun: NimNode # custom own get function ident
   propGetFun: NimNode # custom get function ident
   propSetFun: NimNode # custom set function ident
   propDelFun: NimNode # custom del function ident
@@ -1372,6 +1447,7 @@ proc newRegistryInfo(t: NimNode; name: string): RegistryInfo =
     tabStatic: newNimNode(nnkBracket),
     finName: newNilLit(),
     finFun: newNilLit(),
+    propGetOwnFun: newNilLit(),
     propGetFun: newNilLit(),
     propSetFun: newNilLit(),
     propDelFun: newNilLit(),
@@ -1480,6 +1556,10 @@ proc bindFunctions(stmts: NimNode; info: var RegistryInfo) =
           exv[1] = f1
         do:
           info.getset[f0] = (newNilLit(), f1, false)
+      of bfPropertyGetOwn:
+        if info.propGetFun.kind != nnkNilLit:
+          error("Class " & info.tname & " has 2+ own property getters.")
+        info.propGetOwnFun = f1
       of bfPropertyGet:
         if info.propGetFun.kind != nnkNilLit:
           error("Class " & info.tname & " has 2+ property getters.")
@@ -1490,7 +1570,7 @@ proc bindFunctions(stmts: NimNode; info: var RegistryInfo) =
         info.propSetFun = f1
       of bfPropertyDel:
         if info.propDelFun.kind != nnkNilLit:
-          error("Class " & info.tname & " has 2+ property setters.")
+          error("Class " & info.tname & " has 2+ property deleters.")
         info.propDelFun = f1
       of bfPropertyHas:
         if info.propHasFun.kind != nnkNilLit:
@@ -1579,11 +1659,13 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
   let jsname = info.jsname
   let dfin = info.dfin
   let classDef = info.classDef
-  if info.propGetFun.kind != nnkNilLit or
+  if info.propGetOwnFun.kind != nnkNilLit or
+      info.propGetFun.kind != nnkNilLit or
       info.propSetFun.kind != nnkNilLit or
       info.propDelFun.kind != nnkNilLit or
       info.propHasFun.kind != nnkNilLit or
       info.propNamesFun.kind != nnkNilLit:
+    let propGetOwnFun = info.propGetOwnFun
     let propGetFun = info.propGetFun
     let propSetFun = info.propSetFun
     let propDelFun = info.propDelFun
@@ -1591,16 +1673,17 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
     let propNamesFun = info.propNamesFun
     endstmts.add(quote do:
       var exotic {.global.} = JSClassExoticMethods(
-        get_own_property: `propGetFun`,
+        get_own_property: `propGetOwnFun`,
         get_own_property_names: `propNamesFun`,
         has_property: `propHasFun`,
+        get_property: `propGetFun`,
         set_property: `propSetFun`,
         delete_property: `propDelFun`
       )
       var cd {.global.} = JSClassDef(
         class_name: `jsname`,
         can_destroy: `dfin`,
-        exotic: addr exotic
+        exotic: JSClassExoticMethodsConst(addr exotic)
       )
       let `classDef` = JSClassDefConst(addr cd)
     )
@@ -1610,7 +1693,8 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
         class_name: `jsname`,
         can_destroy: `dfin`
       )
-      let `classDef` = JSClassDefConst(addr cd))
+      let `classDef` = JSClassDefConst(addr cd)
+    )
 
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;

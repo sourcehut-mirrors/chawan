@@ -1,2 +1,5 @@
 * import QJS test suite
 * re-enable timezone offset as external hook
+* remove jsgetprop in next version
+* rename jsgetrealprop to jsgetprop in a subsequent version
+* then deprecate and remove jsgetrealprop alias
