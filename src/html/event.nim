@@ -1,4 +1,3 @@
-import std/math
 import std/options
 
 import html/catom
