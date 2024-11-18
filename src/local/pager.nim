@@ -233,7 +233,7 @@ proc reflect(ctx: JSContext; this_val: JSValue; argc: cint;
   let fun = func_data[1]
   return JS_Call(ctx, fun, obj, argc, argv)
 
-proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetprop.} =
+proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetownprop.} =
   if pager.container != nil:
     let cval = if pager.container.select != nil:
       ctx.toJS(pager.container.select)
@@ -250,7 +250,7 @@ proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetprop.} =
     JS_FreeValue(ctx, cval)
     if not JS_IsUndefined(val):
       return val
-  return JS_NULL
+  return JS_UNINITIALIZED
 
 proc searchNext(pager: Pager; n = 1) {.jsfunc.} =
   if pager.regex.isSome:

@@ -1,4 +1,5 @@
 import monoucha/javascript
+import monoucha/quickjs
 import types/referrer
 import types/url
 
@@ -135,3 +136,8 @@ proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
 
 proc logException*(ctx: JSContext) =
   ctx.errorImpl(ctx.getExceptionMsg())
+
+func uninitIfNull*(val: JSValue): JSValue =
+  if JS_IsNull(val):
+    return JS_UNINITIALIZED
+  return val

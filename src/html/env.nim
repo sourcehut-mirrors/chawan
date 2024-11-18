@@ -70,11 +70,12 @@ proc item(pluginArray: var PluginArray): JSValue {.jsfunc.} = JS_NULL
 proc length(pluginArray: var PluginArray): uint32 {.jsfget.} = 0
 proc item(mimeTypeArray: var MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
 proc length(mimeTypeArray: var MimeTypeArray): uint32 {.jsfget.} = 0
-proc getter(pluginArray: var PluginArray; atom: JSAtom): JSValue {.jsgetprop.} =
-  return JS_NULL
+proc getter(pluginArray: var PluginArray; atom: JSAtom): JSValue
+    {.jsgetownprop.} =
+  return JS_UNINITIALIZED
 proc getter(mimeTypeArray: var MimeTypeArray; atom: JSAtom): JSValue
-    {.jsgetprop.} =
-  return JS_NULL
+    {.jsgetownprop.} =
+  return JS_UNINITIALIZED
 
 # Screen
 proc availWidth(screen: var Screen): int64 {.jsfget.} =
@@ -143,9 +144,9 @@ func names(ctx: JSContext; this: var Storage): JSPropertyEnumList
     list.add(it.key)
   return list
 
-func getter(this: var Storage; s: string): Option[string]
-    {.jsgetprop.} =
-  return this.getItem(s)
+func getter(ctx: JSContext; this: var Storage; s: string): JSValue
+    {.jsgetownprop.} =
+  return ctx.toJS(this.getItem(s)).uninitIfNull()
 
 func setter(this: var Storage; k, v: string): Err[DOMException]
     {.jssetprop.} =

@@ -1533,11 +1533,11 @@ func value(tokenList: DOMTokenList): string {.jsfget.} =
   return $tokenList
 
 proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
-    {.jsgetprop.} =
+    {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return ctx.item(this, int(u))
-  return JS_NULL
+    return ctx.item(this, int(u)).uninitIfNull()
+  return JS_UNINITIALIZED
 
 # DOMStringMap
 func validateAttributeName(name: string): Err[DOMException] =
@@ -1559,13 +1559,13 @@ proc delete(map: var DOMStringMap; name: string): bool {.jsfunc.} =
     map.target.delAttr(i)
   return i != -1
 
-func getter(map: var DOMStringMap; name: string): Option[string]
-    {.jsgetprop.} =
+func getter(ctx: JSContext; map: var DOMStringMap; name: string): JSValue
+    {.jsgetownprop.} =
   let name = map.target.document.toAtom("data-" & name.camelToKebabCase())
   let i = map.target.findAttr(name)
   if i != -1:
-    return some(map.target.attrs[i].value)
-  return none(string)
+    return ctx.toJS(map.target.attrs[i].value)
+  return JS_UNINITIALIZED
 
 proc setter(map: var DOMStringMap; name, value: string): Err[DOMException]
     {.jssetprop.} =
@@ -1601,11 +1601,12 @@ func item(this: NodeList; u: uint32): Node {.jsfunc.} =
     return this.snapshot[i]
   return nil
 
-func getter(ctx: JSContext; this: NodeList; atom: JSAtom): Node {.jsgetprop.} =
+func getter(ctx: JSContext; this: NodeList; atom: JSAtom): JSValue
+    {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return this.item(u)
-  return nil
+    return ctx.toJS(this.item(u)).uninitIfNull()
+  return JS_UNINITIALIZED
 
 func names(ctx: JSContext; this: NodeList): JSPropertyEnumList {.jspropnames.} =
   let L = this.length
@@ -1631,15 +1632,15 @@ func namedItem(this: HTMLCollection; atom: CAtom): Element {.jsfunc.} =
       return it
   return nil
 
-proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): Element
-    {.jsgetprop.} =
+proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
+    {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return this.item(u)
+    return ctx.toJS(this.item(u)).uninitIfNull()
   var s: CAtom
   if ctx.fromJS(atom, s).isSome:
-    return this.namedItem(s)
-  return nil
+    return ctx.toJS(this.namedItem(s)).uninitIfNull()
+  return JS_UNINITIALIZED
 
 func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
@@ -1682,14 +1683,14 @@ proc names(ctx: JSContext; this: HTMLFormControlsCollection): JSPropertyEnumList
   return ctx.names(HTMLCollection(this))
 
 proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
-    JSValue {.jsgetprop.} =
+    JSValue {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return ctx.toJS(this.item(u))
+    return ctx.toJS(this.item(u)).uninitIfNull()
   var s: CAtom
   if ctx.fromJS(atom, s).isSome:
-    return ctx.namedItem(this, s)
-  return JS_NULL
+    return ctx.toJS(ctx.namedItem(this, s)).uninitIfNull()
+  return JS_UNINITIALIZED
 
 # HTMLAllCollection
 proc length(this: HTMLAllCollection): uint32 {.jsfget.} =
@@ -1701,12 +1702,12 @@ func item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
     return Element(this.snapshot[i])
   return nil
 
-func getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): Element
-    {.jsgetprop.} =
+func getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): JSValue
+    {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return this.item(u)
-  return nil
+    return ctx.toJS(this.item(u)).uninitIfNull()
+  return JS_UNINITIALIZED
 
 func names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
     {.jspropnames.} =
@@ -1986,7 +1987,7 @@ proc item(map: NamedNodeMap; i: uint32): Attr {.jsfunc.} =
   return nil
 
 func getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): Opt[Attr]
-    {.jsgetprop.} =
+    {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
     return ok(map.item(u))
@@ -2662,7 +2663,7 @@ proc reinitURL*(element: HTMLElement): Option[URL] =
 proc hyperlinkGetProp(ctx: JSContext; element: HTMLElement; a: JSAtom):
     JSValue =
   let href = element.reinitURL()
-  var res = JS_NULL
+  var res = JS_UNINITIALIZED
   var ca: StaticAtom
   if ctx.fromJS(a, ca).isSome:
     if ca in {satHref, satOrigin, satProtocol, satUsername, satPassword,
@@ -2691,7 +2692,7 @@ proc setHref(anchor: HTMLAnchorElement; href: string) {.jsfset: "href".} =
   anchor.attr(satHref, href)
 
 proc getter(ctx: JSContext; anchor: HTMLAnchorElement; a: JSAtom): JSValue
-    {.jsgetprop.} =
+    {.jsgetownprop.} =
   return ctx.hyperlinkGetProp(anchor, a)
 
 proc toString(anchor: HTMLAnchorElement): string {.jsfunc.} =
@@ -2708,7 +2709,7 @@ proc setHref(area: HTMLAreaElement; href: string) {.jsfset: "href".} =
   area.attr(satHref, href)
 
 proc getter(ctx: JSContext; anchor: HTMLAreaElement; a: JSAtom): JSValue
-    {.jsgetprop.} =
+    {.jsgetownprop.} =
   return ctx.hyperlinkGetProp(anchor, a)
 
 proc toString(area: HTMLAreaElement): string {.jsfunc.} =
@@ -2765,7 +2766,7 @@ func elements(form: HTMLFormElement): HTMLFormControlsCollection {.jsfget.} =
   return form.cachedElements
 
 proc getter(ctx: JSContext; this: HTMLFormElement; atom: JSAtom): JSValue
-    {.jsgetprop.} =
+    {.jsgetownprop.} =
   return ctx.getter(this.elements, atom)
 
 # <input>
@@ -2796,8 +2797,8 @@ proc names(ctx: JSContext; this: HTMLOptionsCollection): JSPropertyEnumList
     {.jspropnames.} =
   return ctx.names(HTMLCollection(this))
 
-proc getter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom): Element
-    {.jsgetprop.} =
+proc getter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom): JSValue
+    {.jsgetownprop.} =
   return ctx.getter(HTMLCollection(this), atom)
 
 func jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
@@ -2817,8 +2818,8 @@ proc length(this: HTMLSelectElement): int {.jsfget.} =
 
 #TODO length setter
 
-proc getter(ctx: JSContext; this: HTMLSelectElement; u: JSAtom): Element
-    {.jsgetprop.} =
+proc getter(ctx: JSContext; this: HTMLSelectElement; u: JSAtom): JSValue
+    {.jsgetownprop.} =
   return ctx.getter(this.jsOptions, u)
 
 proc item(this: HTMLSelectElement; u: uint32): Node {.jsfunc.} =
@@ -3172,10 +3173,10 @@ func IDLAttributeToCSSProperty(s: string; dashPrefix = false): string =
       result &= c
 
 proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
-    JSValue {.jsgetprop.} =
+    JSValue {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return ctx.toJS(this.item(u))
+    return ctx.toJS(this.item(u)).uninitIfNull()
   var s: string
   if ctx.fromJS(atom, s).isNone:
     return JS_EXCEPTION
@@ -3184,7 +3185,7 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
   s = IDLAttributeToCSSProperty(s)
   if s.isSupportedProperty():
     return ctx.toJS(this.getPropertyValue(s))
-  return JS_NULL #TODO eh?
+  return JS_UNINITIALIZED
 
 proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
     Err[void] =

@@ -4,19 +4,18 @@
 test
 <a id=y>test test</a>
 </main>
+<script src=asserts.js></script>
 <script>
-(function() {
-	let x = document.getElementById("x")
-	let y = document.getElementById("y");
-	if (y.previousSibling === x) return;
-	if (y.previousSibling.textContent.trim() !== "test") return;
-	if (y.previousElementSibling !== x) return;
-	if (x.nextElementSibling !== y) return;
-	if (x.nextSibling.textContent.trim() !== "test") return;
-	x.nextSibling.remove();
-	x.nextSibling.remove();
-	if (x.parentElement.children.length !== 1) return;
-	if (x.parentElement.children[0] !== x) return;
-	x.textContent = "Success";
-})()
+const x = document.getElementById("x")
+const y = document.getElementById("y");
+assertNotEquals(y.previousSibling, x);
+assertEquals(y.previousSibling.textContent.trim(), "test");
+assertEquals(y.previousElementSibling, x);
+assertEquals(x.nextElementSibling, y);
+assertEquals(x.nextSibling.textContent.trim(), "test");
+x.nextSibling.remove();
+x.nextSibling.remove();
+assertEquals(x.parentElement.children.length, 1);
+assertEquals(x.parentElement.children[0], x);
+x.textContent = "Success";
 </script>
