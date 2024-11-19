@@ -303,13 +303,12 @@ proc dispatchEvent0(ctx: JSContext; event: Event; currentTarget: EventTarget;
       if JS_IsException(e):
         ctx.logException()
       JS_FreeValue(ctx, e)
-      if efStopImmediatePropagation in event.flags:
-        stop = true
-        break
-      if efStopPropagation in event.flags:
-        stop = true
       if efCanceled in event.flags:
         canceled = true
+      if {efStopPropagation, efStopImmediatePropagation} * event.flags != {}:
+        stop = true
+      if efStopImmediatePropagation in event.flags:
+        break
 
 proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
   #TODO this is far from being compliant
