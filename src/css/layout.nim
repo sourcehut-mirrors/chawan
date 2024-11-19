@@ -595,6 +595,7 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     let whitespace = state.fragment.computed{"white-space"}
     if whitespace == WhitespacePre:
       ictx.flushWhitespace(state)
+      ictx.state.xminwidth = max(ictx.state.xminwidth, ictx.lbstate.size.w)
     elif whitespace == WhitespacePreWrap:
       ictx.flushWhitespace(state, hang = true)
     else:
