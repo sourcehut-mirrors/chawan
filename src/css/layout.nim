@@ -174,6 +174,9 @@ func outerSize(box: BlockBox; dim: DimensionType; sizes: ResolvedSizes):
     LayoutUnit =
   return sizes.margin[dim].sum() + box.state.size[dim]
 
+func max(span: Span): LayoutUnit =
+  return max(span.start, span.send)
+
 # In CSS, "min" beats "max".
 func minClamp(x: LayoutUnit; span: Span): LayoutUnit =
   return max(min(x, span.send), span.start)
@@ -1100,6 +1103,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       t: sizes.space[dim].t,
       u: minClamp(u, sizes.minMaxSizes[dim])
     )
+  elif sizes.minMaxSizes[dim].send < LayoutUnit.high:
+    sizes.space[dim] = fitContent(sizes.minMaxSizes[dim].max())
   else:
     # Ensure that space is indefinite in the first pass if no width has
     # been specified.
@@ -1115,6 +1120,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       t: sizes.space[odim].t,
       u: minClamp(u, sizes.minMaxSizes[odim])
     )
+  elif sizes.minMaxSizes[odim].send < LayoutUnit.high:
+    sizes.space[odim] = fitContent(sizes.minMaxSizes[odim].max())
   return sizes
 
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
@@ -2282,7 +2289,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LayoutUnit;
           it.weights[wt] = 0
           mctx.shrinkSize -= it.child.state.size[dim]
         u = minu
-      let maxu = it.sizes.minMaxSizes[dim].send
+      let maxu = it.sizes.minMaxSizes[dim].max()
       if maxu < u:
         # max violation
         if wt == fwtGrow: # freeze
