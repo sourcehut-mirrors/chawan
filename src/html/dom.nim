@@ -4942,6 +4942,16 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(TextMetrics)
   ctx.registerType(CSSStyleDeclaration)
   ctx.registerElements(nodeCID)
+  let imageFun = ctx.newFunction(["width", "height"], """
+const x = document.createElement("img");
+x.width = width;
+x.height = height;
+return x;
+""")
+  doAssert JS_SetConstructorBit(ctx, imageFun, true)
+  let jsWindow = JS_GetGlobalObject(ctx)
+  ctx.defineProperty(jsWindow, "Image", imageFun)
+  JS_FreeValue(ctx, jsWindow)
 
 # Forward declaration hack
 isDefaultPassiveImpl = func(target: EventTarget): bool =
