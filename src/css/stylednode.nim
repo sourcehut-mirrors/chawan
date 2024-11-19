@@ -37,7 +37,12 @@ type
   StyledType* = enum
     stElement, stText, stReplacement
 
-  DependencyInfo = array[DependencyType, seq[Element]]
+  DependencyInfoItem = object
+    t: DependencyType
+    element: Element
+
+  DependencyInfo* = object
+    items: seq[DependencyInfoItem]
 
   StyledNode* = ref object
     parent*: StyledNode
@@ -49,7 +54,7 @@ type
     of stElement:
       computed*: CSSComputedValues
       children*: seq[StyledNode]
-      # All elements we depend on, for each dependency type d.
+      # All elements our style depends on, for each dependency type d.
       depends*: DependencyInfo
     of stReplacement:
       # replaced elements: quotes, or (TODO) markers, images
@@ -72,40 +77,6 @@ when defined(debug):
     of stReplacement:
       return "#replacement"
 
-iterator branch*(node: StyledNode): StyledNode {.inline.} =
-  var node = node
-  while node != nil:
-    yield node
-    node = node.parent
-
-iterator elementList*(node: StyledNode): StyledNode {.inline.} =
-  for child in node.children:
-    yield child
-
-iterator elementList_rev*(node: StyledNode): StyledNode {.inline.} =
-  for i in countdown(node.children.high, 0):
-    yield node.children[i]
-
-func findElement*(root: StyledNode; element: Element): StyledNode =
-  var stack: seq[StyledNode] = @[]
-  for child in root.elementList_rev:
-    if child.t == stElement and child.pseudo == peNone:
-      stack.add(child)
-  while stack.len > 0:
-    let node = stack.pop()
-    if node.node == element:
-      return node
-    for child in node.elementList_rev:
-      if child.t == stElement and child.pseudo == peNone:
-        stack.add(child)
-
-func isDomElement*(styledNode: StyledNode): bool {.inline.} =
-  styledNode.t == stElement and styledNode.pseudo == peNone
-
-# DOM-style getters, for Element interoperability...
-func parentElement*(node: StyledNode): StyledNode {.inline.} =
-  node.parent
-
 proc isValid*(styledNode: StyledNode; toReset: var seq[Element]): bool =
   if styledNode.t in {stText, stReplacement}:
     return true
@@ -114,16 +85,18 @@ proc isValid*(styledNode: StyledNode; toReset: var seq[Element]): bool =
     if element.invalid:
       toReset.add(element)
       return false
-  for d in DependencyType:
-    for dep in styledNode.depends[d]:
-      if d in dep.invalidDeps:
-        toReset.add(dep)
+    # pseudo elements do not have selector dependencies, so we can skip
+    # this if node is nil.
+    for it in styledNode.depends.items:
+      if it.t in it.element.invalidDeps:
+        toReset.add(it.element)
         return false
   return true
 
-proc addDependency*(styledNode: StyledNode; dep: Element; t: DependencyType) =
-  if dep notin styledNode.depends[t]:
-    styledNode.depends[t].add(dep)
+proc add*(depends: var DependencyInfo; element: Element; t: DependencyType) =
+  let it = DependencyInfoItem(t: t, element: element)
+  if it notin depends.items:
+    depends.items.add(it)
 
 func newStyledElement*(parent: StyledNode; element: Element): StyledNode =
   return StyledNode(t: stElement, node: element, parent: parent)

@@ -1,6 +1,4 @@
-import std/options
 import std/strutils
-import std/tables
 
 import chame/tags
 import css/cssparser
@@ -11,16 +9,16 @@ import html/dom
 import utils/twtstr
 
 #TODO rfNone should match insensitively for certain properties
-func attrSelectorMatches(elem: Element; sel: Selector): bool =
+func attrSelectorMatches(element: Element; sel: Selector): bool =
   case sel.rel.t
-  of rtExists: return elem.attrb(sel.attr)
+  of rtExists: return element.attrb(sel.attr)
   of rtEquals:
     case sel.rel.flag
-    of rfNone: return elem.attr(sel.attr) == sel.value
-    of rfI: return elem.attr(sel.attr).equalsIgnoreCase(sel.value)
-    of rfS: return elem.attr(sel.attr) == sel.value
+    of rfNone: return element.attr(sel.attr) == sel.value
+    of rfI: return element.attr(sel.attr).equalsIgnoreCase(sel.value)
+    of rfS: return element.attr(sel.attr) == sel.value
   of rtToken:
-    let val = elem.attr(sel.attr)
+    let val = element.attr(sel.attr)
     case sel.rel.flag
     of rfNone: return sel.value in val.split(AsciiWhitespace)
     of rfI:
@@ -29,7 +27,7 @@ func attrSelectorMatches(elem: Element; sel: Selector): bool =
       return selval in val.split(AsciiWhitespace)
     of rfS: return sel.value in val.split(AsciiWhitespace)
   of rtBeginDash:
-    let val = elem.attr(sel.attr)
+    let val = element.attr(sel.attr)
     case sel.rel.flag
     of rfNone:
       return val == sel.value or sel.value.startsWith(val & '-')
@@ -39,19 +37,19 @@ func attrSelectorMatches(elem: Element; sel: Selector): bool =
     of rfS:
       return val == sel.value or sel.value.startsWith(val & '-')
   of rtStartsWith:
-    let val = elem.attr(sel.attr)
+    let val = element.attr(sel.attr)
     case sel.rel.flag
     of rfNone: return val.startsWith(sel.value)
     of rfI: return val.startsWithIgnoreCase(sel.value)
     of rfS: return val.startsWith(sel.value)
   of rtEndsWith:
-    let val = elem.attr(sel.attr)
+    let val = element.attr(sel.attr)
     case sel.rel.flag
     of rfNone: return val.endsWith(sel.value)
     of rfI: return val.endsWithIgnoreCase(sel.value)
     of rfS: return val.endsWith(sel.value)
   of rtContains:
-    let val = elem.attr(sel.attr)
+    let val = element.attr(sel.attr)
     case sel.rel.flag
     of rfNone: return val.contains(sel.value)
     of rfI:
@@ -60,129 +58,118 @@ func attrSelectorMatches(elem: Element; sel: Selector): bool =
       return val.contains(selval)
     of rfS: return val.contains(sel.value)
 
-func selectorsMatch*[T: Element|StyledNode](elem: T; cxsel: ComplexSelector;
-  felem: T = nil): bool
+func selectorsMatch*(element: Element; cxsel: ComplexSelector;
+  depends: var DependencyInfo): bool
 
-func selectorsMatch[T: Element|StyledNode](elem: T; slist: SelectorList;
-    felem: T = nil): bool =
+func selectorsMatch(element: Element; slist: SelectorList;
+    depends: var DependencyInfo): bool =
   for cxsel in slist:
-    if elem.selectorsMatch(cxsel, felem):
+    if element.selectorsMatch(cxsel, depends):
       return true
   return false
 
-func pseudoSelectorMatches[T: Element|StyledNode](elem: T; sel: Selector;
-    felem: T): bool =
-  let selem = elem
-  when elem is StyledNode:
-    let elem = Element(elem.node)
+func pseudoSelectorMatches(element: Element; sel: Selector;
+    depends: var DependencyInfo): bool =
   case sel.pseudo.t
-  of pcFirstChild: return elem.parentNode.firstElementChild == elem
-  of pcLastChild: return elem.parentNode.lastElementChild == elem
+  of pcFirstChild: return element.parentNode.firstElementChild == element
+  of pcLastChild: return element.parentNode.lastElementChild == element
   of pcOnlyChild:
-    return elem.parentNode.firstElementChild == elem and
-      elem.parentNode.lastElementChild == elem
+    return element.parentNode.firstElementChild == element and
+      element.parentNode.lastElementChild == element
   of pcHover:
-    when selem is StyledNode: felem.addDependency(elem, dtHover)
-    return elem.hover
-  of pcRoot: return elem == elem.document.documentElement
+    depends.add(element, dtHover)
+    return element.hover
+  of pcRoot: return element == element.document.documentElement
   of pcNthChild:
     if sel.pseudo.ofsels.len != 0 and
-        not selem.selectorsMatch(sel.pseudo.ofsels, felem):
+        not element.selectorsMatch(sel.pseudo.ofsels, depends):
       return false
     let A = sel.pseudo.anb.A # step
     let B = sel.pseudo.anb.B # start
     var i = 1
-    let parent = when selem is StyledNode: selem.parent
-    else: selem.parentNode
+    let parent = element.parentNode
     if parent == nil: return false
     for child in parent.elementList:
-      when selem is StyledNode:
-        if not child.isDomElement: continue
-      if child == selem:
+      if child == element:
         if A == 0:
           return i == B
         if A < 0:
           return (i - B) <= 0 and (i - B) mod A == 0
         return (i - B) >= 0 and (i - B) mod A == 0
       if sel.pseudo.ofsels.len == 0 or
-          child.selectorsMatch(sel.pseudo.ofsels, felem):
+          child.selectorsMatch(sel.pseudo.ofsels, depends):
         inc i
     return false
   of pcNthLastChild:
     if sel.pseudo.ofsels.len == 0 and
-        not selem.selectorsMatch(sel.pseudo.ofsels, felem):
+        not element.selectorsMatch(sel.pseudo.ofsels, depends):
       return false
     let A = sel.pseudo.anb.A # step
     let B = sel.pseudo.anb.B # start
     var i = 1
-    let parent = when selem is StyledNode: selem.parent
-    else: selem.parentNode
-    if parent == nil: return false
+    let parent = element.parentNode
+    if parent == nil:
+      return false
     for child in parent.elementList_rev:
-      when selem is StyledNode:
-        if not child.isDomElement: continue
-      if child == selem:
+      if child == element:
         if A == 0:
           return i == B
         if A < 0:
           return (i - B) <= 0 and (i - B) mod A == 0
         return (i - B) >= 0 and (i - B) mod A == 0
       if sel.pseudo.ofsels.len != 0 or
-          child.selectorsMatch(sel.pseudo.ofsels, felem):
+          child.selectorsMatch(sel.pseudo.ofsels, depends):
         inc i
     return false
   of pcChecked:
-    when selem is StyledNode: felem.addDependency(elem, dtChecked)
-    if elem.tagType == TAG_INPUT:
-      return HTMLInputElement(elem).checked
-    elif elem.tagType == TAG_OPTION:
-      return HTMLOptionElement(elem).selected
+    depends.add(element, dtChecked)
+    if element.tagType == TAG_INPUT:
+      return HTMLInputElement(element).checked
+    elif element.tagType == TAG_OPTION:
+      return HTMLOptionElement(element).selected
     return false
   of pcFocus:
-    when selem is StyledNode: felem.addDependency(elem, dtFocus)
-    return elem.document.focus == elem
+    depends.add(element, dtFocus)
+    return element.document.focus == element
   of pcNot:
-    return not selem.selectorsMatch(sel.pseudo.fsels, felem)
+    return not element.selectorsMatch(sel.pseudo.fsels, depends)
   of pcIs, pcWhere:
-    return selem.selectorsMatch(sel.pseudo.fsels, felem)
+    return element.selectorsMatch(sel.pseudo.fsels, depends)
   of pcLang:
     return sel.pseudo.s == "en" #TODO languages?
   of pcLink:
-    return elem.tagType in {TAG_A, TAG_AREA} and elem.attrb(satHref)
+    return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
   of pcVisited:
     return false
 
-func selectorMatches[T: Element|StyledNode](elem: T; sel: Selector;
-    felem: T = nil): bool =
-  let selem = elem
-  when elem is StyledNode:
-    let elem = Element(selem.node)
+func selectorMatches(element: Element; sel: Selector;
+    depends: var DependencyInfo): bool =
   case sel.t
   of stType:
-    return elem.localName == sel.tag
+    return element.localName == sel.tag
   of stClass:
-    return sel.class in elem.classList
+    return sel.class in element.classList
   of stId:
-    return sel.id == elem.id
+    return sel.id == element.id
   of stAttr:
-    return elem.attrSelectorMatches(sel)
+    return element.attrSelectorMatches(sel)
   of stPseudoClass:
-    return pseudoSelectorMatches(selem, sel, felem)
+    return pseudoSelectorMatches(element, sel, depends)
   of stPseudoElement:
     return true
   of stUniversal:
     return true
 
-func selectorsMatch[T: Element|StyledNode](elem: T; sels: CompoundSelector;
-    felem: T): bool =
+func selectorsMatch(element: Element; sels: CompoundSelector;
+    depends: var DependencyInfo): bool =
   for sel in sels:
-    if not selectorMatches(elem, sel, felem):
+    if not selectorMatches(element, sel, depends):
       return false
   return true
 
-func complexSelectorMatches[T: Element|StyledNode](elem: T;
-    cxsel: ComplexSelector; felem: T = nil): bool =
-  var e = elem
+func complexSelectorMatches(element: Element; cxsel: ComplexSelector;
+    depends: var DependencyInfo): bool =
+  var e = element
   for i in countdown(cxsel.high, 0):
     let sels = cxsel[i]
     if e == nil:
@@ -190,42 +177,38 @@ func complexSelectorMatches[T: Element|StyledNode](elem: T;
     var match = false
     case sels.ct
     of ctNone:
-      match = e.selectorsMatch(sels, felem)
+      match = e.selectorsMatch(sels, depends)
     of ctDescendant:
       e = e.parentElement
       while e != nil:
-        if e.selectorsMatch(sels, felem):
+        if e.selectorsMatch(sels, depends):
           match = true
           break
         e = e.parentElement
     of ctChild:
       e = e.parentElement
       if e != nil:
-        match = e.selectorsMatch(sels, felem)
+        match = e.selectorsMatch(sels, depends)
     of ctNextSibling:
       if e.parentElement == nil: return false
       var found = false
       for child in e.parentElement.elementList_rev:
-        when elem is StyledNode:
-          if not child.isDomElement: continue
         if e == child:
           found = true
           continue
         if found:
           e = child
-          match = e.selectorsMatch(sels, felem)
+          match = e.selectorsMatch(sels, depends)
           break
     of ctSubsequentSibling:
       var found = false
       if e.parentElement == nil: return false
       for child in e.parentElement.elementList_rev:
-        when elem is StyledNode:
-          if not child.isDomElement: continue
-        if child == elem:
+        if child == element:
           found = true
           continue
         if not found: continue
-        if child.selectorsMatch(sels, felem):
+        if child.selectorsMatch(sels, depends):
           e = child
           match = true
           break
@@ -233,27 +216,24 @@ func complexSelectorMatches[T: Element|StyledNode](elem: T;
       return false
   return true
 
-# WARNING for StyledNode, this has the side effect of modifying depends.
-#TODO make that an explicit flag or something, also get rid of the Element case
-func selectorsMatch*[T: Element|StyledNode](elem: T; cxsel: ComplexSelector;
-    felem: T = nil): bool =
-  let felem = if felem != nil:
-    felem
-  else:
-    elem
-  return elem.complexSelectorMatches(cxsel, felem)
+# Note: this modifies "depends".
+func selectorsMatch*(element: Element; cxsel: ComplexSelector;
+    depends: var DependencyInfo): bool =
+  return element.complexSelectorMatches(cxsel, depends)
 
 # Forward declaration hack
 querySelectorAllImpl = proc(node: Node; q: string): seq[Element] =
   result = @[]
   let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
-    if element.selectorsMatch(selectors):
+    var dummy: DependencyInfo
+    if element.selectorsMatch(selectors, dummy):
       result.add(element)
 
 querySelectorImpl = proc(node: Node; q: string): Element =
   let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
-    if element.selectorsMatch(selectors):
+    var dummy: DependencyInfo
+    if element.selectorsMatch(selectors, dummy):
       return element
   return nil

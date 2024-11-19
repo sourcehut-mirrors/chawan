@@ -79,9 +79,10 @@ func applies*(mqlist: MediaQueryList; window: Window): bool =
 type
   ToSorts = array[PseudoElem, seq[(int, CSSRuleDef)]]
 
-proc calcRule(tosorts: var ToSorts; styledNode: StyledNode; rule: CSSRuleDef) =
+proc calcRule(tosorts: var ToSorts; element: Element;
+    depends: var DependencyInfo; rule: CSSRuleDef) =
   for sel in rule.sels:
-    if styledNode.selectorsMatch(sel):
+    if element.selectorsMatch(sel, depends):
       let spec = getSpecificity(sel)
       tosorts[sel.pseudo].add((spec, rule))
 
@@ -108,7 +109,7 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
     rules.add(rule)
   rules.sort(ruleDefCmp, order = Ascending)
   for rule in rules:
-    tosorts.calcRule(styledNode, rule)
+    tosorts.calcRule(element, styledNode.depends, rule)
   for i in PseudoElem:
     tosorts[i].sort((proc(x, y: (int, CSSRuleDef)): int =
       cmp(x[0], y[0])
