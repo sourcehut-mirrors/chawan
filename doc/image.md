@@ -55,7 +55,7 @@ Known quirks and implementation details:
 
 * XTerm needs extensive configuration for ideal sixel support. In
   particular, you will want to set the decTerminalID, numColorRegisters,
-  and maxGraphicSize attributes. See `man xterm` for details.
+  and maxGraphicSize attributes. See [`man xterm`](man:xterm(1)) for details.
 * We assume private color registers are supported. On terminals where
   they aren't (e.g. SyncTERM or hardware terminals), colors will get
   messed up with multiple images on screen.
@@ -181,12 +181,12 @@ stdin and/or stdout is (currently) a file in the tmp directory for:
 * decode stdout, always
 * encode stdin, always
 
-This makes it possible to mmap(3) stdin/stdout instead of streaming
-through them with read(3) and write(3). When doing this, mind the
-following:
+This makes it possible to [mmap](man:mmap(3)) stdin/stdout
+instead of streaming through them with [read](man:read(3)) and
+[write](man:write(3)). When doing this, mind the following:
 
 * When reading, you must check your initial position in the file with
-  lseek(2).
+  [lseek](man:lseek(3)).
 * When writing, your headers are part of the output. At the very least,
   you must place a newline at the file's beginning.
 * This *is* an implementation detail, and might change at any time in
