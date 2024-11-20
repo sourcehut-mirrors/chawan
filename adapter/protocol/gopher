@@ -5,7 +5,7 @@ then	printf 'Cha-Control: InvalidMethod\n'
 	exit 1
 fi
 opath=/${MAPPED_URI_PATH#"${MAPPED_URI_PATH%%[!/]*}"}
-path=/${opath##/?/}
+path=${opath##/?}
 t=${opath%%"$path"}
 t=${t##?}
 
