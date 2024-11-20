@@ -126,7 +126,7 @@ proc parseLinkDestination(url: var string; line: openArray[char]; i: int): int =
     let c = line[i]
     if quote:
       quote = false
-    elif sc == '<' and c == '>' or sc != '<' and c in AsciiWhitespace + {')'}:
+    elif sc == '<' and c == '>' or sc != '<' and c in AsciiWhitespace:
       break
     elif c in {'<', '\n'} or c in Controls and sc != '<':
       return -1
