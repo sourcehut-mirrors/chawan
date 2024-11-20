@@ -156,6 +156,9 @@ proc quantize(img: openArray[RGBAColorBE]; outk: var uint;
     root[7] = cast[Node](alloc0(sizeof(NodeObj)))
     root[7].u.leaf.c = rgb(100, 100, 100)
     outk = 2
+    # the point is to skip the first scan, so fall back to the option
+    # that always works
+    outTransparent = true
     return root
   # number of leaves
   let palette = outk
