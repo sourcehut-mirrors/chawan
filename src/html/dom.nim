@@ -1228,7 +1228,7 @@ iterator elements(node: Node; tag: TagType): Element {.inline.} =
     if desc.tagType == tag:
       yield desc
 
-iterator elements(node: Node; tag: set[TagType]): Element {.inline.} =
+iterator elements*(node: Node; tag: set[TagType]): Element {.inline.} =
   for desc in node.elements:
     if desc.tagType in tag:
       yield desc
@@ -3260,6 +3260,11 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
     element.cachedStyle = CSSStyleDeclaration(element: element)
   return element.cachedStyle
 
+proc corsFetch(window: Window; input: Request): FetchPromise =
+  if not window.images and input.url.scheme.startsWith("img-codec+"):
+    return newResolvedPromise(JSResult[Response].err(newFetchTypeError()))
+  return window.loader.fetch(input)
+
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window; link: HTMLLinkElement) =
@@ -3280,7 +3285,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals)
       applies = media.appliesImpl(window)
-    let p = window.loader.fetch(
+    let p = window.corsFetch(
       newRequest(url)
     ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
       if res.isSome:
@@ -3302,8 +3307,13 @@ proc getImageId(window: Window): int =
   result = window.imageId
   inc window.imageId
 
-proc loadResource(window: Window; image: HTMLImageElement) =
-  if not window.images or image.fetchStarted:
+proc loadResource*(window: Window; image: HTMLImageElement) =
+  if not window.images:
+    image.invalid = image.invalid or image.bitmap != nil
+    image.bitmap = nil
+    image.fetchStarted = false
+    return
+  if image.fetchStarted:
     return
   image.fetchStarted = true
   let src = image.attr(satSrc)
@@ -3327,7 +3337,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
     let cachedURL = CachedURLImage(expiry: -1, loading: true)
     window.imageURLCache[surl] = cachedURL
     let headers = newHeaders({"Accept": "*/*"})
-    let p = window.loader.fetch(newRequest(url, headers = headers)).then(
+    let p = window.corsFetch(newRequest(url, headers = headers)).then(
       proc(res: JSResult[Response]): EmptyPromise =
         if res.isNone:
           return newResolvedPromise()
@@ -3346,7 +3356,7 @@ proc loadResource(window: Window; image: HTMLImageElement) =
           headers = newHeaders({"Cha-Image-Info-Only": "1"}),
           body = RequestBody(t: rbtOutput, outputId: response.outputId),
         )
-        let r = window.loader.fetch(request)
+        let r = window.corsFetch(request)
         response.resume()
         response.close()
         var expiry = -1i64
@@ -4758,8 +4768,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
   # callback will go out of scope when we return, so capture a new reference.
   let callback = JS_DupValue(ctx, callback)
   let window = this.document.window
-  let loader = window.loader
-  loader.fetch(newRequest(
+  window.corsFetch(newRequest(
     newURL("img-codec+x-cha-canvas:decode").get,
     httpMethod = hmPost,
     body = RequestBody(t: rbtCache, cacheId: this.bitmap.cacheId)
@@ -4767,7 +4776,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
     if res.isNone:
       return newResolvedPromise(res)
     let res = res.get
-    let p = loader.fetch(newRequest(
+    let p = window.corsFetch(newRequest(
       url,
       httpMethod = hmPost,
       headers = headers,

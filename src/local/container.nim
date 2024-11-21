@@ -1391,7 +1391,8 @@ proc markURL(container: Container) {.jsfunc.} =
 proc toggleImages(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
-  container.iface.toggleImages().then(proc() =
+  container.iface.toggleImages().then(proc(images: bool) =
+    container.config.images = images
     container.needslines = true
   )
 

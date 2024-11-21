@@ -1113,6 +1113,7 @@ proc onload(buffer: Buffer) =
       reprocess = false
     else: # EOF
       buffer.finishLoad().then(proc() =
+        buffer.window.loadingResourcePromises = @[]
         discard buffer.maybeReshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
@@ -1697,8 +1698,27 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
           stack.add(element)
   buffer.reshape()
 
-proc toggleImages*(buffer: Buffer) {.proxy.} =
+proc toggleImages0(buffer: Buffer): bool =
   buffer.config.images = not buffer.config.images
+  buffer.window.images = buffer.config.images
+  for element in buffer.document.elements({TAG_IMG, TAG_IMAGE}):
+    buffer.window.loadResource(HTMLImageElement(element))
+  buffer.savetask = true
+  buffer.loadResources().then(proc() =
+    if buffer.tasks[bcToggleImages] == 0:
+      # we resolved in then
+      buffer.savetask = false
+    else:
+      buffer.resolveTask(bcToggleImages, buffer.config.images)
+    buffer.window.loadingResourcePromises = @[]
+    buffer.prevStyled = nil
+    buffer.rootBox = nil
+    buffer.reshape()
+  )
+  return buffer.config.images
+
+proc toggleImages*(buffer: Buffer): bool {.proxy, task.} =
+  buffer.toggleImages0()
 
 macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     cmd: BufferCommand; packetid: int; r: var BufferedReader) =

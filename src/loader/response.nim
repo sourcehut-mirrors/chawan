@@ -71,6 +71,9 @@ func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
     bodyUsed: true
   )
 
+proc newFetchTypeError*(): JSError =
+  return newTypeError("NetworkError when attempting to fetch resource")
+
 func sok(response: Response): bool {.jsfget: "ok".} =
   return response.status in 200u16 .. 299u16
 
@@ -148,8 +151,7 @@ proc onFinishText(response: Response; success: bool) =
     let charset = response.getCharset(CHARSET_UTF_8)
     bodyRead.resolve(JSResult[string].ok(opaque.buf.decodeAll(charset)))
   else:
-    let err = newTypeError("NetworkError when attempting to fetch resource")
-    bodyRead.resolve(JSResult[string].err(err))
+    bodyRead.resolve(JSResult[string].err(newFetchTypeError()))
 
 proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
   if response.body == nil:

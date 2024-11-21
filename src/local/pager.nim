@@ -1369,9 +1369,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       res.autofocus = sc.autofocus.get
     if sc.meta_refresh.isSome:
       res.metaRefresh = sc.meta_refresh.get
-  if res.images:
-    loaderConfig.filter.allowschemes
-      .add(pager.config.external.urimethodmap.imageProtos)
+  loaderConfig.filter.allowschemes
+    .add(pager.config.external.urimethodmap.imageProtos)
   return res
 
 # Load request in a new buffer.

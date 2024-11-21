@@ -282,8 +282,7 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       stream.sclose()
       # delete before resolving the promise
       loader.unset(connectData)
-      let err = newTypeError("NetworkError when attempting to fetch resource")
-      promise.resolve(JSResult[Response].err(err))
+      promise.resolve(JSResult[Response].err(newFetchTypeError()))
   of cdsBeforeStatus:
     r.sread(connectData.status) # packet 2
     inc connectData.state
@@ -314,8 +313,7 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       if redirectNum < 5: #TODO use config.network.max_redirect?
         loader.fetch0(redirect, promise, redirectNum)
       else:
-        let err = newTypeError("NetworkError when attempting to fetch resource")
-        promise.resolve(JSResult[Response].err(err))
+        promise.resolve(JSResult[Response].err(newFetchTypeError()))
     else:
       promise.resolve(JSResult[Response].ok(response))
 
