@@ -14,10 +14,10 @@ type
     multiple: bool
     oselected*: seq[int] # old selection
     selected*: seq[int] # new selection
-    cursor: int # cursor distance from y
+    fromy {.jsget.}: int # first index to display
+    cursory {.jsget.}: int # selected index
     maxw: int # widest option
     maxh: int # maximum height on screen (yes the naming is dumb)
-    si: int # first index to display
     # location on screen
     #TODO make this absolute
     x: int
@@ -35,42 +35,57 @@ jsDestructor(Select)
 proc queueDraw(select: Select) =
   select.redraw = true
 
-# index of option currently under cursor
-func hover(select: Select): int =
-  return select.cursor + select.si
-
 func dispheight(select: Select): int =
   return select.maxh - select.y
 
-proc `hover=`(select: Select; i: int) =
-  let i = clamp(i, 0, select.options.high)
-  if i >= select.si + select.dispheight:
-    select.si = i - select.dispheight + 1
-    select.cursor = select.dispheight - 1
-  elif i < select.si:
-    select.si = i
-    select.cursor = 0
-  else:
-    select.cursor = i - select.si
+proc setFromY(select: Select; y: int) =
+  select.fromy = max(min(y, select.options.len - select.maxh), 0)
 
-proc cursorDown(select: Select) {.jsfunc.} =
-  if select.hover < select.options.high and
-      select.cursor + select.y < select.maxh - 1:
-    inc select.cursor
-    select.queueDraw()
-  elif select.si < select.options.len - select.maxh:
-    inc select.si
+proc setCursorY(select: Select; y: int) =
+  let y = clamp(y, 0, select.options.high)
+  if select.fromy > y:
+    select.setFromY(y)
+  if select.fromy + select.dispheight <= y:
+    select.setFromY(y - select.dispheight + 1)
+  select.cursory = y
+  select.queueDraw()
+  assert select.cursory >= select.fromy
+
+proc getCursorX*(select: Select): int =
+  if select.cursory == -1:
+    return select.x
+  return select.x + 1
+
+proc getCursorY*(select: Select): int =
+  return select.y + 1 + select.cursory - select.fromy
+
+proc cursorDown(select: Select; n = 1) {.jsfunc.} =
+  select.setCursorY(select.cursory + n)
+
+proc cursorUp(select: Select; n = 1) {.jsfunc.} =
+  let oc = select.cursory
+  select.setCursorY(oc - n)
+  if oc - n < select.cursory and select.multiple:
+    select.cursory = -1
     select.queueDraw()
 
-proc cursorUp(select: Select) {.jsfunc.} =
-  if select.cursor > 0:
-    dec select.cursor
-    select.queueDraw()
-  elif select.si > 0:
-    dec select.si
-    select.queueDraw()
-  elif select.multiple and select.cursor > -1:
-    select.cursor = -1
+proc scrollDown(select: Select; n = 1) {.jsfunc.} =
+  let tfy = select.fromy + n
+  select.setFromY(tfy)
+  if select.fromy > select.cursory:
+    select.setCursorY(select.fromy)
+  elif tfy > select.fromy:
+    select.cursorDown(tfy - select.fromy)
+  select.queueDraw()
+
+proc scrollUp(select: Select; n = 1) {.jsfunc.} =
+  let tfy = select.fromy - n
+  select.setFromY(tfy)
+  if select.fromy + select.dispheight <= select.cursory:
+    select.setCursorY(select.fromy + select.dispheight - 1)
+  elif tfy < select.fromy:
+    select.cursorUp(select.fromy - tfy)
+  select.queueDraw()
 
 proc cursorPrevLink(select: Select) {.jsfunc.} =
   select.cursorUp()
@@ -86,13 +101,13 @@ proc submit(select: Select) {.jsfunc.} =
 
 proc click(select: Select) {.jsfunc.} =
   if not select.multiple:
-    select.selected = @[select.hover]
+    select.selected = @[select.cursory]
     select.submit()
-  elif select.cursor == -1:
+  elif select.cursory == -1:
     select.submit()
   else:
     var k = select.selected.len
-    let i = select.hover
+    let i = select.cursory
     for j in 0 ..< select.selected.len:
       if select.selected[j] >= i:
         k = j
@@ -109,67 +124,68 @@ proc cursorLeft(select: Select) {.jsfunc.} =
 proc cursorRight(select: Select) {.jsfunc.} =
   select.click()
 
-proc getCursorX*(select: Select): int =
-  if select.cursor == -1:
-    return select.x
-  return select.x + 1
-
-proc getCursorY*(select: Select): int =
-  return select.y + 1 + select.cursor
-
 proc cursorFirstLine(select: Select) {.jsfunc.} =
-  if select.cursor != 0 or select.si != 0:
-    select.cursor = 0
-    select.si = 0
+  if select.cursory != 0:
+    select.cursory = 0
+    select.fromy = 0
     select.queueDraw()
 
 proc cursorLastLine(select: Select) {.jsfunc.} =
-  if select.hover < select.options.len:
-    select.cursor = select.dispheight - 1
-    select.si = max(select.options.len - select.maxh, 0)
+  if select.cursory < select.options.len:
+    select.fromy = max(select.options.len - select.maxh, 0)
+    select.cursory = select.fromy + select.dispheight - 1
     select.queueDraw()
+
+proc cursorTop(select: Select) {.jsfunc.} =
+  select.setCursorY(select.fromy)
+
+proc cursorMiddle(select: Select) {.jsfunc.} =
+  select.setCursorY(select.fromy + (select.dispheight - 1) div 2)
+
+proc cursorBottom(select: Select) {.jsfunc.} =
+  select.setCursorY(select.fromy + select.dispheight - 1)
 
 proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
   var j = -1
-  for i in select.hover + 1 ..< select.options.len:
+  for i in select.cursory + 1 ..< select.options.len:
     if regex.exec(select.options[i]).success:
       j = i
       break
   if j != -1:
-    select.hover = j
+    select.setCursorY(j)
     select.queueDraw()
   elif wrap:
-    for i in 0 ..< select.hover:
+    for i in 0 ..< select.cursory:
       if regex.exec(select.options[i]).success:
         j = i
         break
     if j != -1:
-      select.hover = j
+      select.setCursorY(j)
       select.queueDraw()
 
 proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool) =
   var j = -1
-  for i in countdown(select.hover - 1, 0):
+  for i in countdown(select.cursory - 1, 0):
     if regex.exec(select.options[i]).success:
       j = i
       break
   if j != -1:
-    select.hover = j
+    select.setCursorY(j)
     select.queueDraw()
   elif wrap:
-    for i in countdown(select.options.high, select.hover):
+    for i in countdown(select.options.high, select.cursory):
       if regex.exec(select.options[i]).success:
         j = i
         break
     if j != -1:
-      select.hover = j
+      select.setCursorY(j)
       select.queueDraw()
 
 proc pushCursorPos*(select: Select) =
-  select.bpos.add(select.hover)
+  select.bpos.add(select.cursory)
 
 proc popCursorPos*(select: Select; nojump = false) =
-  select.hover = select.bpos.pop()
+  select.setCursorY(select.bpos.pop())
   if not nojump:
     select.queueDraw()
 
@@ -231,7 +247,7 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
   let mw = display.width - 2
   let mh = display.height - 2
   var sy = select.y
-  let si = select.si
+  let si = select.fromy
   var ey = min(sy + select.options.len, mh) + 1
   var sx = select.x
   if sx + select.maxw >= mw:
@@ -242,8 +258,8 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
       # but I feel like this may not be the best solution.
       sx = 0
   var ex = min(sx + select.maxw, mw) + 1
-  let upmore = select.si > 0
-  let downmore = select.si + mh < select.options.len
+  let upmore = select.fromy > 0
+  let downmore = select.fromy + mh < select.options.len
   drawBorders(display, sx, ex, sy, ey, upmore, downmore)
   if select.multiple and not upmore:
     display[sy * display.width + sx].str = "X"
@@ -287,14 +303,8 @@ proc windowChange*(select: Select; height: int) =
   if select.y + select.options.len >= select.maxh:
     select.y = height - select.options.len
     if select.y < 0:
-      select.si = -select.y
       select.y = 0
-  if select.selected.len > 0:
-    let i = select.selected[0]
-    if select.si > i:
-      select.si = i
-    elif select.si + select.maxh < i:
-      select.si = max(i - select.maxh, 0)
+  select.setCursorY(select.cursory)
   select.queueDraw()
 
 proc newSelect*(multiple: bool; options: seq[string]; selected: seq[int];
