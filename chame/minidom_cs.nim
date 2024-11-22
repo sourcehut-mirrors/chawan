@@ -1,12 +1,11 @@
-## A demonstration of using the Chakasu encoding library in combination with
-## the Chame HTML parser.
+## A demonstration of using the Chagashi encoding library in combination
+## with the Chame HTML parser.
 ##
-## For the most part, this is the same as minidom. However, it also has support
-## for decoding documents with arbitrary character sets using DecoderStream +
-## EncoderStream.
+## For the most part, this is the same as minidom, except it supports
+## decoding documents with arbitrary character sets.
 ##
-## Note: this is not implemented for the fragment parsing algorithm, because it
-## is only defined for the UTF-8 character set.
+## Note: this is not implemented for the fragment parsing algorithm,
+## because that is only defined for UTF-8 in the standard.
 ##
 ## For a version without the encoding library dependency, see
 ## [minidom](minidom.html).

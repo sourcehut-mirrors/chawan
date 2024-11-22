@@ -1,13 +1,12 @@
 ## Minimal DOMBuilder example. Implements the absolute minimum required
-## for Chawan's HTML parser to work correctly.
+## for htmlparser to work correctly.
 ##
-## For an example of a complete implementation, see Chawan's chadombuilder.
+## For an example of a complete implementation (with JS support and
+## document.write), see Chawan's chadombuilder.
 ##
-## WARNING: this assumes *valid* UTF-8 to be the input encoding; text tokens
-## containing invalid UTF-8 are silently discarded.
-##
-## For a variant that can switch encodings when meta tags are encountered etc.
-## see [chame/minidom_cs](minidom_cs.html).
+## Note: this only works with UTF-8 inputs. For a variant that can
+## switch encodings when meta tags are encountered etc. see
+## [chame/minidom_cs](minidom_cs.html).
 
 import std/algorithm
 import std/hashes

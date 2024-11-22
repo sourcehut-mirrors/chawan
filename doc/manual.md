@@ -28,7 +28,7 @@ Here we describe both APIs.
 
 Chame implements HTML5 parsing as described in the
 [Parsing HTML documents](https://html.spec.whatwg.org/multipage/parsing.html)
-section of the WHATWG's living standard. Note that this document may change at
+section of WHATWG's living standard. Note that this document may change at
 any time, and newer additions might take some time to implement in Chame.
 
 Users of the low-level API are encouraged to consult the appropriate sections
@@ -36,12 +36,12 @@ of the standard while implementing hooks provided by htmlparser.
 
 ### String interning
 
-To achieve O(1) comparisons of tag and attribute names and a lower memory
-footprint, Chame uses
-[string interning](https://en.wikipedia.org/wiki/String_interning). While
-minidom users can deal with simply by calling the appropriate conversion
-functions on Document.factory, consumers of htmlparser must implement string
-interning themselves (be that through MAtomFactory or a custom solution).
+To achieve O(1) comparisons of tag and attribute names and a lower
+memory footprint, Chame uses
+[string interning](https://en.wikipedia.org/wiki/String_interning).
+While minidom users can simply call the appropriate conversion functions
+on Document.factory, consumers of htmlparser must implement string
+interning themselves, be that through MAtomFactory or a custom solution.
 
 ### String validation
 
@@ -64,7 +64,7 @@ e.g. in a browser, the `innerHTML` setter would use `parseHTMLFragment`, while
 `DOMParser.parseFromString` would use `parseHTML`.
 
 The input stream must be passed as a `Stream` object from `std/streams`. Both
-parseHTML and parseHTMLFragment return only when the input stream has been
+`parseHTML` and `parseHTMLFragment` return only when the input stream has been
 completely consumed from the stream. For chunked parsing, you must use the
 low-level htmlparser API instead.
 
@@ -87,8 +87,8 @@ Strings returned from minidom are guaranteed to be valid UTF-8. Note however
 that minidom only understands UTF-8 documents. For parsing documents with
 character sets other than UTF-8, minidom_cs must be used. The `parseHTML`
 function of minidom_cs is also able to BOM sniff, interpret meta charset
-tags and optionally retry parsing of documents with a predefined list of
-character sets (using the companion character decoding library Chakasu).
+tags, and optionally retry parsing with a predefined list of character
+sets (using the companion character decoding library Chagashi).
 
 ## Low-level API (htmlparser)
 
@@ -185,8 +185,8 @@ parser.finish()
 Note the while loop; `parseChunk` will return `PRES_SCRIPT` multiple times
 for a single chunk if it contains several scripts.
 
-Also note that `minidom` does not handle `PRES_STOP`, since it does support
-character encodings. For an implementation that *does* handle `PRES_STOP`, see
+Also note that `minidom` does not handle `PRES_STOP`, since it does not support
+legacy encodings. For an implementation that *does* handle `PRES_STOP`, see
 `minidom_cs`.
 
 ##### Option 2: Parse buffers passed by `document.write`
@@ -196,7 +196,7 @@ using the `document.write` function.
 
 It is possible to implement this, but it is somewhat too involved to give a
 detailed explanation of it here. Please refer to Chawan's implementation in
-html/chadombuilder and html/dom.
+html/chadombuilder and html/dom. (Good luck.)
 
 #### finish
 
@@ -233,7 +233,7 @@ types except `TAG_UNKNOWN`, which is never passed to `tagTypeToAtom`.)
 Note that htmlparser does not *require* an `atomToStr` procedure, so it is not
 even necessary to store interned strings in a format compatible with the Nim
 string type. (Obviously, some way to stringify atoms is required for most use
-cases, but it need not be exposed.)
+cases, but it need not be exposed to Chame.)
 
 ## Example
 
