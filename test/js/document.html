@@ -12,10 +12,11 @@ assertEquals(document.toString, document.getElementById("toString"));
 document.toString.remove();
 document.testtest = "hi";
 assertEquals(Object.getOwnPropertyNames(document).toString(), "testtest,location,img2,img3,asdf");
-// the spec doesn't have HTMLDocument, but browsers do.
-//TODO: we'll probably have to implement HTMLDocument ourselves too
-// nonetheless.
-if (!window.HTMLDocument)
+/*
+ * Note: the spec says Document == HTMLDocument, but in other browsers
+ * this is not true.
+ */
+if (HTMLDocument == Document)
 	assertEquals(document.toString(), "[object Document]");
 assertEquals(document, window.document);
 assertEquals(document.implementation, document.implementation);

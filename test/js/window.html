@@ -15,5 +15,9 @@ delete window.localStorage.b;
 assertEquals(window.localStorage["b"], undefined);
 window.localStorage["b"] = "y";
 assert(window.sessionStorage instanceof Storage);
+Image = "test";
+HTMLDocument = "test";
+assertEquals(Image, "test");
+assertEquals(HTMLDocument, "test");
 document.getElementById("x").textContent = "Success";
 </script>

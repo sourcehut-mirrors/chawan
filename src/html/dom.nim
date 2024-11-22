@@ -4995,7 +4995,9 @@ return x;
 """)
   doAssert JS_SetConstructorBit(ctx, imageFun, true)
   let jsWindow = JS_GetGlobalObject(ctx)
-  ctx.defineProperty(jsWindow, "Image", imageFun)
+  ctx.definePropertyCW(jsWindow, "Image", imageFun)
+  ctx.definePropertyCW(jsWindow, "HTMLDocument",
+    JS_GetPropertyStr(ctx, jsWindow, "Document"))
   JS_FreeValue(ctx, jsWindow)
 
 # Forward declaration hack
