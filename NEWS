@@ -1,3 +1,7 @@
+0.7.1 (2024.11.22)
+* fix wrong allocation sizes in jspropenum module
+This could lead to memory corruption.
+
 0.7.0 (2024.11.18)
 * clean up and complete exotic pragmas
 Now the Monoucha API can express all exotics that QJS provides.
