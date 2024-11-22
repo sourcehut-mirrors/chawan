@@ -1407,6 +1407,11 @@ func childNodes(node: Node): NodeList {.jsfget.} =
 func isForm(node: Node): bool =
   return node of HTMLFormElement
 
+func compatMode(document: Document): string {.jsfget.} =
+  if document.mode == QUIRKS:
+    return "BackCompat"
+  return "CSS1Compat"
+
 func forms(document: Document): HTMLCollection {.jsfget.} =
   if document.cachedForms == nil:
     document.cachedForms = newCollection[HTMLCollection](
