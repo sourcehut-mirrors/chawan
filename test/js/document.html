@@ -1,11 +1,30 @@
 <!doctype html>
-<title>Window test</title>
+<title>Document test</title>
+<body>
 <div id="abc">Fail</div>
+<img id=img2 name=img3>
+<img id=toString name=a>
+<img id=img4 name=>
+<form id=myform name=asdf></form>
+<script src=asserts.js></script>
 <script>
-(function() {
-	if (document.toString() !== "[object Document]") return;
-	if (document !== window.document) return;
-	if (document.implementation !== document.implementation) return;
-	document.getElementById("abc").textContent = "Success";
-})()
+assertEquals(document.toString, document.getElementById("toString"));
+document.toString.remove();
+document.testtest = "hi";
+assertEquals(Object.getOwnPropertyNames(document).toString(), "testtest,location,img2,img3,asdf");
+// the spec doesn't have HTMLDocument, but browsers do.
+//TODO: we'll probably have to implement HTMLDocument ourselves too
+// nonetheless.
+if (!window.HTMLDocument)
+	assertEquals(document.toString(), "[object Document]");
+assertEquals(document, window.document);
+assertEquals(document.implementation, document.implementation);
+assertEquals(document.img2, document.getElementById("img2"));
+assertEquals(document.img3, document.getElementById("img2"));
+assertEquals(document.asdf, document.getElementById("myform"));
+assertEquals(document.img4, undefined);
+document.getElementById("img4").remove();
+document.asdf.remove();
+document.img2.remove();
+document.getElementById("abc").textContent = "Success";
 </script>

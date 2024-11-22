@@ -1647,18 +1647,19 @@ proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
     return ctx.toJS(this.namedItem(s)).uninitIfNull()
   return JS_UNINITIALIZED
 
-func names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
+proc names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     {.jspropnames.} =
   let L = collection.length
   var list = newJSPropertyEnumList(ctx, L)
   var ids = initOrderedSet[CAtom]()
+  let empty = ctx.toAtom("")
   for u in 0 ..< L:
     list.add(u)
-    let elem = collection.item(u)
-    if elem.id != CAtomNull:
-      ids.incl(elem.id)
-    if elem.namespace == Namespace.HTML:
-      ids.incl(elem.name)
+    let element = collection.item(u)
+    if element.id != CAtomNull and element.id != empty:
+      ids.incl(element.id)
+    if element.namespace == Namespace.HTML:
+      ids.incl(element.name)
   for id in ids:
     list.add(collection.root.document.toStr(id))
   return list
@@ -2352,6 +2353,36 @@ func nextElementSibling*(elem: Element): Element {.jsfget.} =
 
 func documentElement*(document: Document): Element {.jsfget.} =
   return document.firstElementChild()
+
+proc names(ctx: JSContext; document: Document): JSPropertyEnumList
+    {.jspropnames.} =
+  var list = newJSPropertyEnumList(ctx, 0)
+  #TODO I'm not quite sure why location isn't added, so I'll add it
+  # manually for now.
+  list.add("location")
+  let empty = ctx.toAtom("")
+  #TODO exposed embed, exposed object
+  for child in document.elements({TAG_FORM, TAG_IFRAME, TAG_IMG}):
+    if child.name != CAtomNull and child.name != empty:
+      if child.tagType == TAG_IMG and child.id != CAtomNull and
+          child.id != empty:
+        list.add(ctx.toStr(child.id))
+      list.add(ctx.toStr(child.name))
+  return list
+
+proc getter(ctx: JSContext; document: Document; s: string): JSValue
+    {.jsgetownprop.} =
+  if s.len != 0:
+    let id = ctx.toAtom(s)
+    let empty = ctx.toAtom("")
+    #TODO exposed embed, exposed object
+    for child in document.elements({TAG_FORM, TAG_IFRAME, TAG_IMG}):
+      if child.tagType == TAG_IMG and child.id == id and
+          child.name != CAtomNull and child.name != empty:
+        return ctx.toJS(child)
+      if child.name == id:
+        return ctx.toJS(child)
+  return JS_UNINITIALIZED
 
 func attr*(element: Element; s: CAtom): string =
   let i = element.findAttr(s)
@@ -3054,10 +3085,10 @@ proc newDocument*(factory: CAtomFactory): Document =
   let document = Document(
     url: newURL("about:blank").get,
     index: -1,
-    factory: factory
+    factory: factory,
+    contentType: "application/xml"
   )
   document.implementation = DOMImplementation(document: document)
-  document.contentType = "application/xml"
   return document
 
 proc newDocument(ctx: JSContext): Document {.jsctor.} =
