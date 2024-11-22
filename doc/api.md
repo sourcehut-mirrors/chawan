@@ -373,6 +373,13 @@ element.</td>
 </tr>
 
 <tr>
+<td>`cursorLinkNavDown(n = 1)`, `cursorLinkNavUp(n = 1)`</td>
+<td>Move the cursor to the beginning of the next/previous clickable element.
+Buffer scrolls pagewise, wrap to beginning/end if content is less than one page
+length.</td>
+</tr>
+
+<tr>
 <td>`cursorNextParagraph(n = 1)`, `cursorPrevParagraph(n = 1)`</td>
 <td>Move the cursor to the beginning/end of the nth next/previous
 paragraph.</td>

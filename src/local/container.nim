@@ -1128,6 +1128,61 @@ proc cursorPrevLink*(container: Container; n = 1) {.jsfunc.} =
         container.markPos()
     )
 
+proc cursorLinkNavDown*(container: Container; n = 1) {.jsfunc.} =
+  if container.iface == nil:
+    return
+  container.markPos0()
+  container.iface
+    .findNextLink(container.cursorx, container.cursory, n)
+    .then(proc(res: tuple[x, y: int]) =
+      if res.x == -1 and res.y == -1:
+        if container.numLines <= container.height:
+          container.iface
+            .findNextLink(-1, 0, n = 1).then(proc(res2: tuple[x, y: int]) =
+              container.setCursorXYCenter(res2.x, res2.y)
+              container.markPos()
+            )
+        else:
+          container.pageDown()
+          container.markPos()
+      elif res.y < container.fromy + container.height:
+        container.setCursorXYCenter(res.x, res.y)
+        container.markPos()
+      else:
+        container.pageDown()
+        if res.y < container.fromy + container.height:
+          container.setCursorXYCenter(res.x, res.y)
+          container.markPos()
+    )
+
+proc cursorLinkNavUp*(container: Container; n = 1) {.jsfunc.} =
+  if container.iface == nil:
+    return
+  container.markPos0()
+  container.iface
+    .findPrevLink(container.cursorx, container.cursory, n)
+    .then(proc(res: tuple[x, y: int]) =
+      if res.x == -1 and res.y == -1:
+        if container.numLines <= container.height:
+          container.iface
+            .findPrevLink(int.high, container.numLines - 1, n = 1)
+            .then(proc(res2: tuple[x, y: int]) =
+              container.setCursorXYCenter(res2.x, res2.y)
+              container.markPos()
+            )
+        else:
+          container.pageUp()
+          container.markPos()
+      elif res.y >= container.fromy:
+        container.setCursorXYCenter(res.x, res.y)
+        container.markPos()
+      else:
+        container.pageUp()
+        if res.y >= container.fromy:
+          container.setCursorXYCenter(res.x, res.y)
+          container.markPos()
+    )
+
 proc cursorNextParagraph*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return

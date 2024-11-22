@@ -451,7 +451,11 @@ proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
   var found = 0
   var i = buffer.lines[cursory].findFormatN(cursorx) - 1
   var link: Element = nil
-  if i >= 0:
+  if cursorx == int.high:
+    # Special case for when we want to jump to the last link on this
+    # line (for cursorLinkNavUp).
+    i = buffer.lines[cursory].formats.len
+  elif i >= 0:
     link = buffer.lines[cursory].formats[i].node.getClickable()
   dec i
   var ly = 0 # last y
