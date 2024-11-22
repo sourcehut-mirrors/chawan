@@ -1,3 +1,7 @@
+1.0.2 (2024.11.22)
+* Minor optimizations
+* Minor documentation updates
+
 1.0.1 (2024.07.28)
 * Minor optimization
 * Add test directory to skipDirs

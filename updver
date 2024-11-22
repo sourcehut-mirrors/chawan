@@ -1,11 +1,14 @@
 #!/bin/sh
 
-if ! test "$1"
-then	echo "Usage: updver [version]" >&2
+die()
+{
+	echo "$*" 2>&1
 	exit 1
-fi
+}
 
-vv="$(printf '%s\n' "$1" | sed 's/v//')"
+test "$1" || die "Usage: updver [version]"
+
+vv=$(printf '%s\n' "$1" | sed 's/v//')
 
 major=$(printf '%s\n' "$vv" | sed 's/\..*//')
 minor=$(printf '%s\n' "$vv" | sed 's/[^.]*\.\([^.]*\)\..*/\1/')
@@ -13,6 +16,24 @@ patch=$(printf '%s\n' "$vv" | sed 's/.*\.//')
 
 vs="$major.$minor.$patch"
 
+oldhdr=$(head -1 NEWS)
+
+msgfile=$(mktemp)
+
+printf '%s (%s)\n\n' "$vs" "$(date +'%Y.%m.%d')" > "$msgfile"
+cat NEWS >> "$msgfile"
+
+test -n "$EDITOR" || die 'missing $EDITOR env var'
+$EDITOR "$msgfile"
+
+printf 'Ok? (y/n) '
+read -r ok
+case "$ok" in
+y|Y)	;;
+*)	die "Aborted. (File is $msgfile.)" ;;
+esac
+
+cp "$msgfile" NEWS
 echo "/version/c
 version       = \"$vs\"
 .
@@ -27,4 +48,12 @@ wq" | ed -s chame/version.nim
 
 git add .
 git commit -m "Version $vs"
-git tag -a "v$vs"
+
+tmp2=$(mktemp)
+
+while read line
+do	if test "$line" = "$oldhdr"; then break; fi
+	printf '%s\n' "$line"
+done <NEWS >"$tmp2"
+
+git tag -faeF "$tmp2" "v$vs"
