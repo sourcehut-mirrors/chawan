@@ -30,7 +30,8 @@ proc grow(this: var JSPropertyEnumList) =
   if this.size == 0:
     this.size = 1
   this.size *= 2
-  let p = js_realloc(this.ctx, this.buffer, csize_t(this.size))
+  let p = js_realloc(this.ctx, this.buffer,
+    csize_t(sizeof(JSPropertyEnum)) * csize_t(this.size))
   this.buffer = cast[JSPropertyEnumArray](p)
 
 proc add*(this: var JSPropertyEnumList; val: uint32) =

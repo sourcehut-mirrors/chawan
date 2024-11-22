@@ -112,7 +112,7 @@ val"""
 test "jspropenumlist":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
-  var list = newJSPropertyEnumList(ctx, 3)
+  var list = newJSPropertyEnumList(ctx, 0)
   list.add(1)
   list.add("hi")
   list.add(3)
