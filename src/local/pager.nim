@@ -2258,7 +2258,8 @@ const MenuMap = [
   ("Save source (sS)", "buffer.saveSource"),
   ("Reload (U)", "pager.reloadBuffer"),
   ("Save link (s<Enter>)", "buffer.saveLink"),
-  ("View image (I)", "buffer.viewImage")
+  ("View image (I)", "buffer.viewImage"),
+  ("Linkify URLs (:)", "buffer.markURL")
 ]
 
 proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =

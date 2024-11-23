@@ -94,11 +94,23 @@ proc scrollUp(select: Select; n = 1) {.jsfunc.} =
     select.cursorUp(select.fromy - tfy)
   select.queueDraw()
 
-proc cursorPrevLink(select: Select) {.jsfunc.} =
-  select.cursorUp()
+proc cursorPrevLink(select: Select; n = 1) {.jsfunc.} =
+  select.cursorUp(n)
 
-proc cursorNextLink(select: Select) {.jsfunc.} =
-  select.cursorDown()
+proc cursorNextLink(select: Select; n = 1) {.jsfunc.} =
+  select.cursorDown(n)
+
+proc cursorLinkNavUp(select: Select; n = 1) {.jsfunc.} =
+  select.cursorUp(n)
+
+proc cursorLinkNavDown(select: Select; n = 1) {.jsfunc.} =
+  select.cursorDown(n)
+
+proc cursorNthLink(select: Select; n = 1) {.jsfunc.} =
+  select.setCursorY(n - 1)
+
+proc cursorRevNthLink(select: Select; n = 1) {.jsfunc.} =
+  select.setCursorY(select.options.len - n)
 
 proc gotoLine(select: Select; n: int) {.jsfunc.} =
   select.setCursorY(n + 1)
