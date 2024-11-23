@@ -1463,7 +1463,9 @@ proc omniRewrite(pager: Pager; s: string): string =
 proc loadURL*(pager: Pager; url: string; ctype = none(string);
     cs = CHARSET_UNKNOWN) =
   let url0 = pager.omniRewrite(url)
-  let url = if url[0] == '~': expandPath(url0) else: url0
+  let url = expandPath(url0)
+  if url.len == 0:
+    return
   let firstparse = parseURL(url)
   if firstparse.isSome:
     let prev = if pager.container != nil:
