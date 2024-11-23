@@ -4,8 +4,8 @@ MANOFF -->
 
 # Chawan's command API
 
-As described in <!-- MANOFF -->the [config](config.md) documentation<!-- MANON -->
-<!-- MANON **cha-config**(5) MANOFF -->, keypress combinations can be bound to
+As described in <!-- MANOFF -->the [config](config.md) documentation,<!-- MANON -->
+<!-- MANON **cha-config**(5), MANOFF --> keypress combinations can be bound to
 actions.
 
 An action can be either a JavaScript expression, or a command defined in the
@@ -174,23 +174,14 @@ open the current buffer's contents as HTML.</td>
 </tr>
 
 <tr>
-<td>`searchForward()`</td>
-<td>Search for a string in the current buffer.</td>
+<td>`searchForward()`, `searchBackward()`</td>
+<td>Search forward/backward for a string in the current buffer.</td>
 </tr>
 
 <tr>
-<td>`searchBackward()`</td>
-<td>Search for a string, backwards.</td>
-</tr>
-
-<tr>
-<td>`isearchForward()`</td>
-<td>Incremental-search for a string, highlighting the first result.</td>
-</tr>
-
-<tr>
-<td>`isearchBackward()`</td>
-<td>Incremental-search and highlight the first result, backwards.</td>
+<td>`isearchForward()`, `isearchBackward()`</td>
+<td>Incremental-search forward/backward for a string, highlighting the
+first result.</td>
 </tr>
 
 <tr>
@@ -201,13 +192,8 @@ shown.</td>
 </tr>
 
 <tr>
-<td>`searchNext(n = 1)`</td>
-<td>Jump to the nth next search result.</td>
-</tr>
-
-<tr>
-<td>`searchPrev(n = 1)`</td>
-<td>Jump to the nth previous search result.</td>
+<td>`searchNext(n = 1)`, `searchPrev(n = 1)`</td>
+<td>Jump to the nth next/previous search result.</td>
 </tr>
 
 <tr>
@@ -242,16 +228,6 @@ q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(
 <td>`askChar(prompt)`</td>
 <td>Ask the user for any character.<br>
 Like `pager.ask`, but the return value is a character.</td>
-</tr>
-
-<tr>
-<td>`saveLink()`</td>
-<td>Save URL pointed to by the cursor.</td>
-</tr>
-
-<tr>
-<td>`saveSource()`</td>
-<td>Save the source of the current buffer.</td>
 </tr>
 
 <tr>
@@ -425,18 +401,9 @@ from the document's last line.</td>
 </tr>
 
 <tr>
-<td>`cursorTop()`</td>
-<td>Move to the first line on the screen. (Equivalent to H in vi.)</td>
-</tr>
-
-<tr>
-<td>`cursorMiddle()`</td>
-<td>Move to the line in the middle of the screen. (Equivalent to M in vi.)</td>
-</tr>
-
-<tr>
-<td>`cursorBottom()`</td>
-<td>Move to the last line on the screen. (Equivalent to L in vi.)</td>
+<td>`cursorTop()`, `cursorMiddle()`, `cursorBottom()`</td>
+<td>Move to the first/middle/bottom line on the screen. (Equivalent to H/M/L
+in vi.)</td>
 </tr>
 
 <tr>
@@ -492,15 +459,10 @@ in vi.)</td>
 </tr>
 
 <tr>
-<td>`findNextMark(x = this.cursorx, y = this.cursory)`</td>
-<td>Find the next mark after `x`, `y`, if any; and return its id (or null
-if none were found.)</td>
-</tr>
-
-<tr>
-<td>`findPrevMark(x = this.cursorx, y = this.cursory)`</td>
-<td>Find the previous mark before `x`, `y`, if any; and return its id (or null
-if none were found.)</td>
+<td>`findNextMark(x = this.cursorx, y = this.cursory)`,
+`findPrevMark(x = this.cursorx, y = this.cursory)`</td>
+<td>Find the next/previous mark after/before `x`, `y`, if any; and return its id
+(or null if none were found.)</td>
 </tr>
 
 <tr>
@@ -536,8 +498,37 @@ If the mark does not exist, return null.</td>
 </tr>
 
 <tr>
+<td>`cursorToggleSelection(n = 1, opts = {selectionType: "normal"})`</td>
+<td>Start a vim-style visual selection. The cursor is moved to the right
+by `n` cells.<br>
+selectionType may be "normal" (regular selection), "line" (line-based
+selection) and "column" (column-based selection).</td>
+</tr>
+
+<tr>
+<td>`getSelectionText()`</td>
+<td>Get the currently selected text.<br>
+Returns a promise, so consumers must `await` it to get the text.</td>
+</tr>
+
+<tr>
 <td>`markURL()`</td>
 <td>Convert URL-like strings to anchors on the current page.</td>
+</tr>
+
+<tr>
+<td>`toggleImages()`</td>
+<td>Toggle display of images in this buffer.</td>
+</tr>
+
+<tr>
+<td>`saveLink()`</td>
+<td>Save URL pointed to by the cursor.</td>
+</tr>
+
+<tr>
+<td>`saveSource()`</td>
+<td>Save the source of this buffer.</td>
 </tr>
 
 <tr>
@@ -550,6 +541,58 @@ string.</td>
 <td>`hoverTitle`, `hoverLink`, `hoverImage`</td>
 <td>Getter for the string representation of the element title/link/image
 currently under the cursor. Returns the empty string if no title is found.</td>
+</tr>
+
+<tr>
+<td>`cursorx`, `cursory`</td>
+<td>The x/y position of the cursor inside the buffer.<br>
+Note that although the status line is 1-based, these values are 0-based.</td>
+</tr>
+
+<tr>
+<td>`fromx`, `fromy`</td>
+<td>The x/y position of the first line displayed on the screen.</td>
+</tr>
+
+<tr>
+<td>`numLines`</td>
+<td>The number of lines currently loaded in the buffer.</td>
+</tr>
+
+<tr>
+<td>`width`, `height`</td>
+<td>The width and height of the buffer's window (i.e. the visible part
+of the canvas).</td>
+</tr>
+
+<tr>
+<td>`process`</td>
+<td>The process ID of the buffer.</td>
+</tr>
+
+<tr>
+<td>`title`</td>
+<td>Text from the `title` element, or the buffer's URL if there is no
+title.</td>
+</tr>
+
+<tr>
+<td>`parent`</td>
+<td>Parent buffer in the buffer tree. May be null.</td>
+</tr>
+
+<tr>
+<td>`children`</td>
+<td>Array of child buffers in the buffer tree.</td>
+</tr>
+
+<tr>
+<td>`select`</td>
+<td>Reference to the current `select` element's widget, or null if no
+`select` element is open.<br>
+This object implements the `Select` interface, which is somewhat
+compatible with the `Buffer` interface with some exceptions. (TODO:
+elaborate)</td>
 </tr>
 
 </table>
