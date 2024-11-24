@@ -619,14 +619,6 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     ictx.lbstate = LineBoxState(offsety: y + ictx.lbstate.size.h)
     ictx.initLine()
 
-func xminwidth(atom: InlineAtom): LayoutUnit =
-  if atom.t == iatInlineBlock:
-    return atom.innerbox.state.xminwidth
-  elif atom.t == iatImage:
-    # We calculate this in addInlineImage instead.
-    return 0
-  return atom.size.w
-
 func shouldWrap(ictx: InlineContext; w: LayoutUnit;
     pcomputed: CSSComputedValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
@@ -679,8 +671,18 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
   if atom.size.w > 0 and atom.size.h > 0 or atom.t == iatInlineBlock:
     if shift > 0:
       ictx.addSpacing(shift, state)
-    ictx.state.xminwidth = max(ictx.state.xminwidth, atom.xminwidth)
-    if atom.t == iatWord:
+    case atom.t
+    of iatWord:
+      if ictx.wrappos != -1:
+        # set xminwidth to the first wrapping opportunity
+        ictx.state.xminwidth = max(ictx.state.xminwidth, ictx.wrappos)
+      elif state.prevrw == 2:
+        # last char was double width; we can wrap anywhere.
+        # (I think this isn't quite right when double width + half width
+        # are mixed, but whatever...)
+        ictx.state.xminwidth = max(ictx.state.xminwidth, 2)
+      else:
+        ictx.state.xminwidth = max(ictx.state.xminwidth, atom.size.w)
       if ictx.lbstate.atoms.len > 0 and state.fragment.state.atoms.len > 0:
         let oatom = ictx.lbstate.atoms[^1]
         if oatom.t == iatWord and oatom == state.fragment.state.atoms[^1]:
@@ -688,7 +690,12 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
           oatom.size.w += atom.size.w
           ictx.lbstate.size.w += atom.size.w
           return
-    else:
+    of iatInlineBlock:
+      ictx.state.xminwidth = max(ictx.state.xminwidth,
+        atom.innerbox.state.xminwidth)
+      ictx.lbstate.charwidth = 0
+    of iatImage:
+      # We calculate xminwidth in addInlineImage instead.
       ictx.lbstate.charwidth = 0
     ictx.lbstate.putAtom(atom, iastate, state.fragment)
     atom.offset.x += ictx.lbstate.size.w
