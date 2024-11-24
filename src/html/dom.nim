@@ -2061,7 +2061,7 @@ func scriptingEnabled(element: Element): bool =
 
 func isSubmitButton*(element: Element): bool =
   if element of HTMLButtonElement:
-    return element.attr(satType) == "submit"
+    return element.attr(satType).equalsIgnoreCase("submit")
   elif element of HTMLInputElement:
     let element = HTMLInputElement(element)
     return element.inputType in {itSubmit, itImage}
@@ -2642,7 +2642,7 @@ func findAnchor*(document: Document; id: string): Element =
 
 proc findMetaRefresh*(document: Document): Element =
   for child in document.elements(TAG_META):
-    if child.attr(satHttpEquiv) == "refresh":
+    if child.attr(satHttpEquiv).equalsIgnoreCase("refresh"):
       return child
   return nil
 
