@@ -1647,59 +1647,79 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
   var stack = @[buffer.document.body]
   while stack.len > 0:
     let element = stack.pop()
-    for i in countdown(element.childList.high, 0):
-      let node = element.childList[i]
+    var toRemove: seq[Node] = @[]
+    var texts: seq[Text] = @[]
+    var stackNext: seq[HTMLElement] = @[]
+    var lastText: Text = nil
+    for node in element.childList:
       if node of Text:
         let text = Text(node)
-        var res = regex.exec(text.data)
-        if res.success:
-          var offset = 0
-          var data = ""
-          var j = 0
-          for cap in res.captures.mitems:
-            let capLen = cap[0].e - cap[0].s
-            while j < cap[0].s:
-              case (let c = text.data[j]; c)
-              of '<':
-                data &= "&lt;"
-                offset += 3
-              of '>':
-                data &= "&gt;"
-                offset += 3
-              of '\'':
-                data &= "&apos;"
-                offset += 5
-              of '"':
-                data &= "&quot;"
-                offset += 5
-              of '&':
-                data &= "&amp;"
-                offset += 4
-              else:
-                data &= c
-              inc j
-            cap[0].s += offset
-            cap[0].e += offset
-            let s = text.data[j ..< j + capLen]
-            let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
-            data &= news
-            j += cap[0].e - cap[0].s
-            offset += news.len - (cap[0].e - cap[0].s)
-          while j < text.data.len:
-            case (let c = text.data[j]; c)
-            of '<': data &= "&lt;"
-            of '>': data &= "&gt;"
-            of '\'': data &= "&apos;"
-            of '"': data &= "&quot;"
-            of '&': data &= "&amp;"
-            else: data &= c
-            inc j
-          let replacement = html.fragmentParsingAlgorithm(data)
-          discard element.replace(text, replacement)
+        if lastText != nil:
+          lastText.data &= text.data
+          toRemove.add(text)
+        else:
+          texts.add(text)
+          lastText = text
       elif node of HTMLElement:
         let element = HTMLElement(node)
-        if element.tagType notin {TAG_HEAD, TAG_SCRIPT, TAG_STYLE, TAG_A}:
-          stack.add(element)
+        if element.tagType in {TAG_NOBR, TAG_WBR}:
+          toRemove.add(node)
+        elif element.tagType notin {TAG_HEAD, TAG_SCRIPT, TAG_STYLE, TAG_A}:
+          stackNext.add(element)
+          lastText = nil
+        else:
+          lastText = nil
+      else:
+        lastText = nil
+    for it in toRemove:
+      it.remove()
+    for text in texts:
+      var res = regex.exec(text.data)
+      if res.success:
+        var offset = 0
+        var data = ""
+        var j = 0
+        for cap in res.captures.mitems:
+          let capLen = cap[0].e - cap[0].s
+          while j < cap[0].s:
+            case (let c = text.data[j]; c)
+            of '<':
+              data &= "&lt;"
+              offset += 3
+            of '>':
+              data &= "&gt;"
+              offset += 3
+            of '\'':
+              data &= "&apos;"
+              offset += 5
+            of '"':
+              data &= "&quot;"
+              offset += 5
+            of '&':
+              data &= "&amp;"
+              offset += 4
+            else:
+              data &= c
+            inc j
+          cap[0].s += offset
+          cap[0].e += offset
+          let s = text.data[j ..< j + capLen]
+          let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
+          data &= news
+          j += cap[0].e - cap[0].s
+          offset += news.len - (cap[0].e - cap[0].s)
+        while j < text.data.len:
+          case (let c = text.data[j]; c)
+          of '<': data &= "&lt;"
+          of '>': data &= "&gt;"
+          of '\'': data &= "&apos;"
+          of '"': data &= "&quot;"
+          of '&': data &= "&amp;"
+          else: data &= c
+          inc j
+        let replacement = html.fragmentParsingAlgorithm(data)
+        discard element.replace(text, replacement)
+    stack.add(stackNext)
   buffer.reshape()
 
 proc toggleImages0(buffer: Buffer): bool =
