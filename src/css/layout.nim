@@ -673,14 +673,16 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
       ictx.addSpacing(shift, state)
     case atom.t
     of iatWord:
+      let wordBreak = state.fragment.computed{"word-break"}
       if ictx.wrappos != -1:
         # set xminwidth to the first wrapping opportunity
         ictx.state.xminwidth = max(ictx.state.xminwidth, ictx.wrappos)
-      elif state.prevrw == 2:
+      elif state.prevrw >= 2 and wordBreak != WordBreakKeepAll or
+          wordBreak == WordBreakBreakAll:
         # last char was double width; we can wrap anywhere.
         # (I think this isn't quite right when double width + half width
         # are mixed, but whatever...)
-        ictx.state.xminwidth = max(ictx.state.xminwidth, 2)
+        ictx.state.xminwidth = max(ictx.state.xminwidth, state.prevrw)
       else:
         ictx.state.xminwidth = max(ictx.state.xminwidth, atom.size.w)
       if ictx.lbstate.atoms.len > 0 and state.fragment.state.atoms.len > 0:
