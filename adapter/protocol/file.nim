@@ -4,12 +4,6 @@ import std/times
 import utils/twtstr
 
 proc loadDir(path, opath: string) =
-  var path = path
-  if path[^1] != '/': #TODO dos/windows
-    path &= '/'
-  var base = "file://" & opath
-  if base[^1] != '/': #TODO dos/windows
-    base &= '/'
   let title = percentEncode("Directory list of " & path,
     ComponentPercentEncodeSet)
   stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
