@@ -10,7 +10,6 @@ import config/mailcap
 import config/mimetypes
 import config/toml
 import config/urimethodmap
-import loader/headers
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jspropenumlist
@@ -18,6 +17,7 @@ import monoucha/jsregex
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
+import server/headers
 import types/cell
 import types/color
 import types/cookie

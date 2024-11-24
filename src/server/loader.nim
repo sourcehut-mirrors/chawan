@@ -33,12 +33,12 @@ import io/bufwriter
 import io/dynstream
 import io/poll
 import io/tempfile
-import loader/connecterror
-import loader/headers
-import loader/loaderiface
-import loader/request
-import loader/urlfilter
 import monoucha/javascript
+import server/connecterror
+import server/headers
+import server/loaderiface
+import server/request
+import server/urlfilter
 import types/cookie
 import types/formdata
 import types/opt

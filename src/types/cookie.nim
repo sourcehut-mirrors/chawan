@@ -1,10 +1,10 @@
 import std/strutils
 import std/times
 
-import loader/urlfilter
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/jsregex
+import server/urlfilter
 import types/opt
 import types/url
 import utils/twtstr

@@ -1,7 +1,7 @@
-# Interface to loader/loader. The idea is that modules don't have to
+# Interface to server/loader. The idea is that modules don't have to
 # depend on the entire loader implementation to interact with it.
 #
-# See loader/loader for a more detailed description of the protocol.
+# See server/loader for a more detailed description of the protocol.
 
 import std/tables
 
@@ -9,12 +9,12 @@ import io/bufreader
 import io/bufwriter
 import io/dynstream
 import io/promise
-import loader/urlfilter
-import loader/headers
-import loader/request
-import loader/response
 import monoucha/javascript
 import monoucha/jserror
+import server/headers
+import server/request
+import server/response
+import server/urlfilter
 import types/cookie
 import types/opt
 import types/referrer

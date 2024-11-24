@@ -30,10 +30,9 @@ Explanation for the separate directories found in `src/`:
 * html: DOM building, the DOM itself, forms, misc. JS APIs, etc. (It
   does not include the [HTML parser](https://git.sr.ht/~bptato/chame).)
 * io: code for IPC, interaction with the file system, etc.
-* loader: code for the file loader server (?).
 * local: code for the main process (i.e. the pager).
-* server: code for processes other than the main process, e.g. buffer
-  and forkserver. (Why is loader not here? idk)
+* server: code for processes other than the main process: buffer,
+  forkserver, loader.
 * types: mainly definitions of data types and things I didn't know where
   to put.
 * utils: things I didn't know where to put part 2

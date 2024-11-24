@@ -9,9 +9,9 @@ import config/urimethodmap
 import io/bufreader
 import io/bufwriter
 import io/dynstream
-import loader/loader
-import loader/loaderiface
 import server/buffer
+import server/loader
+import server/loaderiface
 import types/url
 import types/winattrs
 import utils/proctitle

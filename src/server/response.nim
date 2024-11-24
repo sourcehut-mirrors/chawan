@@ -5,12 +5,12 @@ import chagashi/charset
 import chagashi/decoder
 import io/dynstream
 import io/promise
-import loader/headers
-import loader/request
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/quickjs
 import monoucha/tojs
+import server/headers
+import server/request
 import types/blob
 import types/opt
 import types/referrer

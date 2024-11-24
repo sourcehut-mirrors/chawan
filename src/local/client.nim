@@ -23,10 +23,6 @@ import io/dynstream
 import io/poll
 import io/promise
 import io/timeout
-import loader/headers
-import loader/loaderiface
-import loader/request
-import loader/response
 import local/container
 import local/lineedit
 import local/pager
@@ -43,6 +39,10 @@ import monoucha/quickjs
 import monoucha/tojs
 import server/buffer
 import server/forkserver
+import server/headers
+import server/loaderiface
+import server/request
+import server/response
 import types/blob
 import types/cookie
 import types/opt

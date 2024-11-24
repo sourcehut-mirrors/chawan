@@ -18,12 +18,6 @@ import io/poll
 import io/promise
 import io/tempfile
 import io/timeout
-import loader/connecterror
-import loader/headers
-import loader/loaderiface
-import loader/request
-import loader/response
-import loader/urlfilter
 import local/container
 import local/lineedit
 import local/select
@@ -38,7 +32,13 @@ import monoucha/libregexp
 import monoucha/quickjs
 import monoucha/tojs
 import server/buffer
+import server/connecterror
 import server/forkserver
+import server/headers
+import server/loaderiface
+import server/request
+import server/response
+import server/urlfilter
 import types/bitmap
 import types/blob
 import types/cell

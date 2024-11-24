@@ -32,14 +32,14 @@ import io/dynstream
 import io/poll
 import io/promise
 import io/timeout
-import loader/headers
-import loader/loaderiface
-import loader/request
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jsregex
 import monoucha/libregexp
 import monoucha/quickjs
+import server/headers
+import server/loaderiface
+import server/request
 import types/blob
 import types/cell
 import types/color

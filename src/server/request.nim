@@ -4,12 +4,12 @@ import std/tables
 import html/script
 import io/bufreader
 import io/bufwriter
-import loader/headers
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/jstypes
 import monoucha/quickjs
+import server/headers
 import types/blob
 import types/formdata
 import types/opt
