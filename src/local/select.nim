@@ -226,12 +226,17 @@ proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
     upmore, downmore: bool) =
   for y in sy .. ey:
     var x = 0
-    while x < sx:
-      if display[y * display.width + x].str == "":
-        display[y * display.width + x].str = " "
-        inc x
-      else:
-        x += display[y * display.width + x].str.width()
+    let yi = y * display.width
+    while true:
+      if display[yi + x].str == "":
+        display[yi + x].str = " "
+      let w = display[yi + x].str.width()
+      if x + w > sx:
+        while x < sx:
+          display[yi + x].str = " "
+          inc x
+        break
+      x += w
   # Draw corners.
   let tl = if upmore: VerticalBar else: CornerTopLeft
   let tr = if upmore: VerticalBar else: CornerTopRight
