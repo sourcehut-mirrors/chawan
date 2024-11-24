@@ -315,10 +315,16 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
     while j < select.options[i].len:
       let pj = j
       let u = select.options[i].nextUTF8(j)
-      let nx = x + u.width()
+      let uw = u.width()
+      let nx = x + uw
       if nx > ex:
         break
-      display[dls + x].str = select.options[i].substr(pj, j - 1)
+      display[dls + x].str = ""
+      if u <= 0xFF and char(u) in Controls:
+        display[dls + x].str &= '^' & char(u).getControlLetter()
+      else:
+        for l in pj ..< j:
+          display[dls + x].str &= select.options[i][l]
       display[dls + x].format = format
       inc x
       while x < nx:
@@ -356,6 +362,8 @@ proc newSelect*(multiple: bool; options: seq[string]; selected: seq[int];
     opt.mnormalize()
     select.maxw = max(select.maxw, opt.width())
   select.windowChange(width, height)
+  if selected.len > 0:
+    select.setCursorY(selected[0])
   return select
 
 proc addSelectModule*(ctx: JSContext) =
