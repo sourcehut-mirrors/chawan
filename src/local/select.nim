@@ -9,8 +9,12 @@ type
   SelectFinish* = proc(opaque: RootRef; select: Select; res: SubmitResult)
     {.nimcall.}
 
+  SelectOption* = object
+    nop*: bool
+    s*: string
+
   Select* = ref object
-    options: seq[string]
+    options: seq[SelectOption]
     multiple* {.jsget.}: bool
     oselected*: seq[int] # old selection
     selected*: seq[int] # new selection
@@ -45,12 +49,14 @@ func width*(select: Select): int =
   return select.maxw + 2
 
 func height*(select: Select): int =
-  return select.maxh + 2
+  return min(select.options.len + 2, select.maxh)
 
 proc setCursorY*(select: Select; y: int) =
   var y = clamp(y, -1, select.options.high)
   if not select.multiple:
     y = max(y, 0)
+  if select.options[max(y, 0)].nop:
+    return
   if select.fromy > y:
     select.setFromY(y)
   if select.fromy + select.dispheight <= y:
@@ -67,14 +73,26 @@ proc getCursorY*(select: Select): int =
   return select.y + 1 + select.cursory - select.fromy
 
 proc cursorDown(select: Select; n = 1) {.jsfunc.} =
-  select.setCursorY(select.cursory + n)
+  var y = select.cursory + 1
+  var n = n
+  while y < select.options.len:
+    if not select.options[y].nop:
+      dec n
+    if n <= 0:
+      break
+    inc y
+  select.setCursorY(y)
 
 proc cursorUp(select: Select; n = 1) {.jsfunc.} =
-  let oc = select.cursory
-  select.setCursorY(oc - n)
-  if oc - n < select.cursory and select.multiple:
-    select.cursory = -1
-    select.queueDraw()
+  var y = select.cursory - 1
+  var n = n
+  while y >= 0:
+    if not select.options[y].nop:
+      dec n
+    if n <= 0:
+      break
+    dec y
+  select.setCursorY(y)
 
 proc scrollDown(select: Select; n = 1) {.jsfunc.} =
   let tfy = select.fromy + n
@@ -124,7 +142,10 @@ proc submit(select: Select) {.jsfunc.} =
   select.finishImpl(select.opaque, select, srSubmit)
 
 proc click*(select: Select) {.jsfunc.} =
-  if not select.multiple:
+  if select.cursory >= 0 and select.cursory < select.options.len and
+      select.options[select.cursory].nop:
+    discard
+  elif not select.multiple:
     select.submit()
   elif select.cursory == -1:
     select.submit()
@@ -166,15 +187,15 @@ proc cursorTop(select: Select) {.jsfunc.} =
   select.setCursorY(select.fromy)
 
 proc cursorMiddle(select: Select) {.jsfunc.} =
-  select.setCursorY(select.fromy + (select.dispheight - 1) div 2)
+  select.setCursorY(select.fromy + (select.height - 1) div 2)
 
 proc cursorBottom(select: Select) {.jsfunc.} =
-  select.setCursorY(select.fromy + select.dispheight - 1)
+  select.setCursorY(select.fromy + select.height - 1)
 
 proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
   var j = -1
   for i in select.cursory + 1 ..< select.options.len:
-    if regex.exec(select.options[i]).success:
+    if regex.exec(select.options[i].s).success:
       j = i
       break
   if j != -1:
@@ -182,7 +203,7 @@ proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
     select.queueDraw()
   elif wrap:
     for i in 0 ..< select.cursory:
-      if regex.exec(select.options[i]).success:
+      if regex.exec(select.options[i].s).success:
         j = i
         break
     if j != -1:
@@ -192,7 +213,7 @@ proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool) =
 proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool) =
   var j = -1
   for i in countdown(select.cursory - 1, 0):
-    if regex.exec(select.options[i]).success:
+    if regex.exec(select.options[i].s).success:
       j = i
       break
   if j != -1:
@@ -200,7 +221,7 @@ proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool) =
     select.queueDraw()
   elif wrap:
     for i in countdown(select.options.high, select.cursory):
-      if regex.exec(select.options[i]).success:
+      if regex.exec(select.options[i].s).success:
         j = i
         break
     if j != -1:
@@ -305,16 +326,16 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
     var j = 0
     var x = sx
     let dls = y * display.width
-    if select.multiple and k < select.selected.len and
+    if (select.multiple and k < select.selected.len and
           select.selected[k] == i or
-        not select.multiple and select.getCursorY() == y:
+        not select.multiple and select.getCursorY() == y):
       format.flags.incl(ffReverse)
       inc k
     else:
       format.flags.excl(ffReverse)
-    while j < select.options[i].len:
+    while j < select.options[i].s.len:
       let pj = j
-      let u = select.options[i].nextUTF8(j)
+      let u = select.options[i].s.nextUTF8(j)
       let uw = u.width()
       let nx = x + uw
       if nx > ex:
@@ -324,7 +345,7 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
         display[dls + x].str &= '^' & char(u).getControlLetter()
       else:
         for l in pj ..< j:
-          display[dls + x].str &= select.options[i][l]
+          display[dls + x].str &= select.options[i].s[l]
       display[dls + x].format = format
       inc x
       while x < nx:
@@ -341,11 +362,12 @@ proc windowChange*(select: Select; width, height: int) =
   if select.y + select.options.len >= select.maxh:
     select.y = max(select.maxh - select.options.len, 0)
   if select.x + select.maxw + 2 > width:
-    select.x = max(width - select.maxw, 0)
+    #TODO I don't know why but - 2 does not work.
+    select.x = max(width - select.maxw - 3, 0)
   select.setCursorY(select.cursory)
   select.queueDraw()
 
-proc newSelect*(multiple: bool; options: seq[string]; selected: seq[int];
+proc newSelect*(multiple: bool; options: seq[SelectOption]; selected: seq[int];
     x, y, width, height: int; finishImpl: SelectFinish; opaque: RootRef):
     Select =
   let select = Select(
@@ -359,8 +381,8 @@ proc newSelect*(multiple: bool; options: seq[string]; selected: seq[int];
     opaque: opaque
   )
   for opt in select.options.mitems:
-    opt.mnormalize()
-    select.maxw = max(select.maxw, opt.width())
+    opt.s.mnormalize()
+    select.maxw = max(select.maxw, opt.s.width())
   select.windowChange(width, height)
   if selected.len > 0:
     select.setCursorY(selected[0])

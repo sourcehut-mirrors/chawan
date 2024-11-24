@@ -8,14 +8,7 @@ This document lists common problems you may run into when using Chawan.
 
 ## I can't select/copy text with my mouse?
 
-Your options are:
-
-* Press `v` (and copy with `y`). You can then expand the selection with the
-  mouse.
-* Hold down the shift key while selecting. Drawback: can only select text
-  currently on the screen, and you can't select tabs.
-* Disable mouse support (`input.use-mouse = false` in config.toml). Drawback:
-  see above.
+Right click -> select text, then right click -> copy selection.
 
 ## Why do I get strange/incorrect/ugly colors?
 

@@ -869,21 +869,23 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
   setControlCHook(proc() {.noconv.} = quit(1))
   let jsrt = JS_GetRuntime(jsctx)
   JS_SetModuleLoaderFunc(jsrt, normalizeModuleName, clientLoadJSModule, nil)
-  let pager = newPager(config, forkserver, jsctx, warnings, urandom)
   let loader = FileLoader(process: loaderPid, clientPid: getCurrentProcessId())
   loader.setSocketDir(config.external.sockdir)
-  pager.setLoader(loader)
   let client = Client(
     config: config,
     jsrt: jsrt,
     jsctx: jsctx,
-    pager: pager,
     exitCode: -1,
     alive: true,
     factory: newCAtomFactory(),
     loader: loader,
     urandom: urandom
   )
+  client.pager = newPager(config, forkserver, jsctx, warnings, urandom,
+    proc(action: string; arg0: int32) =
+      discard client.evalAction(action, arg0)
+  )
+  client.pager.setLoader(loader)
   JS_SetInterruptHandler(jsrt, interruptHandler, cast[pointer](client))
   let global = JS_GetGlobalObject(jsctx)
   jsctx.setGlobal(client)

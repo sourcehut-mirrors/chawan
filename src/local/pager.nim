@@ -158,6 +158,7 @@ type
     timeouts*: TimeoutState
     unreg*: seq[Container]
     urandom: PosixStream
+    evalAction: proc(action: string; arg0: int32)
 
 jsDestructor(Pager)
 
@@ -343,7 +344,8 @@ proc quit*(pager: Pager) =
   pager.dumpAlerts()
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
-    alerts: seq[string]; urandom: PosixStream): Pager =
+    alerts: seq[string]; urandom: PosixStream;
+    evalAction: proc(action: string; arg0: int32)): Pager =
   return Pager(
     config: config,
     forkserver: forkserver,
@@ -351,7 +353,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: alerts,
     jsctx: ctx,
     luctx: LUContext(),
-    urandom: urandom
+    urandom: urandom,
+    evalAction: evalAction
   )
 
 proc genClientKey(pager: Pager): ClientKey =
@@ -2250,26 +2253,31 @@ proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
     JS_FreeValue(ctx, arg)
 
 const MenuMap = [
-  (" Previous buffer (,)", "pager.prevBuffer"),
-  (" Next buffer     (.)", "pager.nextBuffer"),
-  (" Discard buffer  (D)", "pager.discardBuffer"),
-  (" View source     (\\)", "pager.toggleSource"),
-  (" Edit source     (sE)", "buffer.sourceEdit"),
-  (" Save source     (sS)", "buffer.saveSource"),
-  (" Reload          (U)", "pager.reloadBuffer"),
-  (" Save link       (s<Enter>) ", "buffer.saveLink"),
-  (" View image      (I)", "buffer.viewImage"),
-  (" Linkify URLs    (:)", "buffer.markURL")
+  (" Select text           (v)", "cmd.buffer.cursorToggleSelection(1)"),
+  (" Copy selection        (y)", "cmd.buffer.copySelection(1)"),
+  (" Previous buffer       (,)", "cmd.pager.prevBuffer(1)"),
+  (" Next buffer           (.)", "cmd.pager.nextBuffer(1)"),
+  (" Discard buffer        (D)", "cmd.pager.discardBuffer(1)"),
+  (" ───────────────────────── ", ""),
+  (" View image            (I)", "cmd.buffer.viewImage(1)"),
+  (" Peek                  (u)", "cmd.pager.peekCursor(1)"),
+  (" Copy link            (yu)", "cmd.pager.copyCursorLink(1)"),
+  (" Copy image link      (yI)", "cmd.pager.copyCursorImage(1)"),
+  (" Go to clipboard URL (M-p)", "cmd.pager.gotoClipboardURL(1)"),
+  (" Reload                (U)", "cmd.pager.reloadBuffer(1)"),
+  (" ───────────────────────── ", ""),
+  (" Linkify URLs          (:)", "cmd.buffer.markURL(1)"),
+  (" Save link          (sC-m)", "cmd.buffer.saveLink(1)"),
+  (" View source           (\\)", "cmd.pager.toggleSource(1)"),
+  (" Edit source          (sE)", "cmd.buffer.sourceEdit(1)"),
+  (" Save source          (sS)", "cmd.buffer.saveSource(1)"),
 ]
 
 proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =
   let pager = Pager(opaque)
   case sr
   of srCancel: discard
-  of srSubmit:
-    let action = MenuMap[select.selected[0]][1]
-    let fun = pager.config.cmd.map.getOrDefault(action, JS_UNDEFINED)
-    discard pager.timeouts.setTimeout(ttTimeout, fun, 0, [])
+  of srSubmit: pager.scommand = MenuMap[select.selected[0]][1]
   pager.menu = nil
   if pager.container != nil:
     pager.container.queueDraw()
@@ -2284,9 +2292,9 @@ proc openMenu*(pager: Pager; x = -1; y = -1) {.jsfunc.} =
     pager.container.acursory
   else:
     max(y, 0)
-  var options: seq[string] = @[]
-  for (s, _) in MenuMap:
-    options.add(s)
+  var options: seq[SelectOption] = @[]
+  for (s, cmd) in MenuMap:
+    options.add(SelectOption(s: s, nop: cmd == ""))
   pager.menu = newSelect(false, options, @[], x, y, pager.bufWidth,
     pager.bufHeight, menuFinish, pager)
 
