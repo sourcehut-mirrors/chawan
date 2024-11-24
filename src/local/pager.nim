@@ -2250,16 +2250,16 @@ proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
     JS_FreeValue(ctx, arg)
 
 const MenuMap = [
-  ("Previous buffer (,)", "pager.prevBuffer"),
-  ("Next buffer (.)", "pager.nextBuffer"),
-  ("Discard buffer (D)", "pager.discardBuffer"),
-  ("View source (\\)", "pager.toggleSource"),
-  ("Edit source (sE)", "buffer.sourceEdit"),
-  ("Save source (sS)", "buffer.saveSource"),
-  ("Reload (U)", "pager.reloadBuffer"),
-  ("Save link (s<Enter>)", "buffer.saveLink"),
-  ("View image (I)", "buffer.viewImage"),
-  ("Linkify URLs (:)", "buffer.markURL")
+  (" Previous buffer (,)", "pager.prevBuffer"),
+  (" Next buffer     (.)", "pager.nextBuffer"),
+  (" Discard buffer  (D)", "pager.discardBuffer"),
+  (" View source     (\\)", "pager.toggleSource"),
+  (" Edit source     (sE)", "buffer.sourceEdit"),
+  (" Save source     (sS)", "buffer.saveSource"),
+  (" Reload          (U)", "pager.reloadBuffer"),
+  (" Save link       (s<Enter>) ", "buffer.saveLink"),
+  (" View image      (I)", "buffer.viewImage"),
+  (" Linkify URLs    (:)", "buffer.markURL")
 ]
 
 proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =
