@@ -93,14 +93,6 @@ proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
     discard
   return 0
 
-proc runJSJobs(client: Client) =
-  while true:
-    let r = client.jsrt.runJSJobs()
-    if r.isSome:
-      break
-    let ctx = r.error
-    ctx.writeException(client.console.err)
-
 proc cleanup(client: Client) =
   if client.alive:
     client.alive = false
@@ -117,6 +109,16 @@ proc cleanup(client: Client) =
 proc quit(client: Client; code = 0) =
   client.cleanup()
   quit(code)
+
+proc runJSJobs(client: Client) =
+  while true:
+    let r = client.jsrt.runJSJobs()
+    if r.isSome:
+      break
+    let ctx = r.error
+    ctx.writeException(client.console.err)
+  if client.exitCode != -1:
+    client.quit(0)
 
 proc evalJS(client: Client; src, filename: string; module = false): JSValue =
   client.pager.term.unblockStdin()
@@ -426,8 +428,7 @@ proc input(client: Client): EmptyPromise =
       client.feednext = false
   client.pager.inputBuffer = ""
   if p == nil:
-    p = EmptyPromise()
-    p.resolve()
+    p = newResolvedPromise()
   return p
 
 proc consoleBuffer(client: Client): Container {.jsfget.} =
