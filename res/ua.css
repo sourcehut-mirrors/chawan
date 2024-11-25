@@ -1,434 +1,203 @@
-area, base, basefont, datalist, head, link, meta, noembed,
-noframes, param, rp, script, style, template, title {
-	display: none;
-}
+:root { display: block !important }
 
-:root {
-	display: block !important;
-}
+area, base, basefont, datalist, head, link, meta, noembed,
+noframes, param, rp, script, style, template, title { display: none }
 
 address, article, aside, blockquote, body, center, dd, details, dialog,
 dir, div, dl, dt, figcaption, figure, footer, form, h1, h2, h3, h4,
 h5, h6, header, hgroup, hr, html, legend, listing, main, menu, nav,
 noframes, noscript, ol, p, plaintext, pre, search, section, ul, xmp {
-	display: block;
+	display: block
 }
 
-fieldset {
-	display: flow-root;
-}
+fieldset { display: flow-root }
 
-code {
-	text-decoration: -cha-reverse;
-}
+code { text-decoration: -cha-reverse }
+pre code { text-decoration: none }
 
-pre code {
-	text-decoration: none;
-}
+@media (scripting: enabled) { noscript { display: none } }
 
-@media (scripting: enabled) {
-noscript {
-	display: none;
-}
-}
+textarea, iframe, frame, input, img, canvas { display: inline-block }
 
-textarea, iframe, frame, input, img, canvas {
-	display: inline-block;
-}
-
-ol, ul, menu, dir {
-	padding-left: 4ch;
-	margin-top: 1em;
-	margin-bottom: 1em;
-}
+ol, ul, menu, dir { padding-left: 4ch; margin: 1em 0 }
 
 :is(ol, ul, menu, dir) :is(ol, ul, menu, dir) {
 	margin-top: unset;
-	margin-bottom: unset;
+	margin-bottom: unset
 }
 
-blockquote {
-	margin: 1em;
-}
+blockquote { margin: 1em }
 
-q::before {
-	content: open-quote;
-}
-
-q::after {
-	content: close-quote;
-}
+q::before { content: open-quote }
+q::after { content: close-quote }
 
 table {
 	display: table;
 	border-spacing: 0.5ch 0;
 	padding-left: 0.5ch;
-	padding-right: 0.5ch;
+	padding-right: 0.5ch
 }
 
-tbody {
-	display: table-row-group;
-	vertical-align: middle;
-}
+tbody { display: table-row-group; vertical-align: middle }
+thead { display: table-header-group }
+tfoot { display: table-footer-group; }
+colgroup { display: table-column-group; }
+tr { display: table-row; vertical-align: inherit }
+col { display: table-column }
+th { display: table-cell; font-weight: bold; vertical-align: inherit }
+td { display: table-cell; text-align: unset; vertical-align: inherit }
 
-thead {
-	display: table-header-group;
-}
+caption { display: table-caption; text-align: center }
+caption[align=top] { caption-side: top }
+caption[align=bottom] { caption-side: bottom }
 
-tfoot {
-	display: table-footer-group;
-}
-
-colgroup {
-	display: table-column-group;
-}
-
-tr {
-	display: table-row;
-	vertical-align: inherit;
-}
-
-col {
-	display: table-column;
-}
-
-th {
-	display: table-cell;
-	font-weight: bold;
-	vertical-align: inherit;
-}
-
-td {
-	display: table-cell;
-	text-align: unset;
-	vertical-align: inherit;
-}
-
-caption {
-	display: table-caption;
-	text-align: center;
-}
-
-caption[align=top] {
-	caption-side: top;
-}
-
-caption[align=bottom] {
-	caption-side: bottom;
-}
-
-input {
-	margin-right: 1ch;
-	white-space: pre;
-	color: red;
-}
-
-input[type="hidden" i] {
-	display: none;
-}
-
-input::before {
-	content: '[';
-	text-decoration: none;
-	color: initial;
-}
-
-input::after {
-	content: ']';
-	text-decoration: none;
-	color: initial;
-}
+input { margin-right: 1ch; white-space: pre; color: red }
+input[type="hidden" i] { display: none }
+input::before { content: '['; text-decoration: none; color: initial }
+input::after { content: ']'; text-decoration: none; color: initial }
 
 input[type="radio" i]::before {
 	content: '(';
 	text-decoration: none;
-	color: initial;
+	color: initial
 }
 
 input[type="radio" i]::after {
 	content: ')';
 	text-decoration: none;
-	color: initial;
+	color: initial
 }
 
 input:is([type="text" i], [type="password" i], [type="search" i], [type="file" i],
 		[type="url" i], [type="email" i], [type="tel" i]) {
-	text-decoration: underline;
+	text-decoration: underline
 }
 
-input:is([type="submit" i], [type="button" i], [type="reset" i])::before {
-	color: red;
-}
-
-input:is([type="submit" i], [type="button" i], [type="reset" i])::after {
-	color: red;
-}
-
+input:is([type="submit" i], [type="button" i], [type="reset" i])::before,
+input:is([type="submit" i], [type="button" i], [type="reset" i])::after,
 button {
-	color: red;
+	color: red
 }
 
-textarea {
-	color: red;
-	white-space: pre;
-}
+textarea { color: red; white-space: pre }
 
-li, summary {
-	display: list-item;
-}
+li, summary { display: list-item }
 
-i, em {
-	font-style: italic;
-}
+i, em { font-style: italic }
 
-b, strong {
-	font-weight: bold;
-}
+b, strong { font-weight: bold }
 
-u, ins {
-	text-decoration: underline;
-}
+u, ins { text-decoration: underline }
 
-h1, h2, h3, h4, h5, h6 {
-	margin-top: 1em;
-	margin-bottom: 1em;
-	font-weight: bold;
-}
+h1, h2, h3, h4, h5, h6 { margin: 1em 0; font-weight: bold }
 
-pre, xmp {
-	margin-top: 1em;
-	margin-bottom: 1em;
-	white-space: pre;
-}
+pre, xmp { margin: 1em 0; white-space: pre }
 
-plaintext {
-	white-space: pre;
-}
+plaintext { white-space: pre }
 
-p {
-	margin-top: 1em;
-	margin-bottom: 1em;
-}
+p { margin: 1em 0 }
 
-@media (prefers-color-scheme: light) {
-a[href] {
-	color: -cha-ansi(blue);
-}
-}
-@media (prefers-color-scheme: dark) {
-a[href] {
-	color: -cha-ansi(yellow);
-}
-}
+@media (prefers-color-scheme: light) { a[href] { color: -cha-ansi(blue) } }
+@media (prefers-color-scheme: dark) { a[href] { color: -cha-ansi(yellow) } }
 
-a[href]:hover {
-	text-decoration: underline;
-}
+a[href]:hover { text-decoration: underline }
 
-sup::before {
-	content: '^';
-}
+sup::before { content: '^' }
+sub::before { content: '~' }
 
-sub::before {
-	content: '~';
-}
+:is(ol, ul, menu, dir) ul { list-style-type: circle }
+:is(ol, ul, menu, dir) :is(ol, ul, menu, dir) ul { list-style-type: square }
 
-ol {
-	list-style-type: decimal;
-	counter-reset: list-item 0;
-}
+dl { margin-bottom: 1em }
+:is(ul, ol, dir, menu, dl) dl { margin-bottom: unset }
+dt { font-weight: bold }
+dd { margin-left: 4ch }
+dl[compact] dt + br { display: none }
 
-ul {
-	list-style-type: disc;
-	counter-reset: list-item 0;
-}
+select { display: inline-block }
+select:focus { visibility: hidden }
+select::before { content: '['; color: initial; display: inline-block }
+select::after { content: ']'; color: initial; display: inline-block }
 
-:is(ol, ul, menu, dir) ul {
-	list-style-type: circle;
-}
-
-:is(ol, ul, menu, dir) :is(ol, ul, menu, dir) ul {
-	list-style-type: square;
-}
-
-dl {
-	margin-bottom: 1em;
-}
-
-:is(ul, ol, dir, menu, dl) dl {
-	margin-bottom: unset;
-}
-
-dt {
-	font-weight: bold;
-}
-
-dd {
-	margin-left: 4ch;
-}
-
-dl[compact] dt + br {
-	display: none;
-}
-
-select {
-	display: inline-block;
-}
-
-select:focus {
-	visibility: hidden;
-}
-
-select::before {
-	content: '[';
-	color: initial;
-	display: inline-block;
-}
-
-select::after {
-	content: ']';
-	color: initial;
-	display: inline-block;
-}
-
-select > :is(option, optgroup > option) {
-	display: none;
-}
+select > :is(option, optgroup > option) { display: none }
 
 select > :is(option, optgroup > option):checked {
 	display: inline-block;
-	color: red;
+	color: red
 }
 
 select[multiple] > :is(option, optgroup > option):first-child {
-	display: inline-block;
+	display: inline-block
 }
 
 select[multiple] > :is(option, optgroup > option):not(:checked):first-child::after {
-	content: '(...)';
+	content: '(...)
 }
 
 select[multiple] > :is(option, optgroup > option):not(:first-child):checked::before {
-	content: ',';
+	content: ','
 }
 
-center {
-	text-align: -cha-center;
-}
+center { text-align: -cha-center }
 
-blink {
-	text-decoration: blink;
-}
+blink { text-decoration: blink }
 
-del, s, strike {
-	text-decoration: line-through;
-}
+del, s, strike { text-decoration: line-through }
 
-rt::before {
-	content: '（';
-}
+rt::before { content: '（' }
+rt::after { content: '）' }
 
-rt::after {
-	content: '）';
-}
+img[align=left] { float: left }
+img[align=right] { float: right }
+img[align=top] { vertical-align: top }
+img[align=middle], img[align=center] { vertical-align: middle }
+img[align=bottom] { vertical-align: bottom }
 
-img[align=left] {
-	float: left;
-}
-
-img[align=right] {
-	float: right;
-}
-
-img[align=top] {
-	vertical-align: top;
-}
-
-img[align=middle], img[align=center] {
-	vertical-align: middle;
-}
-
-img[align=bottom] {
-	vertical-align: bottom;
-}
-
-table[align=left] {
-	float: left;
-}
-
-table[align=right] {
-	float: right;
-}
-
-table[align=center] {
-	margin-left: auto;
-	margin-right: auto;
-}
+table[align=left] { float: left }
+table[align=right] { float: right }
+table[align=center] { margin-left: auto; margin-right: auto }
 
 :is(div, p, td, th, thead, tbody, tfoot, tr)[align=left] {
-	text-align: -cha-left;
+	text-align: -cha-left
 }
 
 :is(div, p, td, th, thead, tbody, tfoot, tr)[align=center] {
-	text-align: -cha-center;
+	text-align: -cha-center
 }
 
 :is(div, p, td, th, thead, tbody, tfoot, tr)[align=middle] {
-	text-align: -cha-center;
+	text-align: -cha-center
 }
 
 :is(div, p, td, th, thead, tbody, tfoot, tr)[align=right] {
-	text-align: -cha-right;
+	text-align: -cha-right
 }
 
 :is(td, th, thead, tbody, tfoot, tr)[valign=top] {
-	vertical-align: top;
+	vertical-align: top
 }
 
 :is(td, th, thead, tbody, tfoot, tr)[valign=middle] {
-	vertical-align: middle;
+	vertical-align: middle
 }
 
 :is(td, th, thead, tbody, tfoot, tr)[valign=bottom] {
-	vertical-align: bottom;
+	vertical-align: bottom
 }
 
 :is(td, th, thead, tbody, tfoot, tr)[valign=baseline] {
-	vertical-align: baseline;
+	vertical-align: baseline
 }
 
-ol[type=1] {
-	list-style-type: decimal;
-}
+ol { list-style-type: decimal; counter-reset: list-item 0 }
+ol[type=1] { list-style-type: decimal }
+ol[type=a s] { list-style-type: lower-alpha }
+ol[type=A s] { list-style-type: upper-alpha }
+ol[type=i s] { list-style-type: lower-roman }
+ol[type=I s] { list-style-type: upper-roman }
 
-ol[type=a s] {
-	list-style-type: lower-alpha;
-}
-
-ol[type=A s] {
-	list-style-type: upper-alpha;
-}
-
-ol[type=i s] {
-	list-style-type: lower-roman;
-}
-
-ol[type=I s] {
-	list-style-type: upper-roman;
-}
-
-ul[type=none i] {
-	list-style-type: none;
-}
-
-ul[type=disc i] {
-	list-style-type: disc;
-}
-
-ul[type=circle i] {
-	list-style-type: circle;
-}
-
-ul[type=square i] {
-	list-style-type: square;
-}
+ul { list-style-type: disc; counter-reset: list-item 0 }
+ul[type=none i] { list-style-type: none }
+ul[type=disc i] { list-style-type: disc }
+ul[type=circle i] { list-style-type: circle }
+ul[type=square i] { list-style-type: square }
