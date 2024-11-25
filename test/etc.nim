@@ -84,6 +84,17 @@ test "optional jsdict inherited":
   ctx.free()
   rt.free()
 
+proc subroutine(ctx: JSContext; val: JSValue) =
+  var res: TestDict0
+  assert ctx.fromJS(val, res).isSome, ctx.getExceptionMsg()
+  discard ctx.eval("delete val.f", "<input>")
+  assert res.a
+  assert res.b == 1
+  assert res.c == teB
+  assert res.e == 0
+  assert res.d.a.isNone
+  ctx.defineProperty(res.f.get, "x", JS_NewInt32(ctx, 9))
+
 test "jsdict transitive JSValue descendant":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
@@ -95,16 +106,8 @@ const val = {
 }
 val"""
   let val = ctx.eval(code, "<input>")
-  block:
-    var res: TestDict0
-    assert ctx.fromJS(val, res).isSome, ctx.getExceptionMsg()
-    discard ctx.eval("delete val.f", "<input>")
-    assert res.a
-    assert res.b == 1
-    assert res.c == teB
-    assert res.e == 0
-    assert res.d.a.isNone
-    ctx.defineProperty(res.f.get, "x", JS_NewInt32(ctx, 9))
+  ctx.subroutine(val)
+  GC_fullCollect()
   JS_FreeValue(ctx, val)
   ctx.free()
   rt.free()

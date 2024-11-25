@@ -2100,10 +2100,10 @@ void JS_FreeRuntime(JSRuntime *rt)
     }
     init_list_head(&rt->job_list);
 
-    JS_RunGC(rt);
-
     if (rt->user_cleanup)
         rt->user_cleanup(rt);
+
+    JS_RunGC(rt);
 
 #ifdef DUMP_LEAKS
     /* leaking objects */

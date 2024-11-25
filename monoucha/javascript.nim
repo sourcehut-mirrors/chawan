@@ -126,23 +126,36 @@ proc bindRealloc(s: pointer; p: pointer; size: csize_t): pointer {.cdecl.} =
 proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
   let rtOpaque = rt.getOpaque()
   GC_unref(rtOpaque)
+  # For refc: ensure there are no ghost Nim objects holding onto JS
+  # values.
+  try:
+    GC_fullCollect()
+  except Exception:
+    quit(1)
+  JS_RunGC(rt)
   assert rtOpaque.destroying == nil
-  var ps: seq[pointer] = @[]
+  var np = 0
   for p in rtOpaque.plist.values:
-    ps.add(p)
+    rtOpaque.tmplist[np] = p
+    inc np
   rtOpaque.plist.clear()
-  var unrefs: seq[JSEmptyOpaqueCallback] = @[]
+  var nu = 0
   for (_, unref) in rtOpaque.refmap.values:
-    unrefs.add(unref)
+    rtOpaque.tmpunrefs[nu] = unref
+    inc nu
   rtOpaque.refmap.clear()
-  for unref in unrefs:
-    unref()
-  for p in ps:
+  for i in 0 ..< nu:
+    rtOpaque.tmpunrefs[i]()
+  for i in 0 ..< np:
+    let p = rtOpaque.tmplist[i]
     #TODO maybe finalize?
     let val = JS_MKPTR(JS_TAG_OBJECT, p)
+    let classid = JS_GetClassID(val)
+    rtOpaque.fins.withValue(classid, fin):
+      fin[](rt, val)
     JS_SetOpaque(val, nil)
     JS_FreeValueRT(rt, val)
-  JS_RunGC(rt)
+  # GC will run again now
 
 proc newJSRuntime*(): JSRuntime =
   ## Instantiate a Monoucha `JSRuntime`.
@@ -210,6 +223,16 @@ proc free*(ctx: JSContext) =
 
 proc free*(rt: JSRuntime) =
   ## Free the `JSRuntime` rt and remove it from the global JSRuntime pool.
+  #
+  # We must prepare space for opaque refs & pointers here, so that we
+  # can avoid allocations during cleanup. Otherwise we risk triggering a
+  # GC cycle and that would break cleanup too...
+  #
+  # (But we must *not* collect them yet; wait until the cycles are
+  # collected once.)
+  let rtOpaque = rt.getOpaque()
+  rtOpaque.tmplist.setLen(rtOpaque.plist.len)
+  rtOpaque.tmpunrefs.setLen(rtOpaque.refmap.len)
   JS_FreeRuntime(rt)
   runtimes.del(runtimes.find(rt))
 

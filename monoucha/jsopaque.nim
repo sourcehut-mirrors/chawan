@@ -54,6 +54,9 @@ type
     fins*: Table[JSClassID, JSFinalizerFunction]
     refmap*: Table[pointer, tuple[cref, cunref: JSEmptyOpaqueCallback]]
     destroying*: pointer
+    # temp list for uninit
+    tmplist*: seq[pointer]
+    tmpunrefs*: seq[JSEmptyOpaqueCallback]
 
 func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))

@@ -1,6 +1,6 @@
 NIM ?= nim
 TESTDIR ?= /tmp/chagashi_test
-FLAGS += --debugger:native
+FLAGS += --debugger:native --mm:refc
 
 .PHONY: all
 all: test

@@ -287,8 +287,10 @@ test "jsfin: object finalizers":
 const file = new File("doc/manual.md");
   """
   JS_FreeValue(ctx, ctx.eval(code))
-  check unrefd == 1 # deallocated once, all good :)
+  GC_fullCollect() # ensure refc runs
+  check unrefd == 1 # first file is already deallocated
   ctx.free()
-  check unrefd == 1 # still available...
+  GC_fullCollect() # ensure refc runs
+  check unrefd == 1 # the second file is still available
   rt.free()
-  check unrefd == 2 # runtime is free'd; deallocated twice!
+  check unrefd == 2 # runtime is freed, so the second file gets deallocated too

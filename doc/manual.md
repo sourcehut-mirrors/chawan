@@ -625,8 +625,10 @@ const code = """
 const file = new File("doc/manual.md");
 """
 JS_FreeValue(ctx, ctx.eval(code))
+GC_fullCollect() # ensure refc runs
 assert unrefd == 1 # first file is already deallocated
 ctx.free()
+GC_fullCollect() # ensure refc runs
 assert unrefd == 1 # the second file is still available
 rt.free()
 assert unrefd == 2 # runtime is freed, so the second file gets deallocated too
@@ -709,6 +711,13 @@ below!)**, a QuickJS exception is thrown (using `JS_Throw()`), and
 **Warning**: since fromJS is mainly meant to be used by automatic wrappers, it
 performs the following optimization: for `JSDict` values, `res` is left in
 a modified state.
+
+**Warning 2**: JSDict in general is somewhat finnicky: you must make sure
+that their destructors run before deinitializing the runtime. In practice,
+this means a) you must not use JSDict in the same procedure where you free the
+JSRuntime, b) you must call GC_fullCollect before freeing the runtime if you
+use JSDict. (TODO: this all seems very broken. Why isn't JSDict itself just a
+ref object?)
 
 Passing `JS_EXCEPTION` to `fromJS` is valid, and results in no new exception
 being thrown.
