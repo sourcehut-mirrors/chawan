@@ -382,6 +382,7 @@ proc newSelect*(multiple: bool; options: seq[SelectOption]; selected: seq[int];
   )
   for opt in select.options.mitems:
     opt.s.mnormalize()
+    opt.s = ' ' & opt.s & ' '
     select.maxw = max(select.maxw, opt.s.width())
   select.windowChange(width, height)
   if selected.len > 0:
