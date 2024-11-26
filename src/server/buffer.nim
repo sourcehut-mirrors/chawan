@@ -893,10 +893,10 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
   let prevNode = buffer.prevHover
   if thisNode != prevNode and (thisNode == nil or prevNode == nil or
       thisNode != prevNode):
+    var oldHover: seq[Element] = @[]
     for element in prevNode.branchElems:
       if element.hover:
-        element.setHover(false)
-        repaint = true
+        oldHover.add(element)
     for ht in HoverType:
       let s = HoverFun[ht](buffer, thisNode)
       if buffer.hoverText[ht] != s:
@@ -906,6 +906,13 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
       if not element.hover:
         element.setHover(true)
         repaint = true
+      elif (let i = oldHover.find(element); i != -1):
+        # branches converged
+        oldHover.setLen(i)
+        break
+    for element in oldHover:
+      element.setHover(false)
+      repaint = true
   if repaint:
     buffer.reshape()
   buffer.prevHover = thisNode

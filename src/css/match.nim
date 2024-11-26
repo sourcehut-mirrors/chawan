@@ -77,6 +77,12 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
     return element.parentNode.firstElementChild == element and
       element.parentNode.lastElementChild == element
   of pcHover:
+    #TODO this is somewhat problematic.
+    # e.g. if there is a rule like ".class :hover", then you set
+    # dtHover for basically every element, even if most of them are not
+    # a .class descendant.
+    # Ideally we should try to match the rest of the selector before
+    # attaching dependencies in general.
     depends.add(element, dtHover)
     return element.hover
   of pcRoot: return element == element.document.documentElement
