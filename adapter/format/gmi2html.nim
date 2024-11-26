@@ -20,8 +20,8 @@ a, pre, ul, blockquote, li, h1, h2, h3 { margin-top: 0; margin-bottom: 0 }
 """)
   var inpre = false
   var inul = false
-  while not stdin.endOfFile:
-    let line = stdin.readLine()
+  var line = ""
+  while stdin.readLine(line):
     if inpre and not line.startsWith("```"):
       stdout.write(line.htmlEscape() & '\n')
       continue
@@ -36,13 +36,13 @@ a, pre, ul, blockquote, li, h1, h2, h3 { margin-top: 0; margin-bottom: 0 }
       let url = line.until(AsciiWhitespace, i)
       let text = if i + url.len < line.len:
         let j = line.skipBlanks(i + url.len)
-        line.substr(j).htmlEscape()
+        line.toOpenArray(j, line.high).htmlEscape()
       else:
         url.htmlEscape()
       stdout.write("<a href='" & url.htmlEscape() & "'>" & text & "</a>")
     elif line.startsWith("```"): # preformatting toggle
       inpre = not inpre
-      let title = line.substr(3).htmlEscape()
+      let title = line.toOpenArray(3, line.high).htmlEscape()
       if inpre:
         stdout.write("<pre title='" & title & "'>")
       else:
@@ -53,15 +53,17 @@ a, pre, ul, blockquote, li, h1, h2, h3 { margin-top: 0; margin-bottom: 0 }
         inc i
       let h = "h" & $i
       i = line.skipBlanks(i) # ignore whitespace after #
-      stdout.write("<" & h & ">" & line.substr(i).htmlEscape() & "</" & h & ">")
+      stdout.write("<" & h & ">" & line.toOpenArray(i, line.high).htmlEscape() &
+        "</" & h & ">")
     elif line.startsWith("* "): # unordered list item
       if not inul:
         inul = true
         stdout.write("<ul>")
-      stdout.write("<li>" & line.substr(2).htmlEscape() & "</li>")
+      stdout.write("<li>" & line.toOpenArray(2, line.high).htmlEscape() &
+        "</li>")
     elif line.startsWith(">"): # quote
       stdout.write("<blockquote>")
-      stdout.write(line.substr(1).htmlEscape())
+      stdout.write(line.toOpenArray(1, line.high).htmlEscape())
       stdout.write("</blockquote>")
     else:
       stdout.write(line.htmlEscape() & '\n')
