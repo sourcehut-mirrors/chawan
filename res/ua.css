@@ -10,6 +10,10 @@ noframes, noscript, ol, p, plaintext, pre, search, section, ul, xmp {
 	display: block
 }
 
+br[clear=left i] { clear: left }
+br[clear=right i] { clear: right }
+br[clear=all i], br[clear=both i] { clear: both }
+
 fieldset { display: flow-root }
 
 code { text-decoration: -cha-reverse }

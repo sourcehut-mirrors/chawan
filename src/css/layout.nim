@@ -562,6 +562,25 @@ proc flushWhitespace(ictx: var InlineContext; state: InlineState;
   if shift > 0:
     ictx.addSpacing(shift, state, hang)
 
+proc clearFloats(offsety: var LayoutUnit; bctx: var BlockContext;
+    bfcOffsety: LayoutUnit; clear: CSSClear) =
+  var y = bfcOffsety + offsety
+  case clear
+  of ClearLeft, ClearInlineStart:
+    for ex in bctx.exclusions:
+      if ex.t == FloatLeft:
+        y = max(ex.offset.y + ex.size.h, y)
+  of ClearRight, ClearInlineEnd:
+    for ex in bctx.exclusions:
+      if ex.t == FloatRight:
+        y = max(ex.offset.y + ex.size.h, y)
+  of ClearBoth:
+    for ex in bctx.exclusions:
+      y = max(ex.offset.y + ex.size.h, y)
+  of ClearNone: assert false
+  bctx.clearOffset = y
+  offsety = y - bfcOffsety
+
 # Prepare the next line's initial width and available width.
 # (If space on the left is excluded by floats, set the initial width to
 # the end of that space. If space on the right is excluded, set the
@@ -571,14 +590,13 @@ proc initLine(ictx: var InlineContext) =
   # from space. so we must offset available width with padding-left too
   ictx.lbstate.availableWidth = ictx.space.w.u + ictx.padding.left
   ictx.lbstate.size.w = ictx.padding.left
-  let bctx = ictx.bctx
   #TODO what if maxContent/minContent?
-  if bctx.exclusions.len != 0:
+  if ictx.bctx.exclusions.len > 0:
     let bfcOffset = ictx.bfcOffset
     let y = ictx.lbstate.offsety + bfcOffset.y
     var left = bfcOffset.x + ictx.lbstate.size.w
     var right = bfcOffset.x + ictx.lbstate.availableWidth
-    for ex in bctx.exclusions:
+    for ex in ictx.bctx.exclusions:
       if ex.offset.y <= y and y < ex.offset.y + ex.size.h:
         ictx.lbstate.hasExclusion = true
         if ex.t == FloatLeft:
@@ -590,7 +608,7 @@ proc initLine(ictx: var InlineContext) =
       ictx.lbstate.availableWidth)
 
 proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
-    force = false) =
+    force = false; clear = ClearNone) =
   if ictx.lbstate.atoms.len != 0 or force:
     let whitespace = state.fragment.computed{"white-space"}
     if whitespace == WhitespacePre:
@@ -604,12 +622,14 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     ictx.alignLine()
     # add line to ictx
     let y = ictx.lbstate.offsety
+    if clear != ClearNone:
+      ictx.lbstate.size.h.clearFloats(ictx.bctx[], ictx.bfcOffset.y + y, clear)
     # * set first baseline if this is the first line box
     # * always set last baseline (so the baseline of the last line box remains)
-    if not ictx.firstBaselineSet:
-      ictx.state.firstBaseline = y + ictx.lbstate.baseline
-      ictx.firstBaselineSet = true
     ictx.state.baseline = y + ictx.lbstate.baseline
+    if not ictx.firstBaselineSet:
+      ictx.state.firstBaseline = ictx.lbstate.baseline
+      ictx.firstBaselineSet = true
     ictx.state.size.h += ictx.lbstate.size.h
     let lineWidth = if wrap:
       ictx.lbstate.availableWidth
@@ -1245,24 +1265,6 @@ proc flushMargins(bctx: var BlockContext; box: BlockBox) =
     bctx.marginTarget = nil
   bctx.marginTodo = Strut()
 
-proc clearFloats(offset: var Offset; bctx: var BlockContext; clear: CSSClear) =
-  var y = bctx.bfcOffset.y + offset.y
-  case clear
-  of ClearLeft, ClearInlineStart:
-    for ex in bctx.exclusions:
-      if ex.t == FloatLeft:
-        y = max(ex.offset.y + ex.size.h, y)
-  of ClearRight, ClearInlineEnd:
-    for ex in bctx.exclusions:
-      if ex.t == FloatRight:
-        y = max(ex.offset.y + ex.size.h, y)
-  of ClearBoth:
-    for ex in bctx.exclusions:
-      y = max(ex.offset.y + ex.size.h, y)
-  of ClearNone: assert false
-  bctx.clearOffset = y
-  offset.y = y - bctx.bfcOffset.y
-
 proc applyOverflowDimensions(parent: var Overflow; child: BlockBox) =
   var childOverflow = child.state.overflow
   for dim in DimensionType:
@@ -1379,7 +1381,7 @@ proc positionFloat(bctx: var BlockContext; child: BlockBox;
   assert space.w.t != scFitContent
   let clear = child.computed{"clear"}
   if clear != ClearNone:
-    child.state.offset.clearFloats(bctx, clear)
+    child.state.offset.y.clearFloats(bctx, bctx.bfcOffset.y, clear)
   var childBfcOffset = bfcOffset + child.state.offset - marginOffset
   childBfcOffset.y = max(bctx.clearOffset, childBfcOffset.y)
   let ft = child.computed{"float"}
@@ -1464,7 +1466,8 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     bctx.flushMargins(box)
     bctx.positionFloats()
   if box.computed{"clear"} != ClearNone:
-    box.state.offset.clearFloats(bctx, box.computed{"clear"})
+    box.state.offset.y.clearFloats(bctx, bctx.bfcOffset.y,
+      box.computed{"clear"})
   if box.inline != nil:
     # Builder only contains inline boxes.
     bctx.layoutInline(box, sizes)
@@ -1669,7 +1672,9 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
       computed{"position"} notin PositionStaticLike:
     lctx.pushPositioned()
   case fragment.t
-  of iftNewline: ictx.finishLine(state, wrap = false, force = true)
+  of iftNewline:
+    ictx.finishLine(state, wrap = false, force = true,
+      fragment.computed{"clear"})
   of iftBox: ictx.addBox(state, fragment.box)
   of iftBitmap: ictx.addInlineImage(state, fragment.bmp, padding.sum())
   of iftText: ictx.layoutText(state, fragment.text.textData)
@@ -2508,7 +2513,8 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
     bctx.positionFloats()
     bctx.marginTodo.append(sizes.margin.bottom)
     if child.computed{"clear"} != ClearNone:
-      state.offset.clearFloats(bctx, child.computed{"clear"})
+      state.offset.y.clearFloats(bctx, bctx.bfcOffset.y,
+        child.computed{"clear"})
     if bctx.exclusions.len > 0:
       # From the standard (abridged):
       #
