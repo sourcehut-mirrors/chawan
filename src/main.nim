@@ -206,17 +206,17 @@ const defaultConfig = staticRead"res/config.toml"
 
 proc initConfig(ctx: ParamParseContext; config: Config;
     warnings: var seq[string]): Err[string] =
-  let fs = openConfig(config.configdir, ctx.configPath)
+  let fs = openConfig(config.dir, ctx.configPath)
   if fs == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("Failed to open config file " & ctx.configPath.get)
-  putEnv("CHA_CONFIG_DIR", config.configdir)
+  putEnv("CHA_CONFIG_DIR", config.dir)
   ?config.parseConfig("res", defaultConfig, warnings)
   when defined(debug):
     if (let fs = newFileStream(getCurrentDir() / "res/config.toml"); fs != nil):
       ?config.parseConfig(getCurrentDir(), fs.readAll(), warnings)
   if fs != nil:
-    ?config.parseConfig(config.configdir, fs.readAll(), warnings)
+    ?config.parseConfig(config.dir, fs.readAll(), warnings)
   for opt in ctx.opts:
     ?config.parseConfig(getCurrentDir(), opt, warnings, laxnames = true)
   config.css.stylesheet &= ctx.stylesheet

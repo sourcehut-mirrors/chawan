@@ -162,7 +162,7 @@ type
   Config* = ref object
     jsctx*: JSContext
     jsvfns*: seq[JSValueFunction]
-    configdir* {.jsget.}: string
+    dir* {.jsget.}: string
     `include` {.jsget.}: seq[ChaPathResolved]
     start* {.jsget.}: StartConfig
     buffer* {.jsget.}: BufferSectionConfig
