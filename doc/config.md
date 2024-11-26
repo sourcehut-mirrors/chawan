@@ -153,7 +153,7 @@ enable JavaScript with `[[siteconf]]` instead of using this setting.</td>
 <tr>
 <td>images</td>
 <td>boolean</td>
-<td>Enable/disable experimental image support.<br>
+<td>Enable/disable inline image display.<br>
 Defaults to false.</td>
 </tr>
 

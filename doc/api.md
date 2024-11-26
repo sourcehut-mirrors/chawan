@@ -71,6 +71,30 @@ SIGTSTP signal.<br>
 Note: this suspends the entire process group.</td>
 </tr>
 
+<tr>
+<td>`pager`</td>
+<td>The pager object. Implements `Pager`, as described below.</td>
+</tr>
+
+<tr>
+<td>`line`</td>
+<td>The line editor. Implements `Line`, as described below.</td>
+
+<tr>
+<td>`config`</td>
+<td>The config object.<br>
+A currently incomplete interface for retrieving and setting
+configuration options. In general, names are the same as in config.toml,
+except for `-` (ASCII hyphen) characters being replaced with `_`
+(underscore). e.g. `external.cgi-dir` can be queried as
+`config.external.cgi_dir`, etc.<br>
+Setting individual options sometimes works, but sometimes they do not
+get propagated as expected. Consider this an experimental API.<br>
+Currently, `siteconf`, `protocol` and `omnirule` values are not exposed
+to JS.<br>
+The configuration directory itself can be queried as `config.dir`.</td>
+</tr>
+
 </table>
 
 `Client` also implements various web standards normally available on the
