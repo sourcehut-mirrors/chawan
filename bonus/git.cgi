@@ -76,6 +76,8 @@ function cgi(cmd) {
 	return `${cgi0}&params=${encodeURIComponent(cmd)}`;
 }
 
+const GitBranchAllowed = ["-l", "--list", "-a", "--all", "-r", "--remote"];
+
 if (params[0] == "log") {
 	const showUrl = cgi("show");
 	const re = /[a-f0-9]{7}[a-f0-9]*/g;
@@ -114,7 +116,7 @@ if (params[0] == "log") {
 	runGitCmd(config, params, re, sub);
 } else if (params[0] == "branch" &&
 	(params.length == 1 ||
-	params.length == 2 && ["-l", "--list", "-a", "--all"].includes(params[1]))) {
+	params.length == 2 && GitBranchAllowed.includes(params[1]))) {
 	const logUrl = cgi("log");
 	const checkoutUrl = cgi("checkout");
 	const re = /^(\s+)(<span style='color: -cha-ansi...;'>)?([\w./-]+)(<.*)?$/g;
@@ -127,9 +129,9 @@ if (params[0] == "log") {
 	const showUrl = cgi("show");
 	const stashApply = cgi("stash apply");
 	const stashDrop = cgi("stash drop");
-	const re = /^stash@\{([0-9]+)\}/g;
+	const re = /^(stash@\{[0-9]+\})/g;
 	function sub(s, n) {
-		return `stash@{<a href='${showUrl}%20${s}'>${n}</a>}\
+		return `<a href='${showUrl}%20${s}'>${n}</a>\
  <form method=POST action='${stashApply}%20${s}'><input type=submit value=apply></form>` +
 ` <form method=POST action='${stashDrop}%20${s}'><input type=submit value=drop></form>`;
 	}
