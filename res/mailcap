@@ -1,7 +1,7 @@
 # default mailcap for Chawan
 
 text/gopher;	"$CHA_LIBEXEC_DIR"/gopher2html -u "$MAILCAP_URL"; x-htmloutput
-text/gemini;	"$CHA_LIBEXEC_DIR"/gmi2html; x-htmloutput
+text/gemini;	"$CHA_LIBEXEC_DIR"/gmi2html; x-htmloutput; x-needsstyle
 text/markdown;	"$CHA_LIBEXEC_DIR"/md2html; x-htmloutput
-text/x-ansi;	"$CHA_LIBEXEC_DIR"/ansi2html -st '%{title}'; x-htmloutput
+text/x-ansi;	"$CHA_LIBEXEC_DIR"/ansi2html -st '%{title}'; x-htmloutput; x-needsstyle
 text/x-dirlist;	"$CHA_LIBEXEC_DIR"/dirlist2html -t '%{title}'; x-htmloutput

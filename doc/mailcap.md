@@ -75,9 +75,11 @@ extension fields are recognized too.
   it is ignored.
 * The `x-htmloutput` extension field behaves the same as `copiousoutput`,
   but makes Chawan interpret the command's output as HTML.
-* `x-ansioutput` makes Chawan pipe the output through the default "text/x-ansi"
-  content type handler. This means that you get colors, formatting, etc.
-  displayed with ANSI escape sequences.
+* `x-ansioutput` pipes the output through the "text/x-ansi" content type
+  handler, so that ANSI colors, formatting, etc. are displayed correctly.
+* `x-needsstyle` forces CSS to be processed for the specific type, even if
+  styling is disabled in the config. Only useful when combined with
+  `x-htmloutput`.
 * `needsterminal` hands over control of the terminal to the command while
   it is running. Note: as of now, `needsterminal` does nothing if either
   `copiousoutput` or `x-htmloutput` is specified.

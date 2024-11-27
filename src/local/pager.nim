@@ -1812,6 +1812,7 @@ type CheckMailcapResult = object
   ishtml: bool
   found: bool
   redirected: bool # whether or not ostream is the same as istream
+  needsstyle: bool
 
 proc execPipe(pager: Pager; cmd: string; ps, os, closeme: PosixStream): int =
   case (let pid = myFork(); pid)
@@ -1835,7 +1836,7 @@ proc execPipe(pager: Pager; cmd: string; ps, os, closeme: PosixStream): int =
     return pid
 
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
-proc ansiDecode(pager: Pager; url: URL; ishtml: var bool; istream: PosixStream):
+proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
     PosixStream =
   let i = pager.config.external.mailcap.findMailcapEntry("text/x-ansi", "", url)
   if i == -1:
@@ -1978,7 +1979,7 @@ proc checkMailcap0(pager: Pager; url: URL; stream: PosixStream;
     outpath = unquoteCommand(entry.nametemplate, contentType, outpath, url)
   var canpipe = true
   let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, canpipe)
-  var ishtml = mfHtmloutput in entry.flags
+  let ishtml = mfHtmloutput in entry.flags
   let needsterminal = mfNeedsterminal in entry.flags
   putEnv("MAILCAP_URL", $url)
   block needsConnect:
@@ -2016,6 +2017,8 @@ proc checkMailcap0(pager: Pager; url: URL; stream: PosixStream;
       ostream: response.body,
       ostreamOutputId: response.outputId,
       ishtml: ishtml,
+      # ansi always needs styles
+      needsstyle: mfNeedsstyle in entry.flags or mfAnsioutput in entry.flags,
       found: true,
       redirected: true
     )
@@ -2161,6 +2164,8 @@ proc connected(pager: Pager; container: Container; response: Response) =
       container.flags.incl(cfIsHTML)
     else:
       container.flags.excl(cfIsHTML)
+    if mailcapRes.needsstyle: # override
+      container.config.styling = true
     # buffer now actually exists; create a process for it
     var attrs = pager.attrs
     # subtract status line height
