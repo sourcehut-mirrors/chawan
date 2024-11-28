@@ -1419,14 +1419,14 @@ proc getSelectionText(container: Container; hl: Highlight = nil):
         let ei = res.lines[^1].str.findColBytes(endx + 1) - 1
         s &= res.lines[^1].str.substr(0, ei)
     of stBlock:
-      for i, line in res.lines:
+      for i, line in res.lines.mypairs:
         let si = line.str.findColBytes(startx)
         let ei = line.str.findColBytes(endx + 1, startx, si) - 1
         if i > 0:
           s &= '\n'
         s &= line.str.substr(si, ei)
     of stLine:
-      for i, line in res.lines:
+      for i, line in res.lines.mypairs:
         if i > 0:
           s &= '\n'
         s &= line.str

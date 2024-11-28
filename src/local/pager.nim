@@ -870,7 +870,7 @@ func findConnectingContainer*(pager: Pager; container: Container):
   return nil
 
 func findProcMapItem*(pager: Pager; pid: int): int =
-  for i, item in pager.procmap:
+  for i, item in pager.procmap.mypairs:
     if item.container.process == pid:
       return i
   -1

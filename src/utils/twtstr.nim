@@ -825,3 +825,12 @@ proc getEnvEmpty*(name: string; fallback = ""): string =
   if res != "":
     return res
   return fallback
+
+iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
+  var i = 0
+  let L = a.len
+  while i < L:
+    yield (i, a[i])
+    {.push overflowChecks: off.}
+    inc i
+    {.pop.}

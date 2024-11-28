@@ -1993,9 +1993,9 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     row.applyOverflowDimensions(cell)
   row.state.size.w = x
 
-proc preLayoutTableRows(tctx: var TableContext; rows: seq[BlockBox];
+proc preLayoutTableRows(tctx: var TableContext; rows: openArray[BlockBox];
     table: BlockBox) =
-  for i, row in rows:
+  for i, row in rows.mypairs:
     let rctx = tctx.preLayoutTableRow(row, table, i, rows.len)
     tctx.rows.add(rctx)
     tctx.maxwidth = max(rctx.width, tctx.maxwidth)

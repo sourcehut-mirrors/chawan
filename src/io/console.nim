@@ -2,6 +2,7 @@ import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
 import types/opt
+import utils/twtstr
 
 type Console* = ref object
   err*: DynStream
@@ -22,7 +23,7 @@ proc newConsole*(err: DynStream; clearFun: proc() = nil; showFun: proc() = nil;
 
 proc log*(console: Console; ss: varargs[string]) =
   var buf = ""
-  for i, s in ss:
+  for i, s in ss.mypairs:
     buf &= s
     if i != ss.high:
       buf &= ' '

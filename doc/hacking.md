@@ -100,18 +100,25 @@ except in short accumulator-style procedures.
 
 #### Implicit initialization
 
-Avoid, except for arrays. The correct way to create an object:
+Avoid. The correct way to create an object:
 
 ```nim
 let myObj = MyObject(
   param1: x,
   param2: y
+  # if there's e.g. a param3 too, it's OK to leave it out and let it be
+  # default initialized.
 )
 ```
 
-It's OK to leave out param3 and let it be zero-initialized. Also,
-manually initializing arrays is annoying, so it's OK to do it
-implicitly.
+For arrays, use:
+
+```nim
+var buf1 = default(array[1234, char]) # when you need 0-initialization
+var buf2 {.noinit.}: array[1234, char] # when you don't need 0-initialization
+```
+
+For primitive types, just set them to 0, "", etc.
 
 #### "out" parameters
 
@@ -119,11 +126,26 @@ They crash the 1.6.14 compiler. Use "var" for now.
 
 #### Copying operations
 
-substr and x[n..m] copies. Try to use toOpenArray instead, which is a
-non-copying slice.
+`substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which
+is a non-copying slice. (Obviously, you should use `substr` if you
+*need* to copy.)
 
-Note that `=` is not just assignment, it's a "copy" operator. If you're
-copying a large object a lot, you may want to set its type to `ref`.
+Note that `=` usually copies. If you're copying a large object a lot,
+you may want to set its type to `ref`.
+
+Beware of `pairs` on sequences of objects; it copies. Use `mypairs`
+if you don't need mutation, `mpairs` if you do:
+
+```nim
+proc foo(objs: openArray[SomeObj]) =
+  for i, obj in objs: # this copies. obj is of type "SomeObj".
+    obj.bar(i)
+  # import utils/twtstr to use mypairs.
+  for i, obj in objs.mypairs: # doesn't copy. obj is of type "lent "SomeObj".
+    obj.bar(i)
+  for i, obj in objs.mpairs: # doesn't copy. obj is of type "var SomeObj".
+    obj.i = i
+```
 
 #### Generic parameters for JS values
 

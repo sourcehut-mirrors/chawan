@@ -2,6 +2,7 @@ import monoucha/javascript
 import monoucha/quickjs
 import types/referrer
 import types/url
+import utils/twtstr
 
 type
   ParserMetadata* = enum
@@ -84,7 +85,7 @@ var errorImpl*: proc(ctx: JSContext; ss: varargs[string]) {.nimcall.}
 
 proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
   let surl = $url
-  for i, entry in moduleMap:
+  for i, entry in moduleMap.mypairs:
     if entry.key.moduleType == moduleType and entry.key.url == surl:
       return i
   return -1

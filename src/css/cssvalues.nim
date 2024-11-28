@@ -908,7 +908,7 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
       "cyan",
       "white"
     ]
-    for i, it in NameTable:
+    for i, it in NameTable.mypairs:
       if it.equalsIgnoreCase(name):
         var i = int(i)
         if bright:
@@ -1316,13 +1316,13 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
     inc i
   case lengths.len
   of 1: # top, bottom, left, right
-    for i, t in props:
+    for i, t in props.mypairs:
       res.add((t, lengths[0], cgtNone))
   of 2: # top, bottom | left, right
-    for i, t in props:
+    for i, t in props.mypairs:
       res.add((t, lengths[i mod 2], cgtNone))
   of 3: # top | left, right | bottom
-    for i, t in props:
+    for i, t in props.mypairs:
       let j = if i == 0:
         0 # top
       elif i == 3:
@@ -1331,7 +1331,7 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
         1 # left, right
       res.add((t, lengths[j], cgtNone))
   of 4: # top | right | bottom | left
-    for i, t in props:
+    for i, t in props.mypairs:
       res.add((t, lengths[i], cgtNone))
   else:
     return err()

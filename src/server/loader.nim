@@ -315,8 +315,8 @@ func findCachedHandle(ctx: LoaderContext; cacheId: int): InputHandle =
       return it
   return nil
 
-func find(cacheMap: seq[CachedItem]; id: int): int =
-  for i, it in cacheMap:
+func find(cacheMap: openArray[CachedItem]; id: int): int =
+  for i, it in cacheMap.mypairs:
     if it.id == id:
       return i
   -1

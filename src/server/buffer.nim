@@ -516,7 +516,7 @@ proc findNextLink*(buffer: Buffer; cursorx, cursory, n: int):
   if i >= 0:
     link = buffer.lines[cursory].formats[i].node.getClickable()
   inc i
-  for j, line in buffer.lines.toOpenArray(cursory, buffer.lines.high).mpairs:
+  for j, line in buffer.lines.toOpenArray(cursory, buffer.lines.high).mypairs:
     while i < line.formats.len:
       let format = line.formats[i]
       let fl = format.node.getClickable()

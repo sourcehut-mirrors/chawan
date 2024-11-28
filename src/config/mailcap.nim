@@ -311,7 +311,7 @@ proc findMailcapEntry*(mailcap: var Mailcap; contentType, outpath: string;
     url: URL): int =
   let mt = contentType.until('/')
   let st = contentType.until(AsciiWhitespace + {';'}, mt.len + 1)
-  for i, entry in mailcap.mpairs:
+  for i, entry in mailcap.mypairs:
     if entry.mt != "*" and not entry.mt.equalsIgnoreCase(mt):
       continue
     if entry.subt != "*" and not entry.subt.equalsIgnoreCase(st):

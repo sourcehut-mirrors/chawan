@@ -1077,7 +1077,7 @@ func tagType*(element: Element): TagType =
   return element.tagTypeNoNS
 
 func findAttr(element: Element; qualifiedName: CAtom): int =
-  for i, attr in element.attrs.mpairs:
+  for i, attr in element.attrs.mypairs:
     if attr.qualifiedName == qualifiedName:
       return i
   return -1
@@ -1086,7 +1086,7 @@ func findAttr(element: Element; qualifiedName: StaticAtom): int =
   return element.findAttr(element.document.toAtom(qualifiedName))
 
 func findAttrNS(element: Element; namespace, qualifiedName: CAtom): int =
-  for i, attr in element.attrs.mpairs:
+  for i, attr in element.attrs.mypairs:
     if attr.namespace == namespace and attr.qualifiedName == qualifiedName:
       return i
   return -1
@@ -1902,7 +1902,7 @@ func name(attr: Attr): CAtom {.jsfget.} =
   return attr.data.qualifiedName
 
 func findAttr(map: NamedNodeMap; dataIdx: int): int =
-  for i, attr in map.attrlist:
+  for i, attr in map.attrlist.mypairs:
     if attr.dataIdx == dataIdx:
       return i
   return -1
@@ -1932,7 +1932,7 @@ func attributes(element: Element): NamedNodeMap {.jsfget.} =
   if element.cachedAttributes != nil:
     return element.cachedAttributes
   element.cachedAttributes = NamedNodeMap(element: element)
-  for i, attr in element.attrs.mpairs:
+  for i, attr in element.attrs.mypairs:
     element.cachedAttributes.attrlist.add(Attr(
       internalDocument: element.document,
       index: -1,
@@ -3182,7 +3182,7 @@ proc delAttr(element: Element; i: int; keep = false) =
   if map != nil:
     # delete from attrlist + adjust indices invalidated
     var j = -1
-    for i, attr in map.attrlist.mpairs:
+    for i, attr in map.attrlist.mypairs:
       if attr.dataIdx == i:
         j = i
       elif attr.dataIdx > i:
@@ -3583,7 +3583,7 @@ func cmpAttrName(a: AttrData; b: CAtom): int =
 # Returns the attr index if found, or the negation - 1 of an upper bound
 # (where a new attr with the passed name may be inserted).
 func findAttrOrNext(element: Element; qualName: CAtom): int =
-  for i, data in element.attrs.mpairs:
+  for i, data in element.attrs.mypairs:
     if data.qualifiedName == qualName:
       return i
     if int(data.qualifiedName) > int(qualName):
@@ -4617,7 +4617,7 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
         node.localName != other.localName or
         node.attrs.len != other.attrs.len:
       return false
-    for i, attr in node.attrs.mpairs:
+    for i, attr in node.attrs.mypairs:
       if not attr.equals(other.attrs[i]):
         return false
   elif node of Attr:
@@ -4637,7 +4637,7 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
         node of Comment and not (other of Comment):
       return false
     return CharacterData(node).data == CharacterData(other).data
-  for i, child in node.childList:
+  for i, child in node.childList.mypairs:
     if not child.isEqualNode(other.childList[i]):
       return false
   true
