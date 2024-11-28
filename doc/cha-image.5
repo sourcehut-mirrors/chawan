@@ -189,12 +189,12 @@ decode stdout, always
 .IP \[bu] 2
 encode stdin, always
 .PP
-This makes it possible to mmap(3) stdin/stdout instead of streaming
-through them with read(3) and write(3).
+This makes it possible to mmap stdin/stdout instead of streaming through
+them with read and write.
 When doing this, mind the following:
 .IP \[bu] 2
 When reading, you must check your initial position in the file with
-lseek(2).
+lseek.
 .IP \[bu] 2
 When writing, your headers are part of the output.
 At the very least, you must place a newline at the file\[cq]s beginning.

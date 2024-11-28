@@ -80,10 +80,14 @@ The \f[CR]x\-htmloutput\f[R] extension field behaves the same as
 \f[CR]copiousoutput\f[R], but makes Chawan interpret the command\[cq]s
 output as HTML.
 .IP \[bu] 2
-\f[CR]x\-ansioutput\f[R] makes Chawan pipe the output through the
-default \[lq]text/x\-ansi\[rq] content type handler.
-This means that you get colors, formatting, etc.
-displayed with ANSI escape sequences.
+\f[CR]x\-ansioutput\f[R] pipes the output through the
+\[lq]text/x\-ansi\[rq] content type handler, so that ANSI colors,
+formatting, etc.
+are displayed correctly.
+.IP \[bu] 2
+\f[CR]x\-needsstyle\f[R] forces CSS to be processed for the specific
+type, even if styling is disabled in the config.
+Only useful when combined with \f[CR]x\-htmloutput\f[R].
 .IP \[bu] 2
 \f[CR]needsterminal\f[R] hands over control of the terminal to the
 command while it is running.

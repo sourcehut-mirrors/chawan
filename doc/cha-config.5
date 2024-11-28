@@ -151,7 +151,7 @@ images
 T}@T{
 boolean
 T}@T{
-Enable/disable experimental image support.
+Enable/disable inline image display.
 Defaults to false.
 T}@T{
 T}
@@ -1819,18 +1819,18 @@ Environment variables can be used like \f[CR]$ENV_VAR\f[R].
 .IP \[bu] 2
 Relative paths are relative to the Chawan configuration directory.
 .PP
-Some internal variables are also defined by Chawan.
-These can be accessed using the non\-standard syntax
-\f[CR]${%VARIABLE}\f[R]:
+Some environment variables are also exported by Chawan:
 .IP \[bu] 2
-\f[CR]${%CHA_BIN_DIR}\f[R]: the directory which the \f[CR]cha\f[R]
-binary resides in.
-Note that symbolic links are automatically resolved to determine this
-path.
+\f[CR]$CHA_BIN_DIR\f[R]: the directory which the \f[CR]cha\f[R] binary
+resides in.
+Symbolic links are automatically resolved to determine this path.
 .IP \[bu] 2
-\f[CR]${%CHA_LIBEXEC_DIR}\f[R]: the directory for all executables Chawan
+\f[CR]$CHA_LIBEXEC_DIR\f[R]: the directory for all executables Chawan
 uses for operation.
-By default, this is \f[CR]${%CHA_BIN_DIR}/../libexec/chawan\f[R].
+By default, this is \f[CR]$CHA_BIN_DIR/../libexec/chawan\f[R].
+.IP \[bu] 2
+\f[CR]$CHA_CONFIG_DIR\f[R]: the configuration directory.
+(This can also be set by the user; see the top section for details.)
 .SS Word types
 Word\-based pager commands can operate with different definitions of
 words.

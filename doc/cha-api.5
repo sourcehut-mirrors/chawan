@@ -77,6 +77,21 @@ SIGTSTP signal.
 Note: this suspends the entire process group.
 T}@T{
 T}
+T{
+\f[CR]pager\f[R]
+T}@T{
+The pager object.
+Implements \f[CR]Pager\f[R], as described below.
+T}@T{
+T}
+T{
+\f[CR]line\f[R]
+T}@T{
+The line editor.
+Implements \f[CR]Line\f[R], as described below.
+T}@T{
+\f[CR]config\f[R]
+T}
 .TE
 .PP
 \f[CR]Client\f[R] also implements various web standards normally
@@ -205,27 +220,16 @@ Display information about the current line.
 T}@T{
 T}
 T{
-\f[CR]searchForward()\f[R]
+\f[CR]searchForward()\f[R], \f[CR]searchBackward()\f[R]
 T}@T{
-Search for a string in the current buffer.
-T}@T{
-T}
-T{
-\f[CR]searchBackward()\f[R]
-T}@T{
-Search for a string, backwards.
+Search forward/backward for a string in the current buffer.
 T}@T{
 T}
 T{
-\f[CR]isearchForward()\f[R]
+\f[CR]isearchForward()\f[R], \f[CR]isearchBackward()\f[R]
 T}@T{
-Incremental\-search for a string, highlighting the first result.
-T}@T{
-T}
-T{
-\f[CR]isearchBackward()\f[R]
-T}@T{
-Incremental\-search and highlight the first result, backwards.
+Incremental\-search forward/backward for a string, highlighting the
+first result.
 T}@T{
 T}
 T{
@@ -237,15 +241,9 @@ shown.
 T}@T{
 T}
 T{
-\f[CR]searchNext(n = 1)\f[R]
+\f[CR]searchNext(n = 1)\f[R], \f[CR]searchPrev(n = 1)\f[R]
 T}@T{
-Jump to the nth next search result.
-T}@T{
-T}
-T{
-\f[CR]searchPrev(n = 1)\f[R]
-T}@T{
-Jump to the nth previous search result.
+Jump to the nth next/previous search result.
 T}@T{
 T}
 T{
@@ -283,18 +281,6 @@ T{
 T}@T{
 Ask the user for any character.
 Like \f[CR]pager.ask\f[R], but the return value is a character.
-T}@T{
-T}
-T{
-\f[CR]saveLink()\f[R]
-T}@T{
-Save URL pointed to by the cursor.
-T}@T{
-T}
-T{
-\f[CR]saveSource()\f[R]
-T}@T{
-Save the source of the current buffer.
 T}@T{
 T}
 T{
@@ -444,6 +430,14 @@ Move the cursor to the beginning of the next/previous clickable element.
 T}@T{
 T}
 T{
+\f[CR]cursorLinkNavDown(n = 1)\f[R], \f[CR]cursorLinkNavUp(n = 1)\f[R]
+T}@T{
+Move the cursor to the beginning of the next/previous clickable element.
+Buffer scrolls pagewise, wrap to beginning/end if content is less than
+one page length.
+T}@T{
+T}
+T{
 \f[CR]cursorNextParagraph(n = 1)\f[R],
 \f[CR]cursorPrevParagraph(n = 1)\f[R]
 T}@T{
@@ -497,24 +491,11 @@ Move to the first/last line in the buffer.
 T}@T{
 T}
 T{
-\f[CR]cursorTop()\f[R]
-T}@T{
-Move to the first line on the screen.
-(Equivalent to H in vi.)
-T}@T{
-T}
-T{
-\f[CR]cursorMiddle()\f[R]
-T}@T{
-Move to the line in the middle of the screen.
-(Equivalent to M in vi.)
-T}@T{
-T}
-T{
+\f[CR]cursorTop()\f[R], \f[CR]cursorMiddle()\f[R],
 \f[CR]cursorBottom()\f[R]
 T}@T{
-Move to the last line on the screen.
-(Equivalent to L in vi.)
+Move to the first/middle/bottom line on the screen.
+(Equivalent to H/M/L in vi.)
 T}@T{
 T}
 T{
@@ -586,17 +567,11 @@ Center screen around the current column.
 T}@T{
 T}
 T{
-\f[CR]findNextMark(x = this.cursorx, y = this.cursory)\f[R]
-T}@T{
-Find the next mark after \f[CR]x\f[R], \f[CR]y\f[R], if any; and return
-its id (or null if none were found.)
-T}@T{
-T}
-T{
+\f[CR]findNextMark(x = this.cursorx, y = this.cursory)\f[R],
 \f[CR]findPrevMark(x = this.cursorx, y = this.cursory)\f[R]
 T}@T{
-Find the previous mark before \f[CR]x\f[R], \f[CR]y\f[R], if any; and
-return its id (or null if none were found.)
+Find the next/previous mark after/before \f[CR]x\f[R], \f[CR]y\f[R], if
+any; and return its id (or null if none were found.)
 T}@T{
 T}
 T{
@@ -640,9 +615,45 @@ If the mark does not exist, return null.
 T}@T{
 T}
 T{
+\f[CR]cursorToggleSelection(n = 1, opts = {selectionType: \[dq]normal\[dq]})\f[R]
+T}@T{
+Start a vim\-style visual selection.
+The cursor is moved to the right by \f[CR]n\f[R] cells.
+selectionType may be \[lq]normal\[rq] (regular selection),
+\[lq]line\[rq] (line\-based selection) and \[lq]column\[rq]
+(column\-based selection).
+T}@T{
+T}
+T{
+\f[CR]getSelectionText()\f[R]
+T}@T{
+Get the currently selected text.
+Returns a promise, so consumers must \f[CR]await\f[R] it to get the
+text.
+T}@T{
+T}
+T{
 \f[CR]markURL()\f[R]
 T}@T{
 Convert URL\-like strings to anchors on the current page.
+T}@T{
+T}
+T{
+\f[CR]toggleImages()\f[R]
+T}@T{
+Toggle display of images in this buffer.
+T}@T{
+T}
+T{
+\f[CR]saveLink()\f[R]
+T}@T{
+Save URL pointed to by the cursor.
+T}@T{
+T}
+T{
+\f[CR]saveSource()\f[R]
+T}@T{
+Save the source of this buffer.
 T}@T{
 T}
 T{
@@ -658,6 +669,70 @@ T}@T{
 Getter for the string representation of the element title/link/image
 currently under the cursor.
 Returns the empty string if no title is found.
+T}@T{
+T}
+T{
+\f[CR]cursorx\f[R], \f[CR]cursory\f[R]
+T}@T{
+The x/y position of the cursor inside the buffer.
+Note that although the status line is 1\-based, these values are
+0\-based.
+T}@T{
+T}
+T{
+\f[CR]fromx\f[R], \f[CR]fromy\f[R]
+T}@T{
+The x/y position of the first line displayed on the screen.
+T}@T{
+T}
+T{
+\f[CR]numLines\f[R]
+T}@T{
+The number of lines currently loaded in the buffer.
+T}@T{
+T}
+T{
+\f[CR]width\f[R], \f[CR]height\f[R]
+T}@T{
+The width and height of the buffer\[cq]s window (i.e.\ the visible part
+of the canvas).
+T}@T{
+T}
+T{
+\f[CR]process\f[R]
+T}@T{
+The process ID of the buffer.
+T}@T{
+T}
+T{
+\f[CR]title\f[R]
+T}@T{
+Text from the \f[CR]title\f[R] element, or the buffer\[cq]s URL if there
+is no title.
+T}@T{
+T}
+T{
+\f[CR]parent\f[R]
+T}@T{
+Parent buffer in the buffer tree.
+May be null.
+T}@T{
+T}
+T{
+\f[CR]children\f[R]
+T}@T{
+Array of child buffers in the buffer tree.
+T}@T{
+T}
+T{
+\f[CR]select\f[R]
+T}@T{
+Reference to the current \f[CR]select\f[R] element\[cq]s widget, or null
+if no \f[CR]select\f[R] element is open.
+This object implements the \f[CR]Select\f[R] interface, which is
+somewhat compatible with the \f[CR]Buffer\f[R] interface with some
+exceptions.
+(TODO: elaborate)
 T}@T{
 T}
 .TE
