@@ -923,7 +923,6 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   outs &= ",i=" & $image.kittyId
   const MaxBytes = 4096 * 3 div 4
   var i = MaxBytes
-  # transcode to RGB
   let p = cast[ptr UncheckedArray[uint8]](image.data.buffer)
   let L = image.data.size
   let m = if i < L: '1' else: '0'

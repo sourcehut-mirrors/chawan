@@ -1169,8 +1169,6 @@ proc origin*(url: URL): Origin =
       t: otTuple,
       tup: (url.scheme, url.hostname, url.port, none(string))
     )
-  of "file":
-    return Origin(t: otOpaque, s: $url)
   else:
     return Origin(t: otOpaque, s: $url)
 

@@ -2010,7 +2010,6 @@ proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
   var tbody: seq[BlockBox] = @[]
   var tfoot: seq[BlockBox] = @[]
   for child in table.children:
-    assert child.computed{"display"} in ProperTableChild
     case child.computed{"display"}
     of DisplayTableRow: tbody.add(child)
     of DisplayTableHeaderGroup: thead.add(child.children)
