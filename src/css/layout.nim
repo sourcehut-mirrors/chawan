@@ -1664,8 +1664,6 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
     x = ictx.lbstate.widthAfterWhitespace,
     y = ictx.lbstate.offsety
   )
-  if ictx.lbstate.atoms.len > 0:
-    fragment.state.startOffset.y += ictx.cellHeight
   ictx.lbstate.size.w += padding.start
   var state = InlineState(fragment: fragment)
   if stSplitStart in fragment.splitType and
