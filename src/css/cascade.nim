@@ -280,10 +280,10 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSComputedValues;
   rules[coUser].add(map.user[peNone])
   for rule in map.author:
     rules[coAuthor].add(rule[peNone])
-  if styling and styledNode.node != nil:
+  if styledNode.node != nil:
     let element = Element(styledNode.node)
     let style = element.cachedStyle
-    if style != nil:
+    if styling and style != nil:
       for decl in style.decls:
         let vals = parseComputedValues(decl.name, decl.value)
         if decl.important:
