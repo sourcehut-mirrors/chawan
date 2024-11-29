@@ -99,6 +99,8 @@ pre, xmp { margin: 1em 0; white-space: pre }
 
 plaintext { white-space: pre }
 
+nobr { white-space: nowrap }
+
 p { margin: 1em 0 }
 
 @media (prefers-color-scheme: light) { a[href] { color: -cha-ansi(blue) } }
