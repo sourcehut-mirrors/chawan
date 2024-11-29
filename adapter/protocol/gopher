@@ -5,8 +5,9 @@ then	printf 'Cha-Control: InvalidMethod\n'
 	exit 1
 fi
 opath=/${MAPPED_URI_PATH#"${MAPPED_URI_PATH%%[!/]*}"}
-path=${opath##/?}
-t=${opath%%"$path"}
+path0=$(printf '%s\n' "$opath" | "$CHA_LIBEXEC_DIR"/urldec)
+path=${path0##/?}
+t=${path0%%"$path"}
 t=${t##?}
 
 if test "$t" = 7 && test -z "$MAPPED_URI_QUERY"
@@ -14,7 +15,7 @@ then	exec cat <<EOF
 Content-Type: text/html
 
 <!DOCTYPE html>
-<h1>Search $MAPPED_URI_SCHEME://$MAPPED_URI_HOST:$MAPPED_URI_PORT$path</h1>
+<h1>Search $MAPPED_URI_SCHEME://$MAPPED_URI_HOST:$MAPPED_URI_PORT$opath</h1>
 <form><input type=search name=name></form>
 EOF
 else	LF='
@@ -32,7 +33,6 @@ Location: /1$opath
 EOF
 		;;
 	esac
-	path=$(printf '%s\n' "$path" | "$CHA_LIBEXEC_DIR"/urldec)
 	query=$(printf '%s\n' "${MAPPED_URI_QUERY##*=}" | \
 		sed 's/\+/ /g' | "$CHA_LIBEXEC_DIR"/urldec)
 	tab='	'

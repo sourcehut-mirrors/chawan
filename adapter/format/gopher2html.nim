@@ -11,12 +11,13 @@ func gopherName(c: char): string =
   of '5': "DOS binary"
   of '7': "search"
   of 'm': "message"
-  of 's': "sound"
+  of 's', '<': "sound"
   of 'g': "gif"
   of 'h': "HTML"
-  of 'I': "image"
+  of 'I', ':': "image"
   of '9': "binary"
   of 'p': "png"
+  of ';': "video"
   else: "unsupported"
 
 proc main() =
