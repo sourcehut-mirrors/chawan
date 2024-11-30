@@ -128,11 +128,16 @@ scrollLeft = 'n => pager.scrollLeft(n)'
 scrollRight = 'n => pager.scrollRight(n)'
 click = '() => pager.click()'
 viewImage = '''
-() => {
-	if (pager.hoverImage) {
-		const headers = new Headers({Accept: "*/*"});
-		pager.gotoURL(new Request(pager.hoverImage, {headers: headers}));
+(_, save) => {
+	let contentType = null;
+	let url = new Request(pager.hoverImage, {headers: {Accept: "*/*"}});
+	if (pager.hoverCachedImage) {
+		[url, contentType] = pager.hoverCachedImage.split(' ');
+		url = 'file:' + pager.getCacheFile(url, pager.buffer.process);
+		console.log(url)
 	}
+	if (url)
+		pager.gotoURL(url, {contentType: contentType, save: save});
 }
 '''
 toggleImages = '() => pager.toggleImages()'
@@ -168,6 +173,7 @@ sourceEdit = '''
 '''
 saveLink = '() => pager.saveLink()'
 saveSource = '() => pager.saveSource()'
+saveImage = '() => cmd.buffer.viewImage(1, true);'
 mark = '''
 async () => {
 	const c = await pager.askChar("m");
@@ -396,6 +402,7 @@ m = 'cmd.buffer.mark'
 C-m = 'cmd.buffer.click'
 C-j = 'cmd.buffer.click'
 I = 'cmd.buffer.viewImage'
+sI = 'cmd.buffer.saveImage'
 M-i = 'cmd.buffer.toggleImages'
 ':' = 'cmd.buffer.markURL'
 r = 'cmd.buffer.redraw'

@@ -63,9 +63,7 @@ type
     bsLoadingPage, bsLoadingResources, bsLoaded
 
   HoverType* = enum
-    htTitle = "TITLE"
-    htLink = "URL"
-    htImage = "IMAGE"
+    htTitle, htLink, htImage, htCachedImage
 
   BufferMatch* = object
     success*: bool
@@ -382,28 +380,34 @@ proc getClickHover(buffer: Buffer; element: Element): string =
   ""
 
 proc getImageHover(buffer: Buffer; element: Element): string =
-  for element in element.branchElems:
-    if element of HTMLImageElement:
-      let image = HTMLImageElement(element)
-      let src = image.attr(satSrc)
-      if src != "":
-        let url = image.document.parseURL(src)
-        if url.isSome:
-          return $url.get
-    elif element of HTMLVideoElement:
-      let video = HTMLVideoElement(element)
-      let src = video.getSrc()
-      if src != "":
-        let url = video.document.parseURL(src)
-        if url.isSome:
-          return $url.get
-    elif element of HTMLAudioElement:
-      let audio = HTMLAudioElement(element)
-      let src = audio.getSrc()
-      if src != "":
-        let url = audio.document.parseURL(src)
-        if url.isSome:
-          return $url.get
+  if element of HTMLImageElement:
+    let image = HTMLImageElement(element)
+    let src = image.attr(satSrc)
+    if src != "":
+      let url = image.document.parseURL(src)
+      if url.isSome:
+        return $url.get
+  elif element of HTMLVideoElement:
+    let video = HTMLVideoElement(element)
+    let src = video.getSrc()
+    if src != "":
+      let url = video.document.parseURL(src)
+      if url.isSome:
+        return $url.get
+  elif element of HTMLAudioElement:
+    let audio = HTMLAudioElement(element)
+    let src = audio.getSrc()
+    if src != "":
+      let url = audio.document.parseURL(src)
+      if url.isSome:
+        return $url.get
+  ""
+
+proc getCachedImageHover(buffer: Buffer; element: Element): string =
+  if element of HTMLImageElement:
+    let image = HTMLImageElement(element)
+    if image.bitmap.cacheId != 0:
+      return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
   ""
 
 func getCursorStyledNode(buffer: Buffer; cursorx, cursory: int): StyledNode =
@@ -881,7 +885,8 @@ type UpdateHoverResult* = object
 const HoverFun = [
   htTitle: getTitleAttr,
   htLink: getClickHover,
-  htImage: getImageHover
+  htImage: getImageHover,
+  htCachedImage: getCachedImageHover
 ]
 proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
     {.proxy.} =

@@ -1358,6 +1358,12 @@ position.</td>
 <td>Save the source of the current buffer to the disk.</td>
 </tr>
 
+<tr>
+<td><kbd>sI</kbd></td>
+<td>`cmd.buffer.saveImage`</td>
+<td>Save the image currently under the cursor.</td>
+</tr>
+
 </table>
 
 

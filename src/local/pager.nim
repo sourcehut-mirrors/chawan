@@ -170,8 +170,8 @@ proc getLineHist(pager: Pager; mode: LineMode): LineHistory
 template attrs(pager: Pager): WindowAttributes =
   pager.term.attrs
 
-func loaderPid(pager: Pager): int64 {.jsfget.} =
-  int64(pager.loader.process)
+func loaderPid(pager: Pager): int {.jsfget.} =
+  return pager.loader.process
 
 func getRoot(container: Container): Container =
   var c = container
@@ -1240,8 +1240,9 @@ proc toggleSource(pager: Pager) {.jsfunc.} =
       pager.container.sourcepair = container
       pager.addContainer(container)
 
-proc getCacheFile(pager: Pager; cacheId: int): string {.jsfunc.} =
-  return pager.loader.getCacheFile(cacheId)
+proc getCacheFile(pager: Pager; cacheId: int; pid = -1): string {.jsfunc.} =
+  let pid = if pid == -1: pager.loader.clientPid else: pid
+  return pager.loader.getCacheFile(cacheId, pid)
 
 proc cacheFile(pager: Pager): string {.jsfget.} =
   if pager.container != nil:
@@ -1750,6 +1751,7 @@ proc load(pager: Pager; s = "") {.jsfunc.} =
 type GotoURLDict = object of JSDict
   contentType {.jsdefault.}: Option[string]
   replace {.jsdefault.}: Container
+  save {.jsdefault.}: bool
 
 proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
     {.jsfunc: "gotoURL".} =
@@ -1765,7 +1767,7 @@ proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
       url = ?newURL(s)
     request = newRequest(url)
   discard pager.gotoURL(request, contentType = t.contentType,
-    replace = t.replace)
+    replace = t.replace, save = t.save)
   return ok()
 
 # Reload the page in a new buffer, then kill the previous buffer.

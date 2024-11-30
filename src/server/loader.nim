@@ -1104,12 +1104,15 @@ proc loadConfig(ctx: LoaderContext; stream: SocketStream; client: ClientData;
   r.sread(config)
   ctx.load(stream, request, client, config)
 
-proc getCacheFile(ctx: LoaderContext; stream: SocketStream; client: ClientData;
+proc getCacheFile(ctx: LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
   var cacheId: int
+  var sourcePid: int
   r.sread(cacheId)
+  r.sread(sourcePid)
+  let client = ctx.clientData.getOrDefault(sourcePid, nil)
+  let n = if client != nil: client.cacheMap.find(cacheId) else: -1
   stream.withPacketWriter w:
-    let n = client.cacheMap.find(cacheId)
     if n != -1:
       w.swrite(client.cacheMap[n].path)
     else:
@@ -1335,7 +1338,7 @@ proc acceptConnection(ctx: LoaderContext) =
         ctx.loadConfig(stream, client, r)
       of lcGetCacheFile:
         privileged_command
-        ctx.getCacheFile(stream, client, r)
+        ctx.getCacheFile(stream, r)
       of lcAddCacheFile:
         ctx.addCacheFile(stream, client, r)
       of lcRemoveCachedItem:

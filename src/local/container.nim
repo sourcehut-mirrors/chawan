@@ -1702,6 +1702,9 @@ func hoverTitle(container: Container): string {.jsfget.} =
 func hoverImage(container: Container): string {.jsfget.} =
   return container.hoverText[htImage]
 
+func hoverCachedImage(container: Container): string {.jsfget.} =
+  return container.hoverText[htCachedImage]
+
 proc handleCommand(container: Container) =
   var packet: array[3, int] # 0 len, 1 auxLen, 2 packetid
   container.iface.stream.recvDataLoop(addr packet[0], sizeof(packet))

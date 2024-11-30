@@ -231,13 +231,14 @@ proc addCacheFile*(loader: FileLoader; outputId, targetPid: int): int =
   stream.sclose()
   return outputId
 
-proc getCacheFile*(loader: FileLoader; cacheId: int): string =
+proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
   let stream = loader.connect()
   if stream == nil:
     return ""
   stream.withLoaderPacketWriter loader, w:
     w.swrite(lcGetCacheFile)
     w.swrite(cacheId)
+    w.swrite(sourcePid)
   var r = stream.initPacketReader()
   var s: string
   r.sread(s)
