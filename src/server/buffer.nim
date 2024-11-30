@@ -406,7 +406,7 @@ proc getImageHover(buffer: Buffer; element: Element): string =
 proc getCachedImageHover(buffer: Buffer; element: Element): string =
   if element of HTMLImageElement:
     let image = HTMLImageElement(element)
-    if image.bitmap.cacheId != 0:
+    if image.bitmap != nil and image.bitmap.cacheId != 0:
       return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
   ""
 
