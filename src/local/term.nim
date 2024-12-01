@@ -1100,7 +1100,8 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
   if not windowOnly:
     var outs = ""
-    if term.tname != "screen":
+    let isTmux = getEnv("TMUX") != ""
+    if term.tname != "screen" or isTmux:
       # screen has a horrible bug (feature?) where the responses to
       # bg/fg queries are printed out of order (presumably because it
       # must ask the terminal first).
