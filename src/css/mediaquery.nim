@@ -427,7 +427,6 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
     else:
       return err()
   elif tokval.equalsIgnoreCase("and"):
-    parser.reconsume()
     return parser.parseMediaAnd(res)
   else:
     return err()
