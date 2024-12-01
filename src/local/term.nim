@@ -597,14 +597,14 @@ proc generateSwapOutput(term: Terminal): string =
 
 proc hideCursor*(term: Terminal) =
   when TermcapFound:
-    if term.tc != nil:
+    if term.tc != nil and term.hascap vi:
       term.write(term.ccap vi)
       return
   term.write(CIVIS)
 
 proc showCursor*(term: Terminal) =
   when TermcapFound:
-    if term.tc != nil:
+    if term.tc != nil and term.hascap ve:
       term.write(term.ccap ve)
       return
   term.write(CNORM)
@@ -1277,10 +1277,16 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       term.tname = "dosansi"
   var win: IOctl_WinSize
   if ioctl(term.istream.fd, TIOCGWINSZ, addr win) != -1:
-    term.attrs.width = int(win.ws_col)
-    term.attrs.height = int(win.ws_row)
-    term.attrs.ppc = int(win.ws_xpixel) div term.attrs.width
-    term.attrs.ppl = int(win.ws_ypixel) div term.attrs.height
+    if win.ws_col > 0:
+      term.attrs.width = int(win.ws_col)
+      term.attrs.ppc = int(win.ws_xpixel) div term.attrs.width
+    if win.ws_row > 0:
+      term.attrs.height = int(win.ws_row)
+      term.attrs.ppl = int(win.ws_ypixel) div term.attrs.height
+  if term.attrs.width == 0:
+    term.attrs.width = int(parseInt32(getEnv("COLUMNS")).get(0))
+  if term.attrs.height == 0:
+    term.attrs.height = int(parseInt32(getEnv("LINES")).get(0))
   if term.config.display.query_da1:
     let r = term.queryAttrs(windowOnly)
     if r.success: # DA1 success
