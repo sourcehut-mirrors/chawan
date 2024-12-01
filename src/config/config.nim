@@ -110,6 +110,8 @@ type
     urimethodmap*: URIMethodMap
     download_dir* {.jsgetset.}: ChaPathResolved
     w3m_cgi_compat* {.jsgetset.}: bool
+    copy_cmd* {.jsgetset.}: string
+    paste_cmd* {.jsgetset.}: string
 
   InputConfig = object
     vi_numeric_prefix* {.jsgetset.}: bool

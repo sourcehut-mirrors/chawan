@@ -349,6 +349,20 @@ details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
 <td>Path to pre-fill for "Save to:" prompts.</td>
 </tr>
 
+<tr>
+<td>copy-cmd</td>
+<td>shell command</td>
+<td>Command to use for "copy to clipboard" operations. Currently it
+defaults to `xsel -bi`.</td>
+</tr>
+
+<tr>
+<td>paste-cmd</td>
+<td>shell command</td>
+<td>Command to use for "read from clipboard" operations. Currently it
+defaults to `xsel -bo`.</td>
+</tr>
+
 </table>
 
 ## Input

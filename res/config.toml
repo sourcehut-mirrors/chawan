@@ -9,10 +9,10 @@ quit = '() => quit()'
 suspend = '() => suspend()'
 copyURL = '''
 () => {
-	if (pager.externInto('xsel -bi', pager.url))
+	if (pager.externInto(config.external.copy_cmd, pager.url))
 		pager.alert("Copied URL to clipboard.");
 	else
-		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
+		pager.alert("Error; please install xsel or adjust external.copy-cmd");
 }
 '''
 copyCursorLink = '''
@@ -20,10 +20,10 @@ copyCursorLink = '''
 	const link = pager.hoverLink;
 	if (!link)
 		pager.alert("Please move the cursor above a link and try again.");
-	else if (pager.externInto('xsel -bi', link))
+	else if (pager.externInto(config.external.copy_cmd, link))
 		pager.alert("Copied URL to clipboard.");
 	else
-		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
+		pager.alert("Error; please install xsel or adjust external.copy-cmd");
 }
 '''
 copyCursorImage = '''
@@ -31,17 +31,17 @@ copyCursorImage = '''
 	const link = pager.hoverImage;
 	if (!link)
 		pager.alert("Please move the cursor above an image and try again.");
-	else if (pager.externInto('xsel -bi', link))
+	else if (pager.externInto(config.external.copy_cmd, link))
 		pager.alert("Copied URL to clipboard.");
 	else
-		pager.alert("Failed to copy URL to clipboard. (Is xsel installed?)");
+		pager.alert("Error; please install xsel or adjust external.copy-cmd");
 }
 '''
 gotoClipboardURL = '''
 () => {
-	const s = pager.externCapture('xsel -bo');
+	const s = pager.externCapture(config.external.paste_cmd);
 	if (s === null)
-		pager.alert("Failed to read URL from clipboard. (Is xsel installed?)");
+		pager.alert("Error; please install xsel or adjust external.paste-cmd");
 	else
 		pager.loadSubmit(s);
 }
@@ -202,10 +202,10 @@ async () => {
 		return;
 	}
 	const text = await pager.getSelectionText(pager.currentSelection);
-	if (pager.externInto('xsel -bi', text))
+	if (pager.externInto(config.external.copy_cmd, text))
 		pager.alert("Copied selection to clipboard.");
 	else
-		pager.alert("Failed to copy selection to clipboard. (Is xsel installed?)");
+		pager.alert("Error; please install xsel or adjust external.copy-cmd");
 	pager.cursorToggleSelection();
 }
 '''
@@ -278,6 +278,8 @@ editor = "${EDITOR:-vi}"
 cgi-dir = ["$CHA_CONFIG_DIR/cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
 download-dir = "${TMPDIR:-/tmp}/"
 w3m-cgi-compat = false
+copy-cmd = 'xsel -bi'
+paste-cmd = 'xsel -bo'
 
 [network]
 max-redirect = 10
