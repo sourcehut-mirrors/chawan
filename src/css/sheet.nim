@@ -234,7 +234,7 @@ proc parseStylesheet*(ibuf: string; factory: CAtomFactory; base: URL):
     CSSStylesheet =
   let raw = parseStylesheet(ibuf)
   let sheet = newStylesheet(raw.value.len, factory)
-  for i, v in raw.value.mypairs:
+  for v in raw.value:
     if v of CSSAtRule:
       sheet.addAtRule(CSSAtRule(v), base)
     else:
