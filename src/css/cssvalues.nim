@@ -827,7 +827,7 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
     return some(CSSLength(num: n, u: cuPerc))
   return some(CSSLength(num: n, u: cuPx))
 
-func skipWhitespace(vals: openArray[CSSComponentValue]; i: var int) =
+func skipWhitespace*(vals: openArray[CSSComponentValue]; i: var int) =
   while i < vals.len:
     if vals[i] != cttWhitespace:
       break
@@ -1124,14 +1124,17 @@ func cssMaxMinSize(cval: CSSComponentValue): Opt[CSSLength] =
   return err()
 
 #TODO should be URL (parsed with baseurl of document...)
-func cssURL(cval: CSSComponentValue): Option[string] =
+func cssURL*(cval: CSSComponentValue; src = false): Option[string] =
   if isToken(cval):
     let tok = getToken(cval)
     if tok == cttUrl:
       return some(tok.value)
+    elif not src and tok == cttString:
+      return some(tok.value)
   elif cval of CSSFunction:
     let fun = CSSFunction(cval)
-    if fun.name.equalsIgnoreCase("url") or fun.name.equalsIgnoreCase("src"):
+    if fun.name.equalsIgnoreCase("url") or
+        src and fun.name.equalsIgnoreCase("src"):
       for x in fun.value:
         if not isToken(x):
           break
@@ -1142,6 +1145,7 @@ func cssURL(cval: CSSComponentValue): Option[string] =
           return some(x.value)
         else:
           break
+  return none(string)
 
 #TODO this should be bg-image, add gradient, etc etc
 func cssImage(cval: CSSComponentValue): Opt[CSSContent] =
@@ -1150,7 +1154,7 @@ func cssImage(cval: CSSComponentValue): Opt[CSSContent] =
     let tok = getToken(cval)
     if tok.tokenType == cttIdent and tok.value.equalsIgnoreCase("none"):
       return ok(CSSContent(t: ContentNone))
-  let url = cssURL(cval)
+  let url = cssURL(cval, src = true)
   if url.isSome:
     #TODO do something with the URL
     return ok(CSSContent(t: ContentImage))

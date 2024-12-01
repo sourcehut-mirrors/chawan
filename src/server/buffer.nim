@@ -924,7 +924,13 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
   return UpdateHoverResult(repaint: repaint, hover: hover)
 
 proc loadResources(buffer: Buffer): EmptyPromise =
-  return buffer.window.loadingResourcePromises.all()
+  if buffer.window.pendingResources.len > 0:
+    let pendingResources = move(buffer.window.pendingResources)
+    buffer.window.pendingResources.setLen(0)
+    return pendingResources.all().then(proc(): EmptyPromise =
+      return buffer.loadResources()
+    )
+  return newResolvedPromise()
 
 proc rewind(buffer: Buffer; offset: int; unregister = true): bool =
   let url = newURL("cache:" & $buffer.cacheId & "?" & $offset).get
@@ -1130,7 +1136,6 @@ proc onload(buffer: Buffer) =
       reprocess = false
     else: # EOF
       buffer.finishLoad().then(proc() =
-        buffer.window.loadingResourcePromises = @[]
         discard buffer.maybeReshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
@@ -1749,7 +1754,6 @@ proc toggleImages0(buffer: Buffer): bool =
       buffer.savetask = false
     else:
       buffer.resolveTask(bcToggleImages, buffer.config.images)
-    buffer.window.loadingResourcePromises = @[]
     buffer.prevStyled = nil
     buffer.rootBox = nil
     buffer.reshape()
@@ -1935,9 +1939,9 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   const css = staticRead"res/ua.css"
   const quirk = css & staticRead"res/quirk.css"
   buffer.initDecoder()
-  buffer.uastyle = css.parseStylesheet(factory)
-  buffer.quirkstyle = quirk.parseStylesheet(factory)
-  buffer.userstyle = parseStylesheet(buffer.config.userstyle, factory)
+  buffer.uastyle = css.parseStylesheet(factory, nil)
+  buffer.quirkstyle = quirk.parseStylesheet(factory, nil)
+  buffer.userstyle = buffer.config.userstyle.parseStylesheet(factory, nil)
   buffer.htmlParser = newHTML5ParserWrapper(
     buffer.window,
     buffer.url,

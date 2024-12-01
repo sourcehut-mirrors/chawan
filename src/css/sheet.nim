@@ -1,3 +1,4 @@
+import std/options
 import std/tables
 
 import css/cssparser
@@ -5,6 +6,7 @@ import css/cssvalues
 import css/mediaquery
 import css/selectorparser
 import html/catom
+import types/url
 import utils/twtstr
 
 type
@@ -31,6 +33,7 @@ type
     classTable*: Table[CAtom, seq[CSSRuleDef]]
     attrTable*: Table[CAtom, seq[CSSRuleDef]]
     generalList*: seq[CSSRuleDef]
+    importList*: seq[URL]
     len: int
     factory: CAtomFactory
 
@@ -193,31 +196,47 @@ proc addRule(stylesheet: CSSStylesheet; rule: CSSQualifiedRule) =
     ))
     inc stylesheet.len
 
-proc addAtRule(stylesheet: CSSStylesheet; atrule: CSSAtRule) =
-  if atrule.oblock == nil: # invalid at-rule
-    return
-  if atrule.name.equalsIgnoreCase("media"):
-    let query = parseMediaQueryList(atrule.prelude)
-    let rules = atrule.oblock.value.parseListOfRules()
-    if rules.len > 0:
-      var media = CSSMediaQueryDef()
-      media.children = newStylesheet(rules.len, stylesheet.factory)
-      media.children.len = stylesheet.len
-      media.query = query
-      for rule in rules:
-        if rule of CSSAtRule:
-          media.children.addAtRule(CSSAtRule(rule))
-        else:
-          media.children.addRule(CSSQualifiedRule(rule))
-      stylesheet.mqList.add(media)
-      stylesheet.len = media.children.len
+proc addAtRule(stylesheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
+  if atrule.name.equalsIgnoreCase("import"):
+    if stylesheet.len == 0 and base != nil:
+      var i = 0
+      atrule.prelude.skipWhitespace(i)
+      # Warning: this is a tracking vector minefield. If you implement
+      # media query based imports, make sure to not filter here, but in
+      # DOM after the sheet has been downloaded. (e.g. importList can
+      # get a "media" field, etc.)
+      if i < atrule.prelude.len:
+        if (let url = cssURL(atrule.prelude[i]); url.isSome):
+          if (let url = parseURL(url.get, some(base)); url.isSome):
+            inc i
+            atrule.prelude.skipWhitespace(i)
+            # check if there are really no media queries/layers/etc
+            if i == atrule.prelude.len:
+              stylesheet.importList.add(url.get)
+  elif atrule.name.equalsIgnoreCase("media"):
+    if atrule.oblock != nil:
+      let query = parseMediaQueryList(atrule.prelude)
+      let rules = atrule.oblock.value.parseListOfRules()
+      if rules.len > 0:
+        var media = CSSMediaQueryDef()
+        media.children = newStylesheet(rules.len, stylesheet.factory)
+        media.children.len = stylesheet.len
+        media.query = query
+        for rule in rules:
+          if rule of CSSAtRule:
+            media.children.addAtRule(CSSAtRule(rule), nil)
+          else:
+            media.children.addRule(CSSQualifiedRule(rule))
+        stylesheet.mqList.add(media)
+        stylesheet.len = media.children.len
 
-proc parseStylesheet*(ibuf: string; factory: CAtomFactory): CSSStylesheet =
+proc parseStylesheet*(ibuf: string; factory: CAtomFactory; base: URL):
+    CSSStylesheet =
   let raw = parseStylesheet(ibuf)
   let sheet = newStylesheet(raw.value.len, factory)
-  for v in raw.value:
+  for i, v in raw.value.mypairs:
     if v of CSSAtRule:
-      sheet.addAtRule(CSSAtRule(v))
+      sheet.addAtRule(CSSAtRule(v), base)
     else:
       sheet.addRule(CSSQualifiedRule(v))
   return sheet

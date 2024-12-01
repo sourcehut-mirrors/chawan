@@ -97,7 +97,7 @@ type
     navigate*: proc(url: URL)
     importMapsAllowed*: bool
     factory*: CAtomFactory
-    loadingResourcePromises*: seq[EmptyPromise]
+    pendingResources*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
     images*: bool
     styling*: bool
@@ -310,7 +310,7 @@ type
     sheet: CSSStylesheet
 
   HTMLLinkElement* = ref object of HTMLElement
-    sheet*: CSSStylesheet
+    sheets: seq[CSSStylesheet]
     relList {.jsget.}: DOMTokenList
     fetchStarted: bool
     enabled: Option[bool]
@@ -2513,14 +2513,13 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
     for elem in document.documentElement.descendants:
       if elem of HTMLStyleElement:
         let style = HTMLStyleElement(elem)
-        style.sheet = parseStylesheet(style.textContent, document.factory)
-        if style.sheet != nil:
-          document.cachedSheets.add(style.sheet)
+        style.sheet = parseStylesheet(style.textContent, document.factory,
+          document.baseURL)
+        document.cachedSheets.add(style.sheet)
       elif elem of HTMLLinkElement:
         let link = HTMLLinkElement(elem)
-        if link.sheet != nil and
-            link.enabled.get(satAlternate notin link.relList):
-          document.cachedSheets.add(link.sheet)
+        if link.enabled.get(satAlternate notin link.relList):
+          document.cachedSheets.add(link.sheets)
       else: discard
     document.cachedSheetsInvalid = false
   return document.cachedSheets
@@ -3301,6 +3300,30 @@ proc corsFetch(window: Window; input: Request): FetchPromise =
     return newResolvedPromise(JSResult[Response].err(newFetchTypeError()))
   return window.loader.fetch(input)
 
+proc loadSheet(window: Window; link: HTMLLinkElement; url: URL; applies: bool) =
+  let p = window.corsFetch(
+    newRequest(url)
+  ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
+    if res.isSome:
+      let res = res.get
+      if res.getContentType() == "text/css":
+        return res.text()
+      res.close()
+    return newResolvedPromise(JSResult[string].err(nil))
+  ).then(proc(s: JSResult[string]) =
+    # Check applies here, to avoid leaking the window size.
+    if s.isSome:
+      let sheet = s.get.parseStylesheet(window.factory, url)
+      if applies:
+        # Note: we intentionally load all sheets to prevent media query
+        # based tracking.
+        link.sheets.add(sheet)
+        window.document.cachedSheetsInvalid = true
+      for url in sheet.importList:
+        window.loadSheet(link, url, true) #TODO media query
+  )
+  window.pendingResources.add(p)
+
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window; link: HTMLLinkElement) =
@@ -3321,23 +3344,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals)
       applies = media.appliesImpl(window)
-    let p = window.corsFetch(
-      newRequest(url)
-    ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
-      if res.isSome:
-        let res = res.get
-        if res.getContentType() == "text/css":
-          return res.text()
-        res.close()
-      return newResolvedPromise(JSResult[string].err(nil))
-    ).then(proc(s: JSResult[string]) =
-      # Check applies here, to avoid leaking the window size.
-      if s.isSome and applies:
-        #TODO non-utf-8 css?
-        link.sheet = parseStylesheet(s.get, window.factory)
-        window.document.cachedSheetsInvalid = true
-    )
-    window.loadingResourcePromises.add(p)
+    window.loadSheet(link, url, applies)
 
 proc getImageId(window: Window): int =
   result = window.imageId
@@ -3440,7 +3447,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           image.setInvalid()
         )
       )
-    window.loadingResourcePromises.add(p)
+    window.pendingResources.add(p)
 
 proc reflectEvent(element: Element; target: EventTarget; name, ctype: StaticAtom;
     value: string) =
