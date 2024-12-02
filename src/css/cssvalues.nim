@@ -407,10 +407,10 @@ type
     coUser
     coAuthor
 
-  CSSComputedEntry* = tuple
-    t: CSSPropertyType
-    val: CSSComputedValue
-    global: CSSGlobalType
+  CSSComputedEntry* = object
+    t*: CSSPropertyType
+    obj*: CSSComputedValue
+    global*: CSSGlobalType
 
 const ValueTypes = [
   cptNone: cvtNone,
@@ -487,7 +487,7 @@ func shorthandType(s: string): CSSShorthandType =
 func propertyType(s: string): CSSPropertyType =
   return parseEnumNoCase[CSSPropertyType](s).get(cptNone)
 
-func valueType(prop: CSSPropertyType): CSSValueType =
+func valueType*(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
 func isSupportedProperty*(s: string): bool =
@@ -1170,6 +1170,16 @@ func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float64] =
         return ok(tok.nvalue)
   return err()
 
+proc makeEntry*(t: CSSPropertyType; obj: CSSComputedValue): CSSComputedEntry =
+  return CSSComputedEntry(t: t, obj: obj)
+
+proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
+  return CSSComputedEntry(t: t, global: global)
+
+proc makeEntry*(t: CSSPropertyType; obj: CSSComputedValue;
+    global: CSSGlobalType): CSSComputedEntry =
+  return CSSComputedEntry(t: t, obj: obj, global: global)
+
 proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
     Opt[CSSComputedValue] =
   var i = 0
@@ -1302,7 +1312,7 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
   var res: seq[CSSComputedEntry] = @[]
   if global != cgtNone:
     for t in props:
-      res.add((t, nil, global))
+      res.add(makeEntry(t, global))
     return ok(res)
   var lengths: seq[CSSComputedValue] = @[]
   var i = 0
@@ -1315,10 +1325,10 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
   case lengths.len
   of 1: # top, bottom, left, right
     for i, t in props.mypairs:
-      res.add((t, lengths[0], cgtNone))
+      res.add(makeEntry(t, lengths[0]))
   of 2: # top, bottom | left, right
     for i, t in props.mypairs:
-      res.add((t, lengths[i mod 2], cgtNone))
+      res.add(makeEntry(t, lengths[i mod 2]))
   of 3: # top | left, right | bottom
     for i, t in props.mypairs:
       let j = if i == 0:
@@ -1327,10 +1337,10 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
         2 # bottom
       else:
         1 # left, right
-      res.add((t, lengths[j], cgtNone))
+      res.add(makeEntry(t, lengths[j]))
   of 4: # top | right | bottom | left
     for i, t in props.mypairs:
-      res.add((t, lengths[i], cgtNone))
+      res.add(makeEntry(t, lengths[i]))
   else:
     return err()
   return ok(res)
@@ -1354,14 +1364,14 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
   of cstNone:
     let t = propertyType(name)
     if global != cgtNone:
-      res.add((t, nil, global))
+      res.add(makeEntry(t, global))
     else:
-      res.add((t, ?cvals.parseValue(t), global))
+      res.add(makeEntry(t, ?cvals.parseValue(t)))
   of cstAll:
     if global == cgtNone:
       return err()
     for t in CSSPropertyType:
-      res.add((t, nil, global))
+      res.add(makeEntry(t, global))
   of cstMargin:
     res.add(?lengthShorthand(cvals, PropertyMarginSpec, global))
   of cstPadding:
@@ -1384,8 +1394,8 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
           #valid = false
           discard
     if valid:
-      res.add((cptBackgroundColor, bgcolorval, global))
-      res.add((cptBackgroundImage, bgimageval, global))
+      res.add(makeEntry(cptBackgroundColor, bgcolorval, global))
+      res.add(makeEntry(cptBackgroundImage, bgimageval, global))
   of cstListStyle:
     var positionVal = getDefault(cptListStylePosition)
     var typeVal = getDefault(cptListStyleType)
@@ -1409,8 +1419,8 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
           #valid = false
           discard
     if valid:
-      res.add((cptListStylePosition, positionVal, global))
-      res.add((cptListStyleType, typeVal, global))
+      res.add(makeEntry(cptListStylePosition, positionVal, global))
+      res.add(makeEntry(cptListStyleType, typeVal, global))
   of cstFlex:
     if global == cgtNone:
       var i = 0
@@ -1420,7 +1430,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       if (let r = cssNumber(cvals[i], positive = true); r.isSome):
         # flex-grow
         let val = CSSComputedValue(v: cvtNumber, number: r.get)
-        res.add((cptFlexGrow, val, global))
+        res.add(makeEntry(cptFlexGrow, val))
         inc i
         cvals.skipWhitespace(i)
         if i < cvals.len:
@@ -1429,29 +1439,29 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
           if (let r = cssNumber(cvals[i], positive = true); r.isSome):
             # flex-shrink
             let val = CSSComputedValue(v: cvtNumber, number: r.get)
-            res.add((cptFlexShrink, val, global))
+            res.add(makeEntry(cptFlexShrink, val))
             inc i
             cvals.skipWhitespace(i)
       if res.len < 1: # flex-grow omitted, default to 1
         let val = CSSComputedValue(v: cvtNumber, number: 1)
-        res.add((cptFlexGrow, val, global))
+        res.add(makeEntry(cptFlexGrow, val))
       if res.len < 2: # flex-shrink omitted, default to 1
         let val = CSSComputedValue(v: cvtNumber, number: 1)
-        res.add((cptFlexShrink, val, global))
+        res.add(makeEntry(cptFlexShrink, val))
       if i < cvals.len:
         # flex-basis
         let val = CSSComputedValue(v: cvtLength, length: ?cssLength(cvals[i]))
-        res.add((cptFlexBasis, val, global))
+        res.add(makeEntry(cptFlexBasis, val))
       else: # omitted, default to 0px
         let val = CSSComputedValue(
           v: cvtLength,
           length: CSSLength(u: cuPx, num: 0)
         )
-        res.add((cptFlexBasis, val, global))
+        res.add(makeEntry(cptFlexBasis, val, global))
     else:
-      res.add((cptFlexGrow, getDefault(cptFlexGrow), global))
-      res.add((cptFlexShrink, getDefault(cptFlexShrink), global))
-      res.add((cptFlexBasis, getDefault(cptFlexBasis), global))
+      res.add(makeEntry(cptFlexGrow, global))
+      res.add(makeEntry(cptFlexShrink, global))
+      res.add(makeEntry(cptFlexBasis, global))
   of cstFlexFlow:
     if global == cgtNone:
       var i = 0
@@ -1461,16 +1471,16 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       if (let dir = parseIdent[CSSFlexDirection](cvals[i]); dir.isSome):
         # flex-direction
         let val = CSSComputedValue(v: cvtFlexDirection, flexdirection: dir.get)
-        res.add((cptFlexDirection, val, global))
+        res.add(makeEntry(cptFlexDirection, val))
         inc i
         cvals.skipWhitespace(i)
       if i < cvals.len:
         let wrap = ?parseIdent[CSSFlexWrap](cvals[i])
         let val = CSSComputedValue(v: cvtFlexWrap, flexwrap: wrap)
-        res.add((cptFlexWrap, val, global))
+        res.add(makeEntry(cptFlexWrap, val))
     else:
-      res.add((cptFlexDirection, getDefault(cptFlexDirection), global))
-      res.add((cptFlexWrap, getDefault(cptFlexWrap), global))
+      res.add(makeEntry(cptFlexDirection, global))
+      res.add(makeEntry(cptFlexWrap, global))
   return ok()
 
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue]):
@@ -1506,12 +1516,12 @@ proc applyValue*(vals: CSSComputedValues; entry: CSSComputedEntry;
     else:
       vals[entry.t] = getDefault(entry.t)
   of cgtNone:
-    vals[entry.t] = entry.val
+    vals[entry.t] = entry.obj
 
 func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
   new(result)
   for prop in CSSPropertyType:
-    if inherited(prop) and parent[prop] != nil:
+    if inherited(prop):
       result[prop] = parent[prop]
     else:
       result[prop] = getDefault(prop)

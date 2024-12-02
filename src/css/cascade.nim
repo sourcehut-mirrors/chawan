@@ -118,63 +118,63 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
     for item in tosorts[i]:
       result[i].add(item[1])
 
-func calcPresentationalHints(element: Element): CSSComputedValues =
-  template set_cv(a, b: untyped) =
-    if result == nil:
-      new(result)
-    result{a} = b
+func calcPresHints(element: Element): seq[CSSComputedEntry] =
+  result = @[]
+  template set_cv(t, x, b: untyped) =
+    const v = valueType(t)
+    result.add(makeEntry(t, CSSComputedValue(v: v, x: b)))
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
     if s.isSome:
-      set_cv "width", s.get
+      set_cv cptWidth, length, s.get
   template map_height =
     let s = parseDimensionValues(element.attr(satHeight))
     if s.isSome:
-      set_cv "height", s.get
+      set_cv cptHeight, length, s.get
   template map_width_nozero =
     let s = parseDimensionValues(element.attr(satWidth))
     if s.isSome and s.get.num != 0:
-      set_cv "width", s.get
+      set_cv cptWidth, length, s.get
   template map_height_nozero =
     let s = parseDimensionValues(element.attr(satHeight))
     if s.isSome and s.get.num != 0:
-      set_cv "height", s.get
+      set_cv cptHeight, length, s.get
   template map_bgcolor =
     let s = element.attr(satBgcolor)
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
-        set_cv "background-color", c.get.cssColor()
+        set_cv cptBackgroundColor, color, c.get.cssColor()
   template map_size =
     let s = element.attrul(satSize)
     if s.isSome:
-      set_cv "width", CSSLength(num: float64(s.get), u: cuCh)
+      set_cv cptWidth, length, CSSLength(num: float64(s.get), u: cuCh)
   template map_text =
     let s = element.attr(satText)
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
-        set_cv "color", c.get.cssColor()
+        set_cv cptColor, color, c.get.cssColor()
   template map_color =
     let s = element.attr(satColor)
     if s != "":
       let c = parseLegacyColor(s)
       if c.isSome:
-        set_cv "color", c.get.cssColor()
+        set_cv cptColor, color, c.get.cssColor()
   template map_colspan =
     let colspan = element.attrulgz(satColspan)
     if colspan.isSome:
       let i = colspan.get
       if i <= 1000:
-        set_cv "-cha-colspan", int(i)
+        set_cv cptChaColspan, integer, int(i)
   template map_rowspan =
     let rowspan = element.attrul(satRowspan)
     if rowspan.isSome:
       let i = rowspan.get
       if i <= 65534:
-        set_cv "-cha-rowspan", int(i)
+        set_cv cptChaRowspan, integer, int(i)
   template set_bgcolor_is_canvas =
-    set_cv "-cha-bgcolor-is-canvas", true
+    set_cv cptBgcolorIsCanvas, bgcolorIsCanvas, true
 
   case element.tagType
   of TAG_TABLE:
@@ -208,8 +208,8 @@ func calcPresentationalHints(element: Element): CSSComputedValues =
     let textarea = HTMLTextAreaElement(element)
     let cols = textarea.attrul(satCols).get(20)
     let rows = textarea.attrul(satRows).get(1)
-    set_cv "width", CSSLength(u: cuCh, num: float64(cols))
-    set_cv "height", CSSLength(u: cuEm, num: float64(rows))
+    set_cv cptWidth, length, CSSLength(u: cuCh, num: float64(cols))
+    set_cv cptHeight, length, CSSLength(u: cuEm, num: float64(rows))
   of TAG_FONT:
     map_color
   of TAG_INPUT:
@@ -225,31 +225,29 @@ type
 
   CSSValueEntryMap = array[CSSOrigin, CSSValueEntryObj]
 
-func buildComputedValues(rules: CSSValueEntryMap; presHints, parent:
-    CSSComputedValues): CSSComputedValues =
+func buildComputedValues(rules: CSSValueEntryMap;
+    presHints: openArray[CSSComputedEntry]; parent: CSSComputedValues):
+    CSSComputedValues =
   new(result)
-  var previousOrigins: array[CSSOrigin, CSSComputedValues]
   for entry in rules[coUserAgent].normal: # user agent
     result.applyValue(entry, parent, nil)
-  previousOrigins[coUserAgent] = result.copyProperties()
+  let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
-  if presHints != nil:
-    for prop in CSSPropertyType:
-      if presHints[prop] != nil:
-        result[prop] = presHints[prop]
+  for entry in presHints:
+    result.applyValue(entry, nil, nil)
   for entry in rules[coUser].normal: # user
-    result.applyValue(entry, parent, previousOrigins[coUserAgent])
-  # save user origins so author can use them
-  previousOrigins[coUser] = result.copyProperties()
+    result.applyValue(entry, parent, uaProperties)
+  # save user properties so author can use them
+  let userProperties = result.copyProperties()
   for entry in rules[coAuthor].normal: # author
-    result.applyValue(entry, parent, previousOrigins[coUser])
+    result.applyValue(entry, parent, userProperties)
   # no need to save user origins
   for entry in rules[coAuthor].important: # author important
-    result.applyValue(entry, parent, previousOrigins[coUser])
+    result.applyValue(entry, parent, userProperties)
   # important, so no need to save origins
   for entry in rules[coUser].important: # user important
-    result.applyValue(entry, parent, previousOrigins[coUserAgent])
+    result.applyValue(entry, parent, uaProperties)
   # important, so no need to save origins
   for entry in rules[coUserAgent].important: # user agent important
     result.applyValue(entry, parent, nil)
@@ -257,7 +255,7 @@ func buildComputedValues(rules: CSSValueEntryMap; presHints, parent:
   # set defaults
   for prop in CSSPropertyType:
     if result[prop] == nil:
-      if prop.inherited and parent != nil and parent[prop] != nil:
+      if prop.inherited and parent != nil:
         result[prop] = parent[prop]
       else:
         result[prop] = getDefault(prop)
@@ -275,7 +273,7 @@ proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
 proc applyDeclarations(styledNode: StyledNode; parent: CSSComputedValues;
     map: RuleListMap; styling: bool) =
   var rules: CSSValueEntryMap
-  var presHints: CSSComputedValues = nil
+  var presHints: seq[CSSComputedEntry] = @[]
   rules[coUserAgent].add(map.ua[peNone])
   rules[coUser].add(map.user[peNone])
   for rule in map.author:
@@ -290,7 +288,7 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSComputedValues;
           rules[coAuthor].important.add(vals)
         else:
           rules[coAuthor].normal.add(vals)
-    presHints = element.calcPresentationalHints()
+    presHints = element.calcPresHints()
   styledNode.computed = rules.buildComputedValues(presHints, parent)
 
 func hasValues(rules: CSSValueEntryMap): bool =
@@ -308,7 +306,7 @@ proc applyDeclarations(pseudo: PseudoElem; styledParent: StyledNode;
   for rule in map.author:
     rules[coAuthor].add(rule[pseudo])
   if rules.hasValues():
-    let cvals = rules.buildComputedValues(nil, styledParent.computed)
+    let cvals = rules.buildComputedValues([], styledParent.computed)
     return styledParent.newStyledElement(pseudo, cvals)
   return nil
 
