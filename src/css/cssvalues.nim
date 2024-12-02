@@ -777,16 +777,10 @@ func quoteEnd*(level: int): string =
     return "“"
   return "‘"
 
-template isToken(cval: CSSComponentValue): bool =
-  cval of CSSToken
-
-template getToken(cval: CSSComponentValue): CSSToken =
-  CSSToken(cval)
-
 func parseIdent(map: openArray[IdentMapItem]; cval: CSSComponentValue): int =
-  if isToken(cval):
-    let tok = getToken(cval)
-    if tok.tokenType == cttIdent:
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    if tok.t == cttIdent:
       return map.parseEnumNoCase0(tok.value)
   return -1
 
@@ -886,11 +880,11 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
     #TODO numeric functions
     return err()
   let tok = CSSToken(value[i])
-  if tok.tokenType == cttNumber:
+  if tok.t == cttNumber:
     if tok.tflagb != tflagbInteger or int(tok.nvalue) notin 0..255:
       return err() # invalid numeric ANSI color
     return ok(ANSIColor(tok.nvalue).cssColor())
-  elif tok.tokenType == cttIdent:
+  elif tok.t == cttIdent:
     var name = tok.value
     if name.equalsIgnoreCase("default"):
       return ok(defaultColor.cssColor())
@@ -919,7 +913,7 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
 func cssColor*(val: CSSComponentValue): Opt[CSSColor] =
   if val of CSSToken:
     let tok = CSSToken(val)
-    case tok.tokenType
+    case tok.t
     of cttHash:
       let c = parseHexColor(tok.value)
       if c.isSome:
@@ -943,7 +937,7 @@ func cssLength*(val: CSSComponentValue; has_auto = true; allow_negative = true):
     Opt[CSSLength] =
   if val of CSSToken:
     let tok = CSSToken(val)
-    case tok.tokenType
+    case tok.t
     of cttNumber:
       if tok.nvalue == 0:
         return ok(CSSLength(num: 0, u: cuPx))
@@ -967,7 +961,7 @@ func cssLength*(val: CSSComponentValue; has_auto = true; allow_negative = true):
 func cssAbsoluteLength(val: CSSComponentValue): Opt[CSSLength] =
   if val of CSSToken:
     let tok = CSSToken(val)
-    case tok.tokenType
+    case tok.t
     of cttNumber:
       if tok.nvalue == 0:
         return ok(CSSLength(num: 0, u: cuPx))
@@ -990,9 +984,9 @@ func cssQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
   var pair: tuple[s, e: string]
   for cval in cvals:
     if res.auto: die
-    if isToken(cval):
-      let tok = getToken(cval)
-      case tok.tokenType
+    if cval of CSSToken:
+      let tok = CSSToken(cval)
+      case tok.t
       of cttIdent:
         if res.qs.len > 0: die
         if tok.value.equalsIgnoreCase("auto"):
@@ -1017,9 +1011,9 @@ func cssQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
 
 func cssContent(cvals: openArray[CSSComponentValue]): seq[CSSContent] =
   for cval in cvals:
-    if isToken(cval):
-      let tok = getToken(cval)
-      case tok.tokenType
+    if cval of CSSToken:
+      let tok = CSSToken(cval)
+      case tok.t
       of cttIdent:
         if tok.value == "/":
           break
@@ -1036,9 +1030,9 @@ func cssContent(cvals: openArray[CSSComponentValue]): seq[CSSContent] =
       else: return
 
 func cssFontWeight(cval: CSSComponentValue): Opt[int] =
-  if isToken(cval):
-    let tok = getToken(cval)
-    if tok.tokenType == cttIdent:
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    if tok.t == cttIdent:
       const FontWeightMap = {
         "normal": 400,
         "bold": 700,
@@ -1048,7 +1042,7 @@ func cssFontWeight(cval: CSSComponentValue): Opt[int] =
       let i = FontWeightMap.parseIdent(cval)
       if i != -1:
         return ok(i)
-    elif tok.tokenType == cttNumber:
+    elif tok.t == cttNumber:
       if tok.nvalue in 1f64..1000f64:
         return ok(int(tok.nvalue))
   return err()
@@ -1057,10 +1051,10 @@ func cssTextDecoration(cvals: openArray[CSSComponentValue]):
     Opt[set[CSSTextDecoration]] =
   var s: set[CSSTextDecoration] = {}
   for cval in cvals:
-    if not isToken(cval):
+    if not (cval of CSSToken):
       continue
-    let tok = getToken(cval)
-    if tok.tokenType == cttIdent:
+    let tok = CSSToken(cval)
+    if tok.t == cttIdent:
       let td = ?parseIdent[CSSTextDecoration](tok)
       if td == TextDecorationNone:
         if cvals.len != 1:
@@ -1070,9 +1064,9 @@ func cssTextDecoration(cvals: openArray[CSSComponentValue]):
   return ok(s)
 
 func cssVerticalAlign(cval: CSSComponentValue): Opt[CSSVerticalAlign] =
-  if isToken(cval):
-    let tok = getToken(cval)
-    if tok.tokenType == cttIdent:
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    if tok.t == cttIdent:
       let va2 = ?parseIdent[CSSVerticalAlign2](cval)
       return ok(CSSVerticalAlign(keyword: va2))
     else:
@@ -1092,9 +1086,9 @@ func cssCounterReset(cvals: openArray[CSSComponentValue]):
   var s = false
   var res: seq[CSSCounterReset] = @[]
   for cval in cvals:
-    if isToken(cval):
-      let tok = getToken(cval)
-      case tok.tokenType
+    if cval of CSSToken:
+      let tok = CSSToken(cval)
+      case tok.t
       of cttWhitespace: discard
       of cttIdent:
         if s:
@@ -1112,9 +1106,9 @@ func cssCounterReset(cvals: openArray[CSSComponentValue]):
   return ok(res)
 
 func cssMaxMinSize(cval: CSSComponentValue): Opt[CSSLength] =
-  if isToken(cval):
-    let tok = getToken(cval)
-    case tok.tokenType
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    case tok.t
     of cttIdent:
       if tok.value.equalsIgnoreCase("none"):
         return ok(CSSLengthAuto)
@@ -1125,8 +1119,8 @@ func cssMaxMinSize(cval: CSSComponentValue): Opt[CSSLength] =
 
 #TODO should be URL (parsed with baseurl of document...)
 func cssURL*(cval: CSSComponentValue; src = false): Option[string] =
-  if isToken(cval):
-    let tok = getToken(cval)
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
     if tok == cttUrl:
       return some(tok.value)
     elif not src and tok == cttString:
@@ -1136,9 +1130,9 @@ func cssURL*(cval: CSSComponentValue; src = false): Option[string] =
     if fun.name.equalsIgnoreCase("url") or
         src and fun.name.equalsIgnoreCase("src"):
       for x in fun.value:
-        if not isToken(x):
+        if not (x of CSSToken):
           break
-        let x = getToken(x)
+        let x = CSSToken(x)
         if x == cttWhitespace:
           discard
         elif x == cttString:
@@ -1149,10 +1143,10 @@ func cssURL*(cval: CSSComponentValue; src = false): Option[string] =
 
 #TODO this should be bg-image, add gradient, etc etc
 func cssImage(cval: CSSComponentValue): Opt[CSSContent] =
-  if isToken(cval):
+  if cval of CSSToken:
     #TODO bg-image only
-    let tok = getToken(cval)
-    if tok.tokenType == cttIdent and tok.value.equalsIgnoreCase("none"):
+    let tok = CSSToken(cval)
+    if tok.t == cttIdent and tok.value.equalsIgnoreCase("none"):
       return ok(CSSContent(t: ContentNone))
   let url = cssURL(cval, src = true)
   if url.isSome:
@@ -1161,17 +1155,17 @@ func cssImage(cval: CSSComponentValue): Opt[CSSContent] =
   return err()
 
 func cssInteger(cval: CSSComponentValue; range: Slice[int]): Opt[int] =
-  if isToken(cval):
-    let tok = getToken(cval)
-    if tok.tokenType == cttNumber:
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    if tok.t == cttNumber:
       if tok.nvalue in float64(range.a)..float64(range.b):
         return ok(int(tok.nvalue))
   return err()
 
 func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float64] =
-  if isToken(cval):
-    let tok = getToken(cval)
-    if tok.tokenType == cttNumber:
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    if tok.t == cttNumber:
       if not positive or tok.nvalue >= 0:
         return ok(tok.nvalue)
   return err()
@@ -1430,7 +1424,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         inc i
         cvals.skipWhitespace(i)
         if i < cvals.len:
-          if not cvals[i].isToken:
+          if not (cvals[i] of CSSToken):
             return err()
           if (let r = cssNumber(cvals[i], positive = true); r.isSome):
             # flex-shrink

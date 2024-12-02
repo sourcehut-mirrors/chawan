@@ -64,9 +64,9 @@ func applies(mq: MediaQuery; window: Window): bool =
   of mctNot:
     return not mq.n.applies(window)
   of mctAnd:
-    return mq.anda.applies(window) and mq.andb.applies(window)
+    return mq.left.applies(window) and mq.right.applies(window)
   of mctOr:
-    return mq.ora.applies(window) or mq.orb.applies(window)
+    return mq.left.applies(window) or mq.right.applies(window)
   of mctFeature:
     return mq.feature.applies(window)
 

@@ -300,7 +300,7 @@ proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
   if i >= cssfunction.value.len:
     return nthchild
   let lasttok = get_tok cssfunction.value[i]
-  if lasttok.tokenType != cttIdent or not lasttok.value.equalsIgnoreCase("of"):
+  if lasttok.t != cttIdent or not lasttok.value.equalsIgnoreCase("of"):
     fail
   if i == cssfunction.value.len: fail
   nthchild.pseudo.ofsels = cssfunction.value[i..^1]
@@ -310,7 +310,7 @@ proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
 
 proc skipWhitespace(state: var SelectorParser) =
   while state.has() and state.peek() of CSSToken and
-      CSSToken(state.peek()).tokenType == cttWhitespace:
+      CSSToken(state.peek()).t == cttWhitespace:
     inc state.at
 
 proc parseLang(cvals: seq[CSSComponentValue]): Selector =
@@ -318,7 +318,7 @@ proc parseLang(cvals: seq[CSSComponentValue]): Selector =
   state.skipWhitespace()
   if not state.has(): fail
   let tok = get_tok state.consume()
-  if tok.tokenType != cttIdent: fail
+  if tok.t != cttIdent: fail
   return Selector(t: stPseudoClass, pseudo: PseudoData(t: pcLang, s: tok.value))
 
 proc parseSelectorFunction(state: var SelectorParser; cssfunction: CSSFunction):
@@ -350,7 +350,7 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
       if state.nested or state.has() and state.peek() != cttComma: fail
       return Selector(t: stPseudoElement, elem: element)
     let tok = CSSToken(cval)
-    case tok.tokenType
+    case tok.t
     of cttIdent:
       template add_pseudo_class(class: PseudoClass) =
         return Selector(t: stPseudoClass, pseudo: PseudoData(t: class))
@@ -370,7 +370,7 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
     of cttColon:
       if not state.has(): fail
       let tok = get_tok state.consume()
-      if tok.tokenType != cttIdent: fail
+      if tok.t != cttIdent: fail
       case tok.value.toLowerAscii()
       of "before": add_pseudo_element peBefore
       of "after": add_pseudo_element peAfter
@@ -384,12 +384,12 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 
 proc parseAttributeSelector(state: var SelectorParser;
     cssblock: CSSSimpleBlock): Selector =
-  if cssblock.token.tokenType != cttLbracket: fail
+  if cssblock.token.t != cttLbracket: fail
   var state2 = SelectorParser(cvals: cssblock.value)
   state2.skipWhitespace()
   if not state2.has(): fail
   let attr = get_tok state2.consume()
-  if attr.tokenType != cttIdent: fail
+  if attr.t != cttIdent: fail
   state2.skipWhitespace()
   if not state2.has():
     return Selector(
@@ -398,7 +398,7 @@ proc parseAttributeSelector(state: var SelectorParser;
       rel: SelectorRelation(t: rtExists)
     )
   let delim = get_tok state2.consume()
-  if delim.tokenType != cttDelim: fail
+  if delim.t != cttDelim: fail
   let rel = case delim.cvalue
   of '~': rtToken
   of '|': rtBeginDash
@@ -409,16 +409,16 @@ proc parseAttributeSelector(state: var SelectorParser;
   else: fail
   if rel != rtEquals:
     let delim = get_tok state2.consume()
-    if delim.tokenType != cttDelim or delim.cvalue != '=': fail
+    if delim.t != cttDelim or delim.cvalue != '=': fail
   state2.skipWhitespace()
   if not state2.has(): fail
   let value = get_tok state2.consume()
-  if value.tokenType notin {cttIdent, cttString}: fail
+  if value.t notin {cttIdent, cttString}: fail
   state2.skipWhitespace()
   var flag = rfNone
   if state2.has():
     let delim = get_tok state2.consume()
-    if delim.tokenType != cttIdent: fail
+    if delim.t != cttIdent: fail
     if delim.value.equalsIgnoreCase("i"):
       flag = rfI
     elif delim.value.equalsIgnoreCase("s"):
@@ -436,7 +436,7 @@ proc parseAttributeSelector(state: var SelectorParser;
 proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = get_tok state.consume()
-  if tok.tokenType != cttIdent: fail
+  if tok.t != cttIdent: fail
   let class = state.factory.toAtom(tok.value)
   result = Selector(t: stClass, class: class)
   when defined(debug):
@@ -448,7 +448,7 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
     let cval = state.peek()
     if cval of CSSToken:
       let tok = CSSToken(cval)
-      case tok.tokenType
+      case tok.t
       of cttIdent:
         inc state.at
         let s = tok.value.toLowerAscii()
@@ -502,7 +502,7 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     if not state.has():
       break # finish
     let tok = get_tok state.consume()
-    case tok.tokenType
+    case tok.t
     of cttDelim:
       case tok.cvalue
       of '>': result[^1].ct = ctChild

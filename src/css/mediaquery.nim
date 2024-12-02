@@ -52,12 +52,9 @@ type
       feature*: MediaFeature
     of mctNot:
       n*: MediaQuery
-    of mctOr:
-      ora*: MediaQuery
-      orb*: MediaQuery
-    of mctAnd:
-      anda*: MediaQuery
-      andb*: MediaQuery
+    of mctOr, mctAnd:
+      left*: MediaQuery
+      right*: MediaQuery
 
   MediaQueryList* = seq[MediaQuery]
 
@@ -97,8 +94,8 @@ func `$`*(mq: MediaQuery): string =
   of mctMedia: return $mq.media
   of mctFeature: return $mq.feature
   of mctNot: return "not (" & $mq.n
-  of mctOr: return "(" & $mq.ora & ") or (" & $mq.orb & ")"
-  of mctAnd: return "(" & $mq.anda & ") or (" & $mq.andb & ")"
+  of mctOr: return "(" & $mq.left & ") or (" & $mq.right & ")"
+  of mctAnd: return "(" & $mq.left & ") or (" & $mq.right & ")"
 
 const RangeFeatures = {mftColor, mftWidth, mftHeight}
 
@@ -124,7 +121,7 @@ proc peek(parser: MediaQueryParser; i = 0): CSSComponentValue =
 proc skipBlanks(parser: var MediaQueryParser) =
   while parser.has():
     let cval = parser.peek()
-    if cval of CSSToken and CSSToken(cval).tokenType == cttWhitespace:
+    if cval of CSSToken and CSSToken(cval).t == cttWhitespace:
       inc parser.at
     else:
       break
@@ -159,14 +156,14 @@ proc consumeToken(parser: var MediaQueryParser): Opt[CSSToken] =
 
 proc consumeIdent(parser: var MediaQueryParser): Opt[CSSToken] =
   let tok = ?parser.consumeToken()
-  if tok.tokenType != cttIdent:
+  if tok.t != cttIdent:
     parser.reconsume()
     return err()
   return ok(tok)
 
 proc consumeInt(parser: var MediaQueryParser): Opt[int] =
   let tok = ?parser.consumeToken()
-  if tok.tokenType != cttNumber or tok.tflagb == tflagbInteger:
+  if tok.t != cttNumber or tok.tflagb == tflagbInteger:
     parser.reconsume()
     return err()
   return ok(int(tok.nvalue))
@@ -299,9 +296,9 @@ proc parseFeature(parser: var MediaQueryParser; t: MediaFeatureType;
   if not parser.has():
     return getBoolFeature(t)
   let tok = ?parser.consumeToken()
-  if t notin RangeFeatures and (tok.tokenType != cttColon or ismin or ismax):
+  if t notin RangeFeatures and (tok.t != cttColon or ismin or ismax):
     return err()
-  if tok.tokenType != cttColon:
+  if tok.t != cttColon:
     # for range parsing; e.g. we might have gotten a delim or similar
     parser.reconsume()
   ?parser.skipBlanksCheckHas()
@@ -313,7 +310,7 @@ proc parseFeature(parser: var MediaQueryParser; t: MediaFeatureType;
 
 proc parseMediaInParens(parser: var MediaQueryParser): Opt[MediaQuery] =
   let sb = ?parser.consumeSimpleBlock()
-  if sb.token.tokenType != cttLparen:
+  if sb.token.t != cttLparen:
     return err()
   var fparser = MediaQueryParser(cvals: sb.value)
   fparser.skipBlanks()
@@ -334,12 +331,12 @@ proc parseMediaInParens(parser: var MediaQueryParser): Opt[MediaQuery] =
 proc parseMediaOr(parser: var MediaQueryParser; left: MediaQuery):
     Opt[MediaQuery] =
   let right = ?parser.parseMediaCondition()
-  return ok(MediaQuery(t: mctOr, ora: left, orb: right))
+  return ok(MediaQuery(t: mctOr, left: left, right: right))
 
 proc parseMediaAnd(parser: var MediaQueryParser; left: MediaQuery):
     Opt[MediaQuery] =
   let right = ?parser.parseMediaCondition()
-  return ok(MediaQuery(t: mctAnd, anda: left, andb: right))
+  return ok(MediaQuery(t: mctAnd, left: left, right: right))
 
 func negateIf(mq: MediaQuery; non: bool): MediaQuery =
   if non:
