@@ -1204,9 +1204,20 @@ proc applySize(box: BlockBox; sizes: ResolvedSizes;
   # Then, clamp it to minWidth and maxWidth (if applicable).
   box.state.size[dim] = minClamp(box.state.size[dim], sizes.minMaxSizes[dim])
 
+proc applyMinWidth(box: BlockBox; sizes: ResolvedSizes) =
+  #TODO this is a hack, and is subtly wrong.
+  # the proper solution would be to override xminwidth *only* if
+  # min-width was auto or equivalent, e.g. unresolvable percentage.
+  # (or maybe I could just change DefaultSpan to start from
+  # LayoutUnit.low? then I'll need another extra 0 check everywhere I
+  # apply it but that should be ok)
+  if sizes.minWidth > 0:
+    box.state.xminwidth = min(box.state.xminwidth, sizes.minWidth)
+
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit; space: AvailableSpace) =
   box.applySize(sizes, maxChildWidth, space, dtHorizontal)
+  box.applyMinWidth(sizes)
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit) =
@@ -2419,6 +2430,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.applyBaseline()
   box.applySize(sizes, fctx.totalMaxSize[dim], sizes.space, dim)
   box.applySize(sizes, fctx.offset[odim], sizes.space, odim)
+  box.applyMinWidth(sizes)
   for child in fctx.relativeChildren:
     lctx.positionRelative(box, child)
     box.applyOverflowDimensions(child)
