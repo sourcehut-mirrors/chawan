@@ -933,7 +933,7 @@ func cssColor*(val: CSSComponentValue): Opt[CSSColor] =
       return parseANSI(f.value)
   return err()
 
-func cssLength*(val: CSSComponentValue; has_auto = true; allow_negative = true):
+func cssLength*(val: CSSComponentValue; hasAuto = true; allowNegative = true):
     Opt[CSSLength] =
   if val of CSSToken:
     let tok = CSSToken(val)
@@ -942,19 +942,16 @@ func cssLength*(val: CSSComponentValue; has_auto = true; allow_negative = true):
       if tok.nvalue == 0:
         return ok(CSSLength(num: 0, u: cuPx))
     of cttPercentage:
-      if not allow_negative:
-        if tok.nvalue < 0:
-          return err()
+      if not allowNegative and tok.nvalue < 0:
+        return err()
       return cssLength(tok.nvalue, "%")
     of cttDimension:
-      if not allow_negative:
-        if tok.nvalue < 0:
-          return err()
+      if not allowNegative and tok.nvalue < 0:
+        return err()
       return cssLength(tok.nvalue, tok.unit)
     of cttIdent:
-      if has_auto:
-        if tok.value.equalsIgnoreCase("auto"):
-          return ok(CSSLengthAuto)
+      if hasAuto and tok.value.equalsIgnoreCase("auto"):
+        return ok(CSSLengthAuto)
     else: discard
   return err()
 
@@ -1070,7 +1067,7 @@ func cssVerticalAlign(cval: CSSComponentValue): Opt[CSSVerticalAlign] =
       let va2 = ?parseIdent[CSSVerticalAlign2](cval)
       return ok(CSSVerticalAlign(keyword: va2))
     else:
-      let length = ?cssLength(tok, has_auto = false)
+      let length = ?cssLength(tok, hasAuto = false)
       return ok(CSSVerticalAlign(
         keyword: VerticalAlignBaseline,
         u: length.u,
@@ -1105,7 +1102,7 @@ func cssCounterReset(cvals: openArray[CSSComponentValue]):
         die
   return ok(res)
 
-func cssMaxMinSize(cval: CSSComponentValue): Opt[CSSLength] =
+func cssMaxSize(cval: CSSComponentValue): Opt[CSSLength] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     case tok.t
@@ -1113,7 +1110,7 @@ func cssMaxMinSize(cval: CSSComponentValue): Opt[CSSLength] =
       if tok.value.equalsIgnoreCase("none"):
         return ok(CSSLengthAuto)
     of cttNumber, cttDimension, cttPercentage:
-      return cssLength(tok, allow_negative = false)
+      return cssLength(tok, allowNegative = false)
     else: discard
   return err()
 
@@ -1195,10 +1192,12 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
   of cvtColor: return_new color, ?cssColor(cval)
   of cvtLength:
     case t
-    of cptMaxWidth, cptMaxHeight, cptMinWidth, cptMinHeight:
-      return_new length, ?cssMaxMinSize(cval)
+    of cptMinWidth, cptMinHeight:
+      return_new length, ?cssLength(cval, allowNegative = false)
+    of cptMaxWidth, cptMaxHeight:
+      return_new length, ?cssMaxSize(cval)
     of cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom:
-      return_new length, ?cssLength(cval, has_auto = false)
+      return_new length, ?cssLength(cval, hasAuto = false)
     #TODO content for flex-basis
     else:
       return_new length, ?cssLength(cval)
@@ -1307,7 +1306,7 @@ template getDefault*(t: CSSPropertyType): CSSComputedValue =
     defaultTable[t]
 
 func lengthShorthand(cvals: openArray[CSSComponentValue];
-    props: array[4, CSSPropertyType]; global: CSSGlobalType; has_auto = true):
+    props: array[4, CSSPropertyType]; global: CSSGlobalType; hasAuto = true):
     Opt[seq[CSSComputedEntry]] =
   var res: seq[CSSComputedEntry] = @[]
   if global != cgtNone:
@@ -1318,7 +1317,7 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
   var i = 0
   while i < cvals.len:
     cvals.skipWhitespace(i)
-    let length = ?cssLength(cvals[i], has_auto = has_auto)
+    let length = ?cssLength(cvals[i], hasAuto = hasAuto)
     let val = CSSComputedValue(v: cvtLength, length: length)
     lengths.add(val)
     inc i
@@ -1376,7 +1375,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     res.add(?lengthShorthand(cvals, PropertyMarginSpec, global))
   of cstPadding:
     res.add(?lengthShorthand(cvals, PropertyPaddingSpec, global,
-      has_auto = false))
+      hasAuto = false))
   of cstBackground:
     var bgcolorval = getDefault(cptBackgroundColor)
     var bgimageval = getDefault(cptBackgroundImage)
