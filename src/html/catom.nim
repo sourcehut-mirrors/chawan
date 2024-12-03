@@ -26,6 +26,7 @@ macro makeStaticAtom =
       satAutofocus = "autofocus"
       satBgcolor = "bgcolor"
       satBlocking = "blocking"
+      satCellspacing = "cellspacing"
       satCharset = "charset"
       satChecked = "checked"
       satClass = "class"

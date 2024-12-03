@@ -177,12 +177,19 @@ func calcPresHints(element: Element): seq[CSSComputedEntry] =
     var val = CSSComputedValueBit()
     val.bgcolorIsCanvas = true
     result.add(makeEntry(cptBgcolorIsCanvas, val))
+  template map_cellspacing =
+    let s = element.attrul(satCellspacing)
+    if s.isSome:
+      set_cv cptBorderSpacing, length2, CSSLength2(
+        a: CSSLength(num: float64(s.get), u: cuPx)
+      )
 
   case element.tagType
   of TAG_TABLE:
     map_height_nozero
     map_width_nozero
     map_bgcolor
+    map_cellspacing
   of TAG_TD, TAG_TH:
     map_height_nozero
     map_width_nozero
