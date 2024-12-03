@@ -47,37 +47,50 @@ type
 
   CSSPropertyType* = enum
     cptNone = ""
+    # primitive/enum properties: stored as byte
+    # (font-style serves as the sentinel, so place such properties
+    # *before* that.)
+    cptDisplay = "display"
+    cptWhiteSpace = "white-space"
+    cptWordBreak = "word-break"
+    cptListStyleType = "list-style-type"
+    cptTextAlign = "text-align"
+    cptListStylePosition = "list-style-position"
+    cptPosition = "position"
+    cptCaptionSide = "caption-side"
+    cptBorderCollapse = "border-collapse"
+    cptFloat = "float"
+    cptVisibility = "visibility"
+    cptBoxSizing = "box-sizing"
+    cptClear = "clear"
+    cptTextTransform = "text-transform"
+    cptFlexDirection = "flex-direction"
+    cptOverflow = "overflow"
+    cptFlexWrap = "flex-wrap"
+    cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
+    cptFontStyle = "font-style"
+    # object properties: stored as pointer to a ref object
     cptColor = "color"
     cptMarginTop = "margin-top"
     cptMarginLeft = "margin-left"
     cptMarginRight = "margin-right"
     cptMarginBottom = "margin-bottom"
-    cptFontStyle = "font-style"
-    cptDisplay = "display"
     cptContent = "content"
-    cptWhiteSpace = "white-space"
     cptFontWeight = "font-weight"
     cptTextDecoration = "text-decoration"
-    cptWordBreak = "word-break"
     cptWidth = "width"
     cptHeight = "height"
-    cptListStyleType = "list-style-type"
     cptPaddingTop = "padding-top"
     cptPaddingLeft = "padding-left"
     cptPaddingRight = "padding-right"
     cptPaddingBottom = "padding-bottom"
     cptVerticalAlign = "vertical-align"
-    cptTextAlign = "text-align"
-    cptListStylePosition = "list-style-position"
     cptBackgroundColor = "background-color"
-    cptPosition = "position"
     cptLeft = "left"
     cptRight = "right"
     cptTop = "top"
     cptBottom = "bottom"
-    cptCaptionSide = "caption-side"
     cptBorderSpacing = "border-spacing"
-    cptBorderCollapse = "border-collapse"
     cptQuotes = "quotes"
     cptCounterReset = "counter-reset"
     cptMaxWidth = "max-width"
@@ -87,18 +100,9 @@ type
     cptBackgroundImage = "background-image"
     cptChaColspan = "-cha-colspan"
     cptChaRowspan = "-cha-rowspan"
-    cptFloat = "float"
-    cptVisibility = "visibility"
-    cptBoxSizing = "box-sizing"
-    cptClear = "clear"
-    cptTextTransform = "text-transform"
-    cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
-    cptFlexDirection = "flex-direction"
-    cptFlexWrap = "flex-wrap"
     cptFlexGrow = "flex-grow"
     cptFlexShrink = "flex-shrink"
     cptFlexBasis = "flex-basis"
-    cptOverflow = "overflow"
     cptZIndex = "z-index"
 
   CSSValueType* = enum
@@ -142,8 +146,8 @@ type
     cgtUnset = "unset"
 
   CSSDisplay* = enum
-    DisplayNone = "none"
     DisplayInline = "inline"
+    DisplayNone = "none"
     DisplayBlock = "block"
     DisplayListItem = "list-item"
     DisplayInlineBlock = "inline-block"
@@ -336,71 +340,57 @@ type
     a*: CSSLength
     b*: CSSLength
 
+  CSSComputedValueBit* {.union.} = object
+    dummy: uint8
+    bgcolorIsCanvas*: bool
+    borderCollapse*: CSSBorderCollapse
+    boxSizing*: CSSBoxSizing
+    captionSide*: CSSCaptionSide
+    clear*: CSSClear
+    display*: CSSDisplay
+    flexDirection*: CSSFlexDirection
+    flexWrap*: CSSFlexWrap
+    float*: CSSFloat
+    fontStyle*: CSSFontStyle
+    listStylePosition*: CSSListStylePosition
+    listStyleType*: CSSListStyleType
+    overflow*: CSSOverflow
+    position*: CSSPosition
+    textAlign*: CSSTextAlign
+    textTransform*: CSSTextTransform
+    visibility*: CSSVisibility
+    whiteSpace*: CSSWhiteSpace
+    wordBreak*: CSSWordBreak
+
   CSSComputedValue* = ref object
     case v*: CSSValueType
     of cvtColor:
       color*: CSSColor
     of cvtLength:
       length*: CSSLength
-    of cvtFontStyle:
-      fontStyle*: CSSFontStyle
-    of cvtDisplay:
-      display*: CSSDisplay
     of cvtContent:
       content*: seq[CSSContent]
     of cvtQuotes:
       quotes*: CSSQuotes
-    of cvtWhiteSpace:
-      whiteSpace*: CSSWhiteSpace
     of cvtInteger:
       integer*: int
     of cvtNumber:
       number*: float64
     of cvtTextDecoration:
       textDecoration*: set[CSSTextDecoration]
-    of cvtWordBreak:
-      wordBreak*: CSSWordBreak
-    of cvtListStyleType:
-      listStyleType*: CSSListStyleType
     of cvtVerticalAlign:
       verticalAlign*: CSSVerticalAlign
-    of cvtTextAlign:
-      textAlign*: CSSTextAlign
-    of cvtListStylePosition:
-      listStylePosition*: CSSListStylePosition
-    of cvtPosition:
-      position*: CSSPosition
-    of cvtCaptionSide:
-      captionSide*: CSSCaptionSide
     of cvtLength2:
       length2*: CSSLength2
-    of cvtBorderCollapse:
-      borderCollapse*: CSSBorderCollapse
     of cvtCounterReset:
       counterReset*: seq[CSSCounterReset]
     of cvtImage:
       image*: CSSContent
-    of cvtFloat:
-      float*: CSSFloat
-    of cvtVisibility:
-      visibility*: CSSVisibility
-    of cvtBoxSizing:
-      boxSizing*: CSSBoxSizing
-    of cvtClear:
-      clear*: CSSClear
-    of cvtTextTransform:
-      textTransform*: CSSTextTransform
-    of cvtBgcolorIsCanvas:
-      bgcolorIsCanvas*: bool
-    of cvtFlexDirection:
-      flexDirection*: CSSFlexDirection
-    of cvtFlexWrap:
-      flexWrap*: CSSFlexWrap
-    of cvtOverflow:
-      overflow*: CSSOverflow
-    of cvtNone: discard
+    else: discard
 
-  CSSComputedValues* = ref array[CSSPropertyType, CSSComputedValue]
+  CSSComputedValues* = ref object
+    bits*: array[CSSPropertyType.low..cptFontStyle, CSSComputedValueBit]
+    objs*: array[cptColor..CSSPropertyType.high, CSSComputedValue]
 
   CSSOrigin* = enum
     coUserAgent
@@ -409,42 +399,52 @@ type
 
   CSSComputedEntry* = object
     t*: CSSPropertyType
-    obj*: CSSComputedValue
     global*: CSSGlobalType
+    bit*: uint8
+    obj*: CSSComputedValue
 
 const ValueTypes = [
   cptNone: cvtNone,
+  cptDisplay: cvtDisplay,
+  cptWhiteSpace: cvtWhiteSpace,
+  cptWordBreak: cvtWordBreak,
+  cptListStyleType: cvtListStyleType,
+  cptTextAlign: cvtTextAlign,
+  cptListStylePosition: cvtListStylePosition,
+  cptPosition: cvtPosition,
+  cptCaptionSide: cvtCaptionSide,
+  cptBorderCollapse: cvtBorderCollapse,
+  cptFloat: cvtFloat,
+  cptVisibility: cvtVisibility,
+  cptBoxSizing: cvtBoxSizing,
+  cptClear: cvtClear,
+  cptTextTransform: cvtTextTransform,
+  cptFlexDirection: cvtFlexDirection,
+  cptOverflow: cvtOverflow,
+  cptFlexWrap: cvtFlexWrap,
+  cptBgcolorIsCanvas: cvtBgcolorIsCanvas,
+  cptFontStyle: cvtFontStyle,
   cptColor: cvtColor,
   cptMarginTop: cvtLength,
   cptMarginLeft: cvtLength,
   cptMarginRight: cvtLength,
   cptMarginBottom: cvtLength,
-  cptFontStyle: cvtFontStyle,
-  cptDisplay: cvtDisplay,
   cptContent: cvtContent,
-  cptWhiteSpace: cvtWhiteSpace,
   cptFontWeight: cvtInteger,
   cptTextDecoration: cvtTextDecoration,
-  cptWordBreak: cvtWordBreak,
   cptWidth: cvtLength,
   cptHeight: cvtLength,
-  cptListStyleType: cvtListStyleType,
   cptPaddingTop: cvtLength,
   cptPaddingLeft: cvtLength,
   cptPaddingRight: cvtLength,
   cptPaddingBottom: cvtLength,
   cptVerticalAlign: cvtVerticalAlign,
-  cptTextAlign: cvtTextAlign,
-  cptListStylePosition: cvtListStylePosition,
   cptBackgroundColor: cvtColor,
-  cptPosition: cvtPosition,
   cptLeft: cvtLength,
   cptRight: cvtLength,
   cptTop: cvtLength,
   cptBottom: cvtLength,
-  cptCaptionSide: cvtCaptionSide,
   cptBorderSpacing: cvtLength2,
-  cptBorderCollapse: cvtBorderCollapse,
   cptQuotes: cvtQuotes,
   cptCounterReset: cvtCounterReset,
   cptMaxWidth: cvtLength,
@@ -454,18 +454,9 @@ const ValueTypes = [
   cptBackgroundImage: cvtImage,
   cptChaColspan: cvtInteger,
   cptChaRowspan: cvtInteger,
-  cptFloat: cvtFloat,
-  cptVisibility: cvtVisibility,
-  cptBoxSizing: cvtBoxSizing,
-  cptClear: cvtClear,
-  cptTextTransform: cvtTextTransform,
-  cptBgcolorIsCanvas: cvtBgcolorIsCanvas,
-  cptFlexDirection: cvtFlexDirection,
-  cptFlexWrap: cvtFlexWrap,
   cptFlexGrow: cvtNumber,
   cptFlexShrink: cvtNumber,
   cptFlexBasis: cvtLength,
-  cptOverflow: cvtOverflow,
   cptZIndex: cvtInteger
 ]
 
@@ -481,6 +472,9 @@ const PositionStaticLike* = {
   PositionStatic, PositionSticky
 }
 
+func isBit*(t: CSSPropertyType): bool =
+  return t <= cptFontStyle
+
 func shorthandType(s: string): CSSShorthandType =
   return parseEnumNoCase[CSSShorthandType](s).get(cstNone)
 
@@ -493,77 +487,68 @@ func valueType*(prop: CSSPropertyType): CSSValueType =
 func isSupportedProperty*(s: string): bool =
   return propertyType(s) != cptNone
 
-func `$`*(length: CSSLength): string =
-  if length.u == cuAuto:
-    return "auto"
-  return $length.num & $length.u
+when defined(debug):
+  func `$`*(length: CSSLength): string =
+    if length.u == cuAuto:
+      return "auto"
+    return $length.num & $length.u
 
-func `$`*(content: CSSContent): string =
-  if content.s != "":
-    return "url(" & content.s & ")"
-  return "none"
+  func `$`*(content: CSSContent): string =
+    if content.s != "":
+      return "url(" & content.s & ")"
+    return "none"
 
-func `$`(quotes: CSSQuotes): string =
-  if quotes.auto:
-    return "auto"
-  return "auto" #TODO
+  func `$`(quotes: CSSQuotes): string =
+    if quotes.auto:
+      return "auto"
+    return "auto" #TODO
 
-func `$`(counterreset: seq[CSSCounterReset]): string =
-  result = ""
-  for it in counterreset:
-    result &= $it.name
-    result &= ' '
-    result &= $it.num
+  func `$`(counterreset: seq[CSSCounterReset]): string =
+    result = ""
+    for it in counterreset:
+      result &= $it.name
+      result &= ' '
+      result &= $it.num
 
-func `$`*(val: CSSComputedValue): string =
-  case val.v
-  of cvtNone: return "none"
-  of cvtColor: return $val.color
-  of cvtImage: return $val.image
-  of cvtLength: return $val.length
-  of cvtDisplay: return $val.display
-  of cvtFontStyle: return $val.fontStyle
-  of cvtWhiteSpace: return $val.whiteSpace
-  of cvtInteger: return $val.integer
-  of cvtTextDecoration: return $val.textDecoration
-  of cvtWordBreak: return $val.wordBreak
-  of cvtListStyleType: return $val.listStyleType
-  of cvtVerticalAlign: return $val.verticalAlign
-  of cvtTextAlign: return $val.textAlign
-  of cvtListStylePosition: return $val.listStylePosition
-  of cvtPosition: return $val.position
-  of cvtCaptionSide: return $val.captionSide
-  of cvtLength2: return $val.length2.a & " " & $val.length2.b
-  of cvtBorderCollapse: return $val.borderCollapse
-  of cvtContent: return $val.content
-  of cvtQuotes: return $val.quotes
-  of cvtCounterReset: return $val.counterReset
-  of cvtFloat: return $val.float
-  of cvtVisibility: return $val.visibility
-  of cvtBoxSizing: return $val.boxSizing
-  of cvtClear: return $val.clear
-  of cvtTextTransform: return $val.textTransform
-  of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
-  of cvtFlexDirection: return $val.flexDirection
-  of cvtFlexWrap: return $val.flexWrap
-  of cvtOverflow: return $val.overflow
-  of cvtNumber: return $val.number
+  func `$`*(val: CSSComputedValue): string =
+    case val.v
+    of cvtNone: return "none"
+    of cvtColor: return $val.color
+    of cvtImage: return $val.image
+    of cvtLength: return $val.length
+    of cvtInteger: return $val.integer
+    of cvtTextDecoration: return $val.textDecoration
+    of cvtVerticalAlign: return $val.verticalAlign
+    of cvtLength2: return $val.length2.a & " " & $val.length2.b
+    of cvtContent: return $val.content
+    of cvtQuotes: return $val.quotes
+    of cvtCounterReset: return $val.counterReset
+    of cvtNumber: return $val.number
+    else: assert false
 
 macro `{}`*(vals: CSSComputedValues; s: static string): untyped =
   let t = propertyType(s)
   let vs = ident($valueType(t))
-  return quote do:
-    `vals`[CSSPropertyType(`t`)].`vs`
+  if t.isBit:
+    return quote do:
+      `vals`.bits[CSSPropertyType(`t`)].`vs`
+  else:
+    return quote do:
+      `vals`.objs[CSSPropertyType(`t`)].`vs`
 
 macro `{}=`*(vals: CSSComputedValues; s: static string, val: typed) =
   let t = propertyType(s)
   let v = valueType(t)
   let vs = ident($v)
-  return quote do:
-    `vals`[CSSPropertyType(`t`)] = CSSComputedValue(
-      v: CSSValueType(`v`),
-      `vs`: `val`
-    )
+  if t.isBit:
+    return quote do:
+      `vals`.bits[CSSPropertyType(`t`)].dummy = uint8(`val`)
+  else:
+    return quote do:
+      `vals`.objs[CSSPropertyType(`t`)] = CSSComputedValue(
+        v: CSSValueType(`v`),
+        `vs`: `val`
+      )
 
 func inherited*(t: CSSPropertyType): bool =
   return t in InheritedProperties
@@ -766,7 +751,6 @@ func listMarker*(t: CSSListStyleType; i: int): string =
   of ListStyleTypeCjkHeavenlyStem: return numToFixed(i, HeavenlyStemMap) & "、"
   of ListStyleTypeJapaneseInformal: return japaneseNumber(i) & "、"
 
-#TODO this should change by language
 func quoteStart*(level: int): string =
   if level == 0:
     return "“"
@@ -1167,84 +1151,89 @@ func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float64] =
         return ok(tok.nvalue)
   return err()
 
-proc makeEntry*(t: CSSPropertyType; obj: CSSComputedValue): CSSComputedEntry =
-  return CSSComputedEntry(t: t, obj: obj)
+proc makeEntry*(t: CSSPropertyType; obj: CSSComputedValue; global = cgtNone):
+    CSSComputedEntry =
+  return CSSComputedEntry(t: t, obj: obj, global: global)
+
+proc makeEntry*(t: CSSPropertyType; bit: CSSComputedValueBit; global = cgtNone):
+    CSSComputedEntry =
+  return CSSComputedEntry(t: t, bit: bit.dummy, global: global)
 
 proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
   return CSSComputedEntry(t: t, global: global)
 
-proc makeEntry*(t: CSSPropertyType; obj: CSSComputedValue;
-    global: CSSGlobalType): CSSComputedEntry =
-  return CSSComputedEntry(t: t, obj: obj, global: global)
-
-proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType):
-    Opt[CSSComputedValue] =
+proc parseValue(cvals: openArray[CSSComponentValue];
+    entry: var CSSComputedEntry): Opt[void] =
   var i = 0
   cvals.skipWhitespace(i)
   if i >= cvals.len:
     return err()
   let cval = cvals[i]
+  let t = entry.t
   inc i
   let v = valueType(t)
-  template return_new(prop, val: untyped) =
-    return ok(CSSComputedValue(v: v, prop: val))
+  template set_new(prop, val: untyped) =
+    entry.obj = CSSComputedValue(v: v, prop: val)
+  template set_bit(prop, val: untyped) =
+    entry.bit = uint8(val)
   case v
-  of cvtColor: return_new color, ?cssColor(cval)
+  of cvtDisplay: set_bit display, ?parseIdent[CSSDisplay](cval)
+  of cvtWhiteSpace: set_bit whiteSpace, ?parseIdent[CSSWhiteSpace](cval)
+  of cvtWordBreak: set_bit wordBreak, ?parseIdent[CSSWordBreak](cval)
+  of cvtListStyleType:
+    set_bit listStyleType, ?parseIdent[CSSListStyleType](cval)
+  of cvtFontStyle: set_bit fontStyle, ?parseIdent[CSSFontStyle](cval)
+  of cvtColor: set_new color, ?cssColor(cval)
   of cvtLength:
     case t
     of cptMinWidth, cptMinHeight:
-      return_new length, ?cssLength(cval, allowNegative = false)
+      set_new length, ?cssLength(cval, allowNegative = false)
     of cptMaxWidth, cptMaxHeight:
-      return_new length, ?cssMaxSize(cval)
+      set_new length, ?cssMaxSize(cval)
     of cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom:
-      return_new length, ?cssLength(cval, hasAuto = false)
+      set_new length, ?cssLength(cval, hasAuto = false)
     #TODO content for flex-basis
     else:
-      return_new length, ?cssLength(cval)
-  of cvtFontStyle: return_new fontStyle, ?parseIdent[CSSFontStyle](cval)
-  of cvtDisplay: return_new display, ?parseIdent[CSSDisplay](cval)
-  of cvtContent: return_new content, cssContent(cvals)
-  of cvtWhiteSpace: return_new whiteSpace, ?parseIdent[CSSWhiteSpace](cval)
+      set_new length, ?cssLength(cval)
+  of cvtContent: set_new content, cssContent(cvals)
   of cvtInteger:
     case t
-    of cptFontWeight: return_new integer, ?cssFontWeight(cval)
-    of cptChaColspan: return_new integer, ?cssInteger(cval, 1 .. 1000)
-    of cptChaRowspan: return_new integer, ?cssInteger(cval, 0 .. 65534)
-    of cptZIndex: return_new integer, ?cssInteger(cval, -65534 .. 65534)
+    of cptFontWeight: set_new integer, ?cssFontWeight(cval)
+    of cptChaColspan: set_new integer, ?cssInteger(cval, 1 .. 1000)
+    of cptChaRowspan: set_new integer, ?cssInteger(cval, 0 .. 65534)
+    of cptZIndex: set_new integer, ?cssInteger(cval, -65534 .. 65534)
     else: assert false
-  of cvtTextDecoration: return_new textdecoration, ?cssTextDecoration(cvals)
-  of cvtWordBreak: return_new wordBreak, ?parseIdent[CSSWordBreak](cval)
-  of cvtListStyleType:
-    return_new liststyletype, ?parseIdent[CSSListStyleType](cval)
-  of cvtVerticalAlign: return_new verticalAlign, ?cssVerticalAlign(cval)
-  of cvtTextAlign: return_new textAlign, ?parseIdent[CSSTextAlign](cval)
+  of cvtTextDecoration: set_new textdecoration, ?cssTextDecoration(cvals)
+  of cvtVerticalAlign: set_new verticalAlign, ?cssVerticalAlign(cval)
+  of cvtTextAlign: set_bit textAlign, ?parseIdent[CSSTextAlign](cval)
   of cvtListStylePosition:
-    return_new listStylePosition, ?parseIdent[CSSListStylePosition](cval)
-  of cvtPosition: return_new position, ?parseIdent[CSSPosition](cval)
-  of cvtCaptionSide: return_new captionSide, ?parseIdent[CSSCaptionSide](cval)
+    set_bit listStylePosition, ?parseIdent[CSSListStylePosition](cval)
+  of cvtPosition: set_bit position, ?parseIdent[CSSPosition](cval)
+  of cvtCaptionSide: set_bit captionSide, ?parseIdent[CSSCaptionSide](cval)
   of cvtBorderCollapse:
-    return_new borderCollapse, ?parseIdent[CSSBorderCollapse](cval)
+    set_bit borderCollapse, ?parseIdent[CSSBorderCollapse](cval)
   of cvtLength2:
     let a = ?cssAbsoluteLength(cval)
     cvals.skipWhitespace(i)
     let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i])
-    return_new length2, CSSLength2(a: a, b: b)
-  of cvtQuotes: return_new quotes, ?cssQuotes(cvals)
-  of cvtCounterReset: return_new counterReset, ?cssCounterReset(cvals)
-  of cvtImage: return_new image, ?cssImage(cval)
-  of cvtFloat: return_new float, ?parseIdent[CSSFloat](cval)
-  of cvtVisibility: return_new visibility, ?parseIdent[CSSVisibility](cval)
-  of cvtBoxSizing: return_new boxSizing, ?parseIdent[CSSBoxSizing](cval)
-  of cvtClear: return_new clear, ?parseIdent[CSSClear](cval)
+    set_new length2, CSSLength2(a: a, b: b)
+  of cvtQuotes: set_new quotes, ?cssQuotes(cvals)
+  of cvtCounterReset: set_new counterReset, ?cssCounterReset(cvals)
+  of cvtImage: set_new image, ?cssImage(cval)
+  of cvtFloat: set_bit float, ?parseIdent[CSSFloat](cval)
+  of cvtVisibility: set_bit visibility, ?parseIdent[CSSVisibility](cval)
+  of cvtBoxSizing: set_bit boxSizing, ?parseIdent[CSSBoxSizing](cval)
+  of cvtClear: set_bit clear, ?parseIdent[CSSClear](cval)
   of cvtTextTransform:
-    return_new textTransform, ?parseIdent[CSSTextTransform](cval)
+    set_bit textTransform, ?parseIdent[CSSTextTransform](cval)
   of cvtBgcolorIsCanvas: return err() # internal value
   of cvtFlexDirection:
-    return_new flexDirection, ?parseIdent[CSSFlexDirection](cval)
-  of cvtFlexWrap: return_new flexWrap, ?parseIdent[CSSFlexWrap](cval)
-  of cvtNumber: return_new number, ?cssNumber(cval, t == cptFlexGrow)
-  of cvtOverflow: return_new overflow, ?parseIdent[CSSOverflow](cval)
+    set_bit flexDirection, ?parseIdent[CSSFlexDirection](cval)
+  of cvtFlexWrap: set_bit flexWrap, ?parseIdent[CSSFlexWrap](cval)
+  of cvtNumber: set_new number, ?cssNumber(cval, t == cptFlexGrow)
+  of cvtOverflow: set_bit overflow, ?parseIdent[CSSOverflow](cval)
   of cvtNone: return err()
+  return ok()
 
 func getInitialColor(t: CSSPropertyType): CSSColor =
   if t == cptBackgroundColor:
@@ -1275,25 +1264,13 @@ func getInitialNumber(t: CSSPropertyType): float64 =
 
 func calcInitial(t: CSSPropertyType): CSSComputedValue =
   let v = valueType(t)
-  var nv: CSSComputedValue
   case v
-  of cvtColor:
-    nv = CSSComputedValue(v: v, color: getInitialColor(t))
-  of cvtDisplay:
-    nv = CSSComputedValue(v: v, display: DisplayInline)
-  of cvtWordBreak:
-    nv = CSSComputedValue(v: v, wordbreak: WordBreakNormal)
-  of cvtLength:
-    nv = CSSComputedValue(v: v, length: getInitialLength(t))
-  of cvtInteger:
-    nv = CSSComputedValue(v: v, integer: getInitialInteger(t))
-  of cvtQuotes:
-    nv = CSSComputedValue(v: v, quotes: CSSQuotes(auto: true))
-  of cvtNumber:
-    nv = CSSComputedValue(v: v, number: getInitialNumber(t))
-  else:
-    nv = CSSComputedValue(v: v)
-  return nv
+  of cvtColor: return CSSComputedValue(v: v, color: getInitialColor(t))
+  of cvtLength: return CSSComputedValue(v: v, length: getInitialLength(t))
+  of cvtInteger: return CSSComputedValue(v: v, integer: getInitialInteger(t))
+  of cvtQuotes: return CSSComputedValue(v: v, quotes: CSSQuotes(auto: true))
+  of cvtNumber: return CSSComputedValue(v: v, number: getInitialNumber(t))
+  else: return CSSComputedValue(v: v)
 
 func getInitialTable(): array[CSSPropertyType, CSSComputedValue] =
   for t in CSSPropertyType:
@@ -1365,7 +1342,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     if global != cgtNone:
       res.add(makeEntry(t, global))
     else:
-      res.add(makeEntry(t, ?cvals.parseValue(t)))
+      var entry = CSSComputedEntry(t: t)
+      ?cvals.parseValue(entry)
+      res.add(entry)
   of cstAll:
     if global == cgtNone:
       return err()
@@ -1396,23 +1375,17 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       res.add(makeEntry(cptBackgroundColor, bgcolorval, global))
       res.add(makeEntry(cptBackgroundImage, bgimageval, global))
   of cstListStyle:
-    var positionVal = getDefault(cptListStylePosition)
-    var typeVal = getDefault(cptListStyleType)
+    var positionVal = CSSComputedValueBit()
+    var typeVal = CSSComputedValueBit()
     var valid = true
     if global == cgtNone:
       for tok in cvals:
         if tok == cttWhitespace:
           continue
         if (let r = parseIdent[CSSListStylePosition](tok); r.isSome):
-          positionVal = CSSComputedValue(
-            v: cvtListStylePosition,
-            liststyleposition: r.get
-          )
+          positionVal.listStylePosition = r.get
         elif (let r = parseIdent[CSSListStyleType](tok); r.isSome):
-          typeVal = CSSComputedValue(
-            v: cvtListStyleType,
-            liststyletype: r.get
-          )
+          typeVal.listStyleType = r.get
         else:
           #TODO list-style-image
           #valid = false
@@ -1469,13 +1442,15 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         return err()
       if (let dir = parseIdent[CSSFlexDirection](cvals[i]); dir.isSome):
         # flex-direction
-        let val = CSSComputedValue(v: cvtFlexDirection, flexdirection: dir.get)
+        var val = CSSComputedValueBit()
+        val.flexDirection = dir.get
         res.add(makeEntry(cptFlexDirection, val))
         inc i
         cvals.skipWhitespace(i)
       if i < cvals.len:
         let wrap = ?parseIdent[CSSFlexWrap](cvals[i])
-        let val = CSSComputedValue(v: cvtFlexWrap, flexwrap: wrap)
+        var val = CSSComputedValueBit()
+        val.flexWrap = wrap
         res.add(makeEntry(cptFlexWrap, val))
     else:
       res.add(makeEntry(cptFlexDirection, global))
@@ -1489,41 +1464,55 @@ proc parseComputedValues*(name: string; value: seq[CSSComponentValue]):
     return res
   return @[]
 
+proc copyFrom(a, b: CSSComputedValues; t: CSSPropertyType) =
+  if t.isBit:
+    a.bits[t] = b.bits[t]
+  else:
+    a.objs[t] = b.objs[t]
+
+proc setInitial(a: CSSComputedValues; t: CSSPropertyType) =
+  if t.isBit:
+    a.bits[t].dummy = 0
+  else:
+    a.objs[t] = getDefault(t)
+
+proc initialOrInheritFrom*(a, b: CSSComputedValues; t: CSSPropertyType) =
+  if t.inherited and b != nil:
+    a.copyFrom(b, t)
+  else:
+    a.setInitial(t)
+
 proc applyValue*(vals: CSSComputedValues; entry: CSSComputedEntry;
-    parent, previousOrigin: CSSComputedValues) =
+    parent, previousOrigin: CSSComputedValues;
+    inited: array[CSSPropertyType, bool]) =
   case entry.global
   of cgtInherit:
     if parent != nil:
-      vals[entry.t] = parent[entry.t]
+      vals.copyFrom(parent, entry.t)
     else:
-      vals[entry.t] = getDefault(entry.t)
+      vals.setInitial(entry.t)
   of cgtInitial:
-    vals[entry.t] = getDefault(entry.t)
+    vals.setInitial(entry.t)
   of cgtUnset:
-    if inherited(entry.t):
-      # inherit
-      if parent != nil:
-        vals[entry.t] = parent[entry.t]
-      else:
-        vals[entry.t] = getDefault(entry.t)
-    else:
-      # initial
-      vals[entry.t] = getDefault(entry.t)
+    vals.initialOrInheritFrom(parent, entry.t)
   of cgtRevert:
-    if previousOrigin != nil:
-      vals[entry.t] = previousOrigin[entry.t]
+    if previousOrigin != nil and inited[entry.t]:
+      vals.copyFrom(previousOrigin, entry.t)
     else:
-      vals[entry.t] = getDefault(entry.t)
+      vals.initialOrInheritFrom(parent, entry.t)
   of cgtNone:
-    vals[entry.t] = entry.obj
+    if entry.t.isBit:
+      vals.bits[entry.t].dummy = entry.bit
+    else:
+      vals.objs[entry.t] = entry.obj
 
 func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
   new(result)
-  for prop in CSSPropertyType:
-    if inherited(prop):
-      result[prop] = parent[prop]
+  for t in CSSPropertyType:
+    if t.inherited:
+      result.copyFrom(parent, t)
     else:
-      result[prop] = getDefault(prop)
+      result.setInitial(t)
 
 func copyProperties*(props: CSSComputedValues): CSSComputedValues =
   new(result)
@@ -1531,8 +1520,8 @@ func copyProperties*(props: CSSComputedValues): CSSComputedValues =
 
 func rootProperties*(): CSSComputedValues =
   new(result)
-  for prop in CSSPropertyType:
-    result[prop] = getDefault(prop)
+  for t in CSSPropertyType:
+    result.setInitial(t)
 
 # Separate CSSComputedValues of a table into those of the wrapper and the actual
 # table.
@@ -1552,12 +1541,12 @@ func splitTable*(computed: CSSComputedValues):
     # no clue why this isn't included in the standard
     cptClear
   }
-  for prop in CSSPropertyType:
-    if prop in props:
-      outerComputed[prop] = computed[prop]
-      innerComputed[prop] = getDefault(prop)
+  for t in CSSPropertyType:
+    if t in props:
+      outerComputed.copyFrom(computed, t)
+      innerComputed.setInitial(t)
     else:
-      outerComputed[prop] = getDefault(prop)
-      innerComputed[prop] = computed[prop]
+      innerComputed.copyFrom(computed, t)
+      outerComputed.setInitial(t)
   outerComputed{"display"} = computed{"display"}
   return (outerComputed, innerComputed)

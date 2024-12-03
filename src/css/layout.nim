@@ -1105,7 +1105,7 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
   )
   sizes.space.h = maxContent()
   for dim in DimensionType:
-    let length = computed[CvalSizeMap[dim]].length
+    let length = computed.objs[CvalSizeMap[dim]].length
     if length.canpx(space[dim]):
       let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
       sizes.space[dim] = stretch(minClamp(u, sizes.minMaxSizes[dim]))
@@ -1126,7 +1126,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
   )
   if dim != dtHorizontal:
     sizes.space.h = maxContent()
-  let length = computed[CvalSizeMap[dim]].length
+  let length = computed.objs[CvalSizeMap[dim]].length
   if length.canpx(space[dim]):
     let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
     sizes.space[dim] = SizeConstraint(
@@ -1140,7 +1140,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     # been specified.
     sizes.space[dim] = maxContent()
   let odim = dim.opposite()
-  let olength = computed[CvalSizeMap[odim]].length
+  let olength = computed.objs[CvalSizeMap[odim]].length
   if olength.canpx(space[odim]):
     let u = olength.spx(lctx, space[odim], computed, paddingSum[odim])
     sizes.space[odim] = stretch(minClamp(u, sizes.minMaxSizes[odim]))

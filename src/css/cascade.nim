@@ -174,7 +174,9 @@ func calcPresHints(element: Element): seq[CSSComputedEntry] =
       if i <= 65534:
         set_cv cptChaRowspan, integer, int(i)
   template set_bgcolor_is_canvas =
-    set_cv cptBgcolorIsCanvas, bgcolorIsCanvas, true
+    var val = CSSComputedValueBit()
+    val.bgcolorIsCanvas = true
+    result.add(makeEntry(cptBgcolorIsCanvas, val))
 
   case element.tagType
   of TAG_TABLE:
@@ -229,36 +231,43 @@ func buildComputedValues(rules: CSSValueEntryMap;
     presHints: openArray[CSSComputedEntry]; parent: CSSComputedValues):
     CSSComputedValues =
   new(result)
+  var inited = default(array[CSSPropertyType, bool])
+  var uaInited = default(array[CSSPropertyType, bool])
+  var userInited = default(array[CSSPropertyType, bool])
   for entry in rules[coUserAgent].normal: # user agent
-    result.applyValue(entry, parent, nil)
+    result.applyValue(entry, parent, nil, inited)
+    inited[entry.t] = true
+    uaInited[entry.t] = true
+    userInited[entry.t] = true
   let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
   for entry in presHints:
-    result.applyValue(entry, nil, nil)
+    result.applyValue(entry, nil, nil, uaInited)
+    inited[entry.t] = true
+    userInited[entry.t] = true
   for entry in rules[coUser].normal: # user
-    result.applyValue(entry, parent, uaProperties)
+    result.applyValue(entry, parent, uaProperties, uaInited)
+    inited[entry.t] = true
+    userInited[entry.t] = true
   # save user properties so author can use them
   let userProperties = result.copyProperties()
   for entry in rules[coAuthor].normal: # author
-    result.applyValue(entry, parent, userProperties)
-  # no need to save user origins
+    result.applyValue(entry, parent, userProperties, userInited)
+    inited[entry.t] = true
   for entry in rules[coAuthor].important: # author important
-    result.applyValue(entry, parent, userProperties)
-  # important, so no need to save origins
+    result.applyValue(entry, parent, userProperties, userInited)
+    inited[entry.t] = true
   for entry in rules[coUser].important: # user important
-    result.applyValue(entry, parent, uaProperties)
-  # important, so no need to save origins
+    result.applyValue(entry, parent, uaProperties, uaInited)
+    inited[entry.t] = true
   for entry in rules[coUserAgent].important: # user agent important
-    result.applyValue(entry, parent, nil)
-  # important, so no need to save origins
+    result.applyValue(entry, parent, nil, uaInited)
+    inited[entry.t] = true
   # set defaults
-  for prop in CSSPropertyType:
-    if result[prop] == nil:
-      if prop.inherited and parent != nil:
-        result[prop] = parent[prop]
-      else:
-        result[prop] = getDefault(prop)
+  for t in CSSPropertyType:
+    if not inited[t]:
+      result.initialOrInheritFrom(parent, t)
   if result{"float"} != FloatNone:
     #TODO it may be better to handle this in layout
     let display = result{"display"}.blockify()
