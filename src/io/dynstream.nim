@@ -193,7 +193,8 @@ proc newPosixStream*(fd: cint): PosixStream =
 proc newPosixStream*(fd: SocketHandle): PosixStream =
   return newPosixStream(cint(fd))
 
-proc newPosixStream*(path: string; flags, mode: cint): PosixStream =
+proc newPosixStream*(path: string; flags = cint(O_RDONLY); mode = cint(0)):
+    PosixStream =
   let fd = open(cstring(path), flags, mode)
   if fd == -1:
     return nil
@@ -274,6 +275,9 @@ proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
     fromMmap: false
   )
   return res
+
+template toOpenArray*(mem: MaybeMappedMemory): openArray[char] =
+  cast[ptr UncheckedArray[char]](mem.p).toOpenArray(0, mem.len - 1)
 
 proc sendDataLoop*(ps: PosixStream; mem: MaybeMappedMemory) =
   # only send if not mmapped; otherwise everything is already where it should be

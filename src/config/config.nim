@@ -10,6 +10,7 @@ import config/mailcap
 import config/mimetypes
 import config/toml
 import config/urimethodmap
+import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jspropenumlist
@@ -670,8 +671,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
     else: # tvtString
       x.init.add((kkk.substr("cmd.".len), vv.s))
 
-proc parseConfig*(config: Config; dir, buf: string; warnings: var seq[string];
-  name = "<input>"; laxnames = false): Err[string]
+proc parseConfig*(config: Config; dir: string; buf: openArray[char];
+  warnings: var seq[string]; name = "<input>"; laxnames = false): Err[string]
 
 proc parseConfig(config: Config; dir: string; t: TomlValue;
     warnings: var seq[string]): Err[string] =
@@ -693,8 +694,9 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
   except ValueError as e:
     return err(e.msg)
 
-proc parseConfig*(config: Config; dir, buf: string; warnings: var seq[string];
-    name = "<input>"; laxnames = false): Err[string] =
+proc parseConfig*(config: Config; dir: string; buf: openArray[char];
+    warnings: var seq[string]; name = "<input>"; laxnames = false):
+    Err[string] =
   let toml = parseToml(buf, dir / name, laxnames)
   if toml.isSome:
     return config.parseConfig(dir, toml.get, warnings)
@@ -706,27 +708,27 @@ proc getNormalAction*(config: Config; s: string): string =
 proc getLinedAction*(config: Config; s: string): string =
   return config.line.getOrDefault(s)
 
-proc openConfig*(dir: var string; override: Option[string]): FileStream =
+proc openConfig*(dir: var string; override: Option[string]): PosixStream =
   if override.isSome:
     if override.get.len > 0 and override.get[0] == '/':
       dir = parentDir(override.get)
-      return newFileStream(override.get)
+      return newPosixStream(override.get)
     else:
       let path = getCurrentDir() / override.get
       dir = parentDir(path)
-      return newFileStream(path)
+      return newPosixStream(path)
   dir = getEnv("CHA_CONFIG_DIR")
   if dir != "":
-    return newFileStream(dir / "config.toml")
+    return newPosixStream(dir / "config.toml")
   dir = getEnv("XDG_CONFIG_HOME")
   if dir != "":
     dir = dir / "chawan"
-    return newFileStream(dir / "config.toml")
+    return newPosixStream(dir / "config.toml")
   dir = expandTilde("~/.config/chawan")
-  if (let fs = newFileStream(dir / "config.toml"); fs != nil):
+  if (let fs = newPosixStream(dir / "config.toml"); fs != nil):
     return fs
   dir = expandTilde("~/.chawan")
-  return newFileStream(dir / "config.toml")
+  return newPosixStream(dir / "config.toml")
 
 # called after parseConfig returns
 proc initCommands*(config: Config): Err[string] =

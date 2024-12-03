@@ -3,7 +3,6 @@ import version
 import std/options
 import std/os
 import std/posix
-import std/streams
 
 import chagashi/charset
 import config/chapath
@@ -206,17 +205,20 @@ const defaultConfig = staticRead"res/config.toml"
 
 proc initConfig(ctx: ParamParseContext; config: Config;
     warnings: var seq[string]): Err[string] =
-  let fs = openConfig(config.dir, ctx.configPath)
-  if fs == nil and ctx.configPath.isSome:
+  let ps = openConfig(config.dir, ctx.configPath)
+  if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("Failed to open config file " & ctx.configPath.get)
   putEnv("CHA_CONFIG_DIR", config.dir)
   ?config.parseConfig("res", defaultConfig, warnings)
   when defined(debug):
-    if (let fs = newFileStream(getCurrentDir() / "res/config.toml"); fs != nil):
-      ?config.parseConfig(getCurrentDir(), fs.readAll(), warnings)
-  if fs != nil:
-    ?config.parseConfig(config.dir, fs.readAll(), warnings)
+    if (let ps = newPosixStream(getCurrentDir() / "res/config.toml");
+        ps != nil):
+      ?config.parseConfig(getCurrentDir(), ps.recvAll(), warnings)
+  if ps != nil:
+    let src = ps.recvDataLoopOrMmap()
+    ?config.parseConfig(config.dir, src.toOpenArray(), warnings)
+    deallocMem(src)
   for opt in ctx.opts:
     ?config.parseConfig(getCurrentDir(), opt, warnings, laxnames = true)
   config.css.stylesheet &= ctx.stylesheet
