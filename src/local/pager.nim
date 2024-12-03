@@ -697,8 +697,8 @@ proc initImages(pager: Pager; container: Container) =
     let canvasImage = pager.term.loadImage(cached.data, container.process,
       imageId, image.x - container.fromx, image.y - container.fromy,
       image.width, image.height, image.x, image.y, pager.bufWidth,
-      pager.bufHeight, erry, offx, dispw, cached.preludeLen, cached.transparent,
-      redrawNext)
+      pager.bufHeight, erry, offx, dispw, image.offx, image.offy,
+      cached.preludeLen, cached.transparent, redrawNext)
     if canvasImage != nil:
       newImages.add(canvasImage)
   pager.term.clearImages(pager.bufHeight)

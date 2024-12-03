@@ -91,6 +91,10 @@ type
     # offset (crop start)
     offx: int
     offy: int
+    # kitty only: X/Y offset *inside* cell. (TODO implement for sixel too)
+    # has nothing to do with offx/offy.
+    offx2: int
+    offy2: int
     # size cap (crop end)
     # Note: this 0-based, so the final display size is
     # (dispw - offx, disph - offy)
@@ -710,12 +714,17 @@ func findImage(term: Terminal; pid, imageId: int; rx, ry, width, height,
 
 # x, y, maxw, maxh in cells
 # x, y can be negative, then image starts outside the screen
-proc positionImage(term: Terminal; image: CanvasImage; x, y, maxw, maxh: int):
-    bool =
+proc positionImage(term: Terminal; image: CanvasImage;
+    x, y, maxw, maxh, offx2, offy2: int): bool =
   image.x = x
   image.y = y
-  let xpx = x * term.attrs.ppc
-  let ypx = y * term.attrs.ppl
+  image.offx2 = offx2
+  image.offy2 = offy2
+  var xpx = x * term.attrs.ppc
+  var ypx = y * term.attrs.ppl
+  if term.imageMode == imKitty:
+    xpx += image.offx2
+    ypx += image.offy2
   # calculate offset inside image to start from
   image.offx = -min(xpx, 0)
   image.offy = -min(ypx, 0)
@@ -790,8 +799,8 @@ proc checkImageDamage*(term: Terminal; maxw, maxh: int) =
               term.lineDamage[y] = mx
 
 proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
-    rx, ry, maxw, maxh, erry, offx, dispw, preludeLen: int; transparent: bool;
-    redrawNext: var bool): CanvasImage =
+    rx, ry, maxw, maxh, erry, offx, dispw, offx2, offy2, preludeLen: int;
+    transparent: bool; redrawNext: var bool): CanvasImage =
   if (let image = term.findImage(pid, imageId, rx, ry, width, height, erry,
         offx, dispw); image != nil):
     # reuse image on screen
@@ -799,7 +808,7 @@ proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
       # only clear sixels; with kitty we just move the existing image
       if term.imageMode == imSixel:
         term.clearImage(image, maxh)
-      if not term.positionImage(image, x, y, maxw, maxh):
+      if not term.positionImage(image, x, y, maxw, maxh, offx2, offy2):
         # no longer on screen
         image.dead = true
         return nil
@@ -814,13 +823,15 @@ proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
     data: data,
     rx: rx,
     ry: ry,
+    offx2: offx2,
+    offy2: offy2,
     width: width,
     height: height,
     erry: erry,
     transparent: transparent,
     preludeLen: preludeLen
   )
-  if term.positionImage(image, x, y, maxw, maxh):
+  if term.positionImage(image, x, y, maxw, maxh, offx2, offy2):
     redrawNext = true
     return image
   # no longer on screen
@@ -909,6 +920,7 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   var outs = term.cursorGoto(x, y) &
     APC & "GC=1,s=" & $image.width & ",v=" & $image.height &
     ",x=" & $image.offx & ",y=" & $image.offy &
+    ",X=" & $image.offx2 & ",Y=" & $image.offy2 &
     ",w=" & $(image.dispw - image.offx) &
     ",h=" & $(image.disph - image.offy) &
     # for now, we always use placement id 1
@@ -966,7 +978,8 @@ proc clearCanvas*(term: Terminal) =
   let maxh = term.attrs.height - 1
   var newImages: seq[CanvasImage] = @[]
   for image in term.canvasImages:
-    if term.positionImage(image, image.x, image.y, maxw, maxh):
+    if term.positionImage(image, image.x, image.y, maxw, maxh, image.offx2,
+        image.offy2):
       image.damaged = true
       image.marked = true
       newImages.add(image)

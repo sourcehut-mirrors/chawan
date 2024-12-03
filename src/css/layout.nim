@@ -1599,7 +1599,7 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
   let atom = InlineAtom(
     t: iatImage,
     bmp: bmp,
-    size: size(w = int(bmp.width), h = int(bmp.height)) #TODO overflow
+    size: size(w = bmp.width, h = bmp.height) #TODO overflow
   )
   let computed = state.fragment.computed
   let lctx = ictx.lctx

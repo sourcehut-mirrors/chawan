@@ -230,6 +230,8 @@ type
   PosBitmap* = ref object
     x*: int
     y*: int
+    offx*: int
+    offy*: int
     width*: int
     height*: int
     bmp*: NetworkBitmap
@@ -367,9 +369,15 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
         # "paint" background, i.e. add formatting (but don't actually color it)
         grid.paintBackground(state, defaultColor, x1, y1, x2, y2, fragment.node,
           noPaint = true)
+        let x = (offset.x div state.attrs.ppc).toInt
+        let y = (offset.y div state.attrs.ppl).toInt
+        let offx = (offset.x - x.toLayoutUnit * state.attrs.ppc).toInt
+        let offy = (offset.y - y.toLayoutUnit * state.attrs.ppl).toInt
         state.images.add(PosBitmap(
-          x: (offset.x div state.attrs.ppc).toInt,
-          y: (offset.y div state.attrs.ppl).toInt,
+          x: x,
+          y: y,
+          offx: offx,
+          offy: offy,
           width: atom.size.w.toInt,
           height: atom.size.h.toInt,
           bmp: atom.bmp
