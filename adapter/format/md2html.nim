@@ -314,7 +314,7 @@ proc parseInline(line: openArray[char]) =
     stdout.write("</DEL>")
 
 type ListType = enum
-  ltOl, ltUl
+  ltOl, ltUl, ltNoMark
 
 proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
   var depth = 0
@@ -323,19 +323,38 @@ proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
       depth += 8
     elif c == ' ':
       inc depth
+    elif c in {'*', '-', '+'}:
+      inc depth
+      for j, c in line.toOpenArray(i + 1, line.high):
+        if c == '\t':
+          depth += 8
+        elif c == ' ':
+          inc depth
+        elif j == 0:
+          break # fail
+        else:
+          return (depth, i + j, ltUl)
+      break # fail
+    elif c in AsciiDigit:
+      var i = i + 1
+      inc depth
+      while i < line.len and line[i] in AsciiDigit:
+        inc depth
+        inc i
+      if i < line.len and line[i] == '.':
+        for j, c in line.toOpenArray(i + 1, line.high):
+          if c == '\t':
+            depth += 8
+          elif c == ' ':
+            inc depth
+          elif j == 0:
+            break # fail
+          else:
+            return (depth, i + j, ltOl)
+      break # fail
     else:
-      if c in {'*', '-', '+'}:
-        let i = i + 1
-        if i < line.len and line[i] in {'\t', ' '}:
-          return (depth, i, ltUl)
-      elif c in AsciiDigit:
-        let i = i + 1
-        if i < line.len and line[i] == '.':
-          let i = i + 1
-          if i < line.len and line[i] in {'\t', ' '}:
-            return (depth, i, ltOl)
-      break
-  return (-1, -1, ltUl)
+      return (depth, i, ltNoMark)
+  return (-1, -1, ltNoMark)
 
 proc matchHTMLPreStart(line: string): bool =
   var tagn = ""
@@ -370,25 +389,35 @@ type
     btNone, btPar, btList, btPre, btTabPre, btSpacePre, btBlockquote, btHTML,
     btHTMLPre, btComment
 
+  ListState = enum
+    lsNormal, lsAfterBlank, lsLastLine
+
+  List = object
+    depth: int
+    t: ListType
+    par: bool
+
   ParseState = object
     blockType: BlockType
     blockData: string
-    listDepth: int
-    lists: seq[ListType]
+    lists: seq[List]
     hasp: bool
     reprocess: bool
+    listState: ListState
     numPreLines: int
 
-proc pushList(state: var ParseState; t: ListType) =
+proc pushList(state: var ParseState; t: ListType; depth: int) =
   case t
   of ltOl: stdout.write("<OL>\n<LI>")
   of ltUl: stdout.write("<UL>\n<LI>")
-  state.lists.add(t)
+  of ltNoMark: assert false
+  state.lists.add(List(t: t, depth: depth))
 
 proc popList(state: var ParseState) =
-  case state.lists.pop()
+  case state.lists.pop().t
   of ltOl: stdout.write("</OL>\n")
   of ltUl: stdout.write("</UL>\n")
+  of ltNoMark: assert false
 
 proc writeHeading(state: var ParseState; n: int; text: openArray[char]) =
   state.hasp = false
@@ -399,7 +428,7 @@ proc writeHeading(state: var ParseState; n: int; text: openArray[char]) =
   stdout.write("</H" & $n & ">\n")
 
 proc parseNone(state: var ParseState; line: string) =
-  if line == "":
+  if AllChars - {' ', '\t'} notin line:
     discard
   elif (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
     if state.hasp:
@@ -443,11 +472,11 @@ proc parseNone(state: var ParseState; line: string) =
       stdout.write("</P>\n")
     state.blockData = line.substr(1) & "<BR>"
     stdout.write("<BLOCKQUOTE>")
-  elif (let (n, len, t) = line.getListDepth(); n != -1):
+  elif (let (n, len, t) = line.getListDepth(); t != ltNoMark):
     state.blockType = btList
-    state.listDepth = n
+    state.listState = lsNormal
     state.hasp = false
-    state.pushList(t)
+    state.pushList(t, n)
     state.blockData = line.substr(len + 1) & '\n'
   else:
     state.blockType = btPar
@@ -461,35 +490,63 @@ proc parsePre(state: var ParseState; line: string) =
   else:
     stdout.write(line.htmlEscape() & '\n')
 
-proc parseList(state: var ParseState; line: string) =
-  if line == "":
-    state.blockData.parseInline()
-    state.blockData = ""
-    while state.lists.len > 0:
-      state.popList()
-    state.blockType = btNone
-  elif (let (n, len, t) = line.getListDepth(); n != -1):
-    state.blockData.parseInline()
-    state.blockData = ""
-    if n < state.listDepth:
-      if state.lists.len > 0:
-        state.popList()
-      else:
-        state.pushList(t)
-    elif n > state.listDepth:
-      state.pushList(t)
-    stdout.write("<LI>")
-    state.listDepth = n
-    state.blockData = line.substr(len + 1) & '\n'
-  else:
-    state.blockData &= line & '\n'
-
 proc flushPar(state: var ParseState) =
   if state.blockData != "":
     state.hasp = true
     stdout.write("<P>\n")
     state.blockData.parseInline()
     state.blockData = ""
+
+proc flushList(state: var ParseState) =
+  if state.lists[^1].par and state.blockData != "":
+    stdout.write("<P>\n")
+  state.blockData.parseInline()
+  state.blockData = ""
+  while state.lists.len > 0:
+    state.popList()
+  state.blockType = btNone
+
+proc parseList(state: var ParseState; line: string) =
+  if state.listState == lsLastLine:
+    state.flushList()
+  elif AllChars - {' ', '\t'} notin line:
+    state.listState = lsAfterBlank
+  else:
+    let (n, len, t) = line.getListDepth()
+    if t == ltNoMark:
+      if state.lists[0].depth > n:
+        if state.listState == lsAfterBlank:
+          state.flushList()
+          state.reprocess = true
+        else:
+          state.blockData &= line & '\n'
+      else:
+        if state.listState == lsAfterBlank:
+          state.lists[^1].par = true
+          state.listState = lsNormal
+        if state.lists[^1].par:
+          stdout.write("<P>\n")
+          state.blockData.parseInline()
+          state.blockData = ""
+          while n < state.lists[^1].depth:
+            state.popList()
+        state.blockData &= line.substr(len) & '\n'
+    else:
+      if state.listState == lsAfterBlank and state.lists[^1].t == t:
+        state.lists[^1].par = true
+      if state.lists[^1].par:
+        stdout.write("<P>\n")
+      state.blockData.parseInline()
+      state.blockData = ""
+      while state.lists.len > 1 and (n < state.lists[^1].depth or
+          n == state.lists[^1].depth and t != state.lists[^1].t):
+        state.popList()
+      if state.lists.len == 0 or state.lists[^1].depth < n or
+          state.lists[^1].t != t:
+        state.pushList(t, n)
+      else:
+        stdout.write("<LI>")
+      state.blockData = line.substr(len + 1) & '\n'
 
 proc parsePar(state: var ParseState; line: string) =
   if line == "":
@@ -508,8 +565,12 @@ proc parsePar(state: var ParseState; line: string) =
     state.blockType = btPre
     state.hasp = false
     stdout.write("<PRE>")
-  elif line[0] in {'-', '=', '*', '_'} and AllChars - {line[0]} notin line:
-    if state.blockData == "" and line[0] in {'-', '*', '_'}: # thematic break
+  elif line[0] in {'-', '=', '*', '_', ' ', '\t'} and
+      AllChars - {line[0]} notin line:
+    if line[0] in {' ', '\t'}: # lines with space only also count as blank
+      state.flushPar()
+      state.blockType = btNone
+    elif state.blockData == "" and line[0] in {'-', '*', '_'}: # thematic break
       state.blockData &= "<HR>\n"
     elif state.blockData != "" and line[0] in {'-', '='}: # setext heading
       let n = if line[0] == '=': 1 else: 2
@@ -524,7 +585,7 @@ proc parseHTML(state: var ParseState; line: string) =
   if state.hasp:
     state.hasp = false
     stdout.write("</P>\n")
-  if line == "":
+  if AllChars - {' ', '\t'} notin line:
     state.blockData.parseInline()
     state.blockData = ""
     state.blockType = btNone
@@ -594,16 +655,17 @@ proc parseComment(state: var ParseState; line: string) =
   else:
     stdout.write(line & '\n')
 
-proc readLine(state: ParseState; line: var string): bool =
+proc readLine(state: var ParseState; line: var string): bool =
   let hadLine = line != ""
   if stdin.readLine(line):
     return true
   line = ""
+  state.listState = lsLastLine
   return hadLine # add one last iteration with a blank after EOF
 
 proc main() =
   var line: string
-  var state = ParseState(listDepth: -1)
+  var state = ParseState()
   while state.reprocess or state.readLine(line):
     state.reprocess = false
     case state.blockType
