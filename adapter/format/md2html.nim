@@ -523,8 +523,6 @@ proc parseList(state: var ParseState; line: string) =
       else:
         if state.listState == lsAfterBlank:
           state.lists[^1].par = true
-          state.listState = lsNormal
-        if state.lists[^1].par:
           stdout.write("<P>\n")
           state.blockData.parseInline()
           state.blockData = ""
@@ -547,6 +545,7 @@ proc parseList(state: var ParseState; line: string) =
       else:
         stdout.write("<LI>")
       state.blockData = line.substr(len + 1) & '\n'
+    state.listState = lsNormal
 
 proc parsePar(state: var ParseState; line: string) =
   if line == "":

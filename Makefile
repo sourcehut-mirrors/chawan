@@ -241,15 +241,19 @@ test/net/run: test/net/run.nim
 
 .PHONY: test_js
 test_js:
-	(cd test/js && ./run_js_tests.sh)
+	(cd test/js && ./run.sh)
 
 .PHONY: test_layout
 test_layout:
-	(cd test/layout && ./run_layout_tests.sh)
+	(cd test/layout && ./run.sh)
+
+.PHONY: test_md
+test_md:
+	(cd test/md && ./run.sh)
 
 .PHONY: test_net
 test_net: test/net/run
 	(cd test/net && ./run)
 
 .PHONY: test
-test: test_js test_layout test_net
+test: test_js test_layout test_net test_md
