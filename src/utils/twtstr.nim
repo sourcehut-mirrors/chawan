@@ -235,6 +235,11 @@ func skipBlanks*(buf: openArray[char]; at: int): int =
   while result < buf.len and buf[result] in AsciiWhitespace:
     inc result
 
+func skipBlanksTillLF*(buf: openArray[char]; at: int): int =
+  result = at
+  while result < buf.len and buf[result] in AsciiWhitespace:
+    inc result
+
 func stripAndCollapse*(s: openArray[char]): string =
   var res = newStringOfCap(s.len)
   var space = false
@@ -254,7 +259,7 @@ func until*(s: openArray[char]; c: set[char]; starti = 0): string =
       break
     result &= s[i]
 
-func untilLower*(s: string; c: set[char]; starti = 0): string =
+func untilLower*(s: openArray[char]; c: set[char]; starti = 0): string =
   result = ""
   for i in starti ..< s.len:
     if s[i] in c:
@@ -834,3 +839,15 @@ iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
     {.push overflowChecks: off.}
     inc i
     {.pop.}
+
+proc getFileExt*(path: string): string =
+  var n = 0
+  for i in countdown(path.high, 0):
+    if path[i] == '/':
+      break
+    if path[i] == '.':
+      n = i
+      break
+  if n > 0:
+    return path.substr(n + 1)
+  return ""

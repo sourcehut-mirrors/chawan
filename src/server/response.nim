@@ -3,6 +3,7 @@ import std/tables
 
 import chagashi/charset
 import chagashi/decoder
+import config/mimetypes
 import io/dynstream
 import io/promise
 import monoucha/javascript
@@ -15,7 +16,6 @@ import types/blob
 import types/opt
 import types/referrer
 import types/url
-import utils/mimeguess
 import utils/twtstr
 
 type

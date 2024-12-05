@@ -11,6 +11,7 @@ import std/times
 import chagashi/charset
 import chagashi/decoder
 import chame/tags
+import config/mimetypes
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
@@ -46,7 +47,6 @@ import types/path
 import types/referrer
 import types/url
 import types/winattrs
-import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
 
@@ -106,6 +106,7 @@ type
     # list of streams that must be closed for canvas rendering on load
     pendingCanvasCtls*: seq[CanvasRenderingContext2D]
     urandom*: PosixStream
+    imageTypes*: Table[string, string]
 
   # Navigator stuff
   Navigator* = object
@@ -3388,9 +3389,22 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         let contentType = response.getContentType("image/x-unknown")
         if not contentType.startsWith("image/"):
           return newResolvedPromise()
+        var t = contentType.after('/')
+        if t == "x-unknown":
+          let ext = response.url.pathname.getFileExt()
+          # Note: imageTypes is taken from mime.types.
+          # To avoid fingerprinting, we
+          # a) always download the entire image (through addCacheFile) -
+          #    this prevents the server from knowing what content type
+          #    is supported
+          # b) prevent mime.types extensions for images defined by
+          #    ourselves
+          # In fact, a) would by itself be enough, but I'm not sure if
+          # it's the best way, so I added b) as a fallback measure.
+          t = window.imageTypes.getOrDefault(ext, "x-unknown")
         let cacheId = window.loader.addCacheFile(response.outputId,
           window.loader.clientPid)
-        let url = newURL("img-codec+" & contentType.after('/') & ":decode")
+        let url = newURL("img-codec+" & t & ":decode")
         if url.isNone:
           return newResolvedPromise()
         let request = newRequest(

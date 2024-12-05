@@ -8,7 +8,7 @@ application/xhtml+xml	xhtml	xhtm	xht
 text/plain		txt
 text/css		css
 image/png		png
-image/jpeg		jpg
+image/jpeg		jpg	jpeg	jpe	jfif
 image/bmp		bmp
 image/gif		gif
 image/webp		webp

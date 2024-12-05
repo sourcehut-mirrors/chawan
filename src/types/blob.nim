@@ -2,12 +2,12 @@ import std/options
 import std/posix
 import std/strutils
 
+import config/mimetypes
 import io/bufreader
 import io/bufwriter
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jstypes
-import utils/mimeguess
 
 type
   DeallocFun = proc(opaque, p: pointer) {.nimcall, raises: [].}

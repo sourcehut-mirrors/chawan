@@ -29,7 +29,6 @@ import types/referrer
 import types/url
 import types/winattrs
 import utils/luwrap
-import utils/mimeguess
 import utils/strwidth
 import utils/twtstr
 import utils/wordbreak

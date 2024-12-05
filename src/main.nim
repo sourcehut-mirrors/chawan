@@ -220,10 +220,12 @@ proc initConfig(ctx: ParamParseContext; config: Config;
     if (let ps = newPosixStream(getCurrentDir() / "res/config.toml");
         ps != nil):
       ?config.parseConfig(getCurrentDir(), ps.recvAll(), warnings)
+      ps.sclose()
   if ps != nil:
     let src = ps.recvDataLoopOrMmap()
     ?config.parseConfig(config.dir, src.toOpenArray(), warnings)
     deallocMem(src)
+    ps.sclose()
   for opt in ctx.opts:
     ?config.parseConfig(getCurrentDir(), opt, warnings, laxnames = true)
   config.css.stylesheet &= ctx.stylesheet

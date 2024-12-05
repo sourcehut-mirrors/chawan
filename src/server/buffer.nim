@@ -130,11 +130,12 @@ type
     scripting*: bool
     images*: bool
     isdump*: bool
-    charsets*: seq[Charset]
-    charsetOverride*: Charset
-    protocol*: Table[string, ProtocolConfig]
     autofocus*: bool
+    charsetOverride*: Charset
     metaRefresh*: MetaRefresh
+    charsets*: seq[Charset]
+    protocol*: Table[string, ProtocolConfig]
+    imageTypes*: Table[string, string]
 
   GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.nimcall.}
 
@@ -1917,8 +1918,17 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     cacheId: -1,
     outputId: -1,
     factory: factory,
-    window: newWindow(config.scripting, config.images, config.styling, attrs,
-      factory, loader, url, urandom)
+    window: newWindow(
+      config.scripting,
+      config.images,
+      config.styling,
+      attrs,
+      factory,
+      loader,
+      url,
+      urandom,
+      config.imageTypes
+    )
   )
   if buffer.config.scripting:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)

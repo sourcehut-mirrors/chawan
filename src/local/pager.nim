@@ -10,6 +10,7 @@ import chagashi/charset
 import config/chapath
 import config/config
 import config/mailcap
+import config/mimetypes
 import css/render
 import io/bufreader
 import io/console
@@ -48,7 +49,6 @@ import types/opt
 import types/url
 import types/winattrs
 import utils/luwrap
-import utils/mimeguess
 import utils/regexutils
 import utils/strwidth
 import utils/twtstr
@@ -1387,6 +1387,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       res.metaRefresh = sc.meta_refresh.get
   loaderConfig.filter.allowschemes
     .add(pager.config.external.urimethodmap.imageProtos)
+  if res.images:
+    res.imageTypes = pager.config.external.mime_types.image
   return res
 
 # Load request in a new buffer.

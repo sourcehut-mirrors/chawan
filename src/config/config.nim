@@ -303,14 +303,22 @@ proc openFileExpand(dir, file: string): FileStream =
   else:
     return newFileStream(dir / file)
 
+proc openFileExpand2(dir, file: string): PosixStream =
+  if file.len == 0:
+    return nil
+  if file[0] == '/':
+    return newPosixStream(file)
+  else:
+    return newPosixStream(dir / file)
+
 proc readUserStylesheet(dir, file: string): string =
   let x = ChaPath(file).unquote()
   if x.isNone:
     raise newException(ValueError, x.error)
-  let s = openFileExpand(dir, x.get)
-  if s != nil:
-    result = s.readAll()
-    s.close()
+  let ps = openFileExpand2(dir, x.get)
+  if ps != nil:
+    result = ps.recvAll()
+    ps.sclose()
 
 type ConfigParser = object
   config: Config
@@ -614,9 +622,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(MimeTypes)
   for p in paths:
-    let f = openFileExpand(ctx.dir, p)
-    if f != nil:
-      x.parseMimeTypes(f)
+    let ps = openFileExpand2(ctx.dir, p)
+    if ps != nil:
+      let src = ps.recvDataLoopOrMmap()
+      x.parseMimeTypes(src.toOpenArray(), DefaultImages)
+      deallocMem(src)
+      ps.sclose()
 
 const DefaultMailcap = block:
   let ss = newStringStream(staticRead"res/mailcap")
@@ -645,9 +656,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(URIMethodMap)
   for p in paths:
-    let f = openFileExpand(ctx.dir, p)
-    if f != nil:
-      x.parseURIMethodMap(f.readAll())
+    let ps = openFileExpand2(ctx.dir, p)
+    if ps != nil:
+      x.parseURIMethodMap(ps.recvAll())
+      ps.sclose()
   x.append(DefaultURIMethodMap)
 
 func isCompatibleIdent(s: string): bool =
@@ -685,10 +697,11 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
       var includes = config.`include`
       config.`include`.setLen(0)
       for s in includes:
-        let fs = openFileExpand(dir, s)
-        if fs == nil:
+        let ps = openFileExpand2(dir, s)
+        if ps == nil:
           return err("include file not found: " & s)
-        ?config.parseConfig(dir, fs.readAll(), warnings)
+        ?config.parseConfig(dir, ps.recvAll(), warnings)
+        ps.sclose()
     warnings.add(ctx.warnings)
     return ok()
   except ValueError as e:
