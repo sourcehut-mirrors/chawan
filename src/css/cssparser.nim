@@ -153,6 +153,9 @@ proc consume(state: var CSSTokenizerState): char =
   inc state.at
   return state.curr
 
+proc seek(state: var CSSTokenizerState; n: int) =
+  state.at += n
+
 proc consumeRChar(state: var CSSTokenizerState): char =
   let u = state.buf.nextUTF8(state.at)
   if u < 0x80:
@@ -223,7 +226,7 @@ proc startsWithNumber(state: var CSSTokenizerState): bool =
 
 proc skipWhitespace(state: var CSSTokenizerState) =
   while state.has() and state.peek() in AsciiWhitespace:
-    discard state.consume()
+    state.seek(1)
 
 proc consumeEscape(state: var CSSTokenizerState): string =
   if not state.has():
@@ -241,7 +244,7 @@ proc consumeEscape(state: var CSSTokenizerState): string =
       num += uint32(hexValue(c))
       inc i
     if state.has() and state.peek() in AsciiWhitespace:
-      discard state.consume()
+      state.seek(1)
     if num == 0 or num > 0x10FFFF or num in 0xD800u32..0xDFFFu32:
       return "\uFFFD"
     else:
@@ -262,7 +265,7 @@ proc consumeString(state: var CSSTokenizerState): CSSToken =
       if not state.has():
         continue
       elif state.peek() == '\n':
-        discard state.consume()
+        state.seek(1)
       else:
         s &= consumeEscape(state)
     elif c == ending:
@@ -316,18 +319,20 @@ proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
 proc consumeNumericToken(state: var CSSTokenizerState): CSSToken =
   let (t, val) = state.consumeNumber()
   if state.next3startsWithIdentSequence():
-    result = CSSToken(t: cttDimension, nvalue: val, tflagb: t)
-    result.unit = state.consumeIdentSequence()
-  elif state.has() and state.peek() == '%':
-    discard state.consume()
-    result = CSSToken(t: cttPercentage, nvalue: val)
-  else:
-    result = CSSToken(t: cttNumber, nvalue: val, tflagb: t)
+    return CSSToken(
+      t: cttDimension,
+      nvalue: val,
+      tflagb: t,
+      unit: state.consumeIdentSequence()
+    )
+  if state.has() and state.peek() == '%':
+    state.seek(1)
+    return CSSToken(t: cttPercentage, nvalue: val)
+  return CSSToken(t: cttNumber, nvalue: val, tflagb: t)
 
 proc consumeBadURL(state: var CSSTokenizerState) =
   while state.has():
-    let c = state.consume()
-    case c
+    case state.consume()
     of ')':
       return
     elif state.isValidEscape():
@@ -335,75 +340,69 @@ proc consumeBadURL(state: var CSSTokenizerState) =
     else: discard
 
 const NonPrintable = {
-  char(0x00)..char(0x08), char(0x0B),
-  char(0x0E)..char(0x1F), char(0x7F)
+  '\0'..char(0x08), '\v', char(0x0E)..char(0x1F), char(0x7F)
 }
 
 proc consumeURL(state: var CSSTokenizerState): CSSToken =
-  result = CSSToken(t: cttUrl)
+  let res = CSSToken(t: cttUrl)
   state.skipWhitespace()
   while state.has():
     let c = state.consume()
     case c
     of ')':
-      return result
+      return res
     of '"', '\'', '(', NonPrintable:
       state.consumeBadURL()
       return CSSToken(t: cttBadUrl)
     of AsciiWhitespace:
       state.skipWhitespace()
       if not state.has():
-        return result
+        return res
       if state.peek() == ')':
-        discard state.consume()
-        return result
+        state.seek(1)
+        return res
       state.consumeBadURL()
       return CSSToken(t: cttBadUrl)
     of '\\':
       state.reconsume()
       if state.isValidEscape():
-        result.value &= state.consumeEscape()
+        res.value &= state.consumeEscape()
       else:
         state.consumeBadURL()
         return CSSToken(t: cttBadUrl)
     else:
-      result.value &= c
+      res.value &= c
+  return res
 
 proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
   let s = state.consumeIdentSequence()
   if s.equalsIgnoreCase("url") and state.has() and state.peek() == '(':
-    discard state.consume()
+    state.seek(1)
     while state.has(1) and state.peek() in AsciiWhitespace and
         state.peek(1) in AsciiWhitespace:
-      discard state.consume()
+      state.seek(1)
     if state.has() and state.peek() in {'"', '\''} or
         state.has(1) and state.peek() in {'"', '\''} + AsciiWhitespace and
         state.peek(1) in {'"', '\''}:
       return CSSToken(t: cttFunction, value: s)
-    else:
-      return state.consumeURL()
-  elif state.has() and state.peek() == '(':
-    discard state.consume()
+    return state.consumeURL()
+  if state.has() and state.peek() == '(':
+    state.seek(1)
     return CSSToken(t: cttFunction, value: s)
-
   return CSSToken(t: cttIdent, value: s)
 
 proc consumeComments(state: var CSSTokenizerState) =
   if state.has(1) and state.peek() == '/' and state.peek(1) == '*':
-    discard state.consume()
-    discard state.consume()
+    state.seek(2)
     while state.has() and not (state.has(1) and state.peek() == '*' and
         state.peek(1) == '/'):
-      discard state.consume()
+      state.seek(1)
     if state.has(1):
-      discard state.consume()
+      state.seek(1)
     if state.has():
-      discard state.consume()
+      state.seek(1)
 
 proc consumeToken(state: var CSSTokenizerState): CSSToken =
-  state.consumeComments()
-  if not state.has():
-    return
   let c = state.consume()
   case c
   of AsciiWhitespace:
@@ -437,8 +436,7 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
       return state.consumeNumericToken()
     else:
       if state.has(1) and state.peek() == '-' and state.peek(1) == '>':
-        discard state.consume()
-        discard state.consume()
+        state.seek(2)
         return CSSToken(t: cttCdc)
       elif state.startsWithIdentSequence():
         state.reconsume()
@@ -456,9 +454,7 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
   of '<':
     if state.has(2) and state.peek() == '!' and state.peek(1) == '-' and
         state.peek(2) == '-':
-      discard state.consume()
-      discard state.consume()
-      discard state.consume()
+      state.seek(3)
       return CSSToken(t: cttCdo)
     else:
       return CSSToken(t: cttDelim, cvalue: c)
@@ -487,11 +483,12 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
     return CSSToken(t: cttDelim, cvalue: state.consumeRChar())
 
 proc tokenizeCSS*(ibuf: string): seq[CSSParsedItem] =
+  result = @[]
   var state = CSSTokenizerState(buf: ibuf)
   while state.has():
-    let tok = state.consumeToken()
-    if tok != nil:
-      result.add(tok)
+    state.consumeComments()
+    if state.has():
+      result.add(state.consumeToken())
 
 proc consume(state: var CSSParseState): CSSParsedItem =
   result = state.tokens[state.at]
@@ -532,15 +529,15 @@ proc consumeSimpleBlock(state: var CSSParseState; tok: CSSToken):
       result.value.add(state.consumeComponentValue())
 
 proc consumeFunction(state: var CSSParseState): CSSFunction =
-  let t = (CSSToken)state.consume()
-  result = CSSFunction(name: t.value)
+  let t = CSSToken(state.consume())
+  let res = CSSFunction(name: t.value)
   while state.at < state.tokens.len:
     let t = state.consume()
     if t == cttRparen:
-      return result
-    else:
-      state.reconsume()
-      result.value.add(state.consumeComponentValue())
+      break
+    state.reconsume()
+    res.value.add(state.consumeComponentValue())
+  return res
 
 proc consumeComponentValue(state: var CSSParseState): CSSComponentValue =
   let t = state.consume()
