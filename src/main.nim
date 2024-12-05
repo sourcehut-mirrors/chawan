@@ -86,6 +86,7 @@ proc version() =
 type ParamParseContext = object
   params: seq[string]
   i: int
+  next: string
   configPath: Option[string]
   contentType: Option[string]
   charset: Charset
@@ -95,14 +96,16 @@ type ParamParseContext = object
   stylesheet: string
   pages: seq[string]
 
-proc getnext(ctx: var ParamParseContext): string =
+proc getNext(ctx: var ParamParseContext): string =
+  if ctx.next != "":
+    return ctx.next
   inc ctx.i
   if ctx.i < ctx.params.len:
     return ctx.params[ctx.i]
   help(1)
 
 proc parseConfig(ctx: var ParamParseContext) =
-  ctx.configPath = some(ctx.getnext())
+  ctx.configPath = some(ctx.getNext())
 
 proc parseMonochrome(ctx: var ParamParseContext) =
   ctx.opts.add("display.color-mode = monochrome")
@@ -111,10 +114,10 @@ proc parseVisual(ctx: var ParamParseContext) =
   ctx.visual = true
 
 proc parseContentType(ctx: var ParamParseContext) =
-  ctx.contentType = some(ctx.getnext())
+  ctx.contentType = some(ctx.getNext())
 
 proc getCharset(ctx: var ParamParseContext): Charset =
-  let s = ctx.getnext()
+  let s = ctx.getNext()
   let charset = getCharset(s)
   if charset == CHARSET_UNKNOWN:
     stderr.writeLine("Unknown charset " & s)
@@ -131,13 +134,13 @@ proc parseDump(ctx: var ParamParseContext) =
   ctx.dump = true
 
 proc parseCSS(ctx: var ParamParseContext) =
-  ctx.stylesheet &= ctx.getnext()
+  ctx.stylesheet &= ctx.getNext()
 
 proc parseOpt(ctx: var ParamParseContext) =
-  ctx.opts.add(ctx.getnext())
+  ctx.opts.add(ctx.getNext())
 
 proc parseRun(ctx: var ParamParseContext) =
-  let script = dqEscape(ctx.getnext())
+  let script = dqEscape(ctx.getNext())
   ctx.opts.add("start.startup-script = \"\"\"" & script & "\"\"\"")
   ctx.opts.add("start.headless = true")
   ctx.dump = true
@@ -164,9 +167,8 @@ proc parse(ctx: var ParamParseContext) =
       if param[1] != '-':
         for j in 1 ..< param.len:
           const NeedsNextParam = {'C', 'I', 'O', 'T', 'c', 'o', 'r'}
-          if j != param.high and param[j] in NeedsNextParam:
-            # expecting next parameter, but not the last char...
-            help(1)
+          if j < param.high and param[j] in NeedsNextParam:
+            ctx.next = param.substr(j + 1)
           case param[j]
           of 'C': ctx.parseConfig()
           of 'I': ctx.parseInputCharset()
@@ -181,6 +183,9 @@ proc parse(ctx: var ParamParseContext) =
           of 'r': ctx.parseRun()
           of 'v': version()
           else: help(1)
+          if ctx.next != "":
+            ctx.next = ""
+            break
       else:
         case param
         of "--config": ctx.parseConfig()
