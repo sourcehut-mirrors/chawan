@@ -648,7 +648,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       if ps == nil:
         pager.loader.removeCachedItem(cacheId)
         return
-      let mem = ps.recvDataLoopOrMmap()
+      let mem = ps.mmap()
       ps.sclose()
       if mem == nil:
         pager.loader.removeCachedItem(cacheId)

@@ -222,7 +222,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
       ?config.parseConfig(getCurrentDir(), ps.recvAll(), warnings)
       ps.sclose()
   if ps != nil:
-    let src = ps.recvDataLoopOrMmap()
+    let src = ps.recvAllOrMmap()
     ?config.parseConfig(config.dir, src.toOpenArray(), warnings)
     deallocMem(src)
     ps.sclose()

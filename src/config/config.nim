@@ -1,6 +1,5 @@
 import std/options
 import std/os
-import std/streams
 import std/strutils
 import std/tables
 
@@ -295,15 +294,7 @@ proc bindPagerKey(config: Config; key, action: string) {.jsfunc.} =
 proc bindLineKey(config: Config; key, action: string) {.jsfunc.} =
   config.line.setter(key, action)
 
-proc openFileExpand(dir, file: string): FileStream =
-  if file.len == 0:
-    return nil
-  if file[0] == '/':
-    return newFileStream(file)
-  else:
-    return newFileStream(dir / file)
-
-proc openFileExpand2(dir, file: string): PosixStream =
+proc openFileExpand(dir, file: string): PosixStream =
   if file.len == 0:
     return nil
   if file[0] == '/':
@@ -315,7 +306,7 @@ proc readUserStylesheet(dir, file: string): string =
   let x = ChaPath(file).unquote()
   if x.isNone:
     raise newException(ValueError, x.error)
-  let ps = openFileExpand2(dir, x.get)
+  let ps = openFileExpand(dir, x.get)
   if ps != nil:
     result = ps.recvAll()
     ps.sclose()
@@ -622,16 +613,14 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(MimeTypes)
   for p in paths:
-    let ps = openFileExpand2(ctx.dir, p)
+    let ps = openFileExpand(ctx.dir, p)
     if ps != nil:
-      let src = ps.recvDataLoopOrMmap()
+      let src = ps.recvAllOrMmap()
       x.parseMimeTypes(src.toOpenArray(), DefaultImages)
       deallocMem(src)
       ps.sclose()
 
-const DefaultMailcap = block:
-  let ss = newStringStream(staticRead"res/mailcap")
-  parseMailcap(ss).get
+const DefaultMailcap = parseMailcap(staticRead"res/mailcap").get
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
     k: string) =
@@ -639,9 +628,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(Mailcap)
   for p in paths:
-    let f = openFileExpand(ctx.dir, p)
-    if f != nil:
-      let res = parseMailcap(f)
+    let ps = openFileExpand(ctx.dir, p)
+    if ps != nil:
+      let src = ps.recvAllOrMmap()
+      let res = parseMailcap(src.toOpenArray())
+      deallocMem(src)
+      ps.sclose()
       if res.isSome:
         x.add(res.get)
       else:
@@ -656,7 +648,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(URIMethodMap)
   for p in paths:
-    let ps = openFileExpand2(ctx.dir, p)
+    let ps = openFileExpand(ctx.dir, p)
     if ps != nil:
       x.parseURIMethodMap(ps.recvAll())
       ps.sclose()
@@ -697,7 +689,7 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
       var includes = config.`include`
       config.`include`.setLen(0)
       for s in includes:
-        let ps = openFileExpand2(dir, s)
+        let ps = openFileExpand(dir, s)
         if ps == nil:
           return err("include file not found: " & s)
         ?config.parseConfig(dir, ps.recvAll(), warnings)

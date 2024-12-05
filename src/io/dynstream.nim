@@ -224,7 +224,7 @@ proc mmap(ps: PosixStream; stats: Stat; ilen: int): MaybeMappedMemory =
     let res = create(MaybeMappedMemoryObj)
     res[] = MaybeMappedMemoryObj(t: mmmtMmap, p0: nil, p0len: 0, p: nil, len: 0)
     return res
-  let p0 = mmap(nil, p0len, PROT_READ, MAP_SHARED, ps.fd, 0)
+  let p0 = mmap(nil, p0len, PROT_READ, MAP_PRIVATE, ps.fd, 0)
   if p0 == MAP_FAILED:
     return nil
   let p1 = addr cast[ptr UncheckedArray[uint8]](p0)[srcOff]
@@ -238,38 +238,54 @@ proc mmap(ps: PosixStream; stats: Stat; ilen: int): MaybeMappedMemory =
   )
   return res
 
+# Try to mmap the stream, and return nil on failure.
+proc mmap*(ps: PosixStream): MaybeMappedMemory =
+  var stats: Stat
+  if fstat(ps.fd, stats) != -1:
+    return ps.mmap(stats, -1)
+  return nil
+
 # Read data of size "len", or mmap it if the stream is a file.
-proc recvDataLoopOrMmap*(ps: PosixStream; ilen = -1): MaybeMappedMemory =
-  var ilen = ilen
+# This may return nil.
+proc recvDataLoopOrMmap*(ps: PosixStream; ilen: int): MaybeMappedMemory =
   var stats: Stat
   if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
     return ps.mmap(stats, ilen)
   let res = create(MaybeMappedMemoryObj)
-  if ilen == -1:
-    let s = new(string)
-    s[] = ps.recvAll()
-    GC_ref(s)
-    let p = if s[].len > 0:
-      cast[ptr UncheckedArray[uint8]](addr s[][0])
-    else:
-      nil
-    res[] = MaybeMappedMemoryObj(
-      t: mmmtString,
-      p0: cast[pointer](s),
-      p0len: ilen,
-      p: p,
-      len: s[].len
-    )
+  let p = cast[ptr UncheckedArray[uint8]](alloc(ilen))
+  ps.recvDataLoop(p, ilen)
+  res[] = MaybeMappedMemoryObj(
+    t: mmmtAlloc,
+    p0: p,
+    p0len: ilen,
+    p: p,
+    len: ilen
+  )
+  return res
+
+# Try to mmap the file, and fall back to recvAll if it fails.
+# This never returns nil.
+proc recvAllOrMmap*(ps: PosixStream): MaybeMappedMemory =
+  var stats: Stat
+  if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
+    let res = ps.mmap(stats, -1)
+    if res != nil:
+      return res
+  let res = create(MaybeMappedMemoryObj)
+  let s = new(string)
+  s[] = ps.recvAll()
+  GC_ref(s)
+  let p = if s[].len > 0:
+    cast[ptr UncheckedArray[uint8]](addr s[][0])
   else:
-    let p = cast[ptr UncheckedArray[uint8]](alloc(ilen))
-    ps.recvDataLoop(p, ilen)
-    res[] = MaybeMappedMemoryObj(
-      t: mmmtAlloc,
-      p0: p,
-      p0len: ilen,
-      p: p,
-      len: ilen
-    )
+    nil
+  res[] = MaybeMappedMemoryObj(
+    t: mmmtString,
+    p0: cast[pointer](s),
+    p0len: s[].len,
+    p: p,
+    len: s[].len
+  )
   return res
 
 proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =

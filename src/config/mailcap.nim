@@ -1,7 +1,6 @@
 # See https://www.rfc-editor.org/rfc/rfc1524
 
 import std/osproc
-import std/streams
 import std/strutils
 
 import types/url
@@ -10,9 +9,9 @@ import utils/twtstr
 
 type
   MailcapParser = object
-    stream: Stream
     hasbuf: bool
     buf: char
+    at: int
     line: int
 
   MailcapFlag* = enum
@@ -33,19 +32,22 @@ type
 
   Mailcap* = seq[MailcapEntry]
 
-proc has(state: MailcapParser): bool {.inline.} =
-  return not state.stream.atEnd
+proc has(state: MailcapParser; buf: openArray[char]): bool {.inline.} =
+  return state.at < buf.len
 
-proc consume(state: var MailcapParser): char =
+proc consume(state: var MailcapParser; buf: openArray[char]): char =
   if state.hasbuf:
     state.hasbuf = false
     return state.buf
-  var c = state.stream.readChar()
-  if c == '\\' and not state.stream.atEnd:
-    let c2 = state.stream.readChar()
-    if c2 == '\n' and not state.stream.atEnd:
+  var c = buf[state.at]
+  inc state.at
+  if c == '\\' and state.has(buf):
+    let c2 = buf[state.at]
+    inc state.at
+    if c2 == '\n' and state.has(buf):
       inc state.line
-      c = state.stream.readChar()
+      c = buf[state.at]
+      inc state.at
   if c == '\n':
     inc state.line
   return c
@@ -54,28 +56,31 @@ proc reconsume(state: var MailcapParser; c: char) =
   state.buf = c
   state.hasbuf = true
 
-proc skipBlanks(state: var MailcapParser; c: var char): bool =
-  while state.has():
-    c = state.consume()
+proc skipBlanks(state: var MailcapParser; buf: openArray[char]; c: var char):
+    bool =
+  while state.has(buf):
+    c = state.consume(buf)
     if c notin AsciiWhitespace - {'\n'}:
       return true
+  return false
 
-proc skipBlanks(state: var MailcapParser) =
+proc skipBlanks(state: var MailcapParser; buf: openArray[char]) =
   var c: char
-  if state.skipBlanks(c):
+  if state.skipBlanks(buf, c):
     state.reconsume(c)
 
-proc skipLine(state: var MailcapParser) =
-  while state.has():
-    let c = state.consume()
+proc skipLine(state: var MailcapParser; buf: openArray[char]) =
+  while state.has(buf):
+    let c = state.consume(buf)
     if c == '\n':
       break
 
-proc consumeTypeField(state: var MailcapParser): Result[string, string] =
+proc consumeTypeField(state: var MailcapParser; buf: openArray[char]):
+    Result[string, string] =
   var s = ""
   # type
-  while state.has():
-    let c = state.consume()
+  while state.has(buf):
+    let c = state.consume(buf)
     if c == '/':
       s &= c
       break
@@ -83,11 +88,11 @@ proc consumeTypeField(state: var MailcapParser): Result[string, string] =
       return err("line " & $state.line & ": invalid character in type field: " &
         c)
     s &= c.toLowerAscii()
-  if not state.has():
+  if not state.has(buf):
     return err("Missing subtype")
   # subtype
-  while state.has():
-    let c = state.consume()
+  while state.has(buf):
+    let c = state.consume(buf)
     if c in AsciiWhitespace + {';'}:
       state.reconsume(c)
       break
@@ -96,16 +101,17 @@ proc consumeTypeField(state: var MailcapParser): Result[string, string] =
         ": invalid character in subtype field: " & c)
     s &= c.toLowerAscii()
   var c: char
-  if not state.skipBlanks(c) or c != ';':
+  if not state.skipBlanks(buf, c) or c != ';':
     return err("Semicolon not found")
   return ok(s)
 
-proc consumeCommand(state: var MailcapParser): Result[string, string] =
-  state.skipBlanks()
+proc consumeCommand(state: var MailcapParser; buf: openArray[char]):
+    Result[string, string] =
+  state.skipBlanks(buf)
   var quoted = false
   var s = ""
-  while state.has():
-    let c = state.consume()
+  while state.has(buf):
+    let c = state.consume(buf)
     if not quoted:
       if c == '\r':
         continue
@@ -128,62 +134,62 @@ type NamedField = enum
   nmNametemplate = "nametemplate"
   nmEdit = "edit"
 
-proc consumeField(state: var MailcapParser; entry: var MailcapEntry):
-    Result[bool, string] =
-  state.skipBlanks()
-  var buf = ""
+proc consumeField(state: var MailcapParser; buf: openArray[char];
+    entry: var MailcapEntry): Result[bool, string] =
+  state.skipBlanks(buf)
+  var s = ""
   var res = false
-  while state.has():
-    case (let c = state.consume(); c)
+  while state.has(buf):
+    case (let c = state.consume(buf); c)
     of ';', '\n':
       res = c == ';'
       break
     of '\r':
       continue
     of '=':
-      let cmd = ?state.consumeCommand()
-      while buf.len > 0 and buf[^1] in AsciiWhitespace:
-        buf.setLen(buf.len - 1)
-      if (let x = parseEnumNoCase[NamedField](buf); x.isSome):
+      let cmd = ?state.consumeCommand(s)
+      while s.len > 0 and s[^1] in AsciiWhitespace:
+        s.setLen(s.len - 1)
+      if (let x = parseEnumNoCase[NamedField](s); x.isSome):
         case x.get
         of nmTest: entry.test = cmd
         of nmNametemplate: entry.nametemplate = cmd
         of nmEdit: entry.edit = cmd
-      return ok(state.consume() == ';')
+      return ok(state.consume(s) == ';')
     elif c in Controls:
       return err("line " & $state.line & ": invalid character in field: " & c)
     else:
-      buf &= c
-  while buf.len > 0 and buf[^1] in AsciiWhitespace:
-    buf.setLen(buf.len - 1)
-  if (let x = parseEnumNoCase[MailcapFlag](buf); x.isSome):
+      s &= c
+  while s.len > 0 and s[^1] in AsciiWhitespace:
+    s.setLen(s.len - 1)
+  if (let x = parseEnumNoCase[MailcapFlag](s); x.isSome):
     entry.flags.incl(x.get)
   return ok(res)
 
-proc parseMailcap*(stream: Stream): Result[Mailcap, string] =
-  var state = MailcapParser(stream: stream, line: 1)
+proc parseMailcap*(buf: openArray[char]): Result[Mailcap, string] =
+  var state = MailcapParser(line: 1)
   var mailcap: Mailcap
-  while not stream.atEnd():
-    let c = state.consume()
+  while state.has(buf):
+    let c = state.consume(buf)
     if c == '#':
-      state.skipLine()
+      state.skipLine(buf)
       continue
     state.reconsume(c)
-    state.skipBlanks()
-    let c2 = state.consume()
+    state.skipBlanks(buf)
+    let c2 = state.consume(buf)
     if c2 == '\n' or c2 == '\r':
       continue
     state.reconsume(c2)
-    let t = ?state.consumeTypeField()
+    let t = ?state.consumeTypeField(buf)
     let mt = t.until('/') #TODO this could be more efficient
     let subt = t[mt.len + 1 .. ^1]
     var entry = MailcapEntry(
       mt: mt,
       subt: subt,
-      cmd: ?state.consumeCommand()
+      cmd: ?state.consumeCommand(buf)
     )
-    if state.consume() == ';':
-      while ?state.consumeField(entry):
+    if state.consume(buf) == ';':
+      while ?state.consumeField(buf, entry):
         discard
     mailcap.add(entry)
   return ok(mailcap)
