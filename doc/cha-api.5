@@ -139,17 +139,17 @@ Same as \f[CR]pager.load(url + \[dq]\[rs]n\[dq])\f[R].
 T}@T{
 T}
 T{
-\f[CR]gotoURL(url, options = {replace: null, contentType: null})\f[R]
+\f[CR]gotoURL(url, options = {replace: null, contentType: null, save: false})\f[R]
 T}@T{
 Go to the specified URL immediately (without a prompt).
-This differs from \f[CR]load\f[R] and \f[CR]loadSubmit\f[R] in that it
-\f[I]does not\f[R] try to correct the URL.
+This differs from \f[CR]loadSubmit\f[R] in that it loads the exact URL
+as passed (no prepending https, etc.)
 When \f[CR]replace\f[R] is set, the new buffer may replace the old one
 if it loads successfully.
 When \f[CR]contentType\f[R] is set, the new buffer\[cq]s content type is
 forcefully set to that string.
-Use this for loading automatically retrieved (i.e.\ non\-user\-provided)
-URLs.
+When \f[CR]save\f[R] is true, the user is prompted to save the resource
+instead of displaying it in a buffer.
 T}@T{
 T}
 T{

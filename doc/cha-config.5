@@ -386,6 +386,24 @@ T}@T{
 Path to pre\-fill for \[lq]Save to:\[rq] prompts.
 T}@T{
 T}
+T{
+copy\-cmd
+T}@T{
+shell command
+T}@T{
+Command to use for \[lq]copy to clipboard\[rq] operations.
+Currently it defaults to \f[CR]xsel \-bi\f[R].
+T}@T{
+T}
+T{
+paste\-cmd
+T}@T{
+shell command
+T}@T{
+Command to use for \[lq]read from clipboard\[rq] operations.
+Currently it defaults to \f[CR]xsel \-bo\f[R].
+T}@T{
+T}
 .TE
 .SS Input
 Input options are to be placed in the \f[CR][input]\f[R] section.
@@ -1647,6 +1665,14 @@ T}@T{
 \f[CR]cmd.buffer.saveSource\f[R]
 T}@T{
 Save the source of the current buffer to the disk.
+T}@T{
+T}
+T{
+sI
+T}@T{
+\f[CR]cmd.buffer.saveImage\f[R]
+T}@T{
+Save the image currently under the cursor.
 T}@T{
 T}
 .TE

@@ -148,13 +148,14 @@ Many other text-based web browsers exist. Here's some recommendations
 (not meant to be an exhaustive list):
 
 * [w3m](https://sr.ht/~rkta/w3m/) - A text-mode browser, extensible using
-  local-cgi. Also has inline image display and very good table support.
+  local CGI. Also has inline image display and very good table support.
   Main source of inspiration for Chawan.
 * [elinks](https://github.com/rkd77/elinks) - Has CSS and JavaScript support,
   and incremental rendering (it's pretty fast.)
 * [links](http://links.twibright.com/) - Precursor of elinks, but it's still
   being developed. Has a graphical mode.
 * [lynx](https://lynx.invisible-island.net/) - Doesn't need an introduction.
+  The oldest web browser still in active development.
 * [edbrowse](http://edbrowse.org/) - This one looks more like `ed` than
   `less` or `vi`. Originally designed for blind users.
 * [telescope](https://github.com/telescope-browser/telescope) - A "small
