@@ -121,6 +121,8 @@ proc newInputHandle(ostream: PosixStream; outputId, pid: int;
     ownerPid: pid,
     suspended: suspended
   ))
+  when defined(debug):
+    handle.outputs[^1].url = handle.url
   return handle
 
 func cap(buffer: LoaderBuffer): int {.inline.} =
@@ -411,6 +413,8 @@ proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
       istreamAtEnd: output.istreamAtEnd,
       outputId: ctx.getOutputId()
     ))
+    when defined(debug):
+      output.parent.outputs[^1].url = output.parent.url
   return true
 
 proc addCacheFile(ctx: LoaderContext; client: ClientData; output: OutputHandle):
@@ -1281,7 +1285,8 @@ proc resume(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     let output = ctx.findOutput(id, client)
     if output != nil:
       output.suspended = false
-      ctx.register(output)
+      if not output.isEmpty or output.istreamAtEnd:
+        ctx.register(output)
   stream.sclose()
 
 proc equalsConstantTime(a, b: ClientKey): bool =
