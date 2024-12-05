@@ -33,7 +33,7 @@ proc main() {.async.} =
   let port = server.getPort()
   case fork()
   of 0:
-    let cmd = getAppFileName().untilLast('/') & "/run.sh " & $uint16(port)
+    let cmd = getAppFilename().untilLast('/') & "/run.sh " & $uint16(port)
     discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
     quit(1)
   of -1:

@@ -71,9 +71,9 @@ proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     ctx.s &= $getCurrentProcessId()
     ctx.state = usNormal
   of '0':
-    # Note: we intentionally use getAppFileName so that any symbolic links
+    # Note: we intentionally use getAppFilename so that any symbolic links
     # are resolved.
-    ctx.s &= getAppFileName()
+    ctx.s &= getAppFilename()
     ctx.state = usNormal
   of AsciiAlpha:
     ctx.identStr = $c
@@ -122,7 +122,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   case c
   of '}':
     if ctx.identStr == "0":
-      ctx.s &= getAppFileName()
+      ctx.s &= getAppFilename()
     else:
       ctx.s &= $getEnv(ctx.identStr)
     ctx.identStr = ""

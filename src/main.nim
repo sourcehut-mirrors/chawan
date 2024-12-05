@@ -236,7 +236,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
 proc main() =
-  putEnv("CHA_BIN_DIR", getAppFileName().untilLast('/'))
+  putEnv("CHA_BIN_DIR", getAppFilename().untilLast('/'))
   putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
   let forkserver = newForkServer()
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)

@@ -249,7 +249,7 @@ to check like that than looking it up in the syscall table.)
 
 You may find these links useful.
 
-### WhatWG
+### WHATWG
 
 * HTML: <https://html.spec.whatwg.org/multipage/>. Includes everything
   and then some more.
@@ -274,7 +274,7 @@ Note that these sometimes change daily, especially the HTML standard.
   Draft" 2.2 version: <https://drafts.csswg.org/css2/>. Not many
   differences, but usually it's worth to check 2.2 too.
 
-Good news is that unlike WhatWG specs, these don't change daily. Bad
+Good news is that unlike WHATWG specs, these don't change daily. Bad
 news is that CSS 2.1 was the last real CSS version, and newer features
 are spread accross a bunch of random documents with questionable status
 of stability: <https://www.w3.org/Style/CSS/specs.en.html>.
