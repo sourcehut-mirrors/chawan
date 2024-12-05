@@ -169,7 +169,8 @@ proc fetch(window: Window; input: JSValue;
     {.jsfunc.} =
   let input = ?newRequest(window.jsctx, input, init)
   #TODO cors requests?
-  if not window.settings.origin.isSameOrigin(input.request.url.origin):
+  if input.request.url.scheme != "data" and
+      not window.settings.origin.isSameOrigin(input.request.url.origin):
     let err = newFetchTypeError()
     return ok(newResolvedPromise(JSResult[Response].err(err)))
   return ok(window.loader.fetch(input.request))
