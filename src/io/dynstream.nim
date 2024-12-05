@@ -203,46 +203,73 @@ proc newPosixStream*(path: string; flags = cint(O_RDONLY); mode = cint(0)):
 type
   MaybeMappedMemory* = ptr MaybeMappedMemoryObj
 
+  MaybeMappedMemoryType = enum
+    mmmtMmap, mmmtAlloc, mmmtString
+
   MaybeMappedMemoryObj = object
+    t: MaybeMappedMemoryType
     p0: pointer
     p0len: int
-    fromMmap: bool
     p*: ptr UncheckedArray[uint8]
     len*: int
 
-# Read data of size "len", or mmap it if the stream is a file.
-proc recvDataLoopOrMmap*(ps: PosixStream; ilen = -1): MaybeMappedMemory =
-  var stats: Stat
-  if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
-    let srcOff = lseek(ps.fd, 0, SEEK_CUR) # skip headers
-    doAssert srcOff >= 0
-    let p0len = int(stats.st_size)
-    let len = int(stats.st_size - srcOff)
-    if ilen != -1:
-      doAssert ilen == len
-    let p0 = mmap(nil, p0len, PROT_READ, MAP_SHARED, ps.fd, 0)
-    if p0 == MAP_FAILED:
-      return nil
-    let p1 = addr cast[ptr UncheckedArray[uint8]](p0)[srcOff]
+proc mmap(ps: PosixStream; stats: Stat; ilen: int): MaybeMappedMemory =
+  let srcOff = lseek(ps.fd, 0, SEEK_CUR) # skip headers
+  doAssert srcOff >= 0
+  let p0len = int(stats.st_size)
+  let len = int(stats.st_size - srcOff)
+  if ilen != -1:
+    doAssert ilen == len
+  if len == 0:
     let res = create(MaybeMappedMemoryObj)
-    res[] = MaybeMappedMemoryObj(
-      p0: p0,
-      p0len: p0len,
-      p: cast[ptr UncheckedArray[uint8]](p1),
-      len: len,
-      fromMmap: true
-    )
+    res[] = MaybeMappedMemoryObj(t: mmmtMmap, p0: nil, p0len: 0, p: nil, len: 0)
     return res
-  let p = cast[ptr UncheckedArray[uint8]](alloc(ilen))
-  ps.recvDataLoop(p, ilen)
+  let p0 = mmap(nil, p0len, PROT_READ, MAP_SHARED, ps.fd, 0)
+  if p0 == MAP_FAILED:
+    return nil
+  let p1 = addr cast[ptr UncheckedArray[uint8]](p0)[srcOff]
   let res = create(MaybeMappedMemoryObj)
   res[] = MaybeMappedMemoryObj(
-    p0: p,
-    p0len: ilen,
-    p: p,
-    len: ilen,
-    fromMmap: false
+    t: mmmtMmap,
+    p0: p0,
+    p0len: p0len,
+    p: cast[ptr UncheckedArray[uint8]](p1),
+    len: len
   )
+  return res
+
+# Read data of size "len", or mmap it if the stream is a file.
+proc recvDataLoopOrMmap*(ps: PosixStream; ilen = -1): MaybeMappedMemory =
+  var ilen = ilen
+  var stats: Stat
+  if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
+    return ps.mmap(stats, ilen)
+  let res = create(MaybeMappedMemoryObj)
+  if ilen == -1:
+    let s = new(string)
+    s[] = ps.recvAll()
+    GC_ref(s)
+    let p = if s[].len > 0:
+      cast[ptr UncheckedArray[uint8]](addr s[][0])
+    else:
+      nil
+    res[] = MaybeMappedMemoryObj(
+      t: mmmtString,
+      p0: cast[pointer](s),
+      p0len: ilen,
+      p: p,
+      len: s[].len
+    )
+  else:
+    let p = cast[ptr UncheckedArray[uint8]](alloc(ilen))
+    ps.recvDataLoop(p, ilen)
+    res[] = MaybeMappedMemoryObj(
+      t: mmmtAlloc,
+      p0: p,
+      p0len: ilen,
+      p: p,
+      len: ilen
+    )
   return res
 
 proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
@@ -258,39 +285,44 @@ proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
       return nil
     let res = create(MaybeMappedMemoryObj)
     res[] = MaybeMappedMemoryObj(
+      t: mmmtMmap,
       p0: p0,
       p0len: len,
       p: cast[ptr UncheckedArray[uint8]](p0),
-      len: len,
-      fromMmap: true
+      len: len
     )
     return res
   let p = cast[ptr UncheckedArray[uint8]](alloc(len))
   let res = create(MaybeMappedMemoryObj)
   res[] = MaybeMappedMemoryObj(
+    t: mmmtAlloc,
     p0: p,
     p0len: len,
     p: p,
-    len: len,
-    fromMmap: false
+    len: len
   )
   return res
 
 template toOpenArray*(mem: MaybeMappedMemory): openArray[char] =
-  cast[ptr UncheckedArray[char]](mem.p).toOpenArray(0, mem.len - 1)
+  if mem.len > 0:
+    cast[ptr UncheckedArray[char]](mem.p).toOpenArray(0, mem.len - 1)
+  else:
+    []
 
 proc sendDataLoop*(ps: PosixStream; mem: MaybeMappedMemory) =
   # only send if not mmapped; otherwise everything is already where it should be
-  if not mem.fromMmap:
+  if mem.t != mmmtMmap:
     ps.sendDataLoop(mem.p, mem.len)
 
 template dealloc*(mem: MaybeMappedMemory) {.error: "use deallocMem".} = discard
 
 proc deallocMem*(mem: MaybeMappedMemory) =
-  if mem.fromMmap:
-    discard munmap(mem.p0, mem.p0len)
-  else:
-    dealloc(mem.p0)
+  case mem.t
+  of mmmtMmap:
+    if mem.p0len != 0:
+      discard munmap(mem.p0, mem.p0len)
+  of mmmtString: GC_unref(cast[ref string](mem.p0))
+  of mmmtAlloc: dealloc(mem.p0)
   dealloc(pointer(mem))
 
 proc drain*(ps: PosixStream) =
