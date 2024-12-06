@@ -4919,8 +4919,8 @@ proc insertAdjacentHTML(this: Element; position, text: string):
       return errDOMException("Parent is not a valid element",
         "NoModificationAllowedError")
     ctx = this.parentElement
-    if ctx == nil or not this.document.isxml and ctx.tagType == TAG_HTML:
-      ctx = this.document.newHTMLElement(TAG_BODY)
+  if ctx == nil or not this.document.isxml and ctx.tagType == TAG_HTML:
+    ctx = this.document.newHTMLElement(TAG_BODY)
   let fragment = ctx.fragmentParsingAlgorithm(text)
   case position
   of iapBeforeBegin: this.parentNode.insert(fragment, this)
