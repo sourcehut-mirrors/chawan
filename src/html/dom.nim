@@ -4906,40 +4906,27 @@ type InsertAdjacentPosition = enum
   iapAfterBegin = "afterbegin"
   iapBeforeEnd = "beforeend"
 
-func parseInsertAdjacentPosition(s: string): DOMResult[InsertAdjacentPosition] =
-  for iap in InsertAdjacentPosition.low .. InsertAdjacentPosition.high:
-    if ($iap).equalsIgnoreCase(s):
-      return ok(iap)
-  return errDOMException("Invalid position", "SyntaxError")
-
 # https://w3c.github.io/DOM-Parsing/#dom-element-insertadjacenthtml
-proc insertAdjacentHTML(element: Element; position, text: string):
+proc insertAdjacentHTML(this: Element; position, text: string):
     Err[DOMException] {.jsfunc.} =
-  let position = ?parseInsertAdjacentPosition(position)
-  let ctx0 = case position
-  of iapBeforeBegin, iapAfterEnd:
-    if element.parentNode of Document or element.parentNode == nil:
+  let pos0 = parseEnumNoCase[InsertAdjacentPosition](position)
+  if pos0.isNone:
+    return errDOMException("Invalid position", "SyntaxError")
+  let position = pos0.get
+  var ctx = this
+  if position in {iapBeforeBegin, iapAfterEnd}:
+    if this.parentNode of Document or this.parentNode == nil:
       return errDOMException("Parent is not a valid element",
         "NoModificationAllowedError")
-    element.parentNode
-  of iapAfterBegin, iapBeforeEnd:
-    Node(element)
-  let document = ctx0.document
-  let ctx = if not (ctx0 of Element) or not document.isxml or
-      Element(ctx0).namespace == Namespace.HTML:
-    document.newHTMLElement(TAG_BODY)
-  else:
-    Element(ctx0)
+    ctx = this.parentElement
+    if ctx == nil or not this.document.isxml and ctx.tagType == TAG_HTML:
+      ctx = this.document.newHTMLElement(TAG_BODY)
   let fragment = ctx.fragmentParsingAlgorithm(text)
   case position
-  of iapBeforeBegin:
-    ctx.parentNode.insert(fragment, ctx)
-  of iapAfterBegin:
-    ctx.insert(fragment, ctx.firstChild)
-  of iapBeforeEnd:
-    ctx.append(fragment)
-  of iapAfterEnd:
-    ctx.parentNode.insert(fragment, ctx.nextSibling)
+  of iapBeforeBegin: this.parentNode.insert(fragment, this)
+  of iapAfterBegin: this.insert(fragment, this.firstChild)
+  of iapBeforeEnd: this.append(fragment)
+  of iapAfterEnd: this.parentNode.insert(fragment, this.nextSibling)
 
 proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)
