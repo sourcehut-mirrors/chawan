@@ -763,6 +763,7 @@ proc clearImages*(term: Terminal; maxh: int) =
     if not image.marked:
       term.clearImage(image, maxh)
     image.marked = false
+  term.canvasImages.setLen(0)
 
 proc checkImageDamage*(term: Terminal; maxw, maxh: int) =
   if term.imageMode == imSixel:

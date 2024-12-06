@@ -708,6 +708,7 @@ proc initImages(pager: Pager; container: Container) =
 proc draw*(pager: Pager) =
   var redraw = false
   var imageRedraw = false
+  var hasMenu = false
   let container = pager.container
   if container != nil:
     if container.redraw:
@@ -726,12 +727,14 @@ proc draw*(pager: Pager) =
       select.drawSelect(pager.display.grid)
       select.redraw = false
       pager.display.redraw = true
+      hasMenu = true
   if (let menu = pager.menu; menu != nil and
       (menu.redraw or pager.display.redraw)):
     menu.drawSelect(pager.display.grid)
     menu.redraw = false
     pager.display.redraw = true
     imageRedraw = false
+    hasMenu = true
   if pager.display.redraw:
     pager.term.writeGrid(pager.display.grid)
     pager.display.redraw = false
@@ -750,9 +753,22 @@ proc draw*(pager: Pager) =
     pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
     pager.status.redraw = false
     redraw = true
-  if imageRedraw and pager.term.imageMode != imNone:
-    # init images only after term canvas has been finalized
-    pager.initImages(container)
+  if pager.term.imageMode != imNone:
+    if imageRedraw:
+      # init images only after term canvas has been finalized
+      pager.initImages(container)
+    elif hasMenu and pager.term.imageMode == imKitty:
+      # Kitty can't really deal with text layered both on top of *and*
+      # under images.
+      #
+      # Well, it can, but only in a peculiar way: background color is
+      # part of the text layer, so with our image model we'd a) have to
+      # specify bgcolor for the menu and b) have to use sub-optimal
+      # in-cell positioning. (You'll understand why if you try to
+      # implement it.)
+      #
+      # Ugh. :(
+      pager.term.clearImages(pager.bufHeight)
   if redraw:
     pager.term.hideCursor()
     pager.term.outputGrid()
