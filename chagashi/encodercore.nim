@@ -212,6 +212,9 @@ proc encodeGB18030(te: TextEncoder; iq: openArray[uint8];
       continue
     let cl = te.try_get_utf8(iq, b)
     let c = te.c
+    const NewTable2024Part2 = [
+      0xE81Eu16, 0xE826, 0xE82B, 0xE82C, 0xE832, 0xE843, 0xE854, 0xE864
+    ]
     if isGBK and c == 0x20AC:
       oq.try_put_byte 0x80, n
       te.i += cl
@@ -230,6 +233,18 @@ proc encodeGB18030(te: TextEncoder; iq: openArray[uint8];
       let trail = p mod 96
       let offset = if trail < 0x3F: 0x40u8 else: 0x41u8
       oq.try_put_bytes [uint8(lead), uint8(trail) + offset], n
+    elif c >= 0xE78D and c <= 0xE796: # new table of 2024 part 1
+      var b = c - 0xE78D + 0xD9
+      if b > 0xDF:
+        b += 12
+      if b == 0xEE:
+        b = 0xF3
+      oq.try_put_bytes [0xA6u8, uint8(b)], n
+    elif c <= 0xE864 and uint16(c) in NewTable2024Part2:
+      var b = c - 0xE81E + 0x59
+      if b > 0x7E:
+        inc b
+      oq.try_put_bytes [0xFEu8, uint8(b)], n
     elif (let i = GB18030Encode.findPair16(c); i != -1):
       let p = GB18030Encode[i].p
       let lead = p div 190 + 0x81
