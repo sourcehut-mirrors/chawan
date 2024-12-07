@@ -3204,8 +3204,8 @@ proc delAttr(element: Element; i: int; keep = false) =
 
 proc newCSSStyleDeclaration(element: Element; value: string):
     CSSStyleDeclaration =
-  let inlineRules = value.parseDeclarations2()
-  var decls: seq[CSSDeclaration]
+  let inlineRules = value.parseDeclarations()
+  var decls: seq[CSSDeclaration] = @[]
   for rule in inlineRules:
     if rule.name.isSupportedProperty():
       decls.add(rule)

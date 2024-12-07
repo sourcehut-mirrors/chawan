@@ -181,7 +181,7 @@ proc addRule(stylesheet: CSSStylesheet; rule: CSSQualifiedRule) =
   if sels.len > 0:
     var normalVals: seq[CSSComputedEntry] = @[]
     var importantVals: seq[CSSComputedEntry] = @[]
-    let decls = rule.oblock.value.parseDeclarations2()
+    let decls = rule.oblock.value.parseDeclarations()
     for decl in decls:
       let vals = parseComputedValues(decl.name, decl.value)
       if decl.important:
