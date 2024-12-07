@@ -39,6 +39,7 @@ type
 
   LayoutContext = ref object
     attrsp: ptr WindowAttributes
+    cellSize: Size # size(w = attrsp.ppc, h = attrsp.ppl)
     positioned: seq[PositionedItem]
     myRootProperties: CSSComputedValues
     # placeholder text data
@@ -1559,7 +1560,11 @@ proc addInlineAbsolute(ictx: var InlineContext; state: var InlineState;
 proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
   let lctx = ictx.lctx
-  let sizes = lctx.resolveFloatSizes(ictx.space, box.computed)
+  var sizes = lctx.resolveFloatSizes(ictx.space, box.computed)
+  for i, it in sizes.padding.mpairs:
+    let cs = lctx.cellSize[i]
+    it.start = (it.start div cs).toInt.toLayoutUnit * cs
+    it.send = (it.send div cs).toInt.toLayoutUnit * cs
   box.state = BoxLayoutState()
   let marginBottom = lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
   # Apply the block box's properties to the atom itself.
@@ -3403,6 +3408,7 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   )
   let lctx = LayoutContext(
     attrsp: attrsp,
+    cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
     positioned: @[PositionedItem(), PositionedItem()],
     myRootProperties: rootProperties(),
     imgText: newStyledText("[img]"),
