@@ -8,7 +8,7 @@ standards for [Chawan](https://sr.ht/~bptato/chawan).
 First, include it in your nimble file:
 
 ```
-requires "chagashi >= 0.5.5"
+requires "chagashi"
 ```
 
 Note: following code uses the (very) high-level interface, which is rather
@@ -73,11 +73,6 @@ Q: Is it fast?
 
 A: Not really, I have done very little optimization because it's not necessary
 for my use case.
-
-Also, similarly to encoding_rs, Chagashi uses RLE compressed tables to reduce
-binary size. In particular, this makes encoding EUC-KR and GBK very slow, since
-it depends on a linear search. For decoding the same ranges, binary search is
-used, which should be fast enough although is still slower than a lookup table.
 
 If you need better performance, feel free to complain in the
 [tickets](https://todo.sr.ht/~bptato/chawan) with a specific input and I may
