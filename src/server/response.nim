@@ -124,48 +124,7 @@ proc resume*(response: Response) =
   response.resumeFun(response.outputId)
   response.resumeFun = nil
 
-type TextOpaque = ref object of RootObj
-  buf: string
-  bodyRead: Promise[JSResult[string]]
-
 const BufferSize = 4096
-
-proc onReadText(response: Response) =
-  let opaque = TextOpaque(response.opaque)
-  while true:
-    let olen = opaque.buf.len
-    try:
-      opaque.buf.setLen(olen + BufferSize)
-      let n = response.body.recvData(addr opaque.buf[olen], BufferSize)
-      opaque.buf.setLen(olen + n)
-      if n == 0:
-        break
-    except ErrorAgain:
-      opaque.buf.setLen(olen)
-      break
-
-proc onFinishText(response: Response; success: bool) =
-  let opaque = TextOpaque(response.opaque)
-  let bodyRead = opaque.bodyRead
-  if success:
-    let charset = response.getCharset(CHARSET_UTF_8)
-    bodyRead.resolve(JSResult[string].ok(opaque.buf.decodeAll(charset)))
-  else:
-    bodyRead.resolve(JSResult[string].err(newFetchTypeError()))
-
-proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
-  if response.body == nil:
-    return newResolvedPromise(JSResult[string].ok(""))
-  if response.bodyUsed:
-    let err = newTypeError("Body has already been consumed")
-    return newResolvedPromise(JSResult[string].err(err))
-  let opaque = TextOpaque(bodyRead: Promise[JSResult[string]]())
-  response.opaque = opaque
-  response.onRead = onReadText
-  response.onFinish = onFinishText
-  response.bodyUsed = true
-  response.resume()
-  return opaque.bodyRead
 
 type BlobOpaque = ref object of RootObj
   p: pointer
@@ -194,7 +153,7 @@ proc onFinishBlob(response: Response; success: bool) =
   let opaque = BlobOpaque(response.opaque)
   let bodyRead = opaque.bodyRead
   if success:
-    let p = realloc(opaque.p, opaque.len)
+    let p = opaque.p
     opaque.p = nil
     let blob = if p == nil:
       newBlob(nil, 0, opaque.contentType, nil)
@@ -224,6 +183,12 @@ proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
   response.bodyUsed = true
   response.resume()
   return opaque.bodyRead
+
+proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
+  return response.blob().then(proc(res: JSResult[Blob]): JSResult[string] =
+    let blob = ?res
+    return ok(blob.toOpenArray().toValidUTF8())
+  )
 
 proc json(ctx: JSContext; this: Response): Promise[JSValue] {.jsfunc.} =
   return this.text().then(proc(s: JSResult[string]): JSValue =

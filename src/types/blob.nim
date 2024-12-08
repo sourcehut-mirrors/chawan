@@ -77,6 +77,13 @@ proc deallocBlob*(opaque, p: pointer) =
   if p != nil:
     dealloc(p)
 
+template toOpenArray*(blob: Blob): openArray[char] =
+  let p = cast[ptr UncheckedArray[char]](blob.buffer)
+  if p != nil:
+    p.toOpenArray(0, blob.size - 1)
+  else:
+    []
+
 proc finalize(blob: Blob) {.jsfin.} =
   if blob.fd.isSome:
     discard close(blob.fd.get)
