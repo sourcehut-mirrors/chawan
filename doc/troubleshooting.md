@@ -10,6 +10,9 @@ This document lists common problems you may run into when using Chawan.
 
 Right click -> select text, then right click -> copy selection.
 
+If Chawan complains about xsel, either install it or edit
+`external.copy-cmd` and `external.paste-cmd` to your liking.
+
 ## Why do I get strange/incorrect/ugly colors?
 
 Chawan's display capabilities depend on what your terminal reports. In
@@ -131,6 +134,20 @@ The easiest workaround is to remove the shell from the equation using
 ```sh
 [external]
 editor = 'exec vi +%d'
+```
+
+## When I open Chawan from aerc, it prints garbage in the search field!
+
+See <https://todo.sr.ht/~bptato/chawan/33>.
+
+Until the fix is upstreamed, you can work around it like this:
+
+```
+[display]
+# Use whatever colors your terminal actually uses. CSS-style hex values
+# (#FFFFFF etc.) work too.
+default-background-color = "black"
+default-foreground-color = "white"
 ```
 
 <!-- MANON
