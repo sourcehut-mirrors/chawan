@@ -1212,6 +1212,10 @@ proc applyMinWidth(box: BlockBox; sizes: ResolvedSizes) =
   # (or maybe I could just change DefaultSpan to start from
   # LayoutUnit.low? then I'll need another extra 0 check everywhere I
   # apply it but that should be ok)
+  # Also I have doubts on whether checking for stretch is OK... why
+  # isn't it reflected by minWidth anyway?
+  if sizes.space.w.t == scStretch:
+    box.state.xminwidth = min(box.state.xminwidth, sizes.space.w.u)
   if sizes.minWidth > 0:
     box.state.xminwidth = min(box.state.xminwidth, sizes.minWidth)
 
