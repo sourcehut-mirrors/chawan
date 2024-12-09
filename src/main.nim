@@ -9,6 +9,7 @@ import config/chapath
 import config/config
 import io/dynstream
 import local/client
+import local/pager
 import local/term
 import monoucha/javascript
 import server/forkserver
@@ -264,10 +265,11 @@ proc main() =
   discard mkdir(cstring(config.external.tmpdir), 0o700)
   discard mkdir(cstring(config.external.sockdir), 0o700)
   let loaderPid = forkserver.loadConfig(config)
+  setControlCHook(proc() {.noconv.} = quit(1))
   let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
     urandom)
   try:
-    client.launchClient(ctx.pages, ctx.contentType, ctx.charset, ctx.dump)
+    client.pager.run(ctx.pages, ctx.contentType, ctx.charset, ctx.dump)
   except CatchableError:
     client.flushConsole()
     raise

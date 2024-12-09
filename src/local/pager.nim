@@ -1,18 +1,22 @@
 import std/deques
+import std/exitprocs
 import std/options
 import std/os
 import std/osproc
 import std/posix
 import std/sets
+import std/strutils
 import std/tables
 
 import chagashi/charset
+import chagashi/decoder
 import config/chapath
 import config/config
 import config/mailcap
 import config/mimetypes
 import css/render
 import io/bufreader
+import io/bufwriter
 import io/console
 import io/dynstream
 import io/poll
@@ -118,23 +122,29 @@ type
 
   Pager* = ref object of RootObj
     alertState: PagerAlertState
-    alerts*: seq[string]
+    alerts: seq[string]
+    alive: bool
     askcharpromise*: Promise[string]
     askcursor: int
     askpromise*: Promise[bool]
     askprompt: string
+    blockTillRelease: bool
     commandMode {.jsget.}: bool
     config*: Config
     consoleWrapper*: ConsoleWrapper
-    container*: Container
+    container {.jsget: "buffer".}: Container
     cookiejars: Table[string, CookieJar]
     display: Surface
+    exitCode*: int
+    feednext*: bool
     forkserver*: ForkServer
     hasload*: bool # has a page been successfully loaded since startup?
-    inputBuffer*: string # currently uninterpreted characters
+    inEval: bool
+    inputBuffer: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
     jsctx: JSContext
+    jsrt: JSRuntime
     lastAlert: string # last alert seen by the user
     lineData: LineData
     lineHist: array[LineMode, LineHistory]
@@ -142,30 +152,53 @@ type
     linemode: LineMode
     loader*: FileLoader
     luctx: LUContext
-    menu*: Select
+    menu: Select
     navDirection {.jsget.}: NavDirection
-    notnum*: bool # has a non-numeric character been input already?
+    notnum: bool # has a non-numeric character been input already?
     numload*: int # number of pages currently being loaded
     pollData*: PollData
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
+    pressed: tuple[col, row: int]
     procmap*: seq[ProcMapItem]
     refreshAllowed: HashSet[string]
     regex: Opt[Regex]
     reverseSearch: bool
-    scommand*: string
+    scommand: string
     status: Surface
     term*: Terminal
     timeouts*: TimeoutState
     unreg*: seq[Container]
     urandom: PosixStream
-    evalAction: proc(action: string; arg0: int32)
+
+  ContainerData* = ref object of MapData
+    container*: Container
 
 jsDestructor(Pager)
 
 # Forward declarations
+proc acceptBuffers(pager: Pager)
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper
+proc addLoaderClient(pager: Pager; pid: int; config: LoaderClientConfig;
+  clonedFrom = -1): ClientKey
 proc alert*(pager: Pager; msg: string)
+proc draw(pager: Pager)
+proc dumpBuffers(pager: Pager)
+proc evalJS(pager: Pager; src, filename: string; module = false): JSValue
+proc fulfillAsk(pager: Pager; y: bool)
+proc fulfillCharAsk(pager: Pager; s: string)
 proc getLineHist(pager: Pager; mode: LineMode): LineHistory
+proc handleEvents(pager: Pager)
+proc handleRead(pager: Pager; fd: int)
+proc headlessLoop(pager: Pager)
+proc inputLoop(pager: Pager)
+proc loadURL(pager: Pager; url: string; ctype = none(string);
+  cs = CHARSET_UNKNOWN)
+proc openMenu(pager: Pager; x = -1; y = -1)
+proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
+  title: string)
+proc refreshStatusMsg(pager: Pager)
+proc showAlerts(pager: Pager)
+proc updateReadLine(pager: Pager)
 
 template attrs(pager: Pager): WindowAttributes =
   pager.term.attrs
@@ -184,6 +217,9 @@ func bufWidth(pager: Pager): int =
 
 func bufHeight(pager: Pager): int =
   return pager.attrs.height - 1
+
+func console(pager: Pager): Console =
+  return pager.consoleWrapper.console
 
 # depth-first descendant iterator
 iterator descendants(parent: Container): Container {.inline.} =
@@ -216,7 +252,7 @@ proc clearStatus(pager: Pager) =
     redraw: true
   )
 
-proc setContainer*(pager: Pager; c: Container) {.jsfunc.} =
+proc setContainer(pager: Pager; c: Container) {.jsfunc.} =
   if pager.term.imageMode != imNone and pager.container != nil:
     for cachedImage in pager.container.cachedImages:
       if cachedImage.state == cisLoaded:
@@ -335,50 +371,432 @@ proc gotoLine(ctx: JSContext; pager: Pager; val = JS_UNDEFINED): Opt[void]
     pager.container.gotoLine(s)
   return ok()
 
-proc dumpAlerts*(pager: Pager) =
-  for msg in pager.alerts:
-    stderr.write("cha: " & msg & '\n')
+proc setImportMeta(ctx: JSContext; funcVal: JSValue; isMain: bool) =
+  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  let moduleNameAtom = JS_GetModuleName(ctx, m)
+  let metaObj = JS_GetImportMeta(ctx, m)
+  definePropertyCWE(ctx, metaObj, "url", JS_AtomToValue(ctx, moduleNameAtom))
+  definePropertyCWE(ctx, metaObj, "main", isMain)
+  JS_FreeValue(ctx, metaObj)
+  JS_FreeAtom(ctx, moduleNameAtom)
 
-proc quit*(pager: Pager) =
-  pager.term.quit()
-  pager.dumpAlerts()
+proc finishLoadModule(ctx: JSContext; f: string; name: cstring): JSModuleDef =
+  let funcVal = compileModule(ctx, f, $name)
+  if JS_IsException(funcVal):
+    return nil
+  setImportMeta(ctx, funcVal, false)
+  # "the module is already referenced, so we must free it"
+  # idk how this works, so for now let's just do what qjs does
+  result = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  JS_FreeValue(ctx, funcVal)
+
+proc normalizeModuleName(ctx: JSContext; base_name, name: cstringConst;
+    opaque: pointer): cstring {.cdecl.} =
+  return js_strdup(ctx, cstring(name))
+
+proc clientLoadJSModule(ctx: JSContext; module_name: cstringConst;
+    opaque: pointer): JSModuleDef {.cdecl.} =
+  let global = JS_GetGlobalObject(ctx)
+  JS_FreeValue(ctx, global)
+  var x: Option[URL]
+  if module_name[0] == '/' or module_name[0] == '.' and
+      (module_name[1] == '/' or
+      module_name[1] == '.' and module_name[2] == '/'):
+    let cur = getCurrentDir()
+    x = parseURL($module_name, parseURL("file://" & cur & "/"))
+  else:
+    x = parseURL($module_name)
+  if x.isNone or x.get.scheme != "file":
+    JS_ThrowTypeError(ctx, "Invalid URL: %s", module_name)
+    return nil
+  try:
+    let f = readFile(x.get.pathname)
+    return finishLoadModule(ctx, f, cstring(module_name))
+  except IOError:
+    JS_ThrowTypeError(ctx, "Failed to open file %s", module_name)
+    return nil
+
+proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
+  let pager = cast[Pager](opaque)
+  if pager.console != nil and pager.term.istream != nil:
+    try:
+      var buf = [char(0)]
+      let n = pager.term.istream.recvData(buf)
+      if n == 1 and buf[0] == char(3): #C-c
+        pager.term.ibuf = ""
+        return 1
+      pager.term.ibuf &= buf[0]
+    except ErrorAgain:
+      discard
+  return 0
+
+proc evalJSFree(opaque: RootRef; src, filename: string) =
+  let pager = Pager(opaque)
+  JS_FreeValue(pager.jsctx, pager.evalJS(src, filename))
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
-    alerts: seq[string]; urandom: PosixStream;
-    evalAction: proc(action: string; arg0: int32)): Pager =
-  return Pager(
+    alerts: seq[string]; urandom: PosixStream; loader: FileLoader): Pager =
+  let pager = Pager(
+    alive: true,
     config: config,
     forkserver: forkserver,
     term: newTerminal(stdout, config),
     alerts: alerts,
+    jsrt: JS_GetRuntime(ctx),
     jsctx: ctx,
     luctx: LUContext(),
     urandom: urandom,
-    evalAction: evalAction
+    exitCode: -1,
+    loader: loader
   )
+  pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
+  JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, clientLoadJSModule,
+    nil)
+  JS_SetInterruptHandler(pager.jsrt, interruptHandler, cast[pointer](pager))
+  loader.key = pager.addLoaderClient(pager.loader.clientPid, LoaderClientConfig(
+    defaultHeaders: newHeaders(pager.config.network.default_headers),
+    proxy: pager.config.network.proxy,
+    filter: newURLFilter(default = true),
+  ))
+  return pager
+
+proc cleanup(pager: Pager) =
+  if pager.alive:
+    pager.alive = false
+    pager.term.quit()
+    for msg in pager.alerts:
+      stderr.write("cha: " & msg & '\n')
+    for val in pager.config.cmd.map.values:
+      JS_FreeValue(pager.jsctx, val)
+    for fn in pager.config.jsvfns:
+      JS_FreeValue(pager.jsctx, fn)
+    pager.timeouts.clearAll()
+    assert not pager.inEval
+    pager.jsctx.free()
+    pager.jsrt.free()
+
+proc quit*(pager: Pager; code: int) =
+  pager.cleanup()
+  quit(code)
+
+proc runJSJobs(pager: Pager) =
+  while true:
+    let r = pager.jsrt.runJSJobs()
+    if r.isSome:
+      break
+    let ctx = r.error
+    ctx.writeException(pager.console.err)
+  if pager.exitCode != -1:
+    pager.quit(0)
+
+proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
+  pager.term.unblockStdin()
+  let flags = if module:
+    JS_EVAL_TYPE_MODULE
+  else:
+    JS_EVAL_TYPE_GLOBAL
+  let wasInEval = pager.inEval
+  pager.inEval = true
+  result = pager.jsctx.eval(src, filename, flags)
+  pager.inEval = false
+  pager.term.restoreStdin()
+  if pager.exitCode != -1:
+    # if we are in a nested eval, then just wait until we are not.
+    if not wasInEval:
+      pager.quit(pager.exitCode)
+  else:
+    pager.runJSJobs()
+
+proc evalActionJS(pager: Pager; action: string): JSValue =
+  if action.startsWith("cmd."):
+    pager.config.cmd.map.withValue(action.substr("cmd.".len), p):
+      return JS_DupValue(pager.jsctx, p[])
+  return pager.evalJS(action, "<command>")
+
+# Warning: this is not re-entrant.
+proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
+  var ret = pager.evalActionJS(action)
+  let ctx = pager.jsctx
+  var p = EmptyPromise()
+  p.resolve()
+  if JS_IsFunction(ctx, ret):
+    if arg0 != 0:
+      let arg0 = toJS(ctx, arg0)
+      let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 1, arg0.toJSValueArray())
+      JS_FreeValue(ctx, arg0)
+      JS_FreeValue(ctx, ret)
+      ret = ret2
+    else: # no precnum
+      let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 0, nil)
+      JS_FreeValue(ctx, ret)
+      ret = ret2
+    if pager.exitCode != -1:
+      assert not pager.inEval
+      pager.quit(pager.exitCode)
+  if JS_IsException(ret):
+    pager.jsctx.writeException(pager.console.err)
+  elif JS_IsObject(ret):
+    var maybep: EmptyPromise
+    if ctx.fromJS(ret, maybep).isSome:
+      p = maybep
+  JS_FreeValue(ctx, ret)
+  return p
+
+proc command0(pager: Pager; src: string; filename = "<command>";
+    silence = false; module = false) =
+  let ret = pager.evalJS(src, filename, module = module)
+  if JS_IsException(ret):
+    pager.jsctx.writeException(pager.console.err)
+  else:
+    if not silence:
+      var res: string
+      if pager.jsctx.fromJS(ret, res).isSome:
+        pager.console.log(res)
+  JS_FreeValue(pager.jsctx, ret)
+
+proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
+  case input.button
+  of mibLeft:
+    case input.t
+    of mitPress:
+      pager.pressed = (input.col, input.row)
+    of mitRelease:
+      if pager.pressed != (-1, -1):
+        let diff = (input.col - pager.pressed.col,
+          input.row - pager.pressed.row)
+        if diff[0] > 0:
+          discard pager.evalAction("cmd.buffer.scrollLeft", int32(diff[0]))
+        elif diff[0] < 0:
+          discard pager.evalAction("cmd.buffer.scrollRight", -int32(diff[0]))
+        if diff[1] > 0:
+          discard pager.evalAction("cmd.buffer.scrollUp", int32(diff[1]))
+        elif diff[1] < 0:
+          discard pager.evalAction("cmd.buffer.scrollDown", -int32(diff[1]))
+        pager.pressed = (-1, -1)
+    else: discard
+  of mibWheelUp:
+    if input.t == mitPress:
+      discard pager.evalAction("cmd.buffer.scrollUp", 5)
+  of mibWheelDown:
+    if input.t == mitPress:
+      discard pager.evalAction("cmd.buffer.scrollDown", 5)
+  of mibWheelLeft:
+    if input.t == mitPress:
+      discard pager.evalAction("cmd.buffer.scrollLeft", 5)
+  of mibWheelRight:
+    if input.t == mitPress:
+      discard pager.evalAction("cmd.buffer.scrollRight", 5)
+  else: discard
+
+proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
+  case input.button
+  of mibLeft:
+    if input.t == mitRelease and pager.pressed == (input.col, input.row):
+      let prevx = container.cursorx
+      let prevy = container.cursory
+      #TODO I wish we could avoid setCursorXY if we're just going to
+      # click, but that doesn't work with double-width chars
+      container.setCursorXY(container.fromx + input.col,
+        container.fromy + input.row)
+      if container.cursorx == prevx and container.cursory == prevy:
+        discard pager.evalAction("cmd.buffer.click", 0)
+  of mibMiddle:
+    if input.t == mitRelease: # release, to emulate w3m
+      discard pager.evalAction("cmd.pager.discardBuffer", 0)
+  of mibRight:
+    if input.t == mitPress: # w3m uses release, but I like this better
+      pager.pressed = (input.col, input.row)
+      container.setCursorXY(container.fromx + input.col,
+        container.fromy + input.row)
+      pager.openMenu(input.col, input.row)
+  of mibThumbInner:
+    if input.t == mitPress:
+      discard pager.evalAction("cmd.pager.prevBuffer", 0)
+  of mibThumbTip:
+    if input.t == mitPress:
+      discard pager.evalAction("cmd.pager.nextBuffer", 0)
+  else: discard
+
+proc handleMouseInput(pager: Pager; input: MouseInput; select: Select) =
+  let y = select.fromy + input.row - select.y - 1 # one off because of border
+  case input.button
+  of mibRight:
+    if (input.col, input.row) != pager.pressed:
+      # Prevent immediate movement/submission in case the menu appeared under
+      # the cursor.
+      select.setCursorY(y)
+    case input.t
+    of mitPress:
+      # Do not include borders, so that a double right click closes the
+      # menu again.
+      if input.row notin select.y + 1 ..< select.y + select.height - 1 or
+          input.col notin select.x + 1 ..< select.x + select.width - 1:
+        pager.blockTillRelease = true
+        select.cursorLeft()
+    of mitRelease:
+      if input.row in select.y + 1 ..< select.y + select.height - 1 and
+          input.col in select.x + 1 ..< select.x + select.width - 1 and
+          (input.col, input.row) != pager.pressed:
+        select.click()
+      # forget about where we started once btn3 is released
+      pager.pressed = (-1, -1)
+    of mitMove: discard
+  of mibLeft:
+    case input.t
+    of mitPress:
+      if input.row notin select.y ..< select.y + select.height or
+          input.col notin select.x ..< select.x + select.width:
+        # clicked outside the select
+        pager.blockTillRelease = true
+        select.cursorLeft()
+    of mitRelease:
+      let at = (input.col, input.row)
+      if at == pager.pressed and
+          (input.row in select.y + 1 ..< select.y + select.height - 1 and
+            input.col in select.x + 1 ..< select.x + select.width - 1 or
+          select.multiple and at == (select.x, select.y)):
+        # clicked inside the select
+        select.setCursorY(y)
+        select.click()
+    of mitMove: discard
+  else: discard
+
+proc handleMouseInput(pager: Pager; input: MouseInput) =
+  if pager.blockTillRelease:
+    if input.t == mitRelease:
+      pager.blockTillRelease = false
+    else:
+      return
+  if pager.menu != nil:
+    pager.handleMouseInput(input, pager.menu)
+  elif (let container = pager.container; container != nil):
+    if container.select != nil:
+      pager.handleMouseInput(input, container.select)
+    else:
+      pager.handleMouseInput(input, container)
+  if not pager.blockTillRelease:
+    pager.handleMouseInputGeneric(input)
+
+# The maximum number we are willing to accept.
+# This should be fine for 32-bit signed ints (which precnum currently is).
+# We can always increase it further (e.g. by switching to uint32, uint64...) if
+# it proves to be too low.
+const MaxPrecNum = 100000000
+
+proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
+  if pager.config.input.vi_numeric_prefix and not pager.notnum:
+    if pager.precnum != 0 and c == '0' or c in '1' .. '9':
+      if pager.precnum < MaxPrecNum: # better ignore than eval...
+        pager.precnum *= 10
+        pager.precnum += cast[int32](decValue(c))
+      return
+    else:
+      pager.notnum = true
+  pager.inputBuffer &= c
+  let action = getNormalAction(pager.config, pager.inputBuffer)
+  if action != "":
+    let p = pager.evalAction(action, pager.precnum)
+    if not pager.feednext:
+      pager.precnum = 0
+      pager.notnum = false
+      pager.handleEvents()
+    return p
+  if pager.config.input.use_mouse:
+    if pager.inputBuffer == "\e[<":
+      let input = pager.term.parseMouseInput()
+      if input.isSome:
+        let input = input.get
+        pager.handleMouseInput(input)
+      pager.inputBuffer = ""
+    elif "\e[<".startsWith(pager.inputBuffer):
+      pager.feednext = true
+  return nil
+
+proc input(pager: Pager): EmptyPromise =
+  var p: EmptyPromise = nil
+  pager.term.restoreStdin()
+  var buf: string
+  while true:
+    let c = pager.term.readChar()
+    if pager.askpromise != nil:
+      if c == 'y':
+        pager.fulfillAsk(true)
+      elif c == 'n':
+        pager.fulfillAsk(false)
+    elif pager.askcharpromise != nil:
+      buf &= c
+      if buf.validateUtf8Surr() != -1:
+        continue
+      pager.fulfillCharAsk(buf)
+    elif pager.lineedit != nil:
+      pager.inputBuffer &= c
+      let edit = pager.lineedit
+      if edit.escNext:
+        edit.escNext = false
+        if edit.write(pager.inputBuffer, pager.term.cs):
+          pager.inputBuffer = ""
+      else:
+        let action = pager.config.getLinedAction(pager.inputBuffer)
+        if action == "":
+          if edit.write(pager.inputBuffer, pager.term.cs):
+            pager.inputBuffer = ""
+          else:
+            pager.feednext = true
+        elif not pager.feednext:
+          discard pager.evalAction(action, 0)
+        if not pager.feednext:
+          pager.updateReadLine()
+    else:
+      p = pager.handleCommandInput(c)
+      if not pager.feednext:
+        pager.inputBuffer = ""
+        pager.refreshStatusMsg()
+        break
+      #TODO this is not perfect, because it results in us never displaying
+      # lone escape. maybe a timeout for escape display would be useful
+      if not "\e[<".startsWith(pager.inputBuffer):
+        pager.refreshStatusMsg()
+        pager.draw()
+    if not pager.feednext:
+      pager.inputBuffer = ""
+      break
+    else:
+      pager.feednext = false
+  pager.inputBuffer = ""
+  if p == nil:
+    p = newResolvedPromise()
+  return p
 
 proc genClientKey(pager: Pager): ClientKey =
   var key: ClientKey
   pager.urandom.recvDataLoop(key)
   return key
 
-proc addLoaderClient*(pager: Pager; pid: int; config: LoaderClientConfig;
+proc addLoaderClient(pager: Pager; pid: int; config: LoaderClientConfig;
     clonedFrom = -1): ClientKey =
   var key = pager.genClientKey()
   while unlikely(not pager.loader.addClient(key, pid, config, clonedFrom)):
     key = pager.genClientKey()
   return key
 
-proc setLoader*(pager: Pager; loader: FileLoader) =
-  pager.loader = loader
-  let config = LoaderClientConfig(
-    defaultHeaders: newHeaders(pager.config.network.default_headers),
-    proxy: pager.config.network.proxy,
-    filter: newURLFilter(default = true),
-  )
-  loader.key = pager.addLoaderClient(pager.loader.clientPid, config)
-
-proc launchPager*(pager: Pager; istream: PosixStream) =
+proc run*(pager: Pager; pages: openArray[string]; contentType: Option[string];
+    cs: Charset; dump: bool) =
+  var istream: PosixStream = nil
+  var dump = dump
+  if not dump:
+    if stdin.isatty():
+      istream = newPosixStream(STDIN_FILENO)
+    if stdout.isatty():
+      if istream == nil:
+        istream = newPosixStream("/dev/tty", O_RDONLY, 0)
+    else:
+      istream = nil
+    dump = istream == nil
+  pager.pollData.register(pager.forkserver.estream.fd, POLLIN)
+  pager.loader.registerFun = proc(fd: int) =
+    pager.pollData.register(fd, POLLIN)
+  pager.loader.unregisterFun = proc(fd: int) =
+    pager.pollData.unregister(fd)
   case pager.term.start(istream)
   of tsrSuccess: discard
   of tsrDA1Fail:
@@ -386,9 +804,30 @@ proc launchPager*(pager: Pager; istream: PosixStream) =
   pager.clearDisplay()
   pager.clearStatus()
   pager.consoleWrapper = pager.addConsole(interactive = istream != nil)
-
-proc buffer(pager: Pager): Container {.jsfget, inline.} =
-  return pager.container
+  addExitProc((proc() = pager.cleanup()))
+  if pager.config.start.startup_script != "":
+    let s = if fileExists(pager.config.start.startup_script):
+      readFile(pager.config.start.startup_script)
+    else:
+      pager.config.start.startup_script
+    let ismodule = pager.config.start.startup_script.endsWith(".mjs")
+    pager.command0(s, pager.config.start.startup_script, silence = true,
+      module = ismodule)
+  if not stdin.isatty():
+    # stdin may very well receive ANSI text
+    let contentType = contentType.get("text/x-ansi")
+    let ps = newPosixStream(STDIN_FILENO)
+    pager.readPipe(contentType, cs, ps, "*stdin*")
+  for page in pages:
+    pager.loadURL(page, ctype = contentType, cs = cs)
+  pager.showAlerts()
+  pager.acceptBuffers()
+  if not dump:
+    pager.inputLoop()
+  else:
+    pager.dumpBuffers()
+  if pager.config.start.headless:
+    pager.headlessLoop()
 
 # Note: this function does not work correctly if start < x of last written char
 proc writeStatusMessage(pager: Pager; str: string; format = Format();
@@ -431,7 +870,7 @@ proc writeStatusMessage(pager: Pager; str: string; format = Format();
     inc x
 
 # Note: should only be called directly after user interaction.
-proc refreshStatusMsg*(pager: Pager) =
+proc refreshStatusMsg(pager: Pager) =
   let container = pager.container
   if container == nil: return
   if pager.askpromise != nil: return
@@ -483,7 +922,7 @@ proc refreshStatusMsg*(pager: Pager) =
 # Call refreshStatusMsg if no alert is being displayed on the screen.
 # Alerts take precedence over load info, but load info is preserved when no
 # pending alerts exist.
-proc showAlerts*(pager: Pager) =
+proc showAlerts(pager: Pager) =
   if (pager.alertState == pasNormal or
       pager.alertState == pasLoadInfo and pager.alerts.len > 0) and
       pager.inputBuffer == "" and pager.precnum == 0:
@@ -705,7 +1144,7 @@ proc initImages(pager: Pager; container: Container) =
   pager.term.canvasImages = newImages
   pager.term.checkImageDamage(pager.bufWidth, pager.bufHeight)
 
-proc draw*(pager: Pager) =
+proc draw(pager: Pager) =
   var redraw = false
   var imageRedraw = false
   var hasMenu = false
@@ -806,12 +1245,12 @@ proc askChar(pager: Pager; prompt: string): Promise[string] {.jsfunc.} =
   pager.askcharpromise = Promise[string]()
   return pager.askcharpromise
 
-proc fulfillAsk*(pager: Pager; y: bool) =
+proc fulfillAsk(pager: Pager; y: bool) =
   pager.askpromise.resolve(y)
   pager.askpromise = nil
   pager.askprompt = ""
 
-proc fulfillCharAsk*(pager: Pager; s: string) =
+proc fulfillCharAsk(pager: Pager; s: string) =
   pager.askcharpromise.resolve(s)
   pager.askcharpromise = nil
   pager.askprompt = ""
@@ -876,7 +1315,7 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     url = container.url
   )
 
-func findConnectingContainer*(pager: Pager; container: Container):
+func findConnectingContainer(pager: Pager; container: Container):
     ConnectingContainer =
   for item in pager.loader.data:
     if item of ConnectingContainer:
@@ -885,7 +1324,7 @@ func findConnectingContainer*(pager: Pager; container: Container):
         return item
   return nil
 
-func findProcMapItem*(pager: Pager; pid: int): int =
+func findProcMapItem(pager: Pager; pid: int): int =
   for i, item in pager.procmap.mypairs:
     if item.container.process == pid:
       return i
@@ -991,7 +1430,7 @@ func find(container: Container; dir: NavDirection): Container =
 
 # The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
 # commands by traversing the container tree in a depth-first order.
-proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
+proc prevBuffer(pager: Pager): bool {.jsfunc.} =
   pager.navDirection = ndPrev
   if pager.container == nil:
     return false
@@ -1001,7 +1440,7 @@ proc prevBuffer*(pager: Pager): bool {.jsfunc.} =
   pager.setContainer(prev)
   return true
 
-proc nextBuffer*(pager: Pager): bool {.jsfunc.} =
+proc nextBuffer(pager: Pager): bool {.jsfunc.} =
   pager.navDirection = ndNext
   if pager.container == nil:
     return false
@@ -1052,7 +1491,7 @@ proc alert*(pager: Pager; msg: string) {.jsfunc.} =
     pager.alerts.add(msg)
 
 # replace target with container in the tree
-proc replace*(pager: Pager; target, container: Container) =
+proc replace(pager: Pager; target, container: Container) =
   let n = target.children.find(container)
   if n != -1:
     target.children.delete(n)
@@ -1117,7 +1556,7 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     pager.forkserver.removeChild(container.process)
     pager.loader.removeClient(container.process)
 
-proc discardBuffer*(pager: Pager; container = none(Container);
+proc discardBuffer(pager: Pager; container = none(Container);
     dir = none(NavDirection)) {.jsfunc.} =
   if dir.isSome:
     pager.navDirection = dir.get.opposite()
@@ -1296,7 +1735,7 @@ proc openInEditor(pager: Pager; input: var string): bool =
     discard
   return false
 
-proc windowChange*(pager: Pager) =
+proc windowChange(pager: Pager) =
   let oldAttrs = pager.attrs
   pager.term.windowChange()
   if pager.attrs == oldAttrs:
@@ -1494,7 +1933,7 @@ proc omniRewrite(pager: Pager; s: string): string =
 # * file://$PWD/<file>
 # * https://<url>
 # So we attempt to load both, and see what works.
-proc loadURL*(pager: Pager; url: string; ctype = none(string);
+proc loadURL(pager: Pager; url: string; ctype = none(string);
     cs = CHARSET_UNKNOWN) =
   let url0 = pager.omniRewrite(url)
   let url = expandPath(url0)
@@ -1535,7 +1974,7 @@ proc createPipe(pager: Pager): (PosixStream, PosixStream) =
     return (nil, nil)
   return (newPosixStream(pipefds[0]), newPosixStream(pipefds[1]))
 
-proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
+proc readPipe0(pager: Pager; contentType: string; cs: Charset;
     ps: PosixStream; url: URL; title: string; flags: set[ContainerFlag]):
     Container =
   var url = url
@@ -1553,7 +1992,7 @@ proc readPipe0*(pager: Pager; contentType: string; cs: Charset;
     contentType = some(contentType)
   )
 
-proc readPipe*(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
+proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
     title: string) =
   let url = newURL("stream:-").get
   let container = pager.readPipe0(contentType, cs, ps, url, title,
@@ -1563,7 +2002,7 @@ proc readPipe*(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
 
 const ConsoleTitle = "Browser Console"
 
-proc showConsole*(pager: Pager) =
+proc showConsole(pager: Pager) =
   let container = pager.consoleWrapper.container
   if pager.container != container:
     pager.consoleWrapper.prev = pager.container
@@ -1582,7 +2021,7 @@ proc clearConsole(pager: Pager) =
     replacement.replace = pager.consoleWrapper.container
     pager.replace(pager.consoleWrapper.container, replacement)
     pager.consoleWrapper.container = replacement
-    let console = pager.consoleWrapper.console
+    let console = pager.console
     console.err.sclose()
     console.err = pouts
 
@@ -1606,11 +2045,12 @@ proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
   return ConsoleWrapper(console: newConsole(err))
 
 proc flushConsole*(pager: Pager) =
-  if pager.consoleWrapper.console == nil:
+  if pager.console == nil:
     # hack for when client crashes before console has been initialized
     pager.consoleWrapper = ConsoleWrapper(
       console: newConsole(newDynFileStream(stderr))
     )
+  pager.handleRead(pager.forkserver.estream.fd)
 
 proc command(pager: Pager) {.jsfunc.} =
   pager.setLineEdit(lmCommand)
@@ -1680,7 +2120,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
           pager.lineData = nil
     )
 
-proc updateReadLine*(pager: Pager) =
+proc updateReadLine(pager: Pager) =
   let lineedit = pager.lineedit
   if pager.linemode in {lmISearchF, lmISearchB}:
     pager.updateReadLineISearch(pager.linemode)
@@ -2217,7 +2657,7 @@ proc unregisterFd(pager: Pager; fd: int) =
   pager.pollData.unregister(fd)
   pager.loader.unregistered.add(fd)
 
-proc handleRead*(pager: Pager; item: ConnectingContainer) =
+proc handleRead(pager: Pager; item: ConnectingContainer) =
   let container = item.container
   let stream = item.stream
   case item.state
@@ -2261,7 +2701,7 @@ proc handleRead*(pager: Pager; item: ConnectingContainer) =
     else:
       pager.connected(container, response)
 
-proc handleError*(pager: Pager; item: ConnectingContainer) =
+proc handleError(pager: Pager; item: ConnectingContainer) =
   pager.fail(item.container, "loader died while loading")
   pager.unregisterFd(int(item.stream.fd))
   item.stream.sclose()
@@ -2308,7 +2748,7 @@ proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =
     pager.container.queueDraw()
   pager.draw()
 
-proc openMenu*(pager: Pager; x = -1; y = -1) {.jsfunc.} =
+proc openMenu(pager: Pager; x = -1; y = -1) {.jsfunc.} =
   let x = if x == -1 and pager.container != nil:
     pager.container.acursorx
   else:
@@ -2405,22 +2845,298 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
           )
   return true
 
-proc handleEvents*(pager: Pager; container: Container) =
+proc handleEvents(pager: Pager; container: Container) =
   while container.events.len > 0:
     let event = container.events.popFirst()
     if not pager.handleEvent0(container, event):
       break
 
-proc handleEvents*(pager: Pager) =
+proc handleEvents(pager: Pager) =
   if pager.container != nil:
     pager.handleEvents(pager.container)
 
-proc handleEvent*(pager: Pager; container: Container) =
+proc handleEvent(pager: Pager; container: Container) =
   try:
     container.handleEvent()
     pager.handleEvents(container)
   except IOError:
     discard
+
+proc runCommand(pager: Pager) =
+  if pager.scommand != "":
+    pager.command0(pager.scommand)
+    let container = pager.consoleWrapper.container
+    if container != nil:
+      container.tailOnLoad = true
+    pager.scommand = ""
+    pager.handleEvents()
+
+proc acceptBuffers(pager: Pager) =
+  while pager.unreg.len > 0:
+    let container = pager.unreg.pop()
+    if container.iface != nil: # fully connected
+      let stream = container.iface.stream
+      let fd = int(stream.source.fd)
+      pager.pollData.unregister(fd)
+      pager.loader.unset(fd)
+      stream.sclose()
+    elif container.process != -1: # connecting to buffer process
+      let i = pager.findProcMapItem(container.process)
+      pager.procmap.del(i)
+    elif (let item = pager.findConnectingContainer(container); item != nil):
+      # connecting to URL
+      let stream = item.stream
+      pager.pollData.unregister(int(stream.fd))
+      stream.sclose()
+      pager.loader.unset(item)
+  let registerFun = proc(fd: int) =
+    pager.pollData.unregister(fd)
+    pager.pollData.register(fd, POLLIN or POLLOUT)
+  for item in pager.procmap:
+    let container = item.container
+    let stream = connectSocketStream(pager.config.external.sockdir,
+      pager.loader.sockDirFd, container.process)
+    # unlink here; on Linux we can't unlink from the buffer :/
+    discard tryRemoveFile(getSocketPath(pager.config.external.sockdir,
+      container.process))
+    if stream == nil:
+      pager.alert("Error: failed to set up buffer")
+      continue
+    let key = pager.addLoaderClient(container.process, container.loaderConfig,
+      container.clonedFrom)
+    let loader = pager.loader
+    if item.istreamOutputId != -1: # new buffer
+      if container.cacheId == -1:
+        container.cacheId = loader.addCacheFile(item.istreamOutputId,
+          loader.clientPid)
+      if container.request.url.scheme == "cache":
+        # loading from cache; now both the buffer and us hold a new reference
+        # to the cached item, but it's only shared with the buffer. add a
+        # pager ref too.
+        loader.shareCachedItem(container.cacheId, loader.clientPid)
+      let pid = container.process
+      var outCacheId = container.cacheId
+      if not item.redirected:
+        loader.shareCachedItem(container.cacheId, pid)
+        loader.resume(item.istreamOutputId)
+      else:
+        outCacheId = loader.addCacheFile(item.ostreamOutputId, pid)
+        loader.resume([item.istreamOutputId, item.ostreamOutputId])
+      stream.withPacketWriter w:
+        w.swrite(key)
+        w.swrite(outCacheId)
+      # pass down ostream
+      # must come after the previous block so the first packet is flushed
+      stream.sendFd(item.ostream.fd)
+      item.ostream.sclose()
+      container.setStream(stream, registerFun)
+    else: # cloned buffer
+      stream.withPacketWriter w:
+        w.swrite(key)
+      # buffer is cloned, just share the parent's cached source
+      loader.shareCachedItem(container.cacheId, container.process)
+      # also add a reference here; it will be removed when the container is
+      # deleted
+      loader.shareCachedItem(container.cacheId, loader.clientPid)
+      container.setCloneStream(stream, registerFun)
+    let fd = int(stream.fd)
+    pager.loader.put(ContainerData(stream: stream, container: container))
+    pager.pollData.register(fd, POLLIN)
+    # clear replacement references, because we can't fail to load this
+    # buffer anymore
+    container.replaceRef = nil
+    container.replace = nil
+    container.replaceBackup = nil
+    pager.handleEvents(container)
+  pager.procmap.setLen(0)
+
+proc handleStderr(pager: Pager) =
+  const BufferSize = 4096
+  const prefix = "STDERR: "
+  var buffer {.noinit.}: array[BufferSize, char]
+  let estream = pager.forkserver.estream
+  var hadlf = true
+  while true:
+    try:
+      let n = estream.recvData(buffer)
+      if n == 0:
+        break
+      var i = 0
+      while i < n:
+        var j = n
+        var found = false
+        for k in i ..< n:
+          if buffer[k] == '\n':
+            j = k + 1
+            found = true
+            break
+        if hadlf:
+          pager.console.err.write(prefix)
+        if j - i > 0:
+          pager.console.err.write(buffer.toOpenArray(i, j - 1))
+        i = j
+        hadlf = found
+    except ErrorAgain:
+      break
+  if not hadlf:
+    pager.console.err.write('\n')
+  pager.console.err.sflush()
+
+proc handleRead(pager: Pager; fd: int) =
+  if pager.term.istream != nil and fd == pager.term.istream.fd:
+    pager.input().then(proc() =
+      pager.handleEvents()
+    )
+  elif fd == pager.forkserver.estream.fd:
+    pager.handleStderr()
+  elif (let data = pager.loader.get(fd); data != nil):
+    if data of ConnectingContainer:
+      pager.handleRead(ConnectingContainer(data))
+    elif data of ContainerData:
+      let container = ContainerData(data).container
+      pager.handleEvent(container)
+    else:
+      pager.loader.onRead(fd)
+      if data of ConnectData:
+        pager.runJSJobs()
+  elif fd in pager.loader.unregistered:
+    discard # ignore
+  else:
+    assert false
+
+proc handleWrite(pager: Pager; fd: int) =
+  let container = ContainerData(pager.loader.get(fd)).container
+  if container.iface.stream.flushWrite():
+    pager.pollData.unregister(fd)
+    pager.pollData.register(fd, POLLIN)
+
+proc handleError(pager: Pager; fd: int) =
+  if pager.term.istream != nil and fd == pager.term.istream.fd:
+    #TODO do something here...
+    stderr.write("Error in tty\n")
+    pager.quit(1)
+  elif fd == pager.forkserver.estream.fd:
+    #TODO do something here...
+    stderr.write("Fork server crashed :(\n")
+    pager.quit(1)
+  elif (let data = pager.loader.get(fd); data != nil):
+    if data of ConnectingContainer:
+      pager.handleError(ConnectingContainer(data))
+    elif data of ContainerData:
+      let container = ContainerData(data).container
+      if container != pager.consoleWrapper.container:
+        pager.console.error("Error in buffer", $container.url)
+      else:
+        pager.consoleWrapper.container = nil
+      pager.pollData.unregister(fd)
+      pager.loader.unset(fd)
+      doAssert pager.consoleWrapper.container != nil
+      pager.showConsole()
+    else:
+      discard pager.loader.onError(fd) #TODO handle connection error?
+  elif fd in pager.loader.unregistered:
+    discard # already unregistered...
+  else:
+    doAssert pager.consoleWrapper.container != nil
+    pager.showConsole()
+
+let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
+
+proc setupSigwinch(pager: Pager): PosixStream =
+  var pipefd {.noinit.}: array[2, cint]
+  doAssert pipe(pipefd) != -1
+  let writer = newPosixStream(pipefd[1])
+  writer.setBlocking(false)
+  var gwriter {.global.}: PosixStream = nil
+  gwriter = writer
+  onSignal SIGWINCH:
+    discard sig
+    try:
+      gwriter.sendDataLoop([0u8])
+    except ErrorAgain:
+      discard
+  let reader = newPosixStream(pipefd[0])
+  reader.setBlocking(false)
+  return reader
+
+proc inputLoop(pager: Pager) =
+  pager.pollData.register(pager.term.istream.fd, POLLIN)
+  let sigwinch = pager.setupSigwinch()
+  pager.pollData.register(sigwinch.fd, POLLIN)
+  while true:
+    let timeout = pager.timeouts.sortAndGetTimeout()
+    pager.pollData.poll(timeout)
+    for event in pager.pollData.events:
+      let efd = int(event.fd)
+      if (event.revents and POLLIN) != 0:
+        if event.fd == sigwinch.fd:
+          sigwinch.drain()
+          pager.windowChange()
+        else:
+          pager.handleRead(efd)
+      if (event.revents and POLLOUT) != 0:
+        pager.handleWrite(efd)
+      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+        pager.handleError(efd)
+    if pager.timeouts.run(pager.console.err):
+      let container = pager.consoleWrapper.container
+      if container != nil:
+        container.tailOnLoad = true
+    pager.runJSJobs()
+    pager.loader.unregistered.setLen(0)
+    pager.acceptBuffers()
+    pager.runCommand()
+    if pager.container == nil and pager.lineedit == nil:
+      # No buffer to display.
+      if not pager.hasload:
+        # Failed to load every single URL the user passed us. We quit, and that
+        # will dump all alerts to stderr.
+        pager.quit(1)
+      else:
+        # At least one connection has succeeded, but we have nothing to display.
+        # Normally, this means that the input stream has been redirected to a
+        # file or to an external program. That also means we can't just exit
+        # without potentially interrupting that stream.
+        #TODO: a better UI would be querying the number of ongoing streams in
+        # loader, and then asking for confirmation if there is at least one.
+        pager.term.setCursor(0, pager.term.attrs.height - 1)
+        pager.term.anyKey("Hit any key to quit Chawan:")
+        pager.quit(0)
+    pager.showAlerts()
+    pager.draw()
+
+func hasSelectFds(pager: Pager): bool =
+  return not pager.timeouts.empty or pager.numload > 0 or
+    pager.loader.mapFds > 0 or pager.procmap.len > 0
+
+proc headlessLoop(pager: Pager) =
+  while pager.hasSelectFds():
+    let timeout = pager.timeouts.sortAndGetTimeout()
+    pager.pollData.poll(timeout)
+    for event in pager.pollData.events:
+      let efd = int(event.fd)
+      if (event.revents and POLLIN) != 0:
+        pager.handleRead(efd)
+      if (event.revents and POLLOUT) != 0:
+        pager.handleWrite(efd)
+      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+        pager.handleError(efd)
+    discard pager.timeouts.run(pager.console.err)
+    pager.runJSJobs()
+    pager.loader.unregistered.setLen(0)
+    pager.acceptBuffers()
+
+proc dumpBuffers(pager: Pager) =
+  pager.headlessLoop()
+  for container in pager.containers:
+    try:
+      pager.drawBuffer(container, stdout)
+      pager.handleEvents(container)
+    except IOError:
+      pager.console.error("Error in buffer", $container.url)
+      # check for errors
+      pager.handleRead(pager.forkserver.estream.fd)
+      pager.quit(1)
 
 proc addPagerModule*(ctx: JSContext) =
   ctx.registerType(Pager)
