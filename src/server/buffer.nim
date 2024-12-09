@@ -1428,10 +1428,10 @@ proc baseURL(buffer: Buffer): URL =
   return buffer.document.baseURL
 
 proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
-  let encodedScriptSource = ($url)["javascript:".len..^1]
-  let scriptSource = percentDecode(encodedScriptSource)
+  let surl = $url
+  let source = surl.toOpenArray("javascript:".len, surl.high).percentDecode()
   let ctx = buffer.window.jsctx
-  let ret = ctx.eval(scriptSource, $buffer.baseURL, JS_EVAL_TYPE_GLOBAL)
+  let ret = ctx.eval(source, $buffer.baseURL, JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(ret):
     ctx.writeException(buffer.estream)
     return err() # error
