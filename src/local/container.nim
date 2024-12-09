@@ -138,9 +138,9 @@ type
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig
     iface*: BufferInterface
-    width* {.jsget.}: int
-    height* {.jsget.}: int
-    title*: string # used in status msg
+    width {.jsget.}: int
+    height {.jsget.}: int
+    title: string # used in status msg
     hoverText: array[HoverType, string]
     lastPeek: HoverType
     request*: Request # source request
@@ -180,7 +180,7 @@ type
     filter*: BufferFilter
     bgcolor*: CellColor
     tailOnLoad*: bool
-    mainConfig*: Config
+    mainConfig: Config
     flags*: set[ContainerFlag]
     images*: seq[PosBitmap]
     cachedImages*: seq[CachedImage]
@@ -1103,7 +1103,7 @@ proc copyCursorPos*(container, c2: Container) =
     container.startpos = some(c2.pos)
   container.flags.incl(cfHasStart)
 
-proc cursorNextLink*(container: Container; n = 1) {.jsfunc.} =
+proc cursorNextLink(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1115,7 +1115,7 @@ proc cursorNextLink*(container: Container; n = 1) {.jsfunc.} =
         container.markPos()
     )
 
-proc cursorPrevLink*(container: Container; n = 1) {.jsfunc.} =
+proc cursorPrevLink(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1127,7 +1127,7 @@ proc cursorPrevLink*(container: Container; n = 1) {.jsfunc.} =
         container.markPos()
     )
 
-proc cursorLinkNavDown*(container: Container; n = 1) {.jsfunc.} =
+proc cursorLinkNavDown(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1154,7 +1154,7 @@ proc cursorLinkNavDown*(container: Container; n = 1) {.jsfunc.} =
           container.markPos()
     )
 
-proc cursorLinkNavUp*(container: Container; n = 1) {.jsfunc.} =
+proc cursorLinkNavUp(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1182,7 +1182,7 @@ proc cursorLinkNavUp*(container: Container; n = 1) {.jsfunc.} =
           container.markPos()
     )
 
-proc cursorNextParagraph*(container: Container; n = 1) {.jsfunc.} =
+proc cursorNextParagraph(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1193,7 +1193,7 @@ proc cursorNextParagraph*(container: Container; n = 1) {.jsfunc.} =
       container.markPos()
     )
 
-proc cursorPrevParagraph*(container: Container; n = 1) {.jsfunc.} =
+proc cursorPrevParagraph(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.markPos0()
@@ -1204,8 +1204,8 @@ proc cursorPrevParagraph*(container: Container; n = 1) {.jsfunc.} =
       container.markPos()
     )
 
-proc setMark*(container: Container; id: string; x = none(int);
-    y = none(int)): bool {.jsfunc.} =
+proc setMark(container: Container; id: string; x = none(int); y = none(int)):
+    bool {.jsfunc.} =
   let x = x.get(container.cursorx)
   let y = y.get(container.cursory)
   container.marks.withValue(id, p):
@@ -1217,7 +1217,7 @@ proc setMark*(container: Container; id: string; x = none(int);
     container.queueDraw()
     return true
 
-proc clearMark*(container: Container; id: string): bool {.jsfunc.} =
+proc clearMark(container: Container; id: string): bool {.jsfunc.} =
   result = id in container.marks
   container.marks.del(id)
   container.queueDraw()
@@ -1229,7 +1229,7 @@ proc getMarkPos(container: Container; id: string): Opt[PagePos] {.jsfunc.} =
     return ok(p[])
   return err()
 
-proc gotoMark*(container: Container; id: string): bool {.jsfunc.} =
+proc gotoMark(container: Container; id: string): bool {.jsfunc.} =
   container.markPos0()
   let mark = container.getMarkPos(id)
   if mark.isSome:
@@ -1239,7 +1239,7 @@ proc gotoMark*(container: Container; id: string): bool {.jsfunc.} =
     return true
   return false
 
-proc gotoMarkY*(container: Container; id: string): bool {.jsfunc.} =
+proc gotoMarkY(container: Container; id: string): bool {.jsfunc.} =
   container.markPos0()
   let mark = container.getMarkPos(id)
   if mark.isSome:
@@ -1249,7 +1249,7 @@ proc gotoMarkY*(container: Container; id: string): bool {.jsfunc.} =
     return true
   return false
 
-proc findNextMark*(container: Container; x = none(int), y = none(int)):
+proc findNextMark(container: Container; x = none(int); y = none(int)):
     Option[string] {.jsfunc.} =
   #TODO optimize (maybe store marks in an OrderedTable and sort on insert?)
   let x = x.get(container.cursorx)
@@ -1264,7 +1264,7 @@ proc findNextMark*(container: Container; x = none(int), y = none(int)):
       bestid = some(id)
   return bestid
 
-proc findPrevMark*(container: Container; x = none(int), y = none(int)):
+proc findPrevMark(container: Container; x = none(int); y = none(int)):
     Option[string] {.jsfunc.} =
   #TODO optimize (maybe store marks in an OrderedTable and sort on insert?)
   let x = x.get(container.cursorx)
@@ -1279,7 +1279,7 @@ proc findPrevMark*(container: Container; x = none(int), y = none(int)):
       bestid = some(id)
   return bestid
 
-proc cursorNthLink*(container: Container; n = 1) {.jsfunc.} =
+proc cursorNthLink(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.iface
@@ -1288,7 +1288,7 @@ proc cursorNthLink*(container: Container; n = 1) {.jsfunc.} =
       if res.x > -1 and res.y != -1:
         container.setCursorXYCenter(res.x, res.y))
 
-proc cursorRevNthLink*(container: Container; n = 1) {.jsfunc.} =
+proc cursorRevNthLink(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.iface
