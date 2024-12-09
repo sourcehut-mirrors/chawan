@@ -78,7 +78,7 @@ Note: this suspends the entire process group.</td>
 
 <tr>
 <td>`line`</td>
-<td>The line editor. Implements `Line`, as described below.</td>
+<td>The line editor. Implements `LineEdit`, as described below.</td>
 
 <tr>
 <td>`config`</td>
