@@ -360,28 +360,30 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
       of iatInlineBlock:
         grid.renderBlockBox(state, atom.innerbox, offset + atom.offset)
       of iatWord:
-        grid.setRowWord(state, atom, offset, format, fragment.node)
+        if fragment.computed{"visibility"} == VisibilityVisible:
+          grid.setRowWord(state, atom, offset, format, fragment.node)
       of iatImage:
-        let x1 = offset.x.toInt
-        let y1 = offset.y.toInt
-        let x2 = (offset.x + atom.size.w).toInt
-        let y2 = (offset.y + atom.size.h).toInt
-        # "paint" background, i.e. add formatting (but don't actually color it)
-        grid.paintBackground(state, defaultColor, x1, y1, x2, y2, fragment.node,
-          noPaint = true)
-        let x = (offset.x div state.attrs.ppc).toInt
-        let y = (offset.y div state.attrs.ppl).toInt
-        let offx = (offset.x - x.toLayoutUnit * state.attrs.ppc).toInt
-        let offy = (offset.y - y.toLayoutUnit * state.attrs.ppl).toInt
-        state.images.add(PosBitmap(
-          x: x,
-          y: y,
-          offx: offx,
-          offy: offy,
-          width: atom.size.w.toInt,
-          height: atom.size.h.toInt,
-          bmp: atom.bmp
-        ))
+        if fragment.computed{"visibility"} == VisibilityVisible:
+          let x1 = offset.x.toInt
+          let y1 = offset.y.toInt
+          let x2 = (offset.x + atom.size.w).toInt
+          let y2 = (offset.y + atom.size.h).toInt
+          # add StyledNode to background (but don't actually color it)
+          grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
+            fragment.node, noPaint = true)
+          let x = (offset.x div state.attrs.ppc).toInt
+          let y = (offset.y div state.attrs.ppl).toInt
+          let offx = (offset.x - x.toLayoutUnit * state.attrs.ppc).toInt
+          let offy = (offset.y - y.toLayoutUnit * state.attrs.ppl).toInt
+          state.images.add(PosBitmap(
+            x: x,
+            y: y,
+            offx: offx,
+            offy: offy,
+            width: atom.size.w.toInt,
+            height: atom.size.h.toInt,
+            bmp: atom.bmp
+          ))
   if position notin PositionStaticLike and stSplitEnd in fragment.splitType:
     discard state.absolutePos.pop()
 
