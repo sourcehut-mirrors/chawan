@@ -121,7 +121,7 @@ proc main() =
         quit(0)
       else:
         die("Cha-Control: ConnectionError 1 stbi error " &
-          $stbi_failure_reason())
+          $stbi_failure_reason() & '\n')
     let p = stbi_load_from_callbacks(addr clbk, addr user, x, y,
       channels_in_file, 4)
     if p == nil:
@@ -133,7 +133,7 @@ proc main() =
       stbi_image_free(p)
   of "encode":
     if f notin ["png", "bmp", "jpeg"]:
-      die("Cha-Control: ConnectionError 1 unknown format " & f)
+      die("Cha-Control: ConnectionError 1 unknown format " & f & '\n')
     let headers = getEnv("REQUEST_HEADERS")
     var quality = cint(50)
     var width = cint(0)
@@ -145,14 +145,14 @@ proc main() =
         let w = parseUInt32(s[0], allowSign = false)
         let h = parseUInt32(s[1], allowSign = false)
         if w.isNone or w.isNone:
-          die("Cha-Control: ConnectionError 1 wrong dimensions")
+          die("Cha-Control: ConnectionError 1 wrong dimensions\n")
         width = cint(w.get)
         height = cint(h.get)
       of "Cha-Image-Quality":
         let s = hdr.after(':').strip()
         let q = parseUInt32(s, allowSign = false).get(101)
         if q < 1 or 100 < q:
-          die("Cha-Control: ConnectionError 1 wrong quality")
+          die("Cha-Control: ConnectionError 1 wrong quality\n")
         quality = cint(q)
     let ps = newPosixStream(STDIN_FILENO)
     let src = ps.recvDataLoopOrMmap(width * height * 4)
@@ -171,5 +171,7 @@ proc main() =
       stbi_write_jpg_to_func(myWriteFunc, nil, cint(width), cint(height), 4, p,
         quality)
     deallocMem(src)
+  else:
+    die("Cha-Control: ConnectionError 1 not implemented\n")
 
 main()

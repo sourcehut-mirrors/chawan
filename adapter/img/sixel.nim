@@ -489,10 +489,7 @@ proc parseDimensions(os: PosixStream; s: string): (int, int) =
 
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
-  case getEnv("MAPPED_URI_PATH")
-  of "decode":
-    os.die("Cha-Control: ConnectionError InternalError not implemented")
-  of "encode":
+  if getEnv("MAPPED_URI_PATH") == "encode":
     var width = 0
     var height = 0
     var offx = 0
@@ -547,5 +544,7 @@ proc main() =
     os.encode(p.toOpenArray(0, n - 1), width, height, offx, offy, cropw,
       palette, halfdump)
     deallocMem(src)
+  else:
+    os.die("Cha-Control: ConnectionError InternalError not implemented\n")
 
 main()

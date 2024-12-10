@@ -64,7 +64,7 @@ proc setpxb(bmp: Bitmap; x, y: int; c: RGBAColorBE) {.inline.} =
 proc setpxb(bmp: Bitmap; x, y: int; c: ARGBColor) {.inline.} =
   bmp.setpxb(x, y, rgba_be(c.r, c.g, c.b, c.a))
 
-const unifont = readFile"res/unifont_jp-15.0.05.png"
+const unifont = staticRead"res/unifont_jp-15.0.05.png"
 proc loadUnifont(unifont: string): Bitmap =
   var width, height, comp: cint
   let p = stbi_load_from_memory(cast[ptr uint8](unsafeAddr unifont[0]),
@@ -351,8 +351,8 @@ proc main() =
       except EOFError, ErrorConnectionReset, ErrorBrokenPipe:
         break
     os.sendDataLoop(addr bmp.px[0], bmp.px.len * sizeof(bmp.px[0]))
-  of "encode":
-    os.write("Cha-Control: ConnectionError 1 not supported\n")
+  else:
+    os.write("Cha-Control: ConnectionError 1 not implemented\n")
     quit(1)
 
 main()

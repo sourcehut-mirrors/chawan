@@ -78,8 +78,7 @@ proc main() =
   enterNetworkSandbox()
   let scheme = getEnv("MAPPED_URI_SCHEME")
   let f = scheme.after('+')
-  case getEnv("MAPPED_URI_PATH")
-  of "decode":
+  if getEnv("MAPPED_URI_PATH") == "decode":
     if f != "webp":
       die("Cha-Control: ConnectionError 1 unknown format " & f)
     let headers = getEnv("REQUEST_HEADERS")
@@ -121,7 +120,7 @@ proc main() =
         "\n\n")
       writeAll(image.pixels, image.width * image.height * 4)
       jebp_free_image(addr image)
-  of "encode":
-    die("Cha-Control: ConnectionError 1 not supported")
+  else:
+    die("Cha-Control: ConnectionError 1 not implemented\n")
 
 main()
