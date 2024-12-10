@@ -68,6 +68,7 @@ type
     padding: RelativeRect
     space: AvailableSpace
     minMaxSizes: array[DimensionType, Span]
+    minWidthClamp: LayoutUnit
 
 const DefaultSpan = Span(start: 0, send: LayoutUnit.high)
 
@@ -1005,6 +1006,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
   if width.canpx(parentWidth):
     widthpx = width.spx(lctx, parentWidth, computed, inlinePadding)
     sizes.space.w = stretch(widthpx)
+    sizes.minWidthClamp = widthpx
   sizes.resolveContentWidth(widthpx, parentWidth, computed, width.u == cuAuto)
   if sizes.space.w.isDefinite() and sizes.maxWidth < sizes.space.w.u or
       sizes.maxWidth < LayoutUnit.high and sizes.space.w.t == scMaxContent:
@@ -1015,6 +1017,8 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
       # available width could be higher than max-width (but not necessarily)
       sizes.space.w = fitContent(sizes.maxWidth)
     sizes.resolveContentWidth(sizes.maxWidth, parentWidth, computed)
+  elif sizes.space.w.isDefinite():
+    sizes.minMaxSizes[dtHorizontal].send = sizes.space.w.u
   if sizes.space.w.isDefinite() and sizes.minWidth > sizes.space.w.u or
       sizes.minWidth > 0 and sizes.space.w.t == scMinContent:
     # two cases:
@@ -1087,7 +1091,8 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
   var sizes = ResolvedSizes(
     margin: resolveMargins(stretch(size.w), lctx, computed),
     padding: resolvePadding(stretch(size.w), lctx, computed),
-    minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
+    minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan],
+    minWidthClamp: LayoutUnit.high
   )
   sizes.resolveAbsoluteWidth(size, positioned, computed, lctx)
   sizes.resolveAbsoluteHeight(size, positioned, computed, lctx)
@@ -1102,7 +1107,8 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
     space: space,
-    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed)
+    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed),
+    minWidthClamp: LayoutUnit.high
   )
   sizes.space.h = maxContent()
   for dim in DimensionType:
@@ -1123,8 +1129,11 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
     space: space,
-    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed)
+    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed),
+    minWidthClamp: LayoutUnit.high
   )
+  if computed{"min-width"}.canpx(space.w):
+    sizes.minWidthClamp = sizes.minWidth
   if dim != dtHorizontal:
     sizes.space.h = maxContent()
   let length = computed.objs[CvalSizeMap[dim]].length
@@ -1134,6 +1143,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       t: sizes.space[dim].t,
       u: minClamp(u, sizes.minMaxSizes[dim])
     )
+    if dim == dtHorizontal:
+      sizes.minWidthClamp = sizes.space[dim].u
   elif sizes.minMaxSizes[dim].send < LayoutUnit.high:
     sizes.space[dim] = fitContent(sizes.minMaxSizes[dim].max())
   else:
@@ -1163,7 +1174,8 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     margin: resolveMargins(space.w, lctx, computed),
     padding: padding,
     space: space,
-    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed)
+    minMaxSizes: lctx.resolveMinMaxSizes(space, paddingSum, computed),
+    minWidthClamp: LayoutUnit.high
   )
   # for tables, fit-content by default
   if computed{"display"} == DisplayTableWrapper:
@@ -1173,6 +1185,8 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     maxContent()
   else:
     fitContent(sizes.space.h)
+  if computed{"min-width"}.canpx(space.w):
+    sizes.minWidthClamp = sizes.minWidth
   # Finally, calculate available width and height.
   sizes.resolveBlockWidth(space.w, paddingSum[dtHorizontal], computed, lctx)
   #TODO parent height should be lctx height in quirks mode for percentage
@@ -1206,18 +1220,11 @@ proc applySize(box: BlockBox; sizes: ResolvedSizes;
   box.state.size[dim] = minClamp(box.state.size[dim], sizes.minMaxSizes[dim])
 
 proc applyMinWidth(box: BlockBox; sizes: ResolvedSizes) =
-  #TODO this is a hack, and is subtly wrong.
-  # the proper solution would be to override xminwidth *only* if
-  # min-width was auto or equivalent, e.g. unresolvable percentage.
-  # (or maybe I could just change DefaultSpan to start from
-  # LayoutUnit.low? then I'll need another extra 0 check everywhere I
-  # apply it but that should be ok)
-  # Also I have doubts on whether checking for stretch is OK... why
-  # isn't it reflected by minWidth anyway?
-  if sizes.space.w.t == scStretch:
-    box.state.xminwidth = min(box.state.xminwidth, sizes.space.w.u)
-  if sizes.minWidth > 0:
-    box.state.xminwidth = min(box.state.xminwidth, sizes.minWidth)
+  #TODO this is the right direction, but the implementation is still
+  # a hack.  really it should be evaluated where minWidthClamp applies
+  # and then min/max size resolution adjusted appropriately.
+  # (I think everywhere? but I'm not sure about table cells)
+  box.state.xminwidth = min(box.state.xminwidth, sizes.minWidthClamp)
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit; space: AvailableSpace) =
@@ -1505,7 +1512,8 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     var bctx = BlockContext(lctx: bctx.lctx)
     let markerSizes = ResolvedSizes(
       space: availableSpace(w = fitContent(sizes.space.w), h = sizes.space.h),
-      minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
+      minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan],
+      minWidthClamp: LayoutUnit.high
     )
     bctx.layoutFlow(marker, markerSizes)
     marker.state.offset.x = -marker.state.size.w
@@ -1791,7 +1799,8 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
   var sizes = ResolvedSizes(
     padding: resolvePadding(space.w, lctx, box.computed),
     space: space,
-    minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan]
+    minMaxSizes: [dtHorizontal: DefaultSpan, dtVertical: DefaultSpan],
+    minWidthClamp: LayoutUnit.high
   )
   if sizes.space.w.isDefinite():
     sizes.space.w.u -= sizes.padding[dtHorizontal].sum()
@@ -2748,6 +2757,8 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     state.initReLayout(bctx, box, sizes)
     state.layoutBlockChildren(bctx, box)
   box.applyBaseline()
+  # Set xminwidth now, so that it can be clamped by minWidthClamp.
+  box.state.xminwidth = state.xminwidth
   # Apply width, and height. For height, temporarily remove padding we have
   # applied before so that percentage resolution works correctly.
   box.applyWidth(sizes, state.maxChildWidth, state.space)
@@ -2757,8 +2768,6 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     lctx.positionRelative(box, child)
   # Add padding; we cannot do this further up without influencing positioning.
   box.applyPadding(sizes.padding)
-  # Pass down relevant data from state.
-  box.state.xminwidth = state.xminwidth
   if state.isParentResolved(bctx):
     # Our offset has already been resolved, ergo any margins in marginTodo will
     # be passed onto the next box. Set marginTarget to nil, so that if we (or
