@@ -5,6 +5,10 @@
 This document lists common problems you may run into when using Chawan.
 .SS I can\[cq]t select/copy text with my mouse?
 Right click \-> select text, then right click \-> copy selection.
+.PP
+If Chawan complains about xsel, either install it or edit
+\f[CR]external.copy\-cmd\f[R] and \f[CR]external.paste\-cmd\f[R] to your
+liking.
 .SS Why do I get strange/incorrect/ugly colors?
 Chawan\[cq]s display capabilities depend on what your terminal reports.
 In particular:
@@ -144,6 +148,21 @@ The easiest workaround is to remove the shell from the equation using
 .EX
 [external]
 editor = \[aq]exec vi +%d\[aq]
+.EE
+.SS When I open Chawan from aerc, it prints garbage in the search field!
+See \c
+.UR https://todo.sr.ht/~bptato/chawan/33
+.UE \c
+\&.
+Until aerc is updated to include the fix, you can work around it like
+this:
+.IP
+.EX
+[display]
+# Use whatever colors your terminal actually uses. CSS\-style hex values
+# (#FFFFFF etc.) work too.
+default\-background\-color = \[dq]black\[dq]
+default\-foreground\-color = \[dq]white\[dq]
 .EE
 .SS See also
 \f[B]cha\f[R](1)

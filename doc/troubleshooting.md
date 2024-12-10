@@ -138,9 +138,8 @@ editor = 'exec vi +%d'
 
 ## When I open Chawan from aerc, it prints garbage in the search field!
 
-See <https://todo.sr.ht/~bptato/chawan/33>.
-
-Until the fix is upstreamed, you can work around it like this:
+See <https://todo.sr.ht/~bptato/chawan/33>.  Until aerc is updated to
+include the fix, you can work around it like this:
 
 ```
 [display]
