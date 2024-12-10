@@ -1812,6 +1812,8 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
   box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight)
+  # A table cell's minimum width overrides its width.
+  box.state.size.w = max(box.state.size.w, box.state.xminwidth)
 
 # Sort growing cells, and filter out cells that have grown to their intended
 # rowspan.
