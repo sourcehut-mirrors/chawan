@@ -934,7 +934,7 @@ proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
       sizes.margin[dtHorizontal].start = underflow div 2
       sizes.margin[dtHorizontal].send = underflow div 2
 
-proc resolveMargins(availableWidth: SizeConstraint; lctx: LayoutContext;
+proc resolveMargins(lctx: LayoutContext; availableWidth: SizeConstraint;
     computed: CSSComputedValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
   return [
@@ -948,7 +948,7 @@ proc resolveMargins(availableWidth: SizeConstraint; lctx: LayoutContext;
     )
   ]
 
-proc resolvePadding(availableWidth: SizeConstraint; lctx: LayoutContext;
+proc resolvePadding(lctx: LayoutContext; availableWidth: SizeConstraint;
     computed: CSSComputedValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
   return [
@@ -1007,6 +1007,121 @@ func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
       res.a[dtVertical].send = px
   return res
 
+const CvalSizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
+
+proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
+    positioned: RelativeRect; computed: CSSComputedValues;
+    lctx: LayoutContext) =
+  if computed{"width"}.u == cuAuto:
+    let u = max(size.w - positioned[dtHorizontal].sum(), 0)
+    if computed{"left"}.u != cuAuto and computed{"right"}.u != cuAuto:
+      # Both left and right are known, so we can calculate the width.
+      sizes.space.w = stretch(u)
+    else:
+      # Return shrink to fit and solve for left/right.
+      sizes.space.w = fitContent(u)
+  else:
+    let padding = sizes.padding[dtHorizontal].sum()
+    let sizepx = computed{"width"}.spx(lctx, stretch(size.w), computed, padding)
+    sizes.space.w = stretch(sizepx)
+
+proc resolveAbsoluteHeight(sizes: var ResolvedSizes; size: Size;
+    positioned: RelativeRect; computed: CSSComputedValues;
+    lctx: LayoutContext) =
+  if computed{"height"}.u == cuAuto:
+    let u = max(size.w - positioned[dtVertical].sum(), 0)
+    if computed{"top"}.u != cuAuto and computed{"bottom"}.u != cuAuto:
+      # Both top and bottom are known, so we can calculate the height.
+      sizes.space.h = stretch(u)
+    else:
+      # The height is based on the content.
+      sizes.space.h = maxContent()
+  else:
+    let padding = sizes.padding[dtVertical].sum()
+    let sizepx = computed{"height"}.spx(lctx, stretch(size.h), computed,
+      padding)
+    sizes.space.h = stretch(sizepx)
+
+# Calculate and resolve available width & height for absolutely positioned
+# boxes.
+proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
+    positioned: var RelativeRect; computed: CSSComputedValues): ResolvedSizes =
+  positioned = lctx.resolvePositioned(size, computed)
+  var sizes = ResolvedSizes(
+    margin: lctx.resolveMargins(stretch(size.w), computed),
+    padding: lctx.resolvePadding(stretch(size.w), computed),
+    bounds: DefaultBounds
+  )
+  sizes.resolveAbsoluteWidth(size, positioned, computed, lctx)
+  sizes.resolveAbsoluteHeight(size, positioned, computed, lctx)
+  return sizes
+
+# Calculate and resolve available width & height for floating boxes.
+proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
+    computed: CSSComputedValues): ResolvedSizes =
+  let padding = lctx.resolvePadding(space.w, computed)
+  let paddingSum = padding.sum()
+  var sizes = ResolvedSizes(
+    margin: lctx.resolveMargins(space.w, computed),
+    padding: padding,
+    space: space,
+    bounds: lctx.resolveBounds(space, paddingSum, computed)
+  )
+  sizes.space.h = maxContent()
+  for dim in DimensionType:
+    let length = computed.objs[CvalSizeMap[dim]].length
+    if length.canpx(space[dim]):
+      let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
+      sizes.space[dim] = stretch(minClamp(u, sizes.bounds.a[dim]))
+    elif sizes.space[dim].isDefinite():
+      let u = sizes.space[dim].u - sizes.margin[dim].sum() - paddingSum[dim]
+      sizes.space[dim] = fitContent(minClamp(u, sizes.bounds.a[dim]))
+  return sizes
+
+proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
+    dim: DimensionType; computed: CSSComputedValues): ResolvedSizes =
+  let padding = lctx.resolvePadding(space.w, computed)
+  let paddingSum = padding.sum()
+  var sizes = ResolvedSizes(
+    margin: lctx.resolveMargins(space.w, computed),
+    padding: padding,
+    space: space,
+    bounds: lctx.resolveBounds(space, paddingSum, computed)
+  )
+  if dim != dtHorizontal:
+    sizes.space.h = maxContent()
+  let length = computed.objs[CvalSizeMap[dim]].length
+  if length.canpx(space[dim]):
+    let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
+    sizes.space[dim] = SizeConstraint(
+      t: sizes.space[dim].t,
+      u: minClamp(u, sizes.bounds.a[dim])
+    )
+    sizes.bounds.minClamp[dim] = min(sizes.space[dim].u,
+      sizes.bounds.minClamp[dim])
+  elif sizes.bounds.a[dim].send < LayoutUnit.high:
+    sizes.space[dim] = fitContent(sizes.bounds.a[dim].max())
+  else:
+    # Ensure that space is indefinite in the first pass if no width has
+    # been specified.
+    sizes.space[dim] = maxContent()
+  let odim = dim.opposite()
+  let olength = computed.objs[CvalSizeMap[odim]].length
+  if olength.canpx(space[odim]):
+    let u = olength.spx(lctx, space[odim], computed, paddingSum[odim])
+    sizes.space[odim] = stretch(minClamp(u, sizes.bounds.a[odim]))
+    sizes.bounds.minClamp[odim] = min(sizes.space[odim].u,
+      sizes.bounds.minClamp[odim])
+  elif sizes.space[odim].isDefinite():
+    let u = sizes.space[odim].u - sizes.margin[odim].sum() - paddingSum[odim]
+    sizes.space[odim] = SizeConstraint(
+      t: sizes.space[odim].t,
+      u: minClamp(u, sizes.bounds.a[odim])
+    )
+  elif sizes.bounds.a[odim].send < LayoutUnit.high:
+    sizes.space[odim] = fitContent(sizes.bounds.a[odim].max())
+  return sizes
+
 proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     inlinePadding: LayoutUnit; computed: CSSComputedValues;
     lctx: LayoutContext) =
@@ -1056,127 +1171,12 @@ proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
     # same reasoning as for width.
     sizes.space.h = stretch(sizes.minHeight)
 
-const CvalSizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
-
-proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
-    positioned: RelativeRect; computed: CSSComputedValues;
-    lctx: LayoutContext) =
-  if computed{"width"}.u == cuAuto:
-    let u = max(size.w - positioned[dtHorizontal].sum(), 0)
-    if computed{"left"}.u != cuAuto and computed{"right"}.u != cuAuto:
-      # Both left and right are known, so we can calculate the width.
-      sizes.space.w = stretch(u)
-    else:
-      # Return shrink to fit and solve for left/right.
-      sizes.space.w = fitContent(u)
-  else:
-    let padding = sizes.padding[dtHorizontal].sum()
-    let sizepx = computed{"width"}.spx(lctx, stretch(size.w), computed, padding)
-    sizes.space.w = stretch(sizepx)
-
-proc resolveAbsoluteHeight(sizes: var ResolvedSizes; size: Size;
-    positioned: RelativeRect; computed: CSSComputedValues;
-    lctx: LayoutContext) =
-  if computed{"height"}.u == cuAuto:
-    let u = max(size.w - positioned[dtVertical].sum(), 0)
-    if computed{"top"}.u != cuAuto and computed{"bottom"}.u != cuAuto:
-      # Both top and bottom are known, so we can calculate the height.
-      sizes.space.h = stretch(u)
-    else:
-      # The height is based on the content.
-      sizes.space.h = maxContent()
-  else:
-    let padding = sizes.padding[dtVertical].sum()
-    let sizepx = computed{"height"}.spx(lctx, stretch(size.h), computed,
-      padding)
-    sizes.space.h = stretch(sizepx)
-
-# Calculate and resolve available width & height for absolutely positioned
-# boxes.
-proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
-    positioned: var RelativeRect; computed: CSSComputedValues): ResolvedSizes =
-  positioned = lctx.resolvePositioned(size, computed)
-  var sizes = ResolvedSizes(
-    margin: resolveMargins(stretch(size.w), lctx, computed),
-    padding: resolvePadding(stretch(size.w), lctx, computed),
-    bounds: DefaultBounds
-  )
-  sizes.resolveAbsoluteWidth(size, positioned, computed, lctx)
-  sizes.resolveAbsoluteHeight(size, positioned, computed, lctx)
-  return sizes
-
-# Calculate and resolve available width & height for floating boxes.
-proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
-    computed: CSSComputedValues): ResolvedSizes =
-  let padding = resolvePadding(space.w, lctx, computed)
-  let paddingSum = padding.sum()
-  var sizes = ResolvedSizes(
-    margin: resolveMargins(space.w, lctx, computed),
-    padding: padding,
-    space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed)
-  )
-  sizes.space.h = maxContent()
-  for dim in DimensionType:
-    let length = computed.objs[CvalSizeMap[dim]].length
-    if length.canpx(space[dim]):
-      let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
-      sizes.space[dim] = stretch(minClamp(u, sizes.bounds.a[dim]))
-    elif sizes.space[dim].isDefinite():
-      let u = sizes.space[dim].u - sizes.margin[dim].sum() - paddingSum[dim]
-      sizes.space[dim] = fitContent(minClamp(u, sizes.bounds.a[dim]))
-  return sizes
-
-proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
-    dim: DimensionType; computed: CSSComputedValues): ResolvedSizes =
-  let padding = resolvePadding(space.w, lctx, computed)
-  let paddingSum = padding.sum()
-  var sizes = ResolvedSizes(
-    margin: resolveMargins(space.w, lctx, computed),
-    padding: padding,
-    space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed)
-  )
-  if dim != dtHorizontal:
-    sizes.space.h = maxContent()
-  let length = computed.objs[CvalSizeMap[dim]].length
-  if length.canpx(space[dim]):
-    let u = length.spx(lctx, space[dim], computed, paddingSum[dim])
-    sizes.space[dim] = SizeConstraint(
-      t: sizes.space[dim].t,
-      u: minClamp(u, sizes.bounds.a[dim])
-    )
-    sizes.bounds.minClamp[dim] = min(sizes.space[dim].u,
-      sizes.bounds.minClamp[dim])
-  elif sizes.bounds.a[dim].send < LayoutUnit.high:
-    sizes.space[dim] = fitContent(sizes.bounds.a[dim].max())
-  else:
-    # Ensure that space is indefinite in the first pass if no width has
-    # been specified.
-    sizes.space[dim] = maxContent()
-  let odim = dim.opposite()
-  let olength = computed.objs[CvalSizeMap[odim]].length
-  if olength.canpx(space[odim]):
-    let u = olength.spx(lctx, space[odim], computed, paddingSum[odim])
-    sizes.space[odim] = stretch(minClamp(u, sizes.bounds.a[odim]))
-    sizes.bounds.minClamp[odim] = min(sizes.space[odim].u,
-      sizes.bounds.minClamp[odim])
-  elif sizes.space[odim].isDefinite():
-    let u = sizes.space[odim].u - sizes.margin[odim].sum() - paddingSum[odim]
-    sizes.space[odim] = SizeConstraint(
-      t: sizes.space[odim].t,
-      u: minClamp(u, sizes.bounds.a[odim])
-    )
-  elif sizes.bounds.a[odim].send < LayoutUnit.high:
-    sizes.space[odim] = fitContent(sizes.bounds.a[odim].max())
-  return sizes
-
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     computed: CSSComputedValues): ResolvedSizes =
-  let padding = resolvePadding(space.w, lctx, computed)
+  let padding = lctx.resolvePadding(space.w, computed)
   let paddingSum = padding.sum()
   var sizes = ResolvedSizes(
-    margin: resolveMargins(space.w, lctx, computed),
+    margin: lctx.resolveMargins(space.w, computed),
     padding: padding,
     space: space,
     bounds: lctx.resolveBounds(space, paddingSum, computed)
@@ -1795,7 +1795,7 @@ type
 proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
     space: AvailableSpace) =
   var sizes = ResolvedSizes(
-    padding: resolvePadding(space.w, lctx, box.computed),
+    padding: lctx.resolvePadding(space.w, box.computed),
     space: space,
     bounds: DefaultBounds
   )
