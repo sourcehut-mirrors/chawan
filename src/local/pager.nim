@@ -2490,7 +2490,6 @@ proc checkMailcap(pager: Pager; container: Container; stream: PosixStream;
   # contentType must exist, because we set it in applyResponse
   let shortContentType = container.contentType.get
   var stream = stream
-  var redirected = false
   if container.filter != nil:
     stream = pager.filterBuffer(stream, container.filter.cmd)
   if shortContentType.equalsIgnoreCase("text/html"):
@@ -2500,28 +2499,17 @@ proc checkMailcap(pager: Pager; container: Container; stream: PosixStream;
       connect: true,
       ostream: stream,
       ishtml: true,
-      found: true,
-      redirected: redirected
+      found: true
     )
   if shortContentType.equalsIgnoreCase("text/plain"):
     # text/plain could potentially be useful. Unfortunately, many mailcaps
     # include a text/plain entry with less by default, so it's probably better
     # to ignore this.
-    return CheckMailcapResult(
-      connect: true,
-      ostream: stream,
-      found: true,
-      redirected: redirected
-    )
+    return CheckMailcapResult(connect: true, ostream: stream, found: true)
   let url = container.url
   let i = pager.config.external.mailcap.findMailcapEntry(contentType, "", url)
   if i == -1:
-    return CheckMailcapResult(
-      connect: true,
-      ostream: stream,
-      found: false,
-      redirected: redirected
-    )
+    return CheckMailcapResult(connect: true, ostream: stream, found: false)
   return pager.checkMailcap0(url, stream, istreamOutputId, contentType,
     pager.config.external.mailcap[i])
 
