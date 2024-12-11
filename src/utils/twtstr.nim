@@ -579,18 +579,16 @@ func utf16Len*(s: openArray[char]): int =
       result += 2
 
 proc expandPath*(path: string): string =
-  if path.len == 0 or path[0] != '~':
-    return path
-  if path.len == 1:
-    return getHomeDir()
-  elif path[1] == '/':
-    return getHomeDir() / path.substr(2)
-  else:
+  if path.len > 0 and path[0] == '~':
+    if path.len == 1:
+      return getHomeDir()
+    if path[1] == '/':
+      return getHomeDir() / path.substr(2)
     let usr = path.until({'/'}, 1)
     let p = getpwnam(cstring(usr))
-    if p != nil:
+    if p != nil and p.pw_dir != nil:
       return $p.pw_dir / path.substr(usr.len)
-    return path
+  return path
 
 func deleteChars*(s: openArray[char]; todel: set[char]): string =
   result = newStringOfCap(s.len)
