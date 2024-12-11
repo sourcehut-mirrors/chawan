@@ -2,14 +2,17 @@
 .\"
 .TH "cha\-mailcap" "5" "" "" "Mailcap support in Chawan"
 .SH Mailcap
-Chawan\[cq]s buffers can only handle HTML and plain text.
-To make Chawan recognize other file formats, the mailcap file format can
-be used.
+By default, Chawan\[cq]s buffers only handle HTML and plain text.
+The \f[CR]mailcap\f[R] file can be used to view other file formats using
+external commands, or to convert them to HTML/plain text before
+displaying them in Chawan.
 .PP
 Note that Chawan\[cq]s default mime.types file only recognizes a few
-file extensions, which may result in your entries not being executed.
-Please consult the \f[B]cha\-mime.types\f[R](5) documentation for
-details.
+file extensions, which may result in your entries not being executed if
+your system lacks an /etc/mime.types file.
+Please consult the
+.PP
+\f[B]cha\-mime.types\f[R](5) documentation for details.
 .PP
 For an exact description of the mailcap format, see \c
 .UR https://www.rfc-editor.org/rfc/rfc1524
@@ -17,62 +20,63 @@ RFC 1524
 .UE \c
 \&.
 .SS Search path
-The search path for mailcap files can be overridden using the
-configuration variable \f[CR]external.mailcap\f[R].
-.PP
-By default, the only file checked by Chawan is
-\f[CR]$HOME/.mailcap\f[R].
-.PP
-In the past, the full path from the specification was used.
-This was changed because mailcap files shipped with various systems are
-usually incompatible with the assumptions Chawan makes about mailcap
-file contents.
-You can restore the old/standard\-recommended behavior by adding this to
-your config.toml:
+The search path for mailcap files is set by the configuration variable
+\f[CR]external.mailcap\f[R].
+This matches the recommended path in the RFC:
 .IP
 .EX
-\f[B][external]\f[R]
-mailcap = [
-\[dq]\[ti]/.mailcap\[dq],
-\[dq]/etc/mailcap\[dq],
-\[dq]/usr/etc/mailcap\[dq],
-\[dq]/usr/local/etc/mailcap\[dq]
-]
+$HOME/.mailcap:/etc/mailcap:/usr/etc/mailcap:/usr/local/etc/mailcap
 .EE
+.PP
+By default, mailcap entries are only executed if the user types
+\f[CR]r\f[R] (run) after the prompt.
+Other options are to view the file with \f[CR]t\f[R] (text), or to save
+the file with \f[CR]s\f[R].
+.PP
+If a capital letter is typed (e.g.\ press shift and type \f[CR]R\f[R]),
+then a corresponding entry is appended to
+\f[CR]external.auto\-mailcap\f[R] (default:
+\f[CR]\[ti]/.chawan/auto.mailcap\f[R], or
+\f[CR]\[ti]/.config/chawan/config.toml\f[R] with XDG basedirs).
+\f[CR](T)ext\f[R] and \f[CR](S)ave\f[R] may also be used to append
+entries corresponding to the other display options.
+.PP
+Entries in auto\-mailcap are automatically executed, so it is
+recommended to add your Chawan\-specific entries there (or just set it
+to your personal mailcap file).
 .SS Format
-Chawan tries to adhere to the format described in RFC 1524, with a few
+Chawan adheres to the format described in RFC 1524, with a few
 extensions.
+.PP
+Note that text/html and text/plain entries are ignored.
 .SS Templating
 \f[CR]%s\f[R], \f[CR]%t\f[R], and named content type fields like
 \f[CR]%{charset}\f[R] work as described in the standard.
 .PP
-If no quoting is applied, Chawan will quote the templates automatically.
+If no quoting is applied, Chawan quotes the templates automatically.
 (This works with $(command substitutions) as well.)
-.PP
-DEPRECATED
 .PP
 The non\-standard template %u may be specified to get the original URL
 of the resource.
-(As far as I can tell, this is a Netscape extension that may or may not
-be compatible with other implementations.)
-.PP
-Use of this is not recommended; instead, use the \f[CR]$MAILCAP_URL\f[R]
-environment variable which is set to the same value before the execution
-of every mailcap command.
+This is a Netscape extension that may not be compatible with other
+implementations.
+As an alternative, the \f[CR]$MAILCAP_URL\f[R] environment variable is
+set to the same value.
 .SS Fields
 The \f[CR]test\f[R], \f[CR]nametemplate\f[R], \f[CR]needsterminal\f[R]
 and \f[CR]copiousoutput\f[R] fields are recognized.
-Additionally, the non\-standard \f[CR]x\-htmloutput\f[R] and
-\f[CR]x\-ansioutput\f[R] extension fields are recognized too.
+The non\-standard \f[CR]x\-htmloutput\f[R], \f[CR]x\-ansioutput\f[R],
+\f[CR]x\-saveoutput\f[R] and \f[CR]x\-needsstyle\f[R] extension fields
+are also recognized.
 .IP \[bu] 2
 When the \f[CR]test\f[R] named field is specified, the mailcap entry is
 only used if the test command returns 0.
 Warning: as of now, \f[CR]%s\f[R] does not work with \f[CR]test\f[R];
-\f[CR]test\f[R] named fields with a \f[CR]%s\f[R] template are skipped.
-Additionally, no data is piped into \f[CR]test\f[R] either.
+\f[CR]test\f[R] named fields with a \f[CR]%s\f[R] template are skipped,
+and no data is piped into \f[CR]test\f[R] commands.
 .IP \[bu] 2
 \f[CR]copiousoutput\f[R] makes Chawan redirect the output of the
-external command into a new buffer.
+external command\[cq]s output into a new buffer.
 If either x\-htmloutput or x\-ansioutput is defined too, then it is
 ignored.
 .IP \[bu] 2
@@ -85,6 +89,9 @@ output as HTML.
 formatting, etc.
 are displayed correctly.
 .IP \[bu] 2
+\f[CR]x\-saveoutput\f[R] prompts the user to save the entry\[cq]s output
+in a file.
+.IP \[bu] 2
 \f[CR]x\-needsstyle\f[R] forces CSS to be processed for the specific
 type, even if styling is disabled in the config.
 Only useful when combined with \f[CR]x\-htmloutput\f[R].
@@ -95,25 +102,9 @@ Note: as of now, \f[CR]needsterminal\f[R] does nothing if either
 \f[CR]copiousoutput\f[R] or \f[CR]x\-htmloutput\f[R] is specified.
 .IP \[bu] 2
 For a description of \f[CR]nametemplate\f[R], see the RFC.
-Note however, that it does not work with test (since %s is not supported
-there).
-.SS Environment variables
-As noted above, the \f[CR]$MAILCAP_URL\f[R] variable is set to the URL
-of the target resource before the execution of the mailcap command.
-Backwards compatibility with mailcap agents that do not support this
-variable can be achieved through shell substitution,
-e.g.\ \f[CR]${MAILCAP_URL:\-string for when it is unsupported}\f[R].
-.PP
-Note that it is not recommended to set \f[CR]%s\f[R] as the fallback,
-because it will force Chawan to download the entire file before
-displaying it even if it could have been piped into the command.
-.SS Note
-Entries with a content type of text/html or text/plain are ignored.
-.PP
-Content types that do not appear in mailcap files are handled as text
-files in case they start with \f[CR]text/\f[R].
-Otherwise, they prompt the user to save the file to the disk.
 .SS Examples
+I recommend placing entries in \f[CR]\[ti]/.chawan/auto.mailcap\f[R] (or
+\f[CR]\[ti]/.config/chawan/auto.mailcap\f[R] if you use XDG basedirs).
 .IP
 .EX
 # Note: these examples require an entry in mime.types that sets e.g. md as
@@ -123,7 +114,7 @@ Otherwise, they prompt the user to save the file to the disk.
 text/markdown; pandoc \- \-f markdown \-t html \-o \-; x\-htmloutput
 
 # Show syntax highlighting for JavaScript source files using bat.
-text/javascript; bat \-f \-l es6 \-\-file\-name ${MAILCAP_URL:\-STDIN} \-; x\-ansioutput
+text/javascript; bat \-f \-l es6 \-\-file\-name \[dq]${MAILCAP_URL:\-STDIN}\[dq] \-; x\-ansioutput
 
 # Play music using mpv, and hand over control of the terminal until mpv exits.
 audio/*; mpv \-; needsterminal

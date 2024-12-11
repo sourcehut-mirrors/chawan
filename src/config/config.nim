@@ -105,6 +105,7 @@ type
     sockdir* {.jsgetset.}: ChaPathResolved
     editor* {.jsgetset.}: string
     mailcap*: Mailcap
+    auto_mailcap*: AutoMailcap
     mime_types*: MimeTypes
     cgi_dir* {.jsgetset.}: seq[ChaPathResolved]
     urimethodmap*: URIMethodMap
@@ -366,6 +367,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
   k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap; v: TomlValue;
+  k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
@@ -620,8 +623,6 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
       deallocMem(src)
       ps.sclose()
 
-const DefaultMailcap = parseMailcap(staticRead"res/mailcap").get
-
 proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
     k: string) =
   var paths: seq[ChaPathResolved]
@@ -631,14 +632,31 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
     let ps = openFileExpand(ctx.dir, p)
     if ps != nil:
       let src = ps.recvAllOrMmap()
-      let res = parseMailcap(src.toOpenArray())
+      let res = x.parseMailcap(src.toOpenArray())
       deallocMem(src)
       ps.sclose()
-      if res.isSome:
-        x.add(res.get)
-      else:
+      if res.isNone:
         ctx.warnings.add("Error reading mailcap: " & res.error)
-  x.add(DefaultMailcap)
+
+const DefaultMailcap = block:
+  var mailcap: Mailcap
+  doAssert mailcap.parseMailcap(staticRead"res/mailcap").isSome
+  mailcap
+
+proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
+    v: TomlValue; k: string) =
+  var path: ChaPathResolved
+  ctx.parseConfigValue(path, v, k)
+  x = AutoMailcap(path: path)
+  let ps = openFileExpand(ctx.dir, path)
+  if ps != nil:
+    let src = ps.recvAllOrMmap()
+    let res = x.entries.parseMailcap(src.toOpenArray())
+    deallocMem(src)
+    ps.sclose()
+    if res.isNone:
+      ctx.warnings.add("Error reading auto-mailcap: " & res.error)
+  x.entries.add(DefaultMailcap)
 
 const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
 

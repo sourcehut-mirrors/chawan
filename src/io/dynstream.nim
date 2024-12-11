@@ -320,15 +320,12 @@ proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
   return res
 
 template toOpenArray*(mem: MaybeMappedMemory): openArray[char] =
-  if mem.len > 0:
-    cast[ptr UncheckedArray[char]](mem.p).toOpenArray(0, mem.len - 1)
-  else:
-    []
+  cast[ptr UncheckedArray[char]](mem.p).toOpenArray(0, mem.len - 1)
 
 proc sendDataLoop*(ps: PosixStream; mem: MaybeMappedMemory) =
   # only send if not mmapped; otherwise everything is already where it should be
   if mem.t != mmmtMmap:
-    ps.sendDataLoop(mem.p, mem.len)
+    ps.sendDataLoop(mem.toOpenArray())
 
 template dealloc*(mem: MaybeMappedMemory) {.error: "use deallocMem".} = discard
 

@@ -217,16 +217,20 @@ func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
 
 func startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
-  if s1.len < s2.len: return false
+  if s1.len < s2.len:
+    return false
   for i in 0 ..< s2.len:
     if s1[i].toLowerAscii() != s2[i].toLowerAscii():
       return false
   return true
 
 func endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
-  if s1.len < s2.len: return false
-  for i in countdown(s2.high, 0):
-    if s1[i].toLowerAscii() != s2[i].toLowerAscii():
+  if s1.len < s2.len:
+    return false
+  let h1 = s1.high
+  let h2 = s2.high
+  for i in 0 ..< s2.len:
+    if s1[h1 - i].toLowerAscii() != s2[h2 - i].toLowerAscii():
       return false
   return true
 

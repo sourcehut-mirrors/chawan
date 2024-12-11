@@ -1,10 +1,13 @@
 # See https://www.rfc-editor.org/rfc/rfc1524
 
+import std/os
 import std/osproc
+import std/posix
 import std/strutils
 
-import types/url
+import io/dynstream
 import types/opt
+import types/url
 import utils/twtstr
 
 type
@@ -19,11 +22,11 @@ type
     mfCopiousoutput = "copiousoutput"
     mfHtmloutput = "x-htmloutput" # from w3m
     mfAnsioutput = "x-ansioutput" # Chawan extension
+    mfSaveoutput = "x-saveoutput" # Chawan extension
     mfNeedsstyle = "x-needsstyle" # Chawan extension
 
   MailcapEntry* = object
-    mt*: string
-    subt*: string
+    t*: string
     cmd*: string
     flags*: set[MailcapFlag]
     nametemplate*: string
@@ -31,6 +34,36 @@ type
     test*: string
 
   Mailcap* = seq[MailcapEntry]
+
+  AutoMailcap* = object
+    path*: string
+    entries*: Mailcap
+
+proc serializeCommand(s: var string; cmd: string) =
+  for c in cmd:
+    if c == ';':
+      s &= '\\'
+    s &= c
+
+proc `$`*(entry: MailcapEntry): string =
+  var s = ""
+  s.serializeCommand(entry.t)
+  s &= ';'
+  s.serializeCommand(entry.cmd)
+  for flag in MailcapFlag:
+    if flag in entry.flags:
+      s &= ';' & $flag
+  if entry.nametemplate != "":
+    s &= ";nametemplate="
+    s.serializeCommand(entry.nametemplate)
+  if entry.edit != "":
+    s &= ";edit="
+    s.serializeCommand(entry.edit)
+  if entry.test != "":
+    s &= ";test="
+    s.serializeCommand(entry.test)
+  s &= '\n'
+  return s
 
 proc has(state: MailcapParser; buf: openArray[char]): bool {.inline.} =
   return state.at < buf.len
@@ -75,41 +108,34 @@ proc skipLine(state: var MailcapParser; buf: openArray[char]) =
     if c == '\n':
       break
 
-proc consumeTypeField(state: var MailcapParser; buf: openArray[char]):
-    Result[string, string] =
-  var s = ""
-  # type
-  while state.has(buf):
-    let c = state.consume(buf)
-    if c == '/':
-      s &= c
-      break
-    if c notin AsciiAlphaNumeric + {'-', '*'}:
-      return err("line " & $state.line & ": invalid character in type field: " &
-        c)
-    s &= c.toLowerAscii()
-  if not state.has(buf):
-    return err("Missing subtype")
-  # subtype
+proc consumeTypeField(state: var MailcapParser; buf: openArray[char];
+    outs: var string): Err[string] =
+  var nslash = 0
   while state.has(buf):
     let c = state.consume(buf)
     if c in AsciiWhitespace + {';'}:
       state.reconsume(c)
       break
-    if c notin AsciiAlphaNumeric + {'-', '.', '*', '_', '+'}:
+    if c == '/':
+      inc nslash
+    elif c notin AsciiAlphaNumeric + {'-', '.', '*', '_', '+'}:
       return err("line " & $state.line &
-        ": invalid character in subtype field: " & c)
-    s &= c.toLowerAscii()
+        ": invalid character in type field: " & c)
+    outs &= c.toLowerAscii()
+  if nslash == 0:
+    # Accept types without a subtype - RFC calls this "implicit-wild".
+    outs &= "/*"
+  if nslash > 1:
+    return err("line " & $state.line & ": too many slash characters")
   var c: char
   if not state.skipBlanks(buf, c) or c != ';':
     return err("Semicolon not found")
-  return ok(s)
+  return ok()
 
-proc consumeCommand(state: var MailcapParser; buf: openArray[char]):
-    Result[string, string] =
+proc consumeCommand(state: var MailcapParser; buf: openArray[char];
+    outs: var string): Err[string] =
   state.skipBlanks(buf)
   var quoted = false
-  var s = ""
   while state.has(buf):
     let c = state.consume(buf)
     if not quoted:
@@ -117,7 +143,7 @@ proc consumeCommand(state: var MailcapParser; buf: openArray[char]):
         continue
       if c == ';' or c == '\n':
         state.reconsume(c)
-        return ok(s)
+        return ok()
       if c == '\\':
         quoted = true
         continue
@@ -126,8 +152,8 @@ proc consumeCommand(state: var MailcapParser; buf: openArray[char]):
           c)
     else:
       quoted = false
-    s &= c
-  return ok(s)
+    outs &= c
+  return ok()
 
 type NamedField = enum
   nmTest = "test"
@@ -147,7 +173,8 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
     of '\r':
       continue
     of '=':
-      let cmd = ?state.consumeCommand(s)
+      var cmd = ""
+      ?state.consumeCommand(buf, cmd)
       while s.len > 0 and s[^1] in AsciiWhitespace:
         s.setLen(s.len - 1)
       if (let x = parseEnumNoCase[NamedField](s); x.isSome):
@@ -155,7 +182,7 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
         of nmTest: entry.test = cmd
         of nmNametemplate: entry.nametemplate = cmd
         of nmEdit: entry.edit = cmd
-      return ok(state.consume(s) == ';')
+      return ok(state.has(buf) and state.consume(buf) == ';')
     elif c in Controls:
       return err("line " & $state.line & ": invalid character in field: " & c)
     else:
@@ -166,9 +193,9 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
     entry.flags.incl(x.get)
   return ok(res)
 
-proc parseMailcap*(buf: openArray[char]): Result[Mailcap, string] =
+proc parseMailcap*(omailcap: var Mailcap; buf: openArray[char]): Err[string] =
   var state = MailcapParser(line: 1)
-  var mailcap: Mailcap
+  var mailcap = default(Mailcap)
   while state.has(buf):
     let c = state.consume(buf)
     if c == '#':
@@ -180,19 +207,15 @@ proc parseMailcap*(buf: openArray[char]): Result[Mailcap, string] =
     if c2 == '\n' or c2 == '\r':
       continue
     state.reconsume(c2)
-    let t = ?state.consumeTypeField(buf)
-    let mt = t.until('/') #TODO this could be more efficient
-    let subt = t[mt.len + 1 .. ^1]
-    var entry = MailcapEntry(
-      mt: mt,
-      subt: subt,
-      cmd: ?state.consumeCommand(buf)
-    )
-    if state.consume(buf) == ';':
+    var entry = MailcapEntry()
+    ?state.consumeTypeField(buf, entry.t)
+    ?state.consumeCommand(buf, entry.cmd)
+    if state.has(buf) and state.consume(buf) == ';':
       while ?state.consumeField(buf, entry):
         discard
     mailcap.add(entry)
-  return ok(mailcap)
+  omailcap.add(mailcap)
+  return ok()
 
 # Mostly based on w3m's mailcap quote/unquote
 type UnquoteState = enum
@@ -315,12 +338,12 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
 
 proc findMailcapEntry*(mailcap: var Mailcap; contentType, outpath: string;
     url: URL): int =
-  let mt = contentType.until('/')
-  let st = contentType.until(AsciiWhitespace + {';'}, mt.len + 1)
+  let mt = contentType.until('/') & '/'
+  let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
   for i, entry in mailcap.mypairs:
-    if entry.mt != "*" and not entry.mt.equalsIgnoreCase(mt):
+    if not entry.t.startsWith("*/") and not entry.t.startsWithIgnoreCase(mt):
       continue
-    if entry.subt != "*" and not entry.subt.equalsIgnoreCase(st):
+    if not entry.t.endsWith("/*") and not entry.t.endsWithIgnoreCase(st):
       continue
     if entry.test != "":
       var canpipe = true
@@ -331,3 +354,19 @@ proc findMailcapEntry*(mailcap: var Mailcap; contentType, outpath: string;
         continue
     return i
   return -1
+
+proc saveEntry*(mailcap: var AutoMailcap; entry: MailcapEntry): bool =
+  let s = $entry
+  try:
+    let pdir = mailcap.path.parentDir()
+    if not dirExists(pdir):
+      createDir(pdir)
+    let ps = newPosixStream(mailcap.path, O_WRONLY or O_APPEND or O_CREAT, 0o644)
+    if ps == nil:
+      return false
+    ps.sendDataLoop(s)
+    ps.sclose()
+  except IOError, OSError:
+    return false
+  mailcap.entries.add(entry)
+  return true

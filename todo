@@ -21,6 +21,17 @@ config:
   proto.gemini.known-hosts = '/some/path'; maybe also with inline JS?)
 - add RPC for CGI scripts e.g. toggle settings/issue downloads/etc
 	* also some way to set permissions for RPC calls
+mailcap:
+- save custom command?
+- w3mmee extensions?
+	* x-cgioutput would allow for easy implementation of an
+	  in-browser image viewer
+		- open question: how to decide if I want cgioutput or
+		  feh?
+			* maybe an internal mime type attribute?
+	* browsecap looks cleaner than urimethodmap too, and would be
+	  useful for mailto
+		- it overlaps with siteconf quite a bit...
 buffer:
 - important: validate returned values
 	* do not block container when receiving buffer data; if invalid, kill

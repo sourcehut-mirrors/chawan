@@ -318,6 +318,13 @@ the line number.</td>
 </tr>
 
 <tr>
+<td>auto-mailcap</td>
+<td>path</td>
+<td>Mailcap file for entries that are automatically executed.<br>
+The "Open as" prompt also saves entries in this file.</td>
+</tr>
+
+<tr>
 <td>cgi-dir</td>
 <td>array of paths</td>
 <td>Search path for <!-- MANOFF -->[local CGI](localcgi.md) scripts.<!-- MANON -->

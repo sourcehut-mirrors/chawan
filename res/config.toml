@@ -258,8 +258,12 @@ display-charset = "auto"
 
 [external]
 mailcap = [
-	"~/.mailcap"
+	"~/.mailcap",
+	"/etc/mailcap",
+	"/usr/etc/mailcap",
+	"/usr/local/etc/mailcap"
 ]
+auto-mailcap = "$CHA_CONFIG_DIR/auto.mailcap"
 mime-types = [
 	"~/.mime.types",
 	"/etc/mime.types",

@@ -72,6 +72,7 @@ type
     lmDownload = "(Download)Save file to: "
     lmBufferFile = "(Upload)Filename: "
     lmAlert = "Alert: "
+    lmMailcap = "Mailcap: "
 
   ProcMapItem = object
     container*: Container
@@ -101,6 +102,14 @@ type
 
   LineDataAuth = ref object of LineData
     url: URL
+
+  LineDataMailcap = ref object of LineData
+    container: Container
+    ostream: PosixStream
+    contentType: string
+    i: int
+    response: Response
+    sx: int
 
   NavDirection = enum
     ndPrev = "prev"
@@ -173,6 +182,17 @@ type
   ContainerData* = ref object of MapData
     container*: Container
 
+  CheckMailcapFlag = enum
+    cmfConnect, cmfHTML, cmfFound, cmfRedirected, cmfPrompt, cmfNeedsstyle,
+    cmfSaveoutput
+
+  MailcapResult = object
+    entry: MailcapEntry
+    flags: set[CheckMailcapFlag]
+    ostream: PosixStream
+    ostreamOutputId: int
+    cmd: string
+
 jsDestructor(Pager)
 
 # Forward declarations
@@ -181,6 +201,10 @@ proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper
 proc addLoaderClient(pager: Pager; pid: int; config: LoaderClientConfig;
   clonedFrom = -1): ClientKey
 proc alert*(pager: Pager; msg: string)
+proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
+  contentType: string; i: int; response: Response; sx: int)
+proc connected2(pager: Pager; container: Container; res: MailcapResult;
+  response: Response)
 proc draw(pager: Pager)
 proc dumpBuffers(pager: Pager)
 proc evalJS(pager: Pager; src, filename: string; module = false): JSValue
@@ -197,6 +221,9 @@ proc openMenu(pager: Pager; x = -1; y = -1)
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   title: string)
 proc refreshStatusMsg(pager: Pager)
+proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
+  istreamOutputId: int; contentType: string; entry: MailcapEntry):
+  MailcapResult
 proc showAlerts(pager: Pager)
 proc updateReadLine(pager: Pager)
 
@@ -1229,7 +1256,7 @@ proc draw(pager: Pager) =
   pager.term.flush()
 
 proc writeAskPrompt(pager: Pager; s = "") =
-  let maxwidth = pager.status.grid.width - s.len
+  let maxwidth = pager.status.grid.width - s.width()
   let i = pager.writeStatusMessage(pager.askprompt, maxwidth = maxwidth)
   pager.askcursor = pager.writeStatusMessage(s, start = i)
 
@@ -1246,14 +1273,16 @@ proc askChar(pager: Pager; prompt: string): Promise[string] {.jsfunc.} =
   return pager.askcharpromise
 
 proc fulfillAsk(pager: Pager; y: bool) =
-  pager.askpromise.resolve(y)
+  let p = pager.askpromise
   pager.askpromise = nil
   pager.askprompt = ""
+  p.resolve(y)
 
 proc fulfillCharAsk(pager: Pager; s: string) =
-  pager.askcharpromise.resolve(s)
+  let p = pager.askcharpromise
   pager.askcharpromise = nil
   pager.askprompt = ""
+  p.resolve(s)
 
 proc addContainer*(pager: Pager; container: Container) =
   container.parent = pager.container
@@ -2177,6 +2206,19 @@ proc updateReadLine(pager: Pager) =
           )
         else:
           pager.saveTo(data, lineedit.news)
+      of lmMailcap:
+        var mailcap = default(Mailcap)
+        let res = mailcap.parseMailcap(lineedit.news)
+        let data = LineDataMailcap(pager.lineData)
+        if res.isSome and mailcap.len == 1:
+          let res = pager.runMailcap(data.container.url, data.ostream,
+            data.response.outputId, data.contentType, mailcap[0])
+          pager.connected2(data.container, res, data.response)
+        else:
+          if res.isNone:
+            pager.alert(res.error)
+          pager.askMailcap(data.container, data.ostream, data.contentType,
+            data.i, data.response, data.sx)
       of lmISearchF, lmISearchB, lmAlert: discard
     of lesCancel:
       case pager.linemode
@@ -2186,6 +2228,10 @@ proc updateReadLine(pager: Pager) =
       of lmDownload:
         let data = LineDataDownload(pager.lineData)
         data.stream.sclose()
+      of lmMailcap:
+        let data = LineDataMailcap(pager.lineData)
+        pager.askMailcap(data.container, data.ostream, data.contentType,
+          data.i, data.response, data.sx)
       else: discard
       pager.lineData = nil
   if lineedit.state in {lesCancel, lesFinish} and pager.lineedit == lineedit:
@@ -2264,15 +2310,6 @@ proc externFilterSource(pager: Pager; cmd: string; c: Container = nil;
   let container = pager.newContainerFrom(fromc, contentType)
   pager.addContainer(container)
   container.filter = BufferFilter(cmd: cmd)
-
-type CheckMailcapResult = object
-  ostream: PosixStream
-  ostreamOutputId: int
-  connect: bool
-  ishtml: bool
-  found: bool
-  redirected: bool # whether or not ostream is the same as istream
-  needsstyle: bool
 
 proc execPipe(pager: Pager; cmd: string; ps, os, closeme: PosixStream): int =
   case (let pid = myFork(); pid)
@@ -2430,9 +2467,9 @@ proc filterBuffer(pager: Pager; ps: PosixStream; cmd: string): PosixStream =
 # If needsterminal is specified, and stdout is not being read, then the
 # pager is suspended until the command exits.
 #TODO add support for edit/compose, better error handling
-proc checkMailcap0(pager: Pager; url: URL; stream: PosixStream;
+proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     istreamOutputId: int; contentType: string; entry: MailcapEntry):
-    CheckMailcapResult =
+    MailcapResult =
   let ext = url.pathname.afterLast('.')
   var outpath = pager.getTempFile(ext)
   if entry.nametemplate != "":
@@ -2443,7 +2480,8 @@ proc checkMailcap0(pager: Pager; url: URL; stream: PosixStream;
   let needsterminal = mfNeedsterminal in entry.flags
   putEnv("MAILCAP_URL", $url)
   block needsConnect:
-    if entry.flags * {mfCopiousoutput, mfHtmloutput, mfAnsioutput} == {}:
+    if entry.flags * {mfCopiousoutput, mfHtmloutput, mfAnsioutput,
+        mfSaveoutput} == {}:
       # No output. Resume here, so that blocking needsterminal filters work.
       pager.loader.resume(istreamOutputId)
       if canpipe:
@@ -2472,46 +2510,21 @@ proc checkMailcap0(pager: Pager; url: URL; stream: PosixStream;
     pager.loader.passFd(url.pathname, pins.fd)
     pins.safeClose()
     let response = pager.loader.doRequest(newRequest(url))
-    return CheckMailcapResult(
-      connect: true,
-      ostream: response.body,
-      ostreamOutputId: response.outputId,
-      ishtml: ishtml,
+    var flags = {cmfConnect, cmfFound, cmfRedirected}
+    if mfNeedsstyle in entry.flags or mfAnsioutput in entry.flags:
       # ansi always needs styles
-      needsstyle: mfNeedsstyle in entry.flags or mfAnsioutput in entry.flags,
-      found: true,
-      redirected: true
+      flags.incl(cmfNeedsstyle)
+    if mfSaveoutput in entry.flags:
+      flags.incl(cmfSaveoutput)
+    if ishtml:
+      flags.incl(cmfHTML)
+    return MailcapResult(
+      flags: flags,
+      ostream: response.body,
+      ostreamOutputId: response.outputId
     )
   delEnv("MAILCAP_URL")
-  return CheckMailcapResult(connect: false, found: true)
-
-proc checkMailcap(pager: Pager; container: Container; stream: PosixStream;
-    istreamOutputId: int; contentType: string): CheckMailcapResult =
-  # contentType must exist, because we set it in applyResponse
-  let shortContentType = container.contentType.get
-  var stream = stream
-  if container.filter != nil:
-    stream = pager.filterBuffer(stream, container.filter.cmd)
-  if shortContentType.equalsIgnoreCase("text/html"):
-    # We support text/html natively, so it would make little sense to execute
-    # mailcap filters for it.
-    return CheckMailcapResult(
-      connect: true,
-      ostream: stream,
-      ishtml: true,
-      found: true
-    )
-  if shortContentType.equalsIgnoreCase("text/plain"):
-    # text/plain could potentially be useful. Unfortunately, many mailcaps
-    # include a text/plain entry with less by default, so it's probably better
-    # to ignore this.
-    return CheckMailcapResult(connect: true, ostream: stream, found: true)
-  let url = container.url
-  let i = pager.config.external.mailcap.findMailcapEntry(contentType, "", url)
-  if i == -1:
-    return CheckMailcapResult(connect: true, ostream: stream, found: false)
-  return pager.checkMailcap0(url, stream, istreamOutputId, contentType,
-    pager.config.external.mailcap[i])
+  return MailcapResult(flags: {cmfFound})
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
   let replaceBackup = if container.replaceBackup != nil:
@@ -2559,7 +2572,8 @@ proc redirect(pager: Pager; container: Container; response: Response;
     pager.alert("Error: maximum redirection depth reached")
     pager.deleteContainer(container, failTarget)
 
-proc askDownloadPath(pager: Pager; container: Container; response: Response) =
+proc askDownloadPath(pager: Pager; container: Container; stream: PosixStream;
+    response: Response) =
   var buf = string(pager.config.external.download_dir)
   let pathname = container.url.pathname
   if buf.len == 0 or buf[^1] != '/':
@@ -2569,16 +2583,145 @@ proc askDownloadPath(pager: Pager; container: Container; response: Response) =
   else:
     buf &= container.url.pathname.afterLast('/').percentDecode()
   pager.setLineEdit(lmDownload, buf)
-  pager.lineData = LineDataDownload(
-    outputId: response.outputId,
-    stream: response.body
-  )
+  pager.lineData = LineDataDownload(outputId: response.outputId, stream: stream)
   pager.deleteContainer(container, container.find(ndAny))
   pager.refreshStatusMsg()
   dec pager.numload
 
+proc connected2(pager: Pager; container: Container; res: MailcapResult;
+    response: Response) =
+  if cfSave in container.flags or cmfSaveoutput in res.flags:
+    container.flags.incl(cfSave) # saveoutput doesn't include it before
+    pager.askDownloadPath(container, res.ostream, response)
+  elif cmfConnect in res.flags:
+    if cmfHTML in res.flags:
+      container.flags.incl(cfIsHTML)
+    else:
+      container.flags.excl(cfIsHTML)
+    if cmfNeedsstyle in res.flags: # override
+      container.config.styling = true
+    # buffer now actually exists; create a process for it
+    var attrs = pager.attrs
+    # subtract status line height
+    attrs.height -= 1
+    attrs.heightPx -= attrs.ppl
+    container.process = pager.forkserver.forkBuffer(
+      container.config,
+      container.url,
+      attrs,
+      cmfHTML in res.flags,
+      container.charsetStack
+    )
+    pager.procmap.add(ProcMapItem(
+      container: container,
+      ostream: res.ostream,
+      redirected: cmfRedirected in res.flags,
+      ostreamOutputId: res.ostreamOutputId,
+      istreamOutputId: response.outputId
+    ))
+    if container.replace != nil:
+      pager.deleteContainer(container.replace, container.find(ndAny))
+      container.replace = nil
+  else:
+    dec pager.numload
+    pager.deleteContainer(container, container.find(ndAny))
+    pager.refreshStatusMsg()
+
+proc saveEntry(pager: Pager; entry: MailcapEntry) =
+  if not pager.config.external.auto_mailcap.saveEntry(entry):
+    pager.alert("Could not write to " & pager.config.external.auto_mailcap.path)
+
+proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int):
+    string =
+  var msg = "Open " & shortContentType & " as (shift=always): (t)ext, (s)ave"
+  if i != -1:
+    msg &= ", (r)un \"" & pager.config.external.mailcap[i].cmd.strip() & '"'
+  msg &= ", (e)dit entry, (C-c)ancel"
+  msg = msg.toValidUTF8()
+  var mw = msg.width()
+  var j = 0
+  var x = 0
+  while j < msg.len:
+    let pj = j
+    let px = x
+    x += msg.nextUTF8(j).width()
+    if mw - px <= pager.attrs.width or x > sx:
+      j = pj
+      sx = px
+      break
+  msg = msg.substr(j)
+  return msg
+
+proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
+    contentType: string; i: int; response: Response; sx: int) =
+  var sx = sx
+  let msg = pager.askMailcapMsg(container.contentType.get, i, sx)
+  pager.askChar(msg).then(proc(s: string) =
+    if s.len != 1:
+      pager.askMailcap(container, ostream, contentType, i, response, sx)
+      return
+    let c = s[0]
+    if c in {'\3', 'q'}:
+      pager.alert("Canceled")
+      ostream.sclose()
+      pager.connected2(container, MailcapResult(), response)
+    elif c == 'e':
+      #TODO no idea how to implement save :/
+      # probably it should run use a custom reader that runs through
+      # auto.mailcap clearing any other entry. but maybe it's better to
+      # add a full blown editor like w3m has at that point...
+      var s = container.contentType.get & ';'
+      if i != -1:
+        s = $pager.config.external.mailcap[i]
+      pager.setLineEdit(lmMailcap, s)
+      pager.lineData = LineDataMailcap(
+        container: container,
+        ostream: ostream,
+        contentType: contentType,
+        i: i,
+        response: response,
+        sx: sx
+      )
+    elif c in {'t', 'T'}:
+      pager.connected2(container, MailcapResult(
+        flags: {cmfConnect},
+        ostream: ostream
+      ), response)
+      if c == 'T':
+        pager.saveEntry(MailcapEntry(
+          t: container.contentType.get,
+          cmd: "cat",
+          flags: {mfCopiousoutput}
+        ))
+    elif c in {'s', 'S'}:
+      container.flags.incl(cfSave)
+      pager.connected2(container, MailcapResult(
+        flags: {cmfConnect},
+        ostream: ostream
+      ), response)
+      if c == 'S':
+        pager.saveEntry(MailcapEntry(
+          t: container.contentType.get,
+          cmd: "cat",
+          flags: {mfSaveoutput}
+        ))
+    elif i != -1 and c in {'r', 'R'}:
+      let res = pager.runMailcap(container.url, ostream, response.outputId,
+        contentType, pager.config.external.mailcap[i])
+      pager.connected2(container, res, response)
+      if c == 'R':
+        pager.saveEntry(pager.config.external.mailcap[i])
+    else:
+      var sx = sx
+      if c == 'h':
+        dec sx
+      if c == 'l':
+        inc sx
+      pager.askMailcap(container, ostream, contentType, i, response, max(sx, 0))
+  )
+
 proc connected(pager: Pager; container: Container; response: Response) =
-  let istream = response.body
+  var istream = PosixStream(response.body)
   container.applyResponse(response, pager.config.external.mime_types)
   if response.status == 401: # unauthorized
     pager.setLineEdit(lmUsername, container.url.username)
@@ -2590,56 +2733,37 @@ proc connected(pager: Pager; container: Container; response: Response) =
   # variable.)
   if cfUserRequested in container.flags:
     pager.hasload = true
-  if cfSave in container.flags:
-    # download queried by user
-    pager.askDownloadPath(container, response)
-    return
-  let realContentType = if "Content-Type" in response.headers:
+  var contentType = if "Content-Type" in response.headers:
     response.headers["Content-Type"]
   else:
     # both contentType and charset must be set by applyResponse.
     container.contentType.get & ";charset=" & $container.charset
-  let mailcapRes = pager.checkMailcap(container, istream, response.outputId,
-    realContentType)
+  contentType = contentType.toValidUTF8()
+  # contentType must exist, because we set it in applyResponse
   let shortContentType = container.contentType.get
-  if not mailcapRes.found and
-      not shortContentType.startsWithIgnoreCase("text/") and
-      not shortContentType.isJavaScriptType():
-    pager.askDownloadPath(container, response)
-    return
-  if mailcapRes.connect:
-    if mailcapRes.ishtml:
-      container.flags.incl(cfIsHTML)
-    else:
-      container.flags.excl(cfIsHTML)
-    if mailcapRes.needsstyle: # override
-      container.config.styling = true
-    # buffer now actually exists; create a process for it
-    var attrs = pager.attrs
-    # subtract status line height
-    attrs.height -= 1
-    attrs.heightPx -= attrs.ppl
-    container.process = pager.forkserver.forkBuffer(
-      container.config,
-      container.url,
-      attrs,
-      mailcapRes.ishtml,
-      container.charsetStack
-    )
-    pager.procmap.add(ProcMapItem(
-      container: container,
-      ostream: mailcapRes.ostream,
-      redirected: mailcapRes.redirected,
-      ostreamOutputId: mailcapRes.ostreamOutputId,
-      istreamOutputId: response.outputId
-    ))
-    if container.replace != nil:
-      pager.deleteContainer(container.replace, container.find(ndAny))
-      container.replace = nil
+  if container.filter != nil:
+    istream = pager.filterBuffer(istream, container.filter.cmd)
+  if shortContentType.equalsIgnoreCase("text/html"):
+    pager.connected2(container, MailcapResult(
+      flags: {cmfConnect, cmfHTML, cmfFound},
+      ostream: istream
+    ), response)
+  elif shortContentType.equalsIgnoreCase("text/plain"):
+    pager.connected2(container, MailcapResult(
+      flags: {cmfConnect, cmfFound},
+      ostream: istream
+    ), response)
   else:
-    dec pager.numload
-    pager.deleteContainer(container, container.find(ndAny))
-    pager.refreshStatusMsg()
+    let i = pager.config.external.auto_mailcap.entries
+      .findMailcapEntry(contentType, "", container.url)
+    if i != -1:
+      let res = pager.runMailcap(container.url, istream, response.outputId,
+        contentType, pager.config.external.auto_mailcap.entries[i])
+      pager.connected2(container, res, response)
+    else:
+      let i = pager.config.external.mailcap.findMailcapEntry(contentType, "",
+        container.url)
+      pager.askMailcap(container, istream, contentType, i, response, 0)
 
 proc unregisterFd(pager: Pager; fd: int) =
   pager.pollData.unregister(fd)
