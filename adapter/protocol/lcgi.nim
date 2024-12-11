@@ -33,7 +33,7 @@ proc openSocket(os: PosixStream; host, port, resFail, connFail: string;
     err = getaddrinfo(cstring(host), cstring(port), addr hints, res)
     if err == 0:
       break
-  if err < 0:
+  if err != 0:
     os.die(resFail, $gai_strerror(err))
   let sock = socket(res.ai_family, res.ai_socktype, res.ai_protocol)
   if cint(sock) < 0:
