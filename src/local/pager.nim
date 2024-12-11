@@ -2763,7 +2763,13 @@ proc connected(pager: Pager; container: Container; response: Response) =
     else:
       let i = pager.config.external.mailcap.findMailcapEntry(contentType, "",
         container.url)
-      pager.askMailcap(container, istream, contentType, i, response, 0)
+      if i == -1 and container.contentType.get.isTextType():
+        pager.connected2(container, MailcapResult(
+          flags: {cmfConnect, cmfFound},
+          ostream: istream
+        ), response)
+      else:
+        pager.askMailcap(container, istream, contentType, i, response, 0)
 
 proc unregisterFd(pager: Pager; fd: int) =
   pager.pollData.unregister(fd)

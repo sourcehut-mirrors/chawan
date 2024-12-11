@@ -76,3 +76,6 @@ const JavaScriptTypes = [
 
 func isJavaScriptType*(s: string): bool =
   return JavaScriptTypes.binarySearch(s) != -1
+
+func isTextType*(s: string): bool =
+  return s.startsWithIgnoreCase("text/") or s.isJavaScriptType()
