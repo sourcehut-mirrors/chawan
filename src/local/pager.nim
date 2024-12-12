@@ -752,7 +752,7 @@ proc input(pager: Pager): EmptyPromise =
         pager.fulfillAsk(false)
     elif pager.askcharpromise != nil:
       buf &= c
-      if buf.validateUtf8Surr() != -1:
+      if buf.validateUTF8Surr() != -1:
         continue
       pager.fulfillCharAsk(buf)
     elif pager.lineedit != nil:
