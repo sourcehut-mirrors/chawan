@@ -1006,11 +1006,6 @@ func serialize*(url: URL; excludeHash = false; excludePassword = false):
   if not excludeHash:
     result &= url.hash
 
-func serialize*(url: Option[URL]): string =
-  if url.isNone:
-    return ""
-  return url.get.serialize()
-
 func equals*(a, b: URL; excludeHash = false): bool =
   return a.serialize(excludeHash) == b.serialize(excludeHash)
 
