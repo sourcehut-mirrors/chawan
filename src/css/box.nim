@@ -59,7 +59,7 @@ type
   InlineFragment* = ref object
     state*: InlineFragmentState
     render*: BoxRenderState
-    computed*: CSSComputedValues
+    computed*: CSSValues
     node*: StyledNode
     splitType*: set[SplitType]
     case t*: InlineFragmentType
@@ -86,7 +86,7 @@ type
   BlockBox* = ref object
     state*: BoxLayoutState
     render*: BoxRenderState
-    computed*: CSSComputedValues
+    computed*: CSSValues
     node*: StyledNode
     inline*: InlineFragment
     children*: seq[BlockBox]

@@ -52,7 +52,7 @@ type
     of stText:
       discard
     of stElement:
-      computed*: CSSComputedValues
+      computed*: CSSValues
       children*: seq[StyledNode]
       # All elements our style depends on, for each dependency type d.
       depends*: DependencyInfo
@@ -106,7 +106,7 @@ func newStyledElement*(element: Element): StyledNode =
   return StyledNode(t: stElement, node: element)
 
 func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
-    computed: CSSComputedValues): StyledNode =
+    computed: CSSValues): StyledNode =
   return StyledNode(
     t: stElement,
     computed: computed,

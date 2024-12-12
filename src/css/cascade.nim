@@ -122,7 +122,7 @@ func calcPresHints(element: Element): seq[CSSComputedEntry] =
   result = @[]
   template set_cv(t, x, b: untyped) =
     const v = valueType(t)
-    result.add(makeEntry(t, CSSComputedValue(v: v, x: b)))
+    result.add(makeEntry(t, CSSValue(v: v, x: b)))
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
     if s.isSome:
@@ -174,7 +174,7 @@ func calcPresHints(element: Element): seq[CSSComputedEntry] =
       if i <= 65534:
         set_cv cptChaRowspan, integer, int(i)
   template set_bgcolor_is_canvas =
-    var val = CSSComputedValueBit()
+    var val = CSSValueBit()
     val.bgcolorIsCanvas = true
     result.add(makeEntry(cptBgcolorIsCanvas, val))
   template map_cellspacing =
@@ -235,8 +235,8 @@ type
   CSSValueEntryMap = array[CSSOrigin, CSSValueEntryObj]
 
 func buildComputedValues(rules: CSSValueEntryMap;
-    presHints: openArray[CSSComputedEntry]; parent: CSSComputedValues):
-    CSSComputedValues =
+    presHints: openArray[CSSComputedEntry]; parent: CSSValues):
+    CSSValues =
   new(result)
   var inited = default(array[CSSPropertyType, bool])
   var uaInited = default(array[CSSPropertyType, bool])
@@ -286,7 +286,7 @@ proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
     map.normal.add(rule.normalVals)
     map.important.add(rule.importantVals)
 
-proc applyDeclarations(styledNode: StyledNode; parent: CSSComputedValues;
+proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
     map: RuleListMap; styling: bool) =
   var rules: CSSValueEntryMap
   var presHints: seq[CSSComputedEntry] = @[]

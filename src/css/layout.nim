@@ -41,7 +41,7 @@ type
     attrsp: ptr WindowAttributes
     cellSize: Size # size(w = attrsp.ppc, h = attrsp.ppl)
     positioned: seq[PositionedItem]
-    myRootProperties: CSSComputedValues
+    myRootProperties: CSSValues
     # placeholder text data
     imgText: StyledNode
     audioText: StyledNode
@@ -268,7 +268,7 @@ type
 
   InlineContext = object
     state: BoxLayoutState
-    computed: CSSComputedValues
+    computed: CSSValues
     bctx: ptr BlockContext
     bfcOffset: Offset
     lbstate: LineBoxState
@@ -296,11 +296,11 @@ type
     firstrw: int # first rune width of the current word
     prevrw: int # last processed rune's width
 
-func whitespacepre(computed: CSSComputedValues): bool =
+func whitespacepre(computed: CSSValues): bool =
   computed{"white-space"} in {WhitespacePre, WhitespacePreLine,
     WhitespacePreWrap}
 
-func nowrap(computed: CSSComputedValues): bool =
+func nowrap(computed: CSSValues): bool =
   computed{"white-space"} in {WhitespaceNowrap, WhitespacePre}
 
 func cellWidth(lctx: LayoutContext): int =
@@ -645,7 +645,7 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     ictx.initLine()
 
 func shouldWrap(ictx: InlineContext; w: LayoutUnit;
-    pcomputed: CSSComputedValues): bool =
+    pcomputed: CSSValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
     return false
   if ictx.space.w.t == scMaxContent:
@@ -832,7 +832,7 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
   state.lastrw = state.prevrw
 
 func initInlineContext(bctx: var BlockContext; space: AvailableSpace;
-    bfcOffset: Offset; padding: RelativeRect; computed: CSSComputedValues):
+    bfcOffset: Offset; padding: RelativeRect; computed: CSSValues):
     InlineContext =
   return InlineContext(
     bctx: addr bctx,
@@ -900,14 +900,14 @@ proc layoutText(ictx: var InlineContext; state: var InlineState; s: string) =
     ictx.layoutTextLoop(state, s)
 
 func spx(l: CSSLength; lctx: LayoutContext; p: SizeConstraint;
-    computed: CSSComputedValues; padding: LayoutUnit): LayoutUnit =
+    computed: CSSValues; padding: LayoutUnit): LayoutUnit =
   let u = l.px(lctx, p)
   if computed{"box-sizing"} == BoxSizingBorderBox:
     return max(u - padding, 0)
   return max(u, 0)
 
 proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
-    parentWidth: SizeConstraint; computed: CSSComputedValues;
+    parentWidth: SizeConstraint; computed: CSSValues;
     isauto = false) =
   if not sizes.space.w.isDefinite() or not parentWidth.isDefinite():
     # width is indefinite, so no conflicts can be resolved here.
@@ -935,7 +935,7 @@ proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
       sizes.margin[dtHorizontal].send = underflow div 2
 
 proc resolveMargins(lctx: LayoutContext; availableWidth: SizeConstraint;
-    computed: CSSComputedValues): RelativeRect =
+    computed: CSSValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
   return [
     dtHorizontal: Span(
@@ -949,7 +949,7 @@ proc resolveMargins(lctx: LayoutContext; availableWidth: SizeConstraint;
   ]
 
 proc resolvePadding(lctx: LayoutContext; availableWidth: SizeConstraint;
-    computed: CSSComputedValues): RelativeRect =
+    computed: CSSValues): RelativeRect =
   # Note: we use availableWidth for percentage resolution intentionally.
   return [
     dtHorizontal: Span(
@@ -963,7 +963,7 @@ proc resolvePadding(lctx: LayoutContext; availableWidth: SizeConstraint;
   ]
 
 func resolvePositioned(lctx: LayoutContext; size: Size;
-    computed: CSSComputedValues): RelativeRect =
+    computed: CSSValues): RelativeRect =
   # As per standard, vertical percentages refer to the *height*, not the width
   # (unlike with margin/padding)
   return [
@@ -983,7 +983,7 @@ const DefaultBounds = Bounds(
 )
 
 func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
-    computed: CSSComputedValues): Bounds =
+    computed: CSSValues): Bounds =
   var res = DefaultBounds
   block:
     let sc = space.w
@@ -1010,7 +1010,7 @@ func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
 const CvalSizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
 
 proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
-    positioned: RelativeRect; computed: CSSComputedValues;
+    positioned: RelativeRect; computed: CSSValues;
     lctx: LayoutContext) =
   if computed{"width"}.u == cuAuto:
     let u = max(size.w - positioned[dtHorizontal].sum(), 0)
@@ -1026,7 +1026,7 @@ proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
     sizes.space.w = stretch(sizepx)
 
 proc resolveAbsoluteHeight(sizes: var ResolvedSizes; size: Size;
-    positioned: RelativeRect; computed: CSSComputedValues;
+    positioned: RelativeRect; computed: CSSValues;
     lctx: LayoutContext) =
   if computed{"height"}.u == cuAuto:
     let u = max(size.w - positioned[dtVertical].sum(), 0)
@@ -1045,7 +1045,7 @@ proc resolveAbsoluteHeight(sizes: var ResolvedSizes; size: Size;
 # Calculate and resolve available width & height for absolutely positioned
 # boxes.
 proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
-    positioned: var RelativeRect; computed: CSSComputedValues): ResolvedSizes =
+    positioned: var RelativeRect; computed: CSSValues): ResolvedSizes =
   positioned = lctx.resolvePositioned(size, computed)
   var sizes = ResolvedSizes(
     margin: lctx.resolveMargins(stretch(size.w), computed),
@@ -1058,7 +1058,7 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
 
 # Calculate and resolve available width & height for floating boxes.
 proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
-    computed: CSSComputedValues): ResolvedSizes =
+    computed: CSSValues): ResolvedSizes =
   let padding = lctx.resolvePadding(space.w, computed)
   let paddingSum = padding.sum()
   var sizes = ResolvedSizes(
@@ -1079,7 +1079,7 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
   return sizes
 
 proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
-    dim: DimensionType; computed: CSSComputedValues): ResolvedSizes =
+    dim: DimensionType; computed: CSSValues): ResolvedSizes =
   let padding = lctx.resolvePadding(space.w, computed)
   let paddingSum = padding.sum()
   var sizes = ResolvedSizes(
@@ -1123,7 +1123,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
   return sizes
 
 proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
-    inlinePadding: LayoutUnit; computed: CSSComputedValues;
+    inlinePadding: LayoutUnit; computed: CSSValues;
     lctx: LayoutContext) =
   let width = computed{"width"}
   var widthpx: LayoutUnit = 0
@@ -1152,7 +1152,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     sizes.resolveContentWidth(sizes.minWidth, parentWidth, computed)
 
 proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
-    blockPadding: LayoutUnit; computed: CSSComputedValues;
+    blockPadding: LayoutUnit; computed: CSSValues;
     lctx: LayoutContext) =
   let height = computed{"height"}
   if height.canpx(parentHeight):
@@ -1172,7 +1172,7 @@ proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
     sizes.space.h = stretch(sizes.minHeight)
 
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
-    computed: CSSComputedValues): ResolvedSizes =
+    computed: CSSValues): ResolvedSizes =
   let padding = lctx.resolvePadding(space.w, computed)
   let paddingSum = padding.sum()
   var sizes = ResolvedSizes(
@@ -2082,7 +2082,7 @@ proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LayoutUnit;
       W -= col.width
   return avail
 
-func needsRedistribution(tctx: TableContext; computed: CSSComputedValues):
+func needsRedistribution(tctx: TableContext; computed: CSSValues):
     bool =
   case tctx.space.w.t
   of scMinContent, scMaxContent:
@@ -2596,7 +2596,7 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
 
 # Note: this does not include display types that cannot appear as block
 # children.
-func establishesBFC(computed: CSSComputedValues): bool =
+func establishesBFC(computed: CSSValues): bool =
   return computed{"float"} != FloatNone or
     computed{"display"} in {DisplayFlowRoot, DisplayTable, DisplayTableWrapper,
       DisplayFlex} or
@@ -2782,7 +2782,7 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
 
 # 1st pass: build tree
 
-proc newMarkerBox(computed: CSSComputedValues; listItemCounter: int):
+proc newMarkerBox(computed: CSSValues; listItemCounter: int):
     InlineFragment =
   let computed = computed.inheritProperties()
   computed{"display"} = DisplayInline
@@ -2824,7 +2824,7 @@ proc flushInlineGroup(ctx: var InnerBlockContext) =
     ctx.inline = nil
 
 # Don't build empty anonymous inline blocks between block boxes
-func canBuildAnonInline(ctx: InnerBlockContext; computed: CSSComputedValues;
+func canBuildAnonInline(ctx: InnerBlockContext; computed: CSSValues;
     str: string): bool =
   return ctx.inline != nil and ctx.inline.children.len > 0 or
     computed.whitespacepre or not str.onlyWhitespace()
@@ -2834,20 +2834,20 @@ proc buildBlock(ctx: var InnerBlockContext)
 proc buildTable(ctx: var InnerBlockContext)
 proc buildFlex(ctx: var InnerBlockContext)
 proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode;
-  computed: CSSComputedValues)
+  computed: CSSValues)
 proc buildTableRowGroup(parent: var InnerBlockContext; styledNode: StyledNode;
-  computed: CSSComputedValues): BlockBox
+  computed: CSSValues): BlockBox
 proc buildTableRow(parent: var InnerBlockContext; styledNode: StyledNode;
-  computed: CSSComputedValues): BlockBox
+  computed: CSSValues): BlockBox
 proc buildTableCell(parent: var InnerBlockContext; styledNode: StyledNode;
-  computed: CSSComputedValues): BlockBox
+  computed: CSSValues): BlockBox
 proc buildTableCaption(parent: var InnerBlockContext; styledNode: StyledNode;
-  computed: CSSComputedValues): BlockBox
+  computed: CSSValues): BlockBox
 proc newInnerBlockContext(styledNode: StyledNode; box: BlockBox;
   lctx: LayoutContext; parent: ptr InnerBlockContext): InnerBlockContext
 proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment)
 proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
-  computed: CSSComputedValues)
+  computed: CSSValues)
 
 func toTableWrapper(display: CSSDisplay): CSSDisplay =
   if display == DisplayTable:
@@ -2855,7 +2855,7 @@ func toTableWrapper(display: CSSDisplay): CSSDisplay =
   assert display == DisplayInlineTable
   return DisplayInlineTableWrapper
 
-proc createAnonTable(ctx: var InnerBlockContext; computed: CSSComputedValues):
+proc createAnonTable(ctx: var InnerBlockContext; computed: CSSValues):
     BlockBox =
   let inline = ctx.inlineStack.len > 0
   if not inline and ctx.anonTableWrapper == nil or
@@ -2974,7 +2974,7 @@ proc reconstructInlineParents(ctx: var InnerBlockContext) =
       parent = child
 
 proc buildSomeBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues): BlockBox =
+    computed: CSSValues): BlockBox =
   let box = BlockBox(computed: computed, node: styledNode)
   var childCtx = newInnerBlockContext(styledNode, box, ctx.lctx, addr ctx)
   case computed{"display"}
@@ -2986,7 +2986,7 @@ proc buildSomeBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
 
 # Note: these also pop
 proc pushBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   if (computed{"position"} == PositionAbsolute or
         computed{"float"} != FloatNone) and
       (ctx.inline != nil or ctx.inlineStack.len > 0):
@@ -3004,7 +3004,7 @@ proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment) =
     ctx.reconstructInlineParents()
     ctx.inlineStackFragments[^1].children.add(fragment)
 
-proc pushInlineText(ctx: var InnerBlockContext; computed: CSSComputedValues;
+proc pushInlineText(ctx: var InnerBlockContext; computed: CSSValues;
     parent, node: StyledNode) =
   ctx.pushInline(InlineFragment(
     t: iftText,
@@ -3014,7 +3014,7 @@ proc pushInlineText(ctx: var InnerBlockContext; computed: CSSComputedValues;
   ))
 
 proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   ctx.pushInline(InlineFragment(
     t: iftBox,
     computed: computed.inheritProperties(),
@@ -3023,7 +3023,7 @@ proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
   ))
 
 proc pushListItem(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   ctx.iflush()
   ctx.flush()
   inc ctx.listItemCounter
@@ -3050,7 +3050,7 @@ proc pushListItem(ctx: var InnerBlockContext; styledNode: StyledNode;
     ctx.outer.children.add(content)
 
 proc pushTableRow(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   let child = ctx.buildTableRow(styledNode, computed)
   if ctx.inlineStack.len == 0:
     ctx.iflush()
@@ -3066,7 +3066,7 @@ proc pushTableRow(ctx: var InnerBlockContext; styledNode: StyledNode;
     anonTableWrapper.children[0].children.add(child)
 
 proc pushTableRowGroup(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   let child = ctx.buildTableRowGroup(styledNode, computed)
   if ctx.inlineStack.len == 0:
     ctx.iflush()
@@ -3083,7 +3083,7 @@ proc pushTableRowGroup(ctx: var InnerBlockContext; styledNode: StyledNode;
     anonTableWrapper.children[0].children.add(child)
 
 proc pushTableCell(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   let child = ctx.buildTableCell(styledNode, computed)
   if ctx.inlineStack.len == 0 and
       ctx.outer.computed{"display"} == DisplayTableRow:
@@ -3095,7 +3095,7 @@ proc pushTableCell(ctx: var InnerBlockContext; styledNode: StyledNode;
     anonRow.children.add(child)
 
 proc pushTableCaption(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   ctx.iflush()
   ctx.flushInlineGroup()
   ctx.flushTableRow()
@@ -3109,7 +3109,7 @@ proc pushTableCaption(ctx: var InnerBlockContext; styledNode: StyledNode;
       anonTableWrapper.children.add(child)
 
 proc buildFromElem(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   case computed{"display"}
   of DisplayBlock, DisplayFlowRoot, DisplayFlex, DisplayTable:
     ctx.pushBlock(styledNode, computed)
@@ -3133,7 +3133,7 @@ proc buildFromElem(ctx: var InnerBlockContext; styledNode: StyledNode;
   of DisplayTableWrapper, DisplayInlineTableWrapper: assert false
 
 proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   case child.content.t
   of ContentNone: assert false # unreachable for `content'
   of ContentOpenQuote:
@@ -3187,7 +3187,7 @@ proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode;
     ))
 
 proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues) =
+    computed: CSSValues) =
   let parent = InlineFragment(
     t: iftParent,
     computed: computed,
@@ -3298,7 +3298,7 @@ proc buildFlex(ctx: var InnerBlockContext) =
     ctx.outer.children.reverse()
 
 proc buildTableCell(parent: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues): BlockBox =
+    computed: CSSValues): BlockBox =
   let box = BlockBox(node: styledNode, computed: computed)
   var ctx = newInnerBlockContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
@@ -3306,7 +3306,7 @@ proc buildTableCell(parent: var InnerBlockContext; styledNode: StyledNode;
   return box
 
 proc buildTableRowChildWrappers(box: BlockBox) =
-  var wrapperVals: CSSComputedValues = nil
+  var wrapperVals: CSSValues = nil
   for child in box.children:
     if child.computed{"display"} != DisplayTableCell:
       wrapperVals = box.computed.inheritProperties()
@@ -3328,7 +3328,7 @@ proc buildTableRowChildWrappers(box: BlockBox) =
     box.children = children
 
 proc buildTableRow(parent: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues): BlockBox =
+    computed: CSSValues): BlockBox =
   let box = BlockBox(node: styledNode, computed: computed)
   var ctx = newInnerBlockContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
@@ -3337,7 +3337,7 @@ proc buildTableRow(parent: var InnerBlockContext; styledNode: StyledNode;
   return box
 
 proc buildTableRowGroupChildWrappers(box: BlockBox) =
-  var wrapperVals: CSSComputedValues = nil
+  var wrapperVals: CSSValues = nil
   for child in box.children:
     if child.computed{"display"} != DisplayTableRow:
       wrapperVals = box.computed.inheritProperties()
@@ -3363,7 +3363,7 @@ proc buildTableRowGroupChildWrappers(box: BlockBox) =
     box.children = children
 
 proc buildTableRowGroup(parent: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues): BlockBox =
+    computed: CSSValues): BlockBox =
   let box = BlockBox(node: styledNode, computed: computed)
   var ctx = newInnerBlockContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
@@ -3372,14 +3372,14 @@ proc buildTableRowGroup(parent: var InnerBlockContext; styledNode: StyledNode;
   return box
 
 proc buildTableCaption(parent: var InnerBlockContext; styledNode: StyledNode;
-    computed: CSSComputedValues): BlockBox =
+    computed: CSSValues): BlockBox =
   let box = BlockBox(node: styledNode, computed: computed)
   var ctx = newInnerBlockContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
   return box
 
-proc buildTableChildWrappers(box: BlockBox; computed: CSSComputedValues) =
+proc buildTableChildWrappers(box: BlockBox; computed: CSSValues) =
   let innerTable = BlockBox(computed: computed, node: box.node)
   let wrapperVals = box.computed.inheritProperties()
   wrapperVals{"display"} = DisplayTableRow

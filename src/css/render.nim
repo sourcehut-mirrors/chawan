@@ -51,7 +51,7 @@ proc addFormat(line: var FlexibleLine; pos: int; format: Format;
     node: StyledNode = nil) =
   line.formats.add(FormatCell(format: format, node: node, pos: pos))
 
-func toFormat(computed: CSSComputedValues): Format =
+func toFormat(computed: CSSValues): Format =
   if computed == nil:
     return Format()
   var flags: set[FormatFlag] = {}

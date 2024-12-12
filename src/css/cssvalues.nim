@@ -340,7 +340,7 @@ type
     a*: CSSLength
     b*: CSSLength
 
-  CSSComputedValueBit* {.union.} = object
+  CSSValueBit* {.union.} = object
     dummy: uint8
     bgcolorIsCanvas*: bool
     borderCollapse*: CSSBorderCollapse
@@ -362,7 +362,7 @@ type
     whiteSpace*: CSSWhiteSpace
     wordBreak*: CSSWordBreak
 
-  CSSComputedValue* = ref object
+  CSSValue* = ref object
     case v*: CSSValueType
     of cvtColor:
       color*: CSSColor
@@ -388,9 +388,9 @@ type
       image*: CSSContent
     else: discard
 
-  CSSComputedValues* = ref object
-    bits*: array[CSSPropertyType.low..cptFontStyle, CSSComputedValueBit]
-    objs*: array[cptColor..CSSPropertyType.high, CSSComputedValue]
+  CSSValues* = ref object
+    bits*: array[CSSPropertyType.low..cptFontStyle, CSSValueBit]
+    objs*: array[cptColor..CSSPropertyType.high, CSSValue]
 
   CSSOrigin* = enum
     coUserAgent
@@ -401,7 +401,7 @@ type
     t*: CSSPropertyType
     global*: CSSGlobalType
     bit*: uint8
-    obj*: CSSComputedValue
+    obj*: CSSValue
 
 const ValueTypes = [
   cptNone: cvtNone,
@@ -510,7 +510,7 @@ when defined(debug):
       result &= ' '
       result &= $it.num
 
-  func `$`*(val: CSSComputedValue): string =
+  func `$`*(val: CSSValue): string =
     case val.v
     of cvtNone: return "none"
     of cvtColor: return $val.color
@@ -526,7 +526,7 @@ when defined(debug):
     of cvtNumber: return $val.number
     else: assert false
 
-macro `{}`*(vals: CSSComputedValues; s: static string): untyped =
+macro `{}`*(vals: CSSValues; s: static string): untyped =
   let t = propertyType(s)
   let vs = ident($valueType(t))
   if t.isBit:
@@ -536,7 +536,7 @@ macro `{}`*(vals: CSSComputedValues; s: static string): untyped =
     return quote do:
       `vals`.objs[CSSPropertyType(`t`)].`vs`
 
-macro `{}=`*(vals: CSSComputedValues; s: static string, val: typed) =
+macro `{}=`*(vals: CSSValues; s: static string, val: typed) =
   let t = propertyType(s)
   let v = valueType(t)
   let vs = ident($v)
@@ -545,7 +545,7 @@ macro `{}=`*(vals: CSSComputedValues; s: static string, val: typed) =
       `vals`.bits[CSSPropertyType(`t`)].dummy = uint8(`val`)
   else:
     return quote do:
-      `vals`.objs[CSSPropertyType(`t`)] = CSSComputedValue(
+      `vals`.objs[CSSPropertyType(`t`)] = CSSValue(
         v: CSSValueType(`v`),
         `vs`: `val`
       )
@@ -1151,11 +1151,11 @@ func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float64] =
         return ok(tok.nvalue)
   return err()
 
-proc makeEntry*(t: CSSPropertyType; obj: CSSComputedValue; global = cgtNone):
+proc makeEntry*(t: CSSPropertyType; obj: CSSValue; global = cgtNone):
     CSSComputedEntry =
   return CSSComputedEntry(t: t, obj: obj, global: global)
 
-proc makeEntry*(t: CSSPropertyType; bit: CSSComputedValueBit; global = cgtNone):
+proc makeEntry*(t: CSSPropertyType; bit: CSSValueBit; global = cgtNone):
     CSSComputedEntry =
   return CSSComputedEntry(t: t, bit: bit.dummy, global: global)
 
@@ -1173,7 +1173,7 @@ proc parseValue(cvals: openArray[CSSComponentValue];
   inc i
   let v = valueType(t)
   template set_new(prop, val: untyped) =
-    entry.obj = CSSComputedValue(v: v, prop: val)
+    entry.obj = CSSValue(v: v, prop: val)
   template set_bit(prop, val: untyped) =
     entry.bit = uint8(val)
   case v
@@ -1262,23 +1262,23 @@ func getInitialNumber(t: CSSPropertyType): float64 =
     return 1
   return 0
 
-func calcInitial(t: CSSPropertyType): CSSComputedValue =
+func calcInitial(t: CSSPropertyType): CSSValue =
   let v = valueType(t)
   case v
-  of cvtColor: return CSSComputedValue(v: v, color: getInitialColor(t))
-  of cvtLength: return CSSComputedValue(v: v, length: getInitialLength(t))
-  of cvtInteger: return CSSComputedValue(v: v, integer: getInitialInteger(t))
-  of cvtQuotes: return CSSComputedValue(v: v, quotes: CSSQuotes(auto: true))
-  of cvtNumber: return CSSComputedValue(v: v, number: getInitialNumber(t))
-  else: return CSSComputedValue(v: v)
+  of cvtColor: return CSSValue(v: v, color: getInitialColor(t))
+  of cvtLength: return CSSValue(v: v, length: getInitialLength(t))
+  of cvtInteger: return CSSValue(v: v, integer: getInitialInteger(t))
+  of cvtQuotes: return CSSValue(v: v, quotes: CSSQuotes(auto: true))
+  of cvtNumber: return CSSValue(v: v, number: getInitialNumber(t))
+  else: return CSSValue(v: v)
 
-func getInitialTable(): array[CSSPropertyType, CSSComputedValue] =
+func getInitialTable(): array[CSSPropertyType, CSSValue] =
   for t in CSSPropertyType:
     result[t] = calcInitial(t)
 
 let defaultTable = getInitialTable()
 
-template getDefault*(t: CSSPropertyType): CSSComputedValue =
+template getDefault*(t: CSSPropertyType): CSSValue =
   {.cast(noSideEffect).}:
     defaultTable[t]
 
@@ -1290,12 +1290,12 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
     for t in props:
       res.add(makeEntry(t, global))
     return ok(res)
-  var lengths: seq[CSSComputedValue] = @[]
+  var lengths: seq[CSSValue] = @[]
   var i = 0
   while i < cvals.len:
     cvals.skipWhitespace(i)
     let length = ?cssLength(cvals[i], hasAuto = hasAuto)
-    let val = CSSComputedValue(v: cvtLength, length: length)
+    let val = CSSValue(v: cvtLength, length: length)
     lengths.add(val)
     inc i
   case lengths.len
@@ -1364,9 +1364,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         if tok == cttWhitespace:
           continue
         if (let r = cssImage(tok); r.isSome):
-          bgimageval = CSSComputedValue(v: cvtImage, image: r.get)
+          bgimageval = CSSValue(v: cvtImage, image: r.get)
         elif (let r = cssColor(tok); r.isSome):
-          bgcolorval = CSSComputedValue(v: cvtColor, color: r.get)
+          bgcolorval = CSSValue(v: cvtColor, color: r.get)
         else:
           #TODO when we implement the other shorthands too
           #valid = false
@@ -1375,8 +1375,8 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       res.add(makeEntry(cptBackgroundColor, bgcolorval, global))
       res.add(makeEntry(cptBackgroundImage, bgimageval, global))
   of cstListStyle:
-    var positionVal = CSSComputedValueBit()
-    var typeVal = CSSComputedValueBit()
+    var positionVal = CSSValueBit()
+    var typeVal = CSSValueBit()
     var valid = true
     if global == cgtNone:
       for tok in cvals:
@@ -1401,7 +1401,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         return err()
       if (let r = cssNumber(cvals[i], positive = true); r.isSome):
         # flex-grow
-        let val = CSSComputedValue(v: cvtNumber, number: r.get)
+        let val = CSSValue(v: cvtNumber, number: r.get)
         res.add(makeEntry(cptFlexGrow, val))
         inc i
         cvals.skipWhitespace(i)
@@ -1410,22 +1410,22 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
             return err()
           if (let r = cssNumber(cvals[i], positive = true); r.isSome):
             # flex-shrink
-            let val = CSSComputedValue(v: cvtNumber, number: r.get)
+            let val = CSSValue(v: cvtNumber, number: r.get)
             res.add(makeEntry(cptFlexShrink, val))
             inc i
             cvals.skipWhitespace(i)
       if res.len < 1: # flex-grow omitted, default to 1
-        let val = CSSComputedValue(v: cvtNumber, number: 1)
+        let val = CSSValue(v: cvtNumber, number: 1)
         res.add(makeEntry(cptFlexGrow, val))
       if res.len < 2: # flex-shrink omitted, default to 1
-        let val = CSSComputedValue(v: cvtNumber, number: 1)
+        let val = CSSValue(v: cvtNumber, number: 1)
         res.add(makeEntry(cptFlexShrink, val))
       if i < cvals.len:
         # flex-basis
-        let val = CSSComputedValue(v: cvtLength, length: ?cssLength(cvals[i]))
+        let val = CSSValue(v: cvtLength, length: ?cssLength(cvals[i]))
         res.add(makeEntry(cptFlexBasis, val))
       else: # omitted, default to 0px
-        let val = CSSComputedValue(
+        let val = CSSValue(
           v: cvtLength,
           length: CSSLength(u: cuPx, num: 0)
         )
@@ -1442,14 +1442,14 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         return err()
       if (let dir = parseIdent[CSSFlexDirection](cvals[i]); dir.isSome):
         # flex-direction
-        var val = CSSComputedValueBit()
+        var val = CSSValueBit()
         val.flexDirection = dir.get
         res.add(makeEntry(cptFlexDirection, val))
         inc i
         cvals.skipWhitespace(i)
       if i < cvals.len:
         let wrap = ?parseIdent[CSSFlexWrap](cvals[i])
-        var val = CSSComputedValueBit()
+        var val = CSSValueBit()
         val.flexWrap = wrap
         res.add(makeEntry(cptFlexWrap, val))
     else:
@@ -1464,26 +1464,26 @@ proc parseComputedValues*(name: string; value: seq[CSSComponentValue]):
     return res
   return @[]
 
-proc copyFrom(a, b: CSSComputedValues; t: CSSPropertyType) =
+proc copyFrom(a, b: CSSValues; t: CSSPropertyType) =
   if t.isBit:
     a.bits[t] = b.bits[t]
   else:
     a.objs[t] = b.objs[t]
 
-proc setInitial(a: CSSComputedValues; t: CSSPropertyType) =
+proc setInitial(a: CSSValues; t: CSSPropertyType) =
   if t.isBit:
     a.bits[t].dummy = 0
   else:
     a.objs[t] = getDefault(t)
 
-proc initialOrInheritFrom*(a, b: CSSComputedValues; t: CSSPropertyType) =
+proc initialOrInheritFrom*(a, b: CSSValues; t: CSSPropertyType) =
   if t.inherited and b != nil:
     a.copyFrom(b, t)
   else:
     a.setInitial(t)
 
-proc applyValue*(vals: CSSComputedValues; entry: CSSComputedEntry;
-    parent, previousOrigin: CSSComputedValues;
+proc applyValue*(vals: CSSValues; entry: CSSComputedEntry;
+    parent, previousOrigin: CSSValues;
     inited: array[CSSPropertyType, bool]) =
   case entry.global
   of cgtInherit:
@@ -1506,7 +1506,7 @@ proc applyValue*(vals: CSSComputedValues; entry: CSSComputedEntry;
     else:
       vals.objs[entry.t] = entry.obj
 
-func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
+func inheritProperties*(parent: CSSValues): CSSValues =
   new(result)
   for t in CSSPropertyType:
     if t.inherited:
@@ -1514,20 +1514,20 @@ func inheritProperties*(parent: CSSComputedValues): CSSComputedValues =
     else:
       result.setInitial(t)
 
-func copyProperties*(props: CSSComputedValues): CSSComputedValues =
+func copyProperties*(props: CSSValues): CSSValues =
   new(result)
   result[] = props[]
 
-func rootProperties*(): CSSComputedValues =
+func rootProperties*(): CSSValues =
   new(result)
   for t in CSSPropertyType:
     result.setInitial(t)
 
-# Separate CSSComputedValues of a table into those of the wrapper and the actual
+# Separate CSSValues of a table into those of the wrapper and the actual
 # table.
-func splitTable*(computed: CSSComputedValues):
-    tuple[outerComputed, innnerComputed: CSSComputedValues] =
-  var outerComputed, innerComputed: CSSComputedValues
+func splitTable*(computed: CSSValues):
+    tuple[outerComputed, innnerComputed: CSSValues] =
+  var outerComputed, innerComputed: CSSValues
   new(outerComputed)
   new(innerComputed)
   const props = {
