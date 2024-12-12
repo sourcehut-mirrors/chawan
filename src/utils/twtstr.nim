@@ -241,7 +241,7 @@ func skipBlanks*(buf: openArray[char]; at: int): int =
 
 func skipBlanksTillLF*(buf: openArray[char]; at: int): int =
   result = at
-  while result < buf.len and buf[result] in AsciiWhitespace:
+  while result < buf.len and buf[result] in AsciiWhitespace - {'\n'}:
     inc result
 
 func stripAndCollapse*(s: openArray[char]): string =
