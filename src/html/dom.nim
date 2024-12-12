@@ -4333,16 +4333,16 @@ proc prepare*(element: HTMLScriptElement) =
     return
   let t = element.attr(satType)
   let typeString = if t != "":
-    t.strip(chars = AsciiWhitespace).toLowerAscii()
+    t.strip(chars = AsciiWhitespace)
   elif (let l = element.attr(satLanguage); l != ""):
-    "text/" & l.toLowerAscii()
+    "text/" & l
   else:
     "text/javascript"
   if typeString.isJavaScriptType():
     element.ctype = stClassic
-  elif typeString == "module":
+  elif typeString.equalsIgnoreCase("module"):
     element.ctype = stModule
-  elif typeString == "importmap":
+  elif typeString.equalsIgnoreCase("importmap"):
     element.ctype = stImportMap
   else:
     return
