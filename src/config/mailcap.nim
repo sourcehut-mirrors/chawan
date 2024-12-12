@@ -12,8 +12,6 @@ import utils/twtstr
 
 type
   MailcapParser = object
-    hasbuf: bool
-    buf: char
     at: int
     line: int
 
@@ -39,68 +37,50 @@ type
     path*: string
     entries*: Mailcap
 
-proc serializeCommand(s: var string; cmd: string) =
-  for c in cmd:
-    if c == ';':
-      s &= '\\'
-    s &= c
-
 proc `$`*(entry: MailcapEntry): string =
-  var s = ""
-  s.serializeCommand(entry.t)
-  s &= ';'
-  s.serializeCommand(entry.cmd)
+  var s = entry.t & ';' & entry.cmd
   for flag in MailcapFlag:
     if flag in entry.flags:
       s &= ';' & $flag
   if entry.nametemplate != "":
-    s &= ";nametemplate="
-    s.serializeCommand(entry.nametemplate)
+    s &= ";nametemplate=" & entry.nametemplate
   if entry.edit != "":
-    s &= ";edit="
-    s.serializeCommand(entry.edit)
+    s &= ";edit=" & entry.edit
   if entry.test != "":
-    s &= ";test="
-    s.serializeCommand(entry.test)
+    s &= ";test=" & entry.test
   s &= '\n'
   return s
 
 proc has(state: MailcapParser; buf: openArray[char]): bool {.inline.} =
   return state.at < buf.len
 
+proc reconsume(state: var MailcapParser) =
+  dec state.at
+
 proc consume(state: var MailcapParser; buf: openArray[char]): char =
-  if state.hasbuf:
-    state.hasbuf = false
-    return state.buf
-  var c = buf[state.at]
+  let c = buf[state.at]
   inc state.at
-  if c == '\\' and state.has(buf):
-    let c2 = buf[state.at]
+  if c == '\\' and state.at < buf.len:
+    if buf[state.at] != '\n':
+      return '\\'
     inc state.at
-    if c2 == '\n' and state.has(buf):
+    inc state.line
+    if state.at >= buf.len:
+      return '\n'
+    let c = buf[state.at]
+    inc state.at
+    if c == '\n':
       inc state.line
-      c = buf[state.at]
-      inc state.at
+    return c
   if c == '\n':
     inc state.line
   return c
 
-proc reconsume(state: var MailcapParser; c: char) =
-  state.buf = c
-  state.hasbuf = true
-
-proc skipBlanks(state: var MailcapParser; buf: openArray[char]; c: var char):
-    bool =
-  while state.has(buf):
-    c = state.consume(buf)
-    if c notin AsciiWhitespace - {'\n'}:
-      return true
-  return false
-
 proc skipBlanks(state: var MailcapParser; buf: openArray[char]) =
-  var c: char
-  if state.skipBlanks(buf, c):
-    state.reconsume(c)
+  while state.has(buf):
+    if state.consume(buf) notin AsciiWhitespace - {'\n'}:
+      state.reconsume()
+      break
 
 proc skipLine(state: var MailcapParser; buf: openArray[char]) =
   while state.has(buf):
@@ -114,7 +94,7 @@ proc consumeTypeField(state: var MailcapParser; buf: openArray[char];
   while state.has(buf):
     let c = state.consume(buf)
     if c in AsciiWhitespace + {';'}:
-      state.reconsume(c)
+      state.reconsume()
       break
     if c == '/':
       inc nslash
@@ -127,8 +107,8 @@ proc consumeTypeField(state: var MailcapParser; buf: openArray[char];
     outs &= "/*"
   if nslash > 1:
     return err("line " & $state.line & ": too many slash characters")
-  var c: char
-  if not state.skipBlanks(buf, c) or c != ';':
+  state.skipBlanks(buf)
+  if not state.has(buf) or state.consume(buf) != ';':
     return err("Semicolon not found")
   return ok()
 
@@ -141,13 +121,13 @@ proc consumeCommand(state: var MailcapParser; buf: openArray[char];
     if not quoted:
       if c == '\r':
         continue
-      if c == ';' or c == '\n':
-        state.reconsume(c)
+      if c in {';', '\n'}:
+        state.reconsume()
         return ok()
       if c == '\\':
         quoted = true
-        continue
-      if c notin Ascii - Controls:
+        # fall through; backslash will be parsed again in unquoteCommand
+      elif c notin Ascii - Controls:
         return err("line " & $state.line & ": invalid character in command: " &
           c)
     else:
@@ -193,20 +173,17 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
     entry.flags.incl(x.get)
   return ok(res)
 
-proc parseMailcap*(omailcap: var Mailcap; buf: openArray[char]): Err[string] =
+proc parseMailcap*(mailcap: var Mailcap; buf: openArray[char]): Err[string] =
   var state = MailcapParser(line: 1)
-  var mailcap = default(Mailcap)
   while state.has(buf):
-    let c = state.consume(buf)
-    if c == '#':
+    if state.consume(buf) == '#':
       state.skipLine(buf)
       continue
-    state.reconsume(c)
+    state.reconsume()
     state.skipBlanks(buf)
-    let c2 = state.consume(buf)
-    if c2 == '\n' or c2 == '\r':
+    if state.consume(buf) in {'\n', '\r'}:
       continue
-    state.reconsume(c2)
+    state.reconsume()
     var entry = MailcapEntry()
     ?state.consumeTypeField(buf, entry.t)
     ?state.consumeCommand(buf, entry.cmd)
@@ -214,7 +191,6 @@ proc parseMailcap*(omailcap: var Mailcap; buf: openArray[char]): Err[string] =
       while ?state.consumeField(buf, entry):
         discard
     mailcap.add(entry)
-  omailcap.add(mailcap)
   return ok()
 
 # Mostly based on w3m's mailcap quote/unquote
@@ -361,12 +337,16 @@ proc saveEntry*(mailcap: var AutoMailcap; entry: MailcapEntry): bool =
     let pdir = mailcap.path.parentDir()
     if not dirExists(pdir):
       createDir(pdir)
-    let ps = newPosixStream(mailcap.path, O_WRONLY or O_APPEND or O_CREAT, 0o644)
-    if ps == nil:
-      return false
-    ps.sendDataLoop(s)
-    ps.sclose()
-  except IOError, OSError:
+  except OSError:
     return false
+  let ps = newPosixStream(mailcap.path, O_WRONLY or O_APPEND or O_CREAT, 0o644)
+  if ps == nil:
+    return false
+  try:
+    ps.sendDataLoop(s)
+  except IOError:
+    return false
+  finally:
+    ps.sclose()
   mailcap.entries.add(entry)
   return true
