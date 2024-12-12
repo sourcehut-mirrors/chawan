@@ -737,9 +737,11 @@ func atob(c: char): uint8 {.inline.} =
     return 63
   return uint8.high
 
-func atob0*(data: string): Result[string, cstring] =
-  var outs = newStringOfCap(data.len div 4 * 3)
-  var buf: array[4, uint8]
+# Warning: this overrides outs.
+# (it should really be out string, just can't use out because of 1.6.14)
+func atob*(outs: var string; data: string): Err[cstring] =
+  outs = newStringOfCap(data.len div 4 * 3)
+  var buf = default(array[4, uint8])
   var i = 0
   var j = 0
   var pad = 0
@@ -784,7 +786,7 @@ func atob0*(data: string): Result[string, cstring] =
     outs &= char(ob1)
   elif j != 0:
     return err("Incorrect number of characters in encoded string")
-  return ok(outs)
+  return ok()
 
 const AMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 

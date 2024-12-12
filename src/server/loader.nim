@@ -1011,13 +1011,13 @@ proc loadData(ctx: LoaderContext; handle: InputHandle; request: Request) =
   let sd = ct.len + 1 # data start
   let body = percentDecode(url.pathname.toOpenArray(sd, url.pathname.high))
   if ct.endsWith(";base64"):
-    let d = atob0(body) # decode from ct end + 1
-    if d.isNone:
+    var d = ""
+    if d.atob(body).isNone:
       handle.sendResult(ceInvalidURL, "invalid data URL")
       handle.close()
       return
     ct.setLen(ct.len - ";base64".len) # remove base64 indicator
-    ctx.loadDataSend(handle, d.get, ct)
+    ctx.loadDataSend(handle, d, ct)
   else:
     ctx.loadDataSend(handle, body, ct)
 

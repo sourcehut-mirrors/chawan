@@ -228,11 +228,11 @@ func getParent(window: Window): Window {.jsfget: "parent".} =
 
 # See twtstr for the actual implementations.
 proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
-  let r = atob0(data)
-  if r.isNone:
+  var s = ""
+  if (let r = s.atob(data); r.isNone):
     let ex = newDOMException($r.error, "InvalidCharacterError")
     return JS_Throw(ctx, ctx.toJS(ex))
-  return ctx.toJS(NarrowString(r.get))
+  return ctx.toJS(NarrowString(s))
 
 proc btoa(ctx: JSContext; window: Window; data: JSValue): JSValue
     {.jsfunc.} =
