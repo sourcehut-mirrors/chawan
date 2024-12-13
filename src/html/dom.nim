@@ -163,7 +163,6 @@ type
     # nodes they refer to. These are removed when the collection is destroyed,
     # and invalidated when the owner node's children or attributes change.
     liveCollections: seq[pointer]
-    cachedChildNodes: NodeList
     internalDocument: Document # not nil
 
   Attr* = ref object of Node
@@ -210,7 +209,6 @@ type
     cachedAll: HTMLAllCollection
     cachedSheets: seq[CSSStylesheet]
     cachedSheetsInvalid*: bool
-    cachedChildren: HTMLCollection
     cachedForms: HTMLCollection
     parser*: RootRef
 
@@ -228,7 +226,6 @@ type
 
   DocumentFragment* = ref object of Node
     host*: Element
-    cachedChildren*: HTMLCollection
 
   DocumentType* = ref object of Node
     name*: string
@@ -257,7 +254,6 @@ type
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
     cachedAttributes: NamedNodeMap
     cachedStyle*: CSSStyleDeclaration
-    cachedChildren: HTMLCollection
 
   AttrDummyElement = ref object of Element
 
@@ -1379,34 +1375,39 @@ func jsNodeType(node: Node): uint16 {.jsfget: "nodeType".} =
 func isElement(node: Node): bool =
   return node of Element
 
-template parentNodeChildrenImpl(parentNode: typed) =
-  if parentNode.cachedChildren == nil:
-    parentNode.cachedChildren = newCollection[HTMLCollection](
-      root = parentNode,
-      match = isElement,
-      islive = true,
-      childonly = true
-    )
-  return parentNode.cachedChildren
+template parentNodeChildrenImpl(ctx: JSContext; parentNode: typed) =
+  let children = ctx.toJS(newCollection[HTMLCollection](
+    root = parentNode,
+    match = isElement,
+    islive = true,
+    childonly = true
+  ))
+  let this = ctx.toJS(parentNode)
+  ctx.definePropertyCW(this, "children", JS_DupValue(ctx, children))
+  JS_FreeValue(ctx, this)
+  return children
 
-func children(parentNode: Document): HTMLCollection {.jsfget.} =
-  parentNodeChildrenImpl(parentNode)
+func children(ctx: JSContext; parentNode: Document): JSValue {.jsfget.} =
+  parentNodeChildrenImpl(ctx, parentNode)
 
-func children(parentNode: DocumentFragment): HTMLCollection {.jsfget.} =
-  parentNodeChildrenImpl(parentNode)
+func children(ctx: JSContext; parentNode: DocumentFragment): JSValue
+    {.jsfget.} =
+  parentNodeChildrenImpl(ctx, parentNode)
 
-func children(parentNode: Element): HTMLCollection {.jsfget.} =
-  parentNodeChildrenImpl(parentNode)
+func children(ctx: JSContext; parentNode: Element): JSValue {.jsfget.} =
+  parentNodeChildrenImpl(ctx, parentNode)
 
-func childNodes(node: Node): NodeList {.jsfget.} =
-  if node.cachedChildNodes == nil:
-    node.cachedChildNodes = newCollection[NodeList](
-      root = node,
-      match = nil,
-      islive = true,
-      childonly = true
-    )
-  return node.cachedChildNodes
+func childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
+  let childNodes = ctx.toJS(newCollection[NodeList](
+    root = node,
+    match = nil,
+    islive = true,
+    childonly = true
+  ))
+  let this = ctx.toJS(node)
+  ctx.definePropertyCW(this, "childNodes", JS_DupValue(ctx, childNodes))
+  JS_FreeValue(ctx, this)
+  return childNodes
 
 func isForm(node: Node): bool =
   return node of HTMLFormElement
@@ -3821,8 +3822,10 @@ proc adopt(document: Document; node: Node) =
     for desc in node.descendantsIncl:
       desc.internalDocument = document
       if desc of Element:
-        for attr in Element(desc).attributes.attrlist:
-          attr.internalDocument = document
+        let desc = Element(desc)
+        if desc.cachedAttributes != nil:
+          for attr in desc.cachedAttributes.attrlist:
+            attr.internalDocument = document
     #TODO custom elements
     #..adopting steps
 
