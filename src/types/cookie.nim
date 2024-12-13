@@ -1,8 +1,7 @@
+import std/options
 import std/strutils
 import std/times
 
-import monoucha/javascript
-import monoucha/jserror
 import monoucha/jsregex
 import server/urlfilter
 import types/opt
@@ -12,20 +11,18 @@ import utils/twtstr
 type
   Cookie* = ref object
     created: int64 # unix time
-    name {.jsget.}: string
-    value {.jsget.}: string
-    expires {.jsget.}: int64 # unix time
-    secure {.jsget.}: bool
-    httponly {.jsget.}: bool
-    samesite {.jsget.}: bool
-    domain {.jsget.}: string
-    path {.jsget.}: string
+    name: string
+    value: string
+    expires: int64 # unix time
+    secure: bool
+    httponly: bool
+    samesite: bool
+    domain: string
+    path: string
 
   CookieJar* = ref object
     filter*: URLFilter
     cookies*: seq[Cookie]
-
-jsDestructor(Cookie)
 
 proc parseCookieDate(val: string): Option[DateTime] =
   # cookie-date
@@ -207,7 +204,7 @@ proc serialize*(cookiejar: CookieJar; url: URL): string =
     result &= "="
     result &= cookie.value
 
-proc newCookie*(str: string; url: URL = nil): JSResult[Cookie] {.jsctor.} =
+proc newCookie*(str: string; url: URL): Opt[Cookie] =
   let cookie = Cookie(expires: -1, created: getTime().utc().toTime().toUnix())
   var first = true
   var haspath = false
@@ -241,29 +238,22 @@ proc newCookie*(str: string; url: URL = nil): JSResult[Cookie] {.jsctor.} =
         haspath = true
         cookie.path = val
     of "domain":
-      if url == nil or cookieDomainMatches(val, url):
+      if cookieDomainMatches(val, url):
         cookie.domain = val
         hasdomain = true
       else:
-        return errTypeError("Domains do not match")
+        return err()
   if not hasdomain:
-    if url != nil:
-      cookie.domain = url.host
+    cookie.domain = url.host
   if not haspath:
-    if url == nil:
-      cookie.path = "/"
-    else:
-      cookie.path = defaultCookiePath(url)
+    cookie.path = defaultCookiePath(url)
   return ok(cookie)
 
-proc newCookieJar*(location: URL; allowhosts: seq[Regex]): CookieJar =
+proc newCookieJar*(url: URL; allowhosts: seq[Regex]): CookieJar =
   return CookieJar(
     filter: newURLFilter(
-      scheme = some(location.scheme),
-      allowhost = some(location.host),
+      scheme = some(url.scheme),
+      allowhost = some(url.host),
       allowhosts = allowhosts
     )
   )
-
-proc addCookieModule*(ctx: JSContext) =
-  ctx.registerType(Cookie)

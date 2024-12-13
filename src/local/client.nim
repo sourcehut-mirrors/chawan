@@ -32,7 +32,6 @@ import server/loaderiface
 import server/request
 import server/response
 import types/blob
-import types/cookie
 import types/opt
 import types/url
 import utils/twtstr
@@ -129,7 +128,6 @@ proc addJSModules(client: Client; ctx: JSContext) =
   ctx.addPagerModule()
   ctx.addContainerModule()
   ctx.addSelectModule()
-  ctx.addCookieModule()
 
 func getClient(client: Client): Client {.jsfget: "client".} =
   return client
