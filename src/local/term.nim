@@ -464,12 +464,8 @@ proc reduceColors(term: Terminal; cellf: var Format) =
     if cellf.fgcolor.t == ctANSI and uint8(cellf.fgcolor.ansi) > 15:
       cellf.fgcolor = cellf.fgcolor.ansi.toRGB().cellColor()
     if cellf.fgcolor.t == ctRGB:
-      if cellf.bgcolor.t == ctNone:
-        cellf.fgcolor = term.approximateANSIColor(cellf.fgcolor.rgb,
-          term.defaultForeground)
-      else:
-        # ANSI fgcolor + bgcolor at the same time is broken
-        cellf.fgcolor = defaultColor
+      cellf.fgcolor = term.approximateANSIColor(cellf.fgcolor.rgb,
+        term.defaultForeground)
   of cmEightBit:
     if cellf.bgcolor.t == ctRGB:
       cellf.bgcolor = cellf.bgcolor.rgb.toEightBit().cellColor()
