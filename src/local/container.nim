@@ -1508,13 +1508,12 @@ proc onload(container: Container; res: int) =
       container.onload(res)
     )
 
-proc extractCookies(response: Response): seq[Cookie] =
-  result = @[]
+proc extractCookies(response: Response; cookieJar: CookieJar) =
   if "Set-Cookie" in response.headers.table:
     for s in response.headers.table["Set-Cookie"]:
       let cookie = newCookie(s, response.url)
       if cookie.isSome:
-        result.add(cookie.get)
+        cookieJar.add(cookie.get)
 
 # Apply data received in response.
 # Note: pager must call this before checkMailcap.
@@ -1524,7 +1523,7 @@ proc applyResponse*(container: Container; response: Response;
   # accept cookies
   let cookieJar = container.loaderConfig.cookieJar
   if cookieJar != nil:
-    cookieJar.add(response.extractCookies())
+    response.extractCookies(cookieJar)
   # set referrer policy, if any
   let referrerPolicy = response.getReferrerPolicy()
   if container.config.refererFrom:

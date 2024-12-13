@@ -165,8 +165,7 @@ func cookieDomainMatches(cookieDomain: string; url: URL): bool =
 
 proc add*(cookieJar: CookieJar; cookie: Cookie) =
   var i = -1
-  for j in 0 ..< cookieJar.cookies.len:
-    let old = cookieJar.cookies[j]
+  for j, old in cookieJar.cookies.mypairs:
     if old.name == cookie.name and old.domain == cookie.domain and
         old.path == cookie.path:
       i = j
@@ -176,10 +175,6 @@ proc add*(cookieJar: CookieJar; cookie: Cookie) =
     cookie.created = old.created
     cookieJar.cookies.del(i)
   cookieJar.cookies.add(cookie)
-
-proc add*(cookiejar: CookieJar; cookies: seq[Cookie]) =
-  for cookie in cookies:
-    cookiejar.add(cookie)
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.4
 proc serialize*(cookiejar: CookieJar; url: URL): string =
