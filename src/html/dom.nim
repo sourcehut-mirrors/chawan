@@ -404,6 +404,8 @@ type
 
   HTMLAudioElement* = ref object of HTMLElement
 
+  HTMLIFrameElement* = ref object of HTMLElement
+
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
@@ -440,6 +442,7 @@ jsDestructor(HTMLCanvasElement)
 jsDestructor(HTMLImageElement)
 jsDestructor(HTMLVideoElement)
 jsDestructor(HTMLAudioElement)
+jsDestructor(HTMLIFrameElement)
 jsDestructor(Node)
 jsDestructor(NodeList)
 jsDestructor(HTMLCollection)
@@ -4503,6 +4506,9 @@ proc createHTMLDocument(ctx: JSContext; implementation: var DOMImplementation;
 proc hasFeature(implementation: var DOMImplementation): bool {.jsfunc.} =
   return true
 
+func queryCommandSupported(document: Document): bool {.jsfunc.} =
+  return false
+
 proc createCDATASection(document: Document; data: string):
     DOMResult[CDATASection] {.jsfunc.} =
   if not document.isxml:
@@ -4966,6 +4972,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLImageElement, TAG_IMG)
   register(HTMLVideoElement, TAG_VIDEO)
   register(HTMLAudioElement, TAG_AUDIO)
+  register(HTMLIFrameElement, TAG_IFRAME)
 
 proc addDOMModule*(ctx: JSContext) =
   let eventTargetCID = ctx.getClass("EventTarget")
