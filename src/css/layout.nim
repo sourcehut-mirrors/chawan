@@ -2059,7 +2059,7 @@ func calcSpecifiedRatio(tctx: TableContext; W: LayoutUnit): LayoutUnit =
   # rest of the space.
   if totalSpecified == 0 or W > totalSpecified and hasUnspecified:
     return 1
-  return W / totalSpecified
+  return W div totalSpecified
 
 proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LayoutUnit;
     weight: var float64): seq[int] =

@@ -14,14 +14,10 @@ func `*`*(a, b: LayoutUnit): LayoutUnit {.inline.} =
   LayoutUnit((int32(a) * int32(b)) shr 6)
 func `*=`*(a: var LayoutUnit, b: LayoutUnit) {.inline.} =
   a = a * b
-func `/`*(a, b: LayoutUnit): LayoutUnit {.inline.} =
+func `div`*(a, b: LayoutUnit): LayoutUnit {.inline.} =
   let a64 = int64(a)
   let b64 = int64(b)
   LayoutUnit(cast[int32](((a64 shl 12) div b64) shr 6))
-func `/=`*(a: var LayoutUnit, b: LayoutUnit) {.inline.} =
-  a = a / b
-func `div`*(a, b: LayoutUnit): LayoutUnit {.inline.} =
-  a / b
 
 func toInt*(a: LayoutUnit): int =
   return int32(a) shr 6
