@@ -737,7 +737,7 @@ proc parseFile(input: openArray[char]; pointer: var int; base: Option[URL];
     url: URL; override: bool): URLState =
   url.scheme = "file"
   url.hostname = ""
-  url.hostType = htNone
+  url.hostType = htOpaque
   if pointer < input.len and input[pointer] in {'/', '\\'}:
     inc pointer
     return input.parseFileSlash(pointer, base, url, override)

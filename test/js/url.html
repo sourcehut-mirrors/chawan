@@ -34,6 +34,7 @@ assertEquals(new URL("abcd#ijkl", "https://example.com/") + "", "https://example
 assertEquals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://example.com/abcd?efgh#ijkl");
 assertEquals(new URL("https://テスト") + "", "https://xn--zckzah/");
 assertEquals(new URL("https://xn--zckzah") + "", "https://xn--zckzah/");
+assertEquals(new URL("file:/test") + "", "file:///test");
 assertThrows('new URL("https://[]")', TypeError);
 {
 	const x = new URL("file:/test");
