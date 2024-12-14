@@ -55,32 +55,32 @@ caption { display: table-caption; text-align: center }
 caption[align=top] { caption-side: top }
 caption[align=bottom] { caption-side: bottom }
 
-input { margin-right: 1ch; white-space: pre; color: red }
-input[type="hidden" i] { display: none }
+input { margin-right: 1ch; white-space: pre; color: red; text-decoration: underline }
+input[type=hidden i] { display: none }
 input::before { content: '['; text-decoration: none; color: initial }
 input::after { content: ']'; text-decoration: none; color: initial }
 
-input[type="radio" i]::before {
+input[type=submit i], input[type=button i], input[type=reset i],
+input[type=radio i] {
+	text-decoration: none
+}
+
+input[type=radio i]::before {
 	content: '(';
 	text-decoration: none;
 	color: initial
 }
 
-input[type="radio" i]::after {
+input[type=radio i]::after {
 	content: ')';
 	text-decoration: none;
 	color: initial
 }
 
-input:is([type="text" i], [type="password" i], [type="search" i], [type="file" i],
-		[type="url" i], [type="email" i], [type="tel" i]) {
-	text-decoration: underline
-}
-
-input:is([type="submit" i], [type="button" i], [type="reset" i])::before,
-input:is([type="submit" i], [type="button" i], [type="reset" i])::after,
-button {
-	color: red
+input:is([type=submit i], [type=button i], [type=reset i])::before,
+input:is([type=submit i], [type=button i], [type=reset i])::after, button {
+	color: red;
+	text-decoration: none
 }
 
 textarea { color: red; white-space: pre }
