@@ -72,6 +72,36 @@ Note: this suspends the entire process group.</td>
 </tr>
 
 <tr>
+<td>`readFile(path)`</td>
+<td>Read a file at `path`.<br>
+Returns the file's content as a string, or null if the file does not
+exist.
+</td>
+</tr>
+
+<tr>
+<td>`writeFile(path, content)`</td>
+<td>Write `content` to the file at `path`.<br>
+Throws a TypeError if this failed for whatever reason.
+</td>
+</tr>
+
+<tr>
+<td>`getenv(name, fallback = null)`</td>
+<td>Get an environment variable by `name`.<br>
+Returns `fallback` if the variable does not exist.
+</td>
+</tr>
+
+<tr>
+<td>`setenv(name, value)`</td>
+<td>Set an environment variable by `name`.<br>
+Throws a type error if the operation failed (e.g. because the variable's
+size exceeded an OS-specified limit.)
+</td>
+</tr>
+
+<tr>
 <td>`pager`</td>
 <td>The pager object. Implements `Pager`, as described below.</td>
 </tr>

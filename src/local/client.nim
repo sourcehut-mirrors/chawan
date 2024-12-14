@@ -78,16 +78,41 @@ proc readBlob(client: Client; path: string): WebFile {.jsfunc.} =
   let name = path.afterLast('/')
   return newWebFile(name, ps.fd)
 
-#TODO this is dumb
-proc readFile(client: Client; path: string): string {.jsfunc.} =
+proc readFile(ctx: JSContext; client: Client; path: string): JSValue
+    {.jsfunc.} =
   try:
-    return readFile(path)
+    return ctx.toJS(readFile(path))
   except IOError:
-    discard
+    return JS_NULL
 
-#TODO ditto
-proc writeFile(client: Client; path, content: string) {.jsfunc.} =
-  writeFile(path, content)
+proc writeFile(ctx: JSContext; client: Client; path, content: string): JSValue
+    {.jsfunc.} =
+  try:
+    writeFile(path, content)
+  except IOError:
+    return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
+  return JS_UNDEFINED
+
+proc getenv(ctx: JSContext; client: Client; s: string;
+    fallback = JS_NULL): JSValue {.jsfunc.} =
+  if not existsEnv(s):
+    return fallback
+  return ctx.toJS(getEnv(s))
+
+proc setenv(ctx: JSContext; client: Client; s: string; val: JSValue): JSValue
+    {.jsfunc.} =
+  try:
+    if JS_IsNull(val):
+      delEnv(s)
+    else:
+      var vals: string
+      if (let res = ctx.fromJS(val, vals); res.isSome):
+        putEnv(s, vals)
+      else:
+        return JS_EXCEPTION
+  except OSError:
+    return JS_ThrowTypeError(ctx, "Failed to set environment variable")
+  return JS_UNDEFINED
 
 proc nimGCStats(client: Client): string {.jsfunc.} =
   return GC_getStatistics()
