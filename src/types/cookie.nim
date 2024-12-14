@@ -3,7 +3,6 @@ import std/strutils
 import std/times
 
 import monoucha/jsregex
-import server/urlfilter
 import types/opt
 import types/url
 import utils/twtstr
@@ -16,12 +15,13 @@ type
     expires: int64 # unix time
     secure: bool
     httponly: bool
-    samesite: bool
     domain: string
+    hostOnly: bool
     path: string
 
   CookieJar* = ref object
-    filter*: URLFilter
+    domain: string
+    allowHosts: seq[Regex]
     cookies*: seq[Cookie]
 
 proc parseCookieDate(val: string): Option[DateTime] =
@@ -112,10 +112,12 @@ proc parseCookieDate(val: string): Option[DateTime] =
   return some(dt)
 
 # For debugging
-proc `$`*(cookiejar: CookieJar): string =
-  result &= $cookiejar.filter
-  result &= "\n"
-  for cookie in cookiejar.cookies:
+proc `$`*(cookieJar: CookieJar): string =
+  result &= $cookieJar.domain
+  result &= ":\n"
+  for re in cookieJar.allowHosts:
+    result &= "third-party " & $re & '\n'
+  for cookie in cookieJar.cookies:
     result &= "Cookie "
     result &= $cookie[]
     result &= "\n"
@@ -152,12 +154,14 @@ func cookiePathMatches(cookiePath, requestPath: string): bool =
 #         domain string is a %x2E (".") character. (???)
 #      *  The string is a host name (i.e., not an IP address).)
 func cookieDomainMatches(cookieDomain: string; url: URL): bool =
+  if cookieDomain.len == 0:
+    return false
   let host = url.host
   if host == cookieDomain:
     return true
   if url.isIP():
     return false
-  let cookieDomain = if cookieDomain.len > 0 and cookieDomain[0] == '.':
+  let cookieDomain = if cookieDomain[0] == '.':
     cookieDomain.substr(1)
   else:
     cookieDomain
@@ -176,34 +180,47 @@ proc add*(cookieJar: CookieJar; cookie: Cookie) =
     cookieJar.cookies.del(i)
   cookieJar.cookies.add(cookie)
 
+proc match(cookieJar: CookieJar; url: URL): bool =
+  if cookieJar.domain.cookieDomainMatches(url):
+    return true
+  if cookieJar.allowHosts.len > 0:
+    let host = url.host
+    for re in cookieJar.allowHosts:
+      if re.match(host):
+        return true
+  return false
+
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.4
-proc serialize*(cookiejar: CookieJar; url: URL): string =
-  if not cookiejar.filter.match(url):
-    return "" # fail
-  let t = getTime().utc().toTime().toUnix()
+proc serialize*(cookieJar: CookieJar; url: URL): string =
+  if not cookieJar.match(url):
+    return ""
+  var res = ""
+  let t = getTime().toUnix()
   #TODO sort
-  for i in countdown(cookiejar.cookies.high, 0):
-    let cookie = cookiejar.cookies[i]
+  for i in countdown(cookieJar.cookies.high, 0):
+    let cookie = cookieJar.cookies[i]
     if cookie.expires != -1 and cookie.expires <= t:
-      cookiejar.cookies.delete(i)
+      cookieJar.cookies.delete(i)
       continue
     if cookie.secure and url.scheme != "https":
       continue
     if not cookiePathMatches(cookie.path, url.pathname):
       continue
-    if not cookieDomainMatches(cookie.domain, url):
+    if cookie.hostOnly and cookie.domain != url.host:
       continue
-    if result != "":
-      result &= "; "
-    result &= cookie.name
-    result &= "="
-    result &= cookie.value
+    if not cookie.hostOnly and not cookieDomainMatches(cookie.domain, url):
+      continue
+    if res != "":
+      res &= "; "
+    res &= cookie.name
+    res &= "="
+    res &= cookie.value
+  return res
 
 proc newCookie*(str: string; url: URL): Opt[Cookie] =
-  let cookie = Cookie(expires: -1, created: getTime().utc().toTime().toUnix())
+  let cookie = Cookie(expires: -1, created: getTime().toUnix(), hostOnly: true)
   var first = true
-  var haspath = false
-  var hasdomain = false
+  var hasPath = false
   for part in str.split(';'):
     if first:
       cookie.name = part.until('=')
@@ -227,28 +244,23 @@ proc newCookie*(str: string; url: URL): Opt[Cookie] =
         cookie.expires = cookie.created + x.get
     of "secure": cookie.secure = true
     of "httponly": cookie.httponly = true
-    of "samesite": cookie.samesite = true
     of "path":
       if val != "" and val[0] == '/':
-        haspath = true
+        hasPath = true
         cookie.path = val
     of "domain":
-      if cookieDomainMatches(val, url):
-        cookie.domain = val
-        hasdomain = true
-      else:
+      if not cookieDomainMatches(val, url):
         return err()
-  if not hasdomain:
+      cookie.domain = val
+      cookie.hostOnly = true
+  if cookie.hostOnly:
     cookie.domain = url.host
-  if not haspath:
+  if not hasPath:
     cookie.path = defaultCookiePath(url)
   return ok(cookie)
 
-proc newCookieJar*(url: URL; allowhosts: seq[Regex]): CookieJar =
+proc newCookieJar*(url: URL; allowHosts: seq[Regex]): CookieJar =
   return CookieJar(
-    filter: newURLFilter(
-      scheme = some(url.scheme),
-      allowhost = some(url.host),
-      allowhosts = allowhosts
-    )
+    domain: url.host,
+    allowHosts: allowHosts
   )

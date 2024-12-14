@@ -720,7 +720,6 @@ rewrite-url = '''
 host = '(.*\.)?sr\.ht' # either 'something.sr.ht' or 'sr.ht'
 cookie = true # enable cookies
 share-cookie-jar = 'sr.ht' # use the cookie jar of 'sr.ht' for all matched hosts
-third-party-cookie = '.*\.sr\.ht' # allow cookies from subdomains
 
 # Use the "vector" skin on Wikipedia.
 [[siteconf]]
@@ -787,10 +786,12 @@ Overrides `buffer.cookie`.</td>
 <tr>
 <td>third-party-cookie</td>
 <td>array of regexes</td>
-<td>Domains for which third-party cookies are allowed on this domain. Note:
-this only works for buffers which share the same cookie jar.<br>
-Note: regexes are handled according to the [match mode](#match-mode) regex
-handling rules.</td>
+<td>Domains for which third-party cookies are allowed on this domain.
+Only works for buffers which share the same cookie jar.<br>
+Regexes are handled according to [match mode](#match-mode) rules.<br>
+Note: in the past, this was required for first-party cookies from
+subdomains, but this is no longer the case. `third-party-cookie`
+declarations on subdomains have no effect.</td>
 </tr>
 
 <tr>
