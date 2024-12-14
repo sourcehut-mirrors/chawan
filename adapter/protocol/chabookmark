@@ -1,0 +1,235 @@
+#!/bin/sh
+#
+# Simple bookmark script for Chawan. By default, M-b shows bookmarks,
+# and M-a opens the "add bookmark" screen.
+#
+# Also works in w3m; just add to keymap:
+#
+# bind M-a GOTO /cgi-bin/chabookmark
+#
+# The format is a subset of Markdown, so that it's easy to render and
+# edit. (At least as long as you don't do anything weird, you can
+# manually edit it too.)
+#
+# Sample:
+#
+# <title>
+# Bookmarks
+# </title>
+#
+# # Bookmarks
+#
+# ## Section 1
+#
+# * [Entry 1](https://a.example)
+# * [Entry 2](https://b.example)
+#
+# ## Section 2
+#
+# * [Entry 3](https://c.example)
+#
+# (end of sample)
+#
+# TODO:
+# * sub-entries (or really, sub-sections)
+# * maybe tags? (but I don't know what they are good for...)
+# * think of a better structured bookmark format?
+# * rewrite in Nim?
+
+bookmark_file=${CHA_BOOKMARK:-"${CHA_CONFIG_DIR:-"$HOME/.chawan"}/bookmark.md"}
+
+# utils
+die() {
+	echo "Cha-Control: ConnectionError $*"
+	exit 1
+}
+
+urldec() {
+	printf '%s\n' "$1" | sed 's/+/ /g' | "${CHA_LIBEXEC_DIR:-/usr/local/libexec/chawan}"/urldec
+}
+
+urlenc() {
+	printf '%s\n' "$1" | "$CHA_LIBEXEC_DIR"/urlenc
+}
+
+post_only() {
+	test "$REQUEST_METHOD" = POST || die InvalidMethod
+}
+
+safe_printf() {
+	printf "$@" || die "InternalError error writing file"
+}
+
+safe_println() {
+	safe_printf '%s\n' "$1"
+}
+
+safe_rm() {
+	rm -f "$1" || die "InternalError error removing temporary file"
+}
+
+list_sections() {
+	# we don't care if there is a file or not
+	sed -n '/^## /s/## //p' "$bookmark_file" 2>/dev/null
+}
+
+# endpoints
+ensure_bookmark() {
+	if test -f "$bookmark_file"; then return 0; fi
+	import_text=
+	if test -f "${W3M_DIR:-"$HOME"/.w3m}"/bookmark.html
+	then	import_text="<form method=POST>
+<p>
+Or import bookmarks from w3m:
+<p>
+<input type=hidden name=action value=w3m>
+<input name=w3m_path value=\"$HOME/.w3m/bookmark.html\" size=40>
+<p>
+<input type=submit name=go value="IMPORT">
+</form>
+"
+	fi
+	exec cat <<EOF
+Content-Type: text/html
+
+<title>No bookmark file</title>
+<h1>No bookmark file</h1>
+<p>
+No bookmark file found. Create a new one at $bookmark_file?
+<form method=POST>
+<input type=hidden name=action value=init>
+<input type=submit name=go value="OK">
+</form>
+$import_text
+EOF
+}
+
+new_ed() {
+	ensure_bookmark
+	new_ed_section=$(list_sections | sed 's/.*/<option value="&">&/')
+	if test -n "$new_ed_section"
+	then	new_ed_section="<tr><td>Section: <td><select name=section>$new_ed_section</select>"
+	fi
+	exec cat <<EOF
+Content-Type: text/html
+
+<head>
+<title>Register to my bookmark</title>
+<body>
+<h1>Register to my bookmark</h1>
+<form method=POST>
+<input type=hidden name=action value=new>
+<!-- TODO: add labels around URL, Title when I fix ] jump -->
+<table cellpadding=0 style="padding: 0">
+<tr>$new_ed_section
+<tr><td>New Section:<td><input name=new_section size=60>
+<tr><td>URL:<td><input type=url name=url value="$url" size=60>
+<tr><td>Title:<td><input name=title value="$title" size=60>
+<tr><td><input type=submit value=ADD>
+</table>
+EOF
+}
+
+view() {
+	ensure_bookmark
+	printf 'Status: 301\nLocation: file:%s\n\n' "$bookmark_file"
+}
+
+new() {
+	if test -z "$title"
+	then	printf '\nError: missing title\n'
+		exit 1
+	fi
+	if ! test -f "$bookmark_file"; then init || exit 1; fi
+	if test -n "$new_section"
+	then	section=$new_section
+		safe_printf '\n## %s\n' "$new_section" >> "$bookmark_file"
+	fi
+	new_tmp="$bookmark_file~"
+	new_found=0
+	safe_rm "$new_tmp"
+	while read -r line
+	do	safe_println "$line" >> "$new_tmp"
+		if test "$new_found" = 0 && test "$line" = "## $section"
+		then	read -r line
+			if test -n "$line"
+			then	safe_println "$line" >> "$new_tmp"
+				while read -r line && test -n "$line"
+				do	safe_println "$line" >> "$new_tmp"
+				done
+			else	safe_println '' >> "$new_tmp"
+				line=
+			fi
+			safe_println "* [$title]($url)" >> "$new_tmp"
+			new_found=1
+		fi
+	done <"$bookmark_file"
+	mv "$new_tmp" "$bookmark_file" || die InternalError "could not move temp file"
+	view
+}
+
+init_string='<title>
+Bookmarks
+</title>
+<style>
+a[href^="#"] { display: none }
+</style>
+
+# Bookmarks'
+
+init() {
+	safe_println "$init_string" >> "$bookmark_file"
+}
+
+import_w3m() {
+	if ! test -f "$w3m_path"
+	then	printf '\n\nFile not found: %s\n' "$w3m_path"
+		exit 1
+	fi
+	import_w3m_tmp="$bookmark_file~"
+	safe_rm "$import_w3m_tmp"
+	safe_println "$init_string" >> "$import_w3m_tmp"
+	#TODO this isn't quite right. Specifically, if a URL has unmatched
+	# parentheses/brackets in it, then you get a malformed markdown file.
+	# But also, the user can just edit it manually, it's not that hard.
+	sed -E \
+		-e 's@<h2>(.*)</h2>@## \1@g' \
+		-e 's@</?ul>|<body>@@g' \
+		-e '/^<!--|^<h1>|^<\/?body>|^<\/?html>|^<meta charset|^<\/?head>/d' \
+		-e 's@<li><a href="([^"]+)">([^<]+)</a>@* [\2](\1)@g' \
+		"$w3m_path" >> "$import_w3m_tmp" || die "InternalError error importing file"
+	mv "$import_w3m_tmp" "$bookmark_file" || die InternalError "could not move temp file"
+	view
+}
+
+# main
+if test "$REQUEST_METHOD" = POST
+then	QUERY_STRING="$(cat)&"
+else	QUERY_STRING="$QUERY_STRING&"
+fi
+
+url=$W3M_URL
+title=$W3M_TITLE
+action=new_ed
+while test -n "$QUERY_STRING"
+do	kv=${QUERY_STRING%%&*}
+	v=$(urldec "${kv#*=}")
+	case $kv in
+	section=*)	section=$v;;
+	new_section=*)	new_section=$v;;
+	action=*)	action=$v;;
+	title=*)	title=$v;;
+	url=*)		url=$v;;
+	w3m_path=*)	w3m_path=$v;;
+	esac
+	QUERY_STRING=${QUERY_STRING#*&}
+done
+
+case $action in
+new_ed)	new_ed;;
+view)	view;;
+new)	post_only && new;;
+init)	post_only && init && view;;
+w3m)	post_only && import_w3m && view;;
+*)	die InvalidURL "unknown action $action";;
+esac

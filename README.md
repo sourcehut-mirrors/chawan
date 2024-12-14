@@ -72,6 +72,7 @@ Currently implemented features are:
 * mouse support
 * syscall sandboxing on FreeBSD, OpenBSD and Linux (through capsicum, pledge
   and seccomp-bpf)
+* bookmarks
 
 ...with a lot more [planned](todo).
 

@@ -46,7 +46,7 @@ buffer:
 pager:
 - better horizontal line handling: allow viewing content positioned before page
   start, handle long lines, etc
-- history, bookmarks (w3m format?)
+- history (what format?)
 - save/edit buffer output
 - alert on external command failure
 network:
