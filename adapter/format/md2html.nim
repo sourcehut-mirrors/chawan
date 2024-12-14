@@ -655,7 +655,7 @@ proc parseComment(state: var ParseState; line: string) =
     stdout.write(line & '\n')
 
 proc readLine(state: var ParseState; line: var string): bool =
-  let hadLine = line != ""
+  let hadLine = line != "" or state.blockType == btList
   if stdin.readLine(line):
     return true
   line = ""
