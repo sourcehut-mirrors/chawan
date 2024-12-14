@@ -38,6 +38,8 @@ type
     pcLang = "lang"
     pcLink = "link"
     pcVisited = "visited"
+    pcFirstNode = "-cha-first-node"
+    pcLastNode = "-cha-last-node"
 
   CombinatorType* = enum
     ctNone, ctDescendant, ctChild, ctNextSibling, ctSubsequentSibling
@@ -366,6 +368,8 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
       of "focus": add_pseudo_class pcFocus
       of "link": add_pseudo_class pcLink
       of "visited": add_pseudo_class pcVisited
+      of "-cha-first-node": add_pseudo_class pcFirstNode
+      of "-cha-last-node": add_pseudo_class pcLastNode
       else: fail
     of cttColon:
       if not state.has(): fail

@@ -73,6 +73,8 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
   case sel.pseudo.t
   of pcFirstChild: return element.parentNode.firstElementChild == element
   of pcLastChild: return element.parentNode.lastElementChild == element
+  of pcFirstNode: return element.isFirstVisualNode()
+  of pcLastNode: return element.isLastVisualNode()
   of pcOnlyChild:
     return element.parentNode.firstElementChild == element and
       element.parentNode.lastElementChild == element

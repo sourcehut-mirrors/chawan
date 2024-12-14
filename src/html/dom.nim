@@ -2244,6 +2244,29 @@ func lastElementChild*(node: Node): Element {.jsfget.} =
     return child
   return nil
 
+func isFirstVisualNode*(element: Element): bool =
+  let parent = element.parentNode
+  for child in parent.childList:
+    if child == element:
+      return true
+    if child of Element:
+      break
+    if child of Text and not Text(child).data.onlyWhitespace():
+      break
+  return false
+
+func isLastVisualNode*(element: Element): bool =
+  let parent = element.parentNode
+  for i in countdown(parent.childList.high, 0):
+    let child = parent.childList[i]
+    if child == element:
+      return true
+    if child of Element:
+      break
+    if child of Text and not Text(child).data.onlyWhitespace():
+      break
+  return false
+
 func findAncestor*(node: Node; tagTypes: set[TagType]): Element =
   for element in node.ancestors:
     if element.tagType in tagTypes:
