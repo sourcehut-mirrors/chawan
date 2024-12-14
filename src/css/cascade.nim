@@ -29,11 +29,8 @@ type
 func appliesLR(feature: MediaFeature; window: Window; n: LayoutUnit): bool =
   let a = feature.lengthrange.s.a.px(window.attrs, 0)
   let b = feature.lengthrange.s.b.px(window.attrs, 0)
-  if not feature.lengthrange.aeq and a == n or a > n:
-    return false
-  if not feature.lengthrange.beq and b == n or b < n:
-    return false
-  return true
+  return (feature.lengthrange.aeq and a == n or a < n) and
+    (feature.lengthrange.beq and b == n or n < b)
 
 func applies(feature: MediaFeature; window: Window): bool =
   case feature.t
@@ -87,7 +84,7 @@ proc calcRule(tosorts: var ToSorts; element: Element;
       tosorts[sel.pseudo].add((spec, rule))
 
 func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
-  var tosorts: ToSorts
+  var tosorts = ToSorts.default
   let element = Element(styledNode.node)
   var rules: seq[CSSRuleDef] = @[]
   sheet.tagTable.withValue(element.localName, v):
