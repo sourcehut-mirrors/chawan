@@ -12,9 +12,9 @@ x.onreadystatechange = myFunction;
 assert(myFunction === x.onreadystatechange);
 assert(x.readyState === XMLHttpRequest.UNSENT);
 x.open("GET", "ping", false);
-assert_throws("x.responseType = 'document'");
+assertThrows("x.responseType = 'document'", DOMException);
 x.send();
-assert_equals(x.readyState, XMLHttpRequest.DONE);
-assert_equals(x.responseText.trim(), "pong");
+assertEquals(x.readyState, XMLHttpRequest.DONE);
+assertEquals(x.responseText.trim(), "pong");
 document.getElementById("x").textContent = "Success";
 </script>
