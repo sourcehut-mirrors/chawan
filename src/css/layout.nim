@@ -2191,6 +2191,8 @@ proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
 #      cell's width to min_width, then re-do the distribution.
 proc layoutTable(tctx: var TableContext; table: BlockBox;
     sizes: ResolvedSizes) =
+  if tctx.space.w.t == scStretch:
+    table.state.xminwidth = tctx.space.w.u
   let lctx = tctx.lctx
   if table.computed{"border-collapse"} != BorderCollapseCollapse:
     let spc = table.computed{"border-spacing"}
@@ -2216,6 +2218,7 @@ proc layoutTableWrapper(bctx: BlockContext; box: BlockBox;
   box.state.size = table.state.size
   box.state.baseline = table.state.size.h
   box.state.firstBaseline = table.state.size.h
+  box.state.xminwidth = table.state.xminwidth
   if box.children.len > 1:
     # do it here, so that caption's box can stretch to our width
     let caption = box.children[1]
