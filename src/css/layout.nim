@@ -2179,6 +2179,7 @@ proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
     box.state.offset.y += table.state.size.h
   parent.state.size.h += outerHeight
   parent.state.size.w = max(parent.state.size.w, outerWidth)
+  parent.state.xminwidth = max(parent.state.xminwidth, box.state.xminwidth)
 
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
