@@ -422,8 +422,8 @@ proc popList(state: var ParseState) =
 proc writeHeading(state: var ParseState; n: int; text: openArray[char]) =
   state.hasp = false
   let id = text.getId()
-  stdout.write("<H" & $n & " id='" & id & "'><A HREF='#" & id & "'>" &
-    '#'.repeat(n) & "</A> ")
+  stdout.write("<H" & $n & " id='" & id & "'><A HREF='#" & id &
+    "' CLASS=heading>" & '#'.repeat(n) & "</A> ")
   text.parseInline()
   stdout.write("</H" & $n & ">\n")
 

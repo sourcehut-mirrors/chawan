@@ -7,15 +7,18 @@
 #
 # bind M-a GOTO /cgi-bin/chabookmark
 #
-# The format is a subset of Markdown, so that it's easy to render and
-# edit. (At least as long as you don't do anything weird, you can
-# manually edit it too.)
+# The format is a subset of Markdown, so that it's easy to render.
+# You can also edit it manually and it will still work, as long as you
+# don't do anything weird.
 #
 # Sample:
 #
 # <title>
 # Bookmarks
 # </title>
+# <style>
+# a.heading { display: none }
+# </style>
 #
 # # Bookmarks
 #
@@ -172,7 +175,7 @@ init_string='<title>
 Bookmarks
 </title>
 <style>
-a[href^="#"] { display: none }
+a.heading { display: none }
 </style>
 
 # Bookmarks'
