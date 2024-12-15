@@ -21,7 +21,7 @@ type
     fromy* {.jsget.}: int # first index to display
     cursory {.jsget.}: int # selected index
     maxw: int # widest option
-    maxh: int # maximum height on screen (yes the naming is dumb)
+    maxh: int # maximum number of options on screen
     # location on screen
     #TODO make this absolute
     x*: int
@@ -39,9 +39,6 @@ jsDestructor(Select)
 proc queueDraw(select: Select) =
   select.redraw = true
 
-func dispheight(select: Select): int =
-  return select.maxh - select.y
-
 proc setFromY(select: Select; y: int) =
   select.fromy = max(min(y, select.options.len - select.maxh), 0)
 
@@ -49,7 +46,7 @@ func width*(select: Select): int =
   return select.maxw + 2
 
 func height*(select: Select): int =
-  return min(select.options.len + 2, select.maxh)
+  return select.maxh + 2
 
 proc setCursorY*(select: Select; y: int) =
   var y = clamp(y, -1, select.options.high)
@@ -59,8 +56,8 @@ proc setCursorY*(select: Select; y: int) =
     return
   if select.fromy > y:
     select.setFromY(y)
-  if select.fromy + select.dispheight <= y:
-    select.setFromY(y - select.dispheight + 1)
+  if select.fromy + select.maxh <= y:
+    select.setFromY(y - select.maxh + 1)
   select.cursory = y
   select.queueDraw()
 
@@ -106,8 +103,8 @@ proc scrollDown(select: Select; n = 1) {.jsfunc.} =
 proc scrollUp(select: Select; n = 1) {.jsfunc.} =
   let tfy = select.fromy - n
   select.setFromY(tfy)
-  if select.fromy + select.dispheight <= select.cursory:
-    select.setCursorY(select.fromy + select.dispheight - 1)
+  if select.fromy + select.maxh <= select.cursory:
+    select.setCursorY(select.fromy + select.maxh - 1)
   elif tfy < select.fromy:
     select.cursorUp(select.fromy - tfy)
   select.queueDraw()
@@ -180,7 +177,7 @@ proc cursorFirstLine(select: Select) {.jsfunc.} =
 proc cursorLastLine(select: Select) {.jsfunc.} =
   if select.cursory < select.options.len:
     select.fromy = max(select.options.len - select.maxh, 0)
-    select.cursory = select.fromy + select.dispheight - 1
+    select.cursory = select.fromy + select.maxh - 1
     select.queueDraw()
 
 proc cursorTop(select: Select) {.jsfunc.} =
@@ -358,9 +355,9 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
       inc x
 
 proc windowChange*(select: Select; width, height: int) =
-  select.maxh = height - 2
-  if select.y + select.options.len >= select.maxh:
-    select.y = max(select.maxh - select.options.len, 0)
+  if select.y + select.options.len >= height - 2:
+    select.y = max(height - 2 - select.options.len, 0)
+  select.maxh = min(height - 2, select.options.len)
   if select.x + select.maxw + 2 > width:
     #TODO I don't know why but - 2 does not work.
     select.x = max(width - select.maxw - 3, 0)
