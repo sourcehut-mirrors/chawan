@@ -35,7 +35,7 @@ type
     generalList*: seq[CSSRuleDef]
     importList*: seq[URL]
     len: int
-    factory: CAtomFactory
+    factory*: CAtomFactory
 
 type SelectorHashes = object
   tag: CAtom

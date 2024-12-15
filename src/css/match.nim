@@ -156,9 +156,13 @@ func selectorMatches(element: Element; sel: Selector;
   of stType:
     return element.localName == sel.tag
   of stClass:
-    return sel.class in element.classList
+    let factory = element.document.factory
+    for it in element.classList.toks:
+      if sel.class == factory.toLowerAscii(it):
+        return true
+    return false
   of stId:
-    return sel.id == element.id
+    return sel.id == element.document.factory.toLowerAscii(element.id)
   of stAttr:
     return element.attrSelectorMatches(sel)
   of stPseudoClass:

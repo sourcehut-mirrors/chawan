@@ -88,20 +88,16 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
   let element = Element(styledNode.node)
   var rules: seq[CSSRuleDef] = @[]
   sheet.tagTable.withValue(element.localName, v):
-    for rule in v[]:
-      rules.add(rule)
+    rules.add(v[])
   if element.id != CAtomNull:
-    sheet.idTable.withValue(element.id, v):
-      for rule in v[]:
-        rules.add(rule)
+    sheet.idTable.withValue(sheet.factory.toLowerAscii(element.id), v):
+      rules.add(v[])
   for class in element.classList.toks:
-    sheet.classTable.withValue(class, v):
-      for rule in v[]:
-        rules.add(rule)
+    sheet.classTable.withValue(sheet.factory.toLowerAscii(class), v):
+      rules.add(v[])
   for attr in element.attrs:
     sheet.attrTable.withValue(attr.qualifiedName, v):
-      for rule in v[]:
-        rules.add(rule)
+      rules.add(v[])
   for rule in sheet.generalList:
     rules.add(rule)
   rules.sort(ruleDefCmp, order = Ascending)

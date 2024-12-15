@@ -1043,6 +1043,9 @@ proc toStr*(window: Window; atom: CAtom): string =
 proc toAtom*(document: Document; s: string): CAtom =
   return document.factory.toAtom(s)
 
+proc toAtomLower*(document: Document; s: string): CAtom =
+  return document.factory.toAtomLower(s)
+
 proc toAtom*(document: Document; at: StaticAtom): CAtom =
   return document.factory.toAtom(at)
 
@@ -1927,7 +1930,7 @@ proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
 
 func normalizeAttrQName(element: Element; qualifiedName: string): CAtom =
   if element.namespace == Namespace.HTML and not element.document.isxml:
-    return element.document.toAtom(qualifiedName.toLowerAscii())
+    return element.document.toAtomLower(qualifiedName)
   return element.document.toAtom(qualifiedName)
 
 func hasAttributes(element: Element): bool {.jsfunc.} =
@@ -2300,7 +2303,7 @@ func getElementsByTagName0(root: Node; tagName: string): HTMLCollection =
       childonly = false
     )
   let localName = root.document.toAtom(tagName)
-  let localNameLower = root.document.toAtom(tagName.toLowerAscii())
+  let localNameLower = root.document.factory.toLowerAscii(localName)
   return newCollection[HTMLCollection](
     root,
     func(node: Node): bool =
@@ -2328,7 +2331,7 @@ func getElementsByClassName0(node: Node; classNames: string): HTMLCollection =
   let isquirks = document.mode == QUIRKS
   if isquirks:
     for class in classNames.split(AsciiWhitespace):
-      classAtoms.add(document.toAtom(class.toLowerAscii()))
+      classAtoms.add(document.toAtomLower(class))
   else:
     for class in classNames.split(AsciiWhitespace):
       classAtoms.add(document.toAtom(class))
@@ -2339,8 +2342,7 @@ func getElementsByClassName0(node: Node; classNames: string): HTMLCollection =
         if isquirks:
           var cl = newSeq[CAtom]()
           for tok in element.classList.toks:
-            let s = document.toStr(tok)
-            cl.add(document.toAtom(s.toLowerAscii()))
+            cl.add(document.factory.toLowerAscii(tok))
           for class in classAtoms:
             if class notin cl:
               return false
@@ -3700,7 +3702,7 @@ proc setAttribute(element: Element; qualifiedName, value: string):
   ?validateAttributeName(qualifiedName)
   let qualifiedName = if element.namespace == Namespace.HTML and
       not element.document.isxml:
-    element.document.toAtom(qualifiedName.toLowerAscii())
+    element.document.toAtomLower(qualifiedName)
   else:
     element.document.toAtom(qualifiedName)
   element.attr(qualifiedName, value)
@@ -4489,7 +4491,7 @@ proc createElement(document: Document; localName: string):
     return errDOMException("Invalid character in element name",
       "InvalidCharacterError")
   let localName = if not document.isxml:
-    document.toAtom(localName.toLowerAscii())
+    document.toAtomLower(localName)
   else:
     document.toAtom(localName)
   let namespace = if not document.isxml:

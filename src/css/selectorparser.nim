@@ -398,7 +398,7 @@ proc parseAttributeSelector(state: var SelectorParser;
   if not state2.has():
     return Selector(
       t: stAttr,
-      attr: state.factory.toAtom(attr.value),
+      attr: state.factory.toAtomLower(attr.value),
       rel: SelectorRelation(t: rtExists)
     )
   let delim = get_tok state2.consume()
@@ -441,7 +441,7 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = get_tok state.consume()
   if tok.t != cttIdent: fail
-  let class = state.factory.toAtom(tok.value)
+  let class = state.factory.toAtomLower(tok.value)
   result = Selector(t: stClass, class: class)
   when defined(debug):
     result.classs = tok.value
@@ -455,18 +455,17 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       case tok.t
       of cttIdent:
         inc state.at
-        let s = tok.value.toLowerAscii()
-        let tag = state.factory.toAtom(s)
+        let tag = state.factory.toAtomLower(tok.value)
         let sel = Selector(t: stType, tag: tag)
         when defined(debug):
-          sel.tags = s
+          sel.tags = tok.value
         result.add(sel)
       of cttColon:
         inc state.at
         result.add(state.parsePseudoSelector())
       of cttHash:
         inc state.at
-        let id = state.factory.toAtom(tok.value)
+        let id = state.factory.toAtomLower(tok.value)
         result.add(Selector(t: stId, id: id))
         when defined(debug):
           result[^1].ids = tok.value

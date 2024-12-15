@@ -148,6 +148,7 @@ type
   CAtomFactoryObj = object
     strMap: array[CAtomFactoryStrMapLength, seq[CAtom]]
     atomMap: seq[string]
+    lowerMap: seq[CAtom]
 
   #TODO could be a ptr probably
   CAtomFactory* = ref CAtomFactoryObj
@@ -160,7 +161,8 @@ func hash*(atom: CAtom): Hash {.borrow.}
 
 func `$`*(a: CAtom): string {.borrow.}
 
-func toAtom(factory: var CAtomFactoryObj; s: string): CAtom =
+func toAtom(factory: var CAtomFactoryObj; s: string;
+    isInit: static bool = false): CAtom =
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
   for atom in factory.strMap[i]:
@@ -170,6 +172,12 @@ func toAtom(factory: var CAtomFactoryObj; s: string): CAtom =
   # Not found
   let atom = CAtom(factory.atomMap.len)
   factory.atomMap.add(s)
+  when not isInit:
+    let lower = if AsciiUpperAlpha notin s:
+      atom
+    else:
+      factory.toAtom(s.toLowerAscii())
+    factory.lowerMap.add(lower)
   factory.strMap[i].add(atom)
   return atom
 
@@ -177,9 +185,16 @@ const factoryInit = (func(): CAtomFactoryInit =
   var init = CAtomFactoryInit()
   # Null atom
   init.obj.atomMap.add("")
+  init.obj.lowerMap.add(CAtom(0))
   # StaticAtom includes TagType too.
   for sa in StaticAtom(1) .. StaticAtom.high:
-    discard init.obj.toAtom($sa)
+    discard init.obj.toAtom($sa, isInit = true)
+  for sa in StaticAtom(1) .. StaticAtom.high:
+    let atom = init.obj.toAtom(($sa).toLowerAscii(), isInit = true)
+    init.obj.lowerMap.add(atom)
+  # fill slots of newly added lower mappings
+  while init.obj.lowerMap.len < init.obj.atomMap.len:
+    init.obj.lowerMap.add(CAtom(init.obj.lowerMap.len))
   return init
 )()
 
@@ -187,6 +202,12 @@ proc newCAtomFactory*(): CAtomFactory =
   let factory = new(CAtomFactory)
   factory[] = factoryInit.obj
   return factory
+
+func toLowerAscii*(factory: CAtomFactory; a: CAtom): CAtom =
+  return factory.lowerMap[int32(a)]
+
+func equalsIgnoreCase*(factory: CAtomFactory; a, b: CAtom): bool =
+  return factory.lowerMap[int32(a)] == factory.lowerMap[int32(b)]
 
 func toAtom*(factory: CAtomFactory; s: string): CAtom =
   return factory[].toAtom(s)
@@ -198,6 +219,9 @@ func toAtom*(factory: CAtomFactory; tagType: TagType): CAtom =
 func toAtom*(factory: CAtomFactory; attrType: StaticAtom): CAtom =
   assert attrType != atUnknown
   return CAtom(attrType)
+
+func toAtomLower*(factory: CAtomFactory; s: string): CAtom =
+  return factory.lowerMap[int32(factory.toAtom(s))]
 
 func toStr*(factory: CAtomFactory; atom: CAtom): string =
   return factory.atomMap[int(atom)]
