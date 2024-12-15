@@ -61,7 +61,7 @@ input::before { content: '['; text-decoration: none; color: initial }
 input::after { content: ']'; text-decoration: none; color: initial }
 
 input[type=submit i], input[type=button i], input[type=reset i],
-input[type=radio i] {
+input[type=radio i], input[type=checkbox i] {
 	text-decoration: none
 }
 
