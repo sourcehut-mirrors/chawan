@@ -1796,13 +1796,11 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
     space: AvailableSpace) =
   var sizes = ResolvedSizes(
     padding: lctx.resolvePadding(space.w, box.computed),
-    space: space,
+    space: availableSpace(w = space.w, h = maxContent()),
     bounds: DefaultBounds
   )
   if sizes.space.w.isDefinite():
     sizes.space.w.u -= sizes.padding[dtHorizontal].sum()
-  if sizes.space.h.isDefinite():
-    sizes.space.h.u -= sizes.padding[dtVertical].sum()
   box.state = BoxLayoutState()
   var bctx = BlockContext(lctx: lctx)
   bctx.layoutFlow(box, sizes)
@@ -1812,6 +1810,9 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
   box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight)
+  if space.h.t == scStretch:
+    box.state.size.h = max(box.state.size.h, space.h.u -
+      sizes.padding[dtVertical].sum())
   # A table cell's minimum width overrides its width.
   box.state.size.w = max(box.state.size.w, box.state.xminwidth)
 
