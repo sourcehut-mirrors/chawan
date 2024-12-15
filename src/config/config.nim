@@ -109,6 +109,7 @@ type
     mime_types*: MimeTypes
     cgi_dir* {.jsgetset.}: seq[ChaPathResolved]
     urimethodmap*: URIMethodMap
+    bookmark* {.jsgetset.}: ChaPathResolved
     download_dir* {.jsgetset.}: ChaPathResolved
     w3m_cgi_compat* {.jsgetset.}: bool
     copy_cmd* {.jsgetset.}: string
@@ -295,21 +296,13 @@ proc bindPagerKey(config: Config; key, action: string) {.jsfunc.} =
 proc bindLineKey(config: Config; key, action: string) {.jsfunc.} =
   config.line.setter(key, action)
 
-proc openFileExpand(dir, file: string): PosixStream =
-  if file.len == 0:
-    return nil
-  if file[0] == '/':
-    return newPosixStream(file)
-  else:
-    return newPosixStream(dir / file)
-
-proc readUserStylesheet(dir, file: string): string =
-  let x = ChaPath(file).unquote()
+proc readUserStylesheet(outs: var string; dir, file: string) =
+  let x = ChaPath(file).unquote(dir)
   if x.isNone:
     raise newException(ValueError, x.error)
-  let ps = openFileExpand(dir, x.get)
+  let ps = newPosixStream(x.get)
   if ps != nil:
-    result = ps.recvAll()
+    outs &= ps.recvAll()
     ps.sclose()
 
 type ConfigParser = object
@@ -565,10 +558,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
       typeCheck(vv, {tvtString, tvtArray}, kkk)
       case vv.t
       of tvtString:
-        x.stylesheet &= readUserStylesheet(ctx.dir, vv.s)
+        x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
       of tvtArray:
         for child in vv.a:
-          x.stylesheet &= readUserStylesheet(ctx.dir, vv.s)
+          x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
       else: discard
     of "inline":
       typeCheck(vv, tvtString, kkk)
@@ -605,7 +598,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
     v: TomlValue; k: string) =
   typeCheck(v, tvtString, k)
-  let y = ChaPath(v.s).unquote()
+  let y = ChaPath(v.s).unquote(ctx.config.dir)
   if y.isNone:
     raise newException(ValueError, y.error)
   x = ChaPathResolved(y.get)
@@ -616,7 +609,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(MimeTypes)
   for p in paths:
-    let ps = openFileExpand(ctx.dir, p)
+    let ps = newPosixStream(p)
     if ps != nil:
       let src = ps.recvAllOrMmap()
       x.parseMimeTypes(src.toOpenArray(), DefaultImages)
@@ -629,7 +622,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(Mailcap)
   for p in paths:
-    let ps = openFileExpand(ctx.dir, p)
+    let ps = newPosixStream(p)
     if ps != nil:
       let src = ps.recvAllOrMmap()
       let res = x.parseMailcap(src.toOpenArray())
@@ -648,7 +641,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
   var path: ChaPathResolved
   ctx.parseConfigValue(path, v, k)
   x = AutoMailcap(path: path)
-  let ps = openFileExpand(ctx.dir, path)
+  let ps = newPosixStream(path)
   if ps != nil:
     let src = ps.recvAllOrMmap()
     let res = x.entries.parseMailcap(src.toOpenArray())
@@ -666,7 +659,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   ctx.parseConfigValue(paths, v, k)
   x = default(URIMethodMap)
   for p in paths:
-    let ps = openFileExpand(ctx.dir, p)
+    let ps = newPosixStream(p)
     if ps != nil:
       x.parseURIMethodMap(ps.recvAll())
       ps.sclose()
@@ -707,7 +700,7 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
       var includes = config.`include`
       config.`include`.setLen(0)
       for s in includes:
-        let ps = openFileExpand(dir, s)
+        let ps = newPosixStream(s)
         if ps == nil:
           return err("include file not found: " & s)
         ?config.parseConfig(dir, ps.recvAll(), warnings)

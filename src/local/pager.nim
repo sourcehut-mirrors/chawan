@@ -1735,7 +1735,7 @@ proc cacheFile(pager: Pager): string {.jsfget.} =
 
 proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
   var editor = pager.config.external.editor
-  if (let uqEditor = ChaPath(editor).unquote(); uqEditor.isSome):
+  if (let uqEditor = ChaPath(editor).unquote(""); uqEditor.isSome):
     if uqEditor.get in ["vi", "nvi", "vim", "nvim"]:
       editor = uqEditor.get & " +%d"
   var canpipe = true
@@ -2854,6 +2854,9 @@ const MenuMap = [
   ("View source           (\\)", "cmd.pager.toggleSource(1)"),
   ("Edit source          (sE)", "cmd.buffer.sourceEdit(1)"),
   ("Save source          (sS)", "cmd.buffer.saveSource(1)"),
+  ("─────────────────────────", ""),
+  ("Bookmark page       (M-a)", "cmd.pager.addBookmark(1)"),
+  ("Open bookmarks      (M-b)", "cmd.pager.openBookmarks(1)"),
 ]
 
 proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =

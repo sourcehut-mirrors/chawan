@@ -45,7 +45,8 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
       cgiDir: seq[string](config.external.cgi_dir),
       tmpdir: config.external.tmpdir,
       sockdir: config.external.sockdir,
-      configdir: config.dir
+      configdir: config.dir,
+      bookmark: config.external.bookmark
     ))
   var r = forkserver.istream.initPacketReader()
   var process: int

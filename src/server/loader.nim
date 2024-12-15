@@ -272,6 +272,7 @@ type
     tmpdir*: string
     sockdir*: string
     configdir*: string
+    bookmark*: string
 
 func isPrivileged(ctx: LoaderContext; client: ClientData): bool =
   return ctx.pagerClient == client
@@ -1428,6 +1429,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
   putEnv("CHA_TMP_DIR", config.tmpdir)
   putEnv("CHA_CONFIG_DIR", config.configdir)
+  putEnv("CHA_BOOKMARK", config.bookmark)
   return ctx
 
 # This is only called when an OutputHandle could not read enough of one (or

@@ -49,6 +49,7 @@ urimethodmap = [
 	"/etc/urimethodmap",
 	"/usr/local/etc/w3m/urimethodmap"
 ]
+bookmark = "bookmark.md"
 tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
 sockdir = "${TMPDIR:-/tmp}/cha-sock-$LOGNAME"
 editor = "${EDITOR:-vi}"
@@ -322,7 +323,7 @@ dupeBuffer = '() => pager.dupeBuffer()'
 load = '() => pager.load()'
 webSearch = '() => pager.load("go:")'
 addBookmark = '() => pager.gotoURL(`cgi-bin:chabookmark?url=${encodeURIComponent(pager.url)}&title=${encodeURIComponent(pager.title)}`)'
-openBookmarks = '() => pager.gotoURL(`cgi-bin:chabookmark?view`)'
+openBookmarks = '() => pager.gotoURL(`cgi-bin:chabookmark?action=view`)'
 reloadBuffer = '() => pager.reload()'
 lineInfo = '() => pager.lineInfo()'
 toggleSource = '() => pager.toggleSource()'

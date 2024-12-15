@@ -195,6 +195,8 @@ proc newPosixStream*(fd: SocketHandle): PosixStream =
 
 proc newPosixStream*(path: string; flags = cint(O_RDONLY); mode = cint(0)):
     PosixStream =
+  if path == "":
+    return nil
   let fd = open(cstring(path), flags, mode)
   if fd == -1:
     return nil

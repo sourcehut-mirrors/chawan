@@ -30,7 +30,6 @@ type
 
   ChaPathResult[T] = Result[T, ChaPathError]
 
-proc unquote*(p: ChaPath): ChaPathResult[string]
 proc unquote(p: string; starti: var int; terminal: Option[char]):
     ChaPathResult[string]
 proc stateCurlyStart(ctx: var UnquoteContext; c: char): ChaPathResult[void]
@@ -255,9 +254,13 @@ proc toJS*(ctx: JSContext; p: ChaPath): JSValue =
 proc fromJS*(ctx: JSContext; val: JSValue; res: var ChaPath): Opt[void] =
   return ctx.fromJS(val, string(res))
 
-proc unquote*(p: ChaPath): ChaPathResult[string] =
-  let s = ?unquote(string(p))
+proc unquote*(p: ChaPath; base: string): ChaPathResult[string] =
+  var s = ?unquote(string(p))
+  if s.len == 0:
+    return ok(s)
+  if base != "" and s[0] != '/':
+    s.insert(base & '/', 0)
   return ok(normalizedPath(s))
 
 proc unquoteGet*(p: ChaPath): string =
-  return p.unquote().get
+  return p.unquote("").get

@@ -370,6 +370,13 @@ defaults to `xsel -bi`.</td>
 defaults to `xsel -bo`.</td>
 </tr>
 
+<tr>
+<td>bookmark</td>
+<td>path</td>
+<td>Path to the bookmark.md file. (The file it points to should have a
+.md extension, so that its type can be correctly deduced.)</td>
+</tr>
+
 </table>
 
 ## Input
@@ -1117,6 +1124,18 @@ ones using C-p or C-n.</td>
 <td><kbd>M-p</kbd></td>
 <td>`cmd.pager.gotoClipboardURL`</td>
 <td>Go to the URL currently on the clipboard.</td>
+</tr>
+
+<tr>
+<td><kbd>M-b</kbd></td>
+<td>`cmd.pager.openBookmarks`</td>
+<td>Open the bookmark file.</td>
+</tr>
+
+<tr>
+<td><kbd>M-a</kbd></td>
+<td>`cmd.pager.addBookmark`</td>
+<td>Add the current page to your bookmarks.</td>
 </tr>
 
 </table>
