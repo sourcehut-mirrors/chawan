@@ -4,234 +4,6 @@ startup-script = ""
 headless = false
 console-buffer = true
 
-[cmd.pager]
-quit = '() => quit()'
-suspend = '() => suspend()'
-copyURL = '''
-() => {
-	if (pager.externInto(config.external.copy_cmd, pager.url))
-		pager.alert("Copied URL to clipboard.");
-	else
-		pager.alert("Error; please install xsel or adjust external.copy-cmd");
-}
-'''
-copyCursorLink = '''
-() => {
-	const link = pager.hoverLink;
-	if (!link)
-		pager.alert("Please move the cursor above a link and try again.");
-	else if (pager.externInto(config.external.copy_cmd, link))
-		pager.alert("Copied URL to clipboard.");
-	else
-		pager.alert("Error; please install xsel or adjust external.copy-cmd");
-}
-'''
-copyCursorImage = '''
-() => {
-	const link = pager.hoverImage;
-	if (!link)
-		pager.alert("Please move the cursor above an image and try again.");
-	else if (pager.externInto(config.external.copy_cmd, link))
-		pager.alert("Copied URL to clipboard.");
-	else
-		pager.alert("Error; please install xsel or adjust external.copy-cmd");
-}
-'''
-gotoClipboardURL = '''
-() => {
-	const s = pager.externCapture(config.external.paste_cmd);
-	if (s === null)
-		pager.alert("Error; please install xsel or adjust external.paste-cmd");
-	else
-		pager.loadSubmit(s);
-}
-'''
-peek = '() => pager.alert(pager.url)'
-peekCursor = 'n => pager.peekCursor(n)'
-toggleWrap = '''
-() => {
-	config.search.wrap = !config.search.wrap;
-	pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
-}
-'''
-dupeBuffer = '() => pager.dupeBuffer()'
-load = '() => pager.load()'
-webSearch = '() => pager.load("go:")'
-addBookmark = '() => pager.gotoURL(`cgi-bin:chabookmark?url=${encodeURIComponent(pager.url)}&title=${encodeURIComponent(pager.title)}`)'
-openBookmarks = '() => pager.gotoURL(`cgi-bin:chabookmark?view`)'
-reloadBuffer = '() => pager.reload()'
-lineInfo = '() => pager.lineInfo()'
-toggleSource = '() => pager.toggleSource()'
-discardBuffer = '() => pager.discardBuffer()'
-discardBufferPrev = '() => pager.discardBuffer(pager.buffer, "prev")'
-discardBufferNext = '() => pager.discardBuffer(pager.buffer, "next")'
-discardTree = '() => pager.discardTree()'
-prevBuffer = '() => pager.prevBuffer()'
-prevSiblingBuffer = '() => pager.prevSiblingBuffer()'
-nextBuffer = '() => pager.nextBuffer()'
-nextSiblingBuffer = '() => pager.nextSiblingBuffer()'
-parentBuffer = '() => pager.parentBuffer()'
-enterCommand = '() => pager.command()'
-searchForward = '() => pager.searchForward()'
-searchBackward = '() => pager.searchBackward()'
-isearchForward = '() => pager.isearchForward()'
-isearchBackward = '() => pager.isearchBackward()'
-searchNext = 'n => pager.searchNext(n)'
-searchPrev = 'n => pager.searchPrev(n)'
-toggleCommandMode = '''
-() => {
-	if ((pager.commandMode = consoleBuffer != pager.buffer))
-		console.show();
-	else
-		console.hide();
-}
-'''
-showFullAlert = '() => pager.showFullAlert()'
-
-[cmd.buffer]
-cursorLeft = 'n => pager.cursorLeft(n)'
-cursorDown = 'n => pager.cursorDown(n)'
-cursorUp = 'n => pager.cursorUp(n)'
-cursorRight = 'n => pager.cursorRight(n)'
-cursorLineBegin = '() => pager.cursorLineBegin()'
-cursorLineTextStart = '() => pager.cursorLineTextStart()'
-cursorLineEnd = '() => pager.cursorLineEnd()'
-cursorNextWord = '() => pager.cursorNextWord()'
-cursorNextViWord = '() => pager.cursorNextViWord()'
-cursorNextBigWord = '() => pager.cursorNextBigWord()'
-cursorWordBegin = '() => pager.cursorWordBegin()'
-cursorViWordBegin = '() => pager.cursorViWordBegin()'
-cursorBigWordBegin = '() => pager.cursorBigWordBegin()'
-cursorWordEnd = '() => pager.cursorWordEnd()'
-cursorViWordEnd = '() => pager.cursorViWordEnd()'
-cursorBigWordEnd = '() => pager.cursorBigWordEnd()'
-cursorPrevLink = 'n => pager.cursorPrevLink(n)'
-cursorNextLink = 'n => pager.cursorNextLink(n)'
-cursorPrevParagraph = 'n => pager.cursorPrevParagraph(n)'
-cursorNextParagraph = 'n => pager.cursorNextParagraph(n)'
-cursorTop = 'n => pager.cursorTop(n)'
-cursorMiddle = '() => pager.cursorMiddle()'
-cursorBottom = 'n => pager.cursorBottom(n)'
-cursorLeftEdge = '() => pager.cursorLeftEdge()'
-cursorMiddleColumn = '() => pager.cursorMiddleColumn()'
-cursorRightEdge = '() => pager.cursorRightEdge()'
-halfPageDown = 'n => pager.halfPageDown(n)'
-halfPageUp = 'n => pager.halfPageUp(n)'
-halfPageLeft = 'n => pager.halfPageLeft(n)'
-halfPageRight = 'n => pager.halfPageRight(n)'
-pageDown = 'n => pager.pageDown(n)'
-pageUp = 'n => pager.pageUp(n)'
-pageLeft = 'n => pager.pageLeft(n)'
-pageRight = 'n => pager.pageRight(n)'
-scrollDown = 'n => pager.scrollDown(n)'
-scrollUp = 'n => pager.scrollUp(n)'
-scrollLeft = 'n => pager.scrollLeft(n)'
-scrollRight = 'n => pager.scrollRight(n)'
-click = '() => pager.click()'
-viewImage = '''
-(_, save) => {
-	let contentType = null;
-	let url = new Request(pager.hoverImage, {headers: {Accept: "*/*"}});
-	if (pager.hoverCachedImage) {
-		[url, contentType] = pager.hoverCachedImage.split(' ');
-		url = 'file:' + pager.getCacheFile(url, pager.buffer.process);
-		console.log(url)
-	}
-	if (url)
-		pager.gotoURL(url, {contentType: contentType, save: save});
-}
-'''
-toggleImages = '() => pager.toggleImages()'
-markURL = '() => pager.markURL()'
-redraw = '() => pager.redraw()'
-reshape = '() => pager.reshape()'
-cancel = '() => pager.cancel()'
-# vi G
-gotoLineOrEnd = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
-# vim gg
-gotoLineOrStart = 'n => n ? pager.gotoLine(n) : pager.cursorFirstLine()'
-# vi z. z^M z-
-centerLineBegin = 'n => pager.centerLineBegin(n)'
-raisePageBegin = 'n => pager.raisePageBegin(n)'
-lowerPageBegin = 'n => pager.lowerPageBegin(n)'
-# vi z+ z^
-nextPageBegin = 'n => pager.nextPageBegin(n)'
-previousPageBegin = 'n => pager.previousPageBegin(n)'
-# vim zz zb zt
-centerLine = 'n => pager.centerLine(n)'
-raisePage = 'n => pager.raisePage(n)'
-lowerPage = 'n => pager.lowerPage(n)'
-cursorToggleSelection = 'n => pager.cursorToggleSelection(n)'
-cursorToggleSelectionLine = 'n => pager.cursorToggleSelection(n, {selectionType: "line"})'
-cursorToggleSelectionBlock = 'n => pager.cursorToggleSelection(n, {selectionType: "block"})'
-sourceEdit = '''
-() => {
-	const url = pager.url;
-	pager.extern(pager.getEditorCommand(url.protocol == "file:" ?
-		decodeURIComponent(url.pathname) :
-		pager.cacheFile));
-}
-'''
-saveLink = '() => pager.saveLink()'
-saveSource = '() => pager.saveSource()'
-saveImage = '() => cmd.buffer.viewImage(1, true);'
-mark = '''
-async () => {
-	const c = await pager.askChar("m");
-	if (c.charCodeAt() != 3) /* ctrl-c */
-		pager.setMark(c);
-}
-'''
-gotoMark = '''
-async () => {
-	const c = await pager.askChar('`');
-	if (c.charCodeAt() != 3) /* C-c */
-		pager.gotoMark(c);
-}
-'''
-gotoMarkY = '''
-async () => {
-	const c = await pager.askChar('`');
-	if (c.charCodeAt() != 3) /* C-c */
-		pager.gotoMarkY(c);
-}
-'''
-copySelection = '''
-async () => {
-	if (!pager.currentSelection) {
-		feedNext();
-		return;
-	}
-	const text = await pager.getSelectionText(pager.currentSelection);
-	if (pager.externInto(config.external.copy_cmd, text))
-		pager.alert("Copied selection to clipboard.");
-	else
-		pager.alert("Error; please install xsel or adjust external.copy-cmd");
-	pager.cursorToggleSelection();
-}
-'''
-cursorNthLink = 'n => pager.cursorNthLink(n)'
-cursorRevNthLink = 'n => pager.cursorRevNthLink(n)'
-
-[cmd.line]
-submit = '() => line.submit()'
-backspace = '() => line.backspace()'
-delete = '() => line.delete()'
-cancel = '() => line.cancel()'
-prevWord = '() => line.prevWord()'
-nextWord = '() => line.nextWord()'
-backward = '() => line.backward()'
-forward = '() => line.forward()'
-clear = '() => line.clear()'
-kill = '() => line.kill()'
-clearWord = '() => line.clearWord()'
-killWord = '() => line.killWord()'
-begin = '() => line.begin()'
-end = '() => line.end()'
-escape = '() => line.escape()'
-prevHist = '() => line.prevHist()'
-nextHist = '() => line.nextHist()'
-
 [protocol.ftp]
 form-request = "ftp"
 
@@ -495,3 +267,231 @@ M-c = 'cmd.pager.toggleCommandMode'
 'M-[B' = 'cmd.line.nextHist'
 'M-[A' = 'cmd.line.prevHist'
 'M-[C' = 'cmd.line.forward'
+
+[cmd.pager]
+quit = '() => quit()'
+suspend = '() => suspend()'
+copyURL = '''
+() => {
+	if (pager.externInto(config.external.copy_cmd, pager.url))
+		pager.alert("Copied URL to clipboard.");
+	else
+		pager.alert("Error; please install xsel or adjust external.copy-cmd");
+}
+'''
+copyCursorLink = '''
+() => {
+	const link = pager.hoverLink;
+	if (!link)
+		pager.alert("Please move the cursor above a link and try again.");
+	else if (pager.externInto(config.external.copy_cmd, link))
+		pager.alert("Copied URL to clipboard.");
+	else
+		pager.alert("Error; please install xsel or adjust external.copy-cmd");
+}
+'''
+copyCursorImage = '''
+() => {
+	const link = pager.hoverImage;
+	if (!link)
+		pager.alert("Please move the cursor above an image and try again.");
+	else if (pager.externInto(config.external.copy_cmd, link))
+		pager.alert("Copied URL to clipboard.");
+	else
+		pager.alert("Error; please install xsel or adjust external.copy-cmd");
+}
+'''
+gotoClipboardURL = '''
+() => {
+	const s = pager.externCapture(config.external.paste_cmd);
+	if (s === null)
+		pager.alert("Error; please install xsel or adjust external.paste-cmd");
+	else
+		pager.loadSubmit(s);
+}
+'''
+peek = '() => pager.alert(pager.url)'
+peekCursor = 'n => pager.peekCursor(n)'
+toggleWrap = '''
+() => {
+	config.search.wrap = !config.search.wrap;
+	pager.alert("Wrap search " + (config.search.wrap ? "on" : "off"));
+}
+'''
+dupeBuffer = '() => pager.dupeBuffer()'
+load = '() => pager.load()'
+webSearch = '() => pager.load("go:")'
+addBookmark = '() => pager.gotoURL(`cgi-bin:chabookmark?url=${encodeURIComponent(pager.url)}&title=${encodeURIComponent(pager.title)}`)'
+openBookmarks = '() => pager.gotoURL(`cgi-bin:chabookmark?view`)'
+reloadBuffer = '() => pager.reload()'
+lineInfo = '() => pager.lineInfo()'
+toggleSource = '() => pager.toggleSource()'
+discardBuffer = '() => pager.discardBuffer()'
+discardBufferPrev = '() => pager.discardBuffer(pager.buffer, "prev")'
+discardBufferNext = '() => pager.discardBuffer(pager.buffer, "next")'
+discardTree = '() => pager.discardTree()'
+prevBuffer = '() => pager.prevBuffer()'
+prevSiblingBuffer = '() => pager.prevSiblingBuffer()'
+nextBuffer = '() => pager.nextBuffer()'
+nextSiblingBuffer = '() => pager.nextSiblingBuffer()'
+parentBuffer = '() => pager.parentBuffer()'
+enterCommand = '() => pager.command()'
+searchForward = '() => pager.searchForward()'
+searchBackward = '() => pager.searchBackward()'
+isearchForward = '() => pager.isearchForward()'
+isearchBackward = '() => pager.isearchBackward()'
+searchNext = 'n => pager.searchNext(n)'
+searchPrev = 'n => pager.searchPrev(n)'
+toggleCommandMode = '''
+() => {
+	if ((pager.commandMode = consoleBuffer != pager.buffer))
+		console.show();
+	else
+		console.hide();
+}
+'''
+showFullAlert = '() => pager.showFullAlert()'
+
+[cmd.buffer]
+cursorLeft = 'n => pager.cursorLeft(n)'
+cursorDown = 'n => pager.cursorDown(n)'
+cursorUp = 'n => pager.cursorUp(n)'
+cursorRight = 'n => pager.cursorRight(n)'
+cursorLineBegin = '() => pager.cursorLineBegin()'
+cursorLineTextStart = '() => pager.cursorLineTextStart()'
+cursorLineEnd = '() => pager.cursorLineEnd()'
+cursorNextWord = '() => pager.cursorNextWord()'
+cursorNextViWord = '() => pager.cursorNextViWord()'
+cursorNextBigWord = '() => pager.cursorNextBigWord()'
+cursorWordBegin = '() => pager.cursorWordBegin()'
+cursorViWordBegin = '() => pager.cursorViWordBegin()'
+cursorBigWordBegin = '() => pager.cursorBigWordBegin()'
+cursorWordEnd = '() => pager.cursorWordEnd()'
+cursorViWordEnd = '() => pager.cursorViWordEnd()'
+cursorBigWordEnd = '() => pager.cursorBigWordEnd()'
+cursorPrevLink = 'n => pager.cursorPrevLink(n)'
+cursorNextLink = 'n => pager.cursorNextLink(n)'
+cursorPrevParagraph = 'n => pager.cursorPrevParagraph(n)'
+cursorNextParagraph = 'n => pager.cursorNextParagraph(n)'
+cursorTop = 'n => pager.cursorTop(n)'
+cursorMiddle = '() => pager.cursorMiddle()'
+cursorBottom = 'n => pager.cursorBottom(n)'
+cursorLeftEdge = '() => pager.cursorLeftEdge()'
+cursorMiddleColumn = '() => pager.cursorMiddleColumn()'
+cursorRightEdge = '() => pager.cursorRightEdge()'
+halfPageDown = 'n => pager.halfPageDown(n)'
+halfPageUp = 'n => pager.halfPageUp(n)'
+halfPageLeft = 'n => pager.halfPageLeft(n)'
+halfPageRight = 'n => pager.halfPageRight(n)'
+pageDown = 'n => pager.pageDown(n)'
+pageUp = 'n => pager.pageUp(n)'
+pageLeft = 'n => pager.pageLeft(n)'
+pageRight = 'n => pager.pageRight(n)'
+scrollDown = 'n => pager.scrollDown(n)'
+scrollUp = 'n => pager.scrollUp(n)'
+scrollLeft = 'n => pager.scrollLeft(n)'
+scrollRight = 'n => pager.scrollRight(n)'
+click = '() => pager.click()'
+viewImage = '''
+(_, save) => {
+	let contentType = null;
+	let url = new Request(pager.hoverImage, {headers: {Accept: "*/*"}});
+	if (pager.hoverCachedImage) {
+		[url, contentType] = pager.hoverCachedImage.split(' ');
+		url = 'file:' + pager.getCacheFile(url, pager.buffer.process);
+		console.log(url)
+	}
+	if (url)
+		pager.gotoURL(url, {contentType: contentType, save: save});
+}
+'''
+toggleImages = '() => pager.toggleImages()'
+markURL = '() => pager.markURL()'
+redraw = '() => pager.redraw()'
+reshape = '() => pager.reshape()'
+cancel = '() => pager.cancel()'
+# vi G
+gotoLineOrEnd = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
+# vim gg
+gotoLineOrStart = 'n => n ? pager.gotoLine(n) : pager.cursorFirstLine()'
+# vi z. z^M z-
+centerLineBegin = 'n => pager.centerLineBegin(n)'
+raisePageBegin = 'n => pager.raisePageBegin(n)'
+lowerPageBegin = 'n => pager.lowerPageBegin(n)'
+# vi z+ z^
+nextPageBegin = 'n => pager.nextPageBegin(n)'
+previousPageBegin = 'n => pager.previousPageBegin(n)'
+# vim zz zb zt
+centerLine = 'n => pager.centerLine(n)'
+raisePage = 'n => pager.raisePage(n)'
+lowerPage = 'n => pager.lowerPage(n)'
+cursorToggleSelection = 'n => pager.cursorToggleSelection(n)'
+cursorToggleSelectionLine = 'n => pager.cursorToggleSelection(n, {selectionType: "line"})'
+cursorToggleSelectionBlock = 'n => pager.cursorToggleSelection(n, {selectionType: "block"})'
+sourceEdit = '''
+() => {
+	const url = pager.url;
+	pager.extern(pager.getEditorCommand(url.protocol == "file:" ?
+		decodeURIComponent(url.pathname) :
+		pager.cacheFile));
+}
+'''
+saveLink = '() => pager.saveLink()'
+saveSource = '() => pager.saveSource()'
+saveImage = '() => cmd.buffer.viewImage(1, true);'
+mark = '''
+async () => {
+	const c = await pager.askChar("m");
+	if (c.charCodeAt() != 3) /* ctrl-c */
+		pager.setMark(c);
+}
+'''
+gotoMark = '''
+async () => {
+	const c = await pager.askChar('`');
+	if (c.charCodeAt() != 3) /* C-c */
+		pager.gotoMark(c);
+}
+'''
+gotoMarkY = '''
+async () => {
+	const c = await pager.askChar('`');
+	if (c.charCodeAt() != 3) /* C-c */
+		pager.gotoMarkY(c);
+}
+'''
+copySelection = '''
+async () => {
+	if (!pager.currentSelection) {
+		feedNext();
+		return;
+	}
+	const text = await pager.getSelectionText(pager.currentSelection);
+	if (pager.externInto(config.external.copy_cmd, text))
+		pager.alert("Copied selection to clipboard.");
+	else
+		pager.alert("Error; please install xsel or adjust external.copy-cmd");
+	pager.cursorToggleSelection();
+}
+'''
+cursorNthLink = 'n => pager.cursorNthLink(n)'
+cursorRevNthLink = 'n => pager.cursorRevNthLink(n)'
+
+[cmd.line]
+submit = '() => line.submit()'
+backspace = '() => line.backspace()'
+delete = '() => line.delete()'
+cancel = '() => line.cancel()'
+prevWord = '() => line.prevWord()'
+nextWord = '() => line.nextWord()'
+backward = '() => line.backward()'
+forward = '() => line.forward()'
+clear = '() => line.clear()'
+kill = '() => line.kill()'
+clearWord = '() => line.clearWord()'
+killWord = '() => line.killWord()'
+begin = '() => line.begin()'
+end = '() => line.end()'
+escape = '() => line.escape()'
+prevHist = '() => line.prevHist()'
+nextHist = '() => line.nextHist()'
