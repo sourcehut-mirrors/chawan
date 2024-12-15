@@ -144,7 +144,7 @@ func px(l: CSSLength; lctx: LayoutContext; p: LayoutUnit = 0):
   return px(l, lctx.attrs, p)
 
 func canpx(l: CSSLength; sc: SizeConstraint): bool =
-  return l.u != cuAuto and (l.u != cuPerc or sc.isDefinite())
+  return l.u != cuAuto and (l.u != cuPerc or sc.t == scStretch)
 
 # Note: for margins only
 # For percentages, use 0 for indefinite, and containing box's size for
@@ -909,7 +909,7 @@ func spx(l: CSSLength; lctx: LayoutContext; p: SizeConstraint;
 proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
     parentWidth: SizeConstraint; computed: CSSValues;
     isauto = false) =
-  if not sizes.space.w.isDefinite() or not parentWidth.isDefinite():
+  if not sizes.space.w.isDefinite() or parentWidth.t != scStretch:
     # width is indefinite, so no conflicts can be resolved here.
     return
   let total = widthpx + sizes.margin[dtHorizontal].sum() +
