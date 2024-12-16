@@ -3,12 +3,14 @@ import std/options
 import css/cssparser
 import css/cssvalues
 import types/opt
+import types/winattrs
 import utils/twtstr
 
 type
   MediaQueryParser = object
     at: int
     cvals: seq[CSSComponentValue]
+    attrs: ptr WindowAttributes
 
   MediaType* = enum
     mtAll = "all"
@@ -241,16 +243,19 @@ proc parseIntRange(parser: var MediaQueryParser; ismin, ismax: bool):
 
 proc parseLength(parser: var MediaQueryParser): Opt[CSSLength] =
   let cval = parser.consume()
-  return cssLength(cval)
+  let len = ?parseLength(cval, parser.attrs[])
+  if len.u != clPx:
+    return err()
+  return ok(len)
 
 proc parseLengthRange(parser: var MediaQueryParser; ismin, ismax: bool):
     Opt[LengthRange] =
   if ismin:
     let a = ?parser.parseLength()
-    let b = CSSLength(num: Inf, u: cuPx)
+    let b = cssLength(Inf)
     return ok(LengthRange(s: a .. b, aeq: true, beq: false))
   if ismax:
-    let a = CSSLength(num: 0, u: cuPx)
+    let a = cssLength(0)
     let b = ?parser.parseLength()
     return ok(LengthRange(s: a .. b, aeq: false, beq: true))
   let comparison = ?parser.parseComparison()
@@ -260,10 +265,10 @@ proc parseLengthRange(parser: var MediaQueryParser; ismin, ismax: bool):
   of mqcEq:
     return ok(LengthRange(s: len .. len, aeq: true, beq: true))
   of mqcGt, mqcGe:
-    let b = CSSLength(num: Inf, u: cuPx)
+    let b = cssLength(Inf)
     return ok(LengthRange(s: len .. b, aeq: comparison == mqcGe, beq: false))
   of mqcLt, mqcLe:
-    let a = CSSLength(num: 0, u: cuPx)
+    let a = cssLength(0)
     return ok(LengthRange(s: a .. len, aeq: false, beq: comparison == mqcLe))
 
 proc parseFeature0(parser: var MediaQueryParser; t: MediaFeatureType;
@@ -312,7 +317,7 @@ proc parseMediaInParens(parser: var MediaQueryParser): Opt[MediaQuery] =
   let sb = ?parser.consumeSimpleBlock()
   if sb.token.t != cttLparen:
     return err()
-  var fparser = MediaQueryParser(cvals: sb.value)
+  var fparser = MediaQueryParser(cvals: sb.value, attrs: parser.attrs)
   fparser.skipBlanks()
   let tok = ?fparser.consumeIdent()
   fparser.skipBlanks()
@@ -397,11 +402,12 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
   else:
     return err()
 
-proc parseMediaQueryList*(cvals: seq[CSSComponentValue]): MediaQueryList =
+proc parseMediaQueryList*(cvals: seq[CSSComponentValue];
+    attrs: ptr WindowAttributes): MediaQueryList =
   result = @[]
   let cseplist = cvals.parseCommaSepComponentValues()
   for list in cseplist:
-    var parser = MediaQueryParser(cvals: list)
+    var parser = MediaQueryParser(cvals: list, attrs: attrs)
     let query = parser.parseMediaQuery()
     if query.isSome:
       result.add(query.get)

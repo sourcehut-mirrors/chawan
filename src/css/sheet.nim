@@ -7,6 +7,7 @@ import css/mediaquery
 import css/selectorparser
 import html/catom
 import types/url
+import types/winattrs
 import utils/twtstr
 
 type
@@ -36,6 +37,7 @@ type
     importList*: seq[URL]
     len: int
     factory*: CAtomFactory
+    attrs: ptr WindowAttributes
 
 type SelectorHashes = object
   tag: CAtom
@@ -43,7 +45,8 @@ type SelectorHashes = object
   class: CAtom
   attr: CAtom
 
-func newStylesheet*(cap: int; factory: CAtomFactory): CSSStylesheet =
+func newStylesheet*(cap: int; factory: CAtomFactory;
+    attrs: ptr WindowAttributes): CSSStylesheet =
   let bucketsize = cap div 2
   return CSSStylesheet(
     tagTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
@@ -51,7 +54,8 @@ func newStylesheet*(cap: int; factory: CAtomFactory): CSSStylesheet =
     classTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
     attrTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
     generalList: newSeqOfCap[CSSRuleDef](bucketsize),
-    factory: factory
+    factory: factory,
+    attrs: attrs
   )
 
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool
@@ -176,29 +180,29 @@ proc add*(sheet, sheet2: CSSStylesheet) =
     do:
       sheet.attrTable[key] = value
 
-proc addRule(stylesheet: CSSStylesheet; rule: CSSQualifiedRule) =
-  let sels = parseSelectors(rule.prelude, stylesheet.factory)
+proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
+  let sels = parseSelectors(rule.prelude, sheet.factory)
   if sels.len > 0:
     var normalVals: seq[CSSComputedEntry] = @[]
     var importantVals: seq[CSSComputedEntry] = @[]
     let decls = rule.oblock.value.parseDeclarations()
     for decl in decls:
-      let vals = parseComputedValues(decl.name, decl.value)
+      let vals = parseComputedValues(decl.name, decl.value, sheet.attrs[])
       if decl.important:
         importantVals.add(vals)
       else:
         normalVals.add(vals)
-    stylesheet.add(CSSRuleDef(
+    sheet.add(CSSRuleDef(
       sels: sels,
       normalVals: normalVals,
       importantVals: importantVals,
-      idx: stylesheet.len
+      idx: sheet.len
     ))
-    inc stylesheet.len
+    inc sheet.len
 
-proc addAtRule(stylesheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
+proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
   if atrule.name.equalsIgnoreCase("import"):
-    if stylesheet.len == 0 and base != nil:
+    if sheet.len == 0 and base != nil:
       var i = 0
       atrule.prelude.skipWhitespace(i)
       # Warning: this is a tracking vector minefield. If you implement
@@ -212,28 +216,28 @@ proc addAtRule(stylesheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
             atrule.prelude.skipWhitespace(i)
             # check if there are really no media queries/layers/etc
             if i == atrule.prelude.len:
-              stylesheet.importList.add(url.get)
+              sheet.importList.add(url.get)
   elif atrule.name.equalsIgnoreCase("media"):
     if atrule.oblock != nil:
-      let query = parseMediaQueryList(atrule.prelude)
+      let query = parseMediaQueryList(atrule.prelude, sheet.attrs)
       let rules = atrule.oblock.value.parseListOfRules()
       if rules.len > 0:
         var media = CSSMediaQueryDef()
-        media.children = newStylesheet(rules.len, stylesheet.factory)
-        media.children.len = stylesheet.len
+        media.children = newStylesheet(rules.len, sheet.factory, sheet.attrs)
+        media.children.len = sheet.len
         media.query = query
         for rule in rules:
           if rule of CSSAtRule:
             media.children.addAtRule(CSSAtRule(rule), nil)
           else:
             media.children.addRule(CSSQualifiedRule(rule))
-        stylesheet.mqList.add(media)
-        stylesheet.len = media.children.len
+        sheet.mqList.add(media)
+        sheet.len = media.children.len
 
-proc parseStylesheet*(ibuf: string; factory: CAtomFactory; base: URL):
-    CSSStylesheet =
+proc parseStylesheet*(ibuf: string; factory: CAtomFactory; base: URL;
+    attrs: ptr WindowAttributes): CSSStylesheet =
   let raw = parseStylesheet(ibuf)
-  let sheet = newStylesheet(raw.value.len, factory)
+  let sheet = newStylesheet(raw.value.len, factory, attrs)
   for v in raw.value:
     if v of CSSAtRule:
       sheet.addAtRule(CSSAtRule(v), base)

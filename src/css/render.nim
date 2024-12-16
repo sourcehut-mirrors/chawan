@@ -402,9 +402,9 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     return
   var offset = offset
   if position in {PositionAbsolute, PositionFixed}:
-    if box.computed{"left"}.u != cuAuto or box.computed{"right"}.u != cuAuto:
+    if box.computed{"left"}.u != clAuto or box.computed{"right"}.u != clAuto:
       offset.x = state.absolutePos[^1].x
-    if box.computed{"top"}.u != cuAuto or box.computed{"bottom"}.u != cuAuto:
+    if box.computed{"top"}.u != clAuto or box.computed{"bottom"}.u != clAuto:
       offset.y = state.absolutePos[^1].y
   offset += box.state.offset
   box.render.offset = offset

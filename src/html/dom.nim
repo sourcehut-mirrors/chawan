@@ -2543,8 +2543,8 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
     for elem in document.documentElement.descendants:
       if elem of HTMLStyleElement:
         let style = HTMLStyleElement(elem)
-        style.sheet = parseStylesheet(style.textContent, document.factory,
-          document.baseURL)
+        style.sheet = style.textContent.parseStylesheet(document.factory,
+          document.baseURL, addr document.window.attrs)
         document.cachedSheets.add(style.sheet)
       elif elem of HTMLLinkElement:
         let link = HTMLLinkElement(elem)
@@ -3288,12 +3288,21 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
     return ctx.toJS(this.getPropertyValue(s))
   return JS_UNINITIALIZED
 
+template dummyWindow(): WindowAttributes = WindowAttributes(
+  width: 80,
+  height: 24,
+  ppc: 9,
+  ppl: 18,
+  widthPx: 80 * 9,
+  heightPx: 24 * 18
+)
+
 proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
     Err[void] =
   if i notin 0 .. this.decls.high:
     return err()
   var dummy: seq[CSSComputedEntry]
-  ?parseComputedValues(dummy, this.decls[i].name, cvals)
+  ?parseComputedValues(dummy, this.decls[i].name, cvals, dummyWindow())
   this.decls[i].value = cvals
   return ok()
 
@@ -3313,7 +3322,7 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
         return ok()
     else:
       var dummy: seq[CSSComputedEntry]
-      let val0 = parseComputedValues(dummy, s, cvals)
+      let val0 = parseComputedValues(dummy, s, cvals, dummyWindow())
       if val0.isNone:
         return ok()
       this.decls.add(CSSDeclaration(name: s, value: cvals))
@@ -3343,7 +3352,7 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL; applies: bool) =
   ).then(proc(s: JSResult[string]) =
     # Check applies here, to avoid leaking the window size.
     if s.isSome:
-      let sheet = s.get.parseStylesheet(window.factory, url)
+      let sheet = s.get.parseStylesheet(window.factory, url, addr window.attrs)
       if applies:
         # Note: we intentionally load all sheets to prevent media query
         # based tracking.
@@ -3372,7 +3381,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     var applies = true
     if media != "":
       let cvals = parseComponentValues(media)
-      let media = parseMediaQueryList(cvals)
+      let media = parseMediaQueryList(cvals, addr window.attrs)
       applies = media.appliesImpl(window)
     window.loadSheet(link, url, applies)
 

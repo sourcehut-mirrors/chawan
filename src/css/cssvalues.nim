@@ -311,14 +311,19 @@ type
     OverflowAuto = "auto"
 
 type
+  CSSLengthType* = enum
+    clPx = "px"
+    clAuto = "auto"
+    clPerc = "%"
+
   CSSLength* = object
-    u*: CSSUnit
+    u*: CSSLengthType
     num*: float64
 
   CSSVerticalAlign* = object
     keyword*: CSSVerticalAlign2
     # inlined CSSLength so that this object fits into 2 words
-    u*: CSSUnit
+    u*: CSSLengthType
     num*: float64
 
   CSSContent* = object
@@ -489,7 +494,7 @@ func isSupportedProperty*(s: string): bool =
 
 when defined(debug):
   func `$`*(length: CSSLength): string =
-    if length.u == cuAuto:
+    if length.u == clAuto:
       return "auto"
     return $length.num & $length.u
 
@@ -552,41 +557,6 @@ macro `{}=`*(vals: CSSValues; s: static string, val: typed) =
 
 func inherited*(t: CSSPropertyType): bool =
   return t in InheritedProperties
-
-func em_to_px(em: float64; window: WindowAttributes): LayoutUnit =
-  (em * float64(window.ppl)).toLayoutUnit()
-
-func ch_to_px(ch: float64; window: WindowAttributes): LayoutUnit =
-  (ch * float64(window.ppc)).toLayoutUnit()
-
-# 水 width, we assume it's 2 chars
-func ic_to_px(ic: float64; window: WindowAttributes): LayoutUnit =
-  (ic * float64(window.ppc) * 2).toLayoutUnit()
-
-# x-letter height, we assume it's em/2
-func ex_to_px(ex: float64; window: WindowAttributes): LayoutUnit =
-  (ex * float64(window.ppc) / 2).toLayoutUnit()
-
-func px*(l: CSSLength; window: WindowAttributes; p: LayoutUnit): LayoutUnit =
-  return case l.u
-  of cuAuto: LayoutUnit(0)
-  of cuEm, cuRem: em_to_px(l.num, window)
-  of cuCh: ch_to_px(l.num, window)
-  of cuIc: ic_to_px(l.num, window)
-  of cuEx: ex_to_px(l.num, window)
-  of cuPerc: toLayoutUnit(toFloat64(p) * l.num / 100)
-  of cuPx: toLayoutUnit(l.num)
-  of cuCm: toLayoutUnit(l.num * 37.8)
-  of cuMm: toLayoutUnit(l.num * 3.78)
-  of cuIn: toLayoutUnit(l.num * 96)
-  of cuPc: toLayoutUnit(l.num * 16)
-  of cuPt: toLayoutUnit(l.num * 4 / 3)
-  of cuVw: toLayoutUnit(float64(window.widthPx) * l.num / 100)
-  of cuVh: toLayoutUnit(float64(window.heightPx) * l.num / 100)
-  of cuVmin:
-    toLayoutUnit(min(window.widthPx, window.heightPx) / 100 * l.num)
-  of cuVmax:
-    toLayoutUnit(max(window.widthPx, window.heightPx) / 100 * l.num)
 
 func blockify*(display: CSSDisplay): CSSDisplay =
   case display
@@ -775,11 +745,35 @@ func parseIdent[T: enum](cval: CSSComponentValue): Opt[T] =
     return ok(T(i))
   return err()
 
-func cssLength(val: float64; u: string): Opt[CSSLength] =
-  let u = ?parseEnumNoCase[CSSUnit](u)
-  return ok(CSSLength(num: val, u: u))
+template cssLength*(n: float64): CSSLength =
+  CSSLength(u: clPx, num: n)
 
-const CSSLengthAuto* = CSSLength(u: cuAuto)
+func resolveLength*(u: CSSUnit; val: float64; attrs: WindowAttributes):
+    CSSLength =
+  return case u
+  of cuAuto: CSSLength(u: clAuto)
+  of cuEm, cuRem: cssLength(val * float64(attrs.ppl))
+  of cuCh: cssLength(val * float64(attrs.ppc))
+  of cuIc: cssLength(val * float64(attrs.ppc) * 2)
+  of cuEx: cssLength(val * float64(attrs.ppc) / 2)
+  of cuPerc: CSSLength(u: clPerc, num: val)
+  of cuPx: cssLength(val)
+  of cuCm: cssLength(val * 37.8)
+  of cuMm: cssLength(val * 3.78)
+  of cuIn: cssLength(val * 96)
+  of cuPc: cssLength(val * 16)
+  of cuPt: cssLength(val * 4 / 3)
+  of cuVw: cssLength(float64(attrs.widthPx) * val / 100)
+  of cuVh: cssLength(float64(attrs.heightPx) * val / 100)
+  of cuVmin: cssLength(min(attrs.widthPx, attrs.heightPx) / 100 * val)
+  of cuVmax: cssLength(max(attrs.widthPx, attrs.heightPx) / 100 * val)
+
+func parseLength(val: float64; u: string; attrs: WindowAttributes):
+    Opt[CSSLength] =
+  let u = ?parseEnumNoCase[CSSUnit](u)
+  return ok(resolveLength(u, val, attrs))
+
+const CSSLengthAuto* = CSSLength(u: clAuto)
 
 func parseDimensionValues*(s: string): Option[CSSLength] =
   var i = s.skipBlanks(0)
@@ -791,19 +785,19 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
     n += float64(decValue(s[i]))
     inc i
     if i >= s.len:
-      return some(CSSLength(num: n, u: cuPx))
+      return some(cssLength(n))
   if s[i] == '.':
     inc i
     if i >= s.len:
-      return some(CSSLength(num: n, u: cuPx))
+      return some(cssLength(n))
     var d = 1
     while i < s.len and s[i] in AsciiDigit:
       n += float64(decValue(s[i])) / float64(d)
       inc d
       inc i
   if i < s.len and s[i] == '%':
-    return some(CSSLength(num: n, u: cuPerc))
-  return some(CSSLength(num: n, u: cuPx))
+    return some(CSSLength(num: n, u: clPerc))
+  return some(cssLength(n))
 
 func skipWhitespace*(vals: openArray[CSSComponentValue]; i: var int) =
   while i < vals.len:
@@ -917,38 +911,39 @@ func cssColor*(val: CSSComponentValue): Opt[CSSColor] =
       return parseANSI(f.value)
   return err()
 
-func cssLength*(val: CSSComponentValue; hasAuto = true; allowNegative = true):
-    Opt[CSSLength] =
+func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
+    hasAuto = true; allowNegative = true): Opt[CSSLength] =
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.t
     of cttNumber:
       if tok.nvalue == 0:
-        return ok(CSSLength(num: 0, u: cuPx))
+        return ok(cssLength(0))
     of cttPercentage:
       if not allowNegative and tok.nvalue < 0:
         return err()
-      return cssLength(tok.nvalue, "%")
+      return parseLength(tok.nvalue, "%", attrs)
     of cttDimension:
       if not allowNegative and tok.nvalue < 0:
         return err()
-      return cssLength(tok.nvalue, tok.unit)
+      return parseLength(tok.nvalue, tok.unit, attrs)
     of cttIdent:
       if hasAuto and tok.value.equalsIgnoreCase("auto"):
         return ok(CSSLengthAuto)
     else: discard
   return err()
 
-func cssAbsoluteLength(val: CSSComponentValue): Opt[CSSLength] =
+func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
+    Opt[CSSLength] =
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.t
     of cttNumber:
       if tok.nvalue == 0:
-        return ok(CSSLength(num: 0, u: cuPx))
+        return ok(cssLength(0))
     of cttDimension:
       if tok.nvalue >= 0:
-        return cssLength(tok.nvalue, tok.unit)
+        return parseLength(tok.nvalue, tok.unit, attrs)
     else: discard
   return err()
 
@@ -1044,14 +1039,15 @@ func cssTextDecoration(cvals: openArray[CSSComponentValue]):
       s.incl(td)
   return ok(s)
 
-func cssVerticalAlign(cval: CSSComponentValue): Opt[CSSVerticalAlign] =
+func cssVerticalAlign(cval: CSSComponentValue; attrs: WindowAttributes):
+    Opt[CSSVerticalAlign] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     if tok.t == cttIdent:
       let va2 = ?parseIdent[CSSVerticalAlign2](cval)
       return ok(CSSVerticalAlign(keyword: va2))
     else:
-      let length = ?cssLength(tok, hasAuto = false)
+      let length = ?parseLength(tok, attrs, hasAuto = false)
       return ok(CSSVerticalAlign(
         keyword: VerticalAlignBaseline,
         u: length.u,
@@ -1086,7 +1082,8 @@ func cssCounterReset(cvals: openArray[CSSComponentValue]):
         die
   return ok(res)
 
-func cssMaxSize(cval: CSSComponentValue): Opt[CSSLength] =
+func cssMaxSize(cval: CSSComponentValue; attrs: WindowAttributes):
+    Opt[CSSLength] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     case tok.t
@@ -1094,7 +1091,7 @@ func cssMaxSize(cval: CSSComponentValue): Opt[CSSLength] =
       if tok.value.equalsIgnoreCase("none"):
         return ok(CSSLengthAuto)
     of cttNumber, cttDimension, cttPercentage:
-      return cssLength(tok, allowNegative = false)
+      return parseLength(tok, attrs, allowNegative = false)
     else: discard
   return err()
 
@@ -1163,7 +1160,7 @@ proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
   return CSSComputedEntry(t: t, global: global)
 
 proc parseValue(cvals: openArray[CSSComponentValue];
-    entry: var CSSComputedEntry): Opt[void] =
+    entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
   var i = 0
   cvals.skipWhitespace(i)
   if i >= cvals.len:
@@ -1187,14 +1184,14 @@ proc parseValue(cvals: openArray[CSSComponentValue];
   of cvtLength:
     case t
     of cptMinWidth, cptMinHeight:
-      set_new length, ?cssLength(cval, allowNegative = false)
+      set_new length, ?parseLength(cval, attrs, allowNegative = false)
     of cptMaxWidth, cptMaxHeight:
-      set_new length, ?cssMaxSize(cval)
+      set_new length, ?cssMaxSize(cval, attrs)
     of cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom:
-      set_new length, ?cssLength(cval, hasAuto = false)
+      set_new length, ?parseLength(cval, attrs, hasAuto = false)
     #TODO content for flex-basis
     else:
-      set_new length, ?cssLength(cval)
+      set_new length, ?parseLength(cval, attrs)
   of cvtContent: set_new content, cssContent(cvals)
   of cvtInteger:
     case t
@@ -1204,7 +1201,7 @@ proc parseValue(cvals: openArray[CSSComponentValue];
     of cptZIndex: set_new integer, ?cssInteger(cval, -65534 .. 65534)
     else: assert false
   of cvtTextDecoration: set_new textdecoration, ?cssTextDecoration(cvals)
-  of cvtVerticalAlign: set_new verticalAlign, ?cssVerticalAlign(cval)
+  of cvtVerticalAlign: set_new verticalAlign, ?cssVerticalAlign(cval, attrs)
   of cvtTextAlign: set_bit textAlign, ?parseIdent[CSSTextAlign](cval)
   of cvtListStylePosition:
     set_bit listStylePosition, ?parseIdent[CSSListStylePosition](cval)
@@ -1213,9 +1210,9 @@ proc parseValue(cvals: openArray[CSSComponentValue];
   of cvtBorderCollapse:
     set_bit borderCollapse, ?parseIdent[CSSBorderCollapse](cval)
   of cvtLength2:
-    let a = ?cssAbsoluteLength(cval)
+    let a = ?cssAbsoluteLength(cval, attrs)
     cvals.skipWhitespace(i)
-    let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i])
+    let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i], attrs)
     set_new length2, CSSLength2(a: a, b: b)
   of cvtQuotes: set_new quotes, ?cssQuotes(cvals)
   of cvtCounterReset: set_new counterReset, ?cssCounterReset(cvals)
@@ -1246,7 +1243,7 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
       cptMaxHeight, cptMinWidth, cptMinHeight, cptFlexBasis:
     return CSSLengthAuto
   else:
-    return CSSLength(u: cuPx, num: 0)
+    return cssLength(0)
 
 func getInitialInteger(t: CSSPropertyType): int =
   case t
@@ -1283,8 +1280,8 @@ template getDefault*(t: CSSPropertyType): CSSValue =
     defaultTable[t]
 
 func lengthShorthand(cvals: openArray[CSSComponentValue];
-    props: array[4, CSSPropertyType]; global: CSSGlobalType; hasAuto = true):
-    Opt[seq[CSSComputedEntry]] =
+    props: array[4, CSSPropertyType]; global: CSSGlobalType;
+    attrs: WindowAttributes; hasAuto = true): Opt[seq[CSSComputedEntry]] =
   var res: seq[CSSComputedEntry] = @[]
   if global != cgtNone:
     for t in props:
@@ -1294,7 +1291,7 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
   var i = 0
   while i < cvals.len:
     cvals.skipWhitespace(i)
-    let length = ?cssLength(cvals[i], hasAuto = hasAuto)
+    let length = ?parseLength(cvals[i], attrs, hasAuto = hasAuto)
     let val = CSSValue(v: cvtLength, length: length)
     lengths.add(val)
     inc i
@@ -1330,7 +1327,7 @@ const PropertyPaddingSpec = [
 ]
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
-    cvals: openArray[CSSComponentValue]): Err[void] =
+    cvals: openArray[CSSComponentValue]; attrs: WindowAttributes): Err[void] =
   var i = 0
   cvals.skipWhitespace(i)
   if i >= cvals.len:
@@ -1343,7 +1340,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       res.add(makeEntry(t, global))
     else:
       var entry = CSSComputedEntry(t: t)
-      ?cvals.parseValue(entry)
+      ?cvals.parseValue(entry, attrs)
       res.add(entry)
   of cstAll:
     if global == cgtNone:
@@ -1351,9 +1348,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     for t in CSSPropertyType:
       res.add(makeEntry(t, global))
   of cstMargin:
-    res.add(?lengthShorthand(cvals, PropertyMarginSpec, global))
+    res.add(?lengthShorthand(cvals, PropertyMarginSpec, global, attrs))
   of cstPadding:
-    res.add(?lengthShorthand(cvals, PropertyPaddingSpec, global,
+    res.add(?lengthShorthand(cvals, PropertyPaddingSpec, global, attrs,
       hasAuto = false))
   of cstBackground:
     var bgcolorval = getDefault(cptBackgroundColor)
@@ -1422,13 +1419,10 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         res.add(makeEntry(cptFlexShrink, val))
       if i < cvals.len:
         # flex-basis
-        let val = CSSValue(v: cvtLength, length: ?cssLength(cvals[i]))
+        let val = CSSValue(v: cvtLength, length: ?parseLength(cvals[i], attrs))
         res.add(makeEntry(cptFlexBasis, val))
       else: # omitted, default to 0px
-        let val = CSSValue(
-          v: cvtLength,
-          length: CSSLength(u: cuPx, num: 0)
-        )
+        let val = CSSValue(v: cvtLength, length: cssLength(0))
         res.add(makeEntry(cptFlexBasis, val, global))
     else:
       res.add(makeEntry(cptFlexGrow, global))
@@ -1457,10 +1451,10 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       res.add(makeEntry(cptFlexWrap, global))
   return ok()
 
-proc parseComputedValues*(name: string; value: seq[CSSComponentValue]):
-    seq[CSSComputedEntry] =
+proc parseComputedValues*(name: string; value: seq[CSSComponentValue];
+    attrs: WindowAttributes): seq[CSSComputedEntry] =
   var res: seq[CSSComputedEntry] = @[]
-  if res.parseComputedValues(name, value).isSome:
+  if res.parseComputedValues(name, value, attrs).isSome:
     return res
   return @[]
 

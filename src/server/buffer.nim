@@ -1949,9 +1949,11 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   const css = staticRead"res/ua.css"
   const quirk = css & staticRead"res/quirk.css"
   buffer.initDecoder()
-  buffer.uastyle = css.parseStylesheet(factory, nil)
-  buffer.quirkstyle = quirk.parseStylesheet(factory, nil)
-  buffer.userstyle = buffer.config.userstyle.parseStylesheet(factory, nil)
+  let attrsp = addr buffer.attrs
+  buffer.uastyle = css.parseStylesheet(factory, nil, attrsp)
+  buffer.quirkstyle = quirk.parseStylesheet(factory, nil, attrsp)
+  buffer.userstyle = buffer.config.userstyle.parseStylesheet(factory, nil,
+    attrsp)
   buffer.htmlParser = newHTML5ParserWrapper(
     buffer.window,
     buffer.url,

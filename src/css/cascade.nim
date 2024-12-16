@@ -17,6 +17,7 @@ import html/enums
 import types/color
 import types/jscolor
 import types/opt
+import types/winattrs
 
 type
   RuleList* = array[PseudoElem, seq[CSSRuleDef]]
@@ -26,9 +27,9 @@ type
     user: RuleList
     author: seq[RuleList]
 
-func appliesLR(feature: MediaFeature; window: Window; n: LayoutUnit): bool =
-  let a = feature.lengthrange.s.a.px(window.attrs, 0)
-  let b = feature.lengthrange.s.b.px(window.attrs, 0)
+func appliesLR(feature: MediaFeature; window: Window; n: float64): bool =
+  let a = feature.lengthrange.s.a.num
+  let b = feature.lengthrange.s.b.num
   return (feature.lengthrange.aeq and a == n or a < n) and
     (feature.lengthrange.beq and b == n or n < b)
 
@@ -43,9 +44,9 @@ func applies(feature: MediaFeature; window: Window): bool =
   of mftPrefersColorScheme:
     return feature.b == window.attrs.prefersDark
   of mftWidth:
-    return feature.appliesLR(window, window.attrs.widthPx.toLayoutUnit)
+    return feature.appliesLR(window, float64(window.attrs.widthPx))
   of mftHeight:
-    return feature.appliesLR(window, window.attrs.heightPx.toLayoutUnit)
+    return feature.appliesLR(window, float64(window.attrs.heightPx))
   of mftScripting:
     return feature.b == window.settings.scripting
 
@@ -111,7 +112,8 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
     for item in tosorts[i]:
       result[i].add(item[1])
 
-func calcPresHints(element: Element): seq[CSSComputedEntry] =
+func calcPresHints(element: Element; attrs: WindowAttributes):
+    seq[CSSComputedEntry] =
   result = @[]
   template set_cv(t, x, b: untyped) =
     const v = valueType(t)
@@ -141,7 +143,7 @@ func calcPresHints(element: Element): seq[CSSComputedEntry] =
   template map_size =
     let s = element.attrul(satSize)
     if s.isSome:
-      set_cv cptWidth, length, CSSLength(num: float64(s.get), u: cuCh)
+      set_cv cptWidth, length, resolveLength(cuCh, float64(s.get), attrs)
   template map_text =
     let s = element.attr(satText)
     if s != "":
@@ -173,9 +175,8 @@ func calcPresHints(element: Element): seq[CSSComputedEntry] =
   template map_cellspacing =
     let s = element.attrul(satCellspacing)
     if s.isSome:
-      set_cv cptBorderSpacing, length2, CSSLength2(
-        a: CSSLength(num: float64(s.get), u: cuPx)
-      )
+      let n = float64(s.get)
+      set_cv cptBorderSpacing, length2, CSSLength2(a: cssLength(n))
 
   case element.tagType
   of TAG_TABLE:
@@ -210,8 +211,8 @@ func calcPresHints(element: Element): seq[CSSComputedEntry] =
     let textarea = HTMLTextAreaElement(element)
     let cols = textarea.attrul(satCols).get(20)
     let rows = textarea.attrul(satRows).get(1)
-    set_cv cptWidth, length, CSSLength(u: cuCh, num: float64(cols))
-    set_cv cptHeight, length, CSSLength(u: cuEm, num: float64(rows))
+    set_cv cptWidth, length, resolveLength(cuCh, float64(cols), attrs)
+    set_cv cptHeight, length, resolveLength(cuEm, float64(rows), attrs)
   of TAG_FONT:
     map_color
   of TAG_INPUT:
@@ -280,7 +281,7 @@ proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
     map.important.add(rule.importantVals)
 
 proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
-    map: RuleListMap; styling: bool) =
+    map: RuleListMap; window: Window) =
   var rules: CSSValueEntryMap
   var presHints: seq[CSSComputedEntry] = @[]
   rules[coUserAgent].add(map.ua[peNone])
@@ -290,14 +291,14 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
   if styledNode.node != nil:
     let element = Element(styledNode.node)
     let style = element.cachedStyle
-    if styling and style != nil:
+    if window.styling and style != nil:
       for decl in style.decls:
-        let vals = parseComputedValues(decl.name, decl.value)
+        let vals = parseComputedValues(decl.name, decl.value, window.attrs)
         if decl.important:
           rules[coAuthor].important.add(vals)
         else:
           rules[coAuthor].normal.add(vals)
-    presHints = element.calcPresHints()
+    presHints = element.calcPresHints(window.attrs)
   styledNode.computed = rules.buildComputedValues(presHints, parent)
 
 func hasValues(rules: CSSValueEntryMap): bool =
@@ -345,12 +346,12 @@ func calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
   )
 
 proc applyStyle(parent, styledNode: StyledNode; map: RuleListMap;
-    styling: bool) =
+    window: Window) =
   let parentComputed = if parent != nil:
     parent.computed
   else:
     rootProperties()
-  styledNode.applyDeclarations(parentComputed, map, styling)
+  styledNode.applyDeclarations(parentComputed, map, window)
 
 type CascadeFrame = object
   styledParent: StyledNode
@@ -382,7 +383,7 @@ proc applyRulesFrameValid(frame: var CascadeFrame): StyledNode =
   return cachedChild
 
 proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
-    author: seq[CSSStylesheet]; declmap: var RuleListMap; styling: bool):
+    author: seq[CSSStylesheet]; declmap: var RuleListMap; window: Window):
     StyledNode =
   var styledChild: StyledNode = nil
   let pseudo = frame.pseudo
@@ -451,7 +452,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
         styledChild = styledParent.newStyledElement(element)
         styledParent.children.add(styledChild)
         declmap = styledChild.calcRules(ua, user, author)
-        styledParent.applyStyle(styledChild, declmap, styling)
+        styledParent.applyStyle(styledChild, declmap, window)
       elif child of Text:
         let text = Text(child)
         styledChild = styledParent.newStyledText(text)
@@ -461,7 +462,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       let element = Element(child)
       styledChild = newStyledElement(element)
       declmap = styledChild.calcRules(ua, user, author)
-      styledParent.applyStyle(styledChild, declmap, styling)
+      styledParent.applyStyle(styledChild, declmap, window)
   return styledChild
 
 proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
@@ -566,7 +567,7 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
       # because of property inheritance.
       frame.cachedChild = nil
       frame.applyRulesFrameInvalid(ua, user, author, declmap,
-        document.window.styling)
+        document.window)
     if styledChild != nil:
       if styledParent == nil:
         # Root element
