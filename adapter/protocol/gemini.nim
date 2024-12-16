@@ -81,6 +81,7 @@ proc checkCert0(os: PosixStream; theirDigest, host: string;
     tmpEntry: string): CheckCertResult =
   var line = tmpEntry
   var found = line.until(' ') == host
+  knownHosts.setFilePos(0)
   while not found and knownHosts.readLine(line):
     found = line.until(' ') == host
   if not found:
