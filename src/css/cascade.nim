@@ -80,7 +80,7 @@ type
 proc calcRule(tosorts: var ToSorts; element: Element;
     depends: var DependencyInfo; rule: CSSRuleDef) =
   for sel in rule.sels:
-    if element.selectorsMatch(sel, depends):
+    if element.matches(sel, depends):
       let spec = getSpecificity(sel)
       tosorts[sel.pseudo].add((spec, rule))
 

@@ -9,7 +9,7 @@ import html/dom
 import utils/twtstr
 
 #TODO rfNone should match insensitively for certain properties
-func attrSelectorMatches(element: Element; sel: Selector): bool =
+func matchesAttr(element: Element; sel: Selector): bool =
   case sel.rel.t
   of rtExists: return element.attrb(sel.attr)
   of rtEquals:
@@ -58,19 +58,19 @@ func attrSelectorMatches(element: Element; sel: Selector): bool =
       return val.contains(selval)
     of rfS: return val.contains(sel.value)
 
-func selectorsMatch*(element: Element; cxsel: ComplexSelector;
+func matches*(element: Element; cxsel: ComplexSelector;
   depends: var DependencyInfo): bool
 
-func selectorsMatch(element: Element; slist: SelectorList;
+func matches(element: Element; slist: SelectorList;
     depends: var DependencyInfo): bool =
   for cxsel in slist:
-    if element.selectorsMatch(cxsel, depends):
+    if element.matches(cxsel, depends):
       return true
   return false
 
-func pseudoSelectorMatches(element: Element; sel: Selector;
+func matches(element: Element; pseudo: PseudoData;
     depends: var DependencyInfo): bool =
-  case sel.pseudo.t
+  case pseudo.t
   of pcFirstChild: return element.parentNode.firstElementChild == element
   of pcLastChild: return element.parentNode.lastElementChild == element
   of pcFirstNode: return element.isFirstVisualNode()
@@ -89,9 +89,9 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
     return element.hover
   of pcRoot: return element == element.document.documentElement
   of pcNthChild:
-    let A = sel.pseudo.anb.A # step
-    let B = sel.pseudo.anb.B # start
-    if sel.pseudo.ofsels.len == 0:
+    let A = pseudo.anb.A # step
+    let B = pseudo.anb.B # start
+    if pseudo.ofsels.len == 0:
       let i = element.elIndex + 1
       if A == 0:
         return i == B
@@ -99,7 +99,7 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
       if A < 0:
         return j <= 0 and j mod A == 0
       return j >= 0 and j mod A == 0
-    if element.selectorsMatch(sel.pseudo.ofsels, depends):
+    if element.matches(pseudo.ofsels, depends):
       var i = 1
       for child in element.parentNode.elementList:
         if child == element:
@@ -109,13 +109,13 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
           if A < 0:
             return j <= 0 and j mod A == 0
           return j >= 0 and j mod A == 0
-        if child.selectorsMatch(sel.pseudo.ofsels, depends):
+        if child.matches(pseudo.ofsels, depends):
           inc i
     return false
   of pcNthLastChild:
-    let A = sel.pseudo.anb.A # step
-    let B = sel.pseudo.anb.B # start
-    if sel.pseudo.ofsels.len == 0:
+    let A = pseudo.anb.A # step
+    let B = pseudo.anb.B # start
+    if pseudo.ofsels.len == 0:
       let last = element.parentNode.lastElementChild
       let i = last.elIndex + 1 - element.elIndex
       if A == 0:
@@ -124,7 +124,7 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
       if A < 0:
         return j <= 0 and j mod A == 0
       return j >= 0 and j mod A == 0
-    if element.selectorsMatch(sel.pseudo.ofsels, depends):
+    if element.matches(pseudo.ofsels, depends):
       var i = 1
       for child in element.parentNode.elementList_rev:
         if child == element:
@@ -134,8 +134,7 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
           if A < 0:
             return j <= 0 and j mod A == 0
           return j >= 0 and j mod A == 0
-        if sel.pseudo.ofsels.len == 0 or
-            child.selectorsMatch(sel.pseudo.ofsels, depends):
+        if child.matches(pseudo.ofsels, depends):
           inc i
     return false
   of pcChecked:
@@ -149,18 +148,18 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
     depends.add(element, dtFocus)
     return element.document.focus == element
   of pcNot:
-    return not element.selectorsMatch(sel.pseudo.fsels, depends)
+    return not element.matches(pseudo.fsels, depends)
   of pcIs, pcWhere:
-    return element.selectorsMatch(sel.pseudo.fsels, depends)
+    return element.matches(pseudo.fsels, depends)
   of pcLang:
-    return sel.pseudo.s == "en" #TODO languages?
+    return pseudo.s == "en" #TODO languages?
   of pcLink:
     return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
   of pcVisited:
     return false
 
-func selectorMatches(element: Element; sel: Selector;
-    depends: var DependencyInfo): bool =
+func matches(element: Element; sel: Selector; depends: var DependencyInfo):
+    bool =
   case sel.t
   of stType:
     return element.localName == sel.tag
@@ -173,74 +172,59 @@ func selectorMatches(element: Element; sel: Selector;
   of stId:
     return sel.id == element.document.factory.toLowerAscii(element.id)
   of stAttr:
-    return element.attrSelectorMatches(sel)
+    return element.matchesAttr(sel)
   of stPseudoClass:
-    return pseudoSelectorMatches(element, sel, depends)
+    return element.matches(sel.pseudo, depends)
   of stPseudoElement:
     return true
   of stUniversal:
     return true
 
-func selectorsMatch(element: Element; sels: CompoundSelector;
+func matches(element: Element; sels: CompoundSelector;
     depends: var DependencyInfo): bool =
   for sel in sels:
-    if not selectorMatches(element, sel, depends):
+    if not element.matches(sel, depends):
       return false
   return true
 
-func complexSelectorMatches(element: Element; cxsel: ComplexSelector;
+# Note: this modifies "depends".
+func matches*(element: Element; cxsel: ComplexSelector;
     depends: var DependencyInfo): bool =
   var e = element
   for i in countdown(cxsel.high, 0):
-    let sels = cxsel[i]
-    if e == nil:
-      return false
     var match = false
-    case sels.ct
+    case cxsel[i].ct
     of ctNone:
-      match = e.selectorsMatch(sels, depends)
+      match = e.matches(cxsel[i], depends)
     of ctDescendant:
       e = e.parentElement
       while e != nil:
-        if e.selectorsMatch(sels, depends):
+        if e.matches(cxsel[i], depends):
           match = true
           break
         e = e.parentElement
     of ctChild:
       e = e.parentElement
       if e != nil:
-        match = e.selectorsMatch(sels, depends)
+        match = e.matches(cxsel[i], depends)
     of ctNextSibling:
-      if e.parentElement == nil: return false
-      var found = false
-      for child in e.parentElement.elementList_rev:
-        if e == child:
-          found = true
-          continue
-        if found:
-          e = child
-          match = e.selectorsMatch(sels, depends)
-          break
+      let prev = e.previousElementSibling
+      if prev != nil:
+        e = prev
+        match = e.matches(cxsel[i], depends)
     of ctSubsequentSibling:
-      var found = false
-      if e.parentElement == nil: return false
-      for child in e.parentElement.elementList_rev:
-        if child == element:
-          found = true
-          continue
-        if not found: continue
-        if child.selectorsMatch(sels, depends):
-          e = child
-          match = true
-          break
+      let parent = e.parentNode
+      for j in countdown(e.index - 1, 0):
+        let child = parent.childList[j]
+        if child of Element:
+          let child = Element(child)
+          if child.matches(cxsel[i], depends):
+            e = child
+            match = true
+            break
     if not match:
       return false
   return true
-
-# Note: this modifies "depends".
-func selectorsMatch*(element: Element; cxsel: ComplexSelector;
-    depends: var DependencyInfo): bool =
-  return element.complexSelectorMatches(cxsel, depends)
 
 # Forward declaration hack
 querySelectorAllImpl = proc(node: Node; q: string): seq[Element] =
@@ -248,13 +232,13 @@ querySelectorAllImpl = proc(node: Node; q: string): seq[Element] =
   let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
     var dummy: DependencyInfo
-    if element.selectorsMatch(selectors, dummy):
+    if element.matches(selectors, dummy):
       result.add(element)
 
 querySelectorImpl = proc(node: Node; q: string): Element =
   let selectors = parseSelectors(q, node.document.factory)
   for element in node.elements:
     var dummy: DependencyInfo
-    if element.selectorsMatch(selectors, dummy):
+    if element.matches(selectors, dummy):
       return element
   return nil
