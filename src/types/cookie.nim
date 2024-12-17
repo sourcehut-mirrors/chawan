@@ -9,14 +9,13 @@ import utils/twtstr
 
 type
   Cookie* = ref object
-    created: int64 # unix time
     name: string
     value: string
     expires: int64 # unix time
     secure: bool
     httponly: bool
-    domain: string
     hostOnly: bool
+    domain: string
     path: string
 
   CookieJar* = ref object
@@ -24,7 +23,7 @@ type
     allowHosts: seq[Regex]
     cookies*: seq[Cookie]
 
-proc parseCookieDate(val: string): Option[DateTime] =
+proc parseCookieDate(val: string): Option[int64] =
   # cookie-date
   const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}
   const NonDigit = AllChars - AsciiDigit
@@ -101,15 +100,15 @@ proc parseCookieDate(val: string): Option[DateTime] =
         foundYear = true
         continue
   if not (foundDayOfMonth and foundMonth and foundYear and foundTime):
-    return none(DateTime)
-  if dayOfMonth notin 0..31: return none(DateTime)
-  if year < 1601: return none(DateTime)
-  if time[0] > 23: return none(DateTime)
-  if time[1] > 59: return none(DateTime)
-  if time[2] > 59: return none(DateTime)
+    return none(int64)
+  if dayOfMonth notin 0..31: return none(int64)
+  if year < 1601: return none(int64)
+  if time[0] > 23: return none(int64)
+  if time[1] > 59: return none(int64)
+  if time[2] > 59: return none(int64)
   let dt = dateTime(year, Month(month), MonthdayRange(dayOfMonth),
     HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]))
-  return some(dt)
+  return some(dt.toTime().toUnix())
 
 # For debugging
 proc `$`*(cookieJar: CookieJar): string =
@@ -174,11 +173,6 @@ proc add*(cookieJar: CookieJar; cookie: Cookie) =
         old.path == cookie.path:
       i = j
       break
-  if i != -1:
-    let old = cookieJar.cookies[i]
-    cookie.created = old.created
-    cookieJar.cookies.del(i)
-  cookieJar.cookies.add(cookie)
 
 proc match(cookieJar: CookieJar; url: URL): bool =
   if cookieJar.domain.cookieDomainMatches(url):
@@ -217,8 +211,8 @@ proc serialize*(cookieJar: CookieJar; url: URL): string =
     res &= cookie.value
   return res
 
-proc newCookie*(str: string; url: URL): Opt[Cookie] =
-  let cookie = Cookie(expires: -1, created: getTime().toUnix(), hostOnly: true)
+proc parseCookie(str: string; t: int64; url: URL): Opt[Cookie] =
+  let cookie = Cookie(expires: -1, hostOnly: true)
   var first = true
   var hasPath = false
   for part in str.split(';'):
@@ -235,13 +229,14 @@ proc newCookie*(str: string; url: URL): Opt[Cookie] =
     let val = part.substr(n + 1)
     case key.toLowerAscii()
     of "expires":
-      let date = parseCookieDate(val)
-      if date.isSome:
-        cookie.expires = date.get.toTime().toUnix()
+      if cookie.expires == -1:
+        let date = parseCookieDate(val)
+        if date.isSome:
+          cookie.expires = date.get
     of "max-age":
       let x = parseInt64(val)
       if x.isSome:
-        cookie.expires = cookie.created + x.get
+        cookie.expires = t + x.get
     of "secure": cookie.secure = true
     of "httponly": cookie.httponly = true
     of "path":
@@ -264,3 +259,10 @@ proc newCookieJar*(url: URL; allowHosts: seq[Regex]): CookieJar =
     domain: url.host,
     allowHosts: allowHosts
   )
+
+proc setCookie*(cookieJar: CookieJar; header: openArray[string]; url: URL) =
+  let t = getTime().toUnix()
+  for s in header:
+    let cookie = parseCookie(s, t, url)
+    if cookie.isSome:
+      cookieJar.add(cookie.get)
