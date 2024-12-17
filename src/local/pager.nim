@@ -2545,7 +2545,17 @@ proc fail(pager: Pager; container: Container; errorMessage: string) =
     discard pager.gotoURL(newRequest(container.retry.pop()),
       contentType = container.contentType)
   else:
-    pager.alert("Can't load " & $container.url & " (" & errorMessage & ")")
+    # Try to fit a meaningful part of the URL and the error message too.
+    # URLs can't include double-width chars, so we can just use string
+    # length for those.  (However, error messages can.)
+    var msg = "Can't load " & $container.url
+    let ew = errorMessage.width() + 3
+    if msg.len + ew > pager.attrs.width:
+      msg.setLen(max(pager.attrs.width - ew, pager.attrs.width div 3))
+      if msg.len > 0:
+        msg[^1] = '$'
+      msg &= " (" & errorMessage & ')'
+    pager.alert(msg)
 
 proc redirect(pager: Pager; container: Container; response: Response;
     request: Request) =
