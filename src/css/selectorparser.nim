@@ -304,6 +304,9 @@ proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
   let lasttok = get_tok cssfunction.value[i]
   if lasttok.t != cttIdent or not lasttok.value.equalsIgnoreCase("of"):
     fail
+  inc i
+  while i < cssfunction.value.len and cssfunction.value[i] == cttWhitespace:
+    inc i
   if i == cssfunction.value.len: fail
   nthchild.pseudo.ofsels = cssfunction.value[i..^1]
     .parseSelectorList(state.factory, nested = true, forgiving = false)

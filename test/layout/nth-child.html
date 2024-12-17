@@ -1,0 +1,60 @@
+<style>
+ul[first] :nth-child(1n+0) { color: green }
+ul[first] :nth-child(2n+0) { color: blue }
+ul[first] :nth-child(0n+1) { color: red }
+
+ul[second] :nth-child(1n+0 of li) { color: lime }
+ul[second] :nth-child(2n+0 of li) { color: aliceblue }
+ul[second] :nth-child(0n+1 of li) { color: pink }
+
+ol[first] :nth-last-child(1n+0) { color: green }
+ol[first] :nth-last-child(2n+0) { color: blue }
+ol[first] :nth-last-child(0n+1) { color: red }
+
+ol[second] :nth-last-child(1n+0 of li) { color: lime }
+ol[second] :nth-last-child(2n+0 of li) { color: aliceblue }
+ol[second] :nth-last-child(0n+1 of li) { color: pink }
+
+ol[third] :nth-child(n+2) { color: red }
+</style>
+
+<body bgcolor=black text=white>
+<ul first>
+<li>test
+<li>test
+<li>test
+<li>test
+<li>test
+</ul>
+
+<ul second>
+<li>test
+<li>test
+<li>test
+<li>test
+<li>test
+</ul>
+
+<ol first>
+<li>test
+<li>test
+<li>test
+<li>test
+<li>test
+</ol>
+
+<ol second>
+<li>test
+<li>test
+<li>test
+<li>test
+<li>test
+</ol>
+
+<ol third>
+<li>test
+<li>test
+<li>test
+<li>test
+<li>test
+</ol>

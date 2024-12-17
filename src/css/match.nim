@@ -89,45 +89,54 @@ func pseudoSelectorMatches(element: Element; sel: Selector;
     return element.hover
   of pcRoot: return element == element.document.documentElement
   of pcNthChild:
-    if sel.pseudo.ofsels.len != 0 and
-        not element.selectorsMatch(sel.pseudo.ofsels, depends):
-      return false
     let A = sel.pseudo.anb.A # step
     let B = sel.pseudo.anb.B # start
-    var i = 1
-    let parent = element.parentNode
-    if parent == nil: return false
-    for child in parent.elementList:
-      if child == element:
-        if A == 0:
-          return i == B
-        if A < 0:
-          return (i - B) <= 0 and (i - B) mod A == 0
-        return (i - B) >= 0 and (i - B) mod A == 0
-      if sel.pseudo.ofsels.len == 0 or
-          child.selectorsMatch(sel.pseudo.ofsels, depends):
-        inc i
+    if sel.pseudo.ofsels.len == 0:
+      let i = element.elIndex + 1
+      if A == 0:
+        return i == B
+      let j = (i - B)
+      if A < 0:
+        return j <= 0 and j mod A == 0
+      return j >= 0 and j mod A == 0
+    if element.selectorsMatch(sel.pseudo.ofsels, depends):
+      var i = 1
+      for child in element.parentNode.elementList:
+        if child == element:
+          if A == 0:
+            return i == B
+          let j = (i - B)
+          if A < 0:
+            return j <= 0 and j mod A == 0
+          return j >= 0 and j mod A == 0
+        if child.selectorsMatch(sel.pseudo.ofsels, depends):
+          inc i
     return false
   of pcNthLastChild:
-    if sel.pseudo.ofsels.len == 0 and
-        not element.selectorsMatch(sel.pseudo.ofsels, depends):
-      return false
     let A = sel.pseudo.anb.A # step
     let B = sel.pseudo.anb.B # start
-    var i = 1
-    let parent = element.parentNode
-    if parent == nil:
-      return false
-    for child in parent.elementList_rev:
-      if child == element:
-        if A == 0:
-          return i == B
-        if A < 0:
-          return (i - B) <= 0 and (i - B) mod A == 0
-        return (i - B) >= 0 and (i - B) mod A == 0
-      if sel.pseudo.ofsels.len != 0 or
-          child.selectorsMatch(sel.pseudo.ofsels, depends):
-        inc i
+    if sel.pseudo.ofsels.len == 0:
+      let last = element.parentNode.lastElementChild
+      let i = last.elIndex + 1 - element.elIndex
+      if A == 0:
+        return i == B
+      let j = (i - B)
+      if A < 0:
+        return j <= 0 and j mod A == 0
+      return j >= 0 and j mod A == 0
+    if element.selectorsMatch(sel.pseudo.ofsels, depends):
+      var i = 1
+      for child in element.parentNode.elementList_rev:
+        if child == element:
+          if A == 0:
+            return i == B
+          let j = (i - B)
+          if A < 0:
+            return j <= 0 and j mod A == 0
+          return j >= 0 and j mod A == 0
+        if sel.pseudo.ofsels.len == 0 or
+            child.selectorsMatch(sel.pseudo.ofsels, depends):
+          inc i
     return false
   of pcChecked:
     depends.add(element, dtChecked)

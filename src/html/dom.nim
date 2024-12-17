@@ -250,6 +250,7 @@ type
     localName* {.jsget.}: CAtom
     id* {.jsget.}: CAtom
     name {.jsget.}: CAtom
+    elIndex*: int # like index, but for elements only.
     classList* {.jsget.}: DOMTokenList
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
     cachedAttributes: NamedNodeMap
@@ -3103,6 +3104,7 @@ proc newHTMLElement*(document: Document; localName: CAtom;
   let localName = document.toAtom(satClassList)
   result.classList = DOMTokenList(element: result, localName: localName)
   result.index = -1
+  result.elIndex = -1
   result.dataset = DOMStringMap(target: result)
 
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
@@ -3825,9 +3827,13 @@ proc remove*(node: Node; suppressObservers: bool) =
   assert node.index != -1
   #TODO live ranges
   #TODO NodeIterator
+  let element = if node of Element: Element(node) else: nil
   for i in node.index ..< parent.childList.len - 1:
-    parent.childList[i] = parent.childList[i + 1]
-    parent.childList[i].index = i
+    let it = parent.childList[i + 1]
+    it.index = i
+    if element != nil and it of Element:
+      dec Element(it).elIndex
+    parent.childList[i] = it
   parent.childList.setLen(parent.childList.len - 1)
   parent.invalidateCollections()
   node.invalidateCollections()
@@ -3835,10 +3841,11 @@ proc remove*(node: Node; suppressObservers: bool) =
     Element(parent).setInvalid()
   node.parentNode = nil
   node.index = -1
-  if node.document != nil and (node of HTMLStyleElement or
-      node of HTMLLinkElement):
-    node.document.cachedSheetsInvalid = true
-
+  if element != nil:
+    element.elIndex = -1
+    if element.document != nil and
+        (element of HTMLStyleElement or element of HTMLLinkElement):
+      element.document.cachedSheetsInvalid = true
   #TODO assigned, shadow root, shadow root again, custom nodes, registered
   # observers
   #TODO not suppress observers => queue tree mutation record
@@ -4022,13 +4029,28 @@ func preInsertionValidity*(parent, node, before: Node): Err[DOMException] =
 proc insertNode(parent, node, before: Node) =
   parent.document.adopt(node)
   parent.childList.setLen(parent.childList.len + 1)
+  let element = if node of Element: Element(node) else: nil
   if before == nil:
     node.index = parent.childList.high
   else:
     node.index = before.index
+    if element != nil and before of Element:
+      element.elIndex = Element(before).elIndex
     for i in countdown(parent.childList.high - 1, node.index):
-      parent.childList[i + 1] = parent.childList[i]
-      parent.childList[i + 1].index = i + 1
+      let it = parent.childList[i]
+      let j = i + 1
+      it.index = j
+      if element != nil and it of Element:
+        let it = Element(it)
+        if element.elIndex == -1:
+          element.elIndex = it.elIndex
+        inc it.elIndex
+      parent.childList[j] = it
+  if element != nil and element.elIndex == -1:
+    element.elIndex = 0
+    let last = parent.lastElementChild
+    if last != nil:
+      element.elIndex = last.elIndex + 1
   parent.childList[node.index] = node
   node.parentNode = parent
   node.invalidateCollections()
