@@ -250,13 +250,17 @@ proc main() =
   if (let res = ctx.initConfig(config, warnings); res.isNone):
     stderr.writeLine(res.error)
     quit(1)
+  var history = true
   if ctx.pages.len == 0 and stdin.isatty():
     if ctx.visual:
       ctx.pages.add(config.start.visual_home)
+      history = false
     elif (let httpHome = getEnv("HTTP_HOME"); httpHome != ""):
       ctx.pages.add(httpHome)
+      history = false
     elif (let wwwHome = getEnv("WWW_HOME"); wwwHome != ""):
       ctx.pages.add(wwwHome)
+      history = false
   if ctx.pages.len == 0 and not config.start.headless:
     if stdin.isatty():
       help(1)
@@ -269,7 +273,7 @@ proc main() =
   let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
     urandom)
   try:
-    client.pager.run(ctx.pages, ctx.contentType, ctx.charset, ctx.dump)
+    client.pager.run(ctx.pages, ctx.contentType, ctx.charset, ctx.dump, history)
   except CatchableError:
     client.flushConsole()
     raise

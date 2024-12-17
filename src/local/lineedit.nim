@@ -2,6 +2,7 @@ import std/strutils
 
 import chagashi/charset
 import chagashi/decoder
+import config/history
 import monoucha/javascript
 import monoucha/quickjs
 import types/cell
@@ -15,9 +16,6 @@ import utils/wordbreak
 type
   LineEditState* = enum
     lesEdit, lesFinish, lesCancel
-
-  LineHistory* = ref object
-    lines*: seq[string]
 
   LineEdit* = ref object
     news*: string
@@ -33,16 +31,13 @@ type
     maxwidth: int
     disallowed: set[char]
     hide: bool
-    hist: LineHistory
-    histindex: int
+    hist: History
+    currHist: HistoryEntry
     histtmp: string
     luctx: LUContext
     redraw*: bool
 
 jsDestructor(LineEdit)
-
-func newLineHistory*(): LineHistory =
-  return LineHistory()
 
 # Note: capped at edit.maxwidth.
 func getDisplayWidth(edit: LineEdit): int =
@@ -133,8 +128,8 @@ proc cancel(edit: LineEdit) {.jsfunc.} =
   edit.state = lesCancel
 
 proc submit(edit: LineEdit) {.jsfunc.} =
-  if edit.hist.lines.len == 0 or edit.news != edit.hist.lines[^1]:
-    edit.hist.lines.add(edit.news)
+  if edit.hist.mtime == 0:
+    edit.hist.add(edit.news)
   edit.state = lesFinish
 
 proc backspace(edit: LineEdit) {.jsfunc.} =
@@ -274,11 +269,14 @@ proc `end`(edit: LineEdit) {.jsfunc.} =
       edit.redraw = true
 
 proc prevHist(edit: LineEdit) {.jsfunc.} =
-  if edit.histindex > 0:
-    if edit.news.len > 0:
+  if edit.currHist == nil:
+    if edit.hist.last != nil and edit.news.len > 0:
       edit.histtmp = $edit.news
-    dec edit.histindex
-    edit.news = edit.hist.lines[edit.histindex]
+    edit.currHist = edit.hist.last
+  elif edit.currHist.prev != nil:
+    edit.currHist = edit.currHist.prev
+  if edit.currHist != nil:
+    edit.news = edit.currHist.s
     # The begin call is needed so the cursor doesn't get lost outside
     # the string.
     edit.begin()
@@ -286,25 +284,25 @@ proc prevHist(edit: LineEdit) {.jsfunc.} =
     edit.redraw = true
 
 proc nextHist(edit: LineEdit) {.jsfunc.} =
-  if edit.histindex + 1 < edit.hist.lines.len:
-    inc edit.histindex
-    edit.news = edit.hist.lines[edit.histindex]
+  if edit.currHist != nil and edit.currHist != edit.hist.last:
+    edit.currHist = edit.currHist.next
+    edit.news = edit.currHist.s
     edit.begin()
     edit.end()
     edit.redraw = true
-  elif edit.histindex < edit.hist.lines.len:
-    inc edit.histindex
-    edit.news = edit.histtmp
+  elif edit.currHist == edit.hist.last:
+    edit.currHist = edit.currHist.next
+    edit.news = move(edit.histtmp)
+    edit.histtmp = ""
     edit.begin()
     edit.end()
-    edit.histtmp = ""
     edit.redraw = true
 
 proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1
 
 proc readLine*(prompt, current: string; termwidth: int; disallowed: set[char];
-    hide: bool; hist: LineHistory; luctx: LUContext): LineEdit =
+    hide: bool; hist: History; luctx: LUContext): LineEdit =
   let promptw = prompt.width()
   return LineEdit(
     prompt: prompt,
@@ -318,7 +316,7 @@ proc readLine*(prompt, current: string; termwidth: int; disallowed: set[char];
     # - 1, so that the cursor always has place
     maxwidth: termwidth - promptw - 1,
     hist: hist,
-    histindex: hist.lines.len,
+    currHist: nil,
     luctx: luctx
   )
 

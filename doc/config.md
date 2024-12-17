@@ -195,6 +195,14 @@ Defaults to "ask".
 </td>
 </tr>
 
+<tr>
+<td>history</td>
+<td>true / false</td>
+<td>Whether or not browsing history should be saved to the disk.<br>
+Defaults to true.
+</td>
+</tr>
+
 </table>
 
 ## Search
@@ -375,6 +383,18 @@ defaults to `xsel -bo`.</td>
 <td>path</td>
 <td>Path to the bookmark.md file. (The file it points to should have a
 .md extension, so that its type can be correctly deduced.)</td>
+</tr>
+
+<tr>
+<td>history-file</td>
+<td>path</td>
+<td>Path to the history file. Defaults to "history.uri".</td>
+</tr>
+
+<tr>
+<td>history-size</td>
+<td>number</td>
+<td>Maximum length of the history file. Defaults to 100.</td>
 </tr>
 
 </table>
@@ -893,6 +913,14 @@ automatically after the buffer is loaded. Overrides `buffer.autofocus`.</td>
 completely disables them, "always" automatically accepts all of them, "ask"
 brings up a pop-up menu.<br>
 Overrides `buffer.meta-refresh`.
+</td>
+</tr>
+
+<tr>
+<td>history</td>
+<td>true / false</td>
+<td>Whether or not browsing history should be saved to the disk.<br>
+Overrides `buffer.history`.
 </td>
 </tr>
 

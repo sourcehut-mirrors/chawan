@@ -270,10 +270,10 @@ func untilLower*(s: openArray[char]; c: set[char]; starti = 0): string =
       break
     result.add(s[i].toLowerAscii())
 
-func until*(s: string; c: char; starti = 0): string =
+func until*(s: openArray[char]; c: char; starti = 0): string =
   return s.until({c}, starti)
 
-func untilLower*(s: string; c: char; starti = 0): string =
+func untilLower*(s: openArray[char]; c: char; starti = 0): string =
   return s.untilLower({c}, starti)
 
 func after*(s: string; c: set[char]): string =

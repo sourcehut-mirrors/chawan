@@ -20,6 +20,7 @@ scripting = false
 referer-from = false
 cookie = false
 meta-refresh = "ask"
+history = true
 
 [search]
 wrap = true
@@ -50,6 +51,8 @@ urimethodmap = [
 	"/usr/local/etc/w3m/urimethodmap"
 ]
 bookmark = "bookmark.md"
+history-file = "history.uri"
+history-size = 100
 tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
 sockdir = "${TMPDIR:-/tmp}/cha-sock-$LOGNAME"
 editor = "${EDITOR:-vi}"
@@ -211,6 +214,7 @@ C-l = 'cmd.pager.load'
 C-k = 'cmd.pager.webSearch'
 M-a = 'cmd.pager.addBookmark'
 M-b = 'cmd.pager.openBookmarks'
+C-h = 'cmd.pager.openHistory'
 M-u = 'cmd.pager.dupeBuffer'
 U = 'cmd.pager.reloadBuffer'
 C-g = 'cmd.pager.lineInfo'
@@ -323,7 +327,8 @@ dupeBuffer = '() => pager.dupeBuffer()'
 load = '() => pager.load()'
 webSearch = '() => pager.load("go:")'
 addBookmark = '() => pager.gotoURL(`cgi-bin:chabookmark?url=${encodeURIComponent(pager.url)}&title=${encodeURIComponent(pager.title)}`)'
-openBookmarks = '() => pager.gotoURL(`cgi-bin:chabookmark?action=view`)'
+openBookmarks = '() => pager.gotoURL(`cgi-bin:chabookmark?action=view`, {history: false})'
+openHistory = '() => pager.gotoURL(pager.getHistoryURL(), {contentType: `text/uri-list;title="History page"`, history: false})'
 reloadBuffer = '() => pager.reload()'
 lineInfo = '() => pager.lineInfo()'
 toggleSource = '() => pager.toggleSource()'

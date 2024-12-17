@@ -7,11 +7,13 @@ import std/posix
 import std/sets
 import std/strutils
 import std/tables
+import std/times
 
 import chagashi/charset
 import chagashi/decoder
 import config/chapath
 import config/config
+import config/history
 import config/mailcap
 import config/mimetypes
 import css/render
@@ -156,7 +158,7 @@ type
     jsrt: JSRuntime
     lastAlert: string # last alert seen by the user
     lineData: LineData
-    lineHist: array[LineMode, LineHistory]
+    lineHist: array[LineMode, History]
     lineedit*: LineEdit
     linemode: LineMode
     loader*: FileLoader
@@ -210,13 +212,13 @@ proc dumpBuffers(pager: Pager)
 proc evalJS(pager: Pager; src, filename: string; module = false): JSValue
 proc fulfillAsk(pager: Pager; y: bool)
 proc fulfillCharAsk(pager: Pager; s: string)
-proc getLineHist(pager: Pager; mode: LineMode): LineHistory
+proc getHist(pager: Pager; mode: LineMode): History
 proc handleEvents(pager: Pager)
 proc handleRead(pager: Pager; fd: int)
 proc headlessLoop(pager: Pager)
 proc inputLoop(pager: Pager)
 proc loadURL(pager: Pager; url: string; ctype = none(string);
-  cs = CHARSET_UNKNOWN)
+  cs = CHARSET_UNKNOWN; history = true)
 proc openMenu(pager: Pager; x = -1; y = -1)
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   title: string)
@@ -343,14 +345,14 @@ proc searchPrev(pager: Pager; n = 1) {.jsfunc.} =
   else:
     pager.alert("No previous regular expression")
 
-proc getLineHist(pager: Pager; mode: LineMode): LineHistory =
+proc getHist(pager: Pager; mode: LineMode): History =
   if pager.lineHist[mode] == nil:
-    pager.lineHist[mode] = newLineHistory()
+    pager.lineHist[mode] = newHistory(100)
   return pager.lineHist[mode]
 
 proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
     extraPrompt = "") =
-  let hist = pager.getLineHist(mode)
+  let hist = pager.getHist(mode)
   if pager.term.isatty() and pager.config.input.use_mouse:
     pager.term.disableMouse()
   pager.lineedit = readLine($mode & extraPrompt, current, pager.attrs.width,
@@ -485,12 +487,22 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     proxy: pager.config.network.proxy,
     filter: newURLFilter(default = true),
   ))
+  let hist = newHistory(pager.config.external.history_size, getTime().toUnix())
+  let ps = newPosixStream(pager.config.external.history_file)
+  if ps != nil:
+    var stat: Stat
+    if fstat(ps.fd, stat) != -1:
+      discard hist.parse(ps, int64(stat.st_mtime))
+  pager.lineHist[lmLocation] = hist
   return pager
 
 proc cleanup(pager: Pager) =
   if pager.alive:
     pager.alive = false
     pager.term.quit()
+    let hist = pager.lineHist[lmLocation]
+    if not hist.write(pager.config.external.history_file):
+      pager.alert("failed to save history")
     for msg in pager.alerts:
       stderr.write("cha: " & msg & '\n')
     for val in pager.config.cmd.map.values:
@@ -809,7 +821,7 @@ proc addLoaderClient(pager: Pager; pid: int; config: LoaderClientConfig;
   return key
 
 proc run*(pager: Pager; pages: openArray[string]; contentType: Option[string];
-    cs: Charset; dump: bool) =
+    cs: Charset; dump, history: bool) =
   var istream: PosixStream = nil
   var dump = dump
   if not dump:
@@ -847,8 +859,9 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: Option[string];
     let contentType = contentType.get("text/x-ansi")
     let ps = newPosixStream(STDIN_FILENO)
     pager.readPipe(contentType, cs, ps, "*stdin*")
+  let history = not dump and history # we don't want history for dump either
   for page in pages:
-    pager.loadURL(page, ctype = contentType, cs = cs)
+    pager.loadURL(page, ctype = contentType, cs = cs, history = history)
   pager.showAlerts()
   pager.acceptBuffers()
   if not dump:
@@ -912,11 +925,8 @@ proc refreshStatusMsg(pager: Pager) =
     discard pager.writeStatusMessage(pager.alerts[0])
     # save to alert history
     if pager.lastAlert != "":
-      let hist = pager.getLineHist(lmAlert)
-      if hist.lines.len == 0 or hist.lines[^1] != pager.lastAlert:
-        if hist.lines.len > 19:
-          hist.lines.delete(0)
-        hist.lines.add(move(pager.lastAlert))
+      let hist = pager.getHist(lmAlert)
+      hist.add(move(pager.lastAlert))
     pager.lastAlert = move(pager.alerts[0])
     pager.alerts.delete(0)
   else:
@@ -1878,7 +1888,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
 proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     contentType = none(string); cs = CHARSET_UNKNOWN; replace: Container = nil;
     replaceBackup: Container = nil; redirectDepth = 0;
-    referrer: Container = nil; save = false; url: URL = nil): Container =
+    referrer: Container = nil; save = false; history = true;
+    url: URL = nil): Container =
   pager.navDirection = ndNext
   if referrer != nil and referrer.config.refererFrom:
     request.referrer = referrer.url
@@ -1904,6 +1915,8 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     var flags = {cfCanReinterpret, cfUserRequested}
     if save:
       flags.incl(cfSave)
+    if history:
+      flags.incl(cfHistory)
     let container = pager.newContainer(
       bufferConfig,
       loaderConfig,
@@ -1963,7 +1976,7 @@ proc omniRewrite(pager: Pager; s: string): string =
 # * https://<url>
 # So we attempt to load both, and see what works.
 proc loadURL(pager: Pager; url: string; ctype = none(string);
-    cs = CHARSET_UNKNOWN) =
+    cs = CHARSET_UNKNOWN; history = true) =
   let url0 = pager.omniRewrite(url)
   let url = expandPath(url0)
   if url.len == 0:
@@ -1974,7 +1987,8 @@ proc loadURL(pager: Pager; url: string; ctype = none(string);
       some(pager.container.url)
     else:
       none(URL)
-    discard pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs)
+    discard pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs,
+      history = history)
     return
   var urls: seq[URL] = @[]
   if pager.config.network.prepend_https and
@@ -1992,7 +2006,7 @@ proc loadURL(pager: Pager; url: string; ctype = none(string);
     pager.alert("Invalid URL " & url)
   else:
     let container = pager.gotoURL(newRequest(urls.pop()), contentType = ctype,
-      cs = cs)
+      cs = cs, history = history)
     if container != nil:
       container.retry = urls
 
@@ -2028,6 +2042,18 @@ proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
     {cfCanReinterpret, cfUserRequested})
   inc pager.numload
   pager.addContainer(container)
+
+proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
+  let (pins, pouts) = pager.createPipe()
+  if pins == nil:
+    return nil
+  let url = newURL("stream:history").get
+  pager.loader.passFd(url.pathname, pins.fd)
+  pins.sclose()
+  let hist = pager.lineHist[lmLocation]
+  if not hist.write(pouts, reverse = true):
+    pager.alert("failed to write history")
+  return url
 
 const ConsoleTitle = "Browser Console"
 
@@ -2256,6 +2282,7 @@ type GotoURLDict = object of JSDict
   contentType {.jsdefault.}: Option[string]
   replace {.jsdefault.}: Container
   save {.jsdefault.}: bool
+  history {.jsdefault.}: bool
 
 proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
     {.jsfunc: "gotoURL".} =
@@ -2271,7 +2298,7 @@ proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
       url = ?newURL(s)
     request = newRequest(url)
   discard pager.gotoURL(request, contentType = t.contentType,
-    replace = t.replace, save = t.save)
+    replace = t.replace, save = t.save, history = t.history)
   return ok()
 
 # Reload the page in a new buffer, then kill the previous buffer.
@@ -2533,7 +2560,8 @@ proc redirectTo(pager: Pager; container: Container; request: Request) =
     container.find(ndAny)
   let nc = pager.gotoURL(request, some(container.url), replace = container,
     replaceBackup = replaceBackup, redirectDepth = container.redirectDepth + 1,
-    referrer = container)
+    referrer = container, save = cfSave in container.flags,
+    history = cfHistory in container.flags)
   nc.loadinfo = "Redirecting to " & $request.url
   pager.onSetLoadInfo(nc)
   dec pager.numload
@@ -2743,6 +2771,8 @@ proc connected(pager: Pager; container: Container; response: Response) =
   # variable.)
   if cfUserRequested in container.flags:
     pager.hasload = true
+  if cfHistory in container.flags:
+    pager.lineHist[lmLocation].add($container.url)
   var contentType = if "Content-Type" in response.headers:
     response.headers["Content-Type"]
   else:
@@ -2868,6 +2898,7 @@ const MenuMap = [
   ("─────────────────────────", ""),
   ("Bookmark page       (M-a)", "cmd.pager.addBookmark(1)"),
   ("Open bookmarks      (M-b)", "cmd.pager.openBookmarks(1)"),
+  ("Open history        (C-h)", "cmd.pager.openHistory(1)"),
 ]
 
 proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =

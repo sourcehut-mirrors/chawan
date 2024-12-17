@@ -73,6 +73,7 @@ type
     insecure_ssl_no_verify*: Option[bool]
     autofocus*: Option[bool]
     meta_refresh*: Option[MetaRefresh]
+    history*: Option[bool]
 
   OmniRule* = ref object
     match*: Regex
@@ -110,6 +111,8 @@ type
     cgi_dir* {.jsgetset.}: seq[ChaPathResolved]
     urimethodmap*: URIMethodMap
     bookmark* {.jsgetset.}: ChaPathResolved
+    history_file*: ChaPathResolved
+    history_size* {.jsgetset.}: int32
     download_dir* {.jsgetset.}: ChaPathResolved
     w3m_cgi_compat* {.jsgetset.}: bool
     copy_cmd* {.jsgetset.}: string
@@ -162,6 +165,7 @@ type
     referer_from* {.jsgetset.}: bool
     autofocus* {.jsgetset.}: bool
     meta_refresh* {.jsgetset.}: MetaRefresh
+    history* {.jsgetset.}: bool
 
   Config* = ref object
     jsctx*: JSContext

@@ -38,6 +38,10 @@ buffer:
 	  buffer
 	* this also includes not crashing when the buffer dies while
 	  container is reading...
+- color visited links
+	* needs some sort of conditional formatting in pager, e.g. give
+	  all Formats an id in buffer and send a list of "if URL
+	  visited, change Format" commands
 - configurable/better url filtering in loader
 - when the log buffer crashes, print its contents to stderr
 	* easiest way seems to be to just dump its cache file
@@ -46,7 +50,6 @@ buffer:
 pager:
 - better horizontal line handling: allow viewing content positioned before page
   start, handle long lines, etc
-- history (what format?)
 - save/edit buffer output
 - alert on external command failure
 network:

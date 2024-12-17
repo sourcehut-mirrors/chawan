@@ -5,3 +5,4 @@ text/gemini;	"$CHA_LIBEXEC_DIR"/gmi2html; x-htmloutput; x-needsstyle
 text/markdown;	"$CHA_LIBEXEC_DIR"/md2html; x-htmloutput
 text/x-ansi;	"$CHA_LIBEXEC_DIR"/ansi2html -st '%{title}'; x-htmloutput; x-needsstyle
 text/x-dirlist;	"$CHA_LIBEXEC_DIR"/dirlist2html -t '%{title}'; x-htmloutput
+text/uri-list;	"$CHA_LIBEXEC_DIR"/uri2html '%{title}'; x-htmloutput
