@@ -24,6 +24,9 @@ pre code { text-decoration: none }
 textarea, iframe, frame, input, img, canvas { display: inline-block }
 
 ol, ul, menu, dir { padding-left: 4ch; margin: 1em 0 }
+ol > li:nth-child(n+100) { margin-left: 1ch }
+ol > li:nth-child(n+1000) { margin-left: 2ch }
+ol > li:nth-child(n+10000) { margin-left: 3ch }
 
 :is(ol, ul, menu, dir) :is(ol, ul, menu, dir) {
 	margin-top: unset;
