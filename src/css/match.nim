@@ -8,6 +8,22 @@ import html/catom
 import html/dom
 import utils/twtstr
 
+# We use three match types.
+# "mtTrue" and "mtFalse" are self-explanatory.
+# "mtContinue" is like "mtFalse", but also modifies "depends".  This
+# "depends" change is only propagated at the end if no selector before
+# the pseudo element matches the element, and the last match was
+# "mtContinue".
+#
+# Since style is only recomputed (e.g. when the hovered element changes)
+# for elements that are included in "depends", this has the effect of
+# minimizing such recomputations to cases where it's really necessary.
+type MatchType = enum
+  mtFalse, mtTrue, mtContinue
+
+converter toMatchType(b: bool): MatchType =
+  return MatchType(b)
+
 #TODO rfNone should match insensitively for certain properties
 func matchesAttr(element: Element; sel: Selector): bool =
   case sel.rel.t
@@ -69,7 +85,7 @@ func matches(element: Element; slist: SelectorList;
   return false
 
 func matches(element: Element; pseudo: PseudoData;
-    depends: var DependencyInfo): bool =
+    depends: var DependencyInfo): MatchType =
   case pseudo.t
   of pcFirstChild: return element.parentNode.firstElementChild == element
   of pcLastChild: return element.parentNode.lastElementChild == element
@@ -79,14 +95,10 @@ func matches(element: Element; pseudo: PseudoData;
     return element.parentNode.firstElementChild == element and
       element.parentNode.lastElementChild == element
   of pcHover:
-    #TODO this is somewhat problematic.
-    # e.g. if there is a rule like ".class :hover", then you set
-    # dtHover for basically every element, even if most of them are not
-    # a .class descendant.
-    # Ideally we should try to match the rest of the selector before
-    # attaching dependencies in general.
     depends.add(element, dtHover)
-    return element.hover
+    if element.hover:
+      return mtTrue
+    return mtContinue
   of pcRoot: return element == element.document.documentElement
   of pcNthChild:
     let A = pseudo.anb.A # step
@@ -111,7 +123,7 @@ func matches(element: Element; pseudo: PseudoData;
           return j >= 0 and j mod A == 0
         if child.matches(pseudo.ofsels, depends):
           inc i
-    return false
+    return mtFalse
   of pcNthLastChild:
     let A = pseudo.anb.A # step
     let B = pseudo.anb.B # start
@@ -136,20 +148,27 @@ func matches(element: Element; pseudo: PseudoData;
           return j >= 0 and j mod A == 0
         if child.matches(pseudo.ofsels, depends):
           inc i
-    return false
+    return mtFalse
   of pcChecked:
-    depends.add(element, dtChecked)
     if element.tagType == TAG_INPUT:
-      return HTMLInputElement(element).checked
+      depends.add(element, dtChecked)
+      if HTMLInputElement(element).checked:
+        return mtTrue
     elif element.tagType == TAG_OPTION:
-      return HTMLOptionElement(element).selected
-    return false
+      depends.add(element, dtChecked)
+      if HTMLOptionElement(element).selected:
+        return mtTrue
+    return mtContinue
   of pcFocus:
     depends.add(element, dtFocus)
-    return element.document.focus == element
+    if element.document.focus == element:
+      return mtTrue
+    return mtContinue
   of pcTarget:
     depends.add(element, dtTarget)
-    return element.document.target == element
+    if element.document.target == element:
+      return mtTrue
+    return mtContinue
   of pcNot:
     return not element.matches(pseudo.fsels, depends)
   of pcIs, pcWhere:
@@ -159,10 +178,10 @@ func matches(element: Element; pseudo: PseudoData;
   of pcLink:
     return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
   of pcVisited:
-    return false
+    return mtFalse
 
 func matches(element: Element; sel: Selector; depends: var DependencyInfo):
-    bool =
+    MatchType =
   case sel.t
   of stType:
     return element.localName == sel.tag
@@ -170,8 +189,8 @@ func matches(element: Element; sel: Selector; depends: var DependencyInfo):
     let factory = element.document.factory
     for it in element.classList.toks:
       if sel.class == factory.toLowerAscii(it):
-        return true
-    return false
+        return mtTrue
+    return mtFalse
   of stId:
     return sel.id == element.document.factory.toLowerAscii(element.id)
   of stAttr:
@@ -179,54 +198,71 @@ func matches(element: Element; sel: Selector; depends: var DependencyInfo):
   of stPseudoClass:
     return element.matches(sel.pseudo, depends)
   of stPseudoElement:
-    return true
+    return mtTrue
   of stUniversal:
-    return true
+    return mtTrue
 
 func matches(element: Element; sels: CompoundSelector;
-    depends: var DependencyInfo): bool =
+    depends: var DependencyInfo): MatchType =
+  var res = mtTrue
   for sel in sels:
-    if not element.matches(sel, depends):
-      return false
-  return true
+    case element.matches(sel, depends)
+    of mtFalse: return mtFalse
+    of mtTrue: discard
+    of mtContinue: res = mtContinue
+  return res
 
 # Note: this modifies "depends".
 func matches*(element: Element; cxsel: ComplexSelector;
     depends: var DependencyInfo): bool =
   var e = element
+  var pmatch = mtFalse
+  var mdepends = DependencyInfo()
   for i in countdown(cxsel.high, 0):
-    var match = false
+    var match = mtFalse
     case cxsel[i].ct
     of ctNone:
-      match = e.matches(cxsel[i], depends)
+      match = e.matches(cxsel[i], mdepends)
     of ctDescendant:
       e = e.parentElement
       while e != nil:
-        if e.matches(cxsel[i], depends):
-          match = true
+        case e.matches(cxsel[i], mdepends)
+        of mtFalse: discard
+        of mtTrue:
+          match = mtTrue
           break
+        of mtContinue: match = mtContinue # keep looking
         e = e.parentElement
     of ctChild:
       e = e.parentElement
       if e != nil:
-        match = e.matches(cxsel[i], depends)
+        match = e.matches(cxsel[i], mdepends)
     of ctNextSibling:
       let prev = e.previousElementSibling
       if prev != nil:
         e = prev
-        match = e.matches(cxsel[i], depends)
+        match = e.matches(cxsel[i], mdepends)
     of ctSubsequentSibling:
       let parent = e.parentNode
       for j in countdown(e.index - 1, 0):
         let child = parent.childList[j]
         if child of Element:
           let child = Element(child)
-          if child.matches(cxsel[i], depends):
+          case child.matches(cxsel[i], mdepends)
+          of mtTrue:
             e = child
-            match = true
+            match = mtTrue
             break
-    if not match:
-      return false
+          of mtFalse: discard
+          of mtContinue: match = mtContinue # keep looking
+    if match == mtFalse:
+      return false # we can discard depends.
+    if pmatch == mtContinue and match == mtTrue or e == nil:
+      break # we must update depends.
+    pmatch = match
+  depends.merge(mdepends)
+  if pmatch == mtContinue:
+    return false
   return true
 
 # Forward declaration hack

@@ -94,9 +94,12 @@ proc isValid*(styledNode: StyledNode; toReset: var seq[Element]): bool =
   return true
 
 proc add*(depends: var DependencyInfo; element: Element; t: DependencyType) =
-  let it = DependencyInfoItem(t: t, element: element)
-  if it notin depends.items:
-    depends.items.add(it)
+  depends.items.add(DependencyInfoItem(t: t, element: element))
+
+proc merge*(a: var DependencyInfo; b: DependencyInfo) =
+  for it in b.items:
+    if it notin a.items:
+      a.items.add(it)
 
 func newStyledElement*(parent: StyledNode; element: Element): StyledNode =
   return StyledNode(t: stElement, node: element, parent: parent)
