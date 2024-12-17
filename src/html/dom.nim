@@ -526,7 +526,7 @@ proc reset(state: var DrawingState) =
 
 proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
     options = JS_UNDEFINED) =
-  var pipefd: array[2, cint]
+  var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) == -1:
     return
   let window = jctx.getWindow()

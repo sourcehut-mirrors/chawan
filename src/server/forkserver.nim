@@ -81,7 +81,7 @@ proc trapSIGINT() =
   setControlCHook(proc() {.noconv.} = discard)
 
 proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
-  var pipefd: array[2, cint]
+  var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
   stdout.flushFile()
@@ -127,7 +127,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   r.sread(attrs)
   r.sread(ishtml)
   r.sread(charsetStack)
-  var pipefd: array[2, cint]
+  var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) == -1:
     raise newException(Defect, "Failed to open pipe.")
   stdout.flushFile()

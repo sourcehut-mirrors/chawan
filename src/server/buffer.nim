@@ -295,7 +295,7 @@ macro proxy1(fun: typed) =
   pfun.iname = ident(fun[0].strVal & "_internal")
   pfun.ename = iproc[1]
   pfun.params.add(fun[3][0])
-  var params2: seq[NimNode]
+  var params2: seq[NimNode] = @[]
   params2.add(fun[3][0])
   for i in 1 ..< fun[3].len:
     let param = fun[3][i]
@@ -956,7 +956,7 @@ var gpstream* {.global.}: SocketStream
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
 proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
-  var pipefd: array[2, cint]
+  var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) == -1:
     buffer.estream.write("Failed to open pipe.\n")
     return -1

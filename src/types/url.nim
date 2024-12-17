@@ -108,7 +108,7 @@ func parseIpv6(input: openArray[char]): Option[array[8, uint16]] =
   var pieceindex = 0
   var compress = -1
   var pointer = 0
-  var address: array[8, uint16]
+  var address = array[8, uint16].default
 
   template c(i = 0): char = input[pointer + i]
   template has(i = 0): bool = (pointer + i < input.len)

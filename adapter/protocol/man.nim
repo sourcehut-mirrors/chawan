@@ -236,8 +236,8 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
   efile.close()
 
 proc myOpen(cmd: string): tuple[ofile, efile: File] =
-  var opipe = default(array[2, cint])
-  var epipe = default(array[2, cint])
+  var opipe = array[2, cint].default
+  var epipe = array[2, cint].default
   if pipe(opipe) == -1 or pipe(epipe) == -1:
     return (nil, nil)
   case fork()

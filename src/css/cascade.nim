@@ -232,9 +232,9 @@ func buildComputedValues(rules: CSSValueEntryMap;
     presHints: openArray[CSSComputedEntry]; parent: CSSValues):
     CSSValues =
   new(result)
-  var inited = default(array[CSSPropertyType, bool])
-  var uaInited = default(array[CSSPropertyType, bool])
-  var userInited = default(array[CSSPropertyType, bool])
+  var inited = array[CSSPropertyType, bool].default
+  var uaInited = array[CSSPropertyType, bool].default
+  var userInited = array[CSSPropertyType, bool].default
   for entry in rules[coUserAgent].normal: # user agent
     result.applyValue(entry, parent, nil, inited)
     inited[entry.t] = true
@@ -333,10 +333,10 @@ func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
 func calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
     author: seq[CSSStylesheet]): RuleListMap =
   let uadecls = calcRules(styledNode, ua)
-  var userdecls: RuleList
+  var userdecls = RuleList.default
   if user != nil:
     userdecls = calcRules(styledNode, user)
-  var authordecls: seq[RuleList]
+  var authordecls: seq[RuleList] = @[]
   for rule in author:
     authordecls.add(calcRules(styledNode, rule))
   return RuleListMap(
@@ -362,7 +362,7 @@ type CascadeFrame = object
   parentDeclMap: RuleListMap
 
 proc getAuthorSheets(document: Document): seq[CSSStylesheet] =
-  var author: seq[CSSStylesheet]
+  var author: seq[CSSStylesheet] = @[]
   for sheet in document.sheets():
     author.add(sheet.applyMediaQuery(document.window))
   return author

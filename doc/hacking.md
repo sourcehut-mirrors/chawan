@@ -114,7 +114,7 @@ let myObj = MyObject(
 For arrays, use:
 
 ```nim
-var buf1 = default(array[1234, char]) # when you need 0-initialization
+var buf1 = array[1234, char].default # when you need 0-initialization
 var buf2 {.noinit.}: array[1234, char] # when you don't need 0-initialization
 ```
 

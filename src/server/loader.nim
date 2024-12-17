@@ -1134,7 +1134,7 @@ proc addClient(ctx: LoaderContext; stream: SocketStream;
   r.sread(config)
   r.sread(clonedFrom)
   stream.withPacketWriter w:
-    if pid in ctx.clientData or key == default(ClientKey):
+    if pid in ctx.clientData or key == ClientKey.default:
       w.swrite(false)
     else:
       let client = ClientData(pid: pid, key: key, config: config)
@@ -1401,7 +1401,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
       # pager's key is still null
       var key: ClientKey
       r.sread(key)
-      doAssert key == default(ClientKey)
+      doAssert key == ClientKey.default
     var cmd: LoaderCommand
     r.sread(cmd)
     doAssert cmd == lcAddClient

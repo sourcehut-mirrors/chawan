@@ -64,7 +64,7 @@ proc authenticateSocks5(os, ps: PosixStream; buf: array[2, uint8];
       os.die("InternalError", "username or password too long")
     let sbuf = "\x01" & char(user.len) & user & char(pass.len) & pass
     ps.sendDataLoop(sbuf)
-    var rbuf = default(array[2, uint8])
+    var rbuf = array[2, uint8].default
     ps.recvDataLoop(rbuf)
     if rbuf[0] != 1:
       os.die("ProxyInvalidResponse", "wrong auth version")
@@ -86,7 +86,7 @@ proc sendSocks5Domain(os, ps: PosixStream; host, port: string;
   let port = x.get
   let sbuf = "\x05\x01\x00" & dstaddr & char(port shr 8) & char(port and 0xFF)
   ps.sendDataLoop(sbuf)
-  var rbuf = default(array[4, uint8])
+  var rbuf = array[4, uint8].default
   ps.recvDataLoop(rbuf)
   if rbuf[0] != 5:
     os.die("ProxyInvalidResponse")
@@ -94,7 +94,7 @@ proc sendSocks5Domain(os, ps: PosixStream; host, port: string;
     os.die("ProxyRefusedToConnect")
   case rbuf[3]
   of 0x01:
-    var ipv4 = default(array[4, uint8])
+    var ipv4 = array[4, uint8].default
     ps.recvDataLoop(ipv4)
     outIpv6 = false
   of 0x03:
@@ -105,12 +105,12 @@ proc sendSocks5Domain(os, ps: PosixStream; host, port: string;
     # we don't really know, so just assume it's ipv4.
     outIpv6 = false
   of 0x04:
-    var ipv6 = default(array[16, uint8])
+    var ipv6 = array[16, uint8].default
     ps.recvDataLoop(ipv6)
     outIpv6 = true
   else:
     os.die("ProxyInvalidResponse")
-  var bndport = default(array[2, uint8])
+  var bndport = array[2, uint8].default
   ps.recvDataLoop(bndport)
 
 proc connectSocks5Socket(os: PosixStream; host, port, proxyHost, proxyPort,
@@ -121,7 +121,7 @@ proc connectSocks5Socket(os: PosixStream; host, port, proxyHost, proxyPort,
   const NoAuth = "\x05\x01\x00"
   const WithAuth = "\x05\x02\x00\x02"
   ps.sendDataLoop(if proxyUser != "": NoAuth else: WithAuth)
-  var buf = default(array[2, uint8])
+  var buf = array[2, uint8].default
   ps.recvDataLoop(buf)
   os.authenticateSocks5(ps, buf, proxyUser, proxyPass)
   os.sendSocks5Domain(ps, host, port, outIpv6)

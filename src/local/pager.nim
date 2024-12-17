@@ -1976,7 +1976,7 @@ proc loadURL(pager: Pager; url: string; ctype = none(string);
       none(URL)
     discard pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs)
     return
-  var urls: seq[URL]
+  var urls: seq[URL] = @[]
   if pager.config.network.prepend_https and
       pager.config.network.prepend_scheme != "" and url[0] != '/':
     let pageurl = parseURL(pager.config.network.prepend_scheme & url)
@@ -2207,7 +2207,7 @@ proc updateReadLine(pager: Pager) =
         else:
           pager.saveTo(data, lineedit.news)
       of lmMailcap:
-        var mailcap = default(Mailcap)
+        var mailcap = Mailcap.default
         let res = mailcap.parseMailcap(lineedit.news)
         let data = LineDataMailcap(pager.lineData)
         if res.isSome and mailcap.len == 1:

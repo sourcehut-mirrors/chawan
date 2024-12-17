@@ -33,10 +33,10 @@ proc parseCookieDate(val: string): Option[DateTime] =
   var foundMonth = false
   var foundYear = false
   # date-token-list
-  var time: array[3, int]
-  var dayOfMonth: int
-  var month: int
-  var year: int
+  var time = array[3, int].default
+  var dayOfMonth = 0
+  var month = 0
+  var year = 0
   for dateToken in val.split(Delimiters):
     if dateToken == "": continue # *delimiter
     if not foundTime:
@@ -47,7 +47,7 @@ proc parseCookieDate(val: string): Option[DateTime] =
           if i > 2: break timeBlock # too many time fields
           # 1*2DIGIT
           if timeField.len != 1 and timeField.len != 2: break timeBlock
-          var timeFields: array[3, int]
+          var timeFields = array[3, int].default
           for c in timeField:
             if c notin AsciiDigit: break timeBlock
             timeFields[i] *= 10

@@ -16,7 +16,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
     encoding = "UTF-8"): seq[FormDataEntry]
 
 proc generateBoundary(urandom: PosixStream): string =
-  var s: array[33, uint8]
+  var s {.noinit.}: array[33, uint8]
   urandom.recvDataLoop(s)
   # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
   return "----WebKitFormBoundary" & btoa(s)

@@ -283,7 +283,7 @@ proc consumeComment(state: var TomlParser; buf: openArray[char]) =
 
 proc consumeKey(state: var TomlParser; buf: openArray[char]):
     Result[seq[string], TomlError] =
-  var res: seq[string]
+  var res: seq[string] = @[]
   var str = ""
   while state.has(buf):
     let c = state.consume(buf)

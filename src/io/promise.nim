@@ -187,7 +187,7 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: var EmptyPromise): Opt[void] =
 proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
   if promise == nil:
     return JS_NULL
-  var resolvingFuncs: array[2, JSValue]
+  var resolvingFuncs {.noinit.}: array[2, JSValue]
   let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
@@ -201,7 +201,7 @@ proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
 proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue =
   if promise == nil:
     return JS_NULL
-  var resolvingFuncs: array[2, JSValue]
+  var resolvingFuncs {.noinit.}: array[2, JSValue]
   let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
@@ -218,7 +218,7 @@ proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue =
 proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
   if promise == nil:
     return JS_NULL
-  var resolvingFuncs: array[2, JSValue]
+  var resolvingFuncs {.noinit.}: array[2, JSValue]
   let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION

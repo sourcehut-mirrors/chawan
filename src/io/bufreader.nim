@@ -38,7 +38,7 @@ proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
   return reader
 
 proc initPacketReader*(stream: DynStream): BufferedReader =
-  var len: array[2, int]
+  var len {.noinit.}: array[2, int]
   stream.recvDataLoop(addr len[0], sizeof(len))
   return stream.initReader(len[0], len[1])
 

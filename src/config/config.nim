@@ -607,7 +607,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
     k: string) =
   var paths: seq[ChaPathResolved]
   ctx.parseConfigValue(paths, v, k)
-  x = default(MimeTypes)
+  x = MimeTypes.default
   for p in paths:
     let ps = newPosixStream(p)
     if ps != nil:
@@ -620,7 +620,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
     k: string) =
   var paths: seq[ChaPathResolved]
   ctx.parseConfigValue(paths, v, k)
-  x = default(Mailcap)
+  x = Mailcap.default
   for p in paths:
     let ps = newPosixStream(p)
     if ps != nil:
@@ -657,7 +657,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
     k: string) =
   var paths: seq[ChaPathResolved]
   ctx.parseConfigValue(paths, v, k)
-  x = default(URIMethodMap)
+  x = URIMethodMap.default
   for p in paths:
     let ps = newPosixStream(p)
     if ps != nil:

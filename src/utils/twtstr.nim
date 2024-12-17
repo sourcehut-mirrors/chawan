@@ -469,6 +469,7 @@ func percentEncode*(s: openArray[char]; set: set[char]; spaceAsPlus = false):
   result.percentEncode(s, set, spaceAsPlus)
 
 func percentDecode*(input: openArray[char]): string =
+  result = ""
   var i = 0
   while i < input.len:
     let c = input[i]
@@ -741,7 +742,7 @@ func atob(c: char): uint8 {.inline.} =
 # (it should really be out string, just can't use out because of 1.6.14)
 func atob*(outs: var string; data: string): Err[cstring] =
   outs = newStringOfCap(data.len div 4 * 3)
-  var buf = default(array[4, uint8])
+  var buf = array[4, uint8].default
   var i = 0
   var j = 0
   var pad = 0

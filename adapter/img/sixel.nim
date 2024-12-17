@@ -149,7 +149,7 @@ proc trim(trimMap: var TrimMap; K: var uint) =
 
 proc quantize(img: openArray[RGBAColorBE]; outk: var uint;
     outTransparent: var bool): NodeChildren =
-  var root = default(NodeChildren)
+  var root = NodeChildren.default
   if outk <= 2: # monochrome; not much we can do with an octree...
     root[0] = cast[Node](alloc0(sizeof(NodeObj)))
     root[0].u.leaf.c = rgb(0, 0, 0)
@@ -209,7 +209,7 @@ type
 proc getColor(nodes: seq[Node]; c: ARGBColor; diff: var DitherDiff): Node =
   var child: Node = nil
   var minDist = uint32.high
-  var mdiff = default(DitherDiff)
+  var mdiff = DitherDiff.default
   for node in nodes:
     let ic = node.u.leaf.c
     let ad = int32(c.a) - 100

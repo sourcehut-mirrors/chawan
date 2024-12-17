@@ -34,7 +34,7 @@ proc mnormalize*(s: var string) =
 proc toUpperLU(s: string; n: cint): string =
   result = newStringOfCap(s.len)
   for u in s.points:
-    var outa: array[LRE_CC_RES_LEN_MAX, uint32]
+    var outa {.noinit.}: array[LRE_CC_RES_LEN_MAX, uint32]
     let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]), u, n)
     result.addUTF8(outa.toOpenArray(0, n - 1))
 
@@ -52,7 +52,7 @@ proc capitalizeLU*(s: string): string =
       wordStart = true
       result.addUTF8(u)
     elif wordStart:
-      var outa: array[LRE_CC_RES_LEN_MAX, uint32]
+      var outa {.noinit.}: array[LRE_CC_RES_LEN_MAX, uint32]
       let n = lre_case_conv(cast[ptr UncheckedArray[uint32]](addr outa[0]),
         u, 0)
       result.addUTF8(outa.toOpenArray(0, n - 1))
