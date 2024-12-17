@@ -715,6 +715,8 @@ proc gotoAnchor*(buffer: Buffer; anchor: string; autofocus: bool):
   if buffer.document == nil:
     return GotoAnchorResult(found: false)
   var anchor = buffer.document.findAnchor(anchor)
+  if anchor != nil:
+    buffer.document.setTarget(anchor)
   var focus: ReadLineResult = nil
   # Do not use buffer.config.autofocus when we just want to check if the
   # anchor can be found.
@@ -1032,6 +1034,11 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     for it in connecting:
       # connecting: just reconnect
       buffer.loader.reconnect(it)
+    # Set target now, because it's convenient.
+    # (It is also possible that newurl has no hash, and then gotoAnchor
+    # isn't called at all.)
+    let target = buffer.document.findAnchor(newurl.hash)
+    buffer.document.setTarget(target)
     return 0
   else: # parent
     discard close(pipefd[1]) # close write

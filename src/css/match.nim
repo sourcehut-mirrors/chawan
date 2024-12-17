@@ -147,6 +147,9 @@ func matches(element: Element; pseudo: PseudoData;
   of pcFocus:
     depends.add(element, dtFocus)
     return element.document.focus == element
+  of pcTarget:
+    depends.add(element, dtTarget)
+    return element.document.target == element
   of pcNot:
     return not element.matches(pseudo.fsels, depends)
   of pcIs, pcWhere:

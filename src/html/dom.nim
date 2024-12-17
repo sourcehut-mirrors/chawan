@@ -68,7 +68,7 @@ type
 
 type
   DependencyType* = enum
-    dtHover, dtChecked, dtFocus
+    dtHover, dtChecked, dtFocus, dtTarget
 
   Location = ref object
     window: Window
@@ -200,6 +200,7 @@ type
 
     parserCannotChangeModeFlag*: bool
     internalFocus: Element
+    internalTarget: Element
     contentType* {.jsget.}: string
     renderBlockingElements: seq[Element]
 
@@ -2685,6 +2686,16 @@ proc setFocus*(document: Document; element: Element) =
   document.internalFocus = element
   if element != nil:
     element.invalidDeps.incl(dtFocus)
+
+func target*(document: Document): Element =
+  return document.internalTarget
+
+proc setTarget*(document: Document; element: Element) =
+  if document.target != nil:
+    document.target.invalidDeps.incl(dtTarget)
+  document.internalTarget = element
+  if element != nil:
+    element.invalidDeps.incl(dtTarget)
 
 func hover*(element: Element): bool =
   return element.internalHover

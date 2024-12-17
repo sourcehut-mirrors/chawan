@@ -38,6 +38,7 @@ type
     pcLang = "lang"
     pcLink = "link"
     pcVisited = "visited"
+    pcTarget = "target"
     pcFirstNode = "-cha-first-node"
     pcLastNode = "-cha-last-node"
 
@@ -371,6 +372,7 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
       of "focus": add_pseudo_class pcFocus
       of "link": add_pseudo_class pcLink
       of "visited": add_pseudo_class pcVisited
+      of "target": add_pseudo_class pcTarget
       of "-cha-first-node": add_pseudo_class pcFirstNode
       of "-cha-last-node": add_pseudo_class pcLastNode
       else: fail
