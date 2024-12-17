@@ -34,8 +34,8 @@ type
     size*: Size
     # overflow relative to offset
     overflow*: Overflow
-    # minimum content width (usually shortest word)
-    xminwidth*: LayoutUnit
+    # intrinsic minimum size (e.g. longest word)
+    intr*: Size
     # baseline of the first line box of all descendants
     firstBaseline*: LayoutUnit
     # baseline of the last line box of all descendants

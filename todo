@@ -67,6 +67,11 @@ layout engine:
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
 - overflow
+	* which way to round on overflow: hidden? (floor is probably
+	  better)
+	* instead of scrollbars, maybe just clamp overflow: scroll or
+	  auto to their intrinsic minimum height? it might work well
+	  enough on most sites
 - partial layout, layout caching
 - iframe
 - z order

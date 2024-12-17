@@ -87,6 +87,12 @@ func minHeight(sizes: ResolvedSizes): LayoutUnit =
 func maxHeight(sizes: ResolvedSizes): LayoutUnit =
   return sizes.bounds.a[dtVertical].send
 
+proc addMinWidthClamp(bounds: var Bounds; u: LayoutUnit) =
+  bounds.minClamp[dtHorizontal] = min(bounds.minClamp[dtHorizontal], u)
+
+proc addMinHeightClamp(bounds: var Bounds; u: LayoutUnit) =
+  bounds.minClamp[dtVertical] = min(bounds.minClamp[dtVertical], u)
+
 func sum(span: Span): LayoutUnit =
   return span.start + span.send
 
@@ -246,6 +252,7 @@ type
     availableWidth: LayoutUnit # actual place available after float exclusions
     offsety: LayoutUnit # offset of line in root fragment
     height: LayoutUnit # height used for painting; does not include padding
+    intrh: LayoutUnit # intrinsic minimum height
 
   InlineAtomState = object
     vertalign: CSSVerticalAlign
@@ -613,7 +620,7 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     let whitespace = state.fragment.computed{"white-space"}
     if whitespace == WhitespacePre:
       ictx.flushWhitespace(state)
-      ictx.state.xminwidth = max(ictx.state.xminwidth, ictx.lbstate.size.w)
+      ictx.state.intr.w = max(ictx.state.intr.w, ictx.lbstate.size.w)
     elif whitespace == WhitespacePreWrap:
       ictx.flushWhitespace(state, hang = true)
     else:
@@ -631,12 +638,16 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
       ictx.state.firstBaseline = ictx.lbstate.baseline
       ictx.firstBaselineSet = true
     ictx.state.size.h += ictx.lbstate.size.h
+    ictx.state.intr.h += ictx.lbstate.intrh
     let lineWidth = if wrap:
       ictx.lbstate.availableWidth
     else:
       ictx.lbstate.size.w
     ictx.state.size.w = max(ictx.state.size.w, lineWidth)
-    ictx.lbstate = LineBoxState(offsety: y + ictx.lbstate.size.h)
+    ictx.lbstate = LineBoxState(
+      offsety: y + ictx.lbstate.size.h,
+      intrh: ictx.cellHeight
+    )
     ictx.initLine()
 
 func shouldWrap(ictx: InlineContext; w: LayoutUnit;
@@ -691,34 +702,14 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
   if atom.size.w > 0 and atom.size.h > 0 or atom.t == iatInlineBlock:
     if shift > 0:
       ictx.addSpacing(shift, state)
-    case atom.t
-    of iatWord:
-      let wordBreak = state.fragment.computed{"word-break"}
-      if ictx.wrappos != -1:
-        # set xminwidth to the first wrapping opportunity
-        ictx.state.xminwidth = max(ictx.state.xminwidth, ictx.wrappos)
-      elif state.prevrw >= 2 and wordBreak != WordBreakKeepAll or
-          wordBreak == WordBreakBreakAll:
-        # last char was double width; we can wrap anywhere.
-        # (I think this isn't quite right when double width + half width
-        # are mixed, but whatever...)
-        ictx.state.xminwidth = max(ictx.state.xminwidth, state.prevrw)
-      else:
-        ictx.state.xminwidth = max(ictx.state.xminwidth, atom.size.w)
-      if ictx.lbstate.atoms.len > 0 and state.fragment.state.atoms.len > 0:
-        let oatom = ictx.lbstate.atoms[^1]
-        if oatom.t == iatWord and oatom == state.fragment.state.atoms[^1]:
-          oatom.str &= atom.str
-          oatom.size.w += atom.size.w
-          ictx.lbstate.size.w += atom.size.w
-          return
-    of iatInlineBlock:
-      ictx.state.xminwidth = max(ictx.state.xminwidth,
-        atom.innerbox.state.xminwidth)
-      ictx.lbstate.charwidth = 0
-    of iatImage:
-      # We calculate xminwidth in addInlineImage instead.
-      ictx.lbstate.charwidth = 0
+    if atom.t == iatWord and ictx.lbstate.atoms.len > 0 and
+        state.fragment.state.atoms.len > 0:
+      let oatom = ictx.lbstate.atoms[^1]
+      if oatom.t == iatWord and oatom == state.fragment.state.atoms[^1]:
+        oatom.str &= atom.str
+        oatom.size.w += atom.size.w
+        ictx.lbstate.size.w += atom.size.w
+        return
     ictx.lbstate.putAtom(atom, iastate, state.fragment)
     atom.offset.x += ictx.lbstate.size.w
     ictx.lbstate.size.w += atom.size.w
@@ -729,13 +720,26 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
 
 proc addWord(ictx: var InlineContext; state: var InlineState): bool =
   result = false
-  if ictx.word.str != "":
-    ictx.word.str.mnormalize() #TODO this may break on EOL.
+  let atom = ictx.word
+  if atom.str != "":
+    atom.str.mnormalize() #TODO this may break on EOL.
     let iastate = InlineAtomState(
       vertalign: state.fragment.computed{"vertical-align"},
-      baseline: ictx.word.size.h
+      baseline: atom.size.h
     )
-    result = ictx.addAtom(state, iastate, ictx.word)
+    let wordBreak = state.fragment.computed{"word-break"}
+    if ictx.wrappos != -1:
+      # set intr.w to the first wrapping opportunity
+      ictx.state.intr.w = max(ictx.state.intr.w, ictx.wrappos)
+    elif state.prevrw >= 2 and wordBreak != WordBreakKeepAll or
+        wordBreak == WordBreakBreakAll:
+      # last char was double width; we can wrap anywhere.
+      # (I think this isn't quite right when double width + half width
+      # are mixed, but whatever...)
+      ictx.state.intr.w = max(ictx.state.intr.w, state.prevrw)
+    else:
+      ictx.state.intr.w = max(ictx.state.intr.w, atom.size.w)
+    result = ictx.addAtom(state, iastate, atom)
     ictx.newWord()
 
 proc addWordEOL(ictx: var InlineContext; state: var InlineState): bool =
@@ -836,7 +840,7 @@ func initInlineContext(bctx: var BlockContext; space: AvailableSpace;
     space: space,
     computed: computed,
     padding: padding,
-    lbstate: LineBoxState(offsety: padding.top)
+    lbstate: LineBoxState(offsety: padding.top, intrh: bctx.lctx.attrs.ppl)
   )
 
 proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
@@ -901,33 +905,26 @@ func spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
     return max(u - padding, 0)
   return max(u, 0)
 
-proc resolveContentWidth(sizes: var ResolvedSizes; widthpx: LayoutUnit;
-    parentWidth: SizeConstraint; computed: CSSValues;
-    isauto = false) =
-  if not sizes.space.w.isDefinite() or parentWidth.t != scStretch:
-    # width is indefinite, so no conflicts can be resolved here.
-    return
-  let total = widthpx + sizes.margin[dtHorizontal].sum() +
-    sizes.padding[dtHorizontal].sum()
-  let underflow = parentWidth.u - total
-  if isauto:
-    if underflow >= 0:
-      sizes.space.w = SizeConstraint(t: sizes.space.w.t, u: underflow)
-    else:
-      sizes.margin[dtHorizontal].send += underflow
-  elif underflow > 0:
-    if computed{"margin-left"}.u != clAuto and
-        computed{"margin-right"}.u != clAuto:
-      sizes.margin[dtHorizontal].send += underflow
-    elif computed{"margin-left"}.u != clAuto and
-        computed{"margin-right"}.u == clAuto:
-      sizes.margin[dtHorizontal].send = underflow
-    elif computed{"margin-left"}.u == clAuto and
-        computed{"margin-right"}.u != clAuto:
-      sizes.margin[dtHorizontal].start = underflow
-    else:
-      sizes.margin[dtHorizontal].start = underflow div 2
-      sizes.margin[dtHorizontal].send = underflow div 2
+proc resolveUnderflow(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
+    computed: CSSValues) =
+  # width must be definite, so that conflicts can be resolved
+  if sizes.space.w.isDefinite() and parentWidth.t == scStretch:
+    let total = sizes.space.w.u + sizes.margin[dtHorizontal].sum() +
+      sizes.padding[dtHorizontal].sum()
+    let underflow = parentWidth.u - total
+    if underflow > 0:
+      if computed{"margin-left"}.u != clAuto and
+          computed{"margin-right"}.u != clAuto:
+        sizes.margin[dtHorizontal].send += underflow
+      elif computed{"margin-left"}.u != clAuto and
+          computed{"margin-right"}.u == clAuto:
+        sizes.margin[dtHorizontal].send = underflow
+      elif computed{"margin-left"}.u == clAuto and
+          computed{"margin-right"}.u != clAuto:
+        sizes.margin[dtHorizontal].start = underflow
+      else:
+        sizes.margin[dtHorizontal].start = underflow div 2
+        sizes.margin[dtHorizontal].send = underflow div 2
 
 proc resolveMargins(lctx: LayoutContext; availableWidth: SizeConstraint;
     computed: CSSValues): RelativeRect =
@@ -1121,12 +1118,17 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     inlinePadding: LayoutUnit; computed: CSSValues;
     lctx: LayoutContext) =
   let width = computed{"width"}
-  var widthpx: LayoutUnit = 0
   if width.canpx(parentWidth):
-    widthpx = width.spx(parentWidth, computed, inlinePadding)
-    sizes.space.w = stretch(widthpx)
-    sizes.bounds.minClamp[dtHorizontal] = widthpx
-  sizes.resolveContentWidth(widthpx, parentWidth, computed, width.u == clAuto)
+    sizes.space.w = stretch(width.spx(parentWidth, computed, inlinePadding))
+    sizes.bounds.addMinWidthClamp(sizes.space.w.u)
+    sizes.resolveUnderflow(parentWidth, computed)
+  elif sizes.space.w.isDefinite():
+    let underflow = parentWidth.u - sizes.margin[dtHorizontal].sum() -
+      sizes.padding[dtHorizontal].sum()
+    if underflow >= 0:
+      sizes.space.w = SizeConstraint(t: sizes.space.w.t, u: underflow)
+    else:
+      sizes.margin[dtHorizontal].send += underflow
   if sizes.space.w.isDefinite() and sizes.maxWidth < sizes.space.w.u or
       sizes.maxWidth < LayoutUnit.high and sizes.space.w.t == scMaxContent:
     if sizes.space.w.t == scStretch:
@@ -1135,7 +1137,8 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     else: # scFitContent
       # available width could be higher than max-width (but not necessarily)
       sizes.space.w = fitContent(sizes.maxWidth)
-    sizes.resolveContentWidth(sizes.maxWidth, parentWidth, computed)
+    sizes.bounds.addMinWidthClamp(sizes.space.w.u)
+    sizes.resolveUnderflow(parentWidth, computed)
   if sizes.space.w.isDefinite() and sizes.minWidth > sizes.space.w.u or
       sizes.minWidth > 0 and sizes.space.w.t == scMinContent:
     # two cases:
@@ -1144,16 +1147,19 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     # * available width is fit under min-width. in this case, stretch to
     #   min-width as well (as we must satisfy min-width >= width).
     sizes.space.w = stretch(sizes.minWidth)
-    sizes.resolveContentWidth(sizes.minWidth, parentWidth, computed)
+    sizes.bounds.addMinWidthClamp(sizes.space.w.u)
+    sizes.resolveUnderflow(parentWidth, computed)
+  sizes.bounds.addMinWidthClamp(sizes.maxWidth)
+  if sizes.minWidth > 0:
+    sizes.bounds.addMinWidthClamp(sizes.minWidth)
 
 proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
     blockPadding: LayoutUnit; computed: CSSValues;
     lctx: LayoutContext) =
   let height = computed{"height"}
   if height.canpx(parentHeight):
-    let heightpx = height.spx(parentHeight, computed, blockPadding)
-    sizes.space.h = stretch(heightpx)
-    sizes.bounds.minClamp[dtVertical] = heightpx
+    sizes.space.h = stretch(height.spx(parentHeight, computed, blockPadding))
+    sizes.bounds.addMinHeightClamp(sizes.space.h.u)
   if sizes.space.h.isDefinite() and sizes.maxHeight < sizes.space.h.u or
       sizes.maxHeight < LayoutUnit.high and sizes.space.h.t == scMaxContent:
     # same reasoning as for width.
@@ -1161,10 +1167,15 @@ proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
       sizes.space.h = stretch(sizes.maxHeight)
     else: # scFitContent
       sizes.space.h = fitContent(sizes.maxHeight)
+    sizes.bounds.addMinHeightClamp(sizes.space.h.u)
   if sizes.space.h.isDefinite() and sizes.minHeight > sizes.space.h.u or
       sizes.minHeight > 0 and sizes.space.h.t == scMinContent:
     # same reasoning as for width.
     sizes.space.h = stretch(sizes.minHeight)
+    sizes.bounds.addMinHeightClamp(sizes.space.h.u)
+  sizes.bounds.addMinHeightClamp(sizes.maxHeight)
+  if sizes.minHeight > 0:
+    sizes.bounds.addMinHeightClamp(sizes.minHeight)
 
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     computed: CSSValues): ResolvedSizes =
@@ -1216,14 +1227,13 @@ proc applySize(box: BlockBox; sizes: ResolvedSizes;
   # Then, clamp it to minWidth and maxWidth (if applicable).
   box.state.size[dim] = minClamp(box.state.size[dim], sizes.bounds.a[dim])
 
-proc applyMinWidth(box: BlockBox; sizes: ResolvedSizes) =
-  box.state.xminwidth = min(box.state.xminwidth,
-    sizes.bounds.minClamp[dtHorizontal])
+proc clampIntr(box: BlockBox; sizes: ResolvedSizes) =
+  box.state.intr.w = min(box.state.intr.w, sizes.bounds.minClamp[dtHorizontal])
+  box.state.intr.h = min(box.state.intr.h, sizes.bounds.minClamp[dtVertical])
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit; space: AvailableSpace) =
   box.applySize(sizes, maxChildWidth, space, dtHorizontal)
-  box.applyMinWidth(sizes)
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit) =
@@ -1235,7 +1245,9 @@ proc applyHeight(box: BlockBox; sizes: ResolvedSizes;
 
 proc applyPadding(box: BlockBox; padding: RelativeRect) =
   box.state.size.w += padding[dtHorizontal].sum()
-  box.state.size.h += padding[dtVertical].sum()
+  let verticalSum = padding[dtVertical].sum()
+  box.state.size.h += verticalSum
+  box.state.intr.h += verticalSum
 
 proc applyBaseline(box: BlockBox) =
   if box.children.len > 0:
@@ -1303,11 +1315,11 @@ proc popPositioned(lctx: LayoutContext; overflow: var Overflow; size: Size) =
     var positioned: RelativeRect
     var sizes = lctx.resolveAbsoluteSizes(size, positioned, child.computed)
     var marginBottom = lctx.layoutRootBlock(child, it.offset, sizes)
-    if sizes.space.w.t == scFitContent and child.state.xminwidth > size.w:
+    if sizes.space.w.t == scFitContent and child.state.intr.w > size.w:
       # In case the width is shrink-to-fit, and the available width is
       # less than the minimum width, then the minimum width overrides
       # the available width, and we must re-layout.
-      sizes.space.w = stretch(child.state.xminwidth)
+      sizes.space.w = stretch(child.state.intr.w)
       marginBottom = lctx.layoutRootBlock(child, it.offset, sizes)
     if child.computed{"left"}.u != clAuto:
       child.state.offset.x = positioned.left + sizes.margin.left
@@ -1340,7 +1352,7 @@ type
     maxChildWidth: LayoutUnit
     totalFloatWidth: LayoutUnit # used for re-layouts
     space: AvailableSpace
-    xminwidth: LayoutUnit
+    intr: Size
     prevParentBps: BlockPositionState
     needsReLayout: bool
     # State kept for when a re-layout is necessary:
@@ -1374,7 +1386,7 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
     let w = right - left
     if w >= size.w or miny == high(LayoutUnit):
       # Enough space, or no other exclusions found at this y offset.
-      outw = w
+      outw = min(w, space.w.u) # do not overflow the container.
       if float == FloatLeft:
         return offset(x = left, y = y)
       else: # FloatRight
@@ -1466,10 +1478,11 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
         t: iatInlineBlock,
         innerbox: it.box
       ))
-  box.state.xminwidth = max(box.state.xminwidth, ictx.state.xminwidth)
   box.state.size.w = ictx.state.size.w + sizes.padding[dtHorizontal].sum()
   box.applyWidth(sizes, ictx.state.size.w)
   box.applyHeight(sizes, ictx.state.size.h)
+  box.state.intr = ictx.state.intr
+  box.clampIntr(sizes)
   box.applyPadding(sizes.padding)
   box.state.baseline = ictx.state.baseline
   box.state.firstBaseline = ictx.state.firstBaseline
@@ -1573,7 +1586,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   box.state = BoxLayoutState()
   let marginBottom = lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
   # Apply the block box's properties to the atom itself.
-  let iblock = InlineAtom(
+  let atom = InlineAtom(
     t: iatInlineBlock,
     innerbox: box,
     offset: offset(x = 0, y = 0),
@@ -1585,11 +1598,13 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     marginTop: sizes.margin.top,
     marginBottom: marginBottom
   )
-  discard ictx.addAtom(state, iastate, iblock)
+  discard ictx.addAtom(state, iastate, atom)
+  ictx.state.intr.w = max(ictx.state.intr.w, atom.innerbox.state.intr.w)
+  ictx.lbstate.intrh = max(ictx.lbstate.intrh, atom.size.h)
+  ictx.lbstate.charwidth = 0
   ictx.whitespacenum = 0
 
-proc addBox(ictx: var InlineContext; state: var InlineState;
-    box: BlockBox) =
+proc addBox(ictx: var InlineContext; state: var InlineState; box: BlockBox) =
   if box.computed{"position"} in {PositionAbsolute, PositionFixed}:
     # This doesn't really have to be an inline block. I just want to
     # handle its positioning here.
@@ -1604,7 +1619,7 @@ proc addBox(ictx: var InlineContext; state: var InlineState;
     assert box.computed{"display"} in DisplayOuterInline
     ictx.addInlineBlock(state, box)
 
-proc addInlineImage(ictx: var InlineContext; state: var InlineState;
+proc addImage(ictx: var InlineContext; state: var InlineState;
     bmp: NetworkBitmap; padding: LayoutUnit) =
   let atom = InlineAtom(
     t: iatImage,
@@ -1651,15 +1666,20 @@ proc addInlineImage(ictx: var InlineContext; state: var InlineState;
     baseline: atom.size.h
   )
   discard ictx.addAtom(state, iastate, atom)
+  ictx.lbstate.charwidth = 0
   if atom.size.h > 0:
-    # Setting the atom size as xminwidth might result in a circular dependency
+    # Setting the atom size as intr.w might result in a circular dependency
     # between table cell sizing and image sizing when we don't have a definite
     # parent size yet. e.g. <img width=100% ...> with an indefinite containing
-    # size (i.e. the first table cell pass) would resolve to an xminwidth of
+    # size (i.e. the first table cell pass) would resolve to an intr.w of
     # image.width, stretching out the table to an uncomfortably large size.
-    if ictx.space.w.isDefinite() or computed{"width"}.u != clPerc and
+    if ictx.space.w.t == scStretch or computed{"width"}.u != clPerc and
         computed{"min-width"}.u != clPerc:
-      ictx.state.xminwidth = max(ictx.state.xminwidth, atom.size.w)
+      ictx.state.intr.w = max(ictx.state.intr.w, atom.size.w)
+    # Similarly for height, except in this case it happens in flex sizing.
+    if computed{"height"}.canpx(ictx.space.h) or
+        computed{"min-height"}.canpx(ictx.space.h):
+      ictx.lbstate.intrh = max(ictx.lbstate.intrh, atom.size.h)
 
 proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
   let lctx = ictx.lctx
@@ -1694,7 +1714,7 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
     ictx.finishLine(state, wrap = false, force = true,
       fragment.computed{"clear"})
   of iftBox: ictx.addBox(state, fragment.box)
-  of iftBitmap: ictx.addInlineImage(state, fragment.bmp, padding.sum())
+  of iftBitmap: ictx.addImage(state, fragment.bmp, padding.sum())
   of iftText: ictx.layoutText(state, fragment.text.textData)
   of iftParent:
     for child in fragment.children:
@@ -1808,7 +1828,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
     box.state.size.h = max(box.state.size.h, space.h.u -
       sizes.padding[dtVertical].sum())
   # A table cell's minimum width overrides its width.
-  box.state.size.w = max(box.state.size.w, box.state.xminwidth)
+  box.state.size.w = max(box.state.size.w, box.state.intr.w)
 
 # Sort growing cells, and filter out cells that have grown to their intended
 # rowspan.
@@ -1885,7 +1905,7 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
       pctx.cols.setLen(n + colspan)
     if ctx.reflow.len < n + colspan:
       ctx.reflow.setLen(n + colspan)
-    let minw = box.state.xminwidth div colspan
+    let minw = box.state.intr.w div colspan
     let w = box.state.size.w div colspan
     for i in n ..< n + colspan:
       # Add spacing.
@@ -2171,9 +2191,10 @@ proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
     table.state.offset.y += outerHeight
   of CaptionSideBottom, CaptionSideBlockEnd:
     box.state.offset.y += table.state.size.h
-  parent.state.size.h += outerHeight
   parent.state.size.w = max(parent.state.size.w, outerWidth)
-  parent.state.xminwidth = max(parent.state.xminwidth, box.state.xminwidth)
+  parent.state.intr.w = max(parent.state.intr.w, box.state.intr.w)
+  parent.state.size.h += outerHeight
+  parent.state.intr.h += outerHeight - box.state.size.h + box.state.intr.h
 
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
@@ -2187,7 +2208,7 @@ proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
 proc layoutTable(tctx: var TableContext; table: BlockBox;
     sizes: ResolvedSizes) =
   if tctx.space.w.t == scStretch:
-    table.state.xminwidth = tctx.space.w.u
+    table.state.intr.w = tctx.space.w.u
   if table.computed{"border-collapse"} != BorderCollapseCollapse:
     let spc = table.computed{"border-spacing"}
     if spc != nil:
@@ -2200,6 +2221,9 @@ proc layoutTable(tctx: var TableContext; table: BlockBox;
     table.state.size.w += col.width
   tctx.reflowTableCells()
   tctx.layoutTableRows(table, sizes) # second pass
+  # Table height is minimum by default, and non-negotiable when
+  # specified, ergo it always equals the intrinisc minimum height.
+  table.state.intr.h = table.state.size.h
 
 # As per standard, we must put the caption outside the actual table, inside a
 # block-level wrapper box.
@@ -2212,7 +2236,7 @@ proc layoutTableWrapper(bctx: BlockContext; box: BlockBox;
   box.state.size = table.state.size
   box.state.baseline = table.state.size.h
   box.state.firstBaseline = table.state.size.h
-  box.state.xminwidth = table.state.xminwidth
+  box.state.intr = table.state.intr
   if box.children.len > 1:
     # do it here, so that caption's box can stretch to our width
     let caption = box.children[1]
@@ -2233,7 +2257,7 @@ proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   else:
     assert false
 
-proc layoutFlexChild(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
+proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
   var bctx = BlockContext(lctx: lctx)
   # note: we do not append margins here, since those belong to the flex item,
   # not its inner BFC.
@@ -2243,6 +2267,7 @@ proc layoutFlexChild(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
   box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight)
+  box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight)
 
 type
   FlexWeightType = enum
@@ -2271,14 +2296,6 @@ type
     pending: seq[FlexPendingItem]
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
-
-# This is practically the min-content size. For height, we just take the
-# output height of the previous pass; for width, we take the shortest word's
-# width (xminwidth).
-func minFlexItemSize(state: BoxLayoutState; dim: DimensionType): LayoutUnit =
-  case dim
-  of dtHorizontal: return state.xminwidth
-  of dtVertical: return state.size.h
 
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox;
     sizes: ResolvedSizes) =
@@ -2318,8 +2335,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LayoutUnit;
         uw *= it.child.state.size[dim].toFloat64()
       var u = it.child.state.size[dim] + uw.toLayoutUnit()
       # check for min/max violation
-      var minu = it.sizes.bounds.a[dim].start
-      minu = max(it.child.state.minFlexItemSize(dim), minu)
+      let minu = max(it.child.state.intr[dim], it.sizes.bounds.a[dim].start)
       if minu > u:
         # min violation
         if wt == fwtShrink: # freeze
@@ -2338,7 +2354,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LayoutUnit;
       totalWeight += it.weights[wt]
       #TODO we should call this only on freeze, and then put another loop to
       # the end for non-frozen items
-      lctx.layoutFlexChild(it.child, it.sizes)
+      lctx.layoutFlexItem(it.child, it.sizes)
       mctx.updateMaxSizes(it.child, it.sizes)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
@@ -2358,7 +2374,9 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     if sizes.bounds.a[dim].start > mctx.totalSize[dim]:
       let diff = sizes.bounds.a[dim].start - mctx.totalSize[dim]
       mctx.redistributeMainSize(diff, fwtGrow, dim, lctx)
-  let h = mctx.maxSize[odim] + mctx.maxMargin[odim].sum()
+  let maxMarginSum = mctx.maxMargin[odim].sum()
+  let h = mctx.maxSize[odim] + maxMarginSum
+  var intr = size(w = 0, h = 0)
   var offset = fctx.offset
   for it in mctx.pending.mitems:
     if it.child.state.size[odim] < h and not it.sizes.space[odim].isDefinite:
@@ -2366,18 +2384,23 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       # instead. (if the box's available height is definite, then this will
       # change nothing, so we skip it as an optimization.)
       it.sizes.space[odim] = stretch(h - it.sizes.margin[odim].sum())
-      lctx.layoutFlexChild(it.child, it.sizes)
+      lctx.layoutFlexItem(it.child, it.sizes)
     it.child.state.offset[dim] += offset[dim]
     # margins are added here, since they belong to the flex item.
     it.child.state.offset[odim] += offset[odim] + it.sizes.margin[odim].start
     offset[dim] += it.child.state.size[dim]
     offset[dim] += it.sizes.margin[dim].send
+    intr[dim] += it.child.state.intr[dim]
+    intr[dim] += it.sizes.margin[dim].send
+    intr[odim] = max(it.child.state.intr[odim], intr[odim])
     if it.child.computed{"position"} == PositionRelative:
       fctx.relativeChildren.add(it.child)
     else:
       fctx.box.applyOverflowDimensions(it.child)
   fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
   fctx.mains.add(mctx)
+  fctx.box.state.intr[dim] = max(fctx.box.state.intr[dim], intr[dim])
+  fctx.box.state.intr[odim] += intr[odim] + maxMarginSum
   mctx = FlexMainContext()
   fctx.offset[odim] += h
 
@@ -2404,11 +2427,11 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   for child in box.children:
     var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
     let flexBasis = child.computed{"flex-basis"}
-    lctx.layoutFlexChild(child, childSizes)
+    lctx.layoutFlexItem(child, childSizes)
     if flexBasis.u != clAuto and sizes.space[dim].isDefinite:
       # we can't skip this pass; it is needed to calculate the minimum
       # height.
-      let minu = child.state.minFlexItemSize(dim)
+      let minu = child.state.intr[dim]
       childSizes.space[dim] = stretch(flexBasis.spx(sizes.space[dim],
         child.computed, childSizes.padding[dim].sum()))
       if minu > childSizes.space[dim].u:
@@ -2417,7 +2440,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
         # because the initial flex basis was e.g. 0. Try to resize it to
         # something more usable.
         childSizes.space[dim] = stretch(minu)
-      lctx.layoutFlexChild(child, childSizes)
+      lctx.layoutFlexItem(child, childSizes)
     if child.computed{"position"} in {PositionAbsolute, PositionFixed}:
       # Absolutely positioned flex children do not participate in flex layout.
       lctx.queueAbsolute(child, offset(x = 0, y = 0))
@@ -2445,7 +2468,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.applyBaseline()
   box.applySize(sizes, fctx.totalMaxSize[dim], sizes.space, dim)
   box.applySize(sizes, fctx.offset[odim], sizes.space, odim)
-  box.applyMinWidth(sizes)
+  box.clampIntr(sizes)
   for child in fctx.relativeChildren:
     lctx.positionRelative(box, child)
     box.applyOverflowDimensions(child)
@@ -2468,6 +2491,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
   box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight - marginBottom)
+  box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight - marginBottom)
   return marginBottom
 
 proc initBlockPositionStates(state: var BlockState; bctx: var BlockContext;
@@ -2552,7 +2576,7 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
       # ...thanks for nothing. So here's what we do:
       #
       # * run a normal pass
-      # * place the longest word (i.e. xminwidth) somewhere
+      # * place the longest word (i.e. intr.w) somewhere
       # * run another pass with the placement we got
       #
       # Some browsers prefer to try again until they find enough
@@ -2566,13 +2590,16 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
         x = pbfcOffset.x + child.state.offset.x,
         y = max(pbfcOffset.y + child.state.offset.y, bctx.clearOffset)
       )
-      let minSize = size(w = child.state.xminwidth, h = bctx.lctx.attrs.ppl)
+      let minSize = size(w = child.state.intr.w, h = bctx.lctx.attrs.ppl)
       var outw: LayoutUnit
       let offset = bctx.findNextBlockOffset(bfcOffset, minSize, state.space,
         outw)
-      space = availableSpace(w = stretch(outw), h = state.space.h)
-      sizes = lctx.resolveBlockSizes(space, child.computed)
-      marginBottom = lctx.layoutRootBlock(child, offset - pbfcOffset, sizes)
+      let roffset = offset - pbfcOffset
+      # skip relayout if we can
+      if outw != state.space.w.u or roffset != child.state.offset:
+        space = availableSpace(w = stretch(outw), h = state.space.h)
+        sizes = lctx.resolveBlockSizes(space, child.computed)
+        marginBottom = lctx.layoutRootBlock(child, roffset, sizes)
     # delta y is difference between old and new offsets (margin-top
     # plus any movement caused by floats), sum of margin todo in bctx
     # (margin-bottom) + height.
@@ -2634,7 +2661,7 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
       state.layoutBlockChildBFC(bctx, child, sizes, space)
     else:
       state.layoutBlockChild(bctx, child, sizes)
-    state.xminwidth = max(state.xminwidth, child.state.xminwidth)
+    state.intr.w = max(state.intr.w, child.state.intr.w)
     if child.computed{"float"} == FloatNone:
       # Assume we will stretch to the maximum width, and re-layout if
       # this assumption turns out to be wrong.
@@ -2648,6 +2675,7 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
         state.relativeChildren.add(child)
       state.maxChildWidth = max(state.maxChildWidth, outerSize.w)
       state.offset.y += outerSize.h
+      state.intr.h += outerSize.h - child.state.size.h + child.state.intr.h
       parent.applyOverflowDimensions(child)
     elif state.space.w.t == scFitContent:
       # Float position depends on the available width, but in this case
@@ -2754,12 +2782,12 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     state.initReLayout(bctx, box, sizes)
     state.layoutBlockChildren(bctx, box)
   box.applyBaseline()
-  # Set xminwidth now, so that it can be clamped by minWidthClamp.
-  box.state.xminwidth = state.xminwidth
   # Apply width, and height. For height, temporarily remove padding we have
   # applied before so that percentage resolution works correctly.
   box.applyWidth(sizes, state.maxChildWidth, state.space)
   box.applyHeight(sizes, state.offset.y - sizes.padding.top)
+  box.state.intr = state.intr
+  box.clampIntr(sizes)
   # `position: relative' percentages can now be resolved.
   for child in state.relativeChildren:
     lctx.positionRelative(box, child)
