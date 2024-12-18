@@ -25,6 +25,7 @@ type
     cstListStyle = "list-style"
     cstFlex = "flex"
     cstFlexFlow = "flex-flow"
+    cstOverflow = "overflow"
 
   CSSUnit* = enum
     cuAuto = ""
@@ -65,7 +66,8 @@ type
     cptClear = "clear"
     cptTextTransform = "text-transform"
     cptFlexDirection = "flex-direction"
-    cptOverflow = "overflow"
+    cptOverflowX = "overflow-x"
+    cptOverflowY = "overflow-y"
     cptFlexWrap = "flex-wrap"
     cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
     cptFontStyle = "font-style"
@@ -309,6 +311,7 @@ type
     OverflowClip = "clip"
     OverflowScroll = "scroll"
     OverflowAuto = "auto"
+    OverflowOverlay = "overlay"
 
 type
   CSSLengthType* = enum
@@ -425,7 +428,8 @@ const ValueTypes = [
   cptClear: cvtClear,
   cptTextTransform: cvtTextTransform,
   cptFlexDirection: cvtFlexDirection,
-  cptOverflow: cvtOverflow,
+  cptOverflowX: cvtOverflow,
+  cptOverflowY: cvtOverflow,
   cptFlexWrap: cvtFlexWrap,
   cptBgcolorIsCanvas: cvtBgcolorIsCanvas,
   cptFontStyle: cvtFontStyle,
@@ -476,6 +480,9 @@ const InheritedProperties = {
 const PositionStaticLike* = {
   PositionStatic, PositionSticky
 }
+
+const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
+const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 
 func isBit*(t: CSSPropertyType): bool =
   return t <= cptFontStyle
@@ -573,6 +580,13 @@ func blockify*(display: CSSDisplay): CSSDisplay =
     return DisplayTable
   of DisplayInlineFlex:
     return DisplayFlex
+
+func bfcify*(overflow: CSSOverflow): CSSOverflow =
+  if overflow == OverflowVisible:
+    return OverflowAuto
+  if overflow == OverflowClip:
+    return OverflowHidden
+  return overflow
 
 const UpperAlphaMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toPoints()
 const LowerAlphaMap = "abcdefghijklmnopqrstuvwxyz".toPoints()
@@ -1449,6 +1463,24 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     else:
       res.add(makeEntry(cptFlexDirection, global))
       res.add(makeEntry(cptFlexWrap, global))
+  of cstOverflow:
+    if global == cgtNone:
+      var i = 0
+      cvals.skipWhitespace(i)
+      if i >= cvals.len:
+        return err()
+      if (let xx = parseIdent[CSSOverflow](cvals[i]); xx.isSome):
+        var x = CSSValueBit(overflow: xx.get)
+        var y = x
+        inc i
+        cvals.skipWhitespace(i)
+        if i < cvals.len:
+          y.overflow = ?parseIdent[CSSOverflow](cvals[i])
+        res.add(makeEntry(cptOverflowX, x))
+        res.add(makeEntry(cptOverflowY, y))
+    else:
+      res.add(makeEntry(cptOverflowX, global))
+      res.add(makeEntry(cptOverflowY, global))
   return ok()
 
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue];

@@ -1191,7 +1191,7 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
   if computed{"display"} == DisplayTableWrapper:
     sizes.space.w = fitContent(sizes.space.w)
   # height is max-content normally, but fit-content for clip.
-  sizes.space.h = if computed{"overflow"} != OverflowClip:
+  sizes.space.h = if computed{"overflow-y"} != OverflowClip:
     maxContent()
   else:
     fitContent(sizes.space.h)
@@ -1228,8 +1228,22 @@ proc applySize(box: BlockBox; sizes: ResolvedSizes;
   box.state.size[dim] = minClamp(box.state.size[dim], sizes.bounds.a[dim])
 
 proc clampIntr(box: BlockBox; sizes: ResolvedSizes) =
-  box.state.intr.w = min(box.state.intr.w, sizes.bounds.minClamp[dtHorizontal])
-  box.state.intr.h = min(box.state.intr.h, sizes.bounds.minClamp[dtVertical])
+  # We do not have a scroll bar, so do the next best thing: expand the
+  # box to the size its contents want.
+  #TODO this is far from perfect. For one, intrinsic minimum size isn't
+  # guaranteed to equal the desired scroll size. Also, it's possible
+  # that a parent box clamps the height of this box; in that case,
+  # the parent box's width/height should be clamped to the inner scroll
+  # width/height instead.
+  # Anyway, it is a pretty good approximation for now.
+  if box.computed{"overflow-x"} notin OverflowScrollLike:
+    box.state.intr.w = min(box.state.intr.w, sizes.bounds.minClamp[dtHorizontal])
+  else:
+    box.state.size.w = max(box.state.size.w, box.state.intr.w)
+  if box.computed{"overflow-y"} notin OverflowScrollLike:
+    box.state.intr.h = min(box.state.intr.h, sizes.bounds.minClamp[dtVertical])
+  else:
+    box.state.size.h = max(box.state.size.h, box.state.intr.h)
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit; space: AvailableSpace) =
@@ -2625,7 +2639,7 @@ func establishesBFC(computed: CSSValues): bool =
   return computed{"float"} != FloatNone or
     computed{"display"} in {DisplayFlowRoot, DisplayTable, DisplayTableWrapper,
       DisplayFlex} or
-    computed{"overflow"} notin {OverflowVisible, OverflowClip}
+    computed{"overflow-x"} notin {OverflowVisible, OverflowClip}
     #TODO contain, grid, multicol, column-span
 
 # Layout and place all children in the block box.

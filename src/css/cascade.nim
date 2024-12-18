@@ -274,6 +274,11 @@ func buildComputedValues(rules: CSSValueEntryMap;
     let display = result{"display"}.blockify()
     if display != result{"display"}:
       result{"display"} = display
+  if (result{"overflow-x"} in {OverflowVisible, OverflowClip}) !=
+      (result{"overflow-y"} in {OverflowVisible, OverflowClip}):
+    result{"overflow-x"} = result{"overflow-x"}.bfcify()
+    result{"overflow-y"} = result{"overflow-y"}.bfcify()
+
 
 proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
   for rule in rules:
