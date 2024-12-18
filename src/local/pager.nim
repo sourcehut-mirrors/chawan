@@ -3015,7 +3015,8 @@ proc acceptBuffers(pager: Pager) =
       stream.sclose()
     elif container.process != -1: # connecting to buffer process
       let i = pager.findProcMapItem(container.process)
-      pager.procmap.del(i)
+      if i != -1:
+        pager.procmap.del(i)
     elif (let item = pager.findConnectingContainer(container); item != nil):
       # connecting to URL
       let stream = item.stream
@@ -3163,6 +3164,9 @@ proc handleError(pager: Pager; fd: int) =
         pager.consoleWrapper.container = nil
       pager.pollData.unregister(fd)
       pager.loader.unset(fd)
+      if container.iface != nil:
+        container.iface.stream.sclose()
+        container.iface = nil
       doAssert pager.consoleWrapper.container != nil
       pager.showConsole()
     else:
