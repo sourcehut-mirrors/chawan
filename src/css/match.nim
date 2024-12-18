@@ -216,7 +216,7 @@ func matches(element: Element; sels: CompoundSelector;
 func matches*(element: Element; cxsel: ComplexSelector;
     depends: var DependencyInfo): bool =
   var e = element
-  var pmatch = mtFalse
+  var pmatch = mtTrue
   var mdepends = DependencyInfo()
   for i in countdown(cxsel.high, 0):
     var match = mtFalse
@@ -258,6 +258,7 @@ func matches*(element: Element; cxsel: ComplexSelector;
     if match == mtFalse:
       return false # we can discard depends.
     if pmatch == mtContinue and match == mtTrue or e == nil:
+      pmatch = mtContinue
       break # we must update depends.
     pmatch = match
   depends.merge(mdepends)
