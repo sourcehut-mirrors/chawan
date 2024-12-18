@@ -636,6 +636,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
       container.setCursorXY(container.fromx + input.col,
         container.fromy + input.row)
       pager.openMenu(input.col, input.row)
+      pager.menu.unselect()
   of mibThumbInner:
     if input.t == mitPress:
       discard pager.evalAction("cmd.pager.prevBuffer", 0)
@@ -646,54 +647,55 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
 
 proc handleMouseInput(pager: Pager; input: MouseInput; select: Select) =
   let y = select.fromy + input.row - select.y - 1 # one off because of border
-  case input.button
-  of mibRight:
-    if (input.col, input.row) != pager.pressed:
-      # Prevent immediate movement/submission in case the menu appeared under
-      # the cursor.
-      select.setCursorY(y)
-    case input.t
-    of mitPress:
-      # Do not include borders, so that a double right click closes the
-      # menu again.
-      if input.row notin select.y + 1 ..< select.y + select.height - 1 or
-          input.col notin select.x + 1 ..< select.x + select.width - 1:
-        pager.blockTillRelease = true
-        select.cursorLeft()
-    of mitRelease:
-      if input.row in select.y + 1 ..< select.y + select.height - 1 and
-          input.col in select.x + 1 ..< select.x + select.width - 1 and
-          (input.col, input.row) != pager.pressed:
-        select.click()
-      # forget about where we started once btn3 is released
-      pager.pressed = (-1, -1)
-    of mitMove: discard
-  of mibLeft:
-    case input.t
-    of mitPress:
-      if input.row notin select.y ..< select.y + select.height or
-          input.col notin select.x ..< select.x + select.width:
-        # clicked outside the select
-        pager.blockTillRelease = true
-        select.cursorLeft()
-    of mitRelease:
-      let at = (input.col, input.row)
-      if at == pager.pressed and
-          (input.row in select.y + 1 ..< select.y + select.height - 1 and
-            input.col in select.x + 1 ..< select.x + select.width - 1 or
-          select.multiple and at == (select.x, select.y)):
-        # clicked inside the select
+  if input.button in {mibRight, mibLeft}:
+    # Note: "not inside and not outside" is a valid state, and it
+    # represents the mouse being above the border.
+    let inside = input.row in select.y + 1 ..< select.y + select.height - 1 and
+      input.col in select.x + 1 ..< select.x + select.width - 1
+    let outside = input.row notin select.y ..< select.y + select.height or
+      input.col notin select.x ..< select.x + select.width
+    if input.button == mibRight:
+      if not inside:
+        select.unselect()
+      elif (input.col, input.row) != pager.pressed:
+        # Prevent immediate movement/submission in case the menu appeared under
+        # the cursor.
         select.setCursorY(y)
-        select.click()
-    of mitMove: discard
-  else: discard
+      case input.t
+      of mitPress:
+        # Do not include borders, so that a double right click closes the
+        # menu again.
+        if not inside:
+          pager.blockTillRelease = true
+          select.cursorLeft()
+      of mitRelease:
+        if inside and (input.col, input.row) != pager.pressed:
+          select.click()
+        elif outside:
+          select.cursorLeft()
+        # forget about where we started once btn3 is released
+        pager.pressed = (-1, -1)
+      of mitMove: discard
+    else: # mibLeft
+      case input.t
+      of mitPress:
+        if outside: # clicked outside the select
+          pager.blockTillRelease = true
+          select.cursorLeft()
+      of mitRelease:
+        let at = (input.col, input.row)
+        if at == pager.pressed and
+            (inside or select.multiple and at == (select.x, select.y)):
+          # clicked inside the select
+          select.setCursorY(y)
+          select.click()
+      of mitMove: discard
 
 proc handleMouseInput(pager: Pager; input: MouseInput) =
   if pager.blockTillRelease:
-    if input.t == mitRelease:
-      pager.blockTillRelease = false
-    else:
+    if input.t != mitRelease:
       return
+    pager.blockTillRelease = false
   if pager.menu != nil:
     pager.handleMouseInput(input, pager.menu)
   elif (let container = pager.container; container != nil):

@@ -27,6 +27,7 @@ type
     x*: int
     y*: int
     redraw*: bool
+    unselected*: bool
     bpos: seq[int]
     opaque: RootRef
     finishImpl: SelectFinish
@@ -53,12 +54,17 @@ proc setCursorY*(select: Select; y: int) =
   if not select.multiple:
     y = max(y, 0)
   if select.options[max(y, 0)].nop:
+    if not select.unselected:
+      select.unselected = true
+      select.queueDraw()
     return
   if select.fromy > y:
     select.setFromY(y)
   if select.fromy + select.maxh <= y:
     select.setFromY(y - select.maxh + 1)
   select.cursory = y
+  if select.unselected:
+    select.unselected = false
   select.queueDraw()
 
 proc getCursorX*(select: Select): int =
@@ -139,7 +145,8 @@ proc submit(select: Select) {.jsfunc.} =
   select.finishImpl(select.opaque, select, srSubmit)
 
 proc click*(select: Select) {.jsfunc.} =
-  if select.cursory >= 0 and select.cursory < select.options.len and
+  if select.unselected or
+      select.cursory >= 0 and select.cursory < select.options.len and
       select.options[select.cursory].nop:
     discard
   elif not select.multiple:
@@ -231,6 +238,11 @@ proc pushCursorPos*(select: Select) =
 proc popCursorPos*(select: Select; nojump = false) =
   select.setCursorY(select.bpos.pop())
   if not nojump:
+    select.queueDraw()
+
+proc unselect*(select: Select) =
+  if not select.unselected:
+    select.unselected = true
     select.queueDraw()
 
 const HorizontalBar = "\u2500"
@@ -325,7 +337,8 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
     let dls = y * display.width
     if (select.multiple and k < select.selected.len and
           select.selected[k] == i or
-        not select.multiple and select.getCursorY() == y):
+        not select.multiple and select.getCursorY() == y and
+          not select.unselected):
       format.flags.incl(ffReverse)
       inc k
     else:
