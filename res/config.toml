@@ -400,7 +400,6 @@ viewImage = '''
 	if (pager.hoverCachedImage) {
 		[url, contentType] = pager.hoverCachedImage.split(' ');
 		url = 'file:' + pager.getCacheFile(url, pager.buffer.process);
-		console.log(url)
 	}
 	if (url)
 		pager.gotoURL(url, {contentType: contentType, save: save});

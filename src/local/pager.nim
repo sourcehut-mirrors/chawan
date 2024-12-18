@@ -2760,7 +2760,8 @@ proc connected(pager: Pager; container: Container; response: Response) =
       flags: {cmfConnect, cmfHTML, cmfFound},
       ostream: istream
     ), response)
-  elif shortContentType.equalsIgnoreCase("text/plain"):
+  elif shortContentType.equalsIgnoreCase("text/plain") or
+      cfSave in container.flags:
     pager.connected2(container, MailcapResult(
       flags: {cmfConnect, cmfFound},
       ostream: istream
