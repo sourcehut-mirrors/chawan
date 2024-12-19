@@ -166,13 +166,17 @@ func cookieDomainMatches(cookieDomain: string; url: URL): bool =
     cookieDomain
   return host.endsWith(cookieDomain)
 
-proc add*(cookieJar: CookieJar; cookie: Cookie) =
+proc add(cookieJar: CookieJar; cookie: Cookie) =
   var i = -1
   for j, old in cookieJar.cookies.mypairs:
     if old.name == cookie.name and old.domain == cookie.domain and
         old.path == cookie.path:
       i = j
       break
+  if i != -1:
+    cookieJar.cookies[i] = cookie
+  else:
+    cookieJar.cookies.add(cookie)
 
 proc match(cookieJar: CookieJar; url: URL): bool =
   if cookieJar.domain.cookieDomainMatches(url):
