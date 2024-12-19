@@ -12,6 +12,7 @@ image/jpeg		jpg	jpeg	jpe	jfif
 image/bmp		bmp
 image/gif		gif
 image/webp		webp
+image/svg+xml		svg
 text/markdown		md
 text/gemini		gmi
 text/x-ansi		ans	asc

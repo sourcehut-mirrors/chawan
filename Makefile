@@ -61,7 +61,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_LIBEXEC)/dirlist2html \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
 	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp $(OUTDIR_CGI_BIN)/canvas \
-	$(OUTDIR_CGI_BIN)/sixel $(OUTDIR_CGI_BIN)/resize \
+	$(OUTDIR_CGI_BIN)/nanosvg $(OUTDIR_CGI_BIN)/sixel $(OUTDIR_CGI_BIN)/resize \
 	$(OUTDIR_CGI_BIN)/chabookmark \
 	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc $(OUTDIR_LIBEXEC)/nc \
 	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
@@ -124,6 +124,7 @@ $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
 	src/io/bufreader.nim src/types/color.nim $(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h adapter/img/stb_image_resize.c \
 	$(sandbox) $(dynstream) $(twtstr)
+$(OUTDIR_CGI_BIN)/nanosvg: adapter/img/nanosvg.nim adapter/img/nanosvg.c adapter/img/nanosvg.h
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/gopher2html: $(twtstr)
@@ -186,7 +187,7 @@ manpages = $(manpages1) $(manpages5)
 manpage: $(manpages:%=doc/%)
 
 protocols = http about file ftp sftp gopher gemini finger man spartan stbi \
-	jebp sixel canvas resize chabookmark
+	jebp sixel canvas resize chabookmark nanosvg
 converters = gopher2html md2html ansi2html gmi2html dirlist2html
 tools = urlenc nc
 

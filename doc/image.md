@@ -89,6 +89,7 @@ Currently, the supported input formats are:
 
 * BMP, PNG, JPEG, GIF (through stb_image)
 * WebP (through JebP)
+* SVG (through NanoSVG; no inline SVG yet)
 
 More formats may be added in the future, provided there exists a
 reasonably small implementation, preferably in the public domain. (I do

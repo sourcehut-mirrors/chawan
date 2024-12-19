@@ -116,11 +116,12 @@ Here's some:
   through dedicated loader processes.
 * termcap for basic terminal capability querying, and terminal queries where
   possible.
-* The default image decoder (PNG, JPEG, GIF, BMP) uses the
-  [stb_image](https://github.com/nothings/stb) library, and WebP images are
-  decoded using the [JebP](https://github.com/matanui159/jebp) library. Image
-  codecs are handled as protocols, so users can add their own codecs (with
-  urimethodmap).
+* The default image decoder (PNG, JPEG, GIF, BMP) uses
+  [stb_image](https://github.com/nothings/stb), WebP images are
+  decoded using [JebP](https://github.com/matanui159/jebp), and SVG is
+  decoded using [NanoSVG](https://github.com/memononen/nanosvg).  Image
+  codecs are handled as protocols, so users can add their own codecs
+  (with urimethodmap).
 
 For further details, please refer to the [architecture](doc/architecture.md)
 document.

@@ -1,0 +1,65 @@
+import std/os
+import std/posix
+import std/strutils
+
+import io/dynstream
+import utils/sandbox
+import utils/twtstr
+
+{.compile("nanosvg.c", "-O3").}
+
+{.push header: "nanosvg.h".}
+type
+  NSVGimage {.importc.} = object
+    width: cfloat
+    height: cfloat
+    shapes: ptr NSVGShape
+
+  NSVGShape {.importc, incompleteStruct.} = object
+
+{.push importc, cdecl.}
+proc nsvgParse(input, units: cstring; dpi: cfloat): ptr NSVGimage
+proc nsvgDelete(image: ptr NSVGimage)
+{.pop.}
+
+{.pop.} # nanosvg.h
+
+{.push header: "nanosvgrast.h".}
+type NSVGrasterizer {.incompleteStruct, importc.} = object
+
+{.push importc, cdecl.}
+proc nsvgCreateRasterizer(): ptr NSVGrasterizer
+proc nsvgRasterize(r: ptr NSVGrasterizer; image: ptr NSVGimage;
+  tx, ty, scale: cfloat; dst: ptr uint8; w, h, stride: cint)
+proc nsvgDeleteRasterizer(r: ptr NSVGrasterizer)
+{.pop.}
+
+{.pop.} # nanosvgrast.h
+
+proc main() =
+  let os = newPosixStream(STDOUT_FILENO)
+  enterNetworkSandbox()
+  case getEnv("MAPPED_URI_PATH")
+  of "decode":
+    # Unfortunate as it is, I can't just mmap the string because nanosvg
+    # wants to modify it.
+    var ss = newPosixStream(STDIN_FILENO).recvAll()
+    let image = nsvgParse(cstring(ss), "px", 96)
+    let width = cint(image.width)
+    let height = cint(image.height)
+    os.sendDataLoop("Cha-Image-Dimensions: " & $width & 'x' & $height &
+      "\n\n")
+    for hdr in getEnv("REQUEST_HEADERS").split('\n'):
+      let v = hdr.after(':').strip()
+      if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":
+        return
+    let r = nsvgCreateRasterizer()
+    let obuf = newSeqUninitialized[uint8](width * height * 4)
+    r.nsvgRasterize(image, 0, 0, 1, addr obuf[0], width, height, width * 4)
+    os.sendDataLoop(obuf)
+    r.nsvgDeleteRasterizer()
+    image.nsvgDelete()
+  else:
+    os.sendDataLoop("Cha-Control: ConnectionError 1 not supported\n")
+
+main()
