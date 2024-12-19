@@ -552,10 +552,8 @@ proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
   if response.res != 0:
     # no canvas module; give up
     ps.sclose()
-    ctlres.resume()
     ctlres.close()
     return
-  ctlres.resume()
   ctlres.close()
   response.resume()
   target.ctx2d = CanvasRenderingContext2D(
@@ -3465,7 +3463,6 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           body = RequestBody(t: rbtOutput, outputId: response.outputId),
         )
         let r = window.corsFetch(request)
-        response.resume()
         response.close()
         var expiry = -1i64
         if "Cache-Control" in response.headers:
@@ -3485,7 +3482,6 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
             return
           let response = res.get
           # close immediately; all data we're interested in is in the headers.
-          response.resume()
           response.close()
           if "Cha-Image-Dimensions" notin response.headers.table:
             window.console.error("Cha-Image-Dimensions missing in",
@@ -4915,7 +4911,6 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
       headers = headers,
       body = RequestBody(t: rbtOutput, outputId: res.outputId)
     ))
-    res.resume()
     res.close()
     return p
   ).then(proc(res: JSResult[Response]) =

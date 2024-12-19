@@ -83,8 +83,11 @@ func surl*(response: Response): string {.jsfget: "url".} =
   return $response.url
 
 #TODO: this should be a property of body
-proc close*(response: Response) {.jsfunc.} =
+proc close*(response: Response) =
   response.bodyUsed = true
+  if response.resumeFun != nil:
+    response.resumeFun(response.outputId)
+    response.resumeFun = nil
   if response.unregisterFun != nil:
     response.unregisterFun()
     response.unregisterFun = nil

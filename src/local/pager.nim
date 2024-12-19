@@ -1065,7 +1065,6 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       pager.loader.removeCachedItem(cacheId)
       return newResolvedPromise(res)
     )
-    response.resume()
     response.close()
     return p
   ).then(proc(res: JSResult[Response]) =
@@ -1098,7 +1097,6 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       tocache = true
     )
     let r = pager.loader.fetch(request)
-    response.resume()
     response.close()
     r.then(proc(res: JSResult[Response]) =
       # remove previous step
@@ -1106,7 +1104,6 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       if res.isNone:
         return
       let response = res.get
-      response.resume()
       response.close()
       let cacheId = res.get.outputId
       if cachedImage.state == cisCanceled:
