@@ -21,7 +21,7 @@ pre code { text-decoration: none }
 
 @media (scripting: enabled) { noscript { display: none } }
 
-textarea, iframe, frame, input, img, canvas { display: inline-block }
+textarea, iframe, frame, input, canvas { display: inline-block }
 
 ol, ul, menu, dir { padding-left: 4ch; margin: 1em 0 }
 ol > li:nth-child(n+100) { margin-left: 1ch }

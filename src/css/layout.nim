@@ -1650,13 +1650,15 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
   if computed{"max-width"}.canpx(ictx.space.w):
     let w = computed{"max-width"}.spx(ictx.space.w, computed, padding)
     atom.size.w = min(atom.size.w, w)
-  if computed{"min-width"}.canpx(ictx.space.w):
+  let hasMinWidth = computed{"min-width"}.canpx(ictx.space.w)
+  if hasMinWidth:
     let w = computed{"min-width"}.spx(ictx.space.w, computed, padding)
     atom.size.w = max(atom.size.w, w)
   if computed{"max-height"}.canpx(ictx.space.h):
     let h = computed{"max-height"}.spx(ictx.space.h, computed, padding)
     atom.size.h = min(atom.size.h, h)
-  if computed{"min-height"}.canpx(ictx.space.h):
+  let hasMinHeight = computed{"min-height"}.canpx(ictx.space.h)
+  if hasMinHeight:
     let h = computed{"min-height"}.spx(ictx.space.h, computed, padding)
     atom.size.h = max(atom.size.h, h)
   if not hasWidth and ictx.space.w.isDefinite():
@@ -1664,7 +1666,8 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
   if not hasHeight and ictx.space.h.isDefinite():
     atom.size.h = min(ictx.space.h.u, atom.size.h)
   if not hasHeight and not hasWidth:
-    if osize.w >= osize.h:
+    if osize.w >= osize.h or
+        not ictx.space.h.isDefinite() and ictx.space.w.isDefinite():
       if osize.w > 0:
         atom.size.h = osize.h div osize.w * atom.size.w
     else:
@@ -1686,12 +1689,13 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     # parent size yet. e.g. <img width=100% ...> with an indefinite containing
     # size (i.e. the first table cell pass) would resolve to an intr.w of
     # image.width, stretching out the table to an uncomfortably large size.
-    if ictx.space.w.t == scStretch or computed{"width"}.u != clPerc and
-        computed{"min-width"}.u != clPerc:
+    # The issue is similar with intr.h, which is relevant in flex layout.
+    #
+    # So check if any dimension is fixed, and if yes, report the intrinsic
+    # minimum dimension as that or the atom size (whichever is greater).
+    if ictx.space.w.t == scStretch or hasWidth or hasMinWidth:
       ictx.state.intr.w = max(ictx.state.intr.w, atom.size.w)
-    # Similarly for height, except in this case it happens in flex sizing.
-    if computed{"height"}.canpx(ictx.space.h) or
-        computed{"min-height"}.canpx(ictx.space.h):
+    if ictx.space.h.t == scStretch or hasHeight or hasMinHeight:
       ictx.lbstate.intrh = max(ictx.lbstate.intrh, atom.size.h)
 
 proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =

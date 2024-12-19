@@ -373,20 +373,20 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
   else:
     let format = fragment.computed.toFormat()
     for atom in fragment.state.atoms:
+      let offset = offset + atom.offset
       case atom.t
       of iatInlineBlock:
-        grid.renderBlockBox(state, atom.innerbox, offset + atom.offset)
+        grid.renderBlockBox(state, atom.innerbox, offset)
       of iatWord:
         if fragment.computed{"visibility"} == VisibilityVisible:
-          grid.setText(state, atom.str, offset + atom.offset, format,
-            fragment.node)
+          grid.setText(state, atom.str, offset, format, fragment.node)
       of iatImage:
         if fragment.computed{"visibility"} == VisibilityVisible:
           let x2p = offset.x + atom.size.w
           let y2p = offset.y + atom.size.h
           let clipBox = addr state.clipBoxes[^1]
           #TODO implement proper image clipping
-          if offset.x < clipBox.send.y and offset.y < clipBox.send.y and
+          if offset.x < clipBox.send.x and offset.y < clipBox.send.y and
               x2p >= clipBox.start.x and y2p >= clipBox.start.y:
             let x1 = offset.x.toInt
             let y1 = offset.y.toInt
