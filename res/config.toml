@@ -396,11 +396,12 @@ click = '() => pager.click()'
 viewImage = '''
 (_, save) => {
 	let contentType = null;
-	let url = new Request(pager.hoverImage, {headers: {Accept: "*/*"}});
+	let url = null;
 	if (pager.hoverCachedImage) {
 		[url, contentType] = pager.hoverCachedImage.split(' ');
 		url = 'file:' + pager.getCacheFile(url, pager.buffer.process);
-	}
+	} else if (pager.hoverImage)
+		url = new Request(pager.hoverImage, {headers: {Accept: "*/*"}});
 	if (url)
 		pager.gotoURL(url, {contentType: contentType, save: save});
 }

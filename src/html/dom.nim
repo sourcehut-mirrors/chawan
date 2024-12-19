@@ -99,6 +99,7 @@ type
     factory*: CAtomFactory
     pendingResources*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
+    svgCache*: Table[string, SVGSVGElement]
     images*: bool
     styling*: bool
     # ID of the next image
@@ -265,6 +266,13 @@ type
 
   HTMLElement* = ref object of Element
     dataset {.jsget.}: DOMStringMap
+
+  SVGElement = ref object of Element
+
+  SVGSVGElement* = ref object of SVGElement
+    bitmap*: NetworkBitmap
+    shared: seq[SVGSVGElement] # elements that serialize to the same string
+    fetchStarted: bool
 
   FormAssociatedElement* = ref object of HTMLElement
     form*: HTMLFormElement
@@ -441,6 +449,8 @@ jsDestructor(HTMLImageElement)
 jsDestructor(HTMLVideoElement)
 jsDestructor(HTMLAudioElement)
 jsDestructor(HTMLIFrameElement)
+jsDestructor(SVGElement)
+jsDestructor(SVGSVGElement)
 jsDestructor(Node)
 jsDestructor(NodeList)
 jsDestructor(HTMLCollection)
@@ -539,7 +549,9 @@ proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
   let ps = newPosixStream(pipefd[1])
   let ctlreq = newRequest(newURL("stream:canvas-ctl-" & $imageId).get)
   let ctlres = loader.doRequest(ctlreq)
-  doAssert ctlres.res == 0
+  if ctlres.res != 0: # loader forgot about me :(
+    ps.sclose()
+    return
   let cacheId = loader.addCacheFile(ctlres.outputId, loader.clientPid)
   target.bitmap.cacheId = cacheId
   let request = newRequest(
@@ -555,7 +567,7 @@ proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
     ctlres.close()
     return
   ctlres.close()
-  response.resume()
+  response.close()
   target.ctx2d = CanvasRenderingContext2D(
     bitmap: target.bitmap,
     canvas: target,
@@ -1074,8 +1086,8 @@ proc toAtom(document: Document; prefix: NamespacePrefix): CAtom =
 func tagTypeNoNS(element: Element): TagType =
   return element.document.toTagType(element.localName)
 
-func tagType*(element: Element): TagType =
-  if element.namespace != Namespace.HTML:
+func tagType*(element: Element; namespace = Namespace.HTML): TagType =
+  if element.namespace != namespace:
     return TAG_UNKNOWN
   return element.tagTypeNoNS
 
@@ -2450,51 +2462,49 @@ func serializesAsVoid(element: Element): bool =
   const Extra = {TAG_BASEFONT, TAG_BGSOUND, TAG_FRAME, TAG_KEYGEN, TAG_PARAM}
   return element.tagType in VoidElements + Extra
 
-func serializeFragment*(node: Node): string
+func serializeFragment(res: var string; node: Node)
 
-func serializeFragmentInner(child: Node; parentType: TagType): string =
-  result = ""
+func serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
   if child of Element:
     let element = Element(child)
     let tags = element.document.toStr(element.localName)
-    result &= '<'
+    res &= '<'
     #TODO qualified name if not HTML, SVG or MathML
-    result &= tags
+    res &= tags
     #TODO custom elements
     for attr in element.attrs:
-      #TODO namespaced attrs
-      let k = element.document.toStr(attr.localName)
-      result &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
-    result &= '>'
-    result &= element.serializeFragment()
-    result &= "</"
-    result &= tags
-    result &= '>'
+      let k = element.document.toStr(attr.qualifiedName)
+      res &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
+    res &= '>'
+    res.serializeFragment(element)
+    res &= "</"
+    res &= tags
+    res &= '>'
   elif child of Text:
     let text = Text(child)
     const LiteralTags = {
       TAG_STYLE, TAG_SCRIPT, TAG_XMP, TAG_IFRAME, TAG_NOEMBED, TAG_NOFRAMES,
       TAG_PLAINTEXT, TAG_NOSCRIPT
     }
-    result = if parentType in LiteralTags:
-      text.data
+    if parentType in LiteralTags:
+      res &= text.data
     else:
-      text.data.escapeText()
+      res &= text.data.escapeText()
   elif child of Comment:
-    result &= "<!--" & Comment(child).data & "-->"
+    res &= "<!--" & Comment(child).data & "-->"
   elif child of ProcessingInstruction:
     let inst = ProcessingInstruction(child)
-    result &= "<?" & inst.target & " " & inst.data & '>'
+    res &= "<?" & inst.target & " " & inst.data & '>'
   elif child of DocumentType:
-    result &= "<!DOCTYPE " & DocumentType(child).name & '>'
+    res &= "<!DOCTYPE " & DocumentType(child).name & '>'
 
-func serializeFragment*(node: Node): string =
+func serializeFragment(res: var string; node: Node) =
   var node = node
   var parentType = TAG_UNKNOWN
   if node of Element:
     let element = Element(node)
     if element.serializesAsVoid():
-      return ""
+      return
     if element of HTMLTemplateElement:
       node = HTMLTemplateElement(element).content
     else:
@@ -2503,10 +2513,12 @@ func serializeFragment*(node: Node): string =
         # Pretend parentType is not noscript, so we do not append literally
         # in serializeFragmentInner.
         parentType = TAG_UNKNOWN
-  var s = ""
   for child in node.childList:
-    s &= child.serializeFragmentInner(parentType)
-  return s
+    res.serializeFragmentInner(child, parentType)
+
+func serializeFragment*(node: Node): string =
+  result = ""
+  result.serializeFragment(node)
 
 # Element attribute reflection (getters)
 func innerHTML(element: Element): string {.jsfget.} =
@@ -2515,7 +2527,8 @@ func innerHTML(element: Element): string {.jsfget.} =
 
 func outerHTML(element: Element): string {.jsfget.} =
   #TODO xml
-  return element.serializeFragmentInner(TAG_UNKNOWN)
+  result = ""
+  result.serializeFragmentInner(element, TAG_UNKNOWN)
 
 func crossOrigin0(element: HTMLElement): CORSAttribute =
   if not element.attrb(satCrossorigin):
@@ -3023,65 +3036,65 @@ func newComment(ctx: JSContext; data: string = ""): Comment {.jsctor.} =
   return window.document.newComment(data)
 
 #TODO custom elements
-proc newHTMLElement*(document: Document; localName: CAtom;
-    namespace = Namespace.HTML; prefix = NO_PREFIX): HTMLElement =
+proc newElement*(document: Document; localName: CAtom;
+    namespace = Namespace.HTML; prefix = NO_PREFIX): Element =
   let tagType = document.toTagType(localName)
-  case tagType
+  let element: Element = case tagType
   of TAG_INPUT:
-    result = HTMLInputElement()
+    HTMLInputElement()
   of TAG_A:
     let anchor = HTMLAnchorElement()
     let localName = document.toAtom(satRel)
     anchor.relList = DOMTokenList(element: anchor, localName: localName)
-    result = anchor
+    anchor
   of TAG_SELECT:
-    result = HTMLSelectElement()
+    HTMLSelectElement()
   of TAG_OPTGROUP:
-    result = HTMLOptGroupElement()
+    HTMLOptGroupElement()
   of TAG_OPTION:
-    result = HTMLOptionElement()
+    HTMLOptionElement()
   of TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6:
-    result = HTMLHeadingElement()
+    HTMLHeadingElement()
   of TAG_BR:
-    result = HTMLBRElement()
+    HTMLBRElement()
   of TAG_SPAN:
-    result = HTMLSpanElement()
+    HTMLSpanElement()
   of TAG_OL:
-    result = HTMLOListElement()
+    HTMLOListElement()
   of TAG_UL:
-    result = HTMLUListElement()
+    HTMLUListElement()
   of TAG_MENU:
-    result = HTMLMenuElement()
+    HTMLMenuElement()
   of TAG_LI:
-    result = HTMLLIElement()
+    HTMLLIElement()
   of TAG_STYLE:
-    result = HTMLStyleElement()
+    HTMLStyleElement()
   of TAG_LINK:
     let link = HTMLLinkElement()
     let localName = document.toAtom(satRel)
     link.relList = DOMTokenList(element: link, localName: localName)
-    result = link
+    link
   of TAG_FORM:
     let form = HTMLFormElement()
     let localName = document.toAtom(satRel)
     form.relList = DOMTokenList(element: form, localName: localName)
-    result = form
+    form
   of TAG_TEMPLATE:
-    result = HTMLTemplateElement(
-      content: DocumentFragment(internalDocument: document, host: result)
-    )
+    let templ = HTMLTemplateElement(content: newDocumentFragment(document))
+    templ.content.host = templ
+    templ
   of TAG_UNKNOWN:
-    result = HTMLUnknownElement()
+    HTMLUnknownElement()
   of TAG_SCRIPT:
-    result = HTMLScriptElement(forceAsync: true)
+    HTMLScriptElement(forceAsync: true)
   of TAG_BASE:
-    result = HTMLBaseElement()
+    HTMLBaseElement()
   of TAG_BUTTON:
-    result = HTMLButtonElement()
+    HTMLButtonElement()
   of TAG_TEXTAREA:
-    result = HTMLTextAreaElement()
+    HTMLTextAreaElement()
   of TAG_LABEL:
-    result = HTMLLabelElement()
+    HTMLLabelElement()
   of TAG_CANVAS:
     let bitmap = if document.scriptingEnabled:
       NetworkBitmap(
@@ -3092,33 +3105,41 @@ proc newHTMLElement*(document: Document; localName: CAtom;
       )
     else:
       nil
-    result = HTMLCanvasElement(bitmap: bitmap)
+    HTMLCanvasElement(bitmap: bitmap)
   of TAG_IMG:
-    result = HTMLImageElement()
+    HTMLImageElement()
   of TAG_VIDEO:
-    result = HTMLVideoElement()
+    HTMLVideoElement()
   of TAG_AUDIO:
-    result = HTMLAudioElement()
+    HTMLAudioElement()
   of TAG_AREA:
     let area = HTMLAreaElement()
     let localName = document.toAtom(satRel)
     area.relList = DOMTokenList(element: area, localName: localName)
-    result = area
+    area
+  elif namespace == Namespace.SVG:
+    if tagType == TAG_SVG:
+      SVGSVGElement()
+    else:
+      SVGElement()
   else:
-    result = HTMLElement()
-  result.localName = localName
-  result.namespace = namespace
-  result.namespacePrefix = prefix
-  result.internalDocument = document
+    HTMLElement()
+  element.localName = localName
+  element.namespace = namespace
+  element.namespacePrefix = prefix
+  element.internalDocument = document
   let localName = document.toAtom(satClassList)
-  result.classList = DOMTokenList(element: result, localName: localName)
-  result.index = -1
-  result.elIndex = -1
-  result.dataset = DOMStringMap(target: result)
+  element.classList = DOMTokenList(element: element, localName: localName)
+  element.index = -1
+  element.elIndex = -1
+  if namespace == Namespace.HTML:
+    let element = HTMLElement(element)
+    element.dataset = DOMStringMap(target: element)
+  return element
 
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
   let localName = document.toAtom(tagType)
-  return document.newHTMLElement(localName, Namespace.HTML, NO_PREFIX)
+  return HTMLElement(document.newElement(localName, Namespace.HTML, NO_PREFIX))
 
 proc newDocument*(factory: CAtomFactory): Document =
   assert factory != nil
@@ -3421,7 +3442,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
       url.scheme = "https"
     let surl = $url
     window.imageURLCache.withValue(surl, p):
-      if p[].expiry > getTime().utc().toTime().toUnix():
+      if p[].expiry > getTime().toUnix():
         image.bitmap = p[].bmp
         return
       elif p[].loading:
@@ -3463,6 +3484,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           body = RequestBody(t: rbtOutput, outputId: response.outputId),
         )
         let r = window.corsFetch(request)
+        response.resume()
         response.close()
         var expiry = -1i64
         if "Cache-Control" in response.headers:
@@ -3483,19 +3505,16 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           let response = res.get
           # close immediately; all data we're interested in is in the headers.
           response.close()
-          if "Cha-Image-Dimensions" notin response.headers.table:
-            window.console.error("Cha-Image-Dimensions missing in",
-              $response.url)
-            return
-          let dims = response.headers.table["Cha-Image-Dimensions"][0]
-          let width = parseIntP(dims.until('x'))
-          let height = parseIntP(dims.after('x'))
-          if width.get(-1) < 0 or height.get(-1) < 0:
+          let headers = response.headers
+          let dims = headers.getOrDefault("Cha-Image-Dimensions")
+          let width = parseIntP(dims.until('x')).get(-1)
+          let height = parseIntP(dims.after('x')).get(-1)
+          if width < 0 or height < 0:
             window.console.error("wrong Cha-Image-Dimensions in", $response.url)
             return
           let bmp = NetworkBitmap(
-            width: width.get,
-            height: height.get,
+            width: width,
+            height: height,
             cacheId: cacheId,
             imageId: window.getImageId(),
             contentType: contentType
@@ -3509,6 +3528,78 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         )
       )
     window.pendingResources.add(p)
+
+proc loadResource*(window: Window; svg: SVGSVGElement) =
+  if not window.images:
+    svg.invalid = svg.invalid or svg.bitmap != nil
+    svg.bitmap = nil
+    svg.fetchStarted = false
+    return
+  if svg.fetchStarted:
+    return
+  svg.fetchStarted = true
+  let s = svg.outerHTML
+  if s.len <= 4096: # try to dedupe if the SVG is small enough.
+    window.svgCache.withValue(s, elp):
+      svg.bitmap = elp.bitmap
+      if svg.bitmap != nil: # already decoded
+        svg.setInvalid()
+      else: # tell me when you're done
+        elp.shared.add(svg)
+      return
+    window.svgCache[s] = svg
+  var pipefd {.noinit.}: array[2, cint]
+  if pipe(pipefd) == -1:
+    return
+  let ps = newPosixStream(pipefd[1])
+  let imageId = window.getImageId()
+  let loader = window.loader
+  loader.passFd("svg-" & $imageId, pipefd[0])
+  discard close(pipefd[0])
+  let svgreq = newRequest(newURL("stream:svg-" & $imageId).get)
+  let svgres = loader.doRequest(svgreq)
+  if svgres.res != 0: # loader forgot about me :(
+    ps.sclose()
+    return
+  let cacheId = loader.addCacheFile(svgres.outputId, loader.clientPid)
+  try:
+    ps.sendDataLoop(s)
+  except IOError:
+    return
+  finally:
+    ps.sclose()
+  let request = newRequest(
+    newURL("img-codec+svg+xml:decode").get,
+    httpMethod = hmPost,
+    headers = newHeaders({"Cha-Image-Info-Only": "1"}),
+    body = RequestBody(t: rbtOutput, outputId: svgres.outputId)
+  )
+  let p = loader.fetch(request).then(proc(res: JSResult[Response]) =
+    svgres.close()
+    if res.isNone: # no SVG module; give up
+      return
+    let response = res.get
+    # close immediately; all data we're interested in is in the headers.
+    response.close()
+    let dims = response.headers.getOrDefault("Cha-Image-Dimensions")
+    let width = parseIntP(dims.until('x')).get(-1)
+    let height = parseIntP(dims.after('x')).get(-1)
+    if width < 0 or height < 0:
+      window.console.error("wrong Cha-Image-Dimensions in", $response.url)
+      return
+    svg.bitmap = NetworkBitmap(
+      width: width,
+      height: height,
+      cacheId: cacheId,
+      imageId: imageId,
+      contentType: "image/svg+xml"
+    )
+    for share in svg.shared:
+      share.bitmap = svg.bitmap
+      share.setInvalid()
+    svg.setInvalid()
+  )
+  window.pendingResources.add(p)
 
 proc reflectEvent(element: Element; target: EventTarget; name, ctype: StaticAtom;
     value: string) =
@@ -4537,7 +4628,7 @@ proc createElement(document: Document; localName: string):
     Namespace.HTML
   else:
     NO_NAMESPACE
-  return ok(document.newHTMLElement(localName, namespace))
+  return ok(document.newElement(localName, namespace))
 
 #TODO createElementNS
 
@@ -4606,7 +4697,7 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
   let copy = if node of Element:
     #TODO is value
     let element = Element(node)
-    let x = document.newHTMLElement(element.localName, element.namespace,
+    let x = document.newElement(element.localName, element.namespace,
       element.namespacePrefix)
     x.id = element.id
     x.name = element.name
@@ -4962,7 +5053,7 @@ proc outerHTML(element: Element; s: string): Err[DOMException] {.jsfset.} =
     let ex = newDOMException("outerHTML is disallowed for Document children",
       "NoModificationAllowedError")
     return err(ex)
-  let parent = if parent0 of DocumentFragment:
+  let parent: Element = if parent0 of DocumentFragment:
     element.document.newHTMLElement(TAG_BODY)
   else:
     # neither a document, nor a document fragment => parent must be an
@@ -5038,6 +5129,8 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLVideoElement, TAG_VIDEO)
   register(HTMLAudioElement, TAG_AUDIO)
   register(HTMLIFrameElement, TAG_IFRAME)
+  let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
+  ctx.registerType(SVGSVGElement, parent = svgElementCID)
 
 proc addDOMModule*(ctx: JSContext) =
   let eventTargetCID = ctx.getClass("EventTarget")

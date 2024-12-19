@@ -126,7 +126,7 @@ proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: Node; htmlAttrs: Table[CAtom, string];
     xmlAttrs: seq[ParsedAttr[CAtom]]): Node =
   let document = builder.document
-  let element = document.newHTMLElement(localName, namespace)
+  let element = document.newElement(localName, namespace)
   for k, v in htmlAttrs:
     element.attr(k, v)
   for attr in xmlAttrs:
@@ -203,6 +203,11 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: Node) =
   elif element of HTMLScriptElement:
     assert builder.poppedScript == nil or not builder.document.scriptingEnabled
     builder.poppedScript = HTMLScriptElement(element)
+  elif element of SVGSVGElement:
+    let window = element.document.window
+    if window != nil:
+      let svg = SVGSVGElement(element)
+      window.loadResource(svg)
 
 proc newChaDOMBuilder(url: URL; window: Window; factory: CAtomFactory;
     confidence: CharsetConfidence; charset = DefaultCharset): ChaDOMBuilder =

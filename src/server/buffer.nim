@@ -409,6 +409,10 @@ proc getCachedImageHover(buffer: Buffer; element: Element): string =
     let image = HTMLImageElement(element)
     if image.bitmap != nil and image.bitmap.cacheId != 0:
       return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
+  elif element of SVGSVGElement:
+    let image = SVGSVGElement(element)
+    if image.bitmap != nil and image.bitmap.cacheId != 0:
+      return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
   ""
 
 func getCursorStyledNode(buffer: Buffer; cursorx, cursory: int): StyledNode =
@@ -1753,8 +1757,12 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
 proc toggleImages0(buffer: Buffer): bool =
   buffer.config.images = not buffer.config.images
   buffer.window.images = buffer.config.images
-  for element in buffer.document.elements({TAG_IMG, TAG_IMAGE}):
-    buffer.window.loadResource(HTMLImageElement(element))
+  buffer.window.svgCache.clear()
+  for element in buffer.document.descendants:
+    if element of HTMLImageElement:
+      buffer.window.loadResource(HTMLImageElement(element))
+    elif element of SVGSVGElement:
+      buffer.window.loadResource(SVGSVGElement(element))
   buffer.savetask = true
   buffer.loadResources().then(proc() =
     if buffer.tasks[bcToggleImages] == 0:

@@ -427,6 +427,13 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       )
       let styledText = styledParent.newStyledReplacement(content, pseudo)
       styledParent.children.add(styledText)
+    of peSVG:
+      let content = CSSContent(
+        t: ContentImage,
+        bmp: SVGSVGElement(styledParent.node).bitmap
+      )
+      let styledText = styledParent.newStyledReplacement(content, pseudo)
+      styledParent.children.add(styledText)
     of peCanvas:
       let bmp = HTMLCanvasElement(styledParent.node).bitmap
       if bmp != nil and bmp.cacheId != 0:
@@ -537,6 +544,8 @@ proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
   of TAG_AUDIO: styledStack.stackAppend(frame, styledChild, peAudio, idx)
   of TAG_BR: styledStack.stackAppend(frame, styledChild, peNewline, idx)
   of TAG_CANVAS: styledStack.stackAppend(frame, styledChild, peCanvas, idx)
+  elif element.tagType(Namespace.SVG) == TAG_SVG:
+    styledStack.stackAppend(frame, styledChild, peSVG, idx)
   else:
     for i in countdown(element.childList.high, 0):
       let child = element.childList[i]
