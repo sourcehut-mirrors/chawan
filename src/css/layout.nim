@@ -1258,10 +1258,9 @@ proc applyHeight(box: BlockBox; sizes: ResolvedSizes;
   box.applySize(sizes, maxChildHeight, sizes.space, dtVertical)
 
 proc applyPadding(box: BlockBox; padding: RelativeRect) =
-  box.state.size.w += padding[dtHorizontal].sum()
-  let verticalSum = padding[dtVertical].sum()
-  box.state.size.h += verticalSum
-  box.state.intr.h += verticalSum
+  let sum = padding.sum()
+  box.state.size += sum
+  box.state.intr += sum
 
 proc applyBaseline(box: BlockBox) =
   if box.children.len > 0:
