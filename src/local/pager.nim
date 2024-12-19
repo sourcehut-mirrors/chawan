@@ -2556,7 +2556,7 @@ proc fail(pager: Pager; container: Container; errorMessage: string) =
       msg.setLen(max(pager.attrs.width - ew, pager.attrs.width div 3))
       if msg.len > 0:
         msg[^1] = '$'
-      msg &= " (" & errorMessage & ')'
+    msg &= " (" & errorMessage & ')'
     pager.alert(msg)
 
 proc redirect(pager: Pager; container: Container; response: Response;
