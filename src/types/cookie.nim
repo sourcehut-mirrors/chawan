@@ -251,7 +251,7 @@ proc parseCookie(str: string; t: int64; url: URL): Opt[Cookie] =
       if not cookieDomainMatches(val, url):
         return err()
       cookie.domain = val
-      cookie.hostOnly = true
+      cookie.hostOnly = false
   if cookie.hostOnly:
     cookie.domain = url.host
   if not hasPath:
