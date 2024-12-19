@@ -2633,11 +2633,11 @@ static void nsvg__parseSVG(NSVGparser* p, const char** attr)
 					else if (strstr(attr[i + 1], "xMax") != 0)
 						p->alignX = NSVG_ALIGN_MAX;
 					// Parse X align
-					if (strstr(attr[i + 1], "yMin") != 0)
+					if (strstr(attr[i + 1], "YMin") != 0)
 						p->alignY = NSVG_ALIGN_MIN;
-					else if (strstr(attr[i + 1], "yMid") != 0)
+					else if (strstr(attr[i + 1], "YMid") != 0)
 						p->alignY = NSVG_ALIGN_MID;
-					else if (strstr(attr[i + 1], "yMax") != 0)
+					else if (strstr(attr[i + 1], "YMax") != 0)
 						p->alignY = NSVG_ALIGN_MAX;
 					// Parse meet/slice
 					p->alignType = NSVG_ALIGN_MEET;
