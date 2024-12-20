@@ -270,10 +270,10 @@ func buildComputedValues(rules: CSSValueEntryMap;
     if not inited[t]:
       result.initialOrInheritFrom(parent, t)
   if result{"float"} != FloatNone:
-    #TODO it may be better to handle this in layout
-    let display = result{"display"}.blockify()
-    if display != result{"display"}:
-      result{"display"} = display
+    result{"display"} = result{"display"}.blockify()
+  elif result{"position"} in {PositionAbsolute, PositionFixed} and
+      result{"display"} == DisplayInline:
+    result{"display"} = DisplayBlock
   if (result{"overflow-x"} in {OverflowVisible, OverflowClip}) !=
       (result{"overflow-y"} in {OverflowVisible, OverflowClip}):
     result{"overflow-x"} = result{"overflow-x"}.bfcify()
