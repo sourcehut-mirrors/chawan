@@ -1932,11 +1932,12 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     let container = pager.container
     let url = request.url
     let anchor = url.hash.substr(1)
-    container.iface.gotoAnchor(anchor, false).then(proc(res: GotoAnchorResult) =
-      if res.found:
-        pager.dupeBuffer(container, url)
-      else:
-        pager.alert("Anchor " & url.hash & " not found")
+    container.iface.gotoAnchor(anchor, false, false).then(
+      proc(res: GotoAnchorResult) =
+        if res.found:
+          pager.dupeBuffer(container, url)
+        else:
+          pager.alert("Anchor " & url.hash & " not found")
     )
     return nil
 

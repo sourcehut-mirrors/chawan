@@ -714,12 +714,12 @@ proc findAnchor(box: BlockBox; anchor: Element): Offset =
     return box.render.offset
   return offset(-1, -1)
 
-proc gotoAnchor*(buffer: Buffer; anchor: string; autofocus: bool):
+proc gotoAnchor*(buffer: Buffer; anchor: string; autofocus, target: bool):
     GotoAnchorResult {.proxy.} =
   if buffer.document == nil:
     return GotoAnchorResult(found: false)
   var anchor = buffer.document.findAnchor(anchor)
-  if anchor != nil:
+  if target and anchor != nil:
     buffer.document.setTarget(anchor)
   var focus: ReadLineResult = nil
   # Do not use buffer.config.autofocus when we just want to check if the

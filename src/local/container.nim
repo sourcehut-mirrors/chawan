@@ -1484,7 +1484,8 @@ proc onload(container: Container; res: int) =
       let anchor = container.url.hash.substr(1)
       if anchor != "" or container.config.autofocus:
         container.requestLines().then(proc(): Promise[GotoAnchorResult] =
-          return container.iface.gotoAnchor(anchor, container.config.autofocus)
+          return container.iface.gotoAnchor(anchor, container.config.autofocus,
+            true)
         ).then(proc(res: GotoAnchorResult) =
           if res.found:
             container.setCursorXYCenter(res.x, res.y)
