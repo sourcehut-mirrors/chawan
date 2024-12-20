@@ -11,8 +11,8 @@
 when NimMajor >= 2:
   const msg = "expression has no address; maybe use `unsafeAddr'"
 
-  template addr(x: untyped): untyped {.used, error: msg.} =
+  template addr(x: auto): auto {.used, error: msg.} =
     discard
 
-  template addr(x: var untyped): untyped {.used.} =
+  template addr(x: var auto): auto {.used.} =
     system.addr x

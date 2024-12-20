@@ -54,7 +54,7 @@ proc main() =
       if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":
         return
     let r = nsvgCreateRasterizer()
-    let obuf = newSeqUninitialized[uint8](width * height * 4)
+    var obuf = newSeqUninitialized[uint8](width * height * 4)
     r.nsvgRasterize(image, 0, 0, 1, addr obuf[0], width, height, width * 4)
     os.sendDataLoop(obuf)
     r.nsvgDeleteRasterizer()
