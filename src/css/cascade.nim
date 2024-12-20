@@ -273,7 +273,7 @@ func buildComputedValues(rules: CSSValueEntryMap;
     result{"display"} = result{"display"}.blockify()
   elif result{"position"} in {PositionAbsolute, PositionFixed} and
       result{"display"} == DisplayInline:
-    result{"display"} = DisplayBlock
+    result{"display"} = DisplayInlineBlock
   if (result{"overflow-x"} in {OverflowVisible, OverflowClip}) !=
       (result{"overflow-y"} in {OverflowVisible, OverflowClip}):
     result{"overflow-x"} = result{"overflow-x"}.bfcify()

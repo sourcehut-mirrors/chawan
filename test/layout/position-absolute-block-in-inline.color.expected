@@ -3,4 +3,6 @@ line [48;2;255;0;0mabsabsolute 2[49m
 [48;2;0;0;255mabsolute 3[49m
 line four 
 [38;2;109;109;109m[48;2;255;255;0mabsolute 4[39m[49m
+[48;2;0;0;255mabsolute 5[49m
+line six[38;2;109;109;109m[48;2;255;255;0mabsolute 6[39m[49m
 
