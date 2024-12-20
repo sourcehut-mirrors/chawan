@@ -169,37 +169,23 @@ func peek(state: CSSTokenizerState; i: int = 0): char =
 proc has(state: var CSSTokenizerState; i: int = 0): bool =
   return state.at + i < state.buf.len
 
-proc isValidEscape(a, b: char): bool =
-  return a == '\\' and b != '\n'
-
-proc isValidEscape(state: var CSSTokenizerState; c: char): bool =
-  return state.has() and isValidEscape(c, state.peek())
-
-# current + next + next(1)
-proc startsWithIdentSequence(state: var CSSTokenizerState; c: char): bool =
-  case c
-  of '-':
-    return state.has() and state.peek() in IdentStart + {'-'} or
-      state.has(1) and state.isValidEscape(c)
-  of IdentStart:
-    return true
-  of '\\':
-    return state.isValidEscape(c)
-  else:
-    return false
+# next, next(1)
+proc startsWithIdentSequenceDash(state: var CSSTokenizerState): bool =
+  return state.has() and state.peek() in IdentStart + {'-'} or
+    state.has(1) and state.peek() == '\\' and state.peek(1) != '\n'
 
 # next, next(1), next(2)
-proc next3startsWithIdentSequence(state: var CSSTokenizerState): bool =
+proc startsWithIdentSequence(state: var CSSTokenizerState): bool =
   if not state.has():
     return false
   case state.peek()
   of '-':
     return state.has(1) and state.peek(1) in IdentStart + {'-'} or
-      state.has(2) and isValidEscape(state.peek(1), state.peek(2))
+      state.has(2) and state.peek(1) == '\\' and state.peek(2) != '\n'
   of IdentStart:
     return true
   of '\\':
-    return state.has(1) and isValidEscape(state.peek(), state.peek(1))
+    return state.has(1) and state.peek(1) != '\n'
   else:
     return false
 
@@ -275,7 +261,7 @@ proc consumeIdentSequence(state: var CSSTokenizerState): string =
   var s = ""
   while state.has():
     let c = state.consume()
-    if state.isValidEscape(c):
+    if c == '\\' and state.has() and state.peek() != '\n':
       s &= state.consumeEscape()
     elif c in Ident:
       s &= c
@@ -315,7 +301,7 @@ proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
 
 proc consumeNumericToken(state: var CSSTokenizerState): CSSToken =
   let (t, val) = state.consumeNumber()
-  if state.next3startsWithIdentSequence():
+  if state.startsWithIdentSequence():
     return CSSToken(
       t: cttDimension,
       nvalue: val,
@@ -332,7 +318,7 @@ proc consumeBadURL(state: var CSSTokenizerState) =
     let c = state.consume()
     if c == ')':
       break
-    if state.isValidEscape(c):
+    if c == '\\' and state.has() and state.peek() != '\n':
       discard state.consumeEscape()
 
 const NonPrintable = {
@@ -360,7 +346,7 @@ proc consumeURL(state: var CSSTokenizerState): CSSToken =
       state.consumeBadURL()
       return CSSToken(t: cttBadUrl)
     of '\\':
-      if state.isValidEscape(c):
+      if state.has() and state.peek() != '\n':
         res.value &= state.consumeEscape()
       else:
         state.consumeBadURL()
@@ -406,8 +392,9 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
   of '"', '\'':
     return consumeString(state, c)
   of '#':
-    if state.has() and state.peek() in Ident or state.isValidEscape(c):
-      let flag = if state.startsWithIdentSequence(c):
+    if state.has() and state.peek() in Ident or
+        state.has(1) and state.peek() == '\\' and state.peek(1) != '\n':
+      let flag = if state.startsWithIdentSequence():
         tflagaId
       else:
         tflagaUnrestricted
@@ -434,15 +421,14 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
     if state.startsWithNumber():
       state.reconsume()
       return state.consumeNumericToken()
+    elif state.has(1) and state.peek() == '-' and state.peek(1) == '>':
+      state.seek(2)
+      return CSSToken(t: cttCdc)
+    elif state.startsWithIdentSequenceDash():
+      state.reconsume()
+      return state.consumeIdentLikeToken()
     else:
-      if state.has(1) and state.peek() == '-' and state.peek(1) == '>':
-        state.seek(2)
-        return CSSToken(t: cttCdc)
-      elif state.startsWithIdentSequence(c):
-        state.reconsume()
-        return state.consumeIdentLikeToken()
-      else:
-        return CSSToken(t: cttDelim, cvalue: c)
+      return CSSToken(t: cttDelim, cvalue: c)
   of '.':
     if state.startsWithNumber():
       state.reconsume()
@@ -459,14 +445,14 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of '@':
-    if state.next3startsWithIdentSequence():
+    if state.startsWithIdentSequence():
       let name = state.consumeIdentSequence()
       return CSSToken(t: cttAtKeyword, value: name)
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of '[': return CSSToken(t: cttLbracket)
   of '\\':
-    if state.isValidEscape(c):
+    if state.has() and state.peek() != '\n':
       state.reconsume()
       return state.consumeIdentLikeToken()
     else:
