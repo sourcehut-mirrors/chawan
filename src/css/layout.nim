@@ -242,15 +242,15 @@ type
     hasExclusion: bool
     charwidth: int
     # Set at the end of layoutText. It helps determine the beginning of the
-    # next inline fragment.
+    # next inline box.
     widthAfterWhitespace: LayoutUnit
     # minimum height to fit all inline atoms
     minHeight: LayoutUnit
-    paddingTodo: seq[tuple[fragment: InlineFragment; i: int]]
+    paddingTodo: seq[tuple[box: InlineBox; i: int]]
     atoms: seq[InlineAtom]
     size: Size
     availableWidth: LayoutUnit # actual place available after float exclusions
-    offsety: LayoutUnit # offset of line in root fragment
+    offsety: LayoutUnit # offset of line in root box
     height: LayoutUnit # height used for painting; does not include padding
     intrh: LayoutUnit # intrinsic minimum height
 
@@ -259,10 +259,10 @@ type
     baseline: LayoutUnit
     marginTop: LayoutUnit
     marginBottom: LayoutUnit
-    fragment: InlineFragment
+    box: InlineBox
 
   InlineUnpositionedFloat = object
-    parent: InlineFragment
+    parent: InlineBox
     box: BlockBox
     outerSize: Size
     marginOffset: Offset
@@ -279,18 +279,18 @@ type
     space: AvailableSpace
     whitespacenum: int
     whitespaceIsLF: bool
-    whitespaceFragment: InlineFragment
+    whitespaceFragment: InlineBox
     word: InlineAtom
     wrappos: int # position of last wrapping opportunity, or -1
     textFragmentSeen: bool
-    lastTextFragment: InlineFragment
+    lastTextFragment: InlineBox
     firstBaselineSet: bool
     unpositionedFloats: seq[InlineUnpositionedFloat]
     secondPass: bool
     padding: RelativeRect
 
   InlineState = object
-    fragment: InlineFragment
+    box: InlineBox
     startOffsetTop: Offset
     # we do not want to collapse newlines over tag boundaries, so these are
     # in state
@@ -330,7 +330,7 @@ func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
   if ictx.whitespaceIsLF and state.lastrw == 2 and state.firstrw == 2:
     # skip line feed between double-width characters
     return 0
-  if not state.fragment.computed.whitespacepre:
+  if not state.box.computed.whitespacepre:
     if ictx.lbstate.atoms.len == 0:
       return 0
     let atom = ictx.lbstate.atoms[^1]
@@ -449,7 +449,7 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
   let xshift = ictx.getLineXShift(width)
   var totalWidth: LayoutUnit = 0
   var currentAreaOffsetX: LayoutUnit = 0
-  var currentFragment: InlineFragment = nil
+  var currentFragment: InlineBox = nil
   let offsetyShifted = shiftTop + offsety
   var areaY: LayoutUnit = 0
   for i, atom in ictx.lbstate.atoms:
@@ -464,8 +464,8 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
     atom.offset.x += xshift
     totalWidth += atom.size.w
     ictx.state.overflow[dtHorizontal].expand(atom.overflow(dtHorizontal))
-    let fragment = ictx.lbstate.atomStates[i].fragment
-    if currentFragment != fragment:
+    let box = ictx.lbstate.atomStates[i].box
+    if currentFragment != box:
       if currentFragment != nil:
         # flush area
         let lastAtom = ictx.lbstate.atoms[i - 1]
@@ -476,10 +476,10 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
             # it seems cellHeight is what other browsers use here too
             size: size(w = w, h = cellHeight)
           ))
-      currentFragment = fragment
-      # init new fragment
-      currentAreaOffsetX = if fragment.state.areas.len == 0:
-        fragment.state.atoms[0].offset.x
+      currentFragment = box
+      # init new box
+      currentAreaOffsetX = if box.state.areas.len == 0:
+        box.state.atoms[0].offset.x
       else:
         ictx.lbstate.atoms[0].offset.x
   if currentFragment != nil:
@@ -500,9 +500,9 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
         offset: offset,
         size: size(w = w, h = cellHeight)
       ))
-  for (fragment, i) in ictx.lbstate.paddingTodo:
-    fragment.state.areas[i].offset.x += xshift
-    fragment.state.areas[i].offset.y = areaY
+  for (box, i) in ictx.lbstate.paddingTodo:
+    box.state.areas[i].offset.x += xshift
+    box.state.areas[i].offset.y = areaY
   if ictx.space.w.t == scFitContent:
     ictx.state.size.w = max(totalWidth, ictx.state.size.w)
 
@@ -532,17 +532,17 @@ proc alignLine(ictx: var InlineContext) =
   ictx.lbstate.height = ictx.lbstate.size.h
 
 proc putAtom(state: var LineBoxState; atom: InlineAtom;
-    iastate: InlineAtomState; fragment: InlineFragment) =
+    iastate: InlineAtomState; box: InlineBox) =
   state.atomStates.add(iastate)
-  state.atomStates[^1].fragment = fragment
+  state.atomStates[^1].box = box
   state.atoms.add(atom)
-  fragment.state.atoms.add(atom)
+  box.state.atoms.add(atom)
 
 proc addSpacing(ictx: var InlineContext; width: LayoutUnit; state: InlineState;
     hang = false) =
-  let fragment = ictx.whitespaceFragment
-  if fragment.state.atoms.len == 0 or ictx.lbstate.atoms.len == 0 or
-      (let oatom = fragment.state.atoms[^1];
+  let box = ictx.whitespaceFragment
+  if box.state.atoms.len == 0 or ictx.lbstate.atoms.len == 0 or
+      (let oatom = box.state.atoms[^1];
         oatom.t != iatWord or oatom != ictx.lbstate.atoms[^1]):
     let atom = InlineAtom(
       t: iatWord,
@@ -550,8 +550,8 @@ proc addSpacing(ictx: var InlineContext; width: LayoutUnit; state: InlineState;
       offset: offset(x = ictx.lbstate.size.w, y = ictx.cellHeight)
     )
     let iastate = InlineAtomState(baseline: atom.size.h)
-    ictx.lbstate.putAtom(atom, iastate, fragment)
-  let atom = fragment.state.atoms[^1]
+    ictx.lbstate.putAtom(atom, iastate, box)
+  let atom = box.state.atoms[^1]
   let n = (width div ictx.cellWidth).toInt #TODO
   for i in 0 ..< n:
     atom.str &= ' '
@@ -617,7 +617,7 @@ proc initLine(ictx: var InlineContext) =
 proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     force = false; clear = ClearNone) =
   if ictx.lbstate.atoms.len != 0 or force:
-    let whitespace = state.fragment.computed{"white-space"}
+    let whitespace = state.box.computed{"white-space"}
     if whitespace == WhitespacePre:
       ictx.flushWhitespace(state)
       ictx.state.intr.w = max(ictx.state.intr.w, ictx.lbstate.size.w)
@@ -688,7 +688,7 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
   ictx.lbstate.charwidth += ictx.whitespacenum
   ictx.whitespacenum = 0
   # Line wrapping
-  if ictx.shouldWrap(atom.size.w + shift, state.fragment.computed):
+  if ictx.shouldWrap(atom.size.w + shift, state.box.computed):
     ictx.finishLine(state, wrap = true)
     result = true
     # Recompute on newline
@@ -703,14 +703,14 @@ proc addAtom(ictx: var InlineContext; state: var InlineState;
     if shift > 0:
       ictx.addSpacing(shift, state)
     if atom.t == iatWord and ictx.lbstate.atoms.len > 0 and
-        state.fragment.state.atoms.len > 0:
+        state.box.state.atoms.len > 0:
       let oatom = ictx.lbstate.atoms[^1]
-      if oatom.t == iatWord and oatom == state.fragment.state.atoms[^1]:
+      if oatom.t == iatWord and oatom == state.box.state.atoms[^1]:
         oatom.str &= atom.str
         oatom.size.w += atom.size.w
         ictx.lbstate.size.w += atom.size.w
         return
-    ictx.lbstate.putAtom(atom, iastate, state.fragment)
+    ictx.lbstate.putAtom(atom, iastate, state.box)
     atom.offset.x += ictx.lbstate.size.w
     ictx.lbstate.size.w += atom.size.w
     # store for later use in resizeLine/shiftAtoms
@@ -724,10 +724,10 @@ proc addWord(ictx: var InlineContext; state: var InlineState): bool =
   if atom.str != "":
     atom.str.mnormalize() #TODO this may break on EOL.
     let iastate = InlineAtomState(
-      vertalign: state.fragment.computed{"vertical-align"},
+      vertalign: state.box.computed{"vertical-align"},
       baseline: atom.size.h
     )
-    let wordBreak = state.fragment.computed{"word-break"}
+    let wordBreak = state.box.computed{"word-break"}
     if ictx.wrappos != -1:
       # set intr.w to the first wrapping opportunity
       ictx.state.intr.w = max(ictx.state.intr.w, ictx.wrappos)
@@ -760,7 +760,7 @@ proc addWordEOL(ictx: var InlineContext; state: var InlineState): bool =
 
 proc checkWrap(ictx: var InlineContext; state: var InlineState; u: uint32;
     uw: int) =
-  if state.fragment.computed.nowrap:
+  if state.box.computed.nowrap:
     return
   let shift = ictx.computeShift(state)
   state.prevrw = uw
@@ -770,7 +770,7 @@ proc checkWrap(ictx: var InlineContext; state: var InlineState; u: uint32;
     # remove wrap opportunity, so we wrap properly on the last CJK char (instead
     # of any dash inside CJK sentences)
     ictx.wrappos = -1
-  case state.fragment.computed{"word-break"}
+  case state.box.computed{"word-break"}
   of WordBreakNormal:
     if uw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
       let plusWidth = ictx.word.size.w + shift + uw * ictx.cellWidth
@@ -793,11 +793,11 @@ proc checkWrap(ictx: var InlineContext; state: var InlineState; u: uint32;
 proc processWhitespace(ictx: var InlineContext; state: var InlineState;
     c: char) =
   discard ictx.addWord(state)
-  case state.fragment.computed{"white-space"}
+  case state.box.computed{"white-space"}
   of WhitespaceNormal, WhitespaceNowrap:
     if ictx.whitespacenum < 1:
       ictx.whitespacenum = 1
-      ictx.whitespaceFragment = state.fragment
+      ictx.whitespaceFragment = state.box
       ictx.whitespaceIsLF = c == '\n'
     if c != '\n':
       ictx.whitespaceIsLF = false
@@ -807,7 +807,7 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
     elif ictx.whitespacenum < 1:
       ictx.whitespaceIsLF = false
       ictx.whitespacenum = 1
-      ictx.whitespaceFragment = state.fragment
+      ictx.whitespaceFragment = state.box
   of WhitespacePre, WhitespacePreWrap:
     ictx.whitespaceIsLF = false
     if c == '\n':
@@ -826,7 +826,7 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
       discard ictx.addWord(state)
     else:
       inc ictx.whitespacenum
-      ictx.whitespaceFragment = state.fragment
+      ictx.whitespaceFragment = state.box
   # set the "last word's last rune width" to the previous rune width
   state.lastrw = state.prevrw
 
@@ -884,7 +884,7 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
 proc layoutText(ictx: var InlineContext; state: var InlineState; s: string) =
   ictx.flushWhitespace(state)
   ictx.newWord()
-  let transform = state.fragment.computed{"text-transform"}
+  let transform = state.box.computed{"text-transform"}
   if transform == TextTransformNone:
     ictx.layoutTextLoop(state, s)
   else:
@@ -1215,7 +1215,7 @@ func sum(a: Strut): LayoutUnit =
 proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutTableWrapper(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
-proc layoutInline(ictx: var InlineContext; fragment: InlineFragment)
+proc layoutInline(ictx: var InlineContext; box: InlineBox)
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   sizes: ResolvedSizes): LayoutUnit
 
@@ -1453,7 +1453,7 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   ictx.initLine()
   ictx.layoutInline(box.inline)
   if ictx.lastTextFragment != nil:
-    var state = InlineState(fragment: ictx.lastTextFragment)
+    var state = InlineState(box: ictx.lastTextFragment)
     ictx.finishLine(state, wrap = false)
   if ictx.unpositionedFloats.len > 0 or
       ictx.space.w.t == scFitContent and
@@ -1484,7 +1484,7 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     ictx.secondPass = true
     ictx.layoutInline(box.inline)
     if ictx.lastTextFragment != nil:
-      var state = InlineState(fragment: ictx.lastTextFragment)
+      var state = InlineState(box: ictx.lastTextFragment)
       ictx.finishLine(state, wrap = false)
     for it in floats:
       it.parent.state.atoms.add(InlineAtom(
@@ -1555,7 +1555,7 @@ proc addInlineFloat(ictx: var InlineContext; state: var InlineState;
   ictx.lbstate.size.w += box.state.size.w
   # Note that by now, the top y offset is always resolved.
   ictx.unpositionedFloats.add(InlineUnpositionedFloat(
-    parent: state.fragment,
+    parent: state.box,
     box: box,
     space: sizes.space,
     outerSize: size(
@@ -1572,7 +1572,7 @@ const DisplayOuterInline = {
 proc addInlineAbsolute(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
   let lctx = ictx.lctx
-  state.fragment.state.atoms.add(InlineAtom(
+  state.box.state.atoms.add(InlineAtom(
     t: iatInlineBlock,
     innerbox: box
   ))
@@ -1639,7 +1639,7 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     bmp: bmp,
     size: size(w = bmp.width, h = bmp.height) #TODO overflow
   )
-  let computed = state.fragment.computed
+  let computed = state.box.computed
   let hasWidth = computed{"width"}.canpx(ictx.space.w)
   let hasHeight = computed{"height"}.canpx(ictx.space.h)
   let osize = atom.size
@@ -1678,7 +1678,7 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
   elif not hasWidth:
     atom.size.w = osize.w div osize.h * atom.size.h
   let iastate = InlineAtomState(
-    vertalign: state.fragment.computed{"vertical-align"},
+    vertalign: state.box.computed{"vertical-align"},
     baseline: atom.size.h
   )
   discard ictx.addAtom(state, iastate, atom)
@@ -1698,11 +1698,11 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     if ictx.space.h.t == scStretch or hasHeight or hasMinHeight:
       ictx.lbstate.intrh = max(ictx.lbstate.intrh, atom.size.h)
 
-proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
+proc layoutInline(ictx: var InlineContext; box: InlineBox) =
   let lctx = ictx.lctx
-  let computed = fragment.computed
+  let computed = box.computed
   var padding = Span()
-  if stSplitStart in fragment.splitType:
+  if stSplitStart in box.splitType:
     let w = computed{"margin-left"}.px(ictx.space.w)
     ictx.lbstate.size.w += w
     ictx.lbstate.widthAfterWhitespace += w
@@ -1710,46 +1710,46 @@ proc layoutInline(ictx: var InlineContext; fragment: InlineFragment) =
       start: computed{"padding-left"}.px(ictx.space.w),
       send: computed{"padding-right"}.px(ictx.space.w)
     )
-  fragment.state = InlineFragmentState()
+  box.state = InlineBoxState()
   if padding.start != 0:
-    fragment.state.areas.add(Area(
+    box.state.areas.add(Area(
       offset: offset(x = ictx.lbstate.widthAfterWhitespace, y = 0),
       size: size(w = padding.start, h = ictx.cellHeight)
     ))
-    ictx.lbstate.paddingTodo.add((fragment, 0))
-  fragment.state.startOffset = offset(
+    ictx.lbstate.paddingTodo.add((box, 0))
+  box.state.startOffset = offset(
     x = ictx.lbstate.widthAfterWhitespace,
     y = ictx.lbstate.offsety
   )
   ictx.lbstate.size.w += padding.start
-  var state = InlineState(fragment: fragment)
-  if stSplitStart in fragment.splitType and
+  var state = InlineState(box: box)
+  if stSplitStart in box.splitType and
       computed{"position"} notin PositionStaticLike:
     lctx.pushPositioned()
-  case fragment.t
-  of iftNewline:
+  case box.t
+  of ibtNewline:
     ictx.finishLine(state, wrap = false, force = true,
-      fragment.computed{"clear"})
-  of iftBox: ictx.addBox(state, fragment.box)
-  of iftBitmap: ictx.addImage(state, fragment.bmp, padding.sum())
-  of iftText: ictx.layoutText(state, fragment.text.textData)
-  of iftParent:
-    for child in fragment.children:
+      box.computed{"clear"})
+  of ibtBox: ictx.addBox(state, box.box)
+  of ibtBitmap: ictx.addImage(state, box.bmp, padding.sum())
+  of ibtText: ictx.layoutText(state, box.text.textData)
+  of ibtParent:
+    for child in box.children:
       ictx.layoutInline(child)
   if padding.send != 0:
-    fragment.state.areas.add(Area(
+    box.state.areas.add(Area(
       offset: offset(x = ictx.lbstate.size.w, y = 0),
       size: size(w = padding.send, h = ictx.cellHeight)
     ))
-    ictx.lbstate.paddingTodo.add((fragment, fragment.state.areas.high))
-  if stSplitEnd in fragment.splitType:
+    ictx.lbstate.paddingTodo.add((box, box.state.areas.high))
+  if stSplitEnd in box.splitType:
     ictx.lbstate.size.w += padding.send
     ictx.lbstate.size.w += computed{"margin-right"}.px(ictx.space.w)
-  if fragment.t != iftParent:
+  if box.t != ibtParent:
     if not ictx.textFragmentSeen:
       ictx.textFragmentSeen = true
-    ictx.lastTextFragment = fragment
-  if stSplitEnd in fragment.splitType and
+    ictx.lastTextFragment = box
+  if stSplitEnd in box.splitType and
       computed{"position"} notin PositionStaticLike:
     # This is UB in CSS 2.1, I can't find a newer spec about it,
     # and Gecko can't even layout it consistently (???)
@@ -2826,14 +2826,14 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
 # 1st pass: build tree
 
 proc newMarkerBox(computed: CSSValues; listItemCounter: int):
-    InlineFragment =
+    InlineBox =
   let computed = computed.inheritProperties()
   computed{"display"} = DisplayInline
   # Use pre, so the space at the end of the default markers isn't ignored.
   computed{"white-space"} = WhitespacePre
   let s = computed{"list-style-type"}.listMarker(listItemCounter)
-  return InlineFragment(
-    t: iftText,
+  return InlineBox(
+    t: ibtText,
     computed: computed,
     text: newStyledText(s)
   )
@@ -2851,9 +2851,9 @@ type InnerBlockContext = object
   listItemReset: bool
   parent: ptr InnerBlockContext
   inlineStack: seq[StyledNode]
-  inlineStackFragments: seq[InlineFragment]
+  inlineStackFragments: seq[InlineBox]
   # if inline is not nil, then inline.children.len > 0
-  inline: InlineFragment
+  inline: InlineBox
 
 proc flushTable(ctx: var InnerBlockContext)
 
@@ -2888,7 +2888,7 @@ proc buildTableCaption(parent: var InnerBlockContext; styledNode: StyledNode;
   computed: CSSValues): BlockBox
 proc newInnerBlockContext(styledNode: StyledNode; box: BlockBox;
   lctx: LayoutContext; parent: ptr InnerBlockContext): InnerBlockContext
-proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment)
+proc pushInline(ctx: var InnerBlockContext; box: InlineBox)
 proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
   computed: CSSValues)
 
@@ -2965,8 +2965,8 @@ proc flushInlineTableRow(ctx: var InnerBlockContext) =
 proc flushInlineTable(ctx: var InnerBlockContext) =
   ctx.flushInlineTableRow()
   if ctx.inlineAnonTableWrapper != nil:
-    ctx.pushInline(InlineFragment(
-      t: iftBox,
+    ctx.pushInline(InlineBox(
+      t: ibtBox,
       computed: ctx.inlineAnonTableWrapper.computed.inheritProperties(),
       box: ctx.inlineAnonTableWrapper
     ))
@@ -2986,10 +2986,10 @@ proc flush(ctx: var InnerBlockContext) =
   ctx.flushTable()
   ctx.flushInherit()
 
-proc addInlineRoot(ctx: var InnerBlockContext; box: InlineFragment) =
+proc addInlineRoot(ctx: var InnerBlockContext; box: InlineBox) =
   if ctx.inline == nil:
-    ctx.inline = InlineFragment(
-      t: iftParent,
+    ctx.inline = InlineBox(
+      t: ibtParent,
       computed: ctx.lctx.myRootProperties,
       children: @[box]
     )
@@ -2998,8 +2998,8 @@ proc addInlineRoot(ctx: var InnerBlockContext; box: InlineFragment) =
 
 proc reconstructInlineParents(ctx: var InnerBlockContext) =
   if ctx.inlineStackFragments.len == 0:
-    var parent = InlineFragment(
-      t: iftParent,
+    var parent = InlineBox(
+      t: ibtParent,
       computed: ctx.inlineStack[0].computed,
       node: ctx.inlineStack[0]
     )
@@ -3007,8 +3007,8 @@ proc reconstructInlineParents(ctx: var InnerBlockContext) =
     ctx.addInlineRoot(parent)
     for i in 1 ..< ctx.inlineStack.len:
       let node = ctx.inlineStack[i]
-      let child = InlineFragment(
-        t: iftParent,
+      let child = InlineBox(
+        t: ibtParent,
         computed: node.computed,
         node: node
       )
@@ -3040,17 +3040,17 @@ proc pushBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
     let box = ctx.buildSomeBlock(styledNode, computed)
     ctx.outer.children.add(box)
 
-proc pushInline(ctx: var InnerBlockContext; fragment: InlineFragment) =
+proc pushInline(ctx: var InnerBlockContext; box: InlineBox) =
   if ctx.inlineStack.len == 0:
-    ctx.addInlineRoot(fragment)
+    ctx.addInlineRoot(box)
   else:
     ctx.reconstructInlineParents()
-    ctx.inlineStackFragments[^1].children.add(fragment)
+    ctx.inlineStackFragments[^1].children.add(box)
 
 proc pushInlineText(ctx: var InnerBlockContext; computed: CSSValues;
     parent, node: StyledNode) =
-  ctx.pushInline(InlineFragment(
-    t: iftText,
+  ctx.pushInline(InlineBox(
+    t: ibtText,
     computed: computed,
     node: parent,
     text: node
@@ -3058,8 +3058,8 @@ proc pushInlineText(ctx: var InnerBlockContext; computed: CSSValues;
 
 proc pushInlineBlock(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSValues) =
-  ctx.pushInline(InlineFragment(
-    t: iftBox,
+  ctx.pushInline(InlineBox(
+    t: ibtBox,
     computed: computed.inheritProperties(),
     node: styledNode,
     box: ctx.buildSomeBlock(styledNode, computed)
@@ -3210,8 +3210,8 @@ proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode;
     ctx.pushInlineText(computed, parent, text)
   of ContentImage:
     if child.content.bmp != nil:
-      ctx.pushInline(InlineFragment(
-        t: iftBitmap,
+      ctx.pushInline(InlineBox(
+        t: ibtBitmap,
         computed: parent.computed,
         node: parent,
         bmp: child.content.bmp
@@ -3223,16 +3223,16 @@ proc buildReplacement(ctx: var InnerBlockContext; child, parent: StyledNode;
   of ContentAudio:
     ctx.pushInlineText(computed, parent, ctx.lctx.audioText)
   of ContentNewline:
-    ctx.pushInline(InlineFragment(
-      t: iftNewline,
+    ctx.pushInline(InlineBox(
+      t: ibtNewline,
       computed: computed,
       node: child
     ))
 
 proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode;
     computed: CSSValues) =
-  let parent = InlineFragment(
-    t: iftParent,
+  let parent = InlineBox(
+    t: ibtParent,
     computed: computed,
     splitType: {stSplitStart}
   )
@@ -3255,8 +3255,8 @@ proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode;
       ctx.buildReplacement(child, styledNode, computed)
   ctx.reconstructInlineParents()
   ctx.flushInlineTable()
-  let fragment = ctx.inlineStackFragments.pop()
-  fragment.splitType.incl(stSplitEnd)
+  let box = ctx.inlineStackFragments.pop()
+  box.splitType.incl(stSplitEnd)
   ctx.inlineStack.setLen(ctx.inlineStack.high)
 
 proc newInnerBlockContext(styledNode: StyledNode; box: BlockBox;
@@ -3301,10 +3301,7 @@ proc buildBlock(ctx: var InnerBlockContext) =
     ctx.outer.inline = if ctx.inline != nil:
       ctx.inline
     else:
-      InlineFragment(
-        t: iftParent,
-        computed: ctx.lctx.myRootProperties
-      )
+      InlineBox(t: ibtParent, computed: ctx.lctx.myRootProperties)
     ctx.inline = nil
   ctx.flushInlineGroup()
 

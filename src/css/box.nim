@@ -48,30 +48,30 @@ type
     offset*: Offset
     size*: Size
 
-  InlineFragmentState* = object
+  InlineBoxState* = object
     startOffset*: Offset # offset of the first word, for position: absolute
-    areas*: seq[Area] # background that should be painted by fragment
+    areas*: seq[Area] # background that should be painted by box
     atoms*: seq[InlineAtom]
 
-  InlineFragmentType* = enum
-    iftParent, iftText, iftNewline, iftBitmap, iftBox
+  InlineBoxType* = enum
+    ibtParent, ibtText, ibtNewline, ibtBitmap, ibtBox
 
-  InlineFragment* = ref object
-    state*: InlineFragmentState
+  InlineBox* = ref object
+    state*: InlineBoxState
     render*: BoxRenderState
     computed*: CSSValues
     node*: StyledNode
     splitType*: set[SplitType]
-    case t*: InlineFragmentType
-    of iftParent:
-      children*: seq[InlineFragment]
-    of iftText:
+    case t*: InlineBoxType
+    of ibtParent:
+      children*: seq[InlineBox]
+    of ibtText:
       text*: StyledNode # note: this has no parent.
-    of iftNewline:
+    of ibtNewline:
       discard
-    of iftBitmap:
+    of ibtBitmap:
       bmp*: NetworkBitmap
-    of iftBox:
+    of ibtBox:
       box*: BlockBox
 
   Span* = object
@@ -88,7 +88,7 @@ type
     render*: BoxRenderState
     computed*: CSSValues
     node*: StyledNode
-    inline*: InlineFragment
+    inline*: InlineBox
     children*: seq[BlockBox]
 
 func offset*(x, y: LayoutUnit): Offset =

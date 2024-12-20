@@ -687,18 +687,18 @@ type GotoAnchorResult* = object
 
 proc findAnchor(box: BlockBox; anchor: Element): Offset
 
-proc findAnchor(fragment: InlineFragment; anchor: Element): Offset =
-  if fragment.t == iftBox:
-    let off = fragment.box.findAnchor(anchor)
+proc findAnchor(box: InlineBox; anchor: Element): Offset =
+  if box.t == ibtBox:
+    let off = box.box.findAnchor(anchor)
     if off.y >= 0:
       return off
-  elif fragment.t == iftParent:
-    for child in fragment.children:
+  elif box.t == ibtParent:
+    for child in box.children:
       let off = child.findAnchor(anchor)
       if off.y >= 0:
         return off
-  if fragment.node != nil and fragment.node.node == anchor:
-    return fragment.render.offset
+  if box.node != nil and box.node.node == anchor:
+    return box.render.offset
   return offset(-1, -1)
 
 proc findAnchor(box: BlockBox; anchor: Element): Offset =

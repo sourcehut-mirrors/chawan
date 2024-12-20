@@ -338,50 +338,50 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
   box: BlockBox; offset: Offset; pass2 = false)
 
-proc paintInlineFragment(grid: var FlexibleGrid; state: var RenderState;
-    fragment: InlineFragment; offset: Offset; bgcolor: CellColor) =
-  for area in fragment.state.areas:
+proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
+    box: InlineBox; offset: Offset; bgcolor: CellColor) =
+  for area in box.state.areas:
     let x1 = toInt(offset.x + area.offset.x)
     let y1 = toInt(offset.y + area.offset.y)
     let x2 = toInt(offset.x + area.offset.x + area.size.w)
     let y2 = toInt(offset.y + area.offset.y + area.size.h)
-    grid.paintBackground(state, bgcolor, x1, y1, x2, y2, fragment.node)
+    grid.paintBackground(state, bgcolor, x1, y1, x2, y2, box.node)
 
-proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
-    fragment: InlineFragment; offset: Offset; bgcolor0: ARGBColor;
+proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
+    box: InlineBox; offset: Offset; bgcolor0: ARGBColor;
     pass2 = false) =
-  let position = fragment.computed{"position"}
+  let position = box.computed{"position"}
   #TODO stacking contexts
-  let bgcolor = fragment.computed{"background-color"}
+  let bgcolor = box.computed{"background-color"}
   var bgcolor0 = bgcolor0
   if bgcolor.isCell:
     let bgcolor = bgcolor.cellColor()
     if bgcolor.t != ctNone:
-      grid.paintInlineFragment(state, fragment, offset, bgcolor)
+      grid.paintInlineBox(state, box, offset, bgcolor)
   else:
     bgcolor0 = bgcolor0.blend(bgcolor.argb)
     if bgcolor0.a > 0:
-      grid.paintInlineFragment(state, fragment, offset,
+      grid.paintInlineBox(state, box, offset,
         bgcolor0.rgb.cellColor())
-  let startOffset = offset + fragment.state.startOffset
-  fragment.render.offset = startOffset
-  if position notin PositionStaticLike and stSplitStart in fragment.splitType:
+  let startOffset = offset + box.state.startOffset
+  box.render.offset = startOffset
+  if position notin PositionStaticLike and stSplitStart in box.splitType:
     state.absolutePos.add(startOffset)
-  if fragment.t == iftParent:
-    for child in fragment.children:
-      grid.renderInlineFragment(state, child, offset, bgcolor0)
+  if box.t == ibtParent:
+    for child in box.children:
+      grid.renderInlineBox(state, child, offset, bgcolor0)
   else:
-    let format = fragment.computed.toFormat()
-    for atom in fragment.state.atoms:
+    let format = box.computed.toFormat()
+    for atom in box.state.atoms:
       let offset = offset + atom.offset
       case atom.t
       of iatInlineBlock:
         grid.renderBlockBox(state, atom.innerbox, offset)
       of iatWord:
-        if fragment.computed{"visibility"} == VisibilityVisible:
-          grid.setText(state, atom.str, offset, format, fragment.node)
+        if box.computed{"visibility"} == VisibilityVisible:
+          grid.setText(state, atom.str, offset, format, box.node)
       of iatImage:
-        if fragment.computed{"visibility"} == VisibilityVisible:
+        if box.computed{"visibility"} == VisibilityVisible:
           let x2p = offset.x + atom.size.w
           let y2p = offset.y + atom.size.h
           let clipBox = addr state.clipBoxes[^1]
@@ -394,7 +394,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
             let y2 = y2p.toInt
             # add StyledNode to background (but don't actually color it)
             grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
-              fragment.node, noPaint = true)
+              box.node, noPaint = true)
             let x = (offset.x div state.attrs.ppc).toInt
             let y = (offset.y div state.attrs.ppl).toInt
             let offx = (offset.x - x.toLayoutUnit * state.attrs.ppc).toInt
@@ -408,7 +408,7 @@ proc renderInlineFragment(grid: var FlexibleGrid; state: var RenderState;
               height: atom.size.h.toInt,
               bmp: atom.bmp
             ))
-  if position notin PositionStaticLike and stSplitEnd in fragment.splitType:
+  if position notin PositionStaticLike and stSplitEnd in box.splitType:
     discard state.absolutePos.pop()
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
@@ -480,7 +480,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     if box.computed{"visibility"} == VisibilityVisible and
         state.clipBox.start.x < state.clipBox.send.x and
         state.clipBox.start.y < state.clipBox.send.y:
-      grid.renderInlineFragment(state, box.inline, offset, rgba(0, 0, 0, 0))
+      grid.renderInlineBox(state, box.inline, offset, rgba(0, 0, 0, 0))
   else:
     for child in box.children:
       grid.renderBlockBox(state, child, offset)
