@@ -1187,9 +1187,6 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     space: space,
     bounds: lctx.resolveBounds(space, paddingSum, computed)
   )
-  # for tables, fit-content by default
-  if computed{"display"} == DisplayTableWrapper:
-    sizes.space.w = fitContent(sizes.space.w)
   # height is max-content normally, but fit-content for clip.
   sizes.space.h = if computed{"overflow-y"} != OverflowClip:
     maxContent()
@@ -2185,9 +2182,9 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
     table.state.size.w = max(row.state.size.w, table.state.size.w)
   # Note: we can't use applySizeConstraint here; in CSS, "height" on tables just
   # sets the minimum height.
-  case sizes.space.h.t
+  case tctx.space.h.t
   of scStretch:
-    table.state.size.h = max(sizes.space.h.u, y)
+    table.state.size.h = max(tctx.space.h.u, y)
   of scMinContent, scMaxContent, scFitContent:
     # I don't think these are ever used here; not that they make much sense for
     # min-height...
@@ -2222,16 +2219,24 @@ proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
 #      Distribute the table's content width among cells with an unspecified
 #      width. If this would give any cell a width < min_width, set that
 #      cell's width to min_width, then re-do the distribution.
-proc layoutTable(tctx: var TableContext; table: BlockBox;
+proc layoutTable(tctx: var TableContext; table, parent: BlockBox;
     sizes: ResolvedSizes) =
-  if tctx.space.w.t == scStretch:
-    table.state.intr.w = tctx.space.w.u
   if table.computed{"border-collapse"} != BorderCollapseCollapse:
     let spc = table.computed{"border-spacing"}
     if spc != nil:
       tctx.inlineSpacing = table.computed{"border-spacing"}.a.px(0)
       tctx.blockSpacing = table.computed{"border-spacing"}.b.px(0)
   tctx.preLayoutTableRows(table) # first pass
+  # Percentage sizes have been resolved; switch the table's space to
+  # fit-content if its width is auto.
+  # (Note that we call canpx on space, which might have been changed by
+  # specified width.  This isn't a problem however, because canpx will
+  # still return true after that.)
+  if tctx.space.w.t == scStretch:
+    if not parent.computed{"width"}.canpx(tctx.space.w):
+      tctx.space.w = fitContent(tctx.space.w.u)
+    else:
+      table.state.intr.w = tctx.space.w.u
   if tctx.needsRedistribution(table.computed):
     tctx.redistributeWidth()
   for col in tctx.cols:
@@ -2249,7 +2254,7 @@ proc layoutTableWrapper(bctx: BlockContext; box: BlockBox;
   let table = box.children[0]
   table.state = BoxLayoutState()
   var tctx = TableContext(lctx: bctx.lctx, space: sizes.space)
-  tctx.layoutTable(table, sizes)
+  tctx.layoutTable(table, box, sizes)
   box.state.size = table.state.size
   box.state.baseline = table.state.size.h
   box.state.firstBaseline = table.state.size.h
