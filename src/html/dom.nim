@@ -2193,12 +2193,12 @@ func hasPreviousSibling(node: Node; nodeType: type): bool =
     node = node.previousSibling
   return false
 
-func nodeValue(node: Node): Option[string] {.jsfget.} =
+func nodeValue(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   if node of CharacterData:
-    return some(CharacterData(node).data)
+    return ctx.toJS(CharacterData(node).data)
   elif node of Attr:
-    return some(Attr(node).data.value)
-  return none(string)
+    return ctx.toJS(Attr(node).data.value)
+  return JS_NULL
 
 func textContent*(node: Node): string =
   if node of CharacterData:
@@ -2209,12 +2209,13 @@ func textContent*(node: Node): string =
       if not (child of Comment):
         result &= child.textContent
 
-func jsTextContent(node: Node): Option[string] {.jsfget: "textContent".} =
+func textContent(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   if node of Document or node of DocumentType:
-    return none(string) # null
-  return some(node.textContent)
+    return JS_NULL
+  return ctx.toJS(node.textContent)
 
 func childTextContent*(node: Node): string =
+  result = ""
   for child in node.childList:
     if child of Text:
       result &= Text(child).data
@@ -4276,17 +4277,31 @@ proc replaceChild(parent, node, child: Node): DOMResult[Node] {.jsfunc.} =
 proc createTextNode*(document: Document; data: string): Text {.jsfunc.} =
   return newText(document, data)
 
-proc textContent*(node: Node; data: Option[string]) {.jsfset.} =
-  if node of Element or node of DocumentFragment:
-    let x = if data.isSome:
-      node.document.createTextNode(data.get)
-    else:
-      nil
-    node.replaceAll(x)
-  elif node of CharacterData:
-    CharacterData(node).data = data.get("")
+proc setNodeValue(ctx: JSContext; node: Node; data: JSValue): Err[void]
+    {.jsfset: "nodeValue".} =
+  if node of CharacterData:
+    var res = ""
+    if not JS_IsNull(data):
+      ?ctx.fromJS(data, res)
+    CharacterData(node).data = move(res)
   elif node of Attr:
-    value(Attr(node), data.get(""))
+    var res = ""
+    if not JS_IsNull(data):
+      ?ctx.fromJS(data, res)
+    Attr(node).value(move(res))
+  return ok()
+
+proc setTextContent(ctx: JSContext; node: Node; data: JSValue): Err[void]
+    {.jsfset: "textContent".} =
+  if node of Element or node of DocumentFragment:
+    if JS_IsNull(data):
+      node.replaceAll(nil)
+    else:
+      var res: string
+      ?ctx.fromJS(data, res)
+      node.replaceAll(node.document.createTextNode(move(res)))
+    return ok()
+  return ctx.setNodeValue(node, data)
 
 proc reset*(form: HTMLFormElement) =
   for control in form.controls:
