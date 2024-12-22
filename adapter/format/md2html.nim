@@ -663,7 +663,7 @@ proc readLine(state: var ParseState; line: var string): bool =
   return hadLine # add one last iteration with a blank after EOF
 
 proc main() =
-  var line: string
+  var line = ""
   var state = ParseState()
   while state.reprocess or state.readLine(line):
     state.reprocess = false

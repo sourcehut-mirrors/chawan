@@ -33,6 +33,7 @@ type
     params: string
 
 proc getParam(parser: AnsiCodeParser; i: var int; colon = false): string =
+  result = ""
   while i < parser.params.len and
       not (parser.params[i] == ';' or colon and parser.params[i] == ':'):
     result &= parser.params[i]
@@ -70,6 +71,7 @@ proc parseSGRDefColor(parser: AnsiCodeParser; format: var Format;
     set_color ANSIColor(param0).cellColor()
   else:
     return false
+  return true
 
 proc parseSGRColor(parser: AnsiCodeParser; format: var Format;
     i: var int; u: uint8): bool =

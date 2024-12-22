@@ -251,7 +251,7 @@ func `[]`*(pl: PathLines; i: BackwardsIndex): LineSegment = pl.lines[i]
 func len*(pl: PathLines): int = pl.lines.len
 
 iterator quadraticLines(a, b, c: Vector2D): Line {.inline.} =
-  var points: Deque[tuple[a, b, c: Vector2D]]
+  var points = initDeque[tuple[a, b, c: Vector2D]]()
   let tup = (a, b, c)
   points.addFirst(tup)
   while points.len > 2:
@@ -266,7 +266,7 @@ iterator quadraticLines(a, b, c: Vector2D): Line {.inline.} =
       points.addFirst((s, b, mid2))
 
 iterator bezierLines(p0, p1, c0, c1: Vector2D): Line {.inline.} =
-  var points: Deque[tuple[p0, p1, c0, c1: Vector2D]]
+  var points = initDeque[tuple[p0, p1, c0, c1: Vector2D]]()
   let tup = (p0, p1, c0, c1)
   points.addLast(tup)
   while points.len > 0:

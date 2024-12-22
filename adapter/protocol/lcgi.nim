@@ -49,7 +49,7 @@ proc connectSocket(os: PosixStream; host, port, resFail, connFail: string;
     ps.sclose()
     os.die(connFail)
   outIpv6 = res.ai_family == AF_INET6
-  freeaddrinfo(res)
+  freeAddrInfo(res)
   return ps
 
 proc authenticateSocks5(os, ps: PosixStream; buf: array[2, uint8];

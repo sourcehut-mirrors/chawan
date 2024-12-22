@@ -113,7 +113,7 @@ proc readErrorMsg(efile: File; line: var string): string =
   return msg
 
 proc processManpage(ofile, efile: File; header, keyword: string) =
-  var line: string
+  var line = ""
   # The "right thing" would be to check for the error code and output error
   # messages accordingly. Unfortunately that would prevent us from streaming
   # the output, so what we do instead is:
