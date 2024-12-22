@@ -56,7 +56,7 @@ const ChaVersionStrLong = block:
     s &= "no termcap"
   s & ")\n"
 
-proc help(i: int) =
+proc help(i: int) {.noreturn.} =
   let s = ChaVersionStr & """
 Usage: cha [options] [URL(s) or file(s)...]
 Options:
