@@ -6,7 +6,7 @@ chasc_defs_%.c: %.chasc common.chasc gen_defs chaseccomp.h
 	./gen_defs <$< >$@
 
 chasc_defs_%: chasc_defs_%.c
-	$(CC) $< -o $@
+	$(CC) $(CFLAGS) $< -o $@ $(LDFLAGS)
 
 %.chasc.expanded: chasc_defs_%
 	./$< >$@

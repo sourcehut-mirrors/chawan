@@ -13,6 +13,8 @@ cat <<EOF
 
 static void determine_audit_arch(int sig, siginfo_t *info, void *ucontext)
 {
+	(void)sig;
+	(void)ucontext;
 	printf("load arch\nifne %u deny\n", info->si_arch);
 }
 
