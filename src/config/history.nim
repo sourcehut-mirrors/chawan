@@ -44,6 +44,8 @@ proc add(hist: History; entry: HistoryEntry) =
   hist.last = entry
   inc hist.len
   if hist.len > hist.maxLen:
+    if hist.first.next != nil:
+      hist.first.next.prev = nil
     hist.first = hist.first.next
     if hist.first == nil:
       hist.last = nil
