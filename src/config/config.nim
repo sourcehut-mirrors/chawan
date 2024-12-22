@@ -218,9 +218,6 @@ proc contains*(a: ActionMap; b: string): bool =
 proc getOrDefault(a: ActionMap; b: string): string =
   return a.t.getOrDefault(b)
 
-proc hasKeyOrPut(a: var ActionMap; b, c: string): bool =
-  return a.t.hasKeyOrPut(b, c)
-
 func getRealKey(key: string): string =
   var realk: string
   var control = 0
@@ -276,8 +273,7 @@ proc setter(a: var ActionMap; k, v: string) {.jssetprop.} =
   var teststr = k
   teststr.setLen(teststr.high)
   for i in countdown(k.high, 0):
-    if teststr notin a:
-      a[teststr] = "client.feedNext()"
+    discard a.t.hasKeyOrPut(teststr, "client.feedNext()")
     teststr.setLen(i)
 
 proc delete(a: var ActionMap; k: string): bool {.jsdelprop.} =
@@ -520,10 +516,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
   for kk, vv in v:
     typeCheck(vv, tvtString, k & "[" & kk & "]")
     let rk = getRealKey(kk)
-    var buf: string
-    for i in 0 ..< rk.high:
-      buf &= rk[i]
-      discard x.hasKeyOrPut(buf, "client.feedNext()")
+    var buf = ""
+    for c in rk.toOpenArray(0, rk.high - 1):
+      buf &= c
+      x[buf] = "client.feedNext()"
     x[rk] = vv.s
 
 proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;

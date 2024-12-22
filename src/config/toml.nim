@@ -54,7 +54,7 @@ type
   TomlTable* = ref object of TomlNode
     key: seq[string]
     nodes: seq[TomlNode]
-    map: Table[string, TomlValue]
+    map: OrderedTable[string, TomlValue]
 
 func `$`*(val: TomlValue): string
 
