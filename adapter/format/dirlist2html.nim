@@ -1,9 +1,9 @@
 import std/algorithm
 import std/options
 import std/os
+import std/posix
 import std/strutils
 
-import utils/strwidth
 import utils/twtstr
 
 type DirlistItemType = enum
@@ -50,6 +50,19 @@ proc usage() =
   stderr.write("Usage: dirlist2html [-t title]\n")
   quit(1)
 
+# I'll just assume that wchar_t is int32, as it should be on any sane
+# system.
+
+type wchar_t {.importc.} = int32
+
+proc wcwidth(wc: wchar_t): cint {.importc, header: "<wchar.h>".}
+
+proc width(s: string): int =
+  var res: cint = 0
+  for u in s.points:
+    res += wcwidth(wchar_t(u))
+  return int(res)
+
 proc addItem(items: var seq[DirlistItem]; item: DirlistItem; maxw: var int) =
   if item.t == ditDir:
     item.name &= '/'
@@ -61,6 +74,11 @@ proc addItem(items: var seq[DirlistItem]; item: DirlistItem; maxw: var int) =
   items.add(item)
 
 proc parseInput(f: File; items: var seq[DirlistItem]; maxw: var int) =
+  # wcwidth wants a UTF-8 locale.
+  # I don't know how portable this is, but the worst thing that can
+  # happen is that too many dots are printed.
+  let thisUTF8 = ($setlocale(LC_CTYPE, nil)).until('.') & "UTF-8"
+  discard setlocale(LC_CTYPE, cstring(thisUTF8))
   var line: string
   while f.readLine(line):
     if line.len == 0: continue

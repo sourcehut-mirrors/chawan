@@ -30,29 +30,24 @@ func tabPUAPoint*(n: int): uint32 =
   assert u in TabPUARange
   return u
 
-# One of the few global variables in the code. Honestly, it should not exist.
-var isCJKAmbiguous* = false
+var isCJKAmbiguous* {.global.} = false
 
 # Warning: this shouldn't be called without normalization.
 func width*(u: uint32): int =
   if u <= 0xFFFF: # fast path for BMP
-    if u in CombiningTable:
-      return 0
     if u in DoubleWidthTable:
       return 2
+    if u in 0x80u32 .. 0x9Fu32:
+      # Represent Unicode control chars as [XX] where X is a hex digit.
+      return 4
     if u in TabPUARange:
       return int(((u - TabPUARange.a) and 7) + 1)
-    {.cast(noSideEffect).}:
-      if isCJKAmbiguous and DoubleWidthAmbiguousRanges.isInRange(u):
-        return 2
   else:
-    if Combining.isInRange(u):
-      return 0
     if DoubleWidthRanges.isInRange(u):
       return 2
-    {.cast(noSideEffect).}:
-      if isCJKAmbiguous and DoubleWidthAmbiguousRanges.isInRange(u):
-        return 2
+  {.cast(noSideEffect).}:
+    if isCJKAmbiguous and DoubleWidthAmbiguousRanges.isInRange(u):
+      return 2
   return 1
 
 func width*(s: openArray[char]): int =

@@ -29,7 +29,6 @@ type
     shifti: int # 0 ..< news.len
     padding: int # 0 or 1
     maxwidth: int
-    disallowed: set[char]
     hide: bool
     hist: History
     currHist: HistoryEntry
@@ -95,10 +94,8 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
       let w = u.width()
       if x + w > result.width: break
       if u.isControlChar():
-        result[x].str &= '^'
-        inc x
-        result[x].str &= char(u).getControlLetter()
-        inc x
+        result[x].str = u.controlToVisual()
+        x += result[x].str.len
       else:
         for j in pi ..< i:
           result[x].str &= edit.news[j]
@@ -112,10 +109,6 @@ proc getCursorX*(edit: LineEdit): int =
   return edit.promptw + edit.cursorx + edit.padding - edit.shiftx
 
 proc insertCharseq(edit: LineEdit; s: string) =
-  let s = if edit.escNext:
-    s
-  else:
-    deleteChars(s, edit.disallowed)
   edit.escNext = false
   if s.len == 0:
     return
@@ -301,14 +294,13 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
 proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1
 
-proc readLine*(prompt, current: string; termwidth: int; disallowed: set[char];
-    hide: bool; hist: History; luctx: LUContext): LineEdit =
+proc readLine*(prompt, current: string; termwidth: int; hide: bool;
+    hist: History; luctx: LUContext): LineEdit =
   let promptw = prompt.width()
   return LineEdit(
     prompt: prompt,
     promptw: promptw,
     news: current,
-    disallowed: disallowed,
     hide: hide,
     redraw: true,
     cursori: current.len,

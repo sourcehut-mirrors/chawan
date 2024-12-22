@@ -536,7 +536,7 @@ proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
     return
   if w != -1:
     for u in s.points:
-      assert u > 0x7F or char(u) notin Controls
+      assert u > 0x9F or u != 0x7F and u > 0x1F
       w += u.width()
   let L = res.len
   res.setLen(L + s.len)

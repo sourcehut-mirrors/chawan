@@ -1789,8 +1789,8 @@ proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor
       if nf.pos != -1 and nf.pos <= pw:
         cf = nf
         nf = line.findNextFormat(pw)
-      if u <= 0xFF and char(u) in Controls:
-        display[dls + k].str &= '^' & char(u).getControlLetter()
+      if u.isControlChar():
+        display[dls + k].str = u.controlToVisual()
       elif u in TabPUARange:
         for i in 0 ..< uw:
           display[dls + k].str &= ' '

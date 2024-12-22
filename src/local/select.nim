@@ -351,8 +351,8 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
       if nx > ex:
         break
       display[dls + x].str = ""
-      if u <= 0xFF and char(u) in Controls:
-        display[dls + x].str &= '^' & char(u).getControlLetter()
+      if u.isControlChar():
+        display[dls + x].str &= u.controlToVisual()
       else:
         for l in pj ..< j:
           display[dls + x].str &= select.options[i].s[l]

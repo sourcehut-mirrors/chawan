@@ -356,7 +356,7 @@ proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
   if pager.term.isatty() and pager.config.input.use_mouse:
     pager.term.disableMouse()
   pager.lineedit = readLine($mode & extraPrompt, current, pager.attrs.width,
-    {}, hide, hist, pager.luctx)
+    hide, hist, pager.luctx)
   pager.linemode = mode
 
 # Reuse the line editor as an alert message viewer.
@@ -892,9 +892,7 @@ proc writeStatusMessage(pager: Pager; str: string; format = Format();
       x = lx + 1 # clip must be 1 cell wide
       break
     if u.isControlChar():
-      pager.status.grid[x].str = "^"
-      pager.status.grid[x + 1].str = $getControlLetter(char(u))
-      pager.status.grid[x + 1].format = format
+      pager.status.grid[x].str = u.controlToVisual()
     else:
       pager.status.grid[x].str = u.toUTF8()
     pager.status.grid[x].format = format

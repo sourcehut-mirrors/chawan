@@ -90,18 +90,16 @@ $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim
 unicode_version = 16.0.0
 
 .PHONY: unicode_gen
-unicode_gen: $(OBJDIR)/genidna $(OBJDIR)/gencharwidth res/map/EastAsianWidth.txt
-	@printf 'Download EastAsianWidth.txt and IdnaMappingTable.txt from www.unicode.org? (y/n)'
+unicode_gen: $(OBJDIR)/genidna $(OBJDIR)/gencharwidth
+	@printf 'Download EastAsianWidth.txt and IdnaMappingTable.txt from www.unicode.org? (y/n) '
 	@read res; if test "$$res" = "y"; then \
-	cha -d 'https://www.unicode.org/Public/idna/$(unicode_version)/IdnaMappingTable.txt' >$@; \
-	cha -d 'https://www.unicode.org/Public/$(unicode_version)/ucd/EastAsianWidth.txt' >$@; \
-	else exit 1; fi
+	cha -d 'https://www.unicode.org/Public/idna/$(unicode_version)/IdnaMappingTable.txt' >res/map/IdnaMappingTable.txt; \
+	cha -d 'https://www.unicode.org/Public/$(unicode_version)/ucd/EastAsianWidth.txt' >res/map/EastAsianWidth.txt; \
+	fi
 	$(NIMC) --nimcache:"$(OBJDIR)/idna_gen_cache" -d:danger -o:"$(OBJDIR)/genidna" res/genidna.nim
 	$(NIMC) --nimcache:"$(OBJDIR)/charwidth_gen_cache" -d:danger -o:"$(OBJDIR)/gencharwidth" res/gencharwidth.nim
 	$(OBJDIR)/genidna > res/map/idna_gen.nim
 	$(OBJDIR)/gencharwidth > res/map/charwidth_gen.nim
-
-src/utils/strwidth.nim: res/map/charwidth_gen.nim src/utils/proptable.nim
 
 twtstr = src/utils/twtstr.nim src/utils/map.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim src/io/dynstream_aux.c
@@ -130,7 +128,7 @@ $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/gopher2html: $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim src/io/poll.nim $(twtstr) $(dynstream)
 $(OUTDIR_LIBEXEC)/md2html: $(twtstr)
-$(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr) src/utils/strwidth.nim
+$(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr)
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"

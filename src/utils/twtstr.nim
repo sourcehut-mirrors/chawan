@@ -121,17 +121,12 @@ func onlyWhitespace*(s: string): bool =
   return AllChars - AsciiWhitespace notin s
 
 func isControlChar*(u: uint32): bool =
-  return u <= 0x1F or u == 0x7F
+  return u <= 0x1F or u >= 0x7F and u <= 0x9F
 
 func getControlChar*(c: char): char =
   if c == '?':
     return char(127)
   return char(int(c) and 0x1F)
-
-func getControlLetter*(c: char): char =
-  if c == char(127):
-    return '?'
-  return char(int(c) or 0x40)
 
 func toHeaderCase*(s: string): string =
   result = s
@@ -209,6 +204,16 @@ func toHexLower*(u: uint16): string =
     s[i] = HexCharsLower[x and 0xF]
     x = x shr 4
   return s
+
+func controlToVisual*(u: uint32): string =
+  if u <= 0x1F:
+    return "^" & char(u or 0x40)
+  if u == 0x7F:
+    return "^?"
+  var res = "["
+  res.pushHex(uint8(u))
+  res &= ']'
+  return res
 
 proc add*(s: var string; u: uint8) =
   s.addInt(uint64(u))
@@ -603,12 +608,11 @@ func deleteChars*(s: openArray[char]; todel: set[char]): string =
 
 func replaceControls*(s: openArray[char]): string =
   result = newStringOfCap(s.len)
-  for c in s:
-    if c in Controls:
-      result &= '^'
-      result &= c.getControlLetter()
+  for u in s.points:
+    if u.isControlChar():
+      result &= u.controlToVisual()
     else:
-      result &= c
+      result.addUTF8(u)
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc makeCRLF*(s: openArray[char]): string =
