@@ -129,6 +129,10 @@ x => {
 '''
 
 [page]
+# pager commands, but define them before y so that they actually work.
+yu = 'cmd.pager.copyCursorLink'
+yI = 'cmd.pager.copyCursorImage'
+
 # buffer commands
 h = 'cmd.buffer.cursorLeft'
 j = 'cmd.buffer.cursorDown'
@@ -238,9 +242,6 @@ u = 'cmd.pager.peekCursor'
 su = 'cmd.pager.showFullAlert'
 C-w = 'cmd.pager.toggleWrap'
 M-y = 'cmd.pager.copyURL'
-yc = 'pager.alert("Please use `yu` to copy URLs")'
-yu = 'cmd.pager.copyCursorLink'
-yI = 'cmd.pager.copyCursorImage'
 M-p = 'cmd.pager.gotoClipboardURL'
 
 [line]
