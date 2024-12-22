@@ -141,7 +141,7 @@ proc parseArgs(title: var string) =
       of 't':
         inc i
         if i > H: usage()
-        title = paramStr(i).percentDecode()
+        title = paramStr(i)
       else:
         usage()
     inc i

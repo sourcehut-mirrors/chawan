@@ -171,7 +171,7 @@ const LIBSSH2_SFTP_S_IFLNK = 0o120000
 # do the same, just to be sure.
 proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
     handle: ptr LIBSSH2_SFTP_HANDLE; path: string) =
-  let title = percentEncode("Index of " & path, ComponentPercentEncodeSet)
+  let title = ("Index of " & path).mimeQuote()
   os.sendDataLoop("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   var buffer {.noinit.}: array[512, char]
   var longentry {.noinit.}: array[512, char]

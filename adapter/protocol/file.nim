@@ -4,8 +4,7 @@ import std/times
 import utils/twtstr
 
 proc loadDir(path, opath: string) =
-  let title = percentEncode("Directory list of " & path,
-    ComponentPercentEncodeSet)
+  let title = ("Directory list of " & path).mimeQuote()
   stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   for pc, file in walkDir(path, relative = true):
     let fullpath = path / file

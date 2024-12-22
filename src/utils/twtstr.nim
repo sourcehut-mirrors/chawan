@@ -672,6 +672,9 @@ func parseEnumNoCase*[T: enum](s: string): Opt[T] =
     return ok(T(n))
   return err()
 
+const tchar = AsciiAlphaNumeric +
+  {'!', '#'..'\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'}
+
 proc getContentTypeAttr*(contentType, attrname: string): string =
   var i = contentType.find(';')
   if i == -1:
@@ -683,18 +686,40 @@ proc getContentTypeAttr*(contentType, attrname: string): string =
   if i >= contentType.len or contentType[i] != '=':
     return ""
   i = contentType.skipBlanks(i + 1)
+  if i >= contentType.len:
+    return ""
   var q = false
   var s = ""
+  let dq = contentType[i] == '"'
+  if dq:
+    inc i
   for c in contentType.toOpenArray(i, contentType.high):
     if q:
       s &= c
       q = false
+    elif dq and c == '"':
+      break
     elif c == '\\':
       q = true
-    elif c in AsciiWhitespace + {';'}:
+    elif not dq and c notin tchar:
       break
     else:
       s &= c
+  return s
+
+# turn value into quoted-string
+proc mimeQuote*(value: string): string =
+  var s = newStringOfCap(value.len)
+  s &= '"'
+  var found = false
+  for c in value:
+    if c notin tchar:
+      s &= '\\'
+      found = true
+    s &= c
+  if not found:
+    return value
+  s &= '"'
   return s
 
 proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
@@ -719,10 +744,10 @@ proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
       q = false
     elif c == '\\':
       q = true
-    elif c in AsciiWhitespace + {';'}:
+    elif c notin tchar:
       break
     inc j
-  contentType[i..<j] = value
+  contentType[i..<j] = value.mimeQuote()
 
 func atob(c: char): uint8 {.inline.} =
   # see RFC 4648 table

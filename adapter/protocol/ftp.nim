@@ -111,7 +111,7 @@ proc main() =
       os.sendDataLoop("Status: 301\nLocation: " & path & "/\n")
       quit(0)
     discard os.sendCommand(ps, "LIST", "", obuf)
-    let title = percentEncode("Index of " & path, ComponentPercentEncodeSet)
+    let title = ("Index of " & path).mimeQuote()
     os.sendDataLoop("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   else:
     if os.sendCommand(ps, "RETR", path, obuf) == 550:
