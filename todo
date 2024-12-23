@@ -72,10 +72,6 @@ layout:
 - table layout: include caption in width calculation
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
-- saturation arithmetic for LayoutUnit
-	* easiest way: cast to 64-bit, then clamp
-		- performance would be abysmal on 32-bit architectures,
-		  better use nimAddInt there
 - layout caching
 	* sub-layout is done, now for reusing old trees
 	* use memcmp/memcpy for sizes check?

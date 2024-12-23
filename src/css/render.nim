@@ -259,11 +259,7 @@ proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
     x += s.nextUTF8(i).width()
   if x < sx: # highest x is outside the clipping box, no need to draw
     return
-  #TODO starting to think lunit should just clamp on overflow
-  var ex = int.high
-  if state.clipBox.send.x < LayoutUnit.high - state.attrs.ppc:
-    let tmp = (state.clipBox.send.x + state.attrs.ppc) div state.attrs.ppc
-    ex = tmp.toInt
+  let ex = ((state.clipBox.send.x + state.attrs.ppc) div state.attrs.ppc).toInt
   var j = i
   var targetX = x
   while targetX < ex and j < s.len:
