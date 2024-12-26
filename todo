@@ -1,6 +1,8 @@
-compilation:
-- reduce binary size
-	* fbf for unifont
+reduce binary size:
+- fbf for unifont
+- init some JS APIs from byte-code compiled JS?
+	* ones that return static values could just use a
+	  defineProperty. e.g. most of navigator, parts of screen
 charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
