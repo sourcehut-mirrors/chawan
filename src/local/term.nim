@@ -680,11 +680,11 @@ proc applyConfig(term: Terminal) =
       if cs != CHARSET_UNKNOWN:
         term.cs = cs
         break
-    if term.cs in {CHARSET_UTF_8, CHARSET_UTF_16_LE, CHARSET_UTF_16_BE,
-        CHARSET_REPLACEMENT}:
-      term.cs = CHARSET_UTF_8
-    else:
-      term.te = newTextEncoder(term.cs)
+  if term.cs in {CHARSET_UTF_8, CHARSET_UTF_16_LE, CHARSET_UTF_16_BE,
+      CHARSET_REPLACEMENT}:
+    term.cs = CHARSET_UTF_8
+  else:
+    term.te = newTextEncoder(term.cs)
   term.applyConfigDimensions()
 
 proc outputGrid*(term: Terminal) =
