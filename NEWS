@@ -1,3 +1,6 @@
+0.8.0 (2024.12.26)
+* update QuickJS-NG to 0.8.0
+
 0.7.2 (2024.11.25)
 * fix some deinitialization bugs on JSRuntime.free
 The test suite was being run for ORC only, so it failed to catch bugs
