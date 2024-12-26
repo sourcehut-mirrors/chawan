@@ -7,3 +7,6 @@ force-columns = true
 force-lines = true
 force-pixels-per-column = true
 force-pixels-per-line = true
+
+[buffer]
+images = true

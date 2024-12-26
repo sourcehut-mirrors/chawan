@@ -64,8 +64,8 @@ type
   AvailableSpace = array[DimensionType, SizeConstraint]
 
   Bounds = object
-    a: array[DimensionType, Span]
-    minClamp: array[DimensionType, LayoutUnit]
+    a: array[DimensionType, Span] # width clamp
+    mi: array[DimensionType, Span] # intrinsic clamp
 
   ResolvedSizes = object
     margin: RelativeRect
@@ -86,12 +86,6 @@ func minHeight(sizes: ResolvedSizes): LayoutUnit =
 
 func maxHeight(sizes: ResolvedSizes): LayoutUnit =
   return sizes.bounds.a[dtVertical].send
-
-proc addMinWidthClamp(bounds: var Bounds; u: LayoutUnit) =
-  bounds.minClamp[dtHorizontal] = min(bounds.minClamp[dtHorizontal], u)
-
-proc addMinHeightClamp(bounds: var Bounds; u: LayoutUnit) =
-  bounds.minClamp[dtVertical] = min(bounds.minClamp[dtVertical], u)
 
 func sum(span: Span): LayoutUnit =
   return span.start + span.send
@@ -971,32 +965,41 @@ func resolvePositioned(lctx: LayoutContext; size: Size;
 
 const DefaultBounds = Bounds(
   a: [DefaultSpan, DefaultSpan],
-  minClamp: [LayoutUnit.high, LayoutUnit.high]
+  mi: [DefaultSpan, DefaultSpan]
 )
 
 func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
-    computed: CSSValues): Bounds =
+    computed: CSSValues; flexItem = false): Bounds =
   var res = DefaultBounds
   block:
     let sc = space.w
     let padding = padding[dtHorizontal]
-    if computed{"min-width"}.canpx(sc):
-      let px = computed{"min-width"}.spx(sc, computed, padding)
-      res.a[dtHorizontal].start = px
-      res.minClamp[dtHorizontal] = px
     if computed{"max-width"}.canpx(sc):
       let px = computed{"max-width"}.spx(sc, computed, padding)
       res.a[dtHorizontal].send = px
+      if computed{"max-width"}.u == clPx:
+        res.mi[dtHorizontal].send = px
+    if computed{"min-width"}.canpx(sc):
+      let px = computed{"min-width"}.spx(sc, computed, padding)
+      res.a[dtHorizontal].start = px
+      if computed{"min-width"}.u == clPx:
+        res.mi[dtHorizontal].start = px
+        if flexItem: # for flex items, min-width overrides the intrinsic size.
+          res.mi[dtHorizontal].send = px
   block:
     let sc = space.h
-    let padding = padding[dtHorizontal]
-    if computed{"min-height"}.canpx(sc):
-      let px = computed{"min-height"}.spx(sc, computed, padding)
-      res.a[dtVertical].start = px
-      res.minClamp[dtVertical] = px
+    let padding = padding[dtVertical]
     if computed{"max-height"}.canpx(sc):
       let px = computed{"max-height"}.spx(sc, computed, padding)
       res.a[dtVertical].send = px
+      res.mi[dtVertical].send = px
+    if computed{"min-height"}.canpx(sc):
+      let px = computed{"min-height"}.spx(sc, computed, padding)
+      res.a[dtVertical].start = px
+      if computed{"min-height"}.u == clPx:
+        res.mi[dtVertical].start = px
+        if flexItem:
+          res.mi[dtVertical].send = px
   return res
 
 const CvalSizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
@@ -1078,19 +1081,20 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     margin: lctx.resolveMargins(space.w, computed),
     padding: padding,
     space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed)
+    bounds: lctx.resolveBounds(space, paddingSum, computed, flexItem = true)
   )
   if dim != dtHorizontal:
     sizes.space.h = maxContent()
   let length = computed.objs[CvalSizeMap[dim]].length
   if length.canpx(space[dim]):
     let u = length.spx(space[dim], computed, paddingSum[dim])
-    sizes.space[dim] = SizeConstraint(
-      t: sizes.space[dim].t,
-      u: minClamp(u, sizes.bounds.a[dim])
-    )
-    sizes.bounds.minClamp[dim] = min(sizes.space[dim].u,
-      sizes.bounds.minClamp[dim])
+      .minClamp(sizes.bounds.a[dim])
+    sizes.space[dim] = stretch(u)
+    if length.u == clPx:
+      if computed{"flex-shrink"} == 0:
+        sizes.bounds.mi[dim].start = max(u, sizes.bounds.mi[dim].start)
+      if computed{"flex-grow"} == 0:
+        sizes.bounds.mi[dim].send = min(u, sizes.bounds.mi[dim].send)
   elif sizes.bounds.a[dim].send < LayoutUnit.high:
     sizes.space[dim] = fitContent(sizes.bounds.a[dim].max())
   else:
@@ -1101,9 +1105,11 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
   let olength = computed.objs[CvalSizeMap[odim]].length
   if olength.canpx(space[odim]):
     let u = olength.spx(space[odim], computed, paddingSum[odim])
-    sizes.space[odim] = stretch(minClamp(u, sizes.bounds.a[odim]))
-    sizes.bounds.minClamp[odim] = min(sizes.space[odim].u,
-      sizes.bounds.minClamp[odim])
+      .minClamp(sizes.bounds.a[odim])
+    sizes.space[odim] = stretch(u)
+    if olength.u == clPx:
+      sizes.bounds.mi[odim].start = max(u, sizes.bounds.mi[odim].start)
+      sizes.bounds.mi[odim].send = min(u, sizes.bounds.mi[odim].send)
   elif sizes.space[odim].isDefinite():
     let u = sizes.space[odim].u - sizes.margin[odim].sum() - paddingSum[odim]
     sizes.space[odim] = SizeConstraint(
@@ -1117,14 +1123,18 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
 proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     inlinePadding: LayoutUnit; computed: CSSValues;
     lctx: LayoutContext) =
+  let dim = dtHorizontal
   let width = computed{"width"}
   if width.canpx(parentWidth):
     sizes.space.w = stretch(width.spx(parentWidth, computed, inlinePadding))
-    sizes.bounds.addMinWidthClamp(sizes.space.w.u)
     sizes.resolveUnderflow(parentWidth, computed)
+    if width.u == clPx:
+      let px = sizes.space.w.u
+      sizes.bounds.mi[dim].start = max(sizes.bounds.mi[dim].start, px)
+      sizes.bounds.mi[dim].send = min(sizes.bounds.mi[dim].send, px)
   elif sizes.space.w.isDefinite():
-    let underflow = parentWidth.u - sizes.margin[dtHorizontal].sum() -
-      sizes.padding[dtHorizontal].sum()
+    let underflow = parentWidth.u - sizes.margin[dim].sum() -
+      sizes.padding[dim].sum()
     if underflow >= 0:
       sizes.space.w = SizeConstraint(t: sizes.space.w.t, u: underflow)
     else:
@@ -1137,8 +1147,8 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     else: # scFitContent
       # available width could be higher than max-width (but not necessarily)
       sizes.space.w = fitContent(sizes.maxWidth)
-    sizes.bounds.addMinWidthClamp(sizes.space.w.u)
     sizes.resolveUnderflow(parentWidth, computed)
+    sizes.bounds.mi[dim].send = sizes.space.w.u
   if sizes.space.w.isDefinite() and sizes.minWidth > sizes.space.w.u or
       sizes.minWidth > 0 and sizes.space.w.t == scMinContent:
     # two cases:
@@ -1147,19 +1157,19 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     # * available width is fit under min-width. in this case, stretch to
     #   min-width as well (as we must satisfy min-width >= width).
     sizes.space.w = stretch(sizes.minWidth)
-    sizes.bounds.addMinWidthClamp(sizes.space.w.u)
     sizes.resolveUnderflow(parentWidth, computed)
-  sizes.bounds.addMinWidthClamp(sizes.maxWidth)
-  if sizes.minWidth > 0:
-    sizes.bounds.addMinWidthClamp(sizes.minWidth)
 
 proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
     blockPadding: LayoutUnit; computed: CSSValues;
     lctx: LayoutContext) =
+  let dim = dtVertical
   let height = computed{"height"}
   if height.canpx(parentHeight):
-    sizes.space.h = stretch(height.spx(parentHeight, computed, blockPadding))
-    sizes.bounds.addMinHeightClamp(sizes.space.h.u)
+    let px = height.spx(parentHeight, computed, blockPadding)
+    sizes.space.h = stretch(px)
+    if height.u == clPx:
+      sizes.bounds.mi[dim].start = max(sizes.bounds.mi[dim].start, px)
+      sizes.bounds.mi[dim].send = min(sizes.bounds.mi[dim].send, px)
   if sizes.space.h.isDefinite() and sizes.maxHeight < sizes.space.h.u or
       sizes.maxHeight < LayoutUnit.high and sizes.space.h.t == scMaxContent:
     # same reasoning as for width.
@@ -1167,15 +1177,10 @@ proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
       sizes.space.h = stretch(sizes.maxHeight)
     else: # scFitContent
       sizes.space.h = fitContent(sizes.maxHeight)
-    sizes.bounds.addMinHeightClamp(sizes.space.h.u)
   if sizes.space.h.isDefinite() and sizes.minHeight > sizes.space.h.u or
       sizes.minHeight > 0 and sizes.space.h.t == scMinContent:
     # same reasoning as for width.
     sizes.space.h = stretch(sizes.minHeight)
-    sizes.bounds.addMinHeightClamp(sizes.space.h.u)
-  sizes.bounds.addMinHeightClamp(sizes.maxHeight)
-  if sizes.minHeight > 0:
-    sizes.bounds.addMinHeightClamp(sizes.minHeight)
 
 proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     computed: CSSValues): ResolvedSizes =
@@ -1222,25 +1227,22 @@ proc applySize(box: BlockBox; sizes: ResolvedSizes;
   # Make the box as small/large as the content's width or specified width.
   box.state.size[dim] = maxChildSize.applySizeConstraint(space[dim])
   # Then, clamp it to minWidth and maxWidth (if applicable).
-  box.state.size[dim] = minClamp(box.state.size[dim], sizes.bounds.a[dim])
+  box.state.size[dim] = box.state.size[dim].minClamp(sizes.bounds.a[dim])
 
-proc clampIntr(box: BlockBox; sizes: ResolvedSizes) =
-  # We do not have a scroll bar, so do the next best thing: expand the
-  # box to the size its contents want.
-  #TODO this is far from perfect. For one, intrinsic minimum size isn't
-  # guaranteed to equal the desired scroll size. Also, it's possible
-  # that a parent box clamps the height of this box; in that case,
-  # the parent box's width/height should be clamped to the inner scroll
-  # width/height instead.
-  # Anyway, it is a pretty good approximation for now.
-  if box.computed{"overflow-x"} notin OverflowScrollLike:
-    box.state.intr.w = min(box.state.intr.w, sizes.bounds.minClamp[dtHorizontal])
-  else:
-    box.state.size.w = max(box.state.size.w, box.state.intr.w)
-  if box.computed{"overflow-y"} notin OverflowScrollLike:
-    box.state.intr.h = min(box.state.intr.h, sizes.bounds.minClamp[dtVertical])
-  else:
-    box.state.size.h = max(box.state.size.h, box.state.intr.h)
+proc applyIntr(box: BlockBox; sizes: ResolvedSizes; intr: Size) =
+  for dim in DimensionType:
+    const pt = [dtHorizontal: cptOverflowX, dtVertical: cptOverflowY]
+    if box.computed.bits[pt[dim]].overflow notin OverflowScrollLike:
+      box.state.intr[dim] = intr[dim].minClamp(sizes.bounds.mi[dim])
+    else:
+      # We do not have a scroll bar, so do the next best thing: expand the
+      # box to the size its contents want.
+      #TODO intrinsic minimum size isn't really guaranteed to equal the
+      # desired scroll size. Also, it's possible that a parent box clamps
+      # the height of this box; in that case, the parent box's
+      # width/height should be clamped to the inner scroll width/height
+      # instead.
+      box.state.size[dim] = max(box.state.size[dim], intr[dim])
 
 proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
     maxChildWidth: LayoutUnit; space: AvailableSpace) =
@@ -1491,8 +1493,7 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.state.size.w = ictx.state.size.w + sizes.padding[dtHorizontal].sum()
   box.applyWidth(sizes, ictx.state.size.w)
   box.applyHeight(sizes, ictx.state.size.h)
-  box.state.intr = ictx.state.intr
-  box.clampIntr(sizes)
+  box.applyIntr(sizes, ictx.state.intr)
   box.applyPadding(sizes.padding)
   box.state.baseline = ictx.state.baseline
   box.state.firstBaseline = ictx.state.firstBaseline
@@ -1636,6 +1637,13 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     bmp: bmp,
     size: size(w = bmp.width, h = bmp.height) #TODO overflow
   )
+  #TODO this is hopelessly broken.
+  # The core problem is that we generate an inner and an outer box for
+  # images, and achieving an acceptable image sizing algorithm with this
+  # setup is practicaully impossible.
+  # Accordingly, a correct solution would either handle block-level
+  # images separately, or at least resolve the outer box's sizes with
+  # the knowledge that it is an image.
   let computed = state.box.computed
   let hasWidth = computed{"width"}.canpx(ictx.space.w)
   let hasHeight = computed{"height"}.canpx(ictx.space.h)
@@ -1690,9 +1698,9 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     #
     # So check if any dimension is fixed, and if yes, report the intrinsic
     # minimum dimension as that or the atom size (whichever is greater).
-    if ictx.space.w.t == scStretch or hasWidth or hasMinWidth:
+    if computed{"width"}.u != clPerc or computed{"min-width"}.u != clPerc:
       ictx.state.intr.w = max(ictx.state.intr.w, atom.size.w)
-    if ictx.space.h.t == scStretch or hasHeight or hasMinHeight:
+    if computed{"height"}.u != clPerc or computed{"min-height"}.u != clPerc:
       ictx.lbstate.intrh = max(ictx.lbstate.intrh, atom.size.h)
 
 proc layoutInline(ictx: var InlineContext; box: InlineBox) =
@@ -2305,6 +2313,7 @@ type
     offset: Offset
     lctx: LayoutContext
     totalMaxSize: Size
+    intr: Size # intrinsic minimum size
     box: BlockBox
     relativeChildren: seq[BlockBox]
     redistSpace: SizeConstraint
@@ -2365,14 +2374,18 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LayoutUnit;
           it.weights[wt] = 0
           mctx.shrinkSize -= it.child.state.size[dim]
         u = minu
-      let maxu = it.sizes.bounds.a[dim].max()
+        it.sizes.bounds.mi[dim].start = u
+      let maxu = max(minu, it.sizes.bounds.a[dim].send)
       if maxu < u:
         # max violation
         if wt == fwtGrow: # freeze
           diff += u - maxu
           it.weights[wt] = 0
         u = maxu
-      it.sizes.space[dim] = stretch(u - it.sizes.padding[dim].sum())
+        it.sizes.bounds.mi[dim].send = u
+      u -= it.sizes.padding[dim].sum()
+      it.sizes.space[dim] = stretch(u)
+      # override minimum intrinsic size clamping too
       totalWeight += it.weights[wt]
       #TODO we should call this only on freeze, and then put another loop to
       # the end for non-frozen items
@@ -2380,7 +2393,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LayoutUnit;
       mctx.updateMaxSizes(it.child, it.sizes)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
-    sizes: ResolvedSizes; dim: DimensionType) =
+    sizes: ResolvedSizes; dim: DimensionType; canWrap: bool) =
   let odim = dim.opposite
   let lctx = fctx.lctx
   if fctx.redistSpace.isDefinite:
@@ -2412,8 +2425,11 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     it.child.state.offset[odim] += offset[odim] + it.sizes.margin[odim].start
     offset[dim] += it.child.state.size[dim]
     offset[dim] += it.sizes.margin[dim].send
-    intr[dim] += it.child.state.intr[dim]
-    intr[dim] += it.sizes.margin[dim].send
+    let intru = it.child.state.intr[dim] + it.sizes.margin[dim].sum()
+    if canWrap:
+      intr[dim] = max(intr[dim], intru)
+    else:
+      intr[dim] += intru
     intr[odim] = max(it.child.state.intr[odim], intr[odim])
     if it.child.computed{"position"} == PositionRelative:
       fctx.relativeChildren.add(it.child)
@@ -2421,8 +2437,8 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       fctx.box.applyOverflowDimensions(it.child)
   fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
   fctx.mains.add(mctx)
-  fctx.box.state.intr[dim] = max(fctx.box.state.intr[dim], intr[dim])
-  fctx.box.state.intr[odim] += intr[odim] + maxMarginSum
+  fctx.intr[dim] = max(fctx.intr[dim], intr[dim])
+  fctx.intr[odim] += intr[odim] + maxMarginSum
   mctx = FlexMainContext()
   fctx.offset[odim] += h
 
@@ -2470,7 +2486,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     if canWrap and (sizes.space[dim].t == scMinContent or
         sizes.space[dim].isDefinite and
         mctx.totalSize[dim] + child.state.size[dim] > sizes.space[dim].u):
-      fctx.flushMain(mctx, sizes, dim)
+      fctx.flushMain(mctx, sizes, dim, canWrap)
     let outerSize = child.outerSize(dim, childSizes)
     mctx.updateMaxSizes(child, childSizes)
     let grow = child.computed{"flex-grow"}
@@ -2486,11 +2502,13 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       sizes: childSizes
     ))
   if mctx.pending.len > 0:
-    fctx.flushMain(mctx, sizes, dim)
+    fctx.flushMain(mctx, sizes, dim, canWrap)
   box.applyBaseline()
-  box.applySize(sizes, fctx.totalMaxSize[dim], sizes.space, dim)
-  box.applySize(sizes, fctx.offset[odim], sizes.space, odim)
-  box.clampIntr(sizes)
+  var size = fctx.totalMaxSize
+  size[odim] = fctx.offset[odim]
+  box.applySize(sizes, size[dim], sizes.space, dim)
+  box.applySize(sizes, size[odim], sizes.space, odim)
+  box.applyIntr(sizes, fctx.intr)
   for child in fctx.relativeChildren:
     lctx.positionRelative(box, child)
     box.applyOverflowDimensions(child)
@@ -2806,10 +2824,13 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.applyBaseline()
   # Apply width, and height. For height, temporarily remove padding we have
   # applied before so that percentage resolution works correctly.
-  box.applyWidth(sizes, state.maxChildWidth, state.space)
-  box.applyHeight(sizes, state.offset.y - sizes.padding.top)
-  box.state.intr = state.intr
-  box.clampIntr(sizes)
+  let childSize = size(
+    w = state.maxChildWidth,
+    h = state.offset.y - sizes.padding.top
+  )
+  box.applyWidth(sizes, childSize.w, state.space)
+  box.applyHeight(sizes, childSize.h)
+  box.applyIntr(sizes, state.intr)
   # `position: relative' percentages can now be resolved.
   for child in state.relativeChildren:
     lctx.positionRelative(box, child)
