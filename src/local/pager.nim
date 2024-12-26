@@ -1880,6 +1880,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     .add(pager.config.external.urimethodmap.imageProtos)
   if res.images:
     res.imageTypes = pager.config.external.mime_types.image
+  res.userAgent = loaderConfig.defaultHeaders.getOrDefault("User-Agent")
   return res
 
 # Load request in a new buffer.

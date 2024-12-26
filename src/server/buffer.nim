@@ -136,6 +136,7 @@ type
     charsets*: seq[Charset]
     protocol*: Table[string, ProtocolConfig]
     imageTypes*: Table[string, string]
+    userAgent*: string
 
   GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.nimcall.}
 
@@ -1942,7 +1943,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
       loader,
       url,
       urandom,
-      config.imageTypes
+      config.imageTypes,
+      config.userAgent
     )
   )
   if buffer.config.scripting:

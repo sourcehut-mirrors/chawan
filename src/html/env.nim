@@ -37,9 +37,8 @@ proc appVersion(navigator: var Navigator): string {.jsfget.} = "5.0 (Windows)"
 proc platform(navigator: var Navigator): string {.jsfget.} = "Win32"
 proc product(navigator: var Navigator): string {.jsfget.} = "Gecko"
 proc productSub(navigator: var Navigator): string {.jsfget.} = "20100101"
-proc userAgent(navigator: var Navigator): string {.jsfget.} =
-  #TODO TODO TODO this should be configurable
-  "chawan"
+proc userAgent(ctx: JSContext; navigator: var Navigator): string {.jsfget.} =
+  return ctx.getWindow().userAgent
 proc vendor(navigator: var Navigator): string {.jsfget.} = ""
 proc vendorSub(navigator: var Navigator): string {.jsfget.} = ""
 proc taintEnabled(navigator: var Navigator): bool {.jsfget.} = false
@@ -334,7 +333,7 @@ proc runJSJobs*(window: Window) =
 
 proc newWindow*(scripting, images, styling: bool; attrs: WindowAttributes;
     factory: CAtomFactory; loader: FileLoader; url: URL; urandom: PosixStream;
-    imageTypes: Table[string, string]): Window =
+    imageTypes: Table[string, string]; userAgent: string): Window =
   let err = newDynFileStream(stderr)
   let window = Window(
     attrs: attrs,
@@ -349,7 +348,8 @@ proc newWindow*(scripting, images, styling: bool; attrs: WindowAttributes;
     ),
     factory: factory,
     urandom: urandom,
-    imageTypes: imageTypes
+    imageTypes: imageTypes,
+    userAgent: userAgent
   )
   window.location = window.newLocation()
   if scripting:

@@ -108,6 +108,7 @@ type
     pendingCanvasCtls*: seq[CanvasRenderingContext2D]
     urandom*: PosixStream
     imageTypes*: Table[string, string]
+    userAgent*: string
 
   # Navigator stuff
   Navigator* = object
