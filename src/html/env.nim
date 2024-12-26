@@ -41,7 +41,7 @@ proc userAgent(ctx: JSContext; navigator: var Navigator): string {.jsfget.} =
   return ctx.getWindow().userAgent
 proc vendor(navigator: var Navigator): string {.jsfget.} = ""
 proc vendorSub(navigator: var Navigator): string {.jsfget.} = ""
-proc taintEnabled(navigator: var Navigator): bool {.jsfget.} = false
+proc taintEnabled(navigator: var Navigator): bool {.jsfunc.} = false
 proc oscpu(navigator: var Navigator): string {.jsfget.} = "Windows NT 10.0"
 
 # NavigatorLanguage
