@@ -2075,7 +2075,7 @@ func nodeName(node: Node): string {.jsfget.} =
 func scriptingEnabled*(document: Document): bool =
   if document.window == nil:
     return false
-  return document.window.settings.scripting
+  return document.window.settings.scripting != smFalse
 
 func scriptingEnabled(element: Element): bool =
   return element.document.scriptingEnabled

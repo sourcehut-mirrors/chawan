@@ -8,6 +8,7 @@ import chame/tags
 import html/catom
 import html/dom
 import html/enums
+import html/script
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -264,7 +265,9 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
 
 proc newHTML5ParserWrapper*(window: Window; url: URL; factory: CAtomFactory;
     confidence: CharsetConfidence; charset: Charset): HTML5ParserWrapper =
-  let opts = HTML5ParserOpts[Node, CAtom](scripting: window.settings.scripting)
+  let opts = HTML5ParserOpts[Node, CAtom](
+    scripting: window.settings.scripting != smFalse
+  )
   let builder = newChaDOMBuilder(url, window, factory, confidence, charset)
   let wrapper = HTML5ParserWrapper(
     builder: builder,

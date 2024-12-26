@@ -9,6 +9,7 @@ import config/mailcap
 import config/mimetypes
 import config/toml
 import config/urimethodmap
+import html/script
 import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
@@ -63,7 +64,7 @@ type
     third_party_cookie*: seq[Regex]
     share_cookie_jar*: Option[string]
     referer_from*: Option[bool]
-    scripting*: Option[bool]
+    scripting*: Option[ScriptingMode]
     document_charset*: seq[Charset]
     images*: Option[bool]
     styling*: Option[bool]
@@ -159,7 +160,7 @@ type
 
   BufferSectionConfig* = object
     styling* {.jsgetset.}: bool
-    scripting* {.jsgetset.}: bool
+    scripting* {.jsgetset.}: ScriptingMode
     images* {.jsgetset.}: bool
     cookie* {.jsgetset.}: bool
     referer_from* {.jsgetset.}: bool
@@ -330,6 +331,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
   k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
+  k: string)
 proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
@@ -481,6 +484,17 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
     x = cmTrueColor
   else:
     raise newException(ValueError, "unknown color mode '" & v.s &
+      "' for key " & k)
+
+proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
+    k: string) =
+  typeCheck(v, {tvtString, tvtBoolean}, k)
+  if v.t == tvtBoolean:
+    x = if v.b: smTrue else: smFalse
+  elif v.s == "app":
+    x = smApp
+  else:
+    raise newException(ValueError, "unknown scripting mode '" & v.s &
       "' for key " & k)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;

@@ -144,8 +144,12 @@ Defaults to true (i.e. enabled).</td>
 
 <tr>
 <td>scripting</td>
-<td>boolean</td>
+<td>boolean / "app"</td>
 <td>Enable/disable JavaScript in *all* buffers.<br>
+`"app"` also enables JavaScript APIs that can be used to fingerprint
+users (e.g. querying the window's size.)<br>
+This may achieve better compatibility with websites that behave like
+applications, at the cost of reduced privacy.<br>
 Defaults to false. For security reasons, users are encouraged to selectively
 enable JavaScript with `[[siteconf]]` instead of using this setting.</td>
 </tr>
@@ -841,9 +845,11 @@ Overrides `buffer.referer-from`.
 
 <tr>
 <td>scripting</td>
-<td>boolean</td>
+<td>boolean / "app"</td>
 <td>Enable/disable JavaScript execution on this site. Overrides
-`buffer.scripting`.</td>
+`buffer.scripting`.<br>
+See the description of `buffer.scripting` for an explanation of
+"app".</td>
 </tr>
 
 <tr>

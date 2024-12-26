@@ -14,6 +14,7 @@ import css/stylednode
 import html/catom
 import html/dom
 import html/enums
+import html/script
 import types/color
 import types/jscolor
 import types/opt
@@ -48,7 +49,7 @@ func applies(feature: MediaFeature; window: Window): bool =
   of mftHeight:
     return feature.appliesLR(window, float64(window.attrs.heightPx))
   of mftScripting:
-    return feature.b == window.settings.scripting
+    return feature.b == (window.settings.scripting != smFalse)
 
 func applies(mq: MediaQuery; window: Window): bool =
   case mq.t

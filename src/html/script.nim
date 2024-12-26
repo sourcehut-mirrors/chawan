@@ -5,6 +5,11 @@ import types/url
 import utils/twtstr
 
 type
+  ScriptingMode* = enum
+    smFalse = "false"
+    smTrue = "true"
+    smApp = "app"
+
   ParserMetadata* = enum
     pmParserInserted, pmNotParserInserted
 
@@ -44,7 +49,7 @@ type
 
 type
   EnvironmentSettings* = ref object
-    scripting*: bool
+    scripting*: ScriptingMode
     moduleMap*: ModuleMap
     origin*: Origin
 

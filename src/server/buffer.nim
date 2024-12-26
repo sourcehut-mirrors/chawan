@@ -25,6 +25,7 @@ import html/enums
 import html/env
 import html/event
 import html/formdata as formdata_impl
+import html/script
 import io/bufreader
 import io/bufwriter
 import io/console
@@ -127,7 +128,7 @@ type
     userstyle*: string
     refererFrom*: bool
     styling*: bool
-    scripting*: bool
+    scripting*: ScriptingMode
     images*: bool
     isdump*: bool
     autofocus*: bool
@@ -1081,7 +1082,7 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
     ))
   buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
-  if buffer.config.scripting:
+  if buffer.config.scripting != smFalse:
     buffer.dispatchDOMContentLoadedEvent()
   buffer.pollData.unregister(buffer.fd)
   buffer.loader.unregistered.add(buffer.fd)
@@ -1152,7 +1153,7 @@ proc onload(buffer: Buffer) =
         discard buffer.maybeReshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
-        if buffer.config.scripting:
+        if buffer.config.scripting != smFalse:
           buffer.dispatchLoadEvent()
           for ctx in buffer.window.pendingCanvasCtls:
             ctx.ps.sclose()
@@ -1461,7 +1462,7 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
   if url.isSome:
     var url = url.get
     if url.scheme == "javascript":
-      if not buffer.config.scripting:
+      if buffer.config.scripting == smFalse:
         return ClickResult(repaint: repaint)
       let s = buffer.evalJSURL(url)
       if buffer.maybeReshape():
@@ -1601,7 +1602,7 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
   var repaint = false
   var canceled = false
   let clickable = buffer.getCursorClickable(cursorx, cursory)
-  if buffer.config.scripting:
+  if buffer.config.scripting != smFalse:
     let element = buffer.getCursorElement(cursorx, cursory)
     if element != nil:
       let window = buffer.window
@@ -1854,7 +1855,7 @@ proc handleRead(buffer: Buffer; fd: int): bool =
     buffer.onload()
   elif buffer.loader.get(fd) != nil:
     buffer.loader.onRead(fd)
-    if buffer.config.scripting:
+    if buffer.config.scripting != smFalse:
       buffer.window.runJSJobs()
   elif fd in buffer.loader.unregistered:
     discard # ignore
@@ -1872,7 +1873,7 @@ proc handleError(buffer: Buffer; fd: int): bool =
     if not buffer.loader.onError(fd):
       #TODO handle connection error
       assert false, $fd
-    if buffer.config.scripting:
+    if buffer.config.scripting != smFalse:
       buffer.window.runJSJobs()
   elif fd in buffer.loader.unregistered:
     discard # ignore
@@ -1881,9 +1882,9 @@ proc handleError(buffer: Buffer; fd: int): bool =
   true
 
 proc getPollTimeout(buffer: Buffer): cint =
-  if not buffer.config.scripting:
-    return -1
-  return buffer.window.timeouts.sortAndGetTimeout()
+  if buffer.config.scripting != smFalse:
+    return buffer.window.timeouts.sortAndGetTimeout()
+  return -1
 
 proc runBuffer(buffer: Buffer) =
   var alive = true
@@ -1899,7 +1900,7 @@ proc runBuffer(buffer: Buffer) =
         if not buffer.handleError(event.fd):
           alive = false
           break
-    if buffer.config.scripting:
+    if buffer.config.scripting != smFalse:
       if buffer.window.timeouts.run(buffer.estream):
         buffer.window.runJSJobs()
         discard buffer.maybeReshape()
@@ -1947,7 +1948,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
       config.userAgent
     )
   )
-  if buffer.config.scripting:
+  if buffer.config.scripting != smFalse:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
   buffer.charset = buffer.charsetStack.pop()
   var r = pstream.initPacketReader()

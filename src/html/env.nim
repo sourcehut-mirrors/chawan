@@ -77,20 +77,28 @@ proc getter(mimeTypeArray: var MimeTypeArray; atom: JSAtom): JSValue
   return JS_UNINITIALIZED
 
 # Screen
-proc availWidth(screen: var Screen): int64 {.jsfget.} =
-  #TODO this is a fingerprinting vector, but users should be able to allow it
-  # selectively
-  # for now just return something standard-ish
-  80 * 9
-proc availHeight(screen: var Screen): int64 {.jsfget.} =
-  #TODO see above
-  24 * 18
-proc width(screen: var Screen): int64 {.jsfget.} =
-  screen.availWidth
-proc height(screen: var Screen): int64 {.jsfget.} =
-  screen.availHeight
-proc colorDepth(screen: var Screen): int64 {.jsfget.} = 24
-proc pixelDepth(screen: var Screen): int64 {.jsfget.} = screen.colorDepth
+
+# These are fingerprinting vectors; only app mode gets the real values.
+proc availWidth(ctx: JSContext; screen: var Screen): int {.jsfget.} =
+  let window = ctx.getWindow()
+  if window.settings.scripting == smApp:
+    return window.attrs.widthPx
+  return 80 * 9
+
+proc availHeight(ctx: JSContext; screen: var Screen): int {.jsfget.} =
+  let window = ctx.getWindow()
+  if window.settings.scripting == smApp:
+    return window.attrs.heightPx
+  return 24 * 18
+
+proc width(ctx: JSContext; screen: var Screen): int {.jsfget.} =
+  return ctx.availWidth(screen)
+
+proc height(ctx: JSContext; screen: var Screen): int {.jsfget.} =
+  return ctx.availHeight(screen)
+
+proc colorDepth(screen: var Screen): int {.jsfget.} = 24
+proc pixelDepth(screen: var Screen): int {.jsfget.} = screen.colorDepth
 
 # History
 func length(history: var History): uint32 {.jsfget.} = 1
@@ -191,14 +199,17 @@ proc clearInterval(window: Window; id: int32) {.jsfunc.} =
 func console(window: Window): Console {.jsfget.} =
   return window.internalConsole
 
-proc screenX(window: Window): int64 {.jsfget.} = 0
-proc screenY(window: Window): int64 {.jsfget.} = 0
-proc screenLeft(window: Window): int64 {.jsfget.} = 0
-proc screenTop(window: Window): int64 {.jsfget.} = 0
-proc outerWidth(window: Window): int64 {.jsfget.} =
-  window.screen.availWidth
-proc outerHeight(window: Window): int64 {.jsfget.} =
-  window.screen.availHeight
+proc screenX(window: Window): int {.jsfget.} = 0
+proc screenY(window: Window): int {.jsfget.} = 0
+proc screenLeft(window: Window): int {.jsfget.} = 0
+proc screenTop(window: Window): int {.jsfget.} = 0
+
+proc outerWidth(ctx: JSContext; window: Window): int {.jsfget.} =
+  return ctx.availWidth(window.screen)
+
+proc outerHeight(ctx: JSContext; window: Window): int {.jsfget.} =
+  return ctx.availHeight(window.screen)
+
 proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
 
 proc setLocation(window: Window; s: string): Err[JSError]
@@ -331,9 +342,10 @@ proc runJSJobs*(window: Window) =
     let ctx = r.error
     ctx.writeException(window.console.err)
 
-proc newWindow*(scripting, images, styling: bool; attrs: WindowAttributes;
-    factory: CAtomFactory; loader: FileLoader; url: URL; urandom: PosixStream;
-    imageTypes: Table[string, string]; userAgent: string): Window =
+proc newWindow*(scripting: ScriptingMode; images, styling: bool;
+    attrs: WindowAttributes; factory: CAtomFactory; loader: FileLoader;
+    url: URL; urandom: PosixStream; imageTypes: Table[string, string];
+    userAgent: string): Window =
   let err = newDynFileStream(stderr)
   let window = Window(
     attrs: attrs,
@@ -352,7 +364,7 @@ proc newWindow*(scripting, images, styling: bool; attrs: WindowAttributes;
     userAgent: userAgent
   )
   window.location = window.newLocation()
-  if scripting:
+  if scripting != smFalse:
     window.addScripting()
   return window
 
