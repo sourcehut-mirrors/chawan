@@ -1977,19 +1977,19 @@ func hasAttributeNS(element: Element; namespace, localName: string): bool
     {.jsfunc.} =
   return element.findAttrNS(namespace, localName) != -1
 
-func getAttribute(element: Element; qualifiedName: string): Option[string]
-    {.jsfunc.} =
+func getAttribute(ctx: JSContext; element: Element; qualifiedName: string):
+    JSValue {.jsfunc.} =
   let i = element.findAttr(qualifiedName)
   if i != -1:
-    return some(element.attrs[i].value)
-  return none(string)
+    return ctx.toJS(element.attrs[i].value)
+  return JS_NULL
 
-func getAttributeNS(element: Element; namespace, localName: string):
-    Option[string] {.jsfunc.} =
+func getAttributeNS(ctx: JSContext; element: Element;
+    namespace, localName: string): JSValue {.jsfunc.} =
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
-    return some(element.attrs[i].value)
-  return none(string)
+    return ctx.toJS(element.attrs[i].value)
+  return JS_NULL
 
 proc getNamedItem(map: NamedNodeMap; qualifiedName: string): Attr
     {.jsfunc.} =

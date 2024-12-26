@@ -117,16 +117,16 @@ func find(this: Storage; key: string): int =
 func length(this: var Storage): uint32 {.jsfget.} =
   return uint32(this.map.len)
 
-func key(this: var Storage; i: uint32): Option[string] {.jsfunc.} =
+func key(ctx: JSContext; this: var Storage; i: uint32): JSValue {.jsfunc.} =
   if int(i) < this.map.len:
-    return some(this.map[int(i)].value)
-  return none(string)
+    return ctx.toJS(this.map[int(i)].value)
+  return JS_NULL
 
-func getItem(this: var Storage; s: string): Option[string] {.jsfunc.} =
+func getItem(ctx: JSContext; this: var Storage; s: string): JSValue {.jsfunc.} =
   let i = this.find(s)
   if i != -1:
-    return some(this.map[i].value)
-  return none(string)
+    return ctx.toJS(this.map[i].value)
+  return JS_NULL
 
 func setItem(this: var Storage; key, value: string):
     Err[DOMException] {.jsfunc.} =
@@ -153,7 +153,7 @@ func names(ctx: JSContext; this: var Storage): JSPropertyEnumList
 
 func getter(ctx: JSContext; this: var Storage; s: string): JSValue
     {.jsgetownprop.} =
-  return ctx.toJS(this.getItem(s)).uninitIfNull()
+  return ctx.toJS(ctx.getItem(this, s)).uninitIfNull()
 
 func setter(this: var Storage; k, v: string): Err[DOMException]
     {.jssetprop.} =

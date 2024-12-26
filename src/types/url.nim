@@ -12,6 +12,7 @@ import monoucha/javascript
 import monoucha/jserror
 import monoucha/libunicode
 import monoucha/quickjs
+import monoucha/tojs
 import types/opt
 import utils/luwrap
 import utils/map
@@ -1111,11 +1112,12 @@ proc delete(params: URLSearchParams; name: string) {.jsfunc.} =
       params.list.delete(i)
   params.update()
 
-proc get(params: URLSearchParams; name: string): Option[string] {.jsfunc.} =
+proc get(ctx: JSContext; params: URLSearchParams; name: string): JSValue
+    {.jsfunc.} =
   for it in params.list:
     if it.name == name:
-      return some(it.value)
-  return none(string)
+      return ctx.toJS(it.value)
+  return JS_NULL
 
 proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
   result = @[]

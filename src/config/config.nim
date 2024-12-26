@@ -261,10 +261,11 @@ func getRealKey(key: string): string =
     realk &= '\\'
   return realk
 
-proc getter(a: var ActionMap; s: string): Option[string] {.jsgetownprop.} =
+proc getter(ctx: JSContext; a: var ActionMap; s: string): JSValue
+    {.jsgetownprop.} =
   a.t.withValue(s, p):
-    return some(p[])
-  return none(string)
+    return ctx.toJS(p[])
+  return JS_NULL
 
 proc setter(a: var ActionMap; k, v: string) {.jssetprop.} =
   let k = getRealKey(k)

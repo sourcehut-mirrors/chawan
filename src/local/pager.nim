@@ -2317,12 +2317,13 @@ proc extern(pager: Pager; cmd: string;
     t = ExternDict(env: JS_UNDEFINED, suspend: true)): bool {.jsfunc.} =
   return pager.runCommand(cmd, t.suspend, t.wait, t.env)
 
-proc externCapture(pager: Pager; cmd: string): Option[string] {.jsfunc.} =
+proc externCapture(ctx: JSContext; pager: Pager; cmd: string): JSValue
+    {.jsfunc.} =
   pager.setEnvVars(JS_UNDEFINED)
   var s: string
-  if not runProcessCapture(cmd, s):
-    return none(string)
-  return some(s)
+  if runProcessCapture(cmd, s):
+    return ctx.toJS(s)
+  return JS_NULL
 
 proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
   pager.setEnvVars(JS_UNDEFINED)
