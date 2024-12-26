@@ -280,10 +280,8 @@ static inline JS_BOOL JS_VALUE_IS_NAN(JSValue v)
 #define JS_PROP_DEFINE_PROPERTY  (1 << 18) /* internal use */
 #define JS_PROP_REFLECT_DEFINE_PROPERTY (1 << 19) /* internal use */
 
-#if defined(__wasi__)
-#define JS_DEFAULT_STACK_SIZE 0
-#else
-#define JS_DEFAULT_STACK_SIZE (256 * 1024)
+#ifndef JS_DEFAULT_STACK_SIZE
+#define JS_DEFAULT_STACK_SIZE (1024 * 1024)
 #endif
 
 /* JS_Eval() flags */
@@ -624,6 +622,7 @@ JS_EXTERN JSValue JS_Throw(JSContext *ctx, JSValue obj);
 JS_EXTERN JSValue JS_GetException(JSContext *ctx);
 JS_BOOL JS_HasException(JSContext *ctx);
 JS_EXTERN JS_BOOL JS_IsError(JSContext *ctx, JSValue val);
+JS_EXTERN JS_BOOL JS_IsUncatchableError(JSContext* ctx, JSValue val);
 JS_EXTERN void JS_SetUncatchableError(JSContext *ctx, JSValue val,
                                       JS_BOOL flag);
 JS_EXTERN void JS_ResetUncatchableError(JSContext *ctx);
@@ -771,7 +770,8 @@ JS_EXTERN int JS_DefinePropertyValueStr(JSContext *ctx, JSValue this_obj,
 JS_EXTERN int JS_DefinePropertyGetSet(JSContext *ctx, JSValue this_obj,
                                       JSAtom prop, JSValue getter, JSValue setter,
                                       int flags);
-JS_EXTERN JS_BOOL JS_SetOpaque(JSValue obj, void *opaque);
+/* Only supported for custom classes, returns 0 on success < 0 otherwise. */
+JS_EXTERN int JS_SetOpaque(JSValue obj, void *opaque);
 JS_EXTERN void *JS_GetOpaque(JSValue obj, JSClassID class_id);
 JS_EXTERN void *JS_GetOpaque2(JSContext *ctx, JSValue obj, JSClassID class_id);
 JS_EXTERN void *JS_GetAnyOpaque(JSValue obj, JSClassID *class_id);
@@ -791,6 +791,24 @@ JS_EXTERN void JS_DetachArrayBuffer(JSContext *ctx, JSValue obj);
 JS_EXTERN uint8_t *JS_GetArrayBuffer(JSContext *ctx, size_t *psize, JSValue obj);
 JS_EXTERN JS_BOOL JS_IsArrayBuffer(JSValue obj);
 JS_EXTERN uint8_t *JS_GetUint8Array(JSContext *ctx, size_t *psize, JSValue obj);
+
+typedef enum JSTypedArrayEnum {
+    JS_TYPED_ARRAY_UINT8C = 0,
+    JS_TYPED_ARRAY_INT8,
+    JS_TYPED_ARRAY_UINT8,
+    JS_TYPED_ARRAY_INT16,
+    JS_TYPED_ARRAY_UINT16,
+    JS_TYPED_ARRAY_INT32,
+    JS_TYPED_ARRAY_UINT32,
+    JS_TYPED_ARRAY_BIG_INT64,
+    JS_TYPED_ARRAY_BIG_UINT64,
+    JS_TYPED_ARRAY_FLOAT16,
+    JS_TYPED_ARRAY_FLOAT32,
+    JS_TYPED_ARRAY_FLOAT64,
+} JSTypedArrayEnum;
+
+JS_EXTERN JSValue JS_NewTypedArray(JSContext *ctx, int argc, JSValue *argv,
+                         JSTypedArrayEnum array_type);
 JS_EXTERN JSValue JS_GetTypedArrayBuffer(JSContext *ctx, JSValue obj,
                                          size_t *pbyte_offset,
                                          size_t *pbyte_length,
@@ -798,7 +816,8 @@ JS_EXTERN JSValue JS_GetTypedArrayBuffer(JSContext *ctx, JSValue obj,
 JS_EXTERN JSValue JS_NewUint8Array(JSContext *ctx, uint8_t *buf, size_t len,
                                    JSFreeArrayBufferDataFunc *free_func, void *opaque,
                                    JS_BOOL is_shared);
-JS_EXTERN JS_BOOL JS_IsUint8Array(JSValue obj);
+/* returns -1 if not a typed array otherwise return a JSTypedArrayEnum value */
+JS_EXTERN int JS_GetTypedArrayType(JSValue obj);
 JS_EXTERN JSValue JS_NewUint8ArrayCopy(JSContext *ctx, const uint8_t *buf, size_t len);
 typedef struct {
     void *(*sab_alloc)(void *opaque, size_t size);
@@ -852,7 +871,7 @@ JS_EXTERN void JS_SetModuleLoaderFunc(JSRuntime *rt,
 /* return the import.meta object of a module */
 JS_EXTERN JSValue JS_GetImportMeta(JSContext *ctx, JSModuleDef *m);
 JS_EXTERN JSAtom JS_GetModuleName(JSContext *ctx, JSModuleDef *m);
-JSValue JS_GetModuleNamespace(JSContext *ctx, JSModuleDef *m);
+JS_EXTERN JSValue JS_GetModuleNamespace(JSContext *ctx, JSModuleDef *m);
 
 /* JS Job support */
 
@@ -985,6 +1004,7 @@ typedef struct JSCFunctionListEntry {
         const char *str;    /* pure ASCII or UTF-8 encoded */
         int32_t i32;
         int64_t i64;
+        uint64_t u64;
         double f64;
     } u;
 } JSCFunctionListEntry;
@@ -1013,6 +1033,7 @@ typedef struct JSCFunctionListEntry {
 #define JS_PROP_INT32_DEF(name, val, prop_flags) { name, prop_flags, JS_DEF_PROP_INT32, 0, { .i32 = val } }
 #define JS_PROP_INT64_DEF(name, val, prop_flags) { name, prop_flags, JS_DEF_PROP_INT64, 0, { .i64 = val } }
 #define JS_PROP_DOUBLE_DEF(name, val, prop_flags) { name, prop_flags, JS_DEF_PROP_DOUBLE, 0, { .f64 = val } }
+#define JS_PROP_U2D_DEF(name, val, prop_flags) { name, prop_flags, JS_DEF_PROP_DOUBLE, 0, { .u64 = val } }
 #define JS_PROP_UNDEFINED_DEF(name, prop_flags) { name, prop_flags, JS_DEF_PROP_UNDEFINED, 0, { .i32 = 0 } }
 #define JS_OBJECT_DEF(name, tab, len, prop_flags) { name, prop_flags, JS_DEF_OBJECT, 0, { .prop_list = { tab, len } } }
 #define JS_ALIAS_DEF(name, from) { name, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE, JS_DEF_ALIAS, 0, { .alias = { from, -1 } } }
@@ -1041,7 +1062,7 @@ JS_EXTERN int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
 /* Version */
 
 #define QJS_VERSION_MAJOR 0
-#define QJS_VERSION_MINOR 7
+#define QJS_VERSION_MINOR 8
 #define QJS_VERSION_PATCH 0
 #define QJS_VERSION_SUFFIX ""
 

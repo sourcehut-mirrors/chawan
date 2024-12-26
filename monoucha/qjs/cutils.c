@@ -41,7 +41,7 @@
 #pragma GCC visibility push(default)
 #endif
 
-void pstrcpy(char *buf, int buf_size, const char *str)
+void js__pstrcpy(char *buf, int buf_size, const char *str)
 {
     int c;
     char *q = buf;
@@ -59,16 +59,16 @@ void pstrcpy(char *buf, int buf_size, const char *str)
 }
 
 /* strcat and truncate. */
-char *pstrcat(char *buf, int buf_size, const char *s)
+char *js__pstrcat(char *buf, int buf_size, const char *s)
 {
     int len;
     len = strlen(buf);
     if (len < buf_size)
-        pstrcpy(buf + len, buf_size - len, s);
+        js__pstrcpy(buf + len, buf_size - len, s);
     return buf;
 }
 
-int strstart(const char *str, const char *val, const char **ptr)
+int js__strstart(const char *str, const char *val, const char **ptr)
 {
     const char *p, *q;
     p = str;
@@ -84,7 +84,7 @@ int strstart(const char *str, const char *val, const char **ptr)
     return 1;
 }
 
-int has_suffix(const char *str, const char *suffix)
+int js__has_suffix(const char *str, const char *suffix)
 {
     size_t len = strlen(str);
     size_t slen = strlen(suffix);
@@ -190,7 +190,7 @@ int __attribute__((format(printf, 2, 3))) dbuf_printf(DynBuf *s,
     va_start(ap, fmt);
     len = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    if (len < sizeof(buf)) {
+    if (len < (int)sizeof(buf)) {
         /* fast case */
         return dbuf_put(s, (uint8_t *)buf, len);
     } else {
@@ -1131,7 +1131,7 @@ void rqsort(void *base, size_t nmemb, size_t size, cmp_f cmp, void *opaque)
 
 #ifdef _WIN32
  // From: https://stackoverflow.com/a/26085827
-static int gettimeofday_msvc(struct timeval *tp, struct timezone *tzp)
+static int gettimeofday_msvc(struct timeval *tp)
 {
   static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
 
@@ -1185,7 +1185,7 @@ uint64_t js__hrtime_ns(void) {
 int64_t js__gettimeofday_us(void) {
     struct timeval tv;
 #ifdef _WIN32
-    gettimeofday_msvc(&tv, NULL);
+    gettimeofday_msvc(&tv);
 #else
     gettimeofday(&tv, NULL);
 #endif

@@ -717,9 +717,13 @@ typedef enum JSIteratorKindEnum {
 
 typedef enum JSIteratorHelperKindEnum {
     JS_ITERATOR_HELPER_KIND_DROP,
+    JS_ITERATOR_HELPER_KIND_EVERY,
     JS_ITERATOR_HELPER_KIND_FILTER,
+    JS_ITERATOR_HELPER_KIND_FIND,
     JS_ITERATOR_HELPER_KIND_FLAT_MAP,
+    JS_ITERATOR_HELPER_KIND_FOR_EACH,
     JS_ITERATOR_HELPER_KIND_MAP,
+    JS_ITERATOR_HELPER_KIND_SOME,
     JS_ITERATOR_HELPER_KIND_TAKE,
 } JSIteratorHelperKindEnum;
 
@@ -1844,9 +1848,10 @@ JSRuntime *JS_NewRuntime2(const JSMallocFunctions *mf, void *opaque)
     rt->js_class_id_alloc = JS_CLASS_INIT_COUNT;
 
     rt->stack_size = JS_DEFAULT_STACK_SIZE;
-#ifdef __ASAN__
-    rt->stack_size *= 2; // stack frames are bigger under AddressSanitizer
+#ifdef __wasi__
+    rt->stack_size = 0;
 #endif
+
     JS_UpdateStackTop(rt);
 
     rt->current_exception = JS_UNINITIALIZED;
@@ -6719,14 +6724,15 @@ static const char *get_func_name(JSContext *ctx, JSValue func)
 #define JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL (1 << 0)
 /* only taken into account if filename is provided */
 #define JS_BACKTRACE_FLAG_SINGLE_LEVEL     (1 << 1)
+#define JS_BACKTRACE_FLAG_FILTER_FUNC      (1 << 2)
 
 /* if filename != NULL, an additional level is added with the filename
    and line number information (used for parse error). */
-static void build_backtrace(JSContext *ctx, JSValue error_obj,
+static void build_backtrace(JSContext *ctx, JSValue error_obj, JSValue filter_func,
                             const char *filename, int line_num, int col_num,
                             int backtrace_flags)
 {
-    JSStackFrame *sf;
+    JSStackFrame *sf, *sf_start;
     JSValue stack, prepare, saved_exception;
     DynBuf dbuf;
     const char *func_name_str;
@@ -6775,7 +6781,20 @@ static void build_backtrace(JSContext *ctx, JSValue error_obj,
     if (filename && (backtrace_flags & JS_BACKTRACE_FLAG_SINGLE_LEVEL))
         goto done;
 
-    for (sf = rt->current_stack_frame; sf != NULL && i < stack_trace_limit; sf = sf->prev_frame) {
+    sf_start = rt->current_stack_frame;
+
+    /* Find the frame we want to start from. Note that when a filter is used the filter
+       function will be the first, but we also specify we want to skip the first one. */
+    if (backtrace_flags & JS_BACKTRACE_FLAG_FILTER_FUNC) {
+        for (sf = sf_start; sf != NULL && i < stack_trace_limit; sf = sf->prev_frame) {
+            if (js_same_value(ctx, sf->cur_func, filter_func)) {
+                sf_start = sf;
+                break;
+            }
+        }
+    }
+
+    for (sf = sf_start; sf != NULL && i < stack_trace_limit; sf = sf->prev_frame) {
         if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
             backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
             continue;
@@ -6918,7 +6937,7 @@ static JSValue JS_MakeError(JSContext *ctx, JSErrorEnum error_num,
                                JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
     }
     if (add_backtrace)
-        build_backtrace(ctx, obj, NULL, 0, 0, 0);
+        build_backtrace(ctx, obj, JS_UNDEFINED, NULL, 0, 0, 0);
     return obj;
 }
 
@@ -10207,7 +10226,7 @@ void JS_ResetUncatchableError(JSContext *ctx)
     JS_SetUncatchableError(ctx, ctx->rt->current_exception, FALSE);
 }
 
-JS_BOOL JS_SetOpaque(JSValue obj, void *opaque)
+int JS_SetOpaque(JSValue obj, void *opaque)
 {
     JSObject *p;
     if (JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT) {
@@ -10228,7 +10247,7 @@ JS_BOOL JS_SetOpaque(JSValue obj, void *opaque)
         p->u.opaque = opaque;
     }
 
-    return 1;
+    return -1;
 }
 
 /* |obj| must be a JSObject of an internal class. */
@@ -10599,7 +10618,7 @@ static JSValue js_atof(JSContext *ctx, const char *p, size_t len,
             }
         }
     } else {
-        if (*p == 'I' && (flags & ATOD_ACCEPT_INFINITY) && strstart(p, "Infinity", &p)) {
+        if (*p == 'I' && (flags & ATOD_ACCEPT_INFINITY) && js__strstart(p, "Infinity", &p)) {
             d = INF;
             if (sign == '-')
                 d = -d;
@@ -11467,6 +11486,7 @@ static int js_ecvt(double d, int n_digits,
         }
     } else {
 #if defined(FE_DOWNWARD) && defined(FE_TONEAREST)
+        int i;
         /* generate 2 extra digits: 99% chances to avoid 2 calls */
         js_ecvt1(d, n_digits + 2, dest, size, decpt);
         if (dest[n_digits + 1] < '5')
@@ -11480,7 +11500,7 @@ static int js_ecvt(double d, int n_digits,
                 return n_digits;    /* truncate the 2 extra digits */
         }
         /* round up in the string */
-        for(int i = n_digits;; i--) {
+        for(i = n_digits;; i--) {
             /* ignore the locale specific decimal point */
             if (is_digit(dest[i])) {
                 if (dest[i]++ < '9')
@@ -13686,6 +13706,10 @@ static JSValue js_build_arguments(JSContext *ctx, int argc, JSValue *argv)
     /* add the length field (cannot fail) */
     pr = add_property(ctx, p, JS_ATOM_length,
                       JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    if (!pr) {
+        JS_FreeValue(ctx, val);
+        return JS_EXCEPTION;
+    }
     pr->u.value = js_int32(argc);
 
     /* initialize the fast array part */
@@ -13735,6 +13759,8 @@ static JSValue js_build_mapped_arguments(JSContext *ctx, int argc,
     /* add the length field (cannot fail) */
     pr = add_property(ctx, p, JS_ATOM_length,
                       JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    if (!pr)
+        goto fail;
     pr->u.value = js_int32(argc);
 
     for(i = 0; i < arg_count; i++) {
@@ -14721,15 +14747,14 @@ static void close_var_refs(JSRuntime *rt, JSStackFrame *sf)
     }
 }
 
-static void close_lexical_var(JSContext *ctx, JSStackFrame *sf, int idx, int is_arg)
+static void close_lexical_var(JSContext *ctx, JSStackFrame *sf, int var_idx)
 {
     struct list_head *el, *el1;
     JSVarRef *var_ref;
-    int var_idx = idx;
 
     list_for_each_safe(el, el1, &sf->var_ref_list) {
         var_ref = list_entry(el, JSVarRef, header.link);
-        if (var_idx == var_ref->var_idx && var_ref->is_arg == is_arg) {
+        if (var_idx == var_ref->var_idx && !var_ref->is_arg) {
             var_ref->value = js_dup(sf->var_buf[var_idx]);
             var_ref->pvalue = &var_ref->value;
             list_del(&var_ref->header.link);
@@ -15982,7 +16007,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValue func_obj,
                 int idx;
                 idx = get_u16(pc);
                 pc += 2;
-                close_lexical_var(ctx, sf, idx, FALSE);
+                close_lexical_var(ctx, sf, idx);
             }
             BREAK;
 
@@ -17490,7 +17515,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValue func_obj,
            before if the exception happens in a bytecode
            operation */
         sf->cur_pc = pc;
-        build_backtrace(ctx, rt->current_exception, NULL, 0, 0, 0);
+        build_backtrace(ctx, rt->current_exception, JS_UNDEFINED, NULL, 0, 0, 0);
     }
     if (!JS_IsUncatchableError(ctx, rt->current_exception)) {
         while (sp > stack_buf) {
@@ -18728,7 +18753,8 @@ typedef struct BlockEnv {
     int drop_count; /* number of stack elements to drop */
     int label_finally; /* -1 if none */
     int scope_level;
-    int has_iterator;
+    uint8_t has_iterator : 1;
+    uint8_t is_regular_stmt : 1; // i.e. not a loop statement
 } BlockEnv;
 
 typedef struct JSGlobalVar {
@@ -19084,7 +19110,7 @@ int __attribute__((format(printf, 2, 3))) js_parse_error(JSParseState *s, const 
     backtrace_flags = 0;
     if (s->cur_func && s->cur_func->backtrace_barrier)
         backtrace_flags = JS_BACKTRACE_FLAG_SINGLE_LEVEL;
-    build_backtrace(ctx, ctx->rt->current_exception, s->filename,
+    build_backtrace(ctx, ctx->rt->current_exception, JS_UNDEFINED, s->filename,
                     s->line_num, s->col_num, backtrace_flags);
     return -1;
 }
@@ -23586,7 +23612,7 @@ static __exception int js_parse_postfix_expr(JSParseState *s, int parse_flags)
                 backtrace_flags = 0;
                 if (s->cur_func && s->cur_func->backtrace_barrier)
                     backtrace_flags = JS_BACKTRACE_FLAG_SINGLE_LEVEL;
-                build_backtrace(s->ctx, s->ctx->rt->current_exception,
+                build_backtrace(s->ctx, s->ctx->rt->current_exception, JS_UNDEFINED,
                                 s->filename,
                                 s->token.line_num,
                                 s->token.col_num,
@@ -24993,6 +25019,7 @@ static void push_break_entry(JSFunctionDef *fd, BlockEnv *be,
     be->label_finally = -1;
     be->scope_level = fd->scope_level;
     be->has_iterator = FALSE;
+    be->is_regular_stmt = FALSE;
 }
 
 static void pop_break_entry(JSFunctionDef *fd)
@@ -25019,11 +25046,12 @@ static __exception int emit_break(JSParseState *s, JSAtom name, int is_cont)
             emit_goto(s, OP_goto, top->label_cont);
             return 0;
         }
-        if (!is_cont &&
-            top->label_break != -1 &&
-            (name == JS_ATOM_NULL || top->label_name == name)) {
-            emit_goto(s, OP_goto, top->label_break);
-            return 0;
+        if (!is_cont && top->label_break != -1) {
+            if (top->label_name == name ||
+                (name == JS_ATOM_NULL && !top->is_regular_stmt)) {
+                emit_goto(s, OP_goto, top->label_break);
+                return 0;
+            }
         }
         i = 0;
         if (top->has_iterator) {
@@ -25437,7 +25465,8 @@ static __exception int js_parse_for_in_of(JSParseState *s, int label_name,
     JS_FreeAtom(ctx, var_name);
 
     if (token_is_pseudo_keyword(s, JS_ATOM_of)) {
-        break_entry.has_iterator = is_for_of = TRUE;
+        is_for_of = TRUE;
+        break_entry.has_iterator = TRUE;
         break_entry.drop_count += 2;
         if (has_initializer)
             goto initializer_error;
@@ -25581,13 +25610,14 @@ static __exception int js_parse_statement_or_decl(JSParseState *s,
         &&  s->token.val != TOK_DO
         &&  s->token.val != TOK_WHILE) {
             /* labelled regular statement */
+            JSFunctionDef *fd = s->cur_func;
             int label_break, mask;
             BlockEnv break_entry;
 
             label_break = new_label(s);
-            push_break_entry(s->cur_func, &break_entry,
-                             label_name, label_break, -1, 0);
-            if (!s->cur_func->is_strict_mode &&
+            push_break_entry(fd, &break_entry, label_name, label_break, -1, 0);
+            fd->top_break->is_regular_stmt = 1;
+            if (!fd->is_strict_mode &&
                 (decl_mask & DECL_MASK_FUNC_WITH_LABEL)) {
                 mask = DECL_MASK_FUNC | DECL_MASK_FUNC_WITH_LABEL;
             } else {
@@ -25596,7 +25626,7 @@ static __exception int js_parse_statement_or_decl(JSParseState *s,
             if (js_parse_statement_or_decl(s, mask))
                 goto fail;
             emit_label(s, label_break);
-            pop_break_entry(s->cur_func);
+            pop_break_entry(fd);
             goto done;
         }
     }
@@ -26593,8 +26623,8 @@ static char *js_default_module_normalize_name(JSContext *ctx,
         }
     }
     if (filename[0] != '\0')
-        pstrcat(filename, cap, "/");
-    pstrcat(filename, cap, r);
+        js__pstrcat(filename, cap, "/");
+    js__pstrcat(filename, cap, r);
     //    printf("normalize: %s %s -> %s\n", base_name, name, filename);
     return filename;
 }
@@ -38025,7 +38055,7 @@ static JSValue js_error_constructor(JSContext *ctx, JSValue new_target,
     }
 
     /* skip the Error() function in the backtrace */
-    build_backtrace(ctx, obj, NULL, 0, 0, JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL);
+    build_backtrace(ctx, obj, JS_UNDEFINED, NULL, 0, 0, JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL);
     return obj;
  exception:
     JS_FreeValue(ctx, obj);
@@ -38115,8 +38145,19 @@ static JSValue js_error_set_prepareStackTrace(JSContext *ctx, JSValue this_val, 
     return JS_UNDEFINED;
 }
 
+static JSValue js_error_capture_stack_trace(JSContext *ctx, JSValue this_val,
+                                            int argc, JSValue *argv)
+{
+    JSValue v = argv[0];
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT)
+        return JS_ThrowTypeErrorNotAnObject(ctx);
+    build_backtrace(ctx, v, argv[1], NULL, 0, 0, JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL|JS_BACKTRACE_FLAG_FILTER_FUNC);
+    return JS_UNDEFINED;
+}
+
 static const JSCFunctionListEntry js_error_funcs[] = {
     JS_CFUNC_DEF("isError", 1, js_error_isError ),
+    JS_CFUNC_DEF("captureStackTrace", 2, js_error_capture_stack_trace),
     JS_CGETSET_DEF("stackTraceLimit", js_error_get_stackTraceLimit, js_error_set_stackTraceLimit ),
     JS_CGETSET_DEF("prepareStackTrace", js_error_get_prepareStackTrace, js_error_set_prepareStackTrace ),
 };
@@ -40311,235 +40352,263 @@ fail:
     return JS_EXCEPTION;
 }
 
-static JSValue js_create_iterator_helper(JSContext *ctx, JSValue iterator,
-                                         JSIteratorHelperKindEnum kind, JSValue func, int64_t count);
-
-static JSValue js_iterator_proto_drop(JSContext *ctx, JSValue this_val,
-                                      int argc, JSValue *argv)
+static int check_iterator(JSContext *ctx, JSValue obj)
 {
-    JSValue v;
-    double dlimit;
-    int64_t limit;
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.drop called on non-object");
-    v = JS_ToNumber(ctx, argv[0]);
-    if (JS_IsException(v))
-        return JS_EXCEPTION;
-    // Check for Infinity.
-    if (JS_ToFloat64(ctx, &dlimit, v)) {
-        JS_FreeValue(ctx, v);
-        return JS_EXCEPTION;
+    if (!JS_IsObject(obj)) {
+        JS_ThrowTypeErrorNotAnObject(ctx);
+        return -1;
     }
-    if (isnan(dlimit)) {
-        JS_FreeValue(ctx, v);
-        goto fail;
-    }
-    if (!isfinite(dlimit)) {
-        JS_FreeValue(ctx, v);
-        if (dlimit < 0)
-            goto fail;
-        else
-            limit = MAX_SAFE_INTEGER;
-    } else {
-        v = JS_ToIntegerFree(ctx, v);
-        if (JS_IsException(v))
-            return JS_EXCEPTION;
-        if (JS_ToInt64Free(ctx, &limit, v))
-            return JS_EXCEPTION;
-    }
-    if (limit < 0) {
-    fail:
-        return JS_ThrowRangeError(ctx, "must be positive");
-    }
-    return js_create_iterator_helper(ctx, this_val, JS_ITERATOR_HELPER_KIND_DROP, JS_UNDEFINED, limit);
+    return 0;
 }
 
-static JSValue js_iterator_proto_every(JSContext *ctx, JSValue this_val,
-                                       int argc, JSValue *argv)
+typedef struct JSIteratorHelperData {
+    JSValue obj;
+    JSValue next;
+    JSValue func; // predicate (filter) or mapper (flatMap, map)
+    JSValue inner; // innerValue (flatMap)
+    int64_t count; // limit (drop, take) or counter (filter, map, flatMap)
+    JSIteratorHelperKindEnum kind : 8;
+    uint8_t executing : 1;
+    uint8_t done : 1;
+} JSIteratorHelperData;
+
+static JSValue js_create_iterator_helper(JSContext *ctx, JSValue this_val,
+                                         int argc, JSValue *argv, int magic)
 {
-    JSValue item, method, ret, func, index_val, r;
-    JSValue args[2];
-    int64_t idx;
-    BOOL done;
+    JSValue func, obj, method;
+    int64_t count;
+    JSIteratorHelperData *it;
 
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.every called on non-object");
-    if (check_function(ctx, argv[0]))
+    if (check_iterator(ctx, this_val) < 0)
         return JS_EXCEPTION;
-    func = js_dup(argv[0]);
-    method = JS_GetProperty(ctx, this_val, JS_ATOM_next);
-    if (JS_IsException(method))
-        goto exception;
-    r = JS_TRUE;
-    for (idx = 0; /*empty*/; idx++) {
-        item = JS_IteratorNext(ctx, this_val, method, 0, NULL, &done);
-        if (JS_IsException(item))
-            goto exception;
-        if (done)
-            break;
-        index_val = js_int64(idx);
-        args[0] = item;
-        args[1] = index_val;
-        ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
-        JS_FreeValue(ctx, item);
-        JS_FreeValue(ctx, index_val);
-        if (JS_IsException(ret))
-            goto exception;
-        if (!JS_ToBoolFree(ctx, ret)) {
-            if (JS_IteratorClose(ctx, this_val, FALSE) < 0)
-                r = JS_EXCEPTION;
-            else
-                r = JS_FALSE;
-            break;
-        }
-        index_val = JS_UNDEFINED;
-        ret = JS_UNDEFINED;
-        item = JS_UNDEFINED;
-    }
-    JS_FreeValue(ctx, func);
-    JS_FreeValue(ctx, method);
-    return r;
-exception:
-    JS_IteratorClose(ctx, this_val, TRUE);
-    JS_FreeValue(ctx, func);
-    JS_FreeValue(ctx, method);
-    return JS_EXCEPTION;
-}
+    func = JS_UNDEFINED;
+    count = 0;
 
-static JSValue js_iterator_proto_filter(JSContext *ctx, JSValue this_val,
-                                        int argc, JSValue *argv)
-{
-    JSValue func;
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.filter called on non-object");
-    func = argv[0];
-    if (check_function(ctx, func))
-        return JS_EXCEPTION;
-    return js_create_iterator_helper(ctx, this_val, JS_ITERATOR_HELPER_KIND_FILTER, func, 0);
-}
-
-static JSValue js_iterator_proto_find(JSContext *ctx, JSValue this_val,
-                                      int argc, JSValue *argv)
-{
-    JSValue item, method, ret, func, index_val, r;
-    JSValue args[2];
-    int64_t idx;
-    BOOL done;
-
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.filter called on non-object");
-    if (check_function(ctx, argv[0]))
-        return JS_EXCEPTION;
-    func = js_dup(argv[0]);
-    method = JS_GetProperty(ctx, this_val, JS_ATOM_next);
-    if (JS_IsException(method))
-        goto exception;
-    r = JS_UNDEFINED;
-    for (idx = 0; /*empty*/; idx++) {
-        item = JS_IteratorNext(ctx, this_val, method, 0, NULL, &done);
-        if (JS_IsException(item))
-            goto exception;
-        if (done)
-            break;
-        index_val = js_int64(idx);
-        args[0] = item;
-        args[1] = index_val;
-        ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
-        JS_FreeValue(ctx, index_val);
-        if (JS_IsException(ret)) {
-            JS_FreeValue(ctx, item);
-            goto exception;
-        }
-        if (JS_ToBoolFree(ctx, ret)) {
-            if (JS_IteratorClose(ctx, this_val, FALSE) < 0) {
-                JS_FreeValue(ctx, item);
-                r = JS_EXCEPTION;
-            } else {
-                r = item;
+    switch(magic) {
+    case JS_ITERATOR_HELPER_KIND_DROP:
+    case JS_ITERATOR_HELPER_KIND_TAKE:
+        {
+            JSValue v;
+            double dlimit;
+            v = JS_ToNumber(ctx, argv[0]);
+            if (JS_IsException(v))
+                return JS_EXCEPTION;
+            // Check for Infinity.
+            if (JS_ToFloat64(ctx, &dlimit, v)) {
+                JS_FreeValue(ctx, v);
+                return JS_EXCEPTION;
             }
-            break;
+            if (isnan(dlimit)) {
+                JS_FreeValue(ctx, v);
+                goto fail;
+            }
+            if (!isfinite(dlimit)) {
+                JS_FreeValue(ctx, v);
+                if (dlimit < 0)
+                    goto fail;
+                else
+                    count = MAX_SAFE_INTEGER;
+            } else {
+                v = JS_ToIntegerFree(ctx, v);
+                if (JS_IsException(v))
+                    return JS_EXCEPTION;
+                if (JS_ToInt64Free(ctx, &count, v))
+                    return JS_EXCEPTION;
+            }
+            if (count < 0) {
+            fail:
+                return JS_ThrowRangeError(ctx, "must be positive");
+            }
         }
-        index_val = JS_UNDEFINED;
-        ret = JS_UNDEFINED;
-        item = JS_UNDEFINED;
+        break;
+    case JS_ITERATOR_HELPER_KIND_FILTER:
+    case JS_ITERATOR_HELPER_KIND_FLAT_MAP:
+    case JS_ITERATOR_HELPER_KIND_MAP:
+        {
+            func = argv[0];
+            if (check_function(ctx, func))
+                return JS_EXCEPTION;
+        }
+        break;
+    default:
+        abort();
+        break;
     }
-    JS_FreeValue(ctx, func);
-    JS_FreeValue(ctx, method);
-    return r;
-exception:
-    JS_IteratorClose(ctx, this_val, TRUE);
-    JS_FreeValue(ctx, func);
-    JS_FreeValue(ctx, method);
-    return JS_EXCEPTION;
-}
 
-static JSValue js_iterator_proto_flatMap(JSContext *ctx, JSValue this_val,
-                                         int argc, JSValue *argv)
-{
-    JSValue func;
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.flatMap called on non-object");
-    func = argv[0];
-    if (check_function(ctx, func))
+    method = JS_GetProperty(ctx, this_val, JS_ATOM_next);
+    if (JS_IsException(method))
         return JS_EXCEPTION;
-    return js_create_iterator_helper(ctx, this_val, JS_ITERATOR_HELPER_KIND_FLAT_MAP, func, 0);
+    obj = JS_NewObjectClass(ctx, JS_CLASS_ITERATOR_HELPER);
+    if (JS_IsException(obj)) {
+        JS_FreeValue(ctx, method);
+        return JS_EXCEPTION;
+    }
+    it = js_malloc(ctx, sizeof(*it));
+    if (!it) {
+        JS_FreeValue(ctx, obj);
+        JS_FreeValue(ctx, method);
+        return JS_EXCEPTION;
+    }
+    it->kind = magic;
+    it->obj = js_dup(this_val);
+    it->func = js_dup(func);
+    it->next = method;
+    it->inner = JS_UNDEFINED;
+    it->count = count;
+    it->executing = 0;
+    it->done = 0;
+    JS_SetOpaqueInternal(obj, it);
+    return obj;
 }
 
-static JSValue js_iterator_proto_forEach(JSContext *ctx, JSValue this_val,
-                                         int argc, JSValue *argv)
+static JSValue js_iterator_proto_func(JSContext *ctx, JSValue this_val,
+                                      int argc, JSValue *argv, int magic)
 {
-    JSValue item, method, ret, func, index_val;
+    JSValue item, method, ret, func, index_val, r;
     JSValue args[2];
     int64_t idx;
     BOOL done;
 
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.forEach called on non-object");
+    if (check_iterator(ctx, this_val) < 0)
+        return JS_EXCEPTION;
     if (check_function(ctx, argv[0]))
         return JS_EXCEPTION;
     func = js_dup(argv[0]);
     method = JS_GetProperty(ctx, this_val, JS_ATOM_next);
     if (JS_IsException(method))
-        goto exception;
-    for (idx = 0; /*empty*/; idx++) {
-        item = JS_IteratorNext(ctx, this_val, method, 0, NULL, &done);
-        if (JS_IsException(item))
-            goto exception;
-        if (done)
-            break;
-        index_val = js_int64(idx);
-        args[0] = item;
-        args[1] = index_val;
-        ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
-        JS_FreeValue(ctx, item);
-        JS_FreeValue(ctx, index_val);
-        if (JS_IsException(ret))
-            goto exception;
-        JS_FreeValue(ctx, ret);
-        index_val = JS_UNDEFINED;
-        ret = JS_UNDEFINED;
-        item = JS_UNDEFINED;
+        goto fail;
+
+    r = JS_UNDEFINED;
+
+    switch(magic) {
+    case JS_ITERATOR_HELPER_KIND_EVERY:
+        {
+            r = JS_TRUE;
+            for (idx = 0; /*empty*/; idx++) {
+                item = JS_IteratorNext(ctx, this_val, method, 0, NULL, &done);
+                if (JS_IsException(item))
+                    goto fail;
+                if (done)
+                    break;
+                index_val = js_int64(idx);
+                args[0] = item;
+                args[1] = index_val;
+                ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+                JS_FreeValue(ctx, item);
+                JS_FreeValue(ctx, index_val);
+                if (JS_IsException(ret))
+                    goto fail;
+                if (!JS_ToBoolFree(ctx, ret)) {
+                    if (JS_IteratorClose(ctx, this_val, FALSE) < 0)
+                        r = JS_EXCEPTION;
+                    else
+                        r = JS_FALSE;
+                    break;
+                }
+                index_val = JS_UNDEFINED;
+                ret = JS_UNDEFINED;
+                item = JS_UNDEFINED;
+            }
+        }
+        break;
+    case JS_ITERATOR_HELPER_KIND_FIND:
+        {
+            for (idx = 0; /*empty*/; idx++) {
+                item = JS_IteratorNext(ctx, this_val, method, 0, NULL, &done);
+                if (JS_IsException(item))
+                    goto fail;
+                if (done)
+                    break;
+                index_val = js_int64(idx);
+                args[0] = item;
+                args[1] = index_val;
+                ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+                JS_FreeValue(ctx, index_val);
+                if (JS_IsException(ret)) {
+                    JS_FreeValue(ctx, item);
+                    goto fail;
+                }
+                if (JS_ToBoolFree(ctx, ret)) {
+                    if (JS_IteratorClose(ctx, this_val, FALSE) < 0) {
+                        JS_FreeValue(ctx, item);
+                        r = JS_EXCEPTION;
+                    } else {
+                        r = item;
+                    }
+                    break;
+                }
+                index_val = JS_UNDEFINED;
+                ret = JS_UNDEFINED;
+                item = JS_UNDEFINED;
+            }
+        }
+        break;
+    case JS_ITERATOR_HELPER_KIND_FOR_EACH:
+        {
+            for (idx = 0; /*empty*/; idx++) {
+                item = JS_IteratorNext(ctx, this_val, method, 0, NULL, &done);
+                if (JS_IsException(item))
+                    goto fail;
+                if (done)
+                    break;
+                index_val = js_int64(idx);
+                args[0] = item;
+                args[1] = index_val;
+                ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+                JS_FreeValue(ctx, item);
+                JS_FreeValue(ctx, index_val);
+                if (JS_IsException(ret))
+                    goto fail;
+                JS_FreeValue(ctx, ret);
+                index_val = JS_UNDEFINED;
+                ret = JS_UNDEFINED;
+                item = JS_UNDEFINED;
+            }
+        }
+        break;
+    case JS_ITERATOR_HELPER_KIND_SOME:
+        {
+            r = JS_FALSE;
+            for (idx = 0; /*empty*/; idx++) {
+                item = JS_IteratorNext(ctx, this_val, method, 0, NULL, &done);
+                if (JS_IsException(item))
+                    goto fail;
+                if (done)
+                    break;
+                index_val = js_int64(idx);
+                args[0] = item;
+                args[1] = index_val;
+                ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
+                JS_FreeValue(ctx, item);
+                JS_FreeValue(ctx, index_val);
+                if (JS_IsException(ret))
+                    goto fail;
+                if (JS_ToBoolFree(ctx, ret)) {
+                    if (JS_IteratorClose(ctx, this_val, FALSE) < 0)
+                        r = JS_EXCEPTION;
+                    else
+                        r = JS_TRUE;
+                    break;
+                }
+                index_val = JS_UNDEFINED;
+                ret = JS_UNDEFINED;
+                item = JS_UNDEFINED;
+            }
+        }
+        break;
+    default:
+        abort();
+        break;
     }
+
     JS_FreeValue(ctx, func);
     JS_FreeValue(ctx, method);
-    return JS_UNDEFINED;
-exception:
+    return r;
+fail:
     JS_IteratorClose(ctx, this_val, TRUE);
     JS_FreeValue(ctx, func);
     JS_FreeValue(ctx, method);
     return JS_EXCEPTION;
-}
-
-static JSValue js_iterator_proto_map(JSContext *ctx, JSValue this_val,
-                                     int argc, JSValue *argv)
-{
-    JSValue func;
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.map called on non-object");
-    func = argv[0];
-    if (check_function(ctx, func))
-        return JS_EXCEPTION;
-    return js_create_iterator_helper(ctx, this_val, JS_ITERATOR_HELPER_KIND_MAP, func, 0);
 }
 
 static JSValue js_iterator_proto_reduce(JSContext *ctx, JSValue this_val,
@@ -40550,8 +40619,8 @@ static JSValue js_iterator_proto_reduce(JSContext *ctx, JSValue this_val,
     int64_t idx;
     BOOL done;
 
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.reduce called on non-object");
+    if (check_iterator(ctx, this_val) < 0)
+        return JS_EXCEPTION;
     if (check_function(ctx, argv[0]))
         return JS_EXCEPTION;
     acc = JS_UNDEFINED;
@@ -40604,98 +40673,6 @@ exception:
     return JS_EXCEPTION;
 }
 
-static JSValue js_iterator_proto_some(JSContext *ctx, JSValue this_val,
-                                      int argc, JSValue *argv)
-{
-    JSValue item, method, ret, func, index_val, r;
-    JSValue args[2];
-    int64_t idx;
-    BOOL done;
-
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.some called on non-object");
-    if (check_function(ctx, argv[0]))
-        return JS_EXCEPTION;
-    func = js_dup(argv[0]);
-    method = JS_GetProperty(ctx, this_val, JS_ATOM_next);
-    if (JS_IsException(method))
-        goto exception;
-    r = JS_FALSE;
-    for (idx = 0; /*empty*/; idx++) {
-        item = JS_IteratorNext(ctx, this_val, method, 0, NULL, &done);
-        if (JS_IsException(item))
-            goto exception;
-        if (done)
-            break;
-        index_val = js_int64(idx);
-        args[0] = item;
-        args[1] = index_val;
-        ret = JS_Call(ctx, func, JS_UNDEFINED, countof(args), args);
-        JS_FreeValue(ctx, item);
-        JS_FreeValue(ctx, index_val);
-        if (JS_IsException(ret))
-            goto exception;
-        if (JS_ToBoolFree(ctx, ret)) {
-            if (JS_IteratorClose(ctx, this_val, FALSE) < 0)
-                r = JS_EXCEPTION;
-            else
-                r = JS_TRUE;
-            break;
-        }
-        index_val = JS_UNDEFINED;
-        ret = JS_UNDEFINED;
-        item = JS_UNDEFINED;
-    }
-    JS_FreeValue(ctx, func);
-    JS_FreeValue(ctx, method);
-    return r;
-exception:
-    JS_IteratorClose(ctx, this_val, TRUE);
-    JS_FreeValue(ctx, func);
-    JS_FreeValue(ctx, method);
-    return JS_EXCEPTION;
-}
-
-static JSValue js_iterator_proto_take(JSContext *ctx, JSValue this_val,
-                                      int argc, JSValue *argv)
-{
-    JSValue v;
-    double dlimit;
-    int64_t limit;
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.take called on non-object");
-    v = JS_ToNumber(ctx, argv[0]);
-    if (JS_IsException(v))
-        return JS_EXCEPTION;
-    // Check for Infinity.
-    if (JS_ToFloat64(ctx, &dlimit, v)) {
-        JS_FreeValue(ctx, v);
-        return JS_EXCEPTION;
-    }
-    if (isnan(dlimit)) {
-        JS_FreeValue(ctx, v);
-        goto fail;
-    }
-    if (!isfinite(dlimit)) {
-        JS_FreeValue(ctx, v);
-        if (dlimit < 0)
-            goto fail;
-        else
-            limit = MAX_SAFE_INTEGER;
-    } else {
-        v = JS_ToIntegerFree(ctx, v);
-        if (JS_IsException(v))
-            return JS_EXCEPTION;
-        if (JS_ToInt64Free(ctx, &limit, v))
-            return JS_EXCEPTION;
-    }
-    if (limit < 0) {
-    fail:
-        return JS_ThrowRangeError(ctx, "must be positive");
-    }
-    return js_create_iterator_helper(ctx, this_val, JS_ITERATOR_HELPER_KIND_TAKE, JS_UNDEFINED, limit);
-}
-
 static JSValue js_iterator_proto_toArray(JSContext *ctx, JSValue this_val,
                                          int argc, JSValue *argv)
 {
@@ -40704,8 +40681,8 @@ static JSValue js_iterator_proto_toArray(JSContext *ctx, JSValue this_val,
     BOOL done;
 
     result = JS_UNDEFINED;
-    if (!JS_IsObject(this_val))
-        return JS_ThrowTypeError(ctx, "Iterator.prototype.toArray called on non-object");
+    if (check_iterator(ctx, this_val) < 0)
+        return JS_EXCEPTION;
     method = JS_GetProperty(ctx, this_val, JS_ATOM_next);
     if (JS_IsException(method))
         return JS_EXCEPTION;
@@ -40747,9 +40724,8 @@ static JSValue js_iterator_proto_set_toStringTag(JSContext *ctx, JSValue this_va
 {
     int res;
 
-    if (JS_VALUE_GET_TAG(this_val) != JS_TAG_OBJECT)
-        return JS_ThrowTypeError(ctx,
-                                 "set Iterator.prototype[Symbol.toStringTag] called on non-object");
+    if (check_iterator(ctx, this_val) < 0)
+        return JS_EXCEPTION;
     if (js_same_value(ctx, this_val, ctx->class_proto[JS_CLASS_ITERATOR]))
         return JS_ThrowTypeError(ctx, "Cannot assign to read only property");
     res = JS_GetOwnProperty(ctx, NULL, this_val, JS_ATOM_Symbol_toStringTag);
@@ -40764,17 +40740,6 @@ static JSValue js_iterator_proto_set_toStringTag(JSContext *ctx, JSValue this_va
     }
     return JS_UNDEFINED;
 }
-
-typedef struct JSIteratorHelperData {
-    JSIteratorHelperKindEnum kind; 
-    JSValue obj;
-    JSValue next;
-    JSValue func; // predicate (filter) or mapper (flatMap, map)
-    JSValue inner; // innerValue (flatMap)
-    int64_t count; // limit (drop, take) or counter (filter, map, flatMap)
-    BOOL executing;
-    BOOL done;
-} JSIteratorHelperData;
 
 static void js_iterator_helper_finalizer(JSRuntime *rt, JSValue val)
 {
@@ -40813,7 +40778,7 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValue this_val,
 
     it = JS_GetOpaque2(ctx, this_val, JS_CLASS_ITERATOR_HELPER);
     if (!it)
-        goto fail;
+        return JS_EXCEPTION;
     if (it->executing)
         return JS_ThrowTypeError(ctx, "cannot invoke a running iterator");
     if (it->done) {
@@ -40821,7 +40786,7 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValue this_val,
         return JS_UNDEFINED;
     }
 
-    it->executing = TRUE;
+    it->executing = 1;
 
     switch (it->kind) {
     case JS_ITERATOR_HELPER_KIND_DROP:
@@ -41041,48 +41006,14 @@ static JSValue js_iterator_helper_next(JSContext *ctx, JSValue this_val,
     }
 
 done:
-    it->done = magic == GEN_MAGIC_NEXT ? *pdone : TRUE;
-    it->executing = FALSE;
+    it->done = magic == GEN_MAGIC_NEXT ? *pdone : 1;
+    it->executing = 0;
     return ret;
 fail:
-    if (it) {
-        /* close the iterator object, preserving pending exception */
-        JS_IteratorClose(ctx, it->obj, TRUE);
-    }
+    /* close the iterator object, preserving pending exception */
+    JS_IteratorClose(ctx, it->obj, TRUE);
     ret = JS_EXCEPTION;
     goto done;
-}
-
-static JSValue js_create_iterator_helper(JSContext *ctx, JSValue iterator,
-                                         JSIteratorHelperKindEnum kind, JSValue func, int64_t count)
-{
-    JSValue obj, method;
-    JSIteratorHelperData *it;
-
-    method = JS_GetProperty(ctx, iterator, JS_ATOM_next);
-    if (JS_IsException(method))
-        return JS_EXCEPTION;
-    obj = JS_NewObjectClass(ctx, JS_CLASS_ITERATOR_HELPER);
-    if (JS_IsException(obj)) {
-        JS_FreeValue(ctx, method);
-        return JS_EXCEPTION;
-    }
-    it = js_malloc(ctx, sizeof(*it));
-    if (!it) {
-        JS_FreeValue(ctx, obj);
-        JS_FreeValue(ctx, method);
-        return JS_EXCEPTION;
-    }
-    it->kind = kind;
-    it->obj = js_dup(iterator);
-    it->func = js_dup(func);
-    it->next = method;
-    it->inner = JS_UNDEFINED;
-    it->count = count;
-    it->executing = FALSE;
-    it->done = FALSE;
-    JS_SetOpaqueInternal(obj, it);
-    return obj;
 }
 
 static const JSCFunctionListEntry js_iterator_funcs[] = {
@@ -41090,16 +41021,16 @@ static const JSCFunctionListEntry js_iterator_funcs[] = {
 };
 
 static const JSCFunctionListEntry js_iterator_proto_funcs[] = {
-    JS_CFUNC_DEF("drop", 1, js_iterator_proto_drop ),
-    JS_CFUNC_DEF("every", 1, js_iterator_proto_every ),
-    JS_CFUNC_DEF("filter", 1, js_iterator_proto_filter ),
-    JS_CFUNC_DEF("find", 1, js_iterator_proto_find ),
-    JS_CFUNC_DEF("flatMap", 1, js_iterator_proto_flatMap ),
-    JS_CFUNC_DEF("forEach", 1, js_iterator_proto_forEach ),
-    JS_CFUNC_DEF("map", 1, js_iterator_proto_map ),
+    JS_CFUNC_MAGIC_DEF("drop", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_DROP ),
+    JS_CFUNC_MAGIC_DEF("filter", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_FILTER ),
+    JS_CFUNC_MAGIC_DEF("flatMap", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_FLAT_MAP ),
+    JS_CFUNC_MAGIC_DEF("map", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_MAP ),
+    JS_CFUNC_MAGIC_DEF("take", 1, js_create_iterator_helper, JS_ITERATOR_HELPER_KIND_TAKE ),
+    JS_CFUNC_MAGIC_DEF("every", 1, js_iterator_proto_func, JS_ITERATOR_HELPER_KIND_EVERY ),
+    JS_CFUNC_MAGIC_DEF("find", 1, js_iterator_proto_func, JS_ITERATOR_HELPER_KIND_FIND),
+    JS_CFUNC_MAGIC_DEF("forEach", 1, js_iterator_proto_func, JS_ITERATOR_HELPER_KIND_FOR_EACH ),
+    JS_CFUNC_MAGIC_DEF("some", 1, js_iterator_proto_func, JS_ITERATOR_HELPER_KIND_SOME ),
     JS_CFUNC_DEF("reduce", 1, js_iterator_proto_reduce ),
-    JS_CFUNC_DEF("some", 1, js_iterator_proto_some ),
-    JS_CFUNC_DEF("take", 1, js_iterator_proto_take ),
     JS_CFUNC_DEF("toArray", 0, js_iterator_proto_toArray ),
     JS_CFUNC_DEF("[Symbol.iterator]", 0, js_iterator_proto_iterator ),
     JS_CGETSET_DEF("[Symbol.toStringTag]", js_iterator_proto_get_toStringTag, js_iterator_proto_set_toStringTag),
@@ -41242,7 +41173,7 @@ static const JSCFunctionListEntry js_number_funcs[] = {
     JS_CFUNC_DEF("isSafeInteger", 1, js_number_isSafeInteger ),
     JS_PROP_DOUBLE_DEF("MAX_VALUE", 1.7976931348623157e+308, 0 ),
     JS_PROP_DOUBLE_DEF("MIN_VALUE", 5e-324, 0 ),
-    JS_PROP_DOUBLE_DEF("NaN", NAN, 0 ),
+    JS_PROP_U2D_DEF("NaN", 0x7FF8ull<<48, 0 ), // workaround for msvc
     JS_PROP_DOUBLE_DEF("NEGATIVE_INFINITY", -INFINITY, 0 ),
     JS_PROP_DOUBLE_DEF("POSITIVE_INFINITY", INFINITY, 0 ),
     JS_PROP_DOUBLE_DEF("EPSILON", 2.220446049250313e-16, 0 ), /* ES6 */
@@ -43401,6 +43332,64 @@ static JSValue js_math_clz32(JSContext *ctx, JSValue this_val,
     return js_int32(r);
 }
 
+static JSValue js_math_sumPrecise(JSContext *ctx, JSValue this_val,
+                                  int argc, JSValue *argv)
+{
+    JSValue iter, next, item, ret;
+    bf_t a, b;
+    BOOL done;
+    double d;
+    int r;
+
+    iter = JS_GetIterator(ctx, argv[0], /*async*/FALSE);
+    if (JS_IsException(iter))
+        return JS_EXCEPTION;
+    bf_init(ctx->bf_ctx, &a);
+    bf_init(ctx->bf_ctx, &b);
+    ret = JS_EXCEPTION;
+    next = JS_GetProperty(ctx, iter, JS_ATOM_next);
+    if (JS_IsException(next))
+        goto fail;
+    bf_set_zero(&a, /*is_neg*/TRUE);
+    for (;;) {
+        item = JS_IteratorNext(ctx, iter, next, 0, NULL, &done);
+        if (JS_IsException(item))
+            goto fail;
+        if (done)
+            break; // item == JS_UNDEFINED
+        switch (JS_VALUE_GET_TAG(item)) {
+        default:
+            JS_FreeValue(ctx, item);
+            JS_ThrowTypeError(ctx, "not a number");
+            goto fail;
+        case JS_TAG_INT:
+            d = JS_VALUE_GET_INT(item);
+            break;
+        case JS_TAG_FLOAT64:
+            d = JS_VALUE_GET_FLOAT64(item);
+            break;
+        }
+        if (bf_set_float64(&b, d))
+            goto oom;
+        // Infinity + -Infinity results in BF_ST_INVALID_OP, sets |a| to nan
+        if ((r = bf_add(&a, &a, &b, BF_PREC_INF, BF_RNDN)))
+            if (r != BF_ST_INVALID_OP)
+                goto oom;
+    }
+    bf_get_float64(&a, &d, BF_RNDN); // return value deliberately ignored
+    ret = js_float64(d);
+fail:
+    JS_IteratorClose(ctx, iter, JS_IsException(ret));
+    JS_FreeValue(ctx, iter);
+    JS_FreeValue(ctx, next);
+    bf_delete(&a);
+    bf_delete(&b);
+    return ret;
+oom:
+    JS_ThrowOutOfMemory(ctx);
+    goto fail;
+}
+
 /* xorshift* random number generator by Marsaglia */
 static uint64_t xorshift64star(uint64_t *pstate)
 {
@@ -43502,6 +43491,7 @@ static const JSCFunctionListEntry js_math_funcs[] = {
     JS_CFUNC_SPECIAL_DEF("fround", 1, f_f, js_math_fround ),
     JS_CFUNC_DEF("imul", 2, js_math_imul ),
     JS_CFUNC_DEF("clz32", 1, js_math_clz32 ),
+    JS_CFUNC_DEF("sumPrecise", 1, js_math_sumPrecise ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "Math", JS_PROP_CONFIGURABLE ),
     JS_PROP_DOUBLE_DEF("E", 2.718281828459045, 0 ),
     JS_PROP_DOUBLE_DEF("LN10", 2.302585092994046, 0 ),
@@ -43525,9 +43515,14 @@ static int getTimezoneOffset(int64_t time) {
 #if 0
     /* TODO: expose this as a hook */
 #if defined(_WIN32)
-    TIME_ZONE_INFORMATION time_zone_info;
-    GetTimeZoneInformation(&time_zone_info);
-    return (int)time_zone_info.Bias / 60;
+    DWORD r;
+    TIME_ZONE_INFORMATION t;
+    r = GetTimeZoneInformation(&t);
+    if (r == TIME_ZONE_ID_INVALID)
+        return 0;
+    if (r == TIME_ZONE_ID_DAYLIGHT)
+         return (int)(t.Bias + t.DaylightBias);
+    return (int)t.Bias;
 #else
     time_t ti;
     struct tm tm;
@@ -48499,6 +48494,10 @@ static const JSCFunctionListEntry js_map_funcs[] = {
     JS_CGETSET_DEF("[Symbol.species]", js_get_this, NULL ),
 };
 
+static const JSCFunctionListEntry js_set_funcs[] = {
+    JS_CGETSET_DEF("[Symbol.species]", js_get_this, NULL ),
+};
+
 static const JSCFunctionListEntry js_map_proto_funcs[] = {
     JS_CFUNC_MAGIC_DEF("set", 2, js_map_set, 0 ),
     JS_CFUNC_MAGIC_DEF("get", 1, js_map_get, 0 ),
@@ -48587,17 +48586,19 @@ void JS_AddIntrinsicMapSet(JSContext *ctx)
     for(i = 0; i < 4; i++) {
         const char *name = JS_AtomGetStr(ctx, buf, sizeof(buf),
                                          JS_ATOM_Map + i);
-        ctx->class_proto[JS_CLASS_MAP + i] = JS_NewObject(ctx);
-        JS_SetPropertyFunctionList(ctx, ctx->class_proto[JS_CLASS_MAP + i],
+        int class_id = JS_CLASS_MAP + i;
+        ctx->class_proto[class_id] = JS_NewObject(ctx);
+        JS_SetPropertyFunctionList(ctx, ctx->class_proto[class_id],
                                    js_map_proto_funcs_ptr[i],
                                    js_map_proto_funcs_count[i]);
         obj1 = JS_NewCFunctionMagic(ctx, js_map_constructor, name, 0,
                                     JS_CFUNC_constructor_magic, i);
-        if (i < 2) {
-            JS_SetPropertyFunctionList(ctx, obj1, js_map_funcs,
-                                       countof(js_map_funcs));
-        }
-        JS_NewGlobalCConstructor2(ctx, obj1, name, ctx->class_proto[JS_CLASS_MAP + i]);
+        if (class_id == JS_CLASS_MAP)
+            JS_SetPropertyFunctionList(ctx, obj1, js_map_funcs, countof(js_map_funcs));
+        else if (class_id == JS_CLASS_SET)
+            JS_SetPropertyFunctionList(ctx, obj1, js_set_funcs, countof(js_set_funcs));
+
+        JS_NewGlobalCConstructor2(ctx, obj1, name, ctx->class_proto[class_id]);
     }
 
     for(i = 0; i < 2; i++) {
@@ -50272,7 +50273,7 @@ static const JSCFunctionListEntry js_global_funcs[] = {
     JS_CFUNC_DEF("escape", 1, js_global_escape ),
     JS_CFUNC_DEF("unescape", 1, js_global_unescape ),
     JS_PROP_DOUBLE_DEF("Infinity", 1.0 / 0.0, 0 ),
-    JS_PROP_DOUBLE_DEF("NaN", NAN, 0 ),
+    JS_PROP_U2D_DEF("NaN", 0x7FF8ull<<48, 0 ), // workaround for msvc
     JS_PROP_UNDEFINED_DEF("undefined", 0 ),
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "global", JS_PROP_CONFIGURABLE ),
 };
@@ -50522,7 +50523,10 @@ static JSValue set_date_field(JSContext *ctx, JSValue this_val,
         fields[first_field + i] = trunc(a);
     }
 
-    if (res && argc > 0)
+    if (!res)
+        return JS_NAN;
+
+    if (argc > 0)
         d = set_date_fields(fields, is_local);
 
     return JS_SetThisTimeValue(ctx, this_val, d);
@@ -51288,6 +51292,8 @@ static JSValue js_date_setYear(JSContext *ctx, JSValue this_val,
     if (JS_ThisTimeValue(ctx, &y, this_val) || JS_ToFloat64(ctx, &y, argv[0]))
         return JS_EXCEPTION;
     y = +y;
+    if (isnan(y))
+        return JS_SetThisTimeValue(ctx, this_val, y);
     if (isfinite(y)) {
         y = trunc(y);
         if (y >= 0 && y < 100)
@@ -52575,6 +52581,16 @@ static JSValue js_typed_array_get_byteOffset(JSContext *ctx, JSValue this_val)
         return js_int32(0);
     ta = p->u.typed_array;
     return js_uint32(ta->offset);
+}
+
+JSValue JS_NewTypedArray(JSContext *ctx, int argc, JSValue *argv,
+                         JSTypedArrayEnum type)
+{
+    if (type < JS_TYPED_ARRAY_UINT8C || type > JS_TYPED_ARRAY_FLOAT64)
+        return JS_ThrowRangeError(ctx, "invalid typed array type");
+
+    return js_typed_array_constructor(ctx, JS_UNDEFINED, argc, argv,
+                                      JS_CLASS_UINT8C_ARRAY + type);
 }
 
 /* Return the buffer associated to the typed array or an exception if
@@ -54884,8 +54900,13 @@ JSValue JS_NewUint8ArrayCopy(JSContext *ctx, const uint8_t *buf, size_t len)
     return js_new_uint8array(ctx, buffer);
 }
 
-JS_BOOL JS_IsUint8Array(JSValue obj) {
-    return JS_GetClassID(obj) == JS_CLASS_UINT8_ARRAY;
+int JS_GetTypedArrayType(JSValue obj)
+{
+    JSClassID class_id = JS_GetClassID(obj);
+    if (class_id >= JS_CLASS_UINT8C_ARRAY && class_id <= JS_CLASS_FLOAT64_ARRAY)
+        return class_id - JS_CLASS_UINT8C_ARRAY;
+    else
+        return -1;
 }
 
 /* Atomics */

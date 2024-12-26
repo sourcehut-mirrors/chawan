@@ -513,6 +513,7 @@ proc JS_IsObject*(v: JSValue): JS_BOOL
 proc JS_Throw*(ctx: JSContext; obj: JSValue): JSValue
 proc JS_GetException*(ctx: JSContext): JSValue
 proc JS_IsError*(ctx: JSContext; v: JSValue): JS_BOOL
+proc JS_IsUncatchableError*(ctx: JSContext; val: JSValue): JS_BOOL
 proc JS_SetUncatchableError*(ctx: JSContext; val: JSValue; flag: JS_BOOL)
 proc JS_ResetUncatchableError*(ctx: JSContext)
 proc JS_NewError*(ctx: JSContext): JSValue
