@@ -74,19 +74,19 @@ func jencoding(this: JSTextEncoder): string {.jsfget: "encoding".} =
   return "utf-8"
 
 proc dealloc_wrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
-  dealloc(p)
+  if p != nil:
+    dealloc(p)
 
 proc encode(this: JSTextEncoder; input = ""): JSUint8Array {.jsfunc.} =
   # we have to validate input first :/
   #TODO it is possible to do less copies here...
-  var input = input.toValidUTF8()
-  let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
-  copyMem(buf, addr input[0], input.len)
-  let abuf = JSArrayBuffer(
-    p: buf,
-    len: csize_t(input.len),
-    dealloc: dealloc_wrap
-  )
+  let input = input.toValidUTF8()
+  let abuf = if input.len > 0:
+    let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
+    copyMem(buf, unsafeAddr input[0], input.len)
+    JSArrayBuffer(p: buf, len: csize_t(input.len), dealloc: dealloc_wrap)
+  else:
+    JSArrayBuffer(p: nil, len: 0, dealloc: dealloc_wrap)
   return JSUint8Array(
     abuf: abuf,
     offset: 0,
