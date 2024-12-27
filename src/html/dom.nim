@@ -3298,7 +3298,7 @@ func find(this: CSSStyleDeclaration; s: string): int =
       return i
   return -1
 
-proc getPropertyValue(this: CSSStyleDeclaration; s: string): string =
+proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
   if (let i = this.find(s); i != -1):
     return $this.decls[i].value
   return ""
