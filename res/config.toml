@@ -82,7 +82,7 @@ use-mouse = true
 [display]
 color-mode = "auto"
 format-mode = "auto"
-no-format-mode = ["overline"]
+no-format-mode = "overline"
 image-mode = "auto"
 sixel-colors = "auto"
 alt-screen = "auto"

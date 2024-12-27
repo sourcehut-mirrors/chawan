@@ -68,19 +68,22 @@ Following is a list of start-up options:
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>visual-home</td>
 <td>url</td>
-<td>Page opened when Chawan is called with the -V option (and no other
-pages are passed as arguments.)</td>
+<td>"about:chawan"</td>
+<td>Page opened when Chawan is called with the -V option and no other
+pages are passed as arguments.</td>
 </tr>
 
 <tr>
 <td>startup-script</td>
 <td>JavaScript code</td>
+<td>""</td>
 <td>Script Chawan runs on start-up. Pages will not be loaded until this
 function exits. (Note however that asynchronous functions like setTimeout
 do not block loading.)</td>
@@ -89,6 +92,7 @@ do not block loading.)</td>
 <tr>
 <td>headless</td>
 <td>boolean</td>
+<td>false</td>
 <td>Whether Chawan should always start in headless mode. Automatically
 enabled when Chawan is called with -r.</td>
 </tr>
@@ -96,8 +100,8 @@ enabled when Chawan is called with -r.</td>
 <tr>
 <td>console-buffer</td>
 <td>boolean</td>
-<td>Whether Chawan should open a console buffer in non-headless mode. Defaults
-to true.<br>
+<td>true</td>
+<td>Whether Chawan should open a console buffer in non-headless mode.<br>
 Warning: this is only useful for debugging. Disabling this option without
 manually redirecting standard error will result in error messages randomly
 appearing on your screen.</td>
@@ -131,52 +135,55 @@ Following is a list of buffer options:
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>styling</td>
 <td>boolean</td>
+<td>true</td>
 <td>Enable/disable author style sheets. Note that disabling this does not affect
-user styles set in `[css]`.<br>
-Defaults to true (i.e. enabled).</td>
+user styles set in `[css]`.</td>
 </tr>
 
 <tr>
 <td>scripting</td>
 <td>boolean / "app"</td>
+<td>false</td>
 <td>Enable/disable JavaScript in *all* buffers.<br>
 `"app"` also enables JavaScript APIs that can be used to fingerprint
-users (e.g. querying the window's size.)<br>
-This may achieve better compatibility with websites that behave like
-applications, at the cost of reduced privacy.<br>
-Defaults to false. For security reasons, users are encouraged to selectively
-enable JavaScript with `[[siteconf]]` instead of using this setting.</td>
+users (e.g. querying the window's size.) This may achieve better
+compatibility with websites that behave like applications, at the cost
+of reduced privacy.<br>
+For security reasons, users are encouraged to selectively enable
+JavaScript with `[[siteconf]]` instead of using this setting.</td>
 </tr>
 
 <tr>
 <td>images</td>
 <td>boolean</td>
-<td>Enable/disable inline image display.<br>
-Defaults to false.</td>
+<td>false</td>
+<td>Enable/disable inline image display.</td>
 </tr>
 
 <tr>
 <td>cookie</td>
 <td>boolean</td>
+<td>false</td>
 <td>Enable/disable cookies on sites.<br>
-Defaults to false.<br>
-Note: in Chawan, each website gets a separate cookie jar, so websites relying on
-cross-site cookies may not work as expected. You may use the `[[siteconf]]`
-"cookie-jar" and "third-party-cookie" settings to adjust this behavior for
-specific sites.</td>
+In Chawan, each website gets a separate cookie jar, so websites relying
+on cross-site cookies may not work as expected. You may use the
+`[[siteconf]]` "share-cookie-jar" and "third-party-cookie" settings to
+adjust this behavior for specific sites.</td>
 </tr>
 
 <tr>
 <td>referer-from</td>
 <td>boolean</td>
+<td>false</td>
 <td>Enable/disable the "Referer" header.<br>
-Defaults to false. For security reasons, users are encouraged to leave this
+Defaults to false. For privacy reasons, users are encouraged to leave this
 option disabled, only enabling it for specific sites in `[[siteconf]]`.
 </td>
 </tr>
@@ -184,28 +191,26 @@ option disabled, only enabling it for specific sites in `[[siteconf]]`.
 <tr>
 <td>autofocus</td>
 <td>boolean</td>
+<td>false</td>
 <td>When set to true, elements with an "autofocus" attribute are focused on
 automatically after the buffer is loaded.<br>
-If scripting is enabled, this also allows scripts to focus on elements.<br>
-Defaults to false.</td>
+If scripting is enabled, this also allows scripts to focus on elements.</td>
 </tr>
 
 <tr>
 <td>meta-refresh</td>
 <td>"never" / "always" / "ask"</td>
+<td>"ask"</td>
 <td>Whether or not `http-equiv=refresh` meta tags should be respected. "never"
 completely disables them, "always" automatically accepts all of them, "ask"
-brings up a pop-up menu.<br>
-Defaults to "ask".
-</td>
+brings up a pop-up menu.</td>
 </tr>
 
 <tr>
 <td>history</td>
-<td>true / false</td>
-<td>Whether or not browsing history should be saved to the disk.<br>
-Defaults to true.
-</td>
+<td>boolean</td>
+<td>true</td>
+<td>Whether or not browsing history should be saved to the disk.</td>
 </tr>
 
 </table>
@@ -221,22 +226,24 @@ Following is a list of search options:
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>wrap</td>
 <td>boolean</td>
-<td>When set to true, searchNext/searchPrev wraps around the document.</td>
+<td>true</td>
+<td>Whether on-page searches should wrap around the document.</td>
 </tr>
 
 <tr>
 <td>ignore-case</td>
 <td>"auto" / boolean</td>
+<td>"auto"</td>
 <td>When set to true, document-wide searches are case-insensitive by
 default. When set to "auto", searches are only case-sensitive when the search
 term includes a capital letter.<br>
-Defaults to "auto".<br>
 Note: this can also be overridden inline in the search bar (vim-style),
 with the escape sequences `\c` (ignore case) and `\C` (strict case). See
 [search mode](#search-mode) for details.)</td>
@@ -255,12 +262,14 @@ Following is a list of encoding options:
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>document-charset</td>
 <td>array of charset label strings</td>
+<td>["utf-8", "sjis", "euc-jp", "latin2"]</td>
 <td>List of character sets for loading documents.<br>
 All listed character sets are enumerated until the document has been decoded
 without errors. In HTML, meta tags and the BOM may override this with a
@@ -272,6 +281,7 @@ correctly.
 <tr>
 <td>display-charset</td>
 <td>string</td>
+<td>"auto"</td>
 <td>Character set for keyboard input and displaying documents.<br>
 Used in dump mode as well.<br>
 (This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is roughly equivalent to
@@ -291,18 +301,21 @@ Following is a list of external options:
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>tmpdir</td>
 <td>path</td>
+<td>{usually /tmp/cha-tmp-user}</td>
 <td>Directory used to save temporary files.</td>
 </tr>
 
 <tr>
 <td>sockdir</td>
 <td>path</td>
+<td>{usually /tmp/cha-sock-user}</td>
 <td>Directory used to store UNIX domain sockets used for inter-process
 communication.</td>
 </tr>
@@ -310,6 +323,7 @@ communication.</td>
 <tr>
 <td>editor</td>
 <td>shell command</td>
+<td>{usually `$EDITOR`}</td>
 <td>External editor command. %s is substituted for the file name, %d for
 the line number.</td>
 </tr>
@@ -317,6 +331,7 @@ the line number.</td>
 <tr>
 <td>mailcap</td>
 <td>array of paths</td>
+<td>{see mailcap docs}</td>
 <td>Search path for <!-- MANOFF -->[mailcap](mailcap.md) files.<!-- MANON -->
 <!-- MANON mailcap files. (See **cha-mailcap**(5) for details.) MANOFF -->
 </td>
@@ -325,6 +340,7 @@ the line number.</td>
 <tr>
 <td>mime-types</td>
 <td>array of paths</td>
+<td>{see mime.types docs</td>
 <td>Search path for <!-- MANOFF -->[mime.types](mime.types.md) files.<!-- MANON -->
 <!-- MANON mime.types files. (See **cha-mime.types**(5) for details.) MANOFF -->
 </td>
@@ -333,6 +349,7 @@ the line number.</td>
 <tr>
 <td>auto-mailcap</td>
 <td>path</td>
+<td>"$CHA_CONFIG_DIR/auto.mailcap"</td>
 <td>Mailcap file for entries that are automatically executed.<br>
 The "Open as" prompt also saves entries in this file.</td>
 </tr>
@@ -340,6 +357,7 @@ The "Open as" prompt also saves entries in this file.</td>
 <tr>
 <td>cgi-dir</td>
 <td>array of paths</td>
+<td>{see local CGI docs}</td>
 <td>Search path for <!-- MANOFF -->[local CGI](localcgi.md) scripts.<!-- MANON -->
 <!-- MANON local CGI scripts. (See **cha-localcgi**(5) for details.) MANOFF -->
 </td>
@@ -348,6 +366,7 @@ The "Open as" prompt also saves entries in this file.</td>
 <tr>
 <td>urimethodmap</td>
 <td>array of paths</td>
+<td>{see urimethodmap docs}</td>
 <td>Search path for <!-- MANOFF -->[urimethodmap](urimethodmap.md) files.<!-- MANON -->
 <!-- MANON urimethodmap files. (See **cha-urimethodmap**(5) for details.) MANOFF -->
 </td>
@@ -356,6 +375,7 @@ The "Open as" prompt also saves entries in this file.</td>
 <tr>
 <td>w3m-cgi-compat</td>
 <td>boolean</td>
+<td>false</td>
 <td>Enable local CGI compatibility with w3m. In short, it redirects
 `file:///cgi-bin/*` and `file:///$LIB/cgi-bin/*` to `cgi-bin:*`. For further
 details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
@@ -366,26 +386,28 @@ details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
 <tr>
 <td>download-dir</td>
 <td>path</td>
+<td>{same as tmpdir}</td>
 <td>Path to pre-fill for "Save to:" prompts.</td>
 </tr>
 
 <tr>
 <td>copy-cmd</td>
 <td>shell command</td>
-<td>Command to use for "copy to clipboard" operations. Currently it
-defaults to `xsel -bi`.</td>
+<td>"xsel -bi"</td>
+<td>Command to use for "copy to clipboard" operations.</td>
 </tr>
 
 <tr>
 <td>paste-cmd</td>
 <td>shell command</td>
-<td>Command to use for "read from clipboard" operations. Currently it
-defaults to `xsel -bo`.</td>
+<td>"xsel -bo"</td>
+<td>Command to use for "read from clipboard" operations.</td>
 </tr>
 
 <tr>
 <td>bookmark</td>
 <td>path</td>
+<td>"bookmark.md"</td>
 <td>Path to the bookmark.md file. (The file it points to should have a
 .md extension, so that its type can be correctly deduced.)</td>
 </tr>
@@ -393,13 +415,15 @@ defaults to `xsel -bo`.</td>
 <tr>
 <td>history-file</td>
 <td>path</td>
-<td>Path to the history file. Defaults to "history.uri".</td>
+<td>"history.uri"</td>
+<td>Path to the history file.</td>
 </tr>
 
 <tr>
 <td>history-size</td>
 <td>number</td>
-<td>Maximum length of the history file. Defaults to 100.</td>
+<td>100</td>
+<td>Maximum length of the history file.</td>
 </tr>
 
 </table>
@@ -419,17 +443,17 @@ Input options are to be placed in the `[input]` section.
 <tr>
 <td>vi-numeric-prefix</td>
 <td>boolean</td>
+<td>true</td>
 <td>Whether vi-style numeric prefixes to commands should be accepted.<br>
-When set to true, commands that return a function will be called with the
-numeric prefix as their first argument.<br>
-Note: this only applies for keybindings defined in [page].</td>
+Only applies for keybindings defined in `[page]`.</td>
 </tr>
 
 <tr>
 <td>use-mouse</td>
 <td>boolean</td>
-<td>Whether Chawan is allowed to use the mouse.<br>
-Currently, the default behavior imitates that of w3m.</td>
+<td>true</td>
+<td>Whether Chawan is allowed to intercept mouse clicks.<br>
+The current implementation imitates w3m.</td>
 </tr>
 
 </table>
@@ -456,29 +480,31 @@ Network options are to be placed in the `[network]` section.
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>max-redirect</td>
 <td>number</td>
+<td>10</td>
 <td>Maximum number of redirections to follow.</td>
 </tr>
 
 <tr>
 <td>prepend-scheme</td>
 <td>string</td>
+<td>"https://"</td>
 <td>Prepend this to URLs passed to Chawan without a scheme.<br>
 Note that local files (`file:` scheme) will always be checked first; only
 if this fails, Chawan will retry the request with `prepend-scheme` set as
-the scheme.<br>
-By default, this is set to "https://". Note that the "://" part is
-mandatory.</td>
+the scheme.</td>
 </tr>
 
 <tr>
 <td>prepend-https</td>
 <td>boolean</td>
+<td>true</td>
 <td>Deprecated: use prepend-scheme instead.<br>
 When set to false, Chawan will act as if prepend-scheme were set to "".</td>
 </tr>
@@ -486,6 +512,7 @@ When set to false, Chawan will act as if prepend-scheme were set to "".</td>
 <tr>
 <td>proxy</td>
 <td>URL</td>
+<td>unset</td>
 <td>Specify a proxy for all network requests Chawan makes. All proxies
 supported by cURL may be used. Can be overridden by siteconf.</td>
 </tr>
@@ -493,6 +520,7 @@ supported by cURL may be used. Can be overridden by siteconf.</td>
 <tr>
 <td>default-headers</td>
 <td>table</td>
+<td>{omitted}</td>
 <td>Specify a list of default headers for all HTTP(S) network requests. Can be
 overridden by siteconf.</td>
 </tr>
@@ -510,12 +538,14 @@ Following is a list of display options:
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>color-mode</td>
 <td>"monochrome" / "ansi" / "eight-bit" / "true-color" / "auto"</td>
+<td>"auto"</td>
 <td>Set the color mode. "auto" for automatic detection, "monochrome"
 for black on white, "ansi" for ansi colors, "eight-bit" for 256-color mode, and
 "true-color" for true colors.<br>
@@ -527,6 +557,7 @@ a legacy alias of "true-color".</td>
 <td>format-mode</td>
 <td>"auto" / ["bold", "italic", "underline", "reverse", "strike", "overline",
 "blink"]</td>
+<td>"auto"</td>
 <td>Specifies output formatting modes. Accepts the string "auto" or an array
 of specific attributes. An empty array (`[]`) disables formatting
 completely.</td>
@@ -535,42 +566,42 @@ completely.</td>
 <tr>
 <td>no-format-mode</td>
 <td>["bold", "italic", "underline", "reverse", "strike", "overline", "blink"]</td>
-<td>Disable specified formatting modes.</td>
+<td>"overline"</td>
+<td>Disable specific formatting modes.</td>
 </tr>
 
 <tr>
 <td>image-mode</td>
 <td>"auto" / "none" / "sixel" / "kitty"</td>
+<td>"auto"</td>
 <td>Specifies the image output mode. "sixel" uses sixels for output, "kitty"
 uses the Kitty image display protocol, "none" disables image display
 completely.<br>
 "auto" tries to detect sixel or kitty support, and falls back to "none" when
-neither are available.<br>
-Defaults to "auto". However, images are still disabled by default, unless you
-also enable `buffer.images` which allows the browser to actually download
-images.
-</td>
+neither are available.  This is the default setting, but you must also
+enable `buffer.images` for images to work.</td>
 </tr>
 
 <tr>
 <td>sixel-colors</td>
 <td>"auto" / 2..65535</td>
+<td>"auto"</td>
 <td>Only applies when `display.image-mode="sixel"`. Setting a number
-overrides the number of sixel color registers reported by the terminal,
-while "auto" leaves color detection to Chawan.<br>
-Defaults to "auto".
+overrides the number of sixel color registers reported by the terminal.
 </td>
 </tr>
 
 <tr>
 <td>alt-screen</td>
 <td>"auto" / boolean</td>
+<td>"auto"</td>
 <td>Enable/disable the alternative screen.</td>
 </tr>
 
 <tr>
 <td>highlight-color</td>
 <td>color</td>
+<td>"cyan"</td>
 <td>Set the highlight color. Both hex values and CSS color names are
 accepted.</td>
 </tr>
@@ -578,12 +609,14 @@ accepted.</td>
 <tr>
 <td>highlight-marks</td>
 <td>boolean</td>
+<td>true</td>
 <td>Enable/disable highlighting of marks.</td>
 </tr>
 
 <tr>
 <td>double-width-ambiguous</td>
 <td>boolean</td>
+<td>false</td>
 <td>Assume the terminal displays characters in the East Asian Ambiguous
 category as double-width characters. Useful when e.g. ○ occupies two
 cells.</td>
@@ -592,6 +625,7 @@ cells.</td>
 <tr>
 <td>minimum-contrast</td>
 <td>number</td>
+<td>100</td>
 <td>Specify the minimum difference between the luminance (Y) of the background
 and the foreground. -1 disables this function (i.e. allows black letters on
 black background, etc).</td>
@@ -600,18 +634,21 @@ black background, etc).</td>
 <tr>
 <td>force-clear</td>
 <td>boolean</td>
+<td>false</td>
 <td>Force the screen to be completely cleared every time it is redrawn.</td>
 </tr>
 
 <tr>
 <td>set-title</td>
 <td>boolean</td>
+<td>true</td>
 <td>Set the terminal emulator's window title to that of the current page.</td>
 </tr>
 
 <tr>
 <td>default-background-color</td>
 <td>"auto" / color</td>
+<td>"auto"</td>
 <td>Overrides the assumed background color of the terminal. "auto" leaves
 background color detection to Chawan.</td>
 </tr>
@@ -619,6 +656,7 @@ background color detection to Chawan.</td>
 <tr>
 <td>default-foreground-color</td>
 <td>"auto" / color</td>
+<td>"auto"</td>
 <td>Sets the assumed foreground color of the terminal. "auto" leaves foreground
 color detection to Chawan.</td>
 </tr>
@@ -626,16 +664,17 @@ color detection to Chawan.</td>
 <tr>
 <td>query-da1</td>
 <td>bool</td>
+<td>true</td>
 <td>Enable/disable querying Primary Device Attributes, and with it, all
 "dynamic" terminal querying.<br>
-It is highly recommended not to alter the default value (which is true), or the
-output will most likely look horrible. (Except, obviously, if your terminal does
-not support Primary Device Attributes.)</td>
+Do not alter this value unless Chawan told you so; the output will look
+awful.</td>
 </tr>
 
 <tr>
 <td>columns, lines, pixels-per-column, pixels-per-line</td>
 <td>number</td>
+<td>80, 24, 9, 18</td>
 <td>Fallback values for the number of columns, lines, pixels per
 column, and pixels per line for the cases where it cannot be determined
 automatically. (For example, these values are used in dump mode.)</td>
@@ -645,6 +684,7 @@ automatically. (For example, these values are used in dump mode.)</td>
 <td>force-columns, force-lines, force-pixels-per-column,
 force-pixels-per-line</td>
 <td>boolean</td>
+<td>false</td>
 <td>Force-set columns, lines, pixels per column, or pixels per line to the
 fallback values provided above.</td>
 </tr>
@@ -662,15 +702,16 @@ Protocol-related rules are to be placed in objects keyed as
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>form-request</td>
-<td>http, ftp, data, mailto</td>
+<td>"http" / "ftp" / "data" / "mailto"</td>
+<td>"http"</td>
 <td>Specify which protocol to imitate when submitting forms to this
-protocol.<br>
-Defaults to HTTP.</td>
+protocol.</td>
 </tr>
 
 </table>
@@ -725,8 +766,11 @@ returned, it will be parsed instead of the old one.</td>
 
 ## Siteconf
 
-Configuration options can be specified for individual sites. Entries are to be
-placed in the table array `[[siteconf]]`.
+Configuration options can be specified for individual sites. Entries are
+to be placed in the table array `[[siteconf]]`.
+
+Most siteconf options can also be specified globally; see the
+"overrides" field.
 
 Examples:
 ```
@@ -778,12 +822,14 @@ Siteconf options:
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Overrides</th>
 <th>Function</th>
 </tr>
 
 <tr>
 <td>url</td>
 <td>regex</td>
+<td>n/a</td>
 <td>Regular expression used to match the URL. Either this or the `host` option
 must be specified.<br>
 Note: regexes are handled according to the [match mode](#match-mode) regex
@@ -793,6 +839,7 @@ handling rules.</td>
 <tr>
 <td>host</td>
 <td>regex</td>
+<td>n/a</td>
 <td>Regular expression used to match the host part of the URL (i.e. domain
 name/ip address.) Either this or the `url` option must be specified.<br>
 Note: regexes are handled according to the [match mode](#match-mode) regex
@@ -802,6 +849,7 @@ handling rules.</td>
 <tr>
 <td>rewrite-url</td>
 <td>JavaScript function</td>
+<td>n/a</td>
 <td>A JavaScript function Chawan will pass the site's URL object to. If
 a new URL is returned, or the URL object is modified in any way, Chawan
 will transparently redirect the user to this new URL.</td>
@@ -810,14 +858,15 @@ will transparently redirect the user to this new URL.</td>
 <tr>
 <td>cookie</td>
 <td>boolean</td>
+<td>`buffer.cookie`</td>
 <td>Whether loading cookies should be allowed for this URL. By default, this is
-false for all websites.<br>
-Overrides `buffer.cookie`.</td>
+false for all websites.</td>
 </tr>
 
 <tr>
 <td>third-party-cookie</td>
 <td>array of regexes</td>
+<td>n/a</td>
 <td>Domains for which third-party cookies are allowed on this domain.
 Only works for buffers which share the same cookie jar.<br>
 Regexes are handled according to [match mode](#match-mode) rules.<br>
@@ -829,6 +878,7 @@ declarations on subdomains have no effect.</td>
 <tr>
 <td>share-cookie-jar</td>
 <td>host</td>
+<td>n/a</td>
 <td>Cookie jar to use for this domain. Useful for e.g. sharing cookies with
 subdomains.</td>
 </tr>
@@ -836,102 +886,104 @@ subdomains.</td>
 <tr>
 <td>referer-from</td>
 <td>boolean</td>
+<td>`buffer.referer-from`</td>
 <td>Whether or not we should send a Referer header when opening requests
 originating from this domain. Simplified example: if you click a link on a.com
 that refers to b.com, and referer-from is true, b.com is sent "a.com" as the
-Referer header.<br>
-Overrides `buffer.referer-from`.
+Referer header.
 </td>
 </tr>
 
 <tr>
 <td>scripting</td>
 <td>boolean / "app"</td>
-<td>Enable/disable JavaScript execution on this site. Overrides
-`buffer.scripting`.<br>
-See the description of `buffer.scripting` for an explanation of
-"app".</td>
+<td>`buffer.scripting`</td>
+<td>Enable/disable JavaScript execution on this site. See
+`buffer.scripting` for details.</td>
 </tr>
 
 <tr>
 <td>styling</td>
 <td>boolean</td>
-<td>Enable/disable author styles (CSS) on this site. Overrides
-`buffer.styling`.</td>
+<td>`buffer.styling`</td>
+<td>Enable/disable author styles (CSS) on this site.</td>
 </tr>
 
 <tr>
 <td>images</td>
 <td>boolean</td>
-<td>Enable/disable image display on this site. Overrides `buffer.images`.</td>
+<td>`buffer.images`</td>
+<td>Enable/disable image display on this site.</td>
 </tr>
 
 <tr>
 <td>document-charset</td>
 <td>charset label string</td>
-<td>Specify the default encoding for this site. Overrides
-`encoding.document-charset`. </td>
+<td>`encoding.document-charset`</td>
+<td>Specify the default encoding for this site.</td>
 </tr>
 
 <tr>
 <td>stylesheet</td>
 <td>CSS stylesheet</td>
-<td>Specify an additional user-stylesheet for this site.  
-Note: other user-stylesheets (specified under [css] or additional matching
-siteconfs) are not overridden. (In other words, they will be concatenated
-with this stylesheet to get the final user stylesheet.)</td>
+<td>n/a</td>
+<td>Specify an additional user-stylesheet for this site.<br>
+Other user-stylesheets (specified under [css] or additional matching
+siteconfs) are concatenated with this to get the final user stylesheet.</td>
 </tr>
 
 <tr>
 <td>proxy</td>
 <td>URL</td>
-<td>Specify a proxy for network requests fetching contents of this buffer.
-Overrides `network.proxy`.</td>
+<td>`network.proxy`</td>
+<td>Specify a proxy for network requests fetching contents of this
+buffer.</td>
 </tr>
 
 <tr>
 <td>default-headers</td>
 <td>table</td>
-<td>Specify a list of default headers for HTTP(S) network requests to this
-buffer. Overrides `network.default-headers`.</td>
+<td>`network.default-headers`</td>
+<td>Specify a list of default headers for HTTP(S) network requests
+to this buffer.</td>
 </tr>
 
 <tr>
 <td>insecure-ssl-no-verify</td>
 <td>boolean</td>
+<td>n/a</td>
 <td>Defaults to false. When set to true, this disables peer and hostname
 verification for SSL keys on this site, like `curl --insecure` would.<br>
-WARNING: this is insecure, and opens up your connections to man-in-the-middle
-attacks. Please do not use this unless you are absolutely sure you know what you
+Please do not use this unless you are absolutely sure you know what you
 are doing.</td>
 </tr>
 
 <tr>
 <td>autofocus</td>
 <td>boolean</td>
+<td>`buffer.autofocus`</td>
 <td>When set to true, elements with an "autofocus" attribute are focused
 on automatically after the buffer is loaded.<br>
 If scripting is enabled, this also allows scripts to focus on
-elements.<br>
-Overrides `buffer.autofocus`.</td>
+elements.</td>
 </tr>
 
 <tr>
 <td>meta-refresh</td>
 <td>"never" / "always" / "ask"</td>
+<td>`buffer.meta-refresh`</td>
 <td>Whether or not `http-equiv=refresh` meta tags should be respected. "never"
 completely disables them, "always" automatically accepts all of them, "ask"
-brings up a pop-up menu.<br>
-Overrides `buffer.meta-refresh`.
+brings up a pop-up menu.
 </td>
 </tr>
 
 <tr>
 <td>history</td>
-<td>true / false</td>
-<td>Whether or not browsing history should be saved to the disk.<br>
-Overrides `buffer.history`.
-</td>
+<td>boolean</td>
+<td>`buffer.history`</td>
+<td>Whether or not browsing history should be saved to the disk for this
+URL.</td>
 </tr>
 
 </table>
