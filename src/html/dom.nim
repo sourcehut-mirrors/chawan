@@ -109,6 +109,7 @@ type
     urandom*: PosixStream
     imageTypes*: Table[string, string]
     userAgent*: string
+    autofocus*: bool
 
   # Navigator stuff
   Navigator* = object
@@ -2699,6 +2700,11 @@ proc setFocus*(document: Document; element: Element) =
   document.internalFocus = element
   if element != nil:
     element.invalidDeps.incl(dtFocus)
+
+proc focus(ctx: JSContext; element: Element) {.jsfunc.} =
+  let window = ctx.getWindow()
+  if window != nil and window.autofocus:
+    element.document.setFocus(element)
 
 func target*(document: Document): Element =
   return document.internalTarget

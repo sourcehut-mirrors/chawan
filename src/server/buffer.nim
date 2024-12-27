@@ -1939,6 +1939,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
       config.scripting,
       config.images,
       config.styling,
+      config.autofocus,
       attrs,
       factory,
       loader,

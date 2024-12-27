@@ -342,7 +342,7 @@ proc runJSJobs*(window: Window) =
     let ctx = r.error
     ctx.writeException(window.console.err)
 
-proc newWindow*(scripting: ScriptingMode; images, styling: bool;
+proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     attrs: WindowAttributes; factory: CAtomFactory; loader: FileLoader;
     url: URL; urandom: PosixStream; imageTypes: Table[string, string];
     userAgent: string): Window =
@@ -361,7 +361,8 @@ proc newWindow*(scripting: ScriptingMode; images, styling: bool;
     factory: factory,
     urandom: urandom,
     imageTypes: imageTypes,
-    userAgent: userAgent
+    userAgent: userAgent,
+    autofocus: autofocus
   )
   window.location = window.newLocation()
   if scripting != smFalse:

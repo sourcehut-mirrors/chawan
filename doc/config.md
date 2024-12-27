@@ -186,6 +186,7 @@ option disabled, only enabling it for specific sites in `[[siteconf]]`.
 <td>boolean</td>
 <td>When set to true, elements with an "autofocus" attribute are focused on
 automatically after the buffer is loaded.<br>
+If scripting is enabled, this also allows scripts to focus on elements.<br>
 Defaults to false.</td>
 </tr>
 
@@ -908,8 +909,11 @@ are doing.</td>
 <tr>
 <td>autofocus</td>
 <td>boolean</td>
-<td>When set to true, elements with an "autofocus" attribute are focused on
-automatically after the buffer is loaded. Overrides `buffer.autofocus`.</td>
+<td>When set to true, elements with an "autofocus" attribute are focused
+on automatically after the buffer is loaded.<br>
+If scripting is enabled, this also allows scripts to focus on
+elements.<br>
+Overrides `buffer.autofocus`.</td>
 </tr>
 
 <tr>
