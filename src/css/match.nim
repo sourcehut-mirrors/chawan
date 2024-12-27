@@ -267,18 +267,7 @@ func matches*(element: Element; cxsel: ComplexSelector;
   return true
 
 # Forward declaration hack
-querySelectorAllImpl = proc(node: Node; q: string): seq[Element] =
-  result = @[]
-  let selectors = parseSelectors(q, node.document.factory)
-  for element in node.elements:
-    var dummy: DependencyInfo
-    if element.matches(selectors, dummy):
-      result.add(element)
-
-querySelectorImpl = proc(node: Node; q: string): Element =
-  let selectors = parseSelectors(q, node.document.factory)
-  for element in node.elements:
-    var dummy: DependencyInfo
-    if element.matches(selectors, dummy):
-      return element
-  return nil
+matchesImpl = func(element: Element; cxsels: seq[ComplexSelector]): bool
+    {.nimcall.} =
+  var dummy = DependencyInfo.default
+  return element.matches(cxsels, dummy)

@@ -15,6 +15,7 @@ import config/mimetypes
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
+import css/selectorparser
 import css/sheet
 import html/catom
 import html/domexception
@@ -496,10 +497,8 @@ func value*(option: HTMLOptionElement): string
 var appliesImpl*: proc(mqlist: MediaQueryList; window: Window): bool
   {.nimcall, noSideEffect.}
 # set in css/match
-var querySelectorAllImpl*: proc (node: Node; q: string): seq[Element]
-  {.nimcall.} = nil
-var querySelectorImpl*: proc (node: Node; q: string): Element
-  {.nimcall.} = nil
+var matchesImpl*: proc(element: Element; cxsels: seq[ComplexSelector]): bool
+  {.nimcall, noSideEffect.} = nil
 # set in html/chadombuilder
 var parseHTMLFragmentImpl*: proc(element: Element; s: string): seq[Node]
   {.nimcall.}
@@ -1392,7 +1391,7 @@ func jsNodeType(node: Node): uint16 {.jsfget: "nodeType".} =
 func isElement(node: Node): bool =
   return node of Element
 
-template parentNodeChildrenImpl(ctx: JSContext; parentNode: typed) =
+proc parentNodeChildrenImpl(ctx: JSContext; parentNode: Node): JSValue =
   let children = ctx.toJS(newCollection[HTMLCollection](
     root = parentNode,
     match = isElement,
@@ -1405,14 +1404,14 @@ template parentNodeChildrenImpl(ctx: JSContext; parentNode: typed) =
   return children
 
 func children(ctx: JSContext; parentNode: Document): JSValue {.jsfget.} =
-  parentNodeChildrenImpl(ctx, parentNode)
+  return parentNodeChildrenImpl(ctx, parentNode)
 
 func children(ctx: JSContext; parentNode: DocumentFragment): JSValue
     {.jsfget.} =
-  parentNodeChildrenImpl(ctx, parentNode)
+  return parentNodeChildrenImpl(ctx, parentNode)
 
 func children(ctx: JSContext; parentNode: Element): JSValue {.jsfget.} =
-  parentNodeChildrenImpl(ctx, parentNode)
+  return parentNodeChildrenImpl(ctx, parentNode)
 
 func childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   let childNodes = ctx.toJS(newCollection[NodeList](
@@ -4853,11 +4852,50 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
 func isSameNode(node, other: Node): bool {.jsfunc.} =
   return node == other
 
-proc querySelectorAll(node: Node; q: string): seq[Element] {.jsfunc.} =
-  return node.querySelectorAllImpl(q)
+proc querySelectorImpl(node: Node; q: string): DOMResult[Element] =
+  let selectors = parseSelectors(q, node.document.factory)
+  if selectors.len == 0:
+    return errDOMException("Invalid selector: " & q, "SyntaxError")
+  for element in node.elements:
+    if element.matchesImpl(selectors):
+      return ok(element)
+  return ok(nil)
 
-proc querySelector(node: Node; q: string): Element {.jsfunc.} =
-  return node.querySelectorImpl(q)
+proc querySelector(this: Element; q: string): DOMResult[Element] {.jsfunc.} =
+  return this.querySelectorImpl(q)
+
+proc querySelector(this: Document; q: string): DOMResult[Element] {.jsfunc.} =
+  return this.querySelectorImpl(q)
+
+proc querySelector(this: DocumentFragment; q: string): DOMResult[Element]
+    {.jsfunc.} =
+  return this.querySelectorImpl(q)
+
+proc querySelectorAllImpl(node: Node; q: string): DOMResult[NodeList] =
+  let selectors = parseSelectors(q, node.document.factory)
+  if selectors.len == 0:
+    return errDOMException("Invalid selector: " & q, "SyntaxError")
+  return ok(newCollection[NodeList](
+    root = node,
+    match = func(node: Node): bool =
+      if node of Element:
+        {.cast(noSideEffect).}:
+          return Element(node).matchesImpl(selectors),
+    islive = false,
+    childonly = false
+  ))
+
+proc querySelectorAll(this: Element; q: string): DOMResult[NodeList]
+    {.jsfunc.} =
+  return this.querySelectorAllImpl(q)
+
+proc querySelectorAll(this: Document; q: string): DOMResult[NodeList]
+    {.jsfunc.} =
+  return this.querySelectorAllImpl(q)
+
+proc querySelectorAll(this: DocumentFragment; q: string): DOMResult[NodeList]
+    {.jsfunc.} =
+  return this.querySelectorAllImpl(q)
 
 const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
     seq[ReflectEntry],
