@@ -2,7 +2,6 @@ import std/options
 import std/strutils
 import std/times
 
-import monoucha/jsregex
 import types/opt
 import types/url
 import utils/twtstr
@@ -20,7 +19,6 @@ type
 
   CookieJar* = ref object
     domain: string
-    allowHosts: seq[Regex]
     cookies*: seq[Cookie]
 
 proc parseCookieDate(val: string): Option[int64] =
@@ -114,8 +112,6 @@ proc parseCookieDate(val: string): Option[int64] =
 proc `$`*(cookieJar: CookieJar): string =
   result &= $cookieJar.domain
   result &= ":\n"
-  for re in cookieJar.allowHosts:
-    result &= "third-party " & $re & '\n'
   for cookie in cookieJar.cookies:
     result &= "Cookie "
     result &= $cookie[]
@@ -178,19 +174,9 @@ proc add(cookieJar: CookieJar; cookie: Cookie) =
   else:
     cookieJar.cookies.add(cookie)
 
-proc match(cookieJar: CookieJar; url: URL): bool =
-  if cookieJar.domain.cookieDomainMatches(url):
-    return true
-  if cookieJar.allowHosts.len > 0:
-    let host = url.host
-    for re in cookieJar.allowHosts:
-      if re.match(host):
-        return true
-  return false
-
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.4
 proc serialize*(cookieJar: CookieJar; url: URL): string =
-  if not cookieJar.match(url):
+  if not cookieJar.domain.cookieDomainMatches(url):
     return ""
   var res = ""
   let t = getTime().toUnix()
@@ -258,11 +244,8 @@ proc parseCookie(str: string; t: int64; url: URL): Opt[Cookie] =
     cookie.path = defaultCookiePath(url)
   return ok(cookie)
 
-proc newCookieJar*(url: URL; allowHosts: seq[Regex]): CookieJar =
-  return CookieJar(
-    domain: url.host,
-    allowHosts: allowHosts
-  )
+proc newCookieJar*(url: URL): CookieJar =
+  return CookieJar(domain: url.host)
 
 proc setCookie*(cookieJar: CookieJar; header: openArray[string]; url: URL) =
   let t = getTime().toUnix()

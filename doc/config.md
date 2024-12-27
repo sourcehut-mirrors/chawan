@@ -175,8 +175,8 @@ JavaScript with `[[siteconf]]` instead of using this setting.</td>
 <td>Enable/disable cookies on sites.<br>
 In Chawan, each website gets a separate cookie jar, so websites relying
 on cross-site cookies may not work as expected. You may use the
-`[[siteconf]]` "share-cookie-jar" and "third-party-cookie" settings to
-adjust this behavior for specific sites.</td>
+`[[siteconf]]` "share-cookie-jar" setting to adjust this behavior for
+specific sites.</td>
 </tr>
 
 <tr>
@@ -862,18 +862,6 @@ will transparently redirect the user to this new URL.</td>
 <td>`buffer.cookie`</td>
 <td>Whether loading cookies should be allowed for this URL. By default, this is
 false for all websites.</td>
-</tr>
-
-<tr>
-<td>third-party-cookie</td>
-<td>array of regexes</td>
-<td>n/a</td>
-<td>Domains for which third-party cookies are allowed on this domain.
-Only works for buffers which share the same cookie jar.<br>
-Regexes are handled according to [match mode](#match-mode) rules.<br>
-Note: in the past, this was required for first-party cookies from
-subdomains, but this is no longer the case. `third-party-cookie`
-declarations on subdomains have no effect.</td>
 </tr>
 
 <tr>

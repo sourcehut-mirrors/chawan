@@ -61,7 +61,6 @@ type
     host*: Option[Regex]
     rewrite_url*: Option[JSValueFunction]
     cookie*: Option[bool]
-    third_party_cookie*: seq[Regex]
     share_cookie_jar*: Option[string]
     referer_from*: Option[bool]
     scripting*: Option[ScriptingMode]

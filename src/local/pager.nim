@@ -1848,8 +1848,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         # host/url might have changed by now
         let jarid = sc.share_cookie_jar.get(url.host)
         if jarid notin pager.cookiejars:
-          pager.cookiejars[jarid] = newCookieJar(url,
-            sc.third_party_cookie)
+          pager.cookiejars[jarid] = newCookieJar(url)
         loaderConfig.cookieJar = pager.cookiejars[jarid]
       else:
         loaderConfig.cookieJar = nil # override
