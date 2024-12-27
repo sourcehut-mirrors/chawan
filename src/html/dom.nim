@@ -3263,6 +3263,7 @@ proc delAttr(element: Element; i: int; keep = false) =
         attr.ownerElement = AttrDummyElement(
           internalDocument: attr.ownerElement.document,
           index: -1,
+          elIndex: -1,
           attrs: @[data]
         )
         attr.dataIdx = 0
@@ -4746,6 +4747,7 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
       ownerElement: AttrDummyElement(
         internalDocument: attr.ownerElement.document,
         index: -1,
+        elIndex: -1,
         attrs: @[data]
       ),
       dataIdx: 0
