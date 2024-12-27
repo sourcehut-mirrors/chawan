@@ -211,11 +211,11 @@ const defaultConfig = staticRead"res/config.toml"
 
 proc initConfig(ctx: ParamParseContext; config: Config;
     warnings: var seq[string]): Err[string] =
-  let ps = openConfig(config.dir, ctx.configPath)
+  let ps = openConfig(config.dir, ctx.configPath, warnings)
   if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("Failed to open config file " & ctx.configPath.get)
-  putEnv("CHA_CONFIG_DIR", config.dir)
+  putEnv("CHA_DIR", config.dir)
   ?config.parseConfig("res", defaultConfig, warnings)
   when defined(debug):
     if (let ps = newPosixStream(getCurrentDir() / "res/config.toml");

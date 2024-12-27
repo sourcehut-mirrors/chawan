@@ -136,7 +136,7 @@ Chawan sets the following environment variables:
 * `HTTP_COOKIE=` if set, the Cookie header.
 * `HTTP_REFERER=` if set, the Referer header.
 * `CHA_TMP_DIR=` directory used for storing temporary files.
-* `CHA_CONFIG_DIR=` location of the config file.
+* `CHA_DIR=` location of the config file.
 
 For requests originating from a urimethodmap rewrite, Chawan will also set
 the parsed URL's parts as environment variables. Use of these is highly

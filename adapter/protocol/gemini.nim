@@ -15,7 +15,7 @@ proc fopen(filename, mode: cstring): pointer {.importc, nodecl.}
 proc openKnownHosts(os: PosixStream): (File, string) =
   var path = getEnv("GMIFETCH_KNOWN_HOSTS")
   if path == "":
-    let ourDir = getEnv("CHA_CONFIG_DIR")
+    let ourDir = getEnv("CHA_DIR")
     if ourDir == "":
       os.die("InternalError", "config dir missing")
     path = ourDir & '/' & "gemini_known_hosts"

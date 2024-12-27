@@ -23,8 +23,9 @@ The canonical configuration file path is ~/.chawan/config.toml, but
 the search path accomodates XDG basedirs as well:
 
 1. config file specified through -C switch -> use that
-2. $CHA_CONFIG_DIR is set -> use $CHA_CONFIG_DIR/config.toml
-3. $XDG_CONFIG_HOME is set -> use $XDG_CONFIG_HOME/chawan/config.toml
+2. `$CHA_DIR` is set -> use `$CHA_DIR`/config.toml
+   (`$CHA_CONFIG_DIR` is a deprecated alias for `$CHA_DIR`.)
+3. `$XDG_CONFIG_HOME` is set -> use `$XDG_CONFIG_HOME`/chawan/config.toml
 4. ~/.config/chawan/config.toml exists -> use that
 5. ~/.chawan/config.toml exists -> use that
 
@@ -349,7 +350,7 @@ the line number.</td>
 <tr>
 <td>auto-mailcap</td>
 <td>path</td>
-<td>"$CHA_CONFIG_DIR/auto.mailcap"</td>
+<td>"$CHA_DIR/auto.mailcap"</td>
 <td>Mailcap file for entries that are automatically executed.<br>
 The "Open as" prompt also saves entries in this file.</td>
 </tr>
@@ -1643,8 +1644,9 @@ Some environment variables are also exported by Chawan:
   Symbolic links are automatically resolved to determine this path.
 * `$CHA_LIBEXEC_DIR`: the directory for all executables Chawan uses
   for operation. By default, this is `$CHA_BIN_DIR/../libexec/chawan`.
-* `$CHA_CONFIG_DIR`: the configuration directory. (This can also be set
-  by the user; see the top section for details.)
+* `$CHA_DIR`: the configuration directory. (This can also be set
+  by the user; see the top section for details. `$CHA_CONFIG_DIR` is a
+  deprecated alias for this.)
 
 ### Word types
 

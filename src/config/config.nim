@@ -739,7 +739,8 @@ proc getNormalAction*(config: Config; s: string): string =
 proc getLinedAction*(config: Config; s: string): string =
   return config.line.getOrDefault(s)
 
-proc openConfig*(dir: var string; override: Option[string]): PosixStream =
+proc openConfig*(dir: var string; override: Option[string];
+    warnings: var seq[string]): PosixStream =
   if override.isSome:
     if override.get.len > 0 and override.get[0] == '/':
       dir = parentDir(override.get)
@@ -748,8 +749,12 @@ proc openConfig*(dir: var string; override: Option[string]): PosixStream =
       let path = getCurrentDir() / override.get
       dir = parentDir(path)
       return newPosixStream(path)
+  dir = getEnv("CHA_DIR")
+  if dir != "":
+    return newPosixStream(dir / "config.toml")
   dir = getEnv("CHA_CONFIG_DIR")
   if dir != "":
+    warnings.add("CHA_CONFIG_DIR is deprecated; use CHA_DIR instead")
     return newPosixStream(dir / "config.toml")
   dir = getEnv("XDG_CONFIG_HOME")
   if dir != "":

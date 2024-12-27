@@ -1428,7 +1428,7 @@ proc initLoaderContext(fd: cint; config: LoaderConfig): LoaderContext =
   putEnv("GATEWAY_INTERFACE", "CGI/1.1")
   putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
   putEnv("CHA_TMP_DIR", config.tmpdir)
-  putEnv("CHA_CONFIG_DIR", config.configdir)
+  putEnv("CHA_DIR", config.configdir)
   putEnv("CHA_BOOKMARK", config.bookmark)
   return ctx
 
