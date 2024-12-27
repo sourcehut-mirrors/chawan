@@ -724,6 +724,11 @@ proc positionImage(term: Terminal; image: CanvasImage;
   # calculate offset inside image to start from
   image.offx = -min(xpx, 0)
   image.offy = -min(ypx, 0)
+  # clear offx2/offy2 if the image starts outside the screen
+  if image.offx > 0:
+    image.offx2 = 0
+  if image.offy > 0:
+    image.offy2 = 0
   # calculate maximum image size that fits on the screen relative to the image
   # origin (*not* offx/offy)
   let maxwpx = maxw * term.attrs.ppc
