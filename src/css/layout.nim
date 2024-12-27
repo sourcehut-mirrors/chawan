@@ -1090,11 +1090,10 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     let u = length.spx(space[dim], computed, paddingSum[dim])
       .minClamp(sizes.bounds.a[dim])
     sizes.space[dim] = stretch(u)
-    if length.u == clPx:
-      if computed{"flex-shrink"} == 0:
-        sizes.bounds.mi[dim].start = max(u, sizes.bounds.mi[dim].start)
-      if computed{"flex-grow"} == 0:
-        sizes.bounds.mi[dim].send = min(u, sizes.bounds.mi[dim].send)
+    if computed{"flex-shrink"} == 0:
+      sizes.bounds.mi[dim].start = max(u, sizes.bounds.mi[dim].start)
+    if computed{"flex-grow"} == 0:
+      sizes.bounds.mi[dim].send = min(u, sizes.bounds.mi[dim].send)
   elif sizes.bounds.a[dim].send < LayoutUnit.high:
     sizes.space[dim] = fitContent(sizes.bounds.a[dim].max())
   else:
