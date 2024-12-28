@@ -12,6 +12,7 @@ import html/env
 import html/formdata
 import html/jsencoding
 import html/jsintl
+import html/script
 import html/xmlhttprequest
 import io/console
 import io/dynstream
@@ -168,8 +169,10 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     factory: newCAtomFactory(),
     loader: loader,
     urandom: urandom,
-    pager: newPager(config, forkserver, jsctx, warnings, urandom, loader)
+    pager: newPager(config, forkserver, jsctx, warnings, urandom, loader),
+    settings: EnvironmentSettings(scripting: smApp)
   )
+  client.attrsp = addr client.pager.term.attrs
   client.timeouts = client.pager.timeouts
   let global = JS_GetGlobalObject(jsctx)
   jsctx.setGlobal(client)

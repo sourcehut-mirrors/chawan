@@ -884,7 +884,6 @@ proc processData(buffer: Buffer; iq: openArray[uint8]): bool =
 proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
   buffer.prevStyled = nil
-  buffer.window.attrs = attrs
   buffer.reshape()
 
 type UpdateHoverResult* = object
@@ -1934,20 +1933,20 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     charsetStack: charsetStack,
     cacheId: -1,
     outputId: -1,
-    factory: factory,
-    window: newWindow(
-      config.scripting,
-      config.images,
-      config.styling,
-      config.autofocus,
-      attrs,
-      factory,
-      loader,
-      url,
-      urandom,
-      config.imageTypes,
-      config.userAgent
-    )
+    factory: factory
+  )
+  buffer.window = newWindow(
+    config.scripting,
+    config.images,
+    config.styling,
+    config.autofocus,
+    addr buffer.attrs,
+    factory,
+    loader,
+    url,
+    urandom,
+    config.imageTypes,
+    config.userAgent
   )
   if buffer.config.scripting != smFalse:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)

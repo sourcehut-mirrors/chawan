@@ -81,7 +81,7 @@ type
     bmp: NetworkBitmap
 
   Window* = ref object of EventTarget
-    attrs*: WindowAttributes
+    attrsp*: ptr WindowAttributes
     internalConsole*: Console
     navigator* {.jsget.}: Navigator
     screen* {.jsget.}: Screen
@@ -2559,7 +2559,7 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
       if elem of HTMLStyleElement:
         let style = HTMLStyleElement(elem)
         style.sheet = style.textContent.parseStylesheet(document.factory,
-          document.baseURL, addr document.window.attrs)
+          document.baseURL, document.window.attrsp)
         document.cachedSheets.add(style.sheet)
       elif elem of HTMLLinkElement:
         let link = HTMLLinkElement(elem)
@@ -3392,7 +3392,7 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL; applies: bool) =
   ).then(proc(s: JSResult[string]) =
     # Check applies here, to avoid leaking the window size.
     if s.isSome:
-      let sheet = s.get.parseStylesheet(window.factory, url, addr window.attrs)
+      let sheet = s.get.parseStylesheet(window.factory, url, window.attrsp)
       if applies:
         # Note: we intentionally load all sheets to prevent media query
         # based tracking.
@@ -3421,7 +3421,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     var applies = true
     if media != "":
       let cvals = parseComponentValues(media)
-      let media = parseMediaQueryList(cvals, addr window.attrs)
+      let media = parseMediaQueryList(cvals, window.attrsp)
       applies = media.appliesImpl(window)
     window.loadSheet(link, url, applies)
 

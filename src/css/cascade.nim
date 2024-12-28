@@ -43,11 +43,11 @@ func applies(feature: MediaFeature; window: Window): bool =
   of mftHover:
     return feature.b
   of mftPrefersColorScheme:
-    return feature.b == window.attrs.prefersDark
+    return feature.b == window.attrsp.prefersDark
   of mftWidth:
-    return feature.appliesLR(window, float64(window.attrs.widthPx))
+    return feature.appliesLR(window, float64(window.attrsp.widthPx))
   of mftHeight:
-    return feature.appliesLR(window, float64(window.attrs.heightPx))
+    return feature.appliesLR(window, float64(window.attrsp.heightPx))
   of mftScripting:
     return feature.b == (window.settings.scripting != smFalse)
 
@@ -299,12 +299,12 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
     let style = element.cachedStyle
     if window.styling and style != nil:
       for decl in style.decls:
-        let vals = parseComputedValues(decl.name, decl.value, window.attrs)
+        let vals = parseComputedValues(decl.name, decl.value, window.attrsp[])
         if decl.important:
           rules[coAuthor].important.add(vals)
         else:
           rules[coAuthor].normal.add(vals)
-    presHints = element.calcPresHints(window.attrs)
+    presHints = element.calcPresHints(window.attrsp[])
   styledNode.computed = rules.buildComputedValues(presHints, parent)
 
 func hasValues(rules: CSSValueEntryMap): bool =

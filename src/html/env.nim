@@ -82,13 +82,13 @@ proc getter(mimeTypeArray: var MimeTypeArray; atom: JSAtom): JSValue
 proc availWidth(ctx: JSContext; screen: var Screen): int {.jsfget.} =
   let window = ctx.getWindow()
   if window.settings.scripting == smApp:
-    return window.attrs.widthPx
+    return window.attrsp.widthPx
   return 80 * 9
 
 proc availHeight(ctx: JSContext; screen: var Screen): int {.jsfget.} =
   let window = ctx.getWindow()
   if window.settings.scripting == smApp:
-    return window.attrs.heightPx
+    return window.attrsp.heightPx
   return 24 * 18
 
 proc width(ctx: JSContext; screen: var Screen): int {.jsfget.} =
@@ -343,12 +343,12 @@ proc runJSJobs*(window: Window) =
     ctx.writeException(window.console.err)
 
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
-    attrs: WindowAttributes; factory: CAtomFactory; loader: FileLoader;
+    attrsp: ptr WindowAttributes; factory: CAtomFactory; loader: FileLoader;
     url: URL; urandom: PosixStream; imageTypes: Table[string, string];
     userAgent: string): Window =
   let err = newDynFileStream(stderr)
   let window = Window(
-    attrs: attrs,
+    attrsp: attrsp,
     internalConsole: newConsole(err),
     navigator: Navigator(),
     loader: loader,
