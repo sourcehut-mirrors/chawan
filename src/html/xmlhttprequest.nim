@@ -393,7 +393,7 @@ proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
 
 proc overrideMimeType(this: XMLHttpRequest; s: string): DOMResult[void]
     {.jsfunc.} =
-  if this.readyState notin {xhrsLoading, xhrsDone}:
+  if this.readyState in {xhrsLoading, xhrsDone}:
     return errDOMException("readyState must not be loading or done",
       "InvalidStateError")
   #TODO parse
