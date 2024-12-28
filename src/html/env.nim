@@ -210,6 +210,12 @@ proc outerWidth(ctx: JSContext; window: Window): int {.jsfget.} =
 proc outerHeight(ctx: JSContext; window: Window): int {.jsfget.} =
   return ctx.availHeight(window.screen)
 
+proc innerWidth(ctx: JSContext; window: Window): int {.jsfget.} =
+  return ctx.availWidth(window.screen)
+
+proc innerHeight(ctx: JSContext; window: Window): int {.jsfget.} =
+  return ctx.availHeight(window.screen)
+
 proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
 
 proc setLocation(window: Window; s: string): Err[JSError]
