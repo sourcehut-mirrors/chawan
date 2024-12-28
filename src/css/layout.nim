@@ -614,7 +614,9 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     let whitespace = state.box.computed{"white-space"}
     if whitespace == WhitespacePre:
       ictx.flushWhitespace(state)
-      ictx.state.intr.w = max(ictx.state.intr.w, ictx.lbstate.size.w)
+      # see below on padding
+      ictx.state.intr.w = max(ictx.state.intr.w, ictx.lbstate.size.w -
+        ictx.padding.left)
     elif whitespace == WhitespacePreWrap:
       ictx.flushWhitespace(state, hang = true)
     else:
@@ -637,7 +639,9 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
       ictx.lbstate.availableWidth
     else:
       ictx.lbstate.size.w
-    ictx.state.size.w = max(ictx.state.size.w, lineWidth)
+    # padding-left is added to the line to aid float exclusion; undo
+    # this here to prevent double-padding later
+    ictx.state.size.w = max(ictx.state.size.w, lineWidth - ictx.padding.left)
     ictx.lbstate = LineBoxState(
       offsety: y + ictx.lbstate.size.h,
       intrh: ictx.cellHeight
@@ -1228,6 +1232,11 @@ proc applySize(box: BlockBox; sizes: ResolvedSizes;
   # Then, clamp it to minWidth and maxWidth (if applicable).
   box.state.size[dim] = box.state.size[dim].minClamp(sizes.bounds.a[dim])
 
+proc applySize(box: BlockBox; sizes: ResolvedSizes; maxChildSize: Size;
+    space: AvailableSpace) =
+  for dim in DimensionType:
+    box.applySize(sizes, maxChildSize[dim], space, dim)
+
 proc applyIntr(box: BlockBox; sizes: ResolvedSizes; intr: Size) =
   for dim in DimensionType:
     const pt = [dtHorizontal: cptOverflowX, dtVertical: cptOverflowY]
@@ -1242,23 +1251,6 @@ proc applyIntr(box: BlockBox; sizes: ResolvedSizes; intr: Size) =
       # width/height should be clamped to the inner scroll width/height
       # instead.
       box.state.size[dim] = max(box.state.size[dim], intr[dim])
-
-proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
-    maxChildWidth: LayoutUnit; space: AvailableSpace) =
-  box.applySize(sizes, maxChildWidth, space, dtHorizontal)
-
-proc applyWidth(box: BlockBox; sizes: ResolvedSizes;
-    maxChildWidth: LayoutUnit) =
-  box.applyWidth(sizes, maxChildWidth, sizes.space)
-
-proc applyHeight(box: BlockBox; sizes: ResolvedSizes;
-    maxChildHeight: LayoutUnit) =
-  box.applySize(sizes, maxChildHeight, sizes.space, dtVertical)
-
-proc applyPadding(box: BlockBox; padding: RelativeRect) =
-  let sum = padding.sum()
-  box.state.size += sum
-  box.state.intr += sum
 
 proc applyBaseline(box: BlockBox) =
   if box.children.len > 0:
@@ -1489,11 +1481,10 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
         t: iatInlineBlock,
         innerbox: it.box
       ))
-  box.state.size.w = ictx.state.size.w + sizes.padding[dtHorizontal].sum()
-  box.applyWidth(sizes, ictx.state.size.w)
-  box.applyHeight(sizes, ictx.state.size.h)
-  box.applyIntr(sizes, ictx.state.intr)
-  box.applyPadding(sizes.padding)
+  box.applySize(sizes, ictx.state.size, sizes.space)
+  let paddingSum = sizes.padding.sum()
+  box.applyIntr(sizes, ictx.state.intr + paddingSum)
+  box.state.size += paddingSum
   box.state.baseline = ictx.state.baseline
   box.state.firstBaseline = ictx.state.firstBaseline
   box.state.overflow = ictx.state.overflow
@@ -2505,8 +2496,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.applyBaseline()
   var size = fctx.totalMaxSize
   size[odim] = fctx.offset[odim]
-  box.applySize(sizes, size[dim], sizes.space, dim)
-  box.applySize(sizes, size[odim], sizes.space, odim)
+  box.applySize(sizes, size, sizes.space)
   box.applyIntr(sizes, fctx.intr)
   for child in fctx.relativeChildren:
     lctx.positionRelative(box, child)
@@ -2793,7 +2783,8 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
     bctx.ancestorsHead = bctx.marginTarget
   bctx.exclusions.setLen(state.oldExclusionsLen)
   state.offset = offset(x = sizes.padding.left, y = sizes.padding.top)
-  box.applyWidth(sizes, state.maxChildWidth + state.totalFloatWidth)
+  box.applySize(sizes, state.maxChildWidth + state.totalFloatWidth, sizes.space,
+    dtHorizontal)
   # Positioning of the children will differ now; reset the overflow offsets.
   for dim in DimensionType:
     box.state.overflow[dim] = Span()
@@ -2827,14 +2818,17 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     w = state.maxChildWidth,
     h = state.offset.y - sizes.padding.top
   )
-  box.applyWidth(sizes, childSize.w, state.space)
-  box.applyHeight(sizes, childSize.h)
-  box.applyIntr(sizes, state.intr)
+  box.applySize(sizes, childSize, state.space)
+  let paddingSum = sizes.padding.sum()
+  # Intrinsic minimum size includes the sum of our padding.  (However,
+  # this padding must also be clamped to the same bounds.)
+  box.applyIntr(sizes, state.intr + paddingSum)
   # `position: relative' percentages can now be resolved.
   for child in state.relativeChildren:
     lctx.positionRelative(box, child)
-  # Add padding; we cannot do this further up without influencing positioning.
-  box.applyPadding(sizes.padding)
+  # Add padding; we cannot do this further up without influencing
+  # relative positioning.
+  box.state.size += paddingSum
   if state.isParentResolved(bctx):
     # Our offset has already been resolved, ergo any margins in marginTodo will
     # be passed onto the next box. Set marginTarget to nil, so that if we (or
