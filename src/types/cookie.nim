@@ -110,7 +110,7 @@ proc parseCookieDate(val: string): Option[int64] =
 
 # For debugging
 proc `$`*(cookieJar: CookieJar): string =
-  result &= $cookieJar.domain
+  result = $cookieJar.domain
   result &= ":\n"
   for cookie in cookieJar.cookies:
     result &= "Cookie "
@@ -176,8 +176,6 @@ proc add(cookieJar: CookieJar; cookie: Cookie) =
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.4
 proc serialize*(cookieJar: CookieJar; url: URL): string =
-  if not cookieJar.domain.cookieDomainMatches(url):
-    return ""
   var res = ""
   let t = getTime().toUnix()
   #TODO sort
