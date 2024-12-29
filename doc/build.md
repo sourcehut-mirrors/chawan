@@ -70,3 +70,25 @@ a limited set of C compilers. If you want to override the C compiler:
 * `uninstall`: remove the `cha` binary and Chawan man pages
 * `submodule`: download the submodules required for the browser to build
   (for those of us who keep forgetting the corresponding git command :)
+
+## Cross-compiling
+
+[Apparently](https://todo.sr.ht/~bptato/chawan/37) it's possible.
+From user cutenice:
+
+> With the latest changes, I could simply run
+> `CFLAGS=-m32 LDFLAGS=-m32 FLAGS=--cpu:i386 make` to cross-compile!
+>
+> I don't know if I have any additional insight from today's
+> exploration.. On Arch I needed these things:
+>
+> - `nim-git` from the AUR
+>   - the version available in the repos isn't quite new enough it
+>     seems. I think it's related to #12 (at least i got similar looking
+>     errors)
+> - enable the multilib repository in `/etc/pacman.conf`
+> - `pacman -S lib32-openssl lib32-libxcrypt lib32-ncurses lib32-libssh2`
+>   - most of these packages pull packages like `lib32-gcc-libs` and
+>     `lib32-glibc` which might be useful as well haha
+> - the rest can be eluded from the PKGBUILD in the
+>   [AUR](https://aur.archlinux.org/packages/chawan-git)

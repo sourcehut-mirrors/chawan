@@ -18,9 +18,11 @@ Note: a POSIX-compliant operating system is required.
 1. Clone the Chawan repository:  
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
 2. Install the Nim compiler: <https://nim-lang.org/install.html>
-	* Please use 1.6.14 or newer, ideally 2.2.0. Versions older than 1.6.14
-	  will not work. (You can check your Nim compiler's version using
-	  `nim -v`.)
+	* Please use 1.6.14 or newer, ideally 2.2.0. (Type `nim -v` to
+	  check your Nim compiler's version.)
+	* If you are using a 32-bit system: `export CFLAGS=-fpermissive`
+	  before compiling, or (preferably) use a nightly build of the
+	  Nim compiler.
 3. Install the following dependencies:
 	* [libcurl](https://curl.se/libcurl/)
 	* [OpenSSL](https://www.openssl.org/) (or
