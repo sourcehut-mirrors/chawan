@@ -5,6 +5,7 @@ import std/tables
 
 import chagashi/charset
 import config/chapath
+import config/cookie
 import config/mailcap
 import config/mimetypes
 import config/toml
@@ -21,7 +22,6 @@ import monoucha/tojs
 import server/headers
 import types/cell
 import types/color
-import types/cookie
 import types/jscolor
 import types/opt
 import types/url
@@ -56,11 +56,16 @@ type
     frtData = "data"
     frtMailto = "mailto"
 
+  CookieMode* = enum
+    cmNone = "false"
+    cmReadOnly = "true"
+    cmSave = "save"
+
   SiteConfig* = ref object
     url*: Option[Regex]
     host*: Option[Regex]
     rewrite_url*: Option[JSValueFunction]
-    cookie*: Option[bool]
+    cookie*: Option[CookieMode]
     share_cookie_jar*: Option[string]
     referer_from*: Option[bool]
     scripting*: Option[ScriptingMode]
@@ -113,6 +118,7 @@ type
     bookmark* {.jsgetset.}: ChaPathResolved
     history_file*: ChaPathResolved
     history_size* {.jsgetset.}: int32
+    cookie_file*: ChaPathResolved
     download_dir* {.jsgetset.}: ChaPathResolved
     w3m_cgi_compat* {.jsgetset.}: bool
     copy_cmd* {.jsgetset.}: string
@@ -161,7 +167,7 @@ type
     styling* {.jsgetset.}: bool
     scripting* {.jsgetset.}: ScriptingMode
     images* {.jsgetset.}: bool
-    cookie* {.jsgetset.}: bool
+    cookie* {.jsgetset.}: CookieMode
     referer_from* {.jsgetset.}: bool
     autofocus* {.jsgetset.}: bool
     meta_refresh* {.jsgetset.}: MetaRefresh
@@ -333,6 +339,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
   k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
+  k: string)
 proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
@@ -495,6 +503,17 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
     x = smApp
   else:
     raise newException(ValueError, "unknown scripting mode '" & v.s &
+      "' for key " & k)
+
+proc parseConfigValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
+    k: string) =
+  typeCheck(v, {tvtString, tvtBoolean}, k)
+  if v.t == tvtBoolean:
+    x = if v.b: cmReadOnly else: cmNone
+  elif v.s == "save":
+    x = cmSave
+  else:
+    raise newException(ValueError, "unknown cookie mode '" & v.s &
       "' for key " & k)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;

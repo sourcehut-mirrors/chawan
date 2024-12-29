@@ -138,6 +138,7 @@ type
     protocol*: Table[string, ProtocolConfig]
     imageTypes*: Table[string, string]
     userAgent*: string
+    cookieMode*: CookieMode
 
   GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.nimcall.}
 

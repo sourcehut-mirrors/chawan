@@ -6,6 +6,7 @@ import std/tables
 
 import chagashi/charset
 import config/config
+import config/cookie
 import config/mimetypes
 import css/render
 import io/dynstream
@@ -23,7 +24,6 @@ import types/bitmap
 import types/blob
 import types/cell
 import types/color
-import types/cookie
 import types/opt
 import types/referrer
 import types/url
@@ -1518,7 +1518,8 @@ proc applyResponse*(container: Container; response: Response;
   # accept cookies
   let cookieJar = container.loaderConfig.cookieJar
   if cookieJar != nil and "Set-Cookie" in response.headers.table:
-    cookieJar.setCookie(response.headers.table["Set-Cookie"], response.url)
+    cookieJar.setCookie(response.headers.table["Set-Cookie"], response.url,
+      container.config.cookieMode == cmSave)
   # set referrer policy, if any
   let referrerPolicy = response.getReferrerPolicy()
   if container.config.refererFrom:

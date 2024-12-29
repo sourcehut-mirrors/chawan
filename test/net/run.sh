@@ -5,7 +5,7 @@ then	test -f ../../cha && CHA=../../cha || CHA=cha
 fi
 
 failed=0
-for h in *.html
+for h in *.html *.http
 do	printf '%s\r' "$h"
 	if ! "$CHA" -dC config.toml "http://localhost:$1/$h" | diff all.expected -
 	then	failed=$(($failed+1))

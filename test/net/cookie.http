@@ -1,0 +1,20 @@
+Content-Type: text/html
+Set-Cookie: test=asdfasdf; Max-Age=123123123; Path=/headers
+Set-Cookie: SID=31d4d96e407aad42
+Set-Cookie: test2=asdfasdf; Max-Age=0
+Set-Cookie: test3=x
+Set-Cookie: test4=y; Max-Age=
+Set-Cookie: test5=; Domain=test.example
+Set-Cookie: test6=hi; Max-Age=9223372036854775807
+
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const x = new XMLHttpRequest();
+x.open("GET", "headers", false);
+x.overrideMimeType("text/plain");
+x.send();
+const cookie = x.responseText.split('\n').find(x => x.startsWith("cookie:"));
+assertEquals(cookie.split(': ').pop(), "test=asdfasdf; SID=31d4d96e407aad42; test3=x; test4=y; test6=hi");
+document.getElementById("x").textContent = "Success";
+</script>

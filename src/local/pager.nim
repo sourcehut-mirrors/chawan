@@ -13,6 +13,7 @@ import chagashi/charset
 import chagashi/decoder
 import config/chapath
 import config/config
+import config/cookie
 import config/history
 import config/mailcap
 import config/mimetypes
@@ -50,7 +51,6 @@ import types/bitmap
 import types/blob
 import types/cell
 import types/color
-import types/cookie
 import types/opt
 import types/url
 import types/winattrs
@@ -144,7 +144,7 @@ type
     config*: Config
     consoleWrapper*: ConsoleWrapper
     container {.jsget: "buffer".}: Container
-    cookiejars: Table[string, CookieJar]
+    cookieJars: CookieJarMap
     display: Surface
     exitCode*: int
     feednext*: bool
@@ -476,7 +476,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     luctx: LUContext(),
     urandom: urandom,
     exitCode: -1,
-    loader: loader
+    loader: loader,
+    cookieJars: newCookieJarMap()
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, clientLoadJSModule,
@@ -487,15 +488,24 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     proxy: pager.config.network.proxy,
     filter: newURLFilter(default = true),
   ))
-  let hist = newHistory(pager.config.external.history_size, getTime().toUnix())
-  let ps = newPosixStream(pager.config.external.history_file)
-  if ps != nil:
-    var stat: Stat
-    if fstat(ps.fd, stat) != -1:
-      discard hist.parse(ps, int64(stat.st_mtime))
-    else:
-      ps.sclose()
-  pager.lineHist[lmLocation] = hist
+  block history:
+    let hist = newHistory(pager.config.external.history_size, getTime().toUnix())
+    let ps = newPosixStream(pager.config.external.history_file)
+    if ps != nil:
+      var stat: Stat
+      if fstat(ps.fd, stat) != -1:
+        discard hist.parse(ps, int64(stat.st_mtime))
+      else:
+        ps.sclose()
+    pager.lineHist[lmLocation] = hist
+  block cookie:
+    let ps = newPosixStream(pager.config.external.cookie_file)
+    if ps != nil:
+      var stat: Stat
+      if fstat(ps.fd, stat) != -1:
+        pager.cookieJars.parse(ps, int64(stat.st_mtime), pager.alerts)
+      else:
+        ps.sclose()
   return pager
 
 proc cleanup(pager: Pager) =
@@ -505,6 +515,8 @@ proc cleanup(pager: Pager) =
     let hist = pager.lineHist[lmLocation]
     if not hist.write(pager.config.external.history_file):
       pager.alert("failed to save history")
+    if not pager.cookieJars.write(pager.config.external.cookie_file):
+      pager.alert("failed to save cookies")
     for msg in pager.alerts:
       stderr.write("cha: " & msg & '\n')
     for val in pager.config.cmd.map.values:
@@ -1805,7 +1817,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     isdump: pager.config.start.headless,
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol,
-    metaRefresh: pager.config.buffer.meta_refresh
+    metaRefresh: pager.config.buffer.meta_refresh,
+    cookieMode: pager.config.buffer.cookie
   )
   loaderConfig = LoaderClientConfig(
     defaultHeaders: newHeaders(pager.config.network.default_headers),
@@ -1818,6 +1831,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     ),
     insecureSSLNoVerify: false
   )
+  var cookieJarId = url.host
   let surl = $url
   for sc in pager.config.siteconf:
     if sc.url.isSome and not sc.url.get.match(surl):
@@ -1845,14 +1859,9 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         ourl = tmpUrl
         return
     if sc.cookie.isSome:
-      if sc.cookie.get:
-        # host/url might have changed by now
-        let jarid = sc.share_cookie_jar.get(url.host)
-        if jarid notin pager.cookiejars:
-          pager.cookiejars[jarid] = newCookieJar(url)
-        loaderConfig.cookieJar = pager.cookiejars[jarid]
-      else:
-        loaderConfig.cookieJar = nil # override
+      res.cookieMode = sc.cookie.get
+    if sc.share_cookie_jar.isSome:
+      cookieJarId = sc.share_cookie_jar.get
     if sc.scripting.isSome:
       res.scripting = sc.scripting.get
     if sc.referer_from.isSome:
@@ -1881,6 +1890,12 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   if res.images:
     res.imageTypes = pager.config.external.mime_types.image
   res.userAgent = loaderConfig.defaultHeaders.getOrDefault("User-Agent")
+  if res.cookieMode != cmNone:
+    var cookieJar = pager.cookieJars.jars.getOrDefault(cookieJarId)
+    if cookieJar == nil:
+      cookieJar = newCookieJar()
+      pager.cookieJars.jars[cookieJarId] = cookieJar
+    loaderConfig.cookieJar = cookieJar
   return res
 
 # Load request in a new buffer.

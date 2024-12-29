@@ -53,6 +53,7 @@ urimethodmap = [
 bookmark = "bookmark.md"
 history-file = "history.uri"
 history-size = 100
+cookie-file = "cookies.txt"
 tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
 sockdir = "${TMPDIR:-/tmp}/cha-sock-$LOGNAME"
 editor = "${EDITOR:-vi}"

@@ -27,6 +27,7 @@ import std/posix
 import std/strutils
 import std/tables
 
+import config/cookie
 import config/urimethodmap
 import io/bufreader
 import io/bufwriter
@@ -39,7 +40,6 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/urlfilter
-import types/cookie
 import types/formdata
 import types/opt
 import types/referrer

@@ -25,7 +25,7 @@ type
     usFail, usDone, usSchemeStart, usNoScheme, usFile, usFragment, usAuthority,
     usPath, usQuery, usHost, usHostname, usPort, usPathStart
 
-  HostType = enum
+  HostType* = enum
     htNone, htDomain, htIpv4, htIpv6, htOpaque
 
   URLSearchParams* = ref object
@@ -390,7 +390,7 @@ proc domainToAscii(domain: string; bestrict = false): string =
     return domain.unicodeToAscii(bestrict)
   return domain.toLowerAscii()
 
-proc parseHost(input: string; special: bool; hostType: var HostType): string =
+proc parseHost*(input: string; special: bool; hostType: var HostType): string =
   if input.len == 0:
     return ""
   if input[0] == '[':

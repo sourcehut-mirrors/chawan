@@ -5,6 +5,7 @@
 
 import std/tables
 
+import config/cookie
 import io/bufreader
 import io/bufwriter
 import io/dynstream
@@ -15,7 +16,6 @@ import server/headers
 import server/request
 import server/response
 import server/urlfilter
-import types/cookie
 import types/opt
 import types/referrer
 import types/url

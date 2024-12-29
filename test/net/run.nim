@@ -1,18 +1,41 @@
 import std/asyncdispatch
 import std/asynchttpserver
+import std/httpcore
 import std/os
 import std/posix
+import std/strutils
 
 import utils/twtstr
 
 proc cb(req: Request) {.async.} =
-  const headers = {"Content-type": "text/html; charset=utf-8"}
   if req.url.path == "/stop":
-    await req.respond(Http200, "", headers.newHttpHeaders())
+    await req.respond(Http200, "")
     quit(0)
-  let s = readFile(req.url.path.after('/'))
+  var res = ""
+  var headers: seq[(string, string)] = @[]
+  if req.url.path == "/headers":
+    for k, v in req.headers:
+      res &= k & ": " & v & '\n'
+  else:
+    try:
+      res = readFile(req.url.path.after('/'))
+    except IOError:
+      await req.respond(Http404, "Not found")
+      return
+    if req.url.path.endsWith(".http"):
+      var i = 0
+      for line in res.split('\n'):
+        i += line.len + 1
+        if line == "":
+          break
+        let (x, y) = parseHeader(line)
+        for it in y:
+          headers.add((x, it))
+      res = res.substr(i)
+    else:
+      res = readFile(req.url.path.after('/'))
   #echo (req.reqMethod, req.url.path, req.headers)
-  await req.respond(Http200, s, headers.newHttpHeaders())
+  await req.respond(Http200, res, headers.newHttpHeaders())
 
 proc runServer(server: AsyncHttpServer) {.async.} =
   while true:

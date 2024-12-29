@@ -170,9 +170,12 @@ JavaScript with `[[siteconf]]` instead of using this setting.</td>
 
 <tr>
 <td>cookie</td>
-<td>boolean</td>
+<td>boolean / "save"</td>
 <td>false</td>
 <td>Enable/disable cookies on sites.<br>
+If the string "save" is specified, then cookies are also saved to
+`external.cookie-file`. `true` still reads cookies.txt, but does not
+modify it.<br>
 In Chawan, each website gets a separate cookie jar, so websites relying
 on cross-site cookies may not work as expected. You may use the
 `[[siteconf]]` "share-cookie-jar" setting to adjust this behavior for
@@ -425,6 +428,19 @@ details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
 <td>number</td>
 <td>100</td>
 <td>Maximum length of the history file.</td>
+</tr>
+
+<tr>
+<td>cookie-file</td>
+<td>path</td>
+<td>"cookies.txt"</td>
+<td>Path to the cookie file.<br>
+The format is equivalent to curl's "cookies.txt" format, except that a
+"jar@" part is prepended for cookies that belong in a different jar
+than the domain.<br>
+Cookies from this file are used if "buffer.cookie" (or its equivalent
+siteconf override) is set to `true` or `"save"`. This means that `true`
+sets the cookie-file to a "read-only" mode.</td>
 </tr>
 
 </table>
@@ -795,7 +811,7 @@ rewrite-url = '''
 # Allow cookie sharing on *sr.ht domains.
 [[siteconf]]
 host = '(.*\.)?sr\.ht' # either 'something.sr.ht' or 'sr.ht'
-cookie = true # enable cookies
+cookie = true # enable cookies (read-only; use "save" to persist them)
 share-cookie-jar = 'sr.ht' # use the cookie jar of 'sr.ht' for all matched hosts
 
 # Use the "vector" skin on Wikipedia.
@@ -858,10 +874,10 @@ will transparently redirect the user to this new URL.</td>
 
 <tr>
 <td>cookie</td>
-<td>boolean</td>
+<td>boolean / "save"</td>
 <td>`buffer.cookie`</td>
-<td>Whether loading cookies should be allowed for this URL. By default, this is
-false for all websites.</td>
+<td>Whether loading (with "save", also saving) cookies should be allowed
+for this URL.</td>
 </tr>
 
 <tr>
