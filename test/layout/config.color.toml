@@ -2,3 +2,4 @@ include = "config.toml"
 
 [display]
 color-mode = 'true-color'
+format-mode = ["bold", "italic", "underline", "reverse", "strike"]

@@ -1024,10 +1024,10 @@ func cssFontWeight(cval: CSSComponentValue): Opt[int] =
     let tok = CSSToken(cval)
     if tok.t == cttIdent:
       const FontWeightMap = {
-        "normal": 400,
         "bold": 700,
+        "bolder": 700,
         "lighter": 400,
-        "bolder": 700
+        "normal": 400
       }
       let i = FontWeightMap.parseIdent(cval)
       if i != -1:
