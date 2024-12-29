@@ -664,7 +664,7 @@ proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
   for g in flattened:
     if g.len > 0 and g[0] == Table.getType():
       tableg = some(g)
-    elif g.typekind == ntySequence:
+    elif g.typeKind == ntySequence:
       seqg = some(g)
     elif g == string.getTypeInst():
       hasString = true
