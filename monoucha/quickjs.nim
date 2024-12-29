@@ -163,9 +163,9 @@ type
 
   JSRuntimeCleanUpFunc* {.importc.} = proc(rt: JSRuntime) {.cdecl.}
 
-  JSClassCall* {.importc.} = proc(ctx: JSContext; func_obj, this_val:
-    JSValue; argc: cint; argv: ptr UncheckedArray[JSValue]; flags: cint):
-    JSValue {.cdecl.}
+  JSClassCallP* {.importc: "JSClassCall *".} =
+    proc(ctx: JSContext; func_obj, this_val: JSValue; argc: cint;
+      argv: ptr UncheckedArray[JSValue]; flags: cint): JSValue {.cdecl.}
 
   JSClassDef* {.importc, header: qjsheader.} = object
     class_name*: cstring # pure ASCII only!
@@ -175,7 +175,7 @@ type
     # JS_CALL_FLAG_CONSTRUCTOR) != 0, the function is called as a constructor.
     # In this case, 'this_val' is new.target. A constructor call only happens
     # if the object constructor bit is set (see JS_SetConstructorBit()).
-    call*: JSClassCall
+    call*: JSClassCallP
     exotic*: JSClassExoticMethodsConst
     can_destroy*: JSClassCheckDestroy
 
