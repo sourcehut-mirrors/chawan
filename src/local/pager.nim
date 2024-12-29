@@ -558,8 +558,7 @@ proc evalActionJS(pager: Pager; action: string): JSValue =
 proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
   var ret = pager.evalActionJS(action)
   let ctx = pager.jsctx
-  var p = EmptyPromise()
-  p.resolve()
+  var p = newResolvedPromise()
   if JS_IsFunction(ctx, ret):
     if arg0 != 0:
       let arg0 = toJS(ctx, arg0)
