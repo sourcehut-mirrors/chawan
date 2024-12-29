@@ -13,7 +13,7 @@ export sandbox
 
 export STDIN_FILENO, STDOUT_FILENO
 
-proc die*(os: PosixStream; name: string; s = "") =
+proc die*(os: PosixStream; name: string; s = "") {.noreturn.} =
   var buf = "Cha-Control: ConnectionError " & name
   if s != "":
     buf &= ' ' & s
