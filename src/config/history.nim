@@ -60,14 +60,9 @@ proc add*(hist: History; s: string) =
 proc parse(hist: History; iq: openArray[char]) =
   var i = 0
   while i < iq.len:
-    if iq[i] == '#': # text/uri-list :P
-      while i < iq.len and iq[i] != '\n':
-        inc i
-    else:
-      let entry = newHistoryEntry(iq.until('\n', i))
-      hist.add(entry)
-      i += entry.s.len
-    inc i
+    let entry = newHistoryEntry(iq.until('\n', i))
+    hist.add(entry)
+    i += entry.s.len + 1
 
 # Consumes `ps'.
 proc parse*(hist: History; ps: PosixStream; mtime: int64): bool =
@@ -117,6 +112,10 @@ proc write*(hist: History; file: string): bool =
       if mtime > hist.mtime:
         if not hist.parse(ps, mtime):
           return false
+      else:
+        ps.sclose()
+    else:
+      ps.sclose()
   if hist.first == nil:
     return true
   block write:

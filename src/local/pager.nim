@@ -493,6 +493,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     var stat: Stat
     if fstat(ps.fd, stat) != -1:
       discard hist.parse(ps, int64(stat.st_mtime))
+    else:
+      ps.sclose()
   pager.lineHist[lmLocation] = hist
   return pager
 
