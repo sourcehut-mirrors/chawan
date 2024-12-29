@@ -350,7 +350,7 @@ the line number.</td>
 <tr>
 <td>auto-mailcap</td>
 <td>path</td>
-<td>"$CHA_DIR/auto.mailcap"</td>
+<td>"auto.mailcap"</td>
 <td>Mailcap file for entries that are automatically executed.<br>
 The "Open as" prompt also saves entries in this file.</td>
 </tr>
@@ -1624,7 +1624,8 @@ Rules for path handling are similar to how strings in the shell are handled.
 * Tilde-expansion is used to determine the user's home directory. So
   e.g. `~/whatever` works.
 * Environment variables can be used like `$ENV_VAR`.
-* Relative paths are relative to the Chawan configuration directory.
+* Relative paths are relative to the Chawan configuration directory
+  (i.e. `$CHA_DIR`).
 
 Some environment variables are also exported by Chawan:
 

@@ -10,8 +10,9 @@ used in the following way:
 * All local CGI scripts must be placed in a directory specified in
   `external.cgi-dir`. Multiple directories can be specified in an array too,
   and directories specified first have higher precedence.  
-  By default, this is set to ~/.chawan/cgi-bin and
-  /usr/local/libexec/chawan/cgi-bin.
+  By default, this is set to `$CHA_DIR/cgi-bin` (i.e.
+  `~/.chawan/cgi-bin` or `~/.config/chawan/cgi-bin`, depending on
+  `config.toml`'s location) and `/usr/local/libexec/chawan/cgi-bin`.
 * Then, a CGI script in one of these directories can be executed by visiting
   the URL `cgi-bin:script-name`. $PATH_INFO and $QUERY_STRING are set as
   normal, i.e. `cgi-bin:script-name/abcd?defgh=ijkl` will set $PATH_INFO to
@@ -193,27 +194,6 @@ M-cM-c). This makes it easy to debug a misbehaving CGI script, but may also
 slow down the browser in case of excessive logging. If this is not the
 desired behavior, we recommend wrapping your script into a shell script that
 redirects stderr to /dev/null.
-
-### My script is returning a "no local-CGI directory configured" error message.
-
-Currently, the default setting includes a cgi-bin directory at
-`$(which cha)/../libexec/chawan/cgi-bin`, which usually looks something like
-`/usr/local/libexec/chawan/cgi-bin`. You only get the above message if you
-intentionally set the cgi-dir setting to an empty array. (This will likely break
-everything else too, so do not.)
-
-To change the default local-CGI directory, use the `external.cgi-dir` option.
-
-e.g. you could add this to your config.toml:
-
-```toml
-[external]
-cgi-dir = ["~/cgi-bin", "${%CHA_LIBEXEC_DIR}/cgi-bin"]
-```
-
-and then put your script in `$HOME/cgi-bin`. Note the second element in the
-array; if you don't add it, the default CGI scripts (including http, https,
-etc...) will not work.
 
 ### My script is returning a "Failed to execute script" error message.
 

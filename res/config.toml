@@ -37,7 +37,7 @@ mailcap = [
 	"/usr/etc/mailcap",
 	"/usr/local/etc/mailcap"
 ]
-auto-mailcap = "$CHA_DIR/auto.mailcap"
+auto-mailcap = "auto.mailcap"
 mime-types = [
 	"~/.mime.types",
 	"/etc/mime.types",
@@ -56,7 +56,7 @@ history-size = 100
 tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
 sockdir = "${TMPDIR:-/tmp}/cha-sock-$LOGNAME"
 editor = "${EDITOR:-vi}"
-cgi-dir = ["$CHA_DIR/cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
+cgi-dir = ["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
 download-dir = "${TMPDIR:-/tmp}/"
 w3m-cgi-compat = false
 copy-cmd = 'xsel -bi'

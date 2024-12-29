@@ -780,9 +780,6 @@ proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
 
 proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     request: Request; prevURL: URL; config: LoaderClientConfig) =
-  if ctx.config.cgiDir.len == 0:
-    handle.sendResult(ceNoCGIDir)
-    return
   let cpath = ctx.parseCGIPath(request)
   if cpath.cmd == "" or cpath.basename in ["", ".", ".."] or
       cpath.basename[0] == '~':

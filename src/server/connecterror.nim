@@ -1,20 +1,19 @@
 type ConnectionError* = enum
-  ceCGICachedBodyUnavailable = -18
-  ceCGIOutputHandleNotFound = -17
-  ceCGIFailedToOpenCacheOutput = -16
-  ceCGICachedBodyNotFound = -15
-  ceFailedToRedirect = -14
-  ceURLNotInCache = -13
-  ceFileNotInCache = -12
-  ceFailedToExecuteCGIScript = -11
-  ceCGIMalformedHeader = -10
-  ceCGIInvalidChaControl = -9
-  ceTooManyRewrites = -8
-  ceInvalidURIMethodEntry = -7
-  ceCGIFileNotFound = -6
-  ceInvalidCGIPath = -5
-  ceFailedToSetUpCGI = -4
-  ceNoCGIDir = -3
+  ceCGICachedBodyUnavailable = -17
+  ceCGIOutputHandleNotFound = -16
+  ceCGIFailedToOpenCacheOutput = -15
+  ceCGICachedBodyNotFound = -14
+  ceFailedToRedirect = -13
+  ceURLNotInCache = -12
+  ceFileNotInCache = -11
+  ceFailedToExecuteCGIScript = -10
+  ceCGIMalformedHeader = -9
+  ceCGIInvalidChaControl = -8
+  ceTooManyRewrites = -7
+  ceInvalidURIMethodEntry = -6
+  ceCGIFileNotFound = -5
+  ceInvalidCGIPath = -4
+  ceFailedToSetUpCGI = -3
   ceDisallowedURL = -2
   ceUnknownScheme = -1
   ceNone = 0
@@ -46,7 +45,6 @@ const ErrorMessages* = [
   ceCGIFileNotFound: "CGI file not found",
   ceInvalidCGIPath: "invalid CGI path",
   ceFailedToSetUpCGI: "failed to set up CGI script",
-  ceNoCGIDir: "no local-CGI directory configured",
   ceDisallowedURL: "url not allowed by filter",
   ceUnknownScheme: "unknown scheme",
   ceNone: "connection successful",
