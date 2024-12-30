@@ -1244,12 +1244,14 @@ proc applyIntr(box: BlockBox; sizes: ResolvedSizes; intr: Size) =
       box.state.intr[dim] = intr[dim].minClamp(sizes.bounds.mi[dim])
     else:
       # We do not have a scroll bar, so do the next best thing: expand the
-      # box to the size its contents want.
+      # box to the size its contents want.  (Or the specified size, if
+      # it's greater.)
       #TODO intrinsic minimum size isn't really guaranteed to equal the
       # desired scroll size. Also, it's possible that a parent box clamps
       # the height of this box; in that case, the parent box's
       # width/height should be clamped to the inner scroll width/height
       # instead.
+      box.state.intr[dim] = max(intr[dim], sizes.bounds.mi[dim].start)
       box.state.size[dim] = max(box.state.size[dim], intr[dim])
 
 proc applyBaseline(box: BlockBox) =
