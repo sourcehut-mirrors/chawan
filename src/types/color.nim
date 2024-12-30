@@ -287,8 +287,13 @@ func serialize*(color: ARGBColor): string =
   return "rgba(" & $color.r & ", " & $color.g & ", " & $color.b & ", " & $a &
     ")"
 
-func `$`*(argbcolor: ARGBColor): string =
-  return argbcolor.serialize()
+func `$`*(c: ARGBColor): string =
+  return c.serialize()
+
+func `$`*(c: CSSColor): string =
+  if c.isCell:
+    return "-cha-ansi(" & $c.n & ")"
+  return c.argb().serialize()
 
 # Divide each component by 255, multiply them by n, and discard the fractions.
 # See https://arxiv.org/pdf/2202.02864.pdf for details.

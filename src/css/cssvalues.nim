@@ -499,44 +499,79 @@ func valueType*(prop: CSSPropertyType): CSSValueType =
 func isSupportedProperty*(s: string): bool =
   return propertyType(s) != cptNone
 
+func `$`*(length: CSSLength): string =
+  if length.u == clAuto:
+    return "auto"
+  return $length.num & $length.u
+
+func `$`*(content: CSSContent): string =
+  if content.t == ContentImage:
+    #TODO
+    return ""
+  if content.s != "":
+    return "url(" & content.s & ")"
+  return "none"
+
+func `$`(quotes: CSSQuotes): string =
+  if quotes.auto:
+    return "auto"
+  return "auto" #TODO
+
+func `$`(counterreset: seq[CSSCounterReset]): string =
+  result = ""
+  for it in counterreset:
+    result &= $it.name
+    result &= ' '
+    result &= $it.num
+
+func serialize*(val: CSSValue): string =
+  case val.v
+  of cvtNone: return "none"
+  of cvtColor: return $val.color
+  of cvtImage: return $val.image
+  of cvtLength: return $val.length
+  of cvtInteger: return $val.integer
+  of cvtTextDecoration: return $val.textDecoration
+  of cvtVerticalAlign: return $val.verticalAlign
+  of cvtLength2: return $val.length2.a & " " & $val.length2.b
+  of cvtContent:
+    var s = ""
+    for x in val.content:
+      if s.len > 0:
+        s &= ' '
+      s &= $x
+    return s
+  of cvtQuotes: return $val.quotes
+  of cvtCounterReset: return $val.counterReset
+  of cvtNumber: return $val.number
+  else: assert false
+
+func serialize*(val: CSSValueBit; t: CSSValueType): string =
+  case t
+  of cvtDisplay: return $val.display
+  of cvtFontStyle: return $val.fontStyle
+  of cvtWhiteSpace: return $val.whiteSpace
+  of cvtWordBreak: return $val.wordBreak
+  of cvtListStyleType: return $val.listStyleType
+  of cvtTextAlign: return $val.textAlign
+  of cvtListStylePosition: return $val.listStylePosition
+  of cvtPosition: return $val.position
+  of cvtCaptionSide: return $val.captionSide
+  of cvtBorderCollapse: return $val.borderCollapse
+  of cvtFloat: return $val.float
+  of cvtVisibility: return $val.visibility
+  of cvtBoxSizing: return $val.boxSizing
+  of cvtClear: return $val.clear
+  of cvtTextTransform: return $val.textTransform
+  of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
+  of cvtFlexDirection: return $val.flexDirection
+  of cvtFlexWrap: return $val.flexWrap
+  of cvtOverflow: return $val.overflow
+  else: assert false
+
 when defined(debug):
-  func `$`*(length: CSSLength): string =
-    if length.u == clAuto:
-      return "auto"
-    return $length.num & $length.u
-
-  func `$`*(content: CSSContent): string =
-    if content.s != "":
-      return "url(" & content.s & ")"
-    return "none"
-
-  func `$`(quotes: CSSQuotes): string =
-    if quotes.auto:
-      return "auto"
-    return "auto" #TODO
-
-  func `$`(counterreset: seq[CSSCounterReset]): string =
-    result = ""
-    for it in counterreset:
-      result &= $it.name
-      result &= ' '
-      result &= $it.num
-
   func `$`*(val: CSSValue): string =
-    case val.v
-    of cvtNone: return "none"
-    of cvtColor: return $val.color
-    of cvtImage: return $val.image
-    of cvtLength: return $val.length
-    of cvtInteger: return $val.integer
-    of cvtTextDecoration: return $val.textDecoration
-    of cvtVerticalAlign: return $val.verticalAlign
-    of cvtLength2: return $val.length2.a & " " & $val.length2.b
-    of cvtContent: return $val.content
-    of cvtQuotes: return $val.quotes
-    of cvtCounterReset: return $val.counterReset
-    of cvtNumber: return $val.number
-    else: assert false
+    return val.serialize()
 
 macro `{}`*(vals: CSSValues; s: static string): untyped =
   let t = propertyType(s)

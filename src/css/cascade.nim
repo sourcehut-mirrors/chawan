@@ -294,8 +294,9 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
   rules[coUser].add(map.user[peNone])
   for rule in map.author:
     rules[coAuthor].add(rule[peNone])
+  var element: Element = nil
   if styledNode.node != nil:
-    let element = Element(styledNode.node)
+    element = Element(styledNode.node)
     let style = element.cachedStyle
     if window.styling and style != nil:
       for decl in style.decls:
@@ -306,6 +307,8 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
           rules[coAuthor].normal.add(vals)
     presHints = element.calcPresHints(window.attrsp[])
   styledNode.computed = rules.buildComputedValues(presHints, parent)
+  if element != nil and window.settings.scripting == smApp:
+    element.computed = styledNode.computed
 
 func hasValues(rules: CSSValueEntryMap): bool =
   for origin in CSSOrigin:

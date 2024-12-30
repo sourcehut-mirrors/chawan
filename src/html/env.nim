@@ -283,9 +283,11 @@ callback(new Event("").timeStamp);
   return ctx.toJS(window.setTimeout(handler, 0, callback))
 
 proc getComputedStyle(window: Window; element: Element;
-    pseudoElt = none(string)): JSResult[CSSStyleDeclaration] {.jsfunc.} =
-  #TODO implement this properly
-  return ok(element.style)
+    pseudoElt = none(string)): CSSStyleDeclaration {.jsfunc.} =
+  if window.settings.scripting == smApp:
+    return element.getComputedStyle()
+  # Maybe it works.
+  return element.style
 
 proc postMessage(window: Window) {.jsfunc.} =
   window.console.log("postMessage: Stub")

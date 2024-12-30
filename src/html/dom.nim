@@ -260,10 +260,13 @@ type
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
     cachedAttributes: NamedNodeMap
     cachedStyle*: CSSStyleDeclaration
+    cachedComputedStyle*: CSSStyleDeclaration
+    computed*: CSSValues
 
   AttrDummyElement = ref object of Element
 
   CSSStyleDeclaration* = ref object
+    computed: bool
     decls*: seq[CSSDeclaration]
     element: Element
 
@@ -3300,7 +3303,10 @@ func find(this: CSSStyleDeclaration; s: string): int =
 
 proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
   if (let i = this.find(s); i != -1):
-    return $this.decls[i].value
+    var s = ""
+    for it in this.decls[i].value:
+      s &= $it
+    return move(s)
   return ""
 
 # https://drafts.csswg.org/cssom/#idl-attribute-to-css-property
@@ -3347,7 +3353,10 @@ proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
   return ok()
 
 proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
-    value: string): Opt[void] {.jssetprop.} =
+    value: string): DOMResult[void] {.jssetprop.} =
+  if this.computed:
+    return errDOMException("Cannot modify computed value",
+      "NoModificationAllowedError")
   let cvals = parseComponentValues(value)
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
@@ -3373,6 +3382,21 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.cachedStyle == nil:
     element.cachedStyle = CSSStyleDeclaration(element: element)
   return element.cachedStyle
+
+proc getComputedStyle*(element: Element): CSSStyleDeclaration =
+  if element.cachedComputedStyle == nil:
+    var s = ""
+    for p in CSSPropertyType:
+      if p != cptNone:
+        s &= $p & ':'
+        if p.isBit:
+          s &= element.computed.bits[p].serialize(valueType(p))
+        else:
+          s &= element.computed.objs[p].serialize()
+        s &= ';'
+    element.cachedComputedStyle = newCSSStyleDeclaration(element, move(s))
+    element.cachedComputedStyle.computed = true
+  return element.cachedComputedStyle
 
 proc corsFetch(window: Window; input: Request): FetchPromise =
   if not window.images and input.url.scheme.startsWith("img-codec+"):
