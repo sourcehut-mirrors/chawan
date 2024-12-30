@@ -535,4 +535,4 @@ proc addXMLHttpRequestModule*(ctx: JSContext) =
   )]
   let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID, hasExtraGetSet = true,
     extraGetSet = getset1)
-  ctx.defineConsts(xhrCID, XMLHttpRequestState, uint16)
+  ctx.defineConsts(xhrCID, XMLHttpRequestState)

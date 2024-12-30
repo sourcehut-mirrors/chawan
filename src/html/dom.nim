@@ -5197,7 +5197,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
 proc addDOMModule*(ctx: JSContext) =
   let eventTargetCID = ctx.getClass("EventTarget")
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
-  ctx.defineConsts(nodeCID, NodeType, uint16)
+  ctx.defineConsts(nodeCID, NodeType)
   let nodeListCID = ctx.registerType(NodeList)
   let htmlCollectionCID = ctx.registerType(HTMLCollection)
   ctx.registerType(HTMLAllCollection, ishtmldda = true)

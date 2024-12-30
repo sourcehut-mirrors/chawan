@@ -335,5 +335,5 @@ proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event):
 proc addEventModule*(ctx: JSContext) =
   let eventCID = ctx.registerType(Event)
   ctx.registerType(CustomEvent, parent = eventCID)
-  ctx.defineConsts(eventCID, EventPhase, uint16)
+  ctx.defineConsts(eventCID, EventPhase)
   ctx.registerType(EventTarget)

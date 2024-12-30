@@ -9,8 +9,9 @@ function myFunction() {
 	;
 }
 x.onreadystatechange = myFunction;
-assert(myFunction === x.onreadystatechange);
-assert(x.readyState === XMLHttpRequest.UNSENT);
+assertEquals(myFunction, x.onreadystatechange);
+assertEquals(x.readyState, XMLHttpRequest.UNSENT);
+assertEquals(x.UNSENT, XMLHttpRequest.UNSENT);
 x.open("GET", "ping", false);
 assertThrows("x.responseType = 'document'", DOMException);
 x.overrideMimeType("text/plain");
