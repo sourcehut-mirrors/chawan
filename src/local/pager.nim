@@ -1806,7 +1806,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     loaderConfig: var LoaderClientConfig; ourl: var URL): BufferConfig =
   let host = url.host
   let ctx = pager.jsctx
-  var res = BufferConfig(
+  result = BufferConfig(
     userstyle: pager.config.css.stylesheet,
     refererFrom: pager.config.buffer.referer_from,
     scripting: pager.config.buffer.scripting,
@@ -1859,22 +1859,22 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         ourl = tmpUrl
         return
     if sc.cookie.isSome:
-      res.cookieMode = sc.cookie.get
+      result.cookieMode = sc.cookie.get
     if sc.share_cookie_jar.isSome:
       cookieJarId = sc.share_cookie_jar.get
     if sc.scripting.isSome:
-      res.scripting = sc.scripting.get
+      result.scripting = sc.scripting.get
     if sc.referer_from.isSome:
-      res.refererFrom = sc.referer_from.get
+      result.refererFrom = sc.referer_from.get
     if sc.document_charset.len > 0:
-      res.charsets = sc.document_charset
+      result.charsets = sc.document_charset
     if sc.images.isSome:
-      res.images = sc.images.get
+      result.images = sc.images.get
     if sc.styling.isSome:
-      res.styling = sc.styling.get
+      result.styling = sc.styling.get
     if sc.stylesheet.isSome:
-      res.userstyle &= "\n"
-      res.userstyle &= sc.stylesheet.get
+      result.userstyle &= "\n"
+      result.userstyle &= sc.stylesheet.get
     if sc.proxy.isSome:
       loaderConfig.proxy = sc.proxy.get
     if sc.default_headers != nil:
@@ -1882,21 +1882,20 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     if sc.insecure_ssl_no_verify.isSome:
       loaderConfig.insecureSSLNoVerify = sc.insecure_ssl_no_verify.get
     if sc.autofocus.isSome:
-      res.autofocus = sc.autofocus.get
+      result.autofocus = sc.autofocus.get
     if sc.meta_refresh.isSome:
-      res.metaRefresh = sc.meta_refresh.get
+      result.metaRefresh = sc.meta_refresh.get
   loaderConfig.filter.allowschemes
     .add(pager.config.external.urimethodmap.imageProtos)
-  if res.images:
-    res.imageTypes = pager.config.external.mime_types.image
-  res.userAgent = loaderConfig.defaultHeaders.getOrDefault("User-Agent")
-  if res.cookieMode != cmNone:
+  if result.images:
+    result.imageTypes = pager.config.external.mime_types.image
+  result.userAgent = loaderConfig.defaultHeaders.getOrDefault("User-Agent")
+  if result.cookieMode != cmNone:
     var cookieJar = pager.cookieJars.jars.getOrDefault(cookieJarId)
     if cookieJar == nil:
       cookieJar = newCookieJar()
       pager.cookieJars.jars[cookieJarId] = cookieJar
     loaderConfig.cookieJar = cookieJar
-  return res
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
@@ -2788,14 +2787,15 @@ proc connected(pager: Pager; container: Container; response: Response) =
     pager.hasload = true
   if cfHistory in container.flags:
     pager.lineHist[lmLocation].add($container.url)
-  var contentType = if "Content-Type" in response.headers:
-    response.headers["Content-Type"]
-  else:
-    # both contentType and charset must be set by applyResponse.
-    container.contentType.get & ";charset=" & $container.charset
-  contentType = contentType.toValidUTF8()
-  # contentType must exist, because we set it in applyResponse
+  # contentType must have been set by applyResponse.
   let shortContentType = container.contentType.get
+  var contentType = if "Content-Type" in response.headers:
+    response.headers["Content-Type"].toValidUTF8()
+  else:
+    shortContentType
+  if contentType.startsWithIgnoreCase("text/"):
+    # prepare content type for %{charset}
+    contentType.setContentTypeAttr("charset", $container.charset)
   if container.filter != nil:
     istream = pager.filterBuffer(istream, container.filter.cmd)
   if shortContentType.equalsIgnoreCase("text/html"):
@@ -2892,28 +2892,28 @@ proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
     JS_FreeValue(ctx, arg)
 
 const MenuMap = [
-  ("Select text           (v)", "cmd.buffer.cursorToggleSelection(1)"),
-  ("Copy selection        (y)", "cmd.buffer.copySelection(1)"),
-  ("Previous buffer       (,)", "cmd.pager.prevBuffer(1)"),
-  ("Next buffer           (.)", "cmd.pager.nextBuffer(1)"),
-  ("Discard buffer        (D)", "cmd.pager.discardBuffer(1)"),
-  ("─────────────────────────", ""),
-  ("View image            (I)", "cmd.buffer.viewImage(1)"),
-  ("Peek                  (u)", "cmd.pager.peekCursor(1)"),
-  ("Copy link            (yu)", "cmd.pager.copyCursorLink(1)"),
-  ("Copy image link      (yI)", "cmd.pager.copyCursorImage(1)"),
-  ("Go to clipboard URL (M-p)", "cmd.pager.gotoClipboardURL(1)"),
-  ("Reload                (U)", "cmd.pager.reloadBuffer(1)"),
-  ("─────────────────────────", ""),
-  ("Linkify URLs          (:)", "cmd.buffer.markURL(1)"),
-  ("Save link          (sC-m)", "cmd.buffer.saveLink(1)"),
-  ("View source           (\\)", "cmd.pager.toggleSource(1)"),
-  ("Edit source          (sE)", "cmd.buffer.sourceEdit(1)"),
-  ("Save source          (sS)", "cmd.buffer.saveSource(1)"),
-  ("─────────────────────────", ""),
-  ("Bookmark page       (M-a)", "cmd.pager.addBookmark(1)"),
-  ("Open bookmarks      (M-b)", "cmd.pager.openBookmarks(1)"),
-  ("Open history        (C-h)", "cmd.pager.openHistory(1)"),
+  ("Select text          (v)", "cmd.buffer.cursorToggleSelection(1)"),
+  ("Copy selection       (y)", "cmd.buffer.copySelection(1)"),
+  ("Previous buffer      (,)", "cmd.pager.prevBuffer(1)"),
+  ("Next buffer          (.)", "cmd.pager.nextBuffer(1)"),
+  ("Discard buffer       (D)", "cmd.pager.discardBuffer(1)"),
+  ("────────────────────────", ""),
+  ("View image           (I)", "cmd.buffer.viewImage(1)"),
+  ("Peek                 (u)", "cmd.pager.peekCursor(1)"),
+  ("Copy link           (yu)", "cmd.pager.copyCursorLink(1)"),
+  ("Copy image link     (yI)", "cmd.pager.copyCursorImage(1)"),
+  ("Paste link         (M-p)", "cmd.pager.gotoClipboardURL(1)"),
+  ("Reload               (U)", "cmd.pager.reloadBuffer(1)"),
+  ("────────────────────────", ""),
+  ("Linkify URLs         (:)", "cmd.buffer.markURL(1)"),
+  ("Save link         (sC-m)", "cmd.buffer.saveLink(1)"),
+  ("View source          (\\)", "cmd.pager.toggleSource(1)"),
+  ("Edit source         (sE)", "cmd.buffer.sourceEdit(1)"),
+  ("Save source         (sS)", "cmd.buffer.saveSource(1)"),
+  ("────────────────────────", ""),
+  ("Bookmark page      (M-a)", "cmd.pager.addBookmark(1)"),
+  ("Open bookmarks     (M-b)", "cmd.pager.openBookmarks(1)"),
+  ("Open history       (C-h)", "cmd.pager.openHistory(1)"),
 ]
 
 proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =
