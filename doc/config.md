@@ -1370,6 +1370,13 @@ line.</td>
 </tr>
 
 <tr>
+<td><kbd>I</kbd></td>
+<td>`cmd.buffer.viewImage`</td>
+<td>View the image currently under the cursor in an external
+viewer.</td>
+</tr>
+
+<tr>
 <td><kbd>R</kbd></td>
 <td>`cmd.buffer.reshape`</td>
 <td>Reshape the current buffer (=render the current page anew.) Useful

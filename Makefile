@@ -59,6 +59,7 @@ all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/finger $(OUTDIR_CGI_BIN)/about \
 	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp $(OUTDIR_CGI_BIN)/sftp \
 	$(OUTDIR_LIBEXEC)/dirlist2html $(OUTDIR_LIBEXEC)/uri2html \
+	$(OUTDIR_LIBEXEC)/img2html \
 	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
 	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp $(OUTDIR_CGI_BIN)/canvas \
 	$(OUTDIR_CGI_BIN)/nanosvg $(OUTDIR_CGI_BIN)/sixel $(OUTDIR_CGI_BIN)/resize \
@@ -129,6 +130,7 @@ $(OUTDIR_LIBEXEC)/gopher2html: $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim src/io/poll.nim $(twtstr) $(dynstream)
 $(OUTDIR_LIBEXEC)/md2html: $(twtstr)
 $(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr)
+$(OUTDIR_LIBEXEC)/img2html: $(twtstr)
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
@@ -190,7 +192,7 @@ manpage: $(manpages:%=doc/%)
 
 protocols = http about file ftp sftp gopher gemini finger man spartan stbi \
 	jebp sixel canvas resize chabookmark nanosvg
-converters = gopher2html md2html ansi2html gmi2html dirlist2html uri2html
+converters = gopher2html md2html ansi2html gmi2html dirlist2html uri2html img2html
 tools = urlenc nc
 
 .PHONY: install
