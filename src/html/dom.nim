@@ -282,7 +282,7 @@ type
     parserInserted*: bool
 
   HTMLInputElement* = ref object of FormAssociatedElement
-    inputType*: InputType
+    inputType* {.jsgetset: "type".}: InputType
     value* {.jsget.}: string
     internalChecked {.jsget: "checked".}: bool
     xcoord*: int
