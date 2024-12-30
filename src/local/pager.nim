@@ -2969,16 +2969,22 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       pager.alert("Blocked cross-scheme POST: " & $url)
       return
     #TODO this is horrible UX, async actions shouldn't block input
+    let contentType = if event.contentType == "":
+      none(string)
+    else:
+      some(event.contentType)
     if pager.container != container or
         not event.save and not container.isHoverURL(url):
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
         if x:
           discard pager.gotoURL(event.request, some(container.url),
-            referrer = pager.container, save = event.save)
+            contentType = contentType, referrer = pager.container,
+            save = event.save)
       )
     else:
       discard pager.gotoURL(event.request, some(container.url),
-        referrer = pager.container, save = event.save, url = event.url)
+        contentType = contentType, referrer = pager.container,
+        save = event.save, url = event.url)
   of cetStatus:
     if pager.container == container:
       pager.showAlerts()

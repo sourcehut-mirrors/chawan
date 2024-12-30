@@ -48,7 +48,7 @@ type
     cetReadLine, cetReadArea, cetReadFile, cetOpen, cetSetLoadInfo, cetStatus,
     cetAlert, cetLoaded, cetTitle, cetCancel, cetMetaRefresh
 
-  ContainerEvent* = object
+  ContainerEvent* = ref object
     case t*: ContainerEventType
     of cetReadLine:
       prompt*: string
@@ -57,9 +57,10 @@ type
     of cetReadArea:
       tvalue*: string
     of cetOpen:
-      request*: Request
       save*: bool
+      request*: Request
       url*: URL
+      contentType*: string
     of cetAlert:
       msg*: string
     of cetMetaRefresh:
@@ -1625,7 +1626,8 @@ proc onclick(container: Container; res: ClickResult; save: bool) =
     container.triggerEvent(ContainerEvent(
       t: cetOpen,
       request: res.open,
-      save: save
+      save: save,
+      contentType: res.contentType
     ))
   if res.select.isSome and not save:
     container.displaySelect(res.select.get)

@@ -2990,15 +2990,15 @@ func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
 # <video>
-func getSrc*(this: HTMLElement): string =
+func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
   let src = this.attr(satSrc)
   if src != "":
-    return src
+    return (src, "")
   for el in this.elements(TAG_SOURCE):
     let src = el.attr(satSrc)
     if src != "":
-      return src
-  return ""
+      return (src, el.attr(satType))
+  return ("", "")
 
 func newText*(document: Document; data: string): Text =
   return Text(

@@ -107,10 +107,16 @@ nobr { white-space: nowrap }
 
 p { margin: 1em 0 }
 
-@media (prefers-color-scheme: light) { a[href] { color: -cha-ansi(blue) } }
-@media (prefers-color-scheme: dark) { a[href] { color: -cha-ansi(yellow) } }
+@media (prefers-color-scheme: light) {
+a[href] { color: -cha-ansi(blue) }
+video, audio { color: -cha-ansi(red) }
+}
+@media (prefers-color-scheme: dark) {
+a[href] { color: -cha-ansi(yellow) }
+video, audio { color: -cha-ansi(red) }
+}
 
-a[href]:hover { text-decoration: underline }
+a[href]:hover, video:hover, audio:hover { text-decoration: underline }
 
 sup::before { content: '^' }
 sub::before { content: '~' }

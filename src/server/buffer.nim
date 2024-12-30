@@ -328,7 +328,8 @@ func getTitleAttr(buffer: Buffer; element: Element): string =
   return ""
 
 const ClickableElements = {
-  TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL
+  TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL,
+  TAG_VIDEO, TAG_AUDIO
 }
 
 proc isClickable(element: Element): bool =
@@ -364,6 +365,16 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
     return true
   return false
 
+proc getImageHover(buffer: Buffer; element: Element): string =
+  if element of HTMLImageElement:
+    let image = HTMLImageElement(element)
+    let src = image.attr(satSrc)
+    if src != "":
+      let url = image.document.parseURL(src)
+      if url.isSome:
+        return $url.get
+  ""
+
 proc getClickHover(buffer: Buffer; element: Element): string =
   let clickable = element.getClickable()
   if clickable != nil:
@@ -381,30 +392,12 @@ proc getClickHover(buffer: Buffer; element: Element): string =
       return "<" & $clickable.tagType & ">"
     elif clickable of HTMLOptionElement:
       return "<option>"
-  ""
-
-proc getImageHover(buffer: Buffer; element: Element): string =
-  if element of HTMLImageElement:
-    let image = HTMLImageElement(element)
-    let src = image.attr(satSrc)
-    if src != "":
-      let url = image.document.parseURL(src)
-      if url.isSome:
-        return $url.get
-  elif element of HTMLVideoElement:
-    let video = HTMLVideoElement(element)
-    let src = video.getSrc()
-    if src != "":
-      let url = video.document.parseURL(src)
-      if url.isSome:
-        return $url.get
-  elif element of HTMLAudioElement:
-    let audio = HTMLAudioElement(element)
-    let src = audio.getSrc()
-    if src != "":
-      let url = audio.document.parseURL(src)
-      if url.isSome:
-        return $url.get
+    elif clickable of HTMLVideoElement or clickable of HTMLAudioElement:
+      let (src, _) = HTMLElement(clickable).getSrc()
+      if src != "":
+        let url = clickable.document.parseURL(src)
+        if url.isSome:
+          return $url.get
   ""
 
 proc getCachedImageHover(buffer: Buffer; element: Element): string =
@@ -669,13 +662,14 @@ type
     value*: string
     hide*: bool
 
-  SelectResult* = object
+  SelectResult* = ref object
     multiple*: bool
     options*: seq[SelectOption]
     selected*: seq[int]
 
   ClickResult* = object
     open*: Request
+    contentType*: string
     readline*: Option[ReadLineResult]
     repaint*: bool
     select*: Option[SelectResult]
@@ -1414,6 +1408,7 @@ proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
   let control = label.control
   if control != nil:
     return buffer.click(control)
+  return ClickResult()
 
 proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
   let repaint = buffer.setFocus(select)
@@ -1507,6 +1502,32 @@ proc click(buffer: Buffer; textarea: HTMLTextAreaElement): ClickResult =
     repaint: repaint
   )
 
+proc click(buffer: Buffer; audio: HTMLAudioElement): ClickResult =
+  let repaint = buffer.restoreFocus()
+  let (src, contentType) = audio.getSrc()
+  if src != "":
+    let url = audio.document.parseURL(src)
+    if url.isSome:
+      return ClickResult(
+        repaint: repaint,
+        open: newRequest(url.get),
+        contentType: contentType
+      )
+  return ClickResult(repaint: repaint)
+
+proc click(buffer: Buffer; video: HTMLVideoElement): ClickResult =
+  let repaint = buffer.restoreFocus()
+  let (src, contentType) = video.getSrc()
+  if src != "":
+    let url = video.document.parseURL(src)
+    if url.isSome:
+      return ClickResult(
+        repaint: repaint,
+        open: newRequest(url.get),
+        contentType: contentType
+      )
+  return ClickResult(repaint: repaint)
+
 const InputTypePrompt = [
   itText: "TEXT",
   itButton: "",
@@ -1594,6 +1615,10 @@ proc click(buffer: Buffer; clickable: Element): ClickResult =
     return buffer.click(HTMLTextAreaElement(clickable))
   of TAG_INPUT:
     return buffer.click(HTMLInputElement(clickable))
+  of TAG_AUDIO:
+    return buffer.click(HTMLAudioElement(clickable))
+  of TAG_VIDEO:
+    return buffer.click(HTMLVideoElement(clickable))
   else:
     return ClickResult(repaint: buffer.restoreFocus())
 
