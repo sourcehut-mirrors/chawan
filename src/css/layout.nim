@@ -1763,13 +1763,11 @@ proc positionRelative(lctx: LayoutContext; parent, box: BlockBox) =
   if box.computed{"left"}.u != clAuto:
     box.state.offset.x += positioned.left
   elif box.computed{"right"}.u != clAuto:
-    box.state.offset.x += parent.state.size.w - box.state.size.w -
-      positioned.right
+    box.state.offset.x -= positioned.right
   if box.computed{"top"}.u != clAuto:
     box.state.offset.y += positioned.top
   elif box.computed{"bottom"}.u != clAuto:
-    box.state.offset.y += parent.state.size.h - box.state.size.h -
-      positioned.bottom
+    box.state.offset.y -= positioned.bottom
 
 # Note: caption is not included here
 const RowGroupBox = {
