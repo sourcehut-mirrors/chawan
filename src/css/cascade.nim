@@ -272,11 +272,15 @@ func buildComputedValues(rules: CSSValueEntryMap; parent: CSSValues;
   for t in CSSPropertyType:
     if not inited[t]:
       result.initialOrInheritFrom(parent, t)
-  if result{"float"} != FloatNone:
+  # Quirk: it seems others aren't implementing what the spec says about
+  # blockification.
+  # Well, neither will I, because the spec breaks on actual websites.
+  # Curse CSS.
+  if result{"position"} in {PositionAbsolute, PositionFixed}:
+    if result{"display"} == DisplayInline:
+      result{"display"} = DisplayInlineBlock
+  elif result{"float"} != FloatNone:
     result{"display"} = result{"display"}.blockify()
-  elif result{"position"} in {PositionAbsolute, PositionFixed} and
-      result{"display"} == DisplayInline:
-    result{"display"} = DisplayInlineBlock
   if (result{"overflow-x"} in {OverflowVisible, OverflowClip}) !=
       (result{"overflow-y"} in {OverflowVisible, OverflowClip}):
     result{"overflow-x"} = result{"overflow-x"}.bfcify()

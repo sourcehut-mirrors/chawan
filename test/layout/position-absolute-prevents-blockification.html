@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<!--
+Fun fact: Blink and Gecko agree on inline-flex, but disagree on
+inline-table.
+The spec disagrees with both, but that breaks websites.
+LOL
+-->
+<div>
+<span>
+<div style="display: inline-block; float: left">
+test 1
+</div>
+<div style="display: inline-block; float: left; position: absolute">
+test 2
+</div>
+</span>
+</div>
+<br>
+<div>
+<div style="display: inline-block; float: left">
+test 1
+</div>
+<div style="display: inline-table; float: left; position: absolute">
+test 2
+</div>
+</div>
+<br>
+<div>
+<div style="display: inline-block; float: left">
+test 1
+</div>
+<div style="display: inline-flex; float: left; position: absolute">
+test 2
+</div>
+</div>
