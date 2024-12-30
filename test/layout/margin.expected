@@ -1,8 +1,7 @@
 spacer
 
-  left, right: 2em
-  top, bottom: 1em.
-
+    left, right: 2em
+    top, bottom: 1em.
 
 spacer
                                              width: 10em

@@ -1320,7 +1320,7 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
     for i, t in props.mypairs:
       let j = if i == 0:
         0 # top
-      elif i == 3:
+      elif i == 2:
         2 # bottom
       else:
         1 # left, right
