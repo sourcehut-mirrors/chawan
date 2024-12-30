@@ -113,12 +113,14 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
     for item in tosorts[i]:
       result[i].add(item[1])
 
-func calcPresHints(element: Element; attrs: WindowAttributes):
-    seq[CSSComputedEntry] =
-  result = @[]
+proc applyPresHints(computed: CSSValues; element: Element;
+    attrs: WindowAttributes;
+    inited, uaInited, userInited: var array[CSSPropertyType, bool]) =
   template set_cv(t, x, b: untyped) =
     const v = valueType(t)
-    result.add(makeEntry(t, CSSValue(v: v, x: b)))
+    computed.applyValue(makeEntry(t, CSSValue(v: v, x: b)), nil, nil, uaInited)
+    inited[t] = true
+    userInited[t] = true
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
     if s.isSome:
@@ -170,9 +172,11 @@ func calcPresHints(element: Element; attrs: WindowAttributes):
       if i <= 65534:
         set_cv cptChaRowspan, integer, int(i)
   template set_bgcolor_is_canvas =
-    var val = CSSValueBit()
-    val.bgcolorIsCanvas = true
-    result.add(makeEntry(cptBgcolorIsCanvas, val))
+    let t = cptBgcolorIsCanvas
+    let val = CSSValueBit(bgcolorIsCanvas: true)
+    computed.applyValue(makeEntry(t, val), nil, nil, uaInited)
+    inited[t] = true
+    userInited[t] = true
   template map_cellspacing =
     let s = element.attrul(satCellspacing)
     if s.isSome:
@@ -229,9 +233,9 @@ type
 
   CSSValueEntryMap = array[CSSOrigin, CSSValueEntryObj]
 
-func buildComputedValues(rules: CSSValueEntryMap;
-    presHints: openArray[CSSComputedEntry]; parent: CSSValues):
-    CSSValues =
+# element and attrsp are nil if called for a pseudo element.
+func buildComputedValues(rules: CSSValueEntryMap; parent: CSSValues;
+    element: Element; attrsp: ptr WindowAttributes): CSSValues =
   new(result)
   var inited = array[CSSPropertyType, bool].default
   var uaInited = array[CSSPropertyType, bool].default
@@ -244,10 +248,8 @@ func buildComputedValues(rules: CSSValueEntryMap;
   let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
-  for entry in presHints:
-    result.applyValue(entry, nil, nil, uaInited)
-    inited[entry.t] = true
-    userInited[entry.t] = true
+  if element != nil:
+    result.applyPresHints(element, attrsp[], inited, uaInited, userInited)
   for entry in rules[coUser].normal: # user
     result.applyValue(entry, parent, uaProperties, uaInited)
     inited[entry.t] = true
@@ -280,7 +282,6 @@ func buildComputedValues(rules: CSSValueEntryMap;
     result{"overflow-x"} = result{"overflow-x"}.bfcify()
     result{"overflow-y"} = result{"overflow-y"}.bfcify()
 
-
 proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
   for rule in rules:
     map.normal.add(rule.normalVals)
@@ -289,7 +290,6 @@ proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
 proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
     map: RuleListMap; window: Window) =
   var rules: CSSValueEntryMap
-  var presHints: seq[CSSComputedEntry] = @[]
   rules[coUserAgent].add(map.ua[peNone])
   rules[coUser].add(map.user[peNone])
   for rule in map.author:
@@ -305,8 +305,8 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
           rules[coAuthor].important.add(vals)
         else:
           rules[coAuthor].normal.add(vals)
-    presHints = element.calcPresHints(window.attrsp[])
-  styledNode.computed = rules.buildComputedValues(presHints, parent)
+  styledNode.computed = rules.buildComputedValues(parent, element,
+    window.attrsp)
   if element != nil and window.settings.scripting == smApp:
     element.computed = styledNode.computed
 
@@ -325,7 +325,7 @@ proc applyDeclarations(pseudo: PseudoElem; styledParent: StyledNode;
   for rule in map.author:
     rules[coAuthor].add(rule[pseudo])
   if rules.hasValues():
-    let cvals = rules.buildComputedValues([], styledParent.computed)
+    let cvals = rules.buildComputedValues(styledParent.computed, nil, nil)
     return styledParent.newStyledElement(pseudo, cvals)
   return nil
 
