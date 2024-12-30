@@ -287,6 +287,9 @@ proc getComputedStyle(window: Window; element: Element;
   #TODO implement this properly
   return ok(element.style)
 
+proc postMessage(window: Window) {.jsfunc.} =
+  window.console.log("postMessage: Stub")
+
 proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
     {.jsfset: "onload".} =
   if JS_IsFunction(ctx, val):
