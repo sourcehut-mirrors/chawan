@@ -186,7 +186,7 @@ type
     window* {.jsget: "defaultView".}: Window
     url* {.jsget: "URL".}: URL
     mode*: QuirksMode
-    currentScript: HTMLScriptElement
+    currentScript {.jsget.}: HTMLScriptElement
     isxml*: bool
     implementation {.jsget.}: DOMImplementation
     origin: Origin
