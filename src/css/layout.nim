@@ -1011,16 +1011,18 @@ const CvalSizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
 proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
     positioned: RelativeRect; computed: CSSValues;
     lctx: LayoutContext) =
+  let padding = sizes.padding[dtHorizontal].sum()
   if computed{"width"}.u == clAuto:
     let u = max(size.w - positioned[dtHorizontal].sum(), 0)
     if computed{"left"}.u != clAuto and computed{"right"}.u != clAuto:
       # Both left and right are known, so we can calculate the width.
-      sizes.space.w = stretch(u)
+      # Well, but subtract padding first.
+      sizes.space.w = stretch(u - padding)
     else:
       # Return shrink to fit and solve for left/right.
-      sizes.space.w = fitContent(u)
+      # Well, but subtract padding first.
+      sizes.space.w = fitContent(u - padding)
   else:
-    let padding = sizes.padding[dtHorizontal].sum()
     let sizepx = computed{"width"}.spx(stretch(size.w), computed, padding)
     sizes.space.w = stretch(sizepx)
 
@@ -1031,7 +1033,8 @@ proc resolveAbsoluteHeight(sizes: var ResolvedSizes; size: Size;
     let u = max(size.w - positioned[dtVertical].sum(), 0)
     if computed{"top"}.u != clAuto and computed{"bottom"}.u != clAuto:
       # Both top and bottom are known, so we can calculate the height.
-      sizes.space.h = stretch(u)
+      # Well, but subtract padding first.
+      sizes.space.h = stretch(u - sizes.padding[dtVertical].sum())
     else:
       # The height is based on the content.
       sizes.space.h = maxContent()
@@ -1053,6 +1056,9 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
   )
   sizes.resolveAbsoluteWidth(size, positioned, computed, lctx)
   sizes.resolveAbsoluteHeight(size, positioned, computed, lctx)
+  # Subtract margins.
+  for dim, it in sizes.space.mpairs:
+    it.u = max(it.u - sizes.margin[dim].sum(), 0)
   return sizes
 
 # Calculate and resolve available width & height for floating boxes.
@@ -1318,6 +1324,12 @@ proc popPositioned(lctx: LayoutContext; overflow: var Overflow; size: Size) =
     let child = it.child
     lctx.pushPositioned()
     var positioned: RelativeRect
+    var size = size
+    #TODO this is very ugly.
+    # I'm subtracting the X offset because it's normally equivalent to
+    # the float-induced offset. But this isn't always true, e.g. it
+    # definitely isn't in flex layout.
+    size.w -= it.offset.x
     var sizes = lctx.resolveAbsoluteSizes(size, positioned, child.computed)
     var marginBottom = lctx.layoutRootBlock(child, it.offset, sizes)
     if sizes.space.w.t == scFitContent and child.state.intr.w > size.w:
