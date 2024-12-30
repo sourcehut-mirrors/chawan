@@ -209,6 +209,14 @@ func toLowerAscii*(factory: CAtomFactory; a: CAtom): CAtom =
 func equalsIgnoreCase*(factory: CAtomFactory; a, b: CAtom): bool =
   return factory.lowerMap[int32(a)] == factory.lowerMap[int32(b)]
 
+func containsIgnoreCase*(factory: CAtomFactory; aa: openArray[CAtom];
+    a: CAtom): bool =
+  let a = factory.toLowerAscii(a)
+  for it in aa:
+    if a == factory.toLowerAscii(it):
+      return true
+  return false
+
 func toAtom*(factory: CAtomFactory; s: string): CAtom =
   return factory[].toAtom(s)
 

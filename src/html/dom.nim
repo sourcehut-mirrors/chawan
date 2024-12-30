@@ -184,7 +184,7 @@ type
     factory*: CAtomFactory
     charset*: Charset
     window* {.jsget: "defaultView".}: Window
-    url* {.jsget: "URL".}: URL
+    url* {.jsget: "URL".}: URL # not nil
     mode*: QuirksMode
     currentScript {.jsget.}: HTMLScriptElement
     isxml*: bool
@@ -2311,7 +2311,7 @@ func getElementsByName(document: Document; name: CAtom): NodeList {.jsfunc.} =
     childonly = false
   )
 
-func getElementsByTagName0(root: Node; tagName: string): HTMLCollection =
+func getElementsByTagNameImpl(root: Node; tagName: string): HTMLCollection =
   if tagName == "*":
     return newCollection[HTMLCollection](
       root,
@@ -2336,32 +2336,25 @@ func getElementsByTagName0(root: Node; tagName: string): HTMLCollection =
 
 func getElementsByTagName(document: Document; tagName: string): HTMLCollection
     {.jsfunc.} =
-  return document.getElementsByTagName0(tagName)
+  return document.getElementsByTagNameImpl(tagName)
 
 func getElementsByTagName(element: Element; tagName: string): HTMLCollection
     {.jsfunc.} =
-  return element.getElementsByTagName0(tagName)
+  return element.getElementsByTagNameImpl(tagName)
 
-func getElementsByClassName0(node: Node; classNames: string): HTMLCollection =
+func getElementsByClassNameImpl(node: Node; classNames: string):
+    HTMLCollection =
   var classAtoms = newSeq[CAtom]()
-  let document = node.document
-  let isquirks = document.mode == QUIRKS
-  if isquirks:
-    for class in classNames.split(AsciiWhitespace):
-      classAtoms.add(document.toAtomLower(class))
-  else:
-    for class in classNames.split(AsciiWhitespace):
-      classAtoms.add(document.toAtom(class))
+  for class in classNames.split(AsciiWhitespace):
+    classAtoms.add(node.document.toAtom(class))
   return newCollection[HTMLCollection](node,
     func(node: Node): bool =
       if node of Element:
         let element = Element(node)
-        if isquirks:
-          var cl = newSeq[CAtom]()
-          for tok in element.classList.toks:
-            cl.add(document.factory.toLowerAscii(tok))
+        if element.document.mode == QUIRKS:
+          let factory = element.document.factory
           for class in classAtoms:
-            if class notin cl:
+            if not factory.containsIgnoreCase(element.classList.toks, class):
               return false
         else:
           for class in classAtoms:
@@ -2374,11 +2367,11 @@ func getElementsByClassName0(node: Node; classNames: string): HTMLCollection =
 
 func getElementsByClassName(document: Document; classNames: string):
     HTMLCollection {.jsfunc.} =
-  return document.getElementsByClassName0(classNames)
+  return document.getElementsByClassNameImpl(classNames)
 
 func getElementsByClassName(element: Element; classNames: string):
     HTMLCollection {.jsfunc.} =
-  return element.getElementsByClassName0(classNames)
+  return element.getElementsByClassNameImpl(classNames)
 
 func previousElementSibling*(elem: Element): Element {.jsfget.} =
   let p = elem.parentNode
@@ -2606,6 +2599,7 @@ func inputString*(input: HTMLInputElement): string =
   else: input.value
 
 func textAreaString*(textarea: HTMLTextAreaElement): string =
+  result = ""
   let split = textarea.value.split('\n')
   let rows = int(textarea.attrul(satRows).get(1))
   for i in 0 ..< rows:
@@ -3194,8 +3188,6 @@ proc baseURL*(document: Document): URL =
       href = base.attr(satHref)
   if href == "":
     return document.url
-  if document.url == nil:
-    return newURL("about:blank").get #TODO ???
   let url = parseURL(href, some(document.url))
   if url.isNone:
     return document.url
