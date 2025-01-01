@@ -217,6 +217,8 @@ type
     cachedForms: HTMLCollection
     parser*: RootRef
 
+    internalCookie: string
+
   CharacterData* = ref object of Node
     data* {.jsget.}: string
 
@@ -297,7 +299,6 @@ type
 
   HTMLSelectElement* = ref object of FormAssociatedElement
     cachedOptions: HTMLOptionsCollection
-    cachedSelectedOptions: HTMLCollection
 
   HTMLSpanElement* = ref object of HTMLElement
 
@@ -305,6 +306,7 @@ type
 
   HTMLOptionElement* = ref object of HTMLElement
     selected*: bool
+    dirty: bool
 
   HTMLHeadingElement* = ref object of HTMLElement
 
@@ -485,15 +487,16 @@ jsDestructor(CSSStyleDeclaration)
 # Forward declarations
 func attr*(element: Element; s: StaticAtom): string
 func attrb*(element: Element; s: CAtom): bool
-proc baseURL*(document: Document): URL
+func value*(option: HTMLOptionElement): string
 proc attr*(element: Element; name: CAtom; value: string)
 proc attr*(element: Element; name: StaticAtom; value: string)
+proc baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
 proc getImageId(window: Window): int
+proc invalidateCollections(node: Node)
 proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc setInvalid*(element: Element)
-func value*(option: HTMLOptionElement): string
 
 # Forward declaration hacks
 # set in css/cascade
@@ -1446,8 +1449,12 @@ func forms(document: Document): HTMLCollection {.jsfget.} =
     )
   return document.cachedForms
 
-func cookie(document: Document): string {.jsfget.} =
-  return ""
+func cookie(ctx: JSContext; document: Document): string {.jsfget.} =
+  return document.internalCookie
+
+proc setCookie(ctx: JSContext; document: Document; cookie: string)
+    {.jsfset: "cookie".} =
+  document.internalCookie = cookie
 
 # DOMTokenList
 func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
@@ -2956,24 +2963,66 @@ proc item(this: HTMLSelectElement; u: uint32): Node {.jsfunc.} =
 func namedItem(this: HTMLSelectElement; atom: CAtom): Element {.jsfunc.} =
   return this.jsOptions.namedItem(atom)
 
-proc selectedOptions(this: HTMLSelectElement): HTMLCollection {.jsfget.} =
-  if this.cachedSelectedOptions == nil:
-    this.cachedSelectedOptions = newCollection[HTMLCollection](
-      root = this,
-      match = func(node: Node): bool =
-        return node.isOptionOf(this) and HTMLOptionElement(node).selected,
-      islive = true,
-      childonly = false
-    )
-  return this.cachedSelectedOptions
+proc selectedOptions(ctx: JSContext; this: HTMLSelectElement): JSValue
+    {.jsfget.} =
+  let selectedOptions = ctx.toJS(newCollection[HTMLCollection](
+    root = this,
+    match = func(node: Node): bool =
+      return node.isOptionOf(this) and HTMLOptionElement(node).selected,
+    islive = true,
+    childonly = false
+  ))
+  let this = ctx.toJS(this)
+  ctx.definePropertyCW(this, "selectedOptions",
+    JS_DupValue(ctx, selectedOptions))
+  JS_FreeValue(ctx, this)
+  return selectedOptions
+
+proc selectedIndex(this: HTMLSelectElement): int {.jsfget.} =
+  var i = 0
+  for it in this.options:
+    if it.selected:
+      return i
+    inc i
+  return -1
+
+proc setSelectedIndex(this: HTMLSelectElement; n: int)
+    {.jsfset: "selectedIndex".} =
+  var i = 0
+  for it in this.options:
+    if i == n:
+      it.selected = true
+      it.dirty = true
+    else:
+      it.selected = false
+    it.invalidateCollections()
+    inc i
 
 proc value(this: HTMLSelectElement): string {.jsfget.} =
-  let first = this.selectedOptions.item(0)
-  if first != nil:
-    return HTMLOptionElement(first).value
+  for it in this.options:
+    if it.selected:
+      return it.value
   return ""
 
-#TODO add, selectedIndex, value setter, showPicker
+proc setValue(this: HTMLSelectElement; value: string) {.jsfset: "value".} =
+  var found = false
+  for it in this.options:
+    if not found and it.value == value:
+      found = true
+      it.selected = true
+      it.dirty = true
+    else:
+      it.selected = false
+    it.invalidateCollections()
+
+proc showPicker(this: HTMLSelectElement): Err[DOMException] {.jsfunc.} =
+  # Per spec, we should do something if it's being rendered and on
+  # transient user activation.
+  # If this is ever implemented, then the "is rendered" check must
+  # be app mode only.
+  return errDOMException("not allowed", "NotAllowedError")
+
+#TODO add, remove
 
 # <button>
 func jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
