@@ -1010,7 +1010,7 @@ func serialize*(url: URL; excludeHash = false; excludePassword = false):
 func equals*(a, b: URL; excludeHash = false): bool =
   return a.serialize(excludeHash) == b.serialize(excludeHash)
 
-func `$`*(url: URL): string {.jsfunc.} = url.serialize()
+func `$`*(url: URL): string {.jsfunc: "toString".} = url.serialize()
 
 func href(url: URL): string {.jsfget.} =
   return $url
@@ -1090,7 +1090,7 @@ proc searchParams(url: URL): URLSearchParams {.jsfget.} =
     )
   return url.searchParamsInternal
 
-proc `$`*(params: URLSearchParams): string {.jsfunc.} =
+proc `$`*(params: URLSearchParams): string {.jsfunc: "toString".} =
   return serializeFormURLEncoded(params.list)
 
 proc update(params: URLSearchParams) =
