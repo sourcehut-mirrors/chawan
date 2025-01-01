@@ -10,3 +10,4 @@ force-pixels-per-line = true
 
 [buffer]
 images = true
+history = false

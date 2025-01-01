@@ -1814,6 +1814,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     images: pager.config.buffer.images,
     styling: pager.config.buffer.styling,
     autofocus: pager.config.buffer.autofocus,
+    history: pager.config.buffer.history,
     isdump: pager.config.start.headless,
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol,
@@ -1885,6 +1886,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       result.autofocus = sc.autofocus.get
     if sc.meta_refresh.isSome:
       result.metaRefresh = sc.meta_refresh.get
+    if sc.history.isSome:
+      result.history = sc.history.get
   loaderConfig.filter.allowschemes
     .add(pager.config.external.urimethodmap.imageProtos)
   if result.images:
@@ -1928,7 +1931,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     var flags = {cfCanReinterpret, cfUserRequested}
     if save:
       flags.incl(cfSave)
-    if history:
+    if history and bufferConfig.history:
       flags.incl(cfHistory)
     let container = pager.newContainer(
       bufferConfig,
@@ -2585,8 +2588,12 @@ proc fail(pager: Pager; container: Container; errorMessage: string) =
   pager.deleteContainer(container, container.find(ndAny))
   if container.retry.len > 0:
     discard pager.gotoURL(newRequest(container.retry.pop()),
-      contentType = container.contentType)
+      contentType = container.contentType,
+      history = cfHistory in container.flags)
   else:
+    # Add to the history anyway, so that the user can edit the URL.
+    if cfHistory in container.flags:
+      pager.lineHist[lmLocation].add($container.url)
     # Try to fit a meaningful part of the URL and the error message too.
     # URLs can't include double-width chars, so we can just use string
     # length for those.  (However, error messages can.)

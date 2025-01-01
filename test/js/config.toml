@@ -1,3 +1,6 @@
+[buffer]
+history = false
+
 [[siteconf]]
 match = "file:///.*"
 scripting = true

@@ -1,6 +1,7 @@
 [buffer]
 scripting = true
 cookie = true
+history = false
 
 [display]
 columns = 80

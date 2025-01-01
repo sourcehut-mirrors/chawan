@@ -132,6 +132,7 @@ type
     images*: bool
     isdump*: bool
     autofocus*: bool
+    history*: bool
     charsetOverride*: Charset
     metaRefresh*: MetaRefresh
     charsets*: seq[Charset]
