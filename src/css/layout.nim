@@ -793,7 +793,7 @@ proc processWhitespace(ictx: var InlineContext; state: var InlineState;
   discard ictx.addWord(state)
   case state.box.computed{"white-space"}
   of WhitespaceNormal, WhitespaceNowrap:
-    if ictx.whitespacenum < 1:
+    if ictx.whitespacenum < 1 and ictx.lbstate.atoms.len > 0:
       ictx.whitespacenum = 1
       ictx.whitespaceFragment = state.box
       ictx.whitespaceIsLF = c == '\n'

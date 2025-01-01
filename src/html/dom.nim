@@ -2591,12 +2591,12 @@ func inputString*(input: HTMLInputElement): string =
   of itPassword:
     '*'.repeat(input.value.len).padToWidth(int(input.attrulgz(satSize).get(20)))
   of itReset:
-    if input.value != "":
+    if input.attrb(satValue):
       input.value
     else:
       "RESET"
   of itSubmit, itButton:
-    if input.value != "":
+    if input.attrb(satValue):
       input.value
     else:
       "SUBMIT"
