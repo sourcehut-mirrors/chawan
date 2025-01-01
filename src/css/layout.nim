@@ -3265,7 +3265,8 @@ proc buildInlineBoxes(ctx: var InnerBlockContext; styledNode: StyledNode;
   let parent = InlineBox(
     t: ibtParent,
     computed: computed,
-    splitType: {stSplitStart}
+    splitType: {stSplitStart},
+    node: styledNode
   )
   if ctx.inlineStack.len == 0:
     ctx.addInlineRoot(parent)
