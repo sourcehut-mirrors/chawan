@@ -703,11 +703,7 @@ func getFuncName(fun: NimNode; jsname, staticName: string): string =
     let i = staticName.find('.')
     if i != -1:
       return staticName.substr(i + 1)
-  let x = $fun[0]
-  if x == "$":
-    # stringifier
-    return "toString"
-  return x
+  return $fun[0]
 
 func getErrVal(t: BoundFunctionType): NimNode =
   if t in {bfPropertyGetOwn, bfPropertySet, bfPropertyDel, bfPropertyHas,
