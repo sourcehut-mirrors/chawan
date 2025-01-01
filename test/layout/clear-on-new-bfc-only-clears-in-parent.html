@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<!-- test from the future :P markers shouldn't clear. -->
+<style>
+li::marker { clear: both; display: block; content: "" }
+</style>
+<div>
+<div style="height: 5em">test</div>
+<div style="display: flow-root; clear: both">
+test
+<div style="float: left">test</div>
+</div>
+</div>
+<div>
+<div style="height: 5em">test</div>
+<li style="float: right">right</li>
+<div style="float: left">test</div>
+</div>

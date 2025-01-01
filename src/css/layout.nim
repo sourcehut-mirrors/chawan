@@ -1506,11 +1506,16 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     bctx.lctx.popPositioned(box.state.overflow, box.state.size)
   box.state.overflow.finalize(box.state.size)
 
-proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
+# canClear signals if the box should clear in its inner (flow) layout.
+# In general, this is only true for block boxes that do not establish
+# a BFC; other boxes (e.g. flex) either have nothing to clear, or clear
+# in their parent BFC (e.g. flow-root).
+proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
+    canClear: bool) =
   if box.canFlushMargins(sizes):
     bctx.flushMargins(box)
     bctx.positionFloats()
-  if box.computed{"clear"} != ClearNone:
+  if canClear and box.computed{"clear"} != ClearNone:
     box.state.offset.y.clearFloats(bctx, bctx.bfcOffset.y,
       box.computed{"clear"})
   if box.inline != nil:
@@ -1528,7 +1533,10 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     let content = box.children[1]
     marker.state = BoxLayoutState()
     content.state = BoxLayoutState(offset: box.state.offset)
-    bctx.layoutFlow(content, sizes)
+    #TODO should markers establish a new BFC?
+    # Actually, I'm not sure if it even matters, since they are out
+    # of flow.  Either way, they certainly shouldn't clear.
+    bctx.layoutFlow(content, sizes, canClear = false)
     #TODO we should put markers right before the first atom of the parent
     # list item or something...
     var bctx = BlockContext(lctx: bctx.lctx)
@@ -1536,13 +1544,13 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
       space: availableSpace(w = fitContent(sizes.space.w), h = sizes.space.h),
       bounds: DefaultBounds
     )
-    bctx.layoutFlow(marker, markerSizes)
+    bctx.layoutFlow(marker, markerSizes, canClear = true)
     marker.state.offset.x = -marker.state.size.w
     # take inner box min width etc.
     box.state = content.state
     content.state.offset = offset(x = 0, y = 0)
   of ListStylePositionInside:
-    bctx.layoutFlow(box, sizes)
+    bctx.layoutFlow(box, sizes, canClear = true)
 
 proc addInlineFloat(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
@@ -1841,7 +1849,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
     sizes.space.w.u -= sizes.padding[dtHorizontal].sum()
   box.state = BoxLayoutState()
   var bctx = BlockContext(lctx: lctx)
-  bctx.layoutFlow(box, sizes)
+  bctx.layoutFlow(box, sizes, canClear = false)
   assert bctx.unpositionedFloats.len == 0
   # Table cells ignore margins.
   box.state.offset.y = 0
@@ -2276,10 +2284,11 @@ proc layoutTableWrapper(bctx: BlockContext; box: BlockBox;
     tctx.layoutCaption(box, caption)
   #TODO overflow
 
-proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
+proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
+    canClear: bool) =
   case box.computed{"display"}
   of DisplayBlock, DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock:
-    bctx.layoutFlow(box, sizes)
+    bctx.layoutFlow(box, sizes, canClear)
   of DisplayListItem:
     bctx.layoutListItem(box, sizes)
   of DisplayTableWrapper, DisplayInlineTableWrapper:
@@ -2294,7 +2303,7 @@ proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
   # note: we do not append margins here, since those belong to the flex item,
   # not its inner BFC.
   box.state = BoxLayoutState(offset: offset(x = sizes.margin.left, y = 0))
-  bctx.layout(box, sizes)
+  bctx.layout(box, sizes, canClear = false)
   assert bctx.unpositionedFloats.len == 0
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
@@ -2526,7 +2535,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state = BoxLayoutState(
     offset: offset(x = offset.x + sizes.margin.left, y = offset.y)
   )
-  bctx.layout(box, sizes)
+  bctx.layout(box, sizes, canClear = false)
   assert bctx.unpositionedFloats.len == 0
   let marginBottom = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
@@ -2575,7 +2584,7 @@ proc layoutBlockChild(state: var BlockState; bctx: var BlockContext;
   bctx.marginTodo.append(sizes.margin.top)
   child.state = BoxLayoutState(offset: offset(x = sizes.margin.left, y = 0))
   child.state.offset += state.offset
-  bctx.layout(child, sizes)
+  bctx.layout(child, sizes, canClear = true)
   bctx.marginTodo.append(sizes.margin.bottom)
   return size(
     w = child.outerSize(dtHorizontal, sizes),
