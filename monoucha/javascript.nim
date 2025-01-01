@@ -397,25 +397,6 @@ func getMinArgs(params: seq[FuncParam]): int =
         return i
   return params.len
 
-proc defineConsts*[T](ctx: JSContext; classid: JSClassID;
-    consts: static openArray[(string, T)]) =
-  let ctxOpaque = ctx.getOpaque()
-  if int(classid) >= ctxOpaque.ctors.len or
-      JS_IsUndefined(ctxOpaque.ctors[int(classid)]):
-    raise newException(Defect, "Class does not exist")
-  let proto = ctx.getOpaque().ctors[classid]
-  for (k, v) in consts:
-    ctx.definePropertyE(proto, k, v)
-
-proc defineConsts*(ctx: JSContext; classid: JSClassID;
-    consts: typedesc[enum]; astype: typedesc) =
-  try:
-    let proto = ctx.getOpaque().ctors[classid]
-    for e in consts:
-      ctx.definePropertyE(proto, $e, astype(e))
-  except KeyError:
-    raise newException(Defect, "Class does not exist")
-
 type
   JSFuncGenerator = ref object
     t: BoundFunctionType
