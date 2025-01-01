@@ -421,20 +421,18 @@ proc log(ctx: JSContext; console: Console; s: string) {.jsfunc.} =
   window.outFile.writeLine(s)
 ```
 
-It is also possible to use `varargs` and union types in `.jsfunc` functions:
+It is also possible to use `varargs` in `.jsfunc` functions:
 
 ```nim
-proc log(console: Console; ss: varargs[string]) {.jsfunc.} =
+proc log(ctx: JSContext; console: Console; ss: varargs[JSValue]) {.jsfunc.} =
   discard # can be called like `console.log("a", "b", "c", "d")`
-
-proc log2[T: int|string](console: Console; x: T) {.jsfunc.} =
-  discard # if JS passes a number, typeof(x) will be `int`.
 ```
 
-Note that union types have some limitations: currently, only the following types
-are accepted: `Table`, `seq`, `string`, `JSValue`, `bool`, `int`, `uint32`
-`ref object`. If you need more granular type checking, you are advised to take a
-`JSValue`.
+For efficiency reasons, only `JSValue` varargs are supported.
+
+(In the past, union types and non-JSValue varargs also worked. This
+feature was dropped because it generated inefficient and bloated code;
+`fromJS` with `JSValue` parameters can be used to the same effect.)
 
 For further information about individual type conversions, see the
 [toJS, fromJS](#tojs-fromjs) section.
@@ -645,8 +643,7 @@ In particular, handling JSValues is unavoidable when:
 
 * You want to do something with `eval()`'s result
 * You need to call a QuickJS API not wrapped by Monoucha (e.g. JS function calls)
-* You want a dynamically typed variable (e.g. instead of "union" types, to avoid
-  code duplication from generics)
+* You want a dynamically typed variable, e.g. for "union" types
 
 ### Using raw JSValues
 

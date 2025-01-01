@@ -1,48 +1,48 @@
-# JavaScript binding generator. Horrifying, I know. But it works!
-# Warning: Function overloading is currently not implemented. Though there is a
-# block dielabel:
-#   ...
-# around each bound function call, so it shouldn't be too difficult to get it
-# working. (This would involve generating JS functions in registerType.)
-# Now for the pragmas:
-# {.jsctor.} for constructors. These need no `this' value, and are bound as
-#   regular constructors in JS. They must return a ref object, which will have
-#   a JS counterpart too. (Other functions can return ref objects too, which
-#   will either use the existing JS counterpart, if exists, or create a new
-#   one. In other words: cross-language reference semantics work seamlessly.)
-# {.jsfunc.} is used for binding normal functions. Needs a `this' value, as all
-#   following pragmas. As mentioned before, overloading doesn't work but OR
-#   generics do. By default, the Nim function name is bound; if this is not
-#   desired, you can rename the function like this: {.jsfunc: "preferredName".}
-#   This also works for all other pragmas that define named functions in JS.
-# {.jsstfunc.} binds static functions. Unlike .jsfunc, it does not have a
-#   `this' value. A class name must be specified, e.g. {.jsstfunc: "URL".} to
-#   define on the URL class. To rename a static function, use the syntax
-#   "ClassName:funcName", e.g. "Response:error".
-# {.jsget.}, {.jsfget.} must be specified on object fields; these generate
-#   regular getter & setter functions.
-# {.jsufget, jsuffget, jsuffunc.} For fields with the [LegacyUnforgeable]
-#   WebIDL property.
-#   This makes it so a non-configurable/writable, but enumerable property
-#   is defined on the object when the *constructor* is called (i.e. NOT on
-#   the prototype.)
-# {.jsfget.} and {.jsfset.} for getters/setters. Note the `f'; bare jsget/jsset
-#   can only be used on object fields. (I initially wanted to use the same
-#   keyword, unfortunately that didn't work out.)
-# {.jsgetownprop.} Called when GetOwnProperty would return nothing. The key must
-#   be either a JSAtom, uint32 or string. (Note that the string option copies.)
-# {.jsgetprop.} for property getters. Called on GetProperty.
-#   (In fact, this can be emulated using get_own_property, but this might still
-#   be faster.)
-# {.jssetprop.} for property setters. Called on SetProperty - in fact this
-#   is the set() method of Proxy, except it always returns true. Same rules as
-#   jsgetprop for keys.
-# {.jsdelprop.} for property deletion. It is like the deleteProperty method
-#   of Proxy. Must return true if deleted, false if not deleted.
-# {.jshasprop.} for overriding has_property. Must return a boolean, or one of
-#   the integers "-1, 0, 1".
-# {.jspropnames.} overrides get_own_property_names. Must return a
-#   JSPropertyEnumList object.
+## JavaScript binding generator. Horrifying, I know. But it works!
+## Pragmas:
+## {.jsctor.} for constructors. These need no `this' value, and are
+##   bound as regular constructors in JS. They must return a ref object,
+##   which will have a JS counterpart too. (Other functions can return
+##   ref objects too, which will either use the existing JS counterpart,
+##   if exists, or create a new one. In other words: cross-language
+##   reference semantics work seamlessly.)
+## {.jsfunc.} is used for binding normal functions. Needs a `this'
+##   value, as all following pragmas. Generics are not supported, but
+##   JSValue does.
+##   By default, the Nim function name is bound; if this is not desired,
+##   you can rename the function like this: {.jsfunc: "preferredName".}
+##   This also works for all other pragmas that define named functions
+##   in JS.
+## {.jsstfunc.} binds static functions. Unlike .jsfunc, it does not
+##   have a `this' value. A class name must be specified,
+##   e.g. {.jsstfunc: "URL".} to define on the URL class. To
+##   rename a static function, use the syntax "ClassName:funcName",
+##   e.g. "Response:error".
+## {.jsget.}, {.jsfget.} must be specified on object fields; these
+##   generate regular getter & setter functions.
+## {.jsufget, jsuffget, jsuffunc.} For fields with the
+##   [LegacyUnforgeable] WebIDL property.
+##   This makes it so a non-configurable/writable, but enumerable
+##   property is defined on the object when the *constructor* is called
+##   (i.e. NOT on the prototype.)
+## {.jsfget.} and {.jsfset.} for getters/setters. Note the `f'; bare
+##   jsget/jsset can only be used on object fields. (I initially wanted
+##   to use the same keyword, unfortunately that didn't work out.)
+## {.jsgetownprop.} Called when GetOwnProperty would return nothing. The
+##   key must be either a JSAtom, uint32 or string. (Note that the
+##   string option copies.)
+## {.jsgetprop.} for property getters. Called on GetProperty.
+##   (In fact, this can be emulated using get_own_property, but this
+##   might still be faster.)
+## {.jssetprop.} for property setters. Called on SetProperty - in fact
+##   this is the set() method of Proxy, except it always returns
+##   true. Same rules as jsgetprop for keys.
+## {.jsdelprop.} for property deletion. It is like the deleteProperty
+##   method of Proxy. Must return true if deleted, false if not deleted.
+## {.jshasprop.} for overriding has_property. Must return a boolean,
+##   or the integer 1 for true, 0 for false, or -1 for exception.
+## {.jspropnames.} overrides get_own_property_names. Must return a
+##   JSPropertyEnumList object.
 
 {.push raises: [].}
 
@@ -402,7 +402,6 @@ type
     t: BoundFunctionType
     hasThis: bool
     funcName: string
-    generics: Table[string, seq[NimNode]]
     funcParams: seq[FuncParam]
     passCtx: bool
     thisType: string
@@ -425,45 +424,6 @@ type
     isstatic: bool
 
 var BoundFunctions {.compileTime.}: Table[string, seq[BoundFunction]]
-
-proc getGenerics(fun: NimNode): Table[string, seq[NimNode]] =
-  var node = fun.findChild(it.kind == nnkBracket)
-  if node.kind == nnkNilLit:
-    return # no bracket
-  node = node.findChild(it.kind == nnkGenericParams)
-  if node.kind == nnkNilLit:
-    return # no generics
-  node = node.findChild(it.kind == nnkIdentDefs)
-  var stack: seq[NimNode] = @[]
-  for i in countdown(node.len - 1, 0):
-    stack.add(node[i])
-  var gen_name: NimNode = nil
-  var gen_types: seq[NimNode] = @[]
-  template add_gen =
-    if gen_name != nil:
-      assert gen_types.len != 0
-      result[gen_name.strVal] = gen_types
-      gen_types.setLen(0)
-
-  while stack.len > 0:
-    let node = stack.pop()
-    case node.kind
-    of nnkIdent:
-      add_gen
-      gen_name = node
-    of nnkSym:
-      assert gen_name != nil
-      gen_types.add(node)
-    of nnkInfix:
-      assert node[0].eqIdent(ident("|")) or node[0].eqIdent(ident("or")),
-        "Only OR generics are supported."
-      for i in countdown(node.len - 1, 1): # except infix ident
-        stack.add(node[i])
-    of nnkBracketExpr:
-      gen_types.add(node)
-    else:
-      discard
-  add_gen
 
 proc getParams(fun: NimNode): seq[FuncParam] =
   let formalParams = fun.findChild(it.kind == nnkFormalParams)
@@ -614,139 +574,6 @@ proc addValueParam(gen: var JSFuncGenerator; s, t: NimNode;
   let j = gen.j
   gen.addParam2(s, t, quote do: argv[`j`], fallback)
 
-proc addUnionParamBranch(gen: var JSFuncGenerator; query, newBranch: NimNode;
-    fallback: NimNode = nil) =
-  let i = gen.i
-  let query = if fallback == nil: query else:
-    quote do: (`i` < argc and `query`)
-  let newBranch = newStmtList(newBranch)
-  for list in gen.jsFunCallLists.mitems:
-    var ifstmt = newIfStmt((query, newBranch))
-    let oldBranch = newStmtList()
-    ifstmt.add(newTree(nnkElse, oldBranch))
-    list.add(ifstmt)
-    list = oldBranch
-  gen.newBranchList.add(newBranch)
-
-proc addUnionParam0(gen: var JSFuncGenerator; tt, s, val: NimNode;
-    fallback: NimNode = nil) = {.cast(raises: []).}:
-  # Union types.
-  #TODO quite a few types are still missing.
-  let flattened = gen.generics[tt.strVal] # flattened member types
-  var tableg = none(NimNode)
-  var seqg = none(NimNode)
-  var numg = none(NimNode)
-  var objg = none(NimNode)
-  var hasString = false
-  var hasJSValue = false
-  var hasBoolean = false
-  let ev = gen.errval
-  let dl = gen.dielabel
-  for g in flattened:
-    if g.len > 0 and g[0] == Table.getType():
-      tableg = some(g)
-    elif g.typeKind == ntySequence:
-      seqg = some(g)
-    elif g == string.getTypeInst():
-      hasString = true
-    elif g == JSValue.getTypeInst():
-      hasJSValue = true
-    elif g == bool.getTypeInst():
-      hasBoolean = true
-    elif g == int.getTypeInst(): #TODO should be SomeNumber
-      assert numg.isNone
-      numg = some(g)
-    elif g == uint32.getTypeInst(): #TODO should be SomeNumber
-      assert numg.isNone
-      numg = some(g)
-    elif g.getTypeInst().getTypeImpl().kind == nnkRefTy:
-      # Assume it's ref object.
-      objg = some(g)
-    else:
-      error("Type not supported yet")
-
-  # 5. If V is a platform object, then:
-  if objg.isSome:
-    let t = objg.get
-    let query = quote do:
-      var `s`: `t`
-      ctx.fromJS(`val`, `s`).isSome
-    gen.addUnionParamBranch(query, quote do: discard, fallback)
-  # 10. If Type(V) is Object, then:
-  # Sequence:
-  if seqg.isSome:
-    let query = quote do:
-      isSequence(ctx, `val`)
-    let a = seqg.get[1]
-    gen.addUnionParamBranch(query, quote do:
-      var `s`: seq[`a`]
-      fromJS_or_die(ctx, `val`, `s`, `dl`),
-      fallback)
-  # Record:
-  if tableg.isSome:
-    let a = tableg.get[1]
-    let b = tableg.get[2]
-    let query = quote do:
-      JS_IsObject(`val`)
-    gen.addUnionParamBranch(query, quote do:
-      var `s`: Table[`a`, `b`]
-      fromJS_or_die(ctx, `val`, `s`, `dl`),
-      fallback)
-  # Object (JSObject variant):
-  #TODO non-JS objects (i.e. ref object)
-  if hasJSValue:
-    let query = quote do:
-      JS_IsObject(`val`)
-    gen.addUnionParamBranch(query, quote do:
-      var `s`: JSValue
-      fromJS_or_die(ctx, `val`, `s`, `dl`),
-      fallback)
-  # 11. If Type(V) is Boolean, then:
-  if hasBoolean:
-    let query = quote do:
-      JS_IsBool(`val`)
-    gen.addUnionParamBranch(query, quote do:
-      var `s`: bool
-      fromJS_or_die(ctx, `val`, `s`, `dl`),
-      fallback)
-  # 12. If Type(V) is Number, then:
-  if numg.isSome:
-    let ng = numg.get
-    let query = quote do:
-      JS_IsNumber(`val`)
-    gen.addUnionParamBranch(query, quote do:
-      var `s`: `ng`
-      fromJS_or_die(ctx, `val`, `s`, `dl`),
-      fallback)
-  # 14. If types includes a string type, then return the result of converting V
-  # to that type.
-  if hasString:
-    gen.addParam2(s, string.getType(), quote do: `val`, fallback)
-  # 16. If types includes a numeric type, then return the result of converting
-  # V to that numeric type.
-  elif numg.isSome:
-    gen.addParam2(s, numg.get.getType(), quote do: `val`, fallback)
-  # 17. If types includes boolean, then return the result of converting V to
-  # boolean.
-  elif hasBoolean:
-    gen.addParam2(s, bool.getType(), quote do: `val`, fallback)
-  # 19. Throw a TypeError.
-  else:
-    gen.addParam2(s, string.getType(), quote do:
-      if true:
-        discard JS_ThrowTypeError(ctx, "No match for union type")
-        return `ev`
-      JS_NULL, fallback)
-
-  for branch in gen.newBranchList:
-    gen.jsFunCallLists.add(branch)
-  gen.newBranchList.setLen(0)
-
-proc addUnionParam(gen: var JSFuncGenerator; tt, s: NimNode;
-    fallback: NimNode = nil) =
-  let j = gen.j
-  gen.addUnionParam0(tt, s, quote do: argv[`j`], fallback)
-
 proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
@@ -772,9 +599,8 @@ proc addFixParam(gen: var JSFuncGenerator; name: string) =
   let t = gen.funcParams[gen.i].t
   let id = ident(name)
   if t.typeKind == ntyGenericParam:
-    gen.addUnionParam0(t, s, id)
-  else:
-    gen.addParam2(s, t, id)
+    error("Union parameters are no longer supported. Use JSValue instead.")
+  gen.addParam2(s, t, id)
   if gen.funcParams[gen.i].isptr:
     s = quote do: `s`[]
   gen.jsFunCall.add(s)
@@ -785,9 +611,8 @@ proc addRequiredParams(gen: var JSFuncGenerator) =
     var s = ident("arg_" & $gen.i)
     let tt = gen.funcParams[gen.i].t
     if tt.typeKind == ntyGenericParam:
-      gen.addUnionParam(tt, s)
-    else:
-      gen.addValueParam(s, tt)
+      error("Union parameters are no longer supported. Use JSValue instead.")
+    gen.addValueParam(s, tt)
     if gen.funcParams[gen.i].isptr:
       s = quote do: `s`[]
     gen.jsFunCall.add(s)
@@ -805,25 +630,15 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
         s = quote do:
           argv.toOpenArray(`j`, argc - 1)
       else:
-        for list in gen.jsFunCallLists:
-          list.add(newLetStmt(s, quote do:
-            var valist: seq[`vt`] = @[]
-            for i in `j`..<argc:
-              var it: `vt`
-              if ctx.fromJS(argv[i], it).isNone:
-                return JS_EXCEPTION
-              valist.add(it)
-            valist
-          ))
+        error("Only JSValue varargs are supported")
     else:
       if gen.funcParams[gen.i][2].isNone:
         error("No fallback value. Maybe a non-optional parameter follows an " &
           "optional parameter?")
       let fallback = gen.funcParams[gen.i][2].get
       if tt.typeKind == ntyGenericParam:
-        gen.addUnionParam(tt, s, fallback)
-      else:
-        gen.addValueParam(s, tt, fallback)
+        error("Union parameters are no longer supported. Use JSValue instead.")
+      gen.addValueParam(s, tt, fallback)
     if gen.funcParams[gen.i].isptr:
       s = quote do: `s`[]
     gen.jsFunCall.add(s)
@@ -947,7 +762,6 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; hasThis: bool;
   var gen = JSFuncGenerator(
     t: t,
     funcName: getFuncName(fun, jsname, staticName),
-    generics: getGenerics(fun),
     funcParams: funcParams,
     returnType: getReturn(fun),
     minArgs: funcParams.getMinArgs(),
