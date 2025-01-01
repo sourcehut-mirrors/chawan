@@ -487,8 +487,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
     x = y.get
   # backwards compat
   elif v.s == "8bit":
+    ctx.warnings.add("color-mode='8bit' is deprecated; use 'eight-bit'")
     x = cmEightBit
   elif v.s == "24bit":
+    ctx.warnings.add("color-mode='24bit' is deprecated; use 'true-color'")
     x = cmTrueColor
   else:
     raise newException(ValueError, "unknown color mode '" & v.s &
