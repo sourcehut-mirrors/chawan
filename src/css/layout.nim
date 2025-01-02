@@ -48,32 +48,6 @@ type
     videoText: StyledNode
     luctx: LUContext
 
-  # min-content: box width is longest word's width
-  # max-content: box width is content width without wrapping
-  # stretch: box width is n px wide
-  # fit-content: also known as shrink-to-fit, box width is
-  #   min(max-content, stretch(availableWidth))
-  #   in other words, as wide as needed, but wrap if wider than allowed
-  # (note: I write width here, but it can apply for any constraint)
-  SizeConstraintType = enum
-    scStretch, scFitContent, scMinContent, scMaxContent
-
-  SizeConstraint = object
-    t: SizeConstraintType
-    u: LayoutUnit
-
-  AvailableSpace = array[DimensionType, SizeConstraint]
-
-  Bounds = object
-    a: array[DimensionType, Span] # width clamp
-    mi: array[DimensionType, Span] # intrinsic clamp
-
-  ResolvedSizes = object
-    margin: RelativeRect
-    padding: RelativeRect
-    space: AvailableSpace
-    bounds: Bounds
-
 const DefaultSpan = Span(start: 0, send: LayoutUnit.high)
 
 func minWidth(sizes: ResolvedSizes): LayoutUnit =
@@ -1228,7 +1202,7 @@ proc layoutTableWrapper(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutInline(ictx: var InlineContext; box: InlineBox)
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
-  sizes: ResolvedSizes): LayoutUnit
+  sizes: ResolvedSizes)
 
 # Note: padding must still be applied after this.
 proc applySize(box: BlockBox; sizes: ResolvedSizes;
@@ -1331,13 +1305,14 @@ proc popPositioned(lctx: LayoutContext; overflow: var Overflow; size: Size) =
     # definitely isn't in flex layout.
     size.w -= it.offset.x
     var sizes = lctx.resolveAbsoluteSizes(size, positioned, child.computed)
-    var marginBottom = lctx.layoutRootBlock(child, it.offset, sizes)
+    lctx.layoutRootBlock(child, it.offset, sizes)
     if sizes.space.w.t == scFitContent and child.state.intr.w > size.w:
       # In case the width is shrink-to-fit, and the available width is
       # less than the minimum width, then the minimum width overrides
       # the available width, and we must re-layout.
       sizes.space.w = stretch(child.state.intr.w)
-      marginBottom = lctx.layoutRootBlock(child, it.offset, sizes)
+      lctx.layoutRootBlock(child, it.offset, sizes)
+      #TODO what happens with marginBottom?
     if child.computed{"left"}.u != clAuto:
       child.state.offset.x = positioned.left + sizes.margin.left
     elif child.computed{"right"}.u != clAuto:
@@ -1561,7 +1536,7 @@ proc addInlineFloat(ictx: var InlineContext; state: var InlineState;
     x = 0,
     y = ictx.lbstate.offsety + sizes.margin.top
   )
-  let marginBottom = lctx.layoutRootBlock(box, offset, sizes)
+  lctx.layoutRootBlock(box, offset, sizes)
   ictx.lbstate.size.w += box.state.size.w
   # Note that by now, the top y offset is always resolved.
   ictx.unpositionedFloats.add(InlineUnpositionedFloat(
@@ -1570,7 +1545,7 @@ proc addInlineFloat(ictx: var InlineContext; state: var InlineState;
     space: sizes.space,
     outerSize: size(
       w = box.outerSize(dtHorizontal, sizes),
-      h = box.outerSize(dtVertical, sizes) + marginBottom,
+      h = box.outerSize(dtVertical, sizes) + box.state.marginBottom,
     ),
     marginOffset: sizes.margin.startOffset()
   ))
@@ -1606,8 +1581,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     let cs = lctx.cellSize[i]
     it.start = (it.start div cs).toInt.toLayoutUnit * cs
     it.send = (it.send div cs).toInt.toLayoutUnit * cs
-  box.state = BoxLayoutState()
-  let marginBottom = lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
+  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
   # Apply the block box's properties to the atom itself.
   let atom = InlineAtom(
     t: iatInlineBlock,
@@ -1619,7 +1593,7 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     baseline: box.state.baseline,
     vertalign: box.computed{"vertical-align"},
     marginTop: sizes.margin.top,
-    marginBottom: marginBottom
+    marginBottom: box.state.marginBottom
   )
   discard ictx.addAtom(state, iastate, atom)
   ictx.state.intr.w = max(ictx.state.intr.w, atom.innerbox.state.intr.w)
@@ -2212,10 +2186,10 @@ proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
   let lctx = tctx.lctx
   let space = availableSpace(w = stretch(parent.state.size.w), h = maxContent())
   let sizes = lctx.resolveBlockSizes(space, box.computed)
-  let marginBottom = lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
+  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
   box.state.offset.x += sizes.margin.left
   box.state.offset.y += sizes.margin.top
-  let outerHeight = box.outerSize(dtVertical, sizes) + marginBottom
+  let outerHeight = box.outerSize(dtVertical, sizes) + box.state.marginBottom
   let outerWidth = box.outerSize(dtHorizontal, sizes)
   let table = parent.children[0]
   case box.computed{"caption-side"}
@@ -2530,7 +2504,11 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
 # Returns the bottom margin for the box, collapsed with the appropriate
 # margins from its descendants.
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
-    sizes: ResolvedSizes): LayoutUnit =
+    sizes: ResolvedSizes) =
+  if box.sizes == sizes:
+    box.state.offset = offset
+    return
+  box.sizes = sizes
   var bctx = BlockContext(lctx: lctx)
   box.state = BoxLayoutState(
     offset: offset(x = offset.x + sizes.margin.left, y = offset.y)
@@ -2542,7 +2520,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   # the box height.
   box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight - marginBottom)
   box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight - marginBottom)
-  return marginBottom
+  box.state.marginBottom = marginBottom
 
 proc initBlockPositionStates(state: var BlockState; bctx: var BlockContext;
     box: BlockBox) =
@@ -2605,7 +2583,7 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
   var outerHeight: LayoutUnit
   if child.computed{"float"} == FloatNone:
     sizes = lctx.resolveBlockSizes(state.space, child.computed)
-    var marginBottom = bctx.lctx.layoutRootBlock(child, state.offset, sizes)
+    bctx.lctx.layoutRootBlock(child, state.offset, sizes)
     bctx.marginTodo.append(sizes.margin.top)
     bctx.flushMargins(child)
     bctx.positionFloats()
@@ -2649,21 +2627,21 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
       if outw != state.space.w.u or roffset != child.state.offset:
         space = availableSpace(w = stretch(outw), h = state.space.h)
         sizes = lctx.resolveBlockSizes(space, child.computed)
-        marginBottom = lctx.layoutRootBlock(child, roffset, sizes)
+        lctx.layoutRootBlock(child, roffset, sizes)
     # delta y is difference between old and new offsets (margin-top
     # plus any movement caused by floats), sum of margin todo in bctx
     # (margin-bottom) + height.
     outerHeight = child.state.offset.y - state.offset.y + child.state.size.h +
-      marginBottom
+      child.state.marginBottom
   else:
     sizes = lctx.resolveFloatSizes(space, child.computed)
-    let marginBottom = bctx.lctx.layoutRootBlock(child, state.offset, sizes)
+    bctx.lctx.layoutRootBlock(child, state.offset, sizes)
     child.state.offset.y += sizes.margin.top
     if state.isParentResolved(bctx):
       # If parent offset has been resolved, use marginTodo in this
       # float's initial offset.
       child.state.offset.y += bctx.marginTodo.sum()
-    outerHeight = child.outerSize(dtVertical, sizes) + marginBottom
+    outerHeight = child.outerSize(dtVertical, sizes) + child.state.marginBottom
   return size(
     w = child.outerSize(dtHorizontal, sizes),
     h = outerHeight
@@ -3514,7 +3492,7 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   ctx.buildBlock()
   let sizes = lctx.resolveBlockSizes(space, box.computed)
   # the bottom margin is unused.
-  discard lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
+  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
   var size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
   # Last absolute layer.
   lctx.popPositioned(box.state.overflow, size)

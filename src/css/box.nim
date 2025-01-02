@@ -40,6 +40,8 @@ type
     firstBaseline*: LayoutUnit
     # baseline of the last line box of all descendants
     baseline*: LayoutUnit
+    # bottom margin result
+    marginBottom*: LayoutUnit
 
   SplitType* = enum
     stSplitStart, stSplitEnd
@@ -83,9 +85,36 @@ type
   BoxRenderState* = object
     offset*: Offset
 
+  # min-content: box width is longest word's width
+  # max-content: box width is content width without wrapping
+  # stretch: box width is n px wide
+  # fit-content: also known as shrink-to-fit, box width is
+  #   min(max-content, stretch(availableWidth))
+  #   in other words, as wide as needed, but wrap if wider than allowed
+  # (note: I write width here, but it can apply for any constraint)
+  SizeConstraintType* = enum
+    scStretch, scFitContent, scMinContent, scMaxContent
+
+  SizeConstraint* = object
+    t*: SizeConstraintType
+    u*: LayoutUnit
+
+  AvailableSpace* = array[DimensionType, SizeConstraint]
+
+  Bounds* = object
+    a*: array[DimensionType, Span] # width clamp
+    mi*: array[DimensionType, Span] # intrinsic clamp
+
+  ResolvedSizes* = object
+    margin*: RelativeRect
+    padding*: RelativeRect
+    space*: AvailableSpace
+    bounds*: Bounds
+
   BlockBox* = ref object
-    state*: BoxLayoutState
-    render*: BoxRenderState
+    sizes*: ResolvedSizes # tree builder output -> layout input
+    state*: BoxLayoutState # layout output -> render input
+    render*: BoxRenderState # render output
     computed*: CSSValues
     node*: StyledNode
     inline*: InlineBox

@@ -355,6 +355,10 @@ It runs in two passes.
 
 In practice, step 2 is often repeated for subsections of the tree
 to resolve cyclic dependencies in CSS layout (e.g. in table, flex).
+However, the input sizes are cached between sub-layout passes, and
+the entire sub-layout is skipped if the sizes remained identical.
+(This usually happens if a box's inner layout does not depend on its
+parent box's sizes at all, e.g. with a non-percentage specified width.)
 
 Layout is fully recursive. This means that after a certain nesting
 depth, the buffer will run out of stack space and promptly crash.
