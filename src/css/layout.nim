@@ -1202,7 +1202,7 @@ proc layoutTableWrapper(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutInline(ictx: var InlineContext; box: InlineBox)
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
-  sizes: ResolvedSizes)
+  sizes: ResolvedSizes; includeMargin = false)
 
 # Note: padding must still be applied after this.
 proc applySize(box: BlockBox; sizes: ResolvedSizes;
@@ -2272,18 +2272,6 @@ proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   else:
     assert false
 
-proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
-  var bctx = BlockContext(lctx: lctx)
-  # note: we do not append margins here, since those belong to the flex item,
-  # not its inner BFC.
-  box.state = BoxLayoutState(offset: offset(x = sizes.margin.left, y = 0))
-  bctx.layout(box, sizes, canClear = false)
-  assert bctx.unpositionedFloats.len == 0
-  # If the highest float edge is higher than the box itself, set that as
-  # the box height.
-  box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight)
-  box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight)
-
 type
   FlexWeightType = enum
     fwtGrow, fwtShrink
@@ -2310,6 +2298,9 @@ type
     maxMargin: RelativeRect
     totalWeight: array[FlexWeightType, float64]
     pending: seq[FlexPendingItem]
+
+proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
+  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes, includeMargin = true)
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
@@ -2404,6 +2395,10 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       # instead. (if the box's available height is definite, then this will
       # change nothing, so we skip it as an optimization.)
       it.sizes.space[odim] = stretch(h - it.sizes.margin[odim].sum())
+      if odim == dtVertical:
+        # Do not include the bottom margin; space only applies to the
+        # actual height.
+        it.sizes.space[odim].u -= it.child.state.marginBottom
       lctx.layoutFlexItem(it.child, it.sizes)
     it.child.state.offset[dim] += offset[dim]
     # margins are added here, since they belong to the flex item.
@@ -2504,7 +2499,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
 # Returns the bottom margin for the box, collapsed with the appropriate
 # margins from its descendants.
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
-    sizes: ResolvedSizes) =
+    sizes: ResolvedSizes; includeMargin = false) =
   if box.sizes == sizes:
     box.state.offset = offset
     return
@@ -2516,10 +2511,14 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   bctx.layout(box, sizes, canClear = false)
   assert bctx.unpositionedFloats.len == 0
   let marginBottom = bctx.marginTodo.sum()
+  if includeMargin:
+    box.state.size.h += marginBottom
+  else:
+    bctx.maxFloatHeight -= marginBottom
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
-  box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight - marginBottom)
-  box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight - marginBottom)
+  box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight)
+  box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight)
   box.state.marginBottom = marginBottom
 
 proc initBlockPositionStates(state: var BlockState; bctx: var BlockContext;
