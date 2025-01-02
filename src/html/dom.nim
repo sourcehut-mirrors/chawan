@@ -269,6 +269,7 @@ type
 
   CSSStyleDeclaration* = ref object
     computed: bool
+    readonly: bool
     decls*: seq[CSSDeclaration]
     element: Element
 
@@ -2709,6 +2710,9 @@ proc focus(ctx: JSContext; element: Element) {.jsfunc.} =
   if window != nil and window.autofocus:
     element.document.setFocus(element)
 
+proc scrollTo(element: Element) {.jsfunc.} =
+  discard #TODO maybe in app mode?
+
 func target*(document: Document): Element =
   return document.internalTarget
 
@@ -3393,31 +3397,58 @@ proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
   this.decls[i].value = cvals
   return ok()
 
+proc removeProperty(this: CSSStyleDeclaration; name: string): DOMResult[string]
+    {.jsfunc.} =
+  if this.readonly:
+    return errDOMException("Cannot modify read-only declaration",
+      "NoModificationAllowedError")
+  let name = name.toLowerAscii()
+  let value = this.getPropertyValue(name)
+  #TODO shorthand
+  let i = this.find(name)
+  if i != -1:
+    this.decls.delete(i)
+  return ok(value)
+
+proc setProperty(this: CSSStyleDeclaration; name, value: string):
+    DOMResult[void] {.jsfunc.} =
+  if this.readonly:
+    return errDOMException("Cannot modify read-only declaration",
+      "NoModificationAllowedError")
+  let name = name.toLowerAscii()
+  if not name.isSupportedProperty():
+    return ok()
+  if value == "":
+    discard ?this.removeProperty(name)
+    return ok()
+  let cvals = parseComponentValues(value)
+  if (let i = this.find(name); i != -1):
+    if this.setValue(i, cvals).isNone:
+      # not err! this does not throw.
+      return ok()
+  else:
+    var dummy: seq[CSSComputedEntry]
+    let val0 = parseComputedValues(dummy, name, cvals, dummyWindow())
+    if val0.isNone:
+      return ok()
+    this.decls.add(CSSDeclaration(name: name, value: cvals))
+  this.element.attr(satStyle, $this.decls)
+  ok()
+
 proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
     value: string): DOMResult[void] {.jssetprop.} =
   if this.computed:
     return errDOMException("Cannot modify computed value",
       "NoModificationAllowedError")
-  let cvals = parseComponentValues(value)
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
+    let cvals = parseComponentValues(value)
     if this.setValue(int(u), cvals).isNone:
-      return ok()
-  else:
-    var s: string
-    ?ctx.fromJS(atom, s)
-    if (let i = this.find(s); i != -1):
-      if this.setValue(i, cvals).isNone:
-        # not err! this does not throw.
-        return ok()
-    else:
-      var dummy: seq[CSSComputedEntry]
-      let val0 = parseComputedValues(dummy, s, cvals, dummyWindow())
-      if val0.isNone:
-        return ok()
-      this.decls.add(CSSDeclaration(name: s, value: cvals))
-  this.element.attr(satStyle, $this.decls)
-  ok()
+      this.element.attr(satStyle, $this.decls)
+    return ok()
+  var name: string
+  ?ctx.fromJS(atom, name)
+  return this.setProperty(name, value)
 
 proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.cachedStyle == nil:
@@ -3437,6 +3468,7 @@ proc getComputedStyle*(element: Element): CSSStyleDeclaration =
         s &= ';'
     element.cachedComputedStyle = newCSSStyleDeclaration(element, move(s))
     element.cachedComputedStyle.computed = true
+    element.cachedComputedStyle.readonly = true
   return element.cachedComputedStyle
 
 proc corsFetch(window: Window; input: Request): FetchPromise =
