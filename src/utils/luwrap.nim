@@ -85,6 +85,8 @@ type
     lurHiragana = "Hiragana"
     lurKatakana = "Katakana"
     lurHangul = "Hangul"
+    lurEnclosingMark = "Me"
+    lurNonspacingMark = "Mn"
 
   LUContextObj = object
     crs: array[LURangeType, CharRange]
@@ -139,3 +141,11 @@ proc isKatakana*(ctx: LUContext; u: uint32): bool =
 proc isHangul*(ctx: LUContext; u: uint32): bool =
   ctx.initScript(lurHangul)
   return u in ctx.crs[lurHangul]
+
+proc isEnclosingMark*(ctx: LUContext; u: uint32): bool =
+  ctx.initGeneralCategory(lurEnclosingMark)
+  return u in ctx.crs[lurEnclosingMark]
+
+proc isNonspacingMark*(ctx: LUContext; u: uint32): bool =
+  ctx.initGeneralCategory(lurNonspacingMark)
+  return u in ctx.crs[lurNonspacingMark]

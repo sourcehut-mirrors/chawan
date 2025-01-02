@@ -46,6 +46,7 @@ type
     imgText: StyledNode
     audioText: StyledNode
     videoText: StyledNode
+    luctx: LUContext
 
   # min-content: box width is longest word's width
   # max-content: box width is content width without wrapping
@@ -843,6 +844,7 @@ func initInlineContext(bctx: var BlockContext; space: AvailableSpace;
 
 proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
     str: string) =
+  let luctx = ictx.lctx.luctx
   var i = 0
   while i < str.len:
     let c = str[i]
@@ -862,6 +864,8 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
     else:
       let pi = i
       let u = str.nextUTF8(i)
+      if luctx.isEnclosingMark(u) or luctx.isNonspacingMark(u):
+        continue
       let w = u.width()
       ictx.checkWrap(state, u, w)
       if u == 0xAD: # soft hyphen
@@ -3502,7 +3506,8 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
     myRootProperties: rootProperties(),
     imgText: newStyledText("[img]"),
     videoText: newStyledText("[video]"),
-    audioText: newStyledText("[audio]")
+    audioText: newStyledText("[audio]"),
+    luctx: LUContext()
   )
   let box = BlockBox(computed: root.computed, node: root)
   var ctx = newInnerBlockContext(root, box, lctx, nil)
