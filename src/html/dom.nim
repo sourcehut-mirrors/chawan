@@ -289,7 +289,7 @@ type
     parserInserted*: bool
 
   HTMLInputElement* = ref object of FormAssociatedElement
-    inputType* {.jsgetset: "type".}: InputType
+    inputType* {.jsget: "type".}: InputType
     value* {.jsget.}: string
     internalChecked {.jsget: "checked".}: bool
     xcoord*: int
@@ -1019,6 +1019,7 @@ const ReflectTable0 = [
   makes("target", TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
   makes("href", TAG_LINK),
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
+  makes("name", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
   makeb("novalidate", "noValidate", TAG_FORM),
   makes("rel", TAG_A, TAG_LINK, TAG_LABEL),
   makes("for", "htmlFor", TAG_LABEL),
@@ -2953,6 +2954,9 @@ proc setValue(this: HTMLInputElement; value: string) {.jsfset: "value".} =
   this.value = value
   this.setInvalid()
 
+proc setType(this: HTMLInputElement; s: string) {.jsfset: "type".} =
+  this.attr(satType, s)
+
 # <select>
 func jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
@@ -4169,6 +4173,7 @@ proc setForm*(element: FormAssociatedElement; form: HTMLFormElement) =
   of TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_IMG:
     discard #TODO
   else: assert false
+  form.invalidateCollections()
 
 proc resetFormOwner(element: FormAssociatedElement) =
   element.parserInserted = false
@@ -4183,6 +4188,10 @@ proc resetFormOwner(element: FormAssociatedElement) =
     let form = element.document.getElementById(element.attr(satForm))
     if form of HTMLFormElement:
       element.setForm(HTMLFormElement(form))
+  if element.form == nil:
+    for ancestor in element.ancestors:
+      if ancestor of HTMLFormElement:
+        element.setForm(HTMLFormElement(ancestor))
 
 proc elementInsertionSteps(element: Element) =
   if element of HTMLOptionElement:
