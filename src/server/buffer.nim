@@ -716,7 +716,7 @@ proc gotoAnchor*(buffer: Buffer; anchor: string; autofocus, target: bool):
     GotoAnchorResult {.proxy.} =
   if buffer.document == nil:
     return GotoAnchorResult(found: false)
-  var anchor = buffer.document.findAnchor(anchor)
+  var anchor = buffer.document.findAnchor(anchor.percentDecode())
   if target and anchor != nil:
     buffer.document.setTarget(anchor)
   var focus: ReadLineResult = nil
