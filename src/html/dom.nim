@@ -2262,15 +2262,48 @@ func lastChild*(node: Node): Node {.jsfget.} =
     return nil
   return node.childList[^1]
 
-func firstElementChild*(node: Node): Element {.jsfget.} =
+func firstElementChild*(node: Node): Element =
   for child in node.elementList:
     return child
   return nil
 
-func lastElementChild*(node: Node): Element {.jsfget.} =
+func firstElementChild(this: Element): Element {.jsfget.} =
+  return Node(this).firstElementChild
+
+func firstElementChild(this: Document): Element {.jsfget.} =
+  return Node(this).firstElementChild
+
+func firstElementChild(this: DocumentFragment): Element {.jsfget.} =
+  return Node(this).firstElementChild
+
+func lastElementChild*(node: Node): Element =
   for child in node.elementList_rev:
     return child
   return nil
+
+func lastElementChild(this: Element): Element {.jsfget.} =
+  return Node(this).lastElementChild
+
+func lastElementChild(this: Document): Element {.jsfget.} =
+  return Node(this).lastElementChild
+
+func lastElementChild(this: DocumentFragment): Element {.jsfget.} =
+  return Node(this).lastElementChild
+
+func childElementCountImpl(node: Node): int =
+  let last = node.lastElementChild
+  if last == nil:
+    return 0
+  return last.elIndex + 1
+
+func childElementCount(this: Element): int {.jsfget.} =
+  return this.childElementCountImpl
+
+func childElementCount(this: Document): int {.jsfget.} =
+  return this.childElementCountImpl
+
+func childElementCount(this: DocumentFragment): int {.jsfget.} =
+  return this.childElementCountImpl
 
 func isFirstVisualNode*(element: Element): bool =
   let parent = element.parentNode
@@ -4377,6 +4410,79 @@ proc replaceAll(parent, node: Node) =
 proc replaceChild(parent, node, child: Node): DOMResult[Node] {.jsfunc.} =
   ?parent.replace(child, node)
   return ok(child)
+
+proc toNode(ctx: JSContext; nodes: openArray[JSValue]; document: Document):
+    Node =
+  var ns: seq[Node] = @[]
+  for it in nodes:
+    var node: Node
+    if ctx.fromJS(it, node).isSome:
+      ns.add(node)
+    else:
+      var s: string
+      if ctx.fromJS(it, s).isSome:
+        ns.add(ctx.newText(s))
+  if ns.len == 1:
+    return ns[0]
+  let fragment = document.newDocumentFragment()
+  for node in ns:
+    fragment.append(node)
+  return fragment
+
+proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValue]):
+    Err[DOMException] =
+  let node = ctx.toNode(nodes, parent.document)
+  discard ?parent.insertBefore(node, parent.firstChild)
+  ok()
+
+proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.prependImpl(this, nodes)
+
+proc prepend(ctx: JSContext; this: Document; nodes: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.prependImpl(this, nodes)
+
+proc prepend(ctx: JSContext; this: DocumentFragment; nodes: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.prependImpl(this, nodes)
+
+proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValue]):
+    Err[DOMException] =
+  let node = ctx.toNode(nodes, parent.document)
+  discard ?parent.appendChild(node)
+  ok()
+
+proc append(ctx: JSContext; this: Element; nodes: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.appendImpl(this, nodes)
+
+proc append(ctx: JSContext; this: Document; nodes: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.appendImpl(this, nodes)
+
+proc append(ctx: JSContext; this: DocumentFragment; nodes: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.appendImpl(this, nodes)
+
+proc replaceChildrenImpl(ctx: JSContext; parent: Node;
+    nodes: openArray[JSValue]): Err[DOMException] =
+  let node = ctx.toNode(nodes, parent.document)
+  ?parent.preInsertionValidity(node, nil)
+  parent.replaceAll(node)
+  ok()
+
+proc replaceChildren(ctx: JSContext; this: Element; nodes: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.replaceChildrenImpl(this, nodes)
+
+proc replaceChildren(ctx: JSContext; this: Document; nodes: varargs[JSValue]):
+    Err[DOMException] {.jsfunc.} =
+  return ctx.replaceChildrenImpl(this, nodes)
+
+proc replaceChildren(ctx: JSContext; this: DocumentFragment;
+    nodes: varargs[JSValue]): Err[DOMException] {.jsfunc.} =
+  return ctx.replaceChildrenImpl(this, nodes)
 
 proc createTextNode*(document: Document; data: string): Text {.jsfunc.} =
   return newText(document, data)
