@@ -476,7 +476,6 @@ const InheritedProperties = {
   cptVisibility, cptTextTransform
 }
 
-#TODO implement sticky
 const PositionStaticLike* = {
   PositionStatic, PositionSticky
 }

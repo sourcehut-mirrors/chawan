@@ -11,7 +11,7 @@ display:
 	* either a buffer list buffer, or a buffer list popup menu. ideally
 	  both.
 - dark mode (basically max Y)
-- override bgcolor ourselves when terminal fails to report it
+- tall chars? (cons: seems like it only works in XTerm)
 config:
 - important: config editor
 - switch from table arrays to tables
@@ -26,12 +26,7 @@ config:
 mailcap:
 - save custom command?
 - w3mmee extensions?
-	* x-cgioutput would allow for easy implementation of an
-	  in-browser image viewer
-		- open question: how to decide if I want cgioutput or
-		  feh?
-			* maybe an internal mime type attribute?
-	* browsecap looks cleaner than urimethodmap too, and would be
+	* browsecap looks cleaner than urimethodmap, and would be
 	  useful for mailto
 		- it overlaps with siteconf quite a bit...
 buffer:
@@ -50,37 +45,68 @@ buffer:
 - add buffer groups
 - xhtml
 pager:
-- better horizontal line handling: allow viewing content positioned before page
-  start, handle long lines, etc
+- handle long lines
 - save/edit buffer output
+	* just reuse dump mode code
 - alert on external command failure
+- pipe copiousoutput, x-htmloutput stderr to console
 network:
 - uBO integration? (or at least implement filter lists)
-- websockets (curl supports ws)
+- dict
+- nntp
+- websockets
 javascript:
-- add support for JS mixins
+- support defining one function with multiple names (maybe with magic?)
+- "this" value as JSValue
 - distinguish double from unrestricted double
 - better dom support: more events, CSSOM, ...
 - ReadableStream
 - separate console for each buffer
 - buffer selection
-layout engine:
+layout:
 - box borders
 	* will probably need special treatment, as borders must round to
 	  1ch in x direction and 1em in y direction.
+	* table is high priority; for other boxes, I don't know if it
+	  would work
 - table layout: include caption in width calculation
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
-- partial layout, layout caching
-- iframe
+- saturation arithmetic for LayoutUnit
+	* easiest way: cast to 64-bit, then clamp
+		- performance would be abysmal on 32-bit architectures,
+		  better use nimAddInt there
+- layout caching
+	* sub-layout is done, now for reusing old trees
+	* use memcmp/memcpy for sizes check?
+	* non-root block too, if no floats exist?
+- partial rendering
+	* buffer.lines must go, so rewrite getCursorStyledNode and
+	  findPrev/NextLink to use the box tree
+		- also findPrevMatch/findNextMatch, but it's hard
+		  without a line array... we can render it as we
+		  go, but it will be slow
+	* we must calculate the overflow box, but the current approach
+	  is broken, easier to just set it as a property on render
+	* inline layout's output must be flattened again, so that we can
+	  deal with tall inline boxes (like the <plaintext> tag in
+	  text/plain buffers)
+- partial layout?
+	* may be more trouble than it's worth... for pager-like
+	  behavior, it's easier to just backpressure input
+- frame, iframe
 - z order
-- writing-mode, grid, ruby, ... (i.e. cool new stuff)
+	* for positioned it's almost perfect, but can't do negative
+	  z-index
+	* for images it's straight up broken
+	* background should overpaint text (<- but only fix this when
+	  z-index fully works)
+- grid
 images:
 - animation
 man:
 - add a DOM -> man page converter so that we do not depend on pandoc
   for man page conversion
-- move default keybinding definitions to man page
 tests:
 - network/XHR (make net test async?)
 - pager? (how?)

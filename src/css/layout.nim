@@ -156,11 +156,6 @@ func max(span: Span): LayoutUnit =
 func minClamp(x: LayoutUnit; span: Span): LayoutUnit =
   return max(min(x, span.send), span.start)
 
-#TODO implement sticky
-const PositionStaticLike = {
-  PositionStatic, PositionSticky
-}
-
 type
   BlockContext = object
     lctx: LayoutContext
