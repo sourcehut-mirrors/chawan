@@ -181,8 +181,6 @@ type
     box: BlockBox
     marginOffset: Offset
     outerSize: Size
-    # to propagate float overflow
-    parentBox: BlockBox
 
   BlockPositionState = ref object
     next: BlockPositionState
@@ -310,22 +308,6 @@ proc newWord(ictx: var InlineContext) =
   ictx.wrappos = -1
   ictx.hasshy = false
 
-func overflow(atom: InlineAtom; dim: DimensionType): Span =
-  if atom.t == iatInlineBlock:
-    let u = atom.offset[dim]
-    return Span(
-      start: u + atom.innerbox.state.overflow[dim].start,
-      send: u + atom.innerbox.state.overflow[dim].send
-    )
-  return Span(
-    start: atom.offset[dim],
-    send: atom.offset[dim] + atom.size[dim]
-  )
-
-proc expand(a: var Span; b: Span) =
-  a.start = min(a.start, b.start)
-  a.send = max(a.send, b.send)
-
 #TODO start & justify would be nice to have
 const TextAlignNone = {
   TextAlignStart, TextAlignLeft, TextAlignChaLeft, TextAlignJustify
@@ -422,12 +404,9 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
     #TODO why not offsetyShifted here?
     let minHeight = atom.offset.y - offsety + atom.size.h
     ictx.lbstate.minHeight = max(ictx.lbstate.minHeight, minHeight)
-    # Y is always final, so it is safe to calculate Y overflow
-    ictx.state.overflow[dtVertical].expand(atom.overflow(dtVertical))
     # now position on the inline axis
     atom.offset.x += xshift
     totalWidth += atom.size.w
-    ictx.state.overflow[dtHorizontal].expand(atom.overflow(dtHorizontal))
     let box = ictx.lbstate.atomStates[i].box
     if currentFragment != box:
       if currentFragment != nil:
@@ -1242,11 +1221,6 @@ func bfcOffset(bctx: BlockContext): Offset =
     return bctx.parentBps.offset
   return offset(x = 0, y = 0)
 
-# expand to (0, size[dim].u)
-func finalize(overflow: var Overflow; size: Size) =
-  overflow[dtHorizontal].expand(Span(start: 0, send: size[dtHorizontal]))
-  overflow[dtVertical].expand(Span(start: 0, send: size[dtVertical]))
-
 const DisplayBlockLike = {DisplayBlock, DisplayListItem, DisplayInlineBlock}
 
 # Return true if no more margin collapsing can occur for the current strut.
@@ -1274,20 +1248,11 @@ proc flushMargins(bctx: var BlockContext; box: BlockBox) =
     bctx.marginTarget = nil
   bctx.marginTodo = Strut()
 
-proc applyOverflowDimensions(parent: var Overflow; child: BlockBox) =
-  var childOverflow = child.state.overflow
-  for dim in DimensionType:
-    childOverflow[dim] += child.state.offset[dim]
-    parent[dim].expand(childOverflow[dim])
-
-proc applyOverflowDimensions(box, child: BlockBox) =
-  box.state.overflow.applyOverflowDimensions(child)
-
 proc pushPositioned(lctx: LayoutContext) =
   lctx.positioned.add(PositionedItem())
 
 # size is the parent's size
-proc popPositioned(lctx: LayoutContext; overflow: var Overflow; size: Size) =
+proc popPositioned(lctx: LayoutContext; size: Size) =
   let item = lctx.positioned.pop()
   for it in item.queue:
     let child = it.child
@@ -1321,9 +1286,7 @@ proc popPositioned(lctx: LayoutContext; overflow: var Overflow; size: Size) =
         sizes.margin.bottom
     else:
       child.state.offset.y += sizes.margin.top
-    overflow.applyOverflowDimensions(child)
-    #TODO this overflow looks wrong too
-    lctx.popPositioned(overflow, child.state.size)
+    lctx.popPositioned(child.state.size)
 
 proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
   case box.computed{"position"}
@@ -1411,8 +1374,6 @@ proc positionFloats(bctx: var BlockContext) =
   for f in bctx.unpositionedFloats:
     bctx.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
       f.parentBps.offset)
-    # Propagate overflow dimensions to the float's parent box.
-    f.parentBox.applyOverflowDimensions(f.box)
   bctx.unpositionedFloats.setLen(0)
 
 proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
@@ -1471,10 +1432,8 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.state.size += paddingSum
   box.state.baseline = ictx.state.baseline
   box.state.firstBaseline = ictx.state.firstBaseline
-  box.state.overflow = ictx.state.overflow
   if box.computed{"position"} notin PositionStaticLike:
-    bctx.lctx.popPositioned(box.state.overflow, box.state.size)
-  box.state.overflow.finalize(box.state.size)
+    bctx.lctx.popPositioned(box.state.size)
 
 # canClear signals if the box should clear in its inner (flow) layout.
 # In general, this is only true for block boxes that do not establish
@@ -1616,7 +1575,7 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
   let atom = InlineAtom(
     t: iatImage,
     bmp: bmp,
-    size: size(w = bmp.width, h = bmp.height) #TODO overflow
+    size: size(w = bmp.width, h = bmp.height)
   )
   #TODO this is hopelessly broken.
   # The core problem is that we generate an inner and an outer box for
@@ -1744,8 +1703,7 @@ proc layoutInline(ictx: var InlineContext; box: InlineBox) =
     # For one, space should really be the sum of all splits of this
     # inline box, but I've wasted enough time on this already so I'm
     # gonna stop here and say "good enough".
-    #TODO this overflow calculation looks wrong
-    lctx.popPositioned(ictx.state.overflow, size(w = 0, h = ictx.state.size.h))
+    lctx.popPositioned(size(w = 0, h = ictx.state.size.h))
 
 proc positionRelative(lctx: LayoutContext; parent, box: BlockBox) =
   let positioned = lctx.resolvePositioned(parent.state.size, box.computed)
@@ -2031,8 +1989,6 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     alignTableCell(cellw.box, cellw.height, cellw.baseline)
   for cell in row.children:
     alignTableCell(cell, row.state.size.h, baseline)
-    # cell position is final here; apply overflow dimensions
-    row.applyOverflowDimensions(cell)
   row.state.size.w = x
 
 proc preLayoutTableRows(tctx: var TableContext; rows: openArray[BlockBox];
@@ -2162,8 +2118,6 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
     row.state.offset.y += y
     row.state.offset.x += sizes.padding.left
     row.state.size.w += sizes.padding[dtHorizontal].sum()
-    # row size does not change from here on.
-    row.state.overflow.finalize(row.state.size)
     y += tctx.blockSpacing
     y += row.state.size.h
     table.state.size.w = max(row.state.size.w, table.state.size.w)
@@ -2251,7 +2205,6 @@ proc layoutTableWrapper(bctx: BlockContext; box: BlockBox;
     let caption = box.children[1]
     #TODO also count caption width in table width
     tctx.layoutCaption(box, caption)
-  #TODO overflow
 
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
     canClear: bool) =
@@ -2408,8 +2361,6 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     intr[odim] = max(it.child.state.intr[odim], intr[odim])
     if it.child.computed{"position"} == PositionRelative:
       fctx.relativeChildren.add(it.child)
-    else:
-      fctx.box.applyOverflowDimensions(it.child)
   fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
   fctx.mains.add(mctx)
   fctx.intr[dim] = max(fctx.intr[dim], intr[dim])
@@ -2485,10 +2436,8 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.applyIntr(sizes, fctx.intr)
   for child in fctx.relativeChildren:
     lctx.positionRelative(box, child)
-    box.applyOverflowDimensions(child)
-  box.state.overflow.finalize(box.state.size)
   if box.computed{"position"} notin PositionStaticLike:
-    lctx.popPositioned(box.state.overflow, box.state.size)
+    lctx.popPositioned(box.state.size)
 
 # Inner layout for boxes that establish a new block formatting context.
 # Returns the bottom margin for the box, collapsed with the appropriate
@@ -2698,7 +2647,6 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
       state.maxChildWidth = max(state.maxChildWidth, outerSize.w)
       state.offset.y += outerSize.h
       state.intr.h += outerSize.h - child.state.size.h + child.state.intr.h
-      parent.applyOverflowDimensions(child)
     elif state.space.w.t == scFitContent:
       # Float position depends on the available width, but in this case
       # the parent width is not known.
@@ -2739,8 +2687,7 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
           parentBps: bctx.parentBps,
           box: child,
           marginOffset: marginOffset,
-          outerSize: outerSize,
-          parentBox: parent
+          outerSize: outerSize
         ))
 
 # Unlucky path, where we have floating blocks and a fit-content width.
@@ -2778,9 +2725,6 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
   state.offset = offset(x = sizes.padding.left, y = sizes.padding.top)
   box.applySize(sizes, state.maxChildWidth + state.totalFloatWidth, sizes.space,
     dtHorizontal)
-  # Positioning of the children will differ now; reset the overflow offsets.
-  for dim in DimensionType:
-    box.state.overflow[dim] = Span()
   state.space.w = stretch(box.state.size.w)
 
 proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
@@ -2828,12 +2772,10 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     # one of our ancestors) were still set as a marginTarget, we no longer are.
     bctx.positionFloats()
     bctx.marginTarget = nil
-  # All children are positioned now; finalize our overflow dimensions.
-  box.state.overflow.finalize(box.state.size)
   # Reset parentBps to the previous node.
   bctx.parentBps = state.prevParentBps
   if box.computed{"position"} notin PositionStaticLike:
-    lctx.popPositioned(box.state.overflow, box.state.size)
+    lctx.popPositioned(box.state.size)
 
 # 1st pass: build tree
 
@@ -3489,7 +3431,7 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
   var size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
   # Last absolute layer.
-  lctx.popPositioned(box.state.overflow, size)
+  lctx.popPositioned(size)
   # Fixed containing block.
   # The idea is to move fixed boxes to the real edges of the page,
   # so that they do not overlap with other boxes *and* we don't have
@@ -3498,5 +3440,5 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   # slow down the renderer to a crawl.)
   size.w = max(size.w, box.state.size.w)
   size.h = max(size.h, box.state.size.h)
-  lctx.popPositioned(box.state.overflow, size)
+  lctx.popPositioned(size)
   return box

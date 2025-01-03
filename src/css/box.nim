@@ -11,8 +11,6 @@ type
 
   Size* = array[DimensionType, LayoutUnit]
 
-  Overflow* = array[DimensionType, Span]
-
   InlineAtomType* = enum
     iatWord, iatInlineBlock, iatImage
 
@@ -32,8 +30,6 @@ type
     offset*: Offset
     # padding size
     size*: Size
-    # overflow relative to offset
-    overflow*: Overflow
     # intrinsic minimum size (e.g. longest word)
     intr*: Size
     # baseline of the first line box of all descendants
