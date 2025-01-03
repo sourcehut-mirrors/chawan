@@ -1548,13 +1548,13 @@ static int nsvg__parseTransformArgs(const char** str, float* args, int maxNa)
 
 	while (*ptr && *ptr != '(') ++ptr;
 	if (*ptr == 0) {
-		(*str)++;
+		*str = ptr;
 		return 0;
 	}
 	end = ptr;
 	while (*end && *end != ')') ++end;
 	if (*end == 0) {
-		(*str)++;
+		*str = ptr;
 		return 0;
 	}
 
