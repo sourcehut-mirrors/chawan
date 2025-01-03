@@ -7,9 +7,9 @@ type
   DimensionType* = enum
     dtHorizontal, dtVertical
 
-  Offset* = array[DimensionType, LayoutUnit]
+  Offset* = array[DimensionType, LUnit]
 
-  Size* = array[DimensionType, LayoutUnit]
+  Size* = array[DimensionType, LUnit]
 
   InlineAtomType* = enum
     iatWord, iatInlineBlock, iatImage
@@ -33,11 +33,11 @@ type
     # intrinsic minimum size (e.g. longest word)
     intr*: Size
     # baseline of the first line box of all descendants
-    firstBaseline*: LayoutUnit
+    firstBaseline*: LUnit
     # baseline of the last line box of all descendants
-    baseline*: LayoutUnit
+    baseline*: LUnit
     # bottom margin result
-    marginBottom*: LayoutUnit
+    marginBottom*: LUnit
 
   SplitType* = enum
     stSplitStart, stSplitEnd
@@ -73,8 +73,8 @@ type
       box*: BlockBox
 
   Span* = object
-    start*: LayoutUnit
-    send*: LayoutUnit
+    start*: LUnit
+    send*: LUnit
 
   RelativeRect* = array[DimensionType, Span]
 
@@ -93,7 +93,7 @@ type
 
   SizeConstraint* = object
     t*: SizeConstraintType
-    u*: LayoutUnit
+    u*: LUnit
 
   AvailableSpace* = array[DimensionType, SizeConstraint]
 
@@ -116,46 +116,46 @@ type
     inline*: InlineBox
     children*: seq[BlockBox]
 
-func offset*(x, y: LayoutUnit): Offset =
+func offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
 
-func x*(offset: Offset): LayoutUnit {.inline.} =
+func x*(offset: Offset): LUnit {.inline.} =
   return offset[dtHorizontal]
 
-func x*(offset: var Offset): var LayoutUnit {.inline.} =
+func x*(offset: var Offset): var LUnit {.inline.} =
   return offset[dtHorizontal]
 
-func `x=`*(offset: var Offset; x: LayoutUnit) {.inline.} =
+func `x=`*(offset: var Offset; x: LUnit) {.inline.} =
   offset[dtHorizontal] = x
 
-func y*(offset: Offset): LayoutUnit {.inline.} =
+func y*(offset: Offset): LUnit {.inline.} =
   return offset[dtVertical]
 
-func y*(offset: var Offset): var LayoutUnit {.inline.} =
+func y*(offset: var Offset): var LUnit {.inline.} =
   return offset[dtVertical]
 
-func `y=`*(offset: var Offset; y: LayoutUnit) {.inline.} =
+func `y=`*(offset: var Offset; y: LUnit) {.inline.} =
   offset[dtVertical] = y
 
-func size*(w, h: LayoutUnit): Size =
+func size*(w, h: LUnit): Size =
   return [dtHorizontal: w, dtVertical: h]
 
-func w*(size: Size): LayoutUnit {.inline.} =
+func w*(size: Size): LUnit {.inline.} =
   return size[dtHorizontal]
 
-func w*(size: var Size): var LayoutUnit {.inline.} =
+func w*(size: var Size): var LUnit {.inline.} =
   return size[dtHorizontal]
 
-func `w=`*(size: var Size; w: LayoutUnit) {.inline.} =
+func `w=`*(size: var Size; w: LUnit) {.inline.} =
   size[dtHorizontal] = w
 
-func h*(size: Size): LayoutUnit {.inline.} =
+func h*(size: Size): LUnit {.inline.} =
   return size[dtVertical]
 
-func h*(size: var Size): var LayoutUnit {.inline.} =
+func h*(size: var Size): var LUnit {.inline.} =
   return size[dtVertical]
 
-func `h=`*(size: var Size; h: LayoutUnit) {.inline.} =
+func `h=`*(size: var Size; h: LUnit) {.inline.} =
   size[dtVertical] = h
 
 func `+`*(a, b: Offset): Offset =
@@ -172,18 +172,18 @@ proc `-=`*(a: var Offset; b: Offset) =
   a.x -= b.x
   a.y -= b.y
 
-func left*(s: RelativeRect): LayoutUnit =
+func left*(s: RelativeRect): LUnit =
   return s[dtHorizontal].start
 
-func right*(s: RelativeRect): LayoutUnit =
+func right*(s: RelativeRect): LUnit =
   return s[dtHorizontal].send
 
-func top*(s: RelativeRect): LayoutUnit =
+func top*(s: RelativeRect): LUnit =
   return s[dtVertical].start
 
-func bottom*(s: RelativeRect): LayoutUnit =
+func bottom*(s: RelativeRect): LUnit =
   return s[dtVertical].send
 
-proc `+=`*(span: var Span; u: LayoutUnit) =
+proc `+=`*(span: var Span; u: LUnit) =
   span.start += u
   span.send += u

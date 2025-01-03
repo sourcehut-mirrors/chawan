@@ -393,8 +393,8 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
               box.node, noPaint = true)
             let x = (offset.x div state.attrs.ppc).toInt
             let y = (offset.y div state.attrs.ppl).toInt
-            let offx = (offset.x - x.toLayoutUnit * state.attrs.ppc).toInt
-            let offy = (offset.y - y.toLayoutUnit * state.attrs.ppl).toInt
+            let offx = (offset.x - x.toLUnit * state.attrs.ppc).toInt
+            let offy = (offset.y - y.toLUnit * state.attrs.ppl).toInt
             state.images.add(PosBitmap(
               x: x,
               y: y,
@@ -494,7 +494,7 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     return
   var state = RenderState(
     absolutePos: @[offset(0, 0)],
-    clipBoxes: @[ClipBox(send: offset(LayoutUnit.high, LayoutUnit.high))],
+    clipBoxes: @[ClipBox(send: offset(LUnit.high, LUnit.high))],
     attrsp: attrsp,
     bgcolor: defaultColor
   )

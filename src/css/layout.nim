@@ -48,21 +48,21 @@ type
     videoText: StyledNode
     luctx: LUContext
 
-const DefaultSpan = Span(start: 0, send: LayoutUnit.high)
+const DefaultSpan = Span(start: 0, send: LUnit.high)
 
-func minWidth(sizes: ResolvedSizes): LayoutUnit =
+func minWidth(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtHorizontal].start
 
-func maxWidth(sizes: ResolvedSizes): LayoutUnit =
+func maxWidth(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtHorizontal].send
 
-func minHeight(sizes: ResolvedSizes): LayoutUnit =
+func minHeight(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtVertical].start
 
-func maxHeight(sizes: ResolvedSizes): LayoutUnit =
+func maxHeight(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtVertical].send
 
-func sum(span: Span): LayoutUnit =
+func sum(span: Span): LUnit =
   return span.start + span.send
 
 func opposite(dim: DimensionType): DimensionType =
@@ -97,10 +97,10 @@ template attrs(state: LayoutContext): WindowAttributes =
 func maxContent(): SizeConstraint =
   return SizeConstraint(t: scMaxContent)
 
-func stretch(u: LayoutUnit): SizeConstraint =
+func stretch(u: LUnit): SizeConstraint =
   return SizeConstraint(t: scStretch, u: u)
 
-func fitContent(u: LayoutUnit): SizeConstraint =
+func fitContent(u: LUnit): SizeConstraint =
   return SizeConstraint(t: scFitContent, u: u)
 
 func fitContent(sc: SizeConstraint): SizeConstraint =
@@ -117,16 +117,16 @@ func isDefinite(sc: SizeConstraint): bool =
 func canpx(l: CSSLength; sc: SizeConstraint): bool =
   return l.u != clAuto and (l.u != clPerc or sc.t == scStretch)
 
-func px(l: CSSLength; p: LayoutUnit): LayoutUnit {.inline.} =
+func px(l: CSSLength; p: LUnit): LUnit {.inline.} =
   if l.u != clPerc:
-    return l.num.toLayoutUnit()
-  return (p.toFloat64() * l.num / 100).toLayoutUnit()
+    return l.num.toLUnit()
+  return (p.toFloat64() * l.num / 100).toLUnit()
 
-func px(l: CSSLength; p: SizeConstraint): LayoutUnit {.inline.} =
+func px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
   if l.u != clPerc:
-    return l.num.toLayoutUnit()
+    return l.num.toLUnit()
   if p.t in {scStretch, scFitContent}:
-    return (p.u.toFloat64() * l.num / 100).toLayoutUnit()
+    return (p.u.toFloat64() * l.num / 100).toLUnit()
   return 0
 
 func stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =
@@ -134,8 +134,8 @@ func stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =
     return stretch(l.px(sc))
   return maxContent()
 
-func applySizeConstraint(u: LayoutUnit; availableSize: SizeConstraint):
-    LayoutUnit =
+func applySizeConstraint(u: LUnit; availableSize: SizeConstraint):
+    LUnit =
   case availableSize.t
   of scStretch:
     return availableSize.u
@@ -146,14 +146,14 @@ func applySizeConstraint(u: LayoutUnit; availableSize: SizeConstraint):
     return min(u, availableSize.u)
 
 func outerSize(box: BlockBox; dim: DimensionType; sizes: ResolvedSizes):
-    LayoutUnit =
+    LUnit =
   return sizes.margin[dim].sum() + box.state.size[dim]
 
-func max(span: Span): LayoutUnit =
+func max(span: Span): LUnit =
   return max(span.start, span.send)
 
 # In CSS, "min" beats "max".
-func minClamp(x: LayoutUnit; span: Span): LayoutUnit =
+func minClamp(x: LUnit; span: Span): LUnit =
   return max(min(x, span.send), span.start)
 
 type
@@ -172,8 +172,8 @@ type
     parentBps: BlockPositionState
     exclusions: seq[Exclusion]
     unpositionedFloats: seq[UnpositionedFloat]
-    maxFloatHeight: LayoutUnit
-    clearOffset: LayoutUnit
+    maxFloatHeight: LUnit
+    clearOffset: LUnit
 
   UnpositionedFloat = object
     parentBps: BlockPositionState
@@ -194,33 +194,33 @@ type
     t: CSSFloat
 
   Strut = object
-    pos: LayoutUnit
-    neg: LayoutUnit
+    pos: LUnit
+    neg: LUnit
 
 type
   LineBoxState = object
     atomStates: seq[InlineAtomState]
-    baseline: LayoutUnit
+    baseline: LUnit
     hasExclusion: bool
     charwidth: int
     # Set at the end of layoutText. It helps determine the beginning of the
     # next inline box.
-    widthAfterWhitespace: LayoutUnit
+    widthAfterWhitespace: LUnit
     # minimum height to fit all inline atoms
-    minHeight: LayoutUnit
+    minHeight: LUnit
     paddingTodo: seq[tuple[box: InlineBox; i: int]]
     atoms: seq[InlineAtom]
     size: Size
-    availableWidth: LayoutUnit # actual place available after float exclusions
-    offsety: LayoutUnit # offset of line in root box
-    height: LayoutUnit # height used for painting; does not include padding
-    intrh: LayoutUnit # intrinsic minimum height
+    availableWidth: LUnit # actual place available after float exclusions
+    offsety: LUnit # offset of line in root box
+    height: LUnit # height used for painting; does not include padding
+    intrh: LUnit # intrinsic minimum height
 
   InlineAtomState = object
     vertalign: CSSVerticalAlign
-    baseline: LayoutUnit
-    marginTop: LayoutUnit
-    marginBottom: LayoutUnit
+    baseline: LUnit
+    marginTop: LUnit
+    marginBottom: LUnit
     box: InlineBox
 
   InlineUnpositionedFloat = object
@@ -286,7 +286,7 @@ func startOffset(rect: RelativeRect): Offset =
   return offset(x = rect[dtHorizontal].start, y = rect[dtVertical].start)
 
 # Whitespace between words
-func computeShift(ictx: InlineContext; state: InlineState): LayoutUnit =
+func computeShift(ictx: InlineContext; state: InlineState): LUnit =
   if ictx.whitespacenum == 0:
     return 0
   if ictx.whitespaceIsLF and state.lastrw == 2 and state.firstrw == 2:
@@ -316,7 +316,7 @@ const TextAlignNone = {
 # Resize the line's height based on atoms' height and baseline.
 # The line height should be at least as high as the highest baseline used by
 # an atom plus that atom's height.
-func resizeLine(lbstate: LineBoxState; lctx: LayoutContext): LayoutUnit =
+func resizeLine(lbstate: LineBoxState; lctx: LayoutContext): LUnit =
   let baseline = lbstate.baseline
   var h = lbstate.size.h
   for i, atom in lbstate.atoms:
@@ -342,9 +342,9 @@ func resizeLine(lbstate: LineBoxState; lctx: LayoutContext): LayoutUnit =
   return h
 
 # returns marginTop
-proc positionAtoms(lbstate: LineBoxState; lctx: LayoutContext): LayoutUnit =
+proc positionAtoms(lbstate: LineBoxState; lctx: LayoutContext): LUnit =
   let baseline = lbstate.baseline
-  var marginTop: LayoutUnit = 0
+  var marginTop: LUnit = 0
   for i, atom in lbstate.atoms:
     let iastate = lbstate.atomStates[i]
     case iastate.vertalign.keyword
@@ -371,15 +371,15 @@ proc positionAtoms(lbstate: LineBoxState; lctx: LayoutContext): LayoutUnit =
     marginTop = max(iastate.marginTop - atom.offset.y, marginTop)
   return marginTop
 
-func getLineWidth(ictx: InlineContext): LayoutUnit =
+func getLineWidth(ictx: InlineContext): LUnit =
   return case ictx.space.w.t
   of scMinContent, scMaxContent: ictx.state.size.w
   of scFitContent: ictx.space.w.u
   of scStretch: max(ictx.state.size.w, ictx.space.w.u)
 
-func getLineXShift(ictx: InlineContext; width: LayoutUnit): LayoutUnit =
+func getLineXShift(ictx: InlineContext; width: LUnit): LUnit =
   return case ictx.computed{"text-align"}
-  of TextAlignNone: LayoutUnit(0)
+  of TextAlignNone: LUnit(0)
   of TextAlignEnd, TextAlignRight, TextAlignChaRight:
     let width = min(width, ictx.lbstate.availableWidth)
     max(width, ictx.lbstate.size.w) - ictx.lbstate.size.w
@@ -387,17 +387,17 @@ func getLineXShift(ictx: InlineContext; width: LayoutUnit): LayoutUnit =
     let width = min(width, ictx.lbstate.availableWidth)
     max((max(width, ictx.lbstate.size.w)) div 2 - ictx.lbstate.size.w div 2, 0)
 
-proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
+proc shiftAtoms(ictx: var InlineContext; marginTop: LUnit) =
   let offsety = ictx.lbstate.offsety
   let shiftTop = marginTop
   let cellHeight = ictx.cellHeight
   let width = ictx.getLineWidth()
   let xshift = ictx.getLineXShift(width)
-  var totalWidth: LayoutUnit = 0
-  var currentAreaOffsetX: LayoutUnit = 0
+  var totalWidth: LUnit = 0
+  var currentAreaOffsetX: LUnit = 0
   var currentFragment: InlineBox = nil
   let offsetyShifted = shiftTop + offsety
-  var areaY: LayoutUnit = 0
+  var areaY: LUnit = 0
   for i, atom in ictx.lbstate.atoms:
     atom.offset.y = atom.offset.y + offsetyShifted
     areaY = max(atom.offset.y, areaY)
@@ -452,7 +452,7 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LayoutUnit) =
 # Align atoms (inline boxes, text, etc.) on both axes.
 proc alignLine(ictx: var InlineContext) =
   # Start with cell height as the baseline and line height.
-  let ch = ictx.cellHeight.toLayoutUnit()
+  let ch = ictx.cellHeight.toLUnit()
   ictx.lbstate.size.h = ch
   # Baseline is what we computed in addAtom, or cell height if that's greater.
   ictx.lbstate.baseline = max(ictx.lbstate.baseline, ch)
@@ -481,7 +481,7 @@ proc putAtom(state: var LineBoxState; atom: InlineAtom;
   state.atoms.add(atom)
   box.state.atoms.add(atom)
 
-proc addSpacing(ictx: var InlineContext; width: LayoutUnit; state: InlineState;
+proc addSpacing(ictx: var InlineContext; width: LUnit; state: InlineState;
     hang = false) =
   let box = ictx.whitespaceFragment
   if box.state.atoms.len == 0 or ictx.lbstate.atoms.len == 0 or
@@ -512,8 +512,8 @@ proc flushWhitespace(ictx: var InlineContext; state: InlineState;
   if shift > 0:
     ictx.addSpacing(shift, state, hang)
 
-proc clearFloats(offsety: var LayoutUnit; bctx: var BlockContext;
-    bfcOffsety: LayoutUnit; clear: CSSClear) =
+proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
+    bfcOffsety: LUnit; clear: CSSClear) =
   var y = bfcOffsety + offsety
   case clear
   of ClearLeft, ClearInlineStart:
@@ -597,7 +597,7 @@ proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
     )
     ictx.initLine()
 
-func shouldWrap(ictx: InlineContext; w: LayoutUnit;
+func shouldWrap(ictx: InlineContext; w: LUnit;
     pcomputed: CSSValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
     return false
@@ -607,13 +607,13 @@ func shouldWrap(ictx: InlineContext; w: LayoutUnit;
     return true # always wrap with min-content
   return ictx.lbstate.size.w + w > ictx.lbstate.availableWidth
 
-func shouldWrap2(ictx: InlineContext; w: LayoutUnit): bool =
+func shouldWrap2(ictx: InlineContext; w: LUnit): bool =
   if not ictx.lbstate.hasExclusion:
     return false
   return ictx.lbstate.size.w + w > ictx.lbstate.availableWidth
 
 func getBaseline(ictx: InlineContext; iastate: InlineAtomState;
-    atom: InlineAtom): LayoutUnit =
+    atom: InlineAtom): LUnit =
   return case iastate.vertalign.keyword
   of VerticalAlignBaseline:
     let length = CSSLength(u: iastate.vertalign.u, num: iastate.vertalign.num)
@@ -849,7 +849,7 @@ proc layoutText(ictx: var InlineContext; state: var InlineState; s: string) =
     ictx.layoutTextLoop(state, s)
 
 func spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
-    padding: LayoutUnit): LayoutUnit =
+    padding: LUnit): LUnit =
   let u = l.px(p)
   if computed{"box-sizing"} == BoxSizingBorderBox:
     return max(u - padding, 0)
@@ -1052,7 +1052,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       sizes.bounds.mi[dim].start = max(u, sizes.bounds.mi[dim].start)
     if computed{"flex-grow"} == 0:
       sizes.bounds.mi[dim].send = min(u, sizes.bounds.mi[dim].send)
-  elif sizes.bounds.a[dim].send < LayoutUnit.high:
+  elif sizes.bounds.a[dim].send < LUnit.high:
     sizes.space[dim] = fitContent(sizes.bounds.a[dim].max())
   else:
     # Ensure that space is indefinite in the first pass if no width has
@@ -1073,12 +1073,12 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       t: sizes.space[odim].t,
       u: minClamp(u, sizes.bounds.a[odim])
     )
-  elif sizes.bounds.a[odim].send < LayoutUnit.high:
+  elif sizes.bounds.a[odim].send < LUnit.high:
     sizes.space[odim] = fitContent(sizes.bounds.a[odim].max())
   return sizes
 
 proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
-    inlinePadding: LayoutUnit; computed: CSSValues;
+    inlinePadding: LUnit; computed: CSSValues;
     lctx: LayoutContext) =
   let dim = dtHorizontal
   let width = computed{"width"}
@@ -1097,7 +1097,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     else:
       sizes.margin[dtHorizontal].send += underflow
   if sizes.space.w.isDefinite() and sizes.maxWidth < sizes.space.w.u or
-      sizes.maxWidth < LayoutUnit.high and sizes.space.w.t == scMaxContent:
+      sizes.maxWidth < LUnit.high and sizes.space.w.t == scMaxContent:
     if sizes.space.w.t == scStretch:
       # available width would stretch over max-width
       sizes.space.w = stretch(sizes.maxWidth)
@@ -1117,7 +1117,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     sizes.resolveUnderflow(parentWidth, computed)
 
 proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
-    blockPadding: LayoutUnit; computed: CSSValues;
+    blockPadding: LUnit; computed: CSSValues;
     lctx: LayoutContext) =
   let dim = dtVertical
   let height = computed{"height"}
@@ -1128,7 +1128,7 @@ proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
       sizes.bounds.mi[dim].start = max(sizes.bounds.mi[dim].start, px)
       sizes.bounds.mi[dim].send = min(sizes.bounds.mi[dim].send, px)
   if sizes.space.h.isDefinite() and sizes.maxHeight < sizes.space.h.u or
-      sizes.maxHeight < LayoutUnit.high and sizes.space.h.t == scMaxContent:
+      sizes.maxHeight < LUnit.high and sizes.space.h.t == scMaxContent:
     # same reasoning as for width.
     if sizes.space.h.t == scStretch:
       sizes.space.h = stretch(sizes.maxHeight)
@@ -1161,13 +1161,13 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
   sizes.resolveBlockHeight(space.h, paddingSum[dtVertical], computed, lctx)
   return sizes
 
-proc append(a: var Strut; b: LayoutUnit) =
+proc append(a: var Strut; b: LUnit) =
   if b < 0:
     a.neg = min(b, a.neg)
   else:
     a.pos = max(b, a.pos)
 
-func sum(a: Strut): LayoutUnit =
+func sum(a: Strut): LUnit =
   return a.pos + a.neg
 
 # Forward declarations
@@ -1180,7 +1180,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
 
 # Note: padding must still be applied after this.
 proc applySize(box: BlockBox; sizes: ResolvedSizes;
-    maxChildSize: LayoutUnit; space: AvailableSpace; dim: DimensionType) =
+    maxChildSize: LUnit; space: AvailableSpace; dim: DimensionType) =
   # Make the box as small/large as the content's width or specified width.
   box.state.size[dim] = maxChildSize.applySizeConstraint(space[dim])
   # Then, clamp it to minWidth and maxWidth (if applicable).
@@ -1299,8 +1299,8 @@ proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
 type
   BlockState = object
     offset: Offset
-    maxChildWidth: LayoutUnit
-    totalFloatWidth: LayoutUnit # used for re-layouts
+    maxChildWidth: LUnit
+    totalFloatWidth: LUnit # used for re-layouts
     space: AvailableSpace
     intr: Size
     prevParentBps: BlockPositionState
@@ -1314,7 +1314,7 @@ type
     relativeChildren: seq[BlockBox]
 
 func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
-    space: AvailableSpace; float: CSSFloat; outw: var LayoutUnit): Offset =
+    space: AvailableSpace; float: CSSFloat; outw: var LUnit): Offset =
   # Algorithm originally from QEmacs.
   var y = offset.y
   let leftStart = offset.x
@@ -1322,7 +1322,7 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
   while true:
     var left = leftStart
     var right = rightStart
-    var miny = high(LayoutUnit)
+    var miny = high(LUnit)
     let cy2 = y + size.h
     for ex in bctx.exclusions:
       let ey2 = ex.offset.y + ex.size.h
@@ -1334,7 +1334,7 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
           right = ex.offset.x
         miny = min(ey2, miny)
     let w = right - left
-    if w >= size.w or miny == high(LayoutUnit):
+    if w >= size.w or miny == high(LUnit):
       # Enough space, or no other exclusions found at this y offset.
       outw = min(w, space.w.u) # do not overflow the container.
       if float == FloatLeft:
@@ -1348,11 +1348,11 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
 
 func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
     space: AvailableSpace; float: CSSFloat): Offset =
-  var dummy: LayoutUnit
+  var dummy: LUnit
   return bctx.findNextFloatOffset(offset, size, space, float, dummy)
 
 func findNextBlockOffset(bctx: BlockContext; offset: Offset; size: Size;
-    space: AvailableSpace; outw: var LayoutUnit): Offset =
+    space: AvailableSpace; outw: var LUnit): Offset =
   return bctx.findNextFloatOffset(offset, size, space, FloatLeft, outw)
 
 proc positionFloat(bctx: var BlockContext; child: BlockBox;
@@ -1533,8 +1533,8 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
   var sizes = lctx.resolveFloatSizes(ictx.space, box.computed)
   for i, it in sizes.padding.mpairs:
     let cs = lctx.cellSize[i]
-    it.start = (it.start div cs).toInt.toLayoutUnit * cs
-    it.send = (it.send div cs).toInt.toLayoutUnit * cs
+    it.start = (it.start div cs).toInt.toLUnit * cs
+    it.send = (it.send div cs).toInt.toLUnit * cs
   lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
   # Apply the block box's properties to the atom itself.
   let atom = InlineAtom(
@@ -1571,7 +1571,7 @@ proc addBox(ictx: var InlineContext; state: var InlineState; box: BlockBox) =
     ictx.addInlineBlock(state, box)
 
 proc addImage(ictx: var InlineContext; state: var InlineState;
-    bmp: NetworkBitmap; padding: LayoutUnit) =
+    bmp: NetworkBitmap; padding: LUnit) =
   let atom = InlineAtom(
     t: iatImage,
     bmp: bmp,
@@ -1737,20 +1737,20 @@ type
     grown: int # number of remaining rows
     real: CellWrapper # for filler wrappers
     last: bool # is this the last filler?
-    height: LayoutUnit
-    baseline: LayoutUnit
+    height: LUnit
+    baseline: LUnit
 
   RowContext = object
     cells: seq[CellWrapper]
     reflow: seq[bool]
-    width: LayoutUnit
-    height: LayoutUnit
+    width: LUnit
+    height: LUnit
     box: BlockBox
     ncols: int
 
   ColumnContext = object
-    minwidth: LayoutUnit
-    width: LayoutUnit
+    minwidth: LUnit
+    width: LUnit
     wspecified: bool
     reflow: bool
     weight: float64
@@ -1760,9 +1760,9 @@ type
     rows: seq[RowContext]
     cols: seq[ColumnContext]
     growing: seq[CellWrapper]
-    maxwidth: LayoutUnit
-    blockSpacing: LayoutUnit
-    inlineSpacing: LayoutUnit
+    maxwidth: LUnit
+    blockSpacing: LUnit
+    inlineSpacing: LUnit
     space: AvailableSpace # space we got from parent
 
 proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
@@ -1912,7 +1912,7 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
   ctx.ncols = n
   return ctx
 
-proc alignTableCell(cell: BlockBox; availableHeight, baseline: LayoutUnit) =
+proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
   case cell.computed{"vertical-align"}.keyword
   of VerticalAlignTop:
     cell.state.offset.y = 0
@@ -1926,9 +1926,9 @@ proc alignTableCell(cell: BlockBox; availableHeight, baseline: LayoutUnit) =
 proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     parent, row: BlockBox) =
   row.state = BoxLayoutState()
-  var x: LayoutUnit = 0
+  var x: LUnit = 0
   var n = 0
-  var baseline: LayoutUnit = 0
+  var baseline: LUnit = 0
   # real cellwrappers of fillers
   var toAlign: seq[CellWrapper] = @[]
   # cells with rowspan > 1 that must store baseline
@@ -1936,7 +1936,7 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
   # cells that we must update row height of
   var toHeight: seq[CellWrapper] = @[]
   for cellw in ctx.cells:
-    var w: LayoutUnit = 0
+    var w: LUnit = 0
     for i in n ..< n + cellw.colspan:
       w += tctx.cols[i].width
     # Add inline spacing for merged columns.
@@ -2018,8 +2018,8 @@ proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
   tctx.preLayoutTableRows(tbody, table)
   tctx.preLayoutTableRows(tfoot, table)
 
-func calcSpecifiedRatio(tctx: TableContext; W: LayoutUnit): LayoutUnit =
-  var totalSpecified: LayoutUnit = 0
+func calcSpecifiedRatio(tctx: TableContext; W: LUnit): LUnit =
+  var totalSpecified: LUnit = 0
   var hasUnspecified = false
   for col in tctx.cols:
     if col.wspecified:
@@ -2033,7 +2033,7 @@ func calcSpecifiedRatio(tctx: TableContext; W: LayoutUnit): LayoutUnit =
     return 1
   return W div totalSpecified
 
-proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LayoutUnit;
+proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
     weight: var float64): seq[int] =
   let specifiedRatio = tctx.calcSpecifiedRatio(W)
   # Spacing for each column:
@@ -2081,7 +2081,7 @@ proc redistributeWidth(tctx: var TableContext) =
     weight = 0
     for i in countdown(avail.high, 0):
       let j = avail[i]
-      let x = (unit * tctx.cols[j].weight).toLayoutUnit()
+      let x = (unit * tctx.cols[j].weight).toLUnit()
       let mw = tctx.cols[j].minwidth
       tctx.cols[j].width = x
       if mw > x:
@@ -2108,7 +2108,7 @@ proc reflowTableCells(tctx: var TableContext) =
 
 proc layoutTableRows(tctx: TableContext; table: BlockBox;
     sizes: ResolvedSizes) =
-  var y: LayoutUnit = 0
+  var y: LUnit = 0
   for roww in tctx.rows:
     if roww.box.computed{"visibility"} == VisibilityCollapse:
       continue
@@ -2242,7 +2242,7 @@ type
   FlexMainContext = object
     totalSize: Size
     maxSize: Size
-    shrinkSize: LayoutUnit
+    shrinkSize: LUnit
     maxMargin: RelativeRect
     totalWeight: array[FlexWeightType, float64]
     pending: seq[FlexPendingItem]
@@ -2261,7 +2261,7 @@ proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox;
     mctx.maxMargin[dim].send = max(mctx.maxMargin[dim].send,
       sizes.margin[dim].send)
 
-proc redistributeMainSize(mctx: var FlexMainContext; diff: LayoutUnit;
+proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     wt: FlexWeightType; dim: DimensionType; lctx: LayoutContext) =
   var diff = diff
   var totalWeight = mctx.totalWeight[wt]
@@ -2288,7 +2288,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LayoutUnit;
       var uw = unit * it.weights[wt]
       if wt == fwtShrink:
         uw *= it.child.state.size[dim].toFloat64()
-      var u = it.child.state.size[dim] + uw.toLayoutUnit()
+      var u = it.child.state.size[dim] + uw.toLUnit()
       # check for min/max violation
       let minu = max(it.child.state.intr[dim], it.sizes.bounds.a[dim].start)
       if minu > u:
@@ -2523,7 +2523,7 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
     Size =
   assert child.computed{"position"} != PositionAbsolute
   let lctx = bctx.lctx
-  var outerHeight: LayoutUnit
+  var outerHeight: LUnit
   if child.computed{"float"} == FloatNone:
     sizes = lctx.resolveBlockSizes(state.space, child.computed)
     bctx.lctx.layoutRootBlock(child, state.offset, sizes)
@@ -2562,7 +2562,7 @@ proc layoutBlockChildBFC(state: var BlockState; bctx: var BlockContext;
         y = max(pbfcOffset.y + child.state.offset.y, bctx.clearOffset)
       )
       let minSize = size(w = child.state.intr.w, h = bctx.lctx.attrs.ppl)
-      var outw: LayoutUnit
+      var outw: LUnit
       let offset = bctx.findNextBlockOffset(bfcOffset, minSize, state.space,
         outw)
       let roffset = offset - pbfcOffset
