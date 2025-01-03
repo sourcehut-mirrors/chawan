@@ -102,14 +102,12 @@ func addUTF8*(res: var string; us: openArray[uint32]) =
     res.addUTF8(u)
 
 func toUTF8*(u: uint32): string =
-  var s = ""
-  s.addUTF8(u)
-  return s
+  result = ""
+  result.addUTF8(u)
 
 func toUTF8*(us: openArray[uint32]): string =
-  var s = newStringOfCap(us.len shr 2)
-  s.addUTF8(us)
-  return s
+  result = newStringOfCap(us.len shr 2)
+  result.addUTF8(us)
 
 func pointLen*(s: openArray[char]): int =
   var n = 0
@@ -129,13 +127,13 @@ func getControlChar*(c: char): char =
   return char(int(c) and 0x1F)
 
 func toHeaderCase*(s: string): string =
-  result = s
+  result = newStringOfCap(s.len)
   var flip = true
-  for c in result.mitems:
+  for c in s:
     if flip:
-      c = c.toUpperAscii()
+      result &= c.toUpperAscii()
     else:
-      c = c.toLowerAscii()
+      result &= c.toLowerAscii()
     flip = c == '-'
 
 func snakeToKebabCase*(s: string): string =
@@ -203,7 +201,7 @@ func toHexLower*(u: uint16): string =
   for i in countdown(len - 1, 0):
     s[i] = HexCharsLower[x and 0xF]
     x = x shr 4
-  return s
+  return move(s)
 
 func controlToVisual*(u: uint32): string =
   if u <= 0x1F:
@@ -213,7 +211,7 @@ func controlToVisual*(u: uint32): string =
   var res = "["
   res.pushHex(uint8(u))
   res &= ']'
-  return res
+  return move(res)
 
 proc add*(s: var string; u: uint8) =
   s.addInt(uint64(u))
@@ -259,7 +257,7 @@ func stripAndCollapse*(s: openArray[char]): string =
         res &= ' '
       res &= c
     space = cspace
-  return res
+  return move(res)
 
 func until*(s: openArray[char]; c: set[char]; starti = 0): string =
   result = ""
@@ -512,11 +510,10 @@ func dqEscape*(s: openArray[char]): string =
 func join*(ss: openArray[string]; sep: char): string =
   if ss.len == 0:
     return ""
-  var s = ss[0]
+  result = ss[0]
   for i in 1 ..< ss.len:
-    s &= sep
-    s &= ss[i]
-  return s
+    result &= sep
+    result &= ss[i]
 
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [
@@ -693,13 +690,13 @@ proc getContentTypeAttr*(contentType, attrname: string): string =
   if i >= contentType.len:
     return ""
   var q = false
-  var s = ""
+  result = ""
   let dq = contentType[i] == '"'
   if dq:
     inc i
   for c in contentType.toOpenArray(i, contentType.high):
     if q:
-      s &= c
+      result &= c
       q = false
     elif dq and c == '"':
       break
@@ -708,8 +705,7 @@ proc getContentTypeAttr*(contentType, attrname: string): string =
     elif not dq and c notin tchar:
       break
     else:
-      s &= c
-  return s
+      result &= c
 
 # turn value into quoted-string
 proc mimeQuote*(value: string): string =
@@ -724,7 +720,7 @@ proc mimeQuote*(value: string): string =
   if not found:
     return value
   s &= '"'
-  return s
+  return move(s)
 
 proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
   var i = contentType.find(';')
@@ -854,7 +850,7 @@ func btoa*(data: openArray[uint8]): string =
     L += 3 - rem
   var s = newStringOfCap(L)
   s.btoa(data)
-  return s
+  return move(s)
 
 func btoa*(data: openArray[char]): string =
   return btoa(data.toOpenArrayByte(0, data.len - 1))
