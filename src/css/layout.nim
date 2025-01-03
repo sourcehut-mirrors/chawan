@@ -3428,7 +3428,7 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   ctx.buildBlock()
   let sizes = lctx.resolveBlockSizes(space, box.computed)
   # the bottom margin is unused.
-  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
+  lctx.layoutRootBlock(box, offset(x = 0, y = sizes.margin.top), sizes)
   var size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
   # Last absolute layer.
   lctx.popPositioned(size)
