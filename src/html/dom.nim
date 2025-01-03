@@ -1476,13 +1476,13 @@ func jsContains(tokenList: DOMTokenList; s: string): bool
     {.jsfunc: "contains".} =
   return tokenList.element.document.toAtom(s) in tokenList
 
-func `$`(tokenList: DOMTokenList): string {.jsfunc.} =
+func `$`(tokenList: DOMTokenList): string {.jsfunc: "toString".} =
   var s = ""
   for i, tok in tokenList.toks:
     if i != 0:
       s &= ' '
     s &= tokenList.element.document.toStr(tok)
-  return s
+  return move(s)
 
 proc update(tokenList: DOMTokenList) =
   if not tokenList.element.attrb(tokenList.localName) and
@@ -1804,7 +1804,7 @@ proc setLocation*(document: Document; s: string): Err[JSError]
 
 # Note: we do not implement security checks (as documents are in separate
 # windows anyway).
-proc `$`(location: Location): string {.jsuffunc.} =
+proc `$`(location: Location): string {.jsuffunc: "toString".} =
   return location.url.serialize()
 
 proc href(location: Location): string {.jsuffget.} =
