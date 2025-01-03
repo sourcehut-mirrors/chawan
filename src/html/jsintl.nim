@@ -57,6 +57,11 @@ proc format(nf: NumberFormat; num: float64): string {.jsfunc.} =
         result &= s[i]
         inc i
 
+proc select(this: PluralRules; num: float64): string {.jsfunc.} =
+  if num == 1:
+    return "one"
+  return "many"
+
 proc addIntlModule*(ctx: JSContext) =
   let global = JS_GetGlobalObject(ctx)
   let intl = JS_NewObject(ctx)
