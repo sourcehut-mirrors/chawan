@@ -244,6 +244,11 @@ proc close(handle: InputHandle) =
       output.oclose()
 
 type
+  AuthItem = ref object
+    origin: Origin
+    username: string
+    password: string
+
   ClientData = ref object
     pid: int
     key: ClientKey
@@ -252,6 +257,8 @@ type
     # List of file descriptors passed by the client.
     passedFdMap: seq[tuple[name: string; fd: cint]] # host -> fd
     config: LoaderClientConfig
+    # List of credentials the client has access to (same origin only).
+    authMap: seq[AuthItem]
 
   LoaderContext = ref object
     pagerClient: ClientData
@@ -264,6 +271,8 @@ type
     clientData: Table[int, ClientData] # pid -> data
     # ID of next output. TODO: find a better allocation scheme
     outputNum: int
+    # List of *all* credentials the loader knows of.
+    authMap: seq[AuthItem]
 
   LoaderConfig* = object
     cgiDir*: seq[string]
@@ -695,10 +704,25 @@ proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: InputHandle) =
   handle.outputs.setLen(0)
   handle.iclose()
 
-proc putMappedURL(url: URL) =
+proc findItem(authMap: seq[AuthItem]; origin: Origin): AuthItem =
+  for it in authMap:
+    if origin.isSameOrigin(it.origin):
+      return it
+  return nil
+
+proc findAuth(client: ClientData; url: URL): AuthItem =
+  if client.authMap.len > 0:
+    return client.authMap.findItem(url.authOrigin)
+  return nil
+
+proc putMappedURL(url: URL; auth: AuthItem) =
   putEnv("MAPPED_URI_SCHEME", url.scheme)
-  putEnv("MAPPED_URI_USERNAME", url.username)
-  putEnv("MAPPED_URI_PASSWORD", url.password)
+  if auth != nil:
+    putEnv("MAPPED_URI_USERNAME", auth.username)
+    putEnv("MAPPED_URI_PASSWORD", auth.password)
+  else:
+    delEnv("MAPPED_URI_USERNAME")
+    delEnv("MAPPED_URI_PASSWORD")
   putEnv("MAPPED_URI_HOST", url.hostname)
   putEnv("MAPPED_URI_PORT", url.port)
   putEnv("MAPPED_URI_PATH", url.pathname)
@@ -713,7 +737,7 @@ type CGIPath = object
   myDir: string
 
 proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
-    config: LoaderClientConfig) =
+    config: LoaderClientConfig; auth: AuthItem) =
   let url = request.url
   putEnv("SCRIPT_NAME", cpath.scriptName)
   putEnv("SCRIPT_FILENAME", cpath.cmd)
@@ -724,7 +748,7 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
     headers &= k & ": " & v & "\r\n"
   putEnv("REQUEST_HEADERS", headers)
   if prevURL != nil:
-    putMappedURL(prevURL)
+    putMappedURL(prevURL, auth)
   if cpath.pathInfo != "":
     putEnv("PATH_INFO", cpath.pathInfo)
   if url.search != "":
@@ -865,8 +889,9 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
         istream.sclose()
     else:
       closeStdin()
+    let auth = if prevURL != nil: client.findAuth(prevURL) else: nil
     # we leave stderr open, so it can be seen in the browser console
-    setupEnv(cpath, request, contentLen, prevURL, config)
+    setupEnv(cpath, request, contentLen, prevURL, config, auth)
     # reset SIGCHLD to the default handler. this is useful if the child process
     # expects SIGCHLD to be untouched. (e.g. git dies a horrible death with
     # SIGCHLD as SIG_IGN)
@@ -1141,6 +1166,11 @@ proc addClient(ctx: LoaderContext; stream: SocketStream;
         for item in client2.cacheMap:
           inc item.refc
         client.cacheMap = client2.cacheMap
+      if ctx.authMap.len > 0:
+        let origin = config.originURL.authOrigin
+        for it in ctx.authMap:
+          if it.origin.isSameOrigin(origin):
+            client.authMap.add(it)
       w.swrite(true)
   stream.sclose()
 
@@ -1262,6 +1292,23 @@ proc tee(ctx: LoaderContext; stream: SocketStream; client: ClientData;
       w.swrite(-1)
     stream.sclose()
 
+proc addAuth(ctx: LoaderContext; stream: SocketStream; r: var BufferedReader) =
+  var url: URL
+  r.sread(url)
+  let origin = url.authOrigin
+  let item = ctx.authMap.findItem(origin)
+  if item != nil:
+    item.username = url.username
+    item.password = url.password
+  else:
+    let item = AuthItem(
+      origin: url.authOrigin,
+      username: url.username,
+      password: url.password
+    )
+    ctx.authMap.add(item)
+    ctx.pagerClient.authMap.add(item)
+
 proc suspend(ctx: LoaderContext; stream: SocketStream; client: ClientData;
     r: var BufferedReader) =
   var ids: seq[int]
@@ -1324,6 +1371,9 @@ proc acceptConnection(ctx: LoaderContext) =
       of lcAddClient:
         privileged_command
         ctx.addClient(stream, r)
+      of lcAddAuth:
+        privileged_command
+        ctx.addAuth(stream, r)
       of lcRemoveClient:
         privileged_command
         ctx.removeClient(stream, r)

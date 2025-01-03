@@ -1169,6 +1169,17 @@ proc origin*(url: URL): Origin =
   else:
     return Origin(t: otOpaque, s: $url)
 
+# This follows somewhat different rules from the standard:
+# * with htNone, the origin is opaque.
+# * with other host types, the origin is a tuple origin.
+proc authOrigin*(url: URL): Origin =
+  if url.hostType != htNone:
+    return Origin(
+      t: otTuple,
+      tup: (url.scheme, url.hostname, url.port, none(string))
+    )
+  return Origin(t: otOpaque, s: $url)
+
 proc `==`*(a, b: Origin): bool {.error.} =
   discard
 

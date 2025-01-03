@@ -1822,6 +1822,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     cookieMode: pager.config.buffer.cookie
   )
   loaderConfig = LoaderClientConfig(
+    originURL: url,
     defaultHeaders: newHeaders(pager.config.network.default_headers),
     cookiejar: nil,
     proxy: pager.config.network.proxy,
@@ -1917,6 +1918,9 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     if ourl == nil:
       break
     request.url = ourl
+  if request.url.username != "" and request.url.password != "":
+    pager.loader.addAuth(request.url)
+  request.url.password = ""
   if prevurl.isNone or
       not prevurl.get.equals(request.url, excludeHash = true) or
       request.url.hash == "" or request.httpMethod != hmGet or save:
@@ -2664,9 +2668,14 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
     # subtract status line height
     attrs.height -= 1
     attrs.heightPx -= attrs.ppl
+    var url = container.url
+    if url.username != "" or url.password != "":
+      url = newURL(url)
+      url.username = ""
+      url.password = ""
     container.process = pager.forkserver.forkBuffer(
       container.config,
-      container.url,
+      url,
       attrs,
       cmfHTML in res.flags,
       container.charsetStack
@@ -3094,9 +3103,9 @@ proc acceptBuffers(pager: Pager) =
     if stream == nil:
       pager.alert("Error: failed to set up buffer")
       continue
+    let loader = pager.loader
     let key = pager.addLoaderClient(container.process, container.loaderConfig,
       container.clonedFrom)
-    let loader = pager.loader
     if item.istreamOutputId != -1: # new buffer
       if container.cacheId == -1:
         container.cacheId = loader.addCacheFile(item.istreamOutputId,

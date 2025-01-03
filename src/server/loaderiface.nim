@@ -56,11 +56,13 @@ type
     response*: Response
 
   LoaderCommand* = enum
+    lcAddAuth
     lcAddCacheFile
     lcAddClient
     lcGetCacheFile
     lcLoad
     lcLoadConfig
+    lcOpenCachedItem
     lcPassFd
     lcRedirectToFile
     lcRemoveCachedItem
@@ -69,11 +71,11 @@ type
     lcShareCachedItem
     lcSuspend
     lcTee
-    lcOpenCachedItem
 
   ClientKey* = array[32, uint8]
 
   LoaderClientConfig* = object
+    originURL*: URL
     cookieJar*: CookieJar
     defaultHeaders*: Headers
     filter*: URLFilter
@@ -416,6 +418,13 @@ proc removeCachedItem*(loader: FileLoader; cacheId: int) =
       w.swrite(lcRemoveCachedItem)
       w.swrite(cacheId)
     stream.sclose()
+
+proc addAuth*(loader: FileLoader; url: URL) =
+  let stream = loader.connect()
+  if stream != nil:
+    stream.withLoaderPacketWriter loader, w:
+      w.swrite(lcAddAuth)
+      w.swrite(url)
 
 proc addClient*(loader: FileLoader; key: ClientKey; pid: int;
     config: LoaderClientConfig; clonedFrom: int): bool =
