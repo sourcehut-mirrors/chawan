@@ -70,7 +70,8 @@ Currently implemented features are:
 * [user-defined](doc/urimethodmap.md) protocols and
   [file formats](doc/mailcap.md)
 * markdown viewer, man page viewer
-* sixel/kitty image support
+* sixel/kitty image support (disabled by default; see
+  [doc/image.md](doc/image.md) on how to enable)
 * mouse support
 * syscall sandboxing on FreeBSD, OpenBSD and Linux (through capsicum, pledge
   and seccomp-bpf)
