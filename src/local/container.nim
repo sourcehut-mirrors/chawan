@@ -1589,7 +1589,7 @@ proc readSuccess*(container: Container; s: string; fd: cint = -1) =
 proc reshape(container: Container): EmptyPromise {.jsfunc.} =
   if container.iface == nil:
     return
-  return container.iface.forceRender().then(proc(): EmptyPromise =
+  return container.iface.forceReshape().then(proc(): EmptyPromise =
     return container.requestLines()
   )
 

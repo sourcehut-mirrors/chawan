@@ -111,6 +111,7 @@ type
     imageTypes*: Table[string, string]
     userAgent*: string
     autofocus*: bool
+    maybeRestyle*: proc()
 
   # Navigator stuff
   Navigator* = object
@@ -2735,6 +2736,7 @@ proc setFocus*(document: Document; element: Element) =
   if document.focus != nil:
     document.focus.invalidDeps.incl(dtFocus)
   document.internalFocus = element
+  document.invalid = true
   if element != nil:
     element.invalidDeps.incl(dtFocus)
 
@@ -2762,6 +2764,8 @@ func hover*(element: Element): bool =
 proc setHover*(element: Element; hover: bool) =
   element.invalidDeps.incl(dtHover)
   element.internalHover = hover
+  if element.document != nil:
+    element.document.invalid = true
 
 func findAutoFocus*(document: Document): Element =
   for child in document.elements:

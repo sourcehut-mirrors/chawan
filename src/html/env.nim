@@ -285,6 +285,7 @@ callback(new Event("").timeStamp);
 proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(string)): CSSStyleDeclaration {.jsfunc.} =
   if window.settings.scripting == smApp:
+    window.maybeRestyle()
     return element.getComputedStyle()
   # Maybe it works.
   return element.style

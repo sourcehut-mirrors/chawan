@@ -54,7 +54,7 @@ import utils/twtstr
 
 type
   BufferCommand* = enum
-    bcLoad, bcForceRender, bcWindowChange, bcReadSuccess, bcReadCanceled,
+    bcLoad, bcForceReshape, bcWindowChange, bcReadSuccess, bcReadCanceled,
     bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink, bcFindRevNthLink,
     bcFindNextMatch, bcFindPrevMatch, bcGetLines, bcUpdateHover, bcGotoAnchor,
     bcCancel, bcGetTitle, bcSelect, bcClone, bcFindPrevParagraph,
@@ -94,6 +94,7 @@ type
     lines: FlexibleGrid
     loader: FileLoader
     needsBOMSniff: bool
+    needsReshape: bool
     outputId: int
     pollData: PollData
     prevHover: Element
@@ -782,31 +783,35 @@ proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
     return CheckRefreshResult(n: -1)
   return CheckRefreshResult(n: n, url: url.get)
 
-proc reshape(buffer: Buffer) =
+proc maybeRestyle(buffer: Buffer) =
+  if buffer.document == nil:
+    return
+  if buffer.document.invalid or buffer.document.cachedSheetsInvalid:
+    let uastyle = if buffer.document.mode != QUIRKS:
+      buffer.uastyle
+    else:
+      buffer.quirkstyle
+    if buffer.document.cachedSheetsInvalid:
+      buffer.prevStyled = nil
+    let styledRoot = buffer.document.applyStylesheets(uastyle,
+      buffer.userstyle, buffer.prevStyled)
+    buffer.prevStyled = styledRoot
+    buffer.document.invalid = false
+    buffer.needsReshape = true
+
+proc maybeReshape(buffer: Buffer): bool {.discardable.} =
   if buffer.document == nil:
     return # not parsed yet, nothing to render
-  let uastyle = if buffer.document.mode != QUIRKS:
-    buffer.uastyle
-  else:
-    buffer.quirkstyle
-  if buffer.document.cachedSheetsInvalid:
-    buffer.prevStyled = nil
-  let styledRoot = buffer.document.applyStylesheets(uastyle,
-    buffer.userstyle, buffer.prevStyled)
-  # applyStylesheets may return nil if there is no <html> element.
-  buffer.rootBox = nil
-  if styledRoot != nil:
-    buffer.rootBox = styledRoot.layout(addr buffer.attrs)
-  buffer.lines.renderDocument(buffer.bgcolor, buffer.rootBox,
-    addr buffer.attrs, buffer.images)
-  buffer.prevStyled = styledRoot
-
-proc maybeReshape(buffer: Buffer): bool =
-  if buffer.document != nil:
-    if buffer.document.invalid or buffer.document.cachedSheetsInvalid:
-      buffer.reshape()
-      buffer.document.invalid = false
-      return true
+  buffer.maybeRestyle()
+  if buffer.needsReshape:
+    buffer.rootBox = nil
+    # applyStylesheets may return nil if there is no <html> element.
+    if buffer.prevStyled != nil:
+      buffer.rootBox = buffer.prevStyled.layout(addr buffer.attrs)
+    buffer.lines.renderDocument(buffer.bgcolor, buffer.rootBox,
+      addr buffer.attrs, buffer.images)
+    buffer.needsReshape = false
+    return true
   return false
 
 proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
@@ -877,11 +882,6 @@ proc processData(buffer: Buffer; iq: openArray[uint8]): bool =
     return false
   true
 
-proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
-  buffer.attrs = attrs
-  buffer.prevStyled = nil
-  buffer.reshape()
-
 type UpdateHoverResult* = object
   hover*: seq[tuple[t: HoverType, s: string]]
   repaint*: bool
@@ -923,7 +923,7 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
       element.setHover(false)
       repaint = true
   if repaint:
-    buffer.reshape()
+    buffer.maybeReshape()
   buffer.prevHover = thisNode
   return UpdateHoverResult(repaint: repaint, hover: hover)
 
@@ -1055,13 +1055,13 @@ proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satDOMContentLoaded), buffer.document)
   discard window.jsctx.dispatch(buffer.document, event)
-  discard buffer.maybeReshape()
+  buffer.maybeReshape()
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satLoad), window)
   discard window.jsctx.dispatch(window, event)
-  discard buffer.maybeReshape()
+  buffer.maybeReshape()
 
 proc finishLoad(buffer: Buffer): EmptyPromise =
   if buffer.state != bsLoadingPage:
@@ -1097,7 +1097,7 @@ proc load*(buffer: Buffer): int {.proxy, task.} =
   if buffer.state == bsLoaded:
     return -1
   elif buffer.bytesRead > buffer.reportedBytesRead:
-    buffer.reshape()
+    buffer.maybeReshape()
     buffer.reportedBytesRead = buffer.bytesRead
     return buffer.bytesRead
   else:
@@ -1145,7 +1145,7 @@ proc onload(buffer: Buffer) =
       reprocess = false
     else: # EOF
       buffer.finishLoad().then(proc() =
-        discard buffer.maybeReshape()
+        buffer.maybeReshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
         if buffer.config.scripting != smFalse:
@@ -1164,7 +1164,7 @@ proc onload(buffer: Buffer) =
   # pass
   if not buffer.config.isdump and buffer.tasks[bcLoad] != 0:
     # only makes sense when not in dump mode (and the user has requested a load)
-    discard buffer.maybeReshape()
+    buffer.maybeReshape()
     buffer.reportedBytesRead = buffer.bytesRead
     if buffer.hasTask(bcGetTitle):
       buffer.resolveTask(bcGetTitle, buffer.document.title)
@@ -1181,9 +1181,18 @@ proc getTitle*(buffer: Buffer): string {.proxy, task.} =
   buffer.savetask = true
   return ""
 
-proc forceRender*(buffer: Buffer) {.proxy.} =
-  buffer.prevStyled = nil
-  buffer.reshape()
+proc forceReshape0(buffer: Buffer) =
+  if buffer.document != nil:
+    buffer.document.invalid = true
+  buffer.needsReshape = true
+  buffer.maybeReshape()
+
+proc forceReshape*(buffer: Buffer) {.proxy.} =
+  buffer.forceReshape0()
+
+proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
+  buffer.attrs = attrs
+  buffer.forceReshape0()
 
 proc cancel*(buffer: Buffer) {.proxy.} =
   if buffer.state == bsLoaded:
@@ -1206,7 +1215,7 @@ proc cancel*(buffer: Buffer) {.proxy.} =
     buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
   buffer.state = bsLoaded
-  discard buffer.maybeReshape()
+  buffer.maybeReshape()
 
 #https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc serializeMultipart(entries: seq[FormDataEntry]; urandom: PosixStream):
@@ -1340,7 +1349,7 @@ proc setFocus(buffer: Buffer; e: Element): bool =
   if buffer.document.focus != e:
     buffer.document.setFocus(e)
     e.setInvalid()
-    discard buffer.maybeReshape()
+    buffer.maybeReshape()
     return true
   return false
 
@@ -1348,7 +1357,7 @@ proc restoreFocus(buffer: Buffer): bool =
   if buffer.document.focus != nil:
     buffer.document.focus.setInvalid()
     buffer.document.setFocus(nil)
-    discard buffer.maybeReshape()
+    buffer.maybeReshape()
     return true
   return false
 
@@ -1384,20 +1393,20 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
       of itFile:
         input.file = newWebFile(s, fd)
         input.setInvalid()
-        buffer.reshape()
+        buffer.maybeReshape()
         res.repaint = true
         res.open = buffer.implicitSubmit(input)
       else:
         input.value = s
         input.setInvalid()
-        buffer.reshape()
+        buffer.maybeReshape()
         res.repaint = true
         res.open = buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(buffer.document.focus)
       textarea.value = s
       textarea.setInvalid()
-      buffer.reshape()
+      buffer.maybeReshape()
       res.repaint = true
     else: discard
     let r = buffer.restoreFocus()
@@ -1780,7 +1789,7 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
         let replacement = html.fragmentParsingAlgorithm(data)
         discard element.replace(text, replacement)
     stack.add(stackNext)
-  buffer.reshape()
+  buffer.forceReshape0()
 
 proc toggleImages0(buffer: Buffer): bool =
   buffer.config.images = not buffer.config.images
@@ -1798,9 +1807,7 @@ proc toggleImages0(buffer: Buffer): bool =
       buffer.savetask = false
     else:
       buffer.resolveTask(bcToggleImages, buffer.config.images)
-    buffer.prevStyled = nil
-    buffer.rootBox = nil
-    buffer.reshape()
+    buffer.forceReshape0()
   )
   return buffer.config.images
 
@@ -1929,7 +1936,7 @@ proc runBuffer(buffer: Buffer) =
     if buffer.config.scripting != smFalse:
       if buffer.window.timeouts.run(buffer.estream):
         buffer.window.runJSJobs()
-        discard buffer.maybeReshape()
+        buffer.maybeReshape()
     buffer.loader.unregistered.setLen(0)
 
 proc cleanup(buffer: Buffer) =
@@ -1977,6 +1984,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   )
   if buffer.config.scripting != smFalse:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
+    if buffer.config.scripting == smApp:
+      buffer.window.maybeRestyle = proc() = buffer.maybeRestyle()
   buffer.charset = buffer.charsetStack.pop()
   var r = pstream.initPacketReader()
   r.sread(buffer.loader.key)
