@@ -116,7 +116,7 @@ func moduleTypeToRequestDest*(moduleType: string; default: RequestDestination):
 
 proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
     options: ScriptOptions; mutedErrors = false): ScriptResult =
-  let urls = baseURL.serialize(excludepassword = true)
+  let urls = '<' & baseURL.serialize() & '>'
   let record = ctx.compileScript(source, urls)
   return ScriptResult(
     t: srtScript,
