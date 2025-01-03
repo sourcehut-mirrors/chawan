@@ -2609,7 +2609,7 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
 func checked*(input: HTMLInputElement): bool {.inline.} =
   return input.internalChecked
 
-proc setChecked*(input: HTMLInputElement; b: bool) {.inline.} =
+proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
   input.invalidDeps.incl(dtChecked)
   input.internalChecked = b
 
@@ -3061,6 +3061,31 @@ proc showPicker(this: HTMLSelectElement): Err[DOMException] {.jsfunc.} =
 
 #TODO add, remove
 
+# <option>
+# https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
+func isDisabled*(option: HTMLOptionElement): bool =
+  if option.parentElement of HTMLOptGroupElement and
+      option.parentElement.attrb(satDisabled):
+    return true
+  return option.attrb(satDisabled)
+
+func text(option: HTMLOptionElement): string {.jsfget.} =
+  var s = ""
+  for child in option.descendants:
+    let parent = child.parentElement
+    if child of Text and (parent.tagTypeNoNS != TAG_SCRIPT or
+        parent.namespace notin {Namespace.HTML, Namespace.SVG}):
+      s &= Text(child).data
+  return s.stripAndCollapse()
+
+func value*(option: HTMLOptionElement): string {.jsfget.} =
+  if option.attrb(satValue):
+    return option.attr(satValue)
+  return option.text
+
+proc setValue(option: HTMLOptionElement; s: string) {.jsfset: "value".} =
+  option.attr(satValue, s)
+
 # <button>
 func jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
@@ -3293,27 +3318,6 @@ func title*(document: Document): string {.jsfget.} =
   if (let title = document.findFirst(TAG_TITLE); title != nil):
     return title.childTextContent.stripAndCollapse()
   return ""
-
-# https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
-func isDisabled*(option: HTMLOptionElement): bool =
-  if option.parentElement of HTMLOptGroupElement and
-      option.parentElement.attrb(satDisabled):
-    return true
-  return option.attrb(satDisabled)
-
-func text(option: HTMLOptionElement): string {.jsfget.} =
-  var s = ""
-  for child in option.descendants:
-    let parent = child.parentElement
-    if child of Text and (parent.tagTypeNoNS != TAG_SCRIPT or
-        parent.namespace notin {Namespace.HTML, Namespace.SVG}):
-      s &= Text(child).data
-  return s.stripAndCollapse()
-
-func value*(option: HTMLOptionElement): string {.jsfget.} =
-  if option.attrb(satValue):
-    return option.attr(satValue)
-  return option.text
 
 proc invalidateCollections(node: Node) =
   for id in node.liveCollections:
