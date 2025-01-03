@@ -9,7 +9,7 @@ proc runTest(test: TCTest, factory: MAtomFactory, scripting: bool,
   let ss = newStringStream(test.data)
   let opts = HTML5ParserOpts[Node, MAtom](scripting: scripting)
   assert test.fragment.isNone
-  var charsets: seq[Charset]
+  var charsets: seq[Charset] = @[]
   for s in labels:
     let cs = getCharset(s)
     assert cs != CHARSET_UNKNOWN

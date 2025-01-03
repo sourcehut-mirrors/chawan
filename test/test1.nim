@@ -8,8 +8,9 @@ import chame/tags
 import chame/minidom
 
 func escapeText(s: string, attribute_mode = false): string =
+  result = ""
   var nbsp_mode = false
-  var nbsp_prev: char
+  var nbsp_prev = '\0'
   for c in s:
     if nbsp_mode:
       if c == char(0xA0):
@@ -32,6 +33,7 @@ func escapeText(s: string, attribute_mode = false): string =
       result &= c
 
 func `$`*(node: Node): string =
+  result = ""
   if node of Element:
     let element = Element(node)
     var x = ""

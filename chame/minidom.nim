@@ -242,6 +242,7 @@ proc createDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
   )
 
 func countElementChildren(node: Node): int =
+  result = 0
   for child in node.childList:
     if child of Element:
       inc result
@@ -270,6 +271,7 @@ func isHostIncludingInclusiveAncestor(a, b: Node): bool =
     if b == a:
       return true
     b = b.parentNode
+  return false
 
 func hasPreviousElementSibling(node: Node): bool =
   for n in node.parentNode.childList:
@@ -382,7 +384,7 @@ proc moveChildrenImpl(builder: MiniDOMBuilder, fromNode, toNode: Node) =
 proc addAttrsIfMissingImpl(builder: MiniDOMBuilder, handle: Node,
     attrs: Table[MAtom, string]) =
   let element = Element(handle)
-  var oldNames: HashSet[MAtom]
+  var oldNames = initHashSet[MAtom]()
   for attr in element.attrs:
     oldNames.incl(attr.name)
   for name, value in attrs:
@@ -405,13 +407,13 @@ proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
 
 proc parseFromStream(parser: var HTML5Parser[Node, MAtom],
     inputStream: Stream) =
-  var buffer: array[4096, char]
+  var buffer {.noinit.}: array[4096, char]
   while true:
     let n = inputStream.readData(addr buffer[0], buffer.len)
     if n == 0: break
     # res can be PRES_CONTINUE or PRES_SCRIPTING. PRES_STOP is only returned
     # on charset switching, and minidom does not support that.
-    var res = parser.parseChunk(toOpenArray(buffer, 0, n - 1))
+    var res = parser.parseChunk(buffer.toOpenArray(0, n - 1))
     # Important: we must repeat parseChunk with the same contents for the script
     # end tag result, with reprocess = true.
     #

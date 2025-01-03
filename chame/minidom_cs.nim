@@ -101,7 +101,7 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
   ## (TODO: this should be improved in the future; theoretically we could still
   ## switch between ASCII-compatible charsets before non-ASCII is encountered.)
   let builder = newCharsetMiniDOMBuilder(factory)
-  var charsetStack: seq[Charset]
+  var charsetStack: seq[Charset] = @[]
   for i in countdown(charsets.high, 0):
     charsetStack.add(charsets[i])
   var seekable = seekable
@@ -121,7 +121,7 @@ proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
     else:
       builder.confidence = ccCertain
     var parser = initHTML5Parser(builder, opts)
-    var iq: array[4096, char]
+    var iq {.noinit.}: array[4096, char]
     let decoder = newTextDecoder(builder.charset)
     let errorMode = [
       ccTentative: demFatal,

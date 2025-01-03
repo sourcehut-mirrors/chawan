@@ -45,6 +45,7 @@ proc reconsumeLine(ctx: var TCTestParser) =
   dec ctx.linei
 
 proc consumeLine(ctx: var TCTestParser): string =
+  result = ""
   ctx.pi = ctx.i
   inc ctx.linei
   while ctx.has:
@@ -55,6 +56,7 @@ proc consumeLine(ctx: var TCTestParser): string =
     inc ctx.i
 
 proc parseTestData(ctx: var TCTestParser): string =
+  result = ""
   while ctx.has:
     let line = ctx.consumeLine()
     if line == "#errors":
@@ -65,6 +67,7 @@ proc parseTestData(ctx: var TCTestParser): string =
   doAssert false, "errors expected"
 
 proc parseTestNewErrors(ctx: var TCTestParser): seq[TCError] =
+  result = @[]
   while ctx.has:
     let line = ctx.consumeLine()
     case line
@@ -74,6 +77,7 @@ proc parseTestNewErrors(ctx: var TCTestParser): seq[TCError] =
     result.add(TCError(s: line))
 
 proc parseTestErrors(ctx: var TCTestParser): seq[TCError] =
+  result = @[]
   while ctx.has:
     let line = ctx.consumeLine()
     case line
@@ -141,6 +145,7 @@ proc parseDoctype(ctx: TCTestParser, s: string): DocumentType =
   return doctype
 
 func until(s: string, c: set[char]): string =
+  result = ""
   var i = 0
   while i < s.len:
     if s[i] in c:
@@ -156,16 +161,16 @@ func after(s: string, c: set[char]): string =
     if s[i] in c:
       return s.substr(i + 1)
     inc i
+  return ""
 
 func after(s: string, c: char): string = s.after({c})
 
 proc parseTestDocument(ctx: var TCTestParser): Document =
   result = Document(factory: ctx.factory)
-  var stack: seq[Node]
-  stack.add(result)
+  var stack = @[Node(result)]
   template top: auto = stack[^1]
-  var thistext: Text
-  var thiscomment: Comment
+  var thistext: Text = nil
+  var thiscomment: Comment = nil
   var indent = 1
   template pop_node =
     let node = stack.pop()

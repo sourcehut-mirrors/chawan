@@ -385,6 +385,7 @@ proc hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       if tagType in elements:
         return false
     else: discard
+  return false
 
 proc hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: set[TagType], list: set[TagType]): bool =
@@ -408,6 +409,7 @@ proc hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
       if tagType in elements:
         return false
     else: discard
+  return false
 
 proc hasElementInScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: Handle): bool =
@@ -446,6 +448,7 @@ proc hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     if parser.getTagType(element) in list:
       return false
   assert false
+  return false
 
 proc hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     target: set[TagType], list: set[TagType]): bool =
@@ -456,6 +459,7 @@ proc hasElementInSpecificScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     if tagType in list:
       return false
   assert false
+  return false
 
 const TableScope = {TAG_HTML, TAG_TABLE, TAG_TEMPLATE}
 proc hasElementInTableScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
@@ -475,6 +479,7 @@ proc hasElementInSelectScope[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     if tagType notin {TAG_OPTION, TAG_OPTGROUP}:
       return false
   assert false
+  return false
 
 proc createElementForToken[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     localName: Atom, namespace: Namespace, intendedParent: Handle,
@@ -554,12 +559,12 @@ proc insertHTMLElement[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 # foreign attributes" step as well.
 proc adjustMathMLAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     htmlAttrs: var Table[Atom, string], xmlAttrs: var seq[ParsedAttr[Atom]]) =
-  var deleted: seq[Atom]
+  var deleted: seq[Atom] = @[]
   for k, v in htmlAttrs.mpairs:
     parser.foreignTable.withValue(k, p):
       xmlAttrs.add((p[].prefix, p[].namespace, p[].localName, v))
       deleted.add(k)
-  var v: string
+  var v: string = ""
   if htmlAttrs.pop(parser.tagTypeToAtom(TAG_DEFINITION_URL), v):
     htmlAttrs[parser.strToAtom("definitionURL")] = v
   for k in deleted:
@@ -567,13 +572,13 @@ proc adjustMathMLAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
 
 proc adjustSVGAttributes[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     htmlAttrs: var Table[Atom, string], xmlAttrs: var seq[ParsedAttr[Atom]]) =
-  var deleted: seq[Atom]
+  var deleted: seq[Atom] = @[]
   for k, v in htmlAttrs:
     parser.foreignTable.withValue(k, p):
       xmlAttrs.add((p[].prefix, p[].namespace, p[].localName, v))
       deleted.add(k)
   for k, ak in parser.adjustedTable:
-    var v: string
+    var v: string = ""
     if htmlAttrs.pop(k, v):
       htmlAttrs[ak] = v
   for k in deleted:
@@ -862,6 +867,7 @@ proc isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom],
 const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
 func until(s: string, c1, c2: char, starti: int): string =
+  result = ""
   for i in starti ..< s.len:
     if s[i] == c1 or s[i] == c2:
       break
@@ -1277,7 +1283,7 @@ macro match0(token: Token, patterns: static openArray[Pattern],
 macro match(token: Token, bodyIn: untyped): untyped =
   result = newStmtList()
   var patterns = newTree(nnkBracket)
-  var lambdas: seq[NimNode]
+  var lambdas: seq[NimNode] = @[]
   for child in bodyIn:
     if unlikely(child.kind != nnkInfix or child[0].strVal != "=>"):
       error("=> expected")
@@ -1846,7 +1852,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       "<math>" => (block:
         parser.reconstructActiveFormatting()
-        var xmlAttrs: seq[ParsedAttr[Atom]]
+        var xmlAttrs: seq[ParsedAttr[Atom]] = @[]
         parser.adjustMathMLAttributes(token.attrs, xmlAttrs)
         discard parser.insertForeignElement(token, token.tagname,
           Namespace.MATHML, false, xmlAttrs)
@@ -1855,7 +1861,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
       )
       "<svg>" => (block:
         parser.reconstructActiveFormatting()
-        var xmlAttrs: seq[ParsedAttr[Atom]]
+        var xmlAttrs: seq[ParsedAttr[Atom]] = @[]
         parser.adjustSVGAttributes(token.attrs, xmlAttrs)
         discard parser.insertForeignElement(token, token.tagname, Namespace.SVG,
           false, xmlAttrs)
@@ -2396,7 +2402,7 @@ proc processInForeignContent[Handle, Atom](
   template any_other_start_tag() =
     let namespace = parser.getNamespace(parser.adjustedCurrentNode)
     var tagname = token.tagname
-    var xmlAttrs: seq[ParsedAttr[Atom]]
+    var xmlAttrs: seq[ParsedAttr[Atom]] = @[]
     if namespace == Namespace.SVG:
       parser.caseTable.withValue(tagname, p):
         tagname = p[]
@@ -2473,6 +2479,7 @@ proc processInForeignContent[Handle, Atom](
         any_other_end_tag
     )
     TokenType.END_TAG => (block: any_other_end_tag)
+  return PRES_CONTINUE
 
 proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     token: Token[Atom]): ParseResult =
@@ -2481,7 +2488,7 @@ proc processToken[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     if token.t == CHARACTER_WHITESPACE:
       if token.s[0] == '\n':
         if token.s.len == 1:
-          return
+          return PRES_CONTINUE
         else:
           token.s.delete(0..0)
   if parser.openElements.len == 0 or
@@ -2652,9 +2659,10 @@ proc initHTML5Parser*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
   )
   if opts.ctx.isSome:
     let ctxInit = opts.ctx.get
-    var ctx: OpenElement[Handle, Atom]
-    ctx.element = ctxInit.element
-    ctx.token = Token[Atom](t: START_TAG, tagname: ctxInit.startTagName)
+    let ctx: OpenElement[Handle, Atom] = (ctxInit.element, Token[Atom](
+      t: START_TAG,
+      tagname: ctxInit.startTagName
+    ))
     parser.ctx = some(ctx)
   for (element, tagName) in opts.openElementsInit:
     let it = (element, Token[Atom](t: START_TAG, tagname: tagName))
