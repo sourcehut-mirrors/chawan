@@ -77,7 +77,7 @@ proc parseInput(f: File; items: var seq[DirlistItem]; maxw: var int) =
   # wcwidth wants a UTF-8 locale.
   # I don't know how portable this is, but the worst thing that can
   # happen is that too many dots are printed.
-  let thisUTF8 = ($setlocale(LC_CTYPE, nil)).until('.') & "UTF-8"
+  let thisUTF8 = ($setlocale(LC_CTYPE, nil)).until('.') & ".UTF-8"
   discard setlocale(LC_CTYPE, cstring(thisUTF8))
   var line: string
   while f.readLine(line):
