@@ -1187,12 +1187,16 @@ proc forceReshape0(buffer: Buffer) =
   buffer.needsReshape = true
   buffer.maybeReshape()
 
-proc forceReshape*(buffer: Buffer) {.proxy.} =
+proc forceReshape2(buffer: Buffer) =
+  buffer.prevStyled = nil
   buffer.forceReshape0()
+
+proc forceReshape*(buffer: Buffer) {.proxy.} =
+  buffer.forceReshape2()
 
 proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
   buffer.attrs = attrs
-  buffer.forceReshape0()
+  buffer.forceReshape2()
 
 proc cancel*(buffer: Buffer) {.proxy.} =
   if buffer.state == bsLoaded:
