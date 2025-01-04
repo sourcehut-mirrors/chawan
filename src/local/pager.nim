@@ -822,7 +822,7 @@ proc input(pager: Pager): EmptyPromise =
   return p
 
 proc genClientKey(pager: Pager): ClientKey =
-  var key: ClientKey
+  var key {.noinit.}: ClientKey
   pager.urandom.recvDataLoop(key)
   return key
 
