@@ -420,7 +420,17 @@ type
 
   HTMLAudioElement* = ref object of HTMLElement
 
-  HTMLIFrameElement* = ref object of HTMLElement
+  HTMLIFrameElement = ref object of HTMLElement
+
+  HTMLTableElement = ref object of HTMLElement
+    cachedRows: HTMLCollection
+
+  HTMLTableCaptionElement = ref object of HTMLElement
+
+  HTMLTableSectionElement = ref object of HTMLElement
+    cachedRows: HTMLCollection
+
+  HTMLTableRowElement = ref object of HTMLElement
 
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
@@ -459,6 +469,10 @@ jsDestructor(HTMLImageElement)
 jsDestructor(HTMLVideoElement)
 jsDestructor(HTMLAudioElement)
 jsDestructor(HTMLIFrameElement)
+jsDestructor(HTMLTableElement)
+jsDestructor(HTMLTableCaptionElement)
+jsDestructor(HTMLTableRowElement)
+jsDestructor(HTMLTableSectionElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -490,14 +504,18 @@ jsDestructor(CSSStyleDeclaration)
 func attr*(element: Element; s: StaticAtom): string
 func attrb*(element: Element; s: CAtom): bool
 func value*(option: HTMLOptionElement): string
+proc append*(parent, node: Node)
 proc attr*(element: Element; name: CAtom; value: string)
 proc attr*(element: Element; name: StaticAtom; value: string)
 proc baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
 proc getImageId(window: Window): int
+proc insertBefore*(parent, node, before: Node): DOMResult[Node]
 proc invalidateCollections(node: Node)
+proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
+proc remove*(node: Node)
 proc setInvalid*(element: Element)
 
 # Forward declaration hacks
@@ -1355,6 +1373,10 @@ proc getLength(collection: Collection): int =
   collection.refreshCollection()
   return collection.snapshot.len
 
+proc findNode(collection: Collection; node: Node): int =
+  collection.refreshCollection()
+  return collection.snapshot.find(node)
+
 type CollectionMatchFun = proc(node: Node): bool {.noSideEffect.}
 
 func newCollection[T: Collection](root: Node; match: CollectionMatchFun;
@@ -1366,6 +1388,14 @@ func newCollection[T: Collection](root: Node; match: CollectionMatchFun;
     root: root
   )
   result.populateCollection()
+
+func newHTMLCollection(root: Node; match: CollectionMatchFun;
+    islive, childonly: bool): HTMLCollection =
+  return newCollection[HTMLCollection](root, match, islive, childonly)
+
+func newNodeList(root: Node; match: CollectionMatchFun;
+    islive, childonly: bool): NodeList =
+  return newCollection[NodeList](root, match, islive, childonly)
 
 func jsNodeType0(node: Node): NodeType =
   if node of CharacterData:
@@ -1397,8 +1427,7 @@ func isElement(node: Node): bool =
   return node of Element
 
 proc parentNodeChildrenImpl(ctx: JSContext; parentNode: Node): JSValue =
-  let children = ctx.toJS(newCollection[HTMLCollection](
-    root = parentNode,
+  let children = ctx.toJS(parentNode.newHTMLCollection(
     match = isElement,
     islive = true,
     childonly = true
@@ -1419,8 +1448,7 @@ func children(ctx: JSContext; parentNode: Element): JSValue {.jsfget.} =
   return parentNodeChildrenImpl(ctx, parentNode)
 
 func childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
-  let childNodes = ctx.toJS(newCollection[NodeList](
-    root = node,
+  let childNodes = ctx.toJS(node.newNodeList(
     match = nil,
     islive = true,
     childonly = true
@@ -1440,8 +1468,7 @@ func compatMode(document: Document): string {.jsfget.} =
 
 func forms(document: Document): HTMLCollection {.jsfget.} =
   if document.cachedForms == nil:
-    document.cachedForms = newCollection[HTMLCollection](
-      root = document,
+    document.cachedForms = document.newHTMLCollection(
       match = isForm,
       islive = true,
       childonly = false
@@ -2158,6 +2185,7 @@ func select*(option: HTMLOptionElement): HTMLSelectElement =
   return nil
 
 func countChildren(node: Node; nodeType: type): int =
+  result = 0
   for child in node.childList:
     if child of nodeType:
       inc result
@@ -2166,6 +2194,7 @@ func hasChild(node: Node; nodeType: type): bool =
   for child in node.childList:
     if child of nodeType:
       return true
+  return false
 
 func hasChildExcept(node: Node; nodeType: type; ex: Node): bool =
   for child in node.childList:
@@ -2326,9 +2355,27 @@ func isLastVisualNode*(element: Element): bool =
       break
   return false
 
-func findAncestor*(node: Node; tagTypes: set[TagType]): Element =
+func findAncestor*(node: Node; tagType: TagType): Element =
   for element in node.ancestors:
-    if element.tagType in tagTypes:
+    if element.tagType == tagType:
+      return element
+  return nil
+
+func findFirstChildOf(node: Node; tagType: TagType): Element =
+  for element in node.elementList:
+    if element.tagType == tagType:
+      return element
+  return nil
+
+func findLastChildOf(node: Node; tagType: TagType): Element =
+  for element in node.elementList_rev:
+    if element.tagType == tagType:
+      return element
+  return nil
+
+func findFirstChildNotOf(node: Node; tagType: set[TagType]): Element =
+  for element in node.elementList:
+    if element.tagType notin tagType:
       return element
   return nil
 
@@ -2342,8 +2389,7 @@ func getElementById(document: Document; id: string): Element {.jsfunc.} =
   return nil
 
 func getElementsByName(document: Document; name: CAtom): NodeList {.jsfunc.} =
-  return newCollection[NodeList](
-    document,
+  return document.newNodeList(
     func(node: Node): bool =
       return node of Element and Element(node).name == name,
     islive = true,
@@ -2352,16 +2398,10 @@ func getElementsByName(document: Document; name: CAtom): NodeList {.jsfunc.} =
 
 func getElementsByTagNameImpl(root: Node; tagName: string): HTMLCollection =
   if tagName == "*":
-    return newCollection[HTMLCollection](
-      root,
-      isElement,
-      islive = true,
-      childonly = false
-    )
+    return root.newHTMLCollection(isElement, islive = true, childonly = false)
   let localName = root.document.toAtom(tagName)
   let localNameLower = root.document.factory.toLowerAscii(localName)
-  return newCollection[HTMLCollection](
-    root,
+  return root.newHTMLCollection(
     func(node: Node): bool =
       if node of Element:
         let element = Element(node)
@@ -2386,7 +2426,7 @@ func getElementsByClassNameImpl(node: Node; classNames: string):
   var classAtoms = newSeq[CAtom]()
   for class in classNames.split(AsciiWhitespace):
     classAtoms.add(node.document.toAtom(class))
-  return newCollection[HTMLCollection](node,
+  return node.newHTMLCollection(
     func(node: Node): bool =
       if node of Element:
         let element = Element(node)
@@ -3012,8 +3052,7 @@ func namedItem(this: HTMLSelectElement; atom: CAtom): Element {.jsfunc.} =
 
 proc selectedOptions(ctx: JSContext; this: HTMLSelectElement): JSValue
     {.jsfget.} =
-  let selectedOptions = ctx.toJS(newCollection[HTMLCollection](
-    root = this,
+  let selectedOptions = ctx.toJS(this.newHTMLCollection(
     match = func(node: Node): bool =
       return node.isOptionOf(this) and HTMLOptionElement(node).selected,
     islive = true,
@@ -3114,6 +3153,190 @@ func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
     if src != "":
       return (src, el.attr(satType))
   return ("", "")
+
+# <table>
+func caption(this: HTMLTableElement): Element {.jsfget.} =
+  return this.findFirstChildOf(TAG_CAPTION)
+
+proc setCaption(this: HTMLTableElement; caption: HTMLTableCaptionElement):
+    DOMResult[void] {.jsfset: "caption".} =
+  let old = this.caption
+  if old != nil:
+    old.remove()
+  discard this.insertBefore(caption, this.firstChild)
+  ok()
+
+func tHead(this: HTMLTableElement): Element {.jsfget.} =
+  return this.findFirstChildOf(TAG_THEAD)
+
+func tFoot(this: HTMLTableElement): Element {.jsfget.} =
+  return this.findFirstChildOf(TAG_TFOOT)
+
+proc setTSectImpl(this: HTMLTableElement; sect: HTMLTableSectionElement;
+    tagType: TagType): DOMResult[void] =
+  if sect != nil and sect.tagType != tagType:
+    return errDOMException("Wrong element type", "HierarchyRequestError")
+  let old = this.findFirstChildOf(tagType)
+  if old != nil:
+    old.remove()
+  discard ?this.insertBefore(sect, this.firstChild)
+  ok()
+
+proc setTHead(this: HTMLTableElement; tHead: HTMLTableSectionElement):
+    DOMResult[void] {.jsfset: "tHead".} =
+  return this.setTSectImpl(tHead, TAG_THEAD)
+
+proc setTFoot(this: HTMLTableElement; tFoot: HTMLTableSectionElement):
+    DOMResult[void] {.jsfset: "tFoot".} =
+  return this.setTSectImpl(tFoot, TAG_TFOOT)
+
+func isTBody(this: Node): bool =
+  return this of Element and Element(this).tagType == TAG_TBODY
+
+proc tBodies(ctx: JSContext; this: HTMLTableElement): JSValue {.jsfget.} =
+  let tBodies = ctx.toJS(this.newHTMLCollection(
+    match = isTBody,
+    islive = true,
+    childonly = true
+  ))
+  let this = ctx.toJS(this)
+  ctx.definePropertyCW(this, "tBodies", JS_DupValue(ctx, tBodies))
+  JS_FreeValue(ctx, this)
+  return tBodies
+
+func isRow(this: Node): bool =
+  return this of Element and Element(this).tagType == TAG_TR
+
+proc rows(this: HTMLTableElement): HTMLCollection {.jsfget.} =
+  if this.cachedRows == nil:
+    this.cachedRows = this.newHTMLCollection(
+      match = proc(node: Node): bool =
+        if node.parentNode == this or node.parentNode.parentNode == this:
+          return node.isRow()
+        return false,
+      islive = true,
+      childonly = false
+    )
+  return this.cachedRows
+
+proc create(this: HTMLTableElement; tagType: TagType; before: Node):
+    Element =
+  var element = this.findFirstChildOf(tagType)
+  if element == nil:
+    element = this.document.newHTMLElement(tagType)
+    discard this.insertBefore(element, before)
+  return element
+
+proc delete(this: HTMLTableElement; tagType: TagType) =
+  let element = this.findFirstChildOf(tagType)
+  if element != nil:
+    element.remove()
+
+proc createCaption(this: HTMLTableElement): Element {.jsfunc.} =
+  return this.create(TAG_CAPTION, this.firstChild)
+
+proc createTHead(this: HTMLTableElement): Element {.jsfunc.} =
+  let before = this.findFirstChildNotOf({TAG_CAPTION, TAG_COLGROUP})
+  return this.create(TAG_THEAD, before)
+
+proc createTBody(this: HTMLTableElement): Element {.jsfunc.} =
+  let before = this.findLastChildOf(TAG_TBODY)
+  return this.create(TAG_TBODY, before)
+
+proc createTFoot(this: HTMLTableElement): Element {.jsfunc.} =
+  return this.create(TAG_TFOOT, nil)
+
+proc deleteCaption(this: HTMLTableElement) {.jsfunc.} =
+  this.delete(TAG_CAPTION)
+
+proc deleteTHead(this: HTMLTableElement) {.jsfunc.} =
+  this.delete(TAG_THEAD)
+
+proc deleteTFoot(this: HTMLTableElement): Element {.jsfunc.} =
+  this.delete(TAG_TFOOT)
+
+proc insertRow(this: HTMLTableElement; index = -1): DOMResult[Element]
+    {.jsfunc.} =
+  let nrows = this.rows.getLength()
+  if index < -1 or index > nrows:
+    return errDOMException("Index out of bounds", "IndexSizeError")
+  let tr = this.document.newHTMLElement(TAG_TR)
+  if nrows == 0:
+    this.createTBody().append(tr)
+  elif index == -1 or index == nrows:
+    this.rows.item(uint32(nrows) - 1).parentNode.append(tr)
+  else:
+    let it = this.rows.item(uint32(index))
+    discard it.parentNode.insertBefore(tr, it)
+  return ok(tr)
+
+proc deleteRow(rows: HTMLCollection; index: int): DOMResult[void] =
+  let nrows = rows.getLength()
+  if index < -1 or index >= nrows:
+    return errDOMException("Index out of bounds", "IndexSizeError")
+  if index == -1:
+    rows.item(uint32(nrows - 1)).remove()
+  elif nrows > 0:
+    rows.item(uint32(index)).remove()
+  ok()
+
+proc deleteRow(this: HTMLTableElement; index = -1): DOMResult[void] {.jsfunc.} =
+  return this.rows.deleteRow(index)
+
+# <tbody>
+proc rows(this: HTMLTableSectionElement): HTMLCollection {.jsfget.} =
+  if this.cachedRows == nil:
+    this.cachedRows = this.newHTMLCollection(
+      match = isRow,
+      islive = true,
+      childonly = true
+    )
+  return this.cachedRows
+
+proc insertRow(this: HTMLTableSectionElement; index = -1): DOMResult[Element]
+    {.jsfunc.} =
+  let nrows = this.rows.getLength()
+  if index < -1 or index > nrows:
+    return errDOMException("Index out of bounds", "IndexSizeError")
+  let tr = this.document.newHTMLElement(TAG_TR)
+  if index == -1 or index == nrows:
+    this.append(tr)
+  else:
+    discard this.insertBefore(tr, this.rows.item(uint32(index)))
+  return ok(tr)
+
+proc deleteRow(this: HTMLTableSectionElement; index = -1): DOMResult[void]
+    {.jsfunc.} =
+  return this.rows.deleteRow(index)
+
+# <tr>
+proc isCell(this: Node): bool =
+  return this of Element and Element(this).tagType in {TAG_TD, TAG_TH}
+
+proc cells(ctx: JSContext; this: HTMLTableRowElement): JSValue {.jsfget.} =
+  let cells = ctx.toJS(this.newHTMLCollection(
+    match = isCell,
+    islive = true,
+    childonly = true
+  ))
+  let this = ctx.toJS(this)
+  ctx.definePropertyCW(this, "cells", JS_DupValue(ctx, cells))
+  JS_FreeValue(ctx, this)
+  return cells
+
+func rowIndex(this: HTMLTableRowElement): int {.jsfget.} =
+  let table = this.findAncestor(TAG_TABLE)
+  if table != nil:
+    return HTMLTableElement(table).rows.findNode(this)
+  return -1
+
+func sectionRowIndex(this: HTMLTableRowElement): int {.jsfget.} =
+  let parent = this.parentElement
+  if parent of HTMLTableElement:
+    return this.rowIndex
+  if parent of HTMLTableSectionElement:
+    return HTMLTableSectionElement(parent).rows.findNode(this)
+  return -1
 
 func newText*(document: Document; data: string): Text =
   return Text(
@@ -3242,6 +3465,14 @@ proc newElement*(document: Document; localName: CAtom;
     let localName = document.toAtom(satRel)
     area.relList = DOMTokenList(element: area, localName: localName)
     area
+  of TAG_TABLE:
+    HTMLTableElement()
+  of TAG_CAPTION:
+    HTMLTableCaptionElement()
+  of TAG_TR:
+    HTMLTableRowElement()
+  of TAG_TBODY, TAG_THEAD, TAG_TFOOT:
+    HTMLTableSectionElement()
   elif namespace == Namespace.SVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
@@ -4186,7 +4417,7 @@ proc resetFormOwner(element: FormAssociatedElement) =
   if element.form != nil:
     if element.tagType notin ListedElements:
       return
-    let lastForm = element.findAncestor({TAG_FORM})
+    let lastForm = element.findAncestor(TAG_FORM)
     if not element.attrb(satForm) and lastForm == element.form:
       return
   element.form = nil
@@ -5102,8 +5333,7 @@ proc querySelectorAllImpl(node: Node; q: string): DOMResult[NodeList] =
   let selectors = parseSelectors(q, node.document.factory)
   if selectors.len == 0:
     return errDOMException("Invalid selector: " & q, "SyntaxError")
-  return ok(newCollection[NodeList](
-    root = node,
+  return ok(node.newNodeList(
     match = func(node: Node): bool =
       if node of Element:
         {.cast(noSideEffect).}:
@@ -5418,6 +5648,10 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLVideoElement, TAG_VIDEO)
   register(HTMLAudioElement, TAG_AUDIO)
   register(HTMLIFrameElement, TAG_IFRAME)
+  register(HTMLTableElement, TAG_TABLE)
+  register(HTMLTableCaptionElement, TAG_CAPTION)
+  register(HTMLTableRowElement, TAG_TR)
+  register(HTMLTableSectionElement, {TAG_TBODY, TAG_THEAD, TAG_TFOOT})
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 

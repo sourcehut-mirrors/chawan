@@ -113,7 +113,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
   form.constructingEntryList = true
   var entrylist: seq[FormDataEntry] = @[]
   for field in form.controls:
-    if field.findAncestor({TAG_DATALIST}) != nil or
+    if field.findAncestor(TAG_DATALIST) != nil or
         field.attrb(satDisabled) or
         field.isButton() and Element(field) != submitter:
       continue
