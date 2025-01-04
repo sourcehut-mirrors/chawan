@@ -241,6 +241,7 @@ proc main() =
   putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
   let forkserver = newForkServer()
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
+  urandom.setCloseOnExec()
   var ctx = ParamParseContext(params: commandLineParams(), i: 0)
   ctx.parse()
   let jsrt = newJSRuntime()

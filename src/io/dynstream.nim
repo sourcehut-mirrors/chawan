@@ -349,6 +349,10 @@ proc drain*(ps: PosixStream) =
   except ErrorAgain:
     discard
 
+proc setCloseOnExec*(ps: PosixStream) =
+  let ofd = fcntl(ps.fd, F_GETFD)
+  discard fcntl(ps.fd, ofd or F_SETFD, FD_CLOEXEC)
+
 type SocketStream* = ref object of PosixStream
 
 # Auxiliary functions in C, because writing them portably in Nim is
@@ -394,32 +398,28 @@ proc getSocketName*(pid: int): string =
 proc getSocketPath*(socketDir: string; pid: int): string =
   socketDir / getSocketName(pid)
 
-proc connectAtSocketStream0(socketDir: string; baseFd, pid: int;
-    blocking = true): SocketStream =
+proc connectSocketStream0(socketDir: string; baseFd, pid: int): SocketStream =
   let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
   let ss = SocketStream(fd: fd, blocking: true)
-  if not blocking:
-    ss.setBlocking(false)
+  ss.setCloseOnExec()
   let path = getSocketPath(socketDir, pid)
   if baseFd == -1:
     if connect_unix_from_c(fd, cstring(path), cint(path.len)) != 0:
       raiseOSError(osLastError())
   else:
     when defined(freebsd):
-      doAssert baseFd != -1
       let name = getSocketName(pid)
-      if connectat_unix_from_c(cint(baseFd), fd, cstring(name),
-          cint(name.len)) != 0:
+      let nameLen = cint(name.len)
+      if connectat_unix_from_c(cint(baseFd), fd, cstring(name), nameLen) != 0:
         raiseOSError(osLastError())
     else:
       # shouldn't have sockDirFd on other architectures
       doAssert false
   return ss
 
-proc connectSocketStream*(socketDir: string; baseFd, pid: int;
-    blocking = true): SocketStream =
+proc connectSocketStream*(socketDir: string; baseFd, pid: int): SocketStream =
   try:
-    return connectAtSocketStream0(socketDir, baseFd, pid, blocking)
+    return connectSocketStream0(socketDir, baseFd, pid)
   except OSError:
     return nil
 
@@ -561,11 +561,10 @@ proc close*(ssock: ServerSocket; unlink = true) =
         return
     discard tryRemoveFile(ssock.path)
 
-proc acceptSocketStream*(ssock: ServerSocket; blocking = true): SocketStream =
+proc acceptSocketStream*(ssock: ServerSocket): SocketStream =
   let fd = cint(accept(SocketHandle(ssock.fd), nil, nil))
   if fd == -1:
     return nil
-  let ss = SocketStream(fd: fd, blocking: false)
-  if not blocking:
-    ss.setBlocking(false)
+  let ss = SocketStream(fd: fd, blocking: true)
+  ss.setCloseOnExec()
   return ss

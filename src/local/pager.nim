@@ -1688,8 +1688,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     else:
       if pager.term.istream != nil:
         discard dup2(pager.term.istream.fd, STDIN_FILENO)
-    discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
-    exitnow(127)
+    myExec(cmd)
   else:
     var wstatus: cint
     while waitpid(pid, wstatus, 0) == -1:

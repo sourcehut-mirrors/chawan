@@ -105,15 +105,11 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
       stderr.write(msg)
       quit(1)
     doAssert false
-  let readfd = pipefd[0] # get read
+  let ps = newPosixStream(pipefd[0]) # get read
   discard close(pipefd[1]) # close write
-  var readf: File
-  if not open(readf, FileHandle(readfd), fmRead):
-    raise newException(Defect, "Failed to open output handle.")
-  let c = readf.readChar()
-  assert c == char(0u8)
-  close(readf)
-  discard close(pipefd[0])
+  let c = ps.sreadChar()
+  assert c == '\0'
+  ps.sclose()
   return pid
 
 proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
@@ -184,7 +180,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   discard close(pipefd[1]) # close write
   let ps = newPosixStream(pipefd[0])
   let c = ps.sreadChar()
-  assert c == char(0)
+  assert c == '\0'
   ps.sclose()
   ctx.children.add(pid)
   return pid
@@ -273,10 +269,14 @@ proc newForkServer*(): ForkServer =
     discard close(pipefd_in[0]) # close read
     discard close(pipefd_out[1]) # close write
     discard close(pipefd_err[1]) # close write
+    let ostream = newPosixStream(pipefd_in[1])
+    let istream = newPosixStream(pipefd_out[0])
     let estream = newPosixStream(pipefd_err[0])
     estream.setBlocking(false)
+    for it in [ostream, istream, estream]:
+      it.setCloseOnExec()
     return ForkServer(
-      ostream: newPosixStream(pipefd_in[1]),
-      istream: newPosixStream(pipefd_out[0]),
+      ostream: ostream,
+      istream: istream,
       estream: estream
     )

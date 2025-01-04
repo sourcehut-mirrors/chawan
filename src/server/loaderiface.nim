@@ -106,8 +106,7 @@ template withLoaderPacketWriter(stream: SocketStream; loader: FileLoader;
     body
 
 proc connect(loader: FileLoader): SocketStream =
-  return connectSocketStream(loader.sockDir, loader.sockDirFd, loader.process,
-    blocking = true)
+  return connectSocketStream(loader.sockDir, loader.sockDirFd, loader.process)
 
 # Start a request. This should not block (not for a significant amount of time
 # anyway).

@@ -906,7 +906,7 @@ proc loadCGI(ctx: LoaderContext; client: ClientData; handle: InputHandle;
     let code = int(ceFailedToExecuteCGIScript)
     stdout.write("Cha-Control: ConnectionError " & $code & " " &
       ($strerror(errno)).deleteChars({'\n', '\r'}))
-    quit(1)
+    exitnow(1)
   else:
     ostreamOut.sclose() # close write
     if ostreamOut2 != nil:
