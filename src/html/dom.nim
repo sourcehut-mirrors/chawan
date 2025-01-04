@@ -3417,6 +3417,8 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
   var s: string
   if ctx.fromJS(atom, s).isNone:
     return JS_EXCEPTION
+  if s == "cssFloat":
+    s = "float"
   if s.isSupportedProperty():
     return ctx.toJS(this.getPropertyValue(s))
   s = IDLAttributeToCSSProperty(s)
@@ -3493,6 +3495,8 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
     return ok()
   var name: string
   ?ctx.fromJS(atom, name)
+  if name == "cssFloat":
+    name = "float"
   return this.setProperty(name, value)
 
 proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
