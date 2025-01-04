@@ -1578,14 +1578,9 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
     )
   of itCheckbox:
     input.setChecked(not input.checked)
-    input.setInvalid()
     return ClickResult(repaint: buffer.maybeReshape())
   of itRadio:
-    for radio in input.radiogroup:
-      radio.setChecked(false)
-      radio.setInvalid()
     input.setChecked(true)
-    input.setInvalid()
     return ClickResult(repaint: buffer.maybeReshape())
   of itReset:
     if input.form != nil:

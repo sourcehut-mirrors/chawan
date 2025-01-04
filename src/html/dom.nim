@@ -1263,24 +1263,20 @@ iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
     if control of HTMLInputElement:
       yield HTMLInputElement(control)
 
-iterator radiogroup(form: HTMLFormElement): HTMLInputElement {.inline.} =
-  for input in form.inputs:
-    if input.inputType == itRadio:
-      yield input
-
-iterator radiogroup(document: Document): HTMLInputElement {.inline.} =
-  for input in document.elements(TAG_INPUT):
-    let input = HTMLInputElement(input)
-    if input.form == nil and input.inputType == itRadio:
-      yield input
-
 iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
-  if input.form != nil:
-    for input in input.form.radiogroup:
-      yield input
-  else:
-    for input in input.document.radiogroup:
-      yield input
+  let empty = input.document.toAtom("")
+  let name = input.name
+  if name != CAtomNull and name != empty:
+    if input.form != nil:
+      for input in input.form.inputs:
+        if input.name == name and input.inputType == itRadio:
+          yield input
+    else:
+      for input in input.document.elements(TAG_INPUT):
+        let input = HTMLInputElement(input)
+        if input.form == nil and input.name == name and
+            input.inputType == itRadio:
+          yield input
 
 iterator textNodes*(node: Node): Text {.inline.} =
   for node in node.childList:
@@ -2612,8 +2608,14 @@ func checked*(input: HTMLInputElement): bool {.inline.} =
   return input.internalChecked
 
 proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
+  if input.inputType == itRadio:
+    for radio in input.radiogroup:
+      radio.invalidDeps.incl(dtChecked)
+      radio.internalChecked = false
+      radio.setInvalid()
   input.invalidDeps.incl(dtChecked)
   input.internalChecked = b
+  input.setInvalid()
 
 func inputString*(input: HTMLInputElement): string =
   case input.inputType
@@ -4958,6 +4960,7 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
     elif x of HTMLInputElement:
       let x = HTMLInputElement(x)
       let element = HTMLInputElement(element)
+      x.inputType = element.inputType
       x.value = element.value
       #TODO dirty value flag
       x.setChecked(element.checked)
