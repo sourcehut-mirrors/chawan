@@ -69,6 +69,12 @@ macro makeStaticAtom =
       satMousewheel = "mousewheel"
       satMultiple = "multiple"
       satName = "name"
+      satNamespaceHTML = "http://www.w3.org/1999/xhtml",
+      satNamespaceMathML = "http://www.w3.org/1998/Math/MathML",
+      satNamespaceSVG = "http://www.w3.org/2000/svg",
+      satNamespaceXLink = "http://www.w3.org/1999/xlink",
+      satNamespaceXML = "http://www.w3.org/XML/1998/namespace",
+      satNamespaceXMLNS = "http://www.w3.org/2000/xmlns/",
       satNomodule = "nomodule"
       satNovalidate = "novalidate"
       satOnclick = "onclick"
@@ -104,12 +110,16 @@ macro makeStaticAtom =
       satTouchstart = "touchstart"
       satType = "type"
       satUEvent = "Event"
+      satUempty = ""
       satUsemap = "usemap"
       satUsername = "username"
       satValign = "valign"
       satValue = "value"
       satWheel = "wheel"
       satWidth = "width"
+      satXlink = "xlink"
+      satXml = "xml"
+      satXmlns = "xmlns"
   let decl = quote do:
     type StaticAtom* {.inject.} = enum
       atUnknown = ""
@@ -149,17 +159,21 @@ type
     strMap: array[CAtomFactoryStrMapLength, seq[CAtom]]
     atomMap: seq[string]
     lowerMap: seq[CAtom]
+    namespaceMap: array[Namespace, CAtom]
+    prefixMap: array[NamespacePrefix, CAtom]
 
   #TODO could be a ptr probably
   CAtomFactory* = ref CAtomFactoryObj
 
+# This maps to JS null.
 const CAtomNull* = CAtom(0)
 
 # Mandatory Atom functions
 func `==`*(a, b: CAtom): bool {.borrow.}
 func hash*(atom: CAtom): Hash {.borrow.}
 
-func `$`*(a: CAtom): string {.borrow.}
+when defined(debug):
+  func `$`*(a: CAtom): string {.borrow.}
 
 func toAtom(factory: var CAtomFactoryObj; s: string;
     isInit: static bool = false): CAtom =
@@ -195,6 +209,18 @@ const factoryInit = (func(): CAtomFactoryInit =
   # fill slots of newly added lower mappings
   while init.obj.lowerMap.len < init.obj.atomMap.len:
     init.obj.lowerMap.add(CAtom(init.obj.lowerMap.len))
+  let olen = init.obj.atomMap.len
+  for it in Namespace:
+    if it == NO_NAMESPACE:
+      init.obj.namespaceMap[it] = CAtomNull
+    else:
+      init.obj.namespaceMap[it] = init.obj.toAtom($it)
+  for it in NamespacePrefix:
+    if it == NO_PREFIX:
+      init.obj.prefixMap[it] = CAtomNull
+    else:
+      init.obj.prefixMap[it] = init.obj.toAtom($it)
+  assert init.obj.atomMap.len == olen
   return init
 )()
 
@@ -237,7 +263,7 @@ func toStr*(factory: CAtomFactory; atom: CAtom): string =
 func toStr*(factory: CAtomFactory; sa: StaticAtom): string =
   return factory.toStr(factory.toAtom(sa))
 
-func toTagType*(factory: CAtomFactory; atom: CAtom): TagType =
+func toTagType*(atom: CAtom): TagType =
   let i = int(atom)
   if i <= int(TagType.high):
     return TagType(i)
@@ -251,6 +277,23 @@ func toStaticAtom*(factory: CAtomFactory; atom: CAtom): StaticAtom =
 
 func toStaticAtom*(factory: CAtomFactory; s: string): StaticAtom =
   return factory.toStaticAtom(factory.toAtom(s))
+
+func toNamespace*(factory: CAtomFactory; atom: CAtom): Namespace =
+  case factory.toStaticAtom(atom)
+  of satUempty: return NO_NAMESPACE
+  of satNamespaceHTML: return Namespace.HTML
+  of satNamespaceMathML: return Namespace.MATHML
+  of satNamespaceSVG: return Namespace.SVG
+  of satNamespaceXLink: return Namespace.XLINK
+  of satNamespaceXML: return Namespace.XML
+  of satNamespaceXMLNS: return Namespace.XMLNS
+  else: return NAMESPACE_UNKNOWN
+
+func toAtom*(factory: CAtomFactory; namespace: Namespace): CAtom =
+  return factory.namespaceMap[namespace]
+
+func toAtom*(factory: CAtomFactory; prefix: NamespacePrefix): CAtom =
+  return factory.prefixMap[prefix]
 
 # Forward declaration hack
 var getFactoryImpl*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect,
@@ -293,6 +336,8 @@ proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): Opt[void] =
   return ok()
 
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
+  if atom == CAtomNull:
+    return JS_NULL
   return ctx.toJS(ctx.getFactoryImpl().toStr(atom))
 
 proc toJS*(ctx: JSContext; atom: StaticAtom): JSValue =

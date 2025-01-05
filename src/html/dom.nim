@@ -248,8 +248,8 @@ type
     value*: string
 
   Element* = ref object of Node
-    namespace*: Namespace
-    namespacePrefix*: NamespacePrefix
+    namespaceURI {.jsget.}: CAtom
+    prefix {.jsget.}: CAtom
     internalHover: bool
     invalid*: bool
     # The owner StyledNode is marked as invalid when one of these no longer
@@ -1093,9 +1093,6 @@ proc toAtom*(document: Document; at: StaticAtom): CAtom =
 proc toStr(document: Document; atom: CAtom): string =
   return document.factory.toStr(atom)
 
-proc toTagType*(document: Document; atom: CAtom): TagType =
-  return document.factory.toTagType(atom)
-
 proc toStaticAtom(document: Document; atom: CAtom): StaticAtom =
   return document.factory.toStaticAtom(atom)
 
@@ -1103,17 +1100,16 @@ proc toAtom*(document: Document; tagType: TagType): CAtom =
   return document.factory.toAtom(tagType)
 
 proc toAtom(document: Document; namespace: Namespace): CAtom =
-  #TODO optimize
-  assert namespace != NO_NAMESPACE
-  return document.toAtom($namespace)
+  return document.factory.toAtom(namespace)
 
 proc toAtom(document: Document; prefix: NamespacePrefix): CAtom =
-  #TODO optimize
-  assert prefix != NO_PREFIX
-  return document.toAtom($prefix)
+  return document.factory.toAtom(prefix)
+
+func namespace*(element: Element): Namespace =
+  return element.document.factory.toNamespace(element.namespaceURI)
 
 func tagTypeNoNS(element: Element): TagType =
-  return element.document.toTagType(element.localName)
+  return element.localName.toTagType()
 
 func tagType*(element: Element; namespace = Namespace.HTML): TagType =
   if element.namespace != namespace:
@@ -1485,6 +1481,12 @@ proc setCookie(ctx: JSContext; document: Document; cookie: string)
   document.internalCookie = cookie
 
 # DOMTokenList
+proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList =
+  return DOMTokenList(
+    element: element,
+    localName: element.document.toAtom(name)
+  )
+
 iterator items*(tokenList: DOMTokenList): CAtom {.inline.} =
   for tok in tokenList.toks:
     yield tok
@@ -1610,19 +1612,18 @@ proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
     return ctx.item(this, u).uninitIfNull()
   return JS_UNINITIALIZED
 
+proc validateName(name: string): DOMResult[void] =
+  if not name.matchNameProduction():
+    return errDOMException("Invalid character in name", "InvalidCharacterError")
+  ok()
+
+proc validateQName(qname: string): DOMResult[void] =
+  if not qname.matchQNameProduction():
+    return errDOMException("Invalid character in qualified name",
+      "InvalidCharacterError")
+  ok()
+
 # DOMStringMap
-func validateAttributeName(name: string): Err[DOMException] =
-  if name.matchNameProduction():
-    return ok()
-  return errDOMException("Invalid character in attribute name",
-    "InvalidCharacterError")
-
-func validateAttributeQName(name: string): Err[DOMException] =
-  if name.matchQNameProduction():
-    return ok()
-  return errDOMException("Invalid character in attribute name",
-    "InvalidCharacterError")
-
 proc delete(map: var DOMStringMap; name: string): bool {.jsfunc.} =
   let name = map.target.document.toAtom("data-" & name.camelToKebabCase())
   let i = map.target.findAttr(name)
@@ -1648,7 +1649,7 @@ proc setter(map: var DOMStringMap; name, value: string): Err[DOMException]
     return errDOMException("Lower case after hyphen is not allowed in dataset",
       "InvalidCharacterError")
   let name = "data-" & name.camelToKebabCase()
-  ?name.validateAttributeName()
+  ?name.validateName()
   let aname = map.target.document.toAtom(name)
   map.target.attr(aname, value)
   return ok()
@@ -3405,16 +3406,16 @@ func newComment(ctx: JSContext; data: string = ""): Comment {.jsctor.} =
   return window.document.newComment(data)
 
 #TODO custom elements
-proc newElement*(document: Document; localName: CAtom;
-    namespace = Namespace.HTML; prefix = NO_PREFIX): Element =
-  let tagType = document.toTagType(localName)
+proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
+    Element =
+  let tagType = localName.toTagType()
+  let sns = document.toStaticAtom(namespaceURI)
   let element: Element = case tagType
   of TAG_INPUT:
     HTMLInputElement()
   of TAG_A:
-    let anchor = HTMLAnchorElement()
-    let localName = document.toAtom(satRel)
-    anchor.relList = DOMTokenList(element: anchor, localName: localName)
+    let anchor = HTMLAnchorElement(internalDocument: document)
+    anchor.relList = anchor.newDOMTokenList(satRel)
     anchor
   of TAG_SELECT:
     HTMLSelectElement()
@@ -3439,14 +3440,12 @@ proc newElement*(document: Document; localName: CAtom;
   of TAG_STYLE:
     HTMLStyleElement()
   of TAG_LINK:
-    let link = HTMLLinkElement()
-    let localName = document.toAtom(satRel)
-    link.relList = DOMTokenList(element: link, localName: localName)
+    let link = HTMLLinkElement(internalDocument: document)
+    link.relList = link.newDOMTokenList(satRel)
     link
   of TAG_FORM:
-    let form = HTMLFormElement()
-    let localName = document.toAtom(satRel)
-    form.relList = DOMTokenList(element: form, localName: localName)
+    let form = HTMLFormElement(internalDocument: document)
+    form.relList = form.newDOMTokenList(satRel)
     form
   of TAG_TEMPLATE:
     let templ = HTMLTemplateElement(content: newDocumentFragment(document))
@@ -3482,9 +3481,8 @@ proc newElement*(document: Document; localName: CAtom;
   of TAG_AUDIO:
     HTMLAudioElement()
   of TAG_AREA:
-    let area = HTMLAreaElement()
-    let localName = document.toAtom(satRel)
-    area.relList = DOMTokenList(element: area, localName: localName)
+    let area = HTMLAreaElement(internalDocument: document)
+    area.relList = area.newDOMTokenList(satRel)
     area
   of TAG_TABLE:
     HTMLTableElement()
@@ -3494,7 +3492,7 @@ proc newElement*(document: Document; localName: CAtom;
     HTMLTableRowElement()
   of TAG_TBODY, TAG_THEAD, TAG_TFOOT:
     HTMLTableSectionElement()
-  elif namespace == Namespace.SVG:
+  elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
     else:
@@ -3502,17 +3500,21 @@ proc newElement*(document: Document; localName: CAtom;
   else:
     HTMLElement()
   element.localName = localName
-  element.namespace = namespace
-  element.namespacePrefix = prefix
+  element.namespaceURI = namespaceURI
+  element.prefix = prefix
   element.internalDocument = document
-  let localName = document.toAtom(satClassList)
-  element.classList = DOMTokenList(element: element, localName: localName)
+  element.classList = element.newDOMTokenList(satClassList)
   element.index = -1
   element.elIndex = -1
-  if namespace == Namespace.HTML:
+  if sns == satNamespaceHTML:
     let element = HTMLElement(element)
     element.dataset = DOMStringMap(target: element)
   return element
+
+proc newElement*(document: Document; localName: CAtom;
+    namespace = Namespace.HTML; prefix = NO_PREFIX): Element =
+  return document.newElement(localName, document.toAtom(namespace),
+    document.toAtom(prefix))
 
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
   let localName = document.toAtom(tagType)
@@ -4215,7 +4217,7 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32) =
 
 proc setAttribute(element: Element; qualifiedName, value: string):
     Err[DOMException] {.jsfunc.} =
-  ?validateAttributeName(qualifiedName)
+  ?qualifiedName.validateName()
   let qualifiedName = if element.namespace == Namespace.HTML and
       not element.document.isxml:
     element.document.toAtomLower(qualifiedName)
@@ -4226,7 +4228,7 @@ proc setAttribute(element: Element; qualifiedName, value: string):
 
 proc setAttributeNS(element: Element; namespace, qualifiedName,
     value: string): Err[DOMException] {.jsfunc.} =
-  ?validateAttributeQName(qualifiedName)
+  ?qualifiedName.validateQName()
   let ps = qualifiedName.until(':')
   let prefix = if ps.len < qualifiedName.len: ps else: ""
   let localName = element.document.toAtom(qualifiedName.substr(prefix.len))
@@ -4265,7 +4267,7 @@ proc removeAttributeNS(element: Element; namespace, localName: string)
 
 proc toggleAttribute(element: Element; qualifiedName: string;
     force = none(bool)): DOMResult[bool] {.jsfunc.} =
-  ?validateAttributeName(qualifiedName)
+  ?qualifiedName.validateName()
   let qualifiedName = element.normalizeAttrQName(qualifiedName)
   if not element.attrb(qualifiedName):
     if force.get(true):
@@ -5113,11 +5115,9 @@ proc prepare*(element: HTMLScriptElement) =
     element.execute()
 
 #TODO options/custom elements
-proc createElement(document: Document; localName: string):
-    DOMResult[Element] {.jsfunc.} =
-  if not localName.matchNameProduction():
-    return errDOMException("Invalid character in element name",
-      "InvalidCharacterError")
+proc createElement(document: Document; localName: string): DOMResult[Element]
+    {.jsfunc.} =
+  ?localName.validateName()
   let localName = if not document.isxml:
     document.toAtomLower(localName)
   else:
@@ -5129,16 +5129,45 @@ proc createElement(document: Document; localName: string):
     NO_NAMESPACE
   return ok(document.newElement(localName, namespace))
 
-#TODO createElementNS
+proc validateAndExtract(ctx: JSContext; document: Document; namespace: JSValue;
+    qname: string; namespaceOut, prefixOut, localNameOut: var CAtom):
+    DOMResult[void] =
+  ?qname.validateQName()
+  if JS_IsNull(namespace):
+    namespaceOut = CAtomNull
+  else:
+    ?ctx.fromJS(namespace, namespaceOut)
+  var prefix = ""
+  var localName = qname.until(':')
+  if localName.len < qname.len:
+    prefix = move(localName)
+    localName = qname.substr(prefix.len + 1)
+  if namespaceOut == CAtomNull and prefix != "":
+    return errDOMException("Got namespace prefix, but no namespace",
+      "NamespaceError")
+  let sns = document.toStaticAtom(namespaceOut)
+  if prefix == "xml" and sns != satNamespaceXML:
+    return errDOMException("Expected XML namespace", "NamespaceError")
+  if (qname == "xmlns" or prefix == "xmlns") != (sns == satNamespaceXMLNS):
+    return errDOMException("Expected XMLNS namespace", "NamespaceError")
+  prefixOut = if prefix == "": CAtomNull else: document.toAtom(prefix)
+  localNameOut = document.toAtom(localName)
+  ok()
+
+proc createElementNS(ctx: JSContext; document: Document; namespace0: JSValue;
+    qname: string): DOMResult[Element] {.jsfunc.} =
+  var namespace, prefix, localName: CAtom
+  ?ctx.validateAndExtract(document, namespace0, qname, namespace, prefix,
+    localName)
+  #TODO custom elements (is)
+  return ok(document.newElement(localName, namespace, prefix))
 
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
 proc createDocumentType(implementation: var DOMImplementation; qualifiedName,
     publicId, systemId: string): DOMResult[DocumentType] {.jsfunc.} =
-  if not qualifiedName.matchQNameProduction():
-    return errDOMException("Invalid character in document type name",
-      "InvalidCharacterError")
+  ?qualifiedName.validateQName()
   let document = implementation.document
   return ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
@@ -5196,11 +5225,11 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
   let copy = if node of Element:
     #TODO is value
     let element = Element(node)
-    let x = document.newElement(element.localName, element.namespace,
-      element.namespacePrefix)
+    let x = document.newElement(element.localName, element.namespaceURI,
+      element.prefix)
     x.id = element.id
     x.name = element.name
-    x.classList = DOMTokenList(element: x, localName: element.localName)
+    x.classList = x.newDOMTokenList(satClassList)
     x.attrs = element.attrs
     #TODO namespaced attrs?
     # Cloning steps
@@ -5297,10 +5326,8 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
       return false
     let node = Element(node)
     let other = Element(other)
-    if node.namespace != other.namespace or
-        node.namespacePrefix != other.namespacePrefix or
-        node.localName != other.localName or
-        node.attrs.len != other.attrs.len:
+    if node.namespace != other.namespace or node.prefix != other.prefix or
+        node.localName != other.localName or node.attrs.len != other.attrs.len:
       return false
     for i, attr in node.attrs.mypairs:
       if not attr.equals(other.attrs[i]):

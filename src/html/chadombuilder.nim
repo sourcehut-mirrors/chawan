@@ -53,7 +53,7 @@ proc getDocumentImpl(builder: ChaDOMBuilder): Node =
   return builder.document
 
 proc atomToTagTypeImpl(builder: ChaDOMBuilder; atom: CAtom): TagType =
-  return builder.factory.toTagType(atom)
+  return atom.toTagType()
 
 proc tagTypeToAtomImpl(builder: ChaDOMBuilder; tagType: TagType): CAtom =
   return builder.factory.toAtom(tagType)
