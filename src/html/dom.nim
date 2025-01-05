@@ -153,7 +153,7 @@ type
   HTMLAllCollection = ref object of Collection
 
   DOMTokenList = ref object
-    toks*: seq[CAtom]
+    toks: seq[CAtom]
     element: Element
     localName: CAtom
 
@@ -1485,12 +1485,19 @@ proc setCookie(ctx: JSContext; document: Document; cookie: string)
   document.internalCookie = cookie
 
 # DOMTokenList
-func length(tokenList: DOMTokenList): uint32 {.jsfget.} =
-  return uint32(tokenList.toks.len)
+iterator items*(tokenList: DOMTokenList): CAtom {.inline.} =
+  for tok in tokenList.toks:
+    yield tok
 
-proc item(ctx: JSContext; tokenList: DOMTokenList; i: int): JSValue {.jsfunc.} =
-  if i < tokenList.toks.len:
-    return ctx.toJS(tokenList.toks[i])
+func length(tokenList: DOMTokenList): int {.jsfget.} =
+  return tokenList.toks.len
+
+proc item(ctx: JSContext; tokenList: DOMTokenList; u: uint32): JSValue
+    {.jsfunc.} =
+  if int64(u) < int64(int.high):
+    let i = int(u)
+    if i < tokenList.toks.len:
+      return ctx.toJS(tokenList.toks[i])
   return JS_NULL
 
 func contains*(tokenList: DOMTokenList; a: CAtom): bool =
@@ -1600,7 +1607,7 @@ proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
-    return ctx.item(this, int(u)).uninitIfNull()
+    return ctx.item(this, u).uninitIfNull()
   return JS_UNINITIALIZED
 
 # DOMStringMap

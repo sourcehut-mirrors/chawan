@@ -187,7 +187,7 @@ func matches(element: Element; sel: Selector; depends: var DependencyInfo):
     return element.localName == sel.tag
   of stClass:
     let factory = element.document.factory
-    for it in element.classList.toks:
+    for it in element.classList:
       if sel.class == factory.toLowerAscii(it):
         return mtTrue
     return mtFalse

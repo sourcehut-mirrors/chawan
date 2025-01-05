@@ -94,7 +94,7 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
   if element.id != CAtomNull:
     sheet.idTable.withValue(sheet.factory.toLowerAscii(element.id), v):
       rules.add(v[])
-  for class in element.classList.toks:
+  for class in element.classList:
     sheet.classTable.withValue(sheet.factory.toLowerAscii(class), v):
       rules.add(v[])
   for attr in element.attrs:
