@@ -502,6 +502,7 @@ jsDestructor(CSSStyleDeclaration)
 # Forward declarations
 func attr*(element: Element; s: StaticAtom): string
 func attrb*(element: Element; s: CAtom): bool
+func serializeFragment(res: var string; node: Node)
 func value*(option: HTMLOptionElement): string
 proc append*(parent, node: Node)
 proc attr*(element: Element; name: CAtom; value: string)
@@ -955,7 +956,7 @@ func attrType0(s: static string): StaticAtom {.compileTime.} =
   return strictParseEnum[StaticAtom](s).get
 
 template toset(ts: openArray[TagType]): set[TagType] =
-  var tags: system.set[TagType]
+  var tags: system.set[TagType] = {}
   for tag in ts:
     tags.incl(tag)
   tags
@@ -1134,26 +1135,27 @@ func findAttrNS(element: Element; namespace, qualifiedName: CAtom): int =
       return i
   return -1
 
-func escapeText(s: string; attribute_mode = false): string =
-  var nbsp_mode = false
-  var nbsp_prev: char
+func escapeText(s: string; attributeMode = false): string =
+  result = newStringOfCap(s.len)
+  var nbspMode = false
+  var nbspPrev = '\0'
   for c in s:
-    if nbsp_mode:
-      if c == char(0xA0):
+    if nbspMode:
+      if c == '\xA0':
         result &= "&nbsp;"
       else:
-        result &= nbsp_prev & c
-      nbsp_mode = false
+        result &= nbspPrev & c
+      nbspMode = false
     elif c == '&':
       result &= "&amp;"
-    elif c == char(0xC2):
-      nbsp_mode = true
-      nbsp_prev = c
-    elif attribute_mode and c == '"':
+    elif c == '\xC2':
+      nbspMode = true
+      nbspPrev = c
+    elif attributeMode and c == '"':
       result &= "&quot;"
-    elif not attribute_mode and c == '<':
+    elif not attributeMode and c == '<':
       result &= "&lt;"
-    elif not attribute_mode and c == '>':
+    elif not attributeMode and c == '>':
       result &= "&gt;"
     else:
       result &= c
@@ -2124,23 +2126,6 @@ func isSubmitButton*(element: Element): bool =
     return element.inputType in {itSubmit, itImage}
   return false
 
-func canSubmitImplicitly*(form: HTMLFormElement): bool =
-  const BlocksImplicitSubmission = {
-    itText, itSearch, itURL, itTel, itEmail, itPassword, itDate, itMonth,
-    itWeek, itTime, itDatetimeLocal, itNumber
-  }
-  var found = false
-  for control in form.controls:
-    if control of HTMLInputElement:
-      let input = HTMLInputElement(control)
-      if input.inputType in BlocksImplicitSubmission:
-        if found:
-          return false
-        found = true
-    elif control.isSubmitButton():
-      return false
-  return true
-
 # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
 proc write(ctx: JSContext; document: Document; args: varargs[JSValue]):
     Err[DOMException] {.jsfunc.} =
@@ -2177,12 +2162,6 @@ func head*(document: Document): HTMLElement {.jsfget.} =
 
 func body*(document: Document): HTMLElement {.jsfget.} =
   return document.findFirst(TAG_BODY)
-
-func select*(option: HTMLOptionElement): HTMLSelectElement =
-  for anc in option.ancestors:
-    if anc of HTMLSelectElement:
-      return HTMLSelectElement(anc)
-  return nil
 
 func countChildren(node: Node; nodeType: type): int =
   result = 0
@@ -2539,8 +2518,6 @@ func serializesAsVoid(element: Element): bool =
   const Extra = {TAG_BASEFONT, TAG_BGSOUND, TAG_FRAME, TAG_KEYGEN, TAG_PARAM}
   return element.tagType in VoidElements + Extra
 
-func serializeFragment(res: var string; node: Node)
-
 func serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
   if child of Element:
     let element = Element(child)
@@ -2597,7 +2574,7 @@ func serializeFragment*(node: Node): string =
   result = ""
   result.serializeFragment(node)
 
-# Element attribute reflection (getters)
+# Element
 func innerHTML(element: Element): string {.jsfget.} =
   #TODO xml
   return element.serializeFragment()
@@ -2607,6 +2584,7 @@ func outerHTML(element: Element): string {.jsfget.} =
   result = ""
   result.serializeFragmentInner(element, TAG_UNKNOWN)
 
+# HTMLElement
 func crossOrigin0(element: HTMLElement): CORSAttribute =
   if not element.attrb(satCrossorigin):
     return caNoCors
@@ -2643,59 +2621,6 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
       else: discard
     document.cachedSheetsInvalid = false
   return document.cachedSheets
-
-func checked*(input: HTMLInputElement): bool {.inline.} =
-  return input.internalChecked
-
-proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
-  if input.inputType == itRadio:
-    for radio in input.radiogroup:
-      radio.invalidDeps.incl(dtChecked)
-      radio.internalChecked = false
-      radio.setInvalid()
-  input.invalidDeps.incl(dtChecked)
-  input.internalChecked = b
-  input.setInvalid()
-
-func inputString*(input: HTMLInputElement): string =
-  case input.inputType
-  of itCheckbox, itRadio:
-    if input.checked:
-      "*"
-    else:
-      " "
-  of itSearch, itText, itEmail, itURL, itTel:
-    input.value.padToWidth(int(input.attrulgz(satSize).get(20)))
-  of itPassword:
-    '*'.repeat(input.value.len).padToWidth(int(input.attrulgz(satSize).get(20)))
-  of itReset:
-    if input.attrb(satValue):
-      input.value
-    else:
-      "RESET"
-  of itSubmit, itButton:
-    if input.attrb(satValue):
-      input.value
-    else:
-      "SUBMIT"
-  of itFile:
-    let s = if input.file != nil: input.file.name else: ""
-    s.padToWidth(int(input.attrulgz(satSize).get(20)))
-  else: input.value
-
-func textAreaString*(textarea: HTMLTextAreaElement): string =
-  result = ""
-  let split = textarea.value.split('\n')
-  let rows = int(textarea.attrul(satRows).get(1))
-  for i in 0 ..< rows:
-    let cols = int(textarea.attrul(satCols).get(20))
-    if cols > 2:
-      if i < split.len:
-        result &= '[' & split[i].padToWidth(cols - 2) & "]\n"
-      else:
-        result &= '[' & ' '.repeat(cols - 2) & "]\n"
-    else:
-      result &= "[]\n"
 
 func isButton*(element: Element): bool =
   if element of HTMLButtonElement:
@@ -2904,14 +2829,6 @@ proc hyperlinkGetProp(ctx: JSContext; element: HTMLElement; a: JSAtom;
       return JS_TRUE # dummy value
   return JS_UNINITIALIZED
 
-# <base>
-proc href(base: HTMLBaseElement): string {.jsfget.} =
-  #TODO with fallback base url
-  let url = parseURL(base.attr(satHref))
-  if url.isSome:
-    return $url.get
-  return ""
-
 # <a>
 proc getter(ctx: JSContext; this: HTMLAnchorElement; a: JSAtom;
     desc: ptr JSPropertyDescriptor): JSValue {.jsgetownprop.} =
@@ -2940,32 +2857,39 @@ proc toString(area: HTMLAreaElement): string {.jsfunc.} =
 proc setRelList(area: HTMLAreaElement; s: string) {.jsfset: "relList".} =
   area.attr(satRel, s)
 
-# <label>
-func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
-  let f = label.attr(satFor)
-  if f != "":
-    let elem = label.document.getElementById(f)
-    #TODO the supported check shouldn't be needed, just labelable
-    if elem of FormAssociatedElement and elem.tagType in LabelableElements:
-      return FormAssociatedElement(elem)
-    return nil
-  for elem in label.elements(LabelableElements):
-    if elem of FormAssociatedElement: #TODO remove this
-      return FormAssociatedElement(elem)
-    return nil
-  return nil
+# <base>
+proc href(base: HTMLBaseElement): string {.jsfget.} =
+  #TODO with fallback base url
+  let url = parseURL(base.attr(satHref))
+  if url.isSome:
+    return $url.get
+  return ""
 
-func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
-  let control = label.control
-  if control != nil:
-    return control.form
-  return nil
+# <button>
+func jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
+  return this.form
 
-# <link>
-proc setRelList(link: HTMLLinkElement; s: string) {.jsfset: "relList".} =
-  link.attr(satRel, s)
+proc setType(this: HTMLButtonElement; s: string) {.jsfset: "type".} =
+  this.attr(satType, s)
 
 # <form>
+func canSubmitImplicitly*(form: HTMLFormElement): bool =
+  const BlocksImplicitSubmission = {
+    itText, itSearch, itURL, itTel, itEmail, itPassword, itDate, itMonth,
+    itWeek, itTime, itDatetimeLocal, itNumber
+  }
+  var found = false
+  for control in form.controls:
+    if control of HTMLInputElement:
+      let input = HTMLInputElement(control)
+      if input.inputType in BlocksImplicitSubmission:
+        if found:
+          return false
+        found = true
+    elif control.isSubmitButton():
+      return false
+  return true
+
 proc setRelList(form: HTMLFormElement; s: string) {.jsfset: "relList".} =
   form.attr(satRel, s)
 
@@ -2998,6 +2922,101 @@ proc setValue(this: HTMLInputElement; value: string) {.jsfset: "value".} =
 
 proc setType(this: HTMLInputElement; s: string) {.jsfset: "type".} =
   this.attr(satType, s)
+
+func checked*(input: HTMLInputElement): bool {.inline.} =
+  return input.internalChecked
+
+proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
+  if input.inputType == itRadio:
+    for radio in input.radiogroup:
+      radio.invalidDeps.incl(dtChecked)
+      radio.internalChecked = false
+      radio.setInvalid()
+  input.invalidDeps.incl(dtChecked)
+  input.internalChecked = b
+  input.setInvalid()
+
+func inputString*(input: HTMLInputElement): string =
+  case input.inputType
+  of itCheckbox, itRadio:
+    if input.checked:
+      "*"
+    else:
+      " "
+  of itSearch, itText, itEmail, itURL, itTel:
+    input.value.padToWidth(int(input.attrulgz(satSize).get(20)))
+  of itPassword:
+    '*'.repeat(input.value.len).padToWidth(int(input.attrulgz(satSize).get(20)))
+  of itReset:
+    if input.attrb(satValue):
+      input.value
+    else:
+      "RESET"
+  of itSubmit, itButton:
+    if input.attrb(satValue):
+      input.value
+    else:
+      "SUBMIT"
+  of itFile:
+    let s = if input.file != nil: input.file.name else: ""
+    s.padToWidth(int(input.attrulgz(satSize).get(20)))
+  else: input.value
+
+# <label>
+func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
+  let f = label.attr(satFor)
+  if f != "":
+    let elem = label.document.getElementById(f)
+    #TODO the supported check shouldn't be needed, just labelable
+    if elem of FormAssociatedElement and elem.tagType in LabelableElements:
+      return FormAssociatedElement(elem)
+    return nil
+  for elem in label.elements(LabelableElements):
+    if elem of FormAssociatedElement: #TODO remove this
+      return FormAssociatedElement(elem)
+    return nil
+  return nil
+
+func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
+  let control = label.control
+  if control != nil:
+    return control.form
+  return nil
+
+# <link>
+proc setRelList(link: HTMLLinkElement; s: string) {.jsfset: "relList".} =
+  link.attr(satRel, s)
+
+# <option>
+# https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
+func isDisabled*(option: HTMLOptionElement): bool =
+  if option.parentElement of HTMLOptGroupElement and
+      option.parentElement.attrb(satDisabled):
+    return true
+  return option.attrb(satDisabled)
+
+func text(option: HTMLOptionElement): string {.jsfget.} =
+  var s = ""
+  for child in option.descendants:
+    let parent = child.parentElement
+    if child of Text and (parent.tagTypeNoNS != TAG_SCRIPT or
+        parent.namespace notin {Namespace.HTML, Namespace.SVG}):
+      s &= Text(child).data
+  return s.stripAndCollapse()
+
+func value*(option: HTMLOptionElement): string {.jsfget.} =
+  if option.attrb(satValue):
+    return option.attr(satValue)
+  return option.text
+
+proc setValue(option: HTMLOptionElement; s: string) {.jsfset: "value".} =
+  option.attr(satValue, s)
+
+func select*(option: HTMLOptionElement): HTMLSelectElement =
+  for anc in option.ancestors:
+    if anc of HTMLSelectElement:
+      return HTMLSelectElement(anc)
+  return nil
 
 # <select>
 func jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
@@ -3109,53 +3128,6 @@ proc showPicker(this: HTMLSelectElement): Err[DOMException] {.jsfunc.} =
   return errDOMException("not allowed", "NotAllowedError")
 
 #TODO add, remove
-
-# <option>
-# https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
-func isDisabled*(option: HTMLOptionElement): bool =
-  if option.parentElement of HTMLOptGroupElement and
-      option.parentElement.attrb(satDisabled):
-    return true
-  return option.attrb(satDisabled)
-
-func text(option: HTMLOptionElement): string {.jsfget.} =
-  var s = ""
-  for child in option.descendants:
-    let parent = child.parentElement
-    if child of Text and (parent.tagTypeNoNS != TAG_SCRIPT or
-        parent.namespace notin {Namespace.HTML, Namespace.SVG}):
-      s &= Text(child).data
-  return s.stripAndCollapse()
-
-func value*(option: HTMLOptionElement): string {.jsfget.} =
-  if option.attrb(satValue):
-    return option.attr(satValue)
-  return option.text
-
-proc setValue(option: HTMLOptionElement; s: string) {.jsfset: "value".} =
-  option.attr(satValue, s)
-
-# <button>
-func jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
-  return this.form
-
-proc setType(this: HTMLButtonElement; s: string) {.jsfset: "type".} =
-  this.attr(satType, s)
-
-# <textarea>
-func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
-  return this.form
-
-# <video>
-func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
-  let src = this.attr(satSrc)
-  if src != "":
-    return (src, "")
-  for el in this.elements(TAG_SOURCE):
-    let src = el.attr(satSrc)
-    if src != "":
-      return (src, el.attr(satType))
-  return ("", "")
 
 # <table>
 func caption(this: HTMLTableElement): Element {.jsfget.} =
@@ -3340,6 +3312,35 @@ func sectionRowIndex(this: HTMLTableRowElement): int {.jsfget.} =
   if parent of HTMLTableSectionElement:
     return HTMLTableSectionElement(parent).rows.findNode(this)
   return -1
+
+# <textarea>
+func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
+  return this.form
+
+func textAreaString*(textarea: HTMLTextAreaElement): string =
+  result = ""
+  let split = textarea.value.split('\n')
+  let rows = int(textarea.attrul(satRows).get(1))
+  for i in 0 ..< rows:
+    let cols = int(textarea.attrul(satCols).get(20))
+    if cols > 2:
+      if i < split.len:
+        result &= '[' & split[i].padToWidth(cols - 2) & "]\n"
+      else:
+        result &= '[' & ' '.repeat(cols - 2) & "]\n"
+    else:
+      result &= "[]\n"
+
+# <video>
+func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
+  let src = this.attr(satSrc)
+  if src != "":
+    return (src, "")
+  for el in this.elements(TAG_SOURCE):
+    let src = el.attr(satSrc)
+    if src != "":
+      return (src, el.attr(satType))
+  return ("", "")
 
 func newText*(document: Document; data: string): Text =
   return Text(
