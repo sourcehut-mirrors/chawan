@@ -18,7 +18,7 @@ type
   # e.g. in
   # <div style="position: relative; display: inline-block">
   #   <div>
-  #     <div style="position: absolute; width: 100%; color: red">
+  #     <div style="position: absolute; width: 100%; background: red">
   #     blah
   #     </div>
   #   <div>
@@ -30,6 +30,10 @@ type
   # So we must delay this layout until before the outermost box is
   # popped off the stack, and we do this by queuing up absolute boxes in
   # the initial pass.
+  #
+  #TODO: welp, turns out this is also true without position: absolute,
+  # so I think we could skip this entirely...  especially now that
+  # we can cache sub-layouts.
   QueuedAbsolute = object
     offset: Offset
     child: BlockBox
@@ -125,7 +129,7 @@ func px(l: CSSLength; p: LUnit): LUnit {.inline.} =
 func px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
   if l.u != clPerc:
     return l.num.toLUnit()
-  if p.t in {scStretch, scFitContent}:
+  if p.t == scStretch:
     return (p.u.toFloat64() * l.num / 100).toLUnit()
   return 0
 
@@ -1089,13 +1093,15 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
       let px = sizes.space.w.u
       sizes.bounds.mi[dim].start = max(sizes.bounds.mi[dim].start, px)
       sizes.bounds.mi[dim].send = min(sizes.bounds.mi[dim].send, px)
-  elif sizes.space.w.isDefinite():
+  elif parentWidth.t == scStretch:
     let underflow = parentWidth.u - sizes.margin[dim].sum() -
       sizes.padding[dim].sum()
     if underflow >= 0:
-      sizes.space.w = SizeConstraint(t: sizes.space.w.t, u: underflow)
+      sizes.space.w = stretch(underflow)
     else:
       sizes.margin[dtHorizontal].send += underflow
+  elif parentWidth.t == scFitContent:
+    sizes.space.w = maxContent()
   if sizes.space.w.isDefinite() and sizes.maxWidth < sizes.space.w.u or
       sizes.maxWidth < LUnit.high and sizes.space.w.t == scMaxContent:
     if sizes.space.w.t == scStretch:
@@ -2486,7 +2492,7 @@ proc initBlockPositionStates(state: var BlockState; bctx: var BlockContext;
   state.initialMarginTarget = bctx.marginTarget
   state.initialTargetOffset = bctx.marginTarget.offset
   if bctx.parentBps == nil:
-    # We have just established a new BFC. Resolve the margins instantly.
+    # We have just established a new BFC. Resolve the margins immediately.
     bctx.marginTarget = nil
   state.prevParentBps = bctx.parentBps
   bctx.parentBps = bctx.ancestorsHead
@@ -2718,11 +2724,15 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
     bctx.marginTarget = BlockPositionState(
       # Use initialTargetOffset to emulate the BFC positioning of the
       # previous pass.
-      offset: state.initialTargetOffset
+      offset: state.initialTargetOffset,
+      resolved: state.initialMarginTarget.resolved
     )
     # Also set ancestorsHead as the dummy object, so next elements are
     # chained to that.
     bctx.ancestorsHead = bctx.marginTarget
+    if state.prevParentBps == nil:
+      # We have just established a new BFC. Resolve the margins immediately.
+      bctx.marginTarget = nil
   bctx.exclusions.setLen(state.oldExclusionsLen)
   state.offset = sizes.padding.topLeft
   box.applySize(sizes, state.maxChildWidth + state.totalFloatWidth, sizes.space,
@@ -2741,13 +2751,7 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   )
   state.initBlockPositionStates(bctx, box)
   state.layoutBlockChildren(bctx, box)
-  if box.computed{"text-align"} in {TextAlignChaCenter, TextAlignChaRight} and
-      state.space.w.t == scFitContent and
-      state.space.w.u != state.maxChildWidth:
-    # We *could* handle this in a separate pass for a marginal speed
-    # improvement in this edge case, but this is prettier.
-    state.needsReLayout = true
-  if state.needsReLayout:
+  if state.needsReLayout or state.space.w.t == scFitContent:
     state.initReLayout(bctx, box, sizes)
     state.layoutBlockChildren(bctx, box)
   box.applyBaseline()
