@@ -2368,6 +2368,13 @@ func getElementById(document: Document; id: string): Element {.jsfunc.} =
   return nil
 
 func getElementsByName(document: Document; name: CAtom): NodeList {.jsfunc.} =
+  if name == document.toAtom(""):
+    return document.newNodeList(
+      func(node: Node): bool =
+        return false,
+      islive = false,
+      childonly = true
+    )
   return document.newNodeList(
     func(node: Node): bool =
       return node of Element and Element(node).name == name,
@@ -2911,6 +2918,9 @@ func elements(form: HTMLFormElement): HTMLFormControlsCollection {.jsfget.} =
 proc getter(ctx: JSContext; this: HTMLFormElement; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   return ctx.getter(this.elements, atom)
+
+func length(this: HTMLFormElement): int {.jsfget.} =
+  return this.elements.getLength()
 
 # <input>
 func jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =

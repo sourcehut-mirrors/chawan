@@ -13,6 +13,7 @@ document.toString.remove();
 document.testtest = "hi";
 assertEquals(document.ELEMENT_NODE, 1);
 assertEquals(Document.ELEMENT_NODE, 1);
+assertEquals(document.getElementsByName("").length, 0);
 assertEquals(Object.getOwnPropertyNames(document).toString(), "testtest,location,img2,img3,asdf");
 /*
  * Note: the spec says Document == HTMLDocument, but in other browsers

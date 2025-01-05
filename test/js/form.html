@@ -1,6 +1,10 @@
 <!doctype html>
 <title>Form/form control tests</title>
 <div id=x>Fail</div>
+<form id=test>
+<input id=1 name=input>
+<input id=0 name=input>
+</form>
 <script src=asserts.js></script>
 <script>
 let x = document.createElement("button");
@@ -11,5 +15,23 @@ x.type = "button";
 assertEquals(x.type, "button");
 x.value = "test";
 assertEquals(x.getAttribute("value"), "test");
+assertEquals(document.getElementsByName("input").length, 2);
+(function() { // form
+	const test = document.getElementById("test");
+	assertEquals(document.forms[0], test);
+	assertEquals(document.forms["test"], test);
+	const elements = test.elements;
+	assertEquals(elements.length, test.length);
+	assertEquals(elements["a"], undefined);
+	assertInstanceof(elements[0], HTMLInputElement);
+	assertEquals(elements[0].id, "1");
+	assertEquals(elements["0"].id, "1");
+	assertEquals(elements[0].name, "input");
+	assertInstanceof(elements["input"], RadioNodeList);
+	let el = elements[0];
+	el.remove();
+	el.remove();
+	elements[0].remove();
+})();
 document.getElementById("x").textContent = "Success";
 </script>
