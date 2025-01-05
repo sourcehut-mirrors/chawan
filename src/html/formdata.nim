@@ -163,7 +163,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
       else:
         entrylist.add((name, field.value))
     elif field of HTMLButtonElement:
-      entrylist.add((name, HTMLButtonElement(field).value))
+      entrylist.add((name, HTMLButtonElement(field).attr(satValue)))
     elif field of HTMLTextAreaElement:
       entrylist.add((name, HTMLTextAreaElement(field).value))
     else:

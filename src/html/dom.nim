@@ -362,8 +362,7 @@ type
     relList {.jsget.}: DOMTokenList
 
   HTMLButtonElement* = ref object of FormAssociatedElement
-    ctype*: ButtonType
-    value* {.jsget, jsset.}: string
+    ctype* {.jsget: "type".}: ButtonType
 
   HTMLTextAreaElement* = ref object of FormAssociatedElement
     value* {.jsget.}: string
@@ -1036,6 +1035,7 @@ const ReflectTable0 = [
   # non-global attributes
   makes("target", TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
   makes("href", TAG_LINK),
+  makes("value", TAG_BUTTON),
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
   makes("name", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
   makeb("novalidate", "noValidate", TAG_FORM),
@@ -3139,6 +3139,9 @@ proc setValue(option: HTMLOptionElement; s: string) {.jsfset: "value".} =
 func jsForm(this: HTMLButtonElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
+proc setType(this: HTMLButtonElement; s: string) {.jsfset: "type".} =
+  this.attr(satType, s)
+
 # <textarea>
 func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
@@ -4068,7 +4071,6 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
     option.reflect_bool satSelected, selected
   of TAG_BUTTON:
     let button = HTMLButtonElement(element)
-    button.reflect_str satValue, value
     if name == satType:
       button.ctype = parseEnumNoCase[ButtonType](value.get("")).get(btSubmit)
   of TAG_LINK:

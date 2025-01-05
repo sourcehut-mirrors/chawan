@@ -1,0 +1,15 @@
+<!doctype html>
+<title>Form/form control tests</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+let x = document.createElement("button");
+x.type = "test";
+assertEquals(x.type, "submit");
+assertEquals(x.getAttribute("type"), "test");
+x.type = "button";
+assertEquals(x.type, "button");
+x.value = "test";
+assertEquals(x.getAttribute("value"), "test");
+document.getElementById("x").textContent = "Success";
+</script>
