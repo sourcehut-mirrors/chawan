@@ -184,6 +184,9 @@ func top*(s: RelativeRect): LUnit =
 func bottom*(s: RelativeRect): LUnit =
   return s[dtVertical].send
 
+func topLeft*(s: RelativeRect): Offset =
+  return offset(x = s.left, y = s.top)
+
 proc `+=`*(span: var Span; u: LUnit) =
   span.start += u
   span.send += u
