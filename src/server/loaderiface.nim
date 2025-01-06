@@ -34,6 +34,10 @@ type
     sockDir*: string
     # (FreeBSD only) fd for the socket directory so we can connectat() on it
     sockDirFd*: cint
+    # A mechanism to queue up new fds being added to the poll data
+    # inside the events iterator.
+    registerBlocked: bool
+    registerQueue: seq[ConnectData]
 
   ConnectDataState = enum
     cdsBeforeResult, cdsBeforeStatus, cdsBeforeHeaders
@@ -163,11 +167,28 @@ proc unset*(loader: FileLoader; data: MapData) =
   if loader.get(fd) != nil:
     loader.unset(fd)
 
+proc register(loader: FileLoader; data: ConnectData) =
+  if loader.registerBlocked:
+    loader.registerQueue.add(data)
+  else:
+    loader.registerFun(int(data.stream.fd))
+    loader.put(data)
+
+proc blockRegister*(loader: FileLoader) =
+  assert not loader.registerBlocked
+  loader.registerBlocked = true
+
+proc unblockRegister*(loader: FileLoader) =
+  assert loader.registerBlocked
+  loader.registerBlocked = false
+  for it in loader.registerQueue:
+    loader.register(it)
+  loader.registerQueue.setLen(0)
+
 proc fetch0(loader: FileLoader; input: Request; promise: FetchPromise;
     redirectNum: int) =
   let stream = loader.startRequest(input)
-  loader.registerFun(int(stream.fd))
-  loader.put(ConnectData(
+  loader.register(ConnectData(
     promise: promise,
     request: input,
     stream: stream,
@@ -182,13 +203,11 @@ proc fetch*(loader: FileLoader; input: Request): FetchPromise =
 proc reconnect*(loader: FileLoader; data: ConnectData) =
   data.stream.sclose()
   let stream = loader.startRequest(data.request)
-  let data = ConnectData(
+  loader.register(ConnectData(
     promise: data.promise,
     request: data.request,
     stream: stream
-  )
-  loader.put(data)
-  loader.registerFun(data.fd)
+  ))
 
 proc suspend*(loader: FileLoader; fds: seq[int]) =
   let stream = loader.connect()

@@ -3269,6 +3269,7 @@ proc inputLoop(pager: Pager) =
   while true:
     let timeout = pager.timeouts.sortAndGetTimeout()
     pager.pollData.poll(timeout)
+    pager.loader.blockRegister()
     for event in pager.pollData.events:
       let efd = int(event.fd)
       if (event.revents and POLLIN) != 0:
@@ -3285,8 +3286,9 @@ proc inputLoop(pager: Pager) =
       let container = pager.consoleWrapper.container
       if container != nil:
         container.tailOnLoad = true
-    pager.runJSJobs()
+    pager.loader.unblockRegister()
     pager.loader.unregistered.setLen(0)
+    pager.runJSJobs()
     pager.acceptBuffers()
     pager.runCommand()
     if pager.container == nil and pager.lineedit == nil:
@@ -3316,6 +3318,7 @@ proc headlessLoop(pager: Pager) =
   while pager.hasSelectFds():
     let timeout = pager.timeouts.sortAndGetTimeout()
     pager.pollData.poll(timeout)
+    pager.loader.blockRegister()
     for event in pager.pollData.events:
       let efd = int(event.fd)
       if (event.revents and POLLIN) != 0:
@@ -3324,9 +3327,10 @@ proc headlessLoop(pager: Pager) =
         pager.handleWrite(efd)
       if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
         pager.handleError(efd)
+    pager.loader.unblockRegister()
+    pager.loader.unregistered.setLen(0)
     discard pager.timeouts.run(pager.console.err)
     pager.runJSJobs()
-    pager.loader.unregistered.setLen(0)
     pager.acceptBuffers()
 
 proc dumpBuffers(pager: Pager) =

@@ -1895,7 +1895,7 @@ proc handleRead(buffer: Buffer; fd: int): bool =
     assert false
   true
 
-proc handleError(buffer: Buffer; fd: int): bool =
+proc handleError(buffer: Buffer; fd: int; event: TPollfd): bool =
   if fd == buffer.rfd:
     # Connection reset by peer, probably. Close the buffer.
     return false
@@ -1923,20 +1923,22 @@ proc runBuffer(buffer: Buffer) =
   while alive:
     let timeout = buffer.getPollTimeout()
     buffer.pollData.poll(timeout)
+    buffer.loader.blockRegister()
     for event in buffer.pollData.events:
       if (event.revents and POLLIN) != 0:
         if not buffer.handleRead(event.fd):
           alive = false
           break
       if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
-        if not buffer.handleError(event.fd):
+        if not buffer.handleError(event.fd, event):
           alive = false
           break
+    buffer.loader.unregistered.setLen(0)
+    buffer.loader.unblockRegister()
     if buffer.config.scripting != smFalse:
       if buffer.window.timeouts.run(buffer.estream):
         buffer.window.runJSJobs()
         buffer.maybeReshape()
-    buffer.loader.unregistered.setLen(0)
 
 proc cleanup(buffer: Buffer) =
   buffer.pstream.sclose()
