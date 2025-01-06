@@ -304,7 +304,7 @@ proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
   let mqlist = parseMediaQueryList(cvals, window.scriptAttrsp)
   return MediaQueryList(
     matches: mqlist.applies(window.settings.scripting, window.scriptAttrsp),
-    media: s #TODO this should be serialized from mqlist
+    media: $mqlist
   )
 
 proc postMessage(window: Window) {.jsfunc.} =

@@ -13,17 +13,17 @@ type
     cvals: seq[CSSComponentValue]
     attrs: ptr WindowAttributes
 
-  MediaType* = enum
+  MediaType = enum
     mtAll = "all"
     mtPrint = "print"
     mtScreen = "screen"
     mtSpeech = "speech"
     mtTty = "tty"
 
-  MediaConditionType* = enum
+  MediaConditionType = enum
     mctNot, mctAnd, mctOr, mctFeature, mctMedia
 
-  MediaFeatureType* = enum
+  MediaFeatureType = enum
     mftColor = "color"
     mftGrid = "grid"
     mftHover = "hover"
@@ -32,34 +32,31 @@ type
     mftHeight = "height"
     mftScripting = "scripting"
 
-  LengthRange* = object
-    s*: Slice[CSSLength]
-    aeq*: bool
-    beq*: bool
+  LengthRange = object
+    s: Slice[CSSLength]
+    aeq: bool
+    beq: bool
 
-  MediaFeature* = object
-    case t*: MediaFeatureType
+  MediaFeature = object
+    case t: MediaFeatureType
     of mftColor:
-      range*: Slice[int]
-    of mftGrid, mftHover, mftPrefersColorScheme,
-        mftScripting:
-      b*: bool
+      range: Slice[int]
+    of mftGrid, mftHover, mftPrefersColorScheme, mftScripting:
+      b: bool
     of mftWidth, mftHeight:
       lengthrange*: LengthRange
 
   MediaQuery* = ref object
-    case t*: MediaConditionType
+    case t: MediaConditionType
     of mctMedia:
-      media*: MediaType
+      media: MediaType
     of mctFeature:
-      feature*: MediaFeature
+      feature: MediaFeature
     of mctNot:
-      n*: MediaQuery
+      n: MediaQuery
     of mctOr, mctAnd:
-      left*: MediaQuery
-      right*: MediaQuery
-
-  MediaQueryList* = seq[MediaQuery]
+      left: MediaQuery
+      right: MediaQuery
 
   MediaQueryComparison = enum
     mqcEq, mqcGt, mqcLt, mqcGe, mqcLe
@@ -68,37 +65,44 @@ type
 proc parseMediaCondition(parser: var MediaQueryParser; non = false;
   noor = false): Opt[MediaQuery]
 
-# for debugging
-func `$`*(mf: MediaFeature): string =
+# Serializer.
+# As usual, the spec is incomplete, so it's hard to say if it's
+# compliant.  What can you do :/
+func `$`(mf: MediaFeature): string =
   case mf.t
   of mftColor:
-    return "color: " & $mf.range.a & ".." & $mf.range.b
+    return $mf.range.a & " <= " & $mf.t & " <= " & $mf.range.b
   of mftGrid:
-    return "grid: " & $mf.b
+    return "grid: " & $int(mf.b)
   of mftHover:
-    return "hover: " & $mf.b
+    return "hover: " & [false: "none", true: "hover"][mf.b]
   of mftPrefersColorScheme:
-    return "prefers-color-scheme: " & $mf.b
+    return "prefers-color-scheme: " & [false: "light", true: "dark"][mf.b]
   of mftWidth, mftHeight:
-    result &= $mf.lengthrange.s.a
-    result &= " <"
+    result = $mf.lengthrange.s.a & " <"
     if mf.lengthrange.aeq:
-      result &= "="
+      result &= '='
     result &= ' ' & $mf.t & " <"
     if mf.lengthrange.beq:
-      result &= "="
-    result &= " "
-    result &= $mf.lengthrange.s.b
+      result &= '='
+    result &= ' ' & $mf.lengthrange.s.b
   of mftScripting:
-    return "scripting: " & (if mf.b: "enabled" else: "none")
+    return "scripting: " & [false: "none", true: "enabled"][mf.b]
 
-func `$`*(mq: MediaQuery): string =
+func `$`(mq: MediaQuery): string =
   case mq.t
   of mctMedia: return $mq.media
   of mctFeature: return $mq.feature
   of mctNot: return "not (" & $mq.n
   of mctOr: return "(" & $mq.left & ") or (" & $mq.right & ")"
   of mctAnd: return "(" & $mq.left & ") or (" & $mq.right & ")"
+
+func `$`*(mqlist: seq[MediaQuery]): string =
+  result = ""
+  for it in mqlist:
+    if result.len > 0:
+      result &= ", "
+    result &= $it
 
 const RangeFeatures = {mftColor, mftWidth, mftHeight}
 
@@ -404,7 +408,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
     return err()
 
 proc parseMediaQueryList*(cvals: seq[CSSComponentValue];
-    attrs: ptr WindowAttributes): MediaQueryList =
+    attrs: ptr WindowAttributes): seq[MediaQuery] =
   result = @[]
   let cseplist = cvals.parseCommaSepComponentValues()
   for list in cseplist:
@@ -412,6 +416,10 @@ proc parseMediaQueryList*(cvals: seq[CSSComponentValue];
     let query = parser.parseMediaQuery()
     if query.isSome:
       result.add(query.get)
+    else:
+      # sadly, the standard doesn't let us skip this :/
+      let all = MediaQuery(t: mctMedia, media: mtAll)
+      result.add(MediaQuery(t: mctNot, n: all))
 
 type
   MediaApplyContext = object
@@ -459,13 +467,13 @@ func applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
   of mctFeature:
     return ctx.applies(mq.feature)
 
-func applies(ctx: MediaApplyContext; mqlist: MediaQueryList): bool =
+func applies(ctx: MediaApplyContext; mqlist: seq[MediaQuery]): bool =
   for mq in mqlist:
     if ctx.applies(mq):
       return true
   return false
 
-func applies*(mqlist: MediaQueryList; scripting: ScriptingMode;
+func applies*(mqlist: seq[MediaQuery]; scripting: ScriptingMode;
     attrsp: ptr WindowAttributes): bool =
   let ctx = MediaApplyContext(scripting: scripting, attrsp: attrsp)
   return ctx.applies(mqlist)

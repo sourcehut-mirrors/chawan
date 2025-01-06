@@ -21,11 +21,9 @@ type
     # retrieval from the cache.
     idx: int
 
-  CSSConditionalDef* = ref object of CSSRuleBase
+  CSSMediaQueryDef* = ref object of CSSRuleBase
     children*: CSSStylesheet
-
-  CSSMediaQueryDef* = ref object of CSSConditionalDef
-    query*: MediaQueryList
+    query*: seq[MediaQuery]
 
   CSSStylesheet* = ref object
     mqList*: seq[CSSMediaQueryDef]
