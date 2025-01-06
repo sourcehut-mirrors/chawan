@@ -1907,8 +1907,6 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     referrer: Container = nil; save = false; history = true;
     url: URL = nil): Container =
   pager.navDirection = ndNext
-  if referrer != nil and referrer.config.refererFrom:
-    request.referrer = referrer.url
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
   for i in 0 ..< pager.config.network.max_redirect:
@@ -1917,6 +1915,9 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     if ourl == nil:
       break
     request.url = ourl
+  if referrer != nil and referrer.config.refererFrom:
+    request.referrer = referrer.url
+    bufferConfig.referrer = $referrer.url
   if request.url.username != "" and request.url.password != "":
     pager.loader.addAuth(request.url)
   request.url.password = ""

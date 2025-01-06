@@ -113,6 +113,7 @@ type
     urandom*: PosixStream
     imageTypes*: Table[string, string]
     userAgent*: string
+    referrer* {.jsget.}: string
     autofocus*: bool
     maybeRestyle*: proc()
 
@@ -1473,11 +1474,11 @@ func forms(document: Document): HTMLCollection {.jsfget.} =
     )
   return document.cachedForms
 
-func cookie(ctx: JSContext; document: Document): string {.jsfget.} =
+#TODO take cookie jar from loader
+func cookie(document: Document): string {.jsfget.} =
   return document.internalCookie
 
-proc setCookie(ctx: JSContext; document: Document; cookie: string)
-    {.jsfset: "cookie".} =
+proc setCookie(document: Document; cookie: string) {.jsfset: "cookie".} =
   document.internalCookie = cookie
 
 # DOMTokenList

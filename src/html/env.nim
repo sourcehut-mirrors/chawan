@@ -379,7 +379,7 @@ proc runJSJobs*(window: Window) =
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     attrsp: ptr WindowAttributes; factory: CAtomFactory; loader: FileLoader;
     url: URL; urandom: PosixStream; imageTypes: Table[string, string];
-    userAgent: string): Window =
+    userAgent, referrer: string): Window =
   let err = newDynFileStream(stderr)
   let window = Window(
     attrsp: attrsp,
@@ -396,6 +396,7 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     urandom: urandom,
     imageTypes: imageTypes,
     userAgent: userAgent,
+    referrer: referrer,
     autofocus: autofocus
   )
   window.location = window.newLocation()

@@ -136,11 +136,12 @@ type
     history*: bool
     charsetOverride*: Charset
     metaRefresh*: MetaRefresh
+    cookieMode*: CookieMode
     charsets*: seq[Charset]
     protocol*: Table[string, ProtocolConfig]
     imageTypes*: Table[string, string]
     userAgent*: string
-    cookieMode*: CookieMode
+    referrer*: string
 
   GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.nimcall.}
 
@@ -1981,7 +1982,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     url,
     urandom,
     config.imageTypes,
-    config.userAgent
+    config.userAgent,
+    config.referrer
   )
   if buffer.config.scripting != smFalse:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
