@@ -476,10 +476,6 @@ const InheritedProperties = {
   cptVisibility, cptTextTransform
 }
 
-const PositionStaticLike* = {
-  PositionStatic, PositionSticky
-}
-
 const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 

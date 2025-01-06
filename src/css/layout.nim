@@ -1385,7 +1385,7 @@ proc positionFloats(bctx: var BlockContext) =
   bctx.unpositionedFloats.setLen(0)
 
 proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  if box.computed{"position"} notin PositionStaticLike:
+  if box.computed{"position"} != PositionStatic:
     bctx.lctx.pushPositioned()
   let bfcOffset = if bctx.parentBps != nil:
     bctx.parentBps.offset + box.state.offset
@@ -1440,7 +1440,7 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.state.size += paddingSum
   box.state.baseline = ictx.state.baseline
   box.state.firstBaseline = ictx.state.firstBaseline
-  if box.computed{"position"} notin PositionStaticLike:
+  if box.computed{"position"} != PositionStatic:
     bctx.lctx.popPositioned(box.state.size)
 
 # canClear signals if the box should clear in its inner (flow) layout.
@@ -1676,8 +1676,7 @@ proc layoutInline(ictx: var InlineContext; box: InlineBox) =
   )
   ictx.lbstate.size.w += padding.start
   var state = InlineState(box: box)
-  if stSplitStart in box.splitType and
-      computed{"position"} notin PositionStaticLike:
+  if stSplitStart in box.splitType and computed{"position"} != PositionStatic:
     lctx.pushPositioned()
   case box.t
   of ibtNewline:
@@ -1702,8 +1701,7 @@ proc layoutInline(ictx: var InlineContext; box: InlineBox) =
     if not ictx.textFragmentSeen:
       ictx.textFragmentSeen = true
     ictx.lastTextFragment = box
-  if stSplitEnd in box.splitType and
-      computed{"position"} notin PositionStaticLike:
+  if stSplitEnd in box.splitType and computed{"position"} != PositionStatic:
     # This is UB in CSS 2.1, I can't find a newer spec about it,
     # and Gecko can't even layout it consistently (???)
     #
@@ -2380,7 +2378,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   assert box.inline == nil
   let lctx = bctx.lctx
-  if box.computed{"position"} notin PositionStaticLike:
+  if box.computed{"position"} != PositionStatic:
     lctx.pushPositioned()
   let flexDir = box.computed{"flex-direction"}
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
@@ -2445,7 +2443,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.applyIntr(sizes, fctx.intr)
   for child in fctx.relativeChildren:
     lctx.positionRelative(box, child)
-  if box.computed{"position"} notin PositionStaticLike:
+  if box.computed{"position"} != PositionStatic:
     lctx.popPositioned(box.state.size)
 
 # Inner layout for boxes that establish a new block formatting context.
@@ -2741,7 +2739,7 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
 
 proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
-  if box.computed{"position"} notin PositionStaticLike:
+  if box.computed{"position"} != PositionStatic:
     lctx.pushPositioned()
   var state = BlockState(
     offset: sizes.padding.topLeft,
@@ -2780,7 +2778,7 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     bctx.marginTarget = nil
   # Reset parentBps to the previous node.
   bctx.parentBps = state.prevParentBps
-  if box.computed{"position"} notin PositionStaticLike:
+  if box.computed{"position"} != PositionStatic:
     lctx.popPositioned(box.state.size)
 
 # 1st pass: build tree

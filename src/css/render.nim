@@ -361,7 +361,7 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
         bgcolor0.rgb.cellColor())
   let startOffset = offset + box.state.startOffset
   box.render.offset = startOffset
-  if position notin PositionStaticLike and stSplitStart in box.splitType:
+  if position != PositionStatic and stSplitStart in box.splitType:
     state.absolutePos.add(startOffset)
   if box.t == ibtParent:
     for child in box.children:
@@ -404,7 +404,7 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
               height: atom.size.h.toInt,
               bmp: atom.bmp
             ))
-  if position notin PositionStaticLike and stSplitEnd in box.splitType:
+  if position != PositionStatic and stSplitEnd in box.splitType:
     discard state.absolutePos.pop()
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
@@ -412,7 +412,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
   let position = box.computed{"position"}
   #TODO handle negative z-index
   let zindex = box.computed{"z-index"}
-  if position notin PositionStaticLike and not pass2 and zindex >= 0:
+  if position != PositionStatic and not pass2 and zindex >= 0:
     state.nstack.add(StackItem(
       box: box,
       offset: offset,
@@ -429,7 +429,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       offset.y = state.absolutePos[^1].y
   offset += box.state.offset
   box.render.offset = offset
-  if position notin PositionStaticLike:
+  if position != PositionStatic:
     state.absolutePos.add(offset)
   let overflowX = box.computed{"overflow-x"}
   let overflowY = box.computed{"overflow-y"}
@@ -482,7 +482,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       grid.renderBlockBox(state, child, offset)
   if hasClipBox:
     discard state.clipBoxes.pop()
-  if position notin PositionStaticLike:
+  if position != PositionStatic:
     discard state.absolutePos.pop()
 
 proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
