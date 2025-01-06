@@ -1414,9 +1414,6 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     # rarely enough.
     let floats = move(ictx.unpositionedFloats)
     var space = sizes.space
-    #TODO there is still a bug here: if the parent's size is
-    # fit-content, then floats should trigger a re-layout in the
-    # *parent*.
     if space.w.t != scStretch:
       space.w = stretch(ictx.state.size.w)
     ictx = bctx.initInlineContext(space, bfcOffset, sizes.padding, box.computed)
@@ -1493,12 +1490,15 @@ proc addInlineFloat(ictx: var InlineContext; state: var InlineState;
     box: BlockBox) =
   let lctx = ictx.lctx
   let sizes = lctx.resolveFloatSizes(ictx.space, box.computed)
-  box.state = BoxLayoutState()
   let offset = offset(
     x = sizes.margin.left,
     y = ictx.lbstate.offsety + sizes.margin.top
   )
   lctx.layoutRootBlock(box, offset, sizes)
+  if ictx.space.w.t == scStretch and
+      ictx.lbstate.size.w + box.state.size.w > ictx.space.w.u:
+    ictx.finishLine(state, wrap = true)
+    box.state.offset.y = ictx.lbstate.offsety + sizes.margin.top
   ictx.lbstate.size.w += box.state.size.w
   # Note that by now, the top y offset is always resolved.
   ictx.unpositionedFloats.add(InlineUnpositionedFloat(
