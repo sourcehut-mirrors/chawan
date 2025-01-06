@@ -227,9 +227,6 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     lastPeek: HoverType.high
   )
 
-func location(container: Container): URL {.jsfget.} =
-  return container.url
-
 proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
   header: "<stdio.h>".}
 
