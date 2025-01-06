@@ -82,6 +82,9 @@ type
 
   Window* = ref object of EventTarget
     attrsp*: ptr WindowAttributes
+    # In app mode, attrsp == scriptAttrsp.
+    # In lite mode, scriptAttrsp == addr dummyAttrs.
+    scriptAttrsp*: ptr WindowAttributes
     internalConsole*: Console
     navigator* {.jsget.}: Navigator
     screen* {.jsget.}: Screen
@@ -519,9 +522,6 @@ proc remove*(node: Node)
 proc setInvalid*(element: Element)
 
 # Forward declaration hacks
-# set in css/cascade
-var appliesImpl*: proc(mqlist: MediaQueryList; window: Window): bool
-  {.nimcall, noSideEffect.}
 # set in css/match
 var matchesImpl*: proc(element: Element; cxsels: seq[ComplexSelector]): bool
   {.nimcall, noSideEffect.} = nil
@@ -3682,21 +3682,13 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
     return ctx.toJS(this.getPropertyValue(s))
   return JS_UNINITIALIZED
 
-template dummyWindow(): WindowAttributes = WindowAttributes(
-  width: 80,
-  height: 24,
-  ppc: 9,
-  ppl: 18,
-  widthPx: 80 * 9,
-  heightPx: 24 * 18
-)
-
 proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
     Err[void] =
   if i notin 0 .. this.decls.high:
     return err()
+  # dummyAttrs can be safely used because the result is discarded.
   var dummy: seq[CSSComputedEntry]
-  ?parseComputedValues(dummy, this.decls[i].name, cvals, dummyWindow())
+  ?parseComputedValues(dummy, this.decls[i].name, cvals, dummyAttrs)
   this.decls[i].value = cvals
   return ok()
 
@@ -3731,7 +3723,7 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
       return ok()
   else:
     var dummy: seq[CSSComputedEntry]
-    let val0 = parseComputedValues(dummy, name, cvals, dummyWindow())
+    let val0 = parseComputedValues(dummy, name, cvals, dummyAttrs)
     if val0.isNone:
       return ok()
     this.decls.add(CSSDeclaration(name: name, value: cvals))
@@ -3824,7 +3816,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     if media != "":
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals, window.attrsp)
-      applies = media.appliesImpl(window)
+      applies = media.applies(window.settings.scripting, window.attrsp)
     window.loadSheet(link, url, applies)
 
 proc getImageId(window: Window): int =

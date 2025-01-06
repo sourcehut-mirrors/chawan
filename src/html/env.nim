@@ -1,5 +1,7 @@
 import std/tables
 
+import css/cssparser
+import css/mediaquery
 import html/catom
 import html/chadombuilder
 import html/dom
@@ -290,6 +292,21 @@ proc getComputedStyle(window: Window; element: Element;
   # Maybe it works.
   return element.style
 
+type MediaQueryList = ref object
+  media: string
+  matches: bool
+  #TODO onchange
+
+jsDestructor(MediaQueryList)
+
+proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
+  let cvals = parseComponentValues(s)
+  let mqlist = parseMediaQueryList(cvals, window.scriptAttrsp)
+  return MediaQueryList(
+    matches: mqlist.applies(window.settings.scripting, window.scriptAttrsp),
+    media: s #TODO this should be serialized from mqlist
+  )
+
 proc postMessage(window: Window) {.jsfunc.} =
   window.console.log("postMessage: Stub")
 
@@ -306,6 +323,7 @@ proc addWindowModule*(ctx: JSContext) =
   ctx.addEventModule()
   let eventTargetCID = ctx.getClass("EventTarget")
   ctx.registerType(Window, parent = eventTargetCID, asglobal = true)
+  ctx.registerType(MediaQueryList)
 
 proc addWindowModule2*(ctx: JSContext) =
   ctx.addEventModule()
@@ -329,6 +347,10 @@ proc addScripting*(window: Window) =
   window.jsctx = ctx
   window.importMapsAllowed = true
   window.timeouts = newTimeoutState(ctx, evalJSFree, window)
+  if window.settings.scripting == smApp:
+    window.scriptAttrsp = window.attrsp
+  else:
+    window.scriptAttrsp = unsafeAddr dummyAttrs
   ctx.addWindowModule()
   ctx.setGlobal(window)
   ctx.addDOMExceptionModule()

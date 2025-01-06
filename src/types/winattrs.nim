@@ -6,3 +6,13 @@ type WindowAttributes* = object
   widthPx*: int
   heightPx*: int
   prefersDark*: bool # prefers-color-scheme accepts "dark" (not "light")
+
+let dummyAttrs* {.global.} = WindowAttributes(
+  width: 80,
+  height: 24,
+  ppc: 9,
+  ppl: 18,
+  widthPx: 80 * 9,
+  heightPx: 24 * 18,
+  prefersDark: true
+)

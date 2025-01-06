@@ -2,6 +2,7 @@ import std/options
 
 import css/cssparser
 import css/cssvalues
+import html/script
 import types/opt
 import types/winattrs
 import utils/twtstr
@@ -411,3 +412,60 @@ proc parseMediaQueryList*(cvals: seq[CSSComponentValue];
     let query = parser.parseMediaQuery()
     if query.isSome:
       result.add(query.get)
+
+type
+  MediaApplyContext = object
+    scripting: ScriptingMode
+    attrsp: ptr WindowAttributes
+
+func appliesLR(feature: MediaFeature; n: float64): bool =
+  let a = feature.lengthrange.s.a.num
+  let b = feature.lengthrange.s.b.num
+  return (feature.lengthrange.aeq and a == n or a < n) and
+    (feature.lengthrange.beq and b == n or n < b)
+
+func applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
+  case feature.t
+  of mftColor:
+    return 8 in feature.range
+  of mftGrid:
+    return feature.b
+  of mftHover:
+    return feature.b
+  of mftPrefersColorScheme:
+    return feature.b == ctx.attrsp.prefersDark
+  of mftWidth:
+    return feature.appliesLR(float64(ctx.attrsp.widthPx))
+  of mftHeight:
+    return feature.appliesLR(float64(ctx.attrsp.heightPx))
+  of mftScripting:
+    return feature.b == (ctx.scripting != smFalse)
+
+func applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
+  case mq.t
+  of mctMedia:
+    case mq.media
+    of mtAll: return true
+    of mtPrint: return false
+    of mtScreen: return true
+    of mtSpeech: return false
+    of mtTty: return true
+  of mctNot:
+    return not ctx.applies(mq.n)
+  of mctAnd:
+    return ctx.applies(mq.left) and ctx.applies(mq.right)
+  of mctOr:
+    return ctx.applies(mq.left) or ctx.applies(mq.right)
+  of mctFeature:
+    return ctx.applies(mq.feature)
+
+func applies(ctx: MediaApplyContext; mqlist: MediaQueryList): bool =
+  for mq in mqlist:
+    if ctx.applies(mq):
+      return true
+  return false
+
+func applies*(mqlist: MediaQueryList; scripting: ScriptingMode;
+    attrsp: ptr WindowAttributes): bool =
+  let ctx = MediaApplyContext(scripting: scripting, attrsp: attrsp)
+  return ctx.applies(mqlist)

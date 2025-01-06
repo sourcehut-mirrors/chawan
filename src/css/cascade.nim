@@ -28,54 +28,6 @@ type
     user: RuleList
     author: seq[RuleList]
 
-func appliesLR(feature: MediaFeature; window: Window; n: float64): bool =
-  let a = feature.lengthrange.s.a.num
-  let b = feature.lengthrange.s.b.num
-  return (feature.lengthrange.aeq and a == n or a < n) and
-    (feature.lengthrange.beq and b == n or n < b)
-
-func applies(feature: MediaFeature; window: Window): bool =
-  case feature.t
-  of mftColor:
-    return 8 in feature.range
-  of mftGrid:
-    return feature.b
-  of mftHover:
-    return feature.b
-  of mftPrefersColorScheme:
-    return feature.b == window.attrsp.prefersDark
-  of mftWidth:
-    return feature.appliesLR(window, float64(window.attrsp.widthPx))
-  of mftHeight:
-    return feature.appliesLR(window, float64(window.attrsp.heightPx))
-  of mftScripting:
-    return feature.b == (window.settings.scripting != smFalse)
-
-func applies(mq: MediaQuery; window: Window): bool =
-  case mq.t
-  of mctMedia:
-    case mq.media
-    of mtAll: return true
-    of mtPrint: return false
-    of mtScreen: return true
-    of mtSpeech: return false
-    of mtTty: return true
-  of mctNot:
-    return not mq.n.applies(window)
-  of mctAnd:
-    return mq.left.applies(window) and mq.right.applies(window)
-  of mctOr:
-    return mq.left.applies(window) or mq.right.applies(window)
-  of mctFeature:
-    return mq.feature.applies(window)
-
-func applies*(mqlist: MediaQueryList; window: Window): bool =
-  for mq in mqlist:
-    if mq.applies(window):
-      return true
-  return false
-
-type
   ToSorts = array[PseudoElem, seq[(int, CSSRuleDef)]]
 
 proc calcRule(tosorts: var ToSorts; element: Element;
@@ -339,7 +291,7 @@ func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
   var res = CSSStylesheet()
   res[] = ss[]
   for mq in ss.mqList:
-    if mq.query.applies(window):
+    if mq.query.applies(window.settings.scripting, window.attrsp):
       res.add(mq.children.applyMediaQuery(window))
   return res
 
@@ -606,6 +558,3 @@ proc applyStylesheets*(document: Document; uass, userss: CSSStylesheet;
   let uass = uass.applyMediaQuery(document.window)
   let userss = userss.applyMediaQuery(document.window)
   return document.applyRules(uass, userss, previousStyled)
-
-# Forward declaration hack
-appliesImpl = applies
