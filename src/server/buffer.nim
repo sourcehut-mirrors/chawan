@@ -1806,7 +1806,7 @@ proc toggleImages0(buffer: Buffer): bool =
       buffer.savetask = false
     else:
       buffer.resolveTask(bcToggleImages, buffer.config.images)
-    buffer.forceReshape0()
+    buffer.forceReshape2()
   )
   return buffer.config.images
 
