@@ -2094,9 +2094,13 @@ func length(characterData: CharacterData): uint32 {.jsfget.} =
   return uint32(characterData.data.utf16Len)
 
 func tagName(element: Element): string {.jsfget.} =
+  let document = element.document
+  result = document.toStr(element.prefix)
+  if result.len > 0:
+    result &= ':'
+  result &= document.toStr(element.localName)
   if element.namespace == Namespace.HTML:
-    return element.document.toStr(element.localName).toUpperAscii()
-  return element.document.toStr(element.localName)
+    result = result.toUpperAscii()
 
 func nodeName(node: Node): string {.jsfget.} =
   if node of Element:
