@@ -855,9 +855,12 @@ func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
   var commaMode = false
   template check_err(slash: bool) =
     #TODO calc, percentages, etc (cssnumber function or something)
-    if not slash and i >= value.len or i < value.len and
-        value[i] != cttNumber:
+    if not slash and i >= value.len:
       return err()
+    if i < value.len:
+      let x = value[i]
+      if not (x of CSSToken and CSSToken(x).t in {cttNumber, cttINumber}):
+        return err()
   template next_value(first = false, slash = false) =
     inc i
     value.skipWhitespace(i)
@@ -903,8 +906,8 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
     #TODO numeric functions
     return err()
   let tok = CSSToken(value[i])
-  if tok.t == cttNumber:
-    if tok.tflagb != tflagbInteger or int(tok.nvalue) notin 0..255:
+  if tok.t == cttINumber:
+    if int(tok.nvalue) notin 0..255:
       return err() # invalid numeric ANSI color
     return ok(ANSIColor(tok.nvalue).cssColor())
   elif tok.t == cttIdent:
@@ -961,14 +964,14 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.t
-    of cttNumber:
+    of cttNumber, cttINumber:
       if tok.nvalue == 0:
         return ok(cssLength(0))
     of cttPercentage:
       if not allowNegative and tok.nvalue < 0:
         return err()
       return parseLength(tok.nvalue, "%", attrs)
-    of cttDimension:
+    of cttDimension, cttIDimension:
       if not allowNegative and tok.nvalue < 0:
         return err()
       return parseLength(tok.nvalue, tok.unit, attrs)
@@ -983,10 +986,10 @@ func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.t
-    of cttNumber:
+    of cttNumber, cttINumber:
       if tok.nvalue == 0:
         return ok(cssLength(0))
-    of cttDimension:
+    of cttDimension, cttIDimension:
       if tok.nvalue >= 0:
         return parseLength(tok.nvalue, tok.unit, attrs)
     else: discard
@@ -1063,7 +1066,7 @@ func cssFontWeight(cval: CSSComponentValue): Opt[int] =
       let i = FontWeightMap.parseIdent(cval)
       if i != -1:
         return ok(i)
-    elif tok.t == cttNumber:
+    elif tok.t in {cttNumber, cttINumber}:
       if tok.nvalue in 1f64..1000f64:
         return ok(int(tok.nvalue))
   return err()
@@ -1117,7 +1120,7 @@ func cssCounterReset(cvals: openArray[CSSComponentValue]):
           die
         r.name = tok.value
         s = true
-      of cttNumber:
+      of cttNumber, cttINumber:
         if not s:
           die
         r.num = int(tok.nvalue)
@@ -1135,7 +1138,7 @@ func cssMaxSize(cval: CSSComponentValue; attrs: WindowAttributes):
     of cttIdent:
       if tok.value.equalsIgnoreCase("none"):
         return ok(CSSLengthAuto)
-    of cttNumber, cttDimension, cttPercentage:
+    of cttNumber, cttINumber, cttDimension, cttIDimension, cttPercentage:
       return parseLength(tok, attrs, allowNegative = false)
     else: discard
   return err()
@@ -1180,7 +1183,7 @@ func cssImage(cval: CSSComponentValue): Opt[CSSContent] =
 func cssInteger(cval: CSSComponentValue; range: Slice[int]): Opt[int] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
-    if tok.t == cttNumber:
+    if tok.t in {cttNumber, cttINumber}:
       if tok.nvalue in float64(range.a)..float64(range.b):
         return ok(int(tok.nvalue))
   return err()
@@ -1188,7 +1191,7 @@ func cssInteger(cval: CSSComponentValue; range: Slice[int]): Opt[int] =
 func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float64] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
-    if tok.t == cttNumber:
+    if tok.t in {cttNumber, cttINumber}:
       if not positive or tok.nvalue >= 0:
         return ok(tok.nvalue)
   return err()

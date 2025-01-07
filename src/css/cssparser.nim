@@ -6,10 +6,11 @@ import utils/twtstr
 
 type
   CSSTokenType* = enum
-    cttIdent, cttFunction, cttAtKeyword, cttHash, cttString, cttBadString,
-    cttUrl, cttBadUrl, cttDelim, cttNumber, cttPercentage, cttDimension,
-    cttWhitespace, cttCdo, cttCdc, cttColon, cttSemicolon, cttComma,
-    cttRbracket, cttLbracket, cttLparen, cttRparen, cttLbrace, cttRbrace
+    cttIdent, cttFunction, cttAtKeyword, cttHash, cttString,
+    cttBadString, cttUrl, cttBadUrl, cttDelim, cttNumber, cttINumber,
+    cttPercentage, cttDimension, cttIDimension, cttWhitespace, cttCdo,
+    cttCdc, cttColon, cttSemicolon, cttComma, cttRbracket, cttLbracket,
+    cttLparen, cttRparen, cttLbrace, cttRbrace
 
   CSSTokenizerState = object
     at: int
@@ -22,21 +23,17 @@ type
   tflaga = enum
     tflagaUnrestricted, tflagaId
 
-  tflagb* = enum
-    tflagbInteger, tflagbNumber
-
   CSSComponentValue* = ref object of RootObj
 
   CSSToken* = ref object of CSSComponentValue
     case t*: CSSTokenType
     of cttIdent, cttFunction, cttAtKeyword, cttHash, cttString, cttUrl:
-      value*: string
       tflaga*: tflaga
+      value*: string
     of cttDelim:
       cvalue*: char
-    of cttNumber, cttPercentage, cttDimension:
+    of cttNumber, cttINumber, cttPercentage, cttDimension, cttIDimension:
       nvalue*: float64
-      tflagb*: tflagb
       unit*: string
     else: discard
 
@@ -69,6 +66,7 @@ type
 
 # For debugging
 proc `$`*(c: CSSComponentValue): string =
+  result = ""
   if c of CSSToken:
     let c = CSSToken(c)
     case c.t:
@@ -87,13 +85,7 @@ proc `$`*(c: CSSComponentValue): string =
         result &= c.cvalue
       else:
         result &= "<UNICODE>"
-    of cttDimension:
-      case c.tflagb
-      of tflagbNumber:
-        result &= $c.nvalue & c.unit
-      of tflagbInteger:
-        result &= $int64(c.nvalue) & c.unit
-    of cttNumber:
+    of cttDimension, cttNumber, cttINumber, cttIDimension:
       result &= $c.nvalue & c.unit
     of cttPercentage:
       result &= $c.nvalue & "%"
@@ -270,8 +262,9 @@ proc consumeIdentSequence(state: var CSSTokenizerState): string =
       break
   return s
 
-proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
-  var t = tflagbInteger
+proc consumeNumber(state: var CSSTokenizerState):
+    tuple[isInt: bool; val: float64] =
+  var isInt = true
   var repr = ""
   if state.has() and state.peek() in {'+', '-'}:
     repr &= state.consume()
@@ -280,7 +273,7 @@ proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
   if state.has(1) and state.peek() == '.' and state.peek(1) in AsciiDigit:
     repr &= state.consume()
     repr &= state.consume()
-    t = tflagbNumber
+    isInt = false
     while state.has() and state.peek() in AsciiDigit:
       repr &= state.consume()
   if state.has(1) and state.peek() in {'E', 'e'} and
@@ -293,25 +286,25 @@ proc consumeNumber(state: var CSSTokenizerState): (tflagb, float64) =
       repr &= state.consume()
     else:
       repr &= state.consume()
-    t = tflagbNumber
+    isInt = false
     while state.has() and state.peek() in AsciiDigit:
       repr &= state.consume()
   let val = parseFloat64(repr)
-  return (t, val)
+  return (isInt, val)
 
 proc consumeNumericToken(state: var CSSTokenizerState): CSSToken =
-  let (t, val) = state.consumeNumber()
+  let (isInt, val) = state.consumeNumber()
   if state.startsWithIdentSequence():
-    return CSSToken(
-      t: cttDimension,
-      nvalue: val,
-      tflagb: t,
-      unit: state.consumeIdentSequence()
-    )
+    let unit = state.consumeIdentSequence()
+    if isInt:
+      return CSSToken(t: cttIDimension, nvalue: val, unit: unit)
+    return CSSToken(t: cttDimension, nvalue: val, unit: unit)
   if state.has() and state.peek() == '%':
     state.seek(1)
     return CSSToken(t: cttPercentage, nvalue: val)
-  return CSSToken(t: cttNumber, nvalue: val, tflagb: t)
+  if isInt:
+    return CSSToken(t: cttINumber, nvalue: val)
+  return CSSToken(t: cttNumber, nvalue: val)
 
 proc consumeBadURL(state: var CSSTokenizerState) =
   while state.has():
@@ -762,10 +755,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       return none(CSSAnB)
     x.get
   template fail_non_integer(tok: CSSToken; res: Option[CSSAnB]) =
-    if tok.t != cttNumber:
-      state.reconsume()
-      return res
-    if tok.tflagb != tflagbInteger:
+    if tok.t != cttINumber:
       state.reconsume()
       return res
     if int64(tok.nvalue) > high(int):
@@ -837,19 +827,15 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
       return some((-1, -parse_sub_int(tok.value, "n-".len)))
     else:
       return none(CSSAnB)
-  of cttNumber:
+  of cttINumber:
     fail_plus
-    if tok.tflagb != tflagbInteger:
-      return none(CSSAnB)
     if int64(tok.nvalue) > high(int):
       return none(CSSAnB)
     # <integer>
     return some((0, int(tok.nvalue)))
-  of cttDimension:
+  of cttIDimension:
     fail_plus
     if int64(tok.nvalue) > high(int):
-      return none(CSSAnB)
-    if tok.tflagb != tflagbInteger:
       return none(CSSAnB)
     case tok.unit
     of "n", "N":

@@ -170,7 +170,7 @@ proc consumeIdent(parser: var MediaQueryParser): Opt[CSSToken] =
 
 proc consumeInt(parser: var MediaQueryParser): Opt[int] =
   let tok = ?parser.consumeToken()
-  if tok.t != cttNumber or tok.tflagb == tflagbInteger:
+  if tok.t != cttINumber:
     parser.reconsume()
     return err()
   return ok(int(tok.nvalue))
