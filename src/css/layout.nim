@@ -2244,6 +2244,8 @@ type
     box: BlockBox
     relativeChildren: seq[BlockBox]
     redistSpace: SizeConstraint
+    canWrap: bool
+    dim: DimensionType # main dimension
 
   FlexMainContext = object
     totalSize: Size
@@ -2323,7 +2325,8 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       mctx.updateMaxSizes(it.child, it.sizes)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
-    sizes: ResolvedSizes; dim: DimensionType; canWrap: bool) =
+    sizes: ResolvedSizes) =
+  let dim = fctx.dim
   let odim = dim.opposite
   let lctx = fctx.lctx
   if fctx.redistSpace.isDefinite:
@@ -2361,7 +2364,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     offset[dim] += it.child.state.size[dim]
     offset[dim] += it.sizes.margin[dim].send
     let intru = it.child.state.intr[dim] + it.sizes.margin[dim].sum()
-    if canWrap:
+    if fctx.canWrap:
       intr[dim] = max(intr[dim], intru)
     else:
       intr[dim] += intru
@@ -2375,51 +2378,34 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   mctx = FlexMainContext()
   fctx.offset[odim] += h
 
-proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  assert box.inline == nil
-  let lctx = bctx.lctx
-  if box.computed{"position"} != PositionStatic:
-    lctx.pushPositioned()
-  let flexDir = box.computed{"flex-direction"}
-  let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
-  let odim = dim.opposite()
-  var fctx = FlexContext(
-    lctx: lctx,
-    box: box,
-    offset: sizes.padding.topLeft,
-    redistSpace: sizes.space[dim]
-  )
-  if fctx.redistSpace.t == scFitContent and sizes.bounds.a[dim].start > 0:
-    fctx.redistSpace = stretch(sizes.bounds.a[dim].start)
-  if fctx.redistSpace.isDefinite:
-    fctx.redistSpace.u = fctx.redistSpace.u.minClamp(sizes.bounds.a[dim])
-  var mctx = FlexMainContext()
-  let canWrap = box.computed{"flex-wrap"} != FlexWrapNowrap
-  for child in box.children:
-    var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
-    let flexBasis = child.computed{"flex-basis"}
+proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
+    child: BlockBox; sizes: ResolvedSizes) =
+  let lctx = fctx.lctx
+  let dim = fctx.dim
+  var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
+  let flexBasis = child.computed{"flex-basis"}
+  lctx.layoutFlexItem(child, childSizes)
+  if flexBasis.u != clAuto and sizes.space[dim].isDefinite:
+    # we can't skip this pass; it is needed to calculate the minimum
+    # height.
+    let minu = child.state.intr[dim]
+    childSizes.space[dim] = stretch(flexBasis.spx(sizes.space[dim],
+      child.computed, childSizes.padding[dim].sum()))
+    if minu > childSizes.space[dim].u:
+      # First pass gave us a box that is thinner than the minimum
+      # acceptable width for whatever reason; this may have happened
+      # because the initial flex basis was e.g. 0. Try to resize it to
+      # something more usable.
+      childSizes.space[dim] = stretch(minu)
     lctx.layoutFlexItem(child, childSizes)
-    if flexBasis.u != clAuto and sizes.space[dim].isDefinite:
-      # we can't skip this pass; it is needed to calculate the minimum
-      # height.
-      let minu = child.state.intr[dim]
-      childSizes.space[dim] = stretch(flexBasis.spx(sizes.space[dim],
-        child.computed, childSizes.padding[dim].sum()))
-      if minu > childSizes.space[dim].u:
-        # First pass gave us a box that is thinner than the minimum
-        # acceptable width for whatever reason; this may have happened
-        # because the initial flex basis was e.g. 0. Try to resize it to
-        # something more usable.
-        childSizes.space[dim] = stretch(minu)
-      lctx.layoutFlexItem(child, childSizes)
-    if child.computed{"position"} in {PositionAbsolute, PositionFixed}:
-      # Absolutely positioned flex children do not participate in flex layout.
-      lctx.queueAbsolute(child, offset(x = 0, y = 0))
-      continue
-    if canWrap and (sizes.space[dim].t == scMinContent or
+  if child.computed{"position"} in {PositionAbsolute, PositionFixed}:
+    # Absolutely positioned flex children do not participate in flex layout.
+    lctx.queueAbsolute(child, offset(x = 0, y = 0))
+  else:
+    if fctx.canWrap and (sizes.space[dim].t == scMinContent or
         sizes.space[dim].isDefinite and
         mctx.totalSize[dim] + child.state.size[dim] > sizes.space[dim].u):
-      fctx.flushMain(mctx, sizes, dim, canWrap)
+      fctx.flushMain(mctx, sizes)
     let outerSize = child.outerSize(dim, childSizes)
     mctx.updateMaxSizes(child, childSizes)
     let grow = child.computed{"flex-grow"}
@@ -2434,8 +2420,36 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       weights: [grow, shrink],
       sizes: childSizes
     ))
+
+proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
+  assert box.inline == nil
+  let lctx = bctx.lctx
+  if box.computed{"position"} != PositionStatic:
+    lctx.pushPositioned()
+  let flexDir = box.computed{"flex-direction"}
+  let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
+  let odim = dim.opposite()
+  var fctx = FlexContext(
+    lctx: lctx,
+    box: box,
+    offset: sizes.padding.topLeft,
+    redistSpace: sizes.space[dim],
+    canWrap: box.computed{"flex-wrap"} != FlexWrapNowrap,
+    dim: dim
+  )
+  if fctx.redistSpace.t == scFitContent and sizes.bounds.a[dim].start > 0:
+    fctx.redistSpace = stretch(sizes.bounds.a[dim].start)
+  if fctx.redistSpace.isDefinite:
+    fctx.redistSpace.u = fctx.redistSpace.u.minClamp(sizes.bounds.a[dim])
+  var mctx = FlexMainContext()
+  if box.computed{"flex-direction"} notin FlexReverse:
+    for child in box.children:
+      fctx.layoutFlexIter(mctx, child, sizes)
+  else:
+    for i in countdown(box.children.high, 0):
+      fctx.layoutFlexIter(mctx, box.children[i], sizes)
   if mctx.pending.len > 0:
-    fctx.flushMain(mctx, sizes, dim, canWrap)
+    fctx.flushMain(mctx, sizes)
   box.applyBaseline()
   var size = fctx.totalMaxSize
   size[odim] = fctx.offset[odim]
@@ -3292,9 +3306,6 @@ proc buildFlex(ctx: var BlockBuilderContext) =
   ctx.flushInherit()
   ctx.flushInlineGroup()
   assert ctx.outer.inline == nil
-  const FlexReverse = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
-  if ctx.outer.computed{"flex-direction"} in FlexReverse:
-    ctx.outer.children.reverse()
 
 proc buildTableCell(parent: var BlockBuilderContext; styledNode: StyledNode;
     computed: CSSValues): BlockBox =

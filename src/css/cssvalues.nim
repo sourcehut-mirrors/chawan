@@ -478,6 +478,7 @@ const InheritedProperties = {
 
 const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
+const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 
 func isBit*(t: CSSPropertyType): bool =
   return t <= cptFontStyle
