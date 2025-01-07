@@ -201,6 +201,12 @@ type
   DOMImplementation = object
     document: Document
 
+  DOMRect = ref object
+    x {.jsgetset.}: float64
+    y {.jsgetset.}: float64
+    width {.jsgetset.}: float64
+    height {.jsgetset.}: float64
+
   DocumentWriteBuffer* = ref object
     data*: string
     i*: int
@@ -553,6 +559,7 @@ jsDestructor(NamedNodeMap)
 jsDestructor(CanvasRenderingContext2D)
 jsDestructor(TextMetrics)
 jsDestructor(CSSStyleDeclaration)
+jsDestructor(DOMRect)
 
 # Forward declarations
 func attr*(element: Element; s: StaticAtom): lent string
@@ -4150,6 +4157,27 @@ proc getComputedStyle0*(window: Window; element: Element;
   return newCSSStyleDeclaration(element, element.attr(satStyle),
     computed = true, readonly = true)
 
+proc getBoundingClientRect(element: Element): DOMRect {.jsfunc.} =
+  #TODO should be implemented properly in app mode.
+  return DOMRect(
+    x: 0,
+    y: 0,
+    width: float64(dummyAttrs.ppc),
+    height: float64(dummyAttrs.ppl)
+  )
+
+func left(rect: DOMRect): float64 {.jsfget.} =
+  return min(rect.x, rect.x + rect.width)
+
+func right(rect: DOMRect): float64 {.jsfget.} =
+  return max(rect.x, rect.x + rect.width)
+
+func top(rect: DOMRect): float64 {.jsfget.} =
+  return min(rect.y, rect.y + rect.height)
+
+func bottom(rect: DOMRect): float64 {.jsfget.} =
+  return max(rect.y, rect.y + rect.height)
+
 proc corsFetch(window: Window; input: Request): FetchPromise =
   if not window.images and input.url.scheme.startsWith("img-codec+"):
     return newResolvedPromise(JSResult[Response].err(newFetchTypeError()))
@@ -6231,6 +6259,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.registerType(CanvasRenderingContext2D)
   ctx.registerType(TextMetrics)
   ctx.registerType(CSSStyleDeclaration)
+  ctx.registerType(DOMRect)
   ctx.registerElements(nodeCID)
   let imageFun = ctx.newFunction(["width", "height"], """
 const x = document.createElement("img");
