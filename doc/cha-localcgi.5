@@ -9,8 +9,11 @@ All local CGI scripts must be placed in a directory specified in
 \f[CR]external.cgi\-dir\f[R].
 Multiple directories can be specified in an array too, and directories
 specified first have higher precedence.
-By default, this is set to \[ti]/.chawan/cgi\-bin and
-/usr/local/libexec/chawan/cgi\-bin.
+By default, this is set to \f[CR]$CHA_DIR/cgi\-bin\f[R] (i.e.
+\f[CR]\[ti]/.chawan/cgi\-bin\f[R] or
+\f[CR]\[ti]/.config/chawan/cgi\-bin\f[R], depending on
+\f[CR]config.toml\f[R]\[cq]s location) and
+\f[CR]/usr/local/libexec/chawan/cgi\-bin\f[R].
 .IP \[bu] 2
 Then, a CGI script in one of these directories can be executed by
 visiting the URL \f[CR]cgi\-bin:script\-name\f[R].
@@ -193,7 +196,7 @@ if this results in it returning an error.
 .IP \[bu] 2
 \f[CR]CHA_TMP_DIR=\f[R] directory used for storing temporary files.
 .IP \[bu] 2
-\f[CR]CHA_CONFIG_DIR=\f[R] location of the config file.
+\f[CR]CHA_DIR=\f[R] location of the config file.
 .PP
 For requests originating from a urimethodmap rewrite, Chawan will also
 set the parsed URL\[cq]s parts as environment variables.
@@ -265,28 +268,6 @@ This makes it easy to debug a misbehaving CGI script, but may also slow
 down the browser in case of excessive logging.
 If this is not the desired behavior, we recommend wrapping your script
 into a shell script that redirects stderr to /dev/null.
-.SS My script is returning a \[lq]no local\-CGI directory configured\[rq] error message.
-Currently, the default setting includes a cgi\-bin directory at
-\f[CR]$(which cha)/../libexec/chawan/cgi\-bin\f[R], which usually looks
-something like \f[CR]/usr/local/libexec/chawan/cgi\-bin\f[R].
-You only get the above message if you intentionally set the cgi\-dir
-setting to an empty array.
-(This will likely break everything else too, so do not.)
-.PP
-To change the default local\-CGI directory, use the
-\f[CR]external.cgi\-dir\f[R] option.
-.PP
-e.g.\ you could add this to your config.toml:
-.IP
-.EX
-\f[B][external]\f[R]
-cgi\-dir = [\[dq]\[ti]/cgi\-bin\[dq], \[dq]${%CHA_LIBEXEC_DIR}/cgi\-bin\[dq]]
-.EE
-.PP
-and then put your script in \f[CR]$HOME/cgi\-bin\f[R].
-Note the second element in the array; if you don\[cq]t add it, the
-default CGI scripts (including http, https, etc\&...)
-will not work.
 .SS My script is returning a \[lq]Failed to execute script\[rq] error message.
 This means the \f[CR]execl\f[R] call to the script failed.
 Make sure that your CGI script\[cq]s executable bit is set, i.e.\ run

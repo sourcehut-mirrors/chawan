@@ -26,9 +26,12 @@ the search path accomodates XDG basedirs as well:
 .IP "1." 3
 config file specified through \-C switch \-> use that
 .IP "2." 3
-$CHA_CONFIG_DIR is set \-> use $CHA_CONFIG_DIR/config.toml
+\f[CR]$CHA_DIR\f[R] is set \-> use \f[CR]$CHA_DIR\f[R]/config.toml
+(\f[CR]$CHA_CONFIG_DIR\f[R] is a deprecated alias for
+\f[CR]$CHA_DIR\f[R].)
 .IP "3." 3
-$XDG_CONFIG_HOME is set \-> use $XDG_CONFIG_HOME/chawan/config.toml
+\f[CR]$XDG_CONFIG_HOME\f[R] is set \-> use
+\f[CR]$XDG_CONFIG_HOME\f[R]/chawan/config.toml
 .IP "4." 3
 \[ti]/.config/chawan/config.toml exists \-> use that
 .IP "5." 3
@@ -40,11 +43,13 @@ Following is a list of start\-up options:
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(11.2n) lw(14.0n) lw(19.6n) lw(22.4n) lw(2.8n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Default
 T}@T{
 Function
 T}@T{
@@ -55,14 +60,18 @@ visual\-home
 T}@T{
 url
 T}@T{
-Page opened when Chawan is called with the \-V option (and no other
-pages are passed as arguments.)
+\[lq]about:chawan\[rq]
+T}@T{
+Page opened when Chawan is called with the \-V option and no other pages
+are passed as arguments.
 T}@T{
 T}
 T{
 startup\-script
 T}@T{
 JavaScript code
+T}@T{
+\[lq]\[rq]
 T}@T{
 Script Chawan runs on start\-up.
 Pages will not be loaded until this function exits.
@@ -75,6 +84,8 @@ headless
 T}@T{
 boolean
 T}@T{
+false
+T}@T{
 Whether Chawan should always start in headless mode.
 Automatically enabled when Chawan is called with \-r.
 T}@T{
@@ -84,8 +95,9 @@ console\-buffer
 T}@T{
 boolean
 T}@T{
+true
+T}@T{
 Whether Chawan should open a console buffer in non\-headless mode.
-Defaults to true.
 Warning: this is only useful for debugging.
 Disabling this option without manually redirecting standard error will
 result in error messages randomly appearing on your screen.
@@ -114,11 +126,13 @@ Following is a list of buffer options:
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(11.2n) lw(14.0n) lw(19.6n) lw(22.4n) lw(2.8n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Default
 T}@T{
 Function
 T}@T{
@@ -129,19 +143,25 @@ styling
 T}@T{
 boolean
 T}@T{
+true
+T}@T{
 Enable/disable author style sheets.
 Note that disabling this does not affect user styles set in
 \f[CR][css]\f[R].
-Defaults to true (i.e.\ enabled).
 T}@T{
 T}
 T{
 scripting
 T}@T{
-boolean
+boolean / \[lq]app\[rq]
+T}@T{
+false
 T}@T{
 Enable/disable JavaScript in \f[I]all\f[R] buffers.
-Defaults to false.
+\f[CR]\[dq]app\[dq]\f[R] also enables JavaScript APIs that can be used
+to fingerprint users (e.g.\ querying the window\[cq]s size.)
+This may achieve better compatibility with websites that behave like
+applications, at the cost of reduced privacy.
 For security reasons, users are encouraged to selectively enable
 JavaScript with \f[CR][[siteconf]]\f[R] instead of using this setting.
 T}@T{
@@ -151,22 +171,26 @@ images
 T}@T{
 boolean
 T}@T{
+false
+T}@T{
 Enable/disable inline image display.
-Defaults to false.
 T}@T{
 T}
 T{
 cookie
 T}@T{
-boolean
+boolean / \[lq]save\[rq]
+T}@T{
+false
 T}@T{
 Enable/disable cookies on sites.
-Defaults to false.
-Note: in Chawan, each website gets a separate cookie jar, so websites
-relying on cross\-site cookies may not work as expected.
-You may use the \f[CR][[siteconf]]\f[R] \[lq]cookie\-jar\[rq] and
-\[lq]third\-party\-cookie\[rq] settings to adjust this behavior for
-specific sites.
+If the string \[lq]save\[rq] is specified, then cookies are also saved
+to \f[CR]external.cookie\-file\f[R].
+\f[CR]true\f[R] still reads cookies.txt, but does not modify it.
+In Chawan, each website gets a separate cookie jar, so websites relying
+on cross\-site cookies may not work as expected.
+You may use the \f[CR][[siteconf]]\f[R] \[lq]share\-cookie\-jar\[rq]
+setting to adjust this behavior for specific sites.
 T}@T{
 T}
 T{
@@ -174,11 +198,12 @@ referer\-from
 T}@T{
 boolean
 T}@T{
+false
+T}@T{
 Enable/disable the \[lq]Referer\[rq] header.
 Defaults to false.
-For security reasons, users are encouraged to leave this option
-disabled, only enabling it for specific sites in
-\f[CR][[siteconf]]\f[R].
+For privacy reasons, users are encouraged to leave this option disabled,
+only enabling it for specific sites in \f[CR][[siteconf]]\f[R].
 T}@T{
 T}
 T{
@@ -186,9 +211,11 @@ autofocus
 T}@T{
 boolean
 T}@T{
+false
+T}@T{
 When set to true, elements with an \[lq]autofocus\[rq] attribute are
 focused on automatically after the buffer is loaded.
-Defaults to false.
+If scripting is enabled, this also allows scripts to focus on elements.
 T}@T{
 T}
 T{
@@ -196,11 +223,22 @@ meta\-refresh
 T}@T{
 \[lq]never\[rq] / \[lq]always\[rq] / \[lq]ask\[rq]
 T}@T{
+\[lq]ask\[rq]
+T}@T{
 Whether or not \f[CR]http\-equiv=refresh\f[R] meta tags should be
 respected.
 \[lq]never\[rq] completely disables them, \[lq]always\[rq] automatically
 accepts all of them, \[lq]ask\[rq] brings up a pop\-up menu.
-Defaults to \[lq]ask\[rq].
+T}@T{
+T}
+T{
+history
+T}@T{
+boolean
+T}@T{
+true
+T}@T{
+Whether or not browsing history should be saved to the disk.
 T}@T{
 T}
 .TE
@@ -211,11 +249,13 @@ Following is a list of search options:
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(11.2n) lw(14.0n) lw(19.6n) lw(22.4n) lw(2.8n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Default
 T}@T{
 Function
 T}@T{
@@ -226,7 +266,9 @@ wrap
 T}@T{
 boolean
 T}@T{
-When set to true, searchNext/searchPrev wraps around the document.
+true
+T}@T{
+Whether on\-page searches should wrap around the document.
 T}@T{
 T}
 T{
@@ -234,11 +276,12 @@ ignore\-case
 T}@T{
 \[lq]auto\[rq] / boolean
 T}@T{
+\[lq]auto\[rq]
+T}@T{
 When set to true, document\-wide searches are case\-insensitive by
 default.
 When set to \[lq]auto\[rq], searches are only case\-sensitive when the
 search term includes a capital letter.
-Defaults to \[lq]auto\[rq].
 Note: this can also be overridden inline in the search bar (vim\-style),
 with the escape sequences \f[CR]\[rs]c\f[R] (ignore case) and
 \f[CR]\[rs]C\f[R] (strict case).
@@ -253,11 +296,13 @@ Following is a list of encoding options:
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(11.2n) lw(14.0n) lw(19.6n) lw(22.4n) lw(2.8n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Default
 T}@T{
 Function
 T}@T{
@@ -267,6 +312,8 @@ T{
 document\-charset
 T}@T{
 array of charset label strings
+T}@T{
+[\[lq]utf\-8\[rq], \[lq]sjis\[rq], \[lq]euc\-jp\[rq], \[lq]latin2\[rq]]
 T}@T{
 List of character sets for loading documents.
 All listed character sets are enumerated until the document has been
@@ -280,6 +327,8 @@ T{
 display\-charset
 T}@T{
 string
+T}@T{
+\[lq]auto\[rq]
 T}@T{
 Character set for keyboard input and displaying documents.
 Used in dump mode as well.
@@ -295,11 +344,13 @@ Following is a list of external options:
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(11.2n) lw(14.0n) lw(19.6n) lw(22.4n) lw(2.8n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Default
 T}@T{
 Function
 T}@T{
@@ -310,6 +361,8 @@ tmpdir
 T}@T{
 path
 T}@T{
+{usually /tmp/cha\-tmp\-user}
+T}@T{
 Directory used to save temporary files.
 T}@T{
 T}
@@ -317,6 +370,8 @@ T{
 sockdir
 T}@T{
 path
+T}@T{
+{usually /tmp/cha\-sock\-user}
 T}@T{
 Directory used to store UNIX domain sockets used for inter\-process
 communication.
@@ -327,6 +382,8 @@ editor
 T}@T{
 shell command
 T}@T{
+{usually \f[CR]$EDITOR\f[R]}
+T}@T{
 External editor command.
 %s is substituted for the file name, %d for the line number.
 T}@T{
@@ -335,6 +392,8 @@ T{
 mailcap
 T}@T{
 array of paths
+T}@T{
+{see mailcap docs}
 T}@T{
 Search path for mailcap files.
 (See \f[B]cha\-mailcap\f[R](5) for details.)
@@ -345,6 +404,8 @@ mime\-types
 T}@T{
 array of paths
 T}@T{
+{see mime.types docs
+T}@T{
 Search path for mime.types files.
 (See \f[B]cha\-mime.types\f[R](5) for details.)
 T}@T{
@@ -353,6 +414,8 @@ T{
 auto\-mailcap
 T}@T{
 path
+T}@T{
+\[lq]auto.mailcap\[rq]
 T}@T{
 Mailcap file for entries that are automatically executed.
 The \[lq]Open as\[rq] prompt also saves entries in this file.
@@ -363,6 +426,8 @@ cgi\-dir
 T}@T{
 array of paths
 T}@T{
+{see local CGI docs}
+T}@T{
 Search path for local CGI scripts.
 (See \f[B]cha\-localcgi\f[R](5) for details.)
 T}@T{
@@ -372,6 +437,8 @@ urimethodmap
 T}@T{
 array of paths
 T}@T{
+{see urimethodmap docs}
+T}@T{
 Search path for urimethodmap files.
 (See \f[B]cha\-urimethodmap\f[R](5) for details.)
 T}@T{
@@ -380,6 +447,8 @@ T{
 w3m\-cgi\-compat
 T}@T{
 boolean
+T}@T{
+false
 T}@T{
 Enable local CGI compatibility with w3m.
 In short, it redirects \f[CR]file:///cgi\-bin/*\f[R] and
@@ -392,6 +461,8 @@ download\-dir
 T}@T{
 path
 T}@T{
+{same as tmpdir}
+T}@T{
 Path to pre\-fill for \[lq]Save to:\[rq] prompts.
 T}@T{
 T}
@@ -400,8 +471,9 @@ copy\-cmd
 T}@T{
 shell command
 T}@T{
+\[lq]xsel \-bi\[rq]
+T}@T{
 Command to use for \[lq]copy to clipboard\[rq] operations.
-Currently it defaults to \f[CR]xsel \-bi\f[R].
 T}@T{
 T}
 T{
@@ -409,8 +481,59 @@ paste\-cmd
 T}@T{
 shell command
 T}@T{
+\[lq]xsel \-bo\[rq]
+T}@T{
 Command to use for \[lq]read from clipboard\[rq] operations.
-Currently it defaults to \f[CR]xsel \-bo\f[R].
+T}@T{
+T}
+T{
+bookmark
+T}@T{
+path
+T}@T{
+\[lq]bookmark.md\[rq]
+T}@T{
+Path to the bookmark.md file.
+(The file it points to should have a .md extension, so that its type can
+be correctly deduced.)
+T}@T{
+T}
+T{
+history\-file
+T}@T{
+path
+T}@T{
+\[lq]history.uri\[rq]
+T}@T{
+Path to the history file.
+T}@T{
+T}
+T{
+history\-size
+T}@T{
+number
+T}@T{
+100
+T}@T{
+Maximum length of the history file.
+T}@T{
+T}
+T{
+cookie\-file
+T}@T{
+path
+T}@T{
+\[lq]cookies.txt\[rq]
+T}@T{
+Path to the cookie file.
+The format is equivalent to curl\[cq]s \[lq]cookies.txt\[rq] format,
+except that a \[lq]jar\[at]\[rq] part is prepended for cookies that
+belong in a different jar than the domain.
+Cookies from this file are used if \[lq]buffer.cookie\[rq] (or its
+equivalent siteconf override) is set to \f[CR]true\f[R] or
+\f[CR]\[dq]save\[dq]\f[R].
+This means that \f[CR]true\f[R] sets the cookie\-file to a
+\[lq]read\-only\[rq] mode.
 T}@T{
 T}
 .TE
@@ -434,20 +557,20 @@ vi\-numeric\-prefix
 T}@T{
 boolean
 T}@T{
-Whether vi\-style numeric prefixes to commands should be accepted.
-When set to true, commands that return a function will be called with
-the numeric prefix as their first argument.
-Note: this only applies for keybindings defined in [page].
+true
 T}@T{
+Whether vi\-style numeric prefixes to commands should be accepted.
+Only applies for keybindings defined in \f[CR][page]\f[R].
 T}
 T{
 use\-mouse
 T}@T{
 boolean
 T}@T{
-Whether Chawan is allowed to use the mouse.
-Currently, the default behavior imitates that of w3m.
+true
 T}@T{
+Whether Chawan is allowed to intercept mouse clicks.
+The current implementation imitates w3m.
 T}
 .TE
 .PP
@@ -469,11 +592,13 @@ Network options are to be placed in the \f[CR][network]\f[R] section.
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(11.2n) lw(14.0n) lw(19.6n) lw(22.4n) lw(2.8n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Default
 T}@T{
 Function
 T}@T{
@@ -484,6 +609,8 @@ max\-redirect
 T}@T{
 number
 T}@T{
+10
+T}@T{
 Maximum number of redirections to follow.
 T}@T{
 T}
@@ -492,18 +619,20 @@ prepend\-scheme
 T}@T{
 string
 T}@T{
+\[lq]https://\[rq]
+T}@T{
 Prepend this to URLs passed to Chawan without a scheme.
 Note that local files (\f[CR]file:\f[R] scheme) will always be checked
 first; only if this fails, Chawan will retry the request with
 \f[CR]prepend\-scheme\f[R] set as the scheme.
-By default, this is set to \[lq]https://\[rq].
-Note that the \[lq]://\[rq] part is mandatory.
 T}@T{
 T}
 T{
 prepend\-https
 T}@T{
 boolean
+T}@T{
+true
 T}@T{
 Deprecated: use prepend\-scheme instead.
 When set to false, Chawan will act as if prepend\-scheme were set to
@@ -515,6 +644,8 @@ proxy
 T}@T{
 URL
 T}@T{
+unset
+T}@T{
 Specify a proxy for all network requests Chawan makes.
 All proxies supported by cURL may be used.
 Can be overridden by siteconf.
@@ -524,6 +655,8 @@ T{
 default\-headers
 T}@T{
 table
+T}@T{
+{omitted}
 T}@T{
 Specify a list of default headers for all HTTP(S) network requests.
 Can be overridden by siteconf.
@@ -537,11 +670,13 @@ Following is a list of display options:
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(11.2n) lw(14.0n) lw(19.6n) lw(22.4n) lw(2.8n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Default
 T}@T{
 Function
 T}@T{
@@ -552,6 +687,8 @@ color\-mode
 T}@T{
 \[lq]monochrome\[rq] / \[lq]ansi\[rq] / \[lq]eight\-bit\[rq] /
 \[lq]true\-color\[rq] / \[lq]auto\[rq]
+T}@T{
+\[lq]auto\[rq]
 T}@T{
 Set the color mode.
 \[lq]auto\[rq] for automatic detection, \[lq]monochrome\[rq] for black
@@ -568,6 +705,8 @@ T}@T{
 \[lq]reverse\[rq], \[lq]strike\[rq], \[lq]overline\[rq],
 \[lq]blink\[rq]]
 T}@T{
+\[lq]auto\[rq]
+T}@T{
 Specifies output formatting modes.
 Accepts the string \[lq]auto\[rq] or an array of specific attributes.
 An empty array (\f[CR][]\f[R]) disables formatting completely.
@@ -580,7 +719,9 @@ T}@T{
 \[lq]reverse\[rq], \[lq]strike\[rq], \[lq]overline\[rq],
 \[lq]blink\[rq]]
 T}@T{
-Disable specified formatting modes.
+\[lq]overline\[rq]
+T}@T{
+Disable specific formatting modes.
 T}@T{
 T}
 T{
@@ -588,16 +729,16 @@ image\-mode
 T}@T{
 \[lq]auto\[rq] / \[lq]none\[rq] / \[lq]sixel\[rq] / \[lq]kitty\[rq]
 T}@T{
+\[lq]auto\[rq]
+T}@T{
 Specifies the image output mode.
 \[lq]sixel\[rq] uses sixels for output, \[lq]kitty\[rq] uses the Kitty
 image display protocol, \[lq]none\[rq] disables image display
 completely.
 \[lq]auto\[rq] tries to detect sixel or kitty support, and falls back to
 \[lq]none\[rq] when neither are available.
-Defaults to \[lq]auto\[rq].
-However, images are still disabled by default, unless you also enable
-\f[CR]buffer.images\f[R] which allows the browser to actually download
-images.
+This is the default setting, but you must also enable
+\f[CR]buffer.images\f[R] for images to work.
 T}@T{
 T}
 T{
@@ -605,16 +746,19 @@ sixel\-colors
 T}@T{
 \[lq]auto\[rq] / 2..65535
 T}@T{
+\[lq]auto\[rq]
+T}@T{
 Only applies when \f[CR]display.image\-mode=\[dq]sixel\[dq]\f[R].
 Setting a number overrides the number of sixel color registers reported
-by the terminal, while \[lq]auto\[rq] leaves color detection to Chawan.
-Defaults to \[lq]auto\[rq].
+by the terminal.
 T}@T{
 T}
 T{
 alt\-screen
 T}@T{
 \[lq]auto\[rq] / boolean
+T}@T{
+\[lq]auto\[rq]
 T}@T{
 Enable/disable the alternative screen.
 T}@T{
@@ -623,6 +767,8 @@ T{
 highlight\-color
 T}@T{
 color
+T}@T{
+\[lq]cyan\[rq]
 T}@T{
 Set the highlight color.
 Both hex values and CSS color names are accepted.
@@ -633,6 +779,8 @@ highlight\-marks
 T}@T{
 boolean
 T}@T{
+true
+T}@T{
 Enable/disable highlighting of marks.
 T}@T{
 T}
@@ -640,6 +788,8 @@ T{
 double\-width\-ambiguous
 T}@T{
 boolean
+T}@T{
+false
 T}@T{
 Assume the terminal displays characters in the East Asian Ambiguous
 category as double\-width characters.
@@ -650,6 +800,8 @@ T{
 minimum\-contrast
 T}@T{
 number
+T}@T{
+100
 T}@T{
 Specify the minimum difference between the luminance (Y) of the
 background and the foreground.
@@ -662,6 +814,8 @@ force\-clear
 T}@T{
 boolean
 T}@T{
+false
+T}@T{
 Force the screen to be completely cleared every time it is redrawn.
 T}@T{
 T}
@@ -669,6 +823,8 @@ T{
 set\-title
 T}@T{
 boolean
+T}@T{
+true
 T}@T{
 Set the terminal emulator\[cq]s window title to that of the current
 page.
@@ -679,6 +835,8 @@ default\-background\-color
 T}@T{
 \[lq]auto\[rq] / color
 T}@T{
+\[lq]auto\[rq]
+T}@T{
 Overrides the assumed background color of the terminal.
 \[lq]auto\[rq] leaves background color detection to Chawan.
 T}@T{
@@ -687,6 +845,8 @@ T{
 default\-foreground\-color
 T}@T{
 \[lq]auto\[rq] / color
+T}@T{
+\[lq]auto\[rq]
 T}@T{
 Sets the assumed foreground color of the terminal.
 \[lq]auto\[rq] leaves foreground color detection to Chawan.
@@ -697,18 +857,20 @@ query\-da1
 T}@T{
 bool
 T}@T{
+true
+T}@T{
 Enable/disable querying Primary Device Attributes, and with it, all
 \[lq]dynamic\[rq] terminal querying.
-It is highly recommended not to alter the default value (which is true),
-or the output will most likely look horrible.
-(Except, obviously, if your terminal does not support Primary Device
-Attributes.)
+Do not alter this value unless Chawan told you so; the output will look
+awful.
 T}@T{
 T}
 T{
 columns, lines, pixels\-per\-column, pixels\-per\-line
 T}@T{
 number
+T}@T{
+80, 24, 9, 18
 T}@T{
 Fallback values for the number of columns, lines, pixels per column, and
 pixels per line for the cases where it cannot be determined
@@ -722,6 +884,8 @@ force\-pixels\-per\-line
 T}@T{
 boolean
 T}@T{
+false
+T}@T{
 Force\-set columns, lines, pixels per column, or pixels per line to the
 fallback values provided above.
 T}@T{
@@ -734,11 +898,13 @@ e.g.\ FTP related rules are placed in in \f[CR][protocol.ftp]\f[R].
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(11.2n) lw(14.0n) lw(19.6n) lw(22.4n) lw(2.8n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Default
 T}@T{
 Function
 T}@T{
@@ -747,11 +913,12 @@ _
 T{
 form\-request
 T}@T{
-http, ftp, data, mailto
+\[lq]http\[rq] / \[lq]ftp\[rq] / \[lq]data\[rq] / \[lq]mailto\[rq]
+T}@T{
+\[lq]http\[rq]
 T}@T{
 Specify which protocol to imitate when submitting forms to this
 protocol.
-Defaults to HTTP.
 T}@T{
 T}
 .TE
@@ -815,6 +982,9 @@ T}
 Configuration options can be specified for individual sites.
 Entries are to be placed in the table array \f[CR][[siteconf]]\f[R].
 .PP
+Most siteconf options can also be specified globally; see the
+\[lq]overrides\[rq] field.
+.PP
 Examples:
 .IP
 .EX
@@ -838,9 +1008,8 @@ x.pathname = s.at(s.length > 2 ? \-2 : 1);
 # Allow cookie sharing on *sr.ht domains.
 [[siteconf]]
 host = \[aq](.*\[rs].)?sr\[rs].ht\[aq] # either \[aq]something.sr.ht\[aq] or \[aq]sr.ht\[aq]
-cookie = true # enable cookies
+cookie = true # enable cookies (read\-only; use \[dq]save\[dq] to persist them)
 share\-cookie\-jar = \[aq]sr.ht\[aq] # use the cookie jar of \[aq]sr.ht\[aq] for all matched hosts
-third\-party\-cookie = \[aq].*\[rs].sr\[rs].ht\[aq] # allow cookies from subdomains
 
 # Use the \[dq]vector\[dq] skin on Wikipedia.
 [[siteconf]]
@@ -864,11 +1033,13 @@ Siteconf options:
 .PP
 .TS
 tab(@);
-lw(15.6n) lw(19.4n) lw(31.1n) lw(3.9n).
+lw(10.4n) lw(13.0n) lw(23.3n) lw(20.7n) lw(2.6n).
 T{
 Name
 T}@T{
 Value
+T}@T{
+Overrides
 T}@T{
 Function
 T}@T{
@@ -878,6 +1049,8 @@ T{
 url
 T}@T{
 regex
+T}@T{
+n/a
 T}@T{
 Regular expression used to match the URL.
 Either this or the \f[CR]host\f[R] option must be specified.
@@ -889,6 +1062,8 @@ T{
 host
 T}@T{
 regex
+T}@T{
+n/a
 T}@T{
 Regular expression used to match the host part of the URL (i.e.\ domain
 name/ip address.)
@@ -902,6 +1077,8 @@ rewrite\-url
 T}@T{
 JavaScript function
 T}@T{
+n/a
+T}@T{
 A JavaScript function Chawan will pass the site\[cq]s URL object to.
 If a new URL is returned, or the URL object is modified in any way,
 Chawan will transparently redirect the user to this new URL.
@@ -910,28 +1087,20 @@ T}
 T{
 cookie
 T}@T{
-boolean
+boolean / \[lq]save\[rq]
 T}@T{
-Whether loading cookies should be allowed for this URL.
-By default, this is false for all websites.
-Overrides \f[CR]buffer.cookie\f[R].
+\f[CR]buffer.cookie\f[R]
 T}@T{
-T}
-T{
-third\-party\-cookie
-T}@T{
-array of regexes
-T}@T{
-Domains for which third\-party cookies are allowed on this domain.
-Note: this only works for buffers which share the same cookie jar.
-Note: regexes are handled according to the match mode regex handling
-rules.
+Whether loading (with \[lq]save\[rq], also saving) cookies should be
+allowed for this URL.
 T}@T{
 T}
 T{
 share\-cookie\-jar
 T}@T{
 host
+T}@T{
+n/a
 T}@T{
 Cookie jar to use for this domain.
 Useful for e.g.\ sharing cookies with subdomains.
@@ -942,21 +1111,24 @@ referer\-from
 T}@T{
 boolean
 T}@T{
+\f[CR]buffer.referer\-from\f[R]
+T}@T{
 Whether or not we should send a Referer header when opening requests
 originating from this domain.
 Simplified example: if you click a link on a.com that refers to b.com,
 and referer\-from is true, b.com is sent \[lq]a.com\[rq] as the Referer
 header.
-Overrides \f[CR]buffer.referer\-from\f[R].
 T}@T{
 T}
 T{
 scripting
 T}@T{
-boolean
+boolean / \[lq]app\[rq]
+T}@T{
+\f[CR]buffer.scripting\f[R]
 T}@T{
 Enable/disable JavaScript execution on this site.
-Overrides \f[CR]buffer.scripting\f[R].
+See \f[CR]buffer.scripting\f[R] for details.
 T}@T{
 T}
 T{
@@ -964,8 +1136,9 @@ styling
 T}@T{
 boolean
 T}@T{
+\f[CR]buffer.styling\f[R]
+T}@T{
 Enable/disable author styles (CSS) on this site.
-Overrides \f[CR]buffer.styling\f[R].
 T}@T{
 T}
 T{
@@ -973,8 +1146,9 @@ images
 T}@T{
 boolean
 T}@T{
+\f[CR]buffer.images\f[R]
+T}@T{
 Enable/disable image display on this site.
-Overrides \f[CR]buffer.images\f[R].
 T}@T{
 T}
 T{
@@ -982,8 +1156,9 @@ document\-charset
 T}@T{
 charset label string
 T}@T{
+\f[CR]encoding.document\-charset\f[R]
+T}@T{
 Specify the default encoding for this site.
-Overrides \f[CR]encoding.document\-charset\f[R].
 T}@T{
 T}
 T{
@@ -991,11 +1166,11 @@ stylesheet
 T}@T{
 CSS stylesheet
 T}@T{
+n/a
+T}@T{
 Specify an additional user\-stylesheet for this site.
-Note: other user\-stylesheets (specified under [css] or additional
-matching siteconfs) are not overridden.
-(In other words, they will be concatenated with this stylesheet to get
-the final user stylesheet.)
+Other user\-stylesheets (specified under [css] or additional matching
+siteconfs) are concatenated with this to get the final user stylesheet.
 T}@T{
 T}
 T{
@@ -1003,8 +1178,9 @@ proxy
 T}@T{
 URL
 T}@T{
+\f[CR]network.proxy\f[R]
+T}@T{
 Specify a proxy for network requests fetching contents of this buffer.
-Overrides \f[CR]network.proxy\f[R].
 T}@T{
 T}
 T{
@@ -1012,9 +1188,10 @@ default\-headers
 T}@T{
 table
 T}@T{
+\f[CR]network.default\-headers\f[R]
+T}@T{
 Specify a list of default headers for HTTP(S) network requests to this
 buffer.
-Overrides \f[CR]network.default\-headers\f[R].
 T}@T{
 T}
 T{
@@ -1022,11 +1199,11 @@ insecure\-ssl\-no\-verify
 T}@T{
 boolean
 T}@T{
+n/a
+T}@T{
 Defaults to false.
 When set to true, this disables peer and hostname verification for SSL
 keys on this site, like \f[CR]curl \-\-insecure\f[R] would.
-WARNING: this is insecure, and opens up your connections to
-man\-in\-the\-middle attacks.
 Please do not use this unless you are absolutely sure you know what you
 are doing.
 T}@T{
@@ -1036,9 +1213,11 @@ autofocus
 T}@T{
 boolean
 T}@T{
+\f[CR]buffer.autofocus\f[R]
+T}@T{
 When set to true, elements with an \[lq]autofocus\[rq] attribute are
 focused on automatically after the buffer is loaded.
-Overrides \f[CR]buffer.autofocus\f[R].
+If scripting is enabled, this also allows scripts to focus on elements.
 T}@T{
 T}
 T{
@@ -1046,11 +1225,23 @@ meta\-refresh
 T}@T{
 \[lq]never\[rq] / \[lq]always\[rq] / \[lq]ask\[rq]
 T}@T{
+\f[CR]buffer.meta\-refresh\f[R]
+T}@T{
 Whether or not \f[CR]http\-equiv=refresh\f[R] meta tags should be
 respected.
 \[lq]never\[rq] completely disables them, \[lq]always\[rq] automatically
 accepts all of them, \[lq]ask\[rq] brings up a pop\-up menu.
-Overrides \f[CR]buffer.meta\-refresh\f[R].
+T}@T{
+T}
+T{
+history
+T}@T{
+boolean
+T}@T{
+\f[CR]buffer.history\f[R]
+T}@T{
+Whether or not browsing history should be saved to the disk for this
+URL.
 T}@T{
 T}
 .TE
@@ -1331,6 +1522,22 @@ T}@T{
 Go to the URL currently on the clipboard.
 T}@T{
 T}
+T{
+M\-b
+T}@T{
+\f[CR]cmd.pager.openBookmarks\f[R]
+T}@T{
+Open the bookmark file.
+T}@T{
+T}
+T{
+M\-a
+T}@T{
+\f[CR]cmd.pager.addBookmark\f[R]
+T}@T{
+Add the current page to your bookmarks.
+T}@T{
+T}
 .TE
 .SS Buffer actions
 Note: \f[CR]n\f[R] in the following text refers to a number preceding
@@ -1507,6 +1714,14 @@ T}@T{
 \f[CR]cmd.buffer.click\f[R]
 T}@T{
 Click the HTML element currently under the cursor.
+T}@T{
+T}
+T{
+I
+T}@T{
+\f[CR]cmd.buffer.viewImage\f[R]
+T}@T{
+View the image currently under the cursor in an external viewer.
 T}@T{
 T}
 T{
@@ -1852,7 +2067,8 @@ So e.g.\ \f[CR]\[ti]/whatever\f[R] works.
 .IP \[bu] 2
 Environment variables can be used like \f[CR]$ENV_VAR\f[R].
 .IP \[bu] 2
-Relative paths are relative to the Chawan configuration directory.
+Relative paths are relative to the Chawan configuration directory
+(i.e.\ \f[CR]$CHA_DIR\f[R]).
 .PP
 Some environment variables are also exported by Chawan:
 .IP \[bu] 2
@@ -1864,8 +2080,9 @@ Symbolic links are automatically resolved to determine this path.
 uses for operation.
 By default, this is \f[CR]$CHA_BIN_DIR/../libexec/chawan\f[R].
 .IP \[bu] 2
-\f[CR]$CHA_CONFIG_DIR\f[R]: the configuration directory.
-(This can also be set by the user; see the top section for details.)
+\f[CR]$CHA_DIR\f[R]: the configuration directory.
+(This can also be set by the user; see the top section for details.
+\f[CR]$CHA_CONFIG_DIR\f[R] is a deprecated alias for this.)
 .SS Word types
 Word\-based pager commands can operate with different definitions of
 words.

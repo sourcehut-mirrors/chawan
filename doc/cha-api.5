@@ -78,6 +78,36 @@ Note: this suspends the entire process group.
 T}@T{
 T}
 T{
+\f[CR]readFile(path)\f[R]
+T}@T{
+Read a file at \f[CR]path\f[R].
+Returns the file\[cq]s content as a string, or null if the file does not
+exist.
+T}@T{
+T}
+T{
+\f[CR]writeFile(path, content)\f[R]
+T}@T{
+Write \f[CR]content\f[R] to the file at \f[CR]path\f[R].
+Throws a TypeError if this failed for whatever reason.
+T}@T{
+T}
+T{
+\f[CR]getenv(name, fallback = null)\f[R]
+T}@T{
+Get an environment variable by \f[CR]name\f[R].
+Returns \f[CR]fallback\f[R] if the variable does not exist.
+T}@T{
+T}
+T{
+\f[CR]setenv(name, value)\f[R]
+T}@T{
+Set an environment variable by \f[CR]name\f[R].
+Throws a type error if the operation failed (e.g.\ because the
+variable\[cq]s size exceeded an OS\-specified limit.)
+T}@T{
+T}
+T{
 \f[CR]pager\f[R]
 T}@T{
 The pager object.
