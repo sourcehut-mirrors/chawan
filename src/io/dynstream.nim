@@ -398,30 +398,26 @@ proc getSocketName*(pid: int): string =
 proc getSocketPath*(socketDir: string; pid: int): string =
   socketDir / getSocketName(pid)
 
-proc connectSocketStream0(socketDir: string; baseFd, pid: int): SocketStream =
+proc connectSocketStream*(socketDir: string; baseFd, pid: int): SocketStream =
   let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
   let ss = SocketStream(fd: fd, blocking: true)
   ss.setCloseOnExec()
   let path = getSocketPath(socketDir, pid)
   if baseFd == -1:
     if connect_unix_from_c(fd, cstring(path), cint(path.len)) != 0:
-      raiseOSError(osLastError())
+      discard close(fd)
+      return nil
   else:
     when defined(freebsd):
       let name = getSocketName(pid)
       let nameLen = cint(name.len)
       if connectat_unix_from_c(cint(baseFd), fd, cstring(name), nameLen) != 0:
-        raiseOSError(osLastError())
+        discard close(fd)
+        return nil
     else:
       # shouldn't have sockDirFd on other architectures
       doAssert false
   return ss
-
-proc connectSocketStream*(socketDir: string; baseFd, pid: int): SocketStream =
-  try:
-    return connectSocketStream0(socketDir, baseFd, pid)
-  except OSError:
-    return nil
 
 type
   BufStream* = ref object of DynStream
