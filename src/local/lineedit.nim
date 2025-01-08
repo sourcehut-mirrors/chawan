@@ -22,19 +22,20 @@ type
     prompt: string
     promptw: int
     state*: LineEditState
-    escNext*: bool
     cursorx: int # 0 ..< news.width
     cursori: int # 0 ..< news.len
     shiftx: int # 0 ..< news.width
     shifti: int # 0 ..< news.len
     padding: int # 0 or 1
     maxwidth: int
-    hide: bool
     hist: History
     currHist: HistoryEntry
     histtmp: string
     luctx: LUContext
     redraw*: bool
+    skipLast: bool
+    escNext*: bool
+    hide: bool
 
 jsDestructor(LineEdit)
 
@@ -263,9 +264,12 @@ proc `end`(edit: LineEdit) {.jsfunc.} =
 
 proc prevHist(edit: LineEdit) {.jsfunc.} =
   if edit.currHist == nil:
-    if edit.hist.last != nil and edit.news.len > 0:
-      edit.histtmp = $edit.news
-    edit.currHist = edit.hist.last
+    var last = edit.hist.last
+    if last != nil and edit.skipLast:
+      last = last.prev
+    if last != nil and edit.news.len > 0:
+      edit.histtmp = edit.news
+    edit.currHist = last
   elif edit.currHist.prev != nil:
     edit.currHist = edit.currHist.prev
   if edit.currHist != nil:
@@ -280,6 +284,8 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
   if edit.currHist != nil and edit.currHist != edit.hist.last:
     edit.currHist = edit.currHist.next
     edit.news = edit.currHist.s
+    if edit.currHist == edit.hist.last and edit.skipLast:
+      edit.currHist = nil
     edit.begin()
     edit.end()
     edit.redraw = true
@@ -309,7 +315,9 @@ proc readLine*(prompt, current: string; termwidth: int; hide: bool;
     maxwidth: termwidth - promptw - 1,
     hist: hist,
     currHist: nil,
-    luctx: luctx
+    luctx: luctx,
+    # Skip the last history entry if it's identical to the input.
+    skipLast: hist.last != nil and hist.last.s == current
   )
 
 proc addLineEditModule*(ctx: JSContext) =
