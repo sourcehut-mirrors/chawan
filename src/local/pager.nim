@@ -200,8 +200,6 @@ jsDestructor(Pager)
 # Forward declarations
 proc acceptBuffers(pager: Pager)
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper
-proc addLoaderClient(pager: Pager; pid: int; config: LoaderClientConfig;
-  clonedFrom = -1): ClientKey
 proc alert*(pager: Pager; msg: string)
 proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
   contentType: string; i: int; response: Response; sx: int)
@@ -233,7 +231,7 @@ template attrs(pager: Pager): WindowAttributes =
   pager.term.attrs
 
 func loaderPid(pager: Pager): int {.jsfget.} =
-  return pager.loader.process
+  return pager.loader.loaderPid
 
 func getRoot(container: Container): Container =
   var c = container
@@ -483,11 +481,13 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, clientLoadJSModule,
     nil)
   JS_SetInterruptHandler(pager.jsrt, interruptHandler, cast[pointer](pager))
-  loader.key = pager.addLoaderClient(pager.loader.clientPid, LoaderClientConfig(
+  let clientConfig = LoaderClientConfig(
     defaultHeaders: newHeaders(pager.config.network.default_headers),
     proxy: pager.config.network.proxy,
     filter: newURLFilter(default = true),
-  ))
+  )
+  discard pager.loader.addClient(pager.loader.clientPid,
+    clientConfig, -1, isPager = true)
   block history:
     let hist = newHistory(pager.config.external.history_size, getTime().toUnix())
     let ps = newPosixStream(pager.config.external.history_file)
@@ -820,18 +820,6 @@ proc input(pager: Pager): EmptyPromise =
   if p == nil:
     p = newResolvedPromise()
   return p
-
-proc genClientKey(pager: Pager): ClientKey =
-  var key {.noinit.}: ClientKey
-  pager.urandom.recvDataLoop(key)
-  return key
-
-proc addLoaderClient(pager: Pager; pid: int; config: LoaderClientConfig;
-    clonedFrom = -1): ClientKey =
-  var key = pager.genClientKey()
-  while unlikely(not pager.loader.addClient(key, pid, config, clonedFrom)):
-    key = pager.genClientKey()
-  return key
 
 proc run*(pager: Pager; pages: openArray[string]; contentType: Option[string];
     cs: Charset; dump, history: bool) =
@@ -3095,17 +3083,19 @@ proc acceptBuffers(pager: Pager) =
     pager.pollData.register(fd, POLLIN or POLLOUT)
   for item in pager.procmap:
     let container = item.container
+    # unlink here; on Linux we can't unlink from the buffer :/
+    #TODO replace this with a socketpair
+    # (also, it seems better to just do this from connect2...)
     let stream = connectSocketStream(pager.config.external.sockdir,
       pager.loader.sockDirFd, container.process)
-    # unlink here; on Linux we can't unlink from the buffer :/
     discard tryRemoveFile(getSocketPath(pager.config.external.sockdir,
       container.process))
     if stream == nil:
       pager.alert("Error: failed to set up buffer")
       continue
     let loader = pager.loader
-    let key = pager.addLoaderClient(container.process, container.loaderConfig,
-      container.clonedFrom)
+    let cstream = pager.loader.addClient(container.process,
+      container.loaderConfig, container.clonedFrom)
     if item.istreamOutputId != -1: # new buffer
       if container.cacheId == -1:
         container.cacheId = loader.addCacheFile(item.istreamOutputId,
@@ -3124,8 +3114,8 @@ proc acceptBuffers(pager: Pager) =
         outCacheId = loader.addCacheFile(item.ostreamOutputId, pid)
         loader.resume([item.istreamOutputId, item.ostreamOutputId])
       stream.withPacketWriter w:
-        w.swrite(key)
         w.swrite(outCacheId)
+        w.sendAux.add(cstream.fd)
       # pass down ostream
       # must come after the previous block so the first packet is flushed
       stream.sendFd(item.ostream.fd)
@@ -3133,13 +3123,14 @@ proc acceptBuffers(pager: Pager) =
       container.setStream(stream, registerFun)
     else: # cloned buffer
       stream.withPacketWriter w:
-        w.swrite(key)
+        w.sendAux.add(cstream.fd)
       # buffer is cloned, just share the parent's cached source
       loader.shareCachedItem(container.cacheId, container.process)
       # also add a reference here; it will be removed when the container is
       # deleted
       loader.shareCachedItem(container.cacheId, loader.clientPid)
       container.setCloneStream(stream, registerFun)
+    cstream.sclose()
     let fd = int(stream.fd)
     pager.loader.put(ContainerData(stream: stream, container: container))
     pager.pollData.register(fd, POLLIN)

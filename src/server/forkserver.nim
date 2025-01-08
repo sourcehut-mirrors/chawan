@@ -34,6 +34,7 @@ type
     loaderPid: int
     sockDirFd: cint
     sockDir: string
+    loaderStream: SocketStream
 
 proc loadConfig*(forkserver: ForkServer; config: Config): int =
   forkserver.ostream.withPacketWriter w:
@@ -81,22 +82,19 @@ proc trapSIGINT() =
   setControlCHook(proc() {.noconv.} = discard)
 
 proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
-  var pipefd {.noinit.}: array[2, cint]
-  if pipe(pipefd) == -1:
-    raise newException(Defect, "Failed to open pipe.")
   stdout.flushFile()
   stderr.flushFile()
   let pid = fork()
   if pid == 0:
     # child process
     trapSIGINT()
+    let loaderStream = ctx.loaderStream
     for i in 0 ..< ctx.children.len: ctx.children[i] = 0
     ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
-    discard close(pipefd[0]) # close read
     try:
       setProcessTitle("cha loader")
-      runFileLoader(pipefd[1], config)
+      runFileLoader(config, loaderStream)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim
@@ -105,11 +103,8 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
       stderr.write(msg)
       quit(1)
     doAssert false
-  let ps = newPosixStream(pipefd[0]) # get read
-  discard close(pipefd[1]) # close write
-  let c = ps.sreadChar()
-  assert c == '\0'
-  ps.sclose()
+  ctx.loaderStream.sclose()
+  ctx.loaderStream = nil
   return pid
 
 proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
@@ -141,8 +136,6 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     let sockDirFd = ctx.sockDirFd
     zeroMem(addr ctx, sizeof(ctx))
     discard close(pipefd[0]) # close read
-    closeStdin()
-    closeStdout()
     setBufferProcessTitle(url)
     let pid = getCurrentProcessId()
     let ssock = newServerSocket(sockDir, sockDirFd, pid)
@@ -151,24 +144,29 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     ps.sclose()
     let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
     let pstream = ssock.acceptSocketStream()
+    var cacheId: int
+    var loaderStream: SocketStream
+    pstream.withPacketReader r:
+      r.sread(cacheId)
+      loaderStream = newSocketStream(r.recvAux.pop())
+    let loader = newFileLoader(loaderPid, pid, sockDir, sockDirFd,
+      loaderStream)
     gssock = ssock
     gpstream = pstream
     onSignal SIGTERM:
       discard sig
-      gpstream.sclose()
-      gssock.close(unlink = false)
+      if gpstream != nil:
+        gpstream.sclose()
+        gpstream = nil
+      if gssock != nil:
+        gssock.close()
+        gssock = nil
       exitnow(1)
     signal(SIGPIPE, SIG_DFL)
     enterBufferSandbox(sockDir)
-    let loader = FileLoader(
-      process: loaderPid,
-      clientPid: pid,
-      sockDir: sockDir,
-      sockDirFd: sockDirFd
-    )
     try:
       launchBuffer(config, url, attrs, ishtml, charsetStack, loader,
-        ssock, pstream, urandom)
+        ssock, pstream, urandom, cacheId)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim
@@ -185,12 +183,13 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   ctx.children.add(pid)
   return pid
 
-proc runForkServer() =
+proc runForkServer(ifd, ofd: cint; loaderStream: SocketStream) =
   setProcessTitle("cha forkserver")
   var ctx = ForkServerContext(
-    istream: newPosixStream(stdin.getFileHandle()),
-    ostream: newPosixStream(stdout.getFileHandle()),
-    sockDirFd: -1
+    istream: newPosixStream(ifd),
+    ostream: newPosixStream(ofd),
+    sockDirFd: -1,
+    loaderStream: loaderStream
   )
   signal(SIGCHLD, SIG_IGN)
   signal(SIGPIPE, SIG_IGN)
@@ -206,8 +205,7 @@ proc runForkServer() =
           r.sread(isCJKAmbiguous)
           r.sread(config)
           ctx.sockDir = config.sockdir
-          when defined(freebsd):
-            ctx.sockDirFd = open(cstring(ctx.sockDir), O_DIRECTORY)
+          ctx.sockDirFd = openSockDir(ctx.sockDir)
           let pid = ctx.forkLoader(config)
           ctx.ostream.withPacketWriter w:
             w.swrite(pid)
@@ -229,19 +227,20 @@ proc runForkServer() =
   ctx.istream.sclose()
   ctx.ostream.sclose()
   # Clean up when the main process crashed.
+  #TODO this seems like a bad idea; children may be out of sync here...
   for child in ctx.children:
     discard kill(cint(child), cint(SIGTERM))
   quit(0)
 
-proc newForkServer*(): ForkServer =
-  var pipefd_in: array[2, cint] # stdin in forkserver
-  var pipefd_out: array[2, cint] # stdout in forkserver
-  var pipefd_err: array[2, cint] # stderr in forkserver
-  if pipe(pipefd_in) == -1:
+proc newForkServer*(sy: array[2, cint]): ForkServer =
+  var pipeFdIn {.noinit.}: array[2, cint] # stdin in forkserver
+  var pipeFdOut {.noinit.}: array[2, cint] # stdout in forkserver
+  var pipeFdErr {.noinit.}: array[2, cint] # stderr in forkserver
+  if pipe(pipeFdIn) == -1:
     raise newException(Defect, "Failed to open input pipe.")
-  if pipe(pipefd_out) == -1:
+  if pipe(pipeFdOut) == -1:
     raise newException(Defect, "Failed to open output pipe.")
-  if pipe(pipefd_err) == -1:
+  if pipe(pipeFdErr) == -1:
     raise newException(Defect, "Failed to open error pipe.")
   stdout.flushFile()
   stderr.flushFile()
@@ -251,32 +250,24 @@ proc newForkServer*(): ForkServer =
   elif pid == 0:
     # child process
     trapSIGINT()
-    discard close(pipefd_in[1]) # close write
-    discard close(pipefd_out[0]) # close read
-    discard close(pipefd_err[0]) # close read
-    let readfd = pipefd_in[0]
-    let writefd = pipefd_out[1]
-    let errfd = pipefd_err[1]
-    discard dup2(readfd, stdin.getFileHandle())
-    discard dup2(writefd, stdout.getFileHandle())
-    discard dup2(errfd, stderr.getFileHandle())
-    discard close(pipefd_in[0])
-    discard close(pipefd_out[1])
-    discard close(pipefd_err[1])
-    runForkServer()
+    closeStdin()
+    closeStdout()
+    discard dup2(pipeFdErr[1], stderr.getFileHandle())
+    discard close(pipeFdErr[1])
+    discard close(pipeFdIn[1]) # close write
+    discard close(pipeFdOut[0]) # close read
+    discard close(pipeFdErr[0]) # close read
+    discard close(sy[0])
+    runForkServer(pipeFdIn[0], pipeFdOut[1], newSocketStream(sy[1]))
     doAssert false
   else:
-    discard close(pipefd_in[0]) # close read
-    discard close(pipefd_out[1]) # close write
-    discard close(pipefd_err[1]) # close write
-    let ostream = newPosixStream(pipefd_in[1])
-    let istream = newPosixStream(pipefd_out[0])
-    let estream = newPosixStream(pipefd_err[0])
+    discard close(pipeFdIn[0]) # close read
+    discard close(pipeFdOut[1]) # close write
+    discard close(pipeFdErr[1]) # close write
+    let ostream = newPosixStream(pipeFdIn[1])
+    let istream = newPosixStream(pipeFdOut[0])
+    let estream = newPosixStream(pipeFdErr[0])
     estream.setBlocking(false)
     for it in [ostream, istream, estream]:
       it.setCloseOnExec()
-    return ForkServer(
-      ostream: ostream,
-      istream: istream,
-      estream: estream
-    )
+    return ForkServer(ostream: ostream, istream: istream, estream: estream)

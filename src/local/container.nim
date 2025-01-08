@@ -245,7 +245,7 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   let ssock = newServerSocket(loader.sockDir, loader.sockDirFd,
     loader.clientPid)
   SocketStream(container.iface.stream.source).sendFd(ssock.fd)
-  ssock.close(unlink = false)
+  ssock.close()
   return p.then(proc(pid: int): Container =
     if pid == -1:
       return nil

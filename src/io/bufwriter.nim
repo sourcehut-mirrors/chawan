@@ -65,9 +65,10 @@ proc deinit*(writer: var BufferedWriter) =
   writer.sendAux.setLen(0)
 
 template withPacketWriter*(stream: DynStream; w, body: untyped) =
-  block:
-    var w = stream.initWriter()
+  var w = stream.initWriter()
+  try:
     body
+  finally:
     w.flush()
     w.deinit()
 

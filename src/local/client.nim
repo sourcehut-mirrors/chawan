@@ -159,10 +159,13 @@ func getClient(client: Client): Client {.jsfget: "client".} =
   return client
 
 proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
-    jsctx: JSContext; warnings: seq[string]; urandom: PosixStream): Client =
+    jsctx: JSContext; warnings: seq[string]; urandom: PosixStream;
+    loaderStream: SocketStream): Client =
   let jsrt = JS_GetRuntime(jsctx)
-  let loader = FileLoader(process: loaderPid, clientPid: getCurrentProcessId())
-  loader.setSocketDir(config.external.sockdir)
+  let clientPid = getCurrentProcessId()
+  let sockDirFd = openSockDir(config.external.sockdir)
+  let loader = newFileLoader(loaderPid, clientPid, config.external.sockdir,
+    sockDirFd, loaderStream)
   let client = Client(
     jsrt: jsrt,
     jsctx: jsctx,

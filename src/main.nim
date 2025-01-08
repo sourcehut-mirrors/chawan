@@ -239,7 +239,12 @@ const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 proc main() =
   putEnv("CHA_BIN_DIR", getAppFilename().untilLast('/'))
   putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
-  let forkserver = newForkServer()
+  var sy {.noinit.}: array[2, cint]
+  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sy) != 0:
+    stderr.writeLine("Failed to set up initial socket pair")
+    quit(1)
+  let forkserver = newForkServer(sy)
+  discard close(sy[1])
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
   var ctx = ParamParseContext(params: commandLineParams(), i: 0)
@@ -272,7 +277,7 @@ proc main() =
   let loaderPid = forkserver.loadConfig(config)
   setControlCHook(proc() {.noconv.} = quit(1))
   let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
-    urandom)
+    urandom, newSocketStream(sy[0]))
   try:
     client.pager.run(ctx.pages, ctx.contentType, ctx.charset, ctx.dump, history)
   except CatchableError:

@@ -1014,7 +1014,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       # We ignore errors; not much we can do with them here :/
       discard buffer.rewind(buffer.bytesRead, unregister = false)
     buffer.pstream.sclose()
-    buffer.ssock.close(unlink = false)
+    buffer.ssock.close()
     let ssock = newServerSocket(sockFd, buffer.loader.sockDir,
       buffer.loader.sockDirFd, myPid)
     buffer.ssock = ssock
@@ -1027,8 +1027,9 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     gpstream = buffer.pstream
     buffer.loader.clientPid = myPid
     # get key for new buffer
-    var r = buffer.pstream.initPacketReader()
-    r.sread(buffer.loader.key)
+    buffer.loader.controlStream.sclose()
+    buffer.pstream.withPacketReader r:
+      buffer.loader.controlStream = newSocketStream(r.recvAux.pop())
     buffer.rfd = buffer.pstream.fd
     buffer.pollData.register(buffer.rfd, POLLIN)
     # must reconnect after the new client is set up, or the client pids get
@@ -1942,14 +1943,18 @@ proc runBuffer(buffer: Buffer) =
         buffer.maybeReshape()
 
 proc cleanup(buffer: Buffer) =
-  buffer.pstream.sclose()
+  if gpstream != nil:
+    gpstream.sclose()
+    gpstream = nil
+  if gssock != nil:
+    gssock.close()
+    gssock = nil
   buffer.window.urandom.sclose()
-  # no unlink access on Linux, so just hope that the pager could clean it up
-  buffer.ssock.close(unlink = false)
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
-    ssock: ServerSocket; pstream: SocketStream; urandom: PosixStream) =
+    ssock: ServerSocket; pstream: SocketStream; urandom: PosixStream;
+    cacheId: int) =
   let factory = newCAtomFactory()
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
@@ -1990,9 +1995,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     if buffer.config.scripting == smApp:
       buffer.window.maybeRestyle = proc() = buffer.maybeRestyle()
   buffer.charset = buffer.charsetStack.pop()
-  var r = pstream.initPacketReader()
-  r.sread(buffer.loader.key)
-  r.sread(buffer.cacheId)
   let fd = pstream.recvFd()
   buffer.fd = int(fd)
   buffer.istream = newPosixStream(fd)

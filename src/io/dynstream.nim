@@ -398,9 +398,12 @@ proc getSocketName*(pid: int): string =
 proc getSocketPath*(socketDir: string; pid: int): string =
   socketDir / getSocketName(pid)
 
+proc newSocketStream*(fd: cint): SocketStream =
+  return SocketStream(fd: fd, blocking: true)
+
 proc connectSocketStream*(socketDir: string; baseFd, pid: int): SocketStream =
   let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
-  let ss = SocketStream(fd: fd, blocking: true)
+  let ss = newSocketStream(fd)
   ss.setCloseOnExec()
   let path = getSocketPath(socketDir, pid)
   if baseFd == -1:
@@ -548,14 +551,8 @@ proc newServerSocket*(sockDir: string; sockDirFd: cint; pid: int): ServerSocket 
     raiseOSError(osLastError())
   return ssock
 
-proc close*(ssock: ServerSocket; unlink = true) =
+proc close*(ssock: ServerSocket) =
   discard close(ssock.fd)
-  if unlink:
-    when defined(freebsd):
-      if ssock.dfd != -1:
-        discard unlinkat(ssock.dfd, cstring(ssock.path), 0)
-        return
-    discard tryRemoveFile(ssock.path)
 
 proc acceptSocketStream*(ssock: ServerSocket): SocketStream =
   let fd = cint(accept(SocketHandle(ssock.fd), nil, nil))

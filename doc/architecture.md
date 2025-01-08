@@ -112,11 +112,11 @@ following steps:
   obviously, it's more efficient this way.)
 
 The loader process distinguishes between clients (i.e processes) through
-client keys (session cookies). In theory this should help against rogue
-clients, though in practice it is still trivial to crash the loader as
-a client. It also helps us block further requests from buffers that have
-been discarded by the pager, but still haven't found out yet that their
-life time has ended.
+their control stream (one end of a socketpair created by loader). In
+theory this should help against rogue clients, though in practice it is
+still trivial to crash the loader as a client. It also helps us block
+further requests from buffers that have been discarded by the pager, but
+still haven't found out yet that their life time has ended.
 
 ### Buffer
 

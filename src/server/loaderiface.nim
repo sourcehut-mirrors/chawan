@@ -22,8 +22,7 @@ import types/url
 
 type
   FileLoader* = ref object
-    key*: ClientKey
-    process*: int
+    loaderPid*: int
     clientPid*: int
     map: seq[MapData]
     mapFds*: int # number of fds in map
@@ -38,6 +37,9 @@ type
     # inside the events iterator.
     registerBlocked: bool
     registerQueue: seq[ConnectData]
+    # UNIX domain socket to the loader process.
+    # We send all messages through this.
+    controlStream*: PosixStream
 
   ConnectDataState = enum
     cdsBeforeResult, cdsBeforeStatus, cdsBeforeHeaders
@@ -102,33 +104,59 @@ proc getRedirect*(response: Response; request: Request): Request =
           return newRequest(url.get, request.httpMethod, body = request.body)
   return nil
 
-template withLoaderPacketWriter(stream: SocketStream; loader: FileLoader;
-    w, body: untyped) =
-  stream.withPacketWriter w:
-    w.swrite(loader.clientPid)
-    w.swrite(loader.key)
+template withPacketWriter(loader: FileLoader; w, body: untyped) =
+  loader.controlStream.withPacketWriter w:
     body
 
-proc connect(loader: FileLoader): SocketStream =
-  return connectSocketStream(loader.sockDir, loader.sockDirFd, loader.process)
+# Sometimes, we can return a value even after the loader crashed.
+# This improves reliability of the pager.
+template withPacketWriter(loader: FileLoader; w, fallback, body: untyped) =
+  try:
+    loader.controlStream.withPacketWriter w:
+      body
+  except IOError:
+    return fallback
+
+template withPacketWriterFire(loader: FileLoader; w, body: untyped) =
+  try:
+    loader.controlStream.withPacketWriter w:
+      body
+  except IOError:
+    return
+
+template withPacketReader(loader: FileLoader; r, body: untyped) =
+  loader.controlStream.withPacketReader r:
+    body
 
 # Start a request. This should not block (not for a significant amount of time
 # anyway).
+#TODO can we return PosixStream here?
+#TODO2 actually, why don't just use a pipe in the first place?
+#TODO3 this chokes if loader runs out of fds...
 proc startRequest(loader: FileLoader; request: Request): SocketStream =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
+  loader.withPacketWriter w:
     w.swrite(lcLoad)
     w.swrite(request)
-  return stream
+  var success: bool
+  var fd: cint
+  loader.withPacketReader r:
+    r.sread(success)
+    if success:
+      fd = r.recvAux.pop()
+  if success:
+    return newSocketStream(fd)
+  return nil
 
 proc startRequest*(loader: FileLoader; request: Request;
     config: LoaderClientConfig): SocketStream =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
+  loader.withPacketWriter w:
     w.swrite(lcLoadConfig)
     w.swrite(request)
     w.swrite(config)
-  return stream
+  var fd: cint
+  loader.withPacketReader r:
+    fd = r.recvAux.pop()
+  return newSocketStream(fd)
 
 iterator data*(loader: FileLoader): MapData {.inline.} =
   for it in loader.map:
@@ -210,74 +238,59 @@ proc reconnect*(loader: FileLoader; data: ConnectData) =
   ))
 
 proc suspend*(loader: FileLoader; fds: seq[int]) =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
+  loader.withPacketWriter w:
     w.swrite(lcSuspend)
     w.swrite(fds)
-  stream.sclose()
 
 proc resume*(loader: FileLoader; fds: openArray[int]) =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
+  loader.withPacketWriter w:
     w.swrite(lcResume)
     w.swrite(fds)
-  stream.sclose()
 
 proc resume*(loader: FileLoader; fds: int) =
   loader.resume([fds])
 
 proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
+  loader.withPacketWriter w:
     w.swrite(lcTee)
     w.swrite(sourceId)
     w.swrite(targetPid)
   var outputId: int
-  var r = stream.initPacketReader()
-  r.sread(outputId)
-  return (stream, outputId)
+  var fd: cint
+  loader.withPacketReader r:
+    r.sread(outputId)
+    fd = r.recvAux.pop()
+  return (newSocketStream(fd), outputId)
 
 proc addCacheFile*(loader: FileLoader; outputId, targetPid: int): int =
-  let stream = loader.connect()
-  if stream == nil:
-    return -1
-  stream.withLoaderPacketWriter loader, w:
+  loader.withPacketWriter w, -1:
     w.swrite(lcAddCacheFile)
     w.swrite(outputId)
     w.swrite(targetPid)
-  var r = stream.initPacketReader()
   var outputId: int
-  r.sread(outputId)
-  stream.sclose()
+  loader.withPacketReader r:
+    r.sread(outputId)
   return outputId
 
 proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
-  let stream = loader.connect()
-  if stream == nil:
-    return ""
-  stream.withLoaderPacketWriter loader, w:
+  loader.withPacketWriter w, "":
     w.swrite(lcGetCacheFile)
     w.swrite(cacheId)
     w.swrite(sourcePid)
-  var r = stream.initPacketReader()
+  var r = loader.controlStream.initPacketReader()
   var s: string
   r.sread(s)
-  stream.sclose()
   return s
 
 proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
     bool =
-  let stream = loader.connect()
-  if stream == nil:
-    return false
-  stream.withLoaderPacketWriter loader, w:
+  loader.withPacketWriter w, false:
     w.swrite(lcRedirectToFile)
     w.swrite(outputId)
     w.swrite(targetPath)
-  var r = stream.initPacketReader()
+  var r = loader.controlStream.initPacketReader()
   var res: bool
   r.sread(res)
-  stream.sclose()
   return res
 
 proc onConnected(loader: FileLoader; connectData: ConnectData) =
@@ -393,86 +406,82 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
   return response
 
 proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1) =
-  let stream = loader.connect()
-  if stream != nil:
-    let sourcePid = if sourcePid != -1: sourcePid else: loader.clientPid
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcShareCachedItem)
-      w.swrite(sourcePid)
-      w.swrite(targetPid)
-      w.swrite(id)
-    stream.sclose()
+  let sourcePid = if sourcePid != -1: sourcePid else: loader.clientPid
+  loader.withPacketWriterFire w:
+    w.swrite(lcShareCachedItem)
+    w.swrite(sourcePid)
+    w.swrite(targetPid)
+    w.swrite(id)
 
 proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
-  let stream = loader.connect()
-  if stream != nil:
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcOpenCachedItem)
-      w.swrite(cacheId)
-    var fd = cint(-1)
-    stream.withPacketReader r:
-      var success: bool
-      r.sread(success)
-      if success:
-        fd = r.recvAux.pop()
-    stream.sclose()
-    if fd != -1:
-      return newPosixStream(fd)
+  loader.withPacketWriter w, nil:
+    w.swrite(lcOpenCachedItem)
+    w.swrite(cacheId)
+  var fd = cint(-1)
+  loader.withPacketReader r:
+    var success: bool
+    r.sread(success)
+    if success:
+      fd = r.recvAux.pop()
+  if fd != -1:
+    return newPosixStream(fd)
   return nil
 
 proc passFd*(loader: FileLoader; id: string; fd: cint) =
-  let stream = loader.connect()
-  if stream != nil:
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcPassFd)
-      w.swrite(id)
-    stream.sendFd(fd)
-    stream.sclose()
+  loader.withPacketWriterFire w:
+    w.swrite(lcPassFd)
+    w.swrite(id)
+    w.sendAux.add(fd)
 
 proc removeCachedItem*(loader: FileLoader; cacheId: int) =
-  let stream = loader.connect()
-  if stream != nil:
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcRemoveCachedItem)
-      w.swrite(cacheId)
-    stream.sclose()
+  loader.withPacketWriterFire w:
+    w.swrite(lcRemoveCachedItem)
+    w.swrite(cacheId)
 
 proc addAuth*(loader: FileLoader; url: URL) =
-  let stream = loader.connect()
-  if stream != nil:
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcAddAuth)
-      w.swrite(url)
+  loader.withPacketWriterFire w:
+    w.swrite(lcAddAuth)
+    w.swrite(url)
 
-proc addClient*(loader: FileLoader; key: ClientKey; pid: int;
-    config: LoaderClientConfig; clonedFrom: int): bool =
-  let stream = loader.connect()
-  stream.withLoaderPacketWriter loader, w:
+proc addClient*(loader: FileLoader; pid: int; config: LoaderClientConfig;
+    clonedFrom: int; isPager = false): SocketStream =
+  loader.withPacketWriter w:
     w.swrite(lcAddClient)
-    w.swrite(key)
     w.swrite(pid)
     w.swrite(config)
     w.swrite(clonedFrom)
-  var r = stream.initPacketReader()
-  var res: bool
-  r.sread(res)
-  stream.sclose()
-  return res
+  var success: bool
+  var fd: cint
+  loader.withPacketReader r:
+    r.sread(success)
+    if success and not isPager:
+      fd = r.recvAux.pop()
+  if success and not isPager:
+    return newSocketStream(fd)
+  return nil
 
 proc removeClient*(loader: FileLoader; pid: int) =
-  let stream = loader.connect()
-  if stream != nil:
-    stream.withLoaderPacketWriter loader, w:
-      w.swrite(lcRemoveClient)
-      w.swrite(pid)
-    stream.sclose()
+  loader.withPacketWriter w:
+    w.swrite(lcRemoveClient)
+    w.swrite(pid)
 
 when defined(freebsd):
-  let O_DIRECTORY* {.importc, header: "<fcntl.h>", noinit.}: cint
+  let O_DIRECTORY {.importc, header: "<fcntl.h>", noinit.}: cint
 
-proc setSocketDir*(loader: FileLoader; path: string) =
-  loader.sockDir = path
+# On Capsicum-capable systems, this opens path as a directory.
+# On other systems, it returns -1.
+proc openSockDir*(path: string): cint =
   when defined(freebsd):
-    loader.sockDirFd = newPosixStream(path, O_DIRECTORY, 0).fd
+    return newPosixStream(path, O_DIRECTORY, 0).fd
   else:
-    loader.sockDirFd = -1
+    return -1
+
+proc newFileLoader*(loaderPid, clientPid: int; sockDir: string;
+    sockDirFd: cint; controlStream: SocketStream): FileLoader =
+  return FileLoader(
+    loaderPid: loaderPid,
+    sockDir: sockDir,
+    sockDirFd: sockDirFd,
+    clientPid: clientPid,
+    controlStream: controlStream
+  )

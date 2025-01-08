@@ -47,6 +47,9 @@ template withPacketReader*(stream: DynStream; r, body: untyped) =
     var r = stream.initPacketReader()
     body
 
+proc empty*(reader: var BufferedReader): bool =
+  return reader.bufIdx == reader.buffer.len
+
 proc readData*(reader: var BufferedReader; buffer: pointer; len: int) =
   assert reader.bufIdx + len <= reader.buffer.len
   copyMem(buffer, addr reader.buffer[reader.bufIdx], len)
