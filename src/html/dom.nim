@@ -435,6 +435,8 @@ type
 
   HTMLTableRowElement = ref object of HTMLElement
 
+  HTMLMetaElement = ref object of HTMLElement
+
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
@@ -476,6 +478,7 @@ jsDestructor(HTMLTableElement)
 jsDestructor(HTMLTableCaptionElement)
 jsDestructor(HTMLTableRowElement)
 jsDestructor(HTMLTableSectionElement)
+jsDestructor(HTMLMetaElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -1033,16 +1036,20 @@ func makef(name: static string; ts: set[TagType]; ctype: static string): Reflect
     ctype: attrType0(ctype)
   )
 
+# Note: this table only works for tag types with a registered interface.
 const ReflectTable0 = [
   # non-global attributes
   makes("target", TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
   makes("href", TAG_LINK),
   makes("value", TAG_BUTTON),
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
-  makes("name", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
+  makes("name", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META),
   makeb("novalidate", "noValidate", TAG_FORM),
   makes("rel", TAG_A, TAG_LINK, TAG_LABEL),
   makes("for", "htmlFor", TAG_LABEL),
+  makes("http-equiv", "httpEquiv", TAG_META),
+  makes("content", TAG_META),
+  makes("media", TAG_META),
   makeul("cols", TAG_TEXTAREA, 20u32),
   makeul("rows", TAG_TEXTAREA, 1u32),
 # <SELECT>:
@@ -3497,6 +3504,8 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     HTMLTableRowElement()
   of TAG_TBODY, TAG_THEAD, TAG_TFOOT:
     HTMLTableSectionElement()
+  of TAG_META:
+    HTMLMetaElement()
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
@@ -5660,8 +5669,8 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
     hasExtraGetSet = true, extraGetSet = extraGetSet)
   template register(t: typed; tags: set[TagType]) =
     const extraGetSet = getReflectFunctions(tags)
-    ctx.registerType(t, parent = htmlElementCID,
-      hasExtraGetSet = true, extraGetSet = extra_getset)
+    ctx.registerType(t, parent = htmlElementCID, hasExtraGetSet = true,
+      extraGetSet = extraGetSet)
   template register(t: typed; tag: TagType) =
     register(t, {tag})
   register(HTMLInputElement, TAG_INPUT)
@@ -5696,6 +5705,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLTableCaptionElement, TAG_CAPTION)
   register(HTMLTableRowElement, TAG_TR)
   register(HTMLTableSectionElement, {TAG_TBODY, TAG_THEAD, TAG_TFOOT})
+  register(HTMLMetaElement, TAG_META)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 
