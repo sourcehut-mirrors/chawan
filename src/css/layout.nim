@@ -2747,6 +2747,7 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
       bctx.marginTarget = nil
   bctx.exclusions.setLen(state.oldExclusionsLen)
   state.offset = sizes.padding.topLeft
+  state.intr = size(w = 0, h = 0)
   box.applySize(sizes, state.maxChildWidth + state.totalFloatWidth, sizes.space,
     dtHorizontal)
   state.space.w = stretch(box.state.size.w)
