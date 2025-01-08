@@ -3933,7 +3933,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
             height: height,
             cacheId: cacheId,
             imageId: window.getImageId(),
-            contentType: contentType
+            contentType: "image/" & t
           )
           image.bitmap = bmp
           cachedURL.bmp = bmp
