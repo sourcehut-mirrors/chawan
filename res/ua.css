@@ -164,45 +164,45 @@ del, s, strike { text-decoration: line-through }
 rt::before { content: '（' }
 rt::after { content: '）' }
 
-img[align=left] { float: left }
-img[align=right] { float: right }
-img[align=top] { vertical-align: top }
-img[align=middle], img[align=center] { vertical-align: middle }
-img[align=bottom] { vertical-align: bottom }
+img[align=left i] { float: left }
+img[align=right i] { float: right }
+img[align=top i] { vertical-align: top }
+img[align=middle i], img[align=center i] { vertical-align: middle }
+img[align=bottom i] { vertical-align: bottom }
 
-table[align=left] { float: left }
-table[align=right] { float: right }
-table[align=center] { margin-left: auto; margin-right: auto }
+table[align=left i] { float: left }
+table[align=right i] { float: right }
+table[align=center i] { margin-left: auto; margin-right: auto }
 
-:is(div, p, td, th, thead, tbody, tfoot, tr)[align=left] {
+:is(div, p, td, th, thead, tbody, tfoot, tr)[align=left i] {
 	text-align: -cha-left
 }
 
-:is(div, p, td, th, thead, tbody, tfoot, tr)[align=center] {
+:is(div, p, td, th, thead, tbody, tfoot, tr)[align=center i] {
 	text-align: -cha-center
 }
 
-:is(div, p, td, th, thead, tbody, tfoot, tr)[align=middle] {
+:is(div, p, td, th, thead, tbody, tfoot, tr)[align=middle i] {
 	text-align: -cha-center
 }
 
-:is(div, p, td, th, thead, tbody, tfoot, tr)[align=right] {
+:is(div, p, td, th, thead, tbody, tfoot, tr)[align=right i] {
 	text-align: -cha-right
 }
 
-:is(td, th, thead, tbody, tfoot, tr)[valign=top] {
+:is(td, th, thead, tbody, tfoot, tr)[valign=top i] {
 	vertical-align: top
 }
 
-:is(td, th, thead, tbody, tfoot, tr)[valign=middle] {
+:is(td, th, thead, tbody, tfoot, tr)[valign=middle i] {
 	vertical-align: middle
 }
 
-:is(td, th, thead, tbody, tfoot, tr)[valign=bottom] {
+:is(td, th, thead, tbody, tfoot, tr)[valign=bottom i] {
 	vertical-align: bottom
 }
 
-:is(td, th, thead, tbody, tfoot, tr)[valign=baseline] {
+:is(td, th, thead, tbody, tfoot, tr)[valign=baseline i] {
 	vertical-align: baseline
 }
 
