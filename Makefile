@@ -151,12 +151,12 @@ $(OUTDIR_CGI_BIN)/%: adapter/img/%.nim
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
                 -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) -o:"$@" $<
 
-$(OUTDIR_LIBEXEC)/%: adapter/format/%.nim adapter/format/nim.cfg
+$(OUTDIR_LIBEXEC)/%: adapter/format/%.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
 		-o:"$@" $<
 
-$(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/tools/nim.cfg
+$(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
 		-o:"$@" $<
