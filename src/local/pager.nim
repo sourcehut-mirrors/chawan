@@ -1973,6 +1973,7 @@ proc omniRewrite(pager: Pager; s: string): string =
       defer: JS_FreeValue(ctx, arg0)
       var res: string
       if ctx.fromJS(jsRet, res).isSome:
+        pager.lineHist[lmLocation].add(s)
         return res
       pager.alert("Error in substitution of " & $rule.match & " for " & s &
         ": " & ctx.getExceptionMsg())
