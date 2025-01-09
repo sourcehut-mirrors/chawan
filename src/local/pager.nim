@@ -3124,7 +3124,6 @@ proc acceptBuffers(pager: Pager) =
       container.setStream(stream, registerFun)
     else: # cloned buffer
       stream.withPacketWriter w:
-        w.swrite(false)
         w.sendAux.add(cstream.fd)
       # buffer is cloned, just share the parent's cached source
       loader.shareCachedItem(container.cacheId, container.process)

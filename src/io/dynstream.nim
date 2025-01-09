@@ -67,16 +67,16 @@ proc sreadChar*(s: DynStream): char =
 
 proc recvDataLoop*(s: DynStream; buffer: pointer; len: int) =
   var n = 0
-  while true:
+  while n < len:
     n += s.recvData(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
-    if n == len:
-      break
 
 proc recvDataLoop*(s: DynStream; buffer: var openArray[uint8]) {.inline.} =
-  s.recvDataLoop(addr buffer[0], buffer.len)
+  if buffer.len > 0:
+    s.recvDataLoop(addr buffer[0], buffer.len)
 
 proc recvDataLoop*(s: DynStream; buffer: var openArray[char]) {.inline.} =
-  s.recvDataLoop(addr buffer[0], buffer.len)
+  if buffer.len > 0:
+    s.recvDataLoop(addr buffer[0], buffer.len)
 
 proc recvAll*(s: DynStream): string =
   var buffer = newString(4096)

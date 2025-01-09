@@ -27,7 +27,7 @@ proc sread*(reader: var BufferedReader; c: var ARGBColor)
 proc sread*(reader: var BufferedReader; c: var CellColor)
 
 proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
-  assert len != 0
+  assert len != 0 or auxLen != 0
   var reader = BufferedReader(
     buffer: newSeqUninitialized[uint8](len),
     bufIdx: 0

@@ -1035,8 +1035,6 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     # get key for new buffer
     buffer.loader.controlStream.sclose()
     buffer.pstream.withPacketReader r:
-      var dummy: bool
-      r.sread(dummy)
       buffer.loader.controlStream = newSocketStream(r.recvAux.pop())
     buffer.rfd = buffer.pstream.fd
     buffer.pollData.register(buffer.rfd, POLLIN)
