@@ -44,6 +44,10 @@ type
   CustomEvent* = ref object of Event
     detail {.jsget.}: JSValue
 
+  MessageEvent* = ref object of Event
+    data {.jsget.}: JSValue
+    origin {.jsget.}: string
+
   EventTarget* = ref object of RootObj
     eventListeners*: seq[EventListener]
 
@@ -62,6 +66,7 @@ type
 
 jsDestructor(Event)
 jsDestructor(CustomEvent)
+jsDestructor(MessageEvent)
 jsDestructor(EventTarget)
 
 # Forward declaration hack
@@ -77,7 +82,12 @@ type
     composed* {.jsdefault.}: bool
 
   CustomEventInit = object of EventInit
-    detail* {.jsdefault: JS_NULL.}: JSValue
+    detail {.jsdefault: JS_NULL.}: JSValue
+
+  MessageEventInit* = object of EventInit
+    data* {.jsdefault: JS_NULL.}: JSValue
+    origin {.jsdefault.}: string
+    lastEventId {.jsdefault.}: string
 
 # Event
 proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
@@ -91,10 +101,10 @@ proc innerEventCreationSteps*(event: Event; eventInitDict: EventInit) =
 
 #TODO eventInitDict type
 proc newEvent(ctx: JSContext; ctype: CAtom; eventInitDict = EventInit()):
-    JSResult[Event] {.jsctor.} =
+    Event {.jsctor.} =
   let event = Event(ctype: ctype)
   event.innerEventCreationSteps(eventInitDict)
-  return ok(event)
+  return event
 
 proc newEvent*(ctype: CAtom; target: EventTarget): Event =
   return Event(
@@ -160,12 +170,13 @@ func composed(this: Event): bool {.jsfget.} =
 
 # CustomEvent
 proc newCustomEvent(ctx: JSContext; ctype: CAtom;
-    eventInitDict = CustomEventInit()): JSResult[CustomEvent] {.jsctor.} =
-  let event = CustomEvent()
+    eventInitDict = CustomEventInit()): CustomEvent {.jsctor.} =
+  let event = CustomEvent(
+    ctype: ctype,
+    detail: JS_DupValue(ctx, eventInitDict.detail)
+  )
   event.innerEventCreationSteps(eventInitDict)
-  event.detail = JS_DupValue(ctx, eventInitDict.detail)
-  event.ctype = ctype
-  return ok(event)
+  return event
 
 proc finalize(rt: JSRuntime; this: CustomEvent) {.jsfin.} =
   JS_FreeValueRT(rt, this.detail)
@@ -175,6 +186,20 @@ proc initCustomEvent(this: CustomEvent; ctype: CAtom;
   if efDispatch notin this.flags:
     this.initialize(ctype, bubbles, cancelable)
     this.detail = detail
+
+# MessageEvent
+proc finalize(rt: JSRuntime; this: MessageEvent) {.jsfin.} =
+  JS_FreeValueRT(rt, this.data)
+
+proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
+    eventInit = MessageEventInit()): MessageEvent =
+  let event = MessageEvent(
+    ctype: ctype,
+    data: JS_DupValue(ctx, eventInit.data),
+    origin: eventInit.origin
+  )
+  event.innerEventCreationSteps(eventInit)
+  return event
 
 # EventTarget
 proc newEventTarget(): EventTarget {.jsctor.} =
@@ -335,5 +360,6 @@ proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event):
 proc addEventModule*(ctx: JSContext) =
   let eventCID = ctx.registerType(Event)
   ctx.registerType(CustomEvent, parent = eventCID)
+  ctx.registerType(MessageEvent, parent = eventCID)
   ctx.defineConsts(eventCID, EventPhase)
   ctx.registerType(EventTarget)

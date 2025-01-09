@@ -17,6 +17,7 @@ import io/console
 import io/dynstream
 import io/promise
 import io/timeout
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/jspropenumlist
@@ -308,8 +309,20 @@ proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
     media: $mqlist
   )
 
-proc postMessage(window: Window) {.jsfunc.} =
-  window.console.log("postMessage: Stub")
+proc postMessage(ctx: JSContext; window: Window; value: JSValue): Err[void]
+    {.jsfunc.} =
+  #TODO structuredClone...
+  let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)
+  defer: JS_FreeValue(ctx, value)
+  var s: string
+  ?ctx.fromJS(value, s)
+  let data = JS_ParseJSON(ctx, cstring(s), csize_t(s.len),
+    cstring"<postMessage>")
+  let event = ctx.newMessageEvent(ctx.toAtom(satMessage),
+    MessageEventInit(data: data))
+  JS_FreeValue(ctx, data)
+  discard ctx.dispatch(window, event)
+  ok()
 
 proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
     {.jsfset: "onload".} =

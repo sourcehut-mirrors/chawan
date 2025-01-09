@@ -64,6 +64,7 @@ macro makeStaticAtom =
       satLoadstart = "loadstart"
       satMax = "max"
       satMedia = "media"
+      satMessage = "message"
       satMethod = "method"
       satMin = "min"
       satMousewheel = "mousewheel"
