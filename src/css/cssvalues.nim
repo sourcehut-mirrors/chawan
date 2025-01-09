@@ -261,7 +261,7 @@ type
   CSSContentType* = enum
     ContentNone, ContentString, ContentOpenQuote, ContentCloseQuote,
     ContentNoOpenQuote, ContentNoCloseQuote, ContentImage, ContentVideo,
-    ContentAudio, ContentNewline
+    ContentAudio, ContentNewline, ContentIFrame
 
   CSSFloat* = enum
     FloatNone = "none"

@@ -425,7 +425,7 @@ type
 
   HTMLAudioElement* = ref object of HTMLElement
 
-  HTMLIFrameElement = ref object of HTMLElement
+  HTMLIFrameElement* = ref object of HTMLElement
 
   HTMLTableElement = ref object of HTMLElement
     cachedRows: HTMLCollection
@@ -3508,6 +3508,8 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     HTMLTableSectionElement()
   of TAG_META:
     HTMLMetaElement()
+  of TAG_IFRAME:
+    HTMLIFrameElement()
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()

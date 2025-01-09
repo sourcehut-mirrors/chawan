@@ -22,6 +22,7 @@ type
     peAudio = "-cha-audio"
     peCanvas = "-cha-canvas"
     peSVG = "-cha-svg"
+    peIFrame = "-cha-iframe"
 
   PseudoClass* = enum
     pcFirstChild = "first-child"

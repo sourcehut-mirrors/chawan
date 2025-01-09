@@ -332,7 +332,7 @@ func getTitleAttr(buffer: Buffer; element: Element): string =
 
 const ClickableElements = {
   TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL,
-  TAG_VIDEO, TAG_AUDIO
+  TAG_VIDEO, TAG_AUDIO, TAG_IFRAME
 }
 
 proc isClickable(element: Element): bool =
@@ -397,6 +397,12 @@ proc getClickHover(buffer: Buffer; element: Element): string =
       return "<option>"
     elif clickable of HTMLVideoElement or clickable of HTMLAudioElement:
       let (src, _) = HTMLElement(clickable).getSrc()
+      if src != "":
+        let url = clickable.document.parseURL(src)
+        if url.isSome:
+          return $url.get
+    elif clickable of HTMLIFrameElement:
+      let src = clickable.attr(satSrc)
       if src != "":
         let url = clickable.document.parseURL(src)
         if url.isSome:
@@ -1546,6 +1552,15 @@ proc click(buffer: Buffer; video: HTMLVideoElement): ClickResult =
       )
   return ClickResult(repaint: repaint)
 
+proc click(buffer: Buffer; iframe: HTMLIFrameElement): ClickResult =
+  let repaint = buffer.restoreFocus()
+  let src = iframe.attr(satSrc)
+  if src != "":
+    let url = iframe.document.parseURL(src)
+    if url.isSome:
+      return ClickResult(repaint: repaint, open: newRequest(url.get))
+  return ClickResult(repaint: repaint)
+
 const InputTypePrompt = [
   itText: "TEXT",
   itButton: "",
@@ -1632,6 +1647,8 @@ proc click(buffer: Buffer; clickable: Element): ClickResult =
     return buffer.click(HTMLAudioElement(clickable))
   of TAG_VIDEO:
     return buffer.click(HTMLVideoElement(clickable))
+  of TAG_IFRAME:
+    return buffer.click(HTMLIFrameElement(clickable))
   else:
     return ClickResult(repaint: buffer.restoreFocus())
 

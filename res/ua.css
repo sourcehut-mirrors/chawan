@@ -110,14 +110,14 @@ p { margin: 1em 0 }
 
 @media (prefers-color-scheme: light) {
 a[href] { color: -cha-ansi(blue) }
-video, audio { color: -cha-ansi(red) }
 }
 @media (prefers-color-scheme: dark) {
 a[href] { color: -cha-ansi(yellow) }
-video, audio { color: -cha-ansi(red) }
 }
 
-a[href]:hover, video:hover, audio:hover { text-decoration: underline }
+video, audio, iframe { color: -cha-ansi(red) }
+
+a[href]:hover, video:hover, audio:hover, iframe:hover { text-decoration: underline }
 
 sup::before { content: '^' }
 sub::before { content: '~' }

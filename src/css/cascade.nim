@@ -411,6 +411,10 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       let content = CSSContent(t: ContentAudio)
       let styledText = styledParent.newStyledReplacement(content, pseudo)
       styledParent.children.add(styledText)
+    of peIFrame:
+      let content = CSSContent(t: ContentIFrame)
+      let styledText = styledParent.newStyledReplacement(content, pseudo)
+      styledParent.children.add(styledText)
     of peNewline:
       let content = CSSContent(t: ContentNewline)
       let styledText = styledParent.newStyledReplacement(content, pseudo)
@@ -504,6 +508,7 @@ proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
   of TAG_AUDIO: styledStack.stackAppend(frame, styledChild, peAudio, idx)
   of TAG_BR: styledStack.stackAppend(frame, styledChild, peNewline, idx)
   of TAG_CANVAS: styledStack.stackAppend(frame, styledChild, peCanvas, idx)
+  of TAG_IFRAME: styledStack.stackAppend(frame, styledChild, peIFrame, idx)
   elif element.tagType(Namespace.SVG) == TAG_SVG:
     styledStack.stackAppend(frame, styledChild, peSVG, idx)
   else:

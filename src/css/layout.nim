@@ -50,6 +50,7 @@ type
     imgText: StyledNode
     audioText: StyledNode
     videoText: StyledNode
+    iframeText: StyledNode
     luctx: LUContext
 
 const DefaultSpan = Span(start: 0, send: LUnit.high)
@@ -3196,6 +3197,8 @@ proc buildReplacement(ctx: var BlockBuilderContext; child, parent: StyledNode;
     ctx.pushInlineText(computed, parent, ctx.lctx.videoText)
   of ContentAudio:
     ctx.pushInlineText(computed, parent, ctx.lctx.audioText)
+  of ContentIFrame:
+    ctx.pushInlineText(computed, parent, ctx.lctx.iframeText)
   of ContentNewline:
     ctx.pushInline(InlineBox(
       t: ibtNewline,
@@ -3437,6 +3440,7 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
     imgText: newStyledText("[img]"),
     videoText: newStyledText("[video]"),
     audioText: newStyledText("[audio]"),
+    iframeText: newStyledText("[iframe]"),
     luctx: LUContext()
   )
   let box = BlockBox(computed: root.computed, node: root)
