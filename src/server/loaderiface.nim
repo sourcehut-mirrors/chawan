@@ -29,10 +29,6 @@ type
     unregistered*: seq[int]
     registerFun*: proc(fd: int)
     unregisterFun*: proc(fd: int)
-    # directory where we store UNIX domain sockets
-    sockDir*: string
-    # (FreeBSD only) fd for the socket directory so we can connectat() on it
-    sockDirFd*: cint
     # A mechanism to queue up new fds being added to the poll data
     # inside the events iterator.
     registerBlocked: bool
@@ -465,23 +461,10 @@ proc removeClient*(loader: FileLoader; pid: int) =
     w.swrite(lcRemoveClient)
     w.swrite(pid)
 
-when defined(freebsd):
-  let O_DIRECTORY {.importc, header: "<fcntl.h>", noinit.}: cint
-
-# On Capsicum-capable systems, this opens path as a directory.
-# On other systems, it returns -1.
-proc openSockDir*(path: string): cint =
-  when defined(freebsd):
-    return newPosixStream(path, O_DIRECTORY, 0).fd
-  else:
-    return -1
-
-proc newFileLoader*(loaderPid, clientPid: int; sockDir: string;
-    sockDirFd: cint; controlStream: SocketStream): FileLoader =
+proc newFileLoader*(loaderPid, clientPid: int; controlStream: SocketStream):
+    FileLoader =
   return FileLoader(
     loaderPid: loaderPid,
-    sockDir: sockDir,
-    sockDirFd: sockDirFd,
     clientPid: clientPid,
     controlStream: controlStream
   )

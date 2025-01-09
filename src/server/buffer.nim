@@ -105,7 +105,6 @@ type
     rfd: int # file descriptor of command pipe
     rootBox: BlockBox
     savetask: bool
-    ssock: ServerSocket
     state: BufferState
     tasks: array[BufferCommand, int] #TODO this should have arguments
     uastyle: CSSStylesheet
@@ -181,18 +180,16 @@ proc resolve(iface: BufferInterface; id: int) =
     it.p.resolve()
     iface.map.del(i)
 
-proc newBufferInterface*(stream: SocketStream; registerFun: proc(fd: int)):
-    BufferInterface =
+proc newBufferInterface*(stream: BufStream): BufferInterface =
   return BufferInterface(
     packetid: 1, # ids below 1 are invalid
-    stream: newBufStream(stream, registerFun)
+    stream: stream
   )
 
 # After cloning a buffer, we need a new interface to the new buffer process.
 # Here we create a new interface for that clone.
-proc cloneInterface*(stream: SocketStream; registerFun: proc(fd: int)):
-    BufferInterface =
-  let iface = newBufferInterface(stream, registerFun)
+proc cloneInterface*(stream: BufStream): BufferInterface =
+  let iface = newBufferInterface(stream)
   #TODO buffered data should probably be copied here
   # We have just fork'ed the buffer process inside an interface function,
   # from which the new buffer is going to return as well. So we must also
@@ -960,7 +957,6 @@ proc rewind(buffer: Buffer; offset: int; unregister = true): bool =
   buffer.bytesRead = offset
   return true
 
-var gssock* {.global.}: ServerSocket
 var gpstream* {.global.}: SocketStream
 
 # Create an exact clone of the current buffer.
@@ -1019,17 +1015,12 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       # the cache. (This also lets us skip suspend/resume in this case.)
       # We ignore errors; not much we can do with them here :/
       discard buffer.rewind(buffer.bytesRead, unregister = false)
-    buffer.pstream.sclose()
-    buffer.ssock.close()
-    let ssock = newServerSocket(sockFd, buffer.loader.sockDir,
-      buffer.loader.sockDirFd, myPid)
-    buffer.ssock = ssock
-    gssock = ssock
     ps.write(char(0))
     buffer.url = newurl
     for it in buffer.tasks.mitems:
       it = 0
-    buffer.pstream = ssock.acceptSocketStream()
+    buffer.pstream.sclose()
+    buffer.pstream = newSocketStream(sockFd)
     gpstream = buffer.pstream
     buffer.loader.clientPid = myPid
     # get key for new buffer
@@ -1963,15 +1954,11 @@ proc cleanup(buffer: Buffer) =
   if gpstream != nil:
     gpstream.sclose()
     gpstream = nil
-  if gssock != nil:
-    gssock.close()
-    gssock = nil
   buffer.window.urandom.sclose()
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
-    ssock: ServerSocket; pstream: SocketStream; urandom: PosixStream;
-    cacheId: int) =
+    pstream: SocketStream; urandom: PosixStream; cacheId: int) =
   let factory = newCAtomFactory()
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
@@ -1986,7 +1973,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
     pstream: pstream,
     rfd: pstream.fd,
-    ssock: ssock,
     url: url,
     charsetStack: charsetStack,
     cacheId: -1,

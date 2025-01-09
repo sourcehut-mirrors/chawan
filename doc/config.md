@@ -321,7 +321,8 @@ Following is a list of external options:
 <td>path</td>
 <td>{usually /tmp/cha-sock-user}</td>
 <td>Directory used to store UNIX domain sockets used for inter-process
-communication.</td>
+communication.<br>
+This is currently unused.</td>
 </tr>
 
 <tr>

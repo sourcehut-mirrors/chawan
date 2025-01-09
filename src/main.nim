@@ -239,12 +239,11 @@ const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 proc main() =
   putEnv("CHA_BIN_DIR", getAppFilename().untilLast('/'))
   putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
-  var sy {.noinit.}: array[2, cint]
-  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sy) != 0:
+  var loaderSockVec {.noinit.}: array[2, cint]
+  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
     stderr.writeLine("Failed to set up initial socket pair")
     quit(1)
-  let forkserver = newForkServer(sy)
-  discard close(sy[1])
+  let forkserver = newForkServer(loaderSockVec)
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
   var ctx = ParamParseContext(params: commandLineParams(), i: 0)
@@ -270,14 +269,12 @@ proc main() =
   if ctx.pages.len == 0 and not config.start.headless:
     if stdin.isatty():
       help(1)
-  # make sure tmpdir & sockdir both exist; if we do this later, then
-  # forkserver may try to open an empty dir
+  # make sure tmpdir exists
   discard mkdir(cstring(config.external.tmpdir), 0o700)
-  discard mkdir(cstring(config.external.sockdir), 0o700)
   let loaderPid = forkserver.loadConfig(config)
   setControlCHook(proc() {.noconv.} = quit(1))
   let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
-    urandom, newSocketStream(sy[0]))
+    urandom, newSocketStream(loaderSockVec[0]))
   try:
     client.pager.run(ctx.pages, ctx.contentType, ctx.charset, ctx.dump, history)
   except CatchableError:

@@ -163,9 +163,7 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     loaderStream: SocketStream): Client =
   let jsrt = JS_GetRuntime(jsctx)
   let clientPid = getCurrentProcessId()
-  let sockDirFd = openSockDir(config.external.sockdir)
-  let loader = newFileLoader(loaderPid, clientPid, config.external.sockdir,
-    sockDirFd, loaderStream)
+  let loader = newFileLoader(loaderPid, clientPid, loaderStream)
   let client = Client(
     jsrt: jsrt,
     jsctx: jsctx,

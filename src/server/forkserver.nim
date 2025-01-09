@@ -23,21 +23,17 @@ type
     fcLoadConfig, fcForkBuffer, fcRemoveChild
 
   ForkServer* = ref object
-    istream: PosixStream
-    ostream: PosixStream
+    stream: SocketStream
     estream*: PosixStream
 
   ForkServerContext = object
-    istream: PosixStream
-    ostream: PosixStream
+    stream: SocketStream
     children: seq[int]
     loaderPid: int
-    sockDirFd: cint
-    sockDir: string
     loaderStream: SocketStream
 
 proc loadConfig*(forkserver: ForkServer; config: Config): int =
-  forkserver.ostream.withPacketWriter w:
+  forkserver.stream.withPacketWriter w:
     w.swrite(fcLoadConfig)
     w.swrite(config.display.double_width_ambiguous)
     w.swrite(LoaderConfig(
@@ -45,34 +41,39 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
       w3mCGICompat: config.external.w3m_cgi_compat,
       cgiDir: seq[string](config.external.cgi_dir),
       tmpdir: config.external.tmpdir,
-      sockdir: config.external.sockdir,
       configdir: config.dir,
       bookmark: config.external.bookmark
     ))
-  var r = forkserver.istream.initPacketReader()
   var process: int
-  r.sread(process)
+  forkserver.stream.withPacketReader r:
+    r.sread(process)
   return process
 
 proc removeChild*(forkserver: ForkServer; pid: int) =
-  forkserver.ostream.withPacketWriter w:
+  forkserver.stream.withPacketWriter w:
     w.swrite(fcRemoveChild)
     w.swrite(pid)
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset]):
-    int =
-  forkserver.ostream.withPacketWriter w:
+    tuple[pid: int; fd: cint] =
+  var sv {.noinit.}: array[2, cint]
+  #TODO fail gracefully
+  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
+    raise newException(Defect, "Failed to open socket pair")
+  forkserver.stream.withPacketWriter w:
     w.swrite(fcForkBuffer)
     w.swrite(config)
     w.swrite(url)
     w.swrite(attrs)
     w.swrite(ishtml)
     w.swrite(charsetStack)
-  var r = forkserver.istream.initPacketReader()
+    w.sendAux.add(sv[1])
+  discard close(sv[1])
   var bufferPid: int
-  r.sread(bufferPid)
-  return bufferPid
+  forkserver.stream.withPacketReader r:
+    r.sread(bufferPid)
+  return (bufferPid, sv[0])
 
 proc trapSIGINT() =
   # trap SIGINT, so e.g. an external editor receiving an interrupt in the
@@ -118,9 +119,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   r.sread(attrs)
   r.sread(ishtml)
   r.sread(charsetStack)
-  var pipefd {.noinit.}: array[2, cint]
-  if pipe(pipefd) == -1:
-    raise newException(Defect, "Failed to open pipe.")
+  let fd = r.recvAux.pop()
   stdout.flushFile()
   stderr.flushFile()
   let pid = fork()
@@ -132,41 +131,29 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     for i in 0 ..< ctx.children.len: ctx.children[i] = 0
     ctx.children.setLen(0)
     let loaderPid = ctx.loaderPid
-    let sockDir = ctx.sockDir
-    let sockDirFd = ctx.sockDirFd
     zeroMem(addr ctx, sizeof(ctx))
-    discard close(pipefd[0]) # close read
     setBufferProcessTitle(url)
     let pid = getCurrentProcessId()
-    let ssock = newServerSocket(sockDir, sockDirFd, pid)
-    let ps = newPosixStream(pipefd[1])
-    ps.write(char(0))
-    ps.sclose()
     let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
-    let pstream = ssock.acceptSocketStream()
+    let pstream = newSocketStream(fd)
     var cacheId: int
     var loaderStream: SocketStream
     pstream.withPacketReader r:
       r.sread(cacheId)
       loaderStream = newSocketStream(r.recvAux.pop())
-    let loader = newFileLoader(loaderPid, pid, sockDir, sockDirFd,
-      loaderStream)
-    gssock = ssock
+    let loader = newFileLoader(loaderPid, pid, loaderStream)
     gpstream = pstream
     onSignal SIGTERM:
       discard sig
       if gpstream != nil:
         gpstream.sclose()
         gpstream = nil
-      if gssock != nil:
-        gssock.close()
-        gssock = nil
       exitnow(1)
     signal(SIGPIPE, SIG_DFL)
-    enterBufferSandbox(sockDir)
+    enterBufferSandbox()
     try:
-      launchBuffer(config, url, attrs, ishtml, charsetStack, loader,
-        ssock, pstream, urandom, cacheId)
+      launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
+        urandom, cacheId)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim
@@ -175,27 +162,20 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
       stderr.write(msg)
       quit(1)
     doAssert false
-  discard close(pipefd[1]) # close write
-  let ps = newPosixStream(pipefd[0])
-  let c = ps.sreadChar()
-  assert c == '\0'
-  ps.sclose()
   ctx.children.add(pid)
   return pid
 
-proc runForkServer(ifd, ofd: cint; loaderStream: SocketStream) =
+proc runForkServer(controlStream, loaderStream: SocketStream) =
   setProcessTitle("cha forkserver")
   var ctx = ForkServerContext(
-    istream: newPosixStream(ifd),
-    ostream: newPosixStream(ofd),
-    sockDirFd: -1,
+    stream: controlStream,
     loaderStream: loaderStream
   )
   signal(SIGCHLD, SIG_IGN)
   signal(SIGPIPE, SIG_IGN)
   while true:
     try:
-      ctx.istream.withPacketReader r:
+      ctx.stream.withPacketReader r:
         var cmd: ForkCommand
         r.sread(cmd)
         case cmd
@@ -204,10 +184,8 @@ proc runForkServer(ifd, ofd: cint; loaderStream: SocketStream) =
           var config: LoaderConfig
           r.sread(isCJKAmbiguous)
           r.sread(config)
-          ctx.sockDir = config.sockdir
-          ctx.sockDirFd = openSockDir(ctx.sockDir)
           let pid = ctx.forkLoader(config)
-          ctx.ostream.withPacketWriter w:
+          ctx.stream.withPacketWriter w:
             w.swrite(pid)
           ctx.loaderPid = pid
           ctx.children.add(pid)
@@ -219,54 +197,51 @@ proc runForkServer(ifd, ofd: cint; loaderStream: SocketStream) =
             ctx.children.del(i)
         of fcForkBuffer:
           let r = ctx.forkBuffer(r)
-          ctx.ostream.withPacketWriter w:
+          ctx.stream.withPacketWriter w:
             w.swrite(r)
     except EOFError, ErrorBrokenPipe:
       # EOF
       break
-  ctx.istream.sclose()
-  ctx.ostream.sclose()
+  ctx.stream.sclose()
   # Clean up when the main process crashed.
   #TODO this seems like a bad idea; children may be out of sync here...
   for child in ctx.children:
     discard kill(cint(child), cint(SIGTERM))
   quit(0)
 
-proc newForkServer*(sy: array[2, cint]): ForkServer =
-  var pipeFdIn {.noinit.}: array[2, cint] # stdin in forkserver
-  var pipeFdOut {.noinit.}: array[2, cint] # stdout in forkserver
+proc newForkServer*(loaderSockVec: array[2, cint]): ForkServer =
+  var sockVec {.noinit.}: array[2, cint] # stdin in forkserver
   var pipeFdErr {.noinit.}: array[2, cint] # stderr in forkserver
-  if pipe(pipeFdIn) == -1:
-    raise newException(Defect, "Failed to open input pipe.")
-  if pipe(pipeFdOut) == -1:
-    raise newException(Defect, "Failed to open output pipe.")
+  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sockVec) != 0:
+    stderr.writeLine("Failed to open fork server i/o socket")
+    quit(1)
   if pipe(pipeFdErr) == -1:
-    raise newException(Defect, "Failed to open error pipe.")
-  stdout.flushFile()
-  stderr.flushFile()
+    stderr.writeLine("Failed to open fork server error pipe")
+    quit(1)
   let pid = fork()
   if pid == -1:
-    raise newException(Defect, "Failed to fork the fork process.")
+    stderr.writeLine("Failed to fork fork the server process")
+    quit(1)
   elif pid == 0:
     # child process
     trapSIGINT()
     closeStdin()
     closeStdout()
     newPosixStream(pipeFdErr[1]).moveFd(STDERR_FILENO)
-    discard close(pipeFdIn[1]) # close write
-    discard close(pipeFdOut[0]) # close read
     discard close(pipeFdErr[0]) # close read
-    discard close(sy[0])
-    runForkServer(pipeFdIn[0], pipeFdOut[1], newSocketStream(sy[1]))
+    discard close(sockVec[0])
+    discard close(loaderSockVec[0])
+    let controlStream = newSocketStream(sockVec[1])
+    let loaderStream = newSocketStream(loaderSockVec[1])
+    runForkServer(controlStream, loaderStream)
     doAssert false
   else:
-    discard close(pipeFdIn[0]) # close read
-    discard close(pipeFdOut[1]) # close write
     discard close(pipeFdErr[1]) # close write
-    let ostream = newPosixStream(pipeFdIn[1])
-    let istream = newPosixStream(pipeFdOut[0])
+    discard close(sockVec[1])
+    discard close(loaderSockVec[1])
+    let stream = newSocketStream(sockVec[0])
+    stream.setCloseOnExec()
     let estream = newPosixStream(pipeFdErr[0])
+    estream.setCloseOnExec()
     estream.setBlocking(false)
-    for it in [ostream, istream, estream]:
-      it.setCloseOnExec()
-    return ForkServer(ostream: ostream, istream: istream, estream: estream)
+    return ForkServer(stream: stream, estream: estream)

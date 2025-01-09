@@ -6,21 +6,9 @@ include common.chasc
 ifeqdef SYS_recvmsg allow
 ifeqdef SYS_sendmsg allow
 
-# accept socket(2), but only with AF_UNIX
-ifne SYS_socket not_socket
-# load domain
-load args[0]
-ifeq AF_UNIX allow
-load nr
-: not_socket
-
 # following syscalls are rarely called
-ifeqdef SYS_accept allow	# for accepting requests from pager
-ifeqdef SYS_accept4 allow	# for when accept is implemented as accept4
-ifeqdef SYS_bind allow		# for outgoing requests to loader
 ifeqdef SYS_clock_gettime allow # used by QuickJS in atomics and cpuTime()
 ifeqdef SYS_clock_gettime64 allow # 64-bit clock_gettime on 32-bit platforms
-ifeqdef SYS_connect allow	# for outgoing requests to loader
 ifeqdef SYS_getpid allow	# for determining current PID after we fork
 ifeqdef SYS_gettimeofday allow 	# used by QuickJS in Date.now()
 ifeqdef SYS_pipe allow		# for pipes to child process

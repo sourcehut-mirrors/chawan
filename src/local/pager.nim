@@ -76,13 +76,6 @@ type
     lmAlert = "Alert: "
     lmMailcap = "Mailcap: "
 
-  ProcMapItem = object
-    container*: Container
-    ostream*: PosixStream
-    istreamOutputId*: int
-    ostreamOutputId*: int
-    redirected*: bool
-
   PagerAlertState = enum
     pasNormal, pasAlertOn, pasLoadInfo
 
@@ -170,7 +163,6 @@ type
     pollData*: PollData
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     pressed: tuple[col, row: int]
-    procmap*: seq[ProcMapItem]
     refreshAllowed: HashSet[string]
     regex: Opt[Regex]
     reverseSearch: bool
@@ -205,6 +197,9 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
   contentType: string; i: int; response: Response; sx: int)
 proc connected2(pager: Pager; container: Container; res: MailcapResult;
   response: Response)
+proc connected3(pager: Pager; container: Container; stream: SocketStream;
+  ostream: PosixStream; istreamOutputId, ostreamOutputId: int;
+  redirected: bool)
 proc draw(pager: Pager)
 proc dumpBuffers(pager: Pager)
 proc evalJS(pager: Pager; src, filename: string; module = false): JSValue
@@ -1361,27 +1356,17 @@ func findConnectingContainer(pager: Pager; container: Container):
         return item
   return nil
 
-func findProcMapItem(pager: Pager; pid: int): int =
-  for i, item in pager.procmap.mypairs:
-    if item.container.process == pid:
-      return i
-  -1
-
 proc dupeBuffer(pager: Pager; container: Container; url: URL) =
   let p = container.clone(url, pager.loader)
   if p == nil:
     pager.alert("Failed to duplicate buffer.")
   else:
-    p.then(proc(container: Container): Container =
-      if container == nil:
+    p.then(proc(res: tuple[c: Container; fd: cint]): Container =
+      if res.c == nil:
         pager.alert("Failed to duplicate buffer.")
       else:
-        pager.addContainer(container)
-        pager.procmap.add(ProcMapItem(
-          container: container,
-          istreamOutputId: -1,
-          ostreamOutputId: -1
-        ))
+        pager.addContainer(res.c)
+        pager.connected3(res.c, newSocketStream(res.fd), nil, -1, -1, false)
     )
 
 proc dupeBuffer(pager: Pager) {.jsfunc.} =
@@ -2444,7 +2429,7 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
       quit(1)
     stream.sclose()
     let ret = execCmd(cmd)
-    discard tryRemoveFile(outpath)
+    discard unlink(cstring(outpath))
     quit(ret)
   else: # parent
     pouts.sclose()
@@ -2461,7 +2446,7 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
       pager.alert("Error: failed to write file for mailcap process")
     else:
       discard execCmd(cmd)
-      discard tryRemoveFile(outpath)
+      discard unlink(cstring(outpath))
       pager.term.restart()
   else:
     # don't block
@@ -2475,7 +2460,7 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
         quit(1)
       stream.sclose()
       let ret = execCmd(cmd)
-      discard tryRemoveFile(outpath)
+      discard unlink(cstring(outpath))
       quit(ret)
     # parent
     stream.sclose()
@@ -2658,27 +2643,74 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
       url = newURL(url)
       url.username = ""
       url.password = ""
-    container.process = pager.forkserver.forkBuffer(
+    let (pid, fd) = pager.forkserver.forkBuffer(
       container.config,
       url,
       attrs,
       cmfHTML in res.flags,
       container.charsetStack
     )
-    pager.procmap.add(ProcMapItem(
-      container: container,
-      ostream: res.ostream,
-      redirected: cmfRedirected in res.flags,
-      ostreamOutputId: res.ostreamOutputId,
-      istreamOutputId: response.outputId
-    ))
+    container.process = pid
     if container.replace != nil:
       pager.deleteContainer(container.replace, container.find(ndAny))
       container.replace = nil
+    pager.connected3(container, newSocketStream(fd), res.ostream,
+      response.outputId, res.ostreamOutputId, cmfRedirected in res.flags)
   else:
     dec pager.numload
     pager.deleteContainer(container, container.find(ndAny))
     pager.refreshStatusMsg()
+
+proc connected3(pager: Pager; container: Container; stream: SocketStream;
+    ostream: PosixStream; istreamOutputId, ostreamOutputId: int;
+    redirected: bool) =
+  let loader = pager.loader
+  let cstream = loader.addClient(container.process, container.loaderConfig,
+    container.clonedFrom)
+  let bufStream = newBufStream(stream, proc(fd: int) =
+    pager.pollData.unregister(fd)
+    pager.pollData.register(fd, POLLIN or POLLOUT))
+  if istreamOutputId != -1: # new buffer
+    if container.cacheId == -1:
+      container.cacheId = loader.addCacheFile(istreamOutputId, loader.clientPid)
+    if container.request.url.scheme == "cache":
+      # loading from cache; now both the buffer and us hold a new reference
+      # to the cached item, but it's only shared with the buffer. add a
+      # pager ref too.
+      loader.shareCachedItem(container.cacheId, loader.clientPid)
+    let pid = container.process
+    var outCacheId = container.cacheId
+    if not redirected:
+      loader.shareCachedItem(container.cacheId, pid)
+      loader.resume(istreamOutputId)
+    else:
+      outCacheId = loader.addCacheFile(ostreamOutputId, pid)
+      loader.resume([istreamOutputId, ostreamOutputId])
+    stream.withPacketWriter w:
+      w.swrite(outCacheId)
+      w.sendAux.add(cstream.fd)
+    # pass down ostream
+    # must come after the previous block so the first packet is flushed
+    stream.sendFd(ostream.fd)
+    ostream.sclose()
+    container.setStream(bufStream)
+  else: # cloned buffer
+    stream.withPacketWriter w:
+      w.sendAux.add(cstream.fd)
+    # buffer is cloned, just share the parent's cached source
+    loader.shareCachedItem(container.cacheId, container.process)
+    # also add a reference here; it will be removed when the container is
+    # deleted
+    loader.shareCachedItem(container.cacheId, loader.clientPid)
+    container.setCloneStream(bufStream)
+  cstream.sclose()
+  loader.put(ContainerData(stream: stream, container: container))
+  pager.pollData.register(stream.fd, POLLIN)
+  # clear replacement references, because we can't fail to load this
+  # buffer anymore
+  container.replaceRef = nil
+  container.replace = nil
+  container.replaceBackup = nil
 
 proc saveEntry(pager: Pager; entry: MailcapEntry) =
   if not pager.config.external.auto_mailcap.saveEntry(entry):
@@ -3065,79 +3097,12 @@ proc acceptBuffers(pager: Pager) =
       pager.pollData.unregister(fd)
       pager.loader.unset(fd)
       stream.sclose()
-    elif container.process != -1: # connecting to buffer process
-      let i = pager.findProcMapItem(container.process)
-      if i != -1:
-        pager.procmap.del(i)
     elif (let item = pager.findConnectingContainer(container); item != nil):
       # connecting to URL
       let stream = item.stream
       pager.pollData.unregister(int(stream.fd))
       stream.sclose()
       pager.loader.unset(item)
-  let registerFun = proc(fd: int) =
-    pager.pollData.unregister(fd)
-    pager.pollData.register(fd, POLLIN or POLLOUT)
-  for item in pager.procmap:
-    let container = item.container
-    # unlink here; on Linux we can't unlink from the buffer :/
-    #TODO replace this with a socketpair
-    # (also, it seems better to just do this from connect2...)
-    let stream = connectSocketStream(pager.config.external.sockdir,
-      pager.loader.sockDirFd, container.process)
-    discard tryRemoveFile(getSocketPath(pager.config.external.sockdir,
-      container.process))
-    if stream == nil:
-      pager.alert("Error: failed to set up buffer")
-      continue
-    let loader = pager.loader
-    let cstream = pager.loader.addClient(container.process,
-      container.loaderConfig, container.clonedFrom)
-    if item.istreamOutputId != -1: # new buffer
-      if container.cacheId == -1:
-        container.cacheId = loader.addCacheFile(item.istreamOutputId,
-          loader.clientPid)
-      if container.request.url.scheme == "cache":
-        # loading from cache; now both the buffer and us hold a new reference
-        # to the cached item, but it's only shared with the buffer. add a
-        # pager ref too.
-        loader.shareCachedItem(container.cacheId, loader.clientPid)
-      let pid = container.process
-      var outCacheId = container.cacheId
-      if not item.redirected:
-        loader.shareCachedItem(container.cacheId, pid)
-        loader.resume(item.istreamOutputId)
-      else:
-        outCacheId = loader.addCacheFile(item.ostreamOutputId, pid)
-        loader.resume([item.istreamOutputId, item.ostreamOutputId])
-      stream.withPacketWriter w:
-        w.swrite(outCacheId)
-        w.sendAux.add(cstream.fd)
-      # pass down ostream
-      # must come after the previous block so the first packet is flushed
-      stream.sendFd(item.ostream.fd)
-      item.ostream.sclose()
-      container.setStream(stream, registerFun)
-    else: # cloned buffer
-      stream.withPacketWriter w:
-        w.sendAux.add(cstream.fd)
-      # buffer is cloned, just share the parent's cached source
-      loader.shareCachedItem(container.cacheId, container.process)
-      # also add a reference here; it will be removed when the container is
-      # deleted
-      loader.shareCachedItem(container.cacheId, loader.clientPid)
-      container.setCloneStream(stream, registerFun)
-    cstream.sclose()
-    let fd = int(stream.fd)
-    pager.loader.put(ContainerData(stream: stream, container: container))
-    pager.pollData.register(fd, POLLIN)
-    # clear replacement references, because we can't fail to load this
-    # buffer anymore
-    container.replaceRef = nil
-    container.replace = nil
-    container.replaceBackup = nil
-    pager.handleEvents(container)
-  pager.procmap.setLen(0)
 
 proc handleStderr(pager: Pager) =
   const BufferSize = 4096
@@ -3301,7 +3266,7 @@ proc inputLoop(pager: Pager) =
 
 func hasSelectFds(pager: Pager): bool =
   return not pager.timeouts.empty or pager.numload > 0 or
-    pager.loader.mapFds > 0 or pager.procmap.len > 0
+    pager.loader.mapFds > 0
 
 proc headlessLoop(pager: Pager) =
   while pager.hasSelectFds():

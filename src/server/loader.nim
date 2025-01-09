@@ -141,7 +141,6 @@ type
     uriMethodMap*: URIMethodMap
     w3mCGICompat*: bool
     tmpdir*: string
-    sockdir*: string
     configdir*: string
     bookmark*: string
 

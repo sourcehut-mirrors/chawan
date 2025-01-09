@@ -227,11 +227,8 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     lastPeek: HoverType.high
   )
 
-proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
-  header: "<stdio.h>".}
-
 proc clone*(container: Container; newurl: URL; loader: FileLoader):
-    Promise[Container] =
+    Promise[tuple[c: Container; fd: cint]] =
   if container.iface == nil:
     return nil
   let url = if newurl != nil:
@@ -239,20 +236,15 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   else:
     container.url
   let p = container.iface.clone(url)
-  # create a server socket, pass it on to the buffer, then move it to
-  # the expected path after the buffer forked itself
-  #TODO this is very ugly
-  let ssock = newServerSocket(loader.sockDir, loader.sockDirFd,
-    loader.clientPid)
-  SocketStream(container.iface.stream.source).sendFd(ssock.fd)
-  ssock.close()
-  return p.then(proc(pid: int): Container =
+  var sv {.noinit.}: array[2, cint]
+  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
+    return nil
+  SocketStream(container.iface.stream.source).sendFd(sv[1])
+  discard close(sv[1])
+  return p.then(proc(pid: int): tuple[c: Container; fd: cint] =
     if pid == -1:
-      return nil
-    let newPath = getSocketPath(loader.sockDir, pid)
-    let oldPath = getSocketPath(loader.sockDir, loader.clientPid)
-    if c_rename(cstring(oldPath), cstring(newPath)) == -1:
-      return nil
+      discard close(sv[0])
+      return (nil, -1)
     let nc = Container()
     nc[] = container[]
     nc.url = url
@@ -263,7 +255,7 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     nc.parent = nil
     nc.children = @[]
     nc.cachedImages = @[]
-    return nc
+    return (nc, sv[0])
   )
 
 func lineLoaded(container: Container; y: int): bool =
@@ -1713,16 +1705,14 @@ proc startLoad(container: Container) =
       container.triggerEvent(cetTitle)
   )
 
-proc setStream*(container: Container; stream: SocketStream;
-    registerFun: proc(fd: int)) =
+proc setStream*(container: Container; stream: BufStream) =
   assert cfCloned notin container.flags
-  container.iface = newBufferInterface(stream, registerFun)
+  container.iface = newBufferInterface(stream)
   container.startLoad()
 
-proc setCloneStream*(container: Container; stream: SocketStream;
-    registerFun: proc(fd: int)) =
+proc setCloneStream*(container: Container; stream: BufStream) =
   assert cfCloned in container.flags
-  container.iface = cloneInterface(stream, registerFun)
+  container.iface = cloneInterface(stream)
   # Maybe we have to resume loading. Let's try.
   container.startLoad()
 

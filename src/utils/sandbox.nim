@@ -8,24 +8,21 @@
 # Aside from sandboxing in buffer processes, we also have a more
 # restrictive "network" sandbox that is intended for CGI processes that
 # just read/write from/to the network and stdin/stdout. At the moment this
-# is used in the HTTP process and all image manipulation processes (codecs,
-# resize).
+# is used in the HTTP, FTP, SFTP, Gemini handlers, and all image
+# manipulation processes (codecs and resize).
 #
-# On FreeBSD, we create a file descriptor to the directory sockets
-# reside in, and then use that for manipulating our sockets.
-#
-# Capsicum does not enable more fine-grained capability control, but
-# in practice the things it does enable should not be enough to harm the
-# user's system.
+# On FreeBSD, we enter capability mode with cap_enter.  Since buffers
+# do not do anything that Capsicum does not allow (they receive their
+# UNIX sockets from the fork server), this is enough to lock down the
+# process.
 #
 # On OpenBSD, we pledge the minimum amount of promises we need, and
 # do not unveil anything. It seems to be roughly equivalent to the
-# security we get with FreeBSD Capsicum, except connect(3) can connect
-# to any UNIX domain socket on the file system.
+# security we get with FreeBSD Capsicum.
 #
 # On Linux, we use chaseccomp which is a very dumb BPF assembler for
-# seccomp-bpf. Like the OpenBSD filter, this does not prevent a
-# connect(3) to UNIX domain sockets that we do not have access to.
+# seccomp-bpf.  It only allows syscalls deemed to be safe; notably
+# however, it also includes clone(2), which I'm not sure about...
 #
 # We do not have syscall sandboxing on other systems (yet).
 
@@ -51,7 +48,7 @@ else:
 when SandboxMode == stCapsicum:
   proc cap_enter(): cint {.importc, cdecl, header: "<sys/capsicum.h>".}
 
-  proc enterBufferSandbox*(sockPath: string) =
+  proc enterBufferSandbox*() =
     # per man:cap_enter(2), it may return ENOSYS if the kernel was compiled
     # without CAPABILITY_MODE. So it seems better not to panic in this case.
     # (But TODO: when we get enough sandboxing coverage it should print a
@@ -67,12 +64,11 @@ elif SandboxMode == stPledge:
   proc pledge(promises, execpromises: cstring): cint {.importc, cdecl,
     header: "<unistd.h>".}
 
-  proc enterBufferSandbox*(sockPath: string) =
+  proc enterBufferSandbox*() =
     # take whatever we need to
     # * fork
-    # * connect to UNIX domain sockets
-    # * take FDs from the main process
-    doAssert pledge("unix stdio sendfd recvfd proc", nil) == 0
+    # * send/receive fds from/to the loader (and sometimes the pager)
+    doAssert pledge("stdio sendfd recvfd proc", nil) == 0
 
   proc enterNetworkSandbox*() =
     # we don't need much to write out data from sockets to stdout.
@@ -89,7 +85,7 @@ elif SandboxMode == stSeccomp:
   proc cha_enter_buffer_sandbox(): cint {.importc, cdecl.}
   proc cha_enter_network_sandbox(): cint {.importc, cdecl.}
 
-  proc enterBufferSandbox*(sockPath: string) =
+  proc enterBufferSandbox*() =
     doAssert cha_enter_buffer_sandbox() == 1
 
   proc enterNetworkSandbox*() =

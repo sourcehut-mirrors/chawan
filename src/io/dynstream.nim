@@ -362,15 +362,6 @@ proc bind_unix_from_c(fd: cint; path: cstring; pathlen: cint): cint {.importc.}
 proc connect_unix_from_c(fd: cint; path: cstring; pathlen: cint): cint
   {.importc.}
 
-when defined(freebsd):
-  # capsicum stuff
-  proc unlinkat(dfd: cint; path: cstring; flag: cint): cint
-    {.importc, header: "<unistd.h>".}
-  proc bindat_unix_from_c(dfd, sock: cint; path: cstring; pathlen: cint): cint
-    {.importc.}
-  proc connectat_unix_from_c(baseFd, sockFd: cint; rel_path: cstring;
-    rel_pathlen: cint): cint {.importc.}
-
 proc sendfd(sock, fd: cint): int {.importc.}
 proc recvfd(sock: cint; fdout: var cint): int {.importc.}
 
@@ -391,34 +382,20 @@ method seek*(s: SocketStream; off: int) =
   doAssert false
 
 const SocketPathPrefix = "cha_sock_"
-proc getSocketName*(pid: int): string =
-  SocketPathPrefix & $pid
-
-proc getSocketPath*(socketDir: string; pid: int): string =
-  socketDir / getSocketName(pid)
+proc getSocketPath(socketDir: string; pid: int): string =
+  return socketDir / SocketPathPrefix & $pid
 
 proc newSocketStream*(fd: cint): SocketStream =
   return SocketStream(fd: fd, blocking: true)
 
-proc connectSocketStream*(socketDir: string; baseFd, pid: int): SocketStream =
+proc connectSocketStream*(socketDir: string; pid: int): SocketStream =
   let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
   let ss = newSocketStream(fd)
   ss.setCloseOnExec()
   let path = getSocketPath(socketDir, pid)
-  if baseFd == -1:
-    if connect_unix_from_c(fd, cstring(path), cint(path.len)) != 0:
-      discard close(fd)
-      return nil
-  else:
-    when defined(freebsd):
-      let name = getSocketName(pid)
-      let nameLen = cint(name.len)
-      if connectat_unix_from_c(cint(baseFd), fd, cstring(name), nameLen) != 0:
-        discard close(fd)
-        return nil
-    else:
-      # shouldn't have sockDirFd on other architectures
-      doAssert false
+  if connect_unix_from_c(fd, cstring(path), cint(path.len)) != 0:
+    discard close(fd)
+    return nil
   return ss
 
 type
@@ -510,53 +487,35 @@ proc newDynFileStream*(path: string): DynFileStream =
   return nil
 
 type ServerSocket* = ref object
-  fd*: cint
+  fd: cint
   path*: string
-  dfd: cint
 
 proc setBlocking*(ssock: ServerSocket; blocking: bool) =
   let ofl = fcntl(ssock.fd, F_GETFL, 0)
   if blocking:
     discard fcntl(ssock.fd, F_SETFL, ofl and not O_NONBLOCK)
   else:
-    discard fcntl(ssock.fd, F_SETFL, ofl and O_NONBLOCK)
+    discard fcntl(ssock.fd, F_SETFL, ofl or O_NONBLOCK)
 
-proc newServerSocket*(fd: cint; sockDir: string; sockDirFd: cint; pid: int):
-    ServerSocket =
+proc newServerSocket*(sockDir: string; pid: int): ServerSocket =
+  let fd = socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP)
   let path = getSocketPath(sockDir, pid)
-  return ServerSocket(fd: cint(fd), path: path, dfd: sockDirFd)
-
-proc newServerSocket*(sockDir: string; sockDirFd: cint; pid: int): ServerSocket =
-  let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
-  let ssock = newServerSocket(fd, sockDir, sockDirFd, pid)
-  # POSIX leaves the result of fchmod on a socket undefined, and while
-  # it works on Linux, it returns an error on BSD descendants.
-  when defined(linux):
-    doAssert fchmod(fd, 0o700) == 0
-  if sockDirFd == -1:
-    discard tryRemoveFile(ssock.path)
-    if bind_unix_from_c(fd, cstring(ssock.path), cint(ssock.path.len)) != 0:
-      raiseOSError(osLastError())
-  else:
-    when defined(freebsd):
-      let name = getSocketName(pid)
-      discard unlinkat(sockDirFd, cstring(name), 0)
-      if bindat_unix_from_c(sockDirFd, fd, cstring(name), cint(name.len)) != 0:
-        raiseOSError(osLastError())
-    else:
-      # shouldn't have sockDirFd on other architectures
-      doAssert false
-  if listen(SocketHandle(fd), 128) != 0:
-    raiseOSError(osLastError())
+  let ssock = ServerSocket(fd: cint(fd), path: path)
+  discard unlink(cstring(ssock.path))
+  if bind_unix_from_c(ssock.fd, cstring(ssock.path), cint(ssock.path.len)) != 0:
+    return nil
+  if listen(fd, 128) != 0:
+    return nil
   return ssock
 
 proc close*(ssock: ServerSocket) =
   discard close(ssock.fd)
+  discard unlink(cstring(ssock.path))
 
 proc acceptSocketStream*(ssock: ServerSocket): SocketStream =
   let fd = cint(accept(SocketHandle(ssock.fd), nil, nil))
   if fd == -1:
     return nil
-  let ss = SocketStream(fd: fd, blocking: true)
+  let ss = newSocketStream(fd)
   ss.setCloseOnExec()
   return ss
