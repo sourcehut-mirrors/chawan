@@ -1670,12 +1670,12 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     # stupid, but may still be surprising.
     pager.setEnvVars(env)
     if not suspend:
-      newPosixStream(STDOUT_FILENO).safeClose()
-      newPosixStream(STDERR_FILENO).safeClose()
-      newPosixStream(STDIN_FILENO).safeClose()
+      closeStdin()
+      closeStdout()
+      closeStderr()
     else:
       if pager.term.istream != nil:
-        discard dup2(pager.term.istream.fd, STDIN_FILENO)
+        pager.term.istream.moveFd(STDIN_FILENO)
     myExec(cmd)
   else:
     var wstatus: cint
@@ -2031,7 +2031,7 @@ proc readPipe0(pager: Pager; contentType: string; cs: Charset;
     Container =
   var url = url
   pager.loader.passFd(url.pathname, ps.fd)
-  ps.safeClose()
+  ps.sclose()
   var loaderConfig: LoaderClientConfig
   var ourl: URL
   let bufferConfig = pager.applySiteconf(url, cs, loaderConfig, ourl)
@@ -2355,10 +2355,8 @@ proc execPipe(pager: Pager; cmd: string; ps, os, closeme: PosixStream): int =
     os.sclose()
     return -1
   of 0:
-    discard dup2(ps.fd, STDIN_FILENO)
-    ps.sclose()
-    discard dup2(os.fd, STDOUT_FILENO)
-    os.sclose()
+    ps.moveFd(STDIN_FILENO)
+    os.moveFd(STDOUT_FILENO)
     closeStderr()
     closeme.sclose()
     for it in pager.loader.data:
@@ -2401,8 +2399,7 @@ proc runMailcapWritePipe(pager: Pager; stream: PosixStream;
     pager.alert("Error: failed to fork mailcap write process")
   elif pid == 0:
     # child process
-    discard dup2(stream.fd, stdin.getFileHandle())
-    stream.sclose()
+    stream.moveFd(STDIN_FILENO)
     if not needsterminal:
       closeStdout()
       closeStderr()
@@ -2441,8 +2438,7 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
   of 0:
     # child process
     pins.sclose()
-    discard dup2(pouts.fd, stdout.getFileHandle())
-    pouts.sclose()
+    pouts.moveFd(STDOUT_FILENO)
     closeStderr()
     if not stream.writeToFile(outpath):
       quit(1)
@@ -2545,7 +2541,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     delEnv("MAILCAP_URL")
     let url = parseURL("stream:" & $pid).get
     pager.loader.passFd(url.pathname, pins.fd)
-    pins.safeClose()
+    pins.sclose()
     let response = pager.loader.doRequest(newRequest(url))
     var flags = {cmfConnect, cmfFound, cmfRedirected}
     if mfNeedsstyle in entry.flags or mfAnsioutput in entry.flags:

@@ -175,17 +175,16 @@ proc closeStdout*() =
 proc closeStderr*() =
   closeHandle(2, O_WRONLY)
 
-# When closing, ensure that no standard input stream ends up without a
-# handle to write to.
-#TODO do we really need this? I'm pretty sure I dup2 to every stream on
-# fork in all processes...
-proc safeClose*(ps: PosixStream) =
-  if ps.fd == 0:
-    closeStdin()
-  elif ps.fd == 1 or ps.fd == 2:
-    closeHandle(ps.fd, O_WRONLY)
+# dup2 the stream to fd, close the old fd and set fd as the new fd
+# of ps.
+# If ps already points to fd, then do nothing.
+proc moveFd*(ps: PosixStream; fd: cint) =
+  if ps.fd == fd:
+    discard
   else:
-    ps.sclose()
+    discard dup2(ps.fd, fd)
+    discard close(ps.fd)
+    ps.fd = fd
 
 proc newPosixStream*(fd: cint): PosixStream =
   return PosixStream(fd: fd, blocking: true)

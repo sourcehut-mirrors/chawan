@@ -904,16 +904,14 @@ proc loadCGI(ctx: LoaderContext; client: ClientHandle; handle: InputHandle;
     handle.sendResult(ceFailedToSetUpCGI)
   elif pid == 0:
     istreamOut.sclose() # close read
-    discard dup2(ostreamOut.fd, 1) # dup stdout
-    ostreamOut.sclose()
+    ostreamOut.moveFd(STDOUT_FILENO) # dup stdout
     if ostream != nil:
       ostream.sclose() # close write
     if istream2 != nil:
       istream2.sclose() # close cache file; we aren't reading it directly
     if istream != nil:
       if istream.fd != 0:
-        discard dup2(istream.fd, 0) # dup stdin
-        istream.sclose()
+        istream.moveFd(STDIN_FILENO) # dup stdin
     else:
       closeStdin()
     let auth = if prevURL != nil: client.findAuth(prevURL) else: nil

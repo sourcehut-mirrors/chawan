@@ -252,8 +252,7 @@ proc newForkServer*(sy: array[2, cint]): ForkServer =
     trapSIGINT()
     closeStdin()
     closeStdout()
-    discard dup2(pipeFdErr[1], stderr.getFileHandle())
-    discard close(pipeFdErr[1])
+    newPosixStream(pipeFdErr[1]).moveFd(STDERR_FILENO)
     discard close(pipeFdIn[1]) # close write
     discard close(pipeFdOut[0]) # close read
     discard close(pipeFdErr[0]) # close read
