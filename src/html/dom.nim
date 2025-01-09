@@ -227,7 +227,7 @@ type
     internalCookie: string
 
   CharacterData* = ref object of Node
-    data* {.jsget.}: string
+    data* {.jsgetset.}: string
 
   Text* = ref object of CharacterData
 
