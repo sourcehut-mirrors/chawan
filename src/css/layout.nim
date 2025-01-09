@@ -1313,7 +1313,6 @@ type
     space: AvailableSpace
     intr: Size
     prevParentBps: BlockPositionState
-    needsReLayout: bool
     # State kept for when a re-layout is necessary:
     oldMarginTodo: Strut
     oldExclusionsLen: int
@@ -2670,12 +2669,9 @@ proc layoutBlockChildren(state: var BlockState; bctx: var BlockContext;
       state.intr.h += outerSize.h - child.state.size.h + child.state.intr.h
     elif state.space.w.t == scFitContent:
       # Float position depends on the available width, but in this case
-      # the parent width is not known.
+      # the parent width is not known.  Skip this box; we will position
+      # it in the next pass.
       #
-      # Set the "re-layout" flag, and skip this box.
-      # (If child boxes with fit-content have floats, those will be
-      # re-layouted too first, so we do not have to consider those here.)
-      state.needsReLayout = true
       # Since we emulate max-content here, the float will not contribute to
       # maxChildWidth in this iteration; instead, its outer width will be
       # summed up in totalFloatWidth and added to maxChildWidth in
@@ -2765,7 +2761,7 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   )
   state.initBlockPositionStates(bctx, box)
   state.layoutBlockChildren(bctx, box)
-  if state.needsReLayout or state.space.w.t == scFitContent:
+  if state.space.w.t == scFitContent:
     state.initReLayout(bctx, box, sizes)
     state.layoutBlockChildren(bctx, box)
   box.applyBaseline()
