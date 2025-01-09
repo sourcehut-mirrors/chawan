@@ -131,28 +131,21 @@ dt { font-weight: bold }
 dd { margin-left: 4ch }
 dl[compact] dt + br { display: none }
 
-select { display: inline-block }
-select:focus { visibility: hidden }
-select::before { content: '['; color: initial; display: inline-block }
-select::after { content: ']'; color: initial; display: inline-block }
-
+select { display: inline-flex; white-space: nowrap }
+select[multiple] { white-space: initial }
+select::before { content: '['; color: initial; float: left }
+select::after { content: ']'; color: initial; float: right }
 select > :is(option, optgroup > option) { display: none }
+select > :is(option, optgroup > option):checked { display: block; color: red }
 
-select > :is(option, optgroup > option):checked {
-	display: inline-block;
-	color: red
+select[multiple] { display: flow-root; overflow: hidden }
+select[multiple]::before, select[multiple]::after { content: '' }
+select[multiple] > :is(option, optgroup > option) {
+	display: block; color: inherit
 }
-
-select[multiple] > :is(option, optgroup > option):first-child {
-	display: inline-block
-}
-
-select[multiple] > :is(option, optgroup > option):not(:checked):first-child::after {
-	content: '(...)
-}
-
-select[multiple] > :is(option, optgroup > option):not(:first-child):checked::before {
-	content: ','
+select[multiple] > :is(option, optgroup > option)::before { content: '[ ]' }
+select[multiple] > :is(option, optgroup > option):checked::before {
+	content: '[*]'; color: red
 }
 
 center { text-align: -cha-center }

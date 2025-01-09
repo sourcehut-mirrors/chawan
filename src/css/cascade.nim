@@ -176,6 +176,11 @@ proc applyPresHints(computed: CSSValues; element: Element;
     let input = HTMLInputElement(element)
     if input.inputType in InputTypeWithSize:
       map_size
+  of TAG_SELECT:
+    let select = HTMLSelectElement(element)
+    if select.attrb(satMultiple):
+      let size = element.attrulgz(satSize).get(4)
+      set_cv cptHeight, length, resolveLength(cuEm, float64(size), attrs)
   else: discard
 
 type
