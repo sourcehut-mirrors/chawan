@@ -10,6 +10,7 @@ import html/event
 import html/formdata
 import html/jsencoding
 import html/jsintl
+import html/performance
 import html/script
 import html/xmlhttprequest
 import io/console
@@ -347,6 +348,12 @@ proc addScripting*(window: Window) =
   window.jsctx = ctx
   window.importMapsAllowed = true
   window.timeouts = newTimeoutState(ctx, evalJSFree, window)
+  let performance = JS_NewAtom(ctx, cstringConst("performance"))
+  let jsWindow = JS_GetGlobalObject(ctx)
+  doAssert JS_DeleteProperty(ctx, jsWindow, performance, 0) == 1
+  JS_FreeValue(ctx, jsWindow)
+  JS_FreeAtom(ctx, performance)
+  window.performance = newPerformance(window.settings.scripting)
   if window.settings.scripting == smApp:
     window.scriptAttrsp = window.attrsp
   else:
@@ -367,6 +374,7 @@ proc addScripting*(window: Window) =
   ctx.addRequestModule()
   ctx.addResponseModule()
   ctx.addEncodingModule()
+  ctx.addPerformanceModule()
 
 proc runJSJobs*(window: Window) =
   while true:

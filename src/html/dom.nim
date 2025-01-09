@@ -21,6 +21,7 @@ import html/catom
 import html/domexception
 import html/enums
 import html/event
+import html/performance
 import html/script
 import io/bufwriter
 import io/console
@@ -116,6 +117,7 @@ type
     referrer* {.jsget.}: string
     autofocus*: bool
     maybeRestyle*: proc()
+    performance* {.jsget.}: Performance
 
   # Navigator stuff
   Navigator* = object

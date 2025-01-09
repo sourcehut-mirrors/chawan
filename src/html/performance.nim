@@ -1,0 +1,29 @@
+import std/math
+import std/times
+
+import html/event
+import html/script
+import io/timeout
+import monoucha/javascript
+
+type Performance* = ref object of EventTarget
+  timeOrigin {.jsget.}: float64
+  scripting: ScriptingMode
+
+jsDestructor(Performance)
+
+proc getTime(scripting: ScriptingMode): float64 =
+  let t = getTime()
+  if scripting == smApp:
+    return float64(t.toUnix() * 1000) + floor(t.nanosecond / 100_000) / 10
+  return float64(getUnixMillis())
+
+proc newPerformance*(scripting: ScriptingMode): Performance =
+  return Performance(timeOrigin: getTime(scripting), scripting: scripting)
+
+proc now(performance: Performance): float64 {.jsfunc.} =
+  return getTime(performance.scripting) - performance.timeOrigin
+
+proc addPerformanceModule*(ctx: JSContext) =
+  let eventTargetCID = ctx.getClass("EventTarget")
+  ctx.registerType(Performance, parent = eventTargetCID)
