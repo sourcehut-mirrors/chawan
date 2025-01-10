@@ -2273,7 +2273,7 @@ proc load(pager: Pager; s = "") {.jsfunc.} =
 # Go to specific URL (for JS)
 type GotoURLDict = object of JSDict
   contentType {.jsdefault.}: Option[string]
-  replace {.jsdefault.}: Container
+  replace {.jsdefault.}: Option[Container]
   save {.jsdefault.}: bool
   history {.jsdefault.}: bool
 
@@ -2291,7 +2291,7 @@ proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
       url = ?newURL(s)
     request = newRequest(url)
   discard pager.gotoURL(request, contentType = t.contentType,
-    replace = t.replace, save = t.save, history = t.history)
+    replace = t.replace.get(nil), save = t.save, history = t.history)
   return ok()
 
 # Reload the page in a new buffer, then kill the previous buffer.
@@ -2323,9 +2323,9 @@ proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
   pager.setEnvVars(JS_UNDEFINED)
   return runProcessInto(cmd, ins)
 
-proc externFilterSource(pager: Pager; cmd: string; c: Container = nil;
+proc externFilterSource(pager: Pager; cmd: string; c = none(Container);
     contentType = none(string)) {.jsfunc.} =
-  let fromc = if c != nil: c else: pager.container
+  let fromc = c.get(pager.container)
   let fallback = pager.container.contentType.get("text/plain")
   let contentType = contentType.get(fallback)
   let container = pager.newContainerFrom(fromc, contentType)
