@@ -6,6 +6,7 @@ import std/strutils
 import chame/tags
 import monoucha/fromjs
 import monoucha/javascript
+import monoucha/quickjs
 import monoucha/tojs
 import types/opt
 import utils/twtstr
@@ -319,9 +320,12 @@ proc toStr*(ctx: JSContext; sa: StaticAtom): string =
   return ctx.getFactoryImpl().toStr(sa)
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
-  var s: string
-  ?ctx.fromJS(val, s)
-  res = ctx.getFactoryImpl().toAtom(s)
+  if JS_IsNull(val):
+    res = CAtomNull
+  else:
+    var s: string
+    ?ctx.fromJS(val, s)
+    res = ctx.getFactoryImpl().toAtom(s)
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =

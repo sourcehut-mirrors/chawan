@@ -226,6 +226,8 @@ type
 
     internalCookie: string
 
+  XMLDocument = ref object of Document
+
   CharacterData* = ref object of Node
     data* {.jsgetset.}: string
 
@@ -492,6 +494,7 @@ jsDestructor(HTMLAllCollection)
 jsDestructor(HTMLOptionsCollection)
 jsDestructor(Location)
 jsDestructor(Document)
+jsDestructor(XMLDocument)
 jsDestructor(DOMImplementation)
 jsDestructor(DOMTokenList)
 jsDestructor(DOMStringMap)
@@ -3618,7 +3621,6 @@ proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
   return HTMLElement(document.newElement(localName, Namespace.HTML, NO_PREFIX))
 
 proc newDocument*(factory: CAtomFactory): Document =
-  assert factory != nil
   let document = Document(
     url: newURL("about:blank").get,
     index: -1,
@@ -3630,6 +3632,16 @@ proc newDocument*(factory: CAtomFactory): Document =
 
 proc newDocument(ctx: JSContext): Document {.jsctor.} =
   return newDocument(ctx.getGlobal().factory)
+
+proc newXMLDocument(ctx: JSContext): XMLDocument =
+  let document = XMLDocument(
+    url: newURL("about:blank").get,
+    index: -1,
+    factory: ctx.getGlobal().factory,
+    contentType: "application/xml"
+  )
+  document.implementation = DOMImplementation(document: document)
+  return document
 
 func newDocumentType*(document: Document; name, publicId, systemId: string):
     DocumentType =
@@ -5224,23 +5236,20 @@ proc createElement(document: Document; localName: string): DOMResult[Element]
     NO_NAMESPACE
   return ok(document.newElement(localName, namespace))
 
-proc validateAndExtract(ctx: JSContext; document: Document; namespace: JSValue;
-    qname: string; namespaceOut, prefixOut, localNameOut: var CAtom):
-    DOMResult[void] =
+proc validateAndExtract(ctx: JSContext; document: Document; qname: string;
+    namespace, prefixOut, localNameOut: var CAtom): DOMResult[void] =
   ?qname.validateQName()
-  if JS_IsNull(namespace):
-    namespaceOut = CAtomNull
-  else:
-    ?ctx.fromJS(namespace, namespaceOut)
+  if namespace == ctx.toAtom(""):
+    namespace = CAtomNull
   var prefix = ""
   var localName = qname.until(':')
   if localName.len < qname.len:
     prefix = move(localName)
     localName = qname.substr(prefix.len + 1)
-  if namespaceOut == CAtomNull and prefix != "":
+  if namespace == CAtomNull and prefix != "":
     return errDOMException("Got namespace prefix, but no namespace",
       "NamespaceError")
-  let sns = document.toStaticAtom(namespaceOut)
+  let sns = document.toStaticAtom(namespace)
   if prefix == "xml" and sns != satNamespaceXML:
     return errDOMException("Expected XML namespace", "NamespaceError")
   if (qname == "xmlns" or prefix == "xmlns") != (sns == satNamespaceXMLNS):
@@ -5249,11 +5258,11 @@ proc validateAndExtract(ctx: JSContext; document: Document; namespace: JSValue;
   localNameOut = document.toAtom(localName)
   ok()
 
-proc createElementNS(ctx: JSContext; document: Document; namespace0: JSValue;
+proc createElementNS(ctx: JSContext; document: Document; namespace: CAtom;
     qname: string): DOMResult[Element] {.jsfunc.} =
-  var namespace, prefix, localName: CAtom
-  ?ctx.validateAndExtract(document, namespace0, qname, namespace, prefix,
-    localName)
+  var namespace = namespace
+  var prefix, localName: CAtom
+  ?ctx.validateAndExtract(document, qname, namespace, prefix, localName)
   #TODO custom elements (is)
   return ok(document.newElement(localName, namespace, prefix))
 
@@ -5265,6 +5274,28 @@ proc createDocumentType(implementation: var DOMImplementation; qualifiedName,
   ?qualifiedName.validateQName()
   let document = implementation.document
   return ok(document.newDocumentType(qualifiedName, publicId, systemId))
+
+proc createDocument(ctx: JSContext; implementation: var DOMImplementation;
+    namespace: CAtom; qname0 = JS_NULL; doctype = none(DocumentType)):
+    DOMResult[XMLDocument] {.jsfunc.} =
+  let document = newXMLDocument(ctx)
+  var qname = ""
+  if not JS_IsNull(qname0):
+    ?ctx.fromJS(qname0, qname)
+  let element = if qname != "":
+    ?ctx.createElementNS(document, namespace, qname)
+  else:
+    nil
+  if doctype.isSome:
+    document.append(doctype.get)
+  if element != nil:
+    document.append(element)
+  document.origin = implementation.document.origin
+  case document.toStaticAtom(namespace)
+  of satNamespaceHTML: document.contentType = "application/xml+html"
+  of satNamespaceSVG: document.contentType = "image/svg+xml"
+  else: discard
+  return ok(document)
 
 proc createHTMLDocument(ctx: JSContext; implementation: var DOMImplementation;
     title = none(string)): Document {.jsfunc.} =
@@ -5280,7 +5311,7 @@ proc createHTMLDocument(ctx: JSContext; implementation: var DOMImplementation;
     titleElement.append(doc.newText(title.get))
     head.append(titleElement)
   html.append(doc.newHTMLElement(TAG_BODY))
-  #TODO set origin
+  doc.origin = implementation.document.origin
   return doc
 
 proc hasFeature(implementation: var DOMImplementation): bool {.jsfunc.} =
@@ -5808,7 +5839,8 @@ proc addDOMModule*(ctx: JSContext) =
   ctx.registerType(HTMLOptionsCollection, parent = htmlCollectionCID)
   ctx.registerType(RadioNodeList, parent = nodeListCID)
   ctx.registerType(Location)
-  ctx.registerType(Document, parent = nodeCID)
+  let documentCID = ctx.registerType(Document, parent = nodeCID)
+  ctx.registerType(XMLDocument, parent = documentCID)
   ctx.registerType(DOMImplementation)
   ctx.registerType(DOMTokenList)
   ctx.registerType(DOMStringMap)
