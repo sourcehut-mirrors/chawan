@@ -704,8 +704,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput; select: Select) =
           select.cursorLeft()
       of mitRelease:
         let at = (input.col, input.row)
-        if at == pager.pressed and
-            (inside or select.multiple and at == (select.x, select.y)):
+        if at == pager.pressed and inside:
           # clicked inside the select
           select.setCursorY(y)
           select.click()
@@ -2949,11 +2948,10 @@ const MenuMap = [
   ("Open history       (C-h)", "cmd.pager.openHistory(1)"),
 ]
 
-proc menuFinish(opaque: RootRef; select: Select; sr: SubmitResult) =
+proc menuFinish(opaque: RootRef; select: Select) =
   let pager = Pager(opaque)
-  case sr
-  of srCancel: discard
-  of srSubmit: pager.scommand = MenuMap[select.selected[0]][1]
+  if select.selected != -1:
+    pager.scommand = MenuMap[select.selected][1]
   pager.menu = nil
   if pager.container != nil:
     pager.container.queueDraw()
@@ -2971,8 +2969,8 @@ proc openMenu(pager: Pager; x = -1; y = -1) {.jsfunc.} =
   var options: seq[SelectOption] = @[]
   for (s, cmd) in MenuMap:
     options.add(SelectOption(s: s, nop: cmd == ""))
-  pager.menu = newSelect(false, options, @[], x, y, pager.bufWidth,
-    pager.bufHeight, menuFinish, pager)
+  pager.menu = newSelect(options, -1, x, y, pager.bufWidth, pager.bufHeight,
+    menuFinish, pager)
 
 proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
     bool =

@@ -313,7 +313,7 @@ type
   HTMLOptGroupElement* = ref object of HTMLElement
 
   HTMLOptionElement* = ref object of HTMLElement
-    selected*: bool
+    selected* {.jsget.}: bool
     dirty: bool
 
   HTMLHeadingElement* = ref object of HTMLElement
@@ -526,6 +526,7 @@ proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc remove*(node: Node)
 proc setInvalid*(element: Element)
+proc setInvalid*(element: Element; dep: DependencyType)
 
 # Forward declaration hacks
 # set in css/match
@@ -1047,6 +1048,7 @@ const ReflectTable0 = [
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
   makes("name", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META),
   makeb("novalidate", "noValidate", TAG_FORM),
+  makeb("selected", "defaultSelected", TAG_OPTION),
   makes("rel", TAG_A, TAG_LINK, TAG_LABEL),
   makes("for", "htmlFor", TAG_LABEL),
   makes("http-equiv", "httpEquiv", TAG_META),
@@ -2731,11 +2733,10 @@ func focus*(document: Document): Element =
 
 proc setFocus*(document: Document; element: Element) =
   if document.focus != nil:
-    document.focus.invalidDeps.incl(dtFocus)
+    document.focus.setInvalid(dtFocus)
   document.internalFocus = element
-  document.invalid = true
   if element != nil:
-    element.invalidDeps.incl(dtFocus)
+    element.setInvalid(dtFocus)
 
 proc focus(ctx: JSContext; element: Element) {.jsfunc.} =
   let window = ctx.getWindow()
@@ -2750,19 +2751,17 @@ func target*(document: Document): Element =
 
 proc setTarget*(document: Document; element: Element) =
   if document.target != nil:
-    document.target.invalidDeps.incl(dtTarget)
+    document.target.setInvalid(dtTarget)
   document.internalTarget = element
   if element != nil:
-    element.invalidDeps.incl(dtTarget)
+    element.setInvalid(dtTarget)
 
 func hover*(element: Element): bool =
   return element.internalHover
 
 proc setHover*(element: Element; hover: bool) =
-  element.invalidDeps.incl(dtHover)
+  element.setInvalid(dtHover)
   element.internalHover = hover
-  if element.document != nil:
-    element.document.invalid = true
 
 func findAutoFocus*(document: Document): Element =
   for child in document.elements:
@@ -2961,12 +2960,10 @@ func checked*(input: HTMLInputElement): bool {.inline.} =
 proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
   if input.inputType == itRadio:
     for radio in input.radiogroup:
-      radio.invalidDeps.incl(dtChecked)
+      radio.setInvalid(dtChecked)
       radio.internalChecked = false
-      radio.setInvalid()
-  input.invalidDeps.incl(dtChecked)
+  input.setInvalid(dtChecked)
   input.internalChecked = b
-  input.setInvalid()
 
 func inputString*(input: HTMLInputElement): string =
   case input.inputType
@@ -3050,6 +3047,27 @@ func select*(option: HTMLOptionElement): HTMLSelectElement =
       return HTMLSelectElement(anc)
   return nil
 
+proc setSelected*(option: HTMLOptionElement; selected: bool)
+    {.jsfset: "selected".} =
+  option.setInvalid(dtChecked)
+  option.selected = selected
+  let select = option.select
+  if select != nil and not select.attrb(satMultiple):
+    var firstOption: HTMLOptionElement = nil
+    var prevSelected: HTMLOptionElement = nil
+    for option in select.options:
+      if firstOption == nil:
+        firstOption = option
+      if option.selected:
+        if prevSelected != nil:
+          prevSelected.selected = false
+          prevSelected.setInvalid(dtChecked)
+        prevSelected = option
+    if select.attrul(satSize).get(1) == 1 and
+        prevSelected == nil and firstOption != nil:
+      firstOption.selected = true
+      firstOption.setInvalid(dtChecked)
+
 # <select>
 func jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
@@ -3115,7 +3133,7 @@ proc selectedOptions(ctx: JSContext; this: HTMLSelectElement): JSValue
   JS_FreeValue(ctx, this)
   return selectedOptions
 
-proc selectedIndex(this: HTMLSelectElement): int {.jsfget.} =
+proc selectedIndex*(this: HTMLSelectElement): int {.jsfget.} =
   var i = 0
   for it in this.options:
     if it.selected:
@@ -3123,7 +3141,7 @@ proc selectedIndex(this: HTMLSelectElement): int {.jsfget.} =
     inc i
   return -1
 
-proc setSelectedIndex(this: HTMLSelectElement; n: int)
+proc setSelectedIndex*(this: HTMLSelectElement; n: int)
     {.jsfset: "selectedIndex".} =
   var i = 0
   for it in this.options:
@@ -3132,6 +3150,7 @@ proc setSelectedIndex(this: HTMLSelectElement; n: int)
       it.dirty = true
     else:
       it.selected = false
+    it.setInvalid(dtChecked)
     it.invalidateCollections()
     inc i
 
@@ -3607,6 +3626,11 @@ proc invalidateCollections(node: Node) =
 
 proc setInvalid*(element: Element) =
   element.invalid = true
+  if element.document != nil:
+    element.document.invalid = true
+
+proc setInvalid*(element: Element; dep: DependencyType) =
+  element.invalidDeps.incl(dep)
   if element.document != nil:
     element.document.invalid = true
 
@@ -4411,6 +4435,7 @@ proc resetElement*(element: Element) =
       if option.selected:
         if not multiple and prevSelected != nil:
           prevSelected.selected = false
+          prevSelected.setInvalid(dtChecked)
         prevSelected = option
     if not multiple and select.attrul(satSize).get(1) == 1 and
         prevSelected == nil and firstOption != nil:

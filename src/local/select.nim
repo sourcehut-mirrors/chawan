@@ -6,8 +6,7 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  SelectFinish* = proc(opaque: RootRef; select: Select; res: SubmitResult)
-    {.nimcall.}
+  SelectFinish* = proc(opaque: RootRef; select: Select) {.nimcall.}
 
   SelectOption* = object
     nop*: bool
@@ -15,11 +14,9 @@ type
 
   Select* = ref object
     options: seq[SelectOption]
-    multiple* {.jsget.}: bool
-    oselected*: seq[int] # old selection
-    selected*: seq[int] # new selection
+    selected*: int # new selection
     fromy* {.jsget.}: int # first index to display
-    cursory {.jsget.}: int # selected index
+    cursory {.jsget.}: int # hover index
     maxw: int # widest option
     maxh: int # maximum number of options on screen
     # location on screen
@@ -31,9 +28,6 @@ type
     bpos: seq[int]
     opaque: RootRef
     finishImpl: SelectFinish
-
-  SubmitResult* = enum
-    srCancel, srSubmit
 
 jsDestructor(Select)
 
@@ -50,9 +44,7 @@ func height*(select: Select): int =
   return select.maxh + 2
 
 proc setCursorY*(select: Select; y: int) =
-  var y = clamp(y, -1, select.options.high)
-  if not select.multiple:
-    y = max(y, 0)
+  let y = clamp(y, 0, select.options.high)
   if select.options[max(y, 0)].nop:
     if not select.unselected:
       select.unselected = true
@@ -137,40 +129,22 @@ proc gotoLine(select: Select; n: int) {.jsfunc.} =
   select.setCursorY(n + 1)
 
 proc cancel(select: Select) {.jsfunc.} =
-  select.finishImpl(select.opaque, select, srCancel)
+  select.finishImpl(select.opaque, select)
 
 proc submit(select: Select) {.jsfunc.} =
-  if not select.multiple:
-    select.selected = @[select.cursory]
-  select.finishImpl(select.opaque, select, srSubmit)
+  select.selected = select.cursory
+  select.finishImpl(select.opaque, select)
 
 proc click*(select: Select) {.jsfunc.} =
   if select.unselected or
       select.cursory >= 0 and select.cursory < select.options.len and
       select.options[select.cursory].nop:
     discard
-  elif not select.multiple:
-    select.submit()
-  elif select.cursory == -1:
-    select.submit()
   else:
-    var k = select.selected.len
-    let i = select.cursory
-    for j in 0 ..< select.selected.len:
-      if select.selected[j] >= i:
-        k = j
-        break
-    if k < select.selected.len and select.selected[k] == i:
-      select.selected.delete(k)
-    else:
-      select.selected.insert(i, k)
-    select.queueDraw()
+    select.submit()
 
 proc cursorLeft*(select: Select) {.jsfunc.} =
-  if select.multiple:
-    select.submit()
-  else:
-    select.cancel()
+  select.cancel()
 
 proc cursorRight(select: Select) {.jsfunc.} =
   select.click()
@@ -321,26 +295,17 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
   let upmore = select.fromy > 0
   let downmore = select.fromy + mh < select.options.len
   drawBorders(display, sx, ex, sy, ey, upmore, downmore)
-  if select.multiple and not upmore:
-    display[sy * display.width + sx].str = "X"
   # move inside border
   inc sy
   inc sx
-  var k = 0
   var format = Format()
-  while k < select.selected.len and select.selected[k] < si:
-    inc k
   for y in sy ..< ey:
     let i = y - sy + si
     var j = 0
     var x = sx
     let dls = y * display.width
-    if (select.multiple and k < select.selected.len and
-          select.selected[k] == i or
-        not select.multiple and select.getCursorY() == y and
-          not select.unselected):
+    if select.getCursorY() == y and not select.unselected:
       format.flags.incl(ffReverse)
-      inc k
     else:
       format.flags.excl(ffReverse)
     while j < select.options[i].s.len:
@@ -377,13 +342,11 @@ proc windowChange*(select: Select; width, height: int) =
   select.setCursorY(select.cursory)
   select.queueDraw()
 
-proc newSelect*(multiple: bool; options: seq[SelectOption]; selected: seq[int];
+proc newSelect*(options: seq[SelectOption]; selected: int;
     x, y, width, height: int; finishImpl: SelectFinish; opaque: RootRef):
     Select =
   let select = Select(
-    multiple: multiple,
     options: options,
-    oselected: selected,
     selected: selected,
     x: x,
     y: y,
@@ -395,8 +358,7 @@ proc newSelect*(multiple: bool; options: seq[SelectOption]; selected: seq[int];
     opt.s = ' ' & opt.s & ' '
     select.maxw = max(select.maxw, opt.s.width())
   select.windowChange(width, height)
-  if selected.len > 0:
-    select.setCursorY(selected[0])
+  select.setCursorY(selected)
   return select
 
 proc addSelectModule*(ctx: JSContext) =

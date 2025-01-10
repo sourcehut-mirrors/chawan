@@ -669,9 +669,8 @@ type
     hide*: bool
 
   SelectResult* = ref object
-    multiple*: bool
     options*: seq[SelectOption]
-    selected*: seq[int]
+    selected*: int
 
   ClickResult* = object
     open*: Request
@@ -1349,20 +1348,12 @@ proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Requ
   return buffer.makeFormRequest(parsedAction, httpMethod, entryList, enctype)
 
 proc setFocus(buffer: Buffer; e: Element): bool =
-  if buffer.document.focus != e:
-    buffer.document.setFocus(e)
-    e.setInvalid()
-    buffer.maybeReshape()
-    return true
-  return false
+  buffer.document.setFocus(e)
+  return buffer.maybeReshape()
 
 proc restoreFocus(buffer: Buffer): bool =
-  if buffer.document.focus != nil:
-    buffer.document.focus.setInvalid()
-    buffer.document.setFocus(nil)
-    buffer.maybeReshape()
-    return true
-  return false
+  buffer.document.setFocus(nil)
+  return buffer.maybeReshape()
 
 type ReadSuccessResult* = object
   open*: Request
@@ -1424,25 +1415,21 @@ proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
   return ClickResult()
 
 proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
+  if select.attrb(satMultiple):
+    return ClickResult()
   let repaint = buffer.setFocus(select)
   var options: seq[SelectOption] = @[]
-  var selected: seq[int] = @[]
+  var selected = -1
   var i = 0
   for option in select.options:
     #TODO: add nop options for each optgroup
-    options.add(SelectOption(
-      s: option.textContent.stripAndCollapse()
-    ))
-    if option.selected:
-      selected.add(i)
+    options.add(SelectOption(s: option.textContent.stripAndCollapse()))
+    if selected == -1 and option.selected:
+      selected = i
     inc i
   return ClickResult(
     repaint: repaint,
-    select: some(SelectResult(
-      multiple: select.attrb(satMultiple),
-      options: options,
-      selected: selected
-    ))
+    select: some(SelectResult(options: move(options), selected: selected))
   )
 
 proc baseURL(buffer: Buffer): URL =
@@ -1487,6 +1474,9 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
 proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
   let select = option.select
   if select != nil:
+    if select.attrb(satMultiple):
+      option.setSelected(not option.selected)
+      return ClickResult(repaint: buffer.maybeReshape())
     return buffer.click(select)
   return ClickResult()
 
@@ -1662,24 +1652,13 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
       return res
   return ClickResult(repaint: repaint)
 
-proc select*(buffer: Buffer; selected: seq[int]): ClickResult {.proxy.} =
+proc select*(buffer: Buffer; selected: int): ClickResult {.proxy.} =
   if buffer.document.focus != nil and
       buffer.document.focus of HTMLSelectElement:
     let select = HTMLSelectElement(buffer.document.focus)
-    var i = 0
-    var j = 0
-    var repaint = false
-    for option in select.options:
-      var wasSelected = option.selected
-      if i < selected.len and selected[i] == j:
-        option.selected = true
-        inc i
-      else:
-        option.selected = false
-      if not repaint:
-        repaint = wasSelected != option.selected
-      inc j
+    select.setSelectedIndex(selected)
     return ClickResult(repaint: buffer.restoreFocus())
+  return ClickResult()
 
 proc readCanceled*(buffer: Buffer): bool {.proxy.} =
   return buffer.restoreFocus()

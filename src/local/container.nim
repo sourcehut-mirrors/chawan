@@ -1582,22 +1582,15 @@ proc reshape(container: Container): EmptyPromise {.jsfunc.} =
     return container.requestLines()
   )
 
-proc selectFinish(opaque: RootRef; select: Select; res: SubmitResult) =
+proc selectFinish(opaque: RootRef; select: Select) =
   let container = Container(opaque)
-  case res
-  of srCancel:
-    container.iface.select(select.oselected).then(proc(res: ClickResult) =
-      container.onclick(res, save = false)
-    )
-  of srSubmit:
-    container.iface.select(select.selected).then(proc(res: ClickResult) =
-      container.onclick(res, save = false)
-    )
+  container.iface.select(select.selected).then(proc(res: ClickResult) =
+    container.onclick(res, save = false)
+  )
   container.select = nil
 
 proc displaySelect(container: Container; selectResult: SelectResult) =
   container.select = newSelect(
-    selectResult.multiple,
     selectResult.options,
     selectResult.selected,
     max(container.acursorx - 1, 0),

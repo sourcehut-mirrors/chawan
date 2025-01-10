@@ -1,7 +1,7 @@
 :root { display: block !important }
 
 area, base, basefont, datalist, head, link, meta, noembed,
-noframes, param, rp, script, style, template, title { display: none }
+param, rp, script, style, template, title { display: none }
 
 address, article, aside, blockquote, body, center, dd, details, dialog,
 dir, div, dl, dt, figcaption, figure, footer, form, h1, h2, h3, h4,
@@ -133,15 +133,15 @@ dl[compact] dt + br { display: none }
 
 select { display: inline-flex; white-space: nowrap }
 select[multiple] { white-space: initial }
-select::before { content: '['; color: initial; float: left }
-select::after { content: ']'; color: initial; float: right }
+select::before { content: '['; color: initial }
+select::after { content: ']'; color: initial }
 select > :is(option, optgroup > option) { display: none }
 select > :is(option, optgroup > option):checked { display: block; color: red }
 
-select[multiple] { display: flow-root; overflow: hidden }
+select[multiple] { display: inline-block; overflow: auto }
 select[multiple]::before, select[multiple]::after { content: '' }
 select[multiple] > :is(option, optgroup > option) {
-	display: block; color: inherit
+	display: flex; color: inherit
 }
 select[multiple] > :is(option, optgroup > option)::before { content: '[ ]' }
 select[multiple] > :is(option, optgroup > option):checked::before {
@@ -170,31 +170,19 @@ table[align=center i] { margin-left: auto; margin-right: auto }
 :is(div, p, td, th, thead, tbody, tfoot, tr)[align=left i] {
 	text-align: -cha-left
 }
-
 :is(div, p, td, th, thead, tbody, tfoot, tr)[align=center i] {
 	text-align: -cha-center
 }
-
 :is(div, p, td, th, thead, tbody, tfoot, tr)[align=middle i] {
 	text-align: -cha-center
 }
-
 :is(div, p, td, th, thead, tbody, tfoot, tr)[align=right i] {
 	text-align: -cha-right
 }
 
-:is(td, th, thead, tbody, tfoot, tr)[valign=top i] {
-	vertical-align: top
-}
-
-:is(td, th, thead, tbody, tfoot, tr)[valign=middle i] {
-	vertical-align: middle
-}
-
-:is(td, th, thead, tbody, tfoot, tr)[valign=bottom i] {
-	vertical-align: bottom
-}
-
+:is(td, th, thead, tbody, tfoot, tr)[valign=top i] { vertical-align: top }
+:is(td, th, thead, tbody, tfoot, tr)[valign=middle i] { vertical-align: middle }
+:is(td, th, thead, tbody, tfoot, tr)[valign=bottom i] { vertical-align: bottom }
 :is(td, th, thead, tbody, tfoot, tr)[valign=baseline i] {
 	vertical-align: baseline
 }
