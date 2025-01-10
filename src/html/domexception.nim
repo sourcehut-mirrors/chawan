@@ -77,6 +77,9 @@ proc newDOMException*(message = ""; name = "Error"): DOMException {.jsctor.} =
 template errDOMException*(message, name: string): untyped =
   err(newDOMException(message, name))
 
+proc JS_ThrowDOMException*(ctx: JSContext; message, name: string): JSValue =
+  return JS_Throw(ctx, ctx.toJS(newDOMException(message, name)))
+
 func message0(this: DOMException): string {.jsfget: "message".} =
   return this.message
 

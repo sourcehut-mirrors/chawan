@@ -3092,6 +3092,50 @@ proc getter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   return ctx.getter(HTMLCollection(this), atom)
 
+proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
+    before = JS_NULL): JSValue {.jsfunc.} =
+  if not (element of HTMLOptionElement or element of HTMLOptGroupElement):
+    return JS_ThrowTypeError(ctx, "Expected option or optgroup element")
+  var beforeEl: HTMLElement = nil
+  var beforeIdx = -1
+  if not JS_IsNull(before) and ctx.fromJS(before, beforeEl).isNone and
+      ctx.fromJS(before, beforeIdx).isNone:
+    return JS_EXCEPTION
+  for it in this.root.ancestors:
+    if element == it:
+      return JS_ThrowDOMException(ctx, "Can't add ancestor of select",
+        "HierarchyRequestError")
+  if beforeEl != nil and this.root notin beforeEl:
+    return JS_ThrowDOMException(ctx, "select is not a descendant of before",
+      "NotFoundError")
+  if element != beforeEl:
+    if beforeEl == nil:
+      let it = this.item(uint32(beforeIdx))
+      if it of HTMLElement:
+        beforeEl = HTMLElement(it)
+    let parent = if beforeEl != nil: beforeEl.parentNode else: this.root
+    let res = ctx.toJS(parent.insertBefore(element, beforeEl))
+    if JS_IsException(res):
+      return res
+  return JS_UNDEFINED
+
+proc remove(this: HTMLOptionsCollection; i: int32) {.jsfunc.} =
+  let element = this.item(uint32(i))
+  if element != nil:
+    element.remove()
+
+proc setLength(this: HTMLOptionsCollection; n: uint32) {.jsfset: "length".} =
+  let len = uint32(this.getLength())
+  if n > len:
+    if n <= 100_000: # LOL
+      let parent = this.root
+      let document = parent.document
+      for i in 0 ..< n - len:
+        parent.append(document.newHTMLElement(TAG_OPTION))
+  else:
+    for i in 0 ..< len - n:
+      this.item(uint32(i)).remove()
+
 func jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
     {.jsfget: "options".} =
   if this.cachedOptions == nil:
@@ -3107,7 +3151,8 @@ func jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
 proc length(this: HTMLSelectElement): int {.jsfget.} =
   return this.jsOptions.getLength()
 
-#TODO length setter
+proc setLength(this: HTMLSelectElement; n: uint32) {.jsfset: "length".} =
+  this.jsOptions.setLength(n)
 
 proc getter(ctx: JSContext; this: HTMLSelectElement; u: JSAtom): JSValue
     {.jsgetownprop.} =
@@ -3140,6 +3185,9 @@ proc selectedIndex*(this: HTMLSelectElement): int {.jsfget.} =
       return i
     inc i
   return -1
+
+proc selectedIndex(this: HTMLOptionsCollection): int {.jsfget.} =
+  return HTMLSelectElement(this.root).selectedIndex
 
 proc setSelectedIndex*(this: HTMLSelectElement; n: int)
     {.jsfset: "selectedIndex".} =
@@ -3178,7 +3226,19 @@ proc showPicker(this: HTMLSelectElement): Err[DOMException] {.jsfunc.} =
   # be app mode only.
   return errDOMException("not allowed", "NotAllowedError")
 
-#TODO add, remove
+proc add(ctx: JSContext; this: HTMLSelectElement; element: Element;
+    before = JS_NULL): JSValue {.jsfunc.} =
+  return ctx.add(this.jsOptions, element, before)
+
+proc remove(ctx: JSContext; this: HTMLSelectElement; idx: varargs[JSValue]):
+    Opt[void] {.jsfunc.} =
+  if idx.len > 0:
+    var i: int32
+    ?ctx.fromJS(idx[0], i)
+    this.jsOptions.remove(i)
+  else:
+    this.remove()
+  ok()
 
 # <table>
 func caption(this: HTMLTableElement): Element {.jsfget.} =
@@ -5646,14 +5706,13 @@ proc innerHTML(element: Element; s: string) {.jsfset.} =
     element
   ctx.replaceAll(fragment)
 
-proc outerHTML(element: Element; s: string): Err[DOMException] {.jsfset.} =
+proc outerHTML(element: Element; s: string): DOMResult[void] {.jsfset.} =
   let parent0 = element.parentNode
   if parent0 == nil:
     return ok()
   if parent0 of Document:
-    let ex = newDOMException("outerHTML is disallowed for Document children",
+    return errDOMException("outerHTML is disallowed for Document children",
       "NoModificationAllowedError")
-    return err(ex)
   let parent: Element = if parent0 of DocumentFragment:
     element.document.newHTMLElement(TAG_BODY)
   else:

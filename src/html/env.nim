@@ -250,8 +250,7 @@ func getParent(window: Window): Window {.jsfget: "parent".} =
 proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
   var s = ""
   if (let r = s.atob(data); r.isNone):
-    let ex = newDOMException($r.error, "InvalidCharacterError")
-    return JS_Throw(ctx, ctx.toJS(ex))
+    return JS_ThrowDOMException(ctx, $r.error, "InvalidCharacterError")
   return ctx.toJS(NarrowString(s))
 
 proc btoa(ctx: JSContext; window: Window; data: JSValue): JSValue
@@ -262,9 +261,8 @@ proc btoa(ctx: JSContext; window: Window; data: JSValue): JSValue
   doAssert JS_IsString(data)
   if JS_IsStringWideChar(data):
     JS_FreeValue(ctx, data)
-    let ex = newDOMException("Invalid character in string",
+    return JS_ThrowDOMException(ctx, "Invalid character in string",
       "InvalidCharacterError")
-    return JS_Throw(ctx, ctx.toJS(ex))
   let len = int(JS_GetStringLength(data))
   if len == 0:
     JS_FreeValue(ctx, data)

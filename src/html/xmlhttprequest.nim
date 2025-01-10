@@ -382,9 +382,8 @@ func getCharset(this: XMLHttpRequest): Charset =
 
 proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
   if this.responseType notin {xhrtUnknown, xhrtText}:
-    let ex = newDOMException("response type was expected to be '' or 'text'",
-      "InvalidStateError")
-    return JS_Throw(ctx, ctx.toJS(ex))
+    return JS_ThrowDOMException(ctx,
+      "Response type was expected to be '' or 'text'", "InvalidStateError")
   if this.readyState notin {xhrsLoading, xhrsDone}:
     return ctx.toJS("")
   let charset = this.getCharset()
