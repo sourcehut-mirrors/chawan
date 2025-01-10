@@ -1077,9 +1077,10 @@ const ReflectTable0 = [
   makeb("ismap", "isMap", TAG_IMG),
   makeb("disabled", TAG_LINK),
   # "super-global" attributes
-  makes("slot", AllTagTypes),
   makes("class", "className", AllTagTypes),
   makef("onclick", AllTagTypes, "click"),
+  makes("slot", AllTagTypes),
+  makes("title", AllTagTypes),
 ]
 
 func document*(node: Node): Document =
