@@ -74,6 +74,7 @@ func `$`(kvpair: TomlKVPair): string =
   result &= '\n'
 
 func `$`(tab: TomlTable): string =
+  result = ""
   if tab.comment != "":
     result &= "#" & tab.comment & '\n'
   for key, val in tab.map:
@@ -461,7 +462,7 @@ proc consumeValue(state: var TomlParser; buf: openArray[char]): TomlResult
 
 proc consumeArray(state: var TomlParser; buf: openArray[char]): TomlResult =
   var res = TomlValue(t: tvtArray)
-  var val: TomlValue
+  var val: TomlValue = nil
   while state.has(buf):
     let c = state.consume(buf)
     case c

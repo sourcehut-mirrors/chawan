@@ -134,7 +134,7 @@ proc checkCert(os: PosixStream; ssl: ptr SSL; host, port: string;
   let pkey = X509_get0_pubkey(cert)
   if pkey == nil:
     sdie("failed to decode public key")
-  var pubkeyBuf: array[16384, uint8]
+  var pubkeyBuf {.noinit.}: array[16384, uint8]
   let len = i2d_PUBKEY(pkey, nil);
   if len * 3 > pubkeyBuf.len:
     os.die("InternalError", "pubkey too long")

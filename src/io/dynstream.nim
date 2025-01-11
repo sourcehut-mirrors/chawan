@@ -12,17 +12,17 @@ type
 # An exception should be raised if recvData is called with the 'isend' flag set
 # to true.
 method recvData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
-  assert false
+  doAssert false
 
 # See above, but with write(2)
 method sendData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
-  assert false
+  doAssert false
 
 method seek*(s: DynStream; off: int) {.base.} =
-  assert false
+  doAssert false
 
 method sclose*(s: DynStream) {.base.} =
-  assert false
+  doAssert false
 
 method sflush*(s: DynStream) {.base.} =
   discard
@@ -501,7 +501,7 @@ proc newDynFileStream*(file: File): DynFileStream =
   return DynFileStream(file: file)
 
 proc newDynFileStream*(path: string): DynFileStream =
-  var file: File
+  var file: File = nil
   if file.open(path):
     return newDynFileStream(path)
   return nil

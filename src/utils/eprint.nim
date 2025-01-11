@@ -23,8 +23,8 @@ else:
 
 func elog*(s: varargs[string, `$`]) =
   {.cast(noSideEffect), cast(tags: []), cast(raises: []).}:
-    var f: File
-    if not open(f, "a", fmAppend):
+    var f: File = nil
+    if not f.open("a", fmAppend):
       return
     var o = ""
     for i in 0 ..< s.len:

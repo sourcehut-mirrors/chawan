@@ -228,7 +228,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
     canpipe: var bool; line = -1): string =
   var cmd = ""
   var attrname = ""
-  var state: UnquoteState
+  var state = usNormal
   var qss = @[qsNormal] # quote state stack. len >1
   template qs: var QuoteState = qss[^1]
   for c in ecmd:
