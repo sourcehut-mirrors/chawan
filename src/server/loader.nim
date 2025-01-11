@@ -86,9 +86,9 @@ type
     currentBuffer: LoaderBuffer
     currentBufferIdx: int
     buffers: Deque[LoaderBuffer]
-    istreamAtEnd: bool
     ownerPid: int
     outputId: int
+    istreamAtEnd: bool
     suspended: bool
     dead: bool
 

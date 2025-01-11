@@ -273,8 +273,10 @@ proc main() =
   discard mkdir(cstring(config.external.tmpdir), 0o700)
   let loaderPid = forkserver.loadConfig(config)
   setControlCHook(proc() {.noconv.} = quit(1))
+  let loaderControl = newSocketStream(loaderSockVec[0])
+  loaderControl.setCloseOnExec()
   let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
-    urandom, newSocketStream(loaderSockVec[0]))
+    urandom, loaderControl)
   try:
     client.pager.run(ctx.pages, ctx.contentType, ctx.charset, ctx.dump, history)
   except CatchableError:

@@ -140,7 +140,9 @@ proc startRequest(loader: FileLoader; request: Request): SocketStream =
     if success:
       fd = r.recvAux.pop()
   if success:
-    return newSocketStream(fd)
+    let res = newSocketStream(fd)
+    res.setCloseOnExec()
+    return res
   return nil
 
 proc startRequest*(loader: FileLoader; request: Request;

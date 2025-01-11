@@ -2077,6 +2077,8 @@ proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
   if interactive and pager.config.start.console_buffer:
     let (pins, pouts) = pager.createPipe()
     if pins != nil:
+      pins.setCloseOnExec()
+      pouts.setCloseOnExec()
       let clearFun = proc() =
         pager.clearConsole()
       let showFun = proc() =
@@ -2332,7 +2334,7 @@ proc externFilterSource(pager: Pager; cmd: string; c = none(Container);
   pager.addContainer(container)
   container.filter = BufferFilter(cmd: cmd)
 
-proc execPipe(pager: Pager; cmd: string; ps, os, closeme: PosixStream): int =
+proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
   case (let pid = myFork(); pid)
   of -1:
     pager.alert("Failed to fork for " & cmd)
@@ -2342,7 +2344,6 @@ proc execPipe(pager: Pager; cmd: string; ps, os, closeme: PosixStream): int =
     ps.moveFd(STDIN_FILENO)
     os.moveFd(STDOUT_FILENO)
     closeStderr()
-    closeme.sclose()
     for it in pager.loader.data:
       if it.stream.fd > 2:
         it.stream.sclose()
@@ -2367,7 +2368,8 @@ proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
   let (pins, pouts) = pager.createPipe()
   if pins == nil:
     return nil
-  let pid = pager.execPipe(cmd, istream, pouts, pins)
+  pins.setCloseOnExec()
+  let pid = pager.execPipe(cmd, istream, pouts)
   if pid == -1:
     return nil
   return pins
@@ -2413,7 +2415,7 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
 # new buffer.
 # needsterminal is ignored.
 proc runMailcapReadFile(pager: Pager; stream: PosixStream;
-    cmd, outpath: string; pins, pouts: PosixStream): int =
+    cmd, outpath: string; pouts: PosixStream): int =
   case (let pid = myFork(); pid)
   of -1:
     pager.alert("Error: failed to fork mailcap read process")
@@ -2421,7 +2423,6 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
     return pid
   of 0:
     # child process
-    pins.sclose()
     pouts.moveFd(STDOUT_FILENO)
     closeStderr()
     if not stream.writeToFile(outpath):
@@ -2469,7 +2470,8 @@ proc filterBuffer(pager: Pager; ps: PosixStream; cmd: string): PosixStream =
   let (pins, pouts) = pager.createPipe()
   if pins == nil:
     return nil
-  let pid = pager.execPipe(cmd, ps, pouts, pins)
+  pins.setCloseOnExec()
+  let pid = pager.execPipe(cmd, ps, pouts)
   if pid == -1:
     return nil
   return pins
@@ -2511,12 +2513,13 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     if pins == nil:
       stream.sclose() # connect: false implies that we consumed the stream
       break needsConnect
+    pins.setCloseOnExec()
     let pid = if canpipe:
       # Pipe input into the mailcap command, then read its output into a buffer.
       # needsterminal is ignored.
-      pager.execPipe(cmd, stream, pouts, pins)
+      pager.execPipe(cmd, stream, pouts)
     else:
-      pager.runMailcapReadFile(stream, cmd, outpath, pins, pouts)
+      pager.runMailcapReadFile(stream, cmd, outpath, pouts)
     stream.sclose()
     if pid == -1:
       break needsConnect
@@ -2624,6 +2627,8 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
     response: Response) =
   if cfSave in container.flags or cmfSaveoutput in res.flags:
     container.flags.incl(cfSave) # saveoutput doesn't include it before
+    # resume the ostream
+    pager.loader.resume(res.ostreamOutputId)
     pager.askDownloadPath(container, res.ostream, response)
   elif cmfConnect in res.flags:
     if cmfHTML in res.flags:
@@ -3201,6 +3206,7 @@ proc setupSigwinch(pager: Pager): PosixStream =
   var pipefd {.noinit.}: array[2, cint]
   doAssert pipe(pipefd) != -1
   let writer = newPosixStream(pipefd[1])
+  writer.setCloseOnExec()
   writer.setBlocking(false)
   var gwriter {.global.}: PosixStream = nil
   gwriter = writer
@@ -3211,6 +3217,7 @@ proc setupSigwinch(pager: Pager): PosixStream =
     except ErrorAgain:
       discard
   let reader = newPosixStream(pipefd[0])
+  reader.setCloseOnExec()
   reader.setBlocking(false)
   return reader
 
