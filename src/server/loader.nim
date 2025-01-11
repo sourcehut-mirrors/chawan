@@ -426,7 +426,7 @@ proc getOutputId(ctx: LoaderContext): int =
 
 proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
     targetPath: string): bool =
-  let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY, 0o600)
+  let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
   if ps == nil:
     return false
   try:
