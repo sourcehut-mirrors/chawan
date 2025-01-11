@@ -56,17 +56,15 @@ import utils/twtstr
 const LoaderBufferPageSize = 4016 # 4096 - 64 - 16
 
 type
-  LoaderBufferObj = object
-    page: ptr UncheckedArray[uint8]
-    len: int
-
   CachedItem = ref object
     id: int
     refc: int
     offset: int
     path: string
 
-  LoaderBuffer = ref LoaderBufferObj
+  LoaderBuffer = ref object
+    len: int
+    page: seq[uint8]
 
   LoaderHandle = ref object of RootObj
     registered: bool # track registered state
@@ -148,11 +146,6 @@ type
     configdir*: string
     bookmark*: string
 
-proc `=destroy`(buffer: var LoaderBufferObj) =
-  if buffer.page != nil:
-    dealloc(buffer.page)
-    buffer.page = nil
-
 when defined(debug):
   func `$`*(buffer: LoaderBuffer): string =
     var s = newString(buffer.len)
@@ -181,10 +174,7 @@ template isEmpty(output: OutputHandle): bool =
   output.currentBuffer == nil and not output.suspended
 
 proc newLoaderBuffer(size = LoaderBufferPageSize): LoaderBuffer =
-  return LoaderBuffer(
-    page: cast[ptr UncheckedArray[uint8]](alloc(size)),
-    len: 0
-  )
+  return LoaderBuffer(page: newSeqUninitialized[uint8](size))
 
 proc bufferCleared(output: OutputHandle) =
   assert output.currentBuffer != nil
@@ -251,11 +241,6 @@ proc sendHeaders(handle: InputHandle; headers: Headers) =
   handle.output.stream.withPacketWriter w:
     w.swrite(headers)
   handle.output.stream.setBlocking(blocking)
-
-proc recvData(ps: PosixStream; buffer: LoaderBuffer): int {.inline.} =
-  let n = ps.recvData(addr buffer.page[0], buffer.cap)
-  buffer.len = n
-  return n
 
 proc sendData(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   assert buffer.len - si > 0
@@ -628,8 +613,7 @@ proc parseHeaders(handle: InputHandle; buffer: LoaderBuffer): int =
   try:
     if buffer == nil:
       return handle.parseHeaders0(['\n'])
-    assert buffer.page != nil
-    let p = cast[ptr UncheckedArray[char]](buffer.page)
+    let p = cast[ptr UncheckedArray[char]](addr buffer.page[0])
     return handle.parseHeaders0(p.toOpenArray(0, buffer.len - 1))
   except ErrorBrokenPipe:
     handle.parser = nil
@@ -670,9 +654,10 @@ proc handleRead(ctx: LoaderContext; handle: InputHandle;
   while true:
     let buffer = newLoaderBuffer()
     try:
-      let n = handle.stream.recvData(buffer)
+      let n = handle.stream.recvData(buffer.page)
       if n == 0: # EOF
         return hrrUnregister
+      buffer.len = n
       var si = 0
       if handle.parser != nil:
         si = handle.parseHeaders(buffer)
@@ -1037,9 +1022,9 @@ proc loadDataSend(ctx: LoaderContext; handle: InputHandle; s, ct: string) =
     else:
       output.oclose()
     return
-  let buffer = newLoaderBuffer(size = s.len)
+  let buffer = newLoaderBuffer(s.len)
   buffer.len = s.len
-  copyMem(buffer.page, unsafeAddr s[0], s.len)
+  copyMem(addr buffer.page[0], unsafeAddr s[0], s.len)
   case ctx.pushBuffer(output, buffer, 0)
   of pbrUnregister:
     if output.registered:
