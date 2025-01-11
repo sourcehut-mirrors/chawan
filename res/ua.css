@@ -131,7 +131,7 @@ dt { font-weight: bold }
 dd { margin-left: 4ch }
 dl[compact] dt + br { display: none }
 
-select { display: inline-flex; white-space: nowrap }
+select { display: inline-flex !important; white-space: nowrap }
 select[multiple] { white-space: initial }
 select::before { content: '['; color: initial }
 select::after { content: ']'; color: initial }
