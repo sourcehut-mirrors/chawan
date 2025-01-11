@@ -52,7 +52,8 @@ Alternatively, you can install Chawan from packages maintained by
 volunteers:
 
 * AUR: <https://aur.archlinux.org/packages/chawan-git>
-* NixOS: look for package "chawan"
+* NixOS: <https://search.nixos.org/packages?show=chawan>
+* AppImage: <https://git.lerch.org/lobo/chawan-appimage/>
 
 ## Features
 
