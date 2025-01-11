@@ -76,8 +76,8 @@ lib/chaseccomp/chaseccomp.o: .FORCE
 .FORCE:
 endif
 
-$(OUTDIR_BIN)/cha: src/*.nim src/**/*.nim src/**/*.c res/* res/**/* \
-		$(chaseccomp) res/map/idna_gen.nim nim.cfg
+$(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim res/* res/**/* $(chaseccomp) \
+		res/map/idna_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) $(FLAGS) \
@@ -103,7 +103,7 @@ unicode_gen: $(OBJDIR)/genidna $(OBJDIR)/gencharwidth
 	$(OBJDIR)/gencharwidth > res/map/charwidth_gen.nim
 
 twtstr = src/utils/twtstr.nim src/utils/map.nim src/types/opt.nim
-dynstream = src/io/dynstream.nim src/io/dynstream_aux.c
+dynstream = src/io/dynstream.nim
 lcgi = $(dynstream) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)

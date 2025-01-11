@@ -195,9 +195,9 @@ proc cloneInterface*(stream: BufStream): BufferInterface =
   # from which the new buffer is going to return as well. So we must also
   # consume the return value of the clone function, which is the pid 0.
   var pid: int
-  var r = stream.initPacketReader()
-  r.sread(iface.packetid)
-  r.sread(pid)
+  stream.withPacketReader r:
+    r.sread(iface.packetid)
+    r.sread(pid)
   return iface
 
 proc resolve*(iface: BufferInterface; packetid, len, auxLen: int) =
@@ -981,7 +981,6 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     buffer.estream.write("Failed to clone buffer.\n")
     return -1
   if pid == 0: # child
-    let sockFd = buffer.pstream.recvFd()
     discard close(pipefd[0]) # close read
     let ps = newPosixStream(pipefd[1])
     buffer.pollData.clear()
@@ -1018,6 +1017,9 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     buffer.url = newurl
     for it in buffer.tasks.mitems:
       it = 0
+    var sockFd: cint
+    buffer.pstream.withPacketReader r:
+      sockFd = r.recvAux.pop()
     buffer.pstream.sclose()
     buffer.pstream = newSocketStream(sockFd)
     gpstream = buffer.pstream
@@ -1378,7 +1380,8 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
   var fd: cint = -1
   var res = ReadSuccessResult()
   if hasFd:
-    fd = buffer.pstream.recvFd()
+    buffer.pstream.withPacketReader r:
+      fd = r.recvAux.pop()
   if buffer.document.focus != nil:
     case buffer.document.focus.tagType
     of TAG_INPUT:
@@ -1856,12 +1859,12 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
   return switch
 
 proc readCommand(buffer: Buffer) =
-  var r = buffer.pstream.initPacketReader()
-  var cmd: BufferCommand
-  var packetid: int
-  r.sread(cmd)
-  r.sread(packetid)
-  bufferDispatcher(ProxyFunctions, buffer, cmd, packetid, r)
+  buffer.pstream.withPacketReader r:
+    var cmd: BufferCommand
+    var packetid: int
+    r.sread(cmd)
+    r.sread(packetid)
+    bufferDispatcher(ProxyFunctions, buffer, cmd, packetid, r)
 
 proc handleRead(buffer: Buffer; fd: int): bool =
   if fd == buffer.rfd:
@@ -1937,7 +1940,7 @@ proc cleanup(buffer: Buffer) =
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
-    pstream: SocketStream; urandom: PosixStream; cacheId: int) =
+    pstream: SocketStream; istream, urandom: PosixStream; cacheId: int) =
   let factory = newCAtomFactory()
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
@@ -1977,11 +1980,10 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     if buffer.config.scripting == smApp:
       buffer.window.maybeRestyle = proc() = buffer.maybeRestyle()
   buffer.charset = buffer.charsetStack.pop()
-  let fd = pstream.recvFd()
-  buffer.fd = int(fd)
-  buffer.istream = newPosixStream(fd)
+  buffer.fd = istream.fd
+  buffer.istream = istream
   buffer.istream.setBlocking(false)
-  buffer.pollData.register(fd, POLLIN)
+  buffer.pollData.register(istream.fd, POLLIN)
   loader.registerFun = proc(fd: int) =
     buffer.pollData.register(fd, POLLIN)
   loader.unregisterFun = proc(fd: int) =

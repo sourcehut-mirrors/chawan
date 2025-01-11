@@ -1,6 +1,10 @@
 # Write data to streams in packets.
-# Each packet is prefixed with its length as a pointer-sized integer.
+# Each packet is prefixed with two pointer-sized integers;
+# the first one indicates the buffer's length, while the second one the
+# length of its ancillary data (i.e. the number of file descriptors
+# passed).
 
+import std/algorithm
 import std/options
 import std/tables
 
@@ -38,8 +42,7 @@ proc swrite*(writer: var BufferedWriter; c: CellColor)
 
 const InitLen = sizeof(int) * 2
 const SizeInit = max(64, InitLen)
-proc initWriter*(stream: DynStream):
-    BufferedWriter =
+proc initWriter*(stream: DynStream): BufferedWriter =
   return BufferedWriter(
     stream: stream,
     buffer: cast[ptr UncheckedArray[uint8]](alloc(SizeInit)),
@@ -52,10 +55,11 @@ proc flush*(writer: var BufferedWriter) =
   let len = [writer.bufLen - InitLen, writer.sendAux.len]
   copyMem(writer.buffer, unsafeAddr len[0], sizeof(len))
   writer.stream.sendDataLoop(writer.buffer, writer.bufLen)
-  for i in countdown(writer.sendAux.high, 0):
-    SocketStream(writer.stream).sendFd(writer.sendAux[i])
+  if writer.sendAux.len > 0:
+    writer.sendAux.reverse()
+    let dummy = [0u8]
+    SocketStream(writer.stream).sendMsg(dummy, writer.sendAux)
   writer.bufLen = 0
-  writer.stream.sflush()
 
 proc deinit*(writer: var BufferedWriter) =
   dealloc(writer.buffer)

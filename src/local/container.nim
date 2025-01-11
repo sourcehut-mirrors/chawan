@@ -9,6 +9,7 @@ import config/config
 import config/cookie
 import config/mimetypes
 import css/render
+import io/bufwriter
 import io/dynstream
 import io/promise
 import local/select
@@ -239,7 +240,8 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return nil
-  SocketStream(container.iface.stream.source).sendFd(sv[1])
+  container.iface.stream.source.withPacketWriter w:
+    w.sendAux.add(sv[1])
   discard close(sv[1])
   return p.then(proc(pid: int): tuple[c: Container; fd: cint] =
     if pid == -1:
@@ -1566,8 +1568,9 @@ proc readCanceled*(container: Container) =
 proc readSuccess*(container: Container; s: string; fd: cint = -1) =
   let p = container.iface.readSuccess(s, fd != -1)
   if fd != -1:
-    container.iface.stream.reallyFlush()
-    SocketStream(container.iface.stream.source).sendFd(fd)
+    container.iface.stream.sflush()
+    container.iface.stream.source.withPacketWriter w:
+      w.sendAux.add(fd)
   p.then(proc(res: ReadSuccessResult) =
     if res.repaint:
       container.needslines = true
@@ -1684,8 +1687,9 @@ func hoverCachedImage(container: Container): string {.jsfget.} =
   return container.hoverText[htCachedImage]
 
 proc handleCommand(container: Container) =
-  var packet: array[3, int] # 0 len, 1 auxLen, 2 packetid
+  var packet {.noinit.}: array[3, int] # 0 len, 1 auxLen, 2 packetid
   container.iface.stream.recvDataLoop(addr packet[0], sizeof(packet))
+  assert packet[1] == 0 # no ancillary data possible for BufStream
   container.iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
 
 proc startLoad(container: Container) =

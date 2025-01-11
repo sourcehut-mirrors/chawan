@@ -30,11 +30,14 @@ proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
   assert len != 0 or auxLen != 0
   var reader = BufferedReader(
     buffer: newSeqUninitialized[uint8](len),
+    recvAux: newSeqUninitialized[cint](auxLen),
     bufIdx: 0
   )
   stream.recvDataLoop(reader.buffer)
-  for i in 0 ..< auxLen:
-    reader.recvAux.add(SocketStream(stream).recvFd())
+  if auxLen > 0:
+    # bufwriter added ancillary data.
+    var dummy = [0u8]
+    SocketStream(stream).recvMsg(dummy, reader.recvAux)
   return reader
 
 proc initPacketReader*(stream: DynStream): BufferedReader =

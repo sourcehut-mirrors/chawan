@@ -120,7 +120,6 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   r.sread(ishtml)
   r.sread(charsetStack)
   let fd = r.recvAux.pop()
-  stdout.flushFile()
   stderr.flushFile()
   let pid = fork()
   if pid == -1:
@@ -138,9 +137,11 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     let pstream = newSocketStream(fd)
     var cacheId: int
     var loaderStream: SocketStream
+    var istream: PosixStream
     pstream.withPacketReader r:
       r.sread(cacheId)
       loaderStream = newSocketStream(r.recvAux.pop())
+      istream = newSocketStream(r.recvAux.pop())
     let loader = newFileLoader(loaderPid, pid, loaderStream)
     gpstream = pstream
     onSignal SIGTERM:
@@ -153,7 +154,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     enterBufferSandbox()
     try:
       launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
-        urandom, cacheId)
+        istream, urandom, cacheId)
     except CatchableError:
       let e = getCurrentException()
       # taken from system/excpt.nim

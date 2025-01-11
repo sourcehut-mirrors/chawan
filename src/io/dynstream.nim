@@ -1,4 +1,3 @@
-import std/os
 import std/posix
 
 type
@@ -354,53 +353,74 @@ proc setCloseOnExec*(ps: PosixStream) =
 
 type SocketStream* = ref object of PosixStream
 
-# Auxiliary functions in C, because writing them portably in Nim is
-# a pain.
-{.compile: "dynstream_aux.c".}
-
-proc bind_unix_from_c(fd: cint; path: cstring; pathlen: cint): cint {.importc.}
-proc connect_unix_from_c(fd: cint; path: cstring; pathlen: cint): cint
-  {.importc.}
-
-proc sendfd(sock, fd: cint): int {.importc.}
-proc recvfd(sock: cint; fdout: var cint): int {.importc.}
-
-proc sendFd*(s: SocketStream; fd: cint) =
-  let n = sendfd(s.fd, fd)
+proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
+    sendAux: openArray[cint]) =
+  var dummy = 0u8
+  var iov = IOVec(iov_base: addr dummy, iov_len: 1)
+  if buffer.len > 0:
+    iov = IOVec(iov_base: unsafeAddr buffer[0], iov_len: csize_t(buffer.len))
+  let sendAuxSize = sizeof(cint) * sendAux.len
+  let controlLen = CMSG_SPACE(csize_t(sendAuxSize))
+  var cmsgBuf = if controlLen > 0: alloc(controlLen) else: nil
+  var hdr = Tmsghdr()
+  zeroMem(addr hdr, sizeof(hdr))
+  hdr.msg_iov = addr iov
+  hdr.msg_iovlen = 1
+  hdr.msg_control = cmsgBuf
+  hdr.msg_controllen = controlLen
+  let cmsg = CMSG_FIRSTHDR(addr hdr)
+  cmsg.cmsg_len = CMSG_LEN(csize_t(sendAuxSize))
+  cmsg.cmsg_level = SOL_SOCKET
+  cmsg.cmsg_type = SCM_RIGHTS
+  if sendAux.len > 0:
+    copyMem(CMSG_DATA(cmsg), unsafeAddr sendAux[0], sendAuxSize)
+  let n = sendmsg(SocketHandle(s.fd), addr hdr, 0)
+  if cmsgBuf != nil:
+    dealloc(cmsgBuf)
   if n < 0:
     raisePosixIOError()
-  assert n == 1 # we send a single nul byte as buf
+  if n < buffer.len:
+    raise newException(EOFError, "eof")
 
-proc recvFd*(s: SocketStream): cint =
-  var fd: cint
-  let n = recvfd(s.fd, fd)
+proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
+    recvAux: var openArray[cint]) =
+  var dummy {.noinit.}: uint8
+  var iov = IOVec(iov_base: addr dummy, iov_len: 1)
+  if buffer.len > 0:
+    iov = IOVec(iov_base: addr buffer[0], iov_len: csize_t(buffer.len))
+  let recvAuxSize = sizeof(cint) * recvAux.len
+  let controlLen = CMSG_SPACE(csize_t(recvAuxSize))
+  var cmsgBuf = if controlLen > 0: alloc(controlLen) else: nil
+  var hdr = Tmsghdr()
+  zeroMem(addr hdr, sizeof(hdr))
+  hdr.msg_iov = addr iov
+  hdr.msg_iovlen = 1
+  hdr.msg_control = cmsgBuf
+  hdr.msg_controllen = controlLen
+  let n = recvmsg(SocketHandle(s.fd), addr hdr, 0)
   if n < 0:
+    if cmsgBuf != nil:
+      dealloc(cmsgBuf)
     raisePosixIOError()
-  return fd
+  if n < buffer.len:
+    if cmsgBuf != nil:
+      dealloc(cmsgBuf)
+    raise newException(EOFError, "eof")
+  if recvAux.len > 0:
+    let cmsg = CMSG_FIRSTHDR(addr hdr)
+    copyMem(addr recvAux[0], CMSG_DATA(cmsg), recvAuxSize)
+  if cmsgBuf != nil:
+    dealloc(cmsgBuf)
 
 method seek*(s: SocketStream; off: int) =
   doAssert false
 
-const SocketPathPrefix = "cha_sock_"
-proc getSocketPath(socketDir: string; pid: int): string =
-  return socketDir / SocketPathPrefix & $pid
-
 proc newSocketStream*(fd: cint): SocketStream =
   return SocketStream(fd: fd, blocking: true)
 
-proc connectSocketStream*(socketDir: string; pid: int): SocketStream =
-  let fd = cint(socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP))
-  let ss = newSocketStream(fd)
-  ss.setCloseOnExec()
-  let path = getSocketPath(socketDir, pid)
-  if connect_unix_from_c(fd, cstring(path), cint(path.len)) != 0:
-    discard close(fd)
-    return nil
-  return ss
-
 type
   BufStream* = ref object of DynStream
-    source*: PosixStream
+    source*: SocketStream
     registerFun: proc(fd: int)
     registered: bool
     writeBuffer: string
@@ -444,12 +464,12 @@ proc flushWrite*(s: BufStream): bool =
   s.writeBuffer = s.writeBuffer.substr(n)
   return false
 
-proc reallyFlush*(s: BufStream) =
+method sflush*(s: BufStream) =
   if s.writeBuffer.len > 0:
     s.source.sendDataLoop(s.writeBuffer)
 
-proc newBufStream*(ps: PosixStream; registerFun: proc(fd: int)): BufStream =
-  return BufStream(source: ps, registerFun: registerFun)
+proc newBufStream*(s: SocketStream; registerFun: proc(fd: int)): BufStream =
+  return BufStream(source: s, registerFun: registerFun)
 
 type
   DynFileStream* = ref object of DynStream
@@ -485,37 +505,3 @@ proc newDynFileStream*(path: string): DynFileStream =
   if file.open(path):
     return newDynFileStream(path)
   return nil
-
-type ServerSocket* = ref object
-  fd: cint
-  path*: string
-
-proc setBlocking*(ssock: ServerSocket; blocking: bool) =
-  let ofl = fcntl(ssock.fd, F_GETFL, 0)
-  if blocking:
-    discard fcntl(ssock.fd, F_SETFL, ofl and not O_NONBLOCK)
-  else:
-    discard fcntl(ssock.fd, F_SETFL, ofl or O_NONBLOCK)
-
-proc newServerSocket*(sockDir: string; pid: int): ServerSocket =
-  let fd = socket(AF_UNIX, SOCK_STREAM, IPPROTO_IP)
-  let path = getSocketPath(sockDir, pid)
-  let ssock = ServerSocket(fd: cint(fd), path: path)
-  discard unlink(cstring(ssock.path))
-  if bind_unix_from_c(ssock.fd, cstring(ssock.path), cint(ssock.path.len)) != 0:
-    return nil
-  if listen(fd, 128) != 0:
-    return nil
-  return ssock
-
-proc close*(ssock: ServerSocket) =
-  discard close(ssock.fd)
-  discard unlink(cstring(ssock.path))
-
-proc acceptSocketStream*(ssock: ServerSocket): SocketStream =
-  let fd = cint(accept(SocketHandle(ssock.fd), nil, nil))
-  if fd == -1:
-    return nil
-  let ss = newSocketStream(fd)
-  ss.setCloseOnExec()
-  return ss

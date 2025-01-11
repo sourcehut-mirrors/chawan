@@ -2688,9 +2688,8 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
     stream.withPacketWriter w:
       w.swrite(outCacheId)
       w.sendAux.add(cstream.fd)
-    # pass down ostream
-    # must come after the previous block so the first packet is flushed
-    stream.sendFd(ostream.fd)
+      # pass down ostream
+      w.sendAux.add(ostream.fd)
     ostream.sclose()
     container.setStream(bufStream)
   else: # cloned buffer
@@ -2868,35 +2867,36 @@ proc handleRead(pager: Pager; item: ConnectingContainer) =
   let stream = item.stream
   case item.state
   of ccsBeforeResult:
-    var r = stream.initPacketReader()
-    var res: int
-    r.sread(res)
-    if res == 0:
-      r.sread(item.outputId)
-      inc item.state
-      container.loadinfo = "Connected to " & $container.url & ". Downloading..."
-      pager.onSetLoadInfo(container)
-      # continue
-    else:
-      var msg: string
-      r.sread(msg)
-      if msg == "":
-        msg = getLoaderErrorMessage(res)
-      pager.fail(container, msg)
-      # done
-      pager.loader.unset(item)
-      pager.unregisterFd(int(item.stream.fd))
-      stream.sclose()
+    stream.withPacketReader r:
+      var res: int
+      r.sread(res)
+      if res == 0:
+        r.sread(item.outputId)
+        inc item.state
+        container.loadinfo = "Connected to " & $container.url &
+          ". Downloading..."
+        pager.onSetLoadInfo(container)
+        # continue
+      else:
+        var msg: string
+        r.sread(msg)
+        if msg == "":
+          msg = getLoaderErrorMessage(res)
+        pager.fail(container, msg)
+        # done
+        pager.loader.unset(item)
+        pager.unregisterFd(int(item.stream.fd))
+        stream.sclose()
   of ccsBeforeStatus:
-    var r = stream.initPacketReader()
-    r.sread(item.status)
+    stream.withPacketReader r:
+      r.sread(item.status)
     inc item.state
     # continue
   of ccsBeforeHeaders:
     let response = newResponse(item.res, container.request, stream,
       item.outputId, item.status)
-    var r = stream.initPacketReader()
-    r.sread(response.headers)
+    stream.withPacketReader r:
+      r.sread(response.headers)
     # done
     pager.loader.unset(item)
     pager.unregisterFd(int(item.stream.fd))

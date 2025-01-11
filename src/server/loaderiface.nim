@@ -35,7 +35,7 @@ type
     registerQueue: seq[ConnectData]
     # UNIX domain socket to the loader process.
     # We send all messages through this.
-    controlStream*: PosixStream
+    controlStream*: SocketStream
 
   ConnectDataState = enum
     cdsBeforeResult, cdsBeforeStatus, cdsBeforeHeaders
@@ -273,9 +273,9 @@ proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
     w.swrite(lcGetCacheFile)
     w.swrite(cacheId)
     w.swrite(sourcePid)
-  var r = loader.controlStream.initPacketReader()
   var s: string
-  r.sread(s)
+  loader.withPacketReader r:
+    r.sread(s)
   return s
 
 proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
@@ -284,68 +284,68 @@ proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
     w.swrite(lcRedirectToFile)
     w.swrite(outputId)
     w.swrite(targetPath)
-  var r = loader.controlStream.initPacketReader()
   var res: bool
-  r.sread(res)
+  loader.withPacketReader r:
+    r.sread(res)
   return res
 
 proc onConnected(loader: FileLoader; connectData: ConnectData) =
   let stream = connectData.stream
   let promise = connectData.promise
   let request = connectData.request
-  var r = stream.initPacketReader()
-  case connectData.state
-  of cdsBeforeResult:
-    var res: int
-    r.sread(res) # packet 1
-    if res == 0:
-      r.sread(connectData.outputId) # packet 1
+  stream.withPacketReader r:
+    case connectData.state
+    of cdsBeforeResult:
+      var res: int
+      r.sread(res) # packet 1
+      if res == 0:
+        r.sread(connectData.outputId) # packet 1
+        inc connectData.state
+      else:
+        var msg: string
+        # msg is discarded.
+        #TODO maybe print if called from trusted code (i.e. global == client)?
+        r.sread(msg) # packet 1
+        let fd = connectData.fd
+        loader.unregisterFun(fd)
+        loader.unregistered.add(fd)
+        stream.sclose()
+        # delete before resolving the promise
+        loader.unset(connectData)
+        promise.resolve(JSResult[Response].err(newFetchTypeError()))
+    of cdsBeforeStatus:
+      r.sread(connectData.status) # packet 2
       inc connectData.state
-    else:
-      var msg: string
-      # msg is discarded.
-      #TODO maybe print if called from trusted code (i.e. global == client)?
-      r.sread(msg) # packet 1
-      let fd = connectData.fd
-      loader.unregisterFun(fd)
-      loader.unregistered.add(fd)
-      stream.sclose()
+    of cdsBeforeHeaders:
+      let response = newResponse(connectData.res, request, stream,
+        connectData.outputId, connectData.status)
+      r.sread(response.headers) # packet 3
+      # Only a stream of the response body may arrive after this point.
+      response.body = stream
       # delete before resolving the promise
       loader.unset(connectData)
-      promise.resolve(JSResult[Response].err(newFetchTypeError()))
-  of cdsBeforeStatus:
-    r.sread(connectData.status) # packet 2
-    inc connectData.state
-  of cdsBeforeHeaders:
-    let response = newResponse(connectData.res, request, stream,
-      connectData.outputId, connectData.status)
-    r.sread(response.headers) # packet 3
-    # Only a stream of the response body may arrive after this point.
-    response.body = stream
-    # delete before resolving the promise
-    loader.unset(connectData)
-    let data = OngoingData(response: response, stream: stream)
-    loader.put(data)
-    assert loader.unregisterFun != nil
-    response.unregisterFun = proc() =
-      loader.unset(data)
-      let fd = data.fd
-      loader.unregistered.add(fd)
-      loader.unregisterFun(fd)
-    response.resumeFun = proc(outputId: int) =
-      loader.resume(outputId)
-    stream.setBlocking(false)
-    let redirect = response.getRedirect(request)
-    if redirect != nil:
-      response.unregisterFun()
-      stream.sclose()
-      let redirectNum = connectData.redirectNum + 1
-      if redirectNum < 5: #TODO use config.network.max_redirect?
-        loader.fetch0(redirect, promise, redirectNum)
+      let data = OngoingData(response: response, stream: stream)
+      loader.put(data)
+      assert loader.unregisterFun != nil
+      response.unregisterFun = proc() =
+        loader.unset(data)
+        let fd = data.fd
+        loader.unregistered.add(fd)
+        loader.unregisterFun(fd)
+      response.resumeFun = proc(outputId: int) =
+        loader.resume(outputId)
+      stream.setBlocking(false)
+      let redirect = response.getRedirect(request)
+      if redirect != nil:
+        response.unregisterFun()
+        stream.sclose()
+        let redirectNum = connectData.redirectNum + 1
+        if redirectNum < 5: #TODO use config.network.max_redirect?
+          loader.fetch0(redirect, promise, redirectNum)
+        else:
+          promise.resolve(JSResult[Response].err(newFetchTypeError()))
       else:
-        promise.resolve(JSResult[Response].err(newFetchTypeError()))
-    else:
-      promise.resolve(JSResult[Response].ok(response))
+        promise.resolve(JSResult[Response].ok(response))
 
 proc onRead*(loader: FileLoader; data: OngoingData) =
   let response = data.response
