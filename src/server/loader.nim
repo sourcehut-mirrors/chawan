@@ -49,7 +49,11 @@ import types/referrer
 import types/url
 import utils/twtstr
 
-const LoaderBufferPageSize = 4064 # 4096 - 32
+# Try to make it a SmallChunk.
+# We must subtract SmallChunk size, and then FreeCell size.
+# (See system/alloc.nim for details.)
+#TODO measure this on 32-bit too, we get a few more bytes there
+const LoaderBufferPageSize = 4016 # 4096 - 64 - 16
 
 type
   LoaderBufferObj = object
