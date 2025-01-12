@@ -66,13 +66,12 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
       result[i].add(item[1])
 
 proc applyPresHints(computed: CSSValues; element: Element;
-    attrs: WindowAttributes;
-    inited, uaInited, userInited: var array[CSSPropertyType, bool]) =
+    attrs: WindowAttributes; initMap: var InitMap) =
   template set_cv(t, x, b: untyped) =
     const v = valueType(t)
-    computed.applyValue(makeEntry(t, CSSValue(v: v, x: b)), nil, nil, uaInited)
-    inited[t] = true
-    userInited[t] = true
+    computed.applyValue(makeEntry(t, CSSValue(v: v, x: b)), nil, nil, initMap,
+      itUserAgent)
+    initMap[t].incl(itUser)
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
     if s.isSome:
@@ -126,9 +125,8 @@ proc applyPresHints(computed: CSSValues; element: Element;
   template set_bgcolor_is_canvas =
     let t = cptBgcolorIsCanvas
     let val = CSSValueBit(bgcolorIsCanvas: true)
-    computed.applyValue(makeEntry(t, val), nil, nil, uaInited)
-    inited[t] = true
-    userInited[t] = true
+    computed.applyValue(makeEntry(t, val), nil, nil, initMap, itUserAgent)
+    initMap[t].incl(itUser)
   template map_cellspacing =
     let s = element.attrul(satCellspacing)
     if s.isSome:
@@ -193,41 +191,36 @@ type
 # element and attrsp are nil if called for a pseudo element.
 func buildComputedValues(rules: CSSValueEntryMap; parent: CSSValues;
     element: Element; attrsp: ptr WindowAttributes): CSSValues =
-  new(result)
-  var inited = array[CSSPropertyType, bool].default
-  var uaInited = array[CSSPropertyType, bool].default
-  var userInited = array[CSSPropertyType, bool].default
+  result = CSSValues()
+  var initMap = InitMap.default
   for entry in rules[coUserAgent].normal: # user agent
-    result.applyValue(entry, parent, nil, inited)
-    inited[entry.t] = true
-    uaInited[entry.t] = true
-    userInited[entry.t] = true
+    result.applyValue(entry, parent, nil, initMap, itOther)
+    initMap[entry.t] = {itUserAgent, itUser}
   let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
   if element != nil:
-    result.applyPresHints(element, attrsp[], inited, uaInited, userInited)
+    result.applyPresHints(element, attrsp[], initMap)
   for entry in rules[coUser].normal: # user
-    result.applyValue(entry, parent, uaProperties, uaInited)
-    inited[entry.t] = true
-    userInited[entry.t] = true
+    result.applyValue(entry, parent, uaProperties, initMap, itUserAgent)
+    initMap[entry.t].incl(itUser)
   # save user properties so author can use them
   let userProperties = result.copyProperties()
   for entry in rules[coAuthor].normal: # author
-    result.applyValue(entry, parent, userProperties, userInited)
-    inited[entry.t] = true
+    result.applyValue(entry, parent, userProperties, initMap, itUser)
+    initMap[entry.t].incl(itOther)
   for entry in rules[coAuthor].important: # author important
-    result.applyValue(entry, parent, userProperties, userInited)
-    inited[entry.t] = true
+    result.applyValue(entry, parent, userProperties, initMap, itUser)
+    initMap[entry.t].incl(itOther)
   for entry in rules[coUser].important: # user important
-    result.applyValue(entry, parent, uaProperties, uaInited)
-    inited[entry.t] = true
+    result.applyValue(entry, parent, uaProperties, initMap, itUserAgent)
+    initMap[entry.t].incl(itOther)
   for entry in rules[coUserAgent].important: # user agent important
-    result.applyValue(entry, parent, nil, uaInited)
-    inited[entry.t] = true
+    result.applyValue(entry, parent, nil, initMap, itUserAgent)
+    initMap[entry.t].incl(itOther)
   # set defaults
   for t in CSSPropertyType:
-    if not inited[t]:
+    if initMap[t] == {}:
       result.initialOrInheritFrom(parent, t)
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.

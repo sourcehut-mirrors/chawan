@@ -1542,9 +1542,14 @@ proc initialOrInheritFrom*(a, b: CSSValues; t: CSSPropertyType) =
   else:
     a.setInitial(t)
 
+type
+  InitType* = enum
+    itUserAgent, itUser, itOther
+
+  InitMap* = array[CSSPropertyType, set[InitType]]
+
 proc applyValue*(vals: CSSValues; entry: CSSComputedEntry;
-    parent, previousOrigin: CSSValues;
-    inited: array[CSSPropertyType, bool]) =
+    parent, previousOrigin: CSSValues; inited: InitMap; initType: InitType) =
   case entry.global
   of cgtInherit:
     if parent != nil:
@@ -1556,7 +1561,7 @@ proc applyValue*(vals: CSSValues; entry: CSSComputedEntry;
   of cgtUnset:
     vals.initialOrInheritFrom(parent, entry.t)
   of cgtRevert:
-    if previousOrigin != nil and inited[entry.t]:
+    if previousOrigin != nil and initType in inited[entry.t]:
       vals.copyFrom(previousOrigin, entry.t)
     else:
       vals.initialOrInheritFrom(parent, entry.t)
