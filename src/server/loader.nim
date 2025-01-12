@@ -1529,7 +1529,6 @@ proc runFileLoader*(config: LoaderConfig; controlStream: SocketStream) =
   var ctx = initLoaderContext(config, controlStream)
   while ctx.alive:
     ctx.pollData.poll(-1)
-    #TODO move to ctx
     for event in ctx.pollData.events:
       let efd = int(event.fd)
       if (event.revents and POLLIN) != 0:
