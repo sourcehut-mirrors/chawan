@@ -426,7 +426,7 @@ type
     scripting: ScriptingMode
     attrsp: ptr WindowAttributes
 
-func appliesLR(feature: MediaFeature; n: float64): bool =
+func appliesLR(feature: MediaFeature; n: float32): bool =
   let a = feature.lengthrange.s.a.num
   let b = feature.lengthrange.s.b.num
   return (feature.lengthrange.aeq and a == n or a < n) and
@@ -443,9 +443,9 @@ func applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
   of mftPrefersColorScheme:
     return feature.b == ctx.attrsp.prefersDark
   of mftWidth:
-    return feature.appliesLR(float64(ctx.attrsp.widthPx))
+    return feature.appliesLR(float32(ctx.attrsp.widthPx))
   of mftHeight:
-    return feature.appliesLR(float64(ctx.attrsp.heightPx))
+    return feature.appliesLR(float32(ctx.attrsp.heightPx))
   of mftScripting:
     return feature.b == (ctx.scripting != smFalse)
 

@@ -394,13 +394,13 @@ func parseIntP*(s: openArray[char]): Option[int] =
   return parseIntImpl[int, uint](s, 10)
 
 # https://www.w3.org/TR/css-syntax-3/#convert-string-to-number
-func parseFloat64*(s: openArray[char]): float64 =
+func parseFloat32*(s: openArray[char]): float32 =
   var sign = 1f64
   var t = 1
   var d = 0
-  var integer: float64 = 0
-  var f: float64 = 0
-  var e: float64 = 0
+  var integer = 0f32
+  var f = 0f32
+  var e = 0f32
   var i = 0
   if i < s.len and s[i] == '-':
     sign = -1f64
@@ -409,13 +409,13 @@ func parseFloat64*(s: openArray[char]): float64 =
     inc i
   while i < s.len and s[i] in AsciiDigit:
     integer *= 10
-    integer += float64(decValue(s[i]))
+    integer += float32(decValue(s[i]))
     inc i
   if i < s.len and s[i] == '.':
     inc i
     while i < s.len and s[i] in AsciiDigit:
       f *= 10
-      f += float64(decValue(s[i]))
+      f += float32(decValue(s[i]))
       inc i
       inc d
   if i < s.len and (s[i] == 'e' or s[i] == 'E'):
@@ -427,9 +427,9 @@ func parseFloat64*(s: openArray[char]): float64 =
       inc i
     while i < s.len and s[i] in AsciiDigit:
       e *= 10
-      e += float64(decValue(s[i]))
+      e += float32(decValue(s[i]))
       inc i
-  return sign * (integer + f * pow(10, float64(-d))) * pow(10, (float64(t) * e))
+  return sign * (integer + f * pow(10, float32(-d))) * pow(10, (float32(t) * e))
 
 const ControlPercentEncodeSet* = Controls + NonAscii
 const FragmentPercentEncodeSet* = ControlPercentEncodeSet +

@@ -68,9 +68,13 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
 proc applyPresHints(computed: CSSValues; element: Element;
     attrs: WindowAttributes; initMap: var InitMap) =
   template set_cv(t, x, b: untyped) =
-    const v = valueType(t)
-    computed.applyValue(makeEntry(t, CSSValue(v: v, x: b)), nil, nil, initMap,
+    computed.applyValue(makeEntry(t, CSSValueWord(x: b)), nil, nil, initMap,
       itUserAgent)
+    initMap[t].incl(itUser)
+  template set_cv_new(t, x, b: untyped) =
+    const v = valueType(t)
+    let val = CSSValue(v: v, x: b)
+    computed.applyValue(makeEntry(t, val), nil, nil, initMap, itUserAgent)
     initMap[t].incl(itUser)
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
@@ -97,7 +101,7 @@ proc applyPresHints(computed: CSSValues; element: Element;
   template map_size =
     let s = element.attrul(satSize)
     if s.isSome:
-      set_cv cptWidth, length, resolveLength(cuCh, float64(s.get), attrs)
+      set_cv cptWidth, length, resolveLength(cuCh, float32(s.get), attrs)
   template map_text =
     let s = element.attr(satText)
     if s != "":
@@ -115,13 +119,13 @@ proc applyPresHints(computed: CSSValues; element: Element;
     if colspan.isSome:
       let i = colspan.get
       if i <= 1000:
-        set_cv cptChaColspan, integer, int(i)
+        set_cv cptChaColspan, integer, int32(i)
   template map_rowspan =
     let rowspan = element.attrul(satRowspan)
     if rowspan.isSome:
       let i = rowspan.get
       if i <= 65534:
-        set_cv cptChaRowspan, integer, int(i)
+        set_cv cptChaRowspan, integer, int32(i)
   template set_bgcolor_is_canvas =
     let t = cptBgcolorIsCanvas
     let val = CSSValueBit(bgcolorIsCanvas: true)
@@ -130,8 +134,8 @@ proc applyPresHints(computed: CSSValues; element: Element;
   template map_cellspacing =
     let s = element.attrul(satCellspacing)
     if s.isSome:
-      let n = float64(s.get)
-      set_cv cptBorderSpacing, length2, CSSLength2(a: cssLength(n))
+      let n = float32(s.get)
+      set_cv_new cptBorderSpacing, length2, CSSLength2(a: cssLength(n))
 
   case element.tagType
   of TAG_TABLE:
@@ -166,8 +170,8 @@ proc applyPresHints(computed: CSSValues; element: Element;
     let textarea = HTMLTextAreaElement(element)
     let cols = textarea.attrul(satCols).get(20)
     let rows = textarea.attrul(satRows).get(1)
-    set_cv cptWidth, length, resolveLength(cuCh, float64(cols), attrs)
-    set_cv cptHeight, length, resolveLength(cuEm, float64(rows), attrs)
+    set_cv cptWidth, length, resolveLength(cuCh, float32(cols), attrs)
+    set_cv cptHeight, length, resolveLength(cuEm, float32(rows), attrs)
   of TAG_FONT:
     map_color
   of TAG_INPUT:
@@ -178,7 +182,7 @@ proc applyPresHints(computed: CSSValues; element: Element;
     let select = HTMLSelectElement(element)
     if select.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)
-      set_cv cptHeight, length, resolveLength(cuEm, float64(size), attrs)
+      set_cv cptHeight, length, resolveLength(cuEm, float32(size), attrs)
   else: discard
 
 type

@@ -3871,13 +3871,9 @@ proc getComputedStyle*(element: Element): CSSStyleDeclaration =
   if element.cachedComputedStyle == nil:
     var s = ""
     for p in CSSPropertyType:
-      if p != cptNone:
-        s &= $p & ':'
-        if p.isBit:
-          s &= element.computed.bits[p].serialize(valueType(p))
-        else:
-          s &= element.computed.objs[p].serialize()
-        s &= ';'
+      s &= $p & ':'
+      s &= element.computed.serialize(p)
+      s &= ';'
     element.cachedComputedStyle = newCSSStyleDeclaration(element, move(s))
     element.cachedComputedStyle.computed = true
     element.cachedComputedStyle.readonly = true

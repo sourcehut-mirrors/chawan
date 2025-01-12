@@ -125,13 +125,13 @@ func canpx(l: CSSLength; sc: SizeConstraint): bool =
 func px(l: CSSLength; p: LUnit): LUnit {.inline.} =
   if l.u != clPerc:
     return l.num.toLUnit()
-  return (p.toFloat64() * l.num / 100).toLUnit()
+  return (p.toFloat32() * l.num / 100).toLUnit()
 
 func px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
   if l.u != clPerc:
     return l.num.toLUnit()
   if p.t == scStretch:
-    return (p.u.toFloat64() * l.num / 100).toLUnit()
+    return (p.u.toFloat32() * l.num / 100).toLUnit()
   return 0
 
 func stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =
@@ -1027,7 +1027,7 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
   )
   sizes.space.h = maxContent()
   for dim in DimensionType:
-    let length = computed.objs[CvalSizeMap[dim]].length
+    let length = computed.words[CvalSizeMap[dim]].length
     if length.canpx(space[dim]):
       let u = length.spx(space[dim], computed, paddingSum[dim])
       sizes.space[dim] = stretch(minClamp(u, sizes.bounds.a[dim]))
@@ -1048,7 +1048,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
   )
   if dim != dtHorizontal:
     sizes.space.h = maxContent()
-  let length = computed.objs[CvalSizeMap[dim]].length
+  let length = computed.words[CvalSizeMap[dim]].length
   if length.canpx(space[dim]):
     let u = length.spx(space[dim], computed, paddingSum[dim])
       .minClamp(sizes.bounds.a[dim])
@@ -1064,7 +1064,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     # been specified.
     sizes.space[dim] = maxContent()
   let odim = dim.opposite()
-  let olength = computed.objs[CvalSizeMap[odim]].length
+  let olength = computed.words[CvalSizeMap[odim]].length
   if olength.canpx(space[odim]):
     let u = olength.spx(space[odim], computed, paddingSum[odim])
       .minClamp(sizes.bounds.a[odim])
@@ -1759,7 +1759,7 @@ type
     width: LUnit
     wspecified: bool
     reflow: bool
-    weight: float64
+    weight: float32
 
   TableContext = object
     lctx: LayoutContext
@@ -2040,7 +2040,7 @@ func calcSpecifiedRatio(tctx: TableContext; W: LUnit): LUnit =
   return W div totalSpecified
 
 proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
-    weight: var float64): seq[int] =
+    weight: var float32): seq[int] =
   let specifiedRatio = tctx.calcSpecifiedRatio(W)
   # Spacing for each column:
   var avail = newSeqOfCap[int](tctx.cols.len)
@@ -2048,9 +2048,9 @@ proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
     if not col.wspecified:
       avail.add(i)
       let w = if col.width < W:
-        toFloat64(col.width)
+        toFloat32(col.width)
       else:
-        toFloat64(W) * (ln(toFloat64(col.width) / toFloat64(W)) + 1)
+        toFloat32(W) * (ln(toFloat32(col.width) / toFloat32(W)) + 1)
       col.weight = w
       weight += w
     else:
@@ -2074,7 +2074,7 @@ func needsRedistribution(tctx: TableContext; computed: CSSValues):
 proc redistributeWidth(tctx: var TableContext) =
   # Remove inline spacing from distributable width.
   var W = tctx.space.w.u - tctx.cols.len * tctx.inlineSpacing * 2
-  var weight = 0f64
+  var weight = 0f32
   var avail = tctx.calcUnspecifiedColIndices(W, weight)
   var redo = true
   while redo and avail.len > 0 and weight != 0:
@@ -2083,7 +2083,7 @@ proc redistributeWidth(tctx: var TableContext) =
       W = 0
     redo = false
     # divide delta width by sum of ln(width) for all elem in avail
-    let unit = toFloat64(W) / weight
+    let unit = toFloat32(W) / weight
     weight = 0
     for i in countdown(avail.high, 0):
       let j = avail[i]
@@ -2232,7 +2232,7 @@ type
 
   FlexPendingItem = object
     child: BlockBox
-    weights: array[FlexWeightType, float64]
+    weights: array[FlexWeightType, float32]
     sizes: ResolvedSizes
 
   FlexContext = object
@@ -2252,7 +2252,7 @@ type
     maxSize: Size
     shrinkSize: LUnit
     maxMargin: RelativeRect
-    totalWeight: array[FlexWeightType, float64]
+    totalWeight: array[FlexWeightType, float32]
     pending: seq[FlexPendingItem]
 
 proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
@@ -2280,9 +2280,9 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     mctx.maxSize[odim] = 0
     var udiv = totalWeight
     if wt == fwtShrink:
-      udiv *= mctx.shrinkSize.toFloat64() / totalWeight
+      udiv *= mctx.shrinkSize.toFloat32() / totalWeight
     let unit = if udiv != 0:
-      diff.toFloat64() / udiv
+      diff.toFloat32() / udiv
     else:
       0
     # reset total weight & available diff for the next iteration (if there is
@@ -2295,7 +2295,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
         continue
       var uw = unit * it.weights[wt]
       if wt == fwtShrink:
-        uw *= it.child.state.size[dim].toFloat64()
+        uw *= it.child.state.size[dim].toFloat32()
       var u = it.child.state.size[dim] + uw.toLUnit()
       # check for min/max violation
       let minu = max(it.child.state.intr[dim], it.sizes.bounds.a[dim].start)
@@ -3152,22 +3152,23 @@ proc buildReplacement(ctx: var BlockBuilderContext; child, parent: StyledNode;
   of ContentNone: assert false # unreachable for `content'
   of ContentOpenQuote:
     let quotes = parent.computed{"quotes"}
-    var text: string = ""
-    if quotes.qs.len > 0:
-      text = quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].s
-    elif quotes.auto:
-      text = quoteStart(ctx.quoteLevel)
-    else: return
-    let node = newStyledText(text)
+    let s = if quotes == nil:
+      quoteStart(ctx.quoteLevel)
+    elif quotes.qs.len > 0:
+      quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].s
+    else:
+      return
+    let node = newStyledText(s)
     ctx.pushInlineText(computed, parent, node)
     inc ctx.quoteLevel
   of ContentCloseQuote:
-    if ctx.quoteLevel > 0: dec ctx.quoteLevel
+    if ctx.quoteLevel > 0:
+      dec ctx.quoteLevel
     let quotes = parent.computed{"quotes"}
-    let s = if quotes.qs.len > 0:
-      quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].e
-    elif quotes.auto:
+    let s = if quotes == nil:
       quoteEnd(ctx.quoteLevel)
+    elif quotes.qs.len > 0:
+      quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].e
     else:
       return
     let text = newStyledText(s)

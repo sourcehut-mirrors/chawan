@@ -33,7 +33,7 @@ type
     of cttDelim:
       cvalue*: char
     of cttNumber, cttINumber, cttPercentage, cttDimension, cttIDimension:
-      nvalue*: float64
+      nvalue*: float32
       unit*: string
     else: discard
 
@@ -263,7 +263,7 @@ proc consumeIdentSequence(state: var CSSTokenizerState): string =
   return s
 
 proc consumeNumber(state: var CSSTokenizerState):
-    tuple[isInt: bool; val: float64] =
+    tuple[isInt: bool; val: float32] =
   var isInt = true
   var repr = ""
   if state.has() and state.peek() in {'+', '-'}:
@@ -289,7 +289,7 @@ proc consumeNumber(state: var CSSTokenizerState):
     isInt = false
     while state.has() and state.peek() in AsciiDigit:
       repr &= state.consume()
-  let val = parseFloat64(repr)
+  let val = parseFloat32(repr)
   return (isInt, val)
 
 proc consumeNumericToken(state: var CSSTokenizerState): CSSToken =

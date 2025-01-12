@@ -461,7 +461,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       let iex = toInt(e.x)
       let iey = toInt(e.y)
       grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node)
-    if box.computed{"background-image"}.t == ContentImage:
+    if box.computed{"background-image"} != nil:
       # ugly hack for background-image display... TODO actually display images
       const s = "[img]"
       let w = s.len * state.attrs.ppc

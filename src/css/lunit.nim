@@ -57,6 +57,10 @@ func `div`*(a, b: LUnit): LUnit {.inline.} =
   let b = int64(b)
   return LUnit((a div b) shr 6)
 
+converter toLUnit*(a: int32): LUnit =
+  let a = int64(a) shl 6
+  return satlu(a)
+
 converter toLUnit*(a: int): LUnit =
   let a = int64(a) shl 6
   return satlu(a)
@@ -84,7 +88,7 @@ func `-=`*(a: var LUnit; b: LUnit) {.inline.} =
 func `*=`*(a: var LUnit; b: LUnit) {.inline.} =
   a = a * b
 
-func toLUnit*(a: float64): LUnit =
+func toLUnit*(a: float32): LUnit =
   let a = a * 64
   if unlikely(a == Inf):
     return LUnit(high(int32))
@@ -92,11 +96,11 @@ func toLUnit*(a: float64): LUnit =
     return LUnit(low(int32))
   return LUnit(int32(a))
 
-func toFloat64*(a: LUnit): float64 =
-  return float64(int32(a)) / 64
+func toFloat32*(a: LUnit): float64 =
+  return float32(int32(a)) / 64
 
 func `$`*(a: LUnit): string =
-  $toFloat64(a)
+  $toFloat32(a)
 
 func min*(a, b: LUnit): LUnit {.borrow.}
 func max*(a, b: LUnit): LUnit {.borrow.}
