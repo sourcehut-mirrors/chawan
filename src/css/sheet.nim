@@ -201,8 +201,7 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
   if atrule.name.equalsIgnoreCase("import"):
     if sheet.len == 0 and base != nil:
-      var i = 0
-      atrule.prelude.skipWhitespace(i)
+      var i = atrule.prelude.skipBlanks(0)
       # Warning: this is a tracking vector minefield. If you implement
       # media query based imports, make sure to not filter here, but in
       # DOM after the sheet has been downloaded. (e.g. importList can
@@ -210,8 +209,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
       if i < atrule.prelude.len:
         if (let url = cssURL(atrule.prelude[i]); url.isSome):
           if (let url = parseURL(url.get, some(base)); url.isSome):
-            inc i
-            atrule.prelude.skipWhitespace(i)
+            i = atrule.prelude.skipBlanks(i + 1)
             # check if there are really no media queries/layers/etc
             if i == atrule.prelude.len:
               sheet.importList.add(url.get)

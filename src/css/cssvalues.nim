@@ -844,15 +844,24 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
     return some(CSSLength(num: n, u: clPerc))
   return some(cssLength(n))
 
-func skipWhitespace*(vals: openArray[CSSComponentValue]; i: var int) =
+func skipBlanks*(vals: openArray[CSSComponentValue]; i: int): int =
+  var i = i
   while i < vals.len:
-    if vals[i] != cttWhitespace:
+    if not (vals[i] of CSSToken) or CSSToken(vals[i]).t != cttWhitespace:
       break
     inc i
+  return i
+
+func getToken(cvals: openArray[CSSComponentValue]; i: int): Opt[CSSToken] =
+  if i < cvals.len:
+    let cval = cvals[i]
+    if cval of CSSToken:
+      return ok(CSSToken(cval))
+  return err()
 
 func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
-  var i = 0
   var commaMode = false
+  var i = value.skipBlanks(0)
   template check_err(slash: bool) =
     #TODO calc, percentages, etc (cssnumber function or something)
     if not slash and i >= value.len:
@@ -862,13 +871,11 @@ func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
       if not (x of CSSToken and CSSToken(x).t in {cttNumber, cttINumber}):
         return err()
   template next_value(first = false, slash = false) =
-    inc i
-    value.skipWhitespace(i)
+    i = value.skipBlanks(i + 1)
     if i < value.len:
       if value[i] == cttComma and (commaMode or first):
         # legacy compatibility
-        inc i
-        value.skipWhitespace(i)
+        i = value.skipBlanks(i + 1)
         commaMode = true
       elif commaMode:
         return err()
@@ -876,10 +883,8 @@ func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
         let tok = value[i]
         if tok != cttDelim or CSSToken(tok).cvalue != '/':
           return err()
-        inc i
-        value.skipWhitespace(i)
+        i = value.skipBlanks(i + 1)
     check_err slash
-  value.skipWhitespace(i)
   check_err false
   let r = clamp(CSSToken(value[i]).nvalue, 0, 255)
   next_value true
@@ -891,8 +896,7 @@ func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
     clamp(CSSToken(value[i]).nvalue, 0, 1)
   else:
     1
-  value.skipWhitespace(i)
-  if i < value.len:
+  if value.skipBlanks(i) < value.len:
     return err()
   return ok(rgba(int(r), int(g), int(b), int(a * 255)).cssColor())
 
@@ -900,8 +904,7 @@ func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
 # where number is an ANSI color (0..255)
 # and ident is in NameTable and may start with "bright-"
 func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
-  var i = 0
-  value.skipWhitespace(i)
+  var i = value.skipBlanks(0)
   if i != value.high or not (value[i] of CSSToken): # only 1 param is valid
     #TODO numeric functions
     return err()
@@ -998,42 +1001,43 @@ func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
 func cssGlobal(cval: CSSComponentValue): CSSGlobalType =
   return parseIdent[CSSGlobalType](cval).get(cgtNone)
 
-func cssQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
-  template die =
+func parseQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
+  var i = cvals.skipBlanks(0)
+  let tok = ?cvals.getToken(i)
+  i = cvals.skipBlanks(i + 1)
+  case tok.t
+  of cttIdent:
+    if i < cvals.len:
+      return err()
+    if tok.value.equalsIgnoreCase("auto"):
+      return ok(CSSQuotes(auto: true))
+    elif tok.value.equalsIgnoreCase("none"):
+      return ok(CSSQuotes())
     return err()
-  if cvals.len == 0:
-    die
-  var res: CSSQuotes
-  var sa = false
-  var pair: tuple[s, e: string]
-  for cval in cvals:
-    if res.auto: die
-    if cval of CSSToken:
+  of cttString:
+    var res = CSSQuotes()
+    var otok = tok
+    while i < cvals.len:
+      let cval = cvals[i]
+      if not (cval of CSSToken):
+        return err()
       let tok = CSSToken(cval)
-      case tok.t
-      of cttIdent:
-        if res.qs.len > 0: die
-        if tok.value.equalsIgnoreCase("auto"):
-          res.auto = true
-        elif tok.value.equalsIgnoreCase("none"):
-          if cvals.len != 1:
-            die
-        die
-      of cttString:
-        if sa:
-          pair.e = tok.value
-          res.qs.add(pair)
-          sa = false
-        else:
-          pair.s = tok.value
-          sa = true
-      of cttWhitespace: discard
-      else: die
-  if sa:
-    die
-  return ok(res)
+      if tok.t != cttString:
+        return err()
+      if otok != nil:
+        res.qs.add((otok.value, tok.value))
+        otok = nil
+      else:
+        otok = tok
+      i = cvals.skipBlanks(i + 1)
+    if otok != nil:
+      return err()
+    return ok(move(res))
+  else:
+    return err()
 
 func cssContent(cvals: openArray[CSSComponentValue]): seq[CSSContent] =
+  result = @[]
   for cval in cvals:
     if cval of CSSToken:
       let tok = CSSToken(cval)
@@ -1209,8 +1213,7 @@ proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
 
 proc parseValue(cvals: openArray[CSSComponentValue];
     entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
-  var i = 0
-  cvals.skipWhitespace(i)
+  var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return err()
   let cval = cvals[i]
@@ -1259,10 +1262,10 @@ proc parseValue(cvals: openArray[CSSComponentValue];
     set_bit borderCollapse, ?parseIdent[CSSBorderCollapse](cval)
   of cvtLength2:
     let a = ?cssAbsoluteLength(cval, attrs)
-    cvals.skipWhitespace(i)
+    i = cvals.skipBlanks(i)
     let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i], attrs)
     set_new length2, CSSLength2(a: a, b: b)
-  of cvtQuotes: set_new quotes, ?cssQuotes(cvals)
+  of cvtQuotes: set_new quotes, ?parseQuotes(cvals)
   of cvtCounterReset: set_new counterReset, ?cssCounterReset(cvals)
   of cvtImage: set_new image, ?cssImage(cval)
   of cvtFloat: set_bit float, ?parseIdent[CSSFloat](cval)
@@ -1338,7 +1341,7 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
   var lengths: seq[CSSValue] = @[]
   var i = 0
   while i < cvals.len:
-    cvals.skipWhitespace(i)
+    i = cvals.skipBlanks(i)
     let length = ?parseLength(cvals[i], attrs, hasAuto = hasAuto)
     let val = CSSValue(v: cvtLength, length: length)
     lengths.add(val)
@@ -1376,8 +1379,7 @@ const PropertyPaddingSpec = [
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     cvals: openArray[CSSComponentValue]; attrs: WindowAttributes): Err[void] =
-  var i = 0
-  cvals.skipWhitespace(i)
+  var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return err()
   let global = cssGlobal(cvals[i])
@@ -1440,16 +1442,14 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       res.add(makeEntry(cptListStyleType, typeVal, global))
   of cstFlex:
     if global == cgtNone:
-      var i = 0
-      cvals.skipWhitespace(i)
+      var i = cvals.skipBlanks(0)
       if i >= cvals.len:
         return err()
       if (let r = cssNumber(cvals[i], positive = true); r.isSome):
         # flex-grow
         let val = CSSValue(v: cvtNumber, number: r.get)
         res.add(makeEntry(cptFlexGrow, val))
-        inc i
-        cvals.skipWhitespace(i)
+        i = cvals.skipBlanks(i + 1)
         if i < cvals.len:
           if not (cvals[i] of CSSToken):
             return err()
@@ -1457,8 +1457,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
             # flex-shrink
             let val = CSSValue(v: cvtNumber, number: r.get)
             res.add(makeEntry(cptFlexShrink, val))
-            inc i
-            cvals.skipWhitespace(i)
+            i = cvals.skipBlanks(i + 1)
       if res.len < 1: # flex-grow omitted, default to 1
         let val = CSSValue(v: cvtNumber, number: 1)
         res.add(makeEntry(cptFlexGrow, val))
@@ -1478,36 +1477,30 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       res.add(makeEntry(cptFlexBasis, global))
   of cstFlexFlow:
     if global == cgtNone:
-      var i = 0
-      cvals.skipWhitespace(i)
+      var i = cvals.skipBlanks(0)
       if i >= cvals.len:
         return err()
       if (let dir = parseIdent[CSSFlexDirection](cvals[i]); dir.isSome):
         # flex-direction
-        var val = CSSValueBit()
-        val.flexDirection = dir.get
+        var val = CSSValueBit(flexDirection: dir.get)
         res.add(makeEntry(cptFlexDirection, val))
-        inc i
-        cvals.skipWhitespace(i)
+        i = cvals.skipBlanks(i + 1)
       if i < cvals.len:
         let wrap = ?parseIdent[CSSFlexWrap](cvals[i])
-        var val = CSSValueBit()
-        val.flexWrap = wrap
+        var val = CSSValueBit(flexWrap: wrap)
         res.add(makeEntry(cptFlexWrap, val))
     else:
       res.add(makeEntry(cptFlexDirection, global))
       res.add(makeEntry(cptFlexWrap, global))
   of cstOverflow:
     if global == cgtNone:
-      var i = 0
-      cvals.skipWhitespace(i)
+      var i = cvals.skipBlanks(0)
       if i >= cvals.len:
         return err()
       if (let xx = parseIdent[CSSOverflow](cvals[i]); xx.isSome):
         var x = CSSValueBit(overflow: xx.get)
         var y = x
-        inc i
-        cvals.skipWhitespace(i)
+        i = cvals.skipBlanks(i + 1)
         if i < cvals.len:
           y.overflow = ?parseIdent[CSSOverflow](cvals[i])
         res.add(makeEntry(cptOverflowX, x))
@@ -1572,7 +1565,7 @@ proc applyValue*(vals: CSSValues; entry: CSSComputedEntry;
       vals.objs[entry.t] = entry.obj
 
 func inheritProperties*(parent: CSSValues): CSSValues =
-  new(result)
+  result = CSSValues()
   for t in CSSPropertyType:
     if t.inherited:
       result.copyFrom(parent, t)
@@ -1580,11 +1573,11 @@ func inheritProperties*(parent: CSSValues): CSSValues =
       result.setInitial(t)
 
 func copyProperties*(props: CSSValues): CSSValues =
-  new(result)
+  result = CSSValues()
   result[] = props[]
 
 func rootProperties*(): CSSValues =
-  new(result)
+  result = CSSValues()
   for t in CSSPropertyType:
     result.setInitial(t)
 
@@ -1592,9 +1585,8 @@ func rootProperties*(): CSSValues =
 # table.
 func splitTable*(computed: CSSValues):
     tuple[outerComputed, innnerComputed: CSSValues] =
-  var outerComputed, innerComputed: CSSValues
-  new(outerComputed)
-  new(innerComputed)
+  var outerComputed = CSSValues()
+  var innerComputed = CSSValues()
   const props = {
     cptPosition, cptFloat, cptMarginLeft, cptMarginRight, cptMarginTop,
     cptMarginBottom, cptTop, cptRight, cptBottom, cptLeft,
