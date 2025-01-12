@@ -36,6 +36,7 @@ type
     cptOverflowY = "overflow-y"
     cptPosition = "position"
     cptTextAlign = "text-align"
+    cptTextDecoration = "text-decoration"
     cptTextTransform = "text-transform"
     cptVisibility = "visibility"
     cptWhiteSpace = "white-space"
@@ -67,17 +68,16 @@ type
     cptPaddingTop = "padding-top"
     cptRight = "right"
     cptTop = "top"
+    cptVerticalAlign = "vertical-align"
     cptWidth = "width"
     cptZIndex = "z-index"
 
-    # object properties: stored as pointer to a ref object
+    # object properties: stored as a tagged ref object
     cptBackgroundImage = "background-image"
     cptBorderSpacing = "border-spacing"
     cptContent = "content"
     cptCounterReset = "counter-reset"
     cptQuotes = "quotes"
-    cptTextDecoration = "text-decoration"
-    cptVerticalAlign = "vertical-align"
 
 const LastBitPropType = cptWordBreak
 const FirstWordPropType = LastBitPropType.succ
@@ -372,6 +372,7 @@ type
     overflow*: CSSOverflow
     position*: CSSPosition
     textAlign*: CSSTextAlign
+    textDecoration*: set[CSSTextDecoration]
     textTransform*: CSSTextTransform
     visibility*: CSSVisibility
     whiteSpace*: CSSWhiteSpace
@@ -383,6 +384,7 @@ type
     integer*: int32
     length*: CSSLength
     number*: float32
+    verticalAlign*: CSSVerticalAlign
 
   CSSValue* = ref object
     case v*: CSSValueType
@@ -390,10 +392,6 @@ type
       content*: seq[CSSContent]
     of cvtQuotes:
       quotes*: CSSQuotes
-    of cvtTextDecoration:
-      textDecoration*: set[CSSTextDecoration]
-    of cvtVerticalAlign:
-      verticalAlign*: CSSVerticalAlign
     of cvtLength2:
       length2*: CSSLength2
     of cvtCounterReset:
@@ -443,6 +441,7 @@ const ValueTypes = [
   cptOverflowY: cvtOverflow,
   cptPosition: cvtPosition,
   cptTextAlign: cvtTextAlign,
+  cptTextDecoration: cvtTextDecoration,
   cptTextTransform: cvtTextTransform,
   cptVisibility: cvtVisibility,
   cptWhiteSpace: cvtWhiteSpace,
@@ -474,6 +473,7 @@ const ValueTypes = [
   cptPaddingTop: cvtLength,
   cptRight: cvtLength,
   cptTop: cvtLength,
+  cptVerticalAlign: cvtVerticalAlign,
   cptWidth: cvtLength,
   cptZIndex: cvtInteger,
 
@@ -483,8 +483,6 @@ const ValueTypes = [
   cptContent: cvtContent,
   cptCounterReset: cvtCounterReset,
   cptQuotes: cvtQuotes,
-  cptTextDecoration: cvtTextDecoration,
-  cptVerticalAlign: cvtVerticalAlign,
 ]
 
 const InheritedProperties = {
@@ -550,8 +548,6 @@ func `$`(counterreset: seq[CSSCounterReset]): string =
 func serialize(val: CSSValue): string =
   case val.v
   of cvtImage: return $val.image
-  of cvtTextDecoration: return $val.textDecoration
-  of cvtVerticalAlign: return $val.verticalAlign
   of cvtLength2: return $val.length2.a & " " & $val.length2.b
   of cvtContent:
     var s = ""
@@ -570,29 +566,31 @@ func serialize(val: CSSValueWord; t: CSSValueType): string =
   of cvtInteger: return $val.integer
   of cvtLength: return $val.length
   of cvtNumber: return $val.number
+  of cvtVerticalAlign: return $val.verticalAlign
   else: assert false
 
 func serialize(val: CSSValueBit; t: CSSValueType): string =
   case t
-  of cvtDisplay: return $val.display
-  of cvtFontStyle: return $val.fontStyle
-  of cvtWhiteSpace: return $val.whiteSpace
-  of cvtWordBreak: return $val.wordBreak
-  of cvtListStyleType: return $val.listStyleType
-  of cvtTextAlign: return $val.textAlign
-  of cvtListStylePosition: return $val.listStylePosition
-  of cvtPosition: return $val.position
-  of cvtCaptionSide: return $val.captionSide
-  of cvtBorderCollapse: return $val.borderCollapse
-  of cvtFloat: return $val.float
-  of cvtVisibility: return $val.visibility
-  of cvtBoxSizing: return $val.boxSizing
-  of cvtClear: return $val.clear
-  of cvtTextTransform: return $val.textTransform
   of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
+  of cvtBorderCollapse: return $val.borderCollapse
+  of cvtBoxSizing: return $val.boxSizing
+  of cvtCaptionSide: return $val.captionSide
+  of cvtClear: return $val.clear
+  of cvtDisplay: return $val.display
   of cvtFlexDirection: return $val.flexDirection
   of cvtFlexWrap: return $val.flexWrap
+  of cvtFloat: return $val.float
+  of cvtFontStyle: return $val.fontStyle
+  of cvtListStylePosition: return $val.listStylePosition
+  of cvtListStyleType: return $val.listStyleType
   of cvtOverflow: return $val.overflow
+  of cvtPosition: return $val.position
+  of cvtTextAlign: return $val.textAlign
+  of cvtTextDecoration: return $val.textDecoration
+  of cvtTextTransform: return $val.textTransform
+  of cvtVisibility: return $val.visibility
+  of cvtWhiteSpace: return $val.whiteSpace
+  of cvtWordBreak: return $val.wordBreak
   else: assert false
 
 func serialize*(computed: CSSValues; p: CSSPropertyType): string =
@@ -1276,7 +1274,7 @@ proc parseValue(cvals: openArray[CSSComponentValue];
   template set_word(prop, val: untyped) =
     entry.word = CSSValueWord(prop: val)
   template set_bit(prop, val: untyped) =
-    entry.bit = uint8(val)
+    entry.bit = cast[uint8](val)
   case v
   of cvtDisplay: set_bit display, ?parseIdent[CSSDisplay](cval)
   of cvtWhiteSpace: set_bit whiteSpace, ?parseIdent[CSSWhiteSpace](cval)
@@ -1304,8 +1302,8 @@ proc parseValue(cvals: openArray[CSSComponentValue];
     of cptChaRowspan: set_word integer, ?parseInteger(cval, 0i32 .. 65534i32)
     of cptZIndex: set_word integer, ?parseInteger(cval, -65534i32 .. 65534i32)
     else: assert false
-  of cvtTextDecoration: set_new textdecoration, ?cssTextDecoration(cvals)
-  of cvtVerticalAlign: set_new verticalAlign, ?cssVerticalAlign(cval, attrs)
+  of cvtTextDecoration: set_bit textDecoration, ?cssTextDecoration(cvals)
+  of cvtVerticalAlign: set_word verticalAlign, ?cssVerticalAlign(cval, attrs)
   of cvtTextAlign: set_bit textAlign, ?parseIdent[CSSTextAlign](cval)
   of cvtListStylePosition:
     set_bit listStylePosition, ?parseIdent[CSSListStylePosition](cval)
