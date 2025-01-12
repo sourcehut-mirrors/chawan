@@ -36,8 +36,7 @@ proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
   stream.recvDataLoop(reader.buffer)
   if auxLen > 0:
     # bufwriter added ancillary data.
-    var dummy = [0u8]
-    SocketStream(stream).recvMsg(dummy, reader.recvAux)
+    SocketStream(stream).recvFds(reader.recvAux)
   return reader
 
 proc initPacketReader*(stream: DynStream): BufferedReader =

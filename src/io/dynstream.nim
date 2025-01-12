@@ -90,6 +90,11 @@ proc recvAll*(s: DynStream): string =
   buffer.setLen(idx)
   return buffer
 
+proc setEnd(s: DynStream) =
+  if unlikely(s.isend):
+    raise newException(EOFError, "eof")
+  s.isend = true
+
 type
   PosixStream* = ref object of DynStream
     fd*: cint
@@ -126,9 +131,7 @@ method recvData*(s: PosixStream; buffer: pointer; len: int): int =
   if n < 0:
     raisePosixIOError()
   if n == 0:
-    if unlikely(s.isend):
-      raise newException(EOFError, "eof")
-    s.isend = true
+    s.setEnd()
   return n
 
 proc sreadChar*(s: PosixStream): char =
@@ -354,7 +357,7 @@ proc setCloseOnExec*(ps: PosixStream) =
 type SocketStream* = ref object of PosixStream
 
 proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
-    sendAux: openArray[cint]) =
+    sendAux: openArray[cint]): int =
   var dummy = 0u8
   var iov = IOVec(iov_base: addr dummy, iov_len: 1)
   if buffer.len > 0:
@@ -362,12 +365,12 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
   let sendAuxSize = sizeof(cint) * sendAux.len
   let controlLen = CMSG_SPACE(csize_t(sendAuxSize))
   var cmsgBuf = if controlLen > 0: alloc(controlLen) else: nil
-  var hdr = Tmsghdr()
-  zeroMem(addr hdr, sizeof(hdr))
-  hdr.msg_iov = addr iov
-  hdr.msg_iovlen = 1
-  hdr.msg_control = cmsgBuf
-  hdr.msg_controllen = SockLen(controlLen)
+  var hdr = Tmsghdr(
+    msg_iov: addr iov,
+    msg_iovlen: 1,
+    msg_control: cmsgBuf,
+    msg_controllen: SockLen(controlLen)
+  )
   let cmsg = CMSG_FIRSTHDR(addr hdr)
   cmsg.cmsg_len = SockLen(CMSG_LEN(csize_t(sendAuxSize)))
   cmsg.cmsg_level = SOL_SOCKET
@@ -379,11 +382,12 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
     dealloc(cmsgBuf)
   if n < 0:
     raisePosixIOError()
-  if n < buffer.len:
-    raise newException(EOFError, "eof")
+  if n == 0:
+    s.setEnd()
+  return n
 
 proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
-    recvAux: var openArray[cint]) =
+    recvAux: var openArray[cint]): int =
   var dummy {.noinit.}: uint8
   var iov = IOVec(iov_base: addr dummy, iov_len: 1)
   if buffer.len > 0:
@@ -391,12 +395,12 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
   let recvAuxSize = sizeof(cint) * recvAux.len
   let controlLen = CMSG_SPACE(csize_t(recvAuxSize))
   var cmsgBuf = if controlLen > 0: alloc(controlLen) else: nil
-  var hdr = Tmsghdr()
-  zeroMem(addr hdr, sizeof(hdr))
-  hdr.msg_iov = addr iov
-  hdr.msg_iovlen = 1
-  hdr.msg_control = cmsgBuf
-  hdr.msg_controllen = SockLen(controlLen)
+  var hdr = Tmsghdr(
+    msg_iov: addr iov,
+    msg_iovlen: 1,
+    msg_control: cmsgBuf,
+    msg_controllen: SockLen(controlLen)
+  )
   let n = recvmsg(SocketHandle(s.fd), addr hdr, 0)
   if n < 0:
     if cmsgBuf != nil:
@@ -411,6 +415,13 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
     copyMem(addr recvAux[0], CMSG_DATA(cmsg), recvAuxSize)
   if cmsgBuf != nil:
     dealloc(cmsgBuf)
+
+proc sendFds*(s: SocketStream; fds: openArray[cint]) =
+  discard s.sendMsg([], fds)
+
+proc recvFds*(s: SocketStream; fds: var openArray[cint]) =
+  var dummy {.noinit.}: array[1, uint8]
+  discard s.recvMsg(dummy, fds)
 
 method seek*(s: SocketStream; off: int) =
   doAssert false
@@ -478,9 +489,7 @@ type
 method recvData*(s: DynFileStream; buffer: pointer; len: int): int =
   let n = s.file.readBuffer(buffer, len)
   if n == 0:
-    if unlikely(s.isend):
-      raise newException(EOFError, "eof")
-    s.isend = true
+    s.setEnd()
   return n
 
 method sendData*(s: DynFileStream; buffer: pointer; len: int): int =

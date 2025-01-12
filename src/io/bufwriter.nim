@@ -57,8 +57,7 @@ proc flush*(writer: var BufferedWriter) =
   writer.stream.sendDataLoop(writer.buffer, writer.bufLen)
   if writer.sendAux.len > 0:
     writer.sendAux.reverse()
-    let dummy = [0u8]
-    SocketStream(writer.stream).sendMsg(dummy, writer.sendAux)
+    SocketStream(writer.stream).sendFds(writer.sendAux)
   writer.bufLen = 0
 
 proc deinit*(writer: var BufferedWriter) =
