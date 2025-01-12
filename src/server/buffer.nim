@@ -1013,14 +1013,14 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       # the cache. (This also lets us skip suspend/resume in this case.)
       # We ignore errors; not much we can do with them here :/
       discard buffer.rewind(buffer.bytesRead, unregister = false)
-    ps.write(char(0))
-    buffer.url = newurl
-    for it in buffer.tasks.mitems:
-      it = 0
     var sockFd: cint
     buffer.pstream.withPacketReader r:
       sockFd = r.recvAux.pop()
     buffer.pstream.sclose()
+    ps.write(char(0))
+    buffer.url = newurl
+    for it in buffer.tasks.mitems:
+      it = 0
     buffer.pstream = newSocketStream(sockFd)
     gpstream = buffer.pstream
     buffer.loader.clientPid = myPid

@@ -367,9 +367,9 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
   hdr.msg_iov = addr iov
   hdr.msg_iovlen = 1
   hdr.msg_control = cmsgBuf
-  hdr.msg_controllen = controlLen
+  hdr.msg_controllen = SockLen(controlLen)
   let cmsg = CMSG_FIRSTHDR(addr hdr)
-  cmsg.cmsg_len = CMSG_LEN(csize_t(sendAuxSize))
+  cmsg.cmsg_len = SockLen(CMSG_LEN(csize_t(sendAuxSize)))
   cmsg.cmsg_level = SOL_SOCKET
   cmsg.cmsg_type = SCM_RIGHTS
   if sendAux.len > 0:
@@ -396,7 +396,7 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
   hdr.msg_iov = addr iov
   hdr.msg_iovlen = 1
   hdr.msg_control = cmsgBuf
-  hdr.msg_controllen = controlLen
+  hdr.msg_controllen = SockLen(controlLen)
   let n = recvmsg(SocketHandle(s.fd), addr hdr, 0)
   if n < 0:
     if cmsgBuf != nil:
