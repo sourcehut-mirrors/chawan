@@ -1515,7 +1515,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     nointerface = false; name: static string = "";
     hasExtraGetSet: static bool = false;
     extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL;
-    errid = opt(JSErrorEnum); ishtmldda = false): JSClassID =
+    errid = Opt[JSErrorEnum].err(); ishtmldda = false): JSClassID =
   var stmts = newStmtList()
   var info = newRegistryInfo(t, name)
   if not asglobal:
