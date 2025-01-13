@@ -3121,12 +3121,16 @@ proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
     let res = ctx.toJS(parent.insertBefore(element, beforeEl))
     if JS_IsException(res):
       return res
+    JS_FreeValue(ctx, res)
   return JS_UNDEFINED
 
 proc remove(this: HTMLOptionsCollection; i: int32) {.jsfunc.} =
   let element = this.item(uint32(i))
   if element != nil:
     element.remove()
+
+proc length(this: HTMLOptionsCollection): int {.jsfget.} =
+  return this.getLength()
 
 proc setLength(this: HTMLOptionsCollection; n: uint32) {.jsfset: "length".} =
   let len = uint32(this.getLength())
