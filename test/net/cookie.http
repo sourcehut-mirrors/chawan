@@ -6,6 +6,8 @@ Set-Cookie: test3=x
 Set-Cookie: test4=y; Max-Age=
 Set-Cookie: test5=; Domain=test.example
 Set-Cookie: test6=hi; Max-Age=9223372036854775807
+Set-Cookie: test7=hi; Expires=Mon 0 Jan 1999 20:30:00 GMT
+Set-Cookie: test8=hi; Expires=Mon, 31 Feb 1999 20:30:00 GMT
 
 <div id=x>Fail</div>
 <script src=asserts.js></script>
@@ -15,6 +17,6 @@ x.open("GET", "headers", false);
 x.overrideMimeType("text/plain");
 x.send();
 const cookie = x.responseText.split('\n').find(x => x.startsWith("cookie:"));
-assertEquals(cookie.split(': ').pop(), "test=asdfasdf; SID=31d4d96e407aad42; test3=x; test4=y; test6=hi");
+assertEquals(cookie.split(': ').pop(), "test=asdfasdf; SID=31d4d96e407aad42; test3=x; test4=y; test6=hi; test7=hi; test8=hi");
 document.getElementById("x").textContent = "Success";
 </script>

@@ -43,49 +43,36 @@ proc parseCookieDate(val: string): Option[int64] =
   const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}
   const NonDigit = AllChars - AsciiDigit
   var foundTime = false
-  var foundDayOfMonth = false
-  var foundMonth = false
-  var foundYear = false
   # date-token-list
   var time = array[3, int].default
   var dayOfMonth = 0
   var month = 0
-  var year = 0
+  var year = -1
   for dateToken in val.split(Delimiters):
     if dateToken == "": continue # *delimiter
-    if not foundTime:
-      block timeBlock: # test for time
-        let hmsTime = dateToken.until(NonDigit - {':'})
-        var i = 0
-        for timeField in hmsTime.split(':'):
-          if i > 2: break timeBlock # too many time fields
-          # 1*2DIGIT
-          if timeField.len != 1 and timeField.len != 2: break timeBlock
-          var timeFields = array[3, int].default
-          for c in timeField:
-            if c notin AsciiDigit: break timeBlock
-            timeFields[i] *= 10
-            timeFields[i] += c.decValue
-          time = timeFields
-          inc i
-        if i != 3: break timeBlock
+    if not foundTime: # test for time
+      let hmsTime = dateToken.until(NonDigit - {':'})
+      var i = 0
+      for timeField in hmsTime.split(':'):
+        if i > 2:
+          i = 0
+          break # too many time fields
+        # 1*2DIGIT
+        if timeField.len != 1 and timeField.len != 2:
+          i = 0
+          break
+        time[i] = parseInt32(timeField).get
+        inc i
+      if i == 3:
         foundTime = true
         continue
-    if not foundDayOfMonth:
-      block dayOfMonthBlock: # test for day-of-month
-        let digits = dateToken.until(NonDigit)
-        if digits.len != 1 and digits.len != 2: break dayOfMonthBlock
-        var n = 0
-        for c in digits:
-          if c notin AsciiDigit: break dayOfMonthBlock
-          n *= 10
-          n += c.decValue
-        dayOfMonth = n
-        foundDayOfMonth = true
+    if dayOfMonth == 0: # test for day-of-month
+      let digits = dateToken.until(NonDigit)
+      if digits.len in 1..2:
+        dayOfMonth = parseInt32(digits).get
         continue
-    if not foundMonth:
-      block monthBlock: # test for month
-        if dateToken.len < 3: break monthBlock
+    if month == 0: # test for month
+      if dateToken.len >= 3:
         case dateToken.substr(0, 2).toLowerAscii()
         of "jan": month = 1
         of "feb": month = 2
@@ -99,30 +86,23 @@ proc parseCookieDate(val: string): Option[int64] =
         of "oct": month = 10
         of "nov": month = 11
         of "dec": month = 12
-        else: break monthBlock
-        foundMonth = true
+        else: discard
+        if month != 0:
+          continue
+    if year == -1: # test for year
+      let digits = dateToken.until(NonDigit)
+      if digits.len == 4:
+        year = parseInt32(digits).get
         continue
-    if not foundYear:
-      block yearBlock: # test for year
-        let digits = dateToken.until(NonDigit)
-        if digits.len != 2 and digits.len != 4: break yearBlock
-        var n = 0
-        for c in digits:
-          if c notin AsciiDigit: break yearBlock
-          n *= 10
-          n += c.decValue
-        year = n
-        foundYear = true
-        continue
-  if not (foundDayOfMonth and foundMonth and foundYear and foundTime):
+  if not (month != 0 and dayOfMonth in 1..getDaysInMonth(Month(month), year) and
+      year >= 1601 and foundTime):
     return none(int64)
-  if dayOfMonth notin 0..31: return none(int64)
-  if year < 1601: return none(int64)
   if time[0] > 23: return none(int64)
   if time[1] > 59: return none(int64)
   if time[2] > 59: return none(int64)
   let dt = dateTime(year, Month(month), MonthdayRange(dayOfMonth),
-    HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]))
+    HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]),
+    zone = utc())
   return some(dt.toTime().toUnix())
 
 # For debugging

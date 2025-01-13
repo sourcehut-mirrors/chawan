@@ -28,9 +28,9 @@ proc cb(req: Request) {.async.} =
         i += line.len + 1
         if line == "":
           break
-        let (x, y) = parseHeader(line)
-        for it in y:
-          headers.add((x, it))
+        let n = line.find(':')
+        if n >= 0:
+          headers.add((line.substr(0, n - 1), line.substr(n + 1)))
       res = res.substr(i)
     else:
       res = readFile(req.url.path.after('/'))
