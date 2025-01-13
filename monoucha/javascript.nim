@@ -811,7 +811,7 @@ macro jsctor*(fun: typed) =
   gen.addOptionalParams()
   gen.finishFunCallList()
   let errstmt = quote do:
-    return JS_ThrowTypeError(ctx, "Invalid parameters passed to constructor")
+    return JS_EXCEPTION
   gen.makeCtorJSCallAndRet(errstmt)
   let jsProc = gen.newJSProc(getJSParams())
   gen.registerConstructor(jsProc)
@@ -1017,7 +1017,7 @@ macro jsfuncn*(jsname: static string; uf: static bool;
   let okstmt = quote do:
     return JS_UNDEFINED
   let errstmt = quote do:
-    return JS_ThrowTypeError(ctx, "Invalid parameters passed to function")
+    return JS_EXCEPTION
   gen.makeJSCallAndRet(okstmt, errstmt)
   let jsProc = gen.newJSProc(getJSParams())
   gen.registerFunction()
