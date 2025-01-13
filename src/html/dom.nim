@@ -347,7 +347,7 @@ type
     relList {.jsget.}: DOMTokenList
 
   HTMLTemplateElement* = ref object of HTMLElement
-    content*: DocumentFragment
+    content* {.jsget.}: DocumentFragment
 
   HTMLUnknownElement* = ref object of HTMLElement
 
