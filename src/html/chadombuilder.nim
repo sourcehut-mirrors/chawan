@@ -151,7 +151,7 @@ proc createDocumentTypeImpl(builder: ChaDOMBuilder; name, publicId,
 
 proc insertBeforeImpl(builder: ChaDOMBuilder; parent, child: Node;
     before: Option[Node]) =
-  discard parent.insertBefore(child, before.get(nil))
+  discard parent.insertBefore(child, before)
 
 proc insertTextImpl(builder: ChaDOMBuilder; parent: Node; text: string;
     before: Option[Node]) =
@@ -165,7 +165,7 @@ proc insertTextImpl(builder: ChaDOMBuilder; parent: Node; text: string;
       Element(parent).invalid = true
   else:
     let text = builder.document.createTextNode(text)
-    discard parent.insertBefore(text, before.get(nil))
+    discard parent.insertBefore(text, before)
 
 proc removeImpl(builder: ChaDOMBuilder; child: Node) =
   if child.parentNode != nil:

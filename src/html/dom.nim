@@ -522,7 +522,7 @@ proc attr*(element: Element; name: StaticAtom; value: string)
 proc baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
 proc getImageId(window: Window): int
-proc insertBefore*(parent, node, before: Node): DOMResult[Node]
+proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
 proc invalidateCollections(node: Node)
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
@@ -3118,7 +3118,7 @@ proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
       if it of HTMLElement:
         beforeEl = HTMLElement(it)
     let parent = if beforeEl != nil: beforeEl.parentNode else: this.root
-    let res = ctx.toJS(parent.insertBefore(element, beforeEl))
+    let res = ctx.toJS(parent.insertBefore(element, option(Node(beforeEl))))
     if JS_IsException(res):
       return res
     JS_FreeValue(ctx, res)
@@ -3257,7 +3257,7 @@ proc setCaption(this: HTMLTableElement; caption: HTMLTableCaptionElement):
   let old = this.caption
   if old != nil:
     old.remove()
-  discard this.insertBefore(caption, this.firstChild)
+  discard ?this.insertBefore(caption, option(this.firstChild))
   ok()
 
 func tHead(this: HTMLTableElement): Element {.jsfget.} =
@@ -3273,7 +3273,7 @@ proc setTSectImpl(this: HTMLTableElement; sect: HTMLTableSectionElement;
   let old = this.findFirstChildOf(tagType)
   if old != nil:
     old.remove()
-  discard ?this.insertBefore(sect, this.firstChild)
+  discard ?this.insertBefore(sect, option(this.firstChild))
   ok()
 
 proc setTHead(this: HTMLTableElement; tHead: HTMLTableSectionElement):
@@ -3318,7 +3318,7 @@ proc create(this: HTMLTableElement; tagType: TagType; before: Node):
   var element = this.findFirstChildOf(tagType)
   if element == nil:
     element = this.document.newHTMLElement(tagType)
-    discard this.insertBefore(element, before)
+    discard this.insertBefore(element, option(before))
   return element
 
 proc delete(this: HTMLTableElement; tagType: TagType) =
@@ -3361,7 +3361,7 @@ proc insertRow(this: HTMLTableElement; index = -1): DOMResult[Element]
     this.rows.item(uint32(nrows) - 1).parentNode.append(tr)
   else:
     let it = this.rows.item(uint32(index))
-    discard it.parentNode.insertBefore(tr, it)
+    discard it.parentNode.insertBefore(tr, option(Node(it)))
   return ok(tr)
 
 proc deleteRow(rows: HTMLCollection; index: int): DOMResult[void] =
@@ -3396,7 +3396,7 @@ proc insertRow(this: HTMLTableSectionElement; index = -1): DOMResult[Element]
   if index == -1 or index == nrows:
     this.append(tr)
   else:
-    discard this.insertBefore(tr, this.rows.item(uint32(index)))
+    discard this.insertBefore(tr, option(Node(this.rows.item(uint32(index)))))
   return ok(tr)
 
 proc deleteRow(this: HTMLTableSectionElement; index = -1): DOMResult[void]
@@ -4693,7 +4693,9 @@ proc insert*(parent, node, before: Node; suppressObservers = false) =
   for node in nodes:
     insertNode(parent, node, before)
 
-proc insertBefore*(parent, node, before: Node): DOMResult[Node] {.jsfunc.} =
+proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
+    {.jsfunc.} =
+  let before = before.get(nil)
   ?parent.preInsertionValidity(node, before)
   let referenceChild = if before == node:
     node.nextSibling
@@ -4703,7 +4705,7 @@ proc insertBefore*(parent, node, before: Node): DOMResult[Node] {.jsfunc.} =
   return ok(node)
 
 proc appendChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
-  return parent.insertBefore(node, nil)
+  return parent.insertBefore(node, none(Node))
 
 proc append*(parent, node: Node) =
   discard parent.appendChild(node)
@@ -4806,7 +4808,7 @@ proc toNode(ctx: JSContext; nodes: openArray[JSValue]; document: Document):
 proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValue]):
     Err[DOMException] =
   let node = ctx.toNode(nodes, parent.document)
-  discard ?parent.insertBefore(node, parent.firstChild)
+  discard ?parent.insertBefore(node, option(parent.firstChild))
   ok()
 
 proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValue]):
