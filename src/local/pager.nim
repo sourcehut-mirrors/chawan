@@ -1,4 +1,3 @@
-import std/deques
 import std/exitprocs
 import std/options
 import std/os
@@ -3066,8 +3065,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
   return true
 
 proc handleEvents(pager: Pager; container: Container) =
-  while container.events.len > 0:
-    let event = container.events.popFirst()
+  while (let event = container.popEvent(); event != nil):
     if not pager.handleEvent0(container, event):
       break
 

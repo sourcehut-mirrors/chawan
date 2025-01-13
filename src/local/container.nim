@@ -1,4 +1,3 @@
-import std/deques
 import std/options
 import std/os
 import std/posix
@@ -68,6 +67,7 @@ type
       refreshIn*: int
       refreshURL*: URL
     else: discard
+    next: ContainerEvent
 
   HighlightType = enum
     hltSearch, hltSelect
@@ -172,7 +172,8 @@ type
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
     needslines*: bool
     loadState*: LoadState
-    events*: Deque[ContainerEvent]
+    event: ContainerEvent
+    lastEvent: ContainerEvent
     startpos: Option[CursorPosition]
     redirectDepth*: int
     select* {.jsget.}: Select
@@ -474,10 +475,24 @@ proc isHoverURL*(container: Container; url: URL): bool =
   return hoverurl.isSome and url.host == hoverurl.get.host
 
 proc triggerEvent(container: Container; event: ContainerEvent) =
-  container.events.addLast(event)
+  if container.lastEvent == nil:
+    container.event = event
+    container.lastEvent = event
+  else:
+    container.lastEvent.next = event
+    container.lastEvent = event
 
 proc triggerEvent(container: Container; t: ContainerEventType) =
   container.triggerEvent(ContainerEvent(t: t))
+
+proc popEvent*(container: Container): ContainerEvent =
+  if container.event == nil:
+    return nil
+  let res = container.event
+  container.event = res.next
+  if res.next == nil:
+    container.lastEvent = nil
+  return res
 
 proc queueDraw*(container: Container) =
   container.redraw = true
