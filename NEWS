@@ -1,3 +1,25 @@
+0.9.0 (2025.01.13)
+* drop support for pre-2.0.0 Nim versions
+* drop support for generics and non-JSValue varargs
+* drop undocumented $ -> toString renaming
+* always set fromJS "out" param (set to default on failure)
+* do not accept JS_NULL for ref object
+* replace jsgetprop with jsgetrealprop
+* type erase dfin
+
+This version brings a significant reduction in the feature set, and
+changes in various APIs.  Wrappers with implementations deemed
+inefficient or overly complex have been removed.
+
+The JS_NULL change is intended to allow for non-nullable parameters.
+In particular, it means that procedures with nullable parameters now
+*must* wrap these in an Option to have the same effect as before.
+However, ref object return values still convert `nil` to JS_NULL.
+
+Also, this release includes an optimization that is expected to break
+ORC less subtly than before.  As always, please make sure to use
+--mm:refc.
+
 0.8.0 (2024.12.26)
 * update QuickJS-NG to 0.8.0
 
