@@ -267,7 +267,7 @@ proc getExceptionMsg*(ctx: JSContext): string =
 proc runJSJobs*(rt: JSRuntime): Result[void, JSContext] =
   while JS_IsJobPending(rt):
     var ctx: JSContext
-    let r = JS_ExecutePendingJob(rt, addr ctx)
+    let r = JS_ExecutePendingJob(rt, ctx)
     if r == -1:
       return err(ctx)
   ok()
@@ -305,8 +305,9 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
     namespace: JSValue; errid: Opt[JSErrorEnum];
     unforgeable, staticfuns: JSFunctionList; ishtmldda: bool): JSClassID
     {.discardable.} =
+  result = 0
   let rt = JS_GetRuntime(ctx)
-  discard JS_NewClassID(rt, addr result)
+  discard JS_NewClassID(rt, result)
   var ctxOpaque = ctx.getOpaque()
   var rtOpaque = rt.getOpaque()
   if JS_NewClass(rt, result, cdef) != 0:
@@ -1127,6 +1128,7 @@ func getStringFromPragma(varPragma: NimNode): Option[string] =
     if not varPragma.len == 1 and varPragma[1].kind == nnkStrLit:
       error("Expected string as pragma argument")
     return some($varPragma[1])
+  return none(string)
 
 proc findPragmas(t: NimNode): JSObjectPragmas =
   let typ = t.getTypeInst()[1] # The type, as declared.
@@ -1558,7 +1560,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
 
 proc getMemoryUsage*(rt: JSRuntime): string =
   var m: JSMemoryUsage
-  JS_ComputeMemoryUsage(rt, addr m)
+  JS_ComputeMemoryUsage(rt, m)
   template row(title: string; count, size, sz2, cnt2: int64, name: string):
       string =
     var fv = $(float(sz2) / float(cnt2))

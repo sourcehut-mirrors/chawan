@@ -62,6 +62,7 @@ proc exec*(regex: Regex; str: string; start = 0; length = -1; nocaps = false):
   var cstr = cstring(str)
   let flags = lre_get_flags(bytecode).toLREFlags
   var start = start
+  result = RegexResult()
   while true:
     let ret = lre_exec(cast[ptr ptr uint8](capture), bytecode,
       cast[ptr uint8](cstr), cint(start), cint(length), cint(3), nil)

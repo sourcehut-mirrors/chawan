@@ -463,7 +463,7 @@ proc js_mallocz*(ctx: JSContext; size: csize_t): pointer
 proc js_strdup*(ctx: JSContext; str: cstringConst): cstring
 proc js_strndup*(ctx: JSContext; str: cstringConst; n: csize_t): cstring
 
-proc JS_ComputeMemoryUsage*(rt: JSRuntime; s: ptr JSMemoryUsage)
+proc JS_ComputeMemoryUsage*(rt: JSRuntime; s: out JSMemoryUsage)
 # DumpMemoryUsage omitted; use getMemoryUsage instead
 
 # atom support
@@ -483,7 +483,7 @@ proc JS_ValueToAtom*(ctx: JSContext; val: JSValue): JSAtom
 # object class support
 const JS_INVALID_CLASS_ID* = cint(0)
 
-proc JS_NewClassID*(rt: JSRuntime; pclass_id: ptr JSClassID): JSClassID
+proc JS_NewClassID*(rt: JSRuntime; pclass_id: var JSClassID): JSClassID
 proc JS_GetClassID*(obj: JSValue): JSClassID
 proc JS_NewClass*(rt: JSRuntime; class_id: JSClassID;
   class_def: ptr JSClassDef): cint
@@ -537,25 +537,25 @@ proc JS_DupValueRT*(rt: JSRuntime; v: JSValue): JSValue
 
 # return -1 for JS_EXCEPTION
 proc JS_ToBool*(ctx: JSContext; val: JSValue): cint
-proc JS_ToInt32*(ctx: JSContext; pres: ptr int32; val: JSValue): cint
-proc JS_ToUint32*(ctx: JSContext; pres: ptr uint32; val: JSValue): cint
-proc JS_ToInt64*(ctx: JSContext; pres: ptr int64; val: JSValue): cint
-proc JS_ToIndex*(ctx: JSContext; plen: ptr uint64; val: JSValue): cint
-proc JS_ToFloat64*(ctx: JSContext; pres: ptr float64; val: JSValue): cint
+proc JS_ToInt32*(ctx: JSContext; pres: var int32; val: JSValue): cint
+proc JS_ToUint32*(ctx: JSContext; pres: var uint32; val: JSValue): cint
+proc JS_ToInt64*(ctx: JSContext; pres: var int64; val: JSValue): cint
+proc JS_ToIndex*(ctx: JSContext; plen: var uint64; val: JSValue): cint
+proc JS_ToFloat64*(ctx: JSContext; pres: var float64; val: JSValue): cint
 # return an exception if 'val' is a Number
-proc JS_ToBigInt64*(ctx: JSContext; pres: ptr int64; val: JSValue): cint
-proc JS_ToBigUint64*(ctx: JSContext; pres: ptr int64; val: JSValue): cint
+proc JS_ToBigInt64*(ctx: JSContext; pres: var int64; val: JSValue): cint
+proc JS_ToBigUint64*(ctx: JSContext; pres: var int64; val: JSValue): cint
 # same as JS_ToInt64 but allow BigInt
-proc JS_ToInt64Ext*(ctx: JSContext; pres: ptr int64; val: JSValue): cint
+proc JS_ToInt64Ext*(ctx: JSContext; pres: var int64; val: JSValue): cint
 
 proc JS_NewStringLen*(ctx: JSContext; str: cstringConst; len1: csize_t): JSValue
 proc JS_NewString*(ctx: JSContext; str: cstring): JSValue
 proc JS_NewAtomString*(ctx: JSContext; str: cstring): JSValue
 proc JS_ToString*(ctx: JSContext; val: JSValue): JSValue
 proc JS_ToPropertyKey*(ctx: JSContext; val: JSValue): JSValue
-proc JS_ToCStringLen2*(ctx: JSContext; plen: ptr csize_t; val1: JSValue;
-  cseu8: JS_BOOL): cstringConst
-proc JS_ToCStringLen*(ctx: JSContext; plen: ptr csize_t; val1: JSValue):
+proc JS_ToCStringLen2*(ctx: JSContext; plen: var csize_t; val1: JSValue;
+  cesu8: JS_BOOL): cstringConst
+proc JS_ToCStringLen*(ctx: JSContext; plen: var csize_t; val1: JSValue):
   cstringConst
 proc JS_ToCString*(ctx: JSContext; val1: JSValue): cstringConst
 proc JS_FreeCString*(ctx: JSContext, p: cstringConst)
@@ -662,14 +662,14 @@ proc JS_NewArrayBuffer*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
 proc JS_NewArrayBufferCopy*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
   len: csize_t): JSValue
 proc JS_DetachArrayBuffer*(ctx: JSContext; obj: JSValue)
-proc JS_GetArrayBuffer*(ctx: JSContext; psize: ptr csize_t; obj: JSValue):
+proc JS_GetArrayBuffer*(ctx: JSContext; psize: var csize_t; obj: JSValue):
   ptr uint8
 
 proc JS_IsArrayBuffer*(obj: JSValue): JS_BOOL
 proc JS_GetUint8Array*(ctx: JSContext; psize: ptr csize_t; obj: JSValue):
   ptr UncheckedArray[uint8]
 proc JS_GetTypedArrayBuffer*(ctx: JSContext; obj: JSValue;
-  pbyte_offset, pbyte_length, pbytes_per_element: ptr csize_t): JSValue
+  pbyte_offset, pbyte_length, pbytes_per_element: var csize_t): JSValue
 proc JS_NewUint8Array*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
   len: csize_t; free_func: JSFreeArrayBufferDataFunc; opaque: pointer;
   is_shared: JS_BOOL): JSValue
@@ -716,7 +716,7 @@ proc JS_EnqueueJob*(ctx: JSContext; job_func: JSJobFunc; argc: cint;
   argv: ptr UncheckedArray[JSValue]): cint
 
 proc JS_IsJobPending*(rt: JSRuntime): JS_BOOL
-proc JS_ExecutePendingJob*(rt: JSRuntime; pctx: ptr JSContext): cint
+proc JS_ExecutePendingJob*(rt: JSRuntime; pctx: out JSContext): cint
 
 type JSSABTab* {.importc.} = object
   tab*: ptr ptr UncheckedArray[uint8]

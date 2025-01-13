@@ -237,7 +237,7 @@ assert(File.exists("doc/manual.md"));
 proc owner(file: JSFile): int {.jsuffget.} =
   let fd = open(cstring(file.path), O_RDONLY, 0)
   if fd == -1: return -1
-  var stats: Stat
+  var stats = Stat.default
   if fstat(fd, stats) == -1:
     discard close(fd)
     return -1

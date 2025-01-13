@@ -136,3 +136,15 @@ test "fromjs-seq":
   JS_FreeValue(ctx, jsTest)
   ctx.free()
   rt.free()
+
+test "fromjs-tuple":
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  var test = (2, "hi")
+  let jsTest = ctx.toJS(test)
+  var test2: tuple[n: int; s: string]
+  assert ctx.fromJS(jsTest, test2).isSome
+  assert test2 == test
+  JS_FreeValue(ctx, jsTest)
+  ctx.free()
+  rt.free()
