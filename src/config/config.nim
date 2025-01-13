@@ -64,42 +64,42 @@ type
   SiteConfig* = ref object
     url*: Option[Regex]
     host*: Option[Regex]
-    rewrite_url*: Option[JSValueFunction]
+    rewriteUrl*: Option[JSValueFunction]
     cookie*: Option[CookieMode]
-    share_cookie_jar*: Option[string]
-    referer_from*: Option[bool]
+    shareCookieJar*: Option[string]
+    refererFrom*: Option[bool]
     scripting*: Option[ScriptingMode]
-    document_charset*: seq[Charset]
+    documentCharset*: seq[Charset]
     images*: Option[bool]
     styling*: Option[bool]
     stylesheet*: Option[string]
     proxy*: Option[URL]
-    default_headers*: TableRef[string, string]
-    insecure_ssl_no_verify*: Option[bool]
+    defaultHeaders*: TableRef[string, string]
+    insecureSslNoVerify*: Option[bool]
     autofocus*: Option[bool]
-    meta_refresh*: Option[MetaRefresh]
+    metaRefresh*: Option[MetaRefresh]
     history*: Option[bool]
 
   OmniRule* = ref object
     match*: Regex
-    substitute_url*: Option[JSValueFunction]
+    substituteUrl*: Option[JSValueFunction]
 
   StartConfig = object
-    visual_home* {.jsgetset.}: string
-    startup_script* {.jsgetset.}: string
+    visualHome* {.jsgetset.}: string
+    startupScript* {.jsgetset.}: string
     headless* {.jsgetset.}: bool
-    console_buffer* {.jsgetset.}: bool
+    consoleBuffer* {.jsgetset.}: bool
 
   CSSConfig = object
     stylesheet* {.jsgetset.}: string
 
   SearchConfig = object
     wrap* {.jsgetset.}: bool
-    ignore_case* {.jsgetset.}: Option[bool]
+    ignoreCase* {.jsgetset.}: Option[bool]
 
   EncodingConfig = object
-    display_charset* {.jsgetset.}: Option[Charset]
-    document_charset* {.jsgetset.}: seq[Charset]
+    displayCharset* {.jsgetset.}: Option[Charset]
+    documentCharset* {.jsgetset.}: seq[Charset]
 
   CommandConfig = object
     jsObj*: JSValue
@@ -111,66 +111,66 @@ type
     sockdir* {.jsgetset.}: ChaPathResolved
     editor* {.jsgetset.}: string
     mailcap*: Mailcap
-    auto_mailcap*: AutoMailcap
-    mime_types*: MimeTypes
-    cgi_dir* {.jsgetset.}: seq[ChaPathResolved]
+    autoMailcap*: AutoMailcap
+    mimeTypes*: MimeTypes
+    cgiDir* {.jsgetset.}: seq[ChaPathResolved]
     urimethodmap*: URIMethodMap
     bookmark* {.jsgetset.}: ChaPathResolved
-    history_file*: ChaPathResolved
-    history_size* {.jsgetset.}: int32
-    cookie_file*: ChaPathResolved
-    download_dir* {.jsgetset.}: ChaPathResolved
-    w3m_cgi_compat* {.jsgetset.}: bool
-    copy_cmd* {.jsgetset.}: string
-    paste_cmd* {.jsgetset.}: string
+    historyFile*: ChaPathResolved
+    historySize* {.jsgetset.}: int32
+    cookieFile*: ChaPathResolved
+    downloadDir* {.jsgetset.}: ChaPathResolved
+    w3mCgiCompat* {.jsgetset.}: bool
+    copyCmd* {.jsgetset.}: string
+    pasteCmd* {.jsgetset.}: string
 
   InputConfig = object
-    vi_numeric_prefix* {.jsgetset.}: bool
-    use_mouse* {.jsgetset.}: bool
+    viNumericPrefix* {.jsgetset.}: bool
+    useMouse* {.jsgetset.}: bool
 
   NetworkConfig = object
-    max_redirect* {.jsgetset.}: int32
-    prepend_https* {.jsgetset.}: bool
-    prepend_scheme* {.jsgetset.}: string
+    maxRedirect* {.jsgetset.}: int32
+    prependHttps* {.jsgetset.}: bool
+    prependScheme* {.jsgetset.}: string
     proxy* {.jsgetset.}: URL
-    default_headers* {.jsgetset.}: Table[string, string]
+    defaultHeaders* {.jsgetset.}: Table[string, string]
 
   DisplayConfig = object
-    color_mode* {.jsgetset.}: Option[ColorMode]
-    format_mode* {.jsgetset.}: Option[set[FormatFlag]]
-    no_format_mode* {.jsgetset.}: set[FormatFlag]
-    image_mode* {.jsgetset.}: Option[ImageMode]
-    sixel_colors* {.jsgetset.}: Option[int32]
-    alt_screen* {.jsgetset.}: Option[bool]
-    highlight_color* {.jsgetset.}: ARGBColor
-    highlight_marks* {.jsgetset.}: bool
-    double_width_ambiguous* {.jsgetset.}: bool
-    minimum_contrast* {.jsgetset.}: int32
-    force_clear* {.jsgetset.}: bool
-    set_title* {.jsgetset.}: bool
-    default_background_color* {.jsgetset.}: Option[RGBColor]
-    default_foreground_color* {.jsgetset.}: Option[RGBColor]
-    query_da1* {.jsgetset.}: bool
+    colorMode* {.jsgetset.}: Option[ColorMode]
+    formatMode* {.jsgetset.}: Option[set[FormatFlag]]
+    noFormatMode* {.jsgetset.}: set[FormatFlag]
+    imageMode* {.jsgetset.}: Option[ImageMode]
+    sixelColors* {.jsgetset.}: Option[int32]
+    altScreen* {.jsgetset.}: Option[bool]
+    highlightColor* {.jsgetset.}: ARGBColor
+    highlightMarks* {.jsgetset.}: bool
+    doubleWidthAmbiguous* {.jsgetset.}: bool
+    minimumContrast* {.jsgetset.}: int32
+    forceClear* {.jsgetset.}: bool
+    setTitle* {.jsgetset.}: bool
+    defaultBackgroundColor* {.jsgetset.}: Option[RGBColor]
+    defaultForegroundColor* {.jsgetset.}: Option[RGBColor]
+    queryDa1* {.jsgetset.}: bool
     columns* {.jsgetset.}: int32
     lines* {.jsgetset.}: int32
-    pixels_per_column* {.jsgetset.}: int32
-    pixels_per_line* {.jsgetset.}: int32
-    force_columns* {.jsgetset.}: bool
-    force_lines* {.jsgetset.}: bool
-    force_pixels_per_column* {.jsgetset.}: bool
-    force_pixels_per_line* {.jsgetset.}: bool
+    pixelsPerColumn* {.jsgetset.}: int32
+    pixelsPerLine* {.jsgetset.}: int32
+    forceColumns* {.jsgetset.}: bool
+    forceLines* {.jsgetset.}: bool
+    forcePixelsPerColumn* {.jsgetset.}: bool
+    forcePixelsPerLine* {.jsgetset.}: bool
 
   ProtocolConfig* = ref object
-    form_request*: FormRequestType
+    formRequest*: FormRequestType
 
   BufferSectionConfig* = object
     styling* {.jsgetset.}: bool
     scripting* {.jsgetset.}: ScriptingMode
     images* {.jsgetset.}: bool
     cookie* {.jsgetset.}: CookieMode
-    referer_from* {.jsgetset.}: bool
+    refererFrom* {.jsgetset.}: bool
     autofocus* {.jsgetset.}: bool
-    meta_refresh* {.jsgetset.}: MetaRefresh
+    metaRefresh* {.jsgetset.}: MetaRefresh
     history* {.jsgetset.}: bool
 
   Config* = ref object
@@ -225,7 +225,7 @@ proc getOrDefault(a: ActionMap; b: string): string =
   return a.t.getOrDefault(b)
 
 func getRealKey(key: string): string =
-  var realk: string
+  var realk = ""
   var control = 0
   var meta = 0
   var skip = false
@@ -393,7 +393,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
   typeCheck(v, tvtTable, k)
   for fk, fv in x.fieldPairs:
     when typeof(fv) isnot JSContext|seq[JSValueFunction]:
-      let kebabk = snakeToKebabCase(fk)
+      let kebabk = camelToKebabCase(fk)
       if kebabk in v:
         let kkk = if k != "":
           k & "." & fk

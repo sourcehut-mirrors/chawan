@@ -393,7 +393,7 @@ proc approximateANSIColor(term: Terminal; rgb, termDefault: RGBColor):
 # Return a fgcolor contrasted to the background by the minimum configured
 # contrast.
 proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
-  let contrast = term.config.display.minimum_contrast
+  let contrast = term.config.display.minimumContrast
   let cfgcolor = fgcolor
   let bgcolor = term.getRGB(bgcolor, term.defaultBackground)
   let fgcolor = term.getRGB(fgcolor, term.defaultForeground)
@@ -625,14 +625,14 @@ proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
 
 proc applyConfigDimensions(term: Terminal) =
   # screen dimensions
-  if term.attrs.width == 0 or term.config.display.force_columns:
+  if term.attrs.width == 0 or term.config.display.forceColumns:
     term.attrs.width = int(term.config.display.columns)
-  if term.attrs.height == 0 or term.config.display.force_lines:
+  if term.attrs.height == 0 or term.config.display.forceLines:
     term.attrs.height = int(term.config.display.lines)
-  if term.attrs.ppc == 0 or term.config.display.force_pixels_per_column:
-    term.attrs.ppc = int(term.config.display.pixels_per_column)
-  if term.attrs.ppl == 0 or term.config.display.force_pixels_per_line:
-    term.attrs.ppl = int(term.config.display.pixels_per_line)
+  if term.attrs.ppc == 0 or term.config.display.forcePixelsPerColumn:
+    term.attrs.ppc = int(term.config.display.pixelsPerColumn)
+  if term.attrs.ppl == 0 or term.config.display.forcePixelsPerLine:
+    term.attrs.ppl = int(term.config.display.pixelsPerLine)
   term.attrs.widthPx = term.attrs.ppc * term.attrs.width
   term.attrs.heightPx = term.attrs.ppl * term.attrs.height
   if term.imageMode == imSixel:
@@ -646,30 +646,30 @@ proc applyConfigDimensions(term: Terminal) =
 
 proc applyConfig(term: Terminal) =
   # colors, formatting
-  if term.config.display.color_mode.isSome:
-    term.colorMode = term.config.display.color_mode.get
-  if term.config.display.format_mode.isSome:
-    term.formatMode = term.config.display.format_mode.get
+  if term.config.display.colorMode.isSome:
+    term.colorMode = term.config.display.colorMode.get
+  if term.config.display.formatMode.isSome:
+    term.formatMode = term.config.display.formatMode.get
   for fm in FormatFlag:
-    if fm in term.config.display.no_format_mode:
+    if fm in term.config.display.noFormatMode:
       term.formatMode.excl(fm)
-  if term.config.display.image_mode.isSome:
-    term.imageMode = term.config.display.image_mode.get
-  if term.imageMode == imSixel and term.config.display.sixel_colors.isSome:
-    let n = term.config.display.sixel_colors.get
+  if term.config.display.imageMode.isSome:
+    term.imageMode = term.config.display.imageMode.get
+  if term.imageMode == imSixel and term.config.display.sixelColors.isSome:
+    let n = term.config.display.sixelColors.get
     term.sixelRegisterNum = clamp(n, 2, 65535)
   if term.isatty():
-    if term.config.display.alt_screen.isSome:
-      term.smcup = term.config.display.alt_screen.get
-    term.setTitle = term.config.display.set_title
-  if term.config.display.default_background_color.isSome:
-    term.defaultBackground = term.config.display.default_background_color.get
-  if term.config.display.default_foreground_color.isSome:
-    term.defaultForeground = term.config.display.default_foreground_color.get
+    if term.config.display.altScreen.isSome:
+      term.smcup = term.config.display.altScreen.get
+    term.setTitle = term.config.display.setTitle
+  if term.config.display.defaultBackgroundColor.isSome:
+    term.defaultBackground = term.config.display.defaultBackgroundColor.get
+  if term.config.display.defaultForegroundColor.isSome:
+    term.defaultForeground = term.config.display.defaultForegroundColor.get
   term.attrs.prefersDark = term.defaultBackground.Y < 125
   # charsets
-  if term.config.encoding.display_charset.isSome:
-    term.cs = term.config.encoding.display_charset.get
+  if term.config.encoding.displayCharset.isSome:
+    term.cs = term.config.encoding.displayCharset.get
   else:
     term.cs = DefaultCharset
     for s in ["LC_ALL", "LC_CTYPE", "LANG"]:
@@ -689,7 +689,7 @@ proc applyConfig(term: Terminal) =
 
 proc outputGrid*(term: Terminal) =
   term.write(term.resetFormat())
-  if term.config.display.force_clear or not term.cleared:
+  if term.config.display.forceClear or not term.cleared:
     term.write(term.generateFullOutput())
     term.cleared = true
   else:
@@ -1014,7 +1014,7 @@ proc restoreStdin*(term: Terminal) =
 proc quit*(term: Terminal) =
   if term.isatty():
     term.disableRawMode()
-    if term.config.input.use_mouse:
+    if term.config.input.useMouse:
       term.disableMouse()
     if term.smcup:
       if term.imageMode == imSixel:
@@ -1126,18 +1126,18 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       # do the sole reasonable thing and skip default color queries.
       #
       # (By the way, tmux works as expected. Sigh.)
-      if term.config.display.default_background_color.isNone:
+      if term.config.display.defaultBackgroundColor.isNone:
         outs &= XTGETBG
-      if term.config.display.default_foreground_color.isNone:
+      if term.config.display.defaultForegroundColor.isNone:
         outs &= XTGETFG
-    if term.config.display.image_mode.isNone:
+    if term.config.display.imageMode.isNone:
       outs &= KITTYQUERY
       outs &= XTNUMREGS
       outs &= XTIMGDIMS
-    elif term.config.display.image_mode.get == imSixel:
+    elif term.config.display.imageMode.get == imSixel:
       outs &= XTNUMREGS
       outs &= XTIMGDIMS
-    if term.config.display.color_mode.isNone:
+    if term.config.display.colorMode.isNone:
       outs &= XTGETTCAPRGB
     outs &=
       XTGETANSI &
@@ -1302,7 +1302,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
     term.attrs.width = int(parseInt32(getEnv("COLUMNS")).get(0))
   if term.attrs.height == 0:
     term.attrs.height = int(parseInt32(getEnv("LINES")).get(0))
-  if term.config.display.query_da1:
+  if term.config.display.queryDa1:
     let r = term.queryAttrs(windowOnly)
     if r.success: # DA1 success
       if r.width != 0:
@@ -1476,7 +1476,7 @@ proc initScreen(term: Terminal) =
     term.write(XTPUSHTITLE)
   if term.smcup:
     term.write(term.enableAltScreen())
-  if term.config.input.use_mouse:
+  if term.config.input.useMouse:
     term.enableMouse()
   term.cursorx = -1
   term.cursory = -1
@@ -1487,7 +1487,7 @@ proc start*(term: Terminal; istream: PosixStream): TermStartResult =
     term.enableRawMode()
   result = term.detectTermAttributes(windowOnly = false)
   if result == tsrDA1Fail:
-    term.config.display.query_da1 = false
+    term.config.display.queryDa1 = false
   term.applyConfig()
   if term.isatty():
     term.initScreen()

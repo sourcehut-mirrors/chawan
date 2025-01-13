@@ -83,7 +83,7 @@ type
     filter*: URLFilter
     proxy*: URL
     referrerPolicy*: ReferrerPolicy
-    insecureSSLNoVerify*: bool
+    insecureSslNoVerify*: bool
 
 proc getRedirect*(response: Response; request: Request): Request =
   if "Location" in response.headers.table:

@@ -346,7 +346,7 @@ proc getHist(pager: Pager; mode: LineMode): History =
 proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
     extraPrompt = "") =
   let hist = pager.getHist(mode)
-  if pager.term.isatty() and pager.config.input.use_mouse:
+  if pager.term.isatty() and pager.config.input.useMouse:
     pager.term.disableMouse()
   pager.lineedit = readLine($mode & extraPrompt, current, pager.attrs.width,
     hide, hist, pager.luctx)
@@ -359,7 +359,7 @@ proc showFullAlert(pager: Pager) {.jsfunc.} =
 
 proc clearLineEdit(pager: Pager) =
   pager.lineedit = nil
-  if pager.term.isatty() and pager.config.input.use_mouse:
+  if pager.term.isatty() and pager.config.input.useMouse:
     pager.term.enableMouse()
 
 proc searchForward(pager: Pager) {.jsfunc.} =
@@ -477,15 +477,15 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     nil)
   JS_SetInterruptHandler(pager.jsrt, interruptHandler, cast[pointer](pager))
   let clientConfig = LoaderClientConfig(
-    defaultHeaders: newHeaders(pager.config.network.default_headers),
+    defaultHeaders: newHeaders(pager.config.network.defaultHeaders),
     proxy: pager.config.network.proxy,
     filter: newURLFilter(default = true),
   )
   discard pager.loader.addClient(pager.loader.clientPid,
     clientConfig, -1, isPager = true)
   block history:
-    let hist = newHistory(pager.config.external.history_size, getTime().toUnix())
-    let ps = newPosixStream(pager.config.external.history_file)
+    let hist = newHistory(pager.config.external.historySize, getTime().toUnix())
+    let ps = newPosixStream(pager.config.external.historyFile)
     if ps != nil:
       var stat: Stat
       if fstat(ps.fd, stat) != -1:
@@ -494,7 +494,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
         ps.sclose()
     pager.lineHist[lmLocation] = hist
   block cookie:
-    let ps = newPosixStream(pager.config.external.cookie_file)
+    let ps = newPosixStream(pager.config.external.cookieFile)
     if ps != nil:
       var stat: Stat
       if fstat(ps.fd, stat) != -1:
@@ -508,9 +508,9 @@ proc cleanup(pager: Pager) =
     pager.alive = false
     pager.term.quit()
     let hist = pager.lineHist[lmLocation]
-    if not hist.write(pager.config.external.history_file):
+    if not hist.write(pager.config.external.historyFile):
       pager.alert("failed to save history")
-    if not pager.cookieJars.write(pager.config.external.cookie_file):
+    if not pager.cookieJars.write(pager.config.external.cookieFile):
       pager.alert("failed to save cookies")
     for msg in pager.alerts:
       stderr.write("cha: " & msg & '\n')
@@ -732,7 +732,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput) =
 const MaxPrecNum = 100000000
 
 proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
-  if pager.config.input.vi_numeric_prefix and not pager.notnum:
+  if pager.config.input.viNumericPrefix and not pager.notnum:
     if pager.precnum != 0 and c == '0' or c in '1' .. '9':
       if pager.precnum < MaxPrecNum: # better ignore than eval...
         pager.precnum *= 10
@@ -749,7 +749,7 @@ proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
       pager.notnum = false
       pager.handleEvents()
     return p
-  if pager.config.input.use_mouse:
+  if pager.config.input.useMouse:
     if pager.inputBuffer == "\e[<":
       let input = pager.term.parseMouseInput()
       if input.isSome:
@@ -841,13 +841,13 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: Option[string];
   pager.clearStatus()
   pager.consoleWrapper = pager.addConsole(interactive = istream != nil)
   addExitProc((proc() = pager.cleanup()))
-  if pager.config.start.startup_script != "":
-    let s = if fileExists(pager.config.start.startup_script):
-      readFile(pager.config.start.startup_script)
+  if pager.config.start.startupScript != "":
+    let s = if fileExists(pager.config.start.startupScript):
+      readFile(pager.config.start.startupScript)
     else:
-      pager.config.start.startup_script
-    let ismodule = pager.config.start.startup_script.endsWith(".mjs")
-    pager.command0(s, pager.config.start.startup_script, silence = true,
+      pager.config.start.startupScript
+    let ismodule = pager.config.start.startupScript.endsWith(".mjs")
+    pager.command0(s, pager.config.start.startupScript, silence = true,
       module = ismodule)
   if not stdin.isatty():
     # stdin may very well receive ANSI text
@@ -1181,9 +1181,9 @@ proc draw(pager: Pager) =
   if container != nil:
     if container.redraw:
       pager.clearDisplay()
-      let hlcolor = cellColor(pager.config.display.highlight_color.rgb)
+      let hlcolor = cellColor(pager.config.display.highlightColor.rgb)
       container.drawLines(pager.display.grid, hlcolor)
-      if pager.config.display.highlight_marks:
+      if pager.config.display.highlightMarks:
         container.highlightMarks(pager.display.grid, hlcolor)
       container.redraw = false
       pager.display.redraw = true
@@ -1779,9 +1779,9 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   let ctx = pager.jsctx
   result = BufferConfig(
     userstyle: pager.config.css.stylesheet,
-    refererFrom: pager.config.buffer.referer_from,
+    refererFrom: pager.config.buffer.refererFrom,
     scripting: pager.config.buffer.scripting,
-    charsets: pager.config.encoding.document_charset,
+    charsets: pager.config.encoding.documentCharset,
     images: pager.config.buffer.images,
     styling: pager.config.buffer.styling,
     autofocus: pager.config.buffer.autofocus,
@@ -1789,12 +1789,12 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     isdump: pager.config.start.headless,
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol,
-    metaRefresh: pager.config.buffer.meta_refresh,
+    metaRefresh: pager.config.buffer.metaRefresh,
     cookieMode: pager.config.buffer.cookie
   )
   loaderConfig = LoaderClientConfig(
     originURL: url,
-    defaultHeaders: newHeaders(pager.config.network.default_headers),
+    defaultHeaders: newHeaders(pager.config.network.defaultHeaders),
     cookiejar: nil,
     proxy: pager.config.network.proxy,
     filter: newURLFilter(
@@ -1802,7 +1802,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       allowschemes = @["data", "cache", "stream"],
       default = true
     ),
-    insecureSSLNoVerify: false
+    insecureSslNoVerify: false
   )
   var cookieJarId = url.host
   let surl = $url
@@ -1811,8 +1811,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       continue
     elif sc.host.isSome and not sc.host.get.match(host):
       continue
-    if sc.rewrite_url.isSome:
-      let fun = sc.rewrite_url.get
+    if sc.rewriteUrl.isSome:
+      let fun = sc.rewriteUrl.get
       var tmpUrl = newURL(url)
       var arg0 = ctx.toJS(tmpUrl)
       let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
@@ -1833,14 +1833,14 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         return
     if sc.cookie.isSome:
       result.cookieMode = sc.cookie.get
-    if sc.share_cookie_jar.isSome:
-      cookieJarId = sc.share_cookie_jar.get
+    if sc.shareCookieJar.isSome:
+      cookieJarId = sc.shareCookieJar.get
     if sc.scripting.isSome:
       result.scripting = sc.scripting.get
-    if sc.referer_from.isSome:
-      result.refererFrom = sc.referer_from.get
-    if sc.document_charset.len > 0:
-      result.charsets = sc.document_charset
+    if sc.refererFrom.isSome:
+      result.refererFrom = sc.refererFrom.get
+    if sc.documentCharset.len > 0:
+      result.charsets = sc.documentCharset
     if sc.images.isSome:
       result.images = sc.images.get
     if sc.styling.isSome:
@@ -1850,20 +1850,20 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       result.userstyle &= sc.stylesheet.get
     if sc.proxy.isSome:
       loaderConfig.proxy = sc.proxy.get
-    if sc.default_headers != nil:
-      loaderConfig.defaultHeaders = newHeaders(sc.default_headers[])
-    if sc.insecure_ssl_no_verify.isSome:
-      loaderConfig.insecureSSLNoVerify = sc.insecure_ssl_no_verify.get
+    if sc.defaultHeaders != nil:
+      loaderConfig.defaultHeaders = newHeaders(sc.defaultHeaders[])
+    if sc.insecureSslNoVerify.isSome:
+      loaderConfig.insecureSslNoVerify = sc.insecureSslNoVerify.get
     if sc.autofocus.isSome:
       result.autofocus = sc.autofocus.get
-    if sc.meta_refresh.isSome:
-      result.metaRefresh = sc.meta_refresh.get
+    if sc.metaRefresh.isSome:
+      result.metaRefresh = sc.metaRefresh.get
     if sc.history.isSome:
       result.history = sc.history.get
   loaderConfig.filter.allowschemes
     .add(pager.config.external.urimethodmap.imageProtos)
   if result.images:
-    result.imageTypes = pager.config.external.mime_types.image
+    result.imageTypes = pager.config.external.mimeTypes.image
   result.userAgent = loaderConfig.defaultHeaders.getOrDefault("User-Agent")
   if result.cookieMode != cmNone:
     var cookieJar = pager.cookieJars.jars.getOrDefault(cookieJarId)
@@ -1881,7 +1881,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
   pager.navDirection = ndNext
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
-  for i in 0 ..< pager.config.network.max_redirect:
+  for i in 0 ..< pager.config.network.maxRedirect:
     var ourl: URL = nil
     bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig, ourl)
     if ourl == nil:
@@ -1949,7 +1949,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
 proc omniRewrite(pager: Pager; s: string): string =
   for rule in pager.config.omnirule:
     if rule.match.match(s):
-      let fun = rule.substitute_url.get
+      let fun = rule.substituteUrl.get
       let ctx = pager.jsctx
       var arg0 = ctx.toJS(s)
       let jsRet = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
@@ -1984,9 +1984,9 @@ proc loadURL(pager: Pager; url: string; ctype = none(string);
       history = history)
     return
   var urls: seq[URL] = @[]
-  if pager.config.network.prepend_https and
-      pager.config.network.prepend_scheme != "" and url[0] != '/':
-    let pageurl = parseURL(pager.config.network.prepend_scheme & url)
+  if pager.config.network.prependHttps and
+      pager.config.network.prependScheme != "" and url[0] != '/':
+    let pageurl = parseURL(pager.config.network.prependScheme & url)
     if pageurl.isSome: # attempt to load remote page
       urls.add(pageurl.get)
   let cdir = parseURL("file://" & percentEncode(getCurrentDir(),
@@ -2074,7 +2074,7 @@ proc clearConsole(pager: Pager) =
     console.err = pouts
 
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
-  if interactive and pager.config.start.console_buffer:
+  if interactive and pager.config.start.consoleBuffer:
     let (pins, pouts) = pager.createPipe()
     if pins != nil:
       pins.setCloseOnExec()
@@ -2117,7 +2117,7 @@ proc checkRegex(pager: Pager; regex: Result[Regex, string]): Opt[Regex] =
   return ok(regex.get)
 
 proc compileSearchRegex(pager: Pager; s: string): Result[Regex, string] =
-  return compileSearchRegex(s, pager.config.search.ignore_case)
+  return compileSearchRegex(s, pager.config.search.ignoreCase)
 
 proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
   let lineedit = pager.lineedit
@@ -2587,8 +2587,8 @@ proc redirect(pager: Pager; container: Container; response: Response;
   # if redirection fails, then we need some other container to move to...
   let failTarget = container.find(ndAny)
   # still need to apply response, or we lose cookie jars.
-  container.applyResponse(response, pager.config.external.mime_types)
-  if container.redirectDepth < pager.config.network.max_redirect:
+  container.applyResponse(response, pager.config.external.mimeTypes)
+  if container.redirectDepth < pager.config.network.maxRedirect:
     if container.url.scheme == request.url.scheme or
         container.url.scheme == "cgi-bin" or
         container.url.scheme == "http" and request.url.scheme == "https" or
@@ -2609,7 +2609,7 @@ proc redirect(pager: Pager; container: Container; response: Response;
 
 proc askDownloadPath(pager: Pager; container: Container; stream: PosixStream;
     response: Response) =
-  var buf = string(pager.config.external.download_dir)
+  var buf = string(pager.config.external.downloadDir)
   let pathname = container.url.pathname
   if buf.len == 0 or buf[^1] != '/':
     buf &= '/'
@@ -2716,8 +2716,8 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
   container.replaceBackup = nil
 
 proc saveEntry(pager: Pager; entry: MailcapEntry) =
-  if not pager.config.external.auto_mailcap.saveEntry(entry):
-    pager.alert("Could not write to " & pager.config.external.auto_mailcap.path)
+  if not pager.config.external.autoMailcap.saveEntry(entry):
+    pager.alert("Could not write to " & pager.config.external.autoMailcap.path)
 
 proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int):
     string =
@@ -2810,7 +2810,7 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
 
 proc connected(pager: Pager; container: Container; response: Response) =
   var istream = PosixStream(response.body)
-  container.applyResponse(response, pager.config.external.mime_types)
+  container.applyResponse(response, pager.config.external.mimeTypes)
   if response.status == 401: # unauthorized
     pager.setLineEdit(lmUsername, container.url.username)
     pager.lineData = LineDataAuth(url: newURL(container.url))
@@ -2846,11 +2846,11 @@ proc connected(pager: Pager; container: Container; response: Response) =
       ostream: istream
     ), response)
   else:
-    let i = pager.config.external.auto_mailcap.entries
+    let i = pager.config.external.autoMailcap.entries
       .findMailcapEntry(contentType, "", container.url)
     if i != -1:
       let res = pager.runMailcap(container.url, istream, response.outputId,
-        contentType, pager.config.external.auto_mailcap.entries[i])
+        contentType, pager.config.external.autoMailcap.entries[i])
       pager.connected2(container, res, response)
     else:
       let i = pager.config.external.mailcap.findMailcapEntry(contentType, "",

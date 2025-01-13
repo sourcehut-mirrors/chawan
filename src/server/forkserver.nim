@@ -35,11 +35,11 @@ type
 proc loadConfig*(forkserver: ForkServer; config: Config): int =
   forkserver.stream.withPacketWriter w:
     w.swrite(fcLoadConfig)
-    w.swrite(config.display.double_width_ambiguous)
+    w.swrite(config.display.doubleWidthAmbiguous)
     w.swrite(LoaderConfig(
       urimethodmap: config.external.urimethodmap,
-      w3mCGICompat: config.external.w3m_cgi_compat,
-      cgiDir: seq[string](config.external.cgi_dir),
+      w3mCGICompat: config.external.w3mCgiCompat,
+      cgiDir: seq[string](config.external.cgiDir),
       tmpdir: config.external.tmpdir,
       configdir: config.dir,
       bookmark: config.external.bookmark

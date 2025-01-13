@@ -106,7 +106,7 @@ func toUTF8*(u: uint32): string =
   result.addUTF8(u)
 
 func toUTF8*(us: openArray[uint32]): string =
-  result = newStringOfCap(us.len shr 2)
+  result = newStringOfCap(us.len)
   result.addUTF8(us)
 
 func pointLen*(s: openArray[char]): int =
@@ -136,12 +136,6 @@ func toHeaderCase*(s: string): string =
       result &= c.toLowerAscii()
     flip = c == '-'
 
-func snakeToKebabCase*(s: string): string =
-  result = s
-  for c in result.mitems:
-    if c == '_':
-      c = '-'
-
 func kebabToCamelCase*(s: string): string =
   result = ""
   var flip = false
@@ -155,8 +149,10 @@ func kebabToCamelCase*(s: string): string =
         result &= c
       flip = false
 
-func camelToKebabCase*(s: string): string =
-  result = ""
+func camelToKebabCase*(s: openArray[char]; dashPrefix = false): string =
+  result = newStringOfCap(s.len)
+  if dashPrefix:
+    result &= '-'
   for c in s:
     if c in AsciiUpperAlpha:
       result &= '-'

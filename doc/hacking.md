@@ -18,9 +18,6 @@ Exceptions:
 * Types/constants use PascalCase. enums in cssvalues use PascalCase too,
   to avoid name collisions.
 * Module-local templates use snake_case.
-* It's easier to convert snake_case to kebab-case, so we use snake_case
-  inside the config object. Note: this doesn't apply to objects created
-  from values in the config object.
 * We keep style of external C libraries, which is often snake_case.
 * Chame is stuck with `SCREAMING_SNAKE_CASE` for its enums. This is
   unfortunate, but does not warrant an API breakage.

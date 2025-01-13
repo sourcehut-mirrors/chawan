@@ -115,9 +115,9 @@ size exceeded an OS-specified limit.)
 <td>The config object.<br>
 A currently incomplete interface for retrieving and setting
 configuration options. In general, names are the same as in config.toml,
-except for `-` (ASCII hyphen) characters being replaced with `_`
-(underscore). e.g. `external.cgi-dir` can be queried as
-`config.external.cgi_dir`, etc.<br>
+except all `-` (ASCII hyphen) characters are stripped and the next
+character is upper-cased (underscore). e.g. `external.cgi-dir` can be
+queried as `config.external.cgiDir`, etc.<br>
 Setting individual options sometimes works, but sometimes they do not
 get propagated as expected. Consider this an experimental API.<br>
 Currently, `siteconf`, `protocol` and `omnirule` values are not exposed

@@ -281,7 +281,7 @@ quit = '() => quit()'
 suspend = '() => suspend()'
 copyURL = '''
 () => {
-	if (pager.externInto(config.external.copy_cmd, pager.url))
+	if (pager.externInto(config.external.copyCmd, pager.url))
 		pager.alert("Copied URL to clipboard.");
 	else
 		pager.alert("Error; please install xsel or adjust external.copy-cmd");
@@ -292,7 +292,7 @@ copyCursorLink = '''
 	const link = pager.hoverLink;
 	if (!link)
 		pager.alert("Please move the cursor above a link and try again.");
-	else if (pager.externInto(config.external.copy_cmd, link))
+	else if (pager.externInto(config.external.copyCmd, link))
 		pager.alert("Copied URL to clipboard.");
 	else
 		pager.alert("Error; please install xsel or adjust external.copy-cmd");
@@ -303,7 +303,7 @@ copyCursorImage = '''
 	const link = pager.hoverImage;
 	if (!link)
 		pager.alert("Please move the cursor above an image and try again.");
-	else if (pager.externInto(config.external.copy_cmd, link))
+	else if (pager.externInto(config.external.copyCmd, link))
 		pager.alert("Copied URL to clipboard.");
 	else
 		pager.alert("Error; please install xsel or adjust external.copy-cmd");
@@ -311,7 +311,7 @@ copyCursorImage = '''
 '''
 gotoClipboardURL = '''
 () => {
-	const s = pager.externCapture(config.external.paste_cmd);
+	const s = pager.externCapture(config.external.pasteCmd);
 	if (s === null)
 		pager.alert("Error; please install xsel or adjust external.paste-cmd");
 	else
@@ -476,7 +476,7 @@ async () => {
 		return;
 	}
 	const text = await pager.getSelectionText(pager.currentSelection);
-	if (pager.externInto(config.external.copy_cmd, text))
+	if (pager.externInto(config.external.copyCmd, text))
 		pager.alert("Copied selection to clipboard.");
 	else
 		pager.alert("Error; please install xsel or adjust external.copy-cmd");

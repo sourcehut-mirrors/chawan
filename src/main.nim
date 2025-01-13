@@ -231,7 +231,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
     ?config.parseConfig(getCurrentDir(), opt, warnings, laxnames = true)
   config.css.stylesheet &= ctx.stylesheet
   ?config.initCommands()
-  isCJKAmbiguous = config.display.double_width_ambiguous
+  isCJKAmbiguous = config.display.doubleWidthAmbiguous
   return ok()
 
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
@@ -258,7 +258,7 @@ proc main() =
   var history = true
   if ctx.pages.len == 0 and stdin.isatty():
     if ctx.visual:
-      ctx.pages.add(config.start.visual_home)
+      ctx.pages.add(config.start.visualHome)
       history = false
     elif (let httpHome = getEnv("HTTP_HOME"); httpHome != ""):
       ctx.pages.add(httpHome)

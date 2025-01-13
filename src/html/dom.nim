@@ -3770,16 +3770,6 @@ proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
     return move(s)
   return ""
 
-# https://drafts.csswg.org/cssom/#idl-attribute-to-css-property
-func IDLAttributeToCSSProperty(s: string; dashPrefix = false): string =
-  result = if dashPrefix: "-" else: ""
-  for c in s:
-    if c in AsciiUpperAlpha:
-      result &= '-'
-      result &= c.toLowerAscii()
-    else:
-      result &= c
-
 proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
     JSValue {.jsgetownprop.} =
   var u: uint32
@@ -3792,7 +3782,7 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
     s = "float"
   if s.isSupportedProperty():
     return ctx.toJS(this.getPropertyValue(s))
-  s = IDLAttributeToCSSProperty(s)
+  s = camelToKebabCase(s)
   if s.isSupportedProperty():
     return ctx.toJS(this.getPropertyValue(s))
   return JS_UNINITIALIZED

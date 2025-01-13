@@ -1255,7 +1255,7 @@ func pickCharset(form: HTMLFormElement): Charset =
 
 proc getFormRequestType(buffer: Buffer; scheme: string): FormRequestType =
   buffer.config.protocol.withValue(scheme, p):
-    return p[].form_request
+    return p[].formRequest
   return frtHttp
 
 proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;

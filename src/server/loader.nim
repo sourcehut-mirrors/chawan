@@ -780,7 +780,7 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
     putEnv("HTTP_REFERER", $request.referrer)
   if config.proxy != nil:
     putEnv("ALL_PROXY", $config.proxy)
-  if config.insecureSSLNoVerify:
+  if config.insecureSslNoVerify:
     putEnv("CHA_INSECURE_SSL_NO_VERIFY", "1")
   setCurrentDir(cpath.myDir)
 
