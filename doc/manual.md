@@ -396,6 +396,11 @@ These are converted on a best-effort basis: e.g. in the above example,
 adhere to the WebIDL standard in this regard. (TODO: find & document places
 where this is not true yet.)
 
+In case of types that can be "nil", Monoucha will convert "nil" return
+values to JS "null" values.  However, "null" is *not* converted to "nil".
+Please wrap types where you wish to accept "null" too in `Option`s (from
+`std/options`).
+
 The first parameter *must* be a reference type that has been registered using
 `registerType`. Alternatively, you can also use a registered non-reference
 object type, but in this case, you *must* annotate it with `var`:

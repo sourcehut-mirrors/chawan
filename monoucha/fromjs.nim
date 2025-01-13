@@ -330,9 +330,6 @@ proc fromJS*[T: enum](ctx: JSContext; val: JSValue; res: out T): Opt[void] =
 
 proc fromJS(ctx: JSContext; val: JSValue; t: cstring; res: out pointer):
     Opt[void] =
-  if JS_IsNull(val):
-    res = nil
-    return ok()
   if not JS_IsObject(val):
     if not JS_IsException(val):
       JS_ThrowTypeError(ctx, "value is not an object")
