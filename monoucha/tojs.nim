@@ -376,12 +376,7 @@ proc toJS*(ctx: JSContext; dict: JSDict): JSValue =
 proc toJSP(ctx: JSContext; parent: ref object; child: var object): JSValue =
   let p = addr child
   # Save parent as the original ancestor for this tree.
-  JS_GetRuntime(ctx).getOpaque().refmap[p] = (
-    (proc() =
-      GC_ref(parent)),
-    (proc() =
-      GC_unref(parent))
-  )
+  JS_GetRuntime(ctx).getOpaque().parentMap[p] = cast[pointer](parent)
   let tp = getTypePtr(child)
   var needsref = false
   let val = toJSP0(ctx, p, tp, JS_UNDEFINED, needsref)
@@ -394,8 +389,8 @@ proc toJSP(ctx: JSContext; parent: ptr object; child: var object): JSValue =
   # Increment the reference count of parent's root ancestor, and save the
   # increment/decrement callbacks for the child as well.
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  let ru = rtOpaque.refmap[parent]
-  ru.cref()
-  rtOpaque.refmap[p] = ru
+  let grandparent = rtOpaque.refmap[parent]
+  GC_ref(cast[RootRef](grandparent))
+  rtOpaque.parentMap[p] = grandparent
   let tp = getTypePtr(child)
   return toJSP0(ctx, p, tp)

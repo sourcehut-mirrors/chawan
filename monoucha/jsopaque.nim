@@ -52,11 +52,11 @@ type
     plist*: Table[pointer, pointer] # Nim, JS
     flist*: seq[seq[JSCFunctionListEntry]]
     fins*: Table[JSClassID, JSFinalizerFunction]
-    refmap*: Table[pointer, tuple[cref, cunref: JSEmptyOpaqueCallback]]
+    parentMap*: Table[pointer, pointer]
     destroying*: pointer
     # temp list for uninit
     tmplist*: seq[pointer]
-    tmpunrefs*: seq[JSEmptyOpaqueCallback]
+    tmpunrefs*: seq[pointer]
 
 func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))

@@ -140,12 +140,12 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
     inc np
   rtOpaque.plist.clear()
   var nu = 0
-  for (_, unref) in rtOpaque.refmap.values:
-    rtOpaque.tmpunrefs[nu] = unref
+  for p in rtOpaque.parentMap.values:
+    rtOpaque.tmpunrefs[nu] = p
     inc nu
-  rtOpaque.refmap.clear()
+  rtOpaque.parentMap.clear()
   for i in 0 ..< nu:
-    rtOpaque.tmpunrefs[i]()
+    GC_unref(cast[RootRef](rtOpaque.tmpunrefs[i]))
   for i in 0 ..< np:
     let p = rtOpaque.tmplist[i]
     #TODO maybe finalize?
@@ -232,7 +232,7 @@ proc free*(rt: JSRuntime) =
   # collected once.)
   let rtOpaque = rt.getOpaque()
   rtOpaque.tmplist.setLen(rtOpaque.plist.len)
-  rtOpaque.tmpunrefs.setLen(rtOpaque.refmap.len)
+  rtOpaque.tmpunrefs.setLen(rtOpaque.parentMap.len)
   JS_FreeRuntime(rt)
   runtimes.del(runtimes.find(rt))
 
@@ -1384,58 +1384,59 @@ proc bindExtraGetSet(stmts: NimNode; info: var RegistryInfo;
     let m = x.magic
     info.tabList.add(quote do: JS_CGETSET_MAGIC_DEF(`k`, `g`, `s`, `m`))
 
-proc bindCheckDestroy(stmts: NimNode; info: RegistryInfo) =
-  let t = info.t
-  let dfin = info.dfin
-  stmts.add(quote do:
-    proc `dfin`(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.} =
-      let opaque = JS_GetOpaque(val, JS_GetClassID(val))
-      if opaque != nil:
-        when `t` is ref object:
-          # Before this function is called, the ownership model is
-          # JSObject -> Nim object.
-          # Here we change it to Nim object -> JSObject.
-          # As a result, Nim object's reference count can now reach zero (it is
-          # no longer "referenced" by the JS object).
-          # nim_finalize_for_js will be invoked by the Nim GC when the Nim
-          # refcount reaches zero. Then, the JS object's opaque will be set
-          # to nil, and its refcount decreased again, so next time this
-          # function will return true.
-          #
-          # Actually, we need another hack to ensure correct
-          # operation. GC_unref may call the destructor of this object, and
-          # in this case we cannot ask QJS to keep the JSValue alive. So we set
-          # the "destroying" pointer to the current opaque, and return true if
-          # the opaque was collected.
-          rt.getOpaque().destroying = opaque
-          GC_unref(cast[`t`](opaque))
-          if rt.getOpaque().destroying == nil:
-            # Looks like GC_unref called nim_finalize_for_js for this pointer.
-            # This means we can allow QJS to collect this JSValue.
-            return true
-          else:
-            rt.getOpaque().destroying = nil
-            # Returning false from this function signals to the QJS GC that it
-            # should not be collected yet. Accordingly, the JSObject's refcount
-            # will be set to one again.
-            return false
-        else:
-          # This is not a reference, just a pointer with a reference to the
-          # root ancestor object.
-          # Remove the reference, allowing destruction of the root object once
-          # again.
-          let rtOpaque = rt.getOpaque()
-          var crefunref: tuple[cref, cunref: (proc())]
-          discard rtOpaque.refmap.pop(opaque, crefunref)
-          crefunref.cunref()
-          # Of course, nim_finalize_for_js might only be called later for
-          # this object, because the parent can still have references to it.
-          # (And for the same reason, a reference to the same object might
-          # still be necessary.)
-          # Accordingly, we return false here as well.
-          return false
+proc jsCheckDestroyRef*(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.} =
+  let opaque = JS_GetOpaque(val, JS_GetClassID(val))
+  if opaque != nil:
+    # Before this function is called, the ownership model is
+    # JSObject -> Nim object.
+    # Here we change it to Nim object -> JSObject.
+    # As a result, Nim object's reference count can now reach zero (it is
+    # no longer "referenced" by the JS object).
+    # nim_finalize_for_js will be invoked by the Nim GC when the Nim
+    # refcount reaches zero. Then, the JS object's opaque will be set
+    # to nil, and its refcount decreased again, so next time this
+    # function will return true.
+    #
+    # Actually, we need another hack to ensure correct
+    # operation. GC_unref may call the destructor of this object, and
+    # in this case we cannot ask QJS to keep the JSValue alive. So we set
+    # the "destroying" pointer to the current opaque, and return true if
+    # the opaque was collected.
+    rt.getOpaque().destroying = opaque
+    # We can lie about the type in refc, as it type erases the reference.
+    # Sadly, this won't work in ARC... then again, nothing works in ARC,
+    # so whatever.
+    GC_unref(cast[RootRef](opaque))
+    if rt.getOpaque().destroying == nil:
+      # Looks like GC_unref called nim_finalize_for_js for this pointer.
+      # This means we can allow QJS to collect this JSValue.
       return true
-  )
+    else:
+      rt.getOpaque().destroying = nil
+      # Returning false from this function signals to the QJS GC that it
+      # should not be collected yet. Accordingly, the JSObject's refcount
+      # will be set to one again.
+      return false
+  return true
+
+proc jsCheckDestroyNonRef*(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.} =
+  let opaque = JS_GetOpaque(val, JS_GetClassID(val))
+  if opaque != nil:
+    # This is not a reference, just a pointer with a reference to the
+    # root ancestor object.
+    # Remove the reference, allowing destruction of the root object once
+    # again.
+    let rtOpaque = rt.getOpaque()
+    var parent: pointer = nil
+    discard rtOpaque.parentMap.pop(opaque, parent)
+    GC_unref(cast[RootRef](parent))
+    # Of course, nim_finalize_for_js might only be called later for
+    # this object, because the parent can still have references to it.
+    # (And for the same reason, a reference to the same object might
+    # still be necessary.)
+    # Accordingly, we return false here as well.
+    return false
+  return true
 
 proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
   let jsname = info.jsname
@@ -1487,7 +1488,11 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   var stmts = newStmtList()
   var info = newRegistryInfo(t, name)
   if not asglobal:
-    info.dfin = ident("js_" & t.strVal & "ClassCheckDestroy")
+    let impl = t.getTypeInst()[1].getTypeImpl()
+    if impl.kind == nnkRefTy:
+      info.dfin = quote do: jsCheckDestroyRef
+    else:
+      info.dfin = quote do: jsCheckDestroyNonRef
     if info.tname notin jsDtors:
       warning("No destructor has been defined for type " & info.tname)
   else:
@@ -1505,8 +1510,6 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     # been passed to it at all.
     stmts.bindExtraGetSet(info, extraGetSet)
   let sctr = stmts.bindConstructor(info)
-  if not asglobal:
-    stmts.bindCheckDestroy(info)
   let endstmts = newStmtList()
   endstmts.bindEndStmts(info)
   let tabList = info.tabList
