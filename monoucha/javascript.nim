@@ -186,7 +186,7 @@ proc newJSContext*(rt: JSRuntime): JSContext =
   JS_SetContextOpaque(ctx, cast[pointer](opaque))
   return ctx
 
-func getClass*(ctx: JSContext; class: string): JSClassID =
+func getClass*(ctx: JSContext; class: cstring): JSClassID =
   ## Get the class ID of the registered class `class'.
   ## Note: this uses the Nim type's name, **not** the JS type's name.
   try:
@@ -194,10 +194,10 @@ func getClass*(ctx: JSContext; class: string): JSClassID =
   except KeyError:
     raise newException(Defect, "Class does not exist")
 
-func hasClass*(ctx: JSContext; class: type): bool =
+func hasClass*(ctx: JSContext; class: cstring): bool =
   ## Check if `class' is registered.
   ## Note: this uses the Nim type's name, **not** the JS type's name.
-  return $class in ctx.getOpaque().creg
+  return class in ctx.getOpaque().creg
 
 proc free*(ctx: JSContext) =
   ## Free the JSContext and associated resources.
