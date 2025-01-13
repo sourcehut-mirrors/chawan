@@ -861,7 +861,7 @@ macro jsgetownprop*(fun: typed) =
         return cint(0)
       let retv {.inject.} = ctx.toJS(`jfcl`)
       if JS_IsException(retv):
-        break `dl`
+        return cint(-1)
       if JS_IsUninitialized(retv):
         return cint(0)
       `handleRetv`
@@ -871,41 +871,7 @@ macro jsgetownprop*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jsgetprop*(fun: typed) {.deprecated: "use jsgetownprop instead".} =
-  var gen = initGenerator(fun, bfPropertyGetOwn, hasThis = true)
-  gen.addThisParam()
-  gen.addFixParam("prop")
-  gen.finishFunCallList()
-  let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
-  gen.jsCallAndRet = quote do:
-    block `dl`:
-      if JS_GetOpaque(this, JS_GetClassID(this)) == nil:
-        return cint(0)
-      let retv = ctx.toJS(`jfcl`)
-      if JS_IsException(retv):
-        break `dl`
-      if JS_IsNull(retv):
-        return cint(0)
-      if desc != nil:
-        # From quickjs.h:
-        # > If 1 is returned, the property descriptor 'desc' is filled
-        # > if != NULL.
-        # So desc may be nil.
-        let fun = ctx.newFunction([], "return () => this;")
-        let val = JS_Call(ctx, fun, retv, 0, nil)
-        JS_FreeValue(ctx, fun)
-        desc[].setter = JS_UNDEFINED
-        desc[].getter = val
-        desc[].value = JS_UNDEFINED
-        desc[].flags = JS_PROP_GETSET
-      return cint(1)
-    return cint(-1)
-  let jsProc = gen.newJSProc(getJSGetOwnPropParams(), false)
-  gen.registerFunction()
-  return newStmtList(fun, jsProc)
-
-macro jsgetrealprop*(fun: typed) =
+macro jsgetprop*(fun: typed) =
   var gen = initGenerator(fun, bfPropertyGet, hasThis = true)
   gen.addThisParam("receiver")
   gen.addFixParam("prop")
