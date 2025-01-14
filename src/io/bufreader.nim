@@ -10,19 +10,19 @@ type BufferedReader* = object
   bufIdx: int
   recvAux*: seq[cint] #TODO assert on unused ones
 
-proc sread*(reader: var BufferedReader; n: var SomeNumber)
-proc sread*[T](reader: var BufferedReader; s: var set[T])
-proc sread*[T: enum](reader: var BufferedReader; x: var T)
-proc sread*(reader: var BufferedReader; s: var string)
-proc sread*(reader: var BufferedReader; b: var bool)
+proc sread*(reader: var BufferedReader; n: out SomeNumber)
+proc sread*[T](reader: var BufferedReader; s: out set[T])
+proc sread*[T: enum](reader: var BufferedReader; x: out T)
+proc sread*(reader: var BufferedReader; s: out string)
+proc sread*(reader: var BufferedReader; b: out bool)
 proc sread*(reader: var BufferedReader; tup: var tuple)
-proc sread*[I, T](reader: var BufferedReader; a: var array[I, T])
-proc sread*(reader: var BufferedReader; s: var seq)
-proc sread*[U, V](reader: var BufferedReader; t: var Table[U, V])
+proc sread*[I, T](reader: var BufferedReader; a: out array[I, T])
+proc sread*[T](reader: var BufferedReader; s: out seq[T])
+proc sread*[U, V](reader: var BufferedReader; t: out Table[U, V])
 proc sread*(reader: var BufferedReader; obj: var object)
 proc sread*(reader: var BufferedReader; obj: var ref object)
-proc sread*[T](reader: var BufferedReader; o: var Option[T])
-proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E])
+proc sread*[T](reader: var BufferedReader; o: out Option[T])
+proc sread*[T, E](reader: var BufferedReader; o: out Result[T, E])
 proc sread*(reader: var BufferedReader; c: var ARGBColor)
 proc sread*(reader: var BufferedReader; c: var CellColor)
 
@@ -57,30 +57,32 @@ proc readData*(reader: var BufferedReader; buffer: pointer; len: int) =
   copyMem(buffer, addr reader.buffer[reader.bufIdx], len)
   reader.bufIdx += len
 
-proc sread*(reader: var BufferedReader; n: var SomeNumber) =
+proc sread*(reader: var BufferedReader; n: out SomeNumber) =
+  n = 0
   reader.readData(addr n, sizeof(n))
 
-proc sread*[T: enum](reader: var BufferedReader; x: var T) =
-  var i: int
+proc sread*[T: enum](reader: var BufferedReader; x: out T) =
+  var i {.noinit.}: int
   reader.sread(i)
   x = cast[T](i)
 
-proc sread*[T](reader: var BufferedReader; s: var set[T]) =
-  var len: int
+proc sread*[T](reader: var BufferedReader; s: out set[T]) =
+  var len {.noinit.}: int
   reader.sread(len)
+  s = {}
   for i in 0 ..< len:
     var x: T
     reader.sread(x)
     s.incl(x)
 
-proc sread*(reader: var BufferedReader; s: var string) =
-  var len: int
+proc sread*(reader: var BufferedReader; s: out string) =
+  var len {.noinit.}: int
   reader.sread(len)
   s = newString(len)
   if len > 0:
     reader.readData(addr s[0], len)
 
-proc sread*(reader: var BufferedReader; b: var bool) =
+proc sread*(reader: var BufferedReader; b: out bool) =
   var n: uint8
   reader.sread(n)
   if n == 1u8:
@@ -93,20 +95,21 @@ proc sread*(reader: var BufferedReader; tup: var tuple) =
   for f in tup.fields:
     reader.sread(f)
 
-proc sread*[I; T](reader: var BufferedReader; a: var array[I, T]) =
+proc sread*[I; T](reader: var BufferedReader; a: out array[I, T]) =
   for x in a.mitems:
     reader.sread(x)
 
-proc sread*(reader: var BufferedReader; s: var seq) =
-  var len: int
+proc sread*[T](reader: var BufferedReader; s: out seq[T]) =
+  var len {.noinit.}: int
   reader.sread(len)
-  s.setLen(len)
+  s = newSeq[T](len)
   for x in s.mitems:
     reader.sread(x)
 
-proc sread*[U; V](reader: var BufferedReader; t: var Table[U, V]) =
-  var len: int
+proc sread*[U; V](reader: var BufferedReader; t: out Table[U, V]) =
+  var len {.noinit.}: int
   reader.sread(len)
+  t = initTable[U, V](len)
   for i in 0..<len:
     var k: U
     reader.sread(k)
@@ -115,6 +118,7 @@ proc sread*[U; V](reader: var BufferedReader; t: var Table[U, V]) =
     t[k] = v
 
 proc sread*(reader: var BufferedReader; obj: var object) =
+  obj = default(typeof(obj))
   for f in obj.fields:
     reader.sread(f)
 
@@ -122,10 +126,12 @@ proc sread*(reader: var BufferedReader; obj: var ref object) =
   var n: bool
   reader.sread(n)
   if n:
-    new(obj)
+    obj = new(typeof(obj))
     reader.sread(obj[])
+  else:
+    obj = nil
 
-proc sread*[T](reader: var BufferedReader; o: var Option[T]) =
+proc sread*[T](reader: var BufferedReader; o: out Option[T]) =
   var x: bool
   reader.sread(x)
   if x:
@@ -135,7 +141,7 @@ proc sread*[T](reader: var BufferedReader; o: var Option[T]) =
   else:
     o = none(T)
 
-proc sread*[T, E](reader: var BufferedReader; o: var Result[T, E]) =
+proc sread*[T, E](reader: var BufferedReader; o: out Result[T, E]) =
   var x: bool
   reader.sread(x)
   if x:

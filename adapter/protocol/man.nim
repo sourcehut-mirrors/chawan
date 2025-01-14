@@ -304,9 +304,9 @@ proc doKeyword(man, keyword, section: string) =
     quit(1)
   var line: string
   if not ofile.readLine(line) or ofile.endOfFile():
-    var wstatus: cint
-    discard wait(addr wstatus)
-    if not WIFEXITED(wstatus) or WEXITSTATUS(wstatus) != 0:
+    var wstatus = cint(0)
+    if wait(addr wstatus) >= 0 and not WIFEXITED(wstatus) or
+        WEXITSTATUS(wstatus) != 0:
       stdout.write("Cha-Control: ConnectionError 4 " & efile.readErrorMsg(line))
       ofile.close()
       efile.close()

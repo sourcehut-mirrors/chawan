@@ -84,7 +84,7 @@ proc matchesPattern(s: string; pats: openArray[string]): bool =
 
 proc parseSSHConfig(f: File; host: string; pubKey, privKey: var string) =
   var skipTillNext = false
-  var line: string
+  var line = ""
   while f.readLine(line):
     var i = line.skipBlanks(0)
     if i == line.len or line[i] == '#':

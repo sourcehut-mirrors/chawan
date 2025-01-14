@@ -29,7 +29,7 @@ proc main() =
 <title>Index of """ & url & """</title>
 <h1>Index of """ & url & """</h1>""")
   var ispre = false
-  var line: string
+  var line = ""
   while stdin.readLine(line):
     if line.len == 0:
       continue
