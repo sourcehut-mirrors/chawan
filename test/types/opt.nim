@@ -30,7 +30,7 @@ type
 template ok*[E](t: type Err[E]): Err[E] =
   Err[E](has: true)
 
-template ok*[T, E](t: type Result[T, E], x: T): Result[T, E] =
+template ok*[T, E](t: type Result[T, E]; x: T): Result[T, E] =
   Result[T, E](val: x, has: true)
 
 template ok*[T](x: T): auto =
@@ -39,13 +39,7 @@ template ok*[T](x: T): auto =
 template ok*(): auto =
   ok(typeof(result))
 
-template ok*[T, E](res: var Result[T, E], x: T) =
-  res = Result[T, E](has: true, val: x)
-
-template ok*[E](res: var Result[void, E]) =
-  res = Result[void, E](has: true)
-
-template err*[T, E](t: type Result[T, E], e: E): Result[T, E] =
+template err*[T, E](t: type Result[T, E]; e: E): Result[T, E] =
   Result[T, E](has: false, ex: e)
 
 template err*[T](t: type Result[T, ref object]): auto =
@@ -57,12 +51,6 @@ template err*[T](t: type Result[T, void]): Result[T, void] =
 template err*(): auto =
   err(typeof(result))
 
-template err*[T, E](res: var Result[T, E], e: E) =
-  res = Result[T, E](has: false, ex: e)
-
-template err*[T, E](res: var Result[T, E]) =
-  res = Result[T, E](has: false)
-
 template err*[E](e: E): auto =
   err(typeof(result), e)
 
@@ -73,23 +61,21 @@ template opt*(t: typedesc): auto =
   err(Result[t, void])
 
 template opt*[T, E: not void](r: Result[T, E]): Opt[T] =
-  if r.isOk:
+  if r.isSome:
     Opt[T].ok(r.get)
   else:
     Opt[T].err()
 
-template isOk*(res: Result): bool = res.has
-template isErr*(res: Result): bool = not res.has
-template isSome*(res: Result): bool = res.isOk
-template isNone*(res: Result): bool = res.isErr
+template isSome*(res: Result): bool = res.has
+template isNone*(res: Result): bool = not res.has
 func get*[T, E](res: Result[T, E]): T {.inline.} = res.val
 func get*[T, E](res: var Result[T, E]): var T = res.val
-func get*[T, E](res: Result[T, E], v: T): T =
+func get*[T, E](res: Result[T, E]; v: T): T =
   if res.has:
     res.val
   else:
     v
-func error*[T, E](res: Result[T, E]): E {.inline.} = res.ex
+func error*[T, E](res: Result[T, E]): lent E {.inline.} = res.ex
 template valType*[T, E](res: type Result[T, E]): auto = T
 template errType*[T, E](res: type Result[T, E]): auto = E
 
