@@ -2123,7 +2123,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
   pager.isearchpromise = pager.isearchpromise.then(proc(): EmptyPromise =
     case lineedit.state
     of lesCancel:
-      pager.iregex.err()
+      pager.iregex = Result[Regex, string].err("")
       pager.container.popCursorPos()
       pager.container.clearSearchHighlights()
       pager.container.redraw = true
