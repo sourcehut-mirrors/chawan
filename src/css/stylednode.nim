@@ -47,7 +47,7 @@ type
   StyledNode* = ref object
     parent*: StyledNode
     node*: Node
-    pseudo*: PseudoElem
+    pseudo*: PseudoElement
     case t*: StyledType
     of stText:
       discard
@@ -108,11 +108,9 @@ func newStyledElement*(parent: StyledNode; element: Element): StyledNode =
 func newStyledElement*(element: Element): StyledNode =
   return StyledNode(t: stElement, node: element)
 
-func newStyledElement*(parent: StyledNode; pseudo: PseudoElem;
-    computed: CSSValues): StyledNode =
+func newStyledElement*(parent: StyledNode; pseudo: PseudoElement): StyledNode =
   return StyledNode(
     t: stElement,
-    computed: computed,
     pseudo: pseudo,
     parent: parent
   )
@@ -124,7 +122,7 @@ func newStyledText*(text: string): StyledNode =
   return StyledNode(t: stText, node: CharacterData(data: text))
 
 func newStyledReplacement*(parent: StyledNode; content: CSSContent;
-    pseudo: PseudoElem): StyledNode =
+    pseudo: PseudoElement): StyledNode =
   return StyledNode(
     t: stReplacement,
     parent: parent,

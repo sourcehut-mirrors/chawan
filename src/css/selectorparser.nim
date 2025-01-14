@@ -9,7 +9,7 @@ type
   SelectorType* = enum
     stType, stId, stAttr, stClass, stUniversal, stPseudoClass, stPseudoElement
 
-  PseudoElem* = enum
+  PseudoElement* = enum
     peNone = "-cha-none"
     peBefore = "before"
     peAfter = "after"
@@ -91,7 +91,7 @@ type
     of stPseudoClass:
       pseudo*: PseudoData
     of stPseudoElement:
-      elem*: PseudoElem
+      elem*: PseudoElement
 
   PseudoData* = object
     case t*: PseudoClass
@@ -108,9 +108,18 @@ type
     ct*: CombinatorType # relation to the next entry in a ComplexSelector.
     sels*: seq[Selector]
 
-  ComplexSelector* = seq[CompoundSelector]
+  ComplexSelector* = object
+    specificity*: int
+    pseudo*: PseudoElement
+    csels: seq[CompoundSelector]
 
   SelectorList* = seq[ComplexSelector]
+
+# Forward declarations
+proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
+  nested, forgiving: bool): SelectorList
+proc parseComplexSelector(state: var SelectorParser): ComplexSelector
+func `$`*(cxsel: ComplexSelector): string
 
 iterator items*(sels: CompoundSelector): Selector {.inline.} =
   for it in sels.sels:
@@ -128,7 +137,26 @@ func len*(sels: CompoundSelector): int {.inline.} =
 proc add*(sels: var CompoundSelector; sel: Selector) {.inline.} =
   sels.sels.add(sel)
 
-func `$`*(cxsel: ComplexSelector): string
+func `[]`*(cxsel: ComplexSelector; i: int): lent CompoundSelector {.inline.} =
+  return cxsel.csels[i]
+
+func `[]`*(cxsel: ComplexSelector; i: BackwardsIndex): CompoundSelector
+    {.inline.} =
+  return cxsel.csels[i]
+
+func `[]`*(cxsel: var ComplexSelector; i: BackwardsIndex): var CompoundSelector
+    {.inline.} =
+  return cxsel.csels[i]
+
+func len*(cxsel: ComplexSelector): int {.inline.} =
+  return cxsel.csels.len
+
+func high*(cxsel: ComplexSelector): int {.inline.} =
+  return cxsel.csels.high
+
+iterator items*(cxsel: ComplexSelector): lent CompoundSelector {.inline.} =
+  for it in cxsel.csels:
+    yield it
 
 func `$`*(sel: Selector): string =
   case sel.t
@@ -212,8 +240,6 @@ func `$`*(slist: SelectorList): string =
     result &= $cxsel
     s = true
 
-func getSpecificity*(cxsel: ComplexSelector): int
-
 func getSpecificity(sel: Selector): int =
   case sel.t
   of stId:
@@ -225,7 +251,7 @@ func getSpecificity(sel: Selector): int =
     of pcIs, pcNot:
       var best = 0
       for child in sel.pseudo.fsels:
-        let s = getSpecificity(child)
+        let s = child.specificity
         if s > best:
           best = s
       result += best
@@ -233,7 +259,7 @@ func getSpecificity(sel: Selector): int =
       if sel.pseudo.ofsels.len != 0:
         var best = 0
         for child in sel.pseudo.ofsels:
-          let s = getSpecificity(child)
+          let s = child.specificity
           if s > best:
             best = s
         result += best
@@ -245,18 +271,10 @@ func getSpecificity(sel: Selector): int =
   of stUniversal:
     discard
 
-func getSpecificity*(sels: CompoundSelector): int =
+func getSpecificity(sels: CompoundSelector): int =
+  result= 0
   for sel in sels:
     result += getSpecificity(sel)
-
-func getSpecificity*(cxsel: ComplexSelector): int =
-  for sels in cxsel:
-    result += getSpecificity(sels)
-
-func pseudo*(cxsel: ComplexSelector): PseudoElem =
-  if cxsel[^1][^1].t == stPseudoElement:
-    return cxsel[^1][^1].elem
-  return peNone
 
 proc consume(state: var SelectorParser): CSSComponentValue =
   result = state.cvals[state.at]
@@ -276,9 +294,6 @@ template get_tok(cval: CSSComponentValue): CSSToken =
   let c = cval
   if not (c of CSSToken): fail
   CSSToken(c)
-
-proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
-  nested, forgiving: bool): SelectorList
 
 # Functions that may contain other selectors, functions, etc.
 proc parseRecursiveSelectorFunction(state: var SelectorParser;
@@ -353,7 +368,7 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let cval = state.consume()
   if cval of CSSToken:
-    template add_pseudo_element(element: PseudoElem) =
+    template add_pseudo_element(element: PseudoElement) =
       state.skipWhitespace()
       if state.nested or state.has() and state.peek() != cttComma: fail
       return Selector(t: stPseudoElement, elem: element)
@@ -390,8 +405,6 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
   elif cval of CSSFunction:
     return state.parseSelectorFunction(CSSFunction(cval))
   else: fail
-
-proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 
 proc parseAttributeSelector(state: var SelectorParser;
     cssblock: CSSSimpleBlock): Selector =
@@ -438,10 +451,7 @@ proc parseAttributeSelector(state: var SelectorParser;
     t: stAttr,
     attr: state.factory.toAtom(attr.value),
     value: value.value,
-    rel: SelectorRelation(
-      t: rel,
-      flag: flag
-    )
+    rel: SelectorRelation(t: rel, flag: flag)
   )
 
 proc parseClassSelector(state: var SelectorParser): Selector =
@@ -504,10 +514,15 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       fail
 
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
+  result = ComplexSelector()
   while true:
     state.skipWhitespace()
     let sels = state.parseCompoundSelector()
-    result.add(sels)
+    if state.failed:
+      break
+    #TODO propagate from parser
+    result.specificity += sels.getSpecificity()
+    result.csels.add(sels)
     if sels.len == 0: fail
     if not state.has():
       break # finish
@@ -526,6 +541,9 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     else: fail
   if result.len == 0 or result[^1].ct != ctNone:
     fail
+  if result[^1][^1].t == stPseudoElement:
+    #TODO move pseudo check here?
+    result.pseudo = result[^1][^1].elem
 
 proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
     nested, forgiving: bool): SelectorList =

@@ -7,13 +7,12 @@ import std/tables
 import css/cssparser
 import css/lunit
 import css/selectorparser
+import html/catom
 import types/bitmap
 import types/color
 import types/opt
 import types/winattrs
 import utils/twtstr
-
-export selectorparser.PseudoElem
 
 type
   CSSPropertyType* = enum
@@ -410,13 +409,26 @@ type
     coUser
     coAuthor
 
+  CSSEntryType* = enum
+    ceBit, ceObject, ceWord, ceVar
+
   CSSComputedEntry* = object
     t*: CSSPropertyType
     global*: CSSGlobalType
-    #TODO case on t?
-    bit*: uint8
-    word*: CSSValueWord
-    obj*: CSSValue
+    case et*: CSSEntryType
+    of ceBit:
+      bit*: uint8
+    of ceWord:
+      word*: CSSValueWord
+    of ceObject:
+      obj*: CSSValue
+    of ceVar:
+      cvar*: CAtom
+
+  CSSVariable* = ref object
+    name*: CAtom
+    cvals*: seq[CSSComponentValue]
+    resolved: seq[tuple[v: CSSValueType; entry: CSSComputedEntry]]
 
 static:
   doAssert sizeof(CSSValueBit) == 1
@@ -1247,34 +1259,66 @@ func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float32] =
 
 proc makeEntry*(t: CSSPropertyType; obj: CSSValue; global = cgtNone):
     CSSComputedEntry =
-  return CSSComputedEntry(t: t, obj: obj, global: global)
+  return CSSComputedEntry(et: ceObject, t: t, obj: obj, global: global)
 
 proc makeEntry*(t: CSSPropertyType; word: CSSValueWord; global = cgtNone):
     CSSComputedEntry =
-  return CSSComputedEntry(t: t, word: word, global: global)
+  return CSSComputedEntry(et: ceWord, t: t, word: word, global: global)
 
 proc makeEntry*(t: CSSPropertyType; bit: CSSValueBit; global = cgtNone):
     CSSComputedEntry =
-  return CSSComputedEntry(t: t, bit: bit.dummy, global: global)
+  return CSSComputedEntry(et: ceBit, t: t, bit: bit.dummy, global: global)
 
 proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
-  return CSSComputedEntry(t: t, global: global)
+  return CSSComputedEntry(et: ceObject, t: t, global: global)
+
+proc parseVar(fun: CSSFunction; entry: var CSSComputedEntry;
+    attrs: WindowAttributes; factory: CAtomFactory): Opt[void] =
+  let i = fun.value.skipBlanks(0)
+  if i >= fun.value.len or fun.value.skipBlanks(i + 1) < fun.value.len:
+    return err()
+  let cval = fun.value[i]
+  if not (cval of CSSToken):
+    return err()
+  let tok = CSSToken(fun.value[i])
+  if tok.t != cttIdent:
+    return err()
+  entry = CSSComputedEntry(
+    et: ceVar,
+    cvar: factory.toAtom(tok.value.substr(2))
+  )
+  return ok()
 
 proc parseValue(cvals: openArray[CSSComponentValue];
-    entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
+    entry: var CSSComputedEntry; attrs: WindowAttributes;
+    factory: CAtomFactory): Opt[void] =
   var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return err()
   let cval = cvals[i]
-  let t = entry.t
   inc i
+  if cval of CSSFunction:
+    let fun = CSSFunction(cval)
+    if fun.name.equalsIgnoreCase("var"):
+      if cvals.skipBlanks(i) < cvals.len:
+        return err()
+      return fun.parseVar(entry, attrs, factory)
+  let t = entry.t
   let v = valueType(t)
   template set_new(prop, val: untyped) =
-    entry.obj = CSSValue(v: v, prop: val)
+    entry = CSSComputedEntry(
+      t: entry.t,
+      et: ceObject,
+      obj: CSSValue(v: v, prop: val)
+    )
   template set_word(prop, val: untyped) =
-    entry.word = CSSValueWord(prop: val)
+    entry = CSSComputedEntry(
+      t: entry.t,
+      et: ceWord,
+      word: CSSValueWord(prop: val)
+    )
   template set_bit(prop, val: untyped) =
-    entry.bit = cast[uint8](val)
+    entry = CSSComputedEntry(t: entry.t, et: ceBit, bit: cast[uint8](val))
   case v
   of cvtDisplay: set_bit display, ?parseIdent[CSSDisplay](cval)
   of cvtWhiteSpace: set_bit whiteSpace, ?parseIdent[CSSWhiteSpace](cval)
@@ -1426,7 +1470,8 @@ const PropertyPaddingSpec = [
 ]
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
-    cvals: openArray[CSSComponentValue]; attrs: WindowAttributes): Err[void] =
+    cvals: openArray[CSSComponentValue]; attrs: WindowAttributes;
+    factory: CAtomFactory): Err[void] =
   var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return err()
@@ -1439,8 +1484,12 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       if global != cgtNone:
         res.add(makeEntry(t, global))
       else:
-        var entry = CSSComputedEntry(t: t)
-        ?cvals.parseValue(entry, attrs)
+        let et = case t.reprType
+        of cprtBit: ceBit
+        of cprtObject: ceObject
+        of cprtWord: ceWord
+        var entry = CSSComputedEntry(t: t, et: et)
+        ?cvals.parseValue(entry, attrs, factory)
         res.add(entry)
   of cstAll:
     if global == cgtNone:
@@ -1561,9 +1610,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
   return ok()
 
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue];
-    attrs: WindowAttributes): seq[CSSComputedEntry] =
+    attrs: WindowAttributes; factory: CAtomFactory): seq[CSSComputedEntry] =
   var res: seq[CSSComputedEntry] = @[]
-  if res.parseComputedValues(name, value, attrs).isSome:
+  if res.parseComputedValues(name, value, attrs, factory).isSome:
     return res
   return @[]
 
@@ -1591,8 +1640,13 @@ type
 
   InitMap* = array[CSSPropertyType, set[InitType]]
 
+  CSSVariableMap* = ref object
+    parent*: CSSVariableMap
+    vars*: seq[CSSVariable]
+
 proc applyValue*(vals: CSSValues; entry: CSSComputedEntry;
-    parent, previousOrigin: CSSValues; inited: InitMap; initType: InitType) =
+    varMap: CSSVariableMap; parent, previousOrigin: CSSValues; inited: InitMap;
+    initType: InitType) =
   case entry.global
   of cgtInherit:
     if parent != nil:
@@ -1609,10 +1663,11 @@ proc applyValue*(vals: CSSValues; entry: CSSComputedEntry;
     else:
       vals.initialOrInheritFrom(parent, entry.t)
   of cgtNone:
-    case entry.t.reprType
-    of cprtBit: vals.bits[entry.t].dummy = entry.bit
-    of cprtWord: vals.words[entry.t] = entry.word
-    of cprtObject: vals.objs[entry.t] = entry.obj
+    case entry.et
+    of ceBit: vals.bits[entry.t].dummy = entry.bit
+    of ceWord: vals.words[entry.t] = entry.word
+    of ceObject: vals.objs[entry.t] = entry.obj
+    of ceVar: discard #eprint "TODO"
 
 func inheritProperties*(parent: CSSValues): CSSValues =
   result = CSSValues()

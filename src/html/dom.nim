@@ -3796,8 +3796,9 @@ proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
   if i notin 0 .. this.decls.high:
     return err()
   # dummyAttrs can be safely used because the result is discarded.
-  var dummy: seq[CSSComputedEntry]
-  ?parseComputedValues(dummy, this.decls[i].name, cvals, dummyAttrs)
+  var dummy: seq[CSSComputedEntry] = @[]
+  ?dummy.parseComputedValues(this.decls[i].name, cvals, dummyAttrs,
+    this.element.document.factory)
   this.decls[i].value = cvals
   return ok()
 
@@ -3831,8 +3832,9 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
       # not err! this does not throw.
       return ok()
   else:
-    var dummy: seq[CSSComputedEntry]
-    let val0 = parseComputedValues(dummy, name, cvals, dummyAttrs)
+    var dummy: seq[CSSComputedEntry] = @[]
+    let val0 = dummy.parseComputedValues(name, cvals, dummyAttrs,
+      this.element.document.factory)
     if val0.isNone:
       return ok()
     this.decls.add(CSSDeclaration(name: name, value: cvals))

@@ -1,4 +1,5 @@
 import std/options
+import std/strutils
 import std/tables
 
 import css/cssparser
@@ -6,6 +7,7 @@ import css/cssvalues
 import css/mediaquery
 import css/selectorparser
 import html/catom
+import types/opt
 import types/url
 import types/winattrs
 import utils/twtstr
@@ -15,11 +17,14 @@ type
 
   CSSRuleDef* = ref object of CSSRuleBase
     sels*: SelectorList
+    specificity*: int
     normalVals*: seq[CSSComputedEntry]
     importantVals*: seq[CSSComputedEntry]
+    normalVars*: seq[CSSVariable]
+    importantVars*: seq[CSSVariable]
     # Absolute position in the stylesheet; used for sorting rules after
     # retrieval from the cache.
-    idx: int
+    idx*: int
 
   CSSMediaQueryDef* = ref object of CSSRuleBase
     children*: CSSStylesheet
@@ -130,9 +135,6 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
     return hashes.tag != CAtomNull or hashes.id != CAtomNull or
       hashes.class != CAtomNull
 
-proc ruleDefCmp*(a, b: CSSRuleDef): int =
-  cmp(a.idx, b.idx)
-
 proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
   var hashes = SelectorHashes()
   for cxsel in rule.sels:
@@ -179,23 +181,35 @@ proc add*(sheet, sheet2: CSSStylesheet) =
       sheet.attrTable[key] = value
 
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
-  let sels = parseSelectors(rule.prelude, sheet.factory)
+  var sels = parseSelectors(rule.prelude, sheet.factory)
   if sels.len > 0:
-    var normalVals: seq[CSSComputedEntry] = @[]
-    var importantVals: seq[CSSComputedEntry] = @[]
     let decls = rule.oblock.value.parseDeclarations()
+    var pass2 = newSeqOfCap[CSSDeclaration](decls.len)
+    let rule = CSSRuleDef(sels: move(sels), idx: sheet.len)
     for decl in decls:
-      let vals = parseComputedValues(decl.name, decl.value, sheet.attrs[])
+      if decl.name.startsWith("--"):
+        let cvar = CSSVariable(
+          # case sensitive, it seems
+          name: sheet.factory.toAtom(decl.name.substr(2)),
+          cvals: move(decl.value)
+        )
+        if decl.important:
+          rule.importantVars.add(cvar)
+        else:
+          rule.normalVars.add(cvar)
+      pass2.add(decl)
+    for decl in pass2:
       if decl.important:
-        importantVals.add(vals)
+        let olen = rule.importantVals.len
+        if rule.importantVals.parseComputedValues(decl.name, decl.value,
+            sheet.attrs[], sheet.factory).isNone:
+          rule.importantVals.setLen(olen)
       else:
-        normalVals.add(vals)
-    sheet.add(CSSRuleDef(
-      sels: sels,
-      normalVals: normalVals,
-      importantVals: importantVals,
-      idx: sheet.len
-    ))
+        let olen = rule.normalVals.len
+        if rule.normalVals.parseComputedValues(decl.name, decl.value,
+            sheet.attrs[], sheet.factory).isNone:
+          rule.normalVals.setLen(olen)
+    sheet.add(rule)
     inc sheet.len
 
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =

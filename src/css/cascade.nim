@@ -21,23 +21,33 @@ import types/opt
 import types/winattrs
 
 type
-  RuleList* = array[PseudoElem, seq[CSSRuleDef]]
+  RuleListEntry = object
+    normal: seq[CSSComputedEntry]
+    important: seq[CSSComputedEntry]
 
-  RuleListMap* = ref object
-    ua: RuleList # user agent
-    user: RuleList
-    author: seq[RuleList]
+  RuleList = array[CSSOrigin, RuleListEntry]
 
-  ToSorts = array[PseudoElem, seq[(int, CSSRuleDef)]]
+  RuleListMap = ref object
+    rules: array[PseudoElement, RuleList]
+
+  RulePair = tuple
+    specificity: int
+    rule: CSSRuleDef
+
+  ToSorts = array[PseudoElement, seq[RulePair]]
 
 proc calcRule(tosorts: var ToSorts; element: Element;
     depends: var DependencyInfo; rule: CSSRuleDef) =
   for sel in rule.sels:
     if element.matches(sel, depends):
-      let spec = getSpecificity(sel)
-      tosorts[sel.pseudo].add((spec, rule))
+      if tosorts[sel.pseudo].len > 0 and tosorts[sel.pseudo][^1].rule == rule:
+        tosorts[sel.pseudo][^1].specificity =
+          max(tosorts[sel.pseudo][^1].specificity, sel.specificity)
+      else:
+        tosorts[sel.pseudo].add((sel.specificity, rule))
 
-func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
+func calcRules(map: RuleListMap; styledNode: StyledNode; sheet: CSSStylesheet;
+    origin: CSSOrigin) =
   var tosorts = ToSorts.default
   let element = Element(styledNode.node)
   var rules: seq[CSSRuleDef] = @[]
@@ -54,27 +64,28 @@ func calcRules(styledNode: StyledNode; sheet: CSSStylesheet): RuleList =
       rules.add(v[])
   for rule in sheet.generalList:
     rules.add(rule)
-  rules.sort(ruleDefCmp, order = Ascending)
   for rule in rules:
     tosorts.calcRule(element, styledNode.depends, rule)
-  for i in PseudoElem:
-    tosorts[i].sort((proc(x, y: (int, CSSRuleDef)): int =
-      cmp(x[0], y[0])
-    ), order = Ascending)
-    result[i] = newSeqOfCap[CSSRuleDef](tosorts[i].len)
-    for item in tosorts[i]:
-      result[i].add(item[1])
+  for pseudo, it in tosorts.mpairs:
+    it.sort(proc(x, y: (int, CSSRuleDef)): int =
+      let n = cmp(x[0], y[0])
+      if n != 0:
+        return n
+      return cmp(x[1].idx, y[1].idx), order = Ascending)
+    for item in it:
+      map.rules[pseudo][origin].normal.add(item[1].normalVals)
+      map.rules[pseudo][origin].important.add(item[1].importantVals)
 
 proc applyPresHints(computed: CSSValues; element: Element;
     attrs: WindowAttributes; initMap: var InitMap) =
   template set_cv(t, x, b: untyped) =
-    computed.applyValue(makeEntry(t, CSSValueWord(x: b)), nil, nil, initMap,
-      itUserAgent)
+    computed.applyValue(makeEntry(t, CSSValueWord(x: b)), nil, nil, nil,
+      initMap, itUserAgent)
     initMap[t].incl(itUser)
   template set_cv_new(t, x, b: untyped) =
     const v = valueType(t)
     let val = CSSValue(v: v, x: b)
-    computed.applyValue(makeEntry(t, val), nil, nil, initMap, itUserAgent)
+    computed.applyValue(makeEntry(t, val), nil, nil, nil, initMap, itUserAgent)
     initMap[t].incl(itUser)
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
@@ -129,7 +140,7 @@ proc applyPresHints(computed: CSSValues; element: Element;
   template set_bgcolor_is_canvas =
     let t = cptBgcolorIsCanvas
     let val = CSSValueBit(bgcolorIsCanvas: true)
-    computed.applyValue(makeEntry(t, val), nil, nil, initMap, itUserAgent)
+    computed.applyValue(makeEntry(t, val), nil, nil, nil, initMap, itUserAgent)
     initMap[t].incl(itUser)
   template map_cellspacing =
     let s = element.attrul(satCellspacing)
@@ -185,42 +196,34 @@ proc applyPresHints(computed: CSSValues; element: Element;
       set_cv cptHeight, length, resolveLength(cuEm, float32(size), attrs)
   else: discard
 
-type
-  CSSValueEntryObj = object
-    normal: seq[CSSComputedEntry]
-    important: seq[CSSComputedEntry]
-
-  CSSValueEntryMap = array[CSSOrigin, CSSValueEntryObj]
-
-# element and attrsp are nil if called for a pseudo element.
-func buildComputedValues(rules: CSSValueEntryMap; parent: CSSValues;
-    element: Element; attrsp: ptr WindowAttributes): CSSValues =
+func applyDeclarations0(rules: RuleList; parent: CSSValues; element: Element;
+    window: Window): CSSValues =
   result = CSSValues()
   var initMap = InitMap.default
   for entry in rules[coUserAgent].normal: # user agent
-    result.applyValue(entry, parent, nil, initMap, itOther)
+    result.applyValue(entry, nil, parent, nil, initMap, itOther)
     initMap[entry.t] = {itUserAgent, itUser}
   let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
   if element != nil:
-    result.applyPresHints(element, attrsp[], initMap)
+    result.applyPresHints(element, window.attrsp[], initMap)
   for entry in rules[coUser].normal: # user
-    result.applyValue(entry, parent, uaProperties, initMap, itUserAgent)
+    result.applyValue(entry, nil, parent, uaProperties, initMap, itUserAgent)
     initMap[entry.t].incl(itUser)
   # save user properties so author can use them
   let userProperties = result.copyProperties()
   for entry in rules[coAuthor].normal: # author
-    result.applyValue(entry, parent, userProperties, initMap, itUser)
+    result.applyValue(entry, nil, parent, userProperties, initMap, itUser)
     initMap[entry.t].incl(itOther)
   for entry in rules[coAuthor].important: # author important
-    result.applyValue(entry, parent, userProperties, initMap, itUser)
+    result.applyValue(entry, nil, parent, userProperties, initMap, itUser)
     initMap[entry.t].incl(itOther)
   for entry in rules[coUser].important: # user important
-    result.applyValue(entry, parent, uaProperties, initMap, itUserAgent)
+    result.applyValue(entry, nil, parent, uaProperties, initMap, itUserAgent)
     initMap[entry.t].incl(itOther)
   for entry in rules[coUserAgent].important: # user agent important
-    result.applyValue(entry, parent, nil, initMap, itUserAgent)
+    result.applyValue(entry, nil, parent, nil, initMap, itUserAgent)
     initMap[entry.t].incl(itOther)
   # set defaults
   for t in CSSPropertyType:
@@ -240,52 +243,20 @@ func buildComputedValues(rules: CSSValueEntryMap; parent: CSSValues;
     result{"overflow-x"} = result{"overflow-x"}.bfcify()
     result{"overflow-y"} = result{"overflow-y"}.bfcify()
 
-proc add(map: var CSSValueEntryObj; rules: seq[CSSRuleDef]) =
-  for rule in rules:
-    map.normal.add(rule.normalVals)
-    map.important.add(rule.importantVals)
-
 proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
-    map: RuleListMap; window: Window) =
-  var rules: CSSValueEntryMap
-  rules[coUserAgent].add(map.ua[peNone])
-  rules[coUser].add(map.user[peNone])
-  for rule in map.author:
-    rules[coAuthor].add(rule[peNone])
-  var element: Element = nil
-  if styledNode.node != nil:
-    element = Element(styledNode.node)
-    let style = element.cachedStyle
-    if window.styling and style != nil:
-      for decl in style.decls:
-        let vals = parseComputedValues(decl.name, decl.value, window.attrsp[])
-        if decl.important:
-          rules[coAuthor].important.add(vals)
-        else:
-          rules[coAuthor].normal.add(vals)
-  styledNode.computed = rules.buildComputedValues(parent, element,
-    window.attrsp)
+    map: RuleListMap; window: Window; pseudo = peNone) =
+  let element = Element(styledNode.node)
+  styledNode.computed = map.rules[pseudo].applyDeclarations0(parent, element,
+    window)
   if element != nil and window.settings.scripting == smApp:
     element.computed = styledNode.computed
 
-func hasValues(rules: CSSValueEntryMap): bool =
-  for origin in CSSOrigin:
-    if rules[origin].normal.len > 0 or rules[origin].important.len > 0:
-      return true
+func hasValues(map: RuleListMap; pseudo: PseudoElement): bool =
+  for x in map.rules:
+    for y in x:
+      if y.normal.len > 0 or y.important.len > 0:
+        return true
   return false
-
-# Either returns a new styled node or nil.
-proc applyDeclarations(pseudo: PseudoElem; styledParent: StyledNode;
-    map: RuleListMap): StyledNode =
-  var rules: CSSValueEntryMap
-  rules[coUserAgent].add(map.ua[pseudo])
-  rules[coUser].add(map.user[pseudo])
-  for rule in map.author:
-    rules[coAuthor].add(rule[pseudo])
-  if rules.hasValues():
-    let cvals = rules.buildComputedValues(styledParent.computed, nil, nil)
-    return styledParent.newStyledElement(pseudo, cvals)
-  return nil
 
 func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
   if ss == nil:
@@ -298,35 +269,32 @@ func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
   return res
 
 func calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
-    author: seq[CSSStylesheet]): RuleListMap =
-  let uadecls = calcRules(styledNode, ua)
-  var userdecls = RuleList.default
+    author: seq[CSSStylesheet]; window: Window): RuleListMap =
+  let map = RuleListMap()
+  map.calcRules(styledNode, ua, coUserAgent)
   if user != nil:
-    userdecls = calcRules(styledNode, user)
-  var authordecls: seq[RuleList] = @[]
+    map.calcRules(styledNode, user, coUser)
   for rule in author:
-    authordecls.add(calcRules(styledNode, rule))
-  return RuleListMap(
-    ua: uadecls,
-    user: userdecls,
-    author: authordecls
-  )
-
-proc applyStyle(parent, styledNode: StyledNode; map: RuleListMap;
-    window: Window) =
-  let parentComputed = if parent != nil:
-    parent.computed
-  else:
-    rootProperties()
-  styledNode.applyDeclarations(parentComputed, map, window)
+    map.calcRules(styledNode, rule, coAuthor)
+  if styledNode.node != nil:
+    let style = Element(styledNode.node).cachedStyle
+    if window.styling and style != nil:
+      for decl in style.decls:
+        let vals = parseComputedValues(decl.name, decl.value, window.attrsp[],
+          window.factory)
+        if decl.important:
+          map.rules[peNone][coAuthor].important.add(vals)
+        else:
+          map.rules[peNone][coAuthor].normal.add(vals)
+  return map
 
 type CascadeFrame = object
   styledParent: StyledNode
   child: Node
-  pseudo: PseudoElem
+  pseudo: PseudoElement
   cachedChild: StyledNode
   cachedChildren: seq[StyledNode]
-  parentDeclMap: RuleListMap
+  parentMap: RuleListMap
 
 proc getAuthorSheets(document: Document): seq[CSSStylesheet] =
   var author: seq[CSSStylesheet] = @[]
@@ -350,7 +318,7 @@ proc applyRulesFrameValid(frame: var CascadeFrame): StyledNode =
   return cachedChild
 
 proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
-    author: seq[CSSStylesheet]; declmap: var RuleListMap; window: Window):
+    author: seq[CSSStylesheet]; map: var RuleListMap; window: Window):
     StyledNode =
   var styledChild: StyledNode = nil
   let pseudo = frame.pseudo
@@ -359,13 +327,15 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
   if frame.pseudo != peNone:
     case pseudo
     of peBefore, peAfter:
-      let declmap = frame.parentDeclMap
-      let styledPseudo = pseudo.applyDeclarations(styledParent, declmap)
-      if styledPseudo != nil and styledPseudo.computed{"content"}.len > 0:
-        for content in styledPseudo.computed{"content"}:
-          let child = styledPseudo.newStyledReplacement(content, peNone)
-          styledPseudo.children.add(child)
-        styledParent.children.add(styledPseudo)
+      let map = frame.parentMap
+      if map.hasValues(pseudo):
+        let styledPseudo = styledParent.newStyledElement(pseudo)
+        styledPseudo.applyDeclarations(styledParent.computed, map, nil, pseudo)
+        if styledPseudo.computed{"content"}.len > 0:
+          for content in styledPseudo.computed{"content"}:
+            let child = styledPseudo.newStyledReplacement(content, peNone)
+            styledPseudo.children.add(child)
+          styledParent.children.add(styledPseudo)
     of peInputText:
       let s = HTMLInputElement(styledParent.node).inputString()
       if s.len > 0:
@@ -429,8 +399,8 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
         let element = Element(child)
         styledChild = styledParent.newStyledElement(element)
         styledParent.children.add(styledChild)
-        declmap = styledChild.calcRules(ua, user, author)
-        styledParent.applyStyle(styledChild, declmap, window)
+        map = styledChild.calcRules(ua, user, author, window)
+        styledChild.applyDeclarations(styledParent.computed, map, window)
       elif child of Text:
         let text = Text(child)
         styledChild = styledParent.newStyledText(text)
@@ -439,8 +409,8 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       # Root element
       let element = Element(child)
       styledChild = newStyledElement(element)
-      declmap = styledChild.calcRules(ua, user, author)
-      styledParent.applyStyle(styledChild, declmap, window)
+      map = styledChild.calcRules(ua, user, author, window)
+      styledChild.applyDeclarations(rootProperties(), map, window)
   return styledChild
 
 proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
@@ -461,8 +431,8 @@ proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
   ))
 
 proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
-    styledParent: StyledNode; pseudo: PseudoElem; i: var int;
-    parentDeclMap: RuleListMap = nil) =
+    styledParent: StyledNode; pseudo: PseudoElement; i: var int;
+    parentMap: RuleListMap = nil) =
   # Can't check for cachedChildren.len here, because we assume that we only have
   # cached pseudo elems when the parent is also cached.
   if frame.cachedChild != nil:
@@ -483,25 +453,25 @@ proc stackAppend(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
         styledParent: styledParent,
         pseudo: pseudo,
         cachedChild: cached,
-        parentDeclMap: parentDeclMap
+        parentMap: parentMap
       ))
   else:
     styledStack.add(CascadeFrame(
       styledParent: styledParent,
       pseudo: pseudo,
       cachedChild: nil,
-      parentDeclMap: parentDeclMap
+      parentMap: parentMap
     ))
 
 # Append children to styledChild.
 proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
-    styledChild: StyledNode; parentDeclMap: RuleListMap) =
+    styledChild: StyledNode; parentMap: RuleListMap) =
   # i points to the child currently being inspected.
   var idx = frame.cachedChildren.len - 1
   let element = Element(styledChild.node)
   # reset invalid flag here to avoid a type conversion above
   element.invalid = false
-  styledStack.stackAppend(frame, styledChild, peAfter, idx, parentDeclMap)
+  styledStack.stackAppend(frame, styledChild, peAfter, idx, parentMap)
   case element.tagType
   of TAG_TEXTAREA:
     styledStack.stackAppend(frame, styledChild, peTextareaText, idx)
@@ -520,7 +490,7 @@ proc appendChildren(styledStack: var seq[CascadeFrame]; frame: CascadeFrame;
         styledStack.stackAppend(frame, styledChild, child, idx)
     if element.tagType == TAG_INPUT:
       styledStack.stackAppend(frame, styledChild, peInputText, idx)
-  styledStack.stackAppend(frame, styledChild, peBefore, idx, parentDeclMap)
+  styledStack.stackAppend(frame, styledChild, peBefore, idx, parentMap)
 
 # Builds a StyledNode tree, optionally based on a previously cached version.
 proc applyRules(document: Document; ua, user: CSSStylesheet;
@@ -538,7 +508,7 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
   var toReset: seq[Element] = @[]
   while styledStack.len > 0:
     var frame = styledStack.pop()
-    var declmap: RuleListMap
+    var map: RuleListMap = nil
     let styledParent = frame.styledParent
     let valid = frame.cachedChild != nil and frame.cachedChild.isValid(toReset)
     let styledChild = if valid:
@@ -547,15 +517,14 @@ proc applyRules(document: Document; ua, user: CSSStylesheet;
       # From here on, computed values of this node's children are invalid
       # because of property inheritance.
       frame.cachedChild = nil
-      frame.applyRulesFrameInvalid(ua, user, author, declmap,
-        document.window)
+      frame.applyRulesFrameInvalid(ua, user, author, map, document.window)
     if styledChild != nil:
       if styledParent == nil:
         # Root element
         root = styledChild
       if styledChild.t == stElement and styledChild.node != nil:
         # note: following resets styledChild.node's invalid flag
-        styledStack.appendChildren(frame, styledChild, declmap)
+        styledStack.appendChildren(frame, styledChild, map)
   for element in toReset:
     element.invalidDeps = {}
   return root
