@@ -251,11 +251,10 @@ proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
   if element != nil and window.settings.scripting == smApp:
     element.computed = styledNode.computed
 
-func hasValues(map: RuleListMap; pseudo: PseudoElement): bool =
-  for x in map.rules:
-    for y in x:
-      if y.normal.len > 0 or y.important.len > 0:
-        return true
+func hasValues(rules: RuleList): bool =
+  for x in rules:
+    if x.normal.len > 0 or x.important.len > 0:
+      return true
   return false
 
 func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
@@ -328,7 +327,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
     case pseudo
     of peBefore, peAfter:
       let map = frame.parentMap
-      if map.hasValues(pseudo):
+      if map.rules[pseudo].hasValues():
         let styledPseudo = styledParent.newStyledElement(pseudo)
         styledPseudo.applyDeclarations(styledParent.computed, map, nil, pseudo)
         if styledPseudo.computed{"content"}.len > 0:
