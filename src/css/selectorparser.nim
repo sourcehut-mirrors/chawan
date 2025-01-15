@@ -449,7 +449,7 @@ proc parseAttributeSelector(state: var SelectorParser;
       flag = rfS
   return Selector(
     t: stAttr,
-    attr: state.factory.toAtom(attr.value),
+    attr: state.factory.toAtomLower(attr.value),
     value: value.value,
     rel: SelectorRelation(t: rel, flag: flag)
   )

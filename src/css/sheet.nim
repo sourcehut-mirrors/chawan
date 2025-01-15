@@ -43,7 +43,7 @@ type
     attrs: ptr WindowAttributes
 
 type SelectorHashes = object
-  tag: CAtom
+  tags: seq[CAtom]
   id: CAtom
   class: CAtom
   attr: CAtom
@@ -74,7 +74,7 @@ proc getSelectorIds(hashes: var SelectorHashes; cxsel: ComplexSelector) =
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
   case sel.t
   of stType:
-    hashes.tag = sel.tag
+    hashes.tags.add(sel.tag)
     return true
   of stClass:
     hashes.class = sel.class
@@ -84,6 +84,7 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
     return true
   of stAttr:
     hashes.attr = sel.attr
+    return true
   of stPseudoElement, stUniversal:
     return false
   of stPseudoClass:
@@ -96,7 +97,6 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
     # 4.   store hashable values of selector x that aren't stored yet
     # 5.   for every hashable value of selector 1 that doesn't match selector x
     # 6.     cancel hashable value
-    var cancelTag = false
     var cancelId = false
     var cancelClass = false
     var cancelAttr = false
@@ -107,10 +107,7 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
     while i < sel.pseudo.fsels.len:
       var nhashes = SelectorHashes()
       nhashes.getSelectorIds(sel.pseudo.fsels[i])
-      if hashes.tag == CAtomNull:
-        hashes.tag = nhashes.tag
-      elif nhashes.tag != CAtomNull and nhashes.tag != hashes.tag:
-        cancelTag = true
+      hashes.tags.add(nhashes.tags)
       if hashes.id == CAtomNull:
         hashes.id = nhashes.id
       elif nhashes.id != CAtomNull and nhashes.id != hashes.id:
@@ -124,26 +121,25 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       elif nhashes.attr != CAtomNull and nhashes.attr != hashes.attr:
         cancelAttr = true
       inc i
-    if cancelTag:
-      hashes.tag = CAtomNull
     if cancelId:
       hashes.id = CAtomNull
     if cancelClass:
       hashes.class = CAtomNull
     if cancelAttr:
       hashes.attr = CAtomNull
-    return hashes.tag != CAtomNull or hashes.id != CAtomNull or
-      hashes.class != CAtomNull
+    return hashes.tags.len > 0 or hashes.id != CAtomNull or
+      hashes.class != CAtomNull or hashes.attr != CAtomNull
 
 proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
   var hashes = SelectorHashes()
   for cxsel in rule.sels:
     hashes.getSelectorIds(cxsel)
-    if hashes.tag != CAtomNull:
-      sheet.tagTable.withValue(hashes.tag, p):
-        p[].add(rule)
-      do:
-        sheet.tagTable[hashes.tag] = @[rule]
+    if hashes.tags.len > 0:
+      for tag in hashes.tags:
+        sheet.tagTable.withValue(tag, p):
+          p[].add(rule)
+        do:
+          sheet.tagTable[tag] = @[rule]
     elif hashes.id != CAtomNull:
       sheet.idTable.withValue(hashes.id, p):
         p[].add(rule)
@@ -154,6 +150,11 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
         p[].add(rule)
       do:
         sheet.classTable[hashes.class] = @[rule]
+    elif hashes.attr != CAtomNull:
+      sheet.attrTable.withValue(hashes.attr, p):
+        p[].add(rule)
+      do:
+        sheet.attrTable[hashes.attr] = @[rule]
     else:
       sheet.generalList.add(rule)
 
