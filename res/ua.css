@@ -125,7 +125,7 @@ sub::before { content: '~' }
 :is(ol, ul, menu, dir) ul { list-style-type: circle }
 :is(ol, ul, menu, dir) :is(ol, ul, menu, dir) ul { list-style-type: square }
 
-dl { margin-bottom: 1em }
+dl { margin: 1em 0 }
 :is(ul, ol, dir, menu, dl) dl { margin-bottom: unset }
 dt { font-weight: bold }
 dd { margin-left: 4ch }
