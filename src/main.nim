@@ -89,7 +89,7 @@ type ParamParseContext = object
   i: int
   next: string
   configPath: Option[string]
-  contentType: Option[string]
+  contentType: string
   charset: Charset
   dump: bool
   visual: bool
@@ -115,7 +115,7 @@ proc parseVisual(ctx: var ParamParseContext) =
   ctx.visual = true
 
 proc parseContentType(ctx: var ParamParseContext) =
-  ctx.contentType = some(ctx.getNext())
+  ctx.contentType = ctx.getNext()
 
 proc getCharset(ctx: var ParamParseContext): Charset =
   let s = ctx.getNext()

@@ -149,7 +149,7 @@ type
     request*: Request # source request
     # if set, this *overrides* any content type received from the network. (this
     # is because it stores the content type from the -T flag.)
-    contentType* {.jsget.}: Option[string]
+    contentType* {.jsget.}: string
     pos: CursorPosition
     bpos: seq[CursorPosition]
     highlights: seq[Highlight]
@@ -165,8 +165,6 @@ type
     # can clear ourselves on discard
     #TODO this is a mess :(
     replaceRef*: Container
-    code*: int # note: this is not the status code, but the ConnectErrorCode.
-    errorMessage*: string
     retry*: seq[URL]
     hlon*: bool # highlight on?
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
@@ -203,7 +201,7 @@ proc triggerEvent(container: Container; t: ContainerEventType)
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
     title: string; redirectDepth: int; flags: set[ContainerFlag];
-    contentType: Option[string]; charsetStack: seq[Charset]; cacheId: int;
+    contentType: string; charsetStack: seq[Charset]; cacheId: int;
     mainConfig: Config): Container =
   return Container(
     url: url,
@@ -1521,7 +1519,6 @@ proc onload(container: Container; res: int) =
 # Note: pager must call this before checkMailcap.
 proc applyResponse*(container: Container; response: Response;
     mimeTypes: MimeTypes) =
-  container.code = response.res
   # accept cookies
   let cookieJar = container.loaderConfig.cookieJar
   if cookieJar != nil and "Set-Cookie" in response.headers.table:
@@ -1535,12 +1532,12 @@ proc applyResponse*(container: Container; response: Response;
   else:
     container.loaderConfig.referrerPolicy = rpNoReferrer
   # setup content type; note that isSome means an override so we skip it
-  if container.contentType.isNone:
+  if container.contentType == "":
     var contentType = response.getContentType()
     if contentType == "application/octet-stream":
       contentType = mimeTypes.guessContentType(container.url.pathname,
         "text/plain")
-    container.contentType = some(contentType)
+    container.contentType = move(contentType)
   # setup charsets:
   # * override charset
   # * network charset
@@ -1743,14 +1740,13 @@ proc onreadline(container: Container; w: Slice[int];
 
 # Synchronously read all lines in the buffer.
 proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =
-  if container.code == 0:
-    # load succeded
-    let w = 0 .. 23
-    container.iface.getLines(w).then(proc(res: GetLinesResult) =
-      container.onreadline(w, handle, res))
-    while container.iface.hasPromises:
-      # fulfill all promises
-      container.handleCommand()
+  # load succeded
+  let w = 0 .. 23
+  container.iface.getLines(w).then(proc(res: GetLinesResult) =
+    container.onreadline(w, handle, res))
+  while container.iface.hasPromises:
+    # fulfill all promises
+    container.handleCommand()
 
 proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor) =
   let bgcolor = container.bgcolor

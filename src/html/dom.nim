@@ -3886,7 +3886,7 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL; applies: bool) =
   ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
     if res.isSome:
       let res = res.get
-      if res.getContentType() == "text/css":
+      if res.getContentType().equalsIgnoreCase("text/css"):
         return res.text()
       res.close()
     return newResolvedPromise(JSResult[string].err(nil))

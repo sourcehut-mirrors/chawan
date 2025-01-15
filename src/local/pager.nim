@@ -209,8 +209,8 @@ proc handleEvents(pager: Pager)
 proc handleRead(pager: Pager; fd: int)
 proc headlessLoop(pager: Pager)
 proc inputLoop(pager: Pager)
-proc loadURL(pager: Pager; url: string; ctype = none(string);
-  cs = CHARSET_UNKNOWN; history = true)
+proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
+  history = true)
 proc openMenu(pager: Pager; x = -1; y = -1)
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   title: string)
@@ -814,7 +814,7 @@ proc input(pager: Pager): EmptyPromise =
     p = newResolvedPromise()
   return p
 
-proc run*(pager: Pager; pages: openArray[string]; contentType: Option[string];
+proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     cs: Charset; dump, history: bool) =
   var istream: PosixStream = nil
   var dump = dump
@@ -850,12 +850,12 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: Option[string];
       module = ismodule)
   if not stdin.isatty():
     # stdin may very well receive ANSI text
-    let contentType = contentType.get("text/x-ansi")
+    let contentType = if contentType != "": contentType else: "text/x-ansi"
     let ps = newPosixStream(STDIN_FILENO)
     pager.readPipe(contentType, cs, ps, "*stdin*")
   let history = not dump and history # we don't want history for dump either
   for page in pages:
-    pager.loadURL(page, ctype = contentType, cs = cs, history = history)
+    pager.loadURL(page, contentType, cs, history)
   pager.showAlerts()
   pager.acceptBuffers()
   if not dump:
@@ -1302,8 +1302,8 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; title = "";
     redirectDepth = 0; flags = {cfCanReinterpret, cfUserRequested};
-    contentType = none(string); charsetStack: seq[Charset] = @[];
-    url = request.url): Container =
+    contentType = ""; charsetStack: seq[Charset] = @[]; url = request.url):
+    Container =
   let stream = pager.loader.startRequest(request, loaderConfig)
   pager.loader.registerFun(stream.fd)
   let cacheId = if request.url.scheme == "cache":
@@ -1340,7 +1340,7 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     container.config,
     container.loaderConfig,
     newRequest(url),
-    contentType = some(contentType),
+    contentType = contentType,
     charsetStack = container.charsetStack,
     url = container.url
   )
@@ -1873,7 +1873,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
-    contentType = none(string); cs = CHARSET_UNKNOWN; replace: Container = nil;
+    contentType = ""; cs = CHARSET_UNKNOWN; replace: Container = nil;
     replaceBackup: Container = nil; redirectDepth = 0;
     referrer: Container = nil; save = false; history = true;
     url: URL = nil): Container =
@@ -1967,8 +1967,8 @@ proc omniRewrite(pager: Pager; s: string): string =
 # * file://$PWD/<file>
 # * https://<url>
 # So we attempt to load both, and see what works.
-proc loadURL(pager: Pager; url: string; ctype = none(string);
-    cs = CHARSET_UNKNOWN; history = true) =
+proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
+    history = true) =
   let url0 = pager.omniRewrite(url)
   let url = expandPath(url0)
   if url.len == 0:
@@ -1979,7 +1979,7 @@ proc loadURL(pager: Pager; url: string; ctype = none(string);
       some(pager.container.url)
     else:
       none(URL)
-    discard pager.gotoURL(newRequest(firstparse.get), prev, ctype, cs,
+    discard pager.gotoURL(newRequest(firstparse.get), prev, contentType, cs,
       history = history)
     return
   var urls: seq[URL] = @[]
@@ -1997,8 +1997,8 @@ proc loadURL(pager: Pager; url: string; ctype = none(string);
   if urls.len == 0:
     pager.alert("Invalid URL " & url)
   else:
-    let container = pager.gotoURL(newRequest(urls.pop()), contentType = ctype,
-      cs = cs, history = history)
+    let container = pager.gotoURL(newRequest(urls.pop()),
+      contentType = contentType, cs = cs, history = history)
     if container != nil:
       container.retry = urls
 
@@ -2024,7 +2024,7 @@ proc readPipe0(pager: Pager; contentType: string; cs: Charset;
     newRequest(url),
     title = title,
     flags = flags,
-    contentType = some(contentType)
+    contentType = contentType
   )
 
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
@@ -2291,7 +2291,7 @@ proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
       ?pager.jsctx.fromJS(v, s)
       url = ?newURL(s)
     request = newRequest(url)
-  discard pager.gotoURL(request, contentType = t.contentType,
+  discard pager.gotoURL(request, contentType = t.contentType.get(""),
     replace = t.replace.get(nil), save = t.save, history = t.history)
   return ok()
 
@@ -2327,7 +2327,10 @@ proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
 proc externFilterSource(pager: Pager; cmd: string; c = none(Container);
     contentType = none(string)) {.jsfunc.} =
   let fromc = c.get(pager.container)
-  let fallback = pager.container.contentType.get("text/plain")
+  let fallback = if fromc.contentType != "":
+    fromc.contentType
+  else:
+    "text/plain"
   let contentType = contentType.get(fallback)
   let container = pager.newContainerFrom(fromc, contentType)
   pager.addContainer(container)
@@ -2742,7 +2745,7 @@ proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int):
 proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
     contentType: string; i: int; response: Response; sx: int) =
   var sx = sx
-  let msg = pager.askMailcapMsg(container.contentType.get, i, sx)
+  let msg = pager.askMailcapMsg(container.contentType.untilLower(';'), i, sx)
   pager.askChar(msg).then(proc(s: string) =
     if s.len != 1:
       pager.askMailcap(container, ostream, contentType, i, response, sx)
@@ -2757,7 +2760,7 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
       # probably it should run use a custom reader that runs through
       # auto.mailcap clearing any other entry. but maybe it's better to
       # add a full blown editor like w3m has at that point...
-      var s = container.contentType.get & ';'
+      var s = container.contentType.untilLower(';') & ';'
       if i != -1:
         s = $pager.config.external.mailcap[i]
       pager.setLineEdit(lmMailcap, s)
@@ -2776,7 +2779,7 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
       ), response)
       if c == 'T':
         pager.saveEntry(MailcapEntry(
-          t: container.contentType.get,
+          t: container.contentType.untilLower(';'),
           cmd: "cat",
           flags: {mfCopiousoutput}
         ))
@@ -2788,7 +2791,7 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
       ), response)
       if c == 'S':
         pager.saveEntry(MailcapEntry(
-          t: container.contentType.get,
+          t: container.contentType.untilLower(';'),
           cmd: "cat",
           flags: {mfSaveoutput}
         ))
@@ -2823,12 +2826,9 @@ proc connected(pager: Pager; container: Container; response: Response) =
   if cfHistory in container.flags:
     pager.lineHist[lmLocation].add($container.url)
   # contentType must have been set by applyResponse.
-  let shortContentType = container.contentType.get
-  var contentType = if "Content-Type" in response.headers:
-    response.headers["Content-Type"].toValidUTF8()
-  else:
-    shortContentType
-  if contentType.startsWithIgnoreCase("text/"):
+  let shortContentType = container.contentType.until(';')
+  var contentType = container.contentType
+  if shortContentType.startsWithIgnoreCase("text/"):
     # prepare content type for %{charset}
     contentType.setContentTypeAttr("charset", $container.charset)
   if container.filter != nil:
@@ -2854,7 +2854,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
     else:
       let i = pager.config.external.mailcap.findMailcapEntry(contentType, "",
         container.url)
-      if i == -1 and container.contentType.get.isTextType():
+      if i == -1 and shortContentType.isTextType():
         pager.connected2(container, MailcapResult(
           flags: {cmfConnect, cmfFound},
           ostream: istream
@@ -3004,21 +3004,17 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
       pager.alert("Blocked cross-scheme POST: " & $url)
       return
     #TODO this is horrible UX, async actions shouldn't block input
-    let contentType = if event.contentType == "":
-      none(string)
-    else:
-      some(event.contentType)
     if pager.container != container or
         not event.save and not container.isHoverURL(url):
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
         if x:
           discard pager.gotoURL(event.request, some(container.url),
-            contentType = contentType, referrer = pager.container,
+            contentType = event.contentType, referrer = pager.container,
             save = event.save)
       )
     else:
       discard pager.gotoURL(event.request, some(container.url),
-        contentType = contentType, referrer = pager.container,
+        contentType = event.contentType, referrer = pager.container,
         save = event.save, url = event.url)
   of cetStatus:
     if pager.container == container:

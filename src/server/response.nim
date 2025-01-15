@@ -103,13 +103,16 @@ func getCharset*(this: Response; fallback: Charset): Charset =
       return cs
   return fallback
 
-func getContentType*(this: Response; fallback = "application/octet-stream"):
-    string =
+func getLongContentType*(this: Response; fallback: string): string =
   this.headers.table.withValue("Content-Type", p):
-    return p[][0].untilLower(';').strip()
+    return p[][0].toValidUTF8().toLowerAscii().strip()
   # also use DefaultGuess for container, so that local mime.types cannot
   # override buffer mime.types
   return DefaultGuess.guessContentType(this.url.pathname, fallback)
+
+func getContentType*(this: Response; fallback = "application/octet-stream"):
+    string =
+  return this.getLongContentType(fallback).until(';')
 
 func getContentLength*(this: Response): int64 =
   this.headers.table.withValue("Content-Length", p):
