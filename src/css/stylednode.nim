@@ -45,12 +45,11 @@ type
     items: seq[DependencyInfoItem]
 
   StyledNode* = ref object
-    parent*: StyledNode
-    node*: Node
+    element*: Element
     pseudo*: PseudoElement
     case t*: StyledType
     of stText:
-      discard
+      text*: CharacterData
     of stElement:
       computed*: CSSValues
       children*: seq[StyledNode]
@@ -61,7 +60,7 @@ type
       content*: CSSContent
 
 template textData*(styledNode: StyledNode): string =
-  CharacterData(styledNode.node).data
+  styledNode.text.data
 
 when defined(debug):
   func `$`*(node: StyledNode): string =
@@ -71,22 +70,21 @@ when defined(debug):
     of stText:
       return "#text " & node.textData
     of stElement:
-      if node.node != nil:
-        return $node.node
-      return $node.pseudo
+      if node.pseudo != peNone:
+        return "#" & $node.pseudo & "::" & $node.element
+      return $node.element
     of stReplacement:
       return "#replacement"
 
 proc isValid*(styledNode: StyledNode; toReset: var seq[Element]): bool =
   if styledNode.t in {stText, stReplacement}:
     return true
-  if styledNode.node != nil:
-    let element = Element(styledNode.node)
+  # pseudo elements do not have selector dependencies
+  if styledNode.pseudo == peNone:
+    let element = styledNode.element
     if element.invalid:
       toReset.add(element)
       return false
-    # pseudo elements do not have selector dependencies, so we can skip
-    # this if node is nil.
     for it in styledNode.depends.items:
       if it.t in it.element.invalidDeps:
         toReset.add(it.element)
@@ -101,31 +99,27 @@ proc merge*(a: var DependencyInfo; b: DependencyInfo) =
     if it notin a.items:
       a.items.add(it)
 
-func newStyledElement*(parent: StyledNode; element: Element): StyledNode =
-  return StyledNode(t: stElement, node: element, parent: parent)
-
-# Root
 func newStyledElement*(element: Element): StyledNode =
-  return StyledNode(t: stElement, node: element)
+  return StyledNode(t: stElement, element: element)
 
 func newStyledElement*(parent: StyledNode; pseudo: PseudoElement): StyledNode =
   return StyledNode(
     t: stElement,
     pseudo: pseudo,
-    parent: parent
+    element: parent.element
   )
 
 func newStyledText*(parent: StyledNode; text: Text): StyledNode =
-  return StyledNode(t: stText, node: text, parent: parent)
+  return StyledNode(t: stText, text: text, element: parent.element)
 
-func newStyledText*(text: string): StyledNode =
-  return StyledNode(t: stText, node: CharacterData(data: text))
+func newStyledText*(text: sink string): StyledNode =
+  return StyledNode(t: stText, text: CharacterData(data: text))
 
-func newStyledReplacement*(parent: StyledNode; content: CSSContent;
+func newStyledReplacement*(parent: StyledNode; content: sink CSSContent;
     pseudo: PseudoElement): StyledNode =
   return StyledNode(
     t: stReplacement,
-    parent: parent,
+    element: parent.element,
     content: content,
     pseudo: pseudo
   )
