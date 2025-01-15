@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-troubleshooting(5) | Troubleshooting Chawan
+% cha-troubleshooting(7) | Troubleshooting Chawan
 MANOFF -->
 
 # Troubleshooting Chawan

@@ -1,3 +1,4 @@
+# Public variables.
 NIM ?= nim
 NIMC ?= $(NIM) c
 OBJDIR ?= .obj
@@ -7,16 +8,25 @@ PREFIX ?= /usr/local
 MANPREFIX ?= $(PREFIX)/share/man
 MANPREFIX1 ?= $(MANPREFIX)/man1
 MANPREFIX5 ?= $(MANPREFIX)/man5
+MANPREFIX7 ?= $(MANPREFIX)/man7
 TARGET ?= release
-# This must be single-quoted, because it is not a real shell substitution.
+
+# Note: this is not a real shell substitution.
 # The default setting is at {the binary's path}/../libexec/chawan.
 # You may override it with any path if your system does not have a libexec
-# directory, but make sure to surround it with quotes if it contains spaces.
-# (This way, the cha binary can be directly executed without installation.)
-LIBEXECDIR ?= '$$CHA_BIN_DIR/../libexec/chawan'
+# directory.
+# (This way, `cha' can be directly executed without installation.)
+LIBEXECDIR ?= \$$CHA_BIN_DIR/../libexec/chawan
+
+# I won't take this from the environment for obvious reasons. Please override it
+# in the make command if you must, or (preferably) fix your environment so it's
+# not needed.
+DANGER_DISABLE_SANDBOX = 0
+
+# Private variables.
 # If overridden, take libexecdir that was specified.
 # Otherwise, just install to libexec/chawan.
-ifeq ($(LIBEXECDIR),'$$CHA_BIN_DIR/../libexec/chawan')
+ifeq ($(LIBEXECDIR),\$$CHA_BIN_DIR/../libexec/chawan)
 LIBEXECDIR_CHAWAN = "$(DESTDIR)$(PREFIX)/libexec/chawan"
 else
 LIBEXECDIR_CHAWAN = $(LIBEXECDIR)
@@ -28,11 +38,6 @@ OUTDIR_BIN = $(OUTDIR_TARGET)/bin
 OUTDIR_LIBEXEC = $(OUTDIR_TARGET)/libexec/chawan
 OUTDIR_CGI_BIN = $(OUTDIR_LIBEXEC)/cgi-bin
 OUTDIR_MAN = $(OUTDIR_TARGET)/share/man
-
-# I won't take this from the environment for obvious reasons. Please override it
-# in the make command if you must, or (preferably) fix your environment so it's
-# not needed.
-DANGER_DISABLE_SANDBOX = 0
 
 # Nim compiler flags
 ifeq ($(TARGET),debug)
@@ -171,6 +176,9 @@ $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 doc/cha-%.5: $(OBJDIR)/man/cha-%.md
 	pandoc --standalone --to man $< -o $@
 
+doc/cha-%.7: $(OBJDIR)/man/cha-%.md
+	pandoc --standalone --to man $< -o $@
+
 .PHONY: clean
 clean:
 	rm -rf "$(OBJDIR)/$(TARGET)"
@@ -182,10 +190,10 @@ distclean: clean
 
 manpages1 = cha.1 mancha.1
 manpages5 = cha-config.5 cha-mailcap.5 cha-mime.types.5 cha-localcgi.5 \
-	cha-urimethodmap.5 cha-protocols.5 cha-api.5 cha-troubleshooting.5 \
-	cha-image.5
+	cha-urimethodmap.5
+manpages7 = cha-protocols.7 cha-api.7 cha-troubleshooting.7 cha-image.7 cha-css.7
 
-manpages = $(manpages1) $(manpages5)
+manpages = $(manpages1) $(manpages5) $(manpages7)
 
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
@@ -214,6 +222,8 @@ install:
 	for f in $(manpages1); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX1)"; done
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
 	for f in $(manpages5); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX5)"; done
+	mkdir -p "$(DESTDIR)$(MANPREFIX7)"
+	for f in $(manpages7); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX7)"; done
 
 .PHONY: uninstall
 uninstall:
@@ -235,7 +245,10 @@ uninstall:
 # urldec is just a symlink to urlenc
 	rm -f $(LIBEXECDIR_CHAWAN)/urldec
 	rmdir $(LIBEXECDIR_CHAWAN) || true
+	for f in $(manpages7); do rm -f "$(DESTDIR)$(MANPREFIX7)/$$f"; done
 	for f in $(manpages5); do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
+# moved to section 7
+	for f in cha-protocols.7 cha-api.7 cha-troubleshooting.7 cha-image.7; do rm -f "$(DESTDIR)$(MANPREFIX5)/$ff"; done
 	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
 
 .PHONY: submodule

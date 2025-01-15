@@ -37,9 +37,7 @@ also override them by setting an environment variable with the same name.
 * `CURLLIBNAME`: Change the name of the libcurl shared object file.
 * `LIBEXECDIR`: Path to your libexec directory; by default, it is
   relative to wherever the binary is placed when it is executed. (i.e.
-  after installation it would resolve to `/usr/local/libexec`.)<BR>
-  WARNING: Unlike other path names, this must be quoted if your path contains
-  spaces.
+  after installation it would resolve to `/usr/local/libexec`.)
 * `DANGER_DISABLE_SANDBOX`: Set it to 1 to forcibly disable syscall
   filtering. Note that this is *not* taken from the environment
   variables, and you must use it like `make DANGER_DISABLE_SANDBOX=1`.  

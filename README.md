@@ -62,20 +62,21 @@ Currently implemented features are:
 * multi-processing, incremental loading of documents
 * multi-charset, double-width aware text display (but no bi-di yet)
 * HTML5 support, forms, cookies
-* CSS-based layout engine: supports flow layout, table layout, flexbox layout
+* [CSS](doc/css.md)-based layout engine: supports flow layout, table
+  layout, flexbox layout
 * user-programmable keybindings (defaults are vi(m)-like)
 * basic JavaScript support in documents (disabled by default for security
   reasons)
+* inline image support with sixel/kitty protocols (disabled by default;
+  see [doc/image.md](doc/image.md) on how to enable)
 * supports several [protocols](doc/protocols.md): HTTP(S), FTP, Gopher, Gemini,
   Finger, etc.
 * [user-defined](doc/urimethodmap.md) protocols and
   [file formats](doc/mailcap.md)
 * markdown viewer, man page viewer
-* sixel/kitty image support (disabled by default; see
-  [doc/image.md](doc/image.md) on how to enable)
 * mouse support
-* syscall sandboxing on FreeBSD, OpenBSD and Linux (through capsicum, pledge
-  and seccomp-bpf)
+* syscall filter based sandboxing on FreeBSD, OpenBSD and Linux (through
+  capsicum, pledge and seccomp-bpf)
 * bookmarks
 
 ...with a lot more [planned](todo).
