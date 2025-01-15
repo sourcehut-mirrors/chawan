@@ -28,6 +28,7 @@ const halfFullMap = (func(): seq[tuple[half, full1, full2: uint32]] =
     var full2 = 0u32
     if i < line.len:
       assert line[i] == '\t'
+      inc i
       full2 = line.nextUTF8(i)
     result.add((half, full1, full2))
 )()
