@@ -24,6 +24,8 @@ type
   RuleListEntry = object
     normal: seq[CSSComputedEntry]
     important: seq[CSSComputedEntry]
+    normalVars: seq[CSSVariable]
+    importantVars: seq[CSSVariable]
 
   RuleList = array[CSSOrigin, RuleListEntry]
 
@@ -36,6 +38,16 @@ type
 
   ToSorts = array[PseudoElement, seq[RulePair]]
 
+  InitType = enum
+    itUserAgent, itUser, itOther
+
+  InitMap = array[CSSPropertyType, set[InitType]]
+
+# Forward declarations
+proc applyValue(vals: CSSValues; entry: CSSComputedEntry;
+  parentComputed, previousOrigin: CSSValues; initMap: var InitMap;
+  initType: InitType; nextInitType: set[InitType]; window: Window)
+
 proc calcRule(tosorts: var ToSorts; element: Element;
     depends: var DependencyInfo; rule: CSSRuleDef) =
   for sel in rule.sels:
@@ -46,9 +58,14 @@ proc calcRule(tosorts: var ToSorts; element: Element;
       else:
         tosorts[sel.pseudo].add((sel.specificity, rule))
 
-func calcRules0(map: RuleListMap; styledNode: StyledNode; sheet: CSSStylesheet;
+proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
+  entry.normal.add(rule.normalVals)
+  entry.important.add(rule.importantVals)
+  entry.normalVars.add(rule.normalVars)
+  entry.importantVars.add(rule.importantVars)
+
+proc calcRules0(map: RuleListMap; styledNode: StyledNode; sheet: CSSStylesheet;
     origin: CSSOrigin) =
-  var tosorts = ToSorts.default
   let element = styledNode.element
   var rules: seq[CSSRuleDef] = @[]
   sheet.tagTable.withValue(element.localName, v):
@@ -64,29 +81,95 @@ func calcRules0(map: RuleListMap; styledNode: StyledNode; sheet: CSSStylesheet;
       rules.add(v[])
   for rule in sheet.generalList:
     rules.add(rule)
+  var tosorts = ToSorts.default
   for rule in rules:
     tosorts.calcRule(element, styledNode.depends, rule)
   for pseudo, it in tosorts.mpairs:
-    it.sort(proc(x, y: (int, CSSRuleDef)): int =
-      let n = cmp(x[0], y[0])
+    it.sort(proc(x, y: RulePair): int =
+      let n = cmp(x.specificity, y.specificity)
       if n != 0:
         return n
-      return cmp(x[1].idx, y[1].idx), order = Ascending)
+      return cmp(x.rule.idx, y.rule.idx), order = Ascending)
     for item in it:
-      map.rules[pseudo][origin].normal.add(item[1].normalVals)
-      map.rules[pseudo][origin].important.add(item[1].importantVals)
+      map.rules[pseudo][origin].add(item.rule)
+
+proc findVariable(computed: CSSValues; varName: CAtom): CSSVariable =
+  var vars = computed.vars
+  while vars != nil:
+    let cvar = vars.table.getOrDefault(varName)
+    if cvar != nil:
+      return cvar
+    vars = vars.parent
+  return nil
+
+proc applyVariable(vals: CSSValues; t: CSSPropertyType; varName: CAtom;
+    fallback: ref CSSComputedEntry; parentComputed, previousOrigin: CSSValues;
+    initMap: var InitMap; initType: InitType; nextInitType: set[InitType];
+    window: Window) =
+  let v = t.valueType
+  let cvar = vals.findVariable(varName)
+  if cvar == nil:
+    if fallback != nil:
+      vals.applyValue(fallback[], parentComputed, previousOrigin, initMap,
+        initType, nextInitType, window)
+    return
+  for (iv, entry) in cvar.resolved.mitems:
+    if iv == v:
+      entry.t = t # must override, same var can be used for different props
+      vals.applyValue(entry, parentComputed, previousOrigin, initMap, initType,
+        nextInitType, window)
+      return
+  var entries: seq[CSSComputedEntry] = @[]
+  assert window != nil
+  if entries.parseComputedValues($t, cvar.cvals, window.attrsp[],
+      window.factory).isSome:
+    if entries[0].et != ceVar:
+      cvar.resolved.add((v, entries[0]))
+      vals.applyValue(entries[0], parentComputed, previousOrigin, initMap,
+        initType, nextInitType, window)
+
+proc applyGlobal(vals: CSSValues; t: CSSPropertyType; global: CSSGlobalType;
+    parentComputed, previousOrigin: CSSValues; initMap: InitMap;
+    initType: InitType) =
+  case global
+  of cgtInherit:
+    vals.initialOrCopyFrom(parentComputed, t)
+  of cgtInitial:
+    vals.setInitial(t)
+  of cgtUnset:
+    vals.initialOrInheritFrom(parentComputed, t)
+  of cgtRevert:
+    if previousOrigin != nil and initType in initMap[t]:
+      vals.copyFrom(previousOrigin, t)
+    else:
+      vals.initialOrInheritFrom(parentComputed, t)
+
+proc applyValue(vals: CSSValues; entry: CSSComputedEntry;
+    parentComputed, previousOrigin: CSSValues; initMap: var InitMap;
+    initType: InitType; nextInitType: set[InitType]; window: Window) =
+  case entry.et
+  of ceBit: vals.bits[entry.t].dummy = entry.bit
+  of ceWord: vals.words[entry.t] = entry.word
+  of ceObject: vals.objs[entry.t] = entry.obj
+  of ceGlobal:
+    vals.applyGlobal(entry.t, entry.global, parentComputed, previousOrigin,
+      initMap, initType)
+  of ceVar:
+    vals.applyVariable(entry.t, entry.cvar, entry.fallback, parentComputed,
+      previousOrigin, initMap, initType, nextInitType, window)
+    return # maybe it applies, maybe it doesn't...
+  initMap[entry.t] = initMap[entry.t] + nextInitType
 
 proc applyPresHints(computed: CSSValues; element: Element;
-    attrs: WindowAttributes; initMap: var InitMap) =
+    attrs: WindowAttributes; initMap: var InitMap, window: Window) =
   template set_cv(t, x, b: untyped) =
-    computed.applyValue(makeEntry(t, CSSValueWord(x: b)), nil, nil, nil,
-      initMap, itUserAgent)
-    initMap[t].incl(itUser)
+    computed.applyValue(makeEntry(t, CSSValueWord(x: b)), nil, nil, initMap,
+      itUserAgent, {itUser}, window)
   template set_cv_new(t, x, b: untyped) =
     const v = valueType(t)
     let val = CSSValue(v: v, x: b)
-    computed.applyValue(makeEntry(t, val), nil, nil, nil, initMap, itUserAgent)
-    initMap[t].incl(itUser)
+    computed.applyValue(makeEntry(t, val), nil, nil, initMap, itUserAgent,
+      {itUser}, window)
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
     if s.isSome:
@@ -140,8 +223,8 @@ proc applyPresHints(computed: CSSValues; element: Element;
   template set_bgcolor_is_canvas =
     let t = cptBgcolorIsCanvas
     let val = CSSValueBit(bgcolorIsCanvas: true)
-    computed.applyValue(makeEntry(t, val), nil, nil, nil, initMap, itUserAgent)
-    initMap[t].incl(itUser)
+    computed.applyValue(makeEntry(t, val), nil, nil, initMap, itUserAgent,
+      {itUser}, window)
   template map_cellspacing =
     let s = element.attrul(satCellspacing)
     if s.isSome:
@@ -196,39 +279,60 @@ proc applyPresHints(computed: CSSValues; element: Element;
       set_cv cptHeight, length, resolveLength(cuEm, float32(size), attrs)
   else: discard
 
-func applyDeclarations0(rules: RuleList; parent: CSSValues; element: Element;
+proc applyDeclarations0(rules: RuleList; parent, element: Element;
     window: Window): CSSValues =
   result = CSSValues()
+  var parentComputed: CSSValues = nil
+  var parentVars: CSSVariableMap = nil
+  if parent != nil:
+    parentComputed = parent.computed
+    parentVars = parentComputed.vars
+  for origin in CSSOrigin:
+    if rules[origin].importantVars.len > 0:
+      if result.vars == nil:
+        result.vars = newCSSVariableMap(parentVars)
+      for i in countdown(rules[origin].importantVars.high, 0):
+        let cvar = rules[origin].importantVars[i]
+        result.vars.putIfAbsent(cvar.name, cvar)
+  for origin in countdown(CSSOrigin.high, CSSOrigin.low):
+    if rules[origin].normalVars.len > 0:
+      if result.vars == nil:
+        result.vars = newCSSVariableMap(parentVars)
+      for i in countdown(rules[origin].normalVars.high, 0):
+        let cvar = rules[origin].normalVars[i]
+        result.vars.putIfAbsent(cvar.name, cvar)
+  if result.vars == nil:
+    result.vars = parentVars # inherit parent
   var initMap = InitMap.default
   for entry in rules[coUserAgent].normal: # user agent
-    result.applyValue(entry, nil, parent, nil, initMap, itOther)
-    initMap[entry.t] = {itUserAgent, itUser}
+    result.applyValue(entry, parentComputed, nil, initMap, itOther,
+      {itUserAgent, itUser}, window)
   let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
   if element != nil:
-    result.applyPresHints(element, window.attrsp[], initMap)
+    result.applyPresHints(element, window.attrsp[], initMap, window)
   for entry in rules[coUser].normal: # user
-    result.applyValue(entry, nil, parent, uaProperties, initMap, itUserAgent)
-    initMap[entry.t].incl(itUser)
+    result.applyValue(entry, parentComputed, uaProperties, initMap, itUserAgent,
+      {itUser}, window)
   # save user properties so author can use them
   let userProperties = result.copyProperties()
   for entry in rules[coAuthor].normal: # author
-    result.applyValue(entry, nil, parent, userProperties, initMap, itUser)
-    initMap[entry.t].incl(itOther)
+    result.applyValue(entry, parentComputed, userProperties, initMap, itUser,
+      {itOther}, window)
   for entry in rules[coAuthor].important: # author important
-    result.applyValue(entry, nil, parent, userProperties, initMap, itUser)
-    initMap[entry.t].incl(itOther)
+    result.applyValue(entry, parentComputed, userProperties, initMap, itUser,
+      {itOther}, window)
   for entry in rules[coUser].important: # user important
-    result.applyValue(entry, nil, parent, uaProperties, initMap, itUserAgent)
-    initMap[entry.t].incl(itOther)
+    result.applyValue(entry, parentComputed, uaProperties, initMap, itUserAgent,
+      {itOther}, window)
   for entry in rules[coUserAgent].important: # user agent important
-    result.applyValue(entry, nil, parent, nil, initMap, itUserAgent)
-    initMap[entry.t].incl(itOther)
+    result.applyValue(entry, parentComputed, nil, initMap, itUserAgent,
+      {itOther}, window)
   # set defaults
   for t in CSSPropertyType:
     if initMap[t] == {}:
-      result.initialOrInheritFrom(parent, t)
+      result.initialOrInheritFrom(parentComputed, t)
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.
   # Well, neither will I, because the spec breaks on actual websites.
@@ -243,12 +347,12 @@ func applyDeclarations0(rules: RuleList; parent: CSSValues; element: Element;
     result{"overflow-x"} = result{"overflow-x"}.bfcify()
     result{"overflow-y"} = result{"overflow-y"}.bfcify()
 
-proc applyDeclarations(styledNode: StyledNode; parent: CSSValues;
+proc applyDeclarations(styledNode: StyledNode; parent: Element;
     map: RuleListMap; window: Window; pseudo = peNone) =
   let element = if styledNode.pseudo == peNone: styledNode.element else: nil
   styledNode.computed = map.rules[pseudo].applyDeclarations0(parent, element,
     window)
-  if element != nil and window.settings.scripting == smApp:
+  if element != nil:
     element.computed = styledNode.computed
 
 func hasValues(rules: RuleList): bool =
@@ -267,7 +371,7 @@ func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
       res.add(mq.children.applyMediaQuery(window))
   return res
 
-func calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
+proc calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
     author: seq[CSSStylesheet]; window: Window): RuleListMap =
   let map = RuleListMap()
   map.calcRules0(styledNode, ua, coUserAgent)
@@ -278,6 +382,7 @@ func calcRules(styledNode: StyledNode; ua, user: CSSStylesheet;
   let style = styledNode.element.cachedStyle
   if window.styling and style != nil:
     for decl in style.decls:
+      #TODO variables
       let vals = parseComputedValues(decl.name, decl.value, window.attrsp[],
         window.factory)
       if decl.important:
@@ -328,10 +433,10 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       let styledChild = newStyledElement(element)
       map = styledChild.calcRules(ua, user, author, window)
       if styledParent == nil: # root element
-        styledChild.applyDeclarations(rootProperties(), map, window)
+        styledChild.applyDeclarations(nil, map, window)
       else:
         styledParent.children.add(styledChild)
-        styledChild.applyDeclarations(styledParent.computed, map, window)
+        styledChild.applyDeclarations(styledParent.element, map, window)
       return styledChild
     elif child of Text:
       let text = Text(child)
@@ -342,7 +447,7 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
     let map = frame.parentMap
     if map.rules[pseudo].hasValues():
       let styledPseudo = styledParent.newStyledElement(pseudo)
-      styledPseudo.applyDeclarations(styledParent.computed, map, nil, pseudo)
+      styledPseudo.applyDeclarations(styledParent.element, map, window, pseudo)
       if styledPseudo.computed{"content"}.len > 0:
         for content in styledPseudo.computed{"content"}:
           let child = styledPseudo.newStyledReplacement(content, peNone)

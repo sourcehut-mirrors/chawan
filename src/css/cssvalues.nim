@@ -146,8 +146,7 @@ type
     cvtNumber = "number"
     cvtOverflow = "overflow"
 
-  CSSGlobalType = enum
-    cgtNone = ""
+  CSSGlobalType* = enum
     cgtInitial = "initial"
     cgtInherit = "inherit"
     cgtRevert = "revert"
@@ -355,7 +354,7 @@ type
     b*: CSSLength
 
   CSSValueBit* {.union.} = object
-    dummy: uint8
+    dummy*: uint8
     bgcolorIsCanvas*: bool
     borderCollapse*: CSSBorderCollapse
     boxSizing*: CSSBoxSizing
@@ -399,10 +398,17 @@ type
       image*: NetworkBitmap
     else: discard
 
+  # Linked list of variable maps, except empty maps are skipped.
+  # Must not be nil for CSSValues, at least during cascade.
+  CSSVariableMap* = ref object
+    parent*: CSSVariableMap
+    table*: Table[CAtom, CSSVariable]
+
   CSSValues* = ref object
     bits*: array[CSSPropertyType.low..LastBitPropType, CSSValueBit]
     words*: array[FirstWordPropType..LastWordPropType, CSSValueWord]
     objs*: array[FirstObjPropType..CSSPropertyType.high, CSSValue]
+    vars*: CSSVariableMap
 
   CSSOrigin* = enum
     coUserAgent
@@ -410,11 +416,12 @@ type
     coAuthor
 
   CSSEntryType* = enum
-    ceBit, ceObject, ceWord, ceVar
+    ceBit, ceObject, ceWord, ceVar, ceGlobal
 
   CSSComputedEntry* = object
+    # put it here, so ComputedEntry remains 2 words wide
+    cvar*: CAtom
     t*: CSSPropertyType
-    global*: CSSGlobalType
     case et*: CSSEntryType
     of ceBit:
       bit*: uint8
@@ -423,17 +430,21 @@ type
     of ceObject:
       obj*: CSSValue
     of ceVar:
-      cvar*: CAtom
+      fallback*: ref CSSComputedEntry
+    of ceGlobal:
+      global*: CSSGlobalType
 
   CSSVariable* = ref object
     name*: CAtom
+    important*: bool
     cvals*: seq[CSSComponentValue]
-    resolved: seq[tuple[v: CSSValueType; entry: CSSComputedEntry]]
+    resolved*: seq[tuple[v: CSSValueType; entry: CSSComputedEntry]]
 
 static:
   doAssert sizeof(CSSValueBit) == 1
   doAssert sizeof(CSSValueWord) <= 8
   doAssert sizeof(CSSValue()[]) <= 16
+  doAssert sizeof(CSSComputedEntry()) <= 16
 
 const ValueTypes = [
   # bits
@@ -507,6 +518,17 @@ const InheritedProperties = {
 const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
+
+# Forward declarations
+proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
+  entry: var CSSComputedEntry; attrs: WindowAttributes; factory: CAtomFactory):
+  Opt[void]
+
+proc newCSSVariableMap*(parent: CSSVariableMap): CSSVariableMap =
+  return CSSVariableMap(parent: parent)
+
+proc putIfAbsent*(map: CSSVariableMap; name: CAtom; cvar: CSSVariable) =
+  discard map.table.hasKeyOrPut(name, cvar)
 
 type CSSPropertyReprType* = enum
   cprtBit, cprtWord, cprtObject
@@ -904,7 +926,15 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
 func skipBlanks*(vals: openArray[CSSComponentValue]; i: int): int =
   var i = i
   while i < vals.len:
-    if not (vals[i] of CSSToken) or CSSToken(vals[i]).t != cttWhitespace:
+    if vals[i] != cttWhitespace:
+      break
+    inc i
+  return i
+
+func findBlank(vals: openArray[CSSComponentValue]; i: int): int =
+  var i = i
+  while i < vals.len:
+    if vals[i] == cttWhitespace:
       break
     inc i
   return i
@@ -1055,8 +1085,8 @@ func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
     else: discard
   return err()
 
-func cssGlobal(cval: CSSComponentValue): CSSGlobalType =
-  return parseIdent[CSSGlobalType](cval).get(cgtNone)
+func parseGlobal(cval: CSSComponentValue): Opt[CSSGlobalType] =
+  return parseIdent[CSSGlobalType](cval)
 
 func parseQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
   var i = cvals.skipBlanks(0)
@@ -1256,25 +1286,23 @@ func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float32] =
         return ok(tok.nvalue)
   return err()
 
-proc makeEntry*(t: CSSPropertyType; obj: CSSValue; global = cgtNone):
-    CSSComputedEntry =
-  return CSSComputedEntry(et: ceObject, t: t, obj: obj, global: global)
+proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
+  return CSSComputedEntry(et: ceObject, t: t, obj: obj)
 
-proc makeEntry*(t: CSSPropertyType; word: CSSValueWord; global = cgtNone):
-    CSSComputedEntry =
-  return CSSComputedEntry(et: ceWord, t: t, word: word, global: global)
+proc makeEntry*(t: CSSPropertyType; word: CSSValueWord): CSSComputedEntry =
+  return CSSComputedEntry(et: ceWord, t: t, word: word)
 
-proc makeEntry*(t: CSSPropertyType; bit: CSSValueBit; global = cgtNone):
-    CSSComputedEntry =
-  return CSSComputedEntry(et: ceBit, t: t, bit: bit.dummy, global: global)
+proc makeEntry*(t: CSSPropertyType; bit: CSSValueBit): CSSComputedEntry =
+  return CSSComputedEntry(et: ceBit, t: t, bit: bit.dummy)
 
 proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
-  return CSSComputedEntry(et: ceObject, t: t, global: global)
+  return CSSComputedEntry(et: ceGlobal, t: t, global: global)
 
-proc parseVar(fun: CSSFunction; entry: var CSSComputedEntry;
-    attrs: WindowAttributes; factory: CAtomFactory): Opt[void] =
-  let i = fun.value.skipBlanks(0)
-  if i >= fun.value.len or fun.value.skipBlanks(i + 1) < fun.value.len:
+proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
+    entry: var CSSComputedEntry; attrs: WindowAttributes;
+    factory: CAtomFactory): Opt[void] =
+  var i = fun.value.skipBlanks(0)
+  if i >= fun.value.len:
     return err()
   let cval = fun.value[i]
   if not (cval of CSSToken):
@@ -1284,11 +1312,22 @@ proc parseVar(fun: CSSFunction; entry: var CSSComputedEntry;
     return err()
   entry = CSSComputedEntry(
     et: ceVar,
+    t: t,
     cvar: factory.toAtom(tok.value.substr(2))
   )
+  i = fun.value.skipBlanks(i + 1)
+  if i < fun.value.len:
+    if fun.value[i] != cttComma:
+      return err()
+    i = fun.value.skipBlanks(i + 1)
+    if i < fun.value.len:
+      entry.fallback = (ref CSSComputedEntry)()
+      if fun.value.toOpenArray(i, fun.value.high).parseValue(t,
+          entry.fallback[], attrs, factory).isNone:
+        entry.fallback = nil
   return ok()
 
-proc parseValue(cvals: openArray[CSSComponentValue];
+proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
     entry: var CSSComputedEntry; attrs: WindowAttributes;
     factory: CAtomFactory): Opt[void] =
   var i = cvals.skipBlanks(0)
@@ -1301,23 +1340,22 @@ proc parseValue(cvals: openArray[CSSComponentValue];
     if fun.name == cftVar:
       if cvals.skipBlanks(i) < cvals.len:
         return err()
-      return fun.parseVar(entry, attrs, factory)
-  let t = entry.t
+      return fun.parseVariable(t, entry, attrs, factory)
   let v = valueType(t)
   template set_new(prop, val: untyped) =
     entry = CSSComputedEntry(
-      t: entry.t,
+      t: t,
       et: ceObject,
       obj: CSSValue(v: v, prop: val)
     )
   template set_word(prop, val: untyped) =
     entry = CSSComputedEntry(
-      t: entry.t,
+      t: t,
       et: ceWord,
       word: CSSValueWord(prop: val)
     )
   template set_bit(prop, val: untyped) =
-    entry = CSSComputedEntry(t: entry.t, et: ceBit, bit: cast[uint8](val))
+    entry = CSSComputedEntry(t: t, et: ceBit, bit: cast[uint8](val))
   case v
   of cvtDisplay: set_bit display, ?parseIdent[CSSDisplay](cval)
   of cvtWhiteSpace: set_bit whiteSpace, ?parseIdent[CSSWhiteSpace](cval)
@@ -1422,10 +1460,11 @@ proc getDefaultWord(t: CSSPropertyType): CSSValueWord =
   else: return CSSValueWord(dummy: 0)
 
 func lengthShorthand(cvals: openArray[CSSComponentValue];
-    props: array[4, CSSPropertyType]; global: CSSGlobalType;
+    props: array[4, CSSPropertyType]; global: Opt[CSSGlobalType];
     attrs: WindowAttributes; hasAuto = true): Opt[seq[CSSComputedEntry]] =
   var res: seq[CSSComputedEntry] = @[]
-  if global != cgtNone:
+  if global.isSome:
+    let global = global.get
     for t in props:
       res.add(makeEntry(t, global))
     return ok(res)
@@ -1474,25 +1513,20 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
   var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return err()
-  let global = cssGlobal(cvals[i])
+  let global = parseGlobal(cvals[i])
   case shorthandType(name)
   of cstNone:
     let t = propertyType(name)
     if t.isSome:
       let t = t.get
-      if global != cgtNone:
-        res.add(makeEntry(t, global))
+      if global.isSome:
+        res.add(makeEntry(t, global.get))
       else:
-        let et = case t.reprType
-        of cprtBit: ceBit
-        of cprtObject: ceObject
-        of cprtWord: ceWord
-        var entry = CSSComputedEntry(t: t, et: et)
-        ?cvals.parseValue(entry, attrs, factory)
+        var entry = CSSComputedEntry()
+        ?cvals.parseValue(t, entry, attrs, factory)
         res.add(entry)
   of cstAll:
-    if global == cgtNone:
-      return err()
+    let global = ?global
     for t in CSSPropertyType:
       res.add(makeEntry(t, global))
   of cstMargin:
@@ -1501,29 +1535,42 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     res.add(?lengthShorthand(cvals, PropertyPaddingSpec, global, attrs,
       hasAuto = false))
   of cstBackground:
-    var bgcolorval = getDefaultWord(cptBackgroundColor)
-    var bgimageval = getDefault(cptBackgroundImage)
-    var valid = true
-    if global == cgtNone:
-      for tok in cvals:
-        if tok == cttWhitespace:
-          continue
-        if (let r = parseImage(tok); r.isSome):
-          bgimageval = CSSValue(v: cvtImage, image: r.get)
-        elif (let r = cssColor(tok); r.isSome):
-          bgcolorval.color = r.get
+    if global.isSome:
+      let global = global.get
+      res.add(makeEntry(cptBackgroundColor, global))
+      res.add(makeEntry(cptBackgroundImage, global))
+    else:
+      var bgcolor = makeEntry(cptBackgroundColor,
+        getDefaultWord(cptBackgroundColor))
+      var bgimage = makeEntry(cptBackgroundImage,
+        getDefault(cptBackgroundImage))
+      var valid = true
+      var i = cvals.skipBlanks(0)
+      while i < cvals.len:
+        let j = cvals.findBlank(i)
+        if cvals.toOpenArray(i, j - 1).parseValue(bgcolor.t, bgcolor, attrs,
+            factory).isSome:
+          discard
+        elif cvals.toOpenArray(i, j - 1).parseValue(bgimage.t, bgimage, attrs,
+            factory).isSome:
+          discard
         else:
           #TODO when we implement the other shorthands too
           #valid = false
           discard
-    if valid:
-      res.add(makeEntry(cptBackgroundColor, bgcolorval, global))
-      res.add(makeEntry(cptBackgroundImage, bgimageval, global))
+        i = cvals.skipBlanks(j)
+      if valid:
+        res.add(bgcolor)
+        res.add(bgimage)
   of cstListStyle:
-    var positionVal = CSSValueBit()
     var typeVal = CSSValueBit()
-    var valid = true
-    if global == cgtNone:
+    if global.isSome:
+      let global = global.get
+      res.add(makeEntry(cptListStylePosition, global))
+      res.add(makeEntry(cptListStyleType, global))
+    else:
+      var valid = true
+      var positionVal = CSSValueBit()
       for tok in cvals:
         if tok == cttWhitespace:
           continue
@@ -1535,11 +1582,16 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
           #TODO list-style-image
           #valid = false
           discard
-    if valid:
-      res.add(makeEntry(cptListStylePosition, positionVal, global))
-      res.add(makeEntry(cptListStyleType, typeVal, global))
+      if valid:
+        res.add(makeEntry(cptListStylePosition, positionVal))
+        res.add(makeEntry(cptListStyleType, typeVal))
   of cstFlex:
-    if global == cgtNone:
+    if global.isSome:
+      let global = global.get
+      res.add(makeEntry(cptFlexGrow, global))
+      res.add(makeEntry(cptFlexShrink, global))
+      res.add(makeEntry(cptFlexBasis, global))
+    else:
       var i = cvals.skipBlanks(0)
       if i >= cvals.len:
         return err()
@@ -1568,13 +1620,13 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         res.add(makeEntry(cptFlexBasis, val))
       else: # omitted, default to 0px
         let val = CSSValueWord(length: cssLength(0))
-        res.add(makeEntry(cptFlexBasis, val, global))
-    else:
-      res.add(makeEntry(cptFlexGrow, global))
-      res.add(makeEntry(cptFlexShrink, global))
-      res.add(makeEntry(cptFlexBasis, global))
+        res.add(makeEntry(cptFlexBasis, val))
   of cstFlexFlow:
-    if global == cgtNone:
+    if global.isSome:
+      let global = global.get
+      res.add(makeEntry(cptFlexDirection, global))
+      res.add(makeEntry(cptFlexWrap, global))
+    else:
       var i = cvals.skipBlanks(0)
       if i >= cvals.len:
         return err()
@@ -1587,11 +1639,12 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         let wrap = ?parseIdent[CSSFlexWrap](cvals[i])
         var val = CSSValueBit(flexWrap: wrap)
         res.add(makeEntry(cptFlexWrap, val))
-    else:
-      res.add(makeEntry(cptFlexDirection, global))
-      res.add(makeEntry(cptFlexWrap, global))
   of cstOverflow:
-    if global == cgtNone:
+    if global.isSome:
+      let global = global.get
+      res.add(makeEntry(cptOverflowX, global))
+      res.add(makeEntry(cptOverflowY, global))
+    else:
       var i = cvals.skipBlanks(0)
       if i >= cvals.len:
         return err()
@@ -1603,9 +1656,6 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
           y.overflow = ?parseIdent[CSSOverflow](cvals[i])
         res.add(makeEntry(cptOverflowX, x))
         res.add(makeEntry(cptOverflowY, y))
-    else:
-      res.add(makeEntry(cptOverflowX, global))
-      res.add(makeEntry(cptOverflowY, global))
   return ok()
 
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue];
@@ -1615,13 +1665,13 @@ proc parseComputedValues*(name: string; value: seq[CSSComponentValue];
     return res
   return @[]
 
-proc copyFrom(a, b: CSSValues; t: CSSPropertyType) =
+proc copyFrom*(a, b: CSSValues; t: CSSPropertyType) =
   case t.reprType
   of cprtBit: a.bits[t] = b.bits[t]
   of cprtWord: a.words[t] = b.words[t]
   of cprtObject: a.objs[t] = b.objs[t]
 
-proc setInitial(a: CSSValues; t: CSSPropertyType) =
+proc setInitial*(a: CSSValues; t: CSSPropertyType) =
   case t.reprType
   of cprtBit: a.bits[t].dummy = 0
   of cprtWord: a.words[t] = getDefaultWord(t)
@@ -1633,40 +1683,11 @@ proc initialOrInheritFrom*(a, b: CSSValues; t: CSSPropertyType) =
   else:
     a.setInitial(t)
 
-type
-  InitType* = enum
-    itUserAgent, itUser, itOther
-
-  InitMap* = array[CSSPropertyType, set[InitType]]
-
-  CSSVariableMap* = ref object
-    parent*: CSSVariableMap
-    vars*: seq[CSSVariable]
-
-proc applyValue*(vals: CSSValues; entry: CSSComputedEntry;
-    varMap: CSSVariableMap; parent, previousOrigin: CSSValues; inited: InitMap;
-    initType: InitType) =
-  case entry.global
-  of cgtInherit:
-    if parent != nil:
-      vals.copyFrom(parent, entry.t)
-    else:
-      vals.setInitial(entry.t)
-  of cgtInitial:
-    vals.setInitial(entry.t)
-  of cgtUnset:
-    vals.initialOrInheritFrom(parent, entry.t)
-  of cgtRevert:
-    if previousOrigin != nil and initType in inited[entry.t]:
-      vals.copyFrom(previousOrigin, entry.t)
-    else:
-      vals.initialOrInheritFrom(parent, entry.t)
-  of cgtNone:
-    case entry.et
-    of ceBit: vals.bits[entry.t].dummy = entry.bit
-    of ceWord: vals.words[entry.t] = entry.word
-    of ceObject: vals.objs[entry.t] = entry.obj
-    of ceVar: discard #eprint "TODO"
+proc initialOrCopyFrom*(a, b: CSSValues; t: CSSPropertyType) =
+  if b != nil:
+    a.copyFrom(b, t)
+  else:
+    a.setInitial(t)
 
 func inheritProperties*(parent: CSSValues): CSSValues =
   result = CSSValues()

@@ -185,31 +185,28 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
   var sels = parseSelectors(rule.prelude, sheet.factory)
   if sels.len > 0:
     let decls = rule.oblock.value.parseDeclarations()
-    var pass2 = newSeqOfCap[CSSDeclaration](decls.len)
     let rule = CSSRuleDef(sels: move(sels), idx: sheet.len)
     for decl in decls:
       if decl.name.startsWith("--"):
         let cvar = CSSVariable(
-          # case sensitive, it seems
           name: sheet.factory.toAtom(decl.name.substr(2)),
-          cvals: move(decl.value)
+          cvals: decl.value
         )
         if decl.important:
           rule.importantVars.add(cvar)
         else:
           rule.normalVars.add(cvar)
-      pass2.add(decl)
-    for decl in pass2:
-      if decl.important:
-        let olen = rule.importantVals.len
-        if rule.importantVals.parseComputedValues(decl.name, decl.value,
-            sheet.attrs[], sheet.factory).isNone:
-          rule.importantVals.setLen(olen)
       else:
-        let olen = rule.normalVals.len
-        if rule.normalVals.parseComputedValues(decl.name, decl.value,
-            sheet.attrs[], sheet.factory).isNone:
-          rule.normalVals.setLen(olen)
+        if decl.important:
+          let olen = rule.importantVals.len
+          if rule.importantVals.parseComputedValues(decl.name, decl.value,
+              sheet.attrs[], sheet.factory).isNone:
+            rule.importantVals.setLen(olen)
+        else:
+          let olen = rule.normalVals.len
+          if rule.normalVals.parseComputedValues(decl.name, decl.value,
+              sheet.attrs[], sheet.factory).isNone:
+            rule.normalVals.setLen(olen)
     sheet.add(rule)
     inc sheet.len
 
