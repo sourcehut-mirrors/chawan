@@ -2340,14 +2340,13 @@ func childElementCount(this: DocumentFragment): int {.jsfget.} =
   return this.childElementCountImpl
 
 func isFirstVisualNode*(element: Element): bool =
-  let parent = element.parentNode
-  for child in parent.childList:
-    if child == element:
-      return true
-    if child of Element:
-      break
-    if child of Text and not Text(child).data.onlyWhitespace():
-      break
+  if element.elIndex == 0:
+    let parent = element.parentNode
+    for child in parent.childList:
+      if child == element:
+        return true
+      if child of Text and not Text(child).data.onlyWhitespace():
+        break
   return false
 
 func isLastVisualNode*(element: Element): bool =
