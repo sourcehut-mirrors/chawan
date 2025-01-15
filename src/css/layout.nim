@@ -1543,6 +1543,10 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     let cs = lctx.cellSize[i]
     it.start = (it.start div cs).toInt.toLUnit * cs
     it.send = (it.send div cs).toInt.toLUnit * cs
+  for i, it in sizes.margin.mpairs:
+    let cs = lctx.cellSize[i]
+    it.start = (it.start div cs).toInt.toLUnit * cs
+    it.send = (it.send div cs).toInt.toLUnit * cs
   lctx.layoutRootBlock(box, offset(x = sizes.margin.left, y = 0), sizes)
   # Apply the block box's properties to the atom itself.
   let atom = InlineAtom(
