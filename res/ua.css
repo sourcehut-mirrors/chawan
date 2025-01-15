@@ -132,20 +132,28 @@ dd { margin-left: 4ch }
 dl[compact] dt + br { display: none }
 
 select { display: inline-flex !important; white-space: nowrap }
-select[multiple] { white-space: initial }
 select::before { content: '['; color: initial }
 select::after { content: ']'; color: initial }
 select > :is(option, optgroup > option) { display: none }
 select > :is(option, optgroup > option):checked { display: block; color: red }
 
-select[multiple] { display: inline-block; overflow: auto }
+select[multiple] {
+	overflow: auto;
+	display: flow-root !important;
+	margin-top: 1em
+}
 select[multiple]::before, select[multiple]::after { content: '' }
 select[multiple] > :is(option, optgroup > option) {
-	display: flex; color: inherit
+	display: flex;
+	color: initial
 }
-select[multiple] > :is(option, optgroup > option)::before { content: '[ ]' }
+select[multiple] > :is(option, optgroup > option)::before {
+	display: block;
+	content: '[ ]'
+}
 select[multiple] > :is(option, optgroup > option):checked::before {
-	content: '[*]'; color: red
+	content: '[*]';
+	color: red
 }
 
 center { text-align: -cha-center }
