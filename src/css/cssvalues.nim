@@ -1013,9 +1013,9 @@ func cssColor*(val: CSSComponentValue): Opt[CSSColor] =
     else: discard
   elif val of CSSFunction:
     let f = CSSFunction(val)
-    if f.name.equalsIgnoreCase("rgb") or f.name.equalsIgnoreCase("rgba"):
+    if f.name in {cftRgb, cftRgba}:
       return parseARGB(f.value)
-    elif f.name.equalsIgnoreCase("-cha-ansi"):
+    elif f.name == cftChaAnsi:
       return parseANSI(f.value)
   return err()
 
@@ -1214,8 +1214,7 @@ func cssURL*(cval: CSSComponentValue; src = false): Option[string] =
       return some(tok.value)
   elif cval of CSSFunction:
     let fun = CSSFunction(cval)
-    if fun.name.equalsIgnoreCase("url") or
-        src and fun.name.equalsIgnoreCase("src"):
+    if fun.name == cftUrl or src and fun.name == cftSrc:
       for x in fun.value:
         if not (x of CSSToken):
           break
@@ -1299,7 +1298,7 @@ proc parseValue(cvals: openArray[CSSComponentValue];
   inc i
   if cval of CSSFunction:
     let fun = CSSFunction(cval)
-    if fun.name.equalsIgnoreCase("var"):
+    if fun.name == cftVar:
       if cvals.skipBlanks(i) < cvals.len:
         return err()
       return fun.parseVar(entry, attrs, factory)

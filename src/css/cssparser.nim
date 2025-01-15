@@ -51,8 +51,23 @@ type
     value*: seq[CSSComponentValue]
     important*: bool
 
+  CSSFunctionType* = enum
+    cftUnknown = "-cha-unknown"
+    cftNot = "not"
+    cftIs = "is"
+    cftWhere = "where"
+    cftNthChild = "nth-child"
+    cftNthLastChild = "nth-last-child"
+    cftLang = "lang"
+    cftRgb = "rgb"
+    cftRgba = "rgba"
+    cftChaAnsi = "-cha-ansi"
+    cftUrl = "url"
+    cftSrc = "src"
+    cftVar = "var"
+
   CSSFunction* = ref object of CSSComponentValue
-    name*: string
+    name*: CSSFunctionType
     value*: seq[CSSComponentValue]
 
   CSSSimpleBlock* = ref object of CSSComponentValue
@@ -109,7 +124,7 @@ proc `$`*(c: CSSComponentValue): string =
       result &= " !important"
     result &= ";\n"
   elif c of CSSFunction:
-    result &= CSSFunction(c).name & "("
+    result &= $CSSFunction(c).name & "("
     for s in CSSFunction(c).value:
       result &= $s
     result &= ")"
@@ -509,7 +524,8 @@ proc consumeSimpleBlock(state: var CSSParseState; tok: CSSToken):
 
 proc consumeFunction(state: var CSSParseState): CSSFunction =
   let t = CSSToken(state.consume())
-  let res = CSSFunction(name: t.value)
+  let name = parseEnumNoCase[CSSFunctionType](t.value).get(cftUnknown)
+  let res = CSSFunction(name: name)
   while state.has():
     let t = state.consume()
     if t == cttRparen:

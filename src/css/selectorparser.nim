@@ -346,21 +346,21 @@ proc parseLang(cvals: seq[CSSComponentValue]): Selector =
 
 proc parseSelectorFunction(state: var SelectorParser; cssfunction: CSSFunction):
     Selector =
-  return case cssfunction.name.toLowerAscii()
-  of "not":
+  return case cssfunction.name
+  of cftNot:
     state.parseRecursiveSelectorFunction(pcNot, cssfunction.value,
       forgiving = false)
-  of "is":
+  of cftIs:
     state.parseRecursiveSelectorFunction(pcIs, cssfunction.value,
       forgiving = true)
-  of "where":
+  of cftWhere:
     state.parseRecursiveSelectorFunction(pcWhere, cssfunction.value,
       forgiving = true)
-  of "nth-child":
+  of cftNthChild:
     state.parseNthChild(cssfunction, PseudoData(t: pcNthChild))
-  of "nth-last-child":
+  of cftNthLastChild:
     state.parseNthChild(cssfunction, PseudoData(t: pcNthLastChild))
-  of "lang":
+  of cftLang:
     parseLang(cssfunction.value)
   else: fail
 
