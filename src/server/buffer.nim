@@ -690,7 +690,7 @@ proc findAnchor(box: InlineBox; anchor: Element): Offset =
       let off = child.findAnchor(anchor)
       if off.y >= 0:
         return off
-  if box.node.element == anchor:
+  if box.node != nil and box.node.element == anchor:
     return box.render.offset
   return offset(-1, -1)
 
@@ -703,7 +703,7 @@ proc findAnchor(box: BlockBox; anchor: Element): Offset =
     let off = child.findAnchor(anchor)
     if off.y >= 0:
       return off
-  if box.node.element == anchor:
+  if box.node != nil and box.node.element == anchor:
     return box.render.offset
   return offset(-1, -1)
 
