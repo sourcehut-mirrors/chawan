@@ -1626,7 +1626,7 @@ proc onclick(container: Container; res: ClickResult; save: bool) =
       save: save,
       contentType: res.contentType
     ))
-  if res.select.isSome and not save:
+  if res.select.isSome and not save and res.select.get.options.len > 0:
     container.displaySelect(res.select.get)
   if res.readline.isSome:
     container.onReadLine(res.readline.get)
