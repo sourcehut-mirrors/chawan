@@ -95,8 +95,6 @@ layout:
 	* for positioned it's almost perfect, but can't do negative
 	  z-index
 	* for images it's straight up broken
-	* background should overpaint text (<- but only fix this when
-	  z-index fully works)
 - grid
 images:
 - animation

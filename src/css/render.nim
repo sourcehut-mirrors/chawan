@@ -58,6 +58,7 @@ type
     attrsp: ptr WindowAttributes
     images: seq[PosBitmap]
     nstack: seq[StackItem]
+    spaces: string # buffer filled with spaces for padding
 
 template attrs(state: RenderState): WindowAttributes =
   state.attrsp[]
@@ -147,7 +148,7 @@ proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
   if ostr.len > 0:
     copyMem(addr line.str[i], unsafeAddr ostr[0], ostr.len)
 
-proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; ostr: string;
+proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
     format: Format; node: Element) =
   var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
   if x > cx:
@@ -221,7 +222,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; ostr: string;
     line.formats.delete(fi)
     line.insertFormat(px, fi, format, node)
     inc fi
-  if ostr.len > 0 and (fi >= line.formats.len or line.formats[fi].pos > nx):
+  if hadStr and (fi >= line.formats.len or line.formats[fi].pos > nx):
     # nx < ostr.width, but we have removed all formatting in the range of our
     # string, and no formatting comes directly after it. So we insert the
     # continuation of the last format we replaced after our string.
@@ -232,8 +233,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; ostr: string;
   # That's it!
 
 proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
-    format: Format; node: Element) =
-  assert x >= 0 and s.len != 0
+    ocx, onx: out int; hadStr: out bool) =
   var i = 0
   let cx = line.findFirstX(x, i) # first x of new string (before padding)
   var j = i
@@ -241,8 +241,18 @@ proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
   while nx < targetX and j < line.str.len:
     nx += line.str.nextUTF8(j).width()
   let ostr = line.str.substr(j)
+  ocx = cx
+  onx = nx
+  hadStr = ostr.len > 0
   line.setTextStr(s, ostr, i, x, cx, nx, targetX)
-  line.setTextFormat(x, cx, nx, ostr, format, node)
+
+proc setText1(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
+    format: Format; node: Element) =
+  assert x >= 0 and s.len != 0
+  var cx, nx: int
+  var hadStr: bool
+  line.setText0(s, x, targetX, cx, nx, hadStr)
+  line.setTextFormat(x, cx, nx, hadStr, format, node)
 
 proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
     offset: Offset; format: Format; node: Element) =
@@ -269,7 +279,7 @@ proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
     # make sure we have line y
     if grid.high < y:
       grid.addLines(y - grid.high)
-    grid[y].setText0(s.toOpenArray(i, j - 1), x, targetX, format, node)
+    grid[y].setText1(s.toOpenArray(i, j - 1), x, targetX, format, node)
 
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     color: CellColor; startx, starty, endx, endy: int; node: Element;
@@ -291,10 +301,20 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     return
   if grid.high < endy: # make sure we have line y
     grid.addLines(endy - grid.high)
+  var format = Format(bgcolor: color)
   for y in starty ..< endy:
     # Make sure line.width() >= endx
-    for i in grid[y].str.width() ..< endx:
-      grid[y].str &= ' '
+    if noPaint:
+      for i in grid[y].str.width() ..< endx:
+        grid[y].str &= ' '
+    else:
+      let w = endx - startx
+      while state.spaces.len < w:
+        state.spaces &= ' '
+      var cx, nx: int
+      var hadStr: bool
+      grid[y].setText0(state.spaces.toOpenArray(0, w - 1), startx, endx,
+        cx, nx, hadStr)
     # Process formatting around startx
     if grid[y].formats.len == 0:
       # No formats
@@ -328,7 +348,7 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
         break
       if grid[y].formats[fi].pos >= startx:
         if not noPaint:
-          grid[y].formats[fi].format.bgcolor = color
+          grid[y].formats[fi].format = format
         grid[y].formats[fi].node = node
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
