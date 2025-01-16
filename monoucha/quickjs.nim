@@ -668,11 +668,29 @@ proc JS_GetArrayBuffer*(ctx: JSContext; psize: var csize_t; obj: JSValue):
 proc JS_IsArrayBuffer*(obj: JSValue): JS_BOOL
 proc JS_GetUint8Array*(ctx: JSContext; psize: ptr csize_t; obj: JSValue):
   ptr UncheckedArray[uint8]
+
+type JSTypedArrayEnum* {.size: sizeof(cint).} = enum
+  JS_TYPED_ARRAY_UINT8C = 0
+  JS_TYPED_ARRAY_INT8
+  JS_TYPED_ARRAY_UINT8
+  JS_TYPED_ARRAY_INT16
+  JS_TYPED_ARRAY_UINT16
+  JS_TYPED_ARRAY_INT32
+  JS_TYPED_ARRAY_UINT32
+  JS_TYPED_ARRAY_BIG_INT64
+  JS_TYPED_ARRAY_BIG_UINT64
+  JS_TYPED_ARRAY_FLOAT16
+  JS_TYPED_ARRAY_FLOAT32
+  JS_TYPED_ARRAY_FLOAT64
+
+proc JS_NewTypedArray*(ctx: JSContext; argc: cint;
+  argv: ptr UncheckedArray[JSValue]; array_type: JSTypedArrayEnum): JSValue
 proc JS_GetTypedArrayBuffer*(ctx: JSContext; obj: JSValue;
   pbyte_offset, pbyte_length, pbytes_per_element: var csize_t): JSValue
 proc JS_NewUint8Array*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
   len: csize_t; free_func: JSFreeArrayBufferDataFunc; opaque: pointer;
   is_shared: JS_BOOL): JSValue
+proc JS_GetTypedArrayType*(obj: JSValue): cint
 proc JS_IsUint8Array*(obj: JSValue): JS_BOOL
 proc JS_NewUint8ArrayCopy*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
   len: csize_t): JSValue

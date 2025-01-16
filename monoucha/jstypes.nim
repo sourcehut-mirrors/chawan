@@ -53,6 +53,7 @@ type
     offset*: csize_t # offset into the buffer
     nmemb*: csize_t # number of members
     nsize*: csize_t # member size
+    t*: cint # type
 
   JSUint8Array* = object
     abuf*: JSArrayBuffer

@@ -483,7 +483,8 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: out JSArrayBufferView):
     abuf: abuf,
     offset: offset,
     nmemb: nmemb,
-    nsize: nsize
+    nsize: nsize,
+    t: JS_GetTypedArrayType(val)
   )
   return ok()
 
