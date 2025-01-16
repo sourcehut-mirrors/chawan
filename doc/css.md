@@ -96,6 +96,20 @@ properties are handled as follows.
    displayed, while content that spills out of a scroll container on the
    Y axis is clipped.
 
+### `position: fixed`, `position: sticky`
+
+To keep the document model static, these do not change their position
+based on the viewport's scroll status.  Instead:
+
+* `position: sticky` is treated as `position: static`, except it also
+  behaves as an absolute position container.
+* `position: fixed` is placed at the bottom of the document.
+
+Right now, `position: fixed` is always positioned at the bottom of the
+root element's margin box.  This breaks on pages that overflow it (e.g.
+by setting `height: 100%` on the root element), so it will be moved to
+the bottom of its overflow box in the future.
+
 ### Color correction
 
 Some authors only specify one of the foreground or the background color,

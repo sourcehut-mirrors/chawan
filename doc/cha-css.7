@@ -101,6 +101,21 @@ then the former overrides the latter.
 Content that spills out of a scroll container on the X axis is
 displayed, while content that spills out of a scroll container on the Y
 axis is clipped.
+.SS \f[CR]position: fixed\f[R], \f[CR]position: sticky\f[R]
+To keep the document model static, these do not change their position
+based on the viewport\[cq]s scroll status.
+Instead:
+.IP \[bu] 2
+\f[CR]position: sticky\f[R] is treated as \f[CR]position: static\f[R],
+except it also behaves as an absolute position container.
+.IP \[bu] 2
+\f[CR]position: fixed\f[R] is placed at the bottom of the document.
+.PP
+Right now, \f[CR]position: fixed\f[R] is always positioned at the bottom
+of the root element\[cq]s margin box.
+This breaks on pages that overflow it (e.g.
+by setting \f[CR]height: 100%\f[R] on the root element), so it will be
+moved to the bottom of its overflow box in the future.
 .SS Color correction
 Some authors only specify one of the foreground or the background color,
 assuming a black\-on\-white canvas.

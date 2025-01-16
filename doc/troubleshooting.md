@@ -138,16 +138,7 @@ editor = 'exec vi +%d'
 
 ## When I open Chawan from aerc, it prints garbage in the search field!
 
-See <https://todo.sr.ht/~bptato/chawan/33>.  Until aerc is updated to
-include the fix, you can work around it like this:
-
-```
-[display]
-# Use whatever colors your terminal actually uses. CSS-style hex values
-# (#FFFFFF etc.) work too.
-default-background-color = "black"
-default-foreground-color = "white"
-```
+This should be fixed in the latest aerc version. Please update aerc.
 
 <!-- MANON
 ## See also
