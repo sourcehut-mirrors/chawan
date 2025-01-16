@@ -503,8 +503,8 @@ proc disableMouse*(term: Terminal) =
   term.write(SGRMOUSEBTNOFF)
 
 proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
-    iq: openArray[uint8]; w: var int) =
-  var n = 0
+    iq: openArray[uint8]) =
+  var n = start
   while true:
     case te.encode(iq, res.toOpenArrayByte(0, res.high), n)
     of terDone:
@@ -519,11 +519,10 @@ proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
       res.setLen(res.len * 2)
     of terError:
       res.setLen(n)
-      res &= '?'
-      # fix up width if char was double width
-      if w != -1:
-        w += 1 - te.c.width()
-        n = res.len
+      # match width of replaced char
+      for i in 0 ..< te.c.width():
+        res &= '?'
+      n = res.len
 
 proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
     w: var int) =
@@ -545,7 +544,7 @@ proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
     copyMem(addr res[L], unsafeAddr s[0], s.len)
   else:
     # Output is not utf-8, so we must encode it first.
-    res.encodeAllQMark(L, term.te, s.toOpenArrayByte(0, s.high), w)
+    res.encodeAllQMark(L, term.te, s.toOpenArrayByte(0, s.high))
 
 proc generateFullOutput(term: Terminal): string =
   var format = Format()
