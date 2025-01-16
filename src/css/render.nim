@@ -446,7 +446,8 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       clipBox.start.y = max(offset.y, clipBox.start.y)
       clipBox.send.y = min(offset.y + box.state.size.h, clipBox.send.y)
     state.clipBoxes.add(clipBox)
-  if box.computed{"visibility"} == VisibilityVisible:
+  let opacity = box.computed{"opacity"}
+  if box.computed{"visibility"} == VisibilityVisible and opacity != 0:
     #TODO maybe blend with the terminal background?
     let bgcolor = box.computed{"background-color"}.cellColor()
     if bgcolor != defaultColor:
@@ -473,13 +474,15 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       grid.setText(state, s, offset, box.computed.toFormat(), box.node)
   if box.inline != nil:
     assert box.children.len == 0
-    if box.computed{"visibility"} == VisibilityVisible and
+    if box.computed{"visibility"} == VisibilityVisible and opacity != 0 and
         state.clipBox.start.x < state.clipBox.send.x and
         state.clipBox.start.y < state.clipBox.send.y:
       grid.renderInlineBox(state, box.inline, offset, rgba(0, 0, 0, 0))
   else:
-    for child in box.children:
-      grid.renderBlockBox(state, child, offset)
+    #TODO this isn't right...
+    if opacity != 0:
+      for child in box.children:
+        grid.renderBlockBox(state, child, offset)
   if hasClipBox:
     discard state.clipBoxes.pop()
   if position != PositionStatic:

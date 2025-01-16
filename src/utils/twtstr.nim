@@ -502,6 +502,13 @@ func dqEscape*(s: openArray[char]): string =
       result &= '\\'
     result &= c
 
+func cssEscape*(s: openArray[char]): string =
+  result = ""
+  for c in s:
+    if c == '\'':
+      result &= '\\'
+    result &= c
+
 #basically std join but with char
 func join*(ss: openArray[string]; sep: char): string =
   if ss.len == 0:

@@ -50,6 +50,7 @@ type
     cptFlexBasis = "flex-basis"
     cptFlexGrow = "flex-grow"
     cptFlexShrink = "flex-shrink"
+    cptFontSize = "font-size"
     cptFontWeight = "font-weight"
     cptHeight = "height"
     cptLeft = "left"
@@ -61,6 +62,7 @@ type
     cptMaxWidth = "max-width"
     cptMinHeight = "min-height"
     cptMinWidth = "min-width"
+    cptOpacity = "opacity"
     cptPaddingBottom = "padding-bottom"
     cptPaddingLeft = "padding-left"
     cptPaddingRight = "padding-right"
@@ -399,7 +401,6 @@ type
     else: discard
 
   # Linked list of variable maps, except empty maps are skipped.
-  # Must not be nil for CSSValues, at least during cascade.
   CSSVariableMap* = ref object
     parent*: CSSVariableMap
     table*: Table[CAtom, CSSVariable]
@@ -479,6 +480,7 @@ const ValueTypes = [
   cptFlexBasis: cvtLength,
   cptFlexGrow: cvtNumber,
   cptFlexShrink: cvtNumber,
+  cptFontSize: cvtLength,
   cptFontWeight: cvtInteger,
   cptHeight: cvtLength,
   cptLeft: cvtLength,
@@ -490,6 +492,7 @@ const ValueTypes = [
   cptMaxWidth: cvtLength,
   cptMinHeight: cvtLength,
   cptMinWidth: cvtLength,
+  cptOpacity: cvtNumber,
   cptPaddingBottom: cvtLength,
   cptPaddingLeft: cvtLength,
   cptPaddingRight: cvtLength,
@@ -570,7 +573,9 @@ func `$`*(content: CSSContent): string =
 func `$`(quotes: CSSQuotes): string =
   if quotes == nil:
     return "auto"
-  return "auto" #TODO
+  result = ""
+  for (s, e) in quotes.qs:
+    result &= "'" & s.cssEscape() & "' '" & e.cssEscape() & "'"
 
 func `$`(counterreset: seq[CSSCounterReset]): string =
   result = ""
@@ -584,12 +589,11 @@ func serialize(val: CSSValue): string =
   of cvtImage: return $val.image
   of cvtLength2: return $val.length2.a & " " & $val.length2.b
   of cvtContent:
-    var s = ""
+    result = ""
     for x in val.content:
-      if s.len > 0:
-        s &= ' '
-      s &= $x
-    return s
+      if result.len > 0:
+        result &= ' '
+      result &= $x
   of cvtQuotes: return $val.quotes
   of cvtCounterReset: return $val.counterReset
   else: assert false
@@ -1278,11 +1282,11 @@ func parseInteger(cval: CSSComponentValue; range: Slice[int32]): Opt[int32] =
         return ok(int32(tok.nvalue))
   return err()
 
-func cssNumber(cval: CSSComponentValue; positive: bool): Opt[float32] =
+func parseNumber(cval: CSSComponentValue; range: Slice[float32]): Opt[float32] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     if tok.t in {cttNumber, cttINumber}:
-      if not positive or tok.nvalue >= 0:
+      if tok.nvalue in range:
         return ok(tok.nvalue)
   return err()
 
@@ -1410,7 +1414,12 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
   of cvtFlexDirection:
     set_bit flexDirection, ?parseIdent[CSSFlexDirection](cval)
   of cvtFlexWrap: set_bit flexWrap, ?parseIdent[CSSFlexWrap](cval)
-  of cvtNumber: set_word number, ?cssNumber(cval, t == cptFlexGrow)
+  of cvtNumber:
+    case t
+    of cptFlexGrow, cptFlexShrink:
+      set_word number, ?parseNumber(cval, 0f32..float32.high)
+    of cptOpacity: set_word number, ?parseNumber(cval, 0f32..1f32)
+    else: assert false
   of cvtOverflow: set_bit overflow, ?parseIdent[CSSOverflow](cval)
   return ok()
 
@@ -1424,6 +1433,8 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
   of cptWidth, cptHeight, cptLeft, cptRight, cptTop, cptBottom, cptMaxWidth,
       cptMaxHeight, cptMinWidth, cptMinHeight, cptFlexBasis:
     return CSSLengthAuto
+  of cptFontSize:
+    return cssLength(16)
   else:
     return cssLength(0)
 
@@ -1437,7 +1448,7 @@ func getInitialInteger(t: CSSPropertyType): int32 =
     return 0
 
 func getInitialNumber(t: CSSPropertyType): float32 =
-  if t == cptFlexShrink:
+  if t in {cptFlexShrink, cptOpacity}:
     return 1
   return 0
 
@@ -1507,6 +1518,11 @@ const PropertyPaddingSpec = [
   cptPaddingTop, cptPaddingRight, cptPaddingBottom, cptPaddingLeft
 ]
 
+proc addGlobals(res: var seq[CSSComputedEntry]; ps: openArray[CSSPropertyType];
+    global: CSSGlobalType) =
+  for p in ps:
+    res.add(makeEntry(p, global))
+
 proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     cvals: openArray[CSSComponentValue]; attrs: WindowAttributes;
     factory: CAtomFactory): Err[void] =
@@ -1536,9 +1552,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       hasAuto = false))
   of cstBackground:
     if global.isSome:
-      let global = global.get
-      res.add(makeEntry(cptBackgroundColor, global))
-      res.add(makeEntry(cptBackgroundImage, global))
+      res.addGlobals([cptBackgroundColor, cptBackgroundImage], global.get)
     else:
       var bgcolor = makeEntry(cptBackgroundColor,
         getDefaultWord(cptBackgroundColor))
@@ -1563,13 +1577,11 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         res.add(bgcolor)
         res.add(bgimage)
   of cstListStyle:
-    var typeVal = CSSValueBit()
     if global.isSome:
-      let global = global.get
-      res.add(makeEntry(cptListStylePosition, global))
-      res.add(makeEntry(cptListStyleType, global))
+      res.addGlobals([cptListStylePosition, cptListStyleType], global.get)
     else:
       var valid = true
+      var typeVal = CSSValueBit()
       var positionVal = CSSValueBit()
       for tok in cvals:
         if tok == cttWhitespace:
@@ -1587,15 +1599,12 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         res.add(makeEntry(cptListStyleType, typeVal))
   of cstFlex:
     if global.isSome:
-      let global = global.get
-      res.add(makeEntry(cptFlexGrow, global))
-      res.add(makeEntry(cptFlexShrink, global))
-      res.add(makeEntry(cptFlexBasis, global))
+      res.addGlobals([cptFlexGrow, cptFlexShrink, cptFlexBasis], global.get)
     else:
       var i = cvals.skipBlanks(0)
       if i >= cvals.len:
         return err()
-      if (let r = cssNumber(cvals[i], positive = true); r.isSome):
+      if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
         # flex-grow
         let val = CSSValueWord(number: r.get)
         res.add(makeEntry(cptFlexGrow, val))
@@ -1603,7 +1612,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         if i < cvals.len:
           if not (cvals[i] of CSSToken):
             return err()
-          if (let r = cssNumber(cvals[i], positive = true); r.isSome):
+          if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
             # flex-shrink
             let val = CSSValueWord(number: r.get)
             res.add(makeEntry(cptFlexShrink, val))
@@ -1623,9 +1632,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         res.add(makeEntry(cptFlexBasis, val))
   of cstFlexFlow:
     if global.isSome:
-      let global = global.get
-      res.add(makeEntry(cptFlexDirection, global))
-      res.add(makeEntry(cptFlexWrap, global))
+      res.addGlobals([cptFlexDirection, cptFlexWrap], global.get)
     else:
       var i = cvals.skipBlanks(0)
       if i >= cvals.len:
@@ -1641,9 +1648,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         res.add(makeEntry(cptFlexWrap, val))
   of cstOverflow:
     if global.isSome:
-      let global = global.get
-      res.add(makeEntry(cptOverflowX, global))
-      res.add(makeEntry(cptOverflowY, global))
+      res.addGlobals([cptOverflowX, cptOverflowY], global.get)
     else:
       var i = cvals.skipBlanks(0)
       if i >= cvals.len:
