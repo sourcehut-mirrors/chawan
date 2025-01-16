@@ -112,9 +112,6 @@ func newStyledElement*(parent: StyledNode; pseudo: PseudoElement): StyledNode =
 func newStyledText*(parent: StyledNode; text: Text): StyledNode =
   return StyledNode(t: stText, text: text, element: parent.element)
 
-func newStyledText*(text: sink string): StyledNode =
-  return StyledNode(t: stText, text: CharacterData(data: text))
-
 func newStyledReplacement*(parent: StyledNode; content: sink CSSContent;
     pseudo: PseudoElement): StyledNode =
   return StyledNode(

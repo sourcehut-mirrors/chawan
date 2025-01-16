@@ -3,7 +3,7 @@ import std/algorithm
 import css/box
 import css/cssvalues
 import css/lunit
-import css/stylednode
+import html/dom
 import types/bitmap
 import types/cell
 import types/color
@@ -17,7 +17,7 @@ type
   FormatCell* = object
     format*: Format
     pos*: int
-    node*: StyledNode
+    node*: Element
 
   # Following properties should hold for `formats':
   # * Position should be >= 0, <= str.width().
@@ -80,11 +80,11 @@ proc insertFormat(line: var FlexibleLine; i: int; cell: FormatCell) =
   line.formats.insert(cell, i)
 
 proc insertFormat(line: var FlexibleLine; pos, i: int; format: Format;
-    node: StyledNode = nil) =
+    node: Element = nil) =
   line.insertFormat(i, FormatCell(format: format, node: node, pos: pos))
 
 proc addFormat(line: var FlexibleLine; pos: int; format: Format;
-    node: StyledNode = nil) =
+    node: Element = nil) =
   line.formats.add(FormatCell(format: format, node: node, pos: pos))
 
 func toFormat(computed: CSSValues): Format =
@@ -148,7 +148,7 @@ proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
     copyMem(addr line.str[i], unsafeAddr ostr[0], ostr.len)
 
 proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; ostr: string;
-    format: Format; node: StyledNode) =
+    format: Format; node: Element) =
   var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
   if x > cx:
     # Replace formats for padding
@@ -185,7 +185,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; ostr: string;
   # Now for the text's formats:
   var format = format
   var lformat: Format
-  var lnode: StyledNode
+  var lnode: Element = nil
   if fi == -1:
     # No formats => just insert a new format at 0
     inc fi
@@ -232,7 +232,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; ostr: string;
   # That's it!
 
 proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
-    format: Format; node: StyledNode) =
+    format: Format; node: Element) =
   assert x >= 0 and s.len != 0
   var i = 0
   let cx = line.findFirstX(x, i) # first x of new string (before padding)
@@ -245,7 +245,7 @@ proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
   line.setTextFormat(x, cx, nx, ostr, format, node)
 
 proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
-    offset: Offset; format: Format; node: StyledNode) =
+    offset: Offset; format: Format; node: Element) =
   if offset.y notin state.clipBox.start.y ..< state.clipBox.send.y:
     return
   if offset.x > state.clipBox.send.x:
@@ -272,7 +272,7 @@ proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
     grid[y].setText0(s.toOpenArray(i, j - 1), x, targetX, format, node)
 
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
-    color: CellColor; startx, starty, endx, endy: int; node: StyledNode;
+    color: CellColor; startx, starty, endx, endy: int; node: Element;
     noPaint = false) =
   let clipBox = addr state.clipBox
   var startx = startx
@@ -388,7 +388,7 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
             let y1 = offset.y.toInt
             let x2 = x2p.toInt
             let y2 = y2p.toInt
-            # add StyledNode to background (but don't actually color it)
+            # add Element to background (but don't actually color it)
             grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
               box.node, noPaint = true)
             let x = (offset.x div state.attrs.ppc).toInt

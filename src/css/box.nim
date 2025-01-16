@@ -1,6 +1,6 @@
 import css/cssvalues
 import css/lunit
-import css/stylednode
+import html/dom
 import types/bitmap
 
 type
@@ -58,13 +58,13 @@ type
     state*: InlineBoxState
     render*: BoxRenderState
     computed*: CSSValues
-    node*: StyledNode
+    node*: Element
     splitType*: set[SplitType]
     case t*: InlineBoxType
     of ibtParent:
       children*: seq[InlineBox]
     of ibtText:
-      text*: StyledNode # note: this has no parent.
+      text*: CharacterData # note: this has no parent.
     of ibtNewline:
       discard
     of ibtBitmap:
@@ -112,7 +112,7 @@ type
     state*: BoxLayoutState # layout output -> render input
     render*: BoxRenderState # render output
     computed*: CSSValues
-    node*: StyledNode
+    node*: Element
     inline*: InlineBox
     children*: seq[BlockBox]
 

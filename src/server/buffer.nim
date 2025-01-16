@@ -345,11 +345,6 @@ proc getClickable(element: Element): Element =
       return element
   return nil
 
-proc getClickable(styledNode: StyledNode): Element =
-  if styledNode == nil:
-    return nil
-  return styledNode.element.getClickable()
-
 func canSubmitOnClick(fae: FormAssociatedElement): bool =
   if fae.form == nil:
     return false
@@ -414,17 +409,11 @@ proc getCachedImageHover(buffer: Buffer; element: Element): string =
       return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
   ""
 
-func getCursorStyledNode(buffer: Buffer; cursorx, cursory: int): StyledNode =
+func getCursorElement(buffer: Buffer; cursorx, cursory: int): Element =
   let i = buffer.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
     return buffer.lines[cursory].formats[i].node
   return nil
-
-func getCursorElement(buffer: Buffer; cursorx, cursory: int): Element =
-  let styledNode = buffer.getCursorStyledNode(cursorx, cursory)
-  if styledNode == nil:
-    return nil
-  return styledNode.element
 
 proc getCursorClickable(buffer: Buffer; cursorx, cursory: int): Element =
   let element = buffer.getCursorElement(cursorx, cursory)
@@ -690,7 +679,7 @@ proc findAnchor(box: InlineBox; anchor: Element): Offset =
       let off = child.findAnchor(anchor)
       if off.y >= 0:
         return off
-  if box.node != nil and box.node.element == anchor:
+  if box.node == anchor:
     return box.render.offset
   return offset(-1, -1)
 
@@ -703,7 +692,7 @@ proc findAnchor(box: BlockBox; anchor: Element): Offset =
     let off = child.findAnchor(anchor)
     if off.y >= 0:
       return off
-  if box.node != nil and box.node.element == anchor:
+  if box.node == anchor:
     return box.render.offset
   return offset(-1, -1)
 

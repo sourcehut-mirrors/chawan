@@ -1,10 +1,11 @@
 import std/algorithm
 import std/math
 
+import css/box
 import css/cssvalues
 import css/lunit
 import css/stylednode
-import css/box
+import html/dom
 import types/bitmap
 import types/winattrs
 import utils/luwrap
@@ -47,13 +48,17 @@ type
     positioned: seq[PositionedItem]
     myRootProperties: CSSValues
     # placeholder text data
-    imgText: StyledNode
-    audioText: StyledNode
-    videoText: StyledNode
-    iframeText: StyledNode
+    imgText: CharacterData
+    audioText: CharacterData
+    videoText: CharacterData
+    iframeText: CharacterData
     luctx: LUContext
 
 const DefaultSpan = Span(start: 0, send: LUnit.high)
+
+# Defined here so it isn't accidentally used in dom.
+func newCharacterData(data: sink string): CharacterData =
+  return CharacterData(data: data)
 
 func minWidth(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtHorizontal].start
@@ -1688,7 +1693,7 @@ proc layoutInline(ictx: var InlineContext; box: InlineBox) =
       box.computed{"clear"})
   of ibtBox: ictx.addBox(state, box.box)
   of ibtBitmap: ictx.addImage(state, box.bmp, padding.sum())
-  of ibtText: ictx.layoutText(state, box.text.textData)
+  of ibtText: ictx.layoutText(state, box.text.data)
   of ibtParent:
     for child in box.children:
       ictx.layoutInline(child)
@@ -2809,7 +2814,7 @@ proc newMarkerBox(computed: CSSValues; listItemCounter: int):
   return InlineBox(
     t: ibtText,
     computed: computed,
-    text: newStyledText(s)
+    text: newCharacterData(s)
   )
 
 type BlockBuilderContext = object
@@ -2975,7 +2980,7 @@ proc reconstructInlineParents(ctx: var BlockBuilderContext) =
     var parent = InlineBox(
       t: ibtParent,
       computed: ctx.inlineStack[0].computed,
-      node: ctx.inlineStack[0]
+      node: ctx.inlineStack[0].element
     )
     ctx.inlineStackFragments.add(parent)
     ctx.addInlineRoot(parent)
@@ -2984,7 +2989,7 @@ proc reconstructInlineParents(ctx: var BlockBuilderContext) =
       let child = InlineBox(
         t: ibtParent,
         computed: node.computed,
-        node: node
+        node: node.element
       )
       parent.children.add(child)
       ctx.inlineStackFragments.add(child)
@@ -2992,7 +2997,7 @@ proc reconstructInlineParents(ctx: var BlockBuilderContext) =
 
 proc buildSomeBlock(ctx: var BlockBuilderContext; styledNode: StyledNode;
     computed: CSSValues): BlockBox =
-  let box = BlockBox(computed: computed, node: styledNode)
+  let box = BlockBox(computed: computed, node: styledNode.element)
   var childCtx = initBlockBuilderContext(styledNode, box, ctx.lctx, addr ctx)
   case computed{"display"}
   of DisplayBlock, DisplayFlowRoot, DisplayInlineBlock: childCtx.buildBlock()
@@ -3022,12 +3027,12 @@ proc pushInline(ctx: var BlockBuilderContext; box: InlineBox) =
     ctx.inlineStackFragments[^1].children.add(box)
 
 proc pushInlineText(ctx: var BlockBuilderContext; computed: CSSValues;
-    parent, node: StyledNode) =
+    parent: Element; text: CharacterData) =
   ctx.pushInline(InlineBox(
     t: ibtText,
     computed: computed,
     node: parent,
-    text: node
+    text: text
   ))
 
 proc pushInlineBlock(ctx: var BlockBuilderContext; styledNode: StyledNode;
@@ -3035,7 +3040,7 @@ proc pushInlineBlock(ctx: var BlockBuilderContext; styledNode: StyledNode;
   ctx.pushInline(InlineBox(
     t: ibtBox,
     computed: computed.inheritProperties(),
-    node: styledNode,
+    node: styledNode.element,
     box: ctx.buildSomeBlock(styledNode, computed)
   ))
 
@@ -3046,7 +3051,7 @@ proc pushListItem(ctx: var BlockBuilderContext; styledNode: StyledNode;
   inc ctx.listItemCounter
   let marker = newMarkerBox(computed, ctx.listItemCounter)
   let position = computed{"list-style-position"}
-  let content = BlockBox(computed: computed, node: styledNode)
+  let content = BlockBox(computed: computed, node: styledNode.element)
   var contentCtx = initBlockBuilderContext(styledNode, content, ctx.lctx,
     addr ctx)
   case position
@@ -3150,8 +3155,8 @@ proc buildFromElem(ctx: var BlockBuilderContext; styledNode: StyledNode;
   of DisplayNone: discard
   of DisplayTableWrapper, DisplayInlineTableWrapper: assert false
 
-proc buildReplacement(ctx: var BlockBuilderContext; child, parent: StyledNode;
-    computed: CSSValues) =
+proc buildReplacement(ctx: var BlockBuilderContext; child: StyledNode;
+    parent: Element; computed: CSSValues) =
   case child.content.t
   of ContentNone: assert false # unreachable for `content'
   of ContentOpenQuote:
@@ -3162,7 +3167,7 @@ proc buildReplacement(ctx: var BlockBuilderContext; child, parent: StyledNode;
       quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].s
     else:
       return
-    let node = newStyledText(s)
+    let node = newCharacterData(s)
     ctx.pushInlineText(computed, parent, node)
     inc ctx.quoteLevel
   of ContentCloseQuote:
@@ -3175,14 +3180,14 @@ proc buildReplacement(ctx: var BlockBuilderContext; child, parent: StyledNode;
       quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].e
     else:
       return
-    let text = newStyledText(s)
+    let text = newCharacterData(s)
     ctx.pushInlineText(computed, parent, text)
   of ContentNoOpenQuote:
     inc ctx.quoteLevel
   of ContentNoCloseQuote:
     if ctx.quoteLevel > 0: dec ctx.quoteLevel
   of ContentString:
-    let text = newStyledText(child.content.s)
+    let text = newCharacterData(child.content.s)
     ctx.pushInlineText(computed, parent, text)
   of ContentImage:
     if child.content.bmp != nil:
@@ -3204,7 +3209,7 @@ proc buildReplacement(ctx: var BlockBuilderContext; child, parent: StyledNode;
     ctx.pushInline(InlineBox(
       t: ibtNewline,
       computed: computed,
-      node: child
+      node: child.element
     ))
 
 proc buildInlineBoxes(ctx: var BlockBuilderContext; styledNode: StyledNode;
@@ -3213,7 +3218,7 @@ proc buildInlineBoxes(ctx: var BlockBuilderContext; styledNode: StyledNode;
     t: ibtParent,
     computed: computed,
     splitType: {stSplitStart},
-    node: styledNode
+    node: styledNode.element
   )
   if ctx.inlineStack.len == 0:
     ctx.addInlineRoot(parent)
@@ -3228,10 +3233,10 @@ proc buildInlineBoxes(ctx: var BlockBuilderContext; styledNode: StyledNode;
       ctx.buildFromElem(child, child.computed)
     of stText:
       ctx.flushInlineTable()
-      ctx.pushInlineText(computed, styledNode, child)
+      ctx.pushInlineText(computed, styledNode.element, child.text)
     of stReplacement:
       ctx.flushInlineTable()
-      ctx.buildReplacement(child, styledNode, computed)
+      ctx.buildReplacement(child, styledNode.element, computed)
   ctx.reconstructInlineParents()
   ctx.flushInlineTable()
   let box = ctx.inlineStackFragments.pop()
@@ -3262,10 +3267,11 @@ proc buildInnerBlock(ctx: var BlockBuilderContext) =
     of stElement:
       ctx.buildFromElem(child, child.computed)
     of stText:
-      if ctx.canBuildAnonInline(ctx.outer.computed, child.textData):
-        ctx.pushInlineText(inlineComputed, ctx.styledNode, child)
+      let text = child.text
+      if ctx.canBuildAnonInline(ctx.outer.computed, text.data):
+        ctx.pushInlineText(inlineComputed, ctx.styledNode.element, text)
     of stReplacement:
-      ctx.buildReplacement(child, ctx.styledNode, inlineComputed)
+      ctx.buildReplacement(child, ctx.styledNode.element, inlineComputed)
   ctx.iflush()
 
 proc buildBlock(ctx: var BlockBuilderContext) =
@@ -3297,10 +3303,11 @@ proc buildInnerFlex(ctx: var BlockBuilderContext) =
         child.computed
       ctx.buildFromElem(child, computed)
     of stText:
-      if ctx.canBuildAnonInline(ctx.outer.computed, child.textData):
-        ctx.pushInlineText(inlineComputed, ctx.styledNode, child)
+      let text = child.text
+      if ctx.canBuildAnonInline(ctx.outer.computed, text.data):
+        ctx.pushInlineText(inlineComputed, ctx.styledNode.element, text)
     of stReplacement:
-      ctx.buildReplacement(child, ctx.styledNode, inlineComputed)
+      ctx.buildReplacement(child, ctx.styledNode.element, inlineComputed)
   ctx.iflush()
 
 proc buildFlex(ctx: var BlockBuilderContext) =
@@ -3314,7 +3321,7 @@ proc buildFlex(ctx: var BlockBuilderContext) =
 
 proc buildTableCell(parent: var BlockBuilderContext; styledNode: StyledNode;
     computed: CSSValues): BlockBox =
-  let box = BlockBox(node: styledNode, computed: computed)
+  let box = BlockBox(node: styledNode.element, computed: computed)
   var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
@@ -3344,7 +3351,7 @@ proc buildTableRowChildWrappers(box: BlockBox) =
 
 proc buildTableRow(parent: var BlockBuilderContext; styledNode: StyledNode;
     computed: CSSValues): BlockBox =
-  let box = BlockBox(node: styledNode, computed: computed)
+  let box = BlockBox(node: styledNode.element, computed: computed)
   var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
@@ -3379,7 +3386,7 @@ proc buildTableRowGroupChildWrappers(box: BlockBox) =
 
 proc buildTableRowGroup(parent: var BlockBuilderContext; styledNode: StyledNode;
     computed: CSSValues): BlockBox =
-  let box = BlockBox(node: styledNode, computed: computed)
+  let box = BlockBox(node: styledNode.element, computed: computed)
   var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
@@ -3388,7 +3395,7 @@ proc buildTableRowGroup(parent: var BlockBuilderContext; styledNode: StyledNode;
 
 proc buildTableCaption(parent: var BlockBuilderContext; styledNode: StyledNode;
     computed: CSSValues): BlockBox =
-  let box = BlockBox(node: styledNode, computed: computed)
+  let box = BlockBox(node: styledNode.element, computed: computed)
   var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
@@ -3438,13 +3445,13 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
     cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
     positioned: @[PositionedItem(), PositionedItem()],
     myRootProperties: rootProperties(),
-    imgText: newStyledText("[img]"),
-    videoText: newStyledText("[video]"),
-    audioText: newStyledText("[audio]"),
-    iframeText: newStyledText("[iframe]"),
+    imgText: newCharacterData("[img]"),
+    videoText: newCharacterData("[video]"),
+    audioText: newCharacterData("[audio]"),
+    iframeText: newCharacterData("[iframe]"),
     luctx: LUContext()
   )
-  let box = BlockBox(computed: root.computed, node: root)
+  let box = BlockBox(computed: root.computed, node: root.element)
   var ctx = initBlockBuilderContext(root, box, lctx, nil)
   ctx.buildBlock()
   let sizes = lctx.resolveBlockSizes(space, box.computed)
