@@ -301,8 +301,8 @@ type
     ## https://github.com/nim-lang/Nim/issues/8745 - genericReset slow
     ## https://github.com/nim-lang/Nim/issues/13879 - double-zero-init slow
     ## https://github.com/nim-lang/Nim/issues/14318 - generic error raises pragma (fixed in 1.6.14+)
-
-    # https://github.com/nim-lang/Nim/issues/20699 (fixed in 2.0.0+)
+    ## https://github.com/nim-lang/Nim/issues/23741 - inefficient codegen for temporaries
+    ## https://github.com/nim-lang/Nim/issues/20699 (fixed in 2.0.0+)
     # case oResultPrivate: bool
     # of false:
     #   eResultPrivate: E
@@ -339,6 +339,63 @@ type
           vResultPrivate*: T
 
   Opt*[T] = Result[T, void]
+
+const
+  resultsGenericsOpenSym* {.booldefine.} = true
+    ## Enable the experimental `genericsOpenSym` feature or a workaround for the
+    ## template injection problem in the issue linked below where scoped symbol
+    ## resolution works differently for expanded bodies in templates depending on
+    ## whether we're in a generic context or not.
+    ##
+    ## The issue leads to surprising errors where symbols from outer scopes get
+    ## bound instead of the symbol created in the template scope which should be
+    ## seen as a better candidate, breaking access to `error` in `valueOr` and
+    ## friends.
+    ##
+    ## In Nim versions that do not support `genericsOpenSym`, a macro is used
+    ## instead to reassign symbol matches which may or may not work depending on
+    ## the complexity of the code.
+    ##
+    ## Nim 2.0.8 was released with an incomplete fix but already declares
+    ## `nimHasGenericsOpenSym`.
+    # TODO https://github.com/nim-lang/Nim/issues/22605
+    # TODO https://github.com/arnetheduck/nim-results/issues/34
+    # TODO https://github.com/nim-lang/Nim/issues/23386
+    # TODO https://github.com/nim-lang/Nim/issues/23385
+    #
+    # Related PR:s (there's more probably, but this gives an overview)
+    # https://github.com/nim-lang/Nim/pull/23102
+    # https://github.com/nim-lang/Nim/pull/23572
+    # https://github.com/nim-lang/Nim/pull/23873
+    # https://github.com/nim-lang/Nim/pull/23892
+    # https://github.com/nim-lang/Nim/pull/23939
+
+  resultsGenericsOpenSymWorkaround* {.booldefine.} =
+    resultsGenericsOpenSym and not defined(nimHasGenericsOpenSym2)
+    ## Prefer macro workaround to solve genericsOpenSym issue
+    # TODO https://github.com/nim-lang/Nim/pull/23892#discussion_r1713434311
+
+  resultsGenericsOpenSymWorkaroundHint* {.booldefine.} = true
+
+  resultsLent {.booldefine.} =
+    (NimMajor, NimMinor, NimPatch) >= (2, 2, 0) or
+    (defined(gcRefc) and ((NimMajor, NimMinor, NimPatch) >= (2, 0, 8)))
+    ## Enable return of `lent` types - this *mostly* works in Nim 1.6.18+ but
+    ## there have been edge cases reported as late as 1.6.14 - YMMV -
+    ## conservatively, `lent` is therefore enabled only with the latest Nim
+    ## version at the time of writing, where it could be verified to work with
+    ## several large applications.
+    ##
+    ## ORC is not expected to work until 2.2.
+    ## https://github.com/nim-lang/Nim/issues/23973
+
+when resultsLent:
+  template maybeLent(T: untyped): untyped =
+    lent T
+
+else:
+  template maybeLent(T: untyped): untyped =
+    T
 
 func raiseResultOk[T, E](self: Result[T, E]) {.noreturn, noinline.} =
   # noinline because raising should take as little space as possible at call
@@ -803,7 +860,14 @@ func `==`*[T0, T1](lhs: Result[T0, void], rhs: Result[T1, void]): bool {.inline.
     of false:
       true
 
-func value*[T, E](self: Result[T, E]): T {.inline.} =
+func value*[E](self: Result[void, E]) {.inline.} =
+  ## Fetch value of result if set, or raise Defect
+  ## Exception bridge mode: raise given Exception instead
+  ## See also: Option.get
+  withAssertOk(self):
+    discard
+
+func value*[T: not void, E](self: Result[T, E]): maybeLent T {.inline.} =
   ## Fetch value of result if set, or raise Defect
   ## Exception bridge mode: raise given Exception instead
   ## See also: Option.get
@@ -845,7 +909,7 @@ template unsafeValue*[E](self: Result[void, E]) =
   ## See also: `unsafeError`
   assert self.oResultPrivate # Emulate field access defect in debug builds
 
-func tryValue*[T, E](self: Result[T, E]): T {.inline.} =
+func tryValue*[E](self: Result[void, E]) {.inline.} =
   ## Fetch value of result if set, or raise
   ## When E is an Exception, raise that exception - otherwise, raise a ResultError[E]
   mixin raiseResultError
@@ -853,10 +917,20 @@ func tryValue*[T, E](self: Result[T, E]): T {.inline.} =
   of false:
     self.raiseResultError()
   of true:
-    when T isnot void:
-      self.vResultPrivate
+    discard
 
-func expect*[T, E](self: Result[T, E], m: string): T =
+func tryValue*[T: not void, E](self: Result[T, E]): maybeLent T {.inline.} =
+  ## Fetch value of result if set, or raise
+  ## When E is an Exception, raise that exception - otherwise, raise a ResultError[E]
+  mixin raiseResultError
+  case self.oResultPrivate
+  of false:
+    self.raiseResultError()
+  of true:
+    # TODO https://github.com/nim-lang/Nim/issues/22216
+    result = self.vResultPrivate
+
+func expect*[E](self: Result[void, E], m: string) =
   ## Return value of Result, or raise a `Defect` with the given message - use
   ## this helper to extract the value when an error is not expected, for example
   ## because the program logic dictates that the operation should never fail
@@ -873,8 +947,27 @@ func expect*[T, E](self: Result[T, E], m: string): T =
     else:
       raiseResultDefect(m)
   of true:
-    when T isnot void:
-      self.vResultPrivate
+    discard
+
+func expect*[T: not void, E](self: Result[T, E], m: string): maybeLent T =
+  ## Return value of Result, or raise a `Defect` with the given message - use
+  ## this helper to extract the value when an error is not expected, for example
+  ## because the program logic dictates that the operation should never fail
+  ##
+  ## ```nim
+  ## let r = Result[int, int].ok(42)
+  ## # Put here a helpful comment why you think this won't fail
+  ## echo r.expect("r was just set to ok(42)")
+  ## ```
+  case self.oResultPrivate
+  of false:
+    when E isnot void:
+      raiseResultDefect(m, self.eResultPrivate)
+    else:
+      raiseResultDefect(m)
+  of true:
+    # TODO https://github.com/nim-lang/Nim/issues/22216
+    result = self.vResultPrivate
 
 func expect*[T: not void, E](self: var Result[T, E], m: string): var T =
   (
@@ -902,7 +995,7 @@ func `$`*[T, E](self: Result[T, E]): string =
     else:
       "err(" & $self.eResultPrivate & ")"
 
-func error*[T, E](self: Result[T, E]): E =
+func error*[T](self: Result[T, void]) =
   ## Fetch error of result if set, or raise Defect
   case self.oResultPrivate
   of true:
@@ -911,10 +1004,21 @@ func error*[T, E](self: Result[T, E]): E =
     else:
       raiseResultDefect("Trying to access error when value is set")
   of false:
-    when E isnot void:
-      self.eResultPrivate
+    discard
 
-func tryError*[T, E](self: Result[T, E]): E {.inline.} =
+func error*[T; E: not void](self: Result[T, E]): maybeLent E =
+  ## Fetch error of result if set, or raise Defect
+  case self.oResultPrivate
+  of true:
+    when T isnot void:
+      raiseResultDefect("Trying to access error when value is set", self.vResultPrivate)
+    else:
+      raiseResultDefect("Trying to access error when value is set")
+  of false:
+    # TODO https://github.com/nim-lang/Nim/issues/22216
+    result = self.eResultPrivate
+
+func tryError*[T](self: Result[T, void]) {.inline.} =
   ## Fetch error of result if set, or raise
   ## Raises a ResultError[T]
   mixin raiseResultOk
@@ -922,8 +1026,18 @@ func tryError*[T, E](self: Result[T, E]): E {.inline.} =
   of true:
     self.raiseResultOk()
   of false:
-    when E isnot void:
-      self.eResultPrivate
+    discard
+
+func tryError*[T; E: not void](self: Result[T, E]): maybeLent E {.inline.} =
+  ## Fetch error of result if set, or raise
+  ## Raises a ResultError[T]
+  mixin raiseResultOk
+  case self.oResultPrivate
+  of true:
+    self.raiseResultOk()
+  of false:
+    # TODO https://github.com/nim-lang/Nim/issues/22216
+    result = self.eResultPrivate
 
 template unsafeError*[T; E: not void](self: Result[T, E]): E =
   ## Fetch error of result if set, undefined behavior if unset
@@ -986,122 +1100,355 @@ func get*[T, E](self: Result[T, E], otherwise: T): T {.inline.} =
   of true: self.vResultPrivate
   of false: otherwise
 
-template isOkOr*[T, E](self: Result[T, E], body: untyped) =
-  ## Evaluate `body` iff result has been assigned an error
-  ## `body` is evaluated lazily.
-  ##
-  ## Example:
-  ## ```
-  ## let
-  ##   v = Result[int, string].err("hello")
-  ##   x = v.isOkOr: echo "not ok"
-  ##   # experimental: direct error access using an unqualified `error` symbol
-  ##   z = v.isOkOr: echo error
-  ## ```
-  ##
-  ## `error` access:
-  ##
-  ## TODO experimental, might change in the future
-  ##
-  ## The template contains a shortcut for accessing the error of the result,
-  ## it can only be used outside of generic code,
-  ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
+when resultsGenericsOpenSymWorkaround:
+  import macros
 
-  let s = (self) # TODO avoid copy
-  case s.oResultPrivate
-  of false:
-    when E isnot void:
-      template error(): E {.used, inject.} =
-        s.eResultPrivate
+  proc containsHack(n: NimNode): bool =
+    if n.len == 0:
+      n.eqIdent("isOkOr") or n.eqIdent("isErrOr") or n.eqIdent("valueOr") or
+        n.eqIdent("errorOr")
+    else:
+      for child in n:
+        if containsHack(child):
+          return true
+      false
 
-    body
-  of true:
-    discard
+  proc containsIdent(n: NimNode, what: string, with: NimNode): bool =
+    if n == with:
+      false # Don't replace if the right symbol is already being used
+    elif n.eqIdent(what):
+      true
+    else:
+      for child in n:
+        if containsIdent(child, what, with):
+          return true
 
-template isErrOr*[T, E](self: Result[T, E], body: untyped) =
-  ## Evaluate `body` iff result has been assigned a value
-  ## `body` is evaluated lazily.
-  ##
-  ## Example:
-  ## ```
-  ## let
-  ##   v = Result[int, string].err("hello")
-  ##   x = v.isOkOr: echo "not ok"
-  ##   # experimental: direct error access using an unqualified `error` symbol
-  ##   z = v.isOkOr: echo error
-  ## ```
-  ##
-  ## `value` access:
-  ##
-  ## TODO experimental, might change in the future
-  ##
-  ## The template contains a shortcut for accessing the value of the result,
-  ## it can only be used outside of generic code,
-  ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
+      false
 
-  let s = (self) # TODO avoid copy
-  case s.oResultPrivate
-  of true:
-    when T isnot void:
-      template value(): T {.used, inject.} =
-        s.vResultPrivate
+  proc replace(n: NimNode, what: string, with: NimNode): NimNode =
+    if not containsIdent(n, what, with): # Fast path that avoids copies altogether
+      return n
 
-    body
-  of false:
-    discard
+    if n == with:
+      result = with
+    elif n.eqIdent(what):
+      when resultsGenericsOpenSymWorkaroundHint:
+        hint("Replaced conflicting external symbol " & what, n)
+      result = with
+    else:
+      case n.kind
+      of nnkCallKinds:
+        if n[0].containsHack():
+          # Don't replace inside nested expansion
+          result = n
+        elif n[0].eqIdent(what):
+          if n.len == 1:
+            if n[0] == with:
+              result = n
+            else:
+              # No arguments - replace call symbol
+              result = copyNimNode(n)
+              result.add with
+              when resultsGenericsOpenSymWorkaroundHint:
+                hint("Replaced conflicting external symbol " & what, n[0])
+          else:
+            # `error(...)` - replace args but not function name
+            result = copyNimNode(n)
+            result.add n[0]
+            for i in 1 ..< n.len:
+              result.add replace(n[i], what, with)
+        else:
+          result = copyNimNode(n)
+          for i in 0 ..< n.len:
+            result.add replace(n[i], what, with)
+      of nnkExprEqExpr:
+        # "error = xxx" - function call with named parameters and other weird stuff
+        result = copyNimNode(n)
+        result.add n[0]
+        for i in 1 ..< n.len:
+          result.add replace(n[i], what, with)
+      of nnkLetSection, nnkVarSection, nnkFormalParams:
+        result = copyNimNode(n)
+        for i in 0 ..< n.len:
+          result.add replace(n[i], what, with)
+      of nnkDotExpr:
+        # Ignore rhs in "abc.error"
+        result = copyNimNode(n)
+        result.add(replace(n[0], what, with))
+        result.add(n[1])
+      else:
+        if (
+          n.kind == nnkForStmt and
+          (n[0].eqIdent(what) or (n.len == 4 and n[1].eqIdent(what))) or
+          (n.kind == nnkIdentDefs and n[0].eqIdent(what))
+        ):
+          # Naming the symbol the same way requires lots of magic here - just
+          # say no
+          error("Shadowing variable declarations of `" & what & "` not supported", n[0])
 
-template valueOr*[T: not void, E](self: Result[T, E], def: untyped): T =
-  ## Fetch value of result if set, or evaluate `def`
-  ## `def` is evaluated lazily, and must be an expression of `T` or exit
-  ## the scope (for example using `return` / `raise`)
-  ##
-  ## See `isOkOr` for a version that works with `Result[void, E]`.
-  ##
-  ## Example:
-  ## ```
-  ## let
-  ##   v = Result[int, string].err("hello")
-  ##   x = v.valueOr: 42 # x == 42 now
-  ##   y = v.valueOr: raise (ref ValueError)(msg: "v is an error, gasp!")
-  ##   # experimental: direct error access using an unqualified `error` symbol
-  ##   z = v.valueOr: raise (ref ValueError)(msg: error)
-  ## ```
-  ##
-  ## `error` access:
-  ##
-  ## TODO experimental, might change in the future
-  ##
-  ## The template contains a shortcut for accessing the error of the result,
-  ## it can only be used outside of generic code,
-  ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
-  ##
-  let s = (self) # TODO avoid copy
-  case s.oResultPrivate
-  of true:
-    s.vResultPrivate
-  of false:
-    when E isnot void:
-      template error(): E {.used, inject.} =
-        s.eResultPrivate
+        result = copyNimNode(n)
+        for i in 0 ..< n.len:
+          result.add replace(n[i], what, with)
 
-    def
+  macro replaceHack(body, what, with: untyped): untyped =
+    # This hack replaces the `what` identifier with `with` except where
+    # this replacing is not expected - this is an approximation of the intent
+    # of injecting a template and likely doesn't cover all applicable cases
+    result = replace(body, $what, with)
 
-template errorOr*[T; E: not void](self: Result[T, E], def: untyped): E =
-  ## Fetch error of result if not set, or evaluate `def`
-  ## `def` is evaluated lazily, and must be an expression of `T` or exit
-  ## the scope (for example using `return` / `raise`)
-  ##
-  ## See `isErrOr` for a version that works with `Result[T, void]`.
-  let s = (self) # TODO avoid copy
-  case s.oResultPrivate
-  of false:
-    s.eResultPrivate
-  of true:
-    when T isnot void:
-      template value(): T {.used, inject.} =
-        s.vResultPrivate
+  template isOkOr*[T, E](self: Result[T, E], body: untyped) =
+    ## Evaluate `body` iff result has been assigned an error
+    ## `body` is evaluated lazily.
+    ##
+    ## Example:
+    ## ```
+    ## let
+    ##   v = Result[int, string].err("hello")
+    ##   x = v.isOkOr: echo "not ok"
+    ##   # experimental: direct error access using an unqualified `error` symbol
+    ##   z = v.isOkOr: echo error
+    ## ```
+    ##
+    ## `error` access:
+    ##
+    ## TODO experimental, might change in the future
+    ##
+    ## The template contains a shortcut for accessing the error of the result,
+    ## it can only be used outside of generic code,
+    ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
 
-    def
+    let s = (self) # TODO avoid copy
+    case s.oResultPrivate
+    of false:
+      when E isnot void:
+        template error(): E {.used, gensym.} =
+          s.eResultPrivate
+
+        replaceHack(body, "error", error)
+      else:
+        body
+    of true:
+      discard
+
+  template isErrOr*[T, E](self: Result[T, E], body: untyped) =
+    ## Evaluate `body` iff result has been assigned a value
+    ## `body` is evaluated lazily.
+    ##
+    ## Example:
+    ## ```
+    ## let
+    ##   v = Result[int, string].ok(42)
+    ##   x = v.isErrOr: echo "not err"
+    ##   # experimental: direct value access using an unqualified `value` symbol
+    ##   z = v.isErrOr: echo value
+    ## ```
+    ##
+    ## `value` access:
+    ##
+    ## TODO experimental, might change in the future
+    ##
+    ## The template contains a shortcut for accessing the value of the result,
+    ## it can only be used outside of generic code,
+    ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
+
+    let s = (self) # TODO avoid copy
+    case s.oResultPrivate
+    of true:
+      when T isnot void:
+        template value(): T {.used, gensym.} =
+          s.vResultPrivate
+
+        replaceHack(body, "value", s.vResultPrivate)
+      else:
+        body
+    of false:
+      discard
+
+  template valueOr*[T: not void, E](self: Result[T, E], def: untyped): T =
+    ## Fetch value of result if set, or evaluate `def`
+    ## `def` is evaluated lazily, and must be an expression of `T` or exit
+    ## the scope (for example using `return` / `raise`)
+    ##
+    ## See `isOkOr` for a version that works with `Result[void, E]`.
+    ##
+    ## Example:
+    ## ```
+    ## let
+    ##   v = Result[int, string].err("hello")
+    ##   x = v.valueOr: 42 # x == 42 now
+    ##   y = v.valueOr: raise (ref ValueError)(msg: "v is an error, gasp!")
+    ##   # experimental: direct error access using an unqualified `error` symbol
+    ##   z = v.valueOr: raise (ref ValueError)(msg: error)
+    ## ```
+    ##
+    ## `error` access:
+    ##
+    ## TODO experimental, might change in the future
+    ##
+    ## The template contains a shortcut for accessing the error of the result,
+    ## it can only be used outside of generic code,
+    ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
+    ##
+    let s = (self) # TODO avoid copy
+    case s.oResultPrivate
+    of true:
+      s.vResultPrivate
+    of false:
+      when E isnot void:
+        template error(): E {.used, gensym.} =
+          s.eResultPrivate
+
+        replaceHack(def, "error", error)
+      else:
+        def
+
+  template errorOr*[T; E: not void](self: Result[T, E], def: untyped): E =
+    ## Fetch error of result if not set, or evaluate `def`
+    ## `def` is evaluated lazily, and must be an expression of `T` or exit
+    ## the scope (for example using `return` / `raise`)
+    ##
+    ## See `isErrOr` for a version that works with `Result[T, void]`.
+    let s = (self) # TODO avoid copy
+    case s.oResultPrivate
+    of false:
+      s.eResultPrivate
+    of true:
+      when T isnot void:
+        template value(): T {.used, gensym.} =
+          s.vResultPrivate
+
+        replaceHack(def, "value", value)
+      else:
+        def
+
+else:
+  # TODO https://github.com/nim-lang/Nim/pull/23892#discussion_r1713434311
+  const pushGenericsOpenSym = defined(nimHasGenericsOpenSym2) and resultsGenericsOpenSym
+
+  template isOkOr*[T, E](self: Result[T, E], body: untyped) =
+    ## Evaluate `body` iff result has been assigned an error
+    ## `body` is evaluated lazily.
+    ##
+    ## Example:
+    ## ```
+    ## let
+    ##   v = Result[int, string].err("hello")
+    ##   x = v.isOkOr: echo "not ok"
+    ##   # experimental: direct error access using an unqualified `error` symbol
+    ##   z = v.isOkOr: echo error
+    ## ```
+    ##
+    ## `error` access:
+    ##
+    ## TODO experimental, might change in the future
+    ##
+    ## The template contains a shortcut for accessing the error of the result,
+    ## it can only be used outside of generic code,
+    ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
+
+    let s = (self) # TODO avoid copy
+    case s.oResultPrivate
+    of false:
+      when E isnot void:
+        when pushGenericsOpenSym:
+          {.push experimental: "genericsOpenSym".}
+        template error(): E {.used.} =
+          s.eResultPrivate
+
+      body
+    of true:
+      discard
+
+  template isErrOr*[T, E](self: Result[T, E], body: untyped) =
+    ## Evaluate `body` iff result has been assigned a value
+    ## `body` is evaluated lazily.
+    ##
+    ## Example:
+    ## ```
+    ## let
+    ##   v = Result[int, string].ok(42)
+    ##   x = v.isErrOr: echo "not err"
+    ##   # experimental: direct value access using an unqualified `value` symbol
+    ##   z = v.isErrOr: echo value
+    ## ```
+    ##
+    ## `value` access:
+    ##
+    ## TODO experimental, might change in the future
+    ##
+    ## The template contains a shortcut for accessing the value of the result,
+    ## it can only be used outside of generic code,
+    ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
+
+    let s = (self) # TODO avoid copy
+    case s.oResultPrivate
+    of true:
+      when T isnot void:
+        when pushGenericsOpenSym:
+          {.push experimental: "genericsOpenSym".}
+        template value(): T {.used.} =
+          s.vResultPrivate
+
+      body
+    of false:
+      discard
+
+  template valueOr*[T: not void, E](self: Result[T, E], def: untyped): T =
+    ## Fetch value of result if set, or evaluate `def`
+    ## `def` is evaluated lazily, and must be an expression of `T` or exit
+    ## the scope (for example using `return` / `raise`)
+    ##
+    ## See `isOkOr` for a version that works with `Result[void, E]`.
+    ##
+    ## Example:
+    ## ```
+    ## let
+    ##   v = Result[int, string].err("hello")
+    ##   x = v.valueOr: 42 # x == 42 now
+    ##   y = v.valueOr: raise (ref ValueError)(msg: "v is an error, gasp!")
+    ##   # experimental: direct error access using an unqualified `error` symbol
+    ##   z = v.valueOr: raise (ref ValueError)(msg: error)
+    ## ```
+    ##
+    ## `error` access:
+    ##
+    ## TODO experimental, might change in the future
+    ##
+    ## The template contains a shortcut for accessing the error of the result,
+    ## it can only be used outside of generic code,
+    ## see https://github.com/status-im/nim-stew/issues/161#issuecomment-1397121386
+    ##
+    let s = (self) # TODO avoid copy
+    case s.oResultPrivate
+    of true:
+      s.vResultPrivate
+    of false:
+      when E isnot void:
+        when pushGenericsOpenSym:
+          {.push experimental: "genericsOpenSym".}
+        template error(): E {.used.} =
+          s.eResultPrivate
+
+      def
+
+  template errorOr*[T; E: not void](self: Result[T, E], def: untyped): E =
+    ## Fetch error of result if not set, or evaluate `def`
+    ## `def` is evaluated lazily, and must be an expression of `T` or exit
+    ## the scope (for example using `return` / `raise`)
+    ##
+    ## See `isErrOr` for a version that works with `Result[T, void]`.
+    let s = (self) # TODO avoid copy
+    case s.oResultPrivate
+    of false:
+      s.eResultPrivate
+    of true:
+      when T isnot void:
+        when pushGenericsOpenSym:
+          {.push experimental: "genericsOpenSym".}
+        template value(): T {.used.} =
+          s.vResultPrivate
+
+      def
 
 func flatten*[T, E](self: Result[Result[T, E], E]): Result[T, E] =
   ## Remove one level of nesting
@@ -1218,7 +1565,7 @@ template `?`*[T, E](self: Result[T, E]): auto =
 
 # Collection integration
 
-iterator values*[T, E](self: Result[T, E]): T =
+iterator values*[T, E](self: Result[T, E]): maybeLent T =
   ## Iterate over a Result as a 0/1-item collection, returning its value if set
   case self.oResultPrivate
   of true:
@@ -1226,7 +1573,7 @@ iterator values*[T, E](self: Result[T, E]): T =
   of false:
     discard
 
-iterator errors*[T, E](self: Result[T, E]): E =
+iterator errors*[T, E](self: Result[T, E]): maybeLent E =
   ## Iterate over a Result as a 0/1-item collection, returning its error if set
   case self.oResultPrivate
   of false:
@@ -1234,7 +1581,7 @@ iterator errors*[T, E](self: Result[T, E]): E =
   of true:
     discard
 
-iterator items*[T](self: Opt[T]): T =
+iterator items*[T](self: Opt[T]): maybeLent T =
   ## Iterate over an Opt as a 0/1-item collection, returning its value if set
   case self.oResultPrivate
   of true:
