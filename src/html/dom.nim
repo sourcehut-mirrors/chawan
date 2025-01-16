@@ -5862,9 +5862,22 @@ x.width = width;
 x.height = height;
 return x;
 """)
+  let optionFun = ctx.newFunction(
+    ["text", "value", "defaultSelected", "selected"], """
+text = text ? text + "" : "";
+const option = document.createElement("option");
+if (text !== "")
+  option.appendChild(new Text(text));
+option.value = value;
+option.defaultSelected = defaultSelected;
+option.selected = selected;
+return option;
+""")
   doAssert JS_SetConstructorBit(ctx, imageFun, true)
+  doAssert JS_SetConstructorBit(ctx, optionFun, true)
   let jsWindow = JS_GetGlobalObject(ctx)
   ctx.definePropertyCW(jsWindow, "Image", imageFun)
+  ctx.definePropertyCW(jsWindow, "Option", optionFun)
   ctx.definePropertyCW(jsWindow, "HTMLDocument",
     JS_GetPropertyStr(ctx, jsWindow, "Document"))
   JS_FreeValue(ctx, jsWindow)
