@@ -27,7 +27,7 @@ proc newFormData0*(entries: seq[FormDataEntry]; urandom: PosixStream):
 
 proc newFormData(ctx: JSContext; form: HTMLFormElement = nil;
     submitter: HTMLElement = nil): DOMResult[FormData] {.jsctor.} =
-  let urandom = ctx.getGlobal().urandom
+  let urandom = ctx.getGlobal().crypto.urandom
   let this = FormData(boundary: urandom.generateBoundary())
   if form != nil:
     if submitter != nil:
@@ -148,12 +148,12 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
           "on"
         entrylist.add((name, value))
       of itFile:
-        if field.file != nil:
+        for file in field.files:
           entrylist.add(FormDataEntry(
             name: name,
-            filename: field.file.name,
+            filename: file.name,
             isstr: false,
-            value: field.file
+            value: file
           ))
       of itHidden:
         if name.equalsIgnoreCase("_charset_"):

@@ -1300,7 +1300,8 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       RequestBody(t: rbtString, s: serializeFormURLEncoded(kvlist))
     of fetMultipart:
       #TODO with charset
-      let multipart = serializeMultipart(entryList, buffer.window.urandom)
+      let multipart = serializeMultipart(entryList,
+        buffer.window.crypto.urandom)
       RequestBody(t: rbtMultipart, multipart: multipart)
     of fetTextPlain:
       #TODO with charset
@@ -1379,7 +1380,7 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
       let input = HTMLInputElement(buffer.document.focus)
       case input.inputType
       of itFile:
-        input.file = newWebFile(s, fd)
+        input.files = @[newWebFile(s, fd)]
         input.setInvalid()
         buffer.maybeReshape()
         res.repaint = true
@@ -1927,7 +1928,7 @@ proc cleanup(buffer: Buffer) =
   if gpstream != nil:
     gpstream.sclose()
     gpstream = nil
-  buffer.window.urandom.sclose()
+  buffer.window.crypto.urandom.sclose()
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;

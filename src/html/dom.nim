@@ -92,6 +92,7 @@ type
     history* {.jsget.}: History
     localStorage* {.jsget.}: Storage
     sessionStorage* {.jsget.}: Storage
+    crypto* {.jsget.}: Crypto
     settings*: EnvironmentSettings
     loader*: FileLoader
     location* {.jsget.}: Location
@@ -111,7 +112,6 @@ type
     imageId: int
     # list of streams that must be closed for canvas rendering on load
     pendingCanvasCtls*: seq[CanvasRenderingContext2D]
-    urandom*: PosixStream
     imageTypes*: Table[string, string]
     userAgent*: string
     referrer* {.jsget.}: string
@@ -133,6 +133,9 @@ type
 
   Storage* = object
     map*: seq[tuple[key, value: string]]
+
+  Crypto* = object
+    urandom*: PosixStream
 
   NamedNodeMap = ref object
     element: Element
@@ -300,9 +303,9 @@ type
     inputType* {.jsget: "type".}: InputType
     value* {.jsget.}: string
     internalChecked {.jsget: "checked".}: bool
+    files* {.jsget.}: seq[WebFile]
     xcoord*: int
     ycoord*: int
-    file*: WebFile
 
   HTMLAnchorElement* = ref object of HTMLElement
     relList {.jsget.}: DOMTokenList
@@ -447,6 +450,7 @@ jsDestructor(MimeTypeArray)
 jsDestructor(Screen)
 jsDestructor(History)
 jsDestructor(Storage)
+jsDestructor(Crypto)
 
 jsDestructor(Element)
 jsDestructor(HTMLElement)
@@ -2990,7 +2994,8 @@ func inputString*(input: HTMLInputElement): string =
     else:
       "SUBMIT"
   of itFile:
-    let s = if input.file != nil: input.file.name else: ""
+    #TODO multiple files?
+    let s = if input.files.len > 0: input.files[0].name else: ""
     s.padToWidth(int(input.attrulgz(satSize).get(20)))
   else: input.value
 
@@ -4483,7 +4488,7 @@ proc resetElement*(element: Element) =
     of itCheckbox, itRadio:
       input.setChecked(input.attrb(satChecked))
     of itFile:
-      input.file = nil
+      input.files.setLen(0)
     else:
       input.value = input.attr(satValue)
     input.setInvalid()

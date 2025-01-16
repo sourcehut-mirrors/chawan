@@ -167,6 +167,20 @@ func delete(this: var Storage; k: string): bool {.jsdelprop.} =
   this.removeItem(k)
   return true
 
+# Crypto
+proc getRandomValues(ctx: JSContext; crypto: var Crypto; array: JSValue):
+    JSValue {.jsfunc.} =
+  var view: JSArrayBufferView
+  if ctx.fromJS(array, view).isNone:
+    return JS_EXCEPTION
+  if view.t < 0 or view.t > cint(JS_TYPED_ARRAY_BIG_UINT64):
+    return JS_ThrowDOMException(ctx, "Wrong typed array type",
+      "TypeMismatchError")
+  if view.abuf.len > 65536:
+    return JS_ThrowDOMException(ctx, "Too large array", "QuotaExceededError")
+  crypto.urandom.recvDataLoop(view.abuf.p, int(view.abuf.len))
+  return JS_DupValue(ctx, array)
+
 proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(Navigator)
   ctx.registerType(PluginArray)
@@ -174,6 +188,7 @@ proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(Screen)
   ctx.registerType(History)
   ctx.registerType(Storage)
+  ctx.registerType(Crypto)
 
 proc fetch(window: Window; input: JSValue;
     init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
@@ -412,7 +427,7 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
       origin: url.origin
     ),
     factory: factory,
-    urandom: urandom,
+    crypto: Crypto(urandom: urandom),
     imageTypes: imageTypes,
     userAgent: userAgent,
     referrer: referrer,

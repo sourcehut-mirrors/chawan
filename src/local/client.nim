@@ -169,7 +169,7 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     jsctx: jsctx,
     factory: newCAtomFactory(),
     loader: loader,
-    urandom: urandom,
+    crypto: Crypto(urandom: urandom),
     pager: newPager(config, forkserver, jsctx, warnings, urandom, loader),
     settings: EnvironmentSettings(scripting: smApp)
   )
