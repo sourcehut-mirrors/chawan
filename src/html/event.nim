@@ -340,6 +340,7 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
   var canceled = false
   var stop = false
   event.flags.incl(efDispatch)
+  event.target = target
   var target = target
   while target != nil and not stop:
     ctx.dispatchEvent0(event, target, stop, canceled)
