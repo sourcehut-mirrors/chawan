@@ -111,7 +111,7 @@ substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + enco
 
 [[omnirule]]
 match = '^go:'
-substitute-url = 'x => `https://www.google.com/search?gbv=1&ucbcb=1&q=${x.split(":").slice(1).join(":")}`'
+substitute-url = 'x => `https://www.google.com/search?gbv=1&ucbcb=1&oe=UTF-8&q=${x.split(":").slice(1).join(":")}`'
 
 # strip tracking
 [[siteconf]]
@@ -128,6 +128,18 @@ x => {
 		x.searchParams.delete(name);
 }
 '''
+# it seems they no longer allow searches without JS.
+# at least the old page still works
+default-headers = {
+	User-Agent = "w3m/0.5.3+git20230718",
+	Accept = "text/html, text/*;q=0.5, */*;q=0.4",
+	Accept-Encoding = "gzip, deflate",
+	Accept-Language = "en;q=1.0",
+	Pragma = "no-cache",
+	Cache-Control = "no-cache"
+}
+# the old style lacks a background, but sets foreground to black...
+stylesheet = "html { background: white }"
 
 [page]
 # pager commands, but define them before y so that they actually work.
