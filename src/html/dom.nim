@@ -1522,15 +1522,16 @@ proc item(ctx: JSContext; tokenList: DOMTokenList; u: uint32): JSValue
       return ctx.toJS(tokenList.toks[i])
   return JS_NULL
 
-func contains*(tokenList: DOMTokenList; a: CAtom): bool =
+func contains(tokenList: DOMTokenList; a: CAtom): bool =
   return a in tokenList.toks
 
-func contains(tokenList: DOMTokenList; a: StaticAtom): bool =
-  return tokenList.element.document.toAtom(a) in tokenList.toks
+func containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool =
+  let document = tokenList.element.document
+  return document.factory.containsIgnoreCase(tokenList.toks, a)
 
 func jsContains(tokenList: DOMTokenList; s: string): bool
     {.jsfunc: "contains".} =
-  return tokenList.element.document.toAtom(s) in tokenList
+  return tokenList.element.document.toAtom(s) in tokenList.toks
 
 func `$`(tokenList: DOMTokenList): string {.jsfunc: "toString".} =
   var s = ""
@@ -2654,7 +2655,7 @@ proc sheets*(document: Document): seq[CSSStylesheet] =
         document.cachedSheets.add(style.sheet)
       elif elem of HTMLLinkElement:
         let link = HTMLLinkElement(elem)
-        if link.enabled.get(satAlternate notin link.relList):
+        if link.enabled.get(not link.relList.containsIgnoreCase(satAlternate)):
           document.cachedSheets.add(link.sheets)
       else: discard
     document.cachedSheetsInvalid = false
@@ -3915,9 +3916,9 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL; applies: bool) =
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window; link: HTMLLinkElement) =
-  if not window.styling or satStylesheet notin link.relList or
+  if not window.styling or not link.relList.containsIgnoreCase(satStylesheet) or
       link.fetchStarted or
-      not link.enabled.get(satAlternate notin link.relList):
+      not link.enabled.get(not link.relList.containsIgnoreCase(satAlternate)):
     return
   link.fetchStarted = true
   let href = link.attr(satHref)

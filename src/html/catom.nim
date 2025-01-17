@@ -259,6 +259,10 @@ func toAtom*(factory: CAtomFactory; attrType: StaticAtom): CAtom =
 func toAtomLower*(factory: CAtomFactory; s: string): CAtom =
   return factory.lowerMap[int32(factory.toAtom(s))]
 
+func containsIgnoreCase*(factory: CAtomFactory; aa: openArray[CAtom];
+    a: StaticAtom): bool =
+  return factory.containsIgnoreCase(aa, factory.toAtom(a))
+
 func toStr*(factory: CAtomFactory; atom: CAtom): string =
   return factory.atomMap[int(atom)]
 
