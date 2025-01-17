@@ -59,16 +59,13 @@ type
       # replaced elements: quotes, or (TODO) markers, images
       content*: CSSContent
 
-template textData*(styledNode: StyledNode): string =
-  styledNode.text.data
-
 when defined(debug):
   func `$`*(node: StyledNode): string =
     if node == nil:
       return "nil"
     case node.t
     of stText:
-      return "#text " & node.textData
+      return "#text " & node.text.data
     of stElement:
       if node.pseudo != peNone:
         return "#" & $node.pseudo & "::" & $node.element
