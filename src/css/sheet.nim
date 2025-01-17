@@ -137,7 +137,8 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
     if hashes.tags.len > 0:
       for tag in hashes.tags:
         sheet.tagTable.withValue(tag, p):
-          p[].add(rule)
+          if p[][^1] != rule:
+            p[].add(rule)
         do:
           sheet.tagTable[tag] = @[rule]
     elif hashes.id != CAtomNull:
