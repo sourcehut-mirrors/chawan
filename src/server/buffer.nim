@@ -1025,7 +1025,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     discard close(pipefd[1]) # close write
     # We must wait for child to tee its ongoing streams.
     let ps = newPosixStream(pipefd[0])
-    let c = ps.sreadChar()
+    let c = ps.readChar()
     assert c == char(0)
     ps.sclose()
     buffer.loader.resume(ids)

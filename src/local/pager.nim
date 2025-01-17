@@ -444,9 +444,9 @@ proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
       var buf = [char(0)]
       let n = pager.term.istream.recvData(buf)
       if n == 1 and buf[0] == char(3): #C-c
-        pager.term.ibuf = ""
+        pager.term.resetInputBuffer()
         return 1
-      pager.term.ibuf &= buf[0]
+      pager.term.bufferInputChar(buf[0])
     except ErrorAgain:
       discard
   return 0

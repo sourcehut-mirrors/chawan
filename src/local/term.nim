@@ -136,7 +136,9 @@ type
     origTermios: Termios
     defaultBackground: RGBColor
     defaultForeground: RGBColor
-    ibuf*: string # buffer for chars when we can't process them
+    ibuf: array[256, char] # buffer for chars when we can't process them
+    ibufLen: int # len of ibuf
+    ibufn: int # position in ibuf
     sixelRegisterNum*: int
     sixelMaxWidth*: int
     sixelMaxHeight: int
@@ -254,11 +256,23 @@ proc write(term: Terminal; s: cstring) =
   term.outfile.write(s)
 
 proc readChar*(term: Terminal): char =
-  if term.ibuf.len == 0:
-    result = term.istream.sreadChar()
-  else:
-    result = term.ibuf[0]
-    term.ibuf.delete(0..0)
+  if term.ibufn == term.ibufLen:
+    term.ibufn = 0
+    term.ibufLen = term.istream.recvData(term.ibuf)
+  result = term.ibuf[term.ibufn]
+  inc term.ibufn
+
+proc bufferInputChar*(term: Terminal; c: char) =
+  if term.ibufn == term.ibuf.len:
+    return # can't help it, sorry :P
+  term.ibuf[term.ibufn] = c
+  inc term.ibufn
+  if term.ibufn >= term.ibufLen:
+    term.ibufLen = term.ibufn
+
+proc resetInputBuffer*(term: Terminal) =
+  term.ibufn = 0
+  term.ibufLen = 0
 
 proc flush*(term: Terminal) =
   term.outfile.flushFile()
@@ -292,7 +306,7 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
     term.write(term.clearEnd() & msg)
     term.flush()
-    discard term.istream.sreadChar()
+    discard term.istream.readChar()
 
 proc resetFormat(term: Terminal): string =
   when TermcapFound:

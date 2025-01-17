@@ -18,7 +18,7 @@ proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
   outs = ""
   try:
     ps.recvDataLoop(buf)
-    while (let c = ps.sreadChar(); c != '\n'):
+    while (let c = ps.readChar(); c != '\n'):
       outs &= c
     let status = parseInt32(buf.toOpenArray(0, 2)).get(-1)
     if buf[3] == ' ':
@@ -26,7 +26,7 @@ proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
     buf[3] = ' '
     while true: # multiline
       var lbuf = ""
-      while (let c = ps.sreadChar(); c != '\n'):
+      while (let c = ps.readChar(); c != '\n'):
         lbuf &= c
       outs &= lbuf
       if lbuf.startsWith(buf):

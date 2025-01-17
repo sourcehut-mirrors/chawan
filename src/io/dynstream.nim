@@ -60,10 +60,6 @@ proc write*(s: DynStream; buffer: openArray[char]) {.inline.} =
 proc write*(s: DynStream; c: char) {.inline.} =
   s.sendDataLoop(unsafeAddr c, 1)
 
-proc sreadChar*(s: DynStream): char =
-  let n = s.recvData(addr result, 1)
-  assert n == 1
-
 proc recvDataLoop*(s: DynStream; buffer: pointer; len: int) =
   var n = 0
   while n < len:
@@ -134,7 +130,7 @@ method recvData*(s: PosixStream; buffer: pointer; len: int): int =
     s.setEnd()
   return n
 
-proc sreadChar*(s: PosixStream): char =
+proc readChar*(s: PosixStream): char =
   let n = read(s.fd, addr result, 1)
   assert n == 1
 
