@@ -2965,11 +2965,15 @@ func checked*(input: HTMLInputElement): bool {.inline.} =
   return input.internalChecked
 
 proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
+  # Note: input elements are implemented as a replaced text, so we must
+  # fully invalidate them on checked change.
   if input.inputType == itRadio:
     for radio in input.radiogroup:
       radio.setInvalid(dtChecked)
+      radio.setInvalid()
       radio.internalChecked = false
   input.setInvalid(dtChecked)
+  input.setInvalid()
   input.internalChecked = b
 
 func inputString*(input: HTMLInputElement): string =
