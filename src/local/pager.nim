@@ -127,10 +127,9 @@ type
     alertState: PagerAlertState
     alerts: seq[string]
     alive: bool
-    askcharpromise*: Promise[string]
-    askcursor: int
-    askpromise*: Promise[bool]
-    askprompt: string
+    askPromise*: Promise[string]
+    askCursor: int
+    askPrompt: string
     blockTillRelease: bool
     commandMode {.jsget.}: bool
     config*: Config
@@ -170,7 +169,6 @@ type
     term*: Terminal
     timeouts*: TimeoutState
     unreg*: seq[Container]
-    urandom: PosixStream
 
   ContainerData* = ref object of MapData
     container*: Container
@@ -202,8 +200,7 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
 proc draw(pager: Pager)
 proc dumpBuffers(pager: Pager)
 proc evalJS(pager: Pager; src, filename: string; module = false): JSValue
-proc fulfillAsk(pager: Pager; y: bool)
-proc fulfillCharAsk(pager: Pager; s: string)
+proc fulfillAsk(pager: Pager; s: string)
 proc getHist(pager: Pager; mode: LineMode): History
 proc handleEvents(pager: Pager)
 proc handleRead(pager: Pager; fd: int)
@@ -456,7 +453,7 @@ proc evalJSFree(opaque: RootRef; src, filename: string) =
   JS_FreeValue(pager.jsctx, pager.evalJS(src, filename))
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
-    alerts: seq[string]; urandom: PosixStream; loader: FileLoader): Pager =
+    alerts: seq[string]; loader: FileLoader): Pager =
   let pager = Pager(
     alive: true,
     config: config,
@@ -466,7 +463,6 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     jsrt: JS_GetRuntime(ctx),
     jsctx: ctx,
     luctx: LUContext(),
-    urandom: urandom,
     exitCode: -1,
     loader: loader,
     cookieJars: newCookieJarMap()
@@ -762,19 +758,15 @@ proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
 proc input(pager: Pager): EmptyPromise =
   var p: EmptyPromise = nil
   pager.term.restoreStdin()
-  var buf: string
+  var buf = ""
   while true:
     let c = pager.term.readChar()
-    if pager.askpromise != nil:
-      if c == 'y':
-        pager.fulfillAsk(true)
-      elif c == 'n':
-        pager.fulfillAsk(false)
-    elif pager.askcharpromise != nil:
+    if pager.askPromise != nil:
       buf &= c
+      #TODO this probably doesn't work with legacy charsets
       if buf.validateUTF8Surr() != -1:
         continue
-      pager.fulfillCharAsk(buf)
+      pager.fulfillAsk(buf)
     elif pager.lineedit != nil:
       pager.inputBuffer &= c
       let edit = pager.lineedit
@@ -907,7 +899,8 @@ proc writeStatusMessage(pager: Pager; str: string; format = Format();
 proc refreshStatusMsg(pager: Pager) =
   let container = pager.container
   if container == nil: return
-  if pager.askpromise != nil: return
+  if pager.askPromise != nil:
+    return
   if pager.precnum != 0:
     discard pager.writeStatusMessage($pager.precnum & pager.inputBuffer)
   elif pager.inputBuffer != "":
@@ -1206,7 +1199,7 @@ proc draw(pager: Pager) =
     pager.term.writeGrid(pager.display.grid)
     pager.display.redraw = false
     redraw = true
-  if pager.askpromise != nil or pager.askcharpromise != nil:
+  if pager.askPromise != nil:
     pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
     pager.status.redraw = false
     redraw = true
@@ -1241,8 +1234,8 @@ proc draw(pager: Pager) =
     pager.term.outputGrid()
     if pager.term.imageMode != imNone:
       pager.term.outputImages()
-  if pager.askpromise != nil:
-    pager.term.setCursor(pager.askcursor, pager.attrs.height - 1)
+  if pager.askPromise != nil:
+    pager.term.setCursor(pager.askCursor, pager.attrs.height - 1)
   elif pager.lineedit != nil:
     pager.term.setCursor(pager.lineedit.getCursorX(), pager.attrs.height - 1)
   elif (let menu = pager.menu; menu != nil):
@@ -1258,31 +1251,29 @@ proc draw(pager: Pager) =
 
 proc writeAskPrompt(pager: Pager; s = "") =
   let maxwidth = pager.status.grid.width - s.width()
-  let i = pager.writeStatusMessage(pager.askprompt, maxwidth = maxwidth)
-  pager.askcursor = pager.writeStatusMessage(s, start = i)
-
-proc ask(pager: Pager; prompt: string): Promise[bool] {.jsfunc.} =
-  pager.askprompt = prompt
-  pager.writeAskPrompt(" (y/n)")
-  pager.askpromise = Promise[bool]()
-  return pager.askpromise
+  let i = pager.writeStatusMessage(pager.askPrompt, maxwidth = maxwidth)
+  pager.askCursor = pager.writeStatusMessage(s, start = i)
 
 proc askChar(pager: Pager; prompt: string): Promise[string] {.jsfunc.} =
-  pager.askprompt = prompt
+  pager.askPrompt = prompt
   pager.writeAskPrompt()
-  pager.askcharpromise = Promise[string]()
-  return pager.askcharpromise
+  pager.askPromise = Promise[string]()
+  return pager.askPromise
 
-proc fulfillAsk(pager: Pager; y: bool) =
-  let p = pager.askpromise
-  pager.askpromise = nil
-  pager.askprompt = ""
-  p.resolve(y)
+proc ask(pager: Pager; prompt: string): Promise[bool] {.jsfunc.} =
+  return pager.askChar(prompt & " (y/n)").then(proc(s: string): Promise[bool] =
+    if s == "y":
+      return newResolvedPromise(true)
+    if s == "n":
+      return newResolvedPromise(false)
+    pager.askPromise = Promise[string]()
+    return pager.ask(prompt)
+  )
 
-proc fulfillCharAsk(pager: Pager; s: string) =
-  let p = pager.askcharpromise
-  pager.askcharpromise = nil
-  pager.askprompt = ""
+proc fulfillAsk(pager: Pager; s: string) =
+  let p = pager.askPromise
+  pager.askPromise = nil
+  pager.askPrompt = ""
   p.resolve(s)
 
 proc addContainer*(pager: Pager; container: Container) =
@@ -1766,7 +1757,7 @@ proc windowChange(pager: Pager) =
   pager.clearStatus()
   for container in pager.containers:
     container.windowChange(pager.attrs)
-  if pager.askprompt != "":
+  if pager.askPrompt != "":
     pager.writeAskPrompt()
   pager.showAlerts()
 

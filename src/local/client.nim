@@ -170,7 +170,7 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     factory: newCAtomFactory(),
     loader: loader,
     crypto: Crypto(urandom: urandom),
-    pager: newPager(config, forkserver, jsctx, warnings, urandom, loader),
+    pager: newPager(config, forkserver, jsctx, warnings, loader),
     settings: EnvironmentSettings(scripting: smApp)
   )
   client.attrsp = addr client.pager.term.attrs
