@@ -163,8 +163,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
       if line.formats[fi].pos == cx:
         padformat.bgcolor = line.formats[fi].format.bgcolor
         let node = line.formats[fi].node
-        line.formats.delete(fi)
-        line.insertFormat(cx, fi, padformat, node)
+        line.formats[fi] = FormatCell(format: padformat, node: node, pos: cx)
       else:
         # First format < cx => split it up
         assert line.formats[fi].pos < cx
@@ -178,8 +177,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
       padformat.bgcolor = line.formats[fi].format.bgcolor
       let node = line.formats[fi].node
       let px = line.formats[fi].pos
-      line.formats.delete(fi)
-      line.insertFormat(px, fi, padformat, node)
+      line.formats[fi] = FormatCell(format: padformat, node: node, pos: px)
       inc fi
     dec fi # go back to previous format, so that pos <= x
     assert line.formats[fi].pos <= x
@@ -203,8 +201,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
       # its bgcolor (which is supposed to end before the new string started.)
       if nx > cx:
         format.bgcolor = line.formats[fi].format.bgcolor
-      line.formats.delete(fi)
-      line.insertFormat(x, fi, format, node)
+      line.formats[fi] = FormatCell(format: format, node: node, pos: x)
     else:
       # First format's pos < x => split it up.
       assert line.formats[fi].pos < x
@@ -219,8 +216,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
     let px = line.formats[fi].pos
     lformat = line.formats[fi].format # save for later use
     lnode = line.formats[fi].node
-    line.formats.delete(fi)
-    line.insertFormat(px, fi, format, node)
+    line.formats[fi] = FormatCell(format: format, node: node, pos: px)
     inc fi
   if hadStr and (fi >= line.formats.len or line.formats[fi].pos > nx):
     # nx < ostr.width, but we have removed all formatting in the range of our
