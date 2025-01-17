@@ -148,7 +148,7 @@ proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
   if ostr.len > 0:
     copyMem(addr line.str[i], unsafeAddr ostr[0], ostr.len)
 
-proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
+proc setTextFormat(line: var FlexibleLine; x, cx, targetX: int; hadStr: bool;
     format: Format; node: Element) =
   var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
   if x > cx:
@@ -172,7 +172,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
         inc fi # insert after first format
         line.insertFormat(cx, fi, padformat, node)
     inc fi # skip last format
-    while fi < line.formats.len and line.formats[fi].pos < x:
+    while fi < line.formats.len and line.formats[fi].pos <= x:
       # Other formats must be > cx => replace them
       padformat.bgcolor = line.formats[fi].format.bgcolor
       let node = line.formats[fi].node
@@ -199,18 +199,18 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
       # We must check if the old string's last x position is greater than
       # the new string's first x position. If not, we cannot inherit
       # its bgcolor (which is supposed to end before the new string started.)
-      if nx > cx:
+      if targetX > cx:
         format.bgcolor = line.formats[fi].format.bgcolor
       line.formats[fi] = FormatCell(format: format, node: node, pos: x)
     else:
       # First format's pos < x => split it up.
       assert line.formats[fi].pos < x
-      if nx > cx: # see above
+      if targetX > cx: # see above
         format.bgcolor = line.formats[fi].format.bgcolor
       inc fi # insert after first format
       line.insertFormat(x, fi, format, node)
   inc fi # skip last format
-  while fi < line.formats.len and line.formats[fi].pos < nx:
+  while fi < line.formats.len and line.formats[fi].pos < targetX:
     # Other formats must be > x => replace them
     format.bgcolor = line.formats[fi].format.bgcolor
     let px = line.formats[fi].pos
@@ -218,37 +218,36 @@ proc setTextFormat(line: var FlexibleLine; x, cx, nx: int; hadStr: bool;
     lnode = line.formats[fi].node
     line.formats[fi] = FormatCell(format: format, node: node, pos: px)
     inc fi
-  if hadStr and (fi >= line.formats.len or line.formats[fi].pos > nx):
-    # nx < ostr.width, but we have removed all formatting in the range of our
-    # string, and no formatting comes directly after it. So we insert the
-    # continuation of the last format we replaced after our string.
-    # (Default format when we haven't replaced anything.)
-    line.insertFormat(nx, fi, lformat, lnode)
-  dec fi # go back to previous format, so that pos <= nx
-  assert line.formats[fi].pos <= nx
+  if hadStr and (fi >= line.formats.len or line.formats[fi].pos > targetX):
+    # targetX < ostr.width, but we have removed all formatting in the
+    # range of our string, and no formatting comes directly after it. So
+    # we insert the continuation of the last format we replaced after
+    # our string.  (Default format when we haven't replaced anything.)
+    line.insertFormat(targetX, fi, lformat, lnode)
+  dec fi # go back to previous format, so that pos <= targetX
+  assert line.formats[fi].pos <= targetX
   # That's it!
 
 proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
-    ocx, onx: out int; hadStr: out bool) =
+    ocx: out int; hadStr: out bool) =
   var i = 0
   let cx = line.findFirstX(x, i) # first x of new string (before padding)
   var j = i
-  var nx = x # last x of new string
+  var nx = x # last x of new string *before the end of the old string*
   while nx < targetX and j < line.str.len:
     nx += line.str.nextUTF8(j).width()
   let ostr = line.str.substr(j)
   ocx = cx
-  onx = nx
   hadStr = ostr.len > 0
   line.setTextStr(s, ostr, i, x, cx, nx, targetX)
 
 proc setText1(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
     format: Format; node: Element) =
   assert x >= 0 and s.len != 0
-  var cx, nx: int
+  var cx: int
   var hadStr: bool
-  line.setText0(s, x, targetX, cx, nx, hadStr)
-  line.setTextFormat(x, cx, nx, hadStr, format, node)
+  line.setText0(s, x, targetX, cx, hadStr)
+  line.setTextFormat(x, cx, targetX, hadStr, format, node)
 
 proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
     offset: Offset; format: Format; node: Element) =
@@ -307,10 +306,10 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
       let w = endx - startx
       while state.spaces.len < w:
         state.spaces &= ' '
-      var cx, nx: int
+      var cx: int
       var hadStr: bool
       grid[y].setText0(state.spaces.toOpenArray(0, w - 1), startx, endx,
-        cx, nx, hadStr)
+        cx, hadStr)
     # Process formatting around startx
     if grid[y].formats.len == 0:
       # No formats
