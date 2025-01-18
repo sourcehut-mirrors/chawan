@@ -59,7 +59,7 @@ javascript:
 - support defining one function with multiple names (maybe with magic?)
 - "this" value as JSValue
 - distinguish double from unrestricted double
-- better dom support: more events, CSSOM, ...
+- more events
 - ReadableStream
 - separate console for each buffer
 - buffer selection

@@ -587,7 +587,10 @@ func `$`(counterreset: seq[CSSCounterReset]): string =
 func serialize(val: CSSValue): string =
   case val.v
   of cvtImage: return $val.image
-  of cvtLength2: return $val.length2.a & " " & $val.length2.b
+  of cvtLength2:
+    if val.length2 == nil:
+      return "0px 0px"
+    return $val.length2.a & " " & $val.length2.b
   of cvtContent:
     result = ""
     for x in val.content:
@@ -636,6 +639,13 @@ func serialize*(computed: CSSValues; p: CSSPropertyType): string =
   of cprtBit: return computed.bits[p].serialize(valueType(p))
   of cprtWord: return computed.words[p].serialize(valueType(p))
   of cprtObject: return computed.objs[p].serialize()
+
+func `$`*(computed: CSSValues): string =
+  result = ""
+  for p in CSSPropertyType:
+    result &= $p & ':'
+    result &= computed.serialize(p)
+    result &= ';'
 
 when defined(debug):
   func `$`*(val: CSSValue): string =

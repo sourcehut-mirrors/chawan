@@ -72,6 +72,13 @@ type
   DependencyType* = enum
     dtHover, dtChecked, dtFocus, dtTarget
 
+  DependencyInfoItem = object
+    t: DependencyType
+    element: Element
+
+  DependencyInfo* = object
+    items: seq[DependencyInfoItem]
+
   Location = ref object
     window: Window
 
@@ -274,8 +281,9 @@ type
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
     cachedAttributes: NamedNodeMap
     cachedStyle*: CSSStyleDeclaration
-    cachedComputedStyle*: CSSStyleDeclaration
-    computed*: CSSValues
+    computedMap*: array[peNone..peAfter, CSSValues]
+    # All elements our style depends on, for each dependency type d.
+    depends*: DependencyInfo
 
   AttrDummyElement = ref object of Element
 
@@ -3716,16 +3724,6 @@ proc invalidateCollections(node: Node) =
   for id in node.liveCollections:
     node.document.invalidCollections.incl(id)
 
-proc setInvalid*(element: Element) =
-  element.invalid = true
-  if element.document != nil:
-    element.document.invalid = true
-
-proc setInvalid*(element: Element; dep: DependencyType) =
-  element.invalidDeps.incl(dep)
-  if element.document != nil:
-    element.document.invalid = true
-
 proc delAttr(element: Element; i: int; keep = false) =
   let map = element.cachedAttributes
   let name = element.attrs[i].qualifiedName
@@ -3754,14 +3752,82 @@ proc delAttr(element: Element; i: int; keep = false) =
   element.invalidateCollections()
   element.setInvalid()
 
-proc newCSSStyleDeclaration(element: Element; value: string):
-    CSSStyleDeclaration =
+# Styles.
+#
+# To avoid having to invalidate the entire tree on pseudo-class changes,
+# each node holds a list of nodes their CSS values depend on. (This list
+# may include the node itself.) In addition, nodes also store each value
+# valid for dependency d. These are then used for checking the validity
+# of StyledNodes.
+#
+# In other words - say we have to apply the author stylesheets of the
+# following document:
+#
+# <style>
+# div:hover { color: red; }
+# :not(input:checked) + p { display: none; }
+# </style>
+# <div>This div turns red on hover.</div>
+# <input type=checkbox>
+# <p>This paragraph is only shown when the checkbox above is checked.
+#
+# That produces the following dependency graph (simplified):
+# div -> div (hover)
+# p -> input (checked)
+#
+# Then, to check if a node has been invalidated, we just iterate over
+# all recorded dependencies of each StyledNode, and check if their
+# registered value of the pseudo-class still matches that of its
+# associated element.
+#
+# So in our example, for div we check if div's :hover pseudo-class has
+# changed, for p we check whether input's :checked pseudo-class has
+# changed.
+proc setInvalid*(element: Element) =
+  element.invalid = true
+  if element.document != nil:
+    element.document.invalid = true
+
+proc setInvalid*(element: Element; dep: DependencyType) =
+  element.invalidDeps.incl(dep)
+  if element.document != nil:
+    element.document.invalid = true
+
+template computed*(element: Element): CSSValues =
+  element.computedMap[peNone]
+
+proc isValid*(element: Element; toReset: var seq[Element]): bool =
+  if element.invalid:
+    toReset.add(element)
+    return false
+  for it in element.depends.items:
+    if it.t in it.element.invalidDeps:
+      toReset.add(it.element)
+      return false
+  return true
+
+proc add*(depends: var DependencyInfo; element: Element; t: DependencyType) =
+  depends.items.add(DependencyInfoItem(t: t, element: element))
+
+proc merge*(a: var DependencyInfo; b: DependencyInfo) =
+  for it in b.items:
+    if it notin a.items:
+      a.items.add(it)
+
+proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
+    readonly = false): CSSStyleDeclaration =
+  # Note: element may be nil
   let inlineRules = value.parseDeclarations()
   var decls: seq[CSSDeclaration] = @[]
   for rule in inlineRules:
     if rule.name.isSupportedProperty():
       decls.add(rule)
-  return CSSStyleDeclaration(decls: inlineRules, element: element)
+  return CSSStyleDeclaration(
+    decls: inlineRules,
+    element: element,
+    computed: computed,
+    readonly: readonly
+  )
 
 proc cssText(this: CSSStyleDeclaration): string {.jsfunc.} =
   #TODO this is incorrect
@@ -3878,17 +3944,15 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
     element.cachedStyle = CSSStyleDeclaration(element: element)
   return element.cachedStyle
 
-proc getComputedStyle*(element: Element): CSSStyleDeclaration =
-  if element.cachedComputedStyle == nil:
-    var s = ""
-    for p in CSSPropertyType:
-      s &= $p & ':'
-      s &= element.computed.serialize(p)
-      s &= ';'
-    element.cachedComputedStyle = newCSSStyleDeclaration(element, move(s))
-    element.cachedComputedStyle.computed = true
-    element.cachedComputedStyle.readonly = true
-  return element.cachedComputedStyle
+proc getComputedStyle*(element: Element; pseudoElt: Option[string]):
+    CSSStyleDeclaration =
+  let pseudo = case pseudoElt.get("")
+  of ":before", "::before": peBefore
+  of ":after", "::after": peAfter
+  of "": peNone
+  else: return newCSSStyleDeclaration(nil, "")
+  return newCSSStyleDeclaration(element, $element.computedMap[pseudo],
+    computed = true, readonly = true)
 
 proc corsFetch(window: Window; input: Request): FetchPromise =
   if not window.images and input.url.scheme.startsWith("img-codec+"):

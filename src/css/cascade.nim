@@ -83,7 +83,7 @@ proc calcRules0(map: RuleListMap; styledNode: StyledNode; sheet: CSSStylesheet;
     rules.add(rule)
   var tosorts = ToSorts.default
   for rule in rules:
-    tosorts.calcRule(element, styledNode.depends, rule)
+    tosorts.calcRule(element, styledNode.element.depends, rule)
   for pseudo, it in tosorts.mpairs:
     it.sort(proc(x, y: RulePair): int =
       let n = cmp(x.specificity, y.specificity)
@@ -347,19 +347,21 @@ proc applyDeclarations0(rules: RuleList; parent, element: Element;
     result{"overflow-x"} = result{"overflow-x"}.bfcify()
     result{"overflow-y"} = result{"overflow-y"}.bfcify()
 
-proc applyDeclarations(styledNode: StyledNode; parent: Element;
-    map: RuleListMap; window: Window; pseudo = peNone) =
-  let element = if styledNode.pseudo == peNone: styledNode.element else: nil
-  styledNode.computed = map.rules[pseudo].applyDeclarations0(parent, element,
-    window)
-  if element != nil:
-    element.computed = styledNode.computed
-
 func hasValues(rules: RuleList): bool =
   for x in rules:
     if x.normal.len > 0 or x.important.len > 0:
       return true
   return false
+
+proc applyDeclarations(styledNode: StyledNode; parent: Element;
+    map: RuleListMap; window: Window) =
+  let element = styledNode.element
+  element.computedMap[peNone] = map.rules[peNone].applyDeclarations0(parent,
+    element, window)
+  for pseudo in peBefore..peAfter:
+    if map.rules[pseudo].hasValues():
+      let computed = map.rules[pseudo].applyDeclarations0(element, nil, window)
+      element.computedMap[pseudo] = computed
 
 func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
   if ss == nil:
@@ -444,15 +446,14 @@ proc applyRulesFrameInvalid(frame: CascadeFrame; ua, user: CSSStylesheet;
       styledParent.children.add(styledChild)
       return styledChild
   of peBefore, peAfter:
-    let map = frame.parentMap
-    if map.rules[pseudo].hasValues():
+    let parent = styledParent.element
+    if parent.computedMap[pseudo] != nil and
+        parent.computedMap[pseudo]{"content"}.len > 0:
       let styledPseudo = styledParent.newStyledElement(pseudo)
-      styledPseudo.applyDeclarations(styledParent.element, map, window, pseudo)
-      if styledPseudo.computed{"content"}.len > 0:
-        for content in styledPseudo.computed{"content"}:
-          let child = styledPseudo.newStyledReplacement(content, peNone)
-          styledPseudo.children.add(child)
-        styledParent.children.add(styledPseudo)
+      for content in parent.computedMap[pseudo]{"content"}:
+        let child = styledPseudo.newStyledReplacement(content, peNone)
+        styledPseudo.children.add(child)
+      styledParent.children.add(styledPseudo)
   of peInputText:
     let s = HTMLInputElement(styledParent.element).inputString()
     if s.len > 0:

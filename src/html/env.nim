@@ -303,7 +303,7 @@ proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(string)): CSSStyleDeclaration {.jsfunc.} =
   if window.settings.scripting == smApp:
     window.maybeRestyle()
-    return element.getComputedStyle()
+    return element.getComputedStyle(pseudoElt)
   # Maybe it works.
   return element.style
 
