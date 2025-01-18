@@ -1,0 +1,81 @@
+{.push raises: [].}
+
+from std/os import parentDir
+
+{.used.}
+# used so that we can import it from quickjs.nim
+
+import libunicode
+
+when not compileOption("threads"):
+  const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
+else:
+  const CFLAGS = "-O2 -fwrapv"
+
+{.compile("qjs/libregexp.c", CFLAGS).}
+
+# this is hardcoded into quickjs, so we must override it here.
+proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
+  return realloc(p, size)
+
+# Hack: quickjs provides a lre_check_stack_overflow, but that basically
+# depends on the entire QuickJS runtime. So to avoid pulling that in as
+# a necessary dependency, we must provide one ourselves, but *only* if
+# quickjs has not been imported.
+# So we define NOT_LRE_ONLY in quickjs.nim, and check it in the "second
+# compilation pass" (i.e. in C).
+{.emit: """
+#ifndef NOT_LRE_ONLY
+int lre_check_stack_overflow(void *opaque, size_t alloca_size)
+{
+  return 0;
+}
+#endif
+""".}
+
+type
+  LREFlag* {.size: sizeof(cint).} = enum
+    LRE_FLAG_GLOBAL = "g"
+    LRE_FLAG_IGNORECASE = "i"
+    LRE_FLAG_MULTILINE = "m"
+    LRE_FLAG_DOTALL = "s"
+    LRE_FLAG_UNICODE = "u"
+    LRE_FLAG_STICKY = "y"
+
+  LREFlags* = set[LREFlag]
+
+func toCInt*(flags: LREFlags): cint =
+  cint(cast[uint8](flags))
+
+func toLREFlags*(flags: cint): LREFlags =
+  cast[LREFlags](flags)
+
+{.passc: "-I" & currentSourcePath().parentDir().}
+
+{.push header: "qjs/libregexp.h", importc.}
+proc lre_compile*(plen: ptr cint; error_msg: cstring; error_msg_size: cint;
+  buf: cstring; buf_len: csize_t; re_flags: cint; opaque: pointer): ptr uint8
+
+proc lre_exec*(capture: ptr ptr uint8; bc_buf, cbuf: ptr uint8;
+  cindex, clen, cbuf_type: cint; opaque: pointer): cint
+
+proc lre_get_capture_count*(bc_buf: ptr uint8): cint
+
+proc lre_get_flags*(bc_buf: ptr uint8): cint
+
+const LRE_CC_RES_LEN_MAX* = 3
+
+# conv_type:
+# 0 = to upper
+# 1 = to lower
+# 2 = case folding
+# res must be an array of LRE_CC_RES_LEN_MAX
+proc lre_case_conv*(res: ptr UncheckedArray[uint32]; c: uint32;
+  conv_type: cint): cint
+
+proc lre_is_space_non_ascii*(c: uint32): cint {.importc.}
+
+proc lre_is_space*(c: uint32): cint {.importc.}
+
+{.pop.} # header, importc
+{.pop.} # raises

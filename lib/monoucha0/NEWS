@@ -1,0 +1,123 @@
+0.9.1 (2025.01.16)
+* add type information to JSArrayBufferView
+* add some more bindings
+
+0.9.0 (2025.01.13)
+* drop support for pre-2.0.0 Nim versions
+* drop support for generics and non-JSValue varargs
+* drop undocumented $ -> toString renaming
+* always set fromJS "out" param (set to default on failure)
+* do not accept JS_NULL for ref object
+* replace jsgetprop with jsgetrealprop
+* type erase dfin
+
+This version brings a significant reduction in the feature set, and
+changes in various APIs.  Wrappers with implementations deemed
+inefficient or overly complex have been removed.
+
+The JS_NULL change is intended to allow for non-nullable parameters.
+In particular, it means that procedures with nullable parameters now
+*must* wrap these in an Option to have the same effect as before.
+However, ref object return values still convert `nil` to JS_NULL.
+
+Also, this release includes an optimization that is expected to break
+ORC less subtly than before.  As always, please make sure to use
+--mm:refc.
+
+0.8.0 (2024.12.26)
+* update QuickJS-NG to 0.8.0
+
+0.7.2 (2024.11.25)
+* fix some deinitialization bugs on JSRuntime.free
+The test suite was being run for ORC only, so it failed to catch bugs
+with refc deinitialization.
+
+0.7.1 (2024.11.22)
+* fix wrong allocation sizes in jspropenum module
+This could lead to memory corruption.
+
+0.7.0 (2024.11.18)
+* clean up and complete exotic pragmas
+Now the Monoucha API can express all exotics that QJS provides.
+
+0.6.0 (2024.11.16)
+* update QuickJS-NG to 0.7.0
+* misc optimizations
+
+0.5.5 (2024.11.09)
+* fix fromJS with seq
+* fix JS_FreePropertyEnum binding
+
+0.5.4 (2024.11.08)
+* fix some C warnings
+* do not link to pthread with --threads:off
+
+0.5.3 (2024.10.28)
+* fix assertion on creating 0-length property enum list
+
+0.5.2 (2024.10.12)
+* fix a bug in our libregexp patch
+
+0.5.1 (2024.10.02)
+* fix build with --threads:off
+
+0.5.0 (2024.09.29)
+* switch to QuickJS-NG
+
+QuickJS-NG is a better maintained QuickJS fork. It has some useful
+features like support for recent standards and column tracking for
+errors.
+
+We import their latest release, which is 0.6.1. I plan to update this
+for every new QJS-NG release.
+
+0.4.3 (2024.09.17)
+* fix broken enum conversion
+
+0.4.2 (2024.09.17)
+* throw on trying to call bound functions on prototypes
+* fix inherited jsgetprop
+
+0.4.1 (2024.08.22)
+* fix compilation on Nim 2.0.4
+
+0.4.0 (2024.08.15)
+* remove toJS(Rune)
+* remove setInteruptHandler wrapper
+* properly convert to pointer-sized int depending on pointer size
+* fix incorrect varargs slicing
+* misc refactoring
+
+0.3.0, 0.3.1 (2024.08.09)
+* redesign fromJS API to reduce copying
+	- fromJS now returns an Opt[void] to signal errors, and fills
+	  the third `res` parameter if it succeeded
+	- JSDict now supports .jsdefault to init values, and throws
+	  on missing non-jsdefault values
+	- JSDict JSValue members are now automatically freed
+This is a breaking change.
+* allow eval without file name
+* sync with upstream
+* fix NUL handling in toJS(string)
+
+0.2.3 (2024.07.28)
+* fix and optimize varargs[JSValue] jsfunc params
+
+0.2.2 (2024.07.18)
+* fix wrong header used in libunicode binding
+
+0.2.1 (2024.07.17)
+* fix a memory corruption bug
+* add JSValueConst to bindings (for documentation purposes)
+* update manual
+
+0.2.0 (2024.06.22)
+* include missing QuickJS bindings
+* add missing err...Error templates
+* update manual
+
+0.1.1 (2024.06.03)
+libunicode wrapper fixes
+
+0.1.0 (2024.06.03)
+Initial release
