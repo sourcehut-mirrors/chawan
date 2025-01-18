@@ -1,0 +1,50 @@
+0.7.0 (2024.12.07)
+* Update GB-18030 encoder and decoder with the spec changes from October
+This is a breaking change - although it does not change the API, it
+changes its behavior.
+
+0.6.0 (2024.10.05)
+* Take openArray[char] instead of string in encoder/decoder functions
+
+0.5.6 (2024.09.06)
+* Fix a broken decodeAll overload
+
+0.5.5 (2024.09.01)
+* Fix streaming EUC-JP decoder
+
+0.5.4 (2024.08.01)
+* Reduce map sizes
+* Promise no exceptions in public APIs
+
+0.5.3 (2024.07.28)
+* Fix skipDirs
+
+0.5.2 (2024.06.14)
+* Misc. bugfixes and improvements
+
+0.5.0, 0.5.1 (2024.06.13)
+* Re-designed API:
+	- Unified validator/validatorcore with decoder/decodercore
+	- Consumers no longer need to buffer the input queue for UTF-8
+	  validation
+This is a breaking change.
+
+0.4.2 (2024.02.26)
+* Fixed compilation on Nim 1.6.14
+
+0.4.1 (2024.02.23)
+* Fixed horribly broken validatorcore API
+
+0.4.0 (2024.02.21)
+
+* Renamed project
+* Re-designed interface: it's now push-based
+* We now encode/decode from/to UTF-8
+	- actually, encoding accepts WTF-8 too
+* Added multibyte tests from https://github.com/hsivonen/encoding_rs
+* Fixed lots of bugs in multi-byte encoding:
+	- EUC-KR encoding was completely broken (it was using the wrong map)
+	- GB18030 encoding was completely broken (it didn't handle ASCII)
+	- all 16-bit maps were somewhat broken, as they had no de-duplication
+* Various other correctness bugfixes
+* Reduced binary size somewhat
