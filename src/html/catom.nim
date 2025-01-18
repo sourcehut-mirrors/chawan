@@ -263,10 +263,10 @@ func containsIgnoreCase*(factory: CAtomFactory; aa: openArray[CAtom];
     a: StaticAtom): bool =
   return factory.containsIgnoreCase(aa, factory.toAtom(a))
 
-func toStr*(factory: CAtomFactory; atom: CAtom): string =
+func toStr*(factory: CAtomFactory; atom: CAtom): lent string =
   return factory.atomMap[int(atom)]
 
-func toStr*(factory: CAtomFactory; sa: StaticAtom): string =
+func toStr*(factory: CAtomFactory; sa: StaticAtom): lent string =
   return factory.toStr(factory.toAtom(sa))
 
 func toTagType*(atom: CAtom): TagType =
@@ -317,10 +317,10 @@ proc toStaticAtom*(ctx: JSContext; atom: CAtom): StaticAtom =
 proc toStaticAtom*(ctx: JSContext; s: string): StaticAtom =
   return ctx.getFactoryImpl().toStaticAtom(s)
 
-proc toStr*(ctx: JSContext; atom: CAtom): string =
+proc toStr*(ctx: JSContext; atom: CAtom): lent string =
   return ctx.getFactoryImpl().toStr(atom)
 
-proc toStr*(ctx: JSContext; sa: StaticAtom): string =
+proc toStr*(ctx: JSContext; sa: StaticAtom): lent string =
   return ctx.getFactoryImpl().toStr(sa)
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =

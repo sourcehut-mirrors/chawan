@@ -516,7 +516,7 @@ jsDestructor(TextMetrics)
 jsDestructor(CSSStyleDeclaration)
 
 # Forward declarations
-func attr*(element: Element; s: StaticAtom): string
+func attr*(element: Element; s: StaticAtom): lent string
 func attrb*(element: Element; s: CAtom): bool
 func serializeFragment(res: var string; node: Node)
 func value*(option: HTMLOptionElement): string
@@ -1092,13 +1092,16 @@ func document*(node: Node): Document =
     return Document(node)
   return node.internalDocument
 
+template document*(element: Element): Document =
+  element.internalDocument
+
 proc toAtom*(window: Window; atom: StaticAtom): CAtom =
   return window.factory.toAtom(atom)
 
 proc toAtom*(window: Window; s: string): CAtom =
   return window.factory.toAtom(s)
 
-proc toStr*(window: Window; atom: CAtom): string =
+proc toStr*(window: Window; atom: CAtom): lent string =
   return window.factory.toStr(atom)
 
 proc toAtom*(document: Document; s: string): CAtom =
@@ -1110,7 +1113,7 @@ proc toAtomLower*(document: Document; s: string): CAtom =
 proc toAtom*(document: Document; at: StaticAtom): CAtom =
   return document.factory.toAtom(at)
 
-proc toStr(document: Document; atom: CAtom): string =
+proc toStr(document: Document; atom: CAtom): lent string =
   return document.factory.toStr(atom)
 
 proc toStaticAtom(document: Document; atom: CAtom): StaticAtom =
@@ -2521,13 +2524,16 @@ proc getter(ctx: JSContext; document: Document; s: string): JSValue
         return ctx.toJS(child)
   return JS_UNINITIALIZED
 
-func attr*(element: Element; s: CAtom): string =
+func attr*(element: Element; s: CAtom): lent string =
   let i = element.findAttr(s)
   if i != -1:
     return element.attrs[i].value
-  return ""
+  {.cast(noSideEffect).}:
+    # the compiler cries if I return string literals :/
+    let emptyStr {.global.} = ""
+    return emptyStr
 
-func attr*(element: Element; s: StaticAtom): string =
+func attr*(element: Element; s: StaticAtom): lent string =
   return element.attr(element.document.toAtom(s))
 
 func attrl*(element: Element; s: StaticAtom): Option[int32] =
