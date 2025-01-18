@@ -1,0 +1,46 @@
+#data
+&gtrsim
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     ">rsim"
+
+#data
+&gt
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     ">"
+
+#data
+<h2>&g</h2>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <h2>
+|       "&g"
+
+#data
+<H2>Q&A</H2>
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     <h2>
+|       "Q&A"
+
+#data
+&zacute;
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     "ź"

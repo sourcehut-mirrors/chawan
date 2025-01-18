@@ -1,0 +1,4 @@
+interface:
+* reduce use of getNamespace (maybe store ns on the stack of open elements?)
+etc:
+* add getElementById and some more basic stuff to minidom

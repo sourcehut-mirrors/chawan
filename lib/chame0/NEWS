@@ -1,0 +1,107 @@
+1.0.3 (2025.01.03)
+* Conform to strict defs
+
+1.0.2 (2024.11.22)
+* Minor optimizations
+* Minor documentation updates
+
+1.0.1 (2024.07.28)
+* Minor optimization
+* Add test directory to skipDirs
+
+1.0.0 (2024.06.13)
+* Drop support for parse error handling
+* Switch from legacy character decoder library to Chagashi
+* Return PRES_SCRIPT for the SVG script element too
+First stable version.
+
+0.14.5 (2024.04.09)
+* Fix broken parsing of HTML entities starting with a lower `z'
+* Fix nimble test execution on old Nim versions
+* Various refactorings: reduce duplicated code, get rid of some dead code,
+  move some atom mappings to compile time
+
+0.14.4 (2024.03.03)
+* Clean up tokenizeEOF so that it's compiled correctly on old Nim + ARM
+
+0.14.3 (2024.02.21)
+* Fix another instance of the same bug
+
+0.14.2 (2024.02.21)
+* Fix a character reference parsing bug: e.g. in `&g<a>', the <
+  character was being flushed as text instead of being interpreted as
+  markup.
+
+0.14.1 (2024.02.08)
+* Fix associateWithFormImpl callback regression (it was not being called for
+  input elements)
+* Misc refactorings
+
+0.14.0 (2024.02.07)
+
+* The "bag of pointers" interface design has been dropped
+* Tag and attribute names are now treated as interned strings (a user-defined
+  "Atom" type)
+* Support processing of embedded SVG/MathML elements
+* Chakasu has been made an optional dependency
+* std/streams no longer used by htmlparser; now it supports chunked parsing
+  instead
+* All tokenizer + tree builder tests passed in html5lib-tests
+
+Rough migration guide from the previous API:
+
+Users of minidom
+
+* nodeType is no longer supported, use the of operator to distinguish
+  between node types.
+* minidom now only supports UTF-8; if you need support for other
+  charsets, use minidom_cs.
+* localName is now an MAtom; to get the stringified local name, use
+  localNameStr.
+* attrs is now a seq of Attribute tuples. Linear search this seq to find
+  specific attributes.
+* minidom now contains several MAtom fields; to convert these to
+  strings, call document.atomToStr(atom).
+
+Users of htmlparser
+
+* The NodeType enum has been removed. Either copy-paste the enum
+  definition from a previous version, or (more efficient) use the `of`
+  operator to distinguish between types.
+* Use of an AtomFactory is now required for consumers of htmlparser. The
+  easiest fix is to copy-paste the implementation found in minidom.
+* Your DOM builder should be generic over a Handle and an Atom. Example:
+  `DOMBuilder[Node, MAtom]`
+* You no longer have to copy function pointers into your DOM builder.
+* It is recommended to add `include chame/htmlparseriface` to your DOM
+  builder module. See the htmlparseriface documentation for details.
+
+Switching to the new interface:
+
+* Add `Impl` to the name of all your procedure implementations.
+* If you included chame/htmlparseriface, replace all parameters of your
+  procedures containing `DOMBuilder[MyHandle]` with `MyDOMBuilder`.
+* setCharacterSet -> setEncodingImpl that takes a string label.
+* getLocalNameImpl now must return an Atom. getTagType is no longer used.
+* insertBeforeImpl must take an `Option[Handle]`
+* addAttrsIfMissingImpl is now mandatory, and must take a `Table[Atom, string]`
+* getNamespaceImpl is now mandatory.
+* getDocumentImpl must be implemented, and must return the Handle of the
+  document.
+* tagTypeToAtomImpl, atomToTagTypeImpl, strToAtomImpl must all be implemented.
+* createHTMLElementImpl must be implemented, and must return the handle of a new
+  `<html>` element.
+* createElement -> createElementForTokenImpl, the signature has changed
+  significantly. localName is the 2-in-1 replacement for both tagType and
+  localName. Also, you probably have to convert attributes from htmlAttrs &
+  xmlAttrs to your own internal representation.
+* finish is no longer called at the end of parsing. Call it yourself.
+
+Event loop changes:
+
+* parseHTML is now split into three parts: initHTML5Parser, parseChunk, finish.
+* If you implement scripting and/or character sets other than UTF-8, see
+  doc/manual.md for handling parseChunk's result. Otherwise, it is safe to
+  discard it.
+* Do not forget to call finish after having parsed the entire document (first
+  for the parser, then for your own DOM builder).

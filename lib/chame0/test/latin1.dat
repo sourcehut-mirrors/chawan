@@ -1,0 +1,13 @@
+#data
+<meta charset=latin1>
+ß
+#errors
+#document
+| <html>
+|   <head>
+|     <meta>
+|       charset="latin1"
+|     "
+"
+|   <body>
+|     "ÃŸ"
