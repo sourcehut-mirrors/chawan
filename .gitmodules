@@ -1,9 +1,0 @@
-[submodule "lib/chame"]
-	path = lib/chame
-	url = https://git.sr.ht/~bptato/chame
-[submodule "lib/chagashi"]
-	path = lib/chagashi
-	url = https://git.sr.ht/~bptato/chagashi
-[submodule "lib/monoucha"]
-	path = lib/monoucha
-	url = https://git.sr.ht/~bptato/monoucha

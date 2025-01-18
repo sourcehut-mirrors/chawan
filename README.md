@@ -34,9 +34,8 @@ Note: a POSIX-compliant operating system is required.
 	* Recommended: a termcap library; e.g. ncurses comes with one
 	* TL;DR for Debian:
 	  `apt install libssh2-1-dev libcurl4-openssl-dev pkg-config make ncurses-base`
-4. Download parts of Chawan found in other repositories: `make submodule`
-5. Run `make` (without arguments).
-6. Install using `make install` (e.g. `sudo make install`).
+4. Run `make` (without arguments).
+5. Install using `make install` (e.g. `sudo make install`).
 
 Then, try:
 

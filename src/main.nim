@@ -1,5 +1,3 @@
-import version
-
 import std/options
 import std/os
 import std/posix

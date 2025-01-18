@@ -81,7 +81,11 @@ lib/chaseccomp/chaseccomp.o: .FORCE
 .FORCE:
 endif
 
-$(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim res/* res/**/* $(chaseccomp) \
+# lib/*0 has a 0 so that it doesn't conflict with the old submodules.
+# git can't deal with this, it seems.
+$(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim res/* lib/chame0/chame/* \
+		lib/chagashi0/chagashi/* lib/monoucha0/monoucha/* \
+		lib/monoucha0/monoucha/qjs/* $(chaseccomp) \
 		res/map/idna_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
@@ -253,7 +257,11 @@ uninstall:
 
 .PHONY: submodule
 submodule:
-	git submodule update --init
+	echo "We no longer use submodules; you can safely drop `make submodule' from build scripts."
+
+.PHONY: subtree
+subtree:
+	for it in chame chagashi monoucha; do git subtree pull --prefix lib/"$${it}"0 https://git.sr.ht/~bptato/"$$it" master --squash; done
 
 test/net/run: test/net/run.nim
 	$(NIMC) test/net/run.nim
