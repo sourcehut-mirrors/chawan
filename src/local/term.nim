@@ -274,6 +274,9 @@ proc resetInputBuffer*(term: Terminal) =
   term.ibufn = 0
   term.ibufLen = 0
 
+proc hasBuffer*(term: Terminal): bool =
+  return term.ibufn < term.ibufLen
+
 proc flush*(term: Terminal) =
   term.outfile.flushFile()
 

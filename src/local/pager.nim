@@ -804,6 +804,10 @@ proc input(pager: Pager): EmptyPromise =
   pager.inputBuffer = ""
   if p == nil:
     p = newResolvedPromise()
+  if pager.term.hasBuffer():
+    return p.then(proc(): EmptyPromise =
+      return pager.input()
+    )
   return p
 
 proc run*(pager: Pager; pages: openArray[string]; contentType: string;
