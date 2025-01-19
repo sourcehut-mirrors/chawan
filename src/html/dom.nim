@@ -3958,7 +3958,7 @@ proc getComputedStyle0*(window: Window; element: Element;
   of ":after", "::after": peAfter
   of "": peNone
   else: return newCSSStyleDeclaration(nil, "")
-  if element.document.window.settings.scripting == smApp:
+  if window.settings.scripting == smApp:
     window.maybeRestyle()
     return newCSSStyleDeclaration(element, $element.computedMap[pseudo],
       computed = true, readonly = true)
