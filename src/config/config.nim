@@ -780,10 +780,10 @@ proc openConfig*(dir: var string; override: Option[string];
   if dir != "":
     dir = dir / "chawan"
     return newPosixStream(dir / "config.toml")
-  dir = expandTilde("~/.config/chawan")
+  dir = expandPath("~/.config/chawan")
   if (let fs = newPosixStream(dir / "config.toml"); fs != nil):
     return fs
-  dir = expandTilde("~/.chawan")
+  dir = expandPath("~/.chawan")
   return newPosixStream(dir / "config.toml")
 
 # called after parseConfig returns
