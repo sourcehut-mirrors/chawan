@@ -257,7 +257,7 @@ uninstall:
 
 .PHONY: submodule
 submodule:
-	echo "We no longer use submodules; you can safely drop `make submodule' from build scripts."
+	echo 'We no longer use submodules; you can safely drop "make submodule" from build scripts.'
 
 .PHONY: subtree
 subtree:
