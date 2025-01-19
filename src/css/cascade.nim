@@ -384,7 +384,7 @@ proc applyDeclarations(styledNode: StyledNode; parent: Element;
   element.computedMap[peNone] = map[peNone].applyDeclarations0(parent, element,
     window)
   for pseudo in peBefore..peAfter:
-    if map[pseudo].hasValues():
+    if map[pseudo].hasValues() or window.settings.scripting == smApp:
       let computed = map[pseudo].applyDeclarations0(element, nil, window)
       element.computedMap[pseudo] = computed
 

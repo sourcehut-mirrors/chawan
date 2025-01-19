@@ -2,8 +2,12 @@
 history = false
 
 [[siteconf]]
-match = "file:///.*"
+match = 'file:///.*'
 scripting = true
+
+[[siteconf]]
+match = 'file:///.*\.app\.html'
+scripting = 'app'
 
 [display]
 columns = 80

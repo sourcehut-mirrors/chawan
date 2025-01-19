@@ -100,8 +100,10 @@ proc `$`*(c: CSSComponentValue): string =
         result &= c.cvalue
       else:
         result &= "<UNICODE>"
-    of cttDimension, cttNumber, cttINumber, cttIDimension:
+    of cttDimension, cttNumber:
       result &= $c.nvalue & c.unit
+    of cttINumber, cttIDimension:
+      result &= $int32(c.nvalue) & c.unit
     of cttPercentage:
       result &= $c.nvalue & "%"
     of cttColon:
@@ -122,7 +124,7 @@ proc `$`*(c: CSSComponentValue): string =
       result &= $s
     if decl.important:
       result &= " !important"
-    result &= ";\n"
+    result &= ";"
   elif c of CSSFunction:
     result &= $CSSFunction(c).name & "("
     for s in CSSFunction(c).value:

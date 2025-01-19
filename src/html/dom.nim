@@ -3829,9 +3829,14 @@ proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
     readonly: readonly
   )
 
-proc cssText(this: CSSStyleDeclaration): string {.jsfunc.} =
-  #TODO this is incorrect
-  return $this.decls
+proc cssText(this: CSSStyleDeclaration): string {.jsfget.} =
+  if this.computed:
+    return ""
+  result = ""
+  for it in this.decls:
+    if result.len > 0:
+      result &= ' '
+    result &= $it
 
 func length(this: CSSStyleDeclaration): uint32 =
   return uint32(this.decls.len)
@@ -3896,11 +3901,15 @@ proc removeProperty(this: CSSStyleDeclaration; name: string): DOMResult[string]
     this.decls.delete(i)
   return ok(value)
 
-proc setProperty(this: CSSStyleDeclaration; name, value: string):
-    DOMResult[void] {.jsfunc.} =
+proc checkReadOnly(this: CSSStyleDeclaration): DOMResult[void] =
   if this.readonly:
     return errDOMException("Cannot modify read-only declaration",
       "NoModificationAllowedError")
+  ok()
+
+proc setProperty(this: CSSStyleDeclaration; name, value: string):
+    DOMResult[void] {.jsfunc.} =
+  ?this.checkReadOnly()
   let name = name.toLowerAscii()
   if not name.isSupportedProperty():
     return ok()
@@ -3924,9 +3933,7 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
 
 proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
     value: string): DOMResult[void] {.jssetprop.} =
-  if this.computed:
-    return errDOMException("Cannot modify computed value",
-      "NoModificationAllowedError")
+  ?this.checkReadOnly()
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
     let cvals = parseComponentValues(value)
@@ -3941,17 +3948,23 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
 
 proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.cachedStyle == nil:
-    element.cachedStyle = CSSStyleDeclaration(element: element)
+    element.cachedStyle = newCSSStyleDeclaration(element, "")
   return element.cachedStyle
 
-proc getComputedStyle*(element: Element; pseudoElt: Option[string]):
-    CSSStyleDeclaration =
+proc getComputedStyle0*(window: Window; element: Element;
+    pseudoElt: Option[string]): CSSStyleDeclaration =
   let pseudo = case pseudoElt.get("")
   of ":before", "::before": peBefore
   of ":after", "::after": peAfter
   of "": peNone
   else: return newCSSStyleDeclaration(nil, "")
-  return newCSSStyleDeclaration(element, $element.computedMap[pseudo],
+  if element.document.window.settings.scripting == smApp:
+    window.maybeRestyle()
+    return newCSSStyleDeclaration(element, $element.computedMap[pseudo],
+      computed = true, readonly = true)
+  # In lite mode, we just parse the "style" attribute and hope for
+  # the best.
+  return newCSSStyleDeclaration(element, element.attr(satStyle),
     computed = true, readonly = true)
 
 proc corsFetch(window: Window; input: Request): FetchPromise =

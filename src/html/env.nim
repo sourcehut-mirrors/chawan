@@ -301,11 +301,7 @@ callback(new Event("").timeStamp);
 
 proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(string)): CSSStyleDeclaration {.jsfunc.} =
-  if window.settings.scripting == smApp:
-    window.maybeRestyle()
-    return element.getComputedStyle(pseudoElt)
-  # Maybe it works.
-  return element.style
+  return window.getComputedStyle0(element, pseudoElt)
 
 type MediaQueryList = ref object
   media: string

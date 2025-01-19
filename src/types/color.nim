@@ -293,7 +293,10 @@ func `$`*(c: ARGBColor): string =
 func `$`*(c: CSSColor): string =
   if c.isCell:
     return "-cha-ansi(" & $c.n & ")"
-  return c.argb().serialize()
+  let c = c.argb()
+  if c.a != 255:
+    return c.serialize()
+  return "rgb(" & $c.r & ", " & $c.g & ", " & $c.b & ")"
 
 # Divide each component by 255, multiply them by n, and discard the fractions.
 # See https://arxiv.org/pdf/2202.02864.pdf for details.

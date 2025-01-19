@@ -1,0 +1,16 @@
+<!doctype html>
+<style>
+#y::before { color: blue }
+</style>
+<title>Style test</title>
+<div id=x>Fail</div>
+<div id=y style="color: red; display: inline">test</div>
+<script src=asserts.js></script>
+<script>
+const y = document.getElementById("y");
+assertEquals(y.style.cssText, "color: red; display: inline;");
+assertEquals(window.getComputedStyle(y).cssText, "");
+assertEquals(window.getComputedStyle(y, "::before").color, "rgb(0, 0, 255)");
+y.remove();
+document.getElementById("x").textContent = "Success";
+</script>
