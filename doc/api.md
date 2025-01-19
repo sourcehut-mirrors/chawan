@@ -590,6 +590,15 @@ Returns a promise, so consumers must `await` it to get the text.</td>
 </tr>
 
 <tr>
+<td>`setCursorX(x)`, `setCursorY(y)`, `setCursorXY(x, y)`,
+`setCursorXCenter(x)`, `setCursorYCenter(y)`, `setCursorXYCenter(x, y)`</td>
+<td>Set the cursor position to `x` and `y` respectively, scrolling the
+view if necessary.<br>
+Variants that end with "Center" will also center the screen around the
+position if it is outside the screen.</td>
+</tr>
+
+<tr>
 <td>`url`</td>
 <td>Getter for the buffer's URL. Note: this returns a `URL` object, not a
 string.</td>

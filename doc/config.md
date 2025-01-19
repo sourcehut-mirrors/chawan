@@ -1470,6 +1470,13 @@ page.</td>
 </tr>
 
 <tr>
+<td><kbd>|</kbd>, None</td>
+<td>`cmd.buffer.gotoColumnOrBegin`, `cmd.buffer.gotoColumnOrEnd`</td>
+<td>If n is specified, jump to column n of the current line.
+Otherwise, jump to the first/last column.</td>
+</tr>
+
+<tr>
 <td><kbd>m</kbd></td>
 <td>`cmd.buffer.mark`</td>
 <td>Wait for a character `x` and then set a mark with the ID `x`.</td>

@@ -706,6 +706,12 @@ proc setCursorYCenter(container: Container; y: int; refresh = true)
   if fy != container.fromy:
     container.centerLine()
 
+proc setCursorXCenter(container: Container; x: int; refresh = true) {.jsfunc.} =
+  let fx = container.fromx
+  container.setCursorX(x, refresh)
+  if fx != container.fromx:
+    container.centerColumn()
+
 proc setCursorXYCenter*(container: Container; x, y: int; refresh = true)
     {.jsfunc.} =
   let fy = container.fromy
