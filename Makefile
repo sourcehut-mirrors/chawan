@@ -252,7 +252,7 @@ uninstall:
 	for f in $(manpages7); do rm -f "$(DESTDIR)$(MANPREFIX7)/$$f"; done
 	for f in $(manpages5); do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
 # moved to section 7
-	for f in cha-protocols.7 cha-api.7 cha-troubleshooting.7 cha-image.7; do rm -f "$(DESTDIR)$(MANPREFIX5)/$ff"; done
+	for f in cha-protocols.5 cha-api.5 cha-troubleshooting.5 cha-image.5; do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
 	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
 
 .PHONY: submodule
