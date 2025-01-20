@@ -1,5 +1,6 @@
 import std/algorithm
 import std/options
+import std/sets
 import std/tables
 
 import chame/tags
@@ -17,7 +18,6 @@ import types/bitmap
 import types/color
 import types/jscolor
 import types/opt
-import types/winattrs
 
 type
   RuleListEntry = object
@@ -41,10 +41,17 @@ type
 
   InitMap = array[CSSPropertyType, set[InitType]]
 
+  ApplyValueContext = object
+    vals: CSSValues
+    parentComputed: CSSValues
+    previousOrigin: CSSValues
+    window: Window
+    initMap: InitMap
+    varsSeen: HashSet[CAtom]
+
 # Forward declarations
-proc applyValue(vals: CSSValues; entry: CSSComputedEntry;
-  parentComputed, previousOrigin: CSSValues; initMap: var InitMap;
-  initType: InitType; nextInitType: set[InitType]; window: Window)
+proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
+  initType: InitType; nextInitType: set[InitType])
 proc applyStyle*(element: Element)
 
 proc calcRule(tosorts: var ToSorts; element: Element;
@@ -100,74 +107,68 @@ proc findVariable(computed: CSSValues; varName: CAtom): CSSVariable =
     vars = vars.parent
   return nil
 
-proc applyVariable(vals: CSSValues; t: CSSPropertyType; varName: CAtom;
-    fallback: ref CSSComputedEntry; parentComputed, previousOrigin: CSSValues;
-    initMap: var InitMap; initType: InitType; nextInitType: set[InitType];
-    window: Window) =
+proc applyVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
+    varName: CAtom; fallback: ref CSSComputedEntry; initType: InitType;
+    nextInitType: set[InitType]) =
   let v = t.valueType
-  let cvar = vals.findVariable(varName)
+  let cvar = ctx.vals.findVariable(varName)
   if cvar == nil:
     if fallback != nil:
-      vals.applyValue(fallback[], parentComputed, previousOrigin, initMap,
-        initType, nextInitType, window)
+      ctx.applyValue(fallback[], initType, nextInitType)
     return
   for (iv, entry) in cvar.resolved.mitems:
     if iv == v:
       entry.t = t # must override, same var can be used for different props
-      vals.applyValue(entry, parentComputed, previousOrigin, initMap, initType,
-        nextInitType, window)
+      ctx.applyValue(entry, initType, nextInitType)
       return
   var entries: seq[CSSComputedEntry] = @[]
-  assert window != nil
-  if entries.parseComputedValues($t, cvar.cvals, window.attrsp[],
-      window.factory).isSome:
-    if entries[0].et != ceVar:
+  if entries.parseComputedValues($t, cvar.cvals, ctx.window.attrsp[],
+      ctx.window.factory).isSome:
+    if entries[0].et == ceVar:
+      if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
+        ctx.varsSeen.clear()
+        return
+    else:
+      ctx.varsSeen.clear()
       cvar.resolved.add((v, entries[0]))
-      vals.applyValue(entries[0], parentComputed, previousOrigin, initMap,
-        initType, nextInitType, window)
+    ctx.applyValue(entries[0], initType, nextInitType)
 
-proc applyGlobal(vals: CSSValues; t: CSSPropertyType; global: CSSGlobalType;
-    parentComputed, previousOrigin: CSSValues; initMap: InitMap;
-    initType: InitType) =
+proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
+    global: CSSGlobalType; initType: InitType) =
   case global
   of cgtInherit:
-    vals.initialOrCopyFrom(parentComputed, t)
+    ctx.vals.initialOrCopyFrom(ctx.parentComputed, t)
   of cgtInitial:
-    vals.setInitial(t)
+    ctx.vals.setInitial(t)
   of cgtUnset:
-    vals.initialOrInheritFrom(parentComputed, t)
+    ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
   of cgtRevert:
-    if previousOrigin != nil and initType in initMap[t]:
-      vals.copyFrom(previousOrigin, t)
+    if ctx.previousOrigin != nil and initType in ctx.initMap[t]:
+      ctx.vals.copyFrom(ctx.previousOrigin, t)
     else:
-      vals.initialOrInheritFrom(parentComputed, t)
+      ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
 
-proc applyValue(vals: CSSValues; entry: CSSComputedEntry;
-    parentComputed, previousOrigin: CSSValues; initMap: var InitMap;
-    initType: InitType; nextInitType: set[InitType]; window: Window) =
+proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
+    initType: InitType; nextInitType: set[InitType]) =
   case entry.et
-  of ceBit: vals.bits[entry.t].dummy = entry.bit
-  of ceWord: vals.words[entry.t] = entry.word
-  of ceObject: vals.objs[entry.t] = entry.obj
+  of ceBit: ctx.vals.bits[entry.t].dummy = entry.bit
+  of ceWord: ctx.vals.words[entry.t] = entry.word
+  of ceObject: ctx.vals.objs[entry.t] = entry.obj
   of ceGlobal:
-    vals.applyGlobal(entry.t, entry.global, parentComputed, previousOrigin,
-      initMap, initType)
+    ctx.applyGlobal(entry.t, entry.global, initType)
   of ceVar:
-    vals.applyVariable(entry.t, entry.cvar, entry.fallback, parentComputed,
-      previousOrigin, initMap, initType, nextInitType, window)
+    ctx.applyVariable(entry.t, entry.cvar, entry.fallback, initType,
+      nextInitType)
     return # maybe it applies, maybe it doesn't...
-  initMap[entry.t] = initMap[entry.t] + nextInitType
+  ctx.initMap[entry.t] = ctx.initMap[entry.t] + nextInitType
 
-proc applyPresHints(computed: CSSValues; element: Element;
-    attrs: WindowAttributes; initMap: var InitMap, window: Window) =
+proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   template set_cv(t, x, b: untyped) =
-    computed.applyValue(makeEntry(t, CSSValueWord(x: b)), nil, nil, initMap,
-      itUserAgent, {itUser}, window)
+    ctx.applyValue(makeEntry(t, CSSValueWord(x: b)), itUserAgent, {itUser})
   template set_cv_new(t, x, b: untyped) =
     const v = valueType(t)
     let val = CSSValue(v: v, x: b)
-    computed.applyValue(makeEntry(t, val), nil, nil, initMap, itUserAgent,
-      {itUser}, window)
+    ctx.applyValue(makeEntry(t, val), itUserAgent, {itUser})
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
     if s.isSome:
@@ -193,7 +194,8 @@ proc applyPresHints(computed: CSSValues; element: Element;
   template map_size =
     let s = element.attrul(satSize)
     if s.isSome:
-      set_cv cptWidth, length, resolveLength(cuCh, float32(s.get), attrs)
+      set_cv cptWidth, length, resolveLength(cuCh, float32(s.get),
+        ctx.window.attrsp[])
   template map_text =
     let s = element.attr(satText)
     if s != "":
@@ -221,8 +223,7 @@ proc applyPresHints(computed: CSSValues; element: Element;
   template set_bgcolor_is_canvas =
     let t = cptBgcolorIsCanvas
     let val = CSSValueBit(bgcolorIsCanvas: true)
-    computed.applyValue(makeEntry(t, val), nil, nil, initMap, itUserAgent,
-      {itUser}, window)
+    ctx.applyValue(makeEntry(t, val), itUserAgent, {itUser})
   template map_cellspacing =
     let s = element.attrul(satCellspacing)
     if s.isSome:
@@ -262,8 +263,10 @@ proc applyPresHints(computed: CSSValues; element: Element;
     let textarea = HTMLTextAreaElement(element)
     let cols = textarea.attrul(satCols).get(20)
     let rows = textarea.attrul(satRows).get(1)
-    set_cv cptWidth, length, resolveLength(cuCh, float32(cols), attrs)
-    set_cv cptHeight, length, resolveLength(cuEm, float32(rows), attrs)
+    set_cv cptWidth, length, resolveLength(cuCh, float32(cols),
+      ctx.window.attrsp[])
+    set_cv cptHeight, length, resolveLength(cuEm, float32(rows),
+      ctx.window.attrsp[])
   of TAG_FONT:
     map_color
   of TAG_INPUT:
@@ -274,19 +277,20 @@ proc applyPresHints(computed: CSSValues; element: Element;
     let select = HTMLSelectElement(element)
     if select.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)
-      set_cv cptHeight, length, resolveLength(cuEm, float32(size), attrs)
+      set_cv cptHeight, length, resolveLength(cuEm, float32(size),
+        ctx.window.attrsp[])
   else: discard
 
 proc applyDeclarations(rules: RuleList; parent, element: Element;
     window: Window): CSSValues =
   result = CSSValues()
-  var parentComputed: CSSValues = nil
   var parentVars: CSSVariableMap = nil
+  var ctx = ApplyValueContext(window: window, vals: result)
   if parent != nil:
     if parent.computed == nil:
       parent.applyStyle()
-    parentComputed = parent.computed
-    parentVars = parentComputed.vars
+    ctx.parentComputed = parent.computed
+    parentVars = ctx.parentComputed.vars
   for origin in CSSOrigin:
     if rules[origin].importantVars.len > 0:
       if result.vars == nil:
@@ -303,36 +307,32 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
         result.vars.putIfAbsent(cvar.name, cvar)
   if result.vars == nil:
     result.vars = parentVars # inherit parent
-  var initMap = InitMap.default
   for entry in rules[coUserAgent].normal: # user agent
-    result.applyValue(entry, parentComputed, nil, initMap, itOther,
-      {itUserAgent, itUser}, window)
+    ctx.applyValue(entry, itOther, {itUserAgent, itUser})
   let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
   if element != nil:
-    result.applyPresHints(element, window.attrsp[], initMap, window)
-  for entry in rules[coUser].normal: # user
-    result.applyValue(entry, parentComputed, uaProperties, initMap, itUserAgent,
-      {itUser}, window)
+    ctx.applyPresHints(element)
+  ctx.previousOrigin = uaProperties
+  for entry in rules[coUser].normal:
+    ctx.applyValue(entry, itUserAgent, {itUser})
   # save user properties so author can use them
-  let userProperties = result.copyProperties()
-  for entry in rules[coAuthor].normal: # author
-    result.applyValue(entry, parentComputed, userProperties, initMap, itUser,
-      {itOther}, window)
-  for entry in rules[coAuthor].important: # author important
-    result.applyValue(entry, parentComputed, userProperties, initMap, itUser,
-      {itOther}, window)
-  for entry in rules[coUser].important: # user important
-    result.applyValue(entry, parentComputed, uaProperties, initMap, itUserAgent,
-      {itOther}, window)
-  for entry in rules[coUserAgent].important: # user agent important
-    result.applyValue(entry, parentComputed, nil, initMap, itUserAgent,
-      {itOther}, window)
-  # set defaults
+  ctx.previousOrigin = result.copyProperties() # use user for author revert
+  for entry in rules[coAuthor].normal:
+    ctx.applyValue(entry, itUser, {itOther})
+  for entry in rules[coAuthor].important:
+    ctx.applyValue(entry, itUser, {itOther})
+  ctx.previousOrigin = uaProperties # use UA for user important revert
+  for entry in rules[coUser].important:
+    ctx.applyValue(entry, itUserAgent, {itOther})
+  ctx.previousOrigin = nil # reset origin for UA
+  for entry in rules[coUserAgent].important:
+    ctx.applyValue(entry, itUserAgent, {itOther})
+  # fill in defaults
   for t in CSSPropertyType:
-    if initMap[t] == {}:
-      result.initialOrInheritFrom(parentComputed, t)
+    if ctx.initMap[t] == {}:
+      result.initialOrInheritFrom(ctx.parentComputed, t)
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.
   # Well, neither will I, because the spec breaks on actual websites.

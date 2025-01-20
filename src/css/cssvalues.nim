@@ -436,7 +436,6 @@ type
 
   CSSVariable* = ref object
     name*: CAtom
-    important*: bool
     cvals*: seq[CSSComponentValue]
     resolved*: seq[tuple[v: CSSValueType; entry: CSSComputedEntry]]
 

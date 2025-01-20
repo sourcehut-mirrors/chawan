@@ -1,7 +1,20 @@
 <style>
 a { --purple: purple; color: var(--purple) }
 div { color: white; --pink: yellow !important; background-color: var(--purple) }
+#test {
+	--test: var(--test2);
+	--test2: var(--test);
+	--test3: var(--test4);
+	--test4: red;
+	--test5: var(--test6,var(--test7));
+	--test7: var(--test6,var(--test5));
+	color: var(--test);
+	color: var(--test3);
+	background-color: var(--test5);
+}
+</style>
 </style>
 <a>
 <div>purple</div>
 </a>
+<span id=test>test</span>
