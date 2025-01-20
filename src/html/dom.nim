@@ -2831,7 +2831,7 @@ proc parseColor(element: Element; s: string): ARGBColor =
   let ec = rgba(255, 255, 255, 255)
   if cval.isNone:
     return ec
-  let color0 = cssColor(cval.get)
+  let color0 = parseColor(cval.get)
   if color0.isNone:
     return ec
   let color = color0.get

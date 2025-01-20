@@ -958,7 +958,7 @@ func getToken(cvals: openArray[CSSComponentValue]; i: int): Opt[CSSToken] =
       return ok(CSSToken(cval))
   return err()
 
-func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
+proc parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
   var commaMode = false
   var i = value.skipBlanks(0)
   template check_err(slash: bool) =
@@ -995,7 +995,7 @@ func parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
     clamp(CSSToken(value[i]).nvalue, 0, 1)
   else:
     1
-  if value.skipBlanks(i) < value.len:
+  if value.skipBlanks(i + 1) < value.len:
     return err()
   return ok(rgba(int(r), int(g), int(b), int(a * 255)).cssColor())
 
@@ -1038,7 +1038,7 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
         return ok(ANSIColor(i).cssColor())
   return err()
 
-func cssColor*(val: CSSComponentValue): Opt[CSSColor] =
+proc parseColor*(val: CSSComponentValue): Opt[CSSColor] =
   if val of CSSToken:
     let tok = CSSToken(val)
     case tok.t
@@ -1375,7 +1375,7 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
   of cvtListStyleType:
     set_bit listStyleType, ?parseIdent[CSSListStyleType](cval)
   of cvtFontStyle: set_bit fontStyle, ?parseIdent[CSSFontStyle](cval)
-  of cvtColor: set_word color, ?cssColor(cval)
+  of cvtColor: set_word color, ?parseColor(cval)
   of cvtLength:
     case t
     of cptMinWidth, cptMinHeight:
