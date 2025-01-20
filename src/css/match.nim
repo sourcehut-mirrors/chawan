@@ -216,7 +216,7 @@ func matches*(element: Element; cxsel: ComplexSelector;
     depends: var DependencyInfo): bool =
   var e = element
   var pmatch = mtTrue
-  var mdepends = DependencyInfo()
+  var mdepends = DependencyInfo.default
   for i in countdown(cxsel.high, 0):
     var match = mtFalse
     case cxsel[i].ct

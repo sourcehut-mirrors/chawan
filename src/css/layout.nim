@@ -2,9 +2,9 @@ import std/algorithm
 import std/math
 
 import css/box
+import css/cascade
 import css/cssvalues
 import css/lunit
-import css/stylednode
 import html/dom
 import types/bitmap
 import types/winattrs
@@ -49,16 +49,9 @@ type
     myRootProperties: CSSValues
     # placeholder text data
     imgText: CharacterData
-    audioText: CharacterData
-    videoText: CharacterData
-    iframeText: CharacterData
     luctx: LUContext
 
 const DefaultSpan = Span(start: 0, send: LUnit.high)
-
-# Defined here so it isn't accidentally used in dom.
-func newCharacterData(data: sink string): CharacterData =
-  return CharacterData(data: data)
 
 func minWidth(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtHorizontal].start
@@ -3158,7 +3151,6 @@ proc buildFromElem(ctx: var BlockBuilderContext; styledNode: StyledNode;
 proc buildReplacement(ctx: var BlockBuilderContext; child: StyledNode;
     parent: Element; computed: CSSValues) =
   case child.content.t
-  of ContentNone: assert false # unreachable for `content'
   of ContentOpenQuote:
     let quotes = parent.computed{"quotes"}
     let s = if quotes == nil:
@@ -3199,12 +3191,6 @@ proc buildReplacement(ctx: var BlockBuilderContext; child: StyledNode;
       ))
     else:
       ctx.pushInlineText(computed, parent, ctx.lctx.imgText)
-  of ContentVideo:
-    ctx.pushInlineText(computed, parent, ctx.lctx.videoText)
-  of ContentAudio:
-    ctx.pushInlineText(computed, parent, ctx.lctx.audioText)
-  of ContentIFrame:
-    ctx.pushInlineText(computed, parent, ctx.lctx.iframeText)
   of ContentNewline:
     ctx.pushInline(InlineBox(
       t: ibtNewline,
@@ -3446,9 +3432,6 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
     positioned: @[PositionedItem(), PositionedItem()],
     myRootProperties: rootProperties(),
     imgText: newCharacterData("[img]"),
-    videoText: newCharacterData("[video]"),
-    audioText: newCharacterData("[audio]"),
-    iframeText: newCharacterData("[iframe]"),
     luctx: LUContext()
   )
   let box = BlockBox(computed: root.computed, node: root.element)

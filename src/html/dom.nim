@@ -1,5 +1,6 @@
 import std/algorithm
 import std/deques
+import std/hashes
 import std/math
 import std/options
 import std/posix
@@ -72,12 +73,11 @@ type
   DependencyType* = enum
     dtHover, dtChecked, dtFocus, dtTarget
 
-  DependencyInfoItem = object
-    t: DependencyType
-    element: Element
+  DependencyMap = object
+    dependsOn: Table[Element, seq[Element]]
+    dependedBy: Table[Element, seq[Element]]
 
-  DependencyInfo* = object
-    items: seq[DependencyInfoItem]
+  DependencyInfo* = array[DependencyType, seq[Element]]
 
   Location = ref object
     window: Window
@@ -123,7 +123,7 @@ type
     userAgent*: string
     referrer* {.jsget.}: string
     autofocus*: bool
-    maybeRestyle*: proc()
+    maybeRestyle*: proc(element: Element)
     performance* {.jsget.}: Performance
 
   # Navigator stuff
@@ -213,6 +213,7 @@ type
     throwOnDynamicMarkupInsertion: int
     activeParserWasAborted: bool
     writeBuffers*: seq[DocumentWriteBuffer]
+    styleDependencies: array[DependencyType, DependencyMap]
 
     scriptsToExecSoon*: seq[HTMLScriptElement]
     scriptsToExecInOrder*: Deque[HTMLScriptElement]
@@ -229,8 +230,10 @@ type
     invalid*: bool # whether the document must be rendered again
 
     cachedAll: HTMLAllCollection
-    cachedSheets: seq[CSSStylesheet]
-    cachedSheetsInvalid*: bool
+
+    uaSheets*: seq[CSSStylesheet]
+    userSheet*: CSSStylesheet
+    authorSheets*: seq[CSSStylesheet]
     cachedForms: HTMLCollection
     parser*: RootRef
 
@@ -269,10 +272,7 @@ type
     namespaceURI {.jsget.}: CAtom
     prefix {.jsget.}: CAtom
     internalHover: bool
-    invalid*: bool
-    # The owner StyledNode is marked as invalid when one of these no longer
-    # matches the DOM value.
-    invalidDeps*: set[DependencyType]
+    selfDepends: set[DependencyType]
     localName* {.jsget.}: CAtom
     id* {.jsget.}: CAtom
     name {.jsget.}: CAtom
@@ -282,8 +282,6 @@ type
     cachedAttributes: NamedNodeMap
     cachedStyle*: CSSStyleDeclaration
     computedMap*: array[peNone..peAfter, CSSValues]
-    # All elements our style depends on, for each dependency type d.
-    depends*: DependencyInfo
 
   AttrDummyElement = ref object of Element
 
@@ -343,7 +341,7 @@ type
     value* {.jsget.}: Option[int32]
 
   HTMLStyleElement* = ref object of HTMLElement
-    sheet: CSSStylesheet
+    sheet*: CSSStylesheet
 
   HTMLLinkElement* = ref object of HTMLElement
     sheets: seq[CSSStylesheet]
@@ -540,8 +538,8 @@ proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc remove*(node: Node)
-proc setInvalid*(element: Element)
-proc setInvalid*(element: Element; dep: DependencyType)
+proc invalidate*(element: Element)
+proc invalidate*(element: Element; dep: DependencyType)
 
 # Forward declaration hacks
 # set in css/match
@@ -2628,6 +2626,9 @@ func serializeFragment*(node: Node): string =
   result.serializeFragment(node)
 
 # Element
+proc hash(element: Element): Hash =
+  return hash(cast[pointer](element))
+
 func innerHTML(element: Element): string {.jsfget.} =
   #TODO xml
   return element.serializeFragment()
@@ -2658,22 +2659,50 @@ func crossOrigin(element: HTMLImageElement): CORSAttribute {.jsfget.} =
 func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
   return strictParseEnum[ReferrerPolicy](element.attr(satReferrerpolicy))
 
-proc sheets*(document: Document): seq[CSSStylesheet] =
-  if document.cachedSheetsInvalid and document.window.styling:
-    document.cachedSheets.setLen(0)
+func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
+  if ss == nil:
+    return nil
+  var res = CSSStylesheet()
+  res[] = ss[]
+  for mq in ss.mqList:
+    if mq.query.applies(window.settings.scripting, window.attrsp):
+      res.add(mq.children.applyMediaQuery(window))
+  return move(res)
+
+proc applyUASheet*(document: Document) =
+  const ua = staticRead"res/ua.css"
+  document.uaSheets.add(ua.parseStylesheet(document.factory, nil,
+    document.window.attrsp).applyMediaQuery(document.window))
+  if document.documentElement != nil:
+    document.documentElement.invalidate()
+
+proc applyQuirksSheet*(document: Document) =
+  const quirks = staticRead"res/quirk.css"
+  document.uaSheets.add(quirks.parseStylesheet(document.factory, nil,
+    document.window.attrsp).applyMediaQuery(document.window))
+  if document.documentElement != nil:
+    document.documentElement.invalidate()
+
+proc applyUserSheet*(document: Document; user: string) =
+  document.userSheet = user.parseStylesheet(document.factory, nil,
+    document.window.attrsp).applyMediaQuery(document.window)
+  if document.documentElement != nil:
+    document.documentElement.invalidate()
+
+#TODO this should be cached & called incrementally
+proc applyAuthorSheets*(document: Document) =
+  let window = document.window
+  if window.styling and document.documentElement != nil:
+    document.authorSheets = @[]
     for elem in document.documentElement.descendants:
       if elem of HTMLStyleElement:
         let style = HTMLStyleElement(elem)
-        style.sheet = style.textContent.parseStylesheet(document.factory,
-          document.baseURL, document.window.attrsp)
-        document.cachedSheets.add(style.sheet)
+        document.authorSheets.add(style.sheet)
       elif elem of HTMLLinkElement:
         let link = HTMLLinkElement(elem)
         if link.enabled.get(not link.relList.containsIgnoreCase(satAlternate)):
-          document.cachedSheets.add(link.sheets)
-      else: discard
-    document.cachedSheetsInvalid = false
-  return document.cachedSheets
+          document.authorSheets.add(link.sheets)
+    document.documentElement.invalidate()
 
 func isButton*(element: Element): bool =
   if element of HTMLButtonElement:
@@ -2755,10 +2784,10 @@ func focus*(document: Document): Element =
 
 proc setFocus*(document: Document; element: Element) =
   if document.focus != nil:
-    document.focus.setInvalid(dtFocus)
+    document.focus.invalidate(dtFocus)
   document.internalFocus = element
   if element != nil:
-    element.setInvalid(dtFocus)
+    element.invalidate(dtFocus)
 
 proc focus(ctx: JSContext; element: Element) {.jsfunc.} =
   let window = ctx.getWindow()
@@ -2773,16 +2802,16 @@ func target*(document: Document): Element =
 
 proc setTarget*(document: Document; element: Element) =
   if document.target != nil:
-    document.target.setInvalid(dtTarget)
+    document.target.invalidate(dtTarget)
   document.internalTarget = element
   if element != nil:
-    element.setInvalid(dtTarget)
+    element.invalidate(dtTarget)
 
 func hover*(element: Element): bool =
   return element.internalHover
 
 proc setHover*(element: Element; hover: bool) =
-  element.setInvalid(dtHover)
+  element.invalidate(dtHover)
   element.internalHover = hover
 
 func findAutoFocus*(document: Document): Element =
@@ -2969,9 +2998,9 @@ func length(this: HTMLFormElement): int {.jsfget.} =
 func jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
-proc setValue(this: HTMLInputElement; value: string) {.jsfset: "value".} =
+proc setValue*(this: HTMLInputElement; value: string) {.jsfset: "value".} =
   this.value = value
-  this.setInvalid()
+  this.invalidate()
 
 proc setType(this: HTMLInputElement; s: string) {.jsfset: "type".} =
   this.attr(satType, s)
@@ -2984,11 +3013,11 @@ proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
   # fully invalidate them on checked change.
   if input.inputType == itRadio:
     for radio in input.radiogroup:
-      radio.setInvalid(dtChecked)
-      radio.setInvalid()
+      radio.invalidate(dtChecked)
+      radio.invalidate()
       radio.internalChecked = false
-  input.setInvalid(dtChecked)
-  input.setInvalid()
+  input.invalidate(dtChecked)
+  input.invalidate()
   input.internalChecked = b
 
 func inputString*(input: HTMLInputElement): string =
@@ -3076,7 +3105,7 @@ func select*(option: HTMLOptionElement): HTMLSelectElement =
 
 proc setSelected*(option: HTMLOptionElement; selected: bool)
     {.jsfset: "selected".} =
-  option.setInvalid(dtChecked)
+  option.invalidate(dtChecked)
   option.selected = selected
   let select = option.select
   if select != nil and not select.attrb(satMultiple):
@@ -3088,12 +3117,12 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
       if option.selected:
         if prevSelected != nil:
           prevSelected.selected = false
-          prevSelected.setInvalid(dtChecked)
+          prevSelected.invalidate(dtChecked)
         prevSelected = option
     if select.attrul(satSize).get(1) == 1 and
         prevSelected == nil and firstOption != nil:
       firstOption.selected = true
-      firstOption.setInvalid(dtChecked)
+      firstOption.invalidate(dtChecked)
 
 # <select>
 func jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
@@ -3229,7 +3258,7 @@ proc setSelectedIndex*(this: HTMLSelectElement; n: int)
       it.dirty = true
     else:
       it.selected = false
-    it.setInvalid(dtChecked)
+    it.invalidate(dtChecked)
     it.invalidateCollections()
     inc i
 
@@ -3270,6 +3299,15 @@ proc remove(ctx: JSContext; this: HTMLSelectElement; idx: varargs[JSValue]):
   else:
     this.remove()
   ok()
+
+# <style>
+proc updateSheet*(this: HTMLStyleElement) =
+  let document = this.document
+  let window = document.window
+  if window != nil:
+    this.sheet = this.textContent.parseStylesheet(document.factory,
+      document.baseURL, window.attrsp).applyMediaQuery(window)
+    document.applyAuthorSheets()
 
 # <table>
 func caption(this: HTMLTableElement): Element {.jsfget.} =
@@ -3750,15 +3788,27 @@ proc delAttr(element: Element; i: int; keep = false) =
       map.attrlist.del(j) # ordering does not matter
   element.reflectAttr(name, none(string))
   element.invalidateCollections()
-  element.setInvalid()
+  element.invalidate()
 
 # Styles.
-#
+template computed*(element: Element): CSSValues =
+  element.computedMap[peNone]
+
+proc invalidate*(element: Element) =
+  let valid = element.computed != nil
+  for it in element.computedMap.mitems:
+    it = nil
+  if element.document != nil:
+    element.document.invalid = true
+  if valid:
+    for it in element.elementList:
+      it.invalidate()
+
 # To avoid having to invalidate the entire tree on pseudo-class changes,
-# each node holds a list of nodes their CSS values depend on. (This list
-# may include the node itself.) In addition, nodes also store each value
-# valid for dependency d. These are then used for checking the validity
-# of StyledNodes.
+# each element holds a list of elements their CSS values depend on.
+# (This list may include the element itself.) In addition, elements
+# store each value valid for dependency d. These are then used for
+# checking the validity of StyledNodes.
 #
 # In other words - say we have to apply the author stylesheets of the
 # following document:
@@ -3783,36 +3833,37 @@ proc delAttr(element: Element; i: int; keep = false) =
 # So in our example, for div we check if div's :hover pseudo-class has
 # changed, for p we check whether input's :checked pseudo-class has
 # changed.
-proc setInvalid*(element: Element) =
-  element.invalid = true
-  if element.document != nil:
-    element.document.invalid = true
 
-proc setInvalid*(element: Element; dep: DependencyType) =
-  element.invalidDeps.incl(dep)
-  if element.document != nil:
-    element.document.invalid = true
+proc invalidate*(element: Element; dep: DependencyType) =
+  if dep in element.selfDepends:
+    element.invalidate()
+  element.document.styleDependencies[dep].dependedBy.withValue(element, p):
+    for it in p[]:
+      it.invalidate()
 
-template computed*(element: Element): CSSValues =
-  element.computedMap[peNone]
-
-proc isValid*(element: Element; toReset: var seq[Element]): bool =
-  if element.invalid:
-    toReset.add(element)
-    return false
-  for it in element.depends.items:
-    if it.t in it.element.invalidDeps:
-      toReset.add(it.element)
-      return false
-  return true
+proc applyStyleDependencies*(element: Element; depends: DependencyInfo) =
+  let document = element.document
+  element.selfDepends = {}
+  for t, map in document.styleDependencies.mpairs:
+    map.dependsOn.withValue(element, p):
+      for it in p[]:
+        map.dependedBy.del(it)
+      document.styleDependencies[t].dependsOn.del(element)
+    for el in depends[t]:
+      if el == element:
+        element.selfDepends.incl(t)
+        continue
+      document.styleDependencies[t].dependedBy.mgetOrPut(el, @[]).add(element)
+      document.styleDependencies[t].dependsOn.mgetOrPut(element, @[]).add(el)
 
 proc add*(depends: var DependencyInfo; element: Element; t: DependencyType) =
-  depends.items.add(DependencyInfoItem(t: t, element: element))
+  depends[t].add(element)
 
 proc merge*(a: var DependencyInfo; b: DependencyInfo) =
-  for it in b.items:
-    if it notin a.items:
-      a.items.add(it)
+  for t, it in b:
+    for x in it:
+      if x notin a[t]:
+        a[t].add(x)
 
 proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
     readonly = false): CSSStyleDeclaration =
@@ -3959,7 +4010,7 @@ proc getComputedStyle0*(window: Window; element: Element;
   of "": peNone
   else: return newCSSStyleDeclaration(nil, "")
   if window.settings.scripting == smApp:
-    window.maybeRestyle()
+    window.maybeRestyle(element)
     return newCSSStyleDeclaration(element, $element.computedMap[pseudo],
       computed = true, readonly = true)
   # In lite mode, we just parse the "style" attribute and hope for
@@ -3989,8 +4040,10 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL; applies: bool) =
       if applies:
         # Note: we intentionally load all sheets to prevent media query
         # based tracking.
-        link.sheets.add(sheet)
-        window.document.cachedSheetsInvalid = true
+        link.sheets.add(sheet.applyMediaQuery(window))
+        window.document.applyAuthorSheets()
+        if window.document.documentElement != nil:
+          window.document.documentElement.invalidate()
       for url in sheet.importList:
         window.loadSheet(link, url, true) #TODO media query
   )
@@ -4024,8 +4077,9 @@ proc getImageId(window: Window): int =
 
 proc loadResource*(window: Window; image: HTMLImageElement) =
   if not window.images:
-    image.invalid = image.invalid or image.bitmap != nil
-    image.bitmap = nil
+    if image.bitmap != nil:
+      image.invalidate()
+      image.bitmap = nil
     image.fetchStarted = false
     return
   if image.fetchStarted:
@@ -4124,16 +4178,17 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           cachedURL.bmp = bmp
           for share in cachedURL.shared:
             share.bitmap = bmp
-            share.setInvalid()
-          image.setInvalid()
+            share.invalidate()
+          image.invalidate()
         )
       )
     window.pendingResources.add(p)
 
 proc loadResource*(window: Window; svg: SVGSVGElement) =
   if not window.images:
-    svg.invalid = svg.invalid or svg.bitmap != nil
-    svg.bitmap = nil
+    if svg.bitmap != nil:
+      svg.invalidate()
+      svg.bitmap = nil
     svg.fetchStarted = false
     return
   if svg.fetchStarted:
@@ -4144,7 +4199,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
     window.svgCache.withValue(s, elp):
       svg.bitmap = elp.bitmap
       if svg.bitmap != nil: # already decoded
-        svg.setInvalid()
+        svg.invalidate()
       else: # tell me when you're done
         elp.shared.add(svg)
       return
@@ -4197,8 +4252,8 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
     )
     for share in svg.shared:
       share.bitmap = svg.bitmap
-      share.setInvalid()
-    svg.setInvalid()
+      share.invalidate()
+    svg.invalidate()
   )
   window.pendingResources.add(p)
 
@@ -4291,7 +4346,7 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
     if name == satDisabled:
       # IE won :(
       if link.enabled.isNone:
-        link.document.cachedSheetsInvalid = true
+        link.document.applyAuthorSheets()
       link.enabled = some(value.isNone)
     if link.isConnected and name in {satHref, satRel, satDisabled}:
       link.fetchStarted = false
@@ -4354,7 +4409,7 @@ proc attr*(element: Element; name: CAtom; value: string) =
   if i >= 0:
     element.attrs[i].value = value
     element.invalidateCollections()
-    element.setInvalid()
+    element.invalidate()
   else:
     element.attrs.insert(AttrData(
       qualifiedName: name,
@@ -4385,7 +4440,7 @@ proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
     element.attrs[i].qualifiedName = qualifiedName
     element.attrs[i].value = value
     element.invalidateCollections()
-    element.setInvalid()
+    element.invalidate()
   else:
     element.attrs.insert(AttrData(
       prefix: prefixAtom,
@@ -4536,14 +4591,15 @@ proc remove*(node: Node; suppressObservers: bool) =
   parent.invalidateCollections()
   node.invalidateCollections()
   if parent of Element:
-    Element(parent).setInvalid()
+    Element(parent).invalidate()
   node.parentNode = nil
   node.index = -1
   if element != nil:
     element.elIndex = -1
-    if element.document != nil and
-        (element of HTMLStyleElement or element of HTMLLinkElement):
-      element.document.cachedSheetsInvalid = true
+    if element.document != nil:
+      if element of HTMLStyleElement or element of HTMLLinkElement:
+        element.document.applyAuthorSheets()
+      element.applyStyleDependencies(DependencyInfo.default)
   #TODO assigned, shadow root, shadow root again, custom nodes, registered
   # observers
   #TODO not suppress observers => queue tree mutation record
@@ -4579,7 +4635,7 @@ proc resetElement*(element: Element) =
       input.files.setLen(0)
     else:
       input.value = input.attr(satValue)
-    input.setInvalid()
+    input.invalidate()
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
     var firstOption: HTMLOptionElement = nil
@@ -4592,7 +4648,7 @@ proc resetElement*(element: Element) =
       if option.selected:
         if not multiple and prevSelected != nil:
           prevSelected.selected = false
-          prevSelected.setInvalid(dtChecked)
+          prevSelected.invalidate(dtChecked)
         prevSelected = option
     if not multiple and select.attrul(satSize).get(1) == 1 and
         prevSelected == nil and firstOption != nil:
@@ -4600,7 +4656,7 @@ proc resetElement*(element: Element) =
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
     textarea.value = textarea.childTextContent()
-    textarea.setInvalid()
+    textarea.invalidate()
   else: discard
 
 proc setForm*(element: FormAssociatedElement; form: HTMLFormElement) =
@@ -4645,7 +4701,8 @@ proc resetFormOwner(element: FormAssociatedElement) =
         element.setForm(HTMLFormElement(ancestor))
 
 proc elementInsertionSteps(element: Element) =
-  if element of HTMLOptionElement:
+  case element.tagType
+  of TAG_OPTION:
     if element.parentElement != nil:
       let parent = element.parentElement
       var select: HTMLSelectElement
@@ -4656,21 +4713,23 @@ proc elementInsertionSteps(element: Element) =
         select = HTMLSelectElement(parent.parentElement)
       if select != nil:
         select.resetElement()
+  of TAG_LINK:
+    let window = element.document.window
+    if window != nil:
+      let link = HTMLLinkElement(element)
+      window.loadResource(link)
+  of TAG_IMAGE:
+    let window = element.document.window
+    if window != nil:
+      let image = HTMLImageElement(element)
+      window.loadResource(image)
+  of TAG_STYLE:
+    HTMLStyleElement(element).updateSheet()
   elif element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if element.parserInserted:
       return
     element.resetFormOwner()
-  elif element of HTMLLinkElement:
-    let window = element.document.window
-    if window != nil:
-      let link = HTMLLinkElement(element)
-      window.loadResource(link)
-  elif element of HTMLImageElement:
-    let window = element.document.window
-    if window != nil:
-      let image = HTMLImageElement(element)
-      window.loadResource(image)
 
 func isValidParent(node: Node): bool =
   return node of Element or node of Document or node of DocumentFragment
@@ -4761,7 +4820,7 @@ proc insertNode(parent, node, before: Node) =
   parent.invalidateCollections()
   if node.document != nil and (node of HTMLStyleElement or
       node of HTMLLinkElement):
-    node.document.cachedSheetsInvalid = true
+    node.document.applyAuthorSheets()
   for el in node.elementsIncl:
     #TODO shadow root
     el.elementInsertionSteps()
@@ -4783,7 +4842,7 @@ proc insert*(parent, node, before: Node; suppressObservers = false) =
     #TODO live ranges
     discard
   if parent of Element:
-    Element(parent).setInvalid()
+    Element(parent).invalidate()
   for node in nodes:
     insertNode(parent, node, before)
 
@@ -4986,7 +5045,7 @@ proc setTextContent(ctx: JSContext; node: Node; data: JSValue): Err[void]
 proc reset*(form: HTMLFormElement) =
   for control in form.controls:
     control.resetElement()
-    control.setInvalid()
+    control.invalidate()
 
 proc renderBlocking(element: Element): bool =
   if "render" in element.attr(satBlocking).split(AsciiWhitespace):

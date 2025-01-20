@@ -266,9 +266,8 @@ type
     BorderCollapseCollapse = "collapse"
 
   CSSContentType* = enum
-    ContentNone, ContentString, ContentOpenQuote, ContentCloseQuote,
-    ContentNoOpenQuote, ContentNoCloseQuote, ContentImage, ContentVideo,
-    ContentAudio, ContentNewline, ContentIFrame
+    ContentString, ContentOpenQuote, ContentCloseQuote, ContentNoOpenQuote,
+    ContentNoCloseQuote, ContentImage, ContentNewline
 
   CSSFloat* = enum
     FloatNone = "none"

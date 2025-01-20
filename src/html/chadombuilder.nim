@@ -88,6 +88,7 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
 proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
   if not builder.document.parserCannotChangeModeFlag:
     builder.document.mode = quirksMode
+    builder.document.applyQuirksSheet()
 
 proc setEncodingImpl(builder: ChaDOMBuilder; encoding: string):
     SetEncodingResult =
@@ -162,7 +163,7 @@ proc insertTextImpl(builder: ChaDOMBuilder; parent: Node; text: string;
   if prevSibling != nil and prevSibling of Text:
     Text(prevSibling).data &= text
     if parent of Element:
-      Element(parent).invalid = true
+      Element(parent).invalidate()
   else:
     let text = builder.document.createTextNode(text)
     discard parent.insertBefore(text, before)
@@ -209,6 +210,8 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: Node) =
     if window != nil:
       let svg = SVGSVGElement(element)
       window.loadResource(svg)
+  elif element of HTMLStyleElement:
+    HTMLStyleElement(element).updateSheet()
 
 proc newChaDOMBuilder(url: URL; window: Window; factory: CAtomFactory;
     confidence: CharsetConfidence; charset = DefaultCharset): ChaDOMBuilder =

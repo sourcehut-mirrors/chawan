@@ -13,16 +13,6 @@ type
     peNone = "-cha-none"
     peBefore = "before"
     peAfter = "after"
-    # internal
-    peInputText = "-cha-input-text"
-    peTextareaText = "-cha-textarea-text"
-    peImage = "-cha-image"
-    peNewline = "-cha-newline"
-    peVideo = "-cha-video"
-    peAudio = "-cha-audio"
-    peCanvas = "-cha-canvas"
-    peSVG = "-cha-svg"
-    peIFrame = "-cha-iframe"
 
   PseudoClass* = enum
     pcFirstChild = "first-child"

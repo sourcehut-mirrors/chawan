@@ -17,7 +17,6 @@ import css/layout
 import css/lunit
 import css/render
 import css/sheet
-import css/stylednode
 import html/catom
 import html/chadombuilder
 import html/dom
@@ -94,11 +93,9 @@ type
     lines: FlexibleGrid
     loader: FileLoader
     needsBOMSniff: bool
-    needsReshape: bool
     outputId: int
     pollData: PollData
     prevHover: Element
-    prevStyled: StyledNode
     pstream: SocketStream # control stream
     quirkstyle: CSSStylesheet
     reportedBytesRead: int
@@ -107,9 +104,7 @@ type
     savetask: bool
     state: BufferState
     tasks: array[BufferCommand, int] #TODO this should have arguments
-    uastyle: CSSStylesheet
     url: URL # URL before readFromFd
-    userstyle: CSSStylesheet
     window: Window
 
   BufferIfaceItem = object
@@ -766,34 +761,15 @@ proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
     return CheckRefreshResult(n: -1)
   return CheckRefreshResult(n: n, url: url.get)
 
-proc maybeRestyle(buffer: Buffer) =
-  if buffer.document == nil:
-    return
-  if buffer.document.invalid or buffer.document.cachedSheetsInvalid:
-    let uastyle = if buffer.document.mode != QUIRKS:
-      buffer.uastyle
-    else:
-      buffer.quirkstyle
-    if buffer.document.cachedSheetsInvalid:
-      buffer.prevStyled = nil
-    let styledRoot = buffer.document.applyStylesheets(uastyle,
-      buffer.userstyle, buffer.prevStyled)
-    buffer.prevStyled = styledRoot
-    buffer.document.invalid = false
-    buffer.needsReshape = true
-
 proc maybeReshape(buffer: Buffer): bool {.discardable.} =
-  if buffer.document == nil:
+  if buffer.document == nil and buffer.document.documentElement != nil:
     return # not parsed yet, nothing to render
-  buffer.maybeRestyle()
-  if buffer.needsReshape:
-    buffer.rootBox = nil
-    # applyStylesheets may return nil if there is no <html> element.
-    if buffer.prevStyled != nil:
-      buffer.rootBox = buffer.prevStyled.layout(addr buffer.attrs)
+  if buffer.document.invalid:
+    let root = initStyledElement(buffer.document.documentElement)
+    buffer.rootBox = root.layout(addr buffer.attrs)
     buffer.lines.renderDocument(buffer.bgcolor, buffer.rootBox,
       addr buffer.attrs, buffer.images)
-    buffer.needsReshape = false
+    buffer.document.invalid = false
     return true
   return false
 
@@ -814,7 +790,8 @@ proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
         Text(lastChild).data &= data
       else:
         plaintext.insert(buffer.document.createTextNode($data), nil)
-      plaintext.setInvalid()
+      #TODO just invalidate document?
+      plaintext.invalidate()
   true
 
 func canSwitch(buffer: Buffer): bool {.inline.} =
@@ -831,7 +808,9 @@ proc switchCharset(buffer: Buffer) =
   buffer.initDecoder()
   buffer.htmlParser.restart(buffer.charset)
   buffer.document = buffer.htmlParser.builder.document
-  buffer.prevStyled = nil
+  buffer.document.applyUASheet()
+  buffer.document.applyUserSheet(buffer.config.userstyle)
+  buffer.document.invalid = true
 
 proc bomSniff(buffer: Buffer; iq: openArray[uint8]): int =
   if iq[0] == 0xFE and iq[1] == 0xFF:
@@ -1125,6 +1104,7 @@ proc onload(buffer: Buffer) =
       reprocess = false
     else: # EOF
       buffer.finishLoad().then(proc() =
+        buffer.document.invalid = true
         buffer.maybeReshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
@@ -1164,11 +1144,15 @@ proc getTitle*(buffer: Buffer): string {.proxy, task.} =
 proc forceReshape0(buffer: Buffer) =
   if buffer.document != nil:
     buffer.document.invalid = true
-  buffer.needsReshape = true
   buffer.maybeReshape()
 
 proc forceReshape2(buffer: Buffer) =
-  buffer.prevStyled = nil
+  if buffer.document != nil and buffer.document.documentElement != nil:
+    buffer.document.documentElement.invalidate()
+  buffer.document.applyUASheet()
+  if buffer.document.mode == QUIRKS:
+    buffer.document.applyQuirksSheet()
+  buffer.document.applyUserSheet(buffer.config.userstyle)
   buffer.forceReshape0()
 
 proc forceReshape*(buffer: Buffer) {.proxy.} =
@@ -1370,20 +1354,19 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
       case input.inputType
       of itFile:
         input.files = @[newWebFile(s, fd)]
-        input.setInvalid()
+        input.invalidate()
         buffer.maybeReshape()
         res.repaint = true
         res.open = buffer.implicitSubmit(input)
       else:
-        input.value = s
-        input.setInvalid()
+        input.setValue(s)
         buffer.maybeReshape()
         res.repaint = true
         res.open = buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(buffer.document.focus)
       textarea.value = s
-      textarea.setInvalid()
+      textarea.invalidate()
       buffer.maybeReshape()
       res.repaint = true
     else: discard
@@ -1959,7 +1942,9 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   if buffer.config.scripting != smFalse:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
     if buffer.config.scripting == smApp:
-      buffer.window.maybeRestyle = proc() = buffer.maybeRestyle()
+      buffer.window.maybeRestyle = proc(element: Element) =
+        if element.computed == nil:
+          element.applyStyle()
   buffer.charset = buffer.charsetStack.pop()
   buffer.fd = istream.fd
   buffer.istream = istream
@@ -1970,14 +1955,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   loader.unregisterFun = proc(fd: int) =
     buffer.pollData.unregister(fd)
   buffer.pollData.register(buffer.rfd, POLLIN)
-  const css = staticRead"res/ua.css"
-  const quirk = css & staticRead"res/quirk.css"
   buffer.initDecoder()
-  let attrsp = addr buffer.attrs
-  buffer.uastyle = css.parseStylesheet(factory, nil, attrsp)
-  buffer.quirkstyle = quirk.parseStylesheet(factory, nil, attrsp)
-  buffer.userstyle = buffer.config.userstyle.parseStylesheet(factory, nil,
-    attrsp)
   buffer.htmlParser = newHTML5ParserWrapper(
     buffer.window,
     buffer.url,
@@ -1987,6 +1965,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   )
   assert buffer.htmlParser.builder.document != nil
   buffer.document = buffer.htmlParser.builder.document
+  buffer.document.applyUASheet()
+  buffer.document.applyUserSheet(buffer.config.userstyle)
   buffer.runBuffer()
   buffer.cleanup()
   quit(0)
