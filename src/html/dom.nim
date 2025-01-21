@@ -1042,7 +1042,8 @@ func makeulgz(name: static string; ts: varargs[TagType]; default = 0u32):
     u: default
   )
 
-func makef(name: static string; ts: set[TagType]; ctype: static string): ReflectEntry =
+func makef(name: static string; ts: set[TagType]; ctype: static string):
+    ReflectEntry =
   const attrname = attrType0(name)
   ReflectEntry(
     attrname: attrname,
@@ -2677,6 +2678,8 @@ proc applyUASheet*(document: Document) =
     document.documentElement.invalidate()
 
 proc applyQuirksSheet*(document: Document) =
+  if document.window == nil:
+    return
   const quirks = staticRead"res/quirk.css"
   document.uaSheets.add(quirks.parseStylesheet(document.factory, nil,
     document.window.attrsp).applyMediaQuery(document.window))
@@ -2692,7 +2695,7 @@ proc applyUserSheet*(document: Document; user: string) =
 #TODO this should be cached & called incrementally
 proc applyAuthorSheets*(document: Document) =
   let window = document.window
-  if window.styling and document.documentElement != nil:
+  if window != nil and window.styling and document.documentElement != nil:
     document.authorSheets = @[]
     for elem in document.documentElement.descendants:
       if elem of HTMLStyleElement:
@@ -3626,10 +3629,14 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
   of TAG_LABEL:
     HTMLLabelElement()
   of TAG_CANVAS:
+    let imageId = if document.window != nil:
+      -1
+    else:
+      document.window.getImageId()
     let bitmap = if document.scriptingEnabled:
       NetworkBitmap(
         contentType: "image/x-cha-canvas",
-        imageId: document.window.getImageId(),
+        imageId: imageId,
         width: 300,
         height: 150
       )
@@ -4257,8 +4264,8 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
   )
   window.pendingResources.add(p)
 
-proc reflectEvent(element: Element; target: EventTarget; name, ctype: StaticAtom;
-    value: string) =
+proc reflectEvent(element: Element; target: EventTarget;
+    name, ctype: StaticAtom; value: string) =
   let document = element.document
   let ctx = document.window.jsctx
   let urls = document.baseURL.serialize(excludepassword = true)
@@ -4323,7 +4330,8 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
   case element.tagType
   of TAG_BODY:
     if name == satOnload and element.scriptingEnabled:
-      element.reflectEvent(element.document.window, name, satLoad, value.get(""))
+      element.reflectEvent(element.document.window, name, satLoad,
+        value.get(""))
       return
   of TAG_INPUT:
     let input = HTMLInputElement(element)
