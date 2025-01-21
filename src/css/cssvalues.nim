@@ -99,22 +99,37 @@ type
 
   CSSUnit* = enum
     cuAuto = ""
+    cuCap = "cap"
+    cuCh = "ch"
     cuCm = "cm"
-    cuMm = "mm"
-    cuIn = "in"
-    cuPx = "px"
-    cuPt = "pt"
-    cuPc = "pc"
+    cuDvmax = "dvmax"
+    cuDvmin = "dvmin"
     cuEm = "em"
     cuEx = "ex"
-    cuCh = "ch"
-    cuRem = "rem"
-    cuVw = "vw"
-    cuVh = "vh"
-    cuVmin = "vmin"
-    cuVmax = "vmax"
-    cuPerc = "%"
     cuIc = "ic"
+    cuIn = "in"
+    cuLh = "lh"
+    cuLvmax = "lvmax"
+    cuLvmin = "lvmin"
+    cuMm = "mm"
+    cuPc = "pc"
+    cuPerc = "%"
+    cuPt = "pt"
+    cuPx = "px"
+    cuRcap = "rcap"
+    cuRch = "rch"
+    cuRem = "rem"
+    cuRex = "rex"
+    cuRic = "ric"
+    cuRlh = "rlh"
+    cuSvmax = "svmax"
+    cuSvmin = "svmin"
+    cuVb = "vb"
+    cuVh = "vh"
+    cuVi = "vi"
+    cuVmax = "vmax"
+    cuVmin = "vmin"
+    cuVw = "vw"
 
   CSSValueType* = enum
     cvtLength = "length"
@@ -888,10 +903,11 @@ func resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
     CSSLength =
   return case u
   of cuAuto: CSSLength(u: clAuto)
-  of cuEm, cuRem: cssLength(val * float32(attrs.ppl))
-  of cuCh: cssLength(val * float32(attrs.ppc))
-  of cuIc: cssLength(val * float32(attrs.ppc) * 2)
-  of cuEx: cssLength(val * float32(attrs.ppc) / 2)
+  of cuEm, cuRem, cuCap, cuRcap, cuLh, cuRlh:
+    cssLength(val * float32(attrs.ppl))
+  of cuCh, cuRch: cssLength(val * float32(attrs.ppc))
+  of cuIc, cuRic: cssLength(val * float32(attrs.ppc) * 2)
+  of cuEx, cuRex: cssLength(val * float32(attrs.ppc) / 2)
   of cuPerc: CSSLength(u: clPerc, num: val)
   of cuPx: cssLength(val)
   of cuCm: cssLength(val * 37.8)
@@ -899,10 +915,12 @@ func resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
   of cuIn: cssLength(val * 96)
   of cuPc: cssLength(val * 16)
   of cuPt: cssLength(val * 4 / 3)
-  of cuVw: cssLength(float32(attrs.widthPx) * val / 100)
-  of cuVh: cssLength(float32(attrs.heightPx) * val / 100)
-  of cuVmin: cssLength(min(attrs.widthPx, attrs.heightPx) / 100 * val)
-  of cuVmax: cssLength(max(attrs.widthPx, attrs.heightPx) / 100 * val)
+  of cuVw, cuVi: cssLength(float32(attrs.widthPx) * val / 100)
+  of cuVh, cuVb: cssLength(float32(attrs.heightPx) * val / 100)
+  of cuVmin, cuSvmin, cuLvmin, cuDvmin:
+    cssLength(min(attrs.widthPx, attrs.heightPx) / 100 * val)
+  of cuVmax, cuSvmax, cuLvmax, cuDvmax:
+    cssLength(max(attrs.widthPx, attrs.heightPx) / 100 * val)
 
 func parseLength(val: float32; u: string; attrs: WindowAttributes):
     Opt[CSSLength] =
