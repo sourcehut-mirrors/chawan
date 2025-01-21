@@ -84,10 +84,6 @@ proc insertFormat(line: var FlexibleLine; pos, i: int; format: Format;
     node: Element = nil) =
   line.insertFormat(i, FormatCell(format: format, node: node, pos: pos))
 
-proc addFormat(line: var FlexibleLine; pos: int; format: Format;
-    node: Element = nil) =
-  line.formats.add(FormatCell(format: format, node: node, pos: pos))
-
 func toFormat(computed: CSSValues): Format =
   if computed == nil:
     return Format()
@@ -278,7 +274,7 @@ proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
 
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     color: CellColor; startx, starty, endx, endy: int; node: Element;
-    noPaint = false) =
+    alpha: uint8) =
   let clipBox = addr state.clipBox
   var startx = startx
   var starty = starty
@@ -294,69 +290,77 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
   endx = min(endx, clipBox.send.x.toInt) div state.attrs.ppc
   if starty >= endy or startx >= endx:
     return
-  if grid.high < endy: # make sure we have line y
+  if grid.len < endy: # make sure we have line y - 1
     grid.addLines(endy - grid.high)
   var format = Format(bgcolor: color)
-  for y in starty ..< endy:
+  for line in grid.toOpenArray(starty, endy - 1).mitems:
     # Make sure line.width() >= endx
-    if noPaint:
-      for i in grid[y].str.width() ..< endx:
-        grid[y].str &= ' '
+    if alpha < 255:
+      # If the background is not fully opaque, then text under it is
+      # preserved.
+      for i in line.str.width() ..< endx:
+        line.str &= ' '
     else:
+      # Otherwise, background overpaints old text.
       let w = endx - startx
       while state.spaces.len < w:
         state.spaces &= ' '
       var cx: int
       var hadStr: bool
-      grid[y].setText0(state.spaces.toOpenArray(0, w - 1), startx, endx,
+      line.setText0(state.spaces.toOpenArray(0, w - 1), startx, endx,
         cx, hadStr)
     # Process formatting around startx
-    if grid[y].formats.len == 0:
+    if line.formats.len == 0:
       # No formats
-      grid[y].addFormat(startx, Format())
+      line.formats.add(FormatCell(pos: startx))
     else:
-      let fi = grid[y].findFormatN(startx) - 1
+      let fi = line.findFormatN(startx) - 1
       if fi == -1:
         # No format <= startx
-        grid[y].insertFormat(startx, 0, Format())
-      elif grid[y].formats[fi].pos == startx:
+        line.insertFormat(startx, 0, Format())
+      elif line.formats[fi].pos == startx:
         # Last format equals startx => next comes after, nothing to be done
         discard
       else:
         # Last format lower than startx => separate format from startx
-        let copy = grid[y].formats[fi]
-        grid[y].formats[fi].pos = startx
-        grid[y].insertFormat(fi, copy)
+        let copy = line.formats[fi]
+        line.formats[fi].pos = startx
+        line.insertFormat(fi, copy)
     # Process formatting around endx
-    assert grid[y].formats.len > 0
-    let fi = grid[y].findFormatN(endx) - 1
+    assert line.formats.len > 0
+    let fi = line.findFormatN(endx) - 1
     if fi == -1:
       # Last format > endx -> nothing to be done
       discard
-    elif grid[y].formats[fi].pos != endx:
-      let copy = grid[y].formats[fi]
-      grid[y].formats[fi].pos = endx
-      grid[y].insertFormat(fi, copy)
+    elif line.formats[fi].pos != endx:
+      let copy = line.formats[fi]
+      line.formats[fi].pos = endx
+      line.insertFormat(fi, copy)
     # Paint format backgrounds between startx and endx
-    for fi in 0 ..< grid[y].formats.len:
-      if grid[y].formats[fi].pos >= endx:
+    for it in line.formats.mitems:
+      if it.pos >= endx:
         break
-      if grid[y].formats[fi].pos >= startx:
-        if not noPaint:
-          grid[y].formats[fi].format = format
-        grid[y].formats[fi].node = node
+      if it.pos >= startx:
+        if alpha == 0:
+          discard
+        elif alpha == 255:
+          it.format = format
+        else:
+          it.format.bgcolor = it.format.bgcolor.blend(color, alpha)
+        it.node = node
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
   box: BlockBox; offset: Offset; pass2 = false)
 
 proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
-    box: InlineBox; offset: Offset; bgcolor: CellColor) =
+    box: InlineBox; offset: Offset; bgcolor: CellColor; alpha: uint8) =
   for area in box.state.areas:
     let x1 = toInt(offset.x + area.offset.x)
     let y1 = toInt(offset.y + area.offset.y)
     let x2 = toInt(offset.x + area.offset.x + area.size.w)
     let y2 = toInt(offset.y + area.offset.y + area.size.h)
-    grid.paintBackground(state, bgcolor, x1, y1, x2, y2, box.node)
+    grid.paintBackground(state, bgcolor, x1, y1, x2, y2, box.node,
+      alpha)
 
 proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
     box: InlineBox; offset: Offset; bgcolor0: ARGBColor;
@@ -368,12 +372,12 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
   if bgcolor.isCell:
     let bgcolor = bgcolor.cellColor()
     if bgcolor.t != ctNone:
-      grid.paintInlineBox(state, box, offset, bgcolor)
+      grid.paintInlineBox(state, box, offset, bgcolor, 255)
   else:
     bgcolor0 = bgcolor0.blend(bgcolor.argb)
     if bgcolor0.a > 0:
       grid.paintInlineBox(state, box, offset,
-        bgcolor0.rgb.cellColor())
+        bgcolor0.rgb.cellColor(), bgcolor0.a)
   let startOffset = offset + box.state.startOffset
   box.render.offset = startOffset
   if position != PositionStatic and stSplitStart in box.splitType:
@@ -405,7 +409,7 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
             let y2 = y2p.toInt
             # add Element to background (but don't actually color it)
             grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
-              box.node, noPaint = true)
+              box.node, 0)
             let x = (offset.x div state.attrs.ppc).toInt
             let y = (offset.y div state.attrs.ppl).toInt
             let offx = (offset.x - x.toLUnit * state.attrs.ppc).toInt
@@ -464,7 +468,8 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
   let opacity = box.computed{"opacity"}
   if box.computed{"visibility"} == VisibilityVisible and opacity != 0:
     #TODO maybe blend with the terminal background?
-    let bgcolor = box.computed{"background-color"}.cellColor()
+    let bgcolor0 = box.computed{"background-color"}
+    let bgcolor = bgcolor0.cellColor()
     if bgcolor != defaultColor:
       if box.computed{"-cha-bgcolor-is-canvas"} and
           state.bgcolor == defaultColor:
@@ -476,7 +481,8 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       let e = offset + box.state.size
       let iex = toInt(e.x)
       let iey = toInt(e.y)
-      grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node)
+      grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node,
+        bgcolor0.a)
     if box.computed{"background-image"} != nil:
       # ugly hack for background-image display... TODO actually display images
       const s = "[img]"

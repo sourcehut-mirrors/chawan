@@ -61,6 +61,9 @@ func a*(c: ARGBColor): uint8 =
 func rgb*(c: ARGBColor): RGBColor =
   return RGBColor(uint32(c) and 0xFFFFFFu32)
 
+func argb*(c: RGBColor; a: uint8): ARGBColor =
+  return ARGBColor((uint32(c) and 0x00FFFFFFu32) or (uint32(a) shl 24))
+
 func argb*(c: RGBColor): ARGBColor =
   return ARGBColor(uint32(c) or 0xFF000000u32)
 
@@ -109,6 +112,13 @@ func cssColor*(c: ANSIColor): CSSColor =
 
 func argb*(c: CSSColor): ARGBColor =
   return ARGBColor(c.n)
+
+func a*(c: CSSColor): uint8 =
+  if c.isCell:
+    if CellColor(c.n).t == ctNone:
+      return 0
+    return 255
+  return ARGBColor(c.n).a
 
 func cellColor*(c: CSSColor): CellColor =
   if c.isCell:
@@ -329,6 +339,8 @@ proc straight(c: ARGBColor): ARGBColor =
   let b = ((uint32(c.b) * 0xFF00 div a + 0x80) shr 8) and 0xFF
   return ARGBColor((a shl 24) or (r shl 16) or (g shl 8) or b)
 
+# Note: this is a very poor approximation, as the premultiplication
+# already discards fractions...
 func blend*(c0, c1: ARGBColor): ARGBColor =
   let pc0 = c0.premul()
   let pc1 = c1.premul()
@@ -341,6 +353,18 @@ func blend*(c0, c1: ARGBColor): ARGBColor =
   let pres = rgba(rr, rg, rb, ra)
   let res = straight(pres)
   return res
+
+# Blending operation for cell colors.
+# Normally, this should only happen with RGB color, so if either color
+# is not one, we can just return fg.
+# (This does mean that blending over -cha-ansi is arguably broken.
+# Luckily, we get to define how it works because it's our extension :)
+func blend*(bg, fg: CellColor; a: uint8): CellColor =
+  if bg.t != ctRGB or fg.t != ctRGB:
+    return fg
+  let bg = bg.rgb.argb
+  let fg = fg.rgb.argb(a)
+  return bg.blend(fg).rgb.cellColor()
 
 func rgb*(r, g, b: uint8): RGBColor =
   return RGBColor((uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
