@@ -1628,9 +1628,9 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     else:
       if osize.h > 0:
         atom.size.w = osize.w div osize.h * atom.size.h
-  elif not hasHeight:
+  elif not hasHeight and osize.w != 0:
     atom.size.h = osize.h div osize.w * atom.size.w
-  elif not hasWidth:
+  elif not hasWidth and osize.h != 0:
     atom.size.w = osize.w div osize.h * atom.size.h
   let iastate = InlineAtomState(
     vertalign: state.box.computed{"vertical-align"},
