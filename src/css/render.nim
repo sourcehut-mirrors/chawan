@@ -74,9 +74,6 @@ func findFormatN*(line: FlexibleLine; pos: int): int =
     inc i
   return i
 
-proc addLines(grid: var FlexibleGrid; n: int) =
-  grid.setLen(grid.len + n)
-
 proc insertFormat(line: var FlexibleLine; i: int; cell: FormatCell) =
   line.formats.insert(cell, i)
 
@@ -268,8 +265,8 @@ proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
   if i < j:
     let y = (offset.y div state.attrs.ppl).toInt
     # make sure we have line y
-    if grid.high < y:
-      grid.addLines(y - grid.high)
+    if grid.len < y + 1:
+      grid.setLen(y + 1)
     grid[y].setText1(s.toOpenArray(i, j - 1), x, targetX, format, node)
 
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
@@ -291,7 +288,7 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
   if starty >= endy or startx >= endx:
     return
   if grid.len < endy: # make sure we have line y - 1
-    grid.addLines(endy - grid.high)
+    grid.setLen(endy)
   var format = Format(bgcolor: color)
   for line in grid.toOpenArray(starty, endy - 1).mitems:
     # Make sure line.width() >= endx
@@ -534,6 +531,6 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     stack.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
     state.nstack = @[]
   if grid.len == 0:
-    grid.addLines(1)
+    grid.setLen(1)
   bgcolor = state.bgcolor
   images = state.images

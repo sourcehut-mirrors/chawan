@@ -35,4 +35,3 @@
 [48;2;0;0;255m   [38;2;0;0;0m[48;2;255;255;255mthe pixel) from this [38;2;161;162;0mreference rendering,[38;2;0;0;0m (except font rasterization and form widgets). All[38;2;139;139;139m     [39m[49m
 [48;2;0;0;255m   [38;2;0;0;0m[48;2;255;255;255mdiscrepancies should be traceable to CSS1 implementation shortcomings. Once you have finished[38;2;139;139;139m   [39m[49m
 [48;2;0;0;255m   [38;2;0;0;0m[48;2;255;255;255mevaluating this test, you can return to the [38;2;161;162;0mparent page[38;2;0;0;0m.[38;2;139;139;139m                                        [39m[49m
-
