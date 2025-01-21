@@ -1,4 +1,5 @@
 import std/algorithm
+import std/math
 import std/options
 import std/strutils
 import std/tables
@@ -44,14 +45,15 @@ type
 
 func rgba*(r, g, b, a: uint8): ARGBColor
 
+# bitmasked so nimvm doesn't choke on it
 func r*(c: ARGBColor): uint8 =
-  return uint8(uint32(c) shr 16)
+  return uint8((uint32(c) shr 16) and 0xFF)
 
 func g*(c: ARGBColor): uint8 =
-  return uint8(uint32(c) shr 8)
+  return uint8((uint32(c) shr 8) and 0xFF)
 
 func b*(c: ARGBColor): uint8 =
-  return uint8(uint32(c))
+  return uint8((uint32(c) and 0xFF))
 
 func a*(c: ARGBColor): uint8 =
   return uint8(uint32(c) shr 24)
@@ -392,6 +394,22 @@ func rgba*(r, g, b, a: int): ARGBColor =
 
 func gray*(n: uint8): RGBColor =
   return rgb(n, n, n)
+
+# ref. https://drafts.csswg.org/css-color/#hsl-to-rgb and
+# https://en.wikipedia.org/wiki/HSL_and_HSV#HSL_to_RGB_alternative
+func hsla*(h, s, l: float32; a: uint8): ARGBColor =
+  let h = h mod 360
+  let s = float32(s) / 100
+  let l = float32(l) / 100
+  template f(n: auto): uint8 =
+    let k = (n + h / 30) mod 12
+    let alpha = s * min(l, 1 - l)
+    let x = l - alpha * max(-1f32, min(k - 3, min(9 - k, 1f32)))
+    uint8(x * 255)
+  let r = f(0)
+  let g = f(8)
+  let b = f(4)
+  return rgba(r, g, b, a)
 
 # NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
 func toRGB*(param0: ANSIColor): RGBColor =

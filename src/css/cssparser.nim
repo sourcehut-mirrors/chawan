@@ -65,6 +65,8 @@ type
     cftUrl = "url"
     cftSrc = "src"
     cftVar = "var"
+    cftHsl = "hsl"
+    cftHsla = "hsla"
 
   CSSFunction* = ref object of CSSComponentValue
     name*: CSSFunctionType

@@ -1,5 +1,6 @@
 import std/algorithm
 import std/macros
+import std/math
 import std/options
 import std/strutils
 import std/tables
@@ -976,46 +977,61 @@ func getToken(cvals: openArray[CSSComponentValue]; i: int): Opt[CSSToken] =
       return ok(CSSToken(cval))
   return err()
 
-proc parseARGB(value: openArray[CSSComponentValue]): Opt[CSSColor] =
-  var commaMode = false
+func getToken(cvals: openArray[CSSComponentValue]; i: int;
+    tt: set[CSSTokenType]): Opt[CSSToken] =
+  let tok = ?cvals.getToken(i)
+  if tok.t in tt:
+    return ok(tok)
+  return err()
+
+func getToken(cvals: openArray[CSSComponentValue]; i: int; t: CSSTokenType):
+    Opt[CSSToken] =
+  let tok = ?cvals.getToken(i)
+  if t == tok.t:
+    return ok(tok)
+  return err()
+
+func getColorToken(cvals: openArray[CSSComponentValue]; i: int;
+    legacy = false): Opt[CSSToken] =
+  let tok = ?cvals.getToken(i)
+  if tok.t in {cttNumber, cttINumber, cttDimension, cttIDimension,
+      cttPercentage}:
+    return ok(tok)
+  if not legacy and tok.t == cttIdent and tok.value == "none":
+    return ok(tok)
+  return err()
+
+# For rgb(), rgba(), hsl(), hsla().
+proc parseLegacyColorFun(value: openArray[CSSComponentValue]):
+    Opt[tuple[v1, v2, v3: CSSToken; a: uint8; legacy: bool]] =
   var i = value.skipBlanks(0)
-  template check_err(slash: bool) =
-    #TODO calc, percentages, etc (cssnumber function or something)
-    if not slash and i >= value.len:
-      return err()
-    if i < value.len:
-      let x = value[i]
-      if not (x of CSSToken and CSSToken(x).t in {cttNumber, cttINumber}):
-        return err()
-  template next_value(first = false, slash = false) =
+  let v1 = ?value.getColorToken(i)
+  i = value.skipBlanks(i + 1)
+  let legacy = ?value.getToken(i) == cttComma
+  if legacy:
+    if v1.t == cttIdent:
+      return err() # legacy doesn't accept "none"
+    inc i
+  i = value.skipBlanks(i)
+  let v2 = ?value.getColorToken(i, legacy)
+  if legacy:
     i = value.skipBlanks(i + 1)
-    if i < value.len:
-      if value[i] == cttComma and (commaMode or first):
-        # legacy compatibility
-        i = value.skipBlanks(i + 1)
-        commaMode = true
-      elif commaMode:
-        return err()
-      elif slash:
-        let tok = value[i]
-        if tok != cttDelim or CSSToken(tok).cvalue != '/':
-          return err()
-        i = value.skipBlanks(i + 1)
-    check_err slash
-  check_err false
-  let r = clamp(CSSToken(value[i]).nvalue, 0, 255)
-  next_value true
-  let g = clamp(CSSToken(value[i]).nvalue, 0, 255)
-  next_value
-  let b = clamp(CSSToken(value[i]).nvalue, 0, 255)
-  next_value false, true
-  let a = if i < value.len:
-    clamp(CSSToken(value[i]).nvalue, 0, 1)
+    discard ?value.getToken(i, cttComma)
+  i = value.skipBlanks(i + 1)
+  let v3 = ?value.getColorToken(i, legacy)
+  i = value.skipBlanks(i + 1)
+  if i == value.len:
+    return ok((v1, v2, v3, 255u8, legacy))
+  if legacy:
+    discard ?value.getToken(i, cttComma)
   else:
-    1
+    if (?value.getToken(i, cttDelim)).cvalue != '/':
+      return err()
+  i = value.skipBlanks(i + 1)
+  let v4 = ?value.getToken(i, {cttPercentage, cttNumber, cttINumber})
   if value.skipBlanks(i + 1) < value.len:
     return err()
-  return ok(rgba(int(r), int(g), int(b), int(a * 255)).cssColor())
+  return ok((v1, v2, v3, uint8(clamp(v4.nvalue, 0, 1) * 255), legacy))
 
 # syntax: -cha-ansi( number | ident )
 # where number is an ANSI color (0..255)
@@ -1056,6 +1072,42 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
         return ok(ANSIColor(i).cssColor())
   return err()
 
+proc parseRGBComponent(tok: CSSToken): uint8 =
+  if tok.t == cttIdent: # none
+    return 0u8
+  var res = tok.nvalue
+  if tok.t == cttPercentage:
+    res *= 2.55
+  return uint8(clamp(res, 0, 255)) # number
+
+type CSSAngleType = enum
+  catDeg = "deg"
+  catGrad = "grad"
+  catRad = "rad"
+  catTurn = "turn"
+
+# The return value is in degrees.
+proc parseAngle(tok: CSSToken): Opt[float32] =
+  if tok.t in {cttDimension, cttIDimension}:
+    case ?parseEnumNoCase[CSSAngleType](tok.unit)
+    of catDeg: return ok(tok.nvalue)
+    of catGrad: return ok(tok.nvalue * 0.9f32)
+    of catRad: return ok(radToDeg(tok.nvalue))
+    of catTurn: return ok(tok.nvalue * 360f32)
+  return err()
+
+proc parseHue(tok: CSSToken): Opt[float32] =
+  if tok.t in {cttNumber, cttINumber}:
+    return ok(tok.nvalue)
+  if tok.t == cttIdent: # none
+    return ok(0)
+  return parseAngle(tok)
+
+proc parseSatOrLight(tok: CSSToken): Opt[float32] =
+  if tok.t in {cttNumber, cttINumber, cttPercentage}:
+    return ok(clamp(tok.nvalue, 0f32, 100f32))
+  return err()
+
 proc parseColor*(val: CSSComponentValue): Opt[CSSColor] =
   if val of CSSToken:
     let tok = CSSToken(val)
@@ -1073,10 +1125,26 @@ proc parseColor*(val: CSSComponentValue): Opt[CSSColor] =
     else: discard
   elif val of CSSFunction:
     let f = CSSFunction(val)
-    if f.name in {cftRgb, cftRgba}:
-      return parseARGB(f.value)
-    elif f.name == cftChaAnsi:
+    case f.name
+    of cftRgb, cftRgba:
+      let (r, g, b, a, legacy) = ?parseLegacyColorFun(f.value)
+      if r.t == g.t and g.t == b.t or not legacy:
+        let r = parseRGBComponent(r)
+        let g = parseRGBComponent(g)
+        let b = parseRGBComponent(b)
+        return ok(rgba(r, g, b, a).cssColor())
+    of cftHsl, cftHsla:
+      let (h, s, l, a, legacy) = ?parseLegacyColorFun(f.value)
+      if h.t != cttIdent and s.t == cttPercentage and l.t == cttPercentage or
+          not legacy:
+        let h = ?parseHue(h)
+        let s = ?parseSatOrLight(s)
+        let l = ?parseSatOrLight(l)
+        return ok(hsla(h, s, l, a).cssColor())
+      return err()
+    of cftChaAnsi:
       return parseANSI(f.value)
+    else: discard
   return err()
 
 func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
