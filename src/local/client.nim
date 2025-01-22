@@ -44,7 +44,7 @@ type
 func config(client: Client): Config {.jsfget.} =
   return client.pager.config
 
-func console(client: Client): Console {.jsfget.} =
+func console(client: Client): Console {.jsrfget.} =
   return client.pager.consoleWrapper.console
 
 proc suspend(client: Client) {.jsfunc.} =

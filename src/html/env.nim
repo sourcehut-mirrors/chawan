@@ -215,27 +215,27 @@ proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
 proc clearInterval(window: Window; id: int32) {.jsfunc.} =
   window.clearTimeout(id)
 
-func console(window: Window): Console {.jsfget.} =
+func console(window: Window): Console {.jsrfget.} =
   return window.internalConsole
 
-proc screenX(window: Window): int {.jsfget.} = 0
-proc screenY(window: Window): int {.jsfget.} = 0
-proc screenLeft(window: Window): int {.jsfget.} = 0
-proc screenTop(window: Window): int {.jsfget.} = 0
+proc screenX(window: Window): int {.jsrfget.} = 0
+proc screenY(window: Window): int {.jsrfget.} = 0
+proc screenLeft(window: Window): int {.jsrfget.} = 0
+proc screenTop(window: Window): int {.jsrfget.} = 0
 
-proc outerWidth(ctx: JSContext; window: Window): int {.jsfget.} =
+proc outerWidth(ctx: JSContext; window: Window): int {.jsrfget.} =
   return ctx.availWidth(window.screen)
 
-proc outerHeight(ctx: JSContext; window: Window): int {.jsfget.} =
+proc outerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
   return ctx.availHeight(window.screen)
 
-proc innerWidth(ctx: JSContext; window: Window): int {.jsfget.} =
+proc innerWidth(ctx: JSContext; window: Window): int {.jsrfget.} =
   return ctx.availWidth(window.screen)
 
-proc innerHeight(ctx: JSContext; window: Window): int {.jsfget.} =
+proc innerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
   return ctx.availHeight(window.screen)
 
-proc devicePixelRatio(window: Window): float64 {.jsfget.} = 1
+proc devicePixelRatio(window: Window): float64 {.jsrfget.} = 1
 
 proc setLocation(window: Window; s: string): Err[JSError]
     {.jsfset: "location".} =
@@ -246,19 +246,16 @@ proc setLocation(window: Window; s: string): Err[JSError]
 func getWindow(window: Window): Window {.jsuffget: "window".} =
   return window
 
-#TODO [Replaceable]
-func getSelf(window: Window): Window {.jsfget: "self".} =
+func getSelf(window: Window): Window {.jsrfget: "self".} =
   return window
 
-#TODO [Replaceable]
-func getFrames(window: Window): Window {.jsfget: "frames".} =
+func getFrames(window: Window): Window {.jsrfget: "frames".} =
   return window
 
 func getTop(window: Window): Window {.jsuffget: "top".} =
   return window #TODO frames?
 
-#TODO [Replaceable]
-func getParent(window: Window): Window {.jsfget: "parent".} =
+func getParent(window: Window): Window {.jsrfget: "parent".} =
   return window #TODO frames?
 
 # See twtstr for the actual implementations.
