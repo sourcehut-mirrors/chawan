@@ -343,6 +343,8 @@ type
 
   CSSLength* = object
     u*: CSSLengthType
+    # hack to support simple function calls like calc(100% - 10px).
+    addpx*: int16
     num*: float32
 
   CSSVerticalAlign* = object
@@ -1167,6 +1169,41 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
       if hasAuto and tok.value.equalsIgnoreCase("auto"):
         return ok(CSSLengthAuto)
     else: discard
+  elif val of CSSFunction:
+    #TODO obviously this is a horrible solution...
+    let fun = CSSFunction(val)
+    if fun.name == cftCalc and allowNegative:
+      var i = fun.value.skipBlanks(0)
+      if i >= fun.value.len:
+        return err()
+      var length = ?parseLength(fun.value[i], attrs, hasAuto, allowNegative)
+      i = fun.value.skipBlanks(i + 1)
+      if i >= fun.value.len or fun.value[i] != cttDelim:
+        return err()
+      let dtok = CSSToken(fun.value[i])
+      let sign = if dtok.cvalue == '+':
+        1f32
+      elif dtok.cvalue == '-':
+        -1f32
+      else:
+        return err()
+      i = fun.value.skipBlanks(i + 1)
+      var length2 = ?parseLength(fun.value[i], attrs, hasAuto, allowNegative)
+      length2.num *= sign
+      if length2.u == clAuto or fun.value.skipBlanks(i + 1) < fun.value.len:
+        return err()
+      if length.u == length2.u:
+        return ok(CSSLength(u: length.u, num: length.num + length2.num))
+      if length2.u == clPerc:
+        swap(length, length2)
+      length2.num += float32(length.addpx)
+      if length2.num notin float32(int16.low)..float32(int16.high):
+        return err()
+      return ok(CSSLength(
+        u: clPerc,
+        num: length.num,
+        addpx: int16(length2.num)
+      ))
   return err()
 
 func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
