@@ -79,7 +79,7 @@ type
   CSSRawStylesheet* = object
     value*: seq[CSSRule]
 
-  CSSAnB* = tuple[A, B: int]
+  CSSAnB* = tuple[A, B: int32]
 
 # For debugging
 proc `$`*(c: CSSComponentValue): string =
@@ -768,7 +768,7 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
   template fail_plus =
     if is_plus:
       return none(CSSAnB)
-  template parse_sub_int(sub: string; skip: int): int =
+  template parse_sub_int(sub: string; skip: int): int32 =
     let s = sub.substr(skip)
     let x = parseInt32(s)
     if x.isNone:
@@ -794,95 +794,91 @@ proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
     case tok.value
     of "odd":
       fail_plus
-      return some((2, 1))
+      return some((2i32, 1i32))
     of "even":
       fail_plus
-      return some((2, 0))
+      return some((2i32, 0i32))
     of "n", "N":
       state.skipWhitespace()
       if is_eof:
-        return some((1, 0))
+        return some((1i32, 0i32))
       let tok2 = get_tok_nows
       if tok2.t == cttDelim:
         let sign = case tok2.cvalue
-        of '+': 1
-        of '-': -1
+        of '+': 1i32
+        of '-': -1i32
         else: return none(CSSAnB)
         let tok3 = get_tok
-        fail_non_signless_integer tok3, some((1, 0))
-        return some((1, sign * int(tok3.nvalue)))
+        fail_non_signless_integer tok3, some((1i32, 0i32))
+        return some((1i32, sign * int32(tok3.nvalue)))
       else:
-        fail_non_integer tok2, some((1, 0))
-        return some((1, int(tok2.nvalue)))
+        fail_non_integer tok2, some((1i32, 0i32))
+        return some((1i32, int32(tok2.nvalue)))
     of "-n", "-N":
       fail_plus
       state.skipWhitespace()
       if is_eof:
-        return some((-1, 0))
+        return some((-1i32, 0i32))
       let tok2 = get_tok_nows
       if tok2.t == cttDelim:
         let sign = case tok2.cvalue
-        of '+': 1
-        of '-': -1
+        of '+': 1i32
+        of '-': -1i32
         else: return none(CSSAnB)
         let tok3 = get_tok
-        fail_non_signless_integer tok3, some((-1, 0))
-        return some((-1, sign * int(tok3.nvalue)))
+        fail_non_signless_integer tok3, some((-1i32, 0i32))
+        return some((-1i32, sign * int32(tok3.nvalue)))
       else:
-        fail_non_integer tok2, some((-1, 0))
-        return some((-1, int(tok2.nvalue)))
+        fail_non_integer tok2, some((-1i32, 0i32))
+        return some((-1i32, int32(tok2.nvalue)))
     of "n-", "N-":
       let tok2 = get_tok
       fail_non_signless_integer tok2, none(CSSAnB)
-      return some((1, -int(tok2.nvalue)))
+      return some((1i32, -int32(tok2.nvalue)))
     of "-n-", "-N-":
       fail_plus
       let tok2 = get_tok
       fail_non_signless_integer tok2, none(CSSAnB)
-      return some((-1, -int(tok2.nvalue)))
+      return some((-1i32, -int32(tok2.nvalue)))
     elif tok.value.startsWithIgnoreCase("n-"):
-      return some((1, -parse_sub_int(tok.value, "n-".len)))
+      return some((1i32, -parse_sub_int(tok.value, "n-".len)))
     elif tok.value.startsWithIgnoreCase("-n-"):
       fail_plus
-      return some((-1, -parse_sub_int(tok.value, "n-".len)))
+      return some((-1i32, -parse_sub_int(tok.value, "n-".len)))
     else:
       return none(CSSAnB)
   of cttINumber:
     fail_plus
-    if int64(tok.nvalue) > high(int):
-      return none(CSSAnB)
     # <integer>
-    return some((0, int(tok.nvalue)))
+    return some((0i32, int32(tok.nvalue)))
   of cttIDimension:
     fail_plus
-    if int64(tok.nvalue) > high(int):
-      return none(CSSAnB)
     case tok.unit
     of "n", "N":
       # <n-dimension>
       state.skipWhitespace()
       if is_eof:
-        return some((int(tok.nvalue), 0))
+        return some((int32(tok.nvalue), 0i32))
       let tok2 = get_tok_nows
       if tok2.t == cttDelim:
         let sign = case tok2.cvalue
-        of '+': 1
-        of '-': -1
+        of '+': 1i32
+        of '-': -1i32
         else: return none(CSSAnB)
         let tok3 = get_tok
-        fail_non_signless_integer tok3, some((int(tok.nvalue), 0))
-        return some((int(tok.nvalue), sign * int(tok3.nvalue)))
+        fail_non_signless_integer tok3, some((int32(tok.nvalue), 0i32))
+        return some((int32(tok.nvalue), sign * int32(tok3.nvalue)))
       else:
-        fail_non_integer tok2, some((int(tok.nvalue), 0))
-        return some((int(tok.nvalue), int(tok2.nvalue)))
+        fail_non_integer tok2, some((int32(tok.nvalue), 0i32))
+        return some((int32(tok.nvalue), int32(tok2.nvalue)))
     of "n-", "N-":
       # <ndash-dimension>
       let tok2 = get_tok
       fail_non_signless_integer tok2, none(CSSAnB)
-      return some((int(tok.nvalue), -int(tok2.nvalue)))
+      return some((int32(tok.nvalue), -int32(tok2.nvalue)))
     elif tok.unit.startsWithIgnoreCase("n-"):
       # <ndashdigit-dimension>
-      return some((int(tok.nvalue), -parse_sub_int(tok.unit, "n-".len)))
+      return some((int32(tok.nvalue), -parse_sub_int(tok.unit, "n-".len)))
     else:
       return none(CSSAnB)
   else:

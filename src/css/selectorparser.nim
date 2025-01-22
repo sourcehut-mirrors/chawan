@@ -72,10 +72,10 @@ type
         classs: string
     of stAttr:
       attr*: CAtom
+      rel*: SelectorRelation
       when defined(debug):
         attrs: string
       value*: string
-      rel*: SelectorRelation
     of stUniversal: #TODO namespaces?
       discard
     of stPseudoClass:
