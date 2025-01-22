@@ -83,7 +83,6 @@ proc trapSIGINT() =
   setControlCHook(proc() {.noconv.} = discard)
 
 proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
-  stdout.flushFile()
   stderr.flushFile()
   let pid = fork()
   if pid == 0:

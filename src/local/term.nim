@@ -118,8 +118,7 @@ type
     te: TextEncoder
     config: Config
     istream*: PosixStream
-    outfile: File
-    cleared: bool
+    ostream*: PosixStream
     canvas: seq[FixedCell]
     canvasImages*: seq[CanvasImage]
     imagesToClear*: seq[CanvasImage]
@@ -128,8 +127,9 @@ type
     colorMode: ColorMode
     formatMode: set[FormatFlag]
     imageMode*: ImageMode
-    smcup: bool
     tc: Termcap
+    cleared: bool
+    smcup: bool
     setTitle: bool
     stdinUnblocked: bool
     stdinWasUnblocked: bool
@@ -139,6 +139,8 @@ type
     ibuf: array[256, char] # buffer for chars when we can't process them
     ibufLen: int # len of ibuf
     ibufn: int # position in ibuf
+    obuf: array[16384, char] # buffer for output data
+    obufLen: int # len of obuf
     sixelRegisterNum*: int
     sixelMaxWidth*: int
     sixelMaxHeight: int
@@ -244,16 +246,23 @@ when TermcapFound:
   func cap(term: Terminal; c: TermcapCap): string = $term.tc.caps[c]
   func ccap(term: Terminal; c: TermcapCap): cstring = term.tc.caps[c]
 
-proc write(term: Terminal; s: openArray[char]) =
-  # write() calls $ on s, so we must writeBuffer
-  if s.len > 0:
-    discard term.outfile.writeBuffer(unsafeAddr s[0], s.len)
+proc flush*(term: Terminal) =
+  if term.obufLen > 0:
+    term.ostream.sendDataLoop(term.obuf.toOpenArray(0, term.obufLen - 1))
+    term.obufLen = 0
 
-proc write(term: Terminal; s: string) =
-  term.outfile.write(s)
+proc write(term: Terminal; s: openArray[char]) =
+  if s.len > 0:
+    if s.len + term.obufLen > term.obuf.len:
+      term.flush()
+    if s.len > term.obuf.len:
+      term.ostream.sendDataLoop(s)
+    else:
+      copyMem(addr term.obuf[term.obufLen], unsafeAddr s[0], s.len)
+      term.obufLen += s.len
 
 proc write(term: Terminal; s: cstring) =
-  term.outfile.write(s)
+  term.write(s.toOpenArray(0, s.len - 1))
 
 proc readChar*(term: Terminal): char =
   if term.ibufn == term.ibufLen:
@@ -277,9 +286,6 @@ proc resetInputBuffer*(term: Terminal) =
 proc hasBuffer*(term: Terminal): bool =
   return term.ibufn < term.ibufLen
 
-proc flush*(term: Terminal) =
-  term.outfile.flushFile()
-
 proc cursorGoto(term: Terminal; x, y: int): string =
   when TermcapFound:
     if term.tc != nil:
@@ -298,12 +304,8 @@ proc clearDisplay(term: Terminal): string =
       return term.cap cd
   return ED
 
-proc isatty*(file: File): bool =
-  return file.getFileHandle().isatty() != 0
-
 proc isatty*(term: Terminal): bool =
-  return term.istream != nil and term.istream.fd.isatty() != 0 and
-    term.outfile.isatty()
+  return term.istream != nil and term.istream.isatty() and term.ostream.isatty()
 
 proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
@@ -1537,11 +1539,11 @@ const ANSIColorMap = [
   rgb(255, 255, 255)
 ]
 
-proc newTerminal*(outfile: File; config: Config): Terminal =
+proc newTerminal*(ostream: PosixStream; config: Config): Terminal =
   const DefaultBackground = namedRGBColor("black").get
   const DefaultForeground = namedRGBColor("white").get
   return Terminal(
-    outfile: outfile,
+    ostream: ostream,
     config: config,
     defaultBackground: DefaultBackground,
     defaultForeground: DefaultForeground,

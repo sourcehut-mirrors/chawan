@@ -254,7 +254,8 @@ proc main() =
     stderr.writeLine(res.error)
     quit(1)
   var history = true
-  if ctx.pages.len == 0 and stdin.isatty():
+  let ps = newPosixStream(STDIN_FILENO)
+  if ctx.pages.len == 0 and ps.isatty():
     if ctx.visual:
       ctx.pages.add(config.start.visualHome)
       history = false
@@ -265,7 +266,7 @@ proc main() =
       ctx.pages.add(wwwHome)
       history = false
   if ctx.pages.len == 0 and not config.start.headless:
-    if stdin.isatty():
+    if ps.isatty():
       help(1)
   # make sure tmpdir exists
   discard mkdir(cstring(config.external.tmpdir), 0o700)

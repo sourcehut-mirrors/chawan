@@ -1,7 +1,6 @@
 import std/exitprocs
 import std/options
 import std/os
-import std/osproc
 import std/posix
 import std/sets
 import std/strutils
@@ -458,7 +457,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alive: true,
     config: config,
     forkserver: forkserver,
-    term: newTerminal(stdout, config),
+    term: newTerminal(newPosixStream(STDOUT_FILENO), config),
     alerts: alerts,
     jsrt: JS_GetRuntime(ctx),
     jsctx: ctx,
@@ -817,10 +816,12 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     cs: Charset; dump, history: bool) =
   var istream: PosixStream = nil
   var dump = dump
+  let ps = newPosixStream(STDIN_FILENO)
   if not dump:
-    if stdin.isatty():
-      istream = newPosixStream(STDIN_FILENO)
-    if stdout.isatty():
+    if ps.isatty():
+      istream = ps
+    let os = newPosixStream(STDOUT_FILENO)
+    if os.isatty():
       if istream == nil:
         istream = newPosixStream("/dev/tty", O_RDONLY, 0)
     else:
@@ -847,10 +848,9 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     let ismodule = pager.config.start.startupScript.endsWith(".mjs")
     pager.command0(s, pager.config.start.startupScript, silence = true,
       module = ismodule)
-  if not stdin.isatty():
+  if not ps.isatty():
     # stdin may very well receive ANSI text
     let contentType = if contentType != "": contentType else: "text/x-ansi"
-    let ps = newPosixStream(STDIN_FILENO)
     pager.readPipe(contentType, cs, ps, "*stdin*")
   let history = not dump and history # we don't want history for dump either
   for page in pages:
@@ -1595,7 +1595,6 @@ proc discardTree(pager: Pager; container = none(Container)) {.jsfunc.} =
     pager.alert("Buffer has no children!")
 
 template myFork(): cint =
-  stdout.flushFile()
   stderr.flushFile()
   fork()
 
@@ -1642,9 +1641,6 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     discard sigaction(SIGINT, oldint, act)
     discard sigaction(SIGQUIT, oldquit, act)
     discard sigprocmask(SIG_SETMASK, oldmask, dummy);
-    for it in pager.loader.data:
-      if it.stream.fd > 2:
-        it.stream.sclose()
     #TODO this is probably a bad idea: we are interacting with a js
     # context in a forked process.
     # likely not much of a problem unless the user does something very
@@ -1659,12 +1655,12 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
         pager.term.istream.moveFd(STDIN_FILENO)
     myExec(cmd)
   else:
+    discard sigaction(SIGINT, oldint, act)
+    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     var wstatus: cint
     while waitpid(pid, wstatus, 0) == -1:
       if errno != EINTR:
         return false
-    discard sigaction(SIGINT, oldint, act)
-    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     if suspend:
       if wait:
         pager.term.anyKey()
@@ -2334,23 +2330,47 @@ proc externFilterSource(pager: Pager; cmd: string; c = none(Container);
   pager.addContainer(container)
   container.filter = BufferFilter(cmd: cmd)
 
+# Execute cmd, with ps moved onto stdin, os onto stdout, and stderr closed.
+# ps remains open, but os is consumed.
 proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
+  var oldint, oldquit: Sigaction
+  var act = Sigaction(sa_handler: SIG_IGN, sa_flags: SA_RESTART)
+  var oldmask, dummy: Sigset
+  if sigemptyset(act.sa_mask) < 0 or
+      sigaction(SIGINT, act, oldint) < 0 or
+      sigaction(SIGQUIT, act, oldquit) < 0 or
+      sigaddset(act.sa_mask, SIGCHLD) < 0 or
+      sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
+    pager.alert("Failed to run process (errno " & $errno & ")")
+    return
   case (let pid = myFork(); pid)
   of -1:
-    pager.alert("Failed to fork for " & cmd)
-    os.sclose()
-    return -1
+    pager.alert("Failed to fork process")
   of 0:
+    act.sa_handler = SIG_DFL
+    discard sigemptyset(act.sa_mask)
+    discard sigaction(SIGINT, oldint, act)
+    discard sigaction(SIGQUIT, oldquit, act)
+    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     ps.moveFd(STDIN_FILENO)
     os.moveFd(STDOUT_FILENO)
     closeStderr()
-    for it in pager.loader.data:
-      if it.stream.fd > 2:
-        it.stream.sclose()
     myExec(cmd)
   else:
+    discard sigaction(SIGINT, oldint, act)
+    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     os.sclose()
     return pid
+
+proc execPipeWait(pager: Pager; cmd: string; ps, os: PosixStream): int =
+  let pid = pager.execPipe(cmd, ps, os)
+  var wstatus = cint(0)
+  while waitpid(Pid(pid), wstatus, 0) == -1:
+    if errno != EINTR:
+      break
+  if WIFSIGNALED(wstatus):
+    return 128 + WTERMSIG(wstatus)
+  return WEXITSTATUS(wstatus)
 
 # Pipe output of an x-ansioutput mailcap command to the text/x-ansi handler.
 proc ansiDecode(pager: Pager; url: URL; ishtml: bool; istream: PosixStream):
@@ -2423,12 +2443,14 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
     return pid
   of 0:
     # child process
-    pouts.moveFd(STDOUT_FILENO)
     closeStderr()
+    pager.term.istream.sclose()
+    pager.term.ostream.sclose()
     if not stream.writeToFile(outpath):
       quit(1)
     stream.sclose()
-    let ret = execCmd(cmd)
+    let ps = newPosixStream("/dev/null")
+    let ret = pager.execPipeWait(cmd, ps, pouts)
     discard unlink(cstring(outpath))
     quit(ret)
   else: # parent
@@ -2441,25 +2463,32 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd, outpath: string) =
   if needsterminal:
     pager.term.quit()
-    if not stream.writeToFile(outpath):
+    let os = newPosixStream(dup(pager.term.ostream.fd))
+    if not stream.writeToFile(outpath) or os.fd == -1:
+      if os.fd != -1:
+        os.sclose()
       pager.term.restart()
       pager.alert("Error: failed to write file for mailcap process")
     else:
-      discard execCmd(cmd)
+      let ret = pager.execPipeWait(cmd, pager.term.istream, os)
       discard unlink(cstring(outpath))
       pager.term.restart()
+      if ret != 0:
+        pager.alert("Error: " & cmd & " exited with status " & $ret)
   else:
     # don't block
     let pid = myFork()
     if pid == 0:
       # child process
-      closeStdin()
-      closeStdout()
       closeStderr()
+      pager.term.istream.sclose()
+      pager.term.ostream.sclose()
       if not stream.writeToFile(outpath):
         quit(1)
       stream.sclose()
-      let ret = execCmd(cmd)
+      let ps = newPosixStream("/dev/null")
+      let os = newPosixStream("/dev/null", O_WRONLY)
+      let ret = pager.execPipeWait(cmd, ps, os)
       discard unlink(cstring(outpath))
       quit(ret)
     # parent

@@ -184,6 +184,9 @@ proc moveFd*(ps: PosixStream; fd: cint) =
     discard close(ps.fd)
     ps.fd = fd
 
+func isatty*(ps: PosixStream): bool =
+  return ps.fd.isatty() == 1
+
 proc newPosixStream*(fd: cint): PosixStream =
   return PosixStream(fd: fd, blocking: true)
 
