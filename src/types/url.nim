@@ -1102,7 +1102,7 @@ proc update(params: URLSearchParams) =
   else:
     params.url.search = "?" & serializedQuery
 
-proc append(params: URLSearchParams; name, value: string) {.jsfunc.} =
+proc append(params: URLSearchParams; name, value: sink string) {.jsfunc.} =
   params.list.add((name, value))
   params.update()
 
@@ -1133,7 +1133,7 @@ proc has(params: URLSearchParams; name: string; value = none(string)): bool
         return true
   return false
 
-proc set(params: URLSearchParams; name, value: string) {.jsfunc.} =
+proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
   for param in params.list.mitems:
     if param.name == name:
       param.value = value

@@ -527,8 +527,8 @@ func attrb*(element: Element; s: CAtom): bool
 func serializeFragment(res: var string; node: Node)
 func value*(option: HTMLOptionElement): string
 proc append*(parent, node: Node)
-proc attr*(element: Element; name: CAtom; value: string)
-proc attr*(element: Element; name: StaticAtom; value: string)
+proc attr*(element: Element; name: CAtom; value: sink string)
+proc attr*(element: Element; name: StaticAtom; value: sink string)
 proc baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
 proc getImageId(window: Window): int
@@ -1105,16 +1105,16 @@ template document*(element: Element): Document =
 proc toAtom*(window: Window; atom: StaticAtom): CAtom =
   return window.factory.toAtom(atom)
 
-proc toAtom*(window: Window; s: string): CAtom =
+proc toAtom*(window: Window; s: sink string): CAtom =
   return window.factory.toAtom(s)
 
 proc toStr*(window: Window; atom: CAtom): lent string =
   return window.factory.toStr(atom)
 
-proc toAtom*(document: Document; s: string): CAtom =
+proc toAtom*(document: Document; s: sink string): CAtom =
   return document.factory.toAtom(s)
 
-proc toAtomLower*(document: Document; s: string): CAtom =
+proc toAtomLower*(document: Document; s: sink string): CAtom =
   return document.factory.toAtomLower(s)
 
 proc toAtom*(document: Document; at: StaticAtom): CAtom =
@@ -3525,14 +3525,14 @@ func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
       return (src, el.attr(satType))
   return ("", "")
 
-func newText*(document: Document; data: string): Text =
+func newText*(document: Document; data: sink string): Text =
   return Text(
     internalDocument: document,
     data: data,
     index: -1
   )
 
-func newText(ctx: JSContext; data = ""): Text {.jsctor.} =
+func newText(ctx: JSContext; data: sink string = ""): Text {.jsctor.} =
   let window = ctx.getGlobal()
   return window.document.newText(data)
 
@@ -3543,8 +3543,8 @@ func newCDATASection(document: Document; data: string): CDATASection =
     index: -1
   )
 
-func newProcessingInstruction(document: Document; target, data: string):
-    ProcessingInstruction =
+func newProcessingInstruction(document: Document; target: string;
+    data: sink string): ProcessingInstruction =
   return ProcessingInstruction(
     internalDocument: document,
     target: target,
@@ -3559,14 +3559,14 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
   let window = ctx.getGlobal()
   return window.document.newDocumentFragment()
 
-func newComment(document: Document; data: string): Comment =
+func newComment(document: Document; data: sink string): Comment =
   return Comment(
     internalDocument: document,
     data: data,
     index: -1
   )
 
-func newComment(ctx: JSContext; data: string = ""): Comment {.jsctor.} =
+func newComment(ctx: JSContext; data: sink string = ""): Comment {.jsctor.} =
   let window = ctx.getGlobal()
   return window.document.newComment(data)
 
@@ -3716,8 +3716,8 @@ proc newXMLDocument(ctx: JSContext): XMLDocument =
   document.implementation = DOMImplementation(document: document)
   return document
 
-func newDocumentType*(document: Document; name, publicId, systemId: string):
-    DocumentType =
+func newDocumentType*(document: Document;
+    name, publicId, systemId: sink string): DocumentType =
   return DocumentType(
     internalDocument: document,
     name: name,
@@ -4412,21 +4412,22 @@ func findAttrOrNext(element: Element; qualName: CAtom): int =
       return -(i + 1)
   return -(element.attrs.len + 1)
 
-proc attr*(element: Element; name: CAtom; value: string) =
-  let i = element.findAttrOrNext(name)
+proc attr*(element: Element; name: CAtom; value: sink string) =
+  var i = element.findAttrOrNext(name)
   if i >= 0:
     element.attrs[i].value = value
     element.invalidateCollections()
     element.invalidate()
   else:
+    i = -(i + 1)
     element.attrs.insert(AttrData(
       qualifiedName: name,
       localName: name,
       value: value
-    ), -(i + 1))
-  element.reflectAttr(name, some(value))
+    ), i)
+  element.reflectAttr(name, some(element.attrs[i].value))
 
-proc attr*(element: Element; name: StaticAtom; value: string) =
+proc attr*(element: Element; name: StaticAtom; value: sink string) =
   element.attr(element.document.toAtom(name), value)
 
 proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
@@ -4469,7 +4470,7 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32) =
   if value > 0:
     element.attrul(name, value)
 
-proc setAttribute(element: Element; qualifiedName, value: string):
+proc setAttribute(element: Element; qualifiedName: string; value: sink string):
     Err[DOMException] {.jsfunc.} =
   ?qualifiedName.validateName()
   let qualifiedName = if element.namespace == Namespace.HTML and
@@ -4481,7 +4482,7 @@ proc setAttribute(element: Element; qualifiedName, value: string):
   return ok()
 
 proc setAttributeNS(element: Element; namespace, qualifiedName,
-    value: string): Err[DOMException] {.jsfunc.} =
+    value: sink string): Err[DOMException] {.jsfunc.} =
   ?qualifiedName.validateQName()
   let ps = qualifiedName.until(':')
   let prefix = if ps.len < qualifiedName.len: ps else: ""

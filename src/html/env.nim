@@ -260,7 +260,7 @@ func getParent(window: Window): Window {.jsrfget: "parent".} =
 
 # See twtstr for the actual implementations.
 proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
-  var s = ""
+  var s: string
   if (let r = s.atob(data); r.isNone):
     return JS_ThrowDOMException(ctx, $r.error, "InvalidCharacterError")
   return ctx.toJS(NarrowString(s))

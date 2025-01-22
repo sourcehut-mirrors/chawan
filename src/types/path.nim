@@ -242,12 +242,13 @@ func flatEnough(a, b, c0, c1: Vector2D): bool =
   let vy = 3 * c1.y - a.y - 2 * b.y
   return max(ux * ux, vx * vx) + max(uy * uy, vy * vy) <= 0.02
 
-iterator items*(pl: PathLines): LineSegment {.inline.} =
+iterator items*(pl: PathLines): lent LineSegment {.inline.} =
   for line in pl.lines:
     yield line
 
-func `[]`*(pl: PathLines; i: int): LineSegment = pl.lines[i]
-func `[]`*(pl: PathLines; i: BackwardsIndex): LineSegment = pl.lines[i]
+func `[]`*(pl: PathLines; i: int): lent LineSegment = pl.lines[i]
+func `[]`*(pl: PathLines; i: BackwardsIndex): lent LineSegment =
+  return pl.lines[pl.lines.len - int(i)]
 func len*(pl: PathLines): int = pl.lines.len
 
 iterator quadraticLines(a, b, c: Vector2D): Line {.inline.} =

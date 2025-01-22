@@ -219,13 +219,14 @@ func matches*(element: Element; cxsel: ComplexSelector;
   var mdepends = DependencyInfo.default
   for i in countdown(cxsel.high, 0):
     var match = mtFalse
-    case cxsel[i].ct
+    let csel = cxsel[i]
+    case csel.ct
     of ctNone:
-      match = e.matches(cxsel[i], mdepends)
+      match = e.matches(csel, mdepends)
     of ctDescendant:
       e = e.parentElement
       while e != nil:
-        case e.matches(cxsel[i], mdepends)
+        case e.matches(csel, mdepends)
         of mtFalse: discard
         of mtTrue:
           match = mtTrue
@@ -235,19 +236,19 @@ func matches*(element: Element; cxsel: ComplexSelector;
     of ctChild:
       e = e.parentElement
       if e != nil:
-        match = e.matches(cxsel[i], mdepends)
+        match = e.matches(csel, mdepends)
     of ctNextSibling:
       let prev = e.previousElementSibling
       if prev != nil:
         e = prev
-        match = e.matches(cxsel[i], mdepends)
+        match = e.matches(csel, mdepends)
     of ctSubsequentSibling:
       let parent = e.parentNode
       for j in countdown(e.index - 1, 0):
         let child = parent.childList[j]
         if child of Element:
           let child = Element(child)
-          case child.matches(cxsel[i], mdepends)
+          case child.matches(csel, mdepends)
           of mtTrue:
             e = child
             match = mtTrue

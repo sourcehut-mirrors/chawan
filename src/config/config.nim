@@ -212,10 +212,10 @@ converter toStr*(p: ChaPathResolved): string {.inline.} =
 proc fromJS(ctx: JSContext; val: JSValue; res: var ChaPathResolved): Opt[void] =
   return ctx.fromJS(val, string(res))
 
-proc `[]=`(a: var ActionMap; b, c: string) =
+proc `[]=`(a: var ActionMap; b: string; c: sink string) =
   a.t[b] = c
 
-proc `[]`*(a: ActionMap; b: string): string =
+proc `[]`*(a: ActionMap; b: string): lent string =
   a.t[b]
 
 proc contains*(a: ActionMap; b: string): bool =

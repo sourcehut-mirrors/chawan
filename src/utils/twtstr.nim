@@ -767,8 +767,7 @@ func atob(c: char): uint8 {.inline.} =
   return uint8.high
 
 # Warning: this overrides outs.
-# (it should really be out string, just can't use out because of 1.6.14)
-func atob*(outs: var string; data: string): Err[cstring] =
+func atob*(outs: out string; data: string): Err[cstring] =
   outs = newStringOfCap(data.len div 4 * 3)
   var buf = array[4, uint8].default
   var i = 0

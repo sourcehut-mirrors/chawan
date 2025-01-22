@@ -46,7 +46,7 @@ proc sread*(reader: var BufferedReader; part: var FormDataEntry) =
   else:
     reader.sread(part.value)
 
-iterator items*(this: FormData): FormDataEntry {.inline.} =
+iterator items*(this: FormData): lent FormDataEntry {.inline.} =
   for entry in this.entries:
     yield entry
 

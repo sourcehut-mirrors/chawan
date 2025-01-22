@@ -1047,7 +1047,7 @@ proc loadData(ctx: LoaderContext; handle: InputHandle; request: Request) =
   let sd = ct.len + 1 # data start
   let body = percentDecode(url.pathname.toOpenArray(sd, url.pathname.high))
   if ct.endsWith(";base64"):
-    var d = ""
+    var d: string
     if d.atob(body).isNone:
       handle.sendResult(ceInvalidURL, "invalid data URL")
       handle.close()

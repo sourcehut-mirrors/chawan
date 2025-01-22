@@ -40,13 +40,14 @@ proc `[]=`*(grid: var FixedGrid; i: BackwardsIndex; cell: FixedCell) =
 proc `[]`*(grid: var FixedGrid; i: int): var FixedCell = grid.cells[i]
 proc `[]`*(grid: var FixedGrid; i: BackwardsIndex): var FixedCell =
   grid.cells[i]
-proc `[]`*(grid: FixedGrid; i: int): FixedCell = grid.cells[i]
-proc `[]`*(grid: FixedGrid; i: BackwardsIndex): FixedCell = grid.cells[i]
+proc `[]`*(grid: FixedGrid; i: int): lent FixedCell = grid.cells[i]
+proc `[]`*(grid: FixedGrid; i: BackwardsIndex): lent FixedCell =
+  return grid.cells[grid.cells.len - int(i)]
 
 proc len*(grid: FixedGrid): int = grid.cells.len
 proc high*(grid: FixedGrid): int = grid.cells.high
 
-iterator items*(grid: FixedGrid): FixedCell {.inline.} =
+iterator items*(grid: FixedGrid): lent FixedCell {.inline.} =
   for cell in grid.cells:
     yield cell
 

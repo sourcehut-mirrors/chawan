@@ -22,7 +22,7 @@ type
 func newHistoryEntry(s: string): HistoryEntry =
   return HistoryEntry(s: s)
 
-proc add(hist: History; entry: HistoryEntry) =
+proc add(hist: History; entry: sink HistoryEntry) =
   let old = hist.map.getOrDefault(entry.s)
   if old != nil:
     if hist.first == old:

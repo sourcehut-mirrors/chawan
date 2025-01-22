@@ -177,7 +177,7 @@ func hash*(atom: CAtom): Hash {.borrow.}
 when defined(debug):
   func `$`*(a: CAtom): string {.borrow.}
 
-func toAtom(factory: var CAtomFactoryObj; s: string;
+func toAtom(factory: var CAtomFactoryObj; s: sink string;
     isInit: static bool = false): CAtom =
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
@@ -245,7 +245,7 @@ func containsIgnoreCase*(factory: CAtomFactory; aa: openArray[CAtom];
       return true
   return false
 
-func toAtom*(factory: CAtomFactory; s: string): CAtom =
+func toAtom*(factory: CAtomFactory; s: sink string): CAtom =
   return factory[].toAtom(s)
 
 func toAtom*(factory: CAtomFactory; tagType: TagType): CAtom =
@@ -256,7 +256,7 @@ func toAtom*(factory: CAtomFactory; attrType: StaticAtom): CAtom =
   assert attrType != atUnknown
   return CAtom(attrType)
 
-func toAtomLower*(factory: CAtomFactory; s: string): CAtom =
+func toAtomLower*(factory: CAtomFactory; s: sink string): CAtom =
   return factory.lowerMap[int32(factory.toAtom(s))]
 
 func containsIgnoreCase*(factory: CAtomFactory; aa: openArray[CAtom];

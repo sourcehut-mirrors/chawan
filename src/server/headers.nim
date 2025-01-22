@@ -250,7 +250,7 @@ func newHeaders*(table: Table[string, string]): Headers =
 func clone*(headers: Headers): Headers =
   return Headers(table: headers.table)
 
-proc add*(headers: Headers; k, v: string) =
+proc add*(headers: Headers; k: string; v: sink string) =
   let k = k.toHeaderCase()
   headers.table.withValue(k, p):
     p[].add(v)

@@ -45,11 +45,11 @@ type
     failed: bool
     nested: bool
 
-  RelationType* {.size: sizeof(int) div 2.} = enum
-    rtExists, rtEquals, rtToken, rtBeginDash,
-    rtStartsWith, rtEndsWith, rtContains
+  RelationType* = enum
+    rtExists, rtEquals, rtToken, rtBeginDash, rtStartsWith, rtEndsWith,
+    rtContains
 
-  RelationFlag* {.size: sizeof(int) div 2.} = enum
+  RelationFlag* = enum
     rfNone, rfI, rfS
 
   SelectorRelation* = object
@@ -111,28 +111,29 @@ proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 func `$`*(cxsel: ComplexSelector): string
 
-iterator items*(sels: CompoundSelector): Selector {.inline.} =
-  for it in sels.sels:
+iterator items*(csel: CompoundSelector): lent Selector {.inline.} =
+  for it in csel.sels:
     yield it
 
-func `[]`*(sels: CompoundSelector; i: int): Selector {.inline.} =
-  return sels.sels[i]
+func `[]`*(csel: CompoundSelector; i: int): lent Selector {.inline.} =
+  return csel.sels[i]
 
-func `[]`*(sels: CompoundSelector; i: BackwardsIndex): Selector {.inline.} =
-  return sels.sels[i]
+func `[]`*(csel: CompoundSelector; i: BackwardsIndex): lent Selector
+    {.inline.} =
+  return csel[csel.sels.len - int(i)]
 
-func len*(sels: CompoundSelector): int {.inline.} =
-  return sels.sels.len
+func len*(csel: CompoundSelector): int {.inline.} =
+  return csel.sels.len
 
-proc add*(sels: var CompoundSelector; sel: Selector) {.inline.} =
-  sels.sels.add(sel)
+proc add*(csel: var CompoundSelector; sel: sink Selector) {.inline.} =
+  csel.sels.add(sel)
 
 func `[]`*(cxsel: ComplexSelector; i: int): lent CompoundSelector {.inline.} =
   return cxsel.csels[i]
 
-func `[]`*(cxsel: ComplexSelector; i: BackwardsIndex): CompoundSelector
+func `[]`*(cxsel: ComplexSelector; i: BackwardsIndex): lent CompoundSelector
     {.inline.} =
-  return cxsel.csels[i]
+  return cxsel[cxsel.csels.len - int(i)]
 
 func `[]`*(cxsel: var ComplexSelector; i: BackwardsIndex): var CompoundSelector
     {.inline.} =
@@ -209,6 +210,7 @@ func `$`*(sel: Selector): string =
     return "::" & $sel.elem
 
 func `$`*(sels: CompoundSelector): string =
+  result = ""
   for sel in sels:
     result &= $sel
 
