@@ -148,3 +148,18 @@ test "fromjs-tuple":
   JS_FreeValue(ctx, jsTest)
   ctx.free()
   rt.free()
+
+type X = ref object
+
+proc foo(x: X; s: sink string) {.jsfunc.} =
+  discard
+
+proc bar(x: X; s: sink(string)) {.jsfunc.} =
+  discard
+
+test "sink":
+  let rt = newJSRuntime()
+  let ctx = rt.newJSContext()
+  ctx.registerType(X)
+  ctx.free()
+  rt.free()

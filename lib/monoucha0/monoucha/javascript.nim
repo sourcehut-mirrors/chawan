@@ -452,6 +452,9 @@ proc getParams(fun: NimNode): seq[FuncParam] =
       t = t[0]
     elif t.kind == nnkVarTy:
       t = newNimNode(nnkPtrTy).add(t[0])
+    elif t.kind in {nnkCommand, nnkCall} and t.len == 2 and
+        t[0].kind == nnkSym and t[0].strVal == "sink":
+      t = t[1]
     let val = if it[^1].kind != nnkEmpty:
       let x = it[^1]
       some(newPar(x))
