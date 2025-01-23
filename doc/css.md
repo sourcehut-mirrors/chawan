@@ -4,11 +4,90 @@ MANOFF -->
 
 # CSS in Chawan
 
-This document describes some proprietary CSS extensions supported by
-Chawan, as well as its intentional deviations from standards.
+This document describes CSS properties supported by Chawan, as well as
+its proprietary extensions and deviations from standards.
 
-If you discover a deviation that is not covered by this document, then
-please open a ticket at <https://todo.sr.ht/~bptato/chawan>.
+If you discover a deviation that is not covered by this document, please
+open a ticket at <https://todo.sr.ht/~bptato/chawan>.
+
+## Standard properties
+
+A list of supported standard properties, with notes on unimplemented
+values:
+
+* background-color (see color)
+* background-image (displays placeholders only)
+* border-collapse
+* border-spacing
+* bottom
+* box-sizing
+* caption-side
+* clear
+* color (hex values and functions `rgb`, `rgba`, `hsl`, `hsla`)
+* content
+* counter-reset
+* display (`block`, `inline-block`, `list-item`, `table`, `table-*`,
+  `flex`, `inline-flex`, `flow-root`)
+* flex-basis (but `content` not supported)
+* flex-direction
+* flex-grow
+* flex-shrink
+* flex-wrap
+* float
+* font-size (ignored; only for JS compatibility)
+* font-style (oblique interpreted as italic)
+* font-weight (numeric properties >= 700 interpreted as bold, others
+  as regular)
+* height
+* left
+* list-style-position
+* list-style-type (but no custom list styles)
+* margin-bottom
+* margin-left
+* margin-right
+* margin-top
+* max-height
+* max-width
+* min-height
+* min-width
+* opacity (hacky; only works with `opacity: 0`)
+* overflow-x (see below on scrollbars)
+* overflow-y (see below on scrollbars)
+* padding-bottom
+* padding-left
+* padding-right
+* padding-top
+* position (see below for `sticky` and `fixed`)
+* quotes
+* right
+* text-align
+* text-decoration (`none`, `underline`, `overline`, `line-through`)
+* text-transform
+* top
+* vertical-align
+* visibility
+* white-space
+* width
+* word-break
+* z-index (negative values are not respected yet)
+
+Shorthands:
+
+* all
+* margin
+* padding
+* background (only color and url; other components are skipped)
+* list-style (list-style-image is skipped)
+* flex
+* flex-flow
+* overflow
+
+Variables (the `var` function) are supported only for non-shorthand
+properties and the `background` shorthand.
+
+Values with a `<length>` type support very simple `calc()` expressions
+that consist of one addition or subtraction and do not use the `var`
+function.
 
 ## Proprietary extensions
 
@@ -56,8 +135,8 @@ the display model inherent to projecting the web to a cell-based screen.
 
 The user agent style sheet is a combination of the styles suggested by
 the HTML standard and a CSS port of w3m's rendering.  In general,
-faithfulness to w3m is preferred over the standard, unless it breaks
-existing websites.
+faithfulness to w3m is preferred over the standard's suggestions, unless
+those break on existing websites.
 
 Link colors differ depending on the terminal's color scheme.
 

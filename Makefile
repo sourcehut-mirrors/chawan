@@ -259,10 +259,6 @@ uninstall:
 submodule:
 	echo 'We no longer use submodules; you can safely drop "make submodule" from build scripts.'
 
-.PHONY: subtree
-subtree:
-	for it in chame chagashi monoucha; do git subtree pull --prefix lib/"$${it}"0 https://git.sr.ht/~bptato/"$$it" master --squash; done
-
 test/net/run: test/net/run.nim
 	$(NIMC) test/net/run.nim
 
