@@ -395,14 +395,6 @@ proc addScripting*(window: Window) =
   ctx.addEncodingModule()
   ctx.addPerformanceModule()
 
-proc runJSJobs*(window: Window) =
-  while true:
-    let r = window.jsrt.runJSJobs()
-    if r.isSome:
-      break
-    let ctx = r.error
-    ctx.writeException(window.console.err)
-
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     attrsp: ptr WindowAttributes; factory: CAtomFactory; loader: FileLoader;
     url: URL; urandom: PosixStream; imageTypes: Table[string, string];

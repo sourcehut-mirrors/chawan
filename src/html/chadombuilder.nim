@@ -200,13 +200,19 @@ proc associateWithFormImpl(builder: ChaDOMBuilder;
 
 proc elementPoppedImpl(builder: ChaDOMBuilder; element: Node) =
   let element = Element(element)
+  let document = builder.document
   if element of HTMLTextAreaElement:
     element.resetElement()
   elif element of HTMLScriptElement:
-    assert builder.poppedScript == nil or not builder.document.scriptingEnabled
+    if document.scriptingEnabled:
+      assert builder.poppedScript == nil
+      inc document.throwOnDynamicMarkupInsertion
+      #TODO I think this has to be moved for custom elements
+      document.window.performMicrotaskCheckpoint()
+      dec document.throwOnDynamicMarkupInsertion
     builder.poppedScript = HTMLScriptElement(element)
   elif element of SVGSVGElement:
-    let window = element.document.window
+    let window = document.window
     if window != nil:
       let svg = SVGSVGElement(element)
       window.loadResource(svg)
@@ -291,7 +297,6 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
   # set insertion point for when it's needed
   var ip = wrapper.parser.getInsertionPoint()
   while res == PRES_SCRIPT:
-    #TODO microtask
     let script = builder.poppedScript
     builder.poppedScript = nil
     document.writeBuffers.add(DocumentWriteBuffer())
@@ -328,7 +333,6 @@ proc parseDocumentWriteChunk(wrapper: RootRef) =
     document.writeBuffers.add(DocumentWriteBuffer())
     while true:
       buffer.i += wrapper.parser.getInsertionPoint()
-      #TODO microtask
       let script = builder.poppedScript
       builder.poppedScript = nil
       script.prepare()

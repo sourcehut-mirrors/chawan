@@ -115,6 +115,8 @@ type
     svgCache*: Table[string, SVGSVGElement]
     images*: bool
     styling*: bool
+    autofocus*: bool
+    inMicrotaskCheckpoint: bool
     # ID of the next image
     imageId: int
     # list of streams that must be closed for canvas rendering on load
@@ -122,7 +124,6 @@ type
     imageTypes*: Table[string, string]
     userAgent*: string
     referrer* {.jsget.}: string
-    autofocus*: bool
     maybeRestyle*: proc(element: Element)
     performance* {.jsget.}: Performance
 
@@ -210,7 +211,7 @@ type
     readyState* {.jsget.}: DocumentReadyState
     # document.write
     ignoreDestructiveWrites: int
-    throwOnDynamicMarkupInsertion: int
+    throwOnDynamicMarkupInsertion*: int
     activeParserWasAborted: bool
     writeBuffers*: seq[DocumentWriteBuffer]
     styleDependencies: array[DependencyType, DependencyMap]
@@ -4263,6 +4264,21 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
     svg.invalidate()
   )
   window.pendingResources.add(p)
+
+proc runJSJobs*(window: Window) =
+  while true:
+    let r = window.jsrt.runJSJobs()
+    if r.isSome:
+      break
+    let ctx = r.error
+    ctx.writeException(window.console.err)
+
+proc performMicrotaskCheckpoint*(window: Window) =
+  if window.inMicrotaskCheckpoint:
+    return
+  window.inMicrotaskCheckpoint = true
+  window.runJSJobs()
+  window.inMicrotaskCheckpoint = false
 
 proc reflectEvent(element: Element; target: EventTarget;
     name, ctype: StaticAtom; value: string) =
