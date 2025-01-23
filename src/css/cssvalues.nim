@@ -1178,9 +1178,7 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
         return err()
       var length = ?parseLength(fun.value[i], attrs, hasAuto, allowNegative)
       i = fun.value.skipBlanks(i + 1)
-      if i >= fun.value.len or fun.value[i] != cttDelim:
-        return err()
-      let dtok = CSSToken(fun.value[i])
+      let dtok = ?fun.value.getToken(i, cttDelim)
       let sign = if dtok.cvalue == '+':
         1f32
       elif dtok.cvalue == '-':
@@ -1188,6 +1186,8 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
       else:
         return err()
       i = fun.value.skipBlanks(i + 1)
+      if i >= fun.value.len:
+        return err()
       var length2 = ?parseLength(fun.value[i], attrs, hasAuto, allowNegative)
       length2.num *= sign
       if length2.u == clAuto or fun.value.skipBlanks(i + 1) < fun.value.len:
