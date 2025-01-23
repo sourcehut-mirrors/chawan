@@ -91,7 +91,7 @@ textarea { color: red; white-space: pre }
 
 li, summary { display: list-item }
 
-i, em { font-style: italic }
+i, em, address { font-style: italic }
 
 b, strong { font-weight: bold }
 
