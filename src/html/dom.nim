@@ -4727,7 +4727,7 @@ proc elementInsertionSteps(element: Element) =
     if window != nil:
       let link = HTMLLinkElement(element)
       window.loadResource(link)
-  of TAG_IMAGE:
+  of TAG_IMG:
     let window = element.document.window
     if window != nil:
       let image = HTMLImageElement(element)
