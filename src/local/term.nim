@@ -261,6 +261,11 @@ proc write(term: Terminal; s: openArray[char]) =
       copyMem(addr term.obuf[term.obufLen], unsafeAddr s[0], s.len)
       term.obufLen += s.len
 
+proc write(term: Terminal; s: string) =
+  # This is needed because some Nim versions can't decide between
+  # resolving to openArray[char] and cstring.
+  term.write(s.toOpenArray(0, s.len - 1))
+
 proc write(term: Terminal; s: cstring) =
   term.write(s.toOpenArray(0, s.len - 1))
 
