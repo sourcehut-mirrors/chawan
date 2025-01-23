@@ -983,19 +983,18 @@ proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
 
 proc resolveAbsoluteHeight(sizes: var ResolvedSizes; size: Size;
     positioned: RelativeRect; computed: CSSValues; lctx: LayoutContext) =
+  let paddingSum = sizes.padding[dtVertical].sum()
   if computed{"height"}.u == clAuto:
-    let u = max(size.w - positioned[dtVertical].sum(), 0)
+    let u = max(size.h - positioned[dtVertical].sum(), 0)
     if computed{"top"}.u != clAuto and computed{"bottom"}.u != clAuto:
       # Both top and bottom are known, so we can calculate the height.
       # Well, but subtract padding and margin first.
-      sizes.space.h = stretch(u - sizes.padding[dtVertical].sum() -
-        sizes.margin[dtVertical].sum())
+      sizes.space.h = stretch(u - paddingSum - sizes.margin[dtVertical].sum())
     else:
       # The height is based on the content.
       sizes.space.h = maxContent()
   else:
-    let sizepx = computed{"height"}.spx(stretch(size.h), computed,
-      sizes.padding[dtVertical].sum())
+    let sizepx = computed{"height"}.spx(stretch(size.h), computed, paddingSum)
     sizes.space.h = stretch(sizepx)
 
 # Calculate and resolve available width & height for absolutely positioned
