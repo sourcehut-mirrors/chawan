@@ -1,12 +1,12 @@
 :root { display: block !important }
 
 area, base, basefont, datalist, head, link, meta, noembed,
-param, rp, script, style, template, title { display: none }
+param, rp, script, style, template, title, noframes { display: none }
 
 address, article, aside, blockquote, body, center, dd, details, dialog,
 dir, div, dl, dt, figcaption, figure, footer, form, h1, h2, h3, h4,
 h5, h6, header, hgroup, hr, html, legend, listing, main, menu, nav,
-noframes, noscript, ol, p, plaintext, pre, search, section, ul, xmp {
+noscript, ol, p, plaintext, pre, search, section, ul, xmp, frame {
 	display: block
 }
 
@@ -21,7 +21,7 @@ pre code { text-decoration: none }
 
 @media (scripting: enabled) { noscript { display: none } }
 
-textarea, iframe, frame, input, canvas { display: inline-block }
+textarea, iframe, input, canvas { display: inline-block }
 
 ol, ul, menu, dir { padding-left: 4ch; margin: 1em 0 }
 ol > li:nth-child(n+100) { margin-left: 1ch }
@@ -115,9 +115,9 @@ a[href] { color: -cha-ansi(blue) }
 a[href] { color: -cha-ansi(yellow) }
 }
 
-video, audio, iframe { color: -cha-ansi(red) }
+video, audio, iframe, frame { color: -cha-ansi(red) }
 
-a[href]:hover, video:hover, audio:hover, iframe:hover { text-decoration: underline }
+:is(a[href], video, audio, iframe, frame):hover { text-decoration: underline }
 
 sup::before { content: '^' }
 sub::before { content: '~' }

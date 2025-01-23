@@ -325,7 +325,7 @@ func getTitleAttr(buffer: Buffer; element: Element): string =
 
 const ClickableElements = {
   TAG_A, TAG_INPUT, TAG_OPTION, TAG_BUTTON, TAG_TEXTAREA, TAG_LABEL,
-  TAG_VIDEO, TAG_AUDIO, TAG_IFRAME
+  TAG_VIDEO, TAG_AUDIO, TAG_IFRAME, TAG_FRAME
 }
 
 proc isClickable(element: Element): bool =
@@ -366,10 +366,25 @@ proc getImageHover(buffer: Buffer; element: Element): string =
 proc getClickHover(buffer: Buffer; element: Element): string =
   let clickable = element.getClickable()
   if clickable != nil:
-    if clickable of HTMLAnchorElement:
+    case clickable.tagType
+    of TAG_A:
       let url = HTMLAnchorElement(clickable).reinitURL()
       if url.isSome:
         return $url.get
+    of TAG_OPTION:
+      return "<option>"
+    of TAG_VIDEO, TAG_AUDIO:
+      let (src, _) = HTMLElement(clickable).getSrc()
+      if src != "":
+        let url = clickable.document.parseURL(src)
+        if url.isSome:
+          return $url.get
+    of TAG_FRAME, TAG_IFRAME:
+      let src = clickable.attr(satSrc)
+      if src != "":
+        let url = clickable.document.parseURL(src)
+        if url.isSome:
+          return $url.get
     elif clickable of FormAssociatedElement:
       #TODO this is inefficient and also quite stupid
       let fae = FormAssociatedElement(clickable)
@@ -378,20 +393,6 @@ proc getClickHover(buffer: Buffer; element: Element): string =
         if req != nil:
           return $req.url
       return "<" & $clickable.tagType & ">"
-    elif clickable of HTMLOptionElement:
-      return "<option>"
-    elif clickable of HTMLVideoElement or clickable of HTMLAudioElement:
-      let (src, _) = HTMLElement(clickable).getSrc()
-      if src != "":
-        let url = clickable.document.parseURL(src)
-        if url.isSome:
-          return $url.get
-    elif clickable of HTMLIFrameElement:
-      let src = clickable.attr(satSrc)
-      if src != "":
-        let url = clickable.document.parseURL(src)
-        if url.isSome:
-          return $url.get
   ""
 
 proc getCachedImageHover(buffer: Buffer; element: Element): string =
@@ -1480,11 +1481,12 @@ proc click(buffer: Buffer; video: HTMLVideoElement): ClickResult =
       return ClickResult(open: newRequest(url.get), contentType: contentType)
   return ClickResult()
 
-proc click(buffer: Buffer; iframe: HTMLIFrameElement): ClickResult =
+# Used for frame, ifframe
+proc clickFrame(buffer: Buffer; frame: Element): ClickResult =
   buffer.restoreFocus()
-  let src = iframe.attr(satSrc)
+  let src = frame.attr(satSrc)
   if src != "":
-    let url = iframe.document.parseURL(src)
+    let url = frame.document.parseURL(src)
     if url.isSome:
       return ClickResult(open: newRequest(url.get))
   return ClickResult()
@@ -1572,8 +1574,8 @@ proc click(buffer: Buffer; clickable: Element): ClickResult =
     return buffer.click(HTMLAudioElement(clickable))
   of TAG_VIDEO:
     return buffer.click(HTMLVideoElement(clickable))
-  of TAG_IFRAME:
-    return buffer.click(HTMLIFrameElement(clickable))
+  of TAG_IFRAME, TAG_FRAME:
+    return buffer.clickFrame(clickable)
   else:
     buffer.restoreFocus()
     return ClickResult()

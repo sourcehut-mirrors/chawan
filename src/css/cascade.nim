@@ -466,6 +466,7 @@ iterator children*(styledNode: StyledNode): StyledNode {.closure.} =
     of TAG_BR:
       yield initStyledReplacement(parent, CSSContent(t: ContentNewline))
     of TAG_IFRAME: yield initStyledText(parent, "[iframe]")
+    of TAG_FRAME: yield initStyledText(parent, "[frame]")
     elif parent.tagType(Namespace.SVG) == TAG_SVG:
       yield initStyledImage(parent, SVGSVGElement(parent).bitmap)
     else:
