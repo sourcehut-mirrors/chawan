@@ -168,7 +168,7 @@ type
     retry*: seq[URL]
     hlon*: bool # highlight on?
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
-    needslines*: bool
+    needslines: bool
     loadState*: LoadState
     event: ContainerEvent
     lastEvent: ContainerEvent
@@ -528,18 +528,23 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
     container.images = res.images
   )
 
-proc sendCursorPosition*(container: Container) =
+proc repaintLoop(container: Container) =
   if container.iface == nil:
     return
-  container.iface.updateHover(container.cursorx, container.cursory)
+  container.iface.onReshape().then(proc() =
+    container.requestLines().then(proc() = container.repaintLoop())
+  )
+
+proc sendCursorPosition*(container: Container): EmptyPromise {.discardable.} =
+  if container.iface == nil:
+    return newResolvedPromise()
+  return container.iface.updateHover(container.cursorx, container.cursory)
       .then(proc(res: UpdateHoverResult) =
-    if res.hover.len > 0:
-      assert res.hover.high <= int(HoverType.high)
-      for (ht, s) in res.hover:
+    if res.len > 0:
+      assert res.high <= int(HoverType.high)
+      for (ht, s) in res:
         container.hoverText[ht] = s
       container.triggerEvent(cetStatus)
-    if res.repaint:
-      container.needslines = true
   )
 
 proc setFromY(container: Container; y: int) {.jsfunc.} =
@@ -1106,7 +1111,7 @@ proc popCursorPos*(container: Container; nojump = false) =
     if not nojump:
       container.updateCursor()
       container.sendCursorPosition()
-      container.needslines = true
+    container.needslines = true
 
 proc copyCursorPos*(container, c2: Container) =
   if c2.startpos.isSome:
@@ -1330,11 +1335,9 @@ proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
       container.highlights.add(hl)
       container.queueDraw()
       container.hlon = false
-      container.needslines = true
   elif container.hlon:
     container.clearSearchHighlights()
     container.queueDraw()
-    container.needslines = true
     container.hlon = false
 
 proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
@@ -1450,16 +1453,13 @@ proc markURL(container: Container) {.jsfunc.} =
   var schemes: seq[string] = @[]
   for key in container.mainConfig.external.urimethodmap.map.keys:
     schemes.add(key.until(':'))
-  container.iface.markURL(schemes).then(proc() =
-    container.needslines = true
-  )
+  container.iface.markURL(schemes)
 
 proc toggleImages(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
   container.iface.toggleImages().then(proc(images: bool) =
     container.config.images = images
-    container.needslines = true
   )
 
 proc setLoadInfo(container: Container; msg: string) =
@@ -1504,7 +1504,6 @@ proc onload(container: Container; res: int) =
             if res.focus != nil:
               container.onReadLine(res.focus)
         )
-    container.needslines = true
     if container.config.metaRefresh != mrNever:
       container.iface.checkRefresh().then(proc(res: CheckRefreshResult) =
         if res.n >= 0:
@@ -1515,7 +1514,6 @@ proc onload(container: Container; res: int) =
           ))
       )
   else:
-    container.needslines = true
     container.setLoadInfo(convertSize(res) & " loaded")
     discard container.iface.load().then(proc(res: int) =
       container.onload(res)
@@ -1564,9 +1562,7 @@ proc applyResponse*(container: Container; response: Response;
 
 proc remoteCancel*(container: Container) =
   if container.iface != nil:
-    container.iface.cancel().then(proc() =
-      container.needslines = true
-    )
+    container.iface.cancel()
   container.setLoadInfo("")
   container.alert("Canceled loading")
 
@@ -1579,9 +1575,7 @@ proc cancel*(container: Container) {.jsfunc.} =
       container.triggerEvent(cetCancel)
 
 proc readCanceled*(container: Container) =
-  container.iface.readCanceled().then(proc(repaint: bool) =
-    if repaint:
-      container.needslines = true)
+  container.iface.readCanceled()
 
 proc readSuccess*(container: Container; s: string; fd: cint = -1) =
   let p = container.iface.readSuccess(s, fd != -1)
@@ -1589,19 +1583,15 @@ proc readSuccess*(container: Container; s: string; fd: cint = -1) =
     container.iface.stream.sflush()
     container.iface.stream.source.withPacketWriter w:
       w.sendAux.add(fd)
-  p.then(proc(res: ReadSuccessResult) =
-    if res.repaint:
-      container.needslines = true
-    if res.open != nil:
-      container.triggerEvent(ContainerEvent(t: cetOpen, request: res.open))
+  p.then(proc(res: Request) =
+    if res != nil:
+      container.triggerEvent(ContainerEvent(t: cetOpen, request: res))
   )
 
 proc reshape(container: Container): EmptyPromise {.jsfunc.} =
   if container.iface == nil:
     return
-  return container.iface.forceReshape().then(proc(): EmptyPromise =
-    return container.requestLines()
-  )
+  return container.iface.forceReshape()
 
 proc selectFinish(opaque: RootRef; select: Select) =
   let container = Container(opaque)
@@ -1623,8 +1613,6 @@ proc displaySelect(container: Container; selectResult: SelectResult) =
   )
 
 proc onclick(container: Container; res: ClickResult; save: bool) =
-  if res.repaint:
-    container.needslines = true
   if res.open != nil:
     container.triggerEvent(ContainerEvent(
       t: cetOpen,
@@ -1667,9 +1655,7 @@ proc windowChange*(container: Container; attrs: WindowAttributes) =
     # subtract status line height
     attrs.height -= 1
     attrs.heightPx -= attrs.ppl
-    container.iface.windowChange(attrs).then(proc() =
-      container.needslines = true
-    )
+    container.iface.windowChange(attrs)
   if container.select != nil:
     container.select.windowChange(container.width, container.height)
 
@@ -1711,6 +1697,8 @@ proc handleCommand(container: Container) =
   container.iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
 
 proc startLoad(container: Container) =
+  if not container.config.dumpMode:
+    container.repaintLoop()
   container.iface.load().then(proc(res: int) =
     container.onload(res)
   )

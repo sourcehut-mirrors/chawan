@@ -126,8 +126,8 @@ type
     alertState: PagerAlertState
     alerts: seq[string]
     alive: bool
-    askPromise*: Promise[string]
     askCursor: int
+    askPromise*: Promise[string]
     askPrompt: string
     blockTillRelease: bool
     commandMode {.jsget.}: bool
@@ -136,6 +136,7 @@ type
     container {.jsget: "buffer".}: Container
     cookieJars: CookieJarMap
     display: Surface
+    dumpMode: bool
     exitCode*: int
     feednext*: bool
     forkserver*: ForkServer
@@ -827,6 +828,7 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     else:
       istream = nil
     dump = istream == nil
+  pager.dumpMode = dump
   pager.pollData.register(pager.forkserver.estream.fd, POLLIN)
   pager.loader.registerFun = proc(fd: int) =
     pager.pollData.register(fd, POLLIN)
@@ -1779,7 +1781,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     styling: pager.config.buffer.styling,
     autofocus: pager.config.buffer.autofocus,
     history: pager.config.buffer.history,
-    isdump: pager.config.start.headless,
+    dumpMode: pager.dumpMode,
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol,
     metaRefresh: pager.config.buffer.metaRefresh,

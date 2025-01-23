@@ -57,7 +57,7 @@ type
     bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink, bcFindRevNthLink,
     bcFindNextMatch, bcFindPrevMatch, bcGetLines, bcUpdateHover, bcGotoAnchor,
     bcCancel, bcGetTitle, bcSelect, bcClone, bcFindPrevParagraph,
-    bcFindNextParagraph, bcMarkURL, bcToggleImages, bcCheckRefresh
+    bcFindNextParagraph, bcMarkURL, bcToggleImages, bcCheckRefresh, bcOnReshape
 
   BufferState = enum
     bsLoadingPage, bsLoadingResources, bsLoaded
@@ -93,6 +93,7 @@ type
     lines: FlexibleGrid
     loader: FileLoader
     needsBOMSniff: bool
+    onReshapeImmediately: bool
     outputId: int
     pollData: PollData
     prevHover: Element
@@ -125,7 +126,7 @@ type
     styling*: bool
     scripting*: ScriptingMode
     images*: bool
-    isdump*: bool
+    dumpMode*: bool
     autofocus*: bool
     history*: bool
     charsetOverride*: Charset
@@ -651,7 +652,6 @@ type
     open*: Request
     contentType*: string
     readline*: Option[ReadLineResult]
-    repaint*: bool
     select*: Option[SelectResult]
 
 proc click(buffer: Buffer; clickable: Element): ClickResult
@@ -761,7 +761,25 @@ proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
     return CheckRefreshResult(n: -1)
   return CheckRefreshResult(n: n, url: url.get)
 
-proc maybeReshape(buffer: Buffer): bool {.discardable.} =
+proc hasTask(buffer: Buffer; cmd: BufferCommand): bool =
+  return buffer.tasks[cmd] != 0
+
+proc resolveTask(buffer: Buffer; cmd: BufferCommand) =
+  let packetid = buffer.tasks[cmd]
+  assert packetid != 0
+  buffer.pstream.withPacketWriter wt:
+    wt.swrite(packetid)
+  buffer.tasks[cmd] = 0
+
+proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
+  let packetid = buffer.tasks[cmd]
+  assert packetid != 0
+  buffer.pstream.withPacketWriter wt:
+    wt.swrite(packetid)
+    wt.swrite(res)
+  buffer.tasks[cmd] = 0
+
+proc maybeReshape(buffer: Buffer) =
   if buffer.document == nil and buffer.document.documentElement != nil:
     return # not parsed yet, nothing to render
   if buffer.document.invalid:
@@ -770,8 +788,10 @@ proc maybeReshape(buffer: Buffer): bool {.discardable.} =
     buffer.lines.renderDocument(buffer.bgcolor, buffer.rootBox,
       addr buffer.attrs, buffer.images)
     buffer.document.invalid = false
-    return true
-  return false
+    if buffer.hasTask(bcOnReshape):
+      buffer.resolveTask(bcOnReshape)
+    else:
+      buffer.onReshapeImmediately = true
 
 proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
   if buffer.ishtml:
@@ -844,9 +864,7 @@ proc processData(buffer: Buffer; iq: openArray[uint8]): bool =
     return false
   true
 
-type UpdateHoverResult* = object
-  hover*: seq[tuple[t: HoverType, s: string]]
-  repaint*: bool
+type UpdateHoverResult* = seq[tuple[t: HoverType, s: string]]
 
 const HoverFun = [
   htTitle: getTitleAttr,
@@ -857,7 +875,7 @@ const HoverFun = [
 proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
     {.proxy.} =
   if cursory >= buffer.lines.len:
-    return UpdateHoverResult()
+    return @[]
   let thisNode = buffer.getCursorElement(cursorx, cursory)
   var hover: seq[tuple[t: HoverType, s: string]] = @[]
   var repaint = false
@@ -887,7 +905,7 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
   if repaint:
     buffer.maybeReshape()
   buffer.prevHover = thisNode
-  return UpdateHoverResult(repaint: repaint, hover: hover)
+  return move(hover)
 
 proc loadResources(buffer: Buffer): EmptyPromise =
   if buffer.window.pendingResources.len > 0:
@@ -1064,17 +1082,6 @@ proc load*(buffer: Buffer): int {.proxy, task.} =
     buffer.savetask = true
     return -2 # unused
 
-proc hasTask(buffer: Buffer; cmd: BufferCommand): bool =
-  return buffer.tasks[cmd] != 0
-
-proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
-  let packetid = buffer.tasks[cmd]
-  assert packetid != 0
-  buffer.pstream.withPacketWriter wt:
-    wt.swrite(packetid)
-    wt.swrite(res)
-  buffer.tasks[cmd] = 0
-
 proc onload(buffer: Buffer) =
   case buffer.state
   of bsLoadingResources, bsLoaded:
@@ -1122,7 +1129,7 @@ proc onload(buffer: Buffer) =
       return # skip incr render
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
-  if not buffer.config.isdump and buffer.tasks[bcLoad] != 0:
+  if not buffer.config.dumpMode and buffer.tasks[bcLoad] != 0:
     # only makes sense when not in dump mode (and the user has requested a load)
     buffer.maybeReshape()
     buffer.reportedBytesRead = buffer.bytesRead
@@ -1314,17 +1321,13 @@ proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Requ
   #let noopener = true #TODO
   return buffer.makeFormRequest(parsedAction, httpMethod, entryList, enctype)
 
-proc setFocus(buffer: Buffer; e: Element): bool =
+proc setFocus(buffer: Buffer; e: Element) =
   buffer.document.setFocus(e)
-  return buffer.maybeReshape()
+  buffer.maybeReshape()
 
-proc restoreFocus(buffer: Buffer): bool =
+proc restoreFocus(buffer: Buffer) =
   buffer.document.setFocus(nil)
-  return buffer.maybeReshape()
-
-type ReadSuccessResult* = object
-  open*: Request
-  repaint*: bool
+  buffer.maybeReshape()
 
 proc implicitSubmit(buffer: Buffer; input: HTMLInputElement): Request =
   let form = input.form
@@ -1340,40 +1343,32 @@ proc implicitSubmit(buffer: Buffer; input: HTMLInputElement): Request =
       return buffer.submitForm(form, form)
   return nil
 
-proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): ReadSuccessResult
-    {.proxy.} =
+proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
   var fd: cint = -1
-  var res = ReadSuccessResult()
   if hasFd:
     buffer.pstream.withPacketReader r:
       fd = r.recvAux.pop()
   if buffer.document.focus != nil:
-    case buffer.document.focus.tagType
+    let focus = buffer.document.focus
+    buffer.restoreFocus()
+    case focus.tagType
     of TAG_INPUT:
-      let input = HTMLInputElement(buffer.document.focus)
+      let input = HTMLInputElement(focus)
       case input.inputType
       of itFile:
         input.files = @[newWebFile(s, fd)]
         input.invalidate()
-        buffer.maybeReshape()
-        res.repaint = true
-        res.open = buffer.implicitSubmit(input)
       else:
         input.setValue(s)
-        buffer.maybeReshape()
-        res.repaint = true
-        res.open = buffer.implicitSubmit(input)
+      buffer.maybeReshape()
+      return buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
-      let textarea = HTMLTextAreaElement(buffer.document.focus)
+      let textarea = HTMLTextAreaElement(focus)
       textarea.value = s
       textarea.invalidate()
       buffer.maybeReshape()
-      res.repaint = true
     else: discard
-    let r = buffer.restoreFocus()
-    if not res.repaint:
-      res.repaint = r
-  return res
+  return nil
 
 proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
   let control = label.control
@@ -1384,7 +1379,7 @@ proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
 proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
   if select.attrb(satMultiple):
     return ClickResult()
-  let repaint = buffer.setFocus(select)
+  buffer.setFocus(select)
   var options: seq[SelectOption] = @[]
   var selected = -1
   var i = 0
@@ -1395,7 +1390,6 @@ proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
       selected = i
     inc i
   return ClickResult(
-    repaint: repaint,
     select: some(SelectResult(options: move(options), selected: selected))
   )
 
@@ -1419,93 +1413,81 @@ proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
   return ok(res)
 
 proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
-  var repaint = buffer.restoreFocus()
+  buffer.restoreFocus()
   let url = anchor.reinitURL()
   if url.isSome:
     var url = url.get
     if url.scheme == "javascript":
       if buffer.config.scripting == smFalse:
-        return ClickResult(repaint: repaint)
+        return ClickResult()
       let s = buffer.evalJSURL(url)
-      if buffer.maybeReshape():
-        repaint = true
+      buffer.maybeReshape()
       if s.isNone:
-        return ClickResult(repaint: repaint)
+        return ClickResult()
       let urls = newURL("data:text/html," & s.get)
       if urls.isNone:
-        return ClickResult(repaint: repaint)
+        return ClickResult()
       url = urls.get
-    return ClickResult(repaint: repaint, open: newRequest(url, hmGet))
-  return ClickResult(repaint: repaint)
+    return ClickResult(open: newRequest(url, hmGet))
+  return ClickResult()
 
 proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
   let select = option.select
   if select != nil:
     if select.attrb(satMultiple):
       option.setSelected(not option.selected)
-      return ClickResult(repaint: buffer.maybeReshape())
+      buffer.maybeReshape()
+      return ClickResult()
     return buffer.click(select)
   return ClickResult()
 
 proc click(buffer: Buffer; button: HTMLButtonElement): ClickResult =
   if button.form != nil:
-    var open: Request = nil
     case button.ctype
     of btSubmit:
-      open = buffer.submitForm(button.form, button)
+      let open = buffer.submitForm(button.form, button)
+      buffer.setFocus(button)
+      return ClickResult(open: open)
     of btReset:
       button.form.reset()
-      return ClickResult(repaint: buffer.maybeReshape())
     of btButton: discard
-    let repaint = buffer.setFocus(button)
-    return ClickResult(open: open, repaint: repaint)
+    buffer.setFocus(button)
   return ClickResult()
 
 proc click(buffer: Buffer; textarea: HTMLTextAreaElement): ClickResult =
-  let repaint = buffer.setFocus(textarea)
+  buffer.setFocus(textarea)
   let readline = ReadLineResult(
     t: rltArea,
     value: textarea.value
   )
-  return ClickResult(
-    readline: some(readline),
-    repaint: repaint
-  )
+  return ClickResult(readline: some(readline))
 
 proc click(buffer: Buffer; audio: HTMLAudioElement): ClickResult =
-  let repaint = buffer.restoreFocus()
+  buffer.restoreFocus()
   let (src, contentType) = audio.getSrc()
   if src != "":
     let url = audio.document.parseURL(src)
     if url.isSome:
-      return ClickResult(
-        repaint: repaint,
-        open: newRequest(url.get),
-        contentType: contentType
-      )
-  return ClickResult(repaint: repaint)
+      return ClickResult(open: newRequest(url.get), contentType: contentType)
+  return ClickResult()
 
 proc click(buffer: Buffer; video: HTMLVideoElement): ClickResult =
-  let repaint = buffer.restoreFocus()
+  buffer.restoreFocus()
   let (src, contentType) = video.getSrc()
   if src != "":
     let url = video.document.parseURL(src)
     if url.isSome:
-      return ClickResult(
-        repaint: repaint,
-        open: newRequest(url.get),
-        contentType: contentType
-      )
-  return ClickResult(repaint: repaint)
+      return ClickResult(open: newRequest(url.get), contentType: contentType)
+  return ClickResult()
 
 proc click(buffer: Buffer; iframe: HTMLIFrameElement): ClickResult =
-  let repaint = buffer.restoreFocus()
+  buffer.restoreFocus()
   let src = iframe.attr(satSrc)
   if src != "":
     let url = iframe.document.parseURL(src)
     if url.isSome:
-      return ClickResult(repaint: repaint, open: newRequest(url.get))
-  return ClickResult(repaint: repaint)
+      return ClickResult(open: newRequest(url.get))
+  return ClickResult()
 
 const InputTypePrompt = [
   itText: "TEXT",
@@ -1533,39 +1515,36 @@ const InputTypePrompt = [
 ]
 
 proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
-  let repaint = buffer.restoreFocus()
+  buffer.restoreFocus()
   case input.inputType
   of itFile:
     #TODO we should somehow extract the path name from the current file
-    return ClickResult(
-      repaint: buffer.setFocus(input) or repaint,
-      readline: some(ReadLineResult(t: rltFile))
-    )
+    buffer.setFocus(input)
+    return ClickResult(readline: some(ReadLineResult(t: rltFile)))
   of itCheckbox:
     input.setChecked(not input.checked)
-    return ClickResult(repaint: buffer.maybeReshape())
+    buffer.maybeReshape()
+    return ClickResult()
   of itRadio:
     input.setChecked(true)
-    return ClickResult(repaint: buffer.maybeReshape())
+    buffer.maybeReshape()
+    return ClickResult()
   of itReset:
     if input.form != nil:
       input.form.reset()
-      return ClickResult(repaint: buffer.maybeReshape())
-    return ClickResult(repaint: false)
+      buffer.maybeReshape()
+    return ClickResult()
   of itSubmit, itButton:
     if input.form != nil:
-      return ClickResult(
-        open: buffer.submitForm(input.form, input),
-        repaint: repaint
-      )
-    return ClickResult(repaint: false)
+      return ClickResult(open: buffer.submitForm(input.form, input))
+    return ClickResult()
   else:
     # default is text.
     var prompt = InputTypePrompt[input.inputType]
     if input.inputType == itRange:
       prompt &= " (" & input.attr(satMin) & ".." & input.attr(satMax) & ")"
+    buffer.setFocus(input)
     return ClickResult(
-      repaint: buffer.setFocus(input) or repaint,
       readline: some(ReadLineResult(
         prompt: prompt & ": ",
         value: input.value,
@@ -1596,11 +1575,11 @@ proc click(buffer: Buffer; clickable: Element): ClickResult =
   of TAG_IFRAME:
     return buffer.click(HTMLIFrameElement(clickable))
   else:
-    return ClickResult(repaint: buffer.restoreFocus())
+    buffer.restoreFocus()
+    return ClickResult()
 
 proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
   if buffer.lines.len <= cursory: return ClickResult()
-  var repaint = false
   var canceled = false
   let clickable = buffer.getCursorClickable(cursorx, cursory)
   if buffer.config.scripting != smFalse:
@@ -1609,34 +1588,30 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
       let window = buffer.window
       let event = newEvent(window.toAtom(satClick), element)
       canceled = window.jsctx.dispatch(element, event)
-      if buffer.maybeReshape():
-        repaint = true
-  if not canceled:
-    if clickable != nil:
-      var res = buffer.click(clickable)
-      if repaint: # override
-        res.repaint = true
-      return res
-  return ClickResult(repaint: repaint)
+      buffer.maybeReshape()
+  if not canceled and clickable != nil:
+    return buffer.click(clickable)
+  return ClickResult()
 
 proc select*(buffer: Buffer; selected: int): ClickResult {.proxy.} =
   if buffer.document.focus != nil and
       buffer.document.focus of HTMLSelectElement:
     let select = HTMLSelectElement(buffer.document.focus)
     select.setSelectedIndex(selected)
-    return ClickResult(repaint: buffer.restoreFocus())
+    buffer.restoreFocus()
   return ClickResult()
 
-proc readCanceled*(buffer: Buffer): bool {.proxy.} =
-  return buffer.restoreFocus()
+proc readCanceled*(buffer: Buffer) {.proxy.} =
+  buffer.restoreFocus()
 
-type GetLinesResult* = tuple
-  numLines: int
-  lines: seq[SimpleFlexibleLine]
-  bgcolor: CellColor
-  images: seq[PosBitmap]
+type GetLinesResult* = object
+  numLines*: int
+  lines*: seq[SimpleFlexibleLine]
+  bgcolor*: CellColor
+  images*: seq[PosBitmap]
 
 proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
+  result = GetLinesResult(numLines: buffer.lines.len, bgcolor: buffer.bgcolor)
   var w = w
   if w.b < 0 or w.b > buffer.lines.high:
     w.b = buffer.lines.high
@@ -1646,14 +1621,22 @@ proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
     for f in buffer.lines[y].formats:
       line.formats.add(SimpleFormatCell(format: f.format, pos: f.pos))
     result.lines.add(line)
-  result.numLines = buffer.lines.len
-  result.bgcolor = buffer.bgcolor
   if buffer.config.images:
     let ppl = buffer.attrs.ppl
     for image in buffer.images:
       let ey = image.y + (image.height + ppl - 1) div ppl # ceil
       if image.y <= w.b and ey >= w.a:
         result.images.add(image)
+
+proc onReshape*(buffer: Buffer) {.proxy, task.} =
+  if buffer.onReshapeImmediately:
+    # We got a reshape before the container even asked us for the event.
+    # This variable prevents the race that would otherwise occur if
+    # the buffer were to be reshaped between two onReshape requests.
+    buffer.onReshapeImmediately = false
+    return
+  assert buffer.tasks[bcOnReshape] == 0
+  buffer.savetask = true
 
 proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
   if buffer.document == nil or buffer.document.body == nil:
