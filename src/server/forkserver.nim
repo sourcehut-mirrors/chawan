@@ -162,6 +162,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
       stderr.write(msg)
       quit(1)
     doAssert false
+  discard close(fd)
   ctx.children.add(pid)
   return pid
 
