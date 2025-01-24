@@ -175,16 +175,20 @@ table[align=left i] { float: left }
 table[align=right i] { float: right }
 table[align=center i] { margin-left: auto; margin-right: auto }
 
-:is(div, p, td, th, thead, tbody, tfoot, tr)[align=left i] {
+:is(div, p, td, th, thead, tbody, tfoot, tr,
+	h1, h2, h3, h4, h5, h6)[align=left i] {
 	text-align: -cha-left
 }
-:is(div, p, td, th, thead, tbody, tfoot, tr)[align=center i] {
+:is(div, p, td, th, thead, tbody, tfoot, tr,
+	h1, h2, h3, h4, h5, h6)[align=center i] {
 	text-align: -cha-center
 }
-:is(div, p, td, th, thead, tbody, tfoot, tr)[align=middle i] {
+:is(div, p, td, th, thead, tbody, tfoot, tr,
+	h1, h2, h3, h4, h5, h6)[align=middle i] {
 	text-align: -cha-center
 }
-:is(div, p, td, th, thead, tbody, tfoot, tr)[align=right i] {
+:is(div, p, td, th, thead, tbody, tfoot, tr,
+	h1, h2, h3, h4, h5, h6)[align=right i] {
 	text-align: -cha-right
 }
 
