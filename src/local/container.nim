@@ -469,8 +469,11 @@ func getHoverText*(container: Container): string =
   ""
 
 proc isHoverURL*(container: Container; url: URL): bool =
-  let hoverurl = parseURL(container.hoverText[htLink])
-  return hoverurl.isSome and url.host == hoverurl.get.host
+  let x = parseURL(container.hoverText[htLink])
+  if x.isSome:
+    let hoverUrl = x.get
+    return url.authOrigin.isSameOrigin(hoverUrl.authOrigin)
+  return false
 
 proc triggerEvent(container: Container; event: ContainerEvent) =
   if container.lastEvent == nil:

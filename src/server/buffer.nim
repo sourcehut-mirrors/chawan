@@ -92,6 +92,7 @@ type
     istream: PosixStream
     lines: FlexibleGrid
     loader: FileLoader
+    navigateUrl: URL # stored when JS tries to navigate
     needsBOMSniff: bool
     onReshapeImmediately: bool
     outputId: int
@@ -428,8 +429,7 @@ func cursorBytes(buffer: Buffer; y, cc: int): int =
   return i
 
 proc navigate(buffer: Buffer; url: URL) =
-  #TODO how?
-  # maybe we could reuse meta refresh for the time being
+  buffer.navigateUrl = url
   stderr.write("navigate to " & $url & "\n")
 
 #TODO rewrite findPrevLink, findNextLink to use the box tree instead
@@ -723,6 +723,10 @@ type CheckRefreshResult* = object
   url*: URL
 
 proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
+  if buffer.navigateUrl != nil:
+    let url = buffer.navigateUrl
+    buffer.navigateUrl = nil
+    return CheckRefreshResult(n: 0, url: url)
   if buffer.document == nil:
     return CheckRefreshResult(n: -1)
   let element = buffer.document.findMetaRefresh()
@@ -1591,8 +1595,12 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
       let event = newEvent(window.toAtom(satClick), element)
       canceled = window.jsctx.dispatch(element, event)
       buffer.maybeReshape()
+  let url = buffer.navigateUrl
+  buffer.navigateUrl = nil
   if not canceled and clickable != nil:
     return buffer.click(clickable)
+  if url != nil:
+    return ClickResult(open: newRequest(url, hmGet))
   return ClickResult()
 
 proc select*(buffer: Buffer; selected: int): ClickResult {.proxy.} =

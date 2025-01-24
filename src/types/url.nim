@@ -1169,11 +1169,19 @@ proc origin*(url: URL): Origin =
   else:
     return Origin(t: otOpaque, s: $url)
 
+# Whether the URL is a net path (ref. RFC 2396).
+# In general, this means that its serialization will look like
+# "scheme://host:port/blah" instead of "scheme:/blah", *except* for
+# file URLs which are special-cased for legacy reasons (they become
+# "file:///blah", but are treated as absoluteURI).
+func isNetPath(url: URL): bool =
+  return url.hostType != htNone and url.scheme != "file"
+
 # This follows somewhat different rules from the standard:
-# * with htNone, the origin is opaque.
+# * for URLs with a net_path, the origin is opaque.
 # * with other host types, the origin is a tuple origin.
 proc authOrigin*(url: URL): Origin =
-  if url.hostType != htNone:
+  if url.isNetPath():
     return Origin(
       t: otTuple,
       tup: (url.scheme, url.hostname, url.port, none(string))
@@ -1214,11 +1222,11 @@ proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
     stateOverride = some(usSchemeStart))
 
 proc setUsername*(url: URL; username: string) {.jsfset: "username".} =
-  if url.hostType != htNone and url.scheme != "file":
+  if url.isNetPath():
     url.username = username.percentEncode(UserInfoPercentEncodeSet)
 
 proc setPassword*(url: URL; password: string) {.jsfset: "password".} =
-  if url.hostType != htNone and url.scheme != "file":
+  if url.isNetPath():
     url.password = password.percentEncode(UserInfoPercentEncodeSet)
 
 proc host*(url: URL): string {.jsfget.} =
@@ -1242,7 +1250,7 @@ proc port*(url: URL): string {.jsfget.} =
   return ""
 
 proc setPort*(url: URL; s: string) {.jsfset: "port".} =
-  if url.hostType != htNone and url.scheme != "file":
+  if url.isNetPath():
     if s == "":
       url.port = none(uint16)
     else:
