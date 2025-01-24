@@ -215,7 +215,8 @@ proc fromJS(ctx: JSContext; val: JSValue; res: var ChaPathResolved): Opt[void] =
 proc `[]=`(a: var ActionMap; b: string; c: sink string) =
   a.t[b] = c
 
-proc `[]`*(a: ActionMap; b: string): lent string =
+# Can't be lent string on 2.0.4 yet.
+template `[]`*(a: ActionMap; b: string): string =
   a.t[b]
 
 proc contains*(a: ActionMap; b: string): bool =
