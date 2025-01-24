@@ -280,12 +280,13 @@ proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
     r.sread(s)
   return s
 
-proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string):
-    bool =
+proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string;
+    displayUrl: URL): bool =
   loader.withPacketWriter w, false:
     w.swrite(lcRedirectToFile)
     w.swrite(outputId)
     w.swrite(targetPath)
+    w.swrite($displayUrl)
   var res: bool
   loader.withPacketReader r:
     r.sread(res)

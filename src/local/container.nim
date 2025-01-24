@@ -271,6 +271,12 @@ iterator ilines*(container: Container; slice: Slice[int]): SimpleFlexibleLine
   for y in slice:
     yield container.getLine(y)
 
+func alive(container: Container): bool {.jsfget.} =
+  return container.iface != nil
+
+func history(container: Container): bool {.jsfget.} =
+  return cfHistory in container.flags
+
 func cursorx*(container: Container): int {.jsfget.} =
   container.pos.cursorx
 

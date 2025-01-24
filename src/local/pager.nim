@@ -92,6 +92,7 @@ type
   LineDataDownload = ref object of LineData
     outputId: int
     stream: DynStream
+    url: URL
 
   LineDataAuth = ref object of LineData
     url: URL
@@ -2150,11 +2151,13 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
   )
 
 proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
-  if pager.loader.redirectToFile(data.outputId, path):
+  if pager.loader.redirectToFile(data.outputId, path, data.url):
     pager.alert("Saving file to " & path)
     pager.loader.resume(data.outputId)
     data.stream.sclose()
     pager.lineData = nil
+    discard pager.gotoURL(newRequest(newURL("download:view").get),
+      history = false)
   else:
     pager.ask("Failed to save to " & path & ". Retry?").then(
       proc(x: bool) =
@@ -2649,7 +2652,11 @@ proc askDownloadPath(pager: Pager; container: Container; stream: PosixStream;
   else:
     buf &= container.url.pathname.afterLast('/').percentDecode()
   pager.setLineEdit(lmDownload, buf)
-  pager.lineData = LineDataDownload(outputId: response.outputId, stream: stream)
+  pager.lineData = LineDataDownload(
+    outputId: response.outputId,
+    stream: stream,
+    url: container.url
+  )
   pager.deleteContainer(container, container.find(ndAny))
   pager.refreshStatusMsg()
   dec pager.numload
@@ -2949,7 +2956,10 @@ proc handleError(pager: Pager; item: ConnectingContainer) =
 proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
   let ctx = pager.jsctx
   let fun = ctx.newFunction(["url", "replace"],
-    "pager.gotoURL(url, {replace: replace})")
+    """
+if (replace.alive)
+  pager.gotoURL(url, {replace: replace, history: replace.history})
+""")
   let args = [ctx.toJS(url), ctx.toJS(container)]
   discard pager.timeouts.setTimeout(ttTimeout, fun, int32(n), args)
   JS_FreeValue(ctx, fun)
@@ -3123,6 +3133,7 @@ proc acceptBuffers(pager: Pager) =
       pager.pollData.unregister(fd)
       pager.loader.unset(fd)
       stream.sclose()
+      container.iface = nil
     elif (let item = pager.findConnectingContainer(container); item != nil):
       # connecting to URL
       let stream = item.stream

@@ -23,12 +23,14 @@
 # Note 2: We also have a separate control socket that can receive
 # various messages, of which "load" is just one.
 
+import std/algorithm
 import std/deques
 import std/options
 import std/os
 import std/posix
 import std/strutils
 import std/tables
+import std/times
 
 import config/cookie
 import config/urimethodmap
@@ -55,6 +57,9 @@ import utils/twtstr
 #TODO measure this on 32-bit too, we get a few more bytes there
 const LoaderBufferPageSize = 4016 # 4096 - 64 - 16
 
+# Override posix.Time
+type Time = times.Time
+
 type
   CachedItem = ref object
     id: int
@@ -78,6 +83,9 @@ type
     cacheRef: CachedItem # if this is a tocache handle, a ref to our cache item
     parser: HeaderParser # only exists for CGI handles
     rstate: ResponseState # track response state
+    contentLen: uint64 # value of Content-Length; uint64.high if no such header
+    bytesSeen: uint64 # number of bytes read until now
+    startTime: Time # time when download of the body was started
 
   OutputHandle = ref object of LoaderHandle
     parent: InputHandle
@@ -89,16 +97,17 @@ type
     istreamAtEnd: bool
     suspended: bool
     dead: bool
+    bytesSent: uint64
 
   HandleParserState = enum
     hpsBeforeLines, hpsAfterFirstLine, hpsControlDone
 
   HeaderParser = ref object
     state: HandleParserState
-    lineBuffer: string
     crSeen: bool
-    headers: Headers
     status: uint16
+    lineBuffer: string
+    headers: Headers
 
   ResponseState = enum
     rsBeforeResult, rsAfterFailure, rsBeforeStatus, rsBeforeHeaders,
@@ -119,6 +128,14 @@ type
     # List of credentials the client has access to (same origin only).
     authMap: seq[AuthItem]
 
+  DownloadItem = ref object
+    path: string
+    displayUrl: string
+    output: OutputHandle
+    sent: uint64
+    contentLen: uint64
+    startTime: Time
+
   LoaderContext = ref object
     pagerClient: ClientHandle
     alive: bool
@@ -137,6 +154,7 @@ type
     unregRead: seq[InputHandle]
     unregWrite: seq[OutputHandle]
     unregClient: seq[ClientHandle]
+    downloadList: seq[DownloadItem]
 
   LoaderConfig* = object
     cgiDir*: seq[string]
@@ -155,7 +173,7 @@ when defined(debug):
 # Create a new loader handle, with the output stream ostream.
 proc newInputHandle(ostream: PosixStream; outputId, pid: int;
     suspended = true): InputHandle =
-  let handle = InputHandle(cacheId: -1)
+  let handle = InputHandle(cacheId: -1, contentLen: uint64.high)
   handle.outputs.add(OutputHandle(
     stream: ostream,
     parent: handle,
@@ -237,6 +255,9 @@ proc sendHeaders(handle: InputHandle; headers: Headers) =
   assert handle.rstate == rsBeforeHeaders
   inc handle.rstate
   let blocking = handle.output.stream.blocking
+  let contentLens = headers.getOrDefault("Content-Length")
+  handle.startTime = getTime()
+  handle.contentLen = parseUInt64(contentLens).get(uint64.high)
   handle.output.stream.setBlocking(true)
   handle.output.stream.withPacketWriter w:
     w.swrite(headers)
@@ -392,7 +413,9 @@ proc pushBuffer(ctx: LoaderContext; output: OutputHandle; buffer: LoaderBuffer;
   elif output.currentBuffer == nil:
     var n = si
     try:
-      n += output.stream.sendData(buffer, si)
+      let m = output.stream.sendData(buffer, si)
+      output.bytesSent += uint64(m)
+      n += m
     except ErrorAgain:
       discard
     except ErrorBrokenPipe:
@@ -410,18 +433,25 @@ proc getOutputId(ctx: LoaderContext): int =
   inc ctx.outputNum
 
 proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
-    targetPath: string): bool =
+    targetPath: string; fileOutput: out OutputHandle; osent: out uint64): bool =
+  fileOutput = nil
+  osent = 0
   let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
   if ps == nil:
     return false
   try:
     if output.currentBuffer != nil:
+      #TODO I suspect this is wrong... at least we should loop until n
+      # is 0 or -1 (exception).
       let n = ps.sendData(output.currentBuffer, output.currentBufferIdx)
+      osent += uint64(n)
       if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
         ps.sclose()
         return false
     for buffer in output.buffers:
+      #TODO ditto
       let n = ps.sendData(buffer)
+      osent += uint64(n)
       if unlikely(n < buffer.len):
         ps.sclose()
         return false
@@ -432,14 +462,16 @@ proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
   if output.istreamAtEnd:
     ps.sclose()
   elif output.parent != nil:
-    output.parent.outputs.add(OutputHandle(
+    fileOutput = OutputHandle(
       parent: output.parent,
       stream: ps,
       istreamAtEnd: output.istreamAtEnd,
-      outputId: ctx.getOutputId()
-    ))
+      outputId: ctx.getOutputId(),
+      bytesSent: osent
+    )
+    output.parent.outputs.add(fileOutput)
     when defined(debug):
-      output.parent.outputs[^1].url = output.parent.url
+      fileOutput.url = output.url
   return true
 
 proc addCacheFile(ctx: LoaderContext; client: ClientHandle; output: OutputHandle):
@@ -448,7 +480,9 @@ proc addCacheFile(ctx: LoaderContext; client: ClientHandle; output: OutputHandle
     # may happen e.g. if client tries to cache a `cache:' URL
     return output.parent.cacheId
   let tmpf = getTempFile(ctx.config.tmpdir)
-  if ctx.redirectToFile(output, tmpf):
+  var dummy: OutputHandle
+  var sent: uint64
+  if ctx.redirectToFile(output, tmpf, dummy, sent):
     let cacheId = output.outputId
     if output.parent != nil:
       output.parent.cacheId = cacheId
@@ -665,6 +699,9 @@ proc handleRead(ctx: LoaderContext; handle: InputHandle;
           return hrrUnregister
         if si == n: # parsed the entire buffer as headers; skip output handling
           continue
+      else:
+        handle.bytesSeen += uint64(n)
+        #TODO stop reading if Content-Length exceeded
       for output in handle.outputs:
         if output.dead:
           # do not push to unregWrite candidates
@@ -1049,13 +1086,148 @@ proc loadData(ctx: LoaderContext; handle: InputHandle; request: Request) =
   if ct.endsWith(";base64"):
     var d: string
     if d.atob(body).isNone:
-      handle.sendResult(ceInvalidURL, "invalid data URL")
-      handle.close()
+      handle.rejectHandle(ceInvalidURL, "invalid data URL")
       return
     ct.setLen(ct.len - ";base64".len) # remove base64 indicator
     ctx.loadDataSend(handle, d, ct)
   else:
     ctx.loadDataSend(handle, body, ct)
+
+# Download manager. Based on (you guessed it) w3m.
+func formatSize(size: uint64): string =
+  result = ""
+  var size = size
+  while size > 0:
+    let n = size mod 1000
+    size = size div 1000
+    var ns = ""
+    if size != 0:
+      ns &= ','
+      if n < 100:
+        ns &= '0'
+      if n < 10:
+        ns &= '0'
+    ns &= $n
+    result.insert(ns, 0)
+
+proc formatDuration(dur: Duration): string =
+  result = ""
+  let parts = dur.toParts()
+  if parts[Weeks] != 0:
+    result &= $parts[Weeks] & " Weeks, "
+  if parts[Days] != 0:
+    result &= $parts[Days] & " Days, "
+  for i, it in [Hours, Minutes, Seconds]:
+    if i > 0:
+      result &= ':'
+    if parts[it] in 0..9:
+      result &= '0'
+    result &= $parts[it]
+
+proc makeProgress(it: DownloadItem; i: int; now: Time): string =
+  result = "<div id=progress" & $i & ">  "
+  #TODO implement progress element and use that
+  var rat = 0u64
+  if it.contentLen == uint64.high and it.sent > 0 and it.output == nil:
+    rat = 80
+  elif it.contentLen < uint64.high and it.contentLen > 0:
+    rat = it.sent * 80 div it.contentLen
+  for i in 0 ..< rat:
+    result &= '#'
+  for i in rat ..< 80:
+    result &= '_'
+  result &= "\n  "
+  result &= formatSize(it.sent)
+  if it.sent < it.contentLen and
+      (it.contentLen < uint64.high or it.output != nil):
+    if it.contentLen < uint64.high and it.contentLen > 0:
+      result &= " / " & formatSize(it.contentLen) & " bytes (" &
+        $(it.sent * 100 div it.contentLen) & "%)  "
+    else:
+      result &= " bytes loaded  "
+    let dur = now - it.startTime
+    result &= formatDuration(dur)
+    result &= "  rate "
+    let udur = max(uint64(dur.inSeconds()), 1)
+    let rate = it.sent div udur
+    result &= convertSize(int(rate)) & "/sec"
+    if it.contentLen < uint64.high:
+      let eta = initDuration(seconds = int64(it.contentLen div max(rate, 1)))
+      result &= "  eta " & formatDuration(eta)
+  else:
+    result &= " bytes loaded"
+  result &= '\n'
+
+type
+  DownloadActionType = enum
+    datRemove
+
+  DownloadAction = object
+    n: int
+    t: DownloadActionType
+
+proc parseDownloadActions(ctx: LoaderContext; s: string): seq[DownloadAction] =
+  result = @[]
+  for it in s.split('&'):
+    let name = it.until('=')
+    if name.startsWith("stop"):
+      let n = parseIntP(name.substr("stop".len)).get(-1)
+      if n >= 0 and n < ctx.downloadList.len:
+        result.add(DownloadAction(n: n, t: datRemove))
+  result.sort(proc(a, b: DownloadAction): int = return cmp(a.n, b.n),
+    Descending)
+
+proc loadDownload(ctx: LoaderContext; handle: InputHandle; request: Request) =
+  let url = request.url
+  case url.pathname
+  of "view":
+    if request.httpMethod == hmPost:
+      # OK/STOP/PAUSE/RESUME clicked
+      if request.body.t != rbtString:
+        handle.rejectHandle(ceInvalidURL, "wat")
+        return
+      for it in ctx.parseDownloadActions(request.body.s):
+        let dl = ctx.downloadList[it.n]
+        if dl.output != nil:
+          ctx.unregWrite.add(dl.output)
+        ctx.downloadList.del(it.n)
+    var body = """
+<!DOCTYPE html>
+<title>Download List Panel</title>
+<body>
+<h1 align=center>Download List Panel</h1>
+<hr>
+<form method=POST action=download:view>
+<hr>
+<pre>
+"""
+    let now = getTime()
+    var refresh = false
+    for i, it in ctx.downloadList.mpairs:
+      body &= it.displayUrl.htmlEscape()
+      body &= "\n  --> " & it.path
+      if it.output != nil:
+        it.sent = it.output.bytesSent
+        if it.output.stream == nil:
+          it.output = nil
+        refresh = true
+      body &= it.makeProgress(i, now)
+      body &= "<input type=submit name=stop" & $i
+      if it.output != nil:
+        body &= " value=STOP"
+      else:
+        body &= " value=OK"
+      body &= ">"
+      body &= "<hr>"
+    if refresh:
+      body &= "<meta http-equiv=refresh content=1>" # :P
+    body &= """
+</pre>
+</body>
+"""
+    ctx.loadDataSend(handle, body, "text/html")
+  else:
+    handle.rejectHandle(ceInvalidURL, "invalid download URL")
 
 proc loadResource(ctx: LoaderContext; client: ClientHandle;
     config: LoaderClientConfig; request: Request; handle: InputHandle) =
@@ -1073,24 +1245,27 @@ proc loadResource(ctx: LoaderContext; client: ClientHandle;
           inc tries
           redo = true
           continue
-    if request.url.scheme == "cgi-bin":
+    case request.url.scheme
+    of "cgi-bin":
       ctx.loadCGI(client, handle, request, prevurl, config)
       if handle.stream != nil:
         ctx.addFd(handle)
       else:
         handle.close()
-    elif request.url.scheme == "stream":
+    of "stream":
       ctx.loadStream(client, handle, request)
       if handle.stream != nil:
         ctx.addFd(handle)
       else:
         handle.close()
-    elif request.url.scheme == "cache":
+    of "cache":
       ctx.loadFromCache(client, handle, request)
       assert handle.stream == nil
       handle.close()
-    elif request.url.scheme == "data":
+    of "data":
       ctx.loadData(handle, request)
+    of "download":
+      ctx.loadDownload(handle, request)
     else:
       prevurl = request.url
       case ctx.config.uriMethodMap.findAndRewrite(request.url)
@@ -1229,12 +1404,33 @@ proc redirectToFile(ctx: LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
   var outputId: int
   var targetPath: string
+  var displayUrl: string
   r.sread(outputId)
   r.sread(targetPath)
+  r.sread(displayUrl)
   let output = ctx.findOutput(outputId, ctx.pagerClient)
   var success = false
   if output != nil:
-    success = ctx.redirectToFile(output, targetPath)
+    var fileOutput: OutputHandle
+    var sent: uint64
+    success = ctx.redirectToFile(output, targetPath, fileOutput, sent)
+    let contentLen = if output.parent != nil:
+      output.parent.contentLen
+    else:
+      uint64.high
+    let startTime = if output.parent != nil:
+      output.parent.startTime
+    else:
+      #TODO ???
+      fromUnix(0)
+    ctx.downloadList.add(DownloadItem(
+      path: targetPath,
+      output: fileOutput,
+      displayUrl: displayUrl,
+      sent: sent,
+      contentLen: contentLen,
+      startTime: startTime
+    ))
   stream.withPacketWriter w:
     w.swrite(success)
 
@@ -1462,6 +1658,7 @@ proc handleWrite(ctx: LoaderContext; output: OutputHandle;
     let buffer = output.currentBuffer
     try:
       let n = output.stream.sendData(buffer, output.currentBufferIdx)
+      output.bytesSent += uint64(n)
       output.currentBufferIdx += n
       if output.currentBufferIdx < buffer.len:
         break
