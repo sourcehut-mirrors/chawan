@@ -2,9 +2,11 @@ from std/posix import TPollfd, POLLNVAL
 
 # NB: nfds_t on SVR4 this was unsigned long, but BSDs use unsigned int.
 # Linux and Haiku emulate the former, BSDs inherit the latter.
-# Since there are less SVR4 imitators than BSD descendants, I'll just
-# hardcode the former.
-when defined(linux) or defined(haiku):
+# ...except bionic copy-pasted from BSD headers, so it uses the latter
+# too.
+# Since there are less SVR4 imitators than BSD descendants, I'll use
+# the latter as the fallback.
+when defined(linux) and not defined(android) or defined(haiku):
   type nfds_t {.importc, header: "<poll.h>".} = culong
 else:
   type nfds_t {.importc, header: "<poll.h>".} = cuint
