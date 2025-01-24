@@ -49,7 +49,9 @@ proc libssh2_sftp_opendir(sftp: ptr LIBSSH2_SFTP; path: cstring):
   ptr LIBSSH2_SFTP_HANDLE {.nodecl.}
 proc libssh2_sftp_readdir_ex(handle: ptr LIBSSH2_SFTP_HANDLE; buffer: ptr char;
   buffer_maxlen: csize_t; longentry: ptr char; longentry_maxlen: csize_t;
-  attrs: var LIBSSH2_SFTP_ATTRIBUTES): int
+  attrs: var LIBSSH2_SFTP_ATTRIBUTES): cint
+proc libssh2_sftp_fstat(handle: ptr LIBSSH2_SFTP_HANDLE;
+  attrs: var LIBSSH2_SFTP_ATTRIBUTES): cint {.nodecl.}
 proc libssh2_sftp_readlink(sftp: ptr LIBSSH2_SFTP; path: cstring;
   target: ptr char; target_len: cuint): cint
 proc libssh2_sftp_open(sftp: ptr LIBSSH2_SFTP; path: cstring; flags: culong;
@@ -226,11 +228,14 @@ proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
 
 proc readFile(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP; path: string) =
   let handle = sftpSession.libssh2_sftp_open(cstring(path), LIBSSH2_FXF_READ, 0)
-  if handle == nil:
+  var attrs: LIBSSH2_SFTP_ATTRIBUTES
+  if handle == nil or libssh2_sftp_fstat(handle, attrs) != 0:
     os.sendDataLoop("Status: 404\nContent-Type: text/html\n\n<h1>Not found")
     quit(0)
-  os.sendDataLoop("\n")
-  var buffer {.noinit.}: array[4096, char]
+  os.sendDataLoop("Content-Length: " & $attrs.filesize & "\n\n")
+  # Apparently a huge buffer results in significant speed increases
+  # compared to a small one.
+  var buffer {.noinit.}: array[65536, char]
   while true:
     let n = handle.libssh2_sftp_read(addr buffer[0], csize_t(buffer.len))
     if n <= 0:

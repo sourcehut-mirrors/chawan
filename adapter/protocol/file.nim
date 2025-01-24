@@ -1,6 +1,8 @@
 import std/os
+import std/posix
 import std/times
 
+import io/dynstream
 import utils/twtstr
 
 proc loadDir(path, opath: string) =
@@ -52,25 +54,32 @@ proc loadDir(path, opath: string) =
       line &= file
     stdout.writeLine(line)
 
-proc loadFile(f: File) =
-  # No headers, we'll let the browser figure out the file type.
-  stdout.write("\n")
+proc loadFile(ps: PosixStream) =
   const BufferSize = 16384
   var buffer {.noinit.}: array[BufferSize, char]
+  var start = 0
+  var stats: Stat
+  if fstat(ps.fd, stats) != -1:
+    let s = "Content-Length: " & $stats.st_size & "\n"
+    for c in s:
+      buffer[start] = c
+      inc start
+  buffer[start] = '\n'
+  inc start
+  let os = newPosixStream(STDOUT_FILENO)
   while true:
-    let n = f.readBuffer(addr buffer[0], BufferSize)
+    let n = ps.recvData(buffer.toOpenArray(start, BufferSize - 1))
     if n == 0:
       break
-    let n2 = stdout.writeBuffer(addr buffer[0], n)
-    if n2 < n or n < BufferSize:
-      break
+    os.sendDataLoop(buffer.toOpenArray(0, start + n - 1))
+    start = 0
 
 proc main() =
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
-  var f: File
-  if f.open(path, fmRead):
-    loadFile(f)
+  let ps = newPosixStream(path)
+  if ps != nil:
+    loadFile(ps)
   elif dirExists(path):
     if path[^1] != '/':
       stdout.write("Status: 301\nLocation: " & path & "/\n")
