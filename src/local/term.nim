@@ -1,6 +1,5 @@
 import std/options
 import std/os
-import std/posix
 import std/strutils
 import std/tables
 import std/termios
