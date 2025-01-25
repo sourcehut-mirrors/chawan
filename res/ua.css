@@ -64,8 +64,8 @@ input[type=hidden i] { display: none }
 input::before { content: '['; text-decoration: none; color: initial }
 input::after { content: ']'; text-decoration: none; color: initial }
 
-input[type=submit i], input[type=button i], input[type=reset i],
-input[type=radio i], input[type=checkbox i] {
+input:is([type=submit i], [type=button i], [type=reset i], [type=radio i],
+	[type=checkbox i]) {
 	text-decoration: none
 }
 
