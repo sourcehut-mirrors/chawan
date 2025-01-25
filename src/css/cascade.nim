@@ -340,7 +340,9 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
   if result{"position"} in {PositionAbsolute, PositionFixed}:
     if result{"display"} == DisplayInline:
       result{"display"} = DisplayInlineBlock
-  elif result{"float"} != FloatNone:
+  elif result{"float"} != FloatNone or
+      ctx.parentComputed != nil and
+        ctx.parentComputed{"display"} == DisplayFlex:
     result{"display"} = result{"display"}.blockify()
   if (result{"overflow-x"} in {OverflowVisible, OverflowClip}) !=
       (result{"overflow-y"} in {OverflowVisible, OverflowClip}):

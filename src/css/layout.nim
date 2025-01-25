@@ -3274,29 +3274,8 @@ proc buildBlock(ctx: var BlockBuilderContext) =
     ctx.inline = nil
   ctx.flushInlineGroup()
 
-proc buildInnerFlex(ctx: var BlockBuilderContext) =
-  let inlineComputed = ctx.outer.computed.inheritProperties()
-  for child in ctx.styledNode.children:
-    case child.t
-    of stElement:
-      let display = child.computed{"display"}.blockify()
-      let computed = if display != child.computed{"display"}:
-        let computed = child.computed.copyProperties()
-        computed{"display"} = display
-        computed
-      else:
-        child.computed
-      ctx.buildFromElem(child, computed)
-    of stText:
-      let text = child.text
-      if ctx.canBuildAnonInline(ctx.outer.computed, text.data):
-        ctx.pushInlineText(inlineComputed, ctx.styledNode.element, text)
-    of stReplacement:
-      ctx.buildReplacement(child, ctx.styledNode.element, inlineComputed)
-  ctx.iflush()
-
 proc buildFlex(ctx: var BlockBuilderContext) =
-  ctx.buildInnerFlex()
+  ctx.buildInnerBlock()
   # Flush anonymous tables here, to avoid setting inline layout with tables.
   ctx.flushTable()
   # (flush here, because why not)
