@@ -462,7 +462,7 @@ iterator children*(styledNode: StyledNode): StyledNode {.closure.} =
       yield initStyledText(parent, HTMLTextAreaElement(parent).textAreaString())
     of TAG_IMG: yield initStyledImage(parent, HTMLImageElement(parent).bitmap)
     of TAG_CANVAS:
-      yield initStyledImage(parent, HTMLImageElement(parent).bitmap)
+      yield initStyledImage(parent, HTMLCanvasElement(parent).bitmap)
     of TAG_VIDEO: yield initStyledText(parent, "[video]")
     of TAG_AUDIO: yield initStyledText(parent, "[audio]")
     of TAG_BR:
