@@ -2847,21 +2847,19 @@ func canBuildAnonInline(ctx: BlockBuilderContext; computed: CSSValues;
 proc buildBlock(ctx: var BlockBuilderContext)
 proc buildTable(ctx: var BlockBuilderContext)
 proc buildFlex(ctx: var BlockBuilderContext)
-proc buildInlineBoxes(ctx: var BlockBuilderContext; styledNode: StyledNode;
-  computed: CSSValues)
-proc buildTableRowGroup(parent: var BlockBuilderContext; styledNode: StyledNode;
-  computed: CSSValues): BlockBox
-proc buildTableRow(parent: var BlockBuilderContext; styledNode: StyledNode;
-  computed: CSSValues): BlockBox
-proc buildTableCell(parent: var BlockBuilderContext; styledNode: StyledNode;
-  computed: CSSValues): BlockBox
-proc buildTableCaption(parent: var BlockBuilderContext; styledNode: StyledNode;
-  computed: CSSValues): BlockBox
+proc buildInlineBoxes(ctx: var BlockBuilderContext; styledNode: StyledNode)
+proc buildTableRowGroup(parent: var BlockBuilderContext;
+  styledNode: StyledNode): BlockBox
+proc buildTableRow(parent: var BlockBuilderContext; styledNode: StyledNode):
+  BlockBox
+proc buildTableCell(parent: var BlockBuilderContext; styledNode: StyledNode):
+  BlockBox
+proc buildTableCaption(parent: var BlockBuilderContext; styledNode: StyledNode):
+  BlockBox
 proc initBlockBuilderContext(styledNode: StyledNode; box: BlockBox;
   lctx: LayoutContext; parent: ptr BlockBuilderContext): BlockBuilderContext
 proc pushInline(ctx: var BlockBuilderContext; box: InlineBox)
-proc pushInlineBlock(ctx: var BlockBuilderContext; styledNode: StyledNode;
-  computed: CSSValues)
+proc pushInlineBlock(ctx: var BlockBuilderContext; styledNode: StyledNode)
 
 func toTableWrapper(display: CSSDisplay): CSSDisplay =
   if display == DisplayTable:
@@ -2987,11 +2985,11 @@ proc reconstructInlineParents(ctx: var BlockBuilderContext) =
       ctx.inlineStackFragments.add(child)
       parent = child
 
-proc buildSomeBlock(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues): BlockBox =
-  let box = BlockBox(computed: computed, node: styledNode.element)
+proc buildSomeBlock(ctx: var BlockBuilderContext; styledNode: StyledNode):
+    BlockBox =
+  let box = BlockBox(computed: styledNode.computed, node: styledNode.element)
   var childCtx = initBlockBuilderContext(styledNode, box, ctx.lctx, addr ctx)
-  case computed{"display"}
+  case styledNode.computed{"display"}
   of DisplayBlock, DisplayFlowRoot, DisplayInlineBlock: childCtx.buildBlock()
   of DisplayFlex, DisplayInlineFlex: childCtx.buildFlex()
   of DisplayTable, DisplayInlineTable: childCtx.buildTable()
@@ -2999,16 +2997,15 @@ proc buildSomeBlock(ctx: var BlockBuilderContext; styledNode: StyledNode;
   return box
 
 # Note: these also pop
-proc pushBlock(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
-  if (computed{"position"} == PositionAbsolute or
-        computed{"float"} != FloatNone) and
+proc pushBlock(ctx: var BlockBuilderContext; styledNode: StyledNode) =
+  if (styledNode.computed{"position"} == PositionAbsolute or
+        styledNode.computed{"float"} != FloatNone) and
       (ctx.inline != nil or ctx.inlineStack.len > 0):
-    ctx.pushInlineBlock(styledNode, computed)
+    ctx.pushInlineBlock(styledNode)
   else:
     ctx.iflush()
     ctx.flush()
-    let box = ctx.buildSomeBlock(styledNode, computed)
+    let box = ctx.buildSomeBlock(styledNode)
     ctx.outer.children.add(box)
 
 proc pushInline(ctx: var BlockBuilderContext; box: InlineBox) =
@@ -3027,23 +3024,24 @@ proc pushInlineText(ctx: var BlockBuilderContext; computed: CSSValues;
     text: text
   ))
 
-proc pushInlineBlock(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
+proc pushInlineBlock(ctx: var BlockBuilderContext; styledNode: StyledNode) =
   ctx.pushInline(InlineBox(
     t: ibtBox,
-    computed: computed.inheritProperties(),
+    computed: styledNode.computed.inheritProperties(),
     node: styledNode.element,
-    box: ctx.buildSomeBlock(styledNode, computed)
+    box: ctx.buildSomeBlock(styledNode)
   ))
 
-proc pushListItem(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
+proc pushListItem(ctx: var BlockBuilderContext; styledNode: StyledNode) =
   ctx.iflush()
   ctx.flush()
   inc ctx.listItemCounter
-  let marker = newMarkerBox(computed, ctx.listItemCounter)
-  let position = computed{"list-style-position"}
-  let content = BlockBox(computed: computed, node: styledNode.element)
+  let marker = newMarkerBox(styledNode.computed, ctx.listItemCounter)
+  let position = styledNode.computed{"list-style-position"}
+  let content = BlockBox(
+    computed: styledNode.computed,
+    node: styledNode.element
+  )
   var contentCtx = initBlockBuilderContext(styledNode, content, ctx.lctx,
     addr ctx)
   case position
@@ -3057,16 +3055,18 @@ proc pushListItem(ctx: var BlockBuilderContext; styledNode: StyledNode;
       computed: marker.computed,
       inline: marker
     )
-    let wrapper = BlockBox(computed: computed, children: @[marker, content])
+    let wrapper = BlockBox(
+      computed: styledNode.computed,
+      children: @[marker, content]
+    )
     ctx.outer.children.add(wrapper)
   of ListStylePositionInside:
     contentCtx.pushInline(marker)
     contentCtx.buildBlock()
     ctx.outer.children.add(content)
 
-proc pushTableRow(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
-  let child = ctx.buildTableRow(styledNode, computed)
+proc pushTableRow(ctx: var BlockBuilderContext; styledNode: StyledNode) =
+  let child = ctx.buildTableRow(styledNode)
   if ctx.inlineStack.len == 0:
     ctx.iflush()
     ctx.flushInlineGroup()
@@ -3080,9 +3080,8 @@ proc pushTableRow(ctx: var BlockBuilderContext; styledNode: StyledNode;
     let anonTableWrapper = ctx.createAnonTable(ctx.outer.computed)
     anonTableWrapper.children[0].children.add(child)
 
-proc pushTableRowGroup(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
-  let child = ctx.buildTableRowGroup(styledNode, computed)
+proc pushTableRowGroup(ctx: var BlockBuilderContext; styledNode: StyledNode) =
+  let child = ctx.buildTableRowGroup(styledNode)
   if ctx.inlineStack.len == 0:
     ctx.iflush()
     ctx.flushInlineGroup()
@@ -3097,9 +3096,8 @@ proc pushTableRowGroup(ctx: var BlockBuilderContext; styledNode: StyledNode;
     let anonTableWrapper = ctx.createAnonTable(ctx.outer.computed)
     anonTableWrapper.children[0].children.add(child)
 
-proc pushTableCell(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
-  let child = ctx.buildTableCell(styledNode, computed)
+proc pushTableCell(ctx: var BlockBuilderContext; styledNode: StyledNode) =
+  let child = ctx.buildTableCell(styledNode)
   if ctx.inlineStack.len == 0 and
       ctx.outer.computed{"display"} == DisplayTableRow:
     ctx.iflush()
@@ -3109,12 +3107,11 @@ proc pushTableCell(ctx: var BlockBuilderContext; styledNode: StyledNode;
     let anonRow = ctx.createAnonRow()
     anonRow.children.add(child)
 
-proc pushTableCaption(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
+proc pushTableCaption(ctx: var BlockBuilderContext; styledNode: StyledNode) =
   ctx.iflush()
   ctx.flushInlineGroup()
   ctx.flushTableRow()
-  let child = ctx.buildTableCaption(styledNode, computed)
+  let child = ctx.buildTableCaption(styledNode)
   if ctx.outer.computed{"display"} in {DisplayTable, DisplayInlineTable}:
     ctx.outer.children.add(child)
   else:
@@ -3123,25 +3120,24 @@ proc pushTableCaption(ctx: var BlockBuilderContext; styledNode: StyledNode;
     if anonTableWrapper.children.len == 1:
       anonTableWrapper.children.add(child)
 
-proc buildFromElem(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
-  case computed{"display"}
+proc buildFromElem(ctx: var BlockBuilderContext; styledNode: StyledNode) =
+  case styledNode.computed{"display"}
   of DisplayBlock, DisplayFlowRoot, DisplayFlex, DisplayTable:
-    ctx.pushBlock(styledNode, computed)
+    ctx.pushBlock(styledNode)
   of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
-    ctx.pushInlineBlock(styledNode, computed)
+    ctx.pushInlineBlock(styledNode)
   of DisplayListItem:
-    ctx.pushListItem(styledNode, computed)
+    ctx.pushListItem(styledNode)
   of DisplayInline:
-    ctx.buildInlineBoxes(styledNode, computed)
+    ctx.buildInlineBoxes(styledNode)
   of DisplayTableRow:
-    ctx.pushTableRow(styledNode, computed)
+    ctx.pushTableRow(styledNode)
   of DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup:
-    ctx.pushTableRowGroup(styledNode, computed)
+    ctx.pushTableRowGroup(styledNode)
   of DisplayTableCell:
-    ctx.pushTableCell(styledNode, computed)
+    ctx.pushTableCell(styledNode)
   of DisplayTableCaption:
-    ctx.pushTableCaption(styledNode, computed)
+    ctx.pushTableCaption(styledNode)
   of DisplayTableColumn: discard #TODO
   of DisplayTableColumnGroup: discard #TODO
   of DisplayNone: discard
@@ -3197,11 +3193,10 @@ proc buildReplacement(ctx: var BlockBuilderContext; child: StyledNode;
       node: child.element
     ))
 
-proc buildInlineBoxes(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues) =
+proc buildInlineBoxes(ctx: var BlockBuilderContext; styledNode: StyledNode) =
   let parent = InlineBox(
     t: ibtParent,
-    computed: computed,
+    computed: styledNode.computed,
     splitType: {stSplitStart},
     node: styledNode.element
   )
@@ -3215,13 +3210,13 @@ proc buildInlineBoxes(ctx: var BlockBuilderContext; styledNode: StyledNode;
   for child in styledNode.children:
     case child.t
     of stElement:
-      ctx.buildFromElem(child, child.computed)
+      ctx.buildFromElem(child)
     of stText:
       ctx.flushInlineTable()
-      ctx.pushInlineText(computed, styledNode.element, child.text)
+      ctx.pushInlineText(styledNode.computed, styledNode.element, child.text)
     of stReplacement:
       ctx.flushInlineTable()
-      ctx.buildReplacement(child, styledNode.element, computed)
+      ctx.buildReplacement(child, styledNode.element, styledNode.computed)
   ctx.reconstructInlineParents()
   ctx.flushInlineTable()
   let box = ctx.inlineStackFragments.pop()
@@ -3250,7 +3245,7 @@ proc buildInnerBlock(ctx: var BlockBuilderContext) =
   for child in ctx.styledNode.children:
     case child.t
     of stElement:
-      ctx.buildFromElem(child, child.computed)
+      ctx.buildFromElem(child)
     of stText:
       let text = child.text
       if ctx.canBuildAnonInline(ctx.outer.computed, text.data):
@@ -3283,9 +3278,9 @@ proc buildFlex(ctx: var BlockBuilderContext) =
   ctx.flushInlineGroup()
   assert ctx.outer.inline == nil
 
-proc buildTableCell(parent: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues): BlockBox =
-  let box = BlockBox(node: styledNode.element, computed: computed)
+proc buildTableCell(parent: var BlockBuilderContext; styledNode: StyledNode):
+    BlockBox =
+  let box = BlockBox(node: styledNode.element, computed: styledNode.computed)
   var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
@@ -3313,9 +3308,9 @@ proc buildTableRowChildWrappers(box: BlockBox) =
         children.add(child)
     box.children = children
 
-proc buildTableRow(parent: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues): BlockBox =
-  let box = BlockBox(node: styledNode.element, computed: computed)
+proc buildTableRow(parent: var BlockBuilderContext; styledNode: StyledNode):
+    BlockBox =
+  let box = BlockBox(node: styledNode.element, computed: styledNode.computed)
   var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
@@ -3348,18 +3343,18 @@ proc buildTableRowGroupChildWrappers(box: BlockBox) =
       wrapper.buildTableRowChildWrappers()
     box.children = children
 
-proc buildTableRowGroup(parent: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues): BlockBox =
-  let box = BlockBox(node: styledNode.element, computed: computed)
+proc buildTableRowGroup(parent: var BlockBuilderContext;
+    styledNode: StyledNode): BlockBox =
+  let box = BlockBox(node: styledNode.element, computed: styledNode.computed)
   var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
   box.buildTableRowGroupChildWrappers()
   return box
 
-proc buildTableCaption(parent: var BlockBuilderContext; styledNode: StyledNode;
-    computed: CSSValues): BlockBox =
-  let box = BlockBox(node: styledNode.element, computed: computed)
+proc buildTableCaption(parent: var BlockBuilderContext; styledNode: StyledNode):
+    BlockBox =
+  let box = BlockBox(node: styledNode.element, computed: styledNode.computed)
   var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
   ctx.buildInnerBlock()
   ctx.flush()
