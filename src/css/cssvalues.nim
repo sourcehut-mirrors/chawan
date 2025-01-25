@@ -537,6 +537,12 @@ const InheritedProperties = {
 const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
+const DisplayOuterInline* = {
+  DisplayInlineBlock, DisplayInlineTableWrapper, DisplayInlineFlex
+}
+const DisplayInnerFlex* = {
+  DisplayFlex, DisplayInlineFlex
+}
 
 # Forward declarations
 proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
@@ -1868,3 +1874,15 @@ func splitTable*(computed: CSSValues):
       outerComputed.setInitial(t)
   outerComputed{"display"} = computed{"display"}
   return (outerComputed, innerComputed)
+
+when defined(debug):
+  func `serializeEmpty`*(computed: CSSValues): string =
+    let default = rootProperties()
+    result = ""
+    for p in CSSPropertyType:
+      let a = computed.serialize(p)
+      let b = default.serialize(p)
+      if a != b:
+        result &= $p & ':'
+        result &= a
+        result &= ';'

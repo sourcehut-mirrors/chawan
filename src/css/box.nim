@@ -39,9 +39,6 @@ type
     # bottom margin result
     marginBottom*: LUnit
 
-  SplitType* = enum
-    stSplitStart, stSplitEnd
-
   Area* = object
     offset*: Offset
     size*: Size
@@ -59,7 +56,6 @@ type
     render*: BoxRenderState
     computed*: CSSValues
     node*: Element
-    splitType*: set[SplitType]
     case t*: InlineBoxType
     of ibtParent:
       children*: seq[InlineBox]

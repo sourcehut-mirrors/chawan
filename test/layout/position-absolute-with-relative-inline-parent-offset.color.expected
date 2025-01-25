@@ -1,16 +1,13 @@
 
-Note: the absolute box is sized differently than boxes in other engines, because
-the CSS standard explicitly specifies this as UB and I *really* don't want to
-make this even more complex.
-
-I don't care, but feel free to fix it ;)
+Note: per CSS, the absolute box's sizing is explicitly UB, apparently to
+accomodate for Gecko's broken rendering. We follow Blink.
 
 
 
 test test [48;2;255;0;0m2t 2t [49mestadsfasdf
 test test [48;2;255;0;0m2     [49mest
-asdfasd fa[48;2;255;0;0m      [49m
-
-
-
-test 
+[48;2;0;0;255masdfasd fa[48;2;255;0;0m      [48;2;0;0;255m                                                                [49m
+          [48;2;255;0;0m      [49m
+          [48;2;255;0;0m      [49m
+          [48;2;255;0;0m      [49m
+test      [48;2;255;0;0m      [49m

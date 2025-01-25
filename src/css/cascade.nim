@@ -405,7 +405,7 @@ when defined(debug):
   func `$`*(node: StyledNode): string =
     case node.t
     of stText:
-      return "#text " & node.text.data
+      return node.text.data
     of stElement:
       if node.pseudo != peNone:
         return $node.element.tagType & "::" & $node.pseudo
@@ -484,3 +484,22 @@ iterator children*(styledNode: StyledNode): StyledNode {.closure.} =
     let parent = styledNode.element
     for content in parent.computedMap[styledNode.pseudo]{"content"}:
       yield parent.initStyledReplacement(content)
+
+when defined(debug):
+  proc computedTree*(styledNode: StyledNode): string =
+    result = ""
+    if styledNode.t != stElement:
+      result &= $styledNode
+    else:
+      result &= "<"
+      if styledNode.computed{"display"} != DisplayInline:
+        result &= "div"
+      else:
+        result &= "span"
+      let computed = styledNode.computed.copyProperties()
+      if computed{"display"} == DisplayBlock:
+        computed{"display"} = DisplayInline
+      result &= " style='" & $computed.serializeEmpty() & "'>\n"
+      for it in styledNode.children:
+        result &= it.computedTree()
+      result &= "\n</div>"

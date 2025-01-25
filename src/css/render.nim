@@ -377,11 +377,13 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
         bgcolor0.rgb.cellColor(), bgcolor0.a)
   let startOffset = offset + box.state.startOffset
   box.render.offset = startOffset
-  if position != PositionStatic and stSplitStart in box.splitType:
-    state.absolutePos.add(startOffset)
   if box.t == ibtParent:
+    if position != PositionStatic:
+      state.absolutePos.add(startOffset)
     for child in box.children:
       grid.renderInlineBox(state, child, offset, bgcolor0)
+    if position != PositionStatic:
+      discard state.absolutePos.pop()
   else:
     let format = box.computed.toFormat()
     for atom in box.state.atoms:
@@ -420,8 +422,6 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
               height: atom.size.h.toInt,
               bmp: atom.bmp
             ))
-  if position != PositionStatic and stSplitEnd in box.splitType:
-    discard state.absolutePos.pop()
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset; pass2 = false) =
