@@ -1124,8 +1124,8 @@ proc formatDuration(dur: Duration): string =
       result &= '0'
     result &= $parts[it]
 
-proc makeProgress(it: DownloadItem; i: int; now: Time): string =
-  result = "<div id=progress" & $i & ">  "
+proc makeProgress(it: DownloadItem; now: Time): string =
+  result = "  "
   #TODO implement progress element and use that
   var rat = 0u64
   if it.contentLen == uint64.high and it.sent > 0 and it.output == nil:
@@ -1152,7 +1152,8 @@ proc makeProgress(it: DownloadItem; i: int; now: Time): string =
     let rate = it.sent div udur
     result &= convertSize(int(rate)) & "/sec"
     if it.contentLen < uint64.high:
-      let eta = initDuration(seconds = int64(it.contentLen div max(rate, 1)))
+      let left = it.contentLen - it.sent
+      let eta = initDuration(seconds = int64(left div max(rate, 1)))
       result &= "  eta " & formatDuration(eta)
   else:
     result &= " bytes loaded"
@@ -1211,7 +1212,7 @@ proc loadDownload(ctx: LoaderContext; handle: InputHandle; request: Request) =
         if it.output.stream == nil:
           it.output = nil
         refresh = true
-      body &= it.makeProgress(i, now)
+      body &= it.makeProgress(now)
       body &= "<input type=submit name=stop" & $i
       if it.output != nil:
         body &= " value=STOP"
