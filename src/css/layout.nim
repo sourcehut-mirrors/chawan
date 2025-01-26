@@ -235,13 +235,6 @@ type
     marginBottom: LUnit
     box: InlineBox
 
-  InlineUnpositionedFloat = object
-    parent: InlineBox
-    box: BlockBox
-    outerSize: Size
-    marginOffset: Offset
-    space: AvailableSpace
-
   InlineContext = object
     state: BoxLayoutState
     computed: CSSValues
@@ -259,7 +252,7 @@ type
     textFragmentSeen: bool
     lastTextFragment: InlineBox
     firstBaselineSet: bool
-    unpositionedFloats: seq[InlineUnpositionedFloat]
+    unpositionedFloats: seq[UnpositionedFloat]
     secondPass: bool
     padding: RelativeRect
 
@@ -1197,10 +1190,11 @@ func sum(a: Strut): LUnit =
   return a.pos + a.neg
 
 # Forward declarations
-proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
+proc layoutBlock(bctx: var BlockContext; state: var BlockState; box: BlockBox;
+  sizes: ResolvedSizes)
 proc layoutTableWrapper(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
-proc layoutInline(ictx: var InlineContext; ibox: InlineBox)
+proc layoutInline0(ictx: var InlineContext; ibox: InlineBox)
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   sizes: ResolvedSizes; includeMargin = false)
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
@@ -1421,21 +1415,13 @@ proc positionFloats(bctx: var BlockContext) =
       f.parentBps.offset)
   bctx.unpositionedFloats.setLen(0)
 
-proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  if box.computed{"position"} != PositionStatic:
-    bctx.lctx.pushPositioned()
-  var state = BlockState(
-    offset: sizes.padding.topLeft,
-    space: sizes.space,
-    oldMarginTodo: bctx.marginTodo,
-    oldExclusionsLen: bctx.exclusions.len
-  )
-  state.initBlockPositionStates(bctx, box)
+proc layoutInline(bctx: var BlockContext; state: var BlockState;
+    box: BlockBox; sizes: ResolvedSizes) =
   let bfcOffset = state.initialParentOffset
   var ictx = bctx.initInlineContext(sizes.space, bfcOffset, sizes.padding,
     box.computed)
   ictx.initLine()
-  ictx.layoutInline(box.inline)
+  ictx.layoutInline0(box.inline)
   if ictx.lastTextFragment != nil:
     var state = InlineState(box: ictx.lastTextFragment)
     ictx.finishLine(state, wrap = false)
@@ -1453,41 +1439,25 @@ proc layoutInline(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     # In the first case, we know that the text is relatively short, so it
     # affects performance little. As for the latter case... just pray it happens
     # rarely enough.
-    let floats = move(ictx.unpositionedFloats)
     var space = sizes.space
     if space.w.t != scStretch:
       space.w = stretch(ictx.state.size.w)
-    ictx = bctx.initInlineContext(space, bfcOffset, sizes.padding, box.computed)
-    for it in floats:
+    for it in ictx.unpositionedFloats:
       bctx.positionFloat(it.box, space, it.outerSize, it.marginOffset,
         bfcOffset)
+    ictx = bctx.initInlineContext(space, bfcOffset, sizes.padding, box.computed)
     ictx.initLine()
     ictx.secondPass = true
-    ictx.layoutInline(box.inline)
+    ictx.layoutInline0(box.inline)
     if ictx.lastTextFragment != nil:
       var state = InlineState(box: ictx.lastTextFragment)
       ictx.finishLine(state, wrap = false)
-    for it in floats:
-      it.parent.state.atoms.add(InlineAtom(
-        t: iatInlineBlock,
-        innerbox: it.box
-      ))
   box.applySize(sizes, ictx.state.size, sizes.space)
   let paddingSum = sizes.padding.sum()
   box.applyIntr(sizes, ictx.state.intr + paddingSum)
   box.state.size += paddingSum
   box.state.baseline = ictx.state.baseline
   box.state.firstBaseline = ictx.state.firstBaseline
-  if state.isParentResolved(bctx):
-    # Our offset has already been resolved, ergo any margins in marginTodo will
-    # be passed onto the next box. Set marginTarget to nil, so that if we (or
-    # one of our ancestors) were still set as a marginTarget, we no longer are.
-    bctx.positionFloats()
-    bctx.marginTarget = nil
-  # Reset parentBps to the previous node.
-  bctx.parentBps = state.prevParentBps
-  if box.computed{"position"} != PositionStatic:
-    bctx.lctx.popPositioned(box.state.size)
 
 # canClear signals if the box should clear in its inner (flow) layout.
 # In general, this is only true for block boxes that do not establish
@@ -1501,12 +1471,32 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   if canClear and box.computed{"clear"} != ClearNone:
     box.state.offset.y.clearFloats(bctx, bctx.bfcOffset.y,
       box.computed{"clear"})
+  let lctx = bctx.lctx
+  if box.computed{"position"} != PositionStatic:
+    lctx.pushPositioned()
+  var state = BlockState(
+    offset: sizes.padding.topLeft,
+    space: sizes.space,
+    oldMarginTodo: bctx.marginTodo,
+    oldExclusionsLen: bctx.exclusions.len
+  )
+  state.initBlockPositionStates(bctx, box)
   if box.inline != nil:
     # Builder only contains inline boxes.
-    bctx.layoutInline(box, sizes)
+    bctx.layoutInline(state, box, sizes)
   else:
     # Builder only contains block boxes.
-    bctx.layoutBlock(box, sizes)
+    bctx.layoutBlock(state, box, sizes)
+  if state.isParentResolved(bctx):
+    # Our offset has already been resolved, ergo any margins in marginTodo will
+    # be passed onto the next box. Set marginTarget to nil, so that if we (or
+    # one of our ancestors) were still set as a marginTarget, we no longer are.
+    bctx.positionFloats()
+    bctx.marginTarget = nil
+  # Reset parentBps to the previous node.
+  bctx.parentBps = state.prevParentBps
+  if box.computed{"position"} != PositionStatic:
+    bctx.lctx.popPositioned(box.state.size)
 
 proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     sizes: ResolvedSizes) =
@@ -1550,8 +1540,7 @@ proc addInlineFloat(ictx: var InlineContext; state: var InlineState;
     box.state.offset.y = ictx.lbstate.offsety + sizes.margin.top
   ictx.lbstate.size.w += box.state.size.w
   # Note that by now, the top y offset is always resolved.
-  ictx.unpositionedFloats.add(InlineUnpositionedFloat(
-    parent: state.box,
+  ictx.unpositionedFloats.add(UnpositionedFloat(
     box: box,
     space: sizes.space,
     outerSize: size(
@@ -1668,6 +1657,10 @@ proc addBox(ictx: var InlineContext; state: var InlineState; box: BlockBox) =
     # This will trigger a re-layout for this inline root.
     if not ictx.secondPass:
       ictx.addInlineFloat(state, box)
+    state.box.state.atoms.add(InlineAtom(
+      t: iatInlineBlock,
+      innerbox: box
+    ))
   elif box.computed{"display"} in DisplayOuterInline:
     # This is an inline block.
     ictx.addInlineBlock(state, box)
@@ -1748,7 +1741,7 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     if computed{"height"}.u != clPerc or computed{"min-height"}.u != clPerc:
       ictx.lbstate.intrh = max(ictx.lbstate.intrh, atom.size.h)
 
-proc layoutInline(ictx: var InlineContext; ibox: InlineBox) =
+proc layoutInline0(ictx: var InlineContext; ibox: InlineBox) =
   let lctx = ictx.lctx
   let computed = ibox.computed
   var padding = Span()
@@ -1791,7 +1784,7 @@ proc layoutInline(ictx: var InlineContext; ibox: InlineBox) =
   of ibtText: ictx.layoutText(state, ibox.text.data)
   of ibtParent:
     for child in ibox.children:
-      ictx.layoutInline(child)
+      ictx.layoutInline0(child)
   if padding.send != 0:
     ibox.state.areas.add(Area(
       offset: offset(x = ictx.lbstate.size.w, y = 0),
@@ -2834,17 +2827,8 @@ proc initReLayout(state: var BlockState; bctx: var BlockContext;
     dtHorizontal)
   state.space.w = stretch(box.state.size.w)
 
-proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  let lctx = bctx.lctx
-  if box.computed{"position"} != PositionStatic:
-    lctx.pushPositioned()
-  var state = BlockState(
-    offset: sizes.padding.topLeft,
-    space: sizes.space,
-    oldMarginTodo: bctx.marginTodo,
-    oldExclusionsLen: bctx.exclusions.len
-  )
-  state.initBlockPositionStates(bctx, box)
+proc layoutBlock(bctx: var BlockContext; state: var BlockState;
+    box: BlockBox; sizes: ResolvedSizes) =
   state.layoutBlockChildren(bctx, box)
   if state.space.w.t == scFitContent:
     state.initReLayout(bctx, box, sizes)
@@ -2864,16 +2848,6 @@ proc layoutBlock(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   # Add padding; we cannot do this further up without influencing
   # relative positioning.
   box.state.size += paddingSum
-  if state.isParentResolved(bctx):
-    # Our offset has already been resolved, ergo any margins in marginTodo will
-    # be passed onto the next box. Set marginTarget to nil, so that if we (or
-    # one of our ancestors) were still set as a marginTarget, we no longer are.
-    bctx.positionFloats()
-    bctx.marginTarget = nil
-  # Reset parentBps to the previous node.
-  bctx.parentBps = state.prevParentBps
-  if box.computed{"position"} != PositionStatic:
-    lctx.popPositioned(box.state.size)
 
 # 1st pass: build tree
 
