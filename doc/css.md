@@ -35,8 +35,8 @@ values:
 * flex-wrap
 * float
 * font-size (ignored; only for JS compatibility)
-* font-style (oblique interpreted as italic)
-* font-weight (numeric properties >= 700 interpreted as bold, others
+* font-style (`oblique` interpreted as `italic`)
+* font-weight (numeric properties > 500 interpreted as bold, others
   as regular)
 * height
 * left
