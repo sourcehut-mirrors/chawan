@@ -1116,7 +1116,6 @@ proc onload(buffer: Buffer) =
       reprocess = false
     else: # EOF
       buffer.finishLoad().then(proc() =
-        buffer.document.invalid = true
         buffer.maybeReshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
