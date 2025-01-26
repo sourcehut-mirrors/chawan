@@ -1,3 +1,7 @@
+when NimMajor < 2:
+  {.error("Nim versions older than 2.0.0 can not compile Chawan.  " &
+    "Please grab a newer one from https://nim-lang.org/install.html").}
+
 import std/options
 import std/os
 import std/posix
