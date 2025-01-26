@@ -213,14 +213,12 @@ type
 type
   LineBoxState = object
     atomStates: seq[InlineAtomState]
-    baseline: LUnit
     hasExclusion: bool
     charwidth: int
     # Set at the end of layoutText. It helps determine the beginning of the
     # next inline box.
     widthAfterWhitespace: LUnit
-    # minimum height to fit all inline atoms
-    minHeight: LUnit
+    minHeight: LUnit # minimum height to fit all inline atoms
     paddingTodo: seq[tuple[box: InlineBox; i: int]]
     atoms: seq[InlineAtom]
     size: Size
@@ -228,8 +226,9 @@ type
     offsety: LUnit # offset of line in root box
     height: LUnit # height used for painting; does not include padding
     intrh: LUnit # intrinsic minimum height
-    unpositionedFloats: seq[UnpositionedFloat]
     totalFloatWidth: LUnit
+    baseline: LUnit
+    unpositionedFloats: seq[UnpositionedFloat]
 
   InlineAtomState = object
     vertalign: CSSVerticalAlign
@@ -244,17 +243,17 @@ type
     bctx: ptr BlockContext
     bfcOffset: Offset
     lbstate: LineBoxState
-    hasshy: bool
     lctx: LayoutContext
     whitespacenum: int
-    whitespaceIsLF: bool
     whitespaceFragment: InlineBox
     word: InlineAtom
     wrappos: int # position of last wrapping opportunity, or -1
-    textFragmentSeen: bool
     lastTextFragment: InlineBox
-    firstBaselineSet: bool
     padding: RelativeRect
+    hasshy: bool
+    whitespaceIsLF: bool
+    textFragmentSeen: bool
+    firstBaselineSet: bool
 
   InlineState = object
     box: InlineBox
@@ -1635,9 +1634,6 @@ proc addOuterBlock(ictx: var InlineContext; state: var InlineState;
   else:
     bctx.marginTodo.append(sizes.margin.top)
     child.state = BoxLayoutState(offset: offset)
-    # In the second pass, floats are already positioned - even those
-    # that come after this box.  So do not clear in the second pass.
-    #TODO this feels very hacky and wrong.
     bctx[].layout(child, sizes, canClear = true)
     bctx.marginTodo.append(sizes.margin.bottom)
     let textAlign = state.box.computed{"text-align"}
@@ -1852,10 +1848,10 @@ type
     coli: int
     colspan: int
     rowspan: int
-    reflow: bool
     grown: int # number of remaining rows
     real: CellWrapper # for filler wrappers
     last: bool # is this the last filler?
+    reflow: bool
     height: LUnit
     baseline: LUnit
 
