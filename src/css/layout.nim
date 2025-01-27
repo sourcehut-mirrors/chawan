@@ -210,7 +210,6 @@ type
     pos: LUnit
     neg: LUnit
 
-type
   LineBoxState = object
     atomStates: seq[InlineAtomState]
     hasExclusion: bool
@@ -237,24 +236,6 @@ type
     marginBottom: LUnit
     box: InlineBox
 
-  InlineContext = object
-    state: ptr FlowState
-    root: BlockBox
-    bctx: ptr BlockContext
-    bfcOffset: Offset
-    lbstate: LineBoxState
-    lctx: LayoutContext
-    whitespacenum: int
-    whitespaceFragment: InlineBox
-    word: InlineAtom
-    wrappos: int # position of last wrapping opportunity, or -1
-    lastTextFragment: InlineBox
-    padding: RelativeRect
-    hasshy: bool
-    whitespaceIsLF: bool
-    textFragmentSeen: bool
-    firstBaselineSet: bool
-
   InlineState = object
     box: InlineBox
     # we do not want to collapse newlines over tag boundaries, so these are
@@ -264,6 +245,8 @@ type
     prevrw: int # last processed rune's width
 
   FlowState = object
+    box: BlockBox
+    pbctx: ptr BlockContext
     offset: Offset
     maxChildWidth: LUnit
     totalFloatWidth: LUnit # used for re-layouts
@@ -275,24 +258,36 @@ type
     oldExclusionsLen: int
     initialMarginTarget: BlockPositionState
     initialTargetOffset: Offset
-    initialParentOffset: Offset
+    # Inline context state:
+    lbstate: LineBoxState
+    whitespacenum: int
+    whitespaceFragment: InlineBox
+    word: InlineAtom
+    wrappos: int # position of last wrapping opportunity, or -1
+    lastTextBox: InlineBox
+    padding: RelativeRect
+    hasshy: bool
+    whitespaceIsLF: bool
+    textFragmentSeen: bool
+    firstBaselineSet: bool
 
 # Forward declarations
-proc layoutBlock(state: var FlowState; bctx: var BlockContext; parent: BlockBox)
+proc layoutBlock(fstate: var FlowState)
+proc layoutInline(fstate: var FlowState; ibox: InlineBox)
 proc layoutTableWrapper(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
-proc layoutInline(ictx: var InlineContext; ibox: InlineBox)
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   sizes: ResolvedSizes; includeMargin = false)
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   canClear: bool)
-proc initBlockPositionStates(state: var FlowState; bctx: var BlockContext;
-  box: BlockBox)
-func isParentResolved(state: FlowState; bctx: BlockContext): bool
 proc positionFloat(bctx: var BlockContext; child: BlockBox;
   space: AvailableSpace; outerSize: Size; marginOffset, bfcOffset: Offset)
-proc initReLayout(state: var FlowState; bctx: var BlockContext;
-  box: BlockBox; sizes: ResolvedSizes)
+
+template bctx(fstate: FlowState): BlockContext =
+  fstate.pbctx[]
+
+template lctx(fstate: FlowState): LayoutContext =
+  fstate.bctx.lctx
 
 func whitespacepre(computed: CSSValues): bool =
   computed{"white-space"} in {WhitespacePre, WhitespacePreLine,
@@ -304,17 +299,14 @@ func nowrap(computed: CSSValues): bool =
 func cellWidth(lctx: LayoutContext): int =
   lctx.attrs.ppc
 
-func cellWidth(ictx: InlineContext): int =
-  ictx.lctx.cellWidth
+func cellWidth(fstate: FlowState): int =
+  fstate.lctx.cellWidth
 
-func cellHeight(ictx: InlineContext): int =
-  ictx.lctx.attrs.ppl
+func cellHeight(fstate: FlowState): int =
+  fstate.lctx.attrs.ppl
 
-func space(ictx: InlineContext): lent AvailableSpace =
-  return ictx.state.space
-
-func computed(ictx: InlineContext): lent CSSValues =
-  return ictx.root.computed
+template computed(fstate: FlowState): CSSValues =
+  fstate.box.computed
 
 func sum(rect: RelativeRect): Size =
   return [
@@ -325,28 +317,40 @@ func sum(rect: RelativeRect): Size =
 func startOffset(rect: RelativeRect): Offset =
   return offset(x = rect[dtHorizontal].start, y = rect[dtVertical].start)
 
+func bfcOffset(bctx: BlockContext): Offset =
+  if bctx.parentBps != nil:
+    return bctx.parentBps.offset
+  return offset(x = 0, y = 0)
+
+template bfcOffset(fstate: FlowState): Offset =
+  fstate.bctx.bfcOffset
+
+func isParentResolved(fstate: FlowState; bctx: BlockContext): bool =
+  return bctx.marginTarget != fstate.initialMarginTarget or
+    fstate.prevParentBps != nil and fstate.prevParentBps.resolved
+
 # Whitespace between words
-func computeShift(ictx: InlineContext; state: InlineState): LUnit =
-  if ictx.whitespacenum == 0:
+func computeShift(fstate: FlowState; state: InlineState): LUnit =
+  if fstate.whitespacenum == 0:
     return 0
-  if ictx.whitespaceIsLF and state.lastrw == 2 and state.firstrw == 2:
+  if fstate.whitespaceIsLF and state.lastrw == 2 and state.firstrw == 2:
     # skip line feed between double-width characters
     return 0
   if not state.box.computed.whitespacepre:
-    if ictx.lbstate.atoms.len == 0:
+    if fstate.lbstate.atoms.len == 0:
       return 0
-    let atom = ictx.lbstate.atoms[^1]
+    let atom = fstate.lbstate.atoms[^1]
     if atom.t == iatWord and atom.str[^1] == ' ':
       return 0
-  return ictx.cellWidth * ictx.whitespacenum
+  return fstate.cellWidth * fstate.whitespacenum
 
-proc newWord(ictx: var InlineContext) =
-  ictx.word = InlineAtom(
+proc newWord(fstate: var FlowState) =
+  fstate.word = InlineAtom(
     t: iatWord,
-    size: size(w = 0, h = ictx.cellHeight)
+    size: size(w = 0, h = fstate.cellHeight)
   )
-  ictx.wrappos = -1
-  ictx.hasshy = false
+  fstate.wrappos = -1
+  fstate.hasshy = false
 
 #TODO start & justify would be nice to have
 const TextAlignNone = {
@@ -411,47 +415,47 @@ proc positionAtoms(lbstate: LineBoxState; lctx: LayoutContext): LUnit =
     marginTop = max(iastate.marginTop - atom.offset.y, marginTop)
   return marginTop
 
-func getLineWidth(ictx: InlineContext): LUnit =
-  return case ictx.space.w.t
-  of scMinContent, scMaxContent: ictx.state.maxChildWidth
-  of scFitContent: ictx.space.w.u
-  of scStretch: max(ictx.state.maxChildWidth, ictx.space.w.u)
+func getLineWidth(fstate: FlowState): LUnit =
+  return case fstate.space.w.t
+  of scMinContent, scMaxContent: fstate.maxChildWidth
+  of scFitContent: fstate.space.w.u
+  of scStretch: max(fstate.maxChildWidth, fstate.space.w.u)
 
-func getLineXShift(ictx: InlineContext; width: LUnit): LUnit =
-  return case ictx.computed{"text-align"}
+func getLineXShift(fstate: FlowState; width: LUnit): LUnit =
+  return case fstate.computed{"text-align"}
   of TextAlignNone: LUnit(0)
   of TextAlignEnd, TextAlignRight, TextAlignChaRight:
-    let width = min(width, ictx.lbstate.availableWidth)
-    max(width, ictx.lbstate.size.w) - ictx.lbstate.size.w
+    let width = min(width, fstate.lbstate.availableWidth)
+    max(width, fstate.lbstate.size.w) - fstate.lbstate.size.w
   of TextAlignCenter, TextAlignChaCenter:
-    let width = min(width, ictx.lbstate.availableWidth)
-    max((max(width, ictx.lbstate.size.w)) div 2 - ictx.lbstate.size.w div 2, 0)
+    let width = min(width, fstate.lbstate.availableWidth)
+    max((max(width, fstate.lbstate.size.w)) div 2 - fstate.lbstate.size.w div 2, 0)
 
-proc shiftAtoms(ictx: var InlineContext; marginTop: LUnit) =
-  let offsety = ictx.lbstate.offsety
+proc shiftAtoms(fstate: var FlowState; marginTop: LUnit) =
+  let offsety = fstate.lbstate.offsety
   let shiftTop = marginTop
-  let cellHeight = ictx.cellHeight
-  let width = ictx.getLineWidth()
-  let xshift = ictx.getLineXShift(width)
+  let cellHeight = fstate.cellHeight
+  let width = fstate.getLineWidth()
+  let xshift = fstate.getLineXShift(width)
   var totalWidth: LUnit = 0
   var currentAreaOffsetX: LUnit = 0
   var currentFragment: InlineBox = nil
   let offsetyShifted = shiftTop + offsety
   var areaY: LUnit = 0
-  for i, atom in ictx.lbstate.atoms:
+  for i, atom in fstate.lbstate.atoms:
     atom.offset.y = atom.offset.y + offsetyShifted
     areaY = max(atom.offset.y, areaY)
     #TODO why not offsetyShifted here?
     let minHeight = atom.offset.y - offsety + atom.size.h
-    ictx.lbstate.minHeight = max(ictx.lbstate.minHeight, minHeight)
+    fstate.lbstate.minHeight = max(fstate.lbstate.minHeight, minHeight)
     # now position on the inline axis
     atom.offset.x += xshift
     totalWidth += atom.size.w
-    let box = ictx.lbstate.atomStates[i].box
+    let box = fstate.lbstate.atomStates[i].box
     if currentFragment != box:
       if currentFragment != nil:
         # flush area
-        let lastAtom = ictx.lbstate.atoms[i - 1]
+        let lastAtom = fstate.lbstate.atoms[i - 1]
         let w = lastAtom.offset.x + lastAtom.size.w - currentAreaOffsetX
         if w != 0:
           currentFragment.state.areas.add(Area(
@@ -464,10 +468,10 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LUnit) =
       currentAreaOffsetX = if box.state.areas.len == 0:
         box.state.atoms[0].offset.x
       else:
-        ictx.lbstate.atoms[0].offset.x
+        fstate.lbstate.atoms[0].offset.x
   if currentFragment != nil:
     # flush area
-    let atom = ictx.lbstate.atoms[^1]
+    let atom = fstate.lbstate.atoms[^1]
     areaY = max(atom.offset.y, areaY)
     # it seems cellHeight is what other browsers use here too?
     let w = atom.offset.x + atom.size.w - currentAreaOffsetX
@@ -483,36 +487,36 @@ proc shiftAtoms(ictx: var InlineContext; marginTop: LUnit) =
         offset: offset,
         size: size(w = w, h = cellHeight)
       ))
-  for (box, i) in ictx.lbstate.paddingTodo:
+  for (box, i) in fstate.lbstate.paddingTodo:
     box.state.areas[i].offset.x += xshift
     box.state.areas[i].offset.y = areaY
-  if ictx.space.w.t == scFitContent:
-    ictx.state.maxChildWidth = max(totalWidth, ictx.state.maxChildWidth)
+  if fstate.space.w.t == scFitContent:
+    fstate.maxChildWidth = max(totalWidth, fstate.maxChildWidth)
 
 # Align atoms (inline boxes, text, etc.) on both axes.
-proc alignLine(ictx: var InlineContext) =
+proc alignLine(fstate: var FlowState) =
   # Start with cell height as the baseline and line height.
-  let ch = ictx.cellHeight.toLUnit()
-  ictx.lbstate.size.h = ch
+  let ch = fstate.cellHeight.toLUnit()
+  fstate.lbstate.size.h = ch
   # Baseline is what we computed in addAtom, or cell height if that's greater.
-  ictx.lbstate.baseline = max(ictx.lbstate.baseline, ch)
+  fstate.lbstate.baseline = max(fstate.lbstate.baseline, ch)
   # Resize according to the baseline and atom sizes.
-  ictx.lbstate.size.h = ictx.lbstate.resizeLine(ictx.lctx)
+  fstate.lbstate.size.h = fstate.lbstate.resizeLine(fstate.lctx)
   # Now we can calculate the actual position of atoms inside the line.
-  let marginTop = ictx.lbstate.positionAtoms(ictx.lctx)
+  let marginTop = fstate.lbstate.positionAtoms(fstate.lctx)
   # Finally, offset all atoms' y position by the largest top margin and the
   # line box's top padding.
-  ictx.shiftAtoms(marginTop)
+  fstate.shiftAtoms(marginTop)
   # Ensure that the line is exactly as high as its highest atom demands,
   # rounded up to the next line.
-  ictx.lbstate.size.h = ictx.lbstate.minHeight.ceilTo(ictx.cellHeight)
+  fstate.lbstate.size.h = fstate.lbstate.minHeight.ceilTo(fstate.cellHeight)
   # Now, if we got a height that is lower than cell height, then set it
   # back to the cell height. (This is to avoid the situation where we
   # would swallow hard line breaks with <br>.)
-  if ictx.lbstate.size.h < ch:
-    ictx.lbstate.size.h = ch
+  if fstate.lbstate.size.h < ch:
+    fstate.lbstate.size.h = ch
   # Set the line height to size.h.
-  ictx.lbstate.height = ictx.lbstate.size.h
+  fstate.lbstate.height = fstate.lbstate.size.h
 
 proc putAtom(state: var LineBoxState; atom: InlineAtom;
     iastate: InlineAtomState; box: InlineBox) =
@@ -521,36 +525,36 @@ proc putAtom(state: var LineBoxState; atom: InlineAtom;
   state.atoms.add(atom)
   box.state.atoms.add(atom)
 
-proc addSpacing(ictx: var InlineContext; width: LUnit; state: InlineState;
+proc addSpacing(fstate: var FlowState; width: LUnit; state: InlineState;
     hang = false) =
-  let box = ictx.whitespaceFragment
-  if box.state.atoms.len == 0 or ictx.lbstate.atoms.len == 0 or
+  let box = fstate.whitespaceFragment
+  if box.state.atoms.len == 0 or fstate.lbstate.atoms.len == 0 or
       (let oatom = box.state.atoms[^1];
-        oatom.t != iatWord or oatom != ictx.lbstate.atoms[^1]):
+        oatom.t != iatWord or oatom != fstate.lbstate.atoms[^1]):
     let atom = InlineAtom(
       t: iatWord,
-      size: size(w = 0, h = ictx.cellHeight),
-      offset: offset(x = ictx.lbstate.size.w, y = ictx.cellHeight)
+      size: size(w = 0, h = fstate.cellHeight),
+      offset: offset(x = fstate.lbstate.size.w, y = fstate.cellHeight)
     )
     let iastate = InlineAtomState(baseline: atom.size.h)
-    ictx.lbstate.putAtom(atom, iastate, box)
+    fstate.lbstate.putAtom(atom, iastate, box)
   let atom = box.state.atoms[^1]
-  let n = (width div ictx.cellWidth).toInt #TODO
+  let n = (width div fstate.cellWidth).toInt #TODO
   for i in 0 ..< n:
     atom.str &= ' '
   atom.size.w += width
   if not hang:
     # In some cases, whitespace may "hang" at the end of the line. This means
     # it is written, but is not actually counted in the box's width.
-    ictx.lbstate.size.w += width
+    fstate.lbstate.size.w += width
 
-proc flushWhitespace(ictx: var InlineContext; state: InlineState;
+proc flushWhitespace(fstate: var FlowState; state: InlineState;
     hang = false) =
-  let shift = ictx.computeShift(state)
-  ictx.lbstate.charwidth += ictx.whitespacenum
-  ictx.whitespacenum = 0
+  let shift = fstate.computeShift(state)
+  fstate.lbstate.charwidth += fstate.whitespacenum
+  fstate.whitespacenum = 0
   if shift > 0:
-    ictx.addSpacing(shift, state, hang)
+    fstate.addSpacing(shift, state, hang)
 
 proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
     bfcOffsety: LUnit; clear: CSSClear) =
@@ -575,101 +579,101 @@ proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
 # (If space on the left is excluded by floats, set the initial width to
 # the end of that space. If space on the right is excluded, set the
 # available width to that space.)
-proc initLine(ictx: var InlineContext) =
+proc initLine(fstate: var FlowState) =
   # we want to start from padding-left, but normally exclude padding
   # from space. so we must offset available width with padding-left too
-  ictx.lbstate.availableWidth = ictx.space.w.u + ictx.padding.left
-  ictx.lbstate.size.w = ictx.padding.left
+  fstate.lbstate.availableWidth = fstate.space.w.u + fstate.padding.left
+  fstate.lbstate.size.w = fstate.padding.left
   #TODO what if maxContent/minContent?
-  if ictx.bctx.exclusions.len > 0:
-    let bfcOffset = ictx.bfcOffset
-    let y = ictx.lbstate.offsety + bfcOffset.y
-    var left = bfcOffset.x + ictx.lbstate.size.w
-    var right = bfcOffset.x + ictx.lbstate.availableWidth
-    for ex in ictx.bctx.exclusions:
+  if fstate.bctx.exclusions.len > 0:
+    let bfcOffset = fstate.bfcOffset
+    let y = fstate.lbstate.offsety + bfcOffset.y
+    var left = bfcOffset.x + fstate.lbstate.size.w
+    var right = bfcOffset.x + fstate.lbstate.availableWidth
+    for ex in fstate.bctx.exclusions:
       if ex.offset.y <= y and y < ex.offset.y + ex.size.h:
-        ictx.lbstate.hasExclusion = true
+        fstate.lbstate.hasExclusion = true
         if ex.t == FloatLeft:
           left = ex.offset.x + ex.size.w
         else:
           right = ex.offset.x
-    ictx.lbstate.size.w = max(left - bfcOffset.x, ictx.lbstate.size.w)
-    ictx.lbstate.availableWidth = min(right - bfcOffset.x,
-      ictx.lbstate.availableWidth)
+    fstate.lbstate.size.w = max(left - bfcOffset.x, fstate.lbstate.size.w)
+    fstate.lbstate.availableWidth = min(right - bfcOffset.x,
+      fstate.lbstate.availableWidth)
 
-proc finishLine(ictx: var InlineContext; state: var InlineState; wrap: bool;
+proc finishLine(fstate: var FlowState; state: var InlineState; wrap: bool;
     force = false; clear = ClearNone) =
-  if ictx.lbstate.atoms.len != 0 or force:
+  if fstate.lbstate.atoms.len != 0 or force:
     let whitespace = state.box.computed{"white-space"}
     if whitespace == WhitespacePre:
-      ictx.flushWhitespace(state)
+      fstate.flushWhitespace(state)
       # see below on padding
-      ictx.state.intr.w = max(ictx.state.intr.w, ictx.lbstate.size.w -
-        ictx.padding.left)
+      fstate.intr.w = max(fstate.intr.w, fstate.lbstate.size.w -
+        fstate.padding.left)
     elif whitespace == WhitespacePreWrap:
-      ictx.flushWhitespace(state, hang = true)
+      fstate.flushWhitespace(state, hang = true)
     else:
-      ictx.whitespacenum = 0
+      fstate.whitespacenum = 0
     # align atoms + calculate width for fit-content + place
-    ictx.alignLine()
-    for f in ictx.lbstate.unpositionedFloats:
+    fstate.alignLine()
+    for f in fstate.lbstate.unpositionedFloats:
       if whitespace != WhitespacePre and f.newLine:
-        f.box.state.offset.y += ictx.lbstate.size.h
-      ictx.bctx[].positionFloat(f.box, f.space, f.outerSize,
+        f.box.state.offset.y += fstate.lbstate.size.h
+      fstate.bctx.positionFloat(f.box, f.space, f.outerSize,
         f.marginOffset, f.parentBps.offset)
-    ictx.state.totalFloatWidth = max(ictx.state.totalFloatWidth,
-      ictx.lbstate.totalFloatWidth)
-    # add line to ictx
-    let y = ictx.lbstate.offsety
+    fstate.totalFloatWidth = max(fstate.totalFloatWidth,
+      fstate.lbstate.totalFloatWidth)
+    # add line to fstate
+    let y = fstate.lbstate.offsety
     if clear != ClearNone:
-      ictx.lbstate.size.h.clearFloats(ictx.bctx[], ictx.bfcOffset.y + y, clear)
+      fstate.lbstate.size.h.clearFloats(fstate.bctx, fstate.bfcOffset.y + y, clear)
     # * set first baseline if this is the first line box
     # * always set last baseline (so the baseline of the last line box remains)
-    ictx.root.state.baseline = y + ictx.lbstate.baseline
-    if not ictx.firstBaselineSet:
-      ictx.root.state.firstBaseline = ictx.lbstate.baseline
-      ictx.firstBaselineSet = true
-    ictx.state.offset.y += ictx.lbstate.size.h
-    ictx.state.intr.h += ictx.lbstate.intrh
+    fstate.box.state.baseline = y + fstate.lbstate.baseline
+    if not fstate.firstBaselineSet:
+      fstate.box.state.firstBaseline = fstate.lbstate.baseline
+      fstate.firstBaselineSet = true
+    fstate.offset.y += fstate.lbstate.size.h
+    fstate.intr.h += fstate.lbstate.intrh
     let lineWidth = if wrap:
-      ictx.lbstate.availableWidth
+      fstate.lbstate.availableWidth
     else:
-      ictx.lbstate.size.w
+      fstate.lbstate.size.w
     # padding-left is added to the line to aid float exclusion; undo
     # this here to prevent double-padding later
-    ictx.state.maxChildWidth = max(ictx.state.maxChildWidth,
-      lineWidth - ictx.padding.left)
-    ictx.lbstate = LineBoxState(
-      offsety: y + ictx.lbstate.size.h,
-      intrh: ictx.cellHeight
+    fstate.maxChildWidth = max(fstate.maxChildWidth,
+      lineWidth - fstate.padding.left)
+    fstate.lbstate = LineBoxState(
+      offsety: y + fstate.lbstate.size.h,
+      intrh: fstate.cellHeight
     )
-    ictx.initLine()
+    fstate.initLine()
   else:
     #TODO this looks wrong...
-    ictx.bctx.unpositionedFloats.add(ictx.lbstate.unpositionedFloats)
-    ictx.lbstate.unpositionedFloats.setLen(0)
+    fstate.bctx.unpositionedFloats.add(fstate.lbstate.unpositionedFloats)
+    fstate.lbstate.unpositionedFloats.setLen(0)
 
-func shouldWrap(ictx: InlineContext; w: LUnit;
+func shouldWrap(fstate: FlowState; w: LUnit;
     pcomputed: CSSValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
     return false
-  if ictx.space.w.t == scMaxContent:
+  if fstate.space.w.t == scMaxContent:
     return false # no wrap with max-content
-  if ictx.space.w.t == scMinContent:
+  if fstate.space.w.t == scMinContent:
     return true # always wrap with min-content
-  return ictx.lbstate.size.w + w > ictx.lbstate.availableWidth
+  return fstate.lbstate.size.w + w > fstate.lbstate.availableWidth
 
-func shouldWrap2(ictx: InlineContext; w: LUnit): bool =
-  if not ictx.lbstate.hasExclusion:
+func shouldWrap2(fstate: FlowState; w: LUnit): bool =
+  if not fstate.lbstate.hasExclusion:
     return false
-  return ictx.lbstate.size.w + w > ictx.lbstate.availableWidth
+  return fstate.lbstate.size.w + w > fstate.lbstate.availableWidth
 
-func getBaseline(ictx: InlineContext; iastate: InlineAtomState;
+func getBaseline(fstate: FlowState; iastate: InlineAtomState;
     atom: InlineAtom): LUnit =
   return case iastate.vertalign.keyword
   of VerticalAlignBaseline:
     let length = CSSLength(u: iastate.vertalign.u, num: iastate.vertalign.num)
-    let len = length.px(ictx.cellHeight)
+    let len = length.px(fstate.cellHeight)
     iastate.baseline + len
   of VerticalAlignTop, VerticalAlignBottom:
     atom.size.h
@@ -680,46 +684,46 @@ func getBaseline(ictx: InlineContext; iastate: InlineAtomState;
 
 # Add an inline atom atom, with state iastate.
 # Returns true on newline.
-proc addAtom(ictx: var InlineContext; state: var InlineState;
+proc addAtom(fstate: var FlowState; state: var InlineState;
     iastate: InlineAtomState; atom: InlineAtom): bool =
   result = false
-  var shift = ictx.computeShift(state)
-  ictx.lbstate.charwidth += ictx.whitespacenum
-  ictx.whitespacenum = 0
+  var shift = fstate.computeShift(state)
+  fstate.lbstate.charwidth += fstate.whitespacenum
+  fstate.whitespacenum = 0
   # Line wrapping
-  if ictx.shouldWrap(atom.size.w + shift, state.box.computed):
-    ictx.finishLine(state, wrap = true)
+  if fstate.shouldWrap(atom.size.w + shift, state.box.computed):
+    fstate.finishLine(state, wrap = true)
     result = true
     # Recompute on newline
-    shift = ictx.computeShift(state)
+    shift = fstate.computeShift(state)
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
-    while ictx.shouldWrap2(atom.size.w + shift):
-      ictx.finishLine(state, wrap = false, force = true)
+    while fstate.shouldWrap2(atom.size.w + shift):
+      fstate.finishLine(state, wrap = false, force = true)
       # Recompute on newline
-      shift = ictx.computeShift(state)
+      shift = fstate.computeShift(state)
   if atom.size.w > 0 and atom.size.h > 0 or atom.t == iatInlineBlock:
     if shift > 0:
-      ictx.addSpacing(shift, state)
-    if atom.t == iatWord and ictx.lbstate.atoms.len > 0 and
+      fstate.addSpacing(shift, state)
+    if atom.t == iatWord and fstate.lbstate.atoms.len > 0 and
         state.box.state.atoms.len > 0:
-      let oatom = ictx.lbstate.atoms[^1]
+      let oatom = fstate.lbstate.atoms[^1]
       if oatom.t == iatWord and oatom == state.box.state.atoms[^1]:
         oatom.str &= atom.str
         oatom.size.w += atom.size.w
-        ictx.lbstate.size.w += atom.size.w
+        fstate.lbstate.size.w += atom.size.w
         return
-    ictx.lbstate.putAtom(atom, iastate, state.box)
-    atom.offset.x += ictx.lbstate.size.w
-    ictx.lbstate.size.w += atom.size.w
+    fstate.lbstate.putAtom(atom, iastate, state.box)
+    atom.offset.x += fstate.lbstate.size.w
+    fstate.lbstate.size.w += atom.size.w
     # store for later use in resizeLine/shiftAtoms
-    let baseline = ictx.getBaseline(iastate, atom)
+    let baseline = fstate.getBaseline(iastate, atom)
     atom.offset.y = baseline
-    ictx.lbstate.baseline = max(ictx.lbstate.baseline, baseline)
+    fstate.lbstate.baseline = max(fstate.lbstate.baseline, baseline)
 
-proc addWord(ictx: var InlineContext; state: var InlineState): bool =
+proc addWord(fstate: var FlowState; state: var InlineState): bool =
   result = false
-  let atom = ictx.word
+  let atom = fstate.word
   if atom.str != "":
     atom.str.mnormalize() #TODO this may break on EOL.
     let iastate = InlineAtomState(
@@ -727,140 +731,126 @@ proc addWord(ictx: var InlineContext; state: var InlineState): bool =
       baseline: atom.size.h
     )
     let wordBreak = state.box.computed{"word-break"}
-    if ictx.wrappos != -1:
+    if fstate.wrappos != -1:
       # set intr.w to the first wrapping opportunity
-      ictx.state.intr.w = max(ictx.state.intr.w, ictx.wrappos)
+      fstate.intr.w = max(fstate.intr.w, fstate.wrappos)
     elif state.prevrw >= 2 and wordBreak != WordBreakKeepAll or
         wordBreak == WordBreakBreakAll:
       # last char was double width; we can wrap anywhere.
       # (I think this isn't quite right when double width + half width
       # are mixed, but whatever...)
-      ictx.state.intr.w = max(ictx.state.intr.w, state.prevrw)
+      fstate.intr.w = max(fstate.intr.w, state.prevrw)
     else:
-      ictx.state.intr.w = max(ictx.state.intr.w, atom.size.w)
-    result = ictx.addAtom(state, iastate, atom)
-    ictx.newWord()
+      fstate.intr.w = max(fstate.intr.w, atom.size.w)
+    result = fstate.addAtom(state, iastate, atom)
+    fstate.newWord()
 
-proc addWordEOL(ictx: var InlineContext; state: var InlineState): bool =
+proc addWordEOL(fstate: var FlowState; state: var InlineState): bool =
   result = false
-  if ictx.word.str != "":
-    if ictx.wrappos != -1:
-      let leftstr = ictx.word.str.substr(ictx.wrappos)
-      ictx.word.str.setLen(ictx.wrappos)
-      if ictx.hasshy:
+  if fstate.word.str != "":
+    if fstate.wrappos != -1:
+      let leftstr = fstate.word.str.substr(fstate.wrappos)
+      fstate.word.str.setLen(fstate.wrappos)
+      if fstate.hasshy:
         const shy = "\u00AD" # soft hyphen
-        ictx.word.str &= shy
-        ictx.hasshy = false
-      result = ictx.addWord(state)
-      ictx.word.str = leftstr
-      ictx.word.size.w = leftstr.width() * ictx.cellWidth
+        fstate.word.str &= shy
+        fstate.hasshy = false
+      result = fstate.addWord(state)
+      fstate.word.str = leftstr
+      fstate.word.size.w = leftstr.width() * fstate.cellWidth
     else:
-      result = ictx.addWord(state)
+      result = fstate.addWord(state)
 
-proc checkWrap(ictx: var InlineContext; state: var InlineState; u: uint32;
+proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
     uw: int) =
   if state.box.computed.nowrap:
     return
-  let shift = ictx.computeShift(state)
+  let shift = fstate.computeShift(state)
   state.prevrw = uw
-  if ictx.word.str.len == 0:
+  if fstate.word.str.len == 0:
     state.firstrw = uw
   if uw >= 2:
     # remove wrap opportunity, so we wrap properly on the last CJK char (instead
     # of any dash inside CJK sentences)
-    ictx.wrappos = -1
+    fstate.wrappos = -1
   case state.box.computed{"word-break"}
   of WordBreakNormal:
-    if uw == 2 or ictx.wrappos != -1: # break on cjk and wrap opportunities
-      let plusWidth = ictx.word.size.w + shift + uw * ictx.cellWidth
-      if ictx.shouldWrap(plusWidth, nil):
-        if not ictx.addWordEOL(state): # no line wrapping occured in addAtom
-          ictx.finishLine(state, wrap = true)
-          ictx.whitespacenum = 0
+    if uw == 2 or fstate.wrappos != -1: # break on cjk and wrap opportunities
+      let plusWidth = fstate.word.size.w + shift + uw * fstate.cellWidth
+      if fstate.shouldWrap(plusWidth, nil):
+        if not fstate.addWordEOL(state): # no line wrapping occured in addAtom
+          fstate.finishLine(state, wrap = true)
+          fstate.whitespacenum = 0
   of WordBreakBreakAll:
-    let plusWidth = ictx.word.size.w + shift + uw * ictx.cellWidth
-    if ictx.shouldWrap(plusWidth, nil):
-      if not ictx.addWordEOL(state): # no line wrapping occured in addAtom
-        ictx.finishLine(state, wrap = true)
-        ictx.whitespacenum = 0
+    let plusWidth = fstate.word.size.w + shift + uw * fstate.cellWidth
+    if fstate.shouldWrap(plusWidth, nil):
+      if not fstate.addWordEOL(state): # no line wrapping occured in addAtom
+        fstate.finishLine(state, wrap = true)
+        fstate.whitespacenum = 0
   of WordBreakKeepAll:
-    let plusWidth = ictx.word.size.w + shift + uw * ictx.cellWidth
-    if ictx.shouldWrap(plusWidth, nil):
-      ictx.finishLine(state, wrap = true)
-      ictx.whitespacenum = 0
+    let plusWidth = fstate.word.size.w + shift + uw * fstate.cellWidth
+    if fstate.shouldWrap(plusWidth, nil):
+      fstate.finishLine(state, wrap = true)
+      fstate.whitespacenum = 0
 
-proc processWhitespace(ictx: var InlineContext; state: var InlineState;
+proc processWhitespace(fstate: var FlowState; state: var InlineState;
     c: char) =
-  discard ictx.addWord(state)
+  discard fstate.addWord(state)
   case state.box.computed{"white-space"}
   of WhitespaceNormal, WhitespaceNowrap:
-    if ictx.whitespacenum < 1 and ictx.lbstate.atoms.len > 0:
-      ictx.whitespacenum = 1
-      ictx.whitespaceFragment = state.box
-      ictx.whitespaceIsLF = c == '\n'
+    if fstate.whitespacenum < 1 and fstate.lbstate.atoms.len > 0:
+      fstate.whitespacenum = 1
+      fstate.whitespaceFragment = state.box
+      fstate.whitespaceIsLF = c == '\n'
     if c != '\n':
-      ictx.whitespaceIsLF = false
+      fstate.whitespaceIsLF = false
   of WhitespacePreLine:
     if c == '\n':
-      ictx.finishLine(state, wrap = false, force = true)
-    elif ictx.whitespacenum < 1:
-      ictx.whitespaceIsLF = false
-      ictx.whitespacenum = 1
-      ictx.whitespaceFragment = state.box
+      fstate.finishLine(state, wrap = false, force = true)
+    elif fstate.whitespacenum < 1:
+      fstate.whitespaceIsLF = false
+      fstate.whitespacenum = 1
+      fstate.whitespaceFragment = state.box
   of WhitespacePre, WhitespacePreWrap:
-    ictx.whitespaceIsLF = false
+    fstate.whitespaceIsLF = false
     if c == '\n':
-      ictx.finishLine(state, wrap = false, force = true)
+      fstate.finishLine(state, wrap = false, force = true)
     elif c == '\t':
-      let realWidth = ictx.lbstate.charwidth + ictx.whitespacenum
+      let realWidth = fstate.lbstate.charwidth + fstate.whitespacenum
       # We must flush first, because addWord would otherwise try to wrap the
       # line. (I think.)
-      ictx.flushWhitespace(state)
+      fstate.flushWhitespace(state)
       let w = ((realWidth + 8) and not 7) - realWidth
-      ictx.word.str.addUTF8(tabPUAPoint(w))
-      ictx.word.size.w += w * ictx.cellWidth
-      ictx.lbstate.charwidth += w
+      fstate.word.str.addUTF8(tabPUAPoint(w))
+      fstate.word.size.w += w * fstate.cellWidth
+      fstate.lbstate.charwidth += w
       # Ditto here - we don't want the tab stop to get merged into the next
       # word's atom.
-      discard ictx.addWord(state)
+      discard fstate.addWord(state)
     else:
-      inc ictx.whitespacenum
-      ictx.whitespaceFragment = state.box
+      inc fstate.whitespacenum
+      fstate.whitespaceFragment = state.box
   # set the "last word's last rune width" to the previous rune width
   state.lastrw = state.prevrw
 
-func initInlineContext(bctx: var BlockContext; bfcOffset: Offset;
-    padding: RelativeRect; state: ptr FlowState; root: BlockBox):
-    InlineContext =
-  result = InlineContext(
-    bctx: addr bctx,
-    lctx: bctx.lctx,
-    bfcOffset: bfcOffset,
-    padding: padding,
-    lbstate: LineBoxState(offsety: padding.top, intrh: bctx.lctx.attrs.ppl),
-    state: state,
-    root: root
-  )
-  result.initLine()
-
-proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
+proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
     str: string) =
-  let luctx = ictx.lctx.luctx
+  let luctx = fstate.lctx.luctx
   var i = 0
   while i < str.len:
     let c = str[i]
     if c in Ascii:
       if c in AsciiWhitespace:
-        ictx.processWhitespace(state, c)
+        fstate.processWhitespace(state, c)
       else:
         let w = uint32(c).width()
-        ictx.checkWrap(state, uint32(c), w)
-        ictx.word.str &= c
-        ictx.word.size.w += w * ictx.cellWidth
-        ictx.lbstate.charwidth += w
+        fstate.checkWrap(state, uint32(c), w)
+        fstate.word.str &= c
+        fstate.word.size.w += w * fstate.cellWidth
+        fstate.lbstate.charwidth += w
         if c == '-': # ascii dash
-          ictx.wrappos = ictx.word.str.len
-          ictx.hasshy = false
+          fstate.wrappos = fstate.word.str.len
+          fstate.hasshy = false
       inc i
     else:
       let pi = i
@@ -868,28 +858,28 @@ proc layoutTextLoop(ictx: var InlineContext; state: var InlineState;
       if luctx.isEnclosingMark(u) or luctx.isNonspacingMark(u):
         continue
       let w = u.width()
-      ictx.checkWrap(state, u, w)
+      fstate.checkWrap(state, u, w)
       if u == 0xAD: # soft hyphen
-        ictx.wrappos = ictx.word.str.len
-        ictx.hasshy = true
+        fstate.wrappos = fstate.word.str.len
+        fstate.hasshy = true
       elif u in TabPUARange: # filter out chars placed in our PUA range
-        ictx.word.str &= "\uFFFD"
-        ictx.word.size.w += 0xFFFD.width() * ictx.cellWidth
+        fstate.word.str &= "\uFFFD"
+        fstate.word.size.w += 0xFFFD.width() * fstate.cellWidth
       else:
         for j in pi ..< i:
-          ictx.word.str &= str[j]
-        ictx.word.size.w += w * ictx.cellWidth
-        ictx.lbstate.charwidth += w
-  discard ictx.addWord(state)
-  let shift = ictx.computeShift(state)
-  ictx.lbstate.widthAfterWhitespace = ictx.lbstate.size.w + shift
+          fstate.word.str &= str[j]
+        fstate.word.size.w += w * fstate.cellWidth
+        fstate.lbstate.charwidth += w
+  discard fstate.addWord(state)
+  let shift = fstate.computeShift(state)
+  fstate.lbstate.widthAfterWhitespace = fstate.lbstate.size.w + shift
 
-proc layoutText(ictx: var InlineContext; state: var InlineState; s: string) =
-  ictx.flushWhitespace(state)
-  ictx.newWord()
+proc layoutText(fstate: var FlowState; state: var InlineState; s: string) =
+  fstate.flushWhitespace(state)
+  fstate.newWord()
   let transform = state.box.computed{"text-transform"}
   if transform == TextTransformNone:
-    ictx.layoutTextLoop(state, s)
+    fstate.layoutTextLoop(state, s)
   else:
     let s = case transform
     of TextTransformCapitalize: s.capitalizeLU()
@@ -899,7 +889,7 @@ proc layoutText(ictx: var InlineContext; state: var InlineState; s: string) =
     of TextTransformFullSizeKana: s.fullsize()
     of TextTransformChaHalfWidth: s.halfwidth()
     else: ""
-    ictx.layoutTextLoop(state, s)
+    fstate.layoutTextLoop(state, s)
 
 func spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
     padding: LUnit): LUnit =
@@ -1262,11 +1252,6 @@ proc applyBaseline(box: BlockBox) =
       firstNested.state.baseline
     box.state.baseline = lastNested.state.offset.y + lastNested.state.baseline
 
-func bfcOffset(bctx: BlockContext): Offset =
-  if bctx.parentBps != nil:
-    return bctx.parentBps.offset
-  return offset(x = 0, y = 0)
-
 const DisplayBlockLike = {DisplayBlock, DisplayListItem, DisplayInlineBlock}
 
 # Return true if no more margin collapsing can occur for the current strut.
@@ -1436,19 +1421,105 @@ proc positionFloats(bctx: var BlockContext) =
       f.parentBps.offset)
   bctx.unpositionedFloats.setLen(0)
 
-proc layoutFlow0(bctx: var BlockContext; state: var FlowState;
-    sizes: ResolvedSizes; box: BlockBox) =
+proc layoutFlow0(fstate: var FlowState; sizes: ResolvedSizes; box: BlockBox) =
   if box.inline != nil:
     # Builder only contains inline boxes.
-    var ictx = bctx.initInlineContext(state.initialParentOffset,
-      sizes.padding, addr state, box)
-    ictx.layoutInline(box.inline)
-    if ictx.lastTextFragment != nil:
-      var state = InlineState(box: ictx.lastTextFragment)
-      ictx.finishLine(state, wrap = false)
+    fstate.lbstate = LineBoxState(
+      offsety: sizes.padding.top,
+      intrh: fstate.lctx.attrs.ppl
+    )
+    fstate.initLine()
+    fstate.layoutInline(box.inline)
+    if fstate.lastTextBox != nil:
+      var istate = InlineState(box: fstate.lastTextBox)
+      fstate.finishLine(istate, wrap = false)
   else:
     # Builder only contains block boxes.
-    state.layoutBlock(bctx, box)
+    fstate.layoutBlock()
+
+proc initFlowState(bctx: var BlockContext; box: BlockBox;
+    sizes: ResolvedSizes): FlowState =
+  result = FlowState(
+    box: box,
+    pbctx: addr bctx,
+    offset: sizes.padding.topLeft,
+    padding: sizes.padding,
+    space: sizes.space,
+    oldMarginTodo: bctx.marginTodo,
+    oldExclusionsLen: bctx.exclusions.len
+  )
+
+proc initBlockPositionStates(fstate: var FlowState; box: BlockBox) =
+  let bctx = fstate.pbctx
+  let prevBps = bctx.ancestorsHead
+  bctx.ancestorsHead = BlockPositionState(
+    box: box,
+    offset: fstate.offset,
+    resolved: bctx.parentBps == nil
+  )
+  if prevBps != nil:
+    prevBps.next = bctx.ancestorsHead
+  if bctx.parentBps != nil:
+    bctx.ancestorsHead.offset += bctx.parentBps.offset
+    # If parentBps is not nil, then our starting position is not in a new
+    # BFC -> we must add it to our BFC offset.
+    bctx.ancestorsHead.offset += box.state.offset
+  if bctx.marginTarget == nil:
+    bctx.marginTarget = bctx.ancestorsHead
+  fstate.initialMarginTarget = bctx.marginTarget
+  fstate.initialTargetOffset = bctx.marginTarget.offset
+  if bctx.parentBps == nil:
+    # We have just established a new BFC. Resolve the margins immediately.
+    bctx.marginTarget = nil
+  fstate.prevParentBps = bctx.parentBps
+  bctx.parentBps = bctx.ancestorsHead
+
+# Unlucky path, where we have a fit-content width.
+# Reset marginTodo & the starting offset, and stretch the box to the
+# max child width.
+proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
+    sizes: ResolvedSizes) =
+  bctx.marginTodo = fstate.oldMarginTodo
+  # Note: we do not reset our own BlockPositionState's offset; we assume it
+  # has already been resolved in the previous pass.
+  # (If not, it won't be resolved in this pass either, so the following code
+  # does not really change anything.)
+  bctx.parentBps.next = nil
+  if fstate.initialMarginTarget != bctx.marginTarget:
+    # Reset the initial margin target to its previous state, and then set
+    # it as the marginTarget again.
+    # Two solutions exist:
+    # a) Store the initial margin target offset, then restore it here. Seems
+    #    clean, but it would require a linked list traversal to update all
+    #    child margin positions.
+    # b) Re-use the previous margin target offsets; they are guaranteed
+    #    to remain the same, because out-of-flow elements (like floats) do not
+    #    participate in margin resolution. We do this by setting the margin
+    #    target to a dummy object, which is a small price to pay compared
+    #    to solution a).
+    bctx.marginTarget = BlockPositionState(
+      # Use initialTargetOffset to emulate the BFC positioning of the
+      # previous pass.
+      offset: fstate.initialTargetOffset,
+      resolved: fstate.initialMarginTarget.resolved
+    )
+    # Also set ancestorsHead as the dummy object, so next elements are
+    # chained to that.
+    bctx.ancestorsHead = bctx.marginTarget
+    if fstate.prevParentBps == nil:
+      # We have just established a new BFC. Resolve the margins immediately.
+      bctx.marginTarget = nil
+  bctx.exclusions.setLen(fstate.oldExclusionsLen)
+  box.applySize(sizes, fstate.maxChildWidth + fstate.totalFloatWidth,
+    sizes.space, dtHorizontal)
+  # Save prev bps & margin target; these are assumed to remain
+  # identical.
+  let prevParentBps = fstate.prevParentBps
+  let initialMarginTarget = fstate.initialMarginTarget
+  fstate = bctx.initFlowState(box, sizes)
+  fstate.space.w = stretch(box.state.size.w)
+  fstate.prevParentBps = prevParentBps
+  fstate.initialMarginTarget = initialMarginTarget
 
 # canClear signals if the box should clear in its inner (flow) layout.
 # In general, this is only true for block boxes that do not establish
@@ -1462,43 +1533,37 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   if canClear and box.computed{"clear"} != ClearNone:
     box.state.offset.y.clearFloats(bctx, bctx.bfcOffset.y,
       box.computed{"clear"})
-  let lctx = bctx.lctx
   if box.computed{"position"} != PositionStatic:
-    lctx.pushPositioned()
-  var state = FlowState(
-    offset: sizes.padding.topLeft,
-    space: sizes.space,
-    oldMarginTodo: bctx.marginTodo,
-    oldExclusionsLen: bctx.exclusions.len
-  )
-  state.initBlockPositionStates(bctx, box)
-  bctx.layoutFlow0(state, sizes, box)
-  if state.space.w.t == scFitContent:
+    bctx.lctx.pushPositioned()
+  var fstate = bctx.initFlowState(box, sizes)
+  fstate.initBlockPositionStates(box)
+  fstate.layoutFlow0(sizes, box)
+  if fstate.space.w.t == scFitContent:
     # shrink-to-fit size; layout again.
-    state.initReLayout(bctx, box, sizes)
-    bctx.layoutFlow0(state, sizes, box)
+    fstate.initReLayout(bctx, box, sizes)
+    fstate.layoutFlow0(sizes, box)
   # Apply width, and height. For height, temporarily remove padding we have
   # applied before so that percentage resolution works correctly.
   let childSize = size(
-    w = state.maxChildWidth,
-    h = state.offset.y - sizes.padding.top
+    w = fstate.maxChildWidth,
+    h = fstate.offset.y - sizes.padding.top
   )
-  box.applySize(sizes, childSize, state.space)
+  box.applySize(sizes, childSize, fstate.space)
   let paddingSum = sizes.padding.sum()
   # Intrinsic minimum size includes the sum of our padding.  (However,
   # this padding must also be clamped to the same bounds.)
-  box.applyIntr(sizes, state.intr + paddingSum)
+  box.applyIntr(sizes, fstate.intr + paddingSum)
   # Add padding; we cannot do this further up without influencing
   # relative positioning.
   box.state.size += paddingSum
-  if state.isParentResolved(bctx):
+  if fstate.isParentResolved(bctx):
     # Our offset has already been resolved, ergo any margins in marginTodo will
     # be passed onto the next box. Set marginTarget to nil, so that if we (or
     # one of our ancestors) were still set as a marginTarget, we no longer are.
     bctx.positionFloats()
     bctx.marginTarget = nil
   # Reset parentBps to the previous node.
-  bctx.parentBps = state.prevParentBps
+  bctx.parentBps = fstate.prevParentBps
   if box.computed{"position"} != PositionStatic:
     bctx.lctx.popPositioned(box.state.size)
 
@@ -1529,68 +1594,68 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
   of ListStylePositionInside:
     bctx.layoutFlow(box, sizes, canClear = true)
 
-proc addInlineFloat(ictx: var InlineContext; state: var InlineState;
+proc addInlineFloat(fstate: var FlowState; state: var InlineState;
     box: BlockBox) =
-  let lctx = ictx.lctx
-  let sizes = lctx.resolveFloatSizes(ictx.space, box.computed)
+  let lctx = fstate.lctx
+  let sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
   let offset = offset(
     x = sizes.margin.left,
-    y = ictx.lbstate.offsety + sizes.margin.top
+    y = fstate.lbstate.offsety + sizes.margin.top
   )
   lctx.layoutRootBlock(box, offset, sizes)
   let outerSize = size(
     w = box.outerSize(dtHorizontal, sizes),
     h = box.outerSize(dtVertical, sizes) + box.state.marginBottom,
   )
-  if ictx.space.w.t == scFitContent:
-    ictx.lbstate.totalFloatWidth += outerSize.w
+  if fstate.space.w.t == scFitContent:
+    fstate.lbstate.totalFloatWidth += outerSize.w
   else:
     # Note that by now, the top y offset is always resolved.
     #TODO ^ lies :(
     var newLine = true
-    if ictx.lbstate.size.w + outerSize.w < ictx.lbstate.availableWidth and
-        (ictx.lbstate.unpositionedFloats.len == 0 or
-        not ictx.lbstate.unpositionedFloats[^1].newLine):
+    if fstate.lbstate.size.w + outerSize.w < fstate.lbstate.availableWidth and
+        (fstate.lbstate.unpositionedFloats.len == 0 or
+        not fstate.lbstate.unpositionedFloats[^1].newLine):
       # We can still cram floats into the line.
       if box.computed{"float"} == FloatLeft:
-        ictx.lbstate.size.w += outerSize.w
-        for atom in ictx.lbstate.atoms:
+        fstate.lbstate.size.w += outerSize.w
+        for atom in fstate.lbstate.atoms:
           atom.offset.x += outerSize.w
       else:
-        ictx.lbstate.availableWidth -= outerSize.w
+        fstate.lbstate.availableWidth -= outerSize.w
       newLine = false
-    ictx.lbstate.unpositionedFloats.add(UnpositionedFloat(
+    fstate.lbstate.unpositionedFloats.add(UnpositionedFloat(
       box: box,
       outerSize: outerSize,
-      space: ictx.space,
+      space: fstate.space,
       marginOffset: sizes.margin.startOffset(),
-      parentBps: ictx.bctx.parentBps,
+      parentBps: fstate.bctx.parentBps,
       newLine: newLine
     ))
 
-proc addInlineAbsolute(ictx: var InlineContext; state: var InlineState;
+proc addInlineAbsolute(fstate: var FlowState; state: var InlineState;
     box: BlockBox) =
-  let lctx = ictx.lctx
+  let lctx = fstate.lctx
   state.box.state.atoms.add(InlineAtom(
     t: iatInlineBlock,
     innerbox: box
   ))
-  var offset = offset(x = 0, y = ictx.lbstate.offsety)
+  var offset = offset(x = 0, y = fstate.lbstate.offsety)
   if box.computed{"display"} in DisplayOuterInline:
     # inline-block or similar. put it on the current line.
     # (I don't add pending spacing because other browsers don't add
     # it either.)
-    offset.x += ictx.lbstate.size.w
-  elif ictx.lbstate.atoms.len > 0:
+    offset.x += fstate.lbstate.size.w
+  elif fstate.lbstate.atoms.len > 0:
     # flush if there is already something on the line *and* our outer
     # display is block.
-    offset.y += ictx.cellHeight
+    offset.y += fstate.cellHeight
   lctx.queueAbsolute(box, offset)
 
-proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
+proc addInlineBlock(fstate: var FlowState; state: var InlineState;
     box: BlockBox) =
-  let lctx = ictx.lctx
-  var sizes = lctx.resolveFloatSizes(ictx.space, box.computed)
+  let lctx = fstate.lctx
+  var sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
   for i, it in sizes.padding.mpairs:
     let cs = lctx.cellSize[i]
     it.start = (it.start div cs).toInt.toLUnit * cs
@@ -1613,38 +1678,37 @@ proc addInlineBlock(ictx: var InlineContext; state: var InlineState;
     marginTop: sizes.margin.top,
     marginBottom: box.state.marginBottom
   )
-  discard ictx.addAtom(state, iastate, atom)
-  ictx.state.intr.w = max(ictx.state.intr.w, atom.innerbox.state.intr.w)
-  ictx.lbstate.intrh = max(ictx.lbstate.intrh, atom.size.h)
-  ictx.lbstate.charwidth = 0
-  ictx.whitespacenum = 0
+  discard fstate.addAtom(state, iastate, atom)
+  fstate.intr.w = max(fstate.intr.w, atom.innerbox.state.intr.w)
+  fstate.lbstate.intrh = max(fstate.lbstate.intrh, atom.size.h)
+  fstate.lbstate.charwidth = 0
+  fstate.whitespacenum = 0
 
-proc addOuterBlock(ictx: var InlineContext; state: var InlineState;
+proc addOuterBlock(fstate: var FlowState; state: var InlineState;
     child: BlockBox) =
-  ictx.finishLine(state, wrap = false)
-  let lctx = ictx.lctx
-  let bctx = ictx.bctx
-  let sizes = lctx.resolveBlockSizes(ictx.space, child.computed)
+  fstate.finishLine(state, wrap = false)
+  let lctx = fstate.lctx
+  let sizes = lctx.resolveBlockSizes(fstate.space, child.computed)
   let offset = offset(
-    x = sizes.margin.left + ictx.padding.left,
-    y = ictx.lbstate.offsety
+    x = sizes.margin.left + fstate.padding.left,
+    y = fstate.lbstate.offsety
   )
   if child.computed.establishesBFC():
     lctx.layoutRootBlock(child, offset, sizes)
   else:
-    bctx.marginTodo.append(sizes.margin.top)
+    fstate.bctx.marginTodo.append(sizes.margin.top)
     child.state = BoxLayoutState(offset: offset)
-    bctx[].layout(child, sizes, canClear = true)
-    bctx.marginTodo.append(sizes.margin.bottom)
+    fstate.bctx.layout(child, sizes, canClear = true)
+    fstate.bctx.marginTodo.append(sizes.margin.bottom)
     let textAlign = state.box.computed{"text-align"}
     if textAlign == TextAlignChaCenter:
-      child.state.offset.x += max(ictx.space.w.u div 2 -
+      child.state.offset.x += max(fstate.space.w.u div 2 -
         child.state.size.w div 2, 0)
     elif textAlign == TextAlignChaRight:
-      child.state.offset.x += max(ictx.space.w.u - child.state.size.w -
+      child.state.offset.x += max(fstate.space.w.u - child.state.size.w -
         sizes.margin.right, 0)
     if child.computed{"position"} == PositionRelative:
-      lctx.positionRelative(ictx.space, child)
+      lctx.positionRelative(fstate.space, child)
   # Apply the block box's properties to the atom itself.
   let atom = InlineAtom(
     t: iatInlineBlock,
@@ -1654,40 +1718,40 @@ proc addOuterBlock(ictx: var InlineContext; state: var InlineState;
       w = child.outerSize(dtHorizontal, sizes),
       # delta y is difference between old and new offsets (margin-top),
       # plus height.
-      h = child.state.offset.y - ictx.lbstate.offsety + child.state.size.h
+      h = child.state.offset.y - fstate.lbstate.offsety + child.state.size.h
     )
   )
   state.box.state.atoms.add(atom)
-  ictx.lbstate.offsety += atom.size.h
+  fstate.lbstate.offsety += atom.size.h
   # Reinit the line, in case the relevant exclusions have changed by
   # shifting the line box offset.
-  ictx.initLine()
-  ictx.state.offset.y += atom.size.h
-  ictx.state.maxChildWidth = max(ictx.state.maxChildWidth, child.state.size.w)
-  ictx.state.intr.w = max(ictx.state.intr.w, child.state.intr.w)
-  ictx.state.intr.h += atom.size.h - child.state.size.h + child.state.intr.h
-  ictx.whitespacenum = 0
+  fstate.initLine()
+  fstate.offset.y += atom.size.h
+  fstate.maxChildWidth = max(fstate.maxChildWidth, child.state.size.w)
+  fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
+  fstate.intr.h += atom.size.h - child.state.size.h + child.state.intr.h
+  fstate.whitespacenum = 0
 
-proc addBox(ictx: var InlineContext; state: var InlineState; box: BlockBox) =
+proc addBox(fstate: var FlowState; state: var InlineState; box: BlockBox) =
   if box.computed{"position"} in {PositionAbsolute, PositionFixed}:
     # This doesn't really have to be an inline block. I just want to
     # handle its positioning here.
-    ictx.addInlineAbsolute(state, box)
+    fstate.addInlineAbsolute(state, box)
   elif box.computed{"float"} != FloatNone:
     # Must check after `position: absolute', as that has higher precedence.
-    ictx.addInlineFloat(state, box)
+    fstate.addInlineFloat(state, box)
     state.box.state.atoms.add(InlineAtom(
       t: iatInlineBlock,
       innerbox: box
     ))
   elif box.computed{"display"} in DisplayOuterInline:
     # This is an inline block.
-    ictx.addInlineBlock(state, box)
+    fstate.addInlineBlock(state, box)
   else:
     # This is an outer block.
-    ictx.addOuterBlock(state, box)
+    fstate.addOuterBlock(state, box)
 
-proc addImage(ictx: var InlineContext; state: var InlineState;
+proc addImage(fstate: var FlowState; state: var InlineState;
     bmp: NetworkBitmap; padding: LUnit) =
   let atom = InlineAtom(
     t: iatImage,
@@ -1702,34 +1766,34 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
   # images separately, or at least resolve the outer box's sizes with
   # the knowledge that it is an image.
   let computed = state.box.computed
-  let hasWidth = computed{"width"}.canpx(ictx.space.w)
-  let hasHeight = computed{"height"}.canpx(ictx.space.h)
+  let hasWidth = computed{"width"}.canpx(fstate.space.w)
+  let hasHeight = computed{"height"}.canpx(fstate.space.h)
   let osize = atom.size
   if hasWidth:
-    atom.size.w = computed{"width"}.spx(ictx.space.w, computed, padding)
+    atom.size.w = computed{"width"}.spx(fstate.space.w, computed, padding)
   if hasHeight:
-    atom.size.h = computed{"height"}.spx(ictx.space.h, computed, padding)
-  if computed{"max-width"}.canpx(ictx.space.w):
-    let w = computed{"max-width"}.spx(ictx.space.w, computed, padding)
+    atom.size.h = computed{"height"}.spx(fstate.space.h, computed, padding)
+  if computed{"max-width"}.canpx(fstate.space.w):
+    let w = computed{"max-width"}.spx(fstate.space.w, computed, padding)
     atom.size.w = min(atom.size.w, w)
-  let hasMinWidth = computed{"min-width"}.canpx(ictx.space.w)
+  let hasMinWidth = computed{"min-width"}.canpx(fstate.space.w)
   if hasMinWidth:
-    let w = computed{"min-width"}.spx(ictx.space.w, computed, padding)
+    let w = computed{"min-width"}.spx(fstate.space.w, computed, padding)
     atom.size.w = max(atom.size.w, w)
-  if computed{"max-height"}.canpx(ictx.space.h):
-    let h = computed{"max-height"}.spx(ictx.space.h, computed, padding)
+  if computed{"max-height"}.canpx(fstate.space.h):
+    let h = computed{"max-height"}.spx(fstate.space.h, computed, padding)
     atom.size.h = min(atom.size.h, h)
-  let hasMinHeight = computed{"min-height"}.canpx(ictx.space.h)
+  let hasMinHeight = computed{"min-height"}.canpx(fstate.space.h)
   if hasMinHeight:
-    let h = computed{"min-height"}.spx(ictx.space.h, computed, padding)
+    let h = computed{"min-height"}.spx(fstate.space.h, computed, padding)
     atom.size.h = max(atom.size.h, h)
-  if not hasWidth and ictx.space.w.isDefinite():
-    atom.size.w = min(ictx.space.w.u, atom.size.w)
-  if not hasHeight and ictx.space.h.isDefinite():
-    atom.size.h = min(ictx.space.h.u, atom.size.h)
+  if not hasWidth and fstate.space.w.isDefinite():
+    atom.size.w = min(fstate.space.w.u, atom.size.w)
+  if not hasHeight and fstate.space.h.isDefinite():
+    atom.size.h = min(fstate.space.h.u, atom.size.h)
   if not hasHeight and not hasWidth:
     if osize.w >= osize.h or
-        not ictx.space.h.isDefinite() and ictx.space.w.isDefinite():
+        not fstate.space.h.isDefinite() and fstate.space.w.isDefinite():
       if osize.w > 0:
         atom.size.h = osize.h div osize.w * atom.size.w
     else:
@@ -1743,8 +1807,8 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     vertalign: state.box.computed{"vertical-align"},
     baseline: atom.size.h
   )
-  discard ictx.addAtom(state, iastate, atom)
-  ictx.lbstate.charwidth = 0
+  discard fstate.addAtom(state, iastate, atom)
+  fstate.lbstate.charwidth = 0
   if atom.size.h > 0:
     # Setting the atom size as intr.w might result in a circular dependency
     # between table cell sizing and image sizing when we don't have a definite
@@ -1756,68 +1820,68 @@ proc addImage(ictx: var InlineContext; state: var InlineState;
     # So check if any dimension is fixed, and if yes, report the intrinsic
     # minimum dimension as that or the atom size (whichever is greater).
     if computed{"width"}.u != clPerc or computed{"min-width"}.u != clPerc:
-      ictx.state.intr.w = max(ictx.state.intr.w, atom.size.w)
+      fstate.intr.w = max(fstate.intr.w, atom.size.w)
     if computed{"height"}.u != clPerc or computed{"min-height"}.u != clPerc:
-      ictx.lbstate.intrh = max(ictx.lbstate.intrh, atom.size.h)
+      fstate.lbstate.intrh = max(fstate.lbstate.intrh, atom.size.h)
 
-proc layoutInline(ictx: var InlineContext; ibox: InlineBox) =
-  let lctx = ictx.lctx
+proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
+  let lctx = fstate.lctx
   let computed = ibox.computed
   var padding = Span()
   if ibox.t == ibtParent:
-    let w = computed{"margin-left"}.px(ictx.space.w)
-    ictx.lbstate.size.w += w
-    ictx.lbstate.widthAfterWhitespace += w
+    let w = computed{"margin-left"}.px(fstate.space.w)
+    fstate.lbstate.size.w += w
+    fstate.lbstate.widthAfterWhitespace += w
     padding = Span(
-      start: computed{"padding-left"}.px(ictx.space.w),
-      send: computed{"padding-right"}.px(ictx.space.w)
+      start: computed{"padding-left"}.px(fstate.space.w),
+      send: computed{"padding-right"}.px(fstate.space.w)
     )
   ibox.state = InlineBoxState()
   if ibox.canFlushMargins(padding):
-    var offsety = ictx.lbstate.offsety
-    ictx.bctx[].flushMargins(offsety)
+    var offsety = fstate.lbstate.offsety
+    fstate.bctx.flushMargins(offsety)
     # Don't forget to add it to intrinsic height...
     #TODO ^ wat? you forgot...
-    ictx.state.offset.y += offsety - ictx.lbstate.offsety
-    ictx.lbstate.offsety = offsety
-    ictx.bctx[].positionFloats()
+    fstate.offset.y += offsety - fstate.lbstate.offsety
+    fstate.lbstate.offsety = offsety
+    fstate.bctx.positionFloats()
   if padding.start != 0:
     ibox.state.areas.add(Area(
-      offset: offset(x = ictx.lbstate.widthAfterWhitespace, y = 0),
-      size: size(w = padding.start, h = ictx.cellHeight)
+      offset: offset(x = fstate.lbstate.widthAfterWhitespace, y = 0),
+      size: size(w = padding.start, h = fstate.cellHeight)
     ))
-    ictx.lbstate.paddingTodo.add((ibox, 0))
+    fstate.lbstate.paddingTodo.add((ibox, 0))
   ibox.state.startOffset = offset(
-    x = ictx.lbstate.widthAfterWhitespace,
-    y = ictx.lbstate.offsety
+    x = fstate.lbstate.widthAfterWhitespace,
+    y = fstate.lbstate.offsety
   )
-  ictx.lbstate.size.w += padding.start
+  fstate.lbstate.size.w += padding.start
   var state = InlineState(box: ibox)
   if ibox.t == ibtParent and computed{"position"} != PositionStatic:
     lctx.pushPositioned()
   case ibox.t
   of ibtNewline:
-    ictx.finishLine(state, wrap = false, force = true,
+    fstate.finishLine(state, wrap = false, force = true,
       ibox.computed{"clear"})
-  of ibtBox: ictx.addBox(state, ibox.box)
-  of ibtBitmap: ictx.addImage(state, ibox.bmp, padding.sum())
-  of ibtText: ictx.layoutText(state, ibox.text.data)
+  of ibtBox: fstate.addBox(state, ibox.box)
+  of ibtBitmap: fstate.addImage(state, ibox.bmp, padding.sum())
+  of ibtText: fstate.layoutText(state, ibox.text.data)
   of ibtParent:
     for child in ibox.children:
-      ictx.layoutInline(child)
+      fstate.layoutInline(child)
   if padding.send != 0:
     ibox.state.areas.add(Area(
-      offset: offset(x = ictx.lbstate.size.w, y = 0),
-      size: size(w = padding.send, h = ictx.cellHeight)
+      offset: offset(x = fstate.lbstate.size.w, y = 0),
+      size: size(w = padding.send, h = fstate.cellHeight)
     ))
-    ictx.lbstate.paddingTodo.add((ibox, ibox.state.areas.high))
+    fstate.lbstate.paddingTodo.add((ibox, ibox.state.areas.high))
   if ibox.t == ibtParent:
-    ictx.lbstate.size.w += padding.send
-    ictx.lbstate.size.w += computed{"margin-right"}.px(ictx.space.w)
+    fstate.lbstate.size.w += padding.send
+    fstate.lbstate.size.w += computed{"margin-right"}.px(fstate.space.w)
   if ibox.t != ibtParent:
-    if not ictx.textFragmentSeen:
-      ictx.textFragmentSeen = true
-    ictx.lastTextFragment = ibox
+    if not fstate.textFragmentSeen:
+      fstate.textFragmentSeen = true
+    fstate.lastTextBox = ibox
   if ibox.t == ibtParent and computed{"position"} != PositionStatic:
     # This is UB in CSS 2.1, I can't find a newer spec about it,
     # and Gecko can't even layout it consistently (???)
@@ -1828,7 +1892,7 @@ proc layoutInline(ictx: var InlineContext; ibox: InlineBox) =
     # Well, it seems good enough.
     lctx.popPositioned(size(
       w = 0,
-      h = ictx.lbstate.offsety + ictx.cellHeight - ibox.state.startOffset.y
+      h = fstate.lbstate.offsety + fstate.cellHeight - ibox.state.startOffset.y
     ))
 
 # Note: caption is not included here
@@ -2593,78 +2657,48 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight)
   box.state.marginBottom = marginBottom
 
-proc initBlockPositionStates(state: var FlowState; bctx: var BlockContext;
-    box: BlockBox) =
-  let prevBps = bctx.ancestorsHead
-  bctx.ancestorsHead = BlockPositionState(
-    box: box,
-    offset: state.offset,
-    resolved: bctx.parentBps == nil
-  )
-  if prevBps != nil:
-    prevBps.next = bctx.ancestorsHead
-  if bctx.parentBps != nil:
-    bctx.ancestorsHead.offset += bctx.parentBps.offset
-    # If parentBps is not nil, then our starting position is not in a new
-    # BFC -> we must add it to our BFC offset.
-    bctx.ancestorsHead.offset += box.state.offset
-  if bctx.marginTarget == nil:
-    bctx.marginTarget = bctx.ancestorsHead
-  state.initialMarginTarget = bctx.marginTarget
-  state.initialTargetOffset = bctx.marginTarget.offset
-  if bctx.parentBps == nil:
-    # We have just established a new BFC. Resolve the margins immediately.
-    bctx.marginTarget = nil
-  state.prevParentBps = bctx.parentBps
-  bctx.parentBps = bctx.ancestorsHead
-  state.initialParentOffset = bctx.parentBps.offset
-
-func isParentResolved(state: FlowState; bctx: BlockContext): bool =
-  return bctx.marginTarget != state.initialMarginTarget or
-    state.prevParentBps != nil and state.prevParentBps.resolved
-
 # Layout a block-level child inside the same block formatting context as
 # its parent.
 # Returns the block's outer size.
 # Stores its resolved size data in `sizes'.
-proc layoutBlockChild(state: var FlowState; bctx: var BlockContext;
-    child: BlockBox; sizes: var ResolvedSizes): Size =
-  sizes = bctx.lctx.resolveBlockSizes(state.space, child.computed)
-  bctx.marginTodo.append(sizes.margin.top)
+proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
+    sizes: var ResolvedSizes): Size =
+  let lctx = fstate.lctx
+  sizes = lctx.resolveBlockSizes(fstate.space, child.computed)
+  fstate.bctx.marginTodo.append(sizes.margin.top)
   child.state = BoxLayoutState(offset: offset(x = sizes.margin.left, y = 0))
-  child.state.offset += state.offset
-  bctx.layout(child, sizes, canClear = true)
-  bctx.marginTodo.append(sizes.margin.bottom)
+  child.state.offset += fstate.offset
+  fstate.bctx.layout(child, sizes, canClear = true)
+  fstate.bctx.marginTodo.append(sizes.margin.bottom)
   return size(
     w = child.outerSize(dtHorizontal, sizes),
     # delta y is difference between old and new offsets (margin-top),
     # plus height.
-    h = child.state.offset.y - state.offset.y + child.state.size.h
+    h = child.state.offset.y - fstate.offset.y + child.state.size.h
   )
 
 # Outer layout for block-level children that establish a BFC.
 # Returns the block's outer size.
 # Stores its resolved size data in `sizes'.
 # For floats, the margin offset is returned in marginOffset.
-proc layoutBlockChildBFC(state: var FlowState; bctx: var BlockContext;
-    child: BlockBox; sizes: var ResolvedSizes; space: var AvailableSpace):
-    Size =
+proc layoutBlockChildBFC(fstate: var FlowState; child: BlockBox;
+    sizes: var ResolvedSizes; space: var AvailableSpace): Size =
   assert child.computed{"position"} != PositionAbsolute
-  let lctx = bctx.lctx
+  let lctx = fstate.lctx
   var outerHeight: LUnit
   if child.computed{"float"} == FloatNone:
-    sizes = lctx.resolveBlockSizes(state.space, child.computed)
-    var offset = state.offset
+    sizes = lctx.resolveBlockSizes(fstate.space, child.computed)
+    var offset = fstate.offset
     offset.x += sizes.margin.left
-    bctx.lctx.layoutRootBlock(child, offset, sizes)
-    bctx.marginTodo.append(sizes.margin.top)
-    bctx.flushMargins(child.state.offset.y)
-    bctx.positionFloats()
-    bctx.marginTodo.append(sizes.margin.bottom)
+    lctx.layoutRootBlock(child, offset, sizes)
+    fstate.bctx.marginTodo.append(sizes.margin.top)
+    fstate.bctx.flushMargins(child.state.offset.y)
+    fstate.bctx.positionFloats()
+    fstate.bctx.marginTodo.append(sizes.margin.bottom)
     if child.computed{"clear"} != ClearNone:
-      state.offset.y.clearFloats(bctx, bctx.bfcOffset.y,
+      fstate.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y,
         child.computed{"clear"})
-    if bctx.exclusions.len > 0:
+    if fstate.bctx.exclusions.len > 0:
       # From the standard (abridged):
       #
       # > The border box of an element that establishes a new BFC must
@@ -2686,33 +2720,33 @@ proc layoutBlockChildBFC(state: var FlowState; bctx: var BlockContext;
       #
       # Note that this does not apply to absolutely positioned elements,
       # as those ignore floats.
-      let pbfcOffset = bctx.bfcOffset
+      let pbfcOffset = fstate.bfcOffset
       let bfcOffset = offset(
         x = pbfcOffset.x + child.state.offset.x,
-        y = max(pbfcOffset.y + child.state.offset.y, bctx.clearOffset)
+        y = max(pbfcOffset.y + child.state.offset.y, fstate.bctx.clearOffset)
       )
-      let minSize = size(w = child.state.intr.w, h = bctx.lctx.attrs.ppl)
+      let minSize = size(w = child.state.intr.w, h = lctx.attrs.ppl)
       var outw: LUnit
-      let offset = bctx.findNextBlockOffset(bfcOffset, minSize, state.space,
-        outw)
+      let offset = fstate.bctx.findNextBlockOffset(bfcOffset, minSize,
+        fstate.space, outw)
       let roffset = offset - pbfcOffset
       # skip relayout if we can
-      if outw != state.space.w.u or roffset != child.state.offset:
-        space = availableSpace(w = stretch(outw), h = state.space.h)
+      if outw != fstate.space.w.u or roffset != child.state.offset:
+        space = availableSpace(w = stretch(outw), h = fstate.space.h)
         sizes = lctx.resolveBlockSizes(space, child.computed)
         lctx.layoutRootBlock(child, roffset, sizes)
     # delta y is difference between old and new offsets (margin-top
     # plus any movement caused by floats), sum of margin todo in bctx
     # (margin-bottom) + height.
-    outerHeight = child.state.offset.y - state.offset.y + child.state.size.h +
+    outerHeight = child.state.offset.y - fstate.offset.y + child.state.size.h +
       child.state.marginBottom
   else:
     sizes = lctx.resolveFloatSizes(space, child.computed)
-    bctx.lctx.layoutRootBlock(child, state.offset + sizes.margin.topLeft, sizes)
-    if state.isParentResolved(bctx):
+    lctx.layoutRootBlock(child, fstate.offset + sizes.margin.topLeft, sizes)
+    if fstate.isParentResolved(fstate.bctx):
       # If parent offset has been resolved, use marginTodo in this
       # float's initial offset.
-      child.state.offset.y += bctx.marginTodo.sum()
+      child.state.offset.y += fstate.bctx.marginTodo.sum()
     outerHeight = child.outerSize(dtVertical, sizes) + child.state.marginBottom
   return size(
     w = child.outerSize(dtHorizontal, sizes),
@@ -2723,13 +2757,12 @@ proc layoutBlockChildBFC(state: var FlowState; bctx: var BlockContext;
 # Box placement must occur during this pass, since child box layout in the
 # same block formatting context depends on knowing where the box offset is
 # (because of floats).
-proc layoutBlock(state: var FlowState; bctx: var BlockContext;
-    parent: BlockBox) =
-  var textAlign = parent.computed{"text-align"}
-  if not state.space.w.isDefinite():
+proc layoutBlock(fstate: var FlowState) =
+  var textAlign = fstate.box.computed{"text-align"}
+  if not fstate.space.w.isDefinite():
     # Aligning min-content or max-content is nonsensical.
     textAlign = TextAlignLeft
-  for child in parent.children:
+  for child in fstate.box.children:
     if child.computed{"position"} in {PositionAbsolute, PositionFixed}:
       # Delay this block's layout until its parent's dimensions are
       # actually known.
@@ -2741,31 +2774,31 @@ proc layoutBlock(state: var FlowState; bctx: var BlockContext;
       # Here our job is much easier in the unresolved case: subsequent
       # children's layout doesn't depend on our position; so we can just
       # defer margin resolution to the parent.
-      var offset = state.offset
-      if bctx.marginTarget != state.initialMarginTarget:
-        offset.y += bctx.marginTodo.sum()
-      bctx.lctx.queueAbsolute(child, offset)
+      var offset = fstate.offset
+      if fstate.bctx.marginTarget != fstate.initialMarginTarget:
+        offset.y += fstate.bctx.marginTodo.sum()
+      fstate.lctx.queueAbsolute(child, offset)
       continue
     var sizes: ResolvedSizes
-    var space = state.space
+    var space = fstate.space
     let outerSize = if child.computed.establishesBFC():
-      state.layoutBlockChildBFC(bctx, child, sizes, space)
+      fstate.layoutBlockChildBFC(child, sizes, space)
     else:
-      state.layoutBlockChild(bctx, child, sizes)
-    state.intr.w = max(state.intr.w, child.state.intr.w)
+      fstate.layoutBlockChild(child, sizes)
+    fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
     if child.computed{"float"} == FloatNone:
       if textAlign == TextAlignChaCenter:
-        child.state.offset.x += max(state.space.w.u div 2 -
+        child.state.offset.x += max(fstate.space.w.u div 2 -
           child.state.size.w div 2, 0)
       elif textAlign == TextAlignChaRight:
-        child.state.offset.x += max(state.space.w.u - child.state.size.w -
+        child.state.offset.x += max(fstate.space.w.u - child.state.size.w -
           sizes.margin.right, 0)
       if child.computed{"position"} == PositionRelative:
-        bctx.lctx.positionRelative(state.space, child)
-      state.maxChildWidth = max(state.maxChildWidth, outerSize.w)
-      state.offset.y += outerSize.h
-      state.intr.h += outerSize.h - child.state.size.h + child.state.intr.h
-    elif state.space.w.t == scFitContent:
+        fstate.lctx.positionRelative(fstate.space, child)
+      fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
+      fstate.offset.y += outerSize.h
+      fstate.intr.h += outerSize.h - child.state.size.h + child.state.intr.h
+    elif fstate.space.w.t == scFitContent:
       # Float position depends on the available width, but in this case
       # the parent width is not known.  Skip this box; we will position
       # it in the next pass.
@@ -2774,9 +2807,9 @@ proc layoutBlock(state: var FlowState; bctx: var BlockContext;
       # maxChildWidth in this iteration; instead, its outer width will be
       # summed up in totalFloatWidth and added to maxChildWidth in
       # initReLayout.
-      state.totalFloatWidth += outerSize.w
+      fstate.totalFloatWidth += outerSize.w
     else:
-      state.maxChildWidth = max(state.maxChildWidth, outerSize.w)
+      fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
       # Two cases exist:
       # a) The float cannot be positioned, because `box' has not resolved
       #    its y offset yet. (e.g. if float comes before the first child,
@@ -2792,61 +2825,19 @@ proc layoutBlock(state: var FlowState; bctx: var BlockContext;
       #   to the same object, that means our (or an ancestor's) offset has
       #   been resolved, i.e. we can position floats already.
       let marginOffset = sizes.margin.startOffset()
-      if bctx.marginTarget != state.initialMarginTarget:
+      if fstate.bctx.marginTarget != fstate.initialMarginTarget:
         # y offset resolved
-        bctx.positionFloat(child, state.space, outerSize, marginOffset,
-          bctx.parentBps.offset)
+        fstate.bctx.positionFloat(child, fstate.space, outerSize, marginOffset,
+          fstate.bctx.parentBps.offset)
       else:
-        bctx.unpositionedFloats.add(UnpositionedFloat(
-          space: state.space,
-          parentBps: bctx.parentBps,
+        fstate.bctx.unpositionedFloats.add(UnpositionedFloat(
+          space: fstate.space,
+          parentBps: fstate.bctx.parentBps,
           box: child,
           marginOffset: marginOffset,
           outerSize: outerSize
         ))
-  parent.applyBaseline()
-
-# Unlucky path, where we have floating blocks and a fit-content width.
-# Reset marginTodo & the starting offset, and stretch the box to the
-# max child width.
-proc initReLayout(state: var FlowState; bctx: var BlockContext; box: BlockBox;
-    sizes: ResolvedSizes) =
-  bctx.marginTodo = state.oldMarginTodo
-  # Note: we do not reset our own BlockPositionState's offset; we assume it
-  # has already been resolved in the previous pass.
-  # (If not, it won't be resolved in this pass either, so the following code
-  # does not really change anything.)
-  bctx.parentBps.next = nil
-  if state.initialMarginTarget != bctx.marginTarget:
-    # Reset the initial margin target to its previous state, and then set
-    # it as the marginTarget again.
-    # Two solutions exist:
-    # a) Store the initial margin target offset, then restore it here. Seems
-    #    clean, but it would require a linked list traversal to update all
-    #    child margin positions.
-    # b) Re-use the previous margin target offsets; they are guaranteed
-    #    to remain the same, because out-of-flow elements (like floats) do not
-    #    participate in margin resolution. We do this by setting the margin
-    #    target to a dummy object, which is a small price to pay compared
-    #    to solution a).
-    bctx.marginTarget = BlockPositionState(
-      # Use initialTargetOffset to emulate the BFC positioning of the
-      # previous pass.
-      offset: state.initialTargetOffset,
-      resolved: state.initialMarginTarget.resolved
-    )
-    # Also set ancestorsHead as the dummy object, so next elements are
-    # chained to that.
-    bctx.ancestorsHead = bctx.marginTarget
-    if state.prevParentBps == nil:
-      # We have just established a new BFC. Resolve the margins immediately.
-      bctx.marginTarget = nil
-  bctx.exclusions.setLen(state.oldExclusionsLen)
-  state.offset = sizes.padding.topLeft
-  state.intr = size(w = 0, h = 0)
-  box.applySize(sizes, state.maxChildWidth + state.totalFloatWidth, sizes.space,
-    dtHorizontal)
-  state.space.w = stretch(box.state.size.w)
+  fstate.box.applyBaseline()
 
 # 1st pass: build tree
 
