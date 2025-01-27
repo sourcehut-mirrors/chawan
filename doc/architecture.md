@@ -239,6 +239,8 @@ code manually, we have JS pragmas to automagically turn Nim procedures
 into JavaScript functions. (For details on the specific pragmas, see the
 [manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md).)
 
+(TODO: description of type conversion is somewhat outdated.)
+
 The type conversion itself is handled by the overloaded toJS function
 and the generic fromJS function. toJS returns a JSValue, the native
 data type of QuickJS. fromJS returns a Result[T, JSError], which is
@@ -337,19 +339,23 @@ CSS 3 parsing module. The latest iteration of the selector parser is
 pretty good. The media query parser and the CSS value parser both work
 OK, but are missing some commonly used features like variables.
 
-Cascading is slow, though it could be slower. Chawan caches the style
-tree, so re-styles are normally very fast. Also, a hash map is used for
-reducing initial style calculation times. However, we don't have a Bloom
-filter yet.
+Cascading is OK.  To speed up selector matching, various properties are
+hashed to filter out irrelevant CSS rules.  However, no further style
+optimization exists yet (such as Bloom filters or style interning).
+
+Style calculation is incremental, and results are cached until an
+element's style is invalidated, so re-styles are quite fast.  (The
+invalidation logic is primitive, but as far as I can tell, it's good
+enough in most cases.)
 
 ### Layout
 
-Our layout engine is a rather simple procedural layout implementation.
-It runs in two passes.
+Our layout engine is a rather "simple" procedural layout implementation.
+It runs in two passes (but I'm working on eliminating the first one.)
 
-1. Build a layout tree. Anonymous boxes are generated here. After this
-   pass, the tree is no longer mutated, only the `state` and `render`
-   fields of the respective boxes.
+1. Build a layout tree. Anonymous block and table boxes are generated
+   here. After this pass, the tree is no longer mutated, only the
+   `state` and `render` fields of the respective boxes.
 2. Position said boxes, always relative to their parent. This pass
    sets the values in the `state` field.
 
@@ -360,26 +366,24 @@ the entire sub-layout is skipped if the sizes remained identical.
 (This usually happens if a box's inner layout does not depend on its
 parent box's sizes at all, e.g. with a non-percentage specified width.)
 
-Layout is fully recursive. This means that after a certain nesting
-depth, the buffer will run out of stack space and promptly crash.
-
 Since we do not cache layout results, and the whole page is layouted,
-it gets quite slow on large documents. (Layout is being incrementally
+it gets quite slow on large documents.  (Layout is being incrementally
 refactored to make implementing a cache simpler.)
 
 ### Rendering
 
 After layout is finished, the document is rendered onto a text-based
 canvas, which is represented as a sequence of strings associated with
-their formatting.
+their formatting.  (Right now, "formatting" also includes a reference to
+the respective DOM nodes; in the future, it won't.)
 
 Additionally, boxes are assigned an offset in the `render` field here,
 which is used when jumping to anchors.
 
 The entire document is rendered, and this is our main performance
-bottleneck right now. (In fact, rendering takes much longer than
-layout. Styling is even slower, but that's less of a problem because
-it's cached.)
+bottleneck right now.  (In fact, rendering takes much longer than
+layout.  Styling is even slower, but that's less of a problem because it
+only happens once for most elements.)
 
 The positive side of this design is that search is very simple (and
 fast), since we are just running regexes over a linear sequence of

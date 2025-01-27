@@ -687,6 +687,17 @@ Save the source of this buffer.
 T}@T{
 T}
 T{
+\f[CR]setCursorX(x)\f[R], \f[CR]setCursorY(y)\f[R],
+\f[CR]setCursorXY(x, y)\f[R], \f[CR]setCursorXCenter(x)\f[R],
+\f[CR]setCursorYCenter(y)\f[R], \f[CR]setCursorXYCenter(x, y)\f[R]
+T}@T{
+Set the cursor position to \f[CR]x\f[R] and \f[CR]y\f[R] respectively,
+scrolling the view if necessary.
+Variants that end with \[lq]Center\[rq] will also center the screen
+around the position if it is outside the screen.
+T}@T{
+T}
+T{
 \f[CR]url\f[R]
 T}@T{
 Getter for the buffer\[cq]s URL.

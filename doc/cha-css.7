@@ -2,14 +2,153 @@
 .\"
 .TH "cha\-css" "7" "" "" "Image support in Chawan"
 .SH CSS in Chawan
-This document describes some proprietary CSS extensions supported by
-Chawan, as well as its intentional deviations from standards.
+This document describes CSS properties supported by Chawan, as well as
+its proprietary extensions and deviations from standards.
 .PP
-If you discover a deviation that is not covered by this document, then
-please open a ticket at \c
+If you discover a deviation that is not covered by this document, please
+open a ticket at \c
 .UR https://todo.sr.ht/~bptato/chawan
 .UE \c
 \&.
+.SS Standard properties
+A list of supported standard properties, with notes on unimplemented
+values:
+.IP \[bu] 2
+background\-color (see color)
+.IP \[bu] 2
+background\-image (displays placeholders only)
+.IP \[bu] 2
+border\-collapse
+.IP \[bu] 2
+border\-spacing
+.IP \[bu] 2
+bottom
+.IP \[bu] 2
+box\-sizing
+.IP \[bu] 2
+caption\-side
+.IP \[bu] 2
+clear
+.IP \[bu] 2
+color (hex values and functions \f[CR]rgb\f[R], \f[CR]rgba\f[R],
+\f[CR]hsl\f[R], \f[CR]hsla\f[R])
+.IP \[bu] 2
+content
+.IP \[bu] 2
+counter\-reset
+.IP \[bu] 2
+display (\f[CR]block\f[R], \f[CR]inline\-block\f[R],
+\f[CR]list\-item\f[R], \f[CR]table\f[R], \f[CR]table\-*\f[R],
+\f[CR]flex\f[R], \f[CR]inline\-flex\f[R], \f[CR]flow\-root\f[R])
+.IP \[bu] 2
+flex\-basis (but \f[CR]content\f[R] not supported)
+.IP \[bu] 2
+flex\-direction
+.IP \[bu] 2
+flex\-grow
+.IP \[bu] 2
+flex\-shrink
+.IP \[bu] 2
+flex\-wrap
+.IP \[bu] 2
+float
+.IP \[bu] 2
+font\-size (ignored; only for JS compatibility)
+.IP \[bu] 2
+font\-style (\f[CR]oblique\f[R] interpreted as \f[CR]italic\f[R])
+.IP \[bu] 2
+font\-weight (numeric properties > 500 interpreted as bold, others as
+regular)
+.IP \[bu] 2
+height
+.IP \[bu] 2
+left
+.IP \[bu] 2
+list\-style\-position
+.IP \[bu] 2
+list\-style\-type (but no custom list styles)
+.IP \[bu] 2
+margin\-bottom
+.IP \[bu] 2
+margin\-left
+.IP \[bu] 2
+margin\-right
+.IP \[bu] 2
+margin\-top
+.IP \[bu] 2
+max\-height
+.IP \[bu] 2
+max\-width
+.IP \[bu] 2
+min\-height
+.IP \[bu] 2
+min\-width
+.IP \[bu] 2
+opacity (hacky; only works with \f[CR]opacity: 0\f[R])
+.IP \[bu] 2
+overflow\-x (see below on scrollbars)
+.IP \[bu] 2
+overflow\-y (see below on scrollbars)
+.IP \[bu] 2
+padding\-bottom
+.IP \[bu] 2
+padding\-left
+.IP \[bu] 2
+padding\-right
+.IP \[bu] 2
+padding\-top
+.IP \[bu] 2
+position (see below for \f[CR]sticky\f[R] and \f[CR]fixed\f[R])
+.IP \[bu] 2
+quotes
+.IP \[bu] 2
+right
+.IP \[bu] 2
+text\-align
+.IP \[bu] 2
+text\-decoration (\f[CR]none\f[R], \f[CR]underline\f[R],
+\f[CR]overline\f[R], \f[CR]line\-through\f[R])
+.IP \[bu] 2
+text\-transform
+.IP \[bu] 2
+top
+.IP \[bu] 2
+vertical\-align
+.IP \[bu] 2
+visibility
+.IP \[bu] 2
+white\-space
+.IP \[bu] 2
+width
+.IP \[bu] 2
+word\-break
+.IP \[bu] 2
+z\-index (negative values are not respected yet)
+.PP
+Shorthands:
+.IP \[bu] 2
+all
+.IP \[bu] 2
+margin
+.IP \[bu] 2
+padding
+.IP \[bu] 2
+background (only color and url; other components are skipped)
+.IP \[bu] 2
+list\-style (list\-style\-image is skipped)
+.IP \[bu] 2
+flex
+.IP \[bu] 2
+flex\-flow
+.IP \[bu] 2
+overflow
+.PP
+Variables (the \f[CR]var\f[R] function) are supported only for
+non\-shorthand properties and the \f[CR]background\f[R] shorthand.
+.PP
+Values with a \f[CR]<length>\f[R] type support very simple
+\f[CR]calc()\f[R] expressions that consist of one addition or
+subtraction and do not use the \f[CR]var\f[R] function.
 .SS Proprietary extensions
 .IP \[bu] 2
 \f[CR]text\-align\f[R] accepts the values \f[CR]\-cha\-center\f[R],
@@ -62,8 +201,8 @@ screen.
 .SS User agent style sheet
 The user agent style sheet is a combination of the styles suggested by
 the HTML standard and a CSS port of w3m\[cq]s rendering.
-In general, faithfulness to w3m is preferred over the standard, unless
-it breaks existing websites.
+In general, faithfulness to w3m is preferred over the standard\[cq]s
+suggestions, unless those break on existing websites.
 .PP
 Link colors differ depending on the terminal\[cq]s color scheme.
 .SS Sizing and positioning
