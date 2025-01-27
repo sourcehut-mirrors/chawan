@@ -1363,7 +1363,7 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
         input.files = @[newWebFile(s, fd)]
         input.invalidate()
       else:
-        input.setValue(s)
+        input.value = s
       buffer.maybeReshape()
       return buffer.implicitSubmit(input)
     of TAG_TEXTAREA:

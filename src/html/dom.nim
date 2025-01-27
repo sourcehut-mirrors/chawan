@@ -308,7 +308,7 @@ type
 
   HTMLInputElement* = ref object of FormAssociatedElement
     inputType* {.jsget: "type".}: InputType
-    value* {.jsget.}: string
+    internalValue: CharacterData
     internalChecked {.jsget: "checked".}: bool
     files* {.jsget.}: seq[WebFile]
     xcoord*: int
@@ -2627,6 +2627,9 @@ func serializeFragment*(node: Node): string =
   result = ""
   result.serializeFragment(node)
 
+func newCharacterData*(data: sink string = ""): CharacterData =
+  return CharacterData(data: data)
+
 # Element
 proc hash(element: Element): Hash =
   return hash(cast[pointer](element))
@@ -3002,8 +3005,20 @@ func length(this: HTMLFormElement): int {.jsfget.} =
 func jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
-proc setValue*(this: HTMLInputElement; value: string) {.jsfset: "value".} =
-  this.value = value
+func value*(this: HTMLInputElement): lent string =
+  if this.internalValue == nil:
+    this.internalValue = newCharacterData()
+  return this.internalValue.data
+
+func jsValue(ctx: JSContext; this: HTMLInputElement): JSValue
+    {.jsfget: "value".} =
+  #TODO wat
+  return ctx.toJS(this.value)
+
+proc `value=`*(this: HTMLInputElement; value: sink string) {.jsfset: "value".} =
+  if this.internalValue == nil:
+    this.internalValue = CharacterData()
+  this.internalValue.data = value
   this.invalidate()
 
 proc setType(this: HTMLInputElement; s: string) {.jsfset: "type".} =
@@ -3024,32 +3039,35 @@ proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
   input.invalidate()
   input.internalChecked = b
 
-func inputString*(input: HTMLInputElement): string =
+func inputString*(input: HTMLInputElement): CharacterData =
   case input.inputType
   of itCheckbox, itRadio:
     if input.checked:
-      "*"
-    else:
-      " "
+      return newCharacterData("*")
+    return newCharacterData(" ")
   of itSearch, itText, itEmail, itURL, itTel:
-    input.value.padToWidth(int(input.attrulgz(satSize).get(20)))
+    if input.value.len == 20:
+      return input.internalValue
+    return CharacterData(
+      data: input.value.padToWidth(int(input.attrulgz(satSize).get(20)))
+    )
   of itPassword:
-    '*'.repeat(input.value.len).padToWidth(int(input.attrulgz(satSize).get(20)))
+    let n = int(input.attrulgz(satSize).get(20))
+    return newCharacterData('*'.repeat(input.value.len).padToWidth(n))
   of itReset:
     if input.attrb(satValue):
-      input.value
-    else:
-      "RESET"
+      return input.internalValue
+    return newCharacterData("RESET")
   of itSubmit, itButton:
     if input.attrb(satValue):
-      input.value
-    else:
-      "SUBMIT"
+      return input.internalValue
+    return newCharacterData("SUBMIT")
   of itFile:
     #TODO multiple files?
     let s = if input.files.len > 0: input.files[0].name else: ""
-    s.padToWidth(int(input.attrulgz(satSize).get(20)))
-  else: input.value
+    return newCharacterData(s.padToWidth(int(input.attrulgz(satSize).get(20))))
+  else:
+    return input.internalValue
 
 # <label>
 func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =

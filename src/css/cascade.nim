@@ -413,11 +413,6 @@ when defined(debug):
     of stReplacement:
       return "#replacement"
 
-# Defined here so it isn't accidentally used in dom.
-#TODO it may be better to do it in dom anyway, so we can cache it...
-func newCharacterData*(data: sink string): CharacterData =
-  return CharacterData(data: data)
-
 template computed*(styledNode: StyledNode): CSSValues =
   styledNode.element.computedMap[styledNode.pseudo]
 
@@ -453,10 +448,9 @@ iterator children*(styledNode: StyledNode): StyledNode {.closure.} =
       yield initStyledPseudo(parent, peBefore)
     case parent.tagType
     of TAG_INPUT:
-      #TODO cache (just put value in a CharacterData)
-      let s = HTMLInputElement(parent).inputString()
-      if s.len > 0:
-        yield initStyledText(parent, s)
+      let cdata = HTMLInputElement(parent).inputString()
+      if cdata != nil and cdata.data.len != 0:
+        yield initStyledText(parent, cdata)
     of TAG_TEXTAREA:
       #TODO cache (do the same as with input, and add borders in render)
       yield initStyledText(parent, HTMLTextAreaElement(parent).textAreaString())
