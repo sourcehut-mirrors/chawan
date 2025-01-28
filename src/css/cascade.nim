@@ -43,6 +43,7 @@ type
 
   ApplyValueContext = object
     vals: CSSValues
+    vars: CSSVariableMap
     parentComputed: CSSValues
     previousOrigin: CSSValues
     window: Window
@@ -50,7 +51,7 @@ type
     varsSeen: HashSet[CAtom]
 
 # Forward declarations
-proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
+proc applyValue0(ctx: var ApplyValueContext; entry: CSSComputedEntry;
   initType: InitType; nextInitType: set[InitType])
 proc applyStyle*(element: Element)
 
@@ -98,28 +99,27 @@ proc calcRules(map: var RuleListMap; element: Element;
     for item in it:
       map[pseudo][origin].add(item.rule)
 
-proc findVariable(computed: CSSValues; varName: CAtom): CSSVariable =
-  var vars = computed.vars
-  while vars != nil:
-    let cvar = vars.table.getOrDefault(varName)
+proc findVariable(ctx: var ApplyValueContext; varName: CAtom): CSSVariable =
+  while ctx.vars != nil:
+    let cvar = ctx.vars.table.getOrDefault(varName)
     if cvar != nil:
       return cvar
-    vars = vars.parent
+    ctx.vars = ctx.vars.parent
   return nil
 
 proc applyVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
     varName: CAtom; fallback: ref CSSComputedEntry; initType: InitType;
     nextInitType: set[InitType]) =
   let v = t.valueType
-  let cvar = ctx.vals.findVariable(varName)
+  let cvar = ctx.findVariable(varName)
   if cvar == nil:
     if fallback != nil:
-      ctx.applyValue(fallback[], initType, nextInitType)
+      ctx.applyValue0(fallback[], initType, nextInitType)
     return
   for (iv, entry) in cvar.resolved.mitems:
     if iv == v:
       entry.t = t # must override, same var can be used for different props
-      ctx.applyValue(entry, initType, nextInitType)
+      ctx.applyValue0(entry, initType, nextInitType)
       return
   var entries: seq[CSSComputedEntry] = @[]
   if entries.parseComputedValues($t, cvar.cvals, ctx.window.attrsp[],
@@ -131,7 +131,7 @@ proc applyVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
     else:
       ctx.varsSeen.clear()
       cvar.resolved.add((v, entries[0]))
-    ctx.applyValue(entries[0], initType, nextInitType)
+    ctx.applyValue0(entries[0], initType, nextInitType)
 
 proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
     global: CSSGlobalType; initType: InitType) =
@@ -148,7 +148,7 @@ proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
     else:
       ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
 
-proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
+proc applyValue0(ctx: var ApplyValueContext; entry: CSSComputedEntry;
     initType: InitType; nextInitType: set[InitType]) =
   case entry.et
   of ceBit: ctx.vals.bits[entry.t].dummy = entry.bit
@@ -161,6 +161,11 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
       nextInitType)
     return # maybe it applies, maybe it doesn't...
   ctx.initMap[entry.t] = ctx.initMap[entry.t] + nextInitType
+
+proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
+    initType: InitType; nextInitType: set[InitType]) =
+  ctx.vars = ctx.vals.vars
+  ctx.applyValue0(entry, initType, nextInitType)
 
 proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   template set_cv(t, x, b: untyped) =

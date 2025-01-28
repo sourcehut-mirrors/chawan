@@ -12,9 +12,14 @@ div { color: white; --pink: yellow !important; background-color: var(--purple) }
 	color: var(--test3);
 	background-color: var(--test5);
 }
-</style>
+:root { --pink: pink }
+a { --pink0: var(--pink); --gray: gray }
+#test2 { color: var(--pink0); --pink: yellow !important; background-color: var(--gray) }
 </style>
 <a>
 <div>purple</div>
 </a>
 <span id=test>test</span>
+<a>
+<div id=test2>test2</div>
+</a>
