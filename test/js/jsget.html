@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<title>Test if .jsget handles ownership correctly.</title>
+<script>
+let a = {};
+let x = new CustomEvent("hi", {detail: a});
+x.detail;
+x.detail;
+x.detail;
+x.detail;
+x.detail;
+x.detail;
+x.detail;
+x.detail;
+x.detail;
+x.detail;
+</script>
+Success

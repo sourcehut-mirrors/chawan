@@ -1271,7 +1271,9 @@ proc registerGetters(stmts: NimNode; info: RegistryInfo;
           return JS_ThrowTypeError(ctx,
             "'%s' called on an object that is not an instance of %s", `fn`,
             `jsname`)
-        when typeof(arg_0.`node`) is object:
+        when arg0.`node` is JSValue:
+          return JS_DupValue(ctx, arg0.`node`)
+        elif arg_0.`node` is object:
           return toJSP(ctx, arg_0, arg_0.`node`)
         else:
           return toJS(ctx, arg_0.`node`)
@@ -1293,8 +1295,7 @@ proc registerSetters(stmts: NimNode; info: RegistryInfo;
     let fn = op.name
     let id = ident($bfSetter & "_" & tname & "_" & fn)
     stmts.add(quote do:
-      proc `id`(ctx: JSContext; this: JSValue; val: JSValue): JSValue
-          {.cdecl.} =
+      proc `id`(ctx: JSContext; this, val: JSValue): JSValue {.cdecl.} =
         when `t` is object:
           var arg_0: ptr `t`
         else:
@@ -1305,8 +1306,12 @@ proc registerSetters(stmts: NimNode; info: RegistryInfo;
             `jsname`)
         # We can't just set arg_0.`node` directly, or fromJS may damage it.
         var nodeVal: typeof(arg_0.`node`)
-        if ctx.fromJS(val, nodeVal).isNone:
-          return JS_EXCEPTION
+        when nodeVal is JSValue:
+          static:
+            error(".jsset is not supported on JSValue; use jsfset")
+        else:
+          if ctx.fromJS(val, nodeVal).isNone:
+            return JS_EXCEPTION
         arg_0.`node` = move(nodeVal)
         return JS_DupValue(ctx, val)
     )
