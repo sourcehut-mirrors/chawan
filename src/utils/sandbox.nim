@@ -93,7 +93,7 @@ elif SandboxMode == stSeccomp:
 
 else:
   {.warning: "Building without syscall sandboxing!".}
-  proc enterBufferSandbox*(sockPath: string) =
+  proc enterBufferSandbox*() =
     discard
 
   proc enterNetworkSandbox*() =
