@@ -170,7 +170,7 @@ func composed(this: Event): bool {.jsfget.} =
 
 # CustomEvent
 proc newCustomEvent(ctx: JSContext; ctype: CAtom;
-    eventInitDict = CustomEventInit()): CustomEvent {.jsctor.} =
+    eventInitDict = CustomEventInit(detail: JS_NULL)): CustomEvent {.jsctor.} =
   let event = CustomEvent(
     ctype: ctype,
     detail: JS_DupValue(ctx, eventInitDict.detail)
@@ -181,18 +181,20 @@ proc newCustomEvent(ctx: JSContext; ctype: CAtom;
 proc finalize(rt: JSRuntime; this: CustomEvent) {.jsfin.} =
   JS_FreeValueRT(rt, this.detail)
 
-proc initCustomEvent(this: CustomEvent; ctype: CAtom;
+proc initCustomEvent(ctx: JSContext; this: CustomEvent; ctype: CAtom;
     bubbles, cancelable: bool; detail: JSValue) {.jsfunc.} =
   if efDispatch notin this.flags:
+    if efInitialized notin this.flags:
+      JS_FreeValue(ctx, this.detail)
+    this.detail = JS_DupValue(ctx, detail)
     this.initialize(ctype, bubbles, cancelable)
-    this.detail = detail
 
 # MessageEvent
 proc finalize(rt: JSRuntime; this: MessageEvent) {.jsfin.} =
   JS_FreeValueRT(rt, this.data)
 
 proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
-    eventInit = MessageEventInit()): MessageEvent =
+    eventInit = MessageEventInit(data: JS_NULL)): MessageEvent =
   let event = MessageEvent(
     ctype: ctype,
     data: JS_DupValue(ctx, eventInit.data),
