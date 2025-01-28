@@ -1125,7 +1125,9 @@ proc formatDuration(dur: Duration): string =
     result &= $parts[it]
 
 proc makeProgress(it: DownloadItem; now: Time): string =
-  result = "  "
+  result = it.displayUrl.htmlEscape() & '\n'
+  result &= "  -> " & it.path & '\n'
+  result &= "  "
   #TODO implement progress element and use that
   var rat = 0u64
   if it.contentLen == uint64.high and it.sent > 0 and it.output == nil:
@@ -1205,8 +1207,6 @@ proc loadDownload(ctx: LoaderContext; handle: InputHandle; request: Request) =
     let now = getTime()
     var refresh = false
     for i, it in ctx.downloadList.mpairs:
-      body &= it.displayUrl.htmlEscape()
-      body &= "\n  --> " & it.path
       if it.output != nil:
         it.sent = it.output.bytesSent
         if it.output.stream == nil:
