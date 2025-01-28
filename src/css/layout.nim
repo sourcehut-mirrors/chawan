@@ -211,7 +211,7 @@ type
     neg: LUnit
 
   LineBoxState = object
-    atomStates: seq[InlineAtomState]
+    iastates: seq[InlineAtomState]
     hasExclusion: bool
     charwidth: int
     # Set at the end of layoutText. It helps determine the beginning of the
@@ -219,10 +219,8 @@ type
     widthAfterWhitespace: LUnit
     minHeight: LUnit # minimum height to fit all inline atoms
     paddingTodo: seq[tuple[box: InlineBox; i: int]]
-    atoms: seq[InlineAtom]
     size: Size
     availableWidth: LUnit # actual place available after float exclusions
-    offsety: LUnit # offset of line in root box
     height: LUnit # height used for painting; does not include padding
     intrh: LUnit # intrinsic minimum height
     totalFloatWidth: LUnit
@@ -235,6 +233,7 @@ type
     marginTop: LUnit
     marginBottom: LUnit
     box: InlineBox
+    atom: InlineAtom
 
   InlineState = object
     box: InlineBox
@@ -282,6 +281,10 @@ proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   canClear: bool)
 proc positionFloat(bctx: var BlockContext; child: BlockBox;
   space: AvailableSpace; outerSize: Size; marginOffset, bfcOffset: Offset)
+proc layoutBlockChildBFC(fstate: var FlowState; child: BlockBox;
+  sizes: var ResolvedSizes; space: var AvailableSpace): Size
+proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
+  sizes: var ResolvedSizes): Size
 
 template bctx(fstate: FlowState): BlockContext =
   fstate.pbctx[]
@@ -333,9 +336,9 @@ func computeShift(fstate: FlowState; state: InlineState): LUnit =
     # skip line feed between double-width characters
     return 0
   if not state.box.computed.whitespacepre:
-    if fstate.lbstate.atoms.len == 0:
+    if fstate.lbstate.iastates.len == 0:
       return 0
-    let atom = fstate.lbstate.atoms[^1]
+    let atom = fstate.lbstate.iastates[^1].atom
     if atom.t == iatWord and atom.str[^1] == ' ':
       return 0
   return fstate.cellWidth * fstate.whitespacenum
@@ -359,8 +362,8 @@ const TextAlignNone = {
 func resizeLine(lbstate: LineBoxState; lctx: LayoutContext): LUnit =
   let baseline = lbstate.baseline
   var h = lbstate.size.h
-  for i, atom in lbstate.atoms:
-    let iastate = lbstate.atomStates[i]
+  for i, iastate in lbstate.iastates.mypairs:
+    let atom = iastate.atom
     # In all cases, the line's height must at least equal the atom's height.
     # (Where the atom is actually placed is irrelevant here.)
     h = max(h, atom.size.h)
@@ -385,8 +388,8 @@ func resizeLine(lbstate: LineBoxState; lctx: LayoutContext): LUnit =
 proc positionAtoms(lbstate: LineBoxState; lctx: LayoutContext): LUnit =
   let baseline = lbstate.baseline
   var marginTop: LUnit = 0
-  for i, atom in lbstate.atoms:
-    let iastate = lbstate.atomStates[i]
+  for i, iastate in lbstate.iastates.mypairs:
+    let atom = iastate.atom
     case iastate.vertalign.keyword
     of VerticalAlignBaseline:
       # Atom is placed at (line baseline) - (atom baseline) - len
@@ -424,11 +427,11 @@ func getLineXShift(fstate: FlowState; width: LUnit): LUnit =
     let width = min(width, fstate.lbstate.availableWidth)
     max(width, fstate.lbstate.size.w) - fstate.lbstate.size.w
   of TextAlignCenter, TextAlignChaCenter:
-    let width = min(width, fstate.lbstate.availableWidth)
-    max((max(width, fstate.lbstate.size.w)) div 2 - fstate.lbstate.size.w div 2, 0)
+    let w = min(width, fstate.lbstate.availableWidth)
+    max(max(w, fstate.lbstate.size.w) div 2 - fstate.lbstate.size.w div 2, 0)
 
 proc shiftAtoms(fstate: var FlowState; marginTop: LUnit) =
-  let offsety = fstate.lbstate.offsety
+  let offsety = fstate.offset.y
   let shiftTop = marginTop
   let cellHeight = fstate.cellHeight
   let width = fstate.getLineWidth()
@@ -438,7 +441,8 @@ proc shiftAtoms(fstate: var FlowState; marginTop: LUnit) =
   var currentFragment: InlineBox = nil
   let offsetyShifted = shiftTop + offsety
   var areaY: LUnit = 0
-  for i, atom in fstate.lbstate.atoms:
+  for i, iastate in fstate.lbstate.iastates.mypairs:
+    let atom = iastate.atom
     atom.offset.y = atom.offset.y + offsetyShifted
     areaY = max(atom.offset.y, areaY)
     #TODO why not offsetyShifted here?
@@ -447,11 +451,11 @@ proc shiftAtoms(fstate: var FlowState; marginTop: LUnit) =
     # now position on the inline axis
     atom.offset.x += xshift
     totalWidth += atom.size.w
-    let box = fstate.lbstate.atomStates[i].box
+    let box = fstate.lbstate.iastates[i].box
     if currentFragment != box:
       if currentFragment != nil:
         # flush area
-        let lastAtom = fstate.lbstate.atoms[i - 1]
+        let lastAtom = fstate.lbstate.iastates[i - 1].atom
         let w = lastAtom.offset.x + lastAtom.size.w - currentAreaOffsetX
         if w != 0:
           currentFragment.state.areas.add(Area(
@@ -464,10 +468,10 @@ proc shiftAtoms(fstate: var FlowState; marginTop: LUnit) =
       currentAreaOffsetX = if box.state.areas.len == 0:
         box.state.atoms[0].offset.x
       else:
-        fstate.lbstate.atoms[0].offset.x
+        fstate.lbstate.iastates[0].atom.offset.x
   if currentFragment != nil:
     # flush area
-    let atom = fstate.lbstate.atoms[^1]
+    let atom = fstate.lbstate.iastates[^1].atom
     areaY = max(atom.offset.y, areaY)
     # it seems cellHeight is what other browsers use here too?
     let w = atom.offset.x + atom.size.w - currentAreaOffsetX
@@ -514,26 +518,25 @@ proc alignLine(fstate: var FlowState) =
   # Set the line height to size.h.
   fstate.lbstate.height = fstate.lbstate.size.h
 
-proc putAtom(state: var LineBoxState; atom: InlineAtom;
-    iastate: InlineAtomState; box: InlineBox) =
-  state.atomStates.add(iastate)
-  state.atomStates[^1].box = box
-  state.atoms.add(atom)
-  box.state.atoms.add(atom)
+proc putAtom(lbstate: var LineBoxState; iastate: InlineAtomState;
+    box: InlineBox) =
+  lbstate.iastates.add(iastate)
+  lbstate.iastates[^1].box = box
+  box.state.atoms.add(iastate.atom)
 
 proc addSpacing(fstate: var FlowState; width: LUnit; state: InlineState;
     hang = false) =
   let box = fstate.whitespaceFragment
-  if box.state.atoms.len == 0 or fstate.lbstate.atoms.len == 0 or
+  if box.state.atoms.len == 0 or fstate.lbstate.iastates.len == 0 or
       (let oatom = box.state.atoms[^1];
-        oatom.t != iatWord or oatom != fstate.lbstate.atoms[^1]):
+        oatom.t != iatWord or oatom != fstate.lbstate.iastates[^1].atom):
     let atom = InlineAtom(
       t: iatWord,
       size: size(w = 0, h = fstate.cellHeight),
       offset: offset(x = fstate.lbstate.size.w, y = fstate.cellHeight)
     )
-    let iastate = InlineAtomState(baseline: atom.size.h)
-    fstate.lbstate.putAtom(atom, iastate, box)
+    let iastate = InlineAtomState(baseline: atom.size.h, atom: atom)
+    fstate.lbstate.putAtom(iastate, box)
   let atom = box.state.atoms[^1]
   let n = (width div fstate.cellWidth).toInt #TODO
   for i in 0 ..< n:
@@ -583,7 +586,7 @@ proc initLine(fstate: var FlowState) =
   #TODO what if maxContent/minContent?
   if fstate.bctx.exclusions.len > 0:
     let bfcOffset = fstate.bfcOffset
-    let y = fstate.lbstate.offsety + bfcOffset.y
+    let y = fstate.offset.y + bfcOffset.y
     var left = bfcOffset.x + fstate.lbstate.size.w
     var right = bfcOffset.x + fstate.lbstate.availableWidth
     for ex in fstate.bctx.exclusions:
@@ -599,7 +602,7 @@ proc initLine(fstate: var FlowState) =
 
 proc finishLine(fstate: var FlowState; state: var InlineState; wrap: bool;
     force = false; clear = ClearNone) =
-  if fstate.lbstate.atoms.len != 0 or force:
+  if fstate.lbstate.iastates.len != 0 or force:
     let whitespace = state.box.computed{"white-space"}
     if whitespace == WhitespacePre:
       fstate.flushWhitespace(state)
@@ -620,7 +623,7 @@ proc finishLine(fstate: var FlowState; state: var InlineState; wrap: bool;
     fstate.totalFloatWidth = max(fstate.totalFloatWidth,
       fstate.lbstate.totalFloatWidth)
     # add line to fstate
-    let y = fstate.lbstate.offsety
+    let y = fstate.offset.y
     if clear != ClearNone:
       fstate.lbstate.size.h.clearFloats(fstate.bctx, fstate.bfcOffset.y + y, clear)
     # * set first baseline if this is the first line box
@@ -640,7 +643,6 @@ proc finishLine(fstate: var FlowState; state: var InlineState; wrap: bool;
     fstate.maxChildWidth = max(fstate.maxChildWidth,
       lineWidth - fstate.padding.left)
     fstate.lbstate = LineBoxState(
-      offsety: y + fstate.lbstate.size.h,
       intrh: fstate.cellHeight
     )
     fstate.initLine()
@@ -664,57 +666,57 @@ func shouldWrap2(fstate: FlowState; w: LUnit): bool =
     return false
   return fstate.lbstate.size.w + w > fstate.lbstate.availableWidth
 
-func getBaseline(fstate: FlowState; iastate: InlineAtomState;
-    atom: InlineAtom): LUnit =
+func getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
   return case iastate.vertalign.keyword
   of VerticalAlignBaseline:
     let length = CSSLength(u: iastate.vertalign.u, num: iastate.vertalign.num)
     let len = length.px(fstate.cellHeight)
     iastate.baseline + len
   of VerticalAlignTop, VerticalAlignBottom:
-    atom.size.h
+    iastate.atom.size.h
   of VerticalAlignMiddle:
-    atom.size.h div 2
+    iastate.atom.size.h div 2
   else:
     iastate.baseline
 
 # Add an inline atom atom, with state iastate.
 # Returns true on newline.
 proc addAtom(fstate: var FlowState; state: var InlineState;
-    iastate: InlineAtomState; atom: InlineAtom): bool =
+    iastate: InlineAtomState): bool =
   result = false
   var shift = fstate.computeShift(state)
   fstate.lbstate.charwidth += fstate.whitespacenum
   fstate.whitespacenum = 0
   # Line wrapping
-  if fstate.shouldWrap(atom.size.w + shift, state.box.computed):
+  if fstate.shouldWrap(iastate.atom.size.w + shift, state.box.computed):
     fstate.finishLine(state, wrap = true)
     result = true
     # Recompute on newline
     shift = fstate.computeShift(state)
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
-    while fstate.shouldWrap2(atom.size.w + shift):
+    while fstate.shouldWrap2(iastate.atom.size.w + shift):
       fstate.finishLine(state, wrap = false, force = true)
       # Recompute on newline
       shift = fstate.computeShift(state)
-  if atom.size.w > 0 and atom.size.h > 0 or atom.t == iatInlineBlock:
+  if iastate.atom.size.w > 0 and iastate.atom.size.h > 0 or
+      iastate.atom.t == iatInlineBlock:
     if shift > 0:
       fstate.addSpacing(shift, state)
-    if atom.t == iatWord and fstate.lbstate.atoms.len > 0 and
+    if iastate.atom.t == iatWord and fstate.lbstate.iastates.len > 0 and
         state.box.state.atoms.len > 0:
-      let oatom = fstate.lbstate.atoms[^1]
+      let oatom = fstate.lbstate.iastates[^1].atom
       if oatom.t == iatWord and oatom == state.box.state.atoms[^1]:
-        oatom.str &= atom.str
-        oatom.size.w += atom.size.w
-        fstate.lbstate.size.w += atom.size.w
+        oatom.str &= iastate.atom.str
+        oatom.size.w += iastate.atom.size.w
+        fstate.lbstate.size.w += iastate.atom.size.w
         return
-    fstate.lbstate.putAtom(atom, iastate, state.box)
-    atom.offset.x += fstate.lbstate.size.w
-    fstate.lbstate.size.w += atom.size.w
+    fstate.lbstate.putAtom(iastate, state.box)
+    iastate.atom.offset.x += fstate.lbstate.size.w
+    fstate.lbstate.size.w += iastate.atom.size.w
     # store for later use in resizeLine/shiftAtoms
-    let baseline = fstate.getBaseline(iastate, atom)
-    atom.offset.y = baseline
+    let baseline = fstate.getBaseline(iastate)
+    iastate.atom.offset.y = baseline
     fstate.lbstate.baseline = max(fstate.lbstate.baseline, baseline)
 
 proc addWord(fstate: var FlowState; state: var InlineState): bool =
@@ -724,7 +726,8 @@ proc addWord(fstate: var FlowState; state: var InlineState): bool =
     atom.str.mnormalize() #TODO this may break on EOL.
     let iastate = InlineAtomState(
       vertalign: state.box.computed{"vertical-align"},
-      baseline: atom.size.h
+      baseline: atom.size.h,
+      atom: atom
     )
     let wordBreak = state.box.computed{"word-break"}
     if fstate.wrappos != -1:
@@ -738,7 +741,7 @@ proc addWord(fstate: var FlowState; state: var InlineState): bool =
       fstate.intr.w = max(fstate.intr.w, state.prevrw)
     else:
       fstate.intr.w = max(fstate.intr.w, atom.size.w)
-    result = fstate.addAtom(state, iastate, atom)
+    result = fstate.addAtom(state, iastate)
     fstate.newWord()
 
 proc addWordEOL(fstate: var FlowState; state: var InlineState): bool =
@@ -794,7 +797,7 @@ proc processWhitespace(fstate: var FlowState; state: var InlineState;
   discard fstate.addWord(state)
   case state.box.computed{"white-space"}
   of WhitespaceNormal, WhitespaceNowrap:
-    if fstate.whitespacenum < 1 and fstate.lbstate.atoms.len > 0:
+    if fstate.whitespacenum < 1 and fstate.lbstate.iastates.len > 0:
       fstate.whitespacenum = 1
       fstate.whitespaceFragment = state.box
       fstate.whitespaceIsLF = c == '\n'
@@ -1413,7 +1416,6 @@ proc layoutFlow0(fstate: var FlowState; sizes: ResolvedSizes; box: BlockBox) =
   if box.inline != nil:
     # Builder only contains inline boxes.
     fstate.lbstate = LineBoxState(
-      offsety: sizes.padding.top,
       intrh: fstate.lctx.attrs.ppl
     )
     fstate.initLine()
@@ -1590,7 +1592,7 @@ proc addInlineFloat(fstate: var FlowState; state: var InlineState;
   let sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
   let offset = offset(
     x = sizes.margin.left,
-    y = fstate.lbstate.offsety + sizes.margin.top
+    y = fstate.offset.y + sizes.margin.top
   )
   lctx.layoutRootBlock(box, offset, sizes)
   let outerSize = size(
@@ -1609,8 +1611,8 @@ proc addInlineFloat(fstate: var FlowState; state: var InlineState;
       # We can still cram floats into the line.
       if box.computed{"float"} == FloatLeft:
         fstate.lbstate.size.w += outerSize.w
-        for atom in fstate.lbstate.atoms:
-          atom.offset.x += outerSize.w
+        for iastate in fstate.lbstate.iastates:
+          iastate.atom.offset.x += outerSize.w
       else:
         fstate.lbstate.availableWidth -= outerSize.w
       newLine = false
@@ -1630,13 +1632,13 @@ proc addInlineAbsolute(fstate: var FlowState; state: var InlineState;
     t: iatInlineBlock,
     innerbox: box
   ))
-  var offset = offset(x = 0, y = fstate.lbstate.offsety)
+  var offset = offset(x = 0, y = fstate.offset.y)
   if box.computed{"display"} in DisplayOuterInline:
     # inline-block or similar. put it on the current line.
     # (I don't add pending spacing because other browsers don't add
     # it either.)
     offset.x += fstate.lbstate.size.w
-  elif fstate.lbstate.atoms.len > 0:
+  elif fstate.lbstate.iastates.len > 0:
     # flush if there is already something on the line *and* our outer
     # display is block.
     offset.y += fstate.cellHeight
@@ -1666,9 +1668,10 @@ proc addInlineBlock(fstate: var FlowState; state: var InlineState;
     baseline: box.state.baseline,
     vertalign: box.computed{"vertical-align"},
     marginTop: sizes.margin.top,
-    marginBottom: box.state.marginBottom
+    marginBottom: box.state.marginBottom,
+    atom: atom
   )
-  discard fstate.addAtom(state, iastate, atom)
+  discard fstate.addAtom(state, iastate)
   fstate.intr.w = max(fstate.intr.w, atom.innerbox.state.intr.w)
   fstate.lbstate.intrh = max(fstate.lbstate.intrh, atom.size.h)
   fstate.lbstate.charwidth = 0
@@ -1678,48 +1681,32 @@ proc addOuterBlock(fstate: var FlowState; state: var InlineState;
     child: BlockBox) =
   fstate.finishLine(state, wrap = false)
   let lctx = fstate.lctx
-  let sizes = lctx.resolveBlockSizes(fstate.space, child.computed)
-  let offset = offset(
-    x = sizes.margin.left + fstate.padding.left,
-    y = fstate.lbstate.offsety
-  )
-  if child.computed.establishesBFC():
-    lctx.layoutRootBlock(child, offset, sizes)
+  var sizes: ResolvedSizes
+  let outerSize = if child.computed.establishesBFC():
+    var space = fstate.space
+    fstate.layoutBlockChildBFC(child, sizes, space)
   else:
-    fstate.bctx.marginTodo.append(sizes.margin.top)
-    child.state = BoxLayoutState(offset: offset)
-    fstate.bctx.layout(child, sizes, canClear = true)
-    fstate.bctx.marginTodo.append(sizes.margin.bottom)
-    let textAlign = state.box.computed{"text-align"}
-    if textAlign == TextAlignChaCenter:
-      child.state.offset.x += max(fstate.space.w.u div 2 -
-        child.state.size.w div 2, 0)
-    elif textAlign == TextAlignChaRight:
-      child.state.offset.x += max(fstate.space.w.u - child.state.size.w -
-        sizes.margin.right, 0)
-    if child.computed{"position"} == PositionRelative:
-      lctx.positionRelative(fstate.space, child)
-  # Apply the block box's properties to the atom itself.
-  let atom = InlineAtom(
-    t: iatInlineBlock,
-    innerbox: child,
-    offset: offset(x = 0, y = 0),
-    size: size(
-      w = child.outerSize(dtHorizontal, sizes),
-      # delta y is difference between old and new offsets (margin-top),
-      # plus height.
-      h = child.state.offset.y - fstate.lbstate.offsety + child.state.size.h
-    )
-  )
-  state.box.state.atoms.add(atom)
-  fstate.lbstate.offsety += atom.size.h
+    fstate.layoutBlockChild(child, sizes)
+  fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
+  let textAlign = state.box.computed{"text-align"}
+  if textAlign == TextAlignChaCenter:
+    child.state.offset.x += max(fstate.space.w.u div 2 -
+      child.state.size.w div 2, 0)
+  elif textAlign == TextAlignChaRight:
+    child.state.offset.x += max(fstate.space.w.u - child.state.size.w -
+      sizes.margin.right, 0)
+  if child.computed{"position"} == PositionRelative:
+    lctx.positionRelative(fstate.space, child)
+  # Add a dummy atom.
+  #TODO only text inline boxes should have atoms...
+  state.box.state.atoms.add(InlineAtom(t: iatInlineBlock, innerbox: child))
   # Reinit the line, in case the relevant exclusions have changed by
   # shifting the line box offset.
   fstate.initLine()
-  fstate.offset.y += atom.size.h
+  fstate.offset.y += outerSize.h
   fstate.maxChildWidth = max(fstate.maxChildWidth, child.state.size.w)
   fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
-  fstate.intr.h += atom.size.h - child.state.size.h + child.state.intr.h
+  fstate.intr.h += outerSize.h - child.state.size.h + child.state.intr.h
   fstate.whitespacenum = 0
 
 proc addBox(fstate: var FlowState; state: var InlineState; box: BlockBox) =
@@ -1795,9 +1782,10 @@ proc addImage(fstate: var FlowState; state: var InlineState;
     atom.size.w = osize.w div osize.h * atom.size.h
   let iastate = InlineAtomState(
     vertalign: state.box.computed{"vertical-align"},
-    baseline: atom.size.h
+    baseline: atom.size.h,
+    atom: atom
   )
-  discard fstate.addAtom(state, iastate, atom)
+  discard fstate.addAtom(state, iastate)
   fstate.lbstate.charwidth = 0
   if atom.size.h > 0:
     # Setting the atom size as intr.w might result in a circular dependency
@@ -1828,13 +1816,12 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     )
   ibox.state = InlineBoxState()
   if ibox.canFlushMargins(padding):
-    var offsety = fstate.lbstate.offsety
+    var offsety = fstate.offset.y
     fstate.bctx.flushMargins(offsety)
     # Don't forget to add it to intrinsic height...
-    let diff = offsety - fstate.lbstate.offsety
-    fstate.offset.y += diff
+    let diff = offsety - fstate.offset.y
+    fstate.offset.y = offsety
     fstate.intr.h += diff
-    fstate.lbstate.offsety = offsety
     fstate.bctx.positionFloats()
   if padding.start != 0:
     ibox.state.areas.add(Area(
@@ -1844,7 +1831,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     fstate.lbstate.paddingTodo.add((ibox, 0))
   ibox.state.startOffset = offset(
     x = fstate.lbstate.widthAfterWhitespace,
-    y = fstate.lbstate.offsety
+    y = fstate.offset.y
   )
   fstate.lbstate.size.w += padding.start
   var state = InlineState(box: ibox)
@@ -1883,7 +1870,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     # Well, it seems good enough.
     lctx.popPositioned(size(
       w = 0,
-      h = fstate.lbstate.offsety + fstate.cellHeight - ibox.state.startOffset.y
+      h = fstate.offset.y + fstate.cellHeight - ibox.state.startOffset.y
     ))
 
 # Note: caption is not included here
@@ -2768,6 +2755,7 @@ proc layoutBlock(fstate: var FlowState) =
       continue
     var sizes: ResolvedSizes
     var space = fstate.space
+    #TODO why is space not used?
     let outerSize = if child.computed.establishesBFC():
       fstate.layoutBlockChildBFC(child, sizes, space)
     else:
