@@ -325,10 +325,6 @@ func bfcOffset(bctx: BlockContext): Offset =
 template bfcOffset(fstate: FlowState): Offset =
   fstate.bctx.bfcOffset
 
-func isParentResolved(fstate: FlowState; bctx: BlockContext): bool =
-  return bctx.marginTarget != fstate.initialMarginTarget or
-    fstate.prevParentBps != nil and fstate.prevParentBps.resolved
-
 # Whitespace between words
 func computeShift(fstate: FlowState; state: InlineState): LUnit =
   if fstate.whitespacenum == 0:
@@ -1266,17 +1262,8 @@ func canFlushMargins(box: BlockBox; sizes: ResolvedSizes): bool =
 func canFlushMargins(ibox: InlineBox; padding: Span): bool =
   if ibox.computed{"position"} in {PositionAbsolute, PositionFixed}:
     return false
-  if padding.start != 0 or padding.send != 0:
-    return true
-  case ibox.t
-  of ibtParent:
-    return ibox.children.len == 0
-  of ibtBox:
-    return ibox.box.computed{"display"} in DisplayOuterInline and
-      ibox.box.computed{"float"} == FloatNone and
-      ibox.box.computed{"position"} notin {PositionAbsolute, PositionFixed}
-  of ibtBitmap, ibtText, ibtNewline:
-    return true
+  return padding.start != 0 or padding.send != 0 or
+    ibox.t in {ibtBitmap, ibtText, ibtNewline}
 
 proc flushMargins(bctx: var BlockContext; offsety: var LUnit) =
   # Apply uncommitted margins.
@@ -1403,6 +1390,7 @@ func findNextBlockOffset(bctx: BlockContext; offset: Offset; size: Size;
 proc positionFloat(bctx: var BlockContext; child: BlockBox;
     space: AvailableSpace; outerSize: Size; marginOffset, bfcOffset: Offset) =
   assert space.w.t != scFitContent
+  child.state.offset.y += bctx.marginTodo.sum()
   let clear = child.computed{"clear"}
   if clear != ClearNone:
     child.state.offset.y.clearFloats(bctx, bctx.bfcOffset.y, clear)
@@ -1556,10 +1544,12 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   # Add padding; we cannot do this further up without influencing
   # relative positioning.
   box.state.size += paddingSum
-  if fstate.isParentResolved(bctx):
-    # Our offset has already been resolved, ergo any margins in marginTodo will
-    # be passed onto the next box. Set marginTarget to nil, so that if we (or
-    # one of our ancestors) were still set as a marginTarget, we no longer are.
+  if bctx.marginTarget != fstate.initialMarginTarget or
+      fstate.prevParentBps != nil and fstate.prevParentBps.resolved:
+    # Our offset has already been resolved, ergo any margins in
+    # marginTodo will be passed onto the next box. Set marginTarget to
+    # nil, so that if we (or one of our ancestors) were still set as a
+    # marginTarget, we no longer are.
     bctx.positionFloats()
     bctx.marginTarget = nil
   # Reset parentBps to the previous node.
@@ -1841,8 +1831,9 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     var offsety = fstate.lbstate.offsety
     fstate.bctx.flushMargins(offsety)
     # Don't forget to add it to intrinsic height...
-    #TODO ^ wat? you forgot...
-    fstate.offset.y += offsety - fstate.lbstate.offsety
+    let diff = offsety - fstate.lbstate.offsety
+    fstate.offset.y += diff
+    fstate.intr.h += diff
     fstate.lbstate.offsety = offsety
     fstate.bctx.positionFloats()
   if padding.start != 0:
@@ -2743,10 +2734,6 @@ proc layoutBlockChildBFC(fstate: var FlowState; child: BlockBox;
   else:
     sizes = lctx.resolveFloatSizes(space, child.computed)
     lctx.layoutRootBlock(child, fstate.offset + sizes.margin.topLeft, sizes)
-    if fstate.isParentResolved(fstate.bctx):
-      # If parent offset has been resolved, use marginTodo in this
-      # float's initial offset.
-      child.state.offset.y += fstate.bctx.marginTodo.sum()
     outerHeight = child.outerSize(dtVertical, sizes) + child.state.marginBottom
   return size(
     w = child.outerSize(dtHorizontal, sizes),
@@ -2811,19 +2798,19 @@ proc layoutBlock(fstate: var FlowState) =
     else:
       fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
       # Two cases exist:
-      # a) The float cannot be positioned, because `box' has not resolved
-      #    its y offset yet. (e.g. if float comes before the first child,
-      #    we do not know yet if said child will move our y offset with a
-      #    margin-top value larger than ours.)
-      #    In this case we put it in unpositionedFloats, and defer positioning
-      #    until our y offset is resolved.
+      # a) The float cannot be positioned, because `fstate.box' has not
+      #    resolved its y offset yet. (e.g. if float comes before the
+      #    first child, we do not know yet if said child will move our y
+      #    offset with a margin-top value larger than ours.)
+      #    In this case we put it in unpositionedFloats, and defer
+      #    positioning until our y offset is resolved.
       # b) `box' has resolved its y offset, so the float can already
       #    be positioned.
       # We check whether our y offset has been positioned as follows:
       # * save marginTarget in FlowState at layoutBlock's start
-      # * if our saved marginTarget and bctx's marginTarget no longer point
-      #   to the same object, that means our (or an ancestor's) offset has
-      #   been resolved, i.e. we can position floats already.
+      # * if our saved marginTarget and bctx's marginTarget no longer
+      #   point to the same object, that means our (or an ancestor's)
+      #   offset has been resolved, i.e. we can position floats already.
       let marginOffset = sizes.margin.startOffset()
       if fstate.bctx.marginTarget != fstate.initialMarginTarget:
         # y offset resolved
