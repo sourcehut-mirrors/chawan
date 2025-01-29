@@ -122,7 +122,7 @@ proc cancel(edit: LineEdit) {.jsfunc.} =
   edit.state = lesCancel
 
 proc submit(edit: LineEdit) {.jsfunc.} =
-  if edit.hist.mtime == 0:
+  if edit.hist.mtime == 0 and edit.news.len > 0:
     edit.hist.add(edit.news)
   edit.state = lesFinish
 
@@ -281,18 +281,15 @@ proc prevHist(edit: LineEdit) {.jsfunc.} =
     edit.redraw = true
 
 proc nextHist(edit: LineEdit) {.jsfunc.} =
-  if edit.currHist != nil and edit.currHist != edit.hist.last:
+  if edit.currHist != nil:
     edit.currHist = edit.currHist.next
-    edit.news = edit.currHist.s
-    if edit.currHist == edit.hist.last and edit.skipLast:
-      edit.currHist = nil
-    edit.begin()
-    edit.end()
-    edit.redraw = true
-  elif edit.currHist == edit.hist.last:
-    edit.currHist = edit.currHist.next
-    edit.news = move(edit.histtmp)
-    edit.histtmp = ""
+    if edit.currHist != nil:
+      edit.news = edit.currHist.s
+      if edit.currHist == edit.hist.last and edit.skipLast:
+        edit.currHist = nil
+    else:
+      edit.news = move(edit.histtmp)
+      edit.histtmp = ""
     edit.begin()
     edit.end()
     edit.redraw = true
