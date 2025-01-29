@@ -456,7 +456,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       clipBox.start.x = max(offset.x, clipBox.start.x)
       clipBox.send.x = min(offset.x + box.state.size.w, clipBox.send.x)
     else: # scroll like
-      clipBox.start.x = min(offset.x, clipBox.start.x)
+      clipBox.start.x = max(min(offset.x, clipBox.start.x), 0)
       clipBox.send.x = max(offset.x + box.state.size.w, clipBox.start.x)
     if overflowY in OverflowHiddenLike:
       clipBox.start.y = max(offset.y, clipBox.start.y)
