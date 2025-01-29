@@ -1561,7 +1561,10 @@ static int nsvg__parseTransformArgs(const char** str, float* args, int maxNa)
 	na = 0;
 	while (ptr < end) {
 		if (*ptr == '-' || *ptr == '+' || *ptr == '.' || nsvg__isdigit(*ptr)) {
-			if (na >= maxNa) return 0;
+			if (na >= maxNa) {
+				*str = end;
+				return 0;
+			}
 			ptr = nsvg__parseNumber(ptr, it, 64);
 			args[na++] = (float)nsvg__atof(it);
 		} else {
