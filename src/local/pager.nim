@@ -1924,7 +1924,6 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       else:
         container.replaceBackup = replaceBackup
         replaceBackup.replaceRef = container
-      container.copyCursorPos(replace)
     else:
       pager.addContainer(container)
     inc pager.numload
@@ -2296,8 +2295,10 @@ proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
-  discard pager.gotoURL(newRequest(pager.container.url), none(URL),
-    pager.container.contentType, replace = pager.container)
+  let old = pager.container
+  let container = pager.gotoURL(newRequest(pager.container.url), none(URL),
+    pager.container.contentType, replace = old)
+  container.copyCursorPos(old)
 
 type ExternDict = object of JSDict
   env {.jsdefault: JS_UNDEFINED.}: JSValue
