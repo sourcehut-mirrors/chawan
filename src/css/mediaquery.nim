@@ -343,9 +343,9 @@ proc parseMediaOr(parser: var MediaQueryParser; left: MediaQuery):
   let right = ?parser.parseMediaCondition()
   return ok(MediaQuery(t: mctOr, left: left, right: right))
 
-proc parseMediaAnd(parser: var MediaQueryParser; left: MediaQuery):
-    Opt[MediaQuery] =
-  let right = ?parser.parseMediaCondition()
+proc parseMediaAnd(parser: var MediaQueryParser; left: MediaQuery;
+    noor = false): Opt[MediaQuery] =
+  let right = ?parser.parseMediaCondition(noor = noor)
   return ok(MediaQuery(t: mctAnd, left: left, right: right))
 
 func negateIf(mq: MediaQuery; non: bool): MediaQuery =
@@ -370,7 +370,7 @@ proc parseMediaCondition(parser: var MediaQueryParser; non = false;
   let tok = ?parser.consumeIdent()
   parser.skipBlanks()
   if tok.value.equalsIgnoreCase("and"):
-    return parser.parseMediaAnd(res)
+    return parser.parseMediaAnd(res, noor)
   elif tok.value.equalsIgnoreCase("or"):
     if noor:
       return err()
@@ -401,11 +401,10 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
     let res = MediaQuery(t: mctMedia, media: x.get)
     if parser.skipBlanksCheckHas().isNone:
       return ok(res)
-    if (let tokx = parser.consumeIdent(); tokx.isSome):
-      return parser.parseMediaAnd(res)
-    return parser.parseMediaCondition()
-  else:
-    return err()
+    let tok = ?parser.consumeIdent()
+    if tok.value.equalsIgnoreCase("and"):
+      return parser.parseMediaAnd(res, noor = true)
+  return err()
 
 proc parseMediaQueryList*(cvals: seq[CSSComponentValue];
     attrs: ptr WindowAttributes): seq[MediaQuery] =

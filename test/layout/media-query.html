@@ -1,17 +1,33 @@
 <style>
+/* valid */
 @mediA (WiDtH >= 1px) and (HeiGhT < 10000px) {
 	#red { color: red }
 }
 @media screen and (WiDtH >= 1px) {
 	#green { color: green }
 }
-@media (width >= 1px 2px) {
-	#red { color: blue }
-}
 @media (grid: 1) {
 	#purple { color: purple }
+}
+@media screen and (min-width: 2px) {
+	#blue { color: blue }
+}
+
+/* invalid */
+@media (width >= 1px 2px) {
+	#red { color: blue !important }
+}
+@media screen yahoo{
+	#purple { color: red !important }
+}
+@media screen or (min-width: 2px) {
+	#blue { color: red !important }
+}
+@media screen and (min-width: 2px) or (min-width: 2px) {
+	#blue { color: red !important }
 }
 </style>
 <div id=red>red</div>
 <div id=green>green</div>
 <div id=purple>purple</div>
+<div id=blue>blue</div>
