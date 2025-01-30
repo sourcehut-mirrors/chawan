@@ -131,8 +131,8 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       hashes.class != CAtomNull or hashes.attr != CAtomNull
 
 proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
-  var hashes = SelectorHashes()
   for cxsel in rule.sels:
+    var hashes = SelectorHashes()
     hashes.getSelectorIds(cxsel)
     if hashes.tags.len > 0:
       for tag in hashes.tags:
