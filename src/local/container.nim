@@ -239,9 +239,20 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return nil
+  # Send a pipe for synchronization in the clone proc.
+  # (Do it here, so buffers do not need pipe rights.)
+  var pipefd {.noinit.}: array[2, cint]
+  if pipe(pipefd) == -1:
+    discard close(sv[0])
+    discard close(sv[1])
+    return nil
   container.iface.stream.source.withPacketWriter w:
     w.sendAux.add(sv[1])
+    w.sendAux.add(pipefd[0])
+    w.sendAux.add(pipefd[1])
   discard close(sv[1])
+  discard close(pipefd[0])
+  discard close(pipefd[1])
   return p.then(proc(pid: int): tuple[c: Container; fd: cint] =
     if pid == -1:
       discard close(sv[0])

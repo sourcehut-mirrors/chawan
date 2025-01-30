@@ -123,7 +123,7 @@ type
     # List of cached resources.
     cacheMap: seq[CachedItem]
     # List of file descriptors passed by the client.
-    passedFdMap: seq[tuple[name: string; fd: cint]] # host -> fd
+    passedFdMap: seq[tuple[name: string; ps: PosixStream]] # host -> ps
     config: LoaderClientConfig
     # List of credentials the client has access to (same origin only).
     authMap: seq[AuthItem]
@@ -1009,10 +1009,9 @@ proc loadStream(ctx: LoaderContext; client: ClientHandle; handle: InputHandle;
   handle.sendResult(0)
   handle.sendStatus(200)
   handle.sendHeaders(newHeaders())
-  let fd = client.passedFdMap[i].fd
-  let ps = newPosixStream(fd)
+  let ps = client.passedFdMap[i].ps
   var stats: Stat
-  doAssert fstat(fd, stats) != -1
+  doAssert fstat(ps.fd, stats) != -1
   handle.stream = ps
   client.passedFdMap.del(i)
   if S_ISCHR(stats.st_mode) or S_ISREG(stats.st_mode):
@@ -1478,7 +1477,25 @@ proc passFd(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
   var id: string
   r.sread(id)
   let fd = r.recvAux.pop()
-  client.passedFdMap.add((id, fd))
+  #TODO cloexec?
+  client.passedFdMap.add((id, newPosixStream(fd)))
+
+proc addPipe(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
+    r: var BufferedReader) =
+  var id: string
+  r.sread(id)
+  var pipefd {.noinit.}: array[2, cint]
+  if pipe(pipefd) == -1:
+    stream.withPacketWriter w:
+      w.swrite(false)
+  else:
+    stream.withPacketWriter w:
+      w.swrite(true)
+      w.sendAux.add(pipefd[1])
+    discard close(pipefd[1])
+    let ps = newPosixStream(pipefd[0])
+    ps.setCloseOnExec()
+    client.passedFdMap.add((id, ps))
 
 proc removeCachedItem(ctx: LoaderContext; stream: SocketStream;
     client: ClientHandle; r: var BufferedReader) =
@@ -1591,12 +1608,15 @@ proc readCommand(ctx: LoaderContext; client: ClientHandle) =
       of lcGetCacheFile:
         privileged_command
         ctx.getCacheFile(stream, r)
+      of lcPassFd:
+        privileged_command
+        ctx.passFd(stream, client, r)
       of lcAddCacheFile:
         ctx.addCacheFile(stream, client, r)
       of lcRemoveCachedItem:
         ctx.removeCachedItem(stream, client, r)
-      of lcPassFd:
-        ctx.passFd(stream, client, r)
+      of lcAddPipe:
+        ctx.addPipe(stream, client, r)
       of lcLoad:
         ctx.load(stream, client, r)
       of lcTee:

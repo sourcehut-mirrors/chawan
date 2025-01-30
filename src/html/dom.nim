@@ -586,19 +586,11 @@ proc reset(state: var DrawingState) =
 
 proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
     options = JS_UNDEFINED) =
-  var pipefd {.noinit.}: array[2, cint]
-  if pipe(pipefd) == -1:
-    return
   let window = jctx.getWindow()
   let imageId = target.bitmap.imageId
   let loader = window.loader
-  loader.passFd("canvas-ctl-" & $imageId, pipefd[0])
-  discard close(pipefd[0])
-  let ps = newPosixStream(pipefd[1])
-  let ctlreq = newRequest(newURL("stream:canvas-ctl-" & $imageId).get)
-  let ctlres = loader.doRequest(ctlreq)
-  if ctlres.res != 0: # loader forgot about me :(
-    ps.sclose()
+  let (ps, ctlres) = loader.doPipeRequest("canvas-ctl-" & $imageId)
+  if ps == nil:
     return
   let cacheId = loader.addCacheFile(ctlres.outputId, loader.clientPid)
   target.bitmap.cacheId = cacheId
@@ -4230,18 +4222,10 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
         elp.shared.add(svg)
       return
     window.svgCache[s] = svg
-  var pipefd {.noinit.}: array[2, cint]
-  if pipe(pipefd) == -1:
-    return
-  let ps = newPosixStream(pipefd[1])
   let imageId = window.getImageId()
   let loader = window.loader
-  loader.passFd("svg-" & $imageId, pipefd[0])
-  discard close(pipefd[0])
-  let svgreq = newRequest(newURL("stream:svg-" & $imageId).get)
-  let svgres = loader.doRequest(svgreq)
-  if svgres.res != 0: # loader forgot about me :(
-    ps.sclose()
+  let (ps, svgres) = loader.doPipeRequest("svg-" & $imageId)
+  if ps == nil:
     return
   let cacheId = loader.addCacheFile(svgres.outputId, loader.clientPid)
   try:

@@ -943,10 +943,6 @@ var gpstream* {.global.}: SocketStream
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
 proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
-  var pipefd {.noinit.}: array[2, cint]
-  if pipe(pipefd) == -1:
-    buffer.estream.write("Failed to open pipe.\n")
-    return -1
   # suspend outputs before tee'ing
   var ids: seq[int] = @[]
   for it in buffer.loader.ongoing:
@@ -958,13 +954,18 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
   for it in buffer.loader.ongoing:
     if it.response.onRead != nil:
       buffer.loader.onRead(it.fd)
+  var pstream: SocketStream
+  var pins, pouts: PosixStream
+  buffer.pstream.withPacketReader r:
+    pstream = newSocketStream(r.recvAux.pop())
+    pins = newPosixStream(r.recvAux.pop())
+    pouts = newPosixStream(r.recvAux.pop())
   let pid = fork()
   if pid == -1:
     buffer.estream.write("Failed to clone buffer.\n")
     return -1
   if pid == 0: # child
-    discard close(pipefd[0]) # close read
-    let ps = newPosixStream(pipefd[1])
+    pins.sclose()
     buffer.pollData.clear()
     var connecting: seq[ConnectData] = @[]
     var ongoing: seq[OngoingData] = @[]
@@ -995,15 +996,13 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       # the cache. (This also lets us skip suspend/resume in this case.)
       # We ignore errors; not much we can do with them here :/
       discard buffer.rewind(buffer.bytesRead, unregister = false)
-    var sockFd: cint
-    buffer.pstream.withPacketReader r:
-      sockFd = r.recvAux.pop()
     buffer.pstream.sclose()
-    ps.write(char(0))
+    pouts.write(char(0))
+    pouts.sclose()
     buffer.url = newurl
     for it in buffer.tasks.mitems:
       it = 0
-    buffer.pstream = newSocketStream(sockFd)
+    buffer.pstream = pstream
     gpstream = buffer.pstream
     buffer.loader.clientPid = myPid
     # get key for new buffer
@@ -1024,12 +1023,12 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     buffer.document.setTarget(target)
     return 0
   else: # parent
-    discard close(pipefd[1]) # close write
+    pouts.sclose()
+    pstream.sclose()
     # We must wait for child to tee its ongoing streams.
-    let ps = newPosixStream(pipefd[0])
-    let c = ps.readChar()
+    let c = pins.readChar()
     assert c == char(0)
-    ps.sclose()
+    pins.sclose()
     buffer.loader.resume(ids)
     return pid
 

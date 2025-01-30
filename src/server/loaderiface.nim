@@ -61,6 +61,7 @@ type
     lcAddAuth
     lcAddCacheFile
     lcAddClient
+    lcAddPipe
     lcGetCacheFile
     lcLoad
     lcLoadConfig
@@ -463,6 +464,34 @@ proc removeClient*(loader: FileLoader; pid: int) =
   loader.withPacketWriter w:
     w.swrite(lcRemoveClient)
     w.swrite(pid)
+
+# Equivalent to creating a pipe and passing its read half of it through
+# passFd.
+proc addPipe*(loader: FileLoader; id: string): PosixStream =
+  loader.withPacketWriter w:
+    w.swrite(lcAddPipe)
+    w.swrite(id)
+  var fd: cint = -1
+  loader.withPacketReader r:
+    var success: bool
+    r.sread(success)
+    if success:
+      fd = r.recvAux.pop()
+  if fd != -1:
+    return newPosixStream(fd)
+  return nil
+
+proc doPipeRequest*(loader: FileLoader; id: string):
+    tuple[ps: PosixStream; response: Response] =
+  let ps = loader.addPipe(id)
+  if ps == nil:
+    return (nil, nil)
+  let request = newRequest(newURL("stream:" & id).get)
+  let response = loader.doRequest(request)
+  if response.res != 0:
+    ps.sclose()
+    return (nil, nil)
+  return (ps, response)
 
 proc newFileLoader*(loaderPid, clientPid: int; controlStream: SocketStream):
     FileLoader =
