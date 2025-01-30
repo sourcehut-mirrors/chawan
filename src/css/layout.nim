@@ -1293,7 +1293,6 @@ proc popPositioned(lctx: LayoutContext; size: Size) =
   let item = lctx.positioned.pop()
   for it in item.queue:
     let child = it.child
-    lctx.pushPositioned()
     var positioned: RelativeRect
     var size = size
     #TODO this is very ugly.
@@ -1325,7 +1324,6 @@ proc popPositioned(lctx: LayoutContext; size: Size) =
         sizes.margin.bottom
     else:
       child.state.offset.y += sizes.margin.top
-    lctx.popPositioned(child.state.size)
 
 proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
   case box.computed{"position"}
@@ -1557,7 +1555,15 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   # Reset parentBps to the previous node.
   bctx.parentBps = fstate.prevParentBps
   if box.computed{"position"} != PositionStatic:
-    bctx.lctx.popPositioned(box.state.size)
+    var size = box.state.size
+    if bctx.parentBps == nil:
+      # We have a bit of an ordering problem here: layoutRootBlock
+      # computes our final height, but we already want to pop the
+      # positioned box here.
+      # I'll just replicate what layoutRootBlock is doing until I find a
+      # better solution...
+      size.h = max(size.h, bctx.maxFloatHeight)
+    bctx.lctx.popPositioned(size)
 
 proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     sizes: ResolvedSizes) =
