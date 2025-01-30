@@ -1180,10 +1180,15 @@ proc parseDownloadActions(ctx: LoaderContext; s: string): seq[DownloadAction] =
   result.sort(proc(a, b: DownloadAction): int = return cmp(a.n, b.n),
     Descending)
 
-proc loadDownload(ctx: LoaderContext; handle: InputHandle; request: Request) =
+proc loadAbout(ctx: LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
   case url.pathname
-  of "view":
+  of "blank":
+    ctx.loadDataSend(handle, "", "text/html")
+  of "chawan":
+    const body = staticRead"res/chawan.html"
+    ctx.loadDataSend(handle, body, "text/html")
+  of "downloads":
     if request.httpMethod == hmPost:
       # OK/STOP/PAUSE/RESUME clicked
       if request.body.t != rbtString:
@@ -1200,7 +1205,7 @@ proc loadDownload(ctx: LoaderContext; handle: InputHandle; request: Request) =
 <body>
 <h1 align=center>Download List Panel</h1>
 <hr>
-<form method=POST action=download:view>
+<form method=POST action=about:downloads>
 <hr>
 <pre>
 """
@@ -1227,6 +1232,9 @@ proc loadDownload(ctx: LoaderContext; handle: InputHandle; request: Request) =
 </body>
 """
     ctx.loadDataSend(handle, body, "text/html")
+  of "license":
+    const body = staticRead"res/license.md"
+    ctx.loadDataSend(handle, body, "text/markdown")
   else:
     handle.rejectHandle(ceInvalidURL, "invalid download URL")
 
@@ -1265,8 +1273,8 @@ proc loadResource(ctx: LoaderContext; client: ClientHandle;
       handle.close()
     of "data":
       ctx.loadData(handle, request)
-    of "download":
-      ctx.loadDownload(handle, request)
+    of "about":
+      ctx.loadAbout(handle, request)
     else:
       prevurl = request.url
       case ctx.config.uriMethodMap.findAndRewrite(request.url)

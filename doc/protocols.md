@@ -120,10 +120,6 @@ wishes; see below).
 `file:` loads a file from the local filesystem. In case of directories, it
 shows the directory listing like the FTP protocol does.
 
-`about:` contains informational pages about the browser. At the time of
-writing, the following pages are available: `about:chawan`, `about:blank`
-and `about:license`.
-
 `man:`, `man-k:` and `man-l:` are wrappers around the commands `man`, `man -k`
 and `man -l`. These look up man pages using `/usr/bin/man` and turn on-page
 references into links. A wrapper command `mancha` also exists; this has an
@@ -132,36 +128,43 @@ it has been rewritten in Nim (and therefore no longer depends on Perl either).
 
 ## Internal schemes: cgi-bin:, stream:, cache:, data:
 
-Four internal protocols exist: `cgi-bin:`, `stream:`, `cache:` and `data:`.
-These are the basic building blocks for the implementation of every protocol
-mentioned above; for this reason, these can *not* be replaced, and are
-implemented in the main browser binary.
+Five internal protocols exist: `cgi-bin:`, `stream:`, `cache:`,
+`data:` and `about:`.  These are the basic building blocks for the
+implementation of every protocol mentioned above; for this reason, these
+can *not* be replaced, and are implemented in the main browser binary.
 
-`cgi-bin:` executes a local CGI script. This scheme is used for the actual
-implementation of the non-internal protocols mentioned above. Local CGI scripts
-can also be used to implement wrappers of other programs inside Chawan
-(e.g. dictionaries).
+`cgi-bin:` executes a local CGI script.  This scheme is used for the
+actual implementation of the non-internal protocols mentioned above.
+Local CGI scripts can also be used to implement wrappers of other
+programs inside Chawan (e.g. dictionaries).
 
-`stream:` is used for reading in streams returned by external programs or passed
-to Chawan via standard input. It differs from `cgi-bin:` in that it does not
-cooperate with the external process, and that the loader does not keep track
-of where the stream originally comes from. Therefore it is suitable for reading
-in the output of mailcap entries, or for turning stdin into a URL.
+`stream:` is used for streams returned by external programs.  It differs
+from `cgi-bin:` in that it does not cooperate with the external process,
+and that the loader does not keep track of where the stream originally
+comes from.  Therefore it is suitable for reading in the output of
+mailcap entries, or for turning stdin into a URL.
 
-Since Chawan does not keep track of the origin of `stream:` URLs, it is not
-possible to reload them. (For that matter, reloading stdin does not make much
-sense anyway.) To support rewinding and "view source", the output of `stream:`'s
-is stored in a temporary file until the buffer is discarded.
+It is not possible to reload `stream:` URLs.  To support rewinding and
+"view source", the output of `stream:`'s is stored in a cache file until
+the buffer is discarded.
 
 `cache:` is not something an end user would normally see; it's used for
-rewinding or re-interpreting streams already downloaded. Note that this is not a
-real cache; files are deterministically loaded from the "cache" upon certain
-actions, and from the network upon others, but neither is used as a fallback
-to the other.
+rewinding or re-interpreting streams already downloaded.
+
+Caching works differently than in most other browsers; files are
+deterministically loaded from the cache upon certain actions, and from
+the network upon others, but neither is used as a fallback to the other.
 
 `data:` decodes a data URL as defined in RFC 2397. This used to be a CGI module,
 but has been moved back into the loader process because these URLs can get
 so long that they no longer fit into the environment.
+
+`about:` is inside the loader to allow for an implementation of the
+download list panel.  It should be turned into a CGI module once the
+loader gets RPC capabilities.
+
+The following about pages are available: `about:chawan`, `about:blank`,
+`about:license`, `about:download`.
 
 ## Custom protocols
 

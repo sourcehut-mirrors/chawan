@@ -2155,7 +2155,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.loader.resume(data.outputId)
     data.stream.sclose()
     pager.lineData = nil
-    discard pager.gotoURL(newRequest(newURL("download:view").get),
+    discard pager.gotoURL(newRequest(newURL("about:downloads").get),
       history = false)
   else:
     pager.ask("Failed to save to " & path & ". Retry?").then(

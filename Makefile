@@ -61,7 +61,7 @@ endif
 all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
 	$(OUTDIR_CGI_BIN)/gemini $(OUTDIR_LIBEXEC)/gmi2html \
 	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
-	$(OUTDIR_CGI_BIN)/finger $(OUTDIR_CGI_BIN)/about \
+	$(OUTDIR_CGI_BIN)/finger \
 	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp $(OUTDIR_CGI_BIN)/sftp \
 	$(OUTDIR_LIBEXEC)/dirlist2html $(OUTDIR_LIBEXEC)/uri2html \
 	$(OUTDIR_LIBEXEC)/img2html \
@@ -119,7 +119,6 @@ sandbox = src/utils/sandbox.nim $(chaseccomp)
 
 $(OUTDIR_CGI_BIN)/man: $(twtstr)
 $(OUTDIR_CGI_BIN)/http: adapter/protocol/curl.nim $(sandbox)
-$(OUTDIR_CGI_BIN)/about: res/chawan.html res/license.md
 $(OUTDIR_CGI_BIN)/file: $(twtstr)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
 $(OUTDIR_CGI_BIN)/sftp: $(lcgi) $(twtstr)
@@ -202,7 +201,7 @@ manpages = $(manpages1) $(manpages5) $(manpages7)
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
-protocols = http about file ftp sftp gopher gemini finger man spartan stbi \
+protocols = http file ftp sftp gopher gemini finger man spartan stbi \
 	jebp sixel canvas resize chabookmark nanosvg
 converters = gopher2html md2html ansi2html gmi2html dirlist2html uri2html img2html
 tools = urlenc nc
@@ -237,13 +236,14 @@ uninstall:
 	for f in $(protocols); do rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/$$f; done
 # notes:
 # * png has been removed in favor of stbi
-# * data has been moved back into the main binary
+# * data, about have been moved back into the main binary
 # * gmifetch has been replaced by gemini
 # * cha-finger has been renamed to finger
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/about
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 # urldec is just a symlink to urlenc
