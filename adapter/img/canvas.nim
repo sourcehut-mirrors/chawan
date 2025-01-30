@@ -19,11 +19,15 @@ import types/color
 import utils/sandbox
 import utils/twtstr
 
-{.compile: "canvas.c".}
-
 {.passc: "-I" & currentSourcePath().parentDir().}
 
-{.push header: "stb_image.h".}
+{.push header: """
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#define STBI_NO_LINEAR
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+""".}
 proc stbi_load_from_memory(buffer: ptr uint8; len: cint; x, y, comp: ptr cint;
   req_comp: cint): ptr uint8
 proc stbi_image_free(retval_from_stbi_load: pointer)

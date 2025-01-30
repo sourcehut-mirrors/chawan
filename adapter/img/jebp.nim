@@ -6,8 +6,6 @@ import std/strutils
 import utils/sandbox
 import utils/twtstr
 
-{.compile: "jebp.c".}
-
 when sizeof(cint) < 4:
   type jebp_int = clong
 else:
@@ -18,7 +16,12 @@ else:
 const STDIN_FILENO = 0
 const STDOUT_FILENO = 1
 
-{.push header: "jebp.h".}
+{.push header: """
+#define JEBP_NO_STDIO
+/* #define JEBP_NO_SIMD */
+#define JEBP_IMPLEMENTATION
+#include "jebp.h"
+""".}
 type
   jebp_io_callbacks {.importc.} = object
     read: proc(data: pointer; size: csize_t; user: pointer): csize_t {.cdecl.}
@@ -46,7 +49,7 @@ proc jebp_read_size_from_callbacks(image: ptr jebp_image_t;
 proc jebp_error_string(err: jebp_error_t): cstring {.importc.}
 
 proc jebp_free_image(image: ptr jebp_image_t) {.importc.}
-{.pop.}
+{.pop.} # jebp.h
 
 proc myRead(data: pointer; size: csize_t; user: pointer): csize_t {.cdecl.} =
   var n = csize_t(0)

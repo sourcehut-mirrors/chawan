@@ -7,9 +7,12 @@ import io/dynstream
 import utils/sandbox
 import utils/twtstr
 
-{.compile("stb_image_resize.c", "-O3").}
+{.passc: "-I" & currentSourcePath().parentDir().}
 
-{.push header: "stb_image_resize.h".}
+{.push header: """
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb_image_resize.h"
+""".}
 proc stbir_resize_uint8_srgb(input_pixels: ptr uint8;
   input_w, input_h, input_stride_in_bytes: cint; output_pixels: ptr uint8;
   output_w, output_h, output_stride_in_bytes, num_channels, alpha_channel,

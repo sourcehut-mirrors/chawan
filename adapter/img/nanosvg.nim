@@ -6,9 +6,13 @@ import io/dynstream
 import utils/sandbox
 import utils/twtstr
 
-{.compile("nanosvg.c", "-O3").}
+{.passc: "-I" & currentSourcePath().parentDir().}
 
-{.push header: "nanosvg.h".}
+{.push header: """
+#define NANOSVG_IMPLEMENTATION
+#define NANOSVG_ALL_COLOR_KEYWORDS
+#include "nanosvg.h"
+""".}
 type
   NSVGimage {.importc.} = object
     width: cfloat
@@ -24,7 +28,10 @@ proc nsvgDelete(image: ptr NSVGimage)
 
 {.pop.} # nanosvg.h
 
-{.push header: "nanosvgrast.h".}
+{.push header: """
+#define NANOSVGRAST_IMPLEMENTATION
+#include "nanosvgrast.h"
+""".}
 type NSVGrasterizer {.incompleteStruct, importc.} = object
 
 {.push importc, cdecl.}
