@@ -23,8 +23,8 @@ also find an appropriate HTML converter in `adapter/format`.
 * [Gemini](#gemini)
 * [Finger](#finger)
 * [Spartan](#spartan)
-* [Local schemes: file:, about:, man:](#local-schemes-file-about-man-data)
-* [Internal schemes: cgi-bin:, stream:, cache:, data:](#internal-schemes-cgi-bin-stream-cache-data)
+* [Local schemes: file:, man:](#local-schemes-file-man)
+* [Internal schemes: cgi-bin:, stream:, cache:, data:, about:](#internal-schemes-cgi-bin-stream-cache-data-about)
 * [Custom protocols](#custom-protocols)
 
 <!-- MANON -->
@@ -111,7 +111,7 @@ protocol-specific line type. This is sort of supported through a sed filter
 for gemtext outputs in the CGI script (in other words, no modification to
 gmi2html was done to support this).
 
-## Local schemes: file:, about:, man:
+## Local schemes: file:, man:
 
 While these are not necessarily *protocols*, they are implemented similarly
 to the protocols listed above (and thus can also be replaced, if the user
@@ -126,7 +126,7 @@ references into links. A wrapper command `mancha` also exists; this has an
 interface similar to `man`. Note: this used to be based on w3mman2html.cgi, but
 it has been rewritten in Nim (and therefore no longer depends on Perl either).
 
-## Internal schemes: cgi-bin:, stream:, cache:, data:
+## Internal schemes: cgi-bin:, stream:, cache:, data:, about:
 
 Five internal protocols exist: `cgi-bin:`, `stream:`, `cache:`,
 `data:` and `about:`.  These are the basic building blocks for the
