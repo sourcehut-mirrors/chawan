@@ -1455,9 +1455,10 @@ proc shareCachedItem(ctx: LoaderContext; stream: SocketStream;
   let sourceClient = ctx.clientMap[sourcePid]
   let targetClient = ctx.clientMap[targetPid]
   let n = sourceClient.cacheMap.find(id)
-  let item = sourceClient.cacheMap[n]
-  inc item.refc
-  targetClient.cacheMap.add(item)
+  if n != -1:
+    let item = sourceClient.cacheMap[n]
+    inc item.refc
+    targetClient.cacheMap.add(item)
 
 proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
     client: ClientHandle; r: var BufferedReader) =
