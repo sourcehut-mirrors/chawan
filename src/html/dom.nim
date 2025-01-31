@@ -126,6 +126,7 @@ type
     referrer* {.jsget.}: string
     maybeRestyle*: proc(element: Element)
     performance* {.jsget.}: Performance
+    currentModuleURL*: URL
 
   # Navigator stuff
   Navigator* = object
@@ -5148,15 +5149,32 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
         element.fetchDescendantsAndLink(res.script, rdScript, onComplete)
   )
 
+proc logException(window: Window; url: URL) =
+  #TODO excludepassword seems pointless?
+  window.console.error("Exception in document",
+    url.serialize(excludepassword = true), window.jsctx.getExceptionMsg())
+
 proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     destination: RequestDestination; onComplete: OnCompleteProc) =
-  discard
+  #TODO ummm...
+  let window = element.document.window
+  let ctx = window.jsctx
+  if JS_ResolveModule(ctx, script.record) < 0:
+    window.logException(script.baseURL)
+    return
+  ctx.setImportMeta(script.record, true)
+  #TODO I think record can be a promise with TLA, and then this doesn't
+  # work at all
+  let res = JS_EvalFunction(ctx, script.record)
+  if JS_IsException(res):
+    window.logException(script.baseURL)
+    return
+  JS_FreeValue(ctx, res)
 
 #TODO settings object
 proc fetchSingleModule(element: HTMLScriptElement; url: URL;
     destination: RequestDestination; options: ScriptOptions,
     referrer: URL; isTopLevel: bool; onComplete: OnCompleteProc) =
-  discard #TODO implement
   let moduleType = "javascript"
   #TODO moduleRequest
   let window = element.document.window
@@ -5206,12 +5224,17 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
           element.onComplete(res)
           return
         if contentType.isJavaScriptType():
-          let res = ctx.newJSModuleScript(s.get, element.document.baseURL,
-            options)
-          if referrerPolicy.isSome:
-            res.script.options.referrerPolicy = referrerPolicy
-          settings.moduleMap.set(url, moduleType, res, ctx)
-          element.onComplete(res)
+          window.currentModuleURL = url
+          let res = ctx.newJSModuleScript(s.get, url, options)
+          #TODO can't we just return null from newJSModuleScript?
+          if JS_IsException(res.script.record):
+            window.logException(res.script.baseURL)
+            element.onComplete(ScriptResult(t: srtNull))
+          else:
+            if referrerPolicy.isSome:
+              res.script.options.referrerPolicy = referrerPolicy
+            settings.moduleMap.set(url, moduleType, res, ctx)
+            element.onComplete(res)
         else:
           #TODO non-JS modules
           discard
@@ -5344,7 +5367,7 @@ proc prepare*(element: HTMLScriptElement) =
     if element.ctype == stClassic:
       element.fetchClassicScript(url.get, options, classicCORS, encoding,
         markAsReady)
-    else:
+    else: # stModule
       element.fetchExternalModuleGraph(url.get, options, markAsReady)
   else:
     let baseURL = element.document.baseURL

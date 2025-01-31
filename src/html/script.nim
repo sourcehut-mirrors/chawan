@@ -1,6 +1,7 @@
 import monoucha/javascript
 import monoucha/jsopaque
 import monoucha/quickjs
+import monoucha/tojs
 import types/referrer
 import types/url
 import utils/twtstr
@@ -140,6 +141,29 @@ proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
       options: options
     )
   )
+
+proc setImportMeta*(ctx: JSContext; funcVal: JSValue; isMain: bool) =
+  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  let moduleNameAtom = JS_GetModuleName(ctx, m)
+  let metaObj = JS_GetImportMeta(ctx, m)
+  definePropertyCWE(ctx, metaObj, "url", JS_AtomToValue(ctx, moduleNameAtom))
+  definePropertyCWE(ctx, metaObj, "main", false)
+  JS_FreeValue(ctx, metaObj)
+  JS_FreeAtom(ctx, moduleNameAtom)
+
+proc normalizeModuleName*(ctx: JSContext; base_name, name: cstringConst;
+    opaque: pointer): cstring {.cdecl.} =
+  return js_strdup(ctx, cstring(name))
+
+proc finishLoadModule*(ctx: JSContext; source, name: string): JSModuleDef =
+  let funcVal = compileModule(ctx, source, name)
+  if JS_IsException(funcVal):
+    return nil
+  ctx.setImportMeta(funcVal, false)
+  # "the module is already referenced, so we must free it"
+  # idk how this works, so for now let's just do what qjs does
+  result = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
+  JS_FreeValue(ctx, funcVal)
 
 proc logException*(ctx: JSContext) =
   ctx.errorImpl(ctx.getExceptionMsg())

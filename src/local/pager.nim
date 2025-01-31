@@ -16,6 +16,7 @@ import config/history
 import config/mailcap
 import config/mimetypes
 import css/render
+import html/script
 import io/bufreader
 import io/bufwriter
 import io/console
@@ -390,49 +391,23 @@ proc gotoLine(ctx: JSContext; pager: Pager; val = JS_UNDEFINED): Opt[void]
     pager.container.gotoLine(s)
   return ok()
 
-proc setImportMeta(ctx: JSContext; funcVal: JSValue; isMain: bool) =
-  let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
-  let moduleNameAtom = JS_GetModuleName(ctx, m)
-  let metaObj = JS_GetImportMeta(ctx, m)
-  definePropertyCWE(ctx, metaObj, "url", JS_AtomToValue(ctx, moduleNameAtom))
-  definePropertyCWE(ctx, metaObj, "main", isMain)
-  JS_FreeValue(ctx, metaObj)
-  JS_FreeAtom(ctx, moduleNameAtom)
-
-proc finishLoadModule(ctx: JSContext; f: string; name: cstring): JSModuleDef =
-  let funcVal = compileModule(ctx, f, $name)
-  if JS_IsException(funcVal):
-    return nil
-  setImportMeta(ctx, funcVal, false)
-  # "the module is already referenced, so we must free it"
-  # idk how this works, so for now let's just do what qjs does
-  result = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
-  JS_FreeValue(ctx, funcVal)
-
-proc normalizeModuleName(ctx: JSContext; base_name, name: cstringConst;
-    opaque: pointer): cstring {.cdecl.} =
-  return js_strdup(ctx, cstring(name))
-
-proc clientLoadJSModule(ctx: JSContext; module_name: cstringConst;
-    opaque: pointer): JSModuleDef {.cdecl.} =
-  let global = JS_GetGlobalObject(ctx)
-  JS_FreeValue(ctx, global)
-  var x: Option[URL]
-  if module_name[0] == '/' or module_name[0] == '.' and
-      (module_name[1] == '/' or
-      module_name[1] == '.' and module_name[2] == '/'):
+proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
+    JSModuleDef {.cdecl.} =
+  let moduleName = $moduleName
+  let x = if moduleName.startsWith("/") or moduleName.startsWith("./") or
+      moduleName.startsWith("../"):
     let cur = getCurrentDir()
-    x = parseURL($module_name, parseURL("file://" & cur & "/"))
+    parseURL(moduleName, parseURL("file://" & cur & "/"))
   else:
-    x = parseURL($module_name)
+    parseURL(moduleName)
   if x.isNone or x.get.scheme != "file":
-    JS_ThrowTypeError(ctx, "Invalid URL: %s", module_name)
+    JS_ThrowTypeError(ctx, "Invalid URL: %s", cstring(moduleName))
     return nil
   try:
-    let f = readFile(x.get.pathname)
-    return finishLoadModule(ctx, f, cstring(module_name))
+    let source = readFile(x.get.pathname)
+    return ctx.finishLoadModule(source, moduleName)
   except IOError:
-    JS_ThrowTypeError(ctx, "Failed to open file %s", module_name)
+    JS_ThrowTypeError(ctx, "Failed to open file %s", cstring(moduleName))
     return nil
 
 proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
@@ -469,8 +444,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     cookieJars: newCookieJarMap()
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
-  JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, clientLoadJSModule,
-    nil)
+  JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(pager.jsrt, interruptHandler, cast[pointer](pager))
   let clientConfig = LoaderClientConfig(
     defaultHeaders: newHeaders(pager.config.network.defaultHeaders),

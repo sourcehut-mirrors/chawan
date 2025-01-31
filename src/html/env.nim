@@ -1,3 +1,4 @@
+import std/strutils
 import std/tables
 
 import css/cssparser
@@ -338,6 +339,32 @@ proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
     doAssert ctx.addEventListener(window, window.toAtom(satLoad), val).isSome
     JS_FreeValue(ctx, this)
 
+proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
+    JSModuleDef {.cdecl.} =
+  let window = ctx.getWindow()
+  #TODO I suspect this doesn't work with dynamically loaded modules?
+  # at least we'd have to set currentModuleURL before every script
+  # execution...
+  let url = window.currentModuleURL
+  var x = none(URL)
+  let moduleName = $moduleName
+  if url != nil and
+      (moduleName.startsWith("/") or moduleName.startsWith("./") or
+      moduleName.startsWith("../")):
+    x = parseURL($moduleName, some(url))
+  if x.isNone or not x.get.origin.isSameOrigin(url.origin):
+    JS_ThrowTypeError(ctx, "Invalid URL: %s", cstring(moduleName))
+    return nil
+  let request = newRequest(x.get)
+  let response = window.loader.doRequest(request)
+  if response.res != 0:
+    JS_ThrowTypeError(ctx, "Failed to load module %s", cstring(moduleName))
+    return nil
+  response.resume()
+  let source = response.body.recvAll()
+  response.close()
+  return ctx.finishLoadModule(source, moduleName)
+
 proc addWindowModule*(ctx: JSContext) =
   ctx.addEventModule()
   let eventTargetCID = ctx.getClass("EventTarget")
@@ -371,6 +398,7 @@ proc addScripting*(window: Window) =
   doAssert JS_DeleteProperty(ctx, jsWindow, performance, 0) == 1
   JS_FreeValue(ctx, jsWindow)
   JS_FreeAtom(ctx, performance)
+  JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   window.performance = newPerformance(window.settings.scripting)
   if window.settings.scripting == smApp:
     window.scriptAttrsp = window.attrsp
