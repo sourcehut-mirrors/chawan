@@ -254,13 +254,23 @@ proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValue;
     needsref: var bool): JSValue =
   JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
     # a JSValue already points to this object.
-    return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, obj[]))
+    let p = obj[].p
+    if obj[].jsref:
+      # JS owns the Nim value, because it still holds an active
+      # reference to it.
+      return JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p))
+    # Nim owned the JS value, but now JS wants to own Nim.
+    # This means we must release the JS reference, and add a reference
+    # to Nim.
+    needsref = true
+    obj[].jsref = true
+    return JS_MKPTR(JS_TAG_OBJECT, p)
   let ctxOpaque = ctx.getOpaque()
   let class = ctxOpaque.typemap.getOrDefault(tp, 0)
   let jsObj = JS_NewObjectFromCtor(ctx, ctor, class)
   if JS_IsException(jsObj):
     return jsObj
-  setOpaque(ctx, jsObj, p)
+  ctx.setOpaque(jsObj, p)
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
   if int(class) < ctxOpaque.unforgeable.len and

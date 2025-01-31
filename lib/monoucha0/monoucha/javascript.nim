@@ -138,8 +138,8 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
   JS_RunGC(rt)
   assert rtOpaque.destroying == nil
   var np = 0
-  for p in rtOpaque.plist.values:
-    rtOpaque.tmplist[np] = p
+  for it in rtOpaque.plist.values:
+    rtOpaque.tmplist[np] = it.p
     inc np
   rtOpaque.plist.clear()
   var nu = 0
@@ -1199,7 +1199,7 @@ proc nim_finalize_for_js*(obj: pointer) =
   for rt in runtimes:
     let rtOpaque = rt.getOpaque()
     rtOpaque.plist.withValue(obj, v):
-      let p = v[]
+      let p = v[].p
       let val = JS_MKPTR(JS_TAG_OBJECT, p)
       let classid = JS_GetClassID(val)
       rtOpaque.fins.withValue(classid, fin):
@@ -1399,7 +1399,24 @@ proc jsCheckDestroyRef*(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.} =
       # This means we can allow QJS to collect this JSValue.
       return true
     else:
-      rt.getOpaque().destroying = nil
+      let rtOpaque = rt.getOpaque()
+      rtOpaque.destroying = nil
+      # Set an internal flag to note that the JS object is owned by the
+      # Nim side.
+      # This means that if toJS is used again on the Nim object, JS will
+      # first get a non-dup'd object, and a reference will be set on
+      # the Nim object.
+      #
+      #TODO can we eliminate this hash somehow?
+      # at least I *think* in the common case of "no reference cycle",
+      # we could just elide the jsref set here, and add a reference
+      # in toJSP0 if the refcount on the JS pointer is 0.  (however,
+      # we must do it here if the refcount is > 1, that means we have
+      # a cycle.)
+      # it sounds too hacky to try for now, but may be worth it if this
+      # turns out to be a bottleneck...
+      rtOpaque.plist.withValue(opaque, v):
+        v[].jsref = false
       # Returning false from this function signals to the QJS GC that it
       # should not be collected yet. Accordingly, the JSObject's refcount
       # will be set to one again.

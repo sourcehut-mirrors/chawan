@@ -49,7 +49,7 @@ type
   JSEmptyOpaqueCallback* = (proc() {.closure, raises: [].})
 
   JSRuntimeOpaque* = ref object
-    plist*: Table[pointer, pointer] # Nim, JS
+    plist*: Table[pointer, tuple[p: pointer; jsref: bool]] # Nim, JS
     flist*: seq[seq[JSCFunctionListEntry]]
     fins*: Table[JSClassID, JSFinalizerFunction]
     parentMap*: Table[pointer, pointer]
@@ -96,7 +96,7 @@ proc setOpaque*(ctx: JSContext; val: JSValue; opaque: pointer) =
   let rt = JS_GetRuntime(ctx)
   let rtOpaque = rt.getOpaque()
   let p = JS_VALUE_GET_PTR(val)
-  rtOpaque.plist[opaque] = p
+  rtOpaque.plist[opaque] = (p, true)
   JS_SetOpaque(val, opaque)
 
 func getOpaque*(val: JSValue): pointer =
