@@ -5179,12 +5179,18 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     window.logException(script.baseURL)
     return
   ctx.setImportMeta(script.record, true)
-  #TODO I think record can be a promise with TLA, and then this doesn't
-  # work at all
   let res = JS_EvalFunction(ctx, script.record)
   if JS_IsException(res):
     window.logException(script.baseURL)
     return
+  var p: Promise[JSValue]
+  if ctx.fromJS(res, p).isSome:
+    p.then(proc(res: JSValue) =
+      if JS_IsException(res):
+        window.logException(script.baseURL)
+    )
+  else:
+    window.logException(script.baseURL)
   JS_FreeValue(ctx, res)
 
 #TODO settings object
@@ -5282,16 +5288,13 @@ proc execute*(element: HTMLScriptElement) =
     let window = document.window
     if window != nil and window.jsctx != nil:
       let script = element.scriptResult.script
-      let urls = script.baseURL.serialize(excludepassword = true)
       let ctx = window.jsctx
       if JS_IsException(script.record):
-        window.console.error("Exception in document", urls,
-          ctx.getExceptionMsg())
+        window.logException(script.baseURL)
       else:
         let ret = ctx.evalFunction(script.record)
         if JS_IsException(ret):
-          window.console.error("Exception in document", urls,
-            ctx.getExceptionMsg())
+          window.logException(script.baseURL)
         JS_FreeValue(ctx, ret)
     document.currentScript = oldCurrentScript
   else: discard #TODO
