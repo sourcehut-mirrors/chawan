@@ -73,6 +73,9 @@ proc newBlob*(buffer: pointer; size: int; ctype: string;
     opaque: opaque
   )
 
+proc newEmptyBlob*(contentType = ""): Blob =
+  return newBlob(nil, 0, contentType, nil)
+
 proc deallocBlob*(opaque, p: pointer) =
   if p != nil:
     dealloc(p)

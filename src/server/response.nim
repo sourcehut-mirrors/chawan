@@ -55,11 +55,18 @@ proc newResponse*(res: int; request: Request; stream: SocketStream;
     outputId: int; status: uint16): Response =
   return Response(
     res: res,
-    url: request.url,
+    url: if request != nil: request.url else: nil,
     body: stream,
     outputId: outputId,
     status: status
   )
+
+proc newResponse*(body = JS_UNDEFINED; init = JS_UNDEFINED): JSResult[Response]
+    {.jsctor.} =
+  if not JS_IsUndefined(body) or not JS_IsUndefined(init):
+    #TODO
+    return errInternalError("Response constructor with body or init")
+  return ok(newResponse(0, nil, nil, -1, 200))
 
 func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
   #TODO use "create" function
@@ -74,7 +81,7 @@ func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
 proc newFetchTypeError*(): JSError =
   return newTypeError("NetworkError when attempting to fetch resource")
 
-func sok(response: Response): bool {.jsfget: "ok".} =
+func jsOk(response: Response): bool {.jsfget: "ok".} =
   return response.status in 200u16 .. 299u16
 
 func surl*(response: Response): string {.jsfget: "url".} =
@@ -162,7 +169,7 @@ proc onFinishBlob(response: Response; success: bool) =
     let p = opaque.p
     opaque.p = nil
     let blob = if p == nil:
-      newBlob(nil, 0, opaque.contentType, nil)
+      newEmptyBlob(opaque.contentType)
     else:
       newBlob(p, opaque.len, opaque.contentType, deallocBlob)
     bodyRead.resolve(JSResult[Blob].ok(blob))
@@ -177,6 +184,9 @@ proc blob*(response: Response): Promise[JSResult[Blob]] {.jsfunc.} =
   if response.bodyUsed:
     let err = JSResult[Blob].err(newTypeError("Body has already been consumed"))
     return newResolvedPromise(err)
+  if response.body == nil:
+    response.bodyUsed = true
+    return newResolvedPromise(JSResult[Blob].ok(newEmptyBlob()))
   let opaque = BlobOpaque(
     bodyRead: Promise[JSResult[Blob]](),
     contentType: response.getContentType(),
