@@ -535,13 +535,14 @@ proc baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
 proc getImageId(window: Window): int
 proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
+proc invalidate*(element: Element)
+proc invalidate*(element: Element; dep: DependencyType)
 proc invalidateCollections(node: Node)
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc remove*(node: Node)
-proc invalidate*(element: Element)
-proc invalidate*(element: Element; dep: DependencyType)
+proc replaceAll(parent: Node; s: sink string)
 
 # Forward declaration hacks
 # set in css/match
@@ -3777,6 +3778,16 @@ func title*(document: Document): string {.jsfget.} =
     return title.childTextContent.stripAndCollapse()
   return ""
 
+proc `title=`(document: Document; s: sink string) {.jsfset: "title".} =
+  var title = document.findFirst(TAG_TITLE)
+  if title == nil:
+    let head = document.head
+    if head == nil:
+      return
+    title = document.newHTMLElement(TAG_TITLE)
+    head.append(title)
+  title.replaceAll(s)
+
 proc invalidateCollections(node: Node) =
   for id in node.liveCollections:
     node.document.invalidCollections.incl(id)
@@ -4964,6 +4975,9 @@ proc replaceAll(parent, node: Node) =
       parent.append(node)
   #TODO tree mutation record
 
+proc replaceAll(parent: Node; s: sink string) =
+  parent.replaceAll(parent.document.newText(s))
+
 proc replaceChild(parent, node, child: Node): DOMResult[Node] {.jsfunc.} =
   ?parent.replace(child, node)
   return ok(child)
@@ -5041,7 +5055,7 @@ proc replaceChildren(ctx: JSContext; this: DocumentFragment;
     nodes: varargs[JSValue]): Err[DOMException] {.jsfunc.} =
   return ctx.replaceChildrenImpl(this, nodes)
 
-proc createTextNode*(document: Document; data: string): Text {.jsfunc.} =
+proc createTextNode(document: Document; data: sink string): Text {.jsfunc.} =
   return newText(document, data)
 
 proc setNodeValue(ctx: JSContext; node: Node; data: JSValue): Err[void]
@@ -5066,7 +5080,7 @@ proc setTextContent(ctx: JSContext; node: Node; data: JSValue): Err[void]
     else:
       var res: string
       ?ctx.fromJS(data, res)
-      node.replaceAll(node.document.createTextNode(move(res)))
+      node.replaceAll(move(res))
     return ok()
   return ctx.setNodeValue(node, data)
 

@@ -814,7 +814,7 @@ proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
       if lastChild != nil and lastChild of Text:
         Text(lastChild).data &= data
       else:
-        plaintext.insert(buffer.document.createTextNode($data), nil)
+        plaintext.insert(buffer.document.newText($data), nil)
       #TODO just invalidate document?
       plaintext.invalidate()
   true

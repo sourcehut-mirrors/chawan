@@ -165,7 +165,7 @@ proc insertTextImpl(builder: ChaDOMBuilder; parent: Node; text: string;
     if parent of Element:
       Element(parent).invalidate()
   else:
-    let text = builder.document.createTextNode(text)
+    let text = builder.document.newText(text)
     discard parent.insertBefore(text, before)
 
 proc removeImpl(builder: ChaDOMBuilder; child: Node) =
