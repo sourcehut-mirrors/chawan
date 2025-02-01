@@ -16,7 +16,7 @@ type
     pmParserInserted, pmNotParserInserted
 
   ScriptType* = enum
-    stNone, stClassic, stModule, stImportMap
+    stClassic, stModule, stImportMap
 
   ScriptResultType* = enum
     srtNull, srtScript, srtImportMapParse, srtFetching

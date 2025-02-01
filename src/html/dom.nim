@@ -5173,6 +5173,17 @@ proc logException(window: Window; url: URL) =
   window.console.error("Exception in document",
     url.serialize(excludepassword = true), window.jsctx.getExceptionMsg())
 
+proc fetchInlineModuleGraph(element: HTMLScriptElement; sourceText: string;
+    url: URL; options: ScriptOptions; onComplete: OnCompleteProc) =
+  let window = element.document.window
+  let ctx = window.jsctx
+  let res = ctx.newJSModuleScript(sourceText, url, options)
+  if JS_IsException(res.script.record):
+    window.logException(res.script.baseURL)
+    element.onComplete(ScriptResult(t: srtNull))
+  else:
+    element.fetchDescendantsAndLink(res.script, rdScript, onComplete)
+
 proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     destination: RequestDestination; onComplete: OnCompleteProc) =
   #TODO ummm...
@@ -5192,8 +5203,6 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
       if JS_IsException(res):
         window.logException(script.baseURL)
     )
-  else:
-    window.logException(script.baseURL)
   JS_FreeValue(ctx, res)
 
 #TODO settings object
@@ -5393,12 +5402,19 @@ proc prepare*(element: HTMLScriptElement) =
       element.fetchExternalModuleGraph(url.get, options, markAsReady)
   else:
     let baseURL = element.document.baseURL
-    if element.ctype == stClassic:
+    case element.ctype
+    of stClassic:
       let ctx = element.document.window.jsctx
       let script = ctx.newClassicScript(sourceText, baseURL, options)
       element.markAsReady(script)
-    else:
-      #TODO stModule, stImportMap
+    of stModule:
+      element.delayingTheLoadEvent = true
+      if element.renderBlocking:
+        element.blockRendering()
+        options.renderBlocking = true
+      element.fetchInlineModuleGraph(sourceText, baseURL, options, markAsReady)
+    of stImportMap:
+      #TODO
       element.markAsReady(ScriptResult(t: srtNull))
   if element.ctype == stClassic and element.attrb(satSrc) or
       element.ctype == stModule:
