@@ -2798,6 +2798,9 @@ proc focus(ctx: JSContext; element: Element) {.jsfunc.} =
 proc scrollTo(element: Element) {.jsfunc.} =
   discard #TODO maybe in app mode?
 
+proc scrollIntoView(element: Element) {.jsfunc.} =
+  discard #TODO ditto
+
 func target*(document: Document): Element =
   return document.internalTarget
 
