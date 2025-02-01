@@ -1005,8 +1005,10 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     erry: erry,
     dispw: dispw
   )
-  pager.loader.shareCachedItem(bmp.cacheId, pager.loader.clientPid,
-    container.process)
+  if not pager.loader.shareCachedItem(bmp.cacheId, pager.loader.clientPid,
+      container.process):
+    pager.alert("Error: received incorrect cache ID from buffer")
+    return
   let imageMode = pager.term.imageMode
   pager.loader.fetch(newRequest(
     newURL("img-codec+" & bmp.contentType.after('/') & ":decode").get,
@@ -2694,11 +2696,11 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
       # loading from cache; now both the buffer and us hold a new reference
       # to the cached item, but it's only shared with the buffer. add a
       # pager ref too.
-      loader.shareCachedItem(container.cacheId, loader.clientPid)
+      discard loader.shareCachedItem(container.cacheId, loader.clientPid)
     let pid = container.process
     var outCacheId = container.cacheId
     if not redirected:
-      loader.shareCachedItem(container.cacheId, pid)
+      discard loader.shareCachedItem(container.cacheId, pid)
       loader.resume(istreamOutputId)
     else:
       outCacheId = loader.addCacheFile(ostreamOutputId, pid)
@@ -2714,10 +2716,10 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
     stream.withPacketWriter w:
       w.sendAux.add(cstream.fd)
     # buffer is cloned, just share the parent's cached source
-    loader.shareCachedItem(container.cacheId, container.process)
+    discard loader.shareCachedItem(container.cacheId, container.process)
     # also add a reference here; it will be removed when the container is
     # deleted
-    loader.shareCachedItem(container.cacheId, loader.clientPid)
+    discard loader.shareCachedItem(container.cacheId, loader.clientPid)
     container.setCloneStream(bufStream)
   cstream.sclose()
   loader.put(ContainerData(stream: stream, container: container))

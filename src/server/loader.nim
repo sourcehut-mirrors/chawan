@@ -1459,6 +1459,8 @@ proc shareCachedItem(ctx: LoaderContext; stream: SocketStream;
     let item = sourceClient.cacheMap[n]
     inc item.refc
     targetClient.cacheMap.add(item)
+  stream.withPacketWriter w:
+    w.swrite(n != -1)
 
 proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
     client: ClientHandle; r: var BufferedReader) =

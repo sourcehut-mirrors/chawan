@@ -3650,6 +3650,7 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
       NetworkBitmap(
         contentType: "image/x-cha-canvas",
         imageId: imageId,
+        cacheId: -1,
         width: 300,
         height: 150
       )
@@ -4416,6 +4417,7 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
           canvas.bitmap = NetworkBitmap(
             contentType: "image/x-cha-canvas",
             imageId: window.getImageId(),
+            cacheId: -1,
             width: w,
             height: h
           )

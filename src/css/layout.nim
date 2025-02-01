@@ -3169,7 +3169,7 @@ proc buildReplacement(ctx: var BlockBuilderContext; child, parent: StyledNode;
     let text = newCharacterData(child.content.s)
     ctx.pushInlineText(computed, parent, text)
   of ContentImage:
-    if child.content.bmp != nil:
+    if child.content.bmp != nil and child.content.bmp.cacheId != -1:
       ctx.pushInline(InlineBox(
         t: ibtBitmap,
         computed: computed,

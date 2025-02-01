@@ -405,13 +405,18 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
     stream.sclose()
   return response
 
-proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1) =
+proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1):
+    bool =
   let sourcePid = if sourcePid != -1: sourcePid else: loader.clientPid
   loader.withPacketWriterFire w:
     w.swrite(lcShareCachedItem)
     w.swrite(sourcePid)
     w.swrite(targetPid)
     w.swrite(id)
+  var success: bool
+  loader.withPacketReader r:
+    r.sread(success)
+  return success
 
 proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
   loader.withPacketWriter w, nil:
