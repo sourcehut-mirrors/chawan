@@ -2795,6 +2795,12 @@ proc focus(ctx: JSContext; element: Element) {.jsfunc.} =
   if window != nil and window.autofocus:
     element.document.setFocus(element)
 
+proc blur(ctx: JSContext; element: Element) {.jsfunc.} =
+  let window = ctx.getWindow()
+  if window != nil and window.autofocus:
+    if element.document.focus == element:
+      element.document.setFocus(nil)
+
 proc scrollTo(element: Element) {.jsfunc.} =
   discard #TODO maybe in app mode?
 
