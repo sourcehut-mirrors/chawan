@@ -75,7 +75,7 @@ type
   Termcap = ref object
     bp: array[1024, uint8]
     funcstr: array[256, uint8]
-    caps: array[TermcapCap, cstring]
+    caps: array[TermcapCap, string]
     numCaps: array[TermcapCapNumeric, cint]
 
   CanvasImage* = ref object
@@ -241,9 +241,11 @@ const APC = "\e_"
 const KITTYQUERY = APC & "Gi=1,a=q;" & ST
 
 when TermcapFound:
-  func hascap(term: Terminal; c: TermcapCap): bool = term.tc.caps[c] != nil
-  func cap(term: Terminal; c: TermcapCap): string = $term.tc.caps[c]
-  func ccap(term: Terminal; c: TermcapCap): cstring = term.tc.caps[c]
+  func hascap(term: Terminal; c: TermcapCap): bool =
+    return term.tc.caps[c].len > 0
+
+  func cap(term: Terminal; c: TermcapCap): lent string =
+    return term.tc.caps[c]
 
 proc flush*(term: Terminal) =
   if term.obufLen > 0:
@@ -259,14 +261,6 @@ proc write(term: Terminal; s: openArray[char]) =
     else:
       copyMem(addr term.obuf[term.obufLen], unsafeAddr s[0], s.len)
       term.obufLen += s.len
-
-proc write(term: Terminal; s: string) =
-  # This is needed because some Nim versions can't decide between
-  # resolving to openArray[char] and cstring.
-  term.write(s.toOpenArray(0, s.len - 1))
-
-proc write(term: Terminal; s: cstring) =
-  term.write(s.toOpenArray(0, s.len - 1))
 
 proc readChar*(term: Terminal): char =
   if term.ibufn == term.ibufLen:
@@ -293,19 +287,19 @@ proc hasBuffer*(term: Terminal): bool =
 proc cursorGoto(term: Terminal; x, y: int): string =
   when TermcapFound:
     if term.tc != nil:
-      return $tgoto(term.ccap cm, cint(x), cint(y))
+      return $tgoto(cstring(term.cap(cm)), cint(x), cint(y))
   return HVP(y + 1, x + 1)
 
 proc clearEnd(term: Terminal): string =
   when TermcapFound:
     if term.tc != nil:
-      return term.cap ce
+      return term.cap(ce)
   return EL
 
 proc clearDisplay(term: Terminal): string =
   when TermcapFound:
     if term.tc != nil:
-      return term.cap cd
+      return term.cap(cd)
   return ED
 
 proc isatty*(term: Terminal): bool =
@@ -320,7 +314,7 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]") =
 proc resetFormat(term: Terminal): string =
   when TermcapFound:
     if term.tc != nil:
-      return term.cap me
+      return term.cap(me)
   return CSI & 'm'
 
 const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
@@ -337,11 +331,11 @@ proc startFormat(term: Terminal; flag: FormatFlag): string =
   when TermcapFound:
     if term.tc != nil:
       case flag
-      of ffBold: return term.cap md
-      of ffUnderline: return term.cap us
-      of ffReverse: return term.cap mr
-      of ffBlink: return term.cap mb
-      of ffItalic: return term.cap ZH
+      of ffBold: return term.cap(md)
+      of ffUnderline: return term.cap(us)
+      of ffReverse: return term.cap(mr)
+      of ffBlink: return term.cap(mb)
+      of ffItalic: return term.cap(ZH)
       else: discard
   return CSI & $FormatCodes[flag].s & 'm'
 
@@ -349,8 +343,8 @@ proc endFormat(term: Terminal; flag: FormatFlag): string =
   when TermcapFound:
     if term.tc != nil:
       case flag
-      of ffUnderline: return term.cap ue
-      of ffItalic: return term.cap ZR
+      of ffUnderline: return term.cap(ue)
+      of ffItalic: return term.cap(ZR)
       else: discard
   return CSI & $FormatCodes[flag].e & 'm'
 
@@ -363,14 +357,14 @@ proc setCursor*(term: Terminal; x, y: int) =
 
 proc enableAltScreen(term: Terminal): string =
   when TermcapFound:
-    if term.tc != nil and term.hascap ti:
-      return term.cap ti
+    if term.tc != nil and term.hascap(ti):
+      return term.cap(ti)
   return SMCUP
 
 proc disableAltScreen(term: Terminal): string =
   when TermcapFound:
-    if term.tc != nil and term.hascap te:
-      return term.cap te
+    if term.tc != nil and term.hascap(te):
+      return term.cap(te)
   return RMCUP
 
 proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
@@ -619,15 +613,15 @@ proc generateSwapOutput(term: Terminal): string =
 
 proc hideCursor*(term: Terminal) =
   when TermcapFound:
-    if term.tc != nil and term.hascap vi:
-      term.write(term.ccap vi)
+    if term.tc != nil and term.hascap(vi):
+      term.write(term.cap(vi))
       return
   term.write(CIVIS)
 
 proc showCursor*(term: Terminal) =
   when TermcapFound:
-    if term.tc != nil and term.hascap ve:
-      term.write(term.ccap ve)
+    if term.tc != nil and term.hascap(ve):
+      term.write(term.cap(ve))
       return
   term.write(CNORM)
 
@@ -1065,7 +1059,9 @@ when TermcapFound:
     if res > 0: # success
       term.tc = tc
       for id in TermcapCap:
-        tc.caps[id] = tgetstr(cstring($id), cast[ptr cstring](addr tc.funcstr))
+        let s = tgetstr(cstring($id), cast[ptr cstring](addr tc.funcstr))
+        if s != nil:
+          tc.caps[id] = $s
       for id in TermcapCapNumeric:
         tc.numCaps[id] = tgetnum(cstring($id))
 
@@ -1387,21 +1383,21 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
   when TermcapFound:
     term.loadTermcap()
     if term.tc != nil:
-      term.smcup = term.hascap ti
+      term.smcup = term.hascap(ti)
       if term.colorMode < cmEightBit and term.tc.numCaps[Co] == 256:
         # due to termcap limitations, 256 is the highest possible number here
         term.colorMode = cmEightBit
       elif term.colorMode < cmANSI and term.tc.numCaps[Co] >= 8:
         term.colorMode = cmANSI
-      if term.hascap ZH:
+      if term.hascap(ZH):
         term.formatMode.incl(ffItalic)
-      if term.hascap us:
+      if term.hascap(us):
         term.formatMode.incl(ffUnderline)
-      if term.hascap md:
+      if term.hascap(md):
         term.formatMode.incl(ffBold)
-      if term.hascap mr:
+      if term.hascap(mr):
         term.formatMode.incl(ffReverse)
-      if term.hascap mb:
+      if term.hascap(mb):
         term.formatMode.incl(ffBlink)
       return res
   term.smcup = true
