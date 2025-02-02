@@ -837,22 +837,17 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; okstmt, errstmt: NimNode) =
         `okstmt`
       `errstmt`
 
-proc makeCtorJSCallAndRet(gen: var JSFuncGenerator; errstmt: NimNode) =
-  let jfcl = gen.jsFunCallList
-  let dl = gen.dielabel
-  gen.jsCallAndRet = quote do:
-    block `dl`:
-      return ctx.toJSNew(`jfcl`, this)
-    `errstmt`
-
 macro jsctor*(fun: typed) =
   var gen = initGenerator(fun, bfConstructor, hasThis = false)
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
-  let errstmt = quote do:
+  let jfcl = gen.jsFunCallList
+  let dl = gen.dielabel
+  gen.jsCallAndRet = quote do:
+    block `dl`:
+      return ctx.toJSNew(`jfcl`, this)
     return JS_EXCEPTION
-  gen.makeCtorJSCallAndRet(errstmt)
   let jsProc = gen.newJSProc(getJSParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
