@@ -175,12 +175,11 @@ func uninitIfNull*(val: JSValue): JSValue =
 
 proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]) =
   let proto = JS_GetClassProto(ctx, classid)
-  let ctorProto = JS_GetPrototype(ctx, ctx.getOpaque().ctors[classid])
+  let ctor = ctx.getOpaque().ctors[classid]
   #TODO it should be enough to define on the proto only, but apparently
   # it isn't...
   for e in consts:
     let s = $e
     ctx.definePropertyE(proto, s, uint16(e))
-    ctx.definePropertyE(ctorProto, s, uint16(e))
-  JS_FreeValue(ctx, ctorProto)
+    ctx.definePropertyE(ctor, s, uint16(e))
   JS_FreeValue(ctx, proto)

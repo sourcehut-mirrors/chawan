@@ -302,6 +302,13 @@ proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID): JSValue =
     return proto
   return JS_NewObject(ctx)
 
+proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
+    className: cstring; parent: JSClassID): JSValue =
+  if parent != 0:
+    return JS_NewCFunction3(ctx, ctor, className, 0, JS_CFUNC_constructor,
+      0, ctx.getOpaque().ctors[parent])
+  return JS_NewCFunction2(ctx, ctor, className, 0, JS_CFUNC_constructor, 0)
+
 func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
     nimt: pointer; ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
     asglobal: bool; nointerface: bool; finalizer: JSFinalizerFunction;
@@ -362,8 +369,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
       JS_SetPropertyFunctionList(ctx, global, ufp,
         cint(ctxOpaque.unforgeable[int(result)].len))
   JS_FreeValue(ctx, news)
-  let jctor = JS_NewCFunction2(ctx, ctor, cstring($cdef.class_name), 0,
-    JS_CFUNC_constructor, 0)
+  let jctor = ctx.newCtorFunFromParentClass(ctor, cdef.class_name, parent)
   if staticfuns.len > 0:
     rtOpaque.flist.add(@staticfuns)
     let fp0 = addr rtOpaque.flist[^1][0]
@@ -371,7 +377,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
     JS_SetPropertyFunctionList(ctx, jctor, fp, cint(staticfuns.len))
   JS_SetConstructor(ctx, jctor, proto)
   if errid.isSome:
-    ctx.getOpaque().errCtorRefs[errid.get] = JS_DupValue(ctx, jctor)
+    ctxOpaque.errCtorRefs[errid.get] = JS_DupValue(ctx, jctor)
   while ctxOpaque.ctors.len <= int(result):
     ctxOpaque.ctors.add(JS_UNDEFINED)
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)

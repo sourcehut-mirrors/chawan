@@ -780,6 +780,9 @@ proc JS_LoadModule*(ctx: JSContext; basename, filename: cstringConst): JSValue
 # C function definition
 proc JS_NewCFunction2*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
   length: cint; proto: JSCFunctionEnum; magic: cint): JSValue
+proc JS_NewCFunction3*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
+  length: cint; proto: JSCFunctionEnum; magic: cint; proto_val: JSValue):
+  JSValue
 proc JS_NewCFunctionData*(ctx: JSContext; cfunc: JSCFunctionData;
   length, magic, data_len: cint; data: ptr UncheckedArray[JSValue]): JSValue
 proc JS_NewCFunction*(ctx: JSContext; cfunc: JSCFunction; name: cstring;

@@ -3,5 +3,6 @@
 <script src=asserts.js></script>
 <script>
 assertEquals(new Text("data").ownerDocument, document);
+assertEquals(Text.__proto__, CharacterData);
 document.getElementById("x").textContent = "Success";
 </script>
