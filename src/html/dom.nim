@@ -4220,6 +4220,9 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
             share.bitmap = bmp
             share.invalidate()
           image.invalidate()
+          #TODO fire error on error
+          if window.settings.scripting != smFalse:
+            window.fireEvent(satLoad, image)
         )
       )
     window.pendingResources.add(p)
