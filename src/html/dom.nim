@@ -4063,7 +4063,8 @@ proc corsFetch(window: Window; input: Request): FetchPromise =
     return newResolvedPromise(JSResult[Response].err(newFetchTypeError()))
   return window.loader.fetch(input)
 
-proc loadSheet(window: Window; link: HTMLLinkElement; url: URL; applies: bool) =
+proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
+    Promise[CSSStylesheet] =
   let p = window.corsFetch(
     newRequest(url)
   ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
@@ -4073,21 +4074,28 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL; applies: bool) =
         return res.text()
       res.close()
     return newResolvedPromise(JSResult[string].err(nil))
-  ).then(proc(s: JSResult[string]) =
-    # Check applies here, to avoid leaking the window size.
+  ).then(proc(s: JSResult[string]): Promise[CSSStylesheet] =
     if s.isSome:
       let sheet = s.get.parseStylesheet(window.factory, url, window.attrsp)
-      if applies:
-        # Note: we intentionally load all sheets to prevent media query
-        # based tracking.
-        link.sheets.add(sheet.applyMediaQuery(window))
-        window.document.applyAuthorSheets()
-        if window.document.documentElement != nil:
-          window.document.documentElement.invalidate()
-      for url in sheet.importList:
-        window.loadSheet(link, url, true) #TODO media query
+      var promises: seq[EmptyPromise] = @[]
+      var sheets = newSeq[CSSStylesheet](sheet.importList.len)
+      for i, url in sheet.importList:
+        (proc(i: int) =
+          let p = window.loadSheet(link, url).then(proc(sheet: CSSStylesheet) =
+            sheets[i] = sheet
+          )
+          promises.add(p)
+        )(i)
+      return promises.all().then(proc(): CSSStylesheet =
+        for sheet in sheets:
+          if sheet != nil:
+            #TODO check import media query here
+            link.sheets.add(sheet)
+        return sheet.applyMediaQuery(window)
+      )
+    return newResolvedPromise[CSSStylesheet](nil)
   )
-  window.pendingResources.add(p)
+  return p
 
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
@@ -4109,7 +4117,16 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals, window.attrsp)
       applies = media.applies(window.settings.scripting, window.attrsp)
-    window.loadSheet(link, url, applies)
+    let p = window.loadSheet(link, url).then(proc(sheet: CSSStylesheet) =
+      # Note: we intentionally load all sheets first and *then* check
+      # whether media applies, to prevent media query based tracking.
+      if sheet != nil and applies:
+        link.sheets.add(sheet)
+        window.document.applyAuthorSheets()
+        if window.document.documentElement != nil:
+          window.document.documentElement.invalidate()
+    )
+    window.pendingResources.add(p)
 
 proc getImageId(window: Window): int =
   result = window.imageId
