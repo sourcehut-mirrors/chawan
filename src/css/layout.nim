@@ -1571,20 +1571,15 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
   of ListStylePositionOutside:
     let marker = box.children[0]
     let content = box.children[1]
-    marker.state = BoxLayoutState()
     content.state = BoxLayoutState(offset: box.state.offset)
-    #TODO should markers establish a new BFC?
-    # Actually, I'm not sure if it even matters, since they are out
-    # of flow.  Either way, they certainly shouldn't clear.
-    bctx.layoutFlow(content, sizes, canClear = false)
-    #TODO we should put markers right before the first atom of the parent
-    # list item or something...
-    var bctx = BlockContext(lctx: bctx.lctx)
+    bctx.layoutFlow(content, sizes, canClear = true)
     let markerSizes = ResolvedSizes(
       space: availableSpace(w = fitContent(sizes.space.w), h = sizes.space.h),
       bounds: DefaultBounds
     )
-    bctx.layoutFlow(marker, markerSizes, canClear = true)
+    bctx.lctx.layoutRootBlock(marker, offset(x = 0, y = 0), markerSizes)
+    #TODO put markers right before the first atom of the list item
+    # instead
     marker.state.offset.x = -marker.state.size.w
     # take inner box min width etc.
     box.state = content.state
@@ -3045,11 +3040,8 @@ proc pushListItem(ctx: var BlockBuilderContext; styledNode: StyledNode) =
     content.computed = content.computed.copyProperties()
     content.computed{"display"} = DisplayBlock
     let markerComputed = marker.computed.copyProperties()
-    markerComputed{"display"} = DisplayBlock
-    let marker = BlockBox(
-      computed: marker.computed,
-      inline: marker
-    )
+    markerComputed{"display"} = markerComputed{"display"}.blockify()
+    let marker = BlockBox(computed: markerComputed, inline: marker)
     let wrapper = BlockBox(
       computed: styledNode.computed,
       children: @[marker, content]
