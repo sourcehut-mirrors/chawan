@@ -1363,12 +1363,16 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
         input.invalidate()
       else:
         input.value = s
+      if buffer.config.scripting != smFalse:
+        buffer.window.fireEvent(satChange, input)
       buffer.maybeReshape()
       return buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(focus)
       textarea.value = s
       textarea.invalidate()
+      if buffer.config.scripting != smFalse:
+        buffer.window.fireEvent(satChange, textarea)
       buffer.maybeReshape()
     else: discard
   return nil
@@ -1439,6 +1443,8 @@ proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
   if select != nil:
     if select.attrb(satMultiple):
       option.setSelected(not option.selected)
+      if buffer.config.scripting != smFalse:
+        buffer.window.fireEvent(satChange, select)
       buffer.maybeReshape()
       return ClickResult()
     return buffer.click(select)
@@ -1527,10 +1533,15 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
     return ClickResult(readline: some(ReadLineResult(t: rltFile)))
   of itCheckbox:
     input.setChecked(not input.checked)
+    if buffer.config.scripting != smFalse:
+      buffer.window.fireEvent(satChange, input)
     buffer.maybeReshape()
     return ClickResult()
   of itRadio:
+    let wasChecked = input.checked
     input.setChecked(true)
+    if not wasChecked and buffer.config.scripting != smFalse:
+      buffer.window.fireEvent(satChange, input)
     buffer.maybeReshape()
     return ClickResult()
   of itReset:
@@ -1607,6 +1618,9 @@ proc select*(buffer: Buffer; selected: int): ClickResult {.proxy.} =
     let select = HTMLSelectElement(buffer.document.focus)
     select.setSelectedIndex(selected)
     buffer.restoreFocus()
+    if buffer.config.scripting != smFalse:
+      buffer.window.fireEvent(satChange, select)
+    buffer.maybeReshape()
   return ClickResult()
 
 proc readCanceled*(buffer: Buffer) {.proxy.} =

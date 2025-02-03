@@ -4441,6 +4441,10 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
       let window = image.document.window
       if window != nil:
         window.loadResource(image)
+  of TAG_SELECT:
+    if name == satOnchange and element.scriptingEnabled:
+      element.reflectEvent(element.document.window, name, satChange,
+        value.get(""))
   else: discard
 
 func cmpAttrName(a: AttrData; b: CAtom): int =
