@@ -2780,7 +2780,7 @@ proc findMetaRefresh*(document: Document): Element =
       return child
   return nil
 
-func focus*(document: Document): Element =
+func focus*(document: Document): Element {.jsfget: "activeElement".} =
   return document.internalFocus
 
 proc setFocus*(document: Document; element: Element) =
