@@ -1055,7 +1055,7 @@ const ReflectTable0 = [
   makes("href", TAG_LINK),
   makes("value", TAG_BUTTON),
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
-  makes("name", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META),
+  makes("name", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META, TAG_IFRAME),
   makeb("novalidate", "noValidate", TAG_FORM),
   makeb("selected", "defaultSelected", TAG_OPTION),
   makes("rel", TAG_A, TAG_LINK, TAG_LABEL),
@@ -1075,7 +1075,7 @@ const ReflectTable0 = [
   makeul("width", TAG_CANVAS, 300u32),
   makeul("height", TAG_CANVAS, 150u32),
   makes("alt", TAG_IMG),
-  makes("src", TAG_IMG, TAG_SCRIPT),
+  makes("src", TAG_IMG, TAG_SCRIPT, TAG_IFRAME),
   makes("srcset", TAG_IMG),
   makes("sizes", TAG_IMG),
   #TODO can we add crossOrigin here?
