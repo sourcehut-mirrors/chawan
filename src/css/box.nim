@@ -11,19 +11,17 @@ type
 
   Size* = array[DimensionType, LUnit]
 
-  InlineAtomType* = enum
-    iatWord, iatInlineBlock, iatImage
-
-  InlineAtom* = ref object
+  InlineImageState* = object
     offset*: Offset
     size*: Size
-    case t*: InlineAtomType
-    of iatWord:
-      str*: string
-    of iatInlineBlock:
-      innerbox*: BlockBox
-    of iatImage:
-      bmp*: NetworkBitmap
+
+  InlineImage* = ref object
+    state*: InlineImageState
+    bmp*: NetworkBitmap
+
+  TextRun* = ref object
+    offset*: Offset
+    str*: string
 
   BoxLayoutState* = object
     # offset relative to parent
@@ -46,7 +44,7 @@ type
   InlineBoxState* = object
     startOffset*: Offset # offset of the first word, for position: absolute
     areas*: seq[Area] # background that should be painted by box
-    atoms*: seq[InlineAtom]
+    runs: seq[TextRun]
 
   InlineBoxType* = enum
     ibtParent, ibtText, ibtNewline, ibtBitmap, ibtBox
@@ -64,7 +62,7 @@ type
     of ibtNewline:
       discard
     of ibtBitmap:
-      bmp*: NetworkBitmap
+      image*: InlineImage
     of ibtBox:
       box*: BlockBox
 
@@ -111,6 +109,13 @@ type
     node*: Element
     inline*: InlineBox
     children*: seq[BlockBox]
+
+# We store runs in state as a private field, so that we can both check
+# if the box type is correct and reset them on relayout by zeroing out
+# state.
+template runs*(ibox: InlineBox): seq[TextRun] =
+  assert ibox.t == ibtText
+  ibox.state.runs
 
 func offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]

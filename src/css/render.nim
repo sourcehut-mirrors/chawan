@@ -377,51 +377,55 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
         bgcolor0.rgb.cellColor(), bgcolor0.a)
   let startOffset = offset + box.state.startOffset
   box.render.offset = startOffset
-  if box.t == ibtParent:
+  case box.t
+  of ibtParent:
     if position != PositionStatic:
       state.absolutePos.add(startOffset)
     for child in box.children:
       grid.renderInlineBox(state, child, offset, bgcolor0)
     if position != PositionStatic:
       discard state.absolutePos.pop()
-  else:
+  of ibtBox:
+    grid.renderBlockBox(state, box.box, offset)
+  of ibtBitmap:
+    if box.computed{"visibility"} != VisibilityVisible:
+      return
+    let image = box.image
+    let offset = offset + image.state.offset
+    let x2p = offset.x + image.state.size.w
+    let y2p = offset.y + image.state.size.h
+    let clipBox = addr state.clipBoxes[^1]
+    #TODO implement proper image clipping
+    if offset.x < clipBox.send.x and offset.y < clipBox.send.y and
+        x2p >= clipBox.start.x and y2p >= clipBox.start.y:
+      let x1 = offset.x.toInt
+      let y1 = offset.y.toInt
+      let x2 = x2p.toInt
+      let y2 = y2p.toInt
+      # add Element to background (but don't actually color it)
+      grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
+        box.node, 0)
+      let x = (offset.x div state.attrs.ppc).toInt
+      let y = (offset.y div state.attrs.ppl).toInt
+      let offx = (offset.x - x.toLUnit * state.attrs.ppc).toInt
+      let offy = (offset.y - y.toLUnit * state.attrs.ppl).toInt
+      state.images.add(PosBitmap(
+        x: x,
+        y: y,
+        offx: offx,
+        offy: offy,
+        width: image.state.size.w.toInt,
+        height: image.state.size.h.toInt,
+        bmp: image.bmp
+      ))
+  of ibtText:
     let format = box.computed.toFormat()
-    for atom in box.state.atoms:
-      let offset = offset + atom.offset
-      case atom.t
-      of iatInlineBlock:
-        grid.renderBlockBox(state, atom.innerbox, offset)
-      of iatWord:
-        if box.computed{"visibility"} == VisibilityVisible:
-          grid.setText(state, atom.str, offset, format, box.node)
-      of iatImage:
-        if box.computed{"visibility"} == VisibilityVisible:
-          let x2p = offset.x + atom.size.w
-          let y2p = offset.y + atom.size.h
-          let clipBox = addr state.clipBoxes[^1]
-          #TODO implement proper image clipping
-          if offset.x < clipBox.send.x and offset.y < clipBox.send.y and
-              x2p >= clipBox.start.x and y2p >= clipBox.start.y:
-            let x1 = offset.x.toInt
-            let y1 = offset.y.toInt
-            let x2 = x2p.toInt
-            let y2 = y2p.toInt
-            # add Element to background (but don't actually color it)
-            grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
-              box.node, 0)
-            let x = (offset.x div state.attrs.ppc).toInt
-            let y = (offset.y div state.attrs.ppl).toInt
-            let offx = (offset.x - x.toLUnit * state.attrs.ppc).toInt
-            let offy = (offset.y - y.toLUnit * state.attrs.ppl).toInt
-            state.images.add(PosBitmap(
-              x: x,
-              y: y,
-              offx: offx,
-              offy: offy,
-              width: atom.size.w.toInt,
-              height: atom.size.h.toInt,
-              bmp: atom.bmp
-            ))
+    for run in box.runs:
+      let offset = offset + run.offset
+      if box.computed{"visibility"} == VisibilityVisible:
+        grid.setText(state, run.str, offset, format, box.node)
+  of ibtNewline:
+    discard
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset; pass2 = false) =
