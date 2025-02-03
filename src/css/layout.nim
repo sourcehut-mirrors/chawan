@@ -217,11 +217,9 @@ type
     # Set at the end of layoutText. It helps determine the beginning of the
     # next inline box.
     widthAfterWhitespace: LUnit
-    minHeight: LUnit # minimum height to fit all inline atoms
     paddingTodo: seq[tuple[box: InlineBox; i: int]]
     size: Size
     availableWidth: LUnit # actual place available after float exclusions
-    height: LUnit # height used for painting; does not include padding
     intrh: LUnit # intrinsic minimum height
     totalFloatWidth: LUnit
     baseline: LUnit
@@ -230,8 +228,6 @@ type
   InlineAtomState = object
     vertalign: CSSVerticalAlign
     baseline: LUnit
-    marginTop: LUnit
-    marginBottom: LUnit
     box: InlineBox
     atom: InlineAtom
 
@@ -356,63 +352,24 @@ const TextAlignNone = {
   TextAlignStart, TextAlignLeft, TextAlignChaLeft, TextAlignJustify
 }
 
-# Resize the line's height based on atoms' height and baseline.
-# The line height should be at least as high as the highest baseline used by
-# an atom plus that atom's height.
-func resizeLine(lbstate: LineBoxState; lctx: LayoutContext): LUnit =
-  let baseline = lbstate.baseline
-  var h = lbstate.size.h
-  for i, iastate in lbstate.iastates.mypairs:
-    let atom = iastate.atom
-    # In all cases, the line's height must at least equal the atom's height.
-    # (Where the atom is actually placed is irrelevant here.)
-    h = max(h, atom.size.h)
-    case iastate.vertalign.keyword
-    of VerticalAlignBaseline:
-      # Line height must be at least as high as
-      # (atom baseline) + (atom height) + (extra height) - (line baseline).
-      h = max(atom.offset.y + atom.size.h - baseline, h)
-    of VerticalAlignMiddle:
-      # Line height must be at least
-      # (line baseline) + (atom height / 2).
-      h = max(baseline + atom.size.h div 2, h)
-    of VerticalAlignTop, VerticalAlignBottom:
-      # Line height must be at least atom height (already ensured above.)
-      discard
-    else:
-      # See baseline (with len = 0).
-      h = max(baseline - iastate.baseline + atom.size.h, h)
-  return h
-
-# returns marginTop
-proc positionAtoms(lbstate: LineBoxState; lctx: LayoutContext): LUnit =
-  let baseline = lbstate.baseline
-  var marginTop: LUnit = 0
-  for i, iastate in lbstate.iastates.mypairs:
-    let atom = iastate.atom
-    case iastate.vertalign.keyword
-    of VerticalAlignBaseline:
-      # Atom is placed at (line baseline) - (atom baseline) - len
-      atom.offset.y = baseline - atom.offset.y
-    of VerticalAlignMiddle:
-      # Atom is placed at (line baseline) - ((atom height) / 2)
-      atom.offset.y = baseline - atom.size.h div 2
-    of VerticalAlignTop:
-      # Atom is placed at the top of the line.
-      atom.offset.y = 0
-    of VerticalAlignBottom:
-      # Atom is placed at the bottom of the line.
-      atom.offset.y = lbstate.size.h - atom.size.h
-    else:
-      # See baseline (with len = 0).
-      atom.offset.y = baseline - iastate.baseline
-    # Find the best top margin of all atoms.
-    # We are looking for the lowest top edge of the line, so we have to do this
-    # after we know where the atoms will be placed.
-    # Note: we used to calculate the bottom edge based on margins too, but this
-    # generated pointless empty lines so I removed it.
-    marginTop = max(iastate.marginTop - atom.offset.y, marginTop)
-  return marginTop
+proc positionAtom(lbstate: LineBoxState; iastate: InlineAtomState) =
+  let atom = iastate.atom
+  case iastate.vertalign.keyword
+  of VerticalAlignBaseline:
+    # Atom is placed at (line baseline) - (atom baseline) - len
+    atom.offset.y = lbstate.baseline - atom.offset.y
+  of VerticalAlignMiddle:
+    # Atom is placed at (line baseline) - ((atom height) / 2)
+    atom.offset.y = lbstate.baseline - atom.size.h div 2
+  of VerticalAlignTop:
+    # Atom is placed at the top of the line.
+    atom.offset.y = 0
+  of VerticalAlignBottom:
+    # Atom is placed at the bottom of the line.
+    atom.offset.y = lbstate.size.h - atom.size.h
+  else:
+    # See baseline (with len = 0).
+    atom.offset.y = lbstate.baseline - iastate.baseline
 
 func getLineWidth(fstate: FlowState): LUnit =
   return case fstate.space.w.t
@@ -430,93 +387,62 @@ func getLineXShift(fstate: FlowState; width: LUnit): LUnit =
     let w = min(width, fstate.lbstate.availableWidth)
     max(max(w, fstate.lbstate.size.w) div 2 - fstate.lbstate.size.w div 2, 0)
 
-proc shiftAtoms(fstate: var FlowState; marginTop: LUnit) =
-  let offsety = fstate.offset.y
-  let shiftTop = marginTop
-  let cellHeight = fstate.cellHeight
+# Calculate the position of atoms and background areas inside the
+# line.
+proc alignLine(fstate: var FlowState) =
   let width = fstate.getLineWidth()
   let xshift = fstate.getLineXShift(width)
   var totalWidth: LUnit = 0
   var currentAreaOffsetX: LUnit = 0
-  var currentFragment: InlineBox = nil
-  let offsetyShifted = shiftTop + offsety
-  var areaY: LUnit = 0
+  var currentBox: InlineBox = nil
+  let areaY = fstate.offset.y + fstate.lbstate.baseline - fstate.cellHeight
+  var minHeight = fstate.cellHeight.toLUnit()
+  for (box, i) in fstate.lbstate.paddingTodo:
+    box.state.areas[i].offset.x += xshift
+    box.state.areas[i].offset.y = areaY
   for i, iastate in fstate.lbstate.iastates.mypairs:
+    fstate.lbstate.positionAtom(iastate)
     let atom = iastate.atom
-    atom.offset.y = atom.offset.y + offsetyShifted
-    areaY = max(atom.offset.y, areaY)
-    #TODO why not offsetyShifted here?
-    let minHeight = atom.offset.y - offsety + atom.size.h
-    fstate.lbstate.minHeight = max(fstate.lbstate.minHeight, minHeight)
+    atom.offset.y = atom.offset.y + fstate.offset.y
+    minHeight = max(minHeight, atom.offset.y - fstate.offset.y + atom.size.h)
     # now position on the inline axis
     atom.offset.x += xshift
     totalWidth += atom.size.w
-    let box = fstate.lbstate.iastates[i].box
-    if currentFragment != box:
-      if currentFragment != nil:
+    let box = iastate.box
+    if currentBox != box:
+      if currentBox != nil:
         # flush area
         let lastAtom = fstate.lbstate.iastates[i - 1].atom
         let w = lastAtom.offset.x + lastAtom.size.w - currentAreaOffsetX
         if w != 0:
-          currentFragment.state.areas.add(Area(
+          currentBox.state.areas.add(Area(
             offset: offset(x = currentAreaOffsetX, y = areaY),
-            # it seems cellHeight is what other browsers use here too
-            size: size(w = w, h = cellHeight)
+            size: size(w = w, h = fstate.cellHeight)
           ))
-      currentFragment = box
       # init new box
-      currentAreaOffsetX = if box.state.areas.len == 0:
-        box.state.atoms[0].offset.x
-      else:
-        fstate.lbstate.iastates[0].atom.offset.x
-  if currentFragment != nil:
+      currentBox = box
+      currentAreaOffsetX = iastate.atom.offset.x
+  if currentBox != nil:
     # flush area
     let atom = fstate.lbstate.iastates[^1].atom
-    areaY = max(atom.offset.y, areaY)
-    # it seems cellHeight is what other browsers use here too?
     let w = atom.offset.x + atom.size.w - currentAreaOffsetX
     let offset = offset(x = currentAreaOffsetX, y = areaY)
-    template lastArea: untyped = currentFragment.state.areas[^1]
-    if currentFragment.state.areas.len > 0 and
+    template lastArea: Area = currentBox.state.areas[^1]
+    if currentBox.state.areas.len > 0 and
         lastArea.offset.x == offset.x and lastArea.size.w == w and
         lastArea.offset.y + lastArea.size.h == offset.y:
       # merge contiguous areas
-      lastArea.size.h += cellHeight
+      lastArea.size.h += fstate.cellHeight
     else:
-      currentFragment.state.areas.add(Area(
+      currentBox.state.areas.add(Area(
         offset: offset,
-        size: size(w = w, h = cellHeight)
+        size: size(w = w, h = fstate.cellHeight)
       ))
-  for (box, i) in fstate.lbstate.paddingTodo:
-    box.state.areas[i].offset.x += xshift
-    box.state.areas[i].offset.y = areaY
   if fstate.space.w.t == scFitContent:
     fstate.maxChildWidth = max(totalWidth, fstate.maxChildWidth)
-
-# Align atoms (inline boxes, text, etc.) on both axes.
-proc alignLine(fstate: var FlowState) =
-  # Start with cell height as the baseline and line height.
-  let ch = fstate.cellHeight.toLUnit()
-  fstate.lbstate.size.h = ch
-  # Baseline is what we computed in addAtom, or cell height if that's greater.
-  fstate.lbstate.baseline = max(fstate.lbstate.baseline, ch)
-  # Resize according to the baseline and atom sizes.
-  fstate.lbstate.size.h = fstate.lbstate.resizeLine(fstate.lctx)
-  # Now we can calculate the actual position of atoms inside the line.
-  let marginTop = fstate.lbstate.positionAtoms(fstate.lctx)
-  # Finally, offset all atoms' y position by the largest top margin and the
-  # line box's top padding.
-  fstate.shiftAtoms(marginTop)
   # Ensure that the line is exactly as high as its highest atom demands,
   # rounded up to the next line.
-  fstate.lbstate.size.h = fstate.lbstate.minHeight.ceilTo(fstate.cellHeight)
-  # Now, if we got a height that is lower than cell height, then set it
-  # back to the cell height. (This is to avoid the situation where we
-  # would swallow hard line breaks with <br>.)
-  if fstate.lbstate.size.h < ch:
-    fstate.lbstate.size.h = ch
-  # Set the line height to size.h.
-  fstate.lbstate.height = fstate.lbstate.size.h
+  fstate.lbstate.size.h = minHeight.ceilTo(fstate.cellHeight)
 
 proc putAtom(lbstate: var LineBoxState; iastate: InlineAtomState;
     box: InlineBox) =
@@ -600,6 +526,14 @@ proc initLine(fstate: var FlowState) =
     fstate.lbstate.availableWidth = min(right - bfcOffset.x,
       fstate.lbstate.availableWidth)
 
+proc initLineBoxState(fstate: FlowState): LineBoxState =
+  let cellHeight = fstate.cellHeight.toLUnit()
+  result = LineBoxState(
+    intrh: cellHeight,
+    baseline: cellHeight,
+    size: size(w = 0, h = cellHeight)
+  )
+
 proc finishLine(fstate: var FlowState; state: var InlineState; wrap: bool;
     force = false; clear = ClearNone) =
   if fstate.lbstate.iastates.len != 0 or force:
@@ -642,9 +576,7 @@ proc finishLine(fstate: var FlowState; state: var InlineState; wrap: bool;
     # this here to prevent double-padding later
     fstate.maxChildWidth = max(fstate.maxChildWidth,
       lineWidth - fstate.padding.left)
-    fstate.lbstate = LineBoxState(
-      intrh: fstate.cellHeight
-    )
+    fstate.lbstate = fstate.initLineBoxState()
     fstate.initLine()
   else:
     #TODO this looks wrong...
@@ -672,10 +604,12 @@ func getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
     let length = CSSLength(u: iastate.vertalign.u, num: iastate.vertalign.num)
     let len = length.px(fstate.cellHeight)
     iastate.baseline + len
-  of VerticalAlignTop, VerticalAlignBottom:
-    iastate.atom.size.h
+  of VerticalAlignTop:
+    0
   of VerticalAlignMiddle:
     iastate.atom.size.h div 2
+  of VerticalAlignBottom:
+    iastate.atom.size.h
   else:
     iastate.baseline
 
@@ -714,10 +648,12 @@ proc addAtom(fstate: var FlowState; state: var InlineState;
     fstate.lbstate.putAtom(iastate, state.box)
     iastate.atom.offset.x += fstate.lbstate.size.w
     fstate.lbstate.size.w += iastate.atom.size.w
-    # store for later use in resizeLine/shiftAtoms
+    # store for later use in alignLine
     let baseline = fstate.getBaseline(iastate)
     iastate.atom.offset.y = baseline
     fstate.lbstate.baseline = max(fstate.lbstate.baseline, baseline)
+    # In all cases, the line's height must at least equal the atom's height.
+    fstate.lbstate.size.h = max(fstate.lbstate.size.h, iastate.atom.size.h)
 
 proc addWord(fstate: var FlowState; state: var InlineState): bool =
   result = false
@@ -1413,9 +1349,7 @@ proc positionFloats(bctx: var BlockContext) =
 proc layoutFlow0(fstate: var FlowState; sizes: ResolvedSizes; box: BlockBox) =
   if box.inline != nil:
     # Builder only contains inline boxes.
-    fstate.lbstate = LineBoxState(
-      intrh: fstate.lctx.attrs.ppl
-    )
+    fstate.lbstate = fstate.initLineBoxState()
     fstate.initLine()
     fstate.layoutInline(box.inline)
     if fstate.lastTextBox != nil:
@@ -1657,19 +1591,20 @@ proc addInlineBlock(fstate: var FlowState; state: var InlineState;
     let cs = lctx.cellSize[i]
     it.start = (it.start div cs).toInt.toLUnit * cs
     it.send = (it.send div cs).toInt.toLUnit * cs
-  lctx.layoutRootBlock(box, offset(x = sizes.margin.left, y = 0), sizes)
+  lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
   # Apply the block box's properties to the atom itself.
   let atom = InlineAtom(
     t: iatInlineBlock,
     innerbox: box,
     offset: offset(x = 0, y = 0),
-    size: size(w = box.outerSize(dtHorizontal, sizes), h = box.state.size.h)
+    size: size(
+      w = box.outerSize(dtHorizontal, sizes),
+      h = box.outerSize(dtVertical, sizes) + box.state.marginBottom
+    )
   )
   let iastate = InlineAtomState(
-    baseline: box.state.baseline,
+    baseline: box.state.baseline + sizes.margin.top,
     vertalign: box.computed{"vertical-align"},
-    marginTop: sizes.margin.top,
-    marginBottom: box.state.marginBottom,
     atom: atom
   )
   discard fstate.addAtom(state, iastate)
