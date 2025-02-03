@@ -77,6 +77,8 @@ func `<`*(a, b: LUnit): bool {.borrow.}
 func `<=`*(a, b: LUnit): bool {.borrow.}
 
 func toInt*(a: LUnit): int =
+  if a < 0:
+    return -(int32(-a) shr 6)
   return int32(a) shr 6
 
 func `+=`*(a: var LUnit; b: LUnit) {.inline.} =
