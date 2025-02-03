@@ -48,6 +48,13 @@ type
     data {.jsget.}: JSValue
     origin {.jsget.}: string
 
+  UIEvent* = ref object of Event
+    detail {.jsget.}: int32
+    #TODO view
+
+  MouseEvent* = ref object of UIEvent
+    #TODO
+
   EventTarget* = ref object of RootObj
     eventListeners*: seq[EventListener]
 
@@ -67,6 +74,8 @@ type
 jsDestructor(Event)
 jsDestructor(CustomEvent)
 jsDestructor(MessageEvent)
+jsDestructor(UIEvent)
+jsDestructor(MouseEvent)
 jsDestructor(EventTarget)
 
 # Forward declaration hack
@@ -169,7 +178,7 @@ func composed(this: Event): bool {.jsfget.} =
   return efComposed in this.flags
 
 # CustomEvent
-proc newCustomEvent(ctx: JSContext; ctype: CAtom;
+proc newCustomEvent*(ctx: JSContext; ctype: CAtom;
     eventInitDict = CustomEventInit(detail: JS_NULL)): CustomEvent {.jsctor.} =
   let event = CustomEvent(
     ctype: ctype,
@@ -364,5 +373,7 @@ proc addEventModule*(ctx: JSContext) =
   let eventCID = ctx.registerType(Event)
   ctx.registerType(CustomEvent, parent = eventCID)
   ctx.registerType(MessageEvent, parent = eventCID)
+  let uiEventCID = ctx.registerType(UIEvent, parent = eventCID)
+  ctx.registerType(MouseEvent, parent = uiEventCID)
   ctx.defineConsts(eventCID, EventPhase)
   ctx.registerType(EventTarget)

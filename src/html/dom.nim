@@ -5587,11 +5587,15 @@ proc createProcessingInstruction(document: Document; target, data: string):
       "InvalidCharacterError")
   return ok(newProcessingInstruction(document, target, data))
 
-proc createEvent(ctx: JSContext; document: Document; t: StaticAtom):
+proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
     DOMResult[Event] {.jsfunc.} =
-  if t notin {satUEvent, satEvent, satEvents, satSvgevents}:
+  case ctx.toStaticAtom(ctx.toLowerAscii(atom))
+  of satCustomevent:
+    return ok(ctx.newCustomEvent(ctx.toAtom("")))
+  of satEvent, satEvents, satSvgevents:
+    return ok(newEvent(ctx.toAtom(""), nil))
+  else:
     return errDOMException("Event not supported", "NotSupportedError")
-  return ok(newEvent(ctx.toAtom(""), nil))
 
 proc clone(node: Node; document = none(Document), deep = false): Node =
   let document = document.get(node.document)

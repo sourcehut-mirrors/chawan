@@ -39,6 +39,7 @@ macro makeStaticAtom =
       satColspan = "colspan"
       satContent = "content"
       satCrossorigin = "crossorigin"
+      satCustomevent = "customevent"
       satDOMContentLoaded = "DOMContentLoaded"
       satDefer = "defer"
       satDirname = "dirname"
@@ -113,7 +114,6 @@ macro makeStaticAtom =
       satTouchmove = "touchmove"
       satTouchstart = "touchstart"
       satType = "type"
-      satUEvent = "Event"
       satUempty = ""
       satUsemap = "usemap"
       satUsername = "username"
@@ -321,6 +321,9 @@ proc toStaticAtom*(ctx: JSContext; s: string): StaticAtom =
 
 proc toStr*(ctx: JSContext; atom: CAtom): lent string =
   return ctx.getFactoryImpl().toStr(atom)
+
+proc toLowerAscii*(ctx: JSContext; atom: CAtom): CAtom =
+  return ctx.getFactoryImpl().toLowerAscii(atom)
 
 proc toStr*(ctx: JSContext; sa: StaticAtom): lent string =
   return ctx.getFactoryImpl().toStr(sa)
