@@ -386,7 +386,7 @@ proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
   return CSSToken(t: cttIdent, value: s)
 
 proc consumeComments(state: var CSSTokenizerState) =
-  if state.has(1) and state.peek() == '/' and state.peek(1) == '*':
+  while state.has(1) and state.peek() == '/' and state.peek(1) == '*':
     state.seek(2)
     while state.has() and not (state.has(1) and state.peek() == '*' and
         state.peek(1) == '/'):
