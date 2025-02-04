@@ -694,13 +694,10 @@ macro `{}=`*(vals: CSSValues; s: static string, val: typed) =
   case t.reprType
   of cprtBit:
     return quote do:
-      `vals`.bits[CSSPropertyType(`t`)].dummy = uint8(`val`)
+      `vals`.bits[CSSPropertyType(`t`)] = CSSValueBit(`vs`: `val`)
   of cprtWord:
     return quote do:
-      `vals`.objs[CSSPropertyType(`t`)] = CSSValue(
-        v: CSSValueType(`v`),
-        `vs`: `val`
-      )
+      `vals`.words[CSSPropertyType(`t`)] = CSSValueWord(`vs`: `val`)
   of cprtObject:
     return quote do:
       `vals`.objs[CSSPropertyType(`t`)] = CSSValue(

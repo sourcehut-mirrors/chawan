@@ -59,35 +59,40 @@ caption { display: table-caption; text-align: center }
 caption[align=top] { caption-side: top }
 caption[align=bottom] { caption-side: bottom }
 
-input { margin-right: 1ch; white-space: pre; color: red; text-decoration: underline }
+input {
+	margin-right: 1ch;
+	white-space: pre !important;
+	color: -cha-ansi(red);
+	text-decoration: underline
+}
 input[type=hidden i] { display: none }
-input::before { content: '['; text-decoration: none; color: initial }
-input::after { content: ']'; text-decoration: none; color: initial }
+input::before { content: '[' !important; text-decoration: none; color: initial }
+input::after { content: ']' !important; text-decoration: none; color: initial }
 
-input:is([type=submit i], [type=button i], [type=reset i], [type=radio i],
+input:is([type=button i], [type=submit i], [type=reset i], [type=radio i],
 	[type=checkbox i]) {
 	text-decoration: none
 }
 
 input[type=radio i]::before {
-	content: '(';
+	content: '(' !important;
 	text-decoration: none;
 	color: initial
 }
 
 input[type=radio i]::after {
-	content: ')';
+	content: ')' !important;
 	text-decoration: none;
 	color: initial
 }
 
 input:is([type=submit i], [type=button i], [type=reset i])::before,
 input:is([type=submit i], [type=button i], [type=reset i])::after, button {
-	color: red;
+	color: -cha-ansi(red);
 	text-decoration: none
 }
 
-textarea { color: red; white-space: pre }
+textarea { color: -cha-ansi(red); white-space: pre }
 
 li, summary { display: list-item }
 
@@ -131,29 +136,25 @@ dt { font-weight: bold }
 dd { margin-left: 4ch }
 dl[compact] dt + br { display: none }
 
-select { display: inline-flex !important; white-space: nowrap }
-select::before { content: '['; color: initial }
-select::after { content: ']'; color: initial }
-select > :is(option, optgroup > option) { display: none }
-select > :is(option, optgroup > option):checked { display: block; color: red }
+select, optgroup { display: inline-flex !important; white-space: nowrap !important }
+select::before { content: '[' !important; color: initial }
+select::after { content: ']' !important; color: initial }
+:is(select, select > optgroup) > option { display: none }
+:is(select, select > optgroup) > option:checked {
+	display: block;
+	color: -cha-ansi(red)
+}
 
 select[multiple] {
 	overflow: auto;
 	display: flow-root !important;
 	margin-top: 1em
 }
-select[multiple]::before, select[multiple]::after { content: '' }
-select[multiple] > :is(option, optgroup > option) {
-	display: flex;
+select[multiple]::before, select[multiple]::after { content: '' !important }
+select[multiple] > optgroup { display: flow-root !important }
+:is(select[multiple], select[multiple] > optgroup) > option {
+	display: flex !important;
 	color: initial
-}
-select[multiple] > :is(option, optgroup > option)::before {
-	display: block;
-	content: '[ ]'
-}
-select[multiple] > :is(option, optgroup > option):checked::before {
-	content: '[*]';
-	color: red
 }
 
 center { text-align: -cha-center }

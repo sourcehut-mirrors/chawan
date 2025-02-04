@@ -397,11 +397,12 @@ type
   StyledNode* = object
     element*: Element
     pseudo*: PseudoElement
+    computed*: CSSValues
     case t*: StyledType
     of stText:
       text*: CharacterData
     of stElement:
-      discard
+      anonChildren: seq[StyledNode]
     of stReplacement:
       # replaced elements: quotes, images, or (TODO) markers
       content*: CSSContent
@@ -418,13 +419,10 @@ when defined(debug):
     of stReplacement:
       return "#replacement"
 
-template computed*(styledNode: StyledNode): CSSValues =
-  styledNode.element.computedMap[styledNode.pseudo]
-
 proc initStyledElement*(element: Element): StyledNode =
   if element.computed == nil:
     element.applyStyle()
-  return StyledNode(t: stElement, element: element)
+  return StyledNode(t: stElement, element: element, computed: element.computed)
 
 proc initStyledReplacement(parent: Element; content: sink CSSContent):
     StyledNode =
@@ -434,13 +432,43 @@ proc initStyledImage(parent: Element; bmp: NetworkBitmap): StyledNode =
   return initStyledReplacement(parent, CSSContent(t: ContentImage, bmp: bmp))
 
 proc initStyledPseudo(parent: Element; pseudo: PseudoElement): StyledNode =
-  return StyledNode(t: stElement, pseudo: pseudo, element: parent)
+  return StyledNode(
+    t: stElement,
+    pseudo: pseudo,
+    element: parent,
+    computed: parent.computedMap[pseudo]
+  )
 
 proc initStyledText(parent: Element; text: CharacterData): StyledNode =
   return StyledNode(t: stText, element: parent, text: text)
 
 proc initStyledText(parent: Element; s: sink string): StyledNode =
+  #TODO should probably cache these...
   return initStyledText(parent, newCharacterData(s))
+
+proc initStyledAnon(parent: Element; children: sink seq[StyledNode];
+    computed: CSSValues): StyledNode =
+  return StyledNode(
+    t: stElement,
+    element: parent,
+    anonChildren: children,
+    computed: computed
+  )
+
+iterator optionChildren(styledNode: StyledNode): StyledNode {.inline.} =
+  let option = HTMLOptionElement(styledNode.element)
+  if option.select != nil and option.select.attrb(satMultiple):
+    yield initStyledText(option, "[")
+    let cdata = newCharacterData(if option.selected: "*" else: " ")
+    let computed = option.computed.inheritProperties()
+    computed{"color"} = cssColor(ANSIColor(1)) # red
+    yield initStyledAnon(option, @[initStyledText(option, cdata)], computed)
+    yield initStyledText(option, "]")
+  for it in option.childList:
+    if it of Element:
+      yield initStyledElement(Element(it))
+    elif it of Text:
+      yield initStyledText(option, Text(it))
 
 # Many yields; we use a closure iterator to avoid bloating the code.
 iterator children*(styledNode: StyledNode): StyledNode {.closure.} =
@@ -448,37 +476,45 @@ iterator children*(styledNode: StyledNode): StyledNode {.closure.} =
     return
   if styledNode.pseudo == peNone:
     let parent = styledNode.element
-    if parent.computedMap[peBefore] != nil and
-        parent.computedMap[peBefore]{"content"}.len > 0:
-      yield initStyledPseudo(parent, peBefore)
-    case parent.tagType
-    of TAG_INPUT:
-      let cdata = HTMLInputElement(parent).inputString()
-      if cdata != nil and cdata.data.len != 0:
-        yield initStyledText(parent, cdata)
-    of TAG_TEXTAREA:
-      #TODO cache (do the same as with input, and add borders in render)
-      yield initStyledText(parent, HTMLTextAreaElement(parent).textAreaString())
-    of TAG_IMG: yield initStyledImage(parent, HTMLImageElement(parent).bitmap)
-    of TAG_CANVAS:
-      yield initStyledImage(parent, HTMLCanvasElement(parent).bitmap)
-    of TAG_VIDEO: yield initStyledText(parent, "[video]")
-    of TAG_AUDIO: yield initStyledText(parent, "[audio]")
-    of TAG_BR:
-      yield initStyledReplacement(parent, CSSContent(t: ContentNewline))
-    of TAG_IFRAME: yield initStyledText(parent, "[iframe]")
-    of TAG_FRAME: yield initStyledText(parent, "[frame]")
-    elif parent.tagType(Namespace.SVG) == TAG_SVG:
-      yield initStyledImage(parent, SVGSVGElement(parent).bitmap)
+    if styledNode.anonChildren.len > 0:
+      for it in styledNode.anonChildren:
+        yield it
     else:
-      for it in parent.childList:
-        if it of Element:
-          yield initStyledElement(Element(it))
-        elif it of Text:
-          yield initStyledText(parent, Text(it))
-    if parent.computedMap[peAfter] != nil and
-        parent.computedMap[peAfter]{"content"}.len > 0:
-      yield initStyledPseudo(parent, peAfter)
+      if parent.computedMap[peBefore] != nil and
+          parent.computedMap[peBefore]{"content"}.len > 0:
+        yield initStyledPseudo(parent, peBefore)
+      case parent.tagType
+      of TAG_INPUT:
+        let cdata = HTMLInputElement(parent).inputString()
+        if cdata != nil and cdata.data.len != 0:
+          yield initStyledText(parent, cdata)
+      of TAG_TEXTAREA:
+        #TODO cache (do the same as with input, and add borders in render)
+        let cdata = HTMLTextAreaElement(parent).textAreaString()
+        yield initStyledText(parent, cdata)
+      of TAG_IMG: yield initStyledImage(parent, HTMLImageElement(parent).bitmap)
+      of TAG_CANVAS:
+        yield initStyledImage(parent, HTMLCanvasElement(parent).bitmap)
+      of TAG_VIDEO: yield initStyledText(parent, "[video]")
+      of TAG_AUDIO: yield initStyledText(parent, "[audio]")
+      of TAG_BR:
+        yield initStyledReplacement(parent, CSSContent(t: ContentNewline))
+      of TAG_IFRAME: yield initStyledText(parent, "[iframe]")
+      of TAG_FRAME: yield initStyledText(parent, "[frame]")
+      of TAG_OPTION:
+        for it in styledNode.optionChildren:
+          yield it
+      elif parent.tagType(Namespace.SVG) == TAG_SVG:
+        yield initStyledImage(parent, SVGSVGElement(parent).bitmap)
+      else:
+        for it in parent.childList:
+          if it of Element:
+            yield initStyledElement(Element(it))
+          elif it of Text:
+            yield initStyledText(parent, Text(it))
+      if parent.computedMap[peAfter] != nil and
+          parent.computedMap[peAfter]{"content"}.len > 0:
+        yield initStyledPseudo(parent, peAfter)
   else:
     let parent = styledNode.element
     for content in parent.computedMap[styledNode.pseudo]{"content"}:
