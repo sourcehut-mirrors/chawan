@@ -153,9 +153,10 @@ as an in-cell offset.
 The lengths `1em` and `1ch` compute to the cell height and cell width
 respectively.
 
-In outer inline boxes (`inline-block`, `inline-flex`), margins and
-padding that are smaller than one cell (on the respective axis) are
-ignored.  This does not apply to blockified inline boxes.
+In outer inline boxes (`inline-block`, `inline-flex`) and `list-item`
+boxes, margins and padding that are smaller than one cell (on the
+respective axis) are ignored.  This does not apply to blockified inline
+boxes.
 
 When calculating clip boxes (`overflow: hidden` or `clip`), the clip
 box's offset is floored, and its size is ceiled to the nearest cell's

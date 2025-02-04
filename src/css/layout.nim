@@ -1053,6 +1053,17 @@ proc resolvePadding(lctx: LayoutContext; availableWidth: SizeConstraint;
     )
   ]
 
+proc roundSmallMarginsAndPadding(lctx: LayoutContext;
+    sizes: var ResolvedSizes) =
+  for i, it in sizes.padding.mpairs:
+    let cs = lctx.cellSize[i]
+    it.start = (it.start div cs).toInt.toLUnit * cs
+    it.send = (it.send div cs).toInt.toLUnit * cs
+  for i, it in sizes.margin.mpairs:
+    let cs = lctx.cellSize[i]
+    it.start = (it.start div cs).toInt.toLUnit * cs
+    it.send = (it.send div cs).toInt.toLUnit * cs
+
 func resolvePositioned(lctx: LayoutContext; size: Size;
     computed: CSSValues): RelativeRect =
   # As per standard, vertical percentages refer to the *height*, not the width
@@ -1308,6 +1319,10 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
   #TODO parent height should be lctx height in quirks mode for percentage
   # resolution.
   sizes.resolveBlockHeight(space.h, paddingSum[dtVertical], computed, lctx)
+  if computed{"display"} == DisplayListItem:
+    # Eliminate distracting margins and padding here, because
+    # resolveBlockWidth may change them beforehand.
+    lctx.roundSmallMarginsAndPadding(sizes)
   return sizes
 
 proc append(a: var Strut; b: LUnit) =
@@ -1704,14 +1719,7 @@ proc addInlineBlock(fstate: var FlowState; istate: var InlineState;
     box: BlockBox) =
   let lctx = fstate.lctx
   var sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
-  for i, it in sizes.padding.mpairs:
-    let cs = lctx.cellSize[i]
-    it.start = (it.start div cs).toInt.toLUnit * cs
-    it.send = (it.send div cs).toInt.toLUnit * cs
-  for i, it in sizes.margin.mpairs:
-    let cs = lctx.cellSize[i]
-    it.start = (it.start div cs).toInt.toLUnit * cs
-    it.send = (it.send div cs).toInt.toLUnit * cs
+  lctx.roundSmallMarginsAndPadding(sizes)
   lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
   # Apply the block box's properties to the atom itself.
   let iastate = InlineAtomState(
