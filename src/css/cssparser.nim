@@ -178,7 +178,7 @@ proc reconsume(state: var CSSTokenizerState) =
 func peek(state: CSSTokenizerState; i: int = 0): char =
   return state.buf[state.at + i]
 
-proc has(state: var CSSTokenizerState; i: int = 0): bool =
+func has(state: CSSTokenizerState; i: int = 0): bool =
   return state.at + i < state.buf.len
 
 # next, next(1)
@@ -200,25 +200,6 @@ proc startsWithIdentSequence(state: var CSSTokenizerState): bool =
     return state.has(1) and state.peek(1) != '\n'
   else:
     return false
-
-proc startsWithNumber(state: var CSSTokenizerState): bool =
-  if state.has():
-    case state.peek()
-    of '+', '-':
-      if state.has(1):
-        if state.peek(1) in AsciiDigit:
-          return true
-        elif state.peek(1) == '.':
-          if state.has(2) and state.peek(2) in AsciiDigit:
-            return true
-    of '.':
-      if state.has(1) and state.peek(1) in AsciiDigit:
-        return true
-    elif state.peek() in AsciiDigit:
-      return true
-    else:
-      return false
-  return false
 
 proc skipWhitespace(state: var CSSTokenizerState) =
   while state.has() and state.peek() in AsciiWhitespace:
@@ -424,14 +405,18 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
   of '{': return CSSToken(t: cttLbrace)
   of '}': return CSSToken(t: cttRbrace)
   of '+':
-    if state.startsWithNumber():
+    # starts with a number
+    if state.has() and state.peek() in AsciiDigit or
+        state.has(1) and state.peek() == '.' and state.peek(1) in AsciiDigit:
       state.reconsume()
       return state.consumeNumericToken()
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of ',': return CSSToken(t: cttComma)
   of '-':
-    if state.startsWithNumber():
+    # starts with a number
+    if state.has() and state.peek() in AsciiDigit or
+        state.has(1) and state.peek() == '.' and state.peek(1) in AsciiDigit:
       state.reconsume()
       return state.consumeNumericToken()
     elif state.has(1) and state.peek() == '-' and state.peek(1) == '>':
@@ -443,7 +428,8 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of '.':
-    if state.startsWithNumber():
+    # starts with a number
+    if state.has() and state.peek() in AsciiDigit:
       state.reconsume()
       return state.consumeNumericToken()
     else:
