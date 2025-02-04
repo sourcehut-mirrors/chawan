@@ -193,6 +193,7 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: out Promise[seq[JSValue]]):
       fun.toJSValueArray())
     JS_FreeValue(ctx, fun)
     if JS_IsException(val):
+      JS_FreeValue(ctx, tmp)
       res = nil
       return err()
     JS_FreeValue(ctx, val)
@@ -203,6 +204,7 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: out Promise[seq[JSValue]]):
       fun.toJSValueArray())
     JS_FreeValue(ctx, fun)
     if JS_IsException(val):
+      JS_FreeValue(ctx, tmp)
       res = nil
       return err()
     JS_FreeValue(ctx, val)
