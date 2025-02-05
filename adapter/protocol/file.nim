@@ -77,14 +77,13 @@ proc loadFile(ps: PosixStream) =
 proc main() =
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
-  let ps = newPosixStream(path)
-  if ps != nil:
-    loadFile(ps)
-  elif dirExists(path):
+  if dirExists(path):
     if path[^1] != '/':
       stdout.write("Status: 301\nLocation: " & path & "/\n")
     else:
       loadDir(path, opath)
+  elif (let ps = newPosixStream(path); ps != nil):
+    loadFile(ps)
   else:
     stdout.write("Cha-Control: ConnectionError FileNotFound")
 
