@@ -1333,8 +1333,15 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
         if opt of HTMLOptionElement:
           yield HTMLOptionElement(opt)
 
-func id(collection: Collection): pointer =
-  return cast[pointer](collection)
+template id(collection: Collection): pointer =
+  cast[pointer](addr collection[])
+
+proc addCollection(node: Node; collection: Collection) =
+  let i = node.liveCollections.find(nil)
+  if i != -1:
+    node.liveCollections[i] = collection.id
+  else:
+    node.liveCollections.add(collection.id)
 
 proc populateCollection(collection: Collection) =
   if collection.childonly:
@@ -1347,26 +1354,35 @@ proc populateCollection(collection: Collection) =
         collection.snapshot.add(desc)
   if collection.islive:
     for child in collection.snapshot:
-      child.liveCollections.add(collection.id)
-    collection.root.liveCollections.add(collection.id)
+      child.addCollection(collection)
+    collection.root.addCollection(collection)
 
 proc refreshCollection(collection: Collection) =
   let document = collection.root.document
-  if collection.id in document.invalidCollections:
+  if not document.invalidCollections.missingOrExcl(collection.id):
+    assert collection.islive
     for child in collection.snapshot:
       let i = child.liveCollections.find(collection.id)
       assert i != -1
       child.liveCollections.del(i)
     collection.snapshot.setLen(0)
     collection.populateCollection()
-    document.invalidCollections.excl(collection.id)
 
 proc finalize0(collection: Collection) =
   if collection.islive:
+    # Do not del() liveCollections here, so that it remains valid to
+    # iterate over them while allocating anything.
+    # (Otherwise, we could modify the length of the seq if the finalizer
+    # gets called as a result of the invalidateCollections incl call,
+    # thereby breaking the iteration.)
     for child in collection.snapshot:
       let i = child.liveCollections.find(collection.id)
       assert i != -1
-      child.liveCollections.del(i)
+      child.liveCollections[i] = nil
+      assert child.liveCollections.find(collection.id) == -1
+    let i = collection.root.liveCollections.find(collection.id)
+    assert i != -1
+    collection.root.liveCollections[i] = nil
     collection.root.document.invalidCollections.excl(collection.id)
 
 proc finalize(collection: HTMLCollection) {.jsfin.} =
@@ -1376,6 +1392,9 @@ proc finalize(collection: NodeList) {.jsfin.} =
   collection.finalize0()
 
 proc finalize(collection: HTMLFormControlsCollection) {.jsfin.} =
+  collection.finalize0()
+
+proc finalize(collection: HTMLOptionsCollection) {.jsfin.} =
   collection.finalize0()
 
 proc finalize(collection: RadioNodeList) {.jsfin.} =
@@ -3800,7 +3819,8 @@ proc `title=`(document: Document; s: sink string) {.jsfset: "title".} =
 
 proc invalidateCollections(node: Node) =
   for id in node.liveCollections:
-    node.document.invalidCollections.incl(id)
+    if id != nil: # may be nil if finalizer removed it
+      node.document.invalidCollections.incl(id)
 
 proc delAttr(element: Element; i: int; keep = false) =
   let map = element.cachedAttributes
