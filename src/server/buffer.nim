@@ -1202,8 +1202,7 @@ proc serializeMultipart(entries: seq[FormDataEntry]; urandom: PosixStream):
 
 proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
   result = ""
-  for it in kvs:
-    let (name, value) = it
+  for (name, value) in kvs:
     result &= name
     result &= '='
     result &= value

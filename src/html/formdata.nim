@@ -21,16 +21,18 @@ proc generateBoundary(urandom: PosixStream): string =
   # 33 * 4 / 3 = 44 + prefix string is 22 bytes = 66 bytes
   return "----WebKitFormBoundary" & btoa(s)
 
-proc newFormData0*(entries: seq[FormDataEntry]; urandom: PosixStream):
+proc newFormData0*(entries: sink seq[FormDataEntry]; urandom: PosixStream):
     FormData =
   return FormData(boundary: urandom.generateBoundary(), entries: entries)
 
-proc newFormData(ctx: JSContext; form: HTMLFormElement = nil;
-    submitter: HTMLElement = nil): DOMResult[FormData] {.jsctor.} =
+proc newFormData(ctx: JSContext; form = none(HTMLFormElement);
+    submitter = none(HTMLElement)): DOMResult[FormData] {.jsctor.} =
   let urandom = ctx.getGlobal().crypto.urandom
   let this = FormData(boundary: urandom.generateBoundary())
-  if form != nil:
-    if submitter != nil:
+  if form.isSome:
+    let form = form.get
+    if submitter.isSome:
+      let submitter = submitter.get
       if not submitter.isSubmitButton():
         return errDOMException("Submitter must be a submit button",
           "InvalidStateError")
@@ -38,21 +40,18 @@ proc newFormData(ctx: JSContext; form: HTMLFormElement = nil;
         return errDOMException("Submitter's form owner is not form",
           "InvalidStateError")
     if not form.constructingEntryList:
-      this.entries = constructEntryList(form, submitter)
+      this.entries = constructEntryList(form, submitter.get(nil))
   return ok(this)
 
-#TODO filename should not be allowed for string entries
-# in other words, this should be an overloaded function, not just an or type
 proc append*(ctx: JSContext; this: FormData; name: string; val: JSValue;
-    filename = none(string)): Opt[void] {.jsfunc.} =
+    rest: varargs[JSValue]): Opt[void] {.jsfunc.} =
   var blob: Blob
   if ctx.fromJS(val, blob).isSome:
-    let filename = if filename.isSome:
-      filename.get
+    var filename = "blob"
+    if rest.len > 0:
+      ?ctx.fromJS(rest[0], filename)
     elif blob of WebFile:
-      WebFile(blob).name
-    else:
-      "blob"
+      filename = WebFile(blob).name
     this.entries.add(FormDataEntry(
       name: name,
       isstr: false,
@@ -60,6 +59,8 @@ proc append*(ctx: JSContext; this: FormData; name: string; val: JSValue;
       filename: filename
     ))
     ok()
+  elif rest.len > 0:
+    err()
   else:
     var s: string
     ?ctx.fromJS(val, s)
@@ -75,19 +76,20 @@ proc get(ctx: JSContext; this: FormData; name: string): JSValue {.jsfunc.} =
   for entry in this.entries:
     if entry.name == name:
       if entry.isstr:
-        return toJS(ctx, entry.svalue)
+        return ctx.toJS(entry.svalue)
       else:
-        return toJS(ctx, entry.value)
+        return ctx.toJS(entry.value)
   return JS_NULL
 
 proc getAll(ctx: JSContext; this: FormData; name: string): seq[JSValue]
     {.jsfunc.} =
+  result = @[]
   for entry in this.entries:
     if entry.name == name:
       if entry.isstr:
-        result.add(toJS(ctx, entry.svalue))
+        result.add(ctx.toJS(entry.svalue))
       else:
-        result.add(toJS(ctx, entry.value))
+        result.add(ctx.toJS(entry.value))
 
 proc add(list: var seq[FormDataEntry], entry: tuple[name, value: string]) =
   list.add(FormDataEntry(
@@ -98,6 +100,7 @@ proc add(list: var seq[FormDataEntry], entry: tuple[name, value: string]) =
 
 func toNameValuePairs*(list: seq[FormDataEntry]):
     seq[tuple[name, value: string]] =
+  result = @[]
   for entry in list:
     if entry.isstr:
       result.add((entry.name, entry.svalue))
@@ -177,7 +180,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
         let dir = "ltr" #TODO bidi
         entrylist.add((dirname, dir))
   form.constructingEntryList = false
-  return entrylist
+  return move(entrylist)
 
 proc addFormDataModule*(ctx: JSContext) =
   ctx.registerType(FormData)
