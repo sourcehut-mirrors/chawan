@@ -130,9 +130,8 @@ type
     cleared: bool
     smcup: bool
     setTitle: bool
-    stdinUnblocked: bool
-    stdinWasUnblocked: bool
     origTermios: Termios
+    newTermios: Termios
     defaultBackground: RGBColor
     defaultForeground: RGBColor
     ibuf: array[256, char] # buffer for chars when we can't process them
@@ -268,18 +267,6 @@ proc readChar*(term: Terminal): char =
     term.ibufLen = term.istream.recvData(term.ibuf)
   result = term.ibuf[term.ibufn]
   inc term.ibufn
-
-proc bufferInputChar*(term: Terminal; c: char) =
-  if term.ibufn == term.ibuf.len:
-    return # can't help it, sorry :P
-  term.ibuf[term.ibufn] = c
-  inc term.ibufn
-  if term.ibufn >= term.ibufLen:
-    term.ibufLen = term.ibufn
-
-proc resetInputBuffer*(term: Terminal) =
-  term.ibufn = 0
-  term.ibufLen = 0
 
 proc hasBuffer*(term: Terminal): bool =
   return term.ibufn < term.ibufLen
@@ -1009,23 +996,30 @@ proc disableRawMode(term: Terminal) =
   discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.origTermios)
 
 proc enableRawMode(term: Terminal) =
+  #TODO check errors
   discard tcGetAttr(term.istream.fd, addr term.origTermios)
   var raw = term.origTermios
   raw.c_iflag = raw.c_iflag and not (BRKINT or ICRNL or INPCK or ISTRIP or IXON)
   raw.c_oflag = raw.c_oflag and not (OPOST)
   raw.c_cflag = raw.c_cflag or CS8
   raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or ISIG or IEXTEN)
+  term.newTermios = raw
   discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr raw)
 
-proc unblockStdin*(term: Terminal) =
-  if term.isatty():
-    term.istream.setBlocking(false)
-    term.stdinUnblocked = true
+# This is checked in the SIGINT handler, set in main.nim.
+var sigintCaught* {.global.} = false
+var acceptSigint* {.global.} = false
 
-proc restoreStdin*(term: Terminal) =
-  if term.stdinUnblocked:
-    term.istream.setBlocking(true)
-    term.stdinUnblocked = false
+proc catchSigint*(term: Terminal) =
+  term.newTermios.c_lflag = term.newTermios.c_lflag or ISIG
+  acceptSigint = true
+  discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.newTermios)
+
+proc respectSigint*(term: Terminal) =
+  sigintCaught = false
+  acceptSigint = false
+  term.newTermios.c_lflag = term.newTermios.c_lflag and not ISIG
+  discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.newTermios)
 
 proc quit*(term: Terminal) =
   if term.isatty():
@@ -1045,9 +1039,6 @@ proc quit*(term: Terminal) =
       term.write(XTPOPTITLE)
     term.showCursor()
     term.clearCanvas()
-    if term.stdinUnblocked:
-      term.restoreStdin()
-      term.stdinWasUnblocked = true
   term.flush()
 
 when TermcapFound:
@@ -1515,9 +1506,6 @@ proc start*(term: Terminal; istream: PosixStream): TermStartResult =
 proc restart*(term: Terminal) =
   if term.isatty():
     term.enableRawMode()
-    if term.stdinWasUnblocked:
-      term.unblockStdin()
-      term.stdinWasUnblocked = false
     term.initScreen()
 
 const ANSIColorMap = [

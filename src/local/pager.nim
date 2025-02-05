@@ -411,18 +411,8 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     return nil
 
 proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
-  let pager = cast[Pager](opaque)
-  if pager.console != nil and pager.term.istream != nil:
-    try:
-      var buf = [char(0)]
-      let n = pager.term.istream.recvData(buf)
-      if n == 1 and buf[0] == char(3): #C-c
-        pager.term.resetInputBuffer()
-        return 1
-      pager.term.bufferInputChar(buf[0])
-    except ErrorAgain:
-      discard
-  return 0
+  result = cint(term.sigintCaught)
+  term.sigintCaught = false
 
 proc evalJSFree(opaque: RootRef; src, filename: string) =
   let pager = Pager(opaque)
@@ -445,7 +435,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
-  JS_SetInterruptHandler(pager.jsrt, interruptHandler, cast[pointer](pager))
+  JS_SetInterruptHandler(pager.jsrt, interruptHandler, nil)
   let clientConfig = LoaderClientConfig(
     defaultHeaders: newHeaders(pager.config.network.defaultHeaders),
     proxy: pager.config.network.proxy,
@@ -511,7 +501,7 @@ proc runJSJobs(pager: Pager) =
     pager.quit(0)
 
 proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
-  pager.term.unblockStdin()
+  pager.term.catchSigint()
   let flags = if module:
     JS_EVAL_TYPE_MODULE
   else:
@@ -520,13 +510,13 @@ proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
   pager.inEval = true
   result = pager.jsctx.eval(src, filename, flags)
   pager.inEval = false
-  pager.term.restoreStdin()
   if pager.exitCode != -1:
     # if we are in a nested eval, then just wait until we are not.
     if not wasInEval:
       pager.quit(pager.exitCode)
   else:
     pager.runJSJobs()
+  pager.term.respectSigint()
 
 proc evalActionJS(pager: Pager; action: string): JSValue =
   if action.startsWith("cmd."):
@@ -735,7 +725,6 @@ proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
 
 proc input(pager: Pager): EmptyPromise =
   var p: EmptyPromise = nil
-  pager.term.restoreStdin()
   var buf = ""
   while true:
     let c = pager.term.readChar()

@@ -275,7 +275,12 @@ proc main() =
   # make sure tmpdir exists
   discard mkdir(cstring(config.external.tmpdir), 0o700)
   let loaderPid = forkserver.loadConfig(config)
-  #setControlCHook(proc() {.noconv.} = quit(1))
+  onSignal SIGINT:
+    discard sig
+    if acceptSigint:
+      sigintCaught = true
+    else:
+      quit(1)
   let loaderControl = newSocketStream(loaderSockVec[0])
   loaderControl.setCloseOnExec()
   let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
