@@ -291,9 +291,13 @@ proc getTypePtr*[T](x: T): pointer =
     # (This dereferences the object's first member, m_type. Probably.)
     return cast[ptr pointer](x)[]
   elif T is RootObj:
-    return cast[pointer](x)
+    static:
+      error("Please make it var")
   else:
     return getTypeInfo(x)
+
+proc getTypePtr*[T: RootObj](x: var T): pointer =
+  return cast[ptr pointer](addr x)[]
 
 func getTypePtr*(t: typedesc[ref object]): pointer =
   var x = t()

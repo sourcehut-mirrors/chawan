@@ -583,14 +583,15 @@ The first parameter must be a reference to the object in question. Only one
 inherited. This means that you must set up separate `.jsfin` functions for each
 child object in the inheritance chain.
 
-To free up JS objects, you may precede your reference type parameter with a
-`JSRuntime` parameter.
+To free up JS objects, you may precede your reference type parameter
+with a `JSRuntime` parameter.  WARNING: this parameter is nil when
+an object that was not bound to a JS value is finalized.
 
-WARNING: like Nim `=destroy`, this pragma is very easy to misuse. In particular,
-you must make sure to **NEVER ALLOCATE** in a `.jsfin` finalizer, because this
-[breaks](https://github.com/nim-lang/Nim/issues/4851) Nim refc. (I don't know if
-this problem is still present in ORC, but at the moment Monoucha does not work
-with ORC anyway.)
+WARNING 2: like Nim `=destroy`, this pragma is very easy to misuse.  In
+particular, you must make sure to **NEVER ALLOCATE** in a `.jsfin`
+finalizer, because this [breaks](https://github.com/nim-lang/Nim/issues/4851)
+Nim refc.  (I don't know if this problem is still present in ORC, but at
+the moment Monoucha does not work with ORC anyway.)
 
 Example:
 

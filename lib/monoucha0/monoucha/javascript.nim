@@ -151,11 +151,13 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
     GC_unref(cast[RootRef](rtOpaque.tmpunrefs[i]))
   for i in 0 ..< np:
     let p = rtOpaque.tmplist[i]
-    #TODO maybe finalize?
     let val = JS_MKPTR(JS_TAG_OBJECT, p)
     let classid = JS_GetClassID(val)
-    rtOpaque.fins.withValue(classid, fin):
-      fin[](rt, val)
+    let opaque = JS_GetOpaque(val, classid)
+    if opaque != nil:
+      let nimt = rtOpaque.inverseTypemap.getOrDefault(classid)
+      rtOpaque.fins.withValue(nimt, fin):
+        fin[](rt, opaque)
     JS_SetOpaque(val, nil)
     JS_FreeValueRT(rt, val)
   # GC will run again now
@@ -324,6 +326,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
     raise newException(Defect, "Failed to allocate JS class: " &
       $cdef.class_name)
   ctxOpaque.typemap[nimt] = result
+  rtOpaque.inverseTypemap[result] = nimt
   ctxOpaque.creg[tname] = result
   if ctxOpaque.parents.len <= int(result):
     ctxOpaque.parents.setLen(int(result) + 1)
@@ -331,7 +334,7 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
   if ishtmldda:
     ctxOpaque.htmldda = result
   if finalizer != nil:
-    rtOpaque.fins[result] = finalizer
+    rtOpaque.fins[nimt] = finalizer
   let proto = ctx.newProtoFromParentClass(parent)
   if funcs.len > 0:
     # We avoid funcs being GC'ed by putting the list in rtOpaque.
@@ -1102,10 +1105,8 @@ macro jsfin*(fun: typed) =
   else:
     error("Expected one or two parameters")
   let jsProc = quote do:
-    proc `finName`(rt {.inject.}: JSRuntime; val: JSValue) =
-      let opaque {.inject.} = JS_GetOpaque(val, JS_GetClassID(val))
-      if opaque != nil:
-        `finStmt`
+    proc `finName`(rt {.inject.}: JSRuntime; opaque {.inject.}: pointer) =
+      `finStmt`
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1196,15 +1197,16 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
               result.jsget.add(op)
               result.jsset.add(op)
 
-proc nim_finalize_for_js*(obj: pointer) =
+proc nim_finalize_for_js*(obj, typeptr: pointer) =
+  var fin: JSFinalizerFunction = nil
   for rt in runtimes:
     let rtOpaque = rt.getOpaque()
+    fin = rtOpaque.fins.getOrDefault(typeptr)
     rtOpaque.plist.withValue(obj, v):
       let p = v[].p
       let val = JS_MKPTR(JS_TAG_OBJECT, p)
-      let classid = JS_GetClassID(val)
-      rtOpaque.fins.withValue(classid, fin):
-        fin[](rt, val)
+      if fin != nil:
+        fin(rt, obj)
       JS_SetOpaque(val, nil)
       rtOpaque.plist.del(obj)
       if rtOpaque.destroying == obj:
@@ -1212,6 +1214,12 @@ proc nim_finalize_for_js*(obj: pointer) =
         rtOpaque.destroying = nil
       else:
         JS_FreeValueRT(rt, val)
+      return
+  # No JSValue exists for the object, but it likely still expects us to
+  # free it.
+  # We pass nil as the runtime, since that's the only sensible solution.
+  if fin != nil:
+    fin(nil, obj)
 
 type
   TabGetSet* = object
@@ -1229,14 +1237,14 @@ template jsDestructor*[U](T: typedesc[ref U]) =
     jsDtors.incl($T)
   {.warning[Deprecated]:off.}:
     proc `=destroy`(obj: var U) =
-      nim_finalize_for_js(addr obj)
+      nim_finalize_for_js(addr obj, getTypePtr(obj))
 
 template jsDestructor*(T: typedesc[object]) =
   static:
     jsDtors.incl($T)
   {.warning[Deprecated]:off.}:
     proc `=destroy`(obj: var T) =
-      nim_finalize_for_js(addr obj)
+      nim_finalize_for_js(addr obj, getTypePtr(obj))
 
 func tname(info: RegistryInfo): string =
   return info.t.strVal

@@ -44,7 +44,7 @@ type
     htmldda*: JSClassID # only one of these exists: document.all.
     globalUnref*: JSEmptyOpaqueCallback
 
-  JSFinalizerFunction* = proc(rt: JSRuntime; val: JSValue) {.nimcall,
+  JSFinalizerFunction* = proc(rt: JSRuntime; opaque: pointer) {.nimcall,
     raises: [].}
 
   JSEmptyOpaqueCallback* = (proc() {.closure, raises: [].})
@@ -52,7 +52,9 @@ type
   JSRuntimeOpaque* = ref object
     plist*: Table[pointer, tuple[p: pointer; jsref: bool]] # Nim, JS
     flist*: seq[seq[JSCFunctionListEntry]]
-    fins*: Table[JSClassID, JSFinalizerFunction]
+    fins*: Table[pointer, JSFinalizerFunction]
+    #TODO maybe just extract this from typemap on JSContext free?
+    inverseTypemap*: Table[JSClassID, pointer]
     parentMap*: Table[pointer, pointer]
     destroying*: pointer
     # temp list for uninit
