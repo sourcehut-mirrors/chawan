@@ -136,7 +136,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     let pstream = newSocketStream(fd)
     var cacheId: int
     var loaderStream: SocketStream
-    var istream: PosixStream
+    var istream: SocketStream
     pstream.withPacketReader r:
       r.sread(cacheId)
       loaderStream = newSocketStream(r.recvAux.pop())

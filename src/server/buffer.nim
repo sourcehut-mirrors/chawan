@@ -71,6 +71,8 @@ type
     y*: int
     str*: string
 
+  InputData = ref object of MapData
+
   Buffer = ref object
     attrs: WindowAttributes
     bgcolor: CellColor
@@ -89,7 +91,6 @@ type
     htmlParser: HTML5ParserWrapper
     images: seq[PosBitmap]
     ishtml: bool
-    istream: PosixStream
     lines: FlexibleGrid
     loader: FileLoader
     navigateUrl: URL # stored when JS tries to navigate
@@ -101,7 +102,6 @@ type
     pstream: SocketStream # control stream
     quirkstyle: CSSStylesheet
     reportedBytesRead: int
-    rfd: int # file descriptor of command pipe
     rootBox: BlockBox
     savetask: bool
     state: BufferState
@@ -921,20 +921,21 @@ proc loadResources(buffer: Buffer): EmptyPromise =
     )
   return newResolvedPromise()
 
-proc rewind(buffer: Buffer; offset: int; unregister = true): bool =
+proc rewind(buffer: Buffer; data: InputData; offset: int;
+    unregister = true): bool =
   let url = newURL("cache:" & $buffer.cacheId & "?" & $offset).get
   let response = buffer.loader.doRequest(newRequest(url))
   if response.body == nil:
     return false
   buffer.loader.resume(response.outputId)
   if unregister:
-    buffer.pollData.unregister(buffer.fd)
-    buffer.loader.unregistered.add(buffer.fd)
-  buffer.istream.sclose()
-  buffer.istream = response.body
-  buffer.istream.setBlocking(false)
-  buffer.fd = response.body.fd
-  buffer.pollData.register(buffer.fd, POLLIN)
+    buffer.pollData.unregister(data.stream.fd)
+    buffer.loader.unregistered.add(data.stream.fd)
+  buffer.loader.unset(data)
+  data.stream.sclose()
+  buffer.loader.put(InputData(stream: response.body))
+  data.stream.setBlocking(false)
+  buffer.pollData.register(data.stream.fd, POLLIN)
   buffer.bytesRead = offset
   return true
 
@@ -969,13 +970,16 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     buffer.pollData.clear()
     var connecting: seq[ConnectData] = @[]
     var ongoing: seq[OngoingData] = @[]
+    var istream: InputData = nil
     for it in buffer.loader.data:
       if it of ConnectData:
         connecting.add(ConnectData(it))
-      else:
+      elif it of OngoingData:
         let it = OngoingData(it)
         ongoing.add(it)
         it.response.body.sclose()
+      else:
+        istream = InputData(it)
       buffer.loader.unregistered.add(it.fd)
       buffer.loader.unset(it)
     let myPid = getCurrentProcessId()
@@ -990,12 +994,12 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
       let data = OngoingData(response: response, stream: stream)
       buffer.pollData.register(data.fd, POLLIN)
       buffer.loader.put(data)
-    if buffer.istream != nil:
+    if istream != nil:
       # We do not own our input stream, so we can't tee it.
       # Luckily it is cached, so what we *can* do is to load the same thing from
       # the cache. (This also lets us skip suspend/resume in this case.)
       # We ignore errors; not much we can do with them here :/
-      discard buffer.rewind(buffer.bytesRead, unregister = false)
+      discard buffer.rewind(istream, buffer.bytesRead, unregister = false)
     buffer.pstream.sclose()
     pouts.write(char(0))
     pouts.sclose()
@@ -1009,8 +1013,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     buffer.loader.controlStream.sclose()
     buffer.pstream.withPacketReader r:
       buffer.loader.controlStream = newSocketStream(r.recvAux.pop())
-    buffer.rfd = buffer.pstream.fd
-    buffer.pollData.register(buffer.rfd, POLLIN)
+    buffer.pollData.register(buffer.pstream.fd, POLLIN)
     # must reconnect after the new client is set up, or the client pids get
     # mixed up.
     for it in connecting:
@@ -1044,7 +1047,7 @@ proc dispatchLoadEvent(buffer: Buffer) =
   discard window.jsctx.dispatch(window, event)
   buffer.maybeReshape()
 
-proc finishLoad(buffer: Buffer): EmptyPromise =
+proc finishLoad(buffer: Buffer; data: InputData): EmptyPromise =
   if buffer.state != bsLoadingPage:
     let p = EmptyPromise()
     p.resolve()
@@ -1060,14 +1063,13 @@ proc finishLoad(buffer: Buffer): EmptyPromise =
   buffer.document.readyState = rsInteractive
   if buffer.config.scripting != smFalse:
     buffer.dispatchDOMContentLoadedEvent()
-  buffer.pollData.unregister(buffer.fd)
-  buffer.loader.unregistered.add(buffer.fd)
+  buffer.pollData.unregister(data.stream.fd)
+  buffer.loader.unregistered.add(data.stream.fd)
   buffer.loader.removeCachedItem(buffer.cacheId)
   buffer.cacheId = -1
-  buffer.fd = -1
   buffer.outputId = -1
-  buffer.istream.sclose()
-  buffer.istream = nil
+  buffer.loader.unset(data)
+  data.stream.sclose()
   return buffer.loadResources()
 
 # Returns:
@@ -1086,7 +1088,7 @@ proc load*(buffer: Buffer): int {.proxy, task.} =
     buffer.savetask = true
     return -2 # unused
 
-proc onload(buffer: Buffer) =
+proc onload(buffer: Buffer; data: InputData) =
   case buffer.state
   of bsLoadingResources, bsLoaded:
     if buffer.hasTask(bcLoad):
@@ -1100,7 +1102,7 @@ proc onload(buffer: Buffer) =
   while true:
     if not reprocess:
       try:
-        n = buffer.istream.recvData(iq)
+        n = data.stream.recvData(iq)
       except ErrorAgain:
         break
       buffer.bytesRead += n
@@ -1109,12 +1111,12 @@ proc onload(buffer: Buffer) =
         if not buffer.firstBufferRead:
           reprocess = true
           continue
-        if buffer.rewind(0):
+        if buffer.rewind(data, 0):
           continue
       buffer.firstBufferRead = true
       reprocess = false
     else: # EOF
-      buffer.finishLoad().then(proc() =
+      buffer.finishLoad(data).then(proc() =
         buffer.maybeReshape()
         buffer.state = bsLoaded
         buffer.document.readyState = rsComplete
@@ -1181,16 +1183,11 @@ proc cancel*(buffer: Buffer) {.proxy.} =
     buffer.loader.unregistered.add(fd)
     it.stream.sclose()
     buffer.loader.unset(it)
-  if buffer.istream != nil:
-    buffer.pollData.unregister(buffer.fd)
-    buffer.loader.unregistered.add(buffer.fd)
-    buffer.loader.removeCachedItem(buffer.cacheId)
-    buffer.fd = -1
-    buffer.cacheId = -1
-    buffer.outputId = -1
-    buffer.istream.sclose()
-    buffer.istream = nil
-    buffer.htmlParser.finish()
+    if it of InputData:
+      buffer.loader.removeCachedItem(buffer.cacheId)
+      buffer.cacheId = -1
+      buffer.outputId = -1
+      buffer.htmlParser.finish()
   buffer.document.readyState = rsInteractive
   buffer.state = bsLoaded
   buffer.maybeReshape()
@@ -1836,7 +1833,7 @@ proc readCommand(buffer: Buffer) =
     bufferDispatcher(ProxyFunctions, buffer, cmd, packetid, r)
 
 proc handleRead(buffer: Buffer; fd: int): bool =
-  if fd == buffer.rfd:
+  if fd == buffer.pstream.fd:
     try:
       buffer.readCommand()
     except ErrorConnectionReset, EOFError:
@@ -1844,12 +1841,13 @@ proc handleRead(buffer: Buffer; fd: int): bool =
       #       getCurrentExceptionMsg() & "\n",
       #       getStackTrace(getCurrentException())
       return false
-  elif fd == buffer.fd:
-    buffer.onload()
-  elif buffer.loader.get(fd) != nil:
-    buffer.loader.onRead(fd)
-    if buffer.config.scripting != smFalse:
-      buffer.window.runJSJobs()
+  elif (let data = buffer.loader.get(fd); data != nil):
+    if data of InputData:
+      buffer.onload(InputData(data))
+    else:
+      buffer.loader.onRead(fd)
+      if buffer.config.scripting != smFalse:
+        buffer.window.runJSJobs()
   elif fd in buffer.loader.unregistered:
     discard # ignore
   else:
@@ -1857,17 +1855,18 @@ proc handleRead(buffer: Buffer; fd: int): bool =
   true
 
 proc handleError(buffer: Buffer; fd: int; event: TPollfd): bool =
-  if fd == buffer.rfd:
+  if fd == buffer.pstream.fd:
     # Connection reset by peer, probably. Close the buffer.
     return false
-  elif fd == buffer.fd:
-    buffer.onload()
-  elif buffer.loader.get(fd) != nil:
-    if not buffer.loader.onError(fd):
-      #TODO handle connection error
-      assert false, $fd
-    if buffer.config.scripting != smFalse:
-      buffer.window.runJSJobs()
+  elif (let data = buffer.loader.get(fd); data != nil):
+    if data of InputData:
+      buffer.onload(InputData(data))
+    else:
+      if not buffer.loader.onError(fd):
+        #TODO handle connection error
+        assert false, $fd
+      if buffer.config.scripting != smFalse:
+        buffer.window.runJSJobs()
   elif fd in buffer.loader.unregistered:
     discard # ignore
   else:
@@ -1909,7 +1908,7 @@ proc cleanup(buffer: Buffer) =
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
-    pstream: SocketStream; istream, urandom: PosixStream; cacheId: int) =
+    pstream, istream: SocketStream; urandom: PosixStream; cacheId: int) =
   let factory = newCAtomFactory()
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
@@ -1923,7 +1922,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     loader: loader,
     needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
     pstream: pstream,
-    rfd: pstream.fd,
     url: url,
     charsetStack: charsetStack,
     cacheId: -1,
@@ -1951,15 +1949,14 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
         if element.computed == nil:
           element.applyStyle()
   buffer.charset = buffer.charsetStack.pop()
-  buffer.fd = istream.fd
-  buffer.istream = istream
-  buffer.istream.setBlocking(false)
+  istream.setBlocking(false)
+  buffer.loader.put(InputData(stream: istream))
   buffer.pollData.register(istream.fd, POLLIN)
   loader.registerFun = proc(fd: int) =
     buffer.pollData.register(fd, POLLIN)
   loader.unregisterFun = proc(fd: int) =
     buffer.pollData.unregister(fd)
-  buffer.pollData.register(buffer.rfd, POLLIN)
+  buffer.pollData.register(buffer.pstream.fd, POLLIN)
   buffer.initDecoder()
   buffer.htmlParser = newHTML5ParserWrapper(
     buffer.window,
