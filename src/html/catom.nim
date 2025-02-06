@@ -338,9 +338,12 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
-  var s: string
-  ?ctx.fromJS(val, s)
-  res = ctx.getFactoryImpl().toAtom(s)
+  if val == JS_ATOM_NULL:
+    res = CAtomNull
+  else:
+    var s: string
+    ?ctx.fromJS(val, s)
+    res = ctx.getFactoryImpl().toAtom(s)
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): Opt[void] =
