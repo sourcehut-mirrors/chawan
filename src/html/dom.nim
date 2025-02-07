@@ -1085,6 +1085,8 @@ const ReflectTable0 = [
   # "super-global" attributes
   makes("class", "className", AllTagTypes),
   makef("onclick", AllTagTypes, "click"),
+  makef("oninput", AllTagTypes, "input"),
+  makef("onchange", AllTagTypes, "change"),
   makes("slot", AllTagTypes),
   makes("title", AllTagTypes),
 ]
@@ -2851,6 +2853,7 @@ func findAutoFocus*(document: Document): Element =
 
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
   let event = newEvent(window.toAtom(name), target)
+  event.isTrusted = true
   discard window.jsctx.dispatch(target, event)
 
 proc parseColor(element: Element; s: string): ARGBColor =
@@ -4415,6 +4418,9 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
       return
   of TAG_INPUT:
     let input = HTMLInputElement(element)
+    if name == satOninput and element.scriptingEnabled:
+      input.reflectEvent(input.document.window, name, satInput,
+        value.get(""))
     input.reflect_str satValue, value
     if name == satChecked:
       input.setChecked(value.isSome)

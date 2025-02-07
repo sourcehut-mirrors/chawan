@@ -39,7 +39,7 @@ type
     #TODO DOMHighResTimeStamp?
     timeStamp {.jsget.}: float64
     flags*: set[EventFlag]
-    isTrusted {.jsufget.}: bool
+    isTrusted* {.jsufget.}: bool
 
   CustomEvent* = ref object of Event
     detail {.jsget.}: JSValue
@@ -54,6 +54,11 @@ type
 
   MouseEvent* = ref object of UIEvent
     #TODO
+
+  InputEvent* = ref object of UIEvent
+    data {.jsget.}: Option[string]
+    isComposing {.jsget.}: bool
+    inputType {.jsget.}: string
 
   EventTarget* = ref object of RootObj
     eventListeners*: seq[EventListener]
@@ -76,6 +81,7 @@ jsDestructor(CustomEvent)
 jsDestructor(MessageEvent)
 jsDestructor(UIEvent)
 jsDestructor(MouseEvent)
+jsDestructor(InputEvent)
 jsDestructor(EventTarget)
 
 # Forward declaration hack
@@ -208,6 +214,31 @@ proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
     ctype: ctype,
     data: JS_DupValue(ctx, eventInit.data),
     origin: eventInit.origin
+  )
+  event.innerEventCreationSteps(eventInit)
+  return event
+
+# UIEvent
+#TODO
+type UIEventInit = object of EventInit
+  #TODO how do I represent view T_T
+  # probably needs to be an EventTarget and manually type checked
+  detail {.jsdefault.}: int32
+
+# InputEvent
+type InputEventInit* = object of UIEventInit
+  data* {.jsdefault.}: Option[string]
+  isComposing* {.jsdefault.}: bool
+  inputType* {.jsdefault.}: string
+
+proc newInputEvent*(ctype: CAtom; eventInit = InputEventInit()): InputEvent =
+  #TODO view
+  let event = InputEvent(
+    ctype: ctype,
+    data: eventInit.data,
+    isComposing: eventInit.isComposing,
+    inputType: eventInit.inputType,
+    detail: eventInit.detail
   )
   event.innerEventCreationSteps(eventInit)
   return event
@@ -375,5 +406,6 @@ proc addEventModule*(ctx: JSContext) =
   ctx.registerType(MessageEvent, parent = eventCID)
   let uiEventCID = ctx.registerType(UIEvent, parent = eventCID)
   ctx.registerType(MouseEvent, parent = uiEventCID)
+  ctx.registerType(InputEvent, parent = uiEventCID)
   ctx.defineConsts(eventCID, EventPhase)
   ctx.registerType(EventTarget)

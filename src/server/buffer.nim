@@ -1030,12 +1030,14 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
 proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satDOMContentLoaded), buffer.document)
+  event.isTrusted = true
   discard window.jsctx.dispatch(buffer.document, event)
   buffer.maybeReshape()
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satLoad), window)
+  event.isTrusted = true
   discard window.jsctx.dispatch(window, event)
   buffer.maybeReshape()
 
@@ -1352,6 +1354,14 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
       else:
         input.value = s
       if buffer.config.scripting != smFalse:
+        let window = buffer.window
+        if input.inputType == itFile:
+          window.fireEvent(satInput, input)
+        else:
+          let inputEvent = newInputEvent(window.toAtom(satInput),
+            InputEventInit(data: some(s), inputType: "insertText"))
+          inputEvent.isTrusted = true
+          discard window.jsctx.dispatch(input, inputEvent)
         buffer.window.fireEvent(satChange, input)
       buffer.maybeReshape()
       return buffer.implicitSubmit(input)
@@ -1522,6 +1532,8 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
   of itCheckbox:
     input.setChecked(not input.checked)
     if buffer.config.scripting != smFalse:
+      # Note: not an InputEvent.
+      buffer.window.fireEvent(satInput, input)
       buffer.window.fireEvent(satChange, input)
     buffer.maybeReshape()
     return ClickResult()
@@ -1529,6 +1541,8 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
     let wasChecked = input.checked
     input.setChecked(true)
     if not wasChecked and buffer.config.scripting != smFalse:
+      # See above.
+      buffer.window.fireEvent(satInput, input)
       buffer.window.fireEvent(satChange, input)
     buffer.maybeReshape()
     return ClickResult()
@@ -1590,6 +1604,7 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
     if element != nil:
       let window = buffer.window
       let event = newEvent(window.toAtom(satClick), element)
+      event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
       buffer.maybeReshape()
   let url = buffer.navigateUrl

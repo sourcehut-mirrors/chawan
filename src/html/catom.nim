@@ -83,6 +83,7 @@ macro makeStaticAtom =
       satNovalidate = "novalidate"
       satOnchange = "onchange"
       satOnclick = "onclick"
+      satOninput = "oninput"
       satOnload = "onload"
       satOrigin = "origin"
       satPassword = "password"
