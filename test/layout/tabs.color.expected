@@ -4,7 +4,7 @@
 [48;2;255;0;0mx       y                                                                       [49m
 [48;2;255;0;0m^ The above rows should be aligned, and dump mode should output spaces.         [49m
 
-Without bgcolor: 
+Without bgcolor:
 
 x	y
 x    	y

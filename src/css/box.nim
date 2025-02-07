@@ -49,23 +49,6 @@ type
   InlineBoxType* = enum
     ibtParent, ibtText, ibtNewline, ibtBitmap, ibtBox
 
-  InlineBox* = ref object
-    state*: InlineBoxState
-    render*: BoxRenderState
-    computed*: CSSValues
-    node*: Element
-    case t*: InlineBoxType
-    of ibtParent:
-      children*: seq[InlineBox]
-    of ibtText:
-      text*: CharacterData # note: this has no parent.
-    of ibtNewline:
-      discard
-    of ibtBitmap:
-      image*: InlineImage
-    of ibtBox:
-      box*: BlockBox
-
   Span* = object
     start*: LUnit
     send*: LUnit
@@ -101,14 +84,29 @@ type
     space*: AvailableSpace
     bounds*: Bounds
 
-  BlockBox* = ref object
-    sizes*: ResolvedSizes # tree builder output -> layout input
-    state*: BoxLayoutState # layout output -> render input
+  CSSBox* = ref object of RootObj
     render*: BoxRenderState # render output
     computed*: CSSValues
-    node*: Element
-    inline*: InlineBox
-    children*: seq[BlockBox]
+    element*: Element
+
+  BlockBox* = ref object of CSSBox
+    sizes*: ResolvedSizes # tree builder output -> layout input
+    state*: BoxLayoutState # layout output -> render input
+    children*: seq[CSSBox]
+
+  InlineBox* = ref object of CSSBox
+    state*: InlineBoxState
+    case t*: InlineBoxType
+    of ibtParent:
+      children*: seq[CSSBox]
+    of ibtText:
+      text*: CharacterData # note: this has no parent.
+    of ibtNewline:
+      discard
+    of ibtBitmap:
+      image*: InlineImage
+    of ibtBox:
+      box*: BlockBox
 
 # We store runs in state as a private field, so that we can both check
 # if the box type is correct and reset them on relayout by zeroing out

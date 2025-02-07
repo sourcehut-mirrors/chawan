@@ -540,9 +540,8 @@ const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const DisplayOuterInline* = {
   DisplayInlineBlock, DisplayInlineTableWrapper, DisplayInlineFlex
 }
-const DisplayInnerFlex* = {
-  DisplayFlex, DisplayInlineFlex
-}
+const DisplayInnerFlex* = {DisplayFlex, DisplayInlineFlex}
+const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
 
 # Forward declarations
 proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;

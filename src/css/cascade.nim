@@ -342,7 +342,7 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
   # blockification.
   # Well, neither will I, because the spec breaks on actual websites.
   # Curse CSS.
-  if result{"position"} in {PositionAbsolute, PositionFixed}:
+  if result{"position"} in PositionAbsoluteFixed:
     if result{"display"} == DisplayInline:
       result{"display"} = DisplayInlineBlock
   elif result{"float"} != FloatNone or
@@ -424,12 +424,21 @@ proc initStyledElement*(element: Element): StyledNode =
     element.applyStyle()
   return StyledNode(t: stElement, element: element, computed: element.computed)
 
-proc initStyledReplacement(parent: Element; content: sink CSSContent):
-    StyledNode =
-  return StyledNode(t: stReplacement, element: parent, content: content)
+proc initStyledReplacement(parent: Element; content: sink CSSContent;
+    computed: CSSValues): StyledNode =
+  return StyledNode(
+    t: stReplacement,
+    element: parent,
+    content: content,
+    computed: computed
+  )
 
 proc initStyledImage(parent: Element; bmp: NetworkBitmap): StyledNode =
-  return initStyledReplacement(parent, CSSContent(t: ContentImage, bmp: bmp))
+  return initStyledReplacement(
+    parent,
+    CSSContent(t: ContentImage, bmp: bmp),
+    parent.computed
+  )
 
 proc initStyledPseudo(parent: Element; pseudo: PseudoElement): StyledNode =
   return StyledNode(
@@ -498,7 +507,11 @@ iterator children*(styledNode: StyledNode): StyledNode {.closure.} =
       of TAG_VIDEO: yield initStyledText(parent, "[video]")
       of TAG_AUDIO: yield initStyledText(parent, "[audio]")
       of TAG_BR:
-        yield initStyledReplacement(parent, CSSContent(t: ContentNewline))
+        yield initStyledReplacement(
+          parent,
+          CSSContent(t: ContentNewline),
+          parent.computed
+        )
       of TAG_IFRAME: yield initStyledText(parent, "[iframe]")
       of TAG_FRAME: yield initStyledText(parent, "[frame]")
       of TAG_OPTION:
@@ -517,8 +530,9 @@ iterator children*(styledNode: StyledNode): StyledNode {.closure.} =
         yield initStyledPseudo(parent, peAfter)
   else:
     let parent = styledNode.element
+    let computed = parent.computedMap[styledNode.pseudo].inheritProperties()
     for content in parent.computedMap[styledNode.pseudo]{"content"}:
-      yield parent.initStyledReplacement(content)
+      yield parent.initStyledReplacement(content, computed)
 
 when defined(debug):
   proc computedTree*(styledNode: StyledNode): string =

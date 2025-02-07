@@ -356,7 +356,7 @@ proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
     let y1 = toInt(offset.y + area.offset.y)
     let x2 = toInt(offset.x + area.offset.x + area.size.w)
     let y2 = toInt(offset.y + area.offset.y + area.size.h)
-    grid.paintBackground(state, bgcolor, x1, y1, x2, y2, box.node,
+    grid.paintBackground(state, bgcolor, x1, y1, x2, y2, box.element,
       alpha)
 
 proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
@@ -382,7 +382,10 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
     if position != PositionStatic:
       state.absolutePos.add(startOffset)
     for child in box.children:
-      grid.renderInlineBox(state, child, offset, bgcolor0)
+      if child of InlineBox:
+        grid.renderInlineBox(state, InlineBox(child), offset, bgcolor0)
+      else:
+        grid.renderBlockBox(state, BlockBox(child), offset)
     if position != PositionStatic:
       discard state.absolutePos.pop()
   of ibtBox:
@@ -404,7 +407,7 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
       let y2 = y2p.toInt
       # add Element to background (but don't actually color it)
       grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
-        box.node, 0)
+        box.element, 0)
       let x = (offset.x div state.attrs.ppc).toInt
       let y = (offset.y div state.attrs.ppl).toInt
       let offx = (offset.x - x.toLUnit * state.attrs.ppc).toInt
@@ -423,7 +426,7 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
     for run in box.runs:
       let offset = offset + run.offset
       if box.computed{"visibility"} == VisibilityVisible:
-        grid.setText(state, run.str, offset, format, box.node)
+        grid.setText(state, run.str, offset, format, box.element)
   of ibtNewline:
     discard
 
@@ -442,7 +445,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     ))
     return
   var offset = offset
-  if position in {PositionAbsolute, PositionFixed}:
+  if position in PositionAbsoluteFixed:
     if box.computed{"left"}.u != clAuto or box.computed{"right"}.u != clAuto:
       offset.x = state.absolutePos[^1].x
     if box.computed{"top"}.u != clAuto or box.computed{"bottom"}.u != clAuto:
@@ -482,7 +485,7 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
       let e = offset + box.state.size
       let iex = toInt(e.x)
       let iey = toInt(e.y)
-      grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.node,
+      grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.element,
         bgcolor0.a)
     if box.computed{"background-image"} != nil:
       # ugly hack for background-image display... TODO actually display images
@@ -493,18 +496,18 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         # text is larger than image; center it to minimize error
         offset.x -= w div 2
         offset.x += box.state.size.w div 2
-      grid.setText(state, s, offset, box.computed.toFormat(), box.node)
-  if box.inline != nil:
-    assert box.children.len == 0
-    if box.computed{"visibility"} == VisibilityVisible and opacity != 0 and
-        state.clipBox.start.x < state.clipBox.send.x and
-        state.clipBox.start.y < state.clipBox.send.y:
-      grid.renderInlineBox(state, box.inline, offset, rgba(0, 0, 0, 0))
-  else:
-    #TODO this isn't right...
-    if opacity != 0:
-      for child in box.children:
-        grid.renderBlockBox(state, child, offset)
+      grid.setText(state, s, offset, box.computed.toFormat(), box.element)
+  if opacity != 0: #TODO this isn't right...
+    for child in box.children:
+      if child of InlineBox:
+        #TODO move this outside the InlineBox check?
+        if box.computed{"visibility"} == VisibilityVisible and
+            state.clipBox.start.x < state.clipBox.send.x and
+            state.clipBox.start.y < state.clipBox.send.y:
+          grid.renderInlineBox(state, InlineBox(child), offset,
+            rgba(0, 0, 0, 0))
+      else:
+        grid.renderBlockBox(state, BlockBox(child), offset)
   if hasClipBox:
     discard state.clipBoxes.pop()
   if position != PositionStatic:
