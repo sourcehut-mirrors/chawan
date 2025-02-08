@@ -499,6 +499,53 @@ proc flushMargins(bctx: var BlockContext; offsety: var LUnit) =
   bctx.marginTodo = Strut()
   bctx.positionFloats()
 
+# Prepare the next line's initial width and available width.
+# (If space on the left is excluded by floats, set the initial width to
+# the end of that space. If space on the right is excluded, set the
+# available width to that space.)
+type InitLineFlag = enum
+  ilfRegular # set the line to inited, and flush floats.
+  ilfFloat # set the line to inited, but do not flush floats.
+  ilfAbsolute # set size, but allow further calls to override the state.
+
+proc initLine(fstate: var FlowState; flag = ilfRegular) =
+  if flag != ilfFloat:
+    #TODO ^ this should really be ilfRegular, but that summons another,
+    # much worse bug.
+    # In fact, absolute handling in the presence of floats has always
+    # been somewhat broken and should be fixed some time.
+    if flag != ilfAbsolute:
+      let poffsety = fstate.offset.y
+      fstate.bctx.flushMargins(fstate.offset.y)
+      # Don't forget to add it to intrinsic height...
+      fstate.intr.h += fstate.offset.y - poffsety
+    fstate.bctx.positionFloats()
+  if fstate.lbstate.init != lisUninited:
+    return
+  # we want to start from padding-left, but normally exclude padding
+  # from space. so we must offset available width with padding-left too
+  fstate.lbstate.availableWidth = fstate.space.w.u + fstate.padding.left
+  fstate.lbstate.size.w = fstate.padding.left
+  fstate.lbstate.init = lisNoExclusions
+  #TODO what if maxContent/minContent?
+  if fstate.bctx.exclusions.len > 0:
+    let bfcOffset = fstate.bfcOffset
+    let y = fstate.offset.y + bfcOffset.y
+    var left = bfcOffset.x + fstate.lbstate.size.w
+    var right = bfcOffset.x + fstate.lbstate.availableWidth
+    for ex in fstate.bctx.relevantExclusions:
+      if ex.offset.y <= y and y < ex.offset.y + ex.size.h:
+        fstate.lbstate.init = lisExclusions
+        if ex.t == FloatLeft:
+          left = ex.offset.x + ex.size.w
+        else:
+          right = ex.offset.x
+    fstate.lbstate.size.w = max(left - bfcOffset.x, fstate.lbstate.size.w)
+    fstate.lbstate.availableWidth = min(right - bfcOffset.x,
+      fstate.lbstate.availableWidth)
+  if flag == ilfAbsolute:
+    fstate.lbstate.init = lisUninited
+
 # Whitespace between words
 func computeShift(fstate: FlowState; istate: InlineState): LUnit =
   if fstate.whitespacenum == 0:
@@ -637,8 +684,7 @@ proc putAtom(lbstate: var LineBoxState; iastate: InlineAtomState) =
   if iastate.ibox.t == ibtText:
     iastate.ibox.runs.add(iastate.run)
 
-proc addSpacing(fstate: var FlowState; width: LUnit; state: InlineState;
-    hang = false) =
+proc addSpacing(fstate: var FlowState; width: LUnit; hang = false) =
   let ibox = fstate.whitespaceBox
   if ibox.runs.len == 0 or fstate.lbstate.iastates.len == 0 or
       (let orun = ibox.runs[^1]; orun != fstate.lbstate.iastates[^1].run):
@@ -661,13 +707,14 @@ proc addSpacing(fstate: var FlowState; width: LUnit; state: InlineState;
     # it is written, but is not actually counted in the box's width.
     fstate.lbstate.size.w += width
 
-proc flushWhitespace(fstate: var FlowState; state: InlineState;
+proc flushWhitespace(fstate: var FlowState; istate: InlineState;
     hang = false) =
-  let shift = fstate.computeShift(state)
+  let shift = fstate.computeShift(istate)
   fstate.lbstate.charwidth += fstate.whitespacenum
   fstate.whitespacenum = 0
   if shift > 0:
-    fstate.addSpacing(shift, state, hang)
+    fstate.initLine()
+    fstate.addSpacing(shift, hang)
 
 proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
     bfcOffsety: LUnit; clear: CSSClear) =
@@ -690,53 +737,6 @@ proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
     bctx.clearIndex[FloatNone] = max(bctx.clearIndex[FloatNone], k)
   offsety = y - bfcOffsety
 
-# Prepare the next line's initial width and available width.
-# (If space on the left is excluded by floats, set the initial width to
-# the end of that space. If space on the right is excluded, set the
-# available width to that space.)
-type InitLineFlag = enum
-  ilfRegular # set the line to inited, and flush floats.
-  ilfFloat # set the line to inited, but do not flush floats.
-  ilfAbsolute # set size, but allow further calls to override the state.
-
-proc initLine(fstate: var FlowState; flag = ilfRegular) =
-  if flag != ilfFloat:
-    #TODO ^ this should really be ilfRegular, but that summons another,
-    # much worse bug.
-    # In fact, absolute handling in the presence of floats has always
-    # been somewhat broken and should be fixed some time.
-    if flag != ilfAbsolute:
-      let poffsety = fstate.offset.y
-      fstate.bctx.flushMargins(fstate.offset.y)
-      # Don't forget to add it to intrinsic height...
-      fstate.intr.h += fstate.offset.y - poffsety
-    fstate.bctx.positionFloats()
-  if fstate.lbstate.init != lisUninited:
-    return
-  # we want to start from padding-left, but normally exclude padding
-  # from space. so we must offset available width with padding-left too
-  fstate.lbstate.availableWidth = fstate.space.w.u + fstate.padding.left
-  fstate.lbstate.size.w = fstate.padding.left
-  fstate.lbstate.init = lisNoExclusions
-  #TODO what if maxContent/minContent?
-  if fstate.bctx.exclusions.len > 0:
-    let bfcOffset = fstate.bfcOffset
-    let y = fstate.offset.y + bfcOffset.y
-    var left = bfcOffset.x + fstate.lbstate.size.w
-    var right = bfcOffset.x + fstate.lbstate.availableWidth
-    for ex in fstate.bctx.relevantExclusions:
-      if ex.offset.y <= y and y < ex.offset.y + ex.size.h:
-        fstate.lbstate.init = lisExclusions
-        if ex.t == FloatLeft:
-          left = ex.offset.x + ex.size.w
-        else:
-          right = ex.offset.x
-    fstate.lbstate.size.w = max(left - bfcOffset.x, fstate.lbstate.size.w)
-    fstate.lbstate.availableWidth = min(right - bfcOffset.x,
-      fstate.lbstate.availableWidth)
-  if flag == ilfAbsolute:
-    fstate.lbstate.init = lisUninited
-
 proc initLineBoxState(fstate: FlowState): LineBoxState =
   let cellHeight = fstate.cellHeight.toLUnit()
   result = LineBoxState(
@@ -747,7 +747,9 @@ proc initLineBoxState(fstate: FlowState): LineBoxState =
 
 proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
     force = false; clear = ClearNone) =
-  if fstate.lbstate.iastates.len != 0 or force:
+  if fstate.lbstate.iastates.len != 0 or force or
+      fstate.whitespacenum != 0 and istate.ibox != nil and
+      istate.ibox.computed{"white-space"} in {WhitespacePre, WhitespacePreWrap}:
     fstate.initLine()
     let whitespace = istate.ibox.computed{"white-space"}
     if whitespace == WhitespacePre:
@@ -869,7 +871,7 @@ proc addAtom(fstate: var FlowState; istate: var InlineState;
       shift = fstate.computeShift(istate)
   if iastate.size.w > 0 and iastate.size.h > 0 or iastate.ibox.t == ibtBox:
     if shift > 0:
-      fstate.addSpacing(shift, istate)
+      fstate.addSpacing(shift)
     if iastate.run != nil and fstate.lbstate.iastates.len > 0 and
         istate.ibox.runs.len > 0:
       let oiastate = addr fstate.lbstate.iastates[^1]
@@ -1043,12 +1045,12 @@ proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
   let shift = fstate.computeShift(state)
   fstate.lbstate.widthAfterWhitespace = fstate.lbstate.size.w + shift
 
-proc layoutText(fstate: var FlowState; state: var InlineState; s: string) =
-  fstate.flushWhitespace(state)
-  fstate.newWord(state.ibox)
-  let transform = state.ibox.computed{"text-transform"}
+proc layoutText(fstate: var FlowState; istate: var InlineState; s: string) =
+  fstate.flushWhitespace(istate)
+  fstate.newWord(istate.ibox)
+  let transform = istate.ibox.computed{"text-transform"}
   if transform == TextTransformNone:
-    fstate.layoutTextLoop(state, s)
+    fstate.layoutTextLoop(istate, s)
   else:
     let s = case transform
     of TextTransformCapitalize: s.capitalizeLU()
@@ -1058,7 +1060,7 @@ proc layoutText(fstate: var FlowState; state: var InlineState; s: string) =
     of TextTransformFullSizeKana: s.fullsize()
     of TextTransformChaHalfWidth: s.halfwidth()
     else: ""
-    fstate.layoutTextLoop(state, s)
+    fstate.layoutTextLoop(istate, s)
 
 func spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
     padding: LUnit): LUnit =
@@ -2877,8 +2879,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
 # 1st pass: build tree
 #TODO ideally we should move this to layout and/or cascade.
 # (Anon box generation probably belongs in cascade, so that caching
-# existing boxes becomes feasible.  This would also allow things like
-# creating a custom anonymous box tree for input and select multiple.)
+# existing boxes becomes feasible.)
 
 type
   BlockBuilderContext = object
