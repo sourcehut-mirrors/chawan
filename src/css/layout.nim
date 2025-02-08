@@ -1319,8 +1319,6 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
       sizes.space.w = stretch(underflow)
     else:
       sizes.margin[dtHorizontal].send += underflow
-  elif parentWidth.t == scFitContent:
-    sizes.space.w = maxContent()
   if sizes.space.w.isDefinite() and sizes.maxWidth < sizes.space.w.u or
       sizes.maxWidth < LUnit.high and sizes.space.w.t == scMaxContent:
     if sizes.space.w.t == scStretch:
