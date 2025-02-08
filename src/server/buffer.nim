@@ -666,22 +666,10 @@ type GotoAnchorResult* = object
   focus*: ReadLineResult
 
 proc findAnchor(box: CSSBox; anchor: Element): Offset =
-  if box of InlineBox:
-    let ibox = InlineBox(box)
-    if ibox.t == ibtBox:
-      let off = ibox.box.findAnchor(anchor)
-      if off.y >= 0:
-        return off
-    elif ibox.t == ibtParent:
-      for child in ibox.children:
-        let off = child.findAnchor(anchor)
-        if off.y >= 0:
-          return off
-  else:
-    for child in BlockBox(box).children:
-      let off = child.findAnchor(anchor)
-      if off.y >= 0:
-        return off
+  for child in box.children:
+    let off = child.findAnchor(anchor)
+    if off.y >= 0:
+      return off
   if box.element == anchor:
     return box.render.offset
   return offset(-1, -1)

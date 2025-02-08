@@ -108,6 +108,22 @@ type
     of ibtBox:
       box*: BlockBox
 
+iterator children*(box: CSSBox): lent CSSBox {.inline.} =
+  if box of BlockBox:
+    let box = BlockBox(box)
+    for child in box.children:
+      yield child
+  else:
+    let ibox = InlineBox(box)
+    case ibox.t
+    of ibtParent:
+      for child in ibox.children:
+        yield child
+    of ibtBox:
+      yield CSSBox(ibox.box)
+    else:
+      discard
+
 # We store runs in state as a private field, so that we can both check
 # if the box type is correct and reset them on relayout by zeroing out
 # state.
