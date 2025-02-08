@@ -218,8 +218,8 @@ proc toJS*[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
 proc toJS*(ctx: JSContext; s: seq): JSValue =
   let a = JS_NewArray(ctx)
   if not JS_IsException(a):
-    for i, x in s:
-      let val = toJS(ctx, x)
+    for i in 0 ..< s.len:
+      let val = toJS(ctx, s[i])
       if JS_IsException(val):
         return val
       ctx.defineProperty(a, int64(i), val, JS_PROP_C_W_E or JS_PROP_THROW)
@@ -250,8 +250,7 @@ proc toJS(ctx: JSContext; t: tuple): JSValue =
       inc i
   return a
 
-proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValue;
-    needsref: var bool): JSValue =
+proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValue): JSValue =
   JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
     # a JSValue already points to this object.
     let p = obj[].p
@@ -262,7 +261,7 @@ proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValue;
     # Nim owned the JS value, but now JS wants to own Nim.
     # This means we must release the JS reference, and add a reference
     # to Nim.
-    needsref = true
+    GC_ref(cast[RootRef](toRef))
     obj[].jsref = true
     return JS_MKPTR(JS_TAG_OBJECT, p)
   let ctxOpaque = ctx.getOpaque()
@@ -279,7 +278,7 @@ proc toJSP0(ctx: JSContext; p, tp: pointer; ctor: JSValue;
     let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
     JS_SetPropertyFunctionList(ctx, jsObj, ufp,
       cint(ctxOpaque.unforgeable[int(class)].len))
-  needsref = true
+  GC_ref(cast[RootRef](toRef))
   if unlikely(ctxOpaque.htmldda == class):
     JS_SetIsHTMLDDA(ctx, jsObj)
   return jsObj
@@ -308,31 +307,23 @@ func getTypePtr*(t: type): pointer =
   return getTypePtr(x)
 
 proc toJSRefObj(ctx: JSContext; obj: ref object): JSValue =
-  if obj == nil:
-    return JS_NULL
   let p = cast[pointer](obj)
   let tp = getTypePtr(obj)
-  var needsref = false
-  let val = toJSP0(ctx, p, tp, JS_UNDEFINED, needsref)
-  if needsref:
-    GC_ref(obj)
-  return val
+  return ctx.toJSP0(p, tp, p, JS_UNDEFINED)
 
 proc toJS*(ctx: JSContext; obj: ref object): JSValue =
-  return toJSRefObj(ctx, obj)
+  if obj == nil:
+    return JS_NULL
+  return ctx.toJSRefObj(obj)
 
 proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValue): JSValue =
   if obj == nil:
     return JS_NULL
   let p = cast[pointer](obj)
   let tp = getTypePtr(obj)
-  var needsref = false
-  let val = toJSP0(ctx, p, tp, ctor, needsref)
-  if needsref:
-    GC_ref(obj)
-  return val
+  return ctx.toJSP0(p, tp, p, ctor)
 
-proc toJSNew[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValue): JSValue =
+proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValue): JSValue =
   if opt.isSome:
     when not (T is void):
       return toJSNew(ctx, opt.get, ctor)
@@ -387,24 +378,20 @@ proc toJS*(ctx: JSContext; dict: JSDict): JSValue =
       ctx.defineProperty(obj, k, v)
   return obj
 
-proc toJSP(ctx: JSContext; parent: ref object; child: var object): JSValue =
+proc toJSP1(ctx: JSContext; p, tp, toRef: pointer): JSValue =
+  JS_GetRuntime(ctx).getOpaque().parentMap[p] = toRef
+  return ctx.toJSP0(p, tp, toRef, JS_UNDEFINED)
+
+proc toJSP*(ctx: JSContext; parent: ref object; child: var object): JSValue =
   let p = addr child
   # Save parent as the original ancestor for this tree.
-  JS_GetRuntime(ctx).getOpaque().parentMap[p] = cast[pointer](parent)
   let tp = getTypePtr(child)
-  var needsref = false
-  let val = toJSP0(ctx, p, tp, JS_UNDEFINED, needsref)
-  if needsref:
-    GC_ref(parent)
-  return val
+  return ctx.toJSP1(p, tp, cast[pointer](parent))
 
-proc toJSP(ctx: JSContext; parent: ptr object; child: var object): JSValue =
+proc toJSP*(ctx: JSContext; parent: ptr object; child: var object): JSValue =
   let p = addr child
   # Increment the reference count of parent's root ancestor, and save the
   # increment/decrement callbacks for the child as well.
-  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  let grandparent = rtOpaque.refmap[parent]
-  GC_ref(cast[RootRef](grandparent))
-  rtOpaque.parentMap[p] = grandparent
+  let grandparent = JS_GetRuntime(ctx).getOpaque().refmap[parent]
   let tp = getTypePtr(child)
-  return toJSP0(ctx, p, tp)
+  return ctx.toJSP1(p, tp, grandparent)
