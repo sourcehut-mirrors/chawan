@@ -1671,7 +1671,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
   if float == FloatNone:
     if not fstate.firstBaselineSet:
       fstate.box.state.firstBaseline = child.state.offset.y +
-        child.state.baseline
+        child.state.firstBaseline
       fstate.firstBaselineSet = true
     fstate.box.state.baseline = child.state.offset.y + child.state.baseline
     if textAlign == TextAlignChaCenter:
