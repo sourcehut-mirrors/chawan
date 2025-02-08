@@ -313,9 +313,9 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
 
 func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
     nimt: pointer; ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
-    asglobal: bool; nointerface: bool; finalizer: JSFinalizerFunction;
+    asglobal, nointerface, ishtmldda: bool; finalizer: JSFinalizerFunction;
     namespace: JSValue; errid: Opt[JSErrorEnum];
-    unforgeable, staticfuns: JSFunctionList; ishtmldda: bool): JSClassID
+    unforgeable, staticfuns: JSFunctionList): JSClassID
     {.discardable.} =
   result = 0
   let rt = JS_GetRuntime(ctx)
@@ -591,6 +591,8 @@ template getJSPropNamesParams(): untyped =
 
 proc addParam2(gen: var JSFuncGenerator; s, t, val: NimNode;
     fallback: NimNode = nil) =
+  if t.typeKind == ntyGenericParam:
+    error("Union parameters are no longer supported. Use JSValue instead.")
   let dl = gen.dielabel
   if fallback == nil:
     gen.jsFunCallList.add(quote do:
@@ -624,8 +626,6 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   gen.jsFunCallList.add(quote do:
     var `s`: `t`
     if ctx.fromJSThis(`id`, `s`).isNone:
-      discard JS_ThrowTypeError(ctx,
-        "'%s' called on an object that is not an instance of %s", `fn`, `tt`)
       break `dl`
   )
   if gen.funcParams[gen.i].t.kind == nnkPtrTy:
@@ -647,8 +647,6 @@ proc addRequiredParams(gen: var JSFuncGenerator) =
   while gen.i < gen.minArgs:
     var s = ident("arg_" & $gen.i)
     let tt = gen.funcParams[gen.i].t
-    if tt.typeKind == ntyGenericParam:
-      error("Union parameters are no longer supported. Use JSValue instead.")
     gen.addValueParam(s, tt)
     if gen.funcParams[gen.i].t.kind == nnkPtrTy:
       s = quote do: `s`[]
@@ -673,8 +671,6 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
       if fallback.isNone:
         error("No fallback value. Maybe a non-optional parameter follows an " &
           "optional parameter?")
-      if tt.typeKind == ntyGenericParam:
-        error("Union parameters are no longer supported. Use JSValue instead.")
       gen.addValueParam(s, tt, fallback.get)
     if gen.funcParams[gen.i].t.kind == nnkPtrTy:
       s = quote do: `s`[]
@@ -763,14 +759,20 @@ proc registerFunction(typ: string; t: BoundFunctionType; name: string;
 proc registerFunction(gen: JSFuncGenerator) =
   registerFunction(gen.thisType, gen.t, gen.funcName, gen.newName, gen.flag)
 
+proc jsCheckNumArgs(ctx: JSContext; argc, minargs: cint): bool =
+  if argc < minargs:
+    JS_ThrowTypeError(ctx, "At least %d arguments required, but only %d passed",
+      minargs, argc)
+    return false
+  true
+
 proc newJSProcBody(gen: var JSFuncGenerator; isva: bool): NimNode =
   let ma = gen.actualMinArgs
   result = newStmtList()
   if isva and ma > 0:
     result.add(quote do:
-      if argc < `ma`:
-        return JS_ThrowTypeError(ctx,
-          "At least %d arguments required, but only %d passed", `ma`, argc)
+      if not ctx.jsCheckNumArgs(argc, `ma`):
+        return JS_EXCEPTION
     )
   result.add(gen.jsCallAndRet)
 
@@ -1273,19 +1275,17 @@ proc registerGetters(stmts: NimNode; info: RegistryInfo;
     stmts.add(quote do:
       proc `id`(ctx: JSContext; this: JSValue): JSValue {.cdecl.} =
         when `t` is object:
-          var arg_0: ptr `t`
+          var arg_0 {.noinit.}: ptr `t`
         else:
           var arg_0: `t`
         if ctx.fromJSThis(this, arg_0).isNone:
-          return JS_ThrowTypeError(ctx,
-            "'%s' called on an object that is not an instance of %s", `fn`,
-            `jsname`)
+          return JS_EXCEPTION
         when arg0.`node` is JSValue:
           return JS_DupValue(ctx, arg0.`node`)
         elif arg_0.`node` is object:
-          return toJSP(ctx, arg_0, arg_0.`node`)
+          return ctx.toJSP(arg_0, arg_0.`node`)
         else:
-          return toJS(ctx, arg_0.`node`)
+          return ctx.toJS(arg_0.`node`)
     )
     info.registerFunction(BoundFunction(
       t: bfGetter,
@@ -1306,13 +1306,11 @@ proc registerSetters(stmts: NimNode; info: RegistryInfo;
     stmts.add(quote do:
       proc `id`(ctx: JSContext; this, val: JSValue): JSValue {.cdecl.} =
         when `t` is object:
-          var arg_0: ptr `t`
+          var arg_0 {.noinit.}: ptr `t`
         else:
           var arg_0: `t`
-        if ctx.fromJS(this, arg_0).isNone:
-          return JS_ThrowTypeError(ctx,
-            "'%s' called on an object that is not an instance of %s", `fn`,
-            `jsname`)
+        if ctx.fromJSThis(this, arg_0).isNone:
+          return JS_EXCEPTION
         # We can't just set arg_0.`node` directly, or fromJS may damage it.
         var nodeVal: typeof(arg_0.`node`)
         when nodeVal is JSValue:
@@ -1337,7 +1335,7 @@ proc bindReplaceableSet(stmts: NimNode; info: var RegistryInfo) =
     proc `rsf`(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
         {.cdecl.} =
       when `t` is object:
-        var dummy: ptr `t`
+        var dummy {.noinit.}: ptr `t`
       else:
         var dummy: `t`
       if ctx.fromJSThis(this, dummy).isNone:
@@ -1537,8 +1535,8 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let global = asglobal and not globalparent
   endstmts.add(quote do:
     `ctx`.newJSClass(classDef, `tname`, getTypePtr(`t`), `sctr`, `tabList`,
-      `parent`, bool(`global`), `nointerface`, `finName`, `namespace`,
-      `errid`, `unforgeable`, `staticfuns`, `ishtmldda`)
+      `parent`, `global`, `nointerface`, `ishtmldda`, `finName`, `namespace`,
+      `errid`, `unforgeable`, `staticfuns`)
   )
   stmts.add(newBlockStmt(endstmts))
   return stmts
