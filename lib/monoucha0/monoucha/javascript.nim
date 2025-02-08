@@ -392,11 +392,11 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
   else:
     JS_FreeValue(ctx, jctor)
 
-type FuncParam = tuple
-  t: NimNode
-  val: Option[NimNode]
-
 type
+  FuncParam = tuple
+    t: NimNode
+    val: Option[NimNode]
+
   JSFuncGenerator = object
     t: BoundFunctionType
     hasThis: bool
@@ -589,7 +589,7 @@ template getJSPropNamesParams(): untyped =
     newIdentDefs(ident("this"), quote do: JSValue)
   ]
 
-proc addParam2(gen: var JSFuncGenerator; s, t, val: NimNode;
+proc addParam(gen: var JSFuncGenerator; s, t, val: NimNode;
     fallback: NimNode = nil) =
   if t.typeKind == ntyGenericParam:
     error("Union parameters are no longer supported. Use JSValue instead.")
@@ -614,14 +614,12 @@ proc addParam2(gen: var JSFuncGenerator; s, t, val: NimNode;
 proc addValueParam(gen: var JSFuncGenerator; s, t: NimNode;
     fallback: NimNode = nil) =
   let j = gen.j
-  gen.addParam2(s, t, quote do: argv[`j`], fallback)
+  gen.addParam(s, t, quote do: argv[`j`], fallback)
 
 proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
   let id = ident(thisName)
-  let tt = gen.thisType
-  let fn = gen.funcName
   let dl = gen.dielabel
   gen.jsFunCallList.add(quote do:
     var `s`: `t`
@@ -637,7 +635,7 @@ proc addFixParam(gen: var JSFuncGenerator; name: string) =
   var s = ident("arg_" & $gen.i)
   let t = gen.funcParams[gen.i].t
   let id = ident(name)
-  gen.addParam2(s, t, id)
+  gen.addParam(s, t, id)
   if gen.funcParams[gen.i].t.kind == nnkPtrTy:
     s = quote do: `s`[]
   gen.jsFunCall.add(s)
@@ -752,12 +750,13 @@ proc registerFunction(typ: string; fun: BoundFunction) =
     BoundFunctions[typ] = info
   info.registerFunction(fun)
 
-proc registerFunction(typ: string; t: BoundFunctionType; name: string;
-    id: NimNode; flag = bffNone) =
-  registerFunction(typ, BoundFunction(t: t, name: name, id: id, flag: flag))
-
 proc registerFunction(gen: JSFuncGenerator) =
-  registerFunction(gen.thisType, gen.t, gen.funcName, gen.newName, gen.flag)
+  registerFunction(gen.thisType, BoundFunction(
+    t: gen.t,
+    name: gen.funcName,
+    id: gen.newName,
+    flag: gen.flag
+  ))
 
 proc jsCheckNumArgs(ctx: JSContext; argc, minargs: cint): bool =
   if argc < minargs:
@@ -766,19 +765,16 @@ proc jsCheckNumArgs(ctx: JSContext; argc, minargs: cint): bool =
     return false
   true
 
-proc newJSProcBody(gen: var JSFuncGenerator; isva: bool): NimNode =
+proc newJSProc(gen: var JSFuncGenerator; params: openArray[NimNode];
+    isva = true): NimNode =
   let ma = gen.actualMinArgs
-  result = newStmtList()
+  let jsBody = newStmtList()
   if isva and ma > 0:
-    result.add(quote do:
+    jsBody.add(quote do:
       if not ctx.jsCheckNumArgs(argc, `ma`):
         return JS_EXCEPTION
     )
-  result.add(gen.jsCallAndRet)
-
-proc newJSProc(gen: var JSFuncGenerator; params: openArray[NimNode];
-    isva = true): NimNode =
-  let jsBody = gen.newJSProcBody(isva)
+  jsBody.add(gen.jsCallAndRet)
   let jsPragmas = newNimNode(nnkPragma).add(ident("cdecl"))
   return newProc(gen.newName, params, jsBody, pragmas = jsPragmas)
 
@@ -1135,10 +1131,6 @@ type
     varsym: NimNode
     flag: BoundFunctionFlag
 
-  JSObjectPragmas = object
-    jsget: seq[JSObjectPragma]
-    jsset: seq[JSObjectPragma]
-
 func getPragmaName(varPragma: NimNode): string =
   if varPragma.kind == nnkExprColonExpr:
     return $varPragma[0]
@@ -1151,7 +1143,72 @@ func getStringFromPragma(varPragma: NimNode): Option[string] =
     return some($varPragma[1])
   return none(string)
 
-proc findPragmas(t: NimNode): JSObjectPragmas =
+func tname(info: RegistryInfo): string =
+  return info.t.strVal
+
+# Differs from tname if the Nim object's name differs from the JS object's
+# name.
+func jsname(info: RegistryInfo): string =
+  if info.name != "":
+    return info.name
+  return info.tname
+
+proc registerGetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
+  let t = info.t
+  let tname = info.tname
+  let node = op.varsym
+  let fn = op.name
+  let id = ident($bfGetter & "_" & tname & "_" & fn)
+  stmts.add(quote do:
+    proc `id`(ctx: JSContext; this: JSValue): JSValue {.cdecl.} =
+      when `t` is object:
+        var arg_0 {.noinit.}: ptr `t`
+      else:
+        var arg_0: `t`
+      if ctx.fromJSThis(this, arg_0).isNone:
+        return JS_EXCEPTION
+      when arg0.`node` is JSValue:
+        return JS_DupValue(ctx, arg0.`node`)
+      elif arg_0.`node` is object:
+        return ctx.toJSP(arg_0, arg_0.`node`)
+      else:
+        return ctx.toJS(arg_0.`node`)
+  )
+  info.registerFunction(BoundFunction(
+    t: bfGetter,
+    name: fn,
+    id: id,
+    flag: op.flag
+  ))
+
+proc registerSetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
+  let t = info.t
+  let tname = info.tname
+  let node = op.varsym
+  let fn = op.name
+  let id = ident($bfSetter & "_" & tname & "_" & fn)
+  stmts.add(quote do:
+    proc `id`(ctx: JSContext; this, val: JSValue): JSValue {.cdecl.} =
+      when `t` is object:
+        var arg_0 {.noinit.}: ptr `t`
+      else:
+        var arg_0: `t`
+      if ctx.fromJSThis(this, arg_0).isNone:
+        return JS_EXCEPTION
+      # We can't just set arg_0.`node` directly, or fromJS may damage it.
+      var nodeVal: typeof(arg_0.`node`)
+      when nodeVal is JSValue:
+        static:
+          error(".jsset is not supported on JSValue; use jsfset")
+      else:
+        if ctx.fromJS(val, nodeVal).isNone:
+          return JS_EXCEPTION
+      arg_0.`node` = move(nodeVal)
+      return JS_DupValue(ctx, val)
+  )
+  info.registerFunction(BoundFunction(t: bfSetter, name: fn, id: id))
+
+proc registerPragmas(stmts: NimNode; info: RegistryInfo; t: NimNode) =
   let typ = t.getTypeInst()[1] # The type, as declared.
   var impl = typ.getTypeImpl() # ref t
   if impl.kind in {nnkRefTy, nnkPtrTy}:
@@ -1162,7 +1219,6 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
   var identDefsStack = newSeq[NimNode](impl[2].len)
   for i, it in identDefsStack.mpairs:
     it = impl[2][i]
-  result = JSObjectPragmas()
   while identDefsStack.len > 0:
     let identDefs = identDefsStack.pop()
     case identDefs.kind
@@ -1187,17 +1243,17 @@ proc findPragmas(t: NimNode): JSObjectPragmas =
               varsym: varName
             )
             case pragmaName
-            of "jsget": result.jsget.add(op)
-            of "jsset": result.jsset.add(op)
+            of "jsget": stmts.registerGetter(info, op)
+            of "jsset": stmts.registerSetter(info, op)
             of "jsufget": # LegacyUnforgeable
               op.flag = bffUnforgeable
-              result.jsget.add(op)
+              stmts.registerGetter(info, op)
             of "jsrget": # Replaceable
               op.flag = bffReplaceable
-              result.jsget.add(op)
+              stmts.registerGetter(info, op)
             of "jsgetset":
-              result.jsget.add(op)
-              result.jsset.add(op)
+              stmts.registerGetter(info, op)
+              stmts.registerSetter(info, op)
 
 proc nim_finalize_for_js*(obj, typeptr: pointer) =
   var fin: JSFinalizerFunction = nil
@@ -1237,98 +1293,24 @@ type
 template jsDestructor*[U](T: typedesc[ref U]) =
   static:
     jsDtors.incl($T)
-  {.warning[Deprecated]:off.}:
-    proc `=destroy`(obj: var U) =
-      nim_finalize_for_js(addr obj, getTypePtr(obj))
+  proc `=destroy`(obj: var U) =
+    nim_finalize_for_js(addr obj, getTypePtr(obj))
 
 template jsDestructor*(T: typedesc[object]) =
   static:
     jsDtors.incl($T)
-  {.warning[Deprecated]:off.}:
-    proc `=destroy`(obj: var T) =
-      nim_finalize_for_js(addr obj, getTypePtr(obj))
-
-func tname(info: RegistryInfo): string =
-  return info.t.strVal
-
-# Differs from tname if the Nim object's name differs from the JS object's
-# name.
-func jsname(info: RegistryInfo): string =
-  if info.name != "":
-    return info.name
-  return info.tname
+  proc `=destroy`(obj: var T) =
+    nim_finalize_for_js(addr obj, getTypePtr(obj))
 
 proc bindConstructor(stmts: NimNode; info: var RegistryInfo): NimNode =
   if info.ctorFun != nil:
     return info.ctorFun
   return ident("js_illegal_ctor")
 
-proc registerGetters(stmts: NimNode; info: RegistryInfo;
-    jsget: seq[JSObjectPragma]) =
-  let t = info.t
-  let tname = info.tname
-  let jsname = info.jsname
-  for op in jsget:
-    let node = op.varsym
-    let fn = op.name
-    let id = ident($bfGetter & "_" & tname & "_" & fn)
-    stmts.add(quote do:
-      proc `id`(ctx: JSContext; this: JSValue): JSValue {.cdecl.} =
-        when `t` is object:
-          var arg_0 {.noinit.}: ptr `t`
-        else:
-          var arg_0: `t`
-        if ctx.fromJSThis(this, arg_0).isNone:
-          return JS_EXCEPTION
-        when arg0.`node` is JSValue:
-          return JS_DupValue(ctx, arg0.`node`)
-        elif arg_0.`node` is object:
-          return ctx.toJSP(arg_0, arg_0.`node`)
-        else:
-          return ctx.toJS(arg_0.`node`)
-    )
-    info.registerFunction(BoundFunction(
-      t: bfGetter,
-      name: fn,
-      id: id,
-      flag: op.flag
-    ))
-
-proc registerSetters(stmts: NimNode; info: RegistryInfo;
-    jsset: seq[JSObjectPragma]) =
-  let t = info.t
-  let tname = info.tname
-  let jsname = info.jsname
-  for op in jsset:
-    let node = op.varsym
-    let fn = op.name
-    let id = ident($bfSetter & "_" & tname & "_" & fn)
-    stmts.add(quote do:
-      proc `id`(ctx: JSContext; this, val: JSValue): JSValue {.cdecl.} =
-        when `t` is object:
-          var arg_0 {.noinit.}: ptr `t`
-        else:
-          var arg_0: `t`
-        if ctx.fromJSThis(this, arg_0).isNone:
-          return JS_EXCEPTION
-        # We can't just set arg_0.`node` directly, or fromJS may damage it.
-        var nodeVal: typeof(arg_0.`node`)
-        when nodeVal is JSValue:
-          static:
-            error(".jsset is not supported on JSValue; use jsfset")
-        else:
-          if ctx.fromJS(val, nodeVal).isNone:
-            return JS_EXCEPTION
-        arg_0.`node` = move(nodeVal)
-        return JS_DupValue(ctx, val)
-    )
-    info.registerFunction(BoundFunction(t: bfSetter, name: fn, id: id))
-
 proc bindReplaceableSet(stmts: NimNode; info: var RegistryInfo) =
   let rsf = ident("js_replaceable_set")
   let t = info.t
   info.replaceableSetFun = rsf
-  let id = ident("js_replaceable_set_" & info.tname)
   let trns = info.tabReplaceableNames
   stmts.add(quote do:
     const replaceableNames = `trns`
@@ -1513,9 +1495,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     info.dfin = newNilLit()
     if info.tname in jsDtors:
       error("Global object " & info.tname & " must not have a destructor!")
-  let pragmas = findPragmas(t)
-  stmts.registerGetters(info, pragmas.jsget)
-  stmts.registerSetters(info, pragmas.jsset)
+  stmts.registerPragmas(info, t)
   if info.tabReplaceableNames.len > 0:
     stmts.bindReplaceableSet(info)
   stmts.bindGetSet(info)
