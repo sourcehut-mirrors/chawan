@@ -194,7 +194,7 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     total: length,
     lengthComputable: length != 0
   ))
-  discard window.jsctx.dispatch(target, event)
+  window.fireEvent(event, target)
 
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
   this.readyState = xhrsDone

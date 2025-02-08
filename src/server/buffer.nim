@@ -1031,14 +1031,14 @@ proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satDOMContentLoaded), buffer.document)
   event.isTrusted = true
-  discard window.jsctx.dispatch(buffer.document, event)
+  window.fireEvent(event, buffer.document)
   buffer.maybeReshape()
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
   let event = newEvent(window.toAtom(satLoad), window)
   event.isTrusted = true
-  discard window.jsctx.dispatch(window, event)
+  window.fireEvent(event, window)
   buffer.maybeReshape()
 
 proc finishLoad(buffer: Buffer; data: InputData): EmptyPromise =
@@ -1361,7 +1361,7 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
           let inputEvent = newInputEvent(window.toAtom(satInput),
             InputEventInit(data: some(s), inputType: "insertText"))
           inputEvent.isTrusted = true
-          discard window.jsctx.dispatch(input, inputEvent)
+          window.fireEvent(inputEvent, input)
         buffer.window.fireEvent(satChange, input)
       buffer.maybeReshape()
       return buffer.implicitSubmit(input)

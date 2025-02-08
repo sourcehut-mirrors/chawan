@@ -327,7 +327,7 @@ proc postMessage(ctx: JSContext; window: Window; value: JSValue): Err[void]
     cstring"<postMessage>")
   let event = ctx.newMessageEvent(ctx.toAtom(satMessage),
     MessageEventInit(data: data))
-  discard ctx.dispatch(window, event)
+  window.fireEvent(event, window)
   ok()
 
 proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)

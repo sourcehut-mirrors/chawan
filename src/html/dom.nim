@@ -2851,10 +2851,13 @@ func findAutoFocus*(document: Document): Element =
       return child
   return nil
 
+proc fireEvent*(window: Window; event: Event; target: EventTarget) =
+  discard window.jsctx.dispatch(target, event)
+
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
   let event = newEvent(window.toAtom(name), target)
   event.isTrusted = true
-  discard window.jsctx.dispatch(target, event)
+  window.fireEvent(event, target)
 
 proc parseColor(element: Element; s: string): ARGBColor =
   let cval = parseComponentValue(s)
