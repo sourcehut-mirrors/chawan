@@ -1615,13 +1615,14 @@ proc selectFinish(opaque: RootRef; select: Select) =
     container.onclick(res, save = false)
   )
   container.select = nil
+  container.queueDraw()
 
 proc displaySelect(container: Container; selectResult: SelectResult) =
   container.select = newSelect(
     selectResult.options,
     selectResult.selected,
     max(container.acursorx - 1, 0),
-    max(container.acursory - 1, 0),
+    max(container.acursory - 1 - selectResult.selected, 0),
     container.width,
     container.height,
     selectFinish,

@@ -319,6 +319,7 @@ type
     relList {.jsget.}: DOMTokenList
 
   HTMLSelectElement* = ref object of FormAssociatedElement
+    userValidity: bool
     cachedOptions: HTMLOptionsCollection
 
   HTMLSpanElement* = ref object of HTMLElement
@@ -1081,7 +1082,7 @@ const ReflectTable0 = [
   #TODO can we add crossOrigin here?
   makes("usemap", "useMap", TAG_IMG),
   makeb("ismap", "isMap", TAG_IMG),
-  makeb("disabled", TAG_LINK),
+  makeb("disabled", TAG_LINK, TAG_OPTION, TAG_SELECT, TAG_OPTGROUP),
   # "super-global" attributes
   makes("class", "className", AllTagTypes),
   makef("onclick", AllTagTypes, "click"),
@@ -3175,6 +3176,25 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
       firstOption.invalidate(dtChecked)
 
 # <select>
+func displaySize(select: HTMLSelectElement): uint32 =
+  return select.attrul(satSize).get(1)
+
+proc setSelectedness(select: HTMLSelectElement) =
+  var firstOption: HTMLOptionElement = nil
+  var prevSelected: HTMLOptionElement = nil
+  if not select.attrb(satMultiple):
+    let displaySize = select.displaySize
+    for option in select.options:
+      if firstOption == nil:
+        firstOption = option
+      if option.selected:
+        if prevSelected != nil:
+          prevSelected.selected = false
+          prevSelected.invalidate(dtChecked)
+        prevSelected = option
+    if select.displaySize == 1 and prevSelected == nil and firstOption != nil:
+      firstOption.selected = true
+
 func jsForm(this: HTMLSelectElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
@@ -3327,6 +3347,7 @@ proc setValue(this: HTMLSelectElement; value: string) {.jsfset: "value".} =
       it.dirty = true
     else:
       it.selected = false
+    it.invalidate(dtChecked)
     it.invalidateCollections()
 
 proc showPicker(this: HTMLSelectElement): Err[DOMException] {.jsfunc.} =
@@ -4741,21 +4762,15 @@ proc resetElement*(element: Element) =
     input.invalidate()
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
-    var firstOption: HTMLOptionElement = nil
-    var prevSelected: HTMLOptionElement = nil
-    let multiple = select.attrb(satMultiple)
+    select.userValidity = false
     for option in select.options:
-      if firstOption == nil:
-        firstOption = option
-      option.selected = option.attrb(satSelected)
-      if option.selected:
-        if not multiple and prevSelected != nil:
-          prevSelected.selected = false
-          prevSelected.invalidate(dtChecked)
-        prevSelected = option
-    if not multiple and select.attrul(satSize).get(1) == 1 and
-        prevSelected == nil and firstOption != nil:
-      firstOption.selected = true
+      if option.attrb(satSelected):
+        option.selected = true
+      else:
+        option.selected = false
+      option.dirty = false
+      option.invalidate(dtChecked)
+    select.setSelectedness()
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
     textarea.value = textarea.childTextContent()
@@ -4815,7 +4830,7 @@ proc elementInsertionSteps(element: Element) =
           parent.parentElement of HTMLSelectElement:
         select = HTMLSelectElement(parent.parentElement)
       if select != nil:
-        select.resetElement()
+        select.setSelectedness()
   of TAG_LINK:
     let window = element.document.window
     if window != nil:

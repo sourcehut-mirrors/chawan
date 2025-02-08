@@ -1618,11 +1618,14 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
 proc select*(buffer: Buffer; selected: int): ClickResult {.proxy.} =
   if buffer.document.focus != nil and
       buffer.document.focus of HTMLSelectElement:
-    let select = HTMLSelectElement(buffer.document.focus)
-    select.setSelectedIndex(selected)
+    if selected != -1:
+      let select = HTMLSelectElement(buffer.document.focus)
+      let index = select.selectedIndex
+      if index != selected:
+        select.setSelectedIndex(selected)
+        if buffer.config.scripting != smFalse:
+          buffer.window.fireEvent(satChange, select)
     buffer.restoreFocus()
-    if buffer.config.scripting != smFalse:
-      buffer.window.fireEvent(satChange, select)
     buffer.maybeReshape()
   return ClickResult()
 

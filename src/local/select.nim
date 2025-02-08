@@ -129,6 +129,7 @@ proc gotoLine(select: Select; n: int) {.jsfunc.} =
   select.setCursorY(n + 1)
 
 proc cancel(select: Select) {.jsfunc.} =
+  select.selected = -1
   select.finishImpl(select.opaque, select)
 
 proc submit(select: Select) {.jsfunc.} =
