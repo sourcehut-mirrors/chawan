@@ -330,6 +330,8 @@ const ClickableElements = {
 }
 
 proc isClickable(element: Element): bool =
+  if element.hasEventListener(element.document.toAtom(satClick)):
+    return true
   if element of HTMLAnchorElement:
     return HTMLAnchorElement(element).reinitURL().isSome
   if element.isButton() and FormAssociatedElement(element).form == nil:
@@ -641,9 +643,9 @@ type
 
   ReadLineResult* = ref object
     t*: ReadLineType
+    hide*: bool
     prompt*: string
     value*: string
-    hide*: bool
 
   SelectResult* = ref object
     options*: seq[SelectOption]

@@ -12,6 +12,7 @@ import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/opt
+import utils/twtstr
 
 type
   EventPhase = enum
@@ -256,7 +257,7 @@ proc defaultPassiveValue(ctx: JSContext; ctype: CAtom;
 
 proc findEventListener(eventTarget: EventTarget; ctype: CAtom;
     callback: EventListenerCallback; capture: bool): int =
-  for i, it in eventTarget.eventListeners:
+  for i, it in eventTarget.eventListeners.mypairs:
     if it.ctype == ctype and it.callback == callback and it.capture == capture:
       return i
   return -1
@@ -357,6 +358,12 @@ proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
   let i = eventTarget.findEventListener(ctype, callback, capture)
   if i != -1:
     eventTarget.removeAnEventListener(ctx, i)
+
+proc hasEventListener*(eventTarget: EventTarget; ctype: CAtom): bool =
+  for it in eventTarget.eventListeners:
+    if it.ctype == ctype:
+      return true
+  return false
 
 proc dispatchEvent0(ctx: JSContext; event: Event; currentTarget: EventTarget;
     stop, canceled: var bool) =
