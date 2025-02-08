@@ -469,7 +469,7 @@ proc cleanup(pager: Pager) =
     pager.term.quit()
     let hist = pager.lineHist[lmLocation]
     if not hist.write(pager.config.external.historyFile):
-      if existsDir(pager.config.dir):
+      if dirExists(pager.config.dir):
         # History is enabled by default, so do not print the error
         # message if no config dir exists.
         pager.alert("failed to save history")
