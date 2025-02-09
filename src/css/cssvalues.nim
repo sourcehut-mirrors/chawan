@@ -538,7 +538,8 @@ const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const DisplayOuterInline* = {
-  DisplayInlineBlock, DisplayInlineTableWrapper, DisplayInlineFlex
+  DisplayInline, DisplayInlineTable, DisplayInlineBlock,
+  DisplayInlineTableWrapper, DisplayInlineFlex
 }
 const DisplayInnerFlex* = {DisplayFlex, DisplayInlineFlex}
 const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
@@ -722,6 +723,12 @@ func blockify*(display: CSSDisplay): CSSDisplay =
     return DisplayTable
   of DisplayInlineFlex:
     return DisplayFlex
+
+func toTableWrapper*(display: CSSDisplay): CSSDisplay =
+  if display == DisplayTable:
+    return DisplayTableWrapper
+  assert display == DisplayInlineTable
+  return DisplayInlineTableWrapper
 
 func bfcify*(overflow: CSSOverflow): CSSOverflow =
   if overflow == OverflowVisible:
@@ -1846,10 +1853,9 @@ func rootProperties*(): CSSValues =
 
 # Separate CSSValues of a table into those of the wrapper and the actual
 # table.
-func splitTable*(computed: CSSValues):
-    tuple[outerComputed, innnerComputed: CSSValues] =
-  var outerComputed = CSSValues()
-  var innerComputed = CSSValues()
+func splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
+  var outer = CSSValues()
+  var inner = CSSValues()
   const props = {
     cptPosition, cptFloat, cptMarginLeft, cptMarginRight, cptMarginTop,
     cptMarginBottom, cptTop, cptRight, cptBottom, cptLeft,
@@ -1863,13 +1869,13 @@ func splitTable*(computed: CSSValues):
   }
   for t in CSSPropertyType:
     if t in props:
-      outerComputed.copyFrom(computed, t)
-      innerComputed.setInitial(t)
+      outer.copyFrom(computed, t)
+      inner.setInitial(t)
     else:
-      innerComputed.copyFrom(computed, t)
-      outerComputed.setInitial(t)
-  outerComputed{"display"} = computed{"display"}
-  return (outerComputed, innerComputed)
+      inner.copyFrom(computed, t)
+      outer.setInitial(t)
+  outer{"display"} = computed{"display"}
+  return (outer, inner)
 
 when defined(debug):
   func `serializeEmpty`*(computed: CSSValues): string =

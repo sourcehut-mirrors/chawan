@@ -471,6 +471,7 @@ iterator optionChildren(styledNode: StyledNode): StyledNode {.inline.} =
     let cdata = newCharacterData(if option.selected: "*" else: " ")
     let computed = option.computed.inheritProperties()
     computed{"color"} = cssColor(ANSIColor(1)) # red
+    computed{"white-space"} = WhitespacePre
     yield initStyledAnon(option, @[initStyledText(option, cdata)], computed)
     yield initStyledText(option, "]")
   for it in option.childList:

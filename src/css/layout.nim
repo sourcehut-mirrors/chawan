@@ -768,8 +768,6 @@ proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
         f.box.state.offset.y += fstate.lbstate.size.h
       fstate.bctx.positionFloat(f.box, f.space, f.outerSize,
         f.marginOffset, f.parentBps.offset)
-    fstate.totalFloatWidth = max(fstate.totalFloatWidth,
-      fstate.lbstate.totalFloatWidth)
     # add line to fstate
     let y = fstate.offset.y
     if clear != ClearNone:
@@ -790,7 +788,6 @@ proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
     # this here to prevent double-padding later
     fstate.maxChildWidth = max(fstate.maxChildWidth,
       lineWidth - fstate.padding.left)
-    fstate.lbstate = fstate.initLineBoxState()
   else:
     # Two cases exist:
     # a) The float cannot be positioned, because `fstate.box' has not
@@ -813,7 +810,10 @@ proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
           f.parentBps.offset)
     else:
       fstate.bctx.unpositionedFloats.add(fstate.lbstate.unpositionedFloats)
-    fstate.lbstate.unpositionedFloats.setLen(0)
+  # Reinit in both cases.
+  fstate.totalFloatWidth = max(fstate.totalFloatWidth,
+    fstate.lbstate.totalFloatWidth)
+  fstate.lbstate = fstate.initLineBoxState()
 
 func shouldWrap(fstate: FlowState; w: LUnit;
     pcomputed: CSSValues): bool =
@@ -1700,7 +1700,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
     fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
     fstate.initLine(flag = ilfFloat)
     var newLine = true
-    if fstate.lbstate.size.w + outerSize.w < fstate.lbstate.availableWidth and
+    if fstate.lbstate.size.w + outerSize.w <= fstate.lbstate.availableWidth and
         (fstate.lbstate.unpositionedFloats.len == 0 or
         not fstate.lbstate.unpositionedFloats[^1].newLine):
       # We can still cram floats into the line.
@@ -2880,21 +2880,28 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
 # existing boxes becomes feasible.)
 
 type
-  BlockBuilderContext = object
+  BoxBuilderContext = object
     styledNode: StyledNode
-    outer: BlockBox
     lctx: LayoutContext
     anonRow: BlockBox
     anonTableWrapper: BlockBox
     quoteLevel: int
     listItemCounter: int
-    listItemReset: bool
-    parent: ptr BlockBuilderContext
-    # active group of inline boxes to be flushed
-    inlineGroup: seq[CSSBox]
 
   ParentType = enum
     ptBlock, ptInline
+
+# Forward declarations
+proc build(ctx: var BoxBuilderContext; box: BlockBox)
+proc buildInline(pctx: var BoxBuilderContext; styledNode: StyledNode):
+  InlineBox
+proc initBoxBuilderContext(styledNode: StyledNode; lctx: LayoutContext;
+  parent: ptr BoxBuilderContext): BoxBuilderContext
+proc flushTable(ctx: var BoxBuilderContext; parent: BlockBox)
+
+template initBoxBuilderContext(styledNode: StyledNode;
+    pctx: var BoxBuilderContext): BoxBuilderContext =
+  initBoxBuilderContext(styledNode, pctx.lctx, addr pctx)
 
 proc newMarkerBox(computed: CSSValues; listItemCounter: int): InlineBox =
   let computed = computed.inheritProperties()
@@ -2907,95 +2914,50 @@ proc newMarkerBox(computed: CSSValues; listItemCounter: int): InlineBox =
     text: newCharacterData(s)
   )
 
-# Forward declarations
-proc build(ctx: var BlockBuilderContext)
-proc buildInline(ctx: var BlockBuilderContext; styledNode: StyledNode):
-  InlineBox
-proc buildTableRowGroup(parent: var BlockBuilderContext;
-  styledNode: StyledNode): BlockBox
-proc buildTableRow(parent: var BlockBuilderContext; styledNode: StyledNode):
-  BlockBox
-proc buildTableCell(parent: var BlockBuilderContext; styledNode: StyledNode):
-  BlockBox
-proc buildTableCaption(parent: var BlockBuilderContext; styledNode: StyledNode):
-  BlockBox
-proc initBlockBuilderContext(styledNode: StyledNode; box: BlockBox;
-  lctx: LayoutContext; parent: ptr BlockBuilderContext): BlockBuilderContext
-proc flushTable(ctx: var BlockBuilderContext)
-
-proc flushInlineGroup(ctx: var BlockBuilderContext) =
-  if ctx.inlineGroup.len > 0:
-    ctx.flushTable()
-    let computed = ctx.outer.computed.inheritProperties()
-    computed{"display"} = DisplayBlock
-    ctx.outer.children.add(BlockBox(
-      computed: computed,
-      children: move(ctx.inlineGroup)
-    ))
-    ctx.inlineGroup = @[]
-
-# Don't build empty anonymous inline blocks between block boxes
-func canBuildAnonInline(ctx: BlockBuilderContext; computed: CSSValues;
-    str: string): bool =
-  return ctx.inlineGroup.len > 0 or computed.whitespacepre or
-    not str.onlyWhitespace()
-
-func toTableWrapper(display: CSSDisplay): CSSDisplay =
-  if display == DisplayTable:
-    return DisplayTableWrapper
-  assert display == DisplayInlineTable
-  return DisplayInlineTableWrapper
-
-proc createAnonTable(ctx: var BlockBuilderContext; parentType: ParentType):
+proc createAnonTable(ctx: var BoxBuilderContext; parentType: ParentType):
     BlockBox =
   if ctx.anonTableWrapper == nil:
-    let (outerComputed, innerComputed) = rootProperties().splitTable()
-    outerComputed{"display"} = case parentType
+    let (outer, inner) = rootProperties().splitTable()
+    outer{"display"} = case parentType
     of ptInline: DisplayInlineTableWrapper
     of ptBlock: DisplayTableWrapper
-    let innerTable = BlockBox(computed: innerComputed)
+    let innerTable = BlockBox(computed: inner)
     let box = BlockBox(
-      computed: outerComputed,
+      computed: outer,
       children: @[CSSBox(innerTable)]
     )
     ctx.anonTableWrapper = box
     return box
   return ctx.anonTableWrapper
 
-proc createAnonRow(ctx: var BlockBuilderContext): BlockBox =
+proc createAnonRow(ctx: var BoxBuilderContext; parent: CSSBox): BlockBox =
   if ctx.anonRow == nil:
-    let wrapperVals = ctx.outer.computed.inheritProperties()
+    let wrapperVals = parent.computed.inheritProperties()
     wrapperVals{"display"} = DisplayTableRow
     let box = BlockBox(computed: wrapperVals)
     ctx.anonRow = box
     return box
   return ctx.anonRow
 
-proc flushTableRow(ctx: var BlockBuilderContext) =
+proc flushTableRow(ctx: var BoxBuilderContext; parent: CSSBox;
+    parentType: ParentType) =
   if ctx.anonRow != nil:
-    if ctx.outer.computed{"display"} in ProperTableRowParent:
-      ctx.outer.children.add(ctx.anonRow)
+    let parentDisplay = parent.computed{"display"}
+    if parentDisplay in ProperTableRowParent:
+      BlockBox(parent).children.add(ctx.anonRow)
     else:
-      let anonTableWrapper = ctx.createAnonTable(ptBlock)
+      let anonTableWrapper = ctx.createAnonTable(parentType)
       BlockBox(anonTableWrapper.children[0]).children.add(ctx.anonRow)
     ctx.anonRow = nil
 
-proc flushTable(ctx: var BlockBuilderContext) =
-  ctx.flushTableRow()
+proc flushTable(ctx: var BoxBuilderContext; parent: BlockBox) =
+  ctx.flushTableRow(parent, ptBlock)
   if ctx.anonTableWrapper != nil:
-    ctx.outer.children.add(ctx.anonTableWrapper)
+    parent.children.add(ctx.anonTableWrapper)
     ctx.anonTableWrapper = nil
 
-proc flushInlineTableRow(ctx: var BlockBuilderContext) =
-  if ctx.anonRow != nil:
-    # There is no way an inline anonymous row could be a child of an inline
-    # table, since inline tables still act like blocks inside.
-    let anonTableWrapper = ctx.createAnonTable(ptInline)
-    BlockBox(anonTableWrapper.children[0]).children.add(ctx.anonRow)
-    ctx.anonRow = nil
-
-proc flushInlineTable(ctx: var BlockBuilderContext; parent: InlineBox) =
-  ctx.flushInlineTableRow()
+proc flushInlineTable(ctx: var BoxBuilderContext; parent: InlineBox) =
+  ctx.flushTableRow(parent, ptInline)
   if ctx.anonTableWrapper != nil:
     assert ctx.anonTableWrapper.computed{"display"} == DisplayInlineTableWrapper
     parent.children.add(InlineBox(
@@ -3005,22 +2967,12 @@ proc flushInlineTable(ctx: var BlockBuilderContext; parent: InlineBox) =
     ))
     ctx.anonTableWrapper = nil
 
-proc flushInherit(ctx: var BlockBuilderContext) =
-  if ctx.parent != nil:
-    if not ctx.listItemReset:
-      ctx.parent.listItemCounter = ctx.listItemCounter
-    ctx.parent.quoteLevel = ctx.quoteLevel
-
-proc flush(ctx: var BlockBuilderContext) =
-  ctx.flushInlineGroup()
-  ctx.flushTable()
-  ctx.flushInherit()
-
-proc buildSomeBlock(pctx: var BlockBuilderContext; styledNode: StyledNode):
+proc buildBlock(pctx: var BoxBuilderContext; styledNode: StyledNode):
     BlockBox =
   let box = BlockBox(computed: styledNode.computed, element: styledNode.element)
-  var ctx = initBlockBuilderContext(styledNode, box, pctx.lctx, addr pctx)
-  ctx.build()
+  var ctx = initBoxBuilderContext(styledNode, pctx)
+  ctx.build(box)
+  pctx.quoteLevel = ctx.quoteLevel
   return box
 
 proc buildInlineText(parent: StyledNode; text: CharacterData;
@@ -3040,18 +2992,17 @@ proc buildInlineText(parent: StyledNode; text: CharacterData): InlineBox =
     text: text
   )
 
-proc buildInlineBlock(ctx: var BlockBuilderContext; styledNode: StyledNode):
+proc buildInlineBlock(ctx: var BoxBuilderContext; styledNode: StyledNode):
     InlineBox =
   return InlineBox(
     t: ibtBox,
     computed: styledNode.computed.inheritProperties(),
     element: styledNode.element,
-    box: ctx.buildSomeBlock(styledNode)
+    box: ctx.buildBlock(styledNode)
   )
 
-proc buildListItem(ctx: var BlockBuilderContext; styledNode: StyledNode):
+proc buildListItem(ctx: var BoxBuilderContext; styledNode: StyledNode):
     BlockBox =
-  ctx.flush()
   inc ctx.listItemCounter
   let marker = newMarkerBox(styledNode.computed, ctx.listItemCounter)
   let position = styledNode.computed{"list-style-position"}
@@ -3059,11 +3010,10 @@ proc buildListItem(ctx: var BlockBuilderContext; styledNode: StyledNode):
     computed: styledNode.computed,
     element: styledNode.element
   )
-  var contentCtx = initBlockBuilderContext(styledNode, content, ctx.lctx,
-    addr ctx)
+  var contentCtx = initBoxBuilderContext(styledNode, ctx.lctx, addr ctx)
   case position
   of ListStylePositionOutside:
-    contentCtx.build()
+    contentCtx.build(content)
     content.computed = content.computed.copyProperties()
     content.computed{"display"} = DisplayBlock
     let markerComputed = marker.computed.copyProperties()
@@ -3077,32 +3027,28 @@ proc buildListItem(ctx: var BlockBuilderContext; styledNode: StyledNode):
       children: @[CSSBox(marker), CSSBox(content)]
     )
   of ListStylePositionInside:
-    contentCtx.inlineGroup.add(marker)
-    contentCtx.build()
+    content.children.add(marker)
+    contentCtx.build(content)
     return content
 
-proc buildFromElem(ctx: var BlockBuilderContext; styledNode: StyledNode;
-    parentType: ParentType): CSSBox =
+proc buildFromElem(ctx: var BoxBuilderContext; styledNode: StyledNode):
+    CSSBox =
   return case styledNode.computed{"display"}
-  of DisplayBlock, DisplayFlowRoot, DisplayFlex, DisplayTable:
-    ctx.buildSomeBlock(styledNode)
+  of DisplayBlock, DisplayFlowRoot, DisplayFlex, DisplayTable,
+      DisplayTableCaption, DisplayTableCell, RowGroupBox, DisplayTableRow:
+    ctx.buildBlock(styledNode)
   of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
     ctx.buildInlineBlock(styledNode)
   of DisplayListItem: ctx.buildListItem(styledNode)
   of DisplayInline: ctx.buildInline(styledNode)
-  of DisplayTableRow: ctx.buildTableRow(styledNode)
-  of RowGroupBox: ctx.buildTableRowGroup(styledNode)
-  of DisplayTableCell: ctx.buildTableCell(styledNode)
-  of DisplayTableCaption: ctx.buildTableCaption(styledNode)
-  of DisplayTableColumn: nil #TODO
-  of DisplayTableColumnGroup: nil #TODO
+  of DisplayTableColumn, DisplayTableColumnGroup: nil #TODO
   of DisplayNone: nil
   of DisplayTableWrapper, DisplayInlineTableWrapper:
     assert false
     nil
 
-proc buildReplacement(ctx: var BlockBuilderContext; child: StyledNode):
-    InlineBox =
+proc buildReplacement(ctx: var BoxBuilderContext; child: StyledNode;
+    computed: CSSValues): InlineBox =
   case child.content.t
   of ContentOpenQuote:
     let quotes = child.computed{"quotes"}
@@ -3113,7 +3059,7 @@ proc buildReplacement(ctx: var BlockBuilderContext; child: StyledNode):
     else:
       return
     let node = newCharacterData(s)
-    result = child.buildInlineText(node)
+    result = child.buildInlineText(node, computed)
     inc ctx.quoteLevel
   of ContentCloseQuote:
     if ctx.quoteLevel > 0:
@@ -3126,7 +3072,7 @@ proc buildReplacement(ctx: var BlockBuilderContext; child: StyledNode):
     else:
       return
     let text = newCharacterData(s)
-    return child.buildInlineText(text)
+    return child.buildInlineText(text, computed)
   of ContentNoOpenQuote:
     inc ctx.quoteLevel
     return nil
@@ -3137,53 +3083,49 @@ proc buildReplacement(ctx: var BlockBuilderContext; child: StyledNode):
   of ContentString:
     #TODO make CharacterData in cssvalues?
     let text = newCharacterData(child.content.s)
-    return child.buildInlineText(text)
+    return child.buildInlineText(text, computed)
   of ContentImage:
     if child.content.bmp != nil and child.content.bmp.cacheId != -1:
       return InlineBox(
         t: ibtBitmap,
-        computed: child.computed,
+        computed: computed,
         element: child.element,
         image: InlineImage(bmp: child.content.bmp)
       )
-    return child.buildInlineText(ctx.lctx.imgText)
+    return child.buildInlineText(ctx.lctx.imgText, computed)
   of ContentNewline:
     return InlineBox(
       t: ibtNewline,
-      computed: child.computed,
+      computed: computed,
       element: child.element
     )
 
-proc buildInline(ctx: var BlockBuilderContext; styledNode: StyledNode):
+proc buildInline(pctx: var BoxBuilderContext; styledNode: StyledNode):
     InlineBox =
   let ibox = InlineBox(
     t: ibtParent,
     computed: styledNode.computed,
     element: styledNode.element
   )
-  #TODO ugh
-  let anonTableWrapper = ctx.anonTableWrapper
-  let anonRow = ctx.anonRow
-  ctx.anonTableWrapper = nil
-  ctx.anonRow = nil
+  var ctx = initBoxBuilderContext(styledNode, pctx)
   for child in styledNode.children:
     case child.t
     of stElement:
-      let child = ctx.buildFromElem(child, ptInline)
+      let child = ctx.buildFromElem(child)
       if child != nil:
         case child.computed{"display"}
         of DisplayTableRow:
-          ctx.flushInlineTableRow()
+          ctx.flushTableRow(ibox, ptInline)
           let anonTableWrapper = ctx.createAnonTable(ptInline)
           BlockBox(anonTableWrapper.children[0]).children.add(child)
         of RowGroupBox:
-          ctx.flushInlineTableRow()
+          ctx.flushTableRow(ibox, ptInline)
           let anonTableWrapper = ctx.createAnonTable(ptInline)
           BlockBox(anonTableWrapper.children[0]).children.add(child)
         of DisplayTableCell:
-          ctx.createAnonRow().children.add(child)
+          ctx.createAnonRow(ibox).children.add(child)
         of DisplayTableCaption:
-          ctx.flushInlineTableRow()
+          ctx.flushTableRow(ibox, ptInline)
           let anonTableWrapper = ctx.createAnonTable(ptInline)
           # only add first caption
           if anonTableWrapper.children.len == 1:
@@ -3196,95 +3138,22 @@ proc buildInline(ctx: var BlockBuilderContext; styledNode: StyledNode):
       ibox.children.add(styledNode.buildInlineText(child.text))
     of stReplacement:
       ctx.flushInlineTable(ibox)
-      let child = ctx.buildReplacement(child)
+      let child = ctx.buildReplacement(child, styledNode.computed)
       if child != nil:
         ibox.children.add(child)
   ctx.flushInlineTable(ibox)
-  ctx.anonTableWrapper = anonTableWrapper
-  ctx.anonRow = anonRow
+  pctx.quoteLevel = ctx.quoteLevel
   return ibox
 
-proc initBlockBuilderContext(styledNode: StyledNode; box: BlockBox;
-    lctx: LayoutContext; parent: ptr BlockBuilderContext): BlockBuilderContext =
-  assert box.computed{"display"} != DisplayInline
-  result = BlockBuilderContext(
-    styledNode: styledNode,
-    outer: box,
-    lctx: lctx,
-    parent: parent
-  )
+proc initBoxBuilderContext(styledNode: StyledNode; lctx: LayoutContext;
+    parent: ptr BoxBuilderContext): BoxBuilderContext =
+  result = BoxBuilderContext(styledNode: styledNode, lctx: lctx)
   if parent != nil:
     result.listItemCounter = parent[].listItemCounter
     result.quoteLevel = parent[].quoteLevel
   for reset in styledNode.computed{"counter-reset"}:
     if reset.name == "list-item":
       result.listItemCounter = reset.num
-      result.listItemReset = true
-
-proc buildInnerBlock(ctx: var BlockBuilderContext) =
-  let inlineComputed = ctx.outer.computed.inheritProperties()
-  for child in ctx.styledNode.children:
-    case child.t
-    of stElement:
-      let child = ctx.buildFromElem(child, ptBlock)
-      if child != nil:
-        case child.computed{"display"}
-        of DisplayTableRow:
-          ctx.flushInlineGroup()
-          ctx.flushTableRow()
-          if ctx.outer.computed{"display"} in ProperTableRowParent:
-            ctx.outer.children.add(child)
-          else:
-            let anonTableWrapper = ctx.createAnonTable(ptBlock)
-            BlockBox(anonTableWrapper.children[0]).children.add(child)
-        of RowGroupBox:
-          ctx.flushInlineGroup()
-          ctx.flushTableRow()
-          if ctx.outer.computed{"display"} in DisplayInnerTable:
-            ctx.outer.children.add(child)
-          else:
-            ctx.flushTableRow()
-            let anonTableWrapper = ctx.createAnonTable(ptBlock)
-            BlockBox(anonTableWrapper.children[0]).children.add(child)
-        of DisplayTableCell:
-          if ctx.outer.computed{"display"} == DisplayTableRow:
-            ctx.flushInlineGroup()
-            ctx.outer.children.add(child)
-          else:
-            ctx.createAnonRow().children.add(child)
-        of DisplayTableCaption:
-          ctx.flushInlineGroup()
-          ctx.flushTableRow()
-          if ctx.outer.computed{"display"} in DisplayInnerTable:
-            ctx.outer.children.add(child)
-          else:
-            let anonTableWrapper = ctx.createAnonTable(ptBlock)
-            # only add first caption
-            if anonTableWrapper.children.len == 1:
-              anonTableWrapper.children.add(child)
-        elif child of InlineBox or ctx.inlineGroup.len > 0 and
-            ctx.outer.computed{"display"} notin DisplayInnerFlex:
-          ctx.inlineGroup.add(child)
-        else:
-          ctx.flush()
-          ctx.outer.children.add(child)
-    of stText:
-      let text = child.text
-      if ctx.canBuildAnonInline(ctx.outer.computed, text.data):
-        let child = ctx.styledNode.buildInlineText(text, inlineComputed)
-        ctx.inlineGroup.add(child)
-    of stReplacement:
-      let child = ctx.buildReplacement(child)
-      if child != nil:
-        ctx.inlineGroup.add(child)
-
-proc buildTableCell(parent: var BlockBuilderContext; styledNode: StyledNode):
-    BlockBox =
-  let box = BlockBox(element: styledNode.element, computed: styledNode.computed)
-  var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
-  ctx.buildInnerBlock()
-  ctx.flush()
-  return box
 
 proc buildTableRowChildWrappers(box: BlockBox) =
   var wrapperVals: CSSValues = nil
@@ -3307,15 +3176,6 @@ proc buildTableRowChildWrappers(box: BlockBox) =
         wrapper = nil
         children.add(child)
     box.children = move(children)
-
-proc buildTableRow(parent: var BlockBuilderContext; styledNode: StyledNode):
-    BlockBox =
-  let box = BlockBox(element: styledNode.element, computed: styledNode.computed)
-  var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
-  ctx.buildInnerBlock()
-  ctx.flush()
-  box.buildTableRowChildWrappers()
-  return box
 
 proc buildTableRowGroupChildWrappers(box: BlockBox) =
   var wrapperVals: CSSValues = nil
@@ -3343,23 +3203,6 @@ proc buildTableRowGroupChildWrappers(box: BlockBox) =
       wrapper.buildTableRowChildWrappers()
     box.children = move(children)
 
-proc buildTableRowGroup(parent: var BlockBuilderContext;
-    styledNode: StyledNode): BlockBox =
-  let box = BlockBox(element: styledNode.element, computed: styledNode.computed)
-  var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
-  ctx.buildInnerBlock()
-  ctx.flush()
-  box.buildTableRowGroupChildWrappers()
-  return box
-
-proc buildTableCaption(parent: var BlockBuilderContext; styledNode: StyledNode):
-    BlockBox =
-  let box = BlockBox(element: styledNode.element, computed: styledNode.computed)
-  var ctx = initBlockBuilderContext(styledNode, box, parent.lctx, addr parent)
-  ctx.buildInnerBlock()
-  ctx.flush()
-  return box
-
 proc buildTableChildWrappers(box: BlockBox; computed: CSSValues) =
   let innerTable = BlockBox(computed: computed, element: box.element)
   let wrapperVals = box.computed.inheritProperties()
@@ -3386,28 +3229,83 @@ proc buildTableChildWrappers(box: BlockBox; computed: CSSValues) =
   if caption != nil:
     box.children.add(caption)
 
-proc build(ctx: var BlockBuilderContext) =
-  ctx.buildInnerBlock()
-  ctx.flushInherit()
-  let display = ctx.outer.computed{"display"}
-  if display in DisplayInnerTable:
-    ctx.flushInlineGroup()
-    ctx.flushTable()
-    let (outerComputed, innerComputed) = ctx.outer.computed.splitTable()
-    ctx.outer.computed = outerComputed
-    outerComputed{"display"} = outerComputed{"display"}.toTableWrapper()
-    ctx.outer.buildTableChildWrappers(innerComputed)
+# Don't build empty anonymous inline blocks between block boxes
+func canBuildAnonInline(ctx: BoxBuilderContext; box: BlockBox; s: string):
+    bool =
+  return box.children.len > 0 and ctx.anonTableWrapper == nil and
+    ctx.anonRow == nil and
+    box.children[^1].computed{"display"} in DisplayOuterInline or
+    box.computed.whitespacepre or not s.onlyWhitespace()
+
+proc build(ctx: var BoxBuilderContext; box: BlockBox) =
+  let inlineComputed = box.computed.inheritProperties()
+  for child in ctx.styledNode.children:
+    case child.t
+    of stElement:
+      let child = ctx.buildFromElem(child)
+      if child != nil:
+        case child.computed{"display"}
+        of DisplayTableRow:
+          ctx.flushTableRow(box, ptBlock)
+          if box.computed{"display"} in ProperTableRowParent:
+            box.children.add(child)
+          else:
+            let anonTableWrapper = ctx.createAnonTable(ptBlock)
+            BlockBox(anonTableWrapper.children[0]).children.add(child)
+        of RowGroupBox:
+          ctx.flushTableRow(box, ptBlock)
+          if box.computed{"display"} in DisplayInnerTable:
+            box.children.add(child)
+          else:
+            let anonTableWrapper = ctx.createAnonTable(ptBlock)
+            BlockBox(anonTableWrapper.children[0]).children.add(child)
+        of DisplayTableCell:
+          if box.computed{"display"} == DisplayTableRow:
+            box.children.add(child)
+          else:
+            ctx.createAnonRow(box).children.add(child)
+        of DisplayTableCaption:
+          ctx.flushTableRow(box, ptBlock)
+          if box.computed{"display"} in DisplayInnerTable:
+            box.children.add(child)
+          else:
+            let anonTableWrapper = ctx.createAnonTable(ptBlock)
+            # only add first caption
+            if anonTableWrapper.children.len == 1:
+              anonTableWrapper.children.add(child)
+        else:
+          ctx.flushTable(box)
+          box.children.add(child)
+    of stText:
+      let text = child.text
+      if ctx.canBuildAnonInline(box, text.data):
+        ctx.flushTable(box)
+        let child = ctx.styledNode.buildInlineText(text, inlineComputed)
+        box.children.add(child)
+    of stReplacement:
+      let child = ctx.buildReplacement(child, inlineComputed)
+      if child != nil:
+        ctx.flushTable(box)
+        box.children.add(child)
+  ctx.flushTable(box)
+  case box.computed{"display"}
+  of DisplayInnerFlex:
+    let blockComputed = inlineComputed.copyProperties()
+    blockComputed{"display"} = DisplayBlock
+    for it in box.children.mitems:
+      if it.computed{"display"} in DisplayOuterInline:
+        it = BlockBox(computed: blockComputed, children: @[it])
+  of DisplayInnerTable:
+    let (outer, inner) = box.computed.splitTable()
+    box.computed = outer
+    outer{"display"} = outer{"display"}.toTableWrapper()
+    box.buildTableChildWrappers(inner)
+  of RowGroupBox:
+    box.buildTableRowGroupChildWrappers()
+  of DisplayTableRow:
+    box.buildTableRowChildWrappers()
   else:
-    # Flush anonymous tables here, to avoid setting inline layout with
-    # tables.
-    ctx.flushTable()
-    if display notin DisplayInnerFlex:
-      # Avoid unnecessary anonymous block boxes. This also helps set our
-      # layout to inline even if no inner anonymous block was built.
-      if ctx.outer.children.len == 0:
-        ctx.outer.children = move(ctx.inlineGroup)
-        ctx.inlineGroup = @[]
-    ctx.flushInlineGroup()
+    discard
 
 proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   let space = availableSpace(
@@ -3423,8 +3321,8 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
     luctx: LUContext()
   )
   let box = BlockBox(computed: root.computed, element: root.element)
-  var ctx = initBlockBuilderContext(root, box, lctx, nil)
-  ctx.build()
+  var ctx = initBoxBuilderContext(root, lctx, nil)
+  ctx.build(box)
   let sizes = lctx.resolveBlockSizes(space, box.computed)
   # the bottom margin is unused.
   lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)

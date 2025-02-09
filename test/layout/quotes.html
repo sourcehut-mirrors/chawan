@@ -1,3 +1,20 @@
+<!DOCTYPE html>
+<style>
+div { quotes: "1" "" "2" "" "3" "" "4" "" "5" "" "6" "" "7" "" }
+#inc::before { content: open-quote }
+#dec::before { content: close-quote }
+</style>
 <q style="quotes: none">test</q>
 <q style="quotes: '\\' '/'">test</q>
 <q style="quotes: '\\' '/' 'a' 'b'"><q>test</q></q>
+<div>
+<span>
+<div id=inc>inc</div>
+<div id=inc>inc</div>
+<div id=inc>inc</div>
+<div id=inc>inc</div>
+</span>
+<div id=inc>inc</div>
+<div id=inc>inc</div>
+</div>
+<div id=inc>inc</div>
