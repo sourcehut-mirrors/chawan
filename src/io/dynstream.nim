@@ -363,11 +363,11 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
     iov = IOVec(iov_base: unsafeAddr buffer[0], iov_len: csize_t(buffer.len))
   let sendAuxSize = sizeof(cint) * sendAux.len
   let controlLen = CMSG_SPACE(csize_t(sendAuxSize))
-  var cmsgBuf = if controlLen > 0: alloc(controlLen) else: nil
+  var cmsgBuf = newSeqUninitialized[uint8](controlLen)
   var hdr = Tmsghdr(
     msg_iov: addr iov,
     msg_iovlen: 1,
-    msg_control: cmsgBuf,
+    msg_control: if cmsgBuf.len > 0: addr cmsgBuf[0] else: nil,
     msg_controllen: SockLen(controlLen)
   )
   let cmsg = CMSG_FIRSTHDR(addr hdr)
@@ -377,8 +377,6 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
   if sendAux.len > 0:
     copyMem(CMSG_DATA(cmsg), unsafeAddr sendAux[0], sendAuxSize)
   let n = sendmsg(SocketHandle(s.fd), addr hdr, 0)
-  if cmsgBuf != nil:
-    dealloc(cmsgBuf)
   if n < 0:
     raisePosixIOError()
   if n == 0:
@@ -393,27 +391,21 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
     iov = IOVec(iov_base: addr buffer[0], iov_len: csize_t(buffer.len))
   let recvAuxSize = sizeof(cint) * recvAux.len
   let controlLen = CMSG_SPACE(csize_t(recvAuxSize))
-  var cmsgBuf = if controlLen > 0: alloc(controlLen) else: nil
+  var cmsgBuf = newSeqUninitialized[uint8](controlLen)
   var hdr = Tmsghdr(
     msg_iov: addr iov,
     msg_iovlen: 1,
-    msg_control: cmsgBuf,
+    msg_control: if cmsgBuf.len > 0: addr cmsgBuf[0] else: nil,
     msg_controllen: SockLen(controlLen)
   )
   let n = recvmsg(SocketHandle(s.fd), addr hdr, 0)
   if n < 0:
-    if cmsgBuf != nil:
-      dealloc(cmsgBuf)
     raisePosixIOError()
   if n < buffer.len:
-    if cmsgBuf != nil:
-      dealloc(cmsgBuf)
     raise newException(EOFError, "eof")
   if recvAux.len > 0:
     let cmsg = CMSG_FIRSTHDR(addr hdr)
     copyMem(addr recvAux[0], CMSG_DATA(cmsg), recvAuxSize)
-  if cmsgBuf != nil:
-    dealloc(cmsgBuf)
 
 proc sendFds*(s: SocketStream; fds: openArray[cint]) =
   discard s.sendMsg([], fds)
