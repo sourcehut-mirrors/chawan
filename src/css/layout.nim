@@ -2347,12 +2347,14 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
       let space = availableSpace(w = stretch(w), h = maxContent())
       tctx.lctx.layoutTableCell(cellw.box, space)
       w = max(w, cellw.box.state.size.w)
+      row.state.intr.w += cellw.box.state.intr.w
     let cell = cellw.box
     x += tctx.inlineSpacing
     if cell != nil:
       cell.state.offset.x += x
     x += tctx.inlineSpacing
     x += w
+    row.state.intr.w += tctx.inlineSpacing * 2
     n += cellw.colspan
     const HasNoBaseline = {
       VerticalAlignTop, VerticalAlignMiddle, VerticalAlignBottom
@@ -2466,7 +2468,7 @@ func needsRedistribution(tctx: TableContext; computed: CSSValues):
 
 proc redistributeWidth(tctx: var TableContext) =
   # Remove inline spacing from distributable width.
-  var W = tctx.space.w.u - tctx.cols.len * tctx.inlineSpacing * 2
+  var W = max(tctx.space.w.u - tctx.cols.len * tctx.inlineSpacing * 2, 0)
   var weight = 0f32
   var avail = tctx.calcUnspecifiedColIndices(W, weight)
   var redo = true
@@ -2520,6 +2522,7 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
     y += tctx.blockSpacing
     y += row.state.size.h
     table.state.size.w = max(row.state.size.w, table.state.size.w)
+    table.state.intr.w = max(row.state.intr.w, table.state.intr.w)
   # Note: we can't use applySizeConstraint here; in CSS, "height" on tables just
   # sets the minimum height.
   case tctx.space.h.t
