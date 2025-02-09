@@ -64,7 +64,7 @@ type
     lmUsername = "Username: "
     lmPassword = "Password: "
     lmCommand = "COMMAND: "
-    lmBuffer = "(BUFFER) "
+    lmBuffer
     lmSearchF = "/"
     lmSearchB = "?"
     lmISearchF = "/"
@@ -342,12 +342,12 @@ proc getHist(pager: Pager; mode: LineMode): History =
   return pager.lineHist[mode]
 
 proc setLineEdit(pager: Pager; mode: LineMode; current = ""; hide = false;
-    extraPrompt = "") =
+    prompt = $mode) =
   let hist = pager.getHist(mode)
   if pager.term.isatty() and pager.config.input.useMouse:
     pager.term.disableMouse()
-  pager.lineedit = readLine($mode & extraPrompt, current, pager.attrs.width,
-    hide, hist, pager.luctx)
+  pager.lineedit = readLine(prompt, current, pager.attrs.width, hide, hist,
+    pager.luctx)
   pager.linemode = mode
 
 # Reuse the line editor as an alert message viewer.
@@ -2988,8 +2988,7 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
     dec pager.numload
   of cetReadLine:
     if container == pager.container:
-      pager.setLineEdit(lmBuffer, event.value, hide = event.password,
-        extraPrompt = event.prompt)
+      pager.setLineEdit(lmBuffer, event.value, event.password, event.prompt)
   of cetReadArea:
     if container == pager.container:
       var s = event.tvalue
