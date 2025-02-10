@@ -767,7 +767,7 @@ proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
   buffer.tasks[cmd] = 0
 
 proc maybeReshape(buffer: Buffer) =
-  if buffer.document == nil and buffer.document.documentElement != nil:
+  if buffer.document == nil or buffer.document.documentElement == nil:
     return # not parsed yet, nothing to render
   if buffer.document.invalid:
     let root = initStyledElement(buffer.document.documentElement)
