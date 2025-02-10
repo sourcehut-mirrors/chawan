@@ -384,13 +384,13 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
   return n
 
 proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
-    recvAux: var openArray[cint]): int =
+    fdbuf: var openArray[cint]; numFds: out int): int =
   var dummy {.noinit.}: uint8
   var iov = IOVec(iov_base: addr dummy, iov_len: 1)
   if buffer.len > 0:
     iov = IOVec(iov_base: addr buffer[0], iov_len: csize_t(buffer.len))
-  let recvAuxSize = sizeof(cint) * recvAux.len
-  let controlLen = CMSG_SPACE(csize_t(recvAuxSize))
+  let fdbufSize = sizeof(cint) * fdbuf.len
+  let controlLen = CMSG_SPACE(csize_t(fdbufSize))
   var cmsgBuf = newSeqUninitialized[uint8](controlLen)
   var hdr = Tmsghdr(
     msg_iov: addr iov,
@@ -403,16 +403,28 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
     raisePosixIOError()
   if n < buffer.len:
     raise newException(EOFError, "eof")
-  if recvAux.len > 0:
-    let cmsg = CMSG_FIRSTHDR(addr hdr)
-    copyMem(addr recvAux[0], CMSG_DATA(cmsg), recvAuxSize)
+  numFds = 0
+  var cmsg = CMSG_FIRSTHDR(addr hdr)
+  while cmsg != nil:
+    let data = CMSG_DATA(cmsg)
+    let size = int(cmsg.cmsg_len) - (cast[int](data) - cast[int](cmsg))
+    if cmsg.cmsg_level == SOL_SOCKET and cmsg.cmsg_type == SCM_RIGHTS and
+        size mod sizeof(cint) == 0:
+      copyMem(addr fdbuf[numFds], data, size)
+      numFds += size div sizeof(cint)
+    else:
+      #TODO may want to add an OOB mechanism to signal malformed messages
+      assert false
+    cmsg = CMSG_NXTHDR(addr hdr, cmsg)
 
 proc sendFds*(s: SocketStream; fds: openArray[cint]) =
   discard s.sendMsg([], fds)
 
 proc recvFds*(s: SocketStream; fds: var openArray[cint]) =
   var dummy {.noinit.}: array[1, uint8]
-  discard s.recvMsg(dummy, fds)
+  var numFds: int
+  discard s.recvMsg(dummy, fds, numFds)
+  assert fds.len == numFds
 
 method seek*(s: SocketStream; off: int) =
   doAssert false
