@@ -498,16 +498,14 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         offset.x += box.state.size.w div 2
       grid.setText(state, s, offset, box.computed.toFormat(), box.element)
   if opacity != 0: #TODO this isn't right...
-    for child in box.children:
-      if child of InlineBox:
-        #TODO move this outside the InlineBox check?
-        if box.computed{"visibility"} == VisibilityVisible and
-            state.clipBox.start.x < state.clipBox.send.x and
-            state.clipBox.start.y < state.clipBox.send.y:
+    if state.clipBox.start.x < state.clipBox.send.x and
+        state.clipBox.start.y < state.clipBox.send.y:
+      for child in box.children:
+        if child of InlineBox:
           grid.renderInlineBox(state, InlineBox(child), offset,
             rgba(0, 0, 0, 0))
-      else:
-        grid.renderBlockBox(state, BlockBox(child), offset)
+        else:
+          grid.renderBlockBox(state, BlockBox(child), offset)
   if hasClipBox:
     discard state.clipBoxes.pop()
   if position != PositionStatic:
