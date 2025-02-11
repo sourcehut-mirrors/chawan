@@ -54,10 +54,13 @@ proc flush*(writer: var BufferedWriter) =
   # subtract the length field's size
   let len = [writer.bufLen - InitLen, writer.sendAux.len]
   copyMem(writer.buffer, unsafeAddr len[0], sizeof(len))
-  writer.stream.sendDataLoop(writer.buffer, writer.bufLen)
+  if not writer.stream.writeDataLoop(writer.buffer, writer.bufLen):
+    raise newException(EOFError, "end of file")
   if writer.sendAux.len > 0:
     writer.sendAux.reverse()
-    SocketStream(writer.stream).sendFds(writer.sendAux)
+    let n = SocketStream(writer.stream).sendMsg([0u8], writer.sendAux)
+    if n < 1:
+      raise newException(EOFError, "end of file")
   writer.bufLen = 0
 
 proc deinit*(writer: var BufferedWriter) =

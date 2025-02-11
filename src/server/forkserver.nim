@@ -200,7 +200,7 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
           let r = ctx.forkBuffer(r)
           ctx.stream.withPacketWriter w:
             w.swrite(r)
-    except EOFError, ErrorBrokenPipe:
+    except EOFError:
       # EOF
       break
   ctx.stream.sclose()

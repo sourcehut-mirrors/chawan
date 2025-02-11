@@ -187,7 +187,7 @@ proc getRandomValues(ctx: JSContext; crypto: var Crypto; array: JSValue):
       "TypeMismatchError")
   if view.abuf.len > 65536:
     return JS_ThrowDOMException(ctx, "Too large array", "QuotaExceededError")
-  crypto.urandom.recvDataLoop(view.abuf.p, int(view.abuf.len))
+  doAssert crypto.urandom.readDataLoop(view.abuf.p, int(view.abuf.len))
   return JS_DupValue(ctx, array)
 
 proc addNavigatorModule*(ctx: JSContext) =
@@ -360,7 +360,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JS_ThrowTypeError(ctx, "Failed to load module %s", cstring(moduleName))
     return nil
   response.resume()
-  let source = response.body.recvAll()
+  let source = response.body.readAll()
   response.close()
   return ctx.finishLoadModule(source, moduleName)
 

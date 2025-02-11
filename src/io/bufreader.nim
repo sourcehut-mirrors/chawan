@@ -33,15 +33,21 @@ proc initReader*(stream: DynStream; len, auxLen: int): BufferedReader =
     recvAux: newSeqUninitialized[cint](auxLen),
     bufIdx: 0
   )
-  stream.recvDataLoop(reader.buffer)
+  if not stream.readDataLoop(reader.buffer):
+    raise newException(EOFError, "end of file")
   if auxLen > 0:
     # bufwriter added ancillary data.
-    SocketStream(stream).recvFds(reader.recvAux)
+    var dummy {.noinit.}: array[1, uint8]
+    var numFds = 0
+    let n = SocketStream(stream).recvMsg(dummy, reader.recvAux, numFds)
+    if n < dummy.len or numFds < auxLen:
+      raise newException(EOFError, "end of file")
   return reader
 
 proc initPacketReader*(stream: DynStream): BufferedReader =
   var len {.noinit.}: array[2, int]
-  stream.recvDataLoop(addr len[0], sizeof(len))
+  if not stream.readDataLoop(addr len[0], sizeof(len)):
+    raise newException(EOFError, "end of file")
   return stream.initReader(len[0], len[1])
 
 template withPacketReader*(stream: DynStream; r, body: untyped) =

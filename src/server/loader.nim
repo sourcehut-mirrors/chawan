@@ -63,7 +63,7 @@ type
   CachedItem = ref object
     id: int
     refc: int
-    offset: int
+    offset: int64
     path: string
 
   LoaderBuffer = ref object
@@ -263,9 +263,9 @@ proc sendHeaders(handle: InputHandle; headers: Headers) =
     w.swrite(headers)
   handle.output.stream.setBlocking(blocking)
 
-proc sendData(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
+proc writeData(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   assert buffer.len - si > 0
-  return ps.sendData(addr buffer.page[si], buffer.len - si)
+  return ps.writeData(addr buffer.page[si], buffer.len - si)
 
 proc iclose(handle: InputHandle) =
   if handle.stream != nil:
@@ -274,16 +274,13 @@ proc iclose(handle: InputHandle) =
       assert handle.outputs.len == 1
       # not an ideal solution, but better than silently eating malformed
       # headers
-      try:
-        if handle.rstate == rsBeforeStatus:
-          handle.sendStatus(500)
-        if handle.rstate == rsBeforeHeaders:
-          handle.sendHeaders(newHeaders())
-        handle.output.stream.setBlocking(true)
-        const msg = "Error: malformed header in CGI script"
-        discard handle.output.stream.sendData(msg)
-      except ErrorBrokenPipe:
-        discard # receiver is dead
+      if handle.rstate == rsBeforeStatus:
+        handle.sendStatus(500)
+      if handle.rstate == rsBeforeHeaders:
+        handle.sendHeaders(newHeaders())
+      handle.output.stream.setBlocking(true)
+      const msg = "Error: malformed header in CGI script"
+      discard handle.output.stream.writeData(msg)
     handle.stream.sclose()
     handle.stream = nil
 
@@ -413,14 +410,17 @@ proc pushBuffer(ctx: var LoaderContext; output: OutputHandle;
       output.buffers.addLast(buffer)
   elif output.currentBuffer == nil:
     var n = si
-    try:
-      let m = output.stream.sendData(buffer, si)
+    let m = output.stream.writeData(buffer, si)
+    if m < 0:
+      let e = errno
+      if e == EAGAIN or e == EWOULDBLOCK:
+        discard
+      else:
+        assert e == EPIPE, $strerror(e)
+        return pbrUnregister
+    else:
       output.bytesSent += uint64(m)
       n += m
-    except ErrorAgain:
-      discard
-    except ErrorBrokenPipe:
-      return pbrUnregister
     if n < buffer.len:
       output.currentBuffer = buffer
       output.currentBufferIdx = n
@@ -441,26 +441,23 @@ proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
   let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
   if ps == nil:
     return false
-  try:
-    if output.currentBuffer != nil:
-      #TODO I suspect this is wrong... at least we should loop until n
-      # is 0 or -1 (exception).
-      let n = ps.sendData(output.currentBuffer, output.currentBufferIdx)
+  if output.currentBuffer != nil:
+    #TODO I suspect this is wrong... at least we should loop until n
+    # is 0 or -1.
+    let n = ps.writeData(output.currentBuffer, output.currentBufferIdx)
+    if n > 0:
       osent += uint64(n)
-      if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
-        ps.sclose()
-        return false
-    for buffer in output.buffers:
-      #TODO ditto
-      let n = ps.sendData(buffer)
+    if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
+      ps.sclose()
+      return false
+  for buffer in output.buffers:
+    #TODO ditto
+    let n = ps.writeData(buffer)
+    if n > 0:
       osent += uint64(n)
-      if unlikely(n < buffer.len):
-        ps.sclose()
-        return false
-  except ErrorBrokenPipe:
-    # ps is dead; give up.
-    ps.sclose()
-    return false
+    if unlikely(n < buffer.len):
+      ps.sclose()
+      return false
   if output.istreamAtEnd:
     ps.sclose()
   elif output.parent != nil:
@@ -505,8 +502,8 @@ proc openCachedItem(client: ClientHandle; id: int): (PosixStream, int) =
       client.cacheMap.del(n)
       return (nil, -1)
     assert item.offset != -1
-    ps.seek(item.offset)
-    return (ps, n)
+    if ps.seek(item.offset) >= 0:
+      return (ps, n)
   return (nil, -1)
 
 proc put(ctx: var LoaderContext; handle: LoaderHandle) =
@@ -655,7 +652,7 @@ proc parseHeaders(handle: InputHandle; buffer: LoaderBuffer): int =
       return handle.parseHeaders0(['\n'])
     let p = cast[ptr UncheckedArray[char]](addr buffer.page[0])
     return handle.parseHeaders0(p.toOpenArray(0, buffer.len - 1))
-  except ErrorBrokenPipe:
+  except EOFError:
     handle.parser = nil
     return -1
 
@@ -665,15 +662,16 @@ proc finishParse(handle: InputHandle) =
     let ps = newPosixStream(handle.cacheRef.path, O_RDONLY, 0)
     if ps != nil:
       var buffer {.noinit.}: array[4096, char]
-      var off = 0
+      var off = 0i64
       while true:
-        let n = ps.recvData(buffer)
-        if n == 0:
+        let n = ps.readData(buffer)
+        if n <= 0:
+          assert n == 0 or errno != EBADF
           break
         let pn = handle.parseHeaders0(buffer.toOpenArray(0, n - 1))
         if pn == -1:
           break
-        off += pn
+        off += int64(pn)
         if pn < n:
           handle.parser = nil
           break
@@ -693,40 +691,42 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
   let maxUnregs = handle.outputs.len
   while true:
     let buffer = newLoaderBuffer()
-    try:
-      let n = handle.stream.recvData(buffer.page)
-      if n == 0: # EOF
+    let n = handle.stream.readData(buffer.page)
+    if n < 0:
+      let e = errno
+      if e == EAGAIN or e == EWOULDBLOCK: # retry later
+        break
+      else: # sender died; stop streaming
+        assert e == EPIPE, $strerror(e)
+        return hrrBrokenPipe
+    if n == 0: # EOF
+      return hrrUnregister
+    buffer.len = n
+    var si = 0
+    if handle.parser != nil:
+      si = handle.parseHeaders(buffer)
+      if si == -1: # died while parsing headers; unregister
         return hrrUnregister
-      buffer.len = n
-      var si = 0
-      if handle.parser != nil:
-        si = handle.parseHeaders(buffer)
-        if si == -1: # died while parsing headers; unregister
-          return hrrUnregister
-        if si == n: # parsed the entire buffer as headers; skip output handling
-          continue
-      else:
-        handle.bytesSeen += uint64(n)
-        #TODO stop reading if Content-Length exceeded
-      for output in handle.outputs:
-        if output.dead:
-          # do not push to unregWrite candidates
-          continue
-        case ctx.pushBuffer(output, buffer, si)
-        of pbrUnregister:
-          output.dead = true
-          unregWrite.add(output)
-          inc unregs
-        of pbrDone: discard
-      if unregs == maxUnregs:
-        # early return: no more outputs to write to
-        break
-      if n < buffer.cap:
-        break
-    except ErrorAgain: # retry later
+      if si == n: # parsed the entire buffer as headers; skip output handling
+        continue
+    else:
+      handle.bytesSeen += uint64(n)
+      #TODO stop reading if Content-Length exceeded
+    for output in handle.outputs:
+      if output.dead:
+        # do not push to unregWrite candidates
+        continue
+      case ctx.pushBuffer(output, buffer, si)
+      of pbrUnregister:
+        output.dead = true
+        unregWrite.add(output)
+        inc unregs
+      of pbrDone: discard
+    if unregs == maxUnregs:
+      # early return: no more outputs to write to
       break
-    except ErrorBrokenPipe: # sender died; stop streaming
-      return hrrBrokenPipe
+    if n < buffer.cap:
+      break
   hrrDone
 
 # stream is a regular file, so we can't select on it.
@@ -1031,11 +1031,11 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
 proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
     handle: InputHandle; request: Request) =
   let id = parseInt32(request.url.pathname).get(-1)
-  let startFrom = parseInt32(request.url.search.substr(1)).get(0)
+  let startFrom = parseInt64(request.url.search.substr(1)).get(0)
   let (ps, n) = client.openCachedItem(id)
   if ps != nil:
     if startFrom != 0:
-      ps.seek(startFrom)
+      discard ps.seek(startFrom)
     handle.stream = ps
     if ps == nil:
       handle.rejectHandle(ceFileNotInCache)
@@ -1637,7 +1637,7 @@ proc readCommand(ctx: var LoaderContext; client: ClientHandle) =
       of lcResume:
         ctx.resume(stream, client, r)
       assert r.empty()
-  except ErrorBrokenPipe, EOFError:
+  except EOFError:
     # Receiving end died while reading, or sent less bytes than they
     # promised.  Give up.
     ctx.unregClient.add(client)
@@ -1658,18 +1658,20 @@ proc handleWrite(ctx: var LoaderContext; output: OutputHandle;
     unregWrite: var seq[OutputHandle]) =
   while output.currentBuffer != nil:
     let buffer = output.currentBuffer
-    try:
-      let n = output.stream.sendData(buffer, output.currentBufferIdx)
-      output.bytesSent += uint64(n)
-      output.currentBufferIdx += n
-      if output.currentBufferIdx < buffer.len:
+    let n = output.stream.writeData(buffer, output.currentBufferIdx)
+    if n < 0:
+      let e = errno
+      if e == EAGAIN or e == EWOULDBLOCK: # never mind
         break
-      output.bufferCleared() # swap out buffer
-    except ErrorAgain: # never mind
+      else: # receiver died; stop streaming
+        assert e == EPIPE, $strerror(e)
+        unregWrite.add(output)
+        break
+    output.bytesSent += uint64(n)
+    output.currentBufferIdx += n
+    if output.currentBufferIdx < buffer.len:
       break
-    except ErrorBrokenPipe: # receiver died; stop streaming
-      unregWrite.add(output)
-      break
+    output.bufferCleared() # swap out buffer
   if output.isEmpty:
     if output.istreamAtEnd:
       # after EOF, no need to send anything more here

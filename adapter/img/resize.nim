@@ -21,7 +21,7 @@ proc stbir_resize_uint8_srgb(input_pixels: ptr uint8;
 
 proc die(s: string) {.noreturn.} =
   let os = newPosixStream(STDOUT_FILENO)
-  os.sendDataLoop(s)
+  discard os.writeDataLoop(s)
   quit(1)
 
 proc main() =
@@ -48,7 +48,7 @@ proc main() =
         srcHeight = cint(h.get)
   let ps = newPosixStream(STDIN_FILENO)
   let os = newPosixStream(STDOUT_FILENO)
-  let src = ps.recvDataLoopOrMmap(int(srcWidth * srcHeight * 4))
+  let src = ps.readDataLoopOrMmap(int(srcWidth * srcHeight * 4))
   let dst = os.maybeMmapForSend(int(dstWidth * dstHeight * 4 + 1))
   if src == nil or dst == nil:
     die("Cha-Control: ConnectionError 1 failed to open i/o\n")
@@ -56,7 +56,7 @@ proc main() =
   enterNetworkSandbox()
   doAssert stbir_resize_uint8_srgb(addr src.p[0], srcWidth, srcHeight, 0,
     addr dst.p[1], dstWidth, dstHeight, 0, 4, 3, 0) != 0
-  os.sendDataLoop(dst)
+  discard os.writeDataLoop(dst)
   deallocMem(src)
   deallocMem(dst)
 

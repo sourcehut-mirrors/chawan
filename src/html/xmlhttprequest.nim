@@ -241,14 +241,11 @@ proc onReadXHR(response: Response) =
   while true:
     let olen = this.received.len
     this.received.setLen(olen + BufferSize)
-    try:
-      let n = response.body.recvData(addr this.received[olen], BufferSize)
-      this.received.setLen(olen + n)
-      if n == 0:
-        break
-    except ErrorAgain:
+    let n = response.body.readData(addr this.received[olen], BufferSize)
+    if n <= 0:
       this.received.setLen(olen)
       break
+    this.received.setLen(olen + n)
   if this.readyState == xhrsHeadersReceived:
     this.readyState = xhrsLoading
   window.fireEvent(satReadystatechange, this)
@@ -340,7 +337,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): JSResult[void]
         #TODO timeout
         response.resume()
         try:
-          this.received = response.body.recvAll()
+          this.received = response.body.readAll()
           #TODO report timing
           let len = max(response.getContentLength(), 0)
           response.opaque = XHROpaque(this: this, window: window, len: len)

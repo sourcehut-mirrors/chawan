@@ -245,9 +245,14 @@ when TermcapFound:
   func cap(term: Terminal; c: TermcapCap): lent string =
     return term.tc.caps[c]
 
+proc write0(term: Terminal; buffer: openArray[char]) =
+  if not term.ostream.writeDataLoop(buffer):
+    stderr.writeLine("Error writing to stdout")
+    quit(1)
+
 proc flush*(term: Terminal) =
   if term.obufLen > 0:
-    term.ostream.sendDataLoop(term.obuf.toOpenArray(0, term.obufLen - 1))
+    term.write0(term.obuf.toOpenArray(0, term.obufLen - 1))
     term.obufLen = 0
 
 proc write(term: Terminal; s: openArray[char]) =
@@ -255,7 +260,7 @@ proc write(term: Terminal; s: openArray[char]) =
     if s.len + term.obufLen > term.obuf.len:
       term.flush()
     if s.len > term.obuf.len:
-      term.ostream.sendDataLoop(s)
+      term.write0(s)
     else:
       copyMem(addr term.obuf[term.obufLen], unsafeAddr s[0], s.len)
       term.obufLen += s.len
@@ -263,7 +268,10 @@ proc write(term: Terminal; s: openArray[char]) =
 proc readChar*(term: Terminal): char =
   if term.ibufn == term.ibufLen:
     term.ibufn = 0
-    term.ibufLen = term.istream.recvData(term.ibuf)
+    term.ibufLen = term.istream.readData(term.ibuf)
+    if term.ibufLen == -1:
+      stderr.writeLine("Error reading from stdin")
+      quit(1)
   result = term.ibuf[term.ibufn]
   inc term.ibufn
 

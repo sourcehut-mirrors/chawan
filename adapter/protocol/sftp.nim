@@ -134,7 +134,7 @@ proc parseSSHConfig(f: File; host: string; pubKey, privKey: var string) =
   f.close()
 
 proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
-  os.sendDataLoop("Status: 401\n")
+  discard os.writeDataLoop("Status: 401\n")
   quit(0)
 
 proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: string) =
@@ -174,7 +174,8 @@ const LIBSSH2_SFTP_S_IFLNK = 0o120000
 proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
     handle: ptr LIBSSH2_SFTP_HANDLE; path: string) =
   let title = ("Index of " & path).mimeQuote()
-  os.sendDataLoop("Content-Type: text/x-dirlist;title=" & title & "\n\n")
+  discard os.writeDataLoop("Content-Type: text/x-dirlist;title=" & title &
+    "\n\n")
   var buffer {.noinit.}: array[512, char]
   var longentry {.noinit.}: array[512, char]
   while true:
@@ -224,15 +225,19 @@ proc readDir(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP;
         for i in 0 ..< n:
           buf &= buffer[i]
     buf &= '\n'
-    os.sendDataLoop(buf)
+    if not os.writeDataLoop(buf):
+      break
 
 proc readFile(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP; path: string) =
   let handle = sftpSession.libssh2_sftp_open(cstring(path), LIBSSH2_FXF_READ, 0)
   var attrs: LIBSSH2_SFTP_ATTRIBUTES
   if handle == nil or libssh2_sftp_fstat(handle, attrs) != 0:
-    os.sendDataLoop("Status: 404\nContent-Type: text/html\n\n<h1>Not found")
+    discard os.writeDataLoop("""Status: 404
+Content-Type: text/html
+
+<h1>Not found""")
     quit(0)
-  os.sendDataLoop("Content-Length: " & $attrs.filesize & "\n\n")
+  discard os.writeDataLoop("Content-Length: " & $attrs.filesize & "\n\n")
   # Apparently a huge buffer results in significant speed increases
   # compared to a small one.
   var buffer {.noinit.}: array[65536, char]
@@ -240,7 +245,8 @@ proc readFile(os: PosixStream; sftpSession: ptr LIBSSH2_SFTP; path: string) =
     let n = handle.libssh2_sftp_read(addr buffer[0], csize_t(buffer.len))
     if n <= 0:
       break
-    os.sendDataLoop(buffer.toOpenArray(0, n - 1))
+    if not os.writeDataLoop(buffer.toOpenArray(0, n - 1)):
+      break
 
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
@@ -262,7 +268,7 @@ proc main() =
   let handle = sftpSession.libssh2_sftp_opendir(cstring(path))
   if handle != nil:
     if path[^1] != '/':
-      os.sendDataLoop("Status: 301\nLocation: " & path & "/\n")
+      discard os.writeDataLoop("Status: 301\nLocation: " & path & "/\n")
       quit(0)
     os.readDir(sftpSession, handle, path)
   else:

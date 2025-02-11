@@ -18,7 +18,7 @@ proc die*(os: PosixStream; name: string; s = "") {.noreturn.} =
   if s != "":
     buf &= ' ' & s
   buf &= '\n'
-  os.sendDataLoop(buf)
+  discard os.writeDataLoop(buf)
   quit(1)
 
 proc openSocket(os: PosixStream; host, port, resFail, connFail: string;
@@ -63,9 +63,11 @@ proc authenticateSocks5(os, ps: PosixStream; buf: array[2, uint8];
     if user.len > 255 or pass.len > 255:
       os.die("InternalError", "username or password too long")
     let sbuf = "\x01" & char(user.len) & user & char(pass.len) & pass
-    ps.sendDataLoop(sbuf)
+    if not ps.writeDataLoop(sbuf):
+      os.die("ProxyAuthFail")
     var rbuf = array[2, uint8].default
-    ps.recvDataLoop(rbuf)
+    if not ps.readDataLoop(rbuf):
+      os.die("ProxyInvalidResponse", "failed to read proxy response")
     if rbuf[0] != 1:
       os.die("ProxyInvalidResponse", "wrong auth version")
     if rbuf[1] != 0:
@@ -85,33 +87,38 @@ proc sendSocks5Domain(os, ps: PosixStream; host, port: string;
     os.die("InternalError", "wrong port")
   let port = x.get
   let sbuf = "\x05\x01\x00" & dstaddr & char(port shr 8) & char(port and 0xFF)
-  ps.sendDataLoop(sbuf)
+  if not ps.writeDataLoop(sbuf):
+    os.die("ProxyRefusedToConnect")
   var rbuf = array[4, uint8].default
-  ps.recvDataLoop(rbuf)
-  if rbuf[0] != 5:
+  if not ps.readDataLoop(rbuf) or rbuf[0] != 5:
     os.die("ProxyInvalidResponse")
   if rbuf[1] != 0:
     os.die("ProxyRefusedToConnect")
   case rbuf[3]
   of 0x01:
     var ipv4 = array[4, uint8].default
-    ps.recvDataLoop(ipv4)
+    if not ps.readDataLoop(ipv4):
+      os.die("ProxyInvalidResponse")
     outIpv6 = false
   of 0x03:
     var len = [0u8]
-    ps.recvDataLoop(len)
+    if not ps.readDataLoop(len):
+      os.die("ProxyInvalidResponse")
     var domain = newString(int(len[0]))
-    ps.recvDataLoop(domain)
+    if not ps.readDataLoop(domain):
+      os.die("ProxyInvalidResponse")
     # we don't really know, so just assume it's ipv4.
     outIpv6 = false
   of 0x04:
     var ipv6 = array[16, uint8].default
-    ps.recvDataLoop(ipv6)
+    if not ps.readDataLoop(ipv6):
+      os.die("ProxyInvalidResponse")
     outIpv6 = true
   else:
     os.die("ProxyInvalidResponse")
   var bndport = array[2, uint8].default
-  ps.recvDataLoop(bndport)
+  if not ps.readDataLoop(bndport):
+    os.die("ProxyInvalidResponse")
 
 proc connectSocks5Socket(os: PosixStream; host, port, proxyHost, proxyPort,
     proxyUser, proxyPass: string; outIpv6: var bool): PosixStream =
@@ -120,9 +127,11 @@ proc connectSocks5Socket(os: PosixStream; host, port, proxyHost, proxyPort,
     "ProxyRefusedToConnect", dummy)
   const NoAuth = "\x05\x01\x00"
   const WithAuth = "\x05\x02\x00\x02"
-  ps.sendDataLoop(if proxyUser != "": NoAuth else: WithAuth)
+  if not ps.writeDataLoop(if proxyUser != "": NoAuth else: WithAuth):
+    os.die("ProxyRefusedToConnect")
   var buf = array[2, uint8].default
-  ps.recvDataLoop(buf)
+  if not ps.readDataLoop(buf):
+    os.die("ProxyInvalidResponse")
   os.authenticateSocks5(ps, buf, proxyUser, proxyPass)
   os.sendSocks5Domain(ps, host, port, outIpv6)
   return ps
@@ -138,13 +147,14 @@ proc connectHTTPSocket(os: PosixStream; host, port, proxyHost, proxyPort,
     let s = btoa(proxyUser & ' ' & proxyPass)
     buf &= "Proxy-Authorization: basic " & s & "\r\n"
   buf &= "\r\n"
-  ps.sendDataLoop(buf)
+  if not ps.writeDataLoop(buf):
+    os.die("ProxyRefusedToConnect")
   var res = ""
   var crlfState = 0
   while crlfState < 4:
     var buf = [char(0)]
-    let n = ps.recvData(buf)
-    if n == 0:
+    let n = ps.readData(buf)
+    if n <= 0:
       break
     let expected = ['\r', '\n'][crlfState mod 2]
     if buf[0] == expected:

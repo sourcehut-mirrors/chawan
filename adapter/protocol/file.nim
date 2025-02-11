@@ -68,10 +68,11 @@ proc loadFile(ps: PosixStream) =
   inc start
   let os = newPosixStream(STDOUT_FILENO)
   while true:
-    let n = ps.recvData(buffer.toOpenArray(start, BufferSize - 1))
-    if n == 0:
+    let n = ps.readData(buffer.toOpenArray(start, BufferSize - 1))
+    if n <= 0:
       break
-    os.sendDataLoop(buffer.toOpenArray(0, start + n - 1))
+    if not os.writeDataLoop(buffer.toOpenArray(0, start + n - 1)):
+      break
     start = 0
 
 proc main() =

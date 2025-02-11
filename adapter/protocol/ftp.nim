@@ -11,13 +11,14 @@ proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
     int32 =
   if cmd != "":
     if param == "":
-      ps.sendDataLoop(cmd & "\r\n")
+      ps.write(cmd & "\r\n")
     else:
-      ps.sendDataLoop(cmd & ' ' & param & "\r\n")
+      ps.write(cmd & ' ' & param & "\r\n")
   var buf = newString(4)
   outs = ""
+  if not ps.readDataLoop(buf):
+    os.die("InvalidResponse")
   try:
-    ps.recvDataLoop(buf)
     while (let c = ps.readChar(); c != '\n'):
       outs &= c
     let status = parseInt32(buf.toOpenArray(0, 2)).get(-1)
@@ -36,7 +37,8 @@ proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
     os.die("InvalidResponse")
 
 proc sdie(os: PosixStream; status: int; s, obuf: string) {.noreturn.} =
-  os.sendDataLoop("Status: " & $status & "\nContent-Type: text/html\n\n" & """
+  discard os.writeDataLoop("Status: " & $status &
+    "\nContent-Type: text/html\n\n" & """
 <h1>""" & s & """</h1>
 
 The server has returned the following message:
@@ -108,20 +110,22 @@ proc main() =
   var path = percentDecode(getEnvEmpty("MAPPED_URI_PATH", "/"))
   if os.sendCommand(ps, "CWD", path, obuf) == 250:
     if path[^1] != '/':
-      os.sendDataLoop("Status: 301\nLocation: " & path & "/\n")
+      discard os.writeDataLoop("Status: 301\nLocation: " & path & "/\n")
       quit(0)
     discard os.sendCommand(ps, "LIST", "", obuf)
     let title = ("Index of " & path).mimeQuote()
-    os.sendDataLoop("Content-Type: text/x-dirlist;title=" & title & "\n\n")
+    discard os.writeDataLoop("Content-Type: text/x-dirlist;title=" & title &
+      "\n\n")
   else:
     if os.sendCommand(ps, "RETR", path, obuf) == 550:
       os.sdie(404, "Not found", obuf)
-    os.sendDataLoop("\n")
+    discard os.writeDataLoop("\n")
   var buffer {.noinit.}: array[4096, uint8]
   while true:
-    let n = passive.recvData(buffer)
-    if n == 0:
+    let n = passive.readData(buffer)
+    if n <= 0:
       break
-    os.sendDataLoop(buffer.toOpenArray(0, n - 1))
+    if not os.writeDataLoop(buffer.toOpenArray(0, n - 1)):
+      break
 
 main()

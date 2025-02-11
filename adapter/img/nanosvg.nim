@@ -50,12 +50,11 @@ proc main() =
   of "decode":
     # Unfortunate as it is, I can't just mmap the string because nanosvg
     # wants to modify it.
-    var ss = newPosixStream(STDIN_FILENO).recvAll()
+    var ss = newPosixStream(STDIN_FILENO).readAll()
     let image = nsvgParse(cstring(ss), "px", 96)
     let width = cint(image.width)
     let height = cint(image.height)
-    os.sendDataLoop("Cha-Image-Dimensions: " & $width & 'x' & $height &
-      "\n\n")
+    os.write("Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n")
     for hdr in getEnv("REQUEST_HEADERS").split('\n'):
       let v = hdr.after(':').strip()
       if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":
@@ -63,10 +62,10 @@ proc main() =
     let r = nsvgCreateRasterizer()
     var obuf = newSeqUninitialized[uint8](width * height * 4)
     r.nsvgRasterize(image, 0, 0, 1, addr obuf[0], width, height, width * 4)
-    os.sendDataLoop(obuf)
+    discard os.writeDataLoop(obuf)
     r.nsvgDeleteRasterizer()
     image.nsvgDelete()
   else:
-    os.sendDataLoop("Cha-Control: ConnectionError 1 not supported\n")
+    os.write("Cha-Control: ConnectionError 1 not supported\n")
 
 main()

@@ -1,3 +1,4 @@
+import std/posix
 import std/strutils
 import std/tables
 
@@ -149,18 +150,16 @@ type BlobOpaque = ref object of RootObj
 proc onReadBlob(response: Response) =
   let opaque = BlobOpaque(response.opaque)
   while true:
-    try:
-      if opaque.len + BufferSize > opaque.size:
-        opaque.size *= 2
-        opaque.p = realloc(opaque.p, opaque.size)
-      let p = cast[ptr UncheckedArray[uint8]](opaque.p)
-      let diff = opaque.size - opaque.len
-      let n = response.body.recvData(addr p[opaque.len], diff)
-      opaque.len += n
-      if n == 0:
-        break
-    except ErrorAgain:
+    if opaque.len + BufferSize > opaque.size:
+      opaque.size *= 2
+      opaque.p = realloc(opaque.p, opaque.size)
+    let p = cast[ptr UncheckedArray[uint8]](opaque.p)
+    let diff = opaque.size - opaque.len
+    let n = response.body.readData(addr p[opaque.len], diff)
+    if n <= 0:
+      assert n != -1 or errno != EBADF
       break
+    opaque.len += n
 
 proc onFinishBlob(response: Response; success: bool) =
   let opaque = BlobOpaque(response.opaque)

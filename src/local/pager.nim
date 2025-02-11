@@ -968,9 +968,9 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
   ox = x
   return move(ls)
 
-proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
+proc drawBuffer*(pager: Pager; container: Container; ofile: File): bool =
   var format = Format()
-  container.readLines(proc(line: SimpleFlexibleLine) =
+  let res = container.readLines(proc(line: SimpleFlexibleLine) =
     var x = 0
     var w = -1
     var i = 0
@@ -997,6 +997,7 @@ proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
     ofile.writeLine(s)
   )
   ofile.flushFile()
+  res
 
 proc redraw(pager: Pager) {.jsfunc.} =
   pager.term.clearCanvas()
@@ -2431,10 +2432,13 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
     return false
   var buffer {.noinit.}: array[4096, uint8]
   while true:
-    let n = istream.recvData(buffer)
+    let n = istream.readData(buffer)
+    if n < 0:
+      return false
     if n == 0:
       break
-    ps.sendDataLoop(buffer.toOpenArray(0, n - 1))
+    if not ps.writeDataLoop(buffer.toOpenArray(0, n - 1)):
+      break
   ps.sclose()
   true
 
@@ -3020,8 +3024,7 @@ proc openMenu(pager: Pager; x = -1; y = -1) {.jsfunc.} =
   pager.menu = newSelect(options, -1, x, y, pager.bufWidth, pager.bufHeight,
     menuFinish, pager)
 
-proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
-    bool =
+proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
   case event.t
   of cetLoaded:
     dec pager.numload
@@ -3101,23 +3104,18 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent):
               pager.refreshAllowed.incl($url)
               pager.metaRefresh(container, n, url)
           )
-  return true
 
 proc handleEvents(pager: Pager; container: Container) =
   while (let event = container.popEvent(); event != nil):
-    if not pager.handleEvent0(container, event):
-      break
+    pager.handleEvent0(container, event)
 
 proc handleEvents(pager: Pager) =
   if pager.container != nil:
     pager.handleEvents(pager.container)
 
 proc handleEvent(pager: Pager; container: Container) =
-  try:
-    container.handleEvent()
+  if container.handleEvent():
     pager.handleEvents(container)
-  except IOError:
-    discard
 
 proc runCommand(pager: Pager) =
   if pager.scommand != "":
@@ -3152,30 +3150,27 @@ proc handleStderr(pager: Pager) =
   let estream = pager.forkserver.estream
   var hadlf = true
   while true:
-    try:
-      let n = estream.recvData(buffer)
-      if n == 0:
-        break
-      var i = 0
-      while i < n:
-        var j = n
-        var found = false
-        for k in i ..< n:
-          if buffer[k] == '\n':
-            j = k + 1
-            found = true
-            break
-        if hadlf:
-          pager.console.err.write(prefix)
-        if j - i > 0:
-          pager.console.err.write(buffer.toOpenArray(i, j - 1))
-        i = j
-        hadlf = found
-    except ErrorAgain:
+    let n = estream.readData(buffer)
+    if n <= 0:
       break
+    var i = 0
+    while i < n:
+      var j = n
+      var found = false
+      for k in i ..< n:
+        if buffer[k] == '\n':
+          j = k + 1
+          found = true
+          break
+      if hadlf:
+        pager.console.err.write(prefix)
+      if j - i > 0:
+        pager.console.err.write(buffer.toOpenArray(i, j - 1))
+      i = j
+      hadlf = found
   if not hadlf:
     pager.console.err.write('\n')
-  pager.console.err.sflush()
+  discard pager.console.err.flush()
 
 proc handleRead(pager: Pager; fd: int) =
   if pager.term.istream != nil and fd == pager.term.istream.fd:
@@ -3250,10 +3245,7 @@ proc setupSigwinch(pager: Pager): PosixStream =
   gwriter = writer
   onSignal SIGWINCH:
     discard sig
-    try:
-      gwriter.sendDataLoop([0u8])
-    except ErrorAgain:
-      discard
+    discard gwriter.writeData([0u8])
   let reader = newPosixStream(pipefd[0])
   reader.setCloseOnExec()
   reader.setBlocking(false)
@@ -3333,10 +3325,9 @@ proc headlessLoop(pager: Pager) =
 proc dumpBuffers(pager: Pager) =
   pager.headlessLoop()
   for container in pager.containers:
-    try:
-      pager.drawBuffer(container, stdout)
+    if pager.drawBuffer(container, stdout):
       pager.handleEvents(container)
-    except IOError:
+    else:
       pager.console.error("Error in buffer", $container.url)
       # check for errors
       pager.handleRead(pager.forkserver.estream.fd)

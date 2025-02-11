@@ -153,8 +153,6 @@ type State = object
   hasPrintingBuf: bool
   backspaceDecay: int
 
-const STDIN_FILENO = 0
-const STDOUT_FILENO = 1
 proc flushOutbuf(state: var State) =
   if state.outbufIdx > 0:
     discard write(STDOUT_FILENO, addr state.outbuf[0], state.outbufIdx)
@@ -394,16 +392,20 @@ proc main() =
   var buffer {.noinit.}: array[4096, char]
   var pollData = PollData()
   while true:
-    try:
-      let n = ps.recvData(buffer)
-      if n == 0:
+    let n = ps.readData(buffer)
+    if n < 0:
+      let e = errno
+      if e == EAGAIN or e == EWOULDBLOCK:
+        state.flushOutbuf()
+        pollData.register(ps.fd, POLLIN)
+        pollData.poll(-1)
+        pollData.unregister(ps.fd)
+        continue
+      else:
         break
-      state.processData(buffer.toOpenArray(0, n - 1))
-    except ErrorAgain:
-      state.flushOutbuf()
-      pollData.register(ps.fd, POLLIN)
-      pollData.poll(-1)
-      pollData.unregister(ps.fd)
+    if n == 0:
+      break
+    state.processData(buffer.toOpenArray(0, n - 1))
   if standalone:
     state.puts("</body>")
   state.flushOutbuf()

@@ -104,14 +104,13 @@ proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
       if ps != nil:
         var buf {.noinit.}: array[4096, uint8]
         while true:
-          let n = ps.recvData(buf)
-          if n == 0:
+          let n = ps.readData(buf)
+          if n <= 0:
             break
-          stream.sendDataLoop(addr buf[0], n)
-          if n < buf.len:
+          if not stream.writeDataLoop(buf.toOpenArray(0, n - 1)):
             break
     else:
-      stream.sendDataLoop(blob.buffer, blob.size)
+      discard stream.writeDataLoop(blob.buffer, blob.size)
     stream.write("\r\n")
 
 proc writeEnd*(stream: DynStream; boundary: string) =

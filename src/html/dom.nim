@@ -4307,12 +4307,10 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
   if ps == nil:
     return
   let cacheId = loader.addCacheFile(svgres.outputId, loader.clientPid)
-  try:
-    ps.sendDataLoop(s)
-  except IOError:
-    return
-  finally:
+  if not ps.writeDataLoop(s):
     ps.sclose()
+    return
+  ps.sclose()
   let request = newRequest(
     newURL("img-codec+svg+xml:decode").get,
     httpMethod = hmPost,
@@ -5279,7 +5277,7 @@ proc fetchClassicScript(element: HTMLScriptElement; url: URL;
     element.onComplete(ScriptResult(t: srtNull))
     return
   response.resume()
-  let s = response.body.recvAll()
+  let s = response.body.readAll()
   let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
   let source = s.decodeAll(cs)
   response.body.sclose()

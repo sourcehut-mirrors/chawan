@@ -317,7 +317,7 @@ proc readUserStylesheet(outs: var string; dir, file: string) =
     raise newException(ValueError, x.error)
   let ps = newPosixStream(x.get)
   if ps != nil:
-    outs &= ps.recvAll()
+    outs &= ps.readAll()
     ps.sclose()
 
 type ConfigParser = object
@@ -667,7 +667,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
   for p in paths:
     let ps = newPosixStream(p)
     if ps != nil:
-      let src = ps.recvAllOrMmap()
+      let src = ps.readAllOrMmap()
       x.parseMimeTypes(src.toOpenArray(), DefaultImages)
       deallocMem(src)
       ps.sclose()
@@ -680,7 +680,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
   for p in paths:
     let ps = newPosixStream(p)
     if ps != nil:
-      let src = ps.recvAllOrMmap()
+      let src = ps.readAllOrMmap()
       let res = x.parseMailcap(src.toOpenArray())
       deallocMem(src)
       ps.sclose()
@@ -699,7 +699,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
   x = AutoMailcap(path: path)
   let ps = newPosixStream(path)
   if ps != nil:
-    let src = ps.recvAllOrMmap()
+    let src = ps.readAllOrMmap()
     let res = x.entries.parseMailcap(src.toOpenArray())
     deallocMem(src)
     ps.sclose()
@@ -717,7 +717,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   for p in paths:
     let ps = newPosixStream(p)
     if ps != nil:
-      x.parseURIMethodMap(ps.recvAll())
+      x.parseURIMethodMap(ps.readAll())
       ps.sclose()
   x.append(DefaultURIMethodMap)
 
@@ -759,7 +759,7 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
         let ps = newPosixStream(s)
         if ps == nil:
           return err("include file not found: " & s)
-        ?config.parseConfig(dir, ps.recvAll(), warnings)
+        ?config.parseConfig(dir, ps.readAll(), warnings)
         ps.sclose()
     warnings.add(ctx.warnings)
     return ok()

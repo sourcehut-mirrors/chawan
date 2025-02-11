@@ -33,7 +33,7 @@ import utils/sandbox
 import utils/twtstr
 
 proc puts(os: PosixStream; s: string) =
-  os.sendDataLoop(s)
+  doAssert os.writeDataLoop(s)
 
 proc die(os: PosixStream; s: string) {.noreturn.} =
   os.puts(s)
@@ -466,7 +466,7 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
       outs &= '-'
       totalLen += uint32(outs.len - olen)
       if outs.len >= MaxBuffer:
-        os.sendDataLoop(outs)
+        os.puts(outs)
         outs.setLen(0)
     inc nrow
     activeChunks.setLen(0)
@@ -474,7 +474,7 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
     ymap.putU32BE(totalLen)
     ymap.putU32BE(uint32(ymap.len))
     outs &= ymap
-  os.sendDataLoop(outs)
+  os.puts(outs)
   # Note: we leave octree deallocation to the OS. See the header for details.
 
 proc parseDimensions(os: PosixStream; s: string): (int, int) =
@@ -536,7 +536,7 @@ proc main() =
     let n = width * height
     let L = n * 4
     let ps = newPosixStream(STDIN_FILENO)
-    let src = ps.recvDataLoopOrMmap(L)
+    let src = ps.readDataLoopOrMmap(L)
     if src == nil:
       os.die("Cha-Control: ConnectionError InternalError failed to read input")
     enterNetworkSandbox() # don't swallow stat

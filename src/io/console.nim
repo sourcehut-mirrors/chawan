@@ -82,4 +82,4 @@ proc addConsoleModule*(ctx: JSContext) =
 
 proc writeException*(ctx: JSContext; s: DynStream) =
   s.write(ctx.getExceptionMsg())
-  s.sflush()
+  discard s.flush()

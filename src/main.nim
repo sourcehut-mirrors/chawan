@@ -220,10 +220,10 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   when defined(debug):
     if (let ps = newPosixStream(getCurrentDir() / "res/config.toml");
         ps != nil):
-      ?config.parseConfig(getCurrentDir(), ps.recvAll(), warnings)
+      ?config.parseConfig(getCurrentDir(), ps.readAll(), warnings)
       ps.sclose()
   if ps != nil:
-    let src = ps.recvAllOrMmap()
+    let src = ps.readAllOrMmap()
     ?config.parseConfig(config.dir, src.toOpenArray(), warnings)
     deallocMem(src)
     ps.sclose()

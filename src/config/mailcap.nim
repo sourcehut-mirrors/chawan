@@ -342,11 +342,8 @@ proc saveEntry*(mailcap: var AutoMailcap; entry: MailcapEntry): bool =
   let ps = newPosixStream(mailcap.path, O_WRONLY or O_APPEND or O_CREAT, 0o644)
   if ps == nil:
     return false
-  try:
-    ps.sendDataLoop(s)
-  except IOError:
-    return false
-  finally:
-    ps.sclose()
-  mailcap.entries.add(entry)
-  return true
+  let res = ps.writeDataLoop(s)
+  if res:
+    mailcap.entries.add(entry)
+  ps.sclose()
+  return res

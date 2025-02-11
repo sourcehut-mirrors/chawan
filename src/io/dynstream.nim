@@ -5,90 +5,90 @@ type
     isend*: bool
     closed: bool
 
-# Semantics of this function are those of POSIX read(3): that is, it may return
-# a result that is lower than `len`, and that does not mean the stream is
-# finished.
-# isend must be set by implementations when the end of the stream is reached.
-# An exception should be raised if recvData is called with the 'isend' flag set
-# to true.
-method recvData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
+# Semantics of this function are those of POSIX read(3): that is, it
+# may return a result that is lower than `len`, and that does not mean
+# the stream is finished.
+# isend must be set by implementations when the end of the stream is
+# reached.
+# An exception should be raised if readData is called with the 'isend'
+# flag set to true. (TODO just assert...)
+method readData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
   doAssert false
 
 # See above, but with write(2)
-method sendData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
+method writeData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
   doAssert false
 
-method seek*(s: DynStream; off: int) {.base.} =
+method seek*(s: DynStream; off: int64): int64 {.base.} =
   doAssert false
 
 method sclose*(s: DynStream) {.base.} =
   doAssert false
 
-method sflush*(s: DynStream) {.base.} =
-  discard
+method flush*(s: DynStream): bool {.base.} =
+  true
 
-proc recvData*(s: DynStream; buffer: var openArray[uint8]): int {.inline.} =
-  return s.recvData(addr buffer[0], buffer.len)
+proc readData*(s: DynStream; buffer: var openArray[uint8]): int {.inline.} =
+  return s.readData(addr buffer[0], buffer.len)
 
-proc recvData*(s: DynStream; buffer: var openArray[char]): int {.inline.} =
-  return s.recvData(addr buffer[0], buffer.len)
+proc readData*(s: DynStream; buffer: var openArray[char]): int {.inline.} =
+  return s.readData(addr buffer[0], buffer.len)
 
-proc sendData*(s: DynStream; buffer: openArray[char]): int {.inline.} =
-  return s.sendData(unsafeAddr buffer[0], buffer.len)
+proc writeData*(s: DynStream; buffer: openArray[char]): int {.inline.} =
+  return s.writeData(unsafeAddr buffer[0], buffer.len)
 
-proc sendData*(s: DynStream; buffer: openArray[uint8]): int {.inline.} =
-  return s.sendData(unsafeAddr buffer[0], buffer.len)
+proc writeData*(s: DynStream; buffer: openArray[uint8]): int {.inline.} =
+  return s.writeData(unsafeAddr buffer[0], buffer.len)
 
-proc sendDataLoop*(s: DynStream; buffer: pointer; len: int) =
-  var n = 0
-  while true:
-    n += s.sendData(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
-    if n == len:
-      break
-
-proc sendDataLoop*(s: DynStream; buffer: openArray[uint8]) {.inline.} =
-  if buffer.len > 0:
-    s.sendDataLoop(unsafeAddr buffer[0], buffer.len)
-
-proc sendDataLoop*(s: DynStream; buffer: openArray[char]) {.inline.} =
-  if buffer.len > 0:
-    s.sendDataLoop(unsafeAddr buffer[0], buffer.len)
-
-proc write*(s: DynStream; buffer: openArray[char]) {.inline.} =
-  s.sendDataLoop(buffer)
-
-proc write*(s: DynStream; c: char) {.inline.} =
-  s.sendDataLoop(unsafeAddr c, 1)
-
-proc recvDataLoop*(s: DynStream; buffer: pointer; len: int) =
+proc readDataLoop*(s: DynStream; buffer: pointer; len: int): bool =
   var n = 0
   while n < len:
-    n += s.recvData(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
+    let m = s.readData(addr cast[ptr UncheckedArray[uint8]](buffer)[n], len - n)
+    if m <= 0:
+      return false
+    n += m
+  return true
 
-proc recvDataLoop*(s: DynStream; buffer: var openArray[uint8]) {.inline.} =
+proc readDataLoop*(s: DynStream; buffer: var openArray[uint8]): bool
+    {.inline.} =
+  if buffer.len == 0:
+    return true
+  return s.readDataLoop(addr buffer[0], buffer.len)
+
+proc readDataLoop*(s: DynStream; buffer: var openArray[char]): bool {.inline.} =
+  if buffer.len == 0:
+    return true
+  return s.readDataLoop(addr buffer[0], buffer.len)
+
+proc writeDataLoop*(s: DynStream; buffer: pointer; len: int): bool =
+  var n = 0
+  while n < len:
+    let p = addr cast[ptr UncheckedArray[uint8]](buffer)[n]
+    let m = s.writeData(p, len - n)
+    if m <= 0:
+      return false
+    n += m
+  return true
+
+proc writeDataLoop*(s: DynStream; buffer: openArray[uint8]): bool {.inline.} =
   if buffer.len > 0:
-    s.recvDataLoop(addr buffer[0], buffer.len)
+    return s.writeDataLoop(unsafeAddr buffer[0], buffer.len)
+  return true
 
-proc recvDataLoop*(s: DynStream; buffer: var openArray[char]) {.inline.} =
+proc writeDataLoop*(s: DynStream; buffer: openArray[char]): bool {.inline.} =
   if buffer.len > 0:
-    s.recvDataLoop(addr buffer[0], buffer.len)
+    return s.writeDataLoop(unsafeAddr buffer[0], buffer.len)
+  return true
 
-proc recvAll*(s: DynStream): string =
-  var buffer = newString(4096)
-  var idx = 0
-  while true:
-    let n = s.recvData(addr buffer[idx], buffer.len - idx)
-    if n == 0:
-      break
-    idx += n
-    if idx == buffer.len:
-      buffer.setLen(buffer.len + 4096)
-  buffer.setLen(idx)
-  return buffer
+proc write*(s: DynStream; buffer: openArray[char]) {.inline.} =
+  discard s.writeDataLoop(buffer)
+
+proc write*(s: DynStream; c: char) {.inline.} =
+  s.write([c])
 
 proc setEnd(s: DynStream) =
   if unlikely(s.isend):
-    raise newException(EOFError, "eof")
+    raise newException(EOFError, "end of file")
   s.isend = true
 
 type
@@ -96,36 +96,22 @@ type
     fd*: cint
     blocking*: bool
 
-  ErrorAgain* = object of IOError
-  ErrorBadFD* = object of IOError
-  ErrorFault* = object of IOError
-  ErrorInterrupted* = object of IOError
-  ErrorInvalid* = object of IOError
-  ErrorConnectionReset* = object of IOError
-  ErrorBrokenPipe* = object of IOError
+proc readAll*(s: PosixStream): string =
+  assert s.blocking
+  var buffer = newString(4096)
+  var idx = 0
+  while true:
+    let n = s.readData(addr buffer[idx], buffer.len - idx)
+    if n <= 0:
+      break
+    idx += n
+    if idx == buffer.len:
+      buffer.setLen(buffer.len + 4096)
+  buffer.setLen(idx)
+  return buffer
 
-proc raisePosixIOError() =
-  # In the nim stdlib, these are only constants on linux amd64, so we
-  # can't use a switch.
-  if errno == EAGAIN or errno == EWOULDBLOCK:
-    raise newException(ErrorAgain, "eagain")
-  elif errno == EBADF:
-    raise newException(ErrorBadFD, "bad fd")
-  elif errno == EFAULT:
-    raise newException(ErrorFault, "fault")
-  elif errno == EINVAL:
-    raise newException(ErrorInvalid, "invalid")
-  elif errno == ECONNRESET:
-    raise newException(ErrorConnectionReset, "connection reset by peer")
-  elif errno == EPIPE:
-    raise newException(ErrorBrokenPipe, "broken pipe")
-  else:
-    raise newException(IOError, $strerror(errno))
-
-method recvData*(s: PosixStream; buffer: pointer; len: int): int =
+method readData*(s: PosixStream; buffer: pointer; len: int): int =
   let n = read(s.fd, buffer, len)
-  if n < 0:
-    raisePosixIOError()
   if n == 0:
     s.setEnd()
   return n
@@ -134,11 +120,8 @@ proc readChar*(s: PosixStream): char =
   let n = read(s.fd, addr result, 1)
   assert n == 1
 
-method sendData*(s: PosixStream; buffer: pointer; len: int): int =
-  let n = write(s.fd, buffer, len)
-  if n < 0:
-    raisePosixIOError()
-  return n
+method writeData*(s: PosixStream; buffer: pointer; len: int): int =
+  return write(s.fd, buffer, len)
 
 method setBlocking*(s: PosixStream; blocking: bool) {.base.} =
   s.blocking = blocking
@@ -148,9 +131,8 @@ method setBlocking*(s: PosixStream; blocking: bool) {.base.} =
   else:
     discard fcntl(s.fd, F_SETFL, ofl or O_NONBLOCK)
 
-method seek*(s: PosixStream; off: int) =
-  if lseek(s.fd, Off(off), SEEK_SET) == -1:
-    raisePosixIOError()
+method seek*(s: PosixStream; off: int64): int64 =
+  return int64(lseek(s.fd, Off(off), SEEK_SET))
 
 method sclose*(s: PosixStream) =
   assert not s.closed
@@ -249,13 +231,14 @@ proc mmap*(ps: PosixStream): MaybeMappedMemory =
 
 # Read data of size "len", or mmap it if the stream is a file.
 # This may return nil.
-proc recvDataLoopOrMmap*(ps: PosixStream; ilen: int): MaybeMappedMemory =
+proc readDataLoopOrMmap*(ps: PosixStream; ilen: int): MaybeMappedMemory =
   var stats: Stat
   if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
     return ps.mmap(stats, ilen)
   let res = create(MaybeMappedMemoryObj)
   let p = cast[ptr UncheckedArray[uint8]](alloc(ilen))
-  ps.recvDataLoop(p, ilen)
+  if not ps.readDataLoop(p, ilen):
+    return nil
   res[] = MaybeMappedMemoryObj(
     t: mmmtAlloc,
     p0: p,
@@ -265,9 +248,9 @@ proc recvDataLoopOrMmap*(ps: PosixStream; ilen: int): MaybeMappedMemory =
   )
   return res
 
-# Try to mmap the file, and fall back to recvAll if it fails.
+# Try to mmap the file, and fall back to readAll if it fails.
 # This never returns nil.
-proc recvAllOrMmap*(ps: PosixStream): MaybeMappedMemory =
+proc readAllOrMmap*(ps: PosixStream): MaybeMappedMemory =
   var stats: Stat
   if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
     let res = ps.mmap(stats, -1)
@@ -275,7 +258,7 @@ proc recvAllOrMmap*(ps: PosixStream): MaybeMappedMemory =
       return res
   let res = create(MaybeMappedMemoryObj)
   let s = new(string)
-  s[] = ps.recvAll()
+  s[] = ps.readAll()
   GC_ref(s)
   let p = if s[].len > 0:
     cast[ptr UncheckedArray[uint8]](addr s[][0])
@@ -293,10 +276,9 @@ proc recvAllOrMmap*(ps: PosixStream): MaybeMappedMemory =
 proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
   var stats: Stat
   if fstat(0, stats) != -1 and S_ISREG(stats.st_mode):
-    try:
-      ps.seek(len - 1)
-      ps.sendDataLoop([char(0)])
-    except IOError:
+    if ps.seek(len - 1) < 0:
+      return nil
+    if not ps.writeDataLoop([char(0)]):
       return nil
     let p0 = mmap(nil, len, PROT_WRITE, MAP_SHARED, ps.fd, 0)
     if p0 == MAP_FAILED:
@@ -324,10 +306,11 @@ proc maybeMmapForSend*(ps: PosixStream; len: int): MaybeMappedMemory =
 template toOpenArray*(mem: MaybeMappedMemory): openArray[char] =
   cast[ptr UncheckedArray[char]](mem.p).toOpenArray(0, mem.len - 1)
 
-proc sendDataLoop*(ps: PosixStream; mem: MaybeMappedMemory) =
+proc writeDataLoop*(ps: PosixStream; mem: MaybeMappedMemory): bool =
   # only send if not mmapped; otherwise everything is already where it should be
   if mem.t != mmmtMmap:
-    ps.sendDataLoop(mem.toOpenArray())
+    return ps.writeDataLoop(mem.toOpenArray())
+  return true
 
 template dealloc*(mem: MaybeMappedMemory) {.error: "use deallocMem".} = discard
 
@@ -343,10 +326,7 @@ proc deallocMem*(mem: MaybeMappedMemory) =
 proc drain*(ps: PosixStream) =
   assert not ps.blocking
   var buffer {.noinit.}: array[4096, uint8]
-  try:
-    while true:
-      discard ps.recvData(addr buffer[0], buffer.len)
-  except ErrorAgain:
+  while ps.readData(buffer) > 0:
     discard
 
 proc setCloseOnExec*(ps: PosixStream) =
@@ -357,10 +337,8 @@ type SocketStream* = ref object of PosixStream
 
 proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
     sendAux: openArray[cint]): int =
-  var dummy = 0u8
-  var iov = IOVec(iov_base: addr dummy, iov_len: 1)
-  if buffer.len > 0:
-    iov = IOVec(iov_base: unsafeAddr buffer[0], iov_len: csize_t(buffer.len))
+  assert buffer.len > 0
+  var iov = IOVec(iov_base: unsafeAddr buffer[0], iov_len: csize_t(buffer.len))
   let sendAuxSize = sizeof(cint) * sendAux.len
   let controlLen = CMSG_SPACE(csize_t(sendAuxSize))
   var cmsgBuf = newSeqUninitialized[uint8](controlLen)
@@ -376,19 +354,12 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
   cmsg.cmsg_type = SCM_RIGHTS
   if sendAux.len > 0:
     copyMem(CMSG_DATA(cmsg), unsafeAddr sendAux[0], sendAuxSize)
-  let n = sendmsg(SocketHandle(s.fd), addr hdr, 0)
-  if n < 0:
-    raisePosixIOError()
-  if n == 0:
-    s.setEnd()
-  return n
+  return sendmsg(SocketHandle(s.fd), addr hdr, 0)
 
 proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
     fdbuf: var openArray[cint]; numFds: out int): int =
-  var dummy {.noinit.}: uint8
-  var iov = IOVec(iov_base: addr dummy, iov_len: 1)
-  if buffer.len > 0:
-    iov = IOVec(iov_base: addr buffer[0], iov_len: csize_t(buffer.len))
+  assert buffer.len > 0
+  var iov = IOVec(iov_base: addr buffer[0], iov_len: csize_t(buffer.len))
   let fdbufSize = sizeof(cint) * fdbuf.len
   let controlLen = CMSG_SPACE(csize_t(fdbufSize))
   var cmsgBuf = newSeqUninitialized[uint8](controlLen)
@@ -399,10 +370,8 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
     msg_controllen: SockLen(controlLen)
   )
   let n = recvmsg(SocketHandle(s.fd), addr hdr, 0)
-  if n < 0:
-    raisePosixIOError()
-  if n < buffer.len:
-    raise newException(EOFError, "eof")
+  if n <= 0:
+    return n
   numFds = 0
   var cmsg = CMSG_FIRSTHDR(addr hdr)
   while cmsg != nil:
@@ -413,20 +382,13 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
       copyMem(addr fdbuf[numFds], data, size)
       numFds += size div sizeof(cint)
     else:
-      #TODO may want to add an OOB mechanism to signal malformed messages
+      #TODO we could just return -2 here, but I'm not sure if it can
+      # ever happen
       assert false
     cmsg = CMSG_NXTHDR(addr hdr, cmsg)
+  return n
 
-proc sendFds*(s: SocketStream; fds: openArray[cint]) =
-  discard s.sendMsg([], fds)
-
-proc recvFds*(s: SocketStream; fds: var openArray[cint]) =
-  var dummy {.noinit.}: array[1, uint8]
-  var numFds: int
-  discard s.recvMsg(dummy, fds, numFds)
-  assert fds.len == numFds
-
-method seek*(s: SocketStream; off: int) =
+method seek*(s: SocketStream; off: int64): int64 =
   doAssert false
 
 proc newSocketStream*(fd: cint): SocketStream =
@@ -439,20 +401,20 @@ type
     registered: bool
     writeBuffer: string
 
-method recvData*(s: BufStream; buffer: pointer; len: int): int =
-  s.source.recvData(buffer, len)
+method readData*(s: BufStream; buffer: pointer; len: int): int =
+  s.source.readData(buffer, len)
 
-method sendData*(s: BufStream; buffer: pointer; len: int): int =
+method writeData*(s: BufStream; buffer: pointer; len: int): int =
   s.source.setBlocking(false)
   block nobuf:
     var n: int
     if not s.registered:
-      try:
-        n = s.source.sendData(buffer, len)
-        if n == len:
-          break nobuf
-      except ErrorAgain:
-        discard
+      n = s.source.writeData(buffer, len)
+      if n == len:
+        break nobuf
+      let e = errno
+      if n == -1 and e != EAGAIN and e != EWOULDBLOCK:
+        return -1
       s.registerFun(s.source.fd)
       s.registered = true
     let olen = s.writeBuffer.len
@@ -469,7 +431,9 @@ method sclose*(s: BufStream) =
 
 proc flushWrite*(s: BufStream): bool =
   s.source.setBlocking(false)
-  let n = s.source.sendData(s.writeBuffer)
+  let n = s.source.writeData(s.writeBuffer)
+  if n == -1:
+    return false
   s.source.setBlocking(true)
   if n == s.writeBuffer.len:
     s.writeBuffer = ""
@@ -478,9 +442,8 @@ proc flushWrite*(s: BufStream): bool =
   s.writeBuffer = s.writeBuffer.substr(n)
   return false
 
-method sflush*(s: BufStream) =
-  if s.writeBuffer.len > 0:
-    s.source.sendDataLoop(s.writeBuffer)
+method flush*(s: BufStream): bool =
+  return s.source.writeDataLoop(s.writeBuffer)
 
 proc newBufStream*(s: SocketStream; registerFun: proc(fd: int)): BufStream =
   return BufStream(source: s, registerFun: registerFun)
@@ -489,25 +452,28 @@ type
   DynFileStream* = ref object of DynStream
     file*: File
 
-method recvData*(s: DynFileStream; buffer: pointer; len: int): int =
+method readData*(s: DynFileStream; buffer: pointer; len: int): int =
   let n = s.file.readBuffer(buffer, len)
   if n == 0:
     s.setEnd()
   return n
 
-method sendData*(s: DynFileStream; buffer: pointer; len: int): int =
+method writeData*(s: DynFileStream; buffer: pointer; len: int): int =
   return s.file.writeBuffer(buffer, len)
 
-method seek*(s: DynFileStream; off: int) =
-  s.file.setFilePos(int64(off))
+method seek*(s: DynFileStream; off: int64): int64 =
+  s.file.setFilePos(off)
+  return off
 
 method sclose*(s: DynFileStream) =
   assert not s.closed
   s.file.close()
   s.closed = true
 
-method sflush*(s: DynFileStream) =
-  s.file.flushFile()
+proc c_fflush(f: File): cint {.importc: "fflush", header: "<stdio.h>".}
+
+method flush*(s: DynFileStream): bool =
+  return c_fflush(s.file) == 0
 
 proc newDynFileStream*(file: File): DynFileStream =
   return DynFileStream(file: file)

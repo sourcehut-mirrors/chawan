@@ -172,7 +172,7 @@ proc main() =
           die("Cha-Control: ConnectionError 1 wrong quality\n")
         quality = cint(q)
     let ps = newPosixStream(STDIN_FILENO)
-    let src = ps.recvDataLoopOrMmap(width * height * 4)
+    let src = ps.readDataLoopOrMmap(width * height * 4)
     if src == nil:
       die("Cha-Control: ConnectionError 1 failed to read input\n")
     enterNetworkSandbox() # don't swallow stat

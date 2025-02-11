@@ -1596,7 +1596,7 @@ proc readCanceled*(container: Container) =
 proc readSuccess*(container: Container; s: string; fd: cint = -1) =
   let p = container.iface.readSuccess(s, fd != -1)
   if fd != -1:
-    container.iface.stream.sflush()
+    doAssert container.iface.stream.flush()
     container.iface.stream.source.withPacketWriter w:
       w.sendAux.add(fd)
   p.then(proc(res: Request) =
@@ -1707,11 +1707,14 @@ func hoverImage(container: Container): string {.jsfget.} =
 func hoverCachedImage(container: Container): string {.jsfget.} =
   return container.hoverText[htCachedImage]
 
-proc handleCommand(container: Container) =
+# Returns false on I/O error.
+proc handleCommand(container: Container): bool =
   var packet {.noinit.}: array[3, int] # 0 len, 1 auxLen, 2 packetid
-  container.iface.stream.recvDataLoop(addr packet[0], sizeof(packet))
+  if not container.iface.stream.readDataLoop(addr packet[0], sizeof(packet)):
+    return false
   assert packet[1] == 0 # no ancillary data possible for BufStream
   container.iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
+  return true
 
 proc startLoad(container: Container) =
   if container.config.headless == hmFalse:
@@ -1755,7 +1758,9 @@ proc onReadLine(container: Container; w: Slice[int];
     return newResolvedPromise()
 
 # Synchronously read all lines in the buffer.
-proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =
+# Returns false on I/O error.
+proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)):
+    bool =
   # load succeded
   let w = 0 .. 23
   container.iface.getLines(w).then(proc(res: GetLinesResult): EmptyPromise =
@@ -1772,7 +1777,9 @@ proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =
   )
   while container.iface.hasPromises:
     # fulfill all promises
-    container.handleCommand()
+    if not container.handleCommand():
+      return false
+  return true
 
 proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor) =
   let bgcolor = container.bgcolor
@@ -1864,11 +1871,14 @@ func findCachedImage*(container: Container; image: PosBitmap;
       return it
   return nil
 
-proc handleEvent*(container: Container) =
-  container.handleCommand()
+# Returns false on I/O error.
+proc handleEvent*(container: Container): bool =
+  if not container.handleCommand():
+    return false
   if container.needslines:
     container.requestLines()
     container.needslines = false
+  return true
 
 proc addContainerModule*(ctx: JSContext) =
   ctx.registerType(Highlight)

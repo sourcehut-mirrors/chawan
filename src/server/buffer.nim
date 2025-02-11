@@ -919,8 +919,8 @@ proc rewind(buffer: Buffer; data: InputData; offset: int;
   buffer.loader.unset(data)
   data.stream.sclose()
   buffer.loader.put(InputData(stream: response.body))
-  data.stream.setBlocking(false)
-  buffer.pollData.register(data.stream.fd, POLLIN)
+  response.body.setBlocking(false)
+  buffer.pollData.register(response.body.fd, POLLIN)
   buffer.bytesRead = offset
   return true
 
@@ -1100,9 +1100,8 @@ proc onload(buffer: Buffer; data: InputData) =
   var n = 0
   while true:
     if not reprocess:
-      try:
-        n = data.stream.recvData(iq)
-      except ErrorAgain:
+      n = data.stream.readData(iq)
+      if n < 0:
         break
       buffer.bytesRead += n
     if n != 0:
@@ -1864,7 +1863,7 @@ proc handleRead(buffer: Buffer; fd: int): bool =
   if fd == buffer.pstream.fd:
     try:
       buffer.readCommand()
-    except ErrorConnectionReset, EOFError:
+    except EOFError:
       #eprint "EOF error", $buffer.url & "\nMESSAGE:",
       #       getCurrentExceptionMsg() & "\n",
       #       getStackTrace(getCurrentException())
@@ -1954,7 +1953,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     pstream: pstream,
     url: url,
     charsetStack: charsetStack,
-    cacheId: -1,
+    cacheId: cacheId,
     outputId: -1
   )
   buffer.window = newWindow(

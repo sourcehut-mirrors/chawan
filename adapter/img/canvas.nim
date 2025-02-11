@@ -288,7 +288,7 @@ proc main() =
         # re-coded, and handle that case in encoders... or implement on-demand
         # multi-frame output.)
         os.write("\n")
-        discard ps.recvAll()
+        discard ps.readAll()
         quit(0)
     var cmd: PaintCommand
     var width: int
@@ -352,9 +352,9 @@ proc main() =
               bmp.fillText(text, x, y, color, align)
             else:
               bmp.strokeText(text, x, y, color, align)
-      except EOFError, ErrorConnectionReset, ErrorBrokenPipe:
+      except EOFError:
         break
-    os.sendDataLoop(addr bmp.px[0], bmp.px.len * sizeof(bmp.px[0]))
+    discard os.writeDataLoop(addr bmp.px[0], bmp.px.len * sizeof(bmp.px[0]))
   else:
     os.write("Cha-Control: ConnectionError 1 not implemented\n")
     quit(1)

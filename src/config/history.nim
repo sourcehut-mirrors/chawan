@@ -67,7 +67,7 @@ proc parse(hist: History; iq: openArray[char]) =
 # Consumes `ps'.
 proc parse*(hist: History; ps: PosixStream; mtime: int64): bool =
   try:
-    let src = ps.recvAllOrMmap()
+    let src = ps.readAllOrMmap()
     hist.parse(src.toOpenArray())
     hist.mtime = mtime
     deallocMem(src)
@@ -82,26 +82,25 @@ proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
 
 # Consumes `ps'.
 proc write*(hist: History; ps: PosixStream; reverse = false): bool =
-  try:
-    var buf = ""
-    var entry = if reverse: hist.last else: hist.first
-    while entry != nil:
-      buf &= entry.s
-      buf &= '\n'
-      if buf.len >= 4096:
-        ps.sendDataLoop(buf)
-        buf = ""
-      if reverse:
-        entry = entry.prev
-      else:
-        entry = entry.next
-    if buf.len > 0:
-      ps.sendDataLoop(buf)
-  except IOError:
-    return false
-  finally:
-    ps.sclose()
-  return true
+  var buf = ""
+  var entry = if reverse: hist.last else: hist.first
+  var res = true
+  while entry != nil:
+    buf &= entry.s
+    buf &= '\n'
+    if buf.len >= 4096:
+      if not ps.writeDataLoop(buf):
+        res = false
+        break
+      buf = ""
+    if reverse:
+      entry = entry.prev
+    else:
+      entry = entry.next
+  if buf.len > 0 and not ps.writeDataLoop(buf):
+    res = false
+  ps.sclose()
+  return res
 
 proc write*(hist: History; file: string): bool =
   let ps = newPosixStream(file)
