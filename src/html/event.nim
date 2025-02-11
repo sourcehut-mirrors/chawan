@@ -54,7 +54,18 @@ type
     #TODO view
 
   MouseEvent* = ref object of UIEvent
-    #TODO
+    screenX {.jsget.}: int32
+    screenY {.jsget.}: int32
+    clientX {.jsget.}: int32
+    clientY {.jsget.}: int32
+    button {.jsget.}: int16
+    buttons {.jsget.}: uint16
+    ctrlKey {.jsget.}: bool
+    shiftKey {.jsget.}: bool
+    altKey {.jsget.}: bool
+    metaKey {.jsget.}: bool
+    relatedTarget {.jsget.}: EventTarget
+    #TODO and the others
 
   InputEvent* = ref object of UIEvent
     data {.jsget.}: Option[string]
@@ -225,6 +236,43 @@ type UIEventInit = object of EventInit
   #TODO how do I represent view T_T
   # probably needs to be an EventTarget and manually type checked
   detail {.jsdefault.}: int32
+
+type EventModifierInit = object of UIEventInit
+  ctrlKey {.jsdefault.}: bool
+  shiftKey {.jsdefault.}: bool
+  altKey {.jsdefault.}: bool
+  metaKey {.jsdefault.}: bool
+  #TODO and the others...
+
+# MouseEvent
+type MouseEventInit = object of EventModifierInit
+  screenX {.jsdefault.}: int32
+  screenY {.jsdefault.}: int32
+  clientX {.jsdefault.}: int32
+  clientY {.jsdefault.}: int32
+  button {.jsdefault.}: int32 #TODO int16?
+  buttons {.jsdefault.}: uint32 #TODO uint16?
+  relatedTarget {.jsdefault.}: Option[EventTarget]
+
+proc newMouseEvent(ctype: CAtom; eventInit = MouseEventInit()): MouseEvent
+    {.jsctor.} =
+  #TODO view
+  let event = MouseEvent(
+    ctype: ctype,
+    screenX: eventInit.screenX,
+    screenY: eventInit.screenY,
+    clientX: eventInit.clientX,
+    clientY: eventInit.clientY,
+    ctrlKey: eventInit.ctrlKey,
+    shiftKey: eventInit.shiftKey,
+    altKey: eventInit.altKey,
+    metaKey: eventInit.metaKey,
+    button: cast[int16](eventInit.button),
+    buttons: uint16(eventInit.buttons),
+    relatedTarget: eventInit.relatedTarget.get(nil)
+  )
+  event.innerEventCreationSteps(eventInit)
+  return event
 
 # InputEvent
 type InputEventInit* = object of UIEventInit
