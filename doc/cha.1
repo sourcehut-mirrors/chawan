@@ -6,100 +6,101 @@ cha - the Chawan text-mode browser
 [\fBoptions\fR]
 [\fIURL(s) \fRor \fIfile(s)\fR...]
 .SH DESCRIPTION
-Chawan is a text-mode browser. It can be used as a pager, or as a
-web/FTP/gopher/file browser, and understands HTML, CSS and JavaScript.
-Chawan can also be used to as a general text-based document viewer using
-\fBmailcap\fR(5) extensions.
+Chawan is a text-mode browser.  It can be used as a pager, or as a
+web/(S)FTP/gopher/gemini/file browser.  It understands HTML and CSS,
+and when enabled by the user, can also execute JavaScript and display
+images (on terminals supporting Sixel or the Kitty image protocol.)
 
-Like \fBw3m\fR(1), Chawan organizes files and pages into buffers. The user
-can freely open, duplicate, delete, and navigate between these.
+Chawan can also be used to as a general text-based document viewer as
+described in \fBcha-mailcap\fR(5), or as a hyperlinked man page viewer
+using \fBmancha\fR(1).
+
+This document describes the invocation of Chawan.  For a list of default
+keybindings, type \fIcha about:chawan\fR.  For a detailed description of
+the configuration format, see \fBcha-config\fR(5).
 
 .SH ARGUMENTS
-On invocation, Chawan looks through all arguments provided, and attempts
-to open each file supplied. If no files could successfully be opened, Chawan
-exits automatically.
+On invocation, Chawan attempts to open all URL/file arguments supplied.
+If no URLs could successfully be opened, Chawan exits automatically.
 
 Chawan may also be started without specifying a file, if a file is provided
-through a pipe. In this case, it may be useful to set the content type using
-e.g. \fB\-T \fItext/html\fR. (The \fB-\fR pseudo-file argument, commonly accepted
-by other commands to mean "pipe input", is simply ignored.)
+through a pipe. In this case, you can specify the content type using the
+\fB-T\fR switch.
 
 .SH OPTIONS
-Command line options generally have both short forms (e.g. \fB\-d\fR) and long
+All command line options have short forms (e.g. \fB\-d\fR) and long
 forms (e.g. \fB\-\-dump\fR).
 
-Long forms must be introduced with two dashes; when only a single dash is
-provided, each letter is parsed as a separate short form.
-.br
-(e.g. \fB\-abcd\fR is equivalent to \fB\-a \-b \-c \-d\fR, \fInot\fR
-\fB\-\-abcd\fR.)
+Long forms must be introduced with two dashes; when only a single
+dash is provided, each letter is parsed as a separate short form.
+
+In short form, it is also valid to provide values to arguments without a
+subsequent space.  For example, \fB\-obuffer.images=true\fR is valid.
 
 .TP
 \fB\-c, \-\-css\fR \fIstylesheet\fR
-Temporarily modify the user stylesheet. If a user stylesheet is already
+Temporarily modify the user stylesheet.  If a user stylesheet is already
 being used, the stylesheet given is appended to that.
 .TP
 \fB\-d, \-\-dump\fR
-Start in headless mode, and sequentially print the opened files to stdout.
-This option is implicitly enabled if stdout is not a tty (e.g. when piping
-\fIcha\fR output).
+Start in headless mode, and sequentially print the opened files to
+stdout.  This option is implicitly enabled if stdout is not a tty
+(e.g. when piping \fIcha\fR output).
 .TP
 \fB\-h, \-\-help\fR
 Print a short version of this page, then exit.
 .TP
 \fB\-o, \-\-opt\fR \fIconfig\fR
-Override configuration options. This accepts the configuration format is
-described in \fBcha-config\fR(5), so the passed string must be valid TOML.
+Pass temporary configuration options.  This accepts the configuration
+format described in \fBcha-config\fR(5), so the passed string must
+be valid TOML.
 
-The sole exception is quoting: to ease specifying string parameters,
-unrecognized bare keywords are converted to strings. So this works:
+To ease specifying string parameters, unrecognized bare keywords are
+converted to strings.  So this works:
 .br
-\fB--opt\fR display.color-mode=\fIeight-bit\fR. Note that symbols and words
-starting with a number must still be quoted.
+\fB--opt\fR display.color-mode=\fIeight-bit\fR.
+.br
+However, symbols and words starting with a number must still be quoted.
+(This means that you have to quote them twice to bypass shell quoting.)
 .TP
 \fB\-r, \-\-run\fR \fIscript\fR/\fIfile\fR
 Execute the string provided as a JS script, or execute the supplied JS
-file. If the file ends in .mjs, it is executed as an ES module.
-.br
-(To execute an inline script as a module, the following hack can be used:
-.br
-\fIcha \fB-r \fR'await new Promise(x => setTimeout(x, 1000));
-console.log("hello from ESM!"); //.mjs'
-.br
-In other words, we add a comment \fI//.mjs\fR to the end of the script.)
+file.  If the file ends in .mjs, it is executed as an ES module.
 .TP
 \fB\-v, \-\-version\fR
 Print information about the browser's version, then exit.
 .TP
 \fB\-C, \-\-config\fR \fIfile\fR
-Override the default configuration search path. Both absolute and relative
-paths are allowed.
+Override the default configuration search path.  Both absolute and
+relative paths are allowed.
 .TP
 \fB\-I, \-\-input-charset\fR \fIcharset\fR
-Override the character set of all input files. Useful when Chawan is
-incorrectly recognizing the input character set. (Note: if this happens
-often, consider changing the default input charset recognition list
-\fIencoding.document-charset\fR in the configuration.)
+Override the character set of all input files.  Useful when Chawan is
+incorrectly recognizing the input character set.
+
+(If this happens often, consider changing the default input charset
+recognition list \fIencoding.document-charset\fR in the configuration.)
 .TP
 \fB\-M, \-\-monochrome\fR
-Override the output character set. This is a shortcut for
-\fB\-o display.color\-mode=\fImonochrome\fR.
+Force monochrome output.  Formatting (bold/italic/etc.) is not affected.
+This is a shortcut for \fB\-o display.color\-mode=\fImonochrome\fR.
 .TP
 \fB\-O, \-\-output-charset\fR \fIcharset\fR
-Override the output character set. This is a shortcut for
+Override the output character set.  This is a shortcut for
 \fB\-o encoding.display\-charset=\fIcharset\fR.
 .TP
 \fB\-T, \-\-type\fR \fIcontent-type\fR
-Override the content type of all input files. Useful when the content type
-cannot be guessed from the file extension, or when reading a non-plaintext
-file from stdin.
+Override the content type of all input files.  Useful when the content
+type cannot be guessed from the file extension, or when reading a
+non-plaintext file from stdin.
 .TP
 \fB\-V, \-\-visual\fR
-Start in visual mode: the page specified in \fIstart.visual-home\fR is opened.
+When no files/URLs are passed, open the page specified in
+\fIstart.visual-home\fR instead of printing a help screen.
 .TP
-\fB\-\-\fP
-Interpret all following arguments as files. For example, if you have a file
-named \fI\-o\fR, you can open it using \fIcha \fB--\fR \fI-o\fR.
+\fB\-\-\fR
+Interpret all following arguments as files.  For example, you can open a
+file named \fI\-o\fR, using \fIcha \fB--\fR \fI-o\fR.
 
 .SH ENVIRONMENT
 Certain environment variables are read and used by Chawan.
@@ -110,20 +111,20 @@ When set, the default configuration stores temporary files and IPC
 sockets inside this directory (and \fI/tmp\fR otherwise.)
 .TP
 \fBHTTP_HOME\fR, \fBWWW_HOME\fR
-When set, Chawan starts in visual mode by default and opens the page specified
-by one of these variables. (\fBHTTP_HOME\fR takes precedence over
-\fBWWW_HOME\fR.)
+When set, Chawan starts in visual mode by default and opens the page
+specified by one of these variables.  \fBHTTP_HOME\fR takes precedence
+over \fBWWW_HOME\fR.
 .TP
 \fBCHA_DIR\fR
 When set, it switches the configuration directory to the path specified.
 .TP
 \fBCOLORTERM\fR
-When set to \fI24bit\fR or \fItruecolor\fR, and the \fIdisplay.color-mode\fR
-configuration option is set to \fIauto\fR, Chawan sets the color mode to
-true color.
+When set to \fI24bit\fR or \fItruecolor\fR, and the
+\fIdisplay.color-mode\fR configuration option is set to \fIauto\fR,
+Chawan sets the color mode to true color.
 .TP
 \fBTERM\fR
-Used by Chawan to determine which termcap entry to load. When not set,
+Used by Chawan to determine which termcap entry to load.  When not set,
 defaults to \fIdosansi\fR.
 .TP
 \fBEDITOR\fR
@@ -131,8 +132,7 @@ Used to determine the editor to use when the \fIexternal.editor\fR
 configuration option is not set.
 .TP
 \fBLINES, COLUMNS\fR
-When set, these are used as fallback values if window size detection
-fails.
+Used as fallback values when window size detection fails.
 
 .SH CONFIGURATION
 Configuration options are described in \fBcha-config\fR(5).

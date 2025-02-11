@@ -82,6 +82,9 @@ Currently implemented features are:
 
 ## Documentation
 
+Chawan's documentation is available as man pages (`man cha`) and as
+Markdown files.
+
 * build/compilation options: [doc/build.md](doc/build.md)
 * manpage: [doc/cha.1](doc/cha.1)
 * configuration options: [doc/config.md](doc/config.md)
@@ -92,6 +95,7 @@ Currently implemented features are:
 * local CGI: [doc/localcgi.md](doc/localcgi.md)
 * protocols: [doc/protocols.md](doc/protocols.md)
 * inline images: [doc/image.md](doc/image.md)
+* CSS: [doc/css.md](doc/css.md)
 * troubleshooting: [doc/troubleshooting.md](doc/troubleshooting.md)
 
 If you're interested in modifying the code:

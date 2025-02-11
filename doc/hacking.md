@@ -89,12 +89,6 @@ Exceptions don't work well with JS embedding; use Result/Opt/Option
 instead. Note that these kill RVO, so if you're returning large objects,
 either make them `ref`, or use manual RVO (return bool, set var param).
 
-#### "result" variable
-
-The implicit "result" variable is great until you need to change the
-procedure signature or manually inline a proc. Avoid it when possible,
-except in short accumulator-style procedures.
-
 #### Implicit initialization
 
 Avoid. The correct way to create an object:
@@ -143,17 +137,6 @@ proc foo(objs: openArray[SomeObj]) =
   for i, obj in objs.mpairs: # doesn't copy. obj is of type "var SomeObj".
     obj.i = i
 ```
-
-#### Generic parameters for JS values
-
-Monoucha (our QuickJS wrapper) supports these, but they bloat code size
-and compile times.
-
-Similarly, `varargs[string]` works, but is less efficient than
-`varargs[JSValue]`. (The former is first converted into a seq, while the
-latter is just a slice.)
-
-Use `?ctx.fromJS(val, res)` on JSValues manually instead.
 
 ### Fixing cyclic imports
 
