@@ -226,8 +226,8 @@ type
     WordBreakKeepAll = "keep-all"
 
   CSSListStyleType* = enum
-    ListStyleTypeNone = "none"
     ListStyleTypeDisc = "disc"
+    ListStyleTypeNone = "none"
     ListStyleTypeCircle = "circle"
     ListStyleTypeSquare = "square"
     ListStyleTypeDecimal = "decimal"
