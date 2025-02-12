@@ -191,7 +191,6 @@ type
     DisplayInlineFlex = "inline-flex"
     # internal, for layout
     DisplayTableWrapper = ""
-    DisplayInlineTableWrapper = ""
 
   CSSWhiteSpace* = enum
     WhitespaceNormal = "normal"
@@ -283,7 +282,7 @@ type
 
   CSSContentType* = enum
     ContentString, ContentOpenQuote, ContentCloseQuote, ContentNoOpenQuote,
-    ContentNoCloseQuote, ContentImage, ContentNewline
+    ContentNoCloseQuote
 
   CSSFloat* = enum
     FloatNone = "none"
@@ -354,11 +353,8 @@ type
     num*: float32
 
   CSSContent* = object
-    case t*: CSSContentType
-    of ContentImage:
-      bmp*: NetworkBitmap
-    else:
-      s*: string
+    t*: CSSContentType
+    s*: string
 
   # nil -> auto
   CSSQuotes* = ref object
@@ -538,11 +534,25 @@ const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const DisplayOuterInline* = {
-  DisplayInline, DisplayInlineTable, DisplayInlineBlock,
-  DisplayInlineTableWrapper, DisplayInlineFlex
+  DisplayInline, DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex
 }
 const DisplayInnerFlex* = {DisplayFlex, DisplayInlineFlex}
+const RowGroupBox* = {
+  # Note: caption is not included here
+  DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup
+}
+const ProperTableChild* = RowGroupBox + {
+  DisplayTableRow, DisplayTableColumn, DisplayTableColumnGroup
+}
+const DisplayInnerTable* = {DisplayTable, DisplayInlineTable}
+const DisplayInternalTable* = {
+  DisplayTableCell, DisplayTableRow, DisplayTableCaption
+} + RowGroupBox
+const ProperTableRowParent* = RowGroupBox + {DisplayTableWrapper} #TODO remove
 const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
+const WhiteSpacePreserve* = {
+  WhitespacePre, WhitespacePreLine, WhitespacePreWrap
+}
 
 # Forward declarations
 proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
@@ -586,8 +596,6 @@ func `$`*(bmp: NetworkBitmap): string =
   return "" #TODO
 
 func `$`*(content: CSSContent): string =
-  if content.t == ContentImage:
-    return $content.bmp
   if content.s != "":
     return "url(" & content.s & ")"
   return "none"
@@ -711,7 +719,7 @@ func inherited*(t: CSSPropertyType): bool =
 func blockify*(display: CSSDisplay): CSSDisplay =
   case display
   of DisplayBlock, DisplayTable, DisplayListItem, DisplayNone, DisplayFlowRoot,
-      DisplayFlex, DisplayTableWrapper, DisplayInlineTableWrapper:
+      DisplayFlex, DisplayTableWrapper:
      #TODO grid
     return display
   of DisplayInline, DisplayInlineBlock, DisplayTableRow,
@@ -723,12 +731,6 @@ func blockify*(display: CSSDisplay): CSSDisplay =
     return DisplayTable
   of DisplayInlineFlex:
     return DisplayFlex
-
-func toTableWrapper*(display: CSSDisplay): CSSDisplay =
-  if display == DisplayTable:
-    return DisplayTableWrapper
-  assert display == DisplayInlineTable
-  return DisplayInlineTableWrapper
 
 func bfcify*(overflow: CSSOverflow): CSSOverflow =
   if overflow == OverflowVisible:
@@ -1875,6 +1877,7 @@ func splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
       inner.copyFrom(computed, t)
       outer.setInitial(t)
   outer{"display"} = computed{"display"}
+  inner{"display"} = DisplayTableWrapper
   return (outer, inner)
 
 when defined(debug):
