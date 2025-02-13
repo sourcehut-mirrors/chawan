@@ -80,6 +80,8 @@ type
     cptBorderSpacing = "border-spacing"
     cptContent = "content"
     cptCounterReset = "counter-reset"
+    cptCounterIncrement = "counter-increment"
+    cptCounterSet = "counter-set"
     cptQuotes = "quotes"
 
 const LastBitPropType = cptWordBreak
@@ -152,7 +154,7 @@ type
     cvtLength2 = "length2"
     cvtBorderCollapse = "borderCollapse"
     cvtQuotes = "quotes"
-    cvtCounterReset = "counterReset"
+    cvtCounterSet = "counterSet"
     cvtImage = "image"
     cvtFloat = "float"
     cvtVisibility = "visibility"
@@ -282,8 +284,12 @@ type
     BorderCollapseCollapse = "collapse"
 
   CSSContentType* = enum
-    ContentString, ContentOpenQuote, ContentCloseQuote, ContentNoOpenQuote,
-    ContentNoCloseQuote
+    ContentString = "-cha-string"
+    ContentCounter = "-cha-counter"
+    ContentOpenQuote = "open-quote"
+    ContentCloseQuote = "close-quote"
+    ContentNoOpenQuote = "no-open-quote"
+    ContentNoCloseQuote = "no-close-quote"
 
   CSSFloat* = enum
     FloatNone = "none"
@@ -354,16 +360,21 @@ type
     num*: float32
 
   CSSContent* = object
-    t*: CSSContentType
-    s*: RefString
+    case t*: CSSContentType
+    of ContentString:
+      s*: RefString
+    of ContentCounter:
+      counter*: CAtom
+    else:
+      discard
 
   # nil -> auto
   CSSQuotes* = ref object
     qs*: seq[tuple[s, e: RefString]]
 
-  CSSCounterReset* = object
-    name*: string
-    num*: int
+  CSSCounterSet* = object
+    name*: CAtom
+    num*: int32
 
   CSSLength2* = ref object
     a*: CSSLength
@@ -408,8 +419,8 @@ type
       quotes*: CSSQuotes
     of cvtLength2:
       length2*: CSSLength2
-    of cvtCounterReset:
-      counterReset*: seq[CSSCounterReset]
+    of cvtCounterSet:
+      counterSet*: seq[CSSCounterSet]
     of cvtImage:
       image*: NetworkBitmap
     else: discard
@@ -520,7 +531,9 @@ const ValueTypes = [
   cptBackgroundImage: cvtImage,
   cptBorderSpacing: cvtLength2,
   cptContent: cvtContent,
-  cptCounterReset: cvtCounterReset,
+  cptCounterReset: cvtCounterSet,
+  cptCounterIncrement: cvtCounterSet,
+  cptCounterSet: cvtCounterSet,
   cptQuotes: cvtQuotes,
 ]
 
@@ -597,9 +610,14 @@ func `$`*(bmp: NetworkBitmap): string =
   return "" #TODO
 
 func `$`*(content: CSSContent): string =
-  if content.s != "":
+  case content.t
+  of ContentString:
     return content.s
-  return "none"
+  of ContentCounter:
+    return content.counter.toStr()
+  of ContentOpenQuote, ContentCloseQuote, ContentNoOpenQuote,
+      ContentNoCloseQuote:
+    return $content.t
 
 func `$`(quotes: CSSQuotes): string =
   if quotes == nil:
@@ -608,10 +626,10 @@ func `$`(quotes: CSSQuotes): string =
   for (s, e) in quotes.qs:
     result &= "'" & ($s).cssEscape() & "' '" & ($e).cssEscape() & "'"
 
-func `$`(counterreset: seq[CSSCounterReset]): string =
+func `$`(counterreset: seq[CSSCounterSet]): string =
   result = ""
   for it in counterreset:
-    result &= it.name
+    result &= it.name.toStr()
     result &= ' '
     result &= $it.num
 
@@ -629,7 +647,7 @@ func serialize(val: CSSValue): string =
         result &= ' '
       result &= $x
   of cvtQuotes: return $val.quotes
-  of cvtCounterReset: return $val.counterReset
+  of cvtCounterSet: return $val.counterSet
   else: assert false
 
 func serialize(val: CSSValueWord; t: CSSValueType): string =
@@ -671,7 +689,7 @@ func serialize*(computed: CSSValues; p: CSSPropertyType): string =
   of cprtWord: return computed.words[p].serialize(valueType(p))
   of cprtObject: return computed.objs[p].serialize()
 
-func `$`*(computed: CSSValues): string =
+proc `$`*(computed: CSSValues): string =
   result = ""
   for p in CSSPropertyType:
     result &= $p & ':'
@@ -864,7 +882,7 @@ func japaneseNumber(i: int): string =
     s &= ss[j]
   return s
 
-func listMarker*(t: CSSListStyleType; i: int): string =
+func listMarker0(t: CSSListStyleType; i: int): string =
   case t
   of ListStyleTypeNone: return ""
   of ListStyleTypeDisc: return "• " # U+2022
@@ -886,6 +904,9 @@ func listMarker*(t: CSSListStyleType; i: int): string =
     return numToFixed(i, EarthlyBranchMap) & "、"
   of ListStyleTypeCjkHeavenlyStem: return numToFixed(i, HeavenlyStemMap) & "、"
   of ListStyleTypeJapaneseInformal: return japaneseNumber(i) & "、"
+
+func listMarker*(t: CSSListStyleType; i: int): RefString =
+  return newRefString(listMarker0(t, i))
 
 func quoteStart*(level: int): string =
   if level == 0:
@@ -1270,8 +1291,8 @@ func parseQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
   else:
     return err()
 
-func cssContent(cvals: openArray[CSSComponentValue]): seq[CSSContent] =
-  result = @[]
+proc parseContent(cvals: openArray[CSSComponentValue]): Opt[seq[CSSContent]] =
+  var res: seq[CSSContent] = @[]
   for cval in cvals:
     if cval of CSSToken:
       let tok = CSSToken(cval)
@@ -1280,16 +1301,30 @@ func cssContent(cvals: openArray[CSSComponentValue]): seq[CSSContent] =
         if tok.value == "/":
           break
         elif tok.value.equalsIgnoreCase("open-quote"):
-          result.add(CSSContent(t: ContentOpenQuote))
+          res.add(CSSContent(t: ContentOpenQuote))
         elif tok.value.equalsIgnoreCase("no-open-quote"):
-          result.add(CSSContent(t: ContentNoOpenQuote))
+          res.add(CSSContent(t: ContentNoOpenQuote))
         elif tok.value.equalsIgnoreCase("close-quote"):
-          result.add(CSSContent(t: ContentCloseQuote))
+          res.add(CSSContent(t: ContentCloseQuote))
         elif tok.value.equalsIgnoreCase("no-close-quote"):
-          result.add(CSSContent(t: ContentNoCloseQuote))
+          res.add(CSSContent(t: ContentNoCloseQuote))
       of cttString:
-        result.add(CSSContent(t: ContentString, s: newRefString(tok.value)))
-      else: return
+        res.add(CSSContent(t: ContentString, s: newRefString(tok.value)))
+      of cttWhitespace:
+        discard
+      else:
+        return err()
+    elif cval of CSSFunction:
+      let fun = CSSFunction(cval)
+      if fun.name == cftCounter:
+        let i = fun.value.skipBlanks(0)
+        if i >= fun.value.len or not (fun.value[i] of CSSToken):
+          return err()
+        let tok = CSSToken(fun.value[i])
+        if tok.t != cttIdent:
+          return err()
+        res.add(CSSContent(t: ContentCounter, counter: tok.value.toAtom()))
+  ok(res)
 
 func parseFontWeight(cval: CSSComponentValue): Opt[int32] =
   if cval of CSSToken:
@@ -1341,13 +1376,13 @@ func cssVerticalAlign(cval: CSSComponentValue; attrs: WindowAttributes):
       ))
   return err()
 
-func cssCounterReset(cvals: openArray[CSSComponentValue]):
-    Opt[seq[CSSCounterReset]] =
+proc parseCounterSet(cvals: openArray[CSSComponentValue]; n: int32):
+    Opt[seq[CSSCounterSet]] =
   template die =
     return err()
-  var r = CSSCounterReset()
+  var r = CSSCounterSet()
   var s = false
-  var res: seq[CSSCounterReset] = @[]
+  var res: seq[CSSCounterSet] = @[]
   for cval in cvals:
     if cval of CSSToken:
       let tok = CSSToken(cval)
@@ -1356,16 +1391,19 @@ func cssCounterReset(cvals: openArray[CSSComponentValue]):
       of cttIdent:
         if s:
           die
-        r.name = tok.value
+        r.name = tok.value.toAtom()
         s = true
       of cttNumber, cttINumber:
         if not s:
           die
-        r.num = int(tok.nvalue)
+        r.num = int32(tok.nvalue)
         res.add(r)
         s = false
       else:
         die
+  if s:
+    r.num = n
+    res.add(r)
   return ok(res)
 
 func cssMaxSize(cval: CSSComponentValue; attrs: WindowAttributes):
@@ -1520,7 +1558,7 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
     #TODO content for flex-basis
     else:
       set_word length, ?parseLength(cval, attrs)
-  of cvtContent: set_new content, cssContent(cvals)
+  of cvtContent: set_new content, ?parseContent(cvals)
   of cvtInteger:
     case t
     of cptFontWeight: set_word integer, ?parseFontWeight(cval)
@@ -1543,7 +1581,9 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
     let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i], attrs)
     set_new length2, CSSLength2(a: a, b: b)
   of cvtQuotes: set_new quotes, ?parseQuotes(cvals)
-  of cvtCounterReset: set_new counterReset, ?cssCounterReset(cvals)
+  of cvtCounterSet:
+    let n = if t == cptCounterIncrement: 1i32 else: 0i32
+    set_new counterSet, ?parseCounterSet(cvals, n)
   of cvtImage: set_new image, ?parseImage(cval)
   of cvtFloat: set_bit float, ?parseIdent[CSSFloat](cval)
   of cvtVisibility: set_bit visibility, ?parseIdent[CSSVisibility](cval)
@@ -1879,7 +1919,7 @@ func splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
   return (outer, inner)
 
 when defined(debug):
-  func `serializeEmpty`*(computed: CSSValues): string =
+  func serializeEmpty*(computed: CSSValues): string =
     let default = rootProperties()
     result = ""
     for p in CSSPropertyType:

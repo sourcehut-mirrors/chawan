@@ -62,6 +62,7 @@ macro makeStaticAtom =
       satIntegrity = "integrity"
       satIsmap = "ismap"
       satLanguage = "language"
+      satListItem = "list-item"
       satLoad = "load"
       satLoadend = "loadend"
       satLoadstart = "loadstart"

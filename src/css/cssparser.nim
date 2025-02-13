@@ -68,6 +68,7 @@ type
     cftHsl = "hsl"
     cftHsla = "hsla"
     cftCalc = "calc"
+    cftCounter = "counter"
 
   CSSFunction* = ref object of CSSComponentValue
     name*: CSSFunctionType

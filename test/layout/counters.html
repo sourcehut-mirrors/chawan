@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- Once again, Blink disagrees with Gecko.  This time though, it's
+     Blink being weird: it resets list-item counters per div level.
+     That feels wrong, so we follow Gecko.  -->
+<style>
+myli { display: list-item; margin-left: 5ch; list-style-type: decimal }
+myli { counter-increment: asdf 1 }
+myli::before { content: counter(asdf) ' ' }
+:root { counter-set: my-link-counter }
+a[href]::before{
+  content: '['counter(my-link-counter)']';
+  counter-increment: my-link-counter
+}
+</style>
+<a href=https://example.org>test</a>
+<div>
+  <myli>1</myli>
+  <div>
+    <a href=https://example.org>test</a>
+    <myli>2</myli>
+    <myli>3</myli>
+    <myli>4</myli>
+    <myli>5</myli>
+  </div>
+  <myli>6</myli>
+  <myli>7</myli>
+</div>
+<div>
+  <myli>1</myli>
+  <myli>2</myli>
+  <myli>3</myli>
+  <div>
+    <myli>4</myli>
+  </div>
+  <myli>5</myli>
+</div>
+<a href=https://example.org>test</a>

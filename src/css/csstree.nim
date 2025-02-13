@@ -29,6 +29,7 @@ import chame/tags
 import css/box
 import css/cascade
 import css/cssvalues
+import css/lunit
 import css/selectorparser
 import html/catom
 import html/dom
@@ -39,7 +40,7 @@ import utils/twtstr
 
 type
   StyledNodeType = enum
-    stElement, stText, stImage, stBr
+    stElement, stText, stMarker, stImage, stBr
 
   # Abstraction over the DOM to pretend that elements, text, replaced
   # and pseudo-elements are derived from the same type.
@@ -57,10 +58,17 @@ type
       bmp: NetworkBitmap
     of stBr: # <br> element
       discard
+    of stMarker: # ::marker (not that it's implemented...)
+      discard
+
+  CSSCounter = object
+    element: Element
+    name: CAtom
+    n: int32
 
   TreeContext = object
     quoteLevel: int
-    listItemCounter: int
+    counters: seq[CSSCounter]
     rootProperties: CSSValues
 
   TreeFrame = object
@@ -93,6 +101,53 @@ when defined(debug):
       return "#image"
     of stBr:
       return "#br"
+    of stMarker:
+      return "#marker"
+
+iterator mritems(counters: var seq[CSSCounter]): var CSSCounter =
+  for i in countdown(counters.high, 0):
+    yield counters[i]
+
+proc incCounter(ctx: var TreeContext; name: CAtom; n: int32; element: Element) =
+  var found = false
+  for counter in ctx.counters.mritems:
+    if counter.name == name:
+      let n64 = clamp(int64(counter.n) + int64(n), int32.low, int32.high)
+      counter.n = int32(n64)
+      found = true
+      break
+  if not found: # instantiate a new counter
+    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
+
+proc setCounter(ctx: var TreeContext; name: CAtom; n: int32; element: Element) =
+  var found = false
+  for counter in ctx.counters.mritems:
+    if counter.name == name:
+      counter.n = n
+      found = true
+      break
+  if not found: # instantiate a new counter
+    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
+
+proc resetCounter(ctx: var TreeContext; name: CAtom; n: int32;
+    element: Element) =
+  var found = false
+  for counter in ctx.counters.mritems:
+    if counter.name == name and
+        counter.element.parentNode == element.parentNode and
+        counter.element.elIndex <= element.elIndex:
+      counter.element = element
+      counter.n = n
+      found = true
+      break
+  if not found:
+    ctx.counters.add(CSSCounter(name: name, n: n, element: element))
+
+proc counter(ctx: var TreeContext; name: CAtom): int =
+  for counter in ctx.counters.mritems:
+    if counter.name == name:
+      return counter.n
+  return 0
 
 func inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
   result = frame.computed.inheritProperties()
@@ -223,14 +278,11 @@ proc getParent(frame: var TreeFrame; computed: CSSValues; display: CSSDisplay):
 proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
   var node = node
   # Generate a marker box.
-  inc frame.ctx.listItemCounter
   let computed = node.computed.inheritProperties()
   computed{"white-space"} = WhitespacePre
-  let counter = frame.ctx.listItemCounter
   let markerText = StyledNode(
-    t: stText,
+    t: stMarker,
     element: node.element,
-    text: newRefString(computed{"list-style-type"}.listMarker(counter)),
     computed: computed
   )
   case node.computed{"list-style-position"}
@@ -400,6 +452,8 @@ proc addContent(frame: var TreeFrame; content: CSSContent) =
   of ContentNoCloseQuote:
     if frame.ctx.quoteLevel > 0:
       dec frame.ctx.quoteLevel
+  of ContentCounter:
+    frame.addText($frame.ctx.counter(content.counter))
 
 proc buildChildren(frame: var TreeFrame; styledNode: StyledNode) =
   for child in styledNode.anonChildren:
@@ -436,14 +490,21 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode):
     CSSBox =
   case styledNode.t
   of stElement:
-    for reset in styledNode.computed{"counter-reset"}:
-      if reset.name == "list-item":
-        ctx.listItemCounter = reset.num
-    let listItemCounter = ctx.listItemCounter
+    for counter in styledNode.computed{"counter-reset"}:
+      ctx.resetCounter(counter.name, counter.num, styledNode.element)
+    var liSeen = false
+    for counter in styledNode.computed{"counter-increment"}:
+      liSeen = counter.name == satListItem.toAtom()
+      ctx.incCounter(counter.name, counter.num, styledNode.element)
+    if not liSeen and styledNode.computed{"display"} == DisplayListItem:
+      ctx.incCounter(satListItem.toAtom(), 1, styledNode.element)
+    for counter in styledNode.computed{"counter-set"}:
+      ctx.setCounter(counter.name, counter.num, styledNode.element)
+    let countersLen = ctx.counters.len
     var frame = ctx.initTreeFrame(styledNode.element, styledNode.computed)
     frame.buildChildren(styledNode)
     let box = ctx.buildBox(frame, cached)
-    ctx.listItemCounter = listItemCounter
+    ctx.counters.setLen(countersLen)
     return box
   of stText:
     return InlineTextBox(
@@ -455,6 +516,13 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode):
     return InlineNewLineBox(
       computed: styledNode.computed,
       element: styledNode.element
+    )
+  of stMarker:
+    let counter = ctx.counter(satListItem.toAtom())
+    return InlineTextBox(
+      computed: styledNode.computed,
+      element: styledNode.element,
+      text: styledNode.computed{"list-style-type"}.listMarker(counter)
     )
   of stImage:
     return InlineImageBox(

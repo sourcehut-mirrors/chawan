@@ -24,8 +24,10 @@ values:
 * caption-side
 * clear
 * color (hex values and functions `rgb`, `rgba`, `hsl`, `hsla`)
-* content
+* content (string, (no-)open/close-quote, counter())
+* counter-increment
 * counter-reset
+* counter-set
 * display (`block`, `inline-block`, `list-item`, `table`, `table-*`,
   `flex`, `inline-flex`, `flow-root`)
 * flex-basis (but `content` not supported)
