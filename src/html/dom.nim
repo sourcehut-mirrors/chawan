@@ -259,9 +259,9 @@ type
     host*: Element
 
   DocumentType* = ref object of Node
-    name*: string
-    publicId*: string
-    systemId*: string
+    name* {.jsget.}: string
+    publicId* {.jsget.}: string
+    systemId* {.jsget.}: string
 
   AttrData* = object
     qualifiedName*: CAtom
