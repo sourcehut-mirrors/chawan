@@ -189,7 +189,7 @@ proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32):
 
 proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     loaded, length: int64) =
-  let event = newProgressEvent(window.factory.toAtom(name), ProgressEventInit(
+  let event = newProgressEvent(name.toAtom(), ProgressEventInit(
     loaded: loaded,
     total: length,
     lengthComputable: length != 0
@@ -503,7 +503,7 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
     assert ctx.fromJS(this, target).isSome
     ctx.definePropertyC(this, "on" & $atom, JS_DupValue(ctx, val))
     #TODO I haven't checked but this might also be wrong
-    doAssert ctx.addEventListener(target, ctx.toAtom(atom), val).isSome
+    doAssert ctx.addEventListener(target, atom.toAtom(), val).isSome
   return JS_DupValue(ctx, val)
 
 func xhretGetSet(): seq[TabGetSet] =

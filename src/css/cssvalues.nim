@@ -556,8 +556,7 @@ const WhiteSpacePreserve* = {
 
 # Forward declarations
 proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
-  entry: var CSSComputedEntry; attrs: WindowAttributes; factory: CAtomFactory):
-  Opt[void]
+  entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void]
 
 proc newCSSVariableMap*(parent: CSSVariableMap): CSSVariableMap =
   return CSSVariableMap(parent: parent)
@@ -610,7 +609,7 @@ func `$`(quotes: CSSQuotes): string =
 func `$`(counterreset: seq[CSSCounterReset]): string =
   result = ""
   for it in counterreset:
-    result &= $it.name
+    result &= it.name
     result &= ' '
     result &= $it.num
 
@@ -1445,8 +1444,7 @@ proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
   return CSSComputedEntry(et: ceGlobal, t: t, global: global)
 
 proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
-    entry: var CSSComputedEntry; attrs: WindowAttributes;
-    factory: CAtomFactory): Opt[void] =
+    entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
   var i = fun.value.skipBlanks(0)
   if i >= fun.value.len:
     return err()
@@ -1459,7 +1457,7 @@ proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
   entry = CSSComputedEntry(
     et: ceVar,
     t: t,
-    cvar: factory.toAtom(tok.value.substr(2))
+    cvar: tok.value.substr(2).toAtom()
   )
   i = fun.value.skipBlanks(i + 1)
   if i < fun.value.len:
@@ -1469,13 +1467,12 @@ proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
     if i < fun.value.len:
       entry.fallback = (ref CSSComputedEntry)()
       if fun.value.toOpenArray(i, fun.value.high).parseValue(t,
-          entry.fallback[], attrs, factory).isNone:
+          entry.fallback[], attrs).isNone:
         entry.fallback = nil
   return ok()
 
 proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
-    entry: var CSSComputedEntry; attrs: WindowAttributes;
-    factory: CAtomFactory): Opt[void] =
+    entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
   var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return err()
@@ -1486,7 +1483,7 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
     if fun.name == cftVar:
       if cvals.skipBlanks(i) < cvals.len:
         return err()
-      return fun.parseVariable(t, entry, attrs, factory)
+      return fun.parseVariable(t, entry, attrs)
   let v = valueType(t)
   template set_new(prop, val: untyped) =
     entry = CSSComputedEntry(
@@ -1666,8 +1663,7 @@ proc addGlobals(res: var seq[CSSComputedEntry]; ps: openArray[CSSPropertyType];
     res.add(makeEntry(p, global))
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
-    cvals: openArray[CSSComponentValue]; attrs: WindowAttributes;
-    factory: CAtomFactory): Err[void] =
+    cvals: openArray[CSSComponentValue]; attrs: WindowAttributes): Err[void] =
   var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return err()
@@ -1681,7 +1677,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         res.add(makeEntry(t, global.get))
       else:
         var entry = CSSComputedEntry()
-        ?cvals.parseValue(t, entry, attrs, factory)
+        ?cvals.parseValue(t, entry, attrs)
         res.add(entry)
   of cstAll:
     let global = ?global
@@ -1704,11 +1700,11 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       var i = cvals.skipBlanks(0)
       while i < cvals.len:
         let j = cvals.findBlank(i)
-        if cvals.toOpenArray(i, j - 1).parseValue(bgcolor.t, bgcolor, attrs,
-            factory).isSome:
+        if cvals.toOpenArray(i, j - 1).parseValue(bgcolor.t, bgcolor,
+            attrs).isSome:
           discard
-        elif cvals.toOpenArray(i, j - 1).parseValue(bgimage.t, bgimage, attrs,
-            factory).isSome:
+        elif cvals.toOpenArray(i, j - 1).parseValue(bgimage.t, bgimage,
+            attrs).isSome:
           discard
         else:
           #TODO when we implement the other shorthands too
@@ -1806,9 +1802,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
   return ok()
 
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue];
-    attrs: WindowAttributes; factory: CAtomFactory): seq[CSSComputedEntry] =
+    attrs: WindowAttributes): seq[CSSComputedEntry] =
   var res: seq[CSSComputedEntry] = @[]
-  if res.parseComputedValues(name, value, attrs, factory).isSome:
+  if res.parseComputedValues(name, value, attrs).isSome:
     return res
   return @[]
 

@@ -76,10 +76,10 @@ proc calcRules(map: var RuleListMap; element: Element;
   sheet.tagTable.withValue(element.localName, v):
     rules.add(v[])
   if element.id != CAtomNull:
-    sheet.idTable.withValue(sheet.factory.toLowerAscii(element.id), v):
+    sheet.idTable.withValue(element.id.toLowerAscii(), v):
       rules.add(v[])
   for class in element.classList:
-    sheet.classTable.withValue(sheet.factory.toLowerAscii(class), v):
+    sheet.classTable.withValue(class.toLowerAscii(), v):
       rules.add(v[])
   for attr in element.attrs:
     sheet.attrTable.withValue(attr.qualifiedName, v):
@@ -121,8 +121,7 @@ proc applyVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
       ctx.applyValue0(entry, initType, nextInitType)
       return
   var entries: seq[CSSComputedEntry] = @[]
-  if entries.parseComputedValues($t, cvar.cvals, ctx.window.attrsp[],
-      ctx.window.factory).isSome:
+  if entries.parseComputedValues($t, cvar.cvals, ctx.window.attrsp[]).isSome:
     if entries[0].et == ceVar:
       if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
         ctx.varsSeen.clear()
@@ -373,8 +372,7 @@ proc applyStyle*(element: Element) =
   if window.styling and style != nil:
     for decl in style.decls:
       #TODO variables
-      let vals = parseComputedValues(decl.name, decl.value, window.attrsp[],
-        window.factory)
+      let vals = parseComputedValues(decl.name, decl.value, window.attrsp[])
       if decl.important:
         map[peNone][coAuthor].important.add(vals)
       else:

@@ -161,13 +161,13 @@ func getClient(client: Client): Client {.jsfget: "client".} =
 proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     jsctx: JSContext; warnings: seq[string]; urandom: PosixStream;
     loaderStream: SocketStream): Client =
+  initCAtomFactory()
   let jsrt = JS_GetRuntime(jsctx)
   let clientPid = getCurrentProcessId()
   let loader = newFileLoader(loaderPid, clientPid, loaderStream)
   let client = Client(
     jsrt: jsrt,
     jsctx: jsctx,
-    factory: newCAtomFactory(),
     loader: loader,
     crypto: Crypto(urandom: urandom),
     pager: newPager(config, forkserver, jsctx, warnings, loader),

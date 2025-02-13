@@ -296,10 +296,9 @@ proc newInputEvent*(ctype: CAtom; eventInit = InputEventInit()): InputEvent =
 proc newEventTarget(): EventTarget {.jsctor.} =
   return EventTarget()
 
-proc defaultPassiveValue(ctx: JSContext; ctype: CAtom;
-    eventTarget: EventTarget): bool =
+proc defaultPassiveValue(ctype: CAtom; eventTarget: EventTarget): bool =
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
-  if ctx.toStaticAtom(ctype) in check:
+  if ctype.toStaticAtom() in check:
     return true
   return eventTarget.isDefaultPassiveImpl()
 
@@ -335,13 +334,12 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   return ret
 
 # shared
-proc addAnEventListener(ctx: JSContext; target: EventTarget;
-    listener: EventListener) =
+proc addAnEventListener(target: EventTarget; listener: EventListener) =
   #TODO signals
   if JS_IsUndefined(listener.callback):
     return
   if listener.passive.isNone:
-    listener.passive = some(ctx.defaultPassiveValue(listener.ctype, target))
+    listener.passive = some(defaultPassiveValue(listener.ctype, target))
   if target.findEventListener(listener.ctype, listener.callback,
       listener.capture) == -1: # dedup
     target.eventListeners.add(listener)
@@ -389,14 +387,13 @@ proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
   if not JS_IsObject(callback) and not JS_IsNull(callback):
     return errTypeError("callback is not an object")
   let (capture, once, passive) = flattenMore(ctx, options)
-  let listener = EventListener(
+  eventTarget.addAnEventListener(EventListener(
     ctype: ctype,
     capture: capture,
     passive: passive,
     once: once,
     callback: JS_DupValue(ctx, callback)
-  )
-  ctx.addAnEventListener(eventTarget, listener)
+  ))
   ok()
 
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;

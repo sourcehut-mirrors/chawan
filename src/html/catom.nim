@@ -229,48 +229,56 @@ const factoryInit = (func(): CAtomFactoryInit =
   return init
 )()
 
-proc newCAtomFactory*(): CAtomFactory =
+proc newCAtomFactory(): CAtomFactory =
   let factory = new(CAtomFactory)
   factory[] = factoryInit.obj
   return factory
 
-func toLowerAscii*(factory: CAtomFactory; a: CAtom): CAtom =
-  return factory.lowerMap[int32(a)]
+var factory {.global.}: CAtomFactory = nil
 
-func equalsIgnoreCase*(factory: CAtomFactory; a, b: CAtom): bool =
-  return factory.lowerMap[int32(a)] == factory.lowerMap[int32(b)]
+func getFactory(): CAtomFactory =
+  {.cast(noSideEffect).}:
+    return factory
 
-func containsIgnoreCase*(factory: CAtomFactory; aa: openArray[CAtom];
-    a: CAtom): bool =
-  let a = factory.toLowerAscii(a)
+proc initCAtomFactory*() =
+  assert factory == nil
+  factory = newCAtomFactory()
+
+func toLowerAscii*(a: CAtom): CAtom =
+  return getFactory().lowerMap[int32(a)]
+
+func equalsIgnoreCase*(a, b: CAtom): bool =
+  return getFactory().lowerMap[int32(a)] == getFactory().lowerMap[int32(b)]
+
+func containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
+  let a = a.toLowerAscii()
   for it in aa:
-    if a == factory.toLowerAscii(it):
+    if a == it.toLowerAscii():
       return true
   return false
 
-func toAtom*(factory: CAtomFactory; s: sink string): CAtom =
-  return factory[].toAtom(s)
+proc toAtom*(s: sink string): CAtom {.sideEffect.} =
+  return getFactory()[].toAtom(s)
 
-func toAtom*(factory: CAtomFactory; tagType: TagType): CAtom =
+func toAtom*(tagType: TagType): CAtom =
   assert tagType != TAG_UNKNOWN
   return CAtom(tagType)
 
-func toAtom*(factory: CAtomFactory; attrType: StaticAtom): CAtom =
+func toAtom*(attrType: StaticAtom): CAtom =
   assert attrType != atUnknown
   return CAtom(attrType)
 
-func toAtomLower*(factory: CAtomFactory; s: sink string): CAtom =
-  return factory.lowerMap[int32(factory.toAtom(s))]
+proc toAtomLower*(s: sink string): CAtom {.sideEffect.} =
+  return getFactory().lowerMap[int32(s.toAtom())]
 
-func containsIgnoreCase*(factory: CAtomFactory; aa: openArray[CAtom];
-    a: StaticAtom): bool =
-  return factory.containsIgnoreCase(aa, factory.toAtom(a))
+func containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
+  return aa.containsIgnoreCase(a.toAtom())
 
-func toStr*(factory: CAtomFactory; atom: CAtom): lent string =
-  return factory.atomMap[int(atom)]
+func toStr*(atom: CAtom): lent string =
+  return getFactory().atomMap[int(atom)]
 
-func toStr*(factory: CAtomFactory; sa: StaticAtom): lent string =
-  return factory.toStr(factory.toAtom(sa))
+func toStr*(sa: StaticAtom): lent string =
+  return sa.toAtom().toStr()
 
 func toTagType*(atom: CAtom): TagType =
   let i = int(atom)
@@ -278,17 +286,17 @@ func toTagType*(atom: CAtom): TagType =
     return TagType(i)
   return TAG_UNKNOWN
 
-func toStaticAtom*(factory: CAtomFactory; atom: CAtom): StaticAtom =
+func toStaticAtom*(atom: CAtom): StaticAtom =
   let i = int(atom)
   if i <= int(StaticAtom.high):
     return StaticAtom(i)
   return atUnknown
 
-func toStaticAtom*(factory: CAtomFactory; s: string): StaticAtom =
-  return factory.toStaticAtom(factory.toAtom(s))
+proc toStaticAtom*(s: string): StaticAtom =
+  return s.toAtom().toStaticAtom()
 
-func toNamespace*(factory: CAtomFactory; atom: CAtom): Namespace =
-  case factory.toStaticAtom(atom)
+func toNamespace*(atom: CAtom): Namespace =
+  case atom.toStaticAtom()
   of satUempty: return NO_NAMESPACE
   of satNamespaceHTML: return Namespace.HTML
   of satNamespaceMathML: return Namespace.MATHML
@@ -298,36 +306,11 @@ func toNamespace*(factory: CAtomFactory; atom: CAtom): Namespace =
   of satNamespaceXMLNS: return Namespace.XMLNS
   else: return NAMESPACE_UNKNOWN
 
-func toAtom*(factory: CAtomFactory; namespace: Namespace): CAtom =
-  return factory.namespaceMap[namespace]
+func toAtom*(namespace: Namespace): CAtom =
+  return getFactory().namespaceMap[namespace]
 
-func toAtom*(factory: CAtomFactory; prefix: NamespacePrefix): CAtom =
-  return factory.prefixMap[prefix]
-
-# Forward declaration hack
-var getFactoryImpl*: proc(ctx: JSContext): CAtomFactory {.nimcall, noSideEffect,
-  raises: [].}
-
-proc toAtom*(ctx: JSContext; atom: StaticAtom): CAtom =
-  return ctx.getFactoryImpl().toAtom(atom)
-
-proc toAtom*(ctx: JSContext; s: string): CAtom =
-  return ctx.getFactoryImpl().toAtom(s)
-
-proc toStaticAtom*(ctx: JSContext; atom: CAtom): StaticAtom =
-  return ctx.getFactoryImpl().toStaticAtom(atom)
-
-proc toStaticAtom*(ctx: JSContext; s: string): StaticAtom =
-  return ctx.getFactoryImpl().toStaticAtom(s)
-
-proc toStr*(ctx: JSContext; atom: CAtom): lent string =
-  return ctx.getFactoryImpl().toStr(atom)
-
-proc toLowerAscii*(ctx: JSContext; atom: CAtom): CAtom =
-  return ctx.getFactoryImpl().toLowerAscii(atom)
-
-proc toStr*(ctx: JSContext; sa: StaticAtom): lent string =
-  return ctx.getFactoryImpl().toStr(sa)
+func toAtom*(prefix: NamespacePrefix): CAtom =
+  return getFactory().prefixMap[prefix]
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
   if JS_IsNull(val):
@@ -335,7 +318,7 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
   else:
     var s: string
     ?ctx.fromJS(val, s)
-    res = ctx.getFactoryImpl().toAtom(s)
+    res = s.toAtom()
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
@@ -344,19 +327,19 @@ proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
   else:
     var s: string
     ?ctx.fromJS(val, s)
-    res = ctx.getFactoryImpl().toAtom(s)
+    res = s.toAtom()
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): Opt[void] =
   var ca: CAtom
   ?ctx.fromJS(val, ca)
-  res = ctx.getFactoryImpl().toStaticAtom(ca)
+  res = ca.toStaticAtom()
   return ok()
 
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:
     return JS_NULL
-  return ctx.toJS(ctx.getFactoryImpl().toStr(atom))
+  return ctx.toJS(atom.toStr())
 
 proc toJS*(ctx: JSContext; atom: StaticAtom): JSValue =
   return ctx.toJS($atom)

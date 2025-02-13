@@ -109,7 +109,6 @@ type
     timeouts*: TimeoutState
     navigate*: proc(url: URL)
     importMapsAllowed*: bool
-    factory*: CAtomFactory
     pendingResources*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
     svgCache*: Table[string, SVGSVGElement]
@@ -150,11 +149,13 @@ type
     element: Element
     attrlist: seq[Attr]
 
+  CollectionMatchFun = proc(node: Node): bool {.noSideEffect.}
+
   Collection = ref object of RootObj
     islive: bool
     childonly: bool
     root: Node
-    match: proc(node: Node): bool {.noSideEffect.}
+    match: CollectionMatchFun
     snapshot: seq[Node]
     livelen: int
 
@@ -200,7 +201,6 @@ type
     i*: int
 
   Document* = ref object of Node
-    factory*: CAtomFactory
     charset*: Charset
     window* {.jsget: "defaultView".}: Window
     url* {.jsget: "URL".}: URL # not nil
@@ -1100,41 +1100,8 @@ func document*(node: Node): Document =
 template document*(element: Element): Document =
   element.internalDocument
 
-proc toAtom*(window: Window; atom: StaticAtom): CAtom =
-  return window.factory.toAtom(atom)
-
-proc toAtom*(window: Window; s: sink string): CAtom =
-  return window.factory.toAtom(s)
-
-proc toStr*(window: Window; atom: CAtom): lent string =
-  return window.factory.toStr(atom)
-
-proc toAtom*(document: Document; s: sink string): CAtom =
-  return document.factory.toAtom(s)
-
-proc toAtomLower*(document: Document; s: sink string): CAtom =
-  return document.factory.toAtomLower(s)
-
-proc toAtom*(document: Document; at: StaticAtom): CAtom =
-  return document.factory.toAtom(at)
-
-proc toStr(document: Document; atom: CAtom): lent string =
-  return document.factory.toStr(atom)
-
-proc toStaticAtom(document: Document; atom: CAtom): StaticAtom =
-  return document.factory.toStaticAtom(atom)
-
-proc toAtom*(document: Document; tagType: TagType): CAtom =
-  return document.factory.toAtom(tagType)
-
-proc toAtom(document: Document; namespace: Namespace): CAtom =
-  return document.factory.toAtom(namespace)
-
-proc toAtom(document: Document; prefix: NamespacePrefix): CAtom =
-  return document.factory.toAtom(prefix)
-
 func namespace*(element: Element): Namespace =
-  return element.document.factory.toNamespace(element.namespaceURI)
+  return element.namespaceURI.toNamespace()
 
 func tagTypeNoNS(element: Element): TagType =
   return element.localName.toTagType()
@@ -1151,7 +1118,7 @@ func findAttr(element: Element; qualifiedName: CAtom): int =
   return -1
 
 func findAttr(element: Element; qualifiedName: StaticAtom): int =
-  return element.findAttr(element.document.toAtom(qualifiedName))
+  return element.findAttr(qualifiedName.toAtom())
 
 func findAttrNS(element: Element; namespace, qualifiedName: CAtom): int =
   for i, attr in element.attrs.mypairs:
@@ -1186,7 +1153,7 @@ func escapeText(s: string; attributeMode = false): string =
 
 when defined(debug):
   func localNameStr*(element: Element): string =
-    return element.document.toStr(element.localName)
+    return element.localName.toStr()
 
   func `$`*(node: Node): string =
     if node == nil:
@@ -1195,7 +1162,7 @@ when defined(debug):
       let element = Element(node)
       result = "<" & element.localNameStr
       for attr in element.attrs:
-        let k = element.document.toStr(attr.localName)
+        let k = attr.localName.toStr()
         result &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
       result &= ">\n"
       for node in element.childList:
@@ -1308,9 +1275,8 @@ iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
       yield HTMLInputElement(control)
 
 iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
-  let empty = input.document.toAtom("")
   let name = input.name
-  if name != CAtomNull and name != empty:
+  if name != CAtomNull and name != satUempty.toAtom():
     if input.form != nil:
       for input in input.form.inputs:
         if input.name == name and input.inputType == itRadio:
@@ -1422,8 +1388,6 @@ proc findNode(collection: Collection; node: Node): int =
   collection.refreshCollection()
   return collection.snapshot.find(node)
 
-type CollectionMatchFun = proc(node: Node): bool {.noSideEffect.}
-
 func newCollection[T: Collection](root: Node; match: CollectionMatchFun;
     islive, childonly: bool): T =
   result = T(
@@ -1529,10 +1493,7 @@ proc setCookie(document: Document; cookie: string) {.jsfset: "cookie".} =
 
 # DOMTokenList
 proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList =
-  return DOMTokenList(
-    element: element,
-    localName: element.document.toAtom(name)
-  )
+  return DOMTokenList(element: element, localName: name.toAtom())
 
 iterator items*(tokenList: DOMTokenList): CAtom {.inline.} =
   for tok in tokenList.toks:
@@ -1553,19 +1514,18 @@ func contains(tokenList: DOMTokenList; a: CAtom): bool =
   return a in tokenList.toks
 
 func containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool =
-  let document = tokenList.element.document
-  return document.factory.containsIgnoreCase(tokenList.toks, a)
+  return tokenList.toks.containsIgnoreCase(a)
 
-func jsContains(tokenList: DOMTokenList; s: string): bool
+proc jsContains(tokenList: DOMTokenList; s: string): bool
     {.jsfunc: "contains".} =
-  return tokenList.element.document.toAtom(s) in tokenList.toks
+  return s.toAtom() in tokenList.toks
 
 func `$`(tokenList: DOMTokenList): string {.jsfunc: "toString".} =
   var s = ""
   for i, tok in tokenList.toks:
     if i != 0:
       s &= ' '
-    s &= tokenList.element.document.toStr(tok)
+    s &= tok.toStr()
   return move(s)
 
 proc update(tokenList: DOMTokenList) =
@@ -1574,7 +1534,7 @@ proc update(tokenList: DOMTokenList) =
     return
   tokenList.element.attr(tokenList.localName, $tokenList)
 
-func validateDOMToken(ctx: JSContext; document: Document; tok: JSValue):
+proc validateDOMToken(ctx: JSContext; document: Document; tok: JSValue):
     DOMResult[CAtom] =
   var res: string
   ?ctx.fromJS(tok, res)
@@ -1583,7 +1543,7 @@ func validateDOMToken(ctx: JSContext; document: Document; tok: JSValue):
   if AsciiWhitespace in res:
     return errDOMException("Got a string containing whitespace",
       "InvalidCharacterError")
-  return ok(document.toAtom(res))
+  return ok(res.toAtom())
 
 proc add(ctx: JSContext; tokenList: DOMTokenList; tokens: varargs[JSValue]):
     Err[DOMException] {.jsfunc.} =
@@ -1643,7 +1603,7 @@ const SupportedTokensMap = {
 
 func supports(tokenList: DOMTokenList; token: string):
     JSResult[bool] {.jsfunc.} =
-  let localName = tokenList.element.document.toStaticAtom(tokenList.localName)
+  let localName = tokenList.localName.toStaticAtom()
   for it in SupportedTokensMap:
     if it[0] == localName:
       let lowercase = token.toLowerAscii()
@@ -1673,15 +1633,15 @@ proc validateQName(qname: string): DOMResult[void] =
 
 # DOMStringMap
 proc delete(map: var DOMStringMap; name: string): bool {.jsfunc.} =
-  let name = map.target.document.toAtom("data-" & name.camelToKebabCase())
+  let name = ("data-" & name.camelToKebabCase()).toAtom()
   let i = map.target.findAttr(name)
   if i != -1:
     map.target.delAttr(i)
   return i != -1
 
-func getter(ctx: JSContext; map: var DOMStringMap; name: string): JSValue
+proc getter(ctx: JSContext; map: var DOMStringMap; name: string): JSValue
     {.jsgetownprop.} =
-  let name = map.target.document.toAtom("data-" & name.camelToKebabCase())
+  let name = ("data-" & name.camelToKebabCase()).toAtom()
   let i = map.target.findAttr(name)
   if i != -1:
     return ctx.toJS(map.target.attrs[i].value)
@@ -1698,7 +1658,7 @@ proc setter(map: var DOMStringMap; name, value: string): Err[DOMException]
       "InvalidCharacterError")
   let name = "data-" & name.camelToKebabCase()
   ?name.validateName()
-  let aname = map.target.document.toAtom(name)
+  let aname = name.toAtom()
   map.target.attr(aname, value)
   return ok()
 
@@ -1706,7 +1666,7 @@ func names(ctx: JSContext; map: var DOMStringMap): JSPropertyEnumList
     {.jspropnames.} =
   var list = newJSPropertyEnumList(ctx, uint32(map.target.attrs.len))
   for attr in map.target.attrs:
-    let k = map.target.document.toStr(attr.localName)
+    let k = attr.localName.toStr()
     if k.startsWith("data-") and AsciiUpperAlpha notin k:
       list.add(k["data-".len .. ^1].kebabToCamelCase())
   return list
@@ -1767,16 +1727,15 @@ proc names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
   let L = collection.length
   var list = newJSPropertyEnumList(ctx, L)
   var ids = initOrderedSet[CAtom]()
-  let empty = ctx.toAtom("")
   for u in 0 ..< L:
     list.add(u)
     let element = collection.item(u)
-    if element.id != CAtomNull and element.id != empty:
+    if element.id != CAtomNull and element.id != satUempty.toAtom():
       ids.incl(element.id)
     if element.namespace == Namespace.HTML:
       ids.incl(element.name)
   for id in ids:
-    list.add(collection.root.document.toStr(id))
+    list.add(id.toStr())
   return list
 
 # HTMLFormControlsCollection
@@ -2035,10 +1994,10 @@ proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
   map.attrlist.add(attr)
   return attr
 
-func normalizeAttrQName(element: Element; qualifiedName: string): CAtom =
+proc normalizeAttrQName(element: Element; qualifiedName: string): CAtom =
   if element.namespace == Namespace.HTML and not element.document.isxml:
-    return element.document.toAtomLower(qualifiedName)
-  return element.document.toAtom(qualifiedName)
+    return qualifiedName.toAtomLower()
+  return qualifiedName.toAtom()
 
 func hasAttributes(element: Element): bool {.jsfunc.} =
   return element.attrs.len > 0
@@ -2056,22 +2015,22 @@ func attributes(element: Element): NamedNodeMap {.jsfget.} =
     ))
   return element.cachedAttributes
 
-func findAttr(element: Element; qualifiedName: string): int =
+proc findAttr(element: Element; qualifiedName: string): int =
   return element.findAttr(element.normalizeAttrQName(qualifiedName))
 
-func findAttrNS(element: Element; namespace, localName: string): int =
-  let namespace = element.document.toAtom(namespace)
-  let localName = element.document.toAtom(localName)
+proc findAttrNS(element: Element; namespace, localName: string): int =
+  let namespace = namespace.toAtom()
+  let localName = localName.toAtom()
   return element.findAttrNS(namespace, localName)
 
-func hasAttribute(element: Element; qualifiedName: string): bool {.jsfunc.} =
+proc hasAttribute(element: Element; qualifiedName: string): bool {.jsfunc.} =
   return element.findAttr(qualifiedName) != -1
 
-func hasAttributeNS(element: Element; namespace, localName: string): bool
+proc hasAttributeNS(element: Element; namespace, localName: string): bool
     {.jsfunc.} =
   return element.findAttrNS(namespace, localName) != -1
 
-func getAttribute(ctx: JSContext; element: Element; qualifiedName: string):
+func getAttribute(ctx: JSContext; element: Element; qualifiedName: CAtom):
     JSValue {.jsfunc.} =
   let i = element.findAttr(qualifiedName)
   if i != -1:
@@ -2079,7 +2038,7 @@ func getAttribute(ctx: JSContext; element: Element; qualifiedName: string):
   return JS_NULL
 
 func getAttributeNS(ctx: JSContext; element: Element;
-    namespace, localName: string): JSValue {.jsfunc.} =
+    namespace, localName: CAtom): JSValue {.jsfunc.} =
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
     return ctx.toJS(element.attrs[i].value)
@@ -2107,7 +2066,7 @@ proc item(map: NamedNodeMap; i: uint32): Attr {.jsfunc.} =
     return map.getAttr(int(i))
   return nil
 
-func getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): Opt[Attr]
+proc getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): Opt[Attr]
     {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isSome:
@@ -2128,7 +2087,7 @@ func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
   var names: HashSet[string]
   let element = map.element
   for attr in element.attrs:
-    let name = element.document.toStr(attr.qualifiedName)
+    let name = attr.qualifiedName.toStr()
     if element.namespace == Namespace.HTML and AsciiUpperAlpha in name:
       continue
     if name in names:
@@ -2141,11 +2100,10 @@ func length(characterData: CharacterData): uint32 {.jsfget.} =
   return uint32(characterData.data.utf16Len)
 
 func tagName(element: Element): string {.jsfget.} =
-  let document = element.document
-  result = document.toStr(element.prefix)
+  result = element.prefix.toStr()
   if result.len > 0:
     result &= ':'
-  result &= document.toStr(element.localName)
+  result &= element.localName.toStr()
   if element.namespace == Namespace.HTML:
     result = result.toUpperAscii()
 
@@ -2154,7 +2112,7 @@ func nodeName(node: Node): string {.jsfget.} =
     return Element(node).tagName
   if node of Attr:
     let attr = Attr(node)
-    return attr.ownerElement.document.toStr(attr.data.qualifiedName)
+    return attr.data.qualifiedName.toStr()
   if node of DocumentType:
     return DocumentType(node).name
   if node of CDATASection:
@@ -2417,17 +2375,17 @@ func findFirstChildNotOf(node: Node; tagType: set[TagType]): Element =
       return element
   return nil
 
-func getElementById(document: Document; id: string): Element {.jsfunc.} =
+proc getElementById(document: Document; id: string): Element {.jsfunc.} =
   if id.len == 0:
     return nil
-  let id = document.toAtom(id)
+  let id = id.toAtom()
   for child in document.elements:
     if child.id == id:
       return child
   return nil
 
-func getElementsByName(document: Document; name: CAtom): NodeList {.jsfunc.} =
-  if name == document.toAtom(""):
+proc getElementsByName(document: Document; name: CAtom): NodeList {.jsfunc.} =
+  if name == satUempty.toAtom():
     return document.newNodeList(
       func(node: Node): bool =
         return false,
@@ -2441,11 +2399,11 @@ func getElementsByName(document: Document; name: CAtom): NodeList {.jsfunc.} =
     childonly = false
   )
 
-func getElementsByTagNameImpl(root: Node; tagName: string): HTMLCollection =
+proc getElementsByTagNameImpl(root: Node; tagName: string): HTMLCollection =
   if tagName == "*":
     return root.newHTMLCollection(isElement, islive = true, childonly = false)
-  let localName = root.document.toAtom(tagName)
-  let localNameLower = root.document.factory.toLowerAscii(localName)
+  let localName = tagName.toAtom()
+  let localNameLower = localName.toLowerAscii()
   return root.newHTMLCollection(
     func(node: Node): bool =
       if node of Element:
@@ -2458,27 +2416,26 @@ func getElementsByTagNameImpl(root: Node; tagName: string): HTMLCollection =
     childonly = false
   )
 
-func getElementsByTagName(document: Document; tagName: string): HTMLCollection
+proc getElementsByTagName(document: Document; tagName: string): HTMLCollection
     {.jsfunc.} =
   return document.getElementsByTagNameImpl(tagName)
 
-func getElementsByTagName(element: Element; tagName: string): HTMLCollection
+proc getElementsByTagName(element: Element; tagName: string): HTMLCollection
     {.jsfunc.} =
   return element.getElementsByTagNameImpl(tagName)
 
-func getElementsByClassNameImpl(node: Node; classNames: string):
+proc getElementsByClassNameImpl(node: Node; classNames: string):
     HTMLCollection =
   var classAtoms = newSeq[CAtom]()
   for class in classNames.split(AsciiWhitespace):
-    classAtoms.add(node.document.toAtom(class))
+    classAtoms.add(class.toAtom())
   return node.newHTMLCollection(
     func(node: Node): bool =
       if node of Element:
         let element = Element(node)
         if element.document.mode == QUIRKS:
-          let factory = element.document.factory
           for class in classAtoms:
-            if not factory.containsIgnoreCase(element.classList.toks, class):
+            if not element.classList.toks.containsIgnoreCase(class):
               return false
         else:
           for class in classAtoms:
@@ -2489,11 +2446,11 @@ func getElementsByClassNameImpl(node: Node; classNames: string):
     childonly = false
   )
 
-func getElementsByClassName(document: Document; classNames: string):
+proc getElementsByClassName(document: Document; classNames: string):
     HTMLCollection {.jsfunc.} =
   return document.getElementsByClassNameImpl(classNames)
 
-func getElementsByClassName(element: Element; classNames: string):
+proc getElementsByClassName(element: Element; classNames: string):
     HTMLCollection {.jsfunc.} =
   return element.getElementsByClassNameImpl(classNames)
 
@@ -2524,25 +2481,23 @@ proc names(ctx: JSContext; document: Document): JSPropertyEnumList
   #TODO I'm not quite sure why location isn't added, so I'll add it
   # manually for now.
   list.add("location")
-  let empty = ctx.toAtom("")
   #TODO exposed embed, exposed object
   for child in document.elements({TAG_FORM, TAG_IFRAME, TAG_IMG}):
-    if child.name != CAtomNull and child.name != empty:
+    if child.name != CAtomNull and child.name != satUempty.toAtom():
       if child.tagType == TAG_IMG and child.id != CAtomNull and
-          child.id != empty:
-        list.add(ctx.toStr(child.id))
-      list.add(ctx.toStr(child.name))
+          child.id != satUempty.toAtom():
+        list.add(child.id.toStr())
+      list.add(child.name.toStr())
   return list
 
 proc getter(ctx: JSContext; document: Document; s: string): JSValue
     {.jsgetownprop.} =
   if s.len != 0:
-    let id = ctx.toAtom(s)
-    let empty = ctx.toAtom("")
+    let id = s.toAtom()
     #TODO exposed embed, exposed object
     for child in document.elements({TAG_FORM, TAG_IFRAME, TAG_IMG}):
       if child.tagType == TAG_IMG and child.id == id and
-          child.name != CAtomNull and child.name != empty:
+          child.name != CAtomNull and child.name != satUempty.toAtom():
         return ctx.toJS(child)
       if child.name == id:
         return ctx.toJS(child)
@@ -2558,7 +2513,7 @@ func attr*(element: Element; s: CAtom): lent string =
     return emptyStr
 
 func attr*(element: Element; s: StaticAtom): lent string =
-  return element.attr(element.document.toAtom(s))
+  return element.attr(s.toAtom())
 
 func attrl*(element: Element; s: StaticAtom): Option[int32] =
   return parseInt32(element.attr(s))
@@ -2579,8 +2534,7 @@ func attrb*(element: Element; s: CAtom): bool =
   return element.findAttr(s) != -1
 
 func attrb*(element: Element; at: StaticAtom): bool =
-  let atom = element.document.toAtom(at)
-  return element.attrb(atom)
+  return element.attrb(at.toAtom())
 
 # https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
 func serializesAsVoid(element: Element): bool =
@@ -2590,13 +2544,13 @@ func serializesAsVoid(element: Element): bool =
 func serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
   if child of Element:
     let element = Element(child)
-    let tags = element.document.toStr(element.localName)
+    let tags = element.localName.toStr()
     res &= '<'
     #TODO qualified name if not HTML, SVG or MathML
     res &= tags
     #TODO custom elements
     for attr in element.attrs:
-      let k = element.document.toStr(attr.qualifiedName)
+      let k = attr.qualifiedName.toStr()
       res &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
     res &= '>'
     res.serializeFragment(element)
@@ -2692,8 +2646,8 @@ func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
 
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
-  document.uaSheets.add(ua.parseStylesheet(document.factory, nil,
-    document.window.attrsp).applyMediaQuery(document.window))
+  document.uaSheets.add(ua.parseStylesheet(nil, document.window.attrsp)
+    .applyMediaQuery(document.window))
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
@@ -2701,14 +2655,14 @@ proc applyQuirksSheet*(document: Document) =
   if document.window == nil:
     return
   const quirks = staticRead"res/quirk.css"
-  document.uaSheets.add(quirks.parseStylesheet(document.factory, nil,
-    document.window.attrsp).applyMediaQuery(document.window))
+  document.uaSheets.add(quirks.parseStylesheet(nil, document.window.attrsp)
+    .applyMediaQuery(document.window))
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
 proc applyUserSheet*(document: Document; user: string) =
-  document.userSheet = user.parseStylesheet(document.factory, nil,
-    document.window.attrsp).applyMediaQuery(document.window)
+  document.userSheet = user.parseStylesheet(nil, document.window.attrsp)
+    .applyMediaQuery(document.window)
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
@@ -2785,10 +2739,10 @@ func formmethod*(element: Element): FormMethod =
         return parseFormMethod(element.form.attr(satMethod))
   return fmGet
 
-func findAnchor*(document: Document; id: string): Element =
+proc findAnchor*(document: Document; id: string): Element =
   if id.len == 0:
     return nil
-  let id = document.toAtom(id)
+  let id = id.toAtom()
   for child in document.elements:
     if child.id == id:
       return child
@@ -2856,7 +2810,7 @@ proc fireEvent*(window: Window; event: Event; target: EventTarget) =
   discard window.jsctx.dispatch(target, event)
 
 proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
-  let event = newEvent(window.toAtom(name), target)
+  let event = newEvent(name.toAtom(), target)
   event.isTrusted = true
   window.fireEvent(event, target)
 
@@ -2892,8 +2846,7 @@ proc hyperlinkGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
   let url = element.reinitURL()
   if url.isSome:
     let href = ctx.toJS(url.get)
-    let s = ctx.toStr(sa)
-    let res = JS_GetPropertyStr(ctx, href, cstring(s))
+    let res = JS_GetPropertyStr(ctx, href, cstring(sa.toStr()))
     JS_FreeValue(ctx, href)
     return res
   if sa == satProtocol:
@@ -2915,8 +2868,8 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
   let url = element.reinitURL()
   if url.isSome:
     let href = ctx.toJS(url)
-    let s = ctx.toStr(sa)
-    let res = JS_SetPropertyStr(ctx, href, cstring(s), JS_DupValue(ctx, val))
+    let res = JS_SetPropertyStr(ctx, href, cstring(sa.toStr()),
+      JS_DupValue(ctx, val))
     if res < 0:
       return JS_EXCEPTION
     var outs: string
@@ -2929,7 +2882,7 @@ proc hyperlinkGetProp(ctx: JSContext; element: HTMLElement; a: JSAtom;
     desc: ptr JSPropertyDescriptor): JSValue =
   var s: string
   if ctx.fromJS(a, s).isSome:
-    let sa = ctx.toStaticAtom(ctx.toAtom(s))
+    let sa = s.toStaticAtom()
     if sa in {satHref, satOrigin, satProtocol, satUsername, satPassword,
         satHost, satHostname, satPort, satPathname, satSearch, satHash}:
       if desc != nil:
@@ -3099,7 +3052,7 @@ func inputString*(input: HTMLInputElement): CharacterData =
     return input.internalValue
 
 # <label>
-func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
+proc control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
   let f = label.attr(satFor)
   if f != "":
     let elem = label.document.getElementById(f)
@@ -3113,7 +3066,7 @@ func control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
     return nil
   return nil
 
-func form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
+proc form(label: HTMLLabelElement): HTMLFormElement {.jsfget.} =
   let control = label.control
   if control != nil:
     return control.form
@@ -3376,8 +3329,8 @@ proc updateSheet*(this: HTMLStyleElement) =
   let document = this.document
   let window = document.window
   if window != nil:
-    this.sheet = this.textContent.parseStylesheet(document.factory,
-      document.baseURL, window.attrsp).applyMediaQuery(window)
+    this.sheet = this.textContent.parseStylesheet(document.baseURL,
+      window.attrsp).applyMediaQuery(window)
     document.applyAuthorSheets()
 
 # <table>
@@ -3642,7 +3595,7 @@ func newComment(ctx: JSContext; data: sink string = ""): Comment {.jsctor.} =
 proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     Element =
   let tagType = localName.toTagType()
-  let sns = document.toStaticAtom(namespaceURI)
+  let sns = namespaceURI.toStaticAtom()
   let element: Element = case tagType
   of TAG_INPUT:
     HTMLInputElement()
@@ -3755,31 +3708,25 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
 
 proc newElement*(document: Document; localName: CAtom;
     namespace = Namespace.HTML; prefix = NO_PREFIX): Element =
-  return document.newElement(localName, document.toAtom(namespace),
-    document.toAtom(prefix))
+  return document.newElement(localName, namespace.toAtom(), prefix.toAtom())
 
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
-  let localName = document.toAtom(tagType)
+  let localName = tagType.toAtom()
   return HTMLElement(document.newElement(localName, Namespace.HTML, NO_PREFIX))
 
-proc newDocument*(factory: CAtomFactory): Document =
+proc newDocument*(): Document {.jsctor.} =
   let document = Document(
     url: newURL("about:blank").get,
     index: -1,
-    factory: factory,
     contentType: "application/xml"
   )
   document.implementation = DOMImplementation(document: document)
   return document
 
-proc newDocument(ctx: JSContext): Document {.jsctor.} =
-  return newDocument(ctx.getGlobal().factory)
-
-proc newXMLDocument(ctx: JSContext): XMLDocument =
+proc newXMLDocument(): XMLDocument =
   let document = XMLDocument(
     url: newURL("about:blank").get,
     index: -1,
-    factory: ctx.getGlobal().factory,
     contentType: "application/xml"
   )
   document.implementation = DOMImplementation(document: document)
@@ -4021,8 +3968,7 @@ proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
     return err()
   # dummyAttrs can be safely used because the result is discarded.
   var dummy: seq[CSSComputedEntry] = @[]
-  ?dummy.parseComputedValues(this.decls[i].name, cvals, dummyAttrs,
-    this.element.document.factory)
+  ?dummy.parseComputedValues(this.decls[i].name, cvals, dummyAttrs)
   this.decls[i].value = cvals
   return ok()
 
@@ -4061,8 +4007,7 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
       return ok()
   else:
     var dummy: seq[CSSComputedEntry] = @[]
-    let val0 = dummy.parseComputedValues(name, cvals, dummyAttrs,
-      this.element.document.factory)
+    let val0 = dummy.parseComputedValues(name, cvals, dummyAttrs)
     if val0.isNone:
       return ok()
     this.decls.add(CSSDeclaration(name: name, value: cvals))
@@ -4123,7 +4068,7 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
     return newResolvedPromise(JSResult[string].err(nil))
   ).then(proc(s: JSResult[string]): Promise[CSSStylesheet] =
     if s.isSome:
-      let sheet = s.get.parseStylesheet(window.factory, url, window.attrsp)
+      let sheet = s.get.parseStylesheet(url, window.attrsp)
       var promises: seq[EmptyPromise] = @[]
       var sheets = newSeq[CSSStylesheet](sheet.importList.len)
       for i, url in sheet.importList:
@@ -4389,11 +4334,11 @@ proc reflectEvent(element: Element; target: EventTarget;
     # directly here, but a wrapper function that calls fun. Currently
     # you can run removeEventListener with element.onclick, that should
     # not work.
-    doAssert ctx.addEventListener(target, document.toAtom(ctype), fun).isSome
+    doAssert ctx.addEventListener(target, ctype.toAtom(), fun).isSome
   JS_FreeValue(ctx, fun)
 
 proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
-  let name = element.document.toStaticAtom(name)
+  let name = name.toStaticAtom()
   template reflect_str(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
       element.val = value.get("")
@@ -4401,7 +4346,7 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
   template reflect_atom(element: Element; n: StaticAtom; val: untyped) =
     if name == n:
       if value.isSome:
-        element.val = element.document.toAtom(value.get)
+        element.val = value.get.toAtom()
       else:
         element.val = CAtomNull
       return
@@ -4414,7 +4359,7 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
     if value.isSome:
       for x in value.get.split(AsciiWhitespace):
         if x != "":
-          let a = element.document.toAtom(x)
+          let a = x.toAtom()
           if a notin element.val:
             element.val.toks.add(a)
   template reflect_domtoklist(element: Element; n: StaticAtom; val: untyped) =
@@ -4543,20 +4488,20 @@ proc attr*(element: Element; name: CAtom; value: sink string) =
   element.reflectAttr(name, some(element.attrs[i].value))
 
 proc attr*(element: Element; name: StaticAtom; value: sink string) =
-  element.attr(element.document.toAtom(name), value)
+  element.attr(name.toAtom(), value)
 
 proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
     namespace: Namespace; value: sink string) =
   if prefix == NO_PREFIX and namespace == NO_NAMESPACE:
     element.attr(localName, value)
     return
-  let namespace = element.document.toAtom(namespace)
+  let namespace = namespace.toAtom()
   let i = element.findAttrNS(namespace, localName)
   var prefixAtom, qualifiedName: CAtom
   if prefix != NO_PREFIX:
-    prefixAtom = element.document.toAtom(prefix)
-    let tmp = $prefix & ':' & element.document.toStr(localName)
-    qualifiedName = element.document.toAtom(tmp)
+    prefixAtom = prefix.toAtom()
+    let tmp = $prefix & ':' & localName.toStr()
+    qualifiedName = tmp.toAtom()
   else:
     qualifiedName = localName
   if i != -1:
@@ -4590,9 +4535,9 @@ proc setAttribute(element: Element; qualifiedName: string; value: sink string):
   ?qualifiedName.validateName()
   let qualifiedName = if element.namespace == Namespace.HTML and
       not element.document.isxml:
-    element.document.toAtomLower(qualifiedName)
+    qualifiedName.toAtomLower()
   else:
-    element.document.toAtom(qualifiedName)
+    qualifiedName.toAtom()
   element.attr(qualifiedName, value)
   return ok()
 
@@ -4601,7 +4546,7 @@ proc setAttributeNS(element: Element; namespace, qualifiedName,
   ?qualifiedName.validateQName()
   let ps = qualifiedName.until(':')
   let prefix = if ps.len < qualifiedName.len: ps else: ""
-  let localName = element.document.toAtom(qualifiedName.substr(prefix.len))
+  let localName = qualifiedName.substr(prefix.len).toAtom()
   #TODO atomize here
   if prefix != "" and namespace == "" or
       prefix == "xml" and namespace != $Namespace.XML or
@@ -4610,8 +4555,8 @@ proc setAttributeNS(element: Element; namespace, qualifiedName,
       namespace == $Namespace.XMLNS and qualifiedName != "xmlns" and
         prefix != "xmlns":
     return errDOMException("Unexpected namespace", "NamespaceError")
-  let qualifiedName = element.document.toAtom(qualifiedName)
-  let namespace = element.document.toAtom(namespace)
+  let qualifiedName = qualifiedName.toAtom()
+  let namespace = namespace.toAtom()
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
     element.attrs[i].value = value
@@ -5534,9 +5479,9 @@ proc createElement(document: Document; localName: string): DOMResult[Element]
     {.jsfunc.} =
   ?localName.validateName()
   let localName = if not document.isxml:
-    document.toAtomLower(localName)
+    localName.toAtomLower()
   else:
-    document.toAtom(localName)
+    localName.toAtom()
   let namespace = if not document.isxml:
     #TODO or content type is application/xhtml+xml
     Namespace.HTML
@@ -5547,7 +5492,7 @@ proc createElement(document: Document; localName: string): DOMResult[Element]
 proc validateAndExtract(ctx: JSContext; document: Document; qname: string;
     namespace, prefixOut, localNameOut: var CAtom): DOMResult[void] =
   ?qname.validateQName()
-  if namespace == ctx.toAtom(""):
+  if namespace == satUempty.toAtom():
     namespace = CAtomNull
   var prefix = ""
   var localName = qname.until(':')
@@ -5557,13 +5502,13 @@ proc validateAndExtract(ctx: JSContext; document: Document; qname: string;
   if namespace == CAtomNull and prefix != "":
     return errDOMException("Got namespace prefix, but no namespace",
       "NamespaceError")
-  let sns = document.toStaticAtom(namespace)
+  let sns = namespace.toStaticAtom()
   if prefix == "xml" and sns != satNamespaceXML:
     return errDOMException("Expected XML namespace", "NamespaceError")
   if (qname == "xmlns" or prefix == "xmlns") != (sns == satNamespaceXMLNS):
     return errDOMException("Expected XMLNS namespace", "NamespaceError")
-  prefixOut = if prefix == "": CAtomNull else: document.toAtom(prefix)
-  localNameOut = document.toAtom(localName)
+  prefixOut = if prefix == "": CAtomNull else: prefix.toAtom()
+  localNameOut = localName.toAtom()
   ok()
 
 proc createElementNS(ctx: JSContext; document: Document; namespace: CAtom;
@@ -5586,7 +5531,7 @@ proc createDocumentType(implementation: var DOMImplementation; qualifiedName,
 proc createDocument(ctx: JSContext; implementation: var DOMImplementation;
     namespace: CAtom; qname0 = JS_NULL; doctype = none(DocumentType)):
     DOMResult[XMLDocument] {.jsfunc.} =
-  let document = newXMLDocument(ctx)
+  let document = newXMLDocument()
   var qname = ""
   if not JS_IsNull(qname0):
     ?ctx.fromJS(qname0, qname)
@@ -5599,15 +5544,15 @@ proc createDocument(ctx: JSContext; implementation: var DOMImplementation;
   if element != nil:
     document.append(element)
   document.origin = implementation.document.origin
-  case document.toStaticAtom(namespace)
+  case namespace.toStaticAtom()
   of satNamespaceHTML: document.contentType = "application/xml+html"
   of satNamespaceSVG: document.contentType = "image/svg+xml"
   else: discard
   return ok(document)
 
-proc createHTMLDocument(ctx: JSContext; implementation: var DOMImplementation;
+proc createHTMLDocument(implementation: var DOMImplementation;
     title = none(string)): Document {.jsfunc.} =
-  let doc = newDocument(ctx)
+  let doc = newDocument()
   doc.contentType = "text/html"
   doc.append(doc.newDocumentType("html", "", ""))
   let html = doc.newHTMLElement(TAG_HTML)
@@ -5650,11 +5595,11 @@ proc createProcessingInstruction(document: Document; target, data: string):
 
 proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
     DOMResult[Event] {.jsfunc.} =
-  case ctx.toStaticAtom(ctx.toLowerAscii(atom))
+  case atom.toLowerAscii().toStaticAtom()
   of satCustomevent:
-    return ok(ctx.newCustomEvent(ctx.toAtom("")))
+    return ok(ctx.newCustomEvent(satUempty.toAtom()))
   of satEvent, satEvents, satSvgevents:
-    return ok(newEvent(ctx.toAtom(""), nil))
+    return ok(newEvent(satUempty.toAtom(), nil))
   else:
     return errDOMException("Event not supported", "NotSupportedError")
 
@@ -5716,7 +5661,7 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
     Node(x)
   elif node of Document:
     let document = Document(node)
-    let x = newDocument(document.factory)
+    let x = newDocument()
     x.charset = document.charset
     x.contentType = document.contentType
     x.url = document.url
@@ -5796,7 +5741,7 @@ func isSameNode(node, other: Node): bool {.jsfunc.} =
   return node == other
 
 proc querySelectorImpl(node: Node; q: string): DOMResult[Element] =
-  let selectors = parseSelectors(q, node.document.factory)
+  let selectors = parseSelectors(q)
   if selectors.len == 0:
     return errDOMException("Invalid selector: " & q, "SyntaxError")
   for element in node.elements:
@@ -5815,7 +5760,7 @@ proc querySelector(this: DocumentFragment; q: string): DOMResult[Element]
   return this.querySelectorImpl(q)
 
 proc querySelectorAllImpl(node: Node; q: string): DOMResult[NodeList] =
-  let selectors = parseSelectors(q, node.document.factory)
+  let selectors = parseSelectors(q)
   if selectors.len == 0:
     return errDOMException("Invalid selector: " & q, "SyntaxError")
   return ok(node.newNodeList(
@@ -5935,8 +5880,7 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
       assert ctx.fromJS(this, target).isSome
       ctx.definePropertyC(this, $entry.attrname, JS_DupValue(ctx, val))
       #TODO I haven't checked but this might also be wrong
-      let ctype = ctx.getGlobal().toAtom(entry.ctype)
-      doAssert ctx.addEventListener(target, ctype, val).isSome
+      doAssert ctx.addEventListener(target, entry.ctype.toAtom(), val).isSome
   return JS_DupValue(ctx, val)
 
 func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
@@ -6210,15 +6154,12 @@ getParentImpl = proc(ctx: JSContext; eventTarget: EventTarget; event: Event):
     EventTarget =
   if eventTarget of Node:
     if eventTarget of Document:
-      if event.ctype == ctx.toAtom(satLoad):
+      if event.ctype == satLoad.toAtom():
         return nil
       # if no browsing context, then window will be nil anyway
       return Document(eventTarget).window
     return Node(eventTarget).parentNode
   return nil
-
-getFactoryImpl = proc(ctx: JSContext): CAtomFactory =
-  return ctx.getGlobal().factory
 
 errorImpl = proc(ctx: JSContext; ss: varargs[string]) =
   ctx.getGlobal().console.error(ss)

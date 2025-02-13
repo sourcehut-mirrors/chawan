@@ -325,7 +325,7 @@ proc postMessage(ctx: JSContext; window: Window; value: JSValue): Err[void]
   ?ctx.fromJS(value, s)
   let data = JS_ParseJSON(ctx, cstring(s), csize_t(s.len),
     cstring"<postMessage>")
-  let event = ctx.newMessageEvent(ctx.toAtom(satMessage),
+  let event = ctx.newMessageEvent(satMessage.toAtom(),
     MessageEventInit(data: data))
   window.fireEvent(event, window)
   ok()
@@ -336,7 +336,7 @@ proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
     let this = ctx.toJS(window)
     ctx.definePropertyC(this, "onload", JS_DupValue(ctx, val))
     #TODO I haven't checked but this might also be wrong
-    doAssert ctx.addEventListener(window, window.toAtom(satLoad), val).isSome
+    doAssert ctx.addEventListener(window, satLoad.toAtom(), val).isSome
     JS_FreeValue(ctx, this)
 
 proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
@@ -423,8 +423,8 @@ proc addScripting*(window: Window) =
   ctx.addPerformanceModule()
 
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
-    attrsp: ptr WindowAttributes; factory: CAtomFactory; loader: FileLoader;
-    url: URL; urandom: PosixStream; imageTypes: Table[string, string];
+    attrsp: ptr WindowAttributes; loader: FileLoader; url: URL;
+    urandom: PosixStream; imageTypes: Table[string, string];
     userAgent, referrer: string): Window =
   let err = newDynFileStream(stderr)
   let window = Window(
@@ -438,7 +438,6 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
       scripting: scripting,
       origin: url.origin
     ),
-    factory: factory,
     crypto: Crypto(urandom: urandom),
     imageTypes: imageTypes,
     userAgent: userAgent,

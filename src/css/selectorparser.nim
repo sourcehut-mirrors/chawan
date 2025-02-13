@@ -41,7 +41,6 @@ type
     selectors: seq[ComplexSelector]
     cvals: seq[CSSComponentValue]
     at: int
-    factory: CAtomFactory
     failed: bool
     nested: bool
 
@@ -106,8 +105,8 @@ type
   SelectorList* = seq[ComplexSelector]
 
 # Forward declarations
-proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
-  nested, forgiving: bool): SelectorList
+proc parseSelectorList(cvals: seq[CSSComponentValue]; nested, forgiving: bool):
+  SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 func `$`*(cxsel: ComplexSelector): string
 
@@ -295,8 +294,7 @@ proc parseRecursiveSelectorFunction(state: var SelectorParser;
     t: stPseudoClass,
     pseudo: PseudoData(t: class),
   )
-  fun.pseudo.fsels = parseSelectorList(body, state.factory, nested = true,
-    forgiving)
+  fun.pseudo.fsels = parseSelectorList(body, nested = true, forgiving)
   if fun.pseudo.fsels.len == 0: fail
   return fun
 
@@ -319,7 +317,7 @@ proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
     inc i
   if i == cssfunction.value.len: fail
   nthchild.pseudo.ofsels = cssfunction.value[i..^1]
-    .parseSelectorList(state.factory, nested = true, forgiving = false)
+    .parseSelectorList(nested = true, forgiving = false)
   if nthchild.pseudo.ofsels.len == 0: fail
   return nthchild
 
@@ -410,7 +408,7 @@ proc parseAttributeSelector(state: var SelectorParser;
   if not state2.has():
     return Selector(
       t: stAttr,
-      attr: state.factory.toAtomLower(attr.value),
+      attr: attr.value.toAtomLower(),
       rel: SelectorRelation(t: rtExists)
     )
   let delim = get_tok state2.consume()
@@ -441,7 +439,7 @@ proc parseAttributeSelector(state: var SelectorParser;
       flag = rfS
   return Selector(
     t: stAttr,
-    attr: state.factory.toAtomLower(attr.value),
+    attr: attr.value.toAtomLower(),
     value: value.value,
     rel: SelectorRelation(t: rel, flag: flag)
   )
@@ -450,7 +448,7 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = get_tok state.consume()
   if tok.t != cttIdent: fail
-  let class = state.factory.toAtomLower(tok.value)
+  let class = tok.value.toAtomLower()
   result = Selector(t: stClass, class: class)
   when defined(debug):
     result.classs = tok.value
@@ -464,7 +462,7 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       case tok.t
       of cttIdent:
         inc state.at
-        let tag = state.factory.toAtomLower(tok.value)
+        let tag = tok.value.toAtomLower()
         let sel = Selector(t: stType, tag: tag)
         when defined(debug):
           sel.tags = tok.value
@@ -474,7 +472,7 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
         result.add(state.parsePseudoSelector())
       of cttHash:
         inc state.at
-        let id = state.factory.toAtomLower(tok.value)
+        let id = tok.value.toAtomLower()
         result.add(Selector(t: stId, id: id))
         when defined(debug):
           result[^1].ids = tok.value
@@ -537,11 +535,10 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     #TODO move pseudo check here?
     result.pseudo = result[^1][^1].elem
 
-proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
-    nested, forgiving: bool): SelectorList =
+proc parseSelectorList(cvals: seq[CSSComponentValue]; nested, forgiving: bool):
+    SelectorList =
   var state = SelectorParser(
     cvals: cvals,
-    factory: factory,
     nested: nested
   )
   var res: SelectorList = @[]
@@ -557,10 +554,8 @@ proc parseSelectorList(cvals: seq[CSSComponentValue]; factory: CAtomFactory;
       res.add(csel)
   return res
 
-proc parseSelectors*(cvals: seq[CSSComponentValue]; factory: CAtomFactory):
-    seq[ComplexSelector] =
-  return parseSelectorList(cvals, factory, nested = false, forgiving = false)
+proc parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] =
+  return parseSelectorList(cvals, nested = false, forgiving = false)
 
-proc parseSelectors*(ibuf: string; factory: CAtomFactory):
-    seq[ComplexSelector] =
-  return parseSelectors(parseComponentValues(ibuf), factory)
+proc parseSelectors*(ibuf: string): seq[ComplexSelector] =
+  return parseSelectors(parseComponentValues(ibuf))

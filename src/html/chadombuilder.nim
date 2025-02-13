@@ -33,7 +33,6 @@ type
     charset*: Charset
     confidence*: CharsetConfidence
     document*: Document
-    factory: CAtomFactory
     poppedScript: HTMLScriptElement
 
   DOMBuilderImpl = ChaDOMBuilder
@@ -56,10 +55,10 @@ proc atomToTagTypeImpl(builder: ChaDOMBuilder; atom: CAtom): TagType =
   return atom.toTagType()
 
 proc tagTypeToAtomImpl(builder: ChaDOMBuilder; tagType: TagType): CAtom =
-  return builder.factory.toAtom(tagType)
+  return tagType.toAtom()
 
 proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtom =
-  return builder.factory.toAtom(s)
+  return s.toAtom()
 
 proc finish(builder: ChaDOMBuilder) =
   while builder.document.scriptsToExecOnLoad.len > 0:
@@ -70,7 +69,7 @@ proc finish(builder: ChaDOMBuilder) =
 
 proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   let builder = wrapper.builder
-  let document = newDocument(builder.factory)
+  let document = newDocument()
   document.charset = charset
   document.setActiveParser(wrapper)
   document.contentType = "text/html"
@@ -82,7 +81,6 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
     window.document = document
   builder.document = document
   builder.charset = charset
-  assert document.factory != nil
   wrapper.parser = initHTML5Parser(builder, wrapper.opts)
 
 proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
@@ -219,9 +217,9 @@ proc elementPoppedImpl(builder: ChaDOMBuilder; element: Node) =
   elif element of HTMLStyleElement:
     HTMLStyleElement(element).updateSheet()
 
-proc newChaDOMBuilder(url: URL; window: Window; factory: CAtomFactory;
-    confidence: CharsetConfidence; charset = DefaultCharset): ChaDOMBuilder =
-  let document = newDocument(factory)
+proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
+    charset = DefaultCharset): ChaDOMBuilder =
+  let document = newDocument()
   document.charset = charset
   document.contentType = "text/html"
   document.url = url
@@ -230,7 +228,6 @@ proc newChaDOMBuilder(url: URL; window: Window; factory: CAtomFactory;
     window.document = document
   return ChaDOMBuilder(
     document: document,
-    factory: factory,
     confidence: confidence,
     charset: charset
   )
@@ -238,8 +235,7 @@ proc newChaDOMBuilder(url: URL; window: Window; factory: CAtomFactory;
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
 proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
   let url = parseURL("about:blank").get
-  let factory = element.document.factory
-  let builder = newChaDOMBuilder(url, nil, factory, ccIrrelevant)
+  let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
   let document = builder.document
   document.mode = element.document.mode
   let state = case element.tagType
@@ -272,12 +268,12 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
   builder.finish()
   return root.childList
 
-proc newHTML5ParserWrapper*(window: Window; url: URL; factory: CAtomFactory;
+proc newHTML5ParserWrapper*(window: Window; url: URL;
     confidence: CharsetConfidence; charset: Charset): HTML5ParserWrapper =
   let opts = HTML5ParserOpts[Node, CAtom](
     scripting: window.settings.scripting != smFalse
   )
-  let builder = newChaDOMBuilder(url, window, factory, confidence, charset)
+  let builder = newChaDOMBuilder(url, window, confidence, charset)
   let wrapper = HTML5ParserWrapper(
     builder: builder,
     opts: opts,
@@ -368,7 +364,7 @@ proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
       window.document.url
     else:
       newURL("about:blank").get
-    let builder = newChaDOMBuilder(url, window, window.factory, ccIrrelevant)
+    let builder = newChaDOMBuilder(url, window, ccIrrelevant)
     var parser = initHTML5Parser(builder, HTML5ParserOpts[Node, CAtom]())
     let res = parser.parseChunk(str)
     assert res == PRES_CONTINUE

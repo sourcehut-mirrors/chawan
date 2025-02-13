@@ -39,7 +39,6 @@ type
     generalList*: seq[CSSRuleDef]
     importList*: seq[URL]
     len: int
-    factory*: CAtomFactory
     attrs: ptr WindowAttributes
 
 type SelectorHashes = object
@@ -48,8 +47,7 @@ type SelectorHashes = object
   class: CAtom
   attr: CAtom
 
-func newStylesheet*(cap: int; factory: CAtomFactory;
-    attrs: ptr WindowAttributes): CSSStylesheet =
+func newStylesheet*(cap: int; attrs: ptr WindowAttributes): CSSStylesheet =
   let bucketsize = cap div 2
   return CSSStylesheet(
     tagTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
@@ -57,7 +55,6 @@ func newStylesheet*(cap: int; factory: CAtomFactory;
     classTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
     attrTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
     generalList: newSeqOfCap[CSSRuleDef](bucketsize),
-    factory: factory,
     attrs: attrs
   )
 
@@ -183,14 +180,14 @@ proc add*(sheet, sheet2: CSSStylesheet) =
       sheet.attrTable[key] = value
 
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
-  var sels = parseSelectors(rule.prelude, sheet.factory)
+  var sels = parseSelectors(rule.prelude)
   if sels.len > 0:
     let decls = rule.oblock.value.parseDeclarations()
     let rule = CSSRuleDef(sels: move(sels), idx: sheet.len)
     for decl in decls:
       if decl.name.startsWith("--"):
         let cvar = CSSVariable(
-          name: sheet.factory.toAtom(decl.name.substr(2)),
+          name: decl.name.substr(2).toAtom(),
           cvals: decl.value
         )
         if decl.important:
@@ -201,12 +198,12 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
         if decl.important:
           let olen = rule.importantVals.len
           if rule.importantVals.parseComputedValues(decl.name, decl.value,
-              sheet.attrs[], sheet.factory).isNone:
+              sheet.attrs[]).isNone:
             rule.importantVals.setLen(olen)
         else:
           let olen = rule.normalVals.len
           if rule.normalVals.parseComputedValues(decl.name, decl.value,
-              sheet.attrs[], sheet.factory).isNone:
+              sheet.attrs[]).isNone:
             rule.normalVals.setLen(olen)
     sheet.add(rule)
     inc sheet.len
@@ -232,7 +229,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
       let rules = atrule.oblock.value.parseListOfRules()
       if rules.len > 0:
         var media = CSSMediaQueryDef()
-        media.children = newStylesheet(rules.len, sheet.factory, sheet.attrs)
+        media.children = newStylesheet(rules.len, sheet.attrs)
         media.children.len = sheet.len
         media.query = query
         for rule in rules:
@@ -243,10 +240,10 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
         sheet.mqList.add(media)
         sheet.len = media.children.len
 
-proc parseStylesheet*(ibuf: string; factory: CAtomFactory; base: URL;
-    attrs: ptr WindowAttributes): CSSStylesheet =
+proc parseStylesheet*(ibuf: string; base: URL; attrs: ptr WindowAttributes):
+    CSSStylesheet =
   let raw = parseStylesheet(ibuf)
-  let sheet = newStylesheet(raw.value.len, factory, attrs)
+  let sheet = newStylesheet(raw.value.len, attrs)
   for v in raw.value:
     if v of CSSAtRule:
       sheet.addAtRule(CSSAtRule(v), base)

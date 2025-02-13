@@ -85,7 +85,6 @@ type
     ctx: TextDecoderContext
     document: Document
     estream: DynFileStream # error stream
-    factory: CAtomFactory
     fd: int # file descriptor of buffer source
     firstBufferRead: bool
     hoverText: array[HoverType, string]
@@ -331,7 +330,7 @@ const ClickableElements = {
 }
 
 proc isClickable(element: Element): bool =
-  if element.hasEventListener(element.document.toAtom(satClick)):
+  if element.hasEventListener(satClick.toAtom()):
     return true
   if element of HTMLAnchorElement:
     return HTMLAnchorElement(element).reinitURL().isSome
@@ -1020,14 +1019,14 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
 
 proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
-  let event = newEvent(window.toAtom(satDOMContentLoaded), buffer.document)
+  let event = newEvent(satDOMContentLoaded.toAtom(), buffer.document)
   event.isTrusted = true
   window.fireEvent(event, buffer.document)
   buffer.maybeReshape()
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
-  let event = newEvent(window.toAtom(satLoad), window)
+  let event = newEvent(satLoad.toAtom(), window)
   event.isTrusted = true
   window.fireEvent(event, window)
   buffer.maybeReshape()
@@ -1349,7 +1348,7 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
         if input.inputType == itFile:
           window.fireEvent(satInput, input)
         else:
-          let inputEvent = newInputEvent(window.toAtom(satInput),
+          let inputEvent = newInputEvent(satInput.toAtom(),
             InputEventInit(data: some(s), inputType: "insertText"))
           inputEvent.isTrusted = true
           window.fireEvent(inputEvent, input)
@@ -1594,7 +1593,7 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
     let element = buffer.getCursorElement(cursorx, cursory)
     if element != nil:
       let window = buffer.window
-      let event = newEvent(window.toAtom(satClick), element)
+      let event = newEvent(satClick.toAtom(), element)
       event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
       buffer.maybeReshape()
@@ -1909,7 +1908,7 @@ proc cleanup(buffer: Buffer) =
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
     pstream, istream: SocketStream; urandom: PosixStream; cacheId: int) =
-  let factory = newCAtomFactory()
+  initCAtomFactory()
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
   else:
@@ -1925,8 +1924,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     url: url,
     charsetStack: charsetStack,
     cacheId: -1,
-    outputId: -1,
-    factory: factory
+    outputId: -1
   )
   buffer.window = newWindow(
     config.scripting,
@@ -1934,7 +1932,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     config.styling,
     config.autofocus,
     addr buffer.attrs,
-    factory,
     loader,
     url,
     urandom,
@@ -1961,7 +1958,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   buffer.htmlParser = newHTML5ParserWrapper(
     buffer.window,
     buffer.url,
-    buffer.factory,
     confidence,
     buffer.charset
   )

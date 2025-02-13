@@ -185,13 +185,12 @@ func matches(element: Element; sel: Selector; depends: var DependencyInfo):
   of stType:
     return element.localName == sel.tag
   of stClass:
-    let factory = element.document.factory
     for it in element.classList:
-      if sel.class == factory.toLowerAscii(it):
+      if sel.class == it.toLowerAscii():
         return mtTrue
     return mtFalse
   of stId:
-    return sel.id == element.document.factory.toLowerAscii(element.id)
+    return sel.id == element.id.toLowerAscii()
   of stAttr:
     return element.matchesAttr(sel)
   of stPseudoClass:
