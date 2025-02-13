@@ -47,6 +47,7 @@ import types/cell
 import types/color
 import types/formdata
 import types/opt
+import types/refstring
 import types/url
 import types/winattrs
 import utils/strwidth
@@ -767,14 +768,15 @@ proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
   buffer.tasks[cmd] = 0
 
 proc maybeReshape(buffer: Buffer) =
-  if buffer.document == nil or buffer.document.documentElement == nil:
+  let document = buffer.document
+  if document == nil or document.documentElement == nil:
     return # not parsed yet, nothing to render
-  if buffer.document.invalid:
-    let root = initStyledElement(buffer.document.documentElement)
-    buffer.rootBox = root.layout(addr buffer.attrs)
+  if document.invalid:
+    buffer.rootBox = document.documentElement.buildTree(buffer.rootBox)
+    buffer.rootBox.layout(addr buffer.attrs)
     buffer.lines.renderDocument(buffer.bgcolor, buffer.rootBox,
       addr buffer.attrs, buffer.images)
-    buffer.document.invalid = false
+    document.invalid = false
     if buffer.hasTask(bcOnReshape):
       buffer.resolveTask(bcOnReshape)
     else:
@@ -794,7 +796,7 @@ proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
     if data.len > 0:
       let lastChild = plaintext.lastChild
       if lastChild != nil and lastChild of Text:
-        Text(lastChild).data &= data
+        Text(lastChild).data.s &= data
       else:
         plaintext.insert(buffer.document.newText($data), nil)
       #TODO just invalidate document?

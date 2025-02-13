@@ -2,7 +2,6 @@ import std/algorithm
 import std/math
 
 import css/box
-import css/csstree
 import css/cssvalues
 import css/lunit
 import html/dom
@@ -46,7 +45,6 @@ type
     attrsp: ptr WindowAttributes
     cellSize: Size # size(w = attrsp.ppc, h = attrsp.ppl)
     positioned: seq[PositionedItem]
-    myRootProperties: CSSValues
     luctx: LUContext
 
 const DefaultSpan = Span(start: 0, send: LUnit.high)
@@ -122,7 +120,6 @@ func establishesBFC(computed: CSSValues): bool =
     computed{"overflow-x"} notin {OverflowVisible, OverflowClip}
     #TODO contain, grid, multicol, column-span
 
-# 2nd pass: layout
 func canpx(l: CSSLength; sc: SizeConstraint): bool =
   return l.u != clAuto and (l.u != clPerc or sc.t == scStretch)
 
@@ -176,7 +173,7 @@ func minClamp(x: LUnit; span: Span): LUnit =
 # Flow is rooted in any block box that establishes a Block Formatting
 # Context (BFC)[1].  State associated with these is represented by the
 # BlockContext object.
-# Then, flow includes further child "boxes"[1] of the following types:
+# Then, flow includes further child "boxes"[2] of the following types:
 #
 # * Inline.  These may contain further inline boxes, text, images,
 #   or block boxes (!).
@@ -236,26 +233,6 @@ func minClamp(x: LUnit; span: Span): LUnit =
 #       * 3
 #
 # and blocks that come after inlines simply flush the current line box.
-# Note however, that the following fragment:
-#
-# <div id=a><span id=b>1</span><div id=c>2</div><span id=d>3</span></div>
-#
-# still produces this tree:
-#
-# * div#a
-#   * anonymous block
-#     * span#b
-#       * 1
-#   * div#c
-#     * anonymous inline
-#       * 2
-#   * anonymous block
-#     * span#d
-#       * 3
-#
-# This is an artifact of the previous implementation, which assumed that
-# inlines and blocks cannot be mixed together.  I'm not yet sure if this
-# should be changed.
 #
 # [3]: The spec itself does not even mention this case, but there is a
 # resolution that agrees with our new implementation:
@@ -391,7 +368,7 @@ type
     # Inline context state:
     lbstate: LineBoxState
     whitespacenum: int
-    whitespaceBox: InlineBox
+    whitespaceBox: InlineTextBox
     word: InlineAtomState
     wrappos: int # position of last wrapping opportunity, or -1
     lastTextBox: InlineBox
@@ -554,9 +531,10 @@ func computeShift(fstate: FlowState; istate: InlineState): LUnit =
     if fstate.lbstate.iastates.len == 0:
       return 0
     let ibox = fstate.lbstate.iastates[^1].ibox
-    if ibox.t == ibtText and ibox.runs.len > 0 and
-        ibox.runs[^1].str[^1] == ' ':
-      return 0
+    if ibox of InlineTextBox:
+      let ibox = InlineTextBox(ibox)
+      if ibox.runs.len > 0 and ibox.runs[^1].str[^1] == ' ':
+        return 0
   return fstate.cellWidth * fstate.whitespacenum
 
 proc newWord(fstate: var FlowState; ibox: InlineBox) =
@@ -645,13 +623,15 @@ proc alignLine(fstate: var FlowState) =
       # init new box
       currentBox = box
       currentAreaOffsetX = iastate.offset.x
-    case iastate.ibox.t
-    of ibtBox:
-      iastate.ibox.box.state.offset += iastate.offset
-    of ibtBitmap:
-      iastate.ibox.image.state.offset += iastate.offset
-    of ibtText:
+    if iastate.ibox of InlineTextBox:
       iastate.run.offset = iastate.offset
+    elif iastate.ibox of InlineBlockBox:
+      let ibox = InlineBlockBox(iastate.ibox)
+      # Add the offset to avoid destroying margins (etc.) of the block.
+      ibox.box.state.offset += iastate.offset
+    elif iastate.ibox of InlineImageBox:
+      let ibox = InlineImageBox(iastate.ibox)
+      ibox.imgstate.offset = iastate.offset
     else:
       assert false
   if currentBox != nil:
@@ -678,8 +658,9 @@ proc alignLine(fstate: var FlowState) =
 
 proc putAtom(lbstate: var LineBoxState; iastate: InlineAtomState) =
   lbstate.iastates.add(iastate)
-  if iastate.ibox.t == ibtText:
-    iastate.ibox.runs.add(iastate.run)
+  if iastate.ibox of InlineTextBox:
+    let ibox = InlineTextBox(iastate.ibox)
+    ibox.runs.add(iastate.run)
 
 proc addSpacing(fstate: var FlowState; width: LUnit; hang = false) =
   let ibox = fstate.whitespaceBox
@@ -866,18 +847,21 @@ proc addAtom(fstate: var FlowState; istate: var InlineState;
       fstate.initLine()
       # Recompute on newline
       shift = fstate.computeShift(istate)
-  if iastate.size.w > 0 and iastate.size.h > 0 or iastate.ibox.t == ibtBox:
+  if iastate.size.w > 0 and iastate.size.h > 0 or
+      iastate.ibox of InlineBlockBox:
     if shift > 0:
       fstate.addSpacing(shift)
     if iastate.run != nil and fstate.lbstate.iastates.len > 0 and
-        istate.ibox.runs.len > 0:
-      let oiastate = addr fstate.lbstate.iastates[^1]
-      let orun = oiastate.run
-      if orun != nil and orun == istate.ibox.runs[^1]:
-        orun.str &= iastate.run.str
-        oiastate.size.w += iastate.size.w
-        fstate.lbstate.size.w += iastate.size.w
-        return
+        istate.ibox of InlineTextBox:
+      let ibox = InlineTextBox(istate.ibox)
+      if ibox.runs.len > 0:
+        let oiastate = addr fstate.lbstate.iastates[^1]
+        let orun = oiastate.run
+        if orun != nil and orun == ibox.runs[^1]:
+          orun.str &= iastate.run.str
+          oiastate.size.w += iastate.size.w
+          fstate.lbstate.size.w += iastate.size.w
+          return
     fstate.lbstate.putAtom(iastate)
     fstate.lbstate.iastates[^1].offset.x += fstate.lbstate.size.w
     fstate.lbstate.size.w += iastate.size.w
@@ -961,45 +945,46 @@ proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
       fstate.finishLine(state, wrap = true)
       fstate.whitespacenum = 0
 
-proc processWhitespace(fstate: var FlowState; state: var InlineState;
+proc processWhitespace(fstate: var FlowState; istate: var InlineState;
     c: char) =
-  discard fstate.addWord(state)
-  case state.ibox.computed{"white-space"}
+  let ibox = InlineTextBox(istate.ibox)
+  discard fstate.addWord(istate)
+  case ibox.computed{"white-space"}
   of WhitespaceNormal, WhitespaceNowrap:
     if fstate.whitespacenum < 1 and fstate.lbstate.iastates.len > 0:
       fstate.whitespacenum = 1
-      fstate.whitespaceBox = state.ibox
+      fstate.whitespaceBox = ibox
       fstate.whitespaceIsLF = c == '\n'
     if c != '\n':
       fstate.whitespaceIsLF = false
   of WhitespacePreLine:
     if c == '\n':
-      fstate.finishLine(state, wrap = false, force = true)
+      fstate.finishLine(istate, wrap = false, force = true)
     elif fstate.whitespacenum < 1:
       fstate.whitespaceIsLF = false
       fstate.whitespacenum = 1
-      fstate.whitespaceBox = state.ibox
+      fstate.whitespaceBox = ibox
   of WhitespacePre, WhitespacePreWrap:
     fstate.whitespaceIsLF = false
     if c == '\n':
-      fstate.finishLine(state, wrap = false, force = true)
+      fstate.finishLine(istate, wrap = false, force = true)
     elif c == '\t':
       let realWidth = fstate.lbstate.charwidth + fstate.whitespacenum
       # We must flush first, because addWord would otherwise try to wrap the
       # line. (I think.)
-      fstate.flushWhitespace(state)
+      fstate.flushWhitespace(istate)
       let w = ((realWidth + 8) and not 7) - realWidth
       fstate.word.run.str.addUTF8(tabPUAPoint(w))
       fstate.word.size.w += w * fstate.cellWidth
       fstate.lbstate.charwidth += w
       # Ditto here - we don't want the tab stop to get merged into the next
       # word.
-      discard fstate.addWord(state)
+      discard fstate.addWord(istate)
     else:
       inc fstate.whitespacenum
-      fstate.whitespaceBox = state.ibox
+      fstate.whitespaceBox = ibox
   # set the "last word's last rune width" to the previous rune width
-  state.lastrw = state.prevrw
+  istate.lastrw = istate.prevrw
 
 proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
     str: string) =
@@ -1717,103 +1702,102 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
       newLine: newLine
     ))
 
-proc addInlineBlock(fstate: var FlowState; istate: var InlineState;
-    box: BlockBox) =
-  let lctx = fstate.lctx
-  var sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
-  lctx.roundSmallMarginsAndPadding(sizes)
-  lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
-  # Apply the block box's properties to the atom itself.
-  let iastate = InlineAtomState(
-    ibox: istate.ibox,
-    baseline: box.state.baseline + sizes.margin.top,
-    vertalign: box.computed{"vertical-align"},
-    size: size(
-      w = box.outerSize(dtHorizontal, sizes),
-      h = box.outerSize(dtVertical, sizes) + box.state.marginBottom
-    )
-  )
-  discard fstate.addAtom(istate, iastate)
-  fstate.intr.w = max(fstate.intr.w, box.state.intr.w)
-  fstate.lbstate.intrh = max(fstate.lbstate.intrh, iastate.size.h)
-  fstate.lbstate.charwidth = 0
-  fstate.whitespacenum = 0
-
-proc addBox(fstate: var FlowState; state: var InlineState; box: BlockBox) =
-  # Absolute is a bit of a special case in inline.
-  if box.computed{"position"} notin PositionAbsoluteFixed and
-      box.computed{"display"} in DisplayOuterInline:
-    fstate.addInlineBlock(state, box)
-  else:
-    assert box.computed{"position"} in PositionAbsoluteFixed
-    var textAlign = state.ibox.computed{"text-align"}
+proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
+  let box = ibox.box
+  if box.computed{"position"} in PositionAbsoluteFixed:
+    # Absolute is a bit of a special case in inline: while the spec
+    # *says* it should blockify, absolutely positioned inline-blocks are
+    # placed in a different place than absolutely positioned blocks (and
+    # websites depend on this).
+    var textAlign = ibox.computed{"text-align"}
     if not fstate.space.w.isDefinite():
       # Aligning min-content or max-content is nonsensical.
       textAlign = TextAlignLeft
     fstate.layoutOuterBlock(box, textAlign)
+  else:
+    # A real inline block.
+    let lctx = fstate.lctx
+    var sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
+    lctx.roundSmallMarginsAndPadding(sizes)
+    lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
+    # Apply the block box's properties to the atom itself.
+    let iastate = InlineAtomState(
+      ibox: ibox,
+      baseline: box.state.baseline + sizes.margin.top,
+      vertalign: box.computed{"vertical-align"},
+      size: size(
+        w = box.outerSize(dtHorizontal, sizes),
+        h = box.outerSize(dtVertical, sizes) + box.state.marginBottom
+      )
+    )
+    var istate = InlineState(ibox: ibox)
+    discard fstate.addAtom(istate, iastate)
+    fstate.intr.w = max(fstate.intr.w, box.state.intr.w)
+    fstate.lbstate.intrh = max(fstate.lbstate.intrh, iastate.size.h)
+    fstate.lbstate.charwidth = 0
+    fstate.whitespacenum = 0
 
-proc addImage(fstate: var FlowState; state: var InlineState;
-    image: InlineImage; padding: LUnit) =
-  #TODO add state to image
-  image.state = InlineImageState(
-    size: size(w = image.bmp.width, h = image.bmp.height)
+proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
+  ibox.imgstate = InlineImageState(
+    size: size(w = ibox.bmp.width, h = ibox.bmp.height)
   )
   #TODO this is hopelessly broken.
   # The core problem is that we generate an inner and an outer box for
   # images, and achieving an acceptable image sizing algorithm with this
-  # setup is practicaully impossible.
+  # setup is practically impossible.
   # Accordingly, a correct solution would either handle block-level
   # images separately, or at least resolve the outer box's sizes with
   # the knowledge that it is an image.
-  let computed = state.ibox.computed
+  let computed = ibox.computed
   let hasWidth = computed{"width"}.canpx(fstate.space.w)
   let hasHeight = computed{"height"}.canpx(fstate.space.h)
-  let osize = image.state.size
+  let osize = ibox.imgstate.size
   if hasWidth:
-    image.state.size.w = computed{"width"}.spx(fstate.space.w, computed,
+    ibox.imgstate.size.w = computed{"width"}.spx(fstate.space.w, computed,
       padding)
   if hasHeight:
-    image.state.size.h = computed{"height"}.spx(fstate.space.h, computed,
+    ibox.imgstate.size.h = computed{"height"}.spx(fstate.space.h, computed,
       padding)
   if computed{"max-width"}.canpx(fstate.space.w):
     let w = computed{"max-width"}.spx(fstate.space.w, computed, padding)
-    image.state.size.w = min(image.state.size.w, w)
+    ibox.imgstate.size.w = min(ibox.imgstate.size.w, w)
   let hasMinWidth = computed{"min-width"}.canpx(fstate.space.w)
   if hasMinWidth:
     let w = computed{"min-width"}.spx(fstate.space.w, computed, padding)
-    image.state.size.w = max(image.state.size.w, w)
+    ibox.imgstate.size.w = max(ibox.imgstate.size.w, w)
   if computed{"max-height"}.canpx(fstate.space.h):
     let h = computed{"max-height"}.spx(fstate.space.h, computed, padding)
-    image.state.size.h = min(image.state.size.h, h)
+    ibox.imgstate.size.h = min(ibox.imgstate.size.h, h)
   let hasMinHeight = computed{"min-height"}.canpx(fstate.space.h)
   if hasMinHeight:
     let h = computed{"min-height"}.spx(fstate.space.h, computed, padding)
-    image.state.size.h = max(image.state.size.h, h)
+    ibox.imgstate.size.h = max(ibox.imgstate.size.h, h)
   if not hasWidth and fstate.space.w.isDefinite():
-    image.state.size.w = min(fstate.space.w.u, image.state.size.w)
+    ibox.imgstate.size.w = min(fstate.space.w.u, ibox.imgstate.size.w)
   if not hasHeight and fstate.space.h.isDefinite():
-    image.state.size.h = min(fstate.space.h.u, image.state.size.h)
+    ibox.imgstate.size.h = min(fstate.space.h.u, ibox.imgstate.size.h)
   if not hasHeight and not hasWidth:
     if osize.w >= osize.h or
         not fstate.space.h.isDefinite() and fstate.space.w.isDefinite():
       if osize.w > 0:
-        image.state.size.h = osize.h div osize.w * image.state.size.w
+        ibox.imgstate.size.h = osize.h div osize.w * ibox.imgstate.size.w
     else:
       if osize.h > 0:
-        image.state.size.w = osize.w div osize.h * image.state.size.h
+        ibox.imgstate.size.w = osize.w div osize.h * ibox.imgstate.size.h
   elif not hasHeight and osize.w != 0:
-    image.state.size.h = osize.h div osize.w * image.state.size.w
+    ibox.imgstate.size.h = osize.h div osize.w * ibox.imgstate.size.w
   elif not hasWidth and osize.h != 0:
-    image.state.size.w = osize.w div osize.h * image.state.size.h
+    ibox.imgstate.size.w = osize.w div osize.h * ibox.imgstate.size.h
   let iastate = InlineAtomState(
-    ibox: state.ibox,
-    vertalign: state.ibox.computed{"vertical-align"},
-    baseline: image.state.size.h,
-    size: image.state.size
+    ibox: ibox,
+    vertalign: ibox.computed{"vertical-align"},
+    baseline: ibox.imgstate.size.h,
+    size: ibox.imgstate.size
   )
-  discard fstate.addAtom(state, iastate)
+  var istate = InlineState(ibox: ibox)
+  discard fstate.addAtom(istate, iastate)
   fstate.lbstate.charwidth = 0
-  if image.state.size.h > 0:
+  if ibox.imgstate.size.h > 0:
     # Setting the atom size as intr.w might result in a circular dependency
     # between table cell sizing and image sizing when we don't have a definite
     # parent size yet. e.g. <img width=100% ...> with an indefinite containing
@@ -1824,90 +1808,96 @@ proc addImage(fstate: var FlowState; state: var InlineState;
     # So check if any dimension is fixed, and if yes, report the intrinsic
     # minimum dimension as that or the atom size (whichever is greater).
     if computed{"width"}.u != clPerc or computed{"min-width"}.u != clPerc:
-      fstate.intr.w = max(fstate.intr.w, image.state.size.w)
+      fstate.intr.w = max(fstate.intr.w, ibox.imgstate.size.w)
     if computed{"height"}.u != clPerc or computed{"min-height"}.u != clPerc:
-      fstate.lbstate.intrh = max(fstate.lbstate.intrh, image.state.size.h)
+      fstate.lbstate.intrh = max(fstate.lbstate.intrh, ibox.imgstate.size.h)
 
 proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
   let lctx = fstate.lctx
   let computed = ibox.computed
-  var padding = Span()
-  if ibox.t == ibtParent:
+  ibox.state = InlineBoxState(
+    startOffset: offset(
+      x = fstate.lbstate.widthAfterWhitespace,
+      y = fstate.offset.y
+    )
+  )
+  let padding = Span(
+    start: computed{"padding-left"}.px(fstate.space.w),
+    send: computed{"padding-right"}.px(fstate.space.w)
+  )
+  if ibox of InlineTextBox:
+    let ibox = InlineTextBox(ibox)
+    ibox.runs.setLen(0)
+    var istate = InlineState(ibox: ibox)
+    fstate.layoutText(istate, ibox.text)
+    fstate.lastTextBox = ibox
+  elif ibox of InlineNewLineBox:
+    let ibox = InlineNewLineBox(ibox)
+    var istate = InlineState(ibox: ibox)
+    fstate.finishLine(istate, wrap = false, force = true,
+      ibox.computed{"clear"})
+    fstate.lastTextBox = ibox
+  elif ibox of InlineBlockBox:
+    let ibox = InlineBlockBox(ibox)
+    fstate.layoutInlineBlock(ibox)
+    fstate.lastTextBox = ibox
+  elif ibox of InlineImageBox:
+    let ibox = InlineImageBox(ibox)
+    fstate.layoutImage(ibox, padding.sum())
+    fstate.lastTextBox = ibox
+  else:
     let w = computed{"margin-left"}.px(fstate.space.w)
     if w != 0:
       fstate.initLine()
       fstate.lbstate.size.w += w
       fstate.lbstate.widthAfterWhitespace += w
-    padding = Span(
-      start: computed{"padding-left"}.px(fstate.space.w),
-      send: computed{"padding-right"}.px(fstate.space.w)
-    )
-  ibox.state = InlineBoxState()
-  if padding.start != 0:
-    ibox.state.areas.add(Area(
-      offset: offset(x = fstate.lbstate.widthAfterWhitespace, y = 0),
-      size: size(w = padding.start, h = fstate.cellHeight)
-    ))
-    fstate.lbstate.paddingTodo.add((ibox, 0))
-  ibox.state.startOffset = offset(
-    x = fstate.lbstate.widthAfterWhitespace,
-    y = fstate.offset.y
-  )
-  if padding.start != 0:
-    fstate.initLine()
-    fstate.lbstate.size.w += padding.start
-  var state = InlineState(ibox: ibox)
-  if ibox.t == ibtParent and computed{"position"} != PositionStatic:
-    lctx.pushPositioned()
-  case ibox.t
-  of ibtNewline:
-    fstate.finishLine(state, wrap = false, force = true,
-      ibox.computed{"clear"})
-  of ibtBox: fstate.addBox(state, ibox.box)
-  of ibtBitmap: fstate.addImage(state, ibox.image, padding.sum())
-  of ibtText:
-    fstate.layoutText(state, ibox.text.data)
-  of ibtParent:
+      ibox.state.startOffset.x += w
+    if padding.start != 0:
+      ibox.state.areas.add(Area(
+        offset: offset(x = fstate.lbstate.widthAfterWhitespace, y = 0),
+        size: size(w = padding.start, h = fstate.cellHeight)
+      ))
+      fstate.lbstate.paddingTodo.add((ibox, 0))
+      fstate.initLine()
+      fstate.lbstate.size.w += padding.start
+    if computed{"position"} != PositionStatic:
+      lctx.pushPositioned()
     for child in ibox.children:
       if child of InlineBox:
         fstate.layoutInline(InlineBox(child))
       else:
         # It seems -moz-center uses the inline parent too...  which is
-        # nonsense if you consider the CSS 2 anonymous box generation rules,
-        # but whatever.
-        var textAlign = state.ibox.computed{"text-align"}
+        # nonsense if you consider the CSS 2 anonymous box generation
+        # rules, but whatever.
+        var textAlign = ibox.computed{"text-align"}
         if not fstate.space.w.isDefinite():
           # Aligning min-content or max-content is nonsensical.
           textAlign = TextAlignLeft
         fstate.layoutOuterBlock(BlockBox(child), textAlign)
-  if padding.send != 0:
-    ibox.state.areas.add(Area(
-      offset: offset(x = fstate.lbstate.size.w, y = 0),
-      size: size(w = padding.send, h = fstate.cellHeight)
-    ))
-    fstate.lbstate.paddingTodo.add((ibox, ibox.state.areas.high))
-  if ibox.t == ibtParent:
     if padding.send != 0:
+      ibox.state.areas.add(Area(
+        offset: offset(x = fstate.lbstate.size.w, y = 0),
+        size: size(w = padding.send, h = fstate.cellHeight)
+      ))
+      fstate.lbstate.paddingTodo.add((ibox, ibox.state.areas.high))
       fstate.initLine()
       fstate.lbstate.size.w += padding.send
     let marginRight = computed{"margin-right"}.px(fstate.space.w)
     if marginRight != 0:
       fstate.initLine()
       fstate.lbstate.size.w += marginRight
-  if ibox.t != ibtParent:
-    fstate.lastTextBox = ibox
-  if ibox.t == ibtParent and computed{"position"} != PositionStatic:
-    # This is UB in CSS 2.1, I can't find a newer spec about it,
-    # and Gecko can't even layout it consistently (???)
-    #
-    # So I'm trying to follow Blink, though it's still not quite right,
-    # since it uses cellHeight instead of the actual line height for the
-    # last line.
-    # Well, it seems good enough.
-    lctx.popPositioned(size(
-      w = 0,
-      h = fstate.offset.y + fstate.cellHeight - ibox.state.startOffset.y
-    ))
+    if computed{"position"} != PositionStatic:
+      # This is UB in CSS 2.1, I can't find a newer spec about it,
+      # and Gecko can't even layout it consistently (???)
+      #
+      # So I'm trying to follow Blink, though it's still not quite right,
+      # since it uses cellHeight instead of the actual line height for the
+      # last line.
+      # Well, it seems good enough.
+      lctx.popPositioned(size(
+        w = 0,
+        h = fstate.offset.y + fstate.cellHeight - ibox.state.startOffset.y
+      ))
 
 proc layoutFlow0(fstate: var FlowState; sizes: ResolvedSizes; box: BlockBox) =
   fstate.lbstate = fstate.initLineBoxState()
@@ -2863,82 +2853,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight)
   box.state.marginBottom = marginBottom
 
-# 1st pass: build tree
-#TODO this tree traversal is largely redundant, and should be moved
-# to csstree.  (Then it should be collapsed into the second pass by
-# lazily generating child boxes, taking boxes from the previous pass
-# when possible.)
-
-proc build(ctx: var TreeContext; styledNode: StyledNode;
-  children: var seq[CSSBox])
-
-proc buildInline(ctx: var TreeContext; styledNode: StyledNode): InlineBox =
-  let ibox = InlineBox(
-    t: ibtParent,
-    computed: styledNode.computed,
-    element: styledNode.element
-  )
-  ctx.build(styledNode, ibox.children)
-  return ibox
-
-proc buildBlock(ctx: var TreeContext; styledNode: StyledNode): BlockBox =
-  let box = BlockBox(computed: styledNode.computed, element: styledNode.element)
-  ctx.build(styledNode, box.children)
-  return box
-
-proc buildInlineBlock(ctx: var TreeContext; styledNode: StyledNode): InlineBox =
-  return InlineBox(
-    t: ibtBox,
-    computed: styledNode.computed.inheritProperties(),
-    element: styledNode.element,
-    box: ctx.buildBlock(styledNode)
-  )
-
-proc buildFromElem(ctx: var TreeContext; styledNode: StyledNode): CSSBox =
-  return case styledNode.computed{"display"}
-  of DisplayBlock, DisplayFlowRoot, DisplayFlex, DisplayTable,
-      DisplayTableCaption, DisplayTableCell, RowGroupBox, DisplayTableRow,
-      DisplayTableWrapper, DisplayListItem:
-    ctx.buildBlock(styledNode)
-  of DisplayInlineBlock, DisplayInlineTable, DisplayInlineFlex:
-    ctx.buildInlineBlock(styledNode)
-  of DisplayInline: ctx.buildInline(styledNode)
-  of DisplayTableColumn, DisplayTableColumnGroup, #TODO
-      DisplayNone:
-    assert false
-    nil
-
-proc build(ctx: var TreeContext; styledNode: StyledNode;
-    children: var seq[CSSBox]) =
-  for child in styledNode.children(ctx):
-    case child.t
-    of stElement:
-      children.add(ctx.buildFromElem(child))
-    of stText:
-      children.add(InlineBox(
-        t: ibtText,
-        computed: child.computed,
-        element: child.element,
-        text: child.text
-      ))
-    of stBr:
-      children.add(InlineBox(
-        t: ibtNewline,
-        computed: child.computed,
-        element: child.element
-      ))
-    of stImage:
-      children.add(InlineBox(
-        t: ibtBitmap,
-        computed: child.computed,
-        element: child.element,
-        image: InlineImage(bmp: child.bmp)
-      ))
-
-proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
-  let box = BlockBox(computed: root.computed, element: root.element)
-  var ctx = TreeContext()
-  ctx.build(root, box.children)
+proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
   let space = availableSpace(
     w = stretch(attrsp[].widthPx),
     h = stretch(attrsp[].heightPx)
@@ -2947,7 +2862,6 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
     attrsp: attrsp,
     cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
     positioned: @[PositionedItem(), PositionedItem()],
-    myRootProperties: rootProperties(),
     luctx: LUContext()
   )
   let sizes = lctx.resolveBlockSizes(space, box.computed)
@@ -2965,4 +2879,3 @@ proc layout*(root: StyledNode; attrsp: ptr WindowAttributes): BlockBox =
   size.w = max(size.w, box.state.size.w)
   size.h = max(size.h, box.state.size.h)
   lctx.popPositioned(size)
-  return box

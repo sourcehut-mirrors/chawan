@@ -360,43 +360,40 @@ proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
       alpha)
 
 proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
-    box: InlineBox; offset: Offset; bgcolor0: ARGBColor;
+    ibox: InlineBox; offset: Offset; bgcolor0: ARGBColor;
     pass2 = false) =
-  let position = box.computed{"position"}
+  let position = ibox.computed{"position"}
   #TODO stacking contexts
-  let bgcolor = box.computed{"background-color"}
+  let bgcolor = ibox.computed{"background-color"}
   var bgcolor0 = bgcolor0
   if bgcolor.isCell:
     let bgcolor = bgcolor.cellColor()
     if bgcolor.t != ctNone:
-      grid.paintInlineBox(state, box, offset, bgcolor, 255)
+      grid.paintInlineBox(state, ibox, offset, bgcolor, 255)
   else:
     bgcolor0 = bgcolor0.blend(bgcolor.argb)
     if bgcolor0.a > 0:
-      grid.paintInlineBox(state, box, offset,
+      grid.paintInlineBox(state, ibox, offset,
         bgcolor0.rgb.cellColor(), bgcolor0.a)
-  let startOffset = offset + box.state.startOffset
-  box.render.offset = startOffset
-  case box.t
-  of ibtParent:
-    if position != PositionStatic:
-      state.absolutePos.add(startOffset)
-    for child in box.children:
-      if child of InlineBox:
-        grid.renderInlineBox(state, InlineBox(child), offset, bgcolor0)
-      else:
-        grid.renderBlockBox(state, BlockBox(child), offset)
-    if position != PositionStatic:
-      discard state.absolutePos.pop()
-  of ibtBox:
-    grid.renderBlockBox(state, box.box, offset)
-  of ibtBitmap:
-    if box.computed{"visibility"} != VisibilityVisible:
+  let startOffset = offset + ibox.state.startOffset
+  ibox.render.offset = startOffset
+  if ibox of InlineTextBox:
+    let ibox = InlineTextBox(ibox)
+    let format = ibox.computed.toFormat()
+    for run in ibox.runs:
+      let offset = offset + run.offset
+      if ibox.computed{"visibility"} == VisibilityVisible:
+        grid.setText(state, run.str, offset, format, ibox.element)
+  elif ibox of InlineBlockBox:
+    let ibox = InlineBlockBox(ibox)
+    grid.renderBlockBox(state, ibox.box, offset)
+  elif ibox of InlineImageBox:
+    let ibox = InlineImageBox(ibox)
+    if ibox.computed{"visibility"} != VisibilityVisible:
       return
-    let image = box.image
-    let offset = offset + image.state.offset
-    let x2p = offset.x + image.state.size.w
-    let y2p = offset.y + image.state.size.h
+    let offset = offset + ibox.imgstate.offset
+    let x2p = offset.x + ibox.imgstate.size.w
+    let y2p = offset.y + ibox.imgstate.size.h
     let clipBox = addr state.clipBoxes[^1]
     #TODO implement proper image clipping
     if offset.x < clipBox.send.x and offset.y < clipBox.send.y and
@@ -407,7 +404,7 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
       let y2 = y2p.toInt
       # add Element to background (but don't actually color it)
       grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
-        box.element, 0)
+        ibox.element, 0)
       let x = (offset.x div state.attrs.ppc).toInt
       let y = (offset.y div state.attrs.ppl).toInt
       let offx = (offset.x - x.toLUnit * state.attrs.ppc).toInt
@@ -417,18 +414,22 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
         y: y,
         offx: offx,
         offy: offy,
-        width: image.state.size.w.toInt,
-        height: image.state.size.h.toInt,
-        bmp: image.bmp
+        width: ibox.imgstate.size.w.toInt,
+        height: ibox.imgstate.size.h.toInt,
+        bmp: ibox.bmp
       ))
-  of ibtText:
-    let format = box.computed.toFormat()
-    for run in box.runs:
-      let offset = offset + run.offset
-      if box.computed{"visibility"} == VisibilityVisible:
-        grid.setText(state, run.str, offset, format, box.element)
-  of ibtNewline:
+  elif ibox of InlineNewLineBox:
     discard
+  else:
+    if position != PositionStatic:
+      state.absolutePos.add(startOffset)
+    for child in ibox.children:
+      if child of InlineBox:
+        grid.renderInlineBox(state, InlineBox(child), offset, bgcolor0)
+      else:
+        grid.renderBlockBox(state, BlockBox(child), offset)
+    if position != PositionStatic:
+      discard state.absolutePos.pop()
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset; pass2 = false) =

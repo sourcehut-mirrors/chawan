@@ -12,6 +12,7 @@ import html/catom
 import types/bitmap
 import types/color
 import types/opt
+import types/refstring
 import types/winattrs
 import utils/twtstr
 
@@ -354,11 +355,11 @@ type
 
   CSSContent* = object
     t*: CSSContentType
-    s*: string
+    s*: RefString
 
   # nil -> auto
   CSSQuotes* = ref object
-    qs*: seq[tuple[s, e: string]]
+    qs*: seq[tuple[s, e: RefString]]
 
   CSSCounterReset* = object
     name*: string
@@ -533,9 +534,10 @@ const InheritedProperties = {
 const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
-const DisplayOuterInline* = {
-  DisplayInline, DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex
+const DisplayInlineBlockLike* = {
+  DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex
 }
+const DisplayOuterInline* = DisplayInlineBlockLike + {DisplayInline}
 const DisplayInnerFlex* = {DisplayFlex, DisplayInlineFlex}
 const RowGroupBox* = {
   # Note: caption is not included here
@@ -596,7 +598,7 @@ func `$`*(bmp: NetworkBitmap): string =
 
 func `$`*(content: CSSContent): string =
   if content.s != "":
-    return "url(" & content.s & ")"
+    return content.s
   return "none"
 
 func `$`(quotes: CSSQuotes): string =
@@ -604,7 +606,7 @@ func `$`(quotes: CSSQuotes): string =
     return "auto"
   result = ""
   for (s, e) in quotes.qs:
-    result &= "'" & s.cssEscape() & "' '" & e.cssEscape() & "'"
+    result &= "'" & ($s).cssEscape() & "' '" & ($e).cssEscape() & "'"
 
 func `$`(counterreset: seq[CSSCounterReset]): string =
   result = ""
@@ -1257,7 +1259,7 @@ func parseQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
       if tok.t != cttString:
         return err()
       if otok != nil:
-        res.qs.add((otok.value, tok.value))
+        res.qs.add((newRefString(otok.value), newRefString(tok.value)))
         otok = nil
       else:
         otok = tok
@@ -1286,7 +1288,7 @@ func cssContent(cvals: openArray[CSSComponentValue]): seq[CSSContent] =
         elif tok.value.equalsIgnoreCase("no-close-quote"):
           result.add(CSSContent(t: ContentNoCloseQuote))
       of cttString:
-        result.add(CSSContent(t: ContentString, s: tok.value))
+        result.add(CSSContent(t: ContentString, s: newRefString(tok.value)))
       else: return
 
 func parseFontWeight(cval: CSSComponentValue): Opt[int32] =

@@ -13,6 +13,7 @@ import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
 import types/opt
+import types/refstring
 import types/url
 
 export htmlparser.ParseResult

@@ -48,6 +48,7 @@ import types/color
 import types/opt
 import types/path
 import types/referrer
+import types/refstring
 import types/url
 import types/winattrs
 import utils/strwidth
@@ -244,7 +245,7 @@ type
   XMLDocument = ref object of Document
 
   CharacterData* = ref object of Node
-    data* {.jsgetset.}: string
+    data* {.jsgetset.}: RefString
 
   Text* = ref object of CharacterData
 
@@ -309,7 +310,7 @@ type
 
   HTMLInputElement* = ref object of FormAssociatedElement
     inputType* {.jsget: "type".}: InputType
-    internalValue: CharacterData
+    internalValue: RefString
     internalChecked {.jsget: "checked".}: bool
     files* {.jsget.}: seq[WebFile]
     xcoord*: int
@@ -2097,7 +2098,7 @@ func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
   return list
 
 func length(characterData: CharacterData): uint32 {.jsfget.} =
-  return uint32(characterData.data.utf16Len)
+  return uint32(($characterData.data).utf16Len)
 
 func tagName(element: Element): string {.jsfget.} =
   result = element.prefix.toStr()
@@ -2597,9 +2598,6 @@ func serializeFragment*(node: Node): string =
   result = ""
   result.serializeFragment(node)
 
-func newCharacterData*(data: sink string = ""): CharacterData =
-  return CharacterData(data: data)
-
 # Element
 proc hash(element: Element): Hash =
   return hash(cast[pointer](element))
@@ -2989,8 +2987,8 @@ func jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
 
 func value*(this: HTMLInputElement): lent string =
   if this.internalValue == nil:
-    this.internalValue = newCharacterData()
-  return this.internalValue.data
+    this.internalValue = newRefString("")
+  return this.internalValue
 
 func jsValue(ctx: JSContext; this: HTMLInputElement): JSValue
     {.jsfget: "value".} =
@@ -2999,8 +2997,8 @@ func jsValue(ctx: JSContext; this: HTMLInputElement): JSValue
 
 proc `value=`*(this: HTMLInputElement; value: sink string) {.jsfset: "value".} =
   if this.internalValue == nil:
-    this.internalValue = CharacterData()
-  this.internalValue.data = value
+    this.internalValue = newRefString("")
+  this.internalValue.s = value
   this.invalidate()
 
 proc setType(this: HTMLInputElement; s: string) {.jsfset: "type".} =
@@ -3021,33 +3019,33 @@ proc setChecked*(input: HTMLInputElement; b: bool) {.jsfset: "checked".} =
   input.invalidate()
   input.internalChecked = b
 
-func inputString*(input: HTMLInputElement): CharacterData =
+func inputString*(input: HTMLInputElement): RefString =
   case input.inputType
   of itCheckbox, itRadio:
     if input.checked:
-      return newCharacterData("*")
-    return newCharacterData(" ")
+      return newRefString("*")
+    return newRefString(" ")
   of itSearch, itText, itEmail, itURL, itTel:
     if input.value.len == 20:
       return input.internalValue
-    return CharacterData(
-      data: input.value.padToWidth(int(input.attrulgz(satSize).get(20)))
+    return newRefString(
+      input.value.padToWidth(int(input.attrulgz(satSize).get(20)))
     )
   of itPassword:
     let n = int(input.attrulgz(satSize).get(20))
-    return newCharacterData('*'.repeat(input.value.len).padToWidth(n))
+    return newRefString('*'.repeat(input.value.len).padToWidth(n))
   of itReset:
     if input.attrb(satValue):
       return input.internalValue
-    return newCharacterData("RESET")
+    return newRefString("RESET")
   of itSubmit, itButton:
     if input.attrb(satValue):
       return input.internalValue
-    return newCharacterData("SUBMIT")
+    return newRefString("SUBMIT")
   of itFile:
     #TODO multiple files?
     let s = if input.files.len > 0: input.files[0].name else: ""
-    return newCharacterData(s.padToWidth(int(input.attrulgz(satSize).get(20))))
+    return newRefString(s.padToWidth(int(input.attrulgz(satSize).get(20))))
   else:
     return input.internalValue
 
@@ -3549,7 +3547,7 @@ func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
 func newText*(document: Document; data: sink string): Text =
   return Text(
     internalDocument: document,
-    data: data,
+    data: newRefString(data),
     index: -1
   )
 
@@ -3560,7 +3558,7 @@ func newText(ctx: JSContext; data: sink string = ""): Text {.jsctor.} =
 func newCDATASection(document: Document; data: string): CDATASection =
   return CDATASection(
     internalDocument: document,
-    data: data,
+    data: newRefString(data),
     index: -1
   )
 
@@ -3569,7 +3567,7 @@ func newProcessingInstruction(document: Document; target: string;
   return ProcessingInstruction(
     internalDocument: document,
     target: target,
-    data: data,
+    data: newRefString(data),
     index: -1
   )
 
@@ -3583,7 +3581,7 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
 func newComment(document: Document; data: sink string): Comment =
   return Comment(
     internalDocument: document,
-    data: data,
+    data: newRefString(data),
     index: -1
   )
 
@@ -5088,7 +5086,7 @@ proc setNodeValue(ctx: JSContext; node: Node; data: JSValue): Err[void]
     var res = ""
     if not JS_IsNull(data):
       ?ctx.fromJS(data, res)
-    CharacterData(node).data = move(res)
+    CharacterData(node).data = newRefString(move(res))
   elif node of Attr:
     var res = ""
     if not JS_IsNull(data):

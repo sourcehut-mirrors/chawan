@@ -1,5 +1,12 @@
 # Tree building.
 #
+#TODO: this is currently a separate pass from layout, meaning at least
+# two tree traversals are required.  Ideally, these should be collapsed
+# into a single pass, reusing parts of previous layout passes when
+# possible.
+#
+# ---
+#
 # This wouldn't be nearly as complex as it is if not for CSS's asinine
 # anonymous table box generation rules.  In particular:
 # * Runs of misparented boxes inside a table/table row/table row group
@@ -19,6 +26,7 @@
 # Whatever your reason may be for looking at this: good luck.
 
 import chame/tags
+import css/box
 import css/cascade
 import css/cssvalues
 import css/selectorparser
@@ -26,32 +34,34 @@ import html/catom
 import html/dom
 import types/bitmap
 import types/color
+import types/refstring
 import utils/twtstr
 
 type
-  StyledType* = enum
+  StyledNodeType = enum
     stElement, stText, stImage, stBr
 
   # Abstraction over the DOM to pretend that elements, text, replaced
   # and pseudo-elements are derived from the same type.
-  StyledNode* = object
-    element*: Element
-    computed*: CSSValues
-    pseudo*: PseudoElement
+  StyledNode = object
+    element: Element
+    computed: CSSValues
+    pseudo: PseudoElement
     skipChildren: bool
-    case t*: StyledType
+    case t: StyledNodeType
     of stText:
-      text*: CharacterData
+      text: RefString
     of stElement:
       anonChildren: seq[StyledNode]
     of stImage:
-      bmp*: NetworkBitmap
+      bmp: NetworkBitmap
     of stBr: # <br> element
       discard
 
-  TreeContext* = object
+  TreeContext = object
     quoteLevel: int
     listItemCounter: int
+    rootProperties: CSSValues
 
   TreeFrame = object
     parent: Element
@@ -64,6 +74,9 @@ type
     anonInlineComputed: CSSValues
     pctx: ptr TreeContext
 
+# Forward declarations
+proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode): CSSBox
+
 template ctx(frame: TreeFrame): var TreeContext =
   frame.pctx[]
 
@@ -71,7 +84,7 @@ when defined(debug):
   func `$`*(node: StyledNode): string =
     case node.t
     of stText:
-      return node.text.data
+      return node.text
     of stElement:
       if node.pseudo != peNone:
         return $node.element.tagType & "::" & $node.pseudo
@@ -80,16 +93,6 @@ when defined(debug):
       return "#image"
     of stBr:
       return "#br"
-
-# Root
-proc initStyledElement*(element: Element): StyledNode =
-  if element.computed == nil:
-    element.applyStyle()
-  result = StyledNode(
-    t: stElement,
-    element: element,
-    computed: element.computed
-  )
 
 func inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
   result = frame.computed.inheritProperties()
@@ -107,13 +110,13 @@ proc getAnonInlineComputed(frame: var TreeFrame): CSSValues =
       frame.anonInlineComputed = frame.computed.inheritProperties()
   return frame.anonInlineComputed
 
-proc displayed(frame: TreeFrame; text: CharacterData): bool =
-  if text.data.len == 0:
+proc displayed(frame: TreeFrame; text: RefString): bool =
+  if text.len == 0:
     return false
   return frame.computed{"display"} == DisplayInline or
     frame.lastChildWasInline or
     frame.computed{"white-space"} in WhiteSpacePreserve or
-    not text.data.onlyWhitespace()
+    not text.onlyWhitespace()
 
 #TODO implement table columns
 const DisplayNoneLike = {
@@ -128,18 +131,23 @@ proc displayed(frame: TreeFrame; pseudo: PseudoElement): bool =
 proc displayed(frame: TreeFrame; element: Element): bool =
   return element.computed{"display"} notin DisplayNoneLike
 
+proc initStyledAnon(element: Element; computed: CSSValues;
+    children: sink seq[StyledNode] = @[]): StyledNode =
+  result = StyledNode(
+    t: stElement,
+    element: element,
+    anonChildren: children,
+    computed: computed,
+    skipChildren: true
+  )
+
 proc getInternalTableParent(frame: var TreeFrame; display: CSSDisplay):
     var seq[StyledNode] =
   if frame.anonTableDisplay != display:
     if frame.anonComputed == nil:
       frame.anonComputed = frame.inheritFor(display)
     frame.anonTableDisplay = display
-    frame.children.add(StyledNode(
-      t: stElement,
-      element: frame.parent,
-      computed: frame.anonComputed,
-      skipChildren: true
-    ))
+    frame.children.add(initStyledAnon(frame.parent, frame.anonComputed))
   return frame.children[^1].anonChildren
 
 # Add an anonymous table to children, and return based on display either
@@ -156,16 +164,10 @@ proc addAnonTable(frame: var TreeFrame; parentDisplay, display: CSSDisplay):
       DisplayTable
     let (outer, inner) = frame.inheritFor(anonDisplay).splitTable()
     frame.anonComputed = outer
-    frame.children.add(StyledNode(
-      t: stElement,
-      computed: outer,
-      skipChildren: true,
-      anonChildren: @[StyledNode(
-        t: stElement,
-        computed: inner,
-        skipChildren: true
-      )]
-    ))
+    frame.children.add(initStyledAnon(frame.parent, outer, @[initStyledAnon(
+      frame.parent,
+      inner
+    )]))
   if display == DisplayTableCaption:
     frame.anonComputed = frame.children[^1].computed
     return frame.children[^1].anonChildren
@@ -176,11 +178,9 @@ proc addAnonTable(frame: var TreeFrame; parentDisplay, display: CSSDisplay):
   if frame.anonComputed{"display"} == DisplayTableRow:
     return frame.children[^1].anonChildren[0].anonChildren[^1].anonChildren
   frame.anonComputed = frame.inheritFor(DisplayTableRow)
-  frame.children[^1].anonChildren[0].anonChildren.add(StyledNode(
-    t: stElement,
-    element: frame.parent,
-    computed: frame.anonComputed,
-    skipChildren: true
+  frame.children[^1].anonChildren[0].anonChildren.add(initStyledAnon(
+    frame.parent,
+    frame.anonComputed
   ))
   return frame.children[^1].anonChildren[0].anonChildren[^1].anonChildren
 
@@ -192,12 +192,7 @@ proc getParent(frame: var TreeFrame; computed: CSSValues; display: CSSDisplay):
     if display in DisplayOuterInline:
       if frame.anonComputed == nil:
         frame.anonComputed = frame.inheritFor(DisplayBlock)
-      frame.children.add(StyledNode(
-        t: stElement,
-        element: frame.parent,
-        computed: frame.anonComputed,
-        skipChildren: true
-      ))
+      frame.children.add(initStyledAnon(frame.parent, frame.anonComputed))
       return frame.children[^1].anonChildren
   of DisplayTableRow:
     if display != DisplayTableCell:
@@ -230,33 +225,21 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
   # Generate a marker box.
   inc frame.ctx.listItemCounter
   let computed = node.computed.inheritProperties()
-  computed{"display"} = DisplayBlock
   computed{"white-space"} = WhitespacePre
-  let t = computed{"list-style-type"}
+  let counter = frame.ctx.listItemCounter
   let markerText = StyledNode(
     t: stText,
     element: node.element,
-    text: newCharacterData(t.listMarker(frame.ctx.listItemCounter)),
-    computed: computed.inheritProperties()
+    text: newRefString(computed{"list-style-type"}.listMarker(counter)),
+    computed: computed
   )
   case node.computed{"list-style-position"}
   of ListStylePositionOutside:
-    # Generate a separate box for the content and marker.
-    node.anonChildren.add(StyledNode(
-      t: stElement,
-      element: node.element,
-      computed: computed,
-      skipChildren: true,
-      anonChildren: @[markerText]
-    ))
+    # Generate separate boxes for the content and marker.
     let computed = node.computed.inheritProperties()
     computed{"display"} = DisplayBlock
-    node.anonChildren.add(StyledNode(
-      t: stElement,
-      element: node.element,
-      computed: computed,
-      skipChildren: true
-    ))
+    node.anonChildren.add(initStyledAnon(node.element, computed, @[markerText]))
+    node.anonChildren.add(initStyledAnon(node.element, computed))
   of ListStylePositionInside:
     node.anonChildren.add(markerText)
   frame.getParent(node.computed, node.computed{"display"}).add(node)
@@ -265,12 +248,7 @@ proc addTable(frame: var TreeFrame; node: sink StyledNode) =
   var node = node
   let (outer, inner) = node.computed.splitTable()
   node.computed = outer
-  node.anonChildren.add(StyledNode(
-    t: stElement,
-    element: node.element,
-    computed: inner,
-    skipChildren: true
-  ))
+  node.anonChildren.add(initStyledAnon(node.element, inner))
   frame.getParent(node.computed, node.computed{"display"}).add(node)
 
 proc add(frame: var TreeFrame; node: sink StyledNode) =
@@ -293,15 +271,9 @@ proc add(frame: var TreeFrame; node: sink StyledNode) =
   if display == DisplayTableCaption:
     frame.captionSeen = true
 
-proc addAnon(frame: var TreeFrame; children: sink seq[StyledNode];
-    computed: CSSValues) =
-  frame.add(StyledNode(
-    t: stElement,
-    element: frame.parent,
-    anonChildren: children,
-    computed: computed,
-    skipChildren: true
-  ))
+proc addAnon(frame: var TreeFrame; computed: CSSValues;
+    children: sink seq[StyledNode]) =
+  frame.add(initStyledAnon(frame.parent, computed, children))
 
 proc addElement(frame: var TreeFrame; element: Element) =
   if element.computed == nil:
@@ -322,7 +294,7 @@ proc addPseudo(frame: var TreeFrame; pseudo: PseudoElement) =
       computed: frame.parent.computedMap[pseudo]
     ))
 
-proc addText(frame: var TreeFrame; text: CharacterData) =
+proc addText(frame: var TreeFrame; text: RefString) =
   if frame.displayed(text):
     frame.add(StyledNode(
       t: stText,
@@ -333,7 +305,7 @@ proc addText(frame: var TreeFrame; text: CharacterData) =
 
 proc addText(frame: var TreeFrame; s: sink string) =
   #TODO should probably cache these...
-  frame.addText(newCharacterData(s))
+  frame.addText(newRefString(s))
 
 proc addImage(frame: var TreeFrame; bmp: NetworkBitmap) =
   if bmp != nil and bmp.cacheId != -1:
@@ -362,19 +334,19 @@ proc addElementChildren(frame: var TreeFrame) =
       #TODO collapse subsequent text nodes into one StyledNode
       # (it isn't possible in HTML, only with JS DOM manipulation)
       let text = Text(it)
-      frame.addText(text)
+      frame.addText(text.data)
 
 proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
   if option.select != nil and option.select.attrb(satMultiple):
     frame.addText("[")
-    let cdata = newCharacterData(if option.selected: "*" else: " ")
+    let cdata = newRefString(if option.selected: "*" else: " ")
     let computed = option.computed.inheritProperties()
     computed{"color"} = cssColor(ANSIColor(1)) # red
     computed{"white-space"} = WhitespacePre
     block anon:
       var aframe = frame.ctx.initTreeFrame(option, computed)
       aframe.addText(cdata)
-      frame.addAnon(move(aframe.children), computed)
+      frame.addAnon(computed, move(aframe.children))
     frame.addText("]")
   frame.addElementChildren()
 
@@ -402,83 +374,103 @@ proc addChildren(frame: var TreeFrame) =
   else:
     frame.addElementChildren()
 
-proc addContent(frame: var TreeFrame; content: CSSContent; ctx: var TreeContext;
-    computed: CSSValues) =
+proc addContent(frame: var TreeFrame; content: CSSContent) =
   case content.t
   of ContentString:
     frame.addText(content.s)
   of ContentOpenQuote:
     let quotes = frame.computed{"quotes"}
     if quotes == nil:
-      frame.addText(quoteStart(ctx.quoteLevel))
+      frame.addText(quoteStart(frame.ctx.quoteLevel))
     elif quotes.qs.len > 0:
-      frame.addText(quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].s)
+      frame.addText(quotes.qs[min(frame.ctx.quoteLevel, quotes.qs.high)].s)
     else:
       return
-    inc ctx.quoteLevel
+    inc frame.ctx.quoteLevel
   of ContentCloseQuote:
-    if ctx.quoteLevel > 0:
-      dec ctx.quoteLevel
-    let quotes = computed{"quotes"}
+    if frame.ctx.quoteLevel > 0:
+      dec frame.ctx.quoteLevel
+    let quotes = frame.computed{"quotes"}
     if quotes == nil:
-      frame.addText(quoteEnd(ctx.quoteLevel))
+      frame.addText(quoteEnd(frame.ctx.quoteLevel))
     elif quotes.qs.len > 0:
-      frame.addText(quotes.qs[min(ctx.quoteLevel, quotes.qs.high)].e)
+      frame.addText(quotes.qs[min(frame.ctx.quoteLevel, quotes.qs.high)].e)
   of ContentNoOpenQuote:
-    inc ctx.quoteLevel
+    inc frame.ctx.quoteLevel
   of ContentNoCloseQuote:
-    if ctx.quoteLevel > 0:
-      dec ctx.quoteLevel
+    if frame.ctx.quoteLevel > 0:
+      dec frame.ctx.quoteLevel
 
-proc build(frame: var TreeFrame; styledNode: StyledNode;
-    ctx: var TreeContext) =
+proc buildChildren(frame: var TreeFrame; styledNode: StyledNode) =
   for child in styledNode.anonChildren:
     frame.add(child)
-  if styledNode.skipChildren:
-    return
-  let parent = styledNode.element
-  if styledNode.pseudo == peNone:
-    frame.addPseudo(peBefore)
-    frame.addChildren()
-    frame.addPseudo(peAfter)
-  else:
-    let computed = parent.computedMap[styledNode.pseudo].inheritProperties()
-    for content in parent.computedMap[styledNode.pseudo]{"content"}:
-      frame.addContent(content, ctx, computed)
+  if not styledNode.skipChildren:
+    if styledNode.pseudo == peNone:
+      frame.addPseudo(peBefore)
+      frame.addChildren()
+      frame.addPseudo(peAfter)
+    else:
+      for content in frame.computed{"content"}:
+        frame.addContent(content)
 
-iterator children*(styledNode: StyledNode; ctx: var TreeContext): StyledNode
-    {.inline.} =
-  if styledNode.t == stElement:
+proc buildBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox): CSSBox =
+  var bbox: BlockBox = nil
+  let display = frame.computed{"display"}
+  let box = if display == DisplayInline:
+    InlineBox(computed: frame.computed, element: frame.parent)
+  else:
+    assert display notin DisplayNoneLike
+    bbox = BlockBox(computed: frame.computed, element: frame.parent)
+    bbox
+  for child in frame.children:
+    box.children.add(ctx.build(nil, child))
+  if display in DisplayInlineBlockLike:
+    return InlineBlockBox(
+      computed: ctx.rootProperties,
+      element: frame.parent,
+      box: bbox
+    )
+  return box
+
+proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode):
+    CSSBox =
+  case styledNode.t
+  of stElement:
     for reset in styledNode.computed{"counter-reset"}:
       if reset.name == "list-item":
         ctx.listItemCounter = reset.num
     let listItemCounter = ctx.listItemCounter
-    let parent = styledNode.element
-    var frame = ctx.initTreeFrame(parent, styledNode.computed)
-    frame.build(styledNode, ctx)
-    for child in frame.children:
-      yield child
+    var frame = ctx.initTreeFrame(styledNode.element, styledNode.computed)
+    frame.buildChildren(styledNode)
+    let box = ctx.buildBox(frame, cached)
     ctx.listItemCounter = listItemCounter
+    return box
+  of stText:
+    return InlineTextBox(
+      computed: styledNode.computed,
+      element: styledNode.element,
+      text: styledNode.text
+    )
+  of stBr:
+    return InlineNewLineBox(
+      computed: styledNode.computed,
+      element: styledNode.element
+    )
+  of stImage:
+    return InlineImageBox(
+      computed: styledNode.computed,
+      element: styledNode.element,
+      bmp: styledNode.bmp
+    )
 
-when defined(debug):
-  proc computedTree*(styledNode: StyledNode; ctx: var TreeContext): string =
-    result = ""
-    if styledNode.t != stElement:
-      result &= $styledNode
-    else:
-      result &= "<"
-      if styledNode.computed{"display"} != DisplayInline:
-        result &= "div"
-      else:
-        result &= "span"
-      let computed = styledNode.computed.copyProperties()
-      if computed{"display"} == DisplayBlock:
-        computed{"display"} = DisplayInline
-      result &= " style='" & $computed.serializeEmpty() & "'>\n"
-      for it in styledNode.children(ctx):
-        result &= it.computedTree(ctx)
-      result &= "\n</div>"
-
-  proc computedTree*(styledNode: StyledNode): string =
-    var ctx = TreeContext()
-    return styledNode.computedTree(ctx)
+# Root
+proc buildTree*(element: Element; cached: CSSBox): BlockBox =
+  if element.computed == nil:
+    element.applyStyle()
+  let styledNode = StyledNode(
+    t: stElement,
+    element: element,
+    computed: element.computed
+  )
+  var ctx = TreeContext(rootProperties: rootProperties())
+  return BlockBox(ctx.build(cached, styledNode))

@@ -2,6 +2,7 @@ import css/cssvalues
 import css/lunit
 import html/dom
 import types/bitmap
+import types/refstring
 
 type
   DimensionType* = enum
@@ -14,10 +15,6 @@ type
   InlineImageState* = object
     offset*: Offset
     size*: Size
-
-  InlineImage* = ref object
-    state*: InlineImageState
-    bmp*: NetworkBitmap
 
   TextRun* = ref object
     offset*: Offset
@@ -44,10 +41,6 @@ type
   InlineBoxState* = object
     startOffset*: Offset # offset of the first word, for position: absolute
     areas*: seq[Area] # background that should be painted by box
-    runs: seq[TextRun]
-
-  InlineBoxType* = enum
-    ibtParent, ibtText, ibtNewline, ibtBitmap, ibtBox
 
   Span* = object
     start*: LUnit
@@ -88,48 +81,27 @@ type
     render*: BoxRenderState # render output
     computed*: CSSValues
     element*: Element
+    children*: seq[CSSBox]
 
   BlockBox* = ref object of CSSBox
     sizes*: ResolvedSizes # tree builder output -> layout input
     state*: BoxLayoutState # layout output -> render input
-    children*: seq[CSSBox]
 
   InlineBox* = ref object of CSSBox
     state*: InlineBoxState
-    case t*: InlineBoxType
-    of ibtParent:
-      children*: seq[CSSBox]
-    of ibtText:
-      text*: CharacterData # note: this has no parent.
-    of ibtNewline:
-      discard
-    of ibtBitmap:
-      image*: InlineImage
-    of ibtBox:
-      box*: BlockBox
 
-iterator children*(box: CSSBox): lent CSSBox {.inline.} =
-  if box of BlockBox:
-    let box = BlockBox(box)
-    for child in box.children:
-      yield child
-  else:
-    let ibox = InlineBox(box)
-    case ibox.t
-    of ibtParent:
-      for child in ibox.children:
-        yield child
-    of ibtBox:
-      yield CSSBox(ibox.box)
-    else:
-      discard
+  InlineTextBox* = ref object of InlineBox
+    runs*: seq[TextRun] # state
+    text*: RefString
 
-# We store runs in state as a private field, so that we can both check
-# if the box type is correct and reset them on relayout by zeroing out
-# state.
-template runs*(ibox: InlineBox): seq[TextRun] =
-  assert ibox.t == ibtText
-  ibox.state.runs
+  InlineNewLineBox* = ref object of InlineBox
+
+  InlineImageBox* = ref object of InlineBox
+    imgstate*: InlineImageState
+    bmp*: NetworkBitmap
+
+  InlineBlockBox* = ref object of InlineBox
+    box*: BlockBox
 
 func offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
@@ -205,3 +177,18 @@ func topLeft*(s: RelativeRect): Offset =
 proc `+=`*(span: var Span; u: LUnit) =
   span.start += u
   span.send += u
+
+when defined(debug):
+  proc computedTree*(box: CSSBox): string =
+    result = "<"
+    if box.computed{"display"} != DisplayInline:
+      result &= "div"
+    else:
+      result &= "span"
+    let computed = box.computed.copyProperties()
+    if computed{"display"} == DisplayBlock:
+      computed{"display"} = DisplayInline
+    result &= " style='" & $computed.serializeEmpty() & "'>\n"
+    for it in box.children:
+      result &= it.computedTree()
+    result &= "\n</div>"
