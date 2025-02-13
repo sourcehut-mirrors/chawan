@@ -2241,7 +2241,7 @@ type GotoURLDict = object of JSDict
   save {.jsdefault.}: bool
   history {.jsdefault.}: bool
 
-proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
+proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[Container]
     {.jsfunc: "gotoURL".} =
   var request: Request = nil
   var jsRequest: JSRequest = nil
@@ -2254,9 +2254,8 @@ proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[void]
       ?pager.jsctx.fromJS(v, s)
       url = ?newURL(s)
     request = newRequest(url)
-  discard pager.gotoURL(request, contentType = t.contentType.get(""),
-    replace = t.replace.get(nil), save = t.save, history = t.history)
-  return ok()
+  return ok(pager.gotoURL(request, contentType = t.contentType.get(""),
+    replace = t.replace.get(nil), save = t.save, history = t.history))
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
@@ -2923,8 +2922,10 @@ proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
   let ctx = pager.jsctx
   let fun = ctx.newFunction(["url", "replace"],
     """
-if (replace.alive)
-  pager.gotoURL(url, {replace: replace, history: replace.history})
+if (replace.alive) {
+  const c2 = pager.gotoURL(url, {replace: replace, history: replace.history});
+  c2.copyCursorPos(replace)
+}
 """)
   let args = [ctx.toJS(url), ctx.toJS(container)]
   discard pager.timeouts.setTimeout(ttTimeout, fun, int32(n), args)

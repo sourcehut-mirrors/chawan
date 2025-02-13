@@ -1133,7 +1133,7 @@ proc popCursorPos*(container: Container; nojump = false) =
       container.sendCursorPosition()
     container.needslines = true
 
-proc copyCursorPos*(container, c2: Container) =
+proc copyCursorPos*(container, c2: Container) {.jsfunc.} =
   if c2.startpos.isSome:
     container.startpos = c2.startpos
   else:
