@@ -40,7 +40,7 @@ import utils/twtstr
 
 type
   StyledNodeType = enum
-    stElement, stText, stMarker, stImage, stBr
+    stElement, stText, stImage, stBr, stCounter
 
   # Abstraction over the DOM to pretend that elements, text, replaced
   # and pseudo-elements are derived from the same type.
@@ -58,8 +58,10 @@ type
       bmp: NetworkBitmap
     of stBr: # <br> element
       discard
-    of stMarker: # ::marker (not that it's implemented...)
-      discard
+    of stCounter: # counters
+      counterName: CAtom
+      counterStyle: CSSListStyleType
+      counterSuffix: bool
 
   CSSCounter = object
     element: Element
@@ -77,7 +79,6 @@ type
     children: seq[StyledNode]
     lastChildWasInline: bool
     captionSeen: bool
-    anonTableDisplay: CSSDisplay
     anonComputed: CSSValues
     anonInlineComputed: CSSValues
     pctx: ptr TreeContext
@@ -101,8 +102,8 @@ when defined(debug):
       return "#image"
     of stBr:
       return "#br"
-    of stMarker:
-      return "#marker"
+    of stCounter:
+      return "#counter"
 
 iterator mritems(counters: var seq[CSSCounter]): var CSSCounter =
   for i in countdown(counters.high, 0):
@@ -143,7 +144,7 @@ proc resetCounter(ctx: var TreeContext; name: CAtom; n: int32;
   if not found:
     ctx.counters.add(CSSCounter(name: name, n: n, element: element))
 
-proc counter(ctx: var TreeContext; name: CAtom): int =
+proc counter(ctx: var TreeContext; name: CAtom): int32 =
   for counter in ctx.counters.mritems:
     if counter.name == name:
       return counter.n
@@ -198,10 +199,8 @@ proc initStyledAnon(element: Element; computed: CSSValues;
 
 proc getInternalTableParent(frame: var TreeFrame; display: CSSDisplay):
     var seq[StyledNode] =
-  if frame.anonTableDisplay != display:
-    if frame.anonComputed == nil:
-      frame.anonComputed = frame.inheritFor(display)
-    frame.anonTableDisplay = display
+  if frame.anonComputed == nil:
+    frame.anonComputed = frame.inheritFor(display)
     frame.children.add(initStyledAnon(frame.parent, frame.anonComputed))
   return frame.children[^1].anonChildren
 
@@ -252,15 +251,15 @@ proc getParent(frame: var TreeFrame; computed: CSSValues; display: CSSDisplay):
   of DisplayTableRow:
     if display != DisplayTableCell:
       return frame.getInternalTableParent(DisplayTableCell)
-    frame.anonTableDisplay = DisplayNone
+    frame.anonComputed = nil
   of RowGroupBox:
     if display != DisplayTableRow:
       return frame.getInternalTableParent(DisplayTableRow)
-    frame.anonTableDisplay = DisplayNone
+    frame.anonComputed = nil
   of DisplayTableWrapper:
     if display notin RowGroupBox + {DisplayTableRow}:
       return frame.getInternalTableParent(DisplayTableRow)
-    frame.anonTableDisplay = DisplayNone
+    frame.anonComputed = nil
   of DisplayInnerTable:
     if frame.children.len > 0 and display != DisplayTableCaption:
       return frame.children[0].anonChildren
@@ -281,9 +280,12 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
   let computed = node.computed.inheritProperties()
   computed{"white-space"} = WhitespacePre
   let markerText = StyledNode(
-    t: stMarker,
+    t: stCounter,
     element: node.element,
-    computed: computed
+    computed: computed,
+    counterName: satListItem.toAtom(),
+    counterStyle: node.computed{"list-style-type"},
+    counterSuffix: true
   )
   case node.computed{"list-style-position"}
   of ListStylePositionOutside:
@@ -320,8 +322,7 @@ proc add(frame: var TreeFrame; node: sink StyledNode) =
     else: discard
   frame.getParent(node.computed, display).add(node)
   frame.lastChildWasInline = display in DisplayOuterInline
-  if display == DisplayTableCaption:
-    frame.captionSeen = true
+  frame.captionSeen = frame.captionSeen or display == DisplayTableCaption
 
 proc addAnon(frame: var TreeFrame; computed: CSSValues;
     children: sink seq[StyledNode]) =
@@ -354,6 +355,15 @@ proc addText(frame: var TreeFrame; text: RefString) =
       text: text,
       computed: frame.getAnonInlineComputed()
     ))
+
+proc addCounter(frame: var TreeFrame; name: CAtom; style: CSSListStyleType) =
+  frame.add(StyledNode(
+    t: stCounter,
+    element: frame.parent,
+    counterName: name,
+    counterStyle: style,
+    computed: frame.getAnonInlineComputed()
+  ))
 
 proc addText(frame: var TreeFrame; s: sink string) =
   #TODO should probably cache these...
@@ -453,7 +463,7 @@ proc addContent(frame: var TreeFrame; content: CSSContent) =
     if frame.ctx.quoteLevel > 0:
       dec frame.ctx.quoteLevel
   of ContentCounter:
-    frame.addText($frame.ctx.counter(content.counter))
+    frame.addCounter(content.counter, content.counterStyle)
 
 proc buildChildren(frame: var TreeFrame; styledNode: StyledNode) =
   for child in styledNode.anonChildren:
@@ -468,38 +478,38 @@ proc buildChildren(frame: var TreeFrame; styledNode: StyledNode) =
         frame.addContent(content)
 
 proc buildBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox): CSSBox =
-  var bbox: BlockBox = nil
   let display = frame.computed{"display"}
   let box = if display == DisplayInline:
     InlineBox(computed: frame.computed, element: frame.parent)
   else:
-    assert display notin DisplayNoneLike
-    bbox = BlockBox(computed: frame.computed, element: frame.parent)
-    bbox
+    BlockBox(computed: frame.computed, element: frame.parent)
   for child in frame.children:
     box.children.add(ctx.build(nil, child))
   if display in DisplayInlineBlockLike:
     return InlineBlockBox(
       computed: ctx.rootProperties,
       element: frame.parent,
-      box: bbox
+      children: @[box]
     )
   return box
+
+proc applyCounters(ctx: var TreeContext; styledNode: StyledNode) =
+  for counter in styledNode.computed{"counter-reset"}:
+    ctx.resetCounter(counter.name, counter.num, styledNode.element)
+  var liSeen = false
+  for counter in styledNode.computed{"counter-increment"}:
+    liSeen = counter.name == satListItem.toAtom()
+    ctx.incCounter(counter.name, counter.num, styledNode.element)
+  if not liSeen and styledNode.computed{"display"} == DisplayListItem:
+    ctx.incCounter(satListItem.toAtom(), 1, styledNode.element)
+  for counter in styledNode.computed{"counter-set"}:
+    ctx.setCounter(counter.name, counter.num, styledNode.element)
 
 proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode):
     CSSBox =
   case styledNode.t
   of stElement:
-    for counter in styledNode.computed{"counter-reset"}:
-      ctx.resetCounter(counter.name, counter.num, styledNode.element)
-    var liSeen = false
-    for counter in styledNode.computed{"counter-increment"}:
-      liSeen = counter.name == satListItem.toAtom()
-      ctx.incCounter(counter.name, counter.num, styledNode.element)
-    if not liSeen and styledNode.computed{"display"} == DisplayListItem:
-      ctx.incCounter(satListItem.toAtom(), 1, styledNode.element)
-    for counter in styledNode.computed{"counter-set"}:
-      ctx.setCounter(counter.name, counter.num, styledNode.element)
+    ctx.applyCounters(styledNode)
     let countersLen = ctx.counters.len
     var frame = ctx.initTreeFrame(styledNode.element, styledNode.computed)
     frame.buildChildren(styledNode)
@@ -517,12 +527,13 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode):
       computed: styledNode.computed,
       element: styledNode.element
     )
-  of stMarker:
-    let counter = ctx.counter(satListItem.toAtom())
+  of stCounter:
+    let counter = ctx.counter(styledNode.counterName)
+    let addSuffix = styledNode.counterSuffix # only used for markers
     return InlineTextBox(
       computed: styledNode.computed,
       element: styledNode.element,
-      text: styledNode.computed{"list-style-type"}.listMarker(counter)
+      text: styledNode.counterStyle.listMarker(counter, addSuffix)
     )
   of stImage:
     return InlineImageBox(

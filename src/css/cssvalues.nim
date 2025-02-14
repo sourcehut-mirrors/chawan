@@ -247,6 +247,7 @@ type
     ListStyleTypeKatakana = "katakana"
     ListStyleTypeKatakanaIroha = "katakana-iroha"
     ListStyleTypeJapaneseInformal = "japanese-informal"
+    ListStyleTypeJapaneseFormal = "japanese-formal"
 
   CSSVerticalAlign2* = enum
     VerticalAlignBaseline = "baseline"
@@ -365,6 +366,7 @@ type
       s*: RefString
     of ContentCounter:
       counter*: CAtom
+      counterStyle*: CSSListStyleType
     else:
       discard
 
@@ -563,7 +565,6 @@ const DisplayInnerTable* = {DisplayTable, DisplayInlineTable}
 const DisplayInternalTable* = {
   DisplayTableCell, DisplayTableRow, DisplayTableCaption
 } + RowGroupBox
-const ProperTableRowParent* = RowGroupBox + {DisplayTableWrapper} #TODO remove
 const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
 const WhiteSpacePreserve* = {
   WhitespacePre, WhitespacePreLine, WhitespacePreWrap
@@ -759,7 +760,6 @@ func bfcify*(overflow: CSSOverflow): CSSOverflow =
   return overflow
 
 const UpperAlphaMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".toPoints()
-const LowerAlphaMap = "abcdefghijklmnopqrstuvwxyz".toPoints()
 const LowerGreekMap = "αβγδεζηθικλμνξοπρστυφχψω".toPoints()
 const HiraganaMap = ("あいうえおかきくけこさしすせそたちつてとなにぬねの" &
   "はひふへほまみむめもやゆよらりるれろわゐゑをん").toPoints()
@@ -786,14 +786,13 @@ func numToBase(n: int; map: openArray[uint32]): string =
     res.addUTF8(tmp[i])
   return res
 
-func numToFixed(n: int; map: openArray[uint32]): string =
-  let n = n - 1
-  if n notin 0 .. map.high:
-    return $n
-  return $map[n]
+func numToFixed(n: int32; map: openArray[uint32]): string =
+  if n in 1 .. map.len:
+    return map[n - 1].toUTF8()
+  return $n
 
-func numberAdditive(i: int; range: HSlice[int, int];
-    symbols: openArray[(int, string)]): string =
+func numberAdditive(i: int32; range: Slice[int32];
+    symbols: openArray[(int32, cstring)]): string =
   if i notin range:
     return $i
   var n = i
@@ -801,65 +800,66 @@ func numberAdditive(i: int; range: HSlice[int, int];
   while n > 0:
     if n >= symbols[at][0]:
       n -= symbols[at][0]
-      result &= symbols[at][1]
+      result &= $symbols[at][1]
       continue
     inc at
   return result
 
 const romanNumbers = [
-  (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
-  (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
+  (1000i32, cstring"M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"),
+  (90, "XC"), (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"),
+  (1, "I")
 ]
 
-const romanNumbersLower = block:
-  var res: seq[(int, string)] = @[]
-  for (n, s) in romanNumbers:
-    res.add((n, s.toLowerAscii()))
-  res
+func romanNumber(i: int32): string =
+  return numberAdditive(i, 1i32..3999i32, romanNumbers)
 
-func romanNumber(i: int): string =
-  return numberAdditive(i, 1..3999, romanNumbers)
-
-func romanNumberLower(i: int): string =
-  return numberAdditive(i, 1..3999, romanNumbersLower)
-
-func japaneseNumber(i: int): string =
+func japaneseNumber(i: int32; formal: bool): string =
   if i == 0:
-    return "〇"
+    return if formal: "〇" else: "零"
   var n = i
   var s = ""
   if i < 0:
     s &= "マイナス"
     n *= -1
   let o = n
-  var ss: seq[string] = @[]
+  var ss: seq[cstring] = @[]
   var d = 0
   while n > 0:
     let m = n mod 10
     if m != 0:
       case d
-      of 1: ss.add("十")
-      of 2: ss.add("百")
-      of 3: ss.add("千")
+      of 1:
+        ss.add(if formal: cstring"拾" else: "十")
+        if formal:
+          ss.add("壱")
+      of 2:
+        ss.add("百")
+        if formal:
+          ss.add("壱")
+      of 3:
+        ss.add(if formal: cstring"阡" else: "千")
+        if formal:
+          ss.add("壱")
       of 4:
         ss.add("万")
-        ss.add("一")
+        ss.add(if formal: cstring"壱" else: "一")
       of 5:
         ss.add("万")
-        ss.add("十")
+        ss.add(if formal: cstring"拾" else: "十")
       of 6:
         ss.add("万")
         ss.add("百")
       of 7:
         ss.add("万")
-        ss.add("千")
-        ss.add("一")
+        ss.add(if formal: cstring"阡" else: "千")
+        ss.add(if formal: cstring"壱" else: "一")
       of 8:
         ss.add("億")
-        ss.add("一")
+        ss.add(if formal: cstring"壱" else: "一")
       of 9:
         ss.add("億")
-        ss.add("十")
+        ss.add(if formal: cstring"拾" else: "十")
       else: discard
     case m
     of 0:
@@ -867,11 +867,11 @@ func japaneseNumber(i: int): string =
       n = n div 10
     of 1:
       if o == n:
-        ss.add("一")
-    of 2: ss.add("二")
-    of 3: ss.add("三")
+        ss.add(if formal: cstring"壱" else: "一")
+    of 2: ss.add(if formal: cstring"弐" else: "二")
+    of 3: ss.add(if formal: cstring"参" else: "三")
     of 4: ss.add("四")
-    of 5: ss.add("五")
+    of 5: ss.add(if formal: cstring"伍" else: "五")
     of 6: ss.add("六")
     of 7: ss.add("七")
     of 8: ss.add("八")
@@ -879,34 +879,52 @@ func japaneseNumber(i: int): string =
     else: discard
     n -= m
   for j in countdown(ss.high, 0):
-    s &= ss[j]
+    s &= $ss[j]
   return s
 
-func listMarker0(t: CSSListStyleType; i: int): string =
-  case t
-  of ListStyleTypeNone: return ""
-  of ListStyleTypeDisc: return "• " # U+2022
-  of ListStyleTypeCircle: return "○ " # U+25CB
-  of ListStyleTypeSquare: return "□ " # U+25A1
-  of ListStyleTypeDisclosureOpen: return "▶ " # U+25B6
-  of ListStyleTypeDisclosureClosed: return "▼ " # U+25BC
-  of ListStyleTypeDecimal: return $i & ". "
-  of ListStyleTypeUpperRoman: return romanNumber(i) & ". "
-  of ListStyleTypeLowerRoman: return romanNumberLower(i) & ". "
-  of ListStyleTypeUpperAlpha: return numToBase(i, UpperAlphaMap) & ". "
-  of ListStyleTypeLowerAlpha: return numToBase(i, LowerAlphaMap) & ". "
-  of ListStyleTypeLowerGreek: return numToBase(i, LowerGreekMap) & ". "
-  of ListStyleTypeHiragana: return numToBase(i, HiraganaMap) & "、"
-  of ListStyleTypeHiraganaIroha: return numToBase(i, HiraganaIrohaMap) & "、"
-  of ListStyleTypeKatakana: return numToBase(i, KatakanaMap) & "、"
-  of ListStyleTypeKatakanaIroha: return numToBase(i, KatakanaIrohaMap) & "、"
-  of ListStyleTypeCjkEarthlyBranch:
-    return numToFixed(i, EarthlyBranchMap) & "、"
-  of ListStyleTypeCjkHeavenlyStem: return numToFixed(i, HeavenlyStemMap) & "、"
-  of ListStyleTypeJapaneseInformal: return japaneseNumber(i) & "、"
+func listMarker0(t: CSSListStyleType; i: int32): string =
+  return case t
+  of ListStyleTypeNone: ""
+  of ListStyleTypeDisc: "•" # U+2022
+  of ListStyleTypeCircle: "○" # U+25CB
+  of ListStyleTypeSquare: "□" # U+25A1
+  of ListStyleTypeDisclosureOpen: "▶" # U+25B6
+  of ListStyleTypeDisclosureClosed: "▼" # U+25BC
+  of ListStyleTypeDecimal: $i
+  of ListStyleTypeUpperRoman: romanNumber(i)
+  of ListStyleTypeLowerRoman: romanNumber(i).toLowerAscii()
+  of ListStyleTypeUpperAlpha: numToBase(i, UpperAlphaMap)
+  of ListStyleTypeLowerAlpha: numToBase(i, UpperAlphaMap).toLowerAscii()
+  of ListStyleTypeLowerGreek: numToBase(i, LowerGreekMap)
+  of ListStyleTypeHiragana: numToBase(i, HiraganaMap)
+  of ListStyleTypeHiraganaIroha: numToBase(i, HiraganaIrohaMap)
+  of ListStyleTypeKatakana: numToBase(i, KatakanaMap)
+  of ListStyleTypeKatakanaIroha: numToBase(i, KatakanaIrohaMap)
+  of ListStyleTypeCjkEarthlyBranch: numToFixed(i, EarthlyBranchMap)
+  of ListStyleTypeCjkHeavenlyStem: numToFixed(i, HeavenlyStemMap)
+  of ListStyleTypeJapaneseInformal: japaneseNumber(i, formal = false)
+  of ListStyleTypeJapaneseFormal: japaneseNumber(i, formal = true)
 
-func listMarker*(t: CSSListStyleType; i: int): RefString =
-  return newRefString(listMarker0(t, i))
+func listMarkerSuffix(t: CSSListStyleType): string =
+  return case t
+  of ListStyleTypeNone: ""
+  of ListStyleTypeDisc, ListStyleTypeCircle, ListStyleTypeSquare,
+      ListStyleTypeDisclosureOpen, ListStyleTypeDisclosureClosed:
+    " "
+  of ListStyleTypeDecimal, ListStyleTypeUpperRoman, ListStyleTypeLowerRoman,
+      ListStyleTypeUpperAlpha, ListStyleTypeLowerAlpha, ListStyleTypeLowerGreek:
+    ". "
+  of ListStyleTypeHiragana, ListStyleTypeHiraganaIroha, ListStyleTypeKatakana,
+      ListStyleTypeKatakanaIroha, ListStyleTypeCjkEarthlyBranch,
+      ListStyleTypeCjkHeavenlyStem, ListStyleTypeJapaneseInformal,
+      ListStyleTypeJapaneseFormal:
+    "、"
+
+func listMarker*(t: CSSListStyleType; i: int32; suffix: bool): RefString =
+  let res = newRefString(listMarker0(t, i))
+  if suffix:
+    res.s &= listMarkerSuffix(t)
+  return res
 
 func quoteStart*(level: int): string =
   if level == 0:
@@ -1073,11 +1091,11 @@ proc parseLegacyColorFun(value: openArray[CSSComponentValue]):
 # and ident is in NameTable and may start with "bright-"
 func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
   var i = value.skipBlanks(0)
-  if i != value.high or not (value[i] of CSSToken): # only 1 param is valid
-    #TODO numeric functions
+  let tok = ?value.getToken(i)
+  if value.skipBlanks(i + 1) < value.len: # only 1 param is valid
     return err()
-  let tok = CSSToken(value[i])
   if tok.t == cttINumber:
+    #TODO calc
     if int(tok.nvalue) notin 0..255:
       return err() # invalid numeric ANSI color
     return ok(ANSIColor(tok.nvalue).cssColor())
@@ -1317,13 +1335,26 @@ proc parseContent(cvals: openArray[CSSComponentValue]): Opt[seq[CSSContent]] =
     elif cval of CSSFunction:
       let fun = CSSFunction(cval)
       if fun.name == cftCounter:
-        let i = fun.value.skipBlanks(0)
-        if i >= fun.value.len or not (fun.value[i] of CSSToken):
-          return err()
-        let tok = CSSToken(fun.value[i])
+        var i = fun.value.skipBlanks(0)
+        let tok = ?fun.value.getToken(i)
         if tok.t != cttIdent:
           return err()
-        res.add(CSSContent(t: ContentCounter, counter: tok.value.toAtom()))
+        var style = ListStyleTypeDecimal
+        i = fun.value.skipBlanks(i + 1)
+        if i < fun.value.len:
+          if fun.value[i] != cttComma:
+            return err()
+          i = fun.value.skipBlanks(i + 1)
+          if i < fun.value.len:
+            # stick with decimal if not found
+            style = parseIdent[CSSListStyleType](fun.value[i]).get(style)
+            if fun.value.skipBlanks(i + 1) < fun.value.len:
+              return err()
+        res.add(CSSContent(
+          t: ContentCounter,
+          counter: tok.value.toAtom(),
+          counterStyle: style
+        ))
   ok(res)
 
 func parseFontWeight(cval: CSSComponentValue): Opt[int32] =
@@ -1486,12 +1517,7 @@ proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
 proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
     entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
   var i = fun.value.skipBlanks(0)
-  if i >= fun.value.len:
-    return err()
-  let cval = fun.value[i]
-  if not (cval of CSSToken):
-    return err()
-  let tok = CSSToken(fun.value[i])
+  let tok = ?fun.value.getToken(i)
   if tok.t != cttIdent:
     return err()
   entry = CSSComputedEntry(

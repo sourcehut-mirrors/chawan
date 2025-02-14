@@ -384,9 +384,6 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
       let offset = offset + run.offset
       if ibox.computed{"visibility"} == VisibilityVisible:
         grid.setText(state, run.str, offset, format, ibox.element)
-  elif ibox of InlineBlockBox:
-    let ibox = InlineBlockBox(ibox)
-    grid.renderBlockBox(state, ibox.box, offset)
   elif ibox of InlineImageBox:
     let ibox = InlineImageBox(ibox)
     if ibox.computed{"visibility"} != VisibilityVisible:

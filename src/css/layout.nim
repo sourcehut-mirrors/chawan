@@ -628,7 +628,7 @@ proc alignLine(fstate: var FlowState) =
     elif iastate.ibox of InlineBlockBox:
       let ibox = InlineBlockBox(iastate.ibox)
       # Add the offset to avoid destroying margins (etc.) of the block.
-      ibox.box.state.offset += iastate.offset
+      BlockBox(ibox.children[0]).state.offset += iastate.offset
     elif iastate.ibox of InlineImageBox:
       let ibox = InlineImageBox(iastate.ibox)
       ibox.imgstate.offset = iastate.offset
@@ -777,7 +777,7 @@ proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
     # b) `box' has resolved its y offset, so the float can already
     #    be positioned.
     # We check whether our y offset has been positioned as follows:
-    # * save marginTarget in FlowState at layoutBlock's start
+    # * save marginTarget in FlowState at layoutFlow's start
     # * if our saved marginTarget and bctx's marginTarget no longer
     #   point to the same object, that means our (or an ancestor's)
     #   offset has been resolved, i.e. we can position floats already.
@@ -1703,7 +1703,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
     ))
 
 proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
-  let box = ibox.box
+  let box = BlockBox(ibox.children[0])
   if box.computed{"position"} in PositionAbsoluteFixed:
     # Absolute is a bit of a special case in inline: while the spec
     # *says* it should blockify, absolutely positioned inline-blocks are

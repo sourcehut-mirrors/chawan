@@ -8,7 +8,7 @@ myli { counter-increment: asdf 1 }
 myli::before { content: counter(asdf) ' ' }
 :root { counter-set: my-link-counter }
 a[href]::before{
-  content: '['counter(my-link-counter)']';
+  content: '['counter(my-link-counter, cjk-heavenly-stem)']';
   counter-increment: my-link-counter
 }
 </style>

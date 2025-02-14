@@ -101,7 +101,7 @@ type
     bmp*: NetworkBitmap
 
   InlineBlockBox* = ref object of InlineBox
-    box*: BlockBox
+    # InlineBlockBox always has one block child.
 
 func offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
