@@ -216,7 +216,7 @@ proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
 proc clearInterval(window: Window; id: int32) {.jsfunc.} =
   window.clearTimeout(id)
 
-func console(window: Window): Console {.jsrfget.} =
+func console*(window: Window): Console {.jsrfget.} =
   return window.internalConsole
 
 proc screenX(window: Window): int {.jsrfget.} = 0

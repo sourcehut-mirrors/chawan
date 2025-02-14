@@ -85,8 +85,6 @@ type
     config: BufferConfig
     ctx: TextDecoderContext
     document: Document
-    estream: DynFileStream # error stream
-    fd: int # file descriptor of buffer source
     firstBufferRead: bool
     hoverText: array[HoverType, string]
     htmlParser: HTML5ParserWrapper
@@ -947,7 +945,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     pouts = newPosixStream(r.recvAux.pop())
   let pid = fork()
   if pid == -1:
-    buffer.estream.write("Failed to clone buffer.\n")
+    buffer.window.console.error("Failed to clone buffer.")
     return -1
   if pid == 0: # child
     pins.sclose()
@@ -1399,7 +1397,7 @@ proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
   let ctx = buffer.window.jsctx
   let ret = ctx.eval(source, '<' & $buffer.baseURL & '>', JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(ret):
-    ctx.writeException(buffer.estream)
+    ctx.writeException(buffer.window.console.err)
     return err() # error
   if JS_IsUndefined(ret):
     return err() # no need to navigate
@@ -1897,7 +1895,7 @@ proc runBuffer(buffer: Buffer) =
     buffer.loader.unregistered.setLen(0)
     buffer.loader.unblockRegister()
     if buffer.config.scripting != smFalse:
-      if buffer.window.timeouts.run(buffer.estream):
+      if buffer.window.timeouts.run(buffer.window.console.err):
         buffer.window.runJSJobs()
         buffer.maybeReshape()
 
@@ -1918,7 +1916,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   let buffer = Buffer(
     attrs: attrs,
     config: config,
-    estream: newDynFileStream(stderr),
     ishtml: ishtml,
     loader: loader,
     needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
