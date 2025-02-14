@@ -179,11 +179,6 @@ const DisplayNoneLike = {
   DisplayNone, DisplayTableColumn, DisplayTableColumnGroup
 }
 
-proc displayed(frame: TreeFrame; pseudo: PseudoElement): bool =
-  return frame.parent.computedMap[pseudo] != nil and
-    frame.parent.computedMap[pseudo]{"content"}.len > 0 and
-    frame.parent.computedMap[pseudo]{"display"} notin DisplayNoneLike
-
 proc displayed(frame: TreeFrame; element: Element): bool =
   return element.computed{"display"} notin DisplayNoneLike
 
@@ -339,12 +334,14 @@ proc addElement(frame: var TreeFrame; element: Element) =
     ))
 
 proc addPseudo(frame: var TreeFrame; pseudo: PseudoElement) =
-  if frame.displayed(pseudo):
+  let computed = frame.parent.getComputedStyle(pseudo)
+  if computed != nil and computed{"display"} notin DisplayNoneLike and
+      computed{"content"}.len > 0:
     frame.add(StyledNode(
       t: stElement,
       pseudo: pseudo,
       element: frame.parent,
-      computed: frame.parent.computedMap[pseudo]
+      computed: computed
     ))
 
 proc addText(frame: var TreeFrame; text: RefString) =

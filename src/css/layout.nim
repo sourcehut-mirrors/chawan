@@ -4,7 +4,6 @@ import std/math
 import css/box
 import css/cssvalues
 import css/lunit
-import html/dom
 import types/bitmap
 import types/winattrs
 import utils/luwrap

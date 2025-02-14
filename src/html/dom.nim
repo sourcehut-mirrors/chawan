@@ -284,7 +284,8 @@ type
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
     cachedAttributes: NamedNodeMap
     cachedStyle*: CSSStyleDeclaration
-    computedMap*: array[peNone..peAfter, CSSValues]
+    computed*: CSSValues
+    computedMap*: seq[tuple[pseudo: PseudoElement; computed: CSSValues]]
 
   AttrDummyElement = ref object of Element
 
@@ -3823,13 +3824,10 @@ proc delAttr(element: Element; i: int; keep = false) =
   element.invalidate()
 
 # Styles.
-template computed*(element: Element): CSSValues =
-  element.computedMap[peNone]
-
 proc invalidate*(element: Element) =
   let valid = element.computed != nil
-  for it in element.computedMap.mitems:
-    it = nil
+  element.computed = nil
+  element.computedMap.setLen(0)
   if element.document != nil:
     element.document.invalid = true
   if valid:
@@ -4032,6 +4030,14 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
     element.cachedStyle = newCSSStyleDeclaration(element, "")
   return element.cachedStyle
 
+proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues =
+  if pseudo == peNone:
+    return element.computed
+  for it in element.computedMap:
+    if it.pseudo == pseudo:
+      return it.computed
+  return nil
+
 proc getComputedStyle0*(window: Window; element: Element;
     pseudoElt: Option[string]): CSSStyleDeclaration =
   let pseudo = case pseudoElt.get("")
@@ -4041,7 +4047,7 @@ proc getComputedStyle0*(window: Window; element: Element;
   else: return newCSSStyleDeclaration(nil, "")
   if window.settings.scripting == smApp:
     window.maybeRestyle(element)
-    return newCSSStyleDeclaration(element, $element.computedMap[pseudo],
+    return newCSSStyleDeclaration(element, $element.getComputedStyle(pseudo),
       computed = true, readonly = true)
   # In lite mode, we just parse the "style" attribute and hope for
   # the best.
