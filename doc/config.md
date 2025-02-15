@@ -92,10 +92,18 @@ do not block loading.)</td>
 
 <tr>
 <td>headless</td>
-<td>boolean</td>
+<td>boolean / "dump"</td>
 <td>false</td>
-<td>Whether Chawan should always start in headless mode. Automatically
-enabled when Chawan is called with -r.</td>
+<td>When set to true or "dump", the browser does not take input;
+instead, it prints a rendered version of all buffers in order, then
+exits.<br>
+The difference between `true` and "dump" is that `true` first waits
+for all scripts and network requests to run to completion, while "dump"
+does not.  This means that `true` may never exit when scripting is
+enabled (e.g. if a script sets `setInterval`.)<br>
+Piping `cha` to an external program or passing the `-d` switch has the
+same effect as passing this option.
+</td>
 </tr>
 
 <tr>

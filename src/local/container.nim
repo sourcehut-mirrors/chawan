@@ -1714,7 +1714,7 @@ proc handleCommand(container: Container) =
   container.iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
 
 proc startLoad(container: Container) =
-  if not container.config.dumpMode:
+  if container.config.headless == hmFalse:
     container.repaintLoop()
   container.iface.load().then(proc(res: int) =
     container.onload(res)

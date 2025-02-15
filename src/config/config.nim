@@ -47,6 +47,11 @@ type
 
   ChaPathResolved* = distinct string
 
+  HeadlessMode* = enum
+    hmFalse = "false"
+    hmTrue = "true"
+    hmDump = "dump"
+
   ActionMap = object
     t: Table[string, string]
 
@@ -87,7 +92,7 @@ type
   StartConfig = object
     visualHome* {.jsgetset.}: string
     startupScript* {.jsgetset.}: string
-    headless* {.jsgetset.}: bool
+    headless* {.jsgetset.}: HeadlessMode
     consoleBuffer* {.jsgetset.}: bool
 
   CSSConfig = object
@@ -340,6 +345,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
   k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var HeadlessMode; v: TomlValue;
+  k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
   k: string)
 proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
@@ -506,6 +513,17 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
     x = smApp
   else:
     raise newException(ValueError, "unknown scripting mode '" & v.s &
+      "' for key " & k)
+
+proc parseConfigValue(ctx: var ConfigParser; x: var HeadlessMode; v: TomlValue;
+    k: string) =
+  typeCheck(v, {tvtString, tvtBoolean}, k)
+  if v.t == tvtBoolean:
+    x = if v.b: hmTrue else: hmFalse
+  elif v.s == "dump":
+    x = hmDump
+  else:
+    raise newException(ValueError, "unknown headless mode '" & v.s &
       "' for key " & k)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;

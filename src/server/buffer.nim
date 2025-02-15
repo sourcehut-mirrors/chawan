@@ -86,6 +86,7 @@ type
     ctx: TextDecoderContext
     document: Document
     firstBufferRead: bool
+    headlessLoading: bool
     hoverText: array[HoverType, string]
     htmlParser: HTML5ParserWrapper
     images: seq[PosBitmap]
@@ -126,7 +127,7 @@ type
     styling*: bool
     scripting*: ScriptingMode
     images*: bool
-    dumpMode*: bool
+    headless*: HeadlessMode
     autofocus*: bool
     history*: bool
     charsetOverride*: Charset
@@ -1056,13 +1057,22 @@ proc finishLoad(buffer: Buffer; data: InputData): EmptyPromise =
   data.stream.sclose()
   return buffer.loadResources()
 
+proc headlessMustWait(buffer: Buffer): bool =
+  return buffer.config.scripting != smFalse and
+    not buffer.window.timeouts.empty or
+    buffer.loader.mapFds > 0
+
 # Returns:
 # * -1 if loading is done
 # * a positive number for reporting the number of bytes loaded and that the page
 #   has been partially rendered.
 proc load*(buffer: Buffer): int {.proxy, task.} =
   if buffer.state == bsLoaded:
-    return -1
+    if buffer.config.headless == hmTrue and buffer.headlessMustWait():
+      buffer.headlessLoading = true
+      return -2 # unused
+    else:
+      return -1
   elif buffer.bytesRead > buffer.reportedBytesRead:
     buffer.maybeReshape()
     buffer.reportedBytesRead = buffer.bytesRead
@@ -1076,7 +1086,10 @@ proc onload(buffer: Buffer; data: InputData) =
   case buffer.state
   of bsLoadingResources, bsLoaded:
     if buffer.hasTask(bcLoad):
-      buffer.resolveTask(bcLoad, -1)
+      if buffer.config.headless == hmTrue and buffer.headlessMustWait():
+        buffer.headlessLoading = true
+      else:
+        buffer.resolveTask(bcLoad, -1)
     return
   of bsLoadingPage:
     discard
@@ -1113,12 +1126,15 @@ proc onload(buffer: Buffer; data: InputData) =
         if buffer.hasTask(bcGetTitle):
           buffer.resolveTask(bcGetTitle, buffer.document.title)
         if buffer.hasTask(bcLoad):
-          buffer.resolveTask(bcLoad, -1)
+          if buffer.config.headless == hmTrue and buffer.headlessMustWait():
+            buffer.headlessLoading = true
+          else:
+            buffer.resolveTask(bcLoad, -1)
       )
       return # skip incr render
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
-  if not buffer.config.dumpMode and buffer.tasks[bcLoad] != 0:
+  if buffer.config.headless == hmFalse and buffer.tasks[bcLoad] != 0:
     # only makes sense when not in dump mode (and the user has requested a load)
     buffer.maybeReshape()
     buffer.reportedBytesRead = buffer.bytesRead
@@ -1880,6 +1896,9 @@ proc getPollTimeout(buffer: Buffer): cint =
 proc runBuffer(buffer: Buffer) =
   var alive = true
   while alive:
+    if buffer.headlessLoading and not buffer.headlessMustWait():
+      buffer.headlessLoading = false
+      buffer.resolveTask(bcLoad, -1)
     let timeout = buffer.getPollTimeout()
     buffer.pollData.poll(timeout)
     buffer.loader.blockRegister()

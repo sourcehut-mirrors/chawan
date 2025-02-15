@@ -93,7 +93,6 @@ type ParamParseContext = object
   configPath: Option[string]
   contentType: string
   charset: Charset
-  dump: bool
   visual: bool
   opts: seq[string]
   stylesheet: string
@@ -134,7 +133,7 @@ proc parseOutputCharset(ctx: var ParamParseContext) =
   ctx.opts.add("encoding.display-charset = '" & $ctx.getCharset() & "'")
 
 proc parseDump(ctx: var ParamParseContext) =
-  ctx.dump = true
+  ctx.opts.add("start.headless = 'dump'")
 
 proc parseCSS(ctx: var ParamParseContext) =
   ctx.stylesheet &= ctx.getNext()
@@ -146,7 +145,6 @@ proc parseRun(ctx: var ParamParseContext) =
   let script = dqEscape(ctx.getNext())
   ctx.opts.add("start.startup-script = \"\"\"" & script & "\"\"\"")
   ctx.opts.add("start.headless = true")
-  ctx.dump = true
 
 proc parse(ctx: var ParamParseContext) =
   var escapeAll = false
@@ -269,7 +267,7 @@ proc main() =
     elif (let wwwHome = getEnv("WWW_HOME"); wwwHome != ""):
       ctx.pages.add(wwwHome)
       history = false
-  if ctx.pages.len == 0 and not config.start.headless:
+  if ctx.pages.len == 0 and config.start.headless != hmTrue:
     if ps.isatty():
       help(1)
   # make sure tmpdir exists
@@ -286,7 +284,7 @@ proc main() =
   let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
     urandom, loaderControl)
   try:
-    client.pager.run(ctx.pages, ctx.contentType, ctx.charset, ctx.dump, history)
+    client.pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
   except CatchableError:
     client.flushConsole()
     raise

@@ -501,7 +501,8 @@ proc runJSJobs(pager: Pager) =
     pager.quit(0)
 
 proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
-  pager.term.catchSigint()
+  if pager.config.start.headless == hmFalse:
+    pager.term.catchSigint()
   let flags = if module:
     JS_EVAL_TYPE_MODULE
   else:
@@ -516,7 +517,8 @@ proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
       pager.quit(pager.exitCode)
   else:
     pager.runJSJobs()
-  pager.term.respectSigint()
+  if pager.config.start.headless == hmFalse:
+    pager.term.respectSigint()
 
 proc evalActionJS(pager: Pager; action: string): JSValue =
   if action.startsWith("cmd."):
@@ -778,11 +780,10 @@ proc input(pager: Pager): EmptyPromise =
   return p
 
 proc run*(pager: Pager; pages: openArray[string]; contentType: string;
-    cs: Charset; dump, history: bool) =
+    cs: Charset; history: bool) =
   var istream: PosixStream = nil
-  var dump = dump
   let ps = newPosixStream(STDIN_FILENO)
-  if not dump:
+  if pager.config.start.headless == hmFalse:
     if ps.isatty():
       istream = ps
     let os = newPosixStream(STDOUT_FILENO)
@@ -791,8 +792,8 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
         istream = newPosixStream("/dev/tty", O_RDONLY, 0)
     else:
       istream = nil
-    dump = istream == nil
-  pager.dumpMode = dump
+    if istream == nil:
+      pager.config.start.headless = hmDump
   pager.pollData.register(pager.forkserver.estream.fd, POLLIN)
   pager.loader.registerFun = proc(fd: int) =
     pager.pollData.register(fd, POLLIN)
@@ -818,17 +819,18 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     # stdin may very well receive ANSI text
     let contentType = if contentType != "": contentType else: "text/x-ansi"
     pager.readPipe(contentType, cs, ps, "*stdin*")
-  let history = not dump and history # we don't want history for dump either
+  # we don't want history for dump/headless mode
+  let history = pager.config.start.headless == hmFalse and history
   for page in pages:
     pager.loadURL(page, contentType, cs, history)
   pager.showAlerts()
   pager.acceptBuffers()
-  if not dump:
+  if pager.config.start.headless == hmFalse:
     pager.inputLoop()
   else:
+    if pager.config.start.headless == hmTrue: # else just dump
+      pager.headlessLoop()
     pager.dumpBuffers()
-  if pager.config.start.headless:
-    pager.headlessLoop()
 
 # Note: this function does not work correctly if start < x of last written char
 proc writeStatusMessage(pager: Pager; str: string; format = Format();
@@ -1747,7 +1749,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     styling: pager.config.buffer.styling,
     autofocus: pager.config.buffer.autofocus,
     history: pager.config.buffer.history,
-    dumpMode: pager.dumpMode,
+    headless: pager.config.start.headless,
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol,
     metaRefresh: pager.config.buffer.metaRefresh,
