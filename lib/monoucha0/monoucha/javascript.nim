@@ -1478,8 +1478,8 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL;
     errid = Opt[JSErrorEnum].err(); ishtmldda = false): JSClassID =
   var stmts = newStmtList()
-  var info: RegistryInfo = nil
-  if not BoundFunctions.pop(t.strVal, info):
+  var info = BoundFunctions.getOrDefault(t.strVal)
+  if info == nil:
     info = newRegistryInfo(t)
   if name != "":
     info.name = name
