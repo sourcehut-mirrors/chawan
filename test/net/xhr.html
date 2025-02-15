@@ -5,8 +5,9 @@
 <script>
 const x = new XMLHttpRequest();
 assert(x.onreadystatechange === null);
+let changed = false;
 function myFunction() {
-	;
+	changed = true;
 }
 x.onreadystatechange = myFunction;
 assertEquals(myFunction, x.onreadystatechange);
@@ -18,6 +19,17 @@ x.overrideMimeType("text/plain");
 x.send();
 assertThrows(`x.overrideMimeType("text/plain")`, DOMException);
 assertEquals(x.readyState, XMLHttpRequest.DONE);
-assertEquals(x.responseText.trim(), "pong");
+assert(changed);
+changed = false;
+x.onreadystatechange = function() {
+	if (x.readyState === XMLHttpRequest.DONE) {
+		x.response;
+		x.response;
+		assertEquals(JSON.stringify(x.response), '{"test":"hi world"}');
+	}
+}
+x.open("GET", "json")
+x.responseType = "json";
+x.send();
 document.getElementById("x").textContent = "Success";
 </script>

@@ -3273,7 +3273,7 @@ proc inputLoop(pager: Pager) =
 
 func hasSelectFds(pager: Pager): bool =
   return not pager.timeouts.empty or pager.numload > 0 or
-    pager.loader.mapFds > 0
+    pager.loader.hasFds()
 
 proc headlessLoop(pager: Pager) =
   while pager.hasSelectFds():

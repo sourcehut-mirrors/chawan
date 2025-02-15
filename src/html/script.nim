@@ -1,5 +1,6 @@
 import monoucha/javascript
 import monoucha/jsopaque
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/referrer
@@ -183,3 +184,12 @@ proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]) =
     ctx.definePropertyE(proto, s, uint16(e))
     ctx.definePropertyE(ctor, s, uint16(e))
   JS_FreeValue(ctx, proto)
+
+proc identity(ctx: JSContext; this_val: JSValue; argc: cint;
+    argv: ptr UncheckedArray[JSValue]; magic: cint;
+    func_data: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
+  return JS_DupValue(ctx, func_data[0])
+
+#TODO move to javascript.nim?
+proc identityFunction*(ctx: JSContext; val: JSValue): JSValue =
+  return JS_NewCFunctionData(ctx, identity, 0, 0, 1, val.toJSValueArray())

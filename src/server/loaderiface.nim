@@ -25,7 +25,7 @@ type
     loaderPid*: int
     clientPid*: int
     map: seq[MapData]
-    mapFds*: int # number of fds in map
+    mapFds: int # number of fds in map
     unregistered*: seq[int]
     registerFun*: proc(fd: int)
     unregisterFun*: proc(fd: int)
@@ -193,6 +193,9 @@ proc unset*(loader: FileLoader; data: MapData) =
   let fd = int(data.stream.fd)
   if loader.get(fd) != nil:
     loader.unset(fd)
+
+func hasFds*(loader: FileLoader): bool =
+  return loader.mapFds > 0 or loader.registerQueue.len > 0
 
 proc register(loader: FileLoader; data: ConnectData) =
   if loader.registerBlocked:

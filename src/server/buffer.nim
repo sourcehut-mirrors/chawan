@@ -1060,7 +1060,7 @@ proc finishLoad(buffer: Buffer; data: InputData): EmptyPromise =
 proc headlessMustWait(buffer: Buffer): bool =
   return buffer.config.scripting != smFalse and
     not buffer.window.timeouts.empty or
-    buffer.loader.mapFds > 0
+    buffer.loader.hasFds()
 
 # Returns:
 # * -1 if loading is done

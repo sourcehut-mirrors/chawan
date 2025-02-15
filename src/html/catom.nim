@@ -33,6 +33,7 @@ macro makeStaticAtom =
       satChecked = "checked"
       satClass = "class"
       satClassList = "classList"
+      satClassName = "className"
       satClick = "click"
       satColor = "color"
       satCols = "cols"
@@ -41,6 +42,7 @@ macro makeStaticAtom =
       satCrossorigin = "crossorigin"
       satCustomevent = "customevent"
       satDOMContentLoaded = "DOMContentLoaded"
+      satDefaultSelected = "defaultSelected"
       satDefer = "defer"
       satDirname = "dirname"
       satDisabled = "disabled"
@@ -53,11 +55,16 @@ macro makeStaticAtom =
       satFormaction = "formaction"
       satFormenctype = "formenctype"
       satFormmethod = "formmethod"
+      satHHttpEquiv = "httpEquiv"
+      satHIsMap = "isMap"
+      satHNoValidate = "noValidate"
+      satHUseMap = "useMap"
       satHash = "hash"
       satHeight = "height"
       satHost = "host"
       satHostname = "hostname"
       satHref = "href"
+      satHtmlFor = "htmlFor"
       satId = "id"
       satIntegrity = "integrity"
       satIsmap = "ismap"
@@ -158,15 +165,10 @@ static:
 type
   CAtom* = distinct uint32
 
-  CAtomFactoryInit = object
-    obj: CAtomFactoryObj
-
   CAtomFactoryObj = object
     strMap: array[CAtomFactoryStrMapLength, seq[CAtom]]
     atomMap: seq[string]
     lowerMap: seq[CAtom]
-    namespaceMap: array[Namespace, CAtom]
-    prefixMap: array[NamespacePrefix, CAtom]
 
   #TODO could be a ptr probably
   CAtomFactory* = ref CAtomFactoryObj
@@ -201,39 +203,21 @@ func toAtom(factory: var CAtomFactoryObj; s: sink string;
   factory.strMap[i].add(atom)
   return atom
 
-const factoryInit = (func(): CAtomFactoryInit =
-  var init = CAtomFactoryInit()
+const factoryInit = (func(): CAtomFactoryObj =
+  result = CAtomFactoryObj()
   # Null atom
-  init.obj.atomMap.add("")
-  init.obj.lowerMap.add(CAtom(0))
+  result.atomMap.add("")
+  result.lowerMap.add(CAtom(0))
   # StaticAtom includes TagType too.
   for sa in StaticAtom(1) .. StaticAtom.high:
-    discard init.obj.toAtom($sa, isInit = true)
+    discard result.toAtom($sa, isInit = true)
   for sa in StaticAtom(1) .. StaticAtom.high:
-    let atom = init.obj.toAtom(($sa).toLowerAscii(), isInit = true)
-    init.obj.lowerMap.add(atom)
+    let atom = result.toAtom(($sa).toLowerAscii(), isInit = true)
+    result.lowerMap.add(atom)
   # fill slots of newly added lower mappings
-  while init.obj.lowerMap.len < init.obj.atomMap.len:
-    init.obj.lowerMap.add(CAtom(init.obj.lowerMap.len))
-  let olen = init.obj.atomMap.len
-  for it in Namespace:
-    if it == NO_NAMESPACE:
-      init.obj.namespaceMap[it] = CAtomNull
-    else:
-      init.obj.namespaceMap[it] = init.obj.toAtom($it)
-  for it in NamespacePrefix:
-    if it == NO_PREFIX:
-      init.obj.prefixMap[it] = CAtomNull
-    else:
-      init.obj.prefixMap[it] = init.obj.toAtom($it)
-  assert init.obj.atomMap.len == olen
-  return init
+  while result.lowerMap.len < result.atomMap.len:
+    result.lowerMap.add(CAtom(result.lowerMap.len))
 )()
-
-proc newCAtomFactory(): CAtomFactory =
-  let factory = new(CAtomFactory)
-  factory[] = factoryInit.obj
-  return factory
 
 var factory {.global.}: CAtomFactory = nil
 
@@ -243,7 +227,8 @@ func getFactory(): CAtomFactory =
 
 proc initCAtomFactory*() =
   assert factory == nil
-  factory = newCAtomFactory()
+  factory = new(CAtomFactory)
+  factory[] = factoryInit
 
 func toLowerAscii*(a: CAtom): CAtom =
   return getFactory().lowerMap[int32(a)]
@@ -294,7 +279,13 @@ func toStaticAtom*(atom: CAtom): StaticAtom =
   return atUnknown
 
 proc toStaticAtom*(s: string): StaticAtom =
-  return s.toAtom().toStaticAtom()
+  let h = s.hash()
+  let i = h and (factoryInit.strMap.len - 1)
+  for atom in factoryInit.strMap[i]:
+    if factoryInit.atomMap[int(atom)] == s:
+      # Found
+      return atom.toStaticAtom()
+  atUnknown
 
 func toNamespace*(atom: CAtom): Namespace =
   case atom.toStaticAtom()
@@ -308,10 +299,23 @@ func toNamespace*(atom: CAtom): Namespace =
   else: return NAMESPACE_UNKNOWN
 
 func toAtom*(namespace: Namespace): CAtom =
-  return getFactory().namespaceMap[namespace]
+  return (case namespace
+  of NO_NAMESPACE: satUempty
+  of Namespace.HTML: satNamespaceHTML
+  of Namespace.MATHML: satNamespaceMathML
+  of Namespace.SVG: satNamespaceSVG
+  of Namespace.XLINK: satNamespaceXLink
+  of Namespace.XML: satNamespaceXML
+  of Namespace.XMLNS: satNamespaceXMLNS
+  of NAMESPACE_UNKNOWN: satUempty).toAtom()
 
 func toAtom*(prefix: NamespacePrefix): CAtom =
-  return getFactory().prefixMap[prefix]
+  return (case prefix
+  of NO_PREFIX: satUempty
+  of PREFIX_XLINK: satXlink
+  of PREFIX_XML: satXml
+  of PREFIX_XMLNS: satXmlns
+  of PREFIX_UNKNOWN: satUempty).toAtom()
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
   if JS_IsNull(val):

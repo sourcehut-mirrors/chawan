@@ -1,13 +1,22 @@
 <!doctype html>
 <title>onclick setter/getter</title>
 <div id=x>Fail</div>
+<div id=y onclick="console.log('test')">test</div>
 <script src=asserts.js></script>
 <script>
-assert(document.getElementById("x").onclick === null);
+const x = document.getElementById("x");
+assertEquals(x.onclick, null);
 function myFunction() {
 	this.textContent = "hello"
 }
-document.getElementById("x").onclick = myFunction;
-assert(myFunction == document.getElementById("x").onclick);
-document.getElementById("x").textContent = "Success";
+x.onclick = () => "";
+x.onclick = myFunction;
+assertEquals(x.onclick, myFunction);
+x.onclick = null;
+assertEquals(x.onclick, null);
+const y = document.getElementById("y");
+y.onclick = myFunction;
+assertEquals(y.onclick, myFunction);
+y.remove();
+x.textContent = "Success";
 </script>

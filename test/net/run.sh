@@ -7,7 +7,7 @@ fi
 failed=0
 for h in *.html *.http
 do	printf '%s\r' "$h"
-	if ! "$CHA" -dC config.toml "http://localhost:$1/$h" | diff all.expected -
+	if ! "$CHA" -C config.toml "http://localhost:$1/$h" | diff all.expected -
 	then	failed=$(($failed+1))
 		printf 'FAIL: %s\n' "$h"
 	fi

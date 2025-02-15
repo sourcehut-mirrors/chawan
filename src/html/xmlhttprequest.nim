@@ -54,11 +54,11 @@ type
     upload {.jsget.}: XMLHttpRequestUpload
     flags: set[XMLHttpRequestFlag]
     requestMethod: HttpMethod
+    responseType {.jsget.}: XMLHttpRequestResponseType
+    timeout {.jsget.}: uint32
     requestURL: URL
     headers: Headers
     response: Response
-    responseType {.jsget.}: XMLHttpRequestResponseType
-    timeout {.jsget.}: uint32
     responseObject: JSValue
     received: string
     contentTypeOverride: string
@@ -150,6 +150,7 @@ proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
   this.requestMethod = httpMethod
   this.headers = newHeaders()
   this.response = makeNetworkError()
+  this.received = ""
   this.requestURL = parsedURL
   #TODO response object, received bytes
   if this.readyState != xhrsOpened:
@@ -466,55 +467,17 @@ proc response(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
     else: discard
   if JS_IsException(this.responseObject):
     this.responseObject = JS_UNDEFINED
-  return this.responseObject
-
-# Event reflection
-
-const ReflectMap = [
-  cint(0): satLoadstart,
-  satProgress,
-  satAbort,
-  satError,
-  satLoad,
-  satTimeout,
-  satLoadend,
-  satReadystatechange
-]
-
-proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
-    {.cdecl.} =
-  let val = toJS(ctx, $ReflectMap[magic])
-  let atom = JS_ValueToAtom(ctx, val)
-  var res = JS_NULL
-  var desc: JSPropertyDescriptor
-  if JS_GetOwnProperty(ctx, addr desc, this, atom) > 0:
-    JS_FreeValue(ctx, desc.setter)
-    JS_FreeValue(ctx, desc.getter)
-    res = JS_GetProperty(ctx, this, atom)
-  JS_FreeValue(ctx, val)
-  JS_FreeAtom(ctx, atom)
-  return res
-
-proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
-    {.cdecl.} =
-  if JS_IsFunction(ctx, val):
-    let atom = ReflectMap[magic]
-    var target: EventTarget
-    assert ctx.fromJS(this, target).isSome
-    ctx.definePropertyC(this, "on" & $atom, JS_DupValue(ctx, val))
-    #TODO I haven't checked but this might also be wrong
-    doAssert ctx.addEventListener(target, atom.toAtom(), val).isSome
-  return JS_DupValue(ctx, val)
+  return JS_DupValue(ctx, this.responseObject)
 
 func xhretGetSet(): seq[TabGetSet] =
   result = @[]
-  for i, it in ReflectMap:
+  for i, it in EventReflectMap:
     if it == satReadystatechange:
       break
     result.add(TabGetSet(
       name: "on" & $it,
-      get: jsReflectGet,
-      set: jsReflectSet,
+      get: eventReflectGet,
+      set: eventReflectSet,
       magic: int16(i)
     ))
 
@@ -528,9 +491,9 @@ proc addXMLHttpRequestModule*(ctx: JSContext) =
   ctx.registerType(ProgressEvent, eventCID)
   const getset1 = [TabGetSet(
     name: "onreadystatechange",
-    get: jsReflectGet,
-    set: jsReflectSet,
-    magic: int16(ReflectMap.high)
+    get: eventReflectGet,
+    set: eventReflectSet,
+    magic: static int16(EventReflectMap.find(satReadystatechange))
   )]
   let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID, hasExtraGetSet = true,
     extraGetSet = getset1)

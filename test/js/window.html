@@ -19,5 +19,9 @@ Image = "test";
 HTMLDocument = "test";
 assertEquals(Image, "test");
 assertEquals(HTMLDocument, "test");
+window.onload = () => "first"
+let second = () => "second"
+window.onload = second;
+assertEquals(second, window.onload);
 document.getElementById("x").textContent = "Success";
 </script>

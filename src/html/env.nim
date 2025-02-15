@@ -330,15 +330,6 @@ proc postMessage(ctx: JSContext; window: Window; value: JSValue): Err[void]
   window.fireEvent(event, window)
   ok()
 
-proc setOnLoad(ctx: JSContext; window: Window; val: JSValue)
-    {.jsfset: "onload".} =
-  if JS_IsFunction(ctx, val):
-    let this = ctx.toJS(window)
-    ctx.definePropertyC(this, "onload", JS_DupValue(ctx, val))
-    #TODO I haven't checked but this might also be wrong
-    doAssert ctx.addEventListener(window, satLoad.toAtom(), val).isSome
-    JS_FreeValue(ctx, this)
-
 proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JSModuleDef {.cdecl.} =
   let window = ctx.getWindow()
@@ -368,7 +359,14 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
 proc addWindowModule*(ctx: JSContext) =
   ctx.addEventModule()
   let eventTargetCID = ctx.getClass("EventTarget")
-  ctx.registerType(Window, parent = eventTargetCID, asglobal = true)
+  const getset = [TabGetSet(
+    name: "onload",
+    get: eventReflectGet,
+    set: eventReflectSet,
+    magic: static int16(EventReflectMap.find(satLoad))
+  )]
+  ctx.registerType(Window, parent = eventTargetCID, asglobal = true,
+    hasExtraGetSet = true, extraGetSet = getset)
   ctx.registerType(MediaQueryList)
 
 proc addWindowModule2*(ctx: JSContext) =

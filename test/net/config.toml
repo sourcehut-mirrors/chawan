@@ -1,3 +1,6 @@
+[start]
+headless = true
+
 [buffer]
 scripting = true
 cookie = true

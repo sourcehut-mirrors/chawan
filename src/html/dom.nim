@@ -546,6 +546,9 @@ proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc remove*(node: Node)
 proc replaceAll(parent: Node; s: sink string)
+proc attrl(element: Element; name: StaticAtom; value: int32)
+proc attrul(element: Element; name: StaticAtom; value: uint32)
+proc attrulgz(element: Element; name: StaticAtom; value: uint32)
 
 # Forward declaration hacks
 # set in css/match
@@ -959,7 +962,7 @@ type
 
   ReflectEntry = object
     attrname: StaticAtom
-    funcname: string
+    funcname: StaticAtom
     tags: set[TagType]
     case t: ReflectType
     of rtLong:
@@ -970,47 +973,39 @@ type
       ctype: StaticAtom
     else: discard
 
-func attrType0(s: static string): StaticAtom {.compileTime.} =
-  return strictParseEnum[StaticAtom](s).get
-
 template toset(ts: openArray[TagType]): set[TagType] =
   var tags: system.set[TagType] = {}
   for tag in ts:
     tags.incl(tag)
   tags
 
-func makes(name: static string; ts: set[TagType]): ReflectEntry =
-  const attrname = attrType0(name)
+func makes(name: string; ts: set[TagType]): ReflectEntry =
+  let name = name.toStaticAtom()
   ReflectEntry(
-    attrname: attrname,
+    attrname: name,
     funcname: name,
     t: rtStr,
     tags: ts
   )
 
-func makes(attrname, funcname: static string; ts: set[TagType]):
-    ReflectEntry =
-  const attrname = attrType0(attrname)
+func makes(attrname, funcname: string; ts: set[TagType]): ReflectEntry =
   ReflectEntry(
-    attrname: attrname,
-    funcname: funcname,
+    attrname: attrname.toStaticAtom(),
+    funcname: funcname.toStaticAtom(),
     t: rtStr,
     tags: ts
   )
 
-func makes(name: static string; ts: varargs[TagType]): ReflectEntry =
+func makes(name: string; ts: varargs[TagType]): ReflectEntry =
   makes(name, toset(ts))
 
-func makes(attrname, funcname: static string; ts: varargs[TagType]):
-    ReflectEntry =
+func makes(attrname, funcname: string; ts: varargs[TagType]): ReflectEntry =
   makes(attrname, funcname, toset(ts))
 
-func makeb(attrname, funcname: static string; ts: varargs[TagType]):
-    ReflectEntry =
-  const attrname = attrType0(attrname)
+func makeb(attrname, funcname: string; ts: varargs[TagType]): ReflectEntry =
   ReflectEntry(
-    attrname: attrname,
-    funcname: funcname,
+    attrname: attrname.toStaticAtom(),
+    funcname: funcname.toStaticAtom(),
     t: rtBool,
     tags: toset(ts)
   )
@@ -1018,37 +1013,35 @@ func makeb(attrname, funcname: static string; ts: varargs[TagType]):
 func makeb(name: static string; ts: varargs[TagType]): ReflectEntry =
   makeb(name, name, ts)
 
-func makeul(name: static string; ts: varargs[TagType]; default = 0u32):
-    ReflectEntry =
-  const attrname = attrType0(name)
+func makeul(name: string; ts: varargs[TagType]; default = 0u32): ReflectEntry =
+  let name = name.toStaticAtom()
   ReflectEntry(
-    attrname: attrname,
+    attrname: name,
     funcname: name,
     t: rtUlong,
     tags: toset(ts),
     u: default
   )
 
-func makeulgz(name: static string; ts: varargs[TagType]; default = 0u32):
+func makeulgz(name: string; ts: varargs[TagType]; default = 0u32):
     ReflectEntry =
-  const attrname = attrType0(name)
+  let name = name.toStaticAtom()
   ReflectEntry(
-    attrname: attrname,
+    attrname: name,
     funcname: name,
     t: rtUlongGz,
     tags: toset(ts),
     u: default
   )
 
-func makef(name: static string; ts: set[TagType]; ctype: static string):
-    ReflectEntry =
-  const attrname = attrType0(name)
+func makef(name: string; ctype: string): ReflectEntry =
+  let name = name.toStaticAtom()
   ReflectEntry(
-    attrname: attrname,
+    attrname: name,
     funcname: name,
     t: rtFunction,
-    tags: ts,
-    ctype: attrType0(ctype)
+    tags: AllTagTypes,
+    ctype: ctype.toStaticAtom()
   )
 
 # Note: this table only works for tag types with a registered interface.
@@ -1068,11 +1061,10 @@ const ReflectTable0 = [
   makes("media", TAG_META),
   makeul("cols", TAG_TEXTAREA, 20u32),
   makeul("rows", TAG_TEXTAREA, 1u32),
-# <SELECT>:
-#> For historical reasons, the default value of the size IDL attribute does
-#> not return the actual size used, which, in the absence of the size content
-#> attribute, is either 1 or 4 depending on the presence of the multiple
-#> attribute.
+# > For historical reasons, the default value of the size IDL attribute
+# > does not return the actual size used, which, in the absence of the
+# > size content attribute, is either 1 or 4 depending on the presence
+# > of the multiple attribute.
   makeulgz("size", TAG_SELECT, 0u32),
   makeulgz("size", TAG_INPUT, 20u32),
   makeul("width", TAG_CANVAS, 300u32),
@@ -1085,11 +1077,12 @@ const ReflectTable0 = [
   makes("usemap", "useMap", TAG_IMG),
   makeb("ismap", "isMap", TAG_IMG),
   makeb("disabled", TAG_LINK, TAG_OPTION, TAG_SELECT, TAG_OPTGROUP),
-  # "super-global" attributes
+  # super-global attributes
   makes("class", "className", AllTagTypes),
-  makef("onclick", AllTagTypes, "click"),
-  makef("oninput", AllTagTypes, "input"),
-  makef("onchange", AllTagTypes, "change"),
+  makef("onclick", "click"),
+  makef("oninput", "input"),
+  makef("onchange", "change"),
+  makef("onload", "load"),
   makes("slot", AllTagTypes),
   makes("title", AllTagTypes),
 ]
@@ -4320,6 +4313,97 @@ proc performMicrotaskCheckpoint*(window: Window) =
   window.runJSJobs()
   window.inMicrotaskCheckpoint = false
 
+const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
+    seq[ReflectEntry],
+    Table[TagType, seq[int16]],
+    int16) =
+  var i: int16 = 0
+  while i < ReflectTable0.len:
+    let x = ReflectTable0[i]
+    result[0].add(x)
+    if x.tags == AllTagTypes:
+      break
+    for tag in result[0][i].tags:
+      if tag notin result[1]:
+        result[1][tag] = newSeq[int16]()
+      result[1][tag].add(i)
+    assert result[0][i].tags.len != 0
+    inc i
+  result[2] = i
+  while i < ReflectTable0.len:
+    let x = ReflectTable0[i]
+    assert x.tags == AllTagTypes
+    result[0].add(x)
+    inc i
+)()
+
+proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
+    {.cdecl.} =
+  let entry = ReflectTable[uint16(magic)]
+  let op = this.getOpaque()
+  if unlikely(not ctx.isInstanceOf(this, "Element") or op == nil):
+    return JS_ThrowTypeError(ctx,
+      "Reflected getter called on a value that is not an element")
+  let element = cast[Element](op)
+  if element.tagType notin entry.tags:
+    return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
+  case entry.t
+  of rtStr: return ctx.toJS(element.attr(entry.attrname))
+  of rtBool: return ctx.toJS(element.attrb(entry.attrname))
+  of rtLong: return ctx.toJS(element.attrl(entry.attrname).get(entry.i))
+  of rtUlong: return ctx.toJS(element.attrul(entry.attrname).get(entry.u))
+  of rtUlongGz: return ctx.toJS(element.attrulgz(entry.attrname).get(entry.u))
+  of rtFunction: return JS_NULL
+
+proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
+    {.cdecl.} =
+  if unlikely(not ctx.isInstanceOf(this, "Element")):
+    return JS_ThrowTypeError(ctx,
+      "Reflected getter called on a value that is not an element")
+  let entry = ReflectTable[uint16(magic)]
+  let op = this.getOpaque()
+  assert op != nil
+  let element = cast[Element](op)
+  if element.tagType notin entry.tags:
+    return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
+  case entry.t
+  of rtStr:
+    var x: string
+    if ctx.fromJS(val, x).isSome:
+      element.attr(entry.attrname, x)
+  of rtBool:
+    var x: bool
+    if ctx.fromJS(val, x).isSome:
+      if x:
+        element.attr(entry.attrname, "")
+      else:
+        let i = element.findAttr(entry.attrname)
+        if i != -1:
+          element.delAttr(i)
+  of rtLong:
+    var x: int32
+    if ctx.fromJS(val, x).isSome:
+      element.attrl(entry.attrname, x)
+  of rtUlong:
+    var x: uint32
+    if ctx.fromJS(val, x).isSome:
+      element.attrul(entry.attrname, x)
+  of rtUlongGz:
+    var x: uint32
+    if ctx.fromJS(val, x).isSome:
+      element.attrulgz(entry.attrname, x)
+  of rtFunction:
+    return ctx.eventReflectSet0(this, val, magic, jsReflectSet, entry.ctype)
+  return JS_DupValue(ctx, val)
+
+func findMagic(ctype: StaticAtom): cint =
+  for i in ReflectAllStartIndex ..< int16(ReflectTable.len):
+    let entry = ReflectTable[i]
+    assert entry.tags == AllTagTypes
+    if ReflectTable[i].t == rtFunction and ReflectTable[i].ctype == ctype:
+      return cint(i)
+  assert false
+
 proc reflectEvent(element: Element; target: EventTarget;
     name, ctype: StaticAtom; value: string) =
   let document = element.document
@@ -4331,15 +4415,12 @@ proc reflectEvent(element: Element; target: EventTarget;
     document.window.console.error("Exception in body content attribute of",
       urls, ctx.getExceptionMsg())
   else:
-    let jsTarget = ctx.toJS(target)
-    ctx.definePropertyC(jsTarget, $name, JS_DupValue(ctx, fun))
-    JS_FreeValue(ctx, jsTarget)
-    #TODO this is subtly wrong. In fact, we should not pass `fun'
-    # directly here, but a wrapper function that calls fun. Currently
-    # you can run removeEventListener with element.onclick, that should
-    # not work.
-    doAssert ctx.addEventListener(target, ctype.toAtom(), fun).isSome
-  JS_FreeValue(ctx, fun)
+    let magic = findMagic(ctype)
+    let this = ctx.toJS(target)
+    JS_FreeValue(ctx, ctx.eventReflectSet0(this, fun, magic, jsReflectSet,
+      ctype))
+    JS_FreeValue(ctx, this)
+    JS_FreeValue(ctx, fun)
 
 proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
   let name = name.toStaticAtom()
@@ -4392,8 +4473,7 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
   of TAG_INPUT:
     let input = HTMLInputElement(element)
     if name == satOninput and element.scriptingEnabled:
-      input.reflectEvent(input.document.window, name, satInput,
-        value.get(""))
+      input.reflectEvent(input.document.window, name, satInput, value.get(""))
     input.reflect_str satValue, value
     if name == satChecked:
       input.setChecked(value.isSome)
@@ -5788,112 +5868,13 @@ proc querySelectorAll(this: DocumentFragment; q: string): DOMResult[NodeList]
     {.jsfunc.} =
   return this.querySelectorAllImpl(q)
 
-const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
-    seq[ReflectEntry],
-    Table[TagType, seq[int16]],
-    int16) =
-  var i: int16 = 0
-  while i < ReflectTable0.len:
-    let x = ReflectTable0[i]
-    result[0].add(x)
-    if x.tags == AllTagTypes:
-      break
-    for tag in result[0][i].tags:
-      if tag notin result[1]:
-        result[1][tag] = newSeq[int16]()
-      result[1][tag].add(i)
-    assert result[0][i].tags.len != 0
-    inc i
-  result[2] = i
-  while i < ReflectTable0.len:
-    let x = ReflectTable0[i]
-    assert x.tags == AllTagTypes
-    result[0].add(x)
-    inc i
-)()
-
-proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
-    {.cdecl.} =
-  let entry = ReflectTable[uint16(magic)]
-  let op = this.getOpaque()
-  if unlikely(not ctx.isInstanceOf(this, "Element") or op == nil):
-    return JS_ThrowTypeError(ctx,
-      "Reflected getter called on a value that is not an element")
-  let element = cast[Element](op)
-  if element.tagType notin entry.tags:
-    return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
-  case entry.t
-  of rtStr: return ctx.toJS(element.attr(entry.attrname))
-  of rtBool: return ctx.toJS(element.attrb(entry.attrname))
-  of rtLong: return ctx.toJS(element.attrl(entry.attrname).get(entry.i))
-  of rtUlong: return ctx.toJS(element.attrul(entry.attrname).get(entry.u))
-  of rtUlongGz: return ctx.toJS(element.attrulgz(entry.attrname).get(entry.u))
-  of rtFunction:
-    let val = ctx.toJS(entry.attrname)
-    let atom = JS_ValueToAtom(ctx, val)
-    var res = JS_NULL
-    var desc: JSPropertyDescriptor
-    if JS_GetOwnProperty(ctx, addr desc, this, atom) > 0:
-      JS_FreeValue(ctx, desc.setter)
-      JS_FreeValue(ctx, desc.getter)
-      res = desc.value
-    JS_FreeValue(ctx, val)
-    JS_FreeAtom(ctx, atom)
-    return res
-
-proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
-    {.cdecl.} =
-  if unlikely(not ctx.isInstanceOf(this, "Element")):
-    return JS_ThrowTypeError(ctx,
-      "Reflected getter called on a value that is not an element")
-  let entry = ReflectTable[uint16(magic)]
-  let op = this.getOpaque()
-  assert op != nil
-  let element = cast[Element](op)
-  if element.tagType notin entry.tags:
-    return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
-  case entry.t
-  of rtStr:
-    var x: string
-    if ctx.fromJS(val, x).isSome:
-      element.attr(entry.attrname, x)
-  of rtBool:
-    var x: bool
-    if ctx.fromJS(val, x).isSome:
-      if x:
-        element.attr(entry.attrname, "")
-      else:
-        let i = element.findAttr(entry.attrname)
-        if i != -1:
-          element.delAttr(i)
-  of rtLong:
-    var x: int32
-    if ctx.fromJS(val, x).isSome:
-      element.attrl(entry.attrname, x)
-  of rtUlong:
-    var x: uint32
-    if ctx.fromJS(val, x).isSome:
-      element.attrul(entry.attrname, x)
-  of rtUlongGz:
-    var x: uint32
-    if ctx.fromJS(val, x).isSome:
-      element.attrulgz(entry.attrname, x)
-  of rtFunction:
-    if JS_IsFunction(ctx, val):
-      var target: EventTarget
-      assert ctx.fromJS(this, target).isSome
-      ctx.definePropertyC(this, $entry.attrname, JS_DupValue(ctx, val))
-      #TODO I haven't checked but this might also be wrong
-      doAssert ctx.addEventListener(target, entry.ctype.toAtom(), val).isSome
-  return JS_DupValue(ctx, val)
-
 func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
   result = @[]
   for tag in tags:
     if tag in TagReflectMap:
       for i in TagReflectMap[tag]:
         result.add(TabGetSet(
-          name: ReflectTable[i].funcname,
+          name: $ReflectTable[i].funcname,
           get: jsReflectGet,
           set: jsReflectSet,
           magic: i
@@ -5905,7 +5886,7 @@ func getElementReflectFunctions(): seq[TabGetSet] =
     let entry = ReflectTable[i]
     assert entry.tags == AllTagTypes
     result.add(TabGetSet(
-      name: ReflectTable[i].funcname,
+      name: $ReflectTable[i].funcname,
       get: jsReflectGet,
       set: jsReflectSet,
       magic: i

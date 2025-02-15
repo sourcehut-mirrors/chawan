@@ -75,17 +75,14 @@ type
   EventTarget* = ref object of RootObj
     eventListeners*: seq[EventListener]
 
-  EventHandler* = JSValue
-
-  EventListenerCallback = JSValue
-
   EventListener* = ref object
-    ctype*: CAtom
     # if callback is undefined, the listener has been removed
-    callback*: EventListenerCallback
+    callback*: JSValue
+    ctype*: CAtom
     capture: bool
     passive: Option[bool]
     once: bool
+    internal: bool
     #TODO AbortSignal
 
 jsDestructor(Event)
@@ -302,10 +299,18 @@ proc defaultPassiveValue(ctype: CAtom; eventTarget: EventTarget): bool =
     return true
   return eventTarget.isDefaultPassiveImpl()
 
-proc findEventListener(eventTarget: EventTarget; ctype: CAtom;
-    callback: EventListenerCallback; capture: bool): int =
+proc findEventListener(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
+    callback: JSValue; capture: bool): int =
   for i, it in eventTarget.eventListeners.mypairs:
-    if it.ctype == ctype and it.callback == callback and it.capture == capture:
+    if not it.internal and it.ctype == ctype and
+        JS_IsStrictEqual(ctx, it.callback, callback) and
+        it.capture == capture:
+      return i
+  return -1
+
+proc findInternalEventListener(eventTarget: EventTarget; ctype: CAtom): int =
+  for i, it in eventTarget.eventListeners.mypairs:
+    if it.ctype == ctype and it.internal:
       return i
   return -1
 
@@ -334,13 +339,14 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   return ret
 
 # shared
-proc addAnEventListener(target: EventTarget; listener: EventListener) =
+proc addAnEventListener(ctx: JSContext; target: EventTarget;
+    listener: EventListener) =
   #TODO signals
   if JS_IsUndefined(listener.callback):
     return
   if listener.passive.isNone:
     listener.passive = some(defaultPassiveValue(listener.ctype, target))
-  if target.findEventListener(listener.ctype, listener.callback,
+  if ctx.findEventListener(target, listener.ctype, listener.callback,
       listener.capture) == -1: # dedup
     target.eventListeners.add(listener)
   #TODO signals
@@ -381,13 +387,79 @@ proc flattenMore(ctx: JSContext; options: JSValue):
     JS_FreeValue(ctx, jsPassive)
   return (capture, once, passive)
 
+proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
+    ctype: StaticAtom) =
+  let i = eventTarget.findInternalEventListener(ctype.toAtom())
+  if i != -1:
+    eventTarget.removeAnEventListener(ctx, i)
+
+proc addInternalEventListener*(ctx: JSContext; eventTarget: EventTarget;
+    ctype: StaticAtom; callback: JSValue) =
+  ctx.removeInternalEventListener(eventTarget, ctype)
+  ctx.addAnEventListener(eventTarget, EventListener(
+    ctype: ctype.toAtom(),
+    capture: false,
+    once: false,
+    internal: true,
+    callback: JS_DupValue(ctx, callback)
+  ))
+
+# Event reflection
+const EventReflectMap* = [
+  cint(0): satLoadstart,
+  satProgress,
+  satAbort,
+  satError,
+  satLoad,
+  satTimeout,
+  satLoadend,
+  satReadystatechange
+]
+
+type UnionHack {.union.} = object
+  fun: JSCFunction
+  fun2: JSSetterMagicFunction
+
+proc eventReflectGet*(ctx: JSContext; this: JSValue; magic: cint): JSValue
+    {.cdecl.} =
+  return JS_NULL
+
+proc eventReflectSet0*(ctx: JSContext; this, val: JSValue; magic: cint;
+    fun2: JSSetterMagicFunction; atom: StaticAtom): JSValue =
+  if JS_IsFunction(ctx, val) or JS_IsNull(val):
+    var target: EventTarget
+    doAssert ctx.fromJS(this, target).isSome
+    let name = "on" & $atom
+    let getter = ctx.identityFunction(val)
+    let hack = UnionHack(fun2: fun2) # cast does not work :(
+    let setter = JS_NewCFunction2(ctx, hack.fun, cstring(name), 1,
+      JS_CFUNC_setter_magic, magic)
+    let ja = JS_NewAtom(ctx, cstring(name))
+    let ret = JS_DefineProperty(ctx, this, ja, JS_UNDEFINED, getter, setter,
+        JS_PROP_HAS_GET or JS_PROP_HAS_SET or
+        JS_PROP_HAS_CONFIGURABLE or JS_PROP_CONFIGURABLE)
+    JS_FreeAtom(ctx, ja)
+    JS_FreeValue(ctx, getter)
+    JS_FreeValue(ctx, setter)
+    if ret == -1:
+      return JS_EXCEPTION
+    if JS_IsNull(val):
+      ctx.removeInternalEventListener(target, atom)
+    else:
+      ctx.addInternalEventListener(target, atom, val)
+  return JS_DupValue(ctx, val)
+
+proc eventReflectSet*(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
+    {.cdecl.} =
+  return ctx.eventReflectSet0(this, val, magic, eventReflectSet,
+    EventReflectMap[magic])
+
 proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
-    callback: EventListenerCallback; options = JS_UNDEFINED): Err[JSError]
-    {.jsfunc.} =
+    callback: JSValue; options = JS_UNDEFINED): Err[JSError] {.jsfunc.} =
   if not JS_IsObject(callback) and not JS_IsNull(callback):
     return errTypeError("callback is not an object")
   let (capture, once, passive) = flattenMore(ctx, options)
-  eventTarget.addAnEventListener(EventListener(
+  ctx.addAnEventListener(eventTarget, EventListener(
     ctype: ctype,
     capture: capture,
     passive: passive,
@@ -397,10 +469,9 @@ proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
   ok()
 
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
-    ctype: CAtom; callback: EventListenerCallback;
-    options = JS_UNDEFINED) {.jsfunc.} =
+    ctype: CAtom; callback: JSValue; options = JS_UNDEFINED) {.jsfunc.} =
   let capture = flatten(ctx, options)
-  let i = eventTarget.findEventListener(ctype, callback, capture)
+  let i = ctx.findEventListener(eventTarget, ctype, callback, capture)
   if i != -1:
     eventTarget.removeAnEventListener(ctx, i)
 
