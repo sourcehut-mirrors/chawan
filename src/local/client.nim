@@ -155,9 +155,6 @@ proc addJSModules(client: Client; ctx: JSContext) =
   ctx.addContainerModule()
   ctx.addSelectModule()
 
-func getClient(client: Client): Client {.jsfget: "client".} =
-  return client
-
 proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     jsctx: JSContext; warnings: seq[string]; urandom: PosixStream;
     loaderStream: SocketStream): Client =

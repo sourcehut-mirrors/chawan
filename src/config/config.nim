@@ -286,7 +286,7 @@ proc setter(a: var ActionMap; k, v: string) {.jssetprop.} =
   var teststr = k
   teststr.setLen(teststr.high)
   for i in countdown(k.high, 0):
-    discard a.t.hasKeyOrPut(teststr, "client.feedNext()")
+    discard a.t.hasKeyOrPut(teststr, "window.feedNext()")
     teststr.setLen(i)
 
 proc delete(a: var ActionMap; k: string): bool {.jsdelprop.} =
@@ -573,7 +573,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
     var buf = ""
     for c in rk.toOpenArray(0, rk.high - 1):
       buf &= c
-      x[buf] = "client.feedNext()"
+      x[buf] = "window.feedNext()"
     x[rk] = vv.s
 
 proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
