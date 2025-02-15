@@ -330,6 +330,16 @@ const
   JS_PROP_AUTOINIT* = (3 shl 4) # used internally
   JS_PROP_THROW* = (1 shl 14)
 
+# Flags for JS_DefineProperty
+const
+  JS_PROP_HAS_SHIFT* = cint(8)
+  JS_PROP_HAS_CONFIGURABLE* = cint(1 shl 8)
+  JS_PROP_HAS_WRITABLE* = cint(1 shl 9)
+  JS_PROP_HAS_ENUMERABLE* = cint(1 shl 10)
+  JS_PROP_HAS_GET* = cint(1 shl 11)
+  JS_PROP_HAS_SET* = cint(1 shl 12)
+  JS_PROP_HAS_VALUE* = cint(1 shl 13)
+
 const
   JS_GPN_STRING_MASK* = (1 shl 0)
   JS_GPN_SYMBOL_MASK* = (1 shl 1)
@@ -643,7 +653,7 @@ proc JS_DefinePropertyValueUint32*(ctx: JSContext; this_obj: JSValue;
   idx: uint32; val: JSValue; flags: cint): cint
 proc JS_DefinePropertyValueStr*(ctx: JSContext; this_obj: JSValue;
   prop: cstring; val: JSValue; flags: cint): cint
-proc JS_DefinePropertyValueGetSet*(ctx: JSContext; this_obj: JSValue;
+proc JS_DefinePropertyGetSet*(ctx: JSContext; this_obj: JSValue;
   prop: JSAtom; getter, setter: JSValue; flags: cint): cint
 # Always returns 1.
 proc JS_SetOpaque*(obj: JSValue; opaque: pointer): cint {.discardable.}
