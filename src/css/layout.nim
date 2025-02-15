@@ -1007,7 +1007,8 @@ proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
     else:
       let pi = i
       let u = str.nextUTF8(i)
-      if luctx.isEnclosingMark(u) or luctx.isNonspacingMark(u):
+      if luctx.isEnclosingMark(u) or luctx.isNonspacingMark(u) or
+          luctx.isFormat(u):
         continue
       let w = u.width()
       fstate.checkWrap(state, u, w)

@@ -87,6 +87,7 @@ type
     lurHangul = "Hangul"
     lurEnclosingMark = "Me"
     lurNonspacingMark = "Mn"
+    lurFormat = "Cf"
 
   LUContextObj = object
     crs: array[LURangeType, CharRange]
@@ -149,3 +150,7 @@ proc isEnclosingMark*(ctx: LUContext; u: uint32): bool =
 proc isNonspacingMark*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurNonspacingMark)
   return u in ctx.crs[lurNonspacingMark]
+
+proc isFormat*(ctx: LUContext; u: uint32): bool =
+  ctx.initGeneralCategory(lurFormat)
+  return u in ctx.crs[lurFormat]
