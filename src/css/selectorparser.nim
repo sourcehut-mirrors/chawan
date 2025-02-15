@@ -59,21 +59,13 @@ type
     case t*: SelectorType
     of stType:
       tag*: CAtom
-      when defined(debug):
-        tags: string
     of stId:
       id*: CAtom
-      when defined(debug):
-        ids: string
     of stClass:
       class*: CAtom
-      when defined(debug):
-        classs: string
     of stAttr:
       attr*: CAtom
       rel*: SelectorRelation
-      when defined(debug):
-        attrs: string
       value*: string
     of stUniversal: #TODO namespaces?
       discard
@@ -150,16 +142,8 @@ iterator items*(cxsel: ComplexSelector): lent CompoundSelector {.inline.} =
 
 func `$`*(sel: Selector): string =
   case sel.t
-  of stType:
-    when defined(debug):
-      return sel.tags
-    else:
-      return "ATOM" & $int(sel.tag)
-  of stId:
-    when defined(debug):
-      return "#" & sel.ids
-    else:
-      return "#ATOM" & $int(sel.id)
+  of stType: return $sel.tag
+  of stId: return "#" & $sel.id
   of stAttr:
     let rel = case sel.rel.t
     of rtExists: ""
@@ -173,16 +157,8 @@ func `$`*(sel: Selector): string =
     of rfNone: ""
     of rfI: " i"
     of rfS: " s"
-    let attrs = when defined(debug):
-      sel.attrs
-    else:
-      "ATOM" & $int(sel.attr)
-    return '[' & attrs & rel & sel.value & flag & ']'
-  of stClass:
-    when defined(debug):
-      return "." & sel.classs
-    else:
-      return ".ATOM" & $int(sel.id)
+    return '[' & $sel.attr & rel & sel.value & flag & ']'
+  of stClass: return "." & $sel.class
   of stUniversal:
     return "*"
   of stPseudoClass:
@@ -449,9 +425,7 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   let tok = get_tok state.consume()
   if tok.t != cttIdent: fail
   let class = tok.value.toAtomLower()
-  result = Selector(t: stClass, class: class)
-  when defined(debug):
-    result.classs = tok.value
+  Selector(t: stClass, class: class)
 
 proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
   result = CompoundSelector()
@@ -463,10 +437,7 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       of cttIdent:
         inc state.at
         let tag = tok.value.toAtomLower()
-        let sel = Selector(t: stType, tag: tag)
-        when defined(debug):
-          sel.tags = tok.value
-        result.add(sel)
+        result.add(Selector(t: stType, tag: tag))
       of cttColon:
         inc state.at
         result.add(state.parsePseudoSelector())
@@ -474,8 +445,6 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
         inc state.at
         let id = tok.value.toAtomLower()
         result.add(Selector(t: stId, id: id))
-        when defined(debug):
-          result[^1].ids = tok.value
       of cttComma: break
       of cttDelim:
         case tok.cvalue

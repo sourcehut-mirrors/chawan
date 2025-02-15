@@ -615,7 +615,7 @@ func `$`*(content: CSSContent): string =
   of ContentString:
     return content.s
   of ContentCounter:
-    return content.counter.toStr()
+    return "counter(" & $content.counter & ", " & $content.counterStyle & ')'
   of ContentOpenQuote, ContentCloseQuote, ContentNoOpenQuote,
       ContentNoCloseQuote:
     return $content.t
@@ -630,7 +630,7 @@ func `$`(quotes: CSSQuotes): string =
 func `$`(counterreset: seq[CSSCounterSet]): string =
   result = ""
   for it in counterreset:
-    result &= it.name.toStr()
+    result &= $it.name
     result &= ' '
     result &= $it.num
 

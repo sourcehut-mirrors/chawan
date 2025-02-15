@@ -1147,23 +1147,20 @@ func escapeText(s: string; attributeMode = false): string =
       result &= c
 
 when defined(debug):
-  func localNameStr*(element: Element): string =
-    return element.localName.toStr()
-
   func `$`*(node: Node): string =
     if node == nil:
       return "null"
     if node of Element:
       let element = Element(node)
-      result = "<" & element.localNameStr
+      result = "<" & $element.localName
       for attr in element.attrs:
-        let k = attr.localName.toStr()
+        let k = $attr.localName
         result &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
       result &= ">\n"
       for node in element.childList:
         for line in ($node).split('\n'):
           result &= "\t" & line & "\n"
-      result &= "</" & element.localNameStr & ">"
+      result &= "</" & $element.localName & ">"
     elif node of Text:
       let text = Text(node)
       result = text.data.escapeText()
@@ -1520,7 +1517,7 @@ func `$`(tokenList: DOMTokenList): string {.jsfunc: "toString".} =
   for i, tok in tokenList.toks:
     if i != 0:
       s &= ' '
-    s &= tok.toStr()
+    s &= $tok
   return move(s)
 
 proc update(tokenList: DOMTokenList) =
@@ -1661,7 +1658,7 @@ func names(ctx: JSContext; map: var DOMStringMap): JSPropertyEnumList
     {.jspropnames.} =
   var list = newJSPropertyEnumList(ctx, uint32(map.target.attrs.len))
   for attr in map.target.attrs:
-    let k = attr.localName.toStr()
+    let k = $attr.localName
     if k.startsWith("data-") and AsciiUpperAlpha notin k:
       list.add(k["data-".len .. ^1].kebabToCamelCase())
   return list
@@ -1730,7 +1727,7 @@ proc names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     if element.namespace == Namespace.HTML:
       ids.incl(element.name)
   for id in ids:
-    list.add(id.toStr())
+    list.add($id)
   return list
 
 # HTMLFormControlsCollection
@@ -2082,7 +2079,7 @@ func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
   var names: HashSet[string]
   let element = map.element
   for attr in element.attrs:
-    let name = attr.qualifiedName.toStr()
+    let name = $attr.qualifiedName
     if element.namespace == Namespace.HTML and AsciiUpperAlpha in name:
       continue
     if name in names:
@@ -2095,10 +2092,10 @@ func length(characterData: CharacterData): uint32 {.jsfget.} =
   return uint32(($characterData.data).utf16Len)
 
 func tagName(element: Element): string {.jsfget.} =
-  result = element.prefix.toStr()
+  result = $element.prefix
   if result.len > 0:
     result &= ':'
-  result &= element.localName.toStr()
+  result &= $element.localName
   if element.namespace == Namespace.HTML:
     result = result.toUpperAscii()
 
@@ -2106,8 +2103,7 @@ func nodeName(node: Node): string {.jsfget.} =
   if node of Element:
     return Element(node).tagName
   if node of Attr:
-    let attr = Attr(node)
-    return attr.data.qualifiedName.toStr()
+    return $Attr(node).data.qualifiedName
   if node of DocumentType:
     return DocumentType(node).name
   if node of CDATASection:
@@ -2481,8 +2477,8 @@ proc names(ctx: JSContext; document: Document): JSPropertyEnumList
     if child.name != CAtomNull and child.name != satUempty.toAtom():
       if child.tagType == TAG_IMG and child.id != CAtomNull and
           child.id != satUempty.toAtom():
-        list.add(child.id.toStr())
-      list.add(child.name.toStr())
+        list.add($child.id)
+      list.add($child.name)
   return list
 
 proc getter(ctx: JSContext; document: Document; s: string): JSValue
@@ -2539,13 +2535,13 @@ func serializesAsVoid(element: Element): bool =
 func serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
   if child of Element:
     let element = Element(child)
-    let tags = element.localName.toStr()
+    let tags = $element.localName
     res &= '<'
     #TODO qualified name if not HTML, SVG or MathML
     res &= tags
     #TODO custom elements
     for attr in element.attrs:
-      let k = attr.qualifiedName.toStr()
+      let k = $attr.qualifiedName
       res &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
     res &= '>'
     res.serializeFragment(element)
@@ -2838,7 +2834,7 @@ proc hyperlinkGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
   let url = element.reinitURL()
   if url.isSome:
     let href = ctx.toJS(url.get)
-    let res = JS_GetPropertyStr(ctx, href, cstring(sa.toStr()))
+    let res = JS_GetPropertyStr(ctx, href, cstring($sa))
     JS_FreeValue(ctx, href)
     return res
   if sa == satProtocol:
@@ -2860,8 +2856,7 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
   let url = element.reinitURL()
   if url.isSome:
     let href = ctx.toJS(url)
-    let res = JS_SetPropertyStr(ctx, href, cstring(sa.toStr()),
-      JS_DupValue(ctx, val))
+    let res = JS_SetPropertyStr(ctx, href, cstring($sa), JS_DupValue(ctx, val))
     if res < 0:
       return JS_EXCEPTION
     var outs: string
@@ -4584,7 +4579,7 @@ proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
   var prefixAtom, qualifiedName: CAtom
   if prefix != NO_PREFIX:
     prefixAtom = prefix.toAtom()
-    let tmp = $prefix & ':' & localName.toStr()
+    let tmp = $prefix & ':' & $localName
     qualifiedName = tmp.toAtom()
   else:
     qualifiedName = localName

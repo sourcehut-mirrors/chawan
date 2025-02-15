@@ -1,3 +1,12 @@
+# String interning.
+# Currently, interned strings do not have a reference count, so it is
+# best to use them cautiously (as they technically leak memory).
+# This could be changed if we switched to ORC, but ORC is still utterly
+# broken in the latest version.  What can you do...
+# (If this turns out to be an issue in practice, we can always turn
+# atoms into ref objects; that would work with refc, but it would also
+# add a lot of overhead.)
+
 import std/hashes
 import std/macros
 import std/sets
@@ -180,9 +189,6 @@ const CAtomNull* = CAtom(0)
 func `==`*(a, b: CAtom): bool {.borrow.}
 func hash*(atom: CAtom): Hash {.borrow.}
 
-when defined(debug):
-  func `$`*(a: CAtom): string {.borrow.}
-
 func toAtom(factory: var CAtomFactoryObj; s: sink string;
     isInit: static bool = false): CAtom =
   let h = s.hash()
@@ -260,11 +266,8 @@ proc toAtomLower*(s: sink string): CAtom {.sideEffect.} =
 func containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
   return aa.containsIgnoreCase(a.toAtom())
 
-func toStr*(atom: CAtom): lent string =
+func `$`*(atom: CAtom): lent string =
   return getFactory().atomMap[int(atom)]
-
-func toStr*(sa: StaticAtom): lent string =
-  return sa.toAtom().toStr()
 
 func toTagType*(atom: CAtom): TagType =
   let i = int(atom)
@@ -344,7 +347,7 @@ proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): Opt[void] =
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:
     return JS_NULL
-  return ctx.toJS(atom.toStr())
+  return ctx.toJS($atom)
 
 proc toJS*(ctx: JSContext; atom: StaticAtom): JSValue =
   return ctx.toJS($atom)
