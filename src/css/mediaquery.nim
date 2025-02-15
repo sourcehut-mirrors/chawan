@@ -409,8 +409,7 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
 proc parseMediaQueryList*(cvals: seq[CSSComponentValue];
     attrs: ptr WindowAttributes): seq[MediaQuery] =
   result = @[]
-  let cseplist = cvals.parseCommaSepComponentValues()
-  for list in cseplist:
+  for list in cvals.parseCommaSepComponentValues():
     var parser = MediaQueryParser(cvals: list, attrs: attrs)
     let query = parser.parseMediaQuery()
     if query.isSome:

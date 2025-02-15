@@ -367,7 +367,7 @@ proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
     return CSSToken(t: cttFunction, value: s)
   return CSSToken(t: cttIdent, value: s)
 
-proc consumeComments(state: var CSSTokenizerState) =
+proc nextToken(state: var CSSTokenizerState): bool =
   while state.has(1) and state.peek() == '/' and state.peek(1) == '*':
     state.seek(2)
     while state.has() and not (state.has(1) and state.peek() == '*' and
@@ -377,6 +377,7 @@ proc consumeComments(state: var CSSTokenizerState) =
       state.seek(1)
     if state.has():
       state.seek(1)
+  return state.has()
 
 proc consumeToken(state: var CSSTokenizerState): CSSToken =
   let c = state.consume()
@@ -471,10 +472,8 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
 proc tokenizeCSS(ibuf: string): seq[CSSComponentValue] =
   result = @[]
   var state = CSSTokenizerState(buf: ibuf)
-  while state.has():
-    state.consumeComments()
-    if state.has():
-      result.add(state.consumeToken())
+  while state.nextToken():
+    result.add(state.consumeToken())
 
 proc consume(state: var CSSParseState): CSSComponentValue =
   result = state.tokens[state.at]
@@ -716,22 +715,22 @@ proc parseComponentValues*(ibuf: string): seq[CSSComponentValue] =
   var state = CSSParseState(tokens: tokenizeCSS(ibuf))
   return state.parseComponentValues()
 
-proc parseCommaSepComponentValues(state: var CSSParseState):
-    seq[seq[CSSComponentValue]] =
-  result = @[]
-  if state.has():
-    result.add(newSeq[CSSComponentValue]())
+proc nextCommaSepComponentValue(state: var CSSParseState;
+    s: out seq[CSSComponentValue]): bool =
+  s = @[]
   while state.has():
     let cvl = state.consumeComponentValue()
-    if cvl != cttComma:
-      result[^1].add(cvl)
-    else:
-      result.add(newSeq[CSSComponentValue]())
+    if cvl == cttComma:
+      break
+    s.add(cvl)
+  return s.len > 0
 
-proc parseCommaSepComponentValues*(cvals: seq[CSSComponentValue]):
-    seq[seq[CSSComponentValue]] =
+iterator parseCommaSepComponentValues*(cvals: seq[CSSComponentValue]):
+    seq[CSSComponentValue] =
   var state = CSSParseState(tokens: cvals)
-  return state.parseCommaSepComponentValues()
+  var s: seq[CSSComponentValue]
+  while state.nextCommaSepComponentValue(s):
+    yield move(s)
 
 proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
   template is_eof: bool =
