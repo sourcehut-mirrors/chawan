@@ -78,6 +78,7 @@ type
     bounds*: Bounds
 
   CSSBox* = ref object of RootObj
+    parent* {.cursor.}: CSSBox
     render*: BoxRenderState # render output
     computed*: CSSValues
     element*: Element

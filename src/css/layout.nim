@@ -12,33 +12,22 @@ import utils/twtstr
 import utils/widthconv
 
 type
-  # position: absolute is annoying in that its layout depends on its
-  # containing box's size, which of course is rarely its parent box.
-  # e.g. in
-  # <div style="position: relative; display: inline-block">
-  #   <div>
-  #     <div style="position: absolute; width: 100%; background: red">
-  #     blah
-  #     </div>
-  #   <div>
-  # blah blah
-  # </div>
-  # the width of the absolute box is the same as "blah blah", but we
-  # only know that after the outermost box has been layouted.
+  # position: absolute is annoying in that its position depends on its
+  # containing box's size and position, which of course is rarely its
+  # parent box.
   #
-  # So we must delay this layout until before the outermost box is
+  # So we must delay its positioning until before the outermost box is
   # popped off the stack, and we do this by queuing up absolute boxes in
   # the initial pass.
   #
-  #TODO: welp, turns out this is also true without position: absolute,
-  # so I think we could skip this entirely...  especially now that
-  # we can cache sub-layouts.
+  # (Technically, its layout could be done earlier, but we aren't sure
+  # of the parent's size before its layout is finished, so this way we
+  # can avoid pointless sub-layout passes.)
   QueuedAbsolute = object
     offset: Offset
     child: BlockBox
 
-  PositionedItem = ref object
-    queue: seq[QueuedAbsolute]
+  PositionedItem = seq[QueuedAbsolute]
 
   LayoutContext = ref object
     attrsp: ptr WindowAttributes
@@ -1401,12 +1390,38 @@ proc applyIntr(box: BlockBox; sizes: ResolvedSizes; intr: Size) =
       box.state.size[dim] = max(box.state.size[dim], intr[dim])
 
 proc pushPositioned(lctx: LayoutContext) =
-  lctx.positioned.add(PositionedItem())
+  lctx.positioned.add(@[])
+
+# Offset the child by the offset of its actual parent to its nearest
+# positioned ancestor (`parent').
+# This is only necessary (for the respective axes) if either top,
+# bottom, left or right is specified.
+proc realignAbsolutePosition(child: BlockBox; parent: CSSBox;
+    dims: set[DimensionType]) =
+  var it {.cursor.} = child.parent
+  while it != parent:
+    let offset = if it of BlockBox:
+      BlockBox(it).state.offset
+    else:
+      InlineBox(it).state.startOffset
+    if dtHorizontal in dims:
+      child.state.offset.x -= offset.x
+    if dtVertical in dims:
+      child.state.offset.y -= offset.y
+    it = it.parent
+  if parent of InlineBox:
+    # The renderer does not adjust position for inline parents, so we
+    # must do it here.
+    let offset = InlineBox(parent).state.startOffset
+    if dtHorizontal in dims:
+      child.state.offset.x += offset.x
+    if dtVertical in dims:
+      child.state.offset.y += offset.y
 
 # size is the parent's size
-proc popPositioned(lctx: LayoutContext; size: Size) =
-  let item = lctx.positioned.pop()
-  for it in item.queue:
+proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size;
+    skipStatic = true) =
+  for it in lctx.positioned.pop():
     let child = it.child
     var size = size
     #TODO this is very ugly.
@@ -1426,26 +1441,33 @@ proc popPositioned(lctx: LayoutContext; size: Size) =
       sizes.space.w = stretch(child.state.intr.w)
       lctx.layoutRootBlock(child, offset, sizes)
       #TODO what happens with marginBottom?
+    var dims: set[DimensionType] = {}
     if child.computed{"left"}.u != clAuto:
       child.state.offset.x = positioned.left + sizes.margin.left
+      dims.incl(dtHorizontal)
     elif child.computed{"right"}.u != clAuto:
       child.state.offset.x = size.w - positioned.right - child.state.size.w -
         sizes.margin.right
+      dims.incl(dtHorizontal)
     # margin.left is added in layoutRootBlock
     if child.computed{"top"}.u != clAuto:
       child.state.offset.y = positioned.top + sizes.margin.top
+      dims.incl(dtVertical)
     elif child.computed{"bottom"}.u != clAuto:
       child.state.offset.y = size.h - positioned.bottom - child.state.size.h -
         sizes.margin.bottom
+      dims.incl(dtVertical)
     else:
       child.state.offset.y += sizes.margin.top
+    if dims != {}:
+      child.realignAbsolutePosition(parent, dims)
 
 proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
   case box.computed{"position"}
   of PositionAbsolute:
-    lctx.positioned[^1].queue.add(QueuedAbsolute(child: box, offset: offset))
+    lctx.positioned[^1].add(QueuedAbsolute(child: box, offset: offset))
   of PositionFixed:
-    lctx.positioned[0].queue.add(QueuedAbsolute(child: box, offset: offset))
+    lctx.positioned[0].add(QueuedAbsolute(child: box, offset: offset))
   else: assert false
 
 proc positionRelative(lctx: LayoutContext; space: AvailableSpace;
@@ -1623,6 +1645,9 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
     # Here our job is much easier in the unresolved case: subsequent
     # children's layout doesn't depend on our position; so we can just
     # defer margin resolution to the parent.
+    if fstate.space.w.t == scFitContent:
+      # Do not queue in the first pass.
+      return
     let lctx = fstate.lctx
     var offset = fstate.offset
     fstate.initLine(flag = ilfAbsolute)
@@ -1815,12 +1840,7 @@ proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
 proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
   let lctx = fstate.lctx
   let computed = ibox.computed
-  ibox.state = InlineBoxState(
-    startOffset: offset(
-      x = fstate.lbstate.widthAfterWhitespace,
-      y = fstate.offset.y
-    )
-  )
+  ibox.state = InlineBoxState()
   let padding = Span(
     start: computed{"padding-left"}.px(fstate.space.w),
     send: computed{"padding-right"}.px(fstate.space.w)
@@ -1846,6 +1866,10 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     fstate.layoutImage(ibox, padding.sum())
     fstate.lastTextBox = ibox
   else:
+    ibox.state.startOffset = offset(
+      x = fstate.lbstate.widthAfterWhitespace,
+      y = fstate.offset.y
+    )
     let w = computed{"margin-left"}.px(fstate.space.w)
     if w != 0:
       fstate.initLine()
@@ -1894,7 +1918,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       # since it uses cellHeight instead of the actual line height for the
       # last line.
       # Well, it seems good enough.
-      lctx.popPositioned(size(
+      lctx.popPositioned(ibox, size(
         w = 0,
         h = fstate.offset.y + fstate.cellHeight - ibox.state.startOffset.y
       ))
@@ -2061,7 +2085,7 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
       # I'll just replicate what layoutRootBlock is doing until I find a
       # better solution...
       size.h = max(size.h, bctx.maxFloatHeight)
-    bctx.lctx.popPositioned(size)
+    bctx.lctx.popPositioned(box, size)
 
 proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     sizes: ResolvedSizes) =
@@ -2827,7 +2851,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   for child in fctx.relativeChildren:
     lctx.positionRelative(sizes.space, child)
   if box.computed{"position"} != PositionStatic:
-    lctx.popPositioned(box.state.size)
+    lctx.popPositioned(box, box.state.size)
 
 # Inner layout for boxes that establish a new block formatting context.
 # Returns the bottom margin for the box, collapsed with the appropriate
@@ -2861,7 +2885,7 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
   let lctx = LayoutContext(
     attrsp: attrsp,
     cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
-    positioned: @[PositionedItem(), PositionedItem()],
+    positioned: @[@[], @[]],
     luctx: LUContext()
   )
   let sizes = lctx.resolveBlockSizes(space, box.computed)
@@ -2869,7 +2893,7 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
   lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
   var size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
   # Last absolute layer.
-  lctx.popPositioned(size)
+  lctx.popPositioned(box, size)
   # Fixed containing block.
   # The idea is to move fixed boxes to the real edges of the page,
   # so that they do not overlap with other boxes *and* we don't have
@@ -2878,4 +2902,4 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
   # slow down the renderer to a crawl.)
   size.w = max(size.w, box.state.size.w)
   size.h = max(size.h, box.state.size.h)
-  lctx.popPositioned(size)
+  lctx.popPositioned(box, size, skipStatic = false)

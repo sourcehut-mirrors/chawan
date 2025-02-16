@@ -481,13 +481,17 @@ proc buildBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox): CSSBox =
   else:
     BlockBox(computed: frame.computed, element: frame.parent)
   for child in frame.children:
-    box.children.add(ctx.build(nil, child))
+    let childBox = ctx.build(nil, child)
+    childBox.parent = box
+    box.children.add(childBox)
   if display in DisplayInlineBlockLike:
-    return InlineBlockBox(
+    let wrapper = InlineBlockBox(
       computed: ctx.rootProperties,
       element: frame.parent,
       children: @[box]
     )
+    box.parent = wrapper
+    return wrapper
   return box
 
 proc applyCounters(ctx: var TreeContext; styledNode: StyledNode) =

@@ -50,9 +50,6 @@ type
     index: int
 
   RenderState = object
-    # Position of the absolute positioning containing block:
-    # https://drafts.csswg.org/css-position/#absolute-positioning-containing-block
-    absolutePos: seq[Offset]
     clipBoxes: seq[ClipBox]
     bgcolor: CellColor
     attrsp: ptr WindowAttributes
@@ -362,7 +359,6 @@ proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
 proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
     ibox: InlineBox; offset: Offset; bgcolor0: ARGBColor;
     pass2 = false) =
-  let position = ibox.computed{"position"}
   #TODO stacking contexts
   let bgcolor = ibox.computed{"background-color"}
   var bgcolor0 = bgcolor0
@@ -375,8 +371,7 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
     if bgcolor0.a > 0:
       grid.paintInlineBox(state, ibox, offset,
         bgcolor0.rgb.cellColor(), bgcolor0.a)
-  let startOffset = offset + ibox.state.startOffset
-  ibox.render.offset = startOffset
+  ibox.render.offset = offset + ibox.state.startOffset
   if ibox of InlineTextBox:
     let ibox = InlineTextBox(ibox)
     let format = ibox.computed.toFormat()
@@ -415,18 +410,12 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
         height: ibox.imgstate.size.h.toInt,
         bmp: ibox.bmp
       ))
-  elif ibox of InlineNewLineBox:
-    discard
-  else:
-    if position != PositionStatic:
-      state.absolutePos.add(startOffset)
+  else: # InlineNewLineBox does not have children, so we handle it here
     for child in ibox.children:
       if child of InlineBox:
         grid.renderInlineBox(state, InlineBox(child), offset, bgcolor0)
       else:
         grid.renderBlockBox(state, BlockBox(child), offset)
-    if position != PositionStatic:
-      discard state.absolutePos.pop()
 
 proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset; pass2 = false) =
@@ -437,21 +426,12 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
     state.nstack.add(StackItem(
       box: box,
       offset: offset,
-      apos: state.absolutePos[^1],
       clipBox: state.clipBox,
       index: zindex
     ))
     return
-  var offset = offset
-  if position in PositionAbsoluteFixed:
-    if box.computed{"left"}.u != clAuto or box.computed{"right"}.u != clAuto:
-      offset.x = state.absolutePos[^1].x
-    if box.computed{"top"}.u != clAuto or box.computed{"bottom"}.u != clAuto:
-      offset.y = state.absolutePos[^1].y
-  offset += box.state.offset
+  let offset = offset + box.state.offset
   box.render.offset = offset
-  if position != PositionStatic:
-    state.absolutePos.add(offset)
   let overflowX = box.computed{"overflow-x"}
   let overflowY = box.computed{"overflow-y"}
   let hasClipBox = overflowX != OverflowVisible or overflowY != OverflowVisible
@@ -506,8 +486,6 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
           grid.renderBlockBox(state, BlockBox(child), offset)
   if hasClipBox:
     discard state.clipBoxes.pop()
-  if position != PositionStatic:
-    discard state.absolutePos.pop()
 
 proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     rootBox: BlockBox; attrsp: ptr WindowAttributes;
@@ -517,7 +495,6 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
     # no HTML element when we run cascade; just clear all lines.
     return
   var state = RenderState(
-    absolutePos: @[offset(0, 0)],
     clipBoxes: @[ClipBox(send: offset(LUnit.high, LUnit.high))],
     attrsp: attrsp,
     bgcolor: defaultColor
@@ -525,11 +502,9 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
   var stack = @[StackItem(box: rootBox, clipBox: state.clipBox)]
   while stack.len > 0:
     for it in stack:
-      state.absolutePos.add(it.apos)
       state.clipBoxes.add(it.clipBox)
       grid.renderBlockBox(state, it.box, it.offset, true)
       discard state.clipBoxes.pop()
-      discard state.absolutePos.pop()
     stack = move(state.nstack)
     stack.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
     state.nstack = @[]
