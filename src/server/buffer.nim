@@ -773,8 +773,8 @@ proc maybeReshape(buffer: Buffer) =
   if document.invalid:
     buffer.rootBox = document.documentElement.buildTree(buffer.rootBox)
     buffer.rootBox.layout(addr buffer.attrs)
-    buffer.lines.renderDocument(buffer.bgcolor, buffer.rootBox,
-      addr buffer.attrs, buffer.images)
+    buffer.lines.render(buffer.bgcolor, buffer.rootBox, addr buffer.attrs,
+      buffer.images)
     document.invalid = false
     if buffer.hasTask(bcOnReshape):
       buffer.resolveTask(bcOnReshape)

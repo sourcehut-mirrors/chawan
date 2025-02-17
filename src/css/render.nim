@@ -42,10 +42,8 @@ type
     start: Offset
     send: Offset
 
-  StackItem = ref object
-    box: BlockBox
-    offset: Offset
-    apos: Offset
+  StackItem = object
+    box: CSSBox
     clipBox: ClipBox
     index: int
 
@@ -56,6 +54,10 @@ type
     images: seq[PosBitmap]
     nstack: seq[StackItem]
     spaces: string # buffer filled with spaces for padding
+
+# Forward declarations
+proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
+  box: BlockBox; offset: Offset; pass2 = false)
 
 template attrs(state: RenderState): WindowAttributes =
   state.attrsp[]
@@ -343,9 +345,6 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
           it.format.bgcolor = it.format.bgcolor.blend(color, alpha)
         it.node = node
 
-proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
-  box: BlockBox; offset: Offset; pass2 = false)
-
 proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
     box: InlineBox; offset: Offset; bgcolor: CellColor; alpha: uint8) =
   for area in box.state.areas:
@@ -356,10 +355,19 @@ proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
     grid.paintBackground(state, bgcolor, x1, y1, x2, y2, box.element,
       alpha)
 
-proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
-    ibox: InlineBox; offset: Offset; bgcolor0: ARGBColor;
+proc renderInline(grid: var FlexibleGrid; state: var RenderState;
+    ibox: InlineBox; offset: Offset; bgcolor0 = rgba(0, 0, 0, 0);
     pass2 = false) =
-  #TODO stacking contexts
+  let position = ibox.computed{"position"}
+  #TODO handle negative z-index
+  let zindex = ibox.computed{"z-index"}
+  if position != PositionStatic and not pass2 and zindex >= 0:
+    state.nstack.add(StackItem(
+      box: ibox,
+      clipBox: state.clipBox,
+      index: zindex
+    ))
+    return
   let bgcolor = ibox.computed{"background-color"}
   var bgcolor0 = bgcolor0
   if bgcolor.isCell:
@@ -413,11 +421,11 @@ proc renderInlineBox(grid: var FlexibleGrid; state: var RenderState;
   else: # InlineNewLineBox does not have children, so we handle it here
     for child in ibox.children:
       if child of InlineBox:
-        grid.renderInlineBox(state, InlineBox(child), offset, bgcolor0)
+        grid.renderInline(state, InlineBox(child), offset, bgcolor0)
       else:
-        grid.renderBlockBox(state, BlockBox(child), offset)
+        grid.renderBlock(state, BlockBox(child), offset)
 
-proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
+proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset; pass2 = false) =
   let position = box.computed{"position"}
   #TODO handle negative z-index
@@ -425,7 +433,6 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
   if position != PositionStatic and not pass2 and zindex >= 0:
     state.nstack.add(StackItem(
       box: box,
-      offset: offset,
       clipBox: state.clipBox,
       index: zindex
     ))
@@ -480,16 +487,30 @@ proc renderBlockBox(grid: var FlexibleGrid; state: var RenderState;
         state.clipBox.start.y < state.clipBox.send.y:
       for child in box.children:
         if child of InlineBox:
-          grid.renderInlineBox(state, InlineBox(child), offset,
-            rgba(0, 0, 0, 0))
+          grid.renderInline(state, InlineBox(child), offset)
         else:
-          grid.renderBlockBox(state, BlockBox(child), offset)
+          grid.renderBlock(state, BlockBox(child), offset)
   if hasClipBox:
     discard state.clipBoxes.pop()
 
-proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
-    rootBox: BlockBox; attrsp: ptr WindowAttributes;
-    images: var seq[PosBitmap]) =
+func findBlockParent(box: CSSBox): BlockBox =
+  var it {.cursor.} = box.parent
+  while it != nil:
+    if it of BlockBox:
+      return BlockBox(it)
+    it = it.parent
+
+proc renderPositioned(grid: var FlexibleGrid; state: var RenderState;
+    box: CSSBox) =
+  let parent = box.findBlockParent()
+  let offset = if parent != nil: parent.render.offset else: offset(0, 0)
+  if box of BlockBox:
+    grid.renderBlock(state, BlockBox(box), offset, pass2 = true)
+  else:
+    grid.renderInline(state, InlineBox(box), offset, pass2 = true)
+
+proc render*(grid: var FlexibleGrid; bgcolor: var CellColor; rootBox: BlockBox;
+    attrsp: ptr WindowAttributes; images: var seq[PosBitmap]) =
   grid.setLen(0)
   if rootBox == nil:
     # no HTML element when we run cascade; just clear all lines.
@@ -503,7 +524,7 @@ proc renderDocument*(grid: var FlexibleGrid; bgcolor: var CellColor;
   while stack.len > 0:
     for it in stack:
       state.clipBoxes.add(it.clipBox)
-      grid.renderBlockBox(state, it.box, it.offset, true)
+      grid.renderPositioned(state, it.box)
       discard state.clipBoxes.pop()
     stack = move(state.nstack)
     stack.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
