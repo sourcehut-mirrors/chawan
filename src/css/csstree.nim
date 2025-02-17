@@ -480,15 +480,20 @@ proc buildBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox): CSSBox =
     InlineBox(computed: frame.computed, element: frame.parent)
   else:
     BlockBox(computed: frame.computed, element: frame.parent)
+  var last: CSSBox = nil
   for child in frame.children:
     let childBox = ctx.build(nil, child)
     childBox.parent = box
-    box.children.add(childBox)
+    if last != nil:
+      last.next = childBox
+    else:
+      box.firstChild = childBox
+    last = childBox
   if display in DisplayInlineBlockLike:
     let wrapper = InlineBlockBox(
       computed: ctx.rootProperties,
       element: frame.parent,
-      children: @[box]
+      firstChild: box
     )
     box.parent = wrapper
     return wrapper

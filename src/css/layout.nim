@@ -616,7 +616,7 @@ proc alignLine(fstate: var FlowState) =
     elif iastate.ibox of InlineBlockBox:
       let ibox = InlineBlockBox(iastate.ibox)
       # Add the offset to avoid destroying margins (etc.) of the block.
-      BlockBox(ibox.children[0]).state.offset += iastate.offset
+      BlockBox(ibox.firstChild).state.offset += iastate.offset
     elif iastate.ibox of InlineImageBox:
       let ibox = InlineImageBox(iastate.ibox)
       ibox.imgstate.offset = iastate.offset
@@ -1728,7 +1728,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
     ))
 
 proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
-  let box = BlockBox(ibox.children[0])
+  let box = BlockBox(ibox.firstChild)
   if box.computed{"position"} in PositionAbsoluteFixed:
     # Absolute is a bit of a special case in inline: while the spec
     # *says* it should blockify, absolutely positioned inline-blocks are
@@ -2091,8 +2091,8 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     sizes: ResolvedSizes) =
   case box.computed{"list-style-position"}
   of ListStylePositionOutside:
-    let marker = BlockBox(box.children[0])
-    let content = BlockBox(box.children[1])
+    let marker = BlockBox(box.firstChild)
+    let content = BlockBox(marker.next)
     content.state = BoxLayoutState(offset: box.state.offset)
     bctx.layoutFlow(content, sizes, canClear = true)
     let markerSizes = ResolvedSizes(
@@ -2220,7 +2220,7 @@ proc growRowspan(pctx: var TableContext; ctx: var RowContext;
 
 proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
     rowi, numrows: int): RowContext =
-  var ctx = RowContext(box: row, cells: newSeq[CellWrapper](row.children.len))
+  var ctx = RowContext(box: row)
   var n = 0
   var i = 0
   var growi = 0
@@ -2248,7 +2248,7 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
       rowspan: rowspan,
       coli: n
     )
-    ctx.cells[i] = wrapper
+    ctx.cells.add(wrapper)
     if rowspan > 1:
       pctx.growing.add(wrapper)
       wrapper.grown = rowspan - 1
@@ -2543,7 +2543,7 @@ proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
   box.state.offset.y += sizes.margin.top
   let outerHeight = box.outerSize(dtVertical, sizes) + box.state.marginBottom
   let outerWidth = box.outerSize(dtHorizontal, sizes)
-  let table = BlockBox(parent.children[0])
+  let table = BlockBox(parent.firstChild)
   case box.computed{"caption-side"}
   of CaptionSideTop, CaptionSideBlockStart:
     table.state.offset.y += outerHeight
@@ -2585,7 +2585,7 @@ proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
 # As per standard, we must put the caption outside the actual table, inside a
 # block-level wrapper box.
 proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  let table = BlockBox(box.children[0])
+  let table = BlockBox(box.firstChild)
   table.state = BoxLayoutState()
   var tctx = TableContext(lctx: bctx.lctx, space: sizes.space)
   tctx.layoutInnerTable(table, box, sizes)
@@ -2593,9 +2593,9 @@ proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.state.baseline = table.state.size.h
   box.state.firstBaseline = table.state.size.h
   box.state.intr = table.state.intr
-  if box.children.len > 1:
+  if table.next != nil:
     # do it here, so that caption's box can stretch to our width
-    let caption = BlockBox(box.children[1])
+    let caption = BlockBox(table.next)
     #TODO also count caption width in table width
     tctx.layoutCaption(box, caption)
 
@@ -2628,11 +2628,13 @@ type
     lctx: LayoutContext
     totalMaxSize: Size
     intr: Size # intrinsic minimum size
-    box: BlockBox
     relativeChildren: seq[BlockBox]
     redistSpace: SizeConstraint
+    firstBaseline: LUnit
+    baseline: LUnit
     canWrap: bool
     dim: DimensionType # main dimension
+    firstBaselineSet: bool
 
   FlexMainContext = object
     totalSize: Size
@@ -2758,6 +2760,11 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     intr[odim] = max(it.child.state.intr[odim], intr[odim])
     if it.child.computed{"position"} == PositionRelative:
       fctx.relativeChildren.add(it.child)
+    let baseline = it.child.state.offset.y + it.child.state.baseline
+    if not fctx.firstBaselineSet:
+      fctx.firstBaselineSet = true
+      fctx.firstBaseline = baseline
+    fctx.baseline = baseline
   fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
   fctx.mains.add(mctx)
   fctx.intr[dim] = max(fctx.intr[dim], intr[dim])
@@ -2817,7 +2824,6 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let odim = dim.opposite()
   var fctx = FlexContext(
     lctx: lctx,
-    box: box,
     offset: sizes.padding.topLeft,
     redistSpace: sizes.space[dim],
     canWrap: box.computed{"flex-wrap"} != FlexWrapNowrap,
@@ -2833,21 +2839,20 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       let child = BlockBox(child)
       fctx.layoutFlexIter(mctx, child, sizes)
   else:
-    for i in countdown(box.children.high, 0):
-      let child = BlockBox(box.children[i])
+    var children: seq[CSSBox] = @[]
+    for it in box.children:
+      children.add(it)
+    for i in countdown(children.high, 0):
+      let child = BlockBox(children[i])
       fctx.layoutFlexIter(mctx, child, sizes)
   if mctx.pending.len > 0:
     fctx.flushMain(mctx, sizes)
-  if box.children.len > 0:
-    let firstNested = BlockBox(box.children[0])
-    let lastNested = BlockBox(box.children[^1])
-    box.state.firstBaseline = firstNested.state.offset.y +
-      firstNested.state.baseline
-    box.state.baseline = lastNested.state.offset.y + lastNested.state.baseline
   var size = fctx.totalMaxSize
   size[odim] = fctx.offset[odim]
   box.applySize(sizes, size, sizes.space)
   box.applyIntr(sizes, fctx.intr)
+  box.state.firstBaseline = fctx.firstBaseline
+  box.state.baseline = fctx.baseline
   for child in fctx.relativeChildren:
     lctx.positionRelative(sizes.space, child)
   if box.computed{"position"} != PositionStatic:

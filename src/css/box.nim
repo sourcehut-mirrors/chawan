@@ -79,10 +79,11 @@ type
 
   CSSBox* = ref object of RootObj
     parent* {.cursor.}: CSSBox
+    firstChild*: CSSBox
+    next*: CSSBox
     render*: BoxRenderState # render output
     computed*: CSSValues
     element*: Element
-    children*: seq[CSSBox]
 
   BlockBox* = ref object of CSSBox
     sizes*: ResolvedSizes # tree builder output -> layout input
@@ -178,6 +179,12 @@ func topLeft*(s: RelativeRect): Offset =
 proc `+=`*(span: var Span; u: LUnit) =
   span.start += u
   span.send += u
+
+iterator children*(box: CSSBox): CSSBox =
+  var it {.cursor.} = box.firstChild
+  while it != nil:
+    yield it
+    it = it.next
 
 when defined(debug):
   proc computedTree*(box: CSSBox): string =
