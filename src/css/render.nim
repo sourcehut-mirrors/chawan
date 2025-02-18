@@ -1,5 +1,3 @@
-import std/algorithm
-
 import css/box
 import css/cssvalues
 import css/lunit
@@ -38,21 +36,10 @@ type
     height*: int
     bmp*: NetworkBitmap
 
-  ClipBox = object
-    start: Offset
-    send: Offset
-
-  StackItem = object
-    box: CSSBox
-    clipBox: ClipBox
-    index: int
-
   RenderState = object
-    clipBoxes: seq[ClipBox]
     bgcolor: CellColor
     attrsp: ptr WindowAttributes
     images: seq[PosBitmap]
-    nstack: seq[StackItem]
     spaces: string # buffer filled with spaces for padding
 
 # Forward declarations
@@ -61,9 +48,6 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
 
 template attrs(state: RenderState): WindowAttributes =
   state.attrsp[]
-
-template clipBox(state: RenderState): ClipBox =
-  state.clipBoxes[^1]
 
 func findFormatN*(line: FlexibleLine; pos: int): int =
   var i = 0
@@ -242,21 +226,21 @@ proc setText1(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
   line.setTextFormat(x, cx, targetX, hadStr, format, node)
 
 proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
-    offset: Offset; format: Format; node: Element) =
-  if offset.y notin state.clipBox.start.y ..< state.clipBox.send.y:
+    offset: Offset; format: Format; node: Element; clipBox: ClipBox) =
+  if offset.y notin clipBox.start.y ..< clipBox.send.y:
     return
-  if offset.x > state.clipBox.send.x:
+  if offset.x > clipBox.send.x:
     return
   var x = (offset.x div state.attrs.ppc).toInt
   # Give room for rounding errors.
   #TODO I'm sure there is a better way to do this, but this seems OK for now.
-  let sx = max((state.clipBox.start.x - state.attrs.ppc) div state.attrs.ppc, 0)
+  let sx = max((clipBox.start.x - state.attrs.ppc) div state.attrs.ppc, 0)
   var i = 0
   while x < sx and i < s.len:
     x += s.nextUTF8(i).width()
   if x < sx: # highest x is outside the clipping box, no need to draw
     return
-  let ex = ((state.clipBox.send.x + state.attrs.ppc) div state.attrs.ppc).toInt
+  let ex = ((clipBox.send.x + state.attrs.ppc) div state.attrs.ppc).toInt
   var j = i
   var targetX = x
   while targetX < ex and j < s.len:
@@ -270,8 +254,7 @@ proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
 
 proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     color: CellColor; startx, starty, endx, endy: int; node: Element;
-    alpha: uint8) =
-  let clipBox = addr state.clipBox
+    alpha: uint8; clipBox: ClipBox) =
   var startx = startx
   var starty = starty
   var endx = endx
@@ -353,21 +336,20 @@ proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
     let x2 = toInt(offset.x + area.offset.x + area.size.w)
     let y2 = toInt(offset.y + area.offset.y + area.size.h)
     grid.paintBackground(state, bgcolor, x1, y1, x2, y2, box.element,
-      alpha)
+      alpha, box.render.clipBox)
 
 proc renderInline(grid: var FlexibleGrid; state: var RenderState;
     ibox: InlineBox; offset: Offset; bgcolor0 = rgba(0, 0, 0, 0);
     pass2 = false) =
-  let position = ibox.computed{"position"}
-  #TODO handle negative z-index
-  let zindex = ibox.computed{"z-index"}
-  if position != PositionStatic and not pass2 and zindex >= 0:
-    state.nstack.add(StackItem(
-      box: ibox,
-      clipBox: state.clipBox,
-      index: zindex
-    ))
-    return
+  let clipBox = if ibox.parent != nil:
+    ibox.parent.render.clipBox
+  else:
+    DefaultClipBox
+  ibox.render = BoxRenderState(
+    offset: offset + ibox.state.startOffset,
+    clipBox: clipBox,
+    positioned: true
+  )
   let bgcolor = ibox.computed{"background-color"}
   var bgcolor0 = bgcolor0
   if bgcolor.isCell:
@@ -377,16 +359,15 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
   else:
     bgcolor0 = bgcolor0.blend(bgcolor.argb)
     if bgcolor0.a > 0:
-      grid.paintInlineBox(state, ibox, offset,
-        bgcolor0.rgb.cellColor(), bgcolor0.a)
-  ibox.render.offset = offset + ibox.state.startOffset
+      grid.paintInlineBox(state, ibox, offset, bgcolor0.rgb.cellColor(),
+        bgcolor0.a)
   if ibox of InlineTextBox:
     let ibox = InlineTextBox(ibox)
     let format = ibox.computed.toFormat()
     for run in ibox.runs:
       let offset = offset + run.offset
       if ibox.computed{"visibility"} == VisibilityVisible:
-        grid.setText(state, run.str, offset, format, ibox.element)
+        grid.setText(state, run.str, offset, format, ibox.element, clipBox)
   elif ibox of InlineImageBox:
     let ibox = InlineImageBox(ibox)
     if ibox.computed{"visibility"} != VisibilityVisible:
@@ -394,7 +375,6 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
     let offset = offset + ibox.imgstate.offset
     let x2p = offset.x + ibox.imgstate.size.w
     let y2p = offset.y + ibox.imgstate.size.h
-    let clipBox = addr state.clipBoxes[^1]
     #TODO implement proper image clipping
     if offset.x < clipBox.send.x and offset.y < clipBox.send.y and
         x2p >= clipBox.start.x and y2p >= clipBox.start.y:
@@ -404,7 +384,7 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
       let y2 = y2p.toInt
       # add Element to background (but don't actually color it)
       grid.paintBackground(state, defaultColor, x1, y1, x2, y2,
-        ibox.element, 0)
+        ibox.element, 0, ibox.render.clipBox)
       let x = (offset.x div state.attrs.ppc).toInt
       let y = (offset.y div state.attrs.ppl).toInt
       let offx = (offset.x - x.toLUnit * state.attrs.ppc).toInt
@@ -419,31 +399,26 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
         bmp: ibox.bmp
       ))
   else: # InlineNewLineBox does not have children, so we handle it here
+    # only check position here to avoid skipping leaves that use our
+    # computed values
+    if ibox.positioned and not pass2:
+      return
     for child in ibox.children:
       if child of InlineBox:
         grid.renderInline(state, InlineBox(child), offset, bgcolor0)
       else:
         grid.renderBlock(state, BlockBox(child), offset)
 
-proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
-    box: BlockBox; offset: Offset; pass2 = false) =
-  let position = box.computed{"position"}
-  #TODO handle negative z-index
-  let zindex = box.computed{"z-index"}
-  if position != PositionStatic and not pass2 and zindex >= 0:
-    state.nstack.add(StackItem(
-      box: box,
-      clipBox: state.clipBox,
-      index: zindex
-    ))
+proc inheritClipBox(box: BlockBox; parent: CSSBox) =
+  if parent == nil:
+    box.render.clipBox = DefaultClipBox
     return
-  let offset = offset + box.state.offset
-  box.render.offset = offset
+  assert parent.render.positioned
+  var clipBox = parent.render.clipBox
   let overflowX = box.computed{"overflow-x"}
   let overflowY = box.computed{"overflow-y"}
-  let hasClipBox = overflowX != OverflowVisible or overflowY != OverflowVisible
-  if hasClipBox:
-    var clipBox = state.clipBox
+  if overflowX != OverflowVisible or overflowY != OverflowVisible:
+    let offset = box.render.offset
     if overflowX in OverflowHiddenLike:
       clipBox.start.x = max(offset.x, clipBox.start.x)
       clipBox.send.x = min(offset.x + box.state.size.w, clipBox.send.x)
@@ -453,7 +428,17 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
     if overflowY in OverflowHiddenLike:
       clipBox.start.y = max(offset.y, clipBox.start.y)
       clipBox.send.y = min(offset.y + box.state.size.h, clipBox.send.y)
-    state.clipBoxes.add(clipBox)
+  box.render.clipBox = clipBox
+
+proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
+    box: BlockBox; offset: Offset; pass2 = false) =
+  if box.positioned and not pass2:
+    return
+  let offset = offset + box.state.offset
+  box.render.offset = offset
+  box.render.positioned = true
+  if not pass2:
+    box.inheritClipBox(box.parent)
   let opacity = box.computed{"opacity"}
   if box.computed{"visibility"} == VisibilityVisible and opacity != 0:
     #TODO maybe blend with the terminal background?
@@ -471,7 +456,7 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
       let iex = toInt(e.x)
       let iey = toInt(e.y)
       grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.element,
-        bgcolor0.a)
+        bgcolor0.a, box.render.clipBox)
     if box.computed{"background-image"} != nil:
       # ugly hack for background-image display... TODO actually display images
       const s = "[img]"
@@ -481,55 +466,95 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
         # text is larger than image; center it to minimize error
         offset.x -= w div 2
         offset.x += box.state.size.w div 2
-      grid.setText(state, s, offset, box.computed.toFormat(), box.element)
+      grid.setText(state, s, offset, box.computed.toFormat(), box.element,
+        box.render.clipBox)
   if opacity != 0: #TODO this isn't right...
-    if state.clipBox.start.x < state.clipBox.send.x and
-        state.clipBox.start.y < state.clipBox.send.y:
+    if box.render.clipBox.start < box.render.clipBox.send:
       for child in box.children:
         if child of InlineBox:
           grid.renderInline(state, InlineBox(child), offset)
         else:
           grid.renderBlock(state, BlockBox(child), offset)
-  if hasClipBox:
-    discard state.clipBoxes.pop()
 
-func findBlockParent(box: CSSBox): BlockBox =
+# This function exists to support another insanity-inducing CSS
+# construct: negative z-index.
+# The issue here is that their position depends on their parent, but the
+# parent box is very often not positioned yet.  So we brute-force our
+# way out of the problem by resolving the parent box's position here.
+# The algorithm itself is mildly confusing because we must skip
+# InlineBox offsets in the process - this means that there may be inline
+# boxes after this pass with an unresolved position which contain block
+# boxes with a resolved position.
+proc resolveBlockParent(box: CSSBox): BlockBox =
   var it {.cursor.} = box.parent
   while it != nil:
     if it of BlockBox:
-      return BlockBox(it)
+      break
     it = it.parent
+  var toPosition: seq[BlockBox] = @[]
+  let findPositioned = box.computed{"position"} in PositionAbsoluteFixed
+  var it2 {.cursor.} = it
+  var parent {.cursor.}: CSSBox = nil
+  while it2 != nil:
+    if it2 of BlockBox:
+      let it2 = BlockBox(it2)
+      if it2.render.positioned and (not findPositioned or it2.positioned):
+        break
+      toPosition.add(it2)
+    it2 = it2.parent
+  var offset = if it2 != nil: it2.render.offset else: offset(0, 0)
+  for i in countdown(toPosition.high, 0):
+    let it = toPosition[i]
+    offset += it.state.offset
+    it.render = BoxRenderState(
+      offset: offset,
+      clipBox: DefaultClipBox,
+      positioned: true
+    )
+    it.inheritClipBox(parent)
+    parent = it
+  if box of BlockBox:
+    let box = BlockBox(box)
+    box.render.clipBox = DefaultClipBox
+    if findPositioned:
+      box.inheritClipBox(it2)
+    else:
+      box.inheritClipBox(it)
+  return BlockBox(it)
 
 proc renderPositioned(grid: var FlexibleGrid; state: var RenderState;
     box: CSSBox) =
-  let parent = box.findBlockParent()
+  let parent = box.resolveBlockParent()
   let offset = if parent != nil: parent.render.offset else: offset(0, 0)
   if box of BlockBox:
     grid.renderBlock(state, BlockBox(box), offset, pass2 = true)
   else:
     grid.renderInline(state, InlineBox(box), offset, pass2 = true)
 
-proc render*(grid: var FlexibleGrid; bgcolor: var CellColor; rootBox: BlockBox;
+proc renderStack(grid: var FlexibleGrid; state: var RenderState;
+    stack: StackItem) =
+  var i = 0
+  # negative z-index
+  while i < stack.children.len:
+    let it = stack.children[i]
+    if it.index >= 0:
+      break
+    grid.renderStack(state, it)
+    inc i
+  grid.renderPositioned(state, stack.box)
+  # z-index >= 0
+  for it in stack.children.toOpenArray(i, stack.children.high):
+    grid.renderStack(state, it)
+
+proc render*(grid: var FlexibleGrid; bgcolor: var CellColor; stack: StackItem;
     attrsp: ptr WindowAttributes; images: var seq[PosBitmap]) =
   grid.setLen(0)
-  if rootBox == nil:
-    # no HTML element when we run cascade; just clear all lines.
-    return
   var state = RenderState(
-    clipBoxes: @[ClipBox(send: offset(LUnit.high, LUnit.high))],
     attrsp: attrsp,
     bgcolor: defaultColor
   )
-  var stack = @[StackItem(box: rootBox, clipBox: state.clipBox)]
-  while stack.len > 0:
-    for it in stack:
-      state.clipBoxes.add(it.clipBox)
-      grid.renderPositioned(state, it.box)
-      discard state.clipBoxes.pop()
-    stack = move(state.nstack)
-    stack.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
-    state.nstack = @[]
+  grid.renderStack(state, stack)
   if grid.len == 0:
     grid.setLen(1)
   bgcolor = state.bgcolor
-  images = state.images
+  images = move(state.images)

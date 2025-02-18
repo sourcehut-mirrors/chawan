@@ -27,7 +27,9 @@ type
     offset: Offset
     child: BlockBox
 
-  PositionedItem = seq[QueuedAbsolute]
+  PositionedItem = object
+    stack: StackItem # stacking context to append children to
+    queue: seq[QueuedAbsolute]
 
   LayoutContext = ref object
     attrsp: ptr WindowAttributes
@@ -1389,8 +1391,16 @@ proc applyIntr(box: BlockBox; sizes: ResolvedSizes; intr: Size) =
       box.state.intr[dim] = max(intr[dim], sizes.bounds.mi[dim].start)
       box.state.size[dim] = max(box.state.size[dim], intr[dim])
 
-proc pushPositioned(lctx: LayoutContext) =
-  lctx.positioned.add(@[])
+proc pushPositioned(lctx: LayoutContext; box: CSSBox) =
+  let index = box.computed{"z-index"}
+  let stack = StackItem(box: box, index: index.num)
+  lctx.positioned[^1].stack.children.add(stack)
+  let nextStack = if index.auto:
+    lctx.positioned[^1].stack
+  else:
+    stack
+  box.positioned = true
+  lctx.positioned.add(PositionedItem(stack: nextStack))
 
 # Offset the child by the offset of its actual parent to its nearest
 # positioned ancestor (`parent').
@@ -1409,7 +1419,7 @@ proc realignAbsolutePosition(child: BlockBox; parent: CSSBox;
     if dtVertical in dims:
       child.state.offset.y -= offset.y
     it = it.parent
-  if parent of InlineBox:
+  if parent != nil and parent of InlineBox:
     # The renderer does not adjust position for inline parents, so we
     # must do it here.
     let offset = InlineBox(parent).state.startOffset
@@ -1418,10 +1428,11 @@ proc realignAbsolutePosition(child: BlockBox; parent: CSSBox;
     if dtVertical in dims:
       child.state.offset.y += offset.y
 
-# size is the parent's size
-proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size;
-    skipStatic = true) =
-  for it in lctx.positioned.pop():
+# size is the parent's size.
+# Note that parent may be nil.
+proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size) =
+  let item = lctx.positioned[^1]
+  for it in item.queue:
     let child = it.child
     var size = size
     #TODO this is very ugly.
@@ -1461,13 +1472,18 @@ proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size;
       child.state.offset.y += sizes.margin.top
     if dims != {}:
       child.realignAbsolutePosition(parent, dims)
+  discard lctx.positioned.pop()
+  let stack = item.stack
+  if stack.box == parent:
+    #TODO this sorts twice because of fixed...
+    stack.children.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
 
 proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
   case box.computed{"position"}
   of PositionAbsolute:
-    lctx.positioned[^1].add(QueuedAbsolute(child: box, offset: offset))
+    lctx.positioned[^1].queue.add(QueuedAbsolute(child: box, offset: offset))
   of PositionFixed:
-    lctx.positioned[0].add(QueuedAbsolute(child: box, offset: offset))
+    lctx.positioned[0].queue.add(QueuedAbsolute(child: box, offset: offset))
   else: assert false
 
 proc positionRelative(lctx: LayoutContext; space: AvailableSpace;
@@ -1545,20 +1561,21 @@ proc positionFloat(bctx: var BlockContext; child: BlockBox;
 # its parent.
 # Returns the block's outer size.
 # Stores its resolved size data in `sizes'.
-proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
+proc layoutBlockChild(fstate: var FlowState; box: BlockBox;
     sizes: out ResolvedSizes): Size =
   let lctx = fstate.lctx
-  sizes = lctx.resolveBlockSizes(fstate.space, child.computed)
+  sizes = lctx.resolveBlockSizes(fstate.space, box.computed)
   fstate.bctx.marginTodo.append(sizes.margin.top)
-  child.state = BoxLayoutState(offset: offset(x = sizes.margin.left, y = 0))
-  child.state.offset += fstate.offset
-  fstate.bctx.layout(child, sizes, canClear = true)
+  box.resetState()
+  box.state.offset = fstate.offset
+  box.state.offset.x += sizes.margin.left
+  fstate.bctx.layout(box, sizes, canClear = true)
   fstate.bctx.marginTodo.append(sizes.margin.bottom)
   return size(
-    w = child.outerSize(dtHorizontal, sizes),
+    w = box.outerSize(dtHorizontal, sizes),
     # delta y is difference between old and new offsets (margin-top),
     # plus height.
-    h = child.state.offset.y - fstate.offset.y + child.state.size.h
+    h = box.state.offset.y - fstate.offset.y + box.state.size.h
   )
 
 # Outer layout for block-level children that establish a BFC.
@@ -1840,7 +1857,7 @@ proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
 proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
   let lctx = fstate.lctx
   let computed = ibox.computed
-  ibox.state = InlineBoxState()
+  ibox.resetState()
   let padding = Span(
     start: computed{"padding-left"}.px(fstate.space.w),
     send: computed{"padding-right"}.px(fstate.space.w)
@@ -1885,7 +1902,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       fstate.initLine()
       fstate.lbstate.size.w += padding.start
     if computed{"position"} != PositionStatic:
-      lctx.pushPositioned()
+      lctx.pushPositioned(ibox)
     for child in ibox.children:
       if child of InlineBox:
         fstate.layoutInline(InlineBox(child))
@@ -1915,8 +1932,8 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       # and Gecko can't even layout it consistently (???)
       #
       # So I'm trying to follow Blink, though it's still not quite right,
-      # since it uses cellHeight instead of the actual line height for the
-      # last line.
+      # since this uses cellHeight instead of the actual line height
+      # for the last line.
       # Well, it seems good enough.
       lctx.popPositioned(ibox, size(
         w = 0,
@@ -2030,7 +2047,7 @@ proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
 proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
     canClear: bool) =
   if box.computed{"position"} != PositionStatic:
-    bctx.lctx.pushPositioned()
+    bctx.lctx.pushPositioned(box)
   if canClear and box.computed{"clear"} != ClearNone and
       box.computed{"position"} notin PositionAbsoluteFixed:
     bctx.flushMargins(box.state.offset.y)
@@ -2093,7 +2110,8 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
   of ListStylePositionOutside:
     let marker = BlockBox(box.firstChild)
     let content = BlockBox(marker.next)
-    content.state = BoxLayoutState(offset: box.state.offset)
+    content.resetState()
+    content.state.offset = box.state.offset
     bctx.layoutFlow(content, sizes, canClear = true)
     let markerSizes = ResolvedSizes(
       space: availableSpace(w = fitContent(sizes.space.w), h = sizes.space.h),
@@ -2104,6 +2122,7 @@ proc layoutListItem(bctx: var BlockContext; box: BlockBox;
     # instead
     marker.state.offset.x = -marker.state.size.w
     # take inner box min width etc.
+    box.resetState()
     box.state = content.state
     content.state.offset = offset(x = 0, y = 0)
   of ListStylePositionInside:
@@ -2165,7 +2184,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
   )
   if sizes.space.w.isDefinite():
     sizes.space.w.u -= sizes.padding[dtHorizontal].sum()
-  box.state = BoxLayoutState()
+  box.resetState()
   var bctx = BlockContext(lctx: lctx)
   bctx.layoutFlow(box, sizes, canClear = false)
   assert bctx.unpositionedFloats.len == 0
@@ -2317,7 +2336,7 @@ proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
 
 proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     parent, row: BlockBox) =
-  row.state = BoxLayoutState()
+  row.resetState()
   var x: LUnit = 0
   var n = 0
   var baseline: LUnit = 0
@@ -2586,7 +2605,7 @@ proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
 # block-level wrapper box.
 proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let table = BlockBox(box.firstChild)
-  table.state = BoxLayoutState()
+  table.resetState()
   var tctx = TableContext(lctx: bctx.lctx, space: sizes.space)
   tctx.layoutInnerTable(table, box, sizes)
   box.state.size = table.state.size
@@ -2633,6 +2652,7 @@ type
     firstBaseline: LUnit
     baseline: LUnit
     canWrap: bool
+    reverse: bool
     dim: DimensionType # main dimension
     firstBaselineSet: bool
 
@@ -2765,6 +2785,11 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       fctx.firstBaselineSet = true
       fctx.firstBaseline = baseline
     fctx.baseline = baseline
+  if fctx.reverse:
+    for it in mctx.pending:
+      let child = it.child
+      child.state.offset[dim] = offset[dim] - child.state.offset[dim] -
+        child.state.size[dim]
   fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
   fctx.mains.add(mctx)
   fctx.intr[dim] = max(fctx.intr[dim], intr[dim])
@@ -2818,7 +2843,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
   if box.computed{"position"} != PositionStatic:
-    lctx.pushPositioned()
+    lctx.pushPositioned(box)
   let flexDir = box.computed{"flex-direction"}
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
   let odim = dim.opposite()
@@ -2827,6 +2852,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     offset: sizes.padding.topLeft,
     redistSpace: sizes.space[dim],
     canWrap: box.computed{"flex-wrap"} != FlexWrapNowrap,
+    reverse: box.computed{"flex-direction"} in FlexReverse,
     dim: dim
   )
   if fctx.redistSpace.t == scFitContent and sizes.bounds.a[dim].start > 0:
@@ -2834,17 +2860,9 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   if fctx.redistSpace.isDefinite:
     fctx.redistSpace.u = fctx.redistSpace.u.minClamp(sizes.bounds.a[dim])
   var mctx = FlexMainContext()
-  if box.computed{"flex-direction"} notin FlexReverse:
-    for child in box.children:
-      let child = BlockBox(child)
-      fctx.layoutFlexIter(mctx, child, sizes)
-  else:
-    var children: seq[CSSBox] = @[]
-    for it in box.children:
-      children.add(it)
-    for i in countdown(children.high, 0):
-      let child = BlockBox(children[i])
-      fctx.layoutFlexIter(mctx, child, sizes)
+  for child in box.children:
+    let child = BlockBox(child)
+    fctx.layoutFlexIter(mctx, child, sizes)
   if mctx.pending.len > 0:
     fctx.flushMain(mctx, sizes)
   var size = fctx.totalMaxSize
@@ -2868,7 +2886,8 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
     return
   box.sizes = sizes
   var bctx = BlockContext(lctx: lctx)
-  box.state = BoxLayoutState(offset: offset)
+  box.resetState()
+  box.state.offset = offset
   bctx.layout(box, sizes, canClear = false)
   assert bctx.unpositionedFloats.len == 0
   let marginBottom = bctx.marginTodo.sum()
@@ -2882,15 +2901,16 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state.intr.h = max(box.state.intr.h, bctx.maxFloatHeight)
   box.state.marginBottom = marginBottom
 
-proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
+proc layout*(box: BlockBox; attrsp: ptr WindowAttributes): StackItem =
   let space = availableSpace(
     w = stretch(attrsp[].widthPx),
     h = stretch(attrsp[].heightPx)
   )
+  let stack = StackItem(box: box)
   let lctx = LayoutContext(
     attrsp: attrsp,
     cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
-    positioned: @[@[], @[]],
+    positioned: @[PositionedItem(stack: stack), PositionedItem(stack: stack)],
     luctx: LUContext()
   )
   let sizes = lctx.resolveBlockSizes(space, box.computed)
@@ -2898,7 +2918,7 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
   lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
   var size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
   # Last absolute layer.
-  lctx.popPositioned(box, size)
+  lctx.popPositioned(nil, size)
   # Fixed containing block.
   # The idea is to move fixed boxes to the real edges of the page,
   # so that they do not overlap with other boxes *and* we don't have
@@ -2907,4 +2927,5 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
   # slow down the renderer to a crawl.)
   size.w = max(size.w, box.state.size.w)
   size.h = max(size.h, box.state.size.h)
-  lctx.popPositioned(box, size, skipStatic = false)
+  lctx.popPositioned(box, size)
+  return stack

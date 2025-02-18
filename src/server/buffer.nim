@@ -772,9 +772,8 @@ proc maybeReshape(buffer: Buffer) =
     return # not parsed yet, nothing to render
   if document.invalid:
     buffer.rootBox = document.documentElement.buildTree(buffer.rootBox)
-    buffer.rootBox.layout(addr buffer.attrs)
-    buffer.lines.render(buffer.bgcolor, buffer.rootBox, addr buffer.attrs,
-      buffer.images)
+    let stack = buffer.rootBox.layout(addr buffer.attrs)
+    buffer.lines.render(buffer.bgcolor, stack, addr buffer.attrs, buffer.images)
     document.invalid = false
     if buffer.hasTask(bcOnReshape):
       buffer.resolveTask(bcOnReshape)

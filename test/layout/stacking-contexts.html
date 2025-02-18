@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<style>
+div { position: relative; width: 4em; height: 4em; top: 2em; left: 2em }
+</style>
+<div style="background: red">
+<div style="z-index: -1; background: green"></div>
+</div>
+<div style="background: blue"></div>
+<br>
+<div style="z-index: 0; background: red">
+<div style="z-index: 1; background: green"></div>
+</div>
+<div style="background: blue"></div>
+<br>
+<div style="background: red">
+<div style="z-index: 1; background: green"></div>
+</div>
+<div style="background: blue"></div>

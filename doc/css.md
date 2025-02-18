@@ -71,7 +71,7 @@ values:
 * white-space
 * width
 * word-break
-* z-index (negative values are not respected yet)
+* z-index
 
 Shorthands:
 

@@ -48,8 +48,21 @@ type
 
   RelativeRect* = array[DimensionType, Span]
 
+  StackItem* = ref object
+    box*: CSSBox
+    index*: int32
+    children*: seq[StackItem]
+
+  ClipBox* = object
+    start*: Offset
+    send*: Offset
+
   BoxRenderState* = object
+    # Whether the following two variables have been initialized.
+    #TODO find a better name that doesn't conflict with box.positioned
+    positioned*: bool
     offset*: Offset
+    clipBox*: ClipBox
 
   # min-content: box width is longest word's width
   # max-content: box width is content width without wrapping
@@ -81,6 +94,7 @@ type
     parent* {.cursor.}: CSSBox
     firstChild*: CSSBox
     next*: CSSBox
+    positioned*: bool # set if we participate in positioned layout
     render*: BoxRenderState # render output
     computed*: CSSValues
     element*: Element
@@ -104,6 +118,9 @@ type
 
   InlineBlockBox* = ref object of InlineBox
     # InlineBlockBox always has one block child.
+
+  LayoutResult* = ref object
+    stack*: StackItem
 
 func offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
@@ -180,11 +197,28 @@ proc `+=`*(span: var Span; u: LUnit) =
   span.start += u
   span.send += u
 
+func `<`*(a, b: Offset): bool =
+  return a.x < b.x and a.y < b.y
+
 iterator children*(box: CSSBox): CSSBox =
   var it {.cursor.} = box.firstChild
   while it != nil:
     yield it
     it = it.next
+
+proc resetState(box: CSSBox) =
+  box.positioned = false
+  box.render = BoxRenderState()
+
+proc resetState*(ibox: InlineBox) =
+  CSSBox(ibox).resetState()
+  ibox.state = InlineBoxState()
+
+proc resetState*(box: BlockBox) =
+  CSSBox(box).resetState()
+  box.state = BoxLayoutState()
+
+const DefaultClipBox* = ClipBox(send: offset(LUnit.high, LUnit.high))
 
 when defined(debug):
   proc computedTree*(box: CSSBox): string =

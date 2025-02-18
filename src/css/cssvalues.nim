@@ -166,6 +166,7 @@ type
     cvtFlexWrap = "flexWrap"
     cvtNumber = "number"
     cvtOverflow = "overflow"
+    cvtZIndex = "zIndex"
 
   CSSGlobalType* = enum
     cgtInitial = "initial"
@@ -382,6 +383,10 @@ type
     a*: CSSLength
     b*: CSSLength
 
+  CSSZIndex* = object
+    `auto`*: bool
+    num*: int32
+
   CSSValueBit* {.union.} = object
     dummy*: uint8
     bgcolorIsCanvas*: bool
@@ -412,6 +417,7 @@ type
     length*: CSSLength
     number*: float32
     verticalAlign*: CSSVerticalAlign
+    zIndex*: CSSZIndex
 
   CSSValue* = ref object
     case v*: CSSValueType
@@ -527,7 +533,7 @@ const ValueTypes = [
   cptTop: cvtLength,
   cptVerticalAlign: cvtVerticalAlign,
   cptWidth: cvtLength,
-  cptZIndex: cvtInteger,
+  cptZIndex: cvtZIndex,
 
   # pointers
   cptBackgroundImage: cvtImage,
@@ -634,6 +640,11 @@ func `$`(counterreset: seq[CSSCounterSet]): string =
     result &= ' '
     result &= $it.num
 
+func `$`(zIndex: CSSZIndex): string =
+  if zIndex.auto:
+    return $auto
+  return $zIndex.num
+
 func serialize(val: CSSValue): string =
   case val.v
   of cvtImage: return $val.image
@@ -658,6 +669,7 @@ func serialize(val: CSSValueWord; t: CSSValueType): string =
   of cvtLength: return $val.length
   of cvtNumber: return $val.number
   of cvtVerticalAlign: return $val.verticalAlign
+  of cvtZIndex: return $val.zIndex
   else: assert false
 
 func serialize(val: CSSValueBit; t: CSSValueType): string =
@@ -1494,6 +1506,14 @@ func parseInteger(cval: CSSComponentValue; range: Slice[int32]): Opt[int32] =
         return ok(int32(tok.nvalue))
   return err()
 
+func parseZIndex(cval: CSSComponentValue): Opt[CSSZIndex] =
+  if cval of CSSToken:
+    let tok = CSSToken(cval)
+    if tok.t == cttIdent and tok.value == "auto":
+      return ok(CSSZIndex(auto: true))
+    return ok(CSSZIndex(num: ?parseInteger(cval, -65534i32 .. 65534i32)))
+  return err()
+
 func parseNumber(cval: CSSComponentValue; range: Slice[float32]): Opt[float32] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
@@ -1590,8 +1610,8 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
     of cptFontWeight: set_word integer, ?parseFontWeight(cval)
     of cptChaColspan: set_word integer, ?parseInteger(cval, 1i32 .. 1000i32)
     of cptChaRowspan: set_word integer, ?parseInteger(cval, 0i32 .. 65534i32)
-    of cptZIndex: set_word integer, ?parseInteger(cval, -65534i32 .. 65534i32)
     else: assert false
+  of cvtZIndex: set_word zIndex, ?parseZIndex(cval)
   of cvtTextDecoration: set_bit textDecoration, ?cssTextDecoration(cvals)
   of cvtVerticalAlign: set_word verticalAlign, ?cssVerticalAlign(cval, attrs)
   of cvtTextAlign: set_bit textAlign, ?parseIdent[CSSTextAlign](cval)
@@ -1675,6 +1695,7 @@ proc getDefaultWord(t: CSSPropertyType): CSSValueWord =
   of cvtInteger: return CSSValueWord(integer: getInitialInteger(t))
   of cvtLength: return CSSValueWord(length: getInitialLength(t))
   of cvtNumber: return CSSValueWord(number: getInitialNumber(t))
+  of cvtZIndex: return CSSValueWord(zIndex: CSSZIndex(auto: true))
   else: return CSSValueWord(dummy: 0)
 
 func lengthShorthand(cvals: openArray[CSSComponentValue];
@@ -1931,7 +1952,7 @@ func splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
     cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom,
     cptWidth, cptHeight, cptBoxSizing,
     # no clue why this isn't included in the standard
-    cptClear
+    cptClear, cptPosition
   }
   for t in CSSPropertyType:
     if t in props:
