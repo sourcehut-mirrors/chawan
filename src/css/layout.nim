@@ -1431,7 +1431,7 @@ proc realignAbsolutePosition(child: BlockBox; parent: CSSBox;
 # size is the parent's size.
 # Note that parent may be nil.
 proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size) =
-  let item = lctx.positioned[^1]
+  let item = lctx.positioned.pop()
   for it in item.queue:
     let child = it.child
     var size = size
@@ -1472,10 +1472,8 @@ proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size) =
       child.state.offset.y += sizes.margin.top
     if dims != {}:
       child.realignAbsolutePosition(parent, dims)
-  discard lctx.positioned.pop()
   let stack = item.stack
   if stack.box == parent:
-    #TODO this sorts twice because of fixed...
     stack.children.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
 
 proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
@@ -1483,7 +1481,7 @@ proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
   of PositionAbsolute:
     lctx.positioned[^1].queue.add(QueuedAbsolute(child: box, offset: offset))
   of PositionFixed:
-    lctx.positioned[0].queue.add(QueuedAbsolute(child: box, offset: offset))
+    lctx.positioned[1].queue.add(QueuedAbsolute(child: box, offset: offset))
   else: assert false
 
 proc positionRelative(lctx: LayoutContext; space: AvailableSpace;
@@ -2910,7 +2908,12 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes): StackItem =
   let lctx = LayoutContext(
     attrsp: attrsp,
     cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
-    positioned: @[PositionedItem(stack: stack), PositionedItem(stack: stack)],
+    positioned: @[
+      # add another to catch fixed boxes pushed to the stack
+      PositionedItem(stack: stack),
+      PositionedItem(stack: stack),
+      PositionedItem(stack: stack)
+    ],
     luctx: LUContext()
   )
   let sizes = lctx.resolveBlockSizes(space, box.computed)
@@ -2927,5 +2930,7 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes): StackItem =
   # slow down the renderer to a crawl.)
   size.w = max(size.w, box.state.size.w)
   size.h = max(size.h, box.state.size.h)
+  lctx.popPositioned(nil, size)
+  # Now we can sort the root box's stacking context list.
   lctx.popPositioned(box, size)
   return stack
