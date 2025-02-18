@@ -84,6 +84,9 @@ proc calcRules(map: var RuleListMap; element: Element;
   for attr in element.attrs:
     sheet.attrTable.withValue(attr.qualifiedName, v):
       rules.add(v[])
+  if element.parentElement == nil:
+    for rule in sheet.rootList:
+      rules.add(rule)
   for rule in sheet.generalList:
     rules.add(rule)
   var tosorts = ToSorts.default

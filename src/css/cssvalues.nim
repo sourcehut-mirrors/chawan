@@ -642,7 +642,7 @@ func `$`(counterreset: seq[CSSCounterSet]): string =
 
 func `$`(zIndex: CSSZIndex): string =
   if zIndex.auto:
-    return $auto
+    return "auto"
   return $zIndex.num
 
 func serialize(val: CSSValue): string =

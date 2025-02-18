@@ -2,6 +2,7 @@ import std/options
 import std/strutils
 import std/tables
 
+import chame/tags
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
@@ -36,6 +37,7 @@ type
     idTable*: Table[CAtom, seq[CSSRuleDef]]
     classTable*: Table[CAtom, seq[CSSRuleDef]]
     attrTable*: Table[CAtom, seq[CSSRuleDef]]
+    rootList*: seq[CSSRuleDef]
     generalList*: seq[CSSRuleDef]
     importList*: seq[URL]
     len: int
@@ -46,6 +48,7 @@ type SelectorHashes = object
   id: CAtom
   class: CAtom
   attr: CAtom
+  root: bool
 
 func newStylesheet*(cap: int; attrs: ptr WindowAttributes): CSSStylesheet =
   let bucketsize = cap div 2
@@ -85,47 +88,63 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
   of stPseudoElement, stUniversal:
     return false
   of stPseudoClass:
-    if sel.pseudo.t notin {pcIs, pcWhere}:
+    case sel.pseudo.t
+    of pcRoot:
+      hashes.root = true
+      return true
+    of pcLink, pcVisited:
+      hashes.tags.add(TAG_A.toAtom())
+      hashes.tags.add(TAG_AREA.toAtom())
+      hashes.attr = satHref.toAtom()
+      return true
+    of pcIs, pcWhere:
+      # Hash whatever the selectors have in common:
+      # 1. get the hashable values of selector 1
+      # 2. for each other selector x:
+      # 3.   get hashable values of selector x
+      # 4.   store hashable values of selector x that aren't stored yet
+      # 5.   for each hashable value of selector 1 that doesn't match selector x
+      # 6.     cancel hashable value
+      var cancelId = false
+      var cancelClass = false
+      var cancelAttr = false
+      var cancelRoot = false
+      var i = 0
+      if i < sel.pseudo.fsels.len:
+        hashes.getSelectorIds(sel.pseudo.fsels[i])
+        inc i
+      while i < sel.pseudo.fsels.len:
+        var nhashes = SelectorHashes()
+        nhashes.getSelectorIds(sel.pseudo.fsels[i])
+        hashes.tags.add(nhashes.tags)
+        if hashes.id == CAtomNull:
+          hashes.id = nhashes.id
+        elif nhashes.id != CAtomNull and nhashes.id != hashes.id:
+          cancelId = true
+        if hashes.class == CAtomNull:
+          hashes.class = nhashes.class
+        elif nhashes.class != CAtomNull and nhashes.class != hashes.class:
+          cancelClass = true
+        if hashes.attr == CAtomNull:
+          hashes.attr = nhashes.attr
+        elif nhashes.attr != CAtomNull and nhashes.attr != hashes.attr:
+          cancelAttr = true
+        if hashes.root != nhashes.root:
+          cancelRoot = true
+        inc i
+      if cancelId:
+        hashes.id = CAtomNull
+      if cancelClass:
+        hashes.class = CAtomNull
+      if cancelAttr:
+        hashes.attr = CAtomNull
+      if cancelRoot:
+        hashes.root = false
+      return hashes.tags.len > 0 or hashes.id != CAtomNull or
+        hashes.class != CAtomNull or hashes.attr != CAtomNull or
+        hashes.root
+    else:
       return false
-    # Basically just hash whatever the selectors have in common:
-    # 1. get the hashable values of selector 1
-    # 2. for every other selector x:
-    # 3.   get hashable values of selector x
-    # 4.   store hashable values of selector x that aren't stored yet
-    # 5.   for every hashable value of selector 1 that doesn't match selector x
-    # 6.     cancel hashable value
-    var cancelId = false
-    var cancelClass = false
-    var cancelAttr = false
-    var i = 0
-    if i < sel.pseudo.fsels.len:
-      hashes.getSelectorIds(sel.pseudo.fsels[i])
-      inc i
-    while i < sel.pseudo.fsels.len:
-      var nhashes = SelectorHashes()
-      nhashes.getSelectorIds(sel.pseudo.fsels[i])
-      hashes.tags.add(nhashes.tags)
-      if hashes.id == CAtomNull:
-        hashes.id = nhashes.id
-      elif nhashes.id != CAtomNull and nhashes.id != hashes.id:
-        cancelId = true
-      if hashes.class == CAtomNull:
-        hashes.class = nhashes.class
-      elif nhashes.class != CAtomNull and nhashes.class != hashes.class:
-        cancelClass = true
-      if hashes.attr == CAtomNull:
-        hashes.attr = nhashes.attr
-      elif nhashes.attr != CAtomNull and nhashes.attr != hashes.attr:
-        cancelAttr = true
-      inc i
-    if cancelId:
-      hashes.id = CAtomNull
-    if cancelClass:
-      hashes.class = CAtomNull
-    if cancelAttr:
-      hashes.attr = CAtomNull
-    return hashes.tags.len > 0 or hashes.id != CAtomNull or
-      hashes.class != CAtomNull or hashes.attr != CAtomNull
 
 proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
   for cxsel in rule.sels:
@@ -153,11 +172,14 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
         p[].add(rule)
       do:
         sheet.attrTable[hashes.attr] = @[rule]
+    elif hashes.root:
+      sheet.rootList.add(rule)
     else:
       sheet.generalList.add(rule)
 
 proc add*(sheet, sheet2: CSSStylesheet) =
   sheet.generalList.add(sheet2.generalList)
+  sheet.rootList.add(sheet2.rootList)
   for key, value in sheet2.tagTable.pairs:
     sheet.tagTable.withValue(key, p):
       p[].add(value)
