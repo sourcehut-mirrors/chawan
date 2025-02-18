@@ -70,20 +70,21 @@ type
     url*: Option[Regex]
     host*: Option[Regex]
     rewriteUrl*: Option[JSValueFunction]
-    cookie*: Option[CookieMode]
     shareCookieJar*: Option[string]
+    stylesheet*: Option[string]
+    proxy*: Option[URL]
+    defaultHeaders*: TableRef[string, string]
+    cookie*: Option[CookieMode]
     refererFrom*: Option[bool]
     scripting*: Option[ScriptingMode]
     documentCharset*: seq[Charset]
     images*: Option[bool]
     styling*: Option[bool]
-    stylesheet*: Option[string]
-    proxy*: Option[URL]
-    defaultHeaders*: TableRef[string, string]
     insecureSslNoVerify*: Option[bool]
     autofocus*: Option[bool]
     metaRefresh*: Option[MetaRefresh]
     history*: Option[bool]
+    markLinks*: Option[bool]
 
   OmniRule* = ref object
     match*: Regex
@@ -177,6 +178,7 @@ type
     autofocus* {.jsgetset.}: bool
     metaRefresh* {.jsgetset.}: MetaRefresh
     history* {.jsgetset.}: bool
+    markLinks* {.jsgetset.}: bool
 
   Config* = ref object
     jsctx*: JSContext

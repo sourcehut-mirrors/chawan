@@ -3,6 +3,7 @@ import std/strutils
 
 import css/cssparser
 import html/catom
+import types/opt
 import utils/twtstr
 
 type
@@ -13,6 +14,7 @@ type
     peNone = "-cha-none"
     peBefore = "before"
     peAfter = "after"
+    peLinkMarker = "-cha-link-marker"
 
   PseudoClass* = enum
     pcFirstChild = "first-child"
@@ -363,10 +365,9 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
       if not state.has(): fail
       let tok = get_tok state.consume()
       if tok.t != cttIdent: fail
-      case tok.value.toLowerAscii()
-      of "before": add_pseudo_element peBefore
-      of "after": add_pseudo_element peAfter
-      else: fail
+      let x = parseEnumNoCase[PseudoElement](tok.value)
+      if x.isNone: fail
+      add_pseudo_element x.get
     else: fail
   elif cval of CSSFunction:
     return state.parseSelectorFunction(CSSFunction(cval))

@@ -225,6 +225,14 @@ brings up a pop-up menu.</td>
 <td>Whether or not browsing history should be saved to the disk.</td>
 </tr>
 
+<tr>
+<td>mark-links</td>
+<td>boolean</td>
+<td>false</td>
+<td>Add numeric markers before links.  In headless/dump mode, this also
+prints a list of URLs after the page.</td>
+</tr>
+
 </table>
 
 ## Search
@@ -998,6 +1006,13 @@ brings up a pop-up menu.
 <td>`buffer.history`</td>
 <td>Whether or not browsing history should be saved to the disk for this
 URL.</td>
+</tr>
+
+<tr>
+<td>mark-links</td>
+<td>boolean</td>
+<td>`buffer.history`</td>
+<td>Add numeric markers before links.</td>
 </tr>
 
 </table>

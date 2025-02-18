@@ -381,7 +381,7 @@ proc applyStyle*(element: Element) =
   element.computed =
     map[peNone].applyDeclarations(element.parentElement, element, window)
   assert element.computedMap.len == 0
-  for pseudo in peBefore..peAfter:
+  for pseudo in peBefore .. PseudoElement.high:
     if map[pseudo].hasValues() or window.settings.scripting == smApp:
       let computed = map[pseudo].applyDeclarations(element, nil, window)
       element.computedMap.add((pseudo, computed))

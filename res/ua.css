@@ -1,4 +1,4 @@
-:root { display: block !important }
+:root { display: block !important; counter-reset: -cha-link-counter }
 
 area, base, basefont, datalist, head, link, meta, noembed,
 param, rp, script, style, template, title, noframes { display: none }
@@ -118,6 +118,11 @@ a[href] { color: -cha-ansi(blue) }
 }
 @media (prefers-color-scheme: dark) {
 a[href] { color: -cha-ansi(yellow) }
+}
+
+a[href]::-cha-link-marker {
+	counter-increment: -cha-link-counter;
+	content: '[' counter(-cha-link-counter) ']'
 }
 
 video, audio, iframe, frame { color: -cha-ansi(red) }

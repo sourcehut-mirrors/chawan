@@ -21,6 +21,7 @@ referer-from = false
 cookie = false
 meta-refresh = "ask"
 history = true
+mark-links = false
 
 [search]
 wrap = true

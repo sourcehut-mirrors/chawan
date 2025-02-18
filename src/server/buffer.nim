@@ -59,7 +59,8 @@ type
     bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink, bcFindRevNthLink,
     bcFindNextMatch, bcFindPrevMatch, bcGetLines, bcUpdateHover, bcGotoAnchor,
     bcCancel, bcGetTitle, bcSelect, bcClone, bcFindPrevParagraph,
-    bcFindNextParagraph, bcMarkURL, bcToggleImages, bcCheckRefresh, bcOnReshape
+    bcFindNextParagraph, bcMarkURL, bcToggleImages, bcCheckRefresh, bcOnReshape,
+    bcGetLinks
 
   BufferState = enum
     bsLoadingPage, bsLoadingResources, bsLoaded
@@ -130,6 +131,7 @@ type
     headless*: HeadlessMode
     autofocus*: bool
     history*: bool
+    markLinks*: bool
     charsetOverride*: Charset
     metaRefresh*: MetaRefresh
     cookieMode*: CookieMode
@@ -771,7 +773,8 @@ proc maybeReshape(buffer: Buffer) =
   if document == nil or document.documentElement == nil:
     return # not parsed yet, nothing to render
   if document.invalid:
-    buffer.rootBox = document.documentElement.buildTree(buffer.rootBox)
+    buffer.rootBox = document.documentElement.buildTree(buffer.rootBox,
+      buffer.config.markLinks)
     let stack = buffer.rootBox.layout(addr buffer.attrs)
     buffer.lines.render(buffer.bgcolor, stack, addr buffer.attrs, buffer.images)
     document.invalid = false
@@ -1661,6 +1664,17 @@ proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
       if image.y <= w.b and ey >= w.a:
         result.images.add(image)
 
+proc getLinks*(buffer: Buffer): seq[string] {.proxy.} =
+  result = @[]
+  if buffer.document != nil:
+    for element in buffer.window.displayedElements(TAG_A):
+      if element.attrb(satHref):
+        let x = HTMLAnchorElement(element).reinitURL()
+        if x.isSome:
+          result.add($x.get)
+        else:
+          result.add(element.attr(satHref))
+
 proc onReshape*(buffer: Buffer) {.proxy, task.} =
   if buffer.onReshapeImmediately:
     # We got a reshape before the container even asked us for the event.
@@ -1958,10 +1972,9 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   )
   if buffer.config.scripting != smFalse:
     buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
-    if buffer.config.scripting == smApp:
-      buffer.window.maybeRestyle = proc(element: Element) =
-        if element.computed == nil:
-          element.applyStyle()
+  buffer.window.maybeRestyle = proc(element: Element) =
+    if element.computed == nil:
+      element.applyStyle()
   buffer.charset = buffer.charsetStack.pop()
   istream.setBlocking(false)
   buffer.loader.put(InputData(stream: istream))

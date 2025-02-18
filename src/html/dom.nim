@@ -1261,6 +1261,22 @@ iterator elements*(node: Node; tag: set[TagType]): Element {.inline.} =
     if desc.tagType in tag:
       yield desc
 
+iterator displayedElements*(window: Window; tag: TagType): Element
+    {.inline.} =
+  let node = window.document
+  var stack: seq[Node] = @[]
+  for i in countdown(node.childList.high, 0):
+    stack.add(node.childList[i])
+  while stack.len > 0:
+    let node = stack.pop()
+    if node of Element:
+      let element = Element(node)
+      window.maybeRestyle(element)
+      if element.computed{"display"} != DisplayNone:
+        yield element
+        for i in countdown(node.childList.high, 0):
+          stack.add(node.childList[i])
+
 iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for control in form.controls:
     if control of HTMLInputElement:

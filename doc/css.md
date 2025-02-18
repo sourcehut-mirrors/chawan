@@ -128,6 +128,9 @@ function.
   element node or a text node with non-whitespace contents.  (Modeled
   after `-moz-first-node` and `-moz-last-node`.)
 
+* If `buffer.mark-links` is set, the `::-cha-link-marker` pseudo-element
+  will be generated on all anchor elements.
+
 ## Rendering quirks
 
 These are willful violations of the standard, usually made to better fit

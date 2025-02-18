@@ -1736,25 +1736,37 @@ proc setCloneStream*(container: Container; stream: BufStream) =
   # Maybe we have to resume loading. Let's try.
   container.startLoad()
 
-proc onreadline(container: Container; w: Slice[int];
-    handle: (proc(line: SimpleFlexibleLine)); res: GetLinesResult) =
+proc onReadLine(container: Container; w: Slice[int];
+    handle: (proc(line: SimpleFlexibleLine)); res: GetLinesResult):
+    EmptyPromise =
   for line in res.lines:
     handle(line)
   if res.numLines > w.b + 1:
     var w = w
     w.a += 24
     w.b += 24
-    container.iface.getLines(w).then(proc(res: GetLinesResult) =
-      container.onreadline(w, handle, res))
+    return container.iface.getLines(w).then(proc(res: GetLinesResult):
+        EmptyPromise =
+      return container.onReadLine(w, handle, res)
+    )
   else:
     container.numLines = res.numLines
+    return newResolvedPromise()
 
 # Synchronously read all lines in the buffer.
 proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =
   # load succeded
   let w = 0 .. 23
-  container.iface.getLines(w).then(proc(res: GetLinesResult) =
-    container.onreadline(w, handle, res))
+  container.iface.getLines(w).then(proc(res: GetLinesResult): EmptyPromise =
+    return container.onReadLine(w, handle, res)
+  ).then(proc() =
+    if container.config.markLinks:
+      container.iface.getLinks.then(proc(res: seq[string]) =
+        handle(SimpleFlexibleLine())
+        for i, link in res.mypairs:
+          handle(SimpleFlexibleLine(str: "[" & $(i + 1) & "] " & link))
+      )
+  )
   while container.iface.hasPromises:
     # fulfill all promises
     container.handleCommand()

@@ -1753,7 +1753,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol,
     metaRefresh: pager.config.buffer.metaRefresh,
-    cookieMode: pager.config.buffer.cookie
+    cookieMode: pager.config.buffer.cookie,
+    markLinks: pager.config.buffer.markLinks
   )
   loaderConfig = LoaderClientConfig(
     originURL: url,
@@ -1823,6 +1824,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       result.metaRefresh = sc.metaRefresh.get
     if sc.history.isSome:
       result.history = sc.history.get
+    if sc.markLinks.isSome:
+      result.markLinks = sc.markLinks.get
   loaderConfig.filter.allowschemes
     .add(pager.config.external.urimethodmap.imageProtos)
   if result.images:

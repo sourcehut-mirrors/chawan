@@ -69,6 +69,7 @@ type
     n: int32
 
   TreeContext = object
+    markLinks: bool
     quoteLevel: int
     counters: seq[CSSCounter]
     rootProperties: CSSValues
@@ -409,6 +410,11 @@ proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
     frame.addText("]")
   frame.addElementChildren()
 
+proc addAnchorChildren(frame: var TreeFrame) =
+  if frame.ctx.markLinks:
+    frame.addPseudo(peLinkMarker)
+  frame.addElementChildren()
+
 proc addChildren(frame: var TreeFrame) =
   case frame.parent.tagType
   of TAG_INPUT:
@@ -428,6 +434,8 @@ proc addChildren(frame: var TreeFrame) =
   of TAG_OPTION:
     let option = HTMLOptionElement(frame.parent)
     frame.addOptionChildren(option)
+  of TAG_A:
+    frame.addAnchorChildren()
   elif frame.parent.tagType(Namespace.SVG) == TAG_SVG:
     frame.addImage(SVGSVGElement(frame.parent).bitmap)
   else:
@@ -549,7 +557,7 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode):
     )
 
 # Root
-proc buildTree*(element: Element; cached: CSSBox): BlockBox =
+proc buildTree*(element: Element; cached: CSSBox; markLinks: bool): BlockBox =
   if element.computed == nil:
     element.applyStyle()
   let styledNode = StyledNode(
@@ -557,5 +565,8 @@ proc buildTree*(element: Element; cached: CSSBox): BlockBox =
     element: element,
     computed: element.computed
   )
-  var ctx = TreeContext(rootProperties: rootProperties())
+  var ctx = TreeContext(
+    rootProperties: rootProperties(),
+    markLinks: markLinks
+  )
   return BlockBox(ctx.build(cached, styledNode))
