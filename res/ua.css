@@ -122,7 +122,8 @@ a[href] { color: -cha-ansi(yellow) }
 
 a[href]::-cha-link-marker {
 	counter-increment: -cha-link-counter;
-	content: '[' counter(-cha-link-counter) ']'
+	content: '[' counter(-cha-link-counter) ']';
+	white-space: pre
 }
 
 video, audio, iframe, frame { color: -cha-ansi(red) }
