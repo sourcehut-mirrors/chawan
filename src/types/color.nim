@@ -2,7 +2,6 @@ import std/algorithm
 import std/math
 import std/options
 import std/strutils
-import std/tables
 
 import utils/twtstr
 
@@ -302,6 +301,9 @@ func serialize*(color: ARGBColor): string =
 func `$`*(c: ARGBColor): string =
   return c.serialize()
 
+func `$`*(c: RGBColor): string =
+  return c.argb().serialize()
+
 func `$`*(c: CSSColor): string =
   if c.isCell:
     return "-cha-ansi(" & $c.n & ")"
@@ -309,6 +311,12 @@ func `$`*(c: CSSColor): string =
   if c.a != 255:
     return c.serialize()
   return "rgb(" & $c.r & ", " & $c.g & ", " & $c.b & ")"
+
+func `$`*(color: CellColor): string =
+  case color.t
+  of ctNone: "none"
+  of ctRGB: $color.rgb
+  of ctANSI: "-cha-ansi(" & $uint8(color.ansi()) & ")"
 
 # Divide each component by 255, multiply them by n, and discard the fractions.
 # See https://arxiv.org/pdf/2202.02864.pdf for details.
@@ -467,12 +475,6 @@ func toEightBit*(c: RGBColor): ANSIColor =
   #16 + 36 * r + 6 * g + b
   return ANSIColor(uint8(16 + 36 * (r * 5 div 255) + 6 * (g * 5 div 255) +
     (b * 5 div 255)))
-
-template `$`*(color: CellColor): string =
-  case color.t
-  of ctNone: "none"
-  of ctRGB: $color.rgb
-  of ctANSI: "ansi" & $color.n
 
 func parseHexColor*(s: openArray[char]): Option[ARGBColor] =
   for c in s:

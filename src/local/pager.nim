@@ -952,7 +952,7 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
         ls &= s[i]
   oi = i
   ox = x
-  return ls
+  return move(ls)
 
 proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
   var format = Format()
@@ -961,13 +961,24 @@ proc drawBuffer*(pager: Pager; container: Container; ofile: File) =
     var w = -1
     var i = 0
     var s = ""
+    if container.bgcolor != defaultColor and
+        (line.formats.len == 0 or line.formats[0].pos > 0):
+      s.processFormat(pager.term, format, Format(bgcolor: container.bgcolor))
     for f in line.formats:
+      var ff = f.format
+      if ff.bgcolor == defaultColor:
+        ff.bgcolor = container.bgcolor
       let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, f.pos)
       s.processOutputString(pager.term, ls, w)
-      s.processFormat(pager.term, format, f.format)
+      if i < line.str.len:
+        s.processFormat(pager.term, format, ff)
     if i < line.str.len:
       let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, int.high)
       s.processOutputString(pager.term, ls, w)
+    if container.bgcolor != defaultColor and x < container.width:
+      s.processFormat(pager.term, format, Format(bgcolor: container.bgcolor))
+      let spaces = ' '.repeat(container.width - x)
+      s.processOutputString(pager.term, spaces, w)
     s.processFormat(pager.term, format, Format())
     ofile.writeLine(s)
   )

@@ -450,13 +450,14 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
         #TODO bgimage
         # note: this eats the alpha
         state.bgcolor = bgcolor
-      let ix = toInt(offset.x)
-      let iy = toInt(offset.y)
-      let e = offset + box.state.size
-      let iex = toInt(e.x)
-      let iey = toInt(e.y)
-      grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.element,
-        bgcolor0.a, box.render.clipBox)
+      else:
+        let ix = toInt(offset.x)
+        let iy = toInt(offset.y)
+        let e = offset + box.state.size
+        let iex = toInt(e.x)
+        let iey = toInt(e.y)
+        grid.paintBackground(state, bgcolor, ix, iy, iex, iey, box.element,
+          bgcolor0.a, box.render.clipBox)
     if box.computed{"background-image"} != nil:
       # ugly hack for background-image display... TODO actually display images
       const s = "[img]"

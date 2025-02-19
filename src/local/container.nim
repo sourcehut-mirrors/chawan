@@ -141,7 +141,7 @@ type
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig
     iface*: BufferInterface
-    width {.jsget.}: int
+    width* {.jsget.}: int
     height {.jsget.}: int
     title: string # used in status msg
     hoverText: array[HoverType, string]
@@ -524,7 +524,7 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
     container.lineshift = w.a
     for y in 0 ..< min(res.lines.len, w.len):
       container.lines[y] = res.lines[y]
-    var isBgNew = container.bgcolor != res.bgcolor
+    let isBgNew = container.bgcolor != res.bgcolor
     if isBgNew:
       container.bgcolor = res.bgcolor
     if res.numLines != container.numLines:
@@ -1739,6 +1739,7 @@ proc setCloneStream*(container: Container; stream: BufStream) =
 proc onReadLine(container: Container; w: Slice[int];
     handle: (proc(line: SimpleFlexibleLine)); res: GetLinesResult):
     EmptyPromise =
+  container.bgcolor = res.bgcolor
   for line in res.lines:
     handle(line)
   if res.numLines > w.b + 1:
@@ -1761,6 +1762,8 @@ proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)) =
     return container.onReadLine(w, handle, res)
   ).then(proc() =
     if container.config.markLinks:
+      # avoid coloring link markers
+      container.bgcolor = defaultColor
       container.iface.getLinks.then(proc(res: seq[string]) =
         handle(SimpleFlexibleLine())
         for i, link in res.mypairs:
