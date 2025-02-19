@@ -6,6 +6,7 @@
 const x = document.getElementById("x");
 assertEquals(x.localName, "div");
 assertEquals(x.tagName, "DIV");
+assertEquals(x.name, undefined);
 assertEquals(x.classList.item(-1), null);
 assertEquals(x.classList[-1], undefined);
 assertEquals(x.classList[1], "b");

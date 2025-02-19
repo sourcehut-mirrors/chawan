@@ -278,7 +278,7 @@ type
     selfDepends: set[DependencyType]
     localName* {.jsget.}: CAtom
     id* {.jsget.}: CAtom
-    name {.jsget.}: CAtom
+    name: CAtom
     elIndex*: int # like index, but for elements only.
     classList* {.jsget.}: DOMTokenList
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
@@ -455,6 +455,10 @@ type
 
   HTMLMetaElement = ref object of HTMLElement
 
+  HTMLDetailsElement = ref object of HTMLElement
+
+  HTMLFrameElement = ref object of HTMLElement
+
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
@@ -498,6 +502,8 @@ jsDestructor(HTMLTableCaptionElement)
 jsDestructor(HTMLTableRowElement)
 jsDestructor(HTMLTableSectionElement)
 jsDestructor(HTMLMetaElement)
+jsDestructor(HTMLDetailsElement)
+jsDestructor(HTMLFrameElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -1051,7 +1057,10 @@ const ReflectTable0 = [
   makes("href", TAG_LINK),
   makes("value", TAG_BUTTON),
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
-  makes("name", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META, TAG_IFRAME),
+  makes("name", TAG_A, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META,
+    TAG_IFRAME, TAG_FRAME, TAG_IMG, TAG_OBJECT, TAG_PARAM, TAG_OBJECT, TAG_MAP,
+    TAG_FORM, TAG_OUTPUT, TAG_FIELDSET, TAG_DETAILS),
+  makes("open", TAG_DETAILS),
   makeb("novalidate", "noValidate", TAG_FORM),
   makeb("selected", "defaultSelected", TAG_OPTION),
   makes("rel", TAG_A, TAG_LINK, TAG_LABEL),
@@ -1070,7 +1079,7 @@ const ReflectTable0 = [
   makeul("width", TAG_CANVAS, 300u32),
   makeul("height", TAG_CANVAS, 150u32),
   makes("alt", TAG_IMG),
-  makes("src", TAG_IMG, TAG_SCRIPT, TAG_IFRAME),
+  makes("src", TAG_IMG, TAG_SCRIPT, TAG_IFRAME, TAG_FRAME, TAG_INPUT),
   makes("srcset", TAG_IMG),
   makes("sizes", TAG_IMG),
   #TODO can we add crossOrigin here?
@@ -3690,6 +3699,10 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     HTMLMetaElement()
   of TAG_IFRAME:
     HTMLIFrameElement()
+  of TAG_DETAILS:
+    HTMLDetailsElement()
+  of TAG_FRAME:
+    HTMLFrameElement()
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
@@ -6072,6 +6085,8 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLTableRowElement, TAG_TR)
   register(HTMLTableSectionElement, {TAG_TBODY, TAG_THEAD, TAG_TFOOT})
   register(HTMLMetaElement, TAG_META)
+  register(HTMLDetailsElement, TAG_DETAILS)
+  register(HTMLFrameElement, TAG_FRAME)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 
