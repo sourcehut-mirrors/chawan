@@ -283,28 +283,40 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValue): JSValue =
     JS_SetIsHTMLDDA(ctx, jsObj)
   return jsObj
 
+type NonInheritable = (object and not RootObj) or (ref object and not RootRef)
+
 # Get a unique pointer for each type.
-proc getTypePtr*[T](x: T): pointer =
-  when T is RootRef:
-    # I'm so sorry.
-    # (This dereferences the object's first member, m_type. Probably.)
-    return cast[ptr pointer](x)[]
-  elif T is RootObj:
-    static:
-      error("Please make it var")
-  else:
-    return getTypeInfo(x)
+template getTypePtr*[T: NonInheritable](x: T): pointer =
+  # This only seems to work for non-inheritable objects.
+  getTypeInfo(x)
 
-proc getTypePtr*[T: RootObj](x: var T): pointer =
-  return cast[ptr pointer](addr x)[]
+template getTypePtr*[T: RootObj](x: T): pointer {.error:
+    "Please make it var".} =
+  discard
 
-func getTypePtr*(t: typedesc[ref object]): pointer =
-  var x = t()
-  return getTypePtr(x)
+template getTypePtr*(x: RootRef): pointer =
+  # Dereference the object's first member, m_type.
+  cast[ptr pointer](x)[]
 
-func getTypePtr*(t: type): pointer =
+template getTypePtr*[T: RootObj](x: var T): pointer =
+  # See above.
+  cast[ptr pointer](addr x)[]
+
+# For some reason, getTypeInfo for ref object of RootObj returns a
+# different pointer from m_type.
+# To make matters even more confusing, getTypeInfo on non-inherited ref
+# object returns a different type than on the same non-ref object.
+template getTypePtr*[T: RootRef](t: typedesc[T]): pointer =
+  var x: typeof(t()[])
+  getTypeInfo(x)
+
+template getTypePtr*[T: object](t: typedesc[ref T]): pointer =
   var x: t
-  return getTypePtr(x)
+  getTypeInfo(x)
+
+template getTypePtr*[T: object](t: typedesc[T]): pointer =
+  var x: t
+  getTypeInfo(x)
 
 proc toJSRefObj(ctx: JSContext; obj: ref object): JSValue =
   let p = cast[pointer](obj)
