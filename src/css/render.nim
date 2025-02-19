@@ -424,7 +424,7 @@ proc inheritClipBox(box: BlockBox; parent: CSSBox) =
       clipBox.send.x = min(offset.x + box.state.size.w, clipBox.send.x)
     else: # scroll like
       clipBox.start.x = max(min(offset.x, clipBox.start.x), 0)
-      clipBox.send.x = max(offset.x + box.state.size.w, clipBox.start.x)
+      clipBox.send.x = max(offset.x + box.state.size.w, clipBox.send.x)
     if overflowY in OverflowHiddenLike:
       clipBox.start.y = max(offset.y, clipBox.start.y)
       clipBox.send.y = min(offset.y + box.state.size.h, clipBox.send.y)
@@ -435,9 +435,9 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
   if box.positioned and not pass2:
     return
   let offset = offset + box.state.offset
-  box.render.offset = offset
-  box.render.positioned = true
   if not pass2:
+    box.render.offset = offset
+    box.render.positioned = true
     box.inheritClipBox(box.parent)
   let opacity = box.computed{"opacity"}
   if box.computed{"visibility"} == VisibilityVisible and opacity != 0:
@@ -493,7 +493,8 @@ proc resolveBlockParent(box: CSSBox): BlockBox =
       break
     it = it.parent
   var toPosition: seq[BlockBox] = @[]
-  let findPositioned = box.computed{"position"} in PositionAbsoluteFixed
+  let findPositioned = box.positioned and
+    box.computed{"position"} in PositionAbsoluteFixed
   var it2 {.cursor.} = it
   var parent {.cursor.}: CSSBox = nil
   while it2 != nil:
@@ -516,7 +517,11 @@ proc resolveBlockParent(box: CSSBox): BlockBox =
     parent = it
   if box of BlockBox:
     let box = BlockBox(box)
-    box.render.clipBox = DefaultClipBox
+    box.render = BoxRenderState(
+      positioned: true,
+      offset: offset + box.state.offset,
+      clipBox: DefaultClipBox
+    )
     if findPositioned:
       box.inheritClipBox(it2)
     else:
