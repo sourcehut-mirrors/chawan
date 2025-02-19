@@ -24,6 +24,5 @@ proc newPerformance*(scripting: ScriptingMode): Performance =
 proc now(performance: Performance): float64 {.jsfunc.} =
   return getTime(performance.scripting) - performance.timeOrigin
 
-proc addPerformanceModule*(ctx: JSContext) =
-  let eventTargetCID = ctx.getClass("EventTarget")
+proc addPerformanceModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.registerType(Performance, parent = eventTargetCID)

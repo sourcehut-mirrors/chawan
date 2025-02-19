@@ -27,7 +27,6 @@ type
     jsvFunction = "Function"
 
   JSContextOpaque* = ref object
-    creg*: Table[cstring, JSClassID]
     typemap*: Table[pointer, JSClassID]
     ctors*: seq[JSValue] # JSClassID -> JSValue
     parents*: seq[JSClassID] # JSClassID -> JSClassID

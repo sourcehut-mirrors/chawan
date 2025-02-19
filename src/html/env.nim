@@ -356,9 +356,9 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   response.close()
   return ctx.finishLoadModule(source, moduleName)
 
-proc addWindowModule*(ctx: JSContext) =
-  ctx.addEventModule()
-  let eventTargetCID = ctx.getClass("EventTarget")
+proc addWindowModule*(ctx: JSContext):
+    tuple[eventCID, eventTargetCID: JSClassID] =
+  let (eventCID, eventTargetCID) = ctx.addEventModule()
   const getset = [TabGetSet(
     name: "onload",
     get: eventReflectGet,
@@ -368,12 +368,14 @@ proc addWindowModule*(ctx: JSContext) =
   ctx.registerType(Window, parent = eventTargetCID, asglobal = true,
     hasExtraGetSet = true, extraGetSet = getset)
   ctx.registerType(MediaQueryList)
+  return (eventCID, eventTargetCID)
 
-proc addWindowModule2*(ctx: JSContext) =
-  ctx.addEventModule()
-  let eventTargetCID = ctx.getClass("EventTarget")
-  ctx.registerType(Window, parent = eventTargetCID, asglobal = true,
-    globalparent = true)
+proc addWindowModule2*(ctx: JSContext):
+    tuple[windowCID, eventCID, eventTargetCID: JSClassID] =
+  let (eventCID, eventTargetCID) = ctx.addEventModule()
+  let windowCID = ctx.registerType(Window, parent = eventTargetCID,
+    asglobal = true, globalparent = true)
+  return (windowCID, eventCID, eventTargetCID)
 
 proc evalJSFree(opaque: RootRef; src, file: string) =
   let window = Window(opaque)
@@ -402,23 +404,23 @@ proc addScripting*(window: Window) =
     window.scriptAttrsp = window.attrsp
   else:
     window.scriptAttrsp = unsafeAddr dummyAttrs
-  ctx.addWindowModule()
+  let (eventCID, eventTargetCID) = ctx.addWindowModule()
   ctx.setGlobal(window)
   ctx.addDOMExceptionModule()
   ctx.addConsoleModule()
   ctx.addNavigatorModule()
-  ctx.addDOMModule()
+  ctx.addDOMModule(eventTargetCID)
   ctx.addURLModule()
   ctx.addHTMLModule()
   ctx.addIntlModule()
   ctx.addBlobModule()
   ctx.addFormDataModule()
-  ctx.addXMLHttpRequestModule()
+  ctx.addXMLHttpRequestModule(eventCID, eventTargetCID)
   ctx.addHeadersModule()
   ctx.addRequestModule()
   ctx.addResponseModule()
   ctx.addEncodingModule()
-  ctx.addPerformanceModule()
+  ctx.addPerformanceModule(eventTargetCID)
 
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     attrsp: ptr WindowAttributes; loader: FileLoader; url: URL;

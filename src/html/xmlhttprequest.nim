@@ -481,9 +481,8 @@ func xhretGetSet(): seq[TabGetSet] =
       magic: int16(i)
     ))
 
-proc addXMLHttpRequestModule*(ctx: JSContext) =
-  let eventTargetCID = ctx.getClass("EventTarget")
-  let eventCID = ctx.getClass("Event")
+proc addXMLHttpRequestModule*(ctx: JSContext;
+    eventCID, eventTargetCID: JSClassID) =
   const getset0 = xhretGetSet()
   let xhretCID = ctx.registerType(XMLHttpRequestEventTarget, eventTargetCID,
     hasExtraGetSet = true, extraGetSet = getset0)

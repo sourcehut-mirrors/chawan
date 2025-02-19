@@ -4351,11 +4351,9 @@ const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
 proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
     {.cdecl.} =
   let entry = ReflectTable[uint16(magic)]
-  let op = this.getOpaque()
-  if unlikely(not ctx.isInstanceOf(this, "Element") or op == nil):
-    return JS_ThrowTypeError(ctx,
-      "Reflected getter called on a value that is not an element")
-  let element = cast[Element](op)
+  var element: Element
+  if ctx.fromJS(this, element).isNone:
+    return JS_EXCEPTION
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
@@ -4368,13 +4366,10 @@ proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
 
 proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
     {.cdecl.} =
-  if unlikely(not ctx.isInstanceOf(this, "Element")):
-    return JS_ThrowTypeError(ctx,
-      "Reflected getter called on a value that is not an element")
+  var element: Element
+  if ctx.fromJS(this, element).isNone:
+    return JS_EXCEPTION
   let entry = ReflectTable[uint16(magic)]
-  let op = this.getOpaque()
-  assert op != nil
-  let element = cast[Element](op)
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
@@ -6080,8 +6075,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 
-proc addDOMModule*(ctx: JSContext) =
-  let eventTargetCID = ctx.getClass("EventTarget")
+proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
   ctx.defineConsts(nodeCID, NodeType)
   let nodeListCID = ctx.registerType(NodeList)

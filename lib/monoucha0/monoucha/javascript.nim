@@ -191,19 +191,6 @@ proc newJSContext*(rt: JSRuntime): JSContext =
   JS_SetContextOpaque(ctx, cast[pointer](opaque))
   return ctx
 
-func getClass*(ctx: JSContext; class: cstring): JSClassID =
-  ## Get the class ID of the registered class `class'.
-  ## Note: this uses the Nim type's name, **not** the JS type's name.
-  try:
-    return ctx.getOpaque().creg[class]
-  except KeyError:
-    raise newException(Defect, "Class does not exist")
-
-func hasClass*(ctx: JSContext; class: cstring): bool =
-  ## Check if `class' is registered.
-  ## Note: this uses the Nim type's name, **not** the JS type's name.
-  return class in ctx.getOpaque().creg
-
 proc free*(ctx: JSContext) =
   ## Free the JSContext and associated resources.
   ## Note: this is not an alias of `JS_FreeContext`; `free` also frees various
@@ -311,8 +298,8 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
       0, ctx.getOpaque().ctors[parent])
   return JS_NewCFunction2(ctx, ctor, className, 0, JS_CFUNC_constructor, 0)
 
-func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
-    nimt: pointer; ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
+func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
+    ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
     asglobal, nointerface, ishtmldda: bool; finalizer: JSFinalizerFunction;
     namespace: JSValue; errid: Opt[JSErrorEnum];
     unforgeable, staticfuns: JSFunctionList): JSClassID
@@ -327,7 +314,6 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; tname: cstring;
       $cdef.class_name)
   ctxOpaque.typemap[nimt] = result
   rtOpaque.inverseTypemap[result] = nimt
-  ctxOpaque.creg[tname] = result
   if ctxOpaque.parents.len <= int(result):
     ctxOpaque.parents.setLen(int(result) + 1)
   ctxOpaque.parents[result] = parent
@@ -1509,12 +1495,11 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   endstmts.bindEndStmts(info)
   let tabList = info.tabList
   let finName = info.finName
-  let tname = info.tname
   let unforgeable = info.tabUnforgeable
   let staticfuns = info.tabStatic
   let global = asglobal and not globalparent
   endstmts.add(quote do:
-    `ctx`.newJSClass(classDef, `tname`, getTypePtr(`t`), `sctr`, `tabList`,
+    `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, `tabList`,
       `parent`, `global`, `nointerface`, `ishtmldda`, `finName`, `namespace`,
       `errid`, `unforgeable`, `staticfuns`)
   )

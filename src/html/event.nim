@@ -523,7 +523,8 @@ proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event):
   event.isTrusted = false
   return ok(ctx.dispatch(this, event))
 
-proc addEventModule*(ctx: JSContext) =
+proc addEventModule*(ctx: JSContext):
+    tuple[eventCID, eventTargetCID: JSClassID] =
   let eventCID = ctx.registerType(Event)
   ctx.registerType(CustomEvent, parent = eventCID)
   ctx.registerType(MessageEvent, parent = eventCID)
@@ -531,4 +532,5 @@ proc addEventModule*(ctx: JSContext) =
   ctx.registerType(MouseEvent, parent = uiEventCID)
   ctx.registerType(InputEvent, parent = uiEventCID)
   ctx.defineConsts(eventCID, EventPhase)
-  ctx.registerType(EventTarget)
+  let eventTargetCID = ctx.registerType(EventTarget)
+  return (eventCID, eventTargetCID)

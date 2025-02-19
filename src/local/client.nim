@@ -133,18 +133,18 @@ proc sleep(client: Client; millis: int) {.jsfunc.} =
 func line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit
 
-proc addJSModules(client: Client; ctx: JSContext) =
-  ctx.addWindowModule2()
+proc addJSModules(client: Client; ctx: JSContext): JSClassID =
+  let (windowCID, eventCID, eventTargetCID) = ctx.addWindowModule2()
   ctx.addDOMExceptionModule()
   ctx.addConsoleModule()
   ctx.addNavigatorModule()
-  ctx.addDOMModule()
+  ctx.addDOMModule(eventTargetCID)
   ctx.addURLModule()
   ctx.addHTMLModule()
   ctx.addIntlModule()
   ctx.addBlobModule()
   ctx.addFormDataModule()
-  ctx.addXMLHttpRequestModule()
+  ctx.addXMLHttpRequestModule(eventCID, eventTargetCID)
   ctx.addHeadersModule()
   ctx.addRequestModule()
   ctx.addResponseModule()
@@ -154,6 +154,7 @@ proc addJSModules(client: Client; ctx: JSContext) =
   ctx.addPagerModule()
   ctx.addContainerModule()
   ctx.addSelectModule()
+  return windowCID
 
 proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     jsctx: JSContext; warnings: seq[string]; urandom: PosixStream;
@@ -177,7 +178,6 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
   jsctx.definePropertyE(global, "cmd", config.cmd.jsObj)
   JS_FreeValue(jsctx, global)
   config.cmd.jsObj = JS_NULL
-  client.addJSModules(jsctx)
-  let windowCID = jsctx.getClass("Window")
+  let windowCID = client.addJSModules(jsctx)
   jsctx.registerType(Client, asglobal = true, parent = windowCID)
   return client

@@ -7,6 +7,7 @@ import jsopaque
 import jstypes
 import optshim
 import quickjs
+import tojs
 
 proc fromJS*(ctx: JSContext; val: JSValue; res: out string): Opt[void]
 proc fromJS*(ctx: JSContext; val: JSValue; res: out int32): Opt[void]
@@ -31,10 +32,9 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: out JSArrayBufferView):
   Opt[void]
 proc fromJS*(ctx: JSContext; val: JSValue; res: out JSValue): Opt[void]
 
-func isInstanceOf*(ctx: JSContext; val: JSValue; class: cstring): bool =
+func isInstanceOf*(ctx: JSContext; val: JSValue; tclassid: JSClassID): bool =
   let ctxOpaque = ctx.getOpaque()
   var classid = JS_GetClassID(val)
-  let tclassid = ctxOpaque.creg.getOrDefault(class, JS_CLASS_OBJECT)
   if classid == JS_CLASS_OBJECT:
     let p0 = JS_VALUE_GET_PTR(ctxOpaque.global)
     let p1 = JS_VALUE_GET_PTR(val)
@@ -328,7 +328,7 @@ proc fromJS*[T: enum](ctx: JSContext; val: JSValue; res: out T): Opt[void] =
   res = default(T)
   return err()
 
-proc fromJS(ctx: JSContext; val: JSValue; t: cstring; res: out pointer):
+proc fromJS(ctx: JSContext; val: JSValue; nimt: pointer; res: out pointer):
     Opt[void] =
   if not JS_IsObject(val):
     if not JS_IsException(val):
@@ -336,25 +336,34 @@ proc fromJS(ctx: JSContext; val: JSValue; t: cstring; res: out pointer):
     res = nil
     return err()
   let p = JS_GetOpaque(val, JS_GetClassID(val))
-  if p == nil or not ctx.isInstanceOf(val, t):
-    JS_ThrowTypeError(ctx, "%s expected", t)
+  let ctxOpaque = ctx.getOpaque()
+  let tclassid = ctxOpaque.typemap.getOrDefault(nimt, JS_CLASS_OBJECT)
+  if p == nil or not ctx.isInstanceOf(val, tclassid):
     res = nil
+    let proto = JS_GetClassProto(ctx, tclassid)
+    let name = JS_GetProperty(ctx, proto, ctxOpaque.symRefs[jsyToStringTag])
+    JS_FreeValue(ctx, proto)
+    defer: JS_FreeValue(ctx, name)
+    var s: string
+    if ctx.fromJS(name, s).isNone:
+      return err()
+    JS_ThrowTypeError(ctx, "%s expected", cstring(s))
     return err()
   res = p
   return ok()
 
 proc fromJS*[T](ctx: JSContext; val: JSValue; res: out ptr T): Opt[void] =
+  let nimt = getTypePtr(T)
   var x: pointer
-  const tname = cstring($T)
-  ?ctx.fromJS(val, tname, x)
+  ?ctx.fromJS(val, nimt, x)
   res = cast[ptr T](x)
   return ok()
 
 proc fromJS*[T: ref object](ctx: JSContext; val: JSValue; res: out T):
     Opt[void] =
+  let nimt = getTypePtr(T)
   var x: pointer
-  const tname = cstring($T)
-  ?ctx.fromJS(val, tname, x)
+  ?ctx.fromJS(val, nimt, x)
   res = cast[T](x)
   return ok()
 
