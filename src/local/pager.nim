@@ -164,7 +164,7 @@ type
     precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
     pressed: tuple[col, row: int]
     refreshAllowed: HashSet[string]
-    regex: Opt[Regex]
+    regex: Option[Regex]
     reverseSearch: bool
     scommand: string
     status: Surface
@@ -335,6 +335,20 @@ proc searchPrev(pager: Pager; n = 1) {.jsfunc.} =
     pager.container.markPos()
   else:
     pager.alert("No previous regular expression")
+
+proc setSearchRegex(pager: Pager; s: string; flags0 = ""; reverse = false):
+    JSResult[void] {.jsfunc.} =
+  var flags = {LRE_FLAG_GLOBAL}
+  for c in flags0:
+    let x = strictParseEnum[LREFlag]($c)
+    if x.isNone:
+      return errTypeError("invalid flag " & c)
+  let re = compileRegex(s, flags)
+  if re.isNone:
+    return errTypeError(re.error)
+  pager.regex = some(re.get)
+  pager.reverseSearch = reverse
+  return ok()
 
 proc getHist(pager: Pager; mode: LineMode): History =
   if pager.lineHist[mode] == nil:
@@ -2086,11 +2100,11 @@ proc commandMode(pager: Pager; val: bool) {.jsfset.} =
   if val:
     pager.command()
 
-proc checkRegex(pager: Pager; regex: Result[Regex, string]): Opt[Regex] =
+proc checkRegex(pager: Pager; regex: Result[Regex, string]): Option[Regex] =
   if regex.isNone:
     pager.alert("Invalid regex: " & regex.error)
-    return err()
-  return ok(regex.get)
+    return none(Regex)
+  return some(regex.get)
 
 proc compileSearchRegex(pager: Pager; s: string): Result[Regex, string] =
   return compileSearchRegex(s, pager.config.search.ignoreCase)
