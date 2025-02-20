@@ -105,12 +105,20 @@ proc height(ctx: JSContext; screen: var Screen): int {.jsfget.} =
 proc colorDepth(screen: var Screen): int {.jsfget.} = 24
 proc pixelDepth(screen: var Screen): int {.jsfget.} = screen.colorDepth
 
+proc setLocation(window: Window; s: string): Err[JSError]
+
 # History
 func length(history: var History): uint32 {.jsfget.} = 1
 func state(history: var History): JSValue {.jsfget.} = JS_NULL
 func go(history: var History) {.jsfunc.} = discard
 func back(history: var History) {.jsfunc.} = discard
 func forward(history: var History) {.jsfunc.} = discard
+proc pushState(ctx: JSContext; history: var History;
+    data, unused: JSValue; s: string): JSResult[void] {.jsfunc.} =
+  let window = ctx.getWindow()
+  if window != nil:
+    return window.setLocation(s)
+  return ok()
 
 # Storage
 func find(this: Storage; key: string): int =
