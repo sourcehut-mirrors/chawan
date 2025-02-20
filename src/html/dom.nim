@@ -551,6 +551,7 @@ proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc remove*(node: Node)
+proc replace*(parent, child, node: Node): Err[DOMException]
 proc replaceAll(parent: Node; s: sink string)
 proc attrl(element: Element; name: StaticAtom; value: int32)
 proc attrul(element: Element; name: StaticAtom; value: uint32)
@@ -3242,6 +3243,25 @@ func jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
       childonly = false
     )
   return this.cachedOptions
+
+proc setter(ctx: JSContext; this: HTMLOptionsCollection; u: uint32;
+    value: Option[HTMLOptionElement]): DOMResult[void] {.jssetprop.} =
+  let element = this.item(u)
+  if value.isNone:
+    if element != nil:
+      element.remove()
+    return ok()
+  let value = value.get
+  let parent = this.root
+  if element != nil:
+    ?parent.replace(element, value)
+  else:
+    let L = uint32(this.getLength())
+    let document = parent.document
+    for i in L ..< u:
+      parent.append(document.newHTMLElement(TAG_OPTION))
+    parent.append(value)
+  return ok()
 
 proc length(this: HTMLSelectElement): int {.jsfget.} =
   return this.jsOptions.getLength()
