@@ -27,8 +27,6 @@ the search path accomodates XDG basedirs as well:
 config file specified through \-C switch \-> use that
 .IP "2." 3
 \f[CR]$CHA_DIR\f[R] is set \-> use \f[CR]$CHA_DIR\f[R]/config.toml
-(\f[CR]$CHA_CONFIG_DIR\f[R] is a deprecated alias for
-\f[CR]$CHA_DIR\f[R].)
 .IP "3." 3
 \f[CR]$XDG_CONFIG_HOME\f[R] is set \-> use
 \f[CR]$XDG_CONFIG_HOME\f[R]/chawan/config.toml
@@ -82,12 +80,21 @@ T}
 T{
 headless
 T}@T{
-boolean
+boolean / \[lq]dump\[rq]
 T}@T{
 false
 T}@T{
-Whether Chawan should always start in headless mode.
-Automatically enabled when Chawan is called with \-r.
+When set to true or \[lq]dump\[rq], the browser does not take input;
+instead, it prints a rendered version of all buffers in order, then
+exits.
+The difference between \f[CR]true\f[R] and \[lq]dump\[rq] is that
+\f[CR]true\f[R] first waits for all scripts and network requests to run
+to completion, while \[lq]dump\[rq] does not.
+This means that \f[CR]true\f[R] may never exit when scripting is enabled
+(e.g.\ if a script sets \f[CR]setInterval\f[R].)
+Piping \f[CR]cha\f[R] to an external program or passing the
+\f[CR]\-d\f[R] switch has the same effect as setting this option to
+\[lq]dump\[rq].
 T}@T{
 T}
 T{
@@ -239,6 +246,17 @@ T}@T{
 true
 T}@T{
 Whether or not browsing history should be saved to the disk.
+T}@T{
+T}
+T{
+mark\-links
+T}@T{
+boolean
+T}@T{
+false
+T}@T{
+Add numeric markers before links.
+In headless/dump mode, this also prints a list of URLs after the page.
 T}@T{
 T}
 .TE
@@ -1245,6 +1263,16 @@ Whether or not browsing history should be saved to the disk for this
 URL.
 T}@T{
 T}
+T{
+mark\-links
+T}@T{
+boolean
+T}@T{
+\f[CR]buffer.history\f[R]
+T}@T{
+Add numeric markers before links.
+T}@T{
+T}
 .TE
 .SS Stylesheets
 User stylesheets are to be placed in the \f[CR][css]\f[R] section.
@@ -2024,15 +2052,15 @@ characters, or any single non\-alphanumeric character.
 .EE
 .SS Appendix
 .SS Regex handling
-Regular expressions are currently handled using libregexp which is
-included in QuickJS.
+Regular expressions are currently handled using the libregexp library
+from QuickJS.
 This means that all regular expressions work as in JavaScript.
 .PP
 There are two different modes of regex preprocessing in Chawan:
-\[lq]search\[rq] mode, and \[lq]match\[rq] mode.
-\[lq]match\[rq] mode is used for configurations (meaning in all values
-in this document described as \[lq]regex\[rq]).
-\[lq]search\[rq] mode is used for the on\-page search function (using
+\[lq]search\[rq] mode and \[lq]match\[rq] mode.
+Match mode is used for configurations (meaning in all values in this
+document described as \[lq]regex\[rq]).
+Search mode is used for the on\-page search function (using
 searchForward/isearchForward etc.)
 .SS Match mode
 Regular expressions are assumed to be exact matches, except when they
@@ -2055,7 +2083,8 @@ For on\-page search, the above transformations do not apply; the search
 \f[CR]/abcd\f[R] searches for the string \f[CR]abcd\f[R] inside all
 lines.
 .PP
-\[lq]Search\[rq] mode also has some other convenience transformations:
+Search mode also has some other convenience transformations (these do
+not work in match mode):
 .IP \[bu] 2
 The string \f[CR]\[rs]c\f[R] (backslash + lower\-case c) inside a
 search\-mode regex enables case\-insensitive matching.
@@ -2068,10 +2097,11 @@ default.)
 \f[CR]\[rs]<\f[R] and \f[CR]\[rs]>\f[R] is converted to
 \f[CR]\[rs]b\f[R] (as in vi, grep, etc.)
 .PP
-Note that none of these work in \[lq]match\[rq] mode.
+Like match mode, search mode operates on lines.
+This means that search patterns do not match text wrapped over multiple
+lines.
 .SS Path handling
-Rules for path handling are similar to how strings in the shell are
-handled.
+Rules for path handling are similar to how the shell handles strings.
 .IP \[bu] 2
 Tilde\-expansion is used to determine the user\[cq]s home directory.
 So e.g.\ \f[CR]\[ti]/whatever\f[R] works.
@@ -2108,12 +2138,13 @@ Big words
 A w3m word is a sequence of alphanumeric characters.
 Symbols are treated in the same way as whitespace.
 .SS vi word
-A vi word is a sequence of alphanumeric characters, OR a sequence of
-symbols.
+A vi word is a sequence of characters in the same character category.
+Currently, character categories are alphanumeric characters, symbols,
+han letters, hiragana, katakana, and hangul.
 .PP
-vi words may be separated by whitespace; however, symbolic and
-alphanumeric vi words do not have to be whitespace\-separated.
-e.g.\ following character sequence contains two words:
+vi words may be separated by whitespace; however, vi words from separate
+categories do not have to be whitespace\-separated.
+e.g.\ the following character sequence contains two words:
 .IP
 .EX
 hello[]+{}\[at]\[ga]!

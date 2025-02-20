@@ -33,9 +33,13 @@ clear
 color (hex values and functions \f[CR]rgb\f[R], \f[CR]rgba\f[R],
 \f[CR]hsl\f[R], \f[CR]hsla\f[R])
 .IP \[bu] 2
-content
+content (string, (no\-)open/close\-quote, counter())
+.IP \[bu] 2
+counter\-increment
 .IP \[bu] 2
 counter\-reset
+.IP \[bu] 2
+counter\-set
 .IP \[bu] 2
 display (\f[CR]block\f[R], \f[CR]inline\-block\f[R],
 \f[CR]list\-item\f[R], \f[CR]table\f[R], \f[CR]table\-*\f[R],
@@ -123,7 +127,7 @@ width
 .IP \[bu] 2
 word\-break
 .IP \[bu] 2
-z\-index (negative values are not respected yet)
+z\-index
 .PP
 Shorthands:
 .IP \[bu] 2
@@ -194,6 +198,10 @@ node that is either an element node or a text node with non\-whitespace
 contents.
 (Modeled after \f[CR]\-moz\-first\-node\f[R] and
 \f[CR]\-moz\-last\-node\f[R].)
+.IP \[bu] 2
+If \f[CR]buffer.mark\-links\f[R] is set, the
+\f[CR]::\-cha\-link\-marker\f[R] pseudo\-element will be generated on
+all anchor elements.
 .SS Rendering quirks
 These are willful violations of the standard, usually made to better fit
 the display model inherent to projecting the web to a cell\-based
@@ -219,8 +227,9 @@ The lengths \f[CR]1em\f[R] and \f[CR]1ch\f[R] compute to the cell height
 and cell width respectively.
 .PP
 In outer inline boxes (\f[CR]inline\-block\f[R],
-\f[CR]inline\-flex\f[R]), margins and padding that are smaller than one
-cell (on the respective axis) are ignored.
+\f[CR]inline\-flex\f[R]) and \f[CR]list\-item\f[R] boxes, margins and
+padding that are smaller than one cell (on the respective axis) are
+ignored.
 This does not apply to blockified inline boxes.
 .PP
 When calculating clip boxes (\f[CR]overflow: hidden\f[R] or

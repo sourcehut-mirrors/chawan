@@ -24,7 +24,6 @@ the search path accomodates XDG basedirs as well:
 
 1. config file specified through -C switch -> use that
 2. `$CHA_DIR` is set -> use `$CHA_DIR`/config.toml
-   (`$CHA_CONFIG_DIR` is a deprecated alias for `$CHA_DIR`.)
 3. `$XDG_CONFIG_HOME` is set -> use `$XDG_CONFIG_HOME`/chawan/config.toml
 4. ~/.config/chawan/config.toml exists -> use that
 5. ~/.chawan/config.toml exists -> use that
@@ -102,7 +101,7 @@ for all scripts and network requests to run to completion, while "dump"
 does not.  This means that `true` may never exit when scripting is
 enabled (e.g. if a script sets `setInterval`.)<br>
 Piping `cha` to an external program or passing the `-d` switch has the
-same effect as passing this option.
+same effect as setting this option to "dump".
 </td>
 </tr>
 
@@ -1632,18 +1631,20 @@ character. (This means that e.g. `https://` consists of four words: `https`,
 
 ### Regex handling
 
-Regular expressions are currently handled using libregexp which is included in
-QuickJS. This means that all regular expressions work as in JavaScript.
+Regular expressions are currently handled using the libregexp library
+from QuickJS.  This means that all regular expressions work as in
+JavaScript.
 
-There are two different modes of regex preprocessing in Chawan: "search" mode,
-and "match" mode. "match" mode is used for configurations (meaning in all values
-in this document described as "regex"). "search" mode is used for the on-page
-search function (using searchForward/isearchForward etc.)
+There are two different modes of regex preprocessing in Chawan: "search"
+mode and "match" mode.  Match mode is used for configurations (meaning
+in all values in this document described as "regex").  Search mode is
+used for the on-page search function (using searchForward/isearchForward
+etc.)
 
 #### Match mode
 
-Regular expressions are assumed to be exact matches, except when they start
-with a caret (^) sign or end with an unescaped dollar ($) sign.
+Regular expressions are assumed to be exact matches, except when they
+start with a caret (^) sign or end with an unescaped dollar ($) sign.
 
 In other words, the following transformations occur:
 
@@ -1658,22 +1659,25 @@ Match mode has no way to toggle JavaScript regex flags like `i`.
 
 #### Search mode
 
-For on-page search, the above transformations do not apply; the search `/abcd`
-searches for the string `abcd` inside all lines.
+For on-page search, the above transformations do not apply; the search
+`/abcd` searches for the string `abcd` inside all lines.
 
-"Search" mode also has some other convenience transformations:
+Search mode also has some other convenience transformations (these do
+not work in match mode):
 
-* The string `\c` (backslash + lower-case c) inside a search-mode regex enables
-  case-insensitive matching.
-* Conversely, `\C` (backslash + capital C) disables case-insensitive matching.
-  (Useful if you have `ignore-case` set to true, which is the default.)
+* The string `\c` (backslash + lower-case c) inside a search-mode regex
+  enables case-insensitive matching.
+* Conversely, `\C` (backslash + capital C) disables case-insensitive
+  matching.  (Useful if you have `ignore-case` set to true, which is
+  the default.)
 * `\<` and `\>` is converted to `\b` (as in vi, grep, etc.)
 
-Note that none of these work in "match" mode.
+Like match mode, search mode operates on individual lines.  This means
+that search patterns do not match text wrapped over multiple lines.
 
 ### Path handling
 
-Rules for path handling are similar to how strings in the shell are handled.
+Rules for path handling are similar to how the shell handles strings.
 
 * Tilde-expansion is used to determine the user's home directory. So
   e.g. `~/whatever` works.
@@ -1702,16 +1706,18 @@ words. Currently, these are:
 
 #### w3m word
 
-A w3m word is a sequence of alphanumeric characters. Symbols are treated
-in the same way as whitespace.
+A w3m word is a sequence of alphanumeric characters.  Symbols are
+treated in the same way as whitespace.
 
 #### vi word
 
-A vi word is a sequence of alphanumeric characters, OR a sequence of symbols.
+A vi word is a sequence of characters in the same character category.
+Currently, character categories are alphanumeric characters, symbols,
+han letters, hiragana, katakana, and hangul.
 
-vi words may be separated by whitespace; however, symbolic and alphanumeric
-vi words do not have to be whitespace-separated. e.g. following character
-sequence contains two words:
+vi words may be separated by whitespace; however, vi words from separate
+categories do not have to be whitespace-separated.  e.g. the following
+character sequence contains two words:
 
 ```
 hello[]+{}@`!
@@ -1721,8 +1727,8 @@ hello[]+{}@`!
 
 A big word is a sequence of non-whitespace characters.
 
-It is essentially the same as a w3m word, but with symbols being defined as
-non-whitespace.
+It is essentially the same as a w3m word, but with symbols being defined
+as non-whitespace.
 
 <!-- MANON
 

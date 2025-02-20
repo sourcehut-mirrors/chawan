@@ -39,18 +39,19 @@ code and possible inaccuracies ahead.
 ## Introduction
 
 Monoucha is a high-level wrapper to QuickJS. It was created for the
-[Chawan](https://sr.ht/~bptato/chawan) browser to avoid having to manually write
+[Chawan](https://sr.ht/~bptato/chawan) browser to avoid manually writing
 bindings to JS APIs.
 
-First, a disclaimer: while Monoucha *is* high-level, it does not try to
-completely abstract away the low-level details. You will in many cases have to
-use QuickJS APIs directly to achieve something; Monoucha only provides
-abstractions to APIs where doing something manually would be tedious and/or
+While Monoucha *is* high-level, it does not try to completely abstract
+away the low-level details. You will in many cases have to use QuickJS
+APIs directly to achieve something; Monoucha only provides abstractions
+to APIs where doing something manually would be tedious and/or
 error-prone.
 
-Also note that Monoucha is *not* complete. APIs may change, disappear, or appear
-at any time in the future. Please pin a specific version if you need a stable
-API.
+Also note that Monoucha is *not* complete, and neither is QuickJS-NG.
+While a major API break for documented interfaces is unlikely, it may
+happen at any time in the future.  Please pin a specific version if you
+need a stable API.
 
 ### Hello, world
 
@@ -72,20 +73,22 @@ ctx.free()
 rt.free()
 ```
 
-This is the minimal required code to run a script. You may notice a few things:
+This is the minimal required code to run a script.  You may notice a few
+things:
 
-* eval() takes two parameters, one for code and one for the file name. The file
-  name will be used for exception handling.
-* You have to free the context and runtime handles manually. This is
-  unfortunately unavoidable; the good news is that you won't have to do much
-  manual memory management after this.
+* eval() takes two parameters, one for code and one for the file name.
+  The file name will be used for exception formatting.
+* You have to free the context and runtime handles manually.  This is
+  unfortunately unavoidable; the good news is that you won't have to do
+  much manual memory management after this.
 
-The `res` variable then holds a QuickJS JSValue. In this case, we convert it
-to a string before freeing it; you can skip conversion if you don't care about
-the script's return value, but you must *always* free it.
+The `res` variable then holds a QuickJS JSValue. In this case, we
+convert it to a string before freeing it. You can skip conversion if you
+don't care about the script's return value, but you must *always* free
+it.
 
-You may be thinking to yourself, "come on, why is there no convenience wrapper
-around this?" Well, it is because one thing we haven't talked about yet:
+You may be thinking to yourself, "why is there no convenience wrapper
+around this?"  The reason is illustrated in the next section.
 
 ### Error handling
 
@@ -97,19 +100,19 @@ let val = ctx.eval(code)
 ```
 
 If you try to convert this into a string, you will get an err() result.
-Obviously, you want to print your errors *somewhere*, but since Monoucha does
-not know (or care) where you log error messages, it leaves this task to you.
+Obviously, you want to print your errors *somewhere*, but Monoucha does
+not care how and where you log error messages, and leaves this task to
+the user.
 
-However, Monoucha does provide an easy way to retrieve the current error
-message:
+However, there is an easy way to retrieve the current error message:
 
 ```nim
 if JS_IsException(res):
   stderr.writeLine(ctx.getExceptionMsg())
 ```
 
-In most cases, you should wrap `eval` in a function that deals with exceptions
-in the most appropriate way for your application.
+In most cases, you should wrap `eval` in a function that deals with
+exceptions in the most appropriate way for your application.
 
 Alternatively, a self-contained evalConvert can be written as follows:
 
@@ -130,18 +133,17 @@ proc evalConvert[T](ctx: JSContext; code: string;
   return ok(res)
 ```
 
-However, it is usually more efficient (and simpler) to immediately log
-exceptions than to pass them around as a Result.
+This is less efficient than immediately logging the exception message.
 
 ## Registering objects
 
-So far we have talked about running JS code and getting its result, which is
-nice, but not enough for most use cases. If you are embedding QuickJS, you
-probably want some sort of interoperability between JS and Nim code.
+So far we have talked about running JS code and getting its result,
+which is not enough for most use cases. If you are embedding QuickJS,
+you probably want some sort of interoperability between JS and Nim code.
 
-In JavaScript, all objects are passed *by reference*. Monoucha allows you to
-transparently use Nim object references in JS, provided you register their
-interface first.
+In JavaScript, all objects are passed *by reference*. Monoucha allows
+you to transparently use Nim object references in JS, provided you
+register their type interface first.
 
 ### registerType: registering type interfaces
 
@@ -151,16 +153,16 @@ To register object types as a JavaScript interface, you must call the
 ```nim
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; nointerface = false;
-    name: static string = ""; has_extra_getset: static bool = false;
-    extra_getset: static openArray[TabGetSet] = []; namespace = JS_NULL;
+    name: static string = ""; hasExtraGetSet: static bool = false;
+    extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL;
     errid = opt(JSErrorEnum); ishtmldda = false): JSClassID
 ```
 
-Typically, you would do this using Nim reference types; non-reference types have
-some restrictions, which we will cover later.
+Typically, you would do this using Nim reference types. Non-reference
+types work too, but have some restrictions which will be covered.
 
-Now for the first example. Following code registers a JS interface for the Nim
-object `Moon`:
+Now for the first example. Following code registers a JS interface for
+the Nim ref object `Moon`:
 
 ```nim
 type Moon = ref object
@@ -177,20 +179,20 @@ echo res # function Moon() [...]
 JS_FreeValue(ctx, val)
 ```
 
-Quite straightforward; just call `registerType`.
+Quite straightforward: just call `registerType`.
 
-One thing to pay attention to is the jsDestructor template: you must place a
-jsDestructor call directly after your type declaration *before* any other
-functions, or Monoucha will complain. (This is necessary so that we can generate
-a `=destroy` hook for the object.)
+Pay attention to the jsDestructor template: you call jsDestructor
+immediately after your type declaration *before* any other functions, or
+Monoucha will complain.  (This is necessary so that we can generate a
+`=destroy` hook for the object.)
 
 #### Global objects
 
-`registerType` also allows you to change the global object's type; this is quite
-important, as it is the only way to create global functions (discounting the
-constructors of object interfaces).
+`registerType` also allows you to change the global object's type.  This
+is quite important, as it is the only way to create global functions
+(discounting object constructors).
 
-To register a global type, you must set `asglobal = true` in `registerType`:
+To register a global type, set `asglobal = true` in `registerType`:
 
 ```nim
 type Earth = ref object
@@ -207,17 +209,17 @@ JS_FreeValue(ctx, val)
 
 You may notice two things:
 
-* We call `setGlobal` with an instance of Earth. This is needed to register some
-  object as the backing Nim object; this same instance of Earth will be passed
-  to bound functions.
-* This time, we do not call jsDestructor. This is because the global object is
-  special-cased; its reference is kept until the JS context gets
-  freed. Therefore it does not need a `=destroy` hook.
+* We call `setGlobal` with an instance of Earth.  This is needed to
+  register some object as the backing Nim object; this same instance of
+  Earth will be passed to bound functions.
+* This time, we do not call jsDestructor, because the global object is
+  special-cased; its reference is kept until the JS context gets freed.
+  Therefore it does not need a `=destroy` hook.
 
 #### Inheritance
 
-`registerType` also allows you to specify inheritance chains by setting the
-`parent` parameter:
+`registerType` also allows you to specify inheritance chains by setting
+the `parent` parameter:
 
 ```nim
 type
@@ -242,14 +244,15 @@ In this model, the inheritance tree looks like:
 	- Earth
 	- Moon
 
-Note that there is no strict requirement to actually model the Nim inheritance
-chain; e.g. if we set "Rock" as the parent of Planet, then we could use Rock as
-the direct ancestor of Earth without even registering Planet at all.
+There is no strict requirement to actually model the Nim inheritance
+chain.  e.g. if we set "Rock" as the parent of Planet, then we could use
+Rock as the direct ancestor of Earth without even registering Planet at
+all.
 
-However, this is a two-edged blade, as it also allows specifying invalid models
-which may result in undefined behavior. For example, setting Earth as the parent
-of Moon is invalid, as it will result in "Moon" Nim objects being casted to
-Earth references.
+However, this is a two-edged blade, as it also allows specifying invalid
+models which may result in undefined behavior. For example, setting
+Earth as the `parent` of Moon compiles, but is invalid, as it will
+result in "Moon" Nim objects being casted to Earth references.
 
 #### Misc registerType parameters
 
@@ -257,24 +260,24 @@ Following parameters also exist:
 
 * `nointerface`: suppress constructor creation
 * `name`: set a different JS name than the Nim name
-* `has_extra_getset`, `extra_getset`: add an array of magic getters/setters.
-  Note that `has_extra_getset` must be set to true in case you pass anything in
-  `extra_getset` because of a compiler bug. (TODO elaborate here)
-* `namespace`: instead of defining the constructor on the global object, define
-  it on the passed JS object. Note that you must use QuickJS APIs to create
-  this object, and that the object is not consumed (i.e. is not freed).
-* `errid`: set the error ID. TODO this is currently pretty useless as a public
-  API because JSErrorEnum is not extendable
-* `ishtmldda`: creates a "falsy" object, like document.all. Note that currently
+* `hasExtraGetSet`, `extraGetSet`: an array of magic getters/setters.
+  `hasExtraGetSet` must be set to true in case you pass anything in
+  `extraGetSet` because of a compiler bug.
+* `namespace`: instead of defining the constructor on the global object,
+  define it on the passed JS object. You must use QuickJS APIs to create
+  this object. `namespace` is not consumed (i.e. you must free it
+  yourself).
+* `errid`: set the error ID. TODO this is currently pretty useless as a
+  public API because JSErrorEnum is not extendable.
+* `ishtmldda`: creates a "falsy" object, like document.all. Currently,
   only one of these is allowed per context.
-
 
 ### jsget, jsset: basic property reflectors
 
 Time to actually expose some Nim values to JS.
 
-The `jsget` and `jsset` pragmas can be set on fields of registered object
-types to directly expose them to JS:
+The `jsget` and `jsset` pragmas can be set on fields of registered
+object types to directly expose them to JS:
 
 ```nim
 type
@@ -304,17 +307,17 @@ echo earth.population # 8e9
 JS_FreeValue(ctx, val)
 ```
 
-In the above example, we expose an Earth instance as the global object, and
-modify/inspect it. By default, object fields are not exposed to JS; `{.jsget.}`
-gives JS read-only access, `{.jsset.}` write-only, and `jsgetset` expands to
-`{.jsget, jsset.}`.
+In the above example, we expose an Earth instance as the global object,
+and modify/inspect it.  By default, object fields are not exposed to JS;
+`{.jsget.}` gives JS read-only access, `{.jsset.}` write-only, and
+`jsgetset` expands to `{.jsget, jsset.}` (both read and write).
 
 ### Non-reference objects
 
-JavaScript only has reference semantics for objects, so this does not make
-much sense at first sight. However, children of heap-allocated objects do in
-fact have a permanent address, which we can convert to JS so long as we hold a
-reference to their parent.
+JavaScript objects have reference semantics, so this does not make much
+sense at first glance.  However, children of heap-allocated objects do
+in fact have a permanent address, which we can convert to JS so long as
+we hold a reference to their parent.
 
 e.g. this works:
 
@@ -340,22 +343,22 @@ echo res # [object Moon]
 JS_FreeValue(ctx, val)
 ```
 
-Do note that this has some restrictions: for example, you cannot return a
+This still has some restrictions: for example, you cannot return a
 non-reference object from a [wrapped](#function-pragmas) function.
 
 ## Function pragmas
 
-Arguably the most important feature of Monoucha is that it lets you
-automatically wrap functions and expose them to JavaScript by associating them
-with types exposed through [registerType](#registerType-registering-type-interfaces).
+The main feature of Monoucha is that it can automatically wrap functions
+and expose them to JavaScript by associating them with types exposed
+through [registerType](#registertype-registering-type-interfaces).
+All you have to do is to stick pragmas to function definitions.
 
-This is done by sticking pragmas to function definitions; here we enumerate over
-all currently available pragmas.
+Here we enumerate over all currently available pragmas.
 
 ### jsfunc: regular functions
 
-The simplest pragma is `.jsfunc`: this marks the function as a member of the
-JS interface associated with the first parameter's type.
+The simplest pragma is `.jsfunc`.  This marks the function as a member
+of the JS interface associated with the first parameter's type.
 
 Example:
 
@@ -383,27 +386,23 @@ JS_FreeValue(ctx, ctx.eval(code))
 As you can see, `log` has been exposed as a member of the JS interface
 `Console`.
 
-It is possible to use a different name for the JS function than for the Nim
-procedure. e.g. the following will also expose a `log` function:
+It is possible to use a different name for the JS function than for the
+Nim procedure. e.g. the following will also expose a `log` function:
 
 ```nim
 proc jsLog(console: Console; s: string) {.jsfunc: "log".} = # [...]
 ```
 
-In general, you can use any combination of parameters in `.jsfunc` procs.
-These are converted on a best-effort basis: e.g. in the above example,
-`console.log(1)` would pass the string "1", not an exception. Monoucha tries to
-adhere to the WebIDL standard in this regard. (TODO: find & document places
-where this is not true yet.)
+In general, you can use any combination of parameters in `.jsfunc`
+procs.  These are converted on a best-effort basis: e.g. in the above
+example, `console.log(1)` would pass the string "1", not an exception.
+Monoucha tries to adhere to the WebIDL standard in this regard. (TODO:
+find & document places where this is not true yet.)
 
-In case of types that can be "nil", Monoucha will convert "nil" return
-values to JS "null" values.  However, "null" is *not* converted to "nil".
-Please wrap types where you wish to accept "null" too in `Option`s (from
-`std/options`).
-
-The first parameter *must* be a reference type that has been registered using
-`registerType`. Alternatively, you can also use a registered non-reference
-object type, but in this case, you *must* annotate it with `var`:
+The first parameter *must* be a reference type that has been registered
+using `registerType`. Alternatively, you can also use a registered
+non-reference object type, but in this case, you *must* annotate it with
+`var`:
 
 ```nim
 type Console2 = object # not ref!
@@ -411,9 +410,10 @@ type Console2 = object # not ref!
 proc log(console: var Console2; s: string) {.jsfunc.} = # [...]
 ```
 
-It is also possible to insert a "zeroeth" parameter to get a reference to the
-current JS context. This is useful if you want to access state global to the
-JS context without storing a backreference to the global object:
+It is also possible to insert a "zeroeth" parameter to get a reference
+to the current JS context. This is useful if you want to access state
+global to the JS context without storing a backreference to the global
+object:
 
 ```nim
 proc log(ctx: JSContext; console: Console; s: string) {.jsfunc.} =
@@ -444,7 +444,8 @@ For further information about individual type conversions, see the
 
 ### jsctor: constructors
 
-The `.jsctor` pragma is used to define a constructor for a specific type:
+The `.jsctor` pragma is used to define a constructor for a specific
+type:
 
 ```nim
 type JSFile = ref object
@@ -463,18 +464,19 @@ const code = "console.log(new File('/path/to/file'))"
 JS_FreeValue(ctx, ctx.eval(code)) # [object File]
 ```
 
-Note that `.jsctor`, like other pragmas, supports the same "zeroeth" JSContext
-parameter trick as [jsfunc](#jsfunc-regular-functions), which is useful when
-the global object is needed for resource allocation.
+`.jsctor`, like other pragmas, supports the same "zeroeth" JSContext
+parameter trick as [jsfunc](#jsfunc-regular-functions), which is useful
+when the global object is needed for resource allocation.
 
 ### jsfget, jsfset: custom property reflectors
 
-The `.jsfget` and `.jsfset` pragmas can be used to define custom getter/setter
-functions.
+The `.jsfget` and `.jsfset` pragmas can be used to define custom
+getter/setter functions.
 
-Like `.jsget` and `.jsset`, they appear as regular getters and setters in
-JS. However, instead of automatically reflecting a property, `.jsfget` and
-`.jsfset` allows you to write custom code to handle property accesses.
+Like `.jsget` and `.jsset`, they appear as regular getters and setters
+in JS. However, instead of automatically reflecting a property,
+`.jsfget` and `.jsfset` allows you to write custom code to handle
+property accesses.
 
 Example:
 
@@ -502,11 +504,12 @@ JS_FreeValue(ctx, ctx.eval(code))
 ### jsstfunc: static functions
 
 `.jsstfunc` defines a static function on a given interface. Unlike with
-`.jsfunc`, you must provide at least a single parameter for these functions,
-with the syntax `Interface.functionName`.
+`.jsfunc`, you must provide at least a single parameter for these
+functions, with the syntax `Interface.functionName`.
 
-Note that `Interface` must be an interface registered through `registerType`.
-If the interface was renamed, the Nim name (*not* the JS name) must be used.
+Note that `Interface` must be an interface registered through
+`registerType`. If the interface was renamed, the Nim name (*not* the
+JS name) must be used.
 
 Example:
 
@@ -525,14 +528,16 @@ JS_FreeValue(ctx, ctx.eval(code))
 
 ### jsuffunc, jsufget, jsuffget: the LegacyUnforgeable property
 
-The pragmas `.jsuffunc`, `.jsufget` and `.jsuffget` correspond to the WebIDL
+The pragmas `.jsuffunc`, `.jsufget` and `.jsuffget` correspond to the
+WebIDL
 [`[LegacyUnforgeable]`](https://webidl.spec.whatwg.org/#LegacyUnforgeable)
 property.
 
-Concretely, this means that the function (or getter) is defined on *instances*
-of the interface, not on the interface (i.e. object prototype) as a
-non-configurable property. Even more concretely, this simply means that the
-function (or getter) cannot be changed by JavaScript code.
+Concretely, this means that the function (or getter) is defined on
+*instances* of the interface, not on the interface (i.e. object
+prototype) as a non-configurable property.  Even more concretely, this
+means that the function (or getter) cannot be changed by JavaScript
+code.
 
 ```nim
 # this will always return the result of the fstat call.
@@ -571,8 +576,8 @@ for property accesses.
 
 ### jsfin: object finalizers
 
-The `.jsfin` pragma can be used to clean up resources used by objects at the
-end of their lifetime.
+The `.jsfin` pragma can be used to clean up resources used by objects at
+the end of their lifetime.
 
 In principle, this is just like the Nim `=destroy` property, except it also
 tracks the lifetime of possible JS objects which the Nim object may back. (In
@@ -583,15 +588,17 @@ The first parameter must be a reference to the object in question. Only one
 inherited. This means that you must set up separate `.jsfin` functions for each
 child object in the inheritance chain.
 
-To free up JS objects, you may precede your reference type parameter
-with a `JSRuntime` parameter.  WARNING: this parameter is nil when
-an object that was not bound to a JS value is finalized.
+`.jsfin` also supports a "zeroeth" parameter, but here it must be a
+`JSRuntime`, *not* `JSContext`.  WARNING: this parameter is nil when
+-an object that was not bound to a JS value is finalized.  (e.g.
+calling toJS on the object, or returning the object from a `.jsfunc`
+converts it to a JSValue too.)
 
 WARNING 2: like Nim `=destroy`, this pragma is very easy to misuse.  In
-particular, you must make sure to **NEVER ALLOCATE** in a `.jsfin`
-finalizer, because this [breaks](https://github.com/nim-lang/Nim/issues/4851)
-Nim refc.  (I don't know if this problem is still present in ORC, but at
-the moment Monoucha does not work with ORC anyway.)
+particular, make sure to **NEVER ALLOCATE** in a `.jsfin` finalizer,
+because this [breaks](https://github.com/nim-lang/Nim/issues/4851) Nim
+refc.  (I don't know if this problem is still present in ORC, but at the
+moment Monoucha does not work with ORC anyway.)
 
 Example:
 
@@ -642,31 +649,34 @@ assert unrefd == 2 # runtime is freed, so the second file gets deallocated too
 
 This section covers the handling and conversion of JSValue types.
 
-While in most cases it is possible to avoid using JSValues, Monoucha does not go
-out of its way to completely eliminate them.
+While in most cases it is possible to avoid using JSValues, Monoucha
+does not go out of its way to completely eliminate them.
 
 In particular, handling JSValues is unavoidable when:
 
-* You want to do something with `eval()`'s result
-* You need to call a QuickJS API not wrapped by Monoucha (e.g. JS function calls)
-* You want a dynamically typed variable, e.g. for "union" types
+* You want to do something with `eval()`'s result.
+* You need to call a QuickJS API not wrapped by Monoucha. (e.g. JS
+  function calls)
+* You want a dynamically typed variable, e.g. for "union" types.
 
 ### Using raw JSValues
 
 When passing around raw JSValues, it is important to make sure you
 reference/unreference appropriately. For this, use the `JS_DupValue` and
 `JS_FreeValue` functions from QuickJS. (When you only have access to a
-`JSRuntime`, use the `JS_FreeValueRT` and `JS_DupValueRT` variants instead.)
+`JSRuntime`, use the `JS_FreeValueRT` and `JS_DupValueRT` variants
+instead.)
 
-To get raw JSValues in `.jsfunc` (or similar) bound functions, you can simply
-set the desired parameter's type to `JSValue`. This way, you get a "borrowed"
-JSValue; to keep a reference to these after the function exits, reference them
-with `JS_DupValue` first. (Analogously, you do not have to free such JSValues as
-long as you don't call `JS_DupValue` on them, either.)
+To get raw JSValues in `.jsfunc` (or similar) bound functions, you can
+simply set the desired parameter's type to `JSValue`. This way, you get
+a "borrowed" JSValue; to keep a reference to these after the function
+exits, reference them with `JS_DupValue` first. (Analogously, you do not
+have to free such JSValues as long as you don't call `JS_DupValue` on
+them, either.)
 
-Since JSValues need a JSContext to do anything useful, you may want to set the
-first parameter of such functions to a `JSContext` type; this passes the current
-JSContext on to the bound function. (For details, see
+Since JSValues need a JSContext to do anything useful, you may want to
+set the first parameter of such functions to a `JSContext` type; this
+passes the current JSContext on to the bound function. (For details, see
 [above](#jsfunc-regular-functions).)
 
 ### Using toJS
@@ -676,22 +686,23 @@ proc toJS[T](ctx: JSContext; val: T): JSValue
 ```
 
 Monoucha internally uses the overloaded `toJS` function to convert bound
-function return values to JS values. This is available to user code too; simply
-import the `monoucha/tojs` module.
+function return values to JS values. This is available to user code too;
+simply import the `monoucha/tojs` module.
 
-Naturally, JSValues you get from toJS are owned by you, so you should call
-`JS_FreeValue` on these when you no longer need them.
+Naturally, `JSValue`s you get from toJS are owned by you, so you should
+call `JS_FreeValue` on these when you no longer need them.
 
 The `tojs` module also includes some other convenience functions:
 
-* `defineProperty`, `definePropertyC`, `definePropertyE`, `definePropertyCW`,
-  `definePropertyCWE`: simple wrappers around `JS_DefineProperty*` functions
-  from the QuickJS API. Unlike the QuickJS versions, they panic on errors, so
-  only use these if you are 100% sure that they always succeed.  
+* `defineProperty`, `definePropertyC`, `definePropertyE`,
+  `definePropertyCW`, `definePropertyCWE`: simple wrappers around
+  `JS_DefineProperty*` functions from the QuickJS API. Unlike the
+  QuickJS versions, they panic on errors, so only use these if you are
+  100% sure that they always succeed.<br>
   The `C`, `E`, `CW`, `CWE` represent the "configurable", "enumerable",
-  and "writable" flags of the property.  
-  Warning: like in QuickJS, these functions *consume* a JSValue; that is, if
-  you pass a JSValue, then be aware that the function will call `JS_FreeValue`
+  and "writable" flags of the property.<br>
+  Warning: like in QuickJS, these functions *consume* a JSValue; that
+  is, if you pass a JSValue, then the function will call `JS_FreeValue`
   on it.
 * `newFunction`: creates a new JavaScript function. `args` is a list of
   parameter names, `body` is the JavaScript function body.
@@ -702,39 +713,39 @@ The `tojs` module also includes some other convenience functions:
 proc fromJS[T](ctx: JSContext; val: JSValue; res: var T): Err[void]
 ```
 
-`fromJS` is the opposite of `toJS`: it converts JSValues into Nim values. To use
-it, import the `monoucha/fromjs` module.
+`fromJS` is the opposite of `toJS`: it converts `JSValue`s into Nim
+values. Import the `monoucha/fromjs` module to use it.
 
-On success, `fromJS` fills res and returns `Opt[void].some()`.
+On success, `fromJS` fills `res` and returns `Opt[void].some()`.
 
-On failure, `res` is left in its initial state, **except if it's a JSDict (see
-below!)**, a QuickJS exception is thrown (using `JS_Throw()`), and
-`Opt[void].none()` is returned.
+On failure, `res` is left in its initial state, **except if it's a
+JSDict (see below!)**, a QuickJS exception is thrown (using
+`JS_Throw()`), and `Opt[void].none()` is returned.
 
-**Warning**: since fromJS is mainly meant to be used by automatic wrappers, it
-performs the following optimization: for `JSDict` values, `res` is left in
-a modified state.
+**Warning**: since fromJS is mainly meant to be used by automatic
+wrappers, it performs the following optimization: for `JSDict` values,
+`res` is left in a modified state.
 
-**Warning 2**: JSDict in general is somewhat finnicky: you must make sure
-that their destructors run before deinitializing the runtime. In practice,
-this means a) you must not use JSDict in the same procedure where you free the
-JSRuntime, b) you must call GC_fullCollect before freeing the runtime if you
-use JSDict. (TODO: this all seems very broken. Why isn't JSDict itself just a
-ref object?)
+**Warning 2**: JSDict in general is somewhat finnicky: you must make
+sure that their destructors run before deinitializing the runtime. In
+practice, this means a) you must not use JSDict in the same procedure
+where you free the JSRuntime, b) you must call GC_fullCollect before
+freeing the runtime if you use JSDict. (TODO: this all seems very
+broken. Why isn't JSDict itself just a ref object?)
 
-Passing `JS_EXCEPTION` to `fromJS` is valid, and results in no new exception
-being thrown.
+Passing `JS_EXCEPTION` to `fromJS` is valid, and results in no new
+exception being thrown.
 
 ### Custom type converters
 
-In Monoucha, object reference types are automatically converted to JS reference
-types. However, value types are different:
+In Monoucha, object reference types are automatically converted to JS
+reference types. However, value types are different:
 
-* A non-reference `object` is converted to a JS reference by implicitly turning
-  it into `ptr object`, as noted [above](#non-reference-objects).
+* A non-reference `object` is converted to a JS reference by implicitly
+  turning it into `ptr object`, as noted [above](#non-reference-objects).
 * Trying to pass any other type to/from JS errors out at compilation.
 
 To work around this limitation, you can override `toJS` and `fromJS` for
 specific types. In both cases, it is enough to add an overload for the
-respective function and expose it to the module where the converter is needed
-(i.e. where you call `registerType`).
+respective function and expose it to the module where the converter is
+needed (i.e. where you call `registerType`).

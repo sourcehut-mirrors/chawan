@@ -91,7 +91,7 @@ protocol\-specific line type.
 This is sort of supported through a sed filter for gemtext outputs in
 the CGI script (in other words, no modification to gmi2html was done to
 support this).
-.SS Local schemes: file:, about:, man:
+.SS Local schemes: file:, man:
 While these are not necessarily \f[I]protocols\f[R], they are
 implemented similarly to the protocols listed above (and thus can also
 be replaced, if the user wishes; see below).
@@ -99,11 +99,6 @@ be replaced, if the user wishes; see below).
 \f[CR]file:\f[R] loads a file from the local filesystem.
 In case of directories, it shows the directory listing like the FTP
 protocol does.
-.PP
-\f[CR]about:\f[R] contains informational pages about the browser.
-At the time of writing, the following pages are available:
-\f[CR]about:chawan\f[R], \f[CR]about:blank\f[R] and
-\f[CR]about:license\f[R].
 .PP
 \f[CR]man:\f[R], \f[CR]man\-k:\f[R] and \f[CR]man\-l:\f[R] are wrappers
 around the commands \f[CR]man\f[R], \f[CR]man \-k\f[R] and
@@ -114,9 +109,9 @@ A wrapper command \f[CR]mancha\f[R] also exists; this has an interface
 similar to \f[CR]man\f[R].
 Note: this used to be based on w3mman2html.cgi, but it has been
 rewritten in Nim (and therefore no longer depends on Perl either).
-.SS Internal schemes: cgi\-bin:, stream:, cache:, data:
-Four internal protocols exist: \f[CR]cgi\-bin:\f[R], \f[CR]stream:\f[R],
-\f[CR]cache:\f[R] and \f[CR]data:\f[R].
+.SS Internal schemes: cgi\-bin:, stream:, cache:, data:, about:
+Five internal protocols exist: \f[CR]cgi\-bin:\f[R], \f[CR]stream:\f[R],
+\f[CR]cache:\f[R], \f[CR]data:\f[R] and \f[CR]about:\f[R].
 These are the basic building blocks for the implementation of every
 protocol mentioned above; for this reason, these can \f[I]not\f[R] be
 replaced, and are implemented in the main browser binary.
@@ -127,32 +122,39 @@ protocols mentioned above.
 Local CGI scripts can also be used to implement wrappers of other
 programs inside Chawan (e.g.\ dictionaries).
 .PP
-\f[CR]stream:\f[R] is used for reading in streams returned by external
-programs or passed to Chawan via standard input.
+\f[CR]stream:\f[R] is used for streams returned by external programs.
 It differs from \f[CR]cgi\-bin:\f[R] in that it does not cooperate with
 the external process, and that the loader does not keep track of where
 the stream originally comes from.
 Therefore it is suitable for reading in the output of mailcap entries,
 or for turning stdin into a URL.
 .PP
-Since Chawan does not keep track of the origin of \f[CR]stream:\f[R]
-URLs, it is not possible to reload them.
-(For that matter, reloading stdin does not make much sense anyway.)
+It is not possible to reload \f[CR]stream:\f[R] URLs.
 To support rewinding and \[lq]view source\[rq], the output of
-\f[CR]stream:\f[R]\[cq]s is stored in a temporary file until the buffer
-is discarded.
+\f[CR]stream:\f[R]\[cq]s is stored in a cache file until the buffer is
+discarded.
 .PP
 \f[CR]cache:\f[R] is not something an end user would normally see;
 it\[cq]s used for rewinding or re\-interpreting streams already
 downloaded.
-Note that this is not a real cache; files are deterministically loaded
-from the \[lq]cache\[rq] upon certain actions, and from the network upon
-others, but neither is used as a fallback to the other.
+.PP
+Caching works differently than in most other browsers; files are
+deterministically loaded from the cache upon certain actions, and from
+the network upon others, but neither is used as a fallback to the other.
 .PP
 \f[CR]data:\f[R] decodes a data URL as defined in RFC 2397.
 This used to be a CGI module, but has been moved back into the loader
 process because these URLs can get so long that they no longer fit into
 the environment.
+.PP
+\f[CR]about:\f[R] is inside the loader to allow for an implementation of
+the download list panel.
+It should be turned into a CGI module once the loader gets RPC
+capabilities.
+.PP
+The following about pages are available: \f[CR]about:chawan\f[R],
+\f[CR]about:blank\f[R], \f[CR]about:license\f[R],
+\f[CR]about:download\f[R].
 .SS Custom protocols
 Chawan is protocol\-agnostic.
 This means that the \f[CR]cha\f[R] binary itself does not know much
