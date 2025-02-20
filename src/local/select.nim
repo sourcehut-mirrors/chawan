@@ -323,6 +323,9 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
         for l in pj ..< j:
           display[dls + x].str &= select.options[i].s[l]
       display[dls + x].format = format
+      if x == sx:
+        # do not reverse the position of the cursor
+        display[dls + x].format.flags.excl(ffReverse)
       inc x
       while x < nx:
         display[dls + x].str = ""
