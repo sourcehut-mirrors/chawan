@@ -58,7 +58,6 @@ type
     so # start standout mode
     md # start bold mode
     us # start underline mode
-    mr # start reverse mode
     mb # start blink mode
     ZH # start italic mode
     se # end standout mode
@@ -320,7 +319,7 @@ proc startFormat(term: Terminal; flag: FormatFlag): string =
       case flag
       of ffBold: return term.cap(md)
       of ffUnderline: return term.cap(us)
-      of ffReverse: return term.cap(mr)
+      of ffReverse: return term.cap(so)
       of ffBlink: return term.cap(mb)
       of ffItalic: return term.cap(ZH)
       else: discard
@@ -332,6 +331,7 @@ proc endFormat(term: Terminal; flag: FormatFlag): string =
       case flag
       of ffUnderline: return term.cap(ue)
       of ffItalic: return term.cap(ZR)
+      of ffReverse: return term.cap(se)
       else: discard
   return CSI & $FormatCodes[flag].e & 'm'
 
@@ -1386,7 +1386,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.formatMode.incl(ffUnderline)
       if term.hascap(md):
         term.formatMode.incl(ffBold)
-      if term.hascap(mr):
+      if term.hascap(so):
         term.formatMode.incl(ffReverse)
       if term.hascap(mb):
         term.formatMode.incl(ffBlink)
