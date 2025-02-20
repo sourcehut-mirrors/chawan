@@ -5,6 +5,7 @@ import html/event
 import html/script
 import io/timeout
 import monoucha/javascript
+import monoucha/quickjs
 
 type Performance* = ref object of EventTarget
   timeOrigin {.jsget.}: float64
@@ -23,6 +24,17 @@ proc newPerformance*(scripting: ScriptingMode): Performance =
 
 proc now(performance: Performance): float64 {.jsfunc.} =
   return getTime(performance.scripting) - performance.timeOrigin
+
+proc getEntries(ctx: JSContext; performance: Performance): JSValue {.jsfunc.} =
+  return JS_NewArray(ctx)
+
+proc getEntriesByType(ctx: JSContext; performance: Performance; t: string):
+    JSValue {.jsfunc.} =
+  return JS_NewArray(ctx)
+
+proc getEntriesByName(ctx: JSContext; performance: Performance; name: string;
+    t = none(string)): JSValue {.jsfunc.} =
+  return JS_NewArray(ctx)
 
 proc addPerformanceModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.registerType(Performance, parent = eventTargetCID)
