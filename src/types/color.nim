@@ -287,16 +287,15 @@ func namedRGBColor*(s: string): Option[RGBColor] =
   return none(RGBColor)
 
 # https://html.spec.whatwg.org/#serialisation-of-a-color
-func serialize*(color: ARGBColor): string =
-  if color.a == 255:
+func serialize*(c: ARGBColor): string =
+  if c.a == 255:
     var res = "#"
-    res.pushHex(color.r)
-    res.pushHex(color.g)
-    res.pushHex(color.b)
+    res.pushHex(c.r)
+    res.pushHex(c.g)
+    res.pushHex(c.b)
     return res
-  let a = float64(color.a) / 255
-  return "rgba(" & $color.r & ", " & $color.g & ", " & $color.b & ", " & $a &
-    ")"
+  let a = float64(c.a) / 255
+  return "rgba(" & $c.r & ", " & $c.g & ", " & $c.b & ", " & $a & ")"
 
 func `$`*(c: ARGBColor): string =
   return c.serialize()
@@ -359,8 +358,7 @@ func blend*(c0, c1: ARGBColor): ARGBColor =
   let rb = pc1.b + mc.b
   let ra = pc1.a + mc.a
   let pres = rgba(rr, rg, rb, ra)
-  let res = straight(pres)
-  return res
+  return straight(pres)
 
 # Blending operation for cell colors.
 # Normally, this should only happen with RGB color, so if either color
@@ -433,9 +431,9 @@ func hsla*(h, s, l: float32; a: uint8): ARGBColor =
   let h = h mod 360
   let s = float32(s) / 100
   let l = float32(l) / 100
+  let alpha = s * min(l, 1 - l)
   template f(n: auto): uint8 =
     let k = (n + h / 30) mod 12
-    let alpha = s * min(l, 1 - l)
     let x = l - alpha * max(-1f32, min(k - 3, min(9 - k, 1f32)))
     uint8(x * 255)
   let r = f(0)
