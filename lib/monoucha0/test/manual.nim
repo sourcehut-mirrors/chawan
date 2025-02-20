@@ -47,7 +47,10 @@ ReferenceError: abcd is not defined
   ctx.free()
   rt.free()
 
-type Earth = ref object
+type
+  Planet = ref object of RootObj
+  Earth = ref object of Planet
+  Moon = ref object of Planet
 
 proc jsAssert(earth: Earth; pred: bool) {.jsfunc: "assert".} =
   assert pred
@@ -84,10 +87,6 @@ test "Global objects":
   rt.free()
 
 test "Inheritance":
-  type
-    Planet = ref object of RootObj
-    Earth = ref object of Planet
-    Moon = ref object of Planet
   jsDestructor(Moon)
   jsDestructor(Planet)
   let rt = newJSRuntime()
@@ -276,6 +275,8 @@ proc finalize(file: JSFile) {.jsfin.} =
 test "jsfin: object finalizers":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
+  GC_fullCollect() # ensure refc runs
+  unrefd = 0 # ignore previous unrefs
   ctx.registerType(Window, asglobal = true)
   ctx.registerType(JSFile, name = "File")
   const code = """
