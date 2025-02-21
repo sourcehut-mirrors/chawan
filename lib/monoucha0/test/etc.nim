@@ -151,6 +151,8 @@ test "fromjs-tuple":
 
 type X = ref object
 
+jsDestructor(X)
+
 proc foo(x: X; s: sink string) {.jsfunc.} =
   discard
 
