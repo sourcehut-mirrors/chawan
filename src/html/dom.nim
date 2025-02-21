@@ -459,6 +459,8 @@ type
 
   HTMLFrameElement = ref object of HTMLElement
 
+  HTMLTimeElement = ref object of HTMLElement
+
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
@@ -504,6 +506,7 @@ jsDestructor(HTMLTableSectionElement)
 jsDestructor(HTMLMetaElement)
 jsDestructor(HTMLDetailsElement)
 jsDestructor(HTMLFrameElement)
+jsDestructor(HTMLTimeElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -1069,6 +1072,7 @@ const ReflectTable0 = [
   makes("http-equiv", "httpEquiv", TAG_META),
   makes("content", TAG_META),
   makes("media", TAG_META),
+  makes("datetime", "dateTime", TAG_TIME),
   makeul("cols", TAG_TEXTAREA, 20u32),
   makeul("rows", TAG_TEXTAREA, 1u32),
 # > For historical reasons, the default value of the size IDL attribute
@@ -6107,6 +6111,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLMetaElement, TAG_META)
   register(HTMLDetailsElement, TAG_DETAILS)
   register(HTMLFrameElement, TAG_FRAME)
+  register(HTMLTimeElement, TAG_TIME)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 

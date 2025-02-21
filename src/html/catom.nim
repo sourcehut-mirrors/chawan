@@ -51,6 +51,7 @@ macro makeStaticAtom =
       satCrossorigin = "crossorigin"
       satCustomevent = "customevent"
       satDOMContentLoaded = "DOMContentLoaded"
+      satDatetime = "datetime"
       satDefaultSelected = "defaultSelected"
       satDefer = "defer"
       satDirname = "dirname"
@@ -64,6 +65,7 @@ macro makeStaticAtom =
       satFormaction = "formaction"
       satFormenctype = "formenctype"
       satFormmethod = "formmethod"
+      satHDatetime = "dateTime"
       satHHttpEquiv = "httpEquiv"
       satHIsMap = "isMap"
       satHNoValidate = "noValidate"
@@ -102,6 +104,7 @@ macro makeStaticAtom =
       satOnclick = "onclick"
       satOninput = "oninput"
       satOnload = "onload"
+      satOpen = "open"
       satOrigin = "origin"
       satPassword = "password"
       satPathname = "pathname"
@@ -288,6 +291,8 @@ proc toStaticAtom*(s: string): StaticAtom =
     if factoryInit.atomMap[int(atom)] == s:
       # Found
       return atom.toStaticAtom()
+  when nimvm:
+    assert false
   atUnknown
 
 func toNamespace*(atom: CAtom): Namespace =
