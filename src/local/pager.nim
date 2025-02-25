@@ -23,7 +23,6 @@ import io/console
 import io/dynstream
 import io/poll
 import io/promise
-import io/tempfile
 import io/timeout
 import local/container
 import local/lineedit
@@ -170,6 +169,7 @@ type
     status: Surface
     term*: Terminal
     timeouts*: TimeoutState
+    tmpfSeq: uint
     unreg*: seq[Container]
 
   ContainerData* = ref object of MapData
@@ -1008,7 +1008,12 @@ proc redraw(pager: Pager) {.jsfunc.} =
       pager.container.select.redraw = true
 
 proc getTempFile(pager: Pager; ext = ""): string =
-  return getTempFile(pager.config.external.tmpdir, ext)
+  result = pager.config.external.tmpdir / "chaptmp" &
+    $pager.loader.clientPid & "-" & $pager.tmpfSeq
+  if ext != "":
+    result &= "."
+    result &= ext
+  inc pager.tmpfSeq
 
 proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     offx, erry, dispw: int) =
@@ -1730,6 +1735,7 @@ proc openInEditor(pager: Pager; input: var string): bool =
   try:
     let tmpf = pager.getTempFile()
     if input != "":
+      discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
       writeFile(tmpf, input)
     let cmd = pager.getEditorCommand(tmpf)
     if cmd == "":
@@ -2462,6 +2468,7 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
 # If needsterminal, leave stderr and stdout open and wait for the process.
 proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd, outpath: string) =
+  discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
   if needsterminal:
     pager.term.quit()
     let os = newPosixStream(dup(pager.term.ostream.fd))

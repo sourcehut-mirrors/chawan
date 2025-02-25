@@ -38,7 +38,6 @@ import io/bufreader
 import io/bufwriter
 import io/dynstream
 import io/poll
-import io/tempfile
 import monoucha/javascript
 import server/connecterror
 import server/headers
@@ -137,11 +136,13 @@ type
     startTime: Time
 
   LoaderContext = ref object
+    pid: int
     pagerClient: ClientHandle
     alive: bool
     config: LoaderConfig
     handleMap: seq[LoaderHandle]
     pollData: PollData
+    tmpfSeq: uint
     # List of existing clients (buffer or pager) that may make requests.
     clientMap: Table[int, ClientHandle] # pid -> data
     # ID of next output. TODO: find a better allocation scheme
@@ -436,6 +437,7 @@ proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
     targetPath: string; fileOutput: out OutputHandle; osent: out uint64): bool =
   fileOutput = nil
   osent = 0
+  discard mkdir(cstring(ctx.config.tmpdir), 0o700)
   let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
   if ps == nil:
     return false
@@ -474,12 +476,16 @@ proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
       fileOutput.url = output.url
   return true
 
+proc getTempFile(ctx: LoaderContext): string =
+  result = ctx.config.tmpdir / "chaltmp" & $ctx.pid & "-" & $ctx.tmpfSeq
+  inc ctx.tmpfSeq
+
 proc addCacheFile(ctx: LoaderContext; client: ClientHandle; output: OutputHandle):
     int =
   if output.parent != nil and output.parent.cacheId != -1:
     # may happen e.g. if client tries to cache a `cache:' URL
     return output.parent.cacheId
-  let tmpf = getTempFile(ctx.config.tmpdir)
+  let tmpf = ctx.getTempFile()
   var dummy: OutputHandle
   var sent: uint64
   if ctx.redirectToFile(output, tmpf, dummy, sent):
@@ -875,7 +881,7 @@ proc loadCGI(ctx: LoaderContext; client: ClientHandle; handle: InputHandle;
   if request.tocache:
     # Set stdout to a file, and repurpose the pipe as a dummy to detect when
     # the process ends. outputId is the cache id.
-    let tmpf = getTempFile(ctx.config.tmpdir)
+    let tmpf = ctx.getTempFile()
     ostreamOut2 = ostreamOut
     # RDWR, otherwise mmap won't work
     ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR, 0o600)
@@ -1647,7 +1653,11 @@ proc exitLoader(ctx: LoaderContext) =
 var gctx: LoaderContext
 proc initLoaderContext(config: LoaderConfig; stream: SocketStream):
     LoaderContext =
-  var ctx = LoaderContext(alive: true, config: config)
+  var ctx = LoaderContext(
+    alive: true,
+    config: config,
+    pid: getCurrentProcessId()
+  )
   gctx = ctx
   onSignal SIGTERM:
     discard sig
