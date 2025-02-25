@@ -135,10 +135,9 @@ type
     contentLen: uint64
     startTime: Time
 
-  LoaderContext = ref object
+  LoaderContext = object
     pid: int
     pagerClient: ClientHandle
-    alive: bool
     config: LoaderConfig
     handleMap: seq[LoaderHandle]
     pollData: PollData
@@ -336,7 +335,8 @@ iterator outputHandles(ctx: LoaderContext): OutputHandle {.inline.} =
     if it != nil and it of OutputHandle:
       yield OutputHandle(it)
 
-func findOutput(ctx: LoaderContext; id: int; client: ClientHandle): OutputHandle =
+func findOutput(ctx: var LoaderContext; id: int;
+    client: ClientHandle): OutputHandle =
   assert id != -1
   for it in ctx.outputHandles:
     if it.outputId == id:
@@ -361,33 +361,33 @@ func find(cacheMap: openArray[CachedItem]; id: int): int =
 type PushBufferResult = enum
   pbrDone, pbrUnregister
 
-proc register(ctx: LoaderContext; handle: InputHandle) =
+proc register(ctx: var LoaderContext; handle: InputHandle) =
   assert not handle.registered
   ctx.pollData.register(handle.stream.fd, cshort(POLLIN))
   handle.registered = true
 
-proc unregister(ctx: LoaderContext; handle: InputHandle) =
+proc unregister(ctx: var LoaderContext; handle: InputHandle) =
   assert handle.registered
   ctx.pollData.unregister(int(handle.stream.fd))
   handle.registered = false
 
-proc register(ctx: LoaderContext; output: OutputHandle) =
+proc register(ctx: var LoaderContext; output: OutputHandle) =
   assert not output.registered
   ctx.pollData.register(int(output.stream.fd), cshort(POLLOUT))
   output.registered = true
 
-proc unregister(ctx: LoaderContext; output: OutputHandle) =
+proc unregister(ctx: var LoaderContext; output: OutputHandle) =
   assert output.registered
   ctx.pollData.unregister(int(output.stream.fd))
   output.registered = false
 
-proc register(ctx: LoaderContext; client: ClientHandle) =
+proc register(ctx: var LoaderContext; client: ClientHandle) =
   assert not client.registered
   ctx.clientMap[client.pid] = client
   ctx.pollData.register(client.stream.fd, cshort(POLLIN))
   client.registered = true
 
-proc unregister(ctx: LoaderContext; client: ClientHandle) =
+proc unregister(ctx: var LoaderContext; client: ClientHandle) =
   assert client.registered
   ctx.clientMap.del(client.pid)
   ctx.pollData.unregister(int(client.stream.fd))
@@ -395,8 +395,8 @@ proc unregister(ctx: LoaderContext; client: ClientHandle) =
 
 # Either write data to the target output, or append it to the list of buffers to
 # write and register the output in our selector.
-proc pushBuffer(ctx: LoaderContext; output: OutputHandle; buffer: LoaderBuffer;
-    si: int): PushBufferResult =
+proc pushBuffer(ctx: var LoaderContext; output: OutputHandle;
+    buffer: LoaderBuffer; si: int): PushBufferResult =
   if output.suspended:
     if output.currentBuffer == nil:
       output.currentBuffer = buffer
@@ -429,11 +429,11 @@ proc pushBuffer(ctx: LoaderContext; output: OutputHandle; buffer: LoaderBuffer;
     output.buffers.addLast(buffer)
   pbrDone
 
-proc getOutputId(ctx: LoaderContext): int =
+proc getOutputId(ctx: var LoaderContext): int =
   result = ctx.outputNum
   inc ctx.outputNum
 
-proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
+proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
     targetPath: string; fileOutput: out OutputHandle; osent: out uint64): bool =
   fileOutput = nil
   osent = 0
@@ -476,12 +476,12 @@ proc redirectToFile(ctx: LoaderContext; output: OutputHandle;
       fileOutput.url = output.url
   return true
 
-proc getTempFile(ctx: LoaderContext): string =
+proc getTempFile(ctx: var LoaderContext): string =
   result = ctx.config.tmpdir / "chaltmp" & $ctx.pid & "-" & $ctx.tmpfSeq
   inc ctx.tmpfSeq
 
-proc addCacheFile(ctx: LoaderContext; client: ClientHandle; output: OutputHandle):
-    int =
+proc addCacheFile(ctx: var LoaderContext; client: ClientHandle;
+    output: OutputHandle): int =
   if output.parent != nil and output.parent.cacheId != -1:
     # may happen e.g. if client tries to cache a `cache:' URL
     return output.parent.cacheId
@@ -509,19 +509,19 @@ proc openCachedItem(client: ClientHandle; id: int): (PosixStream, int) =
     return (ps, n)
   return (nil, -1)
 
-proc put(ctx: LoaderContext; handle: LoaderHandle) =
+proc put(ctx: var LoaderContext; handle: LoaderHandle) =
   let fd = int(handle.stream.fd)
   if ctx.handleMap.len <= fd:
     ctx.handleMap.setLen(fd + 1)
   assert ctx.handleMap[fd] == nil
   ctx.handleMap[fd] = handle
 
-proc unset(ctx: LoaderContext; handle: LoaderHandle) =
+proc unset(ctx: var LoaderContext; handle: LoaderHandle) =
   let fd = int(handle.stream.fd)
   if fd < ctx.handleMap.len:
     ctx.handleMap[fd] = nil
 
-proc addFd(ctx: LoaderContext; handle: InputHandle) =
+proc addFd(ctx: var LoaderContext; handle: InputHandle) =
   let output = handle.output
   output.stream.setBlocking(false)
   handle.stream.setBlocking(false)
@@ -687,7 +687,7 @@ type HandleReadResult = enum
   hrrDone, hrrUnregister, hrrBrokenPipe
 
 # Called whenever there is more data available to read.
-proc handleRead(ctx: LoaderContext; handle: InputHandle;
+proc handleRead(ctx: var LoaderContext; handle: InputHandle;
     unregWrite: var seq[OutputHandle]): HandleReadResult =
   var unregs = 0
   let maxUnregs = handle.outputs.len
@@ -734,7 +734,8 @@ proc handleRead(ctx: LoaderContext; handle: InputHandle;
 # cachedHandle is used for attaching the output handle to another
 # InputHandle when loadFromCache is called while a download is still
 # ongoing (and thus some parts of the document are not cached yet).
-proc loadStreamRegular(ctx: LoaderContext; handle, cachedHandle: InputHandle) =
+proc loadStreamRegular(ctx: var LoaderContext;
+    handle, cachedHandle: InputHandle) =
   assert handle.parser == nil # parser is only used with CGI
   var unregWrite: seq[OutputHandle] = @[]
   let r = ctx.handleRead(handle, unregWrite)
@@ -860,7 +861,7 @@ proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
         break
   return cpath
 
-proc loadCGI(ctx: LoaderContext; client: ClientHandle; handle: InputHandle;
+proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     request: Request; prevURL: URL; config: LoaderClientConfig) =
   let cpath = ctx.parseCGIPath(request)
   if cpath.cmd == "" or cpath.basename in ["", ".", ".."] or
@@ -1006,8 +1007,8 @@ func findPassedFd(client: ClientHandle; name: string): int =
       return i
   return -1
 
-proc loadStream(ctx: LoaderContext; client: ClientHandle; handle: InputHandle;
-    request: Request) =
+proc loadStream(ctx: var LoaderContext; client: ClientHandle;
+    handle: InputHandle; request: Request) =
   let i = client.findPassedFd(request.url.pathname)
   if i == -1:
     handle.sendResult(ceFileNotFound, "stream not found")
@@ -1027,8 +1028,8 @@ proc loadStream(ctx: LoaderContext; client: ClientHandle; handle: InputHandle;
     # not loading from cache, so cachedHandle is nil
     ctx.loadStreamRegular(handle, nil)
 
-proc loadFromCache(ctx: LoaderContext; client: ClientHandle; handle: InputHandle;
-    request: Request) =
+proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
+    handle: InputHandle; request: Request) =
   let id = parseInt32(request.url.pathname).get(-1)
   let startFrom = parseInt32(request.url.search.substr(1)).get(0)
   let (ps, n) = client.openCachedItem(id)
@@ -1052,7 +1053,7 @@ proc loadFromCache(ctx: LoaderContext; client: ClientHandle; handle: InputHandle
 # Data URL handler.
 # Moved back into loader from CGI, because data URLs can get extremely long
 # and thus no longer fit into the environment.
-proc loadDataSend(ctx: LoaderContext; handle: InputHandle; s, ct: string) =
+proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
   handle.sendResult(0)
   handle.sendStatus(200)
   handle.sendHeaders(newHeaders({"Content-Type": ct}))
@@ -1079,7 +1080,7 @@ proc loadDataSend(ctx: LoaderContext; handle: InputHandle; s, ct: string) =
     else:
       output.oclose()
 
-proc loadData(ctx: LoaderContext; handle: InputHandle; request: Request) =
+proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
   var ct = url.pathname.until(',')
   if AllChars - Ascii + Controls - {'\t'} in ct:
@@ -1185,7 +1186,7 @@ proc parseDownloadActions(ctx: LoaderContext; s: string): seq[DownloadAction] =
   result.sort(proc(a, b: DownloadAction): int = return cmp(a.n, b.n),
     Descending)
 
-proc loadAbout(ctx: LoaderContext; handle: InputHandle; request: Request) =
+proc loadAbout(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
   case url.pathname
   of "blank":
@@ -1243,7 +1244,7 @@ proc loadAbout(ctx: LoaderContext; handle: InputHandle; request: Request) =
   else:
     handle.rejectHandle(ceInvalidURL, "invalid download URL")
 
-proc loadResource(ctx: LoaderContext; client: ClientHandle;
+proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     config: LoaderClientConfig; request: Request; handle: InputHandle) =
   var redo = true
   var tries = 0
@@ -1307,7 +1308,7 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig) =
     if r != "":
       request.headers["Referer"] = r
 
-proc load(ctx: LoaderContext; stream: SocketStream; request: Request;
+proc load(ctx: var LoaderContext; stream: SocketStream; request: Request;
     client: ClientHandle; config: LoaderClientConfig) =
   var sy {.noinit.}: array[2, cint]
   var fail = false
@@ -1331,21 +1332,21 @@ proc load(ctx: LoaderContext; stream: SocketStream; request: Request;
       request.setupRequestDefaults(config)
       ctx.loadResource(client, config, request, handle)
 
-proc load(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
+proc load(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
     r: var BufferedReader) =
   var request: Request
   r.sread(request)
   ctx.load(stream, request, client, client.config)
 
-proc loadConfig(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var BufferedReader) =
+proc loadConfig(ctx: var LoaderContext; stream: SocketStream;
+    client: ClientHandle; r: var BufferedReader) =
   var request: Request
   var config: LoaderClientConfig
   r.sread(request)
   r.sread(config)
   ctx.load(stream, request, client, config)
 
-proc getCacheFile(ctx: LoaderContext; stream: SocketStream;
+proc getCacheFile(ctx: var LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
   var cacheId: int
   var sourcePid: int
@@ -1359,7 +1360,7 @@ proc getCacheFile(ctx: LoaderContext; stream: SocketStream;
     else:
       w.swrite("")
 
-proc addClient(ctx: LoaderContext; stream: SocketStream;
+proc addClient(ctx: var LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
   var pid: int
   var config: LoaderClientConfig
@@ -1391,7 +1392,7 @@ proc addClient(ctx: LoaderContext; stream: SocketStream;
       w.swrite(false)
   discard close(sy[1])
 
-proc removeClient(ctx: LoaderContext; stream: SocketStream;
+proc removeClient(ctx: var LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
   var pid: int
   r.sread(pid)
@@ -1399,8 +1400,8 @@ proc removeClient(ctx: LoaderContext; stream: SocketStream;
     let client = ctx.clientMap[pid]
     ctx.unregClient.add(client)
 
-proc addCacheFile(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var BufferedReader) =
+proc addCacheFile(ctx: var LoaderContext; stream: SocketStream;
+    client: ClientHandle; r: var BufferedReader) =
   var outputId: int
   var targetPid: int
   r.sread(outputId)
@@ -1414,7 +1415,7 @@ proc addCacheFile(ctx: LoaderContext; stream: SocketStream; client: ClientHandle
   stream.withPacketWriter w:
     w.swrite(id)
 
-proc redirectToFile(ctx: LoaderContext; stream: SocketStream;
+proc redirectToFile(ctx: var LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
   var outputId: int
   var targetPath: string
@@ -1448,7 +1449,7 @@ proc redirectToFile(ctx: LoaderContext; stream: SocketStream;
   stream.withPacketWriter w:
     w.swrite(success)
 
-proc shareCachedItem(ctx: LoaderContext; stream: SocketStream;
+proc shareCachedItem(ctx: var LoaderContext; stream: SocketStream;
     r: var BufferedReader) =
   # share a cached file with another buffer. this is for newBufferFrom
   # (i.e. view source)
@@ -1481,7 +1482,7 @@ proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
   if ps != nil:
     ps.sclose()
 
-proc passFd(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
+proc passFd(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
     r: var BufferedReader) =
   var id: string
   r.sread(id)
@@ -1489,7 +1490,7 @@ proc passFd(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
   #TODO cloexec?
   client.passedFdMap.add((id, newPosixStream(fd)))
 
-proc addPipe(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
+proc addPipe(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
     r: var BufferedReader) =
   var id: string
   r.sread(id)
@@ -1506,7 +1507,7 @@ proc addPipe(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
     ps.setCloseOnExec()
     client.passedFdMap.add((id, ps))
 
-proc removeCachedItem(ctx: LoaderContext; stream: SocketStream;
+proc removeCachedItem(ctx: var LoaderContext; stream: SocketStream;
     client: ClientHandle; r: var BufferedReader) =
   var id: int
   r.sread(id)
@@ -1518,7 +1519,7 @@ proc removeCachedItem(ctx: LoaderContext; stream: SocketStream;
     if item.refc == 0:
       discard unlink(cstring(item.path))
 
-proc tee(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
+proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
     r: var BufferedReader) =
   var sourceId: int
   var targetPid: int
@@ -1543,7 +1544,8 @@ proc tee(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
     stream.withPacketWriter w:
       w.swrite(-1)
 
-proc addAuth(ctx: LoaderContext; stream: SocketStream; r: var BufferedReader) =
+proc addAuth(ctx: var LoaderContext; stream: SocketStream;
+    r: var BufferedReader) =
   var url: URL
   r.sread(url)
   let origin = url.authOrigin
@@ -1560,7 +1562,7 @@ proc addAuth(ctx: LoaderContext; stream: SocketStream; r: var BufferedReader) =
     ctx.authMap.add(item)
     ctx.pagerClient.authMap.add(item)
 
-proc suspend(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
+proc suspend(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
     r: var BufferedReader) =
   var ids: seq[int]
   r.sread(ids)
@@ -1572,7 +1574,7 @@ proc suspend(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
         # do not waste cycles trying to push into output
         ctx.unregister(output)
 
-proc resume(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
+proc resume(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
     r: var BufferedReader) =
   var ids: seq[int]
   r.sread(ids)
@@ -1583,7 +1585,7 @@ proc resume(ctx: LoaderContext; stream: SocketStream; client: ClientHandle;
       if not output.isEmpty or output.istreamAtEnd:
         ctx.register(output)
 
-proc readCommand(ctx: LoaderContext; client: ClientHandle) =
+proc readCommand(ctx: var LoaderContext; client: ClientHandle) =
   let stream = SocketStream(client.stream)
   try:
     assert not client.stream.isend
@@ -1650,51 +1652,9 @@ proc exitLoader(ctx: LoaderContext) =
           discard unlink(cstring(it.path))
   exitnow(1)
 
-var gctx: LoaderContext
-proc initLoaderContext(config: LoaderConfig; stream: SocketStream):
-    LoaderContext =
-  var ctx = LoaderContext(
-    alive: true,
-    config: config,
-    pid: getCurrentProcessId()
-  )
-  gctx = ctx
-  onSignal SIGTERM:
-    discard sig
-    gctx.exitLoader()
-  for dir in ctx.config.cgiDir.mitems:
-    if dir.len > 0 and dir[^1] != '/':
-      dir &= '/'
-  stream.withPacketReader r:
-    var cmd: LoaderCommand
-    r.sread(cmd)
-    doAssert cmd == lcAddClient
-    var pid: int
-    var config: LoaderClientConfig
-    r.sread(pid)
-    r.sread(config)
-    stream.withPacketWriter w:
-      w.swrite(true)
-    ctx.pagerClient = ClientHandle(stream: stream, pid: pid, config: config)
-    ctx.register(ctx.pagerClient)
-    ctx.put(ctx.pagerClient)
-  # for CGI
-  putEnv("SERVER_SOFTWARE", "Chawan")
-  putEnv("SERVER_PROTOCOL", "HTTP/1.0")
-  putEnv("SERVER_NAME", "localhost")
-  putEnv("SERVER_PORT", "80")
-  putEnv("REMOTE_HOST", "localhost")
-  putEnv("REMOTE_ADDR", "127.0.0.1")
-  putEnv("GATEWAY_INTERFACE", "CGI/1.1")
-  putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
-  putEnv("CHA_TMP_DIR", config.tmpdir)
-  putEnv("CHA_DIR", config.configdir)
-  putEnv("CHA_BOOKMARK", config.bookmark)
-  return ctx
-
 # This is only called when an OutputHandle could not read enough of one (or
 # more) buffers, and we asked select to notify us when it will be available.
-proc handleWrite(ctx: LoaderContext; output: OutputHandle;
+proc handleWrite(ctx: var LoaderContext; output: OutputHandle;
     unregWrite: var seq[OutputHandle]) =
   while output.currentBuffer != nil:
     let buffer = output.currentBuffer
@@ -1718,7 +1678,7 @@ proc handleWrite(ctx: LoaderContext; output: OutputHandle;
       # all buffers sent, no need to select on this output again for now
       ctx.unregister(output)
 
-proc finishCycle(ctx: LoaderContext) =
+proc finishCycle(ctx: var LoaderContext) =
   # Unregister handles queued for unregistration.
   # It is possible for both unregRead and unregWrite to contain duplicates. To
   # avoid double-close/double-unregister, we set the istream/ostream of
@@ -1764,9 +1724,8 @@ proc finishCycle(ctx: LoaderContext) =
   ctx.unregWrite.setLen(0)
   ctx.unregClient.setLen(0)
 
-proc runFileLoader*(config: LoaderConfig; controlStream: SocketStream) =
-  var ctx = initLoaderContext(config, controlStream)
-  while ctx.alive:
+proc loaderLoop(ctx: var LoaderContext) =
+  while true:
     ctx.pollData.poll(-1)
     for event in ctx.pollData.events:
       let efd = int(event.fd)
@@ -1793,3 +1752,42 @@ proc runFileLoader*(config: LoaderConfig; controlStream: SocketStream) =
           ctx.unregClient.add(ClientHandle(handle))
     ctx.finishCycle()
   ctx.exitLoader()
+
+proc runFileLoader*(config: LoaderConfig; stream: SocketStream) =
+  var ctx {.global.}: LoaderContext
+  ctx = LoaderContext(
+    config: config,
+    pid: getCurrentProcessId()
+  )
+  onSignal SIGTERM:
+    discard sig
+    ctx.exitLoader()
+  for dir in ctx.config.cgiDir.mitems:
+    if dir.len > 0 and dir[^1] != '/':
+      dir &= '/'
+  stream.withPacketReader r:
+    var cmd: LoaderCommand
+    r.sread(cmd)
+    doAssert cmd == lcAddClient
+    var pid: int
+    var config: LoaderClientConfig
+    r.sread(pid)
+    r.sread(config)
+    stream.withPacketWriter w:
+      w.swrite(true)
+    ctx.pagerClient = ClientHandle(stream: stream, pid: pid, config: config)
+  ctx.register(ctx.pagerClient)
+  ctx.put(ctx.pagerClient)
+  # for CGI
+  putEnv("SERVER_SOFTWARE", "Chawan")
+  putEnv("SERVER_PROTOCOL", "HTTP/1.0")
+  putEnv("SERVER_NAME", "localhost")
+  putEnv("SERVER_PORT", "80")
+  putEnv("REMOTE_HOST", "localhost")
+  putEnv("REMOTE_ADDR", "127.0.0.1")
+  putEnv("GATEWAY_INTERFACE", "CGI/1.1")
+  putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
+  putEnv("CHA_TMP_DIR", config.tmpdir)
+  putEnv("CHA_DIR", config.configdir)
+  putEnv("CHA_BOOKMARK", config.bookmark)
+  ctx.loaderLoop()
