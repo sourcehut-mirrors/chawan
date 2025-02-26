@@ -434,10 +434,9 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     attrsp: ptr WindowAttributes; loader: FileLoader; url: URL;
     urandom: PosixStream; imageTypes: Table[string, string];
     userAgent, referrer: string): Window =
-  let err = newDynFileStream(stderr)
   let window = Window(
     attrsp: attrsp,
-    internalConsole: newConsole(err),
+    internalConsole: newConsole(stderr),
     navigator: Navigator(),
     loader: loader,
     images: images,

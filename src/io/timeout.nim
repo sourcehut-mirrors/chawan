@@ -2,7 +2,6 @@ import std/algorithm
 import std/times
 
 import io/console
-import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jsutils
@@ -80,12 +79,12 @@ proc setTimeout*(state: var TimeoutState; t: TimeoutType; handler: JSValue;
   state.sorted = false
   return id
 
-proc runEntry(state: var TimeoutState; entry: TimeoutEntry; err: DynStream) =
+proc runEntry(state: var TimeoutState; entry: TimeoutEntry; console: Console) =
   if JS_IsFunction(state.jsctx, entry.val):
     let ret = JS_Call(state.jsctx, entry.val, JS_UNDEFINED,
       cint(entry.args.len), entry.args.toJSValueArray())
     if JS_IsException(ret):
-      state.jsctx.writeException(err)
+      console.writeException(state.jsctx)
     JS_FreeValue(state.jsctx, ret)
   else:
     var s: string
@@ -103,7 +102,7 @@ proc sortAndGetTimeout*(state: var TimeoutState): cint =
   let now = getUnixMillis()
   return cint(max(state.timeouts[^1].expires - now, -1))
 
-proc run*(state: var TimeoutState; err: DynStream): bool =
+proc run*(state: var TimeoutState; console: Console): bool =
   let now = getUnixMillis()
   var found = false
   var H = state.timeouts.high
@@ -113,7 +112,7 @@ proc run*(state: var TimeoutState; err: DynStream): bool =
     let entry = state.timeouts[i]
     if entry.dead:
       continue
-    state.runEntry(entry, err)
+    state.runEntry(entry, console)
     found = true
     case entry.t
     of ttTimeout:

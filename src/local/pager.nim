@@ -510,7 +510,7 @@ proc runJSJobs(pager: Pager) =
     if r.isSome:
       break
     let ctx = r.error
-    ctx.writeException(pager.console.err)
+    pager.console.writeException(ctx)
   if pager.exitCode != -1:
     pager.quit(0)
 
@@ -560,7 +560,7 @@ proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
       assert not pager.inEval
       pager.quit(pager.exitCode)
   if JS_IsException(ret):
-    pager.jsctx.writeException(pager.console.err)
+    pager.console.writeException(pager.jsctx)
   elif JS_IsObject(ret):
     var maybep: EmptyPromise
     if ctx.fromJS(ret, maybep).isSome:
@@ -572,7 +572,7 @@ proc command0(pager: Pager; src: string; filename = "<command>";
     silence = false; module = false) =
   let ret = pager.evalJS(src, filename, module = module)
   if JS_IsException(ret):
-    pager.jsctx.writeException(pager.console.err)
+    pager.console.writeException(pager.jsctx)
   else:
     if not silence:
       var res: string
@@ -2067,8 +2067,9 @@ proc clearConsole(pager: Pager) =
     pager.replace(pager.consoleWrapper.container, replacement)
     pager.consoleWrapper.container = replacement
     let console = pager.console
-    console.err.sclose()
-    console.err = pouts
+    var file: File = nil
+    if file.open(pouts.fd, fmWrite):
+      console.setStream(file)
 
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
   if interactive and pager.config.start.consoleBuffer:
@@ -2086,17 +2087,16 @@ proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
       let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pins,
         url, ConsoleTitle, {})
       pouts.write("Type (M-c) console.hide() to return to buffer mode.\n")
-      let console = newConsole(pouts, clearFun, showFun, hideFun)
-      return ConsoleWrapper(console: console, container: container)
-  let err = newPosixStream(STDERR_FILENO)
-  return ConsoleWrapper(console: newConsole(err))
+      var file: File = nil
+      if file.open(pouts.fd, fmWrite):
+        let console = newConsole(file, clearFun, showFun, hideFun)
+        return ConsoleWrapper(console: console, container: container)
+  return ConsoleWrapper(console: newConsole(stderr))
 
 proc flushConsole*(pager: Pager) =
   if pager.console == nil:
     # hack for when client crashes before console has been initialized
-    pager.consoleWrapper = ConsoleWrapper(
-      console: newConsole(newDynFileStream(stderr))
-    )
+    pager.consoleWrapper = ConsoleWrapper(console: newConsole(stderr))
   pager.handleRead(pager.forkserver.estream.fd)
 
 proc command(pager: Pager) {.jsfunc.} =
@@ -3163,14 +3163,14 @@ proc handleStderr(pager: Pager) =
           found = true
           break
       if hadlf:
-        pager.console.err.write(prefix)
+        pager.console.write(prefix)
       if j - i > 0:
-        pager.console.err.write(buffer.toOpenArray(i, j - 1))
+        pager.console.write(buffer.toOpenArray(i, j - 1))
       i = j
       hadlf = found
   if not hadlf:
-    pager.console.err.write('\n')
-  discard pager.console.err.flush()
+    pager.console.write('\n')
+  pager.console.flush()
 
 proc handleRead(pager: Pager; fd: int) =
   if pager.term.istream != nil and fd == pager.term.istream.fd:
@@ -3271,7 +3271,7 @@ proc inputLoop(pager: Pager) =
         pager.handleWrite(efd)
       if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
         pager.handleError(efd)
-    if pager.timeouts.run(pager.console.err):
+    if pager.timeouts.run(pager.console):
       let container = pager.consoleWrapper.container
       if container != nil:
         container.tailOnLoad = true
@@ -3318,7 +3318,7 @@ proc headlessLoop(pager: Pager) =
         pager.handleError(efd)
     pager.loader.unblockRegister()
     pager.loader.unregistered.setLen(0)
-    discard pager.timeouts.run(pager.console.err)
+    discard pager.timeouts.run(pager.console)
     pager.runJSJobs()
     pager.acceptBuffers()
 

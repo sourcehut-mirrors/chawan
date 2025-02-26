@@ -1414,7 +1414,7 @@ proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
   let ctx = buffer.window.jsctx
   let ret = ctx.eval(source, '<' & $buffer.baseURL & '>', JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(ret):
-    ctx.writeException(buffer.window.console.err)
+    buffer.window.console.writeException(ctx)
     return err() # error
   if JS_IsUndefined(ret):
     return err() # no need to navigate
@@ -1926,7 +1926,7 @@ proc runBuffer(buffer: Buffer) =
     buffer.loader.unregistered.setLen(0)
     buffer.loader.unblockRegister()
     if buffer.config.scripting != smFalse:
-      if buffer.window.timeouts.run(buffer.window.console.err):
+      if buffer.window.timeouts.run(buffer.window.console):
         buffer.window.runJSJobs()
         buffer.maybeReshape()
 

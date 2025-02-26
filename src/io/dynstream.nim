@@ -447,39 +447,3 @@ method flush*(s: BufStream): bool =
 
 proc newBufStream*(s: SocketStream; registerFun: proc(fd: int)): BufStream =
   return BufStream(source: s, registerFun: registerFun)
-
-type
-  DynFileStream* = ref object of DynStream
-    file*: File
-
-method readData*(s: DynFileStream; buffer: pointer; len: int): int =
-  let n = s.file.readBuffer(buffer, len)
-  if n == 0:
-    s.setEnd()
-  return n
-
-method writeData*(s: DynFileStream; buffer: pointer; len: int): int =
-  return s.file.writeBuffer(buffer, len)
-
-method seek*(s: DynFileStream; off: int64): int64 =
-  s.file.setFilePos(off)
-  return off
-
-method sclose*(s: DynFileStream) =
-  assert not s.closed
-  s.file.close()
-  s.closed = true
-
-proc c_fflush(f: File): cint {.importc: "fflush", header: "<stdio.h>".}
-
-method flush*(s: DynFileStream): bool =
-  return c_fflush(s.file) == 0
-
-proc newDynFileStream*(file: File): DynFileStream =
-  return DynFileStream(file: file)
-
-proc newDynFileStream*(path: string): DynFileStream =
-  var file: File = nil
-  if file.open(path):
-    return newDynFileStream(path)
-  return nil

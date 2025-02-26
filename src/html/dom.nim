@@ -4350,7 +4350,7 @@ proc runJSJobs*(window: Window) =
     if r.isSome:
       break
     let ctx = r.error
-    ctx.writeException(window.console.err)
+    window.console.writeException(ctx)
 
 proc performMicrotaskCheckpoint*(window: Window) =
   if window.inMicrotaskCheckpoint:
