@@ -3,8 +3,8 @@ import std/posix
 import std/strutils
 
 import config/mimetypes
-import io/bufreader
-import io/bufwriter
+import io/packetreader
+import io/packetwriter
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jstypes
@@ -30,36 +30,33 @@ jsDestructor(WebFile)
 # Forward declarations
 proc deallocBlob*(opaque, p: pointer) {.raises: [].}
 
-#TODO it would be nice if we had a separate fd type that does sendAux;
-# this solution fails when blob isn't swritten by some module that does
-# not import it (just as a transitive dependency).
-proc swrite*(writer: var BufferedWriter; blob: Blob) =
+proc swrite*(w: var PacketWriter; blob: Blob) =
   if blob.fd.isSome:
-    writer.sendAux.add(blob.fd.get)
-  writer.swrite(blob of WebFile)
+    w.sendFd(blob.fd.get)
+  w.swrite(blob of WebFile)
   if blob of WebFile:
-    writer.swrite(WebFile(blob).name)
-  writer.swrite(blob.fd.isSome)
-  writer.swrite(blob.ctype)
-  writer.swrite(blob.size)
+    w.swrite(WebFile(blob).name)
+  w.swrite(blob.fd.isSome)
+  w.swrite(blob.ctype)
+  w.swrite(blob.size)
   if blob.size > 0:
-    writer.writeData(blob.buffer, blob.size)
+    w.writeData(blob.buffer, blob.size)
 
-proc sread*(reader: var BufferedReader; blob: var Blob) =
+proc sread*(r: var PacketReader; blob: var Blob) =
   var isWebFile: bool
-  reader.sread(isWebFile)
+  r.sread(isWebFile)
   blob = if isWebFile: WebFile() else: Blob()
   if isWebFile:
-    reader.sread(WebFile(blob).name)
+    r.sread(WebFile(blob).name)
   var hasFd: bool
-  reader.sread(hasFd)
+  r.sread(hasFd)
   if hasFd:
-    blob.fd = some(reader.recvAux.pop())
-  reader.sread(blob.ctype)
-  reader.sread(blob.size)
+    blob.fd = some(r.recvFd())
+  r.sread(blob.ctype)
+  r.sread(blob.size)
   if blob.size > 0:
     let buffer = alloc(blob.size)
-    reader.readData(blob.buffer, blob.size)
+    r.readData(blob.buffer, blob.size)
     blob.buffer = buffer
     blob.deallocFun = deallocBlob
 

@@ -8,7 +8,7 @@ import config/config
 import config/cookie
 import config/mimetypes
 import css/render
-import io/bufwriter
+import io/packetwriter
 import io/dynstream
 import io/promise
 import local/select
@@ -247,9 +247,9 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     discard close(sv[1])
     return nil
   container.iface.stream.source.withPacketWriter w:
-    w.sendAux.add(sv[1])
-    w.sendAux.add(pipefd[0])
-    w.sendAux.add(pipefd[1])
+    w.sendFd(sv[1])
+    w.sendFd(pipefd[0])
+    w.sendFd(pipefd[1])
   discard close(sv[1])
   discard close(pipefd[0])
   discard close(pipefd[1])
@@ -1598,7 +1598,7 @@ proc readSuccess*(container: Container; s: string; fd: cint = -1) =
   if fd != -1:
     doAssert container.iface.stream.flush()
     container.iface.stream.source.withPacketWriter w:
-      w.sendAux.add(fd)
+      w.sendFd(fd)
   p.then(proc(res: Request) =
     if res != nil:
       container.triggerEvent(ContainerEvent(t: cetOpen, request: res))

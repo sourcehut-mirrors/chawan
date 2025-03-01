@@ -24,9 +24,9 @@ import html/enums
 import html/event
 import html/performance
 import html/script
-import io/bufwriter
 import io/console
 import io/dynstream
+import io/packetwriter
 import io/promise
 import io/timeout
 import monoucha/fromjs

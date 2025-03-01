@@ -128,7 +128,7 @@ $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.h \
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.h $(sandbox)
 $(OUTDIR_CGI_BIN)/sixel: src/types/color.nim $(sandbox) $(twtstr) $(dynstream)
 $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
-	src/io/bufreader.nim src/types/color.nim adapter/img/stb_image.h \
+	src/io/packetreader.nim src/types/color.nim adapter/img/stb_image.h \
 	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/nanosvg: adapter/img/nanosvg.nim adapter/img/nanosvg.h

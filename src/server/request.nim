@@ -2,8 +2,8 @@ import std/options
 import std/tables
 
 import html/script
-import io/bufreader
-import io/bufwriter
+import io/packetreader
+import io/packetwriter
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -94,25 +94,25 @@ type
 
 jsDestructor(JSRequest)
 
-proc swrite*(writer: var BufferedWriter; o: RequestBody) =
-  writer.swrite(o.t)
+proc swrite*(w: var PacketWriter; o: RequestBody) =
+  w.swrite(o.t)
   case o.t
   of rbtNone: discard
-  of rbtString: writer.swrite(o.s)
-  of rbtMultipart: writer.swrite(o.multipart)
-  of rbtOutput: writer.swrite(o.outputId)
-  of rbtCache: writer.swrite(o.cacheId)
+  of rbtString: w.swrite(o.s)
+  of rbtMultipart: w.swrite(o.multipart)
+  of rbtOutput: w.swrite(o.outputId)
+  of rbtCache: w.swrite(o.cacheId)
 
-proc sread*(reader: var BufferedReader; o: var RequestBody) =
+proc sread*(r: var PacketReader; o: var RequestBody) =
   var t: RequestBodyType
-  reader.sread(t)
+  r.sread(t)
   o = RequestBody(t: t)
   case t
   of rbtNone: discard
-  of rbtString: reader.sread(o.s)
-  of rbtMultipart: reader.sread(o.multipart)
-  of rbtOutput: reader.sread(o.outputId)
-  of rbtCache: reader.sread(o.cacheId)
+  of rbtString: r.sread(o.s)
+  of rbtMultipart: r.sread(o.multipart)
+  of rbtOutput: r.sread(o.outputId)
+  of rbtCache: r.sread(o.cacheId)
 
 proc contentLength*(body: RequestBody): int =
   case body.t

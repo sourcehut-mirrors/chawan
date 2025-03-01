@@ -6,9 +6,9 @@
 import std/tables
 
 import config/cookie
-import io/bufreader
-import io/bufwriter
 import io/dynstream
+import io/packetreader
+import io/packetwriter
 import io/promise
 import monoucha/javascript
 import monoucha/jserror
@@ -139,7 +139,7 @@ proc startRequest(loader: FileLoader; request: Request): SocketStream =
   loader.withPacketReader r:
     r.sread(success)
     if success:
-      fd = r.recvAux.pop()
+      fd = r.recvFd()
   if success:
     let res = newSocketStream(fd)
     res.setCloseOnExec()
@@ -154,7 +154,7 @@ proc startRequest*(loader: FileLoader; request: Request;
     w.swrite(config)
   var fd: cint
   loader.withPacketReader r:
-    fd = r.recvAux.pop()
+    fd = r.recvFd()
   return newSocketStream(fd)
 
 iterator data*(loader: FileLoader): MapData {.inline.} =
@@ -261,7 +261,7 @@ proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
   var fd: cint
   loader.withPacketReader r:
     r.sread(outputId)
-    fd = r.recvAux.pop()
+    fd = r.recvFd()
   return (newSocketStream(fd), outputId)
 
 proc addCacheFile*(loader: FileLoader; outputId, targetPid: int): int =
@@ -430,7 +430,7 @@ proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
     var success: bool
     r.sread(success)
     if success:
-      fd = r.recvAux.pop()
+      fd = r.recvFd()
   if fd != -1:
     return newPosixStream(fd)
   return nil
@@ -439,7 +439,7 @@ proc passFd*(loader: FileLoader; id: string; fd: cint) =
   loader.withPacketWriterFire w:
     w.swrite(lcPassFd)
     w.swrite(id)
-    w.sendAux.add(fd)
+    w.sendFd(fd)
 
 proc removeCachedItem*(loader: FileLoader; cacheId: int) =
   loader.withPacketWriterFire w:
@@ -463,7 +463,7 @@ proc addClient*(loader: FileLoader; pid: int; config: LoaderClientConfig;
   loader.withPacketReader r:
     r.sread(success)
     if success and not isPager:
-      fd = r.recvAux.pop()
+      fd = r.recvFd()
   if success and not isPager:
     return newSocketStream(fd)
   return nil
@@ -484,7 +484,7 @@ proc addPipe*(loader: FileLoader; id: string): PosixStream =
     var success: bool
     r.sread(success)
     if success:
-      fd = r.recvAux.pop()
+      fd = r.recvFd()
   if fd != -1:
     return newPosixStream(fd)
   return nil

@@ -6,9 +6,9 @@ import std/tables
 import chagashi/charset
 import config/config
 import config/urimethodmap
-import io/bufreader
-import io/bufwriter
 import io/dynstream
+import io/packetreader
+import io/packetwriter
 import server/buffer
 import server/loader
 import server/loaderiface
@@ -68,7 +68,7 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     w.swrite(attrs)
     w.swrite(ishtml)
     w.swrite(charsetStack)
-    w.sendAux.add(sv[1])
+    w.sendFd(sv[1])
   discard close(sv[1])
   var bufferPid: int
   forkserver.stream.withPacketReader r:
@@ -107,7 +107,7 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
   ctx.loaderStream = nil
   return pid
 
-proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
+proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   var config: BufferConfig
   var url: URL
   var attrs: WindowAttributes
@@ -118,7 +118,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
   r.sread(attrs)
   r.sread(ishtml)
   r.sread(charsetStack)
-  let fd = r.recvAux.pop()
+  let fd = r.recvFd()
   stderr.flushFile()
   let pid = fork()
   if pid == -1:
@@ -139,8 +139,8 @@ proc forkBuffer(ctx: var ForkServerContext; r: var BufferedReader): int =
     var istream: SocketStream
     pstream.withPacketReader r:
       r.sread(cacheId)
-      loaderStream = newSocketStream(r.recvAux.pop())
-      istream = newSocketStream(r.recvAux.pop())
+      loaderStream = newSocketStream(r.recvFd())
+      istream = newSocketStream(r.recvFd())
     let loader = newFileLoader(loaderPid, pid, loaderStream)
     gpstream = pstream
     onSignal SIGTERM:

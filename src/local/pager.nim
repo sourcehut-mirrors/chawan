@@ -17,10 +17,10 @@ import config/mailcap
 import config/mimetypes
 import css/render
 import html/script
-import io/bufreader
-import io/bufwriter
 import io/console
 import io/dynstream
+import io/packetreader
+import io/packetwriter
 import io/poll
 import io/promise
 import io/timeout
@@ -2737,14 +2737,14 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
       loader.resume([istreamOutputId, ostreamOutputId])
     stream.withPacketWriter w:
       w.swrite(outCacheId)
-      w.sendAux.add(cstream.fd)
+      w.sendFd(cstream.fd)
       # pass down ostream
-      w.sendAux.add(ostream.fd)
+      w.sendFd(ostream.fd)
     ostream.sclose()
     container.setStream(bufStream)
   else: # cloned buffer
     stream.withPacketWriter w:
-      w.sendAux.add(cstream.fd)
+      w.sendFd(cstream.fd)
     # buffer is cloned, just share the parent's cached source
     discard loader.shareCachedItem(container.cacheId, container.process)
     # also add a reference here; it will be removed when the container is

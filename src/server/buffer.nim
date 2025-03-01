@@ -26,10 +26,10 @@ import html/env
 import html/event
 import html/formdata as formdata_impl
 import html/script
-import io/bufreader
-import io/bufwriter
 import io/console
 import io/dynstream
+import io/packetreader
+import io/packetwriter
 import io/poll
 import io/promise
 import io/timeout
@@ -222,12 +222,10 @@ proc buildInterfaceProc(fun: NimNode; funid: string):
   let name = fun[0] # sym
   let params = fun[3] # formalparams
   let retval = params[0] # sym
-  var body = newStmtList()
   assert params.len >= 2 # return type, this value
   let nup = ident(funid) # add this to enums
   let this2 = newIdentDefs(ident("iface"), ident("BufferInterface"))
   let thisval = this2[0]
-  var params2: seq[NimNode] = @[]
   var retval2: NimNode
   var addfun: NimNode
   if retval.kind == nnkEmpty:
@@ -238,36 +236,29 @@ proc buildInterfaceProc(fun: NimNode; funid: string):
     addfun = quote do:
       addPromise[`retval`](`thisval`, `thisval`.packetid)
     retval2 = newNimNode(nnkBracketExpr).add(ident("Promise"), retval)
-  params2.add(retval2)
-  params2.add(this2)
+  var params2 = @[retval2, this2]
   # flatten args
   for i in 2 ..< params.len:
     let param = params[i]
     for i in 0 ..< param.len - 2:
       let id2 = newIdentDefs(ident(param[i].strVal), param[^2])
       params2.add(id2)
-  body.add(quote do:
-    var writer {.inject.} = `thisval`.stream.initWriter()
-    writer.swrite(BufferCommand.`nup`)
-    writer.swrite(`thisval`.packetid)
-  )
+  let writeStmts = newStmtList()
   for i in 2 ..< params2.len:
     let s = params2[i][0] # sym e.g. url
-    body.add(quote do:
-      writer.swrite(`s`)
-    )
-  body.add(quote do:
-    writer.flush()
-    writer.deinit()
+    writeStmts.add(quote do: writer.swrite(`s`))
+  let body = quote do:
+    `thisval`.stream.withPacketWriter writer:
+      writer.swrite(BufferCommand.`nup`)
+      writer.swrite(`thisval`.packetid)
+      `writeStmts`
     let promise = `addfun`
     inc `thisval`.packetid
     return promise
-  )
-  var pragmas: NimNode
-  if retval.kind == nnkEmpty:
-    pragmas = newNimNode(nnkPragma).add(ident("discardable"))
+  let pragmas = if retval.kind == nnkEmpty:
+    newNimNode(nnkPragma).add(ident("discardable"))
   else:
-    pragmas = newEmptyNode()
+    newEmptyNode()
   return (newProc(name, params2, body, pragmas = pragmas), nup)
 
 type
@@ -943,9 +934,9 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
   var pstream: SocketStream
   var pins, pouts: PosixStream
   buffer.pstream.withPacketReader r:
-    pstream = newSocketStream(r.recvAux.pop())
-    pins = newPosixStream(r.recvAux.pop())
-    pouts = newPosixStream(r.recvAux.pop())
+    pstream = newSocketStream(r.recvFd())
+    pins = newPosixStream(r.recvFd())
+    pouts = newPosixStream(r.recvFd())
   let pid = fork()
   if pid == -1:
     buffer.window.console.error("Failed to clone buffer.")
@@ -997,7 +988,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     # get key for new buffer
     buffer.loader.controlStream.sclose()
     buffer.pstream.withPacketReader r:
-      buffer.loader.controlStream = newSocketStream(r.recvAux.pop())
+      buffer.loader.controlStream = newSocketStream(r.recvFd())
     buffer.pollData.register(buffer.pstream.fd, POLLIN)
     # must reconnect after the new client is set up, or the client pids get
     # mixed up.
@@ -1347,7 +1338,7 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
   var fd: cint = -1
   if hasFd:
     buffer.pstream.withPacketReader r:
-      fd = r.recvAux.pop()
+      fd = r.recvFd()
   if buffer.document.focus != nil:
     let focus = buffer.document.focus
     buffer.restoreFocus()
@@ -1799,7 +1790,7 @@ proc toggleImages*(buffer: Buffer): bool {.proxy, task.} =
   buffer.toggleImages0()
 
 macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
-    cmd: BufferCommand; packetid: int; r: var BufferedReader) =
+    cmd: BufferCommand; packetid: int; r: var PacketReader) =
   let switch = newNimNode(nnkCaseStmt)
   switch.add(ident("cmd"))
   for k, v in funs:

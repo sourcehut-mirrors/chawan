@@ -4,8 +4,8 @@ import std/options
 import std/strutils
 import std/tables
 
-import io/bufreader
-import io/bufwriter
+import io/packetreader
+import io/packetwriter
 import lib/punycode
 import monoucha/fromjs
 import monoucha/javascript
@@ -72,15 +72,15 @@ func serialize*(url: URL; excludeHash = false; excludePassword = false):
 func serializeip(ipv4: uint32): string
 func serializeip(ipv6: array[8, uint16]): string
 
-proc swrite*(writer: var BufferedWriter; url: URL) =
+proc swrite*(w: var PacketWriter; url: URL) =
   if url != nil:
-    writer.swrite(url.serialize())
+    w.swrite(url.serialize())
   else:
-    writer.swrite("")
+    w.swrite("")
 
-proc sread*(reader: var BufferedReader; url: var URL) =
+proc sread*(r: var PacketReader; url: var URL) =
   var s: string
-  reader.sread(s)
+  r.sread(s)
   if s == "":
     url = nil
   else:

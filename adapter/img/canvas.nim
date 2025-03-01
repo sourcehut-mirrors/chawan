@@ -11,11 +11,11 @@ import std/os
 import std/posix
 import std/strutils
 
-import types/path
-import io/bufreader
 import io/dynstream
+import io/packetreader
 import types/canvastypes
 import types/color
+import types/path
 import utils/sandbox
 import utils/twtstr
 

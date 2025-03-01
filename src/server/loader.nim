@@ -34,9 +34,9 @@ import std/times
 
 import config/cookie
 import config/urimethodmap
-import io/bufreader
-import io/bufwriter
 import io/dynstream
+import io/packetreader
+import io/packetwriter
 import io/poll
 import monoucha/javascript
 import server/connecterror
@@ -1310,18 +1310,18 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig) =
 
 proc load(ctx: var LoaderContext; stream: SocketStream; request: Request;
     client: ClientHandle; config: LoaderClientConfig) =
-  var sy {.noinit.}: array[2, cint]
+  var sv {.noinit.}: array[2, cint]
   var fail = false
   stream.withPacketWriter w:
-    if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sy) == 0:
+    if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
       w.swrite(true)
-      w.sendAux.add(sy[1])
+      w.sendFd(sv[1])
     else:
       fail = true
       w.swrite(false)
   if not fail:
-    discard close(sy[1])
-    let stream = newSocketStream(sy[0])
+    discard close(sv[1])
+    let stream = newSocketStream(sv[0])
     let handle = newInputHandle(stream, ctx.getOutputId(), client.pid)
     when defined(debug):
       handle.url = request.url
@@ -1333,13 +1333,13 @@ proc load(ctx: var LoaderContext; stream: SocketStream; request: Request;
       ctx.loadResource(client, config, request, handle)
 
 proc load(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var request: Request
   r.sread(request)
   ctx.load(stream, request, client, client.config)
 
 proc loadConfig(ctx: var LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var BufferedReader) =
+    client: ClientHandle; r: var PacketReader) =
   var request: Request
   var config: LoaderClientConfig
   r.sread(request)
@@ -1347,7 +1347,7 @@ proc loadConfig(ctx: var LoaderContext; stream: SocketStream;
   ctx.load(stream, request, client, config)
 
 proc getCacheFile(ctx: var LoaderContext; stream: SocketStream;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var cacheId: int
   var sourcePid: int
   r.sread(cacheId)
@@ -1361,7 +1361,7 @@ proc getCacheFile(ctx: var LoaderContext; stream: SocketStream;
       w.swrite("")
 
 proc addClient(ctx: var LoaderContext; stream: SocketStream;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var pid: int
   var config: LoaderClientConfig
   var clonedFrom: int
@@ -1369,10 +1369,10 @@ proc addClient(ctx: var LoaderContext; stream: SocketStream;
   r.sread(config)
   r.sread(clonedFrom)
   assert pid notin ctx.clientMap
-  var sy {.noinit.}: array[2, cint]
+  var sv {.noinit.}: array[2, cint]
   stream.withPacketWriter w:
-    if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sy) == 0:
-      let stream = newSocketStream(sy[0])
+    if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
+      let stream = newSocketStream(sv[0])
       let client = ClientHandle(stream: stream, pid: pid, config: config)
       ctx.register(client)
       ctx.put(client)
@@ -1387,13 +1387,13 @@ proc addClient(ctx: var LoaderContext; stream: SocketStream;
           if it.origin.isSameOrigin(origin):
             client.authMap.add(it)
       w.swrite(true)
-      w.sendAux.add(sy[1])
+      w.sendFd(sv[1])
     else:
       w.swrite(false)
-  discard close(sy[1])
+  discard close(sv[1])
 
 proc removeClient(ctx: var LoaderContext; stream: SocketStream;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var pid: int
   r.sread(pid)
   if pid in ctx.clientMap:
@@ -1401,7 +1401,7 @@ proc removeClient(ctx: var LoaderContext; stream: SocketStream;
     ctx.unregClient.add(client)
 
 proc addCacheFile(ctx: var LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var BufferedReader) =
+    client: ClientHandle; r: var PacketReader) =
   var outputId: int
   var targetPid: int
   r.sread(outputId)
@@ -1416,7 +1416,7 @@ proc addCacheFile(ctx: var LoaderContext; stream: SocketStream;
     w.swrite(id)
 
 proc redirectToFile(ctx: var LoaderContext; stream: SocketStream;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var outputId: int
   var targetPath: string
   var displayUrl: string
@@ -1450,7 +1450,7 @@ proc redirectToFile(ctx: var LoaderContext; stream: SocketStream;
     w.swrite(success)
 
 proc shareCachedItem(ctx: var LoaderContext; stream: SocketStream;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   # share a cached file with another buffer. this is for newBufferFrom
   # (i.e. view source)
   var sourcePid: int # pid of source client
@@ -1470,7 +1470,7 @@ proc shareCachedItem(ctx: var LoaderContext; stream: SocketStream;
     w.swrite(n != -1)
 
 proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var BufferedReader) =
+    client: ClientHandle; r: var PacketReader) =
   # open a cached item
   var id: int
   r.sread(id)
@@ -1478,20 +1478,20 @@ proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
   stream.withPacketWriter w:
     w.swrite(ps != nil)
     if ps != nil:
-      w.sendAux.add(ps.fd)
+      w.sendFd(ps.fd)
   if ps != nil:
     ps.sclose()
 
 proc passFd(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var id: string
   r.sread(id)
-  let fd = r.recvAux.pop()
+  let fd = r.recvFd()
   #TODO cloexec?
   client.passedFdMap.add((id, newPosixStream(fd)))
 
 proc addPipe(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var id: string
   r.sread(id)
   var pipefd {.noinit.}: array[2, cint]
@@ -1501,14 +1501,14 @@ proc addPipe(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
   else:
     stream.withPacketWriter w:
       w.swrite(true)
-      w.sendAux.add(pipefd[1])
+      w.sendFd(pipefd[1])
     discard close(pipefd[1])
     let ps = newPosixStream(pipefd[0])
     ps.setCloseOnExec()
     client.passedFdMap.add((id, ps))
 
 proc removeCachedItem(ctx: var LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var BufferedReader) =
+    client: ClientHandle; r: var PacketReader) =
   var id: int
   r.sread(id)
   let n = client.cacheMap.find(id)
@@ -1520,7 +1520,7 @@ proc removeCachedItem(ctx: var LoaderContext; stream: SocketStream;
       discard unlink(cstring(item.path))
 
 proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var sourceId: int
   var targetPid: int
   r.sread(sourceId)
@@ -1528,15 +1528,15 @@ proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
   let outputIn = ctx.findOutput(sourceId, client)
   if outputIn != nil:
     let id = ctx.getOutputId()
-    var sy {.noinit.}: array[2, cint]
+    var sv {.noinit.}: array[2, cint]
     stream.withPacketWriter w:
-      if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sy) == 0:
+      if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
         w.swrite(id)
-        w.sendAux.add(sy[1])
+        w.sendFd(sv[1])
       else:
         w.swrite(-1)
-    discard close(sy[1])
-    let ostream = newSocketStream(sy[0])
+    discard close(sv[1])
+    let ostream = newSocketStream(sv[0])
     ostream.setBlocking(false)
     let output = outputIn.tee(ostream, id, targetPid)
     ctx.put(output)
@@ -1545,7 +1545,7 @@ proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
       w.swrite(-1)
 
 proc addAuth(ctx: var LoaderContext; stream: SocketStream;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var url: URL
   r.sread(url)
   let origin = url.authOrigin
@@ -1563,7 +1563,7 @@ proc addAuth(ctx: var LoaderContext; stream: SocketStream;
     ctx.pagerClient.authMap.add(item)
 
 proc suspend(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var ids: seq[int]
   r.sread(ids)
   for id in ids:
@@ -1575,7 +1575,7 @@ proc suspend(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
         ctx.unregister(output)
 
 proc resume(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var BufferedReader) =
+    r: var PacketReader) =
   var ids: seq[int]
   r.sread(ids)
   for id in ids:

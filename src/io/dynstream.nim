@@ -336,11 +336,11 @@ proc setCloseOnExec*(ps: PosixStream) =
 type SocketStream* = ref object of PosixStream
 
 proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
-    sendAux: openArray[cint]): int =
+    fds: openArray[cint]): int =
   assert buffer.len > 0
   var iov = IOVec(iov_base: unsafeAddr buffer[0], iov_len: csize_t(buffer.len))
-  let sendAuxSize = sizeof(cint) * sendAux.len
-  let controlLen = CMSG_SPACE(csize_t(sendAuxSize))
+  let fdSize = sizeof(cint) * fds.len
+  let controlLen = CMSG_SPACE(csize_t(fdSize))
   var cmsgBuf = newSeqUninitialized[uint8](controlLen)
   var hdr = Tmsghdr(
     msg_iov: addr iov,
@@ -349,11 +349,11 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
     msg_controllen: SockLen(controlLen)
   )
   let cmsg = CMSG_FIRSTHDR(addr hdr)
-  cmsg.cmsg_len = SockLen(CMSG_LEN(csize_t(sendAuxSize)))
+  cmsg.cmsg_len = SockLen(CMSG_LEN(csize_t(fdSize)))
   cmsg.cmsg_level = SOL_SOCKET
   cmsg.cmsg_type = SCM_RIGHTS
-  if sendAux.len > 0:
-    copyMem(CMSG_DATA(cmsg), unsafeAddr sendAux[0], sendAuxSize)
+  if fds.len > 0:
+    copyMem(CMSG_DATA(cmsg), unsafeAddr fds[0], fdSize)
   return sendmsg(SocketHandle(s.fd), addr hdr, 0)
 
 proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];

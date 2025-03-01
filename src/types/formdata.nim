@@ -1,8 +1,8 @@
 import std/strutils
 
-import io/bufreader
-import io/bufwriter
 import io/dynstream
+import io/packetreader
+import io/packetwriter
 import monoucha/javascript
 import types/blob
 import utils/twtstr
@@ -23,28 +23,28 @@ type
 
 jsDestructor(FormData)
 
-proc swrite*(writer: var BufferedWriter; part: FormDataEntry) =
-  writer.swrite(part.isstr)
-  writer.swrite(part.name)
-  writer.swrite(part.filename)
+proc swrite*(w: var PacketWriter; part: FormDataEntry) =
+  w.swrite(part.isstr)
+  w.swrite(part.name)
+  w.swrite(part.filename)
   if part.isstr:
-    writer.swrite(part.svalue)
+    w.swrite(part.svalue)
   else:
-    writer.swrite(part.value)
+    w.swrite(part.value)
 
-proc sread*(reader: var BufferedReader; part: var FormDataEntry) =
+proc sread*(r: var PacketReader; part: var FormDataEntry) =
   var isstr: bool
-  reader.sread(isstr)
+  r.sread(isstr)
   if isstr:
     part = FormDataEntry(isstr: true)
   else:
     part = FormDataEntry(isstr: false)
-  reader.sread(part.name)
-  reader.sread(part.filename)
+  r.sread(part.name)
+  r.sread(part.filename)
   if part.isstr:
-    reader.sread(part.svalue)
+    r.sread(part.svalue)
   else:
-    reader.sread(part.value)
+    r.sread(part.value)
 
 iterator items*(this: FormData): lent FormDataEntry {.inline.} =
   for entry in this.entries:
