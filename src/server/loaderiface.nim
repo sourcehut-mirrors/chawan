@@ -38,7 +38,7 @@ type
     controlStream*: SocketStream
 
   ConnectDataState = enum
-    cdsBeforeResult, cdsBeforeStatus, cdsBeforeHeaders
+    cdsBeforeResult, cdsBeforeStatus
 
   MapData* = ref object of RootObj
     stream*: SocketStream
@@ -47,7 +47,6 @@ type
 
   ConnectData* = ref object of LoaderData
     state: ConnectDataState
-    status: uint16
     res: int
     outputId: int
     redirectNum: int
@@ -321,12 +320,11 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
         loader.unset(connectData)
         promise.resolve(JSResult[Response].err(newFetchTypeError()))
     of cdsBeforeStatus:
-      r.sread(connectData.status) # packet 2
-      inc connectData.state
-    of cdsBeforeHeaders:
       let response = newResponse(connectData.res, request, stream,
-        connectData.outputId, connectData.status)
-      r.sread(response.headers) # packet 3
+        connectData.outputId)
+      # packet 2
+      r.sread(response.status)
+      r.sread(response.headers)
       # Only a stream of the response body may arrive after this point.
       response.body = stream
       # delete before resolving the promise
@@ -394,10 +392,9 @@ proc doRequest*(loader: FileLoader; request: Request): Response =
   r.sread(response.res) # packet 1
   if response.res == 0:
     r.sread(response.outputId) # packet 1
-    r = stream.initPacketReader()
-    r.sread(response.status) # packet 2
-    r = stream.initPacketReader()
-    r.sread(response.headers) # packet 3
+    r = stream.initPacketReader() # packet 2
+    r.sread(response.status)
+    r.sread(response.headers)
     # Only a stream of the response body may arrive after this point.
     response.body = stream
     response.resumeFun = proc(outputId: int) =

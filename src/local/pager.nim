@@ -78,14 +78,13 @@ type
     pasNormal, pasAlertOn, pasLoadInfo
 
   ContainerConnectionState = enum
-    ccsBeforeResult, ccsBeforeStatus, ccsBeforeHeaders
+    ccsBeforeResult, ccsBeforeStatus
 
   ConnectingContainer* = ref object of MapData
     state: ContainerConnectionState
     container: Container
     res: int
     outputId: int
-    status: uint16
 
   LineData = ref object of RootObj
 
@@ -2935,14 +2934,10 @@ proc handleRead(pager: Pager; item: ConnectingContainer) =
         pager.unregisterFd(int(item.stream.fd))
         stream.sclose()
   of ccsBeforeStatus:
-    stream.withPacketReader r:
-      r.sread(item.status)
-    inc item.state
-    # continue
-  of ccsBeforeHeaders:
     let response = newResponse(item.res, container.request, stream,
-      item.outputId, item.status)
+      item.outputId)
     stream.withPacketReader r:
+      r.sread(response.status)
       r.sread(response.headers)
     # done
     pager.loader.unset(item)

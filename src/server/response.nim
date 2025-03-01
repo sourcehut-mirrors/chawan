@@ -53,13 +53,13 @@ type
 jsDestructor(Response)
 
 proc newResponse*(res: int; request: Request; stream: SocketStream;
-    outputId: int; status: uint16): Response =
+    outputId: int): Response =
   return Response(
     res: res,
     url: if request != nil: request.url else: nil,
     body: stream,
     outputId: outputId,
-    status: status
+    status: 200
   )
 
 proc newResponse*(body = JS_UNDEFINED; init = JS_UNDEFINED): JSResult[Response]
@@ -67,7 +67,7 @@ proc newResponse*(body = JS_UNDEFINED; init = JS_UNDEFINED): JSResult[Response]
   if not JS_IsUndefined(body) or not JS_IsUndefined(init):
     #TODO
     return errInternalError("Response constructor with body or init")
-  return ok(newResponse(0, nil, nil, -1, 200))
+  return ok(newResponse(0, nil, nil, -1))
 
 func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
   #TODO use "create" function

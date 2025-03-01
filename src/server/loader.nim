@@ -109,8 +109,7 @@ type
     headers: Headers
 
   ResponseState = enum
-    rsBeforeResult, rsAfterFailure, rsBeforeStatus, rsBeforeHeaders,
-    rsAfterHeaders
+    rsBeforeResult, rsAfterFailure, rsBeforeStatus, rsAfterHeaders
 
   AuthItem = ref object
     origin: Origin
@@ -242,17 +241,8 @@ proc sendResult(handle: InputHandle; res: int; msg = "") =
       w.swrite(msg)
   output.stream.setBlocking(blocking)
 
-proc sendStatus(handle: InputHandle; status: uint16) =
+proc sendStatus(handle: InputHandle; status: uint16; headers: Headers) =
   assert handle.rstate == rsBeforeStatus
-  inc handle.rstate
-  let blocking = handle.output.stream.blocking
-  handle.output.stream.setBlocking(true)
-  handle.output.stream.withPacketWriter w:
-    w.swrite(status)
-  handle.output.stream.setBlocking(blocking)
-
-proc sendHeaders(handle: InputHandle; headers: Headers) =
-  assert handle.rstate == rsBeforeHeaders
   inc handle.rstate
   let blocking = handle.output.stream.blocking
   let contentLens = headers.getOrDefault("Content-Length")
@@ -260,6 +250,7 @@ proc sendHeaders(handle: InputHandle; headers: Headers) =
   handle.contentLen = parseUInt64(contentLens).get(uint64.high)
   handle.output.stream.setBlocking(true)
   handle.output.stream.withPacketWriter w:
+    w.swrite(status)
     w.swrite(headers)
   handle.output.stream.setBlocking(blocking)
 
@@ -270,14 +261,11 @@ proc writeData(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
 proc iclose(handle: InputHandle) =
   if handle.stream != nil:
     assert not handle.registered
-    if handle.rstate notin {rsBeforeResult, rsAfterFailure, rsAfterHeaders}:
+    if handle.rstate == rsBeforeStatus:
       assert handle.outputs.len == 1
       # not an ideal solution, but better than silently eating malformed
       # headers
-      if handle.rstate == rsBeforeStatus:
-        handle.sendStatus(500)
-      if handle.rstate == rsBeforeHeaders:
-        handle.sendHeaders(newHeaders())
+      handle.sendStatus(500, newHeaders())
       handle.output.stream.setBlocking(true)
       const msg = "Error: malformed header in CGI script"
       discard handle.output.stream.writeData(msg)
@@ -624,8 +612,7 @@ proc parseHeaders0(handle: InputHandle; data: openArray[char]): int =
           # body comes immediately, so we haven't had a chance to send result
           # yet.
           handle.sendResult(0)
-        handle.sendStatus(parser.status)
-        handle.sendHeaders(parser.headers)
+        handle.sendStatus(parser.status, parser.headers)
         handle.parser = nil
         return i + 1 # +1 to skip \n
       case parser.state
@@ -1014,8 +1001,7 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
     handle.sendResult(ceFileNotFound, "stream not found")
     return
   handle.sendResult(0)
-  handle.sendStatus(200)
-  handle.sendHeaders(newHeaders())
+  handle.sendStatus(200, newHeaders())
   let ps = client.passedFdMap[i].ps
   var stats: Stat
   doAssert fstat(ps.fd, stats) != -1
@@ -1042,8 +1028,7 @@ proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
       client.cacheMap.del(n)
       return
     handle.sendResult(0)
-    handle.sendStatus(200)
-    handle.sendHeaders(newHeaders())
+    handle.sendStatus(200, newHeaders())
     handle.output.stream.setBlocking(false)
     let cachedHandle = ctx.findCachedHandle(id)
     ctx.loadStreamRegular(handle, cachedHandle)
@@ -1055,8 +1040,7 @@ proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
 # and thus no longer fit into the environment.
 proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
   handle.sendResult(0)
-  handle.sendStatus(200)
-  handle.sendHeaders(newHeaders({"Content-Type": ct}))
+  handle.sendStatus(200, newHeaders({"Content-Type": ct}))
   let output = handle.output
   if s.len == 0:
     if output.suspended:
