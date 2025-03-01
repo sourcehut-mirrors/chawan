@@ -20,7 +20,6 @@ proc writeOrDie(ps: PosixStream; buffer: openArray[uint8]) =
   let os = newPosixStream(STDOUT_FILENO)
   if not os.writeDataLoop(msg):
     os.die("InternalError", "failed to write to stream")
-    quit(1)
 
 proc writeOrDie(ps: PosixStream; buffer: openArray[char]) =
   ps.writeOrDie(buffer.toOpenArrayByte(0, buffer.high))
