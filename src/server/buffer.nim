@@ -1153,10 +1153,6 @@ proc forceReshape0(buffer: Buffer) =
 proc forceReshape2(buffer: Buffer) =
   if buffer.document != nil and buffer.document.documentElement != nil:
     buffer.document.documentElement.invalidate()
-  buffer.document.applyUASheet()
-  if buffer.document.mode == QUIRKS:
-    buffer.document.applyQuirksSheet()
-  buffer.document.applyUserSheet(buffer.config.userstyle)
   buffer.forceReshape0()
 
 proc forceReshape*(buffer: Buffer) {.proxy.} =

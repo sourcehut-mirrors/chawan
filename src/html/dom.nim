@@ -4154,6 +4154,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals, window.attrsp)
       applies = media.applies(window.settings.scripting, window.attrsp)
+    link.sheets.setLen(0)
     let p = window.loadSheet(link, url).then(proc(sheet: CSSStylesheet) =
       # Note: we intentionally load all sheets first and *then* check
       # whether media applies, to prevent media query based tracking.
