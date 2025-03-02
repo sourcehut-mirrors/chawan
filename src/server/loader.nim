@@ -265,10 +265,13 @@ proc iclose(handle: InputHandle) =
       assert handle.outputs.len == 1
       # not an ideal solution, but better than silently eating malformed
       # headers
-      handle.sendStatus(500, newHeaders())
       handle.output.stream.setBlocking(true)
-      const msg = "Error: malformed header in CGI script"
-      discard handle.output.stream.writeData(msg)
+      try:
+        handle.sendStatus(500, newHeaders())
+        const msg = "Error: malformed header in CGI script"
+        discard handle.output.stream.writeData(msg)
+      except EOFError:
+        discard
     handle.stream.sclose()
     handle.stream = nil
 
