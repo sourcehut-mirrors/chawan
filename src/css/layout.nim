@@ -2322,15 +2322,14 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
   return ctx
 
 proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
-  case cell.computed{"vertical-align"}.keyword
-  of VerticalAlignTop:
-    cell.state.offset.y = 0
-  of VerticalAlignMiddle:
-    cell.state.offset.y = availableHeight div 2 - cell.state.size.h div 2
-  of VerticalAlignBottom:
-    cell.state.offset.y = availableHeight - cell.state.size.h
-  else:
-    cell.state.offset.y = baseline - cell.state.firstBaseline
+  let firstChild = BlockBox(cell.firstChild)
+  if firstChild != nil:
+    firstChild.state.offset.y = case cell.computed{"vertical-align"}.keyword
+    of VerticalAlignTop: 0.toLUnit()
+    of VerticalAlignMiddle: availableHeight div 2 - cell.state.size.h div 2
+    of VerticalAlignBottom: availableHeight - cell.state.size.h
+    else: baseline - cell.state.firstBaseline
+  cell.state.size.h = availableHeight
 
 proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     parent, row: BlockBox) =

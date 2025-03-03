@@ -263,6 +263,11 @@ proc getParent(frame: var TreeFrame; computed: CSSValues; display: CSSDisplay):
     if frame.computed{"list-style-position"} == ListStylePositionOutside and
         frame.children.len >= 2:
       return frame.children[1].anonChildren
+  of DisplayTableCell:
+    if frame.anonComputed == nil:
+      frame.anonComputed = frame.inheritFor(DisplayFlowRoot)
+      frame.children.add(initStyledAnon(frame.parent, frame.anonComputed))
+    return frame.children[^1].anonChildren
   elif display in DisplayInternalTable:
     return frame.addAnonTable(parentDisplay, display)
   else:
