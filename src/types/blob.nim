@@ -107,7 +107,7 @@ type
     #TODO endings
 
   FilePropertyBag = object of BlobPropertyBag
-    #TODO lastModified: int64
+    lastModified: int64
 
 proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
     options = FilePropertyBag()): WebFile {.jsctor.} =
