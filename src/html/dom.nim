@@ -461,6 +461,14 @@ type
 
   HTMLTimeElement = ref object of HTMLElement
 
+  HTMLQuoteElement = ref object of HTMLElement
+
+  HTMLDataElement = ref object of HTMLElement
+
+  HTMLHeadElement = ref object of HTMLElement
+
+  HTMLTitleElement = ref object of HTMLElement
+
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
 jsDestructor(MimeTypeArray)
@@ -507,6 +515,10 @@ jsDestructor(HTMLMetaElement)
 jsDestructor(HTMLDetailsElement)
 jsDestructor(HTMLFrameElement)
 jsDestructor(HTMLTimeElement)
+jsDestructor(HTMLQuoteElement)
+jsDestructor(HTMLDataElement)
+jsDestructor(HTMLHeadElement)
+jsDestructor(HTMLTitleElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -1059,7 +1071,7 @@ const ReflectTable0 = [
   # non-global attributes
   makes("target", TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
   makes("href", TAG_LINK),
-  makes("value", TAG_BUTTON),
+  makes("value", TAG_BUTTON, TAG_DATA),
   makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
   makes("name", TAG_A, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META,
     TAG_IFRAME, TAG_FRAME, TAG_IMG, TAG_OBJECT, TAG_PARAM, TAG_OBJECT, TAG_MAP,
@@ -3145,6 +3157,17 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
       firstOption.selected = true
       firstOption.invalidate(dtChecked)
 
+# <q>, <blockquote>
+proc cite(this: HTMLQuoteElement): string {.jsfget.} =
+  let s = this.attr(satCite)
+  let url = parseURL(s, some(this.document.url))
+  if url.isSome:
+    return $url.get
+  return s
+
+proc `cite=`(this: HTMLQuoteElement; s: sink string) {.jsfset: "cite".} =
+  this.attr(satCite, s)
+
 # <select>
 func displaySize(select: HTMLSelectElement): uint32 =
   return select.attrul(satSize).get(1)
@@ -3571,6 +3594,13 @@ func textAreaString*(textarea: HTMLTextAreaElement): string =
     else:
       result &= "[]\n"
 
+# <title>
+proc text(this: HTMLTitleElement): string {.jsfget.} =
+  return this.textContent
+
+proc `text=`(this: HTMLTitleElement; s: sink string) {.jsfset: "text".} =
+  this.replaceAll(s)
+
 # <video>
 func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
   let src = this.attr(satSrc)
@@ -3727,6 +3757,14 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     HTMLDetailsElement()
   of TAG_FRAME:
     HTMLFrameElement()
+  of TAG_Q, TAG_BLOCKQUOTE:
+    HTMLQuoteElement()
+  of TAG_DATA:
+    HTMLDataElement()
+  of TAG_HEAD:
+    HTMLHeadElement()
+  of TAG_TITLE:
+    HTMLTitleElement()
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
@@ -6111,6 +6149,10 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLDetailsElement, TAG_DETAILS)
   register(HTMLFrameElement, TAG_FRAME)
   register(HTMLTimeElement, TAG_TIME)
+  register(HTMLQuoteElement, {TAG_BLOCKQUOTE, TAG_Q})
+  register(HTMLDataElement, TAG_DATA)
+  register(HTMLHeadElement, TAG_HEAD)
+  register(HTMLTitleElement, TAG_TITLE)
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 
