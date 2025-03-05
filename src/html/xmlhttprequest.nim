@@ -55,6 +55,7 @@ type
     flags: set[XMLHttpRequestFlag]
     requestMethod: HttpMethod
     responseType {.jsget.}: XMLHttpRequestResponseType
+    withCredentials {.jsget.}: bool
     timeout {.jsget.}: uint32
     requestURL: URL
     headers: Headers
@@ -180,6 +181,17 @@ proc setRequestHeader(this: XMLHttpRequest; name, value: string):
   this.headers.table[name.toHeaderCase()] = @[value]
   ok()
 
+proc `withCredentials=`(this: XMLHttpRequest; withCredentials: bool):
+    DOMResult[void] {.jsfset: "withCredentials".} =
+  if this.readyState notin {xhrsUnsent, xhrsOpened}:
+    return errDOMException(
+      "ready state was expected to be `unsent' or `opened'",
+      "InvalidStateError")
+  if xhrfSend notin this.flags:
+    return errDOMException("send flag is set", "InvalidStateError")
+  this.withCredentials = withCredentials
+  ok()
+
 proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32):
     Err[DOMException] {.jsfset: "timeout".} =
   if ctx.getWindow() != nil and xhrfSync in this.flags:
@@ -291,11 +303,10 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): JSResult[void]
     elif document != nil:
       request.headers["Content-Type"] = "text/html;charset=UTF-8"
   let jsRequest = JSRequest(
-    #TODO unsafe request flag, client, cors credentials mode,
-    # use-url-credentials, initiator type
+    #TODO unsafe request flag, client, use-url-credentials, initiator type
     request: request,
     mode: rmCors,
-    credentialsMode: cmSameOrigin,
+    credentialsMode: if this.withCredentials: cmInclude else: cmSameOrigin,
   )
   if JS_IsNull(body):
     this.flags.incl(xhrfUploadComplete)
@@ -369,7 +380,14 @@ proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: string):
     return JS_NULL
   return res
 
-#TODO getAllResponseHeaders
+proc getAllResponseHeaders(this: XMLHttpRequest): string {.jsfunc.} =
+  result = ""
+  #TODO sort, should use the filtered header list, etc.
+  for k, v in this.response.headers.table:
+    if k.isForbiddenResponseHeaderName():
+      continue
+    for it in v:
+      result &= k & ": " & it & "\r\n"
 
 func getCharset(this: XMLHttpRequest): Charset =
   let override = this.contentTypeOverride.toLowerAscii()
