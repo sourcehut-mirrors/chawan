@@ -379,8 +379,15 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
     let size = int(cmsg.cmsg_len) - (cast[int](data) - cast[int](cmsg))
     if cmsg.cmsg_level == SOL_SOCKET and cmsg.cmsg_type == SCM_RIGHTS and
         size mod sizeof(cint) == 0:
-      copyMem(addr fdbuf[numFds], data, size)
-      numFds += size div sizeof(cint)
+      let n = size div sizeof(cint)
+      var m = min(fdbuf.len, numFds + n) - numFds
+      copyMem(addr fdbuf[numFds], data, m * sizeof(cint))
+      numFds += m
+      while m < n:
+        var fd {.noinit.}: cint
+        copyMem(addr fd, addr cast[ptr UncheckedArray[cint]](data)[m],
+          sizeof(fd))
+        discard close(fd)
     else:
       #TODO we could just return -2 here, but I'm not sure if it can
       # ever happen
