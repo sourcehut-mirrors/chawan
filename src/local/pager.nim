@@ -577,6 +577,7 @@ proc command0(pager: Pager; src: string; filename = "<command>";
       var res: string
       if pager.jsctx.fromJS(ret, res).isSome:
         pager.console.log(res)
+        pager.console.flush()
   JS_FreeValue(pager.jsctx, ret)
 
 proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
