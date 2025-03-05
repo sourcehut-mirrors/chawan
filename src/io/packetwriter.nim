@@ -13,9 +13,8 @@ import types/color
 import types/opt
 
 type PacketWriter* = object
-  stream: DynStream
-  buffer: seq[uint8]
-  bufLen: int
+  buffer*: seq[uint8]
+  bufLen*: int
   # file descriptors to send in the packet
   fds: seq[cint]
 
@@ -40,31 +39,33 @@ proc sendFd*(w: var PacketWriter; fd: cint) =
 
 const InitLen = sizeof(int) * 2
 const SizeInit = max(64, InitLen)
-proc initWriter(stream: DynStream): PacketWriter =
+proc initPacketWriter*(): PacketWriter =
   return PacketWriter(
-    stream: stream,
     buffer: newSeqUninitialized[uint8](SizeInit),
     bufLen: InitLen
   )
 
-proc flush*(w: var PacketWriter) =
+proc writeSize*(w: var PacketWriter) =
   # subtract the length field's size
   let len = [w.bufLen - InitLen, w.fds.len]
   copyMem(addr w.buffer[0], unsafeAddr len[0], sizeof(len))
-  if not w.stream.writeDataLoop(w.buffer.toOpenArray(0, w.bufLen - 1)):
+
+proc flush*(w: var PacketWriter; stream: DynStream) =
+  w.writeSize()
+  if not stream.writeDataLoop(w.buffer.toOpenArray(0, w.bufLen - 1)):
     raise newException(EOFError, "end of file")
   if w.fds.len > 0:
     w.fds.reverse()
-    let n = SocketStream(w.stream).sendMsg([0u8], w.fds)
+    let n = SocketStream(stream).sendMsg([0u8], w.fds)
     if n < 1:
       raise newException(EOFError, "end of file")
   w.bufLen = 0
   w.fds.setLen(0)
 
 template withPacketWriter*(stream: DynStream; w, body: untyped) =
-  var w = stream.initWriter()
+  var w = initPacketWriter()
   body
-  w.flush()
+  w.flush(stream)
 
 proc writeData*(w: var PacketWriter; buffer: pointer; len: int) =
   let targetLen = w.bufLen + len
