@@ -71,7 +71,7 @@ proc calcLength*(this: FormData): int =
       # content type
       result += "Content-Type: \r\n".len
       result += entry.value.ctype.len
-      result += int(entry.value.getSize())
+      result += entry.value.getSize()
     result += "\r\n".len # header is always followed by \r\n
     result += "\r\n".len # value is always followed by \r\n
   result += "--".len + this.boundary.len + "--\r\n".len
@@ -99,8 +99,8 @@ proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
       blob.ctype
     buf &= "Content-Type: " & ctype & "\r\n\r\n"
     stream.write(buf)
-    if blob.fd.isSome:
-      let ps = newPosixStream(blob.fd.get)
+    if blob of WebFile and WebFile(blob).fd.isSome:
+      let ps = newPosixStream(WebFile(blob).fd.get)
       if ps != nil:
         var buf {.noinit.}: array[4096, uint8]
         while true:

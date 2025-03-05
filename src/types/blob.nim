@@ -5,6 +5,7 @@ import std/strutils
 import config/mimetypes
 import io/packetreader
 import io/packetwriter
+import io/timeout
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jstypes
@@ -18,11 +19,12 @@ type
     buffer*: pointer
     opaque*: pointer
     deallocFun*: DeallocFun
-    fd*: Option[cint]
 
   WebFile* = ref object of Blob
     webkitRelativePath {.jsget.}: string
     name* {.jsget.}: string
+    lastModified* {.jsget.}: int64
+    fd*: Option[cint]
 
 jsDestructor(Blob)
 jsDestructor(WebFile)
@@ -31,12 +33,13 @@ jsDestructor(WebFile)
 proc deallocBlob*(opaque, p: pointer) {.raises: [].}
 
 proc swrite*(w: var PacketWriter; blob: Blob) =
-  if blob.fd.isSome:
-    w.sendFd(blob.fd.get)
   w.swrite(blob of WebFile)
   if blob of WebFile:
-    w.swrite(WebFile(blob).name)
-  w.swrite(blob.fd.isSome)
+    let file = WebFile(blob)
+    w.swrite(file.fd.isSome)
+    if file.fd.isSome:
+      w.sendFd(file.fd.get)
+    w.swrite(file.name)
   w.swrite(blob.ctype)
   w.swrite(blob.size)
   if blob.size > 0:
@@ -47,11 +50,12 @@ proc sread*(r: var PacketReader; blob: var Blob) =
   r.sread(isWebFile)
   blob = if isWebFile: WebFile() else: Blob()
   if isWebFile:
-    r.sread(WebFile(blob).name)
-  var hasFd: bool
-  r.sread(hasFd)
-  if hasFd:
-    blob.fd = some(r.recvFd())
+    let file = WebFile(blob)
+    var hasFd: bool
+    r.sread(hasFd)
+    if hasFd:
+      file.fd = some(r.recvFd())
+    r.sread(file.name)
   r.sread(blob.ctype)
   r.sread(blob.size)
   if blob.size > 0:
@@ -85,13 +89,13 @@ template toOpenArray*(blob: Blob): openArray[char] =
     []
 
 proc finalize(blob: Blob) {.jsfin.} =
-  if blob.fd.isSome:
-    discard close(blob.fd.get)
   if blob.deallocFun != nil:
     blob.deallocFun(blob.opaque, blob.buffer)
     blob.buffer = nil
 
 proc finalize(file: WebFile) {.jsfin.} =
+  if file.fd.isSome:
+    discard close(file.fd.get)
   Blob(file).finalize()
 
 proc newWebFile*(name: string; fd: cint): WebFile =
@@ -107,12 +111,14 @@ type
     #TODO endings
 
   FilePropertyBag = object of BlobPropertyBag
-    lastModified: int64
+    lastModified {.jsdefault: getUnixMillis().}: int64
 
 proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
-    options = FilePropertyBag()): WebFile {.jsctor.} =
+    options = FilePropertyBag(lastModified: getUnixMillis())): WebFile
+    {.jsctor.} =
   let file = WebFile(
-    name: fileName
+    name: fileName,
+    lastModified: options.lastModified
   )
   var len = 0
   for blobPart in fileBits:
@@ -134,14 +140,16 @@ proc newWebFile(ctx: JSContext; fileBits: seq[string]; fileName: string;
       file.ctype &= c.toLowerAscii()
   return file
 
-#TODO File, Blob constructors
+#TODO Blob constructor
 
 proc getSize*(this: Blob): int =
-  if this.fd.isSome:
-    var statbuf: Stat
-    if fstat(this.fd.get, statbuf) < 0:
-      return 0
-    return int(statbuf.st_size)
+  if this of WebFile:
+    let file = WebFile(this)
+    if file.fd.isSome:
+      var statbuf: Stat
+      if fstat(file.fd.get, statbuf) < 0:
+        return 0
+      return int(statbuf.st_size)
   return this.size
 
 proc size*(this: WebFile): int {.jsfget.} =
