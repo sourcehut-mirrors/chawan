@@ -155,11 +155,8 @@ proc promiseThenCallback(ctx: JSContext; this: JSValue; argc: cint;
   let fun = funcData[0]
   let op = JS_GetOpaque(fun, JS_GetClassID(fun))
   if op != nil:
-    var vals: seq[JSValue] = @[]
-    for it in argv.toOpenArray(0, argc - 1):
-      vals.add(it)
     let p = cast[Promise[seq[JSValue]]](op)
-    p.resolve(vals)
+    p.resolve(@(argv.toOpenArray(0, argc - 1)))
     GC_unref(p)
     JS_SetOpaque(fun, nil)
   return JS_UNDEFINED
@@ -170,7 +167,7 @@ proc promiseCatchCallback(ctx: JSContext; this: JSValue; argc: cint;
   let fun = funcData[0]
   let op = JS_GetOpaque(fun, JS_GetClassID(fun))
   if op != nil and argc > 0:
-    let vals = @[JS_Throw(ctx, argv[0])]
+    let vals = @[JS_Throw(ctx, JS_DupValue(ctx, argv[0]))]
     let p = cast[Promise[seq[JSValue]]](op)
     p.resolve(vals)
     GC_unref(p)
