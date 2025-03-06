@@ -111,10 +111,6 @@ var buf2 {.noinit.}: array[1234, char] # when you don't need 0-initialization
 
 For primitive types, just set them to 0, "", etc.
 
-#### "out" parameters
-
-They crash the 1.6.14 compiler. Use "var" for now.
-
 #### Copying operations
 
 `substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which

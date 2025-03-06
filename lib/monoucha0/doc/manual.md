@@ -269,8 +269,6 @@ Following parameters also exist:
   yourself).
 * `errid`: set the error ID. TODO this is currently pretty useless as a
   public API because JSErrorEnum is not extendable.
-* `ishtmldda`: creates a "falsy" object, like document.all. Currently,
-  only one of these is allowed per context.
 
 ### jsget, jsset: basic property reflectors
 
