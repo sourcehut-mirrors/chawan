@@ -307,8 +307,8 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   result = 0
   let rt = JS_GetRuntime(ctx)
   discard JS_NewClassID(rt, result)
-  var ctxOpaque = ctx.getOpaque()
-  var rtOpaque = rt.getOpaque()
+  let ctxOpaque = ctx.getOpaque()
+  let rtOpaque = rt.getOpaque()
   if JS_NewClass(rt, result, cdef) != 0:
     raise newException(Defect, "Failed to allocate JS class: " &
       $cdef.class_name)
@@ -421,6 +421,8 @@ type
     tabStatic: NimNode # array of static function table
     replaceableSetFun: NimNode # replaceable setter function ident
     tabReplaceableNames: NimNode # replaceable names array
+    markFun: NimNode # gc_mark for class
+    markList: NimNode # list of members to mark
 
 var BoundFunctions {.compileTime.}: Table[string, RegistryInfo]
 
@@ -439,7 +441,9 @@ proc newRegistryInfo(t: NimNode): RegistryInfo =
     propSetFun: newNilLit(),
     propDelFun: newNilLit(),
     propHasFun: newNilLit(),
-    propNamesFun: newNilLit()
+    propNamesFun: newNilLit(),
+    markFun: newNilLit(),
+    markList: newStmtList()
   )
 
 proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
@@ -1215,18 +1219,17 @@ proc registerPragmas(stmts: NimNode; info: RegistryInfo; t: NimNode) =
       discard # case objects are not supported
     else:
       for i in 0 ..< identDefs.len - 2:
-        let varNode = identDefs[i]
+        var varNode = identDefs[i]
         if varNode.kind == nnkPragmaExpr:
-          var varName = varNode[0]
-          if varName.kind == nnkPostfix:
-            # This is a public field. We are skipping the postfix *
-            varName = varName[1]
           let varPragmas = varNode[1]
+          varNode = varNode[0]
+          if varNode.kind == nnkPostfix:
+            varNode = varNode[1]
           for varPragma in varPragmas:
             let pragmaName = getPragmaName(varPragma)
             var op = JSObjectPragma(
-              name: getStringFromPragma(varPragma).get($varName),
-              varsym: varName
+              name: getStringFromPragma(varPragma).get($varNode),
+              varsym: varNode
             )
             case pragmaName
             of "jsget": stmts.registerGetter(info, op)
@@ -1240,6 +1243,14 @@ proc registerPragmas(stmts: NimNode; info: RegistryInfo; t: NimNode) =
             of "jsgetset":
               stmts.registerGetter(info, op)
               stmts.registerSetter(info, op)
+        elif varNode.kind == nnkPostfix:
+          varNode = varNode[1]
+        let typ = identDefs[^2]
+        if typ.getTypeInst().sameType(JSValue.getType()) or
+            JSValue.getType().sameType(typ):
+          info.markList.add(quote do:
+            JS_MarkValue(rt, this.`varNode`, markFunc)
+          )
 
 proc nim_finalize_for_js*(obj, typeptr: pointer) =
   var fin: JSFinalizerFunction = nil
@@ -1420,6 +1431,7 @@ proc jsCheckDestroyNonRef*(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.} =
 proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
   let jsname = info.jsname
   let dfin = info.dfin
+  let markFun = info.markFun
   if info.propGetOwnFun.kind != nnkNilLit or
       info.propGetFun.kind != nnkNilLit or
       info.propSetFun.kind != nnkNilLit or
@@ -1444,6 +1456,7 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
       var cd {.global.} = JSClassDef(
         class_name: `jsname`,
         can_destroy: `dfin`,
+        gc_mark: `markFun`,
         exotic: JSClassExoticMethodsConst(addr exotic)
       )
       let classDef {.inject.} = JSClassDefConst(addr cd)
@@ -1452,10 +1465,25 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
     endstmts.add(quote do:
       var cd {.global.} = JSClassDef(
         class_name: `jsname`,
-        can_destroy: `dfin`
+        can_destroy: `dfin`,
+        gc_mark: `markFun`
       )
       let classDef {.inject.} = JSClassDefConst(addr cd)
     )
+
+proc bindMarkFunc(stmts: NimNode; info: RegistryInfo) =
+  let t = info.t
+  let id = ident("mark_" & info.tname)
+  let markList = info.markList
+  stmts.add(quote do:
+    proc `id`(rt {.inject.}: JSRuntime; val: JSValue;
+        markFunc {.inject.}: JS_MarkFunc) {.cdecl.} =
+      let p = JS_GetOpaque(val, JS_GetClassID(val))
+      # Disgusting cast, but try not to confuse refc.
+      let this {.inject.} = cast[ptr typeof(`t`.default[])](p)
+      `markList`
+  )
+  info.markFun = id
 
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;
@@ -1482,6 +1510,8 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     if info.tname in jsDtors:
       error("Global object " & info.tname & " must not have a destructor!")
   stmts.registerPragmas(info, t)
+  if info.markList.len > 0:
+    stmts.bindMarkFunc(info)
   if info.tabReplaceableNames.len > 0:
     stmts.bindReplaceableSet(info)
   stmts.bindGetSet(info)
