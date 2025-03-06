@@ -399,12 +399,16 @@ proc write*(map: CookieJarMap; file: string): bool =
           buf &= cookie.name & '\t'
           buf &= cookie.value & '\n'
           inc i
-      if buf.len > 0:
-        if not ps.writeDataLoop(buf):
-          ps.sclose()
-          return false
+      if not ps.writeDataLoop(buf):
+        ps.sclose()
+        return false
     if i == 0:
       discard unlink(cstring(tmp))
       discard unlink(cstring(file))
+      ps.sclose()
       return true
+    if fsync(ps.fd) != 0:
+      ps.sclose()
+      return false
+    ps.sclose()
     return c_rename(cstring(tmp), file) == 0

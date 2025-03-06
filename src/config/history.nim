@@ -81,7 +81,7 @@ proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
   header: "<stdio.h>".}
 
 # Consumes `ps'.
-proc write*(hist: History; ps: PosixStream; reverse = false): bool =
+proc write*(hist: History; ps: PosixStream; sync, reverse: bool): bool =
   var buf = ""
   var entry = if reverse: hist.last else: hist.first
   var res = true
@@ -99,6 +99,8 @@ proc write*(hist: History; ps: PosixStream; reverse = false): bool =
       entry = entry.next
   if buf.len > 0 and not ps.writeDataLoop(buf):
     res = false
+  if sync and res:
+    res = fsync(ps.fd) == 0
   ps.sclose()
   return res
 
@@ -122,6 +124,6 @@ proc write*(hist: History; file: string): bool =
     # another filesystem.
     let tmp = file & '~'
     let ps = newPosixStream(tmp, O_WRONLY or O_CREAT, 0o600)
-    if ps != nil and hist.write(ps):
+    if ps != nil and hist.write(ps, sync = true, reverse = false):
       return c_rename(cstring(tmp), file) == 0
   return false

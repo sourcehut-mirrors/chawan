@@ -2041,7 +2041,7 @@ proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
   pager.loader.passFd(url.pathname, pins.fd)
   pins.sclose()
   let hist = pager.lineHist[lmLocation]
-  if not hist.write(pouts, reverse = true):
+  if not hist.write(pouts, sync = false, reverse = true):
     pager.alert("failed to write history")
   return url
 
