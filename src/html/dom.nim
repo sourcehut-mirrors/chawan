@@ -1831,7 +1831,7 @@ func names(ctx: JSContext; this: HTMLAllCollection): JSPropertyEnumList
     list.add(u)
   return list
 
-proc all(document: Document): HTMLAllCollection {.jsfget.} =
+proc all(ctx: JSContext; document: Document): JSValue {.jsfget.} =
   if document.cachedAll == nil:
     document.cachedAll = newCollection[HTMLAllCollection](
       root = document,
@@ -1839,7 +1839,10 @@ proc all(document: Document): HTMLAllCollection {.jsfget.} =
       islive = true,
       childonly = false
     )
-  return document.cachedAll
+    let val = ctx.toJS(document.cachedAll)
+    JS_SetIsHTMLDDA(ctx, val)
+    return val
+  return ctx.toJS(document.cachedAll)
 
 # Location
 proc newLocation*(window: Window): Location =
@@ -6161,7 +6164,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.defineConsts(nodeCID, NodeType)
   let nodeListCID = ctx.registerType(NodeList)
   let htmlCollectionCID = ctx.registerType(HTMLCollection)
-  ctx.registerType(HTMLAllCollection, ishtmldda = true)
+  ctx.registerType(HTMLAllCollection)
   ctx.registerType(HTMLFormControlsCollection, parent = htmlCollectionCID)
   ctx.registerType(HTMLOptionsCollection, parent = htmlCollectionCID)
   ctx.registerType(RadioNodeList, parent = nodeListCID)

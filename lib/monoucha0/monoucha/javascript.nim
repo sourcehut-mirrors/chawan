@@ -300,7 +300,7 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
 
 func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
-    asglobal, nointerface, ishtmldda: bool; finalizer: JSFinalizerFunction;
+    asglobal, nointerface: bool; finalizer: JSFinalizerFunction;
     namespace: JSValue; errid: Opt[JSErrorEnum];
     unforgeable, staticfuns: JSFunctionList): JSClassID
     {.discardable.} =
@@ -317,8 +317,6 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   if ctxOpaque.parents.len <= int(result):
     ctxOpaque.parents.setLen(int(result) + 1)
   ctxOpaque.parents[result] = parent
-  if ishtmldda:
-    ctxOpaque.htmldda = result
   if finalizer != nil:
     rtOpaque.fins[nimt] = finalizer
   let proto = ctx.newProtoFromParentClass(parent)
@@ -1490,7 +1488,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     nointerface = false; name: static string = "";
     hasExtraGetSet: static bool = false;
     extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL;
-    errid = Opt[JSErrorEnum].err(); ishtmldda = false): JSClassID =
+    errid = Opt[JSErrorEnum].err()): JSClassID =
   var stmts = newStmtList()
   var info = BoundFunctions.getOrDefault(t.strVal)
   if info == nil:
@@ -1529,9 +1527,9 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let staticfuns = info.tabStatic
   let global = asglobal and not globalparent
   endstmts.add(quote do:
-    `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, `tabList`,
-      `parent`, `global`, `nointerface`, `ishtmldda`, `finName`, `namespace`,
-      `errid`, `unforgeable`, `staticfuns`)
+    `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, `tabList`, `parent`,
+      `global`, `nointerface`, `finName`, `namespace`, `errid`, `unforgeable`,
+      `staticfuns`)
   )
   stmts.add(newBlockStmt(endstmts))
   return stmts

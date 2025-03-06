@@ -40,7 +40,6 @@ type
     strRefs*: array[JSStrRef, JSAtom]
     valRefs*: array[JSValueRef, JSValue]
     errCtorRefs*: array[JSErrorEnum, JSValue]
-    htmldda*: JSClassID # only one of these exists: document.all.
     globalUnref*: JSEmptyOpaqueCallback
 
   JSFinalizerFunction* = proc(rt: JSRuntime; opaque: pointer) {.nimcall,

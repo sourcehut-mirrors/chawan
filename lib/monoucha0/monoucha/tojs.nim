@@ -279,8 +279,6 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValue): JSValue =
     JS_SetPropertyFunctionList(ctx, jsObj, ufp,
       cint(ctxOpaque.unforgeable[int(class)].len))
   GC_ref(cast[RootRef](toRef))
-  if unlikely(ctxOpaque.htmldda == class):
-    JS_SetIsHTMLDDA(ctx, jsObj)
   return jsObj
 
 type NonInheritable = (object and not RootObj) or (ref object and not RootRef)

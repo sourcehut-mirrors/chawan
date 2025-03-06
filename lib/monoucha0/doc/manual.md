@@ -155,7 +155,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; nointerface = false;
     name: static string = ""; hasExtraGetSet: static bool = false;
     extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL;
-    errid = opt(JSErrorEnum); ishtmldda = false): JSClassID
+    errid = opt(JSErrorEnum)): JSClassID
 ```
 
 Typically, you would do this using Nim reference types. Non-reference
