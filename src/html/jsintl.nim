@@ -241,5 +241,5 @@ proc addIntlModule*(ctx: JSContext) =
   let intl = JS_NewObject(ctx)
   ctx.registerType(NumberFormat, namespace = intl)
   ctx.registerType(PluralRules, namespace = intl)
-  ctx.defineProperty(global, "Intl", intl)
+  doAssert ctx.defineProperty(global, "Intl", intl) != dprException
   JS_FreeValue(ctx, global)

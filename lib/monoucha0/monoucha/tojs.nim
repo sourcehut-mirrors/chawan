@@ -98,59 +98,66 @@ makeToJSP(Result)
 makeToJSP(JSValue)
 makeToJSP(JSDict)
 
+type DefinePropertyResult* = enum
+  dprException, dprSuccess, dprFail
+
 # Note: this consumes `prop'.
 proc defineProperty*(ctx: JSContext; this: JSValue; name: JSAtom;
-    prop: JSValue; flags = cint(0)) =
-  if JS_DefinePropertyValue(ctx, this, name, prop, flags) <= 0:
-    raise newException(Defect, "Failed to define property string")
+    prop: JSValue; flags = cint(0)): DefinePropertyResult =
+  return case JS_DefinePropertyValue(ctx, this, name, prop, flags)
+  of 0: dprFail
+  of 1: dprSuccess
+  else: dprException
 
 # Note: this consumes `prop'.
 proc defineProperty(ctx: JSContext; this: JSValue; name: int64;
-    prop: JSValue; flags = cint(0)) =
+    prop: JSValue; flags = cint(0)): DefinePropertyResult =
   let name = JS_NewInt64(ctx, name)
   let atom = JS_ValueToAtom(ctx, name)
   JS_FreeValue(ctx, name)
   if unlikely(atom == JS_ATOM_NULL):
-    raise newException(Defect, "Failed to define property string")
-  ctx.defineProperty(this, atom, prop, flags)
+    return dprException
+  result = ctx.defineProperty(this, atom, prop, flags)
   JS_FreeAtom(ctx, atom)
 
 proc definePropertyC*(ctx: JSContext; this: JSValue; name: JSAtom;
-    prop: JSValue) =
+    prop: JSValue): DefinePropertyResult =
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
 proc defineProperty(ctx: JSContext; this: JSValue; name: string;
-    prop: JSValue; flags = cint(0)) =
-  if JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, flags) <= 0:
-    raise newException(Defect, "Failed to define property string: " & name)
+    prop: JSValue; flags = cint(0)): DefinePropertyResult =
+  return case JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, flags)
+  of 0: dprFail
+  of 1: dprSuccess
+  else: dprException
 
 proc definePropertyC*(ctx: JSContext; this: JSValue; name: string;
-    prop: JSValue) =
+    prop: JSValue): DefinePropertyResult =
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
 proc defineProperty*[T](ctx: JSContext; this: JSValue; name: string; prop: T;
-    flags = cint(0)) =
-  defineProperty(ctx, this, name, toJS(ctx, prop), flags)
+    flags = cint(0)): DefinePropertyResult =
+  ctx.defineProperty(this, name, ctx.toJS(prop), flags)
 
 proc definePropertyE*[T](ctx: JSContext; this: JSValue; name: string;
-    prop: T) =
-  defineProperty(ctx, this, name, prop, JS_PROP_ENUMERABLE)
+    prop: T): DefinePropertyResult =
+  ctx.defineProperty(this, name, prop, JS_PROP_ENUMERABLE)
 
 proc definePropertyCW*[T](ctx: JSContext; this: JSValue; name: string;
-    prop: T) =
-  defineProperty(ctx, this, name, prop, JS_PROP_CONFIGURABLE or
+    prop: T): DefinePropertyResult =
+  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or
     JS_PROP_WRITABLE)
 
 proc definePropertyCWE*[T](ctx: JSContext; this: JSValue; name: string;
-    prop: T) =
-  defineProperty(ctx, this, name, prop, JS_PROP_C_W_E)
+    prop: T): DefinePropertyResult =
+  ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
 proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
     JSValue =
   var paramList: seq[JSValue] = @[]
   for arg in args:
-    paramList.add(toJS(ctx, arg))
-  paramList.add(toJS(ctx, body))
+    paramList.add(ctx.toJS(arg))
+  paramList.add(ctx.toJS(body))
   let fun = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvFunction],
     cint(paramList.len), paramList.toJSValueArray())
   for param in paramList:
@@ -171,9 +178,9 @@ proc toJS*(ctx: JSContext; n: int64): JSValue =
 
 proc toJS*(ctx: JSContext; n: int): JSValue =
   when sizeof(int) > 4:
-    return toJS(ctx, int64(n))
+    return ctx.toJS(int64(n))
   else:
-    return toJS(ctx, int32(n))
+    return ctx.toJS(int32(n))
 
 proc toJS*(ctx: JSContext; n: uint16): JSValue =
   return JS_NewUint32(ctx, uint32(n))
@@ -195,12 +202,16 @@ proc toJS*[U, V](ctx: JSContext; t: Table[U, V]): JSValue =
   let obj = JS_NewObject(ctx)
   if not JS_IsException(obj):
     for k, v in t:
-      definePropertyCWE(ctx, obj, k, v)
+      case ctx.definePropertyCWE(obj, k, v)
+      of dprException:
+        JS_FreeValue(ctx, obj)
+        return JS_EXCEPTION
+      else: discard
   return obj
 
 proc toJS*(ctx: JSContext; opt: Option): JSValue =
   if opt.isSome:
-    return toJS(ctx, opt.get)
+    return ctx.toJS(opt.get)
   return JS_NULL
 
 proc toJS*[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
@@ -222,17 +233,26 @@ proc toJS*(ctx: JSContext; s: seq): JSValue =
       let val = toJS(ctx, s[i])
       if JS_IsException(val):
         return val
-      ctx.defineProperty(a, int64(i), val, JS_PROP_C_W_E or JS_PROP_THROW)
+      case ctx.defineProperty(a, int64(i), val, JS_PROP_C_W_E or JS_PROP_THROW)
+      of dprException: return JS_EXCEPTION
+      else: discard
   return a
 
 proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
-  #TODO this is a bit lazy :p
-  var x = newSeq[T]()
-  for e in s:
-    x.add(e)
-  var a = toJS(ctx, x)
+  let a = JS_NewArray(ctx)
   if JS_IsException(a):
     return a
+  var i = 0i64
+  for e in s:
+    let val = ctx.toJS(e)
+    if JS_IsException(val):
+      return val
+    case ctx.defineProperty(a, i, val, JS_PROP_C_W_E or JS_PROP_THROW)
+    of dprException:
+      JS_FreeValue(ctx, a)
+      return JS_EXCEPTION
+    else: discard
+    inc i
   let ret = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvSet], 1,
     a.toJSValueArray())
   JS_FreeValue(ctx, a)
@@ -241,12 +261,16 @@ proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
 proc toJS(ctx: JSContext; t: tuple): JSValue =
   let a = JS_NewArray(ctx)
   if not JS_IsException(a):
-    var i = 0
+    var i = 0i64
     for f in t.fields:
       let val = toJS(ctx, f)
       if JS_IsException(val):
         return val
-      ctx.defineProperty(a, int64(i), val, JS_PROP_C_W_E or JS_PROP_THROW)
+      case ctx.defineProperty(a, i, val, JS_PROP_C_W_E or JS_PROP_THROW)
+      of dprException:
+        JS_FreeValue(ctx, a)
+        return JS_EXCEPTION
+      else: discard
       inc i
   return a
 

@@ -826,7 +826,9 @@ proc initCommands*(config: Config): Err[string] =
         var prop = JS_GetPropertyStr(ctx, objIt, cstring(ss))
         if JS_IsUndefined(prop):
           prop = JS_NewObject(ctx)
-          ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop))
+          case ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop))
+          of dprException: return err(ctx.getExceptionMsg())
+          else: discard
         if JS_IsException(prop):
           return err(ctx.getExceptionMsg())
         JS_FreeValue(ctx, objIt)
@@ -840,7 +842,9 @@ proc initCommands*(config: Config): Err[string] =
     if not JS_IsFunction(ctx, fun):
       JS_FreeValue(ctx, fun)
       return err(k & " is not a function")
-    ctx.definePropertyE(objIt, name, JS_DupValue(ctx, fun))
+    case ctx.definePropertyE(objIt, name, JS_DupValue(ctx, fun))
+    of dprException: return err(ctx.getExceptionMsg())
+    else: discard
     config.cmd.map[k] = fun
     JS_FreeValue(ctx, objIt)
   config.cmd.jsObj = JS_DupValue(ctx, obj)

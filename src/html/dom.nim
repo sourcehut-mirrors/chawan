@@ -1476,7 +1476,11 @@ proc parentNodeChildrenImpl(ctx: JSContext; parentNode: Node): JSValue =
     childonly = true
   ))
   let this = ctx.toJS(parentNode)
-  ctx.definePropertyCW(this, "children", JS_DupValue(ctx, children))
+  case ctx.definePropertyCW(this, "children", JS_DupValue(ctx, children))
+  of dprException:
+    JS_FreeValue(ctx, this)
+    return JS_EXCEPTION
+  else: discard
   JS_FreeValue(ctx, this)
   return children
 
@@ -1497,7 +1501,11 @@ func childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
     childonly = true
   ))
   let this = ctx.toJS(node)
-  ctx.definePropertyCW(this, "childNodes", JS_DupValue(ctx, childNodes))
+  case ctx.definePropertyCW(this, "childNodes", JS_DupValue(ctx, childNodes))
+  of dprException:
+    JS_FreeValue(ctx, this)
+    return JS_EXCEPTION
+  else: discard
   JS_FreeValue(ctx, this)
   return childNodes
 
@@ -1849,10 +1857,12 @@ proc newLocation*(window: Window): Location =
   let location = Location(window: window)
   let ctx = window.jsctx
   if ctx != nil:
-    let val = toJS(ctx, location)
-    let valueOf = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
-    defineProperty(ctx, val, "valueOf", JS_DupValue(ctx, valueOf))
-    defineProperty(ctx, val, "toPrimitive", JS_UNDEFINED)
+    let val = ctx.toJS(location)
+    let valueOf0 = ctx.getOpaque().valRefs[jsvObjectPrototypeValueOf]
+    let valueOf = JS_DupValue(ctx, valueOf0)
+    doAssert ctx.defineProperty(val, "valueOf", valueOf) != dprException
+    doAssert ctx.defineProperty(val, "toPrimitive",
+      JS_UNDEFINED) != dprException
     #TODO [[DefaultProperties]]
     JS_FreeValue(ctx, val)
   return location
@@ -3318,8 +3328,12 @@ proc selectedOptions(ctx: JSContext; this: HTMLSelectElement): JSValue
     childonly = false
   ))
   let this = ctx.toJS(this)
-  ctx.definePropertyCW(this, "selectedOptions",
+  case ctx.definePropertyCW(this, "selectedOptions",
     JS_DupValue(ctx, selectedOptions))
+  of dprException:
+    JS_FreeValue(ctx, this)
+    return JS_EXCEPTION
+  else: discard
   JS_FreeValue(ctx, this)
   return selectedOptions
 
@@ -3441,7 +3455,11 @@ proc tBodies(ctx: JSContext; this: HTMLTableElement): JSValue {.jsfget.} =
     childonly = true
   ))
   let this = ctx.toJS(this)
-  ctx.definePropertyCW(this, "tBodies", JS_DupValue(ctx, tBodies))
+  case ctx.definePropertyCW(this, "tBodies", JS_DupValue(ctx, tBodies))
+  of dprException:
+    JS_FreeValue(ctx, this)
+    return JS_EXCEPTION
+  else: discard
   JS_FreeValue(ctx, this)
   return tBodies
 
@@ -3561,7 +3579,11 @@ proc cells(ctx: JSContext; this: HTMLTableRowElement): JSValue {.jsfget.} =
     childonly = true
   ))
   let this = ctx.toJS(this)
-  ctx.definePropertyCW(this, "cells", JS_DupValue(ctx, cells))
+  case ctx.definePropertyCW(this, "cells", JS_DupValue(ctx, cells))
+  of dprException:
+    JS_FreeValue(ctx, this)
+    return JS_EXCEPTION
+  else: discard
   JS_FreeValue(ctx, this)
   return cells
 
@@ -6207,10 +6229,10 @@ return option;
   doAssert JS_SetConstructorBit(ctx, imageFun, true)
   doAssert JS_SetConstructorBit(ctx, optionFun, true)
   let jsWindow = JS_GetGlobalObject(ctx)
-  ctx.definePropertyCW(jsWindow, "Image", imageFun)
-  ctx.definePropertyCW(jsWindow, "Option", optionFun)
-  ctx.definePropertyCW(jsWindow, "HTMLDocument",
-    JS_GetPropertyStr(ctx, jsWindow, "Document"))
+  doAssert ctx.definePropertyCW(jsWindow, "Image", imageFun) != dprException
+  doAssert ctx.definePropertyCW(jsWindow, "Option", optionFun) != dprException
+  doAssert ctx.definePropertyCW(jsWindow, "HTMLDocument",
+    JS_GetPropertyStr(ctx, jsWindow, "Document")) != dprException
   JS_FreeValue(ctx, jsWindow)
 
 # Forward declaration hack

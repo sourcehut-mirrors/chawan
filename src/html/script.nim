@@ -147,8 +147,9 @@ proc setImportMeta*(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   let m = cast[JSModuleDef](JS_VALUE_GET_PTR(funcVal))
   let moduleNameAtom = JS_GetModuleName(ctx, m)
   let metaObj = JS_GetImportMeta(ctx, m)
-  definePropertyCWE(ctx, metaObj, "url", JS_AtomToValue(ctx, moduleNameAtom))
-  definePropertyCWE(ctx, metaObj, "main", false)
+  doAssert ctx.definePropertyCWE(metaObj, "url",
+    JS_AtomToValue(ctx, moduleNameAtom)) == dprSuccess
+  doAssert ctx.definePropertyCWE(metaObj, "main", false) == dprSuccess
   JS_FreeValue(ctx, metaObj)
   JS_FreeAtom(ctx, moduleNameAtom)
 
@@ -181,8 +182,8 @@ proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]) =
   # it isn't...
   for e in consts:
     let s = $e
-    ctx.definePropertyE(proto, s, uint16(e))
-    ctx.definePropertyE(ctor, s, uint16(e))
+    doAssert ctx.definePropertyE(proto, s, uint16(e)) == dprSuccess
+    doAssert ctx.definePropertyE(ctor, s, uint16(e)) == dprSuccess
   JS_FreeValue(ctx, proto)
 
 proc identity(ctx: JSContext; this_val: JSValue; argc: cint;

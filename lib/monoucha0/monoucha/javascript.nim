@@ -332,19 +332,19 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
     let val = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
     let itSym = ctxOpaque.symRefs[jsyIterator]
-    ctx.defineProperty(proto, itSym, val)
+    doAssert ctx.defineProperty(proto, itSym, val) == dprSuccess
   let news = JS_NewAtomString(ctx, cdef.class_name)
   doAssert not JS_IsException(news)
-  ctx.definePropertyC(proto, ctxOpaque.symRefs[jsyToStringTag],
-    JS_DupValue(ctx, news))
+  doAssert ctx.definePropertyC(proto, ctxOpaque.symRefs[jsyToStringTag],
+    JS_DupValue(ctx, news)) == dprSuccess
   JS_SetClassProto(ctx, result, proto)
   ctx.addClassUnforgeable(proto, result, parent, unforgeable)
   if asglobal:
     let global = ctxOpaque.global
     assert ctxOpaque.gclass == 0
     ctxOpaque.gclass = result
-    ctx.definePropertyC(global, ctxOpaque.symRefs[jsyToStringTag],
-      JS_DupValue(ctx, news))
+    doAssert ctx.definePropertyC(global, ctxOpaque.symRefs[jsyToStringTag],
+      JS_DupValue(ctx, news)) == dprSuccess
     if JS_SetPrototype(ctx, global, proto) != 1:
       raise newException(Defect, "Failed to set global prototype: " &
         $cdef.class_name)
@@ -370,9 +370,11 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
     if JS_IsNull(namespace):
-      ctx.definePropertyCW(ctxOpaque.global, $cdef.class_name, jctor)
+      doAssert ctx.definePropertyCW(ctxOpaque.global, $cdef.class_name,
+        jctor) == dprSuccess
     else:
-      ctx.definePropertyCW(namespace, $cdef.class_name, jctor)
+      doAssert ctx.definePropertyCW(namespace, $cdef.class_name,
+        jctor) == dprSuccess
   else:
     JS_FreeValue(ctx, jctor)
 
