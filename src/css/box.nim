@@ -31,8 +31,6 @@ type
     firstBaseline*: LUnit
     # baseline of the last line box of all descendants
     baseline*: LUnit
-    # bottom margin result
-    marginBottom*: LUnit
 
   Area* = object
     offset*: Offset
