@@ -172,19 +172,36 @@ when defined(debug):
     copyMem(addr s[0], addr buffer.page[0], buffer.len)
     return s
 
+proc put(ctx: var LoaderContext; handle: LoaderHandle) =
+  let fd = int(handle.stream.fd)
+  if ctx.handleMap.len <= fd:
+    ctx.handleMap.setLen(fd + 1)
+  assert ctx.handleMap[fd] == nil
+  ctx.handleMap[fd] = handle
+
+proc unset(ctx: var LoaderContext; handle: LoaderHandle) =
+  assert not handle.registered
+  let fd = int(handle.stream.fd)
+  if fd < ctx.handleMap.len:
+    ctx.handleMap[fd] = nil
+
+proc getOutputId(ctx: var LoaderContext): int =
+  result = ctx.outputNum
+  inc ctx.outputNum
+
 # Create a new loader handle, with the output stream ostream.
-proc newInputHandle(ostream: PosixStream; outputId, pid: int;
+proc newInputHandle(ctx: var LoaderContext; ostream: PosixStream; pid: int;
     suspended = true): InputHandle =
   let handle = InputHandle(cacheId: -1, contentLen: uint64.high)
-  handle.outputs.add(OutputHandle(
+  let output = OutputHandle(
     stream: ostream,
     parent: handle,
-    outputId: outputId,
+    outputId: ctx.getOutputId(),
     ownerPid: pid,
     suspended: suspended
-  ))
-  when defined(debug):
-    handle.outputs[^1].url = handle.url
+  )
+  ctx.put(output)
+  handle.outputs.add(output)
   return handle
 
 func cap(buffer: LoaderBuffer): int {.inline.} =
@@ -204,8 +221,8 @@ proc bufferCleared(output: OutputHandle) =
   else:
     output.currentBuffer = nil
 
-proc tee(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int):
-    OutputHandle =
+proc tee(ctx: var LoaderContext; outputIn: OutputHandle; ostream: PosixStream;
+    pid: int): OutputHandle =
   assert outputIn.suspended
   let output = OutputHandle(
     parent: outputIn.parent,
@@ -214,10 +231,11 @@ proc tee(outputIn: OutputHandle; ostream: PosixStream; outputId, pid: int):
     currentBufferIdx: outputIn.currentBufferIdx,
     buffers: outputIn.buffers,
     istreamAtEnd: outputIn.istreamAtEnd,
-    outputId: outputId,
+    outputId: ctx.getOutputId(),
     ownerPid: pid,
     suspended: outputIn.suspended
   )
+  ctx.put(output)
   when defined(debug):
     output.url = outputIn.url
   if outputIn.parent != nil:
@@ -266,25 +284,25 @@ proc writeData(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   assert buffer.len - si > 0
   return ps.writeData(addr buffer.page[si], buffer.len - si)
 
-proc iclose(handle: InputHandle) =
+proc iclose(ctx: var LoaderContext; handle: InputHandle) =
   if handle.stream != nil:
-    assert not handle.registered
+    ctx.unset(handle)
     handle.stream.sclose()
     handle.stream = nil
 
-proc oclose(output: OutputHandle) =
-  assert not output.registered
+proc oclose(ctx: var LoaderContext; output: OutputHandle) =
+  ctx.unset(output)
   output.stream.sclose()
   output.stream = nil
 
-proc close(handle: InputHandle) =
-  handle.iclose()
+proc close(ctx: var LoaderContext; handle: InputHandle) =
+  ctx.iclose(handle)
   for output in handle.outputs:
     if output.stream != nil:
-      output.oclose()
+      ctx.oclose(output)
 
-proc close(client: ClientHandle) =
-  assert not client.registered
+proc close(ctx: var LoaderContext; client: ClientHandle) =
+  ctx.unset(client)
   client.stream.sclose()
   client.stream = nil
   for it in client.cacheMap:
@@ -411,10 +429,6 @@ proc pushBuffer(ctx: var LoaderContext; output: OutputHandle;
     output.buffers.addLast(buffer)
   pbrDone
 
-proc getOutputId(ctx: var LoaderContext): int =
-  result = ctx.outputNum
-  inc ctx.outputNum
-
 proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
     targetPath: string; fileOutput: out OutputHandle; osent: out uint64): bool =
   fileOutput = nil
@@ -487,18 +501,6 @@ proc openCachedItem(client: ClientHandle; id: int): (PosixStream, int) =
     if ps.seek(item.offset) >= 0:
       return (ps, n)
   return (nil, -1)
-
-proc put(ctx: var LoaderContext; handle: LoaderHandle) =
-  let fd = int(handle.stream.fd)
-  if ctx.handleMap.len <= fd:
-    ctx.handleMap.setLen(fd + 1)
-  assert ctx.handleMap[fd] == nil
-  ctx.handleMap[fd] = handle
-
-proc unset(ctx: var LoaderContext; handle: LoaderHandle) =
-  let fd = int(handle.stream.fd)
-  if fd < ctx.handleMap.len:
-    ctx.handleMap[fd] = nil
 
 proc addFd(ctx: var LoaderContext; handle: InputHandle) =
   handle.stream.setBlocking(false)
@@ -750,7 +752,7 @@ proc loadStreamRegular(ctx: var LoaderContext;
     handle.outputs.del(i)
   for output in handle.outputs:
     if r == hrrBrokenPipe:
-      output.oclose()
+      ctx.oclose(output)
     elif cachedHandle != nil:
       output.parent = cachedHandle
       cachedHandle.outputs.add(output)
@@ -758,11 +760,9 @@ proc loadStreamRegular(ctx: var LoaderContext;
       output.parent = nil
       output.istreamAtEnd = true
     else:
-      assert output.stream.fd >= ctx.handleMap.len or
-        ctx.handleMap[output.stream.fd] == nil
-      output.oclose()
+      ctx.oclose(output)
   handle.outputs.setLen(0)
-  handle.iclose()
+  ctx.iclose(handle)
 
 proc findItem(authMap: seq[AuthItem]; origin: Origin): AuthItem =
   for it in authMap:
@@ -985,20 +985,18 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
       ostream.sclose()
     of rbtOutput:
       ostream.setBlocking(false)
-      let output = outputIn.tee(ostream, ctx.getOutputId(), client.pid)
-      ctx.put(output)
+      let output = ctx.tee(outputIn, ostream, client.pid)
       output.suspended = false
       if not output.isEmpty:
         ctx.register(output)
     of rbtCache:
       if ostream != nil:
-        let handle = newInputHandle(ostream, ctx.getOutputId(), client.pid,
-          suspended = false)
+        let handle = ctx.newInputHandle(ostream, client.pid, suspended = false)
         handle.stream = istream2
         ostream.setBlocking(false)
         ctx.loadStreamRegular(handle, cachedHandle)
         assert handle.stream == nil
-        handle.close()
+        ctx.close(handle)
     of rbtNone:
       discard
 
@@ -1049,13 +1047,13 @@ proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
     of pbrDone: discard
     of pbrUnregister:
       client.cacheMap.del(n)
-      handle.close()
+      ctx.close(handle)
       return
     case ctx.sendStatus(handle, 200, newHeaders())
     of pbrDone: discard
     of pbrUnregister:
       client.cacheMap.del(n)
-      handle.close()
+      ctx.close(handle)
       return
     handle.output.stream.setBlocking(false)
     let cachedHandle = ctx.findCachedHandle(id)
@@ -1070,19 +1068,19 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
   case ctx.sendResult(handle, 0)
   of pbrDone: discard
   of pbrUnregister:
-    handle.close()
+    ctx.close(handle)
     return
   case ctx.sendStatus(handle, 200, newHeaders({"Content-Type": ct}))
   of pbrDone: discard
   of pbrUnregister:
-    handle.close()
+    ctx.close(handle)
     return
   let output = handle.output
   if s.len == 0:
     if output.suspended:
       output.istreamAtEnd = true
     else:
-      output.oclose()
+      ctx.oclose(output)
     return
   let buffer = newLoaderBuffer(s.len)
   buffer.len = s.len
@@ -1091,12 +1089,12 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
   of pbrUnregister:
     if output.registered:
       ctx.unregister(output)
-    output.oclose()
+    ctx.oclose(output)
   of pbrDone:
     if output.registered or output.suspended:
       output.istreamAtEnd = true
     else:
-      output.oclose()
+      ctx.oclose(output)
 
 proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
@@ -1283,13 +1281,13 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       if handle.stream != nil:
         ctx.addFd(handle)
       else:
-        handle.close()
+        ctx.close(handle)
     of "stream":
       ctx.loadStream(client, handle, request)
       if handle.stream != nil:
         ctx.addFd(handle)
       else:
-        handle.close()
+        ctx.close(handle)
     of "cache":
       ctx.loadFromCache(client, handle, request)
       assert handle.stream == nil
@@ -1339,8 +1337,7 @@ proc load(ctx: var LoaderContext; stream: SocketStream; request: Request;
     discard close(sv[1])
     let stream = newSocketStream(sv[0])
     stream.setBlocking(false)
-    let handle = newInputHandle(stream, ctx.getOutputId(), client.pid)
-    ctx.put(handle.output)
+    let handle = ctx.newInputHandle(stream, client.pid)
     when defined(debug):
       handle.url = request.url
       handle.output.url = request.url
@@ -1544,20 +1541,15 @@ proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
   r.sread(sourceId)
   r.sread(targetPid)
   let outputIn = ctx.findOutput(sourceId, client)
-  if outputIn != nil:
-    let id = ctx.getOutputId()
-    var sv {.noinit.}: array[2, cint]
-    stream.withPacketWriter w:
-      if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
-        w.swrite(id)
-        w.sendFd(sv[1])
-      else:
-        w.swrite(-1)
-    discard close(sv[1])
+  var sv {.noinit.}: array[2, cint]
+  if outputIn != nil and socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
     let ostream = newSocketStream(sv[0])
     ostream.setBlocking(false)
-    let output = outputIn.tee(ostream, id, targetPid)
-    ctx.put(output)
+    let output = ctx.tee(outputIn, ostream, targetPid)
+    stream.withPacketWriter w:
+      w.swrite(output.outputId)
+      w.sendFd(sv[1])
+    discard close(sv[1])
   else:
     stream.withPacketWriter w:
       w.swrite(-1)
@@ -1706,10 +1698,9 @@ proc finishCycle(ctx: var LoaderContext) =
   for handle in ctx.unregRead:
     if handle.stream != nil:
       ctx.unregister(handle)
-      ctx.unset(handle)
       if handle.parser != nil:
         ctx.finishParse(handle)
-      handle.iclose()
+      ctx.iclose(handle)
       for output in handle.outputs:
         output.istreamAtEnd = true
         if output.isEmpty:
@@ -1718,8 +1709,7 @@ proc finishCycle(ctx: var LoaderContext) =
     if output.stream != nil:
       if output.registered:
         ctx.unregister(output)
-      ctx.unset(output)
-      output.oclose()
+      ctx.oclose(output)
       let handle = output.parent
       if handle != nil: # may be nil if from loadStream S_ISREG
         let i = handle.outputs.find(output)
@@ -1727,17 +1717,16 @@ proc finishCycle(ctx: var LoaderContext) =
         if handle.outputs.len == 0 and handle.stream != nil:
           # premature end of all output streams; kill istream too
           ctx.unregister(handle)
-          ctx.unset(handle)
           if handle.parser != nil:
             ctx.finishParse(handle)
-          handle.iclose()
+          ctx.iclose(handle)
   for client in ctx.unregClient:
     if client.stream != nil:
       # Do it in this exact order, or the cleanup procedure will have
       # trouble finding all clients if we got interrupted in this loop.
       ctx.unregister(client)
       let fd = int(client.stream.fd)
-      client.close()
+      ctx.close(client)
       if fd < ctx.handleMap.len:
         ctx.handleMap[fd] = nil
   ctx.unregRead.setLen(0)
