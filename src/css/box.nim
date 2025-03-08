@@ -31,6 +31,9 @@ type
     firstBaseline*: LUnit
     # baseline of the last line box of all descendants
     baseline*: LUnit
+    # Bottom margin of the box, collapsed with the margin of children.
+    # This is already added to size, and only used by flex layout.
+    marginBottom*: LUnit
 
   Area* = object
     offset*: Offset

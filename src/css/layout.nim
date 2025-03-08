@@ -372,8 +372,6 @@ proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   sizes: ResolvedSizes)
-proc layoutRootBlock0(lctx: LayoutContext; box: BlockBox; offset: Offset;
-  sizes: ResolvedSizes; marginBottom: out LUnit)
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   canClear: bool)
 proc positionFloat(bctx: var BlockContext; child: BlockBox;
@@ -2637,7 +2635,6 @@ type
     child: BlockBox
     weights: array[FlexWeightType, float32]
     sizes: ResolvedSizes
-    marginBottom: LUnit
 
   FlexContext = object
     mains: seq[FlexMainContext]
@@ -2662,9 +2659,8 @@ type
     totalWeight: array[FlexWeightType, float32]
     pending: seq[FlexPendingItem]
 
-proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes;
-    marginBottom: out LUnit) =
-  lctx.layoutRootBlock0(box, offset(x = 0, y = 0), sizes, marginBottom)
+proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
+  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
@@ -2729,7 +2725,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       totalWeight += it.weights[wt]
       #TODO we should call this only on freeze, and then put another loop to
       # the end for non-frozen items
-      lctx.layoutFlexItem(it.child, it.sizes, it.marginBottom)
+      lctx.layoutFlexItem(it.child, it.sizes)
       mctx.updateMaxSizes(it.child, it.sizes)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
@@ -2763,8 +2759,8 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       if odim == dtVertical:
         # Exclude the bottom margin; space only applies to the actual
         # height.
-        it.sizes.space[odim].u -= it.marginBottom
-      lctx.layoutFlexItem(it.child, it.sizes, it.marginBottom)
+        it.sizes.space[odim].u -= it.child.state.marginBottom
+      lctx.layoutFlexItem(it.child, it.sizes)
     offset[dim] += it.sizes.margin[dim].start
     it.child.state.offset[dim] += offset[dim]
     # margins are added here, since they belong to the flex item.
@@ -2802,8 +2798,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
   let dim = fctx.dim
   var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
   let flexBasis = child.computed{"flex-basis"}
-  var marginBottom: LUnit = 0
-  lctx.layoutFlexItem(child, childSizes, marginBottom)
+  lctx.layoutFlexItem(child, childSizes)
   if flexBasis.u != clAuto and sizes.space[dim].isDefinite:
     # we can't skip this pass; it is needed to calculate the minimum
     # height.
@@ -2816,7 +2811,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
       # because the initial flex basis was e.g. 0. Try to resize it to
       # something more usable.
       childSizes.space[dim] = stretch(minu)
-    lctx.layoutFlexItem(child, childSizes, marginBottom)
+    lctx.layoutFlexItem(child, childSizes)
   if child.computed{"position"} in PositionAbsoluteFixed:
     # Absolutely positioned flex children do not participate in flex layout.
     lctx.queueAbsolute(child, offset(x = 0, y = 0))
@@ -2837,8 +2832,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     mctx.pending.add(FlexPendingItem(
       child: child,
       weights: [grow, shrink],
-      sizes: childSizes,
-      marginBottom: marginBottom
+      sizes: childSizes
     ))
 
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
@@ -2878,12 +2872,8 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     lctx.popPositioned(box, box.state.size)
 
 # Inner layout for boxes that establish a new block formatting context.
-# Returns the bottom margin for the box, collapsed with the appropriate
-# margins from its descendants. This margin is already added to the box
-# size, so normally it can be discarded; only flex uses it to determine
-# the space given to the second pass.
-proc layoutRootBlock0(lctx: LayoutContext; box: BlockBox; offset: Offset;
-    sizes: ResolvedSizes; marginBottom: out LUnit) =
+proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
+    sizes: ResolvedSizes) =
   if box.sizes == sizes:
     box.state.offset = offset
     return
@@ -2893,16 +2883,12 @@ proc layoutRootBlock0(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state.offset = offset
   bctx.layout(box, sizes, canClear = false)
   assert bctx.unpositionedFloats.len == 0
-  marginBottom = bctx.marginTodo.sum()
+  let marginBottom = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
   box.state.size.h = max(box.state.size.h + marginBottom, bctx.maxFloatHeight)
   box.state.intr.h = max(box.state.intr.h + marginBottom, bctx.maxFloatHeight)
-
-proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
-    sizes: ResolvedSizes) =
-  var dummy: LUnit
-  lctx.layoutRootBlock0(box, offset, sizes, dummy)
+  box.state.marginBottom = marginBottom
 
 proc layout*(box: BlockBox; attrsp: ptr WindowAttributes): StackItem =
   let space = availableSpace(
