@@ -302,7 +302,7 @@ proc close(ctx: var LoaderContext; handle: InputHandle) =
       ctx.oclose(output)
 
 proc close(ctx: var LoaderContext; client: ClientHandle) =
-  ctx.unset(client)
+  # Do *not* unset the client, that breaks temp-file cleanup.
   client.stream.sclose()
   client.stream = nil
   for it in client.cacheMap:
