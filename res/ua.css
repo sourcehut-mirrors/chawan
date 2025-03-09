@@ -52,7 +52,12 @@ tfoot { display: table-footer-group; }
 colgroup { display: table-column-group; }
 tr { display: table-row; vertical-align: inherit }
 col { display: table-column }
-th { display: table-cell; font-weight: bold; vertical-align: inherit }
+th {
+	display: table-cell;
+	font-weight: bold;
+	vertical-align: inherit;
+	text-align: -cha-center
+}
 td { display: table-cell; text-align: unset; vertical-align: inherit }
 
 caption { display: table-caption; text-align: center }
