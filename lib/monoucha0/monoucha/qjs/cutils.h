@@ -25,6 +25,7 @@
 #ifndef CUTILS_H
 #define CUTILS_H
 
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
@@ -54,14 +55,6 @@ extern "C" {
 #include <pthread.h>
 #endif
 
-#if defined(__SANITIZE_ADDRESS__)
-# define __ASAN__ 1
-#elif defined(__has_feature)
-# if __has_feature(address_sanitizer)
-#  define __ASAN__ 1
-# endif
-#endif
-
 #if defined(_MSC_VER) && !defined(__clang__)
 #  define likely(x)       (x)
 #  define unlikely(x)     (x)
@@ -70,10 +63,6 @@ extern "C" {
 #  define __maybe_unused
 #  define __attribute__(x)
 #  define __attribute(x)
-#  include <intrin.h>
-static void *__builtin_frame_address(unsigned int level) {
-    return (void *)((char*)_AddressOfReturnAddress() - sizeof(int *) - level * sizeof(int *));
-}
 #else
 #  define likely(x)       __builtin_expect(!!(x), 1)
 #  define unlikely(x)     __builtin_expect(!!(x), 0)
@@ -81,19 +70,6 @@ static void *__builtin_frame_address(unsigned int level) {
 #  define no_inline __attribute__((noinline))
 #  define __maybe_unused __attribute__((unused))
 #endif
-
-// https://stackoverflow.com/a/6849629
-#undef FORMAT_STRING
-#if _MSC_VER >= 1400
-# include <sal.h>
-# if _MSC_VER > 1400
-#  define FORMAT_STRING(p) _Printf_format_string_ p
-# else
-#  define FORMAT_STRING(p) __format_string p
-# endif /* FORMAT_STRING */
-#else
-# define FORMAT_STRING(p) p
-#endif /* _MSC_VER */
 
 #if defined(_MSC_VER) && !defined(__clang__)
 #include <math.h>
@@ -124,13 +100,22 @@ static void *__builtin_frame_address(unsigned int level) {
 #define minimum_length(n) static n
 #endif
 
-typedef int BOOL;
-
-#ifndef FALSE
-enum {
-    FALSE = 0,
-    TRUE = 1,
-};
+/* Borrowed from Folly */
+#ifndef JS_PRINTF_FORMAT
+#ifdef _MSC_VER
+#include <sal.h>
+#define JS_PRINTF_FORMAT _Printf_format_string_
+#define JS_PRINTF_FORMAT_ATTR(format_param, dots_param)
+#else
+#define JS_PRINTF_FORMAT
+#if !defined(__clang__) && defined(__GNUC__)
+#define JS_PRINTF_FORMAT_ATTR(format_param, dots_param) \
+  __attribute__((format(gnu_printf, format_param, dots_param)))
+#else
+#define JS_PRINTF_FORMAT_ATTR(format_param, dots_param) \
+  __attribute__((format(printf, format_param, dots_param)))
+#endif
+#endif
 #endif
 
 void js__pstrcpy(char *buf, int buf_size, const char *str);
@@ -440,7 +425,7 @@ typedef struct DynBuf {
     uint8_t *buf;
     size_t size;
     size_t allocated_size;
-    BOOL error; /* true if a memory allocation error occurred */
+    bool error; /* true if a memory allocation error occurred */
     DynBufReallocFunc *realloc_func;
     void *opaque; /* for realloc_func */
 } DynBuf;
@@ -465,15 +450,14 @@ static inline int dbuf_put_u64(DynBuf *s, uint64_t val)
 {
     return dbuf_put(s, (uint8_t *)&val, 8);
 }
-int __attribute__((format(printf, 2, 3))) dbuf_printf(DynBuf *s,
-                                                      FORMAT_STRING(const char *fmt), ...);
+int JS_PRINTF_FORMAT_ATTR(2, 3) dbuf_printf(DynBuf *s, JS_PRINTF_FORMAT const char *fmt, ...);
 void dbuf_free(DynBuf *s);
-static inline BOOL dbuf_error(DynBuf *s) {
+static inline bool dbuf_error(DynBuf *s) {
     return s->error;
 }
 static inline void dbuf_set_error(DynBuf *s)
 {
-    s->error = TRUE;
+    s->error = true;
 }
 
 /*---- UTF-8 and UTF-16 handling ----*/
@@ -497,17 +481,17 @@ size_t utf8_decode_buf16(uint16_t *dest, size_t dest_len, const char *src, size_
 size_t utf8_encode_buf8(char *dest, size_t dest_len, const uint8_t *src, size_t src_len);
 size_t utf8_encode_buf16(char *dest, size_t dest_len, const uint16_t *src, size_t src_len);
 
-static inline BOOL is_surrogate(uint32_t c)
+static inline bool is_surrogate(uint32_t c)
 {
     return (c >> 11) == (0xD800 >> 11); // 0xD800-0xDFFF
 }
 
-static inline BOOL is_hi_surrogate(uint32_t c)
+static inline bool is_hi_surrogate(uint32_t c)
 {
     return (c >> 10) == (0xD800 >> 10); // 0xD800-0xDBFF
 }
 
-static inline BOOL is_lo_surrogate(uint32_t c)
+static inline bool is_lo_surrogate(uint32_t c)
 {
     return (c >> 10) == (0xDC00 >> 10); // 0xDC00-0xDFFF
 }

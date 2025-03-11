@@ -245,7 +245,7 @@ type
     magic*: int16
     u* {.importc.}: JSCFunctionListEntryU
 
-  JS_BOOL* = distinct cint
+  JS_BOOL* {.importc: "bool".} = bool
 
   JSPropertyEnum* {.importc.} = object
     is_enumerable*: JS_BOOL
@@ -276,12 +276,6 @@ type
     JS_PROMISE_REJECTED
 
 func `==`*(a, b: JSAtom): bool {.borrow.}
-
-converter toBool*(js: JS_BOOL): bool {.inline.} =
-  cast[cint](js) != 0
-
-converter toJSBool*(b: bool): JS_BOOL {.inline.} =
-  cast[JS_BOOL](cint(b))
 
 converter toJSClassID*(e: JSClassEnum): JSClassID {.inline.} =
   JSClassID(e)
@@ -524,7 +518,7 @@ proc JS_Throw*(ctx: JSContext; obj: JSValue): JSValue
 proc JS_GetException*(ctx: JSContext): JSValue
 proc JS_IsError*(ctx: JSContext; v: JSValue): JS_BOOL
 proc JS_IsUncatchableError*(ctx: JSContext; val: JSValue): JS_BOOL
-proc JS_SetUncatchableError*(ctx: JSContext; val: JSValue; flag: JS_BOOL)
+proc JS_SetUncatchableError*(ctx: JSContext; val: JSValue)
 proc JS_ResetUncatchableError*(ctx: JSContext)
 proc JS_NewError*(ctx: JSContext): JSValue
 proc JS_ThrowPlainError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,

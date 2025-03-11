@@ -125,7 +125,7 @@ int dbuf_realloc(DynBuf *s, size_t new_size)
             new_size = size;
         new_buf = s->realloc_func(s->opaque, s->buf, new_size);
         if (!new_buf) {
-            s->error = TRUE;
+            s->error = true;
             return -1;
         }
         s->buf = new_buf;
@@ -180,8 +180,7 @@ int dbuf_putstr(DynBuf *s, const char *str)
     return dbuf_put(s, (const uint8_t *)str, strlen(str));
 }
 
-int __attribute__((format(printf, 2, 3))) dbuf_printf(DynBuf *s,
-                                                      const char *fmt, ...)
+int JS_PRINTF_FORMAT_ATTR(2, 3) dbuf_printf(DynBuf *s, JS_PRINTF_FORMAT const char *fmt, ...)
 {
     va_list ap;
     char buf[128];
@@ -590,7 +589,13 @@ overflow:
  */
 
 /* 2 <= base <= 36 */
-char const digits36[36] = "0123456789abcdefghijklmnopqrstuvwxyz";
+char const digits36[36] = {
+    '0','1','2','3','4','5','6','7','8','9',
+    'a','b','c','d','e','f','g','h','i','j',
+    'k','l','m','n','o','p','q','r','s','t',
+    'u','v','w','x','y','z'
+};
+
 
 #define USE_SPECIAL_RADIX_10  1  // special case base 10 radix conversions
 #define USE_SINGLE_CASE_FAST  1  // special case single digit numbers
@@ -1203,12 +1208,12 @@ typedef struct {
     js__once_cb callback;
 } js__once_data_t;
 
-static BOOL WINAPI js__once_inner(INIT_ONCE *once, void *param, void **context) {
+static int WINAPI js__once_inner(INIT_ONCE *once, void *param, void **context) {
     js__once_data_t *data = param;
 
     data->callback();
 
-    return TRUE;
+    return 1;
 }
 
 void js_once(js_once_t *guard, js__once_cb callback) {
