@@ -193,6 +193,8 @@ type
     DisplayFlowRoot = "flow-root"
     DisplayFlex = "flex"
     DisplayInlineFlex = "inline-flex"
+    DisplayGrid = "grid"
+    DisplayInlineGrid = "inline-grid"
     # internal, for layout
     DisplayTableWrapper = ""
 
@@ -556,10 +558,11 @@ const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const DisplayInlineBlockLike* = {
-  DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex
+  DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex, DisplayInlineGrid
 }
 const DisplayOuterInline* = DisplayInlineBlockLike + {DisplayInline}
 const DisplayInnerFlex* = {DisplayFlex, DisplayInlineFlex}
+const DisplayInnerGrid* = {DisplayGrid, DisplayInlineGrid}
 const RowGroupBox* = {
   # Note: caption is not included here
   DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup
@@ -751,8 +754,7 @@ func inherited*(t: CSSPropertyType): bool =
 func blockify*(display: CSSDisplay): CSSDisplay =
   case display
   of DisplayBlock, DisplayTable, DisplayListItem, DisplayNone, DisplayFlowRoot,
-      DisplayFlex, DisplayTableWrapper:
-     #TODO grid
+      DisplayFlex, DisplayTableWrapper, DisplayGrid:
     return display
   of DisplayInline, DisplayInlineBlock, DisplayTableRow,
       DisplayTableRowGroup, DisplayTableColumn,
@@ -763,6 +765,8 @@ func blockify*(display: CSSDisplay): CSSDisplay =
     return DisplayTable
   of DisplayInlineFlex:
     return DisplayFlex
+  of DisplayInlineGrid:
+    return DisplayGrid
 
 func bfcify*(overflow: CSSOverflow): CSSOverflow =
   if overflow == OverflowVisible:

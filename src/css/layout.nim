@@ -105,10 +105,13 @@ func isDefinite(sc: SizeConstraint): bool =
 # Note: this does not include display types that cannot appear as block
 # children.
 func establishesBFC(computed: CSSValues): bool =
+  const DisplayWithBFC = {
+    DisplayFlowRoot, DisplayTable, DisplayFlex, DisplayGrid
+  }
   return computed{"float"} != FloatNone or
-    computed{"display"} in {DisplayFlowRoot, DisplayTable, DisplayFlex} or
+    computed{"display"} in DisplayWithBFC or
     computed{"overflow-x"} notin {OverflowVisible, OverflowClip}
-    #TODO contain, grid, multicol, column-span
+    #TODO contain, multicol, column-span
 
 func canpx(l: CSSLength; sc: SizeConstraint): bool =
   return l.u != clAuto and (l.u != clPerc or sc.t == scStretch)
@@ -370,6 +373,7 @@ type
 # Forward declarations
 proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
+proc layoutGrid(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   sizes: ResolvedSizes)
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
@@ -2624,6 +2628,8 @@ proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
     bctx.layoutTable(box, sizes)
   of DisplayInnerFlex:
     bctx.layoutFlex(box, sizes)
+  of DisplayInnerGrid:
+    bctx.layoutGrid(box, sizes)
   else:
     assert false
 
@@ -2870,6 +2876,10 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     lctx.positionRelative(sizes.space, child)
   if box.computed{"position"} != PositionStatic:
     lctx.popPositioned(box, box.state.size)
+
+proc layoutGrid(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
+  #TODO implement grid
+  bctx.layoutFlow(box, sizes, canClear = false)
 
 # Inner layout for boxes that establish a new block formatting context.
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;

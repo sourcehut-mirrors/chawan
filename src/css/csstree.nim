@@ -238,7 +238,7 @@ proc getParent(frame: var TreeFrame; computed: CSSValues; display: CSSDisplay):
     var seq[StyledNode] =
   let parentDisplay = frame.computed{"display"}
   case parentDisplay
-  of DisplayInnerFlex:
+  of DisplayInnerFlex, DisplayInnerGrid:
     if display in DisplayOuterInline:
       if frame.anonComputed == nil:
         frame.anonComputed = frame.inheritFor(DisplayBlock)
