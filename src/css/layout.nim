@@ -2422,18 +2422,16 @@ proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
   var tfoot: seq[BlockBox] = @[]
   for child in table.children:
     let child = BlockBox(child)
-    case child.computed{"display"}
-    of DisplayTableRow: tbody.add(child)
-    of DisplayTableHeaderGroup:
+    let display = child.computed{"display"}
+    if display == DisplayTableRow:
+      tbody.add(child)
+    else:
       for it in child.children:
-        thead.add(BlockBox(it))
-    of DisplayTableRowGroup:
-      for it in child.children:
-        tbody.add(BlockBox(it))
-    of DisplayTableFooterGroup:
-      for it in child.children:
-        tfoot.add(BlockBox(it))
-    else: assert false, $child.computed{"display"}
+        case display
+        of DisplayTableHeaderGroup: thead.add(BlockBox(it))
+        of DisplayTableRowGroup: tbody.add(BlockBox(it))
+        of DisplayTableFooterGroup: tfoot.add(BlockBox(it))
+        else: assert false, $child.computed{"display"}
   tctx.preLayoutTableRows(thead, table)
   tctx.preLayoutTableRows(tbody, table)
   tctx.preLayoutTableRows(tfoot, table)
