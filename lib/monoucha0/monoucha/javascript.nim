@@ -369,12 +369,9 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctxOpaque.ctors.add(JS_UNDEFINED)
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
-    if JS_IsNull(namespace):
-      doAssert ctx.definePropertyCW(ctxOpaque.global, $cdef.class_name,
-        jctor) == dprSuccess
-    else:
-      doAssert ctx.definePropertyCW(namespace, $cdef.class_name,
-        jctor) == dprSuccess
+    let target = if JS_IsNull(namespace): ctxOpaque.global else: namespace
+    doAssert JS_DefinePropertyValueStr(ctx, target, cdef.class_name, jctor,
+      JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == 1
   else:
     JS_FreeValue(ctx, jctor)
 
