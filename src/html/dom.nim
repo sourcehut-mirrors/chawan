@@ -4300,16 +4300,15 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         response.resume()
         response.close()
         var expiry = -1i64
-        if "Cache-Control" in response.headers:
-          for hdr in response.headers.getAllCommaSplit("Cache-Control"):
-            let s = hdr.strip()
-            if s.startsWithIgnoreCase("max-age="):
-              let i = hdr.skipBlanks("max-age=".len)
-              let s = hdr.until(AllChars - AsciiDigit, i)
-              let pi = parseInt64(s)
-              if pi.isSome:
-                expiry = getTime().toUnix() + pi.get
-              break
+        for s in response.headers.getAllCommaSplit("Cache-Control"):
+          let s = s.strip()
+          if s.startsWithIgnoreCase("max-age="):
+            let i = s.skipBlanks("max-age=".len)
+            let s = s.until(AllChars - AsciiDigit, i)
+            let pi = parseInt64(s)
+            if pi.isSome:
+              expiry = getTime().toUnix() + pi.get
+            break
         cachedURL.loading = false
         cachedURL.expiry = expiry
         return r.then(proc(res: JSResult[Response]) =
