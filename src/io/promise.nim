@@ -149,38 +149,38 @@ proc all*(promises: seq[EmptyPromise]): EmptyPromise =
 
 # Promise is converted to a JS promise which will be resolved when the Nim
 # promise is resolved.
-proc promiseThenCallback(ctx: JSContext; this: JSValue; argc: cint;
-    argv: ptr UncheckedArray[JSValue]; magic: cint;
-    funcData: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
+proc promiseThenCallback(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint; funcData: JSValueConstArray): JSValue
+    {.cdecl.} =
   let fun = funcData[0]
   let op = JS_GetOpaque(fun, JS_GetClassID(fun))
   if op != nil:
-    let p = cast[Promise[seq[JSValue]]](op)
+    let p = cast[Promise[seq[JSValueConst]]](op)
     p.resolve(@(argv.toOpenArray(0, argc - 1)))
     GC_unref(p)
     JS_SetOpaque(fun, nil)
   return JS_UNDEFINED
 
-proc promiseCatchCallback(ctx: JSContext; this: JSValue; argc: cint;
-    argv: ptr UncheckedArray[JSValue]; magic: cint;
-    funcData: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
+proc promiseCatchCallback(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint; funcData: JSValueConstArray): JSValue
+    {.cdecl.} =
   let fun = funcData[0]
   let op = JS_GetOpaque(fun, JS_GetClassID(fun))
   if op != nil and argc > 0:
-    let vals = @[JS_Throw(ctx, JS_DupValue(ctx, argv[0]))]
-    let p = cast[Promise[seq[JSValue]]](op)
+    let vals = @[JSValueConst(JS_Throw(ctx, JS_DupValue(ctx, argv[0])))]
+    let p = cast[Promise[seq[JSValueConst]]](op)
     p.resolve(vals)
     GC_unref(p)
     JS_SetOpaque(fun, nil)
   return JS_UNDEFINED
 
-proc fromJS*(ctx: JSContext; val: JSValue; res: out Promise[seq[JSValue]]):
-    Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst;
+    res: out Promise[seq[JSValueConst]]): Opt[void] =
   if not JS_IsObject(val):
     JS_ThrowTypeError(ctx, "value is not an object")
     res = nil
     return err()
-  res = Promise[seq[JSValue]]()
+  res = Promise[seq[JSValueConst]]()
   let tmp = JS_NewObject(ctx)
   JS_SetOpaque(tmp, cast[pointer](res))
   block then:
@@ -209,22 +209,23 @@ proc fromJS*(ctx: JSContext; val: JSValue; res: out Promise[seq[JSValue]]):
   GC_ref(res)
   return ok()
 
-proc fromJS*(ctx: JSContext; val: JSValue; res: out EmptyPromise): Opt[void] =
-  var res1: Promise[seq[JSValue]]
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: out EmptyPromise):
+    Opt[void] =
+  var res1: Promise[seq[JSValueConst]]
   ?ctx.fromJS(val, res1)
   let res2 = EmptyPromise()
-  res1.then(proc(_: seq[JSValue]) =
+  res1.then(proc(_: seq[JSValueConst]) =
     res2.resolve()
   )
   res = res2
   return ok()
 
-proc fromJS*(ctx: JSContext; val: JSValue; res: out Promise[JSValue]):
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: out Promise[JSValueConst]):
     Opt[void] =
-  var res1: Promise[seq[JSValue]]
+  var res1: Promise[seq[JSValueConst]]
   ?ctx.fromJS(val, res1)
-  let res2 = Promise[JSValue]()
-  res1.then(proc(s: seq[JSValue]) =
+  let res2 = Promise[JSValueConst]()
+  res1.then(proc(s: seq[JSValueConst]) =
     if s.len > 0:
       res2.resolve(s[0])
     else:
@@ -255,7 +256,7 @@ proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue =
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
   promise.then(proc(x: T) =
-    let x = toJS(ctx, x)
+    let x = ctx.toJS(x)
     let res = JS_Call(ctx, resolvingFuncs[0], JS_UNDEFINED, 1,
       x.toJSValueArray())
     JS_FreeValue(ctx, res)

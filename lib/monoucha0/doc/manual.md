@@ -427,15 +427,16 @@ proc log(ctx: JSContext; console: Console; s: string) {.jsfunc.} =
 It is also possible to use `varargs` in `.jsfunc` functions:
 
 ```nim
-proc log(ctx: JSContext; console: Console; ss: varargs[JSValue]) {.jsfunc.} =
+proc log(ctx: JSContext; console: Console; ss: varargs[JSValueConst])
+    {.jsfunc.} =
   discard # can be called like `console.log("a", "b", "c", "d")`
 ```
 
-For efficiency reasons, only `JSValue` varargs are supported.
+For efficiency reasons, only `JSValueConst` varargs are supported.
 
-(In the past, union types and non-JSValue varargs also worked. This
+(In the past, union types and non-JSValueConst varargs also worked. This
 feature was dropped because it generated inefficient and bloated code;
-`fromJS` with `JSValue` parameters can be used to the same effect.)
+`fromJS` with `JSValueConst` parameters can be used to the same effect.)
 
 For further information about individual type conversions, see the
 [toJS, fromJS](#tojs-fromjs) section.
@@ -665,9 +666,17 @@ reference/unreference appropriately. For this, use the `JS_DupValue` and
 `JSRuntime`, use the `JS_FreeValueRT` and `JS_DupValueRT` variants
 instead.)
 
+Note the presence of JSValueConst; this is a distinct subtype of JSValue
+that indicates that the value is borrowed. It is analogous to the `lent`
+keyword in Nim (which is implicit in procedure parameters).
+
+In contrast, procedures that take a non-const JSValue are expected to
+take ownership of said JSValue and eventually free it. This behavior is
+anologous to the `sink` keyword in Nim.
+
 To get raw JSValues in `.jsfunc` (or similar) bound functions, you can
-simply set the desired parameter's type to `JSValue`. This way, you get
-a "borrowed" JSValue; to keep a reference to these after the function
+simply set the desired parameter's type to `JSValueConst`. This way, you
+get a "borrowed" JSValue; to keep a reference to these after the function
 exits, reference them with `JS_DupValue` first. (Analogously, you do not
 have to free such JSValues as long as you don't call `JS_DupValue` on
 them, either.)
@@ -708,7 +717,7 @@ The `tojs` module also includes some other convenience functions:
 ### Using fromJS
 
 ```nim
-proc fromJS[T](ctx: JSContext; val: JSValue; res: var T): Err[void]
+proc fromJS[T](ctx: JSContext; val: JSValueConst; res: var T): Err[void]
 ```
 
 `fromJS` is the opposite of `toJS`: it converts `JSValue`s into Nim

@@ -73,7 +73,7 @@ export
   JS_EVAL_FLAG_SHEBANG,
   JS_EVAL_FLAG_STRICT,
   JS_EVAL_FLAG_COMPILE_ONLY,
-  JSRuntime, JSContext, JSValue, JSClassID, JSAtom,
+  JSRuntime, JSContext, JSValue, JSValueConst, JSClassID, JSAtom,
   JS_GetGlobalObject, JS_FreeValue, JS_IsException, JS_GetPropertyStr,
   JS_IsFunction, JS_NewCFunctionData, JS_Call, JS_DupValue, JS_IsUndefined,
   JS_ThrowTypeError, JS_ThrowRangeError, JS_ThrowSyntaxError,
@@ -269,7 +269,7 @@ proc runJSJobs*(rt: JSRuntime): Result[void, JSContext] =
 # Since every prototype has a list of all its ancestor's LegacyUnforgeable
 # functions, it is sufficient to simply merge the new list of new classes
 # with their parent's list to achieve this.
-proc addClassUnforgeable(ctx: JSContext; proto: JSValue;
+proc addClassUnforgeable(ctx: JSContext; proto: JSValueConst;
     classid, parent: JSClassID; ourUnforgeable: JSFunctionList) =
   let ctxOpaque = ctx.getOpaque()
   var merged = @ourUnforgeable
@@ -301,7 +301,7 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
 func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
     asglobal, nointerface: bool; finalizer: JSFinalizerFunction;
-    namespace: JSValue; errid: Opt[JSErrorEnum];
+    namespace: JSValueConst; errid: Opt[JSErrorEnum];
     unforgeable, staticfuns: JSFunctionList): JSClassID
     {.discardable.} =
   result = 0
@@ -369,7 +369,10 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctxOpaque.ctors.add(JS_UNDEFINED)
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
   if not nointerface:
-    let target = if JS_IsNull(namespace): ctxOpaque.global else: namespace
+    let target = if JS_IsNull(namespace):
+      JSValueConst(ctxOpaque.global)
+    else:
+      namespace
     doAssert JS_DefinePropertyValueStr(ctx, target, cdef.class_name, jctor,
       JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == 1
   else:
@@ -493,23 +496,23 @@ template getJSParams(): untyped =
   [
     (quote do: JSValue),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
     newIdentDefs(ident("argc"), quote do: cint),
-    newIdentDefs(ident("argv"), quote do: ptr UncheckedArray[JSValue])
+    newIdentDefs(ident("argv"), quote do: JSValueConstArray)
   ]
 
 template getJSGetterParams(): untyped =
   [
     (quote do: JSValue),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
   ]
 
 template getJSMagicGetterParams(): untyped =
   [
     (quote do: JSValue),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
     newIdentDefs(ident("magic"), quote do: cint)
   ]
 
@@ -518,7 +521,7 @@ template getJSGetOwnPropParams(): untyped =
     (quote do: cint),
     newIdentDefs(ident("ctx"), quote do: JSContext),
     newIdentDefs(ident("desc"), quote do: ptr JSPropertyDescriptor),
-    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
     newIdentDefs(ident("prop"), quote do: JSAtom),
   ]
 
@@ -526,19 +529,19 @@ template getJSGetPropParams(): untyped =
   [
     (quote do: JSValue),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
     newIdentDefs(ident("prop"), quote do: JSAtom),
-    newIdentDefs(ident("receiver"), quote do: JSValue),
+    newIdentDefs(ident("receiver"), quote do: JSValueConst),
   ]
 
 template getJSSetPropParams(): untyped =
   [
     (quote do: cint),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
     newIdentDefs(ident("atom"), quote do: JSAtom),
-    newIdentDefs(ident("value"), quote do: JSValue),
-    newIdentDefs(ident("receiver"), quote do: JSValue),
+    newIdentDefs(ident("value"), quote do: JSValueConst),
+    newIdentDefs(ident("receiver"), quote do: JSValueConst),
     newIdentDefs(ident("flags"), quote do: cint),
   ]
 
@@ -546,7 +549,7 @@ template getJSDelPropParams(): untyped =
   [
     (quote do: cint),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
     newIdentDefs(ident("prop"), quote do: JSAtom),
   ]
 
@@ -554,7 +557,7 @@ template getJSHasPropParams(): untyped =
   [
     (quote do: cint),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("this"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
     newIdentDefs(ident("atom"), quote do: JSAtom),
   ]
 
@@ -563,8 +566,8 @@ template getJSSetterParams(): untyped =
   [
     (quote do: JSValue),
     newIdentDefs(ident("ctx"), quote do: JSContext),
-    newIdentDefs(ident("this"), quote do: JSValue),
-    newIdentDefs(ident("val"), quote do: JSValue),
+    newIdentDefs(ident("this"), quote do: JSValueConst),
+    newIdentDefs(ident("val"), quote do: JSValueConst),
   ]
 
 template getJSPropNamesParams(): untyped =
@@ -573,7 +576,7 @@ template getJSPropNamesParams(): untyped =
     newIdentDefs(ident("ctx"), quote do: JSContext),
     newIdentDefs(ident("ptab"), quote do: ptr JSPropertyEnumArray),
     newIdentDefs(ident("plen"), quote do: ptr uint32),
-    newIdentDefs(ident("this"), quote do: JSValue)
+    newIdentDefs(ident("this"), quote do: JSValueConst)
   ]
 
 proc addParam(gen: var JSFuncGenerator; s, t, val: NimNode;
@@ -646,11 +649,12 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
     let tt = gen.funcParams[gen.i].t
     if tt.typeKind == varargs.getType().typeKind: # pray it's not a generic...
       let vt = tt[1]
-      if vt.sameType(JSValue.getType()) or JSValue.getType().sameType(vt):
+      if vt.sameType(JSValueConst.getType()) or
+          JSValueConst.getType().sameType(vt):
         s = quote do:
           argv.toOpenArray(`j`, argc - 1)
       else:
-        error("Only JSValue varargs are supported")
+        error("Only JSValueConst varargs are supported")
     else:
       let fallback = gen.funcParams[gen.i].val
       if fallback.isNone:
@@ -1108,8 +1112,8 @@ template jsufget*(name: string) {.pragma.}
 template jsrget*() {.pragma.}
 template jsrget*(name: string) {.pragma.}
 
-proc js_illegal_ctor*(ctx: JSContext; this: JSValue; argc: cint;
-    argv: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
+proc js_illegal_ctor*(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
   return JS_ThrowTypeError(ctx, "Illegal constructor")
 
 type
@@ -1147,7 +1151,7 @@ proc registerGetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
   let fn = op.name
   let id = ident($bfGetter & "_" & tname & "_" & fn)
   stmts.add(quote do:
-    proc `id`(ctx: JSContext; this: JSValue): JSValue {.cdecl.} =
+    proc `id`(ctx: JSContext; this: JSValueConst): JSValue {.cdecl.} =
       when `t` is object:
         var arg_0 {.noinit.}: ptr `t`
       else:
@@ -1175,7 +1179,7 @@ proc registerSetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
   let fn = op.name
   let id = ident($bfSetter & "_" & tname & "_" & fn)
   stmts.add(quote do:
-    proc `id`(ctx: JSContext; this, val: JSValue): JSValue {.cdecl.} =
+    proc `id`(ctx: JSContext; this, val: JSValueConst): JSValue {.cdecl.} =
       when `t` is object:
         var arg_0 {.noinit.}: ptr `t`
       else:
@@ -1308,7 +1312,7 @@ proc bindReplaceableSet(stmts: NimNode; info: var RegistryInfo) =
   let trns = info.tabReplaceableNames
   stmts.add(quote do:
     const replaceableNames = `trns`
-    proc `rsf`(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
+    proc `rsf`(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
         {.cdecl.} =
       when `t` is object:
         var dummy {.noinit.}: ptr `t`
@@ -1354,7 +1358,7 @@ proc bindExtraGetSet(stmts: NimNode; info: var RegistryInfo;
     let m = x.magic
     info.tabList.add(quote do: JS_CGETSET_MAGIC_DEF(`k`, `g`, `s`, `m`))
 
-proc jsCheckDestroyRef*(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.} =
+proc jsCheckDestroyRef*(rt: JSRuntime; val: JSValueConst): JS_BOOL {.cdecl.} =
   let opaque = JS_GetOpaque(val, JS_GetClassID(val))
   if opaque != nil:
     # Before this function is called, the ownership model is
@@ -1406,7 +1410,8 @@ proc jsCheckDestroyRef*(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.} =
       return false
   return true
 
-proc jsCheckDestroyNonRef*(rt: JSRuntime; val: JSValue): JS_BOOL {.cdecl.} =
+proc jsCheckDestroyNonRef*(rt: JSRuntime; val: JSValueConst): JS_BOOL
+    {.cdecl.} =
   let opaque = JS_GetOpaque(val, JS_GetClassID(val))
   if opaque != nil:
     # This is not a reference, just a pointer with a reference to the
@@ -1473,7 +1478,7 @@ proc bindMarkFunc(stmts: NimNode; info: RegistryInfo) =
   let id = ident("mark_" & info.tname)
   let markList = info.markList
   stmts.add(quote do:
-    proc `id`(rt {.inject.}: JSRuntime; val: JSValue;
+    proc `id`(rt {.inject.}: JSRuntime; val: JSValueConst;
         markFunc {.inject.}: JS_MarkFunc) {.cdecl.} =
       let p = JS_GetOpaque(val, JS_GetClassID(val))
       # Disgusting cast, but try not to confuse refc.

@@ -62,8 +62,8 @@ proc newResponse*(res: int; request: Request; stream: SocketStream;
     status: 200
   )
 
-proc newResponse*(body = JS_UNDEFINED; init = JS_UNDEFINED): JSResult[Response]
-    {.jsctor.} =
+proc newResponse*(body: JSValueConst = JS_UNDEFINED;
+    init: JSValueConst = JS_UNDEFINED): JSResult[Response] {.jsctor.} =
   if not JS_IsUndefined(body) or not JS_IsUndefined(init):
     #TODO
     return errInternalError("Response constructor with body or init")

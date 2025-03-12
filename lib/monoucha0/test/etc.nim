@@ -44,13 +44,13 @@ type
     c {.jsdefault.}: TestEnum
     d: TestDict1
     e {.jsdefault.}: int32
-    f {.jsdefault.}: Option[JSValue]
+    f {.jsdefault.}: Option[JSValueConst]
 
   TestDict1 = object of JSDict
-    a: Option[JSValue]
+    a: Option[JSValueConst]
 
   TestDict2 = object of JSDict
-    a {.jsdefault.}: Option[JSValue]
+    a {.jsdefault.}: Option[JSValueConst]
     b {.jsdefault: 2.}: int
     c {.jsdefault.}: string
 
@@ -84,7 +84,7 @@ test "optional jsdict inherited":
   ctx.free()
   rt.free()
 
-proc subroutine(ctx: JSContext; val: JSValue) =
+proc subroutine(ctx: JSContext; val: JSValueConst) =
   var res: TestDict0
   assert ctx.fromJS(val, res).isSome, ctx.getExceptionMsg()
   discard ctx.eval("delete val.f", "<input>")
@@ -93,7 +93,7 @@ proc subroutine(ctx: JSContext; val: JSValue) =
   assert res.c == teB
   assert res.e == 0
   assert res.d.a.isNone
-  ctx.defineProperty(res.f.get, "x", JS_NewInt32(ctx, 9))
+  doAssert ctx.defineProperty(res.f.get, "x", JS_NewInt32(ctx, 9)) == dprSuccess
 
 test "jsdict transitive JSValue descendant":
   let rt = newJSRuntime()

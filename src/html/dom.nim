@@ -581,7 +581,7 @@ var parseHTMLFragmentImpl*: proc(element: Element; s: string): seq[Node]
   {.nimcall.}
 var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall.}
 # set in html/env
-var fetchImpl*: proc(window: Window; input: JSValue;
+var fetchImpl*: proc(window: Window; input: JSValueConst;
   init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
   {.nimcall.} = nil
 
@@ -615,7 +615,7 @@ proc reset(state: var DrawingState) =
   state.path = newPath()
 
 proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
-    options = JS_UNDEFINED) =
+    options: JSValueConst = JS_UNDEFINED) =
   let window = jctx.getWindow()
   let imageId = target.bitmap.imageId
   let loader = window.loader
@@ -1576,7 +1576,7 @@ proc update(tokenList: DOMTokenList) =
     return
   tokenList.element.attr(tokenList.localName, $tokenList)
 
-proc validateDOMToken(ctx: JSContext; document: Document; tok: JSValue):
+proc validateDOMToken(ctx: JSContext; document: Document; tok: JSValueConst):
     DOMResult[CAtom] =
   var res: string
   ?ctx.fromJS(tok, res)
@@ -1587,8 +1587,8 @@ proc validateDOMToken(ctx: JSContext; document: Document; tok: JSValue):
       "InvalidCharacterError")
   return ok(res.toAtom())
 
-proc add(ctx: JSContext; tokenList: DOMTokenList; tokens: varargs[JSValue]):
-    Err[DOMException] {.jsfunc.} =
+proc add(ctx: JSContext; tokenList: DOMTokenList;
+    tokens: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   var toks: seq[CAtom] = @[]
   for tok in tokens:
     toks.add(?ctx.validateDOMToken(tokenList.element.document, tok))
@@ -1596,8 +1596,8 @@ proc add(ctx: JSContext; tokenList: DOMTokenList; tokens: varargs[JSValue]):
   tokenList.update()
   return ok()
 
-proc remove(ctx: JSContext; tokenList: DOMTokenList; tokens: varargs[JSValue]):
-    Err[DOMException] {.jsfunc.} =
+proc remove(ctx: JSContext; tokenList: DOMTokenList;
+    tokens: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   var toks: seq[CAtom] = @[]
   for tok in tokens:
     toks.add(?ctx.validateDOMToken(tokenList.element.document, tok))
@@ -1608,7 +1608,7 @@ proc remove(ctx: JSContext; tokenList: DOMTokenList; tokens: varargs[JSValue]):
   tokenList.update()
   return ok()
 
-proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: JSValue;
+proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: JSValueConst;
     force = none(bool)): DOMResult[bool] {.jsfunc.} =
   let token = ?ctx.validateDOMToken(tokenList.element.document, token)
   let i = tokenList.toks.find(token)
@@ -1624,8 +1624,8 @@ proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: JSValue;
     return ok(true)
   return ok(false)
 
-proc replace(ctx: JSContext; tokenList: DOMTokenList; token, newToken: JSValue):
-    DOMResult[bool] {.jsfunc.} =
+proc replace(ctx: JSContext; tokenList: DOMTokenList;
+    token, newToken: JSValueConst): DOMResult[bool] {.jsfunc.} =
   let token = ?ctx.validateDOMToken(tokenList.element.document, token)
   let newToken = ?ctx.validateDOMToken(tokenList.element.document, newToken)
   let i = tokenList.toks.find(token)
@@ -2191,7 +2191,7 @@ func isSubmitButton*(element: Element): bool =
   return false
 
 # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
-proc write(ctx: JSContext; document: Document; args: varargs[JSValue]):
+proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
     Err[DOMException] {.jsfunc.} =
   if document.isxml:
     return errDOMException("document.write not supported in XML documents",
@@ -2880,7 +2880,7 @@ proc reinitURL*(element: Element): Option[URL] =
       return url
   return none(URL)
 
-proc hyperlinkGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
+proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
   if ctx.fromJS(this, element).isNone:
@@ -2896,7 +2896,7 @@ proc hyperlinkGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
     return ctx.toJS(":")
   return ctx.toJS("")
 
-proc hyperlinkSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
+proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
   if ctx.fromJS(this, element).isNone:
@@ -3225,7 +3225,7 @@ proc getter(ctx: JSContext; this: HTMLOptionsCollection; atom: JSAtom): JSValue
   return ctx.getter(HTMLCollection(this), atom)
 
 proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
-    before = JS_NULL): JSValue {.jsfunc.} =
+    before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
   if not (element of HTMLOptionElement or element of HTMLOptGroupElement):
     return JS_ThrowTypeError(ctx, "Expected option or optgroup element")
   var beforeEl: HTMLElement = nil
@@ -3387,11 +3387,11 @@ proc showPicker(this: HTMLSelectElement): Err[DOMException] {.jsfunc.} =
   return errDOMException("not allowed", "NotAllowedError")
 
 proc add(ctx: JSContext; this: HTMLSelectElement; element: Element;
-    before = JS_NULL): JSValue {.jsfunc.} =
+    before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
   return ctx.add(this.jsOptions, element, before)
 
-proc remove(ctx: JSContext; this: HTMLSelectElement; idx: varargs[JSValue]):
-    Opt[void] {.jsfunc.} =
+proc remove(ctx: JSContext; this: HTMLSelectElement;
+    idx: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
   if idx.len > 0:
     var i: int32
     ?ctx.fromJS(idx[0], i)
@@ -4447,7 +4447,7 @@ const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
     inc i
 )()
 
-proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
+proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   let entry = ReflectTable[uint16(magic)]
   var element: Element
@@ -4463,7 +4463,7 @@ proc jsReflectGet(ctx: JSContext; this: JSValue; magic: cint): JSValue
   of rtUlongGz: return ctx.toJS(element.attrulgz(entry.attrname).get(entry.u))
   of rtFunction: return JS_NULL
 
-proc jsReflectSet(ctx: JSContext; this, val: JSValue; magic: cint): JSValue
+proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
   if ctx.fromJS(this, element).isNone:
@@ -5195,7 +5195,7 @@ proc replaceChild(parent, node, child: Node): DOMResult[Node] {.jsfunc.} =
   ?parent.replace(child, node)
   return ok(child)
 
-proc toNode(ctx: JSContext; nodes: openArray[JSValue]; document: Document):
+proc toNode(ctx: JSContext; nodes: openArray[JSValueConst]; document: Document):
     Node =
   var ns: seq[Node] = @[]
   for it in nodes:
@@ -5213,65 +5213,65 @@ proc toNode(ctx: JSContext; nodes: openArray[JSValue]; document: Document):
     fragment.append(node)
   return fragment
 
-proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValue]):
+proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     Err[DOMException] =
   let node = ctx.toNode(nodes, parent.document)
   discard ?parent.insertBefore(node, option(parent.firstChild))
   ok()
 
-proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValue]):
+proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
     Err[DOMException] {.jsfunc.} =
   return ctx.prependImpl(this, nodes)
 
-proc prepend(ctx: JSContext; this: Document; nodes: varargs[JSValue]):
+proc prepend(ctx: JSContext; this: Document; nodes: varargs[JSValueConst]):
     Err[DOMException] {.jsfunc.} =
   return ctx.prependImpl(this, nodes)
 
-proc prepend(ctx: JSContext; this: DocumentFragment; nodes: varargs[JSValue]):
-    Err[DOMException] {.jsfunc.} =
+proc prepend(ctx: JSContext; this: DocumentFragment;
+    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   return ctx.prependImpl(this, nodes)
 
-proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValue]):
+proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     Err[DOMException] =
   let node = ctx.toNode(nodes, parent.document)
   discard ?parent.appendChild(node)
   ok()
 
-proc append(ctx: JSContext; this: Element; nodes: varargs[JSValue]):
+proc append(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
     Err[DOMException] {.jsfunc.} =
   return ctx.appendImpl(this, nodes)
 
-proc append(ctx: JSContext; this: Document; nodes: varargs[JSValue]):
+proc append(ctx: JSContext; this: Document; nodes: varargs[JSValueConst]):
     Err[DOMException] {.jsfunc.} =
   return ctx.appendImpl(this, nodes)
 
-proc append(ctx: JSContext; this: DocumentFragment; nodes: varargs[JSValue]):
-    Err[DOMException] {.jsfunc.} =
+proc append(ctx: JSContext; this: DocumentFragment;
+    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   return ctx.appendImpl(this, nodes)
 
 proc replaceChildrenImpl(ctx: JSContext; parent: Node;
-    nodes: openArray[JSValue]): Err[DOMException] =
+    nodes: openArray[JSValueConst]): Err[DOMException] =
   let node = ctx.toNode(nodes, parent.document)
   ?parent.preInsertionValidity(node, nil)
   parent.replaceAll(node)
   ok()
 
-proc replaceChildren(ctx: JSContext; this: Element; nodes: varargs[JSValue]):
-    Err[DOMException] {.jsfunc.} =
+proc replaceChildren(ctx: JSContext; this: Element;
+    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   return ctx.replaceChildrenImpl(this, nodes)
 
-proc replaceChildren(ctx: JSContext; this: Document; nodes: varargs[JSValue]):
-    Err[DOMException] {.jsfunc.} =
+proc replaceChildren(ctx: JSContext; this: Document;
+    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   return ctx.replaceChildrenImpl(this, nodes)
 
 proc replaceChildren(ctx: JSContext; this: DocumentFragment;
-    nodes: varargs[JSValue]): Err[DOMException] {.jsfunc.} =
+    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   return ctx.replaceChildrenImpl(this, nodes)
 
 proc createTextNode(document: Document; data: sink string): Text {.jsfunc.} =
   return newText(document, data)
 
-proc setNodeValue(ctx: JSContext; node: Node; data: JSValue): Err[void]
+proc setNodeValue(ctx: JSContext; node: Node; data: JSValueConst): Err[void]
     {.jsfset: "nodeValue".} =
   if node of CharacterData:
     var res = ""
@@ -5285,7 +5285,7 @@ proc setNodeValue(ctx: JSContext; node: Node; data: JSValue): Err[void]
     Attr(node).value(move(res))
   return ok()
 
-proc setTextContent(ctx: JSContext; node: Node; data: JSValue): Err[void]
+proc setTextContent(ctx: JSContext; node: Node; data: JSValueConst): Err[void]
     {.jsfset: "textContent".} =
   if node of Element or node of DocumentFragment:
     if JS_IsNull(data):
@@ -5405,9 +5405,9 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
   if JS_IsException(res):
     window.logException(script.baseURL)
     return
-  var p: Promise[JSValue]
+  var p: Promise[JSValueConst]
   if ctx.fromJS(res, p).isSome:
-    p.then(proc(res: JSValue) =
+    p.then(proc(res: JSValueConst) =
       if JS_IsException(res):
         window.logException(script.baseURL)
     )
@@ -5718,8 +5718,8 @@ proc createDocumentType(implementation: var DOMImplementation; qualifiedName,
   return ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
 proc createDocument(ctx: JSContext; implementation: var DOMImplementation;
-    namespace: CAtom; qname0 = JS_NULL; doctype = none(DocumentType)):
-    DOMResult[XMLDocument] {.jsfunc.} =
+    namespace: CAtom; qname0: JSValueConst = JS_NULL;
+    doctype = none(DocumentType)): DOMResult[XMLDocument] {.jsfunc.} =
   let document = newXMLDocument()
   var qname = ""
   if not JS_IsNull(qname0):
@@ -5998,7 +5998,7 @@ func getElementReflectFunctions(): seq[TabGetSet] =
     ))
 
 proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
-    options = JS_UNDEFINED): RenderingContext {.jsfunc.} =
+    options: JSValueConst = JS_UNDEFINED): RenderingContext {.jsfunc.} =
   if contextId == "2d":
     if this.ctx2d == nil:
       create2DContext(jctx, this, options)
@@ -6007,7 +6007,7 @@ proc getContext*(jctx: JSContext; this: HTMLCanvasElement; contextId: string;
 
 # Note: the standard says quality should be converted in a strange way for
 # backwards compat, but I don't care.
-proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValue;
+proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
     contentType = "image/png"; quality = none(float64)) {.jsfunc.} =
   let contentType = contentType.toLowerAscii()
   if not contentType.startsWith("image/") or this.bitmap.cacheId == 0:

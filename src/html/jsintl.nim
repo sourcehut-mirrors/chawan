@@ -80,7 +80,8 @@ type
 jsDestructor(NumberFormat)
 jsDestructor(PluralRules)
 
-proc fromJS(ctx: JSContext; val: JSValue; unit: out NumberUnit): Opt[void] =
+proc fromJS(ctx: JSContext; val: JSValueConst; unit: out NumberUnit):
+    Opt[void] =
   var s: string
   ?ctx.fromJS(val, s)
   let i = s.find("-per-")
@@ -99,8 +100,8 @@ proc fromJS(ctx: JSContext; val: JSValue; unit: out NumberUnit): Opt[void] =
     unit = NumberUnit(part1: part1.get)
   ok()
 
-proc fromJSGetProp[T](ctx: JSContext; this: JSValue; name: cstring; res: var T):
-    Opt[bool] =
+proc fromJSGetProp[T](ctx: JSContext; this: JSValueConst; name: cstring;
+    res: var T): Opt[bool] =
   let prop = JS_GetPropertyStr(ctx, this, name)
   if JS_IsException(prop):
     return err()
@@ -110,8 +111,8 @@ proc fromJSGetProp[T](ctx: JSContext; this: JSValue; name: cstring; res: var T):
   JS_FreeValue(ctx, prop)
   ok(true)
 
-proc newNumberFormat(ctx: JSContext; name = "en-US"; options = JS_UNDEFINED):
-    JSResult[NumberFormat] {.jsctor.} =
+proc newNumberFormat(ctx: JSContext; name = "en-US";
+    options: JSValueConst = JS_UNDEFINED): JSResult[NumberFormat] {.jsctor.} =
   let nf = NumberFormat()
   if JS_IsObject(options):
     discard ?ctx.fromJSGetProp(options, "maximumFractionDigits",

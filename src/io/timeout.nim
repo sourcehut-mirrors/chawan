@@ -62,8 +62,8 @@ proc getUnixMillis*(): int64 =
   let now = getTime()
   return now.toUnix() * 1000 + now.nanosecond div 1_000_000
 
-proc setTimeout*(state: var TimeoutState; t: TimeoutType; handler: JSValue;
-    timeout: int32; args: openArray[JSValue]): int32 =
+proc setTimeout*(state: var TimeoutState; t: TimeoutType; handler: JSValueConst;
+    timeout: int32; args: openArray[JSValueConst]): int32 =
   let id = state.timeoutid
   inc state.timeoutid
   let entry = TimeoutEntry(

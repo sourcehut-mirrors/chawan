@@ -283,9 +283,9 @@ proc setContainer(pager: Pager; c: Container) {.jsfunc.} =
     c.queueDraw()
     pager.term.setTitle(c.getTitle())
 
-proc reflect(ctx: JSContext; this_val: JSValue; argc: cint;
-    argv: ptr UncheckedArray[JSValue]; magic: cint;
-    func_data: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
+proc reflect(ctx: JSContext; this_val: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray): JSValue
+    {.cdecl.} =
   let obj = func_data[0]
   let fun = func_data[1]
   return JS_Call(ctx, fun, obj, argc, argv)
@@ -391,8 +391,8 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
   pager.container.markPos0()
   pager.setLineEdit(lmISearchB)
 
-proc gotoLine(ctx: JSContext; pager: Pager; val = JS_UNDEFINED): Opt[void]
-    {.jsfunc.} =
+proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
+    Opt[void] {.jsfunc.} =
   var n: int
   if ctx.fromJS(val, n).isSome:
     pager.container.gotoLine(n)
@@ -1603,7 +1603,7 @@ template myExec(cmd: string) =
   discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
   exitnow(127)
 
-proc setEnvVars(pager: Pager; env: JSValue) =
+proc setEnvVars(pager: Pager; env: JSValueConst) =
   try:
     if pager.container != nil and JS_IsUndefined(env):
       putEnv("CHA_URL", $pager.container.url)
@@ -1619,7 +1619,7 @@ proc setEnvVars(pager: Pager; env: JSValue) =
 # Run process (and suspend the terminal controller).
 # For the most part, this emulates system(3).
 proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
-    env: JSValue): bool =
+    env: JSValueConst): bool =
   if suspend:
     pager.term.quit()
   var oldint, oldquit, act: Sigaction
@@ -2278,8 +2278,8 @@ type GotoURLDict = object of JSDict
   save {.jsdefault.}: bool
   history {.jsdefault.}: bool
 
-proc jsGotoURL(pager: Pager; v: JSValue; t = GotoURLDict()): JSResult[Container]
-    {.jsfunc: "gotoURL".} =
+proc jsGotoURL(pager: Pager; v: JSValueConst; t = GotoURLDict()):
+    JSResult[Container] {.jsfunc: "gotoURL".} =
   var request: Request = nil
   var jsRequest: JSRequest = nil
   if pager.jsctx.fromJS(v, jsRequest).isSome:
@@ -2303,7 +2303,7 @@ proc reload(pager: Pager) {.jsfunc.} =
   container.copyCursorPos(old)
 
 type ExternDict = object of JSDict
-  env {.jsdefault: JS_UNDEFINED.}: JSValue
+  env {.jsdefault: JS_UNDEFINED.}: JSValueConst
   suspend {.jsdefault: true.}: bool
   wait {.jsdefault: false.}: bool
 
@@ -2966,7 +2966,8 @@ if (replace.alive) {
 }
 """)
   let args = [ctx.toJS(url), ctx.toJS(container)]
-  discard pager.timeouts.setTimeout(ttTimeout, fun, int32(n), args)
+  discard pager.timeouts.setTimeout(ttTimeout, fun, int32(n),
+    cast[JSValueConstArray](unsafeAddr args[0]).toOpenArray(0, args.high))
   JS_FreeValue(ctx, fun)
   for arg in args:
     JS_FreeValue(ctx, arg)

@@ -114,7 +114,7 @@ func go(history: var History) {.jsfunc.} = discard
 func back(history: var History) {.jsfunc.} = discard
 func forward(history: var History) {.jsfunc.} = discard
 proc pushState(ctx: JSContext; history: var History;
-    data, unused: JSValue; s: string): JSResult[void] {.jsfunc.} =
+    data, unused: JSValueConst; s: string): JSResult[void] {.jsfunc.} =
   let window = ctx.getWindow()
   if window != nil:
     return window.setLocation(s)
@@ -177,7 +177,7 @@ func delete(this: var Storage; k: string): bool {.jsdelprop.} =
   return true
 
 # Crypto
-proc getRandomValues(ctx: JSContext; crypto: var Crypto; array: JSValue):
+proc getRandomValues(ctx: JSContext; crypto: var Crypto; array: JSValueConst):
     JSValue {.jsfunc.} =
   var view: JSArrayBufferView
   if ctx.fromJS(array, view).isNone:
@@ -199,7 +199,7 @@ proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(Storage)
   ctx.registerType(Crypto)
 
-proc fetch(window: Window; input: JSValue;
+proc fetch(window: Window; input: JSValueConst;
     init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
     {.jsfunc.} =
   let input = ?newRequest(window.jsctx, input, init)
@@ -210,12 +210,12 @@ proc fetch(window: Window; input: JSValue;
     return ok(newResolvedPromise(JSResult[Response].err(err)))
   return ok(window.loader.fetch(input.request))
 
-proc setTimeout(window: Window; handler: JSValue; timeout = 0i32;
-    args: varargs[JSValue]): int32 {.jsfunc.} =
+proc setTimeout(window: Window; handler: JSValueConst; timeout = 0i32;
+    args: varargs[JSValueConst]): int32 {.jsfunc.} =
   return window.timeouts.setTimeout(ttTimeout, handler, timeout, args)
 
-proc setInterval(window: Window; handler: JSValue; interval = 0i32;
-    args: varargs[JSValue]): int32 {.jsfunc.} =
+proc setInterval(window: Window; handler: JSValueConst; interval = 0i32;
+    args: varargs[JSValueConst]): int32 {.jsfunc.} =
   return window.timeouts.setTimeout(ttInterval, handler, interval, args)
 
 proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
@@ -274,7 +274,7 @@ proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
     return JS_ThrowDOMException(ctx, $r.error, "InvalidCharacterError")
   return ctx.toJS(NarrowString(s))
 
-proc btoa(ctx: JSContext; window: Window; data: JSValue): JSValue
+proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
     {.jsfunc.} =
   let data = JS_ToString(ctx, data)
   if JS_IsException(data):
@@ -296,8 +296,8 @@ proc btoa(ctx: JSContext; window: Window; data: JSValue): JSValue
 proc alert(window: Window; s: string) {.jsfunc.} =
   window.console.error(s)
 
-proc requestAnimationFrame(ctx: JSContext; window: Window; callback: JSValue):
-    JSValue {.jsfunc.} =
+proc requestAnimationFrame(ctx: JSContext; window: Window;
+    callback: JSValueConst): JSValue {.jsfunc.} =
   if not JS_IsFunction(ctx, callback):
     return JS_ThrowTypeError(ctx, "callback is not a function")
   let handler = ctx.newFunction(["callback"], """
@@ -324,7 +324,7 @@ proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
     media: $mqlist
   )
 
-proc postMessage(ctx: JSContext; window: Window; value: JSValue): Err[void]
+proc postMessage(ctx: JSContext; window: Window; value: JSValueConst): Err[void]
     {.jsfunc.} =
   #TODO structuredClone...
   let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)

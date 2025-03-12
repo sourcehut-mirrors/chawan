@@ -119,7 +119,7 @@ proc parseMethod(s: string): DOMResult[HttpMethod] =
     errDOMException("Invalid method", "SyntaxError")
 
 proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
-    misc: varargs[JSValue]): Err[DOMException] {.jsfunc.} =
+    misc: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   let httpMethod = ?parseMethod(httpMethod)
   let global = ctx.getGlobal()
   let x = parseURL(url, some(global.document.baseURL))
@@ -282,8 +282,8 @@ proc onFinishXHR(response: Response; success: bool) =
     this.response = makeNetworkError()
     discard window.handleErrors(this)
 
-proc send(ctx: JSContext; this: XMLHttpRequest; body = JS_NULL): JSResult[void]
-    {.jsfunc.} =
+proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
+    JSResult[void] {.jsfunc.} =
   ?this.checkOpened()
   ?this.checkSendFlag()
   var body = body

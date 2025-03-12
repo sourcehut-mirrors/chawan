@@ -95,13 +95,13 @@ proc writeFile(ctx: JSContext; client: Client; path, content: string): JSValue
   return JS_UNDEFINED
 
 proc getenv(ctx: JSContext; client: Client; s: string;
-    fallback = JS_NULL): JSValue {.jsfunc.} =
+    fallback: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
   if not existsEnv(s):
-    return fallback
+    return JS_DupValue(ctx, fallback)
   return ctx.toJS(getEnv(s))
 
-proc setenv(ctx: JSContext; client: Client; s: string; val: JSValue): JSValue
-    {.jsfunc.} =
+proc setenv(ctx: JSContext; client: Client; s: string; val: JSValueConst):
+    JSValue {.jsfunc.} =
   try:
     if JS_IsNull(val):
       delEnv(s)

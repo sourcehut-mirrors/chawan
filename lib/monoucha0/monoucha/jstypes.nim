@@ -71,4 +71,7 @@ type JSValueFunction* = ref object
 converter toJSValue*(f: JSValueFunction): JSValue =
   f.fun
 
+converter toJSValueConst*(f: JSValueFunction): JSValueConst =
+  f.fun
+
 {.pop.} # raises

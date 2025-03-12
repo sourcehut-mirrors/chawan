@@ -35,7 +35,8 @@ jsDestructor(Headers)
 
 const HTTPWhitespace = {'\n', '\r', '\t', ' '}
 
-proc fromJS(ctx: JSContext; val: JSValue; res: var HeadersInit): Err[void] =
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
+    Err[void] =
   if JS_IsUndefined(val) or JS_IsNull(val):
     return err()
   var headers: Headers

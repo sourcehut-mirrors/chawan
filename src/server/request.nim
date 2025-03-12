@@ -193,9 +193,9 @@ type
     referrerPolicy* {.jsdefault.}: Option[ReferrerPolicy]
     credentials* {.jsdefault.}: Option[CredentialsMode]
     mode* {.jsdefault.}: Option[RequestMode]
-    window* {.jsdefault: JS_UNDEFINED.}: JSValue
+    window* {.jsdefault: JS_UNDEFINED.}: JSValueConst
 
-proc fromJS(ctx: JSContext; val: JSValue; res: var BodyInit): Opt[void] =
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var BodyInit): Opt[void] =
   if not JS_IsUndefined(val) and not JS_IsNull(val):
     res = BodyInit(t: bitFormData)
     if ctx.fromJS(val, res.formData).isSome:
@@ -214,7 +214,7 @@ proc fromJS(ctx: JSContext; val: JSValue; res: var BodyInit): Opt[void] =
 
 var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall.}
 
-proc newRequest*(ctx: JSContext; resource: JSValue;
+proc newRequest*(ctx: JSContext; resource: JSValueConst;
     init = RequestInit(window: JS_UNDEFINED)): JSResult[JSRequest] {.jsctor.} =
   let headers = newHeaders(hgRequest)
   var fallbackMode = opt(rmCors)

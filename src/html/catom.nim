@@ -325,7 +325,7 @@ func toAtom*(prefix: NamespacePrefix): CAtom =
   of PREFIX_XMLNS: satXmlns
   of PREFIX_UNKNOWN: satUempty).toAtom()
 
-proc fromJS*(ctx: JSContext; val: JSValue; res: var CAtom): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): Opt[void] =
   if JS_IsNull(val):
     res = CAtomNull
   else:

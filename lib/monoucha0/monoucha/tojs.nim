@@ -82,8 +82,9 @@ proc toJSP*(ctx: JSContext; parent: ptr object; child: var object): JSValue
 
 # Same as toJS, but used in constructors. ctor contains the target prototype,
 # used for subclassing from JS.
-proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValue): JSValue
-proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValue): JSValue
+proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue
+proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValueConst):
+  JSValue
 
 # Avoid accidentally calling toJSP on objects that we have explicit toJS
 # converters for.
@@ -102,7 +103,7 @@ type DefinePropertyResult* = enum
   dprException, dprSuccess, dprFail
 
 # Note: this consumes `prop'.
-proc defineProperty*(ctx: JSContext; this: JSValue; name: JSAtom;
+proc defineProperty*(ctx: JSContext; this: JSValueConst; name: JSAtom;
     prop: JSValue; flags = cint(0)): DefinePropertyResult =
   return case JS_DefinePropertyValue(ctx, this, name, prop, flags)
   of 0: dprFail
@@ -110,7 +111,7 @@ proc defineProperty*(ctx: JSContext; this: JSValue; name: JSAtom;
   else: dprException
 
 # Note: this consumes `prop'.
-proc defineProperty(ctx: JSContext; this: JSValue; name: int64;
+proc defineProperty(ctx: JSContext; this: JSValueConst; name: int64;
     prop: JSValue; flags = cint(0)): DefinePropertyResult =
   let name = JS_NewInt64(ctx, name)
   let atom = JS_ValueToAtom(ctx, name)
@@ -120,35 +121,35 @@ proc defineProperty(ctx: JSContext; this: JSValue; name: int64;
   result = ctx.defineProperty(this, atom, prop, flags)
   JS_FreeAtom(ctx, atom)
 
-proc definePropertyC*(ctx: JSContext; this: JSValue; name: JSAtom;
+proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: JSAtom;
     prop: JSValue): DefinePropertyResult =
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
-proc defineProperty(ctx: JSContext; this: JSValue; name: string;
+proc defineProperty(ctx: JSContext; this: JSValueConst; name: string;
     prop: JSValue; flags = cint(0)): DefinePropertyResult =
   return case JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, flags)
   of 0: dprFail
   of 1: dprSuccess
   else: dprException
 
-proc definePropertyC*(ctx: JSContext; this: JSValue; name: string;
+proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: string;
     prop: JSValue): DefinePropertyResult =
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
 
-proc defineProperty*[T](ctx: JSContext; this: JSValue; name: string; prop: T;
-    flags = cint(0)): DefinePropertyResult =
+proc defineProperty*[T](ctx: JSContext; this: JSValueConst; name: string;
+    prop: T; flags = cint(0)): DefinePropertyResult =
   ctx.defineProperty(this, name, ctx.toJS(prop), flags)
 
-proc definePropertyE*[T](ctx: JSContext; this: JSValue; name: string;
+proc definePropertyE*[T](ctx: JSContext; this: JSValueConst; name: string;
     prop: T): DefinePropertyResult =
   ctx.defineProperty(this, name, prop, JS_PROP_ENUMERABLE)
 
-proc definePropertyCW*[T](ctx: JSContext; this: JSValue; name: string;
+proc definePropertyCW*[T](ctx: JSContext; this: JSValueConst; name: string;
     prop: T): DefinePropertyResult =
   ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or
     JS_PROP_WRITABLE)
 
-proc definePropertyCWE*[T](ctx: JSContext; this: JSValue; name: string;
+proc definePropertyCWE*[T](ctx: JSContext; this: JSValueConst; name: string;
     prop: T): DefinePropertyResult =
   ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
@@ -274,7 +275,8 @@ proc toJS(ctx: JSContext; t: tuple): JSValue =
       inc i
   return a
 
-proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValue): JSValue =
+proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
+    JSValue =
   JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
     # a JSValue already points to this object.
     let p = obj[].p
@@ -350,14 +352,15 @@ proc toJS*(ctx: JSContext; obj: ref object): JSValue =
     return JS_NULL
   return ctx.toJSRefObj(obj)
 
-proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValue): JSValue =
+proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue =
   if obj == nil:
     return JS_NULL
   let p = cast[pointer](obj)
   let tp = getTypePtr(obj)
   return ctx.toJSP0(p, tp, p, ctor)
 
-proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValue): JSValue =
+proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValueConst):
+    JSValue =
   if opt.isSome:
     when not (T is void):
       return toJSNew(ctx, opt.get, ctor)

@@ -251,7 +251,7 @@ proc unquote(p: string): ChaPathResult[string] =
 proc toJS*(ctx: JSContext; p: ChaPath): JSValue =
   toJS(ctx, $p)
 
-proc fromJS*(ctx: JSContext; val: JSValue; res: var ChaPath): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ChaPath): Opt[void] =
   return ctx.fromJS(val, string(res))
 
 proc unquote*(p: ChaPath; base: string): ChaPathResult[string] =

@@ -186,11 +186,11 @@ proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]) =
     doAssert ctx.definePropertyE(ctor, s, uint16(e)) == dprSuccess
   JS_FreeValue(ctx, proto)
 
-proc identity(ctx: JSContext; this_val: JSValue; argc: cint;
-    argv: ptr UncheckedArray[JSValue]; magic: cint;
-    func_data: ptr UncheckedArray[JSValue]): JSValue {.cdecl.} =
+proc identity(ctx: JSContext; this_val: JSValueConst; argc: cint;
+    argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray): JSValue
+    {.cdecl.} =
   return JS_DupValue(ctx, func_data[0])
 
 #TODO move to javascript.nim?
-proc identityFunction*(ctx: JSContext; val: JSValue): JSValue =
+proc identityFunction*(ctx: JSContext; val: JSValueConst): JSValue =
   return JS_NewCFunctionData(ctx, identity, 0, 0, 1, val.toJSValueArray())

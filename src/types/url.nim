@@ -1064,7 +1064,7 @@ proc serializeFormURLEncoded*(kvs: seq[(string, string)]; spaceAsPlus = true):
     result &= '='
     result.percentEncode(value, ApplicationXWWWFormUrlEncodedSet, spaceAsPlus)
 
-proc newURLSearchParams(ctx: JSContext; init: varargs[JSValue]):
+proc newURLSearchParams(ctx: JSContext; init: varargs[JSValueConst]):
     Opt[URLSearchParams] {.jsctor.} =
   let params = URLSearchParams()
   if init.len > 0:

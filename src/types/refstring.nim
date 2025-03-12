@@ -18,7 +18,7 @@ template `&=`*(rs: var RefString; ss: string) =
 proc toJS*(ctx: JSContext; rs: RefString): JSValue =
   return ctx.toJS($rs)
 
-proc fromJS*(ctx: JSContext; val: JSValue; rs: out RefString): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; rs: out RefString): Opt[void] =
   rs = RefString()
   if ctx.fromJS(val, rs.s).isNone:
     rs = nil

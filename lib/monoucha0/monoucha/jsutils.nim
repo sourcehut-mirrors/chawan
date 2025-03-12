@@ -10,7 +10,10 @@ template toJSValueArray*(a: openArray[JSValue]): ptr UncheckedArray[JSValue] =
 
 # Warning: this must be a template, because we're taking the address of
 # the passed value, and Nim is pass-by-value.
-template toJSValueArray*(a: JSValue): ptr UncheckedArray[JSValue] =
-  cast[ptr UncheckedArray[JSValue]](unsafeAddr a)
+template toJSValueArray*(a: JSValue): JSValueArray =
+  cast[JSValueArray](unsafeAddr a)
+
+template toJSValueArray*(a: JSValueConst): JSValueConstArray =
+  cast[JSValueConstArray](unsafeAddr a)
 
 {.pop.} # raises

@@ -216,7 +216,8 @@ jsDestructor(Config)
 converter toStr*(p: ChaPathResolved): string {.inline.} =
   return string(p)
 
-proc fromJS(ctx: JSContext; val: JSValue; res: var ChaPathResolved): Opt[void] =
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var ChaPathResolved):
+    Opt[void] =
   return ctx.fromJS(val, string(res))
 
 proc `[]=`(a: var ActionMap; b: string; c: sink string) =

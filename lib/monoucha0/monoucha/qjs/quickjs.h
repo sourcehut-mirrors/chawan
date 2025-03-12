@@ -1104,7 +1104,7 @@ JS_EXTERN JSValue JS_NewCFunction2(JSContext *ctx, JSCFunction *func,
 JS_EXTERN JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
                                    const char *name,
                                    int length, JSCFunctionEnum cproto, int magic,
-                                   JSValue proto_val);
+                                   JSValueConst proto_val);
 JS_EXTERN JSValue JS_NewCFunctionData(JSContext *ctx, JSCFunctionData *func,
                                       int length, int magic, int data_len,
                                       JSValueConst *data);
@@ -1190,7 +1190,7 @@ typedef struct JSCFunctionListEntry {
 #define JS_ALIAS_DEF(name, from) { name, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE, JS_DEF_ALIAS, 0, { .alias = { from, -1 } } }
 #define JS_ALIAS_BASE_DEF(name, from, base) { name, JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE, JS_DEF_ALIAS, 0, { .alias = { from, base } } }
 
-JS_EXTERN void JS_SetPropertyFunctionList(JSContext *ctx, JSValue obj,
+JS_EXTERN void JS_SetPropertyFunctionList(JSContext *ctx, JSValueConst obj,
                                           const JSCFunctionListEntry *tab,
                                           int len);
 
@@ -1206,7 +1206,7 @@ JS_EXTERN int JS_AddModuleExportList(JSContext *ctx, JSModuleDef *m,
                                       const JSCFunctionListEntry *tab, int len);
 /* can only be called after the module is instantiated */
 JS_EXTERN int JS_SetModuleExport(JSContext *ctx, JSModuleDef *m, const char *export_name,
-                                 JSValue val);
+                                 JSValueConst val);
 JS_EXTERN int JS_SetModuleExportList(JSContext *ctx, JSModuleDef *m,
                                      const JSCFunctionListEntry *tab, int len);
 

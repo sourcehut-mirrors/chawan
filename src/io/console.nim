@@ -43,8 +43,8 @@ proc log*(console: Console; ss: varargs[string]) =
 proc error*(console: Console; ss: varargs[string]) =
   console.log(ss)
 
-proc log*(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
-    {.jsfunc.} =
+proc log*(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
   var buf = ""
   for i, val in ss:
     var res: string
@@ -61,20 +61,20 @@ proc clear(console: Console) {.jsfunc.} =
     console.clearFun()
 
 # For now, these are the same as log().
-proc debug(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
-    {.jsfunc.} =
+proc debug(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
   return log(ctx, console, ss)
 
-proc error(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
-    {.jsfunc.} =
+proc error(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
   return log(ctx, console, ss)
 
-proc info(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
-    {.jsfunc.} =
+proc info(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
   return log(ctx, console, ss)
 
-proc warn(ctx: JSContext; console: Console; ss: varargs[JSValue]): Opt[void]
-    {.jsfunc.} =
+proc warn(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
+    Opt[void] {.jsfunc.} =
   return log(ctx, console, ss)
 
 proc show(console: Console) {.jsfunc.} =

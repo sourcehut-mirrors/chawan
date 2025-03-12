@@ -23,7 +23,7 @@ proc toJS*(ctx: JSContext; rgb: RGBColor): JSValue =
   res.pushHex(rgb.b)
   return toJS(ctx, res)
 
-proc fromJS*(ctx: JSContext; val: JSValue; res: var RGBColor): Err[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var RGBColor): Err[void] =
   var s: string
   ?ctx.fromJS(val, s)
   let x = parseLegacyColor(s)
@@ -41,7 +41,7 @@ proc toJS*(ctx: JSContext; rgba: ARGBColor): JSValue =
   res.pushHex(rgba.a)
   return toJS(ctx, res)
 
-proc fromJS*(ctx: JSContext; val: JSValue; res: var ARGBColor): Err[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor): Err[void] =
   if JS_IsNumber(val):
     # as hex
     ?ctx.fromJS(val, uint32(res))
