@@ -1,5 +1,4 @@
 import std/options
-import std/tables
 
 import html/script
 import io/packetreader
@@ -137,12 +136,7 @@ proc jsReferrer(this: JSRequest): string {.jsfget: "referrer".} =
     return $this.request.referrer
   return ""
 
-iterator pairs*(headers: Headers): (string, string) =
-  for k, vs in headers.table:
-    for v in vs:
-      yield (k, v)
-
-func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders();
+func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false): Request =
   return Request(
     url: url,
@@ -216,7 +210,7 @@ var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall.}
 
 proc newRequest*(ctx: JSContext; resource: JSValueConst;
     init = RequestInit(window: JS_UNDEFINED)): JSResult[JSRequest] {.jsctor.} =
-  let headers = newHeaders(hgRequest)
+  var headers = newHeaders(hgRequest)
   var fallbackMode = opt(rmCors)
   var window = RequestWindow(t: rwtClient)
   var body = RequestBody()
@@ -227,7 +221,7 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   if (var res: JSRequest; ctx.fromJS(resource, res).isSome):
     url = res.url
     httpMethod = res.request.httpMethod
-    headers.table = res.headers.table
+    headers[] = res.headers[]
     referrer = res.request.referrer
     credentials = res.credentialsMode
     body = res.request.body

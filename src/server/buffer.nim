@@ -1274,7 +1274,7 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
       #TODO with charset
       let kvlist = entryList.toNameValuePairs()
       RequestBody(t: rbtString, s: serializePlainTextFormData(kvlist))
-    let headers = newHeaders({"Content-Type": $enctype})
+    let headers = newHeaders(hgRequest, {"Content-Type": $enctype})
     return newRequest(parsedAction, httpMethod, headers, body)
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm

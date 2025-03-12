@@ -804,7 +804,7 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
   putEnv("REQUEST_URI", cpath.requestURI)
   putEnv("REQUEST_METHOD", $request.httpMethod)
   var headers = ""
-  for k, v in request.headers:
+  for k, v in request.headers.allPairs:
     headers &= k & ": " & v & "\r\n"
   putEnv("REQUEST_HEADERS", headers)
   if prevURL != nil:
@@ -971,7 +971,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
       ostreamOut2.sclose() # close write
     if request.body.t != rbtNone:
       istream.sclose() # close read
-    handle.parser = HeaderParser(headers: newHeaders())
+    handle.parser = HeaderParser(headers: newHeaders(hgResponse))
     handle.stream = istreamOut
     case request.body.t
     of rbtString:
@@ -1015,7 +1015,7 @@ proc loadStream(ctx: var LoaderContext; client: ClientHandle;
   case ctx.sendResult(handle, 0)
   of pbrDone: discard
   of pbrUnregister: return
-  case ctx.sendStatus(handle, 200, newHeaders())
+  case ctx.sendStatus(handle, 200, newHeaders(hgResponse))
   of pbrDone: discard
   of pbrUnregister: return
   let ps = client.passedFdMap[i].ps
@@ -1049,7 +1049,7 @@ proc loadFromCache(ctx: var LoaderContext; client: ClientHandle;
       client.cacheMap.del(n)
       ctx.close(handle)
       return
-    case ctx.sendStatus(handle, 200, newHeaders())
+    case ctx.sendStatus(handle, 200, newHeaders(hgResponse))
     of pbrDone: discard
     of pbrUnregister:
       client.cacheMap.del(n)
@@ -1070,7 +1070,7 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
   of pbrUnregister:
     ctx.close(handle)
     return
-  case ctx.sendStatus(handle, 200, newHeaders({"Content-Type": ct}))
+  case ctx.sendStatus(handle, 200, newHeaders(hgResponse, {"Content-Type": ct}))
   of pbrDone: discard
   of pbrUnregister:
     ctx.close(handle)
@@ -1309,11 +1309,11 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     ctx.rejectHandle(handle, ceTooManyRewrites)
 
 proc setupRequestDefaults(request: Request; config: LoaderClientConfig) =
-  for k, v in config.defaultHeaders.table:
-    if k notin request.headers.table:
-      request.headers.table[k] = v
+  for k, v in config.defaultHeaders.allPairs:
+    if k notin request.headers:
+      request.headers[k] = v
   if config.cookieJar != nil and config.cookieJar.cookies.len > 0:
-    if "Cookie" notin request.headers.table:
+    if "Cookie" notin request.headers:
       let cookie = config.cookieJar.serialize(request.url)
       if cookie != "":
         request.headers["Cookie"] = cookie

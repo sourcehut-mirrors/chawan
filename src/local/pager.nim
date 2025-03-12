@@ -450,7 +450,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(pager.jsrt, interruptHandler, nil)
   let clientConfig = LoaderClientConfig(
-    defaultHeaders: newHeaders(pager.config.network.defaultHeaders),
+    defaultHeaders: newHeaders(hgRequest, pager.config.network.defaultHeaders),
     proxy: pager.config.network.proxy,
     filter: newURLFilter(default = true),
   )
@@ -1052,7 +1052,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       return newResolvedPromise(res)
     # resize
     # use a temp file, so that img-resize can mmap its output
-    let headers = newHeaders({
+    let headers = newHeaders(hgRequest, {
       "Cha-Image-Dimensions": $bmp.width & 'x' & $bmp.height,
       "Cha-Image-Target-Dimensions": $image.width & 'x' & $image.height
     })
@@ -1078,7 +1078,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     if cachedImage.state == cisCanceled:
       pager.loader.removeCachedItem(cacheId)
       return
-    let headers = newHeaders({
+    let headers = newHeaders(hgRequest, {
       "Cha-Image-Dimensions": $image.width & 'x' & $image.height
     })
     var url: URL = nil
@@ -1790,7 +1790,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   )
   loaderConfig = LoaderClientConfig(
     originURL: url,
-    defaultHeaders: newHeaders(pager.config.network.defaultHeaders),
+    defaultHeaders: newHeaders(hgRequest, pager.config.network.defaultHeaders),
     cookiejar: nil,
     proxy: pager.config.network.proxy,
     filter: newURLFilter(
@@ -1847,7 +1847,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     if sc.proxy.isSome:
       loaderConfig.proxy = sc.proxy.get
     if sc.defaultHeaders != nil:
-      loaderConfig.defaultHeaders = newHeaders(sc.defaultHeaders[])
+      loaderConfig.defaultHeaders = newHeaders(hgRequest, sc.defaultHeaders[])
     if sc.insecureSslNoVerify.isSome:
       loaderConfig.insecureSslNoVerify = sc.insecureSslNoVerify.get
     if sc.autofocus.isSome:

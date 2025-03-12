@@ -627,7 +627,7 @@ proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
   let request = newRequest(
     newURL("img-codec+x-cha-canvas:decode").get,
     httpMethod = hmPost,
-    headers = newHeaders({"Cha-Image-Info-Only": "1"}),
+    headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
     body = RequestBody(t: rbtOutput, outputId: ctlres.outputId)
   )
   let response = loader.doRequest(request)
@@ -4263,7 +4263,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         return
     let cachedURL = CachedURLImage(expiry: -1, loading: true)
     window.imageURLCache[surl] = cachedURL
-    let headers = newHeaders({"Accept": "*/*"})
+    let headers = newHeaders(hgRequest, {"Accept": "*/*"})
     let p = window.corsFetch(newRequest(url, headers = headers)).then(
       proc(res: JSResult[Response]): EmptyPromise =
         if res.isNone:
@@ -4293,7 +4293,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         let request = newRequest(
           url.get,
           httpMethod = hmPost,
-          headers = newHeaders({"Cha-Image-Info-Only": "1"}),
+          headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
           body = RequestBody(t: rbtOutput, outputId: response.outputId),
         )
         let r = window.corsFetch(request)
@@ -4301,14 +4301,14 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         response.close()
         var expiry = -1i64
         if "Cache-Control" in response.headers:
-          for hdr in response.headers.table["Cache-Control"]:
-            var i = hdr.find("max-age=")
-            if i != -1:
-              i = hdr.skipBlanks(i + "max-age=".len)
+          for hdr in response.headers.getAllCommaSplit("Cache-Control"):
+            let s = hdr.strip()
+            if s.startsWithIgnoreCase("max-age="):
+              let i = hdr.skipBlanks("max-age=".len)
               let s = hdr.until(AllChars - AsciiDigit, i)
               let pi = parseInt64(s)
               if pi.isSome:
-                expiry = getTime().utc().toTime().toUnix() + pi.get
+                expiry = getTime().toUnix() + pi.get
               break
         cachedURL.loading = false
         cachedURL.expiry = expiry
@@ -4378,7 +4378,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
   let request = newRequest(
     newURL("img-codec+svg+xml:decode").get,
     httpMethod = hmPost,
-    headers = newHeaders({"Cha-Image-Info-Only": "1"}),
+    headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
     body = RequestBody(t: rbtOutput, outputId: svgres.outputId)
   )
   let p = loader.fetch(request).then(proc(res: JSResult[Response]) =
@@ -6016,7 +6016,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
   if url0.isNone:
     return
   let url = url0.get
-  let headers = newHeaders({
+  let headers = newHeaders(hgRequest, {
     "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
   })
   if (var quality = quality.get(-1); 0 <= quality and quality <= 1):

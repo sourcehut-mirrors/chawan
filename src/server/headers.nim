@@ -18,7 +18,7 @@ type
     hgResponse = "response"
 
   Headers* = ref object
-    table*: Table[string, seq[string]]
+    table: Table[string, seq[string]]
     guard*: HeaderGuard
 
   HeadersInitType = enum
@@ -32,6 +32,20 @@ type
       tab: Table[string, string]
 
 jsDestructor(Headers)
+
+func isForbiddenResponseHeaderName*(name: string): bool
+
+iterator pairs*(this: Headers): (string, string) =
+  for k, vs in this.table:
+    if this.guard == hgResponse and k.isForbiddenResponseHeaderName():
+      continue
+    for v in vs:
+      yield (k, v)
+
+iterator allPairs*(headers: Headers): (string, string) =
+  for k, vs in headers.table:
+    for v in vs:
+      yield (k, v)
 
 const HTTPWhitespace = {'\n', '\r', '\t', ' '}
 
@@ -219,17 +233,12 @@ proc fill*(headers: Headers; init: HeadersInit): JSResult[void] =
   of hitSequence: return headers.fill(init.s)
   of hitTable: return headers.fill(init.tab)
 
-func newHeaders*(guard = hgNone): Headers =
+func newHeaders*(guard: HeaderGuard): Headers =
   return Headers(guard: guard)
 
-func newHeaders(obj = none(HeadersInit)): JSResult[Headers] {.jsctor.} =
-  let headers = Headers(guard: hgNone)
-  if obj.isSome:
-    ?headers.fill(obj.get)
-  return ok(headers)
-
-func newHeaders*(table: openArray[(string, string)]): Headers =
-  let headers = Headers()
+func newHeaders*(guard: HeaderGuard; table: openArray[(string, string)]):
+    Headers =
+  let headers = newHeaders(guard)
   for (k, v) in table:
     let k = k.toHeaderCase()
     headers.table.withValue(k, vs):
@@ -238,8 +247,8 @@ func newHeaders*(table: openArray[(string, string)]): Headers =
       headers.table[k] = @[v]
   return headers
 
-func newHeaders*(table: Table[string, string]): Headers =
-  let headers = Headers()
+func newHeaders*(guard: HeaderGuard; table: Table[string, string]): Headers =
+  let headers = newHeaders(guard)
   for k, v in table:
     let k = k.toHeaderCase()
     headers.table.withValue(k, vs):
@@ -247,6 +256,12 @@ func newHeaders*(table: Table[string, string]): Headers =
     do:
       headers.table[k] = @[v]
   return headers
+
+func newHeaders(obj = none(HeadersInit)): JSResult[Headers] {.jsctor.} =
+  let headers = Headers(guard: hgNone)
+  if obj.isSome:
+    ?headers.fill(obj.get)
+  return ok(headers)
 
 func clone*(headers: Headers): Headers =
   return Headers(table: headers.table)
@@ -258,24 +273,33 @@ proc add*(headers: Headers; k: string; v: sink string) =
   do:
     headers.table[k] = @[v]
 
-proc `[]=`*(headers: Headers; k: static string; v: string) =
-  const k = k.toHeaderCase()
+proc `[]=`*(headers: Headers; k: string; v: sink string) =
+  let k = k.toHeaderCase()
   headers.table[k] = @[v]
 
-func `[]`*(headers: Headers; k: static string): var string =
-  const k = k.toHeaderCase()
+func `[]`*(headers: Headers; k: string): var string =
+  let k = k.toHeaderCase()
   return headers.table[k][0]
 
-func contains*(headers: Headers; k: static string): bool =
-  const k = k.toHeaderCase()
-  return k in headers.table
+func contains*(headers: Headers; k: string): bool =
+  return k.toHeaderCase() in headers.table
 
-func getOrDefault*(headers: Headers; k: static string; default = ""): string =
-  const k = k.toHeaderCase()
+func getOrDefault*(headers: Headers; k: string; default = ""): string =
+  let k = k.toHeaderCase()
   headers.table.withValue(k, p):
     return p[][0]
   do:
     return default
+
+func getAllCommaSplit*(headers: Headers; k: string): seq[string] =
+  headers.table.withValue(k, p):
+    return p[].join(",").split(',')
+  return @[]
+
+func getAllNoComma*(headers: Headers; k: string): seq[string] =
+  headers.table.withValue(k, p):
+    return p[]
+  return @[]
 
 proc addHeadersModule*(ctx: JSContext) =
   ctx.registerType(Headers)

@@ -1,6 +1,5 @@
 import std/posix
 import std/strutils
-import std/tables
 
 import chagashi/charset
 import chagashi/decoder
@@ -104,16 +103,17 @@ proc close*(response: Response) =
     response.body = nil
 
 func getCharset*(this: Response; fallback: Charset): Charset =
-  this.headers.table.withValue("Content-Type", p):
-    let header = p[][0].toLowerAscii()
+  let header = this.headers.getOrDefault("Content-Type").toLowerAscii()
+  if header != "":
     let cs = header.getContentTypeAttr("charset").getCharset()
     if cs != CHARSET_UNKNOWN:
       return cs
   return fallback
 
 func getLongContentType*(this: Response; fallback: string): string =
-  this.headers.table.withValue("Content-Type", p):
-    return p[][0].toValidUTF8().toLowerAscii().strip()
+  let header = this.headers.getOrDefault("Content-Type")
+  if header != "":
+    return header.toValidUTF8().toLowerAscii().strip()
   # also use DefaultGuess for container, so that local mime.types cannot
   # override buffer mime.types
   return DefaultGuess.guessContentType(this.url.pathname, fallback)
@@ -123,16 +123,15 @@ func getContentType*(this: Response; fallback = "application/octet-stream"):
   return this.getLongContentType(fallback).until(';')
 
 func getContentLength*(this: Response): int64 =
-  this.headers.table.withValue("Content-Length", p):
-    for x in p[]:
-      let u = parseUInt64(x.strip(), allowSign = false)
-      if u.isSome and u.get <= uint64(int64.high):
-        return int64(u.get)
+  let x = this.headers.getOrDefault("Content-Length")
+  let u = parseUInt64(x.strip(), allowSign = false)
+  if u.isSome and u.get <= uint64(int64.high):
+    return int64(u.get)
   return -1
 
 func getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =
-  this.headers.table.withValue("Referrer-Policy", p):
-    return strictParseEnum[ReferrerPolicy](p[][0])
+  let header = this.headers.getOrDefault("Referrer-Policy")
+  return strictParseEnum[ReferrerPolicy](header)
 
 proc resume*(response: Response) =
   response.resumeFun(response.outputId)

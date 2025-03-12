@@ -1541,9 +1541,9 @@ proc applyResponse*(container: Container; response: Response;
     mimeTypes: MimeTypes) =
   # accept cookies
   let cookieJar = container.loaderConfig.cookieJar
-  if cookieJar != nil and "Set-Cookie" in response.headers.table:
-    cookieJar.setCookie(response.headers.table["Set-Cookie"], response.url,
-      container.config.cookieMode == cmSave)
+  if cookieJar != nil:
+    cookieJar.setCookie(response.headers.getAllNoComma("Set-Cookie"),
+      response.url, container.config.cookieMode == cmSave)
   # set referrer policy, if any
   let referrerPolicy = response.getReferrerPolicy()
   if container.config.refererFrom:

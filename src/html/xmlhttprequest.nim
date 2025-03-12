@@ -1,6 +1,5 @@
 import std/options
 import std/strutils
-import std/tables
 
 import chagashi/charset
 import chagashi/decoder
@@ -83,7 +82,7 @@ func newXMLHttpRequest(): XMLHttpRequest {.jsctor.} =
   let upload = XMLHttpRequestUpload()
   return XMLHttpRequest(
     upload: upload,
-    headers: newHeaders(),
+    headers: newHeaders(hgRequest),
     responseObject: JS_UNDEFINED
   )
 
@@ -149,7 +148,7 @@ proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
   else:
     this.flags.incl(xhrfSync)
   this.requestMethod = httpMethod
-  this.headers = newHeaders()
+  this.headers = newHeaders(hgRequest)
   this.response = makeNetworkError()
   this.received = ""
   this.requestURL = parsedURL
@@ -178,7 +177,7 @@ proc setRequestHeader(this: XMLHttpRequest; name, value: string):
     return errDOMException("Invalid header name or value", "SyntaxError")
   if isForbiddenRequestHeader(name, value):
     return ok()
-  this.headers.table[name.toHeaderCase()] = @[value]
+  this.headers[name] = value
   ok()
 
 proc `withCredentials=`(this: XMLHttpRequest; withCredentials: bool):
@@ -383,7 +382,7 @@ proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: string):
 proc getAllResponseHeaders(this: XMLHttpRequest): string {.jsfunc.} =
   result = ""
   #TODO sort, should use the filtered header list, etc.
-  for k, v in this.response.headers.table:
+  for k, v in this.response.headers:
     if k.isForbiddenResponseHeaderName():
       continue
     for it in v:

@@ -86,18 +86,16 @@ type
     insecureSslNoVerify*: bool
 
 proc getRedirect*(response: Response; request: Request): Request =
-  if "Location" in response.headers.table:
-    if response.status in 301u16..303u16 or response.status in 307u16..308u16:
-      let location = response.headers.table["Location"][0]
-      let url = parseURL(location, option(request.url))
-      if url.isSome:
-        let status = response.status
-        if status == 303 and request.httpMethod notin {hmGet, hmHead} or
-            status == 301 or
-            status == 302 and request.httpMethod == hmPost:
-          return newRequest(url.get, hmGet)
-        else:
-          return newRequest(url.get, request.httpMethod, body = request.body)
+  if response.status in 301u16..303u16 or response.status in 307u16..308u16:
+    let location = response.headers.getOrDefault("Location")
+    let url = parseURL(location, option(request.url))
+    if url.isSome:
+      let status = response.status
+      if status == 303 and request.httpMethod notin {hmGet, hmHead} or
+          status == 301 or
+          status == 302 and request.httpMethod == hmPost:
+        return newRequest(url.get, hmGet)
+      return newRequest(url.get, request.httpMethod, body = request.body)
   return nil
 
 template withPacketWriter(loader: FileLoader; w, body: untyped) =
