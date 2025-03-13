@@ -348,7 +348,7 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
       result{"display"} = DisplayInlineBlock
   elif result{"float"} != FloatNone or
       ctx.parentComputed != nil and
-        ctx.parentComputed{"display"} == DisplayFlex:
+        ctx.parentComputed{"display"} in DisplayInnerFlex + DisplayInnerGrid:
     result{"display"} = result{"display"}.blockify()
   if (result{"overflow-x"} in {OverflowVisible, OverflowClip}) !=
       (result{"overflow-y"} in {OverflowVisible, OverflowClip}):
