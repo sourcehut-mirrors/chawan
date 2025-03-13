@@ -153,6 +153,7 @@ type
     lineedit*: LineEdit
     linemode: LineMode
     loader*: FileLoader
+    loaderPid {.jsget.}: int
     luctx: LUContext
     menu: Select
     navDirection {.jsget.}: NavDirection
@@ -221,9 +222,6 @@ proc updateReadLine(pager: Pager)
 
 template attrs(pager: Pager): WindowAttributes =
   pager.term.attrs
-
-func loaderPid(pager: Pager): int {.jsfget.} =
-  return pager.loader.loaderPid
 
 func getRoot(container: Container): Container =
   var c = container
@@ -432,7 +430,7 @@ proc evalJSFree(opaque: RootRef; src, filename: string) =
   JS_FreeValue(pager.jsctx, pager.evalJS(src, filename))
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
-    alerts: seq[string]; loader: FileLoader): Pager =
+    alerts: seq[string]; loader: FileLoader; loaderPid: int): Pager =
   let pager = Pager(
     alive: true,
     config: config,
@@ -444,6 +442,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     luctx: LUContext(),
     exitCode: -1,
     loader: loader,
+    loaderPid: loaderPid,
     cookieJars: newCookieJarMap()
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
@@ -1572,7 +1571,6 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
   pager.unreg.add(container)
   if container.process != -1:
     pager.loader.removeCachedItem(container.cacheId)
-    pager.forkserver.removeChild(container.process)
     pager.loader.removeClient(container.process)
 
 proc discardBuffer(pager: Pager; container = none(Container);

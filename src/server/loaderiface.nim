@@ -22,7 +22,6 @@ import types/url
 
 type
   FileLoader* = ref object
-    loaderPid*: int
     clientPid*: int
     map: seq[MapData]
     mapFds: int # number of fds in map
@@ -496,10 +495,9 @@ proc doPipeRequest*(loader: FileLoader; id: string):
     return (nil, nil)
   return (ps, response)
 
-proc newFileLoader*(loaderPid, clientPid: int; controlStream: SocketStream):
+proc newFileLoader*(clientPid: int; controlStream: SocketStream):
     FileLoader =
   return FileLoader(
-    loaderPid: loaderPid,
     clientPid: clientPid,
     controlStream: controlStream
   )

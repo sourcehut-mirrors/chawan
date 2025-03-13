@@ -162,13 +162,13 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
   initCAtomFactory()
   let jsrt = JS_GetRuntime(jsctx)
   let clientPid = getCurrentProcessId()
-  let loader = newFileLoader(loaderPid, clientPid, loaderStream)
+  let loader = newFileLoader(clientPid, loaderStream)
   let client = Client(
     jsrt: jsrt,
     jsctx: jsctx,
     loader: loader,
     crypto: Crypto(urandom: urandom),
-    pager: newPager(config, forkserver, jsctx, warnings, loader),
+    pager: newPager(config, forkserver, jsctx, warnings, loader, loaderPid),
     settings: EnvironmentSettings(scripting: smApp)
   )
   client.attrsp = addr client.pager.term.attrs

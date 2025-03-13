@@ -20,7 +20,7 @@ import utils/strwidth
 
 type
   ForkCommand = enum
-    fcLoadConfig, fcForkBuffer, fcRemoveChild
+    fcLoadConfig, fcForkBuffer
 
   ForkServer* = ref object
     stream: SocketStream
@@ -28,8 +28,6 @@ type
 
   ForkServerContext = object
     stream: SocketStream
-    children: seq[int]
-    loaderPid: int
     loaderStream: SocketStream
 
 proc loadConfig*(forkserver: ForkServer; config: Config): int =
@@ -48,11 +46,6 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
   forkserver.stream.withPacketReader r:
     r.sread(process)
   return process
-
-proc removeChild*(forkserver: ForkServer; pid: int) =
-  forkserver.stream.withPacketWriter w:
-    w.swrite(fcRemoveChild)
-    w.swrite(pid)
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset]):
@@ -89,8 +82,6 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
     # child process
     trapSIGINT()
     let loaderStream = ctx.loaderStream
-    for i in 0 ..< ctx.children.len: ctx.children[i] = 0
-    ctx.children.setLen(0)
     zeroMem(addr ctx, sizeof(ctx))
     try:
       setProcessTitle("cha loader")
@@ -126,9 +117,6 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   if pid == 0:
     # child process
     trapSIGINT()
-    for i in 0 ..< ctx.children.len: ctx.children[i] = 0
-    ctx.children.setLen(0)
-    let loaderPid = ctx.loaderPid
     zeroMem(addr ctx, sizeof(ctx))
     setBufferProcessTitle(url)
     let pid = getCurrentProcessId()
@@ -141,7 +129,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
       r.sread(cacheId)
       loaderStream = newSocketStream(r.recvFd())
       istream = newSocketStream(r.recvFd())
-    let loader = newFileLoader(loaderPid, pid, loaderStream)
+    let loader = newFileLoader(pid, loaderStream)
     gpstream = pstream
     onSignal SIGTERM:
       discard sig
@@ -163,7 +151,6 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
       quit(1)
     doAssert false
   discard close(fd)
-  ctx.children.add(pid)
   return pid
 
 proc runForkServer(controlStream, loaderStream: SocketStream) =
@@ -181,21 +168,12 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
         r.sread(cmd)
         case cmd
         of fcLoadConfig:
-          assert ctx.loaderPid == 0
           var config: LoaderConfig
           r.sread(isCJKAmbiguous)
           r.sread(config)
           let pid = ctx.forkLoader(config)
           ctx.stream.withPacketWriter w:
             w.swrite(pid)
-          ctx.loaderPid = pid
-          ctx.children.add(pid)
-        of fcRemoveChild:
-          var pid: int
-          r.sread(pid)
-          let i = ctx.children.find(pid)
-          if i != -1:
-            ctx.children.del(i)
         of fcForkBuffer:
           let r = ctx.forkBuffer(r)
           ctx.stream.withPacketWriter w:
@@ -205,9 +183,7 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
       break
   ctx.stream.sclose()
   # Clean up when the main process crashed.
-  #TODO this seems like a bad idea; children may be out of sync here...
-  for child in ctx.children:
-    discard kill(cint(child), cint(SIGTERM))
+  discard kill(0, cint(SIGTERM))
   quit(0)
 
 proc newForkServer*(loaderSockVec: array[2, cint]): ForkServer =
@@ -225,6 +201,7 @@ proc newForkServer*(loaderSockVec: array[2, cint]): ForkServer =
     quit(1)
   elif pid == 0:
     # child process
+    discard setsid()
     trapSIGINT()
     closeStdin()
     closeStdout()
