@@ -967,7 +967,7 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
   ox = x
   return move(ls)
 
-proc drawBuffer*(pager: Pager; container: Container; ofile: File): bool =
+proc drawBuffer(pager: Pager; container: Container; ofile: File): bool =
   var format = Format()
   let res = container.readLines(proc(line: SimpleFlexibleLine) =
     var x = 0

@@ -54,8 +54,8 @@ Described as a tree:
 * cha (main process)
 	- forkserver (forked immediately at startup)
 		* loader
-			- local CGI scripts
 		* buffer(s)
+		* local CGI scripts
 	- mailcap processes (e.g. md2html, feh, ...)
 	- editor (e.g. vi)
 
@@ -72,21 +72,21 @@ in [Opening buffers](#opening-buffers).
 
 ### Forkserver
 
-For forking buffer and loader processes, a forkserver process is launched at the
-very beginning of every 'cha' invocation. The fork server is responsible for
-forking the loader process, and also buffer processes.
+For forking the loader process, buffer processes and CGI processes, a
+fork server process is launched at the very beginning of every 'cha'
+invocation.
 
 We use a fork server for two reasons:
 
-1. It helps clean up child processes when the main process crashes. (We open
-   pipes between the main process and the fork server, and kill all child
-   processes from the fork server on EOF.)
-2. It allows us to start new processes without cloning the pager's entire address
-   space. This reduces the impact of memory bugs somewhat, and also our memory
-   usage.
+1. It helps clean up child processes when the main process crashes.
+   (We open a UNIX domain socket between the main process and the fork
+   server, and kill all child processes from the fork server on EOF.)
+2. It allows us to start new buffer processes without cloning the
+   pager's entire address space.  This reduces the impact of memory bugs
+   somewhat, and also our memory usage.
 
-The fork server is not used for mailcap or CGI processes, because their address
-space is replaced by exec anyway. (Also, it would be slow.)
+For convenience reasons, the fork server is not used for mailcap
+processes.
 
 ### Loader
 
@@ -112,11 +112,10 @@ following steps:
   obviously, it's more efficient this way.)
 
 The loader process distinguishes between clients (i.e processes) through
-their control stream (one end of a socketpair created by loader). In
-theory this should help against rogue clients, though in practice it is
-still trivial to crash the loader as a client. It also helps us block
-further requests from buffers that have been discarded by the pager, but
-still haven't found out yet that their life time has ended.
+their control stream (one end of a socketpair created by loader).
+This control stream is closed when the pager discards the buffer, so
+discarded buffers are unable to make further requests even if their
+process is still alive.
 
 ### Buffer
 
@@ -339,9 +338,10 @@ CSS 3 parsing module. The latest iteration of the selector parser is
 pretty good. The media query parser and the CSS value parser both work
 OK, but are missing some commonly used features like variables.
 
-Cascading is OK.  To speed up selector matching, various properties are
-hashed to filter out irrelevant CSS rules.  However, no further style
-optimization exists yet (such as Bloom filters or style interning).
+Cascading works OK.  To speed up selector matching, various properties
+are hashed to filter out irrelevant CSS rules.  However, no further
+style optimization exists yet (such as Bloom filters or style
+interning).
 
 Style calculation is incremental, and results are cached until an
 element's style is invalidated, so re-styles are quite fast.  (The

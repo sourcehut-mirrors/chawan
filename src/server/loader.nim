@@ -134,6 +134,7 @@ type
   LoaderContext = object
     pid: int
     pagerClient: ClientHandle
+    forkStream: SocketStream # handle to the fork server
     config: LoaderConfig
     handleMap: seq[LoaderHandle]
     pollData: PollData
@@ -775,18 +776,16 @@ proc findAuth(client: ClientHandle; url: URL): AuthItem =
     return client.authMap.findItem(url.authOrigin)
   return nil
 
-proc putMappedURL(url: URL; auth: AuthItem) =
-  putEnv("MAPPED_URI_SCHEME", url.scheme)
+proc putMappedURL(s: var seq[tuple[name, value: string]]; url: URL;
+    auth: AuthItem) =
+  s.add(("MAPPED_URI_SCHEME", url.scheme))
   if auth != nil:
-    putEnv("MAPPED_URI_USERNAME", auth.username)
-    putEnv("MAPPED_URI_PASSWORD", auth.password)
-  else:
-    delEnv("MAPPED_URI_USERNAME")
-    delEnv("MAPPED_URI_PASSWORD")
-  putEnv("MAPPED_URI_HOST", url.hostname)
-  putEnv("MAPPED_URI_PORT", url.port)
-  putEnv("MAPPED_URI_PATH", url.pathname)
-  putEnv("MAPPED_URI_QUERY", url.search.substr(1))
+    s.add(("MAPPED_URI_USERNAME", auth.username))
+    s.add(("MAPPED_URI_PASSWORD", auth.password))
+  s.add(("MAPPED_URI_HOST", url.hostname))
+  s.add(("MAPPED_URI_PORT", url.port))
+  s.add(("MAPPED_URI_PATH", url.pathname))
+  s.add(("MAPPED_URI_QUERY", url.search.substr(1)))
 
 type CGIPath = object
   basename: string
@@ -797,37 +796,39 @@ type CGIPath = object
   myDir: string
 
 proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
-    config: LoaderClientConfig; auth: AuthItem) =
+    config: LoaderClientConfig; auth: AuthItem):
+    seq[tuple[name, value: string]] =
+  result = @[]
   let url = request.url
-  putEnv("SCRIPT_NAME", cpath.scriptName)
-  putEnv("SCRIPT_FILENAME", cpath.cmd)
-  putEnv("REQUEST_URI", cpath.requestURI)
-  putEnv("REQUEST_METHOD", $request.httpMethod)
+  result.add(("SCRIPT_NAME", cpath.scriptName))
+  result.add(("SCRIPT_FILENAME", cpath.cmd))
+  result.add(("REQUEST_URI", cpath.requestURI))
+  result.add(("REQUEST_METHOD", $request.httpMethod))
   var headers = ""
   for k, v in request.headers.allPairs:
     headers &= k & ": " & v & "\r\n"
-  putEnv("REQUEST_HEADERS", headers)
+  result.add(("REQUEST_HEADERS", headers))
   if prevURL != nil:
-    putMappedURL(prevURL, auth)
+    result.putMappedURL(prevURL, auth)
   if cpath.pathInfo != "":
-    putEnv("PATH_INFO", cpath.pathInfo)
+    result.add(("PATH_INFO", cpath.pathInfo))
   if url.search != "":
-    putEnv("QUERY_STRING", url.search.substr(1))
+    result.add(("QUERY_STRING", url.search.substr(1)))
   if request.httpMethod == hmPost:
     if request.body.t == rbtMultipart:
-      putEnv("CONTENT_TYPE", request.body.multipart.getContentType())
+      result.add(("CONTENT_TYPE", request.body.multipart.getContentType()))
     else:
-      putEnv("CONTENT_TYPE", request.headers.getOrDefault("Content-Type", ""))
-    putEnv("CONTENT_LENGTH", $contentLen)
+      let contentType = request.headers.getOrDefault("Content-Type")
+      result.add(("CONTENT_TYPE", contentType))
+    result.add(("CONTENT_LENGTH", $contentLen))
   if "Cookie" in request.headers:
-    putEnv("HTTP_COOKIE", request.headers["Cookie"])
+    result.add(("HTTP_COOKIE", request.headers["Cookie"]))
   if request.referrer != nil:
-    putEnv("HTTP_REFERER", $request.referrer)
+    result.add(("HTTP_REFERER", $request.referrer))
   if config.proxy != nil:
-    putEnv("ALL_PROXY", $config.proxy)
+    result.add(("ALL_PROXY", $config.proxy))
   if config.insecureSslNoVerify:
-    putEnv("CHA_INSECURE_SSL_NO_VERIFY", "1")
-  setCurrentDir(cpath.myDir)
+    result.add(("CHA_INSECURE_SSL_NO_VERIFY", "1"))
 
 proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
   var path = percentDecode(request.url.pathname)
@@ -931,46 +932,40 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     istream = newPosixStream(pipefdRead[0])
     ostream = newPosixStream(pipefdRead[1])
   let contentLen = request.body.contentLength()
-  stderr.flushFile()
-  let pid = fork()
+  let auth = if prevURL != nil: client.findAuth(prevURL) else: nil
+  let env = setupEnv(cpath, request, contentLen, prevURL, config, auth)
+  var pid: int
+  try:
+    let istream3 = if istream != nil: nil else: newPosixStream("/dev/null")
+    ctx.forkStream.withPacketWriter w:
+      if istream != nil:
+        w.sendFd(istream.fd)
+      else:
+        w.sendFd(istream3.fd)
+      w.sendFd(ostreamOut.fd)
+      w.swrite(ostreamOut2 != nil)
+      if ostreamOut2 != nil:
+        w.sendFd(ostreamOut2.fd)
+      w.swrite(env)
+      w.swrite(cpath.myDir)
+      w.swrite(cpath.cmd)
+      w.swrite(cpath.basename)
+    if istream3 != nil:
+      istream3.sclose()
+    ctx.forkStream.withPacketReader r:
+      r.sread(pid)
+  except EOFError:
+    pid = -1
+  ostreamOut.sclose() # close write
+  if ostreamOut2 != nil:
+    ostreamOut2.sclose() # close write
+  if request.body.t != rbtNone:
+    istream.sclose() # close read
   if pid == -1:
     ctx.rejectHandle(handle, ceFailedToSetUpCGI)
-  elif pid == 0:
-    istreamOut.sclose() # close read
-    ostreamOut.moveFd(STDOUT_FILENO) # dup stdout
     if ostream != nil:
-      ostream.sclose() # close write
-    if istream2 != nil:
-      istream2.sclose() # close cache file; we aren't reading it directly
-    if istream != nil:
-      if istream.fd != 0:
-        istream.moveFd(STDIN_FILENO) # dup stdin
-    else:
-      closeStdin()
-    let auth = if prevURL != nil: client.findAuth(prevURL) else: nil
-    # we leave stderr open, so it can be seen in the browser console
-    setupEnv(cpath, request, contentLen, prevURL, config, auth)
-    # reset SIGCHLD to the default handler. this is useful if the child process
-    # expects SIGCHLD to be untouched. (e.g. git dies a horrible death with
-    # SIGCHLD as SIG_IGN)
-    signal(SIGCHLD, SIG_DFL)
-    # let's also reset SIGPIPE, which we ignored in forkserver
-    signal(SIGPIPE, SIG_DFL)
-    # close the parent handles
-    for i in 0 ..< ctx.handleMap.len:
-      if ctx.handleMap[i] != nil:
-        discard close(cint(i))
-    discard execl(cstring(cpath.cmd), cstring(cpath.basename), nil)
-    let code = int(ceFailedToExecuteCGIScript)
-    stdout.write("Cha-Control: ConnectionError " & $code & " " &
-      ($strerror(errno)).deleteChars({'\n', '\r'}))
-    exitnow(1)
+      ostream.sclose()
   else:
-    ostreamOut.sclose() # close write
-    if ostreamOut2 != nil:
-      ostreamOut2.sclose() # close write
-    if request.body.t != rbtNone:
-      istream.sclose() # close read
     handle.parser = HeaderParser(headers: newHeaders(hgResponse))
     handle.stream = istreamOut
     case request.body.t
@@ -1762,11 +1757,12 @@ proc loaderLoop(ctx: var LoaderContext) =
     ctx.finishCycle()
   ctx.exitLoader()
 
-proc runFileLoader*(config: LoaderConfig; stream: SocketStream) =
+proc runFileLoader*(config: LoaderConfig; stream, forkStream: SocketStream) =
   var ctx {.global.}: LoaderContext
   ctx = LoaderContext(
     config: config,
-    pid: getCurrentProcessId()
+    pid: getCurrentProcessId(),
+    forkStream: forkStream
   )
   onSignal SIGTERM:
     discard sig
@@ -1787,16 +1783,4 @@ proc runFileLoader*(config: LoaderConfig; stream: SocketStream) =
     ctx.pagerClient = ClientHandle(stream: stream, pid: pid, config: config)
   ctx.register(ctx.pagerClient)
   ctx.put(ctx.pagerClient)
-  # for CGI
-  putEnv("SERVER_SOFTWARE", "Chawan")
-  putEnv("SERVER_PROTOCOL", "HTTP/1.0")
-  putEnv("SERVER_NAME", "localhost")
-  putEnv("SERVER_PORT", "80")
-  putEnv("REMOTE_HOST", "localhost")
-  putEnv("REMOTE_ADDR", "127.0.0.1")
-  putEnv("GATEWAY_INTERFACE", "CGI/1.1")
-  putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
-  putEnv("CHA_TMP_DIR", config.tmpdir)
-  putEnv("CHA_DIR", config.configdir)
-  putEnv("CHA_BOOKMARK", config.bookmark)
   ctx.loaderLoop()

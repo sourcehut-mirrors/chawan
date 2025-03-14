@@ -273,6 +273,9 @@ proc main() =
   # make sure tmpdir exists
   discard mkdir(cstring(config.external.tmpdir), 0o700)
   let loaderPid = forkserver.loadConfig(config)
+  if loaderPid == -1:
+    stderr.writeLine("Failed to fork loader process")
+    quit(1)
   onSignal SIGINT:
     discard sig
     if acceptSigint:
