@@ -716,6 +716,9 @@ when defined(debug):
   func `$`*(val: CSSValue): string =
     return val.serialize()
 
+proc getLength*(vals: CSSValues; p: CSSPropertyType): CSSLength =
+  return vals.words[p].length
+
 macro `{}`*(vals: CSSValues; s: static string): untyped =
   let t = propertyType(s).get
   let vs = ident($valueType(t))

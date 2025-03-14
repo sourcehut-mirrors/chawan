@@ -1046,26 +1046,30 @@ func spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
     return max(u - padding, 0)
   return max(u, 0)
 
-proc resolveUnderflow(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
+const MarginStartMap = [
+  dtHorizontal: cptMarginLeft,
+  dtVertical: cptMarginTop
+]
+
+const MarginEndMap = [
+  dtHorizontal: cptMarginRight,
+  dtVertical: cptMarginBottom
+]
+
+proc resolveUnderflow(sizes: var ResolvedSizes; parentSize: SizeConstraint;
     computed: CSSValues) =
+  let dim = dtHorizontal
   # width must be definite, so that conflicts can be resolved
-  if sizes.space.w.isDefinite() and parentWidth.t == scStretch:
-    let total = sizes.space.w.u + sizes.margin[dtHorizontal].sum() +
-      sizes.padding[dtHorizontal].sum()
-    let underflow = parentWidth.u - total
-    if underflow > 0:
-      if computed{"margin-left"}.u != clAuto and
-          computed{"margin-right"}.u != clAuto:
-        sizes.margin[dtHorizontal].send += underflow
-      elif computed{"margin-left"}.u != clAuto and
-          computed{"margin-right"}.u == clAuto:
-        sizes.margin[dtHorizontal].send = underflow
-      elif computed{"margin-left"}.u == clAuto and
-          computed{"margin-right"}.u != clAuto:
-        sizes.margin[dtHorizontal].start = underflow
+  if sizes.space[dim].isDefinite() and parentSize.t == scStretch:
+    let start = computed.getLength(MarginStartMap[dim])
+    let send = computed.getLength(MarginEndMap[dim])
+    let underflow = parentSize.u - sizes.space[dim].u -
+      sizes.margin[dim].sum() - sizes.padding[dim].sum()
+    if underflow > 0 and start.u == clAuto:
+      if send.u != clAuto:
+        sizes.margin[dim].start = underflow
       else:
-        sizes.margin[dtHorizontal].start = underflow div 2
-        sizes.margin[dtHorizontal].send = underflow div 2
+        sizes.margin[dim].start = underflow div 2
 
 proc resolveMargins(lctx: LayoutContext; availableWidth: SizeConstraint;
     computed: CSSValues): RelativeRect =
@@ -1160,7 +1164,7 @@ func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
           res.mi[dtVertical].send = px
   return res
 
-const CvalSizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
+const SizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
 
 proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
     positioned: RelativeRect; computed: CSSValues; lctx: LayoutContext) =
@@ -1222,7 +1226,7 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
   )
   sizes.space.h = maxContent()
   for dim in DimensionType:
-    let length = computed.words[CvalSizeMap[dim]].length
+    let length = computed.getLength(SizeMap[dim])
     if length.canpx(space[dim]):
       let u = length.spx(space[dim], computed, paddingSum[dim])
       sizes.space[dim] = stretch(minClamp(u, sizes.bounds.a[dim]))
@@ -1243,7 +1247,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
   )
   if dim != dtHorizontal:
     sizes.space.h = maxContent()
-  let length = computed.words[CvalSizeMap[dim]].length
+  let length = computed.getLength(SizeMap[dim])
   if length.canpx(space[dim]):
     let u = length.spx(space[dim], computed, paddingSum[dim])
       .minClamp(sizes.bounds.a[dim])
@@ -1259,7 +1263,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     # been specified.
     sizes.space[dim] = maxContent()
   let odim = dim.opposite()
-  let olength = computed.words[CvalSizeMap[odim]].length
+  let olength = computed.getLength(SizeMap[odim])
   if olength.canpx(space[odim]):
     let u = olength.spx(space[odim], computed, paddingSum[odim])
       .minClamp(sizes.bounds.a[odim])
@@ -1273,6 +1277,9 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       t: sizes.space[odim].t,
       u: minClamp(u, sizes.bounds.a[odim])
     )
+    if computed.getLength(MarginStartMap[odim]).u == clAuto or
+        computed.getLength(MarginEndMap[odim]).u == clAuto:
+      sizes.space[odim].t = scFitContent
   elif sizes.bounds.a[odim].send < LUnit.high:
     sizes.space[odim] = fitContent(sizes.bounds.a[odim].max())
   return sizes
@@ -2767,6 +2774,21 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       lctx.layoutFlexItem(it.child, it.sizes)
     offset[dim] += it.sizes.margin[dim].start
     it.child.state.offset[dim] += offset[dim]
+    # resolve auto cross margins for shrink-to-fit items
+    if sizes.space[odim].t == scStretch:
+      let start = it.child.computed.getLength(MarginStartMap[odim])
+      let send = it.child.computed.getLength(MarginEndMap[odim])
+      # We can get by without adding offset, because flex items are
+      # always layouted at (0, 0).
+      let underflow = sizes.space[odim].u - it.child.state.size[odim] -
+        it.sizes.margin[odim].sum()
+      if underflow > 0 and start.u == clAuto:
+        # we don't really care about the end margin, because that is
+        # already taken into account by AvailableSpace
+        if send.u != clAuto:
+          it.sizes.margin[odim].start = underflow
+        else:
+          it.sizes.margin[odim].start = underflow div 2
     # margins are added here, since they belong to the flex item.
     it.child.state.offset[odim] += offset[odim] + it.sizes.margin[odim].start
     offset[dim] += it.child.state.size[dim]
