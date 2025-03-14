@@ -2690,19 +2690,23 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
       url = newURL(url)
       url.username = ""
       url.password = ""
-    let (pid, fd) = pager.forkserver.forkBuffer(
+    let (pid, cstream) = pager.forkserver.forkBuffer(
       container.config,
       url,
       attrs,
       cmfHTML in res.flags,
       container.charsetStack
     )
-    container.process = pid
-    if container.replace != nil:
-      pager.deleteContainer(container.replace, container.find(ndAny))
-      container.replace = nil
-    pager.connected3(container, newSocketStream(fd), res.ostream,
-      response.outputId, res.ostreamOutputId, cmfRedirected in res.flags)
+    if pid == -1:
+      res.ostream.sclose()
+      pager.fail(container, "Error forking new process for buffer")
+    else:
+      container.process = pid
+      if container.replace != nil:
+        pager.deleteContainer(container.replace, container.find(ndAny))
+        container.replace = nil
+      pager.connected3(container, cstream, res.ostream, response.outputId,
+        res.ostreamOutputId, cmfRedirected in res.flags)
   else:
     dec pager.numload
     pager.deleteContainer(container, container.find(ndAny))

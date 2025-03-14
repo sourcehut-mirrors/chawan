@@ -19,20 +19,15 @@ import utils/sandbox
 import utils/strwidth
 
 type
-  ForkCommand = enum
-    fcLoadConfig, fcForkBuffer
-
   ForkServer* = ref object
     stream: SocketStream
     estream*: PosixStream
 
   ForkServerContext = object
     stream: SocketStream
-    loaderStream: SocketStream
 
 proc loadConfig*(forkserver: ForkServer; config: Config): int =
   forkserver.stream.withPacketWriter w:
-    w.swrite(fcLoadConfig)
     w.swrite(config.display.doubleWidthAmbiguous)
     w.swrite(LoaderConfig(
       urimethodmap: config.external.urimethodmap,
@@ -49,13 +44,11 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset]):
-    tuple[pid: int; fd: cint] =
+    tuple[pid: int; cstream: SocketStream] =
   var sv {.noinit.}: array[2, cint]
-  #TODO fail gracefully
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
-    raise newException(Defect, "Failed to open socket pair")
+    return (-1, nil)
   forkserver.stream.withPacketWriter w:
-    w.swrite(fcForkBuffer)
     w.swrite(config)
     w.swrite(url)
     w.swrite(attrs)
@@ -66,36 +59,27 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
   var bufferPid: int
   forkserver.stream.withPacketReader r:
     r.sread(bufferPid)
-  return (bufferPid, sv[0])
+  if bufferPid == -1:
+    discard close(sv[0])
+    return (-1, nil)
+  return (bufferPid, newSocketStream(sv[0]))
 
-proc trapSIGINT() =
-  # trap SIGINT, so e.g. an external editor receiving an interrupt in the
-  # same process group can't just kill the process
-  # Note that the main process normally quits on interrupt (thus terminating
-  # all child processes as well).
-  setControlCHook(proc() {.noconv.} = discard)
-
-proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig): int =
+proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
+    loaderStream: SocketStream): int =
   stderr.flushFile()
   let pid = fork()
   if pid == 0:
     # child process
-    trapSIGINT()
-    let loaderStream = ctx.loaderStream
-    zeroMem(addr ctx, sizeof(ctx))
     try:
+      ctx.stream.sclose()
       setProcessTitle("cha loader")
       runFileLoader(config, loaderStream)
-    except CatchableError:
-      let e = getCurrentException()
-      # taken from system/excpt.nim
-      let msg = e.getStackTrace() & "Error: unhandled exception: " & e.msg &
-        " [" & $e.name & "]\n"
-      stderr.write(msg)
+    except CatchableError as e:
+      stderr.write(e.getStackTrace() & "Error: unhandled exception: " & e.msg &
+        " [" & $e.name & "]\n")
       quit(1)
     doAssert false
-  ctx.loaderStream.sclose()
-  ctx.loaderStream = nil
+  loaderStream.sclose()
   return pid
 
 proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
@@ -112,12 +96,9 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   let fd = r.recvFd()
   stderr.flushFile()
   let pid = fork()
-  if pid == -1:
-    raise newException(Defect, "Failed to fork process.")
   if pid == 0:
     # child process
-    trapSIGINT()
-    zeroMem(addr ctx, sizeof(ctx))
+    ctx.stream.sclose()
     setBufferProcessTitle(url)
     let pid = getCurrentProcessId()
     let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
@@ -155,29 +136,22 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
 
 proc runForkServer(controlStream, loaderStream: SocketStream) =
   setProcessTitle("cha forkserver")
-  var ctx = ForkServerContext(
-    stream: controlStream,
-    loaderStream: loaderStream
-  )
+  var ctx = ForkServerContext(stream: controlStream)
   signal(SIGCHLD, SIG_IGN)
   signal(SIGPIPE, SIG_IGN)
+  ctx.stream.withPacketReader r:
+    var config: LoaderConfig
+    r.sread(isCJKAmbiguous)
+    r.sread(config)
+    let pid = ctx.forkLoader(config, loaderStream)
+    ctx.stream.withPacketWriter w:
+      w.swrite(pid)
   while true:
     try:
       ctx.stream.withPacketReader r:
-        var cmd: ForkCommand
-        r.sread(cmd)
-        case cmd
-        of fcLoadConfig:
-          var config: LoaderConfig
-          r.sread(isCJKAmbiguous)
-          r.sread(config)
-          let pid = ctx.forkLoader(config)
-          ctx.stream.withPacketWriter w:
-            w.swrite(pid)
-        of fcForkBuffer:
-          let r = ctx.forkBuffer(r)
-          ctx.stream.withPacketWriter w:
-            w.swrite(r)
+        let pid = ctx.forkBuffer(r)
+        ctx.stream.withPacketWriter w:
+          w.swrite(pid)
     except EOFError:
       # EOF
       break
@@ -202,7 +176,6 @@ proc newForkServer*(loaderSockVec: array[2, cint]): ForkServer =
   elif pid == 0:
     # child process
     discard setsid()
-    trapSIGINT()
     closeStdin()
     closeStdout()
     newPosixStream(pipeFdErr[1]).moveFd(STDERR_FILENO)
