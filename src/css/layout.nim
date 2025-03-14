@@ -2689,6 +2689,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
   var diff = diff
   var totalWeight = mctx.totalWeight[wt]
   let odim = dim.opposite
+  var relayout: seq[int] = @[]
   while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
       totalWeight > 0:
     # redo maxSize calculation; we only need height here
@@ -2704,7 +2705,8 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     # one)
     totalWeight = 0
     diff = 0
-    for it in mctx.pending.mitems:
+    relayout.setLen(0)
+    for i, it in mctx.pending.mpairs:
       if it.weights[wt] == 0:
         mctx.updateMaxSizes(it.child, it.sizes)
         continue
@@ -2734,10 +2736,15 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       it.sizes.space[dim] = stretch(u)
       # override minimum intrinsic size clamping too
       totalWeight += it.weights[wt]
-      #TODO we should call this only on freeze, and then put another loop to
-      # the end for non-frozen items
-      lctx.layoutFlexItem(it.child, it.sizes)
-      mctx.updateMaxSizes(it.child, it.sizes)
+      if it.weights[wt] == 0: # frozen, relayout immediately
+        lctx.layoutFlexItem(it.child, it.sizes)
+        mctx.updateMaxSizes(it.child, it.sizes)
+      else: # delay relayout
+        relayout.add(i)
+    for i in relayout:
+      let child = mctx.pending[i].child
+      lctx.layoutFlexItem(child, mctx.pending[i].sizes)
+      mctx.updateMaxSizes(child, mctx.pending[i].sizes)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     sizes: ResolvedSizes) =
