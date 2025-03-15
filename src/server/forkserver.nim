@@ -96,7 +96,7 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
   else:
     discard close(sv[1])
     loaderStream.sclose()
-    return (pid, newSocketStream(sv[0]))
+    return (int(pid), newSocketStream(sv[0]))
 
 proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   var config: BufferConfig
