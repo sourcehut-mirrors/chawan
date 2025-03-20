@@ -62,8 +62,6 @@ when sizeof(int) < sizeof(int64):
 
   template JS_MKPTR*(t, p: untyped): JSValue =
     JSValue((cast[uint64](int64(t)) shl 32) or cast[uint](p))
-
-  proc `==`*(a, b: JSValueConst): bool {.borrow.}
 else:
   type
     JSValueUnion* {.importc, header: qjsheader, union.} = object
@@ -284,6 +282,12 @@ type
     JS_PROMISE_PENDING
     JS_PROMISE_FULFILLED
     JS_PROMISE_REJECTED
+
+proc `==`*(a, b: JSValue): bool {.error.} =
+  discard
+
+proc `==`*(a, b: JSValueConst): bool {.error.} =
+  discard
 
 func `==`*(a, b: JSAtom): bool {.borrow.}
 
