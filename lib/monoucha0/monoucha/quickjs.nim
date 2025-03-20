@@ -7,6 +7,8 @@ import libregexp
 
 export constcharp
 
+export libregexp.JS_BOOL
+
 {.passc: "-DNOT_LRE_ONLY".}
 
 {.passl: "-lm".}
@@ -252,8 +254,6 @@ type
     def_type*: uint8
     magic*: int16
     u* {.importc.}: JSCFunctionListEntryU
-
-  JS_BOOL* {.importc: "bool".} = bool
 
   JSPropertyEnum* {.importc.} = object
     is_enumerable*: JS_BOOL

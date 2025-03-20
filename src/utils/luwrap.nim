@@ -48,7 +48,7 @@ proc capitalizeLU*(s: string): string =
   result = newStringOfCap(s.len)
   var wordStart = true
   for u in s.points:
-    if lre_is_space(u) == 1:
+    if lre_is_space(u):
       wordStart = true
       result.addUTF8(u)
     elif wordStart:
@@ -112,7 +112,7 @@ proc initScript(ctx: LUContext; lur: LURangeType) =
   if lur notin ctx.inited:
     let p = addr ctx.crs[lur]
     cr_init(p, nil, passRealloc)
-    doAssert unicode_script(p, cstring($lur), 0) == 0
+    doAssert unicode_script(p, cstring($lur), false) == 0
     ctx.inited.incl(lur)
 
 proc isAlpha*(ctx: LUContext; u: uint32): bool =

@@ -7,6 +7,8 @@ from std/os import parentDir
 
 import libunicode
 
+export libunicode.JS_BOOL
+
 when not compileOption("threads"):
   const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
 else:
@@ -26,7 +28,7 @@ proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
 # compilation pass" (i.e. in C).
 {.emit: """
 #ifndef NOT_LRE_ONLY
-int lre_check_stack_overflow(void *opaque, size_t alloca_size)
+bool lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
   return 0;
 }
@@ -65,17 +67,9 @@ proc lre_get_flags*(bc_buf: ptr uint8): cint
 
 const LRE_CC_RES_LEN_MAX* = 3
 
-# conv_type:
-# 0 = to upper
-# 1 = to lower
-# 2 = case folding
-# res must be an array of LRE_CC_RES_LEN_MAX
-proc lre_case_conv*(res: ptr UncheckedArray[uint32]; c: uint32;
-  conv_type: cint): cint
+proc lre_is_space_non_ascii*(c: uint32): JS_BOOL
 
-proc lre_is_space_non_ascii*(c: uint32): cint {.importc.}
-
-proc lre_is_space*(c: uint32): cint {.importc.}
+proc lre_is_space*(c: uint32): JS_BOOL
 
 {.pop.} # header, importc
 {.pop.} # raises
