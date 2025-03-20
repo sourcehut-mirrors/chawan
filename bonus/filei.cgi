@@ -6,7 +6,7 @@
 
 filei:	/cgi-bin/filei.cgi
 
- * then visit filei:directory for a directory of images
+ *   then visit filei:directory for a directory of images
  *
  * - you will notice this only works with absolute paths. as a workaround,
  *   add this to config.toml:

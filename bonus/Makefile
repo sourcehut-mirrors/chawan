@@ -1,4 +1,4 @@
-CHA_CGI_DIR ?= "$$(cha -r 'pager.extern(`echo "$$CHA_DIR/cgi-bin"`)')"
+CHA_CGI_DIR ?= "$$(cha -r 'console.log(getenv("CHA_DIR")+"/cgi-bin")')"
 
 prefix = /usr/local
 
@@ -47,6 +47,13 @@ install-magnet.cgi: magnet.cgi
 	mkdir -p $(CHA_CGI_DIR)
 	cp magnet.cgi $(CHA_CGI_DIR)
 	./addurimethod magnet magnet.cgi
+
+.PHONY: install-newhttp
+install-newhttp:
+	mkdir -p $(CHA_CGI_DIR)
+	nim c -f -d:release -d:lto -o:$(CHA_CGI_DIR)/newhttp newhttp/http.nim
+	./addurimethod http newhttp
+	./addurimethod https newhttp
 
 .PHONY: install-trans.cgi
 install-trans.cgi: trans.cgi

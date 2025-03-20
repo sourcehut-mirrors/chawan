@@ -44,6 +44,20 @@ designed to handle file downloads, not web browsing.
 
 A `magnet:` URL handler. It can forward magnet links to transmission.
 
+### [newhttp](newhttp/)
+
+WIP new HTTP(S) CGI handler.  For now, the only difference between
+this and the current one is that this uses tinfl for decompression.
+
+Still TODO:
+
+* replace libcurl with OpenSSL-based HTTP/1.1
+* keep-alive (loader needs work first)
+* brotli
+* zstd
+* HTTP/2
+* sandbox
+
 ### [stbir2](stbir2/)
 
 By default, Chawan uses stb_image_resize for resizing images, but there

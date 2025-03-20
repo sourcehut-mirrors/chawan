@@ -1,6 +1,9 @@
 [start]
 headless = true
 
+[external]
+urimethodmap = []
+
 [buffer]
 scripting = true
 cookie = true

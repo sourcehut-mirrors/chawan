@@ -65,6 +65,13 @@ const
   CURLU_PUNYCODE* = (1 shl 12)          # get the host name in punycode
   CURLU_PUNY2IDN* = (1 shl 13)          # punycode => IDN conversion
 
+const
+  CURLH_HEADER* = 1 shl 0
+  CURLH_TRAILER* = 1 shl 1
+  CURLH_CONNECT* = 1 shl 2
+  CURLH_1XX* = 1 shl 3
+  CURLH_PSEUDO* = 1 shl 4
+
 {.push cdecl, dynlib: curllib.}
 
 type
@@ -378,6 +385,14 @@ type
     CURLUPART_FRAGMENT
     CURLUPART_ZONEID # added in 7.65.0
 
+  curl_header* = object
+    name*: cstring
+    value*: cstring
+    amount*: csize_t
+    index*: csize_t
+    origin*: cint
+    anchor*: pointer
+
 proc `==`*(a: CURL; b: CURL): bool {.borrow.}
 proc `==`*(a: CURL; b: typeof(nil)): bool {.borrow.}
 proc `==`*(a: CURLM; b: CURLM): bool {.borrow.}
@@ -395,6 +410,10 @@ proc curl_easy_setopt*(handle: CURL; option: CURLoption): CURLcode {.varargs.}
 proc curl_easy_perform*(handle: CURL): CURLcode
 proc curl_easy_getinfo*(handle: CURL; info: CURLINFO): CURLcode {.varargs.}
 proc curl_easy_strerror*(errornum: CURLcode): cstring
+proc curl_easy_nextheader*(curl: CURL; origin: cuint; request: cint;
+  prev: ptr curl_header): ptr curl_header
+proc curl_easy_header*(curl: CURL; name: cstring; index: csize_t; origin: cuint;
+  request: cint; hout: out ptr curl_header): cint
 
 proc curl_url*(): CURLU
 proc curl_url_cleanup*(handle: CURLU)
