@@ -155,6 +155,10 @@ func inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
   result = frame.computed.inheritProperties()
   result{"display"} = display
 
+func copyFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
+  result = frame.computed.copyProperties()
+  result{"display"} = display
+
 proc initTreeFrame(ctx: var TreeContext; parent: Element; computed: CSSValues):
     TreeFrame =
   result = TreeFrame(parent: parent, computed: computed, pctx: addr ctx)
@@ -378,7 +382,7 @@ proc addImage(frame: var TreeFrame; bmp: NetworkBitmap) =
       t: stImage,
       element: frame.parent,
       bmp: bmp,
-      computed: frame.getAnonInlineComputed()
+      computed: frame.copyFor(DisplayInline)
     ))
   else:
     frame.addText("[img]")
