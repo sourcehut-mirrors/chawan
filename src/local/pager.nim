@@ -2969,7 +2969,7 @@ if (replace.alive) {
 """)
   let args = [ctx.toJS(url), ctx.toJS(container)]
   discard pager.timeouts.setTimeout(ttTimeout, fun, int32(n),
-    cast[JSValueConstArray](unsafeAddr args[0]).toOpenArray(0, args.high))
+    args.toJSValueConstOpenArray())
   JS_FreeValue(ctx, fun)
   for arg in args:
     JS_FreeValue(ctx, arg)
