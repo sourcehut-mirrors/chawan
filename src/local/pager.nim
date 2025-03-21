@@ -714,7 +714,7 @@ proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
     if pager.precnum != 0 and c == '0' or c in '1' .. '9':
       if pager.precnum < MaxPrecNum: # better ignore than eval...
         pager.precnum *= 10
-        pager.precnum += cast[int32](decValue(c))
+        pager.precnum += int32(decValue(c))
       return
     else:
       pager.notnum = true
