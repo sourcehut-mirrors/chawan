@@ -567,6 +567,9 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
       ctx.rejectHandle(handle, code, message)
       return crError
     if v.startsWithIgnoreCase("ControlDone"):
+      case ctx.sendResult(handle, 0) # success
+      of pbrDone: discard
+      of pbrUnregister: return crError
       return crDone
     ctx.rejectHandle(handle, ceCGIInvalidChaControl)
     return crError
@@ -636,7 +639,9 @@ proc parseHeaders0(ctx: var LoaderContext; handle: InputHandle;
         case handle.handleControlLine(parser.lineBuffer)
         of crDone: parser.state = hpsControlDone
         of crContinue: discard
-        of crError: die
+        of crError:
+          discard ctx.sendStatus(handle, 500, parser.headers)
+          die
       of hpsControlDone:
         handle.handleLine(parser.lineBuffer)
       parser.lineBuffer = ""
