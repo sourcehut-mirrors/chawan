@@ -253,10 +253,7 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     map_bgcolor
   of TAG_COL:
     map_width
-  of TAG_IMG:
-    map_width
-    map_height
-  of TAG_CANVAS:
+  of TAG_IMG, TAG_CANVAS, TAG_SVG:
     map_width
     map_height
   of TAG_HTML:
