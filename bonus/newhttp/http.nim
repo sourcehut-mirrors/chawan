@@ -1,41 +1,13 @@
 import std/envvars
+import std/options
 import std/posix
 import std/strutils
 
 import io/dynstream
+import types/opt
 import utils/sandbox
 
-import adapter/protocol/curl
-
-template setopt(curl: CURL; opt: CURLoption; arg: typed) =
-  discard curl_easy_setopt(curl, opt, arg)
-
-template setopt(curl: CURL; opt: CURLoption; arg: string) =
-  discard curl_easy_setopt(curl, opt, cstring(arg))
-
-template getinfo(curl: CURL; info: CURLINFO; arg: typed) =
-  discard curl_easy_getinfo(curl, info, arg)
-
-template set(url: CURLU; part: CURLUPart; content: cstring; flags: cuint) =
-  discard curl_url_set(url, part, content, flags)
-
-template set(url: CURLU; part: CURLUPart; content: string; flags: cuint) =
-  url.set(part, cstring(content), flags)
-
-func curlErrorToChaError(res: CURLcode): string =
-  return case res
-  of CURLE_OK: ""
-  of CURLE_URL_MALFORMAT: "InvalidURL" #TODO should never occur...
-  of CURLE_COULDNT_CONNECT: "ConnectionRefused"
-  of CURLE_COULDNT_RESOLVE_PROXY: "FailedToResolveProxy"
-  of CURLE_COULDNT_RESOLVE_HOST: "FailedToResolveHost"
-  of CURLE_PROXY: "ProxyRefusedToConnect"
-  else: "InternalError"
-
-proc getCurlConnectionError(res: CURLcode): string =
-  let e = curlErrorToChaError(res)
-  let msg = $curl_easy_strerror(res)
-  return "Cha-Control: ConnectionError " & e & " " & msg & "\n"
+import adapter/protocol/lcgi_ssl
 
 # tinfl bindings, see tinfl.h for details
 const
@@ -97,19 +69,35 @@ proc tinfl_decompress(r: var tinfl_decompressor; pIn_buf_next: ptr uint8;
   pOut_buf_size: var csize_t; decomp_flags: uint32): tinfl_status
 {.pop.} # importc, cdecl, header: "tinfl.h"
 
+const InputBufferSize = 16384
+
 type
-  EarlyHintState = enum
-    ehsNone, ehsStarted, ehsDone
-
-  HttpHandle = ref object
-    curl: CURL
+  HTTPHandle = ref object
+    state: HTTPState
+    bodyState: HTTPState # if TE is chunked, hsChunkSize; else hsBody
+    lineState: LineState
+    chunkedSize: uint64
+    ps: DynStream
     os: PosixStream
-    statusline: bool
-    connectreport: bool
-    earlyhint: EarlyHintState
-    slist: curl_slist
+    line: string
+    headers: seq[tuple[key, value: string]]
 
-proc inflate(op: HttpHandle; flag: uint32) =
+  LineState = enum
+    lsNone, lsCrSeen
+
+  HTTPState = enum
+    hsStatus, hsHeaders, hsChunkSize, hsBody
+
+  ContentEncoding = enum
+    ceGzip = "gzip"
+    ceDeflate = "deflate"
+
+  TransferEncoding = enum
+    teChunked = "chunked"
+    teGzip = "gzip"
+    teDeflate = "deflate"
+
+proc inflate(op: HTTPHandle; flag: uint32) =
   var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) != 0:
     return
@@ -125,8 +113,7 @@ proc inflate(op: HttpHandle; flag: uint32) =
     let os = op.os
     var flags = flag or TINFL_FLAG_HAS_MORE_INPUT
     var decomp = tinfl_decompressor()
-    # curl's default buffer size is 16k
-    var iq {.noinit.}: array[16384, uint8]
+    var iq {.noinit.}: array[InputBufferSize, uint8]
     var oq {.noinit.}: array[TINFL_LZ_DICT_SIZE, uint8]
     var oqoff = csize_t(0)
     while true:
@@ -163,137 +150,182 @@ proc inflate(op: HttpHandle; flag: uint32) =
     pins.sclose()
     op.os = pouts
 
-proc strcasecmp(a, b: cstring): cint {.importc, header: "<strings.h>".}
-
-proc curlWriteHeader(p: cstring; size, nitems: csize_t; userdata: pointer):
-    csize_t {.cdecl.} =
-  var line = newString(nitems)
-  if nitems > 0:
-    copyMem(addr line[0], p, nitems)
-  let op = cast[HttpHandle](userdata)
-  if not op.statusline:
-    op.statusline = true
-    var status: clong
-    op.curl.getinfo(CURLINFO_RESPONSE_CODE, addr status)
-    if status == 103:
-      op.earlyhint = ehsStarted
+proc handleBuffer(op: HTTPHandle; iq: openArray[char]) =
+  case op.state
+  of hsStatus:
+    for i, c in iq:
+      case op.lineState
+      of lsNone:
+        if c == '\r':
+          op.lineState = lsCrSeen
+        else:
+          op.line &= c
+      of lsCrSeen:
+        if c != '\n' or
+            not op.line.startsWithIgnoreCase("HTTP/1.0") and
+            not op.line.startsWithIgnoreCase("HTTP/1.1"):
+          op.os.die("InvalidResponse", "malformed status line")
+        let codes = op.line.until(' ', "HTTP/1.0 ".len)
+        let code = parseUInt16(codes)
+        if codes.len > 3 or code.isNone:
+          op.os.die("InvalidResponse", "malformed status line")
+        let buf = "Cha-Control: Connected\r\n" &
+          "Status: " & $code.get & "\r\n" &
+          "Cha-Control: ControlDone\r\n"
+        if not op.os.writeDataLoop(buf):
+          quit(1)
+        op.lineState = lsNone
+        op.state = hsHeaders
+        op.line = ""
+        if i + 1 < iq.len:
+          op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
+        break
+  of hsHeaders:
+    for i, c in iq:
+      case op.lineState
+      of lsNone:
+        if c == '\r':
+          op.lineState = lsCrSeen
+        else:
+          op.line &= c
+      of lsCrSeen:
+        if c != '\n': # malformed header
+          quit(1)
+        if op.line != "":
+          var name = op.line.until(':')
+          if name.len > 0 and name[0] notin HTTPWhitespace and
+              name.len != op.line.len:
+            name = name.strip(leading = false, trailing = true,
+              chars = HTTPWhitespace)
+            let value = op.line.after(':').strip(leading = true,
+              trailing = false, chars = HTTPWhitespace)
+            op.headers.add((move(name), value))
+          op.line = ""
+          op.lineState = lsNone
+        else:
+          var buf = ""
+          var contentEncodings: seq[ContentEncoding] = @[]
+          var transferEncodings: seq[TransferEncoding] = @[]
+          for it in op.headers:
+            buf &= it.key & ": " & it.value & "\r\n"
+            if it.key.equalsIgnoreCase("Content-Encoding"):
+              for it in it.value.split(','):
+                let x = parseEnumNoCase[ContentEncoding](it)
+                if x.isSome:
+                  contentEncodings.add(x.get)
+            elif it.key.equalsIgnoreCase("Transfer-Encoding"):
+              for it in it.value.split(','):
+                let x = parseEnumNoCase[TransferEncoding](it)
+                if x.isSome:
+                  transferEncodings.add(x.get)
+          buf &= "\r\n"
+          if not op.os.writeDataLoop(buf):
+            quit(1)
+          op.lineState = lsNone
+          for i in countdown(contentEncodings.high, 0):
+            case contentEncodings[i]
+            of ceGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
+            of ceDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
+          op.bodyState = hsBody
+          for i in countdown(transferEncodings.high, 0):
+            case transferEncodings[i]
+            of teChunked:
+              if i == 0:
+                op.bodyState = hsChunkSize
+            of teGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
+            of teDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
+          op.state = op.bodyState
+          if i + 1 < iq.len:
+            op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
+          break
+  of hsChunkSize:
+    for i, c in iq:
+      case op.lineState
+      of lsNone:
+        if c == '\r':
+          op.lineState = lsCrSeen
+        else:
+          let n = hexValue(c)
+          let osize = op.chunkedSize
+          op.chunkedSize *= 0x10
+          op.chunkedSize += uint64(n)
+          if n == -1 or osize > op.chunkedSize:
+            stderr.writeLine("NewHTTP error: error decoding chunk size")
+            quit(1)
+      of lsCrSeen:
+        if c != '\n':
+          stderr.writeLine("NewHTTP error: CRLF expected")
+          quit(1)
+        op.state = hsBody
+        op.lineState = lsNone
+        if i + 1 < iq.len:
+          op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
+        break
+  of hsBody:
+    var L = uint64(iq.len)
+    if op.bodyState == hsBody or L < op.chunkedSize:
+      # if not chunked, always take this branch
+      op.chunkedSize -= L
+      if not op.os.writeDataLoop(iq):
+        quit(1)
     else:
-      op.connectreport = true
-      op.os.write("Status: " & $status & "\nCha-Control: ControlDone\n")
-    return nitems
-  if line == "\r\n" or line == "\n":
-    # empty line (last, before body)
-    if op.earlyhint == ehsStarted:
-      # ignore; we do not have a way to stream headers yet.
-      op.earlyhint = ehsDone
-      # reset statusline; we are awaiting the next line.
-      op.statusline = false
-      return nitems
-    op.os.write("\r\n")
-    var hdr: ptr curl_header
-    var i = csize_t(0)
-    while op.curl.curl_easy_header("Content-Encoding", i, CURLH_HEADER, -1,
-        hdr) == 0:
-      if strcasecmp(hdr.value, "gzip") == 0:
-        op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
-      elif strcasecmp(hdr.value, "deflate") == 0:
-        op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
-      #TODO brotli, zstd
-      hdr = curl_easy_nextheader(op.curl, CURLH_HEADER, -1, hdr)
-      inc i
-    return nitems
-  if op.earlyhint != ehsStarted:
-    # Regrettably, we can only write early hint headers after the status
-    # code is already known.
-    # For now, it seems easiest to just ignore them all.
-    op.os.write(line)
-  return nitems
+      let n = int(op.chunkedSize)
+      if not op.os.writeDataLoop(iq.toOpenArray(0, n - 1)):
+        quit(1)
+      op.chunkedSize = 0
+      op.state = hsChunkSize
+      op.handleBuffer(iq.toOpenArray(n, iq.high))
 
-# From the documentation: size is always 1.
-proc curlWriteBody(p: cstring; size, nmemb: csize_t; userdata: pointer):
-    csize_t {.cdecl.} =
-  let op = cast[HttpHandle](userdata)
-  return csize_t(op.os.writeData(p, int(nmemb)))
-
-# From the documentation: size is always 1.
-proc readFromStdin(p: pointer; size, nitems: csize_t; userdata: pointer):
-    csize_t {.cdecl.} =
-  return csize_t(read(STDIN_FILENO, p, int(nitems)))
-
-proc curlPreRequest(clientp: pointer; conn_primary_ip, conn_local_ip: cstring;
-    conn_primary_port, conn_local_port: cint): cint {.cdecl.} =
-  let op = cast[HttpHandle](clientp)
-  op.connectreport = true
-  op.os.write("Cha-Control: Connected\n")
-  return 0 # ok
+proc checkCert(os: PosixStream; ssl: ptr SSL) =
+  let res = SSL_get_verify_result(ssl)
+  if res != X509_V_OK:
+    let s = X509_verify_cert_error_string(res)
+    os.die("InvalidResponse", $s)
 
 proc main() =
-  let curl = curl_easy_init()
-  doAssert curl != nil
-  let url = curl_url()
-  const flags = cuint(CURLU_PATH_AS_IS)
-  url.set(CURLUPART_SCHEME, getEnv("MAPPED_URI_SCHEME"), flags)
+  let secure = getEnv("MAPPED_URI_SCHEME") == "https"
   let username = getEnv("MAPPED_URI_USERNAME")
-  if username != "":
-    url.set(CURLUPART_USER, username, flags)
   let password = getEnv("MAPPED_URI_PASSWORD")
-  if password != "":
-    url.set(CURLUPART_PASSWORD, password, flags)
-  url.set(CURLUPART_HOST, getEnv("MAPPED_URI_HOST"), flags)
-  let port = getEnv("MAPPED_URI_PORT")
-  if port != "":
-    url.set(CURLUPART_PORT, port, flags)
+  let host = getEnv("MAPPED_URI_HOST")
+  let port = getEnvEmpty("MAPPED_URI_PORT", if secure: "443" else: "80")
   let path = getEnv("MAPPED_URI_PATH")
-  if path != "":
-    url.set(CURLUPART_PATH, path, flags)
   let query = getEnv("MAPPED_URI_QUERY")
-  if query != "":
-    url.set(CURLUPART_QUERY, query, flags)
-  if getEnv("CHA_INSECURE_SSL_NO_VERIFY") == "1":
-    curl.setopt(CURLOPT_SSL_VERIFYPEER, 0)
-    curl.setopt(CURLOPT_SSL_VERIFYHOST, 0)
-  curl.setopt(CURLOPT_CURLU, url)
   let os = newPosixStream(STDOUT_FILENO)
-  let op = HttpHandle(curl: curl, os: os)
-  curl.setopt(CURLOPT_SUPPRESS_CONNECT_HEADERS, 1)
-  curl.setopt(CURLOPT_WRITEDATA, op)
-  curl.setopt(CURLOPT_WRITEFUNCTION, curlWriteBody)
-  curl.setopt(CURLOPT_HEADERDATA, op)
-  curl.setopt(CURLOPT_HEADERFUNCTION, curlWriteHeader)
-  curl.setopt(CURLOPT_PREREQDATA, op)
-  curl.setopt(CURLOPT_PREREQFUNCTION, curlPreRequest)
-  curl.setopt(CURLOPT_NOSIGNAL, 1)
-  let proxy = getEnv("ALL_PROXY")
-  if proxy != "":
-    curl.setopt(CURLOPT_PROXY, proxy)
-  case getEnv("REQUEST_METHOD")
-  of "GET":
-    curl.setopt(CURLOPT_HTTPGET, 1)
-  of "POST":
-    curl.setopt(CURLOPT_POST, 1)
-    let len = parseInt(getEnv("CONTENT_LENGTH"))
-    # > For any given platform/compiler curl_off_t must be typedef'ed to
-    # a 64-bit
-    # > wide signed integral data type. The width of this data type must remain
-    # > constant and independent of any possible large file support settings.
-    # >
-    # > As an exception to the above, curl_off_t shall be typedef'ed to
-    # a 32-bit
-    # > wide signed integral data type if there is no 64-bit type.
-    # It seems safe to assume that if the platform has no uint64 then Nim won't
-    # compile either. In return, we are allowed to post >2G of data.
-    curl.setopt(CURLOPT_POSTFIELDSIZE_LARGE, uint64(len))
-    curl.setopt(CURLOPT_READFUNCTION, readFromStdin)
-  let headers = getEnv("REQUEST_HEADERS")
-  for line in headers.split("\r\n"):
-    # This is OK, because curl_slist_append strdup's line.
-    op.slist = curl_slist_append(op.slist, cstring(line))
-  if op.slist != nil:
-    curl.setopt(CURLOPT_HTTPHEADER, op.slist)
-  let res = curl_easy_perform(curl)
-  if res != CURLE_OK and not op.connectreport:
-    op.os.write(getCurlConnectionError(res))
-    op.connectreport = true
-  curl_easy_cleanup(curl)
+  let ps = if secure:
+    let ssl = os.connectSSLSocket(host, port, useDefaultCA = true)
+    if getEnv("CHA_INSECURE_SSL_NO_VERIFY") != "1":
+      os.checkCert(ssl)
+    newSSLStream(ssl)
+  else:
+    os.connectSocket(host, port)
+  let op = HTTPHandle(ps: ps, os: os)
+  let requestMethod = getEnv("REQUEST_METHOD")
+  var buf = requestMethod & ' ' & path
+  if query != "":
+    buf &= '?' & query
+  buf &= " HTTP/1.1\r\n"
+  buf &= "Host: " & host
+  if secure and port != "443" or not secure and port != "80":
+    buf &= ':' & port
+  buf &= "\r\n"
+  buf &= "Connection: close\r\n"
+  if username != "":
+    buf &= "Authorization: Basic " & btoa(username & ':' & password) & "\r\n"
+  let contentLength = getEnv("CONTENT_LENGTH")
+  if (let x = parseUInt64(contentLength); x.isSome):
+    buf &= "Content-Length: " & $x.get & "\r\n"
+  buf &= getEnv("REQUEST_HEADERS")
+  buf &= "\r\n"
+  if not op.ps.writeDataLoop(buf):
+    os.die("ConnectionRefused", "error sending request header")
+  var iq {.noinit.}: array[InputBufferSize, char]
+  if requestMethod == "POST":
+    let ps = newPosixStream(STDIN_FILENO)
+    while (let n = ps.readData(iq); n > 0):
+      if not op.ps.writeDataLoop(iq.toOpenArray(0, n - 1)):
+        os.die("ConnectionRefused", "error sending request body")
+  while (let n = ps.readData(iq); n > 0):
+    op.handleBuffer(iq.toOpenArray(0, n - 1))
+  op.ps.sclose()
 
 main()

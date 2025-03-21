@@ -51,7 +51,7 @@ this and the current one is that this uses tinfl for decompression.
 
 Still TODO:
 
-* replace libcurl with OpenSSL-based HTTP/1.1
+* figure out what ciphers to allow
 * keep-alive (loader needs work first)
 * brotli
 * zstd

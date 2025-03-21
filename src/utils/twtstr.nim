@@ -20,6 +20,7 @@ const AsciiAlphaNumeric* = AsciiAlpha + AsciiDigit
 const AsciiOctDigit* = {'0'..'7'}
 const AsciiHexDigit* = AsciiDigit + {'a'..'f', 'A'..'F'}
 const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
+const HTTPWhitespace* = {'\n', '\r', '\t', ' '}
 
 func nextUTF8*(s: openArray[char]; i: var int): uint32 =
   let j = i

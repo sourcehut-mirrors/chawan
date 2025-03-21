@@ -271,7 +271,7 @@ proc main() =
   if query != "":
     reqBuf &= '?' & query
   reqBuf &= "\r\n"
-  let ssl = os.connectSSLSocket(host, port)
+  let ssl = os.connectSSLSocket(host, port, useDefaultCA = false)
   var storedDigest: string
   var theirDigest: string
   var theirTime: Time
