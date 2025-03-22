@@ -76,7 +76,7 @@ type
     state: HTTPState
     bodyState: HTTPState # if TE is chunked, hsChunkSize; else hsBody
     lineState: LineState
-    chunkedSize: uint64
+    chunkSize: uint64 # a nonsensical number if TE is not chunked
     ps: DynStream
     os: PosixStream
     line: string
@@ -86,7 +86,7 @@ type
     lsNone, lsCrSeen
 
   HTTPState = enum
-    hsStatus, hsHeaders, hsChunkSize, hsBody
+    hsStatus, hsHeaders, hsChunkSize, hsChunkAfter, hsBody, hsTrailers
 
   ContentEncoding = enum
     ceGzip = "gzip"
@@ -246,35 +246,55 @@ proc handleBuffer(op: HTTPHandle; iq: openArray[char]) =
           op.lineState = lsCrSeen
         else:
           let n = hexValue(c)
-          let osize = op.chunkedSize
-          op.chunkedSize *= 0x10
-          op.chunkedSize += uint64(n)
-          if n == -1 or osize > op.chunkedSize:
+          let osize = op.chunkSize
+          op.chunkSize *= 0x10
+          op.chunkSize += uint64(n)
+          if n == -1 or osize > op.chunkSize:
             stderr.writeLine("NewHTTP error: error decoding chunk size")
             quit(1)
       of lsCrSeen:
         if c != '\n':
           stderr.writeLine("NewHTTP error: CRLF expected")
           quit(1)
-        op.state = hsBody
         op.lineState = lsNone
-        if i + 1 < iq.len:
-          op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
+        if op.chunkSize > 0:
+          op.state = hsBody
+          if i + 1 < iq.len:
+            op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
+        else:
+          op.state = hsTrailers
         break
   of hsBody:
     var L = uint64(iq.len)
-    if op.bodyState == hsBody or L < op.chunkedSize:
+    if op.bodyState == hsBody or L < op.chunkSize:
       # if not chunked, always take this branch
-      op.chunkedSize -= L
+      op.chunkSize -= L
       if not op.os.writeDataLoop(iq):
         quit(1)
     else:
-      let n = int(op.chunkedSize)
+      let n = int(op.chunkSize)
       if not op.os.writeDataLoop(iq.toOpenArray(0, n - 1)):
         quit(1)
-      op.chunkedSize = 0
-      op.state = hsChunkSize
+      op.chunkSize = 0
+      op.state = hsChunkAfter
       op.handleBuffer(iq.toOpenArray(n, iq.high))
+  of hsChunkAfter: # CRLF after a chunk
+    for i, c in iq:
+      case op.lineState
+      of lsNone:
+        if c != '\r':
+          quit(1)
+        op.lineState = lsCrSeen
+      of lsCrSeen:
+        if c != '\n':
+          quit(1)
+        op.lineState = lsNone
+        op.state = hsChunkSize
+        if i + 1 < iq.high:
+          op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
+        break
+  of hsTrailers:
+    discard
 
 proc checkCert(os: PosixStream; ssl: ptr SSL) =
   let res = SSL_get_verify_result(ssl)
@@ -288,7 +308,7 @@ proc main() =
   let password = getEnv("MAPPED_URI_PASSWORD")
   let host = getEnv("MAPPED_URI_HOST")
   let port = getEnvEmpty("MAPPED_URI_PORT", if secure: "443" else: "80")
-  let path = getEnv("MAPPED_URI_PATH")
+  let path = getEnvEmpty("MAPPED_URI_PATH", "/")
   let query = getEnv("MAPPED_URI_QUERY")
   let os = newPosixStream(STDOUT_FILENO)
   let ps = if secure:
