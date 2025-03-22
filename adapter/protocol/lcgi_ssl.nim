@@ -121,7 +121,7 @@ proc connectSSLSocket*(os: PosixStream; host, port: string;
       os.die("InternalError", "failed to set default verify paths")
   if ctx.SSL_CTX_set_min_proto_version(TLS1_2_VERSION) == 0:
     os.die("InternalError", "failed to set min proto version")
-  const preferredCiphers = "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4:!DSS"
+  const preferredCiphers = "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4:!DSS:!DHE"
   if ctx.SSL_CTX_set_cipher_list(preferredCiphers) == 0:
     os.die("InternalError", "failed to set cipher list")
   let ssl = SSL_new(ctx)
