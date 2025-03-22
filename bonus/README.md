@@ -53,7 +53,6 @@ Still TODO:
 
 * figure out what ciphers to allow
 * keep-alive (loader needs work first)
-* brotli
 * zstd
 * HTTP/2
 * sandbox
