@@ -581,8 +581,7 @@ var parseHTMLFragmentImpl*: proc(element: Element; s: string): seq[Node]
   {.nimcall.}
 var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall.}
 # set in html/env
-var fetchImpl*: proc(window: Window; input: JSValueConst;
-  init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
+var fetchImpl*: proc(window: Window; input: JSRequest): JSResult[FetchPromise]
   {.nimcall.} = nil
 
 # For now, these are the same; on an API level however, getGlobal is guaranteed
@@ -5444,12 +5443,10 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   )
   #TODO set up module script request
   #TODO performFetch
-  let ctx = window.jsctx
-  let v = ctx.toJS(request)
-  let p = window.fetchImpl(v)
-  JS_FreeValue(ctx, v)
+  let p = window.fetchImpl(request)
   if p.isSome:
     p.get.then(proc(res: JSResult[Response]) =
+      let ctx = window.jsctx
       if res.isNone:
         let res = ScriptResult(t: srtNull)
         settings.moduleMap.set(url, moduleType, res, ctx)

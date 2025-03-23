@@ -28,7 +28,7 @@ x.onreadystatechange = function() {
 		assertEquals(JSON.stringify(x.response), '{"test":"hi world"}');
 	}
 }
-x.open("GET", "json")
+x.open("GET", "json", true, undefined, undefined);
 x.responseType = "json";
 x.send();
 document.getElementById("x").textContent = "Success";

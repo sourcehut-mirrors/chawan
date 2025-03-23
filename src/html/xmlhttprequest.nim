@@ -128,11 +128,11 @@ proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
   var async = true
   if misc.len > 0: # standard weirdness
     ?ctx.fromJS(misc[0], async)
-    if misc.len > 1 and not JS_IsNull(misc[1]):
+    if misc.len > 1 and not JS_IsNull(misc[1]) and not JS_IsUndefined(misc[1]):
       var username: string
       ?ctx.fromJS(misc[1], username)
       parsedURL.setUsername(username)
-    if misc.len > 2 and not JS_IsNull(misc[2]):
+    if misc.len > 2 and not JS_IsNull(misc[2]) and not JS_IsUndefined(misc[2]):
       var password: string
       ?ctx.fromJS(misc[2], password)
       parsedURL.setPassword(password)
@@ -316,9 +316,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   let window = ctx.getWindow()
   if xhrfSync notin this.flags: # async
     window.fireProgressEvent(this, satLoadstart, 0, 0)
-    let v = ctx.toJS(jsRequest)
-    let p = window.fetchImpl(v)
-    JS_FreeValue(ctx, v)
+    let p = window.fetchImpl(jsRequest)
     if p.isNone:
       return err(p.error)
     p.get.then(proc(res: JSResult[Response]) =

@@ -202,16 +202,19 @@ proc addNavigatorModule*(ctx: JSContext) =
 method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
   return window.settings.origin.isSameOrigin(origin)
 
-proc fetch(window: Window; input: JSValueConst;
-    init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
-    {.jsfunc.} =
-  let input = ?newRequest(window.jsctx, input, init)
+proc fetch0(window: Window; input: JSRequest): JSResult[FetchPromise] =
   #TODO cors requests?
   if input.request.url.scheme != "data" and
       not window.isSameOrigin(input.request.url.origin):
     let err = newFetchTypeError()
     return ok(newResolvedPromise(JSResult[Response].err(err)))
   return ok(window.loader.fetch(input.request))
+
+proc fetch(window: Window; input: JSValueConst;
+    init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
+    {.jsfunc.} =
+  let input = ?newRequest(window.jsctx, input, init)
+  return window.fetch0(input)
 
 proc setTimeout(window: Window; handler: JSValueConst; timeout = 0i32;
     args: varargs[JSValueConst]): int32 {.jsfunc.} =
@@ -461,4 +464,4 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
   return window
 
 # Forward declaration hack
-fetchImpl = fetch
+fetchImpl = fetch0
