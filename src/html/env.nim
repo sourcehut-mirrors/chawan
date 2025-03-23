@@ -199,13 +199,16 @@ proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(Storage)
   ctx.registerType(Crypto)
 
+method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
+  return window.settings.origin.isSameOrigin(origin)
+
 proc fetch(window: Window; input: JSValueConst;
     init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
     {.jsfunc.} =
   let input = ?newRequest(window.jsctx, input, init)
   #TODO cors requests?
   if input.request.url.scheme != "data" and
-      not window.settings.origin.isSameOrigin(input.request.url.origin):
+      not window.isSameOrigin(input.request.url.origin):
     let err = newFetchTypeError()
     return ok(newResolvedPromise(JSResult[Response].err(err)))
   return ok(window.loader.fetch(input.request))

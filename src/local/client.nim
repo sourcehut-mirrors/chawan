@@ -133,6 +133,9 @@ proc sleep(client: Client; millis: int) {.jsfunc.} =
 func line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit
 
+method isSameOrigin(client: Client; origin: Origin): bool =
+  return true
+
 proc addJSModules(client: Client; ctx: JSContext): JSClassID =
   let (windowCID, eventCID, eventTargetCID) = ctx.addWindowModule2()
   ctx.addDOMExceptionModule()
