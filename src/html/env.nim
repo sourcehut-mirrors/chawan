@@ -309,7 +309,7 @@ proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(string)): CSSStyleDeclaration {.jsfunc.} =
   return window.getComputedStyle0(element, pseudoElt)
 
-type MediaQueryList = ref object
+type MediaQueryList = ref object of EventTarget
   media: string
   matches: bool
   #TODO onchange
@@ -375,7 +375,7 @@ proc addWindowModule*(ctx: JSContext):
   )]
   ctx.registerType(Window, parent = eventTargetCID, asglobal = true,
     hasExtraGetSet = true, extraGetSet = getset)
-  ctx.registerType(MediaQueryList)
+  ctx.registerType(MediaQueryList, parent = eventTargetCID)
   return (eventCID, eventTargetCID)
 
 proc addWindowModule2*(ctx: JSContext):
@@ -383,6 +383,7 @@ proc addWindowModule2*(ctx: JSContext):
   let (eventCID, eventTargetCID) = ctx.addEventModule()
   let windowCID = ctx.registerType(Window, parent = eventTargetCID,
     asglobal = true, globalparent = true)
+  ctx.registerType(MediaQueryList, parent = eventTargetCID)
   return (windowCID, eventCID, eventTargetCID)
 
 proc evalJSFree(opaque: RootRef; src, file: string) =
