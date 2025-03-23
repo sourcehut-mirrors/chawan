@@ -121,7 +121,7 @@ type
     lsNone, lsCrSeen
 
   HTTPState = enum
-    hsStatus, hsHeaders, hsChunkSize, hsChunkAfter, hsBody, hsTrailers
+    hsStatus, hsHeaders, hsChunkSize, hsAfterChunk, hsBody, hsTrailers, hsDone
 
   ContentEncoding = enum
     ceGzip = "gzip"
@@ -152,7 +152,7 @@ proc inflate(op: HTTPHandle; flag: uint32) =
     var decomp = tinfl_decompressor()
     var iq {.noinit.}: array[InputBufferSize, uint8]
     var oq {.noinit.}: array[TINFL_LZ_DICT_SIZE, uint8]
-    var oqoff = csize_t(0)
+    var oqoff = 0
     while true:
       let len0 = pins.readData(iq)
       if len0 <= 0:
@@ -161,12 +161,12 @@ proc inflate(op: HTTPHandle; flag: uint32) =
       var n = csize_t(0)
       while n < len:
         var iqn = csize_t(len) - n
-        var oqn = csize_t(oq.len) - oqoff
+        var oqn = csize_t(oq.len - oqoff)
         let status = decomp.tinfl_decompress(addr iq[n], iqn, addr oq[0],
           addr oq[oqoff], oqn, flags)
-        if not os.writeDataLoop(oq.toOpenArray(oqoff, oqoff + oqn - 1)):
+        if not os.writeDataLoop(oq.toOpenArray(oqoff, oqoff + int(oqn) - 1)):
           quit(1)
-        oqoff = (oqoff + oqn) and csize_t(oq.len - 1)
+        oqoff = int((csize_t(oqoff) + oqn) and csize_t(oq.len) - 1)
         n += iqn
         case status
         of TINFL_STATUS_HAS_MORE_OUTPUT:
@@ -203,7 +203,6 @@ proc unbrotli(op: HTTPHandle) =
     let decomp = BrotliDecoderCreateInstance(nil, nil, nil)
     var iq {.noinit.}: array[InputBufferSize, uint8]
     var oq {.noinit.}: array[InputBufferSize * 2, uint8]
-    var oqoff = csize_t(0)
     while true:
       let len0 = pins.readData(iq)
       if len0 <= 0:
@@ -212,14 +211,13 @@ proc unbrotli(op: HTTPHandle) =
       var n = csize_t(0)
       while true:
         var iqn = csize_t(len) - n
-        var oqn = csize_t(oq.len) - oqoff
+        var oqn = csize_t(oq.len)
         var next_in = addr iq[n]
-        var next_out = addr oq[oqoff]
+        var next_out = addr oq[0]
         let status = decomp.BrotliDecoderDecompressStream(iqn, next_in, oqn,
           next_out, nil)
-        if not os.writeDataLoop(oq.toOpenArray(oqoff, oq.len - int(oqn) - 1)):
+        if not os.writeDataLoop(oq.toOpenArray(0, oq.len - int(oqn) - 1)):
           quit(1)
-        oqoff = oqn and csize_t(oq.len - 1)
         n = csize_t(len) - iqn
         case status
         of BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT:
@@ -241,153 +239,176 @@ proc unbrotli(op: HTTPHandle) =
     pins.sclose()
     op.os = pouts
 
-proc handleBuffer(op: HTTPHandle; iq: openArray[char]) =
-  case op.state
-  of hsStatus:
-    for i, c in iq:
-      case op.lineState
-      of lsNone:
-        if c == '\r':
-          op.lineState = lsCrSeen
-        else:
-          op.line &= c
-      of lsCrSeen:
-        if c != '\n' or
-            not op.line.startsWithIgnoreCase("HTTP/1.0") and
-            not op.line.startsWithIgnoreCase("HTTP/1.1"):
-          op.os.die("InvalidResponse", "malformed status line")
-        let codes = op.line.until(' ', "HTTP/1.0 ".len)
-        let code = parseUInt16(codes)
-        if codes.len > 3 or code.isNone:
-          op.os.die("InvalidResponse", "malformed status line")
-        let buf = "Cha-Control: Connected\r\n" &
-          "Status: " & $code.get & "\r\n" &
-          "Cha-Control: ControlDone\r\n"
+proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
+  for i, c in iq:
+    case op.lineState
+    of lsNone:
+      if c == '\r':
+        op.lineState = lsCrSeen
+      else:
+        op.line &= c
+    of lsCrSeen:
+      if c != '\n' or
+          not op.line.startsWithIgnoreCase("HTTP/1.1") and
+          not op.line.startsWithIgnoreCase("HTTP/1.0"):
+        op.os.die("InvalidResponse", "malformed status line")
+      let codes = op.line.until(' ', "HTTP/1.0 ".len)
+      let code = parseUInt16(codes)
+      if codes.len > 3 or code.isNone:
+        op.os.die("InvalidResponse", "malformed status line")
+      let buf = "Cha-Control: Connected\r\n" &
+        "Status: " & $code.get & "\r\n" &
+        "Cha-Control: ControlDone\r\n"
+      if not op.os.writeDataLoop(buf):
+        quit(1)
+      op.lineState = lsNone
+      op.state = hsHeaders
+      op.line = ""
+      return i + 1
+  return iq.len
+
+proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
+  for i, c in iq:
+    case op.lineState
+    of lsNone:
+      if c == '\r':
+        op.lineState = lsCrSeen
+      else:
+        op.line &= c
+    of lsCrSeen:
+      if c != '\n': # malformed header
+        quit(1)
+      if op.line != "":
+        var name = op.line.until(':')
+        if name.len > 0 and name[0] notin HTTPWhitespace and
+            name.len != op.line.len:
+          name = name.strip(leading = false, trailing = true,
+            chars = HTTPWhitespace)
+          let value = op.line.after(':').strip(leading = true,
+            trailing = false, chars = HTTPWhitespace)
+          op.headers.add((move(name), value))
+        op.line = ""
+        op.lineState = lsNone
+      else:
+        var buf = ""
+        var contentEncodings: seq[ContentEncoding] = @[]
+        var transferEncodings: seq[TransferEncoding] = @[]
+        for it in op.headers:
+          buf &= it.key & ": " & it.value & "\r\n"
+          if it.key.equalsIgnoreCase("Content-Encoding"):
+            for it in it.value.split(','):
+              let x = parseEnumNoCase[ContentEncoding](it)
+              if x.isSome:
+                contentEncodings.add(x.get)
+          elif it.key.equalsIgnoreCase("Transfer-Encoding"):
+            for it in it.value.split(','):
+              let x = parseEnumNoCase[TransferEncoding](it)
+              if x.isSome:
+                transferEncodings.add(x.get)
+        buf &= "\r\n"
         if not op.os.writeDataLoop(buf):
           quit(1)
+        for i in countdown(contentEncodings.high, 0):
+          case contentEncodings[i]
+          of ceGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
+          of ceDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
+          of ceBrotli: op.unbrotli()
+        op.bodyState = hsBody
+        for i in countdown(transferEncodings.high, 0):
+          case transferEncodings[i]
+          of teChunked:
+            if i == 0:
+              op.bodyState = hsChunkSize
+          of teGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
+          of teDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
+          of teBrotli: op.unbrotli()
         op.lineState = lsNone
-        op.state = hsHeaders
-        op.line = ""
-        if i + 1 < iq.len:
-          op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
-        break
-  of hsHeaders:
-    for i, c in iq:
-      case op.lineState
-      of lsNone:
-        if c == '\r':
-          op.lineState = lsCrSeen
-        else:
-          op.line &= c
-      of lsCrSeen:
-        if c != '\n': # malformed header
-          quit(1)
-        if op.line != "":
-          var name = op.line.until(':')
-          if name.len > 0 and name[0] notin HTTPWhitespace and
-              name.len != op.line.len:
-            name = name.strip(leading = false, trailing = true,
-              chars = HTTPWhitespace)
-            let value = op.line.after(':').strip(leading = true,
-              trailing = false, chars = HTTPWhitespace)
-            op.headers.add((move(name), value))
-          op.line = ""
-          op.lineState = lsNone
-        else:
-          var buf = ""
-          var contentEncodings: seq[ContentEncoding] = @[]
-          var transferEncodings: seq[TransferEncoding] = @[]
-          for it in op.headers:
-            buf &= it.key & ": " & it.value & "\r\n"
-            if it.key.equalsIgnoreCase("Content-Encoding"):
-              for it in it.value.split(','):
-                let x = parseEnumNoCase[ContentEncoding](it)
-                if x.isSome:
-                  contentEncodings.add(x.get)
-            elif it.key.equalsIgnoreCase("Transfer-Encoding"):
-              for it in it.value.split(','):
-                let x = parseEnumNoCase[TransferEncoding](it)
-                if x.isSome:
-                  transferEncodings.add(x.get)
-          buf &= "\r\n"
-          if not op.os.writeDataLoop(buf):
-            quit(1)
-          op.lineState = lsNone
-          for i in countdown(contentEncodings.high, 0):
-            case contentEncodings[i]
-            of ceGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
-            of ceDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
-            of ceBrotli: op.unbrotli()
-          op.bodyState = hsBody
-          for i in countdown(transferEncodings.high, 0):
-            case transferEncodings[i]
-            of teChunked:
-              if i == 0:
-                op.bodyState = hsChunkSize
-            of teGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
-            of teDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
-            of teBrotli: op.unbrotli()
-          op.state = op.bodyState
-          if i + 1 < iq.len:
-            op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
-          break
-  of hsChunkSize:
-    for i, c in iq:
-      case op.lineState
-      of lsNone:
-        if c == '\r':
-          op.lineState = lsCrSeen
-        else:
-          let n = hexValue(c)
-          let osize = op.chunkSize
-          op.chunkSize *= 0x10
-          op.chunkSize += uint64(n)
-          if n == -1 or osize > op.chunkSize:
-            stderr.writeLine("NewHTTP error: error decoding chunk size")
-            quit(1)
-      of lsCrSeen:
-        if c != '\n':
-          stderr.writeLine("NewHTTP error: CRLF expected")
-          quit(1)
-        op.lineState = lsNone
-        if op.chunkSize > 0:
-          op.state = hsBody
-          if i + 1 < iq.len:
-            op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
-        else:
-          op.state = hsTrailers
-        break
-  of hsBody:
-    var L = uint64(iq.len)
-    if op.bodyState == hsBody or L < op.chunkSize:
-      # if not chunked, always take this branch
-      op.chunkSize -= L
-      if not op.os.writeDataLoop(iq):
-        quit(1)
-    else:
-      let n = int(op.chunkSize)
-      if not op.os.writeDataLoop(iq.toOpenArray(0, n - 1)):
-        quit(1)
-      op.chunkSize = 0
-      op.state = hsChunkAfter
-      op.handleBuffer(iq.toOpenArray(n, iq.high))
-  of hsChunkAfter: # CRLF after a chunk
-    for i, c in iq:
-      case op.lineState
-      of lsNone:
-        if c != '\r':
-          quit(1)
+        op.state = op.bodyState
+        return i + 1
+  return iq.len
+
+proc handleChunkSize(op: HTTPHandle; iq: openArray[char]): int =
+  for i, c in iq:
+    case op.lineState
+    of lsNone:
+      if c == '\r':
         op.lineState = lsCrSeen
-      of lsCrSeen:
-        if c != '\n':
+      else:
+        let n = hexValue(c)
+        let osize = op.chunkSize
+        op.chunkSize = osize * 0x10 + uint64(n)
+        if n == -1 or osize > op.chunkSize:
+          stderr.writeLine("NewHTTP error: error decoding chunk size")
           quit(1)
-        op.lineState = lsNone
-        op.state = hsChunkSize
-        if i + 1 < iq.high:
-          op.handleBuffer(iq.toOpenArray(i + 1, iq.high))
-        break
-  of hsTrailers:
-    discard
+    of lsCrSeen:
+      if c != '\n':
+        stderr.writeLine("NewHTTP error: CRLF expected")
+        quit(1)
+      op.lineState = lsNone
+      if op.chunkSize > 0:
+        op.state = hsBody
+        return i + 1
+      op.state = hsTrailers
+      break
+  return iq.len
+
+proc handleBody(op: HTTPHandle; iq: openArray[char]): int =
+  var L = uint64(iq.len)
+  if op.bodyState == hsBody or L < op.chunkSize:
+    # if not chunked, always take this branch
+    op.chunkSize -= L
+    if not op.os.writeDataLoop(iq):
+      quit(1)
+    return iq.len
+  let n = int(op.chunkSize)
+  if not op.os.writeDataLoop(iq.toOpenArray(0, n - 1)):
+    quit(1)
+  op.chunkSize = 0
+  op.state = hsAfterChunk
+  return n
+
+proc handleAfterChunk(op: HTTPHandle; iq: openArray[char]): int =
+  for i, c in iq:
+    case op.lineState
+    of lsNone:
+      if c != '\r':
+        quit(1)
+      op.lineState = lsCrSeen
+    of lsCrSeen:
+      if c != '\n':
+        quit(1)
+      op.lineState = lsNone
+      op.state = hsChunkSize
+      return i + 1
+  return iq.len
+
+proc handleTrailers(op: HTTPHandle; iq: openArray[char]): int =
+  for i, c in iq:
+    case op.lineState
+    of lsNone:
+      if c == '\r':
+        op.lineState = lsCrSeen
+      else:
+        op.line &= c
+    of lsCrSeen:
+      if c != '\n':
+        quit(1)
+      op.lineState = lsNone
+      if op.line == "":
+        op.state = hsDone
+        return i + 1
+      op.line = ""
+  return iq.len
+
+proc handleBuffer(op: HTTPHandle; iq: openArray[char]): int =
+  case op.state
+  of hsStatus: return op.handleStatus(iq)
+  of hsHeaders: return op.handleHeaders(iq)
+  of hsChunkSize: return op.handleChunkSize(iq)
+  of hsBody: return op.handleBody(iq)
+  of hsAfterChunk: return op.handleAfterChunk(iq) # CRLF after a chunk
+  of hsTrailers: return op.handleTrailers(iq)
+  of hsDone: return -1
 
 proc checkCert(os: PosixStream; ssl: ptr SSL) =
   let res = SSL_get_verify_result(ssl)
@@ -437,8 +458,14 @@ proc main() =
     while (let n = ps.readData(iq); n > 0):
       if not op.ps.writeDataLoop(iq.toOpenArray(0, n - 1)):
         os.die("ConnectionRefused", "error sending request body")
-  while (let n = ps.readData(iq); n > 0):
-    op.handleBuffer(iq.toOpenArray(0, n - 1))
+  block readResponse:
+    while (let n = ps.readData(iq); n > 0):
+      var m = 0
+      while m < n:
+        let k = op.handleBuffer(iq.toOpenArray(m, n - 1))
+        if k == -1: # hsDone
+          break readResponse
+        m += k
   op.ps.sclose()
 
 main()
