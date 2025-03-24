@@ -1474,9 +1474,12 @@ proc shareCachedItem(ctx: var LoaderContext; stream: SocketStream;
   r.sread(sourcePid)
   r.sread(targetPid)
   r.sread(id)
-  let sourceClient = ctx.clientMap[sourcePid]
-  let targetClient = ctx.clientMap[targetPid]
-  let n = sourceClient.cacheMap.find(id)
+  let sourceClient = ctx.clientMap.getOrDefault(sourcePid)
+  let targetClient = ctx.clientMap.getOrDefault(targetPid)
+  let n = if sourceClient != nil and targetClient != nil:
+    sourceClient.cacheMap.find(id)
+  else:
+    -1
   if n != -1:
     let item = sourceClient.cacheMap[n]
     inc item.refc
