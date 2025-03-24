@@ -73,7 +73,7 @@ type
     inputType {.jsget.}: string
 
   EventTarget* = ref object of RootObj
-    eventListeners*: seq[EventListener]
+    eventListeners: seq[EventListener]
 
   EventListener* = ref object
     # if callback is undefined, the listener has been removed
@@ -322,8 +322,12 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   let jsTarget = ctx.toJS(event.currentTarget)
   let jsEvent = ctx.toJS(event)
   if JS_IsFunction(ctx, listener.callback):
-    let ret = JS_Call(ctx, listener.callback, jsTarget, 1,
+    # Apparently it's a bad idea to call a function that can then delete
+    # the reference it was called from.
+    let callback = JS_DupValue(ctx, listener.callback)
+    let ret = JS_Call(ctx, callback, jsTarget, 1,
       jsEvent.toJSValueArray())
+    JS_FreeValue(ctx, callback)
     JS_FreeValue(ctx, jsTarget)
     JS_FreeValue(ctx, jsEvent)
     return ret
@@ -334,6 +338,7 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
     JS_FreeValue(ctx, jsEvent)
     return handler
   let ret = JS_Call(ctx, handler, jsTarget, 1, jsEvent.toJSValueArray())
+  JS_FreeValue(ctx, handler)
   JS_FreeValue(ctx, jsTarget)
   JS_FreeValue(ctx, jsEvent)
   return ret
@@ -353,8 +358,9 @@ proc addAnEventListener(ctx: JSContext; target: EventTarget;
 
 proc removeAnEventListener(eventTarget: EventTarget; ctx: JSContext; i: int) =
   let listener = eventTarget.eventListeners[i]
-  JS_FreeValue(ctx, listener.callback)
+  let callback = listener.callback
   listener.callback = JS_UNDEFINED
+  JS_FreeValue(ctx, callback)
   eventTarget.eventListeners.delete(i)
 
 proc flatten(ctx: JSContext; options: JSValueConst): bool =
@@ -393,7 +399,7 @@ proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
   if i != -1:
     eventTarget.removeAnEventListener(ctx, i)
 
-proc addInternalEventListener*(ctx: JSContext; eventTarget: EventTarget;
+proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: StaticAtom; callback: JSValueConst) =
   ctx.removeInternalEventListener(eventTarget, ctype)
   ctx.addAnEventListener(eventTarget, EventListener(
