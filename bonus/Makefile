@@ -1,4 +1,4 @@
-CHA_CGI_DIR ?= "$$(cha -r 'console.log(getenv("CHA_DIR")+"/cgi-bin")')"
+CHA_CGI_DIR ?= "$$(cha -r 'pager.externInto("cat", getenv("CHA_DIR")+"/cgi-bin")')"
 
 prefix = /usr/local
 

@@ -14,13 +14,12 @@ filei:	/cgi-bin/filei.cgi
 [[siteconf]]
 url = '^filei:'
 rewrite-url = '''
-x => {
-	if (x.pathname[0] != '/')
-		return new URL(`filei:${pager.externCapture('pwd')}/${x.pathname}`);
-}
+x => x.pathname[0] != "/" ?
+	new URL(`filei:${getenv("PWD")}/${x.pathname}`) :
+	undefined
 '''
 
- * now you can use it like "cha filei:." to view images in the current dir.
+ *   now you can use "cha filei:." to view images in the current dir.
  *
  * TODO:
  * - add zoom functionality to viewer (maybe in JS?)
