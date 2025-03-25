@@ -127,36 +127,22 @@ proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
 proc setTextFormat(line: var FlexibleLine; x, cx, targetX: int; hadStr: bool;
     format: Format; node: Element) =
   var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
-  if x > cx:
-    # Replace formats for padding
-    var padformat = Format()
-    if fi == -1:
-      # No formats
-      inc fi # insert after first format (meaning fi = 0)
-      line.insertFormat(cx, fi, padformat)
-    else:
+  if x > cx and fi != -1:
+    # Amend formatting for padding.
+    # Since we only generate padding in place of non-existent text, it
+    # should be enough to just append a single format cell to erase the
+    # last one's effect.
+    # (This means that if fi is -1, we have nothing to erase -> nothing
+    # to do.)
+    if line.formats[fi].pos == cx:
       # First format's pos may be == cx here.
-      if line.formats[fi].pos == cx:
-        padformat.bgcolor = line.formats[fi].format.bgcolor
-        let node = line.formats[fi].node
-        line.formats[fi] = FormatCell(format: padformat, node: node, pos: cx)
-      else:
-        # First format < cx => split it up
-        assert line.formats[fi].pos < cx
-        padformat.bgcolor = line.formats[fi].format.bgcolor
-        let node = line.formats[fi].node
-        inc fi # insert after first format
-        line.insertFormat(cx, fi, padformat, node)
-    inc fi # skip last format
-    while fi < line.formats.len and line.formats[fi].pos <= x:
-      # Other formats must be > cx => replace them
-      padformat.bgcolor = line.formats[fi].format.bgcolor
-      let node = line.formats[fi].node
-      let px = line.formats[fi].pos
-      line.formats[fi] = FormatCell(format: padformat, node: node, pos: px)
-      inc fi
-    dec fi # go back to previous format, so that pos <= x
-    assert line.formats[fi].pos <= x
+      #TODO I'm not quite sure why. Isn't this a bug?
+      line.formats[fi] = FormatCell(format: Format(), pos: cx)
+    else:
+      # First format < cx => split it up
+      assert line.formats[fi].pos < cx
+      inc fi # insert after first format
+      line.insertFormat(cx, fi, Format())
   # Now for the text's formats:
   var format = format
   var lformat: Format
