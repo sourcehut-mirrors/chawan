@@ -251,14 +251,12 @@ proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
       if c != '\n' or
           not op.line.startsWithIgnoreCase("HTTP/1.1") and
           not op.line.startsWithIgnoreCase("HTTP/1.0"):
-        op.os.die("InvalidResponse", "malformed status line")
+        quit(1)
       let codes = op.line.until(' ', "HTTP/1.0 ".len)
       let code = parseUInt16(codes)
       if codes.len > 3 or code.isNone:
-        op.os.die("InvalidResponse", "malformed status line")
-      let buf = "Cha-Control: Connected\r\n" &
-        "Status: " & $code.get & "\r\n" &
-        "Cha-Control: ControlDone\r\n"
+        quit(1)
+      let buf = "Status: " & $code.get & "\r\nCha-Control: ControlDone\r\n"
       if not op.os.writeDataLoop(buf):
         quit(1)
       op.lineState = lsNone
@@ -458,6 +456,8 @@ proc main() =
     while (let n = ps.readData(iq); n > 0):
       if not op.ps.writeDataLoop(iq.toOpenArray(0, n - 1)):
         os.die("ConnectionRefused", "error sending request body")
+  if not os.writeDataLoop("Cha-Control: Connected\r\n"):
+    quit(1)
   block readResponse:
     while (let n = ps.readData(iq); n > 0):
       var m = 0
