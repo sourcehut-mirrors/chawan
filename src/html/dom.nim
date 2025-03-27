@@ -2839,8 +2839,8 @@ func hover*(element: Element): bool =
   return element.internalHover
 
 proc setHover*(element: Element; hover: bool) =
-  element.invalidate(dtHover)
   element.internalHover = hover
+  element.invalidate(dtHover)
 
 func findAutoFocus*(document: Document): Element =
   for child in document.elements:
@@ -3974,20 +3974,23 @@ proc invalidate*(element: Element; dep: DependencyType) =
     for it in p[]:
       it.invalidate()
 
+proc findAndDelete(map: var seq[Element]; element: Element) =
+  map.del(map.find(element))
+
 proc applyStyleDependencies*(element: Element; depends: DependencyInfo) =
   let document = element.document
   element.selfDepends = {}
   for t, map in document.styleDependencies.mpairs:
     map.dependsOn.withValue(element, p):
       for it in p[]:
-        map.dependedBy.del(it)
-      document.styleDependencies[t].dependsOn.del(element)
+        map.dependedBy[it].findAndDelete(element)
+      map.dependsOn.del(element)
     for el in depends[t]:
       if el == element:
         element.selfDepends.incl(t)
         continue
-      document.styleDependencies[t].dependedBy.mgetOrPut(el, @[]).add(element)
-      document.styleDependencies[t].dependsOn.mgetOrPut(element, @[]).add(el)
+      map.dependedBy.mgetOrPut(el, @[]).add(element)
+      map.dependsOn.mgetOrPut(element, @[]).add(el)
 
 proc add*(depends: var DependencyInfo; element: Element; t: DependencyType) =
   depends[t].add(element)
