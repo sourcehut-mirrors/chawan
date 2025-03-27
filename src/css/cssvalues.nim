@@ -197,6 +197,7 @@ type
     DisplayInlineGrid = "inline-grid"
     # internal, for layout
     DisplayTableWrapper = ""
+    DisplayMarker = ""
 
   CSSWhiteSpace* = enum
     WhitespaceNormal = "normal"
@@ -558,9 +559,14 @@ const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
 const OverflowHiddenLike* = {OverflowHidden, OverflowClip}
 const FlexReverse* = {FlexDirectionRowReverse, FlexDirectionColumnReverse}
 const DisplayInlineBlockLike* = {
-  DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex, DisplayInlineGrid
+  DisplayInlineTable, DisplayInlineBlock, DisplayInlineFlex, DisplayInlineGrid,
+  DisplayMarker
 }
 const DisplayOuterInline* = DisplayInlineBlockLike + {DisplayInline}
+const DisplayInnerBlock* = {
+  DisplayBlock, DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock,
+  DisplayListItem, DisplayMarker
+}
 const DisplayInnerFlex* = {DisplayFlex, DisplayInlineFlex}
 const DisplayInnerGrid* = {DisplayGrid, DisplayInlineGrid}
 const RowGroupBox* = {
@@ -757,7 +763,7 @@ func inherited*(t: CSSPropertyType): bool =
 func blockify*(display: CSSDisplay): CSSDisplay =
   case display
   of DisplayBlock, DisplayTable, DisplayListItem, DisplayNone, DisplayFlowRoot,
-      DisplayFlex, DisplayTableWrapper, DisplayGrid:
+      DisplayFlex, DisplayTableWrapper, DisplayGrid, DisplayMarker:
     return display
   of DisplayInline, DisplayInlineBlock, DisplayTableRow,
       DisplayTableRowGroup, DisplayTableColumn,

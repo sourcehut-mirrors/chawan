@@ -1735,7 +1735,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
         (fstate.lbstate.unpositionedFloats.len == 0 or
         not fstate.lbstate.unpositionedFloats[^1].newLine):
       # We can still cram floats into the line.
-      if child.computed{"float"} == FloatLeft:
+      if float == FloatLeft:
         fstate.lbstate.size.w += outerSize.w
         for iastate in fstate.lbstate.iastates.mitems:
           iastate.offset.x += outerSize.w
@@ -1763,6 +1763,15 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
       # Aligning min-content or max-content is nonsensical.
       textAlign = TextAlignLeft
     fstate.layoutOuterBlock(box, textAlign)
+  elif box.computed{"display"} == DisplayMarker:
+    # Marker box. This is a mixture of absolute and inline-block
+    # layout, where we don't care about the parent size but want to
+    # place ourselves outside the left edge of our parent box.
+    let lctx = fstate.lctx
+    var sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
+    lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
+    fstate.initLine(flag = ilfAbsolute)
+    box.state.offset.x = fstate.lbstate.size.w - box.state.size.w
   else:
     # A real inline block.
     let lctx = fstate.lctx
@@ -2110,30 +2119,6 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
       # better solution...
       size.h = max(size.h, bctx.maxFloatHeight)
     bctx.lctx.popPositioned(box, size)
-
-proc layoutListItem(bctx: var BlockContext; box: BlockBox;
-    sizes: ResolvedSizes) =
-  case box.computed{"list-style-position"}
-  of ListStylePositionOutside:
-    let marker = BlockBox(box.firstChild)
-    let content = BlockBox(marker.next)
-    content.resetState()
-    content.state.offset = box.state.offset
-    bctx.layoutFlow(content, sizes, canClear = true)
-    let markerSizes = ResolvedSizes(
-      space: availableSpace(w = fitContent(sizes.space.w), h = sizes.space.h),
-      bounds: DefaultBounds
-    )
-    bctx.lctx.layoutRootBlock(marker, offset(x = 0, y = 0), markerSizes)
-    #TODO put markers right before the first atom of the list item
-    # instead
-    marker.state.offset.x = -marker.state.size.w
-    # take inner box min width etc.
-    box.resetState()
-    box.state = content.state
-    content.state.offset = offset(x = 0, y = 0)
-  of ListStylePositionInside:
-    bctx.layoutFlow(box, sizes, canClear = true)
 
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
@@ -2625,10 +2610,8 @@ proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
     canClear: bool) =
   case box.computed{"display"}
-  of DisplayBlock, DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock:
+  of DisplayInnerBlock:
     bctx.layoutFlow(box, sizes, canClear)
-  of DisplayListItem:
-    bctx.layoutListItem(box, sizes)
   of DisplayInnerTable:
     bctx.layoutTable(box, sizes)
   of DisplayInnerFlex:

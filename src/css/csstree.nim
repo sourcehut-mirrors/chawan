@@ -259,10 +259,6 @@ proc getParent(frame: var TreeFrame; computed: CSSValues; display: CSSDisplay):
   of DisplayInnerTable:
     if frame.children.len > 0 and display != DisplayTableCaption:
       return frame.children[0].anonChildren
-  of DisplayListItem:
-    if frame.computed{"list-style-position"} == ListStylePositionOutside and
-        frame.children.len >= 2:
-      return frame.children[1].anonChildren
   of DisplayTableCell:
     if frame.anonComputed == nil:
       frame.anonComputed = frame.inheritFor(DisplayFlowRoot)
@@ -292,9 +288,8 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
   of ListStylePositionOutside:
     # Generate separate boxes for the content and marker.
     let computed = node.computed.inheritProperties()
-    computed{"display"} = DisplayBlock
+    computed{"display"} = DisplayMarker
     node.anonChildren.add(initStyledAnon(node.element, computed, @[markerText]))
-    node.anonChildren.add(initStyledAnon(node.element, computed))
   of ListStylePositionInside:
     node.anonChildren.add(markerText)
   frame.getParent(node.computed, node.computed{"display"}).add(node)
