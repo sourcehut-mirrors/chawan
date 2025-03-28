@@ -31,6 +31,7 @@ import std/times
 
 import config/cookie
 import config/urimethodmap
+import html/script
 import io/dynstream
 import io/packetreader
 import io/packetwriter
@@ -776,9 +777,19 @@ proc findItem(authMap: seq[AuthItem]; origin: Origin): AuthItem =
       return it
   return nil
 
-proc findAuth(client: ClientHandle; url: URL): AuthItem =
-  if client.authMap.len > 0:
-    return client.authMap.findItem(url.authOrigin)
+proc includeCredentials(config: LoaderClientConfig; request: Request; url: URL;
+    header: string): bool =
+  if header in request.headers:
+    return false
+  return request.credentialsMode == cmInclude or
+    request.credentialsMode == cmSameOrigin and
+      config.originURL == nil or
+        url.origin.isSameOrigin(config.originURL.origin)
+
+proc findAuth(client: ClientHandle; request: Request; url: URL): AuthItem =
+  if client.config.includeCredentials(request, url, "Authorization"):
+    if client.authMap.len > 0:
+      return client.authMap.findItem(url.authOrigin)
   return nil
 
 proc putMappedURL(s: var seq[tuple[name, value: string]]; url: URL;
@@ -937,7 +948,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     istream = newPosixStream(pipefdRead[0])
     ostream = newPosixStream(pipefdRead[1])
   let contentLen = request.body.contentLength()
-  let auth = if prevURL != nil: client.findAuth(prevURL) else: nil
+  let auth = if prevURL != nil: client.findAuth(request, prevURL) else: nil
   let env = setupEnv(cpath, request, contentLen, prevURL, config, auth)
   var pid: int
   try:
@@ -1313,7 +1324,7 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig) =
     if k notin request.headers:
       request.headers[k] = v
   if config.cookieJar != nil and config.cookieJar.cookies.len > 0:
-    if "Cookie" notin request.headers:
+    if config.includeCredentials(request, request.url, "Cookie"):
       let cookie = config.cookieJar.serialize(request.url)
       if cookie != "":
         request.headers["Cookie"] = cookie

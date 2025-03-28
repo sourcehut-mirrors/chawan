@@ -288,7 +288,9 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   var body = body
   if this.requestMethod in {hmGet, hmHead}:
     body = JS_NULL
-  let request = newRequest(this.requestURL, this.requestMethod, this.headers)
+  let credentialsMode = if this.withCredentials: cmInclude else: cmSameOrigin
+  let request = newRequest(this.requestURL, this.requestMethod, this.headers,
+    credentialsMode = credentialsMode)
   if not JS_IsNull(body):
     var document: Document = nil
     if ctx.fromJS(body, document).isSome:
@@ -304,8 +306,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   let jsRequest = JSRequest(
     #TODO unsafe request flag, client, use-url-credentials, initiator type
     request: request,
-    mode: rmCors,
-    credentialsMode: if this.withCredentials: cmInclude else: cmSameOrigin,
+    mode: rmCors
   )
   if JS_IsNull(body):
     this.flags.incl(xhrfUploadComplete)

@@ -90,6 +90,7 @@ type
 # Forward declaration hack
 # set in html/dom
 var errorImpl*: proc(ctx: JSContext; ss: varargs[string]) {.nimcall.}
+var getEnvSettingsImpl*: proc(ctx: JSContext): EnvironmentSettings {.nimcall.}
 
 proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
   let surl = $url
@@ -194,3 +195,6 @@ proc identity(ctx: JSContext; this_val: JSValueConst; argc: cint;
 #TODO move to javascript.nim?
 proc identityFunction*(ctx: JSContext; val: JSValueConst): JSValue =
   return JS_NewCFunctionData(ctx, identity, 0, 0, 1, val.toJSValueArray())
+
+proc getEnvSettings*(ctx: JSContext): EnvironmentSettings =
+  return ctx.getEnvSettingsImpl()

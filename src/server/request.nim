@@ -81,12 +81,12 @@ type
     body*: RequestBody
     referrer*: URL
     tocache*: bool
+    credentialsMode*: CredentialsMode
 
   JSRequest* = ref object
     request*: Request
     mode* {.jsget.}: RequestMode
     destination* {.jsget.}: RequestDestination
-    credentialsMode* {.jsget.}: CredentialsMode
     origin*: RequestOrigin
     window*: RequestWindow
     client*: Option[EnvironmentSettings]
@@ -130,6 +130,9 @@ func url(this: JSRequest): URL =
 proc jsUrl(this: JSRequest): string {.jsfget: "url".} =
   return $this.url
 
+func credentialsMode(this: JSRequest): string {.jsfget.} =
+  return $this.request.credentialsMode
+
 #TODO pretty sure this is incorrect
 proc jsReferrer(this: JSRequest): string {.jsfget: "referrer".} =
   if this.request.referrer != nil:
@@ -137,14 +140,16 @@ proc jsReferrer(this: JSRequest): string {.jsfget: "referrer".} =
   return ""
 
 func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
-    body = RequestBody(); referrer: URL = nil; tocache = false): Request =
+    body = RequestBody(); referrer: URL = nil; tocache = false;
+    credentialsMode = cmSameOrigin): Request =
   return Request(
     url: url,
     httpMethod: httpMethod,
     headers: headers,
     body: body,
     referrer: referrer,
-    tocache: tocache
+    tocache: tocache,
+    credentialsMode: credentialsMode
   )
 
 func createPotentialCORSRequest*(url: URL; destination: RequestDestination;
@@ -157,10 +162,9 @@ func createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     mode = rmSameOrigin
   let credentialsMode = if cors == caAnonymous: cmSameOrigin else: cmInclude
   return JSRequest(
-    request: newRequest(url),
+    request: newRequest(url, credentialsMode = credentialsMode),
     destination: destination,
-    mode: mode,
-    credentialsMode: credentialsMode
+    mode: mode
   )
 
 type
@@ -223,7 +227,7 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
     httpMethod = res.request.httpMethod
     headers[] = res.headers[]
     referrer = res.request.referrer
-    credentials = res.credentialsMode
+    credentials = res.request.credentialsMode
     body = res.request.body
     fallbackMode = opt(RequestMode)
     window = res.window
@@ -270,10 +274,10 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
       httpMethod,
       headers,
       body,
-      referrer = referrer
+      referrer = referrer,
+      credentialsMode = credentials
     ),
     mode: mode,
-    credentialsMode: credentials,
     destination: destination,
     window: window
   ))
