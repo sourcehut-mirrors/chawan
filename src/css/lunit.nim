@@ -98,7 +98,7 @@ func toLUnit*(a: float32): LUnit =
     return LUnit(low(int32))
   return LUnit(int32(a))
 
-func toFloat32*(a: LUnit): float64 =
+func toFloat32*(a: LUnit): float32 =
   return float32(int32(a)) / 64
 
 func `$`*(a: LUnit): string =
