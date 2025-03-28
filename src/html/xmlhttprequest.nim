@@ -1,6 +1,7 @@
 import std/options
 import std/strutils
 
+import types/formdata
 import chagashi/charset
 import chagashi/decoder
 import html/catom
@@ -293,16 +294,35 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
     credentialsMode = credentialsMode)
   if not JS_IsNull(body):
     var document: Document = nil
+    var formData: FormData = nil
     if ctx.fromJS(body, document).isSome:
       request.body = RequestBody(
         t: rbtString,
         s: document.serializeFragment().toValidUTF8() # replace surrogates
       )
-    #TODO else...
+    elif ctx.fromJS(body, formData).isSome:
+      request.body = RequestBody(
+        t: rbtMultipart,
+        multipart: formData
+      )
+    #TODO elif blob, urlsearchparams, buffersource
+    # actually we could just merge this with request constructor's
+    # BodyInit if we had "extract". (it's almost the same, except for
+    # the latter allowing ReadableStream)
+    else:
+      var s: string
+      ?ctx.fromJS(body, s)
+      request.body = RequestBody(
+        t: rbtString,
+        s: move(s)
+      )
     if "Content-Type" in this.headers:
-      request.headers["Content-Type"].setContentTypeAttr("charset", "UTF-8")
+      if request.body.t == rbtString:
+        request.headers["Content-Type"].setContentTypeAttr("charset", "UTF-8")
     elif document != nil:
       request.headers["Content-Type"] = "text/html;charset=UTF-8"
+    elif formData != nil:
+      request.headers["Content-Type"] = formData.getContentType()
   let jsRequest = JSRequest(
     #TODO unsafe request flag, client, use-url-credentials, initiator type
     request: request,
@@ -345,15 +365,12 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
       if response.res == 0:
         #TODO timeout
         response.resume()
-        try:
-          this.received = response.body.readAll()
-          #TODO report timing
-          let len = max(response.getContentLength(), 0)
-          response.opaque = XHROpaque(this: this, window: window, len: len)
-          response.onFinishXHR(true)
-          return ok()
-        except IOError:
-          discard
+        this.received = response.body.readAll()
+        #TODO report timing
+        let len = max(response.getContentLength(), 0)
+        response.opaque = XHROpaque(this: this, window: window, len: len)
+        response.onFinishXHR(true)
+        return ok()
     let ex = window.handleErrors(this)
     this.response = makeNetworkError()
     if ex != nil:
