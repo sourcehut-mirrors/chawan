@@ -93,8 +93,8 @@ A: You have to make sure that the UTF-8 you are passing to the encoder is at
 least valid *WTF-8*. The encoder will convert surrogate codepoints to
 replacement characters, but it *does not* validate the input byte stream.
 
-To validate your input, you can run `validateUtf8()` from `std/unicode`, or the
-aforementioned `TextValidatorUTF8.validate()`.
+To validate your input, you can run `validateUtf8()` from `std/unicode`, or
+validateUTF8Surr from `chagashi/decoder`.
 
 Q: Why no UTF-16 encoder?
 
