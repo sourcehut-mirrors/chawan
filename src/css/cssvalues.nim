@@ -564,8 +564,8 @@ const DisplayInlineBlockLike* = {
 }
 const DisplayOuterInline* = DisplayInlineBlockLike + {DisplayInline}
 const DisplayInnerBlock* = {
-  DisplayBlock, DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock,
-  DisplayListItem, DisplayMarker
+  DisplayBlock, DisplayFlowRoot, DisplayTableCaption, DisplayTableCell,
+  DisplayInlineBlock, DisplayListItem, DisplayMarker
 }
 const DisplayInnerFlex* = {DisplayFlex, DisplayInlineFlex}
 const DisplayInnerGrid* = {DisplayGrid, DisplayInlineGrid}
