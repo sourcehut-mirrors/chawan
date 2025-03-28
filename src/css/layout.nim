@@ -785,8 +785,6 @@ proc append(a: var Strut; b: LUnit) =
 func sum(a: Strut): LUnit =
   return a.pos + a.neg
 
-const DisplayBlockLike = {DisplayBlock, DisplayListItem, DisplayInlineBlock}
-
 proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
     bfcOffsety: LUnit; clear: CSSClear) =
   var y = bfcOffsety + offsety
@@ -2056,8 +2054,7 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
   var fstate = bctx.initFlowState(box, sizes)
   fstate.initBlockPositionStates(box)
   if box.computed{"position"} notin PositionAbsoluteFixed and
-      (box.computed{"display"} notin DisplayBlockLike or
-      sizes.padding.top != 0 or
+      (sizes.padding.top != 0 or
       sizes.space.h.isDefinite() and sizes.space.h.u != 0):
     bctx.flushMargins(box.state.offset.y)
   fstate.layoutFlow0(sizes, box)
