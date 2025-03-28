@@ -69,7 +69,7 @@ max-redirect = 10
 prepend-scheme = "https://"
 prepend-https = true # deprecated, kept only for backwards-compatibility
 default-headers = {
-	User-Agent = "Mozilla/5.0 chawan",
+	User-Agent = "chawan",
 	Accept = "text/html, text/*;q=0.5, */*;q=0.4",
 	Accept-Encoding = "gzip, deflate",
 	Accept-Language = "en;q=1.0",
