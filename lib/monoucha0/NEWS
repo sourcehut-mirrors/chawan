@@ -1,3 +1,25 @@
+0.10.0 (2025.03.28)
+* implement [Replaceable] property as .jsrget, .jsrfget
+* allow sink parameters
+* fix .jsget pragma on JSValue properties
+* fix a bug in transfer of ownership with reference types
+* derive constructor functions from their parent
+* always call finalizers on objects, even if they aren't attached to
+  a JSRuntime (in that case they receive nil)
+* remove getClass, hasClass; use the returned class ID from registerType
+  instead
+* generate gc_mark functions on registered objects including JSValues
+* remove ishtmldda from registerType; use the QJS API instead
+* update QuickJS-NG to 0.9.0
+* re-add JSValueConst as a distinct type (it gets auto-converted to
+  JSValue)
+* various refactoring and optimization
+This version is mainly focused on fixing bugs and further reducing
+runtime and compile time overhead.
+The main breaking change from 0.9 is the introduction of JSValueConst,
+which makes ownership and borrowing more explicit and eliminates the
+potential for a class of refcounting bugs. See the manual for details.
+
 0.9.1 (2025.01.16)
 * add type information to JSArrayBufferView
 * add some more bindings

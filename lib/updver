@@ -6,9 +6,12 @@ die()
 	exit 1
 }
 
-test "$1" || die "Usage: updver [version]"
+test "$#" -eq 2 || die "Usage: updver [library] [version]"
 
-vv=$(printf '%s\n' "$1" | sed 's/v//')
+library=$1
+dir=${library}0
+
+vv=$(printf '%s\n' "$2" | sed 's/v//')
 
 major=$(printf '%s\n' "$vv" | sed 's/\..*//')
 minor=$(printf '%s\n' "$vv" | sed 's/[^.]*\.\([^.]*\)\..*/\1/')
@@ -16,12 +19,12 @@ patch=$(printf '%s\n' "$vv" | sed 's/.*\.//')
 
 vs="$major.$minor.$patch"
 
-oldhdr=$(head -1 NEWS)
+oldhdr=$(head -1 "$dir"/NEWS)
 
 msgfile=$(mktemp)
 
 printf '%s (%s)\n\n' "$vs" "$(date +'%Y.%m.%d')" > "$msgfile"
-cat NEWS >> "$msgfile"
+cat "$dir"/NEWS >> "$msgfile"
 
 test -n "$EDITOR" || die 'missing $EDITOR env var'
 $EDITOR "$msgfile"
@@ -33,18 +36,18 @@ y|Y)	;;
 *)	die "Aborted. (File is $msgfile.)" ;;
 esac
 
-cp "$msgfile" NEWS
+cp "$msgfile" "$dir/"NEWS
 echo "/version/c
 version       = \"$vs\"
 .
 p
-wq" | ed -s monoucha.nimble
+wq" | ed -s "$dir/$library".nimble
 
 echo "/Major/s/[0-9]*$/$major/
 /Minor/s/[0-9]*$/$minor/
 /Patch/s/[0-9]*$/$patch/
 g/.*/p
-wq" | ed -s monoucha/version.nim
+wq" | ed -s "$dir/$library"/version.nim
 
 git add .
 git commit -m "Version $vs"
@@ -54,6 +57,6 @@ tmp2=$(mktemp)
 while read line
 do	if test "$line" = "$oldhdr"; then break; fi
 	printf '%s\n' "$line"
-done <NEWS >"$tmp2"
+done <"$dir/"NEWS >"$tmp2"
 
 git tag -faeF "$tmp2" "v$vs"
