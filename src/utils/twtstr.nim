@@ -17,10 +17,9 @@ const AsciiAlpha* = AsciiUpperAlpha + AsciiLowerAlpha
 const NonAscii* = {'\x80'..'\xFF'}
 const AsciiDigit* = {'0'..'9'}
 const AsciiAlphaNumeric* = AsciiAlpha + AsciiDigit
-const AsciiOctDigit* = {'0'..'7'}
 const AsciiHexDigit* = AsciiDigit + {'a'..'f', 'A'..'F'}
 const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
-const HTTPWhitespace* = {'\n', '\r', '\t', ' '}
+const HTTPWhitespace* = {' ', '\n', '\r', '\t'}
 
 func nextUTF8*(s: openArray[char]; i: var int): uint32 =
   let j = i
@@ -306,8 +305,8 @@ func untilLast*(s: string; c: set[char]; n = 1): string =
 
 func untilLast*(s: string; c: char; n = 1): string = s.untilLast({c}, n)
 
-proc c_sprintf(buf, fm: cstring): cint
-  {.header: "<stdio.h>", importc: "sprintf", varargs}
+proc snprintf(str: cstring; size: csize_t; format: cstring): cint
+  {.header: "<stdio.h>", importc, varargs}
 
 # From w3m
 const SizeUnit = [
@@ -322,7 +321,8 @@ func convertSize*(size: int): string =
     inc sizepos
   result = newString(10)
   let f = floor(csize * 100 + 0.5) / 100
-  discard c_sprintf(cstring(result), cstring("%.3g%s"), f, SizeUnit[sizepos])
+  discard snprintf(cstring(result), csize_t(result.len), "%.3g%s", f,
+    SizeUnit[sizepos])
   result.setLen(cstring(result).len)
 
 # https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#numbers
@@ -348,14 +348,12 @@ func parseUInt8*(s: openArray[char]; allowSign = false): Option[uint8] =
 func parseUInt16*(s: openArray[char]; allowSign = false): Option[uint16] =
   return parseUIntImpl[uint16](s, allowSign, 10)
 
+func parseUInt32Base*(s: openArray[char]; allowSign = false; radix: uint32):
+    Option[uint32] =
+  return parseUIntImpl[uint32](s, allowSign, radix)
+
 func parseUInt32*(s: openArray[char]; allowSign = false): Option[uint32] =
-  return parseUIntImpl[uint32](s, allowSign, 10)
-
-func parseOctUInt32*(s: openArray[char]; allowSign = false): Option[uint32] =
-  return parseUIntImpl[uint32](s, allowSign, 8)
-
-func parseHexUInt32*(s: openArray[char]; allowSign = false): Option[uint32] =
-  return parseUIntImpl[uint32](s, allowSign, 16)
+  return parseUInt32Base(s, allowSign, 10)
 
 func parseUInt64*(s: openArray[char]; allowSign = false): Option[uint64] =
   return parseUIntImpl[uint64](s, allowSign, 10)
@@ -874,13 +872,7 @@ iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
     {.pop.}
 
 proc getFileExt*(path: string): string =
-  var n = 0
-  for i in countdown(path.high, 0):
-    if path[i] == '/':
-      break
-    if path[i] == '.':
-      n = i
-      break
-  if n > 0:
-    return path.substr(n + 1)
-  return ""
+  let n = path.rfind({'/', '.'})
+  if n == -1 or path[n] != '.':
+    return ""
+  return path.substr(n + 1)

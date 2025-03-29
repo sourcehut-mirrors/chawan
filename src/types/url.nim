@@ -193,7 +193,7 @@ func parseIpv6(input: openArray[char]): Option[array[8, uint16]] =
 
 func parseIpv4Number(s: string): uint32 =
   var input = s
-  var R = 10
+  var R = 10u32
   if input.len >= 2 and input[0] == '0':
     if input[1] in {'x', 'X'}:
       input.delete(0..1)
@@ -203,11 +203,7 @@ func parseIpv4Number(s: string): uint32 =
       R = 8
   if input == "":
     return 0
-  case R
-  of 8: return parseOctUInt32(input, allowSign = false).get(uint32.high)
-  of 10: return parseUInt32(input, allowSign = false).get(uint32.high)
-  of 16: return parseHexUInt32(input, allowSign = false).get(uint32.high)
-  else: return 0
+  return parseUInt32Base(input, allowSign = false, R).get(uint32.high)
 
 func parseIpv4(input: string): Option[uint32] =
   var numbers: seq[uint32] = @[]
