@@ -383,8 +383,8 @@ proc toJS(ctx: JSContext; j: JSValue): JSValue =
 proc toJS*(ctx: JSContext; err: JSError): JSValue =
   if err == nil:
     return JS_EXCEPTION
-  if err.e notin QuickJSErrors:
-    return toJSRefObj(ctx, err)
+  if err.e == jeCustom:
+    return ctx.toJSRefObj(err)
   var msg = toJS(ctx, err.message)
   if JS_IsException(msg):
     return msg

@@ -61,27 +61,25 @@ type
 
 func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))
-  block: # get well-known symbols and other functions
-    let sym = JS_GetPropertyStr(ctx, opaque.global, "Symbol")
-    for s in JSSymbolRef:
-      let name = $s
-      let val = JS_GetPropertyStr(ctx, sym, cstring(name))
-      assert JS_IsSymbol(val)
-      opaque.symRefs[s] = JS_ValueToAtom(ctx, val)
-      JS_FreeValue(ctx, val)
-    JS_FreeValue(ctx, sym)
-    for s in JSStrRef:
-      let ss = $s
-      opaque.strRefs[s] = JS_NewAtomLen(ctx, cstring(ss), csize_t(ss.len))
-    for s in JSValueRef:
-      let ss = $s
-      let ret = JS_Eval(ctx, cstring(ss), csize_t(ss.len), "<init>", 0)
-      assert JS_IsFunction(ctx, ret)
-      opaque.valRefs[s] = ret
-    for e in JSErrorEnum:
-      let s = $e
-      let err = JS_GetPropertyStr(ctx, opaque.global, cstring(s))
-      opaque.errCtorRefs[e] = err
+  let sym = JS_GetPropertyStr(ctx, opaque.global, "Symbol")
+  for s in JSSymbolRef:
+    let name = $s
+    let val = JS_GetPropertyStr(ctx, sym, cstring(name))
+    assert JS_IsSymbol(val)
+    opaque.symRefs[s] = JS_ValueToAtom(ctx, val)
+    JS_FreeValue(ctx, val)
+  JS_FreeValue(ctx, sym)
+  for s in JSStrRef:
+    let ss = $s
+    opaque.strRefs[s] = JS_NewAtomLen(ctx, cstring(ss), csize_t(ss.len))
+  for s in JSValueRef:
+    let ss = $s
+    let ret = JS_Eval(ctx, cstring(ss), csize_t(ss.len), "<init>", 0)
+    assert JS_IsFunction(ctx, ret)
+    opaque.valRefs[s] = ret
+  for e in JSErrorEnum:
+    if e != jeCustom:
+      opaque.errCtorRefs[e] = JS_GetPropertyStr(ctx, opaque.global, cstring($e))
   return opaque
 
 func getOpaque*(ctx: JSContext): JSContextOpaque =

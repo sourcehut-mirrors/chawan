@@ -60,19 +60,14 @@ type
 
   DOMException* = ref object of JSError
     name* {.jsget.}: string
-    code {.jsget.}: uint16
+    code: int
 
   DOMResult*[T] = Result[T, DOMException]
 
 jsDestructor(DOMException)
 
 proc newDOMException*(message = ""; name = "Error"): DOMException {.jsctor.} =
-  let ex = DOMException(e: jeDOMException, name: name, message: message)
-  for it in NamesTable:
-    if it[0] == name:
-      ex.code = it[1]
-      break
-  return ex
+  return DOMException(e: jeCustom, name: name, message: message, code: -1)
 
 template errDOMException*(message, name: string): untyped =
   err(newDOMException(message, name))
@@ -80,10 +75,18 @@ template errDOMException*(message, name: string): untyped =
 proc JS_ThrowDOMException*(ctx: JSContext; message, name: string): JSValue =
   return JS_Throw(ctx, ctx.toJS(newDOMException(message, name)))
 
-func message0(this: DOMException): string {.jsfget: "message".} =
+func getMessage(this: DOMException): string {.jsfget: "message".} =
   return this.message
 
+func getCode(this: DOMException): uint16 {.jsfget: "code".} =
+  if this.code == -1:
+    this.code = 0
+    for it in NamesTable:
+      if it[0] == this.name:
+        this.code = int(it[1])
+        break
+  return uint16(this.code)
+
 proc addDOMExceptionModule*(ctx: JSContext) =
-  let domExceptionCID = ctx.registerType(DOMException, JS_CLASS_ERROR,
-    errid = opt(jeDOMException))
+  let domExceptionCID = ctx.registerType(DOMException, JS_CLASS_ERROR)
   ctx.defineConsts(domExceptionCID, DOMExceptionType)

@@ -267,8 +267,6 @@ Following parameters also exist:
   define it on the passed JS object. You must use QuickJS APIs to create
   this object. `namespace` is not consumed (i.e. you must free it
   yourself).
-* `errid`: set the error ID. TODO this is currently pretty useless as a
-  public API because JSErrorEnum is not extendable.
 
 ### jsget, jsset: basic property reflectors
 

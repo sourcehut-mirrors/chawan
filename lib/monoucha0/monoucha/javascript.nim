@@ -205,8 +205,9 @@ proc free*(ctx: JSContext) =
       JS_FreeValue(ctx, v)
     for classid, v in opaque.ctors:
       JS_FreeValue(ctx, v)
-    for v in opaque.errCtorRefs:
-      JS_FreeValue(ctx, v)
+    for e, v in opaque.errCtorRefs:
+      if e != jeCustom:
+        JS_FreeValue(ctx, v)
     if opaque.globalUnref != nil:
       opaque.globalUnref()
     JS_FreeValue(ctx, opaque.global)
@@ -301,8 +302,7 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
 func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
     asglobal, nointerface: bool; finalizer: JSFinalizerFunction;
-    namespace: JSValueConst; errid: Opt[JSErrorEnum];
-    unforgeable, staticfuns: JSFunctionList): JSClassID
+    namespace: JSValueConst; unforgeable, staticfuns: JSFunctionList): JSClassID
     {.discardable.} =
   result = 0
   let rt = JS_GetRuntime(ctx)
@@ -363,8 +363,6 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     let fp = cast[ptr UncheckedArray[JSCFunctionListEntry]](fp0)
     JS_SetPropertyFunctionList(ctx, jctor, fp, cint(staticfuns.len))
   JS_SetConstructor(ctx, jctor, proto)
-  if errid.isSome:
-    ctxOpaque.errCtorRefs[errid.get] = JS_DupValue(ctx, jctor)
   while ctxOpaque.ctors.len <= int(result):
     ctxOpaque.ctors.add(JS_UNDEFINED)
   ctxOpaque.ctors[result] = JS_DupValue(ctx, jctor)
@@ -1491,8 +1489,8 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;
     nointerface = false; name: static string = "";
     hasExtraGetSet: static bool = false;
-    extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL;
-    errid = Opt[JSErrorEnum].err()): JSClassID =
+    extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL):
+    JSClassID =
   var stmts = newStmtList()
   var info = BoundFunctions.getOrDefault(t.strVal)
   if info == nil:
@@ -1532,7 +1530,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let global = asglobal and not globalparent
   endstmts.add(quote do:
     `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, `tabList`, `parent`,
-      `global`, `nointerface`, `finName`, `namespace`, `errid`, `unforgeable`,
+      `global`, `nointerface`, `finName`, `namespace`, `unforgeable`,
       `staticfuns`)
   )
   stmts.add(newBlockStmt(endstmts))
