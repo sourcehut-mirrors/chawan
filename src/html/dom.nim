@@ -1381,7 +1381,6 @@ proc finalize0(collection: Collection) =
       let i = child.liveCollections.find(collection.id)
       assert i != -1
       child.liveCollections[i] = nil
-      assert child.liveCollections.find(collection.id) == -1
     let i = collection.root.liveCollections.find(collection.id)
     assert i != -1
     collection.root.liveCollections[i] = nil
