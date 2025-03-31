@@ -28,17 +28,12 @@ const
 type tinfl_status {.size: sizeof(cint).} = enum
   TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS = -5
   TINFL_STATUS_BAD_PARAM = -4
-  TINFL_STATUS_GZIP_ISIZE_OR_CRC32_MISMATCH = -3
+  TINFL_STATUS_ISIZE_OR_CRC32_MISMATCH = -3
   TINFL_STATUS_ADLER32_MISMATCH = -2
   TINFL_STATUS_FAILED = -1
   TINFL_STATUS_DONE = 0
   TINFL_STATUS_NEEDS_MORE_INPUT = 1
   TINFL_STATUS_HAS_MORE_OUTPUT = 2
-
-when sizeof(int) == 8:
-  type tinfl_bit_buf = uint64
-else:
-  type tinfl_bit_buf = uint32
 
 type tinfl_huff_table {.importc, header: "tinfl.h", completeStruct.} = object
   m_code_size: array[TINFL_MAX_HUFF_SYMBOLS_0, uint8]
@@ -51,7 +46,7 @@ type tinfl_decompressor {.importc, header: "tinfl.h", completeStruct.} = object
   m_final, m_type, m_check_adler32, m_dist, m_counter, m_num_extra: uint32
   m_table_sizes: array[TINFL_MAX_HUFF_TABLES, uint32]
 
-  m_bit_buf: tinfl_bit_buf
+  m_bit_buf: uint64
   m_dist_from_out_buf_start: csize_t
   m_tables: array[TINFL_MAX_HUFF_TABLES, tinfl_huff_table]
 
@@ -178,7 +173,7 @@ proc inflate(op: HTTPHandle; flag: uint32) =
         of TINFL_STATUS_BAD_PARAM: assert false
         of TINFL_STATUS_ADLER32_MISMATCH, TINFL_STATUS_FAILED,
             TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS,
-            TINFL_STATUS_GZIP_ISIZE_OR_CRC32_MISMATCH:
+            TINFL_STATUS_ISIZE_OR_CRC32_MISMATCH:
           stderr.writeLine("NewHTTP error: " & $status)
           quit(1)
     quit(0)

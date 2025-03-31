@@ -106,7 +106,7 @@ typedef enum {
 	 * data size, or the crc32 check failed.  If you call it again
 	 * it'll return TINFL_STATUS_DONE.
 	 */
-	TINFL_STATUS_GZIP_ISIZE_OR_CRC32_MISMATCH = -3,
+	TINFL_STATUS_ISIZE_OR_CRC32_MISMATCH = -3,
 
 	/*
 	 * This flag indicates the inflator is finished but the adler32
@@ -516,9 +516,9 @@ int tinfl_decompress(tinfl_decompressor *r, const uint8_t *pIn_buf_next,
 		if (counter)
 			TINFL_CR_RETURN_FOREVER(36, TINFL_STATUS_FAILED);
 	} else if (decomp_flags & TINFL_FLAG_PARSE_GZIP_HEADER) {
+		unsigned s, varlen = 0;
 		r->m_checksum = 0;
 		r->m_checksum_current = 0xFFFFFFFFU;
-		unsigned s, varlen = 0;
 		r->m_g_isize = 0;
 		for (counter = 0; counter < 10; counter++)
 			TINFL_GET_BYTE(50, r->m_gz_header[counter]);
@@ -885,7 +885,7 @@ common_exit:
 		if (status == TINFL_STATUS_DONE &&
 		   ((r->m_g_isize != 0) ||
 		   ((r->m_checksum_current ^ 0xFFFFFFFFU) != r->m_checksum)))
-			status = TINFL_STATUS_GZIP_ISIZE_OR_CRC32_MISMATCH;
+			status = TINFL_STATUS_ISIZE_OR_CRC32_MISMATCH;
 	} else if ((decomp_flags & TINFL_FLAG_PARSE_ZLIB_HEADER) && (status >= 0)) {
 		const uint8_t *ptr = pOut_buf_next;
 		size_t buf_len = *pOut_buf_size;
