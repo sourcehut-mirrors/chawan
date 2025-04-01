@@ -206,50 +206,54 @@ proc skipWhitespace(state: var CSSTokenizerState) =
   while state.has() and state.peek() in AsciiWhitespace:
     state.seek(1)
 
-proc consumeEscape(state: var CSSTokenizerState): string =
-  if not state.has():
+proc consumeEscape(buf: openArray[char]; n: var int): string =
+  if n >= buf.len:
     return "\uFFFD"
-  let c = state.consume()
+  let c = buf[n]
+  inc n
   if c in AsciiHexDigit:
     var num = uint32(hexValue(c))
     var i = 0
-    while i <= 5 and state.has():
-      let c = state.consume()
-      if hexValue(c) == -1:
-        state.reconsume()
+    while i <= 5 and n < buf.len:
+      let val = hexValue(buf[n])
+      if val == -1:
         break
       num *= 0x10
-      num += uint32(hexValue(c))
+      num += uint32(val)
+      inc n
       inc i
-    if state.has() and state.peek() in AsciiWhitespace:
-      state.seek(1)
+    if n < buf.len and buf[n] in AsciiWhitespace:
+      inc n
     if num == 0 or num > 0x10FFFF or num in 0xD800u32..0xDFFFu32:
       return "\uFFFD"
-    else:
-      return num.toUTF8()
-  else:
-    return $c #NOTE this assumes the caller doesn't care about non-ascii
+    return num.toUTF8()
+  return $c # assume the caller doesn't care about non-ascii
 
-proc consumeString(state: var CSSTokenizerState; ending: char): CSSToken =
+proc consumeEscape(state: var CSSTokenizerState): string =
+  return consumeEscape(state.buf, state.at)
+
+proc consumeString(buf: openArray[char]; ending: char; n: var int): CSSToken =
   var s = ""
-  while state.has():
-    let c = state.consume()
+  while n < buf.len:
+    let c = buf[n]
     case c
     of '\n':
-      state.reconsume()
       return CSSToken(t: cttBadString)
     of '\\':
-      if not state.has():
-        continue
-      elif state.peek() == '\n':
-        state.seek(1)
+      if n + 1 >= buf.len or buf[n + 1] == '\n':
+        discard
       else:
-        s &= consumeEscape(state)
+        s &= consumeEscape(buf, n)
     elif c == ending:
+      inc n
       break
     else:
       s &= c
-  return CSSToken(t: cttString, value: s)
+    inc n
+  return CSSToken(t: cttString, value: move(s))
+
+proc consumeString(state: var CSSTokenizerState; ending: char): CSSToken =
+  return state.buf.consumeString(ending, state.at)
 
 proc consumeIdentSequence(state: var CSSTokenizerState): string =
   var s = ""
@@ -367,17 +371,19 @@ proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
     return CSSToken(t: cttFunction, value: s)
   return CSSToken(t: cttIdent, value: s)
 
-proc nextToken(state: var CSSTokenizerState): bool =
-  while state.has(1) and state.peek() == '/' and state.peek(1) == '*':
-    state.seek(2)
-    while state.has() and not (state.has(1) and state.peek() == '*' and
-        state.peek(1) == '/'):
-      state.seek(1)
-    if state.has(1):
-      state.seek(1)
-    if state.has():
-      state.seek(1)
-  return state.has()
+proc nextCSSToken*(buf: openArray[char]; n: var int): bool =
+  var m = n
+  while m + 1 < buf.len and buf[m] == '/' and buf[m + 1] == '*':
+    m += 2
+    while m < buf.len and not (m + 1 < buf.len and buf[m] == '*' and
+        buf[m + 1] == '/'):
+      inc m
+    if m + 1 < buf.len:
+      inc m
+    if m < buf.len:
+      inc m
+  n = m
+  return m < buf.len
 
 proc consumeToken(state: var CSSTokenizerState): CSSToken =
   let c = state.consume()
@@ -472,7 +478,7 @@ proc consumeToken(state: var CSSTokenizerState): CSSToken =
 proc tokenizeCSS(ibuf: string): seq[CSSComponentValue] =
   result = @[]
   var state = CSSTokenizerState(buf: ibuf)
-  while state.nextToken():
+  while state.buf.nextCSSToken(state.at):
     result.add(state.consumeToken())
 
 proc consume(state: var CSSParseState): CSSComponentValue =
@@ -875,3 +881,6 @@ proc parseAnB*(cvals: seq[CSSComponentValue]): (Option[CSSAnB], int) =
   var state = CSSParseState(tokens: cvals)
   let anb = state.parseAnB()
   return (anb, state.at)
+
+proc parseCSSString*(buf: openArray[char]; ending: char; n: var int): CSSToken =
+  return buf.consumeString(ending, n)

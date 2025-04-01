@@ -22,6 +22,7 @@ cookie = false
 meta-refresh = "ask"
 history = true
 mark-links = false
+user-style = ""
 
 [search]
 wrap = true
@@ -140,7 +141,7 @@ default-headers = {
 	Cache-Control = "no-cache"
 }
 # the old style lacks a background, but sets foreground to black...
-stylesheet = "html { background: white }"
+user-style = "html { background: white }"
 
 [page]
 # pager commands, but define them before y so that they actually work.

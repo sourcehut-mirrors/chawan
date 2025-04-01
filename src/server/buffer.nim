@@ -123,7 +123,6 @@ type
     stream*: BufStream
 
   BufferConfig* = object
-    userstyle*: string
     refererFrom*: bool
     styling*: bool
     scripting*: ScriptingMode
@@ -140,6 +139,7 @@ type
     imageTypes*: Table[string, string]
     userAgent*: string
     referrer*: string
+    userStyle*: string
 
   GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.nimcall.}
 
@@ -810,7 +810,7 @@ proc switchCharset(buffer: Buffer) =
   buffer.htmlParser.restart(buffer.charset)
   buffer.document = buffer.htmlParser.builder.document
   buffer.document.applyUASheet()
-  buffer.document.applyUserSheet(buffer.config.userstyle)
+  buffer.document.applyUserSheet(buffer.config.userStyle)
   buffer.document.invalid = true
 
 proc bomSniff(buffer: Buffer; iq: openArray[uint8]): int =
@@ -1980,7 +1980,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   assert buffer.htmlParser.builder.document != nil
   buffer.document = buffer.htmlParser.builder.document
   buffer.document.applyUASheet()
-  buffer.document.applyUserSheet(buffer.config.userstyle)
+  buffer.document.applyUserSheet(buffer.config.userStyle)
   buffer.runBuffer()
   buffer.cleanup()
   quit(0)

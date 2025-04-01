@@ -232,6 +232,17 @@ brings up a pop-up menu.</td>
 prints a list of URLs after the page.</td>
 </tr>
 
+<tr>
+<td>user-style</td>
+<td>string</td>
+<td>""</td>
+<td>A user stylesheet applied to all buffers.<br>
+External stylesheets can be imported using the `@import 'file.css'`
+syntax.  Paths are relative to the configuration directory.<br>
+Nested @import is not supported yet.
+</td>
+</tr>
+
 </table>
 
 ## Search
@@ -949,8 +960,10 @@ Referer header.
 <td>CSS stylesheet</td>
 <td>n/a</td>
 <td>Specify an additional user-stylesheet for this site.<br>
-Other user-stylesheets (specified under [css] or additional matching
-siteconfs) are concatenated with this to get the final user stylesheet.</td>
+Other user-stylesheets are concatenated with this to get the final user
+stylesheet.<br>
+**Note:** this setting is deprecated.  Please use `user-style` instead.
+</td>
 </tr>
 
 <tr>
@@ -1014,21 +1027,23 @@ URL.</td>
 <td>Add numeric markers before links.</td>
 </tr>
 
+<tr>
+<td>user-style</td>
+<td>string</td>
+<td>`buffer.user-style`</td>
+<td>Specify a user style sheet specific to the site.<br>
+Please refer to `buffer.user-style` for details.</td>
+</tr>
+
 </table>
 
 ## Stylesheets
 
-User stylesheets are to be placed in the `[css]` section.
+The `[css]` section is deprecated, and will be removed in the future.
+Please use `buffer.user-style` instead.
 
-There are two ways to import user stylesheets:
-
-1. Include a user stylesheet using the format `include = 'path-to-user.css'`.
-   To include multiple stylesheets, use `include = ['first-stylesheet.css,
-   second-stylesheet.css']`.  
-   Relative paths are interpreted relative to the config directory.
-
-2. Place your stylesheet directly in your configuration file using `inline =
-   """your-style"""`.  
+(`user-style` accepts inline styles by default, but can also include
+external stylesheets using `@import 'file.css'`.)
 
 ## Keybindings
 

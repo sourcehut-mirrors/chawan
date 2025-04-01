@@ -10,6 +10,7 @@ import config/mailcap
 import config/mimetypes
 import config/toml
 import config/urimethodmap
+import css/cssparser
 import html/script
 import io/dynstream
 import monoucha/fromjs
@@ -45,6 +46,10 @@ type
     imSixel = "sixel"
     imKitty = "kitty"
 
+  StyleString* = distinct string
+
+  DeprecatedStyleString* = distinct string
+
   ChaPathResolved* = distinct string
 
   HeadlessMode* = enum
@@ -71,7 +76,7 @@ type
     host*: Option[Regex]
     rewriteUrl*: Option[JSValueFunction]
     shareCookieJar*: Option[string]
-    stylesheet*: Option[string]
+    stylesheet*: Option[DeprecatedStyleString]
     proxy*: Option[URL]
     defaultHeaders*: TableRef[string, string]
     cookie*: Option[CookieMode]
@@ -85,6 +90,7 @@ type
     metaRefresh*: Option[MetaRefresh]
     history*: Option[bool]
     markLinks*: Option[bool]
+    userStyle*: Option[StyleString]
 
   OmniRule* = ref object
     match*: Regex
@@ -179,6 +185,7 @@ type
     metaRefresh* {.jsgetset.}: MetaRefresh
     history* {.jsgetset.}: bool
     markLinks* {.jsgetset.}: bool
+    userStyle*: StyleString #TODO getset
 
   Config* = ref object
     jsctx*: JSContext
@@ -388,6 +395,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   k: string)
 proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
   k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
+  k: string)
+proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
+  v: TomlValue; k: string)
 
 proc typeCheck(v: TomlValue; t: TomlValueType; k: string) =
   if v.t != t:
@@ -605,6 +616,7 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
 proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
     k: string) =
   typeCheck(v, tvtTable, k)
+  ctx.warnings.add("[css] is deprecated; use buffer.user-style instead")
   for kk, vv in v:
     let kkk = if k != "":
       k & "." & kk
@@ -742,6 +754,48 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
       ctx.parseConfigValue(x, vv, kkk)
     else: # tvtString
       x.init.add((kkk.substr("cmd.".len), vv.s))
+
+proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
+    k: string) =
+  typeCheck(v, tvtString, k)
+  var s = v.s
+  var i = 0
+  var y = ""
+  while s.nextCSSToken(i):
+    if s[i] in AsciiWhitespace or
+        i + 1 < s.len and s[i] == '\\' and s[i + 1] == '\n':
+      inc i
+      continue
+    if not s.toOpenArray(i, s.high).startsWithIgnoreCase("@import"):
+      break
+    i += "@import".len
+    if i >= s.len or s[i] notin AsciiWhitespace:
+      break
+    i = s.skipBlanks(i)
+    if i >= s.len or s[i] notin {'"', '\''}:
+      break
+    let ending = s[i]
+    inc i
+    let tok = s.parseCSSString(ending, i)
+    if tok.t != cttString:
+      break
+    let path = ChaPath(tok.value).unquote(ctx.config.dir)
+    if path.isNone:
+      raise newException(ValueError, "wrong CSS import in key " & k &
+        " (" & $tok.value & " is not a valid path)")
+    let ps = newPosixStream(path.get)
+    if ps == nil:
+      raise newException(ValueError, "wrong CSS import in key " & k &
+        " (file " & $tok.value & " not found)")
+    y &= ps.readAll()
+    inc i
+  y &= s.substr(i)
+  x = StyleString(move(y))
+
+proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
+    v: TomlValue; k: string) =
+  ctx.warnings.add(k & ": stylesheet is deprecated; use user-style instead")
+  ctx.parseConfigValue(string(x), v, k)
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   warnings: var seq[string]; name = "<input>"; laxnames = false): Err[string]

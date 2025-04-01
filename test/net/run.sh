@@ -13,5 +13,5 @@ do	printf '%s\r' "$h"
 	fi
 done
 printf '\n'
-$CHA -d "http://localhost:$1/stop" >/dev/null
+$CHA -C config.toml -d "http://localhost:$1/stop" >/dev/null
 exit "$failed"

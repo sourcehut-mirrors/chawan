@@ -1771,7 +1771,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   let host = url.host
   let ctx = pager.jsctx
   result = BufferConfig(
-    userstyle: pager.config.css.stylesheet,
+    userStyle: pager.config.css.stylesheet & '\n',
     refererFrom: pager.config.buffer.refererFrom,
     scripting: pager.config.buffer.scripting,
     charsets: pager.config.encoding.documentCharset,
@@ -1786,6 +1786,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     cookieMode: pager.config.buffer.cookie,
     markLinks: pager.config.buffer.markLinks
   )
+  result.userStyle &= string(pager.config.buffer.userStyle) & '\n'
   loaderConfig = LoaderClientConfig(
     originURL: url,
     defaultHeaders: newHeaders(hgRequest, pager.config.network.defaultHeaders),
@@ -1840,8 +1841,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     if sc.styling.isSome:
       result.styling = sc.styling.get
     if sc.stylesheet.isSome:
-      result.userstyle &= "\n"
-      result.userstyle &= sc.stylesheet.get
+      result.userStyle &= string(sc.stylesheet.get) & '\n'
     if sc.proxy.isSome:
       loaderConfig.proxy = sc.proxy.get
     if sc.defaultHeaders != nil:
@@ -1856,6 +1856,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       result.history = sc.history.get
     if sc.markLinks.isSome:
       result.markLinks = sc.markLinks.get
+    if sc.userStyle.isSome:
+      result.userStyle &= string(sc.userStyle.get) & '\n'
   loaderConfig.filter.allowschemes
     .add(pager.config.external.urimethodmap.imageProtos)
   if result.images:

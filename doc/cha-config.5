@@ -259,6 +259,20 @@ Add numeric markers before links.
 In headless/dump mode, this also prints a list of URLs after the page.
 T}@T{
 T}
+T{
+user\-style
+T}@T{
+string
+T}@T{
+\[lq]\[rq]
+T}@T{
+A user stylesheet applied to all buffers.
+External stylesheets can be imported using the
+\f[CR]\[at]import \[aq]file.css\[aq]\f[R] syntax.
+Paths are relative to the configuration directory.
+Nested \[at]import is not supported yet.
+T}@T{
+T}
 .TE
 .SS Search
 Search options are to be placed in the \f[CR][search]\f[R] section.
@@ -1188,8 +1202,10 @@ T}@T{
 n/a
 T}@T{
 Specify an additional user\-stylesheet for this site.
-Other user\-stylesheets (specified under [css] or additional matching
-siteconfs) are concatenated with this to get the final user stylesheet.
+Other user\-stylesheets are concatenated with this to get the final user
+stylesheet.
+\f[B]Note:\f[R] this setting is deprecated.
+Please use \f[CR]user\-style\f[R] instead.
 T}@T{
 T}
 T{
@@ -1273,20 +1289,26 @@ T}@T{
 Add numeric markers before links.
 T}@T{
 T}
+T{
+user\-style
+T}@T{
+string
+T}@T{
+\f[CR]buffer.user\-style\f[R]
+T}@T{
+Specify a user style sheet specific to the site.
+Please refer to \f[CR]buffer.user\-style\f[R] for details.
+T}@T{
+T}
 .TE
 .SS Stylesheets
-User stylesheets are to be placed in the \f[CR][css]\f[R] section.
+The \f[CR][css]\f[R] section is deprecated, and will be removed in the
+future.
+Please use \f[CR]buffer.user\-style\f[R] instead.
 .PP
-There are two ways to import user stylesheets:
-.IP "1." 3
-Include a user stylesheet using the format
-\f[CR]include = \[aq]path\-to\-user.css\[aq]\f[R].
-To include multiple stylesheets, use
-\f[CR]include = [\[aq]first\-stylesheet.css, second\-stylesheet.css\[aq]]\f[R].
-Relative paths are interpreted relative to the config directory.
-.IP "2." 3
-Place your stylesheet directly in your configuration file using
-\f[CR]inline = \[dq]\[dq]\[dq]your\-style\[dq]\[dq]\[dq]\f[R].
+(\f[CR]user\-style\f[R] accepts inline styles by default, but can also
+include external stylesheets using
+\f[CR]\[at]import \[aq]file.css\[aq]\f[R].)
 .SS Keybindings
 Keybindings are to be placed in these sections:
 .IP \[bu] 2
@@ -2097,7 +2119,7 @@ default.)
 \f[CR]\[rs]<\f[R] and \f[CR]\[rs]>\f[R] is converted to
 \f[CR]\[rs]b\f[R] (as in vi, grep, etc.)
 .PP
-Like match mode, search mode operates on lines.
+Like match mode, search mode operates on individual lines.
 This means that search patterns do not match text wrapped over multiple
 lines.
 .SS Path handling
