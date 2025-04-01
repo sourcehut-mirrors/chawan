@@ -319,14 +319,15 @@ proc bindPagerKey(config: Config; key, action: string) {.jsfunc.} =
 proc bindLineKey(config: Config; key, action: string) {.jsfunc.} =
   config.line.setter(key, action)
 
-proc readUserStylesheet(outs: var string; dir, file: string) =
+proc readUserStylesheet(outs: var string; dir, file: string): Err[string] =
   let x = ChaPath(file).unquote(dir)
   if x.isNone:
-    raise newException(ValueError, x.error)
+    return err(x.error)
   let ps = newPosixStream(x.get)
   if ps != nil:
     outs &= ps.readAll()
     ps.sclose()
+  ok()
 
 type ConfigParser = object
   config: Config
@@ -334,85 +335,87 @@ type ConfigParser = object
   warnings: seq[string]
 
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ref object; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var string; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPath; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var HeadlessMode; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue[U; V](ctx: var ConfigParser; x: var Table[U, V];
-  v: TomlValue; k: string)
+  v: TomlValue; k: string): Err[string]
 proc parseConfigValue[U; V](ctx: var ConfigParser; x: var TableRef[U, V];
-  v: TomlValue; k: string)
+  v: TomlValue; k: string): Err[string]
 proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var TomlTable; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
-  v: TomlValue; k: string)
+  v: TomlValue; k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
-  v: TomlValue; k: string)
+  v: TomlValue; k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
-  k: string)
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
-  v: TomlValue; k: string)
+  v: TomlValue; k: string): Err[string]
 
-proc typeCheck(v: TomlValue; t: TomlValueType; k: string) =
+proc typeCheck(v: TomlValue; t: TomlValueType; k: string): Err[string] =
   if v.t != t:
-    raise newException(ValueError, "invalid type for key " & k &
-      " (got " & $v.t & ", expected " & $t & ")")
+    return err("invalid type for key " & k & " (got " & $v.t & ", expected " &
+      $t & ")")
+  ok()
 
-proc typeCheck(v: TomlValue; t: set[TomlValueType]; k: string) =
+proc typeCheck(v: TomlValue; t: set[TomlValueType]; k: string): Err[string] =
   if v.t notin t:
-    raise newException(ValueError, "invalid type for key " & k &
-      " (got " & $v.t & ", expected " & $t & ")")
+    return err("invalid type for key " & k & " (got " & $v.t & ", expected " &
+      $t & ")")
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtTable, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtTable, k)
   for fk, fv in x.fieldPairs:
     when typeof(fv) isnot JSContext|seq[JSValueFunction]:
       let kebabk = camelToKebabCase(fk)
@@ -421,89 +424,99 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
           k & "." & fk
         else:
           fk
-        ctx.parseConfigValue(fv, v[kebabk], kkk)
+        ?ctx.parseConfigValue(fv, v[kebabk], kkk)
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ref object; v: TomlValue;
-    k: string) =
+    k: string): Err[string] =
   new(x)
   ctx.parseConfigValue(x[], v, k)
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
-    v: TomlValue; k: string) =
-  typeCheck(v, tvtTable, k)
+    v: TomlValue; k: string): Err[string] =
+  ?typeCheck(v, tvtTable, k)
   x.clear()
   for kk, vv in v:
     var y: V
     let kkk = k & "[" & kk & "]"
-    ctx.parseConfigValue(y, vv, kkk)
+    ?ctx.parseConfigValue(y, vv, kkk)
     x[kk] = y
+  ok()
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var TableRef[U, V];
-    v: TomlValue; k: string) =
-  typeCheck(v, tvtTable, k)
+    v: TomlValue; k: string): Err[string] =
+  ?typeCheck(v, tvtTable, k)
   x = TableRef[U, V]()
   for kk, vv in v:
     var y: V
     let kkk = k & "[" & kk & "]"
-    ctx.parseConfigValue(y, vv, kkk)
+    ?ctx.parseConfigValue(y, vv, kkk)
     x[kk] = y
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtBoolean, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtBoolean, k)
   x = v.b
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var string; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   x = v.s
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPath;
-    v: TomlValue; k: string) =
-  typeCheck(v, tvtString, k)
+    v: TomlValue; k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   x = ChaPath(v.s)
+  ok()
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
-    k: string) =
-  typeCheck(v, {tvtString, tvtArray}, k)
+    k: string): Err[string] =
+  ?typeCheck(v, {tvtString, tvtArray}, k)
   if v.t != tvtArray:
     var y: T
-    ctx.parseConfigValue(y, v, k)
+    ?ctx.parseConfigValue(y, v, k)
     x = @[y]
   else:
     if not v.ad:
       x.setLen(0)
     for i in 0 ..< v.a.len:
       var y: T
-      ctx.parseConfigValue(y, v.a[i], k & "[" & $i & "]")
+      ?ctx.parseConfigValue(y, v.a[i], k & "[" & $i & "]")
       x.add(y)
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var TomlTable; v: TomlValue;
-    k: string) =
-  typeCheck(v, {tvtTable}, k)
+    k: string): Err[string] =
+  ?typeCheck(v, {tvtTable}, k)
   x = v.tab
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   x = getCharset(v.s)
   if x == CHARSET_UNKNOWN:
-    raise newException(ValueError, "unknown charset '" & v.s & "' for key " &
-      k)
+    return err(k & ": unknown charset '" & v.s & "'")
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtInteger, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtInteger, k)
   x = int32(v.i)
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtInteger, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtInteger, k)
   x = v.i
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   let y = strictParseEnum[ColorMode](v.s)
   if y.isSome:
     x = y.get
@@ -515,107 +528,111 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
     ctx.warnings.add("color-mode='24bit' is deprecated; use 'true-color'")
     x = cmTrueColor
   else:
-    raise newException(ValueError, "unknown color mode '" & v.s &
-      "' for key " & k)
+    return err(k & ": unknown color mode '" & v.s & "'")
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
-    k: string) =
-  typeCheck(v, {tvtString, tvtBoolean}, k)
+    k: string): Err[string] =
+  ?typeCheck(v, {tvtString, tvtBoolean}, k)
   if v.t == tvtBoolean:
     x = if v.b: smTrue else: smFalse
   elif v.s == "app":
     x = smApp
   else:
-    raise newException(ValueError, "unknown scripting mode '" & v.s &
-      "' for key " & k)
+    return err(k & ": unknown scripting mode '" & v.s & "'")
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var HeadlessMode; v: TomlValue;
-    k: string) =
-  typeCheck(v, {tvtString, tvtBoolean}, k)
+    k: string): Err[string] =
+  ?typeCheck(v, {tvtString, tvtBoolean}, k)
   if v.t == tvtBoolean:
     x = if v.b: hmTrue else: hmFalse
   elif v.s == "dump":
     x = hmDump
   else:
-    raise newException(ValueError, "unknown headless mode '" & v.s &
-      "' for key " & k)
+    return err(k & ": unknown headless mode '" & v.s & "'")
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
-    k: string) =
-  typeCheck(v, {tvtString, tvtBoolean}, k)
+    k: string): Err[string] =
+  ?typeCheck(v, {tvtString, tvtBoolean}, k)
   if v.t == tvtBoolean:
     x = if v.b: cmReadOnly else: cmNone
   elif v.s == "save":
     x = cmSave
   else:
-    raise newException(ValueError, "unknown cookie mode '" & v.s &
-      "' for key " & k)
+    return err(k & ": unknown cookie mode '" & v.s & "'")
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   let c = parseARGBColor(v.s)
   if c.isNone:
-    raise newException(ValueError, "invalid color '" & v.s &
-      "' for key " & k)
+    return err(k & ": invalid color '" & v.s & "'")
   x = c.get
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   let c = parseLegacyColor(v.s)
   if c.isNone:
-    raise newException(ValueError, "invalid color '" & v.s &
-      "' for key " & k)
+    return err(k & ": invalid color '" & v.s & "'")
   x = c.get
+  ok()
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
-    k: string) =
+    k: string): Err[string] =
   if v.t == tvtString and v.s == "auto":
     x = none(T)
   else:
     var y: T
-    ctx.parseConfigValue(y, v, k)
+    ?ctx.parseConfigValue(y, v, k)
     x = some(y)
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtTable, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtTable, k)
   for kk, vv in v:
-    typeCheck(vv, tvtString, k & "[" & kk & "]")
+    ?typeCheck(vv, tvtString, k & "[" & kk & "]")
     let rk = getRealKey(kk)
     var buf = ""
     for c in rk.toOpenArray(0, rk.high - 1):
       buf &= c
       x[buf] = "window.feedNext()"
     x[rk] = vv.s
+  ok()
 
 proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   let e = strictParseEnum[T](v.s)
   if e.isNone:
-    raise newException(ValueError, "invalid value '" & v.s & "' for key " & k)
+    return err(k & ": invalid value '" & v.s & "'")
   x = e.get
+  ok()
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
-    k: string) =
-  typeCheck(v, {tvtString, tvtArray}, k)
+    k: string): Err[string] =
+  ?typeCheck(v, {tvtString, tvtArray}, k)
   if v.t == tvtString:
     var xx: T
-    ctx.parseConfigValue(xx, v, k)
+    ?ctx.parseConfigValue(xx, v, k)
     x = {xx}
   else:
     x = {}
     for i in 0 ..< v.a.len:
       let kk = k & "[" & $i & "]"
       var xx: T
-      ctx.parseConfigValue(xx, v.a[i], kk)
+      ?ctx.parseConfigValue(xx, v.a[i], kk)
       x.incl(xx)
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtTable, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtTable, k)
   ctx.warnings.add("[css] is deprecated; use buffer.user-style instead")
   for kk, vv in v:
     let kkk = if k != "":
@@ -624,58 +641,62 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
       kk
     case kk
     of "include":
-      typeCheck(vv, {tvtString, tvtArray}, kkk)
+      ?typeCheck(vv, {tvtString, tvtArray}, kkk)
       case vv.t
       of tvtString:
-        x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
+        ?x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
       of tvtArray:
         for child in vv.a:
-          x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
+          ?x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
       else: discard
     of "inline":
-      typeCheck(vv, tvtString, kkk)
+      ?typeCheck(vv, tvtString, kkk)
       x.stylesheet &= vv.s
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   let y = compileMatchRegex(v.s)
   if y.isNone:
-    raise newException(ValueError, "invalid regex " & k & " : " & y.error)
+    return err(k & ": invalid regex (" & y.error & ")")
   x = y.get
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   let y = parseURL(v.s)
   if y.isNone:
-    raise newException(ValueError, "invalid URL " & k)
+    return err(k & ": invalid URL " & v.s)
   x = y.get
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
-    v: TomlValue; k: string) =
-  typeCheck(v, tvtString, k)
+    v: TomlValue; k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   let fun = ctx.config.jsctx.eval(v.s, "<config>", JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(fun):
-    raise newException(ValueError, "exception in " & k & ": " &
-      ctx.config.jsctx.getExceptionMsg())
+    return err(k & ": " & ctx.config.jsctx.getExceptionMsg())
   if not JS_IsFunction(ctx.config.jsctx, fun):
-    raise newException(ValueError, k & " is not a function")
+    return err(k & ": not a function")
   x = JSValueFunction(fun: fun)
   ctx.config.jsvfns.add(x) # so we can clean it up on exit
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
-    v: TomlValue; k: string) =
-  typeCheck(v, tvtString, k)
+    v: TomlValue; k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   let y = ChaPath(v.s).unquote(ctx.config.dir)
   if y.isNone:
-    raise newException(ValueError, y.error)
+    return err(k & ": " & y.error)
   x = ChaPathResolved(y.get)
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
-    k: string) =
+    k: string): Err[string] =
   var paths: seq[ChaPathResolved]
-  ctx.parseConfigValue(paths, v, k)
+  ?ctx.parseConfigValue(paths, v, k)
   x = MimeTypes.default
   for p in paths:
     let ps = newPosixStream(p)
@@ -684,11 +705,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
       x.parseMimeTypes(src.toOpenArray(), DefaultImages)
       deallocMem(src)
       ps.sclose()
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
-    k: string) =
+    k: string): Err[string] =
   var paths: seq[ChaPathResolved]
-  ctx.parseConfigValue(paths, v, k)
+  ?ctx.parseConfigValue(paths, v, k)
   x = Mailcap.default
   for p in paths:
     let ps = newPosixStream(p)
@@ -699,6 +721,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
       ps.sclose()
       if res.isNone:
         ctx.warnings.add("Error reading mailcap: " & res.error)
+  ok()
 
 const DefaultMailcap = block:
   var mailcap: Mailcap
@@ -706,9 +729,9 @@ const DefaultMailcap = block:
   mailcap
 
 proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
-    v: TomlValue; k: string) =
+    v: TomlValue; k: string): Err[string] =
   var path: ChaPathResolved
-  ctx.parseConfigValue(path, v, k)
+  ?ctx.parseConfigValue(path, v, k)
   x = AutoMailcap(path: path)
   let ps = newPosixStream(path)
   if ps != nil:
@@ -719,13 +742,14 @@ proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
     if res.isNone:
       ctx.warnings.add("Error reading auto-mailcap: " & res.error)
   x.entries.add(DefaultMailcap)
+  ok()
 
 const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")
 
 proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
-    k: string) =
+    k: string): Err[string] =
   var paths: seq[ChaPathResolved]
-  ctx.parseConfigValue(paths, v, k)
+  ?ctx.parseConfigValue(paths, v, k)
   x = URIMethodMap.default
   for p in paths:
     let ps = newPosixStream(p)
@@ -733,6 +757,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
       x.parseURIMethodMap(ps.readAll())
       ps.sclose()
   x.append(DefaultURIMethodMap)
+  ok()
 
 func isCompatibleIdent(s: string): bool =
   if s.len == 0 or s[0] notin AsciiAlpha + {'_', '$'}:
@@ -743,21 +768,22 @@ func isCompatibleIdent(s: string): bool =
   return true
 
 proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtTable, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtTable, k)
   for kk, vv in v:
     let kkk = k & "." & kk
-    typeCheck(vv, {tvtTable, tvtString}, kkk)
+    ?typeCheck(vv, {tvtTable, tvtString}, kkk)
     if not kk.isCompatibleIdent():
-      raise newException(ValueError, "invalid command name: " & kkk)
+      return err(kkk & ": invalid command name")
     if vv.t == tvtTable:
-      ctx.parseConfigValue(x, vv, kkk)
+      ?ctx.parseConfigValue(x, vv, kkk)
     else: # tvtString
       x.init.add((kkk.substr("cmd.".len), vv.s))
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
-    k: string) =
-  typeCheck(v, tvtString, k)
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
   var s = v.s
   var i = 0
   var y = ""
@@ -781,19 +807,19 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
       break
     let path = ChaPath(tok.value).unquote(ctx.config.dir)
     if path.isNone:
-      raise newException(ValueError, "wrong CSS import in key " & k &
-        " (" & $tok.value & " is not a valid path)")
+      return err(k & ": wrong CSS import (" & $tok.value &
+        " is not a valid path)")
     let ps = newPosixStream(path.get)
     if ps == nil:
-      raise newException(ValueError, "wrong CSS import in key " & k &
-        " (file " & $tok.value & " not found)")
+      return err(k & ": wrong CSS import (file " & $tok.value & " not found)")
     y &= ps.readAll()
     inc i
   y &= s.substr(i)
   x = StyleString(move(y))
+  ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
-    v: TomlValue; k: string) =
+    v: TomlValue; k: string): Err[string] =
   ctx.warnings.add(k & ": stylesheet is deprecated; use user-style instead")
   ctx.parseConfigValue(string(x), v, k)
 
@@ -803,23 +829,20 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
 proc parseConfig(config: Config; dir: string; t: TomlValue;
     warnings: var seq[string]): Err[string] =
   var ctx = ConfigParser(config: config, dir: dir)
-  try:
-    ctx.parseConfigValue(config[], t, "")
-    #TODO: for omnirule/siteconf, check if substitution rules are specified?
-    while config.`include`.len > 0:
-      #TODO: warn about recursive includes
-      var includes = config.`include`
-      config.`include`.setLen(0)
-      for s in includes:
-        let ps = newPosixStream(s)
-        if ps == nil:
-          return err("include file not found: " & s)
-        ?config.parseConfig(dir, ps.readAll(), warnings)
-        ps.sclose()
-    warnings.add(ctx.warnings)
-    return ok()
-  except ValueError as e:
-    return err(e.msg)
+  ?ctx.parseConfigValue(config[], t, "")
+  #TODO: for omnirule/siteconf, check if substitution rules are specified?
+  while config.`include`.len > 0:
+    #TODO: warn about recursive includes
+    var includes = config.`include`
+    config.`include`.setLen(0)
+    for s in includes:
+      let ps = newPosixStream(s)
+      if ps == nil:
+        return err("include file not found: " & s)
+      ?config.parseConfig(dir, ps.readAll(), warnings)
+      ps.sclose()
+  warnings.add(ctx.warnings)
+  ok()
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
     warnings: var seq[string]; name = "<input>"; laxnames = false):
