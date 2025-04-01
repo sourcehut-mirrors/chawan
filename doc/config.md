@@ -237,7 +237,7 @@ prints a list of URLs after the page.</td>
 <td>string</td>
 <td>""</td>
 <td>A user stylesheet applied to all buffers.<br>
-External stylesheets can be imported using the `@import 'file.css'`
+External stylesheets can be imported using the `@import 'file.css';`
 syntax.  Paths are relative to the configuration directory.<br>
 Nested @import is not supported yet.
 </td>
@@ -1043,7 +1043,7 @@ The `[css]` section is deprecated, and will be removed in the future.
 Please use `buffer.user-style` instead.
 
 (`user-style` accepts inline styles by default, but can also include
-external stylesheets using `@import 'file.css'`.)
+external stylesheets using `@import 'file.css';`.)
 
 ## Keybindings
 

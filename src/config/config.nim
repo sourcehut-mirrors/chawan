@@ -805,6 +805,14 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
     let tok = s.parseCSSString(ending, i)
     if tok.t != cttString:
       break
+    while s.nextCSSToken(i):
+      if s[i] in AsciiWhitespace or
+          i + 1 < s.len and s[i] == '\\' and s[i + 1] == '\n':
+        inc i
+        continue
+      break
+    if i < s.len and s[i] != ';':
+      break
     let path = ChaPath(tok.value).unquote(ctx.config.dir)
     if path.isNone:
       return err(k & ": wrong CSS import (" & $tok.value &
