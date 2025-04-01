@@ -243,7 +243,9 @@ proc consumeString(buf: openArray[char]; ending: char; n: var int): CSSToken =
       if n + 1 >= buf.len or buf[n + 1] == '\n':
         discard
       else:
-        s &= consumeEscape(buf, n)
+        inc n
+        s &= buf.consumeEscape(n)
+        continue
     elif c == ending:
       inc n
       break
