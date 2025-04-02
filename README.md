@@ -18,7 +18,7 @@ Note: a POSIX-compliant operating system is required.
 1. Clone the Chawan repository:  
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
 2. Install the Nim compiler: <https://nim-lang.org/install.html>
-	* Please use 2.0.0 or newer, ideally 2.2.0. (Type `nim -v` to
+	* Please use 2.0.0 or newer, ideally 2.2.2. (Type `nim -v` to
 	  check your Nim compiler's version.)
 	* If you are using a 32-bit system: `export CFLAGS=-fpermissive`
 	  before compiling, or (preferably) use a nightly build of the
