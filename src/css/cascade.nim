@@ -384,4 +384,6 @@ proc applyStyle*(element: Element) =
   for pseudo in peBefore .. PseudoElement.high:
     if map[pseudo].hasValues() or window.settings.scripting == smApp:
       let computed = map[pseudo].applyDeclarations(element, nil, window)
+      if pseudo == peMarker:
+        computed{"display"} = DisplayMarker
       element.computedMap.add((pseudo, computed))

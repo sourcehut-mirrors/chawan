@@ -14,6 +14,7 @@ type
     peNone = "-cha-none"
     peBefore = "before"
     peAfter = "after"
+    peMarker = "marker"
     peLinkMarker = "-cha-link-marker"
 
   PseudoClass* = enum

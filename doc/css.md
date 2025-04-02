@@ -91,6 +91,9 @@ Values with a `<length>` type support very simple `calc()` expressions
 that consist of one addition or subtraction and do not use the `var`
 function.
 
+The standard pseudo-elements ::before, ::after, and ::marker are
+supported.
+
 ## Proprietary extensions
 
 * `text-align` accepts the values `-cha-center`, `-cha-left`, and

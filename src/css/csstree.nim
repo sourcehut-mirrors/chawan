@@ -274,22 +274,34 @@ proc getParent(frame: var TreeFrame; computed: CSSValues; display: CSSDisplay):
 proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
   var node = node
   # Generate a marker box.
-  let computed = node.computed.inheritProperties()
-  computed{"white-space"} = WhitespacePre
-  let markerText = StyledNode(
-    t: stCounter,
-    element: node.element,
-    computed: computed,
-    counterName: satListItem.toAtom(),
-    counterStyle: node.computed{"list-style-type"},
-    counterSuffix: true
-  )
+  var markerComputed = node.element.getComputedStyle(peMarker)
+  if markerComputed == nil:
+    markerComputed = node.computed.inheritProperties()
+    markerComputed{"display"} = DisplayMarker
+  let textComputed = markerComputed.inheritProperties()
+  textComputed{"white-space"} = WhitespacePre
+  textComputed{"content"} = markerComputed{"content"}
+  let markerText = if markerComputed{"content"}.len == 0:
+    StyledNode(
+      t: stCounter,
+      element: node.element,
+      computed: textComputed,
+      counterName: satListItem.toAtom(),
+      counterStyle: node.computed{"list-style-type"},
+      counterSuffix: true
+    )
+  else:
+    StyledNode(
+      t: stElement,
+      pseudo: peMarker,
+      element: node.element,
+      computed: textComputed
+    )
   case node.computed{"list-style-position"}
   of ListStylePositionOutside:
     # Generate separate boxes for the content and marker.
-    let computed = node.computed.inheritProperties()
-    computed{"display"} = DisplayMarker
-    node.anonChildren.add(initStyledAnon(node.element, computed, @[markerText]))
+    node.anonChildren.add(initStyledAnon(node.element, markerComputed,
+      @[markerText]))
   of ListStylePositionInside:
     node.anonChildren.add(markerText)
   frame.getParent(node.computed, node.computed{"display"}).add(node)
