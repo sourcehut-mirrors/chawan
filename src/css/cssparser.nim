@@ -735,13 +735,18 @@ iterator parseCommaSepComponentValues*(cvals: openArray[CSSComponentValue]):
   while cvals.nextCommaSepComponentValue(s, i):
     yield move(s)
 
+type AnBIdent = enum
+  abiOdd = "odd"
+  abiEven = "even"
+  abiN = "n"
+  abiDashN = "-n"
+  abiNDash = "n-"
+  abiDashNDash = "-n-"
+
 proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
     Opt[CSSAnB] =
   template is_eof: bool =
     i >= cvals.len or not (cvals[i] of CSSToken)
-  template fail_eof =
-    if is_eof:
-      return err()
   template get_plus: bool =
     let tok = cvals.getToken(i, cttDelim)
     if tok.isSome and tok.get.cvalue == '+':
@@ -753,11 +758,10 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
     i = cvals.skipBlanks(i)
     ?cvals.consumeToken(i)
   template fail_plus =
-    if is_plus:
+    if isPlus:
       return err()
-  template parse_sub_int(sub: string; skip: int): int32 =
-    let s = sub.substr(skip)
-    let x = parseInt32(s)
+  template parse_sub_int(s: string; skip: int): int32 =
+    let x = parseInt32(s.toOpenArray(skip, s.high))
     if x.isNone:
       return err()
     x.get
@@ -772,60 +776,63 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
     fail_non_integer tok, res #TODO check if signless?
 
   i = cvals.skipBlanks(i)
-  fail_eof
-  let is_plus = get_plus
+  if is_eof:
+    return err()
+  let isPlus = get_plus
   let tok = ?cvals.consumeToken(i)
   case tok.t
   of cttIdent:
-    case tok.value
-    of "odd":
-      fail_plus
-      return ok((2i32, 1i32))
-    of "even":
-      fail_plus
-      return ok((2i32, 0i32))
-    of "n", "N":
-      i = cvals.skipBlanks(i)
-      if is_eof:
-        return ok((1i32, 0i32))
-      let tok2 = ?cvals.consumeToken(i)
-      if tok2.t == cttDelim:
-        let sign = case tok2.cvalue
-        of '+': 1i32
-        of '-': -1i32
-        else: return err()
-        let tok3 = get_tok
-        fail_non_signless_integer tok3, ok((1i32, 0i32))
-        return ok((1i32, sign * int32(tok3.nvalue)))
-      else:
-        fail_non_integer tok2, ok((1i32, 0i32))
-        return ok((1i32, int32(tok2.nvalue)))
-    of "-n", "-N":
-      fail_plus
-      i = cvals.skipBlanks(i)
-      if is_eof:
-        return ok((-1i32, 0i32))
-      let tok2 = ?cvals.consumeToken(i)
-      if tok2.t == cttDelim:
-        let sign = case tok2.cvalue
-        of '+': 1i32
-        of '-': -1i32
-        else: return err()
-        let tok3 = get_tok
-        fail_non_signless_integer tok3, ok((-1i32, 0i32))
-        return ok((-1i32, sign * int32(tok3.nvalue)))
-      else:
-        fail_non_integer tok2, ok((-1i32, 0i32))
-        return ok((-1i32, int32(tok2.nvalue)))
-    of "n-", "N-":
-      let tok2 = get_tok
-      fail_non_signless_integer tok2, err()
-      return ok((1i32, -int32(tok2.nvalue)))
-    of "-n-", "-N-":
-      fail_plus
-      let tok2 = get_tok
-      fail_non_signless_integer tok2, err()
-      return ok((-1i32, -int32(tok2.nvalue)))
+    let x = parseEnumNoCase[AnBIdent](tok.value)
+    if x.isSome:
+      case x.get
+      of abiOdd:
+        fail_plus
+        return ok((2i32, 1i32))
+      of abiEven:
+        fail_plus
+        return ok((2i32, 0i32))
+      of abiN:
+        i = cvals.skipBlanks(i)
+        if is_eof:
+          return ok((1i32, 0i32))
+        let tok2 = ?cvals.consumeToken(i)
+        if tok2.t == cttDelim:
+          let sign = case tok2.cvalue
+          of '+': 1i32
+          of '-': -1i32
+          else: return err()
+          let tok3 = get_tok
+          fail_non_signless_integer tok3, ok((1i32, 0i32))
+          return ok((1i32, sign * int32(tok3.nvalue)))
+        else:
+          fail_non_integer tok2, ok((1i32, 0i32))
+          return ok((1i32, int32(tok2.nvalue)))
+      of abiDashN:
+        fail_plus
+        i = cvals.skipBlanks(i)
+        if is_eof:
+          return ok((-1i32, 0i32))
+        let tok2 = ?cvals.consumeToken(i)
+        if tok2.t == cttDelim:
+          let sign = case tok2.cvalue
+          of '+': 1i32
+          of '-': -1i32
+          else: return err()
+          let tok3 = get_tok
+          fail_non_signless_integer tok3, ok((-1i32, 0i32))
+          return ok((-1i32, sign * int32(tok3.nvalue)))
+        else:
+          fail_non_integer tok2, ok((-1i32, 0i32))
+          return ok((-1i32, int32(tok2.nvalue)))
+      of abiNDash:
+        let tok2 = get_tok
+        fail_non_signless_integer tok2, err()
+        return ok((1i32, -int32(tok2.nvalue)))
+      of abiDashNDash:
+        fail_plus
+        let tok2 = get_tok
+        fail_non_signless_integer tok2, err()
+        return ok((-1i32, -int32(tok2.nvalue)))
     elif tok.value.startsWithIgnoreCase("n-"):
       return ok((1i32, -parse_sub_int(tok.value, "n-".len)))
     elif tok.value.startsWithIgnoreCase("-n-"):
