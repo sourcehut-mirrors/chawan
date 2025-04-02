@@ -279,7 +279,8 @@ proc parseRecursiveSelectorFunction(state: var SelectorParser;
 proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
     data: PseudoData): Selector =
   var data = data
-  var (anb, i) = parseAnB(cssfunction.value)
+  var i = 0
+  var anb = cssfunction.value.parseAnB(i)
   if anb.isNone: fail
   data.anb = anb.get
   var nthchild = Selector(t: stPseudoClass, pseudo: data)

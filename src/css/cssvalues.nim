@@ -1032,43 +1032,6 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
     return some(CSSLength(num: n, u: clPerc))
   return some(cssLength(n))
 
-func skipBlanks*(vals: openArray[CSSComponentValue]; i: int): int =
-  var i = i
-  while i < vals.len:
-    if vals[i] != cttWhitespace:
-      break
-    inc i
-  return i
-
-func findBlank(vals: openArray[CSSComponentValue]; i: int): int =
-  var i = i
-  while i < vals.len:
-    if vals[i] == cttWhitespace:
-      break
-    inc i
-  return i
-
-func getToken(cvals: openArray[CSSComponentValue]; i: int): Opt[CSSToken] =
-  if i < cvals.len:
-    let cval = cvals[i]
-    if cval of CSSToken:
-      return ok(CSSToken(cval))
-  return err()
-
-func getToken(cvals: openArray[CSSComponentValue]; i: int;
-    tt: set[CSSTokenType]): Opt[CSSToken] =
-  let tok = ?cvals.getToken(i)
-  if tok.t in tt:
-    return ok(tok)
-  return err()
-
-func getToken(cvals: openArray[CSSComponentValue]; i: int; t: CSSTokenType):
-    Opt[CSSToken] =
-  let tok = ?cvals.getToken(i)
-  if t == tok.t:
-    return ok(tok)
-  return err()
-
 func getColorToken(cvals: openArray[CSSComponentValue]; i: int;
     legacy = false): Opt[CSSToken] =
   let tok = ?cvals.getToken(i)

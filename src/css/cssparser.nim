@@ -12,14 +12,6 @@ type
     cttCdc, cttColon, cttSemicolon, cttComma, cttRbracket, cttLbracket,
     cttLparen, cttRparen, cttLbrace, cttRbrace
 
-  CSSTokenizerState = object
-    at: int
-    buf: string
-
-  CSSParseState = object
-    tokens: seq[CSSComponentValue]
-    at: int
-
   tflaga = enum
     tflagaUnrestricted, tflagaId
 
@@ -39,12 +31,13 @@ type
 
   CSSRule* = ref object of CSSComponentValue
     prelude*: seq[CSSComponentValue]
-    oblock*: CSSSimpleBlock
 
   CSSAtRule* = ref object of CSSRule
     name*: string
+    oblock*: CSSSimpleBlock
 
   CSSQualifiedRule* = ref object of CSSRule
+    decls*: seq[CSSDeclaration]
 
   CSSDeclaration* = ref object of CSSComponentValue
     name*: string
@@ -78,12 +71,14 @@ type
     token*: CSSToken
     value*: seq[CSSComponentValue]
 
-  CSSRawStylesheet* = object
-    value*: seq[CSSRule]
-
   CSSAnB* = tuple[A, B: int32]
 
-# For debugging
+# Forward declarations
+proc consumeDeclarations(cvals: openArray[CSSComponentValue]):
+  seq[CSSDeclaration]
+proc consumeComponentValue(cvals: openArray[CSSComponentValue]; i: var int):
+  CSSComponentValue
+
 proc `$`*(c: CSSComponentValue): string =
   result = ""
   if c of CSSToken:
@@ -151,7 +146,10 @@ proc `$`*(c: CSSComponentValue): string =
     if c of CSSAtRule:
       result &= CSSAtRule(c).name & " "
     result &= $CSSRule(c).prelude & "\n"
-    result &= $CSSRule(c).oblock
+    if c of CSSAtRule:
+      result &= $CSSAtRule(c).oblock
+    else:
+      result &= $CSSQualifiedRule(c).decls
 
 func `==`*(a: CSSComponentValue; b: CSSTokenType): bool =
   return a of CSSToken and CSSToken(a).t == b
@@ -159,92 +157,69 @@ func `==`*(a: CSSComponentValue; b: CSSTokenType): bool =
 const IdentStart = AsciiAlpha + NonAscii + {'_'}
 const Ident = IdentStart + AsciiDigit + {'-'}
 
-proc consume(state: var CSSTokenizerState): char =
-  let c = state.buf[state.at]
-  inc state.at
-  return c
-
-proc seek(state: var CSSTokenizerState; n: int) =
-  state.at += n
-
-proc consumeRChar(state: var CSSTokenizerState): char =
-  let u = state.buf.nextUTF8(state.at)
+proc consumeRChar(iq: openArray[char]; n: var int): char =
+  let u = iq.nextUTF8(n)
   if u < 0x80:
     return char(u)
   return char(128)
 
-proc reconsume(state: var CSSTokenizerState) =
-  dec state.at
-
-func peek(state: CSSTokenizerState; i: int = 0): char =
-  return state.buf[state.at + i]
-
-func has(state: CSSTokenizerState; i: int = 0): bool =
-  return state.at + i < state.buf.len
-
 # next, next(1)
-proc startsWithIdentSequenceDash(state: var CSSTokenizerState): bool =
-  return state.has() and state.peek() in IdentStart + {'-'} or
-    state.has(1) and state.peek() == '\\' and state.peek(1) != '\n'
+proc startsWithIdentSequenceDash(iq: openArray[char]; n: int): bool =
+  return n < iq.len and iq[n] in IdentStart + {'-'} or
+    n + 1 < iq.len and iq[n] == '\\' and iq[n + 1] != '\n'
 
 # next, next(1), next(2)
-proc startsWithIdentSequence(state: var CSSTokenizerState): bool =
-  if not state.has():
+proc startsWithIdentSequence(iq: openArray[char]; n: int): bool =
+  if n >= iq.len:
     return false
-  case state.peek()
+  case iq[n]
   of '-':
-    return state.has(1) and state.peek(1) in IdentStart + {'-'} or
-      state.has(2) and state.peek(1) == '\\' and state.peek(2) != '\n'
+    return n + 1 < iq.len and iq[n] in IdentStart + {'-'} or
+      n + 2 < iq.len and iq[n + 1] == '\\' and iq[n + 2] != '\n'
   of IdentStart:
     return true
   of '\\':
-    return state.has(1) and state.peek(1) != '\n'
+    return n + 1 < iq.len and iq[n + 1] != '\n'
   else:
     return false
 
-proc skipWhitespace(state: var CSSTokenizerState) =
-  while state.has() and state.peek() in AsciiWhitespace:
-    state.seek(1)
-
-proc consumeEscape(buf: openArray[char]; n: var int): string =
-  if n >= buf.len:
+proc consumeEscape(iq: openArray[char]; n: var int): string =
+  if n >= iq.len:
     return "\uFFFD"
-  let c = buf[n]
+  let c = iq[n]
   inc n
   if c in AsciiHexDigit:
     var num = uint32(hexValue(c))
     var i = 0
-    while i <= 5 and n < buf.len:
-      let val = hexValue(buf[n])
+    while i <= 5 and n < iq.len:
+      let val = hexValue(iq[n])
       if val == -1:
         break
       num *= 0x10
       num += uint32(val)
       inc n
       inc i
-    if n < buf.len and buf[n] in AsciiWhitespace:
+    if n < iq.len and iq[n] in AsciiWhitespace:
       inc n
     if num == 0 or num > 0x10FFFF or num in 0xD800u32..0xDFFFu32:
       return "\uFFFD"
     return num.toUTF8()
   return $c # assume the caller doesn't care about non-ascii
 
-proc consumeEscape(state: var CSSTokenizerState): string =
-  return consumeEscape(state.buf, state.at)
-
-proc consumeString(buf: openArray[char]; ending: char; n: var int): CSSToken =
+proc consumeCSSString*(iq: openArray[char]; ending: char; n: var int):
+    CSSToken =
   var s = ""
-  while n < buf.len:
-    let c = buf[n]
+  while n < iq.len:
+    let c = iq[n]
     case c
     of '\n':
       return CSSToken(t: cttBadString)
     of '\\':
-      if n + 1 >= buf.len or buf[n + 1] == '\n':
+      if n + 1 >= iq.len or iq[n + 1] == '\n':
         discard
       else:
         inc n
-        s &= buf.consumeEscape(n)
+        s &= iq.consumeEscape(n)
         continue
     elif c == ending:
       inc n
@@ -254,256 +229,279 @@ proc consumeString(buf: openArray[char]; ending: char; n: var int): CSSToken =
     inc n
   return CSSToken(t: cttString, value: move(s))
 
-proc consumeString(state: var CSSTokenizerState; ending: char): CSSToken =
-  return state.buf.consumeString(ending, state.at)
-
-proc consumeIdentSequence(state: var CSSTokenizerState): string =
+proc consumeIdentSequence(iq: openArray[char]; n: var int): string =
   var s = ""
-  while state.has():
-    let c = state.consume()
-    if c == '\\' and state.has() and state.peek() != '\n':
-      s &= state.consumeEscape()
+  while n < iq.len:
+    let c = iq[n]
+    if c == '\\' and n + 1 < iq.len and iq[n + 1] != '\n':
+      inc n
+      s &= iq.consumeEscape(n)
+      continue
     elif c in Ident:
       s &= c
     else:
-      state.reconsume()
       break
-  return s
+    inc n
+  return move(s)
 
-proc consumeNumber(state: var CSSTokenizerState):
+proc consumeNumber(iq: openArray[char]; n: var int):
     tuple[isInt: bool; val: float32] =
   var isInt = true
-  var repr = ""
-  if state.has() and state.peek() in {'+', '-'}:
-    repr &= state.consume()
-  while state.has() and state.peek() in AsciiDigit:
-    repr &= state.consume()
-  if state.has(1) and state.peek() == '.' and state.peek(1) in AsciiDigit:
-    repr &= state.consume()
-    repr &= state.consume()
+  let start = n
+  if n < iq.len and iq[n] in {'+', '-'}:
+    inc n
+  while n < iq.len and iq[n] in AsciiDigit:
+    inc n
+  if n + 1 < iq.len and iq[n] == '.' and iq[n + 1] in AsciiDigit:
+    n += 2
     isInt = false
-    while state.has() and state.peek() in AsciiDigit:
-      repr &= state.consume()
-  if state.has(1) and state.peek() in {'E', 'e'} and
-        state.peek(1) in AsciiDigit or
-      state.has(2) and state.peek() in {'E', 'e'} and
-        state.peek(1) in {'-', '+'} and state.peek(2) in AsciiDigit:
-    repr &= state.consume()
-    if state.peek() in {'-', '+'}:
-      repr &= state.consume()
-      repr &= state.consume()
+    while n < iq.len and iq[n] in AsciiDigit:
+      inc n
+  if n + 1 < iq.len and iq[n] in {'E', 'e'} and iq[n + 1] in AsciiDigit or
+      n + 2 < iq.len and iq[n] in {'E', 'e'} and iq[n + 1] in {'-', '+'} and
+        iq[n + 2] in AsciiDigit:
+    inc n
+    if iq[n] in {'-', '+'}:
+      n += 2
     else:
-      repr &= state.consume()
+      inc n
     isInt = false
-    while state.has() and state.peek() in AsciiDigit:
-      repr &= state.consume()
-  let val = parseFloat32(repr)
+    while n < iq.len and iq[n] in AsciiDigit:
+      inc n
+  let val = parseFloat32(iq.toOpenArray(start, n - 1))
   return (isInt, val)
 
-proc consumeNumericToken(state: var CSSTokenizerState): CSSToken =
-  let (isInt, val) = state.consumeNumber()
-  if state.startsWithIdentSequence():
-    let unit = state.consumeIdentSequence()
+proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
+  let (isInt, val) = iq.consumeNumber(n)
+  if iq.startsWithIdentSequence(n):
+    let unit = iq.consumeIdentSequence(n)
     if isInt:
       return CSSToken(t: cttIDimension, nvalue: val, unit: unit)
     return CSSToken(t: cttDimension, nvalue: val, unit: unit)
-  if state.has() and state.peek() == '%':
-    state.seek(1)
+  if n < iq.len and iq[n] == '%':
+    inc n
     return CSSToken(t: cttPercentage, nvalue: val)
   if isInt:
     return CSSToken(t: cttINumber, nvalue: val)
   return CSSToken(t: cttNumber, nvalue: val)
 
-proc consumeBadURL(state: var CSSTokenizerState) =
-  while state.has():
-    let c = state.consume()
+proc consumeBadURL(iq: openArray[char]; n: var int) =
+  while n < iq.len:
+    let c = iq[n]
+    inc n
     if c == ')':
       break
-    if c == '\\' and state.has() and state.peek() != '\n':
-      discard state.consumeEscape()
+    if c == '\\' and n < iq.len and iq[n] != '\n':
+      discard iq.consumeEscape(n)
 
 const NonPrintable = {
   '\0'..char(0x08), '\v', char(0x0E)..char(0x1F), char(0x7F)
 }
 
-proc consumeURL(state: var CSSTokenizerState): CSSToken =
+proc consumeURL(iq: openArray[char]; n: var int): CSSToken =
   let res = CSSToken(t: cttUrl)
-  state.skipWhitespace()
-  while state.has():
-    let c = state.consume()
+  n = iq.skipBlanks(n)
+  while n < iq.len:
+    let c = iq[n]
+    inc n
     case c
     of ')':
       return res
     of '"', '\'', '(', NonPrintable:
-      state.consumeBadURL()
+      iq.consumeBadURL(n)
       return CSSToken(t: cttBadUrl)
     of AsciiWhitespace:
-      state.skipWhitespace()
-      if not state.has():
+      n = iq.skipBlanks(n)
+      if n >= iq.len:
         return res
-      if state.peek() == ')':
-        state.seek(1)
+      if iq[n] == ')':
+        inc n
         return res
-      state.consumeBadURL()
+      iq.consumeBadURL(n)
       return CSSToken(t: cttBadUrl)
     of '\\':
-      if state.has() and state.peek() != '\n':
-        res.value &= state.consumeEscape()
+      if n < iq.len and iq[n] != '\n':
+        res.value &= iq.consumeEscape(n)
       else:
-        state.consumeBadURL()
+        iq.consumeBadURL(n)
         return CSSToken(t: cttBadUrl)
     else:
       res.value &= c
   return res
 
-proc consumeIdentLikeToken(state: var CSSTokenizerState): CSSToken =
-  let s = state.consumeIdentSequence()
-  if s.equalsIgnoreCase("url") and state.has() and state.peek() == '(':
-    state.seek(1)
-    while state.has(1) and state.peek() in AsciiWhitespace and
-        state.peek(1) in AsciiWhitespace:
-      state.seek(1)
-    if state.has() and state.peek() in {'"', '\''} or
-        state.has(1) and state.peek() in {'"', '\''} + AsciiWhitespace and
-        state.peek(1) in {'"', '\''}:
+proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
+  let s = iq.consumeIdentSequence(n)
+  if s.equalsIgnoreCase("url") and n < iq.len and iq[n] == '(':
+    inc n
+    while n + 1 < iq.len and iq[n] in AsciiWhitespace and
+        iq[n + 1] in AsciiWhitespace:
+      inc n
+    if n < iq.len and iq[n] in {'"', '\''} or
+        n + 1 < iq.len and iq[n] in {'"', '\''} + AsciiWhitespace and
+        iq[n + 1] in {'"', '\''}:
       return CSSToken(t: cttFunction, value: s)
-    return state.consumeURL()
-  if state.has() and state.peek() == '(':
-    state.seek(1)
+    return iq.consumeURL(n)
+  if n < iq.len and iq[n] == '(':
+    inc n
     return CSSToken(t: cttFunction, value: s)
   return CSSToken(t: cttIdent, value: s)
 
-proc nextCSSToken*(buf: openArray[char]; n: var int): bool =
+proc nextCSSToken*(iq: openArray[char]; n: var int): bool =
   var m = n
-  while m + 1 < buf.len and buf[m] == '/' and buf[m + 1] == '*':
+  while m + 1 < iq.len and iq[m] == '/' and iq[m + 1] == '*':
     m += 2
-    while m < buf.len and not (m + 1 < buf.len and buf[m] == '*' and
-        buf[m + 1] == '/'):
+    while m < iq.len and not (m + 1 < iq.len and iq[m] == '*' and
+        iq[m + 1] == '/'):
       inc m
-    if m + 1 < buf.len:
+    if m + 1 < iq.len:
       inc m
-    if m < buf.len:
+    if m < iq.len:
       inc m
   n = m
-  return m < buf.len
+  return m < iq.len
 
-proc consumeToken(state: var CSSTokenizerState): CSSToken =
-  let c = state.consume()
+proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
+  let c = iq[n]
+  inc n
   case c
   of AsciiWhitespace:
-    state.skipWhitespace()
+    n = iq.skipBlanks(n)
     return CSSToken(t: cttWhitespace)
   of '"', '\'':
-    return consumeString(state, c)
+    return iq.consumeCSSString(c, n)
   of '#':
-    if state.has() and state.peek() in Ident or
-        state.has(1) and state.peek() == '\\' and state.peek(1) != '\n':
-      let flag = if state.startsWithIdentSequence():
+    if n < iq.len and iq[n] in Ident or
+        n + 1 < iq.len and iq[n] == '\\' and iq[n + 1] != '\n':
+      let flag = if iq.startsWithIdentSequence(n):
         tflagaId
       else:
         tflagaUnrestricted
       return CSSToken(
         t: cttHash,
-        value: state.consumeIdentSequence(),
+        value: iq.consumeIdentSequence(n),
         tflaga: flag
       )
     else:
-      state.reconsume()
-      return CSSToken(t: cttDelim, cvalue: state.consumeRChar())
+      dec n
+      return CSSToken(t: cttDelim, cvalue: iq.consumeRChar(n))
   of '(': return CSSToken(t: cttLparen)
   of ')': return CSSToken(t: cttRparen)
   of '{': return CSSToken(t: cttLbrace)
   of '}': return CSSToken(t: cttRbrace)
   of '+':
     # starts with a number
-    if state.has() and state.peek() in AsciiDigit or
-        state.has(1) and state.peek() == '.' and state.peek(1) in AsciiDigit:
-      state.reconsume()
-      return state.consumeNumericToken()
+    if n < iq.len and iq[n] in AsciiDigit or
+        n + 1 < iq.len and iq[n] == '.' and iq[n + 1] in AsciiDigit:
+      dec n
+      return iq.consumeNumericToken(n)
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of ',': return CSSToken(t: cttComma)
   of '-':
     # starts with a number
-    if state.has() and state.peek() in AsciiDigit or
-        state.has(1) and state.peek() == '.' and state.peek(1) in AsciiDigit:
-      state.reconsume()
-      return state.consumeNumericToken()
-    elif state.has(1) and state.peek() == '-' and state.peek(1) == '>':
-      state.seek(2)
+    if n < iq.len and iq[n] in AsciiDigit or
+        n + 1 < iq.len and iq[n] == '.' and iq[n + 1] in AsciiDigit:
+      dec n
+      return iq.consumeNumericToken(n)
+    elif n + 1 < iq.len and iq[n] == '-' and iq[n + 1] == '>':
+      n += 2
       return CSSToken(t: cttCdc)
-    elif state.startsWithIdentSequenceDash():
-      state.reconsume()
-      return state.consumeIdentLikeToken()
+    elif iq.startsWithIdentSequenceDash(n):
+      dec n
+      return iq.consumeIdentLikeToken(n)
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of '.':
     # starts with a number
-    if state.has() and state.peek() in AsciiDigit:
-      state.reconsume()
-      return state.consumeNumericToken()
+    if n < iq.len and iq[n] in AsciiDigit:
+      dec n
+      return iq.consumeNumericToken(n)
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of ':': return CSSToken(t: cttColon)
   of ';': return CSSToken(t: cttSemicolon)
   of '<':
-    if state.has(2) and state.peek() == '!' and state.peek(1) == '-' and
-        state.peek(2) == '-':
-      state.seek(3)
+    if n + 2 < iq.len and iq[n] == '!' and iq[n + 1] == '-' and
+        iq[n + 2] == '-':
+      n += 3
       return CSSToken(t: cttCdo)
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of '@':
-    if state.startsWithIdentSequence():
-      let name = state.consumeIdentSequence()
+    if iq.startsWithIdentSequence(n):
+      let name = iq.consumeIdentSequence(n)
       return CSSToken(t: cttAtKeyword, value: name)
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of '[': return CSSToken(t: cttLbracket)
   of '\\':
-    if state.has() and state.peek() != '\n':
-      state.reconsume()
-      return state.consumeIdentLikeToken()
+    if n < iq.len and iq[n] != '\n':
+      dec n
+      return iq.consumeIdentLikeToken(n)
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of ']': return CSSToken(t: cttRbracket)
   of AsciiDigit:
-    state.reconsume()
-    return state.consumeNumericToken()
+    dec n
+    return iq.consumeNumericToken(n)
   of IdentStart:
-    state.reconsume()
-    return state.consumeIdentLikeToken()
+    dec n
+    return iq.consumeIdentLikeToken(n)
   else:
-    state.reconsume()
-    return CSSToken(t: cttDelim, cvalue: state.consumeRChar())
+    dec n
+    return CSSToken(t: cttDelim, cvalue: iq.consumeRChar(n))
 
-proc tokenizeCSS(ibuf: string): seq[CSSComponentValue] =
+proc tokenizeCSS(iq: openArray[char]): seq[CSSComponentValue] =
   result = @[]
-  var state = CSSTokenizerState(buf: ibuf)
-  while state.buf.nextCSSToken(state.at):
-    result.add(state.consumeToken())
+  var n = 0
+  while iq.nextCSSToken(n):
+    result.add(iq.consumeToken(n))
 
-proc consume(state: var CSSParseState): CSSComponentValue =
-  result = state.tokens[state.at]
-  inc state.at
+func skipBlanks*(vals: openArray[CSSComponentValue]; i: int): int =
+  var i = i
+  while i < vals.len:
+    if vals[i] != cttWhitespace:
+      break
+    inc i
+  return i
 
-proc reconsume(state: var CSSParseState) =
-  dec state.at
+func findBlank*(vals: openArray[CSSComponentValue]; i: int): int =
+  var i = i
+  while i < vals.len:
+    if vals[i] == cttWhitespace:
+      break
+    inc i
+  return i
 
-func has(state: CSSParseState): bool =
-  return state.at < state.tokens.len
+func getToken*(cvals: openArray[CSSComponentValue]; i: int): Opt[CSSToken] =
+  if i < cvals.len:
+    let cval = cvals[i]
+    if cval of CSSToken:
+      return ok(CSSToken(cval))
+  return err()
 
-func peek(state: CSSParseState): CSSComponentValue =
-  return state.tokens[state.at]
+proc consumeToken*(cvals: openArray[CSSComponentValue]; i: var int):
+    Opt[CSSToken] =
+  let tok = ?cvals.getToken(i)
+  inc i
+  return ok(tok)
 
-proc skipWhitespace(state: var CSSParseState) =
-  while state.has() and state.peek() == cttWhitespace:
-    discard state.consume()
+func getToken*(cvals: openArray[CSSComponentValue]; i: int;
+    tt: set[CSSTokenType]): Opt[CSSToken] =
+  let tok = ?cvals.getToken(i)
+  if tok.t in tt:
+    return ok(tok)
+  return err()
 
-proc consumeComponentValue(state: var CSSParseState): CSSComponentValue
+func getToken*(cvals: openArray[CSSComponentValue]; i: int; t: CSSTokenType):
+    Opt[CSSToken] =
+  let tok = ?cvals.getToken(i)
+  if t == tok.t:
+    return ok(tok)
+  return err()
 
-proc consumeSimpleBlock(state: var CSSParseState; tok: CSSToken):
-    CSSSimpleBlock =
+proc consumeSimpleBlock(cvals: openArray[CSSComponentValue]; tok: CSSToken;
+    i: var int): CSSSimpleBlock =
   var ending: CSSTokenType
   case tok.t
   of cttLbrace: ending = cttRbrace
@@ -511,97 +509,109 @@ proc consumeSimpleBlock(state: var CSSParseState; tok: CSSToken):
   of cttLbracket: ending = cttRbracket
   else: doAssert false
   result = CSSSimpleBlock(token: tok)
-  while state.has():
-    let tok = state.consume()
+  while i < cvals.len:
+    let tok = cvals[i]
     if tok == ending:
+      inc i
       break
     elif tok == cttLbrace or tok == cttLbracket or tok == cttLparen:
-      result.value.add(state.consumeSimpleBlock(CSSToken(tok)))
+      inc i
+      result.value.add(cvals.consumeSimpleBlock(CSSToken(tok), i))
     else:
-      state.reconsume()
-      result.value.add(state.consumeComponentValue())
+      result.value.add(cvals.consumeComponentValue(i))
 
-proc consumeFunction(state: var CSSParseState): CSSFunction =
-  let t = CSSToken(state.consume())
+proc consumeFunction(cvals: openArray[CSSComponentValue]; i: var int):
+    CSSFunction =
+  let t = CSSToken(cvals[i])
+  inc i
   let name = parseEnumNoCase[CSSFunctionType](t.value).get(cftUnknown)
   let res = CSSFunction(name: name)
-  while state.has():
-    let t = state.consume()
+  while i < cvals.len:
+    let t = cvals[i]
     if t == cttRparen:
+      inc i
       break
-    state.reconsume()
-    res.value.add(state.consumeComponentValue())
+    res.value.add(cvals.consumeComponentValue(i))
   return res
 
-proc consumeComponentValue(state: var CSSParseState): CSSComponentValue =
-  let t = state.consume()
+proc consumeComponentValue(cvals: openArray[CSSComponentValue]; i: var int):
+    CSSComponentValue =
+  let t = cvals[i]
   if t == cttLbrace or t == cttLbracket or t == cttLparen:
-    return state.consumeSimpleBlock(CSSToken(t))
+    inc i
+    return cvals.consumeSimpleBlock(CSSToken(t), i)
   elif t == cttFunction:
-    state.reconsume()
-    return state.consumeFunction()
+    return cvals.consumeFunction(i)
+  inc i
   return t
 
-proc consumeQualifiedRule(state: var CSSParseState): Option[CSSQualifiedRule] =
+proc consumeQualifiedRule(cvals: openArray[CSSComponentValue]; i: var int):
+    Option[CSSQualifiedRule] =
   var r = CSSQualifiedRule()
-  while state.has():
-    let t = state.consume()
+  while i < cvals.len:
+    let t = cvals[i]
     if t of CSSSimpleBlock and CSSSimpleBlock(t).token == cttLbrace:
-      r.oblock = CSSSimpleBlock(t)
+      inc i
+      let oblock = CSSSimpleBlock(t)
+      r.decls = oblock.value.consumeDeclarations()
       return some(r)
     elif t == cttLbrace:
-      r.oblock = state.consumeSimpleBlock(CSSToken(t))
+      inc i
+      let oblock = cvals.consumeSimpleBlock(CSSToken(t), i)
+      r.decls = oblock.value.consumeDeclarations()
       return some(r)
     else:
-      state.reconsume()
-      r.prelude.add(state.consumeComponentValue())
+      r.prelude.add(cvals.consumeComponentValue(i))
   return none(CSSQualifiedRule)
 
-proc consumeAtRule(state: var CSSParseState): CSSAtRule =
-  let t = CSSToken(state.consume())
+proc consumeAtRule(cvals: openArray[CSSComponentValue]; i: var int): CSSAtRule =
+  let t = CSSToken(cvals[i])
+  inc i
   result = CSSAtRule(name: t.value)
-  while state.has():
-    let t = state.consume()
+  while i < cvals.len:
+    let t = cvals[i]
+    inc i
     if t of CSSSimpleBlock:
       result.oblock = CSSSimpleBlock(t)
       break
     elif t == cttSemicolon:
       break
     elif t == cttLbrace:
-      result.oblock = state.consumeSimpleBlock(CSSToken(t))
+      result.oblock = cvals.consumeSimpleBlock(CSSToken(t), i)
       break
     else:
-      state.reconsume()
-      result.prelude.add(state.consumeComponentValue())
+      dec i
+      result.prelude.add(cvals.consumeComponentValue(i))
 
-proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
-  let t = CSSToken(state.consume())
-  var decl = CSSDeclaration(name: t.value)
-  state.skipWhitespace()
-  if not state.has() or state.peek() != cttColon:
+proc consumeDeclaration(cvals: openArray[CSSComponentValue]; i: var int):
+    Option[CSSDeclaration] =
+  let t = CSSToken(cvals[i])
+  i = cvals.skipBlanks(i + 1)
+  if i >= cvals.len or cvals[i] != cttColon:
     return none(CSSDeclaration)
-  discard state.consume()
-  state.skipWhitespace()
-  while state.has():
-    decl.value.add(state.consumeComponentValue())
-  var i = decl.value.len - 1
-  var j = 2
+  i = cvals.skipBlanks(i + 1)
+  let decl = CSSDeclaration(name: t.value)
+  while i < cvals.len:
+    decl.value.add(cvals.consumeComponentValue(i))
+  var j = 0
   var k = 0
   var l = 0
-  while i >= 0 and j > 0:
-    if decl.value[i] != cttWhitespace:
-      dec j
-      if decl.value[i] == cttIdent and k == 0:
-        if CSSToken(decl.value[i]).value.equalsIgnoreCase("important"):
-          inc k
-          l = i
-      elif k == 1 and decl.value[i] == cttDelim:
-        if CSSToken(decl.value[i]).cvalue == '!':
-          decl.important = true
-          decl.value.delete(l)
-          decl.value.delete(i)
-          break
-    dec i
+  for i in countdown(decl.value.high, 0):
+    if decl.value[i] == cttWhitespace:
+      continue
+    inc j
+    if decl.value[i] == cttIdent and k == 0:
+      if CSSToken(decl.value[i]).value.equalsIgnoreCase("important"):
+        inc k
+        l = i
+    elif k == 1 and decl.value[i] == cttDelim:
+      if CSSToken(decl.value[i]).cvalue == '!':
+        decl.important = true
+        decl.value.delete(l)
+        decl.value.delete(i)
+        break
+    if j == 2:
+      break
   while decl.value.len > 0 and decl.value[^1] == cttWhitespace:
     decl.value.setLen(decl.value.len - 1)
   return some(decl)
@@ -614,275 +624,248 @@ proc consumeDeclaration(state: var CSSParseState): Option[CSSDeclaration] =
 # Currently we never use nested at-rules, so the result of consumeAtRule
 # is just discarded. This should be changed if we ever need nested at
 # rules (e.g. add a flag to include at rules).
-proc consumeDeclarations(state: var CSSParseState): seq[CSSDeclaration] =
+proc consumeDeclarations(cvals: openArray[CSSComponentValue]):
+    seq[CSSDeclaration] =
+  var i = 0
   result = @[]
-  while state.has():
-    let t = state.consume()
+  while i < cvals.len:
+    let t = cvals[i]
+    inc i
     if t == cttWhitespace or t == cttSemicolon:
       continue
     elif t == cttAtKeyword:
-      state.reconsume()
-      discard state.consumeAtRule() # see above
+      dec i
+      discard cvals.consumeAtRule(i) # see above
     elif t == cttIdent:
       var tempList = @[t]
-      while state.has() and state.peek() != cttSemicolon:
-        tempList.add(state.consumeComponentValue())
-      var tempState = CSSParseState(at: 0, tokens: tempList)
-      let decl = tempState.consumeDeclaration()
+      while i < cvals.len and cvals[i] != cttSemicolon:
+        tempList.add(cvals.consumeComponentValue(i))
+      var j = 0
+      let decl = tempList.consumeDeclaration(j)
       if decl.isSome:
         result.add(decl.get)
     else:
-      state.reconsume()
-      while state.has() and state.peek() != cttSemicolon:
-        discard state.consumeComponentValue()
+      dec i
+      while i < cvals.len and cvals[i] != cttSemicolon:
+        discard cvals.consumeComponentValue(i)
 
-proc consumeListOfRules(state: var CSSParseState; topLevel = false):
+proc consumeListOfRules(cvals: openArray[CSSComponentValue]; topLevel: bool):
     seq[CSSRule] =
-  while state.has():
-    let t = state.consume()
+  var i = 0
+  while i < cvals.len:
+    let t = cvals[i]
+    inc i
     if t == cttWhitespace:
       continue
     elif t == cttCdo or t == cttCdc:
       if topLevel:
         continue
-      state.reconsume()
-      let q = state.consumeQualifiedRule()
+      dec i
+      let q = cvals.consumeQualifiedRule(i)
       if q.isSome:
         result.add(q.get)
     elif t == cttAtKeyword:
-      state.reconsume()
-      result.add(state.consumeAtRule())
+      dec i
+      result.add(cvals.consumeAtRule(i))
     else:
-      state.reconsume()
-      let q = state.consumeQualifiedRule()
+      dec i
+      let q = cvals.consumeQualifiedRule(i)
       if q.isSome:
         result.add(q.get)
 
-proc parseStylesheet(state: var CSSParseState): CSSRawStylesheet =
-  return CSSRawStylesheet(value: state.consumeListOfRules(true))
+proc parseListOfRules*(iq: openArray[char]; topLevel: bool): seq[CSSRule] =
+  return tokenizeCSS(iq).consumeListOfRules(topLevel)
 
-proc parseStylesheet*(ibuf: string): CSSRawStylesheet =
-  var state = CSSParseState(tokens: tokenizeCSS(ibuf))
-  return state.parseStylesheet()
+proc parseListOfRules*(cvals: openArray[CSSComponentValue]; topLevel: bool):
+    seq[CSSRule] =
+  return cvals.consumeListOfRules(topLevel)
 
-proc parseListOfRules(state: var CSSParseState): seq[CSSRule] =
-  return state.consumeListOfRules()
-
-proc parseListOfRules*(cvals: seq[CSSComponentValue]): seq[CSSRule] =
-  var state = CSSParseState(tokens: cvals)
-  return state.parseListOfRules()
-
-proc parseRule(state: var CSSParseState): DOMResult[CSSRule] =
-  state.skipWhitespace()
-  if not state.has():
+proc parseRule(cvals: openArray[CSSComponentValue]): DOMResult[CSSRule] =
+  var i = cvals.skipBlanks(0)
+  if i >= cvals.len:
     return errDOMException("Unexpected EOF", "SyntaxError")
-  var res = if state.peek() == cttAtKeyword:
-    state.consumeAtRule()
+  var res = if cvals[i] == cttAtKeyword:
+    cvals.consumeAtRule(i)
   else:
-    let q = state.consumeQualifiedRule()
+    let q = cvals.consumeQualifiedRule(i)
     if q.isNone:
-      return errDOMException("No qualified rule found!", "SyntaxError")
+      return errDOMException("No qualified rule found", "SyntaxError")
     q.get
-  state.skipWhitespace()
-  if state.has():
+  if cvals.skipBlanks(i) < cvals.len:
     return errDOMException("EOF not reached", "SyntaxError")
   return ok(res)
 
-proc parseRule*(ibuf: string): DOMResult[CSSRule] =
-  var state = CSSParseState(tokens: tokenizeCSS(ibuf))
-  return state.parseRule()
+proc parseRule*(iq: openArray[char]): DOMResult[CSSRule] =
+  return tokenizeCSS(iq).parseRule()
 
-proc parseDeclarations*(cvals: seq[CSSComponentValue]): seq[CSSDeclaration] =
-  var state = CSSParseState(tokens: cvals)
-  return state.consumeDeclarations()
+proc parseDeclarations*(iq: openArray[char]): seq[CSSDeclaration] =
+  return tokenizeCSS(iq).consumeDeclarations()
 
-proc parseDeclarations*(ibuf: string): seq[CSSDeclaration] =
-  return parseDeclarations(tokenizeCSS(ibuf))
-
-proc parseComponentValue(state: var CSSParseState):
-    DOMResult[CSSComponentValue] =
-  state.skipWhitespace()
-  if not state.has():
+proc parseComponentValue*(iq: openArray[char]): DOMResult[CSSComponentValue] =
+  let cvals = tokenizeCSS(iq)
+  var i = cvals.skipBlanks(0)
+  if i >= cvals.len:
     return errDOMException("Unexpected EOF", "SyntaxError")
-  let res = state.consumeComponentValue()
-  state.skipWhitespace()
-  if state.has():
+  let res = cvals.consumeComponentValue(i)
+  if cvals.skipBlanks(i) < cvals.len:
     return errDOMException("EOF not reached", "SyntaxError")
   return ok(res)
 
-proc parseComponentValue*(ibuf: string): DOMResult[CSSComponentValue] =
-  var state = CSSParseState(tokens: tokenizeCSS(ibuf))
-  return state.parseComponentValue()
-
-proc parseComponentValues(state: var CSSParseState): seq[CSSComponentValue] =
+proc parseComponentValues*(iq: openArray[char]): seq[CSSComponentValue] =
+  let cvals = tokenizeCSS(iq)
   result = @[]
-  while state.has():
-    result.add(state.consumeComponentValue())
+  var i = 0
+  while i < cvals.len:
+    result.add(cvals.consumeComponentValue(i))
 
-proc parseComponentValues*(ibuf: string): seq[CSSComponentValue] =
-  var state = CSSParseState(tokens: tokenizeCSS(ibuf))
-  return state.parseComponentValues()
-
-proc nextCommaSepComponentValue(state: var CSSParseState;
-    s: out seq[CSSComponentValue]): bool =
+proc nextCommaSepComponentValue(cvals: openArray[CSSComponentValue];
+    s: out seq[CSSComponentValue]; i: var int): bool =
   s = @[]
-  while state.has():
-    let cvl = state.consumeComponentValue()
+  while i < cvals.len:
+    let cvl = cvals.consumeComponentValue(i)
     if cvl == cttComma:
       break
     s.add(cvl)
   return s.len > 0
 
-iterator parseCommaSepComponentValues*(cvals: seq[CSSComponentValue]):
+iterator parseCommaSepComponentValues*(cvals: openArray[CSSComponentValue]):
     seq[CSSComponentValue] =
-  var state = CSSParseState(tokens: cvals)
+  var i = 0
   var s: seq[CSSComponentValue]
-  while state.nextCommaSepComponentValue(s):
+  while cvals.nextCommaSepComponentValue(s, i):
     yield move(s)
 
-proc parseAnB*(state: var CSSParseState): Option[CSSAnB] =
+proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
+    Opt[CSSAnB] =
   template is_eof: bool =
-    not state.has() or not (state.peek() of CSSToken)
+    i >= cvals.len or not (cvals[i] of CSSToken)
   template fail_eof =
     if is_eof:
-      return none(CSSAnB)
+      return err()
   template get_plus: bool =
-    let tok = state.peek()
-    if tok == cttDelim and CSSToken(tok).cvalue == '+':
-      discard state.consume()
+    let tok = cvals.getToken(i, cttDelim)
+    if tok.isSome and tok.get.cvalue == '+':
+      inc i
       true
     else:
       false
   template get_tok: CSSToken =
-    state.skipWhitespace()
-    fail_eof
-    CSSToken(state.consume())
-  template get_tok_nows: CSSToken =
-    fail_eof
-    CSSToken(state.consume())
+    i = cvals.skipBlanks(i)
+    ?cvals.consumeToken(i)
   template fail_plus =
     if is_plus:
-      return none(CSSAnB)
+      return err()
   template parse_sub_int(sub: string; skip: int): int32 =
     let s = sub.substr(skip)
     let x = parseInt32(s)
     if x.isNone:
-      return none(CSSAnB)
+      return err()
     x.get
-  template fail_non_integer(tok: CSSToken; res: Option[CSSAnB]) =
+  template fail_non_integer(tok: CSSToken; res: Opt[CSSAnB]) =
     if tok.t != cttINumber:
-      state.reconsume()
+      dec i
       return res
     if int64(tok.nvalue) > high(int):
-      state.reconsume()
+      dec i
       return res
-  template fail_non_signless_integer(tok: CSSToken; res: Option[CSSAnB]) =
+  template fail_non_signless_integer(tok: CSSToken; res: Opt[CSSAnB]) =
     fail_non_integer tok, res #TODO check if signless?
 
-  fail_eof
-  state.skipWhitespace()
+  i = cvals.skipBlanks(i)
   fail_eof
   let is_plus = get_plus
-  let tok = get_tok_nows
+  let tok = ?cvals.consumeToken(i)
   case tok.t
   of cttIdent:
     case tok.value
     of "odd":
       fail_plus
-      return some((2i32, 1i32))
+      return ok((2i32, 1i32))
     of "even":
       fail_plus
-      return some((2i32, 0i32))
+      return ok((2i32, 0i32))
     of "n", "N":
-      state.skipWhitespace()
+      i = cvals.skipBlanks(i)
       if is_eof:
-        return some((1i32, 0i32))
-      let tok2 = get_tok_nows
+        return ok((1i32, 0i32))
+      let tok2 = ?cvals.consumeToken(i)
       if tok2.t == cttDelim:
         let sign = case tok2.cvalue
         of '+': 1i32
         of '-': -1i32
-        else: return none(CSSAnB)
+        else: return err()
         let tok3 = get_tok
-        fail_non_signless_integer tok3, some((1i32, 0i32))
-        return some((1i32, sign * int32(tok3.nvalue)))
+        fail_non_signless_integer tok3, ok((1i32, 0i32))
+        return ok((1i32, sign * int32(tok3.nvalue)))
       else:
-        fail_non_integer tok2, some((1i32, 0i32))
-        return some((1i32, int32(tok2.nvalue)))
+        fail_non_integer tok2, ok((1i32, 0i32))
+        return ok((1i32, int32(tok2.nvalue)))
     of "-n", "-N":
       fail_plus
-      state.skipWhitespace()
+      i = cvals.skipBlanks(i)
       if is_eof:
-        return some((-1i32, 0i32))
-      let tok2 = get_tok_nows
+        return ok((-1i32, 0i32))
+      let tok2 = ?cvals.consumeToken(i)
       if tok2.t == cttDelim:
         let sign = case tok2.cvalue
         of '+': 1i32
         of '-': -1i32
-        else: return none(CSSAnB)
+        else: return err()
         let tok3 = get_tok
-        fail_non_signless_integer tok3, some((-1i32, 0i32))
-        return some((-1i32, sign * int32(tok3.nvalue)))
+        fail_non_signless_integer tok3, ok((-1i32, 0i32))
+        return ok((-1i32, sign * int32(tok3.nvalue)))
       else:
-        fail_non_integer tok2, some((-1i32, 0i32))
-        return some((-1i32, int32(tok2.nvalue)))
+        fail_non_integer tok2, ok((-1i32, 0i32))
+        return ok((-1i32, int32(tok2.nvalue)))
     of "n-", "N-":
       let tok2 = get_tok
-      fail_non_signless_integer tok2, none(CSSAnB)
-      return some((1i32, -int32(tok2.nvalue)))
+      fail_non_signless_integer tok2, err()
+      return ok((1i32, -int32(tok2.nvalue)))
     of "-n-", "-N-":
       fail_plus
       let tok2 = get_tok
-      fail_non_signless_integer tok2, none(CSSAnB)
-      return some((-1i32, -int32(tok2.nvalue)))
+      fail_non_signless_integer tok2, err()
+      return ok((-1i32, -int32(tok2.nvalue)))
     elif tok.value.startsWithIgnoreCase("n-"):
-      return some((1i32, -parse_sub_int(tok.value, "n-".len)))
+      return ok((1i32, -parse_sub_int(tok.value, "n-".len)))
     elif tok.value.startsWithIgnoreCase("-n-"):
       fail_plus
-      return some((-1i32, -parse_sub_int(tok.value, "n-".len)))
+      return ok((-1i32, -parse_sub_int(tok.value, "n-".len)))
     else:
-      return none(CSSAnB)
+      return err()
   of cttINumber:
     fail_plus
     # <integer>
-    return some((0i32, int32(tok.nvalue)))
+    return ok((0i32, int32(tok.nvalue)))
   of cttIDimension:
     fail_plus
     case tok.unit
     of "n", "N":
       # <n-dimension>
-      state.skipWhitespace()
+      i = cvals.skipBlanks(i)
       if is_eof:
-        return some((int32(tok.nvalue), 0i32))
-      let tok2 = get_tok_nows
+        return ok((int32(tok.nvalue), 0i32))
+      let tok2 = ?cvals.consumeToken(i)
       if tok2.t == cttDelim:
         let sign = case tok2.cvalue
         of '+': 1i32
         of '-': -1i32
-        else: return none(CSSAnB)
+        else: return err()
         let tok3 = get_tok
-        fail_non_signless_integer tok3, some((int32(tok.nvalue), 0i32))
-        return some((int32(tok.nvalue), sign * int32(tok3.nvalue)))
+        fail_non_signless_integer tok3, ok((int32(tok.nvalue), 0i32))
+        return ok((int32(tok.nvalue), sign * int32(tok3.nvalue)))
       else:
-        fail_non_integer tok2, some((int32(tok.nvalue), 0i32))
-        return some((int32(tok.nvalue), int32(tok2.nvalue)))
+        fail_non_integer tok2, ok((int32(tok.nvalue), 0i32))
+        return ok((int32(tok.nvalue), int32(tok2.nvalue)))
     of "n-", "N-":
       # <ndash-dimension>
       let tok2 = get_tok
-      fail_non_signless_integer tok2, none(CSSAnB)
-      return some((int32(tok.nvalue), -int32(tok2.nvalue)))
+      fail_non_signless_integer tok2, err()
+      return ok((int32(tok.nvalue), -int32(tok2.nvalue)))
     elif tok.unit.startsWithIgnoreCase("n-"):
       # <ndashdigit-dimension>
-      return some((int32(tok.nvalue), -parse_sub_int(tok.unit, "n-".len)))
+      return ok((int32(tok.nvalue), -parse_sub_int(tok.unit, "n-".len)))
     else:
-      return none(CSSAnB)
+      return err()
   else:
-    return none(CSSAnB)
-
-proc parseAnB*(cvals: seq[CSSComponentValue]): (Option[CSSAnB], int) =
-  var state = CSSParseState(tokens: cvals)
-  let anb = state.parseAnB()
-  return (anb, state.at)
-
-proc parseCSSString*(buf: openArray[char]; ending: char; n: var int): CSSToken =
-  return buf.consumeString(ending, n)
+    return err()

@@ -204,30 +204,29 @@ proc add*(sheet, sheet2: CSSStylesheet) =
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
   var sels = parseSelectors(rule.prelude)
   if sels.len > 0:
-    let decls = rule.oblock.value.parseDeclarations()
-    let rule = CSSRuleDef(sels: move(sels), idx: sheet.len)
-    for decl in decls:
+    let ruleDef = CSSRuleDef(sels: move(sels), idx: sheet.len)
+    for decl in rule.decls:
       if decl.name.startsWith("--"):
         let cvar = CSSVariable(
           name: decl.name.substr(2).toAtom(),
           cvals: decl.value
         )
         if decl.important:
-          rule.importantVars.add(cvar)
+          ruleDef.importantVars.add(cvar)
         else:
-          rule.normalVars.add(cvar)
+          ruleDef.normalVars.add(cvar)
       else:
         if decl.important:
-          let olen = rule.importantVals.len
-          if rule.importantVals.parseComputedValues(decl.name, decl.value,
+          let olen = ruleDef.importantVals.len
+          if ruleDef.importantVals.parseComputedValues(decl.name, decl.value,
               sheet.attrs[]).isNone:
-            rule.importantVals.setLen(olen)
+            ruleDef.importantVals.setLen(olen)
         else:
-          let olen = rule.normalVals.len
-          if rule.normalVals.parseComputedValues(decl.name, decl.value,
+          let olen = ruleDef.normalVals.len
+          if ruleDef.normalVals.parseComputedValues(decl.name, decl.value,
               sheet.attrs[]).isNone:
-            rule.normalVals.setLen(olen)
-    sheet.add(rule)
+            ruleDef.normalVals.setLen(olen)
+    sheet.add(ruleDef)
     inc sheet.len
 
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
@@ -248,7 +247,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
   elif atrule.name.equalsIgnoreCase("media"):
     if atrule.oblock != nil:
       let query = parseMediaQueryList(atrule.prelude, sheet.attrs)
-      let rules = atrule.oblock.value.parseListOfRules()
+      let rules = atrule.oblock.value.parseListOfRules(topLevel = false)
       if rules.len > 0:
         var media = CSSMediaQueryDef()
         media.children = newStylesheet(rules.len, sheet.attrs)
@@ -264,9 +263,9 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
 
 proc parseStylesheet*(ibuf: string; base: URL; attrs: ptr WindowAttributes):
     CSSStylesheet =
-  let raw = parseStylesheet(ibuf)
-  let sheet = newStylesheet(raw.value.len, attrs)
-  for v in raw.value:
+  let rules = parseListOfRules(ibuf, topLevel = true)
+  let sheet = newStylesheet(rules.len, attrs)
+  for v in rules:
     if v of CSSAtRule:
       sheet.addAtRule(CSSAtRule(v), base)
     else:

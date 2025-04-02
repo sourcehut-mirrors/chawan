@@ -802,7 +802,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
       break
     let ending = s[i]
     inc i
-    let tok = s.parseCSSString(ending, i)
+    let tok = s.consumeCSSString(ending, i)
     if tok.t != cttString:
       break
     while s.nextCSSToken(i):
