@@ -2,8 +2,8 @@
 .\"
 .TH "cha\-css" "7" "" "" "Image support in Chawan"
 .SH CSS in Chawan
-This document describes CSS properties supported by Chawan, as well as
-its proprietary extensions and deviations from standards.
+This document describes CSS features supported by Chawan, as well as its
+proprietary extensions and deviations from standards.
 .PP
 If you discover a deviation that is not covered by this document, please
 open a ticket at \c
@@ -153,6 +153,21 @@ non\-shorthand properties and the \f[CR]background\f[R] shorthand.
 Values with a \f[CR]<length>\f[R] type support very simple
 \f[CR]calc()\f[R] expressions that consist of one addition or
 subtraction and do not use the \f[CR]var\f[R] function.
+.SS Selectors
+All selector types from CSS 2.1 are supported, except for namespaces.
+.PP
+Following standard pseudo\-classes are supported:
+\f[CR]:first\-child\f[R], \f[CR]:last\-child\f[R],
+\f[CR]:only\-child\f[R], \f[CR]:hover\f[R], \f[CR]:root\f[R],
+\f[CR]:nth\-child()\f[R], \f[CR]:nth\-last\-child()\f[R],
+\f[CR]:checked\f[R], \f[CR]:focus\f[R], \f[CR]:is()\f[R],
+\f[CR]:not()\f[R], \f[CR]:where()\f[R], \f[CR]:lang()\f[R] (only
+\[lq]en\[rq] is matched), \f[CR]:link\f[R], \f[CR]:target\f[R].
+.PP
+\f[CR]:visited\f[R] is parsed, but for now it is not matched.
+.PP
+The standard pseudo\-elements \f[CR]::before\f[R], \f[CR]::after\f[R],
+and \f[CR]::marker\f[R] are supported.
 .SS Proprietary extensions
 .IP \[bu] 2
 \f[CR]text\-align\f[R] accepts the values \f[CR]\-cha\-center\f[R],
@@ -192,12 +207,12 @@ The \f[CR]\-cha\-colspan\f[R] and \f[CR]\-cha\-rowspan\f[R] properties
 have the same effect as the \f[CR]colspan\f[R] and \f[CR]rowspan\f[R]
 attributes on tables.
 .IP \[bu] 2
-The \f[CR]\-cha\-first\-node\f[R] and \f[CR]\-cha\-last\-node\f[R]
-selectors apply to elements that have no preceding/subsequent sibling
-node that is either an element node or a text node with non\-whitespace
-contents.
-(Modeled after \f[CR]\-moz\-first\-node\f[R] and
-\f[CR]\-moz\-last\-node\f[R].)
+The \f[CR]:\-cha\-first\-node\f[R] and \f[CR]:\-cha\-last\-node\f[R]
+pseudo\-classes apply to elements that have no preceding/subsequent
+sibling node that is either an element node or a text node with
+non\-whitespace contents.
+(Modeled after \f[CR]:\-moz\-first\-node\f[R] and
+\f[CR]:\-moz\-last\-node\f[R].)
 .IP \[bu] 2
 If \f[CR]buffer.mark\-links\f[R] is set, the
 \f[CR]::\-cha\-link\-marker\f[R] pseudo\-element will be generated on
@@ -210,7 +225,7 @@ screen.
 The user agent style sheet is a combination of the styles suggested by
 the HTML standard and a CSS port of w3m\[cq]s rendering.
 In general, faithfulness to w3m is preferred over the standard\[cq]s
-suggestions, unless those break on existing websites.
+suggestions, unless w3m\[cq]s rendering breaks on existing websites.
 .PP
 Link colors differ depending on the terminal\[cq]s color scheme.
 .SS Sizing and positioning

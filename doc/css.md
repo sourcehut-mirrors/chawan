@@ -4,7 +4,7 @@ MANOFF -->
 
 # CSS in Chawan
 
-This document describes CSS properties supported by Chawan, as well as
+This document describes CSS features supported by Chawan, as well as
 its proprietary extensions and deviations from standards.
 
 If you discover a deviation that is not covered by this document, please
@@ -91,7 +91,18 @@ Values with a `<length>` type support very simple `calc()` expressions
 that consist of one addition or subtraction and do not use the `var`
 function.
 
-The standard pseudo-elements ::before, ::after, and ::marker are
+## Selectors
+
+All selector types from CSS 2.1 are supported, except for namespaces.
+
+Following standard pseudo-classes are supported: `:first-child`,
+`:last-child`, `:only-child`, `:hover`, `:root`, `:nth-child()`,
+`:nth-last-child()`, `:checked`, `:focus`, `:is()`, `:not()`,
+`:where()`, `:lang()` (only "en" is matched), `:link`, `:target`.
+
+`:visited` is parsed, but for now it is not matched.
+
+The standard pseudo-elements `::before`, `::after`, and `::marker` are
 supported.
 
 ## Proprietary extensions
@@ -105,6 +116,7 @@ supported.
 
 	- An 8-bit integer, indicating a color value as set by XTerm's
 	  indexed color feature.
+
 	- One of the strings "black", "red", "green", "yellow", "blue",
 	  "magenta", "cyan", "white" for an ANSI color, possibly
 	  prefixed by the string "bright-" to indicate an aixterm
@@ -126,10 +138,10 @@ supported.
 * The `-cha-colspan` and `-cha-rowspan` properties have the same effect
   as the `colspan` and `rowspan` attributes on tables.
 
-* The `-cha-first-node` and `-cha-last-node` selectors apply to elements
-  that have no preceding/subsequent sibling node that is either an
-  element node or a text node with non-whitespace contents.  (Modeled
-  after `-moz-first-node` and `-moz-last-node`.)
+* The `:-cha-first-node` and `:-cha-last-node` pseudo-classes apply to
+  elements that have no preceding/subsequent sibling node that is either
+  an element node or a text node with non-whitespace contents.  (Modeled
+  after `:-moz-first-node` and `:-moz-last-node`.)
 
 * If `buffer.mark-links` is set, the `::-cha-link-marker` pseudo-element
   will be generated on all anchor elements.
@@ -144,7 +156,7 @@ the display model inherent to projecting the web to a cell-based screen.
 The user agent style sheet is a combination of the styles suggested by
 the HTML standard and a CSS port of w3m's rendering.  In general,
 faithfulness to w3m is preferred over the standard's suggestions, unless
-those break on existing websites.
+w3m's rendering breaks on existing websites.
 
 Link colors differ depending on the terminal's color scheme.
 
