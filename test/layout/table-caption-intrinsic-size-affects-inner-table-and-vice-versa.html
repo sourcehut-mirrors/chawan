@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<style>
+xtable { display: table; background: green }
+xcaption { display: table-caption; background: pink }
+xtr { display: table-row; background: blue }
+xtd { display: table-cell; background: red }
+</style>
+
+<!-- caption grows to its intrinsic min width -->
+<div style="width: 1ch">
+<xtable>
+<xcaption><div style="width: 20%; background: blue; height: 1em"></div>testtesttesttest</xcaption>
+<xtr><xtd>test</xtd></xtr>
+</xtable>
+</div>
+
+<!-- available space constrains table, caption is larger than space
+     -> table grows to caption's intrinsic min width -->
+<div style="width: 5ch">
+<xtable>
+<xcaption>testtesttesttest</xcaption>
+<xtr><xtd>test test</xtd></xtr>
+</xtable>
+</div>
+
+<!-- caption & table both fit in available space
+     -> break lines -->
+<div style="width: 5ch">
+<xtable>
+<xcaption>test test</xcaption>
+<xtr><xtd>test test</xtd></xtr>
+</xtable>
+</div>
+
+<!-- caption & table are not constrained in size, table is smaller
+     -> table remains smaller -->
+<xtable>
+<xcaption>testtesttesttest</xcaption>
+<xtr><xtd>test test</xtd></xtr>
+</xtable>
+
+<!-- caption & table are not constrained in size, table is larger
+     -> caption stretched to table size -->
+<xtable>
+<xcaption><div style="width: 50%; height: 1em; background: blue"></div></xcaption>
+<xtr>
+<xtd>
+atest test
+</xtd>
+</xtr>
+</xtable>

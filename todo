@@ -69,7 +69,6 @@ layout:
 	  1ch in x direction and 1em in y direction.
 	* table is high priority; for other boxes, I don't know if it
 	  would work
-- table layout: include caption in width calculation
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
 - layout caching

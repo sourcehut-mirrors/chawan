@@ -144,6 +144,12 @@ func applySizeConstraint(u: LUnit; availableSize: SizeConstraint): LUnit =
 func outerSize(box: BlockBox; dim: DimensionType; sizes: ResolvedSizes): LUnit =
   return sizes.margin[dim].sum() + box.state.size[dim]
 
+func outerSize(box: BlockBox; sizes: ResolvedSizes): Size =
+  return size(
+    w = box.outerSize(dtHorizontal, sizes),
+    h = box.outerSize(dtVertical, sizes)
+  )
+
 func max(span: Span): LUnit =
   return max(span.start, span.send)
 
@@ -1568,10 +1574,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
   let lctx = fstate.lctx
   let sizes = lctx.resolveFloatSizes(fstate.space, child.computed)
   lctx.layoutRootBlock(child, fstate.offset + sizes.margin.topLeft, sizes)
-  let outerSize = size(
-    w = child.outerSize(dtHorizontal, sizes),
-    h = child.outerSize(dtVertical, sizes)
-  )
+  let outerSize = child.outerSize(sizes)
   if fstate.space.w.t == scFitContent:
     # Float position depends on the available width, but in this case
     # the parent width is not known.  Skip this box; we will position
@@ -1766,10 +1769,7 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
       ibox: ibox,
       baseline: box.state.baseline + sizes.margin.top,
       vertalign: box.computed{"vertical-align"},
-      size: size(
-        w = box.outerSize(dtHorizontal, sizes),
-        h = box.outerSize(dtVertical, sizes)
-      )
+      size: box.outerSize(sizes)
     )
     var istate = InlineState(ibox: ibox)
     discard fstate.addAtom(istate, iastate)
@@ -2522,25 +2522,10 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
     # min-height...
     table.state.size.h = y
 
-proc layoutCaption(tctx: TableContext; parent, box: BlockBox) =
-  let lctx = tctx.lctx
-  let space = availableSpace(w = stretch(parent.state.size.w), h = maxContent())
-  let sizes = lctx.resolveBlockSizes(space, box.computed)
-  lctx.layoutRootBlock(box, offset(x = sizes.margin.left, y = 0), sizes)
-  box.state.offset.x += sizes.margin.left
-  box.state.offset.y += sizes.margin.top
-  let outerHeight = box.outerSize(dtVertical, sizes)
-  let outerWidth = box.outerSize(dtHorizontal, sizes)
-  let table = BlockBox(parent.firstChild)
-  case box.computed{"caption-side"}
-  of CaptionSideTop, CaptionSideBlockStart:
-    table.state.offset.y += outerHeight
-  of CaptionSideBottom, CaptionSideBlockEnd:
-    box.state.offset.y += table.state.size.h
-  parent.state.size.w = max(parent.state.size.w, outerWidth)
-  parent.state.intr.w = max(parent.state.intr.w, box.state.intr.w)
-  parent.state.size.h += outerHeight
-  parent.state.intr.h += outerHeight - box.state.size.h + box.state.intr.h
+proc layoutCaption(lctx: LayoutContext; box: BlockBox; space: AvailableSpace;
+    sizes: out ResolvedSizes) =
+  sizes = lctx.resolveBlockSizes(space, box.computed)
+  lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
 
 proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
     sizes: ResolvedSizes) =
@@ -2570,22 +2555,61 @@ proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
   # specified, ergo it always equals the intrinisc minimum height.
   table.state.intr.h = table.state.size.h
 
-# As per standard, we must put the caption outside the actual table, inside a
-# block-level wrapper box.
+# As per standard, we must put the caption outside the actual table,
+# inside a block-level wrapper box.
+#
+# Note that computing the caption's width isn't as simple as it sounds.
+# First, the caption's intrinsic minimum size overrides the available
+# space (unlike what happens in flow, where available space wins).
+# Second, table and caption width has a cyclic dependency, in that the
+# larger of the two must be used for layouting both the cells and the
+# caption.
+#
+# So conceptually we first layout caption, relayout with its intrinsic
+# min size if needed, then layout table, then caption again if table's
+# width exceeds caption's width.  (In practice, the second layout is
+# skipped if there will be a third one, so we never layout more than
+# twice.)
 proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
+  let lctx = bctx.lctx
   let table = BlockBox(box.firstChild)
   table.resetState()
-  var tctx = TableContext(lctx: bctx.lctx, space: sizes.space)
+  var tctx = TableContext(lctx: lctx, space: sizes.space)
+  let caption = BlockBox(table.next)
+  var captionSpace = availableSpace(
+    w = fitContent(sizes.space.w),
+    h = maxContent()
+  )
+  var captionSizes: ResolvedSizes
+  if caption != nil:
+    lctx.layoutCaption(caption, captionSpace, captionSizes)
+    if captionSpace.w.isDefinite():
+      if caption.state.intr.w != captionSpace.w.u:
+        captionSpace.w.u = caption.state.intr.w
+      if tctx.space.w.t == scStretch and tctx.space.w.u < captionSpace.w.u:
+        tctx.space.w.u = captionSpace.w.u
   tctx.layoutInnerTable(table, box, sizes)
   box.state.size = table.state.size
   box.state.baseline = table.state.size.h
   box.state.firstBaseline = table.state.size.h
   box.state.intr = table.state.intr
-  if table.next != nil:
-    # do it here, so that caption's box can stretch to our width
-    let caption = BlockBox(table.next)
-    #TODO also count caption width in table width
-    tctx.layoutCaption(box, caption)
+  if caption != nil:
+    if captionSpace.w.isDefinite():
+      if table.state.size.w > captionSpace.w.u:
+        captionSpace.w = stretch(table.state.size.w)
+      if captionSpace.w.u != caption.state.size.w: # desired size changed; redo
+        lctx.layoutCaption(caption, captionSpace, captionSizes)
+    let outerSize = caption.outerSize(captionSizes)
+    case caption.computed{"caption-side"}
+    of CaptionSideTop, CaptionSideBlockStart:
+      table.state.offset.y += outerSize.h
+    of CaptionSideBottom, CaptionSideBlockEnd:
+      caption.state.offset.y += table.state.size.h
+    box.state.size.w = max(box.state.size.w, outerSize.w)
+    box.state.intr.w = max(box.state.intr.w, caption.state.intr.w)
+    box.state.size.h += outerSize.h
+    box.state.intr.h += outerSize.h - caption.state.size.h +
+      caption.state.intr.h
 
 # Flex layout.
 type
