@@ -132,7 +132,7 @@ proc consumeCommand(state: var MailcapParser; buf: openArray[char];
       if c == '\\':
         quoted = true
         # fall through; backslash will be parsed again in unquoteCommand
-      elif c notin AllChars - Controls:
+      elif c in Controls:
         return state.err("invalid character in command: " & c)
     else:
       quoted = false
