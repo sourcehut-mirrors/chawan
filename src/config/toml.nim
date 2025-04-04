@@ -122,7 +122,7 @@ func peek(state: TomlParser; buf: openArray[char]; i: int): char =
   return buf[state.at + i]
 
 template err(state: TomlParser; msg: string): untyped =
-  err(state.filename & "(" & $state.line & "):" & msg)
+  err(state.filename & "(" & $state.line & "): " & msg)
 
 proc consume(state: var TomlParser; buf: openArray[char]): char =
   result = buf[state.at]

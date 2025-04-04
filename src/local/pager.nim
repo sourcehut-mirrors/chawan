@@ -2228,7 +2228,7 @@ proc updateReadLine(pager: Pager) =
           pager.saveTo(data, lineedit.news)
       of lmMailcap:
         var mailcap = Mailcap.default
-        let res = mailcap.parseMailcap(lineedit.news)
+        let res = mailcap.parseMailcap(lineedit.news, "<input>")
         let data = LineDataMailcap(pager.lineData)
         if res.isSome and mailcap.len == 1:
           let res = pager.runMailcap(data.container.url, data.ostream,

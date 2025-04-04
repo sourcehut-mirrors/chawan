@@ -403,14 +403,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
 
 proc typeCheck(v: TomlValue; t: TomlValueType; k: string): Err[string] =
   if v.t != t:
-    return err("invalid type for key " & k & " (got " & $v.t & ", expected " &
-      $t & ")")
+    return err(k & ": invalid type (got " & $v.t & ", expected " & $t & ")")
   ok()
 
 proc typeCheck(v: TomlValue; t: set[TomlValueType]; k: string): Err[string] =
   if v.t notin t:
-    return err("invalid type for key " & k & " (got " & $v.t & ", expected " &
-      $t & ")")
+    return err(k & ": invalid type (got " & $v.t & ", expected " & $t & ")")
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
@@ -716,16 +714,16 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
     let ps = newPosixStream(p)
     if ps != nil:
       let src = ps.readAllOrMmap()
-      let res = x.parseMailcap(src.toOpenArray())
+      let res = x.parseMailcap(src.toOpenArray(), p)
       deallocMem(src)
       ps.sclose()
       if res.isNone:
-        ctx.warnings.add("Error reading mailcap: " & res.error)
+        ctx.warnings.add(res.error)
   ok()
 
 const DefaultMailcap = block:
   var mailcap: Mailcap
-  doAssert mailcap.parseMailcap(staticRead"res/mailcap").isSome
+  doAssert mailcap.parseMailcap(staticRead"res/mailcap", "res/mailcap").isSome
   mailcap
 
 proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
@@ -736,11 +734,11 @@ proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
   let ps = newPosixStream(path)
   if ps != nil:
     let src = ps.readAllOrMmap()
-    let res = x.entries.parseMailcap(src.toOpenArray())
+    let res = x.entries.parseMailcap(src.toOpenArray(), path)
     deallocMem(src)
     ps.sclose()
     if res.isNone:
-      ctx.warnings.add("Error reading auto-mailcap: " & res.error)
+      ctx.warnings.add(res.error)
   x.entries.add(DefaultMailcap)
   ok()
 

@@ -14,6 +14,7 @@ type
   MailcapParser = object
     at: int
     line: int
+    path: string
 
   MailcapFlag* = enum
     mfNeedsterminal = "needsterminal"
@@ -54,8 +55,13 @@ proc `$`*(entry: MailcapEntry): string =
 proc has(state: MailcapParser; buf: openArray[char]): bool {.inline.} =
   return state.at < buf.len
 
-proc reconsume(state: var MailcapParser) =
+template err(state: MailcapParser; msg: string): untyped =
+  err(state.path & '(' & $state.line & "): " & msg)
+
+proc reconsume(state: var MailcapParser; buf: openArray[char]) =
   dec state.at
+  if buf[state.at] == '\n':
+    dec state.line
 
 proc consume(state: var MailcapParser; buf: openArray[char]): char =
   let c = buf[state.at]
@@ -79,7 +85,7 @@ proc consume(state: var MailcapParser; buf: openArray[char]): char =
 proc skipBlanks(state: var MailcapParser; buf: openArray[char]) =
   while state.has(buf):
     if state.consume(buf) notin AsciiWhitespace - {'\n'}:
-      state.reconsume()
+      state.reconsume(buf)
       break
 
 proc skipLine(state: var MailcapParser; buf: openArray[char]) =
@@ -94,22 +100,21 @@ proc consumeTypeField(state: var MailcapParser; buf: openArray[char];
   while state.has(buf):
     let c = state.consume(buf)
     if c in AsciiWhitespace + {';'}:
-      state.reconsume()
+      state.reconsume(buf)
       break
     if c == '/':
       inc nslash
     elif c notin AsciiAlphaNumeric + {'-', '.', '*', '_', '+'}:
-      return err("line " & $state.line &
-        ": invalid character in type field: " & c)
+      return state.err("invalid character in type field: " & c)
     outs &= c.toLowerAscii()
   if nslash == 0:
     # Accept types without a subtype - RFC calls this "implicit-wild".
     outs &= "/*"
   if nslash > 1:
-    return err("line " & $state.line & ": too many slash characters")
+    return state.err("too many slash characters")
   state.skipBlanks(buf)
   if not state.has(buf) or state.consume(buf) != ';':
-    return err("Semicolon not found")
+    return state.err("semicolon not found")
   return ok()
 
 proc consumeCommand(state: var MailcapParser; buf: openArray[char];
@@ -122,14 +127,13 @@ proc consumeCommand(state: var MailcapParser; buf: openArray[char];
       if c == '\r':
         continue
       if c in {';', '\n'}:
-        state.reconsume()
+        state.reconsume(buf)
         return ok()
       if c == '\\':
         quoted = true
         # fall through; backslash will be parsed again in unquoteCommand
-      elif c notin Ascii - Controls:
-        return err("line " & $state.line & ": invalid character in command: " &
-          c)
+      elif c notin AllChars - Controls:
+        return state.err("invalid character in command: " & c)
     else:
       quoted = false
     outs &= c
@@ -164,7 +168,7 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
         of nmEdit: entry.edit = cmd
       return ok(state.has(buf) and state.consume(buf) == ';')
     elif c in Controls:
-      return err("line " & $state.line & ": invalid character in field: " & c)
+      return state.err("invalid character in field: " & c)
     else:
       s &= c
   while s.len > 0 and s[^1] in AsciiWhitespace:
@@ -173,17 +177,18 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
     entry.flags.incl(x.get)
   return ok(res)
 
-proc parseMailcap*(mailcap: var Mailcap; buf: openArray[char]): Err[string] =
-  var state = MailcapParser(line: 1)
+proc parseMailcap*(mailcap: var Mailcap; buf: openArray[char]; path: string):
+    Err[string] =
+  var state = MailcapParser(line: 1, path: path)
   while state.has(buf):
     if state.consume(buf) == '#':
       state.skipLine(buf)
       continue
-    state.reconsume()
+    state.reconsume(buf)
     state.skipBlanks(buf)
     if state.consume(buf) in {'\n', '\r'}:
       continue
-    state.reconsume()
+    state.reconsume(buf)
     var entry = MailcapEntry()
     ?state.consumeTypeField(buf, entry.t)
     ?state.consumeCommand(buf, entry.cmd)
@@ -312,7 +317,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   var canpipe: bool
   return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
 
-proc findMailcapEntry*(mailcap: var Mailcap; contentType, outpath: string;
+proc findMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;
     url: URL): int =
   let mt = contentType.until('/') & '/'
   let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
