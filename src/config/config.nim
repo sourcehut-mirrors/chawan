@@ -66,11 +66,6 @@ type
     frtData = "data"
     frtMailto = "mailto"
 
-  CookieMode* = enum
-    cmNone = "false"
-    cmReadOnly = "true"
-    cmSave = "save"
-
   SiteConfig* = ref object
     url*: Option[Regex]
     host*: Option[Regex]

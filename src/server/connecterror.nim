@@ -1,4 +1,5 @@
 type ConnectionError* = enum
+  ceCookieStreamExists = -18
   ceCGICachedBodyUnavailable = -17
   ceCGIOutputHandleNotFound = -16
   ceCGIFailedToOpenCacheOutput = -15
@@ -30,6 +31,7 @@ type ConnectionError* = enum
   ceProxyInvalidResponse = (11, "ProxyInvalidResponse")
 
 const ErrorMessages* = [
+  ceCookieStreamExists: "cookie stream already exists",
   ceCGICachedBodyUnavailable: "request body is not ready in the cache",
   ceCGIOutputHandleNotFound: "request body output handle not found",
   ceCGIFailedToOpenCacheOutput: "failed to open cache output",

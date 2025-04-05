@@ -133,7 +133,6 @@ type
     markLinks*: bool
     charsetOverride*: Charset
     metaRefresh*: MetaRefresh
-    cookieMode*: CookieMode
     charsets*: seq[Charset]
     protocol*: Table[string, ProtocolConfig]
     imageTypes*: Table[string, string]

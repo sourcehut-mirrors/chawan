@@ -429,6 +429,80 @@ proc evalJSFree(opaque: RootRef; src, filename: string) =
   let pager = Pager(opaque)
   JS_FreeValue(pager.jsctx, pager.evalJS(src, filename))
 
+type CookieStreamOpaque = ref object of RootObj
+  pager: Pager
+  buffer: string
+
+proc onReadCookieStream(response: Response) =
+  const BufferSize = 4096
+  let opaque = CookieStreamOpaque(response.opaque)
+  let pager = opaque.pager
+  while true:
+    let olen = opaque.buffer.len
+    opaque.buffer.setLen(olen + BufferSize)
+    let n = response.body.readData(addr opaque.buffer[olen], BufferSize)
+    if n <= 0:
+      opaque.buffer.setLen(olen)
+      break
+    opaque.buffer.setLen(olen + n)
+  var lastlf = opaque.buffer.rfind('\n')
+  var i = 0
+  # Syntax: {jarId} RS {url} RS {persist?} RS {header} [ CR {header} ... ] LF
+  # Persist is ASCII digit 0 if persist, 1 if not.
+  const RS = '\x1E' # ASCII record separator
+  while i < lastlf:
+    let jarId = opaque.buffer.until(RS, i)
+    i += jarId.len + 1
+    let urls = opaque.buffer.until(RS, i)
+    i += urls.len + 1
+    let persists = opaque.buffer.until(RS, i)
+    i += persists.len + 1
+    var headers: seq[string] = @[]
+    while i - 1 < opaque.buffer.len and opaque.buffer[i - 1] != '\n':
+      let header = opaque.buffer.until({'\n', '\r'}, i)
+      headers.add(header)
+      i += header.len + 1
+    let cookieJar = pager.cookieJars.getOrDefault(jarId)
+    let url = parseURL(urls)
+    let persist = persists != "0"
+    if cookieJar == nil or url.isNone or persist and persists != "1":
+      pager.alert("Error: received wrong set-cookie notification")
+      continue
+    cookieJar.setCookie(headers, url.get, persist)
+  if i > 0:
+    opaque.buffer.delete(0 ..< i)
+
+proc onFinishCookieStream(response: Response; success: bool) =
+  let pager = CookieStreamOpaque(response.opaque).pager
+  pager.alert("Error: cookie stream broken")
+
+proc initLoader(pager: Pager) =
+  let clientConfig = LoaderClientConfig(
+    defaultHeaders: newHeaders(hgRequest, pager.config.network.defaultHeaders),
+    proxy: pager.config.network.proxy,
+    filter: newURLFilter(default = true),
+  )
+  let loader = pager.loader
+  discard loader.addClient(loader.clientPid, clientConfig, -1, isPager = true)
+  pager.loader.registerFun = proc(fd: int) =
+    pager.pollData.register(fd, POLLIN)
+  pager.loader.unregisterFun = proc(fd: int) =
+    pager.pollData.unregister(fd)
+  let request = newRequest(newURL("about:cookie-stream").get)
+  loader.fetch(request).then(proc(res: JSResult[Response]) =
+    if res.isNone:
+      pager.alert("failed to open cookie stream")
+      return
+    # ugly hack, so that the cookie stream does not keep headless
+    # instances running
+    dec loader.mapFds
+    let response = res.get
+    response.opaque = CookieStreamOpaque(pager: pager)
+    response.onRead = onReadCookieStream
+    response.onFinish = onFinishCookieStream
+    response.resume()
+  )
+
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int): Pager =
   let pager = Pager(
@@ -448,13 +522,7 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
   JS_SetInterruptHandler(pager.jsrt, interruptHandler, nil)
-  let clientConfig = LoaderClientConfig(
-    defaultHeaders: newHeaders(hgRequest, pager.config.network.defaultHeaders),
-    proxy: pager.config.network.proxy,
-    filter: newURLFilter(default = true),
-  )
-  discard pager.loader.addClient(pager.loader.clientPid,
-    clientConfig, -1, isPager = true)
+  pager.initLoader()
   block history:
     let hist = newHistory(pager.config.external.historySize, getTime().toUnix())
     let ps = newPosixStream(pager.config.external.historyFile)
@@ -808,10 +876,6 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     if istream == nil:
       pager.config.start.headless = hmDump
   pager.pollData.register(pager.forkserver.estream.fd, POLLIN)
-  pager.loader.registerFun = proc(fd: int) =
-    pager.pollData.register(fd, POLLIN)
-  pager.loader.unregisterFun = proc(fd: int) =
-    pager.pollData.unregister(fd)
   case pager.term.start(istream)
   of tsrSuccess: discard
   of tsrDA1Fail:
@@ -841,8 +905,6 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   if pager.config.start.headless == hmFalse:
     pager.inputLoop()
   else:
-    if pager.config.start.headless == hmTrue: # else just dump
-      pager.headlessLoop()
     pager.dumpBuffers()
 
 # Note: this function does not work correctly if start < x of last written char
@@ -1783,7 +1845,6 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol,
     metaRefresh: pager.config.buffer.metaRefresh,
-    cookieMode: pager.config.buffer.cookie,
     markLinks: pager.config.buffer.markLinks
   )
   result.userStyle &= string(pager.config.buffer.userStyle) & '\n'
@@ -1797,6 +1858,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       allowschemes = @["data", "cache", "stream"],
       default = true
     ),
+    cookieMode: pager.config.buffer.cookie,
     insecureSslNoVerify: false
   )
   var cookieJarId = url.host
@@ -1827,7 +1889,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         ourl = tmpUrl
         return
     if sc.cookie.isSome:
-      result.cookieMode = sc.cookie.get
+      loaderConfig.cookieMode = sc.cookie.get
     if sc.shareCookieJar.isSome:
       cookieJarId = sc.shareCookieJar.get
     if sc.scripting.isSome:
@@ -1863,11 +1925,10 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   if result.images:
     result.imageTypes = pager.config.external.mimeTypes.image
   result.userAgent = loaderConfig.defaultHeaders.getOrDefault("User-Agent")
-  if result.cookieMode != cmNone:
-    var cookieJar = pager.cookieJars.jars.getOrDefault(cookieJarId)
+  if loaderConfig.cookieMode != cmNone:
+    var cookieJar = pager.cookieJars.getOrDefault(cookieJarId)
     if cookieJar == nil:
-      cookieJar = newCookieJar()
-      pager.cookieJars.jars[cookieJarId] = cookieJar
+      cookieJar = pager.cookieJars.addNew(cookieJarId)
     loaderConfig.cookieJar = cookieJar
 
 # Load request in a new buffer.

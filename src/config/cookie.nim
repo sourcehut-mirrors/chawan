@@ -25,18 +25,32 @@ type
     skip: bool
 
   CookieJar* = ref object
+    name*: string
     cookies*: seq[Cookie]
     map: Table[string, Cookie] # {host}{path}\t{name}
 
   CookieJarMap* = ref object
     mtime: int64
-    jars*: OrderedTable[string, CookieJar]
+    jars: OrderedTable[cstring, CookieJar]
+
+  CookieMode* = enum
+    cmNone = "false"
+    cmReadOnly = "true"
+    cmSave = "save"
 
 proc newCookieJarMap*(): CookieJarMap =
   return CookieJarMap()
 
 proc newCookieJar*(): CookieJar =
   return CookieJar()
+
+proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
+  let jar = CookieJar(name: name)
+  map.jars[cstring(jar.name)] = jar
+  return jar
+
+proc getOrDefault*(map: CookieJarMap; name: string): CookieJar =
+  return map.jars.getOrDefault(cstring(name))
 
 proc parseCookieDate(val: string): Option[int64] =
   # cookie-date
@@ -320,10 +334,9 @@ proc parse(map: CookieJarMap; iq: openArray[char]; warnings: var seq[string]) =
       if domain[0] == '.':
         domain.delete(0..0)
       cookie.domain = domain
-    cookieJar = map.jars.getOrDefault(domain)
+    cookieJar = map.getOrDefault(domain)
     if cookieJar == nil:
-      cookieJar = CookieJar()
-      map.jars[domain] = cookieJar
+      cookieJar = map.addNew(domain)
     cookie.hostOnly = not state.nextBool(iq)
     cookie.path = state.nextField(iq)
     cookie.secure = state.nextBool(iq)
@@ -386,8 +399,8 @@ proc write*(map: CookieJarMap; file: string): bool =
             buf.setLen(0)
           if cookie.httpOnly:
             buf &= "#HttpOnly_"
-          if cookie.domain != name:
-            buf &= name & "@"
+          if cstring(cookie.domain) != name:
+            buf &= $name & "@"
           if not cookie.hostOnly:
             buf &= '.'
           buf &= cookie.domain & '\t'

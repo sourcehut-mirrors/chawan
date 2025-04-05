@@ -24,7 +24,7 @@ type
   FileLoader* = ref object
     clientPid*: int
     map: seq[MapData]
-    mapFds: int # number of fds in map
+    mapFds*: int # number of fds in map
     unregistered*: seq[int]
     registerFun*: proc(fd: int)
     unregisterFun*: proc(fd: int)
@@ -83,6 +83,7 @@ type
     proxy*: URL
     referrerPolicy*: ReferrerPolicy
     insecureSslNoVerify*: bool
+    cookieMode*: CookieMode
 
 proc getRedirect*(response: Response; request: Request): Request =
   if response.status in 301u16..303u16 or response.status in 307u16..308u16:
