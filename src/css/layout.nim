@@ -693,6 +693,8 @@ type
     # * flush margins and position floats
     # * check the relevant exclusions and resize the line appropriately
     init: LineInitState
+    # float values currently included in unpositionedFloats.
+    floatsSeen: set[CSSFloat]
 
   InlineAtomState = object
     vertalign: CSSVerticalAlign
@@ -1570,6 +1572,13 @@ proc positionRelative(lctx: LayoutContext; space: AvailableSpace;
   elif box.computed{"bottom"}.canpx(space.h):
     box.state.offset.y -= box.computed{"bottom"}.px(space.h)
 
+func clearedBy(floats: set[CSSFloat]; clear: CSSClear): bool =
+  return case clear
+  of ClearNone: false
+  of ClearBoth: floats != {}
+  of ClearInlineStart, ClearLeft: FloatLeft in floats
+  of ClearInlineEnd, ClearRight: FloatRight in floats
+
 proc layoutFloat(fstate: var FlowState; child: BlockBox) =
   let lctx = fstate.lctx
   let sizes = lctx.resolveFloatSizes(fstate.space, child.computed)
@@ -1589,17 +1598,19 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
     fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
     fstate.initLine(flag = ilfFloat)
     var newLine = true
-    if fstate.lbstate.size.w + outerSize.w <=
-          fstate.lbstate.availableWidth and
+    let float = child.computed{"float"}
+    if not fstate.lbstate.floatsSeen.clearedBy(child.computed{"clear"}) and
+        fstate.lbstate.size.w + outerSize.w <= fstate.lbstate.availableWidth and
         (fstate.lbstate.unpositionedFloats.len == 0 or
         not fstate.lbstate.unpositionedFloats[^1].newLine):
       # We can still cram floats into the line.
-      if child.computed{"float"} == FloatLeft:
+      if float == FloatLeft:
         fstate.lbstate.size.w += outerSize.w
         for iastate in fstate.lbstate.iastates.mitems:
           iastate.offset.x += outerSize.w
       else:
         fstate.lbstate.availableWidth -= outerSize.w
+      fstate.lbstate.floatsSeen.incl(float)
       newLine = false
     fstate.lbstate.unpositionedFloats.add(UnpositionedFloat(
       space: fstate.space,
