@@ -740,6 +740,8 @@ type
 
 # Forward declarations
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
+proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
+  sizes: ResolvedSizes; flexItem = false)
 
 iterator relevantExclusions(bctx: BlockContext): lent Exclusion {.inline.} =
   for i in bctx.clearIndex[FloatNone] ..< bctx.exclusions.len:
@@ -1446,26 +1448,6 @@ proc layoutText(fstate: var FlowState; istate: var InlineState; s: string) =
     else: ""
     fstate.layoutTextLoop(istate, s)
 
-# Inner layout for boxes that establish a new block formatting context,
-# or have an inner layout that is not flow.
-proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
-    sizes: ResolvedSizes) =
-  if box.sizes == sizes:
-    box.state.offset = offset
-    return
-  box.sizes = sizes
-  var bctx = BlockContext(lctx: lctx)
-  box.resetState()
-  box.state.offset = offset
-  bctx.layout(box, sizes)
-  assert bctx.unpositionedFloats.len == 0
-  let marginBottom = bctx.marginTodo.sum()
-  # If the highest float edge is higher than the box itself, set that as
-  # the box height.
-  box.state.size.h = max(box.state.size.h + marginBottom, bctx.maxFloatHeight)
-  box.state.intr.h = max(box.state.intr.h + marginBottom, bctx.maxFloatHeight)
-  box.state.marginBottom = marginBottom
-
 proc pushPositioned(lctx: LayoutContext; box: CSSBox) =
   let index = box.computed{"z-index"}
   let stack = StackItem(box: box, index: index.num)
@@ -1570,6 +1552,36 @@ proc positionRelative(lctx: LayoutContext; space: AvailableSpace;
     box.state.offset.y += box.computed{"top"}.px(space.h)
   elif box.computed{"bottom"}.canpx(space.h):
     box.state.offset.y -= box.computed{"bottom"}.px(space.h)
+
+# Inner layout for boxes that establish a new block formatting context,
+# or have an inner layout that is not flow.
+# flexItem is true if box is a flex item.
+proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
+    sizes: ResolvedSizes; flexItem = false) =
+  if box.sizes == sizes:
+    box.state.offset = offset
+    return
+  box.sizes = sizes
+  var bctx = BlockContext(lctx: lctx)
+  box.resetState()
+  box.state.offset = offset
+  # For some reason beyond mortal comprehension, flex items always
+  # behave as positioned boxes.
+  #TODO but *not* absolute positioning containers...
+  let positioned = flexItem and not box.computed{"z-index"}.auto or
+    box.computed{"position"} != PositionStatic
+  if positioned:
+    bctx.lctx.pushPositioned(box)
+  bctx.layout(box, sizes)
+  assert bctx.unpositionedFloats.len == 0
+  let marginBottom = bctx.marginTodo.sum()
+  # If the highest float edge is higher than the box itself, set that as
+  # the box height.
+  box.state.size.h = max(box.state.size.h + marginBottom, bctx.maxFloatHeight)
+  box.state.intr.h = max(box.state.intr.h + marginBottom, bctx.maxFloatHeight)
+  box.state.marginBottom = marginBottom
+  if positioned:
+    bctx.lctx.popPositioned(box, box.state.size)
 
 func clearedBy(floats: set[CSSFloat]; clear: CSSClear): bool =
   return case clear
@@ -1687,7 +1699,11 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
     if clear != ClearNone:
       fstate.bctx.flushMargins(child.state.offset.y)
       child.state.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
+    if child.computed{"position"} != PositionStatic:
+      lctx.pushPositioned(child)
     fstate.bctx.layout(child, sizes)
+    if child.computed{"position"} != PositionStatic:
+      lctx.popPositioned(child, child.state.size)
   fstate.bctx.marginTodo.append(sizes.margin.bottom)
   let outerSize = size(
     w = child.outerSize(dtHorizontal, sizes),
@@ -2056,8 +2072,6 @@ proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
 # a BFC; other boxes (e.g. flex) either have nothing to clear, or clear
 # in their parent BFC (e.g. flow-root).
 proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  if box.computed{"position"} != PositionStatic:
-    bctx.lctx.pushPositioned(box)
   var fstate = bctx.initFlowState(box, sizes)
   fstate.initBlockPositionStates(box)
   if box.computed{"position"} notin PositionAbsoluteFixed and
@@ -2097,16 +2111,6 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     bctx.marginTarget = nil
   # Reset parentBps to the previous node.
   bctx.parentBps = fstate.prevParentBps
-  if box.computed{"position"} != PositionStatic:
-    var size = box.state.size
-    if bctx.parentBps == nil:
-      # We have a bit of an ordering problem here: layoutRootBlock
-      # computes our final height, but we already want to pop the
-      # positioned box here.
-      # I'll just replicate what layoutRootBlock is doing until I find a
-      # better solution...
-      size.h = max(size.h, bctx.maxFloatHeight)
-    bctx.lctx.popPositioned(box, size)
 
 # Table layout. We try to emulate w3m's behavior here:
 # 1. Calculate minimum and preferred width of each column
@@ -2166,7 +2170,11 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
     sizes.space.w.u -= sizes.padding[dtHorizontal].sum()
   box.resetState()
   var bctx = BlockContext(lctx: lctx)
+  if box.computed{"position"} != PositionStatic:
+    lctx.pushPositioned(box)
   bctx.layout(box, sizes)
+  if box.computed{"position"} != PositionStatic:
+    lctx.popPositioned(box, box.state.size)
   assert bctx.unpositionedFloats.len == 0
   # Table cells ignore margins.
   box.state.offset.y = 0
@@ -2652,7 +2660,7 @@ type
     pending: seq[FlexPendingItem]
 
 proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
-  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes)
+  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes, flexItem = true)
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
@@ -2851,8 +2859,6 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
 
 proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
-  if box.computed{"position"} != PositionStatic:
-    lctx.pushPositioned(box)
   let flexDir = box.computed{"flex-direction"}
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
   let odim = dim.opposite()
@@ -2882,8 +2888,6 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   box.state.baseline = fctx.baseline
   for child in fctx.relativeChildren:
     lctx.positionRelative(sizes.space, child)
-  if box.computed{"position"} != PositionStatic:
-    lctx.popPositioned(box, box.state.size)
 
 proc layoutGrid(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   #TODO implement grid
