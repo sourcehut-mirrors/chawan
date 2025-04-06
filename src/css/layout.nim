@@ -739,8 +739,7 @@ type
     firstBaselineSet: bool
 
 # Forward declarations
-proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
-  canClear: bool)
+proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
 
 iterator relevantExclusions(bctx: BlockContext): lent Exclusion {.inline.} =
   for i in bctx.clearIndex[FloatNone] ..< bctx.exclusions.len:
@@ -1458,7 +1457,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   var bctx = BlockContext(lctx: lctx)
   box.resetState()
   box.state.offset = offset
-  bctx.layout(box, sizes, canClear = false)
+  bctx.layout(box, sizes)
   assert bctx.unpositionedFloats.len == 0
   let marginBottom = bctx.marginTodo.sum()
   # If the highest float edge is higher than the box itself, set that as
@@ -1637,14 +1636,14 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
   var offset = fstate.offset
   offset.x += sizes.margin.left
   fstate.bctx.marginTodo.append(sizes.margin.top)
+  let clear = child.computed{"clear"}
   if child.computed{"display"} in DisplayWithBFC or
       child.computed{"overflow-x"} notin {OverflowVisible, OverflowClip}:
     # This box establishes a new BFC.
     lctx.layoutRootBlock(child, offset, sizes)
     fstate.bctx.flushMargins(child.state.offset.y)
-    if child.computed{"clear"} != ClearNone:
-      fstate.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y,
-        child.computed{"clear"})
+    if clear != ClearNone:
+      fstate.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
     if fstate.bctx.exclusions.len > 0:
       # From the standard (abridged):
       #
@@ -1685,7 +1684,10 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
   else:
     child.resetState()
     child.state.offset = offset
-    fstate.bctx.layout(child, sizes, canClear = true)
+    if clear != ClearNone:
+      fstate.bctx.flushMargins(child.state.offset.y)
+      child.state.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
+    fstate.bctx.layout(child, sizes)
   fstate.bctx.marginTodo.append(sizes.margin.bottom)
   let outerSize = size(
     w = child.outerSize(dtHorizontal, sizes),
@@ -2053,15 +2055,9 @@ proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
 # In general, this is only true for block boxes that do not establish
 # a BFC; other boxes (e.g. flex) either have nothing to clear, or clear
 # in their parent BFC (e.g. flow-root).
-proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
-    canClear: bool) =
+proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   if box.computed{"position"} != PositionStatic:
     bctx.lctx.pushPositioned(box)
-  if canClear and box.computed{"clear"} != ClearNone and
-      box.computed{"position"} notin PositionAbsoluteFixed:
-    bctx.flushMargins(box.state.offset.y)
-    box.state.offset.y.clearFloats(bctx, bctx.bfcOffset.y,
-      box.computed{"clear"})
   var fstate = bctx.initFlowState(box, sizes)
   fstate.initBlockPositionStates(box)
   if box.computed{"position"} notin PositionAbsoluteFixed and
@@ -2170,7 +2166,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
     sizes.space.w.u -= sizes.padding[dtHorizontal].sum()
   box.resetState()
   var bctx = BlockContext(lctx: lctx)
-  bctx.layout(box, sizes, canClear = false)
+  bctx.layout(box, sizes)
   assert bctx.unpositionedFloats.len == 0
   # Table cells ignore margins.
   box.state.offset.y = 0
@@ -2891,12 +2887,11 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
 
 proc layoutGrid(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   #TODO implement grid
-  bctx.layoutFlow(box, sizes, canClear = false)
+  bctx.layoutFlow(box, sizes)
 
-proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
-    canClear: bool) =
+proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   case box.computed{"display"}
-  of DisplayInnerBlock: bctx.layoutFlow(box, sizes, canClear)
+  of DisplayInnerBlock: bctx.layoutFlow(box, sizes)
   of DisplayInnerTable: bctx.layoutTable(box, sizes)
   of DisplayInnerFlex: bctx.layoutFlex(box, sizes)
   of DisplayInnerGrid: bctx.layoutGrid(box, sizes)
