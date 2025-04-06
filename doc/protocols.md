@@ -61,7 +61,7 @@ listing view is identical to the file:// directory listing.
 
 ## SFTP
 
-The sftp adapter (`adapter/protocol/sftp.nim`) wraps libcurl. It works for me,
+The sftp adapter (`adapter/protocol/sftp.nim`) wraps libssh2. It works for me,
 but YMMV.
 
 Note that if an IdentityFile declaration is found in your ssh config, then it
