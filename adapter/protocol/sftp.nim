@@ -126,11 +126,13 @@ proc parseSSHConfig(f: File; host: string; pubKey, privKey: var string) =
     elif k == "IdentityFile":
       if args.len != 1:
         continue # error
-      privKey = expandTilde(args[0])
+      if privKey == "":
+        privKey = expandTilde(args[0])
     elif k == "CertificateFile":
       if args.len != 1:
         continue # error
-      pubKey = expandTilde(args[0])
+      if pubKey == "":
+        pubKey = expandTilde(args[0])
   f.close()
 
 proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
