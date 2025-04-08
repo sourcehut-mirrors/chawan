@@ -347,8 +347,6 @@ proc parseConfigValue(ctx: var ConfigParser; x: var int32; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
   k: string): Err[string]
-proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
-  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var HeadlessMode; v: TomlValue;
@@ -505,23 +503,6 @@ proc parseConfigValue(ctx: var ConfigParser; x: var int64; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtInteger, k)
   x = v.i
-  ok()
-
-proc parseConfigValue(ctx: var ConfigParser; x: var ColorMode; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtString, k)
-  let y = strictParseEnum[ColorMode](v.s)
-  if y.isSome:
-    x = y.get
-  # backwards compat
-  elif v.s == "8bit":
-    ctx.warnings.add("color-mode='8bit' is deprecated; use 'eight-bit'")
-    x = cmEightBit
-  elif v.s == "24bit":
-    ctx.warnings.add("color-mode='24bit' is deprecated; use 'true-color'")
-    x = cmTrueColor
-  else:
-    return err(k & ": unknown color mode '" & v.s & "'")
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ScriptingMode; v: TomlValue;
