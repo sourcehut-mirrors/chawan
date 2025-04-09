@@ -1163,6 +1163,11 @@ proc parseColor*(val: CSSComponentValue): Opt[CSSColor] =
       let x = namedRGBColor(tok.value)
       if x.isSome:
         return ok(x.get.cssColor())
+      elif tok.value.equalsIgnoreCase("canvas") or
+          tok.value.equalsIgnoreCase("canvastext"):
+        # Not really compliant, but if you're setting text color to
+        # canvas you're doing it wrong anyway.
+        return ok(defaultColor.cssColor())
     else: discard
   elif val of CSSFunction:
     let f = CSSFunction(val)
