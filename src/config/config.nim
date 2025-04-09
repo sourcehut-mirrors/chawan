@@ -88,7 +88,7 @@ type
     userStyle*: Option[StyleString]
 
   OmniRule* = ref object
-    match*: Regex
+    match*: Option[Regex]
     substituteUrl*: Option[JSValueFunction]
 
   StartConfig = object
@@ -183,8 +183,8 @@ type
     userStyle*: StyleString #TODO getset
 
   Config* = ref object
-    jsctx*: JSContext
     jsvfns*: seq[JSValueFunction]
+    arraySeen*: TableRef[string, int] # table arrays seen
     dir* {.jsget.}: string
     `include` {.jsget.}: seq[ChaPathResolved]
     start* {.jsget.}: StartConfig
@@ -198,8 +198,8 @@ type
     display* {.jsget.}: DisplayConfig
     #TODO getset
     protocol*: Table[string, ProtocolConfig]
-    siteconf*: seq[SiteConfig]
-    omnirule*: seq[OmniRule]
+    siteconf*: OrderedTable[string, SiteConfig]
+    omnirule*: OrderedTable[string, OmniRule]
     cmd*: CommandConfig
     page* {.jsget.}: ActionMap
     line* {.jsget.}: ActionMap
@@ -325,6 +325,7 @@ proc readUserStylesheet(outs: var string; dir, file: string): Err[string] =
   ok()
 
 type ConfigParser = object
+  jsctx: JSContext
   config: Config
   dir: string
   warnings: seq[string]
@@ -365,11 +366,11 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue[U; V](ctx: var ConfigParser; x: var Table[U, V];
   v: TomlValue; k: string): Err[string]
+proc parseConfigValue[U; V](ctx: var ConfigParser; x: var OrderedTable[U, V];
+  v: TomlValue; k: string): Err[string]
 proc parseConfigValue[U; V](ctx: var ConfigParser; x: var TableRef[U, V];
   v: TomlValue; k: string): Err[string]
 proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
-  k: string): Err[string]
-proc parseConfigValue(ctx: var ConfigParser; x: var TomlTable; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
   k: string): Err[string]
@@ -407,8 +408,10 @@ proc typeCheck(v: TomlValue; t: set[TomlValueType]; k: string): Err[string] =
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtTable, k)
+  if v.tab.clear:
+    x = default(typeof(x))
   for fk, fv in x.fieldPairs:
-    when typeof(fv) isnot JSContext|seq[JSValueFunction]:
+    when fk notin ["jsvfns", "arraySeen", "dir"]:
       let kebabk = camelToKebabCase(fk)
       if kebabk in v:
         let kkk = if k != "":
@@ -420,29 +423,39 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ref object; v: TomlValue;
     k: string): Err[string] =
-  new(x)
+  ?typeCheck(v, tvtTable, k)
+  if x == nil:
+    new(x)
   ctx.parseConfigValue(x[], v, k)
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
     v: TomlValue; k: string): Err[string] =
   ?typeCheck(v, tvtTable, k)
-  x.clear()
+  if v.tab.clear:
+    x.clear()
   for kk, vv in v:
-    var y: V
     let kkk = k & "[" & kk & "]"
-    ?ctx.parseConfigValue(y, vv, kkk)
-    x[kk] = y
+    ?ctx.parseConfigValue(x.mgetOrPut(kk, default(V)), vv, kkk)
+  ok()
+
+proc parseConfigValue[U, V](ctx: var ConfigParser; x: var OrderedTable[U, V];
+    v: TomlValue; k: string): Err[string] =
+  ?typeCheck(v, tvtTable, k)
+  if v.tab.clear:
+    x.clear()
+  for kk, vv in v:
+    let kkk = k & "[" & kk & "]"
+    ?ctx.parseConfigValue(x.mgetOrPut(kk, default(V)), vv, kkk)
   ok()
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var TableRef[U, V];
     v: TomlValue; k: string): Err[string] =
   ?typeCheck(v, tvtTable, k)
-  x = TableRef[U, V]()
+  if v.tab.clear or x == nil:
+    x = TableRef[U, V]()
   for kk, vv in v:
-    var y: V
     let kkk = k & "[" & kk & "]"
-    ?ctx.parseConfigValue(y, vv, kkk)
-    x[kk] = y
+    ?ctx.parseConfigValue(x.mgetOrPut(kk, default(V)), vv, kkk)
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
@@ -471,18 +484,10 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
     ?ctx.parseConfigValue(y, v, k)
     x = @[y]
   else:
-    if not v.ad:
-      x.setLen(0)
     for i in 0 ..< v.a.len:
       var y: T
       ?ctx.parseConfigValue(y, v.a[i], k & "[" & $i & "]")
       x.add(y)
-  ok()
-
-proc parseConfigValue(ctx: var ConfigParser; x: var TomlTable; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, {tvtTable}, k)
-  x = v.tab
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
@@ -649,10 +654,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
 proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
     v: TomlValue; k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
-  let fun = ctx.config.jsctx.eval(v.s, "<config>", JS_EVAL_TYPE_GLOBAL)
+  let fun = ctx.jsctx.eval(v.s, "<config>", JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(fun):
-    return err(k & ": " & ctx.config.jsctx.getExceptionMsg())
-  if not JS_IsFunction(ctx.config.jsctx, fun):
+    return err(k & ": " & ctx.jsctx.getExceptionMsg())
+  if not JS_IsFunction(ctx.jsctx, fun):
     return err(k & ": not a function")
   x = JSValueFunction(fun: fun)
   ctx.config.jsvfns.add(x) # so we can clean it up on exit
@@ -806,12 +811,16 @@ proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
   ctx.parseConfigValue(string(x), v, k)
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-  warnings: var seq[string]; name = "<input>"; laxnames = false): Err[string]
+  warnings: var seq[string]; jsctx: JSContext; name: string;
+  laxnames = false): Err[string]
 
 proc parseConfig(config: Config; dir: string; t: TomlValue;
-    warnings: var seq[string]): Err[string] =
-  var ctx = ConfigParser(config: config, dir: dir)
+    warnings: var seq[string]; jsctx: JSContext): Err[string] =
+  var ctx = ConfigParser(config: config, dir: dir, jsctx: jsctx)
   ?ctx.parseConfigValue(config[], t, "")
+  for name, value in config.omnirule:
+    if value.match.isNone:
+      return err("omnirule." & name & ": missing match regex")
   #TODO: for omnirule/siteconf, check if substitution rules are specified?
   while config.`include`.len > 0:
     #TODO: warn about recursive includes
@@ -821,17 +830,17 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
       let ps = newPosixStream(s)
       if ps == nil:
         return err("include file not found: " & s)
-      ?config.parseConfig(dir, ps.readAll(), warnings)
+      ?config.parseConfig(dir, ps.readAll(), warnings, jsctx, s.afterLast('/'))
       ps.sclose()
   warnings.add(ctx.warnings)
   ok()
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-    warnings: var seq[string]; name = "<input>"; laxnames = false):
-    Err[string] =
-  let toml = parseToml(buf, dir / name, laxnames)
+    warnings: var seq[string]; jsctx: JSContext; name: string;
+    laxnames = false): Err[string] =
+  let toml = parseToml(buf, dir / name, laxnames, config.arraySeen)
   if toml.isSome:
-    return config.parseConfig(dir, toml.get, warnings)
+    return config.parseConfig(dir, toml.get, warnings, jsctx)
   return err("Fatal error: failed to parse config\n" & toml.error)
 
 proc getNormalAction*(config: Config; s: string): string =
@@ -868,8 +877,7 @@ proc openConfig*(dir: var string; override: Option[string];
   return newPosixStream(dir / "config.toml")
 
 # called after parseConfig returns
-proc initCommands*(config: Config): Err[string] =
-  let ctx = config.jsctx
+proc initCommands*(ctx: JSContext; config: Config): Err[string] =
   let obj = JS_NewObject(ctx)
   defer: JS_FreeValue(ctx, obj)
   if JS_IsException(obj):

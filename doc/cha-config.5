@@ -5,21 +5,24 @@
 .SH Configuration of Chawan
 Chawan supports configuration of various options like keybindings, user
 stylesheets, site preferences, etc.
-The configuration format is almost toml, with the following exceptions:
+The configuration format is similar to toml, with the following
+exceptions:
 .IP \[bu] 2
 Inline tables may span across multiple lines.
 .IP \[bu] 2
-Table arrays can be cleared by setting a variable by the same to the
-empty array.
-This allows users to disable default table array rules.
-.PP
-Example:
-.IP
-.EX
-omnirule = [] # note: this must be placed at the beginning of the file.
-
-[[omnirule]] # this is legal. all default omni\-rules are now disabled.
-.EE
+Regular tables (\f[CR][table]\f[R]) and inline tables
+(\f[CR]table = {}\f[R]) have different semantics.
+The first is additive, meaning old values are not removed.
+The second is destructive, and clears all definitions in the table
+specified.
+.IP \[bu] 2
+For backwards compatibility, \f[CR]table = []\f[R] is equivalent to
+\f[CR]table = {}\f[R].
+.IP \[bu] 2
+\f[CR][[table\-array]]\f[R] is sugar for \f[CR][table\-array.n]\f[R],
+where \f[CR]n\f[R] is the number of declared table arrays.
+For example, you can declare anonymous siteconfs using the syntax
+\f[CR][[siteconf]]\f[R].
 .PP
 The canonical configuration file path is \[ti]/.chawan/config.toml, but
 the search path accommodates XDG basedirs as well:
@@ -956,7 +959,9 @@ T}
 .SS Omnirule
 The omni\-bar (by default opened with C\-l) can be used to perform
 searches using omni\-rules.
-These are to be placed in the table array \f[CR][[omnirule]]\f[R].
+These are to be specified as sub\-keys to table \f[CR][omnirule]\f[R].
+(The sub\-key itself is ignored; you can use anything as long it
+doesn\[cq]t conflict with other keys.)
 .PP
 Examples:
 .IP
@@ -964,11 +969,13 @@ Examples:
 # Search using DuckDuckGo Lite.
 # (This rule is included in the default config, although C\-k now invokes
 # Google search.)
-[[omnirule]]
+[omnirule.ddg]
 match = \[aq]\[ha]ddg:\[aq]
 substitute\-url = \[aq](x) => \[dq]https://lite.duckduckgo.com/lite/?kp=\-1&kd=\-1&q=\[dq] + encodeURIComponent(x.split(\[dq]:\[dq]).slice(1).join(\[dq]:\[dq]))\[aq]
 
 # Search using Wikipedia, Firefox\-style.
+# The [[omnirule]] syntax introduces an anonymous omnirule; it is
+# equivalent to the named one.
 [[omnirule]]
 match = \[aq]\[ha]\[at]wikipedia\[aq]
 substitute\-url = \[aq](x) => \[dq]https://en.wikipedia.org/wiki/Special:Search?search=\[dq] + encodeURIComponent(x.replace(/\[at]wikipedia/, \[dq]\[dq]))\[aq]
@@ -1011,7 +1018,9 @@ T}
 .TE
 .SS Siteconf
 Configuration options can be specified for individual sites.
-Entries are to be placed in the table array \f[CR][[siteconf]]\f[R].
+Entries are to be specified as sub\-keys to table \f[CR][siteconf]\f[R].
+(The sub\-key itself is ignored; you can use anything as long it
+doesn\[cq]t conflict with other keys.)
 .PP
 Most siteconf options can also be specified globally; see the
 \[lq]overrides\[rq] field.
@@ -1020,12 +1029,12 @@ Examples:
 .IP
 .EX
 # Enable cookies on the orange website for log\-in.
-[[siteconf]]
+[siteconf.hn]
 url = \[aq]https://news\[rs].ycombinator\[rs].com/.*\[aq]
 cookie = true
 
 # Redirect npr.org to text.npr.org.
-[[siteconf]]
+[siteconf.npr]
 host = \[aq](www\[rs].)?npr\[rs].org\[aq]
 rewrite\-url = \[aq]\[aq]\[aq]
 (x) => {
@@ -1037,18 +1046,20 @@ x.pathname = s.at(s.length > 2 ? \-2 : 1);
 \[aq]\[aq]\[aq]
 
 # Allow cookie sharing on *sr.ht domains.
-[[siteconf]]
+[siteconf.sr\-ht]
 host = \[aq](.*\[rs].)?sr\[rs].ht\[aq] # either \[aq]something.sr.ht\[aq] or \[aq]sr.ht\[aq]
 cookie = true # enable cookies (read\-only; use \[dq]save\[dq] to persist them)
 share\-cookie\-jar = \[aq]sr.ht\[aq] # use the cookie jar of \[aq]sr.ht\[aq] for all matched hosts
 
 # Use the \[dq]vector\[dq] skin on Wikipedia.
+# The [[siteconf]] syntax introduces an anonymous siteconf; it is
+# equivalent to the above ones.
 [[siteconf]]
 url = \[aq]\[ha]https?://[a\-z]+\[rs].wikipedia\[rs].org/wiki/(?!.*useskin=.*)\[aq]
 rewrite\-url = \[aq]x => x.searchParams.append(\[dq]useskin\[dq], \[dq]vector\[dq])\[aq]
 
 # Make imgur send us images.
-[[siteconf]]
+[siteconf.imgur]
 host = \[aq](i\[rs].)?imgur\[rs].com\[aq]
 default\-headers = {
 User\-Agent = \[dq]Mozilla/5.0 chawan\[dq],

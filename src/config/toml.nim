@@ -1,3 +1,17 @@
+# TOML parser.
+#
+# Note that while it says TOML on the tin, the actual configuration
+# language only superficially resembles it.  In particular, this dialect
+# has a) strict ordering requirements, b) no real distinction between
+# table arrays and tables, c) a distinction between inline tables and
+# regular tables.  For example, `table = {}` can be used to clear
+# a table.
+#
+# The reason for this is that TOML is fundamentally unsuitable for
+# layered configs, but we're stuck with it for historical reasons.
+# One day I hope to come up with a better config language, but migration
+# will be painful...
+
 import std/options
 import std/tables
 import std/times
@@ -24,8 +38,9 @@ type
     line: int
     root: TomlTable
     node: TomlNode
+    arraySeen: TableRef[string, int]
     currkey: seq[string]
-    tarray: bool
+    warnings: seq[string]
     laxnames: bool
 
   TomlValue* = ref object
@@ -42,7 +57,6 @@ type
       tab*: TomlTable
     of tvtArray:
       a*: seq[TomlValue]
-      ad*: bool
 
   TomlNode = ref object of RootObj
     comment: string
@@ -52,6 +66,7 @@ type
     value*: TomlValue
 
   TomlTable* = ref object of TomlNode
+    clear*: bool
     key: seq[string]
     nodes: seq[TomlNode]
     map: OrderedTable[string, TomlValue]
@@ -99,11 +114,11 @@ func `$`*(val: TomlValue): string =
   of tvtTable:
     result = $val.t
   of tvtArray:
-    #TODO if ad table array probably
     result = "["
-    for it in val.a:
+    for i, it in val.a.mypairs:
+      if i > 0:
+        result &= ','
       result &= $it
-      result &= ','
     result &= ']'
 
 func `[]`*(val: TomlValue; key: string): TomlValue =
@@ -244,29 +259,34 @@ proc consumeBare(state: var TomlParser; buf: openArray[char]; c: char):
 proc flushLine(state: var TomlParser): Err[TomlError] =
   if state.node != nil:
     if state.node of TomlKVPair:
+      let node = TomlKVPair(state.node)
       var i = 0
-      let keys = state.currkey & TomlKVPair(state.node).key
+      let keys = state.currkey & node.key
       var table = state.root
       while i < keys.len - 1:
-        if keys[i] in table.map:
-          let node = table.map[keys[i]]
+        let node = table.map.getOrDefault(keys[i])
+        if node != nil:
           if node.t == tvtTable:
             table = node.tab
-          elif node.t == tvtArray:
-            assert state.tarray
-            table = node.a[^1].tab
           else:
-            let s = keys.join('.')
+            let s = keys.toOpenArray(0, i).join('.')
             return state.err("re-definition of node " & s)
         else:
           let node = TomlTable()
           table.map[keys[i]] = TomlValue(t: tvtTable, tab: node)
           table = node
         inc i
-      if keys[i] in table.map:
+      let value = node.value
+      if i == 0 and value.t == tvtArray and value.a.len == 0:
+        # old delete syntax
+        let s = keys.join('.')
+        state.arraySeen.del(s)
+        table.clear = true
+      elif keys[i] in table.map:
         return state.err("re-definition of node " & keys.join('.'))
-      table.map[keys[i]] = TomlKVPair(state.node).value
-      table.nodes.add(state.node)
+      else:
+        table.map[keys[i]] = value
+        table.nodes.add(state.node)
     state.node = nil
   inc state.line
   return ok()
@@ -320,19 +340,26 @@ proc consumeKey(state: var TomlParser; buf: openArray[char]):
 proc consumeTable(state: var TomlParser; buf: openArray[char]):
     Result[TomlTable, TomlError] =
   let res = TomlTable()
+  var tarray = false
   while state.has(buf):
     let c = state.peek(buf, 0)
     case c
     of ' ', '\t': discard state.consume(buf)
-    of '\n': return ok(res)
+    of '\n':
+      if tarray:
+        return state.err("missing ] at table array key's end")
+      return ok(res)
     of ']':
-      if state.tarray:
+      if tarray:
         discard state.consume(buf)
+        let s = res.key.join('.')
+        inc state.arraySeen.mgetOrPut(s, 0)
+        res.key.add($state.arraySeen.getOrDefault(s))
         return ok(res)
       else:
         return state.err("redundant ] character after key")
     of '[':
-      state.tarray = true
+      tarray = true
       discard state.consume(buf)
     of '"', '\'':
       res.key = ?state.consumeKey(buf)
@@ -351,29 +378,7 @@ proc consumeNoState(state: var TomlParser; buf: openArray[char]):
     of ' ', '\t': discard
     of '[':
       discard state.consume(buf)
-      state.tarray = false
       let table = ?state.consumeTable(buf)
-      if state.tarray:
-        var node = state.root
-        for i in 0 ..< table.key.high:
-          if table.key[i] in node.map:
-            node = node.map[table.key[i]].tab
-          else:
-            let t2 = TomlTable()
-            node.map[table.key[i]] = TomlValue(t: tvtTable, tab: t2)
-            node = t2
-        if table.key[^1] in node.map:
-          var last = node.map[table.key[^1]]
-          if last.t != tvtArray:
-            let key = table.key.join('.')
-            return state.err("re-definition of node " & key &
-              " as table array (was " & $last.t & ")")
-          let val = TomlValue(t: tvtTable, tab: table)
-          last.a.add(val)
-        else:
-          let val = TomlValue(t: tvtTable, tab: table)
-          let last = TomlValue(t: tvtArray, a: @[val], ad: true)
-          node.map[table.key[^1]] = last
       state.currkey = table.key
       state.node = table
       return ok(false)
@@ -486,7 +491,8 @@ proc consumeArray(state: var TomlParser; buf: openArray[char]): TomlResult =
 
 proc consumeInlineTable(state: var TomlParser; buf: openArray[char]):
     TomlResult =
-  let res = TomlValue(t: tvtTable, tab: TomlTable())
+  state.arraySeen.del(state.currkey.join('.'))
+  let res = TomlValue(t: tvtTable, tab: TomlTable(clear: true))
   var key: seq[string] = @[]
   var haskey = false
   var val: TomlValue = nil
@@ -565,13 +571,14 @@ proc consumeValue(state: var TomlParser; buf: openArray[char]): TomlResult =
     return ok(TomlValue(t: tvtString, s: ""))
   return state.err("unexpected end of file")
 
-proc parseToml*(buf: openArray[char]; filename = "<input>"; laxnames = false):
-    TomlResult =
+proc parseToml*(buf: openArray[char]; filename: string; laxnames: bool;
+    arraySeen: TableRef[string, int]): TomlResult =
   var state = TomlParser(
     line: 1,
     root: TomlTable(),
     filename: filename,
-    laxnames: laxnames
+    laxnames: laxnames,
+    arraySeen: arraySeen
   )
   while state.has(buf):
     if ?state.consumeNoState(buf):

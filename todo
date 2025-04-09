@@ -13,13 +13,8 @@ display:
 - dark mode (basically max Y)
 config:
 - important: config editor
-- switch from table arrays to tables
 - better siteconf URL matching
 - $TERM-based display config
-- better path handling (e.g. inline files, so we could get rid of css
-  "include/inline" etc.)
-- add per-scheme env var configuration (e.g.
-  proto.gemini.known-hosts = '/some/path'; maybe also with inline JS?)
 - add RPC for CGI scripts e.g. toggle settings/issue downloads/etc
 	* also some way to set permissions for RPC calls
 mailcap:
@@ -41,7 +36,7 @@ buffer:
 - configurable/better url filtering in loader
 - when the log buffer crashes, print its contents to stderr
 	* easiest way seems to be to just dump its cache file
-- add buffer groups
+- add tabs
 - xhtml
 pager:
 - handle long lines

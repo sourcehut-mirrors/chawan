@@ -5,19 +5,19 @@ MANOFF -->
 # Configuration of Chawan
 
 Chawan supports configuration of various options like keybindings, user
-stylesheets, site preferences, etc. The configuration format is almost
-toml, with the following exceptions:
+stylesheets, site preferences, etc. The configuration format is similar
+to toml, with the following exceptions:
 
 * Inline tables may span across multiple lines.
-* Table arrays can be cleared by setting a variable by the same to the
-  empty array. This allows users to disable default table array rules.
-
-Example:
-```
-omnirule = [] # note: this must be placed at the beginning of the file.
-
-[[omnirule]] # this is legal. all default omni-rules are now disabled.
-```
+* Regular tables (`[table]`) and inline tables (`table = {}`) have
+  different semantics.  The first is additive, meaning old values are
+  not removed.  The second is destructive, and clears all definitions in
+  the table specified.
+* For backwards compatibility, `table = []` is equivalent to
+  `table = {}`.
+* `[[table-array]]` is sugar for `[table-array.n]`, where `n` is the
+  number of declared table arrays.  For example, you can declare
+  anonymous siteconfs using the syntax `[[siteconf]]`.
 
 The canonical configuration file path is ~/.chawan/config.toml, but
 the search path accommodates XDG basedirs as well:
@@ -760,19 +760,24 @@ protocol.</td>
 
 ## Omnirule
 
-The omni-bar (by default opened with C-l) can be used to perform searches using
-omni-rules. These are to be placed in the table array `[[omnirule]]`.
+The omni-bar (by default opened with C-l) can be used to perform
+searches using omni-rules.  These are to be specified as sub-keys to table
+`[omnirule]`.  (The sub-key itself is ignored; you can use anything as
+long it doesn't conflict with other keys.)
 
 Examples:
+
 ```
 # Search using DuckDuckGo Lite.
 # (This rule is included in the default config, although C-k now invokes
 # Google search.)
-[[omnirule]]
+[omnirule.ddg]
 match = '^ddg:'
 substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
 
 # Search using Wikipedia, Firefox-style.
+# The [[omnirule]] syntax introduces an anonymous omnirule; it is
+# equivalent to the named one.
 [[omnirule]]
 match = '^@wikipedia'
 substitute-url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + encodeURIComponent(x.replace(/@wikipedia/, ""))'
@@ -808,8 +813,10 @@ returned, it will be parsed instead of the old one.</td>
 
 ## Siteconf
 
-Configuration options can be specified for individual sites. Entries are
-to be placed in the table array `[[siteconf]]`.
+Configuration options can be specified for individual sites.  Entries
+are to be specified as sub-keys to table `[siteconf]`.  (The sub-key
+itself is ignored; you can use anything as long it doesn't conflict with
+other keys.)
 
 Most siteconf options can also be specified globally; see the
 "overrides" field.
@@ -817,12 +824,12 @@ Most siteconf options can also be specified globally; see the
 Examples:
 ```
 # Enable cookies on the orange website for log-in.
-[[siteconf]]
+[siteconf.hn]
 url = 'https://news\.ycombinator\.com/.*'
 cookie = true
 
 # Redirect npr.org to text.npr.org.
-[[siteconf]]
+[siteconf.npr]
 host = '(www\.)?npr\.org'
 rewrite-url = '''
 (x) => {
@@ -834,18 +841,20 @@ rewrite-url = '''
 '''
 
 # Allow cookie sharing on *sr.ht domains.
-[[siteconf]]
+[siteconf.sr-ht]
 host = '(.*\.)?sr\.ht' # either 'something.sr.ht' or 'sr.ht'
 cookie = true # enable cookies (read-only; use "save" to persist them)
 share-cookie-jar = 'sr.ht' # use the cookie jar of 'sr.ht' for all matched hosts
 
 # Use the "vector" skin on Wikipedia.
+# The [[siteconf]] syntax introduces an anonymous siteconf; it is
+# equivalent to the above ones.
 [[siteconf]]
 url = '^https?://[a-z]+\.wikipedia\.org/wiki/(?!.*useskin=.*)'
 rewrite-url = 'x => x.searchParams.append("useskin", "vector")'
 
 # Make imgur send us images.
-[[siteconf]]
+[siteconf.imgur]
 host = '(i\.)?imgur\.com'
 default-headers = {
 	User-Agent = "Mozilla/5.0 chawan",

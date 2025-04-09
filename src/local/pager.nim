@@ -1863,7 +1863,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   )
   var cookieJarId = url.host
   let surl = $url
-  for sc in pager.config.siteconf:
+  for sc in pager.config.siteconf.values:
     if sc.url.isSome and not sc.url.get.match(surl):
       continue
     elif sc.host.isSome and not sc.host.get.match(host):
@@ -2005,8 +2005,8 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     return nil
 
 proc omniRewrite(pager: Pager; s: string): string =
-  for rule in pager.config.omnirule:
-    if rule.match.match(s):
+  for rule in pager.config.omnirule.values:
+    if rule.match.get.match(s):
       let fun = rule.substituteUrl.get
       let ctx = pager.jsctx
       var arg0 = ctx.toJS(s)

@@ -5,6 +5,7 @@ when NimMajor < 2:
 import std/options
 import std/os
 import std/posix
+import std/tables
 
 import chagashi/charset
 import config/chapath
@@ -210,27 +211,30 @@ proc parse(ctx: var ParamParseContext) =
 const defaultConfig = staticRead"res/config.toml"
 
 proc initConfig(ctx: ParamParseContext; config: Config;
-    warnings: var seq[string]): Err[string] =
+    warnings: var seq[string]; jsctx: JSContext): Err[string] =
   let ps = openConfig(config.dir, ctx.configPath, warnings)
   if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("Failed to open config file " & ctx.configPath.get)
   putEnv("CHA_DIR", config.dir)
-  ?config.parseConfig("res", defaultConfig, warnings)
+  ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
   when defined(debug):
     if (let ps = newPosixStream(getCurrentDir() / "res/config.toml");
         ps != nil):
-      ?config.parseConfig(getCurrentDir(), ps.readAll(), warnings)
+      ?config.parseConfig(getCurrentDir(), ps.readAll(), warnings, jsctx,
+        "res/config.toml")
       ps.sclose()
   if ps != nil:
     let src = ps.readAllOrMmap()
-    ?config.parseConfig(config.dir, src.toOpenArray(), warnings)
+    ?config.parseConfig(config.dir, src.toOpenArray(), warnings, jsctx,
+      "config.toml")
     deallocMem(src)
     ps.sclose()
   for opt in ctx.opts:
-    ?config.parseConfig(getCurrentDir(), opt, warnings, laxnames = true)
+    ?config.parseConfig(getCurrentDir(), opt, warnings, jsctx, "<input>",
+      laxnames = true)
   config.css.stylesheet &= ctx.stylesheet
-  ?config.initCommands()
+  ?jsctx.initCommands(config)
   isCJKAmbiguous = config.display.doubleWidthAmbiguous
   return ok()
 
@@ -251,8 +255,8 @@ proc main() =
   let jsrt = newJSRuntime()
   let jsctx = jsrt.newJSContext()
   var warnings = newSeq[string]()
-  let config = Config(jsctx: jsctx)
-  if (let res = ctx.initConfig(config, warnings); res.isNone):
+  let config = Config(arraySeen: newTable[string, int]())
+  if (let res = ctx.initConfig(config, warnings, jsctx); res.isNone):
     stderr.writeLine(res.error)
     quit(1)
   var history = true

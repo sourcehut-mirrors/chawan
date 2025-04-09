@@ -107,16 +107,37 @@ force-lines = false
 force-pixels-per-column = false
 force-pixels-per-line = false
 
-[[omnirule]]
+[omnirule.ddg]
 match = '^ddg:'
 substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
 
-[[omnirule]]
+[omnirule.go]
 match = '^go:'
 substitute-url = 'x => `https://www.google.com/search?gbv=1&ucbcb=1&oe=UTF-8&q=${x.split(":").slice(1).join(":")}`'
 
+[omnirule.wk]
+match = '^wk:'
+substitute-url = '''
+x => "https://en.wikipedia.org/wiki/Special:Search?search=" +
+	encodeURIComponent(x.split(":").slice(1).join(":"))
+'''
+
+[omnirule.wd]
+match = '^wd:'
+substitute-url = '''
+x => "https://en.wiktionary.org/w/index.php?title=Special:Search&search=" +
+	encodeURIComponent(x.split(":").slice(1).join(":"))
+'''
+
+[omnirule.ms]
+match = '^ms:'
+substitute-url = '''
+x => "https://marginalia-search.com/search?query=" +
+	encodeURIComponent(x.split(":").slice(1).join(":"));
+'''
+
 # strip tracking
-[[siteconf]]
+[siteconf.google-com]
 url = '^https?://(www\.)?google\.com'
 rewrite-url = '''
 x => {
