@@ -75,7 +75,6 @@ proc calcLength*(this: FormData): int =
     result += "\r\n".len # header is always followed by \r\n
     result += "\r\n".len # value is always followed by \r\n
   result += "--".len + this.boundary.len + "--\r\n".len
-  result += "\r\n".len
 
 proc getContentType*(this: FormData): string =
   return "multipart/form-data; boundary=" & this.boundary
@@ -115,4 +114,3 @@ proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
 
 proc writeEnd*(stream: DynStream; boundary: string) =
   stream.write("--" & boundary & "--\r\n")
-  stream.write("\r\n")
