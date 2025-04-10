@@ -20,7 +20,7 @@ omnirule = [] # note: this must be placed at the beginning of the file.
 ```
 
 The canonical configuration file path is ~/.chawan/config.toml, but
-the search path accomodates XDG basedirs as well:
+the search path accommodates XDG basedirs as well:
 
 1. config file specified through -C switch -> use that
 2. `$CHA_DIR` is set -> use `$CHA_DIR`/config.toml
@@ -592,9 +592,7 @@ Following is a list of display options:
 <td>"auto"</td>
 <td>Set the color mode. "auto" for automatic detection, "monochrome"
 for black on white, "ansi" for ansi colors, "eight-bit" for 256-color mode, and
-"true-color" for true colors.<br>
-"8bit" is accepted as a legacy alias of "eight-bit". "24bit" is accepted as
-a legacy alias of "true-color".</td>
+"true-color" for true colors.</td>
 </tr>
 
 <tr>
