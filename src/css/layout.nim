@@ -1456,34 +1456,8 @@ proc pushPositioned(lctx: LayoutContext; box: CSSBox) =
     lctx.positioned[^1].stack
   else:
     stack
-  box.positioned = true
+  box.positioned = box.computed{"position"} != PositionStatic
   lctx.positioned.add(PositionedItem(stack: nextStack))
-
-# Offset the child by the offset of its actual parent to its nearest
-# positioned ancestor (`parent').
-# This is only necessary (for the respective axes) if either top,
-# bottom, left or right is specified.
-proc realignAbsolutePosition(child: BlockBox; parent: CSSBox;
-    dims: set[DimensionType]) =
-  var it {.cursor.} = child.parent
-  while it != parent:
-    let offset = if it of BlockBox:
-      BlockBox(it).state.offset
-    else:
-      InlineBox(it).state.startOffset
-    if dtHorizontal in dims:
-      child.state.offset.x -= offset.x
-    if dtVertical in dims:
-      child.state.offset.y -= offset.y
-    it = it.parent
-  if parent != nil and parent of InlineBox:
-    # The renderer does not adjust position for inline parents, so we
-    # must do it here.
-    let offset = InlineBox(parent).state.startOffset
-    if dtHorizontal in dims:
-      child.state.offset.x += offset.x
-    if dtVertical in dims:
-      child.state.offset.y += offset.y
 
 # size is the parent's size.
 # Note that parent may be nil.
@@ -1508,26 +1482,19 @@ proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size) =
       # the available width, and we must re-layout.
       sizes.space.w = stretch(child.state.intr.w)
       lctx.layoutRootBlock(child, offset, sizes)
-    var dims: set[DimensionType] = {}
     if child.computed{"left"}.u != clAuto:
       child.state.offset.x = positioned.left + sizes.margin.left
-      dims.incl(dtHorizontal)
     elif child.computed{"right"}.u != clAuto:
       child.state.offset.x = size.w - positioned.right - child.state.size.w -
         sizes.margin.right
-      dims.incl(dtHorizontal)
     # margin.left is added in layoutRootBlock
     if child.computed{"top"}.u != clAuto:
       child.state.offset.y = positioned.top + sizes.margin.top
-      dims.incl(dtVertical)
     elif child.computed{"bottom"}.u != clAuto:
       child.state.offset.y = size.h - positioned.bottom - child.state.size.h -
         sizes.margin.bottom
-      dims.incl(dtVertical)
     else:
       child.state.offset.y += sizes.margin.top
-    if dims != {}:
-      child.realignAbsolutePosition(parent, dims)
   let stack = item.stack
   if stack.box == parent:
     stack.children.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))

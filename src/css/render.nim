@@ -463,8 +463,8 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
         else:
           grid.renderBlock(state, BlockBox(child), offset)
 
-# This function exists to support another insanity-inducing CSS
-# construct: negative z-index.
+# This function exists to support another insane CSS construct: negative
+# z-index.
 # The issue here is that their position depends on their parent, but the
 # parent box is very often not positioned yet.  So we brute-force our
 # way out of the problem by resolving the parent box's position here.
@@ -472,25 +472,31 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
 # InlineBox offsets in the process - this means that there may be inline
 # boxes after this pass with an unresolved position which contain block
 # boxes with a resolved position.
-proc resolveBlockParent(box: CSSBox): BlockBox =
+proc resolveBlockOffset(box: CSSBox): Offset =
+  var dims: set[DimensionType] = {}
+  let absolute = box.positioned and
+    box.computed{"position"} in PositionAbsoluteFixed
+  if absolute:
+    if box.computed{"left"}.u != clAuto or box.computed{"right"}.u != clAuto:
+      dims.incl(dtHorizontal)
+    if box.computed{"top"}.u != clAuto or box.computed{"bottom"}.u != clAuto:
+      dims.incl(dtVertical)
   var it {.cursor.} = box.parent
   while it != nil:
     if it of BlockBox:
       break
     it = it.parent
   var toPosition: seq[BlockBox] = @[]
-  let findPositioned = box.positioned and
-    box.computed{"position"} in PositionAbsoluteFixed
   var it2 {.cursor.} = it
   var parent {.cursor.}: CSSBox = nil
   while it2 != nil:
+    if it2.render.positioned and (not absolute or it2.positioned):
+      break
     if it2 of BlockBox:
-      let it2 = BlockBox(it2)
-      if it2.render.positioned and (not findPositioned or it2.positioned):
-        break
-      toPosition.add(it2)
+      toPosition.add(BlockBox(it2))
     it2 = it2.parent
-  var offset = if it2 != nil: it2.render.offset else: offset(0, 0)
+  let absOffset = if it2 != nil: it2.render.offset else: offset(0, 0)
+  var offset = absOffset
   for i in countdown(toPosition.high, 0):
     let it = toPosition[i]
     offset += it.state.offset
@@ -501,6 +507,9 @@ proc resolveBlockParent(box: CSSBox): BlockBox =
     )
     it.inheritClipBox(parent)
     parent = it
+  for dim in DimensionType:
+    if dim in dims:
+      offset[dim] = absOffset[dim]
   if box of BlockBox:
     let box = BlockBox(box)
     box.render = BoxRenderState(
@@ -508,16 +517,12 @@ proc resolveBlockParent(box: CSSBox): BlockBox =
       offset: offset + box.state.offset,
       clipBox: DefaultClipBox
     )
-    if findPositioned:
-      box.inheritClipBox(it2)
-    else:
-      box.inheritClipBox(it)
-  return BlockBox(it)
+    box.inheritClipBox(if absolute: it2 else: it)
+  return offset
 
 proc renderPositioned(grid: var FlexibleGrid; state: var RenderState;
     box: CSSBox) =
-  let parent = box.resolveBlockParent()
-  let offset = if parent != nil: parent.render.offset else: offset(0, 0)
+  let offset = box.resolveBlockOffset()
   if box of BlockBox:
     grid.renderBlock(state, BlockBox(box), offset, pass2 = true)
   else:

@@ -1,6 +1,6 @@
 
 Note: per CSS, the absolute box's sizing is explicitly UB, apparently to
-accomodate for Gecko's broken rendering. We follow Blink.
+accommodate for Gecko's broken rendering. We follow Blink.
 
 
 
