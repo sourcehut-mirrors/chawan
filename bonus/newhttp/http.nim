@@ -106,7 +106,7 @@ type
     state: HTTPState
     bodyState: HTTPState # if TE is chunked, hsChunkSize; else hsBody
     lineState: LineState
-    chunkSize: uint64 # a nonsensical number if TE is not chunked
+    chunkSize: uint64 # Content-Length if TE is not chunked
     ps: DynStream
     os: PosixStream
     line: string
@@ -286,6 +286,7 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
         var buf = ""
         var contentEncodings: seq[ContentEncoding] = @[]
         var transferEncodings: seq[TransferEncoding] = @[]
+        var contentLength = uint64.high
         for it in op.headers:
           buf &= it.key & ": " & it.value & "\r\n"
           if it.key.equalsIgnoreCase("Content-Encoding"):
@@ -298,6 +299,8 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
               let x = parseEnumNoCase[TransferEncoding](it)
               if x.isSome:
                 transferEncodings.add(x.get)
+          elif it.key.equalsIgnoreCase("Content-Length"):
+            contentLength = parseUInt64(it.value).get(uint64.high)
         buf &= "\r\n"
         if not op.os.writeDataLoop(buf):
           quit(1)
@@ -317,6 +320,8 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
           of teBrotli: op.unbrotli()
         op.lineState = lsNone
         op.state = op.bodyState
+        if op.bodyState == hsBody:
+          op.chunkSize = contentLength
         return i + 1
   return iq.len
 
@@ -347,17 +352,15 @@ proc handleChunkSize(op: HTTPHandle; iq: openArray[char]): int =
 
 proc handleBody(op: HTTPHandle; iq: openArray[char]): int =
   var L = uint64(iq.len)
-  if op.bodyState == hsBody or L < op.chunkSize:
-    # if not chunked, always take this branch
-    op.chunkSize -= L
-    if not op.os.writeDataLoop(iq):
-      quit(1)
-    return iq.len
-  let n = int(op.chunkSize)
+  if L >= op.chunkSize:
+    L = op.chunkSize
+    op.state = hsAfterChunk
+  let n = int(L)
   if not op.os.writeDataLoop(iq.toOpenArray(0, n - 1)):
     quit(1)
-  op.chunkSize = 0
-  op.state = hsAfterChunk
+  op.chunkSize -= L
+  if op.bodyState == hsBody and op.chunkSize == 0:
+    return -1 # we're done
   return n
 
 proc handleAfterChunk(op: HTTPHandle; iq: openArray[char]): int =
