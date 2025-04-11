@@ -51,9 +51,8 @@ this and the current one is that this uses tinfl for decompression.
 
 Still TODO:
 
-* figure out what ciphers to allow
+* somehow merge TOFU logic/interface with gemini, sftp
 * keep-alive (loader needs work first)
-* zstd
 * HTTP/2
 * sandbox
 

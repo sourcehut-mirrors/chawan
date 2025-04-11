@@ -55,10 +55,6 @@ type tinfl_decompressor {.importc, header: "tinfl.h", completeStruct.} = object
     uint8]
   m_gz_header: array[10, uint8]
 
-const libbrotlidec = staticExec("pkg-config --libs libbrotlidec")
-
-{.passl: libbrotlidec.}
-
 {.push importc, cdecl, header: """
 #define TINFL_IMPLEMENTATION
 #include "tinfl.h"
@@ -67,37 +63,6 @@ proc tinfl_decompress(r: var tinfl_decompressor; pIn_buf_next: ptr uint8;
   pIn_buf_size: var csize_t; pOut_buf_start, pOut_buf_next: ptr uint8;
   pOut_buf_size: var csize_t; decomp_flags: uint32): tinfl_status
 {.pop.} # importc, cdecl, header: "tinfl.h"
-
-# libbrotli bindings
-type BrotliDecoderState {.importc, header: "<brotli/decode.h>",
-  incompleteStruct.} = object
-
-type BrotliDecoderResult {.size: sizeof(cint).} = enum
-  BROTLI_DECODER_RESULT_ERROR = 0
-  BROTLI_DECODER_RESULT_SUCCESS = 1
-  BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT = 2
-  BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT = 3
-
-type
-  brotli_alloc_func {.importc, header: "<brotli/types.h>".} =
-    proc(opaque: pointer; size: csize_t): pointer {.cdecl.}
-  brotli_free_func {.importc, header: "<brotli/types.h>".} =
-    proc(opaque: pointer; address: pointer): pointer {.cdecl.}
-
-  BrotliDecoderErrorCode = cint
-
-{.push importc, cdecl, header: "<brotli/decode.h>".}
-proc BrotliDecoderCreateInstance(alloc_func: brotli_alloc_func;
-  free_func: brotli_free_func; opaque: pointer): ptr BrotliDecoderState
-proc BrotliDecoderDestroyInstance(state: ptr BrotliDecoderState)
-proc BrotliDecoderDecompressStream(state: ptr BrotliDecoderState;
-  available_in: var csize_t; next_in: var ptr uint8; available_out: out csize_t;
-  next_out: var ptr uint8; total_out: ptr csize_t): BrotliDecoderResult
-proc BrotliDecoderGetErrorCode(state: ptr BrotliDecoderState):
-  BrotliDecoderErrorCode
-proc BrotliDecoderErrorString(c: BrotliDecoderErrorCode): cstring
-{.pop.}
-
 
 const InputBufferSize = 16384
 
@@ -121,13 +86,11 @@ type
   ContentEncoding = enum
     ceGzip = "gzip"
     ceDeflate = "deflate"
-    ceBrotli = "br"
 
   TransferEncoding = enum
     teChunked = "chunked"
     teGzip = "gzip"
     teDeflate = "deflate"
-    teBrotli = "br"
 
 proc inflate(op: HTTPHandle; flag: uint32) =
   var pipefd {.noinit.}: array[2, cint]
@@ -177,59 +140,6 @@ proc inflate(op: HTTPHandle; flag: uint32) =
           stderr.writeLine("NewHTTP error: " & $status)
           quit(1)
     quit(0)
-  else: # parent
-    pins.sclose()
-    op.os = pouts
-
-proc unbrotli(op: HTTPHandle) =
-  var pipefd {.noinit.}: array[2, cint]
-  if pipe(pipefd) != 0:
-    return
-  let pins = newPosixStream(pipefd[0])
-  let pouts = newPosixStream(pipefd[1])
-  case fork()
-  of -1:
-    pins.sclose()
-    pouts.sclose()
-  of 0: # child
-    enterNetworkSandbox()
-    pouts.sclose()
-    let os = op.os
-    let decomp = BrotliDecoderCreateInstance(nil, nil, nil)
-    var iq {.noinit.}: array[InputBufferSize, uint8]
-    var oq {.noinit.}: array[InputBufferSize * 2, uint8]
-    while true:
-      let len0 = pins.readData(iq)
-      if len0 <= 0:
-        break
-      let len = csize_t(len0)
-      var n = csize_t(0)
-      while true:
-        var iqn = csize_t(len) - n
-        var oqn = csize_t(oq.len)
-        var next_in = addr iq[n]
-        var next_out = addr oq[0]
-        let status = decomp.BrotliDecoderDecompressStream(iqn, next_in, oqn,
-          next_out, nil)
-        if not os.writeDataLoop(oq.toOpenArray(0, oq.len - int(oqn) - 1)):
-          quit(1)
-        n = csize_t(len) - iqn
-        case status
-        of BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT:
-          assert len == n
-          break
-        of BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT:
-          discard
-        of BROTLI_DECODER_RESULT_SUCCESS:
-          decomp.BrotliDecoderDestroyInstance()
-          quit(0)
-        of BROTLI_DECODER_RESULT_ERROR:
-          let c = decomp.BrotliDecoderGetErrorCode()
-          stderr.writeLine("NewHTTP error: " & $BrotliDecoderErrorString(c))
-          quit(1)
-    # should be unreachable I think
-    stderr.writeLine("NewHTTP error: unexpected end of brotli stream")
-    quit(1)
   else: # parent
     pins.sclose()
     op.os = pouts
@@ -308,7 +218,6 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
           case contentEncodings[i]
           of ceGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
           of ceDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
-          of ceBrotli: op.unbrotli()
         op.bodyState = hsBody
         for i in countdown(transferEncodings.high, 0):
           case transferEncodings[i]
@@ -317,7 +226,6 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
               op.bodyState = hsChunkSize
           of teGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
           of teDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)
-          of teBrotli: op.unbrotli()
         op.lineState = lsNone
         op.state = op.bodyState
         if op.bodyState == hsBody:
