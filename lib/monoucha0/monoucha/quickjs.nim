@@ -295,10 +295,6 @@ type
 proc `==`*(a, b: JSValue): bool {.error.} =
   discard
 
-when defined(debug):
-  proc `==`*(a, b: JSValueConst): bool {.error.} =
-    discard
-
 func `==`*(a, b: JSAtom): bool {.borrow.}
 
 when defined(debug):
