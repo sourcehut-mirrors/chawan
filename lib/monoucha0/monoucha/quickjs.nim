@@ -48,10 +48,12 @@ const                         ##  all tags with a reference count are negative
 
 when sizeof(int) < sizeof(int64):
   {.passc: "-DJS_NAN_BOXING".}
-  type
-    JSValue* {.importc, header: qjsheader.} = distinct uint64
+  type JSValue* {.importc, header: qjsheader.} = distinct uint64
 
-    JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
+  when defined(debug):
+    type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
+  else:
+    type JSValueConst* = JSValue
 
   template JS_VALUE_GET_TAG*(v: JSValueConst): int32 =
     cast[int32](cast[uint64](v) shr 32)
@@ -74,13 +76,20 @@ else:
       u*: JSValueUnion
       tag*: int64
 
-    JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
+  when defined(debug):
+    type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
+  else:
+    type JSValueConst* = JSValue
 
   template JS_VALUE_GET_TAG*(v: JSValueConst): int32 =
     cast[int32](JSValue(v).tag)
 
-  template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
-    cast[pointer](JSValue(v).u)
+  when defined(debug):
+    template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
+      cast[pointer](JSValue(v).u)
+  else:
+    template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
+      cast[pointer](v.u)
 
   template JS_MKVAL*(t, val: untyped): JSValue =
     JSValue(u: JSValueUnion(`int32`: val), tag: t)
@@ -286,16 +295,18 @@ type
 proc `==`*(a, b: JSValue): bool {.error.} =
   discard
 
-proc `==`*(a, b: JSValueConst): bool {.error.} =
-  discard
+when defined(debug):
+  proc `==`*(a, b: JSValueConst): bool {.error.} =
+    discard
 
 func `==`*(a, b: JSAtom): bool {.borrow.}
 
-converter toJSValueConst*(val: JSValue): JSValueConst =
-  JSValueConst(val)
+when defined(debug):
+  converter toJSValueConst*(val: JSValue): JSValueConst =
+    JSValueConst(val)
 
-converter toJSValueConstArray*(val: JSValueArray): JSValueConstArray =
-  JSValueConstArray(val)
+  converter toJSValueConstArray*(val: JSValueArray): JSValueConstArray =
+    JSValueConstArray(val)
 
 converter toJSClassID*(e: JSClassEnum): JSClassID {.inline.} =
   JSClassID(e)
