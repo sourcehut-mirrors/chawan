@@ -1,3 +1,4 @@
+import std/options
 import std/os
 import std/strutils
 import std/times
@@ -14,10 +15,19 @@ const libssh2 = staticExec("pkg-config --libs libssh2")
 
 type
   LIBSSH2_SESSION {.importc, header: "<libssh2.h>", incompleteStruct.} = object
+  LIBSSH2_KNOWNHOSTS {.importc, header: "<libssh2.h>", incompleteStruct.} =
+    object
   LIBSSH2_SFTP {.importc, header: "<libssh2_sftp.h>", incompleteStruct.} =
     object
   LIBSSH2_SFTP_HANDLE {.importc, header: "<libssh2_sftp.h>",
     incompleteStruct.} = object
+  libssh2_knownhost {.importc: "struct libssh2_knownhost",
+    header: "<libssh2.h>".} = object
+    magic: cuint
+    node: pointer
+    name: cstring
+    key: cstring
+    typemask: cint
 
   LIBSSH2_SFTP_ATTRIBUTES {.importc, header: "<libssh2_sftp.h>".} = object
     flags: culong
@@ -30,6 +40,26 @@ type
 
 {.push importc, cdecl, header: "<libssh2.h>".}
 
+let LIBSSH2_KNOWNHOST_FILE_OPENSSH {.importc.}: cint
+let LIBSSH2_KNOWNHOST_TYPE_PLAIN {.importc.}: cint
+let LIBSSH2_KNOWNHOST_KEYENC_RAW {.importc.}: cint
+let LIBSSH2_KNOWNHOST_CHECK_MATCH {.importc.}: cint
+let LIBSSH2_KNOWNHOST_CHECK_MISMATCH {.importc.}: cint
+let LIBSSH2_KNOWNHOST_CHECK_NOTFOUND {.importc.}: cint
+let LIBSSH2_KNOWNHOST_CHECK_FAILURE {.importc.}: cint
+let LIBSSH2_HOSTKEY_TYPE_UNKNOWN {.importc.}: cint
+
+const LIBSSH2_KNOWNHOST_KEY_MASK = 15 shl 18
+const LIBSSH2_KNOWNHOST_KEY_SHIFT = 18
+const LIBSSH2_KNOWNHOST_KEY_SSHRSA = 2 shl 18
+const LIBSSH2_KNOWNHOST_KEY_SSHDSS = 3 shl 18
+const LIBSSH2_KNOWNHOST_KEY_ECDSA_256 = 4 shl 18
+const LIBSSH2_KNOWNHOST_KEY_ECDSA_384 = 5 shl 18
+const LIBSSH2_KNOWNHOST_KEY_ECDSA_521 = 6 shl 18
+const LIBSSH2_KNOWNHOST_KEY_ED25519 = 7 shl 18
+
+let LIBSSH2_METHOD_HOSTKEY {.importc.}: cint
+
 proc libssh2_init(flags: cint): cint
 proc libssh2_session_init(): ptr LIBSSH2_SESSION {.nodecl.}
 proc libssh2_session_handshake(session: ptr LIBSSH2_SESSION;
@@ -40,7 +70,21 @@ proc libssh2_userauth_publickey_fromfile(session: ptr LIBSSH2_SESSION;
   username, publickey, privatekey, passphrase: cstring): cint {.nodecl.}
 proc libssh2_session_disconnect(session: ptr LIBSSH2_SESSION;
   description: cstring): cint {.nodecl.}
+proc libssh2_session_hostkey(session: ptr LIBSSH2_SESSION; len: out csize_t;
+  t: out cint): cstring
+proc libssh2_session_method_pref(session: ptr LIBSSH2_SESSION; method_type: cint;
+  prefs: cstring): cint
 proc libssh2_session_free(session: ptr LIBSSH2_SESSION): cint
+proc libssh2_knownhost_init(session: ptr LIBSSH2_SESSION):
+  ptr LIBSSH2_KNOWNHOSTS
+proc libssh2_knownhost_readfile(hosts: ptr LIBSSH2_KNOWNHOSTS,
+  filename: cstring; t: cint): cint
+proc libssh2_knownhost_checkp(hosts: ptr LIBSSH2_KNOWNHOSTS; host: cstring;
+  port: cint; key: cstring; keylen: csize_t; typemask: cint;
+  knownhost: out ptr libssh2_knownhost): cint
+proc libssh2_knownhost_get(hosts: ptr LIBSSH2_KNOWNHOSTS;
+  store: ptr ptr libssh2_knownhost; prev: ptr libssh2_knownhost): cint
+proc libssh2_knownhost_free(hosts: ptr LIBSSH2_KNOWNHOSTS)
 proc libssh2_exit()
 
 {.push header: "<libssh2_sftp.h>".}
@@ -127,12 +171,12 @@ proc parseSSHConfig(f: File; host: string; pubKey, privKey: var string) =
       if args.len != 1:
         continue # error
       if privKey == "":
-        privKey = expandTilde(args[0])
+        privKey = expandPath(args[0])
     elif k == "CertificateFile":
       if args.len != 1:
         continue # error
       if pubKey == "":
-        pubKey = expandTilde(args[0])
+        pubKey = expandPath(args[0])
   f.close()
 
 proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
@@ -142,7 +186,7 @@ proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
 proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: string) =
   let user = getEnv("MAPPED_URI_USERNAME")
   let pass = getEnv("MAPPED_URI_PASSWORD")
-  let configs = ["/etc/ssh/ssh_config", expandTilde("~/.ssh/config")]
+  let configs = ["/etc/ssh/ssh_config", expandPath("~/.ssh/config")]
   var pubKey = ""
   var privKey = ""
   for config in configs:
@@ -250,6 +294,95 @@ Content-Type: text/html
     if not os.writeDataLoop(buffer.toOpenArray(0, n - 1)):
       break
 
+# Fingerprint validation.
+# Yes, this is actually how you're supposed to do this.
+proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION;
+    host, port: string; hostsPath: out string): ptr LIBSSH2_KNOWNHOSTS =
+  hostsPath = ""
+  if getEnv("CHA_INSECURE_SSL_NO_VERIFY") == "1":
+    return nil
+  let hosts = libssh2_knownhost_init(session)
+  if hosts == nil:
+    os.die("InternalError", "failed to init knownhost")
+  hostsPath = getEnv("CHA_SSH_KNOWN_HOSTS", expandPath("~/.ssh/known_hosts"))
+  discard hosts.libssh2_knownhost_readfile(cstring(hostsPath),
+    LIBSSH2_KNOWNHOST_FILE_OPENSSH)
+  var store: ptr libssh2_knownhost = nil
+  let name = if port == "22":
+    host
+  elif host[0] == '[':
+    host & ':' & port
+  else:
+    '[' & host & "]:" & port
+  var found = false
+  while not found and libssh2_knownhost_get(hosts, addr store, store) == 0:
+    if store == nil or store.name == nil:
+      continue
+    found = $store.name == name
+  if found:
+    let t = store.typemask and LIBSSH2_KNOWNHOST_KEY_MASK
+    let meth = case t
+    of LIBSSH2_KNOWNHOST_KEY_ED25519: cstring"ssh-ed25519"
+    of LIBSSH2_KNOWNHOST_KEY_ECDSA_521: cstring"ecdsa-sha2-nistp521"
+    of LIBSSH2_KNOWNHOST_KEY_ECDSA_384: cstring"ecdsa-sha2-nistp384"
+    of LIBSSH2_KNOWNHOST_KEY_ECDSA_256: cstring"ecdsa-sha2-nistp256"
+    of LIBSSH2_KNOWNHOST_KEY_SSHRSA: cstring"rsa-sha2-256,rsa-sha2-512,ssh-rsa"
+    of LIBSSH2_KNOWNHOST_KEY_SSHDSS: cstring"ssh-dss"
+    else: nil
+    if meth != nil:
+      if session.libssh2_session_method_pref(LIBSSH2_METHOD_HOSTKEY, meth) != 0:
+        os.die("InternalError", "failed to set host key method to " & $meth)
+  return hosts
+
+proc checkFingerprint(os: PosixStream; session: ptr LIBSSH2_SESSION;
+    hosts: ptr LIBSSH2_KNOWNHOSTS; host, port, hostsPath: string) =
+  var len: csize_t
+  var t: cint
+  let fingerprint = session.libssh2_session_hostkey(len, t)
+  if fingerprint == nil:
+    os.die("InternalError", "missing fingerprint")
+  if t == LIBSSH2_HOSTKEY_TYPE_UNKNOWN:
+    os.die("InternalError", "unknown host key type")
+  let port = cint(parseIntP(port).get(-1))
+  var knownhost: ptr libssh2_knownhost
+  let hostBit = (t + 1) shl LIBSSH2_KNOWNHOST_KEY_SHIFT # wtf?
+  let check = hosts.libssh2_knownhost_checkp(cstring(host), port,
+    fingerprint, len, LIBSSH2_KNOWNHOST_TYPE_PLAIN or
+    LIBSSH2_KNOWNHOST_KEYENC_RAW or hostBit, knownhost)
+  if check == LIBSSH2_KNOWNHOST_CHECK_FAILURE:
+    os.die("InternalError", "failure in known hosts check")
+  elif check == LIBSSH2_KNOWNHOST_CHECK_MATCH:
+    discard
+  elif check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND:
+    os.write("""
+Content-Type: text/html
+
+<!DOCTYPE html>
+<title>Unknown host</title>
+<h1>Unknown host</h1>
+<p>
+Host not found in known_hosts at """ & hostsPath & """.
+<p>
+Please try to connect to the server once with SSH:
+ssh """ & host & " -p " & $port)
+    quit(1)
+  else:
+    assert check == LIBSSH2_KNOWNHOST_CHECK_MISMATCH
+    os.write("""
+Content-Type: text/html
+
+<!DOCTYPE html>
+<title>Invalid fingerprint</title>
+<h1>Invalid fingerprint</h1>
+<p>
+The fingerprint received from the server does not match the stored
+fingerprint.  Somebody may be tampering with your connection.
+<p>
+If you are sure that this is not a man-in-the-middle attack,
+please remove this host from """ & hostsPath & ".")
+    quit(1)
+  hosts.libssh2_knownhost_free()
+
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
   if getEnv("REQUEST_METHOD") != "GET":
@@ -260,9 +393,12 @@ proc main() =
   if libssh2_init(0) < 0:
     os.die("InternalError")
   let session = libssh2_session_init()
+  var hostsPath: string
+  let hosts = os.setMethod(session, host, port, hostsPath)
   if session.libssh2_session_handshake(ps.fd) < 0:
     os.die("InternalError", "handshake failed")
-  #TODO check known hosts file...
+  if hosts != nil:
+    os.checkFingerprint(session, hosts, host, port, hostsPath)
   os.authenticate(session, host)
   enterNetworkSandbox()
   let sftpSession = libssh2_sftp_init(session)
