@@ -2069,11 +2069,8 @@ proc createPipe(pager: Pager): (PosixStream, PosixStream) =
   return (newPosixStream(pipefds[0]), newPosixStream(pipefds[1]))
 
 proc readPipe0(pager: Pager; contentType: string; cs: Charset;
-    ps: PosixStream; url: URL; title: string; flags: set[ContainerFlag]):
-    Container =
+    url: URL; title: string; flags: set[ContainerFlag]): Container =
   var url = url
-  pager.loader.passFd(url.pathname, ps.fd)
-  ps.sclose()
   var loaderConfig: LoaderClientConfig
   var ourl: URL
   let bufferConfig = pager.applySiteconf(url, cs, loaderConfig, ourl)
@@ -2089,20 +2086,21 @@ proc readPipe0(pager: Pager; contentType: string; cs: Charset;
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
     title: string) =
   let url = newURL("stream:-").get
-  let container = pager.readPipe0(contentType, cs, ps, url, title,
+  pager.loader.passFd(url.pathname, ps.fd)
+  ps.sclose()
+  let container = pager.readPipe0(contentType, cs, url, title,
     {cfCanReinterpret, cfUserRequested})
   inc pager.numload
   pager.addContainer(container)
 
 proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
-  let (pins, pouts) = pager.createPipe()
-  if pins == nil:
-    return nil
   let url = newURL("stream:history").get
-  pager.loader.passFd(url.pathname, pins.fd)
-  pins.sclose()
+  let ps = pager.loader.addPipe(url.pathname)
+  if ps == nil:
+    return nil
+  ps.setCloseOnExec()
   let hist = pager.lineHist[lmLocation]
-  if not hist.write(pouts, sync = false, reverse = true):
+  if not hist.write(ps, sync = false, reverse = true):
     pager.alert("failed to write history")
   return url
 
@@ -2119,37 +2117,37 @@ proc hideConsole(pager: Pager) =
     pager.setContainer(pager.consoleWrapper.prev)
 
 proc clearConsole(pager: Pager) =
-  let (pins, pouts) = pager.createPipe()
-  if pins != nil:
-    let url = newURL("stream:console").get
-    let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pins,
-      url, ConsoleTitle, {})
+  let url = newURL("stream:console").get
+  let ps = pager.loader.addPipe(url.pathname)
+  if ps != nil:
+    ps.setCloseOnExec()
+    let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, url,
+      ConsoleTitle, {})
     replacement.replace = pager.consoleWrapper.container
     pager.replace(pager.consoleWrapper.container, replacement)
     pager.consoleWrapper.container = replacement
     let console = pager.console
     var file: File = nil
-    if file.open(pouts.fd, fmWrite):
+    if file.open(ps.fd, fmWrite):
       console.setStream(file)
 
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
   if interactive and pager.config.start.consoleBuffer:
-    let (pins, pouts) = pager.createPipe()
-    if pins != nil:
-      pins.setCloseOnExec()
-      pouts.setCloseOnExec()
+    let url = newURL("stream:console").get
+    let ps = pager.loader.addPipe(url.pathname)
+    if ps != nil:
+      ps.setCloseOnExec()
       let clearFun = proc() =
         pager.clearConsole()
       let showFun = proc() =
         pager.showConsole()
       let hideFun = proc() =
         pager.hideConsole()
-      let url = newURL("stream:console").get
-      let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, pins,
-        url, ConsoleTitle, {})
-      pouts.write("Type (M-c) console.hide() to return to buffer mode.\n")
+      let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, url,
+        ConsoleTitle, {})
+      ps.write("Type (M-c) console.hide() to return to buffer mode.\n")
       var file: File = nil
-      if file.open(pouts.fd, fmWrite):
+      if file.open(ps.fd, fmWrite):
         let console = newConsole(file, clearFun, showFun, hideFun)
         return ConsoleWrapper(console: console, container: container)
   return ConsoleWrapper(console: newConsole(stderr))
