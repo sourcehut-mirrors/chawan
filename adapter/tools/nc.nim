@@ -16,14 +16,6 @@ proc usage() {.noreturn.} =
   stderr.write("Usage: " & paramStr(0) & " [host] [port] [-m msg]\n")
   quit(1)
 
-proc writeOrDie(ps: PosixStream; buffer: openArray[uint8]) =
-  let os = newPosixStream(STDOUT_FILENO)
-  if not os.writeDataLoop(msg):
-    os.die("InternalError", "failed to write to stream")
-
-proc writeOrDie(ps: PosixStream; buffer: openArray[char]) =
-  ps.writeOrDie(buffer.toOpenArrayByte(0, buffer.high))
-
 proc main() =
   var host = ""
   var port = ""
@@ -46,19 +38,20 @@ proc main() =
   var os = newPosixStream(STDOUT_FILENO)
   let ips = newPosixStream(STDIN_FILENO)
   var df = cint(-1)
-  if msg == "":
+  if msg == "": # ugly hack to suppress error messages
     df = dup(os.fd)
     os.sclose()
   let ps = os.connectSocket(host, port)
   if df != -1:
     os = newPosixStream(df)
   if msg != "":
-    os.writeOrDie(msg)
+    if not os.writeDataLoop(msg):
+      quit(1)
   enterNetworkSandbox()
   var pollData = PollData()
   pollData.register(ips.fd, POLLIN)
   pollData.register(ps.fd, POLLIN)
-  var buf {.noinit.}: array[4096, uint8]
+  var buf {.noinit.}: array[4096, char]
   i = 0 # unregister counter
   while i < 2:
     pollData.poll(-1)
@@ -71,15 +64,17 @@ proc main() =
             pollData.unregister(ips.fd)
             inc i
             continue
-          ps.writeOrDie(buf.toOpenArray(0, n - 1))
+          if not ps.writeDataLoop(buf.toOpenArray(0, n - 1)):
+            quit(1)
         else:
           assert event.fd == ps.fd
           let n = ps.readData(buf)
           if n <= 0:
-            pollData.unregister(ips.fd)
+            pollData.unregister(ps.fd)
             inc i
             continue
-          os.writeOrDie(buf.toOpenArray(0, n - 1))
+          if not os.writeDataLoop(buf.toOpenArray(0, n - 1)):
+            quit(1)
       if (event.revents and (POLLERR or POLLHUP)) != 0:
         pollData.unregister(event.fd)
         inc i
