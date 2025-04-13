@@ -1641,8 +1641,13 @@ proc addAuth(ctx: var LoaderContext; stream: SocketStream;
   let origin = url.authOrigin
   let item = ctx.authMap.findItem(origin)
   if item != nil:
-    item.username = url.username
-    item.password = url.password
+    # Only replace the old item if the URL sets a password or the old
+    # item's username is different.
+    # This way, loading a URL with only the username set still lets us
+    # load the password which is already associated with said username.
+    if url.password != "" or item.username != url.username:
+      item.username = url.username
+      item.password = url.password
   else:
     let item = AuthItem(
       origin: url.authOrigin,
