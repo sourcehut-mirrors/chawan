@@ -1947,8 +1947,9 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       break
     request.url = ourl
   if referrer != nil and referrer.config.refererFrom:
-    request.referrer = referrer.url
-    bufferConfig.referrer = $referrer.url
+    let referer = $referrer.url
+    request.headers["Referer"] = referer
+    bufferConfig.referrer = referer
   if request.url.username != "" and request.url.password != "":
     pager.loader.addAuth(request.url)
   request.url.password = ""

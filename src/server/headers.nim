@@ -289,6 +289,9 @@ func getOrDefault*(headers: Headers; k: string; default = ""): string =
   do:
     return default
 
+proc del*(headers: Headers; k: string) =
+  headers.table.del(k)
+
 func getAllCommaSplit*(headers: Headers; k: string): seq[string] =
   headers.table.withValue(k, p):
     return p[].join(",").split(',')

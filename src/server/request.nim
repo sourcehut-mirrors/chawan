@@ -79,7 +79,6 @@ type
     url*: URL
     headers*: Headers
     body*: RequestBody
-    referrer*: URL
     tocache*: bool
     credentialsMode*: CredentialsMode
 
@@ -135,19 +134,21 @@ func credentialsMode(this: JSRequest): string {.jsfget.} =
 
 #TODO pretty sure this is incorrect
 proc jsReferrer(this: JSRequest): string {.jsfget: "referrer".} =
-  if this.request.referrer != nil:
-    return $this.request.referrer
-  return ""
+  return this.request.headers.getOrDefault("Referer")
+
+proc getReferrer*(this: Request): URL =
+  return parseURL(this.headers.getOrDefault("Referer")).get(nil)
 
 func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;
     credentialsMode = cmSameOrigin): Request =
+  if referrer != nil:
+    headers["Referer"] = $referrer
   return Request(
     url: url,
     httpMethod: httpMethod,
     headers: headers,
     body: body,
-    referrer: referrer,
     tocache: tocache,
     credentialsMode: credentialsMode
   )
@@ -226,7 +227,7 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
     url = res.url
     httpMethod = res.request.httpMethod
     headers[] = res.headers[]
-    referrer = res.request.referrer
+    referrer = res.request.getReferrer()
     credentials = res.request.credentialsMode
     body = res.request.body
     fallbackMode = opt(RequestMode)

@@ -875,10 +875,12 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
       let contentType = request.headers.getOrDefault("Content-Type")
       result.add(("CONTENT_TYPE", contentType))
     result.add(("CONTENT_LENGTH", $contentLen))
-  if "Cookie" in request.headers:
-    result.add(("HTTP_COOKIE", request.headers["Cookie"]))
-  if request.referrer != nil:
-    result.add(("HTTP_REFERER", $request.referrer))
+  let cookie = request.headers.getOrDefault("Cookie")
+  if cookie != "":
+    result.add(("HTTP_COOKIE", cookie))
+  let referer = request.headers.getOrDefault("Referer")
+  if referer != "":
+    result.add(("HTTP_REFERER", referer))
   if config.proxy != nil:
     result.add(("ALL_PROXY", $config.proxy))
   if config.insecureSslNoVerify:
@@ -1390,8 +1392,10 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig;
       let cookie = config.cookieJar.serialize(request.url)
       if cookie != "":
         request.headers["Cookie"] = cookie
-  if request.referrer != nil and "Referer" notin request.headers:
-    let r = request.referrer.getReferrer(request.url, config.referrerPolicy)
+  let referrer = request.getReferrer()
+  request.headers.del("Referer")
+  if referrer != nil:
+    let r = referrer.getReferrer(request.url, config.referrerPolicy)
     if r != "":
       request.headers["Referer"] = r
 
