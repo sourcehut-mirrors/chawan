@@ -489,14 +489,16 @@ proc resolveBlockOffset(box: CSSBox): Offset =
   var toPosition: seq[BlockBox] = @[]
   var it2 {.cursor.} = it
   var parent {.cursor.}: CSSBox = nil
+  var abs {.cursor.}: CSSBox = nil
   while it2 != nil:
+    if absolute and it2.positioned and abs == nil:
+      abs = it2 # record first absolute ancestor
     if it2.render.positioned and (not absolute or it2.positioned):
       break
     if it2 of BlockBox:
       toPosition.add(BlockBox(it2))
     it2 = it2.parent
-  let absOffset = if it2 != nil: it2.render.offset else: offset(0, 0)
-  var offset = absOffset
+  var offset = if it2 != nil: it2.render.offset else: offset(0, 0)
   for i in countdown(toPosition.high, 0):
     let it = toPosition[i]
     offset += it.state.offset
@@ -507,6 +509,7 @@ proc resolveBlockOffset(box: CSSBox): Offset =
     )
     it.inheritClipBox(parent)
     parent = it
+  let absOffset = if abs != nil: abs.render.offset else: offset(0, 0)
   for dim in DimensionType:
     if dim in dims:
       offset[dim] = absOffset[dim]
