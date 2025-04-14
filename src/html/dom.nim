@@ -387,7 +387,8 @@ type
     ctype* {.jsget: "type".}: ButtonType
 
   HTMLTextAreaElement* = ref object of FormAssociatedElement
-    value* {.jsget.}: string
+    dirty: bool
+    internalValue: string
 
   HTMLLabelElement* = ref object of HTMLElement
 
@@ -3603,6 +3604,16 @@ func sectionRowIndex(this: HTMLTableRowElement): int {.jsfget.} =
 func jsForm(this: HTMLTextAreaElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
+proc value*(textarea: HTMLTextAreaElement): string {.jsfget.} =
+  if textarea.dirty:
+    return textarea.internalValue
+  return textarea.childTextContent
+
+proc `value=`*(textarea: HTMLTextAreaElement; s: sink string)
+    {.jsfset: "value".} =
+  textarea.dirty = true
+  textarea.internalValue = s
+
 func textAreaString*(textarea: HTMLTextAreaElement): string =
   result = ""
   let split = textarea.value.split('\n')
@@ -3616,6 +3627,13 @@ func textAreaString*(textarea: HTMLTextAreaElement): string =
         result &= '[' & ' '.repeat(cols - 2) & "]\n"
     else:
       result &= "[]\n"
+
+proc defaultValue(textarea: HTMLTextAreaElement): string {.jsfget.} =
+  return textarea.textContent
+
+proc `defaultValue=`(textarea: HTMLTextAreaElement; s: sink string)
+    {.jsfset: "defaultValue".} =
+  textarea.replaceAll(s)
 
 # <title>
 proc text(this: HTMLTitleElement): string {.jsfget.} =
@@ -4907,7 +4925,7 @@ proc resetElement*(element: Element) =
     select.setSelectedness()
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
-    textarea.value = textarea.childTextContent()
+    textarea.dirty = false
     textarea.invalidate()
   else: discard
 

@@ -4,6 +4,7 @@
 <form id=test>
 <input id=1 name=input>
 <input id=0 name=input>
+<textarea id=ta>test test</textarea>
 </form>
 <script src=asserts.js></script>
 <script>
@@ -28,9 +29,14 @@ assertEquals(document.getElementsByName("input").length, 2);
 	assertEquals(elements["0"].id, "1");
 	assertEquals(elements[0].name, "input");
 	assertInstanceof(elements["input"], RadioNodeList);
+	assertEquals(elements[2].id, "ta");
+	assertEquals(elements[2].value, "test test");
+	elements[2].defaultValue = "";
+	assertEquals(elements[2].value, "");
 	let el = elements[0];
 	el.remove();
 	el.remove();
+	elements[0].remove();
 	elements[0].remove();
 })();
 let test = document.forms[0];
