@@ -32,7 +32,7 @@ Note: a POSIX-compliant operating system is required.
 	* GNU make
 	* Recommended: a termcap library; e.g. ncurses comes with one
 	* TL;DR for Debian:
-	  `apt install libssh2-1-dev libcurl4-openssl-dev pkg-config make ncurses-base`
+	  `apt install libssh2-1-dev libssl-dev pkg-config make ncurses-base`
 4. Run `make` (without arguments).
 5. Install using `make install` (e.g. `sudo make install`).
 
