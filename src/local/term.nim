@@ -1011,6 +1011,8 @@ proc enableRawMode(term: Terminal) =
   raw.c_oflag = raw.c_oflag and not (OPOST)
   raw.c_cflag = raw.c_cflag or CS8
   raw.c_lflag = raw.c_lflag and not (ECHO or ICANON or ISIG or IEXTEN)
+  raw.c_cc[VMIN] = char(1)
+  raw.c_cc[VTIME] = char(0)
   term.newTermios = raw
   discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr raw)
 
