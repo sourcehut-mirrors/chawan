@@ -79,7 +79,7 @@ proc calcLength*(this: FormData): int =
 proc getContentType*(this: FormData): string =
   return "multipart/form-data; boundary=" & this.boundary
 
-proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
+proc writeEntry*(stream: PosixStream; entry: FormDataEntry; boundary: string) =
   stream.write("--" & boundary & "\r\n")
   let name = percentEncode(entry.name, {'"', '\r', '\n'})
   if entry.isstr:
@@ -112,5 +112,5 @@ proc writeEntry*(stream: DynStream; entry: FormDataEntry; boundary: string) =
       discard stream.writeDataLoop(blob.buffer, blob.size)
     stream.write("\r\n")
 
-proc writeEnd*(stream: DynStream; boundary: string) =
+proc writeEnd*(stream: PosixStream; boundary: string) =
   stream.write("--" & boundary & "--\r\n")

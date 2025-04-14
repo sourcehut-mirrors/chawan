@@ -90,7 +90,7 @@ type
 
   LineDataDownload = ref object of LineData
     outputId: int
-    stream: DynStream
+    stream: PosixStream
     url: URL
 
   LineDataAuth = ref object of LineData
