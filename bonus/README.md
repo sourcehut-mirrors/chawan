@@ -22,6 +22,12 @@ Additional documentation is embedded at the beginning of each file.
 Please read it. (Note that the Makefile automates the installation
 instructions, so you can skip those.)
 
+### [curlhttp](curlhttp/)
+
+Old HTTP(S) handler based on libcurl.  This is mainly useful if you want
+to use curl-impersonate; in this case, install it like
+`make install-libcurl CURLLILBNAME=libcurl-impersonate-chrome.so`.
+
 ### [filei.cgi](filei.cgi)
 
 Album view of a directory. Requires `buffer.images = true`.
@@ -43,18 +49,6 @@ designed to handle file downloads, not web browsing.
 ### [magnet.cgi](magnet.cgi)
 
 A `magnet:` URL handler. It can forward magnet links to transmission.
-
-### [newhttp](newhttp/)
-
-WIP new HTTP(S) CGI handler.  For now, the only difference between
-this and the current one is that this uses tinfl for decompression.
-
-Still TODO:
-
-* somehow merge TOFU logic/interface with gemini, sftp
-* keep-alive (loader needs work first)
-* HTTP/2
-* sandbox
 
 ### [stbir2](stbir2/)
 

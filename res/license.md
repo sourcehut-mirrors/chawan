@@ -11,9 +11,9 @@ terms.  This document attempts to list such projects included in this
 repository.
 
 Usually, the Chawan executables are also dynamically linked against your
-copy of libcurl, libssh2, OpenSSL or LibreSSL, your C library, and if
-exists, your termcap library (normally ncurses). For licensing terms of
-these, please consult the appropriate library's documentation.
+copy of libssh2, OpenSSL or LibreSSL, your C library, and if exists,
+your termcap library (normally ncurses).  For licensing terms of these,
+please consult the appropriate library's documentation.
 
 Also, Chawan is statically linked to parts of the Nim standard library,
 available (at the time of writing) under terms of the MIT license.
@@ -22,6 +22,7 @@ Table of contents:
 
 * [Chawan](#chawan)
 * [STB image](#stb-image)
+* [tinfl](#tinfl)
 * [JebP](#jebp)
 * [NanoSVG](#nanosvg)
 * [QuickJS-NG](#quickjs-ng)
@@ -60,9 +61,19 @@ For more information, please refer to <http://unlicense.org/>
 ## STB image
 
 The stb_image, stb_image_write and stb_image_resize libraries by
-Sean Barrett et al. are used for image transcoding. These libraries
+Sean Barrett et al. are used for image transcoding.  These libraries
 are dedicated to the public domain, and are distributed under the same
 terms as Chawan.
+
+## tinfl
+
+tinfl.h is an inflate implementation in a single function by Rich
+Geldreich, used in the HTTP/s client.  This library is dedicated to the
+public domain, and is distributed under the same terms as Chawan.
+
+(Notably, this is based on the old public domain miniz v1.16 beta
+release, not the more recent MIT version.  In practice, there are no
+substantial differences between the two.)
 
 ## JebP
 

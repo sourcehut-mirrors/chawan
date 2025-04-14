@@ -31,25 +31,24 @@ also find an appropriate HTML converter in `adapter/format`.
 
 ## HTTP
 
-HTTP/s support is based on libcurl; supported features largely depend on
-your libcurl version.
+HTTP/s support is implemented in Nim.  It supports HTTP/1.1 with
+arbitrary headers and POST data, is able to use passed userinfo data,
+and returns all headers and response body it receives without exception.
 
-The libcurl HTTP adapter can take arbitrary headers and POST data, is able
-to use passed userinfo data (`https://username:password@example.org`), and
-returns all headers and response body it receives from libcurl without
-exception.
+Deflate decompression with gzip and zlib headers is supported.
+(Content-Type: gzip, deflate.)  This is based on a modified version of
+the public domain tinfl.h decompressor by Rich Gelreich.
 
-It is possible to build the HTTP adapter using
-[curl-impersonate](https://github.com/lwthiker/curl-impersonate) by setting
-the compile-time variable CURLLIBNAME to `libcurl-impersonate.so`. Note that
-for curl-impersonate to work, you must set `network.default-headers = {}`
-in the Chawan config. (Otherwise, the libcurl adapter will happily override
-curl-impersonate headers, which is probably not what you want.)
+The `bonus` directory contains two alternative HTTP clients:
 
-The `bonus` directory contains an alternative HTTP client based on FreeBSD
-libfetch. It is mostly a proof of concept, as FreeBSD libfetch HTTP support is
-very limited; in particular, it does not support arbitrary HTTP headers, so e.g.
-cookies will not work.
+* curlhttp; this is the old HTTP client based on libcurl.  It can be
+  built using curl-impersonate; see [README.md](../doc/README.md) in
+  the bonus/ directory for details.
+
+* libfetch-http: based on FreeBSD libfetch.  It is mostly a proof of
+  concept, as FreeBSD libfetch HTTP support is very limited; in
+  particular, it does not support arbitrary HTTP headers, so e.g.
+  cookies will not work.
 
 ## FTP
 

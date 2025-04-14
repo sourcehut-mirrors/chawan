@@ -48,12 +48,13 @@ install-magnet.cgi: magnet.cgi
 	cp magnet.cgi $(CHA_CGI_DIR)
 	./addurimethod magnet magnet.cgi
 
-.PHONY: install-newhttp
-install-newhttp:
+.PHONY: install-curlhttp
+install-curlhttp:
 	mkdir -p $(CHA_CGI_DIR)
-	nim c -f -d:release -d:lto -o:$(CHA_CGI_DIR)/newhttp newhttp/http.nim
-	./addurimethod http newhttp
-	./addurimethod https newhttp
+	nim c -f -d:release -d:lto -d:curlLibName=$(CURLLIBNAME) \
+		-o:$(CHA_CGI_DIR)/curlhttp curlhttp.nim
+	./addurimethod http curlhttp
+	./addurimethod https curlhttp
 
 .PHONY: install-trans.cgi
 install-trans.cgi: trans.cgi

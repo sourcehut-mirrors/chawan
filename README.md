@@ -24,7 +24,6 @@ Note: a POSIX-compliant operating system is required.
 	  before compiling, or (preferably) use a nightly build of the
 	  Nim compiler.
 3. Install the following dependencies:
-	* [libcurl](https://curl.se/libcurl/)
 	* [OpenSSL](https://www.openssl.org/) (or
 	  [LibreSSL](https://www.libressl.org/))
 	* [libssh2](https://libssh2.org/)
