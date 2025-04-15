@@ -13,8 +13,6 @@ to toml, with the following exceptions:
   different semantics.  The first is additive, meaning old values are
   not removed.  The second is destructive, and clears all definitions in
   the table specified.
-* For backwards compatibility, `table = []` is equivalent to
-  `table = {}`.
 * `[[table-array]]` is sugar for `[table-array.n]`, where `n` is the
   number of declared table arrays.  For example, you can declare
   anonymous siteconfs using the syntax `[[siteconf]]`.

@@ -276,17 +276,9 @@ proc flushLine(state: var TomlParser): Err[TomlError] =
           table.map[keys[i]] = TomlValue(t: tvtTable, tab: node)
           table = node
         inc i
-      let value = node.value
-      if i == 0 and value.t == tvtArray and value.a.len == 0:
-        # old delete syntax
-        let s = keys.join('.')
-        state.arraySeen.del(s)
-        table.clear = true
-      elif keys[i] in table.map:
+      if table.map.hasKeyOrPut(keys[i], node.value):
         return state.err("re-definition of node " & keys.join('.'))
-      else:
-        table.map[keys[i]] = value
-        table.nodes.add(state.node)
+      table.nodes.add(state.node)
     state.node = nil
   inc state.line
   return ok()

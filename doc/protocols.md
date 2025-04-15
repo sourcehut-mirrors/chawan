@@ -37,7 +37,7 @@ and returns all headers and response body it receives without exception.
 
 Deflate decompression with gzip and zlib headers is supported.
 (Content-Type: gzip, deflate.)  This is based on a modified version of
-the public domain tinfl.h decompressor by Rich Gelreich.
+the public domain tinfl.h decompressor by Rich Geldreich.
 
 The `bonus` directory contains two alternative HTTP clients:
 
