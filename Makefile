@@ -118,7 +118,7 @@ lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)
 
 $(OUTDIR_CGI_BIN)/man: $(twtstr)
-$(OUTDIR_CGI_BIN)/http: $(sandbox) $(lcgi_ssl)
+$(OUTDIR_CGI_BIN)/http: $(sandbox) $(lcgi_ssl) adapter/protocol/tinfl.h
 $(OUTDIR_CGI_BIN)/file: $(twtstr)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
 $(OUTDIR_CGI_BIN)/sftp: $(lcgi) $(twtstr)
