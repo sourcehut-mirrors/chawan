@@ -164,6 +164,10 @@ default-headers = {
 # the old style lacks a background, but sets foreground to black...
 user-style = "html { background: white }"
 
+[siteconf.downloads]
+url = 'about:downloads'
+meta-refresh = "always"
+
 [page]
 # pager commands, but define them before y so that they actually work.
 yu = 'cmd.pager.copyCursorLink'

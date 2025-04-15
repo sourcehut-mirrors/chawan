@@ -136,6 +136,7 @@ type
     container {.jsget: "buffer".}: Container
     cookieJars: CookieJarMap
     display: Surface
+    downloads: Container
     dumpMode: bool
     exitCode*: int
     feednext*: bool
@@ -1624,6 +1625,8 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
       parent.children.add(container.children[i])
   container.parent = nil
   container.children.setLen(0)
+  if pager.downloads == container:
+    pager.downloads = nil
   if container.replace != nil:
     container.replace = nil
   elif container.replaceBackup != nil:
@@ -2217,8 +2220,11 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.loader.resume(data.outputId)
     data.stream.sclose()
     pager.lineData = nil
-    discard pager.gotoURL(newRequest(newURL("about:downloads").get),
-      history = false)
+    if pager.downloads != nil:
+      pager.setContainer(pager.downloads)
+    else:
+      pager.downloads = pager.gotoURL(newRequest(newURL("about:downloads").get),
+        history = false)
   else:
     pager.ask("Failed to save to " & path & ". Retry?").then(
       proc(x: bool) =
