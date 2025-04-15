@@ -1405,6 +1405,7 @@ proc load(ctx: var LoaderContext; stream: SocketStream; request: Request;
   var sv {.noinit.}: array[2, cint]
   var fail = false
   stream.withPacketWriter w:
+    #TODO use pipe?
     if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
       w.swrite(true)
       w.sendFd(sv[1])
@@ -1618,6 +1619,7 @@ proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
   let outputIn = ctx.findOutput(sourceId, client)
   let target = ctx.clientMap.getOrDefault(targetPid)
   var sv {.noinit.}: array[2, cint]
+  #TODO use pipe?
   if target != nil and outputIn != nil and
       socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
     let ostream = newSocketStream(sv[0])

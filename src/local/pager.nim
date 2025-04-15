@@ -2926,7 +2926,7 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
   )
 
 proc connected(pager: Pager; container: Container; response: Response) =
-  var istream = PosixStream(response.body)
+  var istream = response.body
   container.applyResponse(response, pager.config.external.mimeTypes)
   if response.status == 401: # unauthorized
     pager.setLineEdit(lmUsername, container.url.username)

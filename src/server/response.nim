@@ -33,7 +33,7 @@ type
   Response* = ref object
     responseType* {.jsget: "type".}: ResponseType
     res*: int
-    body*: SocketStream
+    body*: PosixStream
     bodyUsed* {.jsget.}: bool
     status* {.jsget.}: uint16
     headers* {.jsget.}: Headers
@@ -51,7 +51,7 @@ type
 
 jsDestructor(Response)
 
-proc newResponse*(res: int; request: Request; stream: SocketStream;
+proc newResponse*(res: int; request: Request; stream: PosixStream;
     outputId: int): Response =
   return Response(
     res: res,

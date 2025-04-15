@@ -40,7 +40,7 @@ type
     cdsBeforeResult, cdsBeforeStatus
 
   MapData* = ref object of RootObj
-    stream*: SocketStream
+    stream*: PosixStream
 
   LoaderData = ref object of MapData
 
@@ -122,11 +122,8 @@ template withPacketReader(loader: FileLoader; r, body: untyped) =
   loader.controlStream.withPacketReader r:
     body
 
-# Start a request. This should not block (not for a significant amount of time
-# anyway).
-#TODO can we return PosixStream here?
-#TODO2 actually, why don't just use a pipe in the first place?
-#TODO3 this chokes if loader runs out of fds...
+# Start a request. This should not block (not for a significant amount
+# of time anyway).
 proc startRequest(loader: FileLoader; request: Request): SocketStream =
   loader.withPacketWriter w:
     w.swrite(lcLoad)
@@ -144,7 +141,7 @@ proc startRequest(loader: FileLoader; request: Request): SocketStream =
   return nil
 
 proc startRequest*(loader: FileLoader; request: Request;
-    config: LoaderClientConfig): SocketStream =
+    config: LoaderClientConfig): PosixStream =
   loader.withPacketWriter w:
     w.swrite(lcLoadConfig)
     w.swrite(request)
@@ -152,7 +149,7 @@ proc startRequest*(loader: FileLoader; request: Request;
   var fd: cint
   loader.withPacketReader r:
     fd = r.recvFd()
-  return newSocketStream(fd)
+  return newPosixStream(fd)
 
 iterator data*(loader: FileLoader): MapData {.inline.} =
   for it in loader.map:
