@@ -261,15 +261,14 @@ proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
     fd = r.recvFd()
   return (newSocketStream(fd), outputId)
 
-proc addCacheFile*(loader: FileLoader; outputId, targetPid: int): int =
+proc addCacheFile*(loader: FileLoader; outputId: int): int =
   loader.withPacketWriter w, -1:
     w.swrite(lcAddCacheFile)
     w.swrite(outputId)
-    w.swrite(targetPid)
-  var outputId: int
+  var cacheId: int
   loader.withPacketReader r:
-    r.sread(outputId)
-  return outputId
+    r.sread(cacheId)
+  return cacheId
 
 proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
   loader.withPacketWriter w, "":

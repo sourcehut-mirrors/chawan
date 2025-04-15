@@ -622,7 +622,7 @@ proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
   let (ps, ctlres) = loader.doPipeRequest("canvas-ctl-" & $imageId)
   if ps == nil:
     return
-  let cacheId = loader.addCacheFile(ctlres.outputId, loader.clientPid)
+  let cacheId = loader.addCacheFile(ctlres.outputId)
   target.bitmap.cacheId = cacheId
   let request = newRequest(
     newURL("img-codec+x-cha-canvas:decode").get,
@@ -4304,8 +4304,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           # In fact, a) would by itself be enough, but I'm not sure if
           # it's the best way, so I added b) as a fallback measure.
           t = window.imageTypes.getOrDefault(ext, "x-unknown")
-        let cacheId = window.loader.addCacheFile(response.outputId,
-          window.loader.clientPid)
+        let cacheId = window.loader.addCacheFile(response.outputId)
         let url = newURL("img-codec+" & t & ":decode")
         if url.isNone:
           return newResolvedPromise()
@@ -4388,7 +4387,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
   let (ps, svgres) = loader.doPipeRequest("svg-" & $imageId)
   if ps == nil:
     return
-  let cacheId = loader.addCacheFile(svgres.outputId, loader.clientPid)
+  let cacheId = loader.addCacheFile(svgres.outputId)
   if not ps.writeDataLoop(s):
     ps.sclose()
     return

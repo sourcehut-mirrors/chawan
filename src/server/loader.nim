@@ -1493,17 +1493,13 @@ proc removeClient(ctx: var LoaderContext; stream: SocketStream;
 proc addCacheFile(ctx: var LoaderContext; stream: SocketStream;
     client: ClientHandle; r: var PacketReader) =
   var outputId: int
-  var targetPid: int
   r.sread(outputId)
-  #TODO get rid of targetPid
-  r.sread(targetPid)
-  doAssert ctx.isPrivileged(client) or client.pid == targetPid
   let output = ctx.findOutput(outputId, client)
-  assert output != nil
-  let targetClient = ctx.clientMap[targetPid]
-  let id = ctx.addCacheFile(targetClient, output)
   stream.withPacketWriter w:
-    w.swrite(id)
+    if output == nil:
+      w.swrite(-1)
+    else:
+      w.swrite(ctx.addCacheFile(client, output))
 
 proc redirectToFile(ctx: var LoaderContext; stream: SocketStream;
     client: ClientHandle; r: var PacketReader) =

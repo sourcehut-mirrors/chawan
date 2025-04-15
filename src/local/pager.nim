@@ -2785,7 +2785,7 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
     pager.pollData.register(fd, POLLIN or POLLOUT))
   if istreamOutputId != -1: # new buffer
     if container.cacheId == -1:
-      container.cacheId = loader.addCacheFile(istreamOutputId, loader.clientPid)
+      container.cacheId = loader.addCacheFile(istreamOutputId)
     if container.request.url.scheme == "cache":
       # loading from cache; now both the buffer and us hold a new reference
       # to the cached item, but it's only shared with the buffer. add a
@@ -2797,7 +2797,9 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
       discard loader.shareCachedItem(container.cacheId, pid)
       loader.resume(istreamOutputId)
     else:
-      outCacheId = loader.addCacheFile(ostreamOutputId, pid)
+      outCacheId = loader.addCacheFile(ostreamOutputId)
+      discard loader.shareCachedItem(outCacheId, pid)
+      loader.removeCachedItem(outCacheId)
       loader.resume([istreamOutputId, ostreamOutputId])
     stream.withPacketWriter w:
       w.swrite(outCacheId)
