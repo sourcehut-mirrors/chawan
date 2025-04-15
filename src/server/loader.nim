@@ -480,22 +480,23 @@ proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
   if ps == nil:
     return false
   if output.currentBuffer != nil:
-    #TODO I suspect this is wrong... at least we should loop until n
-    # is 0 or -1.
-    let n = ps.writeData(output.currentBuffer, output.currentBufferIdx)
-    if n > 0:
+    var m = output.currentBufferIdx
+    while m < output.currentBuffer.len:
+      let n = ps.writeData(output.currentBuffer, m)
+      if n <= 0:
+        ps.sclose()
+        return false
+      m += n
       osent += uint64(n)
-    if unlikely(n < output.currentBuffer.len - output.currentBufferIdx):
-      ps.sclose()
-      return false
   for buffer in output.buffers:
-    #TODO ditto
-    let n = ps.writeData(buffer)
-    if n > 0:
+    var m = 0
+    while m < buffer.len:
+      let n = ps.writeData(buffer, m)
+      if n <= 0:
+        ps.sclose()
+        return false
+      m += n
       osent += uint64(n)
-    if unlikely(n < buffer.len):
-      ps.sclose()
-      return false
   if output.istreamAtEnd:
     ps.sclose()
   elif output.parent != nil:
