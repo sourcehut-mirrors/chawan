@@ -59,6 +59,10 @@ const ChaVersionStrLong = block:
     s &= "no termcap"
   s & ")\n"
 
+proc die(s: string) {.noreturn.} =
+  stderr.writeLine("cha: " & s)
+  quit(1)
+
 proc help(i: int) {.noreturn.} =
   let s = ChaVersionStr & """
 Usage: cha [options] [URL(s) or file(s)...]
@@ -123,8 +127,7 @@ proc getCharset(ctx: var ParamParseContext): Charset =
   let s = ctx.getNext()
   let charset = getCharset(s)
   if charset == CHARSET_UNKNOWN:
-    stderr.writeLine("Unknown charset " & s)
-    quit(1)
+    die("unknown charset " & s)
   return charset
 
 proc parseInputCharset(ctx: var ParamParseContext) =
@@ -245,8 +248,7 @@ proc main() =
   putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
   var loaderSockVec {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
-    stderr.writeLine("Failed to set up initial socket pair")
-    quit(1)
+    die("failed to set up initial socket pair")
   let forkserver = newForkServer(loaderSockVec)
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
@@ -257,8 +259,7 @@ proc main() =
   var warnings = newSeq[string]()
   let config = Config(arraySeen: newTable[string, int]())
   if (let res = ctx.initConfig(config, warnings, jsctx); res.isNone):
-    stderr.writeLine(res.error)
-    quit(1)
+    die(res.error)
   var history = true
   let ps = newPosixStream(STDIN_FILENO)
   if ctx.pages.len == 0 and ps.isatty():
@@ -275,11 +276,15 @@ proc main() =
     if ps.isatty():
       help(1)
   # make sure tmpdir exists
-  discard mkdir(cstring(config.external.tmpdir), 0o700)
+  let tmpdir = cstring(config.external.tmpdir)
+  discard mkdir(tmpdir, 0o700)
+  if chown(tmpdir, getuid(), getgid()) != 0:
+    die("failed to set ownership of " & config.external.tmpdir)
+  if chmod(tmpdir, 0o700) != 0:
+    die("failed to set permissions of " & config.external.tmpdir)
   let loaderPid = forkserver.loadConfig(config)
   if loaderPid == -1:
-    stderr.writeLine("Failed to fork loader process")
-    quit(1)
+    die("failed to fork loader process")
   onSignal SIGINT:
     discard sig
     if acceptSigint:
