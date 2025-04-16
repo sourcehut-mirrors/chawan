@@ -365,7 +365,7 @@ proc onRead*(loader: FileLoader; fd: int) =
 proc onError*(loader: FileLoader; data: OngoingData) =
   let response = data.response
   if response.onFinish != nil:
-    response.onFinish(response, false)
+    response.onFinish(response, true)
   response.onFinish = nil
   response.close()
 

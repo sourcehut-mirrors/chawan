@@ -1402,19 +1402,18 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig;
 
 proc load(ctx: var LoaderContext; stream: SocketStream; request: Request;
     client: ClientHandle; config: LoaderClientConfig) =
-  var sv {.noinit.}: array[2, cint]
+  var pipev {.noinit.}: array[2, cint]
   var fail = false
   stream.withPacketWriter w:
-    #TODO use pipe?
-    if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
+    if pipe(pipev) == 0:
       w.swrite(true)
-      w.sendFd(sv[1])
+      w.sendFd(pipev[0])
     else:
       fail = true
       w.swrite(false)
   if not fail:
-    discard close(sv[1])
-    let stream = newSocketStream(sv[0])
+    discard close(pipev[0])
+    let stream = newSocketStream(pipev[1])
     stream.setBlocking(false)
     let credentials = config.includeCredentials(request, request.url)
     let handle = ctx.newInputHandle(stream, client, request.url, credentials)
@@ -1618,17 +1617,16 @@ proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
   r.sread(targetPid)
   let outputIn = ctx.findOutput(sourceId, client)
   let target = ctx.clientMap.getOrDefault(targetPid)
-  var sv {.noinit.}: array[2, cint]
+  var pipev {.noinit.}: array[2, cint]
   #TODO use pipe?
-  if target != nil and outputIn != nil and
-      socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
-    let ostream = newSocketStream(sv[0])
+  if target != nil and outputIn != nil and pipe(pipev) == 0:
+    let ostream = newSocketStream(pipev[1])
     ostream.setBlocking(false)
     let output = ctx.tee(outputIn, ostream, target)
     stream.withPacketWriter w:
       w.swrite(output.outputId)
-      w.sendFd(sv[1])
-    discard close(sv[1])
+      w.sendFd(pipev[0])
+    discard close(pipev[0])
   else:
     stream.withPacketWriter w:
       w.swrite(-1)
