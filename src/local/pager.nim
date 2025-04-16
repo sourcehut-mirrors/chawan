@@ -189,7 +189,6 @@ type
 jsDestructor(Pager)
 
 # Forward declarations
-proc acceptBuffers(pager: Pager)
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper
 proc alert*(pager: Pager; msg: string)
 proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
@@ -218,6 +217,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
   istreamOutputId: int; contentType: string; entry: MailcapEntry):
   MailcapResult
 proc showAlerts(pager: Pager)
+proc unregisterFd(pager: Pager; fd: int)
 proc updateReadLine(pager: Pager)
 
 template attrs(pager: Pager): WindowAttributes =
@@ -901,7 +901,6 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   for page in pages:
     pager.loadURL(page, contentType, cs, history)
   pager.showAlerts()
-  pager.acceptBuffers()
   if pager.config.start.headless == hmFalse:
     pager.inputLoop()
   else:
@@ -1632,10 +1631,22 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     container.replaceBackup = nil
   elif pager.container == container:
     pager.setContainer(setTarget)
-  pager.unreg.add(container)
   if container.process != -1:
     pager.loader.removeCachedItem(container.cacheId)
     pager.loader.removeClient(container.process)
+  if container.iface != nil: # fully connected
+    let stream = container.iface.stream
+    let fd = int(stream.source.fd)
+    pager.unregisterFd(fd)
+    pager.loader.unset(fd)
+    stream.sclose()
+    container.iface = nil
+  elif (let item = pager.findConnectingContainer(container); item != nil):
+    # connecting to URL
+    let stream = item.stream
+    pager.unregisterFd(int(stream.fd))
+    pager.loader.unset(item)
+    stream.sclose()
 
 proc discardBuffer(pager: Pager; container = none(Container);
     dir = none(NavDirection)) {.jsfunc.} =
@@ -3002,9 +3013,6 @@ proc handleRead(pager: Pager; item: ConnectingContainer) =
           msg = getLoaderErrorMessage(res)
         pager.fail(container, msg)
         # done
-        pager.loader.unset(item)
-        pager.unregisterFd(int(item.stream.fd))
-        stream.sclose()
   of ccsBeforeStatus:
     let response = newResponse(item.res, container.request, stream,
       item.outputId)
@@ -3023,9 +3031,6 @@ proc handleRead(pager: Pager; item: ConnectingContainer) =
 
 proc handleError(pager: Pager; item: ConnectingContainer) =
   pager.fail(item.container, "loader died while loading")
-  pager.unregisterFd(int(item.stream.fd))
-  item.stream.sclose()
-  pager.loader.unset(item)
 
 proc metaRefresh(pager: Pager; container: Container; n: int; url: URL) =
   let ctx = pager.jsctx
@@ -3194,23 +3199,6 @@ proc runCommand(pager: Pager) =
     pager.scommand = ""
     pager.handleEvents()
 
-proc acceptBuffers(pager: Pager) =
-  while pager.unreg.len > 0:
-    let container = pager.unreg.pop()
-    if container.iface != nil: # fully connected
-      let stream = container.iface.stream
-      let fd = int(stream.source.fd)
-      pager.pollData.unregister(fd)
-      pager.loader.unset(fd)
-      stream.sclose()
-      container.iface = nil
-    elif (let item = pager.findConnectingContainer(container); item != nil):
-      # connecting to URL
-      let stream = item.stream
-      pager.pollData.unregister(int(stream.fd))
-      stream.sclose()
-      pager.loader.unset(item)
-
 proc handleStderr(pager: Pager) =
   const BufferSize = 4096
   const prefix = "STDERR: "
@@ -3346,7 +3334,6 @@ proc inputLoop(pager: Pager) =
     pager.loader.unblockRegister()
     pager.loader.unregistered.setLen(0)
     pager.runJSJobs()
-    pager.acceptBuffers()
     pager.runCommand()
     if pager.container == nil and pager.lineedit == nil:
       # No buffer to display.
@@ -3388,7 +3375,6 @@ proc headlessLoop(pager: Pager) =
     pager.loader.unregistered.setLen(0)
     discard pager.timeouts.run(pager.console)
     pager.runJSJobs()
-    pager.acceptBuffers()
 
 proc dumpBuffers(pager: Pager) =
   pager.headlessLoop()
