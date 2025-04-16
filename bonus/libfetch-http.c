@@ -10,10 +10,6 @@
  * - See also: BUGS section in fetch(3).
  *
  * Use cases:
- * - You are upset about having to download a huge HTTP library even
- *   though your system already has one that kind of works sometimes.
- * - You are stranded on a desert island with nothing but the Chawan
- *   sources on a FreeBSD system without libcurl.
  * - ???
  */
 
