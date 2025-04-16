@@ -137,11 +137,10 @@ type
     cookieJars: CookieJarMap
     display: Surface
     downloads: Container
-    dumpMode: bool
     exitCode*: int
     feednext*: bool
     forkserver*: ForkServer
-    hasload*: bool # has a page been successfully loaded since startup?
+    hasload: bool # has a page been successfully loaded since startup?
     inEval: bool
     inputBuffer: string # currently uninterpreted characters
     iregex: Result[Regex, string]
@@ -153,15 +152,15 @@ type
     lineHist: array[LineMode, History]
     lineedit*: LineEdit
     linemode: LineMode
-    loader*: FileLoader
+    loader: FileLoader
     loaderPid {.jsget.}: int
     luctx: LUContext
     menu: Select
     navDirection {.jsget.}: NavDirection
     notnum: bool # has a non-numeric character been input already?
-    numload*: int # number of pages currently being loaded
-    pollData*: PollData
-    precnum*: int32 # current number prefix (when vi-numeric-prefix is true)
+    numload: int # number of pages currently being loaded
+    pollData: PollData
+    precnum: int32 # current number prefix (when vi-numeric-prefix is true)
     pressed: tuple[col, row: int]
     refreshAllowed: HashSet[string]
     regex: Option[Regex]
@@ -171,7 +170,7 @@ type
     term*: Terminal
     timeouts*: TimeoutState
     tmpfSeq: uint
-    unreg*: seq[Container]
+    unreg: seq[Container]
 
   ContainerData* = ref object of MapData
     container*: Container
