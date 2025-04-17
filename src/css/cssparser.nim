@@ -15,14 +15,14 @@ type
   CSSComponentValue* = ref object of RootObj
 
   CSSToken* = ref object of CSSComponentValue
+    nvalue*: float32
+    validId*: bool # type flag; "unrestricted" -> false, "id" -> true
     case t*: CSSTokenType
     of cttIdent, cttFunction, cttAtKeyword, cttHash, cttString, cttUrl:
-      validId*: bool # type flag; "unrestricted" -> false, "id" -> true
       value*: string
     of cttDelim:
       cvalue*: char
     of cttNumber, cttINumber, cttPercentage, cttDimension, cttIDimension:
-      nvalue*: float32
       unit*: string
     else: discard
 
