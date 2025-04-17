@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<style>
+#99 { color: red } /* wrong */
+#-- { color: blue } /* valid */
+#- { color: green } /* wrong */
+</style>
+<div id=99>test</div>
+<div id=-->test</div>
+<div id=->test</div>

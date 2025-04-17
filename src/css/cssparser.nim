@@ -12,15 +12,12 @@ type
     cttCdc, cttColon, cttSemicolon, cttComma, cttRbracket, cttLbracket,
     cttLparen, cttRparen, cttLbrace, cttRbrace
 
-  tflaga = enum
-    tflagaUnrestricted, tflagaId
-
   CSSComponentValue* = ref object of RootObj
 
   CSSToken* = ref object of CSSComponentValue
     case t*: CSSTokenType
     of cttIdent, cttFunction, cttAtKeyword, cttHash, cttString, cttUrl:
-      tflaga*: tflaga
+      validId*: bool # type flag; "unrestricted" -> false, "id" -> true
       value*: string
     of cttDelim:
       cvalue*: char
@@ -174,7 +171,7 @@ proc startsWithIdentSequence(iq: openArray[char]; n: int): bool =
     return false
   case iq[n]
   of '-':
-    return n + 1 < iq.len and iq[n] in IdentStart + {'-'} or
+    return n + 1 < iq.len and iq[n + 1] in IdentStart + {'-'} or
       n + 2 < iq.len and iq[n + 1] == '\\' and iq[n + 2] != '\n'
   of IdentStart:
     return true
@@ -372,14 +369,11 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
   of '#':
     if n < iq.len and iq[n] in Ident or
         n + 1 < iq.len and iq[n] == '\\' and iq[n + 1] != '\n':
-      let flag = if iq.startsWithIdentSequence(n):
-        tflagaId
-      else:
-        tflagaUnrestricted
+      let validId = iq.startsWithIdentSequence(n)
       return CSSToken(
         t: cttHash,
         value: iq.consumeIdentSequence(n),
-        tflaga: flag
+        validId: validId
       )
     else:
       dec n

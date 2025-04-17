@@ -446,6 +446,8 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
         result.add(state.parsePseudoSelector())
       of cttHash:
         inc state.at
+        if not tok.validId:
+          fail
         let id = tok.value.toAtomLower()
         result.add(Selector(t: stId, id: id))
       of cttComma: break
