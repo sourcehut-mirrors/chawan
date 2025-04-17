@@ -308,12 +308,6 @@ func names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
     list.add(key)
   return list
 
-proc bindPagerKey(config: Config; key, action: string) {.jsfunc.} =
-  config.page.setter(key, action)
-
-proc bindLineKey(config: Config; key, action: string) {.jsfunc.} =
-  config.line.setter(key, action)
-
 proc readUserStylesheet(outs: var string; dir, file: string): Err[string] =
   let x = ChaPath(file).unquote(dir)
   if x.isNone:
