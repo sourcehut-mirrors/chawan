@@ -165,7 +165,7 @@ proc consumeEscape(state: var TomlParser; buf: openArray[char]; c: char):
       let c = state.peek(buf, 0)
       if hexValue(c) == -1:
         break
-      discard state.consume(buf)
+      state.seek(1)
       num *= 0x10
       num += hexValue(c)
       inc i
@@ -192,7 +192,7 @@ proc consumeString(state: var TomlParser; buf: openArray[char]; first: char):
     state.seek(2)
   if multiline and state.peek(buf, 0) == '\n':
     inc state.line
-    discard state.consume(buf)
+    state.seek(1)
   var escape = false
   var ml_trim = false
   var res = ""
@@ -206,8 +206,7 @@ proc consumeString(state: var TomlParser; buf: openArray[char]; first: char):
           let c2 = state.peek(buf, 0)
           let c3 = state.peek(buf, 1)
           if c2 == first and c3 == first:
-            discard state.consume(buf)
-            discard state.consume(buf)
+            state.seek(2)
             break
         res &= c
       else:
@@ -336,14 +335,14 @@ proc consumeTable(state: var TomlParser; buf: openArray[char]):
   while state.has(buf):
     let c = state.peek(buf, 0)
     case c
-    of ' ', '\t': discard state.consume(buf)
+    of ' ', '\t': state.seek(1)
     of '\n':
       if tarray:
         return state.err("missing ] at table array key's end")
       return ok(res)
     of ']':
       if tarray:
-        discard state.consume(buf)
+        state.seek(1)
         let s = res.key.join('.')
         inc state.arraySeen.mgetOrPut(s, 0)
         res.key.add($state.arraySeen.getOrDefault(s))
@@ -352,7 +351,7 @@ proc consumeTable(state: var TomlParser; buf: openArray[char]):
         return state.err("redundant ] character after key")
     of '[':
       tarray = true
-      discard state.consume(buf)
+      state.seek(1)
     of '"', '\'':
       res.key = ?state.consumeKey(buf)
     elif c in ValidBare:
@@ -369,7 +368,7 @@ proc consumeNoState(state: var TomlParser; buf: openArray[char]):
       return ok(false)
     of ' ', '\t': discard
     of '[':
-      discard state.consume(buf)
+      state.seek(1)
       let table = ?state.consumeTable(buf)
       state.currkey = table.key
       state.node = table
@@ -410,7 +409,7 @@ proc consumeNumber(state: var TomlParser; buf: openArray[char]; c: char):
       wasNum = true
     elif wasNum and state.peek(buf, 0) == '_':
       wasNum = false
-      repr &= '_'
+      state.seek(1)
     else:
       break
   if state.has(buf, 1) and state.peek(buf, 0) == '.' and
