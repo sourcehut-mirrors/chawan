@@ -1618,7 +1618,6 @@ proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
   let outputIn = ctx.findOutput(sourceId, client)
   let target = ctx.clientMap.getOrDefault(targetPid)
   var pipev {.noinit.}: array[2, cint]
-  #TODO use pipe?
   if target != nil and outputIn != nil and pipe(pipev) == 0:
     let ostream = newSocketStream(pipev[1])
     ostream.setBlocking(false)
