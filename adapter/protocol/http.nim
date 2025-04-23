@@ -76,7 +76,9 @@ const libbrotlidecCflags = staticExec("pkg-config --cflags libbrotlidec")
 type BrotliDecoderState {.importc, header: "<brotli/decode.h>",
   incompleteStruct.} = object
 
-type uint8PConst {.importc: "const uint8_t *".} = distinct ptr uint8
+type
+  uint8PConstPImpl {.importc: "const uint8_t**".} = cstring
+  uint8PConstP = distinct uint8PConstPImpl
 
 type BrotliDecoderResult {.size: sizeof(cint).} = enum
   BROTLI_DECODER_RESULT_ERROR = 0
@@ -97,7 +99,7 @@ proc BrotliDecoderCreateInstance(alloc_func: brotli_alloc_func;
   free_func: brotli_free_func; opaque: pointer): ptr BrotliDecoderState
 proc BrotliDecoderDestroyInstance(state: ptr BrotliDecoderState)
 proc BrotliDecoderDecompressStream(state: ptr BrotliDecoderState;
-  available_in: var csize_t; next_in: var uint8PConst;
+  available_in: var csize_t; next_in: uint8PConstP;
   available_out: out csize_t; next_out: var ptr uint8; total_out: ptr csize_t):
   BrotliDecoderResult
 proc BrotliDecoderGetErrorCode(state: ptr BrotliDecoderState):
@@ -211,9 +213,10 @@ proc unbrotli(op: HTTPHandle) =
       while true:
         var iqn = csize_t(len) - n
         var oqn = csize_t(oq.len)
-        var next_in = cast[uint8PConst](addr iq[n])
+        var next_in = addr iq[n]
         var next_out = addr oq[0]
-        let status = decomp.BrotliDecoderDecompressStream(iqn, next_in, oqn,
+        let next_inP = cast[uint8PConstP](addr next_in)
+        let status = decomp.BrotliDecoderDecompressStream(iqn, next_inP, oqn,
           next_out, nil)
         if not os.writeDataLoop(oq.toOpenArray(0, oq.len - int(oqn) - 1)):
           quit(1)
