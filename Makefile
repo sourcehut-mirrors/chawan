@@ -146,7 +146,7 @@ $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
 	src/io/packetreader.nim src/types/color.nim adapter/img/stb_image.h \
 	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(sandbox) $(dynstream) $(twtstr)
-$(OUTDIR_CGI_BIN)/nanosvg: adapter/img/nanosvg.nim adapter/img/nanosvg.h
+$(OUTDIR_CGI_BIN)/nanosvg: $(sandbox) adapter/img/nanosvg.nim adapter/img/nanosvg.h
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/gopher2html: $(twtstr)
