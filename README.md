@@ -30,9 +30,8 @@ Note: a POSIX-compliant operating system is required.
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config" in your
 	  `$PATH`)
 	* GNU make
-	* Recommended: a termcap library; e.g. ncurses comes with one
 	* TL;DR for Debian:
-	  `apt install libssh2-1-dev libssl-dev pkg-config make ncurses-base`
+	  `apt install libssh2-1-dev libssl-dev pkg-config make`
 4. Run `make` (without arguments).
 5. Install using `make install` (e.g. `sudo make install`).
 
@@ -121,8 +120,7 @@ Here's some:
   execution and regex matching.
 * Each buffer (page) is isolated in a separate process. File loading is done
   through dedicated loader processes.
-* termcap for basic terminal capability querying, and terminal queries where
-  possible.
+* Uses terminal queries for terminal capability discovery.
 * The default image decoder (PNG, JPEG, GIF, BMP) uses
   [stb_image](https://github.com/nothings/stb), WebP images are
   decoded using [JebP](https://github.com/matanui159/jebp), and SVG is

@@ -34,11 +34,6 @@ const ChaVersionStr = block:
     s &= "not sandboxed"
   else:
     s &= "sandboxed"
-  s &= ", "
-  when TermcapFound:
-    s &= "has termcap"
-  else:
-    s &= "no termcap"
   s & ")\n"
 
 const ChaVersionStrLong = block:
@@ -52,11 +47,6 @@ const ChaVersionStrLong = block:
     s &= "not sandboxed"
   else:
     s &= "sandboxed by " & $SandboxMode
-  s &= ", "
-  when TermcapFound:
-    s &= "termcap library " & Termlib
-  else:
-    s &= "no termcap"
   s & ")\n"
 
 proc die(s: string) {.noreturn.} =

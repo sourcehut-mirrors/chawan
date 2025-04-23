@@ -17,65 +17,38 @@ import types/winattrs
 import utils/strwidth
 import utils/twtstr
 
-#TODO switch away from termcap...
-const Termlib* = (proc(): string =
-  const libs = [
-    "terminfo", "mytinfo", "termlib", "termcap", "tinfo", "ncurses", "curses"
-  ]
-  for lib in libs:
-    let res = staticExec("pkg-config --libs --silence-errors " & lib)
-    if res != "":
-      return res
-  # Apparently on some systems pkg-config will fail to locate ncurses.
-  const dirs = [
-    "/lib", "/usr/lib", "/usr/local/lib"
-  ]
-  for lib in libs:
-    for dir in dirs:
-      if fileExists(dir & "/lib" & lib & ".a"):
-        return "-l" & lib
-  return ""
-)()
-
-const TermcapFound* = Termlib != ""
-
-when TermcapFound:
-  {.passl: Termlib.}
-  {.push importc, cdecl.}
-  proc tgetent(bp, name: cstring): cint
-  proc tgetnum(id: cstring): cint
-  proc tgetstr(id: cstring; area: ptr cstring): cstring
-  proc tgoto(cap: cstring; x, y: cint): cstring
-  {.pop.}
-
 type
-  TermcapCap = enum
-    ce # clear till end of line
-    cd # clear display
-    cm # cursor move
-    ti # terminal init (=smcup)
-    te # terminal end (=rmcup)
-    so # start standout mode
-    md # start bold mode
-    us # start underline mode
-    mb # start blink mode
-    ZH # start italic mode
-    se # end standout mode
-    ue # end underline mode
-    ZR # end italic mode
-    me # end all formatting modes
-    vs # enhance cursor
-    vi # make cursor invisible
-    ve # reset cursor to normal
-
-  TermcapCapNumeric = enum
-    Co # color?
-
-  Termcap = ref object
-    bp: array[1024, uint8]
-    funcstr: array[256, uint8]
-    caps: array[TermcapCap, string]
-    numCaps: array[TermcapCapNumeric, cint]
+  TerminalType = enum
+    ttAlacritty = "alacritty"
+    ttContour = "contour" # pretends to be XTerm
+    ttDvtm = "dvtm"
+    ttEterm = "eterm"
+    ttFbterm = "fbterm"
+    ttFoot = "foot"
+    ttFreebsd = "freebsd" # pretends to be XTerm
+    ttGhostty = "ghostty"
+    ttIterm2 = "iterm2"
+    ttKitty = "xterm-kitty"
+    ttKonsole = "konsole" # pretends to be XTerm
+    ttLinux = "linux"
+    ttMintty = "mintty"
+    ttMlterm = "mlterm"
+    ttMsTerminal = "ms-terminal"
+    ttPutty = "putty"
+    ttRlogin = "rlogin"
+    ttScreen = "screen"
+    ttSt = "st"
+    ttSyncterm = "syncterm"
+    ttTerminology = "terminology" # pretends to be XTerm
+    ttTmux = "tmux"
+    ttVte = "vte" # pretends to be XTerm
+    ttWezterm = "wezterm"
+    ttWterm = "wterm"
+    ttXfce = "xfce" # pretends to be XTerm
+    ttXst = "xst"
+    ttXterm = "xterm"
+    ttYaft = "yaft"
+    ttZellij = "zellij" # pretends to be its underlying terminal
 
   CanvasImage* = ref object
     pid: int
@@ -112,6 +85,7 @@ type
     data: Blob
 
   Terminal* = ref object
+    termType: TerminalType
     cs*: Charset
     te: TextEncoder
     config: Config
@@ -125,10 +99,10 @@ type
     colorMode: ColorMode
     formatMode: set[FormatFlag]
     imageMode*: ImageMode
-    tc: Termcap
     cleared: bool
     smcup: bool
     setTitle: bool
+    noDA1: bool
     origTermios: Termios
     newTermios: Termios
     defaultBackground: RGBColor
@@ -145,7 +119,6 @@ type
     cursorx: int
     cursory: int
     colorMap: array[16, RGBColor]
-    tname: string
 
 # control sequence introducer
 const CSI = "\e["
@@ -181,7 +154,7 @@ const XTIMGDIMS = XTSMGRAPHICS(2, 1, 0)
 
 # horizontal & vertical position
 template HVP(y, x: int): string =
-  CSI & $y & ';' & $x & 'f'
+  CSI & $y & ';' & $x & 'H'
 
 # erase line
 const EL = CSI & 'K'
@@ -238,13 +211,6 @@ const APC = "\e_"
 
 const KITTYQUERY = APC & "Gi=1,a=q;" & ST
 
-when TermcapFound:
-  func hascap(term: Terminal; c: TermcapCap): bool =
-    return term.tc.caps[c].len > 0
-
-  func cap(term: Terminal; c: TermcapCap): lent string =
-    return term.tc.caps[c]
-
 proc write0(term: Terminal; buffer: openArray[char]) =
   if not term.ostream.writeDataLoop(buffer):
     stderr.writeLine("Error writing to stdout")
@@ -279,21 +245,12 @@ proc hasBuffer*(term: Terminal): bool =
   return term.ibufn < term.ibufLen
 
 proc cursorGoto(term: Terminal; x, y: int): string =
-  when TermcapFound:
-    if term.tc != nil:
-      return $tgoto(cstring(term.cap(cm)), cint(x), cint(y))
   return HVP(y + 1, x + 1)
 
 proc clearEnd(term: Terminal): string =
-  when TermcapFound:
-    if term.tc != nil:
-      return term.cap(ce)
   return EL
 
 proc clearDisplay(term: Terminal): string =
-  when TermcapFound:
-    if term.tc != nil:
-      return term.cap(cd)
   return ED
 
 proc isatty*(term: Terminal): bool =
@@ -306,9 +263,6 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]") =
     discard term.istream.readChar()
 
 proc resetFormat(term: Terminal): string =
-  when TermcapFound:
-    if term.tc != nil:
-      return term.cap(me)
   return CSI & 'm'
 
 const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
@@ -322,25 +276,9 @@ const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
 ]
 
 proc startFormat(term: Terminal; flag: FormatFlag): string =
-  when TermcapFound:
-    if term.tc != nil:
-      case flag
-      of ffBold: return term.cap(md)
-      of ffUnderline: return term.cap(us)
-      of ffReverse: return term.cap(so)
-      of ffBlink: return term.cap(mb)
-      of ffItalic: return term.cap(ZH)
-      else: discard
   return CSI & $FormatCodes[flag].s & 'm'
 
 proc endFormat(term: Terminal; flag: FormatFlag): string =
-  when TermcapFound:
-    if term.tc != nil:
-      case flag
-      of ffUnderline: return term.cap(ue)
-      of ffItalic: return term.cap(ZR)
-      of ffReverse: return term.cap(se)
-      else: discard
   return CSI & $FormatCodes[flag].e & 'm'
 
 proc setCursor*(term: Terminal; x, y: int) =
@@ -351,15 +289,9 @@ proc setCursor*(term: Terminal; x, y: int) =
     term.cursory = y
 
 proc enableAltScreen(term: Terminal): string =
-  when TermcapFound:
-    if term.tc != nil and term.hascap(ti):
-      return term.cap(ti)
   return SMCUP
 
 proc disableAltScreen(term: Terminal): string =
-  when TermcapFound:
-    if term.tc != nil and term.hascap(te):
-      return term.cap(te)
   return RMCUP
 
 proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
@@ -607,17 +539,9 @@ proc generateSwapOutput(term: Terminal): string =
       term.lineDamage[y] = term.attrs.width
 
 proc hideCursor*(term: Terminal) =
-  when TermcapFound:
-    if term.tc != nil and term.hascap(vi):
-      term.write(term.cap(vi))
-      return
   term.write(CIVIS)
 
 proc showCursor*(term: Terminal) =
-  when TermcapFound:
-    if term.tc != nil and term.hascap(ve):
-      term.write(term.cap(ve))
-      return
   term.write(CNORM)
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
@@ -672,7 +596,8 @@ proc applyConfig(term: Terminal) =
   if term.isatty():
     if term.config.display.altScreen.isSome:
       term.smcup = term.config.display.altScreen.get
-    term.setTitle = term.config.display.setTitle
+    if term.config.display.setTitle.isSome:
+      term.setTitle = term.config.display.setTitle.get
   if term.config.display.defaultBackgroundColor.isSome:
     term.defaultBackground = term.config.display.defaultBackgroundColor.get
   if term.config.display.defaultForegroundColor.isSome:
@@ -1051,24 +976,9 @@ proc quit*(term: Terminal) =
     term.clearCanvas()
   term.flush()
 
-when TermcapFound:
-  proc loadTermcap(term: Terminal) =
-    let tc = Termcap()
-    var res = tgetent(cast[cstring](addr tc.bp), cstring(term.tname))
-    if res == 0: # retry as dosansi
-      res = tgetent(cast[cstring](addr tc.bp), "dosansi")
-    if res > 0: # success
-      term.tc = tc
-      for id in TermcapCap:
-        let s = tgetstr(cstring($id), cast[ptr cstring](addr tc.funcstr))
-        if s != nil:
-          tc.caps[id] = $s
-      for id in TermcapCapNumeric:
-        tc.numCaps[id] = tgetnum(cstring($id))
-
 type
   QueryAttrs = enum
-    qaAnsiColor, qaRGB, qaSixel, qaKittyImage, qaSyncTermFix
+    qaAnsiColor, qaRGB, qaSixel, qaKittyImage
 
   QueryResult = object
     success: bool
@@ -1134,17 +1044,14 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
   if not windowOnly:
     var outs = ""
-    let isTmux = getEnv("TMUX") != ""
-    if term.tname != "screen" or isTmux:
-      # screen has a horrible bug (feature?) where the responses to
-      # bg/fg queries are printed out of order (presumably because it
-      # must ask the terminal first).
+    if term.termType != ttScreen:
+      # screen has a horrible bug where the responses to bg/fg queries
+      # are printed out of order (presumably because it must ask the
+      # terminal first).
       #
-      # Of course, I can't work around this either, because screen won't
-      # respond from terminals that don't support this query. So I'll
-      # do the sole reasonable thing and skip default color queries.
-      #
-      # (By the way, tmux works as expected. Sigh.)
+      # I can't work around this, because screen won't respond at all
+      # from terminals that don't support this query.  So I'll do the
+      # sole reasonable thing and skip default color queries.
       if term.config.display.defaultBackgroundColor.isNone:
         outs &= XTGETBG
       if term.config.display.defaultForegroundColor.isNone:
@@ -1219,11 +1126,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       of '=':
         # = is SyncTERM's response to DA1. Nothing useful will come after this.
         term.skipUntil('c')
-        # SyncTERM supports these.
-        result.attrs.incl(qaSixel)
-        result.attrs.incl(qaAnsiColor)
-        # This will make us ask SyncTERM to stop moving the cursor on EOL.
-        result.attrs.incl(qaSyncTermFix)
+        term.termType = ttSyncterm
         result.success = true
         break # we're done
       of '4', '6', '8': # GEOMPIXEL, CELLSIZE, GEOMCELL
@@ -1299,16 +1202,117 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
 type TermStartResult* = enum
   tsrSuccess, tsrDA1Fail
 
+# Built-in terminal capability database.
+#
+# In an ideal world, none of this would be necessary as we could just
+# get capabilities from the terminal itself.  Alas, some insist on
+# terminfo being the sole source of "reliable" information (it isn't),
+# so we must emulate it to some extent.
+#
+# In general, terminal attributes that we can detect with queries are
+# omitted.  Some terminals only set COLORTERM, but do not respond to
+# queries; this may not propagate through SSH, so we still check TERM
+# for these.
+#
+# For terminals I cannot directly test, our data is based on
+# TERMINALS.md in notcurses and terminfo.src in ncurses.
+type
+  Termdesc = object
+    title: bool # set if the terminal can set its title
+    noDA1: bool # set if the terminal does not respond to DA1
+    colorMode: ColorMode
+    imageMode: Option[ImageMode]
+
+const TermdescMap = [
+  ttAlacritty: Termdesc(title: true, colorMode: cmTrueColor),
+  ttContour: Termdesc(title: true),
+  ttDvtm: Termdesc(colorMode: cmANSI, noDA1: true),
+  ttEterm: Termdesc(title: true, colorMode: cmANSI, noDA1: true),
+  ttFbterm: Termdesc(colorMode: cmANSI),
+  ttFoot: Termdesc(title: true),
+  ttFreebsd: Termdesc(colorMode: cmANSI, noDA1: true),
+  ttGhostty: Termdesc(title: true),
+  ttIterm2: Termdesc(title: true),
+  ttKitty: Termdesc(title: true),
+  ttKonsole: Termdesc(title: true),
+  # Linux accepts true color sequences, but does not actually display
+  # them.  It is better to use eight-bit colors so it doesn't break
+  # color correction.
+  ttLinux: Termdesc(colorMode: cmEightBit),
+  ttMintty: Termdesc(title: true, colorMode: cmTrueColor),
+  ttMlterm: Termdesc(title: true, colorMode: cmTrueColor),
+  ttMsTerminal: Termdesc(title: true, colorMode: cmTrueColor),
+  ttPutty: Termdesc(title: true, colorMode: cmTrueColor),
+  ttRlogin: Termdesc(title: true, colorMode: cmTrueColor),
+  # screen does true color, but only if you explicitly enable it.
+  ttScreen: Termdesc(title: true, colorMode: cmEightBit),
+  ttSt: Termdesc(title: true, colorMode: cmTrueColor),
+  ttSyncterm: Termdesc(colorMode: cmTrueColor, imageMode: some(imSixel)),
+  ttTerminology: Termdesc(title: true),
+  ttTmux: Termdesc(title: true, colorMode: cmTrueColor),
+  ttVte: Termdesc(title: true, colorMode: cmTrueColor),
+  ttWezterm: Termdesc(title: true),
+  ttWterm: Termdesc(title: true, colorMode: cmTrueColor),
+  ttXfce: Termdesc(title: true, colormode: cmTrueColor),
+  ttXst: Termdesc(title: true, colorMode: cmTrueColor),
+  ttXterm: Termdesc(title: true),
+  # yaft supports Sixel, but can't tell us so in DA1.
+  ttYaft: Termdesc(colorMode: cmEightBit, imageMode: some(imSixel)),
+  # zellij supports Sixel, but doesn't advertise it.
+  # However, the feature barely works, so we don't force it here.
+  ttZellij: Termdesc(title: true, colorMode: cmTrueColor),
+]
+
+# Parse TERM variable.  This may adjust color-mode.
+proc parseTERM(term: Terminal): TerminalType =
+  var s = getEnvEmpty("TERM", "xterm")
+  # Sometimes, TERM variables contain:
+  # -{n}color to denote the number of color registers
+  # -direct[n] to denote direct colors (n is irrelevant here)
+  # (in terminfo.src from ncurses at least...)
+  if s.endsWith("color"):
+    let i = s.rfind('-')
+    if i != -1:
+      let n = parseInt32(s.toOpenArray(i + 1, s.high - "color".len)).get(-1)
+      if n == 256:
+        term.colorMode = cmEightBit
+      elif n >= 16:
+        term.colorMode = cmANSI
+      s.setLen(i)
+  else:
+    var i = s.high
+    while i >= 0 and s[i] in AsciiDigit:
+      dec i
+    if s.substr(0, i).endsWith("-direct"):
+      term.colorMode = cmTrueColor
+      s.setLen(i + 1 - "-direct".len)
+  # XTerm is the universal fallback.
+  let res = strictParseEnum[TerminalType](s).get(ttXterm)
+  # tmux says it's screen, but it isn't.
+  if res == ttScreen and getEnv("TMUX") != "":
+    return ttTmux
+  # zellij says it's its underlying terminal, but it isn't.
+  if getEnv("ZELLIJ") != "":
+    return ttZellij
+  return res
+
+proc applyTermDesc(term: Terminal; desc: Termdesc) =
+  if term.colorMode < desc.colorMode:
+    term.colorMode = desc.colorMode
+  if desc.imageMode.isSome:
+    term.imageMode = desc.imageMode.get
+  term.setTitle = desc.title
+  # Unless there is a terminal that outright chokes on any of these,
+  # it's OK to enable all of them.
+  term.smcup = true
+  term.formatMode = {FormatFlag.low..FormatFlag.high}
+  term.noDA1 = desc.noDA1
+
 # when windowOnly, only refresh window size.
 proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
   var res = tsrSuccess
   if not term.isatty():
     return res
-  if not windowOnly:
-    # set tname here because queryAttrs depends on it
-    term.tname = getEnv("TERM")
-    if term.tname == "":
-      term.tname = "dosansi"
   var win: IOctl_WinSize
   if ioctl(term.istream.fd, TIOCGWINSZ, addr win) != -1:
     if win.ws_col > 0:
@@ -1321,6 +1325,10 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
     term.attrs.width = int(parseInt32(getEnv("COLUMNS")).get(0))
   if term.attrs.height == 0:
     term.attrs.height = int(parseInt32(getEnv("LINES")).get(0))
+  if not windowOnly:
+    # set tname here because queryAttrs depends on it
+    term.termType = term.parseTERM()
+    term.applyTermDesc(TermdescMap[term.termType])
   if term.config.display.queryDa1:
     let r = term.queryAttrs(windowOnly)
     if r.success: # DA1 success
@@ -1339,7 +1347,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       if not windowOnly: # we don't check for kitty, so don't override this
         if qaKittyImage in r.attrs:
           term.imageMode = imKitty
-        elif qaSixel in r.attrs or term.tname.startsWith("yaft"): # meh
+        elif qaSixel in r.attrs:
           term.imageMode = imSixel
       if term.imageMode == imSixel: # adjust after windowChange
         if r.registers != 0:
@@ -1355,15 +1363,14 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.sixelMaxWidth = r.sixelMaxWidth
         term.sixelMaxHeight = r.sixelMaxHeight
       if windowOnly:
-        return
-      if qaAnsiColor in r.attrs:
+        return res
+      if qaAnsiColor in r.attrs and term.colorMode < cmANSI:
         term.colorMode = cmANSI
       if qaRGB in r.attrs:
         term.colorMode = cmTrueColor
-      if qaSyncTermFix in r.attrs:
+      if term.termType == ttSyncterm:
+        # Ask SyncTERM to stop moving the cursor on EOL.
         term.write(static(CSI & "=5h"))
-      # just assume the terminal doesn't choke on these.
-      term.formatMode = {ffStrike, ffOverline}
       if r.bgcolor.isSome:
         term.defaultBackground = r.bgcolor.get
       if r.fgcolor.isSome:
@@ -1381,28 +1388,6 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
     let colorterm = getEnv("COLORTERM")
     if colorterm in ["24bit", "truecolor"]:
       term.colorMode = cmTrueColor
-  when TermcapFound:
-    term.loadTermcap()
-    if term.tc != nil:
-      term.smcup = term.hascap(ti)
-      if term.colorMode < cmEightBit and term.tc.numCaps[Co] == 256:
-        # due to termcap limitations, 256 is the highest possible number here
-        term.colorMode = cmEightBit
-      elif term.colorMode < cmANSI and term.tc.numCaps[Co] >= 8:
-        term.colorMode = cmANSI
-      if term.hascap(ZH):
-        term.formatMode.incl(ffItalic)
-      if term.hascap(us):
-        term.formatMode.incl(ffUnderline)
-      if term.hascap(md):
-        term.formatMode.incl(ffBold)
-      if term.hascap(so):
-        term.formatMode.incl(ffReverse)
-      if term.hascap(mb):
-        term.formatMode.incl(ffBlink)
-      return res
-  term.smcup = true
-  term.formatMode = {FormatFlag.low..FormatFlag.high}
   return res
 
 type

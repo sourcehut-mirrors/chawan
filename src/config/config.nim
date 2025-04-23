@@ -154,7 +154,7 @@ type
     doubleWidthAmbiguous* {.jsgetset.}: bool
     minimumContrast* {.jsgetset.}: int32
     forceClear* {.jsgetset.}: bool
-    setTitle* {.jsgetset.}: bool
+    setTitle* {.jsgetset.}: Option[bool]
     defaultBackgroundColor* {.jsgetset.}: Option[RGBColor]
     defaultForegroundColor* {.jsgetset.}: Option[RGBColor]
     queryDa1* {.jsgetset.}: bool

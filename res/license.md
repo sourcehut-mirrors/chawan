@@ -11,9 +11,8 @@ terms.  This document attempts to list such projects included in this
 repository.
 
 Usually, the Chawan executables are also dynamically linked against your
-copy of libssh2, OpenSSL or LibreSSL, your C library, and if exists,
-your termcap library (normally ncurses).  For licensing terms of these,
-please consult the appropriate library's documentation.
+copy of libssh2, OpenSSL or LibreSSL, and your C library.  For licensing
+terms of these, please consult the appropriate library's documentation.
 
 Also, Chawan is statically linked to parts of the Nim standard library,
 available (at the time of writing) under terms of the MIT license.
