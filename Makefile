@@ -35,11 +35,6 @@ endif
 # Static linking.
 STATIC_LINK ?= 0
 
-# I won't take this from the environment for obvious reasons. Please override it
-# in the make command if you must, or (preferably) fix your environment so it's
-# not needed.
-DANGER_DISABLE_SANDBOX = 0
-
 # These paths are quoted in recipes.
 OUTDIR_TARGET = $(OUTDIR)/$(TARGET)
 OUTDIR_BIN = $(OUTDIR_TARGET)/bin
