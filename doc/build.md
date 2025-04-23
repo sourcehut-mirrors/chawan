@@ -106,7 +106,7 @@ gcc.exe = "musl-gcc"
 gcc.linkerexe = "musl-gcc"
 ```
 
-* Compile and install OpenSSL and libssh2 to `/usr/local/musl`.
+* Compile and install OpenSSL, libssh2 and libbrotlidec to `/usr/local/musl`.
 * Compile Chawan:
 
 ```sh

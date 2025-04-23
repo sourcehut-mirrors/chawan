@@ -27,11 +27,12 @@ Note: a POSIX-compliant operating system is required.
 	* [OpenSSL](https://www.openssl.org/) (or
 	  [LibreSSL](https://www.libressl.org/))
 	* [libssh2](https://libssh2.org/)
+	* [brotli](https://github.com/google/brotli)
 	* pkg-config, pkgconf, or similar (must be found as "pkg-config" in your
 	  `$PATH`)
 	* GNU make
 	* TL;DR for Debian:
-	  `apt install libssh2-1-dev libssl-dev pkg-config make`
+	  `apt install libssh2-1-dev libssl-dev libbrotli-dev pkg-config make`
 4. Run `make` (without arguments).
 5. Install using `make install` (e.g. `sudo make install`).
 

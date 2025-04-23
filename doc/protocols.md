@@ -36,8 +36,11 @@ arbitrary headers and POST data, is able to use passed userinfo data,
 and returns all headers and response body it receives without exception.
 
 Deflate decompression with gzip and zlib headers is supported.
-(Content-Type: gzip, deflate.)  This is based on a modified version of
-the public domain tinfl.h decompressor by Rich Geldreich.
+(Accept-Encoding: gzip, deflate.)  This is based on a modified version
+of the public domain tinfl.h decompressor by Rich Geldreich.
+
+Brotli decompression (Accept-Encoding: br) is supported using the
+decoder provided by the reference implementation.
 
 The `bonus` directory contains two alternative HTTP clients:
 

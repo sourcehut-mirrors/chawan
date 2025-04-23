@@ -72,7 +72,7 @@ prepend-https = true # deprecated, kept only for backwards-compatibility
 default-headers = {
 	User-Agent = "chawan",
 	Accept = "text/html, text/*;q=0.5, */*;q=0.4",
-	Accept-Encoding = "gzip, deflate",
+	Accept-Encoding = "gzip, deflate, br",
 	Accept-Language = "en;q=1.0",
 	Pragma = "no-cache",
 	Cache-Control = "no-cache"
