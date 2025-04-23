@@ -279,41 +279,28 @@ const DefaultBounds = Bounds(
   mi: [DefaultSpan, DefaultSpan]
 )
 
+const SizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
+const MinSizeMap = [dtHorizontal: cptMinWidth, dtVertical: cptMinHeight]
+const MaxSizeMap = [dtHorizontal: cptMaxWidth, dtVertical: cptMaxHeight]
+
 func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
     computed: CSSValues; flexItem = false): Bounds =
   var res = DefaultBounds
-  block:
-    let sc = space.w
-    let padding = padding[dtHorizontal]
-    if computed{"max-width"}.canpx(sc):
-      let px = computed{"max-width"}.spx(sc, computed, padding)
-      res.a[dtHorizontal].send = px
-      if computed{"max-width"}.u == clPx:
-        res.mi[dtHorizontal].send = px
-    if computed{"min-width"}.canpx(sc):
-      let px = computed{"min-width"}.spx(sc, computed, padding)
-      res.a[dtHorizontal].start = px
-      if computed{"min-width"}.u == clPx:
-        res.mi[dtHorizontal].start = px
+  for dim in DimensionType:
+    let sc = space[dim]
+    let padding = padding[dim]
+    if computed.getLength(MaxSizeMap[dim]).canpx(sc):
+      let px = computed.getLength(MaxSizeMap[dim]).spx(sc, computed, padding)
+      res.a[dim].send = px
+      res.mi[dim].send = px
+    if computed.getLength(MinSizeMap[dim]).canpx(sc):
+      let px = computed.getLength(MinSizeMap[dim]).spx(sc, computed, padding)
+      res.a[dim].start = px
+      if computed.getLength(MinSizeMap[dim]).u == clPx:
+        res.mi[dim].start = px
         if flexItem: # for flex items, min-width overrides the intrinsic size.
-          res.mi[dtHorizontal].send = px
-  block:
-    let sc = space.h
-    let padding = padding[dtVertical]
-    if computed{"max-height"}.canpx(sc):
-      let px = computed{"max-height"}.spx(sc, computed, padding)
-      res.a[dtVertical].send = px
-      res.mi[dtVertical].send = px
-    if computed{"min-height"}.canpx(sc):
-      let px = computed{"min-height"}.spx(sc, computed, padding)
-      res.a[dtVertical].start = px
-      if computed{"min-height"}.u == clPx:
-        res.mi[dtVertical].start = px
-        if flexItem:
-          res.mi[dtVertical].send = px
+          res.mi[dim].send = px
   return res
-
-const SizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
 
 proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
     positioned: RelativeRect; computed: CSSValues; lctx: LayoutContext) =
@@ -1152,7 +1139,8 @@ proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
     # add line to fstate
     let y = fstate.offset.y
     if clear != ClearNone:
-      fstate.lbstate.size.h.clearFloats(fstate.bctx, fstate.bfcOffset.y + y, clear)
+      fstate.lbstate.size.h.clearFloats(fstate.bctx, fstate.bfcOffset.y + y,
+        clear)
     # * set first baseline if this is the first line box
     # * always set last baseline (so the baseline of the last line box remains)
     fstate.box.state.baseline = y + fstate.lbstate.baseline
