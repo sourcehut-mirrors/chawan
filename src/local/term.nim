@@ -19,6 +19,7 @@ import utils/twtstr
 
 type
   TerminalType = enum
+    ttAdm3a = "adm3a"
     ttAlacritty = "alacritty"
     ttContour = "contour" # pretends to be XTerm
     ttDvtm = "dvtm"
@@ -102,7 +103,9 @@ type
     cleared: bool
     smcup: bool
     setTitle: bool
-    noDA1: bool
+    queryDa1: bool
+    bleedsAPC: bool
+    margin: bool
     origTermios: Termios
     newTermios: Termios
     defaultBackground: RGBColor
@@ -172,18 +175,17 @@ const ST = "\e\\"
 const XTGETTCAPRGB = DCS & "+q524742" & ST
 
 # OS command
-template OSC(s: varargs[string, `$`]): string =
-  "\e]" & s.join(';') & '\a'
-
+const OSC = "\e]"
+const BEL = '\a'
 template XTSETTITLE(s: string): string =
-  OSC(0, s)
+  OSC & "0;" & s & BEL
 
-const XTGETFG = OSC(10, "?") # get foreground color
-const XTGETBG = OSC(11, "?") # get background color
+const XTGETFG = OSC & "10;?" & BEL # get foreground color
+const XTGETBG = OSC & "11;?" & BEL # get background color
 const XTGETANSI = block: # get ansi colors
   var s = ""
   for n in 0 ..< 16:
-    s &= OSC(4, n, "?")
+    s &= OSC & "4;" & $n & ";?" & BEL
   s
 
 # DEC set
@@ -245,13 +247,19 @@ proc hasBuffer*(term: Terminal): bool =
   return term.ibufn < term.ibufLen
 
 proc cursorGoto(term: Terminal; x, y: int): string =
-  return HVP(y + 1, x + 1)
+  case term.termType
+  of ttAdm3a: return "\e=" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20)
+  else: return HVP(y + 1, x + 1)
 
 proc clearEnd(term: Terminal): string =
-  return EL
+  case term.termType
+  of ttAdm3a: return ""
+  else: return EL
 
 proc clearDisplay(term: Terminal): string =
-  return ED
+  case term.termType
+  of ttAdm3a: return "\x1A"
+  else: return ED
 
 proc isatty*(term: Terminal): bool =
   return term.istream != nil and term.istream.isatty() and term.ostream.isatty()
@@ -263,7 +271,9 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]") =
     discard term.istream.readChar()
 
 proc resetFormat(term: Terminal): string =
-  return CSI & 'm'
+  case term.termType
+  of ttAdm3a: return ""
+  else: return CSI & 'm'
 
 const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
   ffBold: (1u8, 22u8),
@@ -441,10 +451,14 @@ proc setTitle*(term: Terminal; title: string) =
     term.write(XTSETTITLE(title.replaceControls()))
 
 proc enableMouse*(term: Terminal) =
-  term.write(XTSHIFTESCAPE & SGRMOUSEBTNON)
+  case term.termType
+  of ttAdm3a: discard
+  else: term.write(XTSHIFTESCAPE & SGRMOUSEBTNON)
 
 proc disableMouse*(term: Terminal) =
-  term.write(SGRMOUSEBTNOFF)
+  case term.termType
+  of ttAdm3a: discard
+  else: term.write(SGRMOUSEBTNOFF)
 
 proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
     iq: openArray[uint8]) =
@@ -539,10 +553,14 @@ proc generateSwapOutput(term: Terminal): string =
       term.lineDamage[y] = term.attrs.width
 
 proc hideCursor*(term: Terminal) =
-  term.write(CIVIS)
+  case term.termType
+  of ttAdm3a: discard
+  else: term.write(CIVIS)
 
 proc showCursor*(term: Terminal) =
-  term.write(CNORM)
+  case term.termType
+  of ttAdm3a: discard
+  else: term.write(CNORM)
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
   for ly in y ..< y + grid.height:
@@ -1057,7 +1075,8 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       if term.config.display.defaultForegroundColor.isNone:
         outs &= XTGETFG
     if term.config.display.imageMode.isNone:
-      outs &= KITTYQUERY
+      if not term.bleedsAPC:
+        outs &= KITTYQUERY
       outs &= XTNUMREGS
       outs &= XTIMGDIMS
     elif term.config.display.imageMode.get == imSixel:
@@ -1217,50 +1236,63 @@ type TermStartResult* = enum
 # For terminals I cannot directly test, our data is based on
 # TERMINALS.md in notcurses and terminfo.src in ncurses.
 type
+  TermFlag = enum
+    tfTitle, tfDa1, tfSmcup, tfBleedsAPC
+
   Termdesc = object
-    title: bool # set if the terminal can set its title
-    noDA1: bool # set if the terminal does not respond to DA1
+    flags: set[TermFlag]
     colorMode: ColorMode
     imageMode: Option[ImageMode]
 
+const CompatibleFlags = {tfTitle, tfDa1, tfSmcup}
+
+# Probably not 1:1 compatible, but either a) compatible enough for our
+# purposes or b) advertises incompatibilities correctly through queries.
+const XtermCompatible = Termdesc(flags: CompatibleFlags)
+
 const TermdescMap = [
-  ttAlacritty: Termdesc(title: true, colorMode: cmTrueColor),
-  ttContour: Termdesc(title: true),
-  ttDvtm: Termdesc(colorMode: cmANSI, noDA1: true),
-  ttEterm: Termdesc(title: true, colorMode: cmANSI, noDA1: true),
-  ttFbterm: Termdesc(colorMode: cmANSI),
-  ttFoot: Termdesc(title: true),
-  ttFreebsd: Termdesc(colorMode: cmANSI, noDA1: true),
-  ttGhostty: Termdesc(title: true),
-  ttIterm2: Termdesc(title: true),
-  ttKitty: Termdesc(title: true),
-  ttKonsole: Termdesc(title: true),
+  ttAdm3a: Termdesc(),
+  ttAlacritty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttContour: Termdesc(flags: CompatibleFlags),
+  ttDvtm: Termdesc(flags: {tfSmcup, tfBleedsAPC}, colorMode: cmANSI),
+  ttEterm: Termdesc(flags: {tfTitle, tfDa1}, colorMode: cmANSI),
+  ttFbterm: Termdesc(flags: {tfDa1}, colorMode: cmANSI),
+  ttFoot: XtermCompatible,
+  ttFreebsd: Termdesc(colorMode: cmANSI),
+  ttGhostty: XtermCompatible,
+  ttIterm2: XtermCompatible,
+  ttKitty: XtermCompatible,
+  ttKonsole: XtermCompatible,
   # Linux accepts true color sequences, but does not actually display
   # them.  It is better to use eight-bit colors so it doesn't break
   # color correction.
-  ttLinux: Termdesc(colorMode: cmEightBit),
-  ttMintty: Termdesc(title: true, colorMode: cmTrueColor),
-  ttMlterm: Termdesc(title: true, colorMode: cmTrueColor),
-  ttMsTerminal: Termdesc(title: true, colorMode: cmTrueColor),
-  ttPutty: Termdesc(title: true, colorMode: cmTrueColor),
-  ttRlogin: Termdesc(title: true, colorMode: cmTrueColor),
+  ttLinux: Termdesc(flags: {tfDa1, tfSmcup}, colorMode: cmEightBit),
+  ttMintty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttMlterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttMsTerminal: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttPutty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttRlogin: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
   # screen does true color, but only if you explicitly enable it.
-  ttScreen: Termdesc(title: true, colorMode: cmEightBit),
-  ttSt: Termdesc(title: true, colorMode: cmTrueColor),
-  ttSyncterm: Termdesc(colorMode: cmTrueColor, imageMode: some(imSixel)),
-  ttTerminology: Termdesc(title: true),
-  ttTmux: Termdesc(title: true, colorMode: cmTrueColor),
-  ttVte: Termdesc(title: true, colorMode: cmTrueColor),
-  ttWezterm: Termdesc(title: true),
-  ttWterm: Termdesc(title: true, colorMode: cmTrueColor),
-  ttXfce: Termdesc(title: true, colormode: cmTrueColor),
-  ttXst: Termdesc(title: true, colorMode: cmTrueColor),
-  ttXterm: Termdesc(title: true),
+  # smcup is also opt-in; however, it should be fine to send it even if
+  # it's not used.
+  ttScreen: Termdesc(flags: CompatibleFlags, colorMode: cmEightBit),
+  ttSt: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttSyncterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor,
+    imageMode: some(imSixel)),
+  ttTerminology: Termdesc(flags: CompatibleFlags + {tfBleedsAPC}),
+  ttTmux: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttVte: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttWezterm: XtermCompatible,
+  ttWterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttXfce: Termdesc(flags: CompatibleFlags, colormode: cmTrueColor),
+  ttXst: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttXterm: XtermCompatible,
   # yaft supports Sixel, but can't tell us so in DA1.
-  ttYaft: Termdesc(colorMode: cmEightBit, imageMode: some(imSixel)),
+  ttYaft: Termdesc(flags: CompatibleFlags + {tfBleedsAPC},
+    colorMode: cmEightBit, imageMode: some(imSixel)),
   # zellij supports Sixel, but doesn't advertise it.
   # However, the feature barely works, so we don't force it here.
-  ttZellij: Termdesc(title: true, colorMode: cmTrueColor),
+  ttZellij: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
 ]
 
 # Parse TERM variable.  This may adjust color-mode.
@@ -1301,12 +1333,16 @@ proc applyTermDesc(term: Terminal; desc: Termdesc) =
     term.colorMode = desc.colorMode
   if desc.imageMode.isSome:
     term.imageMode = desc.imageMode.get
-  term.setTitle = desc.title
+  term.setTitle = tfTitle in desc.flags
   # Unless there is a terminal that outright chokes on any of these,
   # it's OK to enable all of them.
-  term.smcup = true
-  term.formatMode = {FormatFlag.low..FormatFlag.high}
-  term.noDA1 = desc.noDA1
+  term.smcup = tfSmcup in desc.flags
+  if term.termType != ttAdm3a:
+    term.formatMode = {FormatFlag.low..FormatFlag.high}
+  else:
+    term.margin = true
+  term.queryDa1 = tfDa1 in desc.flags
+  term.bleedsAPC = tfBleedsAPC in desc.flags
 
 # when windowOnly, only refresh window size.
 proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
@@ -1329,7 +1365,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
     # set tname here because queryAttrs depends on it
     term.termType = term.parseTERM()
     term.applyTermDesc(TermdescMap[term.termType])
-  if term.config.display.queryDa1:
+  if term.queryDa1 and term.config.display.queryDa1:
     let r = term.queryAttrs(windowOnly)
     if r.success: # DA1 success
       if r.width != 0:
@@ -1382,6 +1418,8 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       # something went horribly wrong. set result to DA1 fail, pager will
       # alert the user
       res = tsrDA1Fail
+  if term.margin:
+    dec term.attrs.width
   if windowOnly:
     return res
   if term.colorMode != cmTrueColor:
@@ -1491,7 +1529,7 @@ proc start*(term: Terminal; istream: PosixStream): TermStartResult =
     term.enableRawMode()
   result = term.detectTermAttributes(windowOnly = false)
   if result == tsrDA1Fail:
-    term.config.display.queryDa1 = false
+    term.queryDa1 = false
   term.applyConfig()
   if term.isatty():
     term.initScreen()
