@@ -22,7 +22,7 @@ XTerm might malfunction.
 ## Queries
 
 Queries are preferred to hardcoded terminal descriptions because they
-are forward-compatible.  Chawan sends the following queries on startup:
+are forward-compatible.  On startup, Chawan queries:
 
 * Whether the terminal has true color, with XTGETTCAP rgb.
 * The default background, foreground, and 16 ANSI(-ish) colors with
@@ -30,7 +30,7 @@ are forward-compatible.  Chawan sends the following queries on startup:
 * Whether the terminal can use the Kitty image protocol, by sending an
   incorrectly encoded image and listening for an error.
 * The number of Sixel color registers (`CSI ? 1 ; 1 ; 0 $`).
-* The maximum Sixel image dimensions (`CSI ? 2 ; 1 ; 0 $).
+* The maximum Sixel image dimensions (`CSI ? 2 ; 1 ; 0 $`).
 * Text area, cell, and window size using `CSI 1 4 t`, `CSI 1 6 t`,
   `CSI 1 8 t`.  (Cell size, `1 6`, beats the other two as it is more
   reliable.)
