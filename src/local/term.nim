@@ -27,9 +27,9 @@ type
     ttFbterm = "fbterm"
     ttFoot = "foot"
     ttFreebsd = "freebsd" # pretends to be XTerm
-    ttGhostty = "ghostty"
+    ttGhostty = "xterm-ghostty" # hardly XTerm
     ttIterm2 = "iterm2"
-    ttKitty = "xterm-kitty"
+    ttKitty = "xterm-kitty" # hardly XTerm
     ttKonsole = "konsole" # pretends to be XTerm
     ttLinux = "linux"
     ttMintty = "mintty"
@@ -37,11 +37,13 @@ type
     ttMsTerminal = "ms-terminal"
     ttPutty = "putty"
     ttRlogin = "rlogin"
+    ttRxvt = "rxvt"
     ttScreen = "screen"
     ttSt = "st"
     ttSyncterm = "syncterm"
     ttTerminology = "terminology" # pretends to be XTerm
     ttTmux = "tmux"
+    ttUrxvt = "rxvt-unicode"
     ttVte = "vte" # pretends to be XTerm
     ttWezterm = "wezterm"
     ttWterm = "wterm"
@@ -176,16 +178,15 @@ const XTGETTCAPRGB = DCS & "+q524742" & ST
 
 # OS command
 const OSC = "\e]"
-const BEL = '\a'
 template XTSETTITLE(s: string): string =
-  OSC & "0;" & s & BEL
+  OSC & "0;" & s & ST
 
-const XTGETFG = OSC & "10;?" & BEL # get foreground color
-const XTGETBG = OSC & "11;?" & BEL # get background color
+const XTGETFG = OSC & "10;?" & ST # get foreground color
+const XTGETBG = OSC & "11;?" & ST # get background color
 const XTGETANSI = block: # get ansi colors
   var s = ""
   for n in 0 ..< 16:
-    s &= OSC & "4;" & $n & ";?" & BEL
+    s &= OSC & "4;" & $n & ";?" & ST
   s
 
 # DEC set
@@ -1036,11 +1037,14 @@ proc consumeIntGreedy(term: Terminal; lastc: var char): int =
       break
   return n
 
-proc eatColor(term: Terminal; tc: set[char]; wasEsc: var bool): uint8 =
+proc eatColor(term: Terminal; tc: char): uint8 =
   var val = 0u8
   var i = 0
   var c = char(0)
-  while (c = term.readChar(); c notin tc):
+  while (c = term.readChar(); c != tc):
+    if tc == '\a' and c == '\e':
+      if term.readChar() == '\\': # 7-bit ST
+        break
     let v0 = hexValue(c)
     if i > 4 or v0 == -1:
       break # wat
@@ -1051,12 +1055,17 @@ proc eatColor(term: Terminal; tc: set[char]; wasEsc: var bool): uint8 =
       val = (val and not 0xFu8) or v
     # all other places are irrelevant
     inc i
-  wasEsc = c == '\e'
   return val
 
 proc skipUntil(term: Terminal; c: char) =
   while term.readChar() != c:
     discard
+
+proc skipUntilST(term: Terminal) =
+  while true:
+    let c = term.readChar()
+    if c == '\a' or c == '\e' and term.readChar() == '\\':
+      break
 
 proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
@@ -1172,13 +1181,9 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         n = term.consumeIntUntil(';')
       if term.consume == 'r' and term.consume == 'g' and term.consume == 'b':
         term.expect ':'
-        var wasEsc = false
-        let r = term.eatColor({'/'}, wasEsc)
-        let g = term.eatColor({'/'}, wasEsc)
-        let b = term.eatColor({'\a', '\e'}, wasEsc)
-        if wasEsc:
-          # we got ST, not BEL; at least kitty does this
-          term.expect '\\'
+        let r = term.eatColor('/')
+        let g = term.eatColor('/')
+        let b = term.eatColor('\a')
         let C = rgb(r, g, b)
         if c == 4:
           result.colorMap.add((n, C))
@@ -1188,7 +1193,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
           result.bgcolor = some(C)
       else:
         # not RGB, give up
-        term.skipUntil('\a')
+        term.skipUntilST()
     of 'P':
       # DCS
       let c = term.consume
@@ -1202,19 +1207,13 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
             fail
           id *= 0x10
           id += hexValue(c)
-        term.skipUntil('\e') # ST (1)
         if id == tcapRGB:
           result.attrs.incl(qaRGB)
-      else: # 0
-        # pure insanity: kitty returns P0, but also +r524742 after. please
-        # make up your mind!
-        term.skipUntil('\e') # ST (1)
-      term.expect '\\' # ST (2)
+      term.skipUntilST()
     of '_': # APC
       term.expect 'G'
       result.attrs.incl(qaKittyImage)
-      term.skipUntil('\e') # ST (1)
-      term.expect '\\' # ST (2)
+      term.skipUntilST()
     else:
       fail
 
@@ -1242,7 +1241,7 @@ type
   Termdesc = object
     flags: set[TermFlag]
     colorMode: ColorMode
-    imageMode: Option[ImageMode]
+    imageMode: ImageMode
 
 const CompatibleFlags = {tfTitle, tfDa1, tfSmcup}
 
@@ -1253,7 +1252,7 @@ const XtermCompatible = Termdesc(flags: CompatibleFlags)
 const TermdescMap = [
   ttAdm3a: Termdesc(),
   ttAlacritty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttContour: Termdesc(flags: CompatibleFlags),
+  ttContour: XtermCompatible,
   ttDvtm: Termdesc(flags: {tfSmcup, tfBleedsAPC}, colorMode: cmANSI),
   ttEterm: Termdesc(flags: {tfTitle, tfDa1}, colorMode: cmANSI),
   ttFbterm: Termdesc(flags: {tfDa1}, colorMode: cmANSI),
@@ -1261,26 +1260,36 @@ const TermdescMap = [
   ttFreebsd: Termdesc(colorMode: cmANSI),
   ttGhostty: XtermCompatible,
   ttIterm2: XtermCompatible,
-  ttKitty: XtermCompatible,
+  ttKitty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
   ttKonsole: XtermCompatible,
-  # Linux accepts true color sequences, but does not actually display
-  # them.  It is better to use eight-bit colors so it doesn't break
-  # color correction.
-  ttLinux: Termdesc(flags: {tfDa1, tfSmcup}, colorMode: cmEightBit),
+  # Linux accepts true color or eight bit sequences, but as per the
+  # man page they are "shoehorned into 16 colors".  This breaks color
+  # correction, so we stick to ANSI.
+  # It also fails to advertise ANSI color in DA1, so we set it here.
+  ttLinux: Termdesc(flags: {tfDa1, tfSmcup}, colorMode: cmANSI),
   ttMintty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
   ttMlterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
   ttMsTerminal: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
   ttPutty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
   ttRlogin: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttRxvt: Termdesc(flags: CompatibleFlags + {tfBleedsAPC},
+    colorMode: cmEightBit),
   # screen does true color, but only if you explicitly enable it.
   # smcup is also opt-in; however, it should be fine to send it even if
   # it's not used.
   ttScreen: Termdesc(flags: CompatibleFlags, colorMode: cmEightBit),
   ttSt: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttSyncterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor,
-    imageMode: some(imSixel)),
+  # SyncTERM supports Sixel, but it doesn't have private color registers
+  # so we omit it.
+  ttSyncterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
   ttTerminology: Termdesc(flags: CompatibleFlags + {tfBleedsAPC}),
   ttTmux: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  # Direct color in urxvt is not really true color; apparently it
+  # just takes the nearest color of the 256 registers and replaces it
+  # with the direct color given.  I don't think this is much worse than
+  # our basic quantization for 256 colors, so we use it anyway.
+  ttUrxvt: Termdesc(flags: CompatibleFlags + {tfBleedsAPC},
+    colorMode: cmTrueColor),
   ttVte: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
   ttWezterm: XtermCompatible,
   ttWterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
@@ -1289,7 +1298,7 @@ const TermdescMap = [
   ttXterm: XtermCompatible,
   # yaft supports Sixel, but can't tell us so in DA1.
   ttYaft: Termdesc(flags: CompatibleFlags + {tfBleedsAPC},
-    colorMode: cmEightBit, imageMode: some(imSixel)),
+    colorMode: cmEightBit, imageMode: imSixel),
   # zellij supports Sixel, but doesn't advertise it.
   # However, the feature barely works, so we don't force it here.
   ttZellij: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
@@ -1329,15 +1338,13 @@ proc parseTERM(term: Terminal): TerminalType =
   return res
 
 proc applyTermDesc(term: Terminal; desc: Termdesc) =
-  if term.colorMode < desc.colorMode:
-    term.colorMode = desc.colorMode
-  if desc.imageMode.isSome:
-    term.imageMode = desc.imageMode.get
+  term.colorMode = desc.colorMode
+  term.imageMode = desc.imageMode
   term.setTitle = tfTitle in desc.flags
-  # Unless there is a terminal that outright chokes on any of these,
-  # it's OK to enable all of them.
   term.smcup = tfSmcup in desc.flags
   if term.termType != ttAdm3a:
+    # Unless a terminal can't process one of these, it's OK to enable
+    # all of them.
     term.formatMode = {FormatFlag.low..FormatFlag.high}
   else:
     term.margin = true
