@@ -1236,72 +1236,65 @@ type TermStartResult* = enum
 # TERMINALS.md in notcurses and terminfo.src in ncurses.
 type
   TermFlag = enum
-    tfTitle, tfDa1, tfSmcup, tfBleedsAPC
+    tfTitle, tfDa1, tfSmcup, tfBleedsAPC, tfAnsiColor, tfEightBitColor,
+    tfTrueColor, tfSixel
 
-  Termdesc = object
-    flags: set[TermFlag]
-    colorMode: ColorMode
-    imageMode: ImageMode
-
-const CompatibleFlags = {tfTitle, tfDa1, tfSmcup}
+  Termdesc = set[TermFlag]
 
 # Probably not 1:1 compatible, but either a) compatible enough for our
 # purposes or b) advertises incompatibilities correctly through queries.
-const XtermCompatible = Termdesc(flags: CompatibleFlags)
+const XtermCompatible = {tfTitle, tfDa1, tfSmcup}
 
 const TermdescMap = [
-  ttAdm3a: Termdesc(),
-  ttAlacritty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttAdm3a: {},
+  ttAlacritty: XtermCompatible + {tfTrueColor},
   ttContour: XtermCompatible,
-  ttDvtm: Termdesc(flags: {tfSmcup, tfBleedsAPC}, colorMode: cmANSI),
-  ttEterm: Termdesc(flags: {tfTitle, tfDa1}, colorMode: cmANSI),
-  ttFbterm: Termdesc(flags: {tfDa1}, colorMode: cmANSI),
+  ttDvtm: {tfSmcup, tfBleedsAPC, tfAnsiColor},
+  ttEterm: {tfTitle, tfDa1, tfAnsiColor},
+  ttFbterm: {tfDa1, tfAnsiColor},
   ttFoot: XtermCompatible,
-  ttFreebsd: Termdesc(colorMode: cmANSI),
+  ttFreebsd: {tfAnsiColor},
   ttGhostty: XtermCompatible,
   ttIterm2: XtermCompatible,
-  ttKitty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttKitty: XtermCompatible + {tfTrueColor},
   ttKonsole: XtermCompatible,
   # Linux accepts true color or eight bit sequences, but as per the
   # man page they are "shoehorned into 16 colors".  This breaks color
   # correction, so we stick to ANSI.
   # It also fails to advertise ANSI color in DA1, so we set it here.
-  ttLinux: Termdesc(flags: {tfDa1, tfSmcup}, colorMode: cmANSI),
-  ttMintty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttMlterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttMsTerminal: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttPutty: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttRlogin: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttRxvt: Termdesc(flags: CompatibleFlags + {tfBleedsAPC},
-    colorMode: cmEightBit),
+  ttLinux: {tfDa1, tfSmcup, tfAnsiColor},
+  ttMintty: XtermCompatible + {tfTrueColor},
+  ttMlterm: XtermCompatible + {tfTrueColor},
+  ttMsTerminal: XtermCompatible + {tfTrueColor},
+  ttPutty: XtermCompatible + {tfTrueColor},
+  ttRlogin: XtermCompatible + {tfTrueColor},
+  ttRxvt: XtermCompatible + {tfBleedsAPC, tfEightBitColor},
   # screen does true color, but only if you explicitly enable it.
   # smcup is also opt-in; however, it should be fine to send it even if
   # it's not used.
-  ttScreen: Termdesc(flags: CompatibleFlags, colorMode: cmEightBit),
-  ttSt: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttScreen: XtermCompatible + {tfEightBitColor},
+  ttSt: XtermCompatible + {tfTrueColor},
   # SyncTERM supports Sixel, but it doesn't have private color registers
   # so we omit it.
-  ttSyncterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttTerminology: Termdesc(flags: CompatibleFlags + {tfBleedsAPC}),
-  ttTmux: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttSyncterm: XtermCompatible + {tfTrueColor},
+  ttTerminology: XtermCompatible + {tfBleedsAPC},
+  ttTmux: XtermCompatible + {tfTrueColor},
   # Direct color in urxvt is not really true color; apparently it
   # just takes the nearest color of the 256 registers and replaces it
   # with the direct color given.  I don't think this is much worse than
   # our basic quantization for 256 colors, so we use it anyway.
-  ttUrxvt: Termdesc(flags: CompatibleFlags + {tfBleedsAPC},
-    colorMode: cmTrueColor),
-  ttVte: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttUrxvt: XtermCompatible + {tfBleedsAPC, tfTrueColor},
+  ttVte: XtermCompatible + {tfTrueColor},
   ttWezterm: XtermCompatible,
-  ttWterm: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
-  ttXfce: Termdesc(flags: CompatibleFlags, colormode: cmTrueColor),
-  ttXst: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttWterm: XtermCompatible + {tfTrueColor},
+  ttXfce: XtermCompatible + {tfTrueColor},
+  ttXst: XtermCompatible + {tfTrueColor},
   ttXterm: XtermCompatible,
   # yaft supports Sixel, but can't tell us so in DA1.
-  ttYaft: Termdesc(flags: CompatibleFlags + {tfBleedsAPC},
-    colorMode: cmEightBit, imageMode: imSixel),
+  ttYaft: XtermCompatible + {tfBleedsAPC, tfSixel},
   # zellij supports Sixel, but doesn't advertise it.
   # However, the feature barely works, so we don't force it here.
-  ttZellij: Termdesc(flags: CompatibleFlags, colorMode: cmTrueColor),
+  ttZellij: XtermCompatible + {tfTrueColor},
 ]
 
 # Parse TERM variable.  This may adjust color-mode.
@@ -1338,18 +1331,24 @@ proc parseTERM(term: Terminal): TerminalType =
   return res
 
 proc applyTermDesc(term: Terminal; desc: Termdesc) =
-  term.colorMode = desc.colorMode
-  term.imageMode = desc.imageMode
-  term.setTitle = tfTitle in desc.flags
-  term.smcup = tfSmcup in desc.flags
+  if tfAnsiColor in desc:
+    term.colorMode = cmANSI
+  elif tfEightBitColor in desc:
+    term.colorMode = cmEightBit
+  elif tfTrueColor in desc:
+    term.colorMode = cmTrueColor
+  if tfSixel in desc:
+    term.imageMode = imSixel
+  term.setTitle = tfTitle in desc
+  term.smcup = tfSmcup in desc
   if term.termType != ttAdm3a:
     # Unless a terminal can't process one of these, it's OK to enable
     # all of them.
     term.formatMode = {FormatFlag.low..FormatFlag.high}
   else:
     term.margin = true
-  term.queryDa1 = tfDa1 in desc.flags
-  term.bleedsAPC = tfBleedsAPC in desc.flags
+  term.queryDa1 = tfDa1 in desc
+  term.bleedsAPC = tfBleedsAPC in desc
 
 # when windowOnly, only refresh window size.
 proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
