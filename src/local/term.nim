@@ -44,6 +44,7 @@ type
     ttTerminology = "terminology" # pretends to be XTerm
     ttTmux = "tmux"
     ttUrxvt = "rxvt-unicode"
+    ttVt52 = "vt52"
     ttVte = "vte" # pretends to be XTerm
     ttWezterm = "wezterm"
     ttWterm = "wterm"
@@ -250,16 +251,19 @@ proc hasBuffer*(term: Terminal): bool =
 proc cursorGoto(term: Terminal; x, y: int): string =
   case term.termType
   of ttAdm3a: return "\e=" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20)
+  of ttVt52: return "\eY" & char(uint8(y) + 0x20) & char(uint8(x) + 0x20)
   else: return HVP(y + 1, x + 1)
 
 proc clearEnd(term: Terminal): string =
   case term.termType
   of ttAdm3a: return ""
+  of ttVt52: return "\eK"
   else: return EL
 
 proc clearDisplay(term: Terminal): string =
   case term.termType
   of ttAdm3a: return "\x1A"
+  of ttVt52: return "\eJ"
   else: return ED
 
 proc isatty*(term: Terminal): bool =
@@ -273,7 +277,7 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]") =
 
 proc resetFormat(term: Terminal): string =
   case term.termType
-  of ttAdm3a: return ""
+  of ttAdm3a, ttVt52: return ""
   else: return CSI & 'm'
 
 const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
@@ -555,12 +559,12 @@ proc generateSwapOutput(term: Terminal): string =
 
 proc hideCursor*(term: Terminal) =
   case term.termType
-  of ttAdm3a: discard
+  of ttAdm3a, ttVt52: discard
   else: term.write(CIVIS)
 
 proc showCursor*(term: Terminal) =
   case term.termType
-  of ttAdm3a: discard
+  of ttAdm3a, ttVt52: discard
   else: term.write(CNORM)
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
@@ -1284,6 +1288,7 @@ const TermdescMap = [
   # with the direct color given.  I don't think this is much worse than
   # our basic quantization for 256 colors, so we use it anyway.
   ttUrxvt: XtermCompatible + {tfBleedsAPC, tfTrueColor},
+  ttVt52: {},
   ttVte: XtermCompatible + {tfTrueColor},
   ttWezterm: XtermCompatible,
   ttWterm: XtermCompatible + {tfTrueColor},
@@ -1341,12 +1346,14 @@ proc applyTermDesc(term: Terminal; desc: Termdesc) =
     term.imageMode = imSixel
   term.setTitle = tfTitle in desc
   term.smcup = tfSmcup in desc
-  if term.termType != ttAdm3a:
+  if term.termType == ttAdm3a:
+    term.margin = true
+  elif term.termType == ttVt52:
+    discard
+  else:
     # Unless a terminal can't process one of these, it's OK to enable
     # all of them.
     term.formatMode = {FormatFlag.low..FormatFlag.high}
-  else:
-    term.margin = true
   term.queryDa1 = tfDa1 in desc
   term.bleedsAPC = tfBleedsAPC in desc
 
