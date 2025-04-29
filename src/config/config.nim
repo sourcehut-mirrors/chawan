@@ -478,6 +478,7 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
     ?ctx.parseConfigValue(y, v, k)
     x = @[y]
   else:
+    x.setLen(0)
     for i in 0 ..< v.a.len:
       var y: T
       ?ctx.parseConfigValue(y, v.a[i], k & "[" & $i & "]")
