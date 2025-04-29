@@ -215,7 +215,7 @@ jsDestructor(DisplayConfig)
 jsDestructor(BufferSectionConfig)
 jsDestructor(Config)
 
-converter toStr*(p: ChaPathResolved): string {.inline.} =
+converter toStr*(p: ChaPathResolved): lent string {.inline.} =
   return string(p)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var ChaPathResolved):
@@ -229,11 +229,11 @@ proc `[]=`(a: var ActionMap; b: string; c: sink string) =
 template `[]`*(a: ActionMap; b: string): string =
   a.t[b]
 
+template getOrDefault(a: ActionMap; b: string): string =
+  a.t.getOrDefault(b)
+
 proc contains*(a: ActionMap; b: string): bool =
   return b in a.t
-
-proc getOrDefault(a: ActionMap; b: string): string =
-  return a.t.getOrDefault(b)
 
 func getRealKey(key: string): string =
   var realk = ""
