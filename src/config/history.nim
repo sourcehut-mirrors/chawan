@@ -19,9 +19,6 @@ type
     prev* {.cursor.}: HistoryEntry
     next*: HistoryEntry
 
-func newHistoryEntry(s: string): HistoryEntry =
-  return HistoryEntry(s: s)
-
 proc add(hist: History; entry: sink HistoryEntry) =
   let old = hist.map.getOrDefault(entry.s)
   if old != nil:
@@ -54,28 +51,23 @@ proc add(hist: History; entry: sink HistoryEntry) =
 func newHistory*(maxLen: int; mtime = 0i64): History =
   return History(maxLen: maxLen, mtime: mtime)
 
-proc add*(hist: History; s: string) =
-  hist.add(newHistoryEntry(s))
+proc add*(hist: History; s: sink string) =
+  hist.add(HistoryEntry(s: s))
 
 proc parse(hist: History; iq: openArray[char]) =
   var i = 0
   while i < iq.len:
-    let entry = newHistoryEntry(iq.until('\n', i))
-    hist.add(entry)
-    i += entry.s.len + 1
+    let s = iq.until('\n', i)
+    i += s.len + 1
+    hist.add(s)
 
 # Consumes `ps'.
-proc parse*(hist: History; ps: PosixStream; mtime: int64): bool =
-  try:
-    let src = ps.readAllOrMmap()
-    hist.parse(src.toOpenArray())
-    hist.mtime = mtime
-    deallocMem(src)
-  except IOError:
-    return false
-  finally:
-    ps.sclose()
-  return true
+proc parse*(hist: History; ps: PosixStream; mtime: int64) =
+  let src = ps.readAllOrMmap()
+  hist.parse(src.toOpenArray())
+  hist.mtime = mtime
+  deallocMem(src)
+  ps.sclose()
 
 proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
   header: "<stdio.h>".}
@@ -111,8 +103,7 @@ proc write*(hist: History; file: string): bool =
     if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
       let mtime = int64(stats.st_mtime)
       if mtime > hist.mtime:
-        if not hist.parse(ps, mtime):
-          return false
+        hist.parse(ps, mtime)
       else:
         ps.sclose()
     else:
