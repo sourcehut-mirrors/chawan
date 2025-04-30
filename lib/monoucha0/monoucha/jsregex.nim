@@ -38,13 +38,12 @@ proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
       errorMsg.setLen(i)
     return err(errorMsg)
   assert plen > 0
-  var bcseq = newSeqUninitialized[uint8](plen)
-  copyMem(addr bcseq[0], bytecode, plen)
-  dealloc(bytecode)
-  var regex = Regex(bytecode: bcseq)
+  var regex = Regex(bytecode: newSeq[uint8](plen))
   when defined(debug):
     regex.buf = buf
-  return ok(regex)
+  copyMem(addr regex.bytecode[0], bytecode, plen)
+  dealloc(bytecode)
+  return ok(move(regex))
 
 proc exec*(regex: Regex; str: string; start = 0; length = -1; nocaps = false):
     RegexResult =
