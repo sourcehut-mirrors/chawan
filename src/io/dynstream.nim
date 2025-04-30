@@ -341,7 +341,7 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
   var iov = IOVec(iov_base: unsafeAddr buffer[0], iov_len: csize_t(buffer.len))
   let fdSize = sizeof(cint) * fds.len
   let controlLen = CMSG_SPACE(csize_t(fdSize))
-  var cmsgBuf = newSeqUninitialized[uint8](controlLen)
+  var cmsgBuf = newSeqUninit[uint8](controlLen)
   var hdr = Tmsghdr(
     msg_iov: addr iov,
     msg_iovlen: 1,
@@ -362,7 +362,7 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
   var iov = IOVec(iov_base: addr buffer[0], iov_len: csize_t(buffer.len))
   let fdbufSize = sizeof(cint) * fdbuf.len
   let controlLen = CMSG_SPACE(csize_t(fdbufSize))
-  var cmsgBuf = newSeqUninitialized[uint8](controlLen)
+  var cmsgBuf = newSeqUninit[uint8](controlLen)
   var hdr = Tmsghdr(
     msg_iov: addr iov,
     msg_iovlen: 1,

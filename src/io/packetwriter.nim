@@ -41,7 +41,7 @@ const InitLen = sizeof(int) * 2
 const SizeInit = max(64, InitLen)
 proc initPacketWriter*(): PacketWriter =
   return PacketWriter(
-    buffer: newSeqUninitialized[uint8](SizeInit),
+    buffer: newSeqUninit[uint8](SizeInit),
     bufLen: InitLen
   )
 

@@ -118,7 +118,7 @@ proc newIdentityMatrix*(n: int): Matrix =
 
 proc newMatrixUninitialized(w, h: int): Matrix =
   return Matrix(
-    me: newSeqUninitialized[float64](w * h),
+    me: newSeqUninit[float64](w * h),
     w: w,
     h: h
   )

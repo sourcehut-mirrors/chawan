@@ -75,7 +75,7 @@ proc loadUnifont(unifont: string): Bitmap =
     cint(unifont.len), addr width, addr height, addr comp, 4)
   let len = width * height
   let bitmap = Bitmap(
-    px: cast[seq[RGBAColorBE]](newSeqUninitialized[uint32](len)),
+    px: cast[seq[RGBAColorBE]](newSeqUninit[uint32](len)),
     width: int(width),
     height: int(height)
   )

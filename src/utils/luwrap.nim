@@ -20,7 +20,7 @@ proc normalize*(rs: seq[uint32]; form = UNICODE_NFC): seq[uint32] =
       raise newException(Defect, "Unicode normalization failed")
     if out_len == 0:
       return
-    var rs = newSeqUninitialized[uint32](out_len)
+    var rs = newSeqUninit[uint32](out_len)
     copyMem(addr rs[0], outbuf, out_len * sizeof(uint32))
     dealloc(outbuf)
     return rs

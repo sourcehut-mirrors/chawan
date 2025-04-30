@@ -222,7 +222,7 @@ template isEmpty(output: OutputHandle): bool =
   output.currentBuffer == nil and not output.suspended
 
 proc newLoaderBuffer(size = LoaderBufferPageSize): LoaderBuffer =
-  return LoaderBuffer(page: newSeqUninitialized[uint8](size))
+  return LoaderBuffer(page: newSeqUninit[uint8](size))
 
 proc newLoaderBuffer(s: openArray[char]): LoaderBuffer =
   let buffer = newLoaderBuffer(s.len)

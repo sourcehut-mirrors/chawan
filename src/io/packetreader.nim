@@ -29,8 +29,8 @@ proc sread*(r: var PacketReader; c: var CellColor)
 proc initReader*(stream: DynStream; len, nfds: int): PacketReader =
   assert len != 0 or nfds != 0
   var r = PacketReader(
-    buffer: newSeqUninitialized[uint8](len),
-    fds: newSeqUninitialized[cint](nfds),
+    buffer: newSeqUninit[uint8](len),
+    fds: newSeqUninit[cint](nfds),
     bufIdx: 0
   )
   if not stream.readDataLoop(r.buffer):
