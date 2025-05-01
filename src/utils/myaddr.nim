@@ -19,5 +19,5 @@ template addr(x: var auto): auto {.used.} =
   system.addr x
 
 when not declared(newSeqUninit):
-  template newSeqUninit[T](len: int): seq[T] =
+  template newSeqUninit[T](len: typed): seq[T] {.used.} =
     newSeqUninitialized[T](len)
