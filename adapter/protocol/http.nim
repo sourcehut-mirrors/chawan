@@ -67,8 +67,8 @@ proc tinfl_decompress(r: var tinfl_decompressor; pIn_buf_next: ptr uint8;
 const InputBufferSize = 16384
 
 # libbrotli bindings
-const libbrotlidec = staticExec("pkg-config --libs libbrotlidec")
-const libbrotlidecCflags = staticExec("pkg-config --cflags libbrotlidec")
+const libbrotlidec = staticExec("pkg-config --libs libbrotlidec libbrotlicommon")
+const libbrotlidecCflags = staticExec("pkg-config --cflags libbrotlidec libbrotlicommon")
 
 {.passl: libbrotlidec.}
 {.passc: libbrotlidecCflags.}
@@ -419,7 +419,7 @@ proc checkCert(os: PosixStream; ssl: ptr SSL) =
     let s = X509_verify_cert_error_string(res)
     os.die("InvalidResponse", $s)
 
-proc main() =
+proc main*() =
   let secure = getEnv("MAPPED_URI_SCHEME") == "https"
   let username = getEnv("MAPPED_URI_USERNAME")
   let password = getEnv("MAPPED_URI_PASSWORD")
@@ -473,4 +473,5 @@ proc main() =
         m += k
   op.ps.sclose()
 
-main()
+when not defined(staticLink):
+  main()

@@ -53,9 +53,15 @@ else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
+protocols = file ftp gopher finger man spartan chabookmark \
+	stbi jebp sixel canvas resize nanosvg http gemini sftp
+converters = gopher2html md2html ansi2html gmi2html dirlist2html uri2html img2html
+tools = urlenc nc
+
 ifeq ($(STATIC_LINK),1)
 FLAGS += -d:staticLink=$(STATIC_LINK)
 LDFLAGS += -static
+protocols += ssl
 endif
 
 ifneq ($(CFLAGS),)
@@ -67,20 +73,14 @@ endif
 
 export CC CFLAGS LDFLAGS
 
+binaries = $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha
+binaries += $(foreach bin,$(protocols),$(OUTDIR_CGI_BIN)/$(bin))
+binaries += $(foreach bin,$(converters),$(OUTDIR_LIBEXEC)/$(bin))
+binaries += $(foreach bin,$(tools),$(OUTDIR_LIBEXEC)/$(bin))
+binaries += $(OUTDIR_LIBEXEC)/urldec
+
 .PHONY: all
-all: $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha $(OUTDIR_CGI_BIN)/http \
-	$(OUTDIR_CGI_BIN)/gemini $(OUTDIR_LIBEXEC)/gmi2html \
-	$(OUTDIR_CGI_BIN)/gopher $(OUTDIR_LIBEXEC)/gopher2html \
-	$(OUTDIR_CGI_BIN)/finger \
-	$(OUTDIR_CGI_BIN)/file $(OUTDIR_CGI_BIN)/ftp $(OUTDIR_CGI_BIN)/sftp \
-	$(OUTDIR_LIBEXEC)/dirlist2html $(OUTDIR_LIBEXEC)/uri2html \
-	$(OUTDIR_LIBEXEC)/img2html \
-	$(OUTDIR_CGI_BIN)/man $(OUTDIR_CGI_BIN)/spartan \
-	$(OUTDIR_CGI_BIN)/stbi $(OUTDIR_CGI_BIN)/jebp $(OUTDIR_CGI_BIN)/canvas \
-	$(OUTDIR_CGI_BIN)/nanosvg $(OUTDIR_CGI_BIN)/sixel $(OUTDIR_CGI_BIN)/resize \
-	$(OUTDIR_CGI_BIN)/chabookmark \
-	$(OUTDIR_LIBEXEC)/urldec $(OUTDIR_LIBEXEC)/urlenc $(OUTDIR_LIBEXEC)/nc \
-	$(OUTDIR_LIBEXEC)/md2html $(OUTDIR_LIBEXEC)/ansi2html
+all: $(binaries)
 	ln -sf "$(OUTDIR)/$(TARGET)/bin/cha" cha
 
 ifeq ($(shell uname), Linux)
@@ -126,13 +126,15 @@ dynstream = src/io/dynstream.nim
 lcgi = $(dynstream) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)
+tinfl = adapter/protocol/tinfl.h
 
 $(OUTDIR_CGI_BIN)/man: $(twtstr)
-$(OUTDIR_CGI_BIN)/http: $(sandbox) $(lcgi_ssl) adapter/protocol/tinfl.h
+$(OUTDIR_CGI_BIN)/http: $(sandbox) $(lcgi_ssl) $(tinfl)
 $(OUTDIR_CGI_BIN)/file: $(twtstr)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
 $(OUTDIR_CGI_BIN)/sftp: $(lcgi) $(twtstr)
 $(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
+$(OUTDIR_CGI_BIN)/ssl: $(lcgi_ssl) $(sandbox) $(tinfl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.h \
 	adapter/img/stb_image_write.h $(sandbox) $(dynstream)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.h $(sandbox)
@@ -168,6 +170,15 @@ $(OUTDIR_CGI_BIN)/%: adapter/img/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
                 -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) -o:"$@" $<
+
+ifeq ($(STATIC_LINK),1)
+$(OUTDIR_CGI_BIN)/http: $(OUTDIR_CGI_BIN)/ssl
+	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl http)
+$(OUTDIR_CGI_BIN)/gemini: $(OUTDIR_CGI_BIN)/ssl
+	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl gemini)
+$(OUTDIR_CGI_BIN)/sftp: $(OUTDIR_CGI_BIN)/ssl
+	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl sftp)
+endif
 
 $(OUTDIR_LIBEXEC)/%: adapter/format/%.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
@@ -211,11 +222,6 @@ manpages = $(manpages1) $(manpages5) $(manpages7)
 .PHONY: manpage
 manpage: $(manpages:%=doc/%)
 
-protocols = http file ftp sftp gopher gemini finger man spartan stbi \
-	jebp sixel canvas resize chabookmark nanosvg
-converters = gopher2html md2html ansi2html gmi2html dirlist2html uri2html img2html
-tools = urlenc nc
-
 .PHONY: install
 install:
 	mkdir -p "$(DESTDIR)$(PREFIX)/bin"
@@ -244,16 +250,24 @@ uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/mancha"
 # intentionally not quoted
 	for f in $(protocols); do rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/$$f; done
-# notes:
+# We only want to uninstall binaries that the main distribution
+# includes or has ever included, but not those that the user might have
+# added.  However, some of these cannot be directly derived from our
+# variables:
 # * png has been removed in favor of stbi
 # * data, about have been moved back into the main binary
 # * gmifetch has been replaced by gemini
 # * cha-finger has been renamed to finger
+# * ssl is an alias for http, gemini, sftp in static builds
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/about
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/http
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gemini
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/sftp
+	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/ssl
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 # urldec is just a symlink to urlenc

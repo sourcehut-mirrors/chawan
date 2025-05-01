@@ -257,7 +257,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
   else:
     os.die("InvalidResponse", "Wrong status code")
 
-proc main() =
+proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
   let host = getEnv("MAPPED_URI_HOST")
   var (knownHosts, knownHostsPath) = os.openKnownHosts()
@@ -344,4 +344,5 @@ Update it?
 """)
   closeSSLSocket(ssl)
 
-main()
+when not defined(staticLink):
+  main()

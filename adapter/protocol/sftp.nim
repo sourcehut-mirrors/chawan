@@ -385,7 +385,7 @@ please remove this host from """ & hostsPath & ".")
     quit(1)
   hosts.libssh2_knownhost_free()
 
-proc main() =
+proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
   if getEnv("REQUEST_METHOD") != "GET":
     os.die("InvalidMethod")
@@ -418,4 +418,5 @@ proc main() =
   discard session.libssh2_session_free()
   libssh2_exit()
 
-main()
+when not defined(staticLink):
+  main()
