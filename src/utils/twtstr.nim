@@ -333,17 +333,23 @@ func parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
     inc i
   var fail = i == s.len # fail on empty input
   var integer: T = 0
+  let radix = uint(radix)
   for i in i ..< s.len:
-    let u = T(hexValue(s[i]))
-    let n = integer * radix + u
-    fail = fail or u >= radix or n < integer # overflow check
-    integer = n
+    let u = uint(hexValue(s[i]))
+    let n = uint(integer) * radix + u
+    integer = T(n)
+    fail = fail or u >= radix or n != uint(integer) # overflow check
   if fail:
     return none(T) # invalid or overflow
   return some(integer)
 
 func parseUInt8*(s: openArray[char]; allowSign = false): Option[uint8] =
   return parseUIntImpl[uint8](s, allowSign, 10)
+
+func parseUInt8NoLeadingZero*(s: openArray[char]): Option[uint8] =
+  if s.len > 1 and s[0] == '0':
+    return none(uint8)
+  return parseUInt8(s)
 
 func parseUInt16*(s: openArray[char]; allowSign = false): Option[uint16] =
   return parseUIntImpl[uint16](s, allowSign, 10)

@@ -105,91 +105,65 @@ func findSpecialPort(scheme: string): int32 =
     {.linearScanEnd.}
     return -1
 
-func parseIpv6(input: openArray[char]): Option[array[8, uint16]] =
-  var pieceindex = 0
+func parseIpv6(input: openArray[char]): string =
+  var pieceIndex = 0
   var compress = -1
-  var pointer = 0
+  var i = 0
   var address = array[8, uint16].default
-
-  template c(i = 0): char = input[pointer + i]
-  template has(i = 0): bool = (pointer + i < input.len)
-  template failure(): Option[array[8, uint16]] = none(array[8, uint16])
-  if c == ':':
-    if not has(1) or c(1) != ':':
-      return failure
-    pointer += 2
-    inc pieceindex
-    compress = pieceindex
-  while has:
-    if pieceindex == 8:
-      return failure
-    if c == ':':
+  if input[i] == ':':
+    if i + 1 >= input.len or input[i + 1] != ':':
+      return ""
+    i += 2
+    inc pieceIndex
+    compress = pieceIndex
+  while i < input.len:
+    if pieceIndex == 8:
+      return ""
+    if input[i] == ':':
       if compress != -1:
-        return failure
-      inc pointer
-      inc pieceindex
-      compress = pieceindex
+        return ""
+      inc i
+      inc pieceIndex
+      compress = pieceIndex
       continue
     var value: uint16 = 0
-    var length = 0
-    while length < 4 and has and c in AsciiHexDigit:
-      value = value * 0x10 + uint16(c.hexValue)
-      inc pointer
-      inc length
-    if has and c == '.':
-      if length == 0:
-        return failure
-      pointer -= length
-      if pieceindex > 6:
-        return failure
-      var numbersseen = 0
-      while has:
-        var ipv4piece = -1
-        if numbersseen > 0:
-          if c == '.' and numbersseen < 4:
-            inc pointer
-          else:
-            return failure
-        if not has or c notin AsciiDigit:
-          return failure
-        while has and c in AsciiDigit:
-          if ipv4piece == -1:
-            ipv4piece = c.decValue
-          elif ipv4piece == 0:
-            return failure
-          else:
-            ipv4piece = ipv4piece * 10 + c.decValue
-          if ipv4piece > 255:
-            return failure
-          inc pointer
-        address[pieceindex] = address[pieceindex] * 0x100 + uint16(ipv4piece)
-        inc numbersseen
-        if numbersseen == 2 or numbersseen == 4:
-          inc pieceindex
-      if numbersseen != 4:
-        return failure
+    let L = min(i + 4, input.len)
+    let oi = i
+    while i < L and (let n = hexValue(input[i]); n != -1):
+      value = value * 0x10 + uint16(n)
+      inc i
+    if i < input.len and input[i] == '.' and pieceIndex <= 6: # dual address
+      i = oi
+      for j in 0 ..< 4:
+        var e = input.len
+        if j < 3: # find ipv4 separator
+          e = i + input.toOpenArray(i, input.high).find('.')
+          if e < i: # not found
+            return ""
+        let x = parseUInt8NoLeadingZero(input.toOpenArray(i, e - 1))
+        if x.isNone:
+          return ""
+        address[pieceIndex] = address[pieceIndex] * 0x100 + uint16(x.get)
+        if j == 1 or j == 3:
+          inc pieceIndex
+        i = e + 1
       break
-    elif has:
-      if c == ':':
-        inc pointer
-        if not has:
-          return failure
-      else:
-        return failure
-    address[pieceindex] = value
-    inc pieceindex
+    elif i < input.len:
+      if input[i] != ':' or i + 1 >= input.len:
+        return ""
+      inc i
+    address[pieceIndex] = value
+    inc pieceIndex
   if compress != -1:
-    var swaps = pieceindex - compress
-    pieceindex = 7
-    while pieceindex != 0 and swaps > 0:
-      let sp = address[pieceindex]
-      address[pieceindex] = address[compress + swaps - 1]
-      address[compress + swaps - 1] = sp
-      dec pieceindex
+    var swaps = pieceIndex - compress
+    pieceIndex = 7
+    while pieceIndex > 0 and swaps > 0:
+      swap(address[pieceIndex], address[compress + swaps - 1])
+      dec pieceIndex
       dec swaps
-  elif pieceindex != 8:
-    return failure
-  return address.some
+  elif pieceIndex != 8:
+    return ""
+  return address.serializeip()
 
 func parseIpv4Number(s: string): uint32 =
   var input = s
@@ -375,16 +349,11 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
       return "" #error
   return labels
 
-proc domainToAscii(domain: string; bestrict = false): string =
-  var needsprocessing = false
-  for s in domain.split('.'):
-    if s.startsWith("xn--") or AllChars - Ascii in s:
-      needsprocessing = true
-      break
-  if bestrict or needsprocessing:
-    # Note: we don't implement STD3 separately, it's always true
-    return domain.unicodeToAscii(bestrict)
-  return domain.toLowerAscii()
+proc domainToAscii(domain: string; beStrict: bool): string =
+  result = domain.toLowerAscii()
+  if beStrict or result.startsWith("xn--") or result.find(".xn--") != -1 or
+      AllChars - Ascii in result:
+    result = domain.unicodeToAscii(beStrict)
 
 proc parseHost*(input: string; special: bool; hostType: var HostType): string =
   if input.len == 0:
@@ -393,18 +362,15 @@ proc parseHost*(input: string; special: bool; hostType: var HostType): string =
     if input[^1] != ']' or input.len < 3:
       return ""
     let ipv6 = parseIpv6(input.toOpenArray(1, input.high - 1))
-    if ipv6.isNone:
-      hostType = htNone
-      return ""
-    hostType = htIpv6
-    return ipv6.get.serializeip()
+    if ipv6 != "":
+      hostType = htIpv6
+    return ipv6
   if not special:
     hostType = htOpaque
     return opaqueParseHost(input)
   let domain = percentDecode(input)
-  let asciiDomain = domain.domainToAscii()
+  let asciiDomain = domain.domainToAscii(beStrict = false)
   if asciiDomain == "" or ForbiddenDomainChars in asciiDomain:
-    hostType = htNone
     return ""
   if asciiDomain.endsInNumber():
     let ipv4 = parseIpv4(asciiDomain)
@@ -629,7 +595,7 @@ proc parseFileHost(input: openArray[char]; pointer: var int; isSpecial: bool;
     url.hostType = htDomain
     url.hostname = ""
   else:
-    var t: HostType
+    var t = htNone
     let hostname = parseHost(buffer, isSpecial, t)
     if hostname == "":
       return usFail
@@ -652,7 +618,7 @@ proc parseHostState(input: openArray[char]; pointer: var int; isSpecial: bool;
     if c == ':' and not insideBrackets:
       if override and state == usHostname:
         return usFail
-      var t: HostType
+      var t = htNone
       let hostname = parseHost(buffer, isSpecial, t)
       if hostname == "":
         return usFail
@@ -673,7 +639,7 @@ proc parseHostState(input: openArray[char]; pointer: var int; isSpecial: bool;
     return usFail
   if override and buffer == "" and (url.includesCredentials or url.port.isSome):
     return usFail
-  var t: HostType
+  var t = htNone
   let hostname = parseHost(buffer, isSpecial, t)
   if hostname == "":
     return usFail
@@ -788,15 +754,17 @@ proc parsePathStart(input: openArray[char]; pointer: var int; isSpecial: bool;
     inc pointer
   return usDone
 
+func isSingleDotPathSegment(s: string): bool =
+  s == "." or s.equalsIgnoreCase("%2e")
+
+func isDoubleDotPathSegment(s: string): bool =
+  s == ".." or s.equalsIgnoreCase(".%2e") or s.equalsIgnoreCase("%2e.") or
+    s.equalsIgnoreCase("%2e%2e")
+
 proc parsePath(input: openArray[char]; pointer: var int; isSpecial: bool;
     url: URL; override: bool): URLState =
   var state = usPath
   var buffer = ""
-  template is_single_dot_path_segment(s: string): bool =
-    s == "." or s.equalsIgnoreCase("%2e")
-  template is_double_dot_path_segment(s: string): bool =
-    s == ".." or s.equalsIgnoreCase(".%2e") or s.equalsIgnoreCase("%2e.") or
-      s.equalsIgnoreCase("%2e%2e")
   while pointer < input.len:
     let c = input[pointer]
     if c == '/' or isSpecial and c == '\\' or not override and c in {'?', '#'}:
@@ -811,13 +779,13 @@ proc parsePath(input: openArray[char]; pointer: var int; isSpecial: bool;
         inc pointer
         break
       let slashCond = c != '/' and (not isSpecial or c != '\\')
-      if buffer.is_double_dot_path_segment:
+      if buffer.isDoubleDotPathSegment():
         url.shortenPath()
         if slashCond:
           url.pathname &= '/'
-      elif buffer.is_single_dot_path_segment and slashCond:
+      elif buffer.isSingleDotPathSegment() and slashCond:
         url.pathname &= '/'
-      elif not buffer.is_single_dot_path_segment:
+      elif not buffer.isSingleDotPathSegment():
         if url.scheme == "file" and url.pathname == "" and
             buffer.isWinDriveLetter():
           buffer[1] = ':'
@@ -829,13 +797,13 @@ proc parsePath(input: openArray[char]; pointer: var int; isSpecial: bool;
     inc pointer
   let slashCond = pointer >= input.len or input[pointer] != '/' and
     (not isSpecial or input[pointer] != '\\')
-  if buffer.is_double_dot_path_segment:
+  if buffer.isDoubleDotPathSegment():
     url.shortenPath()
     if slashCond:
       url.pathname &= '/'
-  elif buffer.is_single_dot_path_segment and slashCond:
+  elif buffer.isSingleDotPathSegment() and slashCond:
     url.pathname &= '/'
-  elif not buffer.is_single_dot_path_segment:
+  elif not buffer.isSingleDotPathSegment():
     if url.scheme == "file" and url.pathname == "" and
         buffer.isWinDriveLetter():
       buffer[1] = ':'

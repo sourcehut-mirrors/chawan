@@ -35,7 +35,34 @@ assertEquals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://ex
 assertEquals(new URL("https://テスト") + "", "https://xn--zckzah/");
 assertEquals(new URL("https://xn--zckzah") + "", "https://xn--zckzah/");
 assertEquals(new URL("file:/test") + "", "file:///test");
+assertEquals(new URL("https://[ffff::127.0.0.1]") + "", "https://[ffff::7f00:1]/");
 assertThrows('new URL("https://[]")', TypeError);
+/* from the spec */
+assertThrows('new URL("https://exa%23mple.org")', TypeError);
+assertThrows('new URL("foo://exa[mple.org")', TypeError);
+assertThrows('new URL("https://1.2.3.4.5/")', TypeError);
+assertThrows('new URL("https://test.42")', TypeError);
+assertThrows('new URL("https://255.255.4000.1")', TypeError);
+assertThrows('new URL("https://[::1")', TypeError);
+assertThrows('new URL("https://[:1]")', TypeError);
+assertThrows('new URL("https://[1:2:3:4:5:6:7:8:9]")', TypeError);
+assertThrows('new URL("https://[1::1::1]")', TypeError);
+assertThrows('new URL("https://[1:2:3!:4]")', TypeError);
+assertThrows('new URL("https://[1:2:3:]")', TypeError);
+assertThrows('new URL("https://[1:2:3]")', TypeError);
+assertThrows('new URL("https://[1:1:1:1:1:1:1:127.0.0.1]")', TypeError);
+assertThrows('new URL("https://[ffff::.0.0.1]")', TypeError);
+assertThrows('new URL("https://[ffff::127.0.xyz.1]")', TypeError);
+assertThrows('new URL("https://[ffff::127.0xyz]")', TypeError);
+assertThrows('new URL("https://[ffff::127.00.0.1]")', TypeError);
+assertThrows('new URL("https://[ffff::127.0.0.1.2]")', TypeError);
+assertThrows('new URL("https://[ffff::127.0.0.4000]")', TypeError);
+assertThrows('new URL("https://[ffff::127.0.0]")', TypeError);
+assertThrows('new URL("https://#fragment")', TypeError);
+assertThrows('new URL("https://:443")', TypeError);
+assertThrows('new URL("https://user:pass@")', TypeError);
+assertThrows('new URL("https://example.org:70000")', TypeError);
+assertThrows('new URL("https://example.org:7z")', TypeError);
 {
 	const x = new URL("file:/test");
 	x.protocol = "abcd";
