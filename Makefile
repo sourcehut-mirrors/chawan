@@ -237,6 +237,11 @@ install:
 	done
 # urldec is just a symlink to urlenc
 	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc urldec)
+ifeq ($(STATIC_LINK),1)
+	(cd $(LIBEXECDIR_CHAWAN/cgi-bin) && ln -sf ssl http)
+	(cd $(LIBEXECDIR_CHAWAN/cgi-bin) && ln -sf ssl gemini)
+	(cd $(LIBEXECDIR_CHAWAN/cgi-bin) && ln -sf ssl sftp)
+endif
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"
 	for f in $(manpages1); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX1)"; done
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
