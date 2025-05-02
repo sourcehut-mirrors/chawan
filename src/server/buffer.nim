@@ -690,12 +690,6 @@ proc gotoAnchor*(buffer: Buffer; anchor: string; autofocus, target: bool):
   let y = max(offset.y div buffer.attrs.ppl, 0).toInt
   return GotoAnchorResult(found: true, x: x, y: y, focus: focus)
 
-type CheckRefreshResult* = object
-  # n is timeout in millis. -1 => not found
-  n*: int
-  # url == nil => self
-  url*: URL
-
 proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
   if buffer.navigateUrl != nil:
     let url = buffer.navigateUrl
@@ -706,39 +700,7 @@ proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
   let element = buffer.document.findMetaRefresh()
   if element == nil:
     return CheckRefreshResult(n: -1)
-  let s = element.attr(satContent)
-  var i = s.skipBlanks(0)
-  let s0 = s.until(AllChars - AsciiDigit, i)
-  let x = parseUInt32(s0, allowSign = false)
-  if s0 != "":
-    if x.isNone and (i >= s.len or s[i] != '.'):
-      return CheckRefreshResult(n: -1)
-  var n = int(x.get(0) * 1000)
-  i = s.skipBlanks(i + s0.len)
-  if i < s.len and s[i] == '.':
-    inc i
-    let s1 = s.until(AllChars - AsciiDigit, i)
-    if s1 != "":
-      n += int(parseUInt32(s1, allowSign = false).get(0))
-      i = s.skipBlanks(i + s1.len)
-  if i >= s.len: # just reload this page
-    return CheckRefreshResult(n: n)
-  if s[i] notin {',', ';'}:
-    return CheckRefreshResult(n: -1)
-  i = s.skipBlanks(i + 1)
-  if s.toOpenArray(i, s.high).startsWithIgnoreCase("url="):
-    i = s.skipBlanks(i + "url=".len)
-  var q = false
-  if i < s.len and s[i] in {'"', '\''}:
-    q = true
-    inc i
-  var s2 = s.substr(i)
-  if q and s2.len > 0 and s[^1] in {'"', '\''}:
-    s2.setLen(s2.high)
-  let url = buffer.document.parseURL(s2)
-  if url.isNone:
-    return CheckRefreshResult(n: -1)
-  return CheckRefreshResult(n: n, url: url.get)
+  return parseRefresh(element.attr(satContent), buffer.url)
 
 proc hasTask(buffer: Buffer; cmd: BufferCommand): bool =
   return buffer.tasks[cmd] != 0

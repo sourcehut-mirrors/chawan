@@ -188,6 +188,7 @@ type
     cachedImages*: seq[CachedImage]
     luctx: LUContext
     redraw*: bool
+    refreshHeader: string
 
 jsDestructor(Highlight)
 jsDestructor(Container)
@@ -1521,14 +1522,23 @@ proc onload(container: Container; res: int) =
               container.onReadLine(res.focus)
         )
     if container.config.metaRefresh != mrNever:
-      container.iface.checkRefresh().then(proc(res: CheckRefreshResult) =
-        if res.n >= 0:
-          container.triggerEvent(ContainerEvent(
-            t: cetMetaRefresh,
-            refreshIn: res.n,
-            refreshURL: if res.url != nil: res.url else: container.url
-          ))
-      )
+      let res = parseRefresh(container.refreshHeader, container.url)
+      container.refreshHeader = ""
+      if res.n != -1:
+        container.triggerEvent(ContainerEvent(
+          t: cetMetaRefresh,
+          refreshIn: res.n,
+          refreshURL: if res.url != nil: res.url else: container.url
+        ))
+      else:
+        container.iface.checkRefresh().then(proc(res: CheckRefreshResult) =
+          if res.n >= 0:
+            container.triggerEvent(ContainerEvent(
+              t: cetMetaRefresh,
+              refreshIn: res.n,
+              refreshURL: if res.url != nil: res.url else: container.url
+            ))
+        )
   else:
     container.setLoadInfo(convertSize(res) & " loaded")
     discard container.iface.load().then(proc(res: int) =
@@ -1575,6 +1585,7 @@ proc applyResponse*(container: Container; response: Response;
     if container.charsetStack.len == 0:
       container.charsetStack.add(DefaultCharset)
   container.charset = container.charsetStack[^1]
+  container.refreshHeader = response.headers.getOrDefault("Refresh")
 
 proc remoteCancel*(container: Container) =
   if container.iface != nil:
