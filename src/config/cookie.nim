@@ -147,12 +147,12 @@ func cookiePathMatches(cookiePath, requestPath: string): bool =
 func cookieDomainMatches(cookieDomain: string; url: URL): bool =
   if cookieDomain.len == 0:
     return false
-  let host = url.host
   if url.isIP():
-    return host == cookieDomain
-  if host.endsWith(cookieDomain) and host.len >= cookieDomain.len:
-    return host.len == cookieDomain.len or
-      host[host.len - cookieDomain.len - 1] == '.'
+    return url.hostname == cookieDomain
+  if url.hostname.endsWith(cookieDomain) and
+      url.hostname.len >= cookieDomain.len:
+    return url.hostname.len == cookieDomain.len or
+      url.hostname[url.hostname.len - cookieDomain.len - 1] == '.'
   return false
 
 proc add(cookieJar: CookieJar; cookie: Cookie; parseMode = false,
@@ -187,7 +187,7 @@ proc serialize*(cookieJar: CookieJar; url: URL): string =
       continue
     if not cookiePathMatches(cookie.path, url.pathname):
       continue
-    if cookie.hostOnly and cookie.domain != url.host:
+    if cookie.hostOnly and cookie.domain != url.hostname:
       continue
     if not cookie.hostOnly and not cookieDomainMatches(cookie.domain, url):
       continue
@@ -251,7 +251,7 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist: bool):
         cookie.domain = move(domain)
         cookie.hostOnly = false
   if cookie.hostOnly:
-    cookie.domain = url.host
+    cookie.domain = url.hostname
   if not hasPath:
     cookie.path = defaultCookiePath(url)
   if cookie.expires < 0:
