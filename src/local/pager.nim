@@ -1589,6 +1589,8 @@ proc replace(pager: Pager; target, container: Container) =
     assert n != -1, "Container not a child of its parent"
     container.parent.children[n] = container
     target.parent = nil
+  if pager.downloads == target:
+    pager.downloads = container
   if pager.container == target:
     pager.setContainer(container)
 
