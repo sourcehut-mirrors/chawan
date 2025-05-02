@@ -2205,7 +2205,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
       pager.container.popCursorPos(true)
       pager.container.pushCursorPos()
       if pager.iregex.isSome:
-        pager.container.hlon = true
+        pager.container.flags.incl(cfHighlight)
         let wrap = pager.config.search.wrap
         return if linemode == lmISearchF:
           pager.container.cursorNextMatch(pager.iregex.get, wrap, false, 1)
@@ -3195,7 +3195,7 @@ proc runCommand(pager: Pager) =
     pager.command0(pager.scommand)
     let container = pager.consoleWrapper.container
     if container != nil:
-      container.tailOnLoad = true
+      container.flags.incl(cfTailOnLoad)
     pager.scommand = ""
     pager.handleEvents()
 
@@ -3330,7 +3330,7 @@ proc inputLoop(pager: Pager) =
     if pager.timeouts.run(pager.console):
       let container = pager.consoleWrapper.container
       if container != nil:
-        container.tailOnLoad = true
+        container.flags.incl(cfTailOnLoad)
     pager.loader.unblockRegister()
     pager.loader.unregistered.setLen(0)
     pager.runJSJobs()

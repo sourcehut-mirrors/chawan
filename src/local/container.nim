@@ -97,7 +97,7 @@ type
 
   ContainerFlag* = enum
     cfCloned, cfUserRequested, cfHasStart, cfCanReinterpret, cfSave, cfIsHTML,
-    cfHistory
+    cfHistory, cfHighlight, cfTailOnLoad
 
   CachedImageState* = enum
     cisLoading, cisCanceled, cisLoaded
@@ -128,9 +128,6 @@ type
     # note: this is not the same as source.request.url (but should be synced
     # with buffer.url)
     url* {.jsget.}: URL
-    #TODO this is inaccurate, because charsetStack can desync
-    charset*: Charset
-    charsetStack*: seq[Charset]
     # note: this is *not* the same as Buffer.cacheId. buffer has the cache ID of
     # the output, while container holds that of the input. Thus pager can
     # re-interpret the original input, and buffer can rewind the (potentially
@@ -145,7 +142,6 @@ type
     height {.jsget.}: int
     title: string # used in status msg
     hoverText: array[HoverType, string]
-    lastPeek: HoverType
     request*: Request # source request
     # if set, this *overrides* any content type received from the network. (this
     # is because it stores the content type from the -T flag.)
@@ -166,9 +162,7 @@ type
     #TODO this is a mess :(
     replaceRef*: Container
     retry*: seq[URL]
-    hlon*: bool # highlight on?
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
-    needslines: bool
     loadState*: LoadState
     event: ContainerEvent
     lastEvent: ContainerEvent
@@ -181,13 +175,17 @@ type
     marks: Table[string, PagePos]
     filter*: BufferFilter
     bgcolor*: CellColor
-    tailOnLoad*: bool
-    mainConfig: Config
+    redraw*: bool
+    needslines: bool
+    lastPeek: HoverType
     flags*: set[ContainerFlag]
+    #TODO this is inaccurate, because charsetStack can desync
+    charset*: Charset
+    charsetStack*: seq[Charset]
+    mainConfig: Config
     images*: seq[PosBitmap]
     cachedImages*: seq[CachedImage]
     luctx: LUContext
-    redraw*: bool
     refreshHeader: string
 
 jsDestructor(Highlight)
@@ -540,8 +538,8 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
         container.triggerEvent(cetStatus)
     if res.numLines > 0:
       container.updateCursor()
-      if container.tailOnLoad:
-        container.tailOnLoad = false
+      if cfTailOnLoad in container.flags:
+        container.flags.excl(cfTailOnLoad)
         container.cursorLastLine()
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
@@ -1343,7 +1341,7 @@ proc clearSearchHighlights*(container: Container) =
 proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
   if res.success:
     container.setCursorXYCenter(res.x, res.y, refresh)
-    if container.hlon:
+    if cfHighlight in container.flags:
       container.clearSearchHighlights()
       let ex = res.x + res.str.width() - 1
       let hl = Highlight(
@@ -1355,11 +1353,11 @@ proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
       )
       container.highlights.add(hl)
       container.queueDraw()
-      container.hlon = false
-  elif container.hlon:
+      container.flags.excl(cfHighlight)
+  elif cfHighlight in container.flags:
     container.clearSearchHighlights()
     container.queueDraw()
-    container.hlon = false
+    container.flags.excl(cfHighlight)
 
 proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
     n: int): EmptyPromise {.discardable.} =
