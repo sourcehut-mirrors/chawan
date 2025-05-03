@@ -3,11 +3,11 @@
 .TH "cha\-protocols" "7" "" "" "Protocol support in Chawan"
 .SH Protocols
 Chawan supports downloading resources from various protocols: HTTP, FTP,
-Gopher, Gemini, and Finger.
+SFTP, Gopher, Gemini, Spartan, and Finger.
 Details on these protocols, and information on how users can add support
 to their preferred protocols is outlined in this document.
 .PP
-In general, you can find network adapters in the
+You can find network adapters in the source distribution\[cq]s
 \f[CR]adapter/protocol\f[R] directory.
 For protocol\-specific file formats (like gemtext or gopher directories)
 you will also find an appropriate HTML converter in
@@ -19,9 +19,12 @@ use passed userinfo data, and returns all headers and response body it
 receives without exception.
 .PP
 Deflate decompression with gzip and zlib headers is supported.
-(Content\-Type: gzip, deflate.)
+(Accept\-Encoding: gzip, deflate.)
 This is based on a modified version of the public domain tinfl.h
 decompressor by Rich Geldreich.
+.PP
+Brotli decompression (Accept\-Encoding: br) is supported using the
+decoder provided by the reference implementation.
 .PP
 The \f[CR]bonus\f[R] directory contains two alternative HTTP clients:
 .IP \[bu] 2

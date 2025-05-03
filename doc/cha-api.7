@@ -69,6 +69,7 @@ T}@T{
 Exit the browser.
 T}@T{
 T}
+_
 T{
 \f[CR]suspend()\f[R]
 T}@T{
@@ -77,6 +78,7 @@ SIGTSTP signal.
 Note: this suspends the entire process group.
 T}@T{
 T}
+_
 T{
 \f[CR]readFile(path)\f[R]
 T}@T{
@@ -85,6 +87,7 @@ Returns the file\[cq]s content as a string, or null if the file does not
 exist.
 T}@T{
 T}
+_
 T{
 \f[CR]writeFile(path, content)\f[R]
 T}@T{
@@ -92,6 +95,7 @@ Write \f[CR]content\f[R] to the file at \f[CR]path\f[R].
 Throws a TypeError if this failed for whatever reason.
 T}@T{
 T}
+_
 T{
 \f[CR]getenv(name, fallback = null)\f[R]
 T}@T{
@@ -99,6 +103,7 @@ Get an environment variable by \f[CR]name\f[R].
 Returns \f[CR]fallback\f[R] if the variable does not exist.
 T}@T{
 T}
+_
 T{
 \f[CR]setenv(name, value)\f[R]
 T}@T{
@@ -107,6 +112,7 @@ Throws a type error if the operation failed (e.g.\ because the
 variable\[cq]s size exceeded an OS\-specified limit.)
 T}@T{
 T}
+_
 T{
 \f[CR]pager\f[R]
 T}@T{
@@ -114,6 +120,7 @@ The pager object.
 Implements \f[CR]Pager\f[R], as described below.
 T}@T{
 T}
+_
 T{
 \f[CR]line\f[R]
 T}@T{
@@ -161,6 +168,7 @@ If this string ends with a newline
 loaded directly.
 T}@T{
 T}
+_
 T{
 \f[CR]loadSubmit(url)\f[R]
 T}@T{
@@ -168,6 +176,7 @@ Act as if \f[CR]url\f[R] had been input into the address bar.
 Same as \f[CR]pager.load(url + \[dq]\[rs]n\[dq])\f[R].
 T}@T{
 T}
+_
 T{
 \f[CR]gotoURL(url, options = {replace: null, contentType: null, save: false})\f[R]
 T}@T{
@@ -182,6 +191,7 @@ When \f[CR]save\f[R] is true, the user is prompted to save the resource
 instead of displaying it in a buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]nextBuffer()\f[R], \f[CR]prevBuffer()\f[R],
 \f[CR]nextSiblingBufer()\f[R], \f[CR]prevSiblingBuffer()\f[R],
@@ -194,12 +204,14 @@ traversal; \[ga]\f[CR]nextSiblingBufer()\f[R],
 \f[CR]parentBuffer()\f[R] returns to the parent.
 T}@T{
 T}
+_
 T{
 \f[CR]dupeBuffer()\f[R]
 T}@T{
 Duplicate the current buffer by loading its source to a new buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]discardBuffer(buffer = pager.buffer, dir = pager.navDirection)\f[R]
 T}@T{
@@ -210,12 +222,14 @@ Possible values of \f[CR]dir\f[R] are: \[lq]prev\[rq], \[lq]next\[rq],
 \[lq]first\-child\[rq], \[lq]any\[rq].
 T}@T{
 T}
+_
 T{
 \f[CR]discardTree()\f[R]
 T}@T{
 Discard all child buffers of the current buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]reload()\f[R]
 T}@T{
@@ -223,12 +237,14 @@ Open a new buffer with the current buffer\[cq]s URL, replacing the
 current buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]reshape()\f[R]
 T}@T{
 Reshape the current buffer (=render the current page anew.)
 T}@T{
 T}
+_
 T{
 \f[CR]redraw()\f[R]
 T}@T{
@@ -236,6 +252,7 @@ Redraw screen contents.
 Useful if something messed up the display.
 T}@T{
 T}
+_
 T{
 \f[CR]toggleSource()\f[R]
 T}@T{
@@ -243,18 +260,21 @@ If viewing an HTML buffer, open a new buffer with its source.
 Otherwise, open the current buffer\[cq]s contents as HTML.
 T}@T{
 T}
+_
 T{
 \f[CR]lineInfo()\f[R]
 T}@T{
 Display information about the current line.
 T}@T{
 T}
+_
 T{
 \f[CR]searchForward()\f[R], \f[CR]searchBackward()\f[R]
 T}@T{
 Search forward/backward for a string in the current buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]isearchForward()\f[R], \f[CR]isearchBackward()\f[R]
 T}@T{
@@ -262,6 +282,7 @@ Incremental\-search forward/backward for a string, highlighting the
 first result.
 T}@T{
 T}
+_
 T{
 \f[CR]gotoLine(n?)\f[R]
 T}@T{
@@ -270,18 +291,21 @@ If no arguments were specified, an input window for entering a line is
 shown.
 T}@T{
 T}
+_
 T{
 \f[CR]searchNext(n = 1)\f[R], \f[CR]searchPrev(n = 1)\f[R]
 T}@T{
 Jump to the nth next/previous search result.
 T}@T{
 T}
+_
 T{
 \f[CR]peek()\f[R]
 T}@T{
 Display an alert message of the current URL.
 T}@T{
 T}
+_
 T{
 \f[CR]peekCursor()\f[R]
 T}@T{
@@ -290,12 +314,14 @@ Multiple calls allow cycling through the two.
 (i.e.\ by default, press u once \-> title, press again \-> URL)
 T}@T{
 T}
+_
 T{
 \f[CR]showFullAlert()\f[R]
 T}@T{
 Show the last alert inside the line editor.
 T}@T{
 T}
+_
 T{
 \f[CR]ask(prompt)\f[R]
 T}@T{
@@ -306,6 +332,7 @@ Can be used to implement an exit prompt like this:
 \f[CR]q = \[aq]pager.ask(\[dq]Do you want to exit Chawan?\[dq]).then(x => x ? pager.quit() : void(0))\[aq]\f[R]
 T}@T{
 T}
+_
 T{
 \f[CR]askChar(prompt)\f[R]
 T}@T{
@@ -313,6 +340,7 @@ Ask the user for any character.
 Like \f[CR]pager.ask\f[R], but the return value is a character.
 T}@T{
 T}
+_
 T{
 \f[CR]extern(cmd, options = {env: { ... }, suspend: true, wait: false})\f[R]
 T}@T{
@@ -329,6 +357,7 @@ Redirect to /dev/null in the command if this is not desired.
 (This will be fixed in the future.)
 T}@T{
 T}
+_
 T{
 \f[CR]externCapture(cmd)\f[R]
 T}@T{
@@ -338,6 +367,7 @@ null is returned if the command wasn\[cq]t executed successfully, or if
 the command returned a non\-zero exit value.
 T}@T{
 T}
+_
 T{
 \f[CR]externInto(cmd, ins)\f[R]
 T}@T{
@@ -347,6 +377,7 @@ standard input stream.
 the return value is \f[CR]false\f[R].
 T}@T{
 T}
+_
 T{
 \f[CR]externFilterSource(cmd, buffer = null, contentType = null)\f[R]
 T}@T{
@@ -359,6 +390,7 @@ Returns \f[CR]undefined\f[R].
 (It should return a promise; TODO.)
 T}@T{
 T}
+_
 T{
 \f[CR]buffer\f[R]
 T}@T{
@@ -400,6 +432,7 @@ Move the cursor upwards/downwards by n lines, or if n is unspecified, by
 1.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorLeft(n = 1)\f[R], \f[CR]cursorRight(n = 1)\f[R]
 T}@T{
@@ -411,18 +444,21 @@ represent characters.
 broken for double\-width chars.)
 T}@T{
 T}
+_
 T{
 \f[CR]cursorLineBegin()\f[R], \f[CR]cursorLineEnd()\f[R]
 T}@T{
 Move the cursor to the first/last cell of the line.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorLineTextStart()\f[R]
 T}@T{
 Move the cursor to the first non\-blank character of the line.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorNextWord()\f[R], \f[CR]cursorNextViWord()\f[R],
 \f[CR]cursorNextBigWord()\f[R]
@@ -430,6 +466,7 @@ T}@T{
 Move the cursor to the beginning of the next word.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorPrevWord()\f[R], \f[CR]cursorPrevViWord()\f[R],
 \f[CR]cursorPrevBigWord()\f[R]
@@ -437,6 +474,7 @@ T}@T{
 Move the cursor to the end of the previous word.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorWordEnd()\f[R], \f[CR]cursorViWordEnd()\f[R],
 \f[CR]cursorBigWordEnd()\f[R]
@@ -445,6 +483,7 @@ Move the cursor to the end of the current word, or if already there, to
 the end of the next word.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorWordBegin()\f[R], \f[CR]cursorViWordBegin()\f[R],
 \f[CR]cursorBigWordBegin()\f[R]
@@ -453,12 +492,14 @@ Move the cursor to the beginning of the current word, or if already
 there, to the end of the previous word.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorNextLink()\f[R], \f[CR]cursorPrevLink()\f[R]
 T}@T{
 Move the cursor to the beginning of the next/previous clickable element.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorLinkNavDown(n = 1)\f[R], \f[CR]cursorLinkNavUp(n = 1)\f[R]
 T}@T{
@@ -467,6 +508,7 @@ Buffer scrolls pagewise, wrap to beginning/end if content is less than
 one page length.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorNextParagraph(n = 1)\f[R],
 \f[CR]cursorPrevParagraph(n = 1)\f[R]
@@ -474,12 +516,14 @@ T}@T{
 Move the cursor to the beginning/end of the nth next/previous paragraph.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorNthLink(n = 1)\f[R]
 T}@T{
 Move the cursor to the nth link of the document.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorRevNthLink(n = 1)\f[R]
 T}@T{
@@ -487,6 +531,7 @@ Move the cursor to the nth link of the document, counting backwards from
 the document\[cq]s last line.
 T}@T{
 T}
+_
 T{
 \f[CR]pageUp(n = 1)\f[R], \f[CR]pageDown(n = 1)\f[R],
 \f[CR]pageLeft(n = 1)\f[R], \f[CR]pageRight(n = 1)\f[R]
@@ -494,6 +539,7 @@ T}@T{
 Scroll up/down/left/right by n pages.
 T}@T{
 T}
+_
 T{
 \f[CR]halfPageUp(n = 1)\f[R], \f[CR]halfPageDown(n = 1)\f[R],
 \f[CR]halfPageLeft(n = 1)\f[R], \f[CR]halfPageRight(n = 1)\f[R]
@@ -501,6 +547,7 @@ T}@T{
 Scroll up/down/left/right by n half pages.
 T}@T{
 T}
+_
 T{
 \f[CR]scrollUp(n = 1)\f[R], \f[CR]scrollDown(n = 1)\f[R],
 \f[CR]scrollLeft(n = 1)\f[R], \f[CR]scrollRight(n = 1)\f[R]
@@ -508,18 +555,21 @@ T}@T{
 Scroll up/down/left/right by n lines.
 T}@T{
 T}
+_
 T{
 \f[CR]click()\f[R]
 T}@T{
 Click the HTML element currently under the cursor.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorFirstLine()\f[R], \f[CR]cursorLastLine()\f[R]
 T}@T{
 Move to the first/last line in the buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorTop()\f[R], \f[CR]cursorMiddle()\f[R],
 \f[CR]cursorBottom()\f[R]
@@ -528,6 +578,7 @@ Move to the first/middle/bottom line on the screen.
 (Equivalent to H/M/L in vi.)
 T}@T{
 T}
+_
 T{
 \f[CR]lowerPage(n = this.cursory)\f[R]
 T}@T{
@@ -536,6 +587,7 @@ line on the screen.
 (\f[CR]zt\f[R] in vim.)
 T}@T{
 T}
+_
 T{
 \f[CR]lowerPageBegin(n = this.cursory)\f[R]
 T}@T{
@@ -544,12 +596,14 @@ so that the cursor is on the top line on the screen.
 (\f[CR]z<CR>\f[R] in vi.)
 T}@T{
 T}
+_
 T{
 \f[CR]centerLine(n = this.cursory)\f[R]
 T}@T{
 Center screen around line n.\ (\f[CR]zz\f[R] in vim.)
 T}@T{
 T}
+_
 T{
 \f[CR]centerLineBegin(n = this.cursory)\f[R]
 T}@T{
@@ -558,6 +612,7 @@ non\-blank character.
 (\f[CR]z.\f[R] in vi.)
 T}@T{
 T}
+_
 T{
 \f[CR]raisePage(n = this.cursory)\f[R]
 T}@T{
@@ -566,6 +621,7 @@ line on the screen.
 (zb in vim.)
 T}@T{
 T}
+_
 T{
 \f[CR]lowerPageBegin(n = this.cursory)\f[R]
 T}@T{
@@ -574,6 +630,7 @@ so that the cursor is on the last line on the screen.
 (\f[CR]z\[ha]\f[R] in vi.)
 T}@T{
 T}
+_
 T{
 \f[CR]nextPageBegin(n = this.cursory)\f[R]
 T}@T{
@@ -583,6 +640,7 @@ Otherwise, go to the previous screen\[cq]s last line and raise the page.
 (\f[CR]z+\f[R] in vi.)
 T}@T{
 T}
+_
 T{
 \f[CR]cursorLeftEdge()\f[R], \f[CR]cursorMiddleColumn()\f[R],
 \f[CR]cursorRightEdge()\f[R]
@@ -590,12 +648,14 @@ T}@T{
 Move to the first/middle/last column on the screen.
 T}@T{
 T}
+_
 T{
 \f[CR]centerColumn()\f[R]
 T}@T{
 Center screen around the current column.
 T}@T{
 T}
+_
 T{
 \f[CR]findNextMark(x = this.cursorx, y = this.cursory)\f[R],
 \f[CR]findPrevMark(x = this.cursorx, y = this.cursory)\f[R]
@@ -604,6 +664,7 @@ Find the next/previous mark after/before \f[CR]x\f[R], \f[CR]y\f[R], if
 any; and return its id (or null if none were found.)
 T}@T{
 T}
+_
 T{
 \f[CR]setMark(id, x = this.cursorx, y = this.cursory)\f[R]
 T}@T{
@@ -613,6 +674,7 @@ If one already exists, it will be overridden and the function returns
 false.
 T}@T{
 T}
+_
 T{
 \f[CR]clearMark(id)\f[R]
 T}@T{
@@ -620,6 +682,7 @@ Clear the mark with the name \f[CR]id\f[R].
 Returns true if the mark existed, false otherwise.
 T}@T{
 T}
+_
 T{
 \f[CR]gotoMark(id)\f[R]
 T}@T{
@@ -627,6 +690,7 @@ If the mark \f[CR]id\f[R] exists, jump to its position and return true.
 Otherwise, do nothing and return false.
 T}@T{
 T}
+_
 T{
 \f[CR]gotoMarkY(id)\f[R]
 T}@T{
@@ -635,6 +699,7 @@ its Y position and return true.
 Otherwise, do nothing and return false.
 T}@T{
 T}
+_
 T{
 \f[CR]getMarkPos(id)\f[R]
 T}@T{
@@ -644,6 +709,7 @@ position.
 If the mark does not exist, return null.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorToggleSelection(n = 1, opts = {selectionType: \[dq]normal\[dq]})\f[R]
 T}@T{
@@ -654,6 +720,7 @@ selectionType may be \[lq]normal\[rq] (regular selection),
 (column\-based selection).
 T}@T{
 T}
+_
 T{
 \f[CR]getSelectionText()\f[R]
 T}@T{
@@ -662,30 +729,35 @@ Returns a promise, so consumers must \f[CR]await\f[R] it to get the
 text.
 T}@T{
 T}
+_
 T{
 \f[CR]markURL()\f[R]
 T}@T{
 Convert URL\-like strings to anchors on the current page.
 T}@T{
 T}
+_
 T{
 \f[CR]toggleImages()\f[R]
 T}@T{
 Toggle display of images in this buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]saveLink()\f[R]
 T}@T{
 Save URL pointed to by the cursor.
 T}@T{
 T}
+_
 T{
 \f[CR]saveSource()\f[R]
 T}@T{
 Save the source of this buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]setCursorX(x)\f[R], \f[CR]setCursorY(y)\f[R],
 \f[CR]setCursorXY(x, y)\f[R], \f[CR]setCursorXCenter(x)\f[R],
@@ -697,6 +769,7 @@ Variants that end with \[lq]Center\[rq] will also center the screen
 around the position if it is outside the screen.
 T}@T{
 T}
+_
 T{
 \f[CR]url\f[R]
 T}@T{
@@ -704,6 +777,7 @@ Getter for the buffer\[cq]s URL.
 Note: this returns a \f[CR]URL\f[R] object, not a string.
 T}@T{
 T}
+_
 T{
 \f[CR]hoverTitle\f[R], \f[CR]hoverLink\f[R], \f[CR]hoverImage\f[R]
 T}@T{
@@ -712,6 +786,7 @@ currently under the cursor.
 Returns the empty string if no title is found.
 T}@T{
 T}
+_
 T{
 \f[CR]cursorx\f[R], \f[CR]cursory\f[R]
 T}@T{
@@ -720,18 +795,21 @@ Note that although the status line is 1\-based, these values are
 0\-based.
 T}@T{
 T}
+_
 T{
 \f[CR]fromx\f[R], \f[CR]fromy\f[R]
 T}@T{
 The x/y position of the first line displayed on the screen.
 T}@T{
 T}
+_
 T{
 \f[CR]numLines\f[R]
 T}@T{
 The number of lines currently loaded in the buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]width\f[R], \f[CR]height\f[R]
 T}@T{
@@ -739,12 +817,14 @@ The width and height of the buffer\[cq]s window (i.e.\ the visible part
 of the canvas).
 T}@T{
 T}
+_
 T{
 \f[CR]process\f[R]
 T}@T{
 The process ID of the buffer.
 T}@T{
 T}
+_
 T{
 \f[CR]title\f[R]
 T}@T{
@@ -752,6 +832,7 @@ Text from the \f[CR]title\f[R] element, or the buffer\[cq]s URL if there
 is no title.
 T}@T{
 T}
+_
 T{
 \f[CR]parent\f[R]
 T}@T{
@@ -759,12 +840,14 @@ Parent buffer in the buffer tree.
 May be null.
 T}@T{
 T}
+_
 T{
 \f[CR]children\f[R]
 T}@T{
 Array of child buffers in the buffer tree.
 T}@T{
 T}
+_
 T{
 \f[CR]select\f[R]
 T}@T{
@@ -805,72 +888,84 @@ T}@T{
 Submit line.
 T}@T{
 T}
+_
 T{
 \f[CR]cancel()\f[R]
 T}@T{
 Cancel operation.
 T}@T{
 T}
+_
 T{
 \f[CR]backspace()\f[R]
 T}@T{
 Delete character before cursor.
 T}@T{
 T}
+_
 T{
 \f[CR]delete()\f[R]
 T}@T{
 Delete character after cursor.
 T}@T{
 T}
+_
 T{
 \f[CR]clear()\f[R]
 T}@T{
 Clear text before cursor.
 T}@T{
 T}
+_
 T{
 \f[CR]kill()\f[R]
 T}@T{
 Clear text after cursor.
 T}@T{
 T}
+_
 T{
 \f[CR]clearWord()\f[R]
 T}@T{
 Delete word before cursor.
 T}@T{
 T}
+_
 T{
 \f[CR]killWord()\f[R]
 T}@T{
 Delete word after cursor.
 T}@T{
 T}
+_
 T{
 \f[CR]backward()\f[R], \f[CR]forward()\f[R]
 T}@T{
 Move cursor backward/forward by one character.
 T}@T{
 T}
+_
 T{
 \f[CR]nextWord()\f[R], \f[CR]prevWord()\f[R]
 T}@T{
 Move cursor to the next/previous word by one character.
 T}@T{
 T}
+_
 T{
 \f[CR]begin()\f[R], \f[CR]end()\f[R]
 T}@T{
 Move cursor to the beginning/end of the line.
 T}@T{
 T}
+_
 T{
 \f[CR]escape()\f[R]
 T}@T{
 Ignore keybindings for next character.
 T}@T{
 T}
+_
 T{
 \f[CR]nextHist()\f[R], \f[CR]prevHist()\f[R]
 T}@T{

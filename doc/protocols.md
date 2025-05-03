@@ -5,13 +5,14 @@ MANOFF -->
 # Protocols
 
 Chawan supports downloading resources from various protocols: HTTP, FTP,
-Gopher, Gemini, and Finger. Details on these protocols, and information
-on how users can add support to their preferred protocols is outlined in
-this document.
+SFTP, Gopher, Gemini, Spartan, and Finger.  Details on these protocols,
+and information on how users can add support to their preferred
+protocols is outlined in this document.
 
-In general, you can find network adapters in the `adapter/protocol` directory.
-For protocol-specific file formats (like gemtext or gopher directories) you will
-also find an appropriate HTML converter in `adapter/format`.
+You can find network adapters in the source distribution's
+`adapter/protocol` directory.  For protocol-specific file formats (like
+gemtext or gopher directories) you will also find an appropriate HTML
+converter in `adapter/format`.
 
 <!-- MANOFF -->
 **Table of contents**

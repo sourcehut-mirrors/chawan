@@ -369,7 +369,7 @@ the line number.</td>
 <tr>
 <td>mime-types</td>
 <td>array of paths</td>
-<td>{see mime.types docs</td>
+<td>{see mime.types docs}</td>
 <td>Search path for <!-- MANOFF -->[mime.types](mime.types.md) files.<!-- MANON -->
 <!-- MANON mime.types files. (See **cha-mime.types**(5) for details.) MANOFF -->
 </td>

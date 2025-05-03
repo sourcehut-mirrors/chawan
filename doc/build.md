@@ -67,8 +67,6 @@ a limited set of C compilers. If you want to override the C compiler:
 * `install`: install the `cha` binary, and if man pages were generated,
   those as well
 * `uninstall`: remove the `cha` binary and Chawan man pages
-* `submodule`: no longer used
-* `subtree`: pull in new commits from subtrees (for development)
 
 ## Cross-compiling
 

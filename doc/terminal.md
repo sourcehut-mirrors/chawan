@@ -1,4 +1,8 @@
-# Terminals and Chawan
+<!-- MANON
+% cha-terminal(7) | Chawan terminal compatibility
+MANOFF -->
+
+# Chawan terminal compatibility
 
 Chawan does not use termcap, terminfo, or ncurses; it relies solely
 on built-in terminal handling routines, mostly inspired by notcurses.
@@ -18,6 +22,11 @@ if:
 
 Terminals pretending to be XTerm (`TERM=xterm`) which are not actually
 XTerm might malfunction.
+
+(In practice, I have tested dozens of terminal emulators and haven't
+encountered any major issues; in all likelihood, yours will work too.
+Still, if it doesn't, please
+[open a ticket](https://tickets.sr.ht/~bptato/chawan.)
 
 ## Queries
 

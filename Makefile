@@ -197,11 +197,14 @@ $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	@mkdir -p "$(OBJDIR)/man"
 	./md2manpreproc $< > $@
 
-doc/cha-%.5: $(OBJDIR)/man/cha-%.md
+$(OBJDIR)/man/cha-%.md.roff: $(OBJDIR)/man/cha-%.md
 	pandoc --standalone --to man $< -o $@
 
-doc/cha-%.7: $(OBJDIR)/man/cha-%.md
-	pandoc --standalone --to man $< -o $@
+doc/cha-%.5: $(OBJDIR)/man/cha-%.md.roff
+	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@
+
+doc/cha-%.7: $(OBJDIR)/man/cha-%.md.roff
+	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@
 
 .PHONY: clean
 clean:
@@ -215,7 +218,7 @@ distclean: clean
 manpages1 = cha.1 mancha.1
 manpages5 = cha-config.5 cha-mailcap.5 cha-mime.types.5 cha-localcgi.5 \
 	cha-urimethodmap.5
-manpages7 = cha-protocols.7 cha-api.7 cha-troubleshooting.7 cha-image.7 cha-css.7
+manpages7 = cha-protocols.7 cha-api.7 cha-troubleshooting.7 cha-image.7 cha-css.7 cha-terminal.7
 
 manpages = $(manpages1) $(manpages5) $(manpages7)
 
@@ -283,10 +286,6 @@ uninstall:
 # moved to section 7
 	for f in cha-protocols.5 cha-api.5 cha-troubleshooting.5 cha-image.5; do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
 	for f in $(manpages1); do rm -f "$(DESTDIR)$(MANPREFIX1)/$$f"; done
-
-.PHONY: submodule
-submodule:
-	echo 'We no longer use submodules; you can safely drop "make submodule" from build scripts.'
 
 test/net/run: test/net/run.nim
 	$(NIMC) test/net/run.nim

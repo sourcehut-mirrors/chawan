@@ -95,7 +95,7 @@ Markdown files.
 * protocols: [doc/protocols.md](doc/protocols.md)
 * inline images: [doc/image.md](doc/image.md)
 * CSS: [doc/css.md](doc/css.md)
-* terminals: [doc/terminals.md](doc/terminals.md)
+* terminal compatibility: [doc/terminal.md](doc/terminal.md)
 * troubleshooting: [doc/troubleshooting.md](doc/troubleshooting.md)
 
 If you're interested in modifying the code:
