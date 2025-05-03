@@ -1,9 +1,8 @@
 # Tree building.
 #
-#TODO: this is currently a separate pass from layout, meaning at least
-# two tree traversals are required.  Ideally, these should be collapsed
-# into a single pass, reusing parts of previous layout passes when
-# possible.
+# This is currently a separate pass from layout, meaning at least two
+# tree traversals are required.  I'm not sure if the two can be
+# meaningfully collapsed.
 #
 # ---
 #
@@ -24,6 +23,8 @@
 #   table and the caption.  The inner table (of DisplayTableWrapper)
 #   includes the rows/row groups.
 # Whatever your reason may be for looking at this: good luck.
+
+import std/algorithm
 
 import chame/tags
 import css/box
@@ -73,6 +74,7 @@ type
     quoteLevel: int
     counters: seq[CSSCounter]
     rootProperties: CSSValues
+    stackItems: seq[StackItem]
 
   TreeFrame = object
     parent: Element
@@ -85,7 +87,8 @@ type
     pctx: ptr TreeContext
 
 # Forward declarations
-proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode): CSSBox
+proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
+  forceZ: bool): CSSBox
 
 template ctx(frame: TreeFrame): var TreeContext =
   frame.pctx[]
@@ -494,29 +497,25 @@ proc buildChildren(frame: var TreeFrame; styledNode: StyledNode) =
       for content in frame.computed{"content"}:
         frame.addContent(content)
 
-proc buildBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox): CSSBox =
+proc buildInnerBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox):
+    CSSBox =
   let display = frame.computed{"display"}
   let box = if display == DisplayInline:
     InlineBox(computed: frame.computed, element: frame.parent)
   else:
     BlockBox(computed: frame.computed, element: frame.parent)
+  # Grid and flex items always respect z-index.  Other boxes only
+  # respect it with position != static.
+  let forceZ = display in DisplayInnerFlex or display in DisplayInnerGrid
   var last: CSSBox = nil
   for child in frame.children:
-    let childBox = ctx.build(nil, child)
+    let childBox = ctx.build(nil, child, forceZ)
     childBox.parent = box
     if last != nil:
       last.next = childBox
     else:
       box.firstChild = childBox
     last = childBox
-  if display in DisplayInlineBlockLike:
-    let wrapper = InlineBlockBox(
-      computed: ctx.rootProperties,
-      element: frame.parent,
-      firstChild: box
-    )
-    box.parent = wrapper
-    return wrapper
   return box
 
 proc applyCounters(ctx: var TreeContext; styledNode: StyledNode) =
@@ -531,17 +530,58 @@ proc applyCounters(ctx: var TreeContext; styledNode: StyledNode) =
   for counter in styledNode.computed{"counter-set"}:
     ctx.setCounter(counter.name, counter.num, styledNode.element)
 
-proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode):
-    CSSBox =
+proc pushStackItem(ctx: var TreeContext; styledNode: StyledNode):
+    StackItem =
+  let index = styledNode.computed{"z-index"}
+  let stack = StackItem(index: index.num)
+  ctx.stackItems[^1].children.add(stack)
+  let nextStack = if index.auto:
+    ctx.stackItems[^1]
+  else:
+    stack
+  ctx.stackItems.add(nextStack)
+  return stack
+
+proc popStackItem(ctx: var TreeContext) =
+  let stack = ctx.stackItems.pop()
+  stack.children.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
+
+proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
+    forceZ: bool): CSSBox =
+  ctx.applyCounters(styledNode)
+  let countersLen = ctx.counters.len
+  var frame = ctx.initTreeFrame(styledNode.element, styledNode.computed)
+  var stackItem: StackItem = nil
+  let display = frame.computed{"display"}
+  let position = frame.computed{"position"}
+  if position != PositionStatic and display notin DisplayNeverHasStack or
+      forceZ and not frame.computed{"z-index"}.auto:
+    stackItem = ctx.pushStackItem(styledNode)
+  frame.buildChildren(styledNode)
+  let box = ctx.buildInnerBox(frame, cached)
+  ctx.counters.setLen(countersLen)
+  if stackItem != nil:
+    if box of InlineBlockBox:
+      stackItem.box = box.firstChild
+    else:
+      stackItem.box = box
+    box.positioned = position != PositionStatic
+    ctx.popStackItem()
+  if display in DisplayInlineBlockLike:
+    let wrapper = InlineBlockBox(
+      computed: ctx.rootProperties,
+      element: frame.parent,
+      firstChild: box
+    )
+    box.parent = wrapper
+    return wrapper
+  return box
+
+proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
+    forceZ: bool): CSSBox =
   case styledNode.t
   of stElement:
-    ctx.applyCounters(styledNode)
-    let countersLen = ctx.counters.len
-    var frame = ctx.initTreeFrame(styledNode.element, styledNode.computed)
-    frame.buildChildren(styledNode)
-    let box = ctx.buildBox(frame, cached)
-    ctx.counters.setLen(countersLen)
-    return box
+    return ctx.buildOuterBox(cached, styledNode, forceZ)
   of stText:
     return InlineTextBox(
       computed: styledNode.computed,
@@ -569,7 +609,7 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode):
     )
 
 # Root
-proc buildTree*(element: Element; cached: CSSBox; markLinks: bool): BlockBox =
+proc buildTree*(element: Element; cached: CSSBox; markLinks: bool): StackItem =
   if element.computed == nil:
     element.applyStyle()
   let styledNode = StyledNode(
@@ -577,8 +617,13 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool): BlockBox =
     element: element,
     computed: element.computed
   )
+  let stack = StackItem()
   var ctx = TreeContext(
     rootProperties: rootProperties(),
-    markLinks: markLinks
+    markLinks: markLinks,
+    stackItems: @[stack]
   )
-  return BlockBox(ctx.build(cached, styledNode))
+  let root = BlockBox(ctx.build(cached, styledNode, forceZ = false))
+  stack.box = root
+  ctx.popStackItem()
+  return stack

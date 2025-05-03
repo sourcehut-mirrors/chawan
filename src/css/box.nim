@@ -208,7 +208,6 @@ iterator children*(box: CSSBox): CSSBox =
     it = it.next
 
 proc resetState(box: CSSBox) =
-  box.positioned = false
   box.render = BoxRenderState()
 
 proc resetState*(ibox: InlineBox) =
@@ -222,16 +221,50 @@ proc resetState*(box: BlockBox) =
 const DefaultClipBox* = ClipBox(send: offset(LUnit.high, LUnit.high))
 
 when defined(debug):
-  proc computedTree*(box: CSSBox): string =
+  import chame/tags
+
+  proc `$`*(box: CSSBox; pass2 = true): string =
+    if box.positioned and not pass2:
+      return ""
     result = "<"
-    if box.computed{"display"} != DisplayInline:
-      result &= "div"
+    let name = if box.computed{"display"} != DisplayInline:
+      if box.element.tagType in {TAG_HTML, TAG_BODY}:
+        $box.element.tagType
+      else:
+        "div"
+    elif box of InlineNewLineBox:
+      "br"
     else:
-      result &= "span"
+      "span"
+    result &= name
     let computed = box.computed.copyProperties()
     if computed{"display"} == DisplayBlock:
       computed{"display"} = DisplayInline
-    result &= " style='" & $computed.serializeEmpty() & "'>\n"
+    var style = $computed.serializeEmpty()
+    if style != "":
+      if style[^1] == ';':
+        style.setLen(style.high)
+      result &= " style='" & style & "'"
+    result &= ">"
+    if box of InlineNewLineBox:
+      return
+    if box of BlockBox:
+      result &= '\n'
     for it in box.children:
-      result &= it.computedTree()
-    result &= "\n</div>"
+      result &= `$`(it, pass2 = false)
+    if box of InlineTextBox:
+      for run in InlineTextBox(box).runs:
+        result &= run.str
+    if box of BlockBox:
+      result &= '\n'
+    result &= "</" & name & ">"
+
+  proc `$`*(stack: StackItem): string =
+    result = "<STACK index=" & $stack.index & ">\n"
+    result &= `$`(stack.box, pass2 = true)
+    result &= "\n"
+    for child in stack.children:
+      result &= "<child>\n"
+      result &= $child
+      result &= "</child>\n"
+    result &= "</STACK>\n"

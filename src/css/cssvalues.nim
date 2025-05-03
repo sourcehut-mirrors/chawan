@@ -573,13 +573,12 @@ const RowGroupBox* = {
   # Note: caption is not included here
   DisplayTableRowGroup, DisplayTableHeaderGroup, DisplayTableFooterGroup
 }
-const ProperTableChild* = RowGroupBox + {
-  DisplayTableRow, DisplayTableColumn, DisplayTableColumnGroup
-}
 const DisplayInnerTable* = {DisplayTable, DisplayInlineTable}
 const DisplayInternalTable* = {
   DisplayTableCell, DisplayTableRow, DisplayTableCaption
 } + RowGroupBox
+const DisplayNeverHasStack* = DisplayInternalTable + DisplayInnerTable -
+  {DisplayTableCell}
 const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
 const WhiteSpacePreserve* = {
   WhitespacePre, WhitespacePreLine, WhitespacePreWrap

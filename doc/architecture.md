@@ -351,7 +351,7 @@ enough in most cases.)
 ### Layout
 
 Our layout engine is a rather "simple" procedural layout implementation.
-It runs in two passes (but I'm working on eliminating the first one.)
+It runs in two passes:
 
 1. Build a layout tree. Anonymous block and table boxes are generated
    here. After this pass, the tree is no longer mutated, only the

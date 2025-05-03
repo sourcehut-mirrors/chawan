@@ -28,7 +28,6 @@ type
     child: BlockBox
 
   PositionedItem = object
-    stack: StackItem # stacking context to append children to
     queue: seq[QueuedAbsolute]
 
   LayoutContext = ref object
@@ -1437,19 +1436,10 @@ proc layoutText(fstate: var FlowState; istate: var InlineState; s: string) =
     fstate.layoutTextLoop(istate, s)
 
 proc pushPositioned(lctx: LayoutContext; box: CSSBox) =
-  let index = box.computed{"z-index"}
-  let stack = StackItem(box: box, index: index.num)
-  lctx.positioned[^1].stack.children.add(stack)
-  let nextStack = if index.auto:
-    lctx.positioned[^1].stack
-  else:
-    stack
-  box.positioned = box.computed{"position"} != PositionStatic
-  lctx.positioned.add(PositionedItem(stack: nextStack))
+  lctx.positioned.add(PositionedItem())
 
 # size is the parent's size.
-# Note that parent may be nil.
-proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size) =
+proc popPositioned(lctx: LayoutContext; size: Size) =
   let item = lctx.positioned.pop()
   for it in item.queue:
     let child = it.child
@@ -1483,9 +1473,6 @@ proc popPositioned(lctx: LayoutContext; parent: CSSBox; size: Size) =
         sizes.margin.bottom
     else:
       child.state.offset.y += sizes.margin.top
-  let stack = item.stack
-  if stack.box == parent:
-    stack.children.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
 
 proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
   case box.computed{"position"}
@@ -1536,7 +1523,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state.intr.h = max(box.state.intr.h + marginBottom, bctx.maxFloatHeight)
   box.state.marginBottom = marginBottom
   if positioned:
-    bctx.lctx.popPositioned(box, box.state.size)
+    bctx.lctx.popPositioned(box.state.size)
 
 func clearedBy(floats: set[CSSFloat]; clear: CSSClear): bool =
   return case clear
@@ -1658,7 +1645,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
       lctx.pushPositioned(child)
     fstate.bctx.layout(child, sizes)
     if child.computed{"position"} != PositionStatic:
-      lctx.popPositioned(child, child.state.size)
+      lctx.popPositioned(child.state.size)
   fstate.bctx.marginTodo.append(sizes.margin.bottom)
   let outerSize = size(
     w = child.outerSize(dtHorizontal, sizes),
@@ -1917,7 +1904,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       # since this uses cellHeight instead of the actual line height
       # for the last line.
       # Well, it seems good enough.
-      lctx.popPositioned(ibox, size(
+      lctx.popPositioned(size(
         w = 0,
         h = fstate.offset.y + fstate.cellHeight - ibox.state.startOffset.y
       ))
@@ -2129,7 +2116,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
     lctx.pushPositioned(box)
   bctx.layout(box, sizes)
   if box.computed{"position"} != PositionStatic:
-    lctx.popPositioned(box, box.state.size)
+    lctx.popPositioned(box.state.size)
   assert bctx.unpositionedFloats.len == 0
   # Table cells ignore margins.
   box.state.offset.y = 0
@@ -2856,20 +2843,19 @@ proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   of DisplayInnerGrid: bctx.layoutGrid(box, sizes)
   else: assert false
 
-proc layout*(box: BlockBox; attrsp: ptr WindowAttributes): StackItem =
+proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
   let space = availableSpace(
     w = stretch(attrsp[].widthPx),
     h = stretch(attrsp[].heightPx)
   )
-  let stack = StackItem(box: box)
   let lctx = LayoutContext(
     attrsp: attrsp,
     cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
     positioned: @[
       # add another to catch fixed boxes pushed to the stack
-      PositionedItem(stack: stack),
-      PositionedItem(stack: stack),
-      PositionedItem(stack: stack)
+      PositionedItem(),
+      PositionedItem(),
+      PositionedItem()
     ],
     luctx: LUContext()
   )
@@ -2878,7 +2864,7 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes): StackItem =
   lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
   var size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
   # Last absolute layer.
-  lctx.popPositioned(nil, size)
+  lctx.popPositioned(size)
   # Fixed containing block.
   # The idea is to move fixed boxes to the real edges of the page,
   # so that they do not overlap with other boxes *and* we don't have
@@ -2887,7 +2873,7 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes): StackItem =
   # slow down the renderer to a crawl.)
   size.w = max(size.w, box.state.size.w)
   size.h = max(size.h, box.state.size.h)
-  lctx.popPositioned(nil, size)
-  # Now we can sort the root box's stacking context list.
-  lctx.popPositioned(box, size)
-  return stack
+  lctx.popPositioned(size)
+  # I'm not sure why the third PositionedItem is needed, but without
+  # this fixed boxes appear in the wrong place.
+  lctx.popPositioned(size)
