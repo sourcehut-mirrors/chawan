@@ -48,18 +48,10 @@ type
   OriginType* = enum
     otOpaque, otTuple
 
-  TupleOrigin* = tuple
-    scheme: string
-    hostname: string
-    port: Option[uint16]
-    domain: Option[string]
-
   Origin* = ref object
-    case t*: OriginType
-    of otOpaque:
-      s: string
-    of otTuple:
-      tup: TupleOrigin
+    t*: OriginType
+    domain: string
+    s: string
 
 jsDestructor(URL)
 jsDestructor(URLSearchParams)
@@ -71,6 +63,7 @@ func serialize*(url: URL; excludeHash = false; excludePassword = false):
     string
 func serializeip(ipv4: uint32): string
 func serializeip(ipv6: array[8, uint16]): string
+proc host*(url: URL): string
 
 proc swrite*(w: var PacketWriter; url: URL) =
   if url != nil:
@@ -1126,10 +1119,7 @@ proc origin*(url: URL): Origin =
       return Origin(t: otOpaque, s: $url)
     return pathURL.get.origin
   of "ftp", "http", "https", "ws", "wss":
-    return Origin(
-      t: otTuple,
-      tup: (url.scheme, url.hostname, url.port, none(string))
-    )
+    return Origin(t: otTuple, s: url.scheme & "://" & url.host)
   else:
     return Origin(t: otOpaque, s: $url)
 
@@ -1146,34 +1136,19 @@ func isNetPath(url: URL): bool =
 # * with other host types, the origin is a tuple origin.
 proc authOrigin*(url: URL): Origin =
   if url.isNetPath():
-    return Origin(
-      t: otTuple,
-      tup: (url.scheme, url.hostname, url.port, none(string))
-    )
+    return Origin(t: otTuple, s: url.scheme & "://" & url.host)
   return Origin(t: otOpaque, s: $url)
 
 proc `==`*(a, b: Origin): bool {.error.} =
   discard
 
 proc isSameOrigin*(a, b: Origin): bool =
-  if a.t != b.t:
-    return false
-  case a.t
-  of otOpaque:
-    return a.s == b.s
-  of otTuple:
-    return a.tup == b.tup
+  return a.t == b.t and a.s == b.s
 
 proc `$`*(origin: Origin): string =
   if origin.t == otOpaque:
     return "null"
-  var s = origin.tup.scheme
-  s &= "://"
-  s &= origin.tup.hostname
-  if origin.tup.port.isSome:
-    s &= ':'
-    s &= $origin.tup.port.get
-  return s
+  return origin.s
 
 proc jsOrigin*(url: URL): string {.jsfget: "origin".} =
   return $url.origin
