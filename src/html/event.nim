@@ -51,7 +51,7 @@ type
 
   UIEvent* = ref object of Event
     detail {.jsget.}: int32
-    #TODO view
+    view {.jsget.}: EventTarget
 
   MouseEvent* = ref object of UIEvent
     screenX {.jsget.}: int32
@@ -98,6 +98,7 @@ var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
   noSideEffect.} = nil
 var getParentImpl*: proc(ctx: JSContext; target: EventTarget; event: Event):
   EventTarget {.nimcall.}
+var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect.}
 
 type
   EventInit* = object of JSDict
@@ -228,11 +229,37 @@ proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
   return event
 
 # UIEvent
-#TODO
+type EventTargetWindow = distinct EventTarget
+proc fromJS(ctx: JSContext; val: JSValue; res: out EventTargetWindow):
+    Opt[void] =
+  var res0: EventTarget
+  ?ctx.fromJS(val, res0)
+  if not res0.isWindowImpl():
+    JS_ThrowTypeError(ctx, "Window expected")
+    return err()
+  res = EventTargetWindow(res0)
+  ok()
+
 type UIEventInit = object of EventInit
-  #TODO how do I represent view T_T
-  # probably needs to be an EventTarget and manually type checked
+  view {.jsdefault.}: EventTargetWindow
   detail {.jsdefault.}: int32
+
+proc newUIEvent*(ctype: CAtom; eventInit = UIEventInit()): UIEvent {.jsctor.} =
+  let event = UIEvent(
+    ctype: ctype,
+    view: EventTarget(eventInit.view),
+    detail: eventInit.detail
+  )
+  event.innerEventCreationSteps(eventInit)
+  return event
+
+proc initUIEvent(this: UIEvent; ctype: CAtom; bubbles = false;
+    cancelable = false; view = none(EventTarget); detail = 0i32) {.jsfunc.} =
+  this.ctype = ctype
+  this.bubbles = bubbles
+  this.cancelable = cancelable
+  this.view = view.get(nil)
+  this.detail = detail
 
 type EventModifierInit = object of UIEventInit
   ctrlKey {.jsdefault.}: bool
@@ -253,9 +280,9 @@ type MouseEventInit = object of EventModifierInit
 
 proc newMouseEvent(ctype: CAtom; eventInit = MouseEventInit()): MouseEvent
     {.jsctor.} =
-  #TODO view
   let event = MouseEvent(
     ctype: ctype,
+    view: EventTarget(eventInit.view),
     screenX: eventInit.screenX,
     screenY: eventInit.screenY,
     clientX: eventInit.clientX,
@@ -278,9 +305,9 @@ type InputEventInit* = object of UIEventInit
   inputType* {.jsdefault.}: string
 
 proc newInputEvent*(ctype: CAtom; eventInit = InputEventInit()): InputEvent =
-  #TODO view
   let event = InputEvent(
     ctype: ctype,
+    view: EventTarget(eventInit.view),
     data: eventInit.data,
     isComposing: eventInit.isComposing,
     inputType: eventInit.inputType,
@@ -529,7 +556,7 @@ proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event):
   if efInitialized notin event.flags:
     return errDOMException("Event is not initialized", "InvalidStateError")
   event.isTrusted = false
-  return ok(ctx.dispatch(this, event))
+  return ok(not ctx.dispatch(this, event))
 
 proc addEventModule*(ctx: JSContext):
     tuple[eventCID, eventTargetCID: JSClassID] =

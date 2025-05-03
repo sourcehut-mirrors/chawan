@@ -5804,6 +5804,8 @@ proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
     return ok(ctx.newCustomEvent(satUempty.toAtom()))
   of satEvent, satEvents, satSvgevents:
     return ok(newEvent(satUempty.toAtom(), nil))
+  of satUievent, satUievents:
+    return ok(newUIEvent(satUempty.toAtom()))
   else:
     return errDOMException("Event not supported", "NotSupportedError")
 
@@ -6280,3 +6282,6 @@ getAPIBaseURLImpl = proc(ctx: JSContext): URL =
   if window == nil or window.document == nil:
     return nil
   return window.document.baseURL
+
+isWindowImpl = proc(target: EventTarget): bool {.noSideEffect.} =
+  return target of Window
