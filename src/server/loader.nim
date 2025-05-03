@@ -1341,7 +1341,7 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
   var prevurl: URL = nil
   while redo and tries < MaxRewrites:
     redo = false
-    if ctx.config.w3mCGICompat and request.url.scheme == "file":
+    if ctx.config.w3mCGICompat and request.url.schemeType == stFile:
       let path = request.url.pathname.percentDecode()
       if ctx.canRewriteForCGICompat(path):
         let newURL = newURL("cgi-bin:" & path & request.url.search)
@@ -1350,25 +1350,25 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
           inc tries
           redo = true
           continue
-    case request.url.scheme
-    of "cgi-bin":
+    case request.url.schemeType
+    of stCgiBin:
       ctx.loadCGI(client, handle, request, prevurl, config)
       if handle.stream != nil:
         ctx.addFd(handle)
       else:
         ctx.close(handle)
-    of "stream":
+    of stStream:
       ctx.loadStream(client, handle, request)
       if handle.stream != nil:
         ctx.addFd(handle)
       else:
         ctx.close(handle)
-    of "cache":
+    of stCache:
       ctx.loadFromCache(client, handle, request)
       assert handle.stream == nil
-    of "data":
+    of stData:
       ctx.loadData(handle, request)
-    of "about":
+    of stAbout:
       ctx.loadAbout(handle, request)
     else:
       prevurl = request.url

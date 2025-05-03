@@ -28,16 +28,34 @@ type
   HostType* = enum
     htNone, htDomain, htIpv4, htIpv6, htOpaque
 
+  # List of known schemes.
+  SchemeType* = enum
+    stUnknown = ""
+    stAbout = "about"
+    stBlob = "blob"
+    stCache = "cache"
+    stCgiBin = "cgi-bin"
+    stData = "data"
+    stFile = "file"
+    stFtp = "ftp"
+    stHttp = "http"
+    stHttps = "https"
+    stJavascript = "javascript"
+    stStream = "stream"
+    stWs = "ws"
+    stWss = "wss"
+
   URLSearchParams* = ref object
     list*: seq[tuple[name, value: string]]
     url: URL
 
   URL* = ref object
-    scheme*: string
+    scheme: string
     username* {.jsget.}: string
     password* {.jsget.}: string
     opaquePath: bool
     hostType: HostType
+    schemeType*: SchemeType
     port: Option[uint16]
     hostname* {.jsget.}: string
     pathname* {.jsget.}: string
@@ -86,17 +104,28 @@ proc sread*(r: var PacketReader; url: var URL) =
 # -1 if not special
 # 0 if file
 # > 0 if special
-func findSpecialPort(scheme: string): int32 =
-  case scheme
-  of "https": return 443
-  of "http": return 80
-  of "wss": return 443
-  of "ws": return 80
-  of "file": return 0
-  of "ftp": 21
-  else:
-    {.linearScanEnd.}
-    return -1
+const SpecialPort = [
+  stUnknown: -1i32,
+  stAbout: -1,
+  stBlob: -1,
+  stCache: -1,
+  stCgiBin: -1,
+  stData: -1,
+  stFile: 0,
+  stFtp: 21,
+  stHttp: 80,
+  stHttps: 443,
+  stJavascript: -1,
+  stStream: -1,
+  stWs: 80,
+  stWss: 443,
+]
+
+template isSpecial(url: URL): bool =
+  SpecialPort[url.schemeType] >= 0
+
+func parseSchemeType(buffer: string): SchemeType =
+  return parseEnumNoCase[SchemeType](buffer).get(stUnknown)
 
 func parseIpv6(input: openArray[char]): string =
   var pieceIndex = 0
@@ -375,7 +404,7 @@ proc parseHost*(input: string; special: bool; hostType: var HostType): string =
   return asciiDomain
 
 proc shortenPath(url: URL) =
-  if url.scheme == "file" and (url.pathname.len == 3 or
+  if url.schemeType == stFile and (url.pathname.len == 3 or
         url.pathname.len == 4 and url.pathname[2] == '/') and
       url.pathname[0] == '/' and url.pathname[1] in AsciiAlpha and
       url.pathname[2] == ':':
@@ -413,8 +442,8 @@ proc parseSpecialAuthorityIgnoreSlashes(input: openArray[char];
   return usAuthority
 
 proc parseRelativeSlash(input: openArray[char]; pointer: var int;
-    isSpecial: bool; base, url: URL): URLState =
-  if isSpecial and pointer < input.len and input[pointer] in {'/', '\\'}:
+    base, url: URL): URLState =
+  if url.isSpecial and pointer < input.len and input[pointer] in {'/', '\\'}:
     inc pointer
     return input.parseSpecialAuthorityIgnoreSlashes(pointer)
   if pointer < input.len and input[pointer] == '/':
@@ -428,14 +457,14 @@ proc parseRelativeSlash(input: openArray[char]; pointer: var int;
   return usPath
 
 proc parseRelative(input: openArray[char]; pointer: var int;
-    specialPort: var int32; base, url: URL): URLState =
-  assert base.scheme != "file"
+    base, url: URL): URLState =
   url.scheme = base.scheme
-  specialPort = findSpecialPort(url.scheme)
+  url.schemeType = base.schemeType
+  assert url.schemeType != stFile
   if pointer < input.len and input[pointer] == '/' or
-      specialPort >= 0 and pointer < input.len and input[pointer] == '\\':
+      url.isSpecial and pointer < input.len and input[pointer] == '\\':
     inc pointer
-    return input.parseRelativeSlash(pointer, specialPort >= 0, base, url)
+    return input.parseRelativeSlash(pointer, base, url)
   url.username = base.username
   url.password = base.password
   url.hostname = base.hostname
@@ -457,16 +486,15 @@ proc parseRelative(input: openArray[char]; pointer: var int;
   return usPath
 
 proc parseSpecialRelativeOrAuthority(input: openArray[char]; pointer: var int;
-    specialPort: var int32; base, url: URL): URLState =
+    base, url: URL): URLState =
   if pointer + 1 < input.len and input[pointer] == '/' and
       input[pointer + 1] == '/':
     pointer += 2
     return input.parseSpecialAuthorityIgnoreSlashes(pointer)
-  return input.parseRelative(pointer, specialPort, base, url)
+  return input.parseRelative(pointer, base, url)
 
-proc parseScheme(input: openArray[char]; pointer: var int;
-    specialPort: var int32; base: Option[URL]; url: URL; override: bool):
-    URLState =
+proc parseScheme(input: openArray[char]; pointer: var int; base: Option[URL];
+    url: URL; override: bool): URLState =
   var buffer = ""
   var i = pointer
   while i < input.len:
@@ -474,27 +502,28 @@ proc parseScheme(input: openArray[char]; pointer: var int;
     if c in AsciiAlphaNumeric + {'+', '-', '.'}:
       buffer &= c.toLowerAscii()
     elif c == ':':
-      let port = findSpecialPort(buffer)
+      let schemeType = parseSchemeType(buffer)
+      let port = SpecialPort[schemeType]
       if override:
-        if (specialPort >= 0) != (port >= 0):
+        if url.isSpecial != (port >= 0):
           return usNoScheme
-        if (url.includesCredentials or url.port.isSome) and buffer == "file":
+        if (url.includesCredentials or url.port.isSome) and
+            schemeType == stFile:
           return usNoScheme
-        if url.hostType == htNone and url.scheme == "file":
+        if url.hostType == htNone and url.schemeType == stFile:
           return usNoScheme
-      url.scheme = buffer
-      specialPort = port
+      url.scheme = move(buffer)
+      url.schemeType = schemeType
       if override:
-        if url.port.isSome and port != int32(url.port.get):
+        if url.port.isSome and port == int32(url.port.get):
           url.port = none(uint16)
         return usDone
       pointer = i + 1
-      if url.scheme == "file":
+      if url.schemeType == stFile:
         return usFile
-      if specialPort >= 0:
+      if url.isSpecial:
         if base.isSome and base.get.scheme == url.scheme:
-          return input.parseSpecialRelativeOrAuthority(pointer, specialPort,
-            base.get, url)
+          return input.parseSpecialRelativeOrAuthority(pointer, base.get, url)
         # special authority slashes state
         if pointer + 1 < input.len and input[pointer] == '/' and
             input[pointer + 1] == '/':
@@ -516,12 +545,11 @@ proc parseScheme(input: openArray[char]; pointer: var int;
   return usNoScheme
 
 proc parseSchemeStart(input: openArray[char]; pointer: var int;
-    specialPort: var int32; base: Option[URL]; url: URL; override: bool):
-    URLState =
+    base: Option[URL]; url: URL; override: bool): URLState =
   var state = usNoScheme
   if pointer < input.len and input[pointer] in AsciiAlpha:
     # continue to scheme state
-    state = input.parseScheme(pointer, specialPort, base, url, override)
+    state = input.parseScheme(pointer, base, url, override)
   if state == usNoScheme:
     pointer = 0 # start over
   if override:
@@ -534,27 +562,27 @@ proc parseSchemeStart(input: openArray[char]; pointer: var int;
       return usFail
     if base.opaquePath and pointer < input.len and input[pointer] == '#':
       url.scheme = base.scheme
-      specialPort = findSpecialPort(url.scheme)
+      url.schemeType = base.schemeType
       url.pathname = base.pathname
       url.opaquePath = base.opaquePath
       url.search = base.search
       url.hash = "#"
       inc pointer
       return usFragment
-    if base.scheme == "file":
+    if base.schemeType == stFile:
       return usFile
-    return input.parseRelative(pointer, specialPort, base, url)
+    return input.parseRelative(pointer, base, url)
   return state
 
-proc parseAuthority(input: openArray[char]; pointer: var int; isSpecial: bool;
-    url: URL): URLState =
+proc parseAuthority(input: openArray[char]; pointer: var int; url: URL):
+    URLState =
   var atSignSeen = false
   var passwordSeen = false
   var buffer = ""
   var beforeBuffer = pointer
   while pointer < input.len:
     let c = input[pointer]
-    if c in {'/', '?', '#'} or isSpecial and c == '\\':
+    if c in {'/', '?', '#'} or url.isSpecial and c == '\\':
       break
     if c == '@':
       if atSignSeen:
@@ -578,8 +606,8 @@ proc parseAuthority(input: openArray[char]; pointer: var int; isSpecial: bool;
   pointer = beforeBuffer
   return usHost
 
-proc parseFileHost(input: openArray[char]; pointer: var int; isSpecial: bool;
-    url: URL; override: bool): URLState =
+proc parseFileHost(input: openArray[char]; pointer: var int; url: URL;
+    override: bool): URLState =
   let buffer = input.until({'/', '\\', '?', '#'}, pointer)
   pointer += buffer.len
   if not override and buffer.isWinDriveLetter():
@@ -589,7 +617,7 @@ proc parseFileHost(input: openArray[char]; pointer: var int; isSpecial: bool;
     url.hostname = ""
   else:
     var t = htNone
-    let hostname = parseHost(buffer, isSpecial, t)
+    let hostname = parseHost(buffer, url.isSpecial, t)
     if hostname == "":
       return usFail
     url.hostType = t
@@ -600,10 +628,10 @@ proc parseFileHost(input: openArray[char]; pointer: var int; isSpecial: bool;
     return usFail
   return usPathStart
 
-proc parseHostState(input: openArray[char]; pointer: var int; isSpecial: bool;
-    url: URL; override: bool; state: URLState): URLState =
-  if override and url.scheme == "file":
-    return input.parseFileHost(pointer, isSpecial, url, override)
+proc parseHostState(input: openArray[char]; pointer: var int; url: URL;
+    override: bool; state: URLState): URLState =
+  if override and url.schemeType == stFile:
+    return input.parseFileHost(pointer, url, override)
   var insideBrackets = false
   var buffer = ""
   while pointer < input.len:
@@ -612,14 +640,14 @@ proc parseHostState(input: openArray[char]; pointer: var int; isSpecial: bool;
       if override and state == usHostname:
         return usFail
       var t = htNone
-      let hostname = parseHost(buffer, isSpecial, t)
+      let hostname = parseHost(buffer, url.isSpecial, t)
       if hostname == "":
         return usFail
       url.hostname = hostname
       url.hostType = t
       inc pointer
       return usPort
-    elif c in {'/', '?', '#'} or isSpecial and c == '\\':
+    elif c in {'/', '?', '#'} or url.isSpecial and c == '\\':
       break
     else:
       if c == '[':
@@ -628,12 +656,12 @@ proc parseHostState(input: openArray[char]; pointer: var int; isSpecial: bool;
         insideBrackets = false
       buffer &= c
     inc pointer
-  if isSpecial and buffer == "":
+  if url.isSpecial and buffer == "":
     return usFail
   if override and buffer == "" and (url.includesCredentials or url.port.isSome):
     return usFail
   var t = htNone
-  let hostname = parseHost(buffer, isSpecial, t)
+  let hostname = parseHost(buffer, url.isSpecial, t)
   if hostname == "":
     return usFail
   url.hostname = hostname
@@ -642,15 +670,15 @@ proc parseHostState(input: openArray[char]; pointer: var int; isSpecial: bool;
     return usFail
   return usPathStart
 
-proc parsePort(input: openArray[char]; pointer: var int; specialPort: int32;
-    url: URL; override: bool): URLState =
+proc parsePort(input: openArray[char]; pointer: var int; url: URL;
+    override: bool): URLState =
   var buffer = ""
   var i = pointer
   while i < input.len:
     let c = input[i]
     if c in AsciiDigit:
       buffer &= c
-    elif c in {'/', '?', '#'} or specialPort >= 0 and c == '\\' or override:
+    elif c in {'/', '?', '#'} or url.isSpecial and c == '\\' or override:
       break
     else:
       return usFail
@@ -661,7 +689,7 @@ proc parsePort(input: openArray[char]; pointer: var int; specialPort: int32;
     # can't be negative, buffer only includes AsciiDigit
     if i > 65535:
       return usFail
-    if specialPort == i:
+    if SpecialPort[url.schemeType] == i:
       url.port = none(uint16)
     else:
       url.port = some(uint16(i))
@@ -678,8 +706,8 @@ proc parseFileSlash(input: openArray[char]; pointer: var int; base: Option[URL];
     url: URL; override: bool): URLState =
   if pointer < input.len and input[pointer] in {'/', '\\'}:
     inc pointer
-    return input.parseFileHost(pointer, isSpecial = true, url, override)
-  if base.isSome and base.get.scheme == "file":
+    return input.parseFileHost(pointer, url, override)
+  if base.isSome and base.get.schemeType == stFile:
     let base = base.get
     url.hostname = base.hostname
     url.hostType = base.hostType
@@ -692,12 +720,13 @@ proc parseFileSlash(input: openArray[char]; pointer: var int; base: Option[URL];
 proc parseFile(input: openArray[char]; pointer: var int; base: Option[URL];
     url: URL; override: bool): URLState =
   url.scheme = "file"
+  url.schemeType = stFile
   url.hostname = ""
   url.hostType = htOpaque
   if pointer < input.len and input[pointer] in {'/', '\\'}:
     inc pointer
     return input.parseFileSlash(pointer, base, url, override)
-  if base.isSome and base.get.scheme == "file":
+  if base.isSome and base.get.schemeType == stFile:
     let base = base.get
     url.hostname = base.hostname
     url.hostType = base.hostType
@@ -722,9 +751,9 @@ proc parseFile(input: openArray[char]; pointer: var int; base: Option[URL];
           url.pathname = ""
   return usPath
 
-proc parsePathStart(input: openArray[char]; pointer: var int; isSpecial: bool;
-    url: URL; override: bool): URLState =
-  if isSpecial:
+proc parsePathStart(input: openArray[char]; pointer: var int; url: URL;
+    override: bool): URLState =
+  if url.isSpecial:
     if pointer < input.len and input[pointer] in {'/', '\\'}:
       inc pointer
     return usPath
@@ -754,13 +783,14 @@ func isDoubleDotPathSegment(s: string): bool =
   s == ".." or s.equalsIgnoreCase(".%2e") or s.equalsIgnoreCase("%2e.") or
     s.equalsIgnoreCase("%2e%2e")
 
-proc parsePath(input: openArray[char]; pointer: var int; isSpecial: bool;
-    url: URL; override: bool): URLState =
+proc parsePath(input: openArray[char]; pointer: var int; url: URL;
+    override: bool): URLState =
   var state = usPath
   var buffer = ""
   while pointer < input.len:
     let c = input[pointer]
-    if c == '/' or isSpecial and c == '\\' or not override and c in {'?', '#'}:
+    if c == '/' or url.isSpecial and c == '\\' or
+        not override and c in {'?', '#'}:
       if c == '?':
         url.search = "?"
         state = usQuery
@@ -771,7 +801,7 @@ proc parsePath(input: openArray[char]; pointer: var int; isSpecial: bool;
         state = usFragment
         inc pointer
         break
-      let slashCond = c != '/' and (not isSpecial or c != '\\')
+      let slashCond = c != '/' and (not url.isSpecial or c != '\\')
       if buffer.isDoubleDotPathSegment():
         url.shortenPath()
         if slashCond:
@@ -779,7 +809,7 @@ proc parsePath(input: openArray[char]; pointer: var int; isSpecial: bool;
       elif buffer.isSingleDotPathSegment() and slashCond:
         url.pathname &= '/'
       elif not buffer.isSingleDotPathSegment():
-        if url.scheme == "file" and url.pathname == "" and
+        if url.schemeType == stFile and url.pathname == "" and
             buffer.isWinDriveLetter():
           buffer[1] = ':'
         url.pathname &= '/'
@@ -789,7 +819,7 @@ proc parsePath(input: openArray[char]; pointer: var int; isSpecial: bool;
       buffer.percentEncode(c, PathPercentEncodeSet)
     inc pointer
   let slashCond = pointer >= input.len or input[pointer] != '/' and
-    (not isSpecial or input[pointer] != '\\')
+    (not url.isSpecial or input[pointer] != '\\')
   if buffer.isDoubleDotPathSegment():
     url.shortenPath()
     if slashCond:
@@ -797,15 +827,15 @@ proc parsePath(input: openArray[char]; pointer: var int; isSpecial: bool;
   elif buffer.isSingleDotPathSegment() and slashCond:
     url.pathname &= '/'
   elif not buffer.isSingleDotPathSegment():
-    if url.scheme == "file" and url.pathname == "" and
+    if url.schemeType == stFile and url.pathname == "" and
         buffer.isWinDriveLetter():
       buffer[1] = ':'
     url.pathname &= '/'
     url.pathname &= buffer
   return state
 
-proc parseQuery(input: openArray[char]; pointer: var int; isSpecial: bool;
-    url: URL; override: bool): URLState =
+proc parseQuery(input: openArray[char]; pointer: var int; url: URL;
+    override: bool): URLState =
   #TODO encoding
   var buffer = ""
   var i = pointer
@@ -816,7 +846,7 @@ proc parseQuery(input: openArray[char]; pointer: var int; isSpecial: bool;
     buffer &= c
     inc i
   pointer = i
-  let set = if isSpecial:
+  let set = if url.isSpecial:
     SpecialQueryPercentEncodeSet
   else:
     QueryPercentEncodeSet
@@ -832,28 +862,25 @@ proc basicParseURL0(input: openArray[char]; base: Option[URL]; url: URL;
   var pointer = 0
   # The URL is special if this is >= 0.
   # A special port of "0" means "no port" (i.e. file scheme).
-  var specialPort = findSpecialPort(url.scheme)
   let input = input.deleteChars({'\n', '\t'})
   let override = stateOverride.isSome
   var state = stateOverride.get(usSchemeStart)
   if state == usSchemeStart:
-    state = input.parseSchemeStart(pointer, specialPort, base, url, override)
+    state = input.parseSchemeStart(pointer, base, url, override)
   if state == usAuthority:
-    state = input.parseAuthority(pointer, specialPort >= 0, url)
+    state = input.parseAuthority(pointer, url)
   if state in {usHost, usHostname}:
-    state = input.parseHostState(pointer, specialPort >= 0, url, override,
-      state)
+    state = input.parseHostState(pointer, url, override, state)
   if state == usPort:
-    state = input.parsePort(pointer, specialPort, url, override)
+    state = input.parsePort(pointer, url, override)
   if state == usFile:
-    specialPort = 0 #TODO not sure why this is needed...
     state = input.parseFile(pointer, base, url, override)
   if state == usPathStart:
-    state = input.parsePathStart(pointer, specialPort >= 0, url, override)
+    state = input.parsePathStart(pointer, url, override)
   if state == usPath:
-    state = input.parsePath(pointer, specialPort >= 0, url, override)
+    state = input.parsePath(pointer, url, override)
   if state == usQuery:
-    state = input.parseQuery(pointer, specialPort >= 0, url, override)
+    state = input.parseQuery(pointer, url, override)
   if state == usFragment:
     while pointer < input.len:
       url.hash.percentEncode(input[pointer], FragmentPercentEncodeSet)
@@ -881,7 +908,7 @@ proc parseURL*(input: string; base = none(URL); override = none(URLState)):
   let url = basicParseURL(input, base, stateOverride = override)
   if url.isNone:
     return url
-  if url.get.scheme == "blob":
+  if url.get.schemeType == stBlob:
     #TODO blob urls
     discard
   return url
@@ -1111,14 +1138,14 @@ proc newURL*(s: string; base: Option[string] = none(string)):
   return parseAPIURL(s, base)
 
 proc origin*(url: URL): Origin =
-  case url.scheme
-  of "blob":
+  case url.schemeType
+  of stBlob:
     #TODO
     let pathURL = parseURL(url.pathname)
     if pathURL.isNone:
       return Origin(t: otOpaque, s: $url)
     return pathURL.get.origin
-  of "ftp", "http", "https", "ws", "wss":
+  of stFtp, stHttp, stHttps, stWs, stWss:
     return Origin(t: otTuple, s: url.scheme & "://" & url.host)
   else:
     return Origin(t: otOpaque, s: $url)
@@ -1129,7 +1156,7 @@ proc origin*(url: URL): Origin =
 # file URLs which are special-cased for legacy reasons (they become
 # "file:///blah", but are treated as absoluteURI).
 func isNetPath(url: URL): bool =
-  return url.hostType != htNone and url.scheme != "file"
+  return url.hostType != htNone and url.schemeType != stFile
 
 # This follows somewhat different rules from the standard:
 # * for URLs with a net_path, the origin is opaque.
@@ -1159,6 +1186,9 @@ proc protocol*(url: URL): string {.jsfget.} =
 proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
   discard basicParseURL(s & ':', url = url,
     stateOverride = some(usSchemeStart))
+
+func scheme*(url: URL): lent string =
+  return url.scheme
 
 proc setUsername*(url: URL; username: string) {.jsfset: "username".} =
   if url.isNetPath():

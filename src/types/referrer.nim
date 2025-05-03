@@ -16,15 +16,14 @@ proc getReferrer*(prev, target: URL; policy: ReferrerPolicy): string =
   let origin = prev.origin
   if origin.t == otOpaque:
     return ""
-  if prev.scheme != "http" and prev.scheme != "https":
-    return ""
-  if target.scheme != "http" and target.scheme != "https":
+  if prev.schemeType notin {stHttp, stHttps} or
+      target.schemeType notin {stHttp, stHttps}:
     return ""
   case policy
   of rpNoReferrer:
     return ""
   of rpNoReferrerWhenDowngrade:
-    if prev.scheme == "https" and target.scheme == "http":
+    if prev.schemeType == stHttps and target.schemeType == stHttp:
       return ""
     return $origin & prev.pathname & prev.search
   of rpSameOrigin:
@@ -34,7 +33,7 @@ proc getReferrer*(prev, target: URL; policy: ReferrerPolicy): string =
   of rpOrigin:
     return $origin
   of rpStrictOrigin:
-    if prev.scheme == "https" and target.scheme == "http":
+    if prev.schemeType == stHttps and target.schemeType == stHttp:
       return ""
     return $origin
   of rpOriginWhenCrossOrigin:
@@ -42,7 +41,7 @@ proc getReferrer*(prev, target: URL; policy: ReferrerPolicy): string =
       return $origin
     return $origin & prev.pathname & prev.search
   of rpStrictOriginWhenCrossOrigin:
-    if prev.scheme == "https" and target.scheme == "http":
+    if prev.schemeType == stHttps and target.schemeType == stHttp:
       return $origin
     if not origin.isSameOrigin(target.origin):
       return $origin

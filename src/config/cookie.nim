@@ -183,7 +183,8 @@ proc serialize*(cookieJar: CookieJar; url: URL): string =
     if cookie.expires != -1 and cookie.expires <= t:
       expired.add(i)
       continue
-    if cookie.secure and url.scheme != "https" and url.hostname != "localhost":
+    if cookie.secure and url.schemeType != stHttps and
+        url.hostname != "localhost":
       continue
     if not cookiePathMatches(cookie.path, url.pathname):
       continue

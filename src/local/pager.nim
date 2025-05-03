@@ -411,7 +411,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     parseURL(moduleName, parseURL("file://" & cur & "/"))
   else:
     parseURL(moduleName)
-  if x.isNone or x.get.scheme != "file":
+  if x.isNone or x.get.schemeType != stFile:
     JS_ThrowTypeError(ctx, "Invalid URL: %s", cstring(moduleName))
     return nil
   try:
@@ -1365,7 +1365,7 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     Container =
   let stream = pager.loader.startRequest(request, loaderConfig)
   pager.loader.registerFun(stream.fd)
-  let cacheId = if request.url.scheme == "cache":
+  let cacheId = if request.url.schemeType == stCache:
     parseInt32(request.url.pathname).get(-1)
   else:
     -1
@@ -2709,12 +2709,14 @@ proc redirect(pager: Pager; container: Container; response: Response;
   container.applyResponse(response, pager.config.external.mimeTypes)
   if container.redirectDepth < pager.config.network.maxRedirect:
     if container.url.scheme == request.url.scheme or
-        container.url.scheme == "cgi-bin" or
-        container.url.scheme == "http" and request.url.scheme == "https" or
-        container.url.scheme == "https" and request.url.scheme == "http":
+        container.url.schemeType == stCgiBin or
+        container.url.schemeType == stHttp and
+          request.url.schemeType == stHttps or
+        container.url.schemeType == stHttps and
+          request.url.schemeType == stHttp:
       pager.redirectTo(container, request)
     #TODO perhaps make following behavior configurable?
-    elif request.url.scheme == "cgi-bin":
+    elif request.url.schemeType == stCgiBin:
       pager.alert("Blocked redirection attempt to " & $request.url)
     else:
       let url = request.url
@@ -2804,7 +2806,7 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
   if istreamOutputId != -1: # new buffer
     if container.cacheId == -1:
       container.cacheId = loader.addCacheFile(istreamOutputId)
-    if container.request.url.scheme == "cache":
+    if container.request.url.schemeType == stCache:
       # loading from cache; now both the buffer and us hold a new reference
       # to the cached item, but it's only shared with the buffer. add a
       # pager ref too.
@@ -3120,8 +3122,8 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
     let url = event.request.url
     let sameScheme = container.url.scheme == url.scheme
     if event.request.httpMethod != hmGet and not sameScheme and
-        not (container.url.scheme in ["http", "https"] and
-          url.scheme in ["http", "https"]):
+        not (container.url.schemeType in {stHttp, stHttps} and
+          url.schemeType in {stHttp, stHttps}):
       pager.alert("Blocked cross-scheme POST: " & $url)
       return
     #TODO this is horrible UX, async actions shouldn't block input

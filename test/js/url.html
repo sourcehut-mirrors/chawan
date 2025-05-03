@@ -79,8 +79,13 @@ assertThrows('new URL("https://example.org:7z")', TypeError);
 	const x = new URL("http:/test");
 	x.protocol = "abcd";
 	assertEquals(x.protocol, "http:");
+	x.port = 444;
 	x.protocol = "https";
 	assertEquals(x.protocol, "https:");
+	assertEquals(x.port, "444");
+	x.port = 80;
+	x.protocol = "http";
+	assertEquals(x + "", "http://test/");
 }
 {
 	const x = new URL("https://user:password@example.org:1234/path?search#hash");

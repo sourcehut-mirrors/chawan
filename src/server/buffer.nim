@@ -1377,7 +1377,7 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
   let url = anchor.reinitURL()
   if url.isSome:
     var url = url.get
-    if url.scheme == "javascript":
+    if url.schemeType == stJavascript:
       if buffer.config.scripting == smFalse:
         return ClickResult()
       let s = buffer.evalJSURL(url)

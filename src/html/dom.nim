@@ -1927,7 +1927,7 @@ proc protocol(location: Location; s: string): Err[DOMException] {.jsfset.} =
     return
   let copyURL = newURL(location.url)
   copyURL.setProtocol(s)
-  if copyURL.scheme != "http" and copyURL.scheme != "https":
+  if copyURL.schemeType notin {stHttp, stHttps}:
     return errDOMException("Invalid URL", "SyntaxError")
   document.window.navigate(copyURL)
   return ok()
@@ -2875,7 +2875,7 @@ proc parseColor(element: Element; s: string): ARGBColor =
 proc reinitURL*(element: Element): Option[URL] =
   if element.attrb(satHref):
     let url = parseURL(element.attr(satHref), some(element.document.baseURL))
-    if url.isSome and url.get.scheme != "blob":
+    if url.isSome and url.get.schemeType != stBlob:
       return url
   return none(URL)
 
@@ -4268,10 +4268,10 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
   let url = parseURL(src, window.document.url.some)
   if url.isSome:
     let url = url.get
-    if window.document.url.scheme == "https" and url.scheme == "http":
+    if window.document.url.schemeType == stHttps and url.schemeType == stHttp:
       # mixed content :/
       #TODO maybe do this in loader?
-      url.scheme = "https"
+      url.setProtocol("https")
     let surl = $url
     window.imageURLCache.withValue(surl, p):
       if p[].expiry > getTime().toUnix():

@@ -204,7 +204,7 @@ method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
 
 proc fetch0(window: Window; input: JSRequest): JSResult[FetchPromise] =
   #TODO cors requests?
-  if input.request.url.scheme != "data" and
+  if input.request.url.schemeType != stData and
       not window.isSameOrigin(input.request.url.origin):
     let err = newFetchTypeError()
     return ok(newResolvedPromise(JSResult[Response].err(err)))
