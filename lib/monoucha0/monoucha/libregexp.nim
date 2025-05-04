@@ -28,6 +28,11 @@ proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
 # compilation pass" (i.e. in C).
 {.emit: """
 #ifndef NOT_LRE_ONLY
+int *lre_check_timeout(void *opaque)
+{
+  return 0;
+}
+
 bool lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
   return 0;

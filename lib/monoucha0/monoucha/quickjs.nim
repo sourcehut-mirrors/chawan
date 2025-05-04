@@ -20,7 +20,7 @@ else:
   {.passl: "-lpthread".}
 
 {.compile("qjs/quickjs.c", CFLAGS).}
-{.compile("qjs/libbf.c", CFLAGS).}
+{.compile("qjs/xsum.c", CFLAGS).}
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
