@@ -26,7 +26,7 @@ instructions, so you can skip those.)
 
 Old HTTP(S) handler based on libcurl.  This is mainly useful if you want
 to use curl-impersonate; in this case, install it like
-`make install-libcurl CURLLILBNAME=libcurl-impersonate-chrome.so`.
+`make install-libcurl CURLLIBNAME=libcurl-impersonate-chrome.so`.
 
 ### [filei.cgi](filei.cgi)
 

@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-api(5) | Chawan's command API
+% cha-api(7) | Chawan's command API
 MANOFF -->
 
 # Chawan's command API
