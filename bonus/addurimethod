@@ -4,31 +4,35 @@ if test $# -ne 2
 then	printf 'Usage: addurimethod [scheme] [program name]' >&2
 	exit 1
 fi
+PAGER=${PAGER:-cat}
 
 urimethodmap=$HOME/.urimethodmap
-scheme="$1:"
-cgi="/cgi-bin/$2%s"
+scheme="$1"
+cgi="/cgi-bin/$2?%s"
 
 if ! test -f "$urimethodmap"
 then	printf '%s:	%s\n' "$scheme" "$cgi" > "$urimethodmap"
 	exit 0
 fi
 
-grep -- "^$1:" "$urimethodmap" >/dev/null && exit 0
+grep -- "^$scheme:[[:space:]]*$cgi"'$' "$urimethodmap" >/dev/null && exit 0
 
 space_kind=$(grep -oE '^[a-zA-Z+-]+:[[:space:]]+' "$urimethodmap" | \
 	grep -oE '[[:space:]]+' | \
 	tail -c2)
-space_num=$(grep -oE '^[a-zA-Z+-]+:[[:space:]]+' "$urimethodmap" | \
-	grep -oE '[[:space:]]+' | \
-	while IFS= read -r line; do printf '%d\n' "${#line}"; done | \
-	sort -r | \
-	head -1)
 
 space_mul=1
 if test "$space_kind" = '	'; then	space_mul=8; fi
+space_num=$(sed -nE 's/^([a-zA-Z+-]+:[[:space:]]*).*/\1/p' "$urimethodmap" | \
+	while IFS= read -r line
+	do	spaces=$(printf '%s\n' "$line" | sed 's/[^[:space:]]//g')
+		nscheme=$((${#line} - ${#spaces}))
+		printf '%d\n' $(((${#spaces} * $space_mul + $nscheme) / $space_mul))
+	done | \
+	sort -rn | \
+	head -1)
 
-space_num=$((($space_num * $space_mul + ($space_mul - 1) - ${#scheme}) / $space_mul))
+space_num=$((($space_num * $space_mul + ($space_mul - 1) - ${#scheme} - 1) / $space_mul))
 
 spaces=
 if test "$space_num" -gt 0
@@ -37,8 +41,8 @@ fi
 
 tmpf=$(mktemp)
 
-printf "%s:${spaces}%s\n" "$1" "/cgi-bin/$2?%s" > "$tmpf"
-cat "$urimethodmap" >> "$tmpf"
+printf "%s:${spaces}%s\n" "$scheme" "$cgi" > "$tmpf"
+grep -v "^$scheme:" "$urimethodmap" >> "$tmpf"
 
 {
 	printf 'Updating %s to:\n\n' "$urimethodmap"
