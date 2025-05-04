@@ -1,7 +1,6 @@
 import std/os
 import std/posix
 import std/strutils
-from std/unicode import runeLenAt
 
 import monoucha/jsregex
 import monoucha/libregexp
@@ -51,7 +50,7 @@ func processBackspace(line: string): string =
       bspace = true
       inc i
       continue
-    let n = line.runeLenAt(i)
+    let n = line.pointLenAt(i)
     if thiscs.len == 0:
       thiscs = i ..< i + n
       i += n

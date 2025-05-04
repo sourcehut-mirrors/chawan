@@ -3,7 +3,8 @@ import std/sets
 import std/streams
 import std/strutils
 import std/tables
-import std/unicode
+
+import utils/twtstr
 
 type
   LowMap = seq[tuple[ucs: uint16, s: string]]
@@ -116,7 +117,7 @@ proc loadIdnaData() =
       let codepoints = thirdcol
       var str = ""
       for code in codepoints:
-        str &= Rune(parseHexInt(code))
+        str &= uint32(parseHexInt(code)).toUTF8()
 
       add(firstcol, str, add_map)
     of "valid":

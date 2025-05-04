@@ -110,7 +110,7 @@ $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim
 unicode_version = 16.0.0
 
 .PHONY: unicode_gen
-unicode_gen: $(OBJDIR)/genidna $(OBJDIR)/gencharwidth
+unicode_gen:
 	@printf 'Download EastAsianWidth.txt and IdnaMappingTable.txt from www.unicode.org? (y/n) '
 	@read res; if test "$$res" = "y"; then \
 	cha -d 'https://www.unicode.org/Public/idna/$(unicode_version)/IdnaMappingTable.txt' >res/map/IdnaMappingTable.txt; \
