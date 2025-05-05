@@ -37,10 +37,10 @@ type
     eventPhase {.jsget.}: uint16
     bubbles {.jsget.}: bool
     cancelable {.jsget.}: bool
-    #TODO DOMHighResTimeStamp?
-    timeStamp {.jsget.}: float64
     flags*: set[EventFlag]
     isTrusted* {.jsufget.}: bool
+    #TODO DOMHighResTimeStamp?
+    timeStamp {.jsget.}: float64
 
   CustomEvent* = ref object of Event
     detail {.jsget.}: JSValue
@@ -131,11 +131,14 @@ proc newEvent(ctx: JSContext; ctype: CAtom; eventInitDict = EventInit()):
   event.innerEventCreationSteps(eventInitDict)
   return event
 
-proc newEvent*(ctype: CAtom; target: EventTarget): Event =
+proc newEvent*(ctype: CAtom; target: EventTarget; bubbles, cancelable: bool):
+    Event =
   return Event(
     ctype: ctype,
     target: target,
-    currentTarget: target
+    currentTarget: target,
+    bubbles: bubbles,
+    cancelable: cancelable
   )
 
 proc initialize(this: Event; ctype: CAtom; bubbles, cancelable: bool) =
@@ -352,8 +355,7 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
     # Apparently it's a bad idea to call a function that can then delete
     # the reference it was called from.
     let callback = JS_DupValue(ctx, listener.callback)
-    let ret = JS_Call(ctx, callback, jsTarget, 1,
-      jsEvent.toJSValueArray())
+    let ret = JS_Call(ctx, callback, jsTarget, 1, jsEvent.toJSValueArray())
     JS_FreeValue(ctx, callback)
     JS_FreeValue(ctx, jsTarget)
     JS_FreeValue(ctx, jsEvent)
@@ -517,13 +519,13 @@ proc hasEventListener*(eventTarget: EventTarget; ctype: CAtom): bool =
   return false
 
 proc dispatchEvent0(ctx: JSContext; event: Event; currentTarget: EventTarget;
-    stop, canceled: var bool) =
+    stop, canceled: var bool; capture: bool) =
   event.currentTarget = currentTarget
   var els = currentTarget.eventListeners # copy intentionally
   for el in els:
     if JS_IsUndefined(el.callback):
       continue # removed, presumably by a previous handler
-    if el.ctype == event.ctype:
+    if el.ctype == event.ctype and el.capture == capture:
       let e = ctx.invoke(el, event)
       if JS_IsException(e):
         ctx.logException()
@@ -536,15 +538,31 @@ proc dispatchEvent0(ctx: JSContext; event: Event; currentTarget: EventTarget;
         break
 
 proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
-  #TODO this is far from being compliant
   var canceled = false
   var stop = false
   event.flags.incl(efDispatch)
   event.target = target
-  var target = target
-  while target != nil and not stop:
-    ctx.dispatchEvent0(event, target, stop, canceled)
-    target = ctx.getParentImpl(target, event)
+  var it = target
+  var targets: seq[EventTarget] = @[]
+  while it != nil:
+    targets.add(it)
+    it = ctx.getParentImpl(it, event)
+  event.eventPhase = 1
+  for i in countdown(targets.high, 1):
+    if stop:
+      break
+    let it = targets[i]
+    ctx.dispatchEvent0(event, it, stop, canceled, capture = true)
+  event.eventPhase = 2
+  ctx.dispatchEvent0(event, target, stop, canceled, capture = true)
+  ctx.dispatchEvent0(event, target, stop, canceled, capture = false)
+  if event.bubbles:
+    event.eventPhase = 3
+    for target in targets:
+      if stop:
+        break
+      ctx.dispatchEvent0(event, target, stop, canceled, capture = false)
+  event.eventPhase = 0
   event.flags.excl(efDispatch)
   return canceled
 

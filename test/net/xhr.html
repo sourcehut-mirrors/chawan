@@ -6,8 +6,11 @@
 const x = new XMLHttpRequest();
 assert(x.onreadystatechange === null);
 let changed = false;
-function myFunction() {
+function myFunction(event) {
 	changed = true;
+	assert(!event.bubbles);
+	assert(!event.cancelable);
+	assert(event.isTrusted);
 }
 x.onreadystatechange = myFunction;
 assertEquals(myFunction, x.onreadystatechange);

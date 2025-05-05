@@ -975,16 +975,14 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
 
 proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
   let window = buffer.window
-  let event = newEvent(satDOMContentLoaded.toAtom(), buffer.document)
-  event.isTrusted = true
-  window.fireEvent(event, buffer.document)
+  window.fireEvent(satDOMContentLoaded, buffer.document, bubbles = false,
+    cancelable = false, trusted = true)
   buffer.maybeReshape()
 
 proc dispatchLoadEvent(buffer: Buffer) =
   let window = buffer.window
-  let event = newEvent(satLoad.toAtom(), window)
-  event.isTrusted = true
-  window.fireEvent(event, window)
+  window.fireEvent(satLoad, window, bubbles = false, cancelable = false,
+    trusted = true)
   buffer.maybeReshape()
 
 proc finishLoad(buffer: Buffer; data: InputData): EmptyPromise =
@@ -1312,13 +1310,21 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
       if buffer.config.scripting != smFalse:
         let window = buffer.window
         if input.inputType == itFile:
-          window.fireEvent(satInput, input)
+          window.fireEvent(satInput, input, bubbles = true, cancelable = true,
+            trusted = true)
         else:
           let inputEvent = newInputEvent(satInput.toAtom(),
-            InputEventInit(data: some(s), inputType: "insertText"))
+            InputEventInit(
+              data: some(s),
+              inputType: "insertText",
+              bubbles: true,
+              cancelable: true
+            )
+          )
           inputEvent.isTrusted = true
           window.fireEvent(inputEvent, input)
-        buffer.window.fireEvent(satChange, input)
+        buffer.window.fireEvent(satChange, input, bubbles = true,
+          cancelable = true, trusted = true)
       buffer.maybeReshape()
       return buffer.implicitSubmit(input)
     of TAG_TEXTAREA:
@@ -1326,7 +1332,8 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
       textarea.value = s
       textarea.invalidate()
       if buffer.config.scripting != smFalse:
-        buffer.window.fireEvent(satChange, textarea)
+        buffer.window.fireEvent(satChange, textarea, bubbles = true,
+          cancelable = true, trusted = true)
       buffer.maybeReshape()
     else: discard
   return nil
@@ -1398,7 +1405,8 @@ proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
     if select.attrb(satMultiple):
       option.setSelected(not option.selected)
       if buffer.config.scripting != smFalse:
-        buffer.window.fireEvent(satChange, select)
+        buffer.window.fireEvent(satChange, select, bubbles = true,
+          cancelable = true, trusted = true)
       buffer.maybeReshape()
       return ClickResult()
     return buffer.click(select)
@@ -1489,8 +1497,10 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
     input.setChecked(not input.checked)
     if buffer.config.scripting != smFalse:
       # Note: not an InputEvent.
-      buffer.window.fireEvent(satInput, input)
-      buffer.window.fireEvent(satChange, input)
+      buffer.window.fireEvent(satInput, input, bubbles = true,
+        cancelable = true, trusted = true)
+      buffer.window.fireEvent(satChange, input, bubbles = true,
+        cancelable = true, trusted = true)
     buffer.maybeReshape()
     return ClickResult()
   of itRadio:
@@ -1498,8 +1508,10 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
     input.setChecked(true)
     if not wasChecked and buffer.config.scripting != smFalse:
       # See above.
-      buffer.window.fireEvent(satInput, input)
-      buffer.window.fireEvent(satChange, input)
+      buffer.window.fireEvent(satInput, input, bubbles = true,
+        cancelable = true, trusted = true)
+      buffer.window.fireEvent(satChange, input, bubbles = true,
+        cancelable = true, trusted = true)
     buffer.maybeReshape()
     return ClickResult()
   of itReset:
@@ -1559,7 +1571,8 @@ proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
     let element = buffer.getCursorElement(cursorx, cursory)
     if element != nil:
       let window = buffer.window
-      let event = newEvent(satClick.toAtom(), element)
+      let event = newEvent(satClick.toAtom(), element, bubbles = true,
+        cancelable = true)
       event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
       buffer.maybeReshape()
@@ -1580,7 +1593,8 @@ proc select*(buffer: Buffer; selected: int): ClickResult {.proxy.} =
       if index != selected:
         select.setSelectedIndex(selected)
         if buffer.config.scripting != smFalse:
-          buffer.window.fireEvent(satChange, select)
+          buffer.window.fireEvent(satChange, select, bubbles = true,
+            cancelable = true, trusted = true)
     buffer.restoreFocus()
     buffer.maybeReshape()
   return ClickResult()

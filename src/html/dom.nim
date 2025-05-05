@@ -2819,6 +2819,12 @@ proc blur(ctx: JSContext; element: Element) {.jsfunc.} =
     if element.document.focus == element:
       element.document.setFocus(nil)
 
+proc click(ctx: JSContext; element: Element) {.jsfunc.} =
+  #TODO should also trigger click on inputs.
+  let event = newEvent(satClick.toAtom(), element, bubbles = true,
+    cancelable = true)
+  discard ctx.dispatch(element, event)
+
 proc scrollTo(element: Element) {.jsfunc.} =
   discard #TODO maybe in app mode?
 
@@ -2851,9 +2857,10 @@ func findAutoFocus*(document: Document): Element =
 proc fireEvent*(window: Window; event: Event; target: EventTarget) =
   discard window.jsctx.dispatch(target, event)
 
-proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget) =
-  let event = newEvent(name.toAtom(), target)
-  event.isTrusted = true
+proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget;
+    bubbles, cancelable, trusted: bool) =
+  let event = newEvent(name.toAtom(), target, bubbles, cancelable)
+  event.isTrusted = trusted
   window.fireEvent(event, target)
 
 proc parseColor(element: Element; s: string): ARGBColor =
@@ -4357,7 +4364,8 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           image.invalidate()
           #TODO fire error on error
           if window.settings.scripting != smFalse:
-            window.fireEvent(satLoad, image)
+            window.fireEvent(satLoad, image, bubbles = false,
+              cancelable = false, trusted = true)
         )
       )
     window.pendingResources.add(p)
@@ -5803,7 +5811,8 @@ proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
   of satCustomevent:
     return ok(ctx.newCustomEvent(satUempty.toAtom()))
   of satEvent, satEvents, satSvgevents:
-    return ok(newEvent(satUempty.toAtom(), nil))
+    return ok(newEvent(satUempty.toAtom(), nil,
+      bubbles = false, cancelable = false))
   of satUievent, satUievents:
     return ok(newUIEvent(satUempty.toAtom()))
   else:

@@ -118,6 +118,10 @@ proc parseMethod(s: string): DOMResult[HttpMethod] =
   else:
     errDOMException("Invalid method", "SyntaxError")
 
+proc fireReadyStateChangeEvent(window: Window; target: EventTarget) =
+  window.fireEvent(satReadystatechange, target, bubbles = false,
+    cancelable = false, trusted = true)
+
 proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
     misc: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   let httpMethod = ?parseMethod(httpMethod)
@@ -156,7 +160,7 @@ proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
   #TODO response object, received bytes
   if this.readyState != xhrsOpened:
     this.readyState = xhrsOpened
-    global.fireEvent(satReadystatechange, this)
+    global.fireReadyStateChangeEvent(this)
   return ok()
 
 proc checkOpened(this: XMLHttpRequest): DOMResult[void] =
@@ -207,6 +211,7 @@ proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     total: length,
     lengthComputable: length != 0
   ))
+  event.isTrusted = true
   window.fireEvent(event, target)
 
 proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
@@ -214,7 +219,7 @@ proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
   this.response = makeNetworkError()
   this.flags.excl(xhrfSend)
   if xhrfSync notin this.flags:
-    window.fireEvent(satReadystatechange, this)
+    window.fireReadyStateChangeEvent(this)
     if xhrfUploadComplete notin this.flags:
       this.flags.incl(xhrfUploadComplete)
       if xhrfUploadListener in this.flags:
@@ -260,7 +265,7 @@ proc onReadXHR(response: Response) =
     this.received.setLen(olen + n)
   if this.readyState == xhrsHeadersReceived:
     this.readyState = xhrsLoading
-  window.fireEvent(satReadystatechange, this)
+    window.fireReadyStateChangeEvent(this)
   window.fireProgressEvent(this, satProgress, int64(this.received.len),
     opaque.len)
 
@@ -275,7 +280,7 @@ proc onFinishXHR(response: Response; success: bool) =
       window.fireProgressEvent(this, satProgress, recvLen, opaque.len)
       this.readyState = xhrsDone
       this.flags.excl(xhrfSend)
-      window.fireEvent(satReadystatechange, this)
+      window.fireReadyStateChangeEvent(this)
       window.fireProgressEvent(this, satLoad, recvLen, opaque.len)
       window.fireProgressEvent(this, satLoadend, recvLen, opaque.len)
   else:
@@ -348,7 +353,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
       let response = res.get
       this.response = response
       this.readyState = xhrsHeadersReceived
-      window.fireEvent(satReadystatechange, this)
+      window.fireReadyStateChangeEvent(this)
       if this.readyState != xhrsHeadersReceived:
         return
       let len = max(response.getContentLength(), 0)
