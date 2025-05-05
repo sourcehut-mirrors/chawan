@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<div id=y>
+<div id=x>Fail</div>
+</div>
+<script src=asserts.js></script>
+<script>
+window.onload = function() {
+	const x = document.getElementById("x")
+	const y = document.getElementById("y")
+	let n = 0;
+	x.addEventListener("test", e => n++);
+	x.dispatchEvent(new Event("test", {bubbles: true}));
+	assertEquals(n, 1);
+	document.documentElement.addEventListener("click", e => e.stopPropagation(), true);
+	let ok1 = true, ok2 = true, ok3 = true;
+	y.addEventListener("click", e => ok1 = false, true);
+	y.addEventListener("click", e => ok2 = false);
+	x.addEventListener("click", e => ok3 = false);
+	x.click();
+	assert(ok1);
+	assert(ok2);
+	assert(ok3);
+	x.textContent = "Success";
+}
+</script>
