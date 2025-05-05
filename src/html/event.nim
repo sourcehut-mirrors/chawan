@@ -556,14 +556,15 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
   if not stop:
     event.eventPhase = 2
     ctx.dispatchEvent0(event, target, stop, canceled, capture = true)
-    ctx.dispatchEvent0(event, target, stop, canceled, capture = false)
-    if event.bubbles:
-      event.eventPhase = 3
-      for i in 1 ..< targets.len:
-        if stop:
-          break
-        let target = targets[i]
-        ctx.dispatchEvent0(event, target, stop, canceled, capture = false)
+    if not stop:
+      ctx.dispatchEvent0(event, target, stop, canceled, capture = false)
+      if event.bubbles:
+        event.eventPhase = 3
+        for i in 1 ..< targets.len:
+          if stop:
+            break
+          let target = targets[i]
+          ctx.dispatchEvent0(event, target, stop, canceled, capture = false)
   event.eventPhase = 0
   event.flags.excl(efDispatch)
   return canceled

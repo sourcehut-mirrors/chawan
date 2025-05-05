@@ -8,6 +8,7 @@ window.onload = function() {
 	const x = document.getElementById("x")
 	const y = document.getElementById("y")
 	let n = 0;
+	x.addEventListener("test", e => { n++, e.stopPropagation() }, true);
 	x.addEventListener("test", e => n++);
 	x.dispatchEvent(new Event("test", {bubbles: true}));
 	assertEquals(n, 1);
