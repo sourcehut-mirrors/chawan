@@ -119,8 +119,6 @@ type
     obuf: array[16384, char] # buffer for output data
     obufLen: int # len of obuf
     sixelRegisterNum*: int
-    sixelMaxWidth*: int
-    sixelMaxHeight: int
     kittyId: int # counter for kitty image (*not* placement) ids.
     cursorx: int
     cursory: int
@@ -154,9 +152,6 @@ template XTSMGRAPHICS(pi, pa, pv: untyped): string =
 
 # number of color registers
 const XTNUMREGS = XTSMGRAPHICS(1, 1, 0)
-
-# image dimensions
-const XTIMGDIMS = XTSMGRAPHICS(2, 1, 0)
 
 # horizontal & vertical position
 template HVP(y, x: int): string =
@@ -593,14 +588,6 @@ proc applyConfigDimensions(term: Terminal) =
     term.attrs.ppl = int(term.config.display.pixelsPerLine)
   term.attrs.widthPx = term.attrs.ppc * term.attrs.width
   term.attrs.heightPx = term.attrs.ppl * term.attrs.height
-  if term.imageMode == imSixel:
-    if term.sixelMaxWidth == 0:
-      term.sixelMaxWidth = term.attrs.widthPx
-    if term.sixelMaxHeight == 0:
-      term.sixelMaxHeight = term.attrs.heightPx
-    # xterm acts weird even if I don't fill in the missing rows, so
-    # just round down instead.
-    term.sixelMaxHeight = (term.sixelMaxHeight div 6) * 6
 
 proc applyConfig(term: Terminal) =
   # colors, formatting
@@ -692,16 +679,8 @@ proc positionImage(term: Terminal; image: CanvasImage;
   # origin (*not* offx/offy)
   let maxwpx = maxw * term.attrs.ppc
   let maxhpx = maxh * term.attrs.ppl
-  var width = image.width
-  var height = image.height
-  if term.imageMode == imSixel:
-    # we *could* scale the images down, but this doesn't really look
-    # like a problem worth solving. just set the max sizes in xterm
-    # appropriately.
-    width = min(width - image.offx, term.sixelMaxWidth) + image.offx
-    height = min(height - image.offy, term.sixelMaxHeight) + image.offy
-  image.dispw = min(width + xpx, maxwpx) - xpx
-  image.disph = min(height + ypx, maxhpx) - ypx
+  image.dispw = min(image.width + xpx, maxwpx) - xpx
+  image.disph = min(image.height + ypx, maxhpx) - ypx
   image.damaged = true
   return image.dispw > image.offx and image.disph > image.offy
 
@@ -1015,8 +994,6 @@ type
     ppl: int
     width: int
     height: int
-    sixelMaxWidth: int
-    sixelMaxHeight: int
     registers: int
 
 proc consumeIntUntil(term: Terminal; sentinel: char): int =
@@ -1073,8 +1050,8 @@ proc skipUntilST(term: Terminal) =
 
 proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   const tcapRGB = 0x524742 # RGB supported?
+  var outs = ""
   if not windowOnly:
-    var outs = ""
     if term.termType != ttScreen:
       # screen has a horrible bug where the responses to bg/fg queries
       # are printed out of order (presumably because it must ask the
@@ -1091,27 +1068,13 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       if not term.bleedsAPC:
         outs &= KITTYQUERY
       outs &= XTNUMREGS
-      outs &= XTIMGDIMS
     elif term.config.display.imageMode.get == imSixel:
       outs &= XTNUMREGS
-      outs &= XTIMGDIMS
     if term.config.display.colorMode.isNone:
       outs &= XTGETTCAPRGB
-    outs &=
-      XTGETANSI &
-      GEOMPIXEL &
-      CELLSIZE &
-      GEOMCELL &
-      DA1
-    term.write(outs)
-  else:
-    const outs =
-      GEOMPIXEL &
-      CELLSIZE &
-      GEOMCELL &
-      XTIMGDIMS &
-      DA1
-    term.write(outs)
+    outs &= XTGETANSI
+  outs &= static(GEOMPIXEL & CELLSIZE & GEOMCELL & DA1)
+  term.write(outs)
   term.flush()
   result = QueryResult(success: false, attrs: {})
   while true:
@@ -1148,10 +1111,6 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
           result.success = true
           break
         else: # 'S' (XTSMGRAPHICS)
-          if params.len >= 4:
-            if params[0] == 2 and params[1] == 0:
-              result.sixelMaxWidth = params[2]
-              result.sixelMaxHeight = params[3]
           if params.len >= 3:
             if params[0] == 1 and params[1] == 0:
               result.registers = params[2]
@@ -1409,8 +1368,6 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         if term.sixelRegisterNum == 0:
           # assume 256 - tell me if you have more.
           term.sixelRegisterNum = 256
-        term.sixelMaxWidth = r.sixelMaxWidth
-        term.sixelMaxHeight = r.sixelMaxHeight
       if windowOnly:
         return res
       if qaAnsiColor in r.attrs and term.colorMode < cmANSI:
