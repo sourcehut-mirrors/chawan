@@ -1536,51 +1536,54 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   stmts.add(newBlockStmt(endstmts))
   return stmts
 
+proc addRow(s: var string; title: string; count, size, sz2, cnt2: int64;
+    name: string) =
+  var fv = $(float(sz2) / float(cnt2))
+  let i = fv.find('.')
+  if i != -1:
+    fv.setLen(i + 1)
+  else:
+    fv &= ".0"
+  s &= title & ": " & $count & " " & $size & " (" & fv & ")" & name & "\n"
+
+proc addRow(s: var string; title: string; count, size, sz2: int64;
+    name: string) =
+  s.addRow(title, count, size, sz2, count, name)
+
+proc addRow(s: var string; title: string; count, size: int64; name: string) =
+  s.addRow(title, count, size, size, name)
+
 proc getMemoryUsage*(rt: JSRuntime): string =
   var m: JSMemoryUsage
   JS_ComputeMemoryUsage(rt, m)
-  template row(title: string; count, size, sz2, cnt2: int64, name: string):
-      string =
-    var fv = $(float(sz2) / float(cnt2))
-    let i = fv.find('.')
-    if i != -1:
-      fv.setLen(i + 1)
-    else:
-      fv &= ".0"
-    title & ": " & $count & " " & $size & " (" & fv & ")" & name & "\n"
-  template row(title: string; count, size, sz2: int64, name: string):
-      string =
-    row(title, count, size, sz2, count, name)
-  template row(title: string; count, size: int64, name: string): string =
-    row(title, count, size, size, name)
   var s = ""
   if m.malloc_count != 0:
-    s &= row("memory allocated", m.malloc_count, m.malloc_size, "/block")
-    s &= row("memory used", m.memory_used_count, m.memory_used_size,
+    s.addRow("memory allocated", m.malloc_count, m.malloc_size, "/block")
+    s.addRow("memory used", m.memory_used_count, m.memory_used_size,
       m.malloc_size - m.memory_used_size, " average slack")
   if m.atom_count != 0:
-    s &= row("atoms", m.atom_count, m.atom_size, "/atom")
+    s.addRow("atoms", m.atom_count, m.atom_size, "/atom")
   if m.str_count != 0:
-    s &= row("strings", m.str_count, m.str_size, "/string")
+    s.addRow("strings", m.str_count, m.str_size, "/string")
   if m.obj_count != 0:
-    s &= row("objects", m.obj_count, m.obj_size, "/object") &
-      row("properties", m.prop_count, m.prop_size, m.prop_size, m.obj_count,
-        "/object") &
-      row("shapes", m.shape_count, m.shape_size, "/shape")
+    s.addRow("objects", m.obj_count, m.obj_size, "/object")
+    s.addRow("properties", m.prop_count, m.prop_size, m.prop_size, m.obj_count,
+      "/object")
+    s.addRow("shapes", m.shape_count, m.shape_size, "/shape")
   if m.js_func_count != 0:
-    s &= row("js functions", m.js_func_count, m.js_func_size, "/function")
+    s.addRow("js functions", m.js_func_count, m.js_func_size, "/function")
   if m.c_func_count != 0:
     s &= "native functions: " & $m.c_func_count & "\n"
   if m.array_count != 0:
     s &= "arrays: " & $m.array_count & "\n" &
-      "fast arrays: " & $m.fast_array_count & "\n" &
-      row("fast array elements", m.fast_array_elements,
+      "fast arrays: " & $m.fast_array_count & "\n"
+    s.addRow("fast array elements", m.fast_array_elements,
         m.fast_array_elements * sizeof(JSValue), m.fast_array_elements,
         m.fast_array_count, "")
   if m.binary_object_count != 0:
     s &= "binary objects: " & $m.binary_object_count & " " &
       $m.binary_object_size
-  return s
+  move(s)
 
 proc eval*(ctx: JSContext; s: string; file = "<input>";
     evalFlags = JS_EVAL_TYPE_GLOBAL): JSValue =
