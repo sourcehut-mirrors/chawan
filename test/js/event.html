@@ -8,19 +8,30 @@ window.onload = function() {
 	const x = document.getElementById("x")
 	const y = document.getElementById("y")
 	let n = 0;
-	x.addEventListener("test", e => { n++, e.stopPropagation() }, true);
-	x.addEventListener("test", e => n++);
+	let ok1 = true, ok2 = true, ok3 = true, ok4 = true, ok5 = true;
+	x.addEventListener("test", e => {
+		n++;
+		e.stopPropagation();
+		ok1 = e.eventPhase == 2;
+	}, true);
+	x.addEventListener("test", e => { n++; ok1 = ok1 && e.eventPhase == 2 });
 	x.dispatchEvent(new Event("test", {bubbles: true}));
-	assertEquals(n, 1);
-	document.documentElement.addEventListener("click", e => e.stopPropagation(), true);
-	let ok1 = true, ok2 = true, ok3 = true;
-	y.addEventListener("click", e => ok1 = false, true);
-	y.addEventListener("click", e => ok2 = false);
-	x.addEventListener("click", e => ok3 = false);
-	x.click();
 	assert(ok1);
+	assertEquals(n, 1);
+	function el2() {
+		ok2 = false;
+	}
+	x.addEventListener("test2", () => x.removeEventListener("test", el2)); 
+	x.addEventListener("test2", el2);
 	assert(ok2);
+	document.documentElement.addEventListener("click", e => e.stopPropagation(), true);
+	y.addEventListener("click", e => ok3 = false, true);
+	y.addEventListener("click", e => ok4 = false);
+	x.addEventListener("click", e => ok5 = false);
+	x.click();
 	assert(ok3);
+	assert(ok4);
+	assert(ok5);
 	x.textContent = "Success";
 }
 </script>

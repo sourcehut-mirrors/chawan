@@ -518,56 +518,79 @@ proc hasEventListener*(eventTarget: EventTarget; ctype: CAtom): bool =
       return true
   return false
 
-proc dispatchEvent0(ctx: JSContext; event: Event; currentTarget: EventTarget;
-    stop, canceled: var bool; capture: bool) =
-  event.currentTarget = currentTarget
-  var els = currentTarget.eventListeners # copy intentionally
-  for el in els:
+type
+  DispatchItem = object
+    target: EventTarget
+    els: seq[EventListener]
+
+  DispatchContext = object
+    event: Event
+    ctx: JSContext
+    stop: bool
+    canceled: bool
+    capture: seq[DispatchItem]
+    bubble: seq[DispatchItem]
+
+proc collectItems(dctx: var DispatchContext; target: EventTarget) =
+  let ctype = dctx.event.ctype
+  let bubbles = dctx.event.bubbles
+  var it = target
+  while it != nil:
+    var capture: seq[EventListener] = @[]
+    var bubble: seq[EventListener] = @[]
+    for el in it.eventListeners:
+      if el.ctype == ctype:
+        if el.capture:
+          capture.add(el)
+        elif bubbles or it == target:
+          bubble.add(el)
+    if capture.len > 0:
+      dctx.capture.add(DispatchItem(target: it, els: move(capture)))
+    if bubble.len > 0:
+      dctx.bubble.add(DispatchItem(target: it, els: move(bubble)))
+    it = dctx.ctx.getParentImpl(it, dctx.event)
+
+proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
+  let ctx = dctx.ctx
+  let event = dctx.event
+  event.currentTarget = item.target
+  for el in item.els:
     if JS_IsUndefined(el.callback):
       continue # removed, presumably by a previous handler
-    if el.ctype == event.ctype and el.capture == capture:
-      let e = ctx.invoke(el, event)
-      if JS_IsException(e):
-        ctx.logException()
-      JS_FreeValue(ctx, e)
-      if efCanceled in event.flags:
-        canceled = true
-      if {efStopPropagation, efStopImmediatePropagation} * event.flags != {}:
-        stop = true
-      if efStopImmediatePropagation in event.flags:
-        break
+    let e = ctx.invoke(el, event)
+    if JS_IsException(e):
+      ctx.logException()
+    JS_FreeValue(ctx, e)
+    if efCanceled in event.flags:
+      dctx.canceled = true
+    if {efStopPropagation, efStopImmediatePropagation} * event.flags != {}:
+      dctx.stop = true
+    if efStopImmediatePropagation in event.flags:
+      break
 
 proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
-  var canceled = false
-  var stop = false
+  var dctx = DispatchContext(ctx: ctx, event: event)
   event.flags.incl(efDispatch)
   event.target = target
-  var it = target
-  var targets: seq[EventTarget] = @[]
-  while it != nil:
-    targets.add(it)
-    it = ctx.getParentImpl(it, event)
+  dctx.collectItems(target)
   event.eventPhase = 1
-  for i in countdown(targets.high, 1):
-    if stop:
+  for i in countdown(dctx.capture.high, 0):
+    if dctx.stop:
       break
-    let it = targets[i]
-    ctx.dispatchEvent0(event, it, stop, canceled, capture = true)
-  if not stop:
-    event.eventPhase = 2
-    ctx.dispatchEvent0(event, target, stop, canceled, capture = true)
-    if not stop:
-      ctx.dispatchEvent0(event, target, stop, canceled, capture = false)
-      if event.bubbles:
-        event.eventPhase = 3
-        for i in 1 ..< targets.len:
-          if stop:
-            break
-          let target = targets[i]
-          ctx.dispatchEvent0(event, target, stop, canceled, capture = false)
+    let item = dctx.capture[i]
+    if item.target == target:
+      event.eventPhase = 2
+    dctx.dispatchEvent0(item)
+  event.eventPhase = 2
+  for item in dctx.bubble:
+    if dctx.stop:
+      break
+    if item.target != target:
+      event.eventPhase = 3
+    dctx.dispatchEvent0(item)
   event.eventPhase = 0
   event.flags.excl(efDispatch)
-  return canceled
+  return dctx.canceled
 
 proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event):
     DOMResult[bool] {.jsfunc.} =
