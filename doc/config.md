@@ -341,15 +341,6 @@ Following is a list of external options:
 </tr>
 
 <tr>
-<td>sockdir</td>
-<td>path</td>
-<td>{usually /tmp/cha-sock-user}</td>
-<td>Directory used to store UNIX domain sockets used for inter-process
-communication.<br>
-This is currently unused.</td>
-</tr>
-
-<tr>
 <td>editor</td>
 <td>shell command</td>
 <td>{usually `$EDITOR`}</td>

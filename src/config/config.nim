@@ -115,7 +115,6 @@ type
 
   ExternalConfig = object
     tmpdir* {.jsgetset.}: ChaPathResolved
-    sockdir* {.jsgetset.}: ChaPathResolved
     editor* {.jsgetset.}: string
     mailcap*: Mailcap
     autoMailcap*: AutoMailcap
