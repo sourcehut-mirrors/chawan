@@ -128,13 +128,6 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
       loaderStream = newSocketStream(r.recvFd())
       istream = newSocketStream(r.recvFd())
     let loader = newFileLoader(pid, loaderStream)
-    gpstream = pstream
-    onSignal SIGTERM:
-      discard sig
-      if gpstream != nil:
-        gpstream.sclose()
-        gpstream = nil
-      exitnow(1)
     signal(SIGPIPE, SIG_DFL)
     enterBufferSandbox()
     try:

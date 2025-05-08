@@ -877,8 +877,6 @@ proc rewind(buffer: Buffer; data: InputData; offset: int;
   buffer.bytesRead = offset
   return true
 
-var gpstream* {.global.}: SocketStream
-
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
 proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
@@ -945,7 +943,6 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     for it in buffer.tasks.mitems:
       it = 0
     buffer.pstream = pstream
-    gpstream = buffer.pstream
     buffer.loader.clientPid = myPid
     # get key for new buffer
     buffer.loader.controlStream.sclose()
@@ -1894,9 +1891,7 @@ proc runBuffer(buffer: Buffer) =
         buffer.maybeReshape()
 
 proc cleanup(buffer: Buffer) =
-  if gpstream != nil:
-    gpstream.sclose()
-    gpstream = nil
+  buffer.pstream.sclose()
   buffer.window.crypto.urandom.sclose()
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
