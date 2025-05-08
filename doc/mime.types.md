@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-config(5) | MIME type detection in Chawan
+% cha-mime.types(5) | MIME type detection in Chawan
 MANOFF -->
 
 # mime.types
