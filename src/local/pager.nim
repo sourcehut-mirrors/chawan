@@ -2233,9 +2233,9 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.lineData = nil
     if pager.downloads != nil:
       pager.setContainer(pager.downloads)
-    else:
-      pager.downloads = pager.gotoURL(newRequest(newURL("about:downloads").get),
-        history = false)
+    elif pager.config.external.showDownloadPanel:
+      let url = newURL("about:downloads").get
+      pager.downloads = pager.gotoURL(newRequest(url), history = false)
   else:
     pager.ask("Failed to save to " & path & ". Retry?").then(
       proc(x: bool) =

@@ -126,6 +126,7 @@ type
     historySize* {.jsgetset.}: int32
     cookieFile*: ChaPathResolved
     downloadDir* {.jsgetset.}: ChaPathResolved
+    showDownloadPanel* {.jsgetset.}: bool
     w3mCgiCompat* {.jsgetset.}: bool
     copyCmd* {.jsgetset.}: string
     pasteCmd* {.jsgetset.}: string

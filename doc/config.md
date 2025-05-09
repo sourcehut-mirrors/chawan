@@ -411,6 +411,14 @@ details, see <!-- MANOFF -->[localcgi.md](localcgi.md).<!-- MANON -->
 </tr>
 
 <tr>
+<td>show-download-panel</td>
+<td>boolean</td>
+<td>true</td>
+<td>Whether the `about:downloads` should be shown after starting a
+download.</td>
+</tr>
+
+<tr>
 <td>copy-cmd</td>
 <td>shell command</td>
 <td>"xsel -bi"</td>
