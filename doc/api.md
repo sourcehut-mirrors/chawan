@@ -748,3 +748,10 @@ Following properties (functions/getters) are defined by `LineEdit`:
 </tr>
 
 </table>
+
+<!-- MANON
+
+## See also
+
+**cha**(1) **cha-config**(5)
+MANOFF -->

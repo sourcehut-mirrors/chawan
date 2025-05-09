@@ -9,6 +9,9 @@ All local CGI scripts must be placed in a directory specified in
 \f[CR]external.cgi\-dir\f[R].
 Multiple directories can be specified in an array too, and directories
 specified first have higher precedence.
+.PD 0
+.P
+.PD
 By default, this is set to \f[CR]$CHA_DIR/cgi\-bin\f[R] (i.e.
 \f[CR]\[ti]/.chawan/cgi\-bin\f[R] or
 \f[CR]\[ti]/.config/chawan/cgi\-bin\f[R], depending on
@@ -88,6 +91,9 @@ before that.
 Parameter 1 is the error code, see below.
 If any following parameters are given, they are concatenated to form a
 custom error message.
+.PD 0
+.P
+.PD
 Note: short but descriptive error messages are preferred, messages that
 do not fit on the screen are currently truncated.
 (TODO fix this somehow :P)
@@ -97,6 +103,9 @@ sent; this means that \f[CR]Cha\-Control\f[R] and \f[CR]Status\f[R]
 headers sent after this must be interpreted as regular headers (and thus
 e.g.\ will be available for JS code calling the script using the fetch
 API).
+.PD 0
+.P
+.PD
 WARNING: this header must be sent before any non\-hardcoded headers that
 take external input.
 For example, an HTTP client would have to send
@@ -238,6 +247,9 @@ Note: the path name is percent\-encoded.
 \f[CR]example\f[R].
 Note that, unlike in JavaScript, no question mark is prepended to the
 string.
+.PD 0
+.P
+.PD
 The query string is percent\-encoded as well.
 .PP
 Note: the fragment part is omitted intentionally.
@@ -293,4 +305,4 @@ This means that either \f[CR]pipe\f[R] or \f[CR]fork\f[R] failed.
 Something strange is going on with your system; we recommend exorcism.
 (Maybe you are running out of memory?)
 .SS See also
-\f[B]cha\f[R](1)
+\f[B]cha\f[R](1) \f[B]cha\-urimethodmap\f[R](5)

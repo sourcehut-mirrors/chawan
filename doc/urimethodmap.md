@@ -130,3 +130,10 @@ urimethodmap + local CGI redirection.
 
 Rule of thumb: if you find yourself writing local CGI scripts that just
 send a `Location:` header, maybe consider just using an omni-rule.
+
+<!-- MANON
+
+## See also
+
+**cha**(1) **cha-localcgi**(5)
+MANOFF -->

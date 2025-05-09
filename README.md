@@ -1,5 +1,3 @@
-# Chawan
-
 [Chawan](https://sr.ht/~bptato/chawan) is a TUI web (and (S)FTP, Gopher,
 Gemini, ...) browser with CSS, inline image and JavaScript support.
 
@@ -78,7 +76,7 @@ Currently implemented features are:
 
 ## Bugs, technical issues, etc.
 
-First, check the [troubleshooting](doc/troubleshooting.md) document.
+First, read the [troubleshooting](doc/troubleshooting.md) document.
 If it doesn't help, [open a ticket](https://todo.sr.ht/~bptato/chawan).
 
 When using the ticket tracker, please make sure your tickets are valid

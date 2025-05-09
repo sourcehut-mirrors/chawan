@@ -225,5 +225,5 @@ with your system; we recommend exorcism. (Maybe you are running out of memory?)
 <!-- MANON
 ## See also
 
-**cha**(1)
+**cha**(1) **cha-urimethodmap**(5)
 MANOFF -->

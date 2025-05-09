@@ -10,6 +10,7 @@ MANPREFIX1 ?= $(MANPREFIX)/man1
 MANPREFIX5 ?= $(MANPREFIX)/man5
 MANPREFIX7 ?= $(MANPREFIX)/man7
 TARGET ?= release
+PANDOC ?= pandoc
 
 # Note: this is not a real shell substitution.
 # The default setting is at {the binary's path}/../libexec/chawan.
@@ -198,7 +199,7 @@ $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	./md2manpreproc $< > $@
 
 $(OBJDIR)/man/cha-%.md.roff: $(OBJDIR)/man/cha-%.md
-	pandoc --standalone --to man $< -o $@
+	$(PANDOC) --standalone --to man $< -o $@
 
 doc/cha-%.5: $(OBJDIR)/man/cha-%.md.roff
 	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@

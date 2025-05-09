@@ -1753,5 +1753,5 @@ as non-whitespace.
 
 ## See also
 
-**cha**(1)
+**cha**(1) **cha-api**(7)
 MANOFF -->

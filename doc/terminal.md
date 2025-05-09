@@ -66,3 +66,10 @@ Sitaker's `admu` emulator.  However, a real ADM-3A would likely be
 confused by non-ASCII characters.
 
 Patches for other terminals (hardware or software alike) are welcome.
+
+<!-- MANON
+
+## See also
+
+**cha**(1)
+MANOFF -->

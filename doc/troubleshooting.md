@@ -6,6 +6,9 @@ MANOFF -->
 
 This document lists common problems you may run into when using Chawan.
 
+If you encounter a problem not described in this document, please open a
+ticket at <https://todo.sr.ht/~bptato/chawan>.
+
 ## I can't select/copy text with my mouse?
 
 Right click -> select text, then right click -> copy selection.

@@ -10,9 +10,8 @@ displaying them in Chawan.
 Note that Chawan\[cq]s default mime.types file only recognizes a few
 file extensions, which may result in your entries not being executed if
 your system lacks an /etc/mime.types file.
-Please consult the
-.PP
-\f[B]cha\-mime.types\f[R](5) documentation for details.
+Please consult the \f[B]cha\-mime.types\f[R](5) documentation for
+details.
 .PP
 For an exact description of the mailcap format, see \c
 .UR https://www.rfc-editor.org/rfc/rfc1524
@@ -71,6 +70,9 @@ are also recognized.
 .IP \[bu] 2
 When the \f[CR]test\f[R] named field is specified, the mailcap entry is
 only used if the test command returns 0.
+.PD 0
+.P
+.PD
 Warning: as of now, \f[CR]%s\f[R] does not work with \f[CR]test\f[R];
 \f[CR]test\f[R] named fields with a \f[CR]%s\f[R] template are skipped,
 and no data is piped into \f[CR]test\f[R] commands.
