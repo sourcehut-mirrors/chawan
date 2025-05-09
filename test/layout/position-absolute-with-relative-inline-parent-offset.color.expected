@@ -1,4 +1,3 @@
-
 Note: per CSS, the absolute box's sizing is explicitly UB, apparently to
 accommodate for Gecko's broken rendering. We follow Blink.
 
