@@ -175,10 +175,9 @@ proc promiseCatchCallback(ctx: JSContext; this: JSValueConst; argc: cint;
   return JS_UNDEFINED
 
 proc fromJS*(ctx: JSContext; val: JSValueConst;
-    res: out Promise[seq[JSValueConst]]): Opt[void] =
+    res: var Promise[seq[JSValueConst]]): Opt[void] =
   if not JS_IsObject(val):
     JS_ThrowTypeError(ctx, "value is not an object")
-    res = nil
     return err()
   res = Promise[seq[JSValueConst]]()
   let tmp = JS_NewObject(ctx)
@@ -209,7 +208,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst;
   GC_ref(res)
   return ok()
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: out EmptyPromise):
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var EmptyPromise):
     Opt[void] =
   var res1: Promise[seq[JSValueConst]]
   ?ctx.fromJS(val, res1)
@@ -220,7 +219,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: out EmptyPromise):
   res = res2
   return ok()
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: out Promise[JSValueConst]):
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var Promise[JSValueConst]):
     Opt[void] =
   var res1: Promise[seq[JSValueConst]]
   ?ctx.fromJS(val, res1)

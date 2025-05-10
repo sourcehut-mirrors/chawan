@@ -80,7 +80,7 @@ type
 jsDestructor(NumberFormat)
 jsDestructor(PluralRules)
 
-proc fromJS(ctx: JSContext; val: JSValueConst; unit: out NumberUnit):
+proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
     Opt[void] =
   var s: string
   ?ctx.fromJS(val, s)

@@ -723,20 +723,15 @@ values. Import the `monoucha/fromjs` module to use it.
 
 On success, `fromJS` fills `res` and returns `Opt[void].some()`.
 
-On failure, `res` is left in its initial state, **except if it's a
-JSDict (see below!)**, a QuickJS exception is thrown (using
-`JS_Throw()`), and `Opt[void].none()` is returned.
+On failure, `res` is set to an unspecified value, a QuickJS exception is
+thrown (using `JS_Throw()`), and `Opt[void].none()` is returned.
 
-**Warning**: since fromJS is mainly meant to be used by automatic
-wrappers, it performs the following optimization: for `JSDict` values,
-`res` is left in a modified state.
-
-**Warning 2**: JSDict in general is somewhat finnicky: you must make
-sure that their destructors run before deinitializing the runtime. In
-practice, this means a) you must not use JSDict in the same procedure
+**Warning**: JSDict in general is somewhat finnicky: you must make
+sure that their destructors run before deinitializing the runtime.
+In practice, this means a) you must not use JSDict in the same procedure
 where you free the JSRuntime, b) you must call GC_fullCollect before
-freeing the runtime if you use JSDict. (TODO: this all seems very
-broken. Why isn't JSDict itself just a ref object?)
+freeing the runtime if you use JSDict.  (TODO: this all seems very
+broken.  Why isn't JSDict itself just a ref object?)
 
 Passing `JS_EXCEPTION` to `fromJS` is valid, and results in no new
 exception being thrown.

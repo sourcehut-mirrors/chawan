@@ -233,7 +233,7 @@ proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
 
 # UIEvent
 type EventTargetWindow = distinct EventTarget
-proc fromJS(ctx: JSContext; val: JSValue; res: out EventTargetWindow):
+proc fromJS(ctx: JSContext; val: JSValue; res: var EventTargetWindow):
     Opt[void] =
   var res0: EventTarget
   ?ctx.fromJS(val, res0)

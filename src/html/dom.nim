@@ -591,14 +591,14 @@ var fetchImpl*: proc(window: Window; input: JSRequest): JSResult[FetchPromise]
 func getGlobal*(ctx: JSContext): Window =
   let global = JS_GetGlobalObject(ctx)
   var window: Window
-  assert ctx.fromJS(global, window).isSome
+  doAssert ctx.fromJS(global, window).isSome
   JS_FreeValue(ctx, global)
   return window
 
 func getWindow*(ctx: JSContext): Window =
   let global = JS_GetGlobalObject(ctx)
   var window: Window
-  assert ctx.fromJS(global, window).isSome
+  doAssert ctx.fromJS(global, window).isSome
   JS_FreeValue(ctx, global)
   return window
 
