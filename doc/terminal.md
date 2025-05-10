@@ -26,7 +26,7 @@ XTerm might malfunction.
 (In practice, I have tested dozens of terminal emulators and haven't
 encountered any major issues; in all likelihood, yours will work too.
 Still, if it doesn't, please
-[open a ticket](https://tickets.sr.ht/~bptato/chawan.)
+[open a ticket](https://tickets.sr.ht/~bptato/chawan).)
 
 ## Queries
 
