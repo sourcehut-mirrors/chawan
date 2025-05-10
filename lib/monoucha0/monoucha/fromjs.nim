@@ -250,14 +250,14 @@ proc fromJS*[A, B](ctx: JSContext; val: JSValueConst; res: out Table[A, B]):
   if not JS_IsObject(val):
     if not JS_IsException(val):
       JS_ThrowTypeError(ctx, "object expected")
-    res = default(typeof(res))
+    res = default(Table[A, B])
     return err()
   var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
   let flags = cint(JS_GPN_STRING_MASK)
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
-    res = default(typeof(res))
+    res = default(Table[A, B])
     return err()
   defer:
     JS_FreePropertyEnum(ctx, ptab, plen)

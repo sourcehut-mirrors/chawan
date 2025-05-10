@@ -833,6 +833,7 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
     # still intersects with the previous y).
     y = miny
   assert false
+  offset(-1, -1)
 
 func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
     space: AvailableSpace; float: CSSFloat): Offset =

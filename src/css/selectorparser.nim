@@ -193,6 +193,7 @@ func `$`*(sels: CompoundSelector): string =
     result &= $sel
 
 func `$`*(cxsel: ComplexSelector): string =
+  result = ""
   for sels in cxsel:
     result &= $sels
     case sels.ct
@@ -203,6 +204,7 @@ func `$`*(cxsel: ComplexSelector): string =
     of ctNone: discard
 
 func `$`*(slist: SelectorList): string =
+  result = ""
   var s = false
   for cxsel in slist:
     if s:
@@ -211,6 +213,7 @@ func `$`*(slist: SelectorList): string =
     s = true
 
 func getSpecificity(sel: Selector): int =
+  result = 0
   case sel.t
   of stId:
     result += 1000000
@@ -335,6 +338,7 @@ proc parseSelectorFunction(state: var SelectorParser; cssfunction: CSSFunction):
   else: fail
 
 proc parsePseudoSelector(state: var SelectorParser): Selector =
+  result = nil
   if not state.has(): fail
   let cval = state.consume()
   if cval of CSSToken:

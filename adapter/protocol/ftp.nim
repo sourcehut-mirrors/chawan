@@ -34,7 +34,8 @@ proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
         break
     return status
   except EOFError:
-    os.die("InvalidResponse")
+    discard
+  os.die("InvalidResponse")
 
 proc sdie(os: PosixStream; status: int; s, obuf: string) {.noreturn.} =
   discard os.writeDataLoop("Status: " & $status &

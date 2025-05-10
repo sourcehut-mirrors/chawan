@@ -275,6 +275,7 @@ func lineLoaded(container: Container; y: int): bool =
 func getLine(container: Container; y: int): SimpleFlexibleLine =
   if container.lineLoaded(y):
     return container.lines[y - container.lineshift]
+  SimpleFlexibleLine()
 
 iterator ilines*(container: Container; slice: Slice[int]): SimpleFlexibleLine
     {.inline.} =
@@ -378,6 +379,7 @@ func acursory*(container: Container): int =
   container.cursory - container.fromy
 
 func maxScreenWidth(container: Container): int =
+  result = 0
   for line in container.ilines(container.fromy..container.lastVisibleLine):
     result = max(line.str.width(), result)
 
@@ -451,6 +453,7 @@ func colorNormal(container: Container; hl: Highlight; y: int;
   if y == endy:
     let w = container.getLine(y).str.width()
     return min(limitx.a, w) .. min(hl.endx, limitx.b)
+  0 .. 0
 
 func colorArea(container: Container; hl: Highlight; y: int;
     limitx: Slice[int]): Slice[int] =
@@ -466,14 +469,17 @@ func colorArea(container: Container; hl: Highlight; y: int;
         else:
           (hl.x2, hl.x1)
         return max(x, limitx.a) .. min(endx, limitx.b)
+      return 0 .. 0
     of stLine:
       if y in hl.starty .. hl.endy:
         let w = container.getLine(y).str.width()
         return min(limitx.a, w) .. min(limitx.b, w)
+      return 0 .. 0
   else:
     return container.colorNormal(hl, y, limitx)
 
 func findHighlights*(container: Container; y: int): seq[Highlight] =
+  result = @[]
   for hl in container.highlights:
     if y in hl.starty .. hl.endy:
       result.add(hl)

@@ -93,6 +93,7 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
         " [" & $e.name & "]\n")
       quit(1)
     doAssert false
+    exitnow(1)
   else:
     discard close(sv[1])
     loaderStream.sclose()
@@ -272,6 +273,7 @@ proc newForkServer*(loaderSockVec: array[2, cint]): ForkServer =
     let loaderStream = newSocketStream(loaderSockVec[1])
     runForkServer(controlStream, loaderStream)
     doAssert false
+    exitnow(1)
   else:
     discard close(pipeFdErr[1]) # close write
     discard close(sockVec[1])

@@ -13,13 +13,16 @@ type
 # An exception should be raised if readData is called with the 'isend'
 # flag set to true. (TODO just assert...)
 method readData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
+  result = 0
   doAssert false
 
 # See above, but with write(2)
 method writeData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
+  result = 0
   doAssert false
 
 method seek*(s: DynStream; off: int64): int64 {.base.} =
+  result = 0
   doAssert false
 
 method sclose*(s: DynStream) {.base.} =
@@ -116,7 +119,7 @@ method readData*(s: PosixStream; buffer: pointer; len: int): int =
     s.setEnd()
   return n
 
-proc readChar*(s: PosixStream): char =
+proc readChar*(s: PosixStream): char {.noinit.} =
   let n = read(s.fd, addr result, 1)
   assert n == 1
 
@@ -396,6 +399,7 @@ proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
   return n
 
 method seek*(s: SocketStream; off: int64): int64 =
+  result = 0
   doAssert false
 
 proc newSocketStream*(fd: cint): SocketStream =

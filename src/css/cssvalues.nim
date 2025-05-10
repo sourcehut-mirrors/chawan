@@ -654,6 +654,7 @@ func `$`(zIndex: CSSZIndex): string =
   return $zIndex.num
 
 func serialize(val: CSSValue): string =
+  result = ""
   case val.v
   of cvtImage: return $val.image
   of cvtLength2:
@@ -678,7 +679,9 @@ func serialize(val: CSSValueWord; t: CSSValueType): string =
   of cvtNumber: return $val.number
   of cvtVerticalAlign: return $val.verticalAlign
   of cvtZIndex: return $val.zIndex
-  else: assert false
+  else:
+    assert false
+    return ""
 
 func serialize(val: CSSValueBit; t: CSSValueType): string =
   case t
@@ -702,7 +705,9 @@ func serialize(val: CSSValueBit; t: CSSValueType): string =
   of cvtVisibility: return $val.visibility
   of cvtWhiteSpace: return $val.whiteSpace
   of cvtWordBreak: return $val.wordBreak
-  else: assert false
+  else:
+    assert false
+    return ""
 
 func serialize*(computed: CSSValues; p: CSSPropertyType): string =
   case p.reprType
@@ -819,15 +824,16 @@ func numberAdditive(i: int32; range: Slice[int32];
     symbols: openArray[(int32, cstring)]): string =
   if i notin range:
     return $i
+  var s = ""
   var n = i
   var at = 0
   while n > 0:
     if n >= symbols[at][0]:
       n -= symbols[at][0]
-      result &= $symbols[at][1]
+      s &= $symbols[at][1]
       continue
     inc at
-  return result
+  move(s)
 
 const romanNumbers = [
   (1000i32, cstring"M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"),
@@ -1660,6 +1666,7 @@ func getInitialNumber(t: CSSPropertyType): float32 =
   return 0
 
 func getInitialTable(): array[CSSPropertyType, CSSValue] =
+  result = array[CSSPropertyType, CSSValue].default
   for t in CSSPropertyType:
     result[t] = CSSValue(v: valueType(t))
 

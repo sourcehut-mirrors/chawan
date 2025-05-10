@@ -211,11 +211,12 @@ proc has(this: Headers; name: string): JSResult[bool] {.jsfunc.} =
 proc set(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
   let value = value.strip(chars = HTTPWhitespace)
   if not ?this.validate(name, value):
-    return
+    return ok()
   if this.guard == hgRequestNoCors and not name.isNoCorsSafelisted(value):
-    return
+    return ok()
   this.table[name.toHeaderCase()] = @[value]
   this.removeRange()
+  ok()
 
 proc fill(headers: Headers; s: seq[(string, string)]): JSResult[void] =
   for (k, v) in s:

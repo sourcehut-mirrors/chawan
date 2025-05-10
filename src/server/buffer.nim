@@ -565,7 +565,7 @@ proc findRevNthLink*(buffer: Buffer; i: int): tuple[x, y: int] {.proxy.} =
 
 proc findPrevMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
     wrap: bool, n: int): BufferMatch {.proxy.} =
-  if cursory >= buffer.lines.len: return
+  if cursory >= buffer.lines.len: return BufferMatch()
   var y = cursory
   let b = buffer.cursorBytes(y, cursorx)
   let res = regex.exec(buffer.lines[y].str, 0, b)
@@ -595,10 +595,11 @@ proc findPrevMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
     if y == cursory:
       break
     dec y
+  BufferMatch()
 
 proc findNextMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
     wrap: bool; n: int): BufferMatch {.proxy.} =
-  if cursory >= buffer.lines.len: return
+  if cursory >= buffer.lines.len: return BufferMatch()
   var y = cursory
   let b = buffer.cursorBytes(y, cursorx + 1)
   let res = regex.exec(buffer.lines[y].str, b, buffer.lines[y].str.len)
@@ -628,6 +629,7 @@ proc findNextMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
     if y == cursory:
       break
     inc y
+  BufferMatch()
 
 type
   ReadLineType* = enum

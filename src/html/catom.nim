@@ -151,7 +151,7 @@ macro makeStaticAtom =
     type StaticAtom* {.inject.} = enum
       atUnknown = ""
   let decl0 = decl[0][2]
-  var seen: HashSet[string]
+  var seen = HashSet[string].default
   for t in TagType:
     if t == TAG_UNKNOWN:
       continue

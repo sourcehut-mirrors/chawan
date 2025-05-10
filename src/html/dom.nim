@@ -919,6 +919,7 @@ proc setLineDash(ctx: CanvasRenderingContext2D; segments: seq[float64])
 
 proc getLineDash(ctx: CanvasRenderingContext2D): seq[float64] {.jsfunc.} =
   discard #TODO implement
+  @[]
 
 # CanvasTextDrawingStyles
 proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
@@ -1461,6 +1462,7 @@ func jsNodeType0(node: Node): NodeType =
   elif node of DocumentFragment:
     return DOCUMENT_FRAGMENT_NODE
   assert false
+  ENTITY_NODE
 
 func jsNodeType(node: Node): uint16 {.jsfget: "nodeType".} =
   return uint16(node.jsNodeType0)
@@ -2486,7 +2488,8 @@ proc getElementsByClassNameImpl(node: Node; classNames: string):
           for class in classAtoms:
             if class notin element.classList.toks:
               return false
-        return true,
+        return true
+      false,
     islive = true,
     childonly = false
   )
@@ -3517,7 +3520,7 @@ proc deleteCaption(this: HTMLTableElement) {.jsfunc.} =
 proc deleteTHead(this: HTMLTableElement) {.jsfunc.} =
   this.delete(TAG_THEAD)
 
-proc deleteTFoot(this: HTMLTableElement): Element {.jsfunc.} =
+proc deleteTFoot(this: HTMLTableElement) {.jsfunc.} =
   this.delete(TAG_TFOOT)
 
 proc insertRow(this: HTMLTableElement; index = -1): DOMResult[Element]
@@ -4532,7 +4535,7 @@ func findMagic(ctype: StaticAtom): cint =
     assert entry.tags == AllTagTypes
     if ReflectTable[i].t == rtFunction and ReflectTable[i].ctype == ctype:
       return cint(i)
-  assert false
+  -1
 
 proc reflectEvent(element: Element; target: EventTarget;
     name, ctype: StaticAtom; value: string) =
@@ -4546,6 +4549,7 @@ proc reflectEvent(element: Element; target: EventTarget;
       urls, ctx.getExceptionMsg())
   else:
     let magic = findMagic(ctype)
+    assert magic != -1
     let this = ctx.toJS(target)
     JS_FreeValue(ctx, ctx.eventReflectSet0(this, fun, magic, jsReflectSet,
       ctype))
@@ -5982,7 +5986,8 @@ proc querySelectorAllImpl(node: Node; q: string): DOMResult[NodeList] =
     match = func(node: Node): bool =
       if node of Element:
         {.cast(noSideEffect).}:
-          return Element(node).matchesImpl(selectors),
+          return Element(node).matchesImpl(selectors)
+      false,
     islive = false,
     childonly = false
   ))
@@ -6152,6 +6157,7 @@ proc insertAdjacentHTML(this: Element; position, text: string):
   of iapAfterBegin: this.insert(fragment, this.firstChild)
   of iapBeforeEnd: this.append(fragment)
   of iapAfterEnd: this.parentNode.insert(fragment, this.nextSibling)
+  ok()
 
 proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   let elementCID = ctx.registerType(Element, parent = nodeCID)

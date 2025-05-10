@@ -105,7 +105,7 @@ proc insert(root: var NodeChildren; c: RGBColor; trimMap: var TrimMap): uint =
         old.u.leaf.r += uint32(c.r)
         old.u.leaf.g += uint32(c.g)
         old.u.leaf.b += uint32(c.b)
-        return 0
+        break
       let oc = old.u.leaf.c
       let child = cast[Node](alloc(sizeof(NodeObj)))
       child.idx = 0
@@ -117,6 +117,7 @@ proc insert(root: var NodeChildren; c: RGBColor; trimMap: var TrimMap): uint =
       split = true
     inc level
     parent = addr old.u.children
+  0
 
 proc trim(trimMap: var TrimMap; K: var uint) =
   var node: Node = nil
@@ -278,6 +279,7 @@ proc getColor(root: var NodeChildren; c: ARGBColor; nodes: seq[Node];
       return child.idx
     inc level
     children = addr child.u.children
+  -1 # unreachable
 
 proc correctDither(c: ARGBColor; x: int; dither: Dither): ARGBColor =
   let (ad, rd, gd, bd) = dither.d1[x + 1]

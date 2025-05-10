@@ -645,6 +645,7 @@ proc consumeDeclarations(cvals: openArray[CSSComponentValue]):
 
 proc consumeListOfRules(cvals: openArray[CSSComponentValue]; topLevel: bool):
     seq[CSSRule] =
+  result = @[]
   var i = 0
   while i < cvals.len:
     let t = cvals[i]

@@ -371,8 +371,7 @@ proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValueConst):
       let res = toJS(ctx, opt.error)
       if not JS_IsNull(res):
         return JS_Throw(ctx, res)
-    else:
-      return JS_NULL
+    return JS_NULL
 
 proc toJS(ctx: JSContext; e: enum): JSValue =
   return toJS(ctx, $e)

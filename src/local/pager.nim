@@ -1417,7 +1417,7 @@ proc dupeBuffer(pager: Pager; container: Container; url: URL) =
   if p == nil:
     pager.alert("Failed to duplicate buffer.")
   else:
-    p.then(proc(res: tuple[c: Container; fd: cint]): Container =
+    p.then(proc(res: tuple[c: Container; fd: cint]) =
       if res.c == nil:
         pager.alert("Failed to duplicate buffer.")
       else:
@@ -1706,10 +1706,11 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
       sigaddset(act.sa_mask, SIGCHLD) < 0 or
       sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
     pager.alert("Failed to run process")
-    return
+    return false
   case (let pid = myFork(); pid)
   of -1:
     pager.alert("Failed to run process")
+    return false
   of 0:
     act.sa_handler = SIG_DFL
     discard sigemptyset(act.sa_mask)
@@ -2223,6 +2224,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
       pager.container.sendCursorPosition()
       pager.container.redraw = true
       pager.isearchpromise = newResolvedPromise()
+    return nil
   )
 
 proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
@@ -2427,10 +2429,11 @@ proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
       sigaddset(act.sa_mask, SIGCHLD) < 0 or
       sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
     pager.alert("Failed to run process (errno " & $errno & ")")
-    return
+    return -1
   case (let pid = myFork(); pid)
   of -1:
     pager.alert("Failed to fork process")
+    return -1
   of 0:
     act.sa_handler = SIG_DFL
     discard sigemptyset(act.sa_mask)
@@ -2449,6 +2452,8 @@ proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
 
 proc execPipeWait(pager: Pager; cmd: string; ps, os: PosixStream): int =
   let pid = pager.execPipe(cmd, ps, os)
+  if pid == -1:
+    return 1
   var wstatus = cint(0)
   while waitpid(Pid(pid), wstatus, 0) == -1:
     if errno != EINTR:
