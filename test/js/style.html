@@ -1,6 +1,6 @@
 <!doctype html>
 <style>
-y::before { color: blue }
+#y::before { color: blue }
 </style>
 <title>Style test</title>
 <div id=x>Fail</div>
@@ -10,7 +10,7 @@ y::before { color: blue }
 const y = document.getElementById("y");
 assertEquals(y.style.cssText, "color: red; display: inline;");
 assertEquals(window.getComputedStyle(y).cssText, "");
-assertEquals(window.getComputedStyle(y, "::before").color, "rgb(255, 0, 0)");
+assertEquals(window.getComputedStyle(y, "::before").color, "red");
 y.remove();
 document.getElementById("x").textContent = "Success";
 </script>

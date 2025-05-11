@@ -57,7 +57,6 @@ history-file = "history.uri"
 history-size = 100
 cookie-file = "cookies.txt"
 tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
-sockdir = "${TMPDIR:-/tmp}/cha-sock-$LOGNAME"
 editor = "${EDITOR:-vi}"
 cgi-dir = ["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]
 download-dir = "${TMPDIR:-/tmp}/"

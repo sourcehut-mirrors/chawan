@@ -399,20 +399,25 @@ proc typeCheck(v: TomlValue; t: set[TomlValueType]; k: string): Err[string] =
     return err(k & ": invalid type (got " & $v.t & ", expected " & $t & ")")
   ok()
 
+proc warnValuesLeft(ctx: var ConfigParser; v: TomlValue; k: string) =
+  for fk in v.keys:
+    let kk = if k != "": k & '.' & fk else: fk
+    ctx.warnings.add("unrecognized option " & kk)
+
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtTable, k)
   if v.tab.clear:
     x = default(typeof(x))
+  when x isnot typeof(Config()[]):
+    let k = k & '.'
   for fk, fv in x.fieldPairs:
     when fk notin ["jsvfns", "arraySeen", "dir"]:
-      let kebabk = camelToKebabCase(fk)
-      if kebabk in v:
-        let kkk = if k != "":
-          k & "." & fk
-        else:
-          fk
-        ?ctx.parseConfigValue(fv, v[kebabk], kkk)
+      const kebabk = camelToKebabCase(fk)
+      var x: TomlValue
+      if v.pop(kebabk, x):
+        ?ctx.parseConfigValue(fv, x, k & kebabk)
+  ctx.warnValuesLeft(v, k)
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ref object; v: TomlValue;
@@ -444,13 +449,9 @@ proc parseConfigValue[U, V](ctx: var ConfigParser; x: var OrderedTable[U, V];
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var TableRef[U, V];
     v: TomlValue; k: string): Err[string] =
-  ?typeCheck(v, tvtTable, k)
-  if v.tab.clear or x == nil:
+  if x == nil:
     x = TableRef[U, V]()
-  for kk, vv in v:
-    let kkk = k & "[" & kk & "]"
-    ?ctx.parseConfigValue(x.mgetOrPut(kk, default(V)), vv, kkk)
-  ok()
+  ctx.parseConfigValue(x[], v, k)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var bool; v: TomlValue;
     k: string): Err[string] =
@@ -608,24 +609,18 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtTable, k)
   ctx.warnings.add("[css] is deprecated; use buffer.user-style instead")
-  for kk, vv in v:
-    let kkk = if k != "":
-      k & "." & kk
-    else:
-      kk
-    case kk
-    of "include":
-      ?typeCheck(vv, {tvtString, tvtArray}, kkk)
-      case vv.t
-      of tvtString:
+  var vv: TomlValue
+  if v.pop("include", vv):
+    ?typeCheck(vv, {tvtString, tvtArray}, k & ".include")
+    if vv.t == tvtString:
+      ?x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
+    else: # array
+      for child in vv.a:
         ?x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
-      of tvtArray:
-        for child in vv.a:
-          ?x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
-      else: discard
-    of "inline":
-      ?typeCheck(vv, tvtString, kkk)
-      x.stylesheet &= vv.s
+  if v.pop("inline", vv):
+    ?typeCheck(vv, tvtString, k & ".inline")
+    x.stylesheet &= vv.s
+  ctx.warnValuesLeft(v, k)
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;

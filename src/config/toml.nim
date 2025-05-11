@@ -121,15 +121,16 @@ func `$`*(val: TomlValue): string =
       result &= $it
     result &= ']'
 
-func `[]`*(val: TomlValue; key: string): TomlValue =
-  return val.tab.map[key]
+template pop*(val: TomlValue; key: string; x: typed): bool =
+  val.tab.map.pop(key, x)
+
+iterator keys*(val: TomlValue): string {.inline.} =
+  for k in val.tab.map.keys:
+    yield k
 
 iterator pairs*(val: TomlValue): (string, TomlValue) {.inline.} =
   for k, v in val.tab.map:
     yield (k, v)
-
-func contains*(val: TomlValue; key: string): bool =
-  return key in val.tab.map
 
 const ValidBare = AsciiAlphaNumeric + {'-', '_'}
 

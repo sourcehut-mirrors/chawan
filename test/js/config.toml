@@ -2,11 +2,11 @@
 history = false
 
 [[siteconf]]
-match = 'file:///.*'
+url = 'file:///.*'
 scripting = true
 
 [[siteconf]]
-match = 'file:///.*\.app\.html'
+url = 'file:///.*\.app\.html'
 scripting = 'app'
 
 [display]
