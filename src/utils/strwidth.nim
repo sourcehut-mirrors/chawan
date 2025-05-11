@@ -102,4 +102,4 @@ func expandPUATabsHard*(s: openArray[char]): string =
     else:
       for j in pi ..< i:
         res &= s[j]
-  return res
+  move(res)

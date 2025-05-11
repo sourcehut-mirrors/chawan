@@ -272,13 +272,18 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
 func lineLoaded(container: Container; y: int): bool =
   return y - container.lineshift in 0..container.lines.high
 
-func getLine(container: Container; y: int): SimpleFlexibleLine =
+func getLine(container: Container; y: int): lent SimpleFlexibleLine =
   if container.lineLoaded(y):
     return container.lines[y - container.lineshift]
-  SimpleFlexibleLine()
+  {.cast(noSideEffect).}:
+    let line {.global.} = SimpleFlexibleLine()
+    return line
 
-iterator ilines*(container: Container; slice: Slice[int]): SimpleFlexibleLine
-    {.inline.} =
+func getLineStr(container: Container; y: int): lent string =
+  return container.getLine(y).str
+
+iterator ilines(container: Container; slice: Slice[int]):
+    lent SimpleFlexibleLine {.inline.} =
   for y in slice:
     yield container.getLine(y)
 
@@ -306,8 +311,8 @@ func xend(container: Container): int {.inline.} =
 func lastVisibleLine(container: Container): int =
   min(container.fromy + container.height, container.numLines) - 1
 
-func currentLine(container: Container): string =
-  return container.getLine(container.cursory).str
+func currentLine(container: Container): lent string =
+  return container.getLineStr(container.cursory)
 
 func findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
   var w = startx
@@ -318,7 +323,7 @@ func findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
   return i
 
 func cursorBytes(container: Container; y: int; cc = container.cursorx): int =
-  return container.getLine(y).str.findColBytes(cc, 0, 0)
+  return container.getLineStr(y).findColBytes(cc, 0, 0)
 
 func currentCursorBytes(container: Container; cc = container.cursorx): int =
   return container.cursorBytes(container.cursory, cc)
@@ -380,8 +385,8 @@ func acursory*(container: Container): int =
 
 func maxScreenWidth(container: Container): int =
   result = 0
-  for line in container.ilines(container.fromy..container.lastVisibleLine):
-    result = max(line.str.width(), result)
+  for y in container.fromy..container.lastVisibleLine:
+    result = max(container.getLineStr(y).width(), result)
 
 func getTitle*(container: Container): string {.jsfget: "title".} =
   if container.title != "":
@@ -443,15 +448,15 @@ func colorNormal(container: Container; hl: Highlight; y: int;
   let starty = hl.starty
   let endy = hl.endy
   if y in starty + 1 .. endy - 1:
-    let w = container.getLine(y).str.width()
+    let w = container.getLineStr(y).width()
     return min(limitx.a, w) .. min(limitx.b, w)
   if y == starty and y == endy:
     return max(hl.startx, limitx.a) .. min(hl.endx, limitx.b)
   if y == starty:
-    let w = container.getLine(y).str.width()
+    let w = container.getLineStr(y).width()
     return max(hl.startx, limitx.a) .. min(limitx.b, w)
   if y == endy:
-    let w = container.getLine(y).str.width()
+    let w = container.getLineStr(y).width()
     return min(limitx.a, w) .. min(hl.endx, limitx.b)
   0 .. 0
 
@@ -472,7 +477,7 @@ func colorArea(container: Container; hl: Highlight; y: int;
       return 0 .. 0
     of stLine:
       if y in hl.starty .. hl.endy:
-        let w = container.getLine(y).str.width()
+        let w = container.getLineStr(y).width()
         return min(limitx.a, w) .. min(limitx.b, w)
       return 0 .. 0
   else:

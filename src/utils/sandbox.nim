@@ -79,7 +79,7 @@ elif SandboxMode == stSeccomp:
     var s = currentSourcePath()
     while s.len > 0 and s[^1] != '/':
       s.setLen(s.len - 1)
-    return s
+    move(s)
   {.passl: sourceParent() & "../../lib/chaseccomp/chaseccomp.o".}
 
   proc cha_enter_buffer_sandbox(): cint {.importc, cdecl.}

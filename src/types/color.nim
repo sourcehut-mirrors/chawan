@@ -293,7 +293,7 @@ func serialize*(c: ARGBColor): string =
     res.pushHex(c.r)
     res.pushHex(c.g)
     res.pushHex(c.b)
-    return res
+    return move(res)
   let a = float64(c.a) / 255
   return "rgba(" & $c.r & ", " & $c.g & ", " & $c.b & ", " & $a & ")"
 

@@ -530,7 +530,7 @@ proc parseSelectorList(cvals: seq[CSSComponentValue]; nested, forgiving: bool):
         discard
     else:
       res.add(csel)
-  return res
+  move(res)
 
 proc parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] =
   return parseSelectorList(cvals, nested = false, forgiving = false)

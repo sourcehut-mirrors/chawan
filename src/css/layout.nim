@@ -2401,7 +2401,7 @@ proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
         col.width *= specifiedRatio
         col.reflow = true
       W -= col.width
-  return avail
+  move(avail)
 
 func needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
   case tctx.space.w.t

@@ -1569,7 +1569,7 @@ func `$`(tokenList: DOMTokenList): string {.jsfunc: "toString".} =
     if i != 0:
       s &= ' '
     s &= $tok
-  return move(s)
+  move(s)
 
 proc update(tokenList: DOMTokenList) =
   if not tokenList.element.attrb(tokenList.localName) and
@@ -2687,7 +2687,7 @@ func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
   for mq in ss.mqList:
     if mq.query.applies(window.settings.scripting, window.attrsp):
       res.add(mq.children.applyMediaQuery(window))
-  return move(res)
+  move(res)
 
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
@@ -3181,11 +3181,11 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
 
 # <q>, <blockquote>
 proc cite(this: HTMLQuoteElement): string {.jsfget.} =
-  let s = this.attr(satCite)
+  var s = this.attr(satCite)
   let url = parseURL(s, some(this.document.url))
   if url.isSome:
     return $url.get
-  return s
+  move(s)
 
 proc `cite=`(this: HTMLQuoteElement; s: sink string) {.jsfset: "cite".} =
   this.attr(satCite, s)

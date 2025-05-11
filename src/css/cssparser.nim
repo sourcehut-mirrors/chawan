@@ -239,7 +239,7 @@ proc consumeIdentSequence(iq: openArray[char]; n: var int): string =
     else:
       break
     inc n
-  return move(s)
+  move(s)
 
 proc consumeNumber(iq: openArray[char]; n: var int):
     tuple[isInt: bool; val: float32] =

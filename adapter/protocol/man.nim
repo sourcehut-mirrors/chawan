@@ -81,7 +81,7 @@ func processBackspace(line: string): string =
   flushChar
   if inU: s &= "</u>"
   if inB: s &= "</b>"
-  return s
+  move(s)
 
 proc isCommand(paths: seq[string]; name, s: string): bool =
   for p in paths:
@@ -109,7 +109,7 @@ proc readErrorMsg(efile: File; line: var string): string =
     msg &= line
     if not efile.readLine(line):
       break
-  return msg
+  move(msg)
 
 proc processManpage(ofile, efile: File; header, keyword: string) =
   var line = ""

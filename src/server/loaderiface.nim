@@ -275,7 +275,7 @@ proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
   var s: string
   loader.withPacketReader r:
     r.sread(s)
-  return s
+  move(s)
 
 proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string;
     displayUrl: URL): bool =

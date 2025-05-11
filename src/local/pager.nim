@@ -1026,7 +1026,7 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
         ls &= s[i]
   oi = i
   ox = x
-  return move(ls)
+  move(ls)
 
 proc drawBuffer(pager: Pager; container: Container; ofile: File): bool =
   var format = Format()
@@ -1805,7 +1805,7 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
     if s[^1] != ' ':
       s &= ' '
     s &= quoteFile(file, qsNormal)
-  return s
+  move(s)
 
 proc openInEditor(pager: Pager; input: var string): bool =
   try:
@@ -2032,7 +2032,7 @@ proc omniRewrite(pager: Pager; s: string): string =
       var res: string
       if ctx.fromJS(jsRet, res).isSome:
         pager.lineHist[lmLocation].add(s)
-        return res
+        return move(res)
       pager.alert("Error in substitution of " & $rule.match & " for " & s &
         ": " & ctx.getExceptionMsg())
   return s
@@ -2873,7 +2873,7 @@ proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int):
       sx = px
       break
   msg = msg.substr(j)
-  return msg
+  move(msg)
 
 proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
     contentType: string; i: int; response: Response; sx: int) =

@@ -345,7 +345,7 @@ proc getLines*(path: Path): seq[Line] =
     assert subpath.points.len == subpath.segments.len + 1
     for i in 0 ..< subpath.segments.len:
       lines.addLines(subpath, i)
-  return lines
+  move(lines)
 
 proc getLineSegments*(path: Path): PathLines =
   if path.subpaths.len == 0:

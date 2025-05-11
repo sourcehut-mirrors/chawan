@@ -50,7 +50,7 @@ proc `$`*(entry: MailcapEntry): string =
   if entry.test != "":
     s &= ";test=" & entry.test
   s &= '\n'
-  return s
+  move(s)
 
 proc has(state: MailcapParser; buf: openArray[char]): bool {.inline.} =
   return state.at < buf.len
@@ -227,7 +227,7 @@ proc quoteFile*(file: string; qs: QuoteState): string =
     elif qs == qsNormal:
       s &= '\\'
     s &= c
-  return s
+  move(s)
 
 proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
     canpipe: var bool; line = -1): string =

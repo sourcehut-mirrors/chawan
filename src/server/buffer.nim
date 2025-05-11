@@ -850,7 +850,7 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
   if repaint:
     buffer.maybeReshape()
   buffer.prevHover = thisNode
-  return move(hover)
+  move(hover)
 
 proc loadResources(buffer: Buffer): EmptyPromise =
   if buffer.window.pendingResources.len > 0:

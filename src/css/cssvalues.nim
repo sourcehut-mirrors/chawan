@@ -813,7 +813,7 @@ func numToBase(n: int; map: openArray[uint32]): string =
   var res = ""
   for i in countdown(tmp.high, 0):
     res.addUTF8(tmp[i])
-  return res
+  move(res)
 
 func numToFixed(n: int32; map: openArray[uint32]): string =
   if n in 1 .. map.len:
@@ -910,7 +910,7 @@ func japaneseNumber(i: int32; formal: bool): string =
     n -= m
   for j in countdown(ss.high, 0):
     s &= $ss[j]
-  return s
+  move(s)
 
 func listMarker0(t: CSSListStyleType; i: int32): string =
   return case t
@@ -1723,7 +1723,7 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
       res.add(makeEntry(t, lengths[i]))
   else:
     return err()
-  return ok(res)
+  return ok(move(res))
 
 const PropertyMarginSpec = [
   cptMarginTop, cptMarginRight, cptMarginBottom, cptMarginLeft
@@ -1881,8 +1881,8 @@ proc parseComputedValues*(name: string; value: seq[CSSComponentValue];
     attrs: WindowAttributes): seq[CSSComputedEntry] =
   var res: seq[CSSComputedEntry] = @[]
   if res.parseComputedValues(name, value, attrs).isSome:
-    return res
-  return @[]
+    return move(res)
+  @[]
 
 proc copyFrom*(a, b: CSSValues; t: CSSPropertyType) =
   case t.reprType

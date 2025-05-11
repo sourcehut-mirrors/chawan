@@ -132,7 +132,7 @@ func defaultCookiePath(url: URL): string =
   var path = url.pathname.untilLast('/')
   if path == "" or path[0] != '/':
     return "/"
-  return move(path)
+  move(path)
 
 func cookiePathMatches(cookiePath, requestPath: string): bool =
   if requestPath.startsWith(cookiePath):
@@ -199,7 +199,7 @@ proc serialize*(cookieJar: CookieJar; url: URL): string =
     res &= cookie.value
   for j in countdown(expired.high, 0):
     cookieJar.cookies.delete(expired[j])
-  return move(res)
+  move(res)
 
 proc parseSetCookie(str: string; t: int64; url: URL; persist: bool):
     Opt[Cookie] =
@@ -285,7 +285,7 @@ proc nextField(state: var ParseState; iq: openArray[char]): string =
   state.i += field.len
   if state.i < iq.len and iq[state.i] == '\t':
     inc state.i
-  return move(field)
+  move(field)
 
 proc nextBool(state: var ParseState; iq: openArray[char]): bool =
   let field = state.nextField(iq)

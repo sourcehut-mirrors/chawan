@@ -201,7 +201,7 @@ func toHexLower*(u: uint16): string =
   for i in countdown(len - 1, 0):
     s[i] = HexCharsLower[x and 0xF]
     x = x shr 4
-  return move(s)
+  move(s)
 
 func controlToVisual*(u: uint32): string =
   if u <= 0x1F:
@@ -211,7 +211,7 @@ func controlToVisual*(u: uint32): string =
   var res = "["
   res.pushHex(uint8(u))
   res &= ']'
-  return move(res)
+  move(res)
 
 proc add*(s: var string; u: uint8) =
   s.addInt(uint64(u))
@@ -257,7 +257,7 @@ func stripAndCollapse*(s: openArray[char]): string =
         res &= ' '
       res &= c
     space = cspace
-  return move(res)
+  move(res)
 
 func until*(s: openArray[char]; c: set[char]; starti = 0): string =
   result = ""
@@ -732,7 +732,7 @@ proc mimeQuote*(value: string): string =
   if not found:
     return value
   s &= '"'
-  return move(s)
+  move(s)
 
 proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
   var i = contentType.find(';')
@@ -861,15 +861,15 @@ func btoa*(data: openArray[uint8]): string =
     L += 3 - rem
   var s = newStringOfCap(L)
   s.btoa(data)
-  return move(s)
+  move(s)
 
 func btoa*(data: openArray[char]): string =
   return btoa(data.toOpenArrayByte(0, data.len - 1))
 
 proc getEnvEmpty*(name: string; fallback = ""): string =
-  let res = getEnv(name, fallback)
+  var res = getEnv(name, fallback)
   if res != "":
-    return res
+    return move(res)
   return fallback
 
 iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =

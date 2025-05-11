@@ -180,7 +180,7 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
         let dir = "ltr" #TODO bidi
         entrylist.add((dirname, dir))
   form.constructingEntryList = false
-  return move(entrylist)
+  move(entrylist)
 
 proc addFormDataModule*(ctx: JSContext) =
   ctx.registerType(FormData)
