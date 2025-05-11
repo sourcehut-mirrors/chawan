@@ -22,34 +22,45 @@ const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
 const HTTPWhitespace* = {' ', '\n', '\r', '\t'}
 
 func nextUTF8*(s: openArray[char]; i: var int): uint32 =
-  let j = i
-  let u = uint32(s[j])
+  var j = i
+  var u = uint32(s[j])
+  {.push overflowChecks: off, boundChecks: off.}
+  inc j # can't overflow if s[j] didn't panic
   if u <= 0x7F:
-    inc i
+    i = j
     return u
-  elif u shr 5 == 0b110:
-    let e = j + 2
-    if likely(e <= s.len):
-      i = e
-      return (u and 0x1F) shl 6 or
-        (uint32(s[j + 1]) and 0x3F)
-  elif u shr 4 == 0b1110:
-    let e = j + 3
-    if likely(e <= s.len):
-      i = e
-      return (u and 0xF) shl 12 or
-        (uint32(s[j + 1]) and 0x3F) shl 6 or
-        (uint32(s[j + 2]) and 0x3F)
-  elif u shr 3 == 0b11110:
-    let e = j + 4
-    if likely(e <= s.len):
-      i = e
-      return (u and 7) shl 18 or
-        (uint32(s[j + 1]) and 0x3F) shl 12 or
-        (uint32(s[j + 2]) and 0x3F) shl 6 or
-        (uint32(s[j + 3]) and 0x3F)
-  inc i
-  return 0xFFFD
+  block good:
+    var min = 0x80u32
+    var n = 1
+    if u shr 5 == 0b110:
+      u = u and 0x1F
+    elif u shr 4 == 0b1110:
+      min = 0x800
+      n = 2
+      u = u and 0xF
+    elif likely(u shr 3 == 0b11110):
+      min = 0x10000
+      n = 3
+      u = u and 7
+    else:
+      break good
+    while true:
+      if unlikely(j >= s.len):
+        break good
+      let u2 = uint32(s[j])
+      if unlikely((u2 shr 6) != 2):
+        break good
+      u = (u shl 6) or u2 and 0x3F
+      inc j
+      dec n
+      if n == 0:
+        break
+    if likely(u >= min and u <= 0x10FFFF):
+      i = j
+      return u
+  {.pop.}
+  i = j
+  0xFFFD
 
 func prevUTF8*(s: openArray[char]; i: var int): uint32 =
   var j = i - 1
@@ -59,16 +70,9 @@ func prevUTF8*(s: openArray[char]; i: var int): uint32 =
   return s.nextUTF8(j)
 
 func pointLenAt*(s: openArray[char]; i: int): int =
-  let u = uint8(s[i])
-  if u <= 0x7F:
-    return 1
-  elif u shr 5 == 0b110:
-    return 2
-  elif u shr 4 == 0b1110:
-    return 3
-  elif u shr 3 == 0b11110:
-    return 4
-  return 1
+  var j = i
+  discard s.nextUTF8(j)
+  return j - i
 
 iterator points*(s: openArray[char]): uint32 {.inline.} =
   var i = 0
