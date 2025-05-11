@@ -45565,16 +45565,21 @@ fail:
 
 bool lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
-    if (!opaque)
-        return 0;
     JSContext *ctx = opaque;
+
+    if (!ctx)
+        return 0;
     return js_check_stack_overflow(ctx->rt, alloca_size);
 }
 
 int lre_check_timeout(void *opaque)
 {
     JSContext *ctx = opaque;
-    JSRuntime *rt = ctx->rt;
+    JSRuntime *rt;
+
+    if (!ctx)
+      return 0;
+    rt = ctx->rt;
     return (rt->interrupt_handler &&
             rt->interrupt_handler(rt, rt->interrupt_opaque));
 }
