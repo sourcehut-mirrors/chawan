@@ -172,7 +172,7 @@ type
 
   CheckMailcapFlag = enum
     cmfConnect, cmfHTML, cmfFound, cmfRedirected, cmfPrompt, cmfNeedsstyle,
-    cmfSaveoutput
+    cmfNeedsimage, cmfSaveoutput
 
   MailcapResult = object
     entry: MailcapEntry
@@ -2614,6 +2614,8 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     if mfNeedsstyle in entry.flags or mfAnsioutput in entry.flags:
       # ansi always needs styles
       flags.incl(cmfNeedsstyle)
+    if mfNeedsimage in entry.flags:
+      flags.incl(cmfNeedsimage)
     if mfSaveoutput in entry.flags:
       flags.incl(cmfSaveoutput)
     if ishtml:
@@ -2723,6 +2725,8 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
       container.flags.excl(cfIsHTML)
     if cmfNeedsstyle in res.flags: # override
       container.config.styling = true
+    if cmfNeedsimage in res.flags: # override
+      container.config.images = true
     # buffer now actually exists; create a process for it
     var attrs = pager.attrs
     # subtract status line height
@@ -2811,12 +2815,16 @@ proc saveEntry(pager: Pager; entry: MailcapEntry) =
   if not pager.config.external.autoMailcap.saveEntry(entry):
     pager.alert("Could not write to " & pager.config.external.autoMailcap.path)
 
-proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int):
-    string =
+proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int;
+    prev, next: int): string =
   var msg = "Open " & shortContentType & " as (shift=always): (t)ext, (s)ave"
   if i != -1:
     msg &= ", (r)un \"" & pager.config.external.mailcap[i].cmd.strip() & '"'
   msg &= ", (e)dit entry, (C-c)ancel"
+  if prev != -1:
+    msg &= ", (p)rev"
+  if next != -1:
+    msg &= ", (n)ext"
   msg = msg.toValidUTF8()
   var mw = msg.width()
   var j = 0
@@ -2835,24 +2843,39 @@ proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int):
 proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
     contentType: string; i: int; response: Response; sx: int) =
   var sx = sx
-  let msg = pager.askMailcapMsg(container.contentType.untilLower(';'), i, sx)
+  var prev = -1
+  var next = -1
+  if i != -1:
+    prev = pager.config.external.mailcap.findPrevMailcapEntry(contentType, "",
+      container.url, i)
+    next = pager.config.external.mailcap.findMailcapEntry(contentType, "",
+      container.url, i)
+  let msg = pager.askMailcapMsg(container.contentType.untilLower(';'), i, sx,
+    prev, next)
   pager.askChar(msg).then(proc(s: string) =
-    if s.len != 1:
-      pager.askMailcap(container, ostream, contentType, i, response, sx)
-      return
-    let c = s[0]
-    if c in {'\3', 'q'}:
+    var retry = true
+    var sx = sx
+    var i = i
+    var c = '\0'
+    if s.len == 1:
+      c = s[0]
+    case c
+    of '\3', 'q':
+      retry = false
       pager.alert("Canceled")
       ostream.sclose()
       pager.connected2(container, MailcapResult(), response)
-    elif c == 'e':
+    of 'e':
       #TODO no idea how to implement save :/
       # probably it should run use a custom reader that runs through
       # auto.mailcap clearing any other entry. but maybe it's better to
       # add a full blown editor like w3m has at that point...
+      retry = false
       var s = container.contentType.untilLower(';') & ';'
       if i != -1:
         s = $pager.config.external.mailcap[i]
+        while s.len > 0 and s[^1] == '\n':
+          s.setLen(s.high)
       pager.setLineEdit(lmMailcap, s)
       pager.lineData = LineDataMailcap(
         container: container,
@@ -2862,7 +2885,8 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
         response: response,
         sx: sx
       )
-    elif c in {'t', 'T'}:
+    of 't', 'T':
+      retry = false
       pager.connected2(container, MailcapResult(
         flags: {cmfConnect},
         ostream: ostream
@@ -2870,10 +2894,11 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
       if c == 'T':
         pager.saveEntry(MailcapEntry(
           t: container.contentType.untilLower(';'),
-          cmd: "cat",
+          cmd: "exec cat",
           flags: {mfCopiousoutput}
         ))
-    elif c in {'s', 'S'}:
+    of 's', 'S':
+      retry = false
       container.flags.incl(cfSave)
       pager.connected2(container, MailcapResult(
         flags: {cmfConnect},
@@ -2882,21 +2907,29 @@ proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
       if c == 'S':
         pager.saveEntry(MailcapEntry(
           t: container.contentType.untilLower(';'),
-          cmd: "cat",
+          cmd: "exec cat",
           flags: {mfSaveoutput}
         ))
-    elif i != -1 and c in {'r', 'R'}:
-      let res = pager.runMailcap(container.url, ostream, response.outputId,
-        contentType, pager.config.external.mailcap[i])
-      pager.connected2(container, res, response)
-      if c == 'R':
-        pager.saveEntry(pager.config.external.mailcap[i])
-    else:
-      var sx = sx
-      if c == 'h':
-        dec sx
-      if c == 'l':
-        inc sx
+    of 'r', 'R':
+      retry = i == -1
+      if not retry:
+        let res = pager.runMailcap(container.url, ostream, response.outputId,
+          contentType, pager.config.external.mailcap[i])
+        pager.connected2(container, res, response)
+        if c == 'R':
+          pager.saveEntry(pager.config.external.mailcap[i])
+    of 'p', 'k':
+      if prev != -1:
+        i = prev
+    of 'n', 'j':
+      if next != -1:
+        i = next
+    of 'h': dec sx
+    of 'l': inc sx
+    of '^', '\1': sx = 0
+    of '$', '\5': sx = int.high
+    else: discard
+    if retry:
       pager.askMailcap(container, ostream, contentType, i, response, max(sx, 0))
   )
 

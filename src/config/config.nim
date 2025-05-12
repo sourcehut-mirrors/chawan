@@ -639,6 +639,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
       ps.sclose()
   ok()
 
+const DefaultMailcap = block:
+  var mailcap: Mailcap
+  const name = "res/mailcap"
+  doAssert mailcap.parseMailcap(staticRead(name), name).isOk
+  mailcap
+
 proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
     k: string): Err[string] =
   var paths: seq[ChaPathResolved]
@@ -653,11 +659,13 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
       ps.sclose()
       if res.isErr:
         ctx.warnings.add(res.error)
+  x.add(DefaultMailcap)
   ok()
 
-const DefaultMailcap = block:
+const DefaultAutoMailcap = block:
   var mailcap: Mailcap
-  doAssert mailcap.parseMailcap(staticRead"res/mailcap", "res/mailcap").isOk
+  const name = "res/auto.mailcap"
+  doAssert mailcap.parseMailcap(staticRead(name), name).isOk
   mailcap
 
 proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
@@ -673,7 +681,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
     ps.sclose()
     if res.isErr:
       ctx.warnings.add(res.error)
-  x.entries.add(DefaultMailcap)
+  x.entries.add(DefaultAutoMailcap)
   ok()
 
 const DefaultURIMethodMap = parseURIMethodMap(staticRead"res/urimethodmap")

@@ -85,6 +85,8 @@ are recognized. The non-standard `x-htmloutput`, `x-ansioutput`,
 * `x-needsstyle` forces CSS to be processed for the specific type, even
   if styling is disabled in the config. Only useful when combined with
   `x-htmloutput`.
+* `x-needsimage` forces images to be displayed for the specific type,
+  even if images are disabled.
 * `needsterminal` hands over control of the terminal to the command
   while it is running. Note: as of now, `needsterminal` does nothing if
   either `copiousoutput` or `x-htmloutput` is specified.

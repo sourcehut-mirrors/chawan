@@ -24,6 +24,7 @@ type
     mfAnsioutput = "x-ansioutput" # Chawan extension
     mfSaveoutput = "x-saveoutput" # Chawan extension
     mfNeedsstyle = "x-needsstyle" # Chawan extension
+    mfNeedsimage = "x-needsimage" # Chawan extension
 
   MailcapEntry* = object
     t*: string
@@ -320,23 +321,33 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
 
 proc system(cmd: cstring): cint {.importc, header: "<stdlib.h>".}
 
-proc findMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;
-    url: URL): int =
+proc checkEntry(entry: MailcapEntry; contentType, outpath, mt, st: string;
+    url: URL): bool =
+  if not entry.t.startsWith("*/") and not entry.t.startsWithIgnoreCase(mt) or
+      not entry.t.endsWith("/*") and not entry.t.endsWithIgnoreCase(st):
+    return false
+  if entry.test != "":
+    var canpipe = true
+    let cmd = unquoteCommand(entry.test, contentType, outpath, url, canpipe)
+    return canpipe and system(cstring(cmd)) == 0
+  true
+
+proc findPrevMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;
+    url: URL; last: int): int =
   let mt = contentType.until('/') & '/'
   let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
-  for i, entry in mailcap.mypairs:
-    if not entry.t.startsWith("*/") and not entry.t.startsWithIgnoreCase(mt):
-      continue
-    if not entry.t.endsWith("/*") and not entry.t.endsWithIgnoreCase(st):
-      continue
-    if entry.test != "":
-      var canpipe = true
-      let cmd = unquoteCommand(entry.test, contentType, outpath, url, canpipe)
-      if not canpipe:
-        continue
-      if system(cstring(cmd)) != 0:
-        continue
-    return i
+  for i in countdown(last - 1, 0):
+    if checkEntry(mailcap[i], contentType, outpath, mt, st, url):
+      return i
+  return -1
+
+proc findMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;
+    url: URL; start = -1): int =
+  let mt = contentType.until('/') & '/'
+  let st = contentType.until(AsciiWhitespace + {';'}, mt.len - 1)
+  for i in start + 1 ..< mailcap.len:
+    if checkEntry(mailcap[i], contentType, outpath, mt, st, url):
+      return i
   return -1
 
 proc saveEntry*(mailcap: var AutoMailcap; entry: MailcapEntry): bool =
