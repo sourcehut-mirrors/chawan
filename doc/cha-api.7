@@ -127,7 +127,27 @@ T}@T{
 The line editor.
 Implements \f[CR]LineEdit\f[R], as described below.
 T}@T{
+T}
+_
+T{
 \f[CR]config\f[R]
+T}@T{
+The config object.
+A currently incomplete interface for retrieving and setting
+configuration options.
+In general, names are the same as in config.toml, except all
+\f[CR]\-\f[R] (ASCII hyphen) characters are stripped and the next
+character is upper\-cased.
+e.g.\ \f[CR]external.cgi\-dir\f[R] can be queried as
+\f[CR]config.external.cgiDir\f[R], etc.
+Setting individual options sometimes works, but sometimes they do not
+get propagated as expected.
+Consider this an experimental API.
+Currently, \f[CR]siteconf\f[R], \f[CR]protocol\f[R] and
+\f[CR]omnirule\f[R] values are not exposed to JS.
+The configuration directory itself can be queried as
+\f[CR]config.dir\f[R].
+T}@T{
 T}
 .TE
 .PP
@@ -350,7 +370,7 @@ variables are set; change this using the \f[CR]env\f[R] option.
 \f[CR]options.suspend\f[R] suspends the pager while the command is being
 executed, and \f[CR]options.wait\f[R] makes it so the user must press a
 key before the pager is resumed.
-Returns true if the command exit successfully, false otherwise.
+Returns true if the command exited successfully, false otherwise.
 Warning: this has a bug where the output is written to stdout even if
 suspend is true.
 Redirect to /dev/null in the command if this is not desired.

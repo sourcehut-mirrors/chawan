@@ -109,6 +109,7 @@ size exceeded an OS-specified limit.)
 <tr>
 <td>`line`</td>
 <td>The line editor. Implements `LineEdit`, as described below.</td>
+</tr>
 
 <tr>
 <td>`config`</td>
@@ -116,7 +117,7 @@ size exceeded an OS-specified limit.)
 A currently incomplete interface for retrieving and setting
 configuration options. In general, names are the same as in config.toml,
 except all `-` (ASCII hyphen) characters are stripped and the next
-character is upper-cased (underscore). e.g. `external.cgi-dir` can be
+character is upper-cased. e.g. `external.cgi-dir` can be
 queried as `config.external.cgiDir`, etc.<br>
 Setting individual options sometimes works, but sometimes they do not
 get propagated as expected. Consider this an experimental API.<br>
@@ -297,7 +298,7 @@ this using the `env` option.<br>
 `options.suspend` suspends the pager while the command is being
 executed, and `options.wait` makes it so the user must press a key
 before the pager is resumed.<br>
-Returns true if the command exit successfully, false otherwise.<br>
+Returns true if the command exited successfully, false otherwise.<br>
 Warning: this has a bug where the output is written to stdout even if suspend
 is true. Redirect to /dev/null in the command if this is not desired. (This
 will be fixed in the future.)</td>
