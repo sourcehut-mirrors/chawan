@@ -401,8 +401,7 @@ proc typeCheck(v: TomlValue; t: set[TomlValueType]; k: string): Err[string] =
 
 proc warnValuesLeft(ctx: var ConfigParser; v: TomlValue; k: string) =
   for fk in v.keys:
-    let kk = if k != "": k & '.' & fk else: fk
-    ctx.warnings.add("unrecognized option " & kk)
+    ctx.warnings.add("unrecognized option " & k & fk)
 
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
     k: string): Err[string] =
@@ -620,7 +619,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
   if v.pop("inline", vv):
     ?typeCheck(vv, tvtString, k & ".inline")
     x.stylesheet &= vv.s
-  ctx.warnValuesLeft(v, k)
+  ctx.warnValuesLeft(v, k & '.')
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
