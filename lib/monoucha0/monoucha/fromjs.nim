@@ -364,16 +364,14 @@ proc fromJS*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
 
 proc fromJSThis*[T: ptr object](ctx: JSContext; val: JSValueConst; res: var T):
     Opt[void] =
-  {.warning[ProveInit]:off.}:
-    return ctx.fromJS(val, res)
+  return ctx.fromJS(val, res)
 
 proc fromJSThis*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
     Opt[void] =
   # translate undefined -> global
-  {.warning[ProveInit]:off.}:
-    if JS_IsUndefined(val):
-      return ctx.fromJS(ctx.getOpaque().global, res)
-    return ctx.fromJS(val, res)
+  if JS_IsUndefined(val):
+    return ctx.fromJS(ctx.getOpaque().global, res)
+  return ctx.fromJS(val, res)
 
 macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
   let impl = t.getTypeInst()[1].getImpl()

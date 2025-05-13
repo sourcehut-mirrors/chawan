@@ -17,10 +17,9 @@ type
   JSDict* = object of RootObj
     toFree*: JSDictToFreeAux
 
-{.warning[Deprecated]:off.}:
-  proc `=destroy`*(x: var JSDictToFreeAuxObj) =
-    for val in x.vals:
-      JS_FreeValue(x.ctx, val)
+proc `=destroy`*(x: var JSDictToFreeAuxObj) =
+  for val in x.vals:
+    JS_FreeValue(x.ctx, val)
 
 # Example usage:
 #
