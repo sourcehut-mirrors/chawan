@@ -2058,7 +2058,7 @@ proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
       history = history)
     return
   var urls: seq[URL] = @[]
-  if pager.config.network.prependHttps and
+  if bool(pager.config.network.prependHttps) and
       pager.config.network.prependScheme != "" and url[0] != '/':
     let pageurl = parseURL(pager.config.network.prependScheme & url)
     if pageurl.isSome: # attempt to load remote page
