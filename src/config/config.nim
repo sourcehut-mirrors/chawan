@@ -810,6 +810,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedSchemeBool;
   if not b:
     ctx.warnings.add(k &
       ": prepend-https is deprecated; use prepend-scheme='' instead")
+  x = DeprecatedSchemeBool(b)
   ok()
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
