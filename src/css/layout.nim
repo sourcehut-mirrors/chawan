@@ -1510,7 +1510,6 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state.offset = offset
   # For some reason beyond mortal comprehension, flex items always
   # behave as positioned boxes.
-  #TODO but *not* absolute positioning containers...
   let positioned = flexItem and not box.computed{"z-index"}.auto or
     box.computed{"position"} != PositionStatic
   if positioned:
