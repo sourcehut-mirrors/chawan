@@ -24,6 +24,9 @@ ifdef. This lets us use the same filters for all platforms - if it
 doesn't support a syscall, its "allow" rule just doesn't get compiled
 in.
 
+Ideally, the filter should be constructed by sorting the syscalls in
+order of usage frequency and then checking each syscall with ifeqdef.
+
 Also note, the following statement is prepended to every filter, with an
 automatically determined audit arch nr:
 
@@ -31,9 +34,6 @@ automatically determined audit arch nr:
 load arch
 ifne {audit arch nr of computer} deny
 ```
-
-Ideally, the filter should be constructed by sorting the syscalls in
-order of usage frequency and then checking each syscall with ifeqdef.
 
 The assembler runs in three steps:
 
