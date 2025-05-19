@@ -46,7 +46,7 @@ decoder provided by the reference implementation.
 The `bonus` directory contains two alternative HTTP clients:
 
 * curlhttp; this is the old HTTP client based on libcurl.  It can be
-  built using curl-impersonate; see [README.md](../doc/README.md) in
+  built using curl-impersonate; see [README.md](../bonus/README.md) in
   the bonus/ directory for details.
 
 * libfetch-http: based on FreeBSD libfetch.  It is mostly a proof of

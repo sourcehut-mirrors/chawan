@@ -25,7 +25,8 @@ instructions, so you can skip those.)
 ### [curlhttp](curlhttp/)
 
 Old HTTP(S) handler based on libcurl.  This is mainly useful if you want
-to use curl-impersonate; in this case, install it like
+to use [curl-impersonate](https://github.com/lexiforest/curl-impersonate);
+in this case, install it like
 `make install-libcurl CURLLIBNAME=libcurl-impersonate.so`.
 
 ### [filei.cgi](filei.cgi)
