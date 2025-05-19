@@ -1,7 +1,7 @@
 #!/bin/sh
 
 if test $# -ne 2
-then	printf 'Usage: addurimethod [scheme] [program name]' >&2
+then	printf 'Usage: addurimethod [scheme] [program name]\n' >&2
 	exit 1
 fi
 PAGER=${PAGER:-cat}
@@ -17,12 +17,11 @@ fi
 
 grep -- "^$scheme:[[:space:]]*$cgi"'$' "$urimethodmap" >/dev/null && exit 0
 
-space_kind=$(grep -oE '^[a-zA-Z+-]+:[[:space:]]+' "$urimethodmap" | \
-	grep -oE '[[:space:]]+' | \
+space_kind=$(sed -En '/^[a-zA-Z+-]+:[[:space:]]/s/[^[:space:]]//gp' "$urimethodmap" | \
 	tail -c2)
 
 space_mul=1
-if test "$space_kind" = '	'; then	space_mul=8; fi
+if test "$space_kind" != ' '; then space_mul=8; space_kind='	'; fi
 space_num=$(sed -nE 's/^([a-zA-Z+-]+:[[:space:]]*).*/\1/p' "$urimethodmap" | \
 	while IFS= read -r line
 	do	spaces=$(printf '%s\n' "$line" | sed 's/[^[:space:]]//g')
