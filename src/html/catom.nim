@@ -187,8 +187,7 @@ type
     atomMap: seq[string]
     lowerMap: seq[CAtom]
 
-  #TODO could be a ptr probably
-  CAtomFactory* = ref CAtomFactoryObj
+  CAtomFactory = ptr CAtomFactoryObj
 
 # This maps to JS null.
 const CAtomNull* = CAtom(0)
@@ -233,16 +232,14 @@ const factoryInit = (func(): CAtomFactoryObj =
     result.lowerMap.add(CAtom(result.lowerMap.len))
 )()
 
-var factory {.global.}: CAtomFactory = nil
+var factory {.global.}: CAtomFactoryObj
 
-func getFactory(): CAtomFactory =
+template getFactory(): CAtomFactory =
   {.cast(noSideEffect).}:
-    return factory
+    addr factory
 
 proc initCAtomFactory*() =
-  assert factory == nil
-  factory = new(CAtomFactory)
-  factory[] = factoryInit
+  factory = factoryInit
 
 func toLowerAscii*(a: CAtom): CAtom =
   return getFactory().lowerMap[int32(a)]
