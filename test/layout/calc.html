@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<div style="width: 20ch">
+<!-- valid -->
+<div style="width: calc(0em - 10em); background: red">0ch</div>
+<div style="width: calc(10ch - 3em); background: red">4ch</div>
+<div style="width: calc(1ch * 2); background: red">2ch</div>
+<div style="width: calc(1ch + calc(2ch - 1ch)); background: red">2ch</div>
+<div style="width: calc(1ch * 2 + calc(2ch - 1ch)); background: red">3ch</div>
+<!-- invalid -->
+<div style="width: calc(1 * 2); background: red">test</div>
+<div style="width: calc(); background: red">test</div>
+<div style="width: calc(1); background: red">test</div>
+<div style="width: calc(1ch + + 1ch); background: red">test</div>

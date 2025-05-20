@@ -52,8 +52,6 @@ type
     varsSeen: HashSet[CAtom]
 
 # Forward declarations
-proc applyValue0(ctx: var ApplyValueContext; entry: CSSComputedEntry;
-  initType: InitType; nextInitType: set[InitType])
 proc applyStyle*(element: Element)
 
 proc calcRule(tosorts: var ToSorts; element: Element;
@@ -111,30 +109,29 @@ proc findVariable(ctx: var ApplyValueContext; varName: CAtom): CSSVariable =
     ctx.vars = ctx.vars.parent
   return nil
 
-proc applyVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
-    varName: CAtom; fallback: ref CSSComputedEntry; initType: InitType;
-    nextInitType: set[InitType]) =
+proc resolveVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
+    varName: CAtom; fallback: ref CSSComputedEntry): Opt[CSSComputedEntry] =
   let v = t.valueType
   let cvar = ctx.findVariable(varName)
   if cvar == nil:
     if fallback != nil:
-      ctx.applyValue0(fallback[], initType, nextInitType)
-    return
+      return ok(fallback[])
+    return err()
   for (iv, entry) in cvar.resolved.mitems:
     if iv == v:
       entry.t = t # must override, same var can be used for different props
-      ctx.applyValue0(entry, initType, nextInitType)
-      return
+      return ok(entry)
   var entries: seq[CSSComputedEntry] = @[]
   if entries.parseComputedValues($t, cvar.cvals, ctx.window.attrsp[]).isSome:
     if entries[0].et == ceVar:
       if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
         ctx.varsSeen.clear()
-        return
+        return err()
     else:
       ctx.varsSeen.clear()
       cvar.resolved.add((v, entries[0]))
-    ctx.applyValue0(entries[0], initType, nextInitType)
+    return ok(entries[0])
+  err()
 
 proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
     global: CSSGlobalType; initType: InitType) =
@@ -152,23 +149,23 @@ proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
       ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
 
 proc applyValue0(ctx: var ApplyValueContext; entry: CSSComputedEntry;
-    initType: InitType; nextInitType: set[InitType]) =
+    initType: InitType; nextInitType: set[InitType]): Opt[void] =
+  ctx.vars = ctx.vals.vars
+  var entry = entry
+  while entry.et == ceVar:
+    entry = ?ctx.resolveVariable(entry.t, entry.cvar, entry.fallback)
   case entry.et
   of ceBit: ctx.vals.bits[entry.t].dummy = entry.bit
   of ceWord: ctx.vals.words[entry.t] = entry.word
   of ceObject: ctx.vals.objs[entry.t] = entry.obj
-  of ceGlobal:
-    ctx.applyGlobal(entry.t, entry.global, initType)
-  of ceVar:
-    ctx.applyVariable(entry.t, entry.cvar, entry.fallback, initType,
-      nextInitType)
-    return # maybe it applies, maybe it doesn't...
+  of ceGlobal: ctx.applyGlobal(entry.t, entry.global, initType)
+  of ceVar: assert false
   ctx.initMap[entry.t] = ctx.initMap[entry.t] + nextInitType
+  ok()
 
 proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
     initType: InitType; nextInitType: set[InitType]) =
-  ctx.vars = ctx.vals.vars
-  ctx.applyValue0(entry, initType, nextInitType)
+  discard ctx.applyValue0(entry, initType, nextInitType)
 
 proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   template set_cv(t, x, b: untyped) =

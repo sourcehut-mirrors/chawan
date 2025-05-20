@@ -458,8 +458,7 @@ type
     ceBit, ceObject, ceWord, ceVar, ceGlobal
 
   CSSComputedEntry* = object
-    # put it here, so ComputedEntry remains 2 words wide
-    cvar*: CAtom
+    cvar*: CAtom # put it here, so ComputedEntry remains 2 words wide
     t*: CSSPropertyType
     case et*: CSSEntryType
     of ceBit:
@@ -1223,38 +1222,58 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
   elif val of CSSFunction:
     #TODO obviously this is a horrible solution...
     let fun = CSSFunction(val)
-    if fun.name == cftCalc and allowNegative:
-      var i = fun.value.skipBlanks(0)
-      if i >= fun.value.len:
+    if fun.name == cftCalc:
+      var i = 0
+      var ns = array[CSSLengthType, float32].default
+      var nmul = none(float32)
+      var t = clPx
+      var n = 0
+      var delim = '+'
+      if i == fun.value.len:
         return err()
-      var length = ?parseLength(fun.value[i], attrs, hasAuto, allowNegative)
-      i = fun.value.skipBlanks(i + 1)
-      let dtok = ?fun.value.getToken(i, cttDelim)
-      let sign = if dtok.cvalue == '+':
-        1f32
-      elif dtok.cvalue == '-':
-        -1f32
-      else:
+      while i < fun.value.len:
+        if n != 0:
+          i = fun.value.skipBlanks(i)
+          delim = (?fun.value.getToken(i, cttDelim)).cvalue
+          inc i
+        i = fun.value.skipBlanks(i)
+        if i >= fun.value.len:
+          return err()
+        if n <= 1 and (let ntokx = fun.value.getToken(i); ntokx.isSome):
+          let ntok = ntokx.get
+          if ntok.t in {cttNumber, cttINumber}:
+            if n == 1:
+              if delim != '*' or nmul.isSome:
+                return err()
+              ns[t] *= ntok.nvalue
+            else:
+              nmul = some(ntok.nvalue)
+            inc i
+            inc n
+            continue
+        let length = ?parseLength(fun.value[i], attrs, hasAuto)
+        if length.u == clPerc:
+          t = clPerc
+        if length.u == clAuto or delim notin {'+', '-', '*'}:
+          return err()
+        let sign = if delim == '-': -1f32 else: 1f32
+        ns[length.u] += length.num * sign
+        if nmul.isSome:
+          if n > 1 or delim != '*':
+            return err() # invalid or needs recursive descent
+          ns[t] *= nmul.get
+          nmul = none(float32)
+        elif delim == '*':
+          return err()
+        inc i
+        inc n
+      if nmul.isSome:
         return err()
-      i = fun.value.skipBlanks(i + 1)
-      if i >= fun.value.len:
+      if t == clPx:
+        return ok(CSSLength(u: clPx, num: ns[clPx]))
+      if ns[clPx] notin float32(int16.low)..float32(int16.high):
         return err()
-      var length2 = ?parseLength(fun.value[i], attrs, hasAuto, allowNegative)
-      length2.num *= sign
-      if length2.u == clAuto or fun.value.skipBlanks(i + 1) < fun.value.len:
-        return err()
-      if length.u == length2.u:
-        return ok(CSSLength(u: length.u, num: length.num + length2.num))
-      if length2.u == clPerc:
-        swap(length, length2)
-      length2.num += float32(length.addpx)
-      if length2.num notin float32(int16.low)..float32(int16.high):
-        return err()
-      return ok(CSSLength(
-        u: clPerc,
-        num: length.num,
-        addpx: int16(length2.num)
-      ))
+      return ok(CSSLength(u: clPerc, num: ns[clPerc], addpx: int16(ns[clPx])))
   return err()
 
 func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
@@ -1441,14 +1460,9 @@ func cssMaxSize(cval: CSSComponentValue; attrs: WindowAttributes):
     Opt[CSSLength] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
-    case tok.t
-    of cttIdent:
-      if tok.value.equalsIgnoreCase("none"):
-        return ok(CSSLengthAuto)
-    of cttNumber, cttINumber, cttDimension, cttIDimension, cttPercentage:
-      return parseLength(tok, attrs, allowNegative = false)
-    else: discard
-  return err()
+    if tok.t == cttIdent and tok.value.equalsIgnoreCase("none"):
+      return ok(CSSLengthAuto)
+  return parseLength(cval, attrs, allowNegative = false)
 
 #TODO should be URL (parsed with baseurl of document...)
 func cssURL*(cval: CSSComponentValue; src = false): Option[string] =
