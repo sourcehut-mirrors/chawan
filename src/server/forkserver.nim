@@ -6,6 +6,7 @@ import std/tables
 import chagashi/charset
 import config/config
 import config/urimethodmap
+import html/catom
 import io/dynstream
 import io/packetreader
 import io/packetwriter
@@ -218,6 +219,7 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
       # Notified main process of failure; our job is done.
       quit(1)
     ctx.loaderStream = loaderStream
+  initCAtomFactory()
   ctx.pollData.register(ctx.stream.fd, POLLIN)
   ctx.pollData.register(ctx.loaderStream.fd, POLLIN)
   var alive = true

@@ -65,7 +65,7 @@ macro makeStaticAtom =
       satFormaction = "formaction"
       satFormenctype = "formenctype"
       satFormmethod = "formmethod"
-      satHDatetime = "dateTime"
+      satHDateTime = "dateTime"
       satHHttpEquiv = "httpEquiv"
       satHIsMap = "isMap"
       satHNoValidate = "noValidate"
@@ -174,8 +174,7 @@ macro makeStaticAtom =
 
 makeStaticAtom
 
-#TODO use a better hash map
-const CAtomFactoryStrMapLength = 1024 # must be a power of 2
+const CAtomFactoryStrMapLength = 2048 # must be a power of 2
 static:
   doAssert (CAtomFactoryStrMapLength and (CAtomFactoryStrMapLength - 1)) == 0
 
@@ -197,7 +196,7 @@ func `==`*(a, b: CAtom): bool {.borrow.}
 func hash*(atom: CAtom): Hash {.borrow.}
 
 func toAtom(factory: var CAtomFactoryObj; s: sink string;
-    isInit: static bool = false): CAtom =
+    addLower = true): CAtom =
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
   for atom in factory.strMap[i]:
@@ -207,30 +206,13 @@ func toAtom(factory: var CAtomFactoryObj; s: sink string;
   # Not found
   let atom = CAtom(factory.atomMap.len)
   factory.atomMap.add(s)
-  when not isInit:
-    let lower = if AsciiUpperAlpha notin s:
-      atom
+  if addLower:
+    if AsciiUpperAlpha notin s:
+      factory.lowerMap.add(atom)
     else:
-      factory.toAtom(s.toLowerAscii())
-    factory.lowerMap.add(lower)
+      factory.lowerMap.add(factory.toAtom(s.toLowerAscii()))
   factory.strMap[i].add(atom)
   return atom
-
-const factoryInit = (func(): CAtomFactoryObj =
-  result = CAtomFactoryObj()
-  # Null atom
-  result.atomMap.add("")
-  result.lowerMap.add(CAtom(0))
-  # StaticAtom includes TagType too.
-  for sa in StaticAtom(1) .. StaticAtom.high:
-    discard result.toAtom($sa, isInit = true)
-  for sa in StaticAtom(1) .. StaticAtom.high:
-    let atom = result.toAtom(($sa).toLowerAscii(), isInit = true)
-    result.lowerMap.add(atom)
-  # fill slots of newly added lower mappings
-  while result.lowerMap.len < result.atomMap.len:
-    result.lowerMap.add(CAtom(result.lowerMap.len))
-)()
 
 var factory {.global.}: CAtomFactoryObj
 
@@ -239,7 +221,18 @@ template getFactory(): CAtomFactory =
     addr factory
 
 proc initCAtomFactory*() =
-  factory = factoryInit
+  # Null atom
+  factory.atomMap.add("")
+  factory.lowerMap.add(CAtom(0))
+  # StaticAtom includes TagType too.
+  for sa in StaticAtom(1) .. StaticAtom.high:
+    discard factory.toAtom($sa, addLower = false)
+  for sa in StaticAtom(1) .. StaticAtom.high:
+    let atom = factory.toAtom(($sa).toLowerAscii(), addLower = false)
+    factory.lowerMap.add(atom)
+  # fill slots of newly added lower mappings
+  while factory.lowerMap.len < factory.atomMap.len:
+    factory.lowerMap.add(CAtom(factory.lowerMap.len))
 
 func toLowerAscii*(a: CAtom): CAtom =
   return getFactory().lowerMap[int32(a)]
@@ -286,15 +279,14 @@ func toStaticAtom*(atom: CAtom): StaticAtom =
     return StaticAtom(i)
   return atUnknown
 
-proc toStaticAtom*(s: string): StaticAtom =
+func toStaticAtom*(s: string): StaticAtom =
+  let factory = getFactory()
   let h = s.hash()
-  let i = h and (factoryInit.strMap.len - 1)
-  for atom in factoryInit.strMap[i]:
-    if factoryInit.atomMap[int(atom)] == s:
+  let i = h and (factory.strMap.len - 1)
+  for atom in factory.strMap[i]:
+    if factory.atomMap[int(atom)] == s:
       # Found
       return atom.toStaticAtom()
-  when nimvm:
-    assert false
   atUnknown
 
 func toNamespace*(atom: CAtom): Namespace =

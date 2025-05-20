@@ -1002,8 +1002,7 @@ template toset(ts: openArray[TagType]): set[TagType] =
     tags.incl(tag)
   tags
 
-func makes(name: string; ts: set[TagType]): ReflectEntry =
-  let name = name.toStaticAtom()
+func makes(name: StaticAtom; ts: set[TagType]): ReflectEntry =
   ReflectEntry(
     attrname: name,
     funcname: name,
@@ -1011,33 +1010,33 @@ func makes(name: string; ts: set[TagType]): ReflectEntry =
     tags: ts
   )
 
-func makes(attrname, funcname: string; ts: set[TagType]): ReflectEntry =
+func makes(attrname, funcname: StaticAtom; ts: set[TagType]): ReflectEntry =
   ReflectEntry(
-    attrname: attrname.toStaticAtom(),
-    funcname: funcname.toStaticAtom(),
+    attrname: attrname,
+    funcname: funcname,
     t: rtStr,
     tags: ts
   )
 
-func makes(name: string; ts: varargs[TagType]): ReflectEntry =
+func makes(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
   makes(name, toset(ts))
 
-func makes(attrname, funcname: string; ts: varargs[TagType]): ReflectEntry =
+func makes(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
   makes(attrname, funcname, toset(ts))
 
-func makeb(attrname, funcname: string; ts: varargs[TagType]): ReflectEntry =
+func makeb(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
   ReflectEntry(
-    attrname: attrname.toStaticAtom(),
-    funcname: funcname.toStaticAtom(),
+    attrname: attrname,
+    funcname: funcname,
     t: rtBool,
     tags: toset(ts)
   )
 
-func makeb(name: static string; ts: varargs[TagType]): ReflectEntry =
+func makeb(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
   makeb(name, name, ts)
 
-func makeul(name: string; ts: varargs[TagType]; default = 0u32): ReflectEntry =
-  let name = name.toStaticAtom()
+func makeul(name: StaticAtom; ts: varargs[TagType]; default = 0u32):
+    ReflectEntry =
   ReflectEntry(
     attrname: name,
     funcname: name,
@@ -1046,9 +1045,8 @@ func makeul(name: string; ts: varargs[TagType]; default = 0u32): ReflectEntry =
     u: default
   )
 
-func makeulgz(name: string; ts: varargs[TagType]; default = 0u32):
+func makeulgz(name: StaticAtom; ts: varargs[TagType]; default = 0u32):
     ReflectEntry =
-  let name = name.toStaticAtom()
   ReflectEntry(
     attrname: name,
     funcname: name,
@@ -1057,61 +1055,60 @@ func makeulgz(name: string; ts: varargs[TagType]; default = 0u32):
     u: default
   )
 
-func makef(name: string; ctype: string): ReflectEntry =
-  let name = name.toStaticAtom()
+func makef(name, ctype: StaticAtom): ReflectEntry =
   ReflectEntry(
     attrname: name,
     funcname: name,
     t: rtFunction,
     tags: AllTagTypes,
-    ctype: ctype.toStaticAtom()
+    ctype: ctype
   )
 
 # Note: this table only works for tag types with a registered interface.
 const ReflectTable0 = [
   # non-global attributes
-  makes("target", TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
-  makes("href", TAG_LINK),
-  makes("value", TAG_BUTTON, TAG_DATA),
-  makeb("required", TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
-  makes("name", TAG_A, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META,
+  makes(satTarget, TAG_A, TAG_AREA, TAG_LABEL, TAG_LINK),
+  makes(satHref, TAG_LINK),
+  makes(satValue, TAG_BUTTON, TAG_DATA),
+  makeb(satRequired, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA),
+  makes(satName, TAG_A, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_META,
     TAG_IFRAME, TAG_FRAME, TAG_IMG, TAG_OBJECT, TAG_PARAM, TAG_OBJECT, TAG_MAP,
     TAG_FORM, TAG_OUTPUT, TAG_FIELDSET, TAG_DETAILS),
-  makes("open", TAG_DETAILS),
-  makeb("novalidate", "noValidate", TAG_FORM),
-  makeb("selected", "defaultSelected", TAG_OPTION),
-  makes("rel", TAG_A, TAG_LINK, TAG_LABEL),
-  makes("for", "htmlFor", TAG_LABEL),
-  makes("http-equiv", "httpEquiv", TAG_META),
-  makes("content", TAG_META),
-  makes("media", TAG_META),
-  makes("datetime", "dateTime", TAG_TIME),
-  makeul("cols", TAG_TEXTAREA, 20u32),
-  makeul("rows", TAG_TEXTAREA, 1u32),
+  makes(satOpen, TAG_DETAILS),
+  makeb(satNovalidate, satHNoValidate, TAG_FORM),
+  makeb(satSelected, satDefaultSelected, TAG_OPTION),
+  makes(satRel, TAG_A, TAG_LINK, TAG_LABEL),
+  makes(satFor, satHtmlFor, TAG_LABEL),
+  makes(satHttpEquiv, satHHttpEquiv, TAG_META),
+  makes(satContent, TAG_META),
+  makes(satMedia, TAG_META),
+  makes(satDatetime, satHDateTime, TAG_TIME),
+  makeul(satCols, TAG_TEXTAREA, 20u32),
+  makeul(satRows, TAG_TEXTAREA, 1u32),
 # > For historical reasons, the default value of the size IDL attribute
 # > does not return the actual size used, which, in the absence of the
 # > size content attribute, is either 1 or 4 depending on the presence
 # > of the multiple attribute.
-  makeulgz("size", TAG_SELECT, 0u32),
-  makeulgz("size", TAG_INPUT, 20u32),
-  makeul("width", TAG_CANVAS, 300u32),
-  makeul("height", TAG_CANVAS, 150u32),
-  makes("alt", TAG_IMG),
-  makes("src", TAG_IMG, TAG_SCRIPT, TAG_IFRAME, TAG_FRAME, TAG_INPUT),
-  makes("srcset", TAG_IMG),
-  makes("sizes", TAG_IMG),
+  makeulgz(satSize, TAG_SELECT, 0u32),
+  makeulgz(satSize, TAG_INPUT, 20u32),
+  makeul(satWidth, TAG_CANVAS, 300u32),
+  makeul(satHeight, TAG_CANVAS, 150u32),
+  makes(satAlt, TAG_IMG),
+  makes(satSrc, TAG_IMG, TAG_SCRIPT, TAG_IFRAME, TAG_FRAME, TAG_INPUT),
+  makes(satSrcset, TAG_IMG),
+  makes(satSizes, TAG_IMG),
   #TODO can we add crossOrigin here?
-  makes("usemap", "useMap", TAG_IMG),
-  makeb("ismap", "isMap", TAG_IMG),
-  makeb("disabled", TAG_LINK, TAG_OPTION, TAG_SELECT, TAG_OPTGROUP),
+  makes(satUsemap, satHUseMap, TAG_IMG),
+  makeb(satIsmap, satHIsMap, TAG_IMG),
+  makeb(satDisabled, TAG_LINK, TAG_OPTION, TAG_SELECT, TAG_OPTGROUP),
   # super-global attributes
-  makes("class", "className", AllTagTypes),
-  makef("onclick", "click"),
-  makef("oninput", "input"),
-  makef("onchange", "change"),
-  makef("onload", "load"),
-  makes("slot", AllTagTypes),
-  makes("title", AllTagTypes),
+  makes(satClass, satClassName, AllTagTypes),
+  makef(satOnclick, satClick),
+  makef(satOninput, satInput),
+  makef(satOnchange, satChange),
+  makef(satOnload, satLoad),
+  makes(satSlot, AllTagTypes),
+  makes(satTitle, AllTagTypes),
 ]
 
 func document*(node: Node): Document =

@@ -1899,7 +1899,6 @@ proc cleanup(buffer: Buffer) =
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
     pstream, istream: SocketStream; urandom: PosixStream; cacheId: int) =
-  initCAtomFactory()
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
   else:
