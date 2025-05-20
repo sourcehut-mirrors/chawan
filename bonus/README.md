@@ -22,7 +22,7 @@ Additional documentation is embedded at the beginning of each file.
 Please read it. (Note that the Makefile automates the installation
 instructions, so you can skip those.)
 
-### [curlhttp](curlhttp/)
+### [curlhttp.nim](curlhttp.nim)
 
 Old HTTP(S) handler based on libcurl.  This is mainly useful if you want
 to use [curl-impersonate](https://github.com/lexiforest/curl-impersonate);
