@@ -16,7 +16,7 @@ assumed.  On Windows you have to use WSL.
 1. Clone the Chawan repository:  
    `git clone https://git.sr.ht/~bptato/chawan && cd chawan`
 2. Install the Nim compiler: <https://nim-lang.org/install.html>
-	* Please use 2.0.0 or newer, ideally 2.2.2.  (`nim -v` displays
+	* Please use 2.0.0 or newer, ideally 2.2.4.  (`nim -v` displays
 	  your Nim compiler's version.)
 	* If you are using a 32-bit system, you probably need 2.2 or
 	  newer.  2.0 may still work if you `export CFLAGS=-fpermissive`.
