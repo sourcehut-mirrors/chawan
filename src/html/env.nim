@@ -216,6 +216,9 @@ proc fetch(window: Window; input: JSValueConst;
   let input = ?newRequest(window.jsctx, input, init)
   return window.fetch0(input)
 
+proc scrollTo(window: Window) {.jsfunc.} =
+  discard #TODO maybe in app mode?
+
 proc setTimeout(window: Window; handler: JSValueConst; timeout = 0i32;
     args: varargs[JSValueConst]): int32 {.jsfunc.} =
   return window.timeouts.setTimeout(ttTimeout, handler, timeout, args)

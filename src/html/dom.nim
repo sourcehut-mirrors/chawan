@@ -204,7 +204,7 @@ type
   Document* = ref object of Node
     charset*: Charset
     window* {.jsget: "defaultView".}: Window
-    url* {.jsget: "URL".}: URL # not nil
+    url*: URL # not nil
     mode*: QuirksMode
     currentScript {.jsget.}: HTMLScriptElement
     isxml*: bool
@@ -1513,6 +1513,8 @@ func childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
 func isForm(node: Node): bool =
   return node of HTMLFormElement
 
+# Document
+
 func compatMode(document: Document): string {.jsfget.} =
   if document.mode == QUIRKS:
     return "BackCompat"
@@ -1526,6 +1528,9 @@ func forms(document: Document): HTMLCollection {.jsfget.} =
       childonly = false
     )
   return document.cachedForms
+
+func getURL(ctx: JSContext; document: Document): JSValue {.jsfget: "URL".} =
+  return ctx.toJS($document.url)
 
 #TODO take cookie jar from loader
 func cookie(document: Document): string {.jsfget.} =
@@ -5814,11 +5819,13 @@ proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
   case atom.toLowerAscii().toStaticAtom()
   of satCustomevent:
     return ok(ctx.newCustomEvent(satUempty.toAtom()))
-  of satEvent, satEvents, satSvgevents:
+  of satEvent, satEvents, satHtmlevents, satSvgevents:
     return ok(newEvent(satUempty.toAtom(), nil,
       bubbles = false, cancelable = false))
   of satUievent, satUievents:
     return ok(newUIEvent(satUempty.toAtom()))
+  of satMouseevent, satMouseevents:
+    return ok(newMouseEvent(satUempty.toAtom()))
   else:
     return errDOMException("Event not supported", "NotSupportedError")
 

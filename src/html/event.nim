@@ -281,7 +281,7 @@ type MouseEventInit = object of EventModifierInit
   buttons {.jsdefault.}: uint32 #TODO uint16?
   relatedTarget {.jsdefault.}: Option[EventTarget]
 
-proc newMouseEvent(ctype: CAtom; eventInit = MouseEventInit()): MouseEvent
+proc newMouseEvent*(ctype: CAtom; eventInit = MouseEventInit()): MouseEvent
     {.jsctor.} =
   let event = MouseEvent(
     ctype: ctype,
