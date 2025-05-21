@@ -89,10 +89,8 @@ proc isCommand(paths: seq[string]; name, s: string): bool =
       return true
   false
 
-iterator myCaptures(res: var RegexResult; i, offset: int): RegexCapture =
+iterator myCaptures(res: var RegexResult; i: int): RegexCapture =
   for cap in res.captures.mitems:
-    cap[i].s += offset
-    cap[i].e += offset
     yield cap[i]
 
 proc readErrorMsg(efile: File; line: var string): string =
@@ -110,6 +108,33 @@ proc readErrorMsg(efile: File; line: var string): string =
     if not efile.readLine(line):
       break
   move(msg)
+
+type RegexType = enum
+  rtLink = r"(https?|ftp)://[\w/~.-]+"
+  rtMail = r"(mailto:|)(\w[\w.-]*@[\w-]+\.[\w.-]*)"
+  rtFile = r"(file:)?[/~][\w/~.-]+[\w/]"
+  rtInclude = r"#include(</?[bu]>|\s)*&lt;([\w./-]+)"
+  rtMan = r"(</?[bu]>)*(\w[\w.-]*)(</?[bu]>)*(\([0-9nlx]\w*\))"
+
+proc updateOffsets(map: var array[RegexType, RegexResult]; len: int;
+    cap: RegexCapture; ourType: RegexType) =
+  let offset = len - (cap.e - cap.s)
+  var first = true
+  for res in map.toOpenArray(ourType, RegexType.high).mitems:
+    var toDel: seq[int] = @[]
+    for i, icap in res.captures.mpairs:
+      var overlap = false
+      for it in icap.mitems:
+        if not first and it.e > cap.s and it.s < cap.e:
+          overlap = true
+        elif it.s > cap.s:
+          it.s += offset
+          it.e += offset
+      if overlap:
+        toDel.add(i)
+    for i in countdown(toDel.high, 0):
+      res.captures.delete(toDel[i])
+    first = false
 
 proc processManpage(ofile, efile: File; header, keyword: string) =
   var line = ""
@@ -137,18 +162,14 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
   stdout.write(header)
   stdout.write(line.processBackspace() & '\n')
   var wasBlank = false
-  template re(s: static string): Regex =
-    let r = s.compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE})
-    if r.isNone:
-      stdout.write(s & ": " & r.error)
-      quit(1)
-    r.get
   # regexes partially from w3mman2html
-  let linkRe = re"(https?|ftp)://[\w/~.-]+"
-  let mailRe = re"(mailto:|)(\w[\w.-]*@[\w-]+\.[\w.-]*)"
-  let fileRe = re"(file:)?[/~][\w/~.-]+[\w/]"
-  let includeRe = re"#include(</?[bu]>|\s)*&lt;([\w./-]+)"
-  let manRe = re"(</?[bu]>)*(\w[\w.-]*)(</?[bu]>)*(\([0-9nlx]\w*\))"
+  var reMap = array[RegexType, Regex].default
+  for t, re in reMap.mpairs:
+    let x = ($t).compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE})
+    if x.isNone:
+      stderr.write($t & ": " & x.error)
+      quit(1)
+    re = x.get
   var paths: seq[string] = @[]
   var ignoreMan = keyword.toUpperAscii()
   if ignoreMan == keyword or keyword.len == 1:
@@ -166,23 +187,20 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
     else:
       wasBlank = false
     var line = line.processBackspace()
-    var offset = 0
-    var linkRes = linkRe.exec(line)
-    var mailRes = mailRe.exec(line)
-    var fileRes = fileRe.exec(line)
-    var includeRes = includeRe.exec(line)
-    var manRes = manRe.exec(line)
-    for cap in linkRes.myCaptures(0, offset):
+    var res = array[RegexType, RegexResult].default
+    for t, re in reMap.mpairs:
+      res[t] = re.exec(line)
+    for cap in res[rtLink].myCaptures(0):
       let s = line[cap.s..<cap.e]
       let link = "<a href='" & s & "'>" & s & "</a>"
       line[cap.s..<cap.e] = link
-      offset += link.len - (cap.e - cap.s)
-    for cap in mailRes.myCaptures(2, offset):
+      res.updateOffsets(link.len, cap, rtLink)
+    for cap in res[rtMail].myCaptures(2):
       let s = line[cap.s..<cap.e]
       let link = "<a href='mailto:" & s & "'>" & s & "</a>"
       line[cap.s..<cap.e] = link
-      offset += link.len - (cap.e - cap.s)
-    for cap in fileRes.myCaptures(0, offset):
+      res.updateOffsets(link.len, cap, rtMail)
+    for cap in res[rtFile].myCaptures(0):
       let s = line[cap.s..<cap.e]
       let target = s.expandTilde()
       if not fileExists(target) and not symlinkExists(target) and
@@ -194,8 +212,8 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
       else:
         "<a href='file:" & target & "'>" & s & "</a>"
       line[cap.s..<cap.e] = link
-      offset += link.len - (cap.e - cap.s)
-    for cap in includeRes.myCaptures(2, offset):
+      res.updateOffsets(link.len, cap, rtFile)
+    for cap in res[rtInclude].myCaptures(2):
       let s = line[cap.s..<cap.e]
       const includePaths = [
         "/usr/include/",
@@ -210,9 +228,10 @@ proc processManpage(ofile, efile: File; header, keyword: string) =
         if fileExists(file):
           let link = "<a href='file:" & file & "'>" & s & "</a>"
           line[cap.s..<cap.e] = link
-          offset += link.len - (cap.e - cap.s)
+          res.updateOffsets(link.len, cap, rtInclude)
           break
-    for cap in manRes.captures.mitems:
+    var offset = 0
+    for cap in res[rtMan].captures.mitems:
       cap[0].s += offset
       cap[0].e += offset
       var manCap = cap[2]
