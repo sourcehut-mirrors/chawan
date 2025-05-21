@@ -22,27 +22,24 @@ export tokstate
 # Heavily inspired by html5ever's TreeSink design.
 type
   HTML5ParserOpts*[Handle, Atom] = object
-    isIframeSrcdoc*: bool
-    ## Is the document an iframe srcdoc?
-    scripting*: bool
-    ## Is scripting enabled for this document?
+    isIframeSrcdoc*: bool ## Is the document an iframe srcdoc?
+    scripting*: bool ## Is scripting enabled for this document?
+    pushInTemplate*: bool
+    ## When set to true, the "in template" insertion mode is pushed to
+    ## the stack of template insertion modes on parser start.
+    initialTokenizerState*: TokenizerState
+    ## The initial tokenizer state; by default, this is DATA.
     ctx*: Option[OpenElementInit[Handle, Atom]]
     ## Context element for fragment parsing. When set to some Handle,
     ## the fragment case is used while parsing.
     ##
     ## `token` must be a valid starting token for this element.
-    initialTokenizerState*: TokenizerState
-    ## The initial tokenizer state; by default, this is DATA.
-    openElementsInit*: seq[OpenElementInit[Handle, Atom]]
-    ## Initial state of the stack of open elements. By default, the stack
-    ## starts out empty.
+    openElementsInit*: seq[OpenElementInit[Handle, Atom]] ## Initial
+    ## state of the stack of open elements. By default, the stack starts
+    ## out empty.
     ## Note: if this is initialized to a non-empty sequence, the parser will
     ## start by resetting the insertion mode appropriately.
-    formInit*: Option[Handle]
-    ## Initial state of the parser's form pointer.
-    pushInTemplate*: bool
-    ## When set to true, the "in template" insertion mode is pushed to the
-    ## stack of template insertion modes on parser start.
+    formInit*: Option[Handle] ## Initial state of the parser's form pointer.
 
   OpenElement*[Handle, Atom] = tuple
     element: Handle
@@ -59,24 +56,24 @@ type
     localName: Atom
 
   HTML5Parser*[Handle, Atom] = object
-    quirksMode: QuirksMode
     dombuilder: DOMBuilder[Handle, Atom]
     opts: HTML5ParserOpts[Handle, Atom]
     ctx: Option[OpenElement[Handle, Atom]]
     openElements: seq[OpenElement[Handle, Atom]]
-    insertionMode: InsertionMode
-    oldInsertionMode: InsertionMode
     templateModes: seq[InsertionMode]
     head: Option[OpenElement[Handle, Atom]]
     tokenizer: Tokenizer[Handle, Atom]
     form: Option[Handle]
+    quirksMode: QuirksMode
+    insertionMode: InsertionMode
+    oldInsertionMode: InsertionMode
     fosterParenting: bool
-    # Handle is an element. nil => marker
-    activeFormatting: seq[(Option[Handle], Token[Atom])]
     framesetOk: bool
     ignoreLF: bool
-    pendingTableChars: string
     pendingTableCharsWhitespace: bool
+    # Handle is an element. nil => marker
+    activeFormatting: seq[(Option[Handle], Token[Atom])]
+    pendingTableChars: string
     caseTable: Table[Atom, Atom]
     adjustedTable: Table[Atom, Atom]
     foreignTable: Table[Atom, QualifiedName[Atom]]
@@ -592,7 +589,7 @@ proc insertCharacter(parser: var HTML5Parser, data: string) =
 
 proc insertComment[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
     token: Token, position: AdjustedInsertionLocation[Handle]) =
-  let comment = parser.createComment(token.data)
+  let comment = parser.createComment(token.s)
   parser.insert(position, comment)
 
 proc insertComment(parser: var HTML5Parser, token: Token) =
@@ -695,32 +692,31 @@ func equalsIgnoreCase(s1, s2: string): bool {.inline.} =
 func quirksConditions(token: Token): bool =
   if token.quirks:
     return true
-  if token.name.get("") != "html":
+  if token.name != "html":
     return true
-  if token.sysid.get("") == "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd":
+  if token.sysid == "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd":
     return true
-  if token.pubid.isSome:
-    let pubid = token.pubid.get
+  if token.hasPubid:
     for id in PublicIdentifierEquals:
-      if pubid.equalsIgnoreCase(id):
+      if token.pubid.equalsIgnoreCase(id):
         return true
     for id in PublicIdentifierStartsWith:
-      if pubid.startsWithNoCase(id):
+      if token.pubid.startsWithNoCase(id):
         return true
-    if token.sysid.isNone:
+    if not token.hasSysid:
       for id in SystemIdentifierMissingAndPublicIdentifierStartsWith:
-        if pubid.startsWithNoCase(id):
+        if token.pubid.startsWithNoCase(id):
           return true
   return false
 
 func limitedQuirksConditions(token: Token): bool =
-  if token.pubid.isNone: return false
+  if not token.hasPubid: return false
   for id in PublicIdentifierStartsWithLimited:
-    if token.pubid.get.startsWithNoCase(id):
+    if token.pubid.startsWithNoCase(id):
       return true
-  if token.sysid.isNone: return false
+  if not token.hasSysid: return false
   for id in SystemIdentifierNotMissingAndPublicIdentifierStartsWith:
-    if token.pubid.get.startsWithNoCase(id):
+    if token.pubid.startsWithNoCase(id):
       return true
   return false
 
@@ -1318,8 +1314,8 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.insertComment(token, last_child_of(parser.getDocument()))
       )
       TokenType.DOCTYPE => (block:
-        let doctype = parser.createDocumentType(token.name.get(""),
-          token.pubid.get(""), token.sysid.get(""))
+        let doctype = parser.createDocumentType(token.name, token.pubid,
+          token.sysid)
         parser.append(parser.getDocument(), doctype)
         if not parser.opts.isIframeSrcdoc:
           if quirksConditions(token):

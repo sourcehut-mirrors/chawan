@@ -87,19 +87,18 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     return Token[MAtom](
       t: TokenType.DOCTYPE,
       quirks: not a[4].getBool(), # yes, this is reversed. don't ask
-      name: if a[1].kind == JNull: none(string) else: some(a[1].getStr()),
-      pubid: if a[2].kind == JNull: none(string) else: some(a[2].getStr()),
-      sysid: if a[3].kind == JNull: none(string) else: some(a[3].getStr())
+      name: if a[1].kind == JNull: "" else: a[1].getStr(),
+      pubid: if a[2].kind == JNull: "" else: a[2].getStr(),
+      hasPubid: a[2].kind != JNull,
+      sysid: if a[3].kind == JNull: "" else: a[3].getStr(),
+      hasSysid: a[3].kind != JNull,
     )
   of "Comment":
     let s = if esc:
       doubleEscape(a[1].getStr())
     else:
       a[1].getStr()
-    return Token[MAtom](
-      t: TokenType.COMMENT,
-      data: s
-    )
+    return Token[MAtom](t: TokenType.COMMENT, s: s)
   else: discard
 
 proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
@@ -142,12 +141,9 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
       inc i
     doAssert tok.attrs == otok.attrs, desc & " (tok attrs: " & attrs &
       " otok attrs (" & oattrs & ")"
-  of TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE:
+  of TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE, TokenType.COMMENT:
     doAssert tok.s == otok.s, desc & " (tok s: " & tok.s & " otok s: " &
       otok.s & ")"
-  of TokenType.COMMENT:
-    doAssert tok.data == otok.data, desc & " (tok data: " & tok.data &
-      " otok data: " & otok.data & ")"
   of EOF, CHARACTER_NULL: discard
 
 proc runTest(builder: MiniDOMBuilder, desc: string,

@@ -1,7 +1,6 @@
 {.experimental: "overloadableEnums".}
 
 import std/options
-import std/strformat
 import std/strutils
 import std/tables
 
@@ -19,42 +18,42 @@ type
     # temporary buffer (mentioned by the standard, but also used for attribute
     # names)
     tmp: string
-    code: uint32 # codepoint of current numeric character reference
     tok: Token[Atom] # current token to be emitted
     laststart*: Token[Atom] # last start tag token
-    attrna: Atom # atom representing attrn after the attribute name is closed
     attrv: string # buffer for attribute values
+    attrna: Atom # atom representing attrn after the attribute name is closed
+    code: uint32 # codepoint of current numeric character reference
     attr: bool # is there already an attr in the previous values?
     hasnonhtml*: bool # does the stack of open elements have a non-HTML node?
+    ignoreLF: bool # ignore the next consumed line feed (for CRLF normalization)
+    isend: bool # if consume returns -1 and isend, we are at EOF
+    isws: bool # is the current character token whitespace-only?
     tokqueue*: seq[Token[Atom]] # queue of tokens to be emitted in this iteration
     charbuf: string # buffer for character tokens
     tagNameBuf: string # buffer for storing the tag name
     peekBuf: array[64, char] # a stack with the last element at peekBufLen - 1
     peekBufLen: int
     inputBufIdx*: int # last character consumed in input buf
-    ignoreLF: bool # ignore the next consumed line feed (for CRLF normalization)
-    isend: bool # if consume returns -1 and isend, we are at EOF
-    isws: bool # is the current character token whitespace-only?
 
   TokenType* = enum
     DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE,
     CHARACTER_NULL, EOF
 
   Token*[Atom] = ref object
+    quirks*: bool
+    hasPubid*: bool
+    hasSysid*: bool
     case t*: TokenType
     of DOCTYPE:
-      quirks*: bool
-      name*: Option[string]
-      pubid*: Option[string]
-      sysid*: Option[string]
+      name*: string
+      pubid*: string
+      sysid*: string
     of START_TAG, END_TAG:
       selfclosing*: bool
       tagname*: Atom
       attrs*: Table[Atom, string]
-    of CHARACTER, CHARACTER_WHITESPACE:
+    of CHARACTER, CHARACTER_WHITESPACE, COMMENT:
       s*: string
-    of COMMENT:
-      data*: string
     of EOF, CHARACTER_NULL: discard
 
 const AsciiUpperAlpha = {'A'..'Z'}
@@ -65,13 +64,18 @@ const AsciiAlphaNumeric = AsciiAlpha + AsciiDigit
 const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
 func `$`*(tok: Token): string =
+  result = $tok.t
   case tok.t
-  of DOCTYPE: fmt"{tok.t} {tok.name} {tok.pubid} {tok.sysid} {tok.quirks}"
-  of START_TAG, END_TAG: fmt"{tok.t} {tok.tagname} {tok.selfclosing} {tok.attrs}"
-  of CHARACTER, CHARACTER_WHITESPACE: $tok.t & " " & tok.s
-  of CHARACTER_NULL: $tok.t
-  of COMMENT: fmt"{tok.t} {tok.data}"
-  of EOF: fmt"{tok.t}"
+  of DOCTYPE:
+    result &= ' ' & tok.name & ' ' & tok.pubid & ' ' & tok.sysid
+    if tok.quirks:
+      result &= " (quirks)"
+  of START_TAG, END_TAG:
+    result &= ' ' & tok.tagname & ' ' & $tok.attrs
+    if tok.selfclosing:
+      result &= " (self-closing)"
+  of CHARACTER, CHARACTER_WHITESPACE, COMMENT: result &= ' ' & tok.s
+  else: discard
 
 proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom],
     s: string): Atom =
@@ -464,7 +468,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         # note: was reconsume
         switch_state TAG_NAME
       of '?':
-        new_token Token[Atom](t: COMMENT, data: "?")
+        new_token Token[Atom](t: COMMENT, s: "?")
         # note: was reconsume
         switch_state BOGUS_COMMENT
       else:
@@ -943,8 +947,8 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      of '\0': tokenizer.tok.data &= "\uFFFD"
-      else: tokenizer.tok.data &= c
+      of '\0': tokenizer.tok.s &= "\uFFFD"
+      else: tokenizer.tok.s &= c
 
     of MARKUP_DECLARATION_OPEN: # note: rewritten to fit case model as we consume a char anyway
       template anything_else =
@@ -969,7 +973,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
           if tokenizer.hasnonhtml:
             switch_state CDATA_SECTION
           else:
-            new_token Token[Atom](t: COMMENT, data: "[CDATA[")
+            new_token Token[Atom](t: COMMENT, s: "[CDATA[")
             switch_state BOGUS_COMMENT
         of esrRetry: break
         of esrFail: anything_else
@@ -993,24 +997,24 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         emit_tok
       else:
-        tokenizer.tok.data &= '-'
+        tokenizer.tok.s &= '-'
         reconsume_in COMMENT
 
     of COMMENT:
       case c
       of '<':
-        tokenizer.tok.data &= c
+        tokenizer.tok.s &= c
         switch_state COMMENT_LESS_THAN_SIGN
       of '-': switch_state COMMENT_END_DASH
-      of '\0': tokenizer.tok.data &= "\uFFFD"
-      else: tokenizer.tok.data &= c
+      of '\0': tokenizer.tok.s &= "\uFFFD"
+      else: tokenizer.tok.s &= c
 
     of COMMENT_LESS_THAN_SIGN:
       case c
       of '!':
-        tokenizer.tok.data &= c
+        tokenizer.tok.s &= c
         switch_state COMMENT_LESS_THAN_SIGN_BANG
-      of '<': tokenizer.tok.data &= c
+      of '<': tokenizer.tok.s &= c
       else: reconsume_in COMMENT
 
     of COMMENT_LESS_THAN_SIGN_BANG:
@@ -1035,7 +1039,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of '-': switch_state COMMENT_END
       else:
-        tokenizer.tok.data &= '-'
+        tokenizer.tok.s &= '-'
         reconsume_in COMMENT
 
     of COMMENT_END:
@@ -1044,22 +1048,21 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         emit_tok
       of '!': switch_state COMMENT_END_BANG
-      of '-': tokenizer.tok.data &= '-'
+      of '-': tokenizer.tok.s &= '-'
       else:
-        tokenizer.tok.data &= "--"
+        tokenizer.tok.s &= "--"
         reconsume_in COMMENT
 
     of COMMENT_END_BANG:
-      case c
-      of '-':
-        tokenizer.tok.data &= "--!"
-        switch_state COMMENT_END_DASH
-      of '>':
+      if c == '>':
         switch_state DATA
         emit_tok
       else:
-        tokenizer.tok.data &= "--!"
-        reconsume_in COMMENT
+        tokenizer.tok.s &= "--!"
+        if c == '-':
+          switch_state COMMENT_END_DASH
+        else:
+          reconsume_in COMMENT
 
     of DOCTYPE:
       if c notin AsciiWhitespace:
@@ -1070,14 +1073,14 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiWhitespace: discard
       of '\0':
-        new_token Token[Atom](t: DOCTYPE, name: some("\uFFFD"))
+        new_token Token[Atom](t: DOCTYPE, name: "\uFFFD")
         switch_state DOCTYPE_NAME
       of '>':
         new_token Token[Atom](t: DOCTYPE, quirks: true)
         switch_state DATA
         emit_tok
       else:
-        new_token Token[Atom](t: DOCTYPE, name: some($c.toLowerAscii()))
+        new_token Token[Atom](t: DOCTYPE, name: $c.toLowerAscii())
         switch_state DOCTYPE_NAME
 
     of DOCTYPE_NAME:
@@ -1086,8 +1089,8 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      of '\0': tokenizer.tok.name.get &= "\uFFFD"
-      else: tokenizer.tok.name.get &= c.toLowerAscii()
+      of '\0': tokenizer.tok.name &= "\uFFFD"
+      else: tokenizer.tok.name &= c.toLowerAscii()
 
     of AFTER_DOCTYPE_NAME: # note: rewritten to fit case model as we consume a char anyway
       template anything_else =
@@ -1117,10 +1120,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
       of '"':
-        tokenizer.tok.pubid = some("")
+        tokenizer.tok.hasPubid = true
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        tokenizer.tok.pubid = some("")
+        tokenizer.tok.hasPubid = true
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED
       of '>':
         tokenizer.tok.quirks = true
@@ -1134,10 +1137,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiWhitespace: discard
       of '"':
-        tokenizer.tok.pubid = some("")
+        tokenizer.tok.hasPubid = true
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        tokenizer.tok.pubid = some("")
+        tokenizer.tok.hasPubid = true
         switch_state DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED
       of '>':
         tokenizer.tok.quirks = true
@@ -1150,22 +1153,22 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
     of DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED:
       case c
       of '"': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
-      of '\0': tokenizer.tok.pubid.get &= "\uFFFD"
+      of '\0': tokenizer.tok.pubid &= "\uFFFD"
       of '>':
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      else: tokenizer.tok.pubid.get &= c
+      else: tokenizer.tok.pubid &= c
 
     of DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
-      of '\0': tokenizer.tok.pubid.get &= "\uFFFD"
+      of '\0': tokenizer.tok.pubid &= "\uFFFD"
       of '>':
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      else: tokenizer.tok.pubid.get &= c
+      else: tokenizer.tok.pubid &= c
 
     of AFTER_DOCTYPE_PUBLIC_IDENTIFIER:
       case c
@@ -1175,10 +1178,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         emit_tok
       of '"':
-        tokenizer.tok.sysid = some("")
+        tokenizer.tok.hasSysid = true
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        tokenizer.tok.sysid = some("")
+        tokenizer.tok.hasSysid = true
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       else:
         tokenizer.tok.quirks = true
@@ -1191,10 +1194,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state DATA
         emit_tok
       of '"':
-        tokenizer.tok.sysid = some("")
+        tokenizer.tok.hasSysid = true
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        tokenizer.tok.sysid = some("")
+        tokenizer.tok.hasSysid = true
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       else:
         tokenizer.tok.quirks = true
@@ -1204,10 +1207,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
       of '"':
-        tokenizer.tok.sysid = some("")
+        tokenizer.tok.hasSysid = true
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        tokenizer.tok.sysid = some("")
+        tokenizer.tok.hasSysid = true
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of '>':
         tokenizer.tok.quirks = true
@@ -1221,10 +1224,10 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       case c
       of AsciiWhitespace: discard
       of '"':
-        tokenizer.tok.sysid = some("")
+        tokenizer.tok.hasSysid = true
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
       of '\'':
-        tokenizer.tok.sysid = some("")
+        tokenizer.tok.hasSysid = true
         switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
       of '>':
         tokenizer.tok.quirks = true
@@ -1237,23 +1240,23 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
     of DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED:
       case c
       of '"': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
-      of '\0': tokenizer.tok.sysid.get &= "\uFFFD"
+      of '\0': tokenizer.tok.sysid &= "\uFFFD"
       of '>':
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
-      else: tokenizer.tok.sysid.get &= c
+      else: tokenizer.tok.sysid &= c
 
     of DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED:
       case c
       of '\'': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
-      of '\0': tokenizer.tok.sysid.get &= "\uFFFD"
+      of '\0': tokenizer.tok.sysid &= "\uFFFD"
       of '>':
         tokenizer.tok.quirks = true
         switch_state DATA
         emit_tok
       else:
-        tokenizer.tok.sysid.get &= c
+        tokenizer.tok.sysid &= c
 
     of AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
       case c
