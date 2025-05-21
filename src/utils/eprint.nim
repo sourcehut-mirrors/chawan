@@ -10,8 +10,11 @@ template eprint0(s: varargs[string]) =
     when nimvm:
       echo o
     else:
-      o &= '\n'
-      stderr.write(o)
+      when declared(stderr):
+        o &= '\n'
+        stderr.write(o)
+      else:
+        echo o
 
 when defined(release):
   func eprint*(s: varargs[string, `$`])
