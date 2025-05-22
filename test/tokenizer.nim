@@ -67,7 +67,7 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
       t: START_TAG,
       tagname: factory.strToAtom(a[1].getStr()),
       attrs: getAttrs(factory, a[2], esc),
-      selfclosing: a.len > 3 and a[3].getBool()
+      flags: if a.len > 3 and a[3].getBool(): {tfSelfClosing} else: {}
     )
   of "EndTag":
     return Token[MAtom](
@@ -84,14 +84,19 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
       s: s
     )
   of "DOCTYPE":
+    var flags: set[TokenFlag] = {}
+    if a[2].kind != JNull:
+      flags.incl(tfPubid)
+    if a[3].kind != JNull:
+      flags.incl(tfSysid)
+    if not a[4].getBool(): # yes, this is reversed. don't ask
+      flags.incl(tfQuirks)
     return Token[MAtom](
       t: TokenType.DOCTYPE,
-      quirks: not a[4].getBool(), # yes, this is reversed. don't ask
       name: if a[1].kind == JNull: "" else: a[1].getStr(),
       pubid: if a[2].kind == JNull: "" else: a[2].getStr(),
-      hasPubid: a[2].kind != JNull,
       sysid: if a[3].kind == JNull: "" else: a[3].getStr(),
-      hasSysid: a[3].kind != JNull,
+      flags: flags
     )
   of "Comment":
     let s = if esc:
@@ -111,16 +116,13 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
     doAssert tok.pubid == otok.pubid, desc & " (" & "tok pubid: " &
       $tok.pubid & " otok pubid: " & $otok.pubid & ")"
     doAssert tok.sysid == otok.sysid, desc
-    doAssert tok.quirks == otok.quirks, desc
+    doAssert tok.flags == otok.flags, desc
   of TokenType.START_TAG, TokenType.END_TAG:
     doAssert tok.tagname == otok.tagname, desc & " (tok tagname: " &
       factory.atomToStr(tok.tagname) & " otok tagname " &
       factory.atomToStr(otok.tagname) & ")"
-    if tok.t == TokenType.START_TAG:
-      #TODO not sure if this is the best solution. but end tags can't really
-      # be self-closing...
-      # Maybe use a separate "self-closing tag" token type?
-      doAssert tok.selfclosing == otok.selfclosing, desc
+    if tok.t == TokenType.START_TAG: # otherwise a test incorrectly fails
+      doAssert tok.flags == otok.flags, desc
     var attrs = ""
     var i = 0
     for name, value in tok.attrs:

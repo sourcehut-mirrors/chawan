@@ -1,5 +1,5 @@
 NIM ?= nim
-FLAGS += -p:. -p:test/chagashi --import:test/eprint
+FLAGS += -p:. -p:test/chagashi
 
 .PHONY: all
 all: test

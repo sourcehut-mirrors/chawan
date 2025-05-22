@@ -690,31 +690,31 @@ func equalsIgnoreCase(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
 
 func quirksConditions(token: Token): bool =
-  if token.quirks:
+  if tfQuirks in token.flags:
     return true
   if token.name != "html":
     return true
   if token.sysid == "http://www.ibm.com/data/dtd/v11/ibmxhtml1-transitional.dtd":
     return true
-  if token.hasPubid:
+  if tfPubid in token.flags:
     for id in PublicIdentifierEquals:
       if token.pubid.equalsIgnoreCase(id):
         return true
     for id in PublicIdentifierStartsWith:
       if token.pubid.startsWithNoCase(id):
         return true
-    if not token.hasSysid:
+    if tfSysid notin token.flags:
       for id in SystemIdentifierMissingAndPublicIdentifierStartsWith:
         if token.pubid.startsWithNoCase(id):
           return true
   return false
 
 func limitedQuirksConditions(token: Token): bool =
-  if not token.hasPubid: return false
+  if tfPubid notin token.flags: return false
   for id in PublicIdentifierStartsWithLimited:
     if token.pubid.startsWithNoCase(id):
       return true
-  if not token.hasSysid: return false
+  if tfSysid notin token.flags: return false
   for id in SystemIdentifierNotMissingAndPublicIdentifierStartsWith:
     if token.pubid.startsWithNoCase(id):
       return true
@@ -1852,7 +1852,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.adjustMathMLAttributes(token.attrs, xmlAttrs)
         discard parser.insertForeignElement(token, token.tagname,
           Namespace.MATHML, false, xmlAttrs)
-        if token.selfclosing:
+        if tfSelfClosing in token.flags:
           pop_current_node
       )
       "<svg>" => (block:
@@ -1861,7 +1861,7 @@ proc processInHTMLContent[Handle, Atom](parser: var HTML5Parser[Handle, Atom],
         parser.adjustSVGAttributes(token.attrs, xmlAttrs)
         discard parser.insertForeignElement(token, token.tagname, Namespace.SVG,
           false, xmlAttrs)
-        if token.selfclosing:
+        if tfSelfClosing in token.flags:
           pop_current_node
       )
       ("<caption>", "<col>", "<colgroup>", "<frame>", "<head>", "<tbody>",
@@ -2407,7 +2407,7 @@ proc processInForeignContent[Handle, Atom](
       parser.adjustMathMLAttributes(token.attrs, xmlAttrs)
     discard parser.insertForeignElement(token, tagname, namespace, false,
       xmlAttrs)
-    if token.selfclosing:
+    if tfSelfClosing in token.flags:
       if namespace == Namespace.SVG and
           parser.atomToTagType(token.tagname) == TAG_SCRIPT:
         script_end_tag
