@@ -13,8 +13,6 @@ export tokstate
 type
   Tokenizer*[Handle, Atom] = object
     dombuilder: DOMBuilder[Handle, Atom]
-    state*: TokenizerState
-    rstate: TokenizerState # return state
     # temporary buffer (mentioned by the standard, but also used for attribute
     # names)
     tmp: string
@@ -23,11 +21,14 @@ type
     attrv: string # buffer for attribute values
     attrna: Atom # atom representing attrn after the attribute name is closed
     code: uint32 # codepoint of current numeric character reference
+    state*: TokenizerState
+    rstate: TokenizerState # return state
     attr: bool # is there already an attr in the previous values?
     hasnonhtml*: bool # does the stack of open elements have a non-HTML node?
     ignoreLF: bool # ignore the next consumed line feed (for CRLF normalization)
     isend: bool # if consume returns -1 and isend, we are at EOF
     isws: bool # is the current character token whitespace-only?
+    quote: char # dedupe states that only differ in their quoting
     tokqueue*: seq[Token[Atom]] # queue of tokens to be emitted in this iteration
     charbuf: string # buffer for character tokens
     tagNameBuf: string # buffer for storing the tag name
@@ -39,17 +40,17 @@ type
     DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE,
     CHARACTER_NULL, EOF
 
+  TokenFlag* = enum
+    tfQuirks, tfPubid, tfSysid, tfSelfClosing
+
   Token*[Atom] = ref object
-    quirks*: bool
-    hasPubid*: bool
-    hasSysid*: bool
+    flags*: set[TokenFlag]
     case t*: TokenType
     of DOCTYPE:
       name*: string
       pubid*: string
       sysid*: string
     of START_TAG, END_TAG:
-      selfclosing*: bool
       tagname*: Atom
       attrs*: Table[Atom, string]
     of CHARACTER, CHARACTER_WHITESPACE, COMMENT:
@@ -68,11 +69,11 @@ func `$`*(tok: Token): string =
   case tok.t
   of DOCTYPE:
     result &= ' ' & tok.name & ' ' & tok.pubid & ' ' & tok.sysid
-    if tok.quirks:
+    if tfQuirks in tok.flags:
       result &= " (quirks)"
   of START_TAG, END_TAG:
     result &= ' ' & tok.tagname & ' ' & $tok.attrs
-    if tok.selfclosing:
+    if tfSelfClosing in tok.flags:
       result &= " (self-closing)"
   of CHARACTER, CHARACTER_WHITESPACE, COMMENT: result &= ' ' & tok.s
   else: discard
@@ -120,16 +121,18 @@ proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
     if tokenizer.isws:
       tokenizer.tokqueue.add(Token[Atom](
         t: CHARACTER_WHITESPACE,
-        s: tokenizer.charbuf
+        s: move(tokenizer.charbuf)
       ))
     else:
-      tokenizer.tokqueue.add(Token[Atom](t: CHARACTER, s: tokenizer.charbuf))
+      tokenizer.tokqueue.add(Token[Atom](
+        t: CHARACTER,
+        s: move(tokenizer.charbuf)
+      ))
     tokenizer.isws = false
     tokenizer.charbuf.setLen(0)
 
 const AttributeStates = {
-  ATTRIBUTE_VALUE_DOUBLE_QUOTED, ATTRIBUTE_VALUE_SINGLE_QUOTED,
-  ATTRIBUTE_VALUE_UNQUOTED
+  ATTRIBUTE_VALUE_QUOTED, ATTRIBUTE_VALUE_UNQUOTED
 }
 
 func consumedAsAttribute(tokenizer: Tokenizer): bool =
@@ -252,7 +255,16 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
   tokenizer.appendAttrOrEmit(s)
 
 proc flushAttr(tokenizer: var Tokenizer) =
-  tokenizer.tok.attrs[tokenizer.attrna] = tokenizer.attrv
+  tokenizer.tok.attrs[tokenizer.attrna] = move(tokenizer.attrv)
+
+proc startNewAttribute(tokenizer: var Tokenizer) =
+  if tokenizer.tok.t == START_TAG and tokenizer.attr:
+    # This can also be called with tok.t == END_TAG, in that case we do
+    # not want to flush attributes.
+    tokenizer.flushAttr()
+  tokenizer.tmp = ""
+  tokenizer.attrv = ""
+  tokenizer.attr = true
 
 type EatStrResult = enum
   esrFail, esrSuccess, esrRetry
@@ -326,18 +338,14 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
     tokenizer.tokqueue.add(Token[Atom](t: COMMENT))
   of DOCTYPE, BEFORE_DOCTYPE_NAME:
     tokenizer.flushChars()
-    tokenizer.tokqueue.add(Token[Atom](t: DOCTYPE, quirks: true))
+    tokenizer.tokqueue.add(Token[Atom](t: DOCTYPE, flags: {tfQuirks}))
   of DOCTYPE_NAME, AFTER_DOCTYPE_NAME, AFTER_DOCTYPE_PUBLIC_KEYWORD,
-      BEFORE_DOCTYPE_PUBLIC_IDENTIFIER,
-      DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED,
-      DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED,
+      BEFORE_DOCTYPE_PUBLIC_IDENTIFIER, DOCTYPE_PUBLIC_IDENTIFIER_QUOTED,
       AFTER_DOCTYPE_PUBLIC_IDENTIFIER,
       BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS,
       AFTER_DOCTYPE_SYSTEM_KEYWORD, BEFORE_DOCTYPE_SYSTEM_IDENTIFIER,
-      DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED,
-      DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED,
-      AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
-    tokenizer.tok.quirks = true
+      DOCTYPE_SYSTEM_IDENTIFIER_QUOTED, AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
+    tokenizer.tok.flags.incl(tfQuirks)
     tokenizer.flushChars()
     tokenizer.tokqueue.add(tokenizer.tok)
   of CDATA_SECTION_BRACKET:
@@ -396,14 +404,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
   template is_appropriate_end_tag_token(): bool =
     tokenizer.laststart != nil and
       tokenizer.laststart.tagname == tokenizer.tok.tagname
-  template start_new_attribute =
-    if tokenizer.tok.t == START_TAG and tokenizer.attr:
-      # This can also be called with tok.t == END_TAG, in that case we do
-      # not want to flush attributes.
-      tokenizer.flushAttr()
-    tokenizer.tmp = ""
-    tokenizer.attrv = ""
-    tokenizer.attr = true
   template leave_attribute_name_state =
     tokenizer.attrna = tokenizer.strToAtom(tokenizer.tmp)
     if tokenizer.attrna in tokenizer.tok.attrs:
@@ -851,11 +851,11 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of AsciiWhitespace: discard
       of '/', '>': reconsume_in AFTER_ATTRIBUTE_NAME
       of '=':
-        start_new_attribute
+        tokenizer.startNewAttribute()
         tokenizer.tmp &= c
         switch_state ATTRIBUTE_NAME
       else:
-        start_new_attribute
+        tokenizer.startNewAttribute()
         reconsume_in ATTRIBUTE_NAME
 
     of ATTRIBUTE_NAME:
@@ -881,32 +881,26 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         prepare_attrs_if_start
         emit_tok
       else:
-        start_new_attribute
+        tokenizer.startNewAttribute()
         reconsume_in ATTRIBUTE_NAME
 
     of BEFORE_ATTRIBUTE_VALUE:
       case c
       of AsciiWhitespace: discard
-      of '"': switch_state ATTRIBUTE_VALUE_DOUBLE_QUOTED
-      of '\'': switch_state ATTRIBUTE_VALUE_SINGLE_QUOTED
+      of '"', '\'':
+        tokenizer.quote = c
+        switch_state ATTRIBUTE_VALUE_QUOTED
       of '>':
         switch_state DATA
         prepare_attrs_if_start
         emit_tok
       else: reconsume_in ATTRIBUTE_VALUE_UNQUOTED
 
-    of ATTRIBUTE_VALUE_DOUBLE_QUOTED:
+    of ATTRIBUTE_VALUE_QUOTED:
       case c
-      of '"': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       of '&': switch_state_return CHARACTER_REFERENCE
       of '\0': tokenizer.appendToAttrValue("\uFFFD")
-      else: tokenizer.appendToAttrValue([c])
-
-    of ATTRIBUTE_VALUE_SINGLE_QUOTED:
-      case c
-      of '\'': switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
-      of '&': switch_state_return CHARACTER_REFERENCE
-      of '\0': tokenizer.appendToAttrValue("\uFFFD")
+      elif c == tokenizer.quote: switch_state AFTER_ATTRIBUTE_VALUE_QUOTED
       else: tokenizer.appendToAttrValue([c])
 
     of ATTRIBUTE_VALUE_UNQUOTED:
@@ -935,7 +929,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
     of SELF_CLOSING_START_TAG:
       case c
       of '>':
-        tokenizer.tok.selfclosing = true
+        tokenizer.tok.flags.incl(tfSelfClosing)
         switch_state DATA
         prepare_attrs_if_start
         emit_tok
@@ -1076,7 +1070,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         new_token Token[Atom](t: DOCTYPE, name: "\uFFFD")
         switch_state DOCTYPE_NAME
       of '>':
-        new_token Token[Atom](t: DOCTYPE, quirks: true)
+        new_token Token[Atom](t: DOCTYPE, flags: {tfQuirks})
         switch_state DATA
         emit_tok
       else:
@@ -1094,7 +1088,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of AFTER_DOCTYPE_NAME: # note: rewritten to fit case model as we consume a char anyway
       template anything_else =
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         switch_state BOGUS_DOCTYPE
       case c
       of AsciiWhitespace: discard
@@ -1119,55 +1113,41 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
     of AFTER_DOCTYPE_PUBLIC_KEYWORD:
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_PUBLIC_IDENTIFIER
-      of '"':
-        tokenizer.tok.hasPubid = true
-        switch_state DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED
-      of '\'':
-        tokenizer.tok.hasPubid = true
-        switch_state DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED
+      of '"', '\'':
+        tokenizer.tok.flags.incl(tfPubid)
+        tokenizer.quote = c
+        switch_state DOCTYPE_PUBLIC_IDENTIFIER_QUOTED
       of '>':
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         switch_state DATA
         emit_tok
       else:
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         reconsume_in BOGUS_DOCTYPE
 
     of BEFORE_DOCTYPE_PUBLIC_IDENTIFIER:
       case c
       of AsciiWhitespace: discard
-      of '"':
-        tokenizer.tok.hasPubid = true
-        switch_state DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED
-      of '\'':
-        tokenizer.tok.hasPubid = true
-        switch_state DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED
+      of '"', '\'':
+        tokenizer.tok.flags.incl(tfPubid)
+        tokenizer.quote = c
+        switch_state DOCTYPE_PUBLIC_IDENTIFIER_QUOTED
       of '>':
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         switch_state DATA
         emit_tok
       else:
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         reconsume_in BOGUS_DOCTYPE
 
-    of DOCTYPE_PUBLIC_IDENTIFIER_DOUBLE_QUOTED:
+    of DOCTYPE_PUBLIC_IDENTIFIER_QUOTED:
       case c
-      of '"': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
       of '\0': tokenizer.tok.pubid &= "\uFFFD"
       of '>':
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         switch_state DATA
         emit_tok
-      else: tokenizer.tok.pubid &= c
-
-    of DOCTYPE_PUBLIC_IDENTIFIER_SINGLE_QUOTED:
-      case c
-      of '\'': switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
-      of '\0': tokenizer.tok.pubid &= "\uFFFD"
-      of '>':
-        tokenizer.tok.quirks = true
-        switch_state DATA
-        emit_tok
+      elif c == tokenizer.quote: switch_state AFTER_DOCTYPE_PUBLIC_IDENTIFIER
       else: tokenizer.tok.pubid &= c
 
     of AFTER_DOCTYPE_PUBLIC_IDENTIFIER:
@@ -1177,14 +1157,12 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      of '"':
-        tokenizer.tok.hasSysid = true
-        switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
-      of '\'':
-        tokenizer.tok.hasSysid = true
-        switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
+      of '"', '\'':
+        tokenizer.tok.flags.incl(tfSysid)
+        tokenizer.quote = c
+        switch_state DOCTYPE_SYSTEM_IDENTIFIER_QUOTED
       else:
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         reconsume_in BOGUS_DOCTYPE
 
     of BETWEEN_DOCTYPE_PUBLIC_AND_SYSTEM_IDENTIFIERS:
@@ -1193,70 +1171,53 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         switch_state DATA
         emit_tok
-      of '"':
-        tokenizer.tok.hasSysid = true
-        switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
-      of '\'':
-        tokenizer.tok.hasSysid = true
-        switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
+      of '"', '\'':
+        tokenizer.tok.flags.incl(tfSysid)
+        tokenizer.quote = c
+        switch_state DOCTYPE_SYSTEM_IDENTIFIER_QUOTED
       else:
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         reconsume_in BOGUS_DOCTYPE
 
     of AFTER_DOCTYPE_SYSTEM_KEYWORD:
       case c
       of AsciiWhitespace: switch_state BEFORE_DOCTYPE_SYSTEM_IDENTIFIER
-      of '"':
-        tokenizer.tok.hasSysid = true
-        switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
-      of '\'':
-        tokenizer.tok.hasSysid = true
-        switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
+      of '"', '\'':
+        tokenizer.tok.flags.incl(tfSysid)
+        tokenizer.quote = c
+        switch_state DOCTYPE_SYSTEM_IDENTIFIER_QUOTED
       of '>':
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         switch_state DATA
         emit_tok
       else:
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         reconsume_in BOGUS_DOCTYPE
 
     of BEFORE_DOCTYPE_SYSTEM_IDENTIFIER:
       case c
       of AsciiWhitespace: discard
-      of '"':
-        tokenizer.tok.hasSysid = true
-        switch_state DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED
-      of '\'':
-        tokenizer.tok.hasSysid = true
-        switch_state DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED
+      of '"', '\'':
+        tokenizer.tok.flags.incl(tfSysid)
+        tokenizer.quote = c
+        switch_state DOCTYPE_SYSTEM_IDENTIFIER_QUOTED
       of '>':
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         switch_state DATA
         emit_tok
       else:
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         reconsume_in BOGUS_DOCTYPE
 
-    of DOCTYPE_SYSTEM_IDENTIFIER_DOUBLE_QUOTED:
+    of DOCTYPE_SYSTEM_IDENTIFIER_QUOTED:
       case c
-      of '"': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
       of '\0': tokenizer.tok.sysid &= "\uFFFD"
       of '>':
-        tokenizer.tok.quirks = true
+        tokenizer.tok.flags.incl(tfQuirks)
         switch_state DATA
         emit_tok
+      elif c == tokenizer.quote: switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
       else: tokenizer.tok.sysid &= c
-
-    of DOCTYPE_SYSTEM_IDENTIFIER_SINGLE_QUOTED:
-      case c
-      of '\'': switch_state AFTER_DOCTYPE_SYSTEM_IDENTIFIER
-      of '\0': tokenizer.tok.sysid &= "\uFFFD"
-      of '>':
-        tokenizer.tok.quirks = true
-        switch_state DATA
-        emit_tok
-      else:
-        tokenizer.tok.sysid &= c
 
     of AFTER_DOCTYPE_SYSTEM_IDENTIFIER:
       case c
