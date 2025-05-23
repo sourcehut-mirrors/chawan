@@ -16,7 +16,7 @@ proc runTestIn(test_in, test_in_ref: FileStream, label: string) =
   let ours = td.decodeAll(s)
   let theirs = test_in_ref.readAll()
   if ours != theirs:
-    eprint "ours vs theirs len", ours.len, theirs.len
+    echo "ours vs theirs len ", ours.len, " ", theirs.len
     let helpfile = newFileStream(dir / "fail_in_" & label, fmWrite)
     helpfile.write(ours)
     assert false, "Failed in test" & label
@@ -30,7 +30,7 @@ proc runTestOut(test_out, test_out_ref: FileStream, label: string) =
   let theirs = test_out_ref.readAll()
   let match = ours == theirs
   if not match:
-    eprint "ours vs theirs len", ours.len, theirs.len
+    echo "ours vs theirs len ", ours.len, " ", theirs.len
     let helpfile = newFileStream(dir / "fail_out_" & label, fmWrite)
     helpfile.write(ours)
     assert false, "Failed out test " & label

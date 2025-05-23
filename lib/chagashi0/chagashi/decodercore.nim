@@ -834,17 +834,16 @@ method finish*(td: TextDecoderEUC_KR): TextDecoderFinishResult =
   td.lead = 0
 
 proc decode0(td: TextDecoderUTF16_BE|TextDecoderUTF16_LE; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int; be: static bool): TextDecoderResult =
+    oq: var openArray[uint8]; n: var int; be: bool): TextDecoderResult =
+  let shiftLead = uint16(be) * 8
+  let shiftTrail = uint16(not be) * 8
   while (let i = td.i; i < iq.len):
     if not td.haslead:
       td.haslead = true
       td.lead = iq[i]
       inc td.i
       continue
-    let cu = when be:
-      (uint16(td.lead) shl 8) + uint16(iq[i])
-    else:
-      (uint16(iq[i]) shl 8) + uint16(td.lead)
+    let cu = (uint16(td.lead) shl shiftLead) + uint16(iq[i]) shl shiftTrail
     td.haslead = false
     if td.hassurr:
       if unlikely(cu notin 0xDC00u16 .. 0xDFFFu16):
