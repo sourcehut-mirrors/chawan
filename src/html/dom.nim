@@ -552,6 +552,7 @@ jsDestructor(CSSStyleDeclaration)
 func attr*(element: Element; s: StaticAtom): lent string
 func attrb*(element: Element; s: CAtom): bool
 func serializeFragment(res: var string; node: Node)
+func serializeFragmentInner(res: var string; child: Node; parentType: TagType)
 func value*(option: HTMLOptionElement): string
 proc append*(parent, node: Node)
 proc attr*(element: Element; name: CAtom; value: sink string)
@@ -1145,61 +1146,12 @@ func findAttrNS(element: Element; namespace, qualifiedName: CAtom): int =
       return i
   return -1
 
-func escapeText(s: string; attributeMode = false): string =
-  result = newStringOfCap(s.len)
-  var nbspMode = false
-  var nbspPrev = '\0'
-  for c in s:
-    if nbspMode:
-      if c == '\xA0':
-        result &= "&nbsp;"
-      else:
-        result &= nbspPrev & c
-      nbspMode = false
-    elif c == '&':
-      result &= "&amp;"
-    elif c == '\xC2':
-      nbspMode = true
-      nbspPrev = c
-    elif attributeMode and c == '"':
-      result &= "&quot;"
-    elif not attributeMode and c == '<':
-      result &= "&lt;"
-    elif not attributeMode and c == '>':
-      result &= "&gt;"
-    else:
-      result &= c
-
 when defined(debug):
   func `$`*(node: Node): string =
     if node == nil:
       return "null"
-    if node of Element:
-      let element = Element(node)
-      result = "<" & $element.localName
-      for attr in element.attrs:
-        let k = $attr.localName
-        result &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
-      result &= ">\n"
-      for node in element.childList:
-        for line in ($node).split('\n'):
-          result &= "\t" & line & "\n"
-      result &= "</" & $element.localName & ">"
-    elif node of Text:
-      let text = Text(node)
-      result = text.data.escapeText()
-    elif node of Comment:
-      result = "<!-- " & Comment(node).data & "-->"
-    elif node of ProcessingInstruction:
-      result = "" #TODO
-    elif node of DocumentType:
-      result = "<!DOCTYPE" & ' ' & DocumentType(node).name & ">"
-    elif node of Document:
-      result = "Node of Document"
-    elif node of DocumentFragment:
-      result = "Node of DocumentFragment"
-    else:
-      result = "Unknown node"
+    result = ""
+    result.serializeFragmentInner(node, TAG_UNKNOWN)
 
 func parentElement*(node: Node): Element {.jsfget.} =
   let p = node.parentNode
@@ -2600,8 +2552,8 @@ func serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
     res &= tags
     #TODO custom elements
     for attr in element.attrs:
-      let k = $attr.qualifiedName
-      res &= ' ' & k & "=\"" & attr.value.escapeText(true) & "\""
+      res &= ' ' & $attr.qualifiedName & "=\"" &
+        attr.value.htmlEscape(mode = emAttribute) & "\""
     res &= '>'
     res.serializeFragment(element)
     res &= "</"
@@ -2616,7 +2568,7 @@ func serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
     if parentType in LiteralTags:
       res &= text.data
     else:
-      res &= text.data.escapeText()
+      res &= ($text.data).htmlEscape(mode = emText)
   elif child of Comment:
     res &= "<!--" & Comment(child).data & "-->"
   elif child of ProcessingInstruction:

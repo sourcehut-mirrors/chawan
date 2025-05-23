@@ -493,15 +493,29 @@ func percentDecode*(input: openArray[char]): string =
         i += 2
     inc i
 
-func htmlEscape*(s: openArray[char]): string =
-  result = ""
+type EscapeMode* = enum
+  emAll # attribute chars plus single quote (non-standard but safest)
+  emAttribute # text chars plus double quote ("attribute mode" in spec)
+  emText # &, nbsp, <, > (default mode in spec)
+
+func htmlEscape*(s: openArray[char]; mode = emAll): string =
+  result = newStringOfCap(s.len)
+  var nbspMode = false
   for c in s:
+    if nbspMode:
+      if c == '\xA0':
+        result &= "&nbsp;"
+      else:
+        result &= '\xC2' & c
+      nbspMode = false
+      continue
     case c
     of '<': result &= "&lt;"
     of '>': result &= "&gt;"
     of '&': result &= "&amp;"
-    of '"': result &= "&quot;"
-    of '\'': result &= "&apos;"
+    of '\xC2': nbspMode = true
+    elif c == '"' and mode <= emAttribute: result &= "&quot;"
+    elif c == '\'' and mode == emAll: result &= "&apos;"
     else: result &= c
 
 func dqEscape*(s: openArray[char]): string =
