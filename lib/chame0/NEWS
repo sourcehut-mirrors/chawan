@@ -1,3 +1,9 @@
+1.0.4 (2025.05.23)
+* Fix bug in parsing invalid character references that start with
+  #x10FFFF or its decimal counterpart
+* Minor optimizations
+* Removed submodules from repository
+
 1.0.3 (2025.01.03)
 * Conform to strict defs
 
