@@ -1348,11 +1348,11 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       let c2 = c.toLowerAscii()
       case c2
       of AsciiDigit:
-        if tokenizer.code < 0x10FFFF:
+        if tokenizer.code <= 0x10FFFF:
           tokenizer.code *= 0x10
           tokenizer.code += uint32(c2) - uint32('0')
       of 'a'..'f':
-        if tokenizer.code < 0x10FFFF:
+        if tokenizer.code <= 0x10FFFF:
           tokenizer.code *= 0x10
           tokenizer.code += uint32(c2) - uint32('a') + 10
       else:
@@ -1363,7 +1363,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
 
     of DECIMAL_CHARACTER_REFERENCE:
       if c in AsciiDigit:
-        if tokenizer.code < 0x10FFFF:
+        if tokenizer.code <= 0x10FFFF:
           tokenizer.code *= 10
           tokenizer.code += uint32(c) - uint32('0')
       else:

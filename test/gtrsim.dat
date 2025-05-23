@@ -44,3 +44,12 @@
 |   <head>
 |   <body>
 |     "ź"
+
+#data
+&#x10FFFF1;
+#errors
+#document
+| <html>
+|   <head>
+|   <body>
+|     "�"
