@@ -1103,8 +1103,10 @@ proc updateCursor(container: Container) =
   if container.fromy > container.maxfromy:
     container.setFromY(container.maxfromy)
   if container.cursory >= container.numLines:
-    container.setCursorY(container.lastVisibleLine)
-    container.alert("Last line is #" & $container.numLines)
+    let n = max(container.lastVisibleLine, 0)
+    if container.cursory != n:
+      container.setCursorY(n)
+      container.alert("Last line is #" & $container.numLines)
 
 proc gotoLine*(container: Container; s: string) =
   if s == "":

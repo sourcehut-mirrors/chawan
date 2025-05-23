@@ -554,7 +554,5 @@ proc render*(grid: var FlexibleGrid; bgcolor: var CellColor; stack: StackItem;
     bgcolor: defaultColor
   )
   grid.renderStack(state, stack)
-  if grid.len == 0:
-    grid.setLen(1)
   bgcolor = state.bgcolor
   images = move(state.images)

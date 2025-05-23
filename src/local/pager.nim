@@ -908,7 +908,7 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
 
 # Note: this function does not work correctly if start < x of last written char
 proc writeStatusMessage(pager: Pager; str: string; format = Format();
-    start = 0; maxwidth = -1; clip = '$'): int =
+    start = 0; maxwidth = -1): int =
   var maxwidth = maxwidth
   if maxwidth == -1:
     maxwidth = pager.status.grid.len
@@ -917,21 +917,25 @@ proc writeStatusMessage(pager: Pager; str: string; format = Format();
   if x >= e:
     return x
   pager.status.redraw = true
-  var lx = 0
   for u in str.points:
-    let w = u.width()
+    var u = u
+    var w = u.width()
+    if u == uint32('\t'):
+      w = ((x + 8) and not 7) - x
     if x + w > e: # clip if we overflow (but not on exact fit)
-      if lx < e:
-        pager.status.grid[lx].format = format
-        pager.status.grid[lx].str = $clip
-      x = lx + 1 # clip must be 1 cell wide
       break
     if u.isControlChar():
+      if u == uint32('\t'):
+        while w > 0:
+          pager.status.grid[x].str = " "
+          pager.status.grid[x].format = format
+          inc x
+          dec w
+        continue
       pager.status.grid[x].str = u.controlToVisual()
     else:
       pager.status.grid[x].str = u.toUTF8()
     pager.status.grid[x].format = format
-    lx = x
     let nx = x + w
     inc x
     while x < nx: # clear unset cells
@@ -967,29 +971,35 @@ proc refreshStatusMsg(pager: Pager) =
     var format = Format(flags: {ffReverse})
     pager.alertState = pasNormal
     container.clearHover()
-    var msg = $(container.cursory + 1) & "/" & $container.numLines &
-      " (" & $container.atPercentOf() & "%)" &
-      " <" & container.getTitle()
+    var msg = ""
+    if container.numLines > 0:
+      msg &= $(container.cursory + 1) & "/" & $container.numLines &
+        " (" & $container.atPercentOf() & "%)"
+    else:
+      msg &= "Viewing"
+    msg &= " <" & container.getTitle()
     let hover = container.getHoverText()
     let sl = hover.width()
     var l = 0
     var i = 0
-    var maxw = pager.status.grid.width - 1 # -1 for '>'
+    var maxw = pager.status.grid.width - 1
     if sl > 0:
-      maxw -= 1 # plus one blank
+      maxw -= 2 # -2 for '>' and one blank
     while i < msg.len:
       let pi = i
       let u = msg.nextUTF8(i)
       l += u.width()
-      if l + sl >= maxw:
+      if l + sl > maxw:
         i = pi
         break
     msg.setLen(i)
-    if i > 0:
-      msg &= ">"
-      if sl > 0:
+    if i > 0 and l < maxw:
+      msg &= '>'
+      if sl > 0 and l < maxw:
         msg &= ' '
     msg &= hover
+    if container.numLines == 0:
+      msg &= "\tNo Line"
     discard pager.writeStatusMessage(msg, format)
 
 # Call refreshStatusMsg if no alert is being displayed on the screen.
