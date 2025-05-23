@@ -1,74 +1,83 @@
-import std/os
+import std/envvars
 import std/posix
-import std/times
 
 import io/dynstream
 import utils/twtstr
 
+proc my_strftime(s: cstring; slen: csize_t; format: cstring;
+  tm: ptr Tm): csize_t {.importc: "strftime", header: "<time.h>".}
+
+proc my_readlink(path: cstring; buf: cstring; buflen: csize_t):
+  int {.importc: "readlink", header: "<unistd.h>".}
+
 proc loadDir(path, opath: string) =
   let title = ("Directory list of " & path).mimeQuote()
   stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
-  for pc, file in walkDir(path, relative = true):
-    let fullpath = path / file
-    var info: FileInfo
-    try:
-      info = getFileInfo(fullpath, followSymlink = false)
-    except OSError:
+  let d = opendir(path)
+  while (let x = readdir(d); x != nil):
+    let file = $cast[cstring](addr x.d_name)
+    let fullpath = path & file
+    var stats: Stat
+    if lstat(cstring(fullpath), stats) < 0:
       continue
-    const TypeMap = [
-      pcFile: '-',
-      pcLinkToFile: 'l',
-      pcDir: 'd',
-      pcLinkToDir: 'l'
-    ]
-    var line = $TypeMap[pc]
-    const PermMap = {
-      fpUserRead: 'r',
-      fpUserWrite: 'w',
-      fpUserExec: 'x',
-      fpGroupRead: 'r',
-      fpGroupWrite: 'w',
-      fpGroupExec: 'x',
-      fpOthersRead: 'r',
-      fpOthersWrite: 'w',
-      fpOthersExec: 'x'
+    var line = ""
+    if S_ISDIR(stats.st_mode):
+      line &= 'd'
+    elif S_ISLNK(stats.st_mode):
+      line &= 'l'
+    else:
+      line &= '-'
+    let PermMap = {
+      cint(S_IRUSR): 'r',
+      cint(S_IWUSR): 'w',
+      cint(S_IXUSR): 'x',
+      cint(S_IRGRP): 'r',
+      cint(S_IWGRP): 'w',
+      cint(S_IXGRP): 'x',
+      cint(S_IROTH): 'r',
+      cint(S_IWOTH): 'w',
+      cint(S_IXOTH): 'x'
     }
     for (perm, c) in PermMap:
-      if perm in info.permissions:
+      if (cint(stats.st_mode) and cint(perm)) != 0:
         line &= c
       else:
         line &= '-'
-    line &= ' ' & $info.linkCount & ' '
-    line &= "0 " # owner, currently unused
-    line &= "0 " # group, currently unused
-    line &= $info.size & ' '
+    line &= ' ' & $stats.st_nlink & ' '
+    line &= $stats.st_uid & ' ' # owner (currently unused in dirlist2html)
+    line &= $stats.st_gid & ' ' # group (ditto)
+    line &= $stats.st_size & ' '
     #TODO if new enough, send time instead of year
-    let modified = $info.lastWriteTime.local().format("MMM dd yyyy")
-    line &= $modified & ' '
-    if pc in {pcLinkToDir, pcLinkToFile}:
-      var target = expandSymlink(fullpath)
-      if pc == pcLinkToDir and target.len == 0 or target[^1] != '/':
-        target &= '/'
-      line &= file & " -> " & target
-    else:
-      line &= file
+    var time = stats.st_mtime
+    let modified = localtime(time)
+    var s = newString(64)
+    let n = my_strftime(cstring(s), csize_t(s.len), "%b %d %Y", modified)
+    s.setLen(int(n))
+    line &= s & ' '
+    line &= file
+    if S_ISLNK(stats.st_mode):
+      let len = int(stats.st_size)
+      var target = newString(len)
+      let n = my_readlink(cstring(fullpath), cstring(target), csize_t(len))
+      if n == len and stat(cstring(target), stats) == 0:
+        if S_ISDIR(stats.st_mode) and (target.len == 0 or target[^1] != '/'):
+          target &= '/'
+      line &= " -> " & target
     stdout.writeLine(line)
 
-proc loadFile(ps: PosixStream) =
+proc loadFile(ps: PosixStream; stats: Stat) =
   const BufferSize = 16384
   var buffer {.noinit.}: array[BufferSize, char]
+  let s = "Content-Length: " & $stats.st_size & "\n"
   var start = 0
-  var stats: Stat
-  if fstat(ps.fd, stats) != -1:
-    let s = "Content-Length: " & $stats.st_size & "\n"
-    for c in s:
-      buffer[start] = c
-      inc start
+  for c in s:
+    buffer[start] = c
+    inc start
   buffer[start] = '\n'
   inc start
   let os = newPosixStream(STDOUT_FILENO)
   while true:
-    let n = ps.readData(buffer.toOpenArray(start, BufferSize - 1))
+    let n = ps.readData(buffer.toOpenArray(start, buffer.high))
     if n <= 0:
       break
     if not os.writeDataLoop(buffer.toOpenArray(0, start + n - 1)):
@@ -78,13 +87,16 @@ proc loadFile(ps: PosixStream) =
 proc main() =
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
-  if dirExists(path):
+  var stats: Stat
+  let res = stat(cstring(path), stats)
+  if res == 0 and S_ISDIR(stats.st_mode):
     if path[^1] != '/':
-      stdout.write("Status: 301\nLocation: " & path & "/\n")
+      stdout.write("Status: 301\nLocation: " & path.deleteChars({'\r', '\n'}) &
+        "/\n")
     else:
       loadDir(path, opath)
-  elif (let ps = newPosixStream(path); ps != nil):
-    loadFile(ps)
+  elif res == 0 and (let ps = newPosixStream(path); ps != nil):
+    loadFile(ps, stats)
   else:
     stdout.write("Cha-Control: ConnectionError FileNotFound")
 
