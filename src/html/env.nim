@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/strutils
 import std/tables
 
@@ -468,3 +470,5 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
 
 # Forward declaration hack
 fetchImpl = fetch0
+
+{.pop.} # raises: []

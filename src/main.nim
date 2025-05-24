@@ -2,6 +2,8 @@ when NimMajor < 2:
   {.error("Nim versions older than 2.0.0 can not compile Chawan.  " &
     "Please grab a newer one from https://nim-lang.org/install.html").}
 
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -49,10 +51,6 @@ const ChaVersionStrLong = block:
     s &= "sandboxed by " & $SandboxMode
   s & ")\n"
 
-proc die(s: string) {.noreturn.} =
-  stderr.writeLine("cha: " & s)
-  quit(1)
-
 proc help(i: int) {.noreturn.} =
   let s = ChaVersionStr & """
 Usage: cha [options] [URL(s) or file(s)...]
@@ -72,13 +70,13 @@ Options:
     -V, --visual                Visual startup mode
 """
   if i == 0:
-    stdout.write(s)
+    stdout.fwrite(s)
   else:
-    stderr.write(s)
+    stderr.fwrite(s)
   quit(i)
 
 proc version() =
-  stdout.write(ChaVersionStrLong)
+  stdout.fwrite(ChaVersionStrLong)
   quit(0)
 
 type ParamParseContext = object
@@ -209,13 +207,15 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("Failed to open config file " & ctx.configPath.get)
-  putEnv("CHA_DIR", config.dir)
+  try:
+    putEnv("CHA_DIR", config.dir)
+  except OSError:
+    die("failed to set env vars")
   ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
+  let cwd = chaGetCwd()
   when defined(debug):
-    if (let ps = newPosixStream(getCurrentDir() / "res/config.toml");
-        ps != nil):
-      ?config.parseConfig(getCurrentDir(), ps.readAll(), warnings, jsctx,
-        "res/config.toml")
+    if (let ps = newPosixStream(cwd / "res/config.toml"); ps != nil):
+      ?config.parseConfig(cwd, ps.readAll(), warnings, jsctx, "res/config.toml")
       ps.sclose()
   if ps != nil:
     let src = ps.readAllOrMmap()
@@ -224,8 +224,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
     deallocMem(src)
     ps.sclose()
   for opt in ctx.opts:
-    ?config.parseConfig(getCurrentDir(), opt, warnings, jsctx, "<input>",
-      laxnames = true)
+    ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", laxnames = true)
   config.css.stylesheet &= ctx.stylesheet
   ?jsctx.initCommands(config)
   isCJKAmbiguous = config.display.doubleWidthAmbiguous
@@ -234,8 +233,11 @@ proc initConfig(ctx: ParamParseContext; config: Config;
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
 proc main() =
-  putEnv("CHA_BIN_DIR", getAppFilename().untilLast('/'))
-  putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
+  try:
+    putEnv("CHA_BIN_DIR", getAppFilename().untilLast('/'))
+    putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
+  except OSError:
+    die("failed to set env vars")
   var loaderSockVec {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
     die("failed to set up initial socket pair")
@@ -285,10 +287,8 @@ proc main() =
   loaderControl.setCloseOnExec()
   let client = newClient(config, forkserver, loaderPid, jsctx, warnings,
     urandom, loaderControl)
-  try:
-    client.pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
-  except CatchableError:
-    client.flushConsole()
-    raise
+  client.pager.run(ctx.pages, ctx.contentType, ctx.charset, history)
 
 main()
+
+{.pop.} # raises: []

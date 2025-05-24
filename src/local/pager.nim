@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/exitprocs
 import std/options
 import std/os
@@ -407,8 +409,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   let moduleName = $moduleName
   let x = if moduleName.startsWith("/") or moduleName.startsWith("./") or
       moduleName.startsWith("../"):
-    let cur = getCurrentDir()
-    parseURL(moduleName, parseURL("file://" & cur & "/"))
+    parseURL(moduleName, parseURL("file://" & chaGetCwd() & "/"))
   else:
     parseURL(moduleName)
   if x.isNone or x.get.schemeType != stFile:
@@ -556,7 +557,7 @@ proc cleanup(pager: Pager) =
     if not pager.cookieJars.write(pager.config.external.cookieFile):
       pager.alert("failed to save cookies")
     for msg in pager.alerts:
-      stderr.write("cha: " & msg & '\n')
+      stderr.fwrite("cha: " & msg & '\n')
     for val in pager.config.cmd.map.values:
       JS_FreeValue(pager.jsctx, val)
     for fn in pager.config.jsvfns:
@@ -885,8 +886,11 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   pager.consoleWrapper = pager.addConsole(interactive = istream != nil)
   addExitProc((proc() = pager.cleanup()))
   if pager.config.start.startupScript != "":
-    let s = if fileExists(pager.config.start.startupScript):
-      readFile(pager.config.start.startupScript)
+    let ps = newPosixStream(pager.config.start.startupScript)
+    let s = if ps != nil:
+      var x = ps.readAll()
+      ps.sclose()
+      move(x)
     else:
       pager.config.start.startupScript
     let ismodule = pager.config.start.startupScript.endsWith(".mjs")
@@ -1064,7 +1068,8 @@ proc drawBuffer(pager: Pager; container: Container; ofile: File): bool =
       let spaces = ' '.repeat(container.width - x)
       s.processOutputString(pager.term, spaces, w)
     s.processFormat(pager.term, format, Format())
-    ofile.writeLine(s)
+    s &= '\n'
+    ofile.fwrite(s)
   )
   ofile.flushFile()
   res
@@ -1761,7 +1766,10 @@ proc runProcessCapture(cmd: string; outs: var string): bool =
   let file = popen(cmd, "r")
   if file == nil:
     return false
-  outs = file.readAll()
+  try:
+    outs = file.readAll()
+  except IOError:
+    return false
   let rv = pclose(file)
   if rv == -1:
     return false
@@ -1772,7 +1780,7 @@ proc runProcessInto(cmd, ins: string): bool =
   let file = popen(cmd, "w")
   if file == nil:
     return false
-  file.write(ins)
+  file.fwrite(ins)
   let rv = pclose(file)
   if rv == -1:
     return false
@@ -1832,7 +1840,7 @@ proc openInEditor(pager: Pager; input: var string): bool =
     elif pager.runCommand(cmd, suspend = true, wait = false, JS_UNDEFINED):
       if fileExists(tmpf):
         input = readFile(tmpf)
-        removeFile(tmpf)
+        discard unlink(cstring(tmpf))
         return true
   except IOError:
     discard
@@ -2076,7 +2084,7 @@ proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
     let pageurl = parseURL(pager.config.network.prependScheme & url)
     if pageurl.isSome: # attempt to load remote page
       urls.add(pageurl.get)
-  let cdir = parseURL("file://" & percentEncode(getCurrentDir(),
+  let cdir = parseURL("file://" & percentEncode(chaGetCwd(),
     LocalPathPercentEncodeSet) & DirSep)
   let localurl = percentEncode(url, LocalPathPercentEncodeSet)
   let newurl = parseURL(localurl, cdir)
@@ -2633,7 +2641,10 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
   let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, canpipe)
   let ishtml = mfHtmloutput in entry.flags
   let needsterminal = mfNeedsterminal in entry.flags
-  putEnv("MAILCAP_URL", $url)
+  try:
+    putEnv("MAILCAP_URL", $url)
+  except OSError:
+    pager.alert("failed to set env vars")
   block needsConnect:
     if entry.flags * {mfCopiousoutput, mfHtmloutput, mfAnsioutput,
         mfSaveoutput} == {}:
@@ -2661,7 +2672,10 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
       break needsConnect
     if not ishtml and mfAnsioutput in entry.flags:
       pins = pager.ansiDecode(url, ishtml, pins)
-    delEnv("MAILCAP_URL")
+    try:
+      delEnv("MAILCAP_URL")
+    except OSError:
+      discard
     let url = parseURL("stream:" & $pid).get
     pager.loader.passFd(url.pathname, pins.fd)
     pins.sclose()
@@ -2679,7 +2693,10 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
       ostream: response.body,
       ostreamOutputId: response.outputId
     )
-  delEnv("MAILCAP_URL")
+  try:
+    delEnv("MAILCAP_URL")
+  except OSError:
+    discard
   return MailcapResult(flags: {cmfFound})
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
@@ -3278,13 +3295,9 @@ proc handleWrite(pager: Pager; fd: int) =
 
 proc handleError(pager: Pager; fd: int) =
   if pager.term.istream != nil and fd == pager.term.istream.fd:
-    #TODO do something here...
-    stderr.write("Error in tty\n")
-    pager.quit(1)
+    die("error in tty")
   elif fd == pager.forkserver.estream.fd:
-    #TODO do something here...
-    stderr.write("Fork server crashed :(\n")
-    pager.quit(1)
+    die("fork server crashed\n")
   elif (let data = pager.loader.get(fd); data != nil):
     if data of ConnectingContainer:
       pager.handleError(ConnectingContainer(data))
@@ -3409,3 +3422,5 @@ proc dumpBuffers(pager: Pager) =
 
 proc addPagerModule*(ctx: JSContext) =
   ctx.registerType(Pager)
+
+{.pop.} # raises: []

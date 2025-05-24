@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/macros
 import std/options
@@ -518,3 +520,5 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): Opt[void] =
   res = $cs
   JS_FreeCString(ctx, cs)
   return ok()
+
+{.pop.} # raises: []

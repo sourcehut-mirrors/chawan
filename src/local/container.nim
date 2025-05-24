@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -780,7 +782,8 @@ proc cursorLineBegin(container: Container) {.jsfunc.} =
 proc cursorLineEnd(container: Container) {.jsfunc.} =
   container.setCursorX(container.currentLineWidth() - 1)
 
-type BreakFunc = proc(ctx: LUContext; r: uint32): BreakCategory {.nimcall.}
+type BreakFunc = proc(ctx: LUContext; r: uint32): BreakCategory {.
+  nimcall, raises: [].}
 
 # move to first char that is not in this category
 proc skipCat(container: Container; b, x: var int; breakFunc: BreakFunc;
@@ -1809,7 +1812,8 @@ proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)):
       return false
   return true
 
-proc drawLines*(container: Container; display: var FixedGrid; hlcolor: CellColor) =
+proc drawLines*(container: Container; display: var FixedGrid;
+    hlcolor: CellColor) =
   let bgcolor = container.bgcolor
   template set_fmt(cell, cf: typed) =
     if cf.pos != -1:
@@ -1911,3 +1915,5 @@ proc handleEvent*(container: Container): bool =
 proc addContainerModule*(ctx: JSContext) =
   ctx.registerType(Highlight)
   ctx.registerType(Container, name = "Buffer")
+
+{.pop.} # raises: []

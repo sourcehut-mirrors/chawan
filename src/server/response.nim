@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/posix
 import std/strutils
 
@@ -38,12 +40,12 @@ type
     status* {.jsget.}: uint16
     headers* {.jsget.}: Headers
     url*: URL #TODO should be urllist?
-    unregisterFun*: proc()
+    unregisterFun*: proc() {.raises: [].}
     resumeFun*: proc(outputId: int)
     internalMessage*: string # should NOT be exposed to JS!
     outputId*: int
-    onRead*: proc(response: Response) {.nimcall.}
-    onFinish*: proc(response: Response; success: bool) {.nimcall.}
+    onRead*: proc(response: Response) {.nimcall, raises: [].}
+    onFinish*: proc(response: Response; success: bool) {.nimcall, raises: [].}
     opaque*: RootRef
     flags*: set[ResponseFlag]
 
@@ -214,3 +216,5 @@ proc json(ctx: JSContext; this: Response): Promise[JSValue] {.jsfunc.} =
 
 proc addResponseModule*(ctx: JSContext) =
   ctx.registerType(Response)
+
+{.pop.} # raises: []

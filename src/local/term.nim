@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/strutils
@@ -212,8 +214,7 @@ const KITTYQUERY = APC & "Gi=1,a=q;" & ST
 
 proc write0(term: Terminal; buffer: openArray[char]) =
   if not term.ostream.writeDataLoop(buffer):
-    stderr.writeLine("Error writing to stdout")
-    quit(1)
+    die("error writing to stdout")
 
 proc flush*(term: Terminal) =
   if term.obufLen > 0:
@@ -235,8 +236,7 @@ proc readChar*(term: Terminal): char =
     term.ibufn = 0
     term.ibufLen = term.istream.readData(term.ibuf)
     if term.ibufLen == -1:
-      stderr.writeLine("Error reading from stdin")
-      quit(1)
+      die("error reading from stdin")
   result = term.ibuf[term.ibufn]
   inc term.ibufn
 
@@ -1540,3 +1540,5 @@ proc newTerminal*(ostream: PosixStream; config: Config): Terminal =
     defaultForeground: DefaultForeground,
     colorMap: ANSIColorMap
   )
+
+{.pop.} # raises: []

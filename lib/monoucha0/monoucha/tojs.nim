@@ -34,6 +34,8 @@
 # `ref object' ancestor is incremented/decremented when synchronizing refcounts
 # with the JS object pair.
 
+{.push raises: [].}
+
 import std/options
 import std/tables
 
@@ -431,3 +433,5 @@ proc toJSP*(ctx: JSContext; parent: ptr object; child: var object): JSValue =
   let grandparent = JS_GetRuntime(ctx).getOpaque().refmap[parent]
   let tp = getTypePtr(child)
   return ctx.toJSP1(p, tp, grandparent)
+
+{.pop.} # raises: []

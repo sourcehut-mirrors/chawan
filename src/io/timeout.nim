@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/times
 
@@ -21,7 +23,7 @@ type
     timeout: int32
     dead: bool
 
-  EvalJSFree* = proc(opaque: RootRef; src, file: string) {.nimcall.}
+  EvalJSFree* = proc(opaque: RootRef; src, file: string) {.nimcall, raises: [].}
 
   TimeoutState* = ref object
     timeoutid: int32
@@ -134,3 +136,5 @@ proc clearAll*(state: var TimeoutState) =
     for arg in entry.args:
       JS_FreeValue(state.jsctx, arg)
   state.timeouts.setLen(0)
+
+{.pop.} # raises: []

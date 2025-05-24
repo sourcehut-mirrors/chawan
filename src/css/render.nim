@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import css/box
 import css/cssvalues
 import css/lunit
@@ -556,3 +558,5 @@ proc render*(grid: var FlexibleGrid; bgcolor: var CellColor; stack: StackItem;
   grid.renderStack(state, stack)
   bgcolor = state.bgcolor
   images = move(state.images)
+
+{.pop.} # raises: []

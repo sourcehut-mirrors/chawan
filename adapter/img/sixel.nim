@@ -21,6 +21,8 @@
 # * Recurse to free the parent nodes (start from root, dealloc each
 #   node where idx == -1)
 
+{.push raises: [].}
+
 import std/algorithm
 import std/options
 import std/os
@@ -550,3 +552,5 @@ proc main() =
     os.die("Cha-Control: ConnectionError InternalError not implemented\n")
 
 main()
+
+{.pop.} # raises: []

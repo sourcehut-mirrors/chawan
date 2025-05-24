@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 
 import html/script
@@ -91,6 +93,9 @@ type
     client*: Option[EnvironmentSettings]
 
 jsDestructor(JSRequest)
+
+# Forward declaration hack
+var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall, raises: [].}
 
 proc swrite*(w: var PacketWriter; o: RequestBody) =
   w.swrite(o.t)
@@ -211,8 +216,6 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var BodyInit): Opt[void] =
   JS_ThrowTypeError(ctx, "invalid body init type")
   return err()
 
-var getAPIBaseURLImpl*: proc(ctx: JSContext): URL {.nimcall.}
-
 proc newRequest*(ctx: JSContext; resource: JSValueConst;
     init = RequestInit(window: JS_UNDEFINED)): JSResult[JSRequest] {.jsctor.} =
   var headers = newHeaders(hgRequest)
@@ -292,3 +295,5 @@ func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
 
 proc addRequestModule*(ctx: JSContext) =
   ctx.registerType(JSRequest, name = "Request")
+
+{.pop.} # raises: []

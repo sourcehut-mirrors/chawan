@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/envvars
 import std/posix
 
@@ -10,7 +12,7 @@ proc my_strftime(s: cstring; slen: csize_t; format: cstring;
 proc my_readlink(path: cstring; buf: cstring; buflen: csize_t):
   int {.importc: "readlink", header: "<unistd.h>".}
 
-proc loadDir(path, opath: string) =
+proc loadDir(path, opath: string) {.raises: [IOError].} =
   let title = ("Directory list of " & path).mimeQuote()
   stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   let d = opendir(path)
@@ -65,7 +67,7 @@ proc loadDir(path, opath: string) =
       line &= " -> " & target
     stdout.writeLine(line)
 
-proc loadFile(ps: PosixStream; stats: Stat) =
+proc loadFile(os, ps: PosixStream; stats: Stat) =
   const BufferSize = 16384
   var buffer {.noinit.}: array[BufferSize, char]
   let s = "Content-Length: " & $stats.st_size & "\n"
@@ -75,7 +77,6 @@ proc loadFile(ps: PosixStream; stats: Stat) =
     inc start
   buffer[start] = '\n'
   inc start
-  let os = newPosixStream(STDOUT_FILENO)
   while true:
     let n = ps.readData(buffer.toOpenArray(start, buffer.high))
     if n <= 0:
@@ -87,17 +88,23 @@ proc loadFile(ps: PosixStream; stats: Stat) =
 proc main() =
   let opath = getEnv("MAPPED_URI_PATH")
   let path = percentDecode(opath)
+  let os = newPosixStream(STDOUT_FILENO)
   var stats: Stat
   let res = stat(cstring(path), stats)
   if res == 0 and S_ISDIR(stats.st_mode):
     if path[^1] != '/':
-      stdout.write("Status: 301\nLocation: " & path.deleteChars({'\r', '\n'}) &
+      os.write("Status: 301\nLocation: " & path.deleteChars({'\r', '\n'}) &
         "/\n")
     else:
-      loadDir(path, opath)
+      try:
+        loadDir(path, opath)
+      except IOError:
+        discard
   elif res == 0 and (let ps = newPosixStream(path); ps != nil):
-    loadFile(ps, stats)
+    os.loadFile(ps, stats)
   else:
-    stdout.write("Cha-Control: ConnectionError FileNotFound")
+    os.write("Cha-Control: ConnectionError FileNotFound")
 
 main()
+
+{.pop.} # raises: []

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/posix
 
 import lcgi
@@ -134,11 +136,11 @@ proc connectSSLSocket*(os: PosixStream; host, port: string;
   if SSL_set_tlsext_host_name(ssl, cstring(host)) == 0:
     os.die("InternalError", "failed to set tlsext host name")
   if SSL_connect(ssl) <= 0:
-    stdout.write("Cha-Control: ConnectionError 5 connect: ")
+    stdout.fwrite("Cha-Control: ConnectionError 5 connect: ")
     ERR_print_errors_fp(stdout)
     quit(1)
   if SSL_do_handshake(ssl) <= 0:
-    stdout.write("Cha-Control: ConnectionError 5 handshake: ")
+    stdout.fwrite("Cha-Control: ConnectionError 5 handshake: ")
     ERR_print_errors_fp(stdout)
     quit(1)
   return ssl
@@ -164,3 +166,5 @@ method sclose*(s: SSLStream) =
 
 proc newSSLStream*(ssl: ptr SSL): SSLStream =
   return SSLStream(ssl: ssl)
+
+{.pop.} # raises: []

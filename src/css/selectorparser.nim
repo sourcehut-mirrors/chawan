@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/strutils
 
@@ -537,3 +539,5 @@ proc parseSelectors*(cvals: seq[CSSComponentValue]): seq[ComplexSelector] =
 
 proc parseSelectors*(ibuf: string): seq[ComplexSelector] =
   return parseSelectors(parseComponentValues(ibuf))
+
+{.pop.} # raises: []

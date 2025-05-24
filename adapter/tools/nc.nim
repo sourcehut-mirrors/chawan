@@ -5,6 +5,9 @@
 # to stdout on error, and the passed message on success.
 #
 # This program respects ALL_PROXY (if set).
+
+{.push raises: [].}
+
 import std/os
 import std/posix
 
@@ -13,7 +16,7 @@ import io/poll
 import utils/sandbox
 
 proc usage() {.noreturn.} =
-  stderr.write("Usage: " & paramStr(0) & " [host] [port] [-m msg]\n")
+  stderr.fwrite("Usage: " & paramStr(0) & " [host] [port] [-m msg]\n")
   quit(1)
 
 proc main() =
@@ -82,3 +85,5 @@ proc main() =
   ps.sclose()
 
 main()
+
+{.pop.} # raises: []

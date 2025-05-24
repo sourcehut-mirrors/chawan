@@ -27,8 +27,8 @@ type
     map: seq[MapData]
     mapFds*: int # number of fds in map
     unregistered*: seq[int]
-    registerFun*: proc(fd: int)
-    unregisterFun*: proc(fd: int)
+    registerFun*: proc(fd: int) {.raises: [].}
+    unregisterFun*: proc(fd: int) {.raises: [].}
     # A mechanism to queue up new fds being added to the poll data
     # inside the events iterator.
     registerBlocked: bool

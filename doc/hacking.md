@@ -86,8 +86,23 @@ for non-obvious reasons.
 #### Exceptions
 
 Exceptions don't work well with JS embedding; use Result/Opt/Option
-instead. Note that these kill RVO, so if you're returning large objects,
-either make them `ref`, or use manual RVO (return bool, set var param).
+instead.  Note that these kill RVO, so if you're returning large
+objects, either make them `ref`, or use manual RVO (return bool, set
+var param).
+
+In new modules, always specify:
+
+```nim
+# This is an example module.
+# After any header comments, but before imports:
+
+{.push raises: [].}
+
+import ...
+
+# At the end of the file:
+{.pop.} # raises: []
+```
 
 #### Implicit initialization
 
@@ -143,7 +158,7 @@ The preferred workaround is global function pointer variables:
 
 ```nim
 # Forward declaration hack
-var forwardDeclImpl*: proc(window: Window; x, y: int) {.nimcall.}
+var forwardDeclImpl*: proc(window: Window; x, y: int) {.nimcall, raises: [].}
 # in the other module:
 forwardDeclImpl = proc(window: Window; x, y: int) =
   # [...]

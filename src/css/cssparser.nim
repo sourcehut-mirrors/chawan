@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 
 import html/domexception
@@ -871,3 +873,5 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
       return err()
   else:
     return err()
+
+{.pop.} # raises: []

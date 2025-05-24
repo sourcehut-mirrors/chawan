@@ -1,5 +1,7 @@
 # See https://www.rfc-editor.org/rfc/rfc1524
 
+{.push raises: [].}
+
 import std/os
 import std/osproc
 import std/posix
@@ -338,12 +340,8 @@ proc findMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;
 
 proc saveEntry*(mailcap: var AutoMailcap; entry: MailcapEntry): bool =
   let s = $entry
-  try:
-    let pdir = mailcap.path.parentDir()
-    if not dirExists(pdir):
-      createDir(pdir)
-  except OSError:
-    return false
+  let pdir = mailcap.path.parentDir()
+  discard mkdir(cstring(pdir), 0o700)
   let ps = newPosixStream(mailcap.path, O_WRONLY or O_APPEND or O_CREAT, 0o644)
   if ps == nil:
     return false
@@ -352,3 +350,5 @@ proc saveEntry*(mailcap: var AutoMailcap; entry: MailcapEntry): bool =
     mailcap.entries.add(entry)
   ps.sclose()
   return res
+
+{.pop.} # raises: []

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/deques
 import std/options
 import std/tables
@@ -383,3 +385,5 @@ parseDocumentWriteChunkImpl = parseDocumentWriteChunk
 
 proc addHTMLModule*(ctx: JSContext) =
   ctx.registerType(DOMParser)
+
+{.pop.} # raises: []

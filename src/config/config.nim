@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/strutils
@@ -859,7 +861,7 @@ proc openConfig*(dir: var string; override: Option[string];
       dir = parentDir(override.get)
       return newPosixStream(override.get)
     else:
-      let path = getCurrentDir() / override.get
+      let path = chaGetCwd() / override.get
       dir = parentDir(path)
       return newPosixStream(path)
   dir = getEnv("CHA_DIR")
@@ -933,3 +935,5 @@ proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(DisplayConfig)
   ctx.registerType(BufferSectionConfig, name = "BufferConfig")
   ctx.registerType(Config)
+
+{.pop.} # raises: []

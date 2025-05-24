@@ -89,8 +89,10 @@ type
 
 # Forward declaration hack
 # set in html/dom
-var errorImpl*: proc(ctx: JSContext; ss: varargs[string]) {.nimcall.}
-var getEnvSettingsImpl*: proc(ctx: JSContext): EnvironmentSettings {.nimcall.}
+var errorImpl*: proc(ctx: JSContext; ss: varargs[string]) {.
+  nimcall, raises: [].}
+var getEnvSettingsImpl*: proc(ctx: JSContext): EnvironmentSettings {.
+  nimcall, raises: [].}
 
 proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
   let surl = $url

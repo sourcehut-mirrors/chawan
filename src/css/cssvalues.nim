@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/macros
 import std/math
@@ -1963,3 +1965,5 @@ when defined(debug):
         result &= $p & ':'
         result &= a
         result &= ';'
+
+{.pop.} # raises: []

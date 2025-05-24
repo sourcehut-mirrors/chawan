@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/math
 import std/options
@@ -548,3 +550,5 @@ func parseLegacyColor0*(s: string): RGBColor =
     (myHexValue(s2[l]) shl 12) or (myHexValue(s2[l + 1]) shl 8) or
     (myHexValue(s2[l * 2]) shl 4) or myHexValue(s2[l * 2 + 1])
   return RGBColor(c)
+
+{.pop.} # raises: []

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/os
 import std/posix
 import std/strutils
@@ -93,7 +95,7 @@ iterator myCaptures(res: var RegexResult; i: int): RegexCapture =
   for cap in res.captures.mitems:
     yield cap[i]
 
-proc readErrorMsg(efile: File; line: var string): string =
+proc readErrorMsg(efile: File; line: var string): string {.raises: [IOError].} =
   var msg = ""
   while true:
     # try to get the error message into an acceptable format
@@ -136,7 +138,8 @@ proc updateOffsets(map: var array[RegexType, RegexResult]; len: int;
       res.captures.delete(toDel[i])
     first = false
 
-proc processManpage(ofile, efile: File; header, keyword: string) =
+proc processManpage(ofile, efile: File; header, keyword: string)
+    {.raises: [IOError].} =
   var line = ""
   # The "right thing" would be to check for the error code and output error
   # messages accordingly. Unfortunately that would prevent us from streaming
@@ -283,7 +286,7 @@ proc myOpen(cmd: string): tuple[ofile, efile: File] =
       return (nil, nil)
     return (ofile, efile)
 
-proc doMan(man, keyword, section: string) =
+proc doMan(man, keyword, section: string) {.raises: [IOError].} =
   let sectionOpt = if section == "": "" else: ' ' & quoteShellPosix(section)
   let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
     man & sectionOpt & ' ' & quoteShellPosix(keyword)
@@ -299,7 +302,7 @@ proc doMan(man, keyword, section: string) =
 <title>man """ & manword & """</title>
 <pre>""", keyword = keyword)
 
-proc doLocal(man, path: string) =
+proc doLocal(man, path: string) {.raises: [IOError].} =
   # Note: we intentionally do not use -l, because it is not supported on
   # various systems (at the very least FreeBSD, NetBSD).
   let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
@@ -313,7 +316,7 @@ proc doLocal(man, path: string) =
 <title>man -l """ & path & """</title>
 <pre>""", keyword = path.afterLast('/').until('.'))
 
-proc doKeyword(man, keyword, section: string) =
+proc doKeyword(man, keyword, section: string) {.raises: [IOError].} =
   let sectionOpt = if section == "": "" else: " -s " & quoteShellPosix(section)
   let cmd = man & sectionOpt & " -k " & quoteShellPosix(keyword)
   let (ofile, efile) = myOpen(cmd)
@@ -375,7 +378,7 @@ proc doKeyword(man, keyword, section: string) =
   ofile.close()
   efile.close()
 
-proc main() =
+proc main() {.raises: [IOError].} =
   var man = getEnv("MANCHA_MAN")
   if man == "":
     block notfound:
@@ -408,3 +411,5 @@ proc main() =
     stdout.write("Cha-Control: ConnectionError 1 invalid scheme")
 
 main()
+
+{.pop.} # raises: []

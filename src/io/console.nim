@@ -1,3 +1,6 @@
+{.push raises: [].}
+
+import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
 import types/opt
@@ -5,9 +8,9 @@ import utils/twtstr
 
 type Console* = ref object
   err: File
-  clearFun: proc()
-  showFun: proc()
-  hideFun: proc()
+  clearFun: proc() {.raises: [].}
+  showFun: proc() {.raises: [].}
+  hideFun: proc() {.raises: [].}
 
 jsDestructor(Console)
 
@@ -24,12 +27,12 @@ proc setStream*(console: Console; file: File) =
   console.err.close()
   console.err = file
 
-proc write*(console: Console; c: char) =
-  discard console.err.writeBuffer(unsafeAddr c, 1)
-
 proc write*(console: Console; s: openArray[char]) =
   if s.len > 0:
-    discard console.err.writeBuffer(unsafeAddr s[0], s.len)
+    console.err.fwrite(s)
+
+proc write*(console: Console; c: char) =
+  console.write([c])
 
 proc log*(console: Console; ss: varargs[string]) =
   var buf = ""
@@ -38,7 +41,7 @@ proc log*(console: Console; ss: varargs[string]) =
     if i != ss.high:
       buf &= ' '
   buf &= '\n'
-  console.err.write(buf)
+  console.write(buf)
 
 proc error*(console: Console; ss: varargs[string]) =
   console.log(ss)
@@ -53,7 +56,7 @@ proc log*(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
     if i != ss.high:
       buf &= ' '
   buf &= '\n'
-  console.err.write(buf)
+  console.write(buf)
   ok()
 
 proc clear(console: Console) {.jsfunc.} =
@@ -94,5 +97,7 @@ proc flush*(console: Console) =
   console.err.flushFile()
 
 proc writeException*(console: Console; ctx: JSContext) =
-  console.err.write(ctx.getExceptionMsg())
+  console.write(ctx.getExceptionMsg())
   console.flush()
+
+{.pop.} # raises: []

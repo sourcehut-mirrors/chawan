@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/strutils
 import std/tables
@@ -271,3 +273,5 @@ proc parseStylesheet*(ibuf: string; base: URL; attrs: ptr WindowAttributes):
     else:
       sheet.addRule(CSSQualifiedRule(v))
   return sheet
+
+{.pop.} # raises: []

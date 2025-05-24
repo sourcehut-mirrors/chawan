@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -192,3 +194,5 @@ proc main() =
     die("Cha-Control: ConnectionError 1 not implemented\n")
 
 main()
+
+{.pop.} # raises: []

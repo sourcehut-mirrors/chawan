@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -61,3 +63,5 @@ proc main() =
   deallocMem(dst)
 
 main()
+
+{.pop.} # raises: []

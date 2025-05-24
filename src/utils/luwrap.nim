@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/strutils
 
@@ -16,10 +18,8 @@ proc normalize*(rs: seq[uint32]; form = UNICODE_NFC): seq[uint32] =
     let p = cast[ptr uint32](unsafeAddr rs[0])
     let out_len = unicode_normalize(addr outbuf, p, cint(rs.len), form, nil,
       passRealloc)
-    if out_len < 0:
-      raise newException(Defect, "Unicode normalization failed")
-    if out_len == 0:
-      return
+    if out_len <= 0:
+      return @[]
     var rs = newSeqUninit[uint32](out_len)
     copyMem(addr rs[0], outbuf, out_len * sizeof(uint32))
     dealloc(outbuf)
@@ -154,3 +154,5 @@ proc isNonspacingMark*(ctx: LUContext; u: uint32): bool =
 proc isFormat*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurFormat)
   return u in ctx.crs[lurFormat]
+
+{.pop.} # raises: []

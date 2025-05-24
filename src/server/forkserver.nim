@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -89,16 +91,11 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
   let pid = fork()
   if pid == 0:
     # child process
-    try:
-      ctx.stream.sclose()
-      discard close(sv[0])
-      let forkStream = newSocketStream(sv[1])
-      setProcessTitle("cha loader")
-      runFileLoader(config, loaderStream, forkStream)
-    except CatchableError as e:
-      stderr.write(e.getStackTrace() & "Error: unhandled exception: " & e.msg &
-        " [" & $e.name & "]\n")
-      quit(1)
+    ctx.stream.sclose()
+    discard close(sv[0])
+    let forkStream = newSocketStream(sv[1])
+    setProcessTitle("cha loader")
+    runFileLoader(config, loaderStream, forkStream)
     doAssert false
     exitnow(1)
   else:
@@ -140,16 +137,8 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
     let loader = newFileLoader(pid, loaderStream)
     signal(SIGPIPE, SIG_DFL)
     enterBufferSandbox()
-    try:
-      launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
-        istream, urandom, cacheId)
-    except CatchableError:
-      let e = getCurrentException()
-      # taken from system/excpt.nim
-      let msg = e.getStackTrace() & "Error: unhandled exception: " & e.msg &
-        " [" & $e.name & "]\n"
-      stderr.write(msg)
-      quit(1)
+    launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
+      istream, urandom, cacheId)
     doAssert false
   discard close(fd)
   return pid
@@ -182,13 +171,16 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     signal(SIGCHLD, SIG_DFL)
     # let's also reset SIGPIPE, which we ignored on init
     signal(SIGPIPE, SIG_DFL)
-    for it in env:
-      putEnv(it.name, it.value)
-    setCurrentDir(dir)
+    try:
+      for it in env:
+        putEnv(it.name, it.value)
+      setCurrentDir(dir)
+    except OSError:
+      die("failed to set env vars")
     discard execl(cstring(cmd), cstring(basename), nil)
     let code = int(ceFailedToExecuteCGIScript)
-    stdout.write("Cha-Control: ConnectionError " & $code & " " &
-      ($strerror(errno)).deleteChars({'\n', '\r'}))
+    stdout.fwrite("Cha-Control: ConnectionError " & $code & " " &
+      ($strerror(errno)).deleteChars({'\n', '\r'}) & '\n')
     exitnow(1)
   else: # parent or error
     istream.sclose()
@@ -207,17 +199,20 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
     r.sread(isCJKAmbiguous)
     r.sread(config)
     # for CGI
-    putEnv("SERVER_SOFTWARE", "Chawan")
-    putEnv("SERVER_PROTOCOL", "HTTP/1.0")
-    putEnv("SERVER_NAME", "localhost")
-    putEnv("SERVER_PORT", "80")
-    putEnv("REMOTE_HOST", "localhost")
-    putEnv("REMOTE_ADDR", "127.0.0.1")
-    putEnv("GATEWAY_INTERFACE", "CGI/1.1")
-    putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
-    putEnv("CHA_TMP_DIR", config.tmpdir)
-    putEnv("CHA_DIR", config.configdir)
-    putEnv("CHA_BOOKMARK", config.bookmark)
+    try:
+      putEnv("SERVER_SOFTWARE", "Chawan")
+      putEnv("SERVER_PROTOCOL", "HTTP/1.0")
+      putEnv("SERVER_NAME", "localhost")
+      putEnv("SERVER_PORT", "80")
+      putEnv("REMOTE_HOST", "localhost")
+      putEnv("REMOTE_ADDR", "127.0.0.1")
+      putEnv("GATEWAY_INTERFACE", "CGI/1.1")
+      putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
+      putEnv("CHA_TMP_DIR", config.tmpdir)
+      putEnv("CHA_DIR", config.configdir)
+      putEnv("CHA_BOOKMARK", config.bookmark)
+    except OSError:
+      die("failed to set env vars")
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader
     var (pid, loaderStream) = ctx.forkLoader(config, loaderStream)
@@ -268,15 +263,12 @@ proc newForkServer*(loaderSockVec: array[2, cint]): ForkServer =
   var sockVec {.noinit.}: array[2, cint] # stdin in forkserver
   var pipeFdErr {.noinit.}: array[2, cint] # stderr in forkserver
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sockVec) != 0:
-    stderr.writeLine("Failed to open fork server i/o socket")
-    quit(1)
+    die("failed to open fork server i/o socket")
   if pipe(pipeFdErr) == -1:
-    stderr.writeLine("Failed to open fork server error pipe")
-    quit(1)
+    die("failed to open fork server error pipe")
   let pid = fork()
   if pid == -1:
-    stderr.writeLine("Failed to fork fork the server process")
-    quit(1)
+    die("failed to fork fork the server process")
   elif pid == 0:
     # child process
     discard setsid()
@@ -301,3 +293,5 @@ proc newForkServer*(loaderSockVec: array[2, cint]): ForkServer =
     estream.setCloseOnExec()
     estream.setBlocking(false)
     return ForkServer(stream: stream, estream: estream)
+
+{.pop.} # raises: []

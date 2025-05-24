@@ -20,6 +20,8 @@
 # received. (This allows for passing outputIds to the pager for later
 # addCacheFile commands there.)
 
+{.push raises: [].}
+
 import std/algorithm
 import std/deques
 import std/options
@@ -1489,10 +1491,11 @@ proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
       ctx.register(client)
       ctx.put(client)
       if clonedFrom != -1:
-        let client2 = ctx.clientMap[clonedFrom]
-        for item in client2.cacheMap:
-          inc item.refc
-        client.cacheMap = client2.cacheMap
+        let client2 = ctx.clientMap.getOrDefault(clonedFrom)
+        if client2 != nil:
+          for item in client2.cacheMap:
+            inc item.refc
+          client.cacheMap = client2.cacheMap
       if ctx.authMap.len > 0:
         let origin = config.originURL.authOrigin
         for it in ctx.authMap:
@@ -1513,8 +1516,8 @@ proc removeClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
     r: var PacketReader): CommandResult =
   var pid: int
   r.sread(pid)
-  if pid in ctx.clientMap:
-    let client = ctx.clientMap[pid]
+  let client = ctx.clientMap.getOrDefault(pid)
+  if client != nil:
     ctx.unregClient.add(client)
   cmdrDone
 
@@ -1920,8 +1923,9 @@ proc runFileLoader*(config: LoaderConfig; stream, forkStream: SocketStream) =
   do:
     fail = true
   if fail:
-    stderr.writeLine("cha loader: initialization error")
-    quit(1)
+    die("initialization error in loader")
   ctx.register(ctx.pagerClient)
   ctx.put(ctx.pagerClient)
   ctx.loaderLoop()
+
+{.pop.} # raises: []

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/math
 import std/options
@@ -900,3 +902,5 @@ proc getFileExt*(path: string): string =
   if n == -1 or path[n] != '.':
     return ""
   return path.substr(n + 1)
+
+{.pop.} # raises: []

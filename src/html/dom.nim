@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/deques
 import std/hashes
@@ -150,7 +152,7 @@ type
     element: Element
     attrlist: seq[Attr]
 
-  CollectionMatchFun = proc(node: Node): bool {.noSideEffect.}
+  CollectionMatchFun = proc(node: Node): bool {.noSideEffect, raises: [].}
 
   Collection = ref object of RootObj
     islive: bool
@@ -577,14 +579,14 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32)
 # Forward declaration hacks
 # set in css/match
 var matchesImpl*: proc(element: Element; cxsels: seq[ComplexSelector]): bool
-  {.nimcall, noSideEffect.} = nil
+  {.nimcall, noSideEffect, raises: [].}
 # set in html/chadombuilder
 var parseHTMLFragmentImpl*: proc(element: Element; s: string): seq[Node]
-  {.nimcall.}
-var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall.}
+  {.nimcall, raises: [].}
+var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall, raises: [].}
 # set in html/env
 var fetchImpl*: proc(window: Window; input: JSRequest): JSResult[FetchPromise]
-  {.nimcall.} = nil
+  {.nimcall, raises: [].}
 
 # For now, these are the same; on an API level however, getGlobal is guaranteed
 # to be non-null, while getWindow may return null in the future. (This is in
@@ -3964,7 +3966,7 @@ proc applyStyleDependencies*(element: Element; depends: DependencyInfo) =
   for t, map in document.styleDependencies.mpairs:
     map.dependsOn.withValue(element, p):
       for it in p[]:
-        map.dependedBy[it].findAndDelete(element)
+        map.dependedBy.mgetOrPut(it, @[]).findAndDelete(element)
       map.dependsOn.del(element)
     for el in depends[t]:
       if el == element:
@@ -4416,9 +4418,7 @@ const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (func(): (
     if x.tags == AllTagTypes:
       break
     for tag in result[0][i].tags:
-      if tag notin result[1]:
-        result[1][tag] = newSeq[int16]()
-      result[1][tag].add(i)
+      result[1].mgetOrPut(tag, @[]).add(i)
     assert result[0][i].tags.len != 0
     inc i
   result[2] = i
@@ -5960,17 +5960,16 @@ proc querySelectorAll(this: DocumentFragment; q: string): DOMResult[NodeList]
     {.jsfunc.} =
   return this.querySelectorAllImpl(q)
 
-func getReflectFunctions(tags: set[TagType]): seq[TabGetSet] =
+func getReflectFunctions(tags: openArray[TagType]): seq[TabGetSet] =
   result = @[]
   for tag in tags:
-    if tag in TagReflectMap:
-      for i in TagReflectMap[tag]:
-        result.add(TabGetSet(
-          name: $ReflectTable[i].funcname,
-          get: jsReflectGet,
-          set: jsReflectSet,
-          magic: i
-        ))
+    for i in TagReflectMap.getOrDefault(tag):
+      result.add(TabGetSet(
+        name: $ReflectTable[i].funcname,
+        get: jsReflectGet,
+        set: jsReflectSet,
+        magic: i
+      ))
 
 func getElementReflectFunctions(): seq[TabGetSet] =
   result = @[]
@@ -6120,19 +6119,19 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   const extraGetSet = getElementReflectFunctions()
   let htmlElementCID = ctx.registerType(HTMLElement, parent = elementCID,
     hasExtraGetSet = true, extraGetSet = extraGetSet)
-  template register(t: typed; tags: set[TagType]) =
+  template register(t: typed; tags: openArray[TagType]) =
     const extraGetSet = getReflectFunctions(tags)
     ctx.registerType(t, parent = htmlElementCID, hasExtraGetSet = true,
       extraGetSet = extraGetSet)
   template register(t: typed; tag: TagType) =
-    register(t, {tag})
+    register(t, [tag])
   register(HTMLInputElement, TAG_INPUT)
   register(HTMLAnchorElement, TAG_A)
   register(HTMLSelectElement, TAG_SELECT)
   register(HTMLSpanElement, TAG_SPAN)
   register(HTMLOptGroupElement, TAG_OPTGROUP)
   register(HTMLOptionElement, TAG_OPTION)
-  register(HTMLHeadingElement, {TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6})
+  register(HTMLHeadingElement, [TAG_H1, TAG_H2, TAG_H3, TAG_H4, TAG_H5, TAG_H6])
   register(HTMLBRElement, TAG_BR)
   register(HTMLMenuElement, TAG_MENU)
   register(HTMLUListElement, TAG_UL)
@@ -6157,12 +6156,12 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLTableElement, TAG_TABLE)
   register(HTMLTableCaptionElement, TAG_CAPTION)
   register(HTMLTableRowElement, TAG_TR)
-  register(HTMLTableSectionElement, {TAG_TBODY, TAG_THEAD, TAG_TFOOT})
+  register(HTMLTableSectionElement, [TAG_TBODY, TAG_THEAD, TAG_TFOOT])
   register(HTMLMetaElement, TAG_META)
   register(HTMLDetailsElement, TAG_DETAILS)
   register(HTMLFrameElement, TAG_FRAME)
   register(HTMLTimeElement, TAG_TIME)
-  register(HTMLQuoteElement, {TAG_BLOCKQUOTE, TAG_Q})
+  register(HTMLQuoteElement, [TAG_BLOCKQUOTE, TAG_Q])
   register(HTMLDataElement, TAG_DATA)
   register(HTMLHeadElement, TAG_HEAD)
   register(HTMLTitleElement, TAG_TITLE)
@@ -6256,3 +6255,5 @@ getAPIBaseURLImpl = proc(ctx: JSContext): URL =
 
 isWindowImpl = proc(target: EventTarget): bool {.noSideEffect.} =
   return target of Window
+
+{.pop.} # raises: []

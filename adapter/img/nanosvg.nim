@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/os
 import std/posix
 import std/strutils
@@ -69,3 +71,5 @@ proc main() =
     os.write("Cha-Control: ConnectionError 1 not supported\n")
 
 main()
+
+{.pop.} # raises: []

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 
@@ -264,3 +266,5 @@ proc unquote*(p: ChaPath; base: string): ChaPathResult[string] =
 
 proc unquoteGet*(p: ChaPath): string =
   return p.unquote("").get
+
+{.pop.} # raises: []

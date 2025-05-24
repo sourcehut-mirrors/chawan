@@ -35,9 +35,9 @@ type URIMethodMapResult* = enum
   ummrNotFound, ummrSuccess, ummrWrongURL
 
 proc findAndRewrite*(this: URIMethodMap; url: var URL): URIMethodMapResult =
-  let protocol = url.protocol
-  if protocol in this.map:
-    let surl = this.map[protocol].rewriteURL($url)
+  let s = this.map.getOrDefault(url.protocol)
+  if s != "":
+    let surl = s.rewriteURL($url)
     let x = newURL(surl)
     if x.isNone:
       return ummrWrongURL

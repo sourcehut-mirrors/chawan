@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/strutils
 import std/tables
 
@@ -158,7 +160,7 @@ func isNoCorsSafelisted(name, value: string): bool =
   return false
 
 func get0(this: Headers; name: string): string =
-  return this.table[name].join(", ")
+  return this.table.getOrDefault(name).join(", ")
 
 proc get*(ctx: JSContext; this: Headers; name: string): JSValue {.jsfunc.} =
   if not name.isValidHeaderName():
@@ -185,10 +187,7 @@ proc append(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
       let tmp = this.get0(name) & ", " & value
       if not name.isNoCorsSafelisted(tmp):
         return ok()
-  if name in this.table:
-    this.table[name].add(value)
-  else:
-    this.table[name] = @[value]
+  this.table.mgetOrPut(name, @[]).add(value)
   this.removeRange()
   ok()
 
@@ -279,7 +278,7 @@ proc `[]=`*(headers: Headers; k: string; v: sink string) =
 
 func `[]`*(headers: Headers; k: string): var string =
   let k = k.toHeaderCase()
-  return headers.table[k][0]
+  return headers.table.mgetOrPut(k, @[])[0]
 
 func contains*(headers: Headers; k: string): bool =
   return k.toHeaderCase() in headers.table
@@ -348,3 +347,5 @@ func parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
 
 proc addHeadersModule*(ctx: JSContext) =
   ctx.registerType(Headers)
+
+{.pop.} # raises: []

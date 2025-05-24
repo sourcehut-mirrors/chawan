@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/strutils
 
 import chame/tags
@@ -270,3 +272,5 @@ matchesImpl = func(element: Element; cxsels: seq[ComplexSelector]): bool
     {.nimcall.} =
   var dummy = DependencyInfo.default
   return element.matches(cxsels, dummy)
+
+{.pop.} # raises: []

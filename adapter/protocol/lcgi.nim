@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -226,3 +228,5 @@ proc connectSocket*(os: PosixStream; host, port: string; outIpv6: var bool):
 proc connectSocket*(os: PosixStream; host, port: string): PosixStream =
   var dummy = false
   return os.connectSocket(host, port, dummy)
+
+{.pop.} # raises: []

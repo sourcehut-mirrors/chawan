@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import monoucha/javascript
 import monoucha/jsregex
 import types/cell
@@ -6,7 +8,7 @@ import utils/strwidth
 import utils/twtstr
 
 type
-  SelectFinish* = proc(opaque: RootRef; select: Select) {.nimcall.}
+  SelectFinish* = proc(opaque: RootRef; select: Select) {.nimcall, raises: [].}
 
   SelectOption* = object
     nop*: bool
@@ -367,3 +369,5 @@ proc newSelect*(options: seq[SelectOption]; selected: int;
 
 proc addSelectModule*(ctx: JSContext) =
   ctx.registerType(Select)
+
+{.pop.} # raises: []

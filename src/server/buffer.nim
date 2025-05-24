@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 from std/strutils import split, toUpperAscii, find, AllChars
 
 import std/macros
@@ -140,7 +142,8 @@ type
     referrer*: string
     userStyle*: string
 
-  GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.nimcall.}
+  GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.
+    nimcall, raises: [].}
 
 # Forward declarations
 proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element):
@@ -276,9 +279,7 @@ type
 var ProxyFunctions {.compileTime.}: ProxyMap
 
 proc getProxyFunction(funid: string): ProxyFunction =
-  if funid notin ProxyFunctions:
-    ProxyFunctions[funid] = ProxyFunction()
-  return ProxyFunctions[funid]
+  return ProxyFunctions.mgetOrPut(funid, ProxyFunction())
 
 macro proxy0(fun: untyped) =
   fun[0] = ident(fun[0].strVal & "_internal")
@@ -428,7 +429,7 @@ func cursorBytes(buffer: Buffer; y, cc: int): int =
 
 proc navigate(buffer: Buffer; url: URL) =
   buffer.navigateUrl = url
-  stderr.write("navigate to " & $url & "\n")
+  stderr.fwrite("navigate to " & $url & "\n")
 
 #TODO rewrite findPrevLink, findNextLink to use the box tree instead
 proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
@@ -1974,3 +1975,5 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   buffer.runBuffer()
   buffer.cleanup()
   quit(0)
+
+{.pop.} # raises: []

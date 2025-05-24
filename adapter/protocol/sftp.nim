@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/strutils
@@ -130,7 +132,8 @@ proc matchesPattern(s: string; pats: openArray[string]): bool =
       return true
   return false
 
-proc parseSSHConfig(f: File; host: string; pubKey, privKey: var string) =
+proc parseSSHConfig(f: File; host: string; pubKey, privKey: var string)
+    {.raises: [IOError].}=
   var skipTillNext = false
   var line = ""
   while f.readLine(line):
@@ -194,7 +197,10 @@ proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: string) =
   for config in configs:
     var f: File
     if f.open(config):
-      parseSSHConfig(f, host, pubKey, privKey)
+      try:
+        parseSSHConfig(f, host, pubKey, privKey)
+      except IOError:
+        os.die("InternalError", "failed to read SSH config")
   if privKey == "":
     if session.libssh2_userauth_password(cstring(user), cstring(pass)) != 0:
       os.unauthorized(session)
@@ -420,3 +426,5 @@ proc main*() =
 
 when not defined(staticLink):
   main()
+
+{.pop.} # raises: []

@@ -4,6 +4,8 @@
 # length of its ancillary data (i.e. the number of file descriptors
 # passed).
 
+{.push raises: [].}
+
 import std/algorithm
 import std/options
 import std/tables
@@ -155,3 +157,5 @@ proc swrite*(w: var PacketWriter; c: ARGBColor) =
 
 proc swrite*(w: var PacketWriter; c: CellColor) =
   w.swrite(uint32(c))
+
+{.pop.} # raises: []

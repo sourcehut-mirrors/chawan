@@ -24,6 +24,8 @@
 #   includes the rows/row groups.
 # Whatever your reason may be for looking at this: good luck.
 
+{.push raises: [].}
+
 import std/algorithm
 
 import chame/tags
@@ -627,3 +629,5 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool): StackItem =
   stack.box = root
   ctx.popStackItem()
   return stack
+
+{.pop.} # raises: []

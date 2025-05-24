@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 
 import html/catom
@@ -95,10 +97,11 @@ jsDestructor(EventTarget)
 
 # Forward declaration hack
 var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
-  noSideEffect.} = nil
+  noSideEffect, raises: [].}
 var getParentImpl*: proc(ctx: JSContext; target: EventTarget; event: Event):
-  EventTarget {.nimcall.}
-var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect.}
+  EventTarget {.nimcall, raises: [].}
+var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect,
+  raises: [].}
 
 type
   EventInit* = object of JSDict
@@ -613,3 +616,5 @@ proc addEventModule*(ctx: JSContext):
   ctx.defineConsts(eventCID, EventPhase)
   let eventTargetCID = ctx.registerType(EventTarget)
   return (eventCID, eventTargetCID)
+
+{.pop.} # raises: []

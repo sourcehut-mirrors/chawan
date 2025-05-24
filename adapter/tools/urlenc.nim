@@ -9,7 +9,8 @@ import std/os
 import utils/twtstr
 
 proc usage() {.noreturn.} =
-  stderr.write("""
+  try:
+    stderr.write("""
 Usage: urlenc [-s] [set]
 The input to be decoded is read from stdin, with the last line feed removed.
 [set] decides which characters are encoded, and defaults to "form".
@@ -23,6 +24,8 @@ The input to be decoded is read from stdin, with the last line feed removed.
     form: component + !, ', (, ), ~
 [-s] encodes spaces to plus signs (as application/x-www-form-urlencoded).
 """)
+  except IOError:
+    discard
   quit(1)
 
 proc main() =

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -6,12 +8,13 @@ import std/strutils
 import lcgi_ssl
 
 proc sdie(s: string) =
-  stdout.write("Cha-Control: ConnectionError 5 " & s & ": ")
+  stdout.fwrite("Cha-Control: ConnectionError 5 " & s & ": ")
   ERR_print_errors_fp(stdout)
   stdout.flushFile()
   quit(1)
 
 proc fopen(filename, mode: cstring): pointer {.importc, nodecl.}
+
 proc openKnownHosts(os: PosixStream): (File, string) =
   var path = getEnv("GMIFETCH_KNOWN_HOSTS")
   if path == "":
@@ -19,11 +22,14 @@ proc openKnownHosts(os: PosixStream): (File, string) =
     if ourDir == "":
       os.die("InternalError", "config dir missing")
     path = ourDir & '/' & "gemini_known_hosts"
-  createDir(path.untilLast('/'))
+  discard mkdir(cstring(path.untilLast('/')), 0o700)
   let f = cast[File](fopen(cstring(path), "a+"))
   if f == nil:
     os.die("InternalError", "error opening open known hosts file")
   return (f, path)
+
+proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
+  header: "<stdio.h>".}
 
 proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
     knownHosts: var File; tmpEntry: var string) =
@@ -53,19 +59,20 @@ proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
         let knownHostsTmpPath = knownHostsPath & '~'
         if not knownHostsTmp.open(knownHostsTmpPath, fmWrite):
           os.die("InternalError", "failed to open temp file")
-        var line: string
-        while knownHosts.readLine(line):
-          let j = line.find(' ')
-          if host.len == j and line.startsWith(host):
-            continue # delete this entry
-          knownHostsTmp.writeLine(line)
-        knownHostsTmp.writeLine(buf)
-        knownHostsTmp.close()
-        knownHosts.close()
         try:
-          moveFile(knownHostsTmpPath, knownHostsPath)
+          var line: string
+          while knownHosts.readLine(line):
+            let j = line.find(' ')
+            if host.len == j and line.startsWith(host):
+              continue # delete this entry
+            knownHostsTmp.writeLine(line)
+          knownHostsTmp.writeLine(buf)
+          knownHostsTmp.close()
+          knownHosts.close()
         except IOError:
-          os.die("InternalError failed to move tmp file")
+          os.die("InternalError", "failed to read known hosts")
+        if c_rename(cstring(knownHostsTmpPath), cstring(knownHostsPath)) != 0:
+          os.die("InternalError", "failed to move temporary file")
         if not knownHosts.open(knownHostsPath, fmRead):
           os.die("InternalError", "failed to reopen known_hosts")
     else:
@@ -81,9 +88,12 @@ proc checkCert0(os: PosixStream; theirDigest, host: string;
     tmpEntry: string): CheckCertResult =
   var line = tmpEntry
   var found = line.until(' ') == host
-  knownHosts.setFilePos(0)
-  while not found and knownHosts.readLine(line):
-    found = line.until(' ') == host
+  try:
+    knownHosts.setFilePos(0)
+    while not found and knownHosts.readLine(line):
+      found = line.until(' ') == host
+  except IOError:
+    os.die("InternalError", "failed to read known hosts")
   if not found:
     return ccrNotFound
   let ss = line.split(' ')
@@ -346,3 +356,5 @@ Update it?
 
 when not defined(staticLink):
   main()
+
+{.pop.} # raises: []

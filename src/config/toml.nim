@@ -12,6 +12,8 @@
 # One day I hope to come up with a better config language, but migration
 # will be painful...
 
+{.push raises: [].}
+
 import std/options
 import std/tables
 import std/times
@@ -589,3 +591,5 @@ proc parseToml*(buf: openArray[char]; filename: string; laxnames: bool;
       else: return state.err("invalid character after value: " & c)
   ?state.flushLine()
   return ok(TomlValue(t: tvtTable, tab: state.root))
+
+{.pop.} # raises: []

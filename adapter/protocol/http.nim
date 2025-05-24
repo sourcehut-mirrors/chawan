@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/envvars
 import std/options
 import std/posix
@@ -135,6 +137,10 @@ type
     teGzip = "gzip"
     teDeflate = "deflate"
 
+proc die*(s: string) {.noreturn.} =
+  stderr.fwrite("newhttp: " & s & '\n')
+  quit(1)
+
 proc inflate(op: HTTPHandle; flag: uint32) =
   var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) != 0:
@@ -180,8 +186,7 @@ proc inflate(op: HTTPHandle; flag: uint32) =
         of TINFL_STATUS_ADLER32_MISMATCH, TINFL_STATUS_FAILED,
             TINFL_STATUS_FAILED_CANNOT_MAKE_PROGRESS,
             TINFL_STATUS_ISIZE_OR_CRC32_MISMATCH:
-          stderr.writeLine("NewHTTP error: " & $status)
-          quit(1)
+          die($status)
     quit(0)
   else: # parent
     pins.sclose()
@@ -232,11 +237,9 @@ proc unbrotli(op: HTTPHandle) =
           quit(0)
         of BROTLI_DECODER_RESULT_ERROR:
           let c = decomp.BrotliDecoderGetErrorCode()
-          stderr.writeLine("NewHTTP error: " & $BrotliDecoderErrorString(c))
-          quit(1)
+          die($BrotliDecoderErrorString(c))
     # should be unreachable I think
-    stderr.writeLine("NewHTTP error: unexpected end of brotli stream")
-    quit(1)
+    die("unexpected end of brotli stream")
   else: # parent
     pins.sclose()
     op.os = pouts
@@ -343,12 +346,10 @@ proc handleChunkSize(op: HTTPHandle; iq: openArray[char]): int =
         let osize = op.chunkSize
         op.chunkSize = osize * 0x10 + uint64(n)
         if n == -1 or osize > op.chunkSize:
-          stderr.writeLine("NewHTTP error: error decoding chunk size")
-          quit(1)
+          die("error decoding chunk size")
     of lsCrSeen:
       if c != '\n':
-        stderr.writeLine("NewHTTP error: CRLF expected")
-        quit(1)
+        die("CRLF expected")
       op.lineState = lsNone
       if op.chunkSize > 0:
         op.state = hsBody
@@ -475,3 +476,5 @@ proc main*() =
 
 when not defined(staticLink):
   main()
+
+{.pop.} # raises: []

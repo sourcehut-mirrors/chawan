@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/tables
 
 import monoucha/quickjs
@@ -12,7 +14,7 @@ type
     psPending, psFulfilled, psRejected
 
   EmptyPromise* = ref object of RootObj
-    cb: (proc())
+    cb: (proc() {.raises: [].})
     next: EmptyPromise
     state*: PromiseState
 
@@ -45,15 +47,16 @@ proc newResolvedPromise*[T](x: T): Promise[T] =
   res.resolve(x)
   return res
 
-proc then*(promise: EmptyPromise; cb: (proc())): EmptyPromise {.discardable.} =
+proc then*(promise: EmptyPromise; cb: (proc() {.raises: [].})): EmptyPromise
+    {.discardable.} =
   promise.cb = cb
   promise.next = EmptyPromise()
   if promise.state == psFulfilled:
     promise.resolve()
   return promise.next
 
-proc then*(promise: EmptyPromise; cb: (proc(): EmptyPromise)): EmptyPromise
-    {.discardable.} =
+proc then*(promise: EmptyPromise; cb: (proc(): EmptyPromise {.raises: [].})):
+    EmptyPromise {.discardable.} =
   let next = EmptyPromise()
   promise.then(proc() =
     var p2 = cb()
@@ -64,12 +67,12 @@ proc then*(promise: EmptyPromise; cb: (proc(): EmptyPromise)): EmptyPromise
       next.resolve())
   return next
 
-proc then*[T](promise: Promise[T]; cb: (proc(x: T))): EmptyPromise
-    {.discardable.} =
+proc then*[T](promise: Promise[T]; cb: (proc(x: T) {.raises: [].})):
+    EmptyPromise {.discardable.} =
   return promise.then(proc() = cb(promise.res))
 
-proc then*[T](promise: EmptyPromise; cb: (proc(): Promise[T])): Promise[T]
-    {.discardable.} =
+proc then*[T](promise: EmptyPromise; cb: (proc(): Promise[T] {.raises: [].})):
+    Promise[T] {.discardable.} =
   let next = Promise[T]()
   promise.then(proc() =
     var p2 = cb()
@@ -81,7 +84,8 @@ proc then*[T](promise: EmptyPromise; cb: (proc(): Promise[T])): Promise[T]
       next.resolve())
   return next
 
-proc then*[T](promise: Promise[T]; cb: (proc(x: T): EmptyPromise)): EmptyPromise
+proc then*[T](promise: Promise[T];
+    cb: (proc(x: T): EmptyPromise {.raises: [].})): EmptyPromise
     {.discardable.} =
   let next = EmptyPromise()
   promise.then(proc(x: T) =
@@ -93,7 +97,7 @@ proc then*[T](promise: Promise[T]; cb: (proc(x: T): EmptyPromise)): EmptyPromise
       next.resolve())
   return next
 
-proc then*[T](promise: EmptyPromise; cb: (proc(): T)): Promise[T]
+proc then*[T](promise: EmptyPromise; cb: (proc(): T {.raises: [].})): Promise[T]
     {.discardable.} =
   let next = Promise[T]()
   promise.then(proc() =
@@ -101,8 +105,8 @@ proc then*[T](promise: EmptyPromise; cb: (proc(): T)): Promise[T]
     next.resolve())
   return next
 
-proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): U)): Promise[U]
-    {.discardable.} =
+proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): U {.raises: [].})):
+    Promise[U] {.discardable.} =
   let next = Promise[U]()
   promise.then(proc(x: T) =
     next.res = cb(x)
@@ -122,8 +126,9 @@ proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): Promise[U])): Promise[U]
       next.resolve())
   return next
 
-proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): Opt[Promise[U]])):
-    Promise[Opt[U]] {.discardable.} =
+proc then*[T, U](promise: Promise[T];
+    cb: (proc(x: T): Opt[Promise[U]] {.raises: [].})): Promise[Opt[U]]
+    {.discardable.} =
   let next = Promise[Opt[U]]()
   promise.then(proc(x: T) =
     let p2 = cb(x)
@@ -286,9 +291,12 @@ proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
         JS_UNDEFINED
       else:
         toJS(ctx, x.error)
-      let res = JS_Call(ctx, resolvingFuncs[1], JS_UNDEFINED, 1, x.toJSValueArray())
+      let res = JS_Call(ctx, resolvingFuncs[1], JS_UNDEFINED, 1,
+        x.toJSValueArray())
       JS_FreeValue(ctx, res)
       JS_FreeValue(ctx, x)
     JS_FreeValue(ctx, resolvingFuncs[0])
     JS_FreeValue(ctx, resolvingFuncs[1]))
   return jsPromise
+
+{.pop.} # raises: []

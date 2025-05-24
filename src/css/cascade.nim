@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/options
 import std/sets
@@ -387,3 +389,5 @@ proc applyStyle*(element: Element) =
       if pseudo == peMarker:
         computed{"display"} = DisplayMarker
       element.computedMap.add((pseudo, computed))
+
+{.pop.} # raises: []

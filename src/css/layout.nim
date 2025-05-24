@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/math
 
@@ -2877,3 +2879,5 @@ proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
   # I'm not sure why the third PositionedItem is needed, but without
   # this fixed boxes appear in the wrong place.
   lctx.popPositioned(size)
+
+{.pop.} # raises: []

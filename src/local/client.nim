@@ -177,7 +177,8 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
   client.timeouts = client.pager.timeouts
   jsctx.setGlobal(client)
   let global = JS_GetGlobalObject(jsctx)
-  doAssert jsctx.definePropertyE(global, "cmd", config.cmd.jsObj) != dprException
+  doAssert jsctx.definePropertyE(global, "cmd", config.cmd.jsObj) !=
+    dprException
   JS_FreeValue(jsctx, global)
   config.cmd.jsObj = JS_NULL
   let windowCID = client.addJSModules(jsctx)

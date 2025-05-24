@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 
 import css/cssparser
@@ -475,3 +477,5 @@ func applies*(mqlist: seq[MediaQuery]; scripting: ScriptingMode;
     attrsp: ptr WindowAttributes): bool =
   let ctx = MediaApplyContext(scripting: scripting, attrsp: attrsp)
   return ctx.applies(mqlist)
+
+{.pop.} # raises: []

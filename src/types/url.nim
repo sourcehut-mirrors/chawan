@@ -1,4 +1,6 @@
 # See https://url.spec.whatwg.org/#url-parsing.
+{.push raises: [].}
+
 import std/algorithm
 import std/options
 import std/strutils
@@ -1259,3 +1261,5 @@ proc canParse(url: string; base = none(string)): bool {.jsstfunc: "URL".} =
 proc addURLModule*(ctx: JSContext) =
   ctx.registerType(URL)
   ctx.registerType(URLSearchParams)
+
+{.pop.}
