@@ -300,60 +300,61 @@ proc main() =
         quit(1)
       r.sread(width)
       r.sread(height)
+    do:
+      quit(1)
     os.write("Cha-Image-Dimensions: " & $width & "x" & $height & "\n\n")
     let bmp = newBitmap(width, height)
     var alive = true
     while alive:
-      try:
-        ps.withPacketReader r:
-          r.sread(cmd)
-          case cmd
-          of pcSetDimensions:
-            alive = false
-          of pcFillRect, pcStrokeRect:
-            var x1, y1, x2, y2: int
-            var color: ARGBColor
-            r.sread(x1)
-            r.sread(y1)
-            r.sread(x2)
-            r.sread(y2)
-            r.sread(color)
-            if cmd == pcFillRect:
-              bmp.fillRect(x1, y1, x2, y2, color)
-            else:
-              bmp.strokeRect(x1, y1, x2, y2, color)
-          of pcFillPath:
-            var lines: PathLines
-            var color: ARGBColor
-            var fillRule: CanvasFillRule
-            r.sread(lines)
-            r.sread(color)
-            r.sread(fillRule)
-            bmp.fillPath(lines, color, fillRule)
-          of pcStrokePath:
-            var lines: seq[Line]
-            var color: ARGBColor
-            r.sread(lines)
-            r.sread(color)
-            bmp.strokePath(lines, color)
-          of pcFillText, pcStrokeText:
-            if unifontBitmap == nil:
-              unifontBitmap = loadUnifont(unifont)
-            var text: string
-            var x, y: float64
-            var color: ARGBColor
-            var align: CanvasTextAlign
-            r.sread(text)
-            r.sread(x)
-            r.sread(y)
-            r.sread(color)
-            r.sread(align)
-            if cmd == pcFillText:
-              bmp.fillText(text, x, y, color, align)
-            else:
-              bmp.strokeText(text, x, y, color, align)
-      except EOFError:
-        break
+      ps.withPacketReader r:
+        r.sread(cmd)
+        case cmd
+        of pcSetDimensions:
+          alive = false
+        of pcFillRect, pcStrokeRect:
+          var x1, y1, x2, y2: int
+          var color: ARGBColor
+          r.sread(x1)
+          r.sread(y1)
+          r.sread(x2)
+          r.sread(y2)
+          r.sread(color)
+          if cmd == pcFillRect:
+            bmp.fillRect(x1, y1, x2, y2, color)
+          else:
+            bmp.strokeRect(x1, y1, x2, y2, color)
+        of pcFillPath:
+          var lines: PathLines
+          var color: ARGBColor
+          var fillRule: CanvasFillRule
+          r.sread(lines)
+          r.sread(color)
+          r.sread(fillRule)
+          bmp.fillPath(lines, color, fillRule)
+        of pcStrokePath:
+          var lines: seq[Line]
+          var color: ARGBColor
+          r.sread(lines)
+          r.sread(color)
+          bmp.strokePath(lines, color)
+        of pcFillText, pcStrokeText:
+          if unifontBitmap == nil:
+            unifontBitmap = loadUnifont(unifont)
+          var text: string
+          var x, y: float64
+          var color: ARGBColor
+          var align: CanvasTextAlign
+          r.sread(text)
+          r.sread(x)
+          r.sread(y)
+          r.sread(color)
+          r.sread(align)
+          if cmd == pcFillText:
+            bmp.fillText(text, x, y, color, align)
+          else:
+            bmp.strokeText(text, x, y, color, align)
+      do:
+        alive = false
     discard os.writeDataLoop(addr bmp.px[0], bmp.px.len * sizeof(bmp.px[0]))
   else:
     os.write("Cha-Control: ConnectionError 1 not implemented\n")

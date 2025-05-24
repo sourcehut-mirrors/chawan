@@ -50,22 +50,30 @@ proc writeSize*(w: var PacketWriter) =
   let len = [w.bufLen - InitLen, w.fds.len]
   copyMem(addr w.buffer[0], unsafeAddr len[0], sizeof(len))
 
-proc flush*(w: var PacketWriter; stream: DynStream) =
+# Returns false on EOF, true if we flushed successfully.
+proc flush*(w: var PacketWriter; stream: DynStream): bool =
   w.writeSize()
   if not stream.writeDataLoop(w.buffer.toOpenArray(0, w.bufLen - 1)):
-    raise newException(EOFError, "end of file")
+    return false
   if w.fds.len > 0:
     w.fds.reverse()
     let n = SocketStream(stream).sendMsg([0u8], w.fds)
     if n < 1:
-      raise newException(EOFError, "end of file")
+      return false
   w.bufLen = 0
   w.fds.setLen(0)
+  true
 
-template withPacketWriter*(stream: DynStream; w, body: untyped) =
+template withPacketWriter*(stream: DynStream; w, body, fallback: untyped) =
   var w = initPacketWriter()
   body
-  w.flush(stream)
+  if not w.flush(stream):
+    fallback
+
+template withPacketWriterFire*(stream: DynStream; w, body: untyped) =
+  var w = initPacketWriter()
+  body
+  discard w.flush(stream)
 
 proc writeData*(w: var PacketWriter; buffer: pointer; len: int) =
   let targetLen = w.bufLen + len

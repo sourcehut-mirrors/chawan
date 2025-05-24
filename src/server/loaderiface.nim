@@ -12,6 +12,7 @@ import io/packetwriter
 import io/promise
 import monoucha/javascript
 import monoucha/jserror
+import server/connecterror
 import server/headers
 import server/request
 import server/response
@@ -98,28 +99,20 @@ proc getRedirect*(response: Response; request: Request): Request =
       return newRequest(url.get, request.httpMethod, body = request.body)
   return nil
 
-template withPacketWriter(loader: FileLoader; w, body: untyped) =
-  loader.controlStream.withPacketWriter w:
-    body
-
 # Sometimes, we can return a value even after the loader crashed.
 # This improves reliability of the pager.
-template withPacketWriter(loader: FileLoader; w, fallback, body: untyped) =
-  try:
-    loader.controlStream.withPacketWriter w:
-      body
-  except IOError:
-    return fallback
+template withPacketWriter(loader: FileLoader; w, body, fallback: untyped) =
+  loader.controlStream.withPacketWriter w:
+    body
+  do:
+    fallback
 
 template withPacketWriterFire(loader: FileLoader; w, body: untyped) =
-  try:
-    loader.controlStream.withPacketWriter w:
-      body
-  except IOError:
-    return
+  loader.controlStream.withPacketWriterFire w:
+    body
 
-template withPacketReader(loader: FileLoader; r, body: untyped) =
-  loader.controlStream.withPacketReader r:
+template withPacketReaderFire(loader: FileLoader; r, body: untyped) =
+  loader.controlStream.withPacketReaderFire r:
     body
 
 # Start a request. This should not block (not for a significant amount
@@ -128,9 +121,11 @@ proc startRequest(loader: FileLoader; request: Request): SocketStream =
   loader.withPacketWriter w:
     w.swrite(lcLoad)
     w.swrite(request)
-  var success: bool
+  do:
+    return nil
+  var success = false
   var fd: cint
-  loader.withPacketReader r:
+  loader.withPacketReaderFire r:
     r.sread(success)
     if success:
       fd = r.recvFd()
@@ -146,10 +141,14 @@ proc startRequest*(loader: FileLoader; request: Request;
     w.swrite(lcLoadConfig)
     w.swrite(request)
     w.swrite(config)
-  var fd: cint
-  loader.withPacketReader r:
+  do:
+    return nil
+  var fd = cint(-1)
+  loader.withPacketReaderFire r:
     fd = r.recvFd()
-  return newPosixStream(fd)
+  if fd != -1:
+    return newPosixStream(fd)
+  nil
 
 iterator data*(loader: FileLoader): MapData {.inline.} =
   for it in loader.map:
@@ -212,12 +211,13 @@ proc unblockRegister*(loader: FileLoader) =
 proc fetch0(loader: FileLoader; input: Request; promise: FetchPromise;
     redirectNum: int) =
   let stream = loader.startRequest(input)
-  loader.register(ConnectData(
-    promise: promise,
-    request: input,
-    stream: stream,
-    redirectNum: redirectNum
-  ))
+  if stream != nil:
+    loader.register(ConnectData(
+      promise: promise,
+      request: input,
+      stream: stream,
+      redirectNum: redirectNum
+    ))
 
 proc fetch*(loader: FileLoader; input: Request): FetchPromise =
   let promise = FetchPromise()
@@ -227,19 +227,20 @@ proc fetch*(loader: FileLoader; input: Request): FetchPromise =
 proc reconnect*(loader: FileLoader; data: ConnectData) =
   data.stream.sclose()
   let stream = loader.startRequest(data.request)
-  loader.register(ConnectData(
-    promise: data.promise,
-    request: data.request,
-    stream: stream
-  ))
+  if stream != nil:
+    loader.register(ConnectData(
+      promise: data.promise,
+      request: data.request,
+      stream: stream
+    ))
 
 proc suspend*(loader: FileLoader; fds: seq[int]) =
-  loader.withPacketWriter w:
+  loader.withPacketWriterFire w:
     w.swrite(lcSuspend)
     w.swrite(fds)
 
 proc resume*(loader: FileLoader; fds: openArray[int]) =
-  loader.withPacketWriter w:
+  loader.withPacketWriterFire w:
     w.swrite(lcResume)
     w.swrite(fds)
 
@@ -251,41 +252,51 @@ proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
     w.swrite(lcTee)
     w.swrite(sourceId)
     w.swrite(targetPid)
+  do:
+    return (nil, -1)
   var outputId: int
-  var fd: cint
-  loader.withPacketReader r:
+  var fd = cint(-1)
+  loader.withPacketReaderFire r:
     r.sread(outputId)
     fd = r.recvFd()
-  return (newSocketStream(fd), outputId)
+  if fd != -1:
+    return (newSocketStream(fd), outputId)
+  return (nil, -1)
 
 proc addCacheFile*(loader: FileLoader; outputId: int): int =
-  loader.withPacketWriter w, -1:
+  loader.withPacketWriter w:
     w.swrite(lcAddCacheFile)
     w.swrite(outputId)
-  var cacheId: int
-  loader.withPacketReader r:
+  do:
+    return -1
+  var cacheId = -1
+  loader.withPacketReaderFire r:
     r.sread(cacheId)
   return cacheId
 
 proc getCacheFile*(loader: FileLoader; cacheId, sourcePid: int): string =
-  loader.withPacketWriter w, "":
+  loader.withPacketWriter w:
     w.swrite(lcGetCacheFile)
     w.swrite(cacheId)
     w.swrite(sourcePid)
-  var s: string
-  loader.withPacketReader r:
+  do:
+    return ""
+  var s = ""
+  loader.withPacketReaderFire r:
     r.sread(s)
   move(s)
 
 proc redirectToFile*(loader: FileLoader; outputId: int; targetPath: string;
     displayUrl: URL): bool =
-  loader.withPacketWriter w, false:
+  loader.withPacketWriter w:
     w.swrite(lcRedirectToFile)
     w.swrite(outputId)
     w.swrite(targetPath)
     w.swrite($displayUrl)
-  var res: bool
-  loader.withPacketReader r:
+  do:
+    return false
+  var res = false
+  loader.withPacketReaderFire r:
     r.sread(res)
   return res
 
@@ -304,7 +315,6 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
       else:
         var msg: string
         # msg is discarded.
-        #TODO maybe print if called from trusted code (i.e. global == client)?
         r.sread(msg) # packet 1
         let fd = connectData.fd
         loader.unregisterFun(fd)
@@ -345,6 +355,13 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
           promise.resolve(JSResult[Response].err(newFetchTypeError()))
       else:
         promise.resolve(JSResult[Response].ok(response))
+  do: # loader died
+    loader.unregisterFun(connectData.fd)
+    loader.unregistered.add(connectData.fd)
+    stream.sclose()
+    # delete before resolving the promise
+    loader.unset(connectData)
+    promise.resolve(JSResult[Response].err(newFetchTypeError()))
 
 proc onRead*(loader: FileLoader; data: OngoingData) =
   let response = data.response
@@ -382,21 +399,29 @@ proc onError*(loader: FileLoader; fd: int): bool =
 proc doRequest*(loader: FileLoader; request: Request): Response =
   let stream = loader.startRequest(request)
   let response = Response(url: request.url)
-  var r = stream.initPacketReader()
-  r.sread(response.res) # packet 1
-  if response.res == 0:
-    r.sread(response.outputId) # packet 1
-    r = stream.initPacketReader() # packet 2
-    r.sread(response.status)
-    r.sread(response.headers)
-    # Only a stream of the response body may arrive after this point.
-    response.body = stream
-    response.resumeFun = proc(outputId: int) =
-      loader.resume(outputId)
-  else:
-    var msg: string
-    r.sread(msg) # packet 1
-    stream.sclose()
+  var r: PacketReader
+  if stream != nil and stream.initPacketReader(r):
+    r.sread(response.res) # packet 1
+    if response.res == 0:
+      r.sread(response.outputId) # packet 1
+      if stream.initPacketReader(r): # packet 2
+        r.sread(response.status)
+        r.sread(response.headers)
+        # Only a stream of the response body may arrive after this point.
+        response.body = stream
+        response.resumeFun = proc(outputId: int) =
+          loader.resume(outputId)
+      else: # EOF
+        response.res = int(ceLoaderGone)
+        stream.sclose()
+    else:
+      var msg: string
+      r.sread(msg) # packet 1
+      stream.sclose()
+  else: # EOF
+    response.res = int(ceLoaderGone)
+    if stream != nil:
+      stream.sclose()
   return response
 
 proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1):
@@ -407,17 +432,19 @@ proc shareCachedItem*(loader: FileLoader; id, targetPid: int; sourcePid = -1):
     w.swrite(sourcePid)
     w.swrite(targetPid)
     w.swrite(id)
-  var success: bool
-  loader.withPacketReader r:
+  var success = false
+  loader.withPacketReaderFire r:
     r.sread(success)
   return success
 
 proc openCachedItem*(loader: FileLoader; cacheId: int): PosixStream =
-  loader.withPacketWriter w, nil:
+  loader.withPacketWriter w:
     w.swrite(lcOpenCachedItem)
     w.swrite(cacheId)
+  do:
+    return nil
   var fd = cint(-1)
-  loader.withPacketReader r:
+  loader.withPacketReaderFire r:
     var success: bool
     r.sread(success)
     if success:
@@ -449,9 +476,11 @@ proc addClient*(loader: FileLoader; pid: int; config: LoaderClientConfig;
     w.swrite(pid)
     w.swrite(config)
     w.swrite(clonedFrom)
-  var success: bool
+  do:
+    return nil
+  var success = false
   var fd: cint
-  loader.withPacketReader r:
+  loader.withPacketReaderFire r:
     r.sread(success)
     if success and not isPager:
       fd = r.recvFd()
@@ -460,7 +489,7 @@ proc addClient*(loader: FileLoader; pid: int; config: LoaderClientConfig;
   return nil
 
 proc removeClient*(loader: FileLoader; pid: int) =
-  loader.withPacketWriter w:
+  loader.withPacketWriterFire w:
     w.swrite(lcRemoveClient)
     w.swrite(pid)
 
@@ -470,8 +499,10 @@ proc addPipe*(loader: FileLoader; id: string): PosixStream =
   loader.withPacketWriter w:
     w.swrite(lcAddPipe)
     w.swrite(id)
+  do:
+    return nil
   var fd: cint = -1
-  loader.withPacketReader r:
+  loader.withPacketReaderFire r:
     var success: bool
     r.sread(success)
     if success:

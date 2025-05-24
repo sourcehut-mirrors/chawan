@@ -268,7 +268,7 @@ proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
     term.write(term.clearEnd() & msg)
     term.flush()
-    discard term.istream.readChar()
+    discard term.readChar()
 
 proc resetFormat(term: Terminal): string =
   case term.termType

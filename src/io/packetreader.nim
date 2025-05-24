@@ -1,4 +1,5 @@
 import std/options
+import std/posix
 import std/tables
 
 import io/dynstream
@@ -26,35 +27,51 @@ proc sread*[T, E](r: var PacketReader; o: out Result[T, E])
 proc sread*(r: var PacketReader; c: var ARGBColor)
 proc sread*(r: var PacketReader; c: var CellColor)
 
-proc initReader*(stream: DynStream; len, nfds: int): PacketReader =
+proc initReader*(stream: DynStream; r: var PacketReader; len, nfds: int): bool =
   assert len != 0 or nfds != 0
-  var r = PacketReader(
+  r = PacketReader(
     buffer: newSeqUninit[uint8](len),
     fds: newSeqUninit[cint](nfds),
     bufIdx: 0
   )
   if not stream.readDataLoop(r.buffer):
-    raise newException(EOFError, "end of file")
+    return false
   if nfds > 0:
     # bufwriter added ancillary data.
     var dummy {.noinit.}: array[1, uint8]
     var numFds = 0
     let n = SocketStream(stream).recvMsg(dummy, r.fds, numFds)
-    if n < dummy.len or numFds < nfds:
-      raise newException(EOFError, "end of file")
-  return r
+    if n < dummy.len:
+      return false
+    if numFds < nfds:
+      for i in 0 ..< numFds:
+        discard close(r.fds[i])
+      return false
+  true
 
-proc initPacketReader*(stream: DynStream): PacketReader =
+proc initPacketReader*(stream: DynStream; r: var PacketReader): bool =
   var len {.noinit.}: array[2, int]
   if not stream.readDataLoop(addr len[0], sizeof(len)):
-    raise newException(EOFError, "end of file")
-  return stream.initReader(len[0], len[1])
+    return false
+  return stream.initReader(r, len[0], len[1])
 
-template withPacketReader*(stream: DynStream; r, body: untyped) =
+template withPacketReader*(stream: DynStream; r, body, fallback: untyped) =
   block:
-    var r = stream.initPacketReader()
-    body
-    assert r.fds.len == 0
+    var r: PacketReader
+    if stream.initPacketReader(r):
+      body
+      assert r.fds.len == 0
+    else:
+      fallback
+
+template withPacketReaderFire*(stream: DynStream; r, body: untyped) =
+  block:
+    var r: PacketReader
+    if stream.initPacketReader(r):
+      body
+      assert r.fds.len == 0
+    else:
+      discard
 
 proc empty*(r: var PacketReader): bool =
   return r.bufIdx == r.buffer.len

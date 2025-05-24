@@ -7,6 +7,18 @@ import lcgi
 
 import utils/twtstr
 
+#TODO this is awfully inefficient
+proc readLine(ps: PosixStream; outs: var string): bool =
+  var c: char
+  while true:
+    let n = ps.readData(addr c, 1)
+    if n < 0:
+      return false
+    if c == '\n':
+      break
+    outs &= c
+  true
+
 proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
     int32 =
   if cmd != "":
@@ -18,24 +30,20 @@ proc sendCommand(os, ps: PosixStream; cmd, param: string; outs: var string):
   outs = ""
   if not ps.readDataLoop(buf):
     os.die("InvalidResponse")
-  try:
-    while (let c = ps.readChar(); c != '\n'):
-      outs &= c
-    let status = parseInt32(buf.toOpenArray(0, 2)).get(-1)
-    if buf[3] == ' ':
-      return status
-    buf[3] = ' '
-    while true: # multiline
-      var lbuf = ""
-      while (let c = ps.readChar(); c != '\n'):
-        lbuf &= c
-      outs &= lbuf
-      if lbuf.startsWith(buf):
-        break
+  if not ps.readLine(outs):
+    os.die("InvalidResponse")
+  let status = parseInt32(buf.toOpenArray(0, 2)).get(-1)
+  if buf[3] == ' ':
     return status
-  except EOFError:
-    discard
-  os.die("InvalidResponse")
+  buf[3] = ' '
+  while true: # multiline
+    var lbuf = ""
+    if not ps.readLine(lbuf):
+      os.die("InvalidResponse")
+    outs &= lbuf
+    if lbuf.startsWith(buf):
+      break
+  return status
 
 proc sdie(os: PosixStream; status: int; s, obuf: string) {.noreturn.} =
   discard os.writeDataLoop("Status: " & $status &

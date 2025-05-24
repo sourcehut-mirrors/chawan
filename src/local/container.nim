@@ -245,13 +245,18 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     discard close(sv[0])
     discard close(sv[1])
     return nil
+  var fail = false
   container.iface.stream.source.withPacketWriter w:
     w.sendFd(sv[1])
     w.sendFd(pipefd[0])
     w.sendFd(pipefd[1])
+  do:
+    fail = true
   discard close(sv[1])
   discard close(pipefd[0])
   discard close(pipefd[1])
+  if fail:
+    return nil
   return p.then(proc(pid: int): tuple[c: Container; fd: cint] =
     if pid == -1:
       discard close(sv[0])
@@ -1619,7 +1624,7 @@ proc readSuccess*(container: Container; s: string; fd: cint = -1) =
   let p = container.iface.readSuccess(s, fd != -1)
   if fd != -1:
     doAssert container.iface.stream.flush()
-    container.iface.stream.source.withPacketWriter w:
+    container.iface.stream.source.withPacketWriterFire w:
       w.sendFd(fd)
   p.then(proc(res: Request) =
     if res != nil:
@@ -1758,8 +1763,9 @@ proc setStream*(container: Container; stream: BufStream) =
 proc setCloneStream*(container: Container; stream: BufStream) =
   assert cfCloned in container.flags
   container.iface = cloneInterface(stream)
-  # Maybe we have to resume loading. Let's try.
-  container.startLoad()
+  if container.iface != nil: # if nil, the buffer is dead.
+    # Maybe we have to resume loading. Let's try.
+    container.startLoad()
 
 proc onReadLine(container: Container; w: Slice[int];
     handle: (proc(line: SimpleFlexibleLine)); res: GetLinesResult):

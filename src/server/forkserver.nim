@@ -43,8 +43,10 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
       configdir: config.dir,
       bookmark: config.external.bookmark
     ))
-  var process: int
-  forkserver.stream.withPacketReader r:
+  do:
+    return -1
+  var process = -1
+  forkserver.stream.withPacketReaderFire r:
     r.sread(process)
   return process
 
@@ -54,6 +56,7 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return (-1, nil)
+  var fail = false
   forkserver.stream.withPacketWriter w:
     w.swrite(config)
     w.swrite(url)
@@ -61,10 +64,13 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     w.swrite(ishtml)
     w.swrite(charsetStack)
     w.sendFd(sv[1])
+  do:
+    fail = true
   discard close(sv[1])
-  var bufferPid: int
-  forkserver.stream.withPacketReader r:
-    r.sread(bufferPid)
+  var bufferPid = -1
+  if not fail:
+    forkserver.stream.withPacketReaderFire r:
+      r.sread(bufferPid)
   if bufferPid == -1:
     discard close(sv[0])
     return (-1, nil)
@@ -129,6 +135,8 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
       r.sread(cacheId)
       loaderStream = newSocketStream(r.recvFd())
       istream = newSocketStream(r.recvFd())
+    do: # EOF in pager; give up
+      quit(1)
     let loader = newFileLoader(pid, loaderStream)
     signal(SIGPIPE, SIG_DFL)
     enterBufferSandbox()
@@ -212,38 +220,45 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
     putEnv("CHA_BOOKMARK", config.bookmark)
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader
-    let (pid, loaderStream) = ctx.forkLoader(config, loaderStream)
+    var (pid, loaderStream) = ctx.forkLoader(config, loaderStream)
     ctx.stream.withPacketWriter w:
       w.swrite(pid)
+    do:
+      pid = -1
     if pid == -1:
       # Notified main process of failure; our job is done.
       quit(1)
     ctx.loaderStream = loaderStream
+  do:
+    quit(1)
   initCAtomFactory()
   ctx.pollData.register(ctx.stream.fd, POLLIN)
   ctx.pollData.register(ctx.loaderStream.fd, POLLIN)
-  var alive = true
-  while alive:
-    ctx.pollData.poll(-1)
-    for event in ctx.pollData.events:
-      if (event.revents and POLLIN) != 0:
-        try:
+  block mainLoop:
+    while true:
+      ctx.pollData.poll(-1)
+      for event in ctx.pollData.events:
+        if (event.revents and POLLIN) != 0:
           if event.fd == ctx.stream.fd:
             ctx.stream.withPacketReader r:
               let pid = ctx.forkBuffer(r)
               ctx.stream.withPacketWriter w:
                 w.swrite(pid)
+              do:
+                break mainLoop # EOF
+            do:
+              break mainLoop # EOF
           elif event.fd == ctx.loaderStream.fd:
             ctx.loaderStream.withPacketReader r:
               let pid = ctx.forkCGI(r)
               ctx.loaderStream.withPacketWriter w:
                 w.swrite(pid)
-        except EOFError:
-          alive = false # EOF
-          break
-      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
-        alive = false # EOF
-        break
+              do:
+                break mainLoop # EOF
+            do:
+              break mainLoop # EOF
+        if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
+          break mainLoop # EOF
   ctx.stream.sclose()
   # Clean up when the main process crashed.
   discard kill(0, cint(SIGTERM))

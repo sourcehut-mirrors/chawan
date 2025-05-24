@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/posix
 
 type
@@ -9,9 +11,8 @@ type
 # may return a result that is lower than `len`, and that does not mean
 # the stream is finished.
 # isend must be set by implementations when the end of the stream is
-# reached.
-# An exception should be raised if readData is called with the 'isend'
-# flag set to true. (TODO just assert...)
+# reached.  If the user is trying to read after isend is set, the
+# implementation should assert.
 method readData*(s: DynStream; buffer: pointer; len: int): int {.base.} =
   result = 0
   doAssert false
@@ -90,8 +91,7 @@ proc write*(s: DynStream; c: char) {.inline.} =
   s.write([c])
 
 proc setEnd(s: DynStream) =
-  if unlikely(s.isend):
-    raise newException(EOFError, "end of file")
+  assert not s.isend
   s.isend = true
 
 type
@@ -118,10 +118,6 @@ method readData*(s: PosixStream; buffer: pointer; len: int): int =
   if n == 0:
     s.setEnd()
   return n
-
-proc readChar*(s: PosixStream): char {.noinit.} =
-  let n = read(s.fd, addr result, 1)
-  assert n == 1
 
 method writeData*(s: PosixStream; buffer: pointer; len: int): int =
   return write(s.fd, buffer, len)
@@ -458,3 +454,5 @@ method flush*(s: BufStream): bool =
 
 proc newBufStream*(s: SocketStream; registerFun: proc(fd: int)): BufStream =
   return BufStream(source: s, registerFun: registerFun)
+
+{.pop.} # raises: []

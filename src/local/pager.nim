@@ -1373,6 +1373,9 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     contentType = ""; charsetStack: seq[Charset] = @[]; url = request.url):
     Container =
   let stream = pager.loader.startRequest(request, loaderConfig)
+  if stream == nil:
+    pager.alert("failed to start request for " & $request.url)
+    return nil
   pager.loader.registerFun(stream.fd)
   let cacheId = if request.url.schemeType == stCache:
     parseInt32(request.url.pathname).get(-1)
@@ -2835,7 +2838,7 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
       discard loader.shareCachedItem(outCacheId, pid)
       loader.removeCachedItem(outCacheId)
       loader.resume([istreamOutputId, ostreamOutputId])
-    stream.withPacketWriter w:
+    stream.withPacketWriterFire w: # if EOF, poll will notify us later
       w.swrite(outCacheId)
       w.sendFd(cstream.fd)
       # pass down ostream
@@ -2843,7 +2846,7 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
     ostream.sclose()
     container.setStream(bufStream)
   else: # cloned buffer
-    stream.withPacketWriter w:
+    stream.withPacketWriterFire w: # if EOF, poll will notify us later
       w.sendFd(cstream.fd)
     # buffer is cloned, just share the parent's cached source
     discard loader.shareCachedItem(container.cacheId, container.process)
@@ -3014,27 +3017,26 @@ proc handleRead(pager: Pager; item: ConnectingContainer) =
   let stream = item.stream
   case item.state
   of ccsBeforeResult:
-    stream.withPacketReader r:
-      var res: int
+    var res = int(ceLoaderGone)
+    var msg: string
+    stream.withPacketReaderFire r:
       r.sread(res)
-      if res == 0:
+      if res == 0: # continue
         r.sread(item.outputId)
         inc item.state
         container.loadinfo = "Connected to " & $container.url &
           ". Downloading..."
         pager.onSetLoadInfo(container)
-        # continue
       else:
-        var msg: string
         r.sread(msg)
-        if msg == "":
-          msg = getLoaderErrorMessage(res)
-        pager.fail(container, msg)
-        # done
+    if res != 0: # done
+      if msg == "":
+        msg = getLoaderErrorMessage(res)
+      pager.fail(container, msg)
   of ccsBeforeStatus:
     let response = newResponse(item.res, container.request, stream,
       item.outputId)
-    stream.withPacketReader r:
+    stream.withPacketReaderFire r:
       r.sread(response.status)
       r.sread(response.headers)
     # done

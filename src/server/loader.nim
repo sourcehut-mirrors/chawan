@@ -167,6 +167,9 @@ type
   PushBufferResult = enum
     pbrDone, pbrUnregister
 
+  CommandResult = enum
+    cmdrDone, cmdrEOF
+
 proc pushBuffer(ctx: var LoaderContext; output: OutputHandle;
   buffer: LoaderBuffer; ignoreSuspension: bool): PushBufferResult
 
@@ -175,6 +178,18 @@ when defined(debug):
     var s = newString(buffer.len)
     copyMem(addr s[0], addr buffer.page[0], buffer.len)
     return s
+
+template withPacketWriter(client: ClientHandle; w, body, fallback: untyped) =
+  client.stream.withPacketWriter w:
+    body
+  do:
+    fallback
+
+template withPacketWriterReturnEOF(client: ClientHandle; w, body: untyped) =
+  client.withPacketWriter w:
+    body
+  do:
+    return cmdrEOF
 
 proc put(ctx: var LoaderContext; handle: LoaderHandle) =
   let fd = int(handle.stream.fd)
@@ -992,27 +1007,29 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
   let auth = if prevURL != nil: client.findAuth(request, prevURL) else: nil
   let env = setupEnv(cpath, request, contentLen, prevURL, config, auth)
   var pid: int
-  try:
-    let istream3 = if istream != nil: nil else: newPosixStream("/dev/null")
-    ctx.forkStream.withPacketWriter w:
-      if istream != nil:
-        w.sendFd(istream.fd)
-      else:
-        w.sendFd(istream3.fd)
-      w.sendFd(ostreamOut.fd)
-      w.swrite(ostreamOut2 != nil)
-      if ostreamOut2 != nil:
-        w.sendFd(ostreamOut2.fd)
-      w.swrite(env)
-      w.swrite(cpath.myDir)
-      w.swrite(cpath.cmd)
-      w.swrite(cpath.basename)
-    if istream3 != nil:
-      istream3.sclose()
+  let istream3 = if istream != nil: nil else: newPosixStream("/dev/null")
+  ctx.forkStream.withPacketWriter w:
+    if istream != nil:
+      w.sendFd(istream.fd)
+    else:
+      w.sendFd(istream3.fd)
+    w.sendFd(ostreamOut.fd)
+    w.swrite(ostreamOut2 != nil)
+    if ostreamOut2 != nil:
+      w.sendFd(ostreamOut2.fd)
+    w.swrite(env)
+    w.swrite(cpath.myDir)
+    w.swrite(cpath.cmd)
+    w.swrite(cpath.basename)
+  do:
+    pid = -1
+  if istream3 != nil:
+    istream3.sclose()
+  if pid != -1:
     ctx.forkStream.withPacketReader r:
       r.sread(pid)
-  except EOFError:
-    pid = -1
+    do:
+      pid = -1
   ostreamOut.sclose() # close write
   if ostreamOut2 != nil:
     ostreamOut2.sclose() # close write
@@ -1400,11 +1417,11 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig;
     if r != "":
       request.headers["Referer"] = r
 
-proc load(ctx: var LoaderContext; stream: SocketStream; request: Request;
-    client: ClientHandle; config: LoaderClientConfig) =
+proc load(ctx: var LoaderContext; request: Request; client: ClientHandle;
+    config: LoaderClientConfig): CommandResult =
   var pipev {.noinit.}: array[2, cint]
   var fail = false
-  stream.withPacketWriter w:
+  client.withPacketWriterReturnEOF w:
     if pipe(pipev) == 0:
       w.swrite(true)
       w.sendFd(pipev[0])
@@ -1422,37 +1439,39 @@ proc load(ctx: var LoaderContext; stream: SocketStream; request: Request;
     else:
       request.setupRequestDefaults(config, credentials)
       ctx.loadResource(client, config, request, handle)
+  cmdrDone
 
-proc load(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var PacketReader) =
+proc loadCmd(ctx: var LoaderContext; client: ClientHandle; r: var PacketReader):
+    CommandResult =
   var request: Request
   r.sread(request)
-  ctx.load(stream, request, client, client.config)
+  ctx.load(request, client, client.config)
 
-proc loadConfig(ctx: var LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var PacketReader) =
+proc loadConfigCmd(ctx: var LoaderContext; client: ClientHandle;
+    r: var PacketReader): CommandResult =
   var request: Request
   var config: LoaderClientConfig
   r.sread(request)
   r.sread(config)
-  ctx.load(stream, request, client, config)
+  ctx.load(request, client, config)
 
-proc getCacheFile(ctx: var LoaderContext; stream: SocketStream;
-    r: var PacketReader) =
+proc getCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var cacheId: int
   var sourcePid: int
   r.sread(cacheId)
   r.sread(sourcePid)
   let client = ctx.clientMap.getOrDefault(sourcePid, nil)
   let n = if client != nil: client.cacheMap.find(cacheId) else: -1
-  stream.withPacketWriter w:
+  rclient.withPacketWriterReturnEOF w:
     if n != -1:
       w.swrite(client.cacheMap[n].path)
     else:
       w.swrite("")
+  cmdrDone
 
-proc addClient(ctx: var LoaderContext; stream: SocketStream;
-    r: var PacketReader) =
+proc addClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var pid: int
   var config: LoaderClientConfig
   var clonedFrom: int
@@ -1461,7 +1480,9 @@ proc addClient(ctx: var LoaderContext; stream: SocketStream;
   r.sread(clonedFrom)
   assert pid notin ctx.clientMap
   var sv {.noinit.}: array[2, cint]
-  stream.withPacketWriter w:
+  var needsClose = false
+  var res = cmdrDone
+  rclient.withPacketWriter w:
     if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) == 0:
       let stream = newSocketStream(sv[0])
       let client = ClientHandle(stream: stream, pid: pid, config: config)
@@ -1479,38 +1500,47 @@ proc addClient(ctx: var LoaderContext; stream: SocketStream;
             client.authMap.add(it)
       w.swrite(true)
       w.sendFd(sv[1])
+      needsClose = true
     else:
       w.swrite(false)
-  discard close(sv[1])
+  do:
+    res = cmdrEOF
+  if needsClose:
+    discard close(sv[1])
+  res
 
-proc removeClient(ctx: var LoaderContext; stream: SocketStream;
-    r: var PacketReader) =
+proc removeClientCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var pid: int
   r.sread(pid)
   if pid in ctx.clientMap:
     let client = ctx.clientMap[pid]
     ctx.unregClient.add(client)
+  cmdrDone
 
-proc addCacheFile(ctx: var LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var PacketReader) =
+proc addCacheFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var outputId: int
   r.sread(outputId)
-  let output = ctx.findOutput(outputId, client)
-  stream.withPacketWriter w:
+  let output = ctx.findOutput(outputId, rclient)
+  rclient.withPacketWriter w:
     if output == nil:
       w.swrite(-1)
     else:
-      w.swrite(ctx.addCacheFile(client, output))
+      w.swrite(ctx.addCacheFile(rclient, output))
+  do:
+    return cmdrEOF
+  cmdrDone
 
-proc redirectToFile(ctx: var LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var PacketReader) =
+proc redirectToFileCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var outputId: int
   var targetPath: string
   var displayUrl: string
   r.sread(outputId)
   r.sread(targetPath)
   r.sread(displayUrl)
-  let output = ctx.findOutput(outputId, client)
+  let output = ctx.findOutput(outputId, rclient)
   var success = false
   if output != nil:
     var fileOutput: OutputHandle
@@ -1533,11 +1563,14 @@ proc redirectToFile(ctx: var LoaderContext; stream: SocketStream;
       contentLen: contentLen,
       startTime: startTime
     ))
-  stream.withPacketWriter w:
+  rclient.withPacketWriter w:
     w.swrite(success)
+  do:
+    return cmdrEOF
+  cmdrDone
 
-proc shareCachedItem(ctx: var LoaderContext; stream: SocketStream;
-    r: var PacketReader) =
+proc shareCachedItemCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   # share a cached file with another buffer. this is for newBufferFrom
   # (i.e. view source)
   var sourcePid: int # pid of source client
@@ -1556,49 +1589,67 @@ proc shareCachedItem(ctx: var LoaderContext; stream: SocketStream;
     let item = sourceClient.cacheMap[n]
     inc item.refc
     targetClient.cacheMap.add(item)
-  stream.withPacketWriter w:
+  rclient.withPacketWriter w:
     w.swrite(n != -1)
+  do:
+    return cmdrEOF
+  cmdrDone
 
-proc openCachedItem(ctx: LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var PacketReader) =
+proc openCachedItemCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   # open a cached item
   var id: int
   r.sread(id)
-  let (ps, _) = client.openCachedItem(id)
-  stream.withPacketWriter w:
+  let (ps, _) = rclient.openCachedItem(id)
+  rclient.withPacketWriter w:
     w.swrite(ps != nil)
     if ps != nil:
       w.sendFd(ps.fd)
+  do:
+    return cmdrEOF
   if ps != nil:
     ps.sclose()
+  cmdrDone
 
-proc passFd(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var PacketReader) =
+proc passFdCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var id: string
   r.sread(id)
   let fd = r.recvFd()
   #TODO cloexec?
-  client.passedFdMap.add((id, newPosixStream(fd)))
+  rclient.passedFdMap.add((id, newPosixStream(fd)))
+  cmdrDone
 
-proc addPipe(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var PacketReader) =
+proc addPipeCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var id: string
   r.sread(id)
   var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) == -1:
-    stream.withPacketWriter w:
+    rclient.withPacketWriter w:
       w.swrite(false)
+    do:
+      return cmdrEOF
   else:
-    stream.withPacketWriter w:
+    var success = true
+    rclient.withPacketWriter w:
       w.swrite(true)
       w.sendFd(pipefd[1])
+    do:
+      discard close(pipefd[0])
+      discard close(pipefd[1])
+      return cmdrEOF
     discard close(pipefd[1])
-    let ps = newPosixStream(pipefd[0])
-    ps.setCloseOnExec()
-    client.passedFdMap.add((id, ps))
+    if success:
+      let ps = newPosixStream(pipefd[0])
+      ps.setCloseOnExec()
+      rclient.passedFdMap.add((id, ps))
+    else:
+      discard close(pipefd[0])
+  cmdrDone
 
-proc removeCachedItem(ctx: var LoaderContext; stream: SocketStream;
-    client: ClientHandle; r: var PacketReader) =
+proc removeCachedItemCmd(ctx: var LoaderContext; client: ClientHandle;
+    r: var PacketReader): CommandResult =
   var id: int
   r.sread(id)
   let n = client.cacheMap.find(id)
@@ -1608,30 +1659,37 @@ proc removeCachedItem(ctx: var LoaderContext; stream: SocketStream;
     dec item.refc
     if item.refc == 0:
       discard unlink(cstring(item.path))
+  cmdrDone
 
-proc tee(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var PacketReader) =
+proc teeCmd(ctx: var LoaderContext; rclient: ClientHandle; r: var PacketReader):
+    CommandResult =
   var sourceId: int
   var targetPid: int
   r.sread(sourceId)
   r.sread(targetPid)
-  let outputIn = ctx.findOutput(sourceId, client)
+  let outputIn = ctx.findOutput(sourceId, rclient)
   let target = ctx.clientMap.getOrDefault(targetPid)
   var pipev {.noinit.}: array[2, cint]
+  var res = cmdrDone
   if target != nil and outputIn != nil and pipe(pipev) == 0:
     let ostream = newSocketStream(pipev[1])
     ostream.setBlocking(false)
     let output = ctx.tee(outputIn, ostream, target)
-    stream.withPacketWriter w:
+    rclient.withPacketWriter w:
       w.swrite(output.outputId)
       w.sendFd(pipev[0])
+    do:
+      res = cmdrEOF
     discard close(pipev[0])
   else:
-    stream.withPacketWriter w:
+    rclient.withPacketWriter w:
       w.swrite(-1)
+    do:
+      res = cmdrEOF
+  res
 
-proc addAuth(ctx: var LoaderContext; stream: SocketStream;
-    r: var PacketReader) =
+proc addAuthCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var url: URL
   r.sread(url)
   let origin = url.authOrigin
@@ -1652,86 +1710,75 @@ proc addAuth(ctx: var LoaderContext; stream: SocketStream;
     )
     ctx.authMap.add(item)
     ctx.pagerClient.authMap.add(item)
+  cmdrDone
 
-proc suspend(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var PacketReader) =
+proc suspendCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var ids: seq[int]
   r.sread(ids)
   for id in ids:
-    let output = ctx.findOutput(id, client)
+    let output = ctx.findOutput(id, rclient)
     if output != nil:
       output.suspended = true
       if output.registered:
         # do not waste cycles trying to push into output
         ctx.unregister(output)
+  cmdrDone
 
-proc resume(ctx: var LoaderContext; stream: SocketStream; client: ClientHandle;
-    r: var PacketReader) =
+proc resumeCmd(ctx: var LoaderContext; rclient: ClientHandle;
+    r: var PacketReader): CommandResult =
   var ids: seq[int]
   r.sread(ids)
   for id in ids:
-    let output = ctx.findOutput(id, client)
+    let output = ctx.findOutput(id, rclient)
     if output != nil:
       output.suspended = false
       if not output.isEmpty or output.istreamAtEnd:
         ctx.register(output)
+  cmdrDone
 
-proc readCommand(ctx: var LoaderContext; client: ClientHandle) =
-  let stream = SocketStream(client.stream)
-  try:
-    assert not client.stream.isend
-    stream.withPacketReader r:
-      var cmd: LoaderCommand
-      r.sread(cmd)
-      template privileged_command =
-        doAssert ctx.isPrivileged(client)
-      case cmd
-      of lcAddClient:
-        privileged_command
-        ctx.addClient(stream, r)
-      of lcAddAuth:
-        privileged_command
-        ctx.addAuth(stream, r)
-      of lcRemoveClient:
-        privileged_command
-        ctx.removeClient(stream, r)
-      of lcShareCachedItem:
-        privileged_command
-        ctx.shareCachedItem(stream, r)
-      of lcOpenCachedItem:
-        privileged_command
-        ctx.openCachedItem(stream, client, r)
-      of lcRedirectToFile:
-        privileged_command
-        ctx.redirectToFile(stream, client, r)
-      of lcLoadConfig:
-        privileged_command
-        ctx.loadConfig(stream, client, r)
-      of lcGetCacheFile:
-        privileged_command
-        ctx.getCacheFile(stream, r)
-      of lcPassFd:
-        privileged_command
-        ctx.passFd(stream, client, r)
-      of lcAddCacheFile:
-        ctx.addCacheFile(stream, client, r)
-      of lcRemoveCachedItem:
-        ctx.removeCachedItem(stream, client, r)
-      of lcAddPipe:
-        ctx.addPipe(stream, client, r)
-      of lcLoad:
-        ctx.load(stream, client, r)
-      of lcTee:
-        ctx.tee(stream, client, r)
-      of lcSuspend:
-        ctx.suspend(stream, client, r)
-      of lcResume:
-        ctx.resume(stream, client, r)
-      assert r.empty()
-  except EOFError:
-    # Receiving end died while reading, or sent less bytes than they
-    # promised.  Give up.
-    ctx.unregClient.add(client)
+const CommandMap = [
+  lcAddAuth: addAuthCmd,
+  lcAddCacheFile: addCacheFileCmd,
+  lcAddClient: addClientCmd,
+  lcAddPipe: addPipeCmd,
+  lcGetCacheFile: getCacheFileCmd,
+  lcLoad: loadCmd,
+  lcLoadConfig: loadConfigCmd,
+  lcOpenCachedItem: openCachedItemCmd,
+  lcPassFd: passFdCmd,
+  lcRedirectToFile: redirectToFileCmd,
+  lcRemoveCachedItem: removeCachedItemCmd,
+  lcRemoveClient: removeClientCmd,
+  lcResume: resumeCmd,
+  lcShareCachedItem: shareCachedItemCmd,
+  lcSuspend: suspendCmd,
+  lcTee: teeCmd,
+]
+
+const UnprivilegedCommands = {
+  lcAddCacheFile, lcAddPipe, lcLoad, lcRemoveCachedItem, lcResume, lcSuspend,
+  lcTee
+}
+const PrivilegedCommands = {LoaderCommand.low .. LoaderCommand.high} -
+  UnprivilegedCommands
+
+proc readCommand(ctx: var LoaderContext; rclient: ClientHandle) =
+  assert not rclient.stream.isend
+  var res = cmdrDone
+  var r: PacketReader
+  if rclient.stream.initPacketReader(r):
+    var cmd: LoaderCommand
+    r.sread(cmd)
+    if cmd in PrivilegedCommands:
+      doAssert ctx.isPrivileged(rclient)
+    res = CommandMap[cmd](ctx, rclient, r)
+    assert r.empty()
+  else:
+    res = cmdrEOF
+  case res
+  of cmdrDone: discard
+  of cmdrEOF: ctx.unregClient.add(rclient)
 
 proc exitLoader(ctx: LoaderContext) =
   for it in ctx.handleMap:
@@ -1856,6 +1903,7 @@ proc runFileLoader*(config: LoaderConfig; stream, forkStream: SocketStream) =
   for dir in ctx.config.cgiDir.mitems:
     if dir.len > 0 and dir[^1] != '/':
       dir &= '/'
+  var fail = false
   stream.withPacketReader r:
     var cmd: LoaderCommand
     r.sread(cmd)
@@ -1866,7 +1914,14 @@ proc runFileLoader*(config: LoaderConfig; stream, forkStream: SocketStream) =
     r.sread(config)
     stream.withPacketWriter w:
       w.swrite(true)
+    do:
+      fail = true
     ctx.pagerClient = ClientHandle(stream: stream, pid: pid, config: config)
+  do:
+    fail = true
+  if fail:
+    stderr.writeLine("cha loader: initialization error")
+    quit(1)
   ctx.register(ctx.pagerClient)
   ctx.put(ctx.pagerClient)
   ctx.loaderLoop()

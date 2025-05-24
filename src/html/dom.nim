@@ -645,7 +645,7 @@ proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
     ps: ps
   )
   window.pendingCanvasCtls.add(target.ctx2d)
-  ps.withPacketWriter w:
+  ps.withPacketWriterFire w:
     w.swrite(pcSetDimensions)
     w.swrite(target.bitmap.width)
     w.swrite(target.bitmap.height)
@@ -654,7 +654,7 @@ proc create2DContext(jctx: JSContext; target: HTMLCanvasElement;
 proc fillRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int;
     color: ARGBColor) =
   if ctx.ps != nil:
-    ctx.ps.withPacketWriter w:
+    ctx.ps.withPacketWriterFire w:
       w.swrite(pcFillRect)
       w.swrite(x1)
       w.swrite(y1)
@@ -665,7 +665,7 @@ proc fillRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int;
 proc strokeRect(ctx: CanvasRenderingContext2D; x1, y1, x2, y2: int;
     color: ARGBColor) =
   if ctx.ps != nil:
-    ctx.ps.withPacketWriter w:
+    ctx.ps.withPacketWriterFire w:
       w.swrite(pcStrokeRect)
       w.swrite(x1)
       w.swrite(y1)
@@ -677,7 +677,7 @@ proc fillPath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor;
     fillRule: CanvasFillRule) =
   if ctx.ps != nil:
     let lines = path.getLineSegments()
-    ctx.ps.withPacketWriter w:
+    ctx.ps.withPacketWriterFire w:
       w.swrite(pcFillPath)
       w.swrite(lines)
       w.swrite(color)
@@ -686,7 +686,7 @@ proc fillPath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor;
 proc strokePath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor) =
   if ctx.ps != nil:
     let lines = path.getLines()
-    ctx.ps.withPacketWriter w:
+    ctx.ps.withPacketWriterFire w:
       w.swrite(pcStrokePath)
       w.swrite(lines)
       w.swrite(color)
@@ -694,7 +694,7 @@ proc strokePath(ctx: CanvasRenderingContext2D; path: Path; color: ARGBColor) =
 proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
     color: ARGBColor; align: CanvasTextAlign) =
   if ctx.ps != nil:
-    ctx.ps.withPacketWriter w:
+    ctx.ps.withPacketWriterFire w:
       w.swrite(pcFillText)
       w.swrite(text)
       w.swrite(x)
@@ -705,7 +705,7 @@ proc fillText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
 proc strokeText(ctx: CanvasRenderingContext2D; text: string; x, y: float64;
     color: ARGBColor; align: CanvasTextAlign) =
   if ctx.ps != nil:
-    ctx.ps.withPacketWriter w:
+    ctx.ps.withPacketWriterFire w:
       w.swrite(pcStrokeText)
       w.swrite(text)
       w.swrite(x)

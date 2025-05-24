@@ -119,7 +119,7 @@ type
     map: seq[BufferIfaceItem]
     packetid: int
     len: int
-    auxLen: int
+    nfds: int
     stream*: BufStream
 
   BufferConfig* = object
@@ -149,9 +149,11 @@ proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element):
 proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
   if iface.len != 0:
     let promise = Promise[T](promise)
-    var r = iface.stream.initReader(iface.len, iface.auxLen)
-    r.sread(promise.res)
+    var r: PacketReader
+    if iface.stream.initReader(r, iface.len, iface.nfds):
+      r.sread(promise.res)
     iface.len = 0
+    iface.nfds = 0
 
 proc addPromise[T](iface: BufferInterface; id: int): Promise[T] =
   let promise = Promise[T]()
@@ -192,15 +194,17 @@ proc cloneInterface*(stream: BufStream): BufferInterface =
   # We have just fork'ed the buffer process inside an interface function,
   # from which the new buffer is going to return as well. So we must also
   # consume the return value of the clone function, which is the pid 0.
-  var pid: int
-  stream.withPacketReader r:
+  var pid = -1
+  stream.withPacketReaderFire r:
     r.sread(iface.packetid)
     r.sread(pid)
+  if pid == -1:
+    return nil
   return iface
 
-proc resolve*(iface: BufferInterface; packetid, len, auxLen: int) =
+proc resolve*(iface: BufferInterface; packetid, len, nfds: int) =
   iface.len = len
-  iface.auxLen = auxLen
+  iface.nfds = nfds
   iface.resolve(packetid)
   # Protection against accidentally not exhausting data available to read,
   # by setting len to 0 in getFromStream.
@@ -247,7 +251,7 @@ proc buildInterfaceProc(fun: NimNode; funid: string):
     let s = params2[i][0] # sym e.g. url
     writeStmts.add(quote do: writer.swrite(`s`))
   let body = quote do:
-    `thisval`.stream.withPacketWriter writer:
+    `thisval`.stream.withPacketWriterFire writer:
       writer.swrite(BufferCommand.`nup`)
       writer.swrite(`thisval`.packetid)
       `writeStmts`
@@ -712,6 +716,8 @@ proc resolveTask(buffer: Buffer; cmd: BufferCommand) =
   assert packetid != 0
   buffer.pstream.withPacketWriter wt:
     wt.swrite(packetid)
+  do:
+    quit(1)
   buffer.tasks[cmd] = 0
 
 proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
@@ -720,6 +726,8 @@ proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
   buffer.pstream.withPacketWriter wt:
     wt.swrite(packetid)
     wt.swrite(res)
+  do:
+    quit(1)
   buffer.tasks[cmd] = 0
 
 proc maybeReshape(buffer: Buffer) =
@@ -882,6 +890,14 @@ proc rewind(buffer: Buffer; data: InputData; offset: int;
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
 proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
+  var pstream: SocketStream
+  var pins, pouts: PosixStream
+  buffer.pstream.withPacketReader r:
+    pstream = newSocketStream(r.recvFd())
+    pins = newPosixStream(r.recvFd())
+    pouts = newPosixStream(r.recvFd())
+  do: # EOF, pager died
+    return -1
   # suspend outputs before tee'ing
   var ids: seq[int] = @[]
   for it in buffer.loader.ongoing:
@@ -893,13 +909,7 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
   for it in buffer.loader.ongoing:
     if it.response.onRead != nil:
       buffer.loader.onRead(it.fd)
-  var pstream: SocketStream
-  var pins, pouts: PosixStream
-  buffer.pstream.withPacketReader r:
-    pstream = newSocketStream(r.recvFd())
-    pins = newPosixStream(r.recvFd())
-    pouts = newPosixStream(r.recvFd())
-  let pid = fork()
+  var pid = fork()
   if pid == -1:
     buffer.window.console.error("Failed to clone buffer.")
     return -1
@@ -950,6 +960,8 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     buffer.loader.controlStream.sclose()
     buffer.pstream.withPacketReader r:
       buffer.loader.controlStream = newSocketStream(r.recvFd())
+    do: # EOF, pager died
+      quit(1)
     buffer.pollData.register(buffer.pstream.fd, POLLIN)
     # must reconnect after the new client is set up, or the client pids get
     # mixed up.
@@ -966,8 +978,11 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     pouts.sclose()
     pstream.sclose()
     # We must wait for child to tee its ongoing streams.
-    let c = pins.readChar()
-    assert c == char(0)
+    var c: char
+    if pins.readData(addr c, 1) == 1:
+      assert c == char(0)
+    else:
+      pid = -1
     pins.sclose()
     buffer.loader.resume(ids)
     return pid
@@ -1294,6 +1309,8 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
   if hasFd:
     buffer.pstream.withPacketReader r:
       fd = r.recvFd()
+    do: # EOF, pager died
+      return nil
   if buffer.document.focus != nil:
     let focus = buffer.document.focus
     buffer.restoreFocus()
@@ -1791,12 +1808,16 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
       resolve.add(quote do:
         buffer.pstream.withPacketWriter wt:
           wt.swrite(`packetid`)
+        do:
+          quit(1)
       )
     else:
       resolve.add(quote do:
         buffer.pstream.withPacketWriter wt:
           wt.swrite(`packetid`)
           wt.swrite(`rval`)
+        do:
+          quit(1)
       )
     if v.istask:
       let en = v.ename
@@ -1813,23 +1834,20 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     switch.add(ofbranch)
   return switch
 
-proc readCommand(buffer: Buffer) =
+proc readCommand(buffer: Buffer): bool =
   buffer.pstream.withPacketReader r:
     var cmd: BufferCommand
     var packetid: int
     r.sread(cmd)
     r.sread(packetid)
     bufferDispatcher(ProxyFunctions, buffer, cmd, packetid, r)
+  do: # EOF, pager died
+    return false
+  true
 
 proc handleRead(buffer: Buffer; fd: int): bool =
   if fd == buffer.pstream.fd:
-    try:
-      buffer.readCommand()
-    except EOFError:
-      #eprint "EOF error", $buffer.url & "\nMESSAGE:",
-      #       getCurrentExceptionMsg() & "\n",
-      #       getStackTrace(getCurrentException())
-      return false
+    return buffer.readCommand()
   elif (let data = buffer.loader.get(fd); data != nil):
     if data of InputData:
       buffer.onload(InputData(data))
