@@ -4840,7 +4840,8 @@ proc remove*(node: Node; suppressObservers: bool) =
     if element.document != nil:
       if element of HTMLStyleElement or element of HTMLLinkElement:
         element.document.applyAuthorSheets()
-      element.applyStyleDependencies(DependencyInfo.default)
+      for desc in element.elementsIncl:
+        desc.applyStyleDependencies(DependencyInfo.default)
   #TODO assigned, shadow root, shadow root again, custom nodes, registered
   # observers
   #TODO not suppress observers => queue tree mutation record
