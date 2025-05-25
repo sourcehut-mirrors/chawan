@@ -314,7 +314,9 @@ proc requestAnimationFrame(ctx: JSContext; window: Window;
   let handler = ctx.newFunction(["callback"], """
 callback(new Event("").timeStamp);
 """)
-  return ctx.toJS(window.setTimeout(handler, 0, callback))
+  let res = ctx.toJS(window.setTimeout(handler, 0, callback))
+  JS_FreeValue(ctx, handler)
+  res
 
 proc getComputedStyle(window: Window; element: Element;
     pseudoElt = none(string)): CSSStyleDeclaration {.jsfunc.} =
