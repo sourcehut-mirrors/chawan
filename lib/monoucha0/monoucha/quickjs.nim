@@ -451,6 +451,7 @@ proc JS_GetContextOpaque*(ctx: JSContext): pointer
 proc JS_GetRuntime*(ctx: JSContext): JSRuntime
 proc JS_SetClassProto*(ctx: JSContext; class_id: JSClassID; obj: JSValue)
 proc JS_GetClassProto*(ctx: JSContext; class_id: JSClassID): JSValue
+proc JS_GetFunctionProto*(ctx: JSContext): JSValue
 
 # the following functions are used to select the intrinsic object to save memory
 proc JS_NewContextRaw*(rt: JSRuntime): JSContext
