@@ -309,14 +309,14 @@ proc consumeKey(state: var TomlParser; buf: openArray[char]):
       str = ?state.consumeString(buf, c)
     of '=', ']':
       if str.len != 0:
-        res.add(str)
+        res.add(move(str))
         str = ""
       return ok(move(res))
     of '.':
       if str.len == 0: #TODO empty strings are allowed, only empty keys aren't
         return state.err("redundant dot")
       else:
-        res.add(str)
+        res.add(move(str))
         str = ""
     of ' ', '\t': discard
     of '\n':
@@ -519,16 +519,15 @@ proc consumeInlineTable(state: var TomlParser; buf: openArray[char]):
       haskey = false
       if c == '}':
         return ok(res)
+    elif val != nil:
+      return state.err("missing comma")
+    elif not haskey:
+      state.reconsume()
+      key = ?state.consumeKey(buf)
+      haskey = true
     else:
-      if val != nil:
-        return state.err("missing comma")
-      if not haskey:
-        state.reconsume()
-        key = ?state.consumeKey(buf)
-        haskey = true
-      else:
-        state.reconsume()
-        val = ?state.consumeValue(buf)
+      state.reconsume()
+      val = ?state.consumeValue(buf)
   return state.err("unexpected end of file")
 
 proc consumeValue(state: var TomlParser; buf: openArray[char]): TomlResult =

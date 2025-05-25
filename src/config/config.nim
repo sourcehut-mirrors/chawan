@@ -313,10 +313,8 @@ func names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
   return list
 
 proc readUserStylesheet(outs: var string; dir, file: string): Err[string] =
-  var x = ChaPath(file).unquote(dir)
-  if x.isNone:
-    return err(move(x.error))
-  let ps = newPosixStream(x.get)
+  let x = ?ChaPath(file).unquote(dir)
+  let ps = newPosixStream(x)
   if ps != nil:
     outs &= ps.readAll()
     ps.sclose()
@@ -482,13 +480,13 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var seq[T]; v: TomlValue;
   if v.t != tvtArray:
     var y: T
     ?ctx.parseConfigValue(y, v, k)
-    x = @[y]
+    x = @[move(y)]
   else:
     x.setLen(0)
     for i in 0 ..< v.a.len:
       var y: T
       ?ctx.parseConfigValue(y, v.a[i], k & "[" & $i & "]")
-      x.add(y)
+      x.add(move(y))
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var Charset; v: TomlValue;
@@ -569,7 +567,7 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
   else:
     var y: T
     ?ctx.parseConfigValue(y, v, k)
-    x = some(y)
+    x = some(move(y))
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;

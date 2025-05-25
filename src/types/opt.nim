@@ -75,12 +75,12 @@ func get*[T, E](res: Result[T, E]): lent T {.inline.} = res.val
 func get*[T, E](res: var Result[T, E]): var T = res.val
 
 func get*[T, E](res: Result[T, E]; v: T): T =
-  {.push checks: off.}
   if res.has:
+    {.push checks: off.}
     result = res.val
+    {.pop.}
   else:
     result = v
-  {.pop.}
 
 func uncheckedGet[T, E](res: var Result[T, E]): var T {.inline.} =
   {.push checks: off.}
@@ -93,16 +93,14 @@ template errType*[T, E](res: type Result[T, E]): auto = E
 
 template `?`*[T, E](res: Result[T, E]): auto =
   var x = res # for when res is a funcall
-  {.push checks: off.}
   if not x.has:
     when typeof(result) is Result[T, E]:
       return move(x)
     elif not (E is void) and typeof(result).errType is E:
+      {.push checks: off.}
       return err(move(x.error))
+      {.pop.}
     else:
       return err()
-  {.pop.}
-  when not (T is void):
+  when T isnot void:
     move(x.uncheckedGet)
-  else:
-    discard
