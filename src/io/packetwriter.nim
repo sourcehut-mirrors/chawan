@@ -12,7 +12,6 @@ import std/tables
 
 import io/dynstream
 import types/color
-import types/opt
 
 type PacketWriter* = object
   buffer*: seq[uint8]
@@ -32,7 +31,6 @@ proc swrite*[U, V](w: var PacketWriter; t: Table[U, V])
 proc swrite*(w: var PacketWriter; obj: object)
 proc swrite*(w: var PacketWriter; obj: ref object)
 proc swrite*[T](w: var PacketWriter; o: Option[T])
-proc swrite*[T, E](w: var PacketWriter; o: Result[T, E])
 proc swrite*(w: var PacketWriter; c: ARGBColor)
 proc swrite*(w: var PacketWriter; c: CellColor)
 
@@ -142,15 +140,6 @@ proc swrite*[T](w: var PacketWriter; o: Option[T]) =
   w.swrite(o.isSome)
   if o.isSome:
     w.swrite(o.get)
-
-proc swrite*[T, E](w: var PacketWriter; o: Result[T, E]) =
-  w.swrite(o.isSome)
-  if o.isSome:
-    when not (T is void):
-      w.swrite(o.get)
-  else:
-    when not (E is void):
-      w.swrite(o.error)
 
 proc swrite*(w: var PacketWriter; c: ARGBColor) =
   w.swrite(uint32(c))

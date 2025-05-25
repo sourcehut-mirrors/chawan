@@ -1768,17 +1768,13 @@ const PrivilegedCommands = {LoaderCommand.low .. LoaderCommand.high} -
 
 proc readCommand(ctx: var LoaderContext; rclient: ClientHandle) =
   assert not rclient.stream.isend
-  var res = cmdrDone
-  var r: PacketReader
-  if rclient.stream.initPacketReader(r):
+  var res = cmdrEOF
+  rclient.stream.withPacketReaderFire r:
     var cmd: LoaderCommand
     r.sread(cmd)
     if cmd in PrivilegedCommands:
       doAssert ctx.isPrivileged(rclient)
     res = CommandMap[cmd](ctx, rclient, r)
-    assert r.empty()
-  else:
-    res = cmdrEOF
   case res
   of cmdrDone: discard
   of cmdrEOF: ctx.unregClient.add(rclient)
@@ -1913,8 +1909,10 @@ proc runFileLoader*(config: LoaderConfig; stream, forkStream: SocketStream) =
     doAssert cmd == lcAddClient
     var pid: int
     var config: LoaderClientConfig
+    var clonedFrom: int
     r.sread(pid)
     r.sread(config)
+    r.sread(clonedFrom)
     stream.withPacketWriter w:
       w.swrite(true)
     do:

@@ -145,7 +145,10 @@ proc startRequest*(loader: FileLoader; request: Request;
     return nil
   var fd = cint(-1)
   loader.withPacketReaderFire r:
-    fd = r.recvFd()
+    var success: bool
+    r.sread(success)
+    if success:
+      fd = r.recvFd()
   if fd != -1:
     return newPosixStream(fd)
   nil

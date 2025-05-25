@@ -1,15 +1,16 @@
+{.push raises: [].}
+
 import std/options
 import std/posix
 import std/tables
 
 import io/dynstream
 import types/color
-import types/opt
 
 type PacketReader* = object
   buffer: seq[uint8]
   bufIdx: int
-  fds: seq[cint] #TODO assert on unused ones
+  fds: seq[cint]
 
 proc sread*(r: var PacketReader; n: out SomeNumber)
 proc sread*[T](r: var PacketReader; s: out set[T])
@@ -23,7 +24,6 @@ proc sread*[U, V](r: var PacketReader; t: out Table[U, V])
 proc sread*(r: var PacketReader; obj: var object)
 proc sread*(r: var PacketReader; obj: var ref object)
 proc sread*[T](r: var PacketReader; o: out Option[T])
-proc sread*[T, E](r: var PacketReader; o: out Result[T, E])
 proc sread*(r: var PacketReader; c: var ARGBColor)
 proc sread*(r: var PacketReader; c: var CellColor)
 
@@ -55,26 +55,23 @@ proc initPacketReader*(stream: DynStream; r: var PacketReader): bool =
     return false
   return stream.initReader(r, len[0], len[1])
 
+proc assertEmpty(r: var PacketReader) =
+  assert r.bufIdx == r.buffer.len and r.fds.len == 0
+
 template withPacketReader*(stream: DynStream; r, body, fallback: untyped) =
   block:
     var r: PacketReader
     if stream.initPacketReader(r):
       body
-      assert r.fds.len == 0
+      r.assertEmpty()
     else:
       fallback
 
 template withPacketReaderFire*(stream: DynStream; r, body: untyped) =
-  block:
-    var r: PacketReader
-    if stream.initPacketReader(r):
-      body
-      assert r.fds.len == 0
-    else:
-      discard
-
-proc empty*(r: var PacketReader): bool =
-  return r.bufIdx == r.buffer.len
+  stream.withPacketReader r:
+    body
+  do:
+    discard
 
 proc readData*(r: var PacketReader; buffer: pointer; len: int) =
   assert r.bufIdx + len <= r.buffer.len
@@ -168,26 +165,10 @@ proc sread*[T](r: var PacketReader; o: out Option[T]) =
   else:
     o = none(T)
 
-proc sread*[T, E](r: var PacketReader; o: out Result[T, E]) =
-  var x: bool
-  r.sread(x)
-  if x:
-    when T isnot void:
-      var m: T
-      r.sread(m)
-      o.ok(m)
-    else:
-      o.ok()
-  else:
-    when E isnot void:
-      var e: E
-      r.sread(e)
-      o.err(e)
-    else:
-      o.err()
-
 proc sread*(r: var PacketReader; c: var ARGBColor) =
   r.sread(uint32(c))
 
 proc sread*(r: var PacketReader; c: var CellColor) =
   r.sread(uint32(c))
+
+{.pop.}
