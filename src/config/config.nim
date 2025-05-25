@@ -279,7 +279,7 @@ func getRealKey(key: string): string =
     realk &= 'M'
   if skip:
     realk &= '\\'
-  return realk
+  move(realk)
 
 proc getter(ctx: JSContext; a: var ActionMap; s: string): JSValue
     {.jsgetownprop.} =
@@ -313,9 +313,9 @@ func names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
   return list
 
 proc readUserStylesheet(outs: var string; dir, file: string): Err[string] =
-  let x = ChaPath(file).unquote(dir)
+  var x = ChaPath(file).unquote(dir)
   if x.isNone:
-    return err(x.error)
+    return err(move(x.error))
   let ps = newPosixStream(x.get)
   if ps != nil:
     outs &= ps.readAll()

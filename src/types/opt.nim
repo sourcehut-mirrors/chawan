@@ -15,13 +15,13 @@ type
       of true:
         discard
       else:
-        ex*: E
+        error*: E
     else: # result
       case has*: bool
       of true:
         val*: T
       else:
-        ex*: E
+        error*: E
 
   Opt*[T] = Result[T, void]
 
@@ -40,10 +40,10 @@ template ok*(): auto =
   ok(typeof(result))
 
 template err*[T, E](t: type Result[T, E]; e: E): Result[T, E] =
-  Result[T, E](has: false, ex: e)
+  Result[T, E](has: false, error: e)
 
 template err*[T](t: type Result[T, ref object]): auto =
-  t(has: false, ex: nil)
+  t(has: false, error: nil)
 
 template err*[T](t: type Result[T, void]): Result[T, void] =
   Result[T, void](has: false)
@@ -67,29 +67,42 @@ template opt*[T, E: not void](r: Result[T, E]): Opt[T] =
     Opt[T].err()
 
 template isSome*(res: Result): bool = res.has
+
 template isNone*(res: Result): bool = not res.has
+
 func get*[T, E](res: Result[T, E]): lent T {.inline.} = res.val
+
 func get*[T, E](res: var Result[T, E]): var T = res.val
+
 func get*[T, E](res: Result[T, E]; v: T): T =
+  {.push checks: off.}
   if res.has:
-    res.val
+    result = res.val
   else:
-    v
-func error*[T, E](res: Result[T, E]): lent E {.inline.} = res.ex
+    result = v
+  {.pop.}
+
+func uncheckedGet[T, E](res: var Result[T, E]): var T {.inline.} =
+  {.push checks: off.}
+  result = res.val
+  {.pop.}
+
 template valType*[T, E](res: type Result[T, E]): auto = T
+
 template errType*[T, E](res: type Result[T, E]): auto = E
 
 template `?`*[T, E](res: Result[T, E]): auto =
-  let x = res # for when res is a funcall
-  if x.has:
-    when not (T is void):
-      x.get
-    else:
-      discard
-  else:
+  var x = res # for when res is a funcall
+  {.push checks: off.}
+  if not x.has:
     when typeof(result) is Result[T, E]:
-      return x
+      return move(x)
     elif not (E is void) and typeof(result).errType is E:
-      return err(x.error)
+      return err(move(x.error))
     else:
       return err()
+  {.pop.}
+  when not (T is void):
+    move(x.uncheckedGet)
+  else:
+    discard

@@ -240,7 +240,7 @@ proc consumeString(state: var TomlParser; buf: openArray[char]; first: char):
       if c == '\n':
         inc state.line
       res &= c
-  return ok(res)
+  ok(move(res))
 
 proc consumeBare(state: var TomlParser; buf: openArray[char]; c: char):
     Result[string, TomlError] =
@@ -256,7 +256,7 @@ proc consumeBare(state: var TomlParser; buf: openArray[char]; c: char):
       res &= c
     else:
       return state.err("invalid value in token: " & c)
-  return ok(res)
+  ok(move(res))
 
 proc flushLine(state: var TomlParser): Err[TomlError] =
   if state.node != nil:
@@ -311,7 +311,7 @@ proc consumeKey(state: var TomlParser; buf: openArray[char]):
       if str.len != 0:
         res.add(str)
         str = ""
-      return ok(res)
+      return ok(move(res))
     of '.':
       if str.len == 0: #TODO empty strings are allowed, only empty keys aren't
         return state.err("redundant dot")
