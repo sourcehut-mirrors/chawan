@@ -179,12 +179,12 @@ of displaying it in a buffer.<br>
 </tr>
 
 <tr>
-<td>`nextBuffer()`, `prevBuffer()`, `nextSiblingBufer()`, `prevSiblingBuffer()`,
-`parentBuffer()`</td>
+<td>`nextBuffer()`, `prevBuffer()`, `nextSiblingBuffer()`,
+`prevSiblingBuffer()`, `parentBuffer()`</td>
 <td>Traverse the buffer tree.<br>
 `nextBuffer()`, `prevBuffer()` do a depth-first traversal;
-``nextSiblingBufer()`, `prevSiblingBuffer()` cycle through siblings, and
-`parentBuffer()` returns to the parent.
+``nextSiblingBuffer()`, `prevSiblingBuffer()` cycle through siblings,
+and `parentBuffer()` returns to the parent.
 </td>
 </tr>
 

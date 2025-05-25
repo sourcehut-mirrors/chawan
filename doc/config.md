@@ -1306,7 +1306,7 @@ unspecified.
 </tr>
 
 <tr>
-<td><kbd>0</kbd></td>
+<td><kbd>0</kbd>/<kbd>Home</kbd></td>
 <td>`cmd.buffer.cursorLineBegin`</td>
 <td>Move the cursor to the first cell of the line.</td>
 </tr>
@@ -1318,7 +1318,7 @@ unspecified.
 </tr>
 
 <tr>
-<td><kbd>&dollar;</kbd></td>
+<td><kbd>&dollar;</kbd>/<kbd>End</kbd></td>
 <td>`cmd.buffer.cursorLineEnd`</td>
 <td>Move the cursor to the last cell of the line.</td>
 </tr>
@@ -1612,7 +1612,7 @@ position.</td>
 </tr>
 
 <tr>
-<td><kbd>C-a</kbd>, <kbd>C-e</kbd></td>
+<td><kbd>C-a</kbd>/<kbd>Home</kbd>, <kbd>C-e</kbd>/<kbd>End</kbd></td>
 <td>`cmd.line.begin`, `cmd.line.end`</td>
 <td>Move cursor to the beginning/end of the line.</td>
 </tr>
