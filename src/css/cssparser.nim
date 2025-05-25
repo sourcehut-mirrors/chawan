@@ -273,10 +273,10 @@ proc consumeNumber(iq: openArray[char]; n: var int):
 proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
   let (isInt, val) = iq.consumeNumber(n)
   if iq.startsWithIdentSequence(n):
-    let unit = iq.consumeIdentSequence(n)
+    var unit = iq.consumeIdentSequence(n)
     if isInt:
-      return CSSToken(t: cttIDimension, nvalue: val, unit: unit)
-    return CSSToken(t: cttDimension, nvalue: val, unit: unit)
+      return CSSToken(t: cttIDimension, nvalue: val, unit: move(unit))
+    return CSSToken(t: cttDimension, nvalue: val, unit: move(unit))
   if n < iq.len and iq[n] == '%':
     inc n
     return CSSToken(t: cttPercentage, nvalue: val)
@@ -329,7 +329,7 @@ proc consumeURL(iq: openArray[char]; n: var int): CSSToken =
   return res
 
 proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
-  let s = iq.consumeIdentSequence(n)
+  var s = iq.consumeIdentSequence(n)
   if s.equalsIgnoreCase("url") and n < iq.len and iq[n] == '(':
     inc n
     while n + 1 < iq.len and iq[n] in AsciiWhitespace and
@@ -338,12 +338,12 @@ proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
     if n < iq.len and iq[n] in {'"', '\''} or
         n + 1 < iq.len and iq[n] in {'"', '\''} + AsciiWhitespace and
         iq[n + 1] in {'"', '\''}:
-      return CSSToken(t: cttFunction, value: s)
+      return CSSToken(t: cttFunction, value: move(s))
     return iq.consumeURL(n)
   if n < iq.len and iq[n] == '(':
     inc n
-    return CSSToken(t: cttFunction, value: s)
-  return CSSToken(t: cttIdent, value: s)
+    return CSSToken(t: cttFunction, value: move(s))
+  return CSSToken(t: cttIdent, value: move(s))
 
 proc nextCSSToken*(iq: openArray[char]; n: var int): bool =
   var m = n
@@ -425,8 +425,7 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
       return CSSToken(t: cttDelim, cvalue: c)
   of '@':
     if iq.startsWithIdentSequence(n):
-      let name = iq.consumeIdentSequence(n)
-      return CSSToken(t: cttAtKeyword, value: name)
+      return CSSToken(t: cttAtKeyword, value: iq.consumeIdentSequence(n))
     else:
       return CSSToken(t: cttDelim, cvalue: c)
   of '[': return CSSToken(t: cttLbracket)

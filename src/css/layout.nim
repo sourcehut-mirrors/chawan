@@ -1292,15 +1292,15 @@ proc addWordEOL(fstate: var FlowState; state: var InlineState): bool =
   if fstate.word.run.str == "":
     return false
   if fstate.wrappos != -1:
-    let leftstr = fstate.word.run.str.substr(fstate.wrappos)
+    var leftstr = fstate.word.run.str.substr(fstate.wrappos)
     fstate.word.run.str.setLen(fstate.wrappos)
     if fstate.hasshy:
       const shy = "\u00AD" # soft hyphen
       fstate.word.run.str &= shy
       fstate.hasshy = false
     let wrapped = fstate.addWord(state)
-    fstate.word.run.str = leftstr
     fstate.word.size.w = leftstr.width() * fstate.cellWidth
+    fstate.word.run.str = move(leftstr)
     return wrapped
   else:
     return fstate.addWord(state)
