@@ -1345,15 +1345,6 @@ proc finalize(collection: HTMLCollection) {.jsfin.} =
 proc finalize(collection: NodeList) {.jsfin.} =
   collection.finalize0()
 
-proc finalize(collection: HTMLFormControlsCollection) {.jsfin.} =
-  collection.finalize0()
-
-proc finalize(collection: HTMLOptionsCollection) {.jsfin.} =
-  collection.finalize0()
-
-proc finalize(collection: RadioNodeList) {.jsfin.} =
-  collection.finalize0()
-
 proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
 

@@ -155,9 +155,10 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
     let classid = JS_GetClassID(val)
     let opaque = JS_GetOpaque(val, classid)
     if opaque != nil:
-      let nimt = rtOpaque.inverseTypemap.getOrDefault(classid)
-      rtOpaque.fins.withValue(nimt, fin):
-        fin[](rt, opaque)
+      let nimt = rtOpaque.toNimType(classid)
+      rtOpaque.fins.withValue(nimt, fins):
+        for fin in fins[]:
+          fin(rt, opaque)
     JS_SetOpaque(val, nil)
     JS_FreeValueRT(rt, val)
   # GC will run again now
@@ -270,8 +271,10 @@ proc runJSJobs*(rt: JSRuntime): Result[void, JSContext] =
 # Since every prototype has a list of all its ancestor's LegacyUnforgeable
 # functions, it is sufficient to simply merge the new list of new classes
 # with their parent's list to achieve this.
-proc addClassUnforgeable(ctx: JSContext; proto: JSValueConst;
-    classid, parent: JSClassID; ourUnforgeable: JSFunctionList) =
+# We handle finalizers similarly.
+proc addClassUnforgeableAndFinalizer(ctx: JSContext; proto: JSValueConst;
+    classid, parent: JSClassID; ourUnforgeable: JSFunctionList;
+    nimt: pointer; finalizer: JSFinalizerFunction) =
   let ctxOpaque = ctx.getOpaque()
   var merged = @ourUnforgeable
   if int(parent) < ctxOpaque.unforgeable.len:
@@ -283,6 +286,15 @@ proc addClassUnforgeable(ctx: JSContext; proto: JSValueConst;
     let ufp0 = addr ctxOpaque.unforgeable[int(classid)][0]
     let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
     JS_SetPropertyFunctionList(ctx, proto, ufp, cint(merged.len))
+  var fins: seq[JSFinalizerFunction] = @[]
+  if finalizer != nil:
+    fins.add(finalizer)
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  let parentt = rtOpaque.toNimType(parent)
+  if parentt != nil:
+    fins.add(rtOpaque.fins.getOrDefault(parentt))
+  if fins.len > 0:
+    rtOpaque.fins[nimt] = move(fins)
 
 proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID): JSValue =
   if parent != 0:
@@ -313,12 +325,12 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     raise newException(Defect, "Failed to allocate JS class: " &
       $cdef.class_name)
   ctxOpaque.typemap[nimt] = result
+  if int(result) >= rtOpaque.inverseTypemap.len:
+    rtOpaque.inverseTypemap.setLen(int(result) + 1)
   rtOpaque.inverseTypemap[result] = nimt
   if ctxOpaque.parents.len <= int(result):
     ctxOpaque.parents.setLen(int(result) + 1)
   ctxOpaque.parents[result] = parent
-  if finalizer != nil:
-    rtOpaque.fins[nimt] = finalizer
   let proto = ctx.newProtoFromParentClass(parent)
   if funcs.len > 0:
     # We avoid funcs being GC'ed by putting the list in rtOpaque.
@@ -338,7 +350,8 @@ func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   doAssert ctx.definePropertyC(proto, ctxOpaque.symRefs[jsyToStringTag],
     JS_DupValue(ctx, news)) == dprSuccess
   JS_SetClassProto(ctx, result, proto)
-  ctx.addClassUnforgeable(proto, result, parent, unforgeable)
+  ctx.addClassUnforgeableAndFinalizer(proto, result, parent, unforgeable,
+    nimt, finalizer)
   if asglobal:
     let global = ctxOpaque.global
     assert ctxOpaque.gclass == 0
@@ -1252,15 +1265,17 @@ proc registerPragmas(stmts: NimNode; info: RegistryInfo; t: NimNode) =
           )
 
 proc nim_finalize_for_js*(obj, typeptr: pointer) =
-  var fin: JSFinalizerFunction = nil
+  var fins: ptr seq[JSFinalizerFunction] = nil
   for rt in runtimes:
     let rtOpaque = rt.getOpaque()
-    fin = rtOpaque.fins.getOrDefault(typeptr)
+    rtOpaque.fins.withValue(typeptr, p):
+      fins = p
     rtOpaque.plist.withValue(obj, v):
       let p = v[].p
       let val = JS_MKPTR(JS_TAG_OBJECT, p)
-      if fin != nil:
-        fin(rt, obj)
+      if fins != nil:
+        for fin in fins[]:
+          fin(nil, obj)
       JS_SetOpaque(val, nil)
       rtOpaque.plist.del(obj)
       if rtOpaque.destroying == obj:
@@ -1272,8 +1287,9 @@ proc nim_finalize_for_js*(obj, typeptr: pointer) =
   # No JSValue exists for the object, but it likely still expects us to
   # free it.
   # We pass nil as the runtime, since that's the only sensible solution.
-  if fin != nil:
-    fin(nil, obj)
+  if fins != nil:
+    for fin in fins[]:
+      fin(nil, obj)
 
 type
   TabGetSet* = object

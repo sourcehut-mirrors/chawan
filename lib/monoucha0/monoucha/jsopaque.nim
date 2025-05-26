@@ -50,9 +50,9 @@ type
   JSRuntimeOpaque* = ref object
     plist*: Table[pointer, tuple[p: pointer; jsref: bool]] # Nim, JS
     flist*: seq[seq[JSCFunctionListEntry]]
-    fins*: Table[pointer, JSFinalizerFunction]
+    fins*: Table[pointer, seq[JSFinalizerFunction]]
     #TODO maybe just extract this from typemap on JSContext free?
-    inverseTypemap*: Table[JSClassID, pointer]
+    inverseTypemap*: seq[pointer]
     parentMap*: Table[pointer, pointer]
     destroying*: pointer
     # temp list for uninit
@@ -90,6 +90,11 @@ func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
 
 func isGlobal*(ctx: JSContext; class: JSClassID): bool =
   return ctx.getOpaque().gclass == class
+
+func toNimType*(opaque: JSRuntimeOpaque; class: JSClassID): pointer =
+  if int(class) < opaque.inverseTypemap.len:
+    return opaque.inverseTypemap[class]
+  nil
 
 proc setOpaque*(ctx: JSContext; val: JSValue; opaque: pointer) =
   let rt = JS_GetRuntime(ctx)

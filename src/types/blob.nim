@@ -96,7 +96,6 @@ proc finalize(blob: Blob) {.jsfin.} =
 proc finalize(file: WebFile) {.jsfin.} =
   if file.fd.isSome:
     discard close(file.fd.get)
-  Blob(file).finalize()
 
 proc newWebFile*(name: string; fd: cint): WebFile =
   return WebFile(

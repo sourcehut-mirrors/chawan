@@ -7,9 +7,6 @@ projects.
 
 I hope to fix this in the future. For now, please use refc.
 
-**UNDER CONSTRUCTION**: this document is an incomplete draft. Partially untested
-code and possible inaccuracies ahead.
-
 ## Table of Contents
 
 * [Introduction](#introduction)
@@ -576,14 +573,14 @@ for property accesses.
 The `.jsfin` pragma can be used to clean up resources used by objects at
 the end of their lifetime.
 
-In principle, this is just like the Nim `=destroy` property, except it also
-tracks the lifetime of possible JS objects which the Nim object may back. (In
-other words, it's a cross-GC finalizer.)
+In principle, this is just like the Nim `=destroy` property, except
+it also tracks the lifetime of possible JS objects which the Nim object
+may back.  (In other words, it's a cross-GC finalizer.)
 
-The first parameter must be a reference to the object in question. Only one
-`.jsfin` procedure per reference type is allowed, and `.jsfin` is *not*
-inherited. This means that you must set up separate `.jsfin` functions for each
-child object in the inheritance chain.
+The first parameter must be a reference to the object in question.
+Only one `.jsfin` procedure per reference type is allowed, but parent
+`.jsfin` finalizers are inherited.  (This used to work differently in
+previous versions.)
 
 `.jsfin` also supports a "zeroeth" parameter, but here it must be a
 `JSRuntime`, *not* `JSContext`.  WARNING: this parameter is nil when
