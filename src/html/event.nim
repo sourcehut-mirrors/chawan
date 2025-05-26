@@ -79,12 +79,13 @@ type
 
   EventListener* = ref object
     # if callback is undefined, the listener has been removed
-    callback*: JSValue
+    callback: JSValue
+    rt: JSRuntime
     ctype*: CAtom
     capture: bool
-    passive: Option[bool]
     once: bool
     internal: bool
+    passive: Option[bool]
     #TODO AbortSignal
 
 jsDestructor(Event)
@@ -102,6 +103,21 @@ var getParentImpl*: proc(ctx: JSContext; target: EventTarget; event: Event):
   EventTarget {.nimcall, raises: [].}
 var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect,
   raises: [].}
+
+proc finalize(target: EventTarget) {.jsfin.} =
+  # Can't take rt as param here, because elements may be unbound in JS.
+  if target != nil:
+    for el in target.eventListeners:
+      let cb = el.callback
+      let rt = el.rt
+      el.callback = JS_UNDEFINED
+      el.rt = nil
+      JS_FreeValueRT(rt, cb)
+
+proc mark(rt: JSRuntime; target: EventTarget; markFunc: JS_MarkFunc)
+    {.jsmark.} =
+  for el in target.eventListeners:
+    JS_MarkValue(rt, el.callback, markFunc)
 
 type
   EventInit* = object of JSDict
@@ -439,6 +455,7 @@ proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     capture: false,
     once: false,
     internal: true,
+    rt: JS_GetRuntime(ctx),
     callback: JS_DupValue(ctx, callback)
   ))
 
@@ -503,6 +520,7 @@ proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
     capture: capture,
     passive: passive,
     once: once,
+    rt: JS_GetRuntime(ctx),
     callback: JS_DupValue(ctx, callback)
   ))
   ok()
