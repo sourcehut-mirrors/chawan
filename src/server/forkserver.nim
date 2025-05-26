@@ -3,6 +3,7 @@
 import std/options
 import std/os
 import std/posix
+import std/strutils
 import std/tables
 
 import chagashi/charset
@@ -19,7 +20,6 @@ import server/loader
 import server/loaderiface
 import types/url
 import types/winattrs
-import utils/proctitle
 import utils/sandbox
 import utils/strwidth
 import utils/twtstr
@@ -78,6 +78,23 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     return (-1, nil)
   return (bufferPid, newSocketStream(sv[0]))
 
+when defined(freebsd):
+  proc c_setproctitle(fmt: cstring) {.header: "<unistd.h>", importc:
+    "setproctitle", varargs.}
+elif defined(netbsd) or defined(openbsd):
+  proc c_setproctitle(fmt: cstring) {.header: "<stdlib.h>", importc:
+    "setproctitle", varargs.}
+elif defined(linux):
+  let PR_SET_NAME {.importc, header: "<sys/prctl.h>", nodecl.}: cint
+  proc prctl(option: cint; arg2, arg3, arg4, arg5: culong): cint {.importc,
+    header: "<sys/prctl.h>".}
+
+proc setProcessTitle(s: string) =
+  when defined(freebsd) or defined(netbsd) or defined(openbsd):
+    c_setproctitle("%s", cstring(s))
+  elif defined(linux):
+    discard prctl(PR_SET_NAME, cast[culong](cstring(s)), 0, 0, 0)
+
 proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     loaderStream: SocketStream): (int, SocketStream) =
   # loaderStream is a connection between main process <-> loader, but we
@@ -102,6 +119,22 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     discard close(sv[1])
     loaderStream.sclose()
     return (int(pid), newSocketStream(sv[0]))
+
+proc setBufferProcessTitle(url: URL) =
+  when defined(linux):
+    # linux truncates to 15 chars; try to preserve important info
+    const initTitle = "cha buf "
+    var title = initTitle
+    var hostname = url.hostname
+    if hostname.startsWith("www."):
+      hostname.delete(0.."www.".high)
+    title &= hostname
+    if title.len > initTitle.len:
+      title &= ' '
+    title &= url.pathname.afterLast('/')
+    setProcessTitle(title)
+  else:
+    setProcessTitle("cha buffer " & $url)
 
 proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   var config: BufferConfig
