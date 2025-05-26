@@ -45,9 +45,11 @@ type
     timeStamp {.jsget.}: float64
 
   CustomEvent* = ref object of Event
+    rt: JSRuntime
     detail {.jsget.}: JSValue
 
   MessageEvent* = ref object of Event
+    rt: JSRuntime
     data {.jsget.}: JSValue
     origin {.jsget.}: string
 
@@ -220,13 +222,14 @@ proc newCustomEvent*(ctx: JSContext; ctype: CAtom;
     eventInitDict = CustomEventInit(detail: JS_NULL)): CustomEvent {.jsctor.} =
   let event = CustomEvent(
     ctype: ctype,
+    rt: JS_GetRuntime(ctx),
     detail: JS_DupValue(ctx, eventInitDict.detail)
   )
   event.innerEventCreationSteps(eventInitDict)
   return event
 
-proc finalize(rt: JSRuntime; this: CustomEvent) {.jsfin.} =
-  JS_FreeValueRT(rt, this.detail)
+proc finalize(this: CustomEvent) {.jsfin.} =
+  JS_FreeValueRT(this.rt, this.detail)
 
 proc initCustomEvent(ctx: JSContext; this: CustomEvent; ctype: CAtom;
     bubbles, cancelable: bool; detail: JSValueConst) {.jsfunc.} =
@@ -237,13 +240,14 @@ proc initCustomEvent(ctx: JSContext; this: CustomEvent; ctype: CAtom;
     this.initialize(ctype, bubbles, cancelable)
 
 # MessageEvent
-proc finalize(rt: JSRuntime; this: MessageEvent) {.jsfin.} =
-  JS_FreeValueRT(rt, this.data)
+proc finalize(this: MessageEvent) {.jsfin.} =
+  JS_FreeValueRT(this.rt, this.data)
 
 proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
     eventInit = MessageEventInit(data: JS_NULL)): MessageEvent =
   let event = MessageEvent(
     ctype: ctype,
+    rt: JS_GetRuntime(ctx),
     data: JS_DupValue(ctx, eventInit.data),
     origin: eventInit.origin
   )

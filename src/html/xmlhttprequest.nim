@@ -60,6 +60,7 @@ type
     requestURL: URL
     headers: Headers
     response: Response
+    rt: JSRuntime
     responseObject: JSValue
     received: string
     contentTypeOverride: string
@@ -79,16 +80,17 @@ jsDestructor(XMLHttpRequestUpload)
 jsDestructor(XMLHttpRequest)
 jsDestructor(ProgressEvent)
 
-func newXMLHttpRequest(): XMLHttpRequest {.jsctor.} =
+func newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
   let upload = XMLHttpRequestUpload()
   return XMLHttpRequest(
     upload: upload,
     headers: newHeaders(hgRequest),
-    responseObject: JS_UNDEFINED
+    responseObject: JS_UNDEFINED,
+    rt: JS_GetRuntime(ctx)
   )
 
-proc finalize(rt: JSRuntime; this: XMLHttpRequest) {.jsfin.} =
-  JS_FreeValueRT(rt, this.responseObject)
+proc finalize(this: XMLHttpRequest) {.jsfin.} =
+  JS_FreeValueRT(this.rt, this.responseObject)
 
 proc newProgressEvent(ctype: CAtom; init = ProgressEventInit()): ProgressEvent
     {.jsctor.} =
