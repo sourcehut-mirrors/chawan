@@ -86,6 +86,9 @@ If you want to send plain text e-mails not formatted as markdown,
 use the [mailing list](mailto:~bptato/chawan-devel@lists.sr.ht) instead.
 This is also where you can send patches.
 
+If you're having troubles accessing SourceHut, you can also use the
+[Codeberg mirror](https://codeberg.org/bptato/chawan).
+
 ## Documentation index
 
 Chawan's documentation is available as man pages (`man cha`) and as
