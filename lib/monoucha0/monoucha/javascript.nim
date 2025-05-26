@@ -97,6 +97,7 @@ type
     bfPropertyHas = "js_prop_has"
     bfPropertyNames = "js_prop_names"
     bfFinalizer = "js_fin"
+    bfMark = "js_mark"
 
   BoundFunctionFlag = enum
     bffNone, bffUnforgeable, bffStatic, bffReplaceable
@@ -425,8 +426,7 @@ type
     propDelFun: NimNode # custom del function ident
     propHasFun: NimNode # custom has function ident
     propNamesFun: NimNode # custom property names function ident
-    finFun: NimNode # finalizer ident
-    finName: NimNode # finalizer wrapper ident
+    finFun: NimNode # finalizer wrapper ident
     dfin: NimNode # CheckDestroy finalizer ident
     tabUnforgeable: NimNode # array of unforgeable function table
     tabStatic: NimNode # array of static function table
@@ -445,7 +445,6 @@ proc newRegistryInfo(t: NimNode): RegistryInfo =
     tabUnforgeable: newNimNode(nnkBracket),
     tabStatic: newNimNode(nnkBracket),
     tabReplaceableNames: newNimNode(nnkBracket),
-    finName: newNilLit(),
     finFun: newNilLit(),
     propGetOwnFun: newNilLit(),
     propGetFun: newNilLit(),
@@ -684,66 +683,71 @@ proc finishFunCallList(gen: var JSFuncGenerator) =
 var jsDtors {.compileTime.}: HashSet[string]
 
 proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
-  let f0 = fun.name
-  let f1 = fun.id
+  let name = fun.name
+  let id = fun.id
   case fun.t
   of bfFunction:
     case fun.flag
     of bffNone:
       info.tabList.add(quote do:
-        JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
+        JS_CFUNC_DEF(`name`, 0, cast[JSCFunction](`id`)))
     of bffUnforgeable:
       info.tabUnforgeable.add(quote do:
-        JS_CFUNC_DEF_NOCONF(`f0`, 0, cast[JSCFunction](`f1`)))
+        JS_CFUNC_DEF_NOCONF(`name`, 0, cast[JSCFunction](`id`)))
     of bffStatic:
       info.tabStatic.add(quote do:
-        JS_CFUNC_DEF(`f0`, 0, cast[JSCFunction](`f1`)))
+        JS_CFUNC_DEF(`name`, 0, cast[JSCFunction](`id`)))
     of bffReplaceable:
       assert false #TODO
   of bfConstructor:
     if info.ctorFun != nil:
       error("Class " & info.name & " has 2+ constructors.")
-    info.ctorFun = f1
+    info.ctorFun = id
   of bfGetter:
-    info.getset.withValue(f0, exv):
-      exv[0] = f1
+    info.getset.withValue(name, exv):
+      exv[0] = id
       exv[2] = fun.flag
     do:
-      info.getset[f0] = (f1, newNilLit(), fun.flag)
+      info.getset[name] = (id, newNilLit(), fun.flag)
       if fun.flag == bffReplaceable:
-        info.tabReplaceableNames.add(newCall("cstring", newStrLitNode(f0)))
+        info.tabReplaceableNames.add(newCall("cstring", newStrLitNode(name)))
   of bfSetter:
-    info.getset.withValue(f0, exv):
-      exv[1] = f1
+    info.getset.withValue(name, exv):
+      exv[1] = id
     do:
-      info.getset[f0] = (newNilLit(), f1, bffNone)
+      info.getset[name] = (newNilLit(), id, bffNone)
   of bfPropertyGetOwn:
     if info.propGetFun.kind != nnkNilLit:
       error("Class " & info.name & " has 2+ own property getters.")
-    info.propGetOwnFun = f1
+    info.propGetOwnFun = id
   of bfPropertyGet:
     if info.propGetFun.kind != nnkNilLit:
       error("Class " & info.name & " has 2+ property getters.")
-    info.propGetFun = f1
+    info.propGetFun = id
   of bfPropertySet:
     if info.propSetFun.kind != nnkNilLit:
       error("Class " & info.name & " has 2+ property setters.")
-    info.propSetFun = f1
+    info.propSetFun = id
   of bfPropertyDel:
     if info.propDelFun.kind != nnkNilLit:
       error("Class " & info.name & " has 2+ property deleters.")
-    info.propDelFun = f1
+    info.propDelFun = id
   of bfPropertyHas:
     if info.propHasFun.kind != nnkNilLit:
       error("Class " & info.name & " has 2+ hasprop getters.")
-    info.propHasFun = f1
+    info.propHasFun = id
   of bfPropertyNames:
     if info.propNamesFun.kind != nnkNilLit:
       error("Class " & info.name & " has 2+ propnames getters.")
-    info.propNamesFun = f1
+    info.propNamesFun = id
   of bfFinalizer:
-    info.finFun = ident(f0)
-    info.finName = f1
+    if info.finFun.kind != nnkNilLit:
+      error("Class " & info.name & " has 2+ finalizers.")
+    info.finFun = id
+  of bfMark:
+    if info.markFun.kind != nnkNilLit:
+      error("Class " & info.name & " has 2+ mark functions.")
+    info.markFun = id
 
 proc registerFunction(typ: string; fun: BoundFunction) =
   var info = BoundFunctions.getOrDefault(typ)
@@ -1107,6 +1111,20 @@ macro jsfin*(fun: typed) =
   let jsProc = quote do:
     proc `finName`(rt {.inject.}: JSRuntime; opaque {.inject.}: pointer) =
       `finStmt`
+  gen.registerFunction()
+  return newStmtList(fun, jsProc)
+
+macro jsmark*(fun: typed) =
+  var gen = initGenerator(fun, bfMark, hasThis = true)
+  let markName = gen.newName
+  let markFun = ident(gen.funcName)
+  let t = gen.thisTypeNode
+  let jsProc = quote do:
+    proc `markName`(rt {.inject.}: JSRuntime; val: JSValueConst;
+        markFunc {.inject.}: JS_MarkFunc) {.cdecl.} =
+      let opaque = JS_GetOpaque(val, JS_GetClassID(val))
+      if opaque != nil:
+        `markFun`(rt, cast[`t`](opaque), markFunc)
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
@@ -1526,7 +1544,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     if info.tname in jsDtors:
       error("Global object " & info.tname & " must not have a destructor!")
   stmts.registerPragmas(info, t)
-  if info.markList.len > 0:
+  if info.markFun.kind == nnkNilLit and info.markList.len > 0:
     stmts.bindMarkFunc(info)
   if info.tabReplaceableNames.len > 0:
     stmts.bindReplaceableSet(info)
@@ -1540,13 +1558,13 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let endstmts = newStmtList()
   endstmts.bindEndStmts(info)
   let tabList = info.tabList
-  let finName = info.finName
+  let finFun = info.finFun
   let unforgeable = info.tabUnforgeable
   let staticfuns = info.tabStatic
   let global = asglobal and not globalparent
   endstmts.add(quote do:
     `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, `tabList`, `parent`,
-      `global`, `nointerface`, `finName`, `namespace`, `unforgeable`,
+      `global`, `nointerface`, `finFun`, `namespace`, `unforgeable`,
       `staticfuns`)
   )
   stmts.add(newBlockStmt(endstmts))
