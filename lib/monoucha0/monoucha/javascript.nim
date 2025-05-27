@@ -884,7 +884,7 @@ macro jsgetownprop*(fun: typed) =
   var gen = initGenerator(fun, bfPropertyGetOwn, hasThis = true)
   gen.addThisParam()
   gen.addFixParam("prop")
-  var handleRetv: NimNode = nil
+  var handleRetv: NimNode
   if gen.i < gen.funcParams.len:
     handleRetv = quote do: discard
     gen.jsFunCall.add(ident("desc"))
@@ -899,6 +899,8 @@ macro jsgetownprop*(fun: typed) =
         desc[].getter = JS_UNDEFINED
         desc[].value = retv
         desc[].flags = 0
+      else:
+        JS_FreeValue(ctx, retv)
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
