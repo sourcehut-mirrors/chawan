@@ -348,6 +348,7 @@ proc postMessage(ctx: JSContext; window: Window; value: JSValueConst): Err[void]
     cstring"<postMessage>")
   let event = ctx.newMessageEvent(satMessage.toAtom(),
     MessageEventInit(data: data))
+  JS_FreeValue(ctx, data)
   window.fireEvent(event, window)
   ok()
 
