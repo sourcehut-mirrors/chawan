@@ -23,8 +23,8 @@ proc die*(os: PosixStream; name: string; s = "") {.noreturn.} =
   discard os.writeDataLoop(buf)
   quit(1)
 
-proc openSocket(os: PosixStream; host, port, resFail, connFail: string;
-    res: var ptr AddrInfo; outIpv6: var bool): SocketHandle =
+proc openSocket(os: PosixStream; host, port, resFail: string;
+    res: var ptr AddrInfo): SocketHandle =
   var err: cint
   for family in [AF_INET, AF_INET6, AF_UNSPEC]:
     var hints = AddrInfo(
@@ -45,7 +45,7 @@ proc openSocket(os: PosixStream; host, port, resFail, connFail: string;
 proc connectSocket(os: PosixStream; host, port, resFail, connFail: string;
     outIpv6: var bool): PosixStream =
   var res: ptr AddrInfo
-  let sock = os.openSocket(host, port, resFail, connFail, res, outIpv6)
+  let sock = os.openSocket(host, port, resFail, res)
   let ps = newPosixStream(sock)
   if connect(sock, res.ai_addr, res.ai_addrlen) < 0:
     ps.sclose()
