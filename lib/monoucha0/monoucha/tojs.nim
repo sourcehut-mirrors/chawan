@@ -279,7 +279,8 @@ proc toJS(ctx: JSContext; t: tuple): JSValue =
 
 proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
     JSValue =
-  JS_GetRuntime(ctx).getOpaque().plist.withValue(p, obj):
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  rtOpaque.plist.withValue(p, obj):
     # a JSValue already points to this object.
     let p = obj[].p
     if obj[].jsref:
@@ -292,14 +293,14 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
     GC_ref(cast[RootRef](toRef))
     obj[].jsref = true
     return JS_MKPTR(JS_TAG_OBJECT, p)
-  let ctxOpaque = ctx.getOpaque()
-  let class = ctxOpaque.typemap.getOrDefault(tp, 0)
+  let class = rtOpaque.typemap.getOrDefault(tp, 0)
   let jsObj = JS_NewObjectFromCtor(ctx, ctor, class)
   if JS_IsException(jsObj):
     return jsObj
   ctx.setOpaque(jsObj, p)
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
+  let ctxOpaque = ctx.getOpaque()
   if int(class) < ctxOpaque.unforgeable.len and
       ctxOpaque.unforgeable[int(class)].len > 0:
     let ufp0 = addr ctxOpaque.unforgeable[int(class)][0]

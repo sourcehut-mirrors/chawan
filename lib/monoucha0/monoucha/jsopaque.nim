@@ -27,7 +27,6 @@ type
     jsvFunction = "Function"
 
   JSContextOpaque* = ref object
-    typemap*: Table[pointer, JSClassID]
     ctors*: seq[JSValue] # JSClassID -> JSValue
     parents*: seq[JSClassID] # JSClassID -> JSClassID
     # Parent unforgeables are merged on class creation.
@@ -48,15 +47,21 @@ type
   JSEmptyOpaqueCallback* = (proc() {.closure, raises: [].})
 
   JSRuntimeOpaque* = ref object
+    typemap*: Table[pointer, JSClassID]
     plist*: Table[pointer, tuple[p: pointer; jsref: bool]] # Nim, JS
     flist*: seq[seq[JSCFunctionListEntry]]
-    fins*: Table[pointer, seq[JSFinalizerFunction]]
-    #TODO maybe just extract this from typemap on JSContext free?
-    inverseTypemap*: seq[pointer]
+    fins*: seq[seq[JSFinalizerFunction]]
     parentMap*: Table[pointer, pointer]
     destroying*: pointer
     # temp list for uninit
     tmplist*: seq[tuple[p: pointer; jsref: bool]]
+
+iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
+    JSFinalizerFunction =
+  let classid = int(classid)
+  if classid < rtOpaque.fins.len:
+    for fin in rtOpaque.fins[classid]:
+      yield fin
 
 func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))
@@ -89,11 +94,6 @@ func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
 
 func isGlobal*(ctx: JSContext; class: JSClassID): bool =
   return ctx.getOpaque().gclass == class
-
-func toNimType*(opaque: JSRuntimeOpaque; class: JSClassID): pointer =
-  if int(class) < opaque.inverseTypemap.len:
-    return opaque.inverseTypemap[class]
-  nil
 
 proc setOpaque*(ctx: JSContext; val: JSValue; opaque: pointer) =
   let rt = JS_GetRuntime(ctx)

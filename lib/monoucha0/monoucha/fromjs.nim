@@ -334,11 +334,12 @@ proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
       JS_ThrowTypeError(ctx, "value is not an object")
     return err()
   let p = JS_GetOpaque(val, JS_GetClassID(val))
-  let ctxOpaque = ctx.getOpaque()
-  let tclassid = ctxOpaque.typemap.getOrDefault(nimt, JS_CLASS_OBJECT)
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  let tclassid = rtOpaque.typemap.getOrDefault(nimt, JS_CLASS_OBJECT)
   if p == nil or not ctx.isInstanceOf(val, tclassid):
     let proto = JS_GetClassProto(ctx, tclassid)
-    let name = JS_GetProperty(ctx, proto, ctxOpaque.symRefs[jsyToStringTag])
+    let name = JS_GetProperty(ctx, proto,
+      ctx.getOpaque().symRefs[jsyToStringTag])
     JS_FreeValue(ctx, proto)
     defer: JS_FreeValue(ctx, name)
     var s: string
