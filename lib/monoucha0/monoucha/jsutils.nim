@@ -20,7 +20,7 @@ template toJSValueConstOpenArray*(a: openArray[JSValue]):
 template toJSValueArray*(a: JSValue): JSValueArray =
   cast[JSValueArray](unsafeAddr a)
 
-template toJSValueArray*(a: JSValueConst): JSValueConstArray =
+template toJSValueConstArray*(a: JSValueConst): JSValueConstArray =
   cast[JSValueConstArray](unsafeAddr a)
 
 {.pop.} # raises

@@ -78,17 +78,19 @@ else:
 
   when defined(debug):
     type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
-  else:
-    type JSValueConst* = JSValue
 
-  template JS_VALUE_GET_TAG*(v: JSValueConst): int32 =
-    cast[int32](JSValue(v).tag)
+    template JS_VALUE_GET_TAG*(v: JSValueConst): int32 =
+      cast[int32](JSValue(v).tag)
 
-  when defined(debug):
     template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
       cast[pointer](JSValue(v).u)
   else:
-    template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
+    type JSValueConst* = JSValue
+
+    template JS_VALUE_GET_TAG*(v: JSValue): int32 =
+      cast[int32](v.tag)
+
+    template JS_VALUE_GET_PTR*(v: JSValue): pointer =
       cast[pointer](v.u)
 
   template JS_MKVAL*(t, val: untyped): JSValue =

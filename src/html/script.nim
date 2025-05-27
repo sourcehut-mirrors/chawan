@@ -196,7 +196,7 @@ proc identity(ctx: JSContext; this_val: JSValueConst; argc: cint;
 
 #TODO move to javascript.nim?
 proc identityFunction*(ctx: JSContext; val: JSValueConst): JSValue =
-  return JS_NewCFunctionData(ctx, identity, 0, 0, 1, val.toJSValueArray())
+  return JS_NewCFunctionData(ctx, identity, 0, 0, 1, val.toJSValueConstArray())
 
 proc getEnvSettings*(ctx: JSContext): EnvironmentSettings =
   return ctx.getEnvSettingsImpl()
