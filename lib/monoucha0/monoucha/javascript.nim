@@ -140,19 +140,12 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
   assert rtOpaque.destroying == nil
   var np = 0
   for it in rtOpaque.plist.values:
-    rtOpaque.tmplist[np] = it.p
+    rtOpaque.tmplist[np] = it
     inc np
   rtOpaque.plist.clear()
-  var nu = 0
-  for p in rtOpaque.parentMap.values:
-    rtOpaque.tmpunrefs[nu] = p
-    inc nu
-  rtOpaque.parentMap.clear()
-  for i in 0 ..< nu:
-    GC_unref(cast[RootRef](rtOpaque.tmpunrefs[i]))
-  for i in 0 ..< np:
-    let p = rtOpaque.tmplist[i]
-    let val = JS_MKPTR(JS_TAG_OBJECT, p)
+  JS_UnsetCanDestroyHooks(rt)
+  for it in rtOpaque.tmplist.toOpenArray(0, np - 1):
+    let val = JS_MKPTR(JS_TAG_OBJECT, it.p)
     let classid = JS_GetClassID(val)
     let opaque = JS_GetOpaque(val, classid)
     if opaque != nil:
@@ -161,7 +154,14 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
         for fin in fins[]:
           fin(rt, opaque)
     JS_SetOpaque(val, nil)
-    JS_FreeValueRT(rt, val)
+    if it.jsref: # JS held a ref to the Nim object.
+      if opaque != nil:
+        rtOpaque.parentMap.withValue(it.p, pp): # var object
+          GC_unref(cast[RootRef](pp[]))
+        do: # ref object
+          GC_unref(cast[RootRef](opaque))
+    else: # Nim held a ref to the JS object.
+      JS_FreeValueRT(rt, val)
   # GC will run again now
 
 proc newJSRuntime*(): JSRuntime =
@@ -227,7 +227,6 @@ proc free*(rt: JSRuntime) =
   # collected once.)
   let rtOpaque = rt.getOpaque()
   rtOpaque.tmplist.setLen(rtOpaque.plist.len)
-  rtOpaque.tmpunrefs.setLen(rtOpaque.parentMap.len)
   JS_FreeRuntime(rt)
   runtimes.del(runtimes.find(rt))
 
@@ -1459,6 +1458,8 @@ proc jsCheckDestroyNonRef*(rt: JSRuntime; val: JSValueConst): JS_BOOL
     # (And for the same reason, a reference to the same object might
     # still be necessary.)
     # Accordingly, we return false here as well.
+    rtOpaque.plist.withValue(opaque, v):
+      v[].jsref = false
     return false
   return true
 

@@ -1882,6 +1882,16 @@ void JS_SetRuntimeCleanUpFunc(JSRuntime *rt, JSRuntimeCleanUpFunc cleanup_func)
     rt->user_cleanup = cleanup_func;
 }
 
+/* used on uninitialization, so that can_destroy does not interfere with
+ * the already error-prone deinit code */
+void JS_UnsetCanDestroyHooks(JSRuntime *rt)
+{
+    int i;
+
+    for(i = 0; i < rt->class_count; i++)
+        rt->class_array[i].can_destroy = NULL;
+}
+
 static void *js_def_calloc(void *opaque, size_t count, size_t size)
 {
     return calloc(count, size);

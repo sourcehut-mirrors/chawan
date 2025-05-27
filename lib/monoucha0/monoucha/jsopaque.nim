@@ -56,8 +56,7 @@ type
     parentMap*: Table[pointer, pointer]
     destroying*: pointer
     # temp list for uninit
-    tmplist*: seq[pointer]
-    tmpunrefs*: seq[pointer]
+    tmplist*: seq[tuple[p: pointer; jsref: bool]]
 
 func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))

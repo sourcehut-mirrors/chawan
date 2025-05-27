@@ -439,6 +439,7 @@ proc JS_GetRuntimeOpaque*(rt: JSRuntime): pointer
 proc JS_SetRuntimeOpaque*(rt: JSRuntime; p: pointer)
 proc JS_SetRuntimeCleanUpFunc*(rt: JSRuntime;
   cleanup_func: JSRuntimeCleanUpFunc)
+proc JS_UnsetCanDestroyHooks*(rt: JSRuntime)
 proc JS_MarkValue*(rt: JSRuntime; val: JSValueConst; mark_func: JS_MarkFunc)
 proc JS_RunGC*(rt: JSRuntime)
 proc JS_IsLiveObject*(rt: JSRuntime; obj: JSValueConst): JS_BOOL
