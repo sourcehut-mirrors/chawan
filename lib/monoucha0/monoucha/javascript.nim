@@ -139,25 +139,24 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
   JS_RunGC(rt)
   assert rtOpaque.destroying == nil
   var np = 0
-  for it in rtOpaque.plist.values:
-    rtOpaque.tmplist[np] = it
+  for nimp, jsp in rtOpaque.plist:
+    rtOpaque.tmplist[np] = (nimp, jsp)
     inc np
   rtOpaque.plist.clear()
   JS_UnsetCanDestroyHooks(rt)
   for it in rtOpaque.tmplist.toOpenArray(0, np - 1):
-    let val = JS_MKPTR(JS_TAG_OBJECT, it.p)
+    let val = JS_MKPTR(JS_TAG_OBJECT, it.jsp)
     let classid = JS_GetClassID(val)
     let opaque = JS_GetOpaque(val, classid)
-    if opaque != nil:
-      for fin in rtOpaque.finalizers(classid):
-        fin(rt, opaque)
-    JS_SetOpaque(val, nil)
-    if it.jsref: # JS held a ref to the Nim object.
-      if opaque != nil:
-        rtOpaque.parentMap.withValue(it.p, pp): # var object
-          GC_unref(cast[RootRef](pp[]))
-        do: # ref object
-          GC_unref(cast[RootRef](opaque))
+    for fin in rtOpaque.finalizers(classid):
+      fin(rt, it.nimp)
+    if opaque != nil: # JS held a ref to the Nim object.
+      JS_SetOpaque(val, nil)
+      assert opaque == it.nimp
+      rtOpaque.parentMap.withValue(opaque, pp): # var object
+        GC_unref(cast[RootRef](pp[]))
+      do: # ref object
+        GC_unref(cast[RootRef](opaque))
     else: # Nim held a ref to the JS object.
       JS_FreeValueRT(rt, val)
   # GC will run again now
@@ -233,11 +232,12 @@ proc setGlobal*[T](ctx: JSContext; obj: T) =
   ## Note: you must call `ctx.registerType(T, asglobal = true)` for this to
   ## work, `T` being the type of `obj`.
   # Add JSValue reference.
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   let ctxOpaque = ctx.getOpaque()
   let opaque = cast[pointer](obj)
-  ctx.setOpaque(ctxOpaque.global, opaque)
+  rtOpaque.plist[opaque] = JS_VALUE_GET_PTR(ctxOpaque.global)
+  JS_SetOpaque(ctxOpaque.global, opaque)
   GC_ref(obj)
-  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   ctx.getOpaque().globalUnref = proc() =
     GC_unref(obj)
     rtOpaque.plist.del(opaque)
@@ -1280,13 +1280,11 @@ proc registerPragmas(stmts: NimNode; info: RegistryInfo; t: NimNode) =
           )
 
 proc nim_finalize_for_js*(obj, typeptr: pointer) =
-  var fins: ptr seq[JSFinalizerFunction] = nil
   var lastrt: JSRuntime = nil
   for rt in runtimes:
     let rtOpaque = rt.getOpaque()
-    rtOpaque.plist.withValue(obj, v):
-      let p = v[].p
-      let val = JS_MKPTR(JS_TAG_OBJECT, p)
+    rtOpaque.plist.withValue(obj, pp):
+      let val = JS_MKPTR(JS_TAG_OBJECT, pp[])
       for fin in rtOpaque.finalizers(JS_GetClassID(val)):
         fin(nil, obj)
       JS_SetOpaque(val, nil)
@@ -1406,37 +1404,27 @@ proc jsCheckDestroyRef*(rt: JSRuntime; val: JSValueConst): JS_BOOL {.cdecl.} =
     # in this case we cannot ask QJS to keep the JSValue alive. So we set
     # the "destroying" pointer to the current opaque, and return true if
     # the opaque was collected.
-    rt.getOpaque().destroying = opaque
+    let rtOpaque = rt.getOpaque()
+    rtOpaque.destroying = opaque
     # We can lie about the type in refc, as it type erases the reference.
     # Sadly, this won't work in ARC... then again, nothing works in ARC,
     # so whatever.
     GC_unref(cast[RootRef](opaque))
-    if rt.getOpaque().destroying == nil:
+    if rtOpaque.destroying == nil:
       # Looks like GC_unref called nim_finalize_for_js for this pointer.
       # This means we can allow QJS to collect this JSValue.
       return true
     else:
-      let rtOpaque = rt.getOpaque()
       rtOpaque.destroying = nil
       # Set an internal flag to note that the JS object is owned by the
       # Nim side.
       # This means that if toJS is used again on the Nim object, JS will
       # first get a non-dup'd object, and a reference will be set on
       # the Nim object.
-      #
-      #TODO can we eliminate this hash somehow?
-      # at least I *think* in the common case of "no reference cycle",
-      # we could just elide the jsref set here, and add a reference
-      # in toJSP0 if the refcount on the JS pointer is 0.  (however,
-      # we must do it here if the refcount is > 1, that means we have
-      # a cycle.)
-      # it sounds too hacky to try for now, but may be worth it if this
-      # turns out to be a bottleneck...
-      rtOpaque.plist.withValue(opaque, v):
-        v[].jsref = false
       # Returning false from this function signals to the QJS GC that it
-      # should not be collected yet. Accordingly, the JSObject's refcount
-      # will be set to one again.
+      # should not be collected yet.  Accordingly, the JSObject's
+      # refcount (and that of its children) will be set to one again,
+      # and later its opaque to NULL.
       return false
   return true
 
@@ -1457,8 +1445,6 @@ proc jsCheckDestroyNonRef*(rt: JSRuntime; val: JSValueConst): JS_BOOL
     # (And for the same reason, a reference to the same object might
     # still be necessary.)
     # Accordingly, we return false here as well.
-    rtOpaque.plist.withValue(opaque, v):
-      v[].jsref = false
     return false
   return true
 
@@ -1513,6 +1499,8 @@ proc bindMarkFunc(stmts: NimNode; info: RegistryInfo) =
     proc `id`(rt {.inject.}: JSRuntime; val: JSValueConst;
         markFunc {.inject.}: JS_MarkFunc) {.cdecl.} =
       let p = JS_GetOpaque(val, JS_GetClassID(val))
+      if p == nil:
+        return
       # Disgusting cast, but try not to confuse refc.
       let this {.inject.} = cast[ptr typeof(`t`.default[])](p)
       `markList`

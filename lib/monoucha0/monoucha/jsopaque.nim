@@ -48,13 +48,13 @@ type
 
   JSRuntimeOpaque* = ref object
     typemap*: Table[pointer, JSClassID]
-    plist*: Table[pointer, tuple[p: pointer; jsref: bool]] # Nim, JS
+    plist*: Table[pointer, pointer] # Nim -> JS
     flist*: seq[seq[JSCFunctionListEntry]]
     fins*: seq[seq[JSFinalizerFunction]]
     parentMap*: Table[pointer, pointer]
     destroying*: pointer
     # temp list for uninit
-    tmplist*: seq[tuple[p: pointer; jsref: bool]]
+    tmplist*: seq[tuple[nimp, jsp: pointer]]
 
 iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
     JSFinalizerFunction =
@@ -94,13 +94,6 @@ func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
 
 func isGlobal*(ctx: JSContext; class: JSClassID): bool =
   return ctx.getOpaque().gclass == class
-
-proc setOpaque*(ctx: JSContext; val: JSValue; opaque: pointer) =
-  let rt = JS_GetRuntime(ctx)
-  let rtOpaque = rt.getOpaque()
-  let p = JS_VALUE_GET_PTR(val)
-  rtOpaque.plist[opaque] = (p, true)
-  JS_SetOpaque(val, opaque)
 
 func getOpaque*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:

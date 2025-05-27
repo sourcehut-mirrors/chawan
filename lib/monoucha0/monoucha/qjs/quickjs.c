@@ -5824,6 +5824,7 @@ static void js_free_value_rt(JSRuntime *rt, JSValue v)
             if (rt->gc_phase != JS_GC_PHASE_REMOVE_CYCLES) {
                 if (gc_has_can_destroy_hook(rt, p) && !gc_can_destroy(rt, p)) {
                     p->ref_count++;
+                    JS_SetOpaque(JS_MKPTR(JS_TAG_OBJECT, p), NULL);
                     break;
                 }
                 list_del(&p->link);
@@ -6073,8 +6074,7 @@ static void gc_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p)
 static void gc_scan(JSRuntime *rt)
 {
     struct list_head *el, *el1, *gc_tail;
-    JSGCObjectHeader *p;
-    int redo;
+    JSGCObjectHeader *p, *p2;
 
     /* keep the objects with a refcount > 0 and their children. */
     list_for_each(el, &rt->gc_obj_list) {
@@ -6085,10 +6085,10 @@ static void gc_scan(JSRuntime *rt)
     }
 
     /* restore objects whose can_destroy hook returns 0 and their children. */
-    do {
+    for (;;) {
         /* save previous tail position of gc_obj_list */
         gc_tail = rt->gc_obj_list.prev;
-        redo = 0;
+        p2 = NULL;
         list_for_each_safe(el, el1, &rt->tmp_hook_obj_list) {
             p = list_entry(el, JSGCObjectHeader, link);
             list_del(&p->link);
@@ -6101,7 +6101,7 @@ static void gc_scan(JSRuntime *rt)
                 /* hook says we cannot destroy yet; move back to gc_obj_list. */
                 p->ref_count++;
                 list_add_tail(&p->link, &rt->gc_obj_list);
-                redo = 1;
+                p2 = p;
                 break;
             }
         }
@@ -6114,7 +6114,12 @@ static void gc_scan(JSRuntime *rt)
             p->mark = 0; /* reset the mark for the next GC call */
             mark_children(rt, p, gc_scan_incref_child);
         }
-    } while(redo);
+        if (!p2)
+            break;
+        /* unset the opaque to signal to the other side that we are
+           no longer referencing them. */
+        JS_SetOpaque(JS_MKPTR(JS_TAG_OBJECT, p2), NULL);
+    }
 
     /* restore the refcount of the objects to be deleted. */
     list_for_each(el, &rt->tmp_obj_list) {
