@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/strutils
 
 import chagashi/charset
@@ -319,3 +321,5 @@ proc readLine*(prompt, current: string; termwidth: int; hide: bool;
 
 proc addLineEditModule*(ctx: JSContext) =
   ctx.registerType(LineEdit)
+
+{.pop.} # raises: []

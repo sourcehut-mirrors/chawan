@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/posix
 import std/strutils
@@ -30,7 +32,7 @@ jsDestructor(Blob)
 jsDestructor(WebFile)
 
 # Forward declarations
-proc deallocBlob*(opaque, p: pointer) {.raises: [].}
+proc deallocBlob*(opaque, p: pointer)
 
 proc swrite*(w: var PacketWriter; blob: Blob) =
   w.swrite(blob of WebFile)
@@ -159,3 +161,5 @@ proc size*(this: WebFile): int {.jsfget.} =
 proc addBlobModule*(ctx: JSContext) =
   let blobCID = ctx.registerType(Blob)
   ctx.registerType(WebFile, parent = blobCID, name = "File")
+
+{.pop.} # raises: []

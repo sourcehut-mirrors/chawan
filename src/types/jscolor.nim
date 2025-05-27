@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/strutils
 
 import monoucha/fromjs
@@ -54,3 +56,5 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor): Err[void] =
     return ok()
   JS_ThrowTypeError(ctx, "unrecognized color")
   return err()
+
+{.pop.} # raises: []

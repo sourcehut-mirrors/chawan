@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import types/url
 
 type ReferrerPolicy* = enum
@@ -48,3 +50,5 @@ proc getReferrer*(prev, target: URL; policy: ReferrerPolicy): string =
     return $origin & prev.pathname & prev.search
   of rpUnsafeURL:
     return $origin & prev.pathname & prev.search
+
+{.pop.} # raises: []
