@@ -93,6 +93,8 @@ var errorImpl*: proc(ctx: JSContext; ss: varargs[string]) {.
   nimcall, raises: [].}
 var getEnvSettingsImpl*: proc(ctx: JSContext): EnvironmentSettings {.
   nimcall, raises: [].}
+var storeJSImpl*: proc(ctx: JSContext; v: JSValue): int {.nimcall, raises: [].}
+var fetchJSImpl*: proc(ctx: JSContext; n: int): JSValue {.nimcall, raises: [].}
 
 proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
   let surl = $url
@@ -200,3 +202,13 @@ proc identityFunction*(ctx: JSContext; val: JSValueConst): JSValue =
 
 proc getEnvSettings*(ctx: JSContext): EnvironmentSettings =
   return ctx.getEnvSettingsImpl()
+
+# Store and fetch JS objects that we may not be able to clean up
+# immediately on free.  Gives/takes one refcount.
+# fetchJS may return JS_UNINITIALIZED in case the value got freed before
+# it was fetched.
+proc storeJS*(ctx: JSContext; v: JSValue): int =
+  return storeJSImpl(ctx, v)
+
+proc fetchJS*(ctx: JSContext; n: int): JSValue =
+  return fetchJSImpl(ctx, n)

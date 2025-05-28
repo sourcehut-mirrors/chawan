@@ -129,6 +129,8 @@ type
     maybeRestyle*: proc(element: Element)
     performance* {.jsget.}: Performance
     currentModuleURL*: URL
+    jsStore*: seq[JSValue]
+    jsStoreFree*: int
 
   # Navigator stuff
   Navigator* = object

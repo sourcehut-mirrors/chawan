@@ -205,6 +205,11 @@ proc addNavigatorModule*(ctx: JSContext) =
 # Window
 proc finalize(window: Window) {.jsfin.} =
   window.timeouts.clearAll()
+  for it in window.jsStore.mitems:
+    let val = it
+    it = JS_UNINITIALIZED
+    JS_FreeValueRT(window.jsrt, val)
+  window.jsStore.setLen(0)
 
 method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
   return window.settings.origin.isSameOrigin(origin)
@@ -222,6 +227,38 @@ proc fetch(window: Window; input: JSValueConst;
     {.jsfunc.} =
   let input = ?newRequest(window.jsctx, input, init)
   return window.fetch0(input)
+
+proc storeJS0(ctx: JSContext; v: JSValue): int =
+  assert not JS_IsUninitialized(v)
+  let global = ctx.getGlobal()
+  let n = global.jsStoreFree
+  if n == global.jsStore.len:
+    global.jsStore.add(v)
+  else:
+    global.jsStore[n] = v
+  var m = global.jsStoreFree
+  while m < global.jsStore.len:
+    if JS_IsUninitialized(global.jsStore[m]):
+      break
+    inc m
+  global.jsStoreFree = m
+  return n
+
+proc fetchJS0(ctx: JSContext; n: int): JSValue =
+  let global = ctx.getGlobal()
+  if n >= global.jsStore.len:
+    return JS_UNINITIALIZED
+  result = global.jsStore[n]
+  global.jsStore[n] = JS_UNINITIALIZED
+  if n < global.jsStoreFree:
+    global.jsStoreFree = n
+  if n == global.jsStore.high:
+    var n = n
+    while n >= 0:
+      if not JS_IsUninitialized(global.jsStore[n]):
+        break
+      dec n
+    global.jsStore.setLen(n + 1)
 
 proc scrollTo(window: Window) {.jsfunc.} =
   discard #TODO maybe in app mode?
@@ -478,5 +515,7 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
 
 # Forward declaration hack
 fetchImpl = fetch0
+storeJSImpl = storeJS0
+fetchJSImpl = fetchJS0
 
 {.pop.} # raises: []

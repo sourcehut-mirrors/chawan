@@ -2,10 +2,11 @@
 
 import std/tables
 
-import monoucha/quickjs
+import html/script
 import monoucha/javascript
-import monoucha/jsutils
 import monoucha/jsopaque
+import monoucha/jsutils
+import monoucha/quickjs
 import monoucha/tojs
 import types/opt
 
@@ -126,20 +127,6 @@ proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): Promise[U])): Promise[U]
       next.resolve())
   return next
 
-proc then*[T, U](promise: Promise[T];
-    cb: (proc(x: T): Opt[Promise[U]] {.raises: [].})): Promise[Opt[U]]
-    {.discardable.} =
-  let next = Promise[Opt[U]]()
-  promise.then(proc(x: T) =
-    let p2 = cb(x)
-    if p2.isSome:
-      p2.get.then(proc(y: U) =
-        next.res = opt(y)
-        next.resolve())
-    else:
-      next.resolve())
-  return next
-
 proc all*(promises: seq[EmptyPromise]): EmptyPromise =
   let res = EmptyPromise()
   var i = 0
@@ -245,11 +232,15 @@ proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
   let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
+  JS_FreeValue(ctx, resolvingFuncs[1])
+  let nthen = ctx.storeJS(resolvingFuncs[0])
   promise.then(proc() =
-    let res = JS_Call(ctx, resolvingFuncs[0], JS_UNDEFINED, 0, nil)
-    JS_FreeValue(ctx, res)
-    JS_FreeValue(ctx, resolvingFuncs[0])
-    JS_FreeValue(ctx, resolvingFuncs[1]))
+    let resolve = ctx.fetchJS(nthen)
+    if not JS_IsUninitialized(resolve):
+      let res = JS_Call(ctx, resolve, JS_UNDEFINED, 0, nil)
+      JS_FreeValue(ctx, res)
+      JS_FreeValue(ctx, resolve)
+  )
   return jsPromise
 
 proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue =
@@ -259,44 +250,26 @@ proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue =
   let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
   if JS_IsException(jsPromise):
     return JS_EXCEPTION
-  promise.then(proc(x: T) =
-    let x = ctx.toJS(x)
-    let res = JS_Call(ctx, resolvingFuncs[0], JS_UNDEFINED, 1,
-      x.toJSValueArray())
-    JS_FreeValue(ctx, res)
+  let nthen = ctx.storeJS(resolvingFuncs[0])
+  let ncatch = ctx.storeJS(resolvingFuncs[1])
+  promise.then(proc(ox: T) =
+    let x = ctx.toJS(ox)
+    let resolve = ctx.fetchJS(nthen)
+    let catch = ctx.fetchJS(ncatch)
+    if not JS_IsException(x):
+      if not JS_IsUninitialized(resolve):
+        JS_FreeValue(ctx, JS_Call(ctx, resolve, JS_UNDEFINED, 1,
+          x.toJSValueArray()))
+    else:
+      if not JS_IsUninitialized(catch):
+        let ex = JS_GetException(ctx)
+        JS_FreeValue(ctx, JS_Call(ctx, catch, JS_UNDEFINED, 1,
+          ex.toJSValueArray()))
+        JS_FreeValue(ctx, ex)
     JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, resolvingFuncs[0])
-    JS_FreeValue(ctx, resolvingFuncs[1]))
-  return jsPromise
-
-proc toJS*[T, E](ctx: JSContext; promise: Promise[Result[T, E]]): JSValue =
-  if promise == nil:
-    return JS_NULL
-  var resolvingFuncs {.noinit.}: array[2, JSValue]
-  let jsPromise = JS_NewPromiseCapability(ctx, resolvingFuncs.toJSValueArray())
-  if JS_IsException(jsPromise):
-    return JS_EXCEPTION
-  promise.then(proc(x: Result[T, E]) =
-    if x.isSome:
-      let x = when T is void:
-        JS_UNDEFINED
-      else:
-        toJS(ctx, x.get)
-      let res = JS_Call(ctx, resolvingFuncs[0], JS_UNDEFINED, 1,
-        x.toJSValueArray())
-      JS_FreeValue(ctx, res)
-      JS_FreeValue(ctx, x)
-    else: # err
-      let x = when E is void:
-        JS_UNDEFINED
-      else:
-        toJS(ctx, x.error)
-      let res = JS_Call(ctx, resolvingFuncs[1], JS_UNDEFINED, 1,
-        x.toJSValueArray())
-      JS_FreeValue(ctx, res)
-      JS_FreeValue(ctx, x)
-    JS_FreeValue(ctx, resolvingFuncs[0])
-    JS_FreeValue(ctx, resolvingFuncs[1]))
+    JS_FreeValue(ctx, resolve)
+    JS_FreeValue(ctx, catch)
+  )
   return jsPromise
 
 {.pop.} # raises: []
