@@ -87,7 +87,6 @@ type
     charsetStack: seq[Charset]
     config: BufferConfig
     ctx: TextDecoderContext
-    document: Document
     firstBufferRead: bool
     headlessLoading: bool
     hoverText: array[HoverType, string]
@@ -148,6 +147,9 @@ type
 # Forward declarations
 proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element):
   Request
+
+template document(buffer: Buffer): Document =
+  buffer.window.document
 
 proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
   if iface.len != 0:
@@ -781,7 +783,6 @@ proc switchCharset(buffer: Buffer) =
   buffer.charset = buffer.charsetStack.pop()
   buffer.initDecoder()
   buffer.htmlParser.restart(buffer.charset)
-  buffer.document = buffer.htmlParser.builder.document
   buffer.document.applyUASheet()
   buffer.document.applyUserSheet(buffer.config.userStyle)
   buffer.document.invalid = true
@@ -1969,7 +1970,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     buffer.charset
   )
   assert buffer.htmlParser.builder.document != nil
-  buffer.document = buffer.htmlParser.builder.document
   buffer.document.applyUASheet()
   buffer.document.applyUserSheet(buffer.config.userStyle)
   buffer.runBuffer()
