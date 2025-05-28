@@ -39,7 +39,7 @@ type
     strRefs*: array[JSStrRef, JSAtom]
     valRefs*: array[JSValueRef, JSValue]
     errCtorRefs*: array[JSErrorEnum, JSValue]
-    globalUnref*: JSEmptyOpaqueCallback
+    globalObj*: pointer
 
   JSFinalizerFunction* = proc(rt: JSRuntime; opaque: pointer) {.nimcall,
     raises: [].}

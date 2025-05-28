@@ -224,8 +224,13 @@ proc free*(ctx: JSContext) =
     for e, v in opaque.errCtorRefs:
       if e != jeCustom:
         JS_FreeValue(ctx, v)
-    if opaque.globalUnref != nil:
-      opaque.globalUnref()
+    if opaque.globalObj != nil:
+      let rt = JS_GetRuntime(ctx)
+      let rtOpaque = rt.getOpaque()
+      for fin in rtOpaque.finalizers(opaque.gclass):
+        fin(rt, cast[pointer](opaque.globalObj))
+      GC_unref(cast[RootRef](opaque.globalObj))
+      rtOpaque.plist.del(opaque.globalObj)
     JS_FreeValue(ctx, opaque.global)
     GC_unref(opaque)
   JS_FreeContext(ctx)
@@ -249,15 +254,14 @@ proc setGlobal*[T](ctx: JSContext; obj: T) =
   ## Note: you must call `ctx.registerType(T, asglobal = true)` for this to
   ## work, `T` being the type of `obj`.
   # Add JSValue reference.
-  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  let rt = JS_GetRuntime(ctx)
+  let rtOpaque = rt.getOpaque()
   let ctxOpaque = ctx.getOpaque()
   let opaque = cast[pointer](obj)
   rtOpaque.plist[opaque] = JS_VALUE_GET_PTR(ctxOpaque.global)
   JS_SetOpaque(ctxOpaque.global, opaque)
   GC_ref(obj)
-  ctx.getOpaque().globalUnref = proc() =
-    GC_unref(obj)
-    rtOpaque.plist.del(opaque)
+  ctxOpaque.globalObj = opaque
 
 proc getExceptionMsg*(ctx: JSContext): string =
   result = ""
