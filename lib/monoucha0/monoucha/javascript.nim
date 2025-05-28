@@ -138,12 +138,24 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
     quit(1)
   JS_RunGC(rt)
   assert rtOpaque.destroying == nil
+  # Now comes a very elaborate dance to ensure that ordering
+  # dependencies are satisfied:
+  # * plist must be cleared before finalizers run.
+  # * Individual finalizers rely on their opaques being set.
+  # * Bound JSValues must not drop to a refcount of 0 before their
+  #   opaque is cleared, lest they try to mark related JSValues and/or
+  #   claw back their refcount in can_destroy.
+  # * Allocations must not occur during deinitialization.
+  #
+  # For this we need three passes over the object map.  Theoretically,
+  # two passes would be enough if move worked reliably across Nim
+  # versions.
   var np = 0
   for nimp, jsp in rtOpaque.plist:
+    discard JS_DupValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, jsp))
     rtOpaque.tmplist[np] = (nimp, jsp)
     inc np
   rtOpaque.plist.clear()
-  JS_UnsetCanDestroyHooks(rt)
   for it in rtOpaque.tmplist.toOpenArray(0, np - 1):
     let val = JS_MKPTR(JS_TAG_OBJECT, it.jsp)
     let classid = JS_GetClassID(val)
@@ -159,7 +171,12 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
         GC_unref(cast[RootRef](opaque))
     else: # Nim held a ref to the JS object.
       JS_FreeValueRT(rt, val)
-  # GC will run again now
+      assert cast[ptr cint](it.jsp)[] >= 0
+  # Opaques are unset, and finalizers have run.  Now we can actually
+  # release the JS objects.
+  for it in rtOpaque.tmplist.toOpenArray(0, np - 1):
+    JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_OBJECT, it.jsp))
+  # GC will run again now (in QJS code).
 
 proc newJSRuntime*(): JSRuntime =
   ## Instantiate a Monoucha `JSRuntime`.

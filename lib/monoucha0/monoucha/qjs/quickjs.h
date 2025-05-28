@@ -457,7 +457,6 @@ JS_EXTERN int JS_AddRuntimeFinalizer(JSRuntime *rt,
                                      JSRuntimeFinalizer *finalizer, void *arg);
 JS_EXTERN void JS_SetRuntimeCleanUpFunc(JSRuntime *rt,
                                         JSRuntimeCleanUpFunc cleanup_func);
-JS_EXTERN void JS_UnsetCanDestroyHooks(JSRuntime *rt);
 typedef void JS_MarkFunc(JSRuntime *rt, JSGCObjectHeader *gp);
 JS_EXTERN void JS_MarkValue(JSRuntime *rt, JSValueConst val,
                             JS_MarkFunc *mark_func);
