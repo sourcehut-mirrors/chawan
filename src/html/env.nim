@@ -37,6 +37,9 @@ import types/url
 import types/winattrs
 import utils/twtstr
 
+# Forward declarations
+proc setLocation(window: Window; s: string): Err[JSError]
+
 # NavigatorID
 proc appCodeName(navigator: var Navigator): string {.jsfget.} = "Mozilla"
 proc appName(navigator: var Navigator): string {.jsfget.} = "Netscape"
@@ -106,8 +109,6 @@ proc height(ctx: JSContext; screen: var Screen): int {.jsfget.} =
 
 proc colorDepth(screen: var Screen): int {.jsfget.} = 24
 proc pixelDepth(screen: var Screen): int {.jsfget.} = screen.colorDepth
-
-proc setLocation(window: Window; s: string): Err[JSError]
 
 # History
 func length(history: var History): uint32 {.jsfget.} = 1
@@ -200,6 +201,10 @@ proc addNavigatorModule*(ctx: JSContext) =
   ctx.registerType(History)
   ctx.registerType(Storage)
   ctx.registerType(Crypto)
+
+# Window
+proc finalize(window: Window) {.jsfin.} =
+  window.timeouts.clearAll()
 
 method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
   return window.settings.origin.isSameOrigin(origin)

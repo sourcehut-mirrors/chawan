@@ -7,6 +7,7 @@ import io/console
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jsutils
+import monoucha/quickjs
 import types/opt
 
 type
@@ -30,12 +31,14 @@ type
     sorted: bool
     timeouts: seq[TimeoutEntry]
     jsctx: JSContext
+    jsrt: JSRuntime
     evalJSFree: EvalJSFree
     opaque: RootRef
 
 func newTimeoutState*(jsctx: JSContext; evalJSFree: EvalJSFree;
     opaque: RootRef): TimeoutState =
   return TimeoutState(
+    jsrt: JS_GetRuntime(jsctx),
     jsctx: jsctx,
     evalJSFree: evalJSFree,
     opaque: opaque,
@@ -47,9 +50,9 @@ func empty*(state: TimeoutState): bool =
 
 proc clearTimeout0(state: var TimeoutState; i: int) =
   let entry = state.timeouts[i]
-  JS_FreeValue(state.jsctx, entry.val)
+  JS_FreeValueRT(state.jsrt, entry.val)
   for arg in entry.args:
-    JS_FreeValue(state.jsctx, arg)
+    JS_FreeValueRT(state.jsrt, arg)
   state.timeouts.del(i)
   if state.timeouts.len != i: # only set if we del'd in the middle
     state.sorted = false
@@ -71,12 +74,12 @@ proc setTimeout*(state: var TimeoutState; t: TimeoutType; handler: JSValueConst;
   let entry = TimeoutEntry(
     t: t,
     id: id,
-    val: JS_DupValue(state.jsctx, handler),
+    val: JS_DupValueRT(state.jsrt, handler),
     expires: getUnixMillis() + int64(timeout),
     timeout: timeout
   )
   for arg in args:
-    entry.args.add(JS_DupValue(state.jsctx, arg))
+    entry.args.add(JS_DupValueRT(state.jsrt, arg))
   state.timeouts.add(entry)
   state.sorted = false
   return id
@@ -87,7 +90,7 @@ proc runEntry(state: var TimeoutState; entry: TimeoutEntry; console: Console) =
       cint(entry.args.len), entry.args.toJSValueArray())
     if JS_IsException(ret):
       console.writeException(state.jsctx)
-    JS_FreeValue(state.jsctx, ret)
+    JS_FreeValueRT(state.jsrt, ret)
   else:
     var s: string
     if state.jsctx.fromJS(entry.val, s).isSome:
@@ -132,9 +135,9 @@ proc run*(state: var TimeoutState; console: Console): bool =
 
 proc clearAll*(state: var TimeoutState) =
   for entry in state.timeouts:
-    JS_FreeValue(state.jsctx, entry.val)
+    JS_FreeValueRT(state.jsrt, entry.val)
     for arg in entry.args:
-      JS_FreeValue(state.jsctx, arg)
+      JS_FreeValueRT(state.jsrt, arg)
   state.timeouts.setLen(0)
 
 {.pop.} # raises: []
