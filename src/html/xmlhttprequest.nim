@@ -533,4 +533,4 @@ proc addXMLHttpRequestModule*(ctx: JSContext;
   )]
   let xhrCID = ctx.registerType(XMLHttpRequest, xhretCID, hasExtraGetSet = true,
     extraGetSet = getset1)
-  ctx.defineConsts(xhrCID, XMLHttpRequestState)
+  doAssert ctx.defineConsts(xhrCID, XMLHttpRequestState) == dprSuccess

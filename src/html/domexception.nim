@@ -1,4 +1,3 @@
-import html/script
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/quickjs
@@ -89,4 +88,4 @@ func getCode(this: DOMException): uint16 {.jsfget: "code".} =
 
 proc addDOMExceptionModule*(ctx: JSContext) =
   let domExceptionCID = ctx.registerType(DOMException, JS_CLASS_ERROR)
-  ctx.defineConsts(domExceptionCID, DOMExceptionType)
+  doAssert ctx.defineConsts(domExceptionCID, DOMExceptionType) == dprSuccess

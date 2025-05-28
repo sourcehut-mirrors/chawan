@@ -6169,7 +6169,7 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
 
 proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   let nodeCID = ctx.registerType(Node, parent = eventTargetCID)
-  ctx.defineConsts(nodeCID, NodeType)
+  doAssert ctx.defineConsts(nodeCID, NodeType) == dprSuccess
   let nodeListCID = ctx.registerType(NodeList)
   let htmlCollectionCID = ctx.registerType(HTMLCollection)
   ctx.registerType(HTMLAllCollection)

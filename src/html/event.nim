@@ -649,7 +649,7 @@ proc addEventModule*(ctx: JSContext):
   let uiEventCID = ctx.registerType(UIEvent, parent = eventCID)
   ctx.registerType(MouseEvent, parent = uiEventCID)
   ctx.registerType(InputEvent, parent = uiEventCID)
-  ctx.defineConsts(eventCID, EventPhase)
+  doAssert ctx.defineConsts(eventCID, EventPhase) == dprSuccess
   let eventTargetCID = ctx.registerType(EventTarget)
   return (eventCID, eventTargetCID)
 

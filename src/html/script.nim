@@ -1,6 +1,4 @@
 import monoucha/javascript
-import monoucha/jsopaque
-import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/referrer
@@ -179,26 +177,6 @@ func uninitIfNull*(val: JSValue): JSValue =
   if JS_IsNull(val):
     return JS_UNINITIALIZED
   return val
-
-proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]) =
-  let proto = JS_GetClassProto(ctx, classid)
-  let ctor = ctx.getOpaque().ctors[classid]
-  #TODO it should be enough to define on the proto only, but apparently
-  # it isn't...
-  for e in consts:
-    let s = $e
-    doAssert ctx.definePropertyE(proto, s, uint16(e)) == dprSuccess
-    doAssert ctx.definePropertyE(ctor, s, uint16(e)) == dprSuccess
-  JS_FreeValue(ctx, proto)
-
-proc identity(ctx: JSContext; this_val: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray): JSValue
-    {.cdecl.} =
-  return JS_DupValue(ctx, func_data[0])
-
-#TODO move to javascript.nim?
-proc identityFunction*(ctx: JSContext; val: JSValueConst): JSValue =
-  return JS_NewCFunctionData(ctx, identity, 0, 0, 1, val.toJSValueConstArray())
 
 proc getEnvSettings*(ctx: JSContext): EnvironmentSettings =
   return ctx.getEnvSettingsImpl()
