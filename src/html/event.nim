@@ -108,13 +108,12 @@ var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect,
 
 proc finalize(target: EventTarget) {.jsfin.} =
   # Can't take rt as param here, because elements may be unbound in JS.
-  if target != nil:
-    for el in target.eventListeners:
-      let cb = el.callback
-      let rt = el.rt
-      el.callback = JS_UNDEFINED
-      el.rt = nil
-      JS_FreeValueRT(rt, cb)
+  for el in target.eventListeners:
+    let cb = el.callback
+    let rt = el.rt
+    el.callback = JS_UNDEFINED
+    el.rt = nil
+    JS_FreeValueRT(rt, cb)
 
 proc mark(rt: JSRuntime; target: EventTarget; markFunc: JS_MarkFunc)
     {.jsmark.} =
@@ -483,23 +482,35 @@ proc eventReflectGet*(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   return JS_NULL
 
-proc eventReflectSet0*(ctx: JSContext; this, val: JSValueConst; magic: cint;
-    fun2: JSSetterMagicFunction; atom: StaticAtom): JSValue =
+proc eventReflectSet0*(ctx: JSContext; target: EventTarget;
+    val: JSValueConst; magic: cint; fun2: JSSetterMagicFunction;
+    atom: StaticAtom; target2 = none(EventTarget)): JSValue =
   if JS_IsFunction(ctx, val) or JS_IsNull(val):
-    var target: EventTarget
-    doAssert ctx.fromJS(this, target).isSome
+    let jsTarget = ctx.toJS(target)
+    let jsTarget2 = ctx.toJS(target2)
+    if JS_IsException(jsTarget) or JS_IsException(jsTarget2):
+      return JS_EXCEPTION
     let name = "on" & $atom
     let getter = ctx.identityFunction(val)
     let hack = UnionHack(fun2: fun2) # cast does not work :(
     let setter = JS_NewCFunction2(ctx, hack.fun, cstring(name), 1,
       JS_CFUNC_setter_magic, magic)
     let ja = JS_NewAtom(ctx, cstring(name))
-    let ret = JS_DefineProperty(ctx, this, ja, JS_UNDEFINED, getter, setter,
-        JS_PROP_HAS_GET or JS_PROP_HAS_SET or
+    var ret = JS_DefineProperty(ctx, jsTarget, ja, JS_UNDEFINED, getter,
+        setter, JS_PROP_HAS_GET or JS_PROP_HAS_SET or
+        JS_PROP_HAS_CONFIGURABLE or JS_PROP_CONFIGURABLE)
+    if ret != -1 and target2.isSome:
+      # target2 is set to document.body in case of properties like
+      # onload, which set functions both on document.body and window,
+      # but only set an event listener on window.
+      ret = JS_DefineProperty(ctx, jsTarget2, ja, JS_UNDEFINED, getter,
+        setter, JS_PROP_HAS_GET or JS_PROP_HAS_SET or
         JS_PROP_HAS_CONFIGURABLE or JS_PROP_CONFIGURABLE)
     JS_FreeAtom(ctx, ja)
     JS_FreeValue(ctx, getter)
     JS_FreeValue(ctx, setter)
+    JS_FreeValue(ctx, jsTarget)
+    JS_FreeValue(ctx, jsTarget2)
     if ret == -1:
       return JS_EXCEPTION
     if JS_IsNull(val):
@@ -510,7 +521,10 @@ proc eventReflectSet0*(ctx: JSContext; this, val: JSValueConst; magic: cint;
 
 proc eventReflectSet*(ctx: JSContext; this, val: JSValueConst; magic: cint):
     JSValue {.cdecl.} =
-  return ctx.eventReflectSet0(this, val, magic, eventReflectSet,
+  var target: EventTarget
+  if ctx.fromJS(this, target).isNone:
+    return JS_EXCEPTION
+  return ctx.eventReflectSet0(target, val, magic, eventReflectSet,
     EventReflectMap[magic])
 
 proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;

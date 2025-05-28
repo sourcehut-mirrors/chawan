@@ -566,6 +566,7 @@ proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
 proc invalidateCollections(node: Node)
+proc logException(window: Window; url: URL)
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
@@ -4471,7 +4472,7 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     if ctx.fromJS(val, x).isSome:
       element.attrulgz(entry.attrname, x)
   of rtFunction:
-    return ctx.eventReflectSet0(this, val, magic, jsReflectSet, entry.ctype)
+    return ctx.eventReflectSet0(element, val, magic, jsReflectSet, entry.ctype)
   return JS_DupValue(ctx, val)
 
 func findMagic(ctype: StaticAtom): cint =
@@ -4482,23 +4483,21 @@ func findMagic(ctype: StaticAtom): cint =
       return cint(i)
   -1
 
-proc reflectEvent(element: Element; target: EventTarget;
-    name, ctype: StaticAtom; value: string) =
-  let document = element.document
+proc reflectEvent(document: Document; target: EventTarget;
+    name, ctype: StaticAtom; value: string; target2 = none(EventTarget)) =
   let ctx = document.window.jsctx
-  let urls = document.baseURL.serialize(excludepassword = true)
   let fun = ctx.newFunction(["event"], value)
   assert ctx != nil
   if JS_IsException(fun):
-    document.window.console.error("Exception in body content attribute of",
-      urls, ctx.getExceptionMsg())
+    document.window.logException(document.baseURL)
   else:
     let magic = findMagic(ctype)
     assert magic != -1
-    let this = ctx.toJS(target)
-    JS_FreeValue(ctx, ctx.eventReflectSet0(this, fun, magic, jsReflectSet,
-      ctype))
-    JS_FreeValue(ctx, this)
+    let res = ctx.eventReflectSet0(target, fun, magic, jsReflectSet, ctype,
+      target2)
+    if JS_IsException(res):
+      document.window.logException(document.baseURL)
+    JS_FreeValue(ctx, res)
     JS_FreeValue(ctx, fun)
 
 proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
@@ -4540,19 +4539,29 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
     else:
       element.cachedStyle = nil
     return
-  if name == satOnclick and element.scriptingEnabled:
-    element.reflectEvent(element, name, satClick, value.get(""))
-    return
+  let document = element.document
+  if element.scriptingEnabled:
+    block eventName:
+      case name
+      of satOnclick:
+        document.reflectEvent(element, name, satClick, value.get(""))
+      of satOninput:
+        document.reflectEvent(element, name, satInput, value.get(""))
+      of satOnchange:
+        document.reflectEvent(element, name, satChange, value.get(""))
+      of satOnload:
+        var target = EventTarget(element)
+        var target2 = none(EventTarget)
+        if element.tagType == TAG_BODY:
+          target = document.window
+          target2 = option(EventTarget(element))
+        document.reflectEvent(target, name, satLoad, value.get(""), target2)
+      else:
+        break eventName
+      return # found
   case element.tagType
-  of TAG_BODY:
-    if name == satOnload and element.scriptingEnabled:
-      element.reflectEvent(element.document.window, name, satLoad,
-        value.get(""))
-      return
   of TAG_INPUT:
     let input = HTMLInputElement(element)
-    if name == satOninput and element.scriptingEnabled:
-      input.reflectEvent(input.document.window, name, satInput, value.get(""))
     input.reflect_str satValue, value
     if name == satChecked:
       input.setChecked(value.isSome)
@@ -4616,10 +4625,6 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
       let window = image.document.window
       if window != nil:
         window.loadResource(image)
-  of TAG_SELECT:
-    if name == satOnchange and element.scriptingEnabled:
-      element.reflectEvent(element.document.window, name, satChange,
-        value.get(""))
   else: discard
 
 func cmpAttrName(a: AttrData; b: CAtom): int =

@@ -2,7 +2,7 @@
 <title>Form/form control tests</title>
 <div id=x>Fail</div>
 <form id=test>
-<input id=1 name=input>
+<input id=1 name=input onchange="globalThis.onchangeCalled = true">
 <input id=0 name=input>
 <textarea id=ta>test test</textarea>
 </form>
@@ -26,6 +26,9 @@ assertEquals(document.getElementsByName("input").length, 2);
 	assertEquals(elements["a"], undefined);
 	assertInstanceof(elements[0], HTMLInputElement);
 	assertEquals(elements[0].id, "1");
+	globalThis.onchangeCalled = false;
+	elements[0].dispatchEvent(new Event("change"));
+	assert(globalThis.onchangeCalled);
 	assertEquals(elements["0"].id, "1");
 	assertEquals(elements[0].name, "input");
 	assertInstanceof(elements["input"], RadioNodeList);

@@ -1,10 +1,13 @@
 <!DOCTYPE html>
+<body onload="bodyOnload(event)">
 <div id=y>
 <div id=x>Fail</div>
 </div>
 <script src=asserts.js></script>
 <script>
-window.onload = function() {
+function bodyOnload(event) {
+	assertEquals(event.target, window);
+	document.body.dispatchEvent(new Event("load"));
 	const x = document.getElementById("x")
 	const y = document.getElementById("y")
 	let n = 0;
