@@ -16,6 +16,7 @@ import html/jsintl
 import html/performance
 import html/script
 import html/xmlhttprequest
+import io/chafile
 import io/console
 import io/dynstream
 import io/promise
@@ -499,7 +500,7 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     userAgent, referrer: string): Window =
   let window = Window(
     attrsp: attrsp,
-    internalConsole: newConsole(stderr),
+    internalConsole: newConsole(cast[ChaFile](stderr)),
     navigator: Navigator(),
     loader: loader,
     images: images,

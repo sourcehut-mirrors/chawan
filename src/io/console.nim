@@ -1,20 +1,20 @@
 {.push raises: [].}
 
-import io/dynstream
+import io/chafile
 import monoucha/fromjs
 import monoucha/javascript
 import types/opt
 import utils/twtstr
 
 type Console* = ref object
-  err: File
+  err: ChaFile
   clearFun: proc() {.raises: [].}
   showFun: proc() {.raises: [].}
   hideFun: proc() {.raises: [].}
 
 jsDestructor(Console)
 
-proc newConsole*(err: File; clearFun: proc() = nil; showFun: proc() = nil;
+proc newConsole*(err: ChaFile; clearFun: proc() = nil; showFun: proc() = nil;
     hideFun: proc() = nil): Console =
   return Console(
     err: err,
@@ -23,13 +23,12 @@ proc newConsole*(err: File; clearFun: proc() = nil; showFun: proc() = nil;
     hideFun: hideFun
   )
 
-proc setStream*(console: Console; file: File) =
-  console.err.close()
+proc setStream*(console: Console; file: ChaFile) =
+  discard console.err.close()
   console.err = file
 
 proc write*(console: Console; s: openArray[char]) =
-  if s.len > 0:
-    console.err.fwrite(s)
+  discard console.err.write(s)
 
 proc write*(console: Console; c: char) =
   console.write([c])
@@ -94,7 +93,7 @@ proc addConsoleModule*(ctx: JSContext) =
   ctx.registerType(Console, nointerface = true, name = "console")
 
 proc flush*(console: Console) =
-  console.err.flushFile()
+  discard console.err.flush()
 
 proc writeException*(console: Console; ctx: JSContext) =
   console.write(ctx.getExceptionMsg())

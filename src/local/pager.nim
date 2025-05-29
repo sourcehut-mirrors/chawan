@@ -2158,9 +2158,9 @@ proc clearConsole(pager: Pager) =
     pager.replace(pager.consoleWrapper.container, replacement)
     pager.consoleWrapper.container = replacement
     let console = pager.console
-    var file: File = nil
-    if file.open(ps.fd, fmWrite):
-      console.setStream(file)
+    let file = ps.fdopen("w")
+    if file.isSome:
+      console.setStream(file.get)
 
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
   if interactive and pager.config.start.consoleBuffer:
@@ -2177,16 +2177,16 @@ proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
       let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, url,
         ConsoleTitle, {})
       ps.write("Type (M-c) console.hide() to return to buffer mode.\n")
-      var file: File = nil
-      if file.open(ps.fd, fmWrite):
-        let console = newConsole(file, clearFun, showFun, hideFun)
+      if (let file = ps.fdopen("w"); file.isSome):
+        let console = newConsole(file.get, clearFun, showFun, hideFun)
         return ConsoleWrapper(console: console, container: container)
-  return ConsoleWrapper(console: newConsole(stderr))
+  return ConsoleWrapper(console: newConsole(cast[ChaFile](stderr)))
 
 proc flushConsole*(pager: Pager) =
   if pager.console == nil:
     # hack for when client crashes before console has been initialized
-    pager.consoleWrapper = ConsoleWrapper(console: newConsole(stderr))
+    let console = newConsole(cast[ChaFile](stderr))
+    pager.consoleWrapper = ConsoleWrapper(console: console)
   pager.handleRead(pager.forkserver.estream.fd)
 
 proc command(pager: Pager) {.jsfunc.} =
