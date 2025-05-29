@@ -1826,8 +1826,8 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
 
 proc openInEditor(pager: Pager; input: var string): bool =
   let tmpf = pager.getTempFile()
-  if input != "":
-    discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
+  discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
+  input &= '\n'
   if chafile.writeFile(tmpf, input, 0o600).isNone:
     pager.alert("failed to write temporary file")
     return false
@@ -1837,6 +1837,8 @@ proc openInEditor(pager: Pager; input: var string): bool =
   elif pager.runCommand(cmd, suspend = true, wait = false, JS_UNDEFINED):
     if chafile.readFile(tmpf, input).isSome:
       discard unlink(cstring(tmpf))
+      if input.len > 0 and input[input.high] == '\n':
+        input.setLen(input.high)
       return true
   return false
 
