@@ -5,6 +5,7 @@ import std/strutils
 import std/tables
 import std/times
 
+import io/chafile
 import io/dynstream
 import types/opt
 import types/url
@@ -32,6 +33,7 @@ type
   CookieJarMap* = ref object
     mtime: int64
     jars: OrderedTable[cstring, CookieJar]
+    transient*: bool # set if there is a failure in parsing cookies
 
   CookieMode* = enum
     cmNone = "false"
@@ -52,7 +54,7 @@ proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
 proc getOrDefault*(map: CookieJarMap; name: string): CookieJar =
   return map.jars.getOrDefault(cstring(name))
 
-proc parseCookieDate(val: string): Option[int64] =
+proc parseCookieDate(val: string): Opt[int64] =
   # cookie-date
   const Delimiters = {'\t', ' '..'/', ';'..'@', '['..'`', '{'..'~'}
   const NonDigit = AllChars - AsciiDigit
@@ -108,16 +110,14 @@ proc parseCookieDate(val: string): Option[int64] =
       if digits.len == 4:
         year = parseInt32(digits).get
         continue
-  if not (month != 0 and dayOfMonth in 1..getDaysInMonth(Month(month), year) and
-      year >= 1601 and foundTime):
-    return none(int64)
-  if time[0] > 23: return none(int64)
-  if time[1] > 59: return none(int64)
-  if time[2] > 59: return none(int64)
+  if month == 0 or dayOfMonth notin 1..getDaysInMonth(Month(month), year) or
+      year < 1601 or not foundTime or
+      time[0] > 23 or time[1] > 59 or time[2] > 59:
+    return err()
   let dt = dateTime(year, Month(month), MonthdayRange(dayOfMonth),
     HourRange(time[0]), MinuteRange(time[1]), SecondRange(time[2]),
     zone = utc())
-  return some(dt.toTime().toUnix())
+  ok(dt.toTime().toUnix())
 
 # For debugging
 proc `$`*(cookieJar: CookieJar): string =
@@ -274,14 +274,13 @@ proc setCookie*(cookieJar: CookieJar; header: openArray[string]; url: URL;
 
 type ParseState = object
   i: int
-  cookie: Cookie
   error: bool
 
 proc nextField(state: var ParseState; iq: openArray[char]): string =
-  if state.i >= iq.len or iq[state.i] == '\n':
+  if state.i >= iq.len:
     state.error = true
     return ""
-  var field = iq.until({'\t', '\n'}, state.i)
+  var field = iq.until('\t', state.i)
   state.i += field.len
   if state.i < iq.len and iq[state.i] == '\t':
     inc state.i
@@ -302,127 +301,121 @@ proc nextInt64(state: var ParseState; iq: openArray[char]): int64 =
     return 0
   return x.get
 
-proc parse(map: CookieJarMap; iq: openArray[char]; warnings: var seq[string]) =
-  var state = ParseState()
-  var line = 0
-  while state.i < iq.len:
-    var httpOnly = false
-    if iq[state.i] == '\n':
-      inc state.i
-      continue
-    if iq[state.i] == '#':
-      inc state.i
-      let first = iq.until({'_', '\n'}, state.i)
-      state.i += first.len
-      if first != "HttpOnly":
-        while state.i < iq.len and iq[state.i] != '\n':
+# Consumes `file'.
+proc parse0(map: CookieJarMap; file: ChaFile; warnings: var seq[string]):
+    Opt[void] =
+  try:
+    var line = ""
+    var nline = 0
+    while ?file.readLine(line):
+      if line.len != 0:
+        var state = ParseState()
+        var httpOnly = false
+        if line[0] == '#':
           inc state.i
-        inc state.i
-        inc line
-        continue
-      inc state.i
-      httpOnly = true
-    state.error = false
-    let cookie = Cookie(httpOnly: httpOnly, persist: true)
-    var domain = state.nextField(iq)
-    var cookieJar: CookieJar = nil
-    if (let j = domain.find('@'); j != -1):
-      cookie.domain = domain.substr(j + 1)
-      if cookie.domain[0] == '.':
-        cookie.domain.delete(0..0)
-      domain.setLen(j)
-    else:
-      if domain[0] == '.':
-        domain.delete(0..0)
-      cookie.domain = domain
-    cookieJar = map.getOrDefault(domain)
-    if cookieJar == nil:
-      cookieJar = map.addNew(domain)
-    cookie.hostOnly = not state.nextBool(iq)
-    cookie.path = state.nextField(iq)
-    cookie.secure = state.nextBool(iq)
-    cookie.expires = state.nextInt64(iq)
-    cookie.name = state.nextField(iq)
-    cookie.value = state.nextField(iq)
-    if not state.error:
-      cookieJar.add(cookie, parseMode = true)
-    else:
-      warnings.add("skipped invalid cookie line " & $line)
-    inc state.i
-    inc line
+          let first = line.until('_', state.i)
+          state.i += first.len
+          if first != "HttpOnly":
+            inc nline
+            continue
+          inc state.i
+          httpOnly = true
+        state.error = false
+        let cookie = Cookie(httpOnly: httpOnly, persist: true)
+        var domain = state.nextField(line)
+        var cookieJar: CookieJar = nil
+        if (let j = domain.find('@'); j != -1):
+          cookie.domain = domain.substr(j + 1)
+          if cookie.domain[0] == '.':
+            cookie.domain.delete(0..0)
+          domain.setLen(j)
+        else:
+          if domain[0] == '.':
+            domain.delete(0..0)
+          cookie.domain = domain
+        cookieJar = map.getOrDefault(domain)
+        if cookieJar == nil:
+          cookieJar = map.addNew(domain)
+        cookie.hostOnly = not state.nextBool(line)
+        cookie.path = state.nextField(line)
+        cookie.secure = state.nextBool(line)
+        cookie.expires = state.nextInt64(line)
+        cookie.name = state.nextField(line)
+        cookie.value = state.nextField(line)
+        if not state.error:
+          cookieJar.add(cookie, parseMode = true)
+        else:
+          warnings.add("skipped invalid cookie line " & $nline)
+      inc nline
+  finally:
+    ?file.close()
+  ok()
 
 # Consumes `ps'.
-proc parse*(map: CookieJarMap; ps: PosixStream; mtime: int64;
-    warnings: var seq[string]) =
-  let src = ps.readAllOrMmap()
-  map.parse(src.toOpenArray(), warnings)
-  deallocMem(src)
-  map.mtime = mtime
-  ps.sclose()
+# If the cookie file's mtime is less than otime, it won't be parsed.
+# (This is used when writing the file, to merge in new data
+# from other instances written after we first parsed the file.)
+proc parse*(map: CookieJarMap; ps: PosixStream; warnings: var seq[string];
+    otime = int64.high): Opt[void] =
+  var stats: Stat
+  if fstat(ps.fd, stats) == -1:
+    ps.sclose()
+    return err()
+  let mtime = int64(stats.st_mtime)
+  if mtime < otime:
+    let file = ?ps.fdopen("r")
+    ?map.parse0(file, warnings)
+    map.mtime = mtime
+  ok()
 
-proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
-  header: "<stdio.h>".}
-
-proc write*(map: CookieJarMap; file: string): bool =
-  let ps = newPosixStream(file)
+proc write*(map: CookieJarMap; path: string): Opt[void] =
+  let ps = newPosixStream(path)
   if ps != nil:
-    var stats: Stat
-    if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
-      if int64(stats.st_mtime) > map.mtime:
-        var dummy: seq[string] = @[]
-        map.parse(ps, int64(stats.st_mtime), dummy)
-      else:
-        ps.sclose()
-    else:
-      ps.sclose()
+    var dummy: seq[string] = @[]
+    ?map.parse(ps, dummy, map.mtime)
   elif map.jars.len == 0:
-    return true
-  let tmp = file & '~'
-  block write:
-    let ps = newPosixStream(tmp, O_WRONLY or O_CREAT, 0o600)
-    var i = 0
-    let time = getTime().toUnix()
-    if ps != nil:
-      var buf = """
+    return ok()
+  let tmp = path & '~'
+  let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT, 0o600)
+  if ps2 == nil:
+    return err()
+  let file = ?ps2.fdopen("w")
+  var i = 0
+  let time = getTime().toUnix()
+  try:
+    ?file.write("""
 # Netscape HTTP Cookie file
 # Autogenerated by Chawan.  Manually added cookies are normally
 # preserved, but comments will be lost.
 
-"""
-      for name, jar in map.jars:
-        for cookie in jar.cookies:
-          if cookie.expires <= time or not cookie.persist:
-            continue # session cookie
-          if buf.len >= 4096: # flush
-            if not ps.writeDataLoop(buf):
-              ps.sclose()
-              return false
-            buf.setLen(0)
-          if cookie.httpOnly:
-            buf &= "#HttpOnly_"
-          if cstring(cookie.domain) != name:
-            buf &= $name & "@"
-          if not cookie.hostOnly:
-            buf &= '.'
-          buf &= cookie.domain & '\t'
-          const BoolMap = [false: "FALSE", true: "TRUE"]
-          buf &= BoolMap[not cookie.hostOnly] & '\t' # flipped intentionally
-          buf &= cookie.path & '\t'
-          buf &= BoolMap[cookie.secure] & '\t'
-          buf &= $cookie.expires & '\t'
-          buf &= cookie.name & '\t'
-          buf &= cookie.value & '\n'
-          inc i
-      if not ps.writeDataLoop(buf):
-        ps.sclose()
-        return false
+""")
+    for name, jar in map.jars:
+      for cookie in jar.cookies:
+        if cookie.expires <= time or not cookie.persist:
+          continue # session cookie
+        var buf = ""
+        if cookie.httpOnly:
+          buf &= "#HttpOnly_"
+        if cstring(cookie.domain) != name:
+          buf &= $name & "@"
+        if not cookie.hostOnly:
+          buf &= '.'
+        buf &= cookie.domain & '\t'
+        const BoolMap = [false: "FALSE", true: "TRUE"]
+        buf &= BoolMap[not cookie.hostOnly] & '\t' # flipped intentionally
+        buf &= cookie.path & '\t'
+        buf &= BoolMap[cookie.secure] & '\t'
+        buf &= $cookie.expires & '\t'
+        buf &= cookie.name & '\t'
+        buf &= cookie.value & '\n'
+        ?file.write(buf)
+        inc i
     if i == 0:
       discard unlink(cstring(tmp))
-      discard unlink(cstring(file))
-      ps.sclose()
-      return true
+      discard unlink(cstring(path))
+      return ok()
     if fsync(ps.fd) != 0:
-      ps.sclose()
-      return false
-    ps.sclose()
-    return c_rename(cstring(tmp), file) == 0
+      return err()
+  finally:
+    ?file.close()
+  return chafile.rename(tmp, path)

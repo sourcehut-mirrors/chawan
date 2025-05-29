@@ -1,9 +1,13 @@
 # Generic object for line editing and browsing hist.
+
+{.push raises: [].}
+
 import std/posix
 import std/tables
 
+import io/chafile
 import io/dynstream
-import utils/twtstr
+import types/opt
 
 type
   History* = ref object
@@ -13,6 +17,7 @@ type
     map: Table[string, HistoryEntry]
     len: int
     maxLen: int
+    transient*: bool # set if there is a failure in parsing history
 
   HistoryEntry* = ref object
     s*: string
@@ -54,67 +59,59 @@ func newHistory*(maxLen: int; mtime = 0i64): History =
 proc add*(hist: History; s: sink string) =
   hist.add(HistoryEntry(s: s))
 
-proc parse(hist: History; iq: openArray[char]) =
-  var i = 0
-  while i < iq.len:
-    let s = iq.until('\n', i)
-    i += s.len + 1
-    hist.add(s)
+# Consumes `ps'.
+# If the history file's mtime is less than otime, it won't be parsed.
+# (This is used when writing the file, to merge in new data from other
+# instances written after we first parsed the file.)
+proc parse*(hist: History; ps: PosixStream; otime = int64.high): Opt[void] =
+  var stats: Stat
+  if fstat(ps.fd, stats) == -1:
+    ps.sclose()
+    return err()
+  let mtime = int64(stats.st_mtime)
+  if mtime < otime:
+    let file = ?ps.fdopen("r")
+    try:
+      var line = ""
+      while ?file.readLine(line):
+        hist.add(line)
+    finally:
+      ?file.close()
+    hist.mtime = mtime
+  ok()
 
 # Consumes `ps'.
-proc parse*(hist: History; ps: PosixStream; mtime: int64) =
-  let src = ps.readAllOrMmap()
-  hist.parse(src.toOpenArray())
-  hist.mtime = mtime
-  deallocMem(src)
-  ps.sclose()
-
-proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
-  header: "<stdio.h>".}
-
-# Consumes `ps'.
-proc write*(hist: History; ps: PosixStream; sync, reverse: bool): bool =
-  var buf = ""
+proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
   var entry = if reverse: hist.last else: hist.first
-  var res = true
-  while entry != nil:
-    buf &= entry.s
-    buf &= '\n'
-    if buf.len >= 4096:
-      if not ps.writeDataLoop(buf):
-        res = false
-        break
-      buf = ""
+  let file = ?ps.fdopen("w")
+  try:
     if reverse:
-      entry = entry.prev
+      while entry != nil:
+        ?file.writeLine(entry.s)
+        entry = entry.prev
     else:
-      entry = entry.next
-  if buf.len > 0 and not ps.writeDataLoop(buf):
-    res = false
-  if sync and res:
-    res = fsync(ps.fd) == 0
-  ps.sclose()
-  return res
+      while entry != nil:
+        ?file.writeLine(entry.s)
+        entry = entry.next
+    ?file.flush()
+    if sync and fsync(ps.fd) != 0:
+      return err()
+  finally:
+    ?file.close()
+  ok()
 
-proc write*(hist: History; file: string): bool =
+proc write*(hist: History; file: string): Opt[void] =
   let ps = newPosixStream(file)
   if ps != nil:
-    var stats: Stat
-    if fstat(ps.fd, stats) != -1 and S_ISREG(stats.st_mode):
-      let mtime = int64(stats.st_mtime)
-      if mtime > hist.mtime:
-        hist.parse(ps, mtime)
-      else:
-        ps.sclose()
-    else:
-      ps.sclose()
+    ?hist.parse(ps, hist.mtime)
   if hist.first == nil:
-    return true
-  block write:
-    # Can't just use getTempFile, because the temp directory may be in
-    # another filesystem.
-    let tmp = file & '~'
-    let ps = newPosixStream(tmp, O_WRONLY or O_CREAT, 0o600)
-    if ps != nil and hist.write(ps, sync = true, reverse = false):
-      return c_rename(cstring(tmp), file) == 0
-  return false
+    return ok()
+  let tmp = file & '~'
+  let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT, 0o600)
+  if ps2 == nil:
+    return err()
+  ?hist.write(ps2, sync = true, reverse = false)
+  ?chafile.rename(tmp, file)
+  ok()
+
+{.pop.} # raises: []

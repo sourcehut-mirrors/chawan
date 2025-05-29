@@ -528,20 +528,16 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     let hist = newHistory(pager.config.external.historySize, getTime().toUnix())
     let ps = newPosixStream(pager.config.external.historyFile)
     if ps != nil:
-      var stat: Stat
-      if fstat(ps.fd, stat) != -1:
-        hist.parse(ps, int64(stat.st_mtime))
-      else:
-        ps.sclose()
+      if hist.parse(ps).isNone:
+        hist.transient = true
+        pager.alert("failed to read history")
     pager.lineHist[lmLocation] = hist
   block cookie:
     let ps = newPosixStream(pager.config.external.cookieFile)
     if ps != nil:
-      var stat: Stat
-      if fstat(ps.fd, stat) != -1:
-        pager.cookieJars.parse(ps, int64(stat.st_mtime), pager.alerts)
-      else:
-        ps.sclose()
+      if pager.cookieJars.parse(ps, pager.alerts).isNone:
+        pager.cookieJars.transient = true
+        pager.alert("failed to read cookies")
   return pager
 
 proc cleanup(pager: Pager) =
@@ -549,13 +545,15 @@ proc cleanup(pager: Pager) =
     pager.alive = false
     pager.term.quit()
     let hist = pager.lineHist[lmLocation]
-    if not hist.write(pager.config.external.historyFile):
-      if dirExists(pager.config.dir):
-        # History is enabled by default, so do not print the error
-        # message if no config dir exists.
-        pager.alert("failed to save history")
-    if not pager.cookieJars.write(pager.config.external.cookieFile):
-      pager.alert("failed to save cookies")
+    if not hist.transient:
+      if hist.write(pager.config.external.historyFile).isNone:
+        if dirExists(pager.config.dir):
+          # History is enabled by default, so do not print the error
+          # message if no config dir exists.
+          pager.alert("failed to save history")
+    if not pager.cookieJars.transient:
+      if pager.cookieJars.write(pager.config.external.cookieFile).isNone:
+        pager.alert("failed to save cookies")
     for msg in pager.alerts:
       stderr.fwrite("cha: " & msg & '\n')
     for val in pager.config.cmd.map.values:
@@ -2137,7 +2135,7 @@ proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
     return nil
   ps.setCloseOnExec()
   let hist = pager.lineHist[lmLocation]
-  if not hist.write(ps, sync = false, reverse = true):
+  if hist.write(ps, sync = false, reverse = true).isNone:
     pager.alert("failed to write history")
   return url
 
