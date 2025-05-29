@@ -210,6 +210,7 @@ proc finalize(window: Window) {.jsfin.} =
     it = JS_UNINITIALIZED
     JS_FreeValueRT(window.jsrt, val)
   window.jsStore.setLen(0)
+  window.settings.moduleMap.clear(window.jsrt)
 
 method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
   return window.settings.origin.isSameOrigin(origin)

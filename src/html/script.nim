@@ -60,6 +60,7 @@ type
     options*: ScriptOptions
     mutedErrors*: bool
     #TODO parse error/error to rethrow
+    rt*: JSRuntime
     record*: JSValue
 
   ScriptOptions* = object
@@ -94,19 +95,59 @@ var getEnvSettingsImpl*: proc(ctx: JSContext): EnvironmentSettings {.
 var storeJSImpl*: proc(ctx: JSContext; v: JSValue): int {.nimcall, raises: [].}
 var fetchJSImpl*: proc(ctx: JSContext; n: int): JSValue {.nimcall, raises: [].}
 
-proc find*(moduleMap: ModuleMap; url: URL; moduleType: string): int =
+proc free*(script: Script) =
+  let record = script.record
+  let rt = script.rt
+  assert rt != nil
+  script.record = JS_UNINITIALIZED
+  script.rt = nil
+  JS_FreeValueRT(rt, record)
+
+proc clear*(moduleMap: var ModuleMap; rt: JSRuntime) =
+  for it in moduleMap.mitems:
+    if it.value.t == srtScript:
+      it.value.script.free()
+  moduleMap.setLen(0)
+
+proc find(moduleMap: ModuleMap; url: URL; moduleType: string): int =
   let surl = $url
   for i, entry in moduleMap.mypairs:
     if entry.key.moduleType == moduleType and entry.key.url == surl:
       return i
   return -1
 
+proc clone(script: Script): Script =
+  return Script(
+    baseURL: script.baseURL,
+    options: script.options,
+    mutedErrors: script.mutedErrors,
+    #TODO parse error/error to rethrow
+    rt: script.rt,
+    record: JS_DupValueRT(script.rt, script.record)
+  )
+
+proc clone*(value: ScriptResult): ScriptResult =
+  case value.t
+  of srtScript:
+    return ScriptResult(t: srtScript, script: value.script.clone())
+  of srtNull, srtFetching:
+    return value
+  of srtImportMapParse:
+    return ScriptResult(t: srtImportMapParse)
+
+proc get*(moduleMap: ModuleMap; url: URL; moduleType: string): ScriptResult =
+  let i = moduleMap.find(url, moduleType)
+  if i == -1:
+    return nil
+  return moduleMap[i].value.clone()
+
 proc set*(moduleMap: var ModuleMap; url: URL; moduleType: string;
     value: ScriptResult; ctx: JSContext) =
   let i = moduleMap.find(url, moduleType)
   if i != -1:
-    if moduleMap[i].value.t == srtScript:
-      JS_FreeValue(ctx, moduleMap[i].value.script.record)
+    let ovalue = moduleMap[i].value
+    if ovalue.t == srtScript:
+      ovalue.script.free()
     moduleMap[i].value = value
   else:
     moduleMap.add(ModuleMapEntry(key: ($url, moduleType), value: value))
@@ -126,6 +167,7 @@ proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
   return ScriptResult(
     t: srtScript,
     script: Script(
+      rt: JS_GetRuntime(ctx),
       record: record,
       baseURL: baseURL,
       options: options,
@@ -140,6 +182,7 @@ proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
   return ScriptResult(
     t: srtScript,
     script: Script(
+      rt: JS_GetRuntime(ctx),
       record: record,
       baseURL: baseURL,
       options: options

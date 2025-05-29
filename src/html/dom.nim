@@ -380,7 +380,9 @@ type
     ctype: ScriptType
     internalNonce: string
     scriptResult*: ScriptResult
-    onReady: (proc())
+    onReady: (proc(element: HTMLScriptElement) {.nimcall, raises: [].})
+
+  OnCompleteProc = proc(element: HTMLScriptElement, res: ScriptResult)
 
   HTMLBaseElement* = ref object of HTMLElement
 
@@ -563,6 +565,7 @@ proc attr*(element: Element; name: CAtom; value: sink string)
 proc attr*(element: Element; name: StaticAtom; value: sink string)
 proc baseURL*(document: Document): URL
 proc delAttr(element: Element; i: int; keep = false)
+proc execute*(element: HTMLScriptElement)
 proc getImageId(window: Window): int
 proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
 proc invalidate*(element: Element)
@@ -571,6 +574,7 @@ proc invalidateCollections(node: Node)
 proc logException(window: Window; url: URL)
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
+proc prepare*(element: HTMLScriptElement)
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc remove*(node: Node)
 proc replace*(parent, child, node: Node): Err[DOMException]
@@ -578,6 +582,12 @@ proc replaceAll(parent: Node; s: sink string)
 proc attrl(element: Element; name: StaticAtom; value: int32)
 proc attrul(element: Element; name: StaticAtom; value: uint32)
 proc attrulgz(element: Element; name: StaticAtom; value: uint32)
+#TODO settings object
+proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
+  destination: RequestDestination; onComplete: OnCompleteProc)
+proc fetchSingleModule(element: HTMLScriptElement; url: URL;
+  destination: RequestDestination; options: ScriptOptions; referrer: URL;
+  isTopLevel: bool; onComplete: OnCompleteProc)
 
 # Forward declaration hacks
 # set in css/match
@@ -4934,7 +4944,8 @@ proc resetFormOwner(element: FormAssociatedElement) =
       if ancestor of HTMLFormElement:
         element.setForm(HTMLFormElement(ancestor))
 
-proc elementInsertionSteps(element: Element) =
+# Returns true if has post-connection steps.
+proc elementInsertionSteps(element: Element): bool =
   case element.tagType
   of TAG_OPTION:
     if element.parentElement != nil:
@@ -4959,11 +4970,19 @@ proc elementInsertionSteps(element: Element) =
       window.loadResource(image)
   of TAG_STYLE:
     HTMLStyleElement(element).updateSheet()
+  of TAG_SCRIPT:
+    return true
   elif element of FormAssociatedElement:
     let element = FormAssociatedElement(element)
     if element.parserInserted:
       return
     element.resetFormOwner()
+  false
+
+proc postConnectionSteps(element: Element) =
+  let script = HTMLScriptElement(element)
+  if script.isConnected and script.parserDocument == nil:
+    script.prepare()
 
 func isValidParent(node: Node): bool =
   return node of Element or node of Document or node of DocumentFragment
@@ -5055,9 +5074,13 @@ proc insertNode(parent, node, before: Node) =
   if node.document != nil and (node of HTMLStyleElement or
       node of HTMLLinkElement):
     node.document.applyAuthorSheets()
+  var nodes: seq[Element] = @[]
   for el in node.elementsIncl:
     #TODO shadow root
-    el.elementInsertionSteps()
+    if el.elementInsertionSteps():
+      nodes.add(el)
+  for el in nodes:
+    el.postConnectionSteps()
 
 # WARNING ditto
 proc insert*(parent, node, before: Node; suppressObservers = false) =
@@ -5299,43 +5322,56 @@ proc blockRendering(element: Element) =
   if document.contentType == "text/html" and document.body == nil:
     element.document.renderBlockingElements.add(element)
 
+# <script>
+proc finalize(element: HTMLScriptElement) {.jsfin.} =
+  if element.scriptResult != nil and element.scriptResult.t == srtScript:
+    let script = element.scriptResult.script
+    if script.rt != nil and not JS_IsUninitialized(script.record):
+      script.free()
+
+proc mark(rt: JSRuntime; element: HTMLScriptElement; markFunc: JS_MarkFunc)
+    {.jsmark.} =
+  if element.scriptResult != nil and element.scriptResult.t == srtScript:
+    let script = element.scriptResult.script
+    if script.rt != nil and not JS_IsUninitialized(script.record):
+      JS_MarkValue(rt, script.record, markFunc)
+
 proc markAsReady(element: HTMLScriptElement; res: ScriptResult) =
   element.scriptResult = res
   if element.onReady != nil:
-    element.onReady()
+    element.onReady(element)
     element.onReady = nil
   element.delayingTheLoadEvent = false
 
-type OnCompleteProc = proc(element: HTMLScriptElement, res: ScriptResult)
+proc scriptOnReadyRunInParser(element: HTMLScriptElement) =
+  element.readyForParserExec = true
+
+proc scriptOnReadyNoParser(element: HTMLScriptElement) =
+  let prepdoc = element.preparationTimeDocument
+  if prepdoc.scriptsToExecInOrder.len > 0 and
+      prepdoc.scriptsToExecInOrder[0] != element:
+    while prepdoc.scriptsToExecInOrder.len > 0:
+      let script = prepdoc.scriptsToExecInOrder[0]
+      if script.scriptResult == nil:
+        break
+      script.execute()
+      prepdoc.scriptsToExecInOrder.shrink(1)
+
+proc scriptOnReadyAsync(element: HTMLScriptElement) =
+  let prepdoc = element.preparationTimeDocument
+  element.execute()
+  let i = prepdoc.scriptsToExecSoon.find(element)
+  prepdoc.scriptsToExecSoon.delete(i)
 
 proc fetchClassicScript(element: HTMLScriptElement; url: URL;
-    options: ScriptOptions; cors: CORSAttribute; cs: Charset;
-    onComplete: OnCompleteProc) =
-  let window = element.document.window
+    cors: CORSAttribute; onComplete: OnCompleteProc): Response =
   if not element.scriptingEnabled:
-    element.onComplete(ScriptResult(t: srtNull))
-    return
+    element.markAsReady(ScriptResult(t: srtNull))
+    return nil
+  let window = element.document.window
   let request = createPotentialCORSRequest(url, rdScript, cors)
   request.client = some(window.settings)
-  #TODO make this non-blocking somehow
-  let response = window.loader.doRequest(request.request)
-  if response.res != 0:
-    element.onComplete(ScriptResult(t: srtNull))
-    return
-  response.resume()
-  let s = response.body.readAll()
-  let cs = if cs == CHARSET_UNKNOWN: CHARSET_UTF_8 else: cs
-  let source = s.decodeAll(cs)
-  response.body.sclose()
-  let script = window.jsctx.newClassicScript(source, url, options, false)
-  element.onComplete(script)
-
-#TODO settings object
-proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
-    destination: RequestDestination; onComplete: OnCompleteProc)
-proc fetchSingleModule(element: HTMLScriptElement; url: URL;
-    destination: RequestDestination; options: ScriptOptions;
-    referrer: URL; isTopLevel: bool; onComplete: OnCompleteProc)
+  return window.loader.doRequest(request.request)
 
 #TODO settings object
 proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
@@ -5379,11 +5415,15 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
   #TODO ummm...
   let window = element.document.window
   let ctx = window.jsctx
-  if JS_ResolveModule(ctx, script.record) < 0:
+  let record = script.record
+  if JS_ResolveModule(ctx, record) < 0:
     window.logException(script.baseURL)
+    script.free()
     return
-  ctx.setImportMeta(script.record, true)
-  let res = JS_EvalFunction(ctx, script.record)
+  ctx.setImportMeta(record, true)
+  script.record = JS_UNINITIALIZED
+  script.rt = nil
+  let res = JS_EvalFunction(ctx, record) # consumes record
   if JS_IsException(res):
     window.logException(script.baseURL)
     return
@@ -5403,12 +5443,12 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   #TODO moduleRequest
   let window = element.document.window
   let settings = window.settings
-  let i = settings.moduleMap.find(url, moduleType)
-  if i != -1:
-    if settings.moduleMap[i].value.t == srtFetching:
+  let res = settings.moduleMap.get(url, moduleType)
+  if res != nil:
+    if res.t == srtFetching:
       #TODO await value
       assert false
-    element.onComplete(settings.moduleMap[i].value)
+    element.onComplete(res)
     return
   let destination = moduleType.moduleTypeToRequestDest(destination)
   let mode = if destination in {rdWorker, rdSharedworker, rdServiceworker}:
@@ -5455,7 +5495,8 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
           else:
             if referrerPolicy.isSome:
               res.script.options.referrerPolicy = referrerPolicy
-            settings.moduleMap.set(url, moduleType, res, ctx)
+            # set & onComplete both take ownership
+            settings.moduleMap.set(url, moduleType, res.clone(), ctx)
             element.onComplete(res)
         else:
           #TODO non-JS modules
@@ -5465,7 +5506,8 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
 
 proc execute*(element: HTMLScriptElement) =
   let document = element.document
-  if document != element.preparationTimeDocument:
+  let window = document.window
+  if document != element.preparationTimeDocument or window == nil:
     return
   let i = document.renderBlockingElements.find(element)
   if i != -1:
@@ -5475,7 +5517,8 @@ proc execute*(element: HTMLScriptElement) =
   if element.scriptResult == nil:
     return
   if element.scriptResult.t == srtNull:
-    #TODO fire error event
+    window.fireEvent(satError, element, bubbles = false,
+      cancelable = false, trusted = true)
     return
   let needsInc = element.external or element.ctype == stModule
   if needsInc:
@@ -5485,14 +5528,16 @@ proc execute*(element: HTMLScriptElement) =
     let oldCurrentScript = document.currentScript
     #TODO not if shadow root
     document.currentScript = element
-    let window = document.window
-    if window != nil and window.jsctx != nil:
+    if window.jsctx != nil:
       let script = element.scriptResult.script
       let ctx = window.jsctx
       if JS_IsException(script.record):
         window.logException(script.baseURL)
       else:
-        let ret = ctx.evalFunction(script.record)
+        let record = script.record
+        script.record = JS_UNINITIALIZED
+        script.rt = nil
+        let ret = JS_EvalFunction(ctx, record) # consumes record
         if JS_IsException(ret):
           window.logException(script.baseURL)
         JS_FreeValue(ctx, ret)
@@ -5500,6 +5545,9 @@ proc execute*(element: HTMLScriptElement) =
   else: discard #TODO
   if needsInc:
     dec document.ignoreDestructiveWrites
+  if element.external:
+    window.fireEvent(satLoad, element, bubbles = false, cancelable = false,
+      trusted = true)
 
 # https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
 proc prepare*(element: HTMLScriptElement) =
@@ -5509,10 +5557,10 @@ proc prepare*(element: HTMLScriptElement) =
   element.parserDocument = nil
   if parserDocument != nil and not element.attrb(satAsync):
     element.forceAsync = true
+  let window = element.document.window
   let sourceText = element.childTextContent
-  if not element.attrb(satSrc) and sourceText == "":
-    return
-  if not element.isConnected:
+  if not element.attrb(satSrc) and sourceText == "" or
+      not element.isConnected or window == nil:
     return
   let t = element.attr(satType)
   let typeString = if t != "":
@@ -5534,21 +5582,17 @@ proc prepare*(element: HTMLScriptElement) =
     element.forceAsync = false
   element.alreadyStarted = true
   element.preparationTimeDocument = element.document
-  if parserDocument != nil and
-      parserDocument != element.preparationTimeDocument:
-    return
-  if not element.scriptingEnabled:
-    return
-  if element.attrb(satNomodule) and element.ctype == stClassic:
+  if parserDocument != nil and parserDocument != element.document or
+      not element.scriptingEnabled or
+      element.attrb(satNomodule) and element.ctype == stClassic:
     return
   #TODO content security policy
   if element.ctype == stClassic and element.attrb(satEvent) and
       element.attrb(satFor):
     let f = element.attr(satFor).strip(chars = AsciiWhitespace)
     let event = element.attr(satEvent).strip(chars = AsciiWhitespace)
-    if not f.equalsIgnoreCase("window"):
-      return
-    if not event.equalsIgnoreCase("onload") and
+    if not f.equalsIgnoreCase("window") or
+        not event.equalsIgnoreCase("onload") and
         not event.equalsIgnoreCase("onload()"):
       return
   let cs = getCharset(element.attr(satCharset))
@@ -5565,18 +5609,14 @@ proc prepare*(element: HTMLScriptElement) =
     referrerpolicy: element.referrerpolicy
   )
   #TODO settings object
+  var response: Response = nil
   if element.attrb(satSrc):
-    if element.ctype == stImportMap:
-      #TODO fire error event
-      return
     let src = element.attr(satSrc)
-    if src == "":
-      #TODO fire error event
-      return
-    element.external = true
     let url = element.document.parseURL(src)
-    if url.isNone:
-      #TODO fire error event
+    element.external = src != "" and element.ctype != stImportMap
+    if element.ctype == stImportMap or url.isNone:
+      window.fireEvent(satError, element, bubbles = false,
+        cancelable = false, trusted = true)
       return
     if element.renderBlocking:
       element.blockRendering()
@@ -5584,8 +5624,7 @@ proc prepare*(element: HTMLScriptElement) =
     if element in element.document.renderBlockingElements:
       options.renderBlocking = true
     if element.ctype == stClassic:
-      element.fetchClassicScript(url.get, options, classicCORS, encoding,
-        markAsReady)
+      response = element.fetchClassicScript(url.get, classicCORS, markAsReady)
     else: # stModule
       element.fetchExternalModuleGraph(url.get, options, markAsReady)
   else:
@@ -5607,36 +5646,29 @@ proc prepare*(element: HTMLScriptElement) =
   if element.ctype == stClassic and element.attrb(satSrc) or
       element.ctype == stModule:
     let prepdoc = element.preparationTimeDocument
-    if element.attrb(satAsync):
+    if element.attrb(satAsync) or element.forceAsync:
       prepdoc.scriptsToExecSoon.add(element)
-      element.onReady = (proc() =
-        element.execute()
-        let i = prepdoc.scriptsToExecSoon.find(element)
-        element.preparationTimeDocument.scriptsToExecSoon.delete(i)
-      )
+      element.onReady = scriptOnReadyAsync
     elif element.parserDocument == nil:
       prepdoc.scriptsToExecInOrder.addFirst(element)
-      element.onReady = (proc() =
-        if prepdoc.scriptsToExecInOrder.len > 0 and
-            prepdoc.scriptsToExecInOrder[0] != element:
-          while prepdoc.scriptsToExecInOrder.len > 0:
-            let script = prepdoc.scriptsToExecInOrder[0]
-            if script.scriptResult == nil:
-              break
-            script.execute()
-            prepdoc.scriptsToExecInOrder.shrink(1)
-      )
+      element.onReady = scriptOnReadyNoParser
     elif element.ctype == stModule or element.attrb(satDefer):
       element.parserDocument.scriptsToExecOnLoad.addFirst(element)
-      element.onReady = (proc() =
-        element.readyForParserExec = true
-      )
+      element.onReady = scriptOnReadyRunInParser
     else:
       element.parserDocument.parserBlockingScript = element
       element.blockRendering()
-      element.onReady = (proc() =
-        element.readyForParserExec = true
-      )
+      element.onReady = scriptOnReadyRunInParser
+    if response != nil:
+      if response.res != 0:
+        element.markAsReady(ScriptResult(t: srtNull))
+      else:
+        response.resume()
+        let source = response.body.readAll().decodeAll(encoding)
+        response.body.sclose()
+        let script = window.jsctx.newClassicScript(source, response.url,
+          options, false)
+        element.markAsReady(script)
   else:
     #TODO if stClassic, parserDocument != nil, parserDocument has a style sheet
     # that is blocking scripts, either the parser is an XML parser or a HTML
