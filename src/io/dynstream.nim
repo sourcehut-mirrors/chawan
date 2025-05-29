@@ -99,19 +99,24 @@ type
     fd*: cint
     blocking*: bool
 
-proc readAll*(s: PosixStream): string =
+proc readAll*(s: PosixStream; buffer: out string): bool =
   assert s.blocking
-  var buffer = newString(4096)
+  buffer = newString(4096)
   var idx = 0
   while true:
     let n = s.readData(addr buffer[idx], buffer.len - idx)
-    if n <= 0:
+    if n == 0:
       break
+    if n < 0:
+      return false
     idx += n
     if idx == buffer.len:
       buffer.setLen(buffer.len + 4096)
   buffer.setLen(idx)
-  return buffer
+  true
+
+proc readAll*(s: PosixStream): string =
+  discard s.readAll(result)
 
 method readData*(s: PosixStream; buffer: pointer; len: int): int =
   let n = read(s.fd, buffer, len)

@@ -14,6 +14,7 @@ import html/jsencoding
 import html/jsintl
 import html/script
 import html/xmlhttprequest
+import io/chafile
 import io/console
 import io/dynstream
 import local/container
@@ -80,18 +81,16 @@ proc readBlob(client: Client; path: string): WebFile {.jsfunc.} =
 
 proc readFile(ctx: JSContext; client: Client; path: string): JSValue
     {.jsfunc.} =
-  try:
-    return ctx.toJS(readFile(path))
-  except IOError:
-    return JS_NULL
+  var s: string
+  if chafile.readFile(path, s).isSome:
+    return ctx.toJS(s)
+  return JS_NULL
 
 proc writeFile(ctx: JSContext; client: Client; path, content: string): JSValue
     {.jsfunc.} =
-  try:
-    writeFile(path, content)
-  except IOError:
-    return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
-  return JS_UNDEFINED
+  if chafile.writeFile(path, content, 0o644).isSome:
+    return JS_UNDEFINED
+  return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
 
 proc getenv(ctx: JSContext; client: Client; s: string;
     fallback: JSValueConst = JS_NULL): JSValue {.jsfunc.} =

@@ -19,6 +19,7 @@ import config/mailcap
 import config/mimetypes
 import css/render
 import html/script
+import io/chafile
 import io/console
 import io/dynstream
 import io/packetreader
@@ -413,14 +414,13 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   else:
     parseURL(moduleName)
   if x.isNone or x.get.schemeType != stFile:
-    JS_ThrowTypeError(ctx, "Invalid URL: %s", cstring(moduleName))
+    JS_ThrowTypeError(ctx, "invalid URL: %s", cstring(moduleName))
     return nil
-  try:
-    let source = readFile(x.get.pathname)
+  var source: string
+  if chafile.readFile(x.get.pathname, source).isSome:
     return ctx.finishLoadModule(source, moduleName)
-  except IOError:
-    JS_ThrowTypeError(ctx, "Failed to open file %s", cstring(moduleName))
-    return nil
+  JS_ThrowTypeError(ctx, "failed to read file %s", cstring(moduleName))
+  return nil
 
 proc interruptHandler(rt: JSRuntime; opaque: pointer): cint {.cdecl.} =
   result = cint(term.sigintCaught)
@@ -1761,25 +1761,23 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
 
 # Run process, and capture its output.
 proc runProcessCapture(cmd: string; outs: var string): bool =
-  let file = popen(cmd, "r")
+  let file = chafile.popen(cmd, "r")
   if file == nil:
     return false
-  try:
-    outs = file.readAll()
-  except IOError:
-    return false
-  let rv = pclose(file)
-  if rv == -1:
+  let res = file.readAll(outs).isSome
+  let rv = file.pclose()
+  if not res or rv == -1:
     return false
   return rv == 0
 
 # Run process, and write an arbitrary string into its standard input.
 proc runProcessInto(cmd, ins: string): bool =
-  let file = popen(cmd, "w")
+  let file = chafile.popen(cmd, "w")
   if file == nil:
     return false
-  file.fwrite(ins)
-  let rv = pclose(file)
+  # It is OK if a process refuses to read all input.
+  discard file.write(ins)
+  let rv = file.pclose()
   if rv == -1:
     return false
   return rv == 0
@@ -1827,21 +1825,19 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
   move(s)
 
 proc openInEditor(pager: Pager; input: var string): bool =
-  try:
-    let tmpf = pager.getTempFile()
-    if input != "":
-      discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
-      writeFile(tmpf, input)
-    let cmd = pager.getEditorCommand(tmpf)
-    if cmd == "":
-      pager.alert("invalid external.editor command")
-    elif pager.runCommand(cmd, suspend = true, wait = false, JS_UNDEFINED):
-      if fileExists(tmpf):
-        input = readFile(tmpf)
-        discard unlink(cstring(tmpf))
-        return true
-  except IOError:
-    discard
+  let tmpf = pager.getTempFile()
+  if input != "":
+    discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
+  if chafile.writeFile(tmpf, input, 0o600).isNone:
+    pager.alert("failed to write temporary file")
+    return false
+  let cmd = pager.getEditorCommand(tmpf)
+  if cmd == "":
+    pager.alert("invalid external.editor command")
+  elif pager.runCommand(cmd, suspend = true, wait = false, JS_UNDEFINED):
+    if chafile.readFile(tmpf, input).isSome:
+      discard unlink(cstring(tmpf))
+      return true
   return false
 
 proc windowChange(pager: Pager) =
