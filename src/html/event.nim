@@ -471,7 +471,9 @@ const EventReflectMap* = [
   satLoad,
   satTimeout,
   satLoadend,
-  satReadystatechange
+  satReadystatechange,
+  satFocus,
+  satBlur
 ]
 
 type UnionHack {.union.} = object

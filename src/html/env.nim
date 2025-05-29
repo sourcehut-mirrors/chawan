@@ -421,15 +421,20 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   response.close()
   return ctx.finishLoadModule(source, moduleName)
 
+proc collectWindowGetSet(): seq[TabGetSet] =
+  result = @[]
+  for it in WindowEvents:
+    result.add(TabGetSet(
+      name: "on" & $it,
+      get: eventReflectGet,
+      set: eventReflectSet,
+      magic: int16(EventReflectMap.find(it))
+    ))
+
 proc addWindowModule*(ctx: JSContext):
     tuple[eventCID, eventTargetCID: JSClassID] =
   let (eventCID, eventTargetCID) = ctx.addEventModule()
-  const getset = [TabGetSet(
-    name: "onload",
-    get: eventReflectGet,
-    set: eventReflectSet,
-    magic: static int16(EventReflectMap.find(satLoad))
-  )]
+  const getset = collectWindowGetSet()
   ctx.registerType(Window, parent = eventTargetCID, asglobal = true,
     hasExtraGetSet = true, extraGetSet = getset)
   ctx.registerType(MediaQueryList, parent = eventTargetCID)

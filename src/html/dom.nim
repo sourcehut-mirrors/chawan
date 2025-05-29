@@ -1123,6 +1123,9 @@ const ReflectTable0 = [
   makef(satOninput, satInput),
   makef(satOnchange, satChange),
   makef(satOnload, satLoad),
+  makef(satOnerror, satError),
+  makef(satOnblur, satBlur),
+  makef(satOnfocus, satFocus),
   makes(satSlot, AllTagTypes),
   makes(satTitle, AllTagTypes),
 ]
@@ -4512,6 +4515,8 @@ proc reflectEvent(document: Document; target: EventTarget;
     JS_FreeValue(ctx, res)
     JS_FreeValue(ctx, fun)
 
+const WindowEvents* = [satLoad, satError, satFocus, satBlur]
+
 proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
   let name = name.toStaticAtom()
   template reflect_str(element: Element; n: StaticAtom; val: untyped) =
@@ -4553,24 +4558,24 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
     return
   let document = element.document
   if element.scriptingEnabled:
-    block eventName:
-      case name
-      of satOnclick:
-        document.reflectEvent(element, name, satClick, value.get(""))
-      of satOninput:
-        document.reflectEvent(element, name, satInput, value.get(""))
-      of satOnchange:
-        document.reflectEvent(element, name, satChange, value.get(""))
-      of satOnload:
+    const ScriptEventMap = {
+      satOnclick: satClick,
+      satOninput: satInput,
+      satOnchange: satChange,
+      satOnload: satLoad,
+      satOnerror: satError,
+      satOnfocus: satFocus,
+      satOnblur: satBlur,
+    }
+    for (n, t) in ScriptEventMap:
+      if n == name:
         var target = EventTarget(element)
         var target2 = none(EventTarget)
-        if element.tagType == TAG_BODY:
+        if element.tagType == TAG_BODY and t in WindowEvents:
           target = document.window
           target2 = option(EventTarget(element))
-        document.reflectEvent(target, name, satLoad, value.get(""), target2)
-      else:
-        break eventName
-      return # found
+        document.reflectEvent(target, name, t, value.get(""), target2)
+        return
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputElement(element)
