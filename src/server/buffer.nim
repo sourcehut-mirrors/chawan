@@ -78,7 +78,7 @@ type
 
   InputData = ref object of MapData
 
-  Buffer = ref object
+  BufferContext = ref object
     attrs: WindowAttributes
     bgcolor: CellColor
     bytesRead: int
@@ -145,11 +145,11 @@ type
     nimcall, raises: [].}
 
 # Forward declarations
-proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element):
+proc submitForm(bc: BufferContext; form: HTMLFormElement; submitter: Element):
   Request
 
-template document(buffer: Buffer): Document =
-  buffer.window.document
+template document(bc: BufferContext): Document =
+  bc.window.document
 
 proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
   if iface.len != 0:
@@ -191,14 +191,16 @@ proc newBufferInterface*(stream: BufStream): BufferInterface =
     stream: stream
   )
 
-# After cloning a buffer, we need a new interface to the new buffer process.
+# After cloning a buffer, we need a new interface to the new buffer
+# process.
 # Here we create a new interface for that clone.
 proc cloneInterface*(stream: BufStream): BufferInterface =
   let iface = newBufferInterface(stream)
   #TODO buffered data should probably be copied here
-  # We have just fork'ed the buffer process inside an interface function,
-  # from which the new buffer is going to return as well. So we must also
-  # consume the return value of the clone function, which is the pid 0.
+  # We have just fork'ed the buffer process inside an interface
+  # function, from which the new buffer is going to return as well.
+  # So we must also consume the return value of the clone function,
+  # which is the pid 0.
   var pid = -1
   stream.withPacketReaderFire r:
     r.sread(iface.packetid)
@@ -316,7 +318,7 @@ macro task(fun: typed) =
   pfun.istask = true
   fun
 
-func getTitleAttr(buffer: Buffer; element: Element): string =
+func getTitleAttr(bc: BufferContext; element: Element): string =
   if element != nil:
     for element in element.branchElems:
       if element.attrb(satTitle):
@@ -355,7 +357,7 @@ func canSubmitOnClick(fae: FormAssociatedElement): bool =
     return true
   return false
 
-proc getImageHover(buffer: Buffer; element: Element): string =
+proc getImageHover(bc: BufferContext; element: Element): string =
   if element of HTMLImageElement:
     let image = HTMLImageElement(element)
     let src = image.attr(satSrc)
@@ -365,7 +367,7 @@ proc getImageHover(buffer: Buffer; element: Element): string =
         return $url.get
   ""
 
-proc getClickHover(buffer: Buffer; element: Element): string =
+proc getClickHover(bc: BufferContext; element: Element): string =
   let clickable = element.getClickable()
   if clickable != nil:
     case clickable.tagType
@@ -391,13 +393,13 @@ proc getClickHover(buffer: Buffer; element: Element): string =
       #TODO this is inefficient and also quite stupid
       let fae = FormAssociatedElement(clickable)
       if fae.canSubmitOnClick():
-        let req = buffer.submitForm(fae.form, fae)
+        let req = bc.submitForm(fae.form, fae)
         if req != nil:
           return $req.url
       return "<" & $clickable.tagType & ">"
   ""
 
-proc getCachedImageHover(buffer: Buffer; element: Element): string =
+proc getCachedImageHover(bc: BufferContext; element: Element): string =
   if element of HTMLImageElement:
     let image = HTMLImageElement(element)
     if image.bitmap != nil and image.bitmap.cacheId != 0:
@@ -408,20 +410,20 @@ proc getCachedImageHover(buffer: Buffer; element: Element): string =
       return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
   ""
 
-func getCursorElement(buffer: Buffer; cursorx, cursory: int): Element =
-  let i = buffer.lines[cursory].findFormatN(cursorx) - 1
+func getCursorElement(bc: BufferContext; cursorx, cursory: int): Element =
+  let i = bc.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
-    return buffer.lines[cursory].formats[i].node
+    return bc.lines[cursory].formats[i].node
   return nil
 
-proc getCursorClickable(buffer: Buffer; cursorx, cursory: int): Element =
-  let element = buffer.getCursorElement(cursorx, cursory)
+proc getCursorClickable(bc: BufferContext; cursorx, cursory: int): Element =
+  let element = bc.getCursorElement(cursorx, cursory)
   if element != nil:
     return element.getClickable()
   return nil
 
-func cursorBytes(buffer: Buffer; y, cc: int): int =
-  let line = buffer.lines[y].str
+func cursorBytes(bc: BufferContext; y, cc: int): int =
+  let line = bc.lines[y].str
   var w = 0
   var i = 0
   while i < line.len and w < cc:
@@ -429,29 +431,29 @@ func cursorBytes(buffer: Buffer; y, cc: int): int =
     w += u.width()
   return i
 
-proc navigate(buffer: Buffer; url: URL) =
-  buffer.navigateUrl = url
+proc navigate(bc: BufferContext; url: URL) =
+  bc.navigateUrl = url
   stderr.fwrite("navigate to " & $url & "\n")
 
 #TODO rewrite findPrevLink, findNextLink to use the box tree instead
-proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
+proc findPrevLink*(bc: BufferContext; cursorx, cursory, n: int):
     tuple[x, y: int] {.proxy.} =
-  if cursory >= buffer.lines.len:
+  if cursory >= bc.lines.len:
     return (-1, -1)
   var found = 0
-  var i = buffer.lines[cursory].findFormatN(cursorx) - 1
+  var i = bc.lines[cursory].findFormatN(cursorx) - 1
   var link: Element = nil
   if cursorx == int.high:
     # Special case for when we want to jump to the last link on this
     # line (for cursorLinkNavUp).
-    i = buffer.lines[cursory].formats.len
+    i = bc.lines[cursory].formats.len
   elif i >= 0:
-    link = buffer.lines[cursory].formats[i].node.getClickable()
+    link = bc.lines[cursory].formats[i].node.getClickable()
   dec i
   var ly = 0 # last y
   var lx = 0 # last x
   for y in countdown(cursory, 0):
-    let line = buffer.lines[y]
+    let line = bc.lines[y]
     if y != cursory:
       i = line.formats.len - 1
     while i >= 0:
@@ -470,7 +472,7 @@ proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
           dec i
         # on previous lines
         for iy in countdown(ly - 1, 0):
-          let line = buffer.lines[iy]
+          let line = bc.lines[iy]
           i = line.formats.len - 1
           let oly = iy
           let olx = lx
@@ -495,17 +497,17 @@ proc findPrevLink*(buffer: Buffer; cursorx, cursory, n: int):
       dec i
   return (-1, -1)
 
-proc findNextLink*(buffer: Buffer; cursorx, cursory, n: int):
+proc findNextLink*(bc: BufferContext; cursorx, cursory, n: int):
     tuple[x, y: int] {.proxy.} =
-  if cursory >= buffer.lines.len:
+  if cursory >= bc.lines.len:
     return (-1, -1)
   var found = 0
-  var i = buffer.lines[cursory].findFormatN(cursorx) - 1
+  var i = bc.lines[cursory].findFormatN(cursorx) - 1
   var link: Element = nil
   if i >= 0:
-    link = buffer.lines[cursory].formats[i].node.getClickable()
+    link = bc.lines[cursory].formats[i].node.getClickable()
   inc i
-  for j, line in buffer.lines.toOpenArray(cursory, buffer.lines.high).mypairs:
+  for j, line in bc.lines.toOpenArray(cursory, bc.lines.high).mypairs:
     while i < line.formats.len:
       let format = line.formats[i]
       let fl = format.node.getClickable()
@@ -518,31 +520,31 @@ proc findNextLink*(buffer: Buffer; cursorx, cursory, n: int):
     i = 0
   return (-1, -1)
 
-proc findPrevParagraph*(buffer: Buffer; cursory, n: int): int {.proxy.} =
+proc findPrevParagraph*(bc: BufferContext; cursory, n: int): int {.proxy.} =
   var y = cursory
   for i in 0 ..< n:
-    while y >= 0 and buffer.lines[y].str.onlyWhitespace():
+    while y >= 0 and bc.lines[y].str.onlyWhitespace():
       dec y
-    while y >= 0 and not buffer.lines[y].str.onlyWhitespace():
+    while y >= 0 and not bc.lines[y].str.onlyWhitespace():
       dec y
   return y
 
-proc findNextParagraph*(buffer: Buffer; cursory, n: int): int {.proxy.} =
+proc findNextParagraph*(bc: BufferContext; cursory, n: int): int {.proxy.} =
   var y = cursory
   for i in 0 ..< n:
-    while y < buffer.lines.len and buffer.lines[y].str.onlyWhitespace():
+    while y < bc.lines.len and bc.lines[y].str.onlyWhitespace():
       inc y
-    while y < buffer.lines.len and not buffer.lines[y].str.onlyWhitespace():
+    while y < bc.lines.len and not bc.lines[y].str.onlyWhitespace():
       inc y
   return y
 
-proc findNthLink*(buffer: Buffer; i: int): tuple[x, y: int] {.proxy.} =
+proc findNthLink*(bc: BufferContext; i: int): tuple[x, y: int] {.proxy.} =
   if i == 0:
     return (-1, -1)
   var k = 0
   var link: Element
-  for y in 0 .. buffer.lines.high:
-    let line = buffer.lines[y]
+  for y in 0 .. bc.lines.high:
+    let line = bc.lines[y]
     for j in 0 ..< line.formats.len:
       let format = line.formats[j]
       let fl = format.node.getClickable()
@@ -553,13 +555,13 @@ proc findNthLink*(buffer: Buffer; i: int): tuple[x, y: int] {.proxy.} =
         link = fl
   return (-1, -1)
 
-proc findRevNthLink*(buffer: Buffer; i: int): tuple[x, y: int] {.proxy.} =
+proc findRevNthLink*(bc: BufferContext; i: int): tuple[x, y: int] {.proxy.} =
   if i == 0:
     return (-1, -1)
   var k = 0
   var link: Element
-  for y in countdown(buffer.lines.high, 0):
-    let line = buffer.lines[y]
+  for y in countdown(bc.lines.high, 0):
+    let line = bc.lines[y]
     for j in countdown(line.formats.high, 0):
       let format = line.formats[j]
       let fl = format.node.getClickable()
@@ -570,17 +572,17 @@ proc findRevNthLink*(buffer: Buffer; i: int): tuple[x, y: int] {.proxy.} =
         link = fl
   return (-1, -1)
 
-proc findPrevMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
+proc findPrevMatch*(bc: BufferContext; regex: Regex; cursorx, cursory: int;
     wrap: bool, n: int): BufferMatch {.proxy.} =
-  if cursory >= buffer.lines.len: return BufferMatch()
+  if cursory >= bc.lines.len: return BufferMatch()
   var y = cursory
-  let b = buffer.cursorBytes(y, cursorx)
-  let res = regex.exec(buffer.lines[y].str, 0, b)
+  let b = bc.cursorBytes(y, cursorx)
+  let res = regex.exec(bc.lines[y].str, 0, b)
   var numfound = 0
   if res.captures.len > 0:
     let cap = res.captures[^1][0]
-    let x = buffer.lines[y].str.width(0, cap.s)
-    let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+    let x = bc.lines[y].str.width(0, cap.s)
+    let str = bc.lines[y].str.substr(cap.s, cap.e - 1)
     inc numfound
     if numfound >= n:
       return BufferMatch(success: true, x: x, y: y, str: str)
@@ -588,14 +590,14 @@ proc findPrevMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
   while true:
     if y < 0:
       if wrap:
-        y = buffer.lines.high
+        y = bc.lines.high
       else:
         break
-    let res = regex.exec(buffer.lines[y].str)
+    let res = regex.exec(bc.lines[y].str)
     if res.captures.len > 0:
       let cap = res.captures[^1][0]
-      let x = buffer.lines[y].str.width(0, cap.s)
-      let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+      let x = bc.lines[y].str.width(0, cap.s)
+      let str = bc.lines[y].str.substr(cap.s, cap.e - 1)
       inc numfound
       if numfound >= n:
         return BufferMatch(success: true, x: x, y: y, str: str)
@@ -604,32 +606,32 @@ proc findPrevMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
     dec y
   BufferMatch()
 
-proc findNextMatch*(buffer: Buffer; regex: Regex; cursorx, cursory: int;
+proc findNextMatch*(bc: BufferContext; regex: Regex; cursorx, cursory: int;
     wrap: bool; n: int): BufferMatch {.proxy.} =
-  if cursory >= buffer.lines.len: return BufferMatch()
+  if cursory >= bc.lines.len: return BufferMatch()
   var y = cursory
-  let b = buffer.cursorBytes(y, cursorx + 1)
-  let res = regex.exec(buffer.lines[y].str, b, buffer.lines[y].str.len)
+  let b = bc.cursorBytes(y, cursorx + 1)
+  let res = regex.exec(bc.lines[y].str, b, bc.lines[y].str.len)
   var numfound = 0
   if res.success and res.captures.len > 0:
     let cap = res.captures[0][0]
-    let x = buffer.lines[y].str.width(0, cap.s)
-    let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+    let x = bc.lines[y].str.width(0, cap.s)
+    let str = bc.lines[y].str.substr(cap.s, cap.e - 1)
     inc numfound
     if numfound >= n:
       return BufferMatch(success: true, x: x, y: y, str: str)
   inc y
   while true:
-    if y > buffer.lines.high:
+    if y > bc.lines.high:
       if wrap:
         y = 0
       else:
         break
-    let res = regex.exec(buffer.lines[y].str)
+    let res = regex.exec(bc.lines[y].str)
     if res.success and res.captures.len > 0:
       let cap = res.captures[0][0]
-      let x = buffer.lines[y].str.width(0, cap.s)
-      let str = buffer.lines[y].str.substr(cap.s, cap.e - 1)
+      let x = bc.lines[y].str.width(0, cap.s)
+      let str = bc.lines[y].str.substr(cap.s, cap.e - 1)
       inc numfound
       if numfound >= n:
         return BufferMatch(success: true, x: x, y: y, str: str)
@@ -658,7 +660,7 @@ type
     readline*: Option[ReadLineResult]
     select*: Option[SelectResult]
 
-proc click(buffer: Buffer; clickable: Element): ClickResult
+proc click(bc: BufferContext; clickable: Element): ClickResult
 
 type GotoAnchorResult* = object
   found*: bool
@@ -675,147 +677,147 @@ proc findAnchor(box: CSSBox; anchor: Element): Offset =
     return box.render.offset
   return offset(-1, -1)
 
-proc gotoAnchor*(buffer: Buffer; anchor: string; autofocus, target: bool):
+proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
     GotoAnchorResult {.proxy.} =
-  if buffer.document == nil:
+  if bc.document == nil:
     return GotoAnchorResult(found: false)
-  var anchor = buffer.document.findAnchor(anchor.percentDecode())
+  var anchor = bc.document.findAnchor(anchor.percentDecode())
   if target and anchor != nil:
-    buffer.document.setTarget(anchor)
+    bc.document.setTarget(anchor)
   var focus: ReadLineResult = nil
-  # Do not use buffer.config.autofocus when we just want to check if the
+  # Do not use bc.config.autofocus when we just want to check if the
   # anchor can be found.
   if autofocus:
-    let autofocus = buffer.document.findAutoFocus()
+    let autofocus = bc.document.findAutoFocus()
     if autofocus != nil:
       if anchor == nil:
         anchor = autofocus # jump to autofocus instead
-      let res = buffer.click(autofocus)
+      let res = bc.click(autofocus)
       focus = res.readline.get(nil)
   if anchor == nil:
     return GotoAnchorResult(found: false)
-  let offset = buffer.rootBox.findAnchor(anchor)
-  let x = max(offset.x div buffer.attrs.ppc, 0).toInt
-  let y = max(offset.y div buffer.attrs.ppl, 0).toInt
+  let offset = bc.rootBox.findAnchor(anchor)
+  let x = max(offset.x div bc.attrs.ppc, 0).toInt
+  let y = max(offset.y div bc.attrs.ppl, 0).toInt
   return GotoAnchorResult(found: true, x: x, y: y, focus: focus)
 
-proc checkRefresh*(buffer: Buffer): CheckRefreshResult {.proxy.} =
-  if buffer.navigateUrl != nil:
-    let url = buffer.navigateUrl
-    buffer.navigateUrl = nil
+proc checkRefresh*(bc: BufferContext): CheckRefreshResult {.proxy.} =
+  if bc.navigateUrl != nil:
+    let url = bc.navigateUrl
+    bc.navigateUrl = nil
     return CheckRefreshResult(n: 0, url: url)
-  if buffer.document == nil:
+  if bc.document == nil:
     return CheckRefreshResult(n: -1)
-  let element = buffer.document.findMetaRefresh()
+  let element = bc.document.findMetaRefresh()
   if element == nil:
     return CheckRefreshResult(n: -1)
-  return parseRefresh(element.attr(satContent), buffer.url)
+  return parseRefresh(element.attr(satContent), bc.url)
 
-proc hasTask(buffer: Buffer; cmd: BufferCommand): bool =
-  return buffer.tasks[cmd] != 0
+proc hasTask(bc: BufferContext; cmd: BufferCommand): bool =
+  return bc.tasks[cmd] != 0
 
-proc resolveTask(buffer: Buffer; cmd: BufferCommand) =
-  let packetid = buffer.tasks[cmd]
+proc resolveTask(bc: BufferContext; cmd: BufferCommand) =
+  let packetid = bc.tasks[cmd]
   assert packetid != 0
-  buffer.pstream.withPacketWriter wt:
+  bc.pstream.withPacketWriter wt:
     wt.swrite(packetid)
   do:
     quit(1)
-  buffer.tasks[cmd] = 0
+  bc.tasks[cmd] = 0
 
-proc resolveTask[T](buffer: Buffer; cmd: BufferCommand; res: T) =
-  let packetid = buffer.tasks[cmd]
+proc resolveTask[T](bc: BufferContext; cmd: BufferCommand; res: T) =
+  let packetid = bc.tasks[cmd]
   assert packetid != 0
-  buffer.pstream.withPacketWriter wt:
+  bc.pstream.withPacketWriter wt:
     wt.swrite(packetid)
     wt.swrite(res)
   do:
     quit(1)
-  buffer.tasks[cmd] = 0
+  bc.tasks[cmd] = 0
 
-proc maybeReshape(buffer: Buffer) =
-  let document = buffer.document
+proc maybeReshape(bc: BufferContext) =
+  let document = bc.document
   if document == nil or document.documentElement == nil:
     return # not parsed yet, nothing to render
   if document.invalid:
-    let stack = document.documentElement.buildTree(buffer.rootBox,
-      buffer.config.markLinks)
-    buffer.rootBox = BlockBox(stack.box)
-    buffer.rootBox.layout(addr buffer.attrs)
-    buffer.lines.render(buffer.bgcolor, stack, addr buffer.attrs, buffer.images)
+    let stack = document.documentElement.buildTree(bc.rootBox,
+      bc.config.markLinks)
+    bc.rootBox = BlockBox(stack.box)
+    bc.rootBox.layout(addr bc.attrs)
+    bc.lines.render(bc.bgcolor, stack, addr bc.attrs, bc.images)
     document.invalid = false
-    if buffer.hasTask(bcOnReshape):
-      buffer.resolveTask(bcOnReshape)
+    if bc.hasTask(bcOnReshape):
+      bc.resolveTask(bcOnReshape)
     else:
-      buffer.onReshapeImmediately = true
+      bc.onReshapeImmediately = true
 
-proc processData0(buffer: Buffer; data: UnsafeSlice): bool =
-  if buffer.ishtml:
-    if buffer.htmlParser.parseBuffer(data.toOpenArray()) == PRES_STOP:
-      buffer.charsetStack = @[buffer.htmlParser.builder.charset]
+proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
+  if bc.ishtml:
+    if bc.htmlParser.parseBuffer(data.toOpenArray()) == PRES_STOP:
+      bc.charsetStack = @[bc.htmlParser.builder.charset]
       return false
   else:
-    var plaintext = buffer.document.findFirst(TAG_PLAINTEXT)
+    var plaintext = bc.document.findFirst(TAG_PLAINTEXT)
     if plaintext == nil:
       const s = "<plaintext>"
-      doAssert buffer.htmlParser.parseBuffer(s) != PRES_STOP
-      plaintext = buffer.document.findFirst(TAG_PLAINTEXT)
+      doAssert bc.htmlParser.parseBuffer(s) != PRES_STOP
+      plaintext = bc.document.findFirst(TAG_PLAINTEXT)
     if data.len > 0:
       let lastChild = plaintext.lastChild
       if lastChild != nil and lastChild of Text:
         Text(lastChild).data.s &= data
       else:
-        plaintext.insert(buffer.document.newText($data), nil)
+        plaintext.insert(bc.document.newText($data), nil)
       #TODO just invalidate document?
       plaintext.invalidate()
   true
 
-func canSwitch(buffer: Buffer): bool {.inline.} =
-  return buffer.htmlParser.builder.confidence == ccTentative and
-    buffer.charsetStack.len > 0
+func canSwitch(bc: BufferContext): bool {.inline.} =
+  return bc.htmlParser.builder.confidence == ccTentative and
+    bc.charsetStack.len > 0
 
 const BufferSize = 16384
 
-proc initDecoder(buffer: Buffer) =
-  buffer.ctx = initTextDecoderContext(buffer.charset, demFatal, BufferSize)
+proc initDecoder(bc: BufferContext) =
+  bc.ctx = initTextDecoderContext(bc.charset, demFatal, BufferSize)
 
-proc switchCharset(buffer: Buffer) =
-  buffer.charset = buffer.charsetStack.pop()
-  buffer.initDecoder()
-  buffer.htmlParser.restart(buffer.charset)
-  buffer.document.applyUASheet()
-  buffer.document.applyUserSheet(buffer.config.userStyle)
-  buffer.document.invalid = true
+proc switchCharset(bc: BufferContext) =
+  bc.charset = bc.charsetStack.pop()
+  bc.initDecoder()
+  bc.htmlParser.restart(bc.charset)
+  bc.document.applyUASheet()
+  bc.document.applyUserSheet(bc.config.userStyle)
+  bc.document.invalid = true
 
-proc bomSniff(buffer: Buffer; iq: openArray[uint8]): int =
+proc bomSniff(bc: BufferContext; iq: openArray[uint8]): int =
   if iq[0] == 0xFE and iq[1] == 0xFF:
-    buffer.charsetStack = @[CHARSET_UTF_16_BE]
-    buffer.switchCharset()
+    bc.charsetStack = @[CHARSET_UTF_16_BE]
+    bc.switchCharset()
     return 2
   if iq[0] == 0xFF and iq[1] == 0xFE:
-    buffer.charsetStack = @[CHARSET_UTF_16_LE]
-    buffer.switchCharset()
+    bc.charsetStack = @[CHARSET_UTF_16_LE]
+    bc.switchCharset()
     return 2
   if iq[0] == 0xEF and iq[1] == 0xBB and iq[2] == 0xBF:
-    buffer.charsetStack = @[CHARSET_UTF_8]
-    buffer.switchCharset()
+    bc.charsetStack = @[CHARSET_UTF_8]
+    bc.switchCharset()
     return 3
   return 0
 
-proc processData(buffer: Buffer; iq: openArray[uint8]): bool =
+proc processData(bc: BufferContext; iq: openArray[uint8]): bool =
   var si = 0
-  if buffer.needsBOMSniff:
+  if bc.needsBOMSniff:
     if iq.len >= 3: # ehm... TODO
-      si += buffer.bomSniff(iq)
-    buffer.needsBOMSniff = false
-  if not buffer.canSwitch():
-    buffer.ctx.errorMode = demReplacement
-  for chunk in buffer.ctx.decode(iq.toOpenArray(si, iq.high), finish = false):
-    if not buffer.processData0(chunk):
-      buffer.switchCharset()
+      si += bc.bomSniff(iq)
+    bc.needsBOMSniff = false
+  if not bc.canSwitch():
+    bc.ctx.errorMode = demReplacement
+  for chunk in bc.ctx.decode(iq.toOpenArray(si, iq.high), finish = false):
+    if not bc.processData0(chunk):
+      bc.switchCharset()
       return false
-  if buffer.ctx.failed:
-    buffer.switchCharset()
+  if bc.ctx.failed:
+    bc.switchCharset()
     return false
   true
 
@@ -827,14 +829,14 @@ const HoverFun = [
   htImage: getImageHover,
   htCachedImage: getCachedImageHover
 ]
-proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
+proc updateHover*(bc: BufferContext; cursorx, cursory: int): UpdateHoverResult
     {.proxy.} =
-  if cursory >= buffer.lines.len:
+  if cursory >= bc.lines.len:
     return @[]
-  let thisNode = buffer.getCursorElement(cursorx, cursory)
+  let thisNode = bc.getCursorElement(cursorx, cursory)
   var hover: seq[tuple[t: HoverType, s: string]] = @[]
   var repaint = false
-  let prevNode = buffer.prevHover
+  let prevNode = bc.prevHover
   if thisNode != prevNode and (thisNode == nil or prevNode == nil or
       thisNode != prevNode):
     var oldHover: seq[Element] = @[]
@@ -842,10 +844,10 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
       if element.hover:
         oldHover.add(element)
     for ht in HoverType:
-      let s = HoverFun[ht](buffer, thisNode)
-      if buffer.hoverText[ht] != s:
+      let s = HoverFun[ht](bc, thisNode)
+      if bc.hoverText[ht] != s:
         hover.add((ht, s))
-        buffer.hoverText[ht] = s
+        bc.hoverText[ht] = s
     for element in thisNode.branchElems:
       if not element.hover:
         element.setHover(true)
@@ -858,43 +860,43 @@ proc updateHover*(buffer: Buffer; cursorx, cursory: int): UpdateHoverResult
       element.setHover(false)
       repaint = true
   if repaint:
-    buffer.maybeReshape()
-  buffer.prevHover = thisNode
+    bc.maybeReshape()
+  bc.prevHover = thisNode
   move(hover)
 
-proc loadResources(buffer: Buffer): EmptyPromise =
-  if buffer.window.pendingResources.len > 0:
-    let pendingResources = move(buffer.window.pendingResources)
-    buffer.window.pendingResources.setLen(0)
+proc loadResources(bc: BufferContext): EmptyPromise =
+  if bc.window.pendingResources.len > 0:
+    let pendingResources = move(bc.window.pendingResources)
+    bc.window.pendingResources.setLen(0)
     return pendingResources.all().then(proc(): EmptyPromise =
-      return buffer.loadResources()
+      return bc.loadResources()
     )
   return newResolvedPromise()
 
-proc rewind(buffer: Buffer; data: InputData; offset: int;
+proc rewind(bc: BufferContext; data: InputData; offset: int;
     unregister = true): bool =
-  let url = newURL("cache:" & $buffer.cacheId & "?" & $offset).get
-  let response = buffer.loader.doRequest(newRequest(url))
+  let url = newURL("cache:" & $bc.cacheId & "?" & $offset).get
+  let response = bc.loader.doRequest(newRequest(url))
   if response.body == nil:
     return false
-  buffer.loader.resume(response.outputId)
+  bc.loader.resume(response.outputId)
   if unregister:
-    buffer.pollData.unregister(data.stream.fd)
-    buffer.loader.unregistered.add(data.stream.fd)
-  buffer.loader.unset(data)
+    bc.pollData.unregister(data.stream.fd)
+    bc.loader.unregistered.add(data.stream.fd)
+  bc.loader.unset(data)
   data.stream.sclose()
-  buffer.loader.put(InputData(stream: response.body))
+  bc.loader.put(InputData(stream: response.body))
   response.body.setBlocking(false)
-  buffer.pollData.register(response.body.fd, POLLIN)
-  buffer.bytesRead = offset
+  bc.pollData.register(response.body.fd, POLLIN)
+  bc.bytesRead = offset
   return true
 
 # Create an exact clone of the current buffer.
 # This clone will share the loader process with the previous buffer.
-proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
+proc clone*(bc: BufferContext; newurl: URL): int {.proxy.} =
   var pstream: SocketStream
   var pins, pouts: PosixStream
-  buffer.pstream.withPacketReader r:
+  bc.pstream.withPacketReader r:
     pstream = newSocketStream(r.recvFd())
     pins = newPosixStream(r.recvFd())
     pouts = newPosixStream(r.recvFd())
@@ -902,26 +904,27 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     return -1
   # suspend outputs before tee'ing
   var ids: seq[int] = @[]
-  for it in buffer.loader.ongoing:
+  for it in bc.loader.ongoing:
     if it.response.onRead != nil:
       ids.add(it.response.outputId)
-  buffer.loader.suspend(ids)
-  # ongoing transfers are now suspended; exhaust all data in the internal buffer
+  bc.loader.suspend(ids)
+  # ongoing transfers are now suspended; exhaust all data in the
+  # internal buffer
   # just to be safe.
-  for it in buffer.loader.ongoing:
+  for it in bc.loader.ongoing:
     if it.response.onRead != nil:
-      buffer.loader.onRead(it.fd)
+      bc.loader.onRead(it.fd)
   var pid = fork()
   if pid == -1:
-    buffer.window.console.error("Failed to clone buffer.")
+    bc.window.console.error("Failed to clone bc.")
     return -1
   if pid == 0: # child
     pins.sclose()
-    buffer.pollData.clear()
+    bc.pollData.clear()
     var connecting: seq[ConnectData] = @[]
     var ongoing: seq[OngoingData] = @[]
     var istream: InputData = nil
-    for it in buffer.loader.data:
+    for it in bc.loader.data:
       if it of ConnectData:
         connecting.add(ConnectData(it))
       elif it of OngoingData:
@@ -930,51 +933,51 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
         it.response.body.sclose()
       else:
         istream = InputData(it)
-      buffer.loader.unregistered.add(it.fd)
-      buffer.loader.unset(it)
+      bc.loader.unregistered.add(it.fd)
+      bc.loader.unset(it)
     let myPid = getCurrentProcessId()
     for it in ongoing:
       let response = it.response
       # tee ongoing streams
-      let (stream, outputId) = buffer.loader.tee(response.outputId, myPid)
+      let (stream, outputId) = bc.loader.tee(response.outputId, myPid)
       # if -1, well, this side hasn't exhausted the socket's buffer
       doAssert outputId != -1 and stream != nil
       response.outputId = outputId
       response.body = stream
       let data = OngoingData(response: response, stream: stream)
-      buffer.pollData.register(data.fd, POLLIN)
-      buffer.loader.put(data)
+      bc.pollData.register(data.fd, POLLIN)
+      bc.loader.put(data)
     if istream != nil:
       # We do not own our input stream, so we can't tee it.
       # Luckily it is cached, so what we *can* do is to load the same thing from
       # the cache. (This also lets us skip suspend/resume in this case.)
       # We ignore errors; not much we can do with them here :/
-      discard buffer.rewind(istream, buffer.bytesRead, unregister = false)
-    buffer.pstream.sclose()
+      discard bc.rewind(istream, bc.bytesRead, unregister = false)
+    bc.pstream.sclose()
     pouts.write(char(0))
     pouts.sclose()
-    buffer.url = newurl
-    for it in buffer.tasks.mitems:
+    bc.url = newurl
+    for it in bc.tasks.mitems:
       it = 0
-    buffer.pstream = pstream
-    buffer.loader.clientPid = myPid
+    bc.pstream = pstream
+    bc.loader.clientPid = myPid
     # get key for new buffer
-    buffer.loader.controlStream.sclose()
-    buffer.pstream.withPacketReader r:
-      buffer.loader.controlStream = newSocketStream(r.recvFd())
+    bc.loader.controlStream.sclose()
+    bc.pstream.withPacketReader r:
+      bc.loader.controlStream = newSocketStream(r.recvFd())
     do: # EOF, pager died
       quit(1)
-    buffer.pollData.register(buffer.pstream.fd, POLLIN)
+    bc.pollData.register(bc.pstream.fd, POLLIN)
     # must reconnect after the new client is set up, or the client pids get
     # mixed up.
     for it in connecting:
       # connecting: just reconnect
-      buffer.loader.reconnect(it)
+      bc.loader.reconnect(it)
     # Set target now, because it's convenient.
     # (It is also possible that newurl has no hash, and then gotoAnchor
     # isn't called at all.)
-    let target = buffer.document.findAnchor(newurl.hash)
-    buffer.document.setTarget(target)
+    let target = bc.document.findAnchor(newurl.hash)
+    bc.document.setTarget(target)
     return 0
   else: # parent
     pouts.sclose()
@@ -986,79 +989,79 @@ proc clone*(buffer: Buffer; newurl: URL): int {.proxy.} =
     else:
       pid = -1
     pins.sclose()
-    buffer.loader.resume(ids)
+    bc.loader.resume(ids)
     return pid
 
-proc dispatchDOMContentLoadedEvent(buffer: Buffer) =
-  let window = buffer.window
-  window.fireEvent(satDOMContentLoaded, buffer.document, bubbles = false,
+proc dispatchDOMContentLoadedEvent(bc: BufferContext) =
+  let window = bc.window
+  window.fireEvent(satDOMContentLoaded, bc.document, bubbles = false,
     cancelable = false, trusted = true)
-  buffer.maybeReshape()
+  bc.maybeReshape()
 
-proc dispatchLoadEvent(buffer: Buffer) =
-  let window = buffer.window
+proc dispatchLoadEvent(bc: BufferContext) =
+  let window = bc.window
   window.fireEvent(satLoad, window, bubbles = false, cancelable = false,
     trusted = true)
-  buffer.maybeReshape()
+  bc.maybeReshape()
 
-proc finishLoad(buffer: Buffer; data: InputData): EmptyPromise =
-  if buffer.state != bsLoadingPage:
+proc finishLoad(bc: BufferContext; data: InputData): EmptyPromise =
+  if bc.state != bsLoadingPage:
     let p = EmptyPromise()
     p.resolve()
     return p
-  buffer.state = bsLoadingResources
-  if buffer.ctx.td != nil and buffer.ctx.td.finish() == tdfrError:
+  bc.state = bsLoadingResources
+  if bc.ctx.td != nil and bc.ctx.td.finish() == tdfrError:
     var s = "\uFFFD"
-    doAssert buffer.processData0(UnsafeSlice(
+    doAssert bc.processData0(UnsafeSlice(
       p: cast[ptr UncheckedArray[char]](addr s[0]),
       len: s.len
     ))
-  buffer.htmlParser.finish()
-  buffer.document.readyState = rsInteractive
-  if buffer.config.scripting != smFalse:
-    buffer.dispatchDOMContentLoadedEvent()
-  buffer.pollData.unregister(data.stream.fd)
-  buffer.loader.unregistered.add(data.stream.fd)
-  buffer.loader.removeCachedItem(buffer.cacheId)
-  buffer.cacheId = -1
-  buffer.outputId = -1
-  buffer.loader.unset(data)
+  bc.htmlParser.finish()
+  bc.document.readyState = rsInteractive
+  if bc.config.scripting != smFalse:
+    bc.dispatchDOMContentLoadedEvent()
+  bc.pollData.unregister(data.stream.fd)
+  bc.loader.unregistered.add(data.stream.fd)
+  bc.loader.removeCachedItem(bc.cacheId)
+  bc.cacheId = -1
+  bc.outputId = -1
+  bc.loader.unset(data)
   data.stream.sclose()
-  return buffer.loadResources()
+  return bc.loadResources()
 
-proc headlessMustWait(buffer: Buffer): bool =
-  return buffer.config.scripting != smFalse and
-    not buffer.window.timeouts.empty or
-    buffer.loader.hasFds()
+proc headlessMustWait(bc: BufferContext): bool =
+  return bc.config.scripting != smFalse and
+    not bc.window.timeouts.empty or
+    bc.loader.hasFds()
 
 # Returns:
 # * -1 if loading is done
 # * a positive number for reporting the number of bytes loaded and that the page
 #   has been partially rendered.
-proc load*(buffer: Buffer): int {.proxy, task.} =
-  if buffer.state == bsLoaded:
-    if buffer.config.headless == hmTrue and buffer.headlessMustWait():
-      buffer.headlessLoading = true
+proc load*(bc: BufferContext): int {.proxy, task.} =
+  if bc.state == bsLoaded:
+    if bc.config.headless == hmTrue and bc.headlessMustWait():
+      bc.headlessLoading = true
       return -2 # unused
     else:
       return -1
-  elif buffer.bytesRead > buffer.reportedBytesRead:
-    buffer.maybeReshape()
-    buffer.reportedBytesRead = buffer.bytesRead
-    return buffer.bytesRead
+  elif bc.bytesRead > bc.reportedBytesRead:
+    bc.maybeReshape()
+    bc.reportedBytesRead = bc.bytesRead
+    return bc.bytesRead
   else:
     # will be resolved in onload
-    buffer.savetask = true
+    bc.savetask = true
     return -2 # unused
 
-proc onload(buffer: Buffer; data: InputData) =
-  case buffer.state
+proc onload(bc: BufferContext; data: InputData) =
+  case bc.state
   of bsLoadingResources, bsLoaded:
-    if buffer.hasTask(bcLoad):
-      if buffer.config.headless == hmTrue and buffer.headlessMustWait():
-        buffer.headlessLoading = true
+    if bc.hasTask(bcLoad):
+      if bc.config.headless == hmTrue and bc.headlessMustWait():
+        bc.headlessLoading = true
       else:
-        buffer.resolveTask(bcLoad, -1)
+        bc.resolveTask(bcLoad, -1)
     return
   of bsLoadingPage:
     discard
@@ -1070,93 +1073,92 @@ proc onload(buffer: Buffer; data: InputData) =
       n = data.stream.readData(iq)
       if n < 0:
         break
-      buffer.bytesRead += n
+      bc.bytesRead += n
     if n != 0:
-      if not buffer.processData(iq.toOpenArray(0, n - 1)):
-        if not buffer.firstBufferRead:
+      if not bc.processData(iq.toOpenArray(0, n - 1)):
+        if not bc.firstBufferRead:
           reprocess = true
           continue
-        if buffer.rewind(data, 0):
+        if bc.rewind(data, 0):
           continue
-      buffer.firstBufferRead = true
+      bc.firstBufferRead = true
       reprocess = false
     else: # EOF
-      buffer.finishLoad(data).then(proc() =
-        buffer.maybeReshape()
-        buffer.state = bsLoaded
-        buffer.document.readyState = rsComplete
-        if buffer.config.scripting != smFalse:
-          buffer.dispatchLoadEvent()
-          for ctx in buffer.window.pendingCanvasCtls:
+      bc.finishLoad(data).then(proc() =
+        bc.maybeReshape()
+        bc.state = bsLoaded
+        bc.document.readyState = rsComplete
+        if bc.config.scripting != smFalse:
+          bc.dispatchLoadEvent()
+          for ctx in bc.window.pendingCanvasCtls:
             ctx.ps.sclose()
             ctx.ps = nil
-          buffer.window.pendingCanvasCtls.setLen(0)
-        if buffer.hasTask(bcGetTitle):
-          buffer.resolveTask(bcGetTitle, buffer.document.title)
-        if buffer.hasTask(bcLoad):
-          if buffer.config.headless == hmTrue and buffer.headlessMustWait():
-            buffer.headlessLoading = true
+          bc.window.pendingCanvasCtls.setLen(0)
+        if bc.hasTask(bcGetTitle):
+          bc.resolveTask(bcGetTitle, bc.document.title)
+        if bc.hasTask(bcLoad):
+          if bc.config.headless == hmTrue and bc.headlessMustWait():
+            bc.headlessLoading = true
           else:
-            buffer.resolveTask(bcLoad, -1)
+            bc.resolveTask(bcLoad, -1)
       )
       return # skip incr render
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
-  if buffer.config.headless == hmFalse and buffer.tasks[bcLoad] != 0:
+  if bc.config.headless == hmFalse and bc.tasks[bcLoad] != 0:
     # only makes sense when not in dump mode (and the user has requested a load)
-    buffer.maybeReshape()
-    buffer.reportedBytesRead = buffer.bytesRead
-    if buffer.hasTask(bcGetTitle):
-      buffer.resolveTask(bcGetTitle, buffer.document.title)
-    if buffer.hasTask(bcLoad):
-      buffer.resolveTask(bcLoad, buffer.bytesRead)
+    bc.maybeReshape()
+    bc.reportedBytesRead = bc.bytesRead
+    if bc.hasTask(bcGetTitle):
+      bc.resolveTask(bcGetTitle, bc.document.title)
+    if bc.hasTask(bcLoad):
+      bc.resolveTask(bcLoad, bc.bytesRead)
 
-proc getTitle*(buffer: Buffer): string {.proxy, task.} =
-  if buffer.document != nil:
-    let title = buffer.document.findFirst(TAG_TITLE)
+proc getTitle*(bc: BufferContext): string {.proxy, task.} =
+  if bc.document != nil:
+    let title = bc.document.findFirst(TAG_TITLE)
     if title != nil:
       return title.childTextContent.stripAndCollapse()
-    if buffer.state == bsLoaded:
+    if bc.state == bsLoaded:
       return "" # title no longer expected
-  buffer.savetask = true
+  bc.savetask = true
   return ""
 
-proc forceReshape0(buffer: Buffer) =
-  if buffer.document != nil:
-    buffer.document.invalid = true
-  buffer.maybeReshape()
+proc forceReshape0(bc: BufferContext) =
+  if bc.document != nil:
+    bc.document.invalid = true
+  bc.maybeReshape()
 
-proc forceReshape2(buffer: Buffer) =
-  if buffer.document != nil and buffer.document.documentElement != nil:
-    buffer.document.documentElement.invalidate()
-  buffer.forceReshape0()
+proc forceReshape2(bc: BufferContext) =
+  if bc.document != nil and bc.document.documentElement != nil:
+    bc.document.documentElement.invalidate()
+  bc.forceReshape0()
 
-proc forceReshape*(buffer: Buffer) {.proxy.} =
-  buffer.forceReshape2()
+proc forceReshape*(bc: BufferContext) {.proxy.} =
+  bc.forceReshape2()
 
-proc windowChange*(buffer: Buffer; attrs: WindowAttributes) {.proxy.} =
-  buffer.attrs = attrs
-  buffer.forceReshape2()
+proc windowChange*(bc: BufferContext; attrs: WindowAttributes) {.proxy.} =
+  bc.attrs = attrs
+  bc.forceReshape2()
 
-proc cancel*(buffer: Buffer) {.proxy.} =
-  if buffer.state == bsLoaded:
+proc cancel*(bc: BufferContext) {.proxy.} =
+  if bc.state == bsLoaded:
     return
-  for it in buffer.loader.data:
+  for it in bc.loader.data:
     let fd = it.fd
-    buffer.pollData.unregister(fd)
-    buffer.loader.unregistered.add(fd)
+    bc.pollData.unregister(fd)
+    bc.loader.unregistered.add(fd)
     it.stream.sclose()
-    buffer.loader.unset(it)
+    bc.loader.unset(it)
     if it of InputData:
-      buffer.loader.removeCachedItem(buffer.cacheId)
-      buffer.cacheId = -1
-      buffer.outputId = -1
-      buffer.htmlParser.finish()
-  buffer.document.readyState = rsInteractive
-  buffer.state = bsLoaded
-  buffer.maybeReshape()
+      bc.loader.removeCachedItem(bc.cacheId)
+      bc.cacheId = -1
+      bc.outputId = -1
+      bc.htmlParser.finish()
+  bc.document.readyState = rsInteractive
+  bc.state = bsLoaded
+  bc.maybeReshape()
 
-#https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#multipart/form-data-encoding-algorithm
 proc serializeMultipart(entries: seq[FormDataEntry]; urandom: PosixStream):
     FormData =
   let formData = newFormData0(entries, urandom)
@@ -1187,15 +1189,16 @@ func pickCharset(form: HTMLFormElement): Charset =
     return CHARSET_UTF_8
   return form.document.charset.getOutputEncoding()
 
-proc getFormRequestType(buffer: Buffer; scheme: string): FormRequestType =
-  buffer.config.protocol.withValue(scheme, p):
+proc getFormRequestType(bc: BufferContext; scheme: string): FormRequestType =
+  bc.config.protocol.withValue(scheme, p):
     return p[].formRequest
   return frtHttp
 
-proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
-    entryList: seq[FormDataEntry]; enctype: FormEncodingType): Request =
+proc makeFormRequest(bc: BufferContext; parsedAction: URL;
+    httpMethod: HttpMethod; entryList: seq[FormDataEntry];
+    enctype: FormEncodingType): Request =
   assert httpMethod in {hmGet, hmPost}
-  case buffer.getFormRequestType(parsedAction.scheme)
+  case bc.getFormRequestType(parsedAction.scheme)
   of frtFtp:
     return newRequest(parsedAction) # get action URL
   of frtData:
@@ -1244,7 +1247,7 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
     of fetMultipart:
       #TODO with charset
       let multipart = serializeMultipart(entryList,
-        buffer.window.crypto.urandom)
+        bc.window.crypto.urandom)
       RequestBody(t: rbtMultipart, multipart: multipart)
     of fetTextPlain:
       #TODO with charset
@@ -1254,7 +1257,8 @@ proc makeFormRequest(buffer: Buffer; parsedAction: URL; httpMethod: HttpMethod;
     return newRequest(parsedAction, httpMethod, headers, body)
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
-proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Request =
+proc submitForm(bc: BufferContext; form: HTMLFormElement; submitter: Element):
+    Request =
   if form.constructingEntryList:
     return nil
   #TODO submit()
@@ -1282,17 +1286,17 @@ proc submitForm(buffer: Buffer; form: HTMLFormElement; submitter: Element): Requ
   #else:
   #  submitter.target()
   #let noopener = true #TODO
-  return buffer.makeFormRequest(parsedAction, httpMethod, entryList, enctype)
+  return bc.makeFormRequest(parsedAction, httpMethod, entryList, enctype)
 
-proc setFocus(buffer: Buffer; e: Element) =
-  buffer.document.setFocus(e)
-  buffer.maybeReshape()
+proc setFocus(bc: BufferContext; e: Element) =
+  bc.document.setFocus(e)
+  bc.maybeReshape()
 
-proc restoreFocus(buffer: Buffer) =
-  buffer.document.setFocus(nil)
-  buffer.maybeReshape()
+proc restoreFocus(bc: BufferContext) =
+  bc.document.setFocus(nil)
+  bc.maybeReshape()
 
-proc implicitSubmit(buffer: Buffer; input: HTMLInputElement): Request =
+proc implicitSubmit(bc: BufferContext; input: HTMLInputElement): Request =
   let form = input.form
   if form != nil and form.canSubmitImplicitly():
     var defaultButton: Element
@@ -1301,21 +1305,22 @@ proc implicitSubmit(buffer: Buffer; input: HTMLInputElement): Request =
         defaultButton = element
         break
     if defaultButton != nil:
-      return buffer.submitForm(form, defaultButton)
+      return bc.submitForm(form, defaultButton)
     else:
-      return buffer.submitForm(form, form)
+      return bc.submitForm(form, form)
   return nil
 
-proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
+proc readSuccess*(bc: BufferContext; s: string; hasFd: bool): Request
+    {.proxy.} =
   var fd: cint = -1
   if hasFd:
-    buffer.pstream.withPacketReader r:
+    bc.pstream.withPacketReader r:
       fd = r.recvFd()
     do: # EOF, pager died
       return nil
-  if buffer.document.focus != nil:
-    let focus = buffer.document.focus
-    buffer.restoreFocus()
+  if bc.document.focus != nil:
+    let focus = bc.document.focus
+    bc.restoreFocus()
     case focus.tagType
     of TAG_INPUT:
       let input = HTMLInputElement(focus)
@@ -1325,8 +1330,8 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
         input.invalidate()
       else:
         input.value = s
-      if buffer.config.scripting != smFalse:
-        let window = buffer.window
+      if bc.config.scripting != smFalse:
+        let window = bc.window
         if input.inputType == itFile:
           window.fireEvent(satInput, input, bubbles = true, cancelable = true,
             trusted = true)
@@ -1341,31 +1346,31 @@ proc readSuccess*(buffer: Buffer; s: string; hasFd: bool): Request {.proxy.} =
           )
           inputEvent.isTrusted = true
           window.fireEvent(inputEvent, input)
-        buffer.window.fireEvent(satChange, input, bubbles = true,
+        bc.window.fireEvent(satChange, input, bubbles = true,
           cancelable = true, trusted = true)
-      buffer.maybeReshape()
-      return buffer.implicitSubmit(input)
+      bc.maybeReshape()
+      return bc.implicitSubmit(input)
     of TAG_TEXTAREA:
       let textarea = HTMLTextAreaElement(focus)
       textarea.value = s
       textarea.invalidate()
-      if buffer.config.scripting != smFalse:
-        buffer.window.fireEvent(satChange, textarea, bubbles = true,
+      if bc.config.scripting != smFalse:
+        bc.window.fireEvent(satChange, textarea, bubbles = true,
           cancelable = true, trusted = true)
-      buffer.maybeReshape()
+      bc.maybeReshape()
     else: discard
   return nil
 
-proc click(buffer: Buffer; label: HTMLLabelElement): ClickResult =
+proc click(bc: BufferContext; label: HTMLLabelElement): ClickResult =
   let control = label.control
   if control != nil:
-    return buffer.click(control)
+    return bc.click(control)
   return ClickResult()
 
-proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
+proc click(bc: BufferContext; select: HTMLSelectElement): ClickResult =
   if select.attrb(satMultiple):
     return ClickResult()
-  buffer.setFocus(select)
+  bc.setFocus(select)
   var options: seq[SelectOption] = @[]
   var selected = -1
   var i = 0
@@ -1379,16 +1384,16 @@ proc click(buffer: Buffer; select: HTMLSelectElement): ClickResult =
     select: some(SelectResult(options: move(options), selected: selected))
   )
 
-proc baseURL(buffer: Buffer): URL =
-  return buffer.document.baseURL
+proc baseURL(bc: BufferContext): URL =
+  return bc.document.baseURL
 
-proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
+proc evalJSURL(bc: BufferContext; url: URL): Opt[string] =
   let surl = $url
   let source = surl.toOpenArray("javascript:".len, surl.high).percentDecode()
-  let ctx = buffer.window.jsctx
-  let ret = ctx.eval(source, '<' & $buffer.baseURL & '>', JS_EVAL_TYPE_GLOBAL)
+  let ctx = bc.window.jsctx
+  let ret = ctx.eval(source, '<' & $bc.baseURL & '>', JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(ret):
-    buffer.window.console.writeException(ctx)
+    bc.window.console.writeException(ctx)
     return err() # error
   if JS_IsUndefined(ret):
     return err() # no need to navigate
@@ -1398,16 +1403,16 @@ proc evalJSURL(buffer: Buffer; url: URL): Opt[string] =
   # Navigate to result.
   return ok(res)
 
-proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
-  buffer.restoreFocus()
+proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
+  bc.restoreFocus()
   let url = anchor.reinitURL()
   if url.isSome:
     var url = url.get
     if url.schemeType == stJavascript:
-      if buffer.config.scripting == smFalse:
+      if bc.config.scripting == smFalse:
         return ClickResult()
-      let s = buffer.evalJSURL(url)
-      buffer.maybeReshape()
+      let s = bc.evalJSURL(url)
+      bc.maybeReshape()
       if s.isNone:
         return ClickResult()
       let urls = newURL("data:text/html," & s.get)
@@ -1417,42 +1422,42 @@ proc click(buffer: Buffer; anchor: HTMLAnchorElement): ClickResult =
     return ClickResult(open: newRequest(url, hmGet))
   return ClickResult()
 
-proc click(buffer: Buffer; option: HTMLOptionElement): ClickResult =
+proc click(bc: BufferContext; option: HTMLOptionElement): ClickResult =
   let select = option.select
   if select != nil:
     if select.attrb(satMultiple):
       option.setSelected(not option.selected)
-      if buffer.config.scripting != smFalse:
-        buffer.window.fireEvent(satChange, select, bubbles = true,
+      if bc.config.scripting != smFalse:
+        bc.window.fireEvent(satChange, select, bubbles = true,
           cancelable = true, trusted = true)
-      buffer.maybeReshape()
+      bc.maybeReshape()
       return ClickResult()
-    return buffer.click(select)
+    return bc.click(select)
   return ClickResult()
 
-proc click(buffer: Buffer; button: HTMLButtonElement): ClickResult =
+proc click(bc: BufferContext; button: HTMLButtonElement): ClickResult =
   if button.form != nil:
     case button.ctype
     of btSubmit:
-      let open = buffer.submitForm(button.form, button)
-      buffer.setFocus(button)
+      let open = bc.submitForm(button.form, button)
+      bc.setFocus(button)
       return ClickResult(open: open)
     of btReset:
       button.form.reset()
     of btButton: discard
-    buffer.setFocus(button)
+    bc.setFocus(button)
   return ClickResult()
 
-proc click(buffer: Buffer; textarea: HTMLTextAreaElement): ClickResult =
-  buffer.setFocus(textarea)
+proc click(bc: BufferContext; textarea: HTMLTextAreaElement): ClickResult =
+  bc.setFocus(textarea)
   let readline = ReadLineResult(
     t: rltArea,
     value: textarea.value
   )
   return ClickResult(readline: some(readline))
 
-proc click(buffer: Buffer; audio: HTMLAudioElement): ClickResult =
-  buffer.restoreFocus()
+proc click(bc: BufferContext; audio: HTMLAudioElement): ClickResult =
+  bc.restoreFocus()
   let (src, contentType) = audio.getSrc()
   if src != "":
     let url = audio.document.parseURL(src)
@@ -1460,8 +1465,8 @@ proc click(buffer: Buffer; audio: HTMLAudioElement): ClickResult =
       return ClickResult(open: newRequest(url.get), contentType: contentType)
   return ClickResult()
 
-proc click(buffer: Buffer; video: HTMLVideoElement): ClickResult =
-  buffer.restoreFocus()
+proc click(bc: BufferContext; video: HTMLVideoElement): ClickResult =
+  bc.restoreFocus()
   let (src, contentType) = video.getSrc()
   if src != "":
     let url = video.document.parseURL(src)
@@ -1470,8 +1475,8 @@ proc click(buffer: Buffer; video: HTMLVideoElement): ClickResult =
   return ClickResult()
 
 # Used for frame, ifframe
-proc clickFrame(buffer: Buffer; frame: Element): ClickResult =
-  buffer.restoreFocus()
+proc clickFrame(bc: BufferContext; frame: Element): ClickResult =
+  bc.restoreFocus()
   let src = frame.attr(satSrc)
   if src != "":
     let url = frame.document.parseURL(src)
@@ -1504,49 +1509,49 @@ const InputTypePrompt = [
   itWeek: "Week"
 ]
 
-proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
-  buffer.restoreFocus()
+proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
+  bc.restoreFocus()
   case input.inputType
   of itFile:
     #TODO we should somehow extract the path name from the current file
-    buffer.setFocus(input)
+    bc.setFocus(input)
     return ClickResult(readline: some(ReadLineResult(t: rltFile)))
   of itCheckbox:
     input.setChecked(not input.checked)
-    if buffer.config.scripting != smFalse:
+    if bc.config.scripting != smFalse:
       # Note: not an InputEvent.
-      buffer.window.fireEvent(satInput, input, bubbles = true,
+      bc.window.fireEvent(satInput, input, bubbles = true,
         cancelable = true, trusted = true)
-      buffer.window.fireEvent(satChange, input, bubbles = true,
+      bc.window.fireEvent(satChange, input, bubbles = true,
         cancelable = true, trusted = true)
-    buffer.maybeReshape()
+    bc.maybeReshape()
     return ClickResult()
   of itRadio:
     let wasChecked = input.checked
     input.setChecked(true)
-    if not wasChecked and buffer.config.scripting != smFalse:
+    if not wasChecked and bc.config.scripting != smFalse:
       # See above.
-      buffer.window.fireEvent(satInput, input, bubbles = true,
+      bc.window.fireEvent(satInput, input, bubbles = true,
         cancelable = true, trusted = true)
-      buffer.window.fireEvent(satChange, input, bubbles = true,
+      bc.window.fireEvent(satChange, input, bubbles = true,
         cancelable = true, trusted = true)
-    buffer.maybeReshape()
+    bc.maybeReshape()
     return ClickResult()
   of itReset:
     if input.form != nil:
       input.form.reset()
-      buffer.maybeReshape()
+      bc.maybeReshape()
     return ClickResult()
   of itSubmit, itButton:
     if input.form != nil:
-      return ClickResult(open: buffer.submitForm(input.form, input))
+      return ClickResult(open: bc.submitForm(input.form, input))
     return ClickResult()
   else:
     # default is text.
     var prompt = InputTypePrompt[input.inputType]
     if input.inputType == itRange:
       prompt &= " (" & input.attr(satMin) & ".." & input.attr(satMax) & ")"
-    buffer.setFocus(input)
+    bc.setFocus(input)
     return ClickResult(
       readline: some(ReadLineResult(
         prompt: prompt & ": ",
@@ -1555,70 +1560,70 @@ proc click(buffer: Buffer; input: HTMLInputElement): ClickResult =
       ))
     )
 
-proc click(buffer: Buffer; clickable: Element): ClickResult =
+proc click(bc: BufferContext; clickable: Element): ClickResult =
   case clickable.tagType
   of TAG_LABEL:
-    return buffer.click(HTMLLabelElement(clickable))
+    return bc.click(HTMLLabelElement(clickable))
   of TAG_SELECT:
-    return buffer.click(HTMLSelectElement(clickable))
+    return bc.click(HTMLSelectElement(clickable))
   of TAG_A:
-    return buffer.click(HTMLAnchorElement(clickable))
+    return bc.click(HTMLAnchorElement(clickable))
   of TAG_OPTION:
-    return buffer.click(HTMLOptionElement(clickable))
+    return bc.click(HTMLOptionElement(clickable))
   of TAG_BUTTON:
-    return buffer.click(HTMLButtonElement(clickable))
+    return bc.click(HTMLButtonElement(clickable))
   of TAG_TEXTAREA:
-    return buffer.click(HTMLTextAreaElement(clickable))
+    return bc.click(HTMLTextAreaElement(clickable))
   of TAG_INPUT:
-    return buffer.click(HTMLInputElement(clickable))
+    return bc.click(HTMLInputElement(clickable))
   of TAG_AUDIO:
-    return buffer.click(HTMLAudioElement(clickable))
+    return bc.click(HTMLAudioElement(clickable))
   of TAG_VIDEO:
-    return buffer.click(HTMLVideoElement(clickable))
+    return bc.click(HTMLVideoElement(clickable))
   of TAG_IFRAME, TAG_FRAME:
-    return buffer.clickFrame(clickable)
+    return bc.clickFrame(clickable)
   else:
-    buffer.restoreFocus()
+    bc.restoreFocus()
     return ClickResult()
 
-proc click*(buffer: Buffer; cursorx, cursory: int): ClickResult {.proxy.} =
-  if buffer.lines.len <= cursory: return ClickResult()
+proc click*(bc: BufferContext; cursorx, cursory: int): ClickResult {.proxy.} =
+  if bc.lines.len <= cursory: return ClickResult()
   var canceled = false
-  let clickable = buffer.getCursorClickable(cursorx, cursory)
-  if buffer.config.scripting != smFalse:
-    let element = buffer.getCursorElement(cursorx, cursory)
+  let clickable = bc.getCursorClickable(cursorx, cursory)
+  if bc.config.scripting != smFalse:
+    let element = bc.getCursorElement(cursorx, cursory)
     if element != nil:
-      let window = buffer.window
+      let window = bc.window
       let event = newEvent(satClick.toAtom(), element, bubbles = true,
         cancelable = true)
       event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
-      buffer.maybeReshape()
-  let url = buffer.navigateUrl
-  buffer.navigateUrl = nil
+      bc.maybeReshape()
+  let url = bc.navigateUrl
+  bc.navigateUrl = nil
   if not canceled and clickable != nil:
-    return buffer.click(clickable)
+    return bc.click(clickable)
   if url != nil:
     return ClickResult(open: newRequest(url, hmGet))
   return ClickResult()
 
-proc select*(buffer: Buffer; selected: int): ClickResult {.proxy.} =
-  if buffer.document.focus != nil and
-      buffer.document.focus of HTMLSelectElement:
+proc select*(bc: BufferContext; selected: int): ClickResult {.proxy.} =
+  if bc.document.focus != nil and
+      bc.document.focus of HTMLSelectElement:
     if selected != -1:
-      let select = HTMLSelectElement(buffer.document.focus)
+      let select = HTMLSelectElement(bc.document.focus)
       let index = select.selectedIndex
       if index != selected:
         select.setSelectedIndex(selected)
-        if buffer.config.scripting != smFalse:
-          buffer.window.fireEvent(satChange, select, bubbles = true,
+        if bc.config.scripting != smFalse:
+          bc.window.fireEvent(satChange, select, bubbles = true,
             cancelable = true, trusted = true)
-    buffer.restoreFocus()
-    buffer.maybeReshape()
+    bc.restoreFocus()
+    bc.maybeReshape()
   return ClickResult()
 
-proc readCanceled*(buffer: Buffer) {.proxy.} =
-  buffer.restoreFocus()
+proc readCanceled*(bc: BufferContext) {.proxy.} =
+  bc.restoreFocus()
 
 type GetLinesResult* = object
   numLines*: int
@@ -1626,28 +1631,28 @@ type GetLinesResult* = object
   bgcolor*: CellColor
   images*: seq[PosBitmap]
 
-proc getLines*(buffer: Buffer; w: Slice[int]): GetLinesResult {.proxy.} =
-  result = GetLinesResult(numLines: buffer.lines.len, bgcolor: buffer.bgcolor)
+proc getLines*(bc: BufferContext; w: Slice[int]): GetLinesResult {.proxy.} =
+  result = GetLinesResult(numLines: bc.lines.len, bgcolor: bc.bgcolor)
   var w = w
-  if w.b < 0 or w.b > buffer.lines.high:
-    w.b = buffer.lines.high
+  if w.b < 0 or w.b > bc.lines.high:
+    w.b = bc.lines.high
   #TODO this is horribly inefficient
   for y in w:
-    var line = SimpleFlexibleLine(str: buffer.lines[y].str)
-    for f in buffer.lines[y].formats:
+    var line = SimpleFlexibleLine(str: bc.lines[y].str)
+    for f in bc.lines[y].formats:
       line.formats.add(SimpleFormatCell(format: f.format, pos: f.pos))
     result.lines.add(line)
-  if buffer.config.images:
-    let ppl = buffer.attrs.ppl
-    for image in buffer.images:
+  if bc.config.images:
+    let ppl = bc.attrs.ppl
+    for image in bc.images:
       let ey = image.y + (image.height + ppl - 1) div ppl # ceil
       if image.y <= w.b and ey >= w.a:
         result.images.add(image)
 
-proc getLinks*(buffer: Buffer): seq[string] {.proxy.} =
+proc getLinks*(bc: BufferContext): seq[string] {.proxy.} =
   result = @[]
-  if buffer.document != nil:
-    for element in buffer.window.displayedElements(TAG_A):
+  if bc.document != nil:
+    for element in bc.window.displayedElements(TAG_A):
       if element.attrb(satHref):
         let x = HTMLAnchorElement(element).reinitURL()
         if x.isSome:
@@ -1655,18 +1660,18 @@ proc getLinks*(buffer: Buffer): seq[string] {.proxy.} =
         else:
           result.add(element.attr(satHref))
 
-proc onReshape*(buffer: Buffer) {.proxy, task.} =
-  if buffer.onReshapeImmediately:
+proc onReshape*(bc: BufferContext) {.proxy, task.} =
+  if bc.onReshapeImmediately:
     # We got a reshape before the container even asked us for the event.
     # This variable prevents the race that would otherwise occur if
     # the buffer were to be reshaped between two onReshape requests.
-    buffer.onReshapeImmediately = false
+    bc.onReshapeImmediately = false
     return
-  assert buffer.tasks[bcOnReshape] == 0
-  buffer.savetask = true
+  assert bc.tasks[bcOnReshape] == 0
+  bc.savetask = true
 
-proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
-  if buffer.document == nil or buffer.document.body == nil:
+proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
+  if bc.document == nil or bc.document.body == nil:
     return
   var buf = "("
   for i, scheme in schemes:
@@ -1677,8 +1682,8 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
   let regex = compileRegex(buf, {LRE_FLAG_GLOBAL}).get
   # Dummy element for the fragment parsing algorithm. We can't just use parent
   # there, because e.g. plaintext would not parse the text correctly.
-  let html = buffer.document.newHTMLElement(TAG_DIV)
-  var stack = @[buffer.document.body]
+  let html = bc.document.newHTMLElement(TAG_DIV)
+  var stack = @[bc.document.body]
   while stack.len > 0:
     let element = stack.pop()
     var toRemove: seq[Node] = @[]
@@ -1754,32 +1759,32 @@ proc markURL*(buffer: Buffer; schemes: seq[string]) {.proxy.} =
         let replacement = html.fragmentParsingAlgorithm(data)
         discard element.replace(text, replacement)
     stack.add(stackNext)
-  buffer.forceReshape0()
+  bc.forceReshape0()
 
-proc toggleImages0(buffer: Buffer): bool =
-  buffer.config.images = not buffer.config.images
-  buffer.window.images = buffer.config.images
-  buffer.window.svgCache.clear()
-  for element in buffer.document.descendants:
+proc toggleImages0(bc: BufferContext): bool =
+  bc.config.images = not bc.config.images
+  bc.window.images = bc.config.images
+  bc.window.svgCache.clear()
+  for element in bc.document.descendants:
     if element of HTMLImageElement:
-      buffer.window.loadResource(HTMLImageElement(element))
+      bc.window.loadResource(HTMLImageElement(element))
     elif element of SVGSVGElement:
-      buffer.window.loadResource(SVGSVGElement(element))
-  buffer.savetask = true
-  buffer.loadResources().then(proc() =
-    if buffer.tasks[bcToggleImages] == 0:
+      bc.window.loadResource(SVGSVGElement(element))
+  bc.savetask = true
+  bc.loadResources().then(proc() =
+    if bc.tasks[bcToggleImages] == 0:
       # we resolved in then
-      buffer.savetask = false
+      bc.savetask = false
     else:
-      buffer.resolveTask(bcToggleImages, buffer.config.images)
-    buffer.forceReshape2()
+      bc.resolveTask(bcToggleImages, bc.config.images)
+    bc.forceReshape2()
   )
-  return buffer.config.images
+  return bc.config.images
 
-proc toggleImages*(buffer: Buffer): bool {.proxy, task.} =
-  buffer.toggleImages0()
+proc toggleImages*(bc: BufferContext): bool {.proxy, task.} =
+  bc.toggleImages0()
 
-macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
+macro bufferDispatcher(funs: static ProxyMap; bc: BufferContext;
     cmd: BufferCommand; packetid: int; r: var PacketReader) =
   let switch = newNimNode(nnkCaseStmt)
   switch.add(ident("cmd"))
@@ -1787,7 +1792,7 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     let ofbranch = newNimNode(nnkOfBranch)
     ofbranch.add(v.ename)
     let stmts = newStmtList()
-    let call = newCall(v.iname, buffer)
+    let call = newCall(v.iname, bc)
     for i in 2 ..< v.params.len:
       let param = v.params[i]
       for i in 0 ..< param.len - 2:
@@ -1808,14 +1813,14 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     var resolve = newStmtList()
     if rval == nil:
       resolve.add(quote do:
-        buffer.pstream.withPacketWriter wt:
+        bc.pstream.withPacketWriter wt:
           wt.swrite(`packetid`)
         do:
           quit(1)
       )
     else:
       resolve.add(quote do:
-        buffer.pstream.withPacketWriter wt:
+        bc.pstream.withPacketWriter wt:
           wt.swrite(`packetid`)
           wt.swrite(`rval`)
         do:
@@ -1824,9 +1829,9 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     if v.istask:
       let en = v.ename
       stmts.add(quote do:
-        if buffer.savetask:
-          buffer.savetask = false
-          buffer.tasks[BufferCommand.`en`] = `packetid`
+        if bc.savetask:
+          bc.savetask = false
+          bc.tasks[BufferCommand.`en`] = `packetid`
         else:
           `resolve`
       )
@@ -1836,88 +1841,88 @@ macro bufferDispatcher(funs: static ProxyMap; buffer: Buffer;
     switch.add(ofbranch)
   return switch
 
-proc readCommand(buffer: Buffer): bool =
-  buffer.pstream.withPacketReader r:
+proc readCommand(bc: BufferContext): bool =
+  bc.pstream.withPacketReader r:
     var cmd: BufferCommand
     var packetid: int
     r.sread(cmd)
     r.sread(packetid)
-    bufferDispatcher(ProxyFunctions, buffer, cmd, packetid, r)
+    bufferDispatcher(ProxyFunctions, bc, cmd, packetid, r)
   do: # EOF, pager died
     return false
   true
 
-proc handleRead(buffer: Buffer; fd: int): bool =
-  if fd == buffer.pstream.fd:
-    return buffer.readCommand()
-  elif (let data = buffer.loader.get(fd); data != nil):
+proc handleRead(bc: BufferContext; fd: int): bool =
+  if fd == bc.pstream.fd:
+    return bc.readCommand()
+  elif (let data = bc.loader.get(fd); data != nil):
     if data of InputData:
-      buffer.onload(InputData(data))
+      bc.onload(InputData(data))
     else:
-      buffer.loader.onRead(fd)
-      if buffer.config.scripting != smFalse:
-        buffer.window.runJSJobs()
-  elif fd in buffer.loader.unregistered:
+      bc.loader.onRead(fd)
+      if bc.config.scripting != smFalse:
+        bc.window.runJSJobs()
+  elif fd in bc.loader.unregistered:
     discard # ignore
   else:
     assert false
   true
 
-proc handleError(buffer: Buffer; fd: int; event: TPollfd): bool =
-  if fd == buffer.pstream.fd:
-    # Connection reset by peer, probably. Close the buffer.
+proc handleError(bc: BufferContext; fd: int; event: TPollfd): bool =
+  if fd == bc.pstream.fd:
+    # Connection reset by peer, probably.  Close the buffer.
     return false
-  elif (let data = buffer.loader.get(fd); data != nil):
+  elif (let data = bc.loader.get(fd); data != nil):
     if data of InputData:
-      buffer.onload(InputData(data))
+      bc.onload(InputData(data))
     else:
-      if not buffer.loader.onError(fd):
+      if not bc.loader.onError(fd):
         #TODO handle connection error
         assert false, $fd
-      if buffer.config.scripting != smFalse:
-        buffer.window.runJSJobs()
-  elif fd in buffer.loader.unregistered:
+      if bc.config.scripting != smFalse:
+        bc.window.runJSJobs()
+  elif fd in bc.loader.unregistered:
     discard # ignore
   else:
     assert false, $fd
   true
 
-proc getPollTimeout(buffer: Buffer): cint =
-  if buffer.config.scripting != smFalse:
-    return buffer.window.timeouts.sortAndGetTimeout()
+proc getPollTimeout(bc: BufferContext): cint =
+  if bc.config.scripting != smFalse:
+    return bc.window.timeouts.sortAndGetTimeout()
   return -1
 
-proc runBuffer(buffer: Buffer) =
+proc runBuffer(bc: BufferContext) =
   var alive = true
   while alive:
-    if buffer.headlessLoading and not buffer.headlessMustWait():
-      buffer.headlessLoading = false
-      buffer.resolveTask(bcLoad, -1)
-    let timeout = buffer.getPollTimeout()
-    buffer.pollData.poll(timeout)
-    buffer.loader.blockRegister()
-    for event in buffer.pollData.events:
+    if bc.headlessLoading and not bc.headlessMustWait():
+      bc.headlessLoading = false
+      bc.resolveTask(bcLoad, -1)
+    let timeout = bc.getPollTimeout()
+    bc.pollData.poll(timeout)
+    bc.loader.blockRegister()
+    for event in bc.pollData.events:
       if (event.revents and POLLIN) != 0:
-        if not buffer.handleRead(event.fd):
+        if not bc.handleRead(event.fd):
           alive = false
           break
       if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
-        if not buffer.handleError(event.fd, event):
+        if not bc.handleError(event.fd, event):
           alive = false
           break
-    buffer.loader.unregistered.setLen(0)
-    buffer.loader.unblockRegister()
-    if buffer.config.scripting != smFalse:
-      if buffer.window.timeouts.run(buffer.window.console):
-        buffer.window.runJSJobs()
-        buffer.maybeReshape()
+    bc.loader.unregistered.setLen(0)
+    bc.loader.unblockRegister()
+    if bc.config.scripting != smFalse:
+      if bc.window.timeouts.run(bc.window.console):
+        bc.window.runJSJobs()
+        bc.maybeReshape()
 
-proc cleanup(buffer: Buffer) =
-  buffer.pstream.sclose()
-  buffer.window.crypto.urandom.sclose()
-  if buffer.config.scripting != smFalse:
-    buffer.window.jsctx.free()
-    buffer.window.jsrt.free()
+proc cleanup(bc: BufferContext) =
+  bc.pstream.sclose()
+  bc.window.crypto.urandom.sclose()
+  if bc.config.scripting != smFalse:
+    bc.window.jsctx.free()
+    bc.window.jsrt.free()
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
@@ -1926,7 +1931,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ccTentative
   else:
     ccCertain
-  let buffer = Buffer(
+  let bc = BufferContext(
     attrs: attrs,
     config: config,
     ishtml: ishtml,
@@ -1938,12 +1943,12 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     cacheId: cacheId,
     outputId: -1
   )
-  buffer.window = newWindow(
+  bc.window = newWindow(
     config.scripting,
     config.images,
     config.styling,
     config.autofocus,
-    addr buffer.attrs,
+    addr bc.attrs,
     loader,
     url,
     urandom,
@@ -1951,32 +1956,31 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     config.userAgent,
     config.referrer
   )
-  if buffer.config.scripting != smFalse:
-    buffer.window.navigate = proc(url: URL) = buffer.navigate(url)
-  buffer.window.maybeRestyle = proc(element: Element) =
+  if bc.config.scripting != smFalse:
+    bc.window.navigate = proc(url: URL) = bc.navigate(url)
+  bc.window.maybeRestyle = proc(element: Element) =
     if element.computed == nil:
       element.applyStyle()
-  buffer.charset = buffer.charsetStack.pop()
+  bc.charset = bc.charsetStack.pop()
   istream.setBlocking(false)
-  buffer.loader.put(InputData(stream: istream))
-  buffer.pollData.register(istream.fd, POLLIN)
+  bc.loader.put(InputData(stream: istream))
+  bc.pollData.register(istream.fd, POLLIN)
   loader.registerFun = proc(fd: int) =
-    buffer.pollData.register(fd, POLLIN)
+    bc.pollData.register(fd, POLLIN)
   loader.unregisterFun = proc(fd: int) =
-    buffer.pollData.unregister(fd)
-  buffer.pollData.register(buffer.pstream.fd, POLLIN)
-  buffer.initDecoder()
-  buffer.htmlParser = newHTML5ParserWrapper(
-    buffer.window,
-    buffer.url,
+    bc.pollData.unregister(fd)
+  bc.pollData.register(bc.pstream.fd, POLLIN)
+  bc.initDecoder()
+  bc.htmlParser = newHTML5ParserWrapper(
+    bc.window,
+    bc.url,
     confidence,
-    buffer.charset
+    bc.charset
   )
-  assert buffer.htmlParser.builder.document != nil
-  buffer.document.applyUASheet()
-  buffer.document.applyUserSheet(buffer.config.userStyle)
-  buffer.runBuffer()
-  buffer.cleanup()
+  bc.document.applyUASheet()
+  bc.document.applyUserSheet(bc.config.userStyle)
+  bc.runBuffer()
+  bc.cleanup()
   quit(0)
 
 {.pop.} # raises: []
