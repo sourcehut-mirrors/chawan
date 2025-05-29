@@ -1915,6 +1915,9 @@ proc runBuffer(buffer: Buffer) =
 proc cleanup(buffer: Buffer) =
   buffer.pstream.sclose()
   buffer.window.crypto.urandom.sclose()
+  if buffer.config.scripting != smFalse:
+    buffer.window.jsctx.free()
+    buffer.window.jsrt.free()
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
