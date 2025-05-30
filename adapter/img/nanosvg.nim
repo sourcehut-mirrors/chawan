@@ -61,12 +61,13 @@ proc main() =
       let v = hdr.after(':').strip()
       if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":
         return
-    let r = nsvgCreateRasterizer()
-    var obuf = newSeqUninit[uint8](width * height * 4)
-    r.nsvgRasterize(image, 0, 0, 1, addr obuf[0], width, height, width * 4)
-    discard os.writeDataLoop(obuf)
-    r.nsvgDeleteRasterizer()
-    image.nsvgDelete()
+    if width != 0 and height != 0:
+      let r = nsvgCreateRasterizer()
+      var obuf = newSeqUninit[uint8](width * height * 4)
+      r.nsvgRasterize(image, 0, 0, 1, addr obuf[0], width, height, width * 4)
+      discard os.writeDataLoop(obuf)
+      r.nsvgDeleteRasterizer()
+      image.nsvgDelete()
   else:
     os.write("Cha-Control: ConnectionError 1 not supported\n")
 
