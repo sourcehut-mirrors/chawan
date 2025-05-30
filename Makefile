@@ -122,7 +122,7 @@ unicode_gen:
 	$(OBJDIR)/genidna > res/map/idna_gen.nim
 	$(OBJDIR)/gencharwidth > res/map/charwidth_gen.nim
 
-twtstr = src/utils/twtstr.nim src/utils/map.nim src/types/opt.nim
+twtstr = src/utils/twtstr.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim
 lcgi = $(dynstream) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim

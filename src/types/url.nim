@@ -17,7 +17,6 @@ import monoucha/quickjs
 import monoucha/tojs
 import types/opt
 import utils/luwrap
-import utils/map
 import utils/twtstr
 
 include res/map/idna_gen

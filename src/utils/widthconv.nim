@@ -1,6 +1,5 @@
 import std/strutils
 
-import utils/map
 import utils/twtstr
 
 const CanHaveDakuten = ("かきくけこさしすせそたちつてとはひふへほカキクケコ" &

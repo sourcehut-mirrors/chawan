@@ -1,4 +1,3 @@
-import utils/map
 import utils/proptable
 import utils/twtstr
 
