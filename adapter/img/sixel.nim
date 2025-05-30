@@ -485,11 +485,11 @@ proc parseDimensions(os: PosixStream; s: string): (int, int) =
   let s = s.split('x')
   if s.len != 2:
     os.die("Cha-Control: ConnectionError InternalError wrong dimensions")
-  let w = parseUInt32(s[0], allowSign = false)
-  let h = parseUInt32(s[1], allowSign = false)
-  if w.isNone or w.isNone:
+  let w = parseIntP(s[0]).get(0)
+  let h = parseIntP(s[1]).get(0)
+  if w <= 0 or h <= 0:
     os.die("Cha-Control: ConnectionError InternalError wrong dimensions")
-  return (int(w.get), int(h.get))
+  return (w, h)
 
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)

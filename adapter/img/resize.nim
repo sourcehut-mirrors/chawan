@@ -38,16 +38,16 @@ proc main() =
       let s = v.split('x')
       if s.len != 2:
         die("Cha-Control: ConnectionError 1 wrong dimensions\n")
-      let w = parseUInt32(s[0], allowSign = false)
-      let h = parseUInt32(s[1], allowSign = false)
-      if w.isNone or w.isNone:
+      let w = parseUInt32(s[0], allowSign = false).get(0)
+      let h = parseUInt32(s[1], allowSign = false).get(0)
+      if w == 0 or w == 0:
         die("Cha-Control: ConnectionError 1 wrong dimensions\n")
       if k == "Cha-Image-Target-Dimensions":
-        dstWidth = cint(w.get)
-        dstHeight = cint(h.get)
+        dstWidth = cint(w)
+        dstHeight = cint(h)
       else:
-        srcWidth = cint(w.get)
-        srcHeight = cint(h.get)
+        srcWidth = cint(w)
+        srcHeight = cint(h)
   let ps = newPosixStream(STDIN_FILENO)
   let os = newPosixStream(STDOUT_FILENO)
   let src = ps.readDataLoopOrMmap(int(srcWidth * srcHeight * 4))
