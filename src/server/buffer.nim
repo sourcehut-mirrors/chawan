@@ -65,7 +65,8 @@ type
     bcGetLinks
 
   BufferState = enum
-    bsLoadingPage, bsLoadingResources, bsLoaded
+    bsLoadingPage, bsLoadingResources, bsLoadingImages,
+    bsLoadingImagesAck, bsLoaded
 
   HoverType* = enum
     htTitle, htLink, htImage, htCachedImage
@@ -867,9 +868,18 @@ proc updateHover*(bc: BufferContext; cursorx, cursory: int): UpdateHoverResult
 proc loadResources(bc: BufferContext): EmptyPromise =
   if bc.window.pendingResources.len > 0:
     let pendingResources = move(bc.window.pendingResources)
-    bc.window.pendingResources.setLen(0)
+    bc.window.pendingResources = @[]
     return pendingResources.all().then(proc(): EmptyPromise =
       return bc.loadResources()
+    )
+  return newResolvedPromise()
+
+proc loadImages(bc: BufferContext): EmptyPromise =
+  if bc.window.pendingImages.len > 0:
+    let pendingImages = move(bc.window.pendingImages)
+    bc.window.pendingImages = @[]
+    return pendingImages.all().then(proc(): EmptyPromise =
+      return bc.loadImages()
     )
   return newResolvedPromise()
 
@@ -1005,11 +1015,6 @@ proc dispatchLoadEvent(bc: BufferContext) =
   bc.maybeReshape()
 
 proc finishLoad(bc: BufferContext; data: InputData): EmptyPromise =
-  if bc.state != bsLoadingPage:
-    let p = EmptyPromise()
-    p.resolve()
-    return p
-  bc.state = bsLoadingResources
   if bc.ctx.td != nil and bc.ctx.td.finish() == tdfrError:
     var s = "\uFFFD"
     doAssert bc.processData0(UnsafeSlice(
@@ -1042,9 +1047,12 @@ proc load*(bc: BufferContext): int {.proxy, task.} =
   if bc.state == bsLoaded:
     if bc.config.headless == hmTrue and bc.headlessMustWait():
       bc.headlessLoading = true
-      return -2 # unused
+      return -999 # unused
     else:
-      return -1
+      return -2
+  elif bc.state == bsLoadingImages:
+    bc.state = bsLoadingImagesAck
+    return -1
   elif bc.bytesRead > bc.reportedBytesRead:
     bc.maybeReshape()
     bc.reportedBytesRead = bc.bytesRead
@@ -1052,19 +1060,13 @@ proc load*(bc: BufferContext): int {.proxy, task.} =
   else:
     # will be resolved in onload
     bc.savetask = true
-    return -2 # unused
+    return -999 # unused
 
 proc onload(bc: BufferContext; data: InputData) =
-  case bc.state
-  of bsLoadingResources, bsLoaded:
-    if bc.hasTask(bcLoad):
-      if bc.config.headless == hmTrue and bc.headlessMustWait():
-        bc.headlessLoading = true
-      else:
-        bc.resolveTask(bcLoad, -1)
+  if bc.state != bsLoadingPage:
+    # We've been called from onError, but we've already seen EOF here.
+    # Nothing to do.
     return
-  of bsLoadingPage:
-    discard
   var reprocess = false
   var iq {.noinit.}: array[BufferSize, uint8]
   var n = 0
@@ -1084,23 +1086,34 @@ proc onload(bc: BufferContext; data: InputData) =
       bc.firstBufferRead = true
       reprocess = false
     else: # EOF
+      bc.state = bsLoadingResources
       bc.finishLoad(data).then(proc() =
-        bc.maybeReshape()
-        bc.state = bsLoaded
-        bc.document.readyState = rsComplete
-        if bc.config.scripting != smFalse:
-          bc.dispatchLoadEvent()
-          for ctx in bc.window.pendingCanvasCtls:
-            ctx.ps.sclose()
-            ctx.ps = nil
-          bc.window.pendingCanvasCtls.setLen(0)
-        if bc.hasTask(bcGetTitle):
-          bc.resolveTask(bcGetTitle, bc.document.title)
-        if bc.hasTask(bcLoad):
-          if bc.config.headless == hmTrue and bc.headlessMustWait():
-            bc.headlessLoading = true
-          else:
+        # CSS loaded
+        if bc.window.pendingImages.len > 0:
+          bc.maybeReshape()
+          bc.state = bsLoadingImages
+          if bc.hasTask(bcLoad):
             bc.resolveTask(bcLoad, -1)
+            bc.state = bsLoadingImagesAck
+        bc.loadImages().then(proc() =
+          # images loaded
+          bc.maybeReshape()
+          bc.state = bsLoaded
+          bc.document.readyState = rsComplete
+          if bc.config.scripting != smFalse:
+            bc.dispatchLoadEvent()
+            for ctx in bc.window.pendingCanvasCtls:
+              ctx.ps.sclose()
+              ctx.ps = nil
+            bc.window.pendingCanvasCtls.setLen(0)
+          if bc.hasTask(bcGetTitle):
+            bc.resolveTask(bcGetTitle, bc.document.title)
+          if bc.hasTask(bcLoad):
+            if bc.config.headless == hmTrue and bc.headlessMustWait():
+              bc.headlessLoading = true
+            else:
+              bc.resolveTask(bcLoad, -2)
+        )
       )
       return # skip incr render
   # incremental rendering: only if we cannot read the entire stream in one
@@ -1771,7 +1784,7 @@ proc toggleImages0(bc: BufferContext): bool =
     elif element of SVGSVGElement:
       bc.window.loadResource(SVGSVGElement(element))
   bc.savetask = true
-  bc.loadResources().then(proc() =
+  bc.loadImages().then(proc() =
     if bc.tasks[bcToggleImages] == 0:
       # we resolved in then
       bc.savetask = false

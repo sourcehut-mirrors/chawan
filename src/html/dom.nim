@@ -113,6 +113,7 @@ type
     navigate*: proc(url: URL)
     importMapsAllowed*: bool
     pendingResources*: seq[EmptyPromise]
+    pendingImages*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
     svgCache*: Table[string, SVGSVGElement]
     images*: bool
@@ -4362,7 +4363,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
               cancelable = false, trusted = true)
         )
       )
-    window.pendingResources.add(p)
+    window.pendingImages.add(p)
 
 proc loadResource*(window: Window; svg: SVGSVGElement) =
   if not window.images:
@@ -4425,7 +4426,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
       share.invalidate()
     svg.invalidate()
   )
-  window.pendingResources.add(p)
+  window.pendingImages.add(p)
 
 proc runJSJobs*(window: Window) =
   while true:
