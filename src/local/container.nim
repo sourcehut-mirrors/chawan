@@ -562,7 +562,10 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
     let cw = container.fromy ..< container.fromy + container.height
     if w.a in cw or w.b in cw or cw.a in w or cw.b in w or isBgNew:
       container.queueDraw()
-    container.images = res.images
+    for image in res.images:
+      if image.width > 0 and image.height > 0 and
+          image.bmp.width > 0 and image.bmp.height > 0:
+        container.images.add(image)
   )
 
 proc repaintLoop(container: Container) =
