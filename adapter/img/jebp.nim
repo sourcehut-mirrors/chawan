@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/os
 import std/posix
 import std/strutils
@@ -87,24 +86,11 @@ proc main() =
     if f != "webp":
       die("Cha-Control: ConnectionError 1 unknown format " & f)
     let headers = getEnv("REQUEST_HEADERS")
-    var targetWidth = cint(-1)
-    var targetHeight = cint(-1)
     var infoOnly = false
     for hdr in headers.split('\n'):
       let v = hdr.after(':').strip()
-      case hdr.until(':')
-      of "Cha-Image-Info-Only":
+      if hdr.until(':').equalsIgnoreCase("Cha-Image-Info-Only"):
         infoOnly = v == "1"
-      of "Cha-Image-Target-Dimensions":
-        let s = v.split('x')
-        if s.len != 2:
-          die("Cha-Control: ConnectionError 1 wrong dimensions\n")
-        let w = parseUInt32(s[0], allowSign = false)
-        let h = parseUInt32(s[1], allowSign = false)
-        if w.isNone or w.isNone:
-          die("Cha-Control: ConnectionError 1 wrong dimensions\n")
-        targetWidth = cint(w.get)
-        targetHeight = cint(h.get)
     var image = jebp_image_t()
     var cb = jebp_io_callbacks(read: myRead)
     if infoOnly:
