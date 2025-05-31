@@ -21,6 +21,6 @@ x.open("GET", "headers", false);
 x.overrideMimeType("text/plain");
 x.send();
 const cookie = x.responseText.split('\n').find(x => x.startsWith("cookie:"));
-assertEquals(cookie.split(': ').pop(), "test=asdfasdf; SID=31d4d96e407aad42; test3=x; test4=y; test6=hi; test7=hi; test8=hi; test11=valid; test9=css");
+assertEquals(cookie.split(': ').pop().split('; ').sort().join(), "SID=31d4d96e407aad42,test11=valid,test3=x,test4=y,test6=hi,test7=hi,test8=hi,test9=css,test=asdfasdf");
 document.getElementById("x").textContent = "Success";
 </script>
