@@ -3053,10 +3053,10 @@ func inputString*(input: HTMLInputElement): RefString =
     if input.value.len == 20:
       return input.internalValue
     return newRefString(
-      input.value.padToWidth(int(input.attrulgz(satSize).get(20)))
+      input.value.padToWidth(input.attrulgz(satSize).get(20))
     )
   of itPassword:
-    let n = int(input.attrulgz(satSize).get(20))
+    let n = input.attrulgz(satSize).get(20)
     return newRefString('*'.repeat(input.value.len).padToWidth(n))
   of itReset:
     if input.attrb(satValue):
@@ -3069,7 +3069,7 @@ func inputString*(input: HTMLInputElement): RefString =
   of itFile:
     #TODO multiple files?
     let s = if input.files.len > 0: input.files[0].name else: ""
-    return newRefString(s.padToWidth(int(input.attrulgz(satSize).get(20))))
+    return newRefString(s.padToWidth(input.attrulgz(satSize).get(20)))
   else:
     return input.internalValue
 
@@ -3600,7 +3600,7 @@ func textAreaString*(textarea: HTMLTextAreaElement): string =
   let split = textarea.value.split('\n')
   let rows = int(textarea.attrul(satRows).get(1))
   for i in 0 ..< rows:
-    let cols = int(textarea.attrul(satCols).get(20))
+    let cols = textarea.attrul(satCols).get(20)
     if cols > 2:
       if i < split.len:
         result &= '[' & split[i].padToWidth(cols - 2) & "]\n"

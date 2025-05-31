@@ -66,14 +66,14 @@ func width*(s: string; start, len: int): int =
     w += u.width()
   return w
 
-func padToWidth*(s: string; size: int; schar = '$'): string =
+func padToWidth*(s: string; size: uint32; schar = '$'): string =
   result = newStringOfCap(s.len)
-  var w = 0
+  var w = 0u32
   var i = 0
   var pi = 0
   while i < s.len:
     pi = i
-    w += s.nextUTF8(i).width()
+    w += uint32(s.nextUTF8(i).width())
     if w > size - 1:
       break
     for j in pi ..< i:
