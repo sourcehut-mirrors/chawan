@@ -481,13 +481,13 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
   os.puts(outs)
   # Note: we leave octree deallocation to the OS. See the header for details.
 
-proc parseDimensions(os: PosixStream; s: string): (int, int) =
+proc parseDimensions(os: PosixStream; s: string; allowZero: bool): (int, int) =
   let s = s.split('x')
   if s.len != 2:
     os.die("Cha-Control: ConnectionError InternalError wrong dimensions")
-  let w = parseIntP(s[0]).get(0)
-  let h = parseIntP(s[1]).get(0)
-  if w <= 0 or h <= 0:
+  let w = parseIntP(s[0]).get(-1)
+  let h = parseIntP(s[1]).get(-1)
+  if w < 0 or h < 0 or not allowZero and (w == 0 or h == 0):
     os.die("Cha-Control: ConnectionError InternalError wrong dimensions")
   return (w, h)
 
@@ -506,9 +506,9 @@ proc main() =
       let s = hdr.after(':').strip()
       case hdr.until(':')
       of "Cha-Image-Dimensions":
-        (width, height) = os.parseDimensions(s)
+        (width, height) = os.parseDimensions(s, allowZero = false)
       of "Cha-Image-Offset":
-        (offx, offy) = os.parseDimensions(s)
+        (offx, offy) = os.parseDimensions(s, allowZero = true)
       of "Cha-Image-Crop-Width":
         let q = parseUInt32(s, allowSign = false)
         if q.isNone:

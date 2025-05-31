@@ -40,7 +40,7 @@ proc main() =
         die("Cha-Control: ConnectionError 1 wrong dimensions\n")
       let w = parseUInt32(s[0], allowSign = false).get(0)
       let h = parseUInt32(s[1], allowSign = false).get(0)
-      if w == 0 or w == 0:
+      if w == 0 or h == 0:
         die("Cha-Control: ConnectionError 1 wrong dimensions\n")
       if k == "Cha-Image-Target-Dimensions":
         dstWidth = cint(w)
