@@ -503,18 +503,14 @@ proc consumeInlineTable(state: var TomlParser; buf: openArray[char]):
       if val == nil:
         return state.err("comma without element")
       var table = res.tab
-      for i in 0 ..< key.high:
-        let k = key[i]
-        if k in table.map:
+      for k in key.toOpenArray(0, key.len - 2):
+        let node = TomlTable()
+        if table.map.hasKeyOrPut(k, TomlValue(t: tvtTable, tab: node)):
           return state.err("invalid re-definition of key " & k)
-        else:
-          let node = TomlTable()
-          table.map[k] = TomlValue(t: tvtTable, tab: node)
-          table = node
+        table = node
       let k = key[^1]
-      if k in table.map:
+      if table.map.hasKeyOrPut(k, val):
         return state.err("invalid re-definition of key " & k)
-      table.map[k] = val
       val = nil
       haskey = false
       if c == '}':
@@ -535,8 +531,7 @@ proc consumeValue(state: var TomlParser; buf: openArray[char]): TomlResult =
     let c = state.consume(buf)
     case c
     of '"', '\'':
-      let s = ?state.consumeString(buf, c)
-      return ok(TomlValue(t: tvtString, s: s))
+      return ok(TomlValue(t: tvtString, s: ?state.consumeString(buf, c)))
     of ' ', '\t': discard
     of '\n':
       return state.err("newline without value")
