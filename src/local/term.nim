@@ -25,6 +25,7 @@ type
     ttAlacritty = "alacritty"
     ttContour = "contour" # pretends to be XTerm
     ttDvtm = "dvtm"
+    ttEat = "eat"
     ttEterm = "eterm"
     ttFbterm = "fbterm"
     ttFoot = "foot"
@@ -1213,6 +1214,7 @@ const TermdescMap = [
   ttAlacritty: XtermCompatible + {tfTrueColor},
   ttContour: XtermCompatible,
   ttDvtm: {tfSmcup, tfBleedsAPC, tfAnsiColor},
+  ttEat: XtermCompatible + {tfTrueColor},
   ttEterm: {tfTitle, tfDa1, tfAnsiColor},
   ttFbterm: {tfDa1, tfAnsiColor},
   ttFoot: XtermCompatible,
