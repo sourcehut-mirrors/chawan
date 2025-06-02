@@ -1893,6 +1893,10 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     cookieMode: pager.config.buffer.cookie,
     insecureSslNoVerify: false
   )
+  if pager.config.network.allowHttpFromFile and
+      url.schemeType in {stFile, stStream}:
+    loaderConfig.filter.allowschemes.add("http")
+    loaderConfig.filter.allowschemes.add("https")
   var cookieJarId = url.host
   let surl = $url
   for sc in pager.config.siteconf.values:

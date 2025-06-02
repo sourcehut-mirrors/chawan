@@ -145,6 +145,7 @@ type
     prependScheme* {.jsgetset.}: string
     proxy* {.jsgetset.}: URL
     defaultHeaders* {.jsgetset.}: Table[string, string]
+    allowHttpFromFile* {.jsgetset.}: bool
 
   DisplayConfig = object
     colorMode* {.jsgetset.}: Option[ColorMode]

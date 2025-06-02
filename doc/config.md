@@ -566,6 +566,19 @@ supported by cURL may be used. Can be overridden by siteconf.</td>
 overridden by siteconf.</td>
 </tr>
 
+<tr>
+<td>allow-http-from-file</td>
+<td>boolean</td>
+<td>false</td>
+<td>**WARNING: think twice before enabling this.**<br>
+Allows HTTP and HTTPS requests from the `file:` and `stream:` schemes.
+This is a very bad idea in general, because it allows local files to
+ping remote servers (a functionality commonly abused by HTML e-mails to
+track your mailbox activity.)<br>
+On the other hand, it allows loading images in HTML e-mails if you
+don't care about the privacy implications.</td>
+</tr>
+
 </table>
 
 ## Display

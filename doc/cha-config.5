@@ -728,6 +728,23 @@ Specify a list of default headers for all HTTP(S) network requests.
 Can be overridden by siteconf.
 T}@T{
 T}
+_
+T{
+allow\-http\-from\-file
+T}@T{
+boolean
+T}@T{
+false
+T}@T{
+\f[B]WARNING: think twice before enabling this.\f[R] Allows HTTP and
+HTTPS requests from the \f[CR]file:\f[R] scheme.
+This is a very bad idea in general, because it allows local files to
+ping remote servers (a functionality commonly abused by HTML e\-mails to
+track your mailbox activity.)
+On the other hand, it allows loading images in HTML e\-mails if you
+don\(cqt care about the privacy implications.
+T}@T{
+T}
 .TE
 .SS Display
 Display options are to be placed in the \f[CR][display]\f[R] section.
