@@ -1407,11 +1407,10 @@ proc setupRequestDefaults(request: Request; config: LoaderClientConfig;
   for k, v in config.defaultHeaders.allPairs:
     if k notin request.headers:
       request.headers[k] = v
-  if config.cookieJar != nil and config.cookieJar.cookies.len > 0:
-    if "Cookie" notin request.headers and credentials:
-      let cookie = config.cookieJar.serialize(request.url)
-      if cookie != "":
-        request.headers["Cookie"] = cookie
+  if config.cookieJar != nil and credentials and "Cookie" notin request.headers:
+    let cookie = config.cookieJar.serialize(request.url)
+    if cookie != "":
+      request.headers["Cookie"] = cookie
   let referrer = request.getReferrer()
   request.headers.del("Referer")
   if referrer != nil:

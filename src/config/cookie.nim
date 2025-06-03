@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/options
 import std/posix
@@ -5,6 +7,8 @@ import std/strutils
 import std/tables
 import std/times
 
+import io/packetreader
+import io/packetwriter
 import io/chafile
 import io/dynstream
 import types/opt
@@ -27,7 +31,7 @@ type
 
   CookieJar* = ref object
     name*: string
-    cookies*: seq[Cookie]
+    cookies: seq[Cookie]
     map: Table[string, Cookie] # {host}{path}\t{name}
 
   CookieJarMap* = ref object
@@ -39,6 +43,28 @@ type
     cmNone = "false"
     cmReadOnly = "true"
     cmSave = "save"
+
+# Forward declarations
+proc getMapKey(cookie: Cookie): string
+
+proc sread*(r: var PacketReader; cookieJar: var CookieJar) =
+  var n: bool
+  r.sread(n)
+  if n:
+    cookieJar = CookieJar()
+    r.sread(cookieJar.name)
+    r.sread(cookieJar.cookies)
+    for cookie in cookieJar.cookies:
+      if not cookie.skip:
+        cookieJar.map[cookie.getMapKey()] = cookie
+  else:
+    cookieJar = nil
+
+proc swrite*(w: var PacketWriter; cookieJar: CookieJar) =
+  w.swrite(cookieJar != nil)
+  if cookieJar != nil:
+    w.swrite(cookieJar.name)
+    w.swrite(cookieJar.cookies)
 
 proc newCookieJarMap*(): CookieJarMap =
   return CookieJarMap()
@@ -53,6 +79,9 @@ proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
 
 proc getOrDefault*(map: CookieJarMap; name: string): CookieJar =
   return map.jars.getOrDefault(cstring(name))
+
+proc getMapKey(cookie: Cookie): string =
+  return cookie.domain & cookie.path & '\t' & cookie.name
 
 proc parseCookieDate(val: string): Opt[int64] =
   # cookie-date
@@ -157,7 +186,7 @@ func cookieDomainMatches(cookieDomain: string; url: URL): bool =
 
 proc add(cookieJar: CookieJar; cookie: Cookie; parseMode = false,
     persist = true) =
-  let s = cookie.domain & cookie.path & '\t' & cookie.name
+  let s = cookie.getMapKey()
   let old = cookieJar.map.getOrDefault(s)
   if old != nil:
     if parseMode and old.isnew:
@@ -198,7 +227,9 @@ proc serialize*(cookieJar: CookieJar; url: URL): string =
     res &= "="
     res &= cookie.value
   for j in countdown(expired.high, 0):
-    cookieJar.cookies.delete(expired[j])
+    let i = expired[j]
+    cookieJar.map.del(cookieJar.cookies[i].getMapKey())
+    cookieJar.cookies.delete(i)
   move(res)
 
 proc parseSetCookie(str: string; t: int64; url: URL; persist: bool):
@@ -419,3 +450,5 @@ proc write*(map: CookieJarMap; path: string): Opt[void] =
   finally:
     ?file.close()
   return chafile.rename(tmp, path)
+
+{.pop.} # raises: []
