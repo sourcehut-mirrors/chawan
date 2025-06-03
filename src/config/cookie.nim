@@ -69,9 +69,6 @@ proc swrite*(w: var PacketWriter; cookieJar: CookieJar) =
 proc newCookieJarMap*(): CookieJarMap =
   return CookieJarMap()
 
-proc newCookieJar*(): CookieJar =
-  return CookieJar()
-
 proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
   let jar = CookieJar(name: name)
   map.jars[cstring(jar.name)] = jar
