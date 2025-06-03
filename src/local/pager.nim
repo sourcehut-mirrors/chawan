@@ -2016,16 +2016,17 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       # (but NOT up above, so that rewrite-url works too)
       url = if url != nil: url else: request.url
     )
-    if replace != nil:
-      pager.replace(replace, container)
-      if replaceBackup == nil:
-        container.replace = replace
-        replace.replaceRef = container
+    if container != nil:
+      if replace != nil:
+        pager.replace(replace, container)
+        if replaceBackup == nil:
+          container.replace = replace
+          replace.replaceRef = container
+        else:
+          container.replaceBackup = replaceBackup
+          replaceBackup.replaceRef = container
       else:
-        container.replaceBackup = replaceBackup
-        replaceBackup.replaceRef = container
-    else:
-      pager.addContainer(container)
+        pager.addContainer(container)
     inc pager.numload
     return container
   else:
@@ -2127,8 +2128,9 @@ proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   ps.sclose()
   let container = pager.readPipe0(contentType, cs, url, title,
     {cfCanReinterpret, cfUserRequested})
+  if container != nil:
+    pager.addContainer(container)
   inc pager.numload
-  pager.addContainer(container)
 
 proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
   let url = newURL("stream:history").get
@@ -2160,13 +2162,16 @@ proc clearConsole(pager: Pager) =
     ps.setCloseOnExec()
     let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, url,
       ConsoleTitle, {})
-    replacement.replace = pager.consoleWrapper.container
-    pager.replace(pager.consoleWrapper.container, replacement)
-    pager.consoleWrapper.container = replacement
-    let console = pager.console
-    let file = ps.fdopen("w")
-    if file.isSome:
-      console.setStream(file.get)
+    if replacement != nil:
+      replacement.replace = pager.consoleWrapper.container
+      pager.replace(pager.consoleWrapper.container, replacement)
+      pager.consoleWrapper.container = replacement
+      let console = pager.console
+      let file = ps.fdopen("w")
+      if file.isSome:
+        console.setStream(file.get)
+    else:
+      ps.sclose()
 
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
   if interactive and pager.config.start.consoleBuffer:
@@ -2182,10 +2187,13 @@ proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
         pager.hideConsole()
       let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, url,
         ConsoleTitle, {})
-      ps.write("Type (M-c) console.hide() to return to buffer mode.\n")
-      if (let file = ps.fdopen("w"); file.isSome):
-        let console = newConsole(file.get, clearFun, showFun, hideFun)
-        return ConsoleWrapper(console: console, container: container)
+      if container != nil:
+        ps.write("Type (M-c) console.hide() to return to buffer mode.\n")
+        if (let file = ps.fdopen("w"); file.isSome):
+          let console = newConsole(file.get, clearFun, showFun, hideFun)
+          return ConsoleWrapper(console: console, container: container)
+      else:
+        ps.sclose()
   return ConsoleWrapper(console: newConsole(cast[ChaFile](stderr)))
 
 proc flushConsole*(pager: Pager) =
@@ -2435,8 +2443,9 @@ proc externFilterSource(pager: Pager; cmd: string; c = none(Container);
     "text/plain"
   let contentType = contentType.get(fallback)
   let container = pager.newContainerFrom(fromc, contentType)
-  pager.addContainer(container)
-  container.filter = BufferFilter(cmd: cmd)
+  if container != nil:
+    pager.addContainer(container)
+    container.filter = BufferFilter(cmd: cmd)
 
 # Execute cmd, with ps moved onto stdin, os onto stdout, and stderr closed.
 # ps remains open, but os is consumed.
