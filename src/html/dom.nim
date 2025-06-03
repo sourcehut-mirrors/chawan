@@ -584,6 +584,7 @@ proc invalidateCollections(node: Node)
 proc logException(window: Window; url: URL)
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
+proc parseURL*(document: Document; s: string): Option[URL]
 proc prepare*(element: HTMLScriptElement)
 proc reflectAttr(element: Element; name: CAtom; value: Option[string])
 proc remove*(node: Node)
@@ -1859,7 +1860,7 @@ proc setLocation*(document: Document; s: string): Err[JSError]
     {.jsfset: "location".} =
   if document.location == nil:
     return errTypeError("document.location is not an object")
-  let url = parseURL(s, some(document.baseURL))
+  let url = document.parseURL(s)
   if url.isNone:
     return errDOMException("Invalid URL", "SyntaxError")
   document.window.navigate(url.get)
