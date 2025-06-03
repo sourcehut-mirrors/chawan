@@ -1857,7 +1857,7 @@ proc setLocation*(document: Document; s: string): Err[JSError]
     {.jsfset: "location".} =
   if document.location == nil:
     return errTypeError("document.location is not an object")
-  let url = parseURL(s)
+  let url = parseURL(s, some(document.baseURL))
   if url.isNone:
     return errDOMException("Invalid URL", "SyntaxError")
   document.window.navigate(url.get)
