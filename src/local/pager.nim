@@ -395,7 +395,7 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
 proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
     Opt[void] {.jsfunc.} =
   var n: int
-  if ctx.fromJS(val, n).isSome:
+  if JS_IsNumber(val) and ctx.fromJS(val, n).isSome:
     pager.container.gotoLine(n)
   elif JS_IsUndefined(val):
     pager.setLineEdit(lmGotoLine)

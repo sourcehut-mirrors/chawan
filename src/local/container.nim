@@ -1120,26 +1120,22 @@ proc updateCursor(container: Container) =
       container.setCursorY(n)
       container.alert("Last line is #" & $container.numLines)
 
-proc gotoLine*(container: Container; s: string) =
-  if s == "":
-    container.redraw = true
-  elif s[0] == '^':
-    container.cursorFirstLine()
-  elif s[0] == '$':
-    container.cursorLastLine()
-  else:
-    let i = parseUInt32(s, allowSign = true)
-    if i.isSome and i.get > 0:
-      container.markPos0()
-      container.setCursorY(int(i.get - 1))
-      container.markPos()
-    else:
-      container.alert("First line is #1") # :)
-
 proc gotoLine*(container: Container; n: int) =
   container.markPos0()
   container.setCursorY(n - 1)
   container.markPos()
+
+proc gotoLine*(container: Container; s: string) =
+  if s != "":
+    let c = s[0]
+    if c == '^':
+      container.cursorFirstLine()
+    elif c == '$':
+      container.cursorLastLine()
+    elif (let n = parseIntP(s).get(0); n > 0):
+      container.gotoLine(n)
+    else:
+      container.alert("First line is #1") # :)
 
 proc pushCursorPos*(container: Container) =
   if container.select != nil:
