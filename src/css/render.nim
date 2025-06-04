@@ -51,8 +51,8 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
 template attrs(state: RenderState): WindowAttributes =
   state.attrsp[]
 
-func findFormatN*(line: FlexibleLine; pos: int): int =
-  var i = 0
+func findFormatN*(line: FlexibleLine; pos: int; start = 0): int =
+  var i = start
   while i < line.formats.len:
     if line.formats[i].pos > pos:
       break
@@ -63,7 +63,7 @@ proc insertFormat(line: var FlexibleLine; i: int; cell: FormatCell) =
   line.formats.insert(cell, i)
 
 proc insertFormat(line: var FlexibleLine; pos, i: int; format: Format;
-    node: Element = nil) =
+    node: Element) =
   line.insertFormat(i, FormatCell(format: format, node: node, pos: pos))
 
 func toFormat(computed: CSSValues): Format =
@@ -126,8 +126,8 @@ proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
   if ostr.len > 0:
     copyMem(addr line.str[i], unsafeAddr ostr[0], ostr.len)
 
-proc setTextFormat(line: var FlexibleLine; x, cx, targetX: int; hadStr: bool;
-    format: Format; node: Element) =
+proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
+    hadStr: bool; format: Format; node: Element) =
   var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
   if x > cx and fi != -1:
     # Amend formatting for padding.
@@ -136,19 +136,15 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX: int; hadStr: bool;
     # last one's effect.
     # (This means that if fi is -1, we have nothing to erase -> nothing
     # to do.)
-    if line.formats[fi].pos == cx:
-      # First format's pos may be == cx here.
-      #TODO I'm not quite sure why. Isn't this a bug?
-      line.formats[fi] = FormatCell(format: Format(), pos: cx)
-    else:
-      # First format < cx => split it up
-      assert line.formats[fi].pos < cx
-      inc fi # insert after first format
-      line.insertFormat(cx, fi, Format())
+    # First format < cx => split it up
+    assert line.formats[fi].pos < cx
+    inc fi # insert after first format
+    line.insertFormat(cx, fi, Format(), nil)
   # Now for the text's formats:
   var format = format
   var lformat: Format
   var lnode: Element = nil
+  var nx = nx
   if fi == -1:
     # No formats => just insert a new format at 0
     inc fi
@@ -163,16 +159,22 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX: int; hadStr: bool;
       # We must check if the old string's last x position is greater than
       # the new string's first x position. If not, we cannot inherit
       # its bgcolor (which is supposed to end before the new string started.)
-      if targetX > cx:
+      if nx > x:
         format.bgcolor = line.formats[fi].format.bgcolor
       line.formats[fi] = FormatCell(format: format, node: node, pos: x)
     else:
       # First format's pos < x => split it up.
       assert line.formats[fi].pos < x
-      if targetX > cx: # see above
+      if nx > x: # see above
         format.bgcolor = line.formats[fi].format.bgcolor
       inc fi # insert after first format
       line.insertFormat(x, fi, format, node)
+    if nx > x and nx < targetX and fi == line.formats.high:
+      # The old format's background is bleeding into ours.  If this was
+      # the last format, we must preserve it.
+      inc fi
+      format.bgcolor = defaultColor
+      line.insertFormat(nx, fi, format, node)
   inc fi # skip last format
   while fi < line.formats.len and line.formats[fi].pos < targetX:
     # Other formats must be > x => replace them
@@ -193,7 +195,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX: int; hadStr: bool;
   # That's it!
 
 proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
-    ocx: out int; hadStr: out bool) =
+    ocx, onx: out int; hadStr: out bool) =
   var i = 0
   let cx = line.findFirstX(x, i) # first x of new string (before padding)
   var j = i
@@ -202,6 +204,7 @@ proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
     nx += line.str.nextUTF8(j).width()
   let ostr = line.str.substr(j)
   ocx = cx
+  onx = nx
   hadStr = ostr.len > 0
   line.setTextStr(s, ostr, i, x, cx, nx, targetX)
 
@@ -209,9 +212,10 @@ proc setText1(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
     format: Format; node: Element) =
   assert x >= 0 and s.len != 0
   var cx: int
+  var nx: int
   var hadStr: bool
-  line.setText0(s, x, targetX, cx, hadStr)
-  line.setTextFormat(x, cx, targetX, hadStr, format, node)
+  line.setText0(s, x, targetX, cx, nx, hadStr)
+  line.setTextFormat(x, cx, targetX, nx, hadStr, format, node)
 
 proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
     offset: Offset; format: Format; node: Element; clipBox: ClipBox) =
@@ -262,59 +266,64 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
   var format = Format(bgcolor: color)
   for line in grid.toOpenArray(starty, endy - 1).mitems:
     # Make sure line.width() >= endx
+    var hadStr: bool
+    var cx: int
     if alpha < 255:
       # If the background is not fully opaque, then text under it is
       # preserved.
-      for i in line.str.width() ..< endx:
+      let w = line.str.width()
+      for i in w ..< endx:
         line.str &= ' '
+      cx = min(w, startx)
+      hadStr = w > endx
     else:
       # Otherwise, background overpaints old text.
       let w = endx - startx
       while state.spaces.len < w:
         state.spaces &= ' '
-      var cx: int
-      var hadStr: bool
+      var nx: int
       line.setText0(state.spaces.toOpenArray(0, w - 1), startx, endx,
-        cx, hadStr)
+        cx, nx, hadStr)
     # Process formatting around startx
-    if line.formats.len == 0:
-      # No formats
-      line.formats.add(FormatCell(pos: startx))
-    else:
-      let fi = line.findFormatN(startx) - 1
-      if fi == -1:
-        # No format <= startx
-        line.insertFormat(startx, 0, Format())
-      elif line.formats[fi].pos == startx:
-        # Last format equals startx => next comes after, nothing to be done
-        discard
-      else:
-        # Last format lower than startx => separate format from startx
-        let copy = line.formats[fi]
-        line.formats[fi].pos = startx
-        line.insertFormat(fi, copy)
-    # Process formatting around endx
-    assert line.formats.len > 0
-    let fi = line.findFormatN(endx) - 1
-    if fi == -1:
-      # Last format > endx -> nothing to be done
+    var sfi = line.findFormatN(startx) - 1
+    if sfi == -1:
+      # No format <= startx
+      line.insertFormat(startx, 0, Format(), nil)
+      inc sfi
+    elif line.formats[sfi].pos == startx:
+      # Last format equals startx => next comes after, nothing to be done
       discard
-    elif line.formats[fi].pos != endx:
-      let copy = line.formats[fi]
-      line.formats[fi].pos = endx
-      line.insertFormat(fi, copy)
+    else:
+      # Last format lower than startx => separate format from startx
+      if cx < startx and sfi == line.formats.high:
+        inc sfi
+        line.insertFormat(cx, sfi, Format(), nil)
+      var copy = line.formats[sfi]
+      inc sfi
+      copy.pos = startx
+      line.insertFormat(sfi, copy)
     # Paint format backgrounds between startx and endx
-    for it in line.formats.mitems:
+    var lformat = Format()
+    var lnode: Element = nil
+    var ifi = 0
+    for fi, it in line.formats.toOpenArray(sfi, line.formats.high).mpairs:
       if it.pos >= endx:
         break
-      if it.pos >= startx:
-        if alpha == 0:
-          discard
-        elif alpha == 255:
-          it.format = format
-        else:
-          it.format.bgcolor = it.format.bgcolor.blend(color, alpha)
-        it.node = node
+      lformat = it.format
+      lnode = it.node
+      if alpha == 0:
+        discard
+      elif alpha == 255:
+        it.format = format
+      else:
+        it.format.bgcolor = it.format.bgcolor.blend(color, alpha)
+      it.node = node
+      ifi = fi
+    # Process formatting around endx
+    let efi = line.findFormatN(endx, ifi) - 1
+    if efi != -1 and line.formats[efi].pos < endx and hadStr:
+      assert line.formats[efi].pos < endx
+      line.insertFormat(endx, efi + 1, lformat, lnode)
 
 proc paintInlineBox(grid: var FlexibleGrid; state: var RenderState;
     box: InlineBox; offset: Offset; bgcolor: CellColor; alpha: uint8) =
