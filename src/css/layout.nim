@@ -1539,7 +1539,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
   let sizes = lctx.resolveFloatSizes(fstate.space, child.computed)
   lctx.layoutRootBlock(child, fstate.offset + sizes.margin.topLeft, sizes)
   let outerSize = child.outerSize(sizes)
-  if fstate.space.w.t == scFitContent:
+  if fstate.space.w.t in {scFitContent, scMaxContent}:
     # Float position depends on the available width, but in this case
     # the parent width is not known.  Skip this box; we will position
     # it in the next pass.
@@ -1687,7 +1687,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
     # Here our job is much easier in the unresolved case: subsequent
     # children's layout doesn't depend on our position; so we can just
     # defer margin resolution to the parent.
-    if fstate.space.w.t == scFitContent:
+    if fstate.space.w.t in {scFitContent, scMaxContent}:
       # Do not queue in the first pass.
       return
     let lctx = fstate.lctx
@@ -2023,10 +2023,16 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       sizes.space.h.isDefinite() and sizes.space.h.u != 0):
     bctx.flushMargins(box.state.offset.y)
   fstate.layoutFlow0(sizes, box)
-  if fstate.space.w.t == scFitContent:
+  if fstate.space.w.t in {scFitContent, scMaxContent}:
     # shrink-to-fit size; layout again.
+    let oldIntr = fstate.intr
     fstate.initReLayout(bctx, box, sizes)
     fstate.layoutFlow0(sizes, box)
+    # Restore old intrinsic sizes, as the new ones are a function of the
+    # current input and therefore wrong.
+    # (This is especially important with max-content, otherwise tables
+    # break horribly.)
+    fstate.intr = oldIntr
   # Apply width, and height. For height, temporarily remove padding we have
   # applied before so that percentage resolution works correctly.
   var childSize = size(
