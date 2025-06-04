@@ -29,6 +29,12 @@ to use [curl-impersonate](https://github.com/lexiforest/curl-impersonate);
 in this case, install it like
 `make install-curlhttp CURLLIBNAME=libcurl-impersonate.so`.
 
+Note: curlhttp handles the `proxy` configuration value differently than
+the default (built-in) handlers; see [`man 1 curl`](man:curl(1)) for
+details.  In particular, there is a difference between `socks5h` and
+`socks5`; in the default HTTP(S) handler, the two are equivalent, but in
+libcurl, the latter leaks DNS lookups.
+
 ### [filei.cgi](filei.cgi)
 
 Album view of a directory. Requires `buffer.images = true`.

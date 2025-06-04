@@ -712,7 +712,10 @@ T}@T{
 unset
 T}@T{
 Specify a proxy for all network requests Chawan makes.
-All proxies supported by cURL may be used.
+Currently, the formats \f[CR]http://user:pass\(atdomain\f[R] and
+\f[CR]socks5://user:pass\(atdomain\f[R] are accepted.
+(Unlike in curl, \f[CR]socks5h\f[R] is an alias of \f[CR]socks5\f[R],
+and DNS requests are always tunneled.)
 Can be overridden by siteconf.
 T}@T{
 T}
@@ -737,7 +740,7 @@ T}@T{
 false
 T}@T{
 \f[B]WARNING: think twice before enabling this.\f[R] Allows HTTP and
-HTTPS requests from the \f[CR]file:\f[R] scheme.
+HTTPS requests from the \f[CR]file:\f[R] and \f[CR]stream:\f[R] schemes.
 This is a very bad idea in general, because it allows local files to
 ping remote servers (a functionality commonly abused by HTML e\-mails to
 track your mailbox activity.)

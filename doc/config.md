@@ -554,8 +554,11 @@ When set to false, Chawan will act as if prepend-scheme were set to "".</td>
 <td>proxy</td>
 <td>URL</td>
 <td>unset</td>
-<td>Specify a proxy for all network requests Chawan makes. All proxies
-supported by cURL may be used. Can be overridden by siteconf.</td>
+<td>Specify a proxy for all network requests Chawan makes.  Currently,
+the formats `http://user:pass@domain` and `socks5://user:pass@domain`
+are accepted.  (Unlike in curl, `socks5h` is an alias of `socks5`, and
+DNS requests are always tunneled.)<br>
+Can be overridden by siteconf.</td>
 </tr>
 
 <tr>
