@@ -482,16 +482,20 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
   var nmemb {.noinit.}: csize_t
   var nsize {.noinit.}: csize_t
   let jsbuf = JS_GetTypedArrayBuffer(ctx, val, offset, nmemb, nsize)
-  var abuf: JSArrayBuffer
-  # if jsbuf is exception, then GetArrayBuffer fails too (wrong tag)
-  ?ctx.fromJS(jsbuf, abuf)
-  res = JSArrayBufferView(
-    abuf: abuf,
-    offset: offset,
-    nmemb: nmemb,
-    nsize: nsize,
-    t: JS_GetTypedArrayType(val)
-  )
+  if JS_IsException(jsbuf):
+    return err()
+  try:
+    var abuf: JSArrayBuffer
+    ?ctx.fromJS(jsbuf, abuf)
+    res = JSArrayBufferView(
+      abuf: abuf,
+      offset: offset,
+      nmemb: nmemb,
+      nsize: nsize,
+      t: JS_GetTypedArrayType(val)
+    )
+  finally:
+    JS_FreeValue(ctx, jsbuf)
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
