@@ -6290,20 +6290,18 @@ return option;
 
 # Forward declaration hack
 isDefaultPassiveImpl = func(target: EventTarget): bool =
-  if target of Window:
-    return true
   if not (target of Node):
     return false
   let node = Node(target)
-  return EventTarget(node.document) == target or
+  return target of Window or EventTarget(node.document) == target or
     EventTarget(node.document.documentElement) == target or
     EventTarget(node.document.body) == target
 
-getParentImpl = proc(ctx: JSContext; eventTarget: EventTarget; event: Event):
+getParentImpl = proc(ctx: JSContext; eventTarget: EventTarget; isLoad: bool):
     EventTarget =
   if eventTarget of Node:
     if eventTarget of Document:
-      if event.ctype == satLoad.toAtom():
+      if isLoad:
         return nil
       # if no browsing context, then window will be nil anyway
       return Document(eventTarget).window

@@ -101,7 +101,7 @@ jsDestructor(EventTarget)
 # Forward declaration hack
 var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
   noSideEffect, raises: [].}
-var getParentImpl*: proc(ctx: JSContext; target: EventTarget; event: Event):
+var getParentImpl*: proc(ctx: JSContext; target: EventTarget; isLoad: bool):
   EventTarget {.nimcall, raises: [].}
 var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect,
   raises: [].}
@@ -189,26 +189,23 @@ proc stopPropagation(this: Event) {.jsfunc.} =
 func cancelBubble(this: Event): bool {.jsfget.} =
   return efStopPropagation in this.flags
 
-proc cancelBubble(this: Event; cancel: bool) {.jsfset.} =
+proc `cancelBubble=`(this: Event; cancel: bool) {.jsfset: "cancelBubble".} =
   if cancel:
     this.stopPropagation()
 
 proc stopImmediatePropagation(this: Event) {.jsfunc.} =
   this.flags.incl({efStopPropagation, efStopImmediatePropagation})
 
-proc setCanceledFlag(this: Event) =
+proc preventDefault(this: Event) {.jsfunc.} =
   if this.cancelable and efInPassiveListener notin this.flags:
     this.flags.incl(efCanceled)
 
 proc returnValue(this: Event): bool {.jsfget.} =
   return efCanceled notin this.flags
 
-proc returnValue(this: Event; value: bool) {.jsfset.} =
+proc `returnValue=`(this: Event; value: bool) {.jsfset: "returnValue".} =
   if not value:
-    this.setCanceledFlag()
-
-proc preventDefault(this: Event) {.jsfunc.} =
-  this.flags.incl(efCanceled)
+    this.preventDefault()
 
 func defaultPrevented(this: Event): bool {.jsfget.} =
   return efCanceled in this.flags
@@ -347,9 +344,7 @@ proc newEventTarget(): EventTarget {.jsctor.} =
 
 proc defaultPassiveValue(ctype: CAtom; eventTarget: EventTarget): bool =
   const check = [satTouchstart, satTouchmove, satWheel, satMousewheel]
-  if ctype.toStaticAtom() in check:
-    return true
-  return eventTarget.isDefaultPassiveImpl()
+  return ctype.toStaticAtom() in check and eventTarget.isDefaultPassiveImpl()
 
 proc findEventListener(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
     callback: JSValueConst; capture: bool): int =
@@ -572,6 +567,7 @@ type
 proc collectItems(dctx: var DispatchContext; target: EventTarget) =
   let ctype = dctx.event.ctype
   let bubbles = dctx.event.bubbles
+  let isLoad = dctx.event.ctype == satLoad.toAtom()
   var it = target
   while it != nil:
     var capture: seq[EventListener] = @[]
@@ -586,7 +582,7 @@ proc collectItems(dctx: var DispatchContext; target: EventTarget) =
       dctx.capture.add(DispatchItem(target: it, els: move(capture)))
     if bubble.len > 0:
       dctx.bubble.add(DispatchItem(target: it, els: move(bubble)))
-    it = dctx.ctx.getParentImpl(it, dctx.event)
+    it = dctx.ctx.getParentImpl(it, isLoad)
 
 proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
   let ctx = dctx.ctx
@@ -595,10 +591,14 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
   for el in item.els:
     if JS_IsUndefined(el.callback):
       continue # removed, presumably by a previous handler
+    if el.passive:
+      event.flags.incl(efInPassiveListener)
     let e = ctx.invoke(el, event)
     if JS_IsException(e):
       ctx.logException()
     JS_FreeValue(ctx, e)
+    if el.passive:
+      event.flags.excl(efInPassiveListener)
     if efCanceled in event.flags:
       dctx.canceled = true
     if {efStopPropagation, efStopImmediatePropagation} * event.flags != {}:
