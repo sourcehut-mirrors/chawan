@@ -41,7 +41,6 @@ type
     cancelable {.jsget.}: bool
     flags*: set[EventFlag]
     isTrusted* {.jsufget.}: bool
-    #TODO DOMHighResTimeStamp?
     timeStamp {.jsget.}: float64
 
   CustomEvent* = ref object of Event
@@ -79,11 +78,11 @@ type
   EventTarget* = ref object of RootObj
     eventListeners: seq[EventListener]
 
-  EventListener* = ref object
+  EventListener = ref object
     # if callback is undefined, the listener has been removed
     callback: JSValue
     rt: JSRuntime
-    ctype*: CAtom
+    ctype: CAtom
     capture: bool
     once: bool
     internal: bool
@@ -362,7 +361,6 @@ proc findInternalEventListener(eventTarget: EventTarget; ctype: CAtom): int =
 
 # EventListener
 proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
-  #TODO make this standards compliant
   if JS_IsNull(listener.callback):
     return JS_UNDEFINED
   let jsTarget = ctx.toJS(event.currentTarget)
@@ -606,10 +604,12 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
     if efStopImmediatePropagation in event.flags:
       break
 
-proc dispatch*(ctx: JSContext; target: EventTarget; event: Event): bool =
+proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
+    targetOverride = false): bool =
   var dctx = DispatchContext(ctx: ctx, event: event)
   event.flags.incl(efDispatch)
-  event.target = target
+  if not targetOverride:
+    event.target = target
   dctx.collectItems(target)
   event.eventPhase = 1
   for i in countdown(dctx.capture.high, 0):

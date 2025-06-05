@@ -1010,8 +1010,10 @@ proc dispatchDOMContentLoadedEvent(bc: BufferContext) =
 
 proc dispatchLoadEvent(bc: BufferContext) =
   let window = bc.window
-  window.fireEvent(satLoad, window, bubbles = false, cancelable = false,
-    trusted = true)
+  let event = newEvent(satLoad.toAtom(), window.document, bubbles = false,
+    cancelable = false)
+  event.isTrusted = true
+  discard window.jsctx.dispatch(window, event, targetOverride = true)
   bc.maybeReshape()
 
 proc finishLoad(bc: BufferContext; data: InputData): EmptyPromise =

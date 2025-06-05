@@ -5,8 +5,13 @@
 </div>
 <script src=asserts.js></script>
 <script>
+let ok7 = false;
 function bodyOnload(event) {
-	assertEquals(event.target, window);
+	assertEquals(event.target, document);
+	assertEquals(event.currentTarget, window);
+	assert(event.isTrusted);
+	assert(!event.bubbles);
+	assert(!event.cancelable);
 	document.body.dispatchEvent(new Event("load"));
 	const x = document.getElementById("x")
 	const y = document.getElementById("y")
@@ -46,6 +51,23 @@ function bodyOnload(event) {
 	}, {passive: true});
 	x.click();
 	assert(ok6);
-	x.textContent = "Success";
+	ok7 = true;
 }
+let ok8 = true;
+document.addEventListener("load", e => {
+	ok8 = false;
+});
+let ok9 = false;
+window.addEventListener("click", e => {
+	ok9 = true;
+});
+window.addEventListener("load", e => {
+	assert(ok7);
+	assert(ok8);
+	assert(ok9);
+	assertEquals(e.target, document);
+	assertEquals(e.currentTarget, window);
+	let x = document.getElementById("x");
+	x.textContent = "Success";
+});
 </script>
