@@ -193,7 +193,7 @@ proc `withCredentials=`(this: XMLHttpRequest; withCredentials: bool):
     return errDOMException(
       "ready state was expected to be `unsent' or `opened'",
       "InvalidStateError")
-  if xhrfSend notin this.flags:
+  if xhrfSend in this.flags:
     return errDOMException("send flag is set", "InvalidStateError")
   this.withCredentials = withCredentials
   ok()

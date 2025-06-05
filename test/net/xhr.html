@@ -33,6 +33,8 @@ x.onreadystatechange = function() {
 }
 x.open("GET", "json", true, undefined, undefined);
 x.responseType = "json";
+x.withCredentials = true;
 x.send();
+assertThrows("x.withCredentials = true", DOMException);
 document.getElementById("x").textContent = "Success";
 </script>
