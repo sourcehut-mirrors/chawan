@@ -30,7 +30,9 @@ function bodyOnload(event) {
 	document.documentElement.addEventListener("click", e => e.stopPropagation(), true);
 	y.addEventListener("click", e => ok3 = false, true);
 	y.addEventListener("click", e => ok4 = false);
-	x.addEventListener("click", e => ok5 = false);
+	function el5() { ok5 = false; };
+	x.addEventListener("click", el5);
+	x.addEventListener("click", el5);
 	x.click();
 	assert(ok3);
 	assert(ok4);

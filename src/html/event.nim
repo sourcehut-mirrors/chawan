@@ -87,7 +87,7 @@ type
     capture: bool
     once: bool
     internal: bool
-    passive: Option[bool]
+    passive: bool
     #TODO AbortSignal
 
 jsDestructor(Event)
@@ -355,8 +355,7 @@ proc findEventListener(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
     callback: JSValueConst; capture: bool): int =
   for i, it in eventTarget.eventListeners.mypairs:
     if not it.internal and it.ctype == ctype and
-        JS_IsStrictEqual(ctx, it.callback, callback) and
-        it.capture == capture:
+        JS_IsStrictEqual(ctx, it.callback, callback) and it.capture == capture:
       return i
   return -1
 
@@ -395,16 +394,26 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
   return ret
 
 # shared
-proc addAnEventListener(ctx: JSContext; target: EventTarget;
-    listener: EventListener) =
+proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
+    capture, once, internal: bool; passive: Option[bool];
+    callback: JSValueConst) =
   #TODO signals
-  if JS_IsUndefined(listener.callback):
+  if JS_IsUndefined(callback):
     return
-  if listener.passive.isNone:
-    listener.passive = some(defaultPassiveValue(listener.ctype, target))
-  if ctx.findEventListener(target, listener.ctype, listener.callback,
-      listener.capture) == -1: # dedup
-    target.eventListeners.add(listener)
+  let passive = if passive.isSome:
+    passive.get
+  else:
+    defaultPassiveValue(ctype, target)
+  if ctx.findEventListener(target, ctype, callback, capture) == -1: # dedup
+    target.eventListeners.add(EventListener(
+      ctype: ctype,
+      capture: capture,
+      once: once,
+      internal: internal,
+      passive: passive,
+      rt: JS_GetRuntime(ctx),
+      callback: JS_DupValue(ctx, callback)
+    ))
   #TODO signals
 
 proc removeAnEventListener(eventTarget: EventTarget; ctx: JSContext; i: int) =
@@ -453,14 +462,8 @@ proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
 proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: StaticAtom; callback: JSValueConst) =
   ctx.removeInternalEventListener(eventTarget, ctype)
-  ctx.addAnEventListener(eventTarget, EventListener(
-    ctype: ctype.toAtom(),
-    capture: false,
-    once: false,
-    internal: true,
-    rt: JS_GetRuntime(ctx),
-    callback: JS_DupValue(ctx, callback)
-  ))
+  ctx.addEventListener0(eventTarget, ctype.toAtom(), capture = false,
+    once = false, internal = true, passive = none(bool), callback)
 
 # Event reflection
 const EventReflectMap* = [
@@ -535,14 +538,8 @@ proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
   if not JS_IsObject(callback) and not JS_IsNull(callback):
     return errTypeError("callback is not an object")
   let (capture, once, passive) = flattenMore(ctx, options)
-  ctx.addAnEventListener(eventTarget, EventListener(
-    ctype: ctype,
-    capture: capture,
-    passive: passive,
-    once: once,
-    rt: JS_GetRuntime(ctx),
-    callback: JS_DupValue(ctx, callback)
-  ))
+  ctx.addEventListener0(eventTarget, ctype, capture, once, internal = false,
+    passive, callback)
   ok()
 
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
