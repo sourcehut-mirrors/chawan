@@ -255,13 +255,13 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
   tokenizer.appendAttrOrEmit(s)
 
 proc flushAttr(tokenizer: var Tokenizer) =
-  tokenizer.tok.attrs[tokenizer.attrna] = move(tokenizer.attrv)
+  # This can also be called with tok.t == END_TAG, in that case we do
+  # not want to flush attributes.
+  if tokenizer.tok.t == START_TAG and tokenizer.attr:
+    tokenizer.tok.attrs[tokenizer.attrna] = move(tokenizer.attrv)
 
 proc startNewAttribute(tokenizer: var Tokenizer) =
-  if tokenizer.tok.t == START_TAG and tokenizer.attr:
-    # This can also be called with tok.t == END_TAG, in that case we do
-    # not want to flush attributes.
-    tokenizer.flushAttr()
+  tokenizer.flushAttr()
   tokenizer.tmp = ""
   tokenizer.attrv = ""
   tokenizer.attr = true
@@ -389,9 +389,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
   template emit_null =
     tokenizer.flushChars()
     tokenizer.tokqueue.add(Token[Atom](t: CHARACTER_NULL))
-  template prepare_attrs_if_start =
-    if tokenizer.tok.t == START_TAG and tokenizer.attr:
-      tokenizer.flushAttr()
   template emit_tok =
     tokenizer.flushChars()
     tokenizer.tokqueue.add(tokenizer.tok)
@@ -404,10 +401,6 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
   template is_appropriate_end_tag_token(): bool =
     tokenizer.laststart != nil and
       tokenizer.laststart.tagname == tokenizer.tok.tagname
-  template leave_attribute_name_state =
-    tokenizer.attrna = tokenizer.strToAtom(tokenizer.tmp)
-    if tokenizer.attrna in tokenizer.tok.attrs:
-      tokenizer.attr = false
   template new_token(t: Token) =
     tokenizer.attr = false
     tokenizer.tok = t
@@ -849,16 +842,21 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
     of BEFORE_ATTRIBUTE_NAME:
       case c
       of AsciiWhitespace: discard
-      of '/', '>': reconsume_in AFTER_ATTRIBUTE_NAME
-      of '=':
-        tokenizer.startNewAttribute()
-        tokenizer.tmp &= c
-        switch_state ATTRIBUTE_NAME
+      of '/': switch_state SELF_CLOSING_START_TAG
+      of '>': reconsume_in AFTER_ATTRIBUTE_NAME
       else:
         tokenizer.startNewAttribute()
-        reconsume_in ATTRIBUTE_NAME
+        if c == '\0':
+          tokenizer.tmp &= "\uFFFD"
+        else:
+          tokenizer.tmp &= c.toLowerAscii()
+        switch_state ATTRIBUTE_NAME
 
     of ATTRIBUTE_NAME:
+      template leave_attribute_name_state =
+        tokenizer.attrna = tokenizer.strToAtom(tokenizer.tmp)
+        if tokenizer.attrna in tokenizer.tok.attrs:
+          tokenizer.attr = false
       case c
       of AsciiWhitespace, '/', '>':
         leave_attribute_name_state
@@ -878,11 +876,15 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '=': switch_state BEFORE_ATTRIBUTE_VALUE
       of '>':
         switch_state DATA
-        prepare_attrs_if_start
+        tokenizer.flushAttr()
         emit_tok
       else:
         tokenizer.startNewAttribute()
-        reconsume_in ATTRIBUTE_NAME
+        if c == '\0':
+          tokenizer.tmp &= "\uFFFD"
+        else:
+          tokenizer.tmp &= c.toLowerAscii()
+        switch_state ATTRIBUTE_NAME
 
     of BEFORE_ATTRIBUTE_VALUE:
       case c
@@ -892,7 +894,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state ATTRIBUTE_VALUE_QUOTED
       of '>':
         switch_state DATA
-        prepare_attrs_if_start
+        tokenizer.flushAttr()
         emit_tok
       else: reconsume_in ATTRIBUTE_VALUE_UNQUOTED
 
@@ -909,7 +911,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '&': switch_state_return CHARACTER_REFERENCE
       of '>':
         switch_state DATA
-        prepare_attrs_if_start
+        tokenizer.flushAttr()
         emit_tok
       of '\0': tokenizer.appendToAttrValue("\uFFFD")
       else: tokenizer.appendToAttrValue([c])
@@ -922,7 +924,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
         switch_state SELF_CLOSING_START_TAG
       of '>':
         switch_state DATA
-        prepare_attrs_if_start
+        tokenizer.flushAttr()
         emit_tok
       else: reconsume_in BEFORE_ATTRIBUTE_NAME
 
@@ -931,7 +933,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
       of '>':
         tokenizer.tok.flags.incl(tfSelfClosing)
         switch_state DATA
-        prepare_attrs_if_start
+        tokenizer.flushAttr()
         emit_tok
       else: reconsume_in BEFORE_ATTRIBUTE_NAME
 
