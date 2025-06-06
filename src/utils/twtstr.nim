@@ -905,13 +905,11 @@ proc getEnvEmpty*(name: string; fallback = ""): string =
   return fallback
 
 iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
-  var i = 0
-  let L = a.len
+  var i = 0u
+  let L = uint(a.len)
   while i < L:
-    yield (i, a[i])
-    {.push overflowChecks: off.}
+    yield (cast[int](i), a[i])
     inc i
-    {.pop.}
 
 proc getFileExt*(path: string): string =
   let n = path.rfind({'/', '.'})
