@@ -2177,7 +2177,7 @@ proc growRowspan(pctx: var TableContext; ctx: var RowContext;
 
 proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
     rowi, numrows: int): RowContext =
-  var ctx = RowContext(box: row)
+  result = RowContext(box: row)
   var n = 0
   var i = 0
   var growi = 0
@@ -2187,7 +2187,7 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
   for box in row.children:
     let box = BlockBox(box)
     assert box.computed{"display"} == DisplayTableCell
-    pctx.growRowspan(ctx, growi, i, n, growlen)
+    pctx.growRowspan(result, growi, i, n, growlen)
     let colspan = box.computed{"-cha-colspan"}
     let rowspan = min(box.computed{"-cha-rowspan"}, numrows - rowi)
     let cw = box.computed{"width"}
@@ -2205,19 +2205,19 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
       rowspan: rowspan,
       coli: n
     )
-    ctx.cells.add(wrapper)
+    result.cells.add(wrapper)
     if rowspan > 1:
       pctx.growing.add(wrapper)
       wrapper.grown = rowspan - 1
     if pctx.cols.len < n + colspan:
       pctx.cols.setLen(n + colspan)
-    if ctx.reflow.len < n + colspan:
-      ctx.reflow.setLen(n + colspan)
+    if result.reflow.len < n + colspan:
+      result.reflow.setLen(n + colspan)
     let minw = box.state.intr.w div colspan
     let w = box.state.size.w div colspan
     for i in n ..< n + colspan:
       # Add spacing.
-      ctx.width += pctx.inlineSpacing
+      result.width += pctx.inlineSpacing
       # Figure out this cell's effect on the column's width.
       # Four cases exist:
       # 1. colwidth already fixed, cell width is fixed: take maximum
@@ -2229,37 +2229,36 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
           # A specified column already exists; we take the larger width.
           if w > pctx.cols[i].width:
             pctx.cols[i].width = w
-            ctx.reflow[i] = true
+            result.reflow[i] = true
         if pctx.cols[i].width != w:
           wrapper.reflow = true
       elif space.w.isDefinite():
         # This is the first specified column. Replace colwidth with whatever
         # we have.
-        ctx.reflow[i] = true
+        result.reflow[i] = true
         pctx.cols[i].wspecified = true
         pctx.cols[i].width = w
       elif w > pctx.cols[i].width:
         pctx.cols[i].width = w
-        ctx.reflow[i] = true
+        result.reflow[i] = true
       else:
         wrapper.reflow = true
       if pctx.cols[i].minwidth < minw:
         pctx.cols[i].minwidth = minw
         if pctx.cols[i].width < minw:
           pctx.cols[i].width = minw
-          ctx.reflow[i] = true
-      ctx.width += pctx.cols[i].width
+          result.reflow[i] = true
+      result.width += pctx.cols[i].width
       # Add spacing to the right side.
-      ctx.width += pctx.inlineSpacing
+      result.width += pctx.inlineSpacing
     n += colspan
     inc i
-  pctx.growRowspan(ctx, growi, i, n, growlen)
+  pctx.growRowspan(result, growi, i, n, growlen)
   pctx.sortGrowing()
   when defined(debug):
-    for cell in ctx.cells:
+    for cell in result.cells:
       assert cell != nil
-  ctx.ncols = n
-  return ctx
+  result.ncols = n
 
 proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
   let firstChild = BlockBox(cell.firstChild)
@@ -2346,8 +2345,8 @@ proc preLayoutTableRows(tctx: var TableContext; rows: openArray[BlockBox];
     table: BlockBox) =
   for i, row in rows.mypairs:
     let rctx = tctx.preLayoutTableRow(row, table, i, rows.len)
-    tctx.rows.add(rctx)
     tctx.maxwidth = max(rctx.width, tctx.maxwidth)
+    tctx.rows.add(rctx)
 
 proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
   # Use separate seqs for different row groups, so that e.g. this HTML:
