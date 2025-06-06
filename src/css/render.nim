@@ -129,44 +129,59 @@ proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
 proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
     hadStr: bool; format: Format; node: Element) =
   var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
-  if x > cx and fi != -1:
-    # Amend formatting for padding.
-    # Since we only generate padding in place of non-existent text, it
-    # should be enough to just append a single format cell to erase the
-    # last one's effect.
-    # (This means that if fi is -1, we have nothing to erase -> nothing
-    # to do.)
-    # First format < cx => split it up
-    assert line.formats[fi].pos < cx
-    inc fi # insert after first format
-    line.insertFormat(cx, fi, Format(), nil)
+  var lformat = Format()
+  var lnode: Element = nil
+  if fi != -1:
+    # Start by saving the old formatting before padding for later use.
+    # This is important because the following code will gladly overwrite
+    # said formatting.
+    lformat = line.formats[fi].format # save for later use
+    lnode = line.formats[fi].node
+    if x > cx:
+      # Amend formatting for padding.
+      # Since we only generate padding in place of non-existent text, it
+      # should be enough to just append a single format cell to erase the
+      # last one's effect.
+      # (This means that if fi is -1, we have nothing to erase ->
+      # nothing to do.)
+      let pos = line.formats[fi].pos
+      if pos == cx:
+        # This branch is only taken if we are overwriting a double-width
+        # char.  Then it is possible to get a single blank cell of
+        # padding affected by the old formatting.
+        # In this case, we must copy the bgcolor as well; in the other
+        # branch this isn't necessary because paintBackground adds
+        # padding anyway.
+        line.formats[fi] = FormatCell(
+          format: Format(bgcolor: lformat.bgcolor),
+          pos: cx
+        )
+      else:
+        # First format < cx => split it up
+        assert pos < cx
+        inc fi # insert after first format
+        line.insertFormat(cx, fi, Format(), nil)
   # Now for the text's formats:
   var format = format
-  var lformat: Format
-  var lnode: Element = nil
-  var nx = nx
   if fi == -1:
     # No formats => just insert a new format at 0
     inc fi
     line.insertFormat(x, fi, format, node)
-    lformat = Format()
   else:
     # First format's pos may be == x here.
-    lformat = line.formats[fi].format # save for later use
-    lnode = line.formats[fi].node
     if line.formats[fi].pos == x:
       # Replace.
       # We must check if the old string's last x position is greater than
       # the new string's first x position. If not, we cannot inherit
       # its bgcolor (which is supposed to end before the new string started.)
       if nx > x:
-        format.bgcolor = line.formats[fi].format.bgcolor
+        format.bgcolor = lformat.bgcolor
       line.formats[fi] = FormatCell(format: format, node: node, pos: x)
     else:
       # First format's pos < x => split it up.
       assert line.formats[fi].pos < x
       if nx > x: # see above
-        format.bgcolor = line.formats[fi].format.bgcolor
+        format.bgcolor = lformat.bgcolor
       inc fi # insert after first format
       line.insertFormat(x, fi, format, node)
     if nx > x and nx < targetX and fi == line.formats.high:
@@ -184,12 +199,16 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
     lnode = line.formats[fi].node
     line.formats[fi] = FormatCell(format: format, node: node, pos: px)
     inc fi
-  if hadStr and (fi >= line.formats.len or line.formats[fi].pos > targetX):
-    # targetX < ostr.width, but we have removed all formatting in the
-    # range of our string, and no formatting comes directly after it. So
-    # we insert the continuation of the last format we replaced after
-    # our string.  (Default format when we haven't replaced anything.)
-    line.insertFormat(targetX, fi, lformat, lnode)
+  if hadStr:
+    # If nx > targetX, we are overwriting a double-width character; then
+    # we want the next formatting to apply from the end of said character.
+    let ostrx = max(nx, targetX)
+    if fi >= line.formats.len or line.formats[fi].pos > ostrx:
+      # targetX < ostr.width, but we have removed all formatting in the
+      # range of our string, and no formatting comes directly after it. So
+      # we insert the continuation of the last format we replaced after
+      # our string.  (Default format when we haven't replaced anything.)
+      line.insertFormat(ostrx, fi, lformat, lnode)
   dec fi # go back to previous format, so that pos <= targetX
   assert line.formats[fi].pos <= targetX
   # That's it!
@@ -199,7 +218,8 @@ proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
   var i = 0
   let cx = line.findFirstX(x, i) # first x of new string (before padding)
   var j = i
-  var nx = x # last x of new string *before the end of the old string*
+  var nx = cx # last x of new string *before the end of the old string*
+  # (nx starts from cx, not x; we are still advancing in the old string)
   while nx < targetX and j < line.str.len:
     nx += line.str.nextUTF8(j).width()
   let ostr = line.str.substr(j)
