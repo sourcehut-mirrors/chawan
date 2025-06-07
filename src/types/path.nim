@@ -252,19 +252,19 @@ func `[]`*(pl: PathLines; i: BackwardsIndex): lent LineSegment =
 func len*(pl: PathLines): int = pl.lines.len
 
 iterator quadraticLines(a, b, c: Vector2D): Line {.inline.} =
-  var points = initDeque[tuple[a, b, c: Vector2D]]()
+  var points = newSeq[tuple[a, b, c: Vector2D]]()
   let tup = (a, b, c)
-  points.addFirst(tup)
+  points.add(tup)
   while points.len > 2:
-    let (a, b, c) = points.popFirst()
+    let (a, b, c) = points.pop()
     if flatEnough(a, b, c):
       yield Line(p0: a, p1: b)
     else:
       let mid1 = (c + a) / 2
       let mid2 = (c + b) / 2
       let s = (mid1 + mid2) / 2
-      points.addFirst((a, s, mid1))
-      points.addFirst((s, b, mid2))
+      points.add((a, s, mid1))
+      points.add((s, b, mid2))
 
 iterator bezierLines(p0, p1, c0, c1: Vector2D): Line {.inline.} =
   var points = initDeque[tuple[p0, p1, c0, c1: Vector2D]]()
