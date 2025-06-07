@@ -34,6 +34,14 @@ assertEquals(new URL("abcd#ijkl", "https://example.com/") + "", "https://example
 assertEquals(new URL("abcd?efgh#ijkl", "https://example.com/") + "", "https://example.com/abcd?efgh#ijkl");
 assertEquals(new URL("https://テスト") + "", "https://xn--zckzah/");
 assertEquals(new URL("https://xn--zckzah") + "", "https://xn--zckzah/");
+assertEquals(new URL("https://他们为什么不说中文") + "", "https://xn--ihqwcrb4cv8a8dqg056pqjye/");
+assertEquals(new URL("https://xn--ihqwcrb4cv8a8dqg056pqjye") + "", "https://xn--ihqwcrb4cv8a8dqg056pqjye/");
+assertEquals(new URL("https://3年b組金八先生") + "", "https://xn--3b-ww4c5e180e575a65lsy2b/");
+assertEquals(new URL("https://xn--3B-ww4c5e180e575a65lsy2b") + "", "https://xn--3b-ww4c5e180e575a65lsy2b/");
+assertEquals(new URL("https://あああ") + "", "https://xn--l8jaa/");
+assertThrows('new URL("https://xn--")', TypeError);
+assertEquals(new URL("https://いろは-にほへと") + "", "https://xn----07t3els0dua4l/");
+assertEquals(new URL("https://xn----07t3els0dua4l/") + "", "https://xn----07t3els0dua4l/");
 assertEquals(new URL("file:/test") + "", "file:///test");
 assertEquals(new URL("https://[ffff::127.0.0.1]") + "", "https://[ffff::7f00:1]/");
 assertThrows('new URL("https://[]")', TypeError);

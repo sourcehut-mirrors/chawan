@@ -8,7 +8,6 @@ import std/tables
 
 import io/packetreader
 import io/packetwriter
-import lib/punycode
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -296,6 +295,121 @@ func getIdnaMapped(u: uint32): string =
   let e = MappedMapData.find('\0', idx)
   return MappedMapData[idx ..< e]
 
+# RFC 3492
+proc punyAdapt(delta, len: uint32; first: bool): uint32 =
+  var delta = if first:
+    delta div 700
+  else:
+    delta div 2
+  delta += delta div len
+  var k = 0u32
+  while delta > 455:
+    delta = delta div 35
+    k += 36
+  return k + (36 * delta) div (delta + 38)
+
+proc punyCharDecode(c: char): Opt[uint32] =
+  if c in AsciiDigit:
+    return ok(uint32(c) - uint32('0') + 26)
+  let c = c.toLowerAscii()
+  if c in AsciiLowerAlpha:
+    return ok(uint32(c) - uint32('a'))
+  err()
+
+proc punyDecode(s: openArray[char]): Opt[seq[uint32]] =
+  var j = 0u
+  var res: seq[uint32] = @[]
+  for k, c in s:
+    if c == '-':
+      j = uint(k)
+    res &= uint32(c)
+  res.setLen(j)
+  if j > 0:
+    inc j
+  var n = 0x80u32
+  var bias = 72u32
+  var i = 0u32
+  while j < uint(s.len):
+    let oldi = i
+    var w = 1u32
+    for k in countup(36u32, uint32.high, 36u32):
+      if j >= uint(s.len):
+        return err()
+      let d = ?punyCharDecode(s[j])
+      inc j
+      let dw = d * w
+      if uint32.high - dw < i: # overflow
+        return err()
+      i += dw
+      let t = if k <= bias: 1u32 elif k >= bias + 26: 26u32 else: k - bias
+      if d < t:
+        break
+      if static(uint32.high div 36) < w: # overflow
+        return err()
+      w *= 36 - t
+    let L = uint32(res.len + 1)
+    bias = punyAdapt(i - oldi, L, oldi == 0)
+    let iL = i div L
+    if uint32.high - iL < n: # overflow
+      return err()
+    n += iL
+    i = i mod L
+    res.insert(n, i)
+    inc i
+  ok(move(res))
+
+proc punyCharEncode(q: uint32): char =
+  if q < 26:
+    return char(uint32('a') + q)
+  return char(uint32('0') + q - 26)
+
+proc punyEncode(s: openArray[char]): Opt[string] =
+  var res = ""
+  var us: seq[uint32] = @[]
+  for u in s.points:
+    if u <= 0x7F:
+      res &= char(u)
+    else:
+      us.add(u)
+  us.sort()
+  var h = uint32(res.len)
+  if uint(res.len) != uint32(res.len): # overflow
+    return err()
+  let b = h
+  if res.len > 0:
+    res &= '-'
+  var n = 0x7Fu32
+  var bias = 72u32
+  var delta = 0u32
+  for m in us:
+    if m == n:
+      continue
+    let delta2 = uint64(delta) + uint64(m - n - 1) * uint64(h + 1)
+    if uint64(delta) > uint64(uint32.high): # overflow
+      return err()
+    delta = uint32(delta2)
+    n = m
+    for u in s.points:
+      if u < m:
+        inc delta
+        if delta == 0: # overflow
+          return err()
+      elif u == m:
+        var q = delta
+        for k in countup(36u32, uint32.high, 36u32):
+          let t = if k <= bias: 1u32 elif k >= bias + 26: 26u32 else: k - bias
+          if q < t:
+            break
+          let tt = 36 - t
+          res &= punyCharEncode(t + (q - t) mod tt)
+          q = (q - t) div tt
+        res &= punyCharEncode(q)
+        bias = punyAdapt(delta, h + 1, h == b)
+        delta = 0
+        inc h
+    inc delta
+  ok(move(res))
+
 proc processIdna(str: string; beStrict: bool): string =
   # CheckHyphens = false
   # CheckBidi = true
@@ -318,33 +432,29 @@ proc processIdna(str: string; beStrict: bool): string =
   var labels = ""
   for label in mapped.toUTF8().split('.'):
     if label.startsWith("xn--"):
-      try:
-        let s = punycode.decode(label.substr("xn--".len))
-        let x0 = s.toPoints()
-        let x1 = x0.normalize()
-        if x0 != x1:
-          return "" #error
-        # CheckHyphens is false
-        if x0.len > 0 and luctx.isMark(x0[0]):
-          return "" #error
-        for u in x0:
-          if u == uint32('.'):
-            return "" #error
-          let status = getIdnaTableStatus(u)
-          if status in {itsDisallowed, itsIgnored, itsMapped}:
-            return "" #error
-          #TODO check joiners
-          #TODO check bidi
-        if labels.len > 0:
-          labels &= '.'
-        labels &= s
-      except PunyError:
+      let x0 = punyDecode(label.toOpenArray("xn--".len, label.high))
+      if x0.isNone:
+        return ""
+      let x1 = x0.get.normalize()
+      # CheckHyphens is false
+      if x0.get != x1 or x1.len > 0 and luctx.isMark(x1[0]):
         return "" #error
+      for u in x1:
+        if u == uint32('.'):
+          return "" #error
+        let status = getIdnaTableStatus(u)
+        if status in {itsDisallowed, itsIgnored, itsMapped}:
+          return "" #error
+        #TODO check joiners
+        #TODO check bidi
+      if labels.len > 0:
+        labels &= '.'
+      labels &= x1.toUTF8()
     else:
       if labels.len > 0:
         labels &= '.'
       labels &= label
-  return labels
+  move(labels)
 
 proc unicodeToAscii(s: string; beStrict: bool): string =
   let processed = s.processIdna(beStrict)
@@ -353,10 +463,10 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
   for label in processed.split('.'):
     var s = ""
     if AllChars - Ascii in label:
-      try:
-        s = "xn--" & punycode.encode(label)
-      except PunyError:
-        return "" #error
+      let x = punyEncode(label)
+      if x.isNone:
+        return ""
+      s = "xn--" & x.get
     else:
       s = label
     if beStrict: # VerifyDnsLength
@@ -370,7 +480,7 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
   if beStrict: # VerifyDnsLength
     if all notin 1..253:
       return "" #error
-  return labels
+  move(labels)
 
 proc domainToAscii(domain: string; beStrict: bool): string =
   result = domain.toLowerAscii()
@@ -392,7 +502,7 @@ proc parseHost*(input: string; special: bool; hostType: var HostType): string =
     hostType = htOpaque
     return opaqueParseHost(input)
   let domain = percentDecode(input)
-  let asciiDomain = domain.domainToAscii(beStrict = false)
+  var asciiDomain = domain.domainToAscii(beStrict = false)
   if asciiDomain == "" or ForbiddenDomainChars in asciiDomain:
     return ""
   if asciiDomain.endsInNumber():
@@ -402,7 +512,7 @@ proc parseHost*(input: string; special: bool; hostType: var HostType): string =
     hostType = htIpv4
     return ipv4.get.serializeip()
   hostType = htDomain
-  return asciiDomain
+  move(asciiDomain)
 
 proc shortenPath(url: URL) =
   if url.schemeType == stFile and (url.pathname.len == 3 or
