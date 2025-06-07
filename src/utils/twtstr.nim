@@ -898,11 +898,29 @@ func btoa*(data: openArray[uint8]): string =
 func btoa*(data: openArray[char]): string =
   return btoa(data.toOpenArrayByte(0, data.len - 1))
 
+proc c_getenv(name: cstring): cstring {.
+  header: "<stdlib.h>", importc: "getenv".}
+proc c_setenv(envname, envval: cstring; overwrite: cint): cint {.
+  header: "<stdlib.h>", importc: "setenv".}
+proc c_unsetenv(name: cstring): cint {.
+  header: "<stdlib.h>", importc: "unsetenv".}
+
+proc getEnvCString*(name: string): cstring =
+  return c_getenv(cstring(name))
+
 proc getEnvEmpty*(name: string; fallback = ""): string =
-  var res = getEnv(name, fallback)
-  if res != "":
-    return move(res)
-  return fallback
+  var res = getEnvCString(name)
+  if res == nil or res[0] == '\0':
+    return fallback
+  return $res
+
+proc setEnv*(name, value: string): Opt[void] =
+  if c_setenv(cstring(name), cstring(value), 1) != 0:
+    return err()
+  ok()
+
+proc unsetEnv*(name: string) =
+  discard c_unsetenv(cstring(name))
 
 iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
   var i = 0u

@@ -207,9 +207,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("Failed to open config file " & ctx.configPath.get)
-  try:
-    putEnv("CHA_DIR", config.dir)
-  except OSError:
+  if twtstr.setEnv("CHA_DIR", config.dir).isNone:
     die("failed to set env vars")
   ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
   let cwd = chaGetCwd()
@@ -233,10 +231,9 @@ proc initConfig(ctx: ParamParseContext; config: Config;
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
 proc main() =
-  try:
-    putEnv("CHA_BIN_DIR", getAppFilename().untilLast('/'))
-    putEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet())
-  except OSError:
+  if twtstr.setEnv("CHA_BIN_DIR", getAppFilename().untilLast('/')).isNone:
+    die("failed to set env vars")
+  if twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isNone:
     die("failed to set env vars")
   var loaderSockVec {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:

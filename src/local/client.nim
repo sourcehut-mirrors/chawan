@@ -94,23 +94,22 @@ proc writeFile(ctx: JSContext; client: Client; path, content: string): JSValue
 
 proc getenv(ctx: JSContext; client: Client; s: string;
     fallback: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
-  if not existsEnv(s):
+  let env = twtstr.getEnvCString(s)
+  if env == nil:
     return JS_DupValue(ctx, fallback)
-  return ctx.toJS(getEnv(s))
+  return JS_NewString(ctx, env)
 
 proc setenv(ctx: JSContext; client: Client; s: string; val: JSValueConst):
     JSValue {.jsfunc.} =
-  try:
-    if JS_IsNull(val):
-      delEnv(s)
+  if JS_IsNull(val):
+    twtstr.unsetEnv(s)
+  else:
+    var vals: string
+    if (let res = ctx.fromJS(val, vals); res.isSome):
+      if twtstr.setEnv(s, vals).isNone:
+        return JS_ThrowTypeError(ctx, "Failed to set environment variable")
     else:
-      var vals: string
-      if (let res = ctx.fromJS(val, vals); res.isSome):
-        putEnv(s, vals)
-      else:
-        return JS_EXCEPTION
-  except OSError:
-    return JS_ThrowTypeError(ctx, "Failed to set environment variable")
+      return JS_EXCEPTION
   return JS_UNDEFINED
 
 proc nimGCStats(client: Client): string {.jsfunc.} =

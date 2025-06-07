@@ -17,6 +17,7 @@ import server/buffer
 import server/connecterror
 import server/loader
 import server/loaderiface
+import types/opt
 import types/url
 import types/winattrs
 import utils/proctitle
@@ -171,12 +172,11 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     signal(SIGCHLD, SIG_DFL)
     # let's also reset SIGPIPE, which we ignored on init
     signal(SIGPIPE, SIG_DFL)
-    try:
-      for it in env:
-        putEnv(it.name, it.value)
-      setCurrentDir(dir)
-    except OSError:
-      die("failed to set env vars")
+    for it in env:
+      if twtstr.setEnv(it.name, it.value).isNone:
+        die("failed to set env vars")
+    if chdir(cstring(dir)) != 0:
+      die("failed to set working directory")
     discard execl(cstring(cmd), cstring(basename), nil)
     let code = int(ceFailedToExecuteCGIScript)
     stdout.fwrite("Cha-Control: ConnectionError " & $code & " " &
@@ -189,6 +189,20 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
       ostreamOut2.sclose()
     return pid
 
+proc setupForkServerEnv(config: LoaderConfig): Opt[void] =
+  ?twtstr.setEnv("SERVER_SOFTWARE", "Chawan")
+  ?twtstr.setEnv("SERVER_PROTOCOL", "HTTP/1.0")
+  ?twtstr.setEnv("SERVER_NAME", "localhost")
+  ?twtstr.setEnv("SERVER_PORT", "80")
+  ?twtstr.setEnv("REMOTE_HOST", "localhost")
+  ?twtstr.setEnv("REMOTE_ADDR", "127.0.0.1")
+  ?twtstr.setEnv("GATEWAY_INTERFACE", "CGI/1.1")
+  ?twtstr.setEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
+  ?twtstr.setEnv("CHA_TMP_DIR", config.tmpdir)
+  ?twtstr.setEnv("CHA_DIR", config.configdir)
+  ?twtstr.setEnv("CHA_BOOKMARK", config.bookmark)
+  ok()
+
 proc runForkServer(controlStream, loaderStream: SocketStream) =
   setProcessTitle("cha forkserver")
   var ctx = ForkServerContext(stream: controlStream)
@@ -199,19 +213,7 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
     r.sread(isCJKAmbiguous)
     r.sread(config)
     # for CGI
-    try:
-      putEnv("SERVER_SOFTWARE", "Chawan")
-      putEnv("SERVER_PROTOCOL", "HTTP/1.0")
-      putEnv("SERVER_NAME", "localhost")
-      putEnv("SERVER_PORT", "80")
-      putEnv("REMOTE_HOST", "localhost")
-      putEnv("REMOTE_ADDR", "127.0.0.1")
-      putEnv("GATEWAY_INTERFACE", "CGI/1.1")
-      putEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
-      putEnv("CHA_TMP_DIR", config.tmpdir)
-      putEnv("CHA_DIR", config.configdir)
-      putEnv("CHA_BOOKMARK", config.bookmark)
-    except OSError:
+    if setupForkServerEnv(config).isNone:
       die("failed to set env vars")
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader

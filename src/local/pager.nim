@@ -1693,17 +1693,19 @@ template myExec(cmd: string) =
   discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
   exitnow(127)
 
+proc setEnvVars0(pager: Pager; env: JSValueConst): Opt[void] =
+  if pager.container != nil and JS_IsUndefined(env):
+    ?twtstr.setEnv("CHA_URL", $pager.container.url)
+    ?twtstr.setEnv("CHA_CHARSET", $pager.container.charset)
+  else:
+    var tab: Table[string, string]
+    if pager.jsctx.fromJS(env, tab).isSome:
+      for k, v in tab:
+        ?twtstr.setEnv(k, v)
+  ok()
+
 proc setEnvVars(pager: Pager; env: JSValueConst) =
-  try:
-    if pager.container != nil and JS_IsUndefined(env):
-      putEnv("CHA_URL", $pager.container.url)
-      putEnv("CHA_CHARSET", $pager.container.charset)
-    else:
-      var tab: Table[string, string]
-      if pager.jsctx.fromJS(env, tab).isSome:
-        for k, v in tab:
-          putEnv(k, v)
-  except OSError:
+  if pager.setEnvVars0(env).isNone:
     pager.alert("Warning: failed to set some environment variables")
 
 # Run process (and suspend the terminal controller).
@@ -2650,9 +2652,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
   let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, canpipe)
   let ishtml = mfHtmloutput in entry.flags
   let needsterminal = mfNeedsterminal in entry.flags
-  try:
-    putEnv("MAILCAP_URL", $url)
-  except OSError:
+  if twtstr.setEnv("MAILCAP_URL", $url).isNone:
     pager.alert("failed to set env vars")
   block needsConnect:
     if entry.flags * {mfCopiousoutput, mfHtmloutput, mfAnsioutput,
@@ -2681,10 +2681,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
       break needsConnect
     if not ishtml and mfAnsioutput in entry.flags:
       pins = pager.ansiDecode(url, ishtml, pins)
-    try:
-      delEnv("MAILCAP_URL")
-    except OSError:
-      discard
+    twtstr.unsetEnv("MAILCAP_URL")
     let url = parseURL("stream:" & $pid).get
     pager.loader.passFd(url.pathname, pins.fd)
     pins.sclose()
@@ -2702,10 +2699,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
       ostream: response.body,
       ostreamOutputId: response.outputId
     )
-  try:
-    delEnv("MAILCAP_URL")
-  except OSError:
-    discard
+  twtstr.unsetEnv("MAILCAP_URL")
   return MailcapResult(flags: {cmfFound})
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
