@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/deques
 import std/hashes
 import std/math
 import std/options
@@ -229,9 +228,11 @@ type
     writeBuffers*: seq[DocumentWriteBuffer]
     styleDependencies: array[DependencyType, DependencyMap]
 
-    scriptsToExecSoon*: seq[HTMLScriptElement]
-    scriptsToExecInOrder*: Deque[HTMLScriptElement]
-    scriptsToExecOnLoad*: Deque[HTMLScriptElement]
+    scriptsToExecSoon: HTMLScriptElement
+    scriptsToExecInOrder: HTMLScriptElement
+    scriptsToExecInOrderTail: HTMLScriptElement
+    scriptsToExecOnLoad*: HTMLScriptElement
+    scriptsToExecOnLoadTail*: HTMLScriptElement
     parserBlockingScript*: HTMLScriptElement
 
     parserCannotChangeModeFlag*: bool
@@ -388,6 +389,7 @@ type
     internalNonce: string
     scriptResult*: ScriptResult
     onReady: (proc(element: HTMLScriptElement) {.nimcall, raises: [].})
+    next*: HTMLScriptElement # scriptsToExecSoon/InOrder/OnLoad
 
   OnCompleteProc = proc(element: HTMLScriptElement, res: ScriptResult)
 
@@ -5382,20 +5384,29 @@ proc scriptOnReadyRunInParser(element: HTMLScriptElement) =
 
 proc scriptOnReadyNoParser(element: HTMLScriptElement) =
   let prepdoc = element.preparationTimeDocument
-  if prepdoc.scriptsToExecInOrder.len > 0 and
-      prepdoc.scriptsToExecInOrder[0] != element:
-    while prepdoc.scriptsToExecInOrder.len > 0:
-      let script = prepdoc.scriptsToExecInOrder[0]
+  if prepdoc.scriptsToExecInOrder == element:
+    while prepdoc.scriptsToExecInOrder != nil:
+      let script = prepdoc.scriptsToExecInOrder
       if script.scriptResult == nil:
         break
       script.execute()
-      prepdoc.scriptsToExecInOrder.shrink(1)
+      let next = prepdoc.scriptsToExecInOrder.next
+      prepdoc.scriptsToExecInOrder = next
+      if next == nil:
+        prepdoc.scriptsToExecInOrderTail = nil
 
 proc scriptOnReadyAsync(element: HTMLScriptElement) =
   let prepdoc = element.preparationTimeDocument
   element.execute()
-  let i = prepdoc.scriptsToExecSoon.find(element)
-  prepdoc.scriptsToExecSoon.delete(i)
+  var it {.cursor.} = prepdoc.scriptsToExecSoon
+  if it == element:
+    prepdoc.scriptsToExecSoon = element.next
+  else:
+    while it != nil:
+      if it.next == element:
+        it.next = element.next
+        break
+      it = it.next
 
 proc fetchClassicScript(element: HTMLScriptElement; url: URL;
     cors: CORSAttribute; onComplete: OnCompleteProc): Response =
@@ -5681,13 +5692,24 @@ proc prepare*(element: HTMLScriptElement) =
       element.ctype == stModule:
     let prepdoc = element.preparationTimeDocument
     if element.attrb(satAsync) or element.forceAsync:
-      prepdoc.scriptsToExecSoon.add(element)
+      element.next = prepdoc.scriptsToExecSoon
+      prepdoc.scriptsToExecSoon = element
       element.onReady = scriptOnReadyAsync
     elif element.parserDocument == nil:
-      prepdoc.scriptsToExecInOrder.addFirst(element)
+      let tail = prepdoc.scriptsToExecInOrderTail
+      if tail != nil:
+        tail.next = element
+      else:
+        prepdoc.scriptsToExecInOrder = element
+      prepdoc.scriptsToExecInOrderTail = element
       element.onReady = scriptOnReadyNoParser
     elif element.ctype == stModule or element.attrb(satDefer):
-      element.parserDocument.scriptsToExecOnLoad.addFirst(element)
+      let tail = element.parserDocument.scriptsToExecOnLoadTail
+      if tail != nil:
+        tail.next = element
+      else:
+        element.parserDocument.scriptsToExecOnLoad = element
+      element.parserDocument.scriptsToExecOnLoadTail = element
       element.onReady = scriptOnReadyRunInParser
     else:
       element.parserDocument.parserBlockingScript = element

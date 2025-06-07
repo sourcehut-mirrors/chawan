@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/deques
 import std/options
 import std/tables
 
@@ -64,10 +63,14 @@ proc strToAtomImpl(builder: ChaDOMBuilder; s: string): CAtom =
   return s.toAtom()
 
 proc finish(builder: ChaDOMBuilder) =
-  while builder.document.scriptsToExecOnLoad.len > 0:
+  while builder.document.scriptsToExecOnLoad != nil:
     #TODO spin event loop
-    let script = builder.document.scriptsToExecOnLoad.popFirst()
+    let script = builder.document.scriptsToExecOnLoad
     script.execute()
+    let next = script.next
+    builder.document.scriptsToExecOnLoad = next
+    if next == nil:
+      builder.document.scriptsToExecOnLoadTail = nil
   #TODO events
 
 proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
