@@ -1,7 +1,7 @@
 [Chawan](https://sr.ht/~bptato/chawan) is a TUI web (and (S)FTP, Gopher,
 Gemini, ...) browser with CSS, inline image and JavaScript support.
 
-It uses its own minimal browser engine developed from scratch, which can
+It uses its own small browser engine developed from scratch, which can
 display many websites in a manner similar to major graphical browsers.
 
 It can also be used as a terminal pager.

@@ -1074,7 +1074,9 @@ Keybindings are to be placed in these sections:
 
 Keybindings are configured using the syntax
 
-	'<keybinding>' = '<action>'
+```toml
+'<keybinding>' = '<action>'
+```
 
 Where `<keybinding>` is a combination of unicode characters with or without
 modifiers. Modifiers are the prefixes `C-` and `M-`, which add control or
