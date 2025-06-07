@@ -68,6 +68,8 @@ proc parseInTag(ctx: var ParseInlineContext; line: openArray[char]) =
     else:
       buf &= c
     inc i
+  if buf != "":
+    stdout.write('<')
   stdout.write(buf)
   ctx.i = i
 
