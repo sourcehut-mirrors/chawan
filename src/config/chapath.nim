@@ -125,7 +125,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     if ctx.identStr == "0":
       ctx.s &= getAppFilename()
     else:
-      ctx.s &= $getEnv(ctx.identStr)
+      ctx.s &= getEnv(ctx.identStr)
     ctx.identStr = ""
     ctx.state = usNormal
     return ok()
