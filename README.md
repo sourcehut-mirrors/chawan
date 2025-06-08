@@ -1,8 +1,9 @@
 [Chawan](https://sr.ht/~bptato/chawan) is a TUI web (and (S)FTP, Gopher,
 Gemini, ...) browser with CSS, inline image and JavaScript support.
 
-It uses its own small browser engine developed from scratch, which can
-display many websites in a manner similar to major graphical browsers.
+It uses its own small browser engine developed from scratch, which
+can nevertheless display many websites in a manner similar to major
+graphical browsers.
 
 It can also be used as a terminal pager.
 
@@ -65,7 +66,7 @@ Currently implemented features are:
   enable)
 * supports several network [protocols](doc/protocols.md): HTTP(S),
   (S)FTP, Gopher, Gemini, Finger, Spartan
-* markdown viewer (`cha file.md`), man page viewer (`mancha`)
+* markdown viewer (`cha README.md`), man page viewer (`mancha`)
 * [user-defined protocols](doc/urimethodmap.md) and
   [file formats](doc/mailcap.md)
 * syscall filter based sandboxing on FreeBSD, OpenBSD and Linux (through

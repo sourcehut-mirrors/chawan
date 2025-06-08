@@ -1863,7 +1863,8 @@ proc windowChange(pager: Pager) =
 # Apply siteconf settings to a request.
 # Note that this may modify the URL passed.
 proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
-    loaderConfig: var LoaderClientConfig; ourl: var URL): BufferConfig =
+    loaderConfig: var LoaderClientConfig; ourl: var URL;
+    cookieJarId: out string): BufferConfig =
   let host = url.host
   let ctx = pager.jsctx
   result = BufferConfig(
@@ -1899,7 +1900,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       url.schemeType in {stFile, stStream}:
     loaderConfig.filter.allowschemes.add("http")
     loaderConfig.filter.allowschemes.add("https")
-  var cookieJarId = url.host
+  cookieJarId = url.host
   let surl = $url
   for sc in pager.config.siteconf.values:
     if sc.url.isSome and not sc.url.get.match(surl):
@@ -1963,6 +1964,9 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   if result.images:
     result.imageTypes = pager.config.external.mimeTypes.image
   result.userAgent = loaderConfig.defaultHeaders.getOrDefault("User-Agent")
+
+proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
+    cookieJarId: string) =
   if loaderConfig.cookieMode != cmNone:
     var cookieJar = pager.cookieJars.getOrDefault(cookieJarId)
     if cookieJar == nil:
@@ -1974,13 +1978,16 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     contentType = ""; cs = CHARSET_UNKNOWN; replace: Container = nil;
     replaceBackup: Container = nil; redirectDepth = 0;
     referrer: Container = nil; save = false; history = true;
-    url: URL = nil): Container =
+    url: URL = nil; scripting = none(ScriptingMode); cookie = none(CookieMode)):
+    Container =
   pager.navDirection = ndNext
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
+  var cookieJarId: string
   for i in 0 ..< pager.config.network.maxRedirect:
     var ourl: URL = nil
-    bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig, ourl)
+    bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig, ourl,
+      cookieJarId)
     if ourl == nil:
       break
     request.url = ourl
@@ -1988,6 +1995,11 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     let referer = $referrer.url
     request.headers["Referer"] = referer
     bufferConfig.referrer = referer
+  if scripting.isSome:
+    bufferConfig.scripting = scripting.get
+  if cookie.isSome:
+    loaderConfig.cookieMode = cookie.get
+  pager.applyCookieJar(loaderConfig, cookieJarId)
   if request.url.username != "":
     pager.loader.addAuth(request.url)
   request.url.password = ""
@@ -2113,7 +2125,10 @@ proc readPipe0(pager: Pager; contentType: string; cs: Charset;
   var url = url
   var loaderConfig: LoaderClientConfig
   var ourl: URL
-  let bufferConfig = pager.applySiteconf(url, cs, loaderConfig, ourl)
+  var cookieJarId: string
+  let bufferConfig = pager.applySiteconf(url, cs, loaderConfig, ourl,
+    cookieJarId)
+  pager.applyCookieJar(loaderConfig, cookieJarId)
   return pager.newContainer(
     bufferConfig,
     loaderConfig,
@@ -2387,6 +2402,8 @@ type GotoURLDict = object of JSDict
   replace {.jsdefault.}: Option[Container]
   save {.jsdefault.}: bool
   history {.jsdefault.}: bool
+  scripting {.jsdefault.}: Option[ScriptingMode]
+  cookie {.jsdefault.}: Option[CookieMode]
 
 proc jsGotoURL(pager: Pager; v: JSValueConst; t = GotoURLDict()):
     JSResult[Container] {.jsfunc: "gotoURL".} =
@@ -2402,7 +2419,8 @@ proc jsGotoURL(pager: Pager; v: JSValueConst; t = GotoURLDict()):
       url = ?newURL(s)
     request = newRequest(url)
   return ok(pager.gotoURL(request, contentType = t.contentType.get(""),
-    replace = t.replace.get(nil), save = t.save, history = t.history))
+    replace = t.replace.get(nil), save = t.save, history = t.history,
+    scripting = t.scripting, cookie = t.cookie))
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
@@ -3089,28 +3107,32 @@ if (replace.alive) {
     JS_FreeValue(ctx, arg)
 
 const MenuMap = [
-  ("Select text          (v)", "cmd.buffer.cursorToggleSelection(1)"),
-  ("Copy selection       (y)", "cmd.buffer.copySelection(1)"),
-  ("Previous buffer      (,)", "cmd.pager.prevBuffer(1)"),
-  ("Next buffer          (.)", "cmd.pager.nextBuffer(1)"),
-  ("Discard buffer       (D)", "cmd.pager.discardBuffer(1)"),
-  ("────────────────────────", ""),
-  ("View image           (I)", "cmd.buffer.viewImage(1)"),
-  ("Peek                 (u)", "cmd.pager.peekCursor(1)"),
-  ("Copy link           (yu)", "cmd.pager.copyCursorLink(1)"),
-  ("Copy image link     (yI)", "cmd.pager.copyCursorImage(1)"),
-  ("Paste link         (M-p)", "cmd.pager.gotoClipboardURL(1)"),
-  ("Reload               (U)", "cmd.pager.reloadBuffer(1)"),
-  ("────────────────────────", ""),
-  ("Linkify URLs         (:)", "cmd.buffer.markURL(1)"),
-  ("Save link         (sC-m)", "cmd.buffer.saveLink(1)"),
-  ("View source          (\\)", "cmd.pager.toggleSource(1)"),
-  ("Edit source         (sE)", "cmd.buffer.sourceEdit(1)"),
-  ("Save source         (sS)", "cmd.buffer.saveSource(1)"),
-  ("────────────────────────", ""),
-  ("Bookmark page      (M-a)", "cmd.pager.addBookmark(1)"),
-  ("Open bookmarks     (M-b)", "cmd.pager.openBookmarks(1)"),
-  ("Open history       (C-h)", "cmd.pager.openHistory(1)"),
+  ("Select text              (v)", "cmd.buffer.cursorToggleSelection(1)"),
+  ("Copy selection           (y)", "cmd.buffer.copySelection(1)"),
+  ("Previous buffer          (,)", "cmd.pager.prevBuffer(1)"),
+  ("Next buffer              (.)", "cmd.pager.nextBuffer(1)"),
+  ("Discard buffer           (D)", "cmd.pager.discardBuffer(1)"),
+  ("────────────────────────────", ""),
+  ("View image               (I)", "cmd.buffer.viewImage(1)"),
+  ("Peek                     (u)", "cmd.pager.peekCursor(1)"),
+  ("Copy link               (yu)", "cmd.pager.copyCursorLink(1)"),
+  ("Copy image link         (yI)", "cmd.pager.copyCursorImage(1)"),
+  ("Paste link             (M-p)", "cmd.pager.gotoClipboardURL(1)"),
+  ("Reload                   (U)", "cmd.pager.reloadBuffer(1)"),
+  ("────────────────────────────", ""),
+  ("Save link             (sC-m)", "cmd.buffer.saveLink(1)"),
+  ("View source              (\\)", "cmd.pager.toggleSource(1)"),
+  ("Edit source             (sE)", "cmd.buffer.sourceEdit(1)"),
+  ("Save source             (sS)", "cmd.buffer.saveSource(1)"),
+  ("────────────────────────────", ""),
+  ("Linkify URLs             (:)", "cmd.buffer.markURL(1)"),
+  ("Toggle images          (M-i)", "cmd.buffer.toggleImages(1)"),
+  ("Toggle JS & reload     (M-j)", "cmd.buffer.toggleScripting(1)"),
+  ("Toggle cookie & reload (M-k)", "cmd.buffer.toggleCookie(1)"),
+  ("────────────────────────────", ""),
+  ("Bookmark page          (M-a)", "cmd.pager.addBookmark(1)"),
+  ("Open bookmarks         (M-b)", "cmd.pager.openBookmarks(1)"),
+  ("Open history           (C-h)", "cmd.pager.openHistory(1)"),
 ]
 
 proc menuFinish(opaque: RootRef; select: Select) =

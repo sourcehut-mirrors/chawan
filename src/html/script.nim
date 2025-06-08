@@ -95,6 +95,12 @@ var getEnvSettingsImpl*: proc(ctx: JSContext): EnvironmentSettings {.
 var storeJSImpl*: proc(ctx: JSContext; v: JSValue): int {.nimcall, raises: [].}
 var fetchJSImpl*: proc(ctx: JSContext; n: int): JSValue {.nimcall, raises: [].}
 
+proc toJS*(ctx: JSContext; val: ScriptingMode): JSValue =
+  case val
+  of smTrue: return JS_TRUE
+  of smFalse: return JS_FALSE
+  of smApp: return JS_NewString(ctx, "app")
+
 proc free*(script: Script) =
   let record = script.record
   let rt = script.rt

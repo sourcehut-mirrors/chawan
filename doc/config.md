@@ -1574,6 +1574,24 @@ position.</td>
 <td>Save the image currently under the cursor.</td>
 </tr>
 
+<tr>
+<td><kbd>M-i</kbd></td>
+<td>`cmd.buffer.toggleImages`</td>
+<td>Toggle display of images in the current buffer.</td>
+</tr>
+
+<tr>
+<td><kbd>M-j</kbd></td>
+<td>`cmd.buffer.toggleScripting`</td>
+<td>Reload the current buffer with scripting enabled/disabled.</td>
+</tr>
+
+<tr>
+<td><kbd>M-k</kbd></td>
+<td>`cmd.buffer.toggleCookie`</td>
+<td>Reload the current buffer with cookies enabled/disabled.</td>
+</tr>
+
 </table>
 
 

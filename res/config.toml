@@ -234,6 +234,8 @@ C-j = 'cmd.buffer.click'
 I = 'cmd.buffer.viewImage'
 sI = 'cmd.buffer.saveImage'
 M-i = 'cmd.buffer.toggleImages'
+M-j = 'cmd.buffer.toggleScripting'
+M-k = 'cmd.buffer.toggleCookie'
 ':' = 'cmd.buffer.markURL'
 r = 'cmd.buffer.redraw'
 R = 'cmd.buffer.reshape'
@@ -460,6 +462,34 @@ viewImage = '''
 }
 '''
 toggleImages = '() => pager.toggleImages()'
+toggleScripting = '''
+() => {
+	const buffer = pager.buffer;
+	const buffer2 = pager.gotoURL(buffer.url, {
+		contentType: buffer.contentType,
+		history: buffer.history,
+		replace: buffer,
+		scripting: !buffer.scripting,
+		cookie: buffer.cookie
+	});
+	if (buffer2)
+		buffer2.copyCursorPos(buffer)
+}
+'''
+toggleCookie = '''
+() => {
+	const buffer = pager.buffer;
+	pager.gotoURL(buffer.url, {
+		contentType: buffer.contentType,
+		history: buffer.history,
+		replace: buffer,
+		scripting: buffer.scripting,
+		cookie: !buffer.cookie
+	});
+	if (buffer2)
+		buffer2.copyCursorPos(buffer)
+}
+'''
 markURL = '() => pager.markURL()'
 redraw = '() => pager.redraw()'
 reshape = '() => pager.reshape()'

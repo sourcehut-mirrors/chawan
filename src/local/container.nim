@@ -10,13 +10,15 @@ import config/config
 import config/cookie
 import config/mimetypes
 import css/render
-import io/packetwriter
+import html/script
 import io/dynstream
+import io/packetwriter
 import io/promise
 import local/select
 import monoucha/javascript
 import monoucha/jsregex
 import monoucha/jstypes
+import monoucha/quickjs
 import server/buffer
 import server/headers
 import server/loaderiface
@@ -299,6 +301,12 @@ func alive(container: Container): bool {.jsfget.} =
 
 func history(container: Container): bool {.jsfget.} =
   return cfHistory in container.flags
+
+func scripting(ctx: JSContext; container: Container): ScriptingMode {.jsfget.} =
+  return container.config.scripting
+
+func cookie(ctx: JSContext; container: Container): CookieMode {.jsfget.} =
+  return container.loaderConfig.cookieMode
 
 func cursorx*(container: Container): int {.jsfget.} =
   container.pos.cursorx

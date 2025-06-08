@@ -227,6 +227,12 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var ChaPathResolved):
     Opt[void] =
   return ctx.fromJS(val, string(res))
 
+proc toJS*(ctx: JSContext; cookie: CookieMode): JSValue =
+  case cookie
+  of cmReadOnly: return JS_TRUE
+  of cmNone: return JS_FALSE
+  of cmSave: return JS_NewString(ctx, "save")
+
 proc `[]=`(a: var ActionMap; b: string; c: sink string) =
   a.t[b] = c
 
