@@ -67,7 +67,7 @@ proc getCursorX*(select: Select): int =
   return select.x + 1
 
 proc getCursorY*(select: Select): int =
-  return select.y + 1 + select.cursory - select.fromy
+  return max(select.y + 1 + select.cursory - select.fromy, 0)
 
 proc cursorDown(select: Select; n = 1) {.jsfunc.} =
   var y = select.cursory + 1
@@ -95,7 +95,7 @@ proc scrollDown(select: Select; n = 1) {.jsfunc.} =
   let tfy = select.fromy + n
   select.setFromY(tfy)
   if select.fromy > select.cursory:
-    select.setCursorY(select.fromy)
+    select.cursorDown(select.fromy - select.cursory)
   elif tfy > select.fromy:
     select.cursorDown(tfy - select.fromy)
   select.queueDraw()
@@ -104,7 +104,7 @@ proc scrollUp(select: Select; n = 1) {.jsfunc.} =
   let tfy = select.fromy - n
   select.setFromY(tfy)
   if select.fromy + select.maxh <= select.cursory:
-    select.setCursorY(select.fromy + select.maxh - 1)
+    select.cursorUp(select.cursory - select.fromy - select.maxh + 1)
   elif tfy < select.fromy:
     select.cursorUp(select.fromy - tfy)
   select.queueDraw()
