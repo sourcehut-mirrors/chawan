@@ -37,8 +37,7 @@ when sizeof(int) == 4 and not defined(nimEmulateOverflowChecks) and
     return LUnit(res)
 else:
   when sizeof(int) == 4:
-    {.warning: """Using 64-bit lunit ops on a 32-bit arch.
-If you are using GCC/clang, report this at https://todo.sr.ht/~bptato/chawan""".}
+    {.warning: "Using 64-bit lunit ops on a 32-bit arch".}
 
   func `+`*(a, b: LUnit): LUnit {.inline.} =
     let ab = int64(a) + int64(b)
