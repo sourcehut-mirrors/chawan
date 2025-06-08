@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/envvars
 import std/posix
 
 import io/dynstream
@@ -86,7 +85,7 @@ proc loadFile(os, ps: PosixStream; stats: Stat) =
     start = 0
 
 proc main() =
-  let opath = getEnv("MAPPED_URI_PATH")
+  let opath = getEnvEmpty("MAPPED_URI_PATH", "/")
   let path = percentDecode(opath)
   let os = newPosixStream(STDOUT_FILENO)
   var stats: Stat

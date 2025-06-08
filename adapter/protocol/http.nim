@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/envvars
 import std/options
 import std/posix
 import std/strutils
@@ -102,7 +101,7 @@ proc BrotliDecoderCreateInstance(alloc_func: brotli_alloc_func;
 proc BrotliDecoderDestroyInstance(state: ptr BrotliDecoderState)
 proc BrotliDecoderDecompressStream(state: ptr BrotliDecoderState;
   available_in: var csize_t; next_in: uint8PConstP;
-  available_out: out csize_t; next_out: var ptr uint8; total_out: ptr csize_t):
+  available_out: var csize_t; next_out: var ptr uint8; total_out: ptr csize_t):
   BrotliDecoderResult
 proc BrotliDecoderGetErrorCode(state: ptr BrotliDecoderState):
   BrotliDecoderErrorCode
@@ -421,23 +420,23 @@ proc checkCert(os: PosixStream; ssl: ptr SSL) =
     os.die("InvalidResponse", $s)
 
 proc main*() =
-  let secure = getEnv("MAPPED_URI_SCHEME") == "https"
-  let username = getEnv("MAPPED_URI_USERNAME")
-  let password = getEnv("MAPPED_URI_PASSWORD")
-  let host = getEnv("MAPPED_URI_HOST")
+  let secure = getEnvEmpty("MAPPED_URI_SCHEME") == "https"
+  let username = getEnvEmpty("MAPPED_URI_USERNAME")
+  let password = getEnvEmpty("MAPPED_URI_PASSWORD")
+  let host = getEnvEmpty("MAPPED_URI_HOST")
   let port = getEnvEmpty("MAPPED_URI_PORT", if secure: "443" else: "80")
   let path = getEnvEmpty("MAPPED_URI_PATH", "/")
-  let query = getEnv("MAPPED_URI_QUERY")
+  let query = getEnvEmpty("MAPPED_URI_QUERY")
   let os = newPosixStream(STDOUT_FILENO)
   let ps = if secure:
     let ssl = os.connectSSLSocket(host, port, useDefaultCA = true)
-    if getEnv("CHA_INSECURE_SSL_NO_VERIFY") != "1":
+    if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY", "0") != "1":
       os.checkCert(ssl)
     newSSLStream(ssl)
   else:
     os.connectSocket(host, port)
   let op = HTTPHandle(ps: ps, os: os)
-  let requestMethod = getEnv("REQUEST_METHOD")
+  let requestMethod = getEnvEmpty("REQUEST_METHOD")
   var buf = requestMethod & ' ' & path
   if query != "":
     buf &= '?' & query
@@ -449,10 +448,10 @@ proc main*() =
   buf &= "Connection: close\r\n"
   if username != "":
     buf &= "Authorization: Basic " & btoa(username & ':' & password) & "\r\n"
-  let contentLength = getEnv("CONTENT_LENGTH")
+  let contentLength = getEnvEmpty("CONTENT_LENGTH")
   if (let x = parseUInt64(contentLength); x.isSome):
     buf &= "Content-Length: " & $x.get & "\r\n"
-  buf &= getEnv("REQUEST_HEADERS")
+  buf &= getEnvEmpty("REQUEST_HEADERS")
   buf &= "\r\n"
   if not op.ps.writeDataLoop(buf):
     os.die("ConnectionRefused", "error sending request header")

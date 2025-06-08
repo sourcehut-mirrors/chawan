@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import chame/tags
 import html/catom
 import html/dom
@@ -184,3 +186,5 @@ proc constructEntryList*(form: HTMLFormElement; submitter: Element = nil;
 
 proc addFormDataModule*(ctx: JSContext) =
   ctx.registerType(FormData)
+
+{.pop.} # raises: []

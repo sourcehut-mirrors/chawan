@@ -214,7 +214,7 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
   # That's it!
 
 proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
-    ocx, onx: out int; hadStr: out bool) =
+    ocx, onx: var int; hadStr: var bool) =
   var i = 0
   let cx = line.findFirstX(x, i) # first x of new string (before padding)
   var j = i

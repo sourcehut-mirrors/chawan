@@ -12,18 +12,18 @@ type PacketReader* = object
   bufIdx: int
   fds: seq[cint]
 
-proc sread*(r: var PacketReader; n: out SomeNumber)
-proc sread*[T](r: var PacketReader; s: out set[T])
-proc sread*[T: enum](r: var PacketReader; x: out T)
-proc sread*(r: var PacketReader; s: out string)
-proc sread*(r: var PacketReader; b: out bool)
+proc sread*(r: var PacketReader; n: var SomeNumber)
+proc sread*[T](r: var PacketReader; s: var set[T])
+proc sread*[T: enum](r: var PacketReader; x: var T)
+proc sread*(r: var PacketReader; s: var string)
+proc sread*(r: var PacketReader; b: var bool)
 proc sread*(r: var PacketReader; tup: var tuple)
-proc sread*[I, T](r: var PacketReader; a: out array[I, T])
-proc sread*[T](r: var PacketReader; s: out seq[T])
-proc sread*[U, V](r: var PacketReader; t: out Table[U, V])
+proc sread*[I, T](r: var PacketReader; a: var array[I, T])
+proc sread*[T](r: var PacketReader; s: var seq[T])
+proc sread*[U, V](r: var PacketReader; t: var Table[U, V])
 proc sread*(r: var PacketReader; obj: var object)
 proc sread*(r: var PacketReader; obj: var ref object)
-proc sread*[T](r: var PacketReader; o: out Option[T])
+proc sread*[T](r: var PacketReader; o: var Option[T])
 proc sread*(r: var PacketReader; c: var ARGBColor)
 proc sread*(r: var PacketReader; c: var CellColor)
 
@@ -81,16 +81,16 @@ proc readData*(r: var PacketReader; buffer: pointer; len: int) =
 proc recvFd*(r: var PacketReader): cint =
   return r.fds.pop()
 
-proc sread*(r: var PacketReader; n: out SomeNumber) =
+proc sread*(r: var PacketReader; n: var SomeNumber) =
   n = 0
   r.readData(addr n, sizeof(n))
 
-proc sread*[T: enum](r: var PacketReader; x: out T) =
+proc sread*[T: enum](r: var PacketReader; x: var T) =
   var i {.noinit.}: int
   r.sread(i)
   x = cast[T](i)
 
-proc sread*[T](r: var PacketReader; s: out set[T]) =
+proc sread*[T](r: var PacketReader; s: var set[T]) =
   var len {.noinit.}: int
   r.sread(len)
   s = {}
@@ -99,14 +99,14 @@ proc sread*[T](r: var PacketReader; s: out set[T]) =
     r.sread(x)
     s.incl(x)
 
-proc sread*(r: var PacketReader; s: out string) =
+proc sread*(r: var PacketReader; s: var string) =
   var len {.noinit.}: int
   r.sread(len)
   s = newString(len)
   if len > 0:
     r.readData(addr s[0], len)
 
-proc sread*(r: var PacketReader; b: out bool) =
+proc sread*(r: var PacketReader; b: var bool) =
   var n: uint8
   r.sread(n)
   if n == 1u8:
@@ -119,18 +119,18 @@ proc sread*(r: var PacketReader; tup: var tuple) =
   for f in tup.fields:
     r.sread(f)
 
-proc sread*[I; T](r: var PacketReader; a: out array[I, T]) =
+proc sread*[I; T](r: var PacketReader; a: var array[I, T]) =
   for x in a.mitems:
     r.sread(x)
 
-proc sread*[T](r: var PacketReader; s: out seq[T]) =
+proc sread*[T](r: var PacketReader; s: var seq[T]) =
   var len {.noinit.}: int
   r.sread(len)
   s = newSeq[T](len)
   for x in s.mitems:
     r.sread(x)
 
-proc sread*[U; V](r: var PacketReader; t: out Table[U, V]) =
+proc sread*[U; V](r: var PacketReader; t: var Table[U, V]) =
   var len {.noinit.}: int
   r.sread(len)
   t = initTable[U, V](len)
@@ -155,7 +155,7 @@ proc sread*(r: var PacketReader; obj: var ref object) =
   else:
     obj = nil
 
-proc sread*[T](r: var PacketReader; o: out Option[T]) =
+proc sread*[T](r: var PacketReader; o: var Option[T]) =
   var x: bool
   r.sread(x)
   if x:

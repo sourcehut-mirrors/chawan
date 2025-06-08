@@ -309,7 +309,7 @@ type CheckRefreshResult* = object
   # url == nil => self
   url*: URL
 
-func parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
+proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   var i = s.skipBlanks(0)
   let s0 = s.until(AllChars - AsciiDigit, i)
   let x = parseUInt32(s0, allowSign = false)

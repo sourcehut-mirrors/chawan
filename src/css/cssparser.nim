@@ -715,7 +715,7 @@ proc parseComponentValues*(iq: openArray[char]): seq[CSSComponentValue] =
     result.add(cvals.consumeComponentValue(i))
 
 proc nextCommaSepComponentValue(cvals: openArray[CSSComponentValue];
-    s: out seq[CSSComponentValue]; i: var int): bool =
+    s: var seq[CSSComponentValue]; i: var int): bool =
   s = @[]
   while i < cvals.len:
     let cvl = cvals.consumeComponentValue(i)

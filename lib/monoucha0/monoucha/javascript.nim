@@ -798,7 +798,9 @@ proc newJSProc(gen: var JSFuncGenerator; params: openArray[NimNode];
         return JS_EXCEPTION
     )
   jsBody.add(gen.jsCallAndRet)
-  let jsPragmas = newNimNode(nnkPragma).add(ident("cdecl"))
+  let jsPragmas = newNimNode(nnkPragma)
+    .add(ident("cdecl"))
+    .add(newTree(nnkExprColonExpr, ident("raises"), newNimNode(nnkBracket)))
   return newProc(gen.newName, params, jsBody, pragmas = jsPragmas)
 
 func getFuncName(fun: NimNode; jsname, staticName: string): string =
@@ -1574,7 +1576,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let global = asglobal and not globalparent
   endstmts.add(quote do:
     `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, `tabList`, `parent`,
-      `global`, `nointerface`, `finFun`, `namespace`, `unforgeable`,
+      cast[bool](`global`), `nointerface`, `finFun`, `namespace`, `unforgeable`,
       `staticfuns`)
   )
   stmts.add(newBlockStmt(endstmts))

@@ -421,7 +421,7 @@ proc curl_easy_strerror*(errornum: CURLcode): cstring
 proc curl_easy_nextheader*(curl: CURL; origin: cuint; request: cint;
   prev: ptr curl_header): ptr curl_header
 proc curl_easy_header*(curl: CURL; name: cstring; index: csize_t; origin: cuint;
-  request: cint; hout: out ptr curl_header): cint
+  request: cint; hout: var ptr curl_header): cint
 
 proc curl_url*(): CURLU
 proc curl_url_cleanup*(handle: CURLU)
@@ -481,7 +481,7 @@ template set(url: CURLU; part: CURLUPart; content: string; flags: cuint) =
 func curlErrorToChaError(res: CURLcode): string =
   return case res
   of CURLE_OK: ""
-  of CURLE_URL_MALFORMAT: "InvalidURL" #TODO should never occur...
+  of CURLE_URL_MALFORMAT: "InvalidURL"
   of CURLE_COULDNT_CONNECT: "ConnectionRefused"
   of CURLE_COULDNT_RESOLVE_PROXY: "FailedToResolveProxy"
   of CURLE_COULDNT_RESOLVE_HOST: "FailedToResolveHost"
@@ -632,7 +632,7 @@ proc main() =
     # compile either. In return, we are allowed to post >2G of data.
     curl.setopt(CURLOPT_POSTFIELDSIZE_LARGE, uint64(len))
     curl.setopt(CURLOPT_READFUNCTION, readFromStdin)
-  else: discard #TODO
+  else: discard
   let headers = getEnv("REQUEST_HEADERS")
   for line in headers.split("\r\n"):
     const needle = "Accept-Encoding: "

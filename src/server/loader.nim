@@ -489,7 +489,7 @@ proc pushBuffer(ctx: var LoaderContext; output: OutputHandle;
   pbrDone
 
 proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
-    targetPath: string; fileOutput: out OutputHandle; osent: out uint64): bool =
+    targetPath: string; fileOutput: var OutputHandle; osent: var uint64): bool =
   fileOutput = nil
   osent = 0
   discard mkdir(cstring(ctx.config.tmpdir), 0o700)

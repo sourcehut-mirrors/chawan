@@ -882,7 +882,13 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   pager.clearDisplay()
   pager.clearStatus()
   pager.consoleWrapper = pager.addConsole(interactive = istream != nil)
-  addExitProc((proc() = pager.cleanup()))
+  when NimMajor < 2:
+    try:
+      addExitProc((proc() = pager.cleanup()))
+    except Exception:
+      discard
+  else:
+    addExitProc((proc() = pager.cleanup()))
   if pager.config.start.startupScript != "":
     let ps = newPosixStream(pager.config.start.startupScript)
     let s = if ps != nil:
@@ -1864,7 +1870,7 @@ proc windowChange(pager: Pager) =
 # Note that this may modify the URL passed.
 proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     loaderConfig: var LoaderClientConfig; ourl: var URL;
-    cookieJarId: out string): BufferConfig =
+    cookieJarId: var string): BufferConfig =
   let host = url.host
   let ctx = pager.jsctx
   result = BufferConfig(

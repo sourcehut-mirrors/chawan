@@ -26,6 +26,8 @@
 #
 # We do not have syscall sandboxing on other systems (yet).
 
+{.push raises: [].}
+
 const disableSandbox {.booldefine.} = false
 
 type SandboxType* = enum
@@ -98,3 +100,5 @@ else:
 
   proc enterNetworkSandbox*() =
     discard
+
+{.pop.} # raises: []

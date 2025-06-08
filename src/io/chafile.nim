@@ -68,7 +68,7 @@ proc readLine*(file: ChaFile; s: var string): Opt[bool] =
     return err()
   ok(false)
 
-proc readAll*(file: ChaFile; s: out string): Opt[void] =
+proc readAll*(file: ChaFile; s: var string): Opt[void] =
   s = newString(4096)
   var n = 0
   while true:

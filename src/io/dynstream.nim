@@ -99,7 +99,7 @@ type
     fd*: cint
     blocking*: bool
 
-proc readAll*(s: PosixStream; buffer: out string): bool =
+proc readAll*(s: PosixStream; buffer: var string): bool =
   assert s.blocking
   buffer = newString(4096)
   var idx = 0
@@ -361,7 +361,7 @@ proc sendMsg*(s: SocketStream; buffer: openArray[uint8];
   return sendmsg(SocketHandle(s.fd), addr hdr, 0)
 
 proc recvMsg*(s: SocketStream; buffer: var openArray[uint8];
-    fdbuf: var openArray[cint]; numFds: out int): int =
+    fdbuf: var openArray[cint]; numFds: var int): int =
   assert buffer.len > 0
   var iov = IOVec(iov_base: addr buffer[0], iov_len: csize_t(buffer.len))
   let fdbufSize = sizeof(cint) * fdbuf.len

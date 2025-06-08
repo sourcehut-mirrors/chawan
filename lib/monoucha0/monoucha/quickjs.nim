@@ -114,36 +114,39 @@ type
   JSContext* = ptr JSContextT
   JSModuleDef* = ptr JSModuleDefT
   JSCFunction* = proc(ctx: JSContext; this_val: JSValueConst; argc: cint;
-      argv: JSValueConstArray): JSValue {.cdecl.}
+      argv: JSValueConstArray): JSValue {.cdecl, raises: [].}
   JSCFunctionMagic* = proc(ctx: JSContext; this_val: JSValueConst; argc: cint;
-      argv: JSValueConstArray; magic: cint): JSValue {.cdecl.}
+      argv: JSValueConstArray; magic: cint): JSValue {.cdecl, raises: [].}
   JSCFunctionData* = proc(ctx: JSContext; this_val: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint;
-    func_data: JSValueConstArray): JSValue {.cdecl.}
+    func_data: JSValueConstArray): JSValue {.cdecl, raises: [].}
   JSGetterFunction* = proc(ctx: JSContext; this_val: JSValueConst): JSValue
-    {.cdecl.}
+    {.cdecl, raises: [].}
   JSSetterFunction* = proc(ctx: JSContext; this_val, val: JSValueConst):
-    JSValue {.cdecl.}
+    JSValue {.cdecl, raises: [].}
   JSGetterMagicFunction* = proc(ctx: JSContext; this_val: JSValueConst;
-    magic: cint): JSValue {.cdecl.}
+    magic: cint): JSValue {.cdecl, raises: [].}
   JSSetterMagicFunction* = proc(ctx: JSContext; this_val, val: JSValueConst;
-    magic: cint): JSValue {.cdecl.}
+    magic: cint): JSValue {.cdecl, raises: [].}
   JSClassID* = uint32
   JSAtom* = distinct uint32
-  JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.cdecl.}
+  JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.
+    cdecl, raises: [].}
   JSClassCheckDestroy* = proc(rt: JSRuntime; val: JSValueConst): JS_BOOL
-    {.cdecl.}
+    {.cdecl, raises: [].}
   JSClassGCMark* = proc(rt: JSRuntime; val: JSValueConst;
-    mark_func: JS_MarkFunc) {.cdecl.}
-  JS_MarkFunc* = proc(rt: JSRuntime; gp: ptr JSGCObjectHeader) {.cdecl.}
+    mark_func: JS_MarkFunc) {.cdecl, raises: [].}
+  JS_MarkFunc* = proc(rt: JSRuntime; gp: ptr JSGCObjectHeader) {.
+    cdecl, raises: [].}
   JSModuleNormalizeFunc* = proc(ctx: JSContext; module_base_name,
-    module_name: cstringConst; opaque: pointer): cstring {.cdecl.}
+    module_name: cstringConst; opaque: pointer): cstring {.cdecl, raises: [].}
   JSModuleLoaderFunc* = proc(ctx: JSContext; module_name: cstringConst,
     opaque: pointer): JSModuleDef {.cdecl.}
   JSJobFunc* = proc(ctx: JSContext; argc: cint;
     argv: JSValueConstArray): JSValue {.cdecl.}
   JSGCObjectHeader* {.importc, header: qjsheader.} = object
-  JSFreeArrayBufferDataFunc* = proc(rt: JSRuntime; opaque, p: pointer) {.cdecl.}
+  JSFreeArrayBufferDataFunc* = proc(rt: JSRuntime; opaque, p: pointer) {.
+    cdecl, raises: [].}
 
   JSPropertyDescriptor* {.importc, header: qjsheader.} = object
     flags*: cint
@@ -498,7 +501,7 @@ proc js_mallocz*(ctx: JSContext; size: csize_t): pointer
 proc js_strdup*(ctx: JSContext; str: cstringConst): cstring
 proc js_strndup*(ctx: JSContext; str: cstringConst; n: csize_t): cstring
 
-proc JS_ComputeMemoryUsage*(rt: JSRuntime; s: out JSMemoryUsage)
+proc JS_ComputeMemoryUsage*(rt: JSRuntime; s: var JSMemoryUsage)
 # DumpMemoryUsage omitted; use getMemoryUsage instead
 
 # atom support
@@ -687,7 +690,7 @@ proc JS_SetOpaque*(obj: JSValueConst; opaque: pointer): cint {.discardable.}
 proc JS_GetOpaque*(obj: JSValueConst; class_id: JSClassID): pointer
 proc JS_GetOpaque2*(ctx: JSContext; obj: JSValueConst; class_id: JSClassID):
   pointer
-proc JS_GetAnyOpaque*(obj: JSValueConst; class_id: out JSClassID): pointer
+proc JS_GetAnyOpaque*(obj: JSValueConst; class_id: var JSClassID): pointer
 
 # 'buf' must be zero terminated i.e. buf[buf_len] = '\0'.
 proc JS_ParseJSON*(ctx: JSContext; buf: cstringConst; buf_len: csize_t;
@@ -729,7 +732,7 @@ proc JS_NewUint8Array*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
   len: csize_t; free_func: JSFreeArrayBufferDataFunc; opaque: pointer;
   is_shared: JS_BOOL): JSValue
 proc JS_GetTypedArrayType*(obj: JSValueConst): cint
-proc JS_GetUint8Array*(ctx: JSContext; psize: out csize_t; obj: JSValueConst):
+proc JS_GetUint8Array*(ctx: JSContext; psize: var csize_t; obj: JSValueConst):
   JS_BOOL
 proc JS_NewUint8ArrayCopy*(ctx: JSContext; buf: ptr UncheckedArray[uint8];
   len: csize_t): JSValue
@@ -774,7 +777,7 @@ proc JS_EnqueueJob*(ctx: JSContext; job_func: JSJobFunc; argc: cint;
   argv: JSValueConstArray): cint
 
 proc JS_IsJobPending*(rt: JSRuntime): JS_BOOL
-proc JS_ExecutePendingJob*(rt: JSRuntime; pctx: out JSContext): cint
+proc JS_ExecutePendingJob*(rt: JSRuntime; pctx: var JSContext): cint
 
 type JSSABTab* {.importc.} = object
   tab*: ptr ptr UncheckedArray[uint8]

@@ -2487,7 +2487,7 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
     table.state.size.h = y
 
 proc layoutCaption(lctx: LayoutContext; box: BlockBox; space: AvailableSpace;
-    sizes: out ResolvedSizes) =
+    sizes: var ResolvedSizes) =
   sizes = lctx.resolveBlockSizes(space, box.computed)
   lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
 

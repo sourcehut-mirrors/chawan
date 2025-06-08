@@ -74,8 +74,8 @@ proc libssh2_userauth_publickey_fromfile(session: ptr LIBSSH2_SESSION;
   username, publickey, privatekey, passphrase: cstring): cint {.nodecl.}
 proc libssh2_session_disconnect(session: ptr LIBSSH2_SESSION;
   description: cstring): cint {.nodecl.}
-proc libssh2_session_hostkey(session: ptr LIBSSH2_SESSION; len: out csize_t;
-  t: out cint): cstring
+proc libssh2_session_hostkey(session: ptr LIBSSH2_SESSION; len: var csize_t;
+  t: var cint): cstring
 proc libssh2_session_method_pref(session: ptr LIBSSH2_SESSION; method_type: cint;
   prefs: cstring): cint
 proc libssh2_session_free(session: ptr LIBSSH2_SESSION): cint
@@ -85,7 +85,7 @@ proc libssh2_knownhost_readfile(hosts: ptr LIBSSH2_KNOWNHOSTS,
   filename: cstring; t: cint): cint
 proc libssh2_knownhost_checkp(hosts: ptr LIBSSH2_KNOWNHOSTS; host: cstring;
   port: cint; key: cstring; keylen: csize_t; typemask: cint;
-  knownhost: out ptr libssh2_knownhost): cint
+  knownhost: var ptr libssh2_knownhost): cint
 proc libssh2_knownhost_get(hosts: ptr LIBSSH2_KNOWNHOSTS;
   store: ptr ptr libssh2_knownhost; prev: ptr libssh2_knownhost): cint
 proc libssh2_knownhost_free(hosts: ptr LIBSSH2_KNOWNHOSTS)
@@ -305,7 +305,7 @@ Content-Type: text/html
 # Fingerprint validation.
 # Yes, this is actually how you're supposed to do this.
 proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION;
-    host, port: string; hostsPath: out string): ptr LIBSSH2_KNOWNHOSTS =
+    host, port: string; hostsPath: var string): ptr LIBSSH2_KNOWNHOSTS =
   hostsPath = ""
   if getEnv("CHA_INSECURE_SSL_NO_VERIFY") == "1":
     return nil

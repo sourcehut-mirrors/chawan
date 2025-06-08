@@ -2,6 +2,6 @@ type
   NetworkBitmap* = ref object
     width*: int
     height*: int
-    cacheId*: int = -1
+    cacheId*: int
     imageId*: int
     contentType*: string
