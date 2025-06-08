@@ -2041,7 +2041,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
           replaceBackup.replaceRef = container
       else:
         pager.addContainer(container)
-    inc pager.numload
+      inc pager.numload
     return container
   else:
     let container = pager.container
@@ -2147,7 +2147,7 @@ proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
     {cfCanReinterpret, cfUserRequested})
   if container != nil:
     pager.addContainer(container)
-  inc pager.numload
+    inc pager.numload
 
 proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
   let url = newURL("stream:history").get
