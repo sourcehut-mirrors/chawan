@@ -12,7 +12,7 @@ import types/opt
 
 type
   PromiseState = enum
-    psPending, psFulfilled, psRejected
+    psPending, psFulfilled
 
   EmptyPromise* = ref object of RootObj
     cb: (proc() {.raises: [].})
