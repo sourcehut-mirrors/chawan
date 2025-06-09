@@ -181,15 +181,18 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     discard signal(SIGCHLD, SIG_DFL)
     # let's also reset SIGPIPE, which we ignored on init
     discard signal(SIGPIPE, SIG_DFL)
+    const ExecErrorMsg = "Cha-Control: ConnectionError " &
+      $int(ceFailedToExecuteCGIScript)
     for it in env:
       if twtstr.setEnv(it.name, it.value).isNone:
-        die("failed to set env vars")
+        stdout.fwrite(ExecErrorMsg & " failed to set env vars\n")
+        exitnow(1)
     if chdir(cstring(dir)) != 0:
-      die("failed to set working directory")
+      stdout.fwrite(ExecErrorMsg & " failed to set working directory\n")
+      exitnow(1)
     discard execl(cstring(cmd), cstring(basename), nil)
-    let code = int(ceFailedToExecuteCGIScript)
-    stdout.fwrite("Cha-Control: ConnectionError " & $code & " " &
-      ($strerror(errno)).deleteChars({'\n', '\r'}) & '\n')
+    let es = $strerror(errno)
+    stdout.fwrite(ExecErrorMsg & ' ' & es.deleteChars({'\n', '\r'}) & '\n')
     exitnow(1)
   else: # parent or error
     istream.sclose()
