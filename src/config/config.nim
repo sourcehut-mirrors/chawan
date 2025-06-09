@@ -854,11 +854,11 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
     return config.parseConfig(dir, toml.get, warnings, jsctx)
   return err("Fatal error: failed to parse config\n" & toml.error)
 
-proc getNormalAction*(config: Config; s: string): string =
-  return config.page.getOrDefault(s)
+template getNormalAction*(config: Config; s: string): string =
+  config.page.getOrDefault(s)
 
-proc getLinedAction*(config: Config; s: string): string =
-  return config.line.getOrDefault(s)
+template getLinedAction*(config: Config; s: string): string =
+  config.line.getOrDefault(s)
 
 proc openConfig*(dir: var string; override: Option[string];
     warnings: var seq[string]): PosixStream =
