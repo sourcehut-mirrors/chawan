@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-protocols(7) | Protocol support in Chawan
+% CHA-PROTOCOLS 7
 MANOFF -->
 
 # Protocols

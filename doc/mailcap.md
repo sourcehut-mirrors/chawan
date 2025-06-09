@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-mailcap(5) | Mailcap support in Chawan
+% CHA-MAILCAP 5
 MANOFF -->
 
 # Mailcap

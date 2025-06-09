@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-urimethodmap(5) | URI method map support in Chawan
+% CHA-URIMETHODMAP 5
 MANOFF -->
 
 # URI method map support in Chawan

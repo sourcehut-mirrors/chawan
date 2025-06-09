@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-config(5) | Configuration of Chawan
+% CHA-CONFIG 5
 MANOFF -->
 
 # Configuration of Chawan
@@ -61,6 +61,7 @@ Start-up options are to be placed in the `[start]` section.
 Following is a list of start-up options:
 
 <table>
+<col width=20%><col width=10%><col width=15%><col width=55%>
 
 <tr>
 <th>Name</th>
@@ -92,11 +93,13 @@ do not block loading.)</td>
 <td>false</td>
 <td>When set to true or "dump", the browser does not take input;
 instead, it prints a rendered version of all buffers in order, then
-exits.<br>
+exits.
+<p>
 The difference between `true` and "dump" is that `true` first waits
 for all scripts and network requests to run to completion, while "dump"
 does not.  This means that `true` may never exit when scripting is
-enabled (e.g. if a script sets `setInterval`.)<br>
+enabled (e.g. if a script sets `setInterval`.)
+<p>
 Piping `cha` to an external program or passing the `-d` switch has the
 same effect as setting this option to "dump".
 </td>
@@ -106,7 +109,8 @@ same effect as setting this option to "dump".
 <td>console-buffer</td>
 <td>boolean</td>
 <td>true</td>
-<td>Whether Chawan should open a console buffer in non-headless mode.<br>
+<td>Whether Chawan should open a console buffer in non-headless mode.
+<p>
 Warning: this is only useful for debugging. Disabling this option without
 manually redirecting standard error will result in error messages randomly
 appearing on your screen.</td>
@@ -152,6 +156,7 @@ a[href] { text-decoration: revert !important }
 Following is a list of buffer options:
 
 <table>
+<col width=20%><col width=15%><col width=10%><col width=55%>
 
 <tr>
 <th>Name</th>
@@ -172,11 +177,13 @@ not affect user styles.</td>
 <td>scripting</td>
 <td>boolean / "app"</td>
 <td>false</td>
-<td>Enable/disable JavaScript in *all* buffers.<br>
+<td>Enable/disable JavaScript in *all* buffers.
+<p>
 `"app"` also enables JavaScript APIs that can be used to fingerprint
 users (e.g. querying the window's size.) This may achieve better
 compatibility with websites that behave like applications, at the cost
-of reduced privacy.<br>
+of reduced privacy.
+<p>
 For security reasons, users are encouraged to selectively enable
 JavaScript with `[[siteconf]]` instead of using this setting.</td>
 </tr>
@@ -192,13 +199,15 @@ JavaScript with `[[siteconf]]` instead of using this setting.</td>
 <td>cookie</td>
 <td>boolean / "save"</td>
 <td>false</td>
-<td>Enable/disable cookies on sites.<br>
+<td>Enable/disable cookies on sites.
+<p>
 If the string "save" is specified, then cookies are also saved to
 `external.cookie-file`. `true` still reads cookies.txt, but does not
-modify it.<br>
+modify it.
+<p>
 In Chawan, each website gets a separate cookie jar, so websites relying
 on cross-site cookies may not work as expected. You may use the
-`[[siteconf]]` "share-cookie-jar" setting to adjust this behavior for
+`[[siteconf]]` `"share-cookie-jar"` setting to adjust this behavior for
 specific sites.</td>
 </tr>
 
@@ -206,7 +215,8 @@ specific sites.</td>
 <td>referer-from</td>
 <td>boolean</td>
 <td>false</td>
-<td>Enable/disable the "Referer" header.<br>
+<td>Enable/disable the "Referer" header.
+<p>
 Defaults to false. For privacy reasons, users are encouraged to leave this
 option disabled, only enabling it for specific sites in `[[siteconf]]`.
 </td>
@@ -217,7 +227,8 @@ option disabled, only enabling it for specific sites in `[[siteconf]]`.
 <td>boolean</td>
 <td>false</td>
 <td>When set to true, elements with an "autofocus" attribute are focused on
-automatically after the buffer is loaded.<br>
+automatically after the buffer is loaded.
+<p>
 If scripting is enabled, this also allows scripts to focus on elements.</td>
 </tr>
 
@@ -249,9 +260,11 @@ prints a list of URLs after the page.</td>
 <td>user-style</td>
 <td>string</td>
 <td>""</td>
-<td>A user stylesheet applied to all buffers.<br>
+<td>A user stylesheet applied to all buffers.
+<p>
 External stylesheets can be imported using the `@import 'file.css';`
-syntax.  Paths are relative to the configuration directory.<br>
+syntax.  Paths are relative to the configuration directory.
+<p>
 Nested @import is not supported yet.
 </td>
 </tr>
@@ -265,6 +278,7 @@ Search options are to be placed in the `[search]` section.
 Following is a list of search options:
 
 <table>
+<col width=20%><col width=15%><col width=10%><col width=55%>
 
 <tr>
 <th>Name</th>
@@ -286,7 +300,8 @@ Following is a list of search options:
 <td>"auto"</td>
 <td>When set to true, document-wide searches are case-insensitive by
 default. When set to "auto", searches are only case-sensitive when the search
-term includes a capital letter.<br>
+term includes a capital letter.
+<p>
 Note: this can also be overridden inline in the search bar (vim-style),
 with the escape sequences `\c` (ignore case) and `\C` (strict case). See
 [search mode](#search-mode) for details.)</td>
@@ -301,6 +316,7 @@ Encoding options are to be placed in the `[encoding]` section.
 Following is a list of encoding options:
 
 <table>
+<col width=20%><col width=15%><col width=15%><col width=50%>
 
 <tr>
 <th>Name</th>
@@ -313,7 +329,8 @@ Following is a list of encoding options:
 <td>document-charset</td>
 <td>array of charset label strings</td>
 <td>["utf-8", "sjis", "euc-jp", "latin2"]</td>
-<td>List of character sets for loading documents.<br>
+<td>List of character sets for loading documents.
+<p>
 All listed character sets are enumerated until the document has been decoded
 without errors. In HTML, meta tags and the BOM may override this with a
 different charset, so long as the specified charset can decode the document
@@ -325,8 +342,10 @@ correctly.
 <td>display-charset</td>
 <td>string</td>
 <td>"auto"</td>
-<td>Character set for keyboard input and displaying documents.<br>
-Used in dump mode as well.<br>
+<td>Character set for keyboard input and displaying documents.
+<p>
+Used in dump mode as well.
+<p>
 (This means that e.g. `cha -I EUC-JP -O UTF-8 a > b` is roughly equivalent to
 `iconv -f EUC-JP -t UTF-8`.)</td>
 </tr>
@@ -340,6 +359,7 @@ External options are to be placed in the `[external]` section.
 Following is a list of external options:
 
 <table>
+<col width=25%><col width=10%><col width=20%><col width=45%>
 
 <tr>
 <th>Name</th>
@@ -385,7 +405,8 @@ the line number.</td>
 <td>auto-mailcap</td>
 <td>path</td>
 <td>"auto.mailcap"</td>
-<td>Mailcap file for entries that are automatically executed.<br>
+<td>Mailcap file for entries that are automatically executed.
+<p>
 The "Open as" prompt also saves entries in this file.</td>
 </tr>
 
@@ -473,10 +494,12 @@ download.</td>
 <td>cookie-file</td>
 <td>path</td>
 <td>"cookies.txt"</td>
-<td>Path to the cookie file.<br>
+<td>Path to the cookie file.
+<p>
 The format is equivalent to curl's "cookies.txt" format, except that a
 "jar@" part is prepended for cookies that belong in a different jar
-than the domain.<br>
+than the domain.
+<p>
 Cookies from this file are used if "buffer.cookie" (or its equivalent
 siteconf override) is set to `true` or `"save"`. This means that `true`
 sets the cookie-file to a "read-only" mode.</td>
@@ -489,6 +512,7 @@ sets the cookie-file to a "read-only" mode.</td>
 Input options are to be placed in the `[input]` section.
 
 <table>
+<col width=20%><col width=10%><col width=10%><col width=60%>
 
 <tr>
 <th>Name</th>
@@ -500,7 +524,8 @@ Input options are to be placed in the `[input]` section.
 <td>vi-numeric-prefix</td>
 <td>boolean</td>
 <td>true</td>
-<td>Whether vi-style numeric prefixes to commands should be accepted.<br>
+<td>Whether vi-style numeric prefixes to commands should be accepted.
+<p>
 Only applies for keybindings defined in `[page]`.</td>
 </tr>
 
@@ -508,7 +533,8 @@ Only applies for keybindings defined in `[page]`.</td>
 <td>use-mouse</td>
 <td>boolean</td>
 <td>true</td>
-<td>Whether Chawan is allowed to intercept mouse clicks.<br>
+<td>Whether Chawan is allowed to intercept mouse clicks.
+<p>
 The current implementation imitates w3m.</td>
 </tr>
 
@@ -546,6 +572,7 @@ G = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
 Network options are to be placed in the `[network]` section.
 
 <table>
+<col width=25%><col width=12%><col width=13%><col width=50%>
 
 <tr>
 <th>Name</th>
@@ -574,7 +601,8 @@ below the threshold.</td>
 <td>prepend-scheme</td>
 <td>string</td>
 <td>"https://"</td>
-<td>Prepend this to URLs passed to Chawan without a scheme.<br>
+<td>Prepend this to URLs passed to Chawan without a scheme.
+<p>
 Note that local files (`file:` scheme) will always be checked first; only
 if this fails, Chawan will retry the request with `prepend-scheme` set as
 the scheme.</td>
@@ -587,7 +615,8 @@ the scheme.</td>
 <td>Specify a proxy for all network requests Chawan makes.  Currently,
 the formats `http://user:pass@domain` and `socks5://user:pass@domain`
 are accepted.  (Unlike in curl, `socks5h` is an alias of `socks5`, and
-DNS requests are always tunneled.)<br>
+DNS requests are always tunneled.)
+<p>
 Can be overridden by siteconf.</td>
 </tr>
 
@@ -603,11 +632,13 @@ overridden by siteconf.</td>
 <td>allow-http-from-file</td>
 <td>boolean</td>
 <td>false</td>
-<td>**WARNING: think twice before enabling this.**<br>
+<td>**WARNING: think twice before enabling this.**
+<p>
 Allows HTTP and HTTPS requests from the `file:` and `stream:` schemes.
 This is a very bad idea in general, because it allows local files to
 ping remote servers (a functionality commonly abused by HTML e-mails to
-track your mailbox activity.)<br>
+track your mailbox activity.)
+<p>
 On the other hand, it allows loading images in HTML e-mails if you
 don't care about the privacy implications.</td>
 </tr>
@@ -621,6 +652,7 @@ Display options are to be placed in the `[display]` section.
 Following is a list of display options:
 
 <table>
+<col width=33%><col width=17%><col width=10%><col width=40%>
 
 <tr>
 <th>Name</th>
@@ -661,7 +693,8 @@ completely.</td>
 <td>"auto"</td>
 <td>Specifies the image output mode. "sixel" uses sixels for output, "kitty"
 uses the Kitty image display protocol, "none" disables image display
-completely.<br>
+completely.
+<p>
 "auto" tries to detect sixel or kitty support, and falls back to "none" when
 neither are available.  This is the default setting, but you must also
 enable `buffer.images` for images to work.</td>
@@ -688,7 +721,8 @@ overrides the number of sixel color registers reported by the terminal.
 <td>color</td>
 <td>"cyan"</td>
 <td>Set the highlight color for incremental search and marks.  Both hex
-values and CSS color names are accepted.<br>
+values and CSS color names are accepted.
+<p>
 In monochrome mode, this setting is ignored; instead, reverse video is
 used.</td>
 </tr>
@@ -753,7 +787,8 @@ color detection to Chawan.</td>
 <td>bool</td>
 <td>true</td>
 <td>Enable/disable querying Primary Device Attributes, and with it, all
-"dynamic" terminal querying.<br>
+"dynamic" terminal querying.
+<p>
 Do not alter this value unless Chawan told you so; the output will look
 awful.</td>
 </tr>
@@ -785,6 +820,7 @@ Protocol-related rules are to be placed in objects keyed as
 `[protocol.ftp]`.
 
 <table>
+<col width=20%><col width=10%><col width=10%><col width=60%>
 
 <tr>
 <th>Name</th>
@@ -831,6 +867,7 @@ substitute-url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" 
 Omnirule options:
 
 <table>
+<col width=25%><col width=25%><col width=50%>
 
 <tr>
 <th>Name</th>
@@ -842,7 +879,8 @@ Omnirule options:
 <td>match</td>
 <td>regex</td>
 <td>Regular expression used to match the input string. Note that websites
-passed as arguments are matched as well.<br>
+passed as arguments are matched as well.
+<p>
 Note: regexes are handled according to the [match mode](#match-mode) regex
 handling rules.</td>
 </tr>
@@ -914,6 +952,7 @@ default-headers = {
 Siteconf options:
 
 <table>
+<col width=25%><col width=15%><col width=28%><col width=32%>
 
 <tr>
 <th>Name</th>
@@ -927,7 +966,8 @@ Siteconf options:
 <td>regex</td>
 <td>n/a</td>
 <td>Regular expression used to match the URL. Either this or the `host` option
-must be specified.<br>
+must be specified.
+<p>
 Note: regexes are handled according to the [match mode](#match-mode) regex
 handling rules.</td>
 </tr>
@@ -937,7 +977,8 @@ handling rules.</td>
 <td>regex</td>
 <td>n/a</td>
 <td>Regular expression used to match the host part of the URL (i.e. domain
-name/ip address.) Either this or the `url` option must be specified.<br>
+name/ip address.) Either this or the `url` option must be specified.
+<p>
 Note: regexes are handled according to the [match mode](#match-mode) regex
 handling rules.</td>
 </tr>
@@ -1028,7 +1069,8 @@ to this buffer.</td>
 <td>boolean</td>
 <td>n/a</td>
 <td>Defaults to false. When set to true, this disables peer and hostname
-verification for SSL keys on this site, like `curl --insecure` would.<br>
+verification for SSL keys on this site, like `curl --insecure` would.
+<p>
 Please do not use this unless you are absolutely sure you know what you
 are doing.</td>
 </tr>
@@ -1038,7 +1080,8 @@ are doing.</td>
 <td>boolean</td>
 <td>`buffer.autofocus`</td>
 <td>When set to true, elements with an "autofocus" attribute are focused
-on automatically after the buffer is loaded.<br>
+on automatically after the buffer is loaded.
+<p>
 If scripting is enabled, this also allows scripts to focus on
 elements.</td>
 </tr>
@@ -1072,7 +1115,8 @@ URL.</td>
 <td>user-style</td>
 <td>string</td>
 <td>`buffer.user-style`</td>
-<td>Specify a user style sheet specific to the site.<br>
+<td>Specify a user style sheet specific to the site.
+<p>
 Please refer to `buffer.user-style` for details.</td>
 </tr>
 
@@ -1127,6 +1171,7 @@ Examples:
 ### Pager actions
 
 <table>
+<col width=20%><col width=30%><col width=50%>
 
 <tr>
 <th>Default key</th>
@@ -1143,7 +1188,8 @@ Examples:
 <tr>
 <td><kbd>C-z</kbd></td>
 <td>`cmd.pager.suspend`</td>
-<td>Temporarily suspend the browser<br>
+<td>Temporarily suspend the browser
+<p>
 Note: this also suspends e.g. buffer processes or CGI scripts. So if you are
 downloading something, that will be delayed until you restart the process.</td>
 </tr>
@@ -1213,11 +1259,14 @@ open the link under the cursor.</td>
 <td>`cmd.pager.nextBuffer`, `cmd.pager.prevBuffer`,
 `cmd.pager.prevSiblingBuffer`, `cmd.pager.nextSiblingBufer`,
 `cmd.pager.parentBuffer`</td>
-<td>Traverse the buffer tree.<br>
+<td>Traverse the buffer tree.
+<p>
 `nextBuffer` and `prevBuffer` are the most intuitive, traversing the tree as if
-it were a linked list.<br>
+it were a linked list.
+<p>
 `prevSiblingBuffer` and `nextSiblingBuffer` cycle through the buffers opened
-from the same buffer.<br>
+from the same buffer.
+<p>
 Finally, `parentBuffer` always returns to the buffer the current buffer was
 opened from, even if e.g. the user returns and opens another page "in between".
 </td>
@@ -1315,6 +1364,7 @@ in `10gg`, n = 10.  If no preceding number is input, then it is left
 unspecified.
 
 <table>
+<col width=20%><col width=35%><col width=45%>
 
 <tr>
 <th>Default key</th>
@@ -1542,7 +1592,7 @@ page.</td>
 </tr>
 
 <tr>
-<td><kbd>|</kbd>, None</td>
+<td><kbd>&vert;</kbd>, None</td>
 <td>`cmd.buffer.gotoColumnOrBegin`, `cmd.buffer.gotoColumnOrEnd`</td>
 <td>If n is specified, jump to column n of the current line.
 Otherwise, jump to the first/last column.</td>
@@ -1558,7 +1608,8 @@ Otherwise, jump to the first/last column.</td>
 <td><kbd>&grave;</kbd>, <kbd>'</kbd></td>
 <td>`cmd.buffer.gotoMark`, `cmd.buffer.gotoMarkY`</td>
 <td>Wait for a character `x` and then jump to the mark with the ID `x` (if it
-exists on the page).<br>
+exists on the page).
+<p>
 `gotoMark` sets both the X and Y positions; gotoMarkY only sets the Y
 position.</td>
 </tr>
@@ -1611,6 +1662,7 @@ position.</td>
 ### Line-editing actions
 
 <table>
+<col width=20%><col width=30%><col width=50%>
 
 <tr>
 <th>Default key</th>

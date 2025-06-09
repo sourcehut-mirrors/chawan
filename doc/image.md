@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-image(7) | Image support in Chawan
+% CHA-IMAGE 7
 MANOFF -->
 
 # Inline images

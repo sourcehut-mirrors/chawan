@@ -1,0 +1,24 @@
+#!/bin/sh
+
+if test $# -ne 1
+then	echo "Usage: md2man [in]"
+	exit 1
+fi
+
+sed -e 's/<!-- MANOFF -->.*<!-- MANON -->//g' \
+	-e 's/<!-- MANON \(.*\) MANOFF -->/\1/g' \
+	-e '/<!-- MANOFF -->/,/<!-- MANON -->/d' \
+	-e '/^<!-- MANON$/d' \
+	-e '/^MANOFF -->$/d' \
+	"$1" | {
+	read -r line;
+	printf '%s\n' "${line#"%"}"
+	$PANDOC -p -t html
+} | {
+	read -r title section
+	$PANDOC -p -f html -t man --standalone \
+		--variable title="$title" \
+		--variable section="$section"
+} | {
+	sed -E '/^\.TH/s/""//g;/^\.TH/s/ *$//'
+} | awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1'

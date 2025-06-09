@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-css(7) | Image support in Chawan
+% CHA-CSS 7
 MANOFF -->
 
 # CSS in Chawan
@@ -138,7 +138,8 @@ the number of colors in Sixel/Kitty images).
   style sheet to highlight text in `<code>` tags.)
 
 * `text-transform` accepts the keyword `-cha-half-width`, which has the
-  opposite effect as `full-width`.<br>
+  opposite effect as `full-width`.
+
   This can be used in user style sheets to compress distracting ruby
   text: `rt{text-transform: -cha-half-width}`.  Characters without
   half-width counterparts are left intact, except hiragana is treated as

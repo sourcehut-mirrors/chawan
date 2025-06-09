@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-terminal(7) | Chawan terminal compatibility
+% CHA-TERMINAL 7
 MANOFF -->
 
 # Chawan terminal compatibility

@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-troubleshooting(7) | Troubleshooting Chawan
+% CHA-TROUBLESHOOTING 7
 MANOFF -->
 
 # Troubleshooting Chawan
@@ -18,11 +18,11 @@ If Chawan complains about xsel, either install it or edit
 
 ## Why do I get strange/incorrect/ugly colors?
 
-Chawan's display capabilities depend on what your terminal reports. In
+Chawan's display capabilities depend on what your terminal reports.  In
 particular:
 
 * if the `$COLORTERM` variable is not set, then it may fall back to 8-bit or
-  ANSI colors. Make sure you export it as `COLORTERM=truecolor`.
+  ANSI colors.  Make sure you export it as `COLORTERM=truecolor`.
 * if it does not respond to querying the background color, then Chawan's color
   contrast correction will likely malfunction. you can correct this using the
   `display.default-background-color`/`display.default-foreground-color`
@@ -47,9 +47,9 @@ At this point, you have two options:
 Ideally you should do both, to deal with cases like git help which shells out to
 man directly.
 
-There is still one problem with this solution: some programs will try to call
-`$PAGER` without shell expansion, breaking the `-T text/x-ansi` trick. To fix
-this, put a script somewhere in your `PATH`:
+There is still one problem with this solution: some programs will try
+to call `$PAGER` without shell expansion, breaking the `-T text/x-ansi`
+trick.  To fix this, put a script somewhere in your `PATH`:
 
 ```sh
 #!/bin/sh
@@ -86,19 +86,23 @@ To do the same for HTML and ANSI text, use `plaintext, pre`.
 ## Why does `$WEBSITE` look awful?
 
 Usually, this is because it uses some CSS features that are not yet implemented
-in Chawan. The most common offenders are grid and calc().
+in Chawan.  The most common offenders are grid and calc().
 
 There are three ways of dealing with this:
 
 1. If the website's contents are mostly text, install
-   [rdrview](https://github.com/eafer/rdrview). Then bind the following command
-   to a key of your choice in the [config](config.md#keybindings)
-   (e.g. `<space> r`):<br>
-   `' r' = "pager.externFilterSource('rdrview -Hu \"$CHA_URL\"')"`<br>
+   [rdrview](https://github.com/eafer/rdrview).
+   Then bind the following command to a key of your choice in the
+   [config](config.md#keybindings) (e.g. `<space> r`):
+
+   `' r' = "pager.externFilterSource('rdrview -Hu \"$CHA_URL\"')"`
+
    This does not fix the core problem, but will significantly improve your
    reading experience anyway.
+
 2. Complain [here](https://todo.sr.ht/~bptato/chawan), and wait until the
    problem goes away.
+
 3. Write a patch to fix the problem, and send it
    [here](https://lists.sr.ht/~bptato/chawan-devel).
 
@@ -106,16 +110,21 @@ There are three ways of dealing with this:
 
 Some potential fixes:
 
-* Logging in to websites requires cookies. Some websites also require cookie
-  sharing across domains. For security reasons, Chawan does not allow any of
-  this by default, so you will have to fiddle with siteconf to fix it. See
-  [config.md#siteconf](config.md#siteconf) for details.
-* Set the `referer-from` siteconf value to true; this will cause Chawan to send
-  a `Referer` header when navigating to other URLs from the target URL.
-* Enable JavaScript. If something broke, type M-c M-c to check the browser
-  console, then follow step 3. of the previous answer.<br>
-  Warning: remote JavaScript execution is inherently unsafe. Please only enable
-  JavaScript on websites you trust.
+* Logging in to websites requires cookies.  Some websites also require
+  cookie sharing across domains.  For security reasons, Chawan does not
+  allow any of this by default, so you will have to fiddle with siteconf
+  to fix it.  See [config.md#siteconf](config.md#siteconf) for details.
+
+* Set the `referer-from` siteconf value to true; this will cause Chawan
+  to send a `Referer` header when navigating to other URLs from the
+  target URL.
+
+* Enable JavaScript.  If something broke, type M-c M-c to check the
+  browser console, then follow step 3. of the previous answer.
+
+  Warning: remote JavaScript execution is inherently unsafe (inasmuch as
+  it is in all browsers).  Please only enable JavaScript on websites
+  you trust.
 
 ## Text areas discard my edits when I type C-c in my editor!
 
@@ -124,7 +133,7 @@ This is a bug in your shell:
 
 When Chawan runs an external text editor, it simply passes the `$EDITOR`
 command to the shell, and then examines its *wait status* to determine
-if your editor exited gracefully. This works if either the editor never
+if your editor exited gracefully.  This works if either the editor never
 receives a signal, or your shell implements WCE.
 
 However, if the editor (e.g. nvi) catches SIGINT on C-c, and the shell
@@ -141,7 +150,7 @@ editor = 'exec vi +%d'
 
 ## When I open Chawan from aerc, it prints garbage in the search field!
 
-This should be fixed in the latest aerc version. Please update aerc.
+This should be fixed in the latest aerc version.  Please update aerc.
 
 <!-- MANON
 ## See also

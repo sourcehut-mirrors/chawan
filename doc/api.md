@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-api(7) | Chawan's command API
+% CHA-API 7
 MANOFF -->
 
 # Chawan's command API
@@ -67,13 +67,15 @@ functions of this are:
 <tr>
 <td>`suspend()`</td>
 <td>Temporarily suspend the browser, by delivering the client process a
-SIGTSTP signal.<br>
+SIGTSTP signal.
+<p>
 Note: this suspends the entire process group.</td>
 </tr>
 
 <tr>
 <td>`readFile(path)`</td>
-<td>Read a file at `path`.<br>
+<td>Read a file at `path`.
+<p>
 Returns the file's content as a string, or null if the file does not
 exist.
 </td>
@@ -81,21 +83,24 @@ exist.
 
 <tr>
 <td>`writeFile(path, content)`</td>
-<td>Write `content` to the file at `path`.<br>
+<td>Write `content` to the file at `path`.
+<p>
 Throws a TypeError if this failed for whatever reason.
 </td>
 </tr>
 
 <tr>
 <td>`getenv(name, fallback = null)`</td>
-<td>Get an environment variable by `name`.<br>
+<td>Get an environment variable by `name`.
+<p>
 Returns `fallback` if the variable does not exist.
 </td>
 </tr>
 
 <tr>
 <td>`setenv(name, value)`</td>
-<td>Set an environment variable by `name`.<br>
+<td>Set an environment variable by `name`.
+<p>
 Throws a type error if the operation failed (e.g. because the variable's
 size exceeded an OS-specified limit.)
 </td>
@@ -113,16 +118,20 @@ size exceeded an OS-specified limit.)
 
 <tr>
 <td>`config`</td>
-<td>The config object.<br>
+<td>The config object.
+<p>
 A currently incomplete interface for retrieving and setting
 configuration options. In general, names are the same as in config.toml,
 except all `-` (ASCII hyphen) characters are stripped and the next
 character is upper-cased. e.g. `external.cgi-dir` can be
-queried as `config.external.cgiDir`, etc.<br>
+queried as `config.external.cgiDir`, etc.
+<p>
 Setting individual options sometimes works, but sometimes they do not
-get propagated as expected. Consider this an experimental API.<br>
+get propagated as expected. Consider this an experimental API.
+<p>
 Currently, `siteconf`, `protocol` and `omnirule` values are not exposed
-to JS.<br>
+to JS.
+<p>
 The configuration directory itself can be queried as `config.dir`.</td>
 </tr>
 
@@ -155,10 +164,12 @@ Following properties (functions/getters) are defined by `Pager`:
 
 <tr>
 <td>`load(url)`</td>
-<td>Put the specified address into the URL bar, and optionally load it.<br>
+<td>Put the specified address into the URL bar, and optionally load it.
+<p>
 Note that this performs auto-expansion of URLs, so Chawan will expand any
 matching omni-rules (e.g. search), try to open schemeless URLs with the default
-scheme/local files, etc.<br>
+scheme/local files, etc.
+<p>
 Opens a prompt with the current URL when no parameters are specified; otherwise,
 the string passed is displayed in the prompt. If this string ends with a newline
 (e.g. `pager.load("about:chawan\n")`), the URL is loaded directly.</td>
@@ -166,7 +177,8 @@ the string passed is displayed in the prompt. If this string ends with a newline
 
 <tr>
 <td>`loadSubmit(url)`</td>
-<td>Act as if `url` had been input into the address bar.<br>
+<td>Act as if `url` had been input into the address bar.
+<p>
 Same as `pager.load(url + "\n")`.</td>
 </tr>
 
@@ -174,13 +186,17 @@ Same as `pager.load(url + "\n")`.</td>
 <td>`gotoURL(url, options = {replace: null, contentType: null, save: false})`</td>
 <td>Go to the specified URL immediately (without a prompt). This differs from
 `loadSubmit` in that it loads the exact URL as passed (no prepending https,
-etc.)<br>
+etc.)
+<p>
 When `replace` is set, the new buffer may replace the old one if it loads
-successfully.<br>
+successfully.
+<p>
 When `contentType` is set, the new buffer's content type is
-forcefully set to that string.<br>
+forcefully set to that string.
+<p>
 When `save` is true, the user is prompted to save the resource instead
-of displaying it in a buffer.<br>
+of displaying it in a buffer.
+<p>
 </td>
 </tr>
 
@@ -257,7 +273,8 @@ first result.</td>
 
 <tr>
 <td>`gotoLine(n?)`</td>
-<td>Go to the line passed as the first argument.<br>
+<td>Go to the line passed as the first argument.
+<p>
 If no arguments were specified, an input window for entering a line is
 shown.</td>
 </tr>
@@ -287,7 +304,8 @@ press again -> URL)</td>
 <tr>
 <td>`ask(prompt)`</td>
 <td>Ask the user for confirmation. Returns a promise which resolves to a
-boolean value indicating whether the user responded with yes.<br>
+boolean value indicating whether the user responded with yes.
+<p>
 Can be used to implement an exit prompt like this:
 ```
 q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(0))'
@@ -297,20 +315,25 @@ q = 'pager.ask("Do you want to exit Chawan?").then(x => x ? pager.quit() : void(
 
 <tr>
 <td>`askChar(prompt)`</td>
-<td>Ask the user for any character.<br>
+<td>Ask the user for any character.
+<p>
 Like `pager.ask`, but the return value is a character.</td>
 </tr>
 
 <tr>
 <td>`extern(cmd, options = {env: { ... }, suspend: true, wait: false})`
 </td>
-<td>Run an external command `cmd`.<br>
+<td>Run an external command `cmd`.
+<p>
 By default, the `$CHA_URL` and `$CHA_CHARSET` variables are set; change
-this using the `env` option.<br>
+this using the `env` option.
+<p>
 `options.suspend` suspends the pager while the command is being
 executed, and `options.wait` makes it so the user must press a key
-before the pager is resumed.<br>
-Returns true if the command exited successfully, false otherwise.<br>
+before the pager is resumed.
+<p>
+Returns true if the command exited successfully, false otherwise.
+<p>
 Warning: this has a bug where the output is written to stdout even if suspend
 is true. Redirect to /dev/null in the command if this is not desired. (This
 will be fixed in the future.)</td>
@@ -333,9 +356,11 @@ value is `false`.</td>
 <tr>
 <td>`externFilterSource(cmd, buffer = null, contentType = null)`</td>
 <td>Redirects the specified (or if `buffer` is null, the current) buffer's
-source into `cmd`.<br>
+source into `cmd`.
+<p>
 Then, it pipes the output into a new buffer, with the content type `contentType`
-(or, if `contentType` is null, the original buffer's content type).<br>
+(or, if `contentType` is null, the original buffer's content type).
+<p>
 Returns `undefined`. (It should return a promise; TODO.)</td>
 </tr>
 
@@ -370,7 +395,8 @@ Also, the following static function is defined on `Pager` itself:
 
 <tr>
 <td>`Pager.oppositeDir(dir)`</td>
-<td>Return a string representing the direction opposite to `dir`.<br>
+<td>Return a string representing the direction opposite to `dir`.
+<p>
 For "next", this is "prev"; for "parent", "first-child"; for
 "prev-sibling", "next-sibling"; for "any", it is the same; for the rest,
 vice versa.</td>
@@ -405,7 +431,8 @@ Following properties (functions/getters) are defined by `Buffer`:
 <tr>
 <td>`cursorLeft(n = 1)`, `cursorRight(n = 1)`</td>
 <td>Move the cursor to the left/right by n cells, or if n is unspecified, by
-1.<br>
+1.
+<p>
 Note: `n` right now represents cells, but really it should represent characters.
 (The difference is that right now numbered cursorLeft/cursorRight is broken for
 double-width chars.)</td>
@@ -568,7 +595,8 @@ in vi.)</td>
 
 <tr>
 <td>`setMark(id, x = this.cursorx, y = this.cursory)`</td>
-<td>Set a mark at (x, y) using the name `id`.<br>
+<td>Set a mark at (x, y) using the name `id`.
+<p>
 Returns true if no other mark exists with `id`. If one already exists,
 it will be overridden and the function returns false.</td>
 </tr>
@@ -601,14 +629,16 @@ If the mark does not exist, return null.</td>
 <tr>
 <td>`cursorToggleSelection(n = 1, opts = {selectionType: "normal"})`</td>
 <td>Start a vim-style visual selection. The cursor is moved to the right
-by `n` cells.<br>
+by `n` cells.
+<p>
 selectionType may be "normal" (regular selection), "line" (line-based
 selection) and "column" (column-based selection).</td>
 </tr>
 
 <tr>
 <td>`getSelectionText()`</td>
-<td>Get the currently selected text.<br>
+<td>Get the currently selected text.
+<p>
 Returns a promise, so consumers must `await` it to get the text.</td>
 </tr>
 
@@ -636,20 +666,25 @@ Returns a promise, so consumers must `await` it to get the text.</td>
 <td>`setCursorX(x)`, `setCursorY(y)`, `setCursorXY(x, y)`,
 `setCursorXCenter(x)`, `setCursorYCenter(y)`, `setCursorXYCenter(x, y)`</td>
 <td>Set the cursor position to `x` and `y` respectively, scrolling the
-view if necessary.<br>
+view if necessary.
+<p>
 Variants that end with "Center" will also center the screen around the
 position if it is outside the screen.</td>
 </tr>
 
 <tr>
 <td>`find(dir)`</td>
-<td>Find the next buffer in the tree in a specific direction.<br>
+<td>Find the next buffer in the tree in a specific direction.
+<p>
 Possible values of `dir` are: `prev`, `next`, `prev-sibling`,
 `next-sibling`, `parent`, `first-child`, `any`.
-"next" and "prev" do a depth-first traversal.<br>
-"prev-sibling" and "next-sibling" cycle through sibling buffers.<br>
+"next" and "prev" do a depth-first traversal.
+<p>
+"prev-sibling" and "next-sibling" cycle through sibling buffers.
+<p>
 "parent" moves to the parent buffer, "first-child" to the first
-child.<br>
+child.
+<p>
 Finally, "any" moves either to "next", or if it does not exist, to
 "prev".
 </td>
@@ -669,7 +704,8 @@ currently under the cursor. Returns the empty string if no title is found.</td>
 
 <tr>
 <td>`cursorx`, `cursory`</td>
-<td>The x/y position of the cursor inside the buffer.<br>
+<td>The x/y position of the cursor inside the buffer.
+<p>
 Note that although the status line is 1-based, these values are 0-based.</td>
 </tr>
 
@@ -713,7 +749,8 @@ title.</td>
 <tr>
 <td>`select`</td>
 <td>Reference to the current `select` element's widget, or null if no
-`select` element is open.<br>
+`select` element is open.
+<p>
 This object implements the `Select` interface, which is somewhat
 compatible with the `Buffer` interface with some exceptions. (TODO:
 elaborate)</td>

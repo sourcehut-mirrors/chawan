@@ -1,5 +1,5 @@
 <!-- MANON
-% cha-localcgi(5) | Local CGI support in Chawan
+% CHA-LOCALCGI 5
 MANOFF -->
 
 # Local CGI support in Chawan

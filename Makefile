@@ -84,7 +84,7 @@ endif
 FLAGS += -d:disableSandbox=$(DANGER_DISABLE_SANDBOX)
 FLAGS += -d:forcePollMode=$(FORCE_POLL_MODE)
 
-export CC CFLAGS LDFLAGS
+export CC CFLAGS LDFLAGS PANDOC
 
 binaries = $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha
 binaries += $(foreach bin,$(protocols),$(OUTDIR_CGI_BIN)/$(bin))
@@ -204,20 +204,12 @@ $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/nim.cfg
 $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 	(cd "$(OUTDIR_LIBEXEC)" && ln -sf urlenc urldec)
 
-$(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
-	@mkdir -p "$(OBJDIR)/man"
-	./md2manpreproc $< > $@~
+doc/cha-%.5: doc/%.md md2man
+	./md2man $< > $@~
 	mv $@~ $@
 
-$(OBJDIR)/man/cha-%.md.roff: $(OBJDIR)/man/cha-%.md
-	$(PANDOC) --standalone --to man $< -o $@
-
-doc/cha-%.5: $(OBJDIR)/man/cha-%.md.roff
-	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@~
-	mv $@~ $@
-
-doc/cha-%.7: $(OBJDIR)/man/cha-%.md.roff
-	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@~
+doc/cha-%.7: doc/%.md md2man
+	./md2man $< > $@~
 	mv $@~ $@
 
 .PHONY: clean
