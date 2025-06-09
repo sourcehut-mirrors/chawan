@@ -67,6 +67,7 @@ paste-cmd = 'xsel -bo'
 
 [network]
 max-redirect = 10
+max-net-connections = 12
 prepend-scheme = "https://"
 prepend-https = true # deprecated, kept only for backwards-compatibility
 default-headers = {

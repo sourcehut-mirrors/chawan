@@ -141,6 +141,7 @@ type
 
   NetworkConfig = object
     maxRedirect* {.jsgetset.}: int32
+    maxNetConnections* {.jsgetset.}: int32
     prependHttps*: DeprecatedSchemeBool
     prependScheme* {.jsgetset.}: string
     proxy* {.jsgetset.}: URL

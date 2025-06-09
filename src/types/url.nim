@@ -1266,7 +1266,7 @@ proc origin*(url: URL): Origin =
 # "scheme://host:port/blah" instead of "scheme:/blah", *except* for
 # file URLs which are special-cased for legacy reasons (they become
 # "file:///blah", but are treated as absoluteURI).
-func isNetPath(url: URL): bool =
+func isNetPath*(url: URL): bool =
   return url.hostType != htNone and url.schemeType != stFile
 
 # This follows somewhat different rules from the standard:

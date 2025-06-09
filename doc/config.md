@@ -533,6 +533,15 @@ Network options are to be placed in the `[network]` section.
 </tr>
 
 <tr>
+<td>max-net-connections</td>
+<td>number</td>
+<td>12</td>
+<td>Maximum number of simultaneous network connections allowed in one
+buffer.  Further connections are held back until the number returns
+below the threshold.</td>
+</tr>
+
+<tr>
 <td>prepend-scheme</td>
 <td>string</td>
 <td>"https://"</td>

@@ -86,6 +86,7 @@ type
     contentLen: uint64 # value of Content-Length; uint64.high if no such header
     bytesSeen: uint64 # number of bytes read until now
     startTime: Time # time when download of the body was started
+    connectionOwner: ClientHandle # set if the handle counts in numConnections
 
   OutputHandle = ref object of LoaderHandle
     parent: InputHandle
@@ -126,6 +127,11 @@ type
     config: LoaderClientConfig
     # List of credentials the client has access to (same origin only).
     authMap: seq[AuthItem]
+    # Number of ongoing requests in this client.
+    numConnections: int
+    # Requests that will only be sent once n no longer exceeds
+    # maxNetConnections.
+    pending: seq[(InputHandle, Request, URL)]
 
   DownloadItem = ref object
     path: string
@@ -157,6 +163,7 @@ type
     unregClient: seq[ClientHandle]
     downloadList: seq[DownloadItem]
     cookieStream: OutputHandle
+    pendingConnections: seq[ClientHandle]
 
   LoaderConfig* = object
     cgiDir*: seq[string]
@@ -165,12 +172,17 @@ type
     tmpdir*: string
     configdir*: string
     bookmark*: string
+    maxNetConnections*: int
 
   PushBufferResult = enum
     pbrDone, pbrUnregister
 
   CommandResult = enum
     cmdrDone, cmdrEOF
+
+# Forward declarations
+proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
+  request: Request; prevURL: URL; config: LoaderClientConfig)
 
 proc pushBuffer(ctx: var LoaderContext; output: OutputHandle;
   buffer: LoaderBuffer; ignoreSuspension: bool): PushBufferResult
@@ -348,6 +360,13 @@ proc iclose(ctx: var LoaderContext; handle: InputHandle) =
     ctx.unset(handle)
     handle.stream.sclose()
     handle.stream = nil
+  let client = handle.connectionOwner
+  if client != nil:
+    if client.numConnections == ctx.config.maxNetConnections and
+        client.pending.len > 0:
+      ctx.pendingConnections.add(client)
+    dec client.numConnections
+    handle.connectionOwner = nil
 
 proc oclose(ctx: var LoaderContext; output: OutputHandle) =
   ctx.unset(output)
@@ -939,18 +958,33 @@ proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
 
 proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     request: Request; prevURL: URL; config: LoaderClientConfig) =
+  if prevURL != nil and not ctx.isPrivileged(client) and prevURL.isNetPath():
+    # Quick hack to throttle the number of simultaneous ongoing
+    # connections.
+    # We do not want to throttle non-net paths and requests originating
+    # from the pager (i.e. client is privileged); in the former case,
+    # we are probably dealing with local requests, and in the latter
+    # case, the config may be different than client.config.
+    handle.connectionOwner = client
+    if client.numConnections >= ctx.config.maxNetConnections:
+      client.pending.add((handle, request, prevURL))
+      return
+    inc client.numConnections
   let cpath = ctx.parseCGIPath(request)
   if cpath.cmd == "" or cpath.basename in ["", ".", ".."] or
       cpath.basename[0] == '~':
     ctx.rejectHandle(handle, ceInvalidCGIPath)
+    ctx.close(handle)
     return
   if not fileExists(cpath.cmd):
     ctx.rejectHandle(handle, ceCGIFileNotFound)
+    ctx.close(handle)
     return
   # Pipe the response body as stdout.
   var pipefd: array[2, cint] # child -> parent
   if pipe(pipefd) == -1:
     ctx.rejectHandle(handle, ceFailedToSetUpCGI)
+    ctx.close(handle)
     return
   let istreamOut = newPosixStream(pipefd[0]) # read by loader
   var ostreamOut = newPosixStream(pipefd[1]) # written by child
@@ -964,6 +998,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     ostreamOut = newPosixStream(tmpf, O_CREAT or O_RDWR, 0o600)
     if ostreamOut == nil:
       ctx.rejectHandle(handle, ceCGIFailedToOpenCacheOutput)
+      ctx.close(handle)
       return
     let cacheId = handle.output.outputId # welp
     let item = CachedItem(
@@ -985,23 +1020,27 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     (istream, n) = client.openCachedItem(request.body.cacheId)
     if istream == nil:
       ctx.rejectHandle(handle, ceCGICachedBodyNotFound)
+      ctx.close(handle)
       return
     cachedHandle = ctx.findCachedHandle(request.body.cacheId)
     if cachedHandle != nil: # cached item still open, switch to streaming mode
       if client.cacheMap[n].offset == -1:
         ctx.rejectHandle(handle, ceCGICachedBodyUnavailable)
+        ctx.close(handle)
         return
       istream2 = istream
   elif request.body.t == rbtOutput:
     outputIn = ctx.findOutput(request.body.outputId, client)
     if outputIn == nil:
       ctx.rejectHandle(handle, ceCGIOutputHandleNotFound)
+      ctx.close(handle)
       return
   if request.body.t in {rbtString, rbtMultipart, rbtOutput} or
       request.body.t == rbtCache and istream2 != nil:
     var pipefdRead: array[2, cint] # parent -> child
     if pipe(pipefdRead) == -1:
       ctx.rejectHandle(handle, ceFailedToSetUpCGI)
+      ctx.close(handle)
       return
     istream = newPosixStream(pipefdRead[0])
     ostream = newPosixStream(pipefdRead[1])
@@ -1041,6 +1080,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     ctx.rejectHandle(handle, ceFailedToSetUpCGI)
     if ostream != nil:
       ostream.sclose()
+    ctx.close(handle)
   else:
     handle.parser = HeaderParser(headers: newHeaders(hgResponse))
     handle.stream = istreamOut
@@ -1374,8 +1414,6 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       ctx.loadCGI(client, handle, request, prevurl, config)
       if handle.stream != nil:
         ctx.addFd(handle)
-      else:
-        ctx.close(handle)
     of stStream:
       ctx.loadStream(client, handle, request)
       if handle.stream != nil:
@@ -1858,6 +1896,22 @@ proc finishCycle(ctx: var LoaderContext) =
   ctx.unregRead.setLen(0)
   ctx.unregWrite.setLen(0)
   ctx.unregClient.setLen(0)
+  for client in ctx.pendingConnections:
+    if client.stream == nil:
+      continue
+    var j = ctx.config.maxNetConnections - client.numConnections
+    for (handle, request, prevURL) in client.pending:
+      if client.numConnections >= ctx.config.maxNetConnections:
+        break
+      ctx.loadCGI(client, handle, request, prevURL, client.config)
+      if handle.stream != nil:
+        ctx.addFd(handle)
+    let L = max(client.pending.len - j, 0)
+    for i in 0 ..< L:
+      client.pending[i] = client.pending[j]
+      inc j
+    client.pending.setLen(L)
+  ctx.pendingConnections.setLen(0)
 
 proc loaderLoop(ctx: var LoaderContext) =
   while true:
