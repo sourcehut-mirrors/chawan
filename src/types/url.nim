@@ -1371,4 +1371,4 @@ proc addURLModule*(ctx: JSContext) =
   ctx.registerType(URL)
   ctx.registerType(URLSearchParams)
 
-{.pop.}
+{.pop.} # raises: []

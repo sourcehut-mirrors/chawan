@@ -171,4 +171,4 @@ proc sread*(r: var PacketReader; c: var ARGBColor) =
 proc sread*(r: var PacketReader; c: var CellColor) =
   r.sread(uint32(c))
 
-{.pop.}
+{.pop.} # raises: []
