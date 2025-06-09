@@ -160,20 +160,11 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
         do:
           sheet.tagTable[tag] = @[rule]
     elif hashes.id != CAtomNull:
-      sheet.idTable.withValue(hashes.id, p):
-        p[].add(rule)
-      do:
-        sheet.idTable[hashes.id] = @[rule]
+      sheet.idTable.mgetOrPut(hashes.id, @[]).add(rule)
     elif hashes.class != CAtomNull:
-      sheet.classTable.withValue(hashes.class, p):
-        p[].add(rule)
-      do:
-        sheet.classTable[hashes.class] = @[rule]
+      sheet.classTable.mgetOrPut(hashes.class, @[]).add(rule)
     elif hashes.attr != CAtomNull:
-      sheet.attrTable.withValue(hashes.attr, p):
-        p[].add(rule)
-      do:
-        sheet.attrTable[hashes.attr] = @[rule]
+      sheet.attrTable.mgetOrPut(hashes.attr, @[]).add(rule)
     elif hashes.root:
       sheet.rootList.add(rule)
     else:
@@ -183,25 +174,13 @@ proc add*(sheet, sheet2: CSSStylesheet) =
   sheet.generalList.add(sheet2.generalList)
   sheet.rootList.add(sheet2.rootList)
   for key, value in sheet2.tagTable.pairs:
-    sheet.tagTable.withValue(key, p):
-      p[].add(value)
-    do:
-      sheet.tagTable[key] = value
+    sheet.tagTable.mgetOrPut(key, @[]).add(value)
   for key, value in sheet2.idTable.pairs:
-    sheet.idTable.withValue(key, p):
-      p[].add(value)
-    do:
-      sheet.idTable[key] = value
+    sheet.idTable.mgetOrPut(key, @[]).add(value)
   for key, value in sheet2.classTable.pairs:
-    sheet.classTable.withValue(key, p):
-      p[].add(value)
-    do:
-      sheet.classTable[key] = value
+    sheet.classTable.mgetOrPut(key, @[]).add(value)
   for key, value in sheet2.attrTable.pairs:
-    sheet.attrTable.withValue(key, p):
-      p[].add(value)
-    do:
-      sheet.attrTable[key] = value
+    sheet.attrTable.mgetOrPut(key, @[]).add(value)
 
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
   var sels = parseSelectors(rule.prelude)
