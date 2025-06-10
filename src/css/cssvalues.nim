@@ -615,8 +615,8 @@ template auto*(length: CSSLength): bool =
 template isPx*(length: CSSLength): bool =
   length.perc == 0
 
-template isPerc*(length: CSSLength): bool =
-  length.perc != 0
+func isPerc*(length: CSSLength): bool {.inline.} =
+  not isNaN(length.perc) and length.perc != 0
 
 func isZero*(length: CSSLength): bool {.inline.} =
   length.px == 0 and length.perc == 0
