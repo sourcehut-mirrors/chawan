@@ -240,20 +240,14 @@ func newHeaders*(guard: HeaderGuard; table: openArray[(string, string)]):
   let headers = newHeaders(guard)
   for (k, v) in table:
     let k = k.toHeaderCase()
-    headers.table.withValue(k, vs):
-      vs[].add(v)
-    do:
-      headers.table[k] = @[v]
+    headers.table.mgetOrPut(k, @[]).add(v)
   return headers
 
 func newHeaders*(guard: HeaderGuard; table: Table[string, string]): Headers =
   let headers = newHeaders(guard)
   for k, v in table:
     let k = k.toHeaderCase()
-    headers.table.withValue(k, vs):
-      vs[].add(v)
-    do:
-      headers.table[k] = @[v]
+    headers.table.mgetOrPut(k, @[]).add(v)
   return headers
 
 func newHeaders(obj = none(HeadersInit)): JSResult[Headers] {.jsctor.} =
@@ -267,10 +261,7 @@ func clone*(headers: Headers): Headers =
 
 proc add*(headers: Headers; k: string; v: sink string) =
   let k = k.toHeaderCase()
-  headers.table.withValue(k, p):
-    p[].add(v)
-  do:
-    headers.table[k] = @[v]
+  headers.table.mgetOrPut(k, @[]).add(v)
 
 proc `[]=`*(headers: Headers; k: string; v: sink string) =
   let k = k.toHeaderCase()
@@ -293,15 +284,11 @@ func getOrDefault*(headers: Headers; k: string; default = ""): string =
 proc del*(headers: Headers; k: string) =
   headers.table.del(k)
 
-func getAllCommaSplit*(headers: Headers; k: string): seq[string] =
-  headers.table.withValue(k, p):
-    return p[].join(",").split(',')
-  return @[]
-
 func getAllNoComma*(headers: Headers; k: string): seq[string] =
-  headers.table.withValue(k, p):
-    return p[]
-  return @[]
+  headers.table.getOrDefault(k, @[])
+
+func getAllCommaSplit*(headers: Headers; k: string): seq[string] =
+  headers.getAllNoComma(k).join(",").split(',')
 
 type CheckRefreshResult* = object
   # n is timeout in millis. -1 => not found
