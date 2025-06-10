@@ -74,7 +74,7 @@ func padToWidth*(s: string; size: uint32; schar = '$'): string =
   while i < s.len:
     pi = i
     w += uint32(s.nextUTF8(i).width())
-    if w > size - 1:
+    if w + 1 > size:
       break
     for j in pi ..< i:
       result &= s[j]
