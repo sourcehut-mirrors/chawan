@@ -169,11 +169,7 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
 
 proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   template set_cv(t, x, b: untyped) =
-    ctx.applyValue(makeEntry(t, CSSValueWord(x: b)), itUserAgent, {itUser})
-  template set_cv_new(t, x, b: untyped) =
-    const v = valueType(t)
-    let val = CSSValue(v: v, x: b)
-    ctx.applyValue(makeEntry(t, val), itUserAgent, {itUser})
+    ctx.applyValue(makeEntry(t, b), itUserAgent, {itUser})
   template map_width =
     let s = parseDimensionValues(element.attr(satWidth))
     if s.isSome:
@@ -184,11 +180,11 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
       set_cv cptHeight, length, s.get
   template map_width_nozero =
     let s = parseDimensionValues(element.attr(satWidth))
-    if s.isSome and s.get.num != 0:
+    if s.isSome and not s.get.isZero:
       set_cv cptWidth, length, s.get
   template map_height_nozero =
     let s = parseDimensionValues(element.attr(satHeight))
-    if s.isSome and s.get.num != 0:
+    if s.isSome and not s.get.isZero:
       set_cv cptHeight, length, s.get
   template map_bgcolor =
     let s = element.attr(satBgcolor)
@@ -232,8 +228,9 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   template map_cellspacing =
     let s = element.attrul(satCellspacing)
     if s.isSome:
-      let n = float32(s.get)
-      set_cv_new cptBorderSpacing, length2, CSSLength2(a: cssLength(n))
+      let n = cssLength(float32(s.get))
+      set_cv cptBorderSpacingInline, length, n
+      set_cv cptBorderSpacingBlock, length, n
 
   case element.tagType
   of TAG_TABLE:

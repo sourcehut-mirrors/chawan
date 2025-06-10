@@ -35,7 +35,7 @@ type
     mftScripting = "scripting"
 
   LengthRange = object
-    s: Slice[CSSLength]
+    s: Slice[float32]
     aeq: bool
     beq: bool
 
@@ -248,23 +248,21 @@ proc parseIntRange(parser: var MediaQueryParser; ismin, ismax: bool):
   of mqcLt, mqcLe:
     return ok(0 .. n)
 
-proc parseLength(parser: var MediaQueryParser): Opt[CSSLength] =
+proc parseLength(parser: var MediaQueryParser): Opt[float32] =
   let cval = parser.consume()
   let len = ?parseLength(cval, parser.attrs[])
-  if len.u != clPx:
+  if len.auto or len.perc != 0:
     return err()
-  return ok(len)
+  return ok(len.px)
 
 proc parseLengthRange(parser: var MediaQueryParser; ismin, ismax: bool):
     Opt[LengthRange] =
   if ismin:
     let a = ?parser.parseLength()
-    let b = cssLength(Inf)
-    return ok(LengthRange(s: a .. b, aeq: true, beq: false))
+    return ok(LengthRange(s: a .. float32(Inf), aeq: true, beq: false))
   if ismax:
-    let a = cssLength(0)
     let b = ?parser.parseLength()
-    return ok(LengthRange(s: a .. b, aeq: false, beq: true))
+    return ok(LengthRange(s: 0f32 .. b, aeq: false, beq: true))
   let comparison = ?parser.parseComparison()
   ?parser.skipBlanksCheckHas()
   let len = ?parser.parseLength()
@@ -272,11 +270,10 @@ proc parseLengthRange(parser: var MediaQueryParser; ismin, ismax: bool):
   of mqcEq:
     return ok(LengthRange(s: len .. len, aeq: true, beq: true))
   of mqcGt, mqcGe:
-    let b = cssLength(Inf)
+    let b = float32(Inf)
     return ok(LengthRange(s: len .. b, aeq: comparison == mqcGe, beq: false))
   of mqcLt, mqcLe:
-    let a = cssLength(0)
-    return ok(LengthRange(s: a .. len, aeq: false, beq: comparison == mqcLe))
+    return ok(LengthRange(s: 0f32 .. len, aeq: false, beq: comparison == mqcLe))
 
 proc parseFeature0(parser: var MediaQueryParser; t: MediaFeatureType;
     ismin, ismax: bool): Opt[MediaFeature] =
@@ -427,8 +424,8 @@ type
     attrsp: ptr WindowAttributes
 
 func appliesLR(feature: MediaFeature; n: float32): bool =
-  let a = feature.lengthrange.s.a.num
-  let b = feature.lengthrange.s.b.num
+  let a = feature.lengthrange.s.a
+  let b = feature.lengthrange.s.b
   return (feature.lengthrange.aeq and a == n or a < n) and
     (feature.lengthrange.beq and b == n or n < b)
 

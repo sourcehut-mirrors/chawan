@@ -508,9 +508,9 @@ proc resolveBlockOffset(box: CSSBox): Offset =
   let absolute = box.positioned and
     box.computed{"position"} in PositionAbsoluteFixed
   if absolute:
-    if box.computed{"left"}.u != clAuto or box.computed{"right"}.u != clAuto:
+    if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
       dims.incl(dtHorizontal)
-    if box.computed{"top"}.u != clAuto or box.computed{"bottom"}.u != clAuto:
+    if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
       dims.incl(dtVertical)
   var it {.cursor.} = box.parent
   while it != nil:

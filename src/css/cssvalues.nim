@@ -41,12 +41,15 @@ type
     cptTextAlign = "text-align"
     cptTextDecoration = "text-decoration"
     cptTextTransform = "text-transform"
+    cptVerticalAlign = "vertical-align"
     cptVisibility = "visibility"
     cptWhiteSpace = "white-space"
     cptWordBreak = "word-break"
 
     # word properties: stored as (64-bit) word
     cptBackgroundColor = "background-color"
+    cptBorderSpacingBlock = "-cha-border-spacing-block"
+    cptBorderSpacingInline = "-cha-border-spacing-inline"
     cptBottom = "bottom"
     cptChaColspan = "-cha-colspan"
     cptChaRowspan = "-cha-rowspan"
@@ -73,13 +76,12 @@ type
     cptPaddingTop = "padding-top"
     cptRight = "right"
     cptTop = "top"
-    cptVerticalAlign = "vertical-align"
+    cptVerticalAlignLength = "-cha-vertical-align-length"
     cptWidth = "width"
     cptZIndex = "z-index"
 
     # object properties: stored as a tagged ref object
     cptBackgroundImage = "background-image"
-    cptBorderSpacing = "border-spacing"
     cptContent = "content"
     cptCounterReset = "counter-reset"
     cptCounterIncrement = "counter-increment"
@@ -102,6 +104,8 @@ type
     cstFlex = "flex"
     cstFlexFlow = "flex-flow"
     cstOverflow = "overflow"
+    cstVerticalAlign = "vertical-align"
+    cstBorderSpacing = "border-spacing"
 
   CSSUnit* = enum
     cuAuto = ""
@@ -153,7 +157,6 @@ type
     cvtListStylePosition = "listStylePosition"
     cvtPosition = "position"
     cvtCaptionSide = "captionSide"
-    cvtLength2 = "length2"
     cvtBorderCollapse = "borderCollapse"
     cvtQuotes = "quotes"
     cvtCounterSet = "counterSet"
@@ -255,7 +258,7 @@ type
     ListStyleTypeJapaneseInformal = "japanese-informal"
     ListStyleTypeJapaneseFormal = "japanese-formal"
 
-  CSSVerticalAlign2* = enum
+  CSSVerticalAlign* = enum
     VerticalAlignBaseline = "baseline"
     VerticalAlignSub = "sub"
     VerticalAlignSuper = "super"
@@ -264,6 +267,7 @@ type
     VerticalAlignMiddle = "middle"
     VerticalAlignTop = "top"
     VerticalAlignBottom = "bottom"
+    VerticalAlignLength = "-cha-length"
 
   CSSTextAlign* = enum
     TextAlignStart = "start"
@@ -349,22 +353,14 @@ type
     OverflowOverlay = "overlay"
 
 type
-  CSSLengthType* = enum
-    clPx = "px"
-    clAuto = "auto"
-    clPerc = "%"
-
+  # CSSLength may represent:
+  # * if isNaN(px) and isNaN(perc), the ident "auto"
+  # * if px == 0, {px} pixels
+  # * if perc == 0, {perc}% of the parent dimensions
+  # * otherwise, {px} pixels + {perc}%
   CSSLength* = object
-    u*: CSSLengthType
-    # hack to support simple function calls like calc(100% - 10px).
-    addpx*: int16
-    num*: float32
-
-  CSSVerticalAlign* = object
-    keyword*: CSSVerticalAlign2
-    # inlined CSSLength so that this object fits into 1 word
-    u*: CSSLengthType
-    num*: float32
+    px*: float32
+    perc*: float32
 
   CSSContent* = object
     case t*: CSSContentType
@@ -383,10 +379,6 @@ type
   CSSCounterSet* = object
     name*: CAtom
     num*: int32
-
-  CSSLength2* = ref object
-    a*: CSSLength
-    b*: CSSLength
 
   CSSZIndex* = object
     `auto`*: bool
@@ -411,6 +403,7 @@ type
     textAlign*: CSSTextAlign
     textDecoration*: set[CSSTextDecoration]
     textTransform*: CSSTextTransform
+    verticalAlign*: CSSVerticalAlign
     visibility*: CSSVisibility
     whiteSpace*: CSSWhiteSpace
     wordBreak*: CSSWordBreak
@@ -421,7 +414,6 @@ type
     integer*: int32
     length*: CSSLength
     number*: float32
-    verticalAlign*: CSSVerticalAlign
     zIndex*: CSSZIndex
 
   CSSValue* = ref object
@@ -430,8 +422,6 @@ type
       content*: seq[CSSContent]
     of cvtQuotes:
       quotes*: CSSQuotes
-    of cvtLength2:
-      length2*: CSSLength2
     of cvtCounterSet:
       counterSet*: seq[CSSCounterSet]
     of cvtImage:
@@ -503,12 +493,15 @@ const ValueTypes = [
   cptTextAlign: cvtTextAlign,
   cptTextDecoration: cvtTextDecoration,
   cptTextTransform: cvtTextTransform,
+  cptVerticalAlign: cvtVerticalAlign,
   cptVisibility: cvtVisibility,
   cptWhiteSpace: cvtWhiteSpace,
   cptWordBreak: cvtWordBreak,
 
   # words
   cptBackgroundColor: cvtColor,
+  cptBorderSpacingBlock: cvtLength,
+  cptBorderSpacingInline: cvtLength,
   cptBottom: cvtLength,
   cptChaColspan: cvtInteger,
   cptChaRowspan: cvtInteger,
@@ -535,13 +528,12 @@ const ValueTypes = [
   cptPaddingTop: cvtLength,
   cptRight: cvtLength,
   cptTop: cvtLength,
-  cptVerticalAlign: cvtVerticalAlign,
+  cptVerticalAlignLength: cvtLength,
   cptWidth: cvtLength,
   cptZIndex: cvtZIndex,
 
   # pointers
   cptBackgroundImage: cvtImage,
-  cptBorderSpacing: cvtLength2,
   cptContent: cvtContent,
   cptCounterReset: cvtCounterSet,
   cptCounterIncrement: cvtCounterSet,
@@ -552,8 +544,8 @@ const ValueTypes = [
 const InheritedProperties = {
   cptColor, cptFontStyle, cptWhiteSpace, cptFontWeight, cptTextDecoration,
   cptWordBreak, cptListStyleType, cptTextAlign, cptListStylePosition,
-  cptCaptionSide, cptBorderSpacing, cptBorderCollapse, cptQuotes,
-  cptVisibility, cptTextTransform
+  cptCaptionSide, cptBorderSpacingInline, cptBorderSpacingBlock,
+  cptBorderCollapse, cptQuotes, cptVisibility, cptTextTransform
 }
 
 const OverflowScrollLike* = {OverflowScroll, OverflowAuto, OverflowOverlay}
@@ -617,10 +609,28 @@ func valueType*(prop: CSSPropertyType): CSSValueType =
 func isSupportedProperty*(s: string): bool =
   return propertyType(s).isSome
 
+template auto*(length: CSSLength): bool =
+  isNaN(length.px)
+
+template isPx*(length: CSSLength): bool =
+  length.perc == 0
+
+template isPerc*(length: CSSLength): bool =
+  length.perc != 0
+
+func isZero*(length: CSSLength): bool {.inline.} =
+  length.px == 0 and length.perc == 0
+
 func `$`*(length: CSSLength): string =
-  if length.u == clAuto:
+  if length.auto:
     return "auto"
-  return $length.num & $length.u
+  result = ""
+  if length.perc != 0:
+    result &= $length.perc & "%"
+  if length.px != 0:
+    if result.len > 0:
+      result &= " + "
+    result &= $length.px & "px"
 
 func `$`*(bmp: NetworkBitmap): string =
   return "" #TODO
@@ -658,10 +668,6 @@ func serialize(val: CSSValue): string =
   result = ""
   case val.v
   of cvtImage: return $val.image
-  of cvtLength2:
-    if val.length2 == nil:
-      return "0px 0px"
-    return $val.length2.a & " " & $val.length2.b
   of cvtContent:
     result = ""
     for x in val.content:
@@ -678,7 +684,6 @@ func serialize(val: CSSValueWord; t: CSSValueType): string =
   of cvtInteger: return $val.integer
   of cvtLength: return $val.length
   of cvtNumber: return $val.number
-  of cvtVerticalAlign: return $val.verticalAlign
   of cvtZIndex: return $val.zIndex
   else:
     assert false
@@ -703,6 +708,7 @@ func serialize(val: CSSValueBit; t: CSSValueType): string =
   of cvtTextAlign: return $val.textAlign
   of cvtTextDecoration: return $val.textDecoration
   of cvtTextTransform: return $val.textTransform
+  of cvtVerticalAlign: return $val.verticalAlign
   of cvtVisibility: return $val.visibility
   of cvtWhiteSpace: return $val.whiteSpace
   of cvtWordBreak: return $val.wordBreak
@@ -718,10 +724,23 @@ func serialize*(computed: CSSValues; p: CSSPropertyType): string =
 
 proc `$`*(computed: CSSValues): string =
   result = ""
+  const skip = {
+    cptVerticalAlignLength, cptBorderSpacingInline, cptBorderSpacingBlock
+  }
   for p in CSSPropertyType:
+    if p in skip:
+      continue
     result &= $p & ':'
+    if p == cptVerticalAlign:
+      if computed.bits[p].verticalAlign == VerticalAlignLength:
+        result &= computed.serialize(cptVerticalAlignLength)
+        result &= ';'
+        continue
     result &= computed.serialize(p)
     result &= ';'
+  result &= "border-spacing: " &
+    computed.serialize(cptBorderSpacingInline) & ' ' &
+    computed.serialize(cptBorderSpacingBlock) & ';'
 
 when defined(debug):
   func `$`*(val: CSSValue): string =
@@ -982,18 +1001,21 @@ func parseIdent[T: enum](cval: CSSComponentValue): Opt[T] =
   return err()
 
 template cssLength*(n: float32): CSSLength =
-  CSSLength(u: clPx, num: n)
+  CSSLength(px: n)
+
+template cssLengthPerc*(n: float32): CSSLength =
+  CSSLength(perc: n / 100)
 
 func resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
     CSSLength =
   return case u
-  of cuAuto: CSSLength(u: clAuto)
+  of cuAuto: CSSLength(px: NaN, perc: NaN)
   of cuEm, cuRem, cuCap, cuRcap, cuLh, cuRlh:
     cssLength(val * float32(attrs.ppl))
   of cuCh, cuRch: cssLength(val * float32(attrs.ppc))
   of cuIc, cuRic: cssLength(val * float32(attrs.ppc) * 2)
   of cuEx, cuRex: cssLength(val * float32(attrs.ppc) / 2)
-  of cuPerc: CSSLength(u: clPerc, num: val)
+  of cuPerc: cssLengthPerc(val)
   of cuPx: cssLength(val)
   of cuCm: cssLength(val * 37.8)
   of cuMm: cssLength(val * 3.78)
@@ -1012,7 +1034,7 @@ func parseLength(val: float32; u: string; attrs: WindowAttributes):
   let u = ?parseEnumNoCase[CSSUnit](u)
   return ok(resolveLength(u, val, attrs))
 
-const CSSLengthAuto* = CSSLength(u: clAuto)
+const CSSLengthAuto* = CSSLength(px: NaN, perc: NaN)
 
 func parseDimensionValues*(s: string): Option[CSSLength] =
   var i = s.skipBlanks(0)
@@ -1035,7 +1057,7 @@ func parseDimensionValues*(s: string): Option[CSSLength] =
       inc d
       inc i
   if i < s.len and s[i] == '%':
-    return some(CSSLength(num: n, u: clPerc))
+    return some(cssLengthPerc(n))
   return some(cssLength(n))
 
 func getColorToken(cvals: openArray[CSSComponentValue]; i: int;
@@ -1224,9 +1246,8 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
     let fun = CSSFunction(val)
     if fun.name == cftCalc:
       var i = 0
-      var ns = array[CSSLengthType, float32].default
-      var nmul = none(float32)
-      var t = clPx
+      var ns = CSSLength()
+      var nmulx = none(float32)
       var n = 0
       var delim = '+'
       if i == fun.value.len:
@@ -1243,37 +1264,35 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
           let ntok = ntokx.get
           if ntok.t in {cttNumber, cttINumber}:
             if n == 1:
-              if delim != '*' or nmul.isSome:
+              if delim != '*' or nmulx.isSome:
                 return err()
-              ns[t] *= ntok.nvalue
+              ns.px *= ntok.nvalue
+              ns.perc *= ntok.nvalue
             else:
-              nmul = some(ntok.nvalue)
+              nmulx = some(ntok.nvalue)
             inc i
             inc n
             continue
         let length = ?parseLength(fun.value[i], attrs, hasAuto)
-        if length.u == clPerc:
-          t = clPerc
-        if length.u == clAuto or delim notin {'+', '-', '*'}:
+        if length.auto or delim notin {'+', '-', '*'}:
           return err()
         let sign = if delim == '-': -1f32 else: 1f32
-        ns[length.u] += length.num * sign
-        if nmul.isSome:
+        ns.px += length.px * sign
+        ns.perc += length.perc * sign
+        if nmulx.isSome:
+          let nmul = nmulx.get
           if n > 1 or delim != '*':
             return err() # invalid or needs recursive descent
-          ns[t] *= nmul.get
-          nmul = none(float32)
+          ns.perc *= nmul
+          ns.px *= nmul
+          nmulx = none(float32)
         elif delim == '*':
           return err()
         inc i
         inc n
-      if nmul.isSome:
+      if nmulx.isSome:
         return err()
-      if t == clPx:
-        return ok(CSSLength(u: clPx, num: ns[clPx]))
-      if ns[clPx] notin float32(int16.low)..float32(int16.high):
-        return err()
-      return ok(CSSLength(u: clPerc, num: ns[clPerc], addpx: int16(ns[clPx])))
+      return ok(ns)
   return err()
 
 func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
@@ -1410,22 +1429,6 @@ func cssTextDecoration(cvals: openArray[CSSComponentValue]):
       s.incl(td)
   return ok(s)
 
-func cssVerticalAlign(cval: CSSComponentValue; attrs: WindowAttributes):
-    Opt[CSSVerticalAlign] =
-  if cval of CSSToken:
-    let tok = CSSToken(cval)
-    if tok.t == cttIdent:
-      let va2 = ?parseIdent[CSSVerticalAlign2](cval)
-      return ok(CSSVerticalAlign(keyword: va2))
-    else:
-      let length = ?parseLength(tok, attrs, hasAuto = false)
-      return ok(CSSVerticalAlign(
-        keyword: VerticalAlignBaseline,
-        u: length.u,
-        num: length.num
-      ))
-  return err()
-
 proc parseCounterSet(cvals: openArray[CSSComponentValue]; n: int32):
     Opt[seq[CSSCounterSet]] =
   template die =
@@ -1524,17 +1527,29 @@ func parseNumber(cval: CSSComponentValue; range: Slice[float32]): Opt[float32] =
         return ok(tok.nvalue)
   return err()
 
-proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
+proc makeEntry(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
   return CSSComputedEntry(et: ceObject, t: t, obj: obj)
 
-proc makeEntry*(t: CSSPropertyType; word: CSSValueWord): CSSComputedEntry =
+proc makeEntry(t: CSSPropertyType; word: CSSValueWord): CSSComputedEntry =
   return CSSComputedEntry(et: ceWord, t: t, word: word)
 
 proc makeEntry*(t: CSSPropertyType; bit: CSSValueBit): CSSComputedEntry =
   return CSSComputedEntry(et: ceBit, t: t, bit: bit.dummy)
 
-proc makeEntry*(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
+proc makeEntry(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
   return CSSComputedEntry(et: ceGlobal, t: t, global: global)
+
+proc makeEntry*(t: CSSPropertyType; length: CSSLength): CSSComputedEntry =
+  makeEntry(t, CSSValueWord(length: length))
+
+proc makeEntry*(t: CSSPropertyType; color: CSSColor): CSSComputedEntry =
+  makeEntry(t, CSSValueWord(color: color))
+
+proc makeEntry*(t: CSSPropertyType; integer: int32): CSSComputedEntry =
+  makeEntry(t, CSSValueWord(integer: integer))
+
+proc makeEntry(t: CSSPropertyType; number: float32): CSSComputedEntry =
+  makeEntry(t, CSSValueWord(number: number))
 
 proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
     entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
@@ -1615,7 +1630,8 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
     else: assert false
   of cvtZIndex: set_word zIndex, ?parseZIndex(cval)
   of cvtTextDecoration: set_bit textDecoration, ?cssTextDecoration(cvals)
-  of cvtVerticalAlign: set_word verticalAlign, ?cssVerticalAlign(cval, attrs)
+  of cvtVerticalAlign:
+    set_bit verticalAlign, ?parseIdent[CSSVerticalAlign](cval)
   of cvtTextAlign: set_bit textAlign, ?parseIdent[CSSTextAlign](cval)
   of cvtListStylePosition:
     set_bit listStylePosition, ?parseIdent[CSSListStylePosition](cval)
@@ -1623,11 +1639,6 @@ proc parseValue(cvals: openArray[CSSComponentValue]; t: CSSPropertyType;
   of cvtCaptionSide: set_bit captionSide, ?parseIdent[CSSCaptionSide](cval)
   of cvtBorderCollapse:
     set_bit borderCollapse, ?parseIdent[CSSBorderCollapse](cval)
-  of cvtLength2:
-    let a = ?cssAbsoluteLength(cval, attrs)
-    i = cvals.skipBlanks(i)
-    let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i], attrs)
-    set_new length2, CSSLength2(a: a, b: b)
   of cvtQuotes: set_new quotes, ?parseQuotes(cvals)
   of cvtCounterSet:
     let n = if t == cptCounterIncrement: 1i32 else: 0i32
@@ -1710,13 +1721,11 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
     for t in props:
       res.add(makeEntry(t, global))
     return ok(res)
-  var lengths: seq[CSSValueWord] = @[]
+  var lengths: seq[CSSLength] = @[]
   var i = 0
   while i < cvals.len:
     i = cvals.skipBlanks(i)
-    let length = ?parseLength(cvals[i], attrs, hasAuto = hasAuto)
-    let val = CSSValueWord(length: length)
-    lengths.add(val)
+    lengths.add(?parseLength(cvals[i], attrs, hasAuto = hasAuto))
     inc i
   case lengths.len
   of 1: # top, bottom, left, right
@@ -1836,30 +1845,24 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
         return err()
       if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
         # flex-grow
-        let val = CSSValueWord(number: r.get)
-        res.add(makeEntry(cptFlexGrow, val))
+        res.add(makeEntry(cptFlexGrow, r.get))
         i = cvals.skipBlanks(i + 1)
         if i < cvals.len:
           if not (cvals[i] of CSSToken):
             return err()
           if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
             # flex-shrink
-            let val = CSSValueWord(number: r.get)
-            res.add(makeEntry(cptFlexShrink, val))
+            res.add(makeEntry(cptFlexShrink, r.get))
             i = cvals.skipBlanks(i + 1)
       if res.len < 1: # flex-grow omitted, default to 1
-        let val = CSSValueWord(number: 1)
-        res.add(makeEntry(cptFlexGrow, val))
+        res.add(makeEntry(cptFlexGrow, 1f32))
       if res.len < 2: # flex-shrink omitted, default to 1
-        let val = CSSValueWord(number: 1)
-        res.add(makeEntry(cptFlexShrink, val))
+        res.add(makeEntry(cptFlexShrink, 1f32))
       if i < cvals.len:
         # flex-basis
-        let val = CSSValueWord(length: ?parseLength(cvals[i], attrs))
-        res.add(makeEntry(cptFlexBasis, val))
+        res.add(makeEntry(cptFlexBasis, ?parseLength(cvals[i], attrs)))
       else: # omitted, default to 0px
-        let val = CSSValueWord(length: cssLength(0))
-        res.add(makeEntry(cptFlexBasis, val))
+        res.add(makeEntry(cptFlexBasis, cssLength(0)))
   of cstFlexFlow:
     if global.isSome:
       res.addGlobals([cptFlexDirection, cptFlexWrap], global.get)
@@ -1884,13 +1887,43 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       if i >= cvals.len:
         return err()
       if (let xx = parseIdent[CSSOverflow](cvals[i]); xx.isSome):
-        var x = CSSValueBit(overflow: xx.get)
+        let x = CSSValueBit(overflow: xx.get)
         var y = x
         i = cvals.skipBlanks(i + 1)
         if i < cvals.len:
           y.overflow = ?parseIdent[CSSOverflow](cvals[i])
         res.add(makeEntry(cptOverflowX, x))
         res.add(makeEntry(cptOverflowY, y))
+  of cstVerticalAlign:
+    var i = cvals.skipBlanks(0)
+    let tok = ?cvals.getToken(i)
+    if i + 1 < cvals.len:
+      return err()
+    if global.isSome:
+      res.addGlobals([cptVerticalAlign, cptVerticalAlignLength], global.get)
+    elif tok.t == cttIdent:
+      var entry = CSSComputedEntry()
+      ?cvals.parseValue(cptVerticalAlign, entry, attrs)
+      res.add(entry)
+    else:
+      let length = ?parseLength(tok, attrs, hasAuto = false)
+      let val = CSSValueBit(verticalAlign: VerticalAlignLength)
+      res.add(makeEntry(cptVerticalAlign, val))
+      res.add(makeEntry(cptVerticalAlignLength, length))
+  of cstBorderSpacing:
+    var i = cvals.skipBlanks(0)
+    let tok = ?cvals.getToken(i)
+    if global.isSome:
+      res.addGlobals([cptBorderSpacingInline, cptBorderSpacingBlock],
+        global.get)
+    else:
+      let a = ?cssAbsoluteLength(tok, attrs)
+      i = cvals.skipBlanks(i + 1)
+      let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i], attrs)
+      if i + 1 < cvals.len:
+        return err()
+      res.add(makeEntry(cptBorderSpacingInline, a))
+      res.add(makeEntry(cptBorderSpacingBlock, b))
   return ok()
 
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue];

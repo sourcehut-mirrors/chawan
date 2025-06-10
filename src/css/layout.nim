@@ -113,18 +113,20 @@ func isDefinite(sc: SizeConstraint): bool =
   return sc.t in {scStretch, scFitContent}
 
 func canpx(l: CSSLength; sc: SizeConstraint): bool =
-  return l.u != clAuto and (l.u != clPerc or sc.t == scStretch)
+  return not l.auto and (l.perc == 0 or sc.t == scStretch)
 
 func px(l: CSSLength; p: LUnit): LUnit {.inline.} =
-  if l.u != clPerc:
-    return l.num.toLUnit()
-  return (p.toFloat32() * l.num / 100 + float32(l.addpx)).toLUnit()
+  if l.auto:
+    return 0
+  return (p.toFloat32() * l.perc + l.px).toLUnit()
 
 func px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
-  if l.u != clPerc:
-    return l.num.toLUnit()
+  if l.perc == 0:
+    return l.px.toLUnit()
+  if l.auto:
+    return 0
   if p.t == scStretch:
-    return (p.u.toFloat32() * l.num / 100 + float32(l.addpx)).toLUnit()
+    return (p.u.toFloat32() * l.perc + l.px).toLUnit()
   return 0
 
 func stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =
@@ -215,8 +217,8 @@ proc resolveUnderflow(sizes: var ResolvedSizes; parentSize: SizeConstraint;
     let send = computed.getLength(MarginEndMap[dim])
     let underflow = parentSize.u - sizes.space[dim].u -
       sizes.margin[dim].sum() - sizes.padding[dim].sum()
-    if underflow > 0 and start.u == clAuto:
-      if send.u != clAuto:
+    if underflow > 0 and start.auto:
+      if not send.auto:
         sizes.margin[dim].start = underflow
       else:
         sizes.margin[dim].start = underflow div 2
@@ -297,7 +299,7 @@ func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
     if computed.getLength(MinSizeMap[dim]).canpx(sc):
       let px = computed.getLength(MinSizeMap[dim]).spx(sc, computed, padding)
       res.a[dim].start = px
-      if computed.getLength(MinSizeMap[dim]).u == clPx:
+      if computed.getLength(MinSizeMap[dim]).isPx:
         res.mi[dim].start = px
         if flexItem: # for flex items, min-width overrides the intrinsic size.
           res.mi[dim].send = px
@@ -306,10 +308,10 @@ func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
 proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
     positioned: RelativeRect; computed: CSSValues; lctx: LayoutContext) =
   let paddingSum = sizes.padding[dtHorizontal].sum()
-  if computed{"width"}.u == clAuto:
+  if computed{"width"}.auto:
     let u = max(size.w - positioned[dtHorizontal].sum(), 0)
     let marginSum = sizes.margin[dtHorizontal].sum()
-    if computed{"left"}.u != clAuto and computed{"right"}.u != clAuto:
+    if not computed{"left"}.auto and not computed{"right"}.auto:
       # Both left and right are known, so we can calculate the width.
       # Well, but subtract padding and margin first.
       sizes.space.w = stretch(u - paddingSum - marginSum)
@@ -324,9 +326,9 @@ proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
 proc resolveAbsoluteHeight(sizes: var ResolvedSizes; size: Size;
     positioned: RelativeRect; computed: CSSValues; lctx: LayoutContext) =
   let paddingSum = sizes.padding[dtVertical].sum()
-  if computed{"height"}.u == clAuto:
+  if computed{"height"}.auto:
     let u = max(size.h - positioned[dtVertical].sum(), 0)
-    if computed{"top"}.u != clAuto and computed{"bottom"}.u != clAuto:
+    if not computed{"top"}.auto and not computed{"bottom"}.auto:
       # Both top and bottom are known, so we can calculate the height.
       # Well, but subtract padding and margin first.
       sizes.space.h = stretch(u - paddingSum - sizes.margin[dtVertical].sum())
@@ -405,7 +407,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     let u = olength.spx(space[odim], computed, paddingSum[odim])
       .minClamp(sizes.bounds.a[odim])
     sizes.space[odim] = stretch(u)
-    if olength.u == clPx:
+    if olength.isPx:
       sizes.bounds.mi[odim].start = max(u, sizes.bounds.mi[odim].start)
       sizes.bounds.mi[odim].send = min(u, sizes.bounds.mi[odim].send)
   elif sizes.space[odim].isDefinite():
@@ -414,8 +416,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       t: sizes.space[odim].t,
       u: minClamp(u, sizes.bounds.a[odim])
     )
-    if computed.getLength(MarginStartMap[odim]).u == clAuto or
-        computed.getLength(MarginEndMap[odim]).u == clAuto:
+    if computed.getLength(MarginStartMap[odim]).auto or
+        computed.getLength(MarginEndMap[odim]).auto:
       sizes.space[odim].t = scFitContent
   elif sizes.bounds.a[odim].send < LUnit.high:
     sizes.space[odim] = fitContent(sizes.bounds.a[odim].max())
@@ -429,7 +431,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
   if width.canpx(parentWidth):
     sizes.space.w = stretch(width.spx(parentWidth, computed, inlinePadding))
     sizes.resolveUnderflow(parentWidth, computed)
-    if width.u == clPx:
+    if width.isPx:
       let px = sizes.space.w.u
       sizes.bounds.mi[dim].start = max(sizes.bounds.mi[dim].start, px)
       sizes.bounds.mi[dim].send = min(sizes.bounds.mi[dim].send, px)
@@ -468,7 +470,7 @@ proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
   if height.canpx(parentHeight):
     let px = height.spx(parentHeight, computed, blockPadding)
     sizes.space.h = stretch(px)
-    if height.u == clPx:
+    if height.isPx:
       sizes.bounds.mi[dim].start = max(sizes.bounds.mi[dim].start, px)
       sizes.bounds.mi[dim].send = min(sizes.bounds.mi[dim].send, px)
   if sizes.space.h.isDefinite() and sizes.maxHeight < sizes.space.h.u or
@@ -691,6 +693,7 @@ type
     run: TextRun
     offset: Offset
     size: Size
+    baselineShift: CSSLength
 
   InlineState = object
     ibox: InlineBox
@@ -957,6 +960,7 @@ proc newWord(fstate: var FlowState; ibox: InlineBox) =
     run: TextRun(),
     size: size(w = 0, h = ch),
     vertalign: ibox.computed{"vertical-align"},
+    baselineShift: ibox.computed{"-cha-vertical-align-length"},
     baseline: ch
   )
   fstate.wrappos = -1
@@ -968,7 +972,7 @@ const TextAlignNone = {
 }
 
 proc positionAtom(lbstate: LineBoxState; iastate: var InlineAtomState) =
-  case iastate.vertalign.keyword
+  case iastate.vertalign
   of VerticalAlignBaseline:
     # Atom is placed at (line baseline) - (atom baseline) - len
     iastate.offset.y = lbstate.baseline - iastate.offset.y
@@ -1203,11 +1207,11 @@ func shouldWrap2(fstate: FlowState; w: LUnit): bool =
   return fstate.lbstate.size.w + w > fstate.lbstate.availableWidth
 
 func getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
-  return case iastate.vertalign.keyword
+  return case iastate.vertalign
   of VerticalAlignBaseline:
-    let length = CSSLength(u: iastate.vertalign.u, num: iastate.vertalign.num)
-    let len = length.px(fstate.cellHeight)
-    iastate.baseline + len
+    iastate.baseline
+  of VerticalAlignLength:
+    iastate.baseline + iastate.baselineShift.px(fstate.cellHeight)
   of VerticalAlignTop:
     0
   of VerticalAlignMiddle:
@@ -1463,15 +1467,15 @@ proc popPositioned(lctx: LayoutContext; size: Size) =
       # the available width, and we must re-layout.
       sizes.space.w = stretch(child.state.intr.w)
       lctx.layoutRootBlock(child, offset, sizes)
-    if child.computed{"left"}.u != clAuto:
+    if not child.computed{"left"}.auto:
       child.state.offset.x = positioned.left + sizes.margin.left
-    elif child.computed{"right"}.u != clAuto:
+    elif not child.computed{"right"}.auto:
       child.state.offset.x = size.w - positioned.right - child.state.size.w -
         sizes.margin.right
     # margin.left is added in layoutRootBlock
-    if child.computed{"top"}.u != clAuto:
+    if not child.computed{"top"}.auto:
       child.state.offset.y = positioned.top + sizes.margin.top
-    elif child.computed{"bottom"}.u != clAuto:
+    elif not child.computed{"bottom"}.auto:
       child.state.offset.y = size.h - positioned.bottom - child.state.size.h -
         sizes.margin.bottom
     else:
@@ -1742,6 +1746,7 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
       ibox: ibox,
       baseline: box.state.baseline + sizes.margin.top,
       vertalign: box.computed{"vertical-align"},
+      baselineShift: ibox.computed{"-cha-vertical-align-length"},
       size: box.outerSize(sizes)
     )
     var istate = InlineState(ibox: ibox)
@@ -1805,6 +1810,7 @@ proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
   let iastate = InlineAtomState(
     ibox: ibox,
     vertalign: ibox.computed{"vertical-align"},
+    baselineShift: ibox.computed{"-cha-vertical-align-length"},
     baseline: ibox.imgstate.size.h,
     size: ibox.imgstate.size
   )
@@ -1821,9 +1827,9 @@ proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
     #
     # So check if any dimension is fixed, and if yes, report the intrinsic
     # minimum dimension as that or the atom size (whichever is greater).
-    if computed{"width"}.u != clPerc or computed{"min-width"}.u != clPerc:
+    if not computed{"width"}.isPerc or not computed{"min-width"}.isPerc:
       fstate.intr.w = max(fstate.intr.w, ibox.imgstate.size.w)
-    if computed{"height"}.u != clPerc or computed{"min-height"}.u != clPerc:
+    if not computed{"height"}.isPerc or not computed{"min-height"}.isPerc:
       fstate.lbstate.intrh = max(fstate.lbstate.intrh, ibox.imgstate.size.h)
 
 proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
@@ -2263,7 +2269,7 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
 proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
   let firstChild = BlockBox(cell.firstChild)
   if firstChild != nil:
-    firstChild.state.offset.y = case cell.computed{"vertical-align"}.keyword
+    firstChild.state.offset.y = case cell.computed{"vertical-align"}
     of VerticalAlignTop: 0.toLUnit()
     of VerticalAlignMiddle: availableHeight div 2 - cell.state.size.h div 2
     of VerticalAlignBottom: availableHeight - cell.state.size.h
@@ -2316,7 +2322,7 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
       VerticalAlignTop, VerticalAlignMiddle, VerticalAlignBottom
     }
     if cell != nil:
-      if cell.computed{"vertical-align"}.keyword notin HasNoBaseline: # baseline
+      if cell.computed{"vertical-align"} notin HasNoBaseline: # baseline
         baseline = max(cell.state.firstBaseline, baseline)
         if cellw.rowspan > 1:
           toBaseline.add(cellw)
@@ -2416,7 +2422,7 @@ func needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
   of scStretch:
     return tctx.space.w.u != tctx.maxwidth
   of scFitContent:
-    return tctx.space.w.u > tctx.maxwidth and computed{"width"}.u != clAuto or
+    return tctx.space.w.u > tctx.maxwidth and not computed{"width"}.auto or
         tctx.space.w.u < tctx.maxwidth
 
 proc redistributeWidth(tctx: var TableContext) =
@@ -2494,10 +2500,8 @@ proc layoutCaption(lctx: LayoutContext; box: BlockBox; space: AvailableSpace;
 proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
     sizes: ResolvedSizes) =
   if table.computed{"border-collapse"} != BorderCollapseCollapse:
-    let spc = table.computed{"border-spacing"}
-    if spc != nil:
-      tctx.inlineSpacing = spc.a.px(0)
-      tctx.blockSpacing = spc.b.px(0)
+    tctx.inlineSpacing = table.computed{"-cha-border-spacing-inline"}.px(0)
+    tctx.blockSpacing = table.computed{"-cha-border-spacing-block"}.px(0)
   tctx.preLayoutTableRows(table) # first pass
   # Percentage sizes have been resolved; switch the table's space to
   # fit-content if its width is auto.
@@ -2727,10 +2731,10 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       # always layouted at (0, 0).
       let underflow = sizes.space[odim].u - it.child.state.size[odim] -
         it.sizes.margin[odim].sum()
-      if underflow > 0 and start.u == clAuto:
+      if underflow > 0 and start.auto:
         # we don't really care about the end margin, because that is
         # already taken into account by AvailableSpace
-        if send.u != clAuto:
+        if not send.auto:
           it.sizes.margin[odim].start = underflow
         else:
           it.sizes.margin[odim].start = underflow div 2
@@ -2770,7 +2774,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
   var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
   let flexBasis = child.computed{"flex-basis"}
   lctx.layoutFlexItem(child, childSizes)
-  if flexBasis.u != clAuto and sizes.space[dim].isDefinite:
+  if not flexBasis.auto and sizes.space[dim].isDefinite:
     # we can't skip this pass; it is needed to calculate the minimum
     # height.
     let minu = child.state.intr[dim]
