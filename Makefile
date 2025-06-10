@@ -72,6 +72,8 @@ ifneq ($(LDFLAGS),)
 FLAGS += $(foreach flag,$(LDFLAGS),--passl:$(flag))
 endif
 
+FLAGS += -d:disableSandbox=$(DANGER_DISABLE_SANDBOX)
+
 export CC CFLAGS LDFLAGS
 
 binaries = $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha
@@ -100,8 +102,7 @@ $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim res/* lib/chame0/chame/* \
 		res/map/idna_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
-                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) $(FLAGS) \
-		-o:"$(OUTDIR_BIN)/cha" src/main.nim
+                $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 
 $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim
 	@mkdir -p "$(OUTDIR_BIN)"
@@ -156,7 +157,6 @@ $(OUTDIR_LIBEXEC)/img2html: $(twtstr)
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
-		-d:disableSandbox=$(DANGER_DISABLE_SANDBOX) -d:curlLibName=$(CURLLIBNAME) \
 		-o:"$@" $<
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%
@@ -170,7 +170,7 @@ $(OUTDIR_LIBEXEC)/%: adapter/format/%
 $(OUTDIR_CGI_BIN)/%: adapter/img/%.nim
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
-                -d:disableSandbox=$(DANGER_DISABLE_SANDBOX) -o:"$@" $<
+                -o:"$@" $<
 
 ifeq ($(STATIC_LINK),1)
 $(OUTDIR_CGI_BIN)/http: $(OUTDIR_CGI_BIN)/ssl
