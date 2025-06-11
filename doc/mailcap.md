@@ -12,8 +12,8 @@ in Chawan.
 Note that Chawan's default mime.types file only recognizes a few file
 extensions, which may result in your entries not being executed if your
 system lacks an /etc/mime.types file.  Please consult
-the <!-- MANOFF -->[mime.types](mime.types.md)<!-- MANON -->
-<!-- MANON **cha-mime.types**(5) MANOFF --> documentation for details.
+the <!-- MANOFF -->[mime.types](mime.types.md)<!-- MANON --> <!-- MANON **cha-mime.types**(5) MANOFF -->
+documentation for details.
 
 For an exact description of the mailcap format, see
 [RFC 1524](https://www.rfc-editor.org/rfc/rfc1524).

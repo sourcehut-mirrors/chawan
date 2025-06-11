@@ -5,9 +5,8 @@ MANOFF -->
 # mime.types
 
 Chawan uses the mime.types file to recognize certain file extensions for
-matching mailcap entries. See the <!-- MANOFF -->[mailcap](mailcap.md)<!-- MANON -->
-<!-- MANON **cha-mailcap**(5) MANOFF --> documentation for a description
-of mailcap.
+matching mailcap entries. See the <!-- MANOFF -->[mailcap](mailcap.md)<!-- MANON --> <!-- MANON **cha-mailcap**(5) MANOFF -->
+documentation for a description of mailcap.
 
 ## Search path
 
