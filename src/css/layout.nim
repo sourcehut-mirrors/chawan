@@ -118,15 +118,15 @@ func canpx(l: CSSLength; sc: SizeConstraint): bool =
 func px(l: CSSLength; p: LUnit): LUnit {.inline.} =
   if l.auto:
     return 0
-  return (p.toFloat32() * l.perc + l.px).toLUnit()
+  return (p.toFloat32() * l.perc + l.npx).toLUnit()
 
 func px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
   if l.perc == 0:
-    return l.px.toLUnit()
+    return l.npx.toLUnit()
   if l.auto:
     return 0
   if p.t == scStretch:
-    return (p.u.toFloat32() * l.perc + l.px).toLUnit()
+    return (p.u.toFloat32() * l.perc + l.npx).toLUnit()
   return 0
 
 func stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =

@@ -253,7 +253,7 @@ proc parseLength(parser: var MediaQueryParser): Opt[float32] =
   let len = ?parseLength(cval, parser.attrs[])
   if len.auto or len.perc != 0:
     return err()
-  return ok(len.px)
+  return ok(len.npx)
 
 proc parseLengthRange(parser: var MediaQueryParser; ismin, ismax: bool):
     Opt[LengthRange] =

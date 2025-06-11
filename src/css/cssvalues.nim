@@ -355,11 +355,11 @@ type
 type
   # CSSLength may represent:
   # * if isNaN(px) and isNaN(perc), the ident "auto"
-  # * if px == 0, {px} pixels
-  # * if perc == 0, {perc}% of the parent dimensions
-  # * otherwise, {px} pixels + {perc}%
+  # * if px == 0, {npx} pixels
+  # * if perc == 0, {perc} * the parent dimensions (*not* a percentage)
+  # * otherwise, {npx} pixels + {perc}%
   CSSLength* = object
-    px*: float32
+    npx*: float32
     perc*: float32
 
   CSSContent* = object
@@ -610,7 +610,7 @@ func isSupportedProperty*(s: string): bool =
   return propertyType(s).isSome
 
 template auto*(length: CSSLength): bool =
-  isNaN(length.px)
+  isNaN(length.npx)
 
 template isPx*(length: CSSLength): bool =
   length.perc == 0
@@ -619,7 +619,7 @@ func isPerc*(length: CSSLength): bool {.inline.} =
   not isNaN(length.perc) and length.perc != 0
 
 func isZero*(length: CSSLength): bool {.inline.} =
-  length.px == 0 and length.perc == 0
+  length.npx == 0 and length.perc == 0
 
 func `$`*(length: CSSLength): string =
   if length.auto:
@@ -627,10 +627,10 @@ func `$`*(length: CSSLength): string =
   result = ""
   if length.perc != 0:
     result &= $length.perc & "%"
-  if length.px != 0:
+  if length.npx != 0:
     if result.len > 0:
       result &= " + "
-    result &= $length.px & "px"
+    result &= $length.npx & "px"
 
 func `$`*(bmp: NetworkBitmap): string =
   return "" #TODO
@@ -1001,15 +1001,18 @@ func parseIdent[T: enum](cval: CSSComponentValue): Opt[T] =
   return err()
 
 template cssLength*(n: float32): CSSLength =
-  CSSLength(px: n)
+  CSSLength(npx: n)
 
 template cssLengthPerc*(n: float32): CSSLength =
   CSSLength(perc: n / 100)
 
+const CSSLengthAuto* = CSSLength(npx: NaN, perc: NaN)
+const CSSLengthZero* = CSSLength(npx: 0, perc: 0)
+
 func resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
     CSSLength =
   return case u
-  of cuAuto: CSSLength(px: NaN, perc: NaN)
+  of cuAuto: CSSLengthAuto
   of cuEm, cuRem, cuCap, cuRcap, cuLh, cuRlh:
     cssLength(val * float32(attrs.ppl))
   of cuCh, cuRch: cssLength(val * float32(attrs.ppc))
@@ -1033,9 +1036,6 @@ func parseLength(val: float32; u: string; attrs: WindowAttributes):
     Opt[CSSLength] =
   let u = ?parseEnumNoCase[CSSUnit](u)
   return ok(resolveLength(u, val, attrs))
-
-const CSSLengthAuto* = CSSLength(px: NaN, perc: NaN)
-const CSSLengthZero* = CSSLength(px: 0, perc: 0)
 
 func parseDimensionValues*(s: string): Option[CSSLength] =
   var i = s.skipBlanks(0)
@@ -1267,7 +1267,7 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
             if n == 1:
               if delim != '*' or nmulx.isSome:
                 return err()
-              ns.px *= ntok.nvalue
+              ns.npx *= ntok.nvalue
               ns.perc *= ntok.nvalue
             else:
               nmulx = some(ntok.nvalue)
@@ -1278,14 +1278,14 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
         if length.auto or delim notin {'+', '-', '*'}:
           return err()
         let sign = if delim == '-': -1f32 else: 1f32
-        ns.px += length.px * sign
+        ns.npx += length.npx * sign
         ns.perc += length.perc * sign
         if nmulx.isSome:
           let nmul = nmulx.get
           if n > 1 or delim != '*':
             return err() # invalid or needs recursive descent
           ns.perc *= nmul
-          ns.px *= nmul
+          ns.npx *= nmul
           nmulx = none(float32)
         elif delim == '*':
           return err()
