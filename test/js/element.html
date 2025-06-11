@@ -11,5 +11,12 @@ assertEquals(x.classList.item(-1), null);
 assertEquals(x.classList[-1], undefined);
 assertEquals(x.classList[1], "b");
 assertEquals(document.createElementNS("test", "test:div").tagName, "test:div");
+x.setAttributeNS("ns", "pf:test", "a");
+x.setAttributeNS("ns", "pf:test", "b");
+assertEquals(x.attributes["pf:test"].namespaceURI, "ns");
+assertEquals(x.attributes["pf:test"].prefix, "pf");
+assertEquals(x.attributes["pf:test"].localName, "test");
+assertEquals(x.attributes["pf:test"].value, "b");
+assertEquals(x.getAttributeNS("ns", "test"), "b")
 x.textContent = "Success";
 </script>

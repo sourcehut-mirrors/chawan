@@ -1169,9 +1169,9 @@ func findAttr(element: Element; qualifiedName: CAtom): int =
 func findAttr(element: Element; qualifiedName: StaticAtom): int =
   return element.findAttr(qualifiedName.toAtom())
 
-func findAttrNS(element: Element; namespace, qualifiedName: CAtom): int =
+func findAttrNS(element: Element; namespace, localName: CAtom): int =
   for i, attr in element.attrs.mypairs:
-    if attr.namespace == namespace and attr.qualifiedName == qualifiedName:
+    if attr.namespace == namespace and attr.localName == localName:
       return i
   return -1
 
@@ -2040,15 +2040,10 @@ func attributes(element: Element): NamedNodeMap {.jsfget.} =
 proc findAttr(element: Element; qualifiedName: string): int =
   return element.findAttr(element.normalizeAttrQName(qualifiedName))
 
-proc findAttrNS(element: Element; namespace, localName: string): int =
-  let namespace = namespace.toAtom()
-  let localName = localName.toAtom()
-  return element.findAttrNS(namespace, localName)
-
 proc hasAttribute(element: Element; qualifiedName: string): bool {.jsfunc.} =
   return element.findAttr(qualifiedName) != -1
 
-proc hasAttributeNS(element: Element; namespace, localName: string): bool
+proc hasAttributeNS(element: Element; namespace, localName: CAtom): bool
     {.jsfunc.} =
   return element.findAttrNS(namespace, localName) != -1
 
@@ -2073,8 +2068,8 @@ proc getNamedItem(map: NamedNodeMap; qualifiedName: string): Attr
     return map.getAttr(i)
   return nil
 
-proc getNamedItemNS(map: NamedNodeMap; namespace, localName: string):
-    Attr {.jsfunc.} =
+proc getNamedItemNS(map: NamedNodeMap; namespace, localName: CAtom): Attr
+    {.jsfunc.} =
   let i = map.element.findAttrNS(namespace, localName)
   if i != -1:
     return map.getAttr(i)
@@ -2106,16 +2101,12 @@ func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
   var list = newJSPropertyEnumList(ctx, len)
   for u in 0 ..< len:
     list.add(u)
-  var names: HashSet[string]
   let element = map.element
   for attr in element.attrs:
-    let name = $attr.qualifiedName
-    if element.namespace == Namespace.HTML and AsciiUpperAlpha in name:
+    let name = attr.qualifiedName
+    if element.namespace == Namespace.HTML and name.toLowerAscii() != name:
       continue
-    if name in names:
-      continue
-    names.incl(name)
-    list.add(name)
+    list.add($name)
   return list
 
 func length(characterData: CharacterData): uint32 {.jsfget.} =
@@ -4761,24 +4752,26 @@ proc setAttribute(element: Element; qualifiedName: string; value: sink string):
 proc setAttributeNS(element: Element; namespace, qualifiedName,
     value: sink string): Err[DOMException] {.jsfunc.} =
   ?qualifiedName.validateQName()
-  let ps = qualifiedName.until(':')
-  let prefix = if ps.len < qualifiedName.len: ps else: ""
-  let localName = qualifiedName.substr(prefix.len).toAtom()
-  #TODO atomize here
-  if prefix != "" and namespace == "" or
-      prefix == "xml" and namespace != $Namespace.XML or
-      (qualifiedName == "xmlns" or prefix == "xmlns") and
-        namespace != $Namespace.XMLNS or
-      namespace == $Namespace.XMLNS and qualifiedName != "xmlns" and
-        prefix != "xmlns":
-    return errDOMException("Unexpected namespace", "NamespaceError")
+  let j = qualifiedName.find(':')
+  let sprefix = if j != -1: qualifiedName.substr(0, j - 1) else: ""
   let qualifiedName = qualifiedName.toAtom()
+  let prefix = sprefix.toAtom()
+  let localName = if j == -1:
+    qualifiedName
+  else:
+    ($qualifiedName).substr(j + 1).toAtom()
   let namespace = namespace.toAtom()
+  if prefix != satUempty and namespace == satUempty or
+      prefix == satXml and namespace != satNamespaceXML or
+      satXmlns in [prefix, qualifiedName] and namespace != satNamespaceXMLNS or
+      satXmlns notin [prefix, qualifiedName] and namespace == satNamespaceXMLNS:
+    return errDOMException("Unexpected namespace", "NamespaceError")
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
     element.attrs[i].value = value
   else:
     element.attrs.add(AttrData(
+      prefix: prefix,
       localName: localName,
       namespace: namespace,
       qualifiedName: qualifiedName,
@@ -4791,7 +4784,7 @@ proc removeAttribute(element: Element; qualifiedName: string) {.jsfunc.} =
   if i != -1:
     element.delAttr(i)
 
-proc removeAttributeNS(element: Element; namespace, localName: string)
+proc removeAttributeNS(element: Element; namespace, localName: CAtom)
     {.jsfunc.} =
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
@@ -4847,7 +4840,7 @@ proc removeNamedItem(map: NamedNodeMap; qualifiedName: string):
     return ok(attr)
   return errDOMException("Item not found", "NotFoundError")
 
-proc removeNamedItemNS(map: NamedNodeMap; namespace, localName: string):
+proc removeNamedItemNS(map: NamedNodeMap; namespace, localName: CAtom):
     DOMResult[Attr] {.jsfunc.} =
   let i = map.element.findAttrNS(namespace, localName)
   if i != -1:

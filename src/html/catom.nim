@@ -324,6 +324,15 @@ func toAtom*(prefix: NamespacePrefix): CAtom =
   of PREFIX_XMLNS: satXmlns
   of PREFIX_UNKNOWN: satUempty).toAtom()
 
+proc `==`*(a: CAtom; b: StaticAtom): bool =
+  a.toStaticAtom() == b
+
+proc `==`*(a: StaticAtom; b: CAtom): bool =
+  a == b.toStaticAtom()
+
+proc contains*(a: openArray[CAtom]; b: StaticAtom): bool =
+  b.toAtom() in a
+
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): Opt[void] =
   if JS_IsNull(val):
     res = CAtomNull
