@@ -200,8 +200,8 @@ const CAtomNull* = CAtom(0)
 func `==`*(a, b: CAtom): bool {.borrow.}
 func hash*(atom: CAtom): Hash {.borrow.}
 
-func toAtom(factory: var CAtomFactoryObj; s: sink string;
-    addLower = true): CAtom =
+func toAtom(factory: var CAtomFactoryObj; s: openArray[char]; addLower = true):
+    CAtom =
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
   for atom in factory.strMap[i]:
@@ -210,12 +210,18 @@ func toAtom(factory: var CAtomFactoryObj; s: sink string;
       return atom
   # Not found
   let atom = CAtom(factory.atomMap.len)
-  factory.atomMap.add(s)
+  var ss = newString(s.len)
+  if s.len > 0:
+    copyMem(addr ss[0], unsafeAddr s[0], s.len)
+  var lower = ""
+  if addLower and AsciiUpperAlpha in ss:
+    lower = ss.toLowerAscii()
+  factory.atomMap.add(move(ss))
   if addLower:
-    if AsciiUpperAlpha notin s:
+    if lower == "":
       factory.lowerMap.add(atom)
     else:
-      factory.lowerMap.add(factory.toAtom(s.toLowerAscii()))
+      factory.lowerMap.add(factory.toAtom(lower))
   factory.strMap[i].add(atom)
   return atom
 
@@ -252,7 +258,7 @@ func containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
       return true
   return false
 
-proc toAtom*(s: sink string): CAtom {.sideEffect.} =
+proc toAtom*(s: openArray[char]): CAtom {.sideEffect.} =
   return getFactory()[].toAtom(s)
 
 func toAtom*(tagType: TagType): CAtom =
@@ -263,7 +269,7 @@ func toAtom*(attrType: StaticAtom): CAtom =
   assert attrType != atUnknown
   return CAtom(attrType)
 
-proc toAtomLower*(s: sink string): CAtom {.sideEffect.} =
+proc toAtomLower*(s: openArray[char]): CAtom {.sideEffect.} =
   return getFactory().lowerMap[int32(s.toAtom())]
 
 func containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
@@ -337,10 +343,19 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): Opt[void] =
   if JS_IsNull(val):
     res = CAtomNull
   else:
-    var s: string
-    ?ctx.fromJS(val, s)
-    res = s.toAtom()
-  return ok()
+    var len: csize_t
+    let cs = JS_ToCStringLen(ctx, len, val)
+    if cs == nil:
+      return err()
+    if len > csize_t(int.high):
+      JS_FreeCString(ctx, cs)
+      return err()
+    {.push overflowChecks: off.}
+    let H = cast[int](len) - 1
+    {.pop.}
+    res = cs.toOpenArray(0, H).toAtom()
+    JS_FreeCString(ctx, cs)
+  ok()
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
   if val == JS_ATOM_NULL:
@@ -349,13 +364,13 @@ proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
     var s: string
     ?ctx.fromJS(val, s)
     res = s.toAtom()
-  return ok()
+  ok()
 
 proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): Opt[void] =
   var ca: CAtom
   ?ctx.fromJS(val, ca)
   res = ca.toStaticAtom()
-  return ok()
+  ok()
 
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:
