@@ -3,7 +3,6 @@
 {.push raises: [].}
 
 import std/os
-import std/osproc
 import std/posix
 import std/strutils
 
@@ -319,6 +318,8 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   var canpipe: bool
   return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
 
+proc system(cmd: cstring): cint {.importc, header: "<stdlib.h>".}
+
 proc findMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;
     url: URL): int =
   let mt = contentType.until('/') & '/'
@@ -333,7 +334,7 @@ proc findMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;
       let cmd = unquoteCommand(entry.test, contentType, outpath, url, canpipe)
       if not canpipe:
         continue
-      if execCmd(cmd) != 0:
+      if system(cstring(cmd)) != 0:
         continue
     return i
   return -1
