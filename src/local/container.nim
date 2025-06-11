@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/options
-import std/os
 import std/posix
 import std/tables
 
@@ -1823,14 +1822,15 @@ proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)):
       return false
   return true
 
+proc setFormat(cell: var FixedCell; cf: SimpleFormatCell; bgcolor: CellColor) =
+  if cf.pos != -1:
+    cell.format = cf.format
+  if bgcolor != defaultColor and cell.format.bgcolor == defaultColor:
+    cell.format.bgcolor = bgcolor
+
 proc drawLines*(container: Container; display: var FixedGrid;
     hlcolor: CellColor) =
   let bgcolor = container.bgcolor
-  template set_fmt(cell, cf: typed) =
-    if cf.pos != -1:
-      cell.format = cf.format
-    if bgcolor != defaultColor and cell.format.bgcolor == defaultColor:
-      cell.format.bgcolor = bgcolor
   var by = 0
   let endy = min(container.fromy + display.height, container.numLines)
   for line in container.ilines(container.fromy ..< endy):
@@ -1848,7 +1848,7 @@ proc drawLines*(container: Container; display: var FixedGrid;
     var k = 0
     while k < w - container.fromx:
       display[dls + k].str &= ' '
-      set_fmt display[dls + k], cf
+      display[dls + k].setFormat(cf, bgcolor)
       inc k
     let startw = w # save this for later
     # Now fill in the visible part of the row.
@@ -1871,7 +1871,7 @@ proc drawLines*(container: Container; display: var FixedGrid;
       else:
         for j in pi ..< i:
           display[dls + k].str &= line.str[j]
-      set_fmt display[dls + k], cf
+      display[dls + k].setFormat(cf, bgcolor)
       k += uw
     if bgcolor != defaultColor:
       # Fill the screen if bgcolor is not default.
