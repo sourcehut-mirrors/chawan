@@ -1035,6 +1035,7 @@ func parseLength(val: float32; u: string; attrs: WindowAttributes):
   return ok(resolveLength(u, val, attrs))
 
 const CSSLengthAuto* = CSSLength(px: NaN, perc: NaN)
+const CSSLengthZero* = CSSLength(px: 0, perc: 0)
 
 func parseDimensionValues*(s: string): Option[CSSLength] =
   var i = s.skipBlanks(0)

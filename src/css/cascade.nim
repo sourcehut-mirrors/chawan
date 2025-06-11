@@ -167,117 +167,87 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
     initType: InitType; nextInitType: set[InitType]) =
   discard ctx.applyValue0(entry, initType, nextInitType)
 
+proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
+  ctx.applyValue(entry, itUserAgent, {itUser})
+
+proc applyDimensionHint(ctx: var ApplyValueContext; p: CSSPropertyType;
+    s: string) =
+  let s = parseDimensionValues(s)
+  if s.isSome:
+    ctx.applyPresHint(makeEntry(p, s.get))
+
+proc applyDimensionHintGz(ctx: var ApplyValueContext; p: CSSPropertyType;
+    s: string) =
+  let s = parseDimensionValues(s).get(CSSLengthZero)
+  if not s.isZero:
+    ctx.applyPresHint(makeEntry(p, s))
+
+proc applyColorHint(ctx: var ApplyValueContext; p: CSSPropertyType; s: string) =
+  let c = parseLegacyColor(s)
+  if c.isSome:
+    ctx.applyPresHint(makeEntry(p, c.get.cssColor()))
+
+proc applyLengthHint(ctx: var ApplyValueContext; p: CSSPropertyType;
+    unit: CSSUnit; u: uint32) =
+  let length = resolveLength(unit, float32(u), ctx.window.attrsp[])
+  ctx.applyPresHint(makeEntry(p, length))
+
 proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
-  template set_cv(t, x, b: untyped) =
-    ctx.applyValue(makeEntry(t, b), itUserAgent, {itUser})
-  template map_width =
-    let s = parseDimensionValues(element.attr(satWidth))
-    if s.isSome:
-      set_cv cptWidth, length, s.get
-  template map_height =
-    let s = parseDimensionValues(element.attr(satHeight))
-    if s.isSome:
-      set_cv cptHeight, length, s.get
-  template map_width_nozero =
-    let s = parseDimensionValues(element.attr(satWidth))
-    if s.isSome and not s.get.isZero:
-      set_cv cptWidth, length, s.get
-  template map_height_nozero =
-    let s = parseDimensionValues(element.attr(satHeight))
-    if s.isSome and not s.get.isZero:
-      set_cv cptHeight, length, s.get
-  template map_bgcolor =
-    let s = element.attr(satBgcolor)
-    if s != "":
-      let c = parseLegacyColor(s)
-      if c.isSome:
-        set_cv cptBackgroundColor, color, c.get.cssColor()
-  template map_size =
-    let s = element.attrul(satSize)
-    if s.isSome:
-      set_cv cptWidth, length, resolveLength(cuCh, float32(s.get),
-        ctx.window.attrsp[])
-  template map_text =
-    let s = element.attr(satText)
-    if s != "":
-      let c = parseLegacyColor(s)
-      if c.isSome:
-        set_cv cptColor, color, c.get.cssColor()
-  template map_color =
-    let s = element.attr(satColor)
-    if s != "":
-      let c = parseLegacyColor(s)
-      if c.isSome:
-        set_cv cptColor, color, c.get.cssColor()
-  template map_colspan =
-    let colspan = element.attrulgz(satColspan)
-    if colspan.isSome:
-      let i = colspan.get
-      if i <= 1000:
-        set_cv cptChaColspan, integer, int32(i)
-  template map_rowspan =
-    let rowspan = element.attrul(satRowspan)
-    if rowspan.isSome:
-      let i = rowspan.get
-      if i <= 65534:
-        set_cv cptChaRowspan, integer, int32(i)
-  template set_bgcolor_is_canvas =
-    let t = cptBgcolorIsCanvas
-    let val = CSSValueBit(bgcolorIsCanvas: true)
-    ctx.applyValue(makeEntry(t, val), itUserAgent, {itUser})
-  template map_cellspacing =
+  case element.tagType
+  of TAG_TABLE:
+    ctx.applyDimensionHintGz(cptWidth, element.attr(satWidth))
+    ctx.applyDimensionHintGz(cptHeight, element.attr(satHeight))
+    ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
     let s = element.attrul(satCellspacing)
     if s.isSome:
       let n = cssLength(float32(s.get))
-      set_cv cptBorderSpacingInline, length, n
-      set_cv cptBorderSpacingBlock, length, n
-
-  case element.tagType
-  of TAG_TABLE:
-    map_height_nozero
-    map_width_nozero
-    map_bgcolor
-    map_cellspacing
+      ctx.applyPresHint(makeEntry(cptBorderSpacingInline, n))
+      ctx.applyPresHint(makeEntry(cptBorderSpacingBlock, n))
   of TAG_TD, TAG_TH:
-    map_height_nozero
-    map_width_nozero
-    map_bgcolor
-    map_colspan
-    map_rowspan
+    ctx.applyDimensionHintGz(cptWidth, element.attr(satWidth))
+    ctx.applyDimensionHintGz(cptHeight, element.attr(satHeight))
+    ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
+    let colspan = element.attrulgz(satColspan).get(1001)
+    if colspan < 1001:
+      ctx.applyPresHint(makeEntry(cptChaColspan, int32(colspan)))
+    let rowspan = element.attrul(satRowspan).get(65535)
+    if rowspan < 65535:
+      ctx.applyPresHint(makeEntry(cptChaRowspan, int32(rowspan)))
   of TAG_THEAD, TAG_TBODY, TAG_TFOOT, TAG_TR:
-    map_height
-    map_bgcolor
+    ctx.applyDimensionHint(cptHeight, element.attr(satHeight))
+    ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
   of TAG_COL:
-    map_width
+    ctx.applyDimensionHint(cptWidth, element.attr(satWidth))
   of TAG_IMG, TAG_CANVAS, TAG_SVG:
-    map_width
-    map_height
+    ctx.applyDimensionHint(cptWidth, element.attr(satWidth))
+    ctx.applyDimensionHint(cptHeight, element.attr(satHeight))
   of TAG_HTML:
-    set_bgcolor_is_canvas
+    ctx.applyPresHint(makeEntry(cptBgcolorIsCanvas,
+      CSSValueBit(bgcolorIsCanvas: true)))
   of TAG_BODY:
-    set_bgcolor_is_canvas
-    map_bgcolor
-    map_text
+    ctx.applyPresHint(makeEntry(cptBgcolorIsCanvas,
+      CSSValueBit(bgcolorIsCanvas: true)))
+    ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
+    ctx.applyColorHint(cptColor, element.attr(satText))
   of TAG_TEXTAREA:
     let textarea = HTMLTextAreaElement(element)
     let cols = textarea.attrul(satCols).get(20)
     let rows = textarea.attrul(satRows).get(1)
-    set_cv cptWidth, length, resolveLength(cuCh, float32(cols),
-      ctx.window.attrsp[])
-    set_cv cptHeight, length, resolveLength(cuEm, float32(rows),
-      ctx.window.attrsp[])
+    ctx.applyLengthHint(cptWidth, cuCh, cols)
+    ctx.applyLengthHint(cptHeight, cuEm, rows)
   of TAG_FONT:
-    map_color
+    ctx.applyColorHint(cptColor, element.attr(satColor))
   of TAG_INPUT:
     let input = HTMLInputElement(element)
     if input.inputType in InputTypeWithSize:
-      map_size
+      let s = element.attrul(satSize)
+      if s.isSome:
+        ctx.applyLengthHint(cptWidth, cuCh, s.get)
   of TAG_SELECT:
     let select = HTMLSelectElement(element)
     if select.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)
-      set_cv cptHeight, length, resolveLength(cuEm, float32(size),
-        ctx.window.attrsp[])
+      ctx.applyLengthHint(cptHeight, cuEm, size)
   else: discard
 
 proc applyDeclarations(rules: RuleList; parent, element: Element;
