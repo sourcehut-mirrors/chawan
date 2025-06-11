@@ -1713,24 +1713,17 @@ proc getDefaultWord(t: CSSPropertyType): CSSValueWord =
   of cvtZIndex: return CSSValueWord(zIndex: CSSZIndex(auto: true))
   else: return CSSValueWord(dummy: 0)
 
-func lengthShorthand(cvals: openArray[CSSComponentValue];
-    props: array[4, CSSPropertyType]; global: Opt[CSSGlobalType];
-    attrs: WindowAttributes; hasAuto = true): Opt[seq[CSSComputedEntry]] =
-  var res: seq[CSSComputedEntry] = @[]
-  if global.isSome:
-    let global = global.get
-    for t in props:
-      res.add(makeEntry(t, global))
-    return ok(res)
+func parseLengthShorthand(res: var seq[CSSComputedEntry];
+    cvals: openArray[CSSComponentValue]; props: openArray[CSSPropertyType];
+    attrs: WindowAttributes; hasAuto: bool): Opt[void] =
   var lengths: seq[CSSLength] = @[]
   var i = 0
   while i < cvals.len:
-    i = cvals.skipBlanks(i)
     lengths.add(?parseLength(cvals[i], attrs, hasAuto = hasAuto))
-    inc i
+    i = cvals.skipBlanks(i + 1)
   case lengths.len
   of 1: # top, bottom, left, right
-    for i, t in props.mypairs:
+    for t in props:
       res.add(makeEntry(t, lengths[0]))
   of 2: # top, bottom | left, right
     for i, t in props.mypairs:
@@ -1749,160 +1742,137 @@ func lengthShorthand(cvals: openArray[CSSComponentValue];
       res.add(makeEntry(t, lengths[i]))
   else:
     return err()
-  return ok(move(res))
+  ok()
 
-const PropertyMarginSpec = [
-  cptMarginTop, cptMarginRight, cptMarginBottom, cptMarginLeft
+const ShorthandMap = [
+  cstNone: @[],
+  cstAll: @[],
+  cstMargin: @[cptMarginTop, cptMarginRight, cptMarginBottom, cptMarginLeft],
+  cstPadding: @[cptPaddingTop, cptPaddingRight, cptPaddingBottom,
+    cptPaddingLeft],
+  cstBackground: @[cptBackgroundColor, cptBackgroundImage],
+  cstListStyle: @[cptListStylePosition, cptListStyleType],
+  cstFlex: @[cptFlexGrow, cptFlexShrink, cptFlexBasis],
+  cstFlexFlow: @[cptFlexDirection, cptFlexWrap],
+  cstOverflow: @[cptOverflowX, cptOverflowY],
+  cstVerticalAlign: @[cptVerticalAlign, cptVerticalAlignLength],
+  cstBorderSpacing: @[cptBorderSpacingInline, cptBorderSpacingBlock]
 ]
-
-const PropertyPaddingSpec = [
-  cptPaddingTop, cptPaddingRight, cptPaddingBottom, cptPaddingLeft
-]
-
-proc addGlobals(res: var seq[CSSComputedEntry]; ps: openArray[CSSPropertyType];
-    global: CSSGlobalType) =
-  for p in ps:
-    res.add(makeEntry(p, global))
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     cvals: openArray[CSSComponentValue]; attrs: WindowAttributes): Err[void] =
   var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return err()
+  let sh = shorthandType(name)
   let global = parseGlobal(cvals[i])
-  case shorthandType(name)
+  if global.isSome:
+    let global = global.get
+    if cvals.skipBlanks(i + 1) < cvals.len:
+      return err()
+    case sh
+    of cstNone: res.add(makeEntry(?propertyType(name), global))
+    of cstAll:
+      for t in CSSPropertyType:
+        res.add(makeEntry(t, global))
+    else:
+      for t in ShorthandMap[sh]:
+        res.add(makeEntry(t, global))
+    return ok()
+  case sh
   of cstNone:
-    let t = propertyType(name)
-    if t.isSome:
-      let t = t.get
-      if global.isSome:
-        res.add(makeEntry(t, global.get))
-      else:
-        var entry = CSSComputedEntry()
-        ?cvals.parseValue(t, entry, attrs)
-        res.add(entry)
-  of cstAll:
-    let global = ?global
-    for t in CSSPropertyType:
-      res.add(makeEntry(t, global))
+    let t = ?propertyType(name)
+    var entry = CSSComputedEntry()
+    ?cvals.parseValue(t, entry, attrs)
+    res.add(entry)
+  of cstAll: return err()
   of cstMargin:
-    res.add(?lengthShorthand(cvals, PropertyMarginSpec, global, attrs))
+    ?res.parseLengthShorthand(cvals, ShorthandMap[sh], attrs, hasAuto = true)
   of cstPadding:
-    res.add(?lengthShorthand(cvals, PropertyPaddingSpec, global, attrs,
-      hasAuto = false))
+    ?res.parseLengthShorthand(cvals, ShorthandMap[sh], attrs, hasAuto = false)
   of cstBackground:
-    if global.isSome:
-      res.addGlobals([cptBackgroundColor, cptBackgroundImage], global.get)
-    else:
-      var bgcolor = makeEntry(cptBackgroundColor,
-        getDefaultWord(cptBackgroundColor))
-      var bgimage = makeEntry(cptBackgroundImage,
-        getDefault(cptBackgroundImage))
-      var valid = true
-      var i = cvals.skipBlanks(0)
-      while i < cvals.len:
-        let j = cvals.findBlank(i)
-        if cvals.toOpenArray(i, j - 1).parseValue(bgcolor.t, bgcolor,
-            attrs).isSome:
-          discard
-        elif cvals.toOpenArray(i, j - 1).parseValue(bgimage.t, bgimage,
-            attrs).isSome:
-          discard
-        else:
-          #TODO when we implement the other shorthands too
-          #valid = false
-          discard
-        i = cvals.skipBlanks(j)
-      if valid:
-        res.add(bgcolor)
-        res.add(bgimage)
+    var bgcolor = makeEntry(cptBackgroundColor,
+      getDefaultWord(cptBackgroundColor))
+    var bgimage = makeEntry(cptBackgroundImage, getDefault(cptBackgroundImage))
+    while i < cvals.len:
+      let j = cvals.findBlank(i)
+      let k = j - 1
+      if cvals.toOpenArray(i, k).parseValue(bgcolor.t, bgcolor, attrs).isSome:
+        discard
+      elif cvals.toOpenArray(i, k).parseValue(bgimage.t, bgimage, attrs).isSome:
+        discard
+      else:
+        #TODO when we implement the other shorthands too
+        #return err()
+        discard
+      i = cvals.skipBlanks(j)
+    res.add(bgcolor)
+    res.add(bgimage)
   of cstListStyle:
-    if global.isSome:
-      res.addGlobals([cptListStylePosition, cptListStyleType], global.get)
-    else:
-      var valid = true
-      var typeVal = CSSValueBit()
-      var positionVal = CSSValueBit()
-      for tok in cvals:
-        if tok == cttWhitespace:
-          continue
-        if (let r = parseIdent[CSSListStylePosition](tok); r.isSome):
-          positionVal.listStylePosition = r.get
-        elif (let r = parseIdent[CSSListStyleType](tok); r.isSome):
-          typeVal.listStyleType = r.get
-        else:
-          #TODO list-style-image
-          #valid = false
-          discard
-      if valid:
-        res.add(makeEntry(cptListStylePosition, positionVal))
-        res.add(makeEntry(cptListStyleType, typeVal))
+    var typeVal = CSSValueBit()
+    var positionVal = CSSValueBit()
+    for tok in cvals:
+      if tok == cttWhitespace:
+        continue
+      if (let r = parseIdent[CSSListStylePosition](tok); r.isSome):
+        positionVal.listStylePosition = r.get
+      elif (let r = parseIdent[CSSListStyleType](tok); r.isSome):
+        typeVal.listStyleType = r.get
+      else:
+        #TODO list-style-image
+        #return err()
+        discard
+    res.add(makeEntry(cptListStylePosition, positionVal))
+    res.add(makeEntry(cptListStyleType, typeVal))
   of cstFlex:
-    if global.isSome:
-      res.addGlobals([cptFlexGrow, cptFlexShrink, cptFlexBasis], global.get)
-    else:
-      var i = cvals.skipBlanks(0)
-      if i >= cvals.len:
-        return err()
-      if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
-        # flex-grow
-        res.add(makeEntry(cptFlexGrow, r.get))
-        i = cvals.skipBlanks(i + 1)
-        if i < cvals.len:
-          if not (cvals[i] of CSSToken):
-            return err()
-          if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
-            # flex-shrink
-            res.add(makeEntry(cptFlexShrink, r.get))
-            i = cvals.skipBlanks(i + 1)
-      if res.len < 1: # flex-grow omitted, default to 1
-        res.add(makeEntry(cptFlexGrow, 1f32))
-      if res.len < 2: # flex-shrink omitted, default to 1
-        res.add(makeEntry(cptFlexShrink, 1f32))
+    if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
+      # flex-grow
+      res.add(makeEntry(cptFlexGrow, r.get))
+      i = cvals.skipBlanks(i + 1)
       if i < cvals.len:
-        # flex-basis
-        res.add(makeEntry(cptFlexBasis, ?parseLength(cvals[i], attrs)))
-      else: # omitted, default to 0px
-        res.add(makeEntry(cptFlexBasis, cssLength(0)))
+        if not (cvals[i] of CSSToken):
+          return err()
+        if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
+          # flex-shrink
+          res.add(makeEntry(cptFlexShrink, r.get))
+          i = cvals.skipBlanks(i + 1)
+    if res.len < 1: # flex-grow omitted, default to 1
+      res.add(makeEntry(cptFlexGrow, 1f32))
+    if res.len < 2: # flex-shrink omitted, default to 1
+      res.add(makeEntry(cptFlexShrink, 1f32))
+    if i < cvals.len:
+      # flex-basis
+      res.add(makeEntry(cptFlexBasis, ?parseLength(cvals[i], attrs)))
+    else: # omitted, default to 0px
+      res.add(makeEntry(cptFlexBasis, cssLength(0)))
   of cstFlexFlow:
-    if global.isSome:
-      res.addGlobals([cptFlexDirection, cptFlexWrap], global.get)
-    else:
-      var i = cvals.skipBlanks(0)
-      if i >= cvals.len:
-        return err()
-      if (let dir = parseIdent[CSSFlexDirection](cvals[i]); dir.isSome):
-        # flex-direction
-        var val = CSSValueBit(flexDirection: dir.get)
-        res.add(makeEntry(cptFlexDirection, val))
-        i = cvals.skipBlanks(i + 1)
-      if i < cvals.len:
-        let wrap = ?parseIdent[CSSFlexWrap](cvals[i])
-        var val = CSSValueBit(flexWrap: wrap)
-        res.add(makeEntry(cptFlexWrap, val))
+    if (let dir = parseIdent[CSSFlexDirection](cvals[i]); dir.isSome):
+      # flex-direction
+      var val = CSSValueBit(flexDirection: dir.get)
+      res.add(makeEntry(cptFlexDirection, val))
+      i = cvals.skipBlanks(i + 1)
+    if i < cvals.len:
+      let wrap = ?parseIdent[CSSFlexWrap](cvals[i])
+      var val = CSSValueBit(flexWrap: wrap)
+      res.add(makeEntry(cptFlexWrap, val))
   of cstOverflow:
-    if global.isSome:
-      res.addGlobals([cptOverflowX, cptOverflowY], global.get)
-    else:
-      var i = cvals.skipBlanks(0)
-      if i >= cvals.len:
-        return err()
-      if (let xx = parseIdent[CSSOverflow](cvals[i]); xx.isSome):
-        let x = CSSValueBit(overflow: xx.get)
-        var y = x
-        i = cvals.skipBlanks(i + 1)
-        if i < cvals.len:
-          y.overflow = ?parseIdent[CSSOverflow](cvals[i])
-        res.add(makeEntry(cptOverflowX, x))
-        res.add(makeEntry(cptOverflowY, y))
+    var i = cvals.skipBlanks(0)
+    if i >= cvals.len:
+      return err()
+    if (let xx = parseIdent[CSSOverflow](cvals[i]); xx.isSome):
+      let x = CSSValueBit(overflow: xx.get)
+      var y = x
+      i = cvals.skipBlanks(i + 1)
+      if i < cvals.len:
+        y.overflow = ?parseIdent[CSSOverflow](cvals[i])
+      res.add(makeEntry(cptOverflowX, x))
+      res.add(makeEntry(cptOverflowY, y))
   of cstVerticalAlign:
     var i = cvals.skipBlanks(0)
     let tok = ?cvals.getToken(i)
-    if i + 1 < cvals.len:
+    if cvals.skipBlanks(i + 1) < cvals.len:
       return err()
-    if global.isSome:
-      res.addGlobals([cptVerticalAlign, cptVerticalAlignLength], global.get)
-    elif tok.t == cttIdent:
+    if tok.t == cttIdent:
       var entry = CSSComputedEntry()
       ?cvals.parseValue(cptVerticalAlign, entry, attrs)
       res.add(entry)
@@ -1914,17 +1884,13 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
   of cstBorderSpacing:
     var i = cvals.skipBlanks(0)
     let tok = ?cvals.getToken(i)
-    if global.isSome:
-      res.addGlobals([cptBorderSpacingInline, cptBorderSpacingBlock],
-        global.get)
-    else:
-      let a = ?cssAbsoluteLength(tok, attrs)
-      i = cvals.skipBlanks(i + 1)
-      let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i], attrs)
-      if i + 1 < cvals.len:
-        return err()
-      res.add(makeEntry(cptBorderSpacingInline, a))
-      res.add(makeEntry(cptBorderSpacingBlock, b))
+    let a = ?cssAbsoluteLength(tok, attrs)
+    i = cvals.skipBlanks(i + 1)
+    let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i], attrs)
+    if cvals.skipBlanks(i + 1) < cvals.len:
+      return err()
+    res.add(makeEntry(cptBorderSpacingInline, a))
+    res.add(makeEntry(cptBorderSpacingBlock, b))
   return ok()
 
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue];
