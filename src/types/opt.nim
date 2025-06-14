@@ -4,13 +4,13 @@ type
   Result*[T, E] = object
     when E is void and T is void: # weirdness
       has*: bool
-    elif E is void and not (T is void): # opt
+    elif E is void and T isnot void: # opt
       case has*: bool
       of true:
         val*: T
       else:
         discard
-    elif not (E is void) and T is void: # err
+    elif E isnot void and T is void: # err
       case has*: bool
       of true:
         discard
@@ -96,7 +96,7 @@ template `?`*[T, E](res: Result[T, E]): auto =
   if not x.has:
     when typeof(result) is Result[T, E]:
       return move(x)
-    elif not (E is void) and typeof(result).errType is E:
+    elif E isnot void and typeof(result).errType is E:
       {.push checks: off.}
       return err(move(x.error))
       {.pop.}
