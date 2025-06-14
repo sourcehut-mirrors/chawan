@@ -1287,7 +1287,11 @@ proc parseTERM(term: Terminal): TerminalType =
       term.colorMode = cmTrueColor
       s.setLen(i + 1 - "-direct".len)
   # XTerm is the universal fallback.
-  let res = strictParseEnum[TerminalType](s).get(ttXterm)
+  var res = strictParseEnum[TerminalType](s).get(ttXterm)
+  # some screen versions use screen.{actual-terminal}, but we don't
+  # really care about the actual terminal.
+  if s.startsWith("screen."):
+    res = ttScreen
   # tmux says it's screen, but it isn't.
   if res == ttScreen and getEnv("TMUX") != "":
     return ttTmux
