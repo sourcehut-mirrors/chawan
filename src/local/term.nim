@@ -1023,7 +1023,7 @@ proc eatColor(term: Terminal; tc: char): uint8 =
   var val = 0u8
   var i = 0
   var c = char(0)
-  while (c = term.readChar(); c != tc):
+  while (c = term.readChar(); c != tc and c != '\a'):
     let v0 = hexValue(c)
     if i > 4 or v0 == -1:
       break # wat
@@ -1034,9 +1034,11 @@ proc eatColor(term: Terminal; tc: char): uint8 =
       val = (val and not 0xFu8) or v
     # all other places are irrelevant
     inc i
-  if tc == '\e':
+  if tc == '\e' and c != '\a':
     if term.readChar() != '\\':
       return 0 # error
+  if tc != '\e' and c == '\a':
+    return 0 # error
   return val
 
 proc skipUntil(term: Terminal; c: char) =
@@ -1046,7 +1048,8 @@ proc skipUntil(term: Terminal; c: char) =
 proc skipUntilST(term: Terminal) =
   while true:
     let c = term.readChar()
-    if c == '\e' and term.readChar() == '\\':
+    # st returns BEL *despite* us sending ST. Ugh.
+    if c == '\a' or c == '\e' and term.readChar() == '\\':
       break
 
 proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
