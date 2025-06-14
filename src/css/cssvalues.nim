@@ -1229,7 +1229,7 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
     case tok.t
     of cttNumber, cttINumber:
       if tok.nvalue == 0:
-        return ok(cssLength(0))
+        return ok(CSSLengthZero)
     of cttPercentage:
       if not allowNegative and tok.nvalue < 0:
         return err()
@@ -1303,7 +1303,7 @@ func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
     case tok.t
     of cttNumber, cttINumber:
       if tok.nvalue == 0:
-        return ok(cssLength(0))
+        return ok(CSSLengthZero)
     of cttDimension, cttIDimension:
       if tok.nvalue >= 0:
         return parseLength(tok.nvalue, tok.unit, attrs)
@@ -1677,7 +1677,7 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
   of cptFontSize:
     return cssLength(16)
   else:
-    return cssLength(0)
+    return CSSLengthZero
 
 func getInitialInteger(t: CSSPropertyType): int32 =
   case t
@@ -1765,7 +1765,8 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
   if i >= cvals.len:
     return err()
   let sh = shorthandType(name)
-  let global = parseGlobal(cvals[i])
+  let cval = cvals[i]
+  let global = parseGlobal(cval)
   if global.isSome:
     let global = global.get
     if cvals.skipBlanks(i + 1) < cvals.len:
@@ -1825,14 +1826,13 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     res.add(makeEntry(cptListStylePosition, positionVal))
     res.add(makeEntry(cptListStyleType, typeVal))
   of cstFlex:
-    if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
+    if (let r = parseNumber(cval, 0f32..float32.high); r.isSome):
       # flex-grow
       res.add(makeEntry(cptFlexGrow, r.get))
       i = cvals.skipBlanks(i + 1)
       if i < cvals.len:
-        if not (cvals[i] of CSSToken):
-          return err()
-        if (let r = parseNumber(cvals[i], 0f32..float32.high); r.isSome):
+        let tok = ?cvals.getToken(i)
+        if (let r = parseNumber(tok, 0f32..float32.high); r.isSome):
           # flex-shrink
           res.add(makeEntry(cptFlexShrink, r.get))
           i = cvals.skipBlanks(i + 1)
@@ -1844,9 +1844,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       # flex-basis
       res.add(makeEntry(cptFlexBasis, ?parseLength(cvals[i], attrs)))
     else: # omitted, default to 0px
-      res.add(makeEntry(cptFlexBasis, cssLength(0)))
+      res.add(makeEntry(cptFlexBasis, CSSLengthZero))
   of cstFlexFlow:
-    if (let dir = parseIdent[CSSFlexDirection](cvals[i]); dir.isSome):
+    if (let dir = parseIdent[CSSFlexDirection](cval); dir.isSome):
       # flex-direction
       var val = CSSValueBit(flexDirection: dir.get)
       res.add(makeEntry(cptFlexDirection, val))
@@ -1856,10 +1856,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       var val = CSSValueBit(flexWrap: wrap)
       res.add(makeEntry(cptFlexWrap, val))
   of cstOverflow:
-    var i = cvals.skipBlanks(0)
-    if i >= cvals.len:
-      return err()
-    if (let xx = parseIdent[CSSOverflow](cvals[i]); xx.isSome):
+    if (let xx = parseIdent[CSSOverflow](cval); xx.isSome):
       let x = CSSValueBit(overflow: xx.get)
       var y = x
       i = cvals.skipBlanks(i + 1)
@@ -1868,10 +1865,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       res.add(makeEntry(cptOverflowX, x))
       res.add(makeEntry(cptOverflowY, y))
   of cstVerticalAlign:
-    var i = cvals.skipBlanks(0)
-    let tok = ?cvals.getToken(i)
-    if cvals.skipBlanks(i + 1) < cvals.len:
+    if cvals.skipBlanks(i + 1) < cvals.len or not (cval of CSSToken):
       return err()
+    let tok = CSSToken(cval)
     if tok.t == cttIdent:
       var entry = CSSComputedEntry()
       ?cvals.parseValue(cptVerticalAlign, entry, attrs)
@@ -1882,9 +1878,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       res.add(makeEntry(cptVerticalAlign, val))
       res.add(makeEntry(cptVerticalAlignLength, length))
   of cstBorderSpacing:
-    var i = cvals.skipBlanks(0)
-    let tok = ?cvals.getToken(i)
-    let a = ?cssAbsoluteLength(tok, attrs)
+    let a = ?cssAbsoluteLength(cval, attrs)
     i = cvals.skipBlanks(i + 1)
     let b = if i >= cvals.len: a else: ?cssAbsoluteLength(cvals[i], attrs)
     if cvals.skipBlanks(i + 1) < cvals.len:
