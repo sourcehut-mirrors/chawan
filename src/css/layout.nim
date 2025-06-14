@@ -2029,7 +2029,7 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       sizes.space.h.isDefinite() and sizes.space.h.u != 0):
     bctx.flushMargins(box.state.offset.y)
   fstate.layoutFlow0(sizes, box)
-  if fstate.space.w.t in {scFitContent, scMaxContent}:
+  if fstate.space.w.t == scFitContent:
     # shrink-to-fit size; layout again.
     let oldIntr = fstate.intr
     fstate.initReLayout(bctx, box, sizes)
@@ -2039,6 +2039,9 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     # (This is especially important with max-content, otherwise tables
     # break horribly.)
     fstate.intr = oldIntr
+  elif fstate.space.w.t == scMaxContent:
+    #TODO performance hack
+    fstate.maxChildWidth += fstate.totalFloatWidth
   # Apply width, and height. For height, temporarily remove padding we have
   # applied before so that percentage resolution works correctly.
   var childSize = size(
@@ -2209,7 +2212,8 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
       box: box,
       colspan: colspan,
       rowspan: rowspan,
-      coli: n
+      coli: n,
+      reflow: space.w.t == scMaxContent #TODO performance hack
     )
     result.cells.add(wrapper)
     if rowspan > 1:
