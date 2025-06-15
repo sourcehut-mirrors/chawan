@@ -17,6 +17,8 @@ ifeqdef SYS_munmap allow
 ifeqdef SYS_brk allow
 
 # less common socket/file i/o
+ifeqdef SYS_writev allow
+ifeqdef SYS_readv allow
 ifeqdef SYS_lseek allow
 ifeqdef SYS_close allow
 ifeqdef SYS_shutdown allow
