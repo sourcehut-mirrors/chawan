@@ -777,6 +777,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput) =
 const MaxPrecNum = 100000000
 
 proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
+  elog "handleCommandInput 1, buffer", repr pager.inputBuffer, "c", repr c
   if pager.config.input.viNumericPrefix and not pager.notnum:
     if pager.precnum != 0 and c == '0' or c in '1' .. '9':
       if pager.precnum < MaxPrecNum: # better ignore than eval...
@@ -785,6 +786,7 @@ proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
       return
     else:
       pager.notnum = true
+  elog "handleCommandInput 2, buffer", repr pager.inputBuffer, "c", repr c
   pager.inputBuffer &= c
   let action = getNormalAction(pager.config, pager.inputBuffer)
   if action != "":
@@ -836,6 +838,7 @@ proc input(pager: Pager): EmptyPromise =
           pager.updateReadLine()
     else:
       p = pager.handleCommandInput(c)
+      elog "after handleCommandInput, buffer", repr pager.inputBuffer, "c", repr c
       if not pager.feednext:
         pager.inputBuffer = ""
         pager.refreshStatusMsg()
