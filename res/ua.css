@@ -124,6 +124,10 @@ a[href] { color: -cha-ansi(blue) }
 @media (prefers-color-scheme: dark) {
 a[href] { color: -cha-ansi(yellow) }
 }
+@media (monochrome) {
+a[href] { text-decoration: underline }
+a[href]:hover { font-weight: bold }
+}
 
 a[href]::-cha-link-marker {
 	counter-increment: -cha-link-counter;

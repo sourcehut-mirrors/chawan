@@ -5,6 +5,7 @@ import std/options
 import css/cssparser
 import css/cssvalues
 import html/script
+import types/color
 import types/opt
 import types/winattrs
 import utils/twtstr
@@ -27,6 +28,8 @@ type
 
   MediaFeatureType = enum
     mftColor = "color"
+    mftColorIndex = "color-index"
+    mftMonochrome = "monochrome"
     mftGrid = "grid"
     mftHover = "hover"
     mftPrefersColorScheme = "prefers-color-scheme"
@@ -41,7 +44,7 @@ type
 
   MediaFeature = object
     case t: MediaFeatureType
-    of mftColor:
+    of mftColor, mftColorIndex, mftMonochrome:
       range: Slice[int]
     of mftGrid, mftHover, mftPrefersColorScheme, mftScripting:
       b: bool
@@ -72,7 +75,7 @@ proc parseMediaCondition(parser: var MediaQueryParser; non = false;
 # compliant.  What can you do :/
 func `$`(mf: MediaFeature): string =
   case mf.t
-  of mftColor:
+  of mftColor, mftColorIndex, mftMonochrome:
     return $mf.range.a & " <= " & $mf.t & " <= " & $mf.range.b
   of mftGrid:
     return "grid: " & $int(mf.b)
@@ -106,7 +109,9 @@ func `$`*(mqlist: seq[MediaQuery]): string =
       result &= ", "
     result &= $it
 
-const RangeFeatures = {mftColor, mftWidth, mftHeight}
+const RangeFeatures = {
+  mftColor, mftColorIndex, mftMonochrome, mftWidth, mftHeight
+}
 
 proc has(parser: MediaQueryParser; i = 0): bool =
   return parser.cvals.len > parser.at + i
@@ -142,7 +147,7 @@ proc getBoolFeature(feature: MediaFeatureType): Opt[MediaQuery] =
       t: mctFeature,
       feature: MediaFeature(t: feature, b: true)
     ))
-  of mftColor:
+  of mftColor, mftColorIndex, mftMonochrome:
     return ok(MediaQuery(
       t: mctFeature,
       feature: MediaFeature(t: feature, range: 1..high(int))
@@ -287,7 +292,7 @@ proc parseFeature0(parser: var MediaQueryParser; t: MediaFeatureType;
   of mftPrefersColorScheme:
     let b = ?parser.parseBool("light", "dark")
     MediaFeature(t: t, b: b)
-  of mftColor:
+  of mftColor, mftColorIndex, mftMonochrome:
     let range = ?parser.parseIntRange(ismin, ismax)
     MediaFeature(t: t, range: range)
   of mftWidth, mftHeight:
@@ -421,6 +426,7 @@ proc parseMediaQueryList*(cvals: seq[CSSComponentValue];
 type
   MediaApplyContext = object
     scripting: ScriptingMode
+    colorMode: ColorMode
     attrsp: ptr WindowAttributes
 
 func appliesLR(feature: MediaFeature; n: float32): bool =
@@ -432,7 +438,17 @@ func appliesLR(feature: MediaFeature; n: float32): bool =
 func applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
   case feature.t
   of mftColor:
-    return 8 in feature.range
+    let bitDepth = if ctx.colorMode != cmMonochrome: 8 else: 0
+    return bitDepth in feature.range
+  of mftColorIndex:
+    let mapSize = case ctx.colorMode
+    of cmANSI: 16
+    of cmEightBit: 256
+    of cmMonochrome, cmTrueColor: 0
+    return mapSize in feature.range
+  of mftMonochrome:
+    let bitDepth = if ctx.colorMode == cmMonochrome: 1 else: 0
+    return bitDepth in feature.range
   of mftGrid:
     return feature.b
   of mftHover:
@@ -471,8 +487,12 @@ func applies(ctx: MediaApplyContext; mqlist: seq[MediaQuery]): bool =
   return false
 
 func applies*(mqlist: seq[MediaQuery]; scripting: ScriptingMode;
-    attrsp: ptr WindowAttributes): bool =
-  let ctx = MediaApplyContext(scripting: scripting, attrsp: attrsp)
+    colorMode: ColorMode; attrsp: ptr WindowAttributes): bool =
+  let ctx = MediaApplyContext(
+    scripting: scripting,
+    colorMode: colorMode,
+    attrsp: attrsp
+  )
   return ctx.applies(mqlist)
 
 {.pop.} # raises: []

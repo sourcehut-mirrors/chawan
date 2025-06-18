@@ -33,6 +33,7 @@ import server/loaderiface
 import server/request
 import server/response
 import types/blob
+import types/color
 import types/opt
 import types/url
 import types/winattrs
@@ -377,7 +378,8 @@ proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
   let cvals = parseComponentValues(s)
   let mqlist = parseMediaQueryList(cvals, window.scriptAttrsp)
   return MediaQueryList(
-    matches: mqlist.applies(window.settings.scripting, window.scriptAttrsp),
+    matches: mqlist.applies(window.settings.scripting, window.colorMode,
+      window.scriptAttrsp),
     media: $mqlist
   )
 
@@ -495,8 +497,8 @@ proc addScripting*(window: Window) =
   ctx.addPerformanceModule(eventTargetCID)
 
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
-    attrsp: ptr WindowAttributes; loader: FileLoader; url: URL;
-    urandom: PosixStream; imageTypes: Table[string, string];
+    colorMode: ColorMode; attrsp: ptr WindowAttributes; loader: FileLoader;
+    url: URL; urandom: PosixStream; imageTypes: Table[string, string];
     userAgent, referrer: string): Window =
   let window = Window(
     attrsp: attrsp,
@@ -513,7 +515,8 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     imageTypes: imageTypes,
     userAgent: userAgent,
     referrer: referrer,
-    autofocus: autofocus
+    autofocus: autofocus,
+    colorMode: colorMode
   )
   window.location = window.newLocation()
   if scripting != smFalse:

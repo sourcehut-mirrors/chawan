@@ -32,12 +32,6 @@ import utils/regexutils
 import utils/twtstr
 
 type
-  ColorMode* = enum
-    cmMonochrome = "monochrome"
-    cmANSI = "ansi"
-    cmEightBit = "eight-bit"
-    cmTrueColor = "true-color"
-
   MetaRefresh* = enum
     mrNever = "never"
     mrAlways = "always"

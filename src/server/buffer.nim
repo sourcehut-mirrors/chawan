@@ -135,6 +135,7 @@ type
     markLinks*: bool
     charsetOverride*: Charset
     metaRefresh*: MetaRefresh
+    colorMode*: ColorMode
     charsets*: seq[Charset]
     protocol*: Table[string, ProtocolConfig]
     imageTypes*: Table[string, string]
@@ -1963,6 +1964,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     config.images,
     config.styling,
     config.autofocus,
+    config.colorMode,
     addr bc.attrs,
     loader,
     url,

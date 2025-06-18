@@ -128,6 +128,22 @@ Example:
 images = true
 \f[I]# disable website CSS\f[R]
 styling = false
+\f[I]# Specify user styles.\f[R]
+user\-style = \(aq\(aq\(aq
+/* you can import external UA styles like this: */
+\(atimport \(aquser.css\(aq;
+/* or just insert the style inline as follows. */
+/* enforce the default text\-decoration for links (i.e. underline). */
+a[href] { text\-decoration: revert !important }
+\(atmedia (monochrome) { /* only in color\-mode \(dqmonochrome\(dq (or \-M) */
+/* disable UA style of bold font (no need for important here) */
+a[href]:hover { font\-weight: initial }
+/* ...and italicize the font on hover instead.
+* here we use important because we don\(aqt want websites to
+* override the value. */
+a[href]:hover { font\-style: italic !important }
+}
+\(aq\(aq\(aq
 \f[I]# You *can* set scripting to true here, but I strongly recommend using\f[R]
 \f[I]# [[siteconf]] to enable it on a per\-site basis instead.\f[R]
 .EE
@@ -156,8 +172,7 @@ T}@T{
 true
 T}@T{
 Enable/disable author style sheets.
-Note that disabling this does not affect user styles set in
-\f[CR][css]\f[R].
+Note that disabling this does not affect user styles.
 T}@T{
 T}
 _

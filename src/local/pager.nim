@@ -1886,7 +1886,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     charsetOverride: charsetOverride,
     protocol: pager.config.protocol,
     metaRefresh: pager.config.buffer.metaRefresh,
-    markLinks: pager.config.buffer.markLinks
+    markLinks: pager.config.buffer.markLinks,
+    colorMode: pager.term.colorMode
   )
   result.userStyle &= string(pager.config.buffer.userStyle) & '\n'
   loaderConfig = LoaderClientConfig(

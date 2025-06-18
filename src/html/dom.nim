@@ -111,6 +111,7 @@ type
     timeouts*: TimeoutState
     navigate*: proc(url: URL)
     importMapsAllowed*: bool
+    colorMode*: ColorMode
     pendingResources*: seq[EmptyPromise]
     pendingImages*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
@@ -2644,7 +2645,8 @@ func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
   var res = CSSStylesheet()
   res[] = ss[]
   for mq in ss.mqList:
-    if mq.query.applies(window.settings.scripting, window.attrsp):
+    if mq.query.applies(window.settings.scripting, window.colorMode,
+        window.attrsp):
       res.add(mq.children.applyMediaQuery(window))
   move(res)
 
@@ -4225,7 +4227,8 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     if media != "":
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals, window.attrsp)
-      applies = media.applies(window.settings.scripting, window.attrsp)
+      applies = media.applies(window.settings.scripting, window.colorMode,
+        window.attrsp)
     link.sheets.setLen(0)
     let p = window.loadSheet(link, url).then(proc(sheet: CSSStylesheet) =
       # Note: we intentionally load all sheets first and *then* check

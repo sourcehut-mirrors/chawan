@@ -130,6 +130,22 @@ Example:
 images = true
 # disable website CSS
 styling = false
+# Specify user styles.
+user-style = '''
+/* you can import external UA styles like this: */
+@import 'user.css';
+/* or just insert the style inline as follows. */
+/* enforce the default text-decoration for links (i.e. underline). */
+a[href] { text-decoration: revert !important }
+@media (monochrome) { /* only in color-mode "monochrome" (or -M) */
+	/* disable UA style of bold font (no need for important here) */
+	a[href]:hover { font-weight: initial }
+	/* ...and italicize the font on hover instead.
+	 * here we use important because we don't want websites to
+	 * override the value. */
+	a[href]:hover { font-style: italic !important }
+}
+'''
 # You *can* set scripting to true here, but I strongly recommend using
 # [[siteconf]] to enable it on a per-site basis instead.
 ```
@@ -149,8 +165,8 @@ Following is a list of buffer options:
 <td>styling</td>
 <td>boolean</td>
 <td>true</td>
-<td>Enable/disable author style sheets. Note that disabling this does not affect
-user styles set in `[css]`.</td>
+<td>Enable/disable author style sheets. Note that disabling this does
+not affect user styles.</td>
 </tr>
 
 <tr>

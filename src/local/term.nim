@@ -103,7 +103,7 @@ type
     imagesToClear*: seq[CanvasImage]
     lineDamage: seq[int]
     attrs*: WindowAttributes
-    colorMode: ColorMode
+    colorMode*: ColorMode
     formatMode: set[FormatFlag]
     imageMode*: ImageMode
     cleared: bool
