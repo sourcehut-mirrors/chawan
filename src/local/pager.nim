@@ -1037,7 +1037,7 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
   ox = x
   move(ls)
 
-proc drawBuffer(pager: Pager; container: Container; ofile: File): bool =
+proc drawBuffer(pager: Pager; container: Container; ofile: File): Opt[void] =
   var format = Format()
   let res = container.readLines(proc(line: SimpleFlexibleLine) =
     var x = 0
@@ -3154,7 +3154,7 @@ proc handleEvents(pager: Pager) =
     pager.handleEvents(pager.container)
 
 proc handleEvent(pager: Pager; container: Container) =
-  if container.handleEvent():
+  if container.handleEvent().isSome:
     pager.handleEvents(container)
 
 proc runCommand(pager: Pager) =
@@ -3342,7 +3342,7 @@ proc headlessLoop(pager: Pager) =
 proc dumpBuffers(pager: Pager) =
   pager.headlessLoop()
   for container in pager.containers:
-    if pager.drawBuffer(container, stdout):
+    if pager.drawBuffer(container, stdout).isSome:
       pager.handleEvents(container)
     else:
       pager.console.error("Error in buffer", $container.url)
