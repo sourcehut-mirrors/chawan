@@ -31,8 +31,13 @@ type
   CSSRule* = ref object of CSSComponentValue
     prelude*: seq[CSSComponentValue]
 
+  CSSAtRuleType* = enum
+    cartUnknown = "-cha-unknown"
+    cartImport = "import"
+    cartMedia = "media"
+
   CSSAtRule* = ref object of CSSRule
-    name*: string
+    name*: CSSAtRuleType
     oblock*: CSSSimpleBlock
 
   CSSQualifiedRule* = ref object of CSSRule
@@ -143,7 +148,7 @@ proc `$`*(c: CSSComponentValue): string =
     else: discard
   elif c of CSSRule:
     if c of CSSAtRule:
-      result &= CSSAtRule(c).name & " "
+      result &= $CSSAtRule(c).name & ' '
     result &= $CSSRule(c).prelude & "\n"
     if c of CSSAtRule:
       result &= $CSSAtRule(c).oblock
@@ -562,7 +567,8 @@ proc consumeQualifiedRule(cvals: openArray[CSSComponentValue]; i: var int):
 proc consumeAtRule(cvals: openArray[CSSComponentValue]; i: var int): CSSAtRule =
   let t = CSSToken(cvals[i])
   inc i
-  result = CSSAtRule(name: t.value)
+  let name = parseEnumNoCase[CSSAtRuleType](t.value).get(cartUnknown)
+  result = CSSAtRule(name: name)
   while i < cvals.len:
     let t = cvals[i]
     inc i

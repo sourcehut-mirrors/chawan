@@ -13,7 +13,6 @@ import html/catom
 import types/opt
 import types/url
 import types/winattrs
-import utils/twtstr
 
 type
   CSSRuleBase* = ref object of RootObj
@@ -211,7 +210,9 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
     inc sheet.len
 
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
-  if atrule.name.equalsIgnoreCase("import"):
+  case atrule.name
+  of cartUnknown: discard
+  of cartImport:
     if sheet.len == 0 and base != nil:
       var i = atrule.prelude.skipBlanks(0)
       # Warning: this is a tracking vector minefield. If you implement
@@ -225,7 +226,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
             # check if there are really no media queries/layers/etc
             if i == atrule.prelude.len:
               sheet.importList.add(url.get)
-  elif atrule.name.equalsIgnoreCase("media"):
+  of cartMedia:
     if atrule.oblock != nil:
       let query = parseMediaQueryList(atrule.prelude, sheet.attrs)
       let rules = atrule.oblock.value.parseListOfRules(topLevel = false)
