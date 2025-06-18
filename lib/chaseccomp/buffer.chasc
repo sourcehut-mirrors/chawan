@@ -14,6 +14,7 @@ ifeqdef SYS_gettimeofday allow 	# used by QuickJS in Date.now()
 ifeqdef SYS_rt_sigreturn allow 	# newer kernels have this instead of sigreturn
 ifeqdef SYS_set_robust_list allow # glibc seems to need it for whatever reason
 ifeqdef SYS_sigreturn allow	# called by signal trampoline
+ifeqdef SYS_set_tid_address allow # called by musl on fork
 
 ifeqdef SYS_fork allow
 # It would be great if this were enough to allow fork and only fork,
