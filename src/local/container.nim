@@ -191,6 +191,15 @@ type
     luctx: LUContext
     refreshHeader: string
 
+  NavDirection* = enum
+    ndPrev = "prev"
+    ndNext = "next"
+    ndPrevSibling = "prev-sibling"
+    ndNextSibling = "next-sibling"
+    ndParent = "parent"
+    ndFirstChild
+    ndAny = "any"
+
 jsDestructor(Highlight)
 jsDestructor(Container)
 
@@ -1746,6 +1755,72 @@ func hoverImage(container: Container): string {.jsfget.} =
 
 func hoverCachedImage(container: Container): string {.jsfget.} =
   return container.hoverText[htCachedImage]
+
+func findPrev(container: Container): Container =
+  if container.parent == nil:
+    return nil
+  let n = container.parent.children.find(container)
+  assert n != -1, "Container not a child of its parent"
+  if n == 0:
+    return container.parent
+  var container = container.parent.children[n - 1]
+  while container.children.len > 0:
+    container = container.children[^1]
+  return container
+
+func findNext(container: Container): Container =
+  if container.children.len > 0:
+    return container.children[0]
+  var container = container
+  while container.parent != nil:
+    let n = container.parent.children.find(container)
+    assert n != -1, "Container not a child of its parent"
+    if n < container.parent.children.high:
+      return container.parent.children[n + 1]
+    container = container.parent
+  return nil
+
+func findPrevSibling(container: Container): Container =
+  if container.parent == nil:
+    return nil
+  var n = container.parent.children.find(container)
+  assert n != -1, "Container not a child of its parent"
+  if n == 0:
+    n = container.parent.children.len
+  return container.parent.children[n - 1]
+
+func findNextSibling(container: Container): Container =
+  if container.parent == nil:
+    return nil
+  var n = container.parent.children.find(container)
+  assert n != -1, "Container not a child of its parent"
+  if n == container.parent.children.high:
+    n = -1
+  return container.parent.children[n + 1]
+
+func findParent(container: Container): Container =
+  return container.parent
+
+func findFirstChild(container: Container): Container =
+  if container.children.len == 0:
+    return nil
+  return container.children[0]
+
+func findAny(container: Container): Container =
+  let prev = container.findPrev()
+  if prev != nil:
+    return prev
+  return container.findNext()
+
+func find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
+  return case dir
+  of ndPrev: container.findPrev()
+  of ndNext: container.findNext()
+  of ndPrevSibling: container.findPrevSibling()
+  of ndNextSibling: container.findNextSibling()
+  of ndParent: container.findParent()
+  of ndFirstChild: container.findFirstChild()
+  of ndAny: container.findAny()
 
 # Returns false on I/O error.
 proc handleCommand(container: Container): bool =

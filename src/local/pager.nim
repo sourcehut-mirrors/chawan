@@ -107,15 +107,6 @@ type
     response: Response
     sx: int
 
-  NavDirection = enum
-    ndPrev = "prev"
-    ndNext = "next"
-    ndPrevSibling = "prev-sibling"
-    ndNextSibling = "next-sibling"
-    ndParent = "parent"
-    ndFirstChild
-    ndAny = "any"
-
   Surface = object
     redraw: bool
     grid: FixedGrid
@@ -1450,63 +1441,8 @@ proc dupeBuffer(pager: Pager; container: Container; url: URL) =
 proc dupeBuffer(pager: Pager) {.jsfunc.} =
   pager.dupeBuffer(pager.container, pager.container.url)
 
-func findPrev(container: Container): Container =
-  if container.parent == nil:
-    return nil
-  let n = container.parent.children.find(container)
-  assert n != -1, "Container not a child of its parent"
-  if n == 0:
-    return container.parent
-  var container = container.parent.children[n - 1]
-  while container.children.len > 0:
-    container = container.children[^1]
-  return container
-
-func findNext(container: Container): Container =
-  if container.children.len > 0:
-    return container.children[0]
-  var container = container
-  while container.parent != nil:
-    let n = container.parent.children.find(container)
-    assert n != -1, "Container not a child of its parent"
-    if n < container.parent.children.high:
-      return container.parent.children[n + 1]
-    container = container.parent
-  return nil
-
-func findPrevSibling(container: Container): Container =
-  if container.parent == nil:
-    return nil
-  var n = container.parent.children.find(container)
-  assert n != -1, "Container not a child of its parent"
-  if n == 0:
-    n = container.parent.children.len
-  return container.parent.children[n - 1]
-
-func findNextSibling(container: Container): Container =
-  if container.parent == nil:
-    return nil
-  var n = container.parent.children.find(container)
-  assert n != -1, "Container not a child of its parent"
-  if n == container.parent.children.high:
-    n = -1
-  return container.parent.children[n + 1]
-
-func findParent(container: Container): Container =
-  return container.parent
-
-func findFirstChild(container: Container): Container =
-  if container.children.len == 0:
-    return nil
-  return container.children[0]
-
-func findAny(container: Container): Container =
-  let prev = container.findPrev()
-  if prev != nil:
-    return prev
-  return container.findNext()
-
-func opposite(dir: NavDirection): NavDirection =
+func opposite(dir: NavDirection): NavDirection
+    {.jsstfunc: "Pager.oppositeDir".} =
   const Map = [
     ndPrev: ndNext,
     ndNext: ndPrev,
@@ -1518,73 +1454,35 @@ func opposite(dir: NavDirection): NavDirection =
   ]
   return Map[dir]
 
-func find(container: Container; dir: NavDirection): Container =
-  return case dir
-  of ndPrev: container.findPrev()
-  of ndNext: container.findNext()
-  of ndPrevSibling: container.findPrevSibling()
-  of ndNextSibling: container.findNextSibling()
-  of ndParent: container.findParent()
-  of ndFirstChild: container.findFirstChild()
-  of ndAny: container.findAny()
+func revDirection(pager: Pager): NavDirection {.jsfget.} =
+  return pager.navDirection.opposite()
+
+proc traverse(pager: Pager; dir: NavDirection): bool {.jsfunc.} =
+  pager.navDirection = dir
+  if pager.container == nil:
+    return false
+  let next = pager.container.find(dir)
+  if next == nil:
+    return false
+  pager.setContainer(next)
+  true
 
 # The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
 # commands by traversing the container tree in a depth-first order.
 proc prevBuffer(pager: Pager): bool {.jsfunc.} =
-  pager.navDirection = ndPrev
-  if pager.container == nil:
-    return false
-  let prev = pager.container.findPrev()
-  if prev == nil:
-    return false
-  pager.setContainer(prev)
-  return true
+  pager.traverse(ndPrev)
 
 proc nextBuffer(pager: Pager): bool {.jsfunc.} =
-  pager.navDirection = ndNext
-  if pager.container == nil:
-    return false
-  let next = pager.container.findNext()
-  if next == nil:
-    return false
-  pager.setContainer(next)
-  return true
+  pager.traverse(ndNext)
 
 proc parentBuffer(pager: Pager): bool {.jsfunc.} =
-  pager.navDirection = ndParent
-  if pager.container == nil:
-    return false
-  let parent = pager.container.findParent()
-  if parent == nil:
-    return false
-  pager.setContainer(parent)
-  return true
+  pager.traverse(ndParent)
 
 proc prevSiblingBuffer(pager: Pager): bool {.jsfunc.} =
-  pager.navDirection = ndPrevSibling
-  if pager.container == nil:
-    return false
-  if pager.container.parent == nil:
-    return false
-  var n = pager.container.parent.children.find(pager.container)
-  assert n != -1, "Container not a child of its parent"
-  if n == 0:
-    n = pager.container.parent.children.len
-  pager.setContainer(pager.container.parent.children[n - 1])
-  return true
+  pager.traverse(ndPrevSibling)
 
 proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
-  pager.navDirection = ndNextSibling
-  if pager.container == nil:
-    return false
-  if pager.container.parent == nil:
-    return false
-  var n = pager.container.parent.children.find(pager.container)
-  assert n != -1, "Container not a child of its parent"
-  if n == pager.container.parent.children.high:
-    n = -1
-  pager.setContainer(pager.container.parent.children[n + 1])
-  return true
+  pager.traverse(ndNextSibling)
 
 proc alert*(pager: Pager; msg: string) {.jsfunc.} =
   if msg != "":
@@ -1676,7 +1574,7 @@ proc discardBuffer(pager: Pager; container = none(Container);
   if dir.isSome:
     pager.navDirection = dir.get.opposite()
   let container = container.get(pager.container)
-  let dir = pager.navDirection.opposite()
+  let dir = pager.revDirection
   let setTarget = container.find(dir)
   if container == nil or setTarget == nil:
     pager.alert("No buffer in direction: " & $dir)

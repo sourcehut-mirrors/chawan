@@ -161,6 +161,13 @@ gives access to the pager (i.e.\ browser chrome).
 It is accessible as \f[CR]globalThis.pager\f[R], or simply
 \f[CR]pager\f[R].
 .PP
+Note that there is a quirk of questionable value, where accessing
+properties that do not exist on the pager will dispatch those to the
+current buffer (\f[CR]pager.buffer\f[R]).
+So if you see e.g.\ \f[CR]pager.url\f[R], that is actually equivalent to
+\f[CR]pager.buffer.url\f[R], because \f[CR]Pager\f[R] has no
+\f[CR]url\f[R] getter.
+.PP
 Following properties (functions/getters) are defined by
 \f[CR]Pager\f[R]:
 .PP
@@ -213,22 +220,30 @@ T}@T{
 T}
 _
 T{
+\f[CR]traverse(dir)\f[R]
+T}@T{
+Switch to the next buffer in direction \f[CR]dir\f[R], interpreted as in
+\f[CR]Buffer#find\f[R].
+T}@T{
+T}
+_
+T{
 \f[CR]nextBuffer()\f[R], \f[CR]prevBuffer()\f[R],
 \f[CR]nextSiblingBuffer()\f[R], \f[CR]prevSiblingBuffer()\f[R],
 \f[CR]parentBuffer()\f[R]
 T}@T{
-Traverse the buffer tree.
-\f[CR]nextBuffer()\f[R], \f[CR]prevBuffer()\f[R] do a depth\-first
-traversal; \(ga\f[CR]nextSiblingBuffer()\f[R],
-\f[CR]prevSiblingBuffer()\f[R] cycle through siblings, and
-\f[CR]parentBuffer()\f[R] returns to the parent.
+Same as \f[CR]traverse(\(dqnext\(dq)\f[R],
+\f[CR]traverse(\(dqprev\(dq)\f[R],
+\f[CR]traverse(\(dqnext\-sibling\(dq)\f[R],
+\f[CR]traverse(\(dqprev\-sibling\(dq)\f[R], and
+\f[CR]traverse(\(dqparent\(dq)\f[R].
 T}@T{
 T}
 _
 T{
 \f[CR]dupeBuffer()\f[R]
 T}@T{
-Duplicate the current buffer by loading its source to a new buffer.
+Duplicate the current buffer by loading its source in a new buffer.
 T}@T{
 T}
 _
@@ -236,10 +251,7 @@ T{
 \f[CR]discardBuffer(buffer = pager.buffer, dir = pager.navDirection)\f[R]
 T}@T{
 Discard \f[CR]buffer\f[R], then move back to the buffer opposite to
-\f[CR]dir\f[R].
-Possible values of \f[CR]dir\f[R] are: \(lqprev\(rq, \(lqnext\(rq,
-\(lqprev\-sibling\(rq, \(lqnext\-sibling\(rq, \(lqparent\(rq,
-\(lqfirst\-child\(rq, \(lqany\(rq.
+\f[CR]dir\f[R] (interpreted as in \f[CR]Buffer#find\f[R]).
 T}@T{
 T}
 _
@@ -418,6 +430,48 @@ Getter for the currently displayed buffer.
 Returns a \f[CR]Buffer\f[R] object; see below.
 T}@T{
 T}
+_
+T{
+\f[CR]navDirection\f[R]
+T}@T{
+The direction the user last moved in the buffer tree using
+\f[CR]traverse\f[R].
+Possible values are \f[CR]prev\f[R], \f[CR]next\f[R],
+\f[CR]prev\-sibling\f[R], \f[CR]next\-sibling\f[R], \f[CR]parent\f[R],
+\f[CR]first\-child\f[R], \f[CR]any\f[R].
+T}@T{
+T}
+_
+T{
+\f[CR]revDirection\f[R]
+T}@T{
+Equivalent to \f[CR]Pager.oppositeDir(pager.navDirection)\f[R].
+T}@T{
+T}
+.TE
+.PP
+Also, the following static function is defined on \f[CR]Pager\f[R]
+itself:
+.PP
+.TS
+tab(@);
+lw(28.0n) lw(38.5n) lw(3.5n).
+T{
+Property
+T}@T{
+Description
+T}@T{
+T}
+_
+T{
+\f[CR]Pager.oppositeDir(dir)\f[R]
+T}@T{
+Return a string representing the direction opposite to \f[CR]dir\f[R].
+For \(lqnext\(rq, this is \(lqprev\(rq; for \(lqparent\(rq,
+\(lqfirst\-child\(rq; for \(lqprev\-sibling\(rq, \(lqnext\-sibling\(rq;
+for \(lqany\(rq, it is the same; for the rest, vice versa.
+T}@T{
+T}
 .TE
 .SS Buffer
 Each buffer is exposed as an object that implements the
@@ -425,12 +479,8 @@ Each buffer is exposed as an object that implements the
 To get a reference to the currently displayed buffer, use
 \f[CR]pager.buffer\f[R].
 .PP
-Important: there exists a quirk of questionable value on pager, where
-accessing properties that do not exist on the pager will dispatch those
-to the current buffer (\f[CR]pager.buffer\f[R]).
-So if you see e.g.\ \f[CR]pager.url\f[R], that is actually equivalent to
-\f[CR]pager.buffer.url\f[R], because \f[CR]Pager\f[R] has no
-\f[CR]url\f[R] getter.
+Note the quirk mentioned above where \f[CR]Pager\f[R] dispatches unknown
+properties onto the current buffer.
 .PP
 Following properties (functions/getters) are defined by
 \f[CR]Buffer\f[R]:
@@ -786,6 +836,23 @@ Set the cursor position to \f[CR]x\f[R] and \f[CR]y\f[R] respectively,
 scrolling the view if necessary.
 Variants that end with \(lqCenter\(rq will also center the screen around
 the position if it is outside the screen.
+T}@T{
+T}
+_
+T{
+\f[CR]find(dir)\f[R]
+T}@T{
+Find the next buffer in the tree in a specific direction.
+Possible values of \f[CR]dir\f[R] are: \f[CR]prev\f[R], \f[CR]next\f[R],
+\f[CR]prev\-sibling\f[R], \f[CR]next\-sibling\f[R], \f[CR]parent\f[R],
+\f[CR]first\-child\f[R], \f[CR]any\f[R].
+\(lqnext\(rq and \(lqprev\(rq do a depth\-first traversal.
+\(lqprev\-sibling\(rq and \(lqnext\-sibling\(rq cycle through sibling
+buffers.
+\(lqparent\(rq moves to the parent buffer, \(lqfirst\-child\(rq to the
+first child.
+Finally, \(lqany\(rq moves either to \(lqnext\(rq, or if it does not
+exist, to \(lqprev\(rq.
 T}@T{
 T}
 _

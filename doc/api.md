@@ -134,9 +134,15 @@ access to JS objects in buffers, so e.g. `globalThis.document` is not available.
 
 ### Pager
 
-`Pager` is a separate interface from `Client` that gives access to the pager
-(i.e. browser chrome). It is accessible as `globalThis.pager`, or simply
-`pager`.
+`Pager` is a separate interface from `Client` that gives access to the
+pager (i.e. browser chrome).  It is accessible as `globalThis.pager`,
+or simply `pager`.
+
+Note that there is a quirk of questionable value, where accessing
+properties that do not exist on the pager will dispatch those to the
+current buffer (`pager.buffer`).  So if you see e.g. `pager.url`, that
+is actually equivalent to `pager.buffer.url`, because `Pager` has no
+`url` getter.
 
 Following properties (functions/getters) are defined by `Pager`:
 
@@ -179,25 +185,31 @@ of displaying it in a buffer.<br>
 </tr>
 
 <tr>
+<td>`traverse(dir)`</td>
+<td>Switch to the next buffer in direction `dir`, interpreted as in
+`Buffer#find`.</td>
+</tr>
+
+<tr>
 <td>`nextBuffer()`, `prevBuffer()`, `nextSiblingBuffer()`,
 `prevSiblingBuffer()`, `parentBuffer()`</td>
-<td>Traverse the buffer tree.<br>
-`nextBuffer()`, `prevBuffer()` do a depth-first traversal;
-``nextSiblingBuffer()`, `prevSiblingBuffer()` cycle through siblings,
-and `parentBuffer()` returns to the parent.
+<td>Same as `traverse("next")`, `traverse("prev")`,
+`traverse("next-sibling")`, `traverse("prev-sibling")`, and
+`traverse("parent")`.
 </td>
 </tr>
 
 <tr>
 <td>`dupeBuffer()`</td>
-<td>Duplicate the current buffer by loading its source to a new buffer.</td>
+<td>Duplicate the current buffer by loading its source in a new
+buffer.</td>
 </tr>
 
 <tr>
-<td>`discardBuffer(buffer = pager.buffer, dir = pager.navDirection)`</td>
-<td>Discard `buffer`, then move back to the buffer opposite to `dir`.
-Possible values of `dir` are: "prev", "next", "prev-sibling", "next-sibling",
-"parent", "first-child", "any".</td>
+<td>`discardBuffer(buffer = pager.buffer, dir =
+pager.navDirection)`</td>
+<td>Discard `buffer`, then move back to the buffer opposite to `dir`
+(interpreted as in `Buffer#find`).</td>
 </tr>
 
 <tr>
@@ -329,21 +341,51 @@ Returns `undefined`. (It should return a promise; TODO.)</td>
 
 <tr>
 <td>`buffer`</td>
-<td>Getter for the currently displayed buffer. Returns a `Buffer` object; see
+<td>Getter for the currently displayed buffer.  Returns a `Buffer` object; see
 below.</td>
+</tr>
+
+<tr>
+<td>`navDirection`</td>
+<td>The direction the user last moved in the buffer tree using
+`traverse`.  Possible values are `prev`, `next`, `prev-sibling`,
+`next-sibling`, `parent`, `first-child`, `any`.</td>
+</tr>
+
+<tr>
+<td>`revDirection`</td>
+<td>Equivalent to `Pager.oppositeDir(pager.navDirection)`.</td>
+</tr>
+
+</table>
+
+Also, the following static function is defined on `Pager` itself:
+
+<table>
+
+<tr>
+<th>Property</th>
+<th>Description</th>
+</tr>
+
+<tr>
+<td>`Pager.oppositeDir(dir)`</td>
+<td>Return a string representing the direction opposite to `dir`.<br>
+For "next", this is "prev"; for "parent", "first-child"; for
+"prev-sibling", "next-sibling"; for "any", it is the same; for the rest,
+vice versa.</td>
 </tr>
 
 </table>
 
 ### Buffer
 
-Each buffer is exposed as an object that implements the `Buffer` interface.  To
-get a reference to the currently displayed buffer, use `pager.buffer`.
+Each buffer is exposed as an object that implements the `Buffer`
+interface.  To get a reference to the currently displayed buffer, use
+`pager.buffer`.
 
-Important: there exists a quirk of questionable value on pager, where accessing
-properties that do not exist on the pager will dispatch those to the current
-buffer (`pager.buffer`). So if you see e.g. `pager.url`, that is actually
-equivalent to `pager.buffer.url`, because `Pager` has no `url` getter.
+Note the quirk mentioned above where `Pager` dispatches unknown
+properties onto the current buffer.
 
 Following properties (functions/getters) are defined by `Buffer`:
 
@@ -597,6 +639,20 @@ Returns a promise, so consumers must `await` it to get the text.</td>
 view if necessary.<br>
 Variants that end with "Center" will also center the screen around the
 position if it is outside the screen.</td>
+</tr>
+
+<tr>
+<td>`find(dir)`</td>
+<td>Find the next buffer in the tree in a specific direction.<br>
+Possible values of `dir` are: `prev`, `next`, `prev-sibling`,
+`next-sibling`, `parent`, `first-child`, `any`.
+"next" and "prev" do a depth-first traversal.<br>
+"prev-sibling" and "next-sibling" cycle through sibling buffers.<br>
+"parent" moves to the parent buffer, "first-child" to the first
+child.<br>
+Finally, "any" moves either to "next", or if it does not exist, to
+"prev".
+</td>
 </tr>
 
 <tr>
