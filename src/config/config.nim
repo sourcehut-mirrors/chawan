@@ -132,6 +132,8 @@ type
   InputConfig = object
     viNumericPrefix* {.jsgetset.}: bool
     useMouse* {.jsgetset.}: bool
+    wheelScroll* {.jsgetset.}: int32
+    sideWheelScroll* {.jsgetset.}: int32
 
   NetworkConfig = object
     maxRedirect* {.jsgetset.}: int32

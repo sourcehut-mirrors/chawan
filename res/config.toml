@@ -83,6 +83,8 @@ allow-http-from-file = false
 [input]
 vi-numeric-prefix = true
 use-mouse = true
+wheel-scroll = 5
+side-wheel-scroll = 5
 
 [display]
 color-mode = "auto"

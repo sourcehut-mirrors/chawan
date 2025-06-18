@@ -513,6 +513,20 @@ Only applies for keybindings defined in `[page]`.</td>
 The current implementation imitates w3m.</td>
 </tr>
 
+<tr>
+<td>wheel-scroll</td>
+<td>number</td>
+<td>5</td>
+<td>Number of lines to scroll for a mouse wheel event.</td>
+</tr>
+
+<tr>
+<td>side-wheel-scroll</td>
+<td>number</td>
+<td>5</td>
+<td>Number of columns to scroll for a mouse side-wheel event.</td>
+</tr>
+
 </table>
 
 Examples:

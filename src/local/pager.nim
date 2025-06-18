@@ -659,16 +659,20 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
     else: discard
   of mibWheelUp:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.buffer.scrollUp", 5)
+      discard pager.evalAction("cmd.buffer.scrollUp",
+        pager.config.input.wheelScroll)
   of mibWheelDown:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.buffer.scrollDown", 5)
+      discard pager.evalAction("cmd.buffer.scrollDown",
+        pager.config.input.wheelScroll)
   of mibWheelLeft:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.buffer.scrollLeft", 5)
+      discard pager.evalAction("cmd.buffer.scrollLeft",
+        pager.config.input.sideWheelScroll)
   of mibWheelRight:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.buffer.scrollRight", 5)
+      discard pager.evalAction("cmd.buffer.scrollRight",
+        pager.config.input.sideWheelScroll)
   else: discard
 
 proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
