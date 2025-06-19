@@ -10,7 +10,6 @@ import css/cssparser
 import css/cssvalues
 import css/lunit
 import css/match
-import css/selectorparser
 import css/sheet
 import html/catom
 import html/dom

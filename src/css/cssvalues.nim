@@ -9,7 +9,6 @@ import std/tables
 
 import css/cssparser
 import css/lunit
-import css/selectorparser
 import html/catom
 import types/bitmap
 import types/color

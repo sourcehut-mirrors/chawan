@@ -17,7 +17,6 @@ import config/mimetypes
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
-import css/selectorparser
 import css/sheet
 import html/catom
 import html/domexception

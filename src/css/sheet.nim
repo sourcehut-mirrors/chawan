@@ -8,7 +8,6 @@ import chame/tags
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
-import css/selectorparser
 import html/catom
 import types/opt
 import types/url
@@ -182,9 +181,8 @@ proc add*(sheet, sheet2: CSSStylesheet) =
     sheet.attrTable.mgetOrPut(key, @[]).add(value)
 
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
-  var sels = parseSelectors(rule.prelude)
-  if sels.len > 0:
-    let ruleDef = CSSRuleDef(sels: move(sels), idx: sheet.len)
+  if rule.sels.len > 0:
+    let ruleDef = CSSRuleDef(sels: move(rule.sels), idx: sheet.len)
     for decl in rule.decls:
       if decl.name.startsWith("--"):
         let cvar = CSSVariable(

@@ -31,9 +31,9 @@ import std/algorithm
 import chame/tags
 import css/box
 import css/cascade
+import css/cssparser
 import css/cssvalues
 import css/lunit
-import css/selectorparser
 import html/catom
 import html/dom
 import types/bitmap

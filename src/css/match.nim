@@ -4,7 +4,6 @@ import std/strutils
 
 import chame/tags
 import css/cssparser
-import css/selectorparser
 import html/catom
 import html/dom
 import utils/twtstr
