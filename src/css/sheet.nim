@@ -9,14 +9,14 @@ import css/cssparser
 import css/cssvalues
 import css/mediaquery
 import html/catom
+import html/script
+import types/color
 import types/opt
 import types/url
 import types/winattrs
 
 type
-  CSSRuleBase* = ref object of RootObj
-
-  CSSRuleDef* = ref object of CSSRuleBase
+  CSSRuleDef* = ref object
     sels*: SelectorList
     specificity*: int
     normalVals*: seq[CSSComputedEntry]
@@ -27,12 +27,7 @@ type
     # retrieval from the cache.
     idx*: int
 
-  CSSMediaQueryDef* = ref object of CSSRuleBase
-    children*: CSSStylesheet
-    query*: seq[MediaQuery]
-
   CSSStylesheet* = ref object
-    mqList*: seq[CSSMediaQueryDef]
     tagTable*: Table[CAtom, seq[CSSRuleDef]]
     idTable*: Table[CAtom, seq[CSSRuleDef]]
     classTable*: Table[CAtom, seq[CSSRuleDef]]
@@ -42,26 +37,20 @@ type
     importList*: seq[URL]
     len: int
     attrs: ptr WindowAttributes
+    scripting: ScriptingMode
+    colorMode: ColorMode
 
-type SelectorHashes = object
-  tags: seq[CAtom]
-  id: CAtom
-  class: CAtom
-  attr: CAtom
-  root: bool
+  SelectorHashes = object
+    tags: seq[CAtom]
+    id: CAtom
+    class: CAtom
+    attr: CAtom
+    root: bool
 
-func newStylesheet*(cap: int; attrs: ptr WindowAttributes): CSSStylesheet =
-  let bucketsize = cap div 2
-  return CSSStylesheet(
-    tagTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
-    idTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
-    classTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
-    attrTable: initTable[CAtom, seq[CSSRuleDef]](bucketsize),
-    generalList: newSeqOfCap[CSSRuleDef](bucketsize),
-    attrs: attrs
-  )
-
+# Forward declarations
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool
+proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule)
+proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL)
 
 proc getSelectorIds(hashes: var SelectorHashes; sels: CompoundSelector) =
   for sel in sels:
@@ -168,17 +157,13 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
     else:
       sheet.generalList.add(rule)
 
-proc add*(sheet, sheet2: CSSStylesheet) =
-  sheet.generalList.add(sheet2.generalList)
-  sheet.rootList.add(sheet2.rootList)
-  for key, value in sheet2.tagTable.pairs:
-    sheet.tagTable.mgetOrPut(key, @[]).add(value)
-  for key, value in sheet2.idTable.pairs:
-    sheet.idTable.mgetOrPut(key, @[]).add(value)
-  for key, value in sheet2.classTable.pairs:
-    sheet.classTable.mgetOrPut(key, @[]).add(value)
-  for key, value in sheet2.attrTable.pairs:
-    sheet.attrTable.mgetOrPut(key, @[]).add(value)
+proc addRules(sheet: CSSStylesheet; cvals: openArray[CSSComponentValue];
+    topLevel: bool; base: URL) =
+  for rule in cvals.parseListOfRules(topLevel):
+    if rule of CSSAtRule:
+      sheet.addAtRule(CSSAtRule(rule), base)
+    else:
+      sheet.addRule(CSSQualifiedRule(rule))
 
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
   if rule.sels.len > 0:
@@ -227,29 +212,18 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
   of cartMedia:
     if atrule.oblock != nil:
       let query = parseMediaQueryList(atrule.prelude, sheet.attrs)
-      let rules = atrule.oblock.value.parseListOfRules(topLevel = false)
-      if rules.len > 0:
-        var media = CSSMediaQueryDef()
-        media.children = newStylesheet(rules.len, sheet.attrs)
-        media.children.len = sheet.len
-        media.query = query
-        for rule in rules:
-          if rule of CSSAtRule:
-            media.children.addAtRule(CSSAtRule(rule), nil)
-          else:
-            media.children.addRule(CSSQualifiedRule(rule))
-        sheet.mqList.add(media)
-        sheet.len = media.children.len
+      if query.applies(sheet.scripting, sheet.colorMode, sheet.attrs):
+        sheet.addRules(atrule.oblock.value, topLevel = false, base = nil)
 
-proc parseStylesheet*(ibuf: string; base: URL; attrs: ptr WindowAttributes):
-    CSSStylesheet =
-  let rules = parseListOfRules(ibuf, topLevel = true)
-  let sheet = newStylesheet(rules.len, attrs)
-  for v in rules:
-    if v of CSSAtRule:
-      sheet.addAtRule(CSSAtRule(v), base)
-    else:
-      sheet.addRule(CSSQualifiedRule(v))
+proc parseStylesheet*(ibuf: openArray[char]; base: URL;
+    attrs: ptr WindowAttributes; scripting: ScriptingMode;
+    colorMode: ColorMode): CSSStylesheet =
+  let sheet = CSSStylesheet(
+    attrs: attrs,
+    scripting: scripting,
+    colorMode: colorMode
+  )
+  sheet.addRules(tokenizeCSS(ibuf), topLevel = true, base)
   return sheet
 
 {.pop.} # raises: []

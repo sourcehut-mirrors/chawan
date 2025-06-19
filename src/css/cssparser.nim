@@ -551,7 +551,7 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
     dec n
     return CSSToken(t: cttDelim, cvalue: iq.consumeRChar(n))
 
-proc tokenizeCSS(iq: openArray[char]): seq[CSSComponentValue] =
+proc tokenizeCSS*(iq: openArray[char]): seq[CSSComponentValue] =
   result = @[]
   var n = 0
   while iq.nextCSSToken(n):
@@ -754,55 +754,40 @@ proc consumeDeclarations(cvals: openArray[CSSComponentValue]):
       while i < cvals.len and cvals[i] != cttSemicolon:
         discard cvals.consumeComponentValue(i)
 
-proc consumeListOfRules(cvals: openArray[CSSComponentValue]; topLevel: bool):
-    seq[CSSRule] =
-  result = @[]
+iterator parseListOfRules*(cvals: openArray[CSSComponentValue];
+    topLevel: bool): CSSRule {.inline.} =
   var i = 0
   while i < cvals.len:
     let t = cvals[i]
     inc i
+    var rule: CSSRule = nil
     if t == cttWhitespace:
       continue
-    elif t == cttCdo or t == cttCdc:
-      if topLevel:
-        continue
-      dec i
-      let q = cvals.consumeQualifiedRule(i)
-      if q.isSome:
-        result.add(q.get)
     elif t == cttAtKeyword:
       dec i
-      result.add(cvals.consumeAtRule(i))
+      rule = cvals.consumeAtRule(i)
+    elif topLevel and (t == cttCdo or t == cttCdc):
+      continue
     else:
       dec i
-      let q = cvals.consumeQualifiedRule(i)
-      if q.isSome:
-        result.add(q.get)
+      rule = cvals.consumeQualifiedRule(i).get(nil)
+    if rule != nil:
+      yield rule
 
-proc parseListOfRules*(iq: openArray[char]; topLevel: bool): seq[CSSRule] =
-  return tokenizeCSS(iq).consumeListOfRules(topLevel)
-
-proc parseListOfRules*(cvals: openArray[CSSComponentValue]; topLevel: bool):
-    seq[CSSRule] =
-  return cvals.consumeListOfRules(topLevel)
-
-proc parseRule(cvals: openArray[CSSComponentValue]): DOMResult[CSSRule] =
+proc parseRule*(iq: openArray[char]): DOMResult[CSSRule] =
+  let cvals = tokenizeCSS(iq)
   var i = cvals.skipBlanks(0)
   if i >= cvals.len:
     return errDOMException("Unexpected EOF", "SyntaxError")
   var res = if cvals[i] == cttAtKeyword:
     cvals.consumeAtRule(i)
-  else:
-    let q = cvals.consumeQualifiedRule(i)
-    if q.isNone:
-      return errDOMException("No qualified rule found", "SyntaxError")
+  elif (let q = cvals.consumeQualifiedRule(i); q.isSome):
     q.get
+  else:
+    return errDOMException("No qualified rule found", "SyntaxError")
   if cvals.skipBlanks(i) < cvals.len:
     return errDOMException("EOF not reached", "SyntaxError")
   return ok(res)
-
-proc parseRule*(iq: openArray[char]): DOMResult[CSSRule] =
-  return tokenizeCSS(iq).parseRule()
 
 proc parseDeclarations*(iq: openArray[char]): seq[CSSDeclaration] =
   return tokenizeCSS(iq).consumeDeclarations()

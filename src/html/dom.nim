@@ -2638,21 +2638,14 @@ func crossOrigin(element: HTMLImageElement): CORSAttribute {.jsfget.} =
 func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
   return strictParseEnum[ReferrerPolicy](element.attr(satReferrerpolicy))
 
-func applyMediaQuery(ss: CSSStylesheet; window: Window): CSSStylesheet =
-  if ss == nil:
-    return nil
-  var res = CSSStylesheet()
-  res[] = ss[]
-  for mq in ss.mqList:
-    if mq.query.applies(window.settings.scripting, window.colorMode,
-        window.attrsp):
-      res.add(mq.children.applyMediaQuery(window))
-  move(res)
+proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL):
+    CSSStylesheet =
+  s.parseStylesheet(nil, window.attrsp, window.settings.scripting,
+    window.colorMode)
 
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
-  document.uaSheets.add(ua.parseStylesheet(nil, document.window.attrsp)
-    .applyMediaQuery(document.window))
+  document.uaSheets.add(document.window.parseStylesheet(ua, nil))
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
@@ -2660,14 +2653,12 @@ proc applyQuirksSheet*(document: Document) =
   if document.window == nil:
     return
   const quirks = staticRead"res/quirk.css"
-  document.uaSheets.add(quirks.parseStylesheet(nil, document.window.attrsp)
-    .applyMediaQuery(document.window))
+  document.uaSheets.add(document.window.parseStylesheet(quirks, nil))
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
 proc applyUserSheet*(document: Document; user: string) =
-  document.userSheet = user.parseStylesheet(nil, document.window.attrsp)
-    .applyMediaQuery(document.window)
+  document.userSheet = document.window.parseStylesheet(user, nil)
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
@@ -3374,8 +3365,7 @@ proc updateSheet*(this: HTMLStyleElement) =
   let document = this.document
   let window = document.window
   if window != nil:
-    this.sheet = this.textContent.parseStylesheet(document.baseURL,
-      window.attrsp).applyMediaQuery(window)
+    this.sheet = window.parseStylesheet(this.textContent, document.baseURL)
     document.applyAuthorSheets()
 
 # <table>
@@ -4186,7 +4176,7 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
     return newResolvedPromise(JSResult[string].err(nil))
   ).then(proc(s: JSResult[string]): Promise[CSSStylesheet] =
     if s.isSome:
-      let sheet = s.get.parseStylesheet(url, window.attrsp)
+      let sheet = window.parseStylesheet(s.get, url)
       var promises: seq[EmptyPromise] = @[]
       var sheets = newSeq[CSSStylesheet](sheet.importList.len)
       for i, url in sheet.importList:
@@ -4201,7 +4191,7 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
           if sheet != nil:
             #TODO check import media query here
             link.sheets.add(sheet)
-        return sheet.applyMediaQuery(window)
+        return sheet
       )
     return newResolvedPromise[CSSStylesheet](nil)
   )
