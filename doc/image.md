@@ -37,7 +37,7 @@ Supported output formats are:
 * The DEC Sixel format
 * The Kitty terminal graphics protocol
 
-The former is supported because it's ubiquitiously adopted; the latter
+The former is supported because it's ubiquitously adopted; the latter
 because it is technically superior to all existing alternatives.
 
 Support for other protocols (iTerm, MLTerm, etc.) is not planned. (To my
