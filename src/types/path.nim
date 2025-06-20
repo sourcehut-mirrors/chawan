@@ -385,10 +385,11 @@ proc ensureSubpath(path: Path; x, y: float64) =
     path.needsNewSubpath = false
 
 proc closePath*(path: Path) =
-  let lsp = path.subpaths[^1]
-  if path.subpaths.len > 0 and (lsp.points.len > 0 or lsp.closed):
-    path.subpaths[^1].closed = true
-    path.addSubpathAt(path.subpaths[^1].points[0])
+  if path.subpaths.len > 0:
+    let lsp = path.subpaths[^1]
+    if lsp.points.len > 0 or lsp.closed:
+      path.subpaths[^1].closed = true
+      path.addSubpathAt(path.subpaths[^1].points[0])
 
 #TODO this is a hack, and breaks as soon as any draw command is issued
 # between tempClosePath and tempOpenPath
