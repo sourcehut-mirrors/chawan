@@ -43,6 +43,12 @@ OUTDIR_LIBEXEC = $(OUTDIR_TARGET)/libexec/chawan
 OUTDIR_CGI_BIN = $(OUTDIR_LIBEXEC)/cgi-bin
 OUTDIR_MAN = $(OUTDIR_TARGET)/share/man
 
+# Force a poll implementation.  0 - do not force, 1 - poll, 2 - select.
+# This is an intentionally undocumented debugging flag; open a ticket if
+# you need it on a certain system, because it has subtle issues without
+# platform-specific adjustments.
+FORCE_POLL_MODE ?= 0
+
 # Nim compiler flags
 ifeq ($(TARGET),debug)
 FLAGS += -d:debug --debugger:native
@@ -65,6 +71,11 @@ LDFLAGS += -static
 protocols += ssl
 endif
 
+ifeq ($(FORCE_POLL_MODE),2)
+# for seccomp
+CFLAGS += -DCHA_FORCE_SELECT
+endif
+
 ifneq ($(CFLAGS),)
 FLAGS += $(foreach flag,$(CFLAGS),--passc:$(flag))
 endif
@@ -73,6 +84,7 @@ FLAGS += $(foreach flag,$(LDFLAGS),--passl:$(flag))
 endif
 
 FLAGS += -d:disableSandbox=$(DANGER_DISABLE_SANDBOX)
+FLAGS += -d:forcePollMode=$(FORCE_POLL_MODE)
 
 export CC CFLAGS LDFLAGS
 
