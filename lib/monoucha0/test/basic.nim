@@ -19,7 +19,8 @@ test "hello JS":
   const code = "testFun()"
   let val = ctx.eval(code, "<test>", 0)
   var res: string
-  check ctx.fromJS(val, res).isSome
+  if ctx.fromJS(val, res).isNone:
+    assert false, ctx.getExceptionMsg()
   check res == "Hello, world!"
   JS_FreeValue(ctx, val)
   ctx.free()
