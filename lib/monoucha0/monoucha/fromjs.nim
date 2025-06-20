@@ -68,6 +68,10 @@ func isSequence*(ctx: JSContext; o: JSValueConst): bool =
   result = not JS_IsUndefined(prop)
   JS_FreeValue(ctx, prop)
 
+proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): Opt[void] =
+  result = ctx.fromJS(val, res)
+  JS_FreeValue(ctx, val)
+
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): Opt[void] =
   var plen {.noinit.}: csize_t
   let outp = JS_ToCStringLen(ctx, plen, val) # cstring
@@ -116,133 +120,121 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): Opt[void] =
   res = n
   return ok()
 
-macro fromJSTupleBody(a: tuple) =
-  let len = a.getType().len - 1
-  result = newStmtList(quote do:
-    var done {.inject.}: bool)
-  for i in 0 ..< len:
-    result.add(quote do:
-      let next = JS_Call(ctx, nextMethod, it, 0, nil)
-      let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
-      defer:
-        JS_FreeValue(ctx, next)
-        JS_FreeValue(ctx, doneVal)
-      ?ctx.fromJS(doneVal, done)
+proc readTupleDone(ctx: JSContext; it, nextMethod: JSValueConst): Opt[void] =
+  let next = JS_Call(ctx, nextMethod, it, 0, nil)
+  let ctxOpaque = ctx.getOpaque()
+  let doneVal = JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstDone])
+  var done = false
+  if ctx.fromJSFree(doneVal, done).isNone or done:
+    JS_FreeValue(ctx, next)
+    if not done:
+      return err()
+    return ok()
+  while true:
+    let next = JS_Call(ctx, nextMethod, it, 0, nil)
+    let doneVal = JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstDone])
+    var done = false
+    if ctx.fromJSFree(doneVal, done).isNone or done:
+      JS_FreeValue(ctx, next)
       if done:
-        JS_ThrowTypeError(ctx,
-          "too few arguments in sequence (got %d, expected %d)", cint(`i`),
-          cint(`len`))
-        return err()
-      let valueVal = JS_GetProperty(ctx, next,
-        ctx.getOpaque().strRefs[jstValue])
-      defer: JS_FreeValue(ctx, valueVal)
-      ?ctx.fromJS(valueVal, `a`[`i`])
-    )
-    if i == len - 1:
-      result.add(quote do:
-        let next = JS_Call(ctx, nextMethod, it, 0, nil)
-        defer: JS_FreeValue(ctx, next)
-        let doneVal = JS_GetProperty(ctx, next,
-          ctx.getOpaque().strRefs[jstDone])
-        ?ctx.fromJS(doneVal, done)
-        var i = `i`
-        # we're emulating a sequence, so we must query all remaining parameters
-        # too:
-        while not done:
-          inc i
-          let next = JS_Call(ctx, nextMethod, it, 0, nil)
-          defer: JS_FreeValue(ctx, next)
-          let doneVal = JS_GetProperty(ctx, next,
-            ctx.getOpaque().strRefs[jstDone])
-          defer: JS_FreeValue(ctx, doneVal)
-          ?ctx.fromJS(doneVal, done)
-          if done:
-            JS_ThrowTypeError(ctx,
-              "too many tuple members (got %d, expected %d)", cint(i),
-              cint(`len`))
-            return err()
-          JS_FreeValue(ctx, JS_GetProperty(ctx, next,
-            ctx.getOpaque().strRefs[jstValue]))
-      )
+        JS_ThrowTypeError(ctx, "too many tuple members")
+      return err()
+    JS_FreeValue(ctx, JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstValue]))
+    JS_FreeValue(ctx, next)
+  ok()
+
+proc fromJSTupleBody[T](ctx: JSContext; it, nextMethod: JSValueConst;
+    res: var T): Opt[void] =
+  for f in res.fields:
+    let next = JS_Call(ctx, nextMethod, it, 0, nil)
+    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
+    var done = false
+    if ctx.fromJSFree(doneVal, done).isNone or done:
+      if done:
+        JS_ThrowTypeError(ctx, "too few arguments in sequence")
+      JS_FreeValue(ctx, next)
+      return err()
+    let valueVal = JS_GetProperty(ctx, next,
+      ctx.getOpaque().strRefs[jstValue])
+    JS_FreeValue(ctx, next)
+    ?ctx.fromJSFree(valueVal, f)
+  ctx.readTupleDone(it, nextMethod)
 
 proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
     Opt[void] =
-  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().symRefs[jsyIterator])
-  if JS_IsException(itprop):
-    return err()
-  defer: JS_FreeValue(ctx, itprop)
-  let it = JS_Call(ctx, itprop, val, 0, nil)
-  defer: JS_FreeValue(ctx, it)
+  let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
   let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
   if JS_IsException(nextMethod):
+    JS_FreeValue(ctx, it)
     return err()
-  defer: JS_FreeValue(ctx, nextMethod)
-  res = default(T)
-  fromJSTupleBody(res)
-  return ok()
+  result = ctx.fromJSTupleBody(it, nextMethod, res)
+  JS_FreeValue(ctx, it)
+  JS_FreeValue(ctx, nextMethod)
+
+proc fromJSSeqIt(ctx: JSContext; it, nextMethod: JSValueConst;
+    res: var JSValue): Opt[bool] =
+  let next = JS_Call(ctx, nextMethod, it, 0, nil)
+  let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
+  var done = false
+  if ctx.fromJSFree(doneVal, done).isSome and not done:
+    res = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstValue])
+    JS_FreeValue(ctx, next)
+    return ok(false)
+  JS_FreeValue(ctx, next)
+  if not done:
+    return err() # conversion error
+  ok(true) # actually done
 
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): Opt[void] =
-  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().symRefs[jsyIterator])
-  if JS_IsException(itprop):
-    return err()
-  defer: JS_FreeValue(ctx, itprop)
-  let it = JS_Call(ctx, itprop, val, 0, nil)
-  defer: JS_FreeValue(ctx, it)
+  let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
   let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
   if JS_IsException(nextMethod):
+    JS_FreeValue(ctx, it)
     return err()
-  defer: JS_FreeValue(ctx, nextMethod)
+  var status = ok()
   var tmp = newSeq[T]()
-  while true:
-    let next = JS_Call(ctx, nextMethod, it, 0, nil)
-    defer: JS_FreeValue(ctx, next)
-    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
-    defer: JS_FreeValue(ctx, doneVal)
-    var done: bool
-    ?ctx.fromJS(doneVal, done)
-    if done:
+  while status.isSome:
+    var val: JSValue
+    let done = ctx.fromJSSeqIt(it, nextMethod, val)
+    if done.isNone:
+      status = err()
       break
-    let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstValue])
-    defer: JS_FreeValue(ctx, valueVal)
+    if done.get:
+      res = move(tmp)
+      break
     tmp.add(default(T))
-    ?ctx.fromJS(valueVal, tmp[^1])
-  res = move(tmp)
-  return ok()
+    status = ctx.fromJSFree(val, tmp[^1])
+  JS_FreeValue(ctx, it)
+  JS_FreeValue(ctx, nextMethod)
+  return status
 
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): Opt[void] =
-  let itprop = JS_GetProperty(ctx, val, ctx.getOpaque().symRefs[jsyIterator])
-  if JS_IsException(itprop):
-    return err()
-  defer: JS_FreeValue(ctx, itprop)
-  let it = JS_Call(ctx, itprop, val, 0, nil)
-  defer: JS_FreeValue(ctx, it)
+  let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
   let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
   if JS_IsException(nextMethod):
+    JS_FreeValue(ctx, it)
     return err()
-  defer: JS_FreeValue(ctx, nextMethod)
+  var status = ok()
   var tmp: set[T] = {}
-  while true:
-    let next = JS_Call(ctx, nextMethod, it, 0, nil)
-    defer: JS_FreeValue(ctx, next)
-    let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
-    defer: JS_FreeValue(ctx, doneVal)
-    var done: bool
-    ?ctx.fromJS(doneVal, done)
-    if done:
+  while status.isSome:
+    var val: JSValue
+    let next = ctx.fromJSSeqIt(it, nextMethod, val)
+    if next.isNone:
+      status = err()
       break
-    let valueVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstValue])
-    defer: JS_FreeValue(ctx, valueVal)
+    if next.get:
+      res = tmp
+      break
     var x: T
-    ?ctx.fromJS(valueVal, x)
+    status = ctx.fromJSFree(val, x)
     tmp.incl(x)
-  res = tmp
-  return ok()
+  JS_FreeValue(ctx, it)
+  JS_FreeValue(ctx, nextMethod)
+  return status
 
 proc fromJS*[A, B](ctx: JSContext; val: JSValueConst; res: var Table[A, B]):
     Opt[void] =
-  if not JS_IsObject(val):
-    if not JS_IsException(val):
-      JS_ThrowTypeError(ctx, "object expected")
+  if JS_IsException(val):
     return err()
   var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
@@ -250,20 +242,21 @@ proc fromJS*[A, B](ctx: JSContext; val: JSValueConst; res: var Table[A, B]):
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
     return err()
-  defer:
-    JS_FreePropertyEnum(ctx, ptab, plen)
   var tmp = initTable[A, B]()
   for i in 0 ..< plen:
     let atom = ptab[i].atom
     let k = JS_AtomToValue(ctx, atom)
-    defer: JS_FreeValue(ctx, k)
     var kn: A
-    ?ctx.fromJS(k, kn)
+    if ctx.fromJSFree(k, kn).isNone:
+      JS_FreePropertyEnum(ctx, ptab, plen)
+      return err()
     let v = JS_GetProperty(ctx, val, atom)
-    defer: JS_FreeValue(ctx, v)
     var vn: B
-    ?ctx.fromJS(v, vn)
+    if ctx.fromJSFree(v, vn).isNone:
+      JS_FreePropertyEnum(ctx, ptab, plen)
+      return err()
     tmp[kn] = move(vn)
+  JS_FreePropertyEnum(ctx, ptab, plen)
   res = move(tmp)
   return ok()
 
@@ -341,11 +334,11 @@ proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
     let name = JS_GetProperty(ctx, proto,
       ctx.getOpaque().symRefs[jsyToStringTag])
     JS_FreeValue(ctx, proto)
-    defer: JS_FreeValue(ctx, name)
-    var s: string
-    if ctx.fromJS(name, s).isNone:
-      return err()
-    JS_ThrowTypeError(ctx, "%s expected", cstring(s))
+    let cs = JS_ToCString(ctx, name)
+    if cs != nil:
+      JS_ThrowTypeError(ctx, "%s expected", cs)
+      JS_FreeCString(ctx, cs)
+    JS_FreeValue(ctx, name)
     return err()
   res = p
   return ok()
@@ -484,18 +477,15 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
   let jsbuf = JS_GetTypedArrayBuffer(ctx, val, offset, nmemb, nsize)
   if JS_IsException(jsbuf):
     return err()
-  try:
-    var abuf: JSArrayBuffer
-    ?ctx.fromJS(jsbuf, abuf)
-    res = JSArrayBufferView(
-      abuf: abuf,
-      offset: offset,
-      nmemb: nmemb,
-      nsize: nsize,
-      t: JS_GetTypedArrayType(val)
-    )
-  finally:
-    JS_FreeValue(ctx, jsbuf)
+  var abuf: JSArrayBuffer
+  ?ctx.fromJSFree(jsbuf, abuf)
+  res = JSArrayBufferView(
+    abuf: abuf,
+    offset: offset,
+    nmemb: nmemb,
+    nsize: nsize,
+    t: JS_GetTypedArrayType(val)
+  )
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
