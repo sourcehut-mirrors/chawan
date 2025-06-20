@@ -1884,7 +1884,7 @@ proc handleRead(bc: BufferContext; fd: int): bool =
     assert false
   true
 
-proc handleError(bc: BufferContext; fd: int; event: TPollfd): bool =
+proc handleError(bc: BufferContext; fd: int): bool =
   if fd == bc.pstream.fd:
     # Connection reset by peer, probably.  Close the buffer.
     return false
@@ -1917,13 +1917,14 @@ proc runBuffer(bc: BufferContext) =
     let timeout = bc.getPollTimeout()
     bc.pollData.poll(timeout)
     bc.loader.blockRegister()
-    for event in bc.pollData.events:
-      if (event.revents and POLLIN) != 0:
-        if not bc.handleRead(event.fd):
+    for fd, revents in bc.pollData.events:
+      let fd = int(fd)
+      if (revents and POLLIN) != 0:
+        if not bc.handleRead(fd):
           alive = false
           break
-      if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
-        if not bc.handleError(event.fd, event):
+      if (revents and POLLERR) != 0 or (revents and POLLHUP) != 0:
+        if not bc.handleError(fd):
           alive = false
           break
     bc.loader.unregistered.setLen(0)

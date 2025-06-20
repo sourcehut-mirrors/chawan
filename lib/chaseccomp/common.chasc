@@ -9,6 +9,11 @@ ifeqdef SYS_write allow
 ifeqdef SYS_poll allow
 ifeqdef SYS_ppoll allow # poll is sometimes implemented as ppoll, e.g. musl
 
+ifdef CHA_FORCE_SELECT
+ifeqdef SYS_select allow
+ifeqdef SYS_pselect6 allow
+endif
+
 # memory allocation
 ifeqdef SYS_mmap allow
 ifeqdef SYS_mmap2 allow

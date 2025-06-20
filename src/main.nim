@@ -9,6 +9,7 @@ import chagashi/charset
 import config/chapath
 import config/config
 import io/dynstream
+import io/poll
 import local/client
 import local/pager
 import local/term
@@ -28,10 +29,9 @@ const ChaVersionStr = block:
   else:
     s &= "release"
   s &= ", "
-  when SandboxMode == stNone:
-    s &= "not sandboxed"
-  else:
-    s &= "sandboxed"
+  s &= $SandboxMode
+  s &= ", "
+  s &= $PollMode
   s & ")\n"
 
 const ChaVersionStrLong = block:
@@ -45,6 +45,8 @@ const ChaVersionStrLong = block:
     s &= "not sandboxed"
   else:
     s &= "sandboxed by " & $SandboxMode
+  s &= ", "
+  s &= "poll uses " & $PollMode
   s & ")\n"
 
 proc help(i: int) {.noreturn.} =
