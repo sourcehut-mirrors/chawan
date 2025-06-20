@@ -445,7 +445,7 @@ proc write*(map: CookieJarMap; path: string): Opt[void] =
   if ps2 == nil:
     return err()
   let file = ?ps2.fdopen("w")
-  let res = map.write0(file, ps, tmp, path)
+  let res = map.write0(file, ps2, tmp, path)
   ?file.close()
   res
 
