@@ -2069,8 +2069,8 @@ proc omniRewrite(pager: Pager; s: string): string =
       let ctx = pager.jsctx
       var arg0 = ctx.toJS(s)
       let jsRet = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
-      defer: JS_FreeValue(ctx, jsRet)
-      defer: JS_FreeValue(ctx, arg0)
+      JS_FreeValue(ctx, jsRet)
+      JS_FreeValue(ctx, arg0)
       var res: string
       if ctx.fromJS(jsRet, res).isSome:
         pager.lineHist[lmLocation].add(s)

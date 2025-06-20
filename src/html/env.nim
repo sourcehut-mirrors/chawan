@@ -385,9 +385,8 @@ proc postMessage(ctx: JSContext; window: Window; value: JSValueConst): Err[void]
     {.jsfunc.} =
   #TODO structuredClone...
   let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)
-  defer: JS_FreeValue(ctx, value)
   var s: string
-  ?ctx.fromJS(value, s)
+  ?ctx.fromJSFree(value, s)
   let data = JS_ParseJSON(ctx, cstring(s), csize_t(s.len),
     cstring"<postMessage>")
   let event = ctx.newMessageEvent(satMessage.toAtom(),
