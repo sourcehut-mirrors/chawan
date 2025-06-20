@@ -1447,18 +1447,19 @@ proc dupeBuffer(pager: Pager; container: Container; url: URL) =
 proc dupeBuffer(pager: Pager) {.jsfunc.} =
   pager.dupeBuffer(pager.container, pager.container.url)
 
+const OppositeMap = [
+  ndPrev: ndNext,
+  ndNext: ndPrev,
+  ndPrevSibling: ndNextSibling,
+  ndNextSibling: ndPrevSibling,
+  ndParent: ndFirstChild,
+  ndFirstChild: ndParent,
+  ndAny: ndAny
+]
+
 func opposite(dir: NavDirection): NavDirection
     {.jsstfunc: "Pager.oppositeDir".} =
-  const Map = [
-    ndPrev: ndNext,
-    ndNext: ndPrev,
-    ndPrevSibling: ndNextSibling,
-    ndNextSibling: ndPrevSibling,
-    ndParent: ndFirstChild,
-    ndFirstChild: ndParent,
-    ndAny: ndAny
-  ]
-  return Map[dir]
+  return OppositeMap[dir]
 
 func revDirection(pager: Pager): NavDirection {.jsfget.} =
   return pager.navDirection.opposite()
