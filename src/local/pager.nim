@@ -592,8 +592,10 @@ proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
 
 proc evalActionJS(pager: Pager; action: string): JSValue =
   if action.startsWith("cmd."):
-    pager.config.cmd.map.withValue(action.substr("cmd.".len), p):
-      return JS_DupValue(pager.jsctx, p[])
+    let k = action.substr("cmd.".len)
+    let val = pager.config.cmd.map.getOrDefault(k, JS_UNINITIALIZED)
+    if not JS_IsUninitialized(val):
+      return JS_DupValue(pager.jsctx, val)
   return pager.evalJS(action, "<command>")
 
 # Warning: this is not re-entrant.
