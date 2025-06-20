@@ -237,9 +237,7 @@ proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
   promise.then(proc() =
     let resolve = ctx.fetchJS(nthen)
     if not JS_IsUninitialized(resolve):
-      let res = JS_Call(ctx, resolve, JS_UNDEFINED, 0, nil)
-      JS_FreeValue(ctx, res)
-      JS_FreeValue(ctx, resolve)
+      JS_FreeValue(ctx, JS_CallFree(ctx, resolve, JS_UNDEFINED, 0, nil))
   )
   return jsPromise
 

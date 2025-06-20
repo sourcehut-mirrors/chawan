@@ -618,15 +618,13 @@ var fetchImpl*: proc(window: Window; input: JSRequest): JSResult[FetchPromise]
 func getGlobal*(ctx: JSContext): Window =
   let global = JS_GetGlobalObject(ctx)
   var window: Window
-  doAssert ctx.fromJS(global, window).isSome
-  JS_FreeValue(ctx, global)
+  doAssert ctx.fromJSFree(global, window).isSome
   return window
 
 func getWindow*(ctx: JSContext): Window =
   let global = JS_GetGlobalObject(ctx)
   var window: Window
-  doAssert ctx.fromJS(global, window).isSome
-  JS_FreeValue(ctx, global)
+  doAssert ctx.fromJSFree(global, window).isSome
   return window
 
 func console(window: Window): Console =
@@ -2875,9 +2873,8 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     if res < 0:
       return JS_EXCEPTION
     var outs: string
-    if ctx.fromJS(href, outs).isSome:
+    if ctx.fromJSFree(href, outs).isSome:
       element.attr(satHref, outs)
-    JS_FreeValue(ctx, href)
   return JS_DupValue(ctx, val)
 
 proc hyperlinkGetProp(ctx: JSContext; element: HTMLElement; a: JSAtom;
@@ -5452,12 +5449,11 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     window.logException(script.baseURL)
     return
   var p: Promise[JSValueConst]
-  if ctx.fromJS(res, p).isSome:
+  if ctx.fromJSFree(res, p).isSome:
     p.then(proc(res: JSValueConst) =
       if JS_IsException(res):
         window.logException(script.baseURL)
     )
-  JS_FreeValue(ctx, res)
 
 #TODO settings object
 proc fetchSingleModule(element: HTMLScriptElement; url: URL;
@@ -6107,13 +6103,13 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
       return
     res.get.blob().then(proc(blob: JSResult[Blob]) =
       let jsBlob = ctx.toJS(blob)
-      let res = JS_Call(ctx, callback, JS_UNDEFINED, 1, jsBlob.toJSValueArray())
+      let res = JS_CallFree(ctx, callback, JS_UNDEFINED, 1,
+        jsBlob.toJSValueArray())
       if JS_IsException(res):
         window.console.error("Exception in canvas toBlob:",
           ctx.getExceptionMsg())
       else:
         JS_FreeValue(ctx, res)
-      JS_FreeValue(ctx, callback)
     )
   )
 

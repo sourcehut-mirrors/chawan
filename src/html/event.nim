@@ -251,7 +251,7 @@ proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
 
 # UIEvent
 type EventTargetWindow = distinct EventTarget
-proc fromJS(ctx: JSContext; val: JSValue; res: var EventTargetWindow):
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindow):
     Opt[void] =
   var res0: EventTarget
   ?ctx.fromJS(val, res0)
@@ -365,23 +365,17 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
     return JS_UNDEFINED
   let jsTarget = ctx.toJS(event.currentTarget)
   let jsEvent = ctx.toJS(event)
+  var ret = JS_UNINITIALIZED
   if JS_IsFunction(ctx, listener.callback):
     # Apparently it's a bad idea to call a function that can then delete
-    # the reference it was called from.
+    # the reference it was called from (hence the dup).
     let callback = JS_DupValue(ctx, listener.callback)
-    let ret = JS_Call(ctx, callback, jsTarget, 1, jsEvent.toJSValueArray())
-    JS_FreeValue(ctx, callback)
-    JS_FreeValue(ctx, jsTarget)
-    JS_FreeValue(ctx, jsEvent)
-    return ret
-  assert JS_IsObject(listener.callback)
-  let handler = JS_GetPropertyStr(ctx, listener.callback, "handleEvent")
-  if JS_IsException(handler):
-    JS_FreeValue(ctx, jsTarget)
-    JS_FreeValue(ctx, jsEvent)
-    return handler
-  let ret = JS_Call(ctx, handler, jsTarget, 1, jsEvent.toJSValueArray())
-  JS_FreeValue(ctx, handler)
+    ret = JS_CallFree(ctx, callback, jsTarget, 1, jsEvent.toJSValueArray())
+  else:
+    assert JS_IsObject(listener.callback)
+    ret = JS_GetPropertyStr(ctx, listener.callback, "handleEvent")
+    if not JS_IsException(ret):
+      ret = JS_CallFree(ctx, ret, jsTarget, 1, jsEvent.toJSValueArray())
   JS_FreeValue(ctx, jsTarget)
   JS_FreeValue(ctx, jsEvent)
   return ret
@@ -422,8 +416,7 @@ proc flatten(ctx: JSContext; options: JSValueConst): bool =
     discard ctx.fromJS(options, result)
   if JS_IsObject(options):
     let x = JS_GetPropertyStr(ctx, options, "capture")
-    discard ctx.fromJS(x, result)
-    JS_FreeValue(ctx, x)
+    discard ctx.fromJSFree(x, result)
 
 proc flattenMore(ctx: JSContext; options: JSValueConst):
     tuple[
@@ -437,13 +430,11 @@ proc flattenMore(ctx: JSContext; options: JSValueConst):
   var passive = none(bool)
   if JS_IsObject(options):
     let jsOnce = JS_GetPropertyStr(ctx, options, "once")
-    discard ctx.fromJS(jsOnce, once)
-    JS_FreeValue(ctx, jsOnce)
+    discard ctx.fromJSFree(jsOnce, once)
     let jsPassive = JS_GetPropertyStr(ctx, options, "passive")
     var x: bool
-    if ctx.fromJS(jsPassive, x).isSome:
+    if ctx.fromJSFree(jsPassive, x).isSome:
       passive = some(x)
-    JS_FreeValue(ctx, jsPassive)
   return (capture, once, passive)
 
 proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;

@@ -606,14 +606,11 @@ proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
   if JS_IsFunction(ctx, ret):
     if arg0 != 0:
       let arg0 = toJS(ctx, arg0)
-      let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 1, arg0.toJSValueArray())
+      let ret2 = JS_CallFree(ctx, ret, JS_UNDEFINED, 1, arg0.toJSValueArray())
       JS_FreeValue(ctx, arg0)
-      JS_FreeValue(ctx, ret)
       ret = ret2
     else: # no precnum
-      let ret2 = JS_Call(ctx, ret, JS_UNDEFINED, 0, nil)
-      JS_FreeValue(ctx, ret)
-      ret = ret2
+      ret = JS_CallFree(ctx, ret, JS_UNDEFINED, 0, nil)
     if pager.exitCode != -1:
       assert not pager.inEval
       pager.quit(pager.exitCode)

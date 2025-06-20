@@ -23,4 +23,9 @@ template toJSValueArray*(a: JSValue): JSValueArray =
 template toJSValueConstArray*(a: JSValueConst): JSValueConstArray =
   cast[JSValueConstArray](unsafeAddr a)
 
+proc JS_CallFree*(ctx: JSContext; funcObj: JSValue; this: JSValueConst;
+    argc: cint; argv: JSValueConstArray): JSValue =
+  result = JS_Call(ctx, funcObj, this, argc, argv)
+  JS_FreeValue(ctx, funcObj)
+
 {.pop.} # raises
