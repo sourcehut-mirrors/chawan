@@ -1648,14 +1648,16 @@ proc evalFunction*(ctx: JSContext; val: JSValue): JSValue =
 proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]):
     DefinePropertyResult =
   let proto = JS_GetClassProto(ctx, classid)
-  defer: JS_FreeValue(ctx, proto)
   let ctor = ctx.getOpaque().ctors[classid]
   for e in consts:
     let s = $e
     if (let res = ctx.definePropertyE(proto, s, uint16(e)); res != dprSuccess):
+      JS_FreeValue(ctx, proto)
       return res
     if (let res = ctx.definePropertyE(ctor, s, uint16(e)); res != dprSuccess):
+      JS_FreeValue(ctx, proto)
       return res
+  JS_FreeValue(ctx, proto)
   dprSuccess
 
 proc identity(ctx: JSContext; this_val: JSValueConst; argc: cint;

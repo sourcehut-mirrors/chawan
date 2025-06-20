@@ -890,7 +890,6 @@ proc openConfig*(dir: var string; override: Option[string];
 # called after parseConfig returns
 proc initCommands*(ctx: JSContext; config: Config): Err[string] =
   let obj = JS_NewObject(ctx)
-  defer: JS_FreeValue(ctx, obj)
   if JS_IsException(obj):
     return err(ctx.getExceptionMsg())
   for i in countdown(config.cmd.init.high, 0):
@@ -906,9 +905,12 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
         if JS_IsUndefined(prop):
           prop = JS_NewObject(ctx)
           case ctx.definePropertyE(objIt, ss, JS_DupValue(ctx, prop))
-          of dprException: return err(ctx.getExceptionMsg())
+          of dprException:
+            JS_FreeValue(ctx, obj)
+            return err(ctx.getExceptionMsg())
           else: discard
         if JS_IsException(prop):
+          JS_FreeValue(ctx, obj)
           return err(ctx.getExceptionMsg())
         JS_FreeValue(ctx, objIt)
         objIt = prop
@@ -917,8 +919,10 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
       continue
     let fun = ctx.eval(cmd, "<" & k & ">", JS_EVAL_TYPE_GLOBAL)
     if JS_IsException(fun):
+      JS_FreeValue(ctx, obj)
       return err(ctx.getExceptionMsg())
     if not JS_IsFunction(ctx, fun):
+      JS_FreeValue(ctx, obj)
       JS_FreeValue(ctx, fun)
       return err(k & " is not a function")
     case ctx.definePropertyE(objIt, name, JS_DupValue(ctx, fun))
@@ -926,7 +930,7 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
     else: discard
     config.cmd.map[k] = fun
     JS_FreeValue(ctx, objIt)
-  config.cmd.jsObj = JS_DupValue(ctx, obj)
+  config.cmd.jsObj = obj
   config.cmd.init = @[]
   ok()
 
