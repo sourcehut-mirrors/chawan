@@ -9,10 +9,18 @@ type PollData* = object
   currentFd: cint
   nfds: cint
   fds: seq[cshort]
-  pool: seq[uint8]
-  read: ptr TFdSet
-  write: ptr TFdSet
-  error: ptr TFdSet
+  readPool: seq[uint8]
+  writePool: seq[uint8]
+  errorPool: seq[uint8]
+
+template read(ctx: PollData): ptr TFdSet =
+  cast[ptr TFdSet](unsafeAddr ctx.readPool[0])
+
+template write(ctx: PollData): ptr TFdSet =
+  cast[ptr TFdSet](unsafeAddr ctx.writePool[0])
+
+template error(ctx: PollData): ptr TFdSet =
+  cast[ptr TFdSet](unsafeAddr ctx.errorPool[0])
 
 proc setFd(ctx: PollData; fd: cint) =
   let events = ctx.fds[int(fd)]
@@ -62,12 +70,9 @@ proc register*(ctx: var PollData; fd: cint; events: cshort) =
       ctx.fds.setLen(max(ctx.fds.len * 2, ((infds + 7) div 8) * 8))
     assert ctx.fds.len mod 8 == 0
     let sz = ctx.fds.len div 8
-    ctx.pool.setLen(sz * 3)
-    ctx.read = cast[ptr TFdSet](addr ctx.pool[0])
-    ctx.write = cast[ptr TFdSet](addr ctx.pool[sz])
-    ctx.error = cast[ptr TFdSet](addr ctx.pool[sz * 2])
-    for it in cint(0) ..< ctx.currentFd:
-      ctx.setFd(it)
+    ctx.readPool.setLen(sz)
+    ctx.writePool.setLen(sz)
+    ctx.errorPool.setLen(sz)
   ctx.fds[int(fd)] = events or POLLERR
   # currentFd is always the next fd to be set.
   # if it points to us or a previous fd, then we must not set the event,
@@ -107,9 +112,12 @@ proc poll*(ctx: var PollData; timeout: cint) =
     tv_usec: Suseconds(max(timeout mod UsecMax, 0))
   )
   let ptv = if timeout != -1: addr tv else: nil
-  let res = select(ctx.nfds, ctx.read, ctx.write, ctx.error, ptv)
-  if res < 0: # error
-    for fd in cint(0) ..< ctx.nfds:
-      FD_CLR(fd, ctx.read[])
-      FD_CLR(fd, ctx.write[])
-      FD_CLR(fd, ctx.error[])
+  if ctx.nfds == 0:
+    discard select(ctx.nfds, nil, nil, nil, ptv)
+  else:
+    let res = select(ctx.nfds, ctx.read, ctx.write, ctx.error, ptv)
+    if res < 0: # error
+      for fd in cint(0) ..< ctx.nfds:
+        FD_CLR(fd, ctx.read[])
+        FD_CLR(fd, ctx.write[])
+        FD_CLR(fd, ctx.error[])
