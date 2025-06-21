@@ -14,6 +14,9 @@ type Console* = ref object
 
 jsDestructor(Console)
 
+# Forward declarations
+proc flush*(console: Console)
+
 proc newConsole*(err: ChaFile; clearFun: proc() = nil; showFun: proc() = nil;
     hideFun: proc() = nil): Console =
   return Console(
@@ -56,6 +59,7 @@ proc log*(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
       buf &= ' '
   buf &= '\n'
   console.write(buf)
+  console.flush()
   ok()
 
 proc clear(console: Console) {.jsfunc.} =
