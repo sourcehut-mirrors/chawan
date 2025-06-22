@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/exitprocs
 import std/options
 import std/os
 import std/posix
@@ -853,6 +852,9 @@ proc input(pager: Pager): EmptyPromise =
     )
   return p
 
+proc atexit(f: proc() {.cdecl, raises: [].}): cint
+  {.importc, header: "<stdlib.h>".}
+
 proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     cs: Charset; history: bool) =
   var istream: PosixStream = nil
@@ -876,13 +878,11 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   pager.clearDisplay()
   pager.clearStatus()
   pager.consoleWrapper = pager.addConsole(interactive = istream != nil)
-  when NimMajor < 2:
-    try:
-      addExitProc((proc() = pager.cleanup()))
-    except Exception:
-      discard
-  else:
-    addExitProc((proc() = pager.cleanup()))
+  var gpager {.global.}: Pager = nil
+  gpager = pager
+  discard atexit(proc() {.cdecl.} =
+    gpager.cleanup()
+  )
   if pager.config.start.startupScript != "":
     let ps = newPosixStream(pager.config.start.startupScript)
     let s = if ps != nil:
