@@ -951,9 +951,8 @@ proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   return $ctx.state.textAlign
 
 proc textAlign(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
-  let x = parseEnumNoCase[CanvasTextAlign](s)
-  if x.isOk:
-    ctx.state.textAlign = x.get
+  if x := parseEnumNoCase[CanvasTextAlign](s):
+    ctx.state.textAlign = x
 
 # CanvasPath
 proc closePath(ctx: CanvasRenderingContext2D) {.jsfunc.} =

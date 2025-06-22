@@ -256,13 +256,12 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist: bool):
     case key
     of "expires":
       if cookie.expires == -1:
-        let date = parseCookieDate(val)
-        if date.isOk:
-          cookie.expires = date.get
+        if date := parseCookieDate(val):
+          cookie.expires = date
     of "max-age":
-      let x = parseInt32(val)
-      if x.get(-1) >= 0:
-        cookie.expires = t + x.get
+      let x = parseInt32(val).get(-1)
+      if x >= 0:
+        cookie.expires = t + x
     of "secure": cookie.secure = true
     of "httponly": cookie.httpOnly = true
     of "path":

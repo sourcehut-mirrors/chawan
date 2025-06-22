@@ -1260,8 +1260,7 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
         i = fun.value.skipBlanks(i)
         if i >= fun.value.len:
           return err()
-        if n <= 1 and (let ntokx = fun.value.getToken(i); ntokx.isOk):
-          let ntok = ntokx.get
+        if n <= 1 and (ntok := fun.value.getToken(i)):
           if ntok.t in {cttNumber, cttINumber}:
             if n == 1:
               if delim != '*' or nmulx.isSome:
@@ -1765,9 +1764,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     return err()
   let sh = shorthandType(name)
   let cval = cvals[i]
-  let global = parseGlobal(cval)
-  if global.isOk:
-    let global = global.get
+  if global := parseGlobal(cval):
     if cvals.skipBlanks(i + 1) < cvals.len:
       return err()
     case sh
@@ -1814,10 +1811,10 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     for tok in cvals:
       if tok == cttWhitespace:
         continue
-      if (let r = parseIdent[CSSListStylePosition](tok); r.isOk):
-        positionVal.listStylePosition = r.get
-      elif (let r = parseIdent[CSSListStyleType](tok); r.isOk):
-        typeVal.listStyleType = r.get
+      if r := parseIdent[CSSListStylePosition](tok):
+        positionVal.listStylePosition = r
+      elif r := parseIdent[CSSListStyleType](tok):
+        typeVal.listStyleType = r
       else:
         #TODO list-style-image
         #return err()
@@ -1825,15 +1822,15 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     res.add(makeEntry(cptListStylePosition, positionVal))
     res.add(makeEntry(cptListStyleType, typeVal))
   of cstFlex:
-    if (let r = parseNumber(cval, 0f32..float32.high); r.isOk):
+    if r := parseNumber(cval, 0f32..float32.high):
       # flex-grow
-      res.add(makeEntry(cptFlexGrow, r.get))
+      res.add(makeEntry(cptFlexGrow, r))
       i = cvals.skipBlanks(i + 1)
       if i < cvals.len:
         let tok = ?cvals.getToken(i)
-        if (let r = parseNumber(tok, 0f32..float32.high); r.isOk):
+        if r := parseNumber(tok, 0f32..float32.high):
           # flex-shrink
-          res.add(makeEntry(cptFlexShrink, r.get))
+          res.add(makeEntry(cptFlexShrink, r))
           i = cvals.skipBlanks(i + 1)
     if res.len < 1: # flex-grow omitted, default to 1
       res.add(makeEntry(cptFlexGrow, 1f32))
@@ -1845,9 +1842,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     else: # omitted, default to 0px
       res.add(makeEntry(cptFlexBasis, CSSLengthZero))
   of cstFlexFlow:
-    if (let dir = parseIdent[CSSFlexDirection](cval); dir.isOk):
+    if dir := parseIdent[CSSFlexDirection](cval):
       # flex-direction
-      var val = CSSValueBit(flexDirection: dir.get)
+      var val = CSSValueBit(flexDirection: dir)
       res.add(makeEntry(cptFlexDirection, val))
       i = cvals.skipBlanks(i + 1)
     if i < cvals.len:
@@ -1855,8 +1852,8 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       var val = CSSValueBit(flexWrap: wrap)
       res.add(makeEntry(cptFlexWrap, val))
   of cstOverflow:
-    if (let xx = parseIdent[CSSOverflow](cval); xx.isOk):
-      let x = CSSValueBit(overflow: xx.get)
+    if overflow := parseIdent[CSSOverflow](cval):
+      let x = CSSValueBit(overflow: overflow)
       var y = x
       i = cvals.skipBlanks(i + 1)
       if i < cvals.len:

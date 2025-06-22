@@ -300,14 +300,12 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
           buf &= it.key & ": " & it.value & "\r\n"
           if it.key.equalsIgnoreCase("Content-Encoding"):
             for it in it.value.split(','):
-              let x = parseEnumNoCase[ContentEncoding](it)
-              if x.isOk:
-                contentEncodings.add(x.get)
+              if ce := parseEnumNoCase[ContentEncoding](it):
+                contentEncodings.add(ce)
           elif it.key.equalsIgnoreCase("Transfer-Encoding"):
             for it in it.value.split(','):
-              let x = parseEnumNoCase[TransferEncoding](it)
-              if x.isOk:
-                transferEncodings.add(x.get)
+              if te := parseEnumNoCase[TransferEncoding](it):
+                transferEncodings.add(te)
           elif it.key.equalsIgnoreCase("Content-Length"):
             contentLength = parseUInt64(it.value).get(uint64.high)
         buf &= "\r\n"

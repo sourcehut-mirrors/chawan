@@ -38,11 +38,10 @@ proc findAndRewrite*(this: URIMethodMap; url: var URL): URIMethodMapResult =
   let s = this.map.getOrDefault(url.protocol)
   if s != "":
     let surl = s.rewriteURL($url)
-    let x = newURL(surl)
-    if x.isErr:
-      return ummrWrongURL
-    url = x.get
-    return ummrSuccess
+    if x := newURL(surl):
+      url = x
+      return ummrSuccess
+    return ummrWrongURL
   return ummrNotFound
 
 proc insert(this: var URIMethodMap; k, v: string) =

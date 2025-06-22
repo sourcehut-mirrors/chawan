@@ -1722,9 +1722,9 @@ proc cacheFile(pager: Pager): string {.jsfget.} =
 
 proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
   var editor = pager.config.external.editor
-  if (let uqEditor = ChaPath(editor).unquote(""); uqEditor.isOk):
-    if uqEditor.get in ["vi", "nvi", "vim", "nvim"]:
-      editor = uqEditor.get & " +%d"
+  if uqEditor := ChaPath(editor).unquote(""):
+    if uqEditor in ["vi", "nvi", "vim", "nvim"]:
+      editor = uqEditor & " +%d"
   var canpipe = true
   var s = unquoteCommand(editor, "", file, nil, canpipe, line)
   if s.len > 0 and canpipe:
@@ -2114,8 +2114,8 @@ proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
         ConsoleTitle, {})
       if container != nil:
         ps.write("Type (M-c) console.hide() to return to buffer mode.\n")
-        if (let file = ps.fdopen("w"); file.isOk):
-          let console = newConsole(file.get, clearFun, showFun, hideFun)
+        if file := ps.fdopen("w"):
+          let console = newConsole(file, clearFun, showFun, hideFun)
           return ConsoleWrapper(console: console, container: container)
       else:
         ps.sclose()

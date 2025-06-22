@@ -646,7 +646,7 @@ proc consumeComponentValue(cvals: openArray[CSSComponentValue]; i: var int):
   return t
 
 proc consumeQualifiedRule(cvals: openArray[CSSComponentValue]; i: var int):
-    Option[CSSQualifiedRule] =
+    Opt[CSSQualifiedRule] =
   var oblock: CSSSimpleBlock = nil
   var r = CSSQualifiedRule()
   var prelude: seq[CSSComponentValue] = @[]
@@ -665,8 +665,8 @@ proc consumeQualifiedRule(cvals: openArray[CSSComponentValue]; i: var int):
   if oblock != nil:
     r.sels = prelude.parseSelectors()
     r.decls = oblock.value.consumeDeclarations()
-    return some(r)
-  return none(CSSQualifiedRule)
+    return ok(r)
+  err()
 
 proc consumeAtRule(cvals: openArray[CSSComponentValue]; i: var int): CSSAtRule =
   let t = CSSToken(cvals[i])
@@ -781,8 +781,8 @@ proc parseRule*(iq: openArray[char]): DOMResult[CSSRule] =
     return errDOMException("Unexpected EOF", "SyntaxError")
   var res = if cvals[i] == cttAtKeyword:
     cvals.consumeAtRule(i)
-  elif (let q = cvals.consumeQualifiedRule(i); q.isSome):
-    q.get
+  elif q := cvals.consumeQualifiedRule(i):
+    q
   else:
     return errDOMException("No qualified rule found", "SyntaxError")
   if cvals.skipBlanks(i) < cvals.len:
@@ -873,9 +873,8 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
   let tok = ?cvals.consumeToken(i)
   case tok.t
   of cttIdent:
-    let x = parseEnumNoCase[AnBIdent](tok.value)
-    if x.isOk:
-      case x.get
+    if x := parseEnumNoCase[AnBIdent](tok.value):
+      case x
       of abiOdd:
         fail_plus
         return ok((2i32, 1i32))

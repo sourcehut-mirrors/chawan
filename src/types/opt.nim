@@ -104,3 +104,13 @@ template `?`*[T, E](res: Result[T, E]): auto =
       return err()
   when T isnot void:
     move(x.uncheckedGet)
+
+template `:=`*[T, E](a: untyped; res: Result[T, E]): bool =
+  var x = res # for when res is a funcall
+  var a: T
+  let r = x.has
+  if r:
+    {.push checks: off.}
+    a = move(x.val)
+    {.pop.}
+  r
