@@ -1826,7 +1826,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         # Conversion may simply error out because the function didn't return a
         # new URL, and that's fine.
         var nu: URL
-        if ctx.fromJS(ret, nu).isSome and nu != nil:
+        if ctx.fromJS(ret, nu).isSome:
           tmpUrl = nu
       else:
         #TODO should writeException the message to console
