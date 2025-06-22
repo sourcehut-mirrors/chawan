@@ -18,17 +18,15 @@ config:
 - add RPC for CGI scripts e.g. toggle settings/issue downloads/etc
 	* also some way to set permissions for RPC calls
 mailcap:
-- save custom command?
-- w3mmee extensions?
+- save custom command? (or a mailcap command editor like w3m)
+- w3mmee extensions
 	* browsecap looks cleaner than urimethodmap, and would be
 	  useful for mailto
-		- it overlaps with siteconf quite a bit...
 buffer:
-- important: validate returned values
-	* do not block container when receiving buffer data; if invalid, kill
-	  buffer
-	* this also includes not crashing when the buffer dies while
-	  container is reading...
+- important: validate returned values, do not block on communication
+  with buffer
+	* turning buffers into a pseudo-protocol and interfacing through
+	  loader may help
 - color visited links
 	* needs some sort of conditional formatting in pager, e.g. give
 	  all Formats an id in buffer and send a list of "if URL
@@ -56,7 +54,6 @@ javascript:
 - more events
 - ReadableStream
 - separate console for each buffer
-- buffer selection
 layout:
 - box borders
 	* will probably need special treatment, as borders must round to
@@ -66,26 +63,21 @@ layout:
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
 - layout caching
-	* sub-layout is done, now for reusing old trees
-	* use memcmp/memcpy for sizes check?
-	* non-root block too, if no floats exist?
+	* the current approach is unmaintainable, we must factor out
+	  tree traversal from layout first (i.e. rewrite it in CPS)
 - partial rendering
 	* buffer.lines must go, so rewrite getCursorStyledNode and
 	  findPrev/NextLink to use the box tree
 		- also findPrevMatch/findNextMatch, but it's hard
-		  without a line array... we can render it as we
-		  go, but it will be slow
+		  without a line array... probably we'll have to change
+		  it to traverse the DOM instead
 	* we must calculate the overflow box, but the current approach
 	  is broken, easier to just set it as a property on render
 	* inline layout's output must be flattened again, so that we can
 	  deal with tall inline boxes (like the <plaintext> tag in
 	  text/plain buffers)
-- partial layout?
-	* may be more trouble than it's worth... for pager-like
-	  behavior, it's easier to just backpressure input
 - frame, iframe
-- z order
-	* for images it's straight up broken
+- z order for images
 - grid
 images:
 - animation
