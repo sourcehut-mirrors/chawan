@@ -6,6 +6,7 @@ import std/posix
 import std/strutils
 
 import io/dynstream
+import types/opt
 import utils/sandbox
 import utils/twtstr
 
@@ -163,7 +164,7 @@ proc main() =
         let s = hdr.after(':').strip().split('x')
         let w = parseUInt32(s[0], allowSign = false)
         let h = parseUInt32(s[1], allowSign = false)
-        if w.isNone or w.isNone:
+        if w.isErr or w.isErr:
           die("Cha-Control: ConnectionError 1 wrong dimensions\n")
         width = cint(w.get)
         height = cint(h.get)

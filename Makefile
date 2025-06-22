@@ -150,7 +150,7 @@ $(OUTDIR_CGI_BIN)/sftp: $(lcgi) $(twtstr)
 $(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/ssl: $(lcgi_ssl) $(sandbox) $(tinfl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.h \
-	adapter/img/stb_image_write.h $(sandbox) $(dynstream)
+	adapter/img/stb_image_write.h $(twtstr) $(sandbox) $(dynstream)
 $(OUTDIR_CGI_BIN)/jebp: adapter/img/jebp.h $(sandbox)
 $(OUTDIR_CGI_BIN)/sixel: src/types/color.nim $(sandbox) $(twtstr) $(dynstream)
 $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \

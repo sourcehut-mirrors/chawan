@@ -31,6 +31,7 @@ import std/strutils
 
 import io/dynstream
 import types/color
+import types/opt
 import utils/sandbox
 import utils/twtstr
 
@@ -511,19 +512,19 @@ proc main() =
         (offx, offy) = os.parseDimensions(s, allowZero = true)
       of "Cha-Image-Crop-Width":
         let q = parseUInt32(s, allowSign = false)
-        if q.isNone:
+        if q.isErr:
           os.die("Cha-Control: ConnectionError InternalError wrong crop width")
         cropw = int(q.get)
       of "Cha-Image-Sixel-Halfdump":
         halfdump = true
       of "Cha-Image-Sixel-Palette":
         let q = parseUInt16(s, allowSign = false)
-        if q.isNone:
+        if q.isErr:
           os.die("Cha-Control: ConnectionError InternalError wrong palette")
         palette = int(q.get)
       of "Cha-Image-Quality":
         let q = parseUInt16(s, allowSign = false)
-        if q.isNone:
+        if q.isErr:
           os.die("Cha-Control: ConnectionError InternalError wrong quality")
         quality = int(q.get)
     if cropw == -1:

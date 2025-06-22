@@ -852,10 +852,7 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
     if isPlus:
       return err()
   template parse_sub_int(s: string; skip: int): int32 =
-    let x = parseInt32(s.toOpenArray(skip, s.high))
-    if x.isNone:
-      return err()
-    x.get
+    ?parseInt32(s.toOpenArray(skip, s.high))
   template fail_non_integer(tok: CSSToken; res: Opt[CSSAnB]) =
     if tok.t != cttINumber:
       dec i

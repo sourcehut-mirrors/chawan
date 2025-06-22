@@ -198,7 +198,7 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyDimensionHintGz(cptHeight, element.attr(satHeight))
     ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
     let s = element.attrul(satCellspacing)
-    if s.isSome:
+    if s.isOk:
       let n = cssLength(float32(s.get))
       ctx.applyPresHint(makeEntry(cptBorderSpacingInline, n))
       ctx.applyPresHint(makeEntry(cptBorderSpacingBlock, n))
@@ -240,7 +240,7 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     let input = HTMLInputElement(element)
     if input.inputType in InputTypeWithSize:
       let s = element.attrul(satSize)
-      if s.isSome:
+      if s.isOk:
         ctx.applyLengthHint(cptWidth, cuCh, s.get)
   of TAG_SELECT:
     let select = HTMLSelectElement(element)

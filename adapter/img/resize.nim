@@ -6,6 +6,7 @@ import std/posix
 import std/strutils
 
 import io/dynstream
+import types/opt
 import utils/sandbox
 import utils/twtstr
 

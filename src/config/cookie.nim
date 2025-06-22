@@ -322,11 +322,10 @@ proc nextBool(state: var ParseState; iq: openArray[char]): bool =
   return false
 
 proc nextInt64(state: var ParseState; iq: openArray[char]): int64 =
-  let x = parseInt64(state.nextField(iq))
-  if x.isNone:
-    state.error = true
-    return 0
-  return x.get
+  if x := parseInt64(state.nextField(iq)):
+    return x
+  state.error = true
+  return 0
 
 proc parse0(map: CookieJarMap; file: ChaFile; warnings: var seq[string]):
     Opt[void] =

@@ -4,6 +4,7 @@ import std/os
 import std/posix
 import std/strutils
 
+import types/opt
 import utils/twtstr
 
 type DirlistItemType = enum

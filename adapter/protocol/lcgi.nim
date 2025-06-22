@@ -6,12 +6,14 @@ import std/posix
 import std/strutils
 
 import io/dynstream
+import types/opt
 import utils/sandbox
 import utils/twtstr
 
 export dynstream
 export twtstr
 export sandbox
+export opt
 
 export STDIN_FILENO, STDOUT_FILENO
 
@@ -85,7 +87,7 @@ proc sendSocks5Domain(os, ps: PosixStream; host, port: string;
     os.die("InternalError", "host too long to send to proxy")
   let dstaddr = "\x03" & char(host.len) & host
   let x = parseUInt16(port)
-  if x.isNone:
+  if x.isErr:
     os.die("InternalError", "wrong port")
   let port = x.get
   let sbuf = "\x05\x01\x00" & dstaddr & char(port shr 8) & char(port and 0xFF)

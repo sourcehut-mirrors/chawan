@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/os
 import std/posix
 import std/strutils
@@ -105,8 +104,8 @@ proc checkCert0(os: PosixStream; theirDigest, host: string;
   if storedDigest != theirDigest:
     return ccrFoundInvalid
   if ss.len > 3:
-    if (let x = parseUInt64(ss[3], allowSign = false); x.isSome):
-      if Time(x.get) == theirTime:
+    if n := parseUInt64(ss[3], allowSign = false):
+      if Time(n) == theirTime:
         return ccrFoundValid
     else:
       os.die("InternalError", "invalid time in known_hosts file")

@@ -594,7 +594,7 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
       line.startsWithIgnoreCase("HTTP/1.1"):
     let codes = line.until(' ', "HTTP/1.0 ".len)
     let code = parseUInt16(codes)
-    if codes.len > 3 or code.isNone:
+    if codes.len > 3 or code.isErr:
       ctx.rejectHandle(handle, ceCGIMalformedHeader)
       return crError
     case ctx.sendResult(handle, 0) # Success
@@ -613,7 +613,7 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
     of pbrDone: discard
     of pbrUnregister: return crError
     let code = parseUInt16(v)
-    if v.len > 3 or code.isNone:
+    if v.len > 3 or code.isErr:
       ctx.rejectHandle(handle, ceCGIMalformedHeader)
       return crError
     handle.parser.status = code.get
@@ -629,13 +629,12 @@ proc handleFirstLine(ctx: var LoaderContext; handle: InputHandle; line: string):
       var code = ceCGIInvalidChaControl
       var message = ""
       if errs.len > 1:
-        if (let x = parseInt32(errs[1]); x.isSome):
-          let n = x.get
+        if n := parseInt32(errs[1]):
           if n > 0 and n <= int32(ConnectionError.high):
-            code = ConnectionError(x.get)
-        elif (let x = strictParseEnum[ConnectionError](errs[1]);
-            x.get(ceNone) != ceNone):
-          code = x.get
+            code = ConnectionError(n)
+        elif (let x = strictParseEnum[ConnectionError](errs[1]).get(ceNone);
+            x != ceNone):
+          code = x
         if errs.len > 2:
           message &= errs[2]
           for i in 3 ..< errs.len:
@@ -664,7 +663,7 @@ proc handleControlLine(handle: InputHandle; line: string): ControlResult =
   let v = line.substr(k.len + 1).strip()
   if k.equalsIgnoreCase("Status"):
     let code = parseUInt16(v)
-    if v.len > 3 or code.isNone:
+    if v.len > 3 or code.isErr:
       return crError
     handle.parser.status = parseUInt16(v).get(0)
     return crContinue

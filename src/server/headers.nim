@@ -301,7 +301,7 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   let s0 = s.until(AllChars - AsciiDigit, i)
   let x = parseUInt32(s0, allowSign = false)
   if s0 != "":
-    if x.isNone and (i >= s.len or s[i] != '.'):
+    if x.isErr and (i >= s.len or s[i] != '.'):
       return CheckRefreshResult(n: -1)
   var n = int(x.get(0) * 1000)
   i = s.skipBlanks(i + s0.len)

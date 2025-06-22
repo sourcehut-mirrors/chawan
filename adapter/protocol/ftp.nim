@@ -87,7 +87,7 @@ proc passiveMode(os, ps: PosixStream; host: string; ipv6: bool): PosixStream =
     ipv4 &= x
   let x = parseUInt16(ss[4])
   let y = parseUInt16(ss[5])
-  if x.isNone or y.isNone:
+  if x.isErr or y.isErr:
     os.die("InvalidResponse")
   let port = $((x.get shl 8) or y.get)
   return os.connectSocket(host, port)

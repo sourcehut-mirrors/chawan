@@ -349,7 +349,7 @@ func convertSize*(size: int): string =
 
 # https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#numbers
 func parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
-    radix: T): Option[T] =
+    radix: T): Opt[T] =
   var i = 0
   if i < s.len and allowSign and s[i] == '+':
     inc i
@@ -362,32 +362,32 @@ func parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
     integer = T(n)
     fail = fail or u >= radix or n != uint(integer) # overflow check
   if fail:
-    return none(T) # invalid or overflow
-  return some(integer)
+    return err() # invalid or overflow
+  ok(integer)
 
-func parseUInt8*(s: openArray[char]; allowSign = false): Option[uint8] =
+func parseUInt8*(s: openArray[char]; allowSign = false): Opt[uint8] =
   return parseUIntImpl[uint8](s, allowSign, 10)
 
-func parseUInt8NoLeadingZero*(s: openArray[char]): Option[uint8] =
+func parseUInt8NoLeadingZero*(s: openArray[char]): Opt[uint8] =
   if s.len > 1 and s[0] == '0':
-    return none(uint8)
+    return err()
   return parseUInt8(s)
 
-func parseUInt16*(s: openArray[char]; allowSign = false): Option[uint16] =
+func parseUInt16*(s: openArray[char]; allowSign = false): Opt[uint16] =
   return parseUIntImpl[uint16](s, allowSign, 10)
 
 func parseUInt32Base*(s: openArray[char]; allowSign = false; radix: uint32):
-    Option[uint32] =
+    Opt[uint32] =
   return parseUIntImpl[uint32](s, allowSign, radix)
 
-func parseUInt32*(s: openArray[char]; allowSign = false): Option[uint32] =
+func parseUInt32*(s: openArray[char]; allowSign = false): Opt[uint32] =
   return parseUInt32Base(s, allowSign, 10)
 
-func parseUInt64*(s: openArray[char]; allowSign = false): Option[uint64] =
+func parseUInt64*(s: openArray[char]; allowSign = false): Opt[uint64] =
   return parseUIntImpl[uint64](s, allowSign, 10)
 
 func parseIntImpl[T: SomeSignedInt; U: SomeUnsignedInt](s: openArray[char];
-    radix: U): Option[T] =
+    radix: U): Opt[T] =
   var sign: T = 1
   var i = 0
   if s.len > 0 and s[0] == '-':
@@ -396,24 +396,24 @@ func parseIntImpl[T: SomeSignedInt; U: SomeUnsignedInt](s: openArray[char];
   let res = parseUIntImpl[U](s.toOpenArray(i, s.high), allowSign = true, radix)
   let u = res.get(U.high)
   if sign == -1 and u == U(T.high) + 1:
-    return some(T.low) # negative has one more valid int
+    return ok(T.low) # negative has one more valid int
   if u <= U(T.high):
-    return some(T(u) * sign)
-  return none(T)
+    return ok(T(u) * sign)
+  err()
 
-func parseInt32*(s: openArray[char]): Option[int32] =
+func parseInt32*(s: openArray[char]): Opt[int32] =
   return parseIntImpl[int32, uint32](s, 10)
 
-func parseInt64*(s: openArray[char]): Option[int64] =
+func parseInt64*(s: openArray[char]): Opt[int64] =
   return parseIntImpl[int64, uint64](s, 10)
 
-func parseOctInt64*(s: openArray[char]): Option[int64] =
+func parseOctInt64*(s: openArray[char]): Opt[int64] =
   return parseIntImpl[int64, uint64](s, 8)
 
-func parseHexInt64*(s: openArray[char]): Option[int64] =
+func parseHexInt64*(s: openArray[char]): Opt[int64] =
   return parseIntImpl[int64, uint64](s, 16)
 
-func parseIntP*(s: openArray[char]): Option[int] =
+func parseIntP*(s: openArray[char]): Opt[int] =
   return parseIntImpl[int, uint](s, 10)
 
 # https://www.w3.org/TR/css-syntax-3/#convert-string-to-number

@@ -258,7 +258,7 @@ proc handleStatus(op: HTTPHandle; iq: openArray[char]): int =
         quit(1)
       let codes = op.line.until(' ', "HTTP/1.0 ".len)
       let code = parseUInt16(codes)
-      if codes.len > 3 or code.isNone:
+      if codes.len > 3 or code.isErr:
         quit(1)
       let buf = "Status: " & $code.get & "\r\nCha-Control: ControlDone\r\n"
       if not op.os.writeDataLoop(buf):
@@ -447,8 +447,8 @@ proc main*() =
   if username != "":
     buf &= "Authorization: Basic " & btoa(username & ':' & password) & "\r\n"
   let contentLength = getEnvEmpty("CONTENT_LENGTH")
-  if (let x = parseUInt64(contentLength); x.isSome):
-    buf &= "Content-Length: " & $x.get & "\r\n"
+  if n := parseUInt64(contentLength):
+    buf &= "Content-Length: " & $n & "\r\n"
   buf &= getEnvEmpty("REQUEST_HEADERS")
   buf &= "\r\n"
   if not op.ps.writeDataLoop(buf):

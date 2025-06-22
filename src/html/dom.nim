@@ -2519,16 +2519,16 @@ func attr*(element: Element; s: CAtom): lent string =
 func attr*(element: Element; s: StaticAtom): lent string =
   return element.attr(s.toAtom())
 
-func attrl*(element: Element; s: StaticAtom): Option[int32] =
+func attrl*(element: Element; s: StaticAtom): Opt[int32] =
   return parseInt32(element.attr(s))
 
-func attrulgz*(element: Element; s: StaticAtom): Option[uint32] =
+func attrulgz*(element: Element; s: StaticAtom): Opt[uint32] =
   let x = parseUInt32(element.attr(s), allowSign = true).get(0)
   if x > 0:
-    return some(x)
-  return none(uint32)
+    return ok(x)
+  err()
 
-func attrul*(element: Element; s: StaticAtom): Option[uint32] =
+func attrul*(element: Element; s: StaticAtom): Opt[uint32] =
   return parseUInt32(element.attr(s), allowSign = true)
 
 func attrb*(element: Element; s: CAtom): bool =
@@ -4299,7 +4299,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
             let i = s.skipBlanks("max-age=".len)
             let s = s.until(AllChars - AsciiDigit, i)
             let pi = parseInt64(s)
-            if pi.isSome:
+            if pi.isOk:
               expiry = getTime().toUnix() + pi.get
             break
         cachedURL.loading = false

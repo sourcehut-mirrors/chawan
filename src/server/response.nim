@@ -126,9 +126,9 @@ func getContentType*(this: Response; fallback = "application/octet-stream"):
 
 func getContentLength*(this: Response): int64 =
   let x = this.headers.getOrDefault("Content-Length")
-  let u = parseUInt64(x.strip(), allowSign = false)
-  if u.isSome and u.get <= uint64(int64.high):
-    return int64(u.get)
+  let u = parseUInt64(x.strip(), allowSign = false).get(uint64.high)
+  if u <= uint64(int64.high):
+    return int64(u)
   return -1
 
 func getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =

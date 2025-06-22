@@ -5,6 +5,7 @@ import std/posix
 import io/dynstream
 import io/poll
 import types/color
+import types/opt
 import utils/twtstr
 
 type
@@ -45,7 +46,7 @@ template getParamU8(parser: AnsiCodeParser; i: var int; colon = false): uint8 =
   if i >= parser.params.len:
     return false
   let u = parseUInt8(parser.getParam(i), allowSign = false)
-  if u.isNone:
+  if u.isErr:
     return false
   u.get
 

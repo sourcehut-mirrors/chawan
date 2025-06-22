@@ -163,7 +163,7 @@ func parseIpv6(input: openArray[char]): string =
           if e < i: # not found
             return ""
         let x = parseUInt8NoLeadingZero(input.toOpenArray(i, e - 1))
-        if x.isNone:
+        if x.isErr:
           return ""
         address[pieceIndex] = address[pieceIndex] * 0x100 + uint16(x.get)
         if j == 1 or j == 3:
