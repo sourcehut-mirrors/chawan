@@ -337,10 +337,8 @@ proc parseMediaInParens(parser: var MediaQueryParser): Opt[MediaQuery] =
   let ismax = tokval.startsWithIgnoreCase("max-")
   if ismin or ismax:
     tokval = tokval.substr(4)
-  let x = parseEnumNoCase[MediaFeatureType](tokval)
-  if x.isNone:
-    return err()
-  return fparser.parseFeature(x.get, ismin, ismax)
+  let t = ?parseEnumNoCase[MediaFeatureType](tokval)
+  return fparser.parseFeature(t, ismin, ismax)
 
 proc parseMediaOr(parser: var MediaQueryParser; left: MediaQuery):
     Opt[MediaQuery] =

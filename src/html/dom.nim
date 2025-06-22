@@ -2524,16 +2524,13 @@ func attrl*(element: Element; s: StaticAtom): Option[int32] =
   return parseInt32(element.attr(s))
 
 func attrulgz*(element: Element; s: StaticAtom): Option[uint32] =
-  let x = parseUInt32(element.attr(s), allowSign = true)
-  if x.isSome and x.get > 0:
-    return x
+  let x = parseUInt32(element.attr(s), allowSign = true).get(0)
+  if x > 0:
+    return some(x)
   return none(uint32)
 
 func attrul*(element: Element; s: StaticAtom): Option[uint32] =
-  let x = parseUInt32(element.attr(s), allowSign = true)
-  if x.isSome and x.get >= 0:
-    return x
-  return none(uint32)
+  return parseUInt32(element.attr(s), allowSign = true)
 
 func attrb*(element: Element; s: CAtom): bool =
   return element.findAttr(s) != -1

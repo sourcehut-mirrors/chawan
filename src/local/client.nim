@@ -105,7 +105,7 @@ proc setenv(ctx: JSContext; client: Client; s: string; val: JSValueConst):
     twtstr.unsetEnv(s)
   else:
     var vals: string
-    if (let res = ctx.fromJS(val, vals); res.isSome):
+    if ctx.fromJS(val, vals).isSome:
       if twtstr.setEnv(s, vals).isNone:
         return JS_ThrowTypeError(ctx, "Failed to set environment variable")
     else:

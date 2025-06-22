@@ -344,10 +344,8 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   let window = ctx.getWindow()
   if xhrfSync notin this.flags: # async
     window.fireProgressEvent(this, satLoadstart, 0, 0)
-    let p = window.fetchImpl(jsRequest)
-    if p.isNone:
-      return err(p.error)
-    p.get.then(proc(res: JSResult[Response]) =
+    let p = ?window.fetchImpl(jsRequest)
+    p.then(proc(res: JSResult[Response]) =
       if res.isNone:
         this.response = makeNetworkError()
         discard window.handleErrors(this)
