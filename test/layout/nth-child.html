@@ -17,6 +17,10 @@ ol[second] :nth-last-child(0n+1 of li) { color: pink }
 
 ol[third] :nth-child(n+2) { color: red }
 ol[third] :nth-child(eVeN) { color: green }
+
+/* invalid */
+ol[first] :nth-last-child(0n++1) { color: purple }
+
 </style>
 
 <body bgcolor=black text=white>

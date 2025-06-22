@@ -989,7 +989,7 @@ func parseIdent(map: openArray[IdentMapItem]; cval: CSSComponentValue): int =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     if tok.t == cttIdent:
-      return map.parseEnumNoCase0(tok.value)
+      return map.parseEnumNoCase0(tok.s)
   return -1
 
 func parseIdent[T: enum](cval: CSSComponentValue): Opt[T] =
@@ -1066,7 +1066,7 @@ func getColorToken(cvals: openArray[CSSComponentValue]; i: int;
   if tok.t in {cttNumber, cttINumber, cttDimension, cttIDimension,
       cttPercentage}:
     return ok(tok)
-  if not legacy and tok.t == cttIdent and tok.value == "none":
+  if not legacy and tok.t == cttIdent and tok.s == "none":
     return ok(tok)
   return err()
 
@@ -1094,13 +1094,13 @@ proc parseLegacyColorFun(value: openArray[CSSComponentValue]):
   if legacy:
     discard ?value.getToken(i, cttComma)
   else:
-    if (?value.getToken(i, cttDelim)).cvalue != '/':
+    if (?value.getToken(i, cttDelim)).c != '/':
       return err()
   i = value.skipBlanks(i + 1)
   let v4 = ?value.getToken(i, {cttPercentage, cttNumber, cttINumber})
   if value.skipBlanks(i + 1) < value.len:
     return err()
-  return ok((v1, v2, v3, uint8(clamp(v4.nvalue, 0, 1) * 255), legacy))
+  return ok((v1, v2, v3, uint8(clamp(v4.num, 0, 1) * 255), legacy))
 
 # syntax: -cha-ansi( number | ident )
 # where number is an ANSI color (0..255)
@@ -1112,11 +1112,11 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
     return err()
   if tok.t == cttINumber:
     #TODO calc
-    if int(tok.nvalue) notin 0..255:
+    if int(tok.num) notin 0..255:
       return err() # invalid numeric ANSI color
-    return ok(ANSIColor(tok.nvalue).cssColor())
+    return ok(ANSIColor(tok.num).cssColor())
   elif tok.t == cttIdent:
-    var name = tok.value
+    var name = tok.s
     if name.equalsIgnoreCase("default"):
       return ok(defaultColor.cssColor())
     var bright = false
@@ -1144,7 +1144,7 @@ func parseANSI(value: openArray[CSSComponentValue]): Opt[CSSColor] =
 proc parseRGBComponent(tok: CSSToken): uint8 =
   if tok.t == cttIdent: # none
     return 0u8
-  var res = tok.nvalue
+  var res = tok.num
   if tok.t == cttPercentage:
     res *= 2.55
   return uint8(clamp(res, 0, 255)) # number
@@ -1158,23 +1158,23 @@ type CSSAngleType = enum
 # The return value is in degrees.
 proc parseAngle(tok: CSSToken): Opt[float32] =
   if tok.t in {cttDimension, cttIDimension}:
-    case ?parseEnumNoCase[CSSAngleType](tok.unit)
-    of catDeg: return ok(tok.nvalue)
-    of catGrad: return ok(tok.nvalue * 0.9f32)
-    of catRad: return ok(radToDeg(tok.nvalue))
-    of catTurn: return ok(tok.nvalue * 360f32)
+    case ?parseEnumNoCase[CSSAngleType](tok.s)
+    of catDeg: return ok(tok.num)
+    of catGrad: return ok(tok.num * 0.9f32)
+    of catRad: return ok(radToDeg(tok.num))
+    of catTurn: return ok(tok.num * 360f32)
   return err()
 
 proc parseHue(tok: CSSToken): Opt[float32] =
   if tok.t in {cttNumber, cttINumber}:
-    return ok(tok.nvalue)
+    return ok(tok.num)
   if tok.t == cttIdent: # none
     return ok(0)
   return parseAngle(tok)
 
 proc parseSatOrLight(tok: CSSToken): Opt[float32] =
   if tok.t in {cttNumber, cttINumber, cttPercentage}:
-    return ok(clamp(tok.nvalue, 0f32, 100f32))
+    return ok(clamp(tok.num, 0f32, 100f32))
   return err()
 
 proc parseColor*(val: CSSComponentValue): Opt[CSSColor] =
@@ -1182,17 +1182,17 @@ proc parseColor*(val: CSSComponentValue): Opt[CSSColor] =
     let tok = CSSToken(val)
     case tok.t
     of cttHash:
-      let c = parseHexColor(tok.value)
+      let c = parseHexColor(tok.s)
       if c.isSome:
         return ok(c.get.cssColor())
     of cttIdent:
-      if tok.value.equalsIgnoreCase("transparent"):
+      if tok.s.equalsIgnoreCase("transparent"):
         return ok(rgba(0, 0, 0, 0).cssColor())
-      let x = namedRGBColor(tok.value)
+      let x = namedRGBColor(tok.s)
       if x.isSome:
         return ok(x.get.cssColor())
-      elif tok.value.equalsIgnoreCase("canvas") or
-          tok.value.equalsIgnoreCase("canvastext"):
+      elif tok.s.equalsIgnoreCase("canvas") or
+          tok.s.equalsIgnoreCase("canvastext"):
         # Not really compliant, but if you're setting text color to
         # canvas you're doing it wrong anyway.
         return ok(defaultColor.cssColor())
@@ -1227,18 +1227,18 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
     let tok = CSSToken(val)
     case tok.t
     of cttNumber, cttINumber:
-      if tok.nvalue == 0:
+      if tok.num == 0:
         return ok(CSSLengthZero)
     of cttPercentage:
-      if not allowNegative and tok.nvalue < 0:
+      if not allowNegative and tok.num < 0:
         return err()
-      return parseLength(tok.nvalue, "%", attrs)
+      return parseLength(tok.num, "%", attrs)
     of cttDimension, cttIDimension:
-      if not allowNegative and tok.nvalue < 0:
+      if not allowNegative and tok.num < 0:
         return err()
-      return parseLength(tok.nvalue, tok.unit, attrs)
+      return parseLength(tok.num, tok.s, attrs)
     of cttIdent:
-      if hasAuto and tok.value.equalsIgnoreCase("auto"):
+      if hasAuto and tok.s.equalsIgnoreCase("auto"):
         return ok(CSSLengthAuto)
     else: discard
   elif val of CSSFunction:
@@ -1255,7 +1255,7 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
       while i < fun.value.len:
         if n != 0:
           i = fun.value.skipBlanks(i)
-          delim = (?fun.value.getToken(i, cttDelim)).cvalue
+          delim = (?fun.value.getToken(i, cttDelim)).c
           inc i
         i = fun.value.skipBlanks(i)
         if i >= fun.value.len:
@@ -1265,10 +1265,10 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
             if n == 1:
               if delim != '*' or nmulx.isSome:
                 return err()
-              ns.npx *= ntok.nvalue
-              ns.perc *= ntok.nvalue
+              ns.npx *= ntok.num
+              ns.perc *= ntok.num
             else:
-              nmulx = some(ntok.nvalue)
+              nmulx = some(ntok.num)
             inc i
             inc n
             continue
@@ -1300,11 +1300,11 @@ func cssAbsoluteLength(val: CSSComponentValue; attrs: WindowAttributes):
     let tok = CSSToken(val)
     case tok.t
     of cttNumber, cttINumber:
-      if tok.nvalue == 0:
+      if tok.num == 0:
         return ok(CSSLengthZero)
     of cttDimension, cttIDimension:
-      if tok.nvalue >= 0:
-        return parseLength(tok.nvalue, tok.unit, attrs)
+      if tok.num >= 0:
+        return parseLength(tok.num, tok.s, attrs)
     else: discard
   return err()
 
@@ -1319,9 +1319,9 @@ func parseQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
   of cttIdent:
     if i < cvals.len:
       return err()
-    if tok.value.equalsIgnoreCase("auto"):
+    if tok.s.equalsIgnoreCase("auto"):
       return ok(nil)
-    elif tok.value.equalsIgnoreCase("none"):
+    elif tok.s.equalsIgnoreCase("none"):
       return ok(CSSQuotes())
     return err()
   of cttString:
@@ -1335,7 +1335,7 @@ func parseQuotes(cvals: openArray[CSSComponentValue]): Opt[CSSQuotes] =
       if tok.t != cttString:
         return err()
       if otok != nil:
-        res.qs.add((newRefString(otok.value), newRefString(tok.value)))
+        res.qs.add((newRefString(otok.s), newRefString(tok.s)))
         otok = nil
       else:
         otok = tok
@@ -1353,18 +1353,18 @@ proc parseContent(cvals: openArray[CSSComponentValue]): Opt[seq[CSSContent]] =
       let tok = CSSToken(cval)
       case tok.t
       of cttIdent:
-        if tok.value == "/":
+        if tok.s == "/":
           break
-        elif tok.value.equalsIgnoreCase("open-quote"):
+        elif tok.s.equalsIgnoreCase("open-quote"):
           res.add(CSSContent(t: ContentOpenQuote))
-        elif tok.value.equalsIgnoreCase("no-open-quote"):
+        elif tok.s.equalsIgnoreCase("no-open-quote"):
           res.add(CSSContent(t: ContentNoOpenQuote))
-        elif tok.value.equalsIgnoreCase("close-quote"):
+        elif tok.s.equalsIgnoreCase("close-quote"):
           res.add(CSSContent(t: ContentCloseQuote))
-        elif tok.value.equalsIgnoreCase("no-close-quote"):
+        elif tok.s.equalsIgnoreCase("no-close-quote"):
           res.add(CSSContent(t: ContentNoCloseQuote))
       of cttString:
-        res.add(CSSContent(t: ContentString, s: newRefString(tok.value)))
+        res.add(CSSContent(t: ContentString, s: newRefString(tok.s)))
       of cttWhitespace:
         discard
       else:
@@ -1389,7 +1389,7 @@ proc parseContent(cvals: openArray[CSSComponentValue]): Opt[seq[CSSContent]] =
               return err()
         res.add(CSSContent(
           t: ContentCounter,
-          counter: tok.value.toAtom(),
+          counter: tok.s.toAtom(),
           counterStyle: style
         ))
   ok(res)
@@ -1408,8 +1408,8 @@ func parseFontWeight(cval: CSSComponentValue): Opt[int32] =
       if i != -1:
         return ok(int32(i))
     elif tok.t in {cttNumber, cttINumber}:
-      if tok.nvalue in 1f64..1000f64:
-        return ok(int32(tok.nvalue))
+      if tok.num in 1f64..1000f64:
+        return ok(int32(tok.num))
   return err()
 
 func cssTextDecoration(cvals: openArray[CSSComponentValue]):
@@ -1443,12 +1443,12 @@ proc parseCounterSet(cvals: openArray[CSSComponentValue]; n: int32):
       of cttIdent:
         if s:
           die
-        r.name = tok.value.toAtom()
+        r.name = tok.s.toAtom()
         s = true
       of cttNumber, cttINumber:
         if not s:
           die
-        r.num = int32(tok.nvalue)
+        r.num = int32(tok.num)
         res.add(r)
         s = false
       else:
@@ -1462,7 +1462,7 @@ func cssMaxSize(cval: CSSComponentValue; attrs: WindowAttributes):
     Opt[CSSLength] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
-    if tok.t == cttIdent and tok.value.equalsIgnoreCase("none"):
+    if tok.t == cttIdent and tok.s.equalsIgnoreCase("none"):
       return ok(CSSLengthAuto)
   return parseLength(cval, attrs, allowNegative = false)
 
@@ -1471,9 +1471,9 @@ func cssURL*(cval: CSSComponentValue; src = false): Option[string] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     if tok == cttUrl:
-      return some(tok.value)
+      return some(tok.s)
     elif not src and tok == cttString:
-      return some(tok.value)
+      return some(tok.s)
   elif cval of CSSFunction:
     let fun = CSSFunction(cval)
     if fun.name == cftUrl or src and fun.name == cftSrc:
@@ -1484,7 +1484,7 @@ func cssURL*(cval: CSSComponentValue; src = false): Option[string] =
         if x == cttWhitespace:
           discard
         elif x == cttString:
-          return some(x.value)
+          return some(x.s)
         else:
           break
   return none(string)
@@ -1494,7 +1494,7 @@ func parseImage(cval: CSSComponentValue): Opt[NetworkBitmap] =
   if cval of CSSToken:
     #TODO bg-image only
     let tok = CSSToken(cval)
-    if tok.t == cttIdent and tok.value.equalsIgnoreCase("none"):
+    if tok.t == cttIdent and tok.s.equalsIgnoreCase("none"):
       return ok(nil)
   let url = cssURL(cval, src = true)
   if url.isSome:
@@ -1506,14 +1506,14 @@ func parseInteger(cval: CSSComponentValue; range: Slice[int32]): Opt[int32] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     if tok.t in {cttNumber, cttINumber}:
-      if tok.nvalue in float32(range.a)..float32(range.b):
-        return ok(int32(tok.nvalue))
+      if tok.num in float32(range.a)..float32(range.b):
+        return ok(int32(tok.num))
   return err()
 
 func parseZIndex(cval: CSSComponentValue): Opt[CSSZIndex] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
-    if tok.t == cttIdent and tok.value == "auto":
+    if tok.t == cttIdent and tok.s == "auto":
       return ok(CSSZIndex(auto: true))
     return ok(CSSZIndex(num: ?parseInteger(cval, -65534i32 .. 65534i32)))
   return err()
@@ -1522,8 +1522,8 @@ func parseNumber(cval: CSSComponentValue; range: Slice[float32]): Opt[float32] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
     if tok.t in {cttNumber, cttINumber}:
-      if tok.nvalue in range:
-        return ok(tok.nvalue)
+      if tok.num in range:
+        return ok(tok.num)
   return err()
 
 proc makeEntry(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
@@ -1556,11 +1556,7 @@ proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
   let tok = ?fun.value.getToken(i)
   if tok.t != cttIdent:
     return err()
-  entry = CSSComputedEntry(
-    et: ceVar,
-    t: t,
-    cvar: tok.value.substr(2).toAtom()
-  )
+  entry = CSSComputedEntry(et: ceVar, t: t, cvar: tok.s.substr(2).toAtom())
   i = fun.value.skipBlanks(i + 1)
   if i < fun.value.len:
     if fun.value[i] != cttComma:

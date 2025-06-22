@@ -789,13 +789,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
       break
     if i < s.len and s[i] != ';':
       break
-    let path = ChaPath(tok.value).unquote(ctx.config.dir)
+    let path = ChaPath(tok.s).unquote(ctx.config.dir)
     if path.isErr:
-      return err(k & ": wrong CSS import (" & $tok.value &
-        " is not a valid path)")
+      return err(k & ": wrong CSS import (" & tok.s & " is not a valid path)")
     let ps = newPosixStream(path.get)
     if ps == nil:
-      return err(k & ": wrong CSS import (file " & $tok.value & " not found)")
+      return err(k & ": wrong CSS import (file " & tok.s & " not found)")
     y &= ps.readAll()
     inc i
   y &= s.substr(i)

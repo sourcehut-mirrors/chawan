@@ -180,7 +180,7 @@ proc consumeInt(parser: var MediaQueryParser): Opt[int] =
   if tok.t != cttINumber:
     parser.reconsume()
     return err()
-  return ok(int(tok.nvalue))
+  return ok(int(tok.num))
 
 proc parseMqInt(parser: var MediaQueryParser; ifalse, itrue: int): Opt[bool] =
   let i = ?parser.consumeInt()
@@ -192,9 +192,9 @@ proc parseMqInt(parser: var MediaQueryParser; ifalse, itrue: int): Opt[bool] =
 
 proc parseBool(parser: var MediaQueryParser; sfalse, strue: string): Opt[bool] =
   let tok = ?parser.consumeIdent()
-  if tok.value.equalsIgnoreCase(strue):
+  if tok.s.equalsIgnoreCase(strue):
     return ok(true)
-  elif tok.value.equalsIgnoreCase(sfalse):
+  elif tok.s.equalsIgnoreCase(sfalse):
     return ok(false)
   else:
     return err()
@@ -202,24 +202,23 @@ proc parseBool(parser: var MediaQueryParser; sfalse, strue: string): Opt[bool] =
 proc parseBool(parser: var MediaQueryParser; sfalse, sfalse2, strue: string):
     Opt[bool] =
   let tok = ?parser.consumeIdent()
-  if tok.value.equalsIgnoreCase(strue):
+  if tok.s.equalsIgnoreCase(strue):
     return ok(true)
-  elif tok.value.equalsIgnoreCase(sfalse) or
-      tok.value.equalsIgnoreCase(sfalse2):
+  elif tok.s.equalsIgnoreCase(sfalse) or tok.s.equalsIgnoreCase(sfalse2):
     return ok(false)
   else:
     return err()
 
 proc parseComparison(parser: var MediaQueryParser): Opt[MediaQueryComparison] =
   let tok = ?parser.consumeToken()
-  if tok != cttDelim or tok.cvalue notin {'=', '<', '>'}:
+  if tok != cttDelim or tok.c notin {'=', '<', '>'}:
     return err()
-  case tok.cvalue
+  case tok.c
   of '<':
     if parser.has():
       parser.skipBlanks()
       let tok = ?parser.consumeToken()
-      if tok == cttDelim and tok.cvalue == '=':
+      if tok == cttDelim and tok.c == '=':
         return ok(mqcLe)
       parser.reconsume()
     return ok(mqcLt)
@@ -227,7 +226,7 @@ proc parseComparison(parser: var MediaQueryParser): Opt[MediaQueryComparison] =
     if parser.has():
       parser.skipBlanks()
       let tok = ?parser.consumeToken()
-      if tok == cttDelim and tok.cvalue == '=':
+      if tok == cttDelim and tok.c == '=':
         return ok(mqcGe)
       parser.reconsume()
     return ok(mqcGt)
@@ -330,9 +329,9 @@ proc parseMediaInParens(parser: var MediaQueryParser): Opt[MediaQuery] =
   fparser.skipBlanks()
   let tok = ?fparser.consumeIdent()
   fparser.skipBlanks()
-  if tok.value.equalsIgnoreCase("not"):
+  if tok.s.equalsIgnoreCase("not"):
     return fparser.parseMediaCondition(non = true)
-  var tokval = tok.value
+  var tokval = tok.s
   let ismin = tokval.startsWithIgnoreCase("min-")
   let ismax = tokval.startsWithIgnoreCase("max-")
   if ismin or ismax:
@@ -360,7 +359,7 @@ proc parseMediaCondition(parser: var MediaQueryParser; non = false;
   var non = non
   if not non:
     if tok := parser.consumeIdent():
-      if tok.value.equalsIgnoreCase("not"):
+      if tok.s.equalsIgnoreCase("not"):
         non = true
       else:
         parser.reconsume()
@@ -370,9 +369,9 @@ proc parseMediaCondition(parser: var MediaQueryParser; non = false;
     return ok(res)
   let tok = ?parser.consumeIdent()
   parser.skipBlanks()
-  if tok.value.equalsIgnoreCase("and"):
+  if tok.s.equalsIgnoreCase("and"):
     return parser.parseMediaAnd(res, noor)
-  elif tok.value.equalsIgnoreCase("or"):
+  elif tok.s.equalsIgnoreCase("or"):
     if noor:
       return err()
     return parser.parseMediaOr(res)
@@ -384,26 +383,26 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
   if tokx.isErr:
     return parser.parseMediaCondition()
   let tok = tokx.get
-  if (let non = tok.value.equalsIgnoreCase("not");
-        non or tok.value.equalsIgnoreCase("only")):
+  if (let non = tok.s.equalsIgnoreCase("not");
+        non or tok.s.equalsIgnoreCase("only")):
     ?parser.skipBlanksCheckHas()
     if tok := parser.consumeIdent():
-      if media := parseEnumNoCase[MediaType](tok.value):
+      if media := parseEnumNoCase[MediaType](tok.s):
         let res = MediaQuery(t: mctMedia, media: media).negateIf(non)
         if parser.skipBlanksCheckHas().isErr:
           return ok(res)
         let tok = ?parser.consumeIdent()
-        if tok.value.equalsIgnoreCase("and"):
+        if tok.s.equalsIgnoreCase("and"):
           ?parser.skipBlanksCheckHas()
           return parser.parseMediaAnd(res)
       return err()
     return parser.parseMediaCondition(non)
-  elif media := parseEnumNoCase[MediaType](tok.value):
+  elif media := parseEnumNoCase[MediaType](tok.s):
     let res = MediaQuery(t: mctMedia, media: media)
     if parser.skipBlanksCheckHas().isErr:
       return ok(res)
     let tok = ?parser.consumeIdent()
-    if tok.value.equalsIgnoreCase("and"):
+    if tok.s.equalsIgnoreCase("and"):
       return parser.parseMediaAnd(res, noor = true)
   return err()
 

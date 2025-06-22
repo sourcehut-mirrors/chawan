@@ -17,17 +17,15 @@ type
 
   CSSComponentValue* = ref object of RootObj
 
+  CSSTokenFlag = enum
+    ctfId, ctfSign
+
   CSSToken* = ref object of CSSComponentValue
-    nvalue*: float32
-    validId*: bool # type flag; "unrestricted" -> false, "id" -> true
-    case t*: CSSTokenType
-    of cttIdent, cttFunction, cttAtKeyword, cttHash, cttString, cttUrl:
-      value*: string
-    of cttDelim:
-      cvalue*: char
-    of cttNumber, cttINumber, cttPercentage, cttDimension, cttIDimension:
-      unit*: string
-    else: discard
+    t*: CSSTokenType
+    flags: set[CSSTokenFlag]
+    c*: char # for cttDelim.  if non-ascii, s contains UTF-8
+    num*: float32 # for number-like
+    s*: string # for ident/string-like, and unit of number tokens
 
   CSSRule* = ref object of CSSComponentValue
 
@@ -185,29 +183,29 @@ func `$`*(cxsel: ComplexSelector): string
 proc `$`*(c: CSSComponentValue): string =
   result = ""
   if c of CSSToken:
-    let c = CSSToken(c)
-    case c.t:
+    let tok = CSSToken(c)
+    case tok.t:
     of cttFunction, cttAtKeyword:
-      result &= $c.t & c.value & '\n'
+      result &= $tok.t & tok.s & '\n'
     of cttUrl:
-      result &= "url(" & c.value & ")"
+      result &= "url(" & tok.s & ")"
     of cttHash:
-      result &= '#' & c.value
+      result &= '#' & tok.s
     of cttIdent:
-      result &= c.value
+      result &= tok.s
     of cttString:
-      result &= ("\"" & c.value & "\"")
+      result &= ("\"" & tok.s & "\"")
     of cttDelim:
-      if c.cvalue != char(128):
-        result &= c.cvalue
+      if tok.c in Ascii:
+        result &= tok.c
       else:
-        result &= "<UNICODE>"
+        result &= tok.s
     of cttDimension, cttNumber:
-      result &= $c.nvalue & c.unit
+      result &= $tok.num & tok.s
     of cttINumber, cttIDimension:
-      result &= $int32(c.nvalue) & c.unit
+      result &= $int32(tok.num) & tok.s
     of cttPercentage:
-      result &= $c.nvalue & "%"
+      result &= $tok.num & "%"
     of cttColon:
       result &= ":"
     of cttWhitespace:
@@ -217,7 +215,7 @@ proc `$`*(c: CSSComponentValue): string =
     of cttComma:
       result &= ","
     else:
-      result &= $c.t & '\n'
+      result &= $tok.t & '\n'
   elif c of CSSDeclaration:
     let decl = CSSDeclaration(c)
     result &= decl.name
@@ -261,11 +259,13 @@ func `==`*(a: CSSComponentValue; b: CSSTokenType): bool =
 const IdentStart = AsciiAlpha + NonAscii + {'_'}
 const Ident = IdentStart + AsciiDigit + {'-'}
 
-proc consumeRChar(iq: openArray[char]; n: var int): char =
+proc consumeDelimToken(iq: openArray[char]; n: var int): CSSToken =
+  let c = iq[n]
+  if c in Ascii:
+    inc n
+    return CSSToken(t: cttDelim, c: c)
   let u = iq.nextUTF8(n)
-  if u < 0x80:
-    return char(u)
-  return char(128)
+  return CSSToken(t: cttDelim, c: c, s: u.toUTF8())
 
 # next, next(1)
 proc startsWithIdentSequenceDash(iq: openArray[char]; n: int): bool =
@@ -331,7 +331,7 @@ proc consumeCSSString*(iq: openArray[char]; ending: char; n: var int):
     else:
       s &= c
     inc n
-  return CSSToken(t: cttString, value: move(s))
+  return CSSToken(t: cttString, s: move(s))
 
 proc consumeIdentSequence(iq: openArray[char]; n: var int): string =
   var s = ""
@@ -349,10 +349,12 @@ proc consumeIdentSequence(iq: openArray[char]; n: var int): string =
   move(s)
 
 proc consumeNumber(iq: openArray[char]; n: var int):
-    tuple[isInt: bool; val: float32] =
+    tuple[isInt, hasSign: bool; val: float32] =
   var isInt = true
+  var hasSign = false
   let start = n
   if n < iq.len and iq[n] in {'+', '-'}:
+    hasSign = true
     inc n
   while n < iq.len and iq[n] in AsciiDigit:
     inc n
@@ -373,21 +375,29 @@ proc consumeNumber(iq: openArray[char]; n: var int):
     while n < iq.len and iq[n] in AsciiDigit:
       inc n
   let val = parseFloat32(iq.toOpenArray(start, n - 1))
-  return (isInt, val)
+  return (isInt, hasSign, val)
 
 proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
-  let (isInt, val) = iq.consumeNumber(n)
+  let (isInt, hasSign, num) = iq.consumeNumber(n)
+  var flags: set[CSSTokenFlag] = {}
+  if hasSign:
+    flags.incl(ctfSign)
   if iq.startsWithIdentSequence(n):
     var unit = iq.consumeIdentSequence(n)
-    if isInt:
-      return CSSToken(t: cttIDimension, nvalue: val, unit: move(unit))
-    return CSSToken(t: cttDimension, nvalue: val, unit: move(unit))
+    return CSSToken(
+      t: if isInt: cttIDimension else: cttDimension,
+      num: num,
+      s: move(unit),
+      flags: flags
+    )
   if n < iq.len and iq[n] == '%':
     inc n
-    return CSSToken(t: cttPercentage, nvalue: val)
-  if isInt:
-    return CSSToken(t: cttINumber, nvalue: val)
-  return CSSToken(t: cttNumber, nvalue: val)
+    return CSSToken(t: cttPercentage, num: num, flags: flags)
+  return CSSToken(
+    t: if isInt: cttINumber else: cttNumber,
+    num: num,
+    flags: flags
+  )
 
 proc consumeBadURL(iq: openArray[char]; n: var int) =
   while n < iq.len:
@@ -425,12 +435,12 @@ proc consumeURL(iq: openArray[char]; n: var int): CSSToken =
       return CSSToken(t: cttBadUrl)
     of '\\':
       if n < iq.len and iq[n] != '\n':
-        res.value &= iq.consumeEscape(n)
+        res.s &= iq.consumeEscape(n)
       else:
         iq.consumeBadURL(n)
         return CSSToken(t: cttBadUrl)
     else:
-      res.value &= c
+      res.s &= c
   return res
 
 proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
@@ -443,12 +453,12 @@ proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
     if n < iq.len and iq[n] in {'"', '\''} or
         n + 1 < iq.len and iq[n] in {'"', '\''} + AsciiWhitespace and
         iq[n + 1] in {'"', '\''}:
-      return CSSToken(t: cttFunction, value: move(s))
+      return CSSToken(t: cttFunction, s: move(s))
     return iq.consumeURL(n)
   if n < iq.len and iq[n] == '(':
     inc n
-    return CSSToken(t: cttFunction, value: move(s))
-  return CSSToken(t: cttIdent, value: move(s))
+    return CSSToken(t: cttFunction, s: move(s))
+  return CSSToken(t: cttIdent, s: move(s))
 
 proc nextCSSToken*(iq: openArray[char]; n: var int): bool =
   var m = n
@@ -476,15 +486,13 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
   of '#':
     if n < iq.len and iq[n] in Ident or
         n + 1 < iq.len and iq[n] == '\\' and iq[n + 1] != '\n':
-      let validId = iq.startsWithIdentSequence(n)
-      return CSSToken(
-        t: cttHash,
-        value: iq.consumeIdentSequence(n),
-        validId: validId
-      )
+      var flags: set[CSSTokenFlag] = {}
+      if iq.startsWithIdentSequence(n):
+        flags.incl(ctfId)
+      return CSSToken(t: cttHash, s: iq.consumeIdentSequence(n), flags: flags)
     else:
       dec n
-      return CSSToken(t: cttDelim, cvalue: iq.consumeRChar(n))
+      return iq.consumeDelimToken(n)
   of '(': return CSSToken(t: cttLparen)
   of ')': return CSSToken(t: cttRparen)
   of '{': return CSSToken(t: cttLbrace)
@@ -496,7 +504,7 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
       dec n
       return iq.consumeNumericToken(n)
     else:
-      return CSSToken(t: cttDelim, cvalue: c)
+      return CSSToken(t: cttDelim, c: c)
   of ',': return CSSToken(t: cttComma)
   of '-':
     # starts with a number
@@ -511,14 +519,14 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
       dec n
       return iq.consumeIdentLikeToken(n)
     else:
-      return CSSToken(t: cttDelim, cvalue: c)
+      return CSSToken(t: cttDelim, c: c)
   of '.':
     # starts with a number
     if n < iq.len and iq[n] in AsciiDigit:
       dec n
       return iq.consumeNumericToken(n)
     else:
-      return CSSToken(t: cttDelim, cvalue: c)
+      return CSSToken(t: cttDelim, c: c)
   of ':': return CSSToken(t: cttColon)
   of ';': return CSSToken(t: cttSemicolon)
   of '<':
@@ -527,19 +535,19 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
       n += 3
       return CSSToken(t: cttCdo)
     else:
-      return CSSToken(t: cttDelim, cvalue: c)
+      return CSSToken(t: cttDelim, c: c)
   of '@':
     if iq.startsWithIdentSequence(n):
-      return CSSToken(t: cttAtKeyword, value: iq.consumeIdentSequence(n))
+      return CSSToken(t: cttAtKeyword, s: iq.consumeIdentSequence(n))
     else:
-      return CSSToken(t: cttDelim, cvalue: c)
+      return CSSToken(t: cttDelim, c: c)
   of '[': return CSSToken(t: cttLbracket)
   of '\\':
     if n < iq.len and iq[n] != '\n':
       dec n
       return iq.consumeIdentLikeToken(n)
     else:
-      return CSSToken(t: cttDelim, cvalue: c)
+      return CSSToken(t: cttDelim, c: c)
   of ']': return CSSToken(t: cttRbracket)
   of AsciiDigit:
     dec n
@@ -549,7 +557,7 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
     return iq.consumeIdentLikeToken(n)
   else:
     dec n
-    return CSSToken(t: cttDelim, cvalue: iq.consumeRChar(n))
+    return iq.consumeDelimToken(n)
 
 proc tokenizeCSS*(iq: openArray[char]): seq[CSSComponentValue] =
   result = @[]
@@ -622,13 +630,13 @@ proc consumeSimpleBlock(cvals: openArray[CSSComponentValue]; tok: CSSToken;
 
 proc consumeFunction(cvals: openArray[CSSComponentValue]; i: var int):
     CSSFunction =
-  let t = CSSToken(cvals[i])
+  let tok = CSSToken(cvals[i])
   inc i
-  let name = parseEnumNoCase[CSSFunctionType](t.value).get(cftUnknown)
+  let name = parseEnumNoCase[CSSFunctionType](tok.s).get(cftUnknown)
   let res = CSSFunction(name: name)
   while i < cvals.len:
-    let t = cvals[i]
-    if t == cttRparen:
+    let tok = cvals[i]
+    if tok == cttRparen:
       inc i
       break
     res.value.add(cvals.consumeComponentValue(i))
@@ -669,20 +677,20 @@ proc consumeQualifiedRule(cvals: openArray[CSSComponentValue]; i: var int):
   err()
 
 proc consumeAtRule(cvals: openArray[CSSComponentValue]; i: var int): CSSAtRule =
-  let t = CSSToken(cvals[i])
+  let tok = CSSToken(cvals[i])
   inc i
-  let name = parseEnumNoCase[CSSAtRuleType](t.value).get(cartUnknown)
+  let name = parseEnumNoCase[CSSAtRuleType](tok.s).get(cartUnknown)
   result = CSSAtRule(name: name)
   while i < cvals.len:
-    let t = cvals[i]
+    let cval = cvals[i]
     inc i
-    if t of CSSSimpleBlock:
-      result.oblock = CSSSimpleBlock(t)
+    if cval of CSSSimpleBlock:
+      result.oblock = CSSSimpleBlock(cval)
       break
-    elif t == cttSemicolon:
+    elif cval == cttSemicolon:
       break
-    elif t == cttLbrace:
-      result.oblock = cvals.consumeSimpleBlock(CSSToken(t), i)
+    elif cval == cttLbrace:
+      result.oblock = cvals.consumeSimpleBlock(CSSToken(cval), i)
       break
     else:
       dec i
@@ -690,12 +698,12 @@ proc consumeAtRule(cvals: openArray[CSSComponentValue]; i: var int): CSSAtRule =
 
 proc consumeDeclaration(cvals: openArray[CSSComponentValue]; i: var int):
     Option[CSSDeclaration] =
-  let t = CSSToken(cvals[i])
+  let tok = CSSToken(cvals[i])
   i = cvals.skipBlanks(i + 1)
   if i >= cvals.len or cvals[i] != cttColon:
     return none(CSSDeclaration)
   i = cvals.skipBlanks(i + 1)
-  let decl = CSSDeclaration(name: t.value)
+  let decl = CSSDeclaration(name: tok.s)
   while i < cvals.len:
     decl.value.add(cvals.consumeComponentValue(i))
   var j = 0
@@ -706,11 +714,11 @@ proc consumeDeclaration(cvals: openArray[CSSComponentValue]; i: var int):
       continue
     inc j
     if decl.value[i] == cttIdent and k == 0:
-      if CSSToken(decl.value[i]).value.equalsIgnoreCase("important"):
+      if CSSToken(decl.value[i]).s.equalsIgnoreCase("important"):
         inc k
         l = i
     elif k == 1 and decl.value[i] == cttDelim:
-      if CSSToken(decl.value[i]).cvalue == '!':
+      if CSSToken(decl.value[i]).c == '!':
         decl.important = true
         decl.value.delete(l)
         decl.value.delete(i)
@@ -838,39 +846,32 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
     Opt[CSSAnB] =
   template is_eof: bool =
     i >= cvals.len or not (cvals[i] of CSSToken)
-  template get_plus: bool =
-    let tok = cvals.getToken(i, cttDelim)
-    if tok.isOk and tok.get.cvalue == '+':
-      inc i
-      true
-    else:
-      false
   template get_tok: CSSToken =
     i = cvals.skipBlanks(i)
     ?cvals.consumeToken(i)
   template fail_plus =
     if isPlus:
       return err()
-  template parse_sub_int(s: string; skip: int): int32 =
-    ?parseInt32(s.toOpenArray(skip, s.high))
   template fail_non_integer(tok: CSSToken; res: Opt[CSSAnB]) =
     if tok.t != cttINumber:
       dec i
       return res
-    if int64(tok.nvalue) > high(int):
+    if int64(tok.num) > high(int):
       dec i
       return res
   template fail_non_signless_integer(tok: CSSToken; res: Opt[CSSAnB]) =
-    fail_non_integer tok, res #TODO check if signless?
+    fail_non_integer tok, res
+    if ctfSign in tok.flags:
+      return res
 
   i = cvals.skipBlanks(i)
-  if is_eof:
-    return err()
-  let isPlus = get_plus
-  let tok = ?cvals.consumeToken(i)
+  var tok = ?cvals.consumeToken(i)
+  let isPlus = tok.t == cttDelim and tok.c == '+'
+  if isPlus:
+    tok = ?cvals.consumeToken(i)
   case tok.t
   of cttIdent:
-    if x := parseEnumNoCase[AnBIdent](tok.value):
+    if x := parseEnumNoCase[AnBIdent](tok.s):
       case x
       of abiOdd:
         fail_plus
@@ -884,16 +885,16 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
           return ok((1i32, 0i32))
         let tok2 = ?cvals.consumeToken(i)
         if tok2.t == cttDelim:
-          let sign = case tok2.cvalue
+          let sign = case tok2.c
           of '+': 1i32
           of '-': -1i32
           else: return err()
           let tok3 = get_tok
           fail_non_signless_integer tok3, ok((1i32, 0i32))
-          return ok((1i32, sign * int32(tok3.nvalue)))
+          return ok((1i32, sign * int32(tok3.num)))
         else:
           fail_non_integer tok2, ok((1i32, 0i32))
-          return ok((1i32, int32(tok2.nvalue)))
+          return ok((1i32, int32(tok2.num)))
       of abiDashN:
         fail_plus
         i = cvals.skipBlanks(i)
@@ -901,64 +902,67 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
           return ok((-1i32, 0i32))
         let tok2 = ?cvals.consumeToken(i)
         if tok2.t == cttDelim:
-          let sign = case tok2.cvalue
+          let sign = case tok2.c
           of '+': 1i32
           of '-': -1i32
           else: return err()
           let tok3 = get_tok
           fail_non_signless_integer tok3, ok((-1i32, 0i32))
-          return ok((-1i32, sign * int32(tok3.nvalue)))
+          return ok((-1i32, sign * int32(tok3.num)))
         else:
           fail_non_integer tok2, ok((-1i32, 0i32))
-          return ok((-1i32, int32(tok2.nvalue)))
+          return ok((-1i32, int32(tok2.num)))
       of abiNDash:
         let tok2 = get_tok
         fail_non_signless_integer tok2, err()
-        return ok((1i32, -int32(tok2.nvalue)))
+        return ok((1i32, -int32(tok2.num)))
       of abiDashNDash:
         fail_plus
         let tok2 = get_tok
         fail_non_signless_integer tok2, err()
-        return ok((-1i32, -int32(tok2.nvalue)))
-    elif tok.value.startsWithIgnoreCase("n-"):
-      return ok((1i32, -parse_sub_int(tok.value, "n-".len)))
-    elif tok.value.startsWithIgnoreCase("-n-"):
+        return ok((-1i32, -int32(tok2.num)))
+    elif tok.s.startsWithIgnoreCase("n-"):
+      let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
+      return ok((1i32, n))
+    elif tok.s.startsWithIgnoreCase("-n-"):
       fail_plus
-      return ok((-1i32, -parse_sub_int(tok.value, "n-".len)))
+      let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
+      return ok((-1i32, -n))
     else:
       return err()
   of cttINumber:
     fail_plus
     # <integer>
-    return ok((0i32, int32(tok.nvalue)))
+    return ok((0i32, int32(tok.num)))
   of cttIDimension:
     fail_plus
-    case tok.unit
+    case tok.s
     of "n", "N":
       # <n-dimension>
       i = cvals.skipBlanks(i)
       if is_eof:
-        return ok((int32(tok.nvalue), 0i32))
+        return ok((int32(tok.num), 0i32))
       let tok2 = ?cvals.consumeToken(i)
       if tok2.t == cttDelim:
-        let sign = case tok2.cvalue
+        let sign = case tok2.c
         of '+': 1i32
         of '-': -1i32
         else: return err()
         let tok3 = get_tok
-        fail_non_signless_integer tok3, ok((int32(tok.nvalue), 0i32))
-        return ok((int32(tok.nvalue), sign * int32(tok3.nvalue)))
+        fail_non_signless_integer tok3, ok((int32(tok.num), 0i32))
+        return ok((int32(tok.num), sign * int32(tok3.num)))
       else:
-        fail_non_integer tok2, ok((int32(tok.nvalue), 0i32))
-        return ok((int32(tok.nvalue), int32(tok2.nvalue)))
+        fail_non_integer tok2, ok((int32(tok.num), 0i32))
+        return ok((int32(tok.num), int32(tok2.num)))
     of "n-", "N-":
       # <ndash-dimension>
       let tok2 = get_tok
       fail_non_signless_integer tok2, err()
-      return ok((int32(tok.nvalue), -int32(tok2.nvalue)))
-    elif tok.unit.startsWithIgnoreCase("n-"):
+      return ok((int32(tok.num), -int32(tok2.num)))
+    elif tok.s.startsWithIgnoreCase("n-"):
       # <ndashdigit-dimension>
-      return ok((int32(tok.nvalue), -parse_sub_int(tok.unit, "n-".len)))
+      let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
+      return ok((int32(tok.num), n))
     else:
       return err()
   else:
@@ -1152,7 +1156,7 @@ proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
   if i >= cssfunction.value.len:
     return nthchild
   let lasttok = get_tok cssfunction.value[i]
-  if lasttok.t != cttIdent or not lasttok.value.equalsIgnoreCase("of"):
+  if lasttok.t != cttIdent or not lasttok.s.equalsIgnoreCase("of"):
     fail
   inc i
   while i < cssfunction.value.len and cssfunction.value[i] == cttWhitespace:
@@ -1174,7 +1178,7 @@ proc parseLang(cvals: seq[CSSComponentValue]): Selector =
   if not state.has(): fail
   let tok = get_tok state.consume()
   if tok.t != cttIdent: fail
-  return Selector(t: stPseudoClass, pseudo: PseudoData(t: pcLang, s: tok.value))
+  return Selector(t: stPseudoClass, pseudo: PseudoData(t: pcLang, s: tok.s))
 
 proc parseSelectorFunction(state: var SelectorParser; cssfunction: CSSFunction):
     Selector =
@@ -1210,19 +1214,19 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
     of cttIdent:
       template add_pseudo_class(class: PseudoClass) =
         return Selector(t: stPseudoClass, pseudo: PseudoData(t: class))
-      if tok.value.equalsIgnoreCase("before"):
+      if tok.s.equalsIgnoreCase("before"):
         add_pseudo_element peBefore
-      elif tok.value.equalsIgnoreCase("after"):
+      elif tok.s.equalsIgnoreCase("after"):
         add_pseudo_element peAfter
       else:
-        let class = parseEnumNoCase[PseudoClass](tok.value)
+        let class = parseEnumNoCase[PseudoClass](tok.s)
         if class.isErr: fail
         add_pseudo_class class.get
     of cttColon:
       if not state.has(): fail
       let tok = get_tok state.consume()
       if tok.t != cttIdent: fail
-      let x = parseEnumNoCase[PseudoElement](tok.value)
+      let x = parseEnumNoCase[PseudoElement](tok.s)
       if x.isErr: fail
       add_pseudo_element x.get
     else: fail
@@ -1242,12 +1246,12 @@ proc parseAttributeSelector(state: var SelectorParser;
   if not state2.has():
     return Selector(
       t: stAttr,
-      attr: attr.value.toAtomLower(),
+      attr: attr.s.toAtomLower(),
       rel: SelectorRelation(t: rtExists)
     )
   let delim = get_tok state2.consume()
   if delim.t != cttDelim: fail
-  let rel = case delim.cvalue
+  let rel = case delim.c
   of '~': rtToken
   of '|': rtBeginDash
   of '^': rtStartsWith
@@ -1257,7 +1261,7 @@ proc parseAttributeSelector(state: var SelectorParser;
   else: fail
   if rel != rtEquals:
     let delim = get_tok state2.consume()
-    if delim.t != cttDelim or delim.cvalue != '=': fail
+    if delim.t != cttDelim or delim.c != '=': fail
   state2.skipWhitespace()
   if not state2.has(): fail
   let value = get_tok state2.consume()
@@ -1267,14 +1271,14 @@ proc parseAttributeSelector(state: var SelectorParser;
   if state2.has():
     let delim = get_tok state2.consume()
     if delim.t != cttIdent: fail
-    if delim.value.equalsIgnoreCase("i"):
+    if delim.s.equalsIgnoreCase("i"):
       flag = rfI
-    elif delim.value.equalsIgnoreCase("s"):
+    elif delim.s.equalsIgnoreCase("s"):
       flag = rfS
   return Selector(
     t: stAttr,
-    attr: attr.value.toAtomLower(),
-    value: value.value,
+    attr: attr.s.toAtomLower(),
+    value: value.s,
     rel: SelectorRelation(t: rel, flag: flag)
   )
 
@@ -1282,7 +1286,7 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = get_tok state.consume()
   if tok.t != cttIdent: fail
-  let class = tok.value.toAtomLower()
+  let class = tok.s.toAtomLower()
   Selector(t: stClass, class: class)
 
 proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
@@ -1294,20 +1298,20 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
       case tok.t
       of cttIdent:
         inc state.at
-        let tag = tok.value.toAtomLower()
+        let tag = tok.s.toAtomLower()
         result.add(Selector(t: stType, tag: tag))
       of cttColon:
         inc state.at
         result.add(state.parsePseudoSelector())
       of cttHash:
         inc state.at
-        if not tok.validId:
+        if ctfId notin tok.flags:
           fail
-        let id = tok.value.toAtomLower()
+        let id = tok.s.toAtomLower()
         result.add(Selector(t: stId, id: id))
       of cttComma: break
       of cttDelim:
-        case tok.cvalue
+        case tok.c
         of '.':
           inc state.at
           result.add(state.parseClassSelector())
@@ -1322,7 +1326,7 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
           inc state.at
         elif state.peek(1) == cttDelim:
           let tok = CSSToken(state.peek(1))
-          if tok.cvalue in {'>', '+', '~'}:
+          if tok.c in {'>', '+', '~'}:
             inc state.at
         break
       else: fail
@@ -1348,7 +1352,7 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     let tok = get_tok state.consume()
     case tok.t
     of cttDelim:
-      case tok.cvalue
+      case tok.c
       of '>': result[^1].ct = ctChild
       of '+': result[^1].ct = ctNextSibling
       of '~': result[^1].ct = ctSubsequentSibling
