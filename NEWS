@@ -1,3 +1,15 @@
+unreleased
+
+Fixes:
+* fix buffer cloning on musl
+* fix crash when saving cookies
+* fix possible crash in CanvasRenderingContext2D#closePath
+* fix mystery miscompilation bug on macOS
+
 0.2.0 (2025.06.15)
 
 Initial release.
+Thanks for patches applied prior to this release to:
+commodorian <c@commodorian.org>
+Alex <alex@lagomor.ph>
+hrdl <git@hrdl.eu>
