@@ -1,3 +1,5 @@
+# See ssl.nim for the entry point.
+
 {.push raises: [].}
 
 import std/options
@@ -423,8 +425,5 @@ proc main*() =
   discard session.libssh2_session_disconnect("")
   discard session.libssh2_session_free()
   libssh2_exit()
-
-when not defined(staticLink):
-  main()
 
 {.pop.} # raises: []

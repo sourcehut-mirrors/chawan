@@ -1,3 +1,5 @@
+# See ssl.nim for the entry point.
+
 {.push raises: [].}
 
 import std/options
@@ -470,8 +472,5 @@ proc main*() =
           break readResponse
         m += k
   op.ps.sclose()
-
-when not defined(staticLink):
-  main()
 
 {.pop.} # raises: []

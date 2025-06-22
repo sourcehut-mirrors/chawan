@@ -1,3 +1,5 @@
+# See ssl.nim for the entry point.
+
 {.push raises: [].}
 
 import std/os
@@ -352,8 +354,5 @@ Update it?
 </form>
 """)
   closeSSLSocket(ssl)
-
-when not defined(staticLink):
-  main()
 
 {.pop.} # raises: []

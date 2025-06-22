@@ -61,14 +61,12 @@ FLAGS += -d:release --debugger:native
 endif
 
 protocols = file ftp gopher finger man spartan chabookmark \
-	stbi jebp sixel canvas resize nanosvg http gemini sftp
+	stbi jebp sixel canvas resize nanosvg http gemini sftp ssl
 converters = gopher2html md2html ansi2html gmi2html dirlist2html uri2html img2html
 tools = urlenc nc
 
 ifeq ($(STATIC_LINK),1)
-FLAGS += -d:staticLink=$(STATIC_LINK)
 LDFLAGS += -static
-protocols += ssl
 endif
 
 ifeq ($(FORCE_POLL_MODE),2)
@@ -184,14 +182,12 @@ $(OUTDIR_CGI_BIN)/%: adapter/img/%.nim
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
                 -o:"$@" $<
 
-ifeq ($(STATIC_LINK),1)
 $(OUTDIR_CGI_BIN)/http: $(OUTDIR_CGI_BIN)/ssl
 	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl http)
 $(OUTDIR_CGI_BIN)/gemini: $(OUTDIR_CGI_BIN)/ssl
 	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl gemini)
 $(OUTDIR_CGI_BIN)/sftp: $(OUTDIR_CGI_BIN)/ssl
 	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl sftp)
-endif
 
 $(OUTDIR_LIBEXEC)/%: adapter/format/%.nim
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
@@ -253,11 +249,9 @@ install:
 	done
 # urldec is just a symlink to urlenc
 	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc urldec)
-ifeq ($(STATIC_LINK),1)
 	(cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl http)
 	(cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl gemini)
 	(cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl sftp)
-endif
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"
 	for f in $(manpages1); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX1)"; done
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
@@ -279,16 +273,11 @@ uninstall:
 # * data, about have been moved back into the main binary
 # * gmifetch has been replaced by gemini
 # * cha-finger has been renamed to finger
-# * ssl is an alias for http, gemini, sftp in static builds
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/about
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/cha-finger
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/data
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/http
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gemini
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/sftp
-	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/ssl
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
 	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 # urldec is just a symlink to urlenc

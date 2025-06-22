@@ -1,3 +1,7 @@
+# This binary unifies all modules that must be linked to OpenSSL, so
+# that it doesn't bloat the distribution's size in statically linked
+# builds.
+
 import utils/twtstr
 
 import gemini
