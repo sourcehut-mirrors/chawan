@@ -559,7 +559,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
   let c = parseLegacyColor(v.s)
-  if c.isNone:
+  if c.isErr:
     return err(k & ": invalid color '" & v.s & "'")
   x = c.get
   ok()
@@ -634,7 +634,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
   let y = compileMatchRegex(v.s)
-  if y.isNone:
+  if y.isErr:
     return err(k & ": invalid regex (" & y.error & ")")
   x = y.get
   ok()
@@ -664,7 +664,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ChaPathResolved;
     v: TomlValue; k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
   let y = ChaPath(v.s).unquote(ctx.config.dir)
-  if y.isNone:
+  if y.isErr:
     return err(k & ": " & y.error)
   x = ChaPathResolved(y.get)
   ok()
@@ -695,13 +695,13 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
       let res = x.parseMailcap(src.toOpenArray(), p)
       deallocMem(src)
       ps.sclose()
-      if res.isNone:
+      if res.isErr:
         ctx.warnings.add(res.error)
   ok()
 
 const DefaultMailcap = block:
   var mailcap: Mailcap
-  doAssert mailcap.parseMailcap(staticRead"res/mailcap", "res/mailcap").isSome
+  doAssert mailcap.parseMailcap(staticRead"res/mailcap", "res/mailcap").isOk
   mailcap
 
 proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
@@ -715,7 +715,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
     let res = x.entries.parseMailcap(src.toOpenArray(), path)
     deallocMem(src)
     ps.sclose()
-    if res.isNone:
+    if res.isErr:
       ctx.warnings.add(res.error)
   x.entries.add(DefaultMailcap)
   ok()
@@ -790,7 +790,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
     if i < s.len and s[i] != ';':
       break
     let path = ChaPath(tok.value).unquote(ctx.config.dir)
-    if path.isNone:
+    if path.isErr:
       return err(k & ": wrong CSS import (" & $tok.value &
         " is not a valid path)")
     let ps = newPosixStream(path.get)
@@ -846,7 +846,7 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
     warnings: var seq[string]; jsctx: JSContext; name: string;
     laxnames = false): Err[string] =
   let toml = parseToml(buf, dir / name, laxnames, config.arraySeen)
-  if toml.isSome:
+  if toml.isOk:
     return config.parseConfig(dir, toml.get, warnings, jsctx)
   return err("Fatal error: failed to parse config\n" & toml.error)
 

@@ -218,7 +218,7 @@ proc toJS*(ctx: JSContext; opt: Option): JSValue =
   return JS_NULL
 
 proc toJS*[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
-  if opt.isSome:
+  if opt.isOk:
     when not (T is void):
       return toJS(ctx, opt.get)
     else:
@@ -365,7 +365,7 @@ proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue =
 
 proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValueConst):
     JSValue =
-  if opt.isSome:
+  if opt.isOk:
     when not (T is void):
       return toJSNew(ctx, opt.get, ctor)
     else:

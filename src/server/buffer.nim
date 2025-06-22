@@ -1429,10 +1429,10 @@ proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
         return ClickResult()
       let s = bc.evalJSURL(url)
       bc.maybeReshape()
-      if s.isNone:
+      if s.isErr:
         return ClickResult()
       let urls = newURL("data:text/html," & s.get)
-      if urls.isNone:
+      if urls.isErr:
         return ClickResult()
       url = urls.get
     return ClickResult(open: newRequest(url, hmGet))

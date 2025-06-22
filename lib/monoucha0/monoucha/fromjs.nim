@@ -125,7 +125,7 @@ proc readTupleDone(ctx: JSContext; it, nextMethod: JSValueConst): Opt[void] =
   let ctxOpaque = ctx.getOpaque()
   let doneVal = JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstDone])
   var done = false
-  if ctx.fromJSFree(doneVal, done).isNone or done:
+  if ctx.fromJSFree(doneVal, done).isErr or done:
     JS_FreeValue(ctx, next)
     if not done:
       return err()
@@ -134,7 +134,7 @@ proc readTupleDone(ctx: JSContext; it, nextMethod: JSValueConst): Opt[void] =
     let next = JS_Call(ctx, nextMethod, it, 0, nil)
     let doneVal = JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstDone])
     var done = false
-    if ctx.fromJSFree(doneVal, done).isNone or done:
+    if ctx.fromJSFree(doneVal, done).isErr or done:
       JS_FreeValue(ctx, next)
       if done:
         JS_ThrowTypeError(ctx, "too many tuple members")
@@ -149,7 +149,7 @@ proc fromJSTupleBody[T](ctx: JSContext; it, nextMethod: JSValueConst;
     let next = JS_Call(ctx, nextMethod, it, 0, nil)
     let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
     var done = false
-    if ctx.fromJSFree(doneVal, done).isNone or done:
+    if ctx.fromJSFree(doneVal, done).isErr or done:
       if done:
         JS_ThrowTypeError(ctx, "too few arguments in sequence")
       JS_FreeValue(ctx, next)
@@ -176,7 +176,7 @@ proc fromJSSeqIt(ctx: JSContext; it, nextMethod: JSValueConst;
   let next = JS_Call(ctx, nextMethod, it, 0, nil)
   let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
   var done = false
-  if ctx.fromJSFree(doneVal, done).isSome and not done:
+  if ctx.fromJSFree(doneVal, done).isOk and not done:
     res = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstValue])
     JS_FreeValue(ctx, next)
     return ok(false)
@@ -193,10 +193,10 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): Opt[void] =
     return err()
   var status = ok()
   var tmp = newSeq[T]()
-  while status.isSome:
+  while status.isOk:
     var val: JSValue
     let done = ctx.fromJSSeqIt(it, nextMethod, val)
-    if done.isNone:
+    if done.isErr:
       status = err()
       break
     if done.get:
@@ -216,10 +216,10 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): Opt[void] =
     return err()
   var status = ok()
   var tmp: set[T] = {}
-  while status.isSome:
+  while status.isOk:
     var val: JSValue
     let next = ctx.fromJSSeqIt(it, nextMethod, val)
-    if next.isNone:
+    if next.isErr:
       status = err()
       break
     if next.get:
@@ -247,12 +247,12 @@ proc fromJS*[A, B](ctx: JSContext; val: JSValueConst; res: var Table[A, B]):
     let atom = ptab[i].atom
     let k = JS_AtomToValue(ctx, atom)
     var kn: A
-    if ctx.fromJSFree(k, kn).isNone:
+    if ctx.fromJSFree(k, kn).isErr:
       JS_FreePropertyEnum(ctx, ptab, plen)
       return err()
     let v = JS_GetProperty(ctx, val, atom)
     var vn: B
-    if ctx.fromJSFree(v, vn).isNone:
+    if ctx.fromJSFree(v, vn).isErr:
       JS_FreePropertyEnum(ctx, ptab, plen)
       return err()
     tmp[kn] = move(vn)

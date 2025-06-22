@@ -14,7 +14,7 @@ test "Hello, world":
   const code = "'Hello from JS!'"
   let val = ctx.eval(code)
   var res: string
-  check ctx.fromJS(val, res).isSome
+  check ctx.fromJS(val, res).isOk
   check res == "Hello from JS!"
   JS_FreeValue(ctx, val)
   ctx.free()
@@ -25,7 +25,7 @@ proc evalConvert[T](ctx: JSContext; code: string;
   let val = ctx.eval(code, file)
   defer: JS_FreeValue(ctx, val) # unref result before returning
   var res: T
-  if ctx.fromJS(val, res).isNone:
+  if ctx.fromJS(val, res).isErr:
     # Conversion failed; return the exception message.
     return err(ctx.getExceptionMsg())
   # All ok! Return the converted object.
@@ -64,7 +64,7 @@ test "registerType: registering type interfaces":
   const code = "Moon"
   let val = ctx.eval(code)
   var res: string
-  check ctx.fromJS(val, res).isSome
+  check ctx.fromJS(val, res).isOk
   check res == """
 function Moon() {
     [native code]
@@ -124,7 +124,7 @@ globalThis.population = 8e9;
 """
   let val = ctx.eval(code)
   var res: string
-  check ctx.fromJS(val, res).isSome
+  check ctx.fromJS(val, res).isOk
   check res == "name: Earth, moon: [object Moon]"
   check earth.population == int64(8e9)
   JS_FreeValue(ctx, val)

@@ -334,7 +334,7 @@ proc setSearchRegex(pager: Pager; s: string; flags0 = ""; reverse = false):
     if x.isNone:
       return errTypeError("invalid flag " & c)
   let re = compileRegex(s, flags)
-  if re.isNone:
+  if re.isErr:
     return errTypeError(re.error)
   pager.regex = some(re.get)
   pager.reverseSearch = reverse
@@ -385,7 +385,7 @@ proc isearchBackward(pager: Pager) {.jsfunc.} =
 proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
     Opt[void] {.jsfunc.} =
   var n: int
-  if JS_IsNumber(val) and ctx.fromJS(val, n).isSome:
+  if JS_IsNumber(val) and ctx.fromJS(val, n).isOk:
     pager.container.gotoLine(n)
   elif JS_IsUndefined(val):
     pager.setLineEdit(lmGotoLine)
@@ -407,7 +407,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JS_ThrowTypeError(ctx, "invalid URL: %s", cstring(moduleName))
     return nil
   var source: string
-  if chafile.readFile(x.get.pathname, source).isSome:
+  if chafile.readFile(x.get.pathname, source).isOk:
     return ctx.finishLoadModule(source, moduleName)
   JS_ThrowTypeError(ctx, "failed to read file %s", cstring(moduleName))
   return nil
@@ -481,7 +481,7 @@ proc initLoader(pager: Pager) =
     pager.pollData.unregister(fd)
   let request = newRequest(newURL("about:cookie-stream").get)
   loader.fetch(request).then(proc(res: JSResult[Response]) =
-    if res.isNone:
+    if res.isErr:
       pager.alert("failed to open cookie stream")
       return
     # ugly hack, so that the cookie stream does not keep headless
@@ -518,14 +518,14 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     let hist = newHistory(pager.config.external.historySize, getTime().toUnix())
     let ps = newPosixStream(pager.config.external.historyFile)
     if ps != nil:
-      if hist.parse(ps).isNone:
+      if hist.parse(ps).isErr:
         hist.transient = true
         pager.alert("failed to read history")
     pager.lineHist[lmLocation] = hist
   block cookie:
     let ps = newPosixStream(pager.config.external.cookieFile)
     if ps != nil:
-      if pager.cookieJars.parse(ps, pager.alerts).isNone:
+      if pager.cookieJars.parse(ps, pager.alerts).isErr:
         pager.cookieJars.transient = true
         pager.alert("failed to read cookies")
   return pager
@@ -536,13 +536,13 @@ proc cleanup(pager: Pager) =
     pager.term.quit()
     let hist = pager.lineHist[lmLocation]
     if not hist.transient:
-      if hist.write(pager.config.external.historyFile).isNone:
+      if hist.write(pager.config.external.historyFile).isErr:
         if dirExists(pager.config.dir):
           # History is enabled by default, so do not print the error
           # message if no config dir exists.
           pager.alert("failed to save history")
     if not pager.cookieJars.transient:
-      if pager.cookieJars.write(pager.config.external.cookieFile).isNone:
+      if pager.cookieJars.write(pager.config.external.cookieFile).isErr:
         pager.alert("failed to save cookies")
     for msg in pager.alerts:
       stderr.fwrite("cha: " & msg & '\n')
@@ -562,7 +562,7 @@ proc quit*(pager: Pager; code: int) =
 proc runJSJobs(pager: Pager) =
   while true:
     let r = pager.jsrt.runJSJobs()
-    if r.isSome:
+    if r.isOk:
       break
     let ctx = r.error
     pager.console.writeException(ctx)
@@ -617,7 +617,7 @@ proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
     pager.console.writeException(pager.jsctx)
   elif JS_IsObject(ret):
     var maybep: EmptyPromise
-    if ctx.fromJS(ret, maybep).isSome:
+    if ctx.fromJS(ret, maybep).isOk:
       p = maybep
   JS_FreeValue(ctx, ret)
   return p
@@ -630,7 +630,7 @@ proc command0(pager: Pager; src: string; filename = "<command>";
   else:
     if not silence:
       var res: string
-      if pager.jsctx.fromJS(ret, res).isSome:
+      if pager.jsctx.fromJS(ret, res).isOk:
         pager.console.log(res)
         pager.console.flush()
   JS_FreeValue(pager.jsctx, ret)
@@ -790,7 +790,7 @@ proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
   if pager.config.input.useMouse:
     if pager.inputBuffer == "\e[<":
       let input = pager.term.parseMouseInput()
-      if input.isSome:
+      if input.isOk:
         let input = input.get
         pager.handleMouseInput(input)
       pager.inputBuffer = ""
@@ -1113,7 +1113,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
   )).then(proc(res: JSResult[Response]): FetchPromise =
     # remove previous step
     pager.loader.removeCachedItem(bmp.cacheId)
-    if res.isNone:
+    if res.isErr:
       return nil
     let response = res.get
     let cacheId = response.outputId # set by loader in tocache
@@ -1144,7 +1144,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     response.close()
     return p
   ).then(proc(res: JSResult[Response]) =
-    if res.isNone:
+    if res.isErr:
       return
     let response = res.get
     let cacheId = response.outputId
@@ -1177,7 +1177,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     r.then(proc(res: JSResult[Response]) =
       # remove previous step
       pager.loader.removeCachedItem(cacheId)
-      if res.isNone:
+      if res.isErr:
         return
       let response = res.get
       response.close()
@@ -1607,13 +1607,13 @@ proc setEnvVars0(pager: Pager; env: JSValueConst): Opt[void] =
     ?twtstr.setEnv("CHA_CHARSET", $pager.container.charset)
   else:
     var tab: Table[string, string]
-    if pager.jsctx.fromJS(env, tab).isSome:
+    if pager.jsctx.fromJS(env, tab).isOk:
       for k, v in tab:
         ?twtstr.setEnv(k, v)
   ok()
 
 proc setEnvVars(pager: Pager; env: JSValueConst) =
-  if pager.setEnvVars0(env).isNone:
+  if pager.setEnvVars0(env).isErr:
     pager.alert("Warning: failed to set some environment variables")
 
 # Run process (and suspend the terminal controller).
@@ -1674,7 +1674,7 @@ proc runProcessCapture(cmd: string; outs: var string): bool =
   let file = chafile.popen(cmd, "r")
   if file == nil:
     return false
-  let res = file.readAll(outs).isSome
+  let res = file.readAll(outs).isOk
   let rv = file.pclose()
   if not res or rv == -1:
     return false
@@ -1722,7 +1722,7 @@ proc cacheFile(pager: Pager): string {.jsfget.} =
 
 proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
   var editor = pager.config.external.editor
-  if (let uqEditor = ChaPath(editor).unquote(""); uqEditor.isSome):
+  if (let uqEditor = ChaPath(editor).unquote(""); uqEditor.isOk):
     if uqEditor.get in ["vi", "nvi", "vim", "nvim"]:
       editor = uqEditor.get & " +%d"
   var canpipe = true
@@ -1738,14 +1738,14 @@ proc openInEditor(pager: Pager; input: var string): bool =
   let tmpf = pager.getTempFile()
   discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
   input &= '\n'
-  if chafile.writeFile(tmpf, input, 0o600).isNone:
+  if chafile.writeFile(tmpf, input, 0o600).isErr:
     pager.alert("failed to write temporary file")
     return false
   let cmd = pager.getEditorCommand(tmpf)
   if cmd == "":
     pager.alert("invalid external.editor command")
   elif pager.runCommand(cmd, suspend = true, wait = false, JS_UNDEFINED):
-    if chafile.readFile(tmpf, input).isSome:
+    if chafile.readFile(tmpf, input).isOk:
       discard unlink(cstring(tmpf))
       if input.len > 0 and input[input.high] == '\n':
         input.setLen(input.high)
@@ -1826,7 +1826,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
         # Conversion may simply error out because the function didn't return a
         # new URL, and that's fine.
         var nu: URL
-        if ctx.fromJS(ret, nu).isSome:
+        if ctx.fromJS(ret, nu).isOk:
           tmpUrl = nu
       else:
         #TODO should writeException the message to console
@@ -1974,7 +1974,7 @@ proc omniRewrite(pager: Pager; s: string): string =
       let jsRet = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
       JS_FreeValue(ctx, arg0)
       var res: string
-      if ctx.fromJSFree(jsRet, res).isSome:
+      if ctx.fromJSFree(jsRet, res).isOk:
         pager.lineHist[lmLocation].add(s)
         return move(res)
       pager.alert("Error in substitution of " & $rule.match & " for " & s &
@@ -2064,7 +2064,7 @@ proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
     return nil
   ps.setCloseOnExec()
   let hist = pager.lineHist[lmLocation]
-  if hist.write(ps, sync = false, reverse = true).isNone:
+  if hist.write(ps, sync = false, reverse = true).isErr:
     pager.alert("failed to write history")
   return url
 
@@ -2093,7 +2093,7 @@ proc clearConsole(pager: Pager) =
       pager.consoleWrapper.container = replacement
       let console = pager.console
       let file = ps.fdopen("w")
-      if file.isSome:
+      if file.isOk:
         console.setStream(file.get)
     else:
       ps.sclose()
@@ -2114,7 +2114,7 @@ proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
         ConsoleTitle, {})
       if container != nil:
         ps.write("Type (M-c) console.hide() to return to buffer mode.\n")
-        if (let file = ps.fdopen("w"); file.isSome):
+        if (let file = ps.fdopen("w"); file.isOk):
           let console = newConsole(file.get, clearFun, showFun, hideFun)
           return ConsoleWrapper(console: console, container: container)
       else:
@@ -2137,7 +2137,7 @@ proc commandMode(pager: Pager; val: bool) {.jsfset.} =
     pager.command()
 
 proc checkRegex(pager: Pager; regex: Result[Regex, string]): Option[Regex] =
-  if regex.isNone:
+  if regex.isErr:
     pager.alert("Invalid regex: " & regex.error)
     return none(Regex)
   return some(regex.get)
@@ -2160,7 +2160,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
         pager.iregex = pager.compileSearchRegex(lineedit.news)
       pager.container.popCursorPos(true)
       pager.container.pushCursorPos()
-      if pager.iregex.isSome:
+      if pager.iregex.isOk:
         pager.container.flags.incl(cfHighlight)
         let wrap = pager.config.search.wrap
         return if linemode == lmISearchF:
@@ -2263,12 +2263,12 @@ proc updateReadLine(pager: Pager) =
         var mailcap = Mailcap.default
         let res = mailcap.parseMailcap(lineedit.news, "<input>")
         let data = LineDataMailcap(pager.lineData)
-        if res.isSome and mailcap.len == 1:
+        if res.isOk and mailcap.len == 1:
           let res = pager.runMailcap(data.container.url, data.ostream,
             data.response.outputId, data.contentType, mailcap[0])
           pager.connected2(data.container, res, data.response)
         else:
-          if res.isNone:
+          if res.isErr:
             pager.alert(res.error)
           pager.askMailcap(data.container, data.ostream, data.contentType,
             data.i, data.response, data.sx)
@@ -2317,11 +2317,11 @@ proc jsGotoURL(pager: Pager; v: JSValueConst; t = GotoURLDict()):
     JSResult[Container] {.jsfunc: "gotoURL".} =
   var request: Request = nil
   var jsRequest: JSRequest = nil
-  if pager.jsctx.fromJS(v, jsRequest).isSome:
+  if pager.jsctx.fromJS(v, jsRequest).isOk:
     request = jsRequest.request
   else:
     var url: URL = nil
-    if pager.jsctx.fromJS(v, url).isNone:
+    if pager.jsctx.fromJS(v, url).isErr:
       var s: string
       ?pager.jsctx.fromJS(v, s)
       url = ?newURL(s)
@@ -2578,7 +2578,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
   let cmd = unquoteCommand(entry.cmd, contentType, outpath, url, canpipe)
   let ishtml = mfHtmloutput in entry.flags
   let needsterminal = mfNeedsterminal in entry.flags
-  if twtstr.setEnv("MAILCAP_URL", $url).isNone:
+  if twtstr.setEnv("MAILCAP_URL", $url).isErr:
     pager.alert("failed to set env vars")
   block needsConnect:
     if entry.flags * {mfCopiousoutput, mfHtmloutput, mfAnsioutput,
@@ -3157,7 +3157,7 @@ proc handleEvents(pager: Pager) =
     pager.handleEvents(pager.container)
 
 proc handleEvent(pager: Pager; container: Container) =
-  if container.handleEvent().isSome:
+  if container.handleEvent().isOk:
     pager.handleEvents(container)
 
 proc runCommand(pager: Pager) =
@@ -3345,7 +3345,7 @@ proc headlessLoop(pager: Pager) =
 proc dumpBuffers(pager: Pager) =
   pager.headlessLoop()
   for container in pager.containers:
-    if pager.drawBuffer(container, stdout).isSome:
+    if pager.drawBuffer(container, stdout).isOk:
       pager.handleEvents(container)
     else:
       pager.console.error("Error in buffer", $container.url)

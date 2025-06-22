@@ -185,7 +185,7 @@ func delete(this: var Storage; k: string): bool {.jsdelprop.} =
 proc getRandomValues(ctx: JSContext; crypto: var Crypto; array: JSValueConst):
     JSValue {.jsfunc.} =
   var view: JSArrayBufferView
-  if ctx.fromJS(array, view).isNone:
+  if ctx.fromJS(array, view).isErr:
     return JS_EXCEPTION
   if view.t < 0 or view.t > cint(JS_TYPED_ARRAY_BIG_UINT64):
     return JS_ThrowDOMException(ctx, "Wrong typed array type",
@@ -326,7 +326,7 @@ func getParent(window: Window): Window {.jsrfget: "parent".} =
 # See twtstr for the actual implementations.
 proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
   var s: string
-  if (let r = s.atob(data); r.isNone):
+  if (let r = s.atob(data); r.isErr):
     return JS_ThrowDOMException(ctx, $r.error, "InvalidCharacterError")
   return ctx.toJS(NarrowString(s))
 

@@ -1,4 +1,3 @@
-import std/options
 import std/os
 import std/posix
 import std/tables
@@ -82,13 +81,13 @@ proc readBlob(client: Client; path: string): WebFile {.jsfunc.} =
 proc readFile(ctx: JSContext; client: Client; path: string): JSValue
     {.jsfunc.} =
   var s: string
-  if chafile.readFile(path, s).isSome:
+  if chafile.readFile(path, s).isOk:
     return ctx.toJS(s)
   return JS_NULL
 
 proc writeFile(ctx: JSContext; client: Client; path, content: string): JSValue
     {.jsfunc.} =
-  if chafile.writeFile(path, content, 0o644).isSome:
+  if chafile.writeFile(path, content, 0o644).isOk:
     return JS_UNDEFINED
   return JS_ThrowTypeError(ctx, "Could not write to file %s", cstring(path))
 
@@ -105,8 +104,8 @@ proc setenv(ctx: JSContext; client: Client; s: string; val: JSValueConst):
     twtstr.unsetEnv(s)
   else:
     var vals: string
-    if ctx.fromJS(val, vals).isSome:
-      if twtstr.setEnv(s, vals).isNone:
+    if ctx.fromJS(val, vals).isOk:
+      if twtstr.setEnv(s, vals).isErr:
         return JS_ThrowTypeError(ctx, "Failed to set environment variable")
     else:
       return JS_EXCEPTION

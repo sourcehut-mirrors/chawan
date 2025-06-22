@@ -93,7 +93,7 @@ proc runEntry(state: var TimeoutState; entry: TimeoutEntry; console: Console) =
     JS_FreeValueRT(state.jsrt, ret)
   else:
     var s: string
-    if state.jsctx.fromJS(entry.val, s).isSome:
+    if state.jsctx.fromJS(entry.val, s).isOk:
       state.evalJSFree(state.opaque, s, $entry.t)
 
 # for poll

@@ -301,12 +301,12 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
           if it.key.equalsIgnoreCase("Content-Encoding"):
             for it in it.value.split(','):
               let x = parseEnumNoCase[ContentEncoding](it)
-              if x.isSome:
+              if x.isOk:
                 contentEncodings.add(x.get)
           elif it.key.equalsIgnoreCase("Transfer-Encoding"):
             for it in it.value.split(','):
               let x = parseEnumNoCase[TransferEncoding](it)
-              if x.isSome:
+              if x.isOk:
                 transferEncodings.add(x.get)
           elif it.key.equalsIgnoreCase("Content-Length"):
             contentLength = parseUInt64(it.value).get(uint64.high)

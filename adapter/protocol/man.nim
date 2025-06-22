@@ -169,7 +169,7 @@ proc processManpage(ofile, efile: File; header, keyword: string)
   var reMap = array[RegexType, Regex].default
   for t, re in reMap.mpairs:
     let x = ($t).compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE})
-    if x.isNone:
+    if x.isErr:
       stderr.write($t & ": " & x.error)
       quit(1)
     re = x.get

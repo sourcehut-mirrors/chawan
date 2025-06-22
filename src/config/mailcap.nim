@@ -162,7 +162,7 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
       ?state.consumeCommand(buf, cmd)
       while s.len > 0 and s[^1] in AsciiWhitespace:
         s.setLen(s.len - 1)
-      if (let x = parseEnumNoCase[NamedField](s); x.isSome):
+      if (let x = parseEnumNoCase[NamedField](s); x.isOk):
         case x.get
         of nmTest: entry.test = cmd
         of nmNametemplate: entry.nametemplate = cmd
@@ -174,7 +174,7 @@ proc consumeField(state: var MailcapParser; buf: openArray[char];
       s &= c
   while s.len > 0 and s[^1] in AsciiWhitespace:
     s.setLen(s.len - 1)
-  if (let x = parseEnumNoCase[MailcapFlag](s); x.isSome):
+  if (let x = parseEnumNoCase[MailcapFlag](s); x.isOk):
     entry.flags.incl(x.get)
   return ok(res)
 

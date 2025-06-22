@@ -101,7 +101,7 @@ proc write0(hist: History; file: ChaFile; reverse: bool): Opt[void] =
 proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
   let file = ?ps.fdopen("w")
   var res = hist.write0(file, reverse)
-  if res.isSome and sync and fsync(ps.fd) != 0:
+  if res.isOk and sync and fsync(ps.fd) != 0:
     res = err()
   ?file.close()
   res

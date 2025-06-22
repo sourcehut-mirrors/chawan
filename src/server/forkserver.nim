@@ -184,7 +184,7 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     const ExecErrorMsg = "Cha-Control: ConnectionError " &
       $int(ceFailedToExecuteCGIScript)
     for it in env:
-      if twtstr.setEnv(it.name, it.value).isNone:
+      if twtstr.setEnv(it.name, it.value).isErr:
         stdout.fwrite(ExecErrorMsg & " failed to set env vars\n")
         exitnow(1)
     if chdir(cstring(dir)) != 0:
@@ -225,7 +225,7 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
     r.sread(isCJKAmbiguous)
     r.sread(config)
     # for CGI
-    if setupForkServerEnv(config).isNone:
+    if setupForkServerEnv(config).isErr:
       die("failed to set env vars")
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader

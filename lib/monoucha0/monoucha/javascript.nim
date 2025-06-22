@@ -267,11 +267,11 @@ proc setGlobal*[T](ctx: JSContext; obj: T) =
 proc getExceptionMsg*(ctx: JSContext): string =
   result = ""
   let ex = JS_GetException(ctx)
-  if fromJS(ctx, ex, result).isSome:
+  if fromJS(ctx, ex, result).isOk:
     result &= '\n'
   let stack = JS_GetPropertyStr(ctx, ex, cstring("stack"));
   var s: string
-  if not JS_IsUndefined(stack) and ctx.fromJS(stack, s).isSome:
+  if not JS_IsUndefined(stack) and ctx.fromJS(stack, s).isOk:
     result &= s
   JS_FreeValue(ctx, stack)
   JS_FreeValue(ctx, ex)
@@ -614,7 +614,7 @@ proc addParam(gen: var JSFuncGenerator; s, t, val: NimNode;
   if fallback == nil:
     gen.jsFunCallList.add(quote do:
       var `s`: `t`
-      if ctx.fromJS(`val`, `s`).isNone:
+      if ctx.fromJS(`val`, `s`).isErr:
         break `dl`
     )
   else:
@@ -622,7 +622,7 @@ proc addParam(gen: var JSFuncGenerator; s, t, val: NimNode;
     gen.jsFunCallList.add(quote do:
       var `s`: `t`
       if `j` < argc and not JS_IsUndefined(argv[`j`]):
-        if ctx.fromJS(`val`, `s`).isNone:
+        if ctx.fromJS(`val`, `s`).isErr:
           break `dl`
       else:
         `s` = `fallback`
@@ -640,7 +640,7 @@ proc addThisParam(gen: var JSFuncGenerator; thisName = "this") =
   let dl = gen.dielabel
   gen.jsFunCallList.add(quote do:
     var `s`: `t`
-    if ctx.fromJSThis(`id`, `s`).isNone:
+    if ctx.fromJSThis(`id`, `s`).isErr:
       break `dl`
   )
   if gen.funcParams[gen.i].t.kind == nnkPtrTy:
@@ -1206,7 +1206,7 @@ proc registerGetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
         var arg_0 {.noinit.}: ptr `t`
       else:
         var arg_0: `t`
-      if ctx.fromJSThis(this, arg_0).isNone:
+      if ctx.fromJSThis(this, arg_0).isErr:
         return JS_EXCEPTION
       when arg0.`node` is JSValue:
         return JS_DupValue(ctx, arg0.`node`)
@@ -1234,7 +1234,7 @@ proc registerSetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
         var arg_0 {.noinit.}: ptr `t`
       else:
         var arg_0: `t`
-      if ctx.fromJSThis(this, arg_0).isNone:
+      if ctx.fromJSThis(this, arg_0).isErr:
         return JS_EXCEPTION
       # We can't just set arg_0.`node` directly, or fromJS may damage it.
       var nodeVal: typeof(arg_0.`node`)
@@ -1242,7 +1242,7 @@ proc registerSetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
         static:
           error(".jsset is not supported on JSValue; use jsfset")
       else:
-        if ctx.fromJS(val, nodeVal).isNone:
+        if ctx.fromJS(val, nodeVal).isErr:
           return JS_EXCEPTION
       arg_0.`node` = move(nodeVal)
       return JS_DupValue(ctx, val)
@@ -1370,7 +1370,7 @@ proc bindReplaceableSet(stmts: NimNode; info: var RegistryInfo) =
         var dummy {.noinit.}: ptr `t`
       else:
         var dummy: `t`
-      if ctx.fromJSThis(this, dummy).isNone:
+      if ctx.fromJSThis(this, dummy).isErr:
         return JS_EXCEPTION
       let name = replaceableNames[int(magic)]
       let dval = JS_DupValue(ctx, val)

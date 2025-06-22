@@ -202,16 +202,16 @@ type
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var BodyInit): Opt[void] =
   if not JS_IsUndefined(val) and not JS_IsNull(val):
     res = BodyInit(t: bitFormData)
-    if ctx.fromJS(val, res.formData).isSome:
+    if ctx.fromJS(val, res.formData).isOk:
       return ok()
     res = BodyInit(t: bitBlob)
-    if ctx.fromJS(val, res.blob).isSome:
+    if ctx.fromJS(val, res.blob).isOk:
       return ok()
     res = BodyInit(t: bitUrlSearchParams)
-    if ctx.fromJS(val, res.searchParams).isSome:
+    if ctx.fromJS(val, res.searchParams).isOk:
       return ok()
     res = BodyInit(t: bitString)
-    if ctx.fromJS(val, res.str).isSome:
+    if ctx.fromJS(val, res.str).isOk:
       return ok()
   JS_ThrowTypeError(ctx, "invalid body init type")
   return err()
@@ -226,7 +226,7 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   var httpMethod = hmGet
   var referrer: URL = nil
   var url: URL = nil
-  if (var res: JSRequest; ctx.fromJS(resource, res).isSome):
+  if (var res: JSRequest; ctx.fromJS(resource, res).isOk):
     url = res.url
     httpMethod = res.request.httpMethod
     headers[] = res.headers[]

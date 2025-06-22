@@ -94,7 +94,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
     unit = NumberUnit(part1: part1.get, part2: part2)
   else:
     let part1 = parseEnumNoCase[NumberUnitPart](s)
-    if part1.isNone:
+    if part1.isErr:
       JS_ThrowRangeError(ctx, "wrong unit %s", cstring(s))
       return err()
     unit = NumberUnit(part1: part1.get)

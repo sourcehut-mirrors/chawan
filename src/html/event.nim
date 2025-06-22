@@ -433,7 +433,7 @@ proc flattenMore(ctx: JSContext; options: JSValueConst):
     discard ctx.fromJSFree(jsOnce, once)
     let jsPassive = JS_GetPropertyStr(ctx, options, "passive")
     var x: bool
-    if ctx.fromJSFree(jsPassive, x).isSome:
+    if ctx.fromJSFree(jsPassive, x).isOk:
       passive = some(x)
   return (capture, once, passive)
 
@@ -511,7 +511,7 @@ proc eventReflectSet0*(ctx: JSContext; target: EventTarget;
 proc eventReflectSet*(ctx: JSContext; this, val: JSValueConst; magic: cint):
     JSValue {.cdecl.} =
   var target: EventTarget
-  if ctx.fromJS(this, target).isNone:
+  if ctx.fromJS(this, target).isErr:
     return JS_EXCEPTION
   return ctx.eventReflectSet0(target, val, magic, eventReflectSet,
     EventReflectMap[magic])

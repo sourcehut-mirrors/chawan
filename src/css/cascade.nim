@@ -121,7 +121,7 @@ proc resolveVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
       entry.t = t # must override, same var can be used for different props
       return ok(entry)
   var entries: seq[CSSComputedEntry] = @[]
-  if entries.parseComputedValues($t, cvar.cvals, ctx.window.attrsp[]).isSome:
+  if entries.parseComputedValues($t, cvar.cvals, ctx.window.attrsp[]).isOk:
     if entries[0].et == ceVar:
       if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
         ctx.varsSeen.clear()
@@ -183,7 +183,7 @@ proc applyDimensionHintGz(ctx: var ApplyValueContext; p: CSSPropertyType;
 
 proc applyColorHint(ctx: var ApplyValueContext; p: CSSPropertyType; s: string) =
   let c = parseLegacyColor(s)
-  if c.isSome:
+  if c.isOk:
     ctx.applyPresHint(makeEntry(p, c.get.cssColor()))
 
 proc applyLengthHint(ctx: var ApplyValueContext; p: CSSPropertyType;

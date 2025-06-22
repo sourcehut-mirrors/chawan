@@ -19,11 +19,11 @@ test "enums":
   let ctx = rt.newJSContext()
   let val = ctx.toJS(teB)
   var e: TestEnum
-  assert ctx.fromJS(val, e).isSome
+  assert ctx.fromJS(val, e).isOk
   assert e == teB
   var e2: TestEnum2
   let val2 = ctx.toJS(te2A)
-  assert ctx.fromJS(val2, e2).isSome
+  assert ctx.fromJS(val2, e2).isOk
   assert e2 == te2A
   ctx.free()
   rt.free()
@@ -33,7 +33,7 @@ test "enums null":
   let ctx = rt.newJSContext()
   let val = ctx.toJS("b\0c")
   var e: TestEnum
-  assert ctx.fromJS(val, e).isNone
+  assert ctx.fromJS(val, e).isErr
   ctx.free()
   rt.free()
 
@@ -63,7 +63,7 @@ test "jsdict undefined missing fields":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   var res: TestDict0
-  assert ctx.fromJS(JS_UNDEFINED, res).isNone
+  assert ctx.fromJS(JS_UNDEFINED, res).isErr
   ctx.free()
   rt.free()
 
@@ -71,7 +71,7 @@ test "optional jsdict undefined":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   var res: TestDict2
-  assert ctx.fromJS(JS_UNDEFINED, res).isSome, ctx.getExceptionMsg()
+  assert ctx.fromJS(JS_UNDEFINED, res).isOk, ctx.getExceptionMsg()
   ctx.free()
   rt.free()
 
@@ -79,14 +79,14 @@ test "optional jsdict inherited":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
   var res: TestDict3
-  assert ctx.fromJS(JS_UNDEFINED, res).isSome, ctx.getExceptionMsg()
+  assert ctx.fromJS(JS_UNDEFINED, res).isOk, ctx.getExceptionMsg()
   assert res.b == 2
   ctx.free()
   rt.free()
 
 proc subroutine(ctx: JSContext; val: JSValueConst) =
   var res: TestDict0
-  assert ctx.fromJS(val, res).isSome, ctx.getExceptionMsg()
+  assert ctx.fromJS(val, res).isOk, ctx.getExceptionMsg()
   discard ctx.eval("delete val.f", "<input>")
   assert res.a
   assert res.b == 1
@@ -131,7 +131,7 @@ test "fromjs-seq":
   var test = @[1, 2, 3, 4]
   let jsTest = ctx.toJS(test)
   var test2: seq[int]
-  assert ctx.fromJS(jsTest, test2).isSome
+  assert ctx.fromJS(jsTest, test2).isOk
   assert test2 == test
   JS_FreeValue(ctx, jsTest)
   ctx.free()
@@ -143,7 +143,7 @@ test "fromjs-tuple":
   var test = (2, "hi")
   let jsTest = ctx.toJS(test)
   var test2: tuple[n: int; s: string]
-  assert ctx.fromJS(jsTest, test2).isSome
+  assert ctx.fromJS(jsTest, test2).isOk
   assert test2 == test
   JS_FreeValue(ctx, jsTest)
   ctx.free()

@@ -48,7 +48,7 @@ proc newFormData(ctx: JSContext; form = none(HTMLFormElement);
 proc append*(ctx: JSContext; this: FormData; name: string; val: JSValueConst;
     rest: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
   var blob: Blob
-  if ctx.fromJS(val, blob).isSome:
+  if ctx.fromJS(val, blob).isOk:
     var filename = "blob"
     if rest.len > 0:
       ?ctx.fromJS(rest[0], filename)

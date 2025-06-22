@@ -182,12 +182,12 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
         if decl.important:
           let olen = ruleDef.importantVals.len
           if ruleDef.importantVals.parseComputedValues(decl.name, decl.value,
-              sheet.attrs[]).isNone:
+              sheet.attrs[]).isErr:
             ruleDef.importantVals.setLen(olen)
         else:
           let olen = ruleDef.normalVals.len
           if ruleDef.normalVals.parseComputedValues(decl.name, decl.value,
-              sheet.attrs[]).isNone:
+              sheet.attrs[]).isErr:
             ruleDef.normalVals.setLen(olen)
     sheet.add(ruleDef)
     inc sheet.len

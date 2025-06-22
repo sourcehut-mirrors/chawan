@@ -618,13 +618,13 @@ var fetchImpl*: proc(window: Window; input: JSRequest): JSResult[FetchPromise]
 func getGlobal*(ctx: JSContext): Window =
   let global = JS_GetGlobalObject(ctx)
   var window: Window
-  doAssert ctx.fromJSFree(global, window).isSome
+  doAssert ctx.fromJSFree(global, window).isOk
   return window
 
 func getWindow*(ctx: JSContext): Window =
   let global = JS_GetGlobalObject(ctx)
   var window: Window
-  doAssert ctx.fromJSFree(global, window).isSome
+  doAssert ctx.fromJSFree(global, window).isOk
   return window
 
 func console(window: Window): Console =
@@ -952,7 +952,7 @@ proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
 
 proc textAlign(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
   let x = parseEnumNoCase[CanvasTextAlign](s)
-  if x.isSome:
+  if x.isOk:
     ctx.state.textAlign = x.get
 
 # CanvasPath
@@ -1634,7 +1634,7 @@ func value(tokenList: DOMTokenList): string {.jsfget.} =
 proc getter(ctx: JSContext; this: DOMTokenList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
-  if ctx.fromJS(atom, u).isSome:
+  if ctx.fromJS(atom, u).isOk:
     return ctx.item(this, u).uninitIfNull()
   return JS_UNINITIALIZED
 
@@ -1702,7 +1702,7 @@ func item(this: NodeList; u: uint32): Node {.jsfunc.} =
 func getter(ctx: JSContext; this: NodeList; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
-  if ctx.fromJS(atom, u).isSome:
+  if ctx.fromJS(atom, u).isOk:
     return ctx.toJS(this.item(u)).uninitIfNull()
   return JS_UNINITIALIZED
 
@@ -1733,10 +1733,10 @@ func namedItem(this: HTMLCollection; atom: CAtom): Element {.jsfunc.} =
 proc getter(ctx: JSContext; this: HTMLCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
-  if ctx.fromJS(atom, u).isSome:
+  if ctx.fromJS(atom, u).isOk:
     return ctx.toJS(this.item(u)).uninitIfNull()
   var s: CAtom
-  if ctx.fromJS(atom, s).isSome:
+  if ctx.fromJS(atom, s).isOk:
     return ctx.toJS(this.namedItem(s)).uninitIfNull()
   return JS_UNINITIALIZED
 
@@ -1783,10 +1783,10 @@ proc names(ctx: JSContext; this: HTMLFormControlsCollection): JSPropertyEnumList
 proc getter(ctx: JSContext; this: HTMLFormControlsCollection; atom: JSAtom):
     JSValue {.jsgetownprop.} =
   var u: uint32
-  if ctx.fromJS(atom, u).isSome:
+  if ctx.fromJS(atom, u).isOk:
     return ctx.toJS(this.item(u)).uninitIfNull()
   var s: CAtom
-  if ctx.fromJS(atom, s).isSome:
+  if ctx.fromJS(atom, s).isOk:
     return ctx.toJS(ctx.namedItem(this, s)).uninitIfNull()
   return JS_UNINITIALIZED
 
@@ -1803,7 +1803,7 @@ func item(this: HTMLAllCollection; u: uint32): Element {.jsfunc.} =
 func getter(ctx: JSContext; this: HTMLAllCollection; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   var u: uint32
-  if ctx.fromJS(atom, u).isSome:
+  if ctx.fromJS(atom, u).isOk:
     return ctx.toJS(this.item(u)).uninitIfNull()
   return JS_UNINITIALIZED
 
@@ -2078,7 +2078,7 @@ proc item(map: NamedNodeMap; i: uint32): Attr {.jsfunc.} =
 proc getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): Opt[Attr]
     {.jsgetownprop.} =
   var u: uint32
-  if ctx.fromJS(atom, u).isSome:
+  if ctx.fromJS(atom, u).isOk:
     return ok(map.item(u))
   var s: CAtom
   ?ctx.fromJS(atom, s)
@@ -2817,10 +2817,10 @@ proc parseColor(element: Element; s: string): ARGBColor =
   #TODO return element style
   # For now we just use white.
   let ec = rgba(255, 255, 255, 255)
-  if cval.isNone:
+  if cval.isErr:
     return ec
   let color0 = parseColor(cval.get)
-  if color0.isNone:
+  if color0.isErr:
     return ec
   let color = color0.get
   if color.isCell:
@@ -2838,7 +2838,7 @@ proc reinitURL*(element: Element): Option[URL] =
 proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
-  if ctx.fromJS(this, element).isNone:
+  if ctx.fromJS(this, element).isErr:
     return JS_EXCEPTION
   let sa = StaticAtom(magic)
   let url = element.reinitURL()
@@ -2854,12 +2854,12 @@ proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
 proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
-  if ctx.fromJS(this, element).isNone:
+  if ctx.fromJS(this, element).isErr:
     return JS_EXCEPTION
   let sa = StaticAtom(magic)
   if sa == satHref:
     var s: string
-    if ctx.fromJS(val, s).isSome:
+    if ctx.fromJS(val, s).isOk:
       element.attr(satHref, s)
       return JS_DupValue(ctx, val)
     return JS_EXCEPTION
@@ -2870,14 +2870,14 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     if res < 0:
       return JS_EXCEPTION
     var outs: string
-    if ctx.fromJSFree(href, outs).isSome:
+    if ctx.fromJSFree(href, outs).isOk:
       element.attr(satHref, outs)
   return JS_DupValue(ctx, val)
 
 proc hyperlinkGetProp(ctx: JSContext; element: HTMLElement; a: JSAtom;
     desc: ptr JSPropertyDescriptor): JSValue =
   var s: string
-  if ctx.fromJS(a, s).isSome:
+  if ctx.fromJS(a, s).isOk:
     let sa = s.toStaticAtom()
     if sa in {satHref, satOrigin, satProtocol, satUsername, satPassword,
         satHost, satHostname, satPort, satPathname, satSearch, satHash}:
@@ -3184,8 +3184,8 @@ proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
     return JS_ThrowTypeError(ctx, "Expected option or optgroup element")
   var beforeEl: HTMLElement = nil
   var beforeIdx = -1
-  if not JS_IsNull(before) and ctx.fromJS(before, beforeEl).isNone and
-      ctx.fromJS(before, beforeIdx).isNone:
+  if not JS_IsNull(before) and ctx.fromJS(before, beforeEl).isErr and
+      ctx.fromJS(before, beforeIdx).isErr:
     return JS_EXCEPTION
   for it in this.root.ancestors:
     if element == it:
@@ -4021,10 +4021,10 @@ proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
 proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
     JSValue {.jsgetownprop.} =
   var u: uint32
-  if ctx.fromJS(atom, u).isSome:
+  if ctx.fromJS(atom, u).isOk:
     return ctx.toJS(this.item(u)).uninitIfNull()
   var s: string
-  if ctx.fromJS(atom, s).isNone:
+  if ctx.fromJS(atom, s).isErr:
     return JS_EXCEPTION
   if s == "cssFloat":
     s = "float"
@@ -4075,13 +4075,13 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
     return ok()
   let cvals = parseComponentValues(value)
   if (let i = this.find(name); i != -1):
-    if this.setValue(i, cvals).isNone:
+    if this.setValue(i, cvals).isErr:
       # not err! this does not throw.
       return ok()
   else:
     var dummy: seq[CSSComputedEntry] = @[]
     let val0 = dummy.parseComputedValues(name, cvals, dummyAttrs)
-    if val0.isNone:
+    if val0.isErr:
       return ok()
     this.decls.add(CSSDeclaration(name: name, value: cvals))
   this.element.attr(satStyle, $this.decls)
@@ -4091,9 +4091,9 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
     value: string): DOMResult[void] {.jssetprop.} =
   ?this.checkReadOnly()
   var u: uint32
-  if ctx.fromJS(atom, u).isSome:
+  if ctx.fromJS(atom, u).isOk:
     let cvals = parseComponentValues(value)
-    if this.setValue(int(u), cvals).isNone:
+    if this.setValue(int(u), cvals).isErr:
       this.element.attr(satStyle, $this.decls)
     return ok()
   var name: string
@@ -4162,14 +4162,14 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
   let p = window.corsFetch(
     newRequest(url)
   ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
-    if res.isSome:
+    if res.isOk:
       let res = res.get
       if res.getContentType().equalsIgnoreCase("text/css"):
         return res.text()
       res.close()
     return newResolvedPromise(JSResult[string].err(nil))
   ).then(proc(s: JSResult[string]): Promise[CSSStylesheet] =
-    if s.isSome:
+    if s.isOk:
       let sheet = window.parseStylesheet(s.get, url)
       var promises: seq[EmptyPromise] = @[]
       var sheets = newSeq[CSSStylesheet](sheet.importList.len)
@@ -4261,7 +4261,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
     let headers = newHeaders(hgRequest, {"Accept": "*/*"})
     let p = window.corsFetch(newRequest(url, headers = headers)).then(
       proc(res: JSResult[Response]): EmptyPromise =
-        if res.isNone:
+        if res.isErr:
           return newResolvedPromise()
         let response = res.get
         let contentType = response.getContentType("image/x-unknown")
@@ -4282,7 +4282,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           t = window.imageTypes.getOrDefault(ext, "x-unknown")
         let cacheId = window.loader.addCacheFile(response.outputId)
         let url = newURL("img-codec+" & t & ":decode")
-        if url.isNone:
+        if url.isErr:
           return newResolvedPromise()
         let request = newRequest(
           url.get,
@@ -4306,7 +4306,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         cachedURL.loading = false
         cachedURL.expiry = expiry
         return r.then(proc(res: JSResult[Response]) =
-          if res.isNone:
+          if res.isErr:
             return
           let response = res.get
           # close immediately; all data we're interested in is in the headers.
@@ -4377,7 +4377,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
   )
   let p = loader.fetch(request).then(proc(res: JSResult[Response]) =
     svgres.close()
-    if res.isNone: # no SVG module; give up
+    if res.isErr: # no SVG module; give up
       return
     let response = res.get
     # close immediately; all data we're interested in is in the headers.
@@ -4405,7 +4405,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
 proc runJSJobs*(window: Window) =
   while true:
     let r = window.jsrt.runJSJobs()
-    if r.isSome:
+    if r.isOk:
       break
     let ctx = r.error
     window.console.writeException(ctx)
@@ -4443,7 +4443,7 @@ proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   let entry = ReflectTable[uint16(magic)]
   var element: Element
-  if ctx.fromJS(this, element).isNone:
+  if ctx.fromJS(this, element).isErr:
     return JS_EXCEPTION
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
@@ -4458,7 +4458,7 @@ proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
 proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   var element: Element
-  if ctx.fromJS(this, element).isNone:
+  if ctx.fromJS(this, element).isErr:
     return JS_EXCEPTION
   let entry = ReflectTable[uint16(magic)]
   if element.tagType notin entry.tags:
@@ -4466,11 +4466,11 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
   case entry.t
   of rtStr:
     var x: string
-    if ctx.fromJS(val, x).isSome:
+    if ctx.fromJS(val, x).isOk:
       element.attr(entry.attrname, x)
   of rtBool:
     var x: bool
-    if ctx.fromJS(val, x).isSome:
+    if ctx.fromJS(val, x).isOk:
       if x:
         element.attr(entry.attrname, "")
       else:
@@ -4479,15 +4479,15 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
           element.delAttr(i)
   of rtLong:
     var x: int32
-    if ctx.fromJS(val, x).isSome:
+    if ctx.fromJS(val, x).isOk:
       element.attrl(entry.attrname, x)
   of rtUlong:
     var x: uint32
-    if ctx.fromJS(val, x).isSome:
+    if ctx.fromJS(val, x).isOk:
       element.attrul(entry.attrname, x)
   of rtUlongGz:
     var x: uint32
-    if ctx.fromJS(val, x).isSome:
+    if ctx.fromJS(val, x).isOk:
       element.attrulgz(entry.attrname, x)
   of rtFunction:
     return ctx.eventReflectSet0(element, val, magic, jsReflectSet, entry.ctype)
@@ -5214,11 +5214,11 @@ proc toNode(ctx: JSContext; nodes: openArray[JSValueConst]; document: Document):
   var ns: seq[Node] = @[]
   for it in nodes:
     var node: Node
-    if ctx.fromJS(it, node).isSome:
+    if ctx.fromJS(it, node).isOk:
       ns.add(node)
     else:
       var s: string
-      if ctx.fromJS(it, s).isSome:
+      if ctx.fromJS(it, s).isOk:
         ns.add(ctx.newText(s))
   if ns.len == 1:
     return ns[0]
@@ -5446,7 +5446,7 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     window.logException(script.baseURL)
     return
   var p: Promise[JSValueConst]
-  if ctx.fromJSFree(res, p).isSome:
+  if ctx.fromJSFree(res, p).isOk:
     p.then(proc(res: JSValueConst) =
       if JS_IsException(res):
         window.logException(script.baseURL)
@@ -5485,10 +5485,10 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   #TODO set up module script request
   #TODO performFetch
   let p = window.fetchImpl(request)
-  if p.isSome:
+  if p.isOk:
     p.get.then(proc(res: JSResult[Response]) =
       let ctx = window.jsctx
-      if res.isNone:
+      if res.isErr:
         let res = ScriptResult(t: srtNull)
         settings.moduleMap.set(url, moduleType, res, ctx)
         element.onComplete(res)
@@ -5497,7 +5497,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
       let contentType = res.getContentType()
       let referrerPolicy = res.getReferrerPolicy()
       res.text().then(proc(s: JSResult[string]) =
-        if s.isNone:
+        if s.isErr:
           let res = ScriptResult(t: srtNull)
           settings.moduleMap.set(url, moduleType, res, ctx)
           element.onComplete(res)
@@ -6058,7 +6058,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
   if not contentType.startsWith("image/") or this.bitmap.cacheId == 0:
     return
   let url0 = newURL("img-codec+" & contentType.after('/') & ":encode")
-  if url0.isNone:
+  if url0.isErr:
     return
   let url = url0.get
   let headers = newHeaders(hgRequest, {
@@ -6076,7 +6076,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
     httpMethod = hmPost,
     body = RequestBody(t: rbtCache, cacheId: this.bitmap.cacheId)
   )).then(proc(res: JSResult[Response]): FetchPromise =
-    if res.isNone:
+    if res.isErr:
       return newResolvedPromise(res)
     let res = res.get
     let p = window.corsFetch(newRequest(
@@ -6088,7 +6088,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
     res.close()
     return p
   ).then(proc(res: JSResult[Response]) =
-    if res.isNone:
+    if res.isErr:
       if contentType != "image/png":
         # redo as PNG.
         # Note: this sounds dumb, and is dumb, but also standard mandated so
@@ -6154,7 +6154,7 @@ type InsertAdjacentPosition = enum
 proc insertAdjacentHTML(this: Element; position, text: string):
     Err[DOMException] {.jsfunc.} =
   let pos0 = parseEnumNoCase[InsertAdjacentPosition](position)
-  if pos0.isNone:
+  if pos0.isErr:
     return errDOMException("Invalid position", "SyntaxError")
   let position = pos0.get
   var ctx = this

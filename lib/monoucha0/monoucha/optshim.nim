@@ -5,5 +5,3 @@ when monouchaUseOpt:
 else:
   import results
   export results
-
-  template isSome*[T: not void, E](res: Result[T, E]): bool = res.isOk

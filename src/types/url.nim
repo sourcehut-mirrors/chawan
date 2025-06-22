@@ -433,7 +433,7 @@ proc processIdna(str: string; beStrict: bool): string =
   for label in mapped.toUTF8().split('.'):
     if label.startsWith("xn--"):
       let x0 = punyDecode(label.toOpenArray("xn--".len, label.high))
-      if x0.isNone:
+      if x0.isErr:
         return ""
       let x1 = x0.get.normalize()
       # CheckHyphens is false
@@ -464,7 +464,7 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
     var s = ""
     if AllChars - Ascii in label:
       let x = punyEncode(label)
-      if x.isNone:
+      if x.isErr:
         return ""
       s = "xn--" & x.get
     else:
@@ -1164,9 +1164,9 @@ proc newURLSearchParams(ctx: JSContext; init: varargs[JSValueConst]):
   let params = URLSearchParams()
   if init.len > 0:
     let val = init[0]
-    if ctx.fromJS(val, params.list).isSome:
+    if ctx.fromJS(val, params.list).isOk:
       discard
-    elif (var t: Table[string, string]; ctx.fromJS(val, t).isSome):
+    elif (var t: Table[string, string]; ctx.fromJS(val, t).isOk):
       for k, v in t:
         params.list.add((k, v))
     else:
@@ -1365,7 +1365,7 @@ proc jsParse(url: string; base = none(string)): URL {.jsstfunc: "URL.parse".} =
   return parseAPIURL(url, base).get(nil)
 
 proc canParse(url: string; base = none(string)): bool {.jsstfunc: "URL".} =
-  return parseAPIURL(url, base).isSome
+  return parseAPIURL(url, base).isOk
 
 proc addURLModule*(ctx: JSContext) =
   ctx.registerType(URL)

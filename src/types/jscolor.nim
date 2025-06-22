@@ -29,7 +29,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var RGBColor): Err[void] =
   var s: string
   ?ctx.fromJS(val, s)
   let x = parseLegacyColor(s)
-  if x.isNone:
+  if x.isErr:
     JS_ThrowTypeError(ctx, x.error)
     return err()
   res = x.get

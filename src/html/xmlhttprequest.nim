@@ -302,12 +302,12 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   if not JS_IsNull(body):
     var document: Document = nil
     var formData: FormData = nil
-    if ctx.fromJS(body, document).isSome:
+    if ctx.fromJS(body, document).isOk:
       request.body = RequestBody(
         t: rbtString,
         s: document.serializeFragment().toValidUTF8() # replace surrogates
       )
-    elif ctx.fromJS(body, formData).isSome:
+    elif ctx.fromJS(body, formData).isOk:
       request.body = RequestBody(
         t: rbtMultipart,
         multipart: formData
@@ -346,7 +346,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
     window.fireProgressEvent(this, satLoadstart, 0, 0)
     let p = ?window.fetchImpl(jsRequest)
     p.then(proc(res: JSResult[Response]) =
-      if res.isNone:
+      if res.isErr:
         this.response = makeNetworkError()
         discard window.handleErrors(this)
         return

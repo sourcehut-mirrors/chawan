@@ -205,7 +205,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("Failed to open config file " & ctx.configPath.get)
-  if twtstr.setEnv("CHA_DIR", config.dir).isNone:
+  if twtstr.setEnv("CHA_DIR", config.dir).isErr:
     die("failed to set env vars")
   ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
   let cwd = chaGetCwd()
@@ -229,9 +229,8 @@ proc initConfig(ctx: ParamParseContext; config: Config;
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
 proc main() =
-  if twtstr.setEnv("CHA_BIN_DIR", getAppFilename().untilLast('/')).isNone:
-    die("failed to set env vars")
-  if twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isNone:
+  if twtstr.setEnv("CHA_BIN_DIR", getAppFilename().untilLast('/')).isErr or
+      twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isErr:
     die("failed to set env vars")
   var loaderSockVec {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
@@ -245,7 +244,7 @@ proc main() =
   let jsctx = jsrt.newJSContext()
   var warnings = newSeq[string]()
   let config = Config(arraySeen: newTable[string, int]())
-  if (let res = ctx.initConfig(config, warnings, jsctx); res.isNone):
+  if (let res = ctx.initConfig(config, warnings, jsctx); res.isErr):
     die(res.error)
   var history = true
   let ps = newPosixStream(STDIN_FILENO)

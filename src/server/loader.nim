@@ -1216,7 +1216,7 @@ proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let body = percentDecode(url.pathname.toOpenArray(sd, url.pathname.high))
   if ct.endsWith(";base64"):
     var d: string
-    if d.atob(body).isNone:
+    if d.atob(body).isErr:
       ctx.rejectHandle(handle, ceInvalidURL, "invalid data URL")
       return
     ct.setLen(ct.len - ";base64".len) # remove base64 indicator
@@ -1404,7 +1404,7 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
       let path = request.url.pathname.percentDecode()
       if ctx.canRewriteForCGICompat(path):
         let newURL = newURL("cgi-bin:" & path & request.url.search)
-        if newURL.isSome:
+        if newURL.isOk:
           request.url = newURL.get
           inc tries
           redo = true

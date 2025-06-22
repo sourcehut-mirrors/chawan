@@ -840,7 +840,7 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
     i >= cvals.len or not (cvals[i] of CSSToken)
   template get_plus: bool =
     let tok = cvals.getToken(i, cttDelim)
-    if tok.isSome and tok.get.cvalue == '+':
+    if tok.isOk and tok.get.cvalue == '+':
       inc i
       true
     else:
@@ -874,7 +874,7 @@ proc parseAnB*(cvals: openArray[CSSComponentValue]; i: var int):
   case tok.t
   of cttIdent:
     let x = parseEnumNoCase[AnBIdent](tok.value)
-    if x.isSome:
+    if x.isOk:
       case x.get
       of abiOdd:
         fail_plus
@@ -1148,7 +1148,7 @@ proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
   var data = data
   var i = 0
   var anb = cssfunction.value.parseAnB(i)
-  if anb.isNone: fail
+  if anb.isErr: fail
   data.anb = anb.get
   var nthchild = Selector(t: stPseudoClass, pseudo: data)
   while i < cssfunction.value.len and cssfunction.value[i] == cttWhitespace:
@@ -1220,14 +1220,14 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
         add_pseudo_element peAfter
       else:
         let class = parseEnumNoCase[PseudoClass](tok.value)
-        if class.isNone: fail
+        if class.isErr: fail
         add_pseudo_class class.get
     of cttColon:
       if not state.has(): fail
       let tok = get_tok state.consume()
       if tok.t != cttIdent: fail
       let x = parseEnumNoCase[PseudoElement](tok.value)
-      if x.isNone: fail
+      if x.isErr: fail
       add_pseudo_element x.get
     else: fail
   elif cval of CSSFunction:

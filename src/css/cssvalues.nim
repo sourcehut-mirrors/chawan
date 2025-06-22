@@ -606,7 +606,7 @@ func valueType*(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
 func isSupportedProperty*(s: string): bool =
-  return propertyType(s).isSome
+  return propertyType(s).isOk
 
 template auto*(length: CSSLength): bool =
   isNaN(length.npx)
@@ -1260,7 +1260,7 @@ func parseLength*(val: CSSComponentValue; attrs: WindowAttributes;
         i = fun.value.skipBlanks(i)
         if i >= fun.value.len:
           return err()
-        if n <= 1 and (let ntokx = fun.value.getToken(i); ntokx.isSome):
+        if n <= 1 and (let ntokx = fun.value.getToken(i); ntokx.isOk):
           let ntok = ntokx.get
           if ntok.t in {cttNumber, cttINumber}:
             if n == 1:
@@ -1570,7 +1570,7 @@ proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
     if i < fun.value.len:
       entry.fallback = (ref CSSComputedEntry)()
       if fun.value.toOpenArray(i, fun.value.high).parseValue(t,
-          entry.fallback[], attrs).isNone:
+          entry.fallback[], attrs).isErr:
         entry.fallback = nil
   return ok()
 
@@ -1766,7 +1766,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
   let sh = shorthandType(name)
   let cval = cvals[i]
   let global = parseGlobal(cval)
-  if global.isSome:
+  if global.isOk:
     let global = global.get
     if cvals.skipBlanks(i + 1) < cvals.len:
       return err()
@@ -1797,9 +1797,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     while i < cvals.len:
       let j = cvals.findBlank(i)
       let k = j - 1
-      if cvals.toOpenArray(i, k).parseValue(bgcolor.t, bgcolor, attrs).isSome:
+      if cvals.toOpenArray(i, k).parseValue(bgcolor.t, bgcolor, attrs).isOk:
         discard
-      elif cvals.toOpenArray(i, k).parseValue(bgimage.t, bgimage, attrs).isSome:
+      elif cvals.toOpenArray(i, k).parseValue(bgimage.t, bgimage, attrs).isOk:
         discard
       else:
         #TODO when we implement the other shorthands too
@@ -1814,9 +1814,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     for tok in cvals:
       if tok == cttWhitespace:
         continue
-      if (let r = parseIdent[CSSListStylePosition](tok); r.isSome):
+      if (let r = parseIdent[CSSListStylePosition](tok); r.isOk):
         positionVal.listStylePosition = r.get
-      elif (let r = parseIdent[CSSListStyleType](tok); r.isSome):
+      elif (let r = parseIdent[CSSListStyleType](tok); r.isOk):
         typeVal.listStyleType = r.get
       else:
         #TODO list-style-image
@@ -1825,13 +1825,13 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     res.add(makeEntry(cptListStylePosition, positionVal))
     res.add(makeEntry(cptListStyleType, typeVal))
   of cstFlex:
-    if (let r = parseNumber(cval, 0f32..float32.high); r.isSome):
+    if (let r = parseNumber(cval, 0f32..float32.high); r.isOk):
       # flex-grow
       res.add(makeEntry(cptFlexGrow, r.get))
       i = cvals.skipBlanks(i + 1)
       if i < cvals.len:
         let tok = ?cvals.getToken(i)
-        if (let r = parseNumber(tok, 0f32..float32.high); r.isSome):
+        if (let r = parseNumber(tok, 0f32..float32.high); r.isOk):
           # flex-shrink
           res.add(makeEntry(cptFlexShrink, r.get))
           i = cvals.skipBlanks(i + 1)
@@ -1845,7 +1845,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     else: # omitted, default to 0px
       res.add(makeEntry(cptFlexBasis, CSSLengthZero))
   of cstFlexFlow:
-    if (let dir = parseIdent[CSSFlexDirection](cval); dir.isSome):
+    if (let dir = parseIdent[CSSFlexDirection](cval); dir.isOk):
       # flex-direction
       var val = CSSValueBit(flexDirection: dir.get)
       res.add(makeEntry(cptFlexDirection, val))
@@ -1855,7 +1855,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
       var val = CSSValueBit(flexWrap: wrap)
       res.add(makeEntry(cptFlexWrap, val))
   of cstOverflow:
-    if (let xx = parseIdent[CSSOverflow](cval); xx.isSome):
+    if (let xx = parseIdent[CSSOverflow](cval); xx.isOk):
       let x = CSSValueBit(overflow: xx.get)
       var y = x
       i = cvals.skipBlanks(i + 1)
@@ -1889,7 +1889,7 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
 proc parseComputedValues*(name: string; value: seq[CSSComponentValue];
     attrs: WindowAttributes): seq[CSSComputedEntry] =
   var res: seq[CSSComputedEntry] = @[]
-  if res.parseComputedValues(name, value, attrs).isSome:
+  if res.parseComputedValues(name, value, attrs).isOk:
     return move(res)
   @[]
 

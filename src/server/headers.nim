@@ -55,7 +55,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
   if JS_IsUndefined(val) or JS_IsNull(val):
     return err()
   var headers: Headers
-  if ctx.fromJS(val, headers).isSome:
+  if ctx.fromJS(val, headers).isOk:
     res = HeadersInit(t: hitSequence, s: @[])
     for k, v in headers.table:
       for vv in v:
@@ -63,7 +63,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     return ok()
   if ctx.isSequence(val):
     res = HeadersInit(t: hitSequence)
-    if ctx.fromJS(val, res.s).isSome:
+    if ctx.fromJS(val, res.s).isOk:
       return ok()
   res = HeadersInit(t: hitTable)
   ?ctx.fromJS(val, res.tab)

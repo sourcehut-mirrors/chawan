@@ -1305,7 +1305,7 @@ proc getMarkPos(container: Container; id: string): Opt[PagePos] {.jsfunc.} =
 proc gotoMark(container: Container; id: string): bool {.jsfunc.} =
   container.markPos0()
   let mark = container.getMarkPos(id)
-  if mark.isSome:
+  if mark.isOk:
     let mark = mark.get
     container.setCursorXYCenter(mark.x, mark.y)
     container.markPos()
@@ -1315,7 +1315,7 @@ proc gotoMark(container: Container; id: string): bool {.jsfunc.} =
 proc gotoMarkY(container: Container; id: string): bool {.jsfunc.} =
   container.markPos0()
   let mark = container.getMarkPos(id)
-  if mark.isSome:
+  if mark.isOk:
     let mark = mark.get
     container.setCursorXYCenter(0, mark.y)
     container.markPos()

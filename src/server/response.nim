@@ -208,7 +208,7 @@ proc text*(response: Response): Promise[JSResult[string]] {.jsfunc.} =
 
 proc json(ctx: JSContext; this: Response): Promise[JSValue] {.jsfunc.} =
   return this.text().then(proc(s: JSResult[string]): JSValue =
-    if s.isNone:
+    if s.isErr:
       return ctx.toJS(s.error)
     return JS_ParseJSON(ctx, cstring(s.get), csize_t(s.get.len),
       cstring"<input>")

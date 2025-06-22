@@ -257,7 +257,7 @@ proc parseSetCookie(str: string; t: int64; url: URL; persist: bool):
     of "expires":
       if cookie.expires == -1:
         let date = parseCookieDate(val)
-        if date.isSome:
+        if date.isOk:
           cookie.expires = date.get
     of "max-age":
       let x = parseInt32(val)
@@ -293,7 +293,7 @@ proc setCookie*(cookieJar: CookieJar; header: openArray[string]; url: URL;
   var sorted = true
   for s in header:
     let cookie = parseSetCookie(s, t, url, persist)
-    if cookie.isSome:
+    if cookie.isOk:
       cookieJar.add(cookie.get, persist = persist)
       sorted = false
   if not sorted:

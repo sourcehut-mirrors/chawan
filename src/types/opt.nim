@@ -61,14 +61,14 @@ template opt*(t: typedesc): auto =
   err(Result[t, void])
 
 template opt*[T, E: not void](r: Result[T, E]): Opt[T] =
-  if r.isSome:
+  if r.isOk:
     Opt[T].ok(r.get)
   else:
     Opt[T].err()
 
-template isSome*(res: Result): bool = res.has
+template isOk*(res: Result): bool = res.has
 
-template isNone*(res: Result): bool = not res.has
+template isErr*(res: Result): bool = not res.has
 
 func get*[T, E](res: Result[T, E]): lent T {.inline.} = res.val
 
