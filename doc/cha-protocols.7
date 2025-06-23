@@ -12,11 +12,17 @@ You can find network adapters in the source distribution\(cqs
 For protocol\-specific file formats (like gemtext or gopher directories)
 you will also find an appropriate HTML converter in
 \f[CR]adapter/format\f[R].
+.SS OpenSSL\-based adapters
+The HTTP(S), SFTP, and Gemini modules all depend on OpenSSL.
+This is a huge library, and linking it separately with each adapter
+would result in enormous code bloat in static builds.
+.PP
+Therefore, these modules are compiled into a single binary.
+The entry point can be found at \f[CR]adapter/protocol/ssl.nim\f[R].
 .SS HTTP
-HTTP/s support is implemented in Nim.
-It supports HTTP/1.1 with arbitrary headers and POST data, is able to
-use passed userinfo data, and returns all headers and response body it
-receives without exception.
+The HTTP(S) adapter supports HTTP/1.1 with arbitrary headers and POST
+data, is able to use passed userinfo data (Basic authentication), and
+returns all headers and response body it receives without exception.
 .PP
 Deflate decompression with gzip and zlib headers is supported.
 (Accept\-Encoding: gzip, deflate.)
@@ -37,6 +43,26 @@ It is mostly a proof of concept, as FreeBSD libfetch HTTP support is
 very limited; in particular, it does not support arbitrary HTTP headers,
 so e.g.
 cookies will not work.
+.SS SFTP
+The SFTP adapter wraps libssh2.
+It works for me, but YMMV.
+.PP
+A slight usability issue is that if an IdentityFile declaration is found
+in your ssh config, it will prompt for the identity file password, but
+there is no way to tell whether it is really asking for that (or just
+regular password auth).
+Also, settings covered by the Match field are ignored.
+.PP
+The adapter does not have a way to register new known hosts, so you have
+to first connect to new hosts with the regular \f[CR]sftp\f[R] command
+before opening them in Chawan.
+.SS Gemini
+Currently, the Gemini adapter does not support sites that require
+private key authentication.
+Otherwise, it should work OK.
+.PP
+gmi2html is its companion program to convert the \f[CR]text/gemini\f[R]
+file format to HTML.
 .SS FTP
 Chawan supports FTP passive mode browsing and downloads.
 .PP
@@ -44,42 +70,33 @@ For directory listings, it assumes UNIX output style, and will probably
 break horribly on receiving anything else.
 Otherwise, the directory listing view is identical to the file://
 directory listing.
-.SS SFTP
-The sftp adapter (\f[CR]adapter/protocol/sftp.nim\f[R]) wraps libssh2.
-It works for me, but YMMV.
+.SS Shell\-based adapters
+Following protocols are simple enough to have adapters implemented as
+shell scripts.
+As such, they are good starting points for understanding Chawan\(cqs
+protocol adapter system.
 .PP
-Note that if an IdentityFile declaration is found in your ssh config,
-then it will prompt for the identity file password, but there is no way
-to tell whether it is really asking for that (or just normal password
-auth).
-Also, settings covered by the Match field are ignored.
+To open TCP connections in a portable manner, these scripts use a very
+limited \f[CR]nc\f[R] clone installed in \f[CR]$CHA_LIBEXEC_DIR\f[R].
 .SS Gopher
-Chawan supports the Gopher protocol through the gopher CGI program.
-Gopher directories are passed as the \f[CR]text/gopher\f[R] type, and
-gopher2html takes care of converting this to HTML.
+Support for the Gopher protocol is implemented as a shell script, using
+the \f[CR]nc\f[R] tool in the libexec directory (a very limited netcat
+clone).
+Gopher directories are returned with the \f[CR]text/gopher\f[R] type,
+and gopher2html takes care of converting this to HTML.
 .PP
-Gopher selector types are converted to MIME types when possible; note
-however, that this is very limited, as most of them (like \f[CR]s\f[R]
-sound, or \f[CR]I\f[R] image) cannot be unambiguously converted without
-some other sniffing method.
+Gopher selector types are converted to MIME types when possible;
+however, this is very limited, as most of them (like \f[CR]s\f[R] sound,
+or \f[CR]I\f[R] image) cannot be unambiguously converted without some
+other sniffing method.
 Chawan will fall back to extension\-based detection in these cases, and
 in the worst case may end up with \f[CR]application/octet\-stream\f[R].
-.SS Gemini
-Chawan\(cqs Gemini adapter has been rewritten as a Nim program.
-It still requires OpenSSL to work.
-.PP
-A limitation that remains is that the Gemini adapter does not support
-sites that require private key authentication.
-.PP
-gmi2html is its companion program to convert the \f[CR]text/gemini\f[R]
-file format to HTML.
 .SS Finger
-Finger is supported through the \f[CR]finger\f[R] shell script.
-It is implemented as a shell script because of the protocol\(cqs
-simplicity.
+Finger is supported through the \f[CR]finger\f[R] shell script, using
+the same \f[CR]nc\f[R] clone as Gopher.
+It is probably the simplest protocol of all.
 .PP
-For portability, \f[CR]finger\f[R] uses Chawan\(cqs \f[CR]nc\f[R] tool
-(a very limited netcat clone) to make requests.
+The URL scheme is a simplified imitation of the one accepted by Lynx.
 .SS Spartan
 Spartan is a protocol similar to Gemini, but without TLS.
 It is supported through the \f[CR]spartan\f[R] shell script, and like
@@ -87,9 +104,9 @@ Finger, it uses Chawan\(cqs \f[CR]nc\f[R] to make requests.
 .PP
 Spartan has the very strange property of extending gemtext with a
 protocol\-specific line type.
-This is sort of supported through a sed filter for gemtext outputs in
-the CGI script (in other words, no modification to gmi2html was done to
-support this).
+This is implemented as a sed filter for gemtext outputs in the CGI
+script (in other words, no modification to gmi2html was done to support
+this).
 .SS Local schemes: file:, man:
 While these are not necessarily \f[I]protocols\f[R], they are
 implemented similarly to the protocols listed above (and thus can also
@@ -106,8 +123,8 @@ These look up man pages using \f[CR]/usr/bin/man\f[R] and turn on\-page
 references into links.
 A wrapper command \f[CR]mancha\f[R] also exists; this has an interface
 similar to \f[CR]man\f[R].
-Note: this used to be based on w3mman2html.cgi, but it has been
-rewritten in Nim (and therefore no longer depends on Perl either).
+(This used to be based on w3mman2html.cgi, but it has been rewritten as
+a standalone Nim program.)
 .SS Internal schemes: cgi\-bin:, stream:, cache:, data:, about:
 Five internal protocols exist: \f[CR]cgi\-bin:\f[R], \f[CR]stream:\f[R],
 \f[CR]cache:\f[R], \f[CR]data:\f[R] and \f[CR]about:\f[R].
@@ -155,12 +172,10 @@ The following about pages are available: \f[CR]about:chawan\f[R],
 \f[CR]about:blank\f[R], \f[CR]about:license\f[R],
 \f[CR]about:download\f[R].
 .SS Custom protocols
-Chawan is protocol\-agnostic.
-This means that the \f[CR]cha\f[R] binary itself does not know much
-about the protocols listed above; instead, it loads these through a
-combination of local CGI, urimethodmap, and if conversion to HTML or
-plain text is necessary, mailcap (using x\-htmloutput, x\-ansioutput and
-copiousoutput).
+The \f[CR]cha\f[R] binary itself does not know much about the protocols
+listed above; instead, it loads these through a combination of local
+CGI, urimethodmap, and if conversion to HTML or plain text is necessary,
+mailcap (using x\-htmloutput, x\-ansioutput and copiousoutput).
 .PP
 urimethodmap can also be used to override default handlers for the
 protocols listed above.
@@ -169,18 +184,18 @@ listing display, but much more powerful; this way, any library or
 program that can retrieve and output text through a certain protocol can
 be combined with Chawan.
 .PP
-For example, consider the urimethodmap definition of cha\-finger:
+For example, consider the urimethodmap definition of \f[CR]finger\f[R]:
 .IP
 .EX
-finger:     cgi\-bin:cha\-finger
+finger:     cgi\-bin:finger
 .EE
 .PP
-This commands Chawan to load the cha\-finger CGI script, setting the
-\f[CR]$MAPPED_URI_*\f[R] variables to the target URL\(cqs parts in the
-process.
+This commands Chawan to load the \f[CR]finger\f[R] CGI script, setting
+the \f[CR]$MAPPED_URI_*\f[R] variables to the target URL\(cqs parts in
+the process.
 .PP
-Then, cha\-finger uses these passed parts to construct an appropriate
-curl command that will retrieve the specified \f[CR]finger:\f[R] URL; it
+Then, finger uses these passed parts to construct an appropriate curl
+command that will retrieve the specified \f[CR]finger:\f[R] URL; it
 prints the header `Content\-Type: text/plain' to the output, then an
 empty line, then the body of the retrieved resource.
 If an error is encountered, it prints a \f[CR]Cha\-Control\f[R] header
@@ -196,17 +211,18 @@ of waiting.
 .EX
 \f[I]#!/bin/sh\f[R]
 \f[I]# We are going to wait a second from now, but want Chawan to show\f[R]
-\f[I]# \(dqDownloading...\(dq instead of \(dqConnecting...\(dq. So signal to the browser that the\f[R]
-\f[I]# connection has succeeded.\f[R]
+\f[I]# \(dqDownloading...\(dq instead of \(dqConnecting...\(dq. So signal to the browser\f[R]
+\f[I]# that the connection has succeeded.\f[R]
 printf \(aqCha\-Control: Connected\(rsn\(aq
 sleep 1 \f[I]# sleep\f[R]
 \f[I]# Status is a special header that signals the equivalent HTTP status code.\f[R]
 printf \(aqStatus: 200\(aq \f[I]# HTTP OK\f[R]
 \f[I]# Tell the browser that no more control headers are to be expected.\f[R]
-\f[I]# This is useful when you want to send remotely received headers; then, it would\f[R]
-\f[I]# be an attack vector to simply send the headers without ControlDone, as nothing\f[R]
-\f[I]# stops the website from sending a Cha\-Control header. With ControlDone sent,\f[R]
-\f[I]# even Cha\-Control headers will be interpreted as regular headers.\f[R]
+\f[I]# This is only useful when you want to send remotely received headers;\f[R]
+\f[I]# then, it would be an attack vector to simply send the headers without\f[R]
+\f[I]# ControlDone, as nothing stops the website from sending a Cha\-Control\f[R]
+\f[I]# header.  With ControlDone sent, subsequent Cha\-Control headers will be\f[R]
+\f[I]# interpreted as regular headers.\f[R]
 printf \(aqCha\-Control: ControlDone\(rsn\(aq
 \f[I]# As in HTTP, you must send an empty line before the body.\f[R]
 printf \(aq\(rsn\(aq
