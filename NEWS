@@ -5,6 +5,7 @@ Fixes:
 * fix crash when saving cookies
 * fix possible crash in CanvasRenderingContext2D#closePath
 * fix mystery miscompilation bug on macOS
+* fix reading from stdin in interactive mode on macOS
 
 0.2.0 (2025.06.15)
 
