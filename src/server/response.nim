@@ -105,7 +105,7 @@ proc close*(response: Response) =
     response.body = nil
 
 func getCharset*(this: Response; fallback: Charset): Charset =
-  let header = this.headers.getOrDefault("Content-Type").toLowerAscii()
+  let header = this.headers.getFirst("Content-Type").toLowerAscii()
   if header != "":
     let cs = header.getContentTypeAttr("charset").getCharset()
     if cs != CHARSET_UNKNOWN:
@@ -113,7 +113,7 @@ func getCharset*(this: Response; fallback: Charset): Charset =
   return fallback
 
 func getLongContentType*(this: Response; fallback: string): string =
-  let header = this.headers.getOrDefault("Content-Type")
+  let header = this.headers.getFirst("Content-Type")
   if header != "":
     return header.toValidUTF8().toLowerAscii().strip()
   # also use DefaultGuess for container, so that local mime.types cannot
@@ -125,14 +125,14 @@ func getContentType*(this: Response; fallback = "application/octet-stream"):
   return this.getLongContentType(fallback).until(';')
 
 func getContentLength*(this: Response): int64 =
-  let x = this.headers.getOrDefault("Content-Length")
+  let x = this.headers.getFirst("Content-Length")
   let u = parseUInt64(x.strip(), allowSign = false).get(uint64.high)
   if u <= uint64(int64.high):
     return int64(u)
   return -1
 
 func getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =
-  let header = this.headers.getOrDefault("Referrer-Policy")
+  let header = this.headers.getFirst("Referrer-Policy")
   return strictParseEnum[ReferrerPolicy](header)
 
 proc resume*(response: Response) =

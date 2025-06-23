@@ -1204,8 +1204,8 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       cachedImage.state = cisLoaded
       cachedImage.cacheId = cacheId
       cachedImage.transparent =
-        response.headers.getOrDefault("Cha-Image-Sixel-Transparent", "0") == "1"
-      let plens = response.headers.getOrDefault("Cha-Image-Sixel-Prelude-Len")
+        response.headers.getFirst("Cha-Image-Sixel-Transparent") == "1"
+      let plens = response.headers.getFirst("Cha-Image-Sixel-Prelude-Len")
       cachedImage.preludeLen = parseIntP(plens).get(0)
     )
   )
@@ -1872,7 +1872,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     .add(pager.config.external.urimethodmap.imageProtos)
   if result.images:
     result.imageTypes = pager.config.external.mimeTypes.image
-  result.userAgent = loaderConfig.defaultHeaders.getOrDefault("User-Agent")
+  result.userAgent = loaderConfig.defaultHeaders.getFirst("User-Agent")
 
 proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
     cookieJarId: string) =

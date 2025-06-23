@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import std/algorithm
 import std/strutils
 import std/tables
 
@@ -20,53 +21,44 @@ type
     hgRequestNoCors = "request-no-cors"
     hgResponse = "response"
 
+  HTTPHeader* = tuple[name, value: string]
+
   Headers* = ref object
-    table: Table[string, seq[string]]
+    list: seq[HTTPHeader]
     guard*: HeaderGuard
 
-  HeadersInitType = enum
-    hitSequence, hitTable
-
   HeadersInit* = object
-    case t: HeadersInitType
-    of hitSequence:
-      s: seq[(string, string)]
-    of hitTable:
-      tab: Table[string, string]
+    s: seq[HTTPHeader]
 
 jsDestructor(Headers)
 
 func isForbiddenResponseHeaderName*(name: string): bool
 
-iterator pairs*(this: Headers): (string, string) =
-  for k, vs in this.table:
-    if this.guard == hgResponse and k.isForbiddenResponseHeaderName():
+iterator pairs*(this: Headers): tuple[name, value: lent string] =
+  for (name, value) in this.list:
+    if this.guard == hgResponse and name.isForbiddenResponseHeaderName():
       continue
-    for v in vs:
-      yield (k, v)
+    yield (name, value)
 
-iterator allPairs*(headers: Headers): (string, string) =
-  for k, vs in headers.table:
-    for v in vs:
-      yield (k, v)
+iterator allPairs*(headers: Headers): tuple[name, value: lent string] =
+  for (name, value) in headers.list:
+    yield (name, value)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     Err[void] =
-  if JS_IsUndefined(val) or JS_IsNull(val):
-    return err()
   var headers: Headers
   if ctx.fromJS(val, headers).isOk:
-    res = HeadersInit(t: hitSequence, s: @[])
-    for k, v in headers.table:
-      for vv in v:
-        res.s.add((k, vv))
+    res = HeadersInit(s: headers.list)
     return ok()
   if ctx.isSequence(val):
-    res = HeadersInit(t: hitSequence)
+    res = HeadersInit()
     if ctx.fromJS(val, res.s).isOk:
       return ok()
-  res = HeadersInit(t: hitTable)
-  ?ctx.fromJS(val, res.tab)
+  res = HeadersInit()
+  var tab: Table[string, string]
+  ?ctx.fromJS(val, tab)
+  for k, v in tab:
+    res.s.add((k, v))
   return ok()
 
 const TokenChars = {
@@ -159,53 +151,94 @@ func isNoCorsSafelisted(name, value: string): bool =
     ]
   return false
 
-func get0(this: Headers; name: string): string =
-  return this.table.getOrDefault(name).join(", ")
+func lowerBound(this: Headers; name: string): int =
+  return this.list.lowerBound(name, proc(it: HTTPHeader; name: string): int =
+    cmpIgnoreCase(it.name, name)
+  )
+
+proc removeAll(this: Headers; name: string; n: int) =
+  var m = n
+  for n, it in this.list.toOpenArray(n, this.list.high).mypairs:
+    if not it.name.equalsIgnoreCase(name):
+      break
+    m = n + 1
+  if n != m:
+    let L = this.list.len - m + n
+    for n in n ..< L:
+      this.list[n] = move(this.list[m])
+      inc m
+    this.list.setLen(L)
+
+proc contains(this: Headers; name: string; n: int): bool =
+  return n < this.list.len and this.list[n].name.equalsIgnoreCase(name)
+
+func contains*(this: Headers; name: string): bool =
+  return this.contains(name, this.lowerBound(name))
+
+proc removeAll*(this: Headers; name: string) =
+  this.removeAll(name, this.lowerBound(name))
+
+proc add(headers: Headers; name, value: string; n: int) =
+  headers.list.insert((name, value), n)
+
+proc addIfNotFound*(headers: Headers; name, value: string) =
+  let n = headers.lowerBound(name)
+  if not headers.contains(name, n):
+    headers.add(name, value, n)
+
+func get(this: Headers; name: string; n: int): string =
+  var s = ""
+  for it in this.list.toOpenArray(n, this.list.high):
+    if not it.name.equalsIgnoreCase(name):
+      break
+    if s.len > 0:
+      s &= ", "
+    s &= it.value
+  move(s)
 
 proc get*(ctx: JSContext; this: Headers; name: string): JSValue {.jsfunc.} =
   if not name.isValidHeaderName():
     JS_ThrowTypeError(ctx, "Invalid header name")
     return JS_EXCEPTION
-  let name = name.toHeaderCase()
-  if name notin this.table:
-    return JS_NULL
-  return ctx.toJS(this.get0(name))
+  let n = this.lowerBound(name)
+  if this.contains(name, n):
+    return ctx.toJS(this.get(name, n))
+  return JS_NULL
 
 proc removeRange(this: Headers) =
   if this.guard == hgRequestNoCors:
-    #TODO do this case insensitively
-    this.table.del("Range") # privileged no-CORS request headers
-    this.table.del("range")
+    this.removeAll("Range") # privileged no-CORS request headers
 
 proc append(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
   let value = value.strip(chars = HTTPWhitespace)
   if not ?this.validate(name, value):
     return ok()
-  let name = name.toHeaderCase()
+  let n = this.lowerBound(name)
   if this.guard == hgRequestNoCors:
-    if name in this.table:
-      let tmp = this.get0(name) & ", " & value
-      if not name.isNoCorsSafelisted(tmp):
-        return ok()
-  this.table.mgetOrPut(name, @[]).add(value)
+    var tmp = this.get(name, n)
+    if tmp.len > 0:
+      tmp &= ", "
+    tmp &= value
+    if not name.isNoCorsSafelisted(tmp):
+      return ok()
+  this.add(name, value, n)
   this.removeRange()
   ok()
 
 proc delete(this: Headers; name: string): JSResult[void] {.jsfunc.} =
-  let name = name.toHeaderCase()
-  if not ?this.validate(name, "") or name notin this.table:
+  if not ?this.validate(name, "") or
+      not name.isNoCorsSafelistedName() and not name.equalsIgnoreCase("Range"):
     return ok()
-  if not name.isNoCorsSafelistedName() and not name.equalsIgnoreCase("Range"):
-    return ok()
-  this.table.del(name)
-  this.removeRange()
+  let n = this.lowerBound(name)
+  if this.contains(name, n):
+    this.removeAll(name, n)
+    this.removeRange()
   ok()
 
 proc has(this: Headers; name: string): JSResult[bool] {.jsfunc.} =
   if not name.isValidHeaderName():
     return errTypeError("Invalid header name")
-  let name = name.toHeaderCase()
-  return ok(name in this.table)
+  return ok(name in this)
 
 proc set(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
   let value = value.strip(chars = HTTPWhitespace)
@@ -213,82 +246,89 @@ proc set(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
     return ok()
   if this.guard == hgRequestNoCors and not name.isNoCorsSafelisted(value):
     return ok()
-  this.table[name.toHeaderCase()] = @[value]
+  let n = this.lowerBound(name)
+  this.removeAll(name, n)
+  this.add(name, value, n)
   this.removeRange()
   ok()
 
-proc fill(headers: Headers; s: seq[(string, string)]): JSResult[void] =
-  for (k, v) in s:
-    ?headers.append(k, v)
-  ok()
-
-proc fill(headers: Headers; tab: Table[string, string]): JSResult[void] =
-  for k, v in tab:
-    ?headers.append(k, v)
-  ok()
-
 proc fill*(headers: Headers; init: HeadersInit): JSResult[void] =
-  case init.t
-  of hitSequence: return headers.fill(init.s)
-  of hitTable: return headers.fill(init.tab)
+  for (k, v) in init.s:
+    ?headers.append(k, v)
+  ok()
 
 func newHeaders*(guard: HeaderGuard): Headers =
   return Headers(guard: guard)
 
-func newHeaders*(guard: HeaderGuard; table: openArray[(string, string)]):
+func newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
     Headers =
   let headers = newHeaders(guard)
-  for (k, v) in table:
-    let k = k.toHeaderCase()
-    headers.table.mgetOrPut(k, @[]).add(v)
+  headers.list = @list
+  headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
   return headers
 
-func newHeaders*(guard: HeaderGuard; table: Table[string, string]): Headers =
+func newHeaders*(guard: HeaderGuard; table: Table[string, string]):
+    Headers =
   let headers = newHeaders(guard)
   for k, v in table:
-    let k = k.toHeaderCase()
-    headers.table.mgetOrPut(k, @[]).add(v)
+    headers.list.add((k, v))
+  headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
   return headers
 
 func newHeaders(obj = none(HeadersInit)): JSResult[Headers] {.jsctor.} =
-  let headers = Headers(guard: hgNone)
+  let headers = newHeaders(hgNone)
   if obj.isSome:
     ?headers.fill(obj.get)
   return ok(headers)
 
 func clone*(headers: Headers): Headers =
-  return Headers(table: headers.table)
+  return Headers(guard: headers.guard, list: headers.list)
 
-proc add*(headers: Headers; k: string; v: sink string) =
-  let k = k.toHeaderCase()
-  headers.table.mgetOrPut(k, @[]).add(v)
+proc add*(headers: Headers; name, value: string) =
+  headers.add(name, value, headers.lowerBound(name))
 
-proc `[]=`*(headers: Headers; k: string; v: sink string) =
-  let k = k.toHeaderCase()
-  headers.table[k] = @[v]
+proc `[]=`*(this: Headers; name, value: string) =
+  let n = this.lowerBound(name)
+  this.removeAll(name, n)
+  this.add(name, value, n)
 
-func `[]`*(headers: Headers; k: string): var string =
-  let k = k.toHeaderCase()
-  return headers.table.mgetOrPut(k, @[])[0]
+func `[]`*(this: Headers; name: string): var string =
+  let n = this.lowerBound(name)
+  return this.list[n].value
 
-func contains*(headers: Headers; k: string): bool =
-  return k.toHeaderCase() in headers.table
+func getFirst(headers: Headers; name: string; n: int): lent string =
+  if headers.contains(name, n):
+    return headers.list[n].value
+  let emptyStr {.global.} = ""
+  {.cast(noSideEffect).}:
+    return emptyStr
 
-func getOrDefault*(headers: Headers; k: string; default = ""): string =
-  let k = k.toHeaderCase()
-  headers.table.withValue(k, p):
-    return p[][0]
-  do:
-    return default
+func getFirst*(headers: Headers; name: string): lent string =
+  return headers.getFirst(name, headers.lowerBound(name))
 
-proc del*(headers: Headers; k: string) =
-  headers.table.del(k)
+func takeFirstRemoveAll*(headers: Headers; name: string): string =
+  let n = headers.lowerBound(name)
+  var s = ""
+  if headers.contains(name, n):
+    s = move(headers.list[n].value)
+  headers.removeAll(name, n)
+  move(s)
 
-func getAllNoComma*(headers: Headers; k: string): seq[string] =
-  headers.table.getOrDefault(k, @[])
+func getAllNoComma*(this: Headers; k: string): seq[string] =
+  result = @[]
+  let n = this.lowerBound(k)
+  for it in this.list.toOpenArray(n, this.list.high):
+    if not it.name.equalsIgnoreCase(k):
+      break
+    result.add(it.value)
 
-func getAllCommaSplit*(headers: Headers; k: string): seq[string] =
-  headers.getAllNoComma(k).join(",").split(',')
+func getAllCommaSplit*(this: Headers; k: string): seq[string] =
+  result = @[]
+  let n = this.lowerBound(k)
+  for it in this.list.toOpenArray(n, this.list.high):
+    if not it.name.equalsIgnoreCase(k):
+      break
+    result.add(it.value.split(','))
 
 type CheckRefreshResult* = object
   # n is timeout in millis. -1 => not found

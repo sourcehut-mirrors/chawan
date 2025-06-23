@@ -138,11 +138,17 @@ func credentialsMode(this: JSRequest): string {.jsfget.} =
   return $this.request.credentialsMode
 
 #TODO pretty sure this is incorrect
-proc jsReferrer(this: JSRequest): string {.jsfget: "referrer".} =
-  return this.request.headers.getOrDefault("Referer")
+proc referrer(this: JSRequest): string {.jsfget.} =
+  return this.request.headers.getFirst("Referer")
 
 proc getReferrer*(this: Request): URL =
-  return parseURL(this.headers.getOrDefault("Referer")).get(nil)
+  return parseURL(this.headers.getFirst("Referer")).get(nil)
+
+proc takeReferrer*(this: Request; policy: ReferrerPolicy): string =
+  let url = parseURL(this.headers.takeFirstRemoveAll("Referer")).get(nil)
+  if url != nil:
+    return url.getReferrer(this.url, policy)
+  return ""
 
 func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;

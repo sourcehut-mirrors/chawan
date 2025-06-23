@@ -47,7 +47,6 @@ import server/request
 import server/urlfilter
 import types/formdata
 import types/opt
-import types/referrer
 import types/url
 import utils/twtstr
 
@@ -334,7 +333,7 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
     headers: Headers): PushBufferResult =
   assert handle.rstate == rsBeforeStatus
   inc handle.rstate
-  let contentLens = headers.getOrDefault("Content-Length")
+  let contentLens = headers.getFirst("Content-Length")
   handle.startTime = getTime()
   handle.contentLen = parseUInt64(contentLens).get(uint64.high)
   let output = handle.output
@@ -908,13 +907,13 @@ proc setupEnv(cpath: CGIPath; request: Request; contentLen: int; prevURL: URL;
     if request.body.t == rbtMultipart:
       result.add(("CONTENT_TYPE", request.body.multipart.getContentType()))
     else:
-      let contentType = request.headers.getOrDefault("Content-Type")
+      let contentType = request.headers.getFirst("Content-Type")
       result.add(("CONTENT_TYPE", contentType))
     result.add(("CONTENT_LENGTH", $contentLen))
-  let cookie = request.headers.getOrDefault("Cookie")
+  let cookie = request.headers.getFirst("Cookie")
   if cookie != "":
     result.add(("HTTP_COOKIE", cookie))
-  let referer = request.headers.getOrDefault("Referer")
+  let referer = request.headers.getFirst("Referer")
   if referer != "":
     result.add(("HTTP_REFERER", referer))
   if config.proxy != nil:
@@ -1442,18 +1441,14 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
 proc setupRequestDefaults(request: Request; config: LoaderClientConfig;
     credentials: bool) =
   for k, v in config.defaultHeaders.allPairs:
-    if k notin request.headers:
-      request.headers[k] = v
-  if config.cookieJar != nil and credentials and "Cookie" notin request.headers:
+    request.headers.addIfNotFound(k, v)
+  if config.cookieJar != nil and credentials:
     let cookie = config.cookieJar.serialize(request.url)
     if cookie != "":
-      request.headers["Cookie"] = cookie
-  let referrer = request.getReferrer()
-  request.headers.del("Referer")
-  if referrer != nil:
-    let r = referrer.getReferrer(request.url, config.referrerPolicy)
-    if r != "":
-      request.headers["Referer"] = r
+      request.headers.addIfNotFound("Cookie", cookie)
+  let referrer = request.takeReferrer(config.referrerPolicy)
+  if referrer != "":
+    request.headers.add("Referer", referrer)
 
 proc load(ctx: var LoaderContext; request: Request; client: ClientHandle;
     config: LoaderClientConfig): CommandResult =

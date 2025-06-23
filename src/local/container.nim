@@ -1619,7 +1619,7 @@ proc applyResponse*(container: Container; response: Response;
     if container.charsetStack.len == 0:
       container.charsetStack.add(DefaultCharset)
   container.charset = container.charsetStack[^1]
-  container.refreshHeader = response.headers.getOrDefault("Refresh")
+  container.refreshHeader = response.headers.getFirst("Refresh")
 
 proc remoteCancel*(container: Container) =
   if container.iface != nil:

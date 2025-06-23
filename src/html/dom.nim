@@ -4311,7 +4311,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           # close immediately; all data we're interested in is in the headers.
           response.close()
           let headers = response.headers
-          let dims = headers.getOrDefault("Cha-Image-Dimensions")
+          let dims = headers.getFirst("Cha-Image-Dimensions")
           let width = parseIntP(dims.until('x')).get(-1)
           let height = parseIntP(dims.after('x')).get(-1)
           if width < 0 or height < 0:
@@ -4381,7 +4381,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
     let response = res.get
     # close immediately; all data we're interested in is in the headers.
     response.close()
-    let dims = response.headers.getOrDefault("Cha-Image-Dimensions")
+    let dims = response.headers.getFirst("Cha-Image-Dimensions")
     let width = parseIntP(dims.until('x')).get(-1)
     let height = parseIntP(dims.after('x')).get(-1)
     if width < 0 or height < 0:

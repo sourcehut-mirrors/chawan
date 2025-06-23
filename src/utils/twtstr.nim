@@ -148,16 +148,6 @@ func getControlChar*(c: char): char =
     return '\x7F'
   return char(int(c) and 0x1F)
 
-func toHeaderCase*(s: string): string =
-  result = newStringOfCap(s.len)
-  var flip = true
-  for c in s:
-    if flip:
-      result &= c.toUpperAscii()
-    else:
-      result &= c.toLowerAscii()
-    flip = c == '-'
-
 func kebabToCamelCase*(s: string): string =
   result = ""
   var flip = false

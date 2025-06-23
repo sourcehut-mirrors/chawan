@@ -3,8 +3,6 @@
 #
 # See server/loader for a more detailed description of the protocol.
 
-import std/tables
-
 import config/cookie
 import io/dynstream
 import io/packetreader
@@ -88,7 +86,7 @@ type
 
 proc getRedirect*(response: Response; request: Request): Request =
   if response.status in 301u16..303u16 or response.status in 307u16..308u16:
-    let location = response.headers.getOrDefault("Location")
+    let location = response.headers.getFirst("Location")
     let url = parseURL(location, option(request.url))
     if url.isSome:
       let status = response.status
