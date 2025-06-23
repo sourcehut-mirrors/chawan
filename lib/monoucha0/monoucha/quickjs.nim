@@ -50,10 +50,7 @@ when sizeof(int) < sizeof(int64):
   {.passc: "-DJS_NAN_BOXING".}
   type JSValue* {.importc, header: qjsheader.} = distinct uint64
 
-  when defined(debug):
-    type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
-  else:
-    type JSValueConst* = JSValue
+  type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
 
   template JS_VALUE_GET_TAG*(v: JSValueConst): int32 =
     cast[int32](cast[uint64](v) shr 32)
@@ -76,22 +73,13 @@ else:
       u*: JSValueUnion
       tag*: int64
 
-  when defined(debug):
-    type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
+  type JSValueConst* {.importc: "JSValueConst".} = distinct JSValue
 
-    template JS_VALUE_GET_TAG*(v: JSValueConst): int32 =
-      cast[int32](JSValue(v).tag)
+  template JS_VALUE_GET_TAG*(v: JSValueConst): int32 =
+    cast[int32](JSValue(v).tag)
 
-    template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
-      cast[pointer](JSValue(v).u)
-  else:
-    type JSValueConst* = JSValue
-
-    template JS_VALUE_GET_TAG*(v: JSValue): int32 =
-      cast[int32](v.tag)
-
-    template JS_VALUE_GET_PTR*(v: JSValue): pointer =
-      cast[pointer](v.u)
+  template JS_VALUE_GET_PTR*(v: JSValueConst): pointer =
+    cast[pointer](JSValue(v).u)
 
   template JS_MKVAL*(t, val: untyped): JSValue =
     JSValue(u: JSValueUnion(`int32`: val), tag: t)
@@ -302,12 +290,13 @@ proc `==`*(a, b: JSValue): bool {.error.} =
 
 func `==`*(a, b: JSAtom): bool {.borrow.}
 
-when defined(debug):
-  converter toJSValueConst*(val: JSValue): JSValueConst =
-    JSValueConst(val)
+converter toJSValueConst*(val: JSValue): JSValueConst {.importc,
+    header: "quickjs-aux.h".} =
+  JSValueConst(val)
 
-  converter toJSValueConstArray*(val: JSValueArray): JSValueConstArray =
-    JSValueConstArray(val)
+converter toJSValueConstArray*(val: JSValueArray): JSValueConstArray {.
+    importc, header: "quickjs-aux.h".} =
+  JSValueConstArray(val)
 
 converter toJSClassID*(e: JSClassEnum): JSClassID {.inline.} =
   JSClassID(e)
