@@ -95,11 +95,7 @@ proc sread*(r: var PacketReader; url: var URL) =
   if s == "":
     url = nil
   else:
-    let x = parseURL(s)
-    if x.isSome:
-      url = x.get
-    else:
-      url = nil
+    url = parseURL(s).get(nil)
 
 # -1 if not special
 # 0 if file
