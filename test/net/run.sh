@@ -7,7 +7,7 @@ fi
 failed=0
 for h in *.html *.http
 do	case $h in
-	cookie.css.http) continue;;
+	cookie.css.http|headers.http) continue;;
 	esac
 	printf '%s\r' "$h"
 	if ! "$CHA" -C config.toml "http://localhost:$1/$h" | diff all.expected -

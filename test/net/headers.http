@@ -1,0 +1,11 @@
+Content-Type: text/html
+Content-Length: 4
+Header-1: a
+header-2: b
+_header-3: c
+_header-333: c
+HeaDeR_FoUr: d
+Set-Cookie: test
+Set-Cookie2: test2
+
+eh?

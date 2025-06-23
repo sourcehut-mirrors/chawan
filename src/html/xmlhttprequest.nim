@@ -1,3 +1,4 @@
+import std/algorithm
 import std/options
 import std/strutils
 
@@ -370,7 +371,9 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
       if response.res == 0:
         #TODO timeout
         response.resume()
+        this.response = response
         this.received = response.body.readAll()
+        response.close()
         #TODO report timing
         let len = max(response.getContentLength(), 0)
         response.opaque = XHROpaque(this: this, window: window, len: len)
@@ -401,13 +404,30 @@ proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: string):
   return res
 
 proc getAllResponseHeaders(this: XMLHttpRequest): string {.jsfunc.} =
-  result = ""
-  #TODO sort, should use the filtered header list, etc.
+  var list: seq[string] = @[]
   for k, v in this.response.headers:
-    if k.isForbiddenResponseHeaderName():
-      continue
-    for it in v:
-      result &= k & ": " & it & "\r\n"
+    list.add(k & ": " & v)
+  list.sort(proc(a, b: string): int {.nimcall.} =
+    # ew, but if the spec says so...
+    let L = min(a.len, b.len)
+    for i in 0 ..< L:
+      let ac = a[i].toUpperAscii()
+      let bc = b[i].toUpperAscii()
+      if ac == ':' or bc == ':':
+        break
+      if uint8(ac) < uint8(bc):
+        return -1
+      if uint8(ac) > uint8(bc):
+        return 1
+    if a.len < b.len:
+      return -1
+    if a.len > b.len:
+      return 1
+    0
+  )
+  result = ""
+  for it in list:
+    result &= it.toLowerAscii() & "\r\n"
 
 func getCharset(this: XMLHttpRequest): Charset =
   let override = this.contentTypeOverride.toLowerAscii()

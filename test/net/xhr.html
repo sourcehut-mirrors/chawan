@@ -36,5 +36,19 @@ x.responseType = "json";
 x.withCredentials = true;
 x.send();
 assertThrows("x.withCredentials = true", DOMException);
+let y = new XMLHttpRequest();
+y.onreadystatechange = function() {
+	if (y.readyState === XMLHttpRequest.DONE) {
+		assertEquals(y.getAllResponseHeaders(), `content-length: 4\r
+content-type: text/html\r
+header-1: a\r
+header-2: b\r
+header_four: d\r
+_header-3: c\r
+_header-333: c\r\n`);
+	}
+}
+y.open("GET", "headers.http", false);
+y.send()
 document.getElementById("x").textContent = "Success";
 </script>
