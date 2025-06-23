@@ -1066,7 +1066,7 @@ func getColorToken(cvals: openArray[CSSComponentValue]; i: int;
   if tok.t in {cttNumber, cttINumber, cttDimension, cttIDimension,
       cttPercentage}:
     return ok(tok)
-  if not legacy and tok.t == cttIdent and tok.s == "none":
+  if not legacy and tok.t == cttIdent and tok.s.equalsIgnoreCase("none"):
     return ok(tok)
   return err()
 
@@ -1513,7 +1513,7 @@ func parseInteger(cval: CSSComponentValue; range: Slice[int32]): Opt[int32] =
 func parseZIndex(cval: CSSComponentValue): Opt[CSSZIndex] =
   if cval of CSSToken:
     let tok = CSSToken(cval)
-    if tok.t == cttIdent and tok.s == "auto":
+    if tok.t == cttIdent and tok.s.equalsIgnoreCase("auto"):
       return ok(CSSZIndex(auto: true))
     return ok(CSSZIndex(num: ?parseInteger(cval, -65534i32 .. 65534i32)))
   return err()
