@@ -1099,21 +1099,16 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
   term.flush()
   result = QueryResult(success: false, attrs: {})
   while true:
-    template consume(term: Terminal): char =
-      term.readChar()
     template fail =
       return
     template expect(term: Terminal; c: char) =
-      if term.consume != c:
+      if term.readChar() != c:
         fail
-    template expect(term: Terminal; s: string) =
-      for c in s:
-        term.expect c
     term.expect '\e'
-    case term.consume
+    case term.readChar()
     of '[':
       # CSI
-      case (let c = term.consume; c)
+      case (let c = term.readChar(); c)
       of '?': # DA1, XTSMGRAPHICS
         var params = newSeq[int]()
         var lastc = char(0)
@@ -1163,7 +1158,8 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       var n: int
       if c == 4:
         n = term.consumeIntUntil(';')
-      if term.consume == 'r' and term.consume == 'g' and term.consume == 'b':
+      if term.readChar() == 'r' and term.readChar() == 'g' and
+          term.readChar() == 'b':
         term.expect ':'
         let r = term.eatColor('/')
         let g = term.eatColor('/')
@@ -1180,13 +1176,14 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         term.skipUntilST()
     of 'P':
       # DCS
-      let c = term.consume
+      let c = term.readChar()
       if c notin {'0', '1'}:
         fail
-      term.expect "+r"
+      term.expect '+'
+      term.expect 'r'
       if c == '1':
         var id = 0
-        while (let c = term.consume; c != '='):
+        while (let c = term.readChar(); c != '='):
           if c notin AsciiHexDigit:
             fail
           id *= 0x10
@@ -1358,9 +1355,9 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       term.attrs.height = int(win.ws_row)
       term.attrs.ppl = int(win.ws_ypixel) div term.attrs.height
   if term.attrs.width == 0:
-    term.attrs.width = int(parseInt32(getEnv("COLUMNS")).get(0))
+    term.attrs.width = parseIntP(getEnv("COLUMNS")).get(0)
   if term.attrs.height == 0:
-    term.attrs.height = int(parseInt32(getEnv("LINES")).get(0))
+    term.attrs.height = parseIntP(getEnv("LINES")).get(0)
   if not windowOnly:
     # set tname here because queryAttrs depends on it
     term.termType = term.parseTERM()
