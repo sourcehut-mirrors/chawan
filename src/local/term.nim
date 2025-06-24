@@ -48,6 +48,7 @@ type
     ttTmux = "tmux"
     ttUrxvt = "rxvt-unicode"
     ttVt52 = "vt52"
+    ttVt100 = "vt100"
     ttVte = "vte" # pretends to be XTerm
     ttWezterm = "wezterm"
     ttWterm = "wterm"
@@ -112,6 +113,7 @@ type
     queryDa1: bool
     bleedsAPC: bool
     margin: bool
+    asciiOnly: bool
     origTermios: Termios
     newTermios: Termios
     defaultBackground: RGBColor
@@ -431,8 +433,12 @@ proc reduceColors(term: Terminal; cellf: var Format) =
 
 proc processFormat*(res: var string; term: Terminal; format: var Format;
     cellf: Format) =
-  for flag in FormatFlag:
-    if flag in term.formatMode:
+  if format.flags == cellf.flags:
+    discard
+  elif term.colorMode == cmMonochrome and cellf.flags == {}:
+    res &= term.resetFormat()
+  else:
+    for flag in term.formatMode:
       if flag in format.flags and flag notin cellf.flags:
         res &= term.endFormat(flag)
       if flag notin format.flags and flag in cellf.flags:
@@ -453,12 +459,12 @@ proc setTitle*(term: Terminal; title: string) =
 
 proc enableMouse*(term: Terminal) =
   case term.termType
-  of ttAdm3a: discard
+  of ttAdm3a, ttVt52, ttVt100: discard
   else: term.write(XTSHIFTESCAPE & SGRMOUSEBTNON)
 
 proc disableMouse*(term: Terminal) =
   case term.termType
-  of ttAdm3a: discard
+  of ttAdm3a, ttVt52, ttVt100: discard
   else: term.write(SGRMOUSEBTNOFF)
 
 proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
@@ -497,12 +503,20 @@ proc processOutputString*(res: var string; term: Terminal; s: openArray[char];
       assert u > 0x9F or u != 0x7F and u > 0x1F
       w += u.width()
   let L = res.len
-  res.setLen(L + s.len)
   if term.te == nil:
     # The output encoding matches the internal representation.
+    res.setLen(L + s.len)
     copyMem(addr res[L], unsafeAddr s[0], s.len)
+  elif term.asciiOnly:
+    for u in s.points:
+      if u < 0x80:
+        res &= char(u)
+      else:
+        for i in 0 ..< u.width():
+          res &= '?'
   else:
     # Output is not utf-8, so we must encode it first.
+    res.setLen(L + s.len) # guess length
     res.encodeAllQMark(L, term.te, s.toOpenArrayByte(0, s.high))
 
 proc generateFullOutput(term: Terminal): string =
@@ -625,6 +639,9 @@ proc applyConfig(term: Terminal) =
         continue
       let cs = getLocaleCharset(env)
       if cs != CHARSET_UNKNOWN:
+        if cs == CHARSET_WINDOWS_1252:
+          term.asciiOnly = env.strip(chars =  AsciiWhitespace)
+            .endsWithIgnoreCase(".ascii")
         term.cs = cs
         break
   if term.cs in {CHARSET_UTF_8, CHARSET_UTF_16_LE, CHARSET_UTF_16_BE,
@@ -1253,6 +1270,8 @@ const TermdescMap = [
   # our basic quantization for 256 colors, so we use it anyway.
   ttUrxvt: XtermCompatible + {tfBleedsAPC, tfTrueColor},
   ttVt52: {},
+  # The VT100 had DA1, but couldn't gracefully consume unknown sequences.
+  ttVt100: {tfSmcup},
   ttVte: XtermCompatible + {tfTrueColor},
   ttWezterm: XtermCompatible,
   ttWterm: XtermCompatible + {tfTrueColor},
@@ -1314,10 +1333,10 @@ proc applyTermDesc(term: Terminal; desc: Termdesc) =
     term.imageMode = imSixel
   term.setTitle = tfTitle in desc
   term.smcup = tfSmcup in desc
-  if term.termType == ttAdm3a:
-    term.margin = true
-  elif term.termType == ttVt52:
-    discard
+  case term.termType
+  of ttAdm3a: term.margin = true
+  of ttVt52: discard
+  of ttVt100: term.formatMode = {ffReverse}
   else:
     # Unless a terminal can't process one of these, it's OK to enable
     # all of them.
