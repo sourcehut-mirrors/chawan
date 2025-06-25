@@ -1921,8 +1921,6 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     # I think this makes navigation pretty natural, or at least very close to
     # what other browsers do. Still, it would be nice if we got some visual
     # feedback on what is actually going to happen when typing a URL; TODO.
-    if referrer != nil:
-      loaderConfig.referrerPolicy = referrer.loaderConfig.referrerPolicy
     var flags = {cfCanReinterpret, cfUserRequested}
     if save:
       flags.incl(cfSave)
