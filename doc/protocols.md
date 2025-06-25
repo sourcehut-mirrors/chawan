@@ -189,7 +189,7 @@ download list panel.  It should be turned into a CGI module once the
 loader gets RPC capabilities.
 
 The following about pages are available: `about:chawan`, `about:blank`,
-`about:license`, `about:download`.
+`about:license`, `about:downloads`.
 
 ## Custom protocols
 
