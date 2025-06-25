@@ -1,5 +1,6 @@
-unreleased
+0.2.1 (2025.06.25)
 
+Patch release.
 Fixes:
 * fix buffer cloning on musl
 * fix crash when saving cookies
