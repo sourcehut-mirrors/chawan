@@ -205,16 +205,19 @@ $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 
 $(OBJDIR)/man/cha-%.md: doc/%.md md2manpreproc
 	@mkdir -p "$(OBJDIR)/man"
-	./md2manpreproc $< > $@
+	./md2manpreproc $< > $@~
+	mv $@~ $@
 
 $(OBJDIR)/man/cha-%.md.roff: $(OBJDIR)/man/cha-%.md
 	$(PANDOC) --standalone --to man $< -o $@
 
 doc/cha-%.5: $(OBJDIR)/man/cha-%.md.roff
-	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@
+	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@~
+	mv $@~ $@
 
 doc/cha-%.7: $(OBJDIR)/man/cha-%.md.roff
-	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@
+	awk 'last=="T}" && $$1=="T{" {print "_"} {last=$$1} 1' $< > $@~
+	mv $@~ $@
 
 .PHONY: clean
 clean:

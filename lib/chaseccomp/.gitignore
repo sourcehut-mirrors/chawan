@@ -2,5 +2,6 @@
 /chasc_*.c
 /*.expanded
 /chaseccomp
-*.o
-*.d
+/*.o
+/*.d
+/*~
