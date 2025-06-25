@@ -331,7 +331,7 @@ proc setSearchRegex(pager: Pager; s: string; flags0 = ""; reverse = false):
   var flags = {LRE_FLAG_GLOBAL}
   for c in flags0:
     let x = strictParseEnum[LREFlag]($c)
-    if x.isNone:
+    if x.isErr:
       return errTypeError("invalid flag " & c)
   let re = compileRegex(s, flags)
   if re.isErr:

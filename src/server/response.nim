@@ -133,7 +133,9 @@ func getContentLength*(this: Response): int64 =
 
 func getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =
   let header = this.headers.getFirst("Referrer-Policy")
-  return strictParseEnum[ReferrerPolicy](header)
+  if p := strictParseEnum[ReferrerPolicy](header):
+    return some(p)
+  none(ReferrerPolicy)
 
 proc resume*(response: Response) =
   response.resumeFun(response.outputId)

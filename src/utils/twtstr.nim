@@ -685,12 +685,12 @@ func strictParseEnum0(map: openArray[IdentMapItem]; s: string): int =
     return map[i].n
   return -1
 
-func strictParseEnum*[T: enum](s: string): Option[T] =
+func strictParseEnum*[T: enum](s: string): Opt[T] =
   const IdentMap = getIdentMap(T)
   let n = IdentMap.strictParseEnum0(s)
   if n != -1:
-    return some(T(n))
-  return none(T)
+    return ok(T(n))
+  err()
 
 func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): int =
   let i = map.binarySearch(s, proc(x: IdentMapItem; y: string): int =

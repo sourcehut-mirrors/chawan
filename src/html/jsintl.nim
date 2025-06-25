@@ -88,10 +88,10 @@ proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
   if i != -1:
     let part1 = strictParseEnum[NumberUnitPart](s.substr(0, i - 1))
     let part2 = strictParseEnum[NumberUnitPart](s.substr(i + "-per-".len))
-    if part1.isNone or part2.isNone:
+    if part1.isErr or part2.isErr:
       JS_ThrowRangeError(ctx, "wrong unit %s", cstring(s))
       return err()
-    unit = NumberUnit(part1: part1.get, part2: part2)
+    unit = NumberUnit(part1: part1.get, part2: some(part2.get))
   else:
     let part1 = parseEnumNoCase[NumberUnitPart](s)
     if part1.isErr:

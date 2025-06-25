@@ -2630,7 +2630,9 @@ func crossOrigin(element: HTMLImageElement): CORSAttribute {.jsfget.} =
   return element.crossOrigin0
 
 func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
-  return strictParseEnum[ReferrerPolicy](element.attr(satReferrerpolicy))
+  if o := strictParseEnum[ReferrerPolicy](element.attr(satReferrerpolicy)):
+    return some(o)
+  none(ReferrerPolicy)
 
 proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL):
     CSSStylesheet =
