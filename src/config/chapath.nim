@@ -7,6 +7,7 @@ import monoucha/fromjs
 import monoucha/javascript
 import monoucha/tojs
 import types/opt
+import utils/myposix
 import utils/twtstr
 
 type ChaPath* = distinct string
@@ -72,9 +73,8 @@ proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     ctx.s &= $getCurrentProcessId()
     ctx.state = usNormal
   of '0':
-    # Note: we intentionally use getAppFilename so that any symbolic links
-    # are resolved.
-    ctx.s &= getAppFilename()
+    # Use getAppFilename so that any symbolic links are resolved.
+    ctx.s &= myposix.getAppFilename()
     ctx.state = usNormal
   of AsciiAlpha:
     ctx.identStr = $c
@@ -123,7 +123,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   case c
   of '}':
     if ctx.identStr == "0":
-      ctx.s &= getAppFilename()
+      ctx.s &= myposix.getAppFilename()
     else:
       ctx.s &= getEnv(ctx.identStr)
     ctx.identStr = ""

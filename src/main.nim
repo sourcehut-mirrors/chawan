@@ -16,6 +16,7 @@ import local/term
 import monoucha/javascript
 import server/forkserver
 import types/opt
+import utils/myposix
 import utils/sandbox
 import utils/strwidth
 import utils/twtstr
@@ -208,7 +209,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   if twtstr.setEnv("CHA_DIR", config.dir).isNone:
     die("failed to set env vars")
   ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
-  let cwd = chaGetCwd()
+  let cwd = myposix.getcwd()
   when defined(debug):
     if (let ps = newPosixStream(cwd / "res/config.toml"); ps != nil):
       ?config.parseConfig(cwd, ps.readAll(), warnings, jsctx, "res/config.toml")
@@ -229,7 +230,8 @@ proc initConfig(ctx: ParamParseContext; config: Config;
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
 proc main() =
-  if twtstr.setEnv("CHA_BIN_DIR", getAppFilename().untilLast('/')).isNone:
+  let binDir = myposix.getAppFilename().untilLast('/')
+  if twtstr.setEnv("CHA_BIN_DIR", binDir).isNone:
     die("failed to set env vars")
   if twtstr.setEnv("CHA_LIBEXEC_DIR", ChaPath(libexecPath).unquoteGet()).isNone:
     die("failed to set env vars")

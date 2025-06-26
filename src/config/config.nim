@@ -28,6 +28,7 @@ import types/color
 import types/jscolor
 import types/opt
 import types/url
+import utils/myposix
 import utils/regexutils
 import utils/twtstr
 
@@ -867,7 +868,7 @@ proc openConfig*(dir: var string; override: Option[string];
       dir = parentDir(override.get)
       return newPosixStream(override.get)
     else:
-      let path = chaGetCwd() / override.get
+      let path = myposix.getcwd() / override.get
       dir = parentDir(path)
       return newPosixStream(path)
   dir = getEnv("CHA_DIR")
