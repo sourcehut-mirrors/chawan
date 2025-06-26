@@ -760,35 +760,16 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
 proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
-  var s = v.s
-  var i = 0
   var y = ""
-  while s.nextCSSToken(i):
-    if s[i] in AsciiWhitespace or
-        i + 1 < s.len and s[i] == '\\' and s[i + 1] == '\n':
-      inc i
-      continue
-    if not s.toOpenArray(i, s.high).startsWithIgnoreCase("@import"):
+  var parser = initCSSParser(v.s)
+  var j = 0
+  for it in parser.consumeImports():
+    var i = it.prelude.skipBlanks(0)
+    if i >= it.prelude.len or it.prelude.skipBlanks(i + 1) < it.prelude.len:
       break
-    i += "@import".len
-    if i >= s.len or s[i] notin AsciiWhitespace:
-      break
-    i = s.skipBlanks(i)
-    if i >= s.len or s[i] notin {'"', '\''}:
-      break
-    let ending = s[i]
-    inc i
-    let tok = s.consumeCSSString(ending, i)
+    let tok = it.prelude[i]
     if tok.t != cttString:
-      break
-    while s.nextCSSToken(i):
-      if s[i] in AsciiWhitespace or
-          i + 1 < s.len and s[i] == '\\' and s[i + 1] == '\n':
-        inc i
-        continue
-      break
-    if i < s.len and s[i] != ';':
-      break
+      return err(k & ": wrong CSS import (unexpected token)")
     let path = ChaPath(tok.s).unquote(ctx.config.dir)
     if path.isErr:
       return err(k & ": wrong CSS import (" & tok.s & " is not a valid path)")
@@ -796,8 +777,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
     if ps == nil:
       return err(k & ": wrong CSS import (file " & tok.s & " not found)")
     y &= ps.readAll()
-    inc i
-  y &= s.substr(i)
+    j = parser.i
+  y &= v.s.substr(j)
   x = StyleString(move(y))
   ok()
 

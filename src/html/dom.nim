@@ -4036,7 +4036,7 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
     return ctx.toJS(this.getPropertyValue(s))
   return JS_UNINITIALIZED
 
-proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSComponentValue]):
+proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSToken]):
     Err[void] =
   if i notin 0 .. this.decls.high:
     return err()

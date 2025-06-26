@@ -157,9 +157,9 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
     else:
       sheet.generalList.add(rule)
 
-proc addRules(sheet: CSSStylesheet; cvals: openArray[CSSComponentValue];
-    topLevel: bool; base: URL) =
-  for rule in cvals.parseListOfRules(topLevel):
+proc addRules(sheet: CSSStylesheet; ctx: var CSSParser; topLevel: bool;
+    base: URL) =
+  for rule in ctx.parseListOfRules(topLevel):
     if rule of CSSAtRule:
       sheet.addAtRule(CSSAtRule(rule), base)
     else:
@@ -171,8 +171,8 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
     for decl in rule.decls:
       if decl.name.startsWith("--"):
         let cvar = CSSVariable(
-          name: decl.name.substr(2).toAtom(),
-          cvals: decl.value
+          name: decl.name.toOpenArray(2, decl.name.high).toAtom(),
+          toks: decl.value
         )
         if decl.important:
           ruleDef.importantVars.add(cvar)
@@ -213,9 +213,10 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
     if atrule.oblock != nil:
       let query = parseMediaQueryList(atrule.prelude, sheet.attrs)
       if query.applies(sheet.scripting, sheet.colorMode, sheet.attrs):
-        sheet.addRules(atrule.oblock.value, topLevel = false, base = nil)
+        var ctx = initCSSParser(atrule.oblock.value)
+        sheet.addRules(ctx, topLevel = false, base = nil)
 
-proc parseStylesheet*(ibuf: openArray[char]; base: URL;
+proc parseStylesheet*(iq: openArray[char]; base: URL;
     attrs: ptr WindowAttributes; scripting: ScriptingMode;
     colorMode: ColorMode): CSSStylesheet =
   let sheet = CSSStylesheet(
@@ -223,7 +224,8 @@ proc parseStylesheet*(ibuf: openArray[char]; base: URL;
     scripting: scripting,
     colorMode: colorMode
   )
-  sheet.addRules(tokenizeCSS(ibuf), topLevel = true, base)
+  var ctx = initCSSParser(iq)
+  sheet.addRules(ctx, topLevel = true, base)
   return sheet
 
 {.pop.} # raises: []

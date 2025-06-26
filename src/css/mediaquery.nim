@@ -13,7 +13,7 @@ import utils/twtstr
 type
   MediaQueryParser = object
     at: int
-    cvals: seq[CSSComponentValue]
+    toks: seq[CSSToken]
     attrs: ptr WindowAttributes
 
   MediaType = enum
@@ -114,31 +114,27 @@ const RangeFeatures = {
 }
 
 proc has(parser: MediaQueryParser; i = 0): bool =
-  return parser.cvals.len > parser.at + i
+  return parser.toks.len > parser.at + i
 
-proc consume(parser: var MediaQueryParser): CSSComponentValue =
-  result = parser.cvals[parser.at]
+proc consume(parser: var MediaQueryParser): CSSToken =
+  result = parser.toks[parser.at]
   inc parser.at
 
 proc consumeSimpleBlock(parser: var MediaQueryParser): Opt[CSSSimpleBlock] =
   let res = parser.consume()
-  if res of CSSSimpleBlock:
-    return ok(CSSSimpleBlock(res))
+  if res.t == cttSimpleBlock:
+    return ok(res.oblock)
   return err()
 
 proc reconsume(parser: var MediaQueryParser) =
   dec parser.at
 
-proc peek(parser: MediaQueryParser; i = 0): CSSComponentValue =
-  return parser.cvals[parser.at + i]
+proc peek(parser: MediaQueryParser; i = 0): CSSToken =
+  return parser.toks[parser.at + i]
 
 proc skipBlanks(parser: var MediaQueryParser) =
-  while parser.has():
-    let cval = parser.peek()
-    if cval of CSSToken and CSSToken(cval).t == cttWhitespace:
-      inc parser.at
-    else:
-      break
+  while parser.has() and parser.peek().t == cttWhitespace:
+    inc parser.at
 
 proc getBoolFeature(feature: MediaFeatureType): Opt[MediaQuery] =
   case feature
@@ -161,22 +157,15 @@ proc skipBlanksCheckHas(parser: var MediaQueryParser): Err[void] =
     return ok()
   return err()
 
-proc consumeToken(parser: var MediaQueryParser): Opt[CSSToken] =
-  let cval = parser.consume()
-  if not (cval of CSSToken):
-    parser.reconsume()
-    return err()
-  return ok(CSSToken(cval))
-
 proc consumeIdent(parser: var MediaQueryParser): Opt[CSSToken] =
-  let tok = ?parser.consumeToken()
+  let tok = parser.consume()
   if tok.t != cttIdent:
     parser.reconsume()
     return err()
   return ok(tok)
 
 proc consumeInt(parser: var MediaQueryParser): Opt[int] =
-  let tok = ?parser.consumeToken()
+  let tok = parser.consume()
   if tok.t != cttINumber:
     parser.reconsume()
     return err()
@@ -210,23 +199,21 @@ proc parseBool(parser: var MediaQueryParser; sfalse, sfalse2, strue: string):
     return err()
 
 proc parseComparison(parser: var MediaQueryParser): Opt[MediaQueryComparison] =
-  let tok = ?parser.consumeToken()
-  if tok != cttDelim or tok.c notin {'=', '<', '>'}:
+  let tok = parser.consume()
+  if tok.t != cttDelim or tok.c notin {'=', '<', '>'}:
     return err()
   case tok.c
   of '<':
-    if parser.has():
-      parser.skipBlanks()
-      let tok = ?parser.consumeToken()
-      if tok == cttDelim and tok.c == '=':
+    if parser.skipBlanksCheckHas().isOk:
+      let tok = parser.consume()
+      if tok.t == cttDelim and tok.c == '=':
         return ok(mqcLe)
       parser.reconsume()
     return ok(mqcLt)
   of '>':
-    if parser.has():
-      parser.skipBlanks()
-      let tok = ?parser.consumeToken()
-      if tok == cttDelim and tok.c == '=':
+    if parser.skipBlanksCheckHas().isOk:
+      let tok = parser.consume()
+      if tok.t == cttDelim and tok.c == '=':
         return ok(mqcGe)
       parser.reconsume()
     return ok(mqcGt)
@@ -253,8 +240,8 @@ proc parseIntRange(parser: var MediaQueryParser; ismin, ismax: bool):
     return ok(0 .. n)
 
 proc parseLength(parser: var MediaQueryParser): Opt[float32] =
-  let cval = parser.consume()
-  let len = ?parseLength(cval, parser.attrs[])
+  let tok = parser.consume()
+  let len = ?parseLength(tok, parser.attrs[])
   if len.auto or len.perc != 0:
     return err()
   return ok(len.npx)
@@ -308,7 +295,7 @@ proc parseFeature(parser: var MediaQueryParser; t: MediaFeatureType;
     ismin, ismax: bool): Opt[MediaQuery] =
   if not parser.has():
     return getBoolFeature(t)
-  let tok = ?parser.consumeToken()
+  let tok = parser.consume()
   if t notin RangeFeatures and (tok.t != cttColon or ismin or ismax):
     return err()
   if tok.t != cttColon:
@@ -323,9 +310,9 @@ proc parseFeature(parser: var MediaQueryParser; t: MediaFeatureType;
 
 proc parseMediaInParens(parser: var MediaQueryParser): Opt[MediaQuery] =
   let sb = ?parser.consumeSimpleBlock()
-  if sb.token.t != cttLparen:
+  if sb.t != cttLparen:
     return err()
-  var fparser = MediaQueryParser(cvals: sb.value, attrs: parser.attrs)
+  var fparser = MediaQueryParser(toks: sb.value, attrs: parser.attrs)
   fparser.skipBlanks()
   let tok = ?fparser.consumeIdent()
   fparser.skipBlanks()
@@ -406,11 +393,11 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
       return parser.parseMediaAnd(res, noor = true)
   return err()
 
-proc parseMediaQueryList*(cvals: seq[CSSComponentValue];
-    attrs: ptr WindowAttributes): seq[MediaQuery] =
+proc parseMediaQueryList*(toks: seq[CSSToken]; attrs: ptr WindowAttributes):
+    seq[MediaQuery] =
   result = @[]
-  for list in cvals.parseCommaSepComponentValues():
-    var parser = MediaQueryParser(cvals: list, attrs: attrs)
+  for list in toks.parseCommaSepComponentValues():
+    var parser = MediaQueryParser(toks: list, attrs: attrs)
     let query = parser.parseMediaQuery()
     if query.isOk:
       result.add(query.get)
