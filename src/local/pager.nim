@@ -55,6 +55,7 @@ import types/opt
 import types/url
 import types/winattrs
 import utils/luwrap
+import utils/myposix
 import utils/regexutils
 import utils/strwidth
 import utils/twtstr
@@ -400,7 +401,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   let moduleName = $moduleName
   let x = if moduleName.startsWith("/") or moduleName.startsWith("./") or
       moduleName.startsWith("../"):
-    parseURL(moduleName, parseURL("file://" & chaGetCwd() & "/"))
+    parseURL(moduleName, parseURL("file://" & myposix.getcwd() & "/"))
   else:
     parseURL(moduleName)
   if x.isNone or x.get.schemeType != stFile:
@@ -2005,7 +2006,7 @@ proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
     let pageurl = parseURL(pager.config.network.prependScheme & url)
     if pageurl.isSome: # attempt to load remote page
       urls.add(pageurl.get)
-  let cdir = parseURL("file://" & percentEncode(chaGetCwd(),
+  let cdir = parseURL("file://" & percentEncode(myposix.getcwd(),
     LocalPathPercentEncodeSet) & DirSep)
   let localurl = percentEncode(url, LocalPathPercentEncodeSet)
   let newurl = parseURL(localurl, cdir)

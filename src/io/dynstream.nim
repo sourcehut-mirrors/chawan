@@ -471,14 +471,4 @@ proc die*(s: string) {.noreturn.} =
   stderr.fwrite("cha: " & s & '\n')
   quit(1)
 
-proc my_getcwd(buf: cstring; size: csize_t): cstring {.
-  importc: "getcwd", header: "<unistd.h>".}
-
-proc chaGetCwd*(): string =
-  var s = newString(4096)
-  let cs = my_getcwd(cstring(s), csize_t(s.len))
-  if cs == nil:
-    return ""
-  $cs
-
 {.pop.} # raises: []
