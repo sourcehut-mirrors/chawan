@@ -3222,10 +3222,8 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       container.remoteCancel()
     else:
       dec pager.numload
+      # closes item's stream
       pager.deleteContainer(container, container.find(ndAny))
-      pager.loader.unset(item)
-      pager.unregisterFd(int(item.stream.fd))
-      item.stream.sclose()
   of cetMetaRefresh:
     let url = event.refreshURL
     let n = event.refreshIn
