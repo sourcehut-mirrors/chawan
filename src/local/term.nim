@@ -1447,17 +1447,15 @@ type
     t*: MouseInputType
     button*: MouseInputButton
     mods*: set[MouseInputMod]
-    col*: int
-    row*: int
+    col*: int32
+    row*: int32
 
 proc parseMouseInput*(term: Terminal): Opt[MouseInput] =
-  template fail =
-    return err()
   var btn = 0
   while (let c = term.readChar(); c != ';'):
     let n = decValue(c)
     if n == -1:
-      fail
+      return err()
     btn *= 10
     btn += n
   var mods: set[MouseInputMod] = {}
@@ -1467,19 +1465,19 @@ proc parseMouseInput*(term: Terminal): Opt[MouseInput] =
     mods.incl(mimCtrl)
   if (btn and 16) != 0:
     mods.incl(mimMeta)
-  var px = 0
+  var px = 0i32
   while (let c = term.readChar(); c != ';'):
-    let n = decValue(c)
+    let n = int32(decValue(c))
     if n == -1:
-      fail
+      return err()
     px *= 10
     px += n
-  var py = 0
+  var py = 0i32
   var c: char
   while (c = term.readChar(); c notin {'m', 'M'}):
-    let n = decValue(c)
+    let n = int32(decValue(c))
     if n == -1:
-      fail
+      return err()
     py *= 10
     py += n
   var t = if c == 'M': mitPress else: mitRelease

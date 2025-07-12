@@ -155,7 +155,7 @@ type
     numload: int # number of pages currently being loaded
     pollData: PollData
     precnum: int32 # current number prefix (when vi-numeric-prefix is true)
-    pressed: tuple[col, row: int]
+    pressed: tuple[col, row: int32]
     refreshAllowed: HashSet[string]
     regex: Option[Regex]
     reverseSearch: bool
@@ -643,18 +643,18 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
     of mitPress:
       pager.pressed = (input.col, input.row)
     of mitRelease:
-      if pager.pressed != (-1, -1):
-        let diff = (input.col - pager.pressed.col,
-          input.row - pager.pressed.row)
-        if diff[0] > 0:
-          discard pager.evalAction("cmd.buffer.scrollLeft", int32(diff[0]))
-        elif diff[0] < 0:
-          discard pager.evalAction("cmd.buffer.scrollRight", -int32(diff[0]))
-        if diff[1] > 0:
-          discard pager.evalAction("cmd.buffer.scrollUp", int32(diff[1]))
-        elif diff[1] < 0:
-          discard pager.evalAction("cmd.buffer.scrollDown", -int32(diff[1]))
-        pager.pressed = (-1, -1)
+      if pager.pressed != (-1i32, -1i32):
+        let dcol = input.col - pager.pressed.col
+        let drow = input.row - pager.pressed.row
+        if dcol > 0:
+          discard pager.evalAction("cmd.buffer.scrollLeft", dcol)
+        elif dcol < 0:
+          discard pager.evalAction("cmd.buffer.scrollRight", -dcol)
+        if drow > 0:
+          discard pager.evalAction("cmd.buffer.scrollUp", drow)
+        elif drow < 0:
+          discard pager.evalAction("cmd.buffer.scrollDown", -drow)
+        pager.pressed = (-1i32, -1i32)
     else: discard
   of mibWheelUp:
     if input.t == mitPress:
