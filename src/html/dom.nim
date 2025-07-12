@@ -13,6 +13,7 @@ import std/times
 import chagashi/charset
 import chagashi/decoder
 import chame/tags
+import config/conftypes
 import config/mimetypes
 import css/cssparser
 import css/cssvalues
@@ -111,6 +112,7 @@ type
     navigate*: proc(url: URL)
     importMapsAllowed*: bool
     colorMode*: ColorMode
+    headless*: HeadlessMode
     pendingResources*: seq[EmptyPromise]
     pendingImages*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
@@ -2634,7 +2636,7 @@ func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
 proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL):
     CSSStylesheet =
   s.parseStylesheet(nil, window.attrsp, window.settings.scripting,
-    window.colorMode)
+    window.colorMode, window.headless)
 
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
@@ -4209,7 +4211,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals, window.attrsp)
       applies = media.applies(window.settings.scripting, window.colorMode,
-        window.attrsp)
+        window.headless, window.attrsp)
     link.sheets.setLen(0)
     let p = window.loadSheet(link, url).then(proc(sheet: CSSStylesheet) =
       # Note: we intentionally load all sheets first and *then* check

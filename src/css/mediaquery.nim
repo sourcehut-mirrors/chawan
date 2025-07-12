@@ -2,10 +2,9 @@
 
 import std/options
 
+import config/conftypes
 import css/cssparser
 import css/cssvalues
-import html/script
-import types/color
 import types/opt
 import types/winattrs
 import utils/twtstr
@@ -42,12 +41,19 @@ type
     aeq: bool
     beq: bool
 
+  MediaScripting = enum
+    msNone = "none"
+    msInitialOnly = "initial-only"
+    msEnabled = "enabled"
+
   MediaFeature = object
     case t: MediaFeatureType
     of mftColor, mftColorIndex, mftMonochrome:
       range: Slice[int]
-    of mftGrid, mftHover, mftPrefersColorScheme, mftScripting:
+    of mftGrid, mftHover, mftPrefersColorScheme:
       b: bool
+    of mftScripting:
+      ms: MediaScripting
     of mftWidth, mftHeight:
       lengthrange*: LengthRange
 
@@ -188,16 +194,6 @@ proc parseBool(parser: var MediaQueryParser; sfalse, strue: string): Opt[bool] =
   else:
     return err()
 
-proc parseBool(parser: var MediaQueryParser; sfalse, sfalse2, strue: string):
-    Opt[bool] =
-  let tok = ?parser.consumeIdent()
-  if tok.s.equalsIgnoreCase(strue):
-    return ok(true)
-  elif tok.s.equalsIgnoreCase(sfalse) or tok.s.equalsIgnoreCase(sfalse2):
-    return ok(false)
-  else:
-    return err()
-
 proc parseComparison(parser: var MediaQueryParser): Opt[MediaQueryComparison] =
   let tok = parser.consume()
   if tok.t != cttDelim or tok.c notin {'=', '<', '>'}:
@@ -287,8 +283,9 @@ proc parseFeature0(parser: var MediaQueryParser; t: MediaFeatureType;
   of mftScripting:
     if ismin or ismax:
       return err()
-    let b = ?parser.parseBool("none", "initial-only", "enabled")
-    MediaFeature(t: t, b: b)
+    let tok = ?parser.consumeIdent()
+    let ms = ?parseEnumNoCase[MediaScripting](tok.s)
+    MediaFeature(t: t, ms: ms)
   return ok(feature)
 
 proc parseFeature(parser: var MediaQueryParser; t: MediaFeatureType;
@@ -410,6 +407,7 @@ type
   MediaApplyContext = object
     scripting: ScriptingMode
     colorMode: ColorMode
+    headless: HeadlessMode
     attrsp: ptr WindowAttributes
 
 func appliesLR(feature: MediaFeature; n: float32): bool =
@@ -443,7 +441,12 @@ func applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
   of mftHeight:
     return feature.appliesLR(float32(ctx.attrsp.heightPx))
   of mftScripting:
-    return feature.b == (ctx.scripting != smFalse)
+    case feature.ms
+    of msNone: return ctx.scripting == smFalse
+    of msInitialOnly:
+      return ctx.scripting != smFalse and ctx.headless == hmDump
+    of msEnabled:
+      return ctx.scripting != smFalse and ctx.headless != hmDump
 
 func applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
   case mq.t
@@ -470,10 +473,12 @@ func applies(ctx: MediaApplyContext; mqlist: seq[MediaQuery]): bool =
   return false
 
 func applies*(mqlist: seq[MediaQuery]; scripting: ScriptingMode;
-    colorMode: ColorMode; attrsp: ptr WindowAttributes): bool =
+    colorMode: ColorMode; headless: HeadlessMode;
+    attrsp: ptr WindowAttributes): bool =
   let ctx = MediaApplyContext(
     scripting: scripting,
     colorMode: colorMode,
+    headless: headless,
     attrsp: attrsp
   )
   return ctx.applies(mqlist)

@@ -6,6 +6,7 @@ import std/sets
 import std/tables
 
 import chame/tags
+import config/conftypes
 import css/cssparser
 import css/cssvalues
 import css/lunit

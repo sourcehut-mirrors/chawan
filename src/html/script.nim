@@ -1,3 +1,4 @@
+import config/conftypes
 import monoucha/javascript
 import monoucha/quickjs
 import monoucha/tojs
@@ -6,11 +7,6 @@ import types/url
 import utils/twtstr
 
 type
-  ScriptingMode* = enum
-    smFalse = "false"
-    smTrue = "true"
-    smApp = "app"
-
   ParserMetadata* = enum
     pmParserInserted, pmNotParserInserted
 

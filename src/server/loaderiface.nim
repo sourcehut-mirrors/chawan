@@ -3,6 +3,7 @@
 #
 # See server/loader for a more detailed description of the protocol.
 
+import config/conftypes
 import config/cookie
 import io/dynstream
 import io/packetreader

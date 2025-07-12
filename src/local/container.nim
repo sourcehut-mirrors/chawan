@@ -6,6 +6,7 @@ import std/tables
 
 import chagashi/charset
 import config/config
+import config/conftypes
 import config/cookie
 import config/mimetypes
 import css/render

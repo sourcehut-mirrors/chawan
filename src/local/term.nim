@@ -10,6 +10,7 @@ import chagashi/charset
 import chagashi/decoder
 import chagashi/encoder
 import config/config
+import config/conftypes
 import io/dynstream
 import types/blob
 import types/cell

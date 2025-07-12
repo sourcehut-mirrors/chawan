@@ -12,6 +12,7 @@ import chagashi/charset
 import chagashi/decoder
 import config/chapath
 import config/config
+import config/conftypes
 import config/cookie
 import config/history
 import config/mailcap

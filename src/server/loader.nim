@@ -32,6 +32,7 @@ import std/tables
 import std/times
 
 import config/config
+import config/conftypes
 import config/cookie
 import config/urimethodmap
 import html/script

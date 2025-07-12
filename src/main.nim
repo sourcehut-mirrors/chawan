@@ -8,6 +8,7 @@ import std/tables
 import chagashi/charset
 import config/chapath
 import config/config
+import config/conftypes
 import io/dynstream
 import io/poll
 import local/client

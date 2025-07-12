@@ -44,12 +44,6 @@ type
     isCell*: bool # if true, n is a CellColor. otherwise, it's ARGBColor.
     n: uint32
 
-  ColorMode* = enum
-    cmMonochrome = "monochrome"
-    cmANSI = "ansi"
-    cmEightBit = "eight-bit"
-    cmTrueColor = "true-color"
-
 func rgba*(r, g, b, a: uint8): ARGBColor
 
 # bitmasked so nimvm doesn't choke on it

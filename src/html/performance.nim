@@ -1,8 +1,8 @@
 import std/math
 import std/times
 
+import config/conftypes
 import html/event
-import html/script
 import io/timeout
 import monoucha/javascript
 import monoucha/quickjs

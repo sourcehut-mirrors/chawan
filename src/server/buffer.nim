@@ -13,6 +13,7 @@ import chagashi/decoder
 import chagashi/decodercore
 import chame/tags
 import config/config
+import config/conftypes
 import css/box
 import css/cascade
 import css/csstree
@@ -27,7 +28,6 @@ import html/enums
 import html/env
 import html/event
 import html/formdata as formdata_impl
-import html/script
 import io/console
 import io/dynstream
 import io/packetreader
@@ -1966,6 +1966,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     config.styling,
     config.autofocus,
     config.colorMode,
+    config.headless,
     addr bc.attrs,
     loader,
     url,

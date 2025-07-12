@@ -3,6 +3,7 @@ import std/posix
 import std/tables
 
 import config/config
+import config/conftypes
 import html/catom
 import html/chadombuilder
 import html/dom

@@ -7,6 +7,7 @@ import std/tables
 
 import chagashi/charset
 import config/chapath
+import config/conftypes
 import config/cookie
 import config/mailcap
 import config/mimetypes
@@ -33,26 +34,11 @@ import utils/regexutils
 import utils/twtstr
 
 type
-  MetaRefresh* = enum
-    mrNever = "never"
-    mrAlways = "always"
-    mrAsk = "ask"
-
-  ImageMode* = enum
-    imNone = "none"
-    imSixel = "sixel"
-    imKitty = "kitty"
-
   StyleString* = distinct string
 
   DeprecatedStyleString* = distinct string
 
   ChaPathResolved* = distinct string
-
-  HeadlessMode* = enum
-    hmFalse = "false"
-    hmTrue = "true"
-    hmDump = "dump"
 
   ActionMap = object
     t: Table[string, string]

@@ -3,6 +3,7 @@
 import std/strutils
 import std/tables
 
+import config/conftypes
 import css/cssparser
 import css/mediaquery
 import html/catom
@@ -33,7 +34,6 @@ import server/loaderiface
 import server/request
 import server/response
 import types/blob
-import types/color
 import types/opt
 import types/url
 import types/winattrs
@@ -379,7 +379,7 @@ proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
   let mqlist = parseMediaQueryList(cvals, window.scriptAttrsp)
   return MediaQueryList(
     matches: mqlist.applies(window.settings.scripting, window.colorMode,
-      window.scriptAttrsp),
+      window.headless, window.scriptAttrsp),
     media: $mqlist
   )
 
@@ -496,9 +496,9 @@ proc addScripting*(window: Window) =
   ctx.addPerformanceModule(eventTargetCID)
 
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
-    colorMode: ColorMode; attrsp: ptr WindowAttributes; loader: FileLoader;
-    url: URL; urandom: PosixStream; imageTypes: Table[string, string];
-    userAgent, referrer: string): Window =
+    colorMode: ColorMode; headless: HeadlessMode; attrsp: ptr WindowAttributes;
+    loader: FileLoader; url: URL; urandom: PosixStream;
+    imageTypes: Table[string, string]; userAgent, referrer: string): Window =
   let window = Window(
     attrsp: attrsp,
     internalConsole: newConsole(cast[ChaFile](stderr)),
@@ -515,7 +515,8 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     userAgent: userAgent,
     referrer: referrer,
     autofocus: autofocus,
-    colorMode: colorMode
+    colorMode: colorMode,
+    headless: headless
   )
   window.location = window.newLocation()
   if scripting != smFalse:

@@ -7,10 +7,10 @@ import std/strutils
 import std/tables
 import std/times
 
-import io/packetreader
-import io/packetwriter
 import io/chafile
 import io/dynstream
+import io/packetreader
+import io/packetwriter
 import types/opt
 import types/url
 import utils/twtstr
@@ -38,11 +38,6 @@ type
     mtime: int64
     jars: OrderedTable[cstring, CookieJar]
     transient*: bool # set if there is a failure in parsing cookies
-
-  CookieMode* = enum
-    cmNone = "false"
-    cmReadOnly = "true"
-    cmSave = "save"
 
 # Forward declarations
 proc getMapKey(cookie: Cookie): string

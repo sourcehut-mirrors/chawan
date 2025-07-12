@@ -5,12 +5,11 @@ import std/strutils
 import std/tables
 
 import chame/tags
+import config/conftypes
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
 import html/catom
-import html/script
-import types/color
 import types/opt
 import types/url
 import types/winattrs
@@ -39,6 +38,7 @@ type
     attrs: ptr WindowAttributes
     scripting: ScriptingMode
     colorMode: ColorMode
+    headless: HeadlessMode
 
   SelectorHashes = object
     tags: seq[CAtom]
@@ -212,13 +212,14 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
   of cartMedia:
     if atrule.oblock != nil:
       let query = parseMediaQueryList(atrule.prelude, sheet.attrs)
-      if query.applies(sheet.scripting, sheet.colorMode, sheet.attrs):
+      if query.applies(sheet.scripting, sheet.colorMode, sheet.headless,
+          sheet.attrs):
         var ctx = initCSSParser(atrule.oblock.value)
         sheet.addRules(ctx, topLevel = false, base = nil)
 
 proc parseStylesheet*(iq: openArray[char]; base: URL;
     attrs: ptr WindowAttributes; scripting: ScriptingMode;
-    colorMode: ColorMode): CSSStylesheet =
+    colorMode: ColorMode; headless: HeadlessMode): CSSStylesheet =
   let sheet = CSSStylesheet(
     attrs: attrs,
     scripting: scripting,

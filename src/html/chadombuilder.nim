@@ -6,10 +6,10 @@ import std/tables
 import chagashi/charset
 import chame/htmlparser
 import chame/tags
+import config/conftypes
 import html/catom
 import html/dom
 import html/enums
-import html/script
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
