@@ -47,8 +47,6 @@ type
 
   DeprecatedStyleString* = distinct string
 
-  DeprecatedSchemeBool* = distinct bool
-
   ChaPathResolved* = distinct string
 
   HeadlessMode* = enum
@@ -139,7 +137,6 @@ type
   NetworkConfig = object
     maxRedirect* {.jsgetset.}: int32
     maxNetConnections* {.jsgetset.}: int32
-    prependHttps*: DeprecatedSchemeBool
     prependScheme* {.jsgetset.}: string
     proxy* {.jsgetset.}: URL
     defaultHeaders* {.jsgetset.}: Table[string, string]
@@ -394,8 +391,6 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
 proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
-  v: TomlValue; k: string): Err[string]
-proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedSchemeBool;
   v: TomlValue; k: string): Err[string]
 
 proc typeCheck(v: TomlValue; t: TomlValueType; k: string): Err[string] =
@@ -787,16 +782,6 @@ proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
     v: TomlValue; k: string): Err[string] =
   ctx.warnings.add(k & ": stylesheet is deprecated; use user-style instead")
   ctx.parseConfigValue(string(x), v, k)
-
-proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedSchemeBool;
-    v: TomlValue; k: string): Err[string] =
-  var b: bool
-  ?ctx.parseConfigValue(b, v, k)
-  if not b:
-    ctx.warnings.add(k &
-      ": prepend-https is deprecated; use prepend-scheme='' instead")
-  x = DeprecatedSchemeBool(b)
-  ok()
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   warnings: var seq[string]; jsctx: JSContext; name: string;

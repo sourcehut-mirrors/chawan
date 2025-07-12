@@ -69,7 +69,6 @@ paste-cmd = 'xsel -bo'
 max-redirect = 10
 max-net-connections = 12
 prepend-scheme = "https://"
-prepend-https = true # deprecated, kept only for backwards-compatibility
 default-headers = {
 	User-Agent = "chawan",
 	Accept = "text/html, text/*;q=0.5, */*;q=0.4",

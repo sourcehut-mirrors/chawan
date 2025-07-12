@@ -582,14 +582,6 @@ the scheme.</td>
 </tr>
 
 <tr>
-<td>prepend-https</td>
-<td>boolean</td>
-<td>true</td>
-<td>Deprecated: use prepend-scheme instead.<br>
-When set to false, Chawan will act as if prepend-scheme were set to "".</td>
-</tr>
-
-<tr>
 <td>proxy</td>
 <td>URL</td>
 <td>unset</td>
