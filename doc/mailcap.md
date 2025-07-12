@@ -33,7 +33,7 @@ By default, mailcap entries are only executed if the user types `r`
 
 If a capital letter is typed (e.g. press shift and type `R`), then a
 corresponding entry is appended to `external.auto-mailcap` (default:
-`~/.chawan/auto.mailcap`, or `~/.config/chawan/config.toml` with XDG
+`~/.chawan/auto.mailcap`, or `~/.config/chawan/auto.mailcap` with XDG
 basedirs). `(T)ext` and `(S)ave` may also be used to append entries
 corresponding to the other display options.
 

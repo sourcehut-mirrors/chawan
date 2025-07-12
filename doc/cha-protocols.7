@@ -66,10 +66,11 @@ file format to HTML.
 .SS FTP
 Chawan supports FTP passive mode browsing and downloads.
 .PP
-For directory listings, it assumes UNIX output style, and will probably
-break horribly on receiving anything else.
-Otherwise, the directory listing view is identical to the file://
-directory listing.
+Directory listings return the \f[CR]text/x\-dirlist\f[R] content type,
+which is parsed by \f[CR]dirlist2html\f[R] (and also used by the
+\f[CR]file:\f[R] handler).
+This assumes UNIX output style, and will probably break horribly on
+receiving anything else.
 .SS Shell\-based adapters
 Following protocols are simple enough to have adapters implemented as
 shell scripts.
@@ -113,8 +114,8 @@ implemented similarly to the protocols listed above (and thus can also
 be replaced, if the user wishes; see below).
 .PP
 \f[CR]file:\f[R] loads a file from the local filesystem.
-In case of directories, it shows the directory listing like the FTP
-protocol does.
+In case of directories, it shows the directory listing using
+\f[CR]dirlist2html\f[R] like FTP.
 .PP
 \f[CR]man:\f[R], \f[CR]man\-k:\f[R] and \f[CR]man\-l:\f[R] are wrappers
 around the commands \f[CR]man\f[R], \f[CR]man \-k\f[R] and

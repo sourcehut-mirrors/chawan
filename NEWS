@@ -6,9 +6,10 @@ Additions:
   <tim@timculverhouse.com>)
 * new API functions Pager#traverse, Pager#navDirection,
   Pager#revDirection, Buffer#find
+* implement <ol start=..., <li value=...
 
 Changes:
-* different highlighting in monochrome mode
+* improved highlighting in monochrome mode
 * unify binaries that link to OpenSSL in dynamically linked builds too
 
 Fixes:
@@ -17,6 +18,9 @@ Fixes:
 * fix possible crash in CanvasRenderingContext2D#closePath
 * fix mystery miscompilation bug on macOS
 * fix interactive mode when reading from stdin on macOS
+* fix referrer policy handling with referer-from=true
+* fix compilation on OpenBSD + ancient Nim
+* fix crash on hitting C-c on buffers waiting for connection
 
 0.2.0 (2025.06.15)
 

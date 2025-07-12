@@ -91,9 +91,10 @@ format to HTML.
 
 Chawan supports FTP passive mode browsing and downloads.
 
-For directory listings, it assumes UNIX output style, and will probably
-break horribly on receiving anything else. Otherwise, the directory
-listing view is identical to the file:// directory listing.
+Directory listings return the `text/x-dirlist` content type, which is
+parsed by `dirlist2html` (and also used by the `file:` handler).
+This assumes UNIX output style, and will probably break horribly on
+receiving anything else.
 
 ## Shell-based adapters
 
@@ -142,7 +143,7 @@ similarly to the protocols listed above (and thus can also be replaced,
 if the user wishes; see below).
 
 `file:` loads a file from the local filesystem.  In case of directories,
-it shows the directory listing like the FTP protocol does.
+it shows the directory listing using `dirlist2html` like FTP.
 
 `man:`, `man-k:` and `man-l:` are wrappers around the commands `man`,
 `man -k` and `man -l`.  These look up man pages using `/usr/bin/man`

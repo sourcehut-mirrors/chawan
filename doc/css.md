@@ -105,6 +105,15 @@ Following standard pseudo-classes are supported: `:first-child`,
 The standard pseudo-elements `::before`, `::after`, and `::marker` are
 supported.
 
+## Media queries
+
+The `grid`, `hover`, `prefers-color-scheme`, `scripting`, `width`, and
+`height` media features are fully supported.
+
+The `color`, `color-index`, and `monochrome` features are supported, but
+only consider the number of supported text colors (which can differ from
+the number of colors in Sixel/Kitty images).
+
 ## Proprietary extensions
 
 * `text-align` accepts the values `-cha-center`, `-cha-left`, and

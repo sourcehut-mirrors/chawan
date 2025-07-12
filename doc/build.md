@@ -34,7 +34,6 @@ also override them by setting an environment variable with the same name.
   `/usr/local/share/man/man1`, etc.  (Normally you shouldn't have to
   set `MANPREFIX1` or `MANPREFIX5` at all, as these are derived from
   `MANPREFIX`.)
-* `CURLLIBNAME`: Change the name of the libcurl shared object file.
 * `LIBEXECDIR`: Path to your libexec directory; by default, it is
   relative to wherever the binary is placed when it is executed. (i.e.
   after installation it would resolve to `/usr/local/libexec`.)
