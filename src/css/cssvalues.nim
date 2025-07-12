@@ -1492,7 +1492,7 @@ func parseNumber(tok: CSSToken; range: Slice[float32]): Opt[float32] =
       return ok(tok.num)
   return err()
 
-proc makeEntry(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
+proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
   return CSSComputedEntry(et: ceObject, t: t, obj: obj)
 
 proc makeEntry(t: CSSPropertyType; word: CSSValueWord): CSSComputedEntry =

@@ -132,6 +132,7 @@ macro makeStaticAtom =
       satSlot = "slot"
       satSrc = "src"
       satSrcset = "srcset"
+      satStart = "start"
       satStyle = "style"
       satStylesheet = "stylesheet"
       satSvgevents = "svgevents"

@@ -243,10 +243,25 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
       if s.isOk:
         ctx.applyLengthHint(cptWidth, cuCh, s.get)
   of TAG_SELECT:
-    let select = HTMLSelectElement(element)
-    if select.attrb(satMultiple):
+    if element.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)
       ctx.applyLengthHint(cptHeight, cuEm, size)
+  of TAG_OL:
+    if n := element.attrl(satStart):
+      if n > int32.low:
+        let n = n - 1
+        let val = CSSValue(
+          v: cvtCounterSet,
+          counterSet: @[CSSCounterSet(name: satListItem.toAtom(), num: n)]
+        )
+        ctx.applyPresHint(makeEntry(cptCounterReset, val))
+  of TAG_LI:
+    if n := element.attrl(satValue):
+      let val = CSSValue(
+        v: cvtCounterSet,
+        counterSet: @[CSSCounterSet(name: satListItem.toAtom(), num: n)]
+      )
+      ctx.applyPresHint(makeEntry(cptCounterSet, val))
   else: discard
 
 proc applyDeclarations(rules: RuleList; parent, element: Element;
