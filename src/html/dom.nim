@@ -284,7 +284,7 @@ type
     value*: string
 
   Element* = ref object of Node
-    namespaceURI {.jsget.}: CAtom
+    namespaceURI* {.jsget.}: CAtom
     prefix {.jsget.}: CAtom
     internalHover: bool
     selfDepends: set[DependencyType]
@@ -1146,19 +1146,16 @@ func document*(node: Node): Document =
 template document*(element: Element): Document =
   element.internalDocument
 
-func namespace*(element: Element): Namespace =
-  return element.namespaceURI.toNamespace()
-
 func tagTypeNoNS(element: Element): TagType =
   return element.localName.toTagType()
 
-func tagType*(element: Element; namespace = Namespace.HTML): TagType =
-  if element.namespace != namespace:
+func tagType*(element: Element; namespace = satNamespaceHTML): TagType =
+  if element.namespaceURI != namespace:
     return TAG_UNKNOWN
   return element.tagTypeNoNS
 
 proc normalizeAttrQName(element: Element; qualifiedName: CAtom): CAtom =
-  if element.namespace == Namespace.HTML and not element.document.isxml:
+  if element.namespaceURI == satNamespaceHTML and not element.document.isxml:
     return qualifiedName.toLowerAscii()
   return qualifiedName
 
@@ -1725,7 +1722,7 @@ func namedItem(this: HTMLCollection; atom: CAtom): Element {.jsfunc.} =
   this.refreshCollection()
   for it in this.snapshot:
     let it = Element(it)
-    if it.id == atom or it.namespace == Namespace.HTML and it.name == atom:
+    if it.id == atom or it.namespaceURI == satNamespaceHTML and it.name == atom:
       return it
   return nil
 
@@ -1749,7 +1746,7 @@ proc names(ctx: JSContext; collection: HTMLCollection): JSPropertyEnumList
     let element = collection.item(u)
     if element.id != CAtomNull and element.id != satUempty.toAtom():
       ids.incl(element.id)
-    if element.namespace == Namespace.HTML:
+    if element.namespaceURI == satNamespaceHTML:
       ids.incl(element.name)
   for id in ids:
     list.add($id)
@@ -1765,7 +1762,7 @@ proc namedItem(ctx: JSContext; this: HTMLFormControlsCollection; name: CAtom):
         return false
       let element = Element(node)
       return element.id == name or
-        element.namespace == Namespace.HTML and element.name == name,
+        element.namespaceURI == satNamespaceHTML and element.name == name,
     islive = true,
     childonly = false
   )
@@ -2085,7 +2082,7 @@ proc getter(ctx: JSContext; map: NamedNodeMap; atom: JSAtom): Opt[Attr]
 
 func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
     {.jspropnames.} =
-  let len = if map.element.namespace == Namespace.HTML:
+  let len = if map.element.namespaceURI == satNamespaceHTML:
     uint32(map.attrlist.len + map.element.attrs.len)
   else:
     uint32(map.attrlist.len)
@@ -2095,7 +2092,7 @@ func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
   let element = map.element
   for attr in element.attrs:
     let name = attr.qualifiedName
-    if element.namespace == Namespace.HTML and name.toLowerAscii() != name:
+    if element.namespaceURI == satNamespaceHTML and name.toLowerAscii() != name:
       continue
     list.add($name)
   return list
@@ -2108,7 +2105,7 @@ func tagName(element: Element): string {.jsfget.} =
   if result.len > 0:
     result &= ':'
   result &= $element.localName
-  if element.namespace == Namespace.HTML:
+  if element.namespaceURI == satNamespaceHTML:
     result = result.toUpperAscii()
 
 func nodeName(node: Node): string {.jsfget.} =
@@ -2411,7 +2408,7 @@ proc getElementsByTagNameImpl(root: Node; tagName: string): HTMLCollection =
     func(node: Node): bool =
       if node of Element:
         let element = Element(node)
-        if element.namespace == Namespace.HTML:
+        if element.namespaceURI == satNamespaceHTML:
           return element.localName == localNameLower
         return element.localName == localName
       return false,
@@ -3086,7 +3083,7 @@ func text(option: HTMLOptionElement): string {.jsfget.} =
   for child in option.descendants:
     let parent = child.parentElement
     if child of Text and (parent.tagTypeNoNS != TAG_SCRIPT or
-        parent.namespace notin {Namespace.HTML, Namespace.SVG}):
+        parent.namespaceURI notin [satNamespaceHTML, satNamespaceSVG]):
       s &= Text(child).data
   return s.stripAndCollapse()
 
@@ -4722,7 +4719,7 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32) =
 proc setAttribute(element: Element; qualifiedName: string; value: sink string):
     Err[DOMException] {.jsfunc.} =
   ?qualifiedName.validateName()
-  let qualifiedName = if element.namespace == Namespace.HTML and
+  let qualifiedName = if element.namespaceURI == satNamespaceHTML and
       not element.document.isxml:
     qualifiedName.toAtomLower()
   else:
@@ -5008,7 +5005,7 @@ func checkParentValidity(parent: Node): Err[DOMException] =
 
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
-func preInsertionValidity*(parent, node, before: Node): Err[DOMException] =
+func preInsertionValidity(parent, node, before: Node): Err[DOMException] =
   ?checkParentValidity(parent)
   if node.isHostIncludingInclusiveAncestor(parent):
     return errDOMException("Parent must be an ancestor",
@@ -5944,7 +5941,7 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
       return false
     let node = Element(node)
     let other = Element(other)
-    if node.namespace != other.namespace or node.prefix != other.prefix or
+    if node.namespaceURI != other.namespaceURI or node.prefix != other.prefix or
         node.localName != other.localName or node.attrs.len != other.attrs.len:
       return false
     for i, attr in node.attrs.mypairs:

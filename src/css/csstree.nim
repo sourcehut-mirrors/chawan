@@ -453,7 +453,7 @@ proc addChildren(frame: var TreeFrame) =
     frame.addOptionChildren(option)
   of TAG_A:
     frame.addAnchorChildren()
-  elif frame.parent.tagType(Namespace.SVG) == TAG_SVG:
+  elif frame.parent.tagType(satNamespaceSVG) == TAG_SVG:
     frame.addImage(SVGSVGElement(frame.parent).bitmap)
   else:
     frame.addElementChildren()

@@ -339,6 +339,9 @@ proc `==`*(a: StaticAtom; b: CAtom): bool =
 proc contains*(a: openArray[CAtom]; b: StaticAtom): bool =
   b.toAtom() in a
 
+proc contains*(a: openArray[StaticAtom]; b: CAtom): bool =
+  b.toStaticAtom() in a
+
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): Opt[void] =
   if JS_IsNull(val):
     res = CAtomNull

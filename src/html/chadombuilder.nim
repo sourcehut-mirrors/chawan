@@ -123,7 +123,7 @@ proc getLocalNameImpl(builder: ChaDOMBuilder; handle: Node): CAtom =
   return Element(handle).localName
 
 proc getNamespaceImpl(builder: ChaDOMBuilder; handle: Node): Namespace =
-  return Element(handle).namespace
+  return Element(handle).namespaceURI.toNamespace()
 
 proc createHTMLElementImpl(builder: ChaDOMBuilder): Node =
   return builder.document.newHTMLElement(TAG_HTML)
