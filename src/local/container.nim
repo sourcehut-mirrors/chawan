@@ -1957,9 +1957,11 @@ proc drawLines*(container: Container; display: var FixedGrid;
       for i in area:
         if i - startw >= display.width:
           break
-        var hlformat = display[dls + i - startw].format
-        hlformat.bgcolor = hlcolor
-        display[dls + i - startw].format = hlformat
+        let n = dls + i - startw
+        if hlcolor != defaultColor:
+          display[n].format.bgcolor = hlcolor
+        else:
+          display[n].format.flags.incl(ffReverse)
     inc by
 
 proc highlightMarks*(container: Container; display: var FixedGrid;
@@ -1969,9 +1971,11 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
         mark.y in container.fromy ..< container.fromy + display.height:
       let x = mark.x - container.fromx
       let y = mark.y - container.fromy
-      var hlformat = display[y * display.width + x].format
-      hlformat.bgcolor = hlcolor
-      display[y * display.width + x].format = hlformat
+      let n = y * display.width + x
+      if hlcolor != defaultColor:
+        display[n].format.bgcolor = hlcolor
+      else:
+        display[n].format.flags.incl(ffReverse)
 
 func findCachedImage*(container: Container; image: PosBitmap;
     offx, erry, dispw: int): CachedImage =

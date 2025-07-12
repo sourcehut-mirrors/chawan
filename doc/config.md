@@ -688,8 +688,10 @@ overrides the number of sixel color registers reported by the terminal.
 <td>highlight-color</td>
 <td>color</td>
 <td>"cyan"</td>
-<td>Set the highlight color. Both hex values and CSS color names are
-accepted.</td>
+<td>Set the highlight color for incremental search and marks.  Both hex
+values and CSS color names are accepted.<br>
+In monochrome mode, this setting is ignored; instead, reverse video is
+used.</td>
 </tr>
 
 <tr>
