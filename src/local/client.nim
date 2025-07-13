@@ -173,7 +173,8 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     timeouts: pager.timeouts,
     settings: EnvironmentSettings(
       scripting: smApp,
-      attrsp: addr pager.term.attrs
+      attrsp: addr pager.term.attrs,
+      scriptAttrsp: addr pager.term.attrs
     )
   )
   jsctx.setGlobal(client)
