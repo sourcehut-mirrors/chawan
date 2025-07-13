@@ -2203,6 +2203,9 @@ func hasChildExcept(node: Node; nodeType: type; ex: Node): bool =
       return true
   return false
 
+func isPreviousSiblingOf*(this, other: Node): bool =
+  return this.parentNode == other.parentNode and this.index <= other.index
+
 func previousSibling*(node: Node): Node {.jsfget.} =
   let i = node.index - 1
   if node.parentNode == nil or i < 0:

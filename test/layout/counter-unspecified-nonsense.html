@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<!-- Nonsensical and entirely unspecified behavior, but necessary for
+     compatibility with others.  For now, we imitate Gecko. -->
+
+<style>
+x-ol, y-ol { display: block; margin-left: 4ch }
+x-li, y-li { display: list-item }
+
+x-ol { counter-reset: list-item; counter-set: list-item  }
+x-li { counter-increment: list-item }
+x-li::marker { content: counter(list-item) ". " }
+
+y-ol { counter-reset: test }
+y-li { counter-increment: test }
+y-li::marker { content: counter(test) ". " }
+</style>
+
+<p>
+<ol>
+<li>A</li>
+<ol>
+        <li>A1</li>
+        <li>A2</li>
+</ol>
+<li>B</li>
+</ol>
+
+<p>
+<x-ol>
+<x-li>A</x-li>
+<x-ol>
+        <x-li>A1</x-li>
+        <x-li>A2</x-li>
+</x-ol>
+<x-li>B</x-li>
+</x-ol>
+
+<p>
+<y-ol>
+<y-li>A</y-li>
+<y-ol>
+        <y-li>A1</y-li>
+        <y-li>A2</y-li>
+</y-ol>
+<y-li>B</y-li>
+</y-ol>

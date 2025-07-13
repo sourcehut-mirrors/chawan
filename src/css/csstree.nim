@@ -140,9 +140,10 @@ proc resetCounter(ctx: var TreeContext; name: CAtom; n: int32;
     element: Element) =
   var found = false
   for counter in ctx.counters.mritems:
-    if counter.name == name and
-        counter.element.parentNode == element.parentNode and
-        counter.element.elIndex <= element.elIndex:
+    if counter.name == name and counter.element.isPreviousSiblingOf(element):
+      if name == satListItem:
+        if counter.element != element:
+          continue
       counter.element = element
       counter.n = n
       found = true
@@ -520,17 +521,34 @@ proc buildInnerBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox):
     last = childBox
   return box
 
-proc applyCounters(ctx: var TreeContext; styledNode: StyledNode) =
+proc applyCounters(ctx: var TreeContext; styledNode: StyledNode;
+    firstSetCounterIdx: var int) =
   for counter in styledNode.computed{"counter-reset"}:
     ctx.resetCounter(counter.name, counter.num, styledNode.element)
+  firstSetCounterIdx = ctx.counters.len
   var liSeen = false
   for counter in styledNode.computed{"counter-increment"}:
-    liSeen = counter.name == satListItem.toAtom()
+    liSeen = liSeen or counter.name == satListItem
     ctx.incCounter(counter.name, counter.num, styledNode.element)
   if not liSeen and styledNode.computed{"display"} == DisplayListItem:
     ctx.incCounter(satListItem.toAtom(), 1, styledNode.element)
   for counter in styledNode.computed{"counter-set"}:
     ctx.setCounter(counter.name, counter.num, styledNode.element)
+
+proc resetCounters(ctx: var TreeContext; element: Element;
+    countersLen, firstElementIdx, firstSetCounterIdx: int) =
+  ctx.counters.setLen(countersLen)
+  # Special case list-item, because the spec is broken.
+  # In particular, we want list-item counters introduced by
+  # counter-reset to be "narrow", i.e. delete them after the element
+  # goes out of scope so that an OL nested in another OL does not shadow
+  # the counter of the parent OL.
+  # Note that this does not apply to list-items introduced by
+  # counter-increment/counter-set, so we do not search those.
+  for i in countdown(firstSetCounterIdx - 1, firstElementIdx):
+    if ctx.counters[i].name == satListItem:
+      ctx.counters.delete(i)
+      break
 
 proc pushStackItem(ctx: var TreeContext; styledNode: StyledNode):
     StackItem =
@@ -550,7 +568,9 @@ proc popStackItem(ctx: var TreeContext) =
 
 proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     forceZ: bool): CSSBox =
-  ctx.applyCounters(styledNode)
+  let oldCountersLen = ctx.counters.len
+  var firstSetCounterIdx: int
+  ctx.applyCounters(styledNode, firstSetCounterIdx)
   let countersLen = ctx.counters.len
   var frame = ctx.initTreeFrame(styledNode.element, styledNode.computed)
   var stackItem: StackItem = nil
@@ -561,7 +581,8 @@ proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     stackItem = ctx.pushStackItem(styledNode)
   frame.buildChildren(styledNode)
   let box = ctx.buildInnerBox(frame, cached)
-  ctx.counters.setLen(countersLen)
+  ctx.resetCounters(styledNode.element, countersLen, oldCountersLen,
+    firstSetCounterIdx)
   if stackItem != nil:
     if box of InlineBlockBox:
       stackItem.box = box.firstChild
