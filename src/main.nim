@@ -223,8 +223,8 @@ proc initConfig(ctx: ParamParseContext; config: Config;
     ps.sclose()
   for opt in ctx.opts:
     ?config.parseConfig(cwd, opt, warnings, jsctx, "<input>", laxnames = true)
-  config.css.stylesheet &= ctx.stylesheet
   ?jsctx.initCommands(config)
+  string(config.buffer.userStyle) &= ctx.stylesheet
   isCJKAmbiguous = config.display.doubleWidthAmbiguous
   return ok()
 

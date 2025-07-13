@@ -39,7 +39,6 @@ the search path accommodates XDG basedirs as well:
 * [Protocol](#protocol)
 * [Omnirule](#omnirule)
 * [Siteconf](#siteconf)
-* [Stylesheets](#stylesheets)
 * [Keybindings](#keybindings)
    * [Pager actions](#pager-actions)
    * [Line-editing actions](#line-editing-actions)
@@ -1009,17 +1008,6 @@ Referer header.
 </tr>
 
 <tr>
-<td>stylesheet</td>
-<td>CSS stylesheet</td>
-<td>n/a</td>
-<td>Specify an additional user-stylesheet for this site.<br>
-Other user-stylesheets are concatenated with this to get the final user
-stylesheet.<br>
-**Note:** this setting is deprecated.  Please use `user-style` instead.
-</td>
-</tr>
-
-<tr>
 <td>proxy</td>
 <td>URL</td>
 <td>`network.proxy`</td>
@@ -1089,14 +1077,6 @@ Please refer to `buffer.user-style` for details.</td>
 </tr>
 
 </table>
-
-## Stylesheets
-
-The `[css]` section is deprecated, and will be removed in the future.
-Please use `buffer.user-style` instead.
-
-(`user-style` accepts inline styles by default, but can also include
-external stylesheets using `@import 'file.css';`.)
 
 ## Keybindings
 

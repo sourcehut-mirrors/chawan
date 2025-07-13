@@ -1781,7 +1781,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   let host = url.host
   let ctx = pager.jsctx
   result = BufferConfig(
-    userStyle: pager.config.css.stylesheet & '\n',
+    userStyle: string(pager.config.buffer.userStyle) & '\n',
     refererFrom: pager.config.buffer.refererFrom,
     scripting: pager.config.buffer.scripting,
     charsets: pager.config.encoding.documentCharset,
@@ -1796,7 +1796,6 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     markLinks: pager.config.buffer.markLinks,
     colorMode: pager.term.colorMode
   )
-  result.userStyle &= string(pager.config.buffer.userStyle) & '\n'
   loaderConfig = LoaderClientConfig(
     originURL: url,
     defaultHeaders: pager.config.network.defaultHeaders,
@@ -1855,8 +1854,6 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       result.images = sc.images.get
     if sc.styling.isSome:
       result.styling = sc.styling.get
-    if sc.stylesheet.isSome:
-      result.userStyle &= string(sc.stylesheet.get) & '\n'
     if sc.proxy.isSome:
       loaderConfig.proxy = sc.proxy.get
     if sc.defaultHeaders != nil:

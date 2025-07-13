@@ -36,8 +36,6 @@ import utils/twtstr
 type
   StyleString* = distinct string
 
-  DeprecatedStyleString* = distinct string
-
   ChaPathResolved* = distinct string
 
   ActionMap = object
@@ -54,7 +52,6 @@ type
     host*: Option[Regex]
     rewriteUrl*: Option[JSValueFunction]
     shareCookieJar*: Option[string]
-    stylesheet*: Option[DeprecatedStyleString]
     proxy*: Option[URL]
     defaultHeaders*: Headers
     cookie*: Option[CookieMode]
@@ -79,9 +76,6 @@ type
     startupScript* {.jsgetset.}: string
     headless* {.jsgetset.}: HeadlessMode
     consoleBuffer* {.jsgetset.}: bool
-
-  CSSConfig = object
-    stylesheet* {.jsgetset.}: string
 
   SearchConfig = object
     wrap* {.jsgetset.}: bool
@@ -176,7 +170,6 @@ type
     start* {.jsget.}: StartConfig
     buffer* {.jsget.}: BufferSectionConfig
     search* {.jsget.}: SearchConfig
-    css* {.jsget.}: CSSConfig
     encoding* {.jsget.}: EncodingConfig
     external* {.jsget.}: ExternalConfig
     network* {.jsget.}: NetworkConfig
@@ -192,7 +185,6 @@ type
 
 jsDestructor(ActionMap)
 jsDestructor(StartConfig)
-jsDestructor(CSSConfig)
 jsDestructor(SearchConfig)
 jsDestructor(EncodingConfig)
 jsDestructor(ExternalConfig)
@@ -300,14 +292,6 @@ func names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
     list.add(key)
   return list
 
-proc readUserStylesheet(outs: var string; dir, file: string): Err[string] =
-  let x = ?ChaPath(file).unquote(dir)
-  let ps = newPosixStream(x)
-  if ps != nil:
-    outs &= ps.readAll()
-    ps.sclose()
-  ok()
-
 type ConfigParser = object
   jsctx: JSContext
   config: Config
@@ -346,8 +330,6 @@ proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var ActionMap; v: TomlValue;
   k: string): Err[string]
-proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
-  k: string): Err[string]
 proc parseConfigValue[U; V](ctx: var ConfigParser; x: var Table[U, V];
   v: TomlValue; k: string): Err[string]
 proc parseConfigValue[U; V](ctx: var ConfigParser; x: var OrderedTable[U, V];
@@ -376,8 +358,6 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
   k: string): Err[string]
-proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
-  v: TomlValue; k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var Headers; v: TomlValue;
   k: string): Err[string]
 
@@ -606,24 +586,6 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
       x.incl(xx)
   ok()
 
-proc parseConfigValue(ctx: var ConfigParser; x: var CSSConfig; v: TomlValue;
-    k: string): Err[string] =
-  ?typeCheck(v, tvtTable, k)
-  ctx.warnings.add("[css] is deprecated; use buffer.user-style instead")
-  var vv: TomlValue
-  if v.pop("include", vv):
-    ?typeCheck(vv, {tvtString, tvtArray}, k & ".include")
-    if vv.t == tvtString:
-      ?x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
-    else: # array
-      for child in vv.a:
-        ?x.stylesheet.readUserStylesheet(ctx.dir, vv.s)
-  if v.pop("inline", vv):
-    ?typeCheck(vv, tvtString, k & ".inline")
-    x.stylesheet &= vv.s
-  ctx.warnValuesLeft(v, k & '.')
-  ok()
-
 proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
@@ -776,11 +738,6 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
   x = StyleString(move(y))
   ok()
 
-proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
-    v: TomlValue; k: string): Err[string] =
-  ctx.warnings.add(k & ": stylesheet is deprecated; use user-style instead")
-  ctx.parseConfigValue(string(x), v, k)
-
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   warnings: var seq[string]; jsctx: JSContext; name: string;
   laxnames = false): Err[string]
@@ -897,7 +854,6 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
 proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(ActionMap)
   ctx.registerType(StartConfig)
-  ctx.registerType(CSSConfig)
   ctx.registerType(SearchConfig)
   ctx.registerType(EncodingConfig)
   ctx.registerType(ExternalConfig)
