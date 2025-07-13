@@ -91,10 +91,6 @@ type
     bmp: NetworkBitmap
 
   Window* = ref object of EventTarget
-    attrsp*: ptr WindowAttributes
-    # In app mode, attrsp == scriptAttrsp.
-    # In lite mode, scriptAttrsp == addr dummyAttrs.
-    scriptAttrsp*: ptr WindowAttributes
     internalConsole*: Console
     navigator* {.jsget.}: Navigator
     screen* {.jsget.}: Screen
@@ -111,16 +107,11 @@ type
     timeouts*: TimeoutState
     navigate*: proc(url: URL)
     importMapsAllowed*: bool
-    colorMode*: ColorMode
-    headless*: HeadlessMode
+    inMicrotaskCheckpoint: bool
     pendingResources*: seq[EmptyPromise]
     pendingImages*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
     svgCache*: Table[string, SVGSVGElement]
-    images*: bool
-    styling*: bool
-    autofocus*: bool
-    inMicrotaskCheckpoint: bool
     # ID of the next image
     imageId: int
     # list of streams that must be closed for canvas rendering on load
@@ -2638,8 +2629,7 @@ func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
 
 proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL):
     CSSStylesheet =
-  s.parseStylesheet(nil, window.attrsp, window.settings.scripting,
-    window.colorMode, window.headless)
+  s.parseStylesheet(nil, addr window.settings)
 
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
@@ -2663,7 +2653,8 @@ proc applyUserSheet*(document: Document; user: string) =
 #TODO this should be cached & called incrementally
 proc applyAuthorSheets*(document: Document) =
   let window = document.window
-  if window != nil and window.styling and document.documentElement != nil:
+  if window != nil and window.settings.styling and
+      document.documentElement != nil:
     document.authorSheets = @[]
     for elem in document.documentElement.descendants:
       if elem of HTMLStyleElement:
@@ -2762,12 +2753,12 @@ proc setFocus*(document: Document; element: Element) =
 
 proc focus(ctx: JSContext; element: Element) {.jsfunc.} =
   let window = ctx.getWindow()
-  if window != nil and window.autofocus:
+  if window != nil and window.settings.autofocus:
     element.document.setFocus(element)
 
 proc blur(ctx: JSContext; element: Element) {.jsfunc.} =
   let window = ctx.getWindow()
-  if window != nil and window.autofocus:
+  if window != nil and window.settings.autofocus:
     if element.document.focus == element:
       element.document.setFocus(nil)
 
@@ -4156,7 +4147,7 @@ func bottom(rect: DOMRect): float64 {.jsfget.} =
   return max(rect.y, rect.y + rect.height)
 
 proc corsFetch(window: Window; input: Request): FetchPromise =
-  if not window.images and input.url.scheme.startsWith("img-codec+"):
+  if not window.settings.images and input.url.scheme.startsWith("img-codec+"):
     return newResolvedPromise(JSResult[Response].err(newFetchTypeError()))
   return window.loader.fetch(input)
 
@@ -4197,7 +4188,8 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
 # see https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
 #TODO make this somewhat compliant with ^this
 proc loadResource(window: Window; link: HTMLLinkElement) =
-  if not window.styling or not link.relList.containsIgnoreCase(satStylesheet) or
+  if not window.settings.styling or
+      not link.relList.containsIgnoreCase(satStylesheet) or
       link.fetchStarted or
       not link.enabled.get(not link.relList.containsIgnoreCase(satAlternate)):
     return
@@ -4212,9 +4204,8 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     var applies = true
     if media != "":
       let cvals = parseComponentValues(media)
-      let media = parseMediaQueryList(cvals, window.attrsp)
-      applies = media.applies(window.settings.scripting, window.colorMode,
-        window.headless, window.attrsp)
+      let media = parseMediaQueryList(cvals, window.settings.attrsp)
+      applies = media.applies(addr window.settings)
     link.sheets.setLen(0)
     let p = window.loadSheet(link, url).then(proc(sheet: CSSStylesheet) =
       # Note: we intentionally load all sheets first and *then* check
@@ -4232,7 +4223,7 @@ proc getImageId(window: Window): int =
   inc window.imageId
 
 proc loadResource*(window: Window; image: HTMLImageElement) =
-  if not window.images:
+  if not window.settings.images:
     if image.bitmap != nil:
       image.invalidate()
       image.bitmap = nil
@@ -4343,7 +4334,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
     window.pendingImages.add(p)
 
 proc loadResource*(window: Window; svg: SVGSVGElement) =
-  if not window.images:
+  if not window.settings.images:
     if svg.bitmap != nil:
       svg.invalidate()
       svg.bitmap = nil

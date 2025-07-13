@@ -4,6 +4,7 @@ import monoucha/quickjs
 import monoucha/tojs
 import types/referrer
 import types/url
+import types/winattrs
 import utils/twtstr
 
 type
@@ -46,9 +47,18 @@ type
 
 type
   EnvironmentSettings* = ref object
-    scripting*: ScriptingMode
+    attrsp*: ptr WindowAttributes
+    # In app mode, attrsp == scriptAttrsp.
+    # In lite mode, scriptAttrsp == addr dummyAttrs.
+    scriptAttrsp*: ptr WindowAttributes
     moduleMap*: ModuleMap
     origin*: Origin
+    scripting*: ScriptingMode
+    colorMode*: ColorMode
+    headless*: HeadlessMode
+    images*: bool
+    styling*: bool
+    autofocus*: bool
 
   Script* = ref object
     #TODO setings

@@ -1779,7 +1779,7 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
 
 proc toggleImages0(bc: BufferContext): bool =
   bc.config.images = not bc.config.images
-  bc.window.images = bc.config.images
+  bc.window.settings.images = bc.config.images
   bc.window.svgCache.clear()
   for element in bc.document.descendants:
     if element of HTMLImageElement:

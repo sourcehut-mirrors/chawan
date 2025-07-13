@@ -5,14 +5,13 @@ import std/strutils
 import std/tables
 
 import chame/tags
-import config/conftypes
 import css/cssparser
 import css/cssvalues
 import css/mediaquery
 import html/catom
+import html/script
 import types/opt
 import types/url
-import types/winattrs
 
 type
   CSSRuleDef* = ref object
@@ -35,10 +34,7 @@ type
     generalList*: seq[CSSRuleDef]
     importList*: seq[URL]
     len: int
-    attrs: ptr WindowAttributes
-    scripting: ScriptingMode
-    colorMode: ColorMode
-    headless: HeadlessMode
+    settings: ptr EnvironmentSettings
 
   SelectorHashes = object
     tags: seq[CAtom]
@@ -182,12 +178,12 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
         if decl.important:
           let olen = ruleDef.importantVals.len
           if ruleDef.importantVals.parseComputedValues(decl.name, decl.value,
-              sheet.attrs[]).isErr:
+              sheet.settings.attrsp[]).isErr:
             ruleDef.importantVals.setLen(olen)
         else:
           let olen = ruleDef.normalVals.len
           if ruleDef.normalVals.parseComputedValues(decl.name, decl.value,
-              sheet.attrs[]).isErr:
+              sheet.settings.attrsp[]).isErr:
             ruleDef.normalVals.setLen(olen)
     sheet.add(ruleDef)
     inc sheet.len
@@ -211,20 +207,14 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
               sheet.importList.add(url.get)
   of cartMedia:
     if atrule.oblock != nil:
-      let query = parseMediaQueryList(atrule.prelude, sheet.attrs)
-      if query.applies(sheet.scripting, sheet.colorMode, sheet.headless,
-          sheet.attrs):
+      let query = parseMediaQueryList(atrule.prelude, sheet.settings.attrsp)
+      if query.applies(sheet.settings):
         var ctx = initCSSParser(atrule.oblock.value)
         sheet.addRules(ctx, topLevel = false, base = nil)
 
 proc parseStylesheet*(iq: openArray[char]; base: URL;
-    attrs: ptr WindowAttributes; scripting: ScriptingMode;
-    colorMode: ColorMode; headless: HeadlessMode): CSSStylesheet =
-  let sheet = CSSStylesheet(
-    attrs: attrs,
-    scripting: scripting,
-    colorMode: colorMode
-  )
+    settings: ptr EnvironmentSettings): CSSStylesheet =
+  let sheet = CSSStylesheet(settings: settings)
   var ctx = initCSSParser(iq)
   sheet.addRules(ctx, topLevel = true, base)
   return sheet

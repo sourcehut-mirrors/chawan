@@ -163,16 +163,19 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
   let jsrt = JS_GetRuntime(jsctx)
   let clientPid = getCurrentProcessId()
   let loader = newFileLoader(clientPid, loaderStream)
+  let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid)
   let client = Client(
     jsrt: jsrt,
     jsctx: jsctx,
     loader: loader,
     crypto: Crypto(urandom: urandom),
-    pager: newPager(config, forkserver, jsctx, warnings, loader, loaderPid),
-    settings: EnvironmentSettings(scripting: smApp)
+    pager: pager,
+    timeouts: pager.timeouts,
+    settings: EnvironmentSettings(
+      scripting: smApp,
+      attrsp: addr pager.term.attrs
+    )
   )
-  client.attrsp = addr client.pager.term.attrs
-  client.timeouts = client.pager.timeouts
   jsctx.setGlobal(client)
   let global = JS_GetGlobalObject(jsctx)
   doAssert jsctx.definePropertyE(global, "cmd", config.cmd.jsObj) !=

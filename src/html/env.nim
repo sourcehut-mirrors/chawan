@@ -93,15 +93,11 @@ proc getter(mimeTypeArray: var MimeTypeArray; atom: JSAtom): JSValue
 # These are fingerprinting vectors; only app mode gets the real values.
 proc availWidth(ctx: JSContext; screen: var Screen): int {.jsfget.} =
   let window = ctx.getWindow()
-  if window.settings.scripting == smApp:
-    return window.attrsp.widthPx
-  return 80 * 9
+  return window.settings.scriptAttrsp.widthPx
 
 proc availHeight(ctx: JSContext; screen: var Screen): int {.jsfget.} =
   let window = ctx.getWindow()
-  if window.settings.scripting == smApp:
-    return window.attrsp.heightPx
-  return 24 * 18
+  return window.settings.scriptAttrsp.heightPx
 
 proc width(ctx: JSContext; screen: var Screen): int {.jsfget.} =
   return ctx.availWidth(screen)
@@ -376,10 +372,9 @@ jsDestructor(MediaQueryList)
 
 proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
   let cvals = parseComponentValues(s)
-  let mqlist = parseMediaQueryList(cvals, window.scriptAttrsp)
+  let mqlist = parseMediaQueryList(cvals, window.settings.scriptAttrsp)
   return MediaQueryList(
-    matches: mqlist.applies(window.settings.scripting, window.colorMode,
-      window.headless, window.scriptAttrsp),
+    matches: mqlist.applies(addr window.settings),
     media: $mqlist
   )
 
@@ -474,9 +469,9 @@ proc addScripting*(window: Window) =
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   window.performance = newPerformance(window.settings.scripting)
   if window.settings.scripting == smApp:
-    window.scriptAttrsp = window.attrsp
+    window.settings.scriptAttrsp = window.settings.attrsp
   else:
-    window.scriptAttrsp = unsafeAddr dummyAttrs
+    window.settings.scriptAttrsp = unsafeAddr dummyAttrs
   let (eventCID, eventTargetCID) = ctx.addWindowModule()
   ctx.setGlobal(window)
   ctx.addDOMExceptionModule()
@@ -500,23 +495,23 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     loader: FileLoader; url: URL; urandom: PosixStream;
     imageTypes: Table[string, string]; userAgent, referrer: string): Window =
   let window = Window(
-    attrsp: attrsp,
     internalConsole: newConsole(cast[ChaFile](stderr)),
     navigator: Navigator(),
     loader: loader,
-    images: images,
-    styling: styling,
     settings: EnvironmentSettings(
+      attrsp: attrsp,
+      styling: styling,
       scripting: scripting,
-      origin: url.origin
+      origin: url.origin,
+      images: images,
+      autofocus: autofocus,
+      colorMode: colorMode,
+      headless: headless
     ),
     crypto: Crypto(urandom: urandom),
     imageTypes: imageTypes,
     userAgent: userAgent,
-    referrer: referrer,
-    autofocus: autofocus,
-    colorMode: colorMode,
-    headless: headless
+    referrer: referrer
   )
   window.location = window.newLocation()
   if scripting != smFalse:

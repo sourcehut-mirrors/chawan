@@ -5,6 +5,7 @@ import std/options
 import config/conftypes
 import css/cssparser
 import css/cssvalues
+import html/script
 import types/opt
 import types/winattrs
 import utils/twtstr
@@ -404,11 +405,7 @@ proc parseMediaQueryList*(toks: seq[CSSToken]; attrs: ptr WindowAttributes):
       result.add(MediaQuery(t: mctNot, n: all))
 
 type
-  MediaApplyContext = object
-    scripting: ScriptingMode
-    colorMode: ColorMode
-    headless: HeadlessMode
-    attrsp: ptr WindowAttributes
+  MediaApplyContext = ptr EnvironmentSettings
 
 func appliesLR(feature: MediaFeature; n: float32): bool =
   let a = feature.lengthrange.s.a
@@ -443,28 +440,16 @@ func applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
   of mftScripting:
     case feature.ms
     of msNone: return ctx.scripting == smFalse
-    of msInitialOnly:
-      return ctx.scripting != smFalse and ctx.headless == hmDump
-    of msEnabled:
-      return ctx.scripting != smFalse and ctx.headless != hmDump
+    of msInitialOnly: return ctx.scripting != smFalse and ctx.headless == hmDump
+    of msEnabled: return ctx.scripting != smFalse and ctx.headless != hmDump
 
 func applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
   case mq.t
-  of mctMedia:
-    case mq.media
-    of mtAll: return true
-    of mtPrint: return false
-    of mtScreen: return true
-    of mtSpeech: return false
-    of mtTty: return true
-  of mctNot:
-    return not ctx.applies(mq.n)
-  of mctAnd:
-    return ctx.applies(mq.left) and ctx.applies(mq.right)
-  of mctOr:
-    return ctx.applies(mq.left) or ctx.applies(mq.right)
-  of mctFeature:
-    return ctx.applies(mq.feature)
+  of mctMedia: return mq.media in {mtAll, mtScreen, mtTty}
+  of mctNot: return not ctx.applies(mq.n)
+  of mctAnd: return ctx.applies(mq.left) and ctx.applies(mq.right)
+  of mctOr: return ctx.applies(mq.left) or ctx.applies(mq.right)
+  of mctFeature: return ctx.applies(mq.feature)
 
 func applies(ctx: MediaApplyContext; mqlist: seq[MediaQuery]): bool =
   for mq in mqlist:
@@ -472,15 +457,7 @@ func applies(ctx: MediaApplyContext; mqlist: seq[MediaQuery]): bool =
       return true
   return false
 
-func applies*(mqlist: seq[MediaQuery]; scripting: ScriptingMode;
-    colorMode: ColorMode; headless: HeadlessMode;
-    attrsp: ptr WindowAttributes): bool =
-  let ctx = MediaApplyContext(
-    scripting: scripting,
-    colorMode: colorMode,
-    headless: headless,
-    attrsp: attrsp
-  )
+func applies*(mqlist: seq[MediaQuery]; ctx: MediaApplyContext): bool =
   return ctx.applies(mqlist)
 
 {.pop.} # raises: []

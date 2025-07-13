@@ -122,7 +122,8 @@ proc resolveVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
       entry.t = t # must override, same var can be used for different props
       return ok(entry)
   var entries: seq[CSSComputedEntry] = @[]
-  if entries.parseComputedValues($t, cvar.toks, ctx.window.attrsp[]).isOk:
+  if entries.parseComputedValues($t, cvar.toks,
+      ctx.window.settings.attrsp[]).isOk:
     if entries[0].et == ceVar:
       if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
         ctx.varsSeen.clear()
@@ -189,7 +190,7 @@ proc applyColorHint(ctx: var ApplyValueContext; p: CSSPropertyType; s: string) =
 
 proc applyLengthHint(ctx: var ApplyValueContext; p: CSSPropertyType;
     unit: CSSUnit; u: uint32) =
-  let length = resolveLength(unit, float32(u), ctx.window.attrsp[])
+  let length = resolveLength(unit, float32(u), ctx.window.settings.attrsp[])
   ctx.applyPresHint(makeEntry(p, length))
 
 proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
@@ -350,10 +351,11 @@ proc applyStyle*(element: Element) =
   for sheet in document.authorSheets:
     map.calcRules(element, sheet, coAuthor, depends)
   let style = element.cachedStyle
-  if window.styling and style != nil:
+  if window.settings.styling and style != nil:
     for decl in style.decls:
       #TODO variables
-      let vals = parseComputedValues(decl.name, decl.value, window.attrsp[])
+      let vals = parseComputedValues(decl.name, decl.value,
+        window.settings.attrsp[])
       if decl.important:
         map[peNone][coAuthor].important.add(vals)
       else:
