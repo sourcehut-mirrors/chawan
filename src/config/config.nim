@@ -56,7 +56,7 @@ type
     shareCookieJar*: Option[string]
     stylesheet*: Option[DeprecatedStyleString]
     proxy*: Option[URL]
-    defaultHeaders*: TableRef[string, string]
+    defaultHeaders*: Headers
     cookie*: Option[CookieMode]
     refererFrom*: Option[bool]
     scripting*: Option[ScriptingMode]
@@ -125,7 +125,7 @@ type
     maxNetConnections* {.jsgetset.}: int32
     prependScheme* {.jsgetset.}: string
     proxy* {.jsgetset.}: URL
-    defaultHeaders* {.jsgetset.}: Table[string, string]
+    defaultHeaders* {.jsgetset.}: Headers
     allowHttpFromFile* {.jsgetset.}: bool
 
   DisplayConfig = object
@@ -378,6 +378,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var DeprecatedStyleString;
   v: TomlValue; k: string): Err[string]
+proc parseConfigValue(ctx: var ConfigParser; x: var Headers; v: TomlValue;
+  k: string): Err[string]
 
 proc typeCheck(v: TomlValue; t: TomlValueType; k: string): Err[string] =
   if v.t != t:
@@ -424,6 +426,16 @@ proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
   for kk, vv in v:
     let kkk = k & "[" & kk & "]"
     ?ctx.parseConfigValue(x.mgetOrPut(kk, default(V)), vv, kkk)
+  ok()
+
+proc parseConfigValue(ctx: var ConfigParser; x: var Headers;
+    v: TomlValue; k: string): Err[string] =
+  ?typeCheck(v, tvtTable, k)
+  if v.tab.clear or x == nil:
+    x = newHeaders(hgRequest)
+  for kk, vv in v:
+    ?typeCheck(vv, tvtString, k & "[" & kk & "]")
+    x[kk] = vv.s
   ok()
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var OrderedTable[U, V];

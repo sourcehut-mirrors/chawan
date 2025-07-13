@@ -267,14 +267,6 @@ func newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
   headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
   return headers
 
-func newHeaders*(guard: HeaderGuard; table: Table[string, string]):
-    Headers =
-  let headers = newHeaders(guard)
-  for k, v in table:
-    headers.list.add((k, v))
-  headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
-  return headers
-
 func newHeaders(obj = none(HeadersInit)): JSResult[Headers] {.jsctor.} =
   let headers = newHeaders(hgNone)
   if obj.isSome:

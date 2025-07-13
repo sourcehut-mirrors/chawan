@@ -471,7 +471,7 @@ proc onFinishCookieStream(response: Response; success: bool) =
 
 proc initLoader(pager: Pager) =
   let clientConfig = LoaderClientConfig(
-    defaultHeaders: newHeaders(hgRequest, pager.config.network.defaultHeaders),
+    defaultHeaders: pager.config.network.defaultHeaders,
     proxy: pager.config.network.proxy,
     filter: newURLFilter(default = true),
   )
@@ -1799,7 +1799,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
   result.userStyle &= string(pager.config.buffer.userStyle) & '\n'
   loaderConfig = LoaderClientConfig(
     originURL: url,
-    defaultHeaders: newHeaders(hgRequest, pager.config.network.defaultHeaders),
+    defaultHeaders: pager.config.network.defaultHeaders,
     cookiejar: nil,
     proxy: pager.config.network.proxy,
     filter: newURLFilter(
@@ -1860,7 +1860,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     if sc.proxy.isSome:
       loaderConfig.proxy = sc.proxy.get
     if sc.defaultHeaders != nil:
-      loaderConfig.defaultHeaders = newHeaders(hgRequest, sc.defaultHeaders[])
+      loaderConfig.defaultHeaders = sc.defaultHeaders
     if sc.insecureSslNoVerify.isSome:
       loaderConfig.insecureSslNoVerify = sc.insecureSslNoVerify.get
     if sc.autofocus.isSome:
