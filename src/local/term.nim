@@ -411,48 +411,54 @@ proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
   res &= 'm'
 
 # If needed, quantize colors based on the color mode.
-proc reduceColors(term: Terminal; cellf: var Format) =
+proc reduceColors(term: Terminal; fgcolor, bgcolor: var CellColor) =
   case term.colorMode
   of cmANSI:
-    if cellf.bgcolor.t == ctANSI and uint8(cellf.bgcolor.ansi) > 15:
-      cellf.bgcolor = cellf.fgcolor.ansi.toRGB().cellColor()
-    if cellf.bgcolor.t == ctRGB:
-      cellf.bgcolor = term.approximateANSIColor(cellf.bgcolor.rgb,
-        term.defaultBackground)
-    if cellf.fgcolor.t == ctANSI and uint8(cellf.fgcolor.ansi) > 15:
-      cellf.fgcolor = cellf.fgcolor.ansi.toRGB().cellColor()
-    if cellf.fgcolor.t == ctRGB:
-      cellf.fgcolor = term.approximateANSIColor(cellf.fgcolor.rgb,
-        term.defaultForeground)
+    if bgcolor.t == ctANSI and uint8(bgcolor.ansi) > 15:
+      bgcolor = fgcolor.ansi.toRGB().cellColor()
+    if bgcolor.t == ctRGB:
+      bgcolor = term.approximateANSIColor(bgcolor.rgb, term.defaultBackground)
+    if fgcolor.t == ctANSI and uint8(fgcolor.ansi) > 15:
+      fgcolor = fgcolor.ansi.toRGB().cellColor()
+    if fgcolor.t == ctRGB:
+      fgcolor = term.approximateANSIColor(fgcolor.rgb, term.defaultForeground)
   of cmEightBit:
-    if cellf.bgcolor.t == ctRGB:
-      cellf.bgcolor = cellf.bgcolor.rgb.toEightBit().cellColor()
-    if cellf.fgcolor.t == ctRGB:
-      cellf.fgcolor = cellf.fgcolor.rgb.toEightBit().cellColor()
+    if bgcolor.t == ctRGB:
+      bgcolor = bgcolor.rgb.toEightBit().cellColor()
+    if fgcolor.t == ctRGB:
+      fgcolor = fgcolor.rgb.toEightBit().cellColor()
   of cmMonochrome, cmTrueColor:
     discard # nothing to do
 
 proc processFormat*(res: var string; term: Terminal; format: var Format;
     cellf: Format) =
-  if format.flags == cellf.flags:
-    discard
-  elif term.colorMode == cmMonochrome and cellf.flags == {}:
-    res &= term.resetFormat()
-  else:
+  if format.flags != cellf.flags:
+    var oldFlags {.noinit.}: array[int(FormatFlag.high) + 1, FormatFlag]
+    var i = 0
     for flag in term.formatMode:
       if flag in format.flags and flag notin cellf.flags:
-        res &= term.endFormat(flag)
+        oldFlags[i] = flag
+        inc i
       if flag notin format.flags and flag in cellf.flags:
         res &= term.startFormat(flag)
-  var cellf = cellf
-  term.reduceColors(cellf)
+    if i > 0:
+      if term.colorMode == cmMonochrome and cellf.flags == {}:
+        res &= term.resetFormat()
+      else:
+        for flag in oldFlags.toOpenArray(0, i - 1):
+          res &= term.endFormat(flag)
+    format.flags = cellf.flags
   if term.colorMode != cmMonochrome:
-    cellf.fgcolor = term.correctContrast(cellf.bgcolor, cellf.fgcolor)
-    if cellf.fgcolor != format.fgcolor:
-      res.addColorSGR(cellf.fgcolor, bgmod = 0)
-    if cellf.bgcolor != format.bgcolor:
-      res.addColorSGR(cellf.bgcolor, bgmod = 10)
-  format = cellf
+    var fgcolor = cellf.fgcolor
+    var bgcolor = cellf.bgcolor
+    term.reduceColors(fgcolor, bgcolor)
+    fgcolor = term.correctContrast(bgcolor, fgcolor)
+    if fgcolor != format.fgcolor:
+      res.addColorSGR(fgcolor, bgmod = 0)
+      format.fgcolor = fgcolor
+    if bgcolor != format.bgcolor:
+      res.addColorSGR(bgcolor, bgmod = 10)
+      format.bgcolor = bgcolor
 
 proc setTitle*(term: Terminal; title: string) =
   if term.setTitle:
@@ -1562,7 +1568,8 @@ proc newTerminal*(ostream: PosixStream; config: Config): Terminal =
     config: config,
     defaultBackground: DefaultBackground,
     defaultForeground: DefaultForeground,
-    colorMap: ANSIColorMap
+    colorMap: ANSIColorMap,
+    termType: ttXterm
   )
 
 {.pop.} # raises: []
