@@ -2470,16 +2470,13 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
   if ps == nil:
     return false
   var buffer {.noinit.}: array[4096, uint8]
-  while true:
-    let n = istream.readData(buffer)
-    if n < 0:
-      return false
-    if n == 0:
-      break
+  var n = 0
+  while (n = istream.readData(buffer); n > 0):
     if not ps.writeDataLoop(buffer.toOpenArray(0, n - 1)):
+      n = -1
       break
   ps.sclose()
-  true
+  n == 0
 
 # Save input in a file, run the command, and redirect its output to a
 # new buffer.
