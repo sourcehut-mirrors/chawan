@@ -10,13 +10,13 @@ import utils/twtstr
 
 type
   FormatFlag = enum
-    ffBold
-    ffItalic
-    ffUnderline
-    ffReverse
-    ffStrike
-    ffOverline
-    ffBlink
+    ffBold = "bold"
+    ffItalic = "italic"
+    ffUnderline = "underline"
+    ffReverse = "-cha-reverse"
+    ffStrike = "line-through"
+    ffOverline = "overline"
+    ffBlink = "blink"
 
   Format = object
     fgcolor: CellColor
@@ -183,36 +183,34 @@ proc flushFmt(state: var State) =
     let fmt = state.pendingFmt
     var buf = ""
     if fmt.fgcolor.t != ctNone:
-      buf &= "color: "
+      buf &= "color:"
       case fmt.fgcolor.t
       of ctNone: discard
       of ctANSI: buf &= "-cha-ansi(" & $uint8(fmt.fgcolor.ansi) & ")"
       of ctRGB: buf &= $fmt.fgcolor.rgb.argb
       buf &= ";"
     if fmt.bgcolor.t != ctNone:
-      buf &= "background-color: "
+      buf &= "background-color:"
       case fmt.bgcolor.t
       of ctNone: discard
       of ctANSI: buf &= "-cha-ansi(" & $uint8(fmt.bgcolor.ansi) & ")"
       of ctRGB: buf &= $fmt.bgcolor.rgb.argb
       buf &= ";"
-    if ffOverline in fmt.flags or ffUnderline in fmt.flags or
-        ffStrike in fmt.flags or ffBlink in fmt.flags:
-      buf &= "text-decoration: "
-      if ffOverline in fmt.flags:
-        buf &= "overline "
-      if ffUnderline in fmt.flags:
-        buf &= "underline "
-      if ffStrike in fmt.flags:
-        buf &= "line-through "
-      if ffBlink in fmt.flags:
-        buf &= "blink "
+    const Decoration = {ffOverline, ffUnderline, ffStrike, ffBlink, ffReverse}
+    if Decoration * fmt.flags != {}:
+      buf &= "text-decoration:"
+      for flag in [ffOverline, ffUnderline, ffStrike, ffBlink, ffReverse]:
+        if flag in fmt.flags:
+          buf &= $flag & ' '
+      if buf[^1] != ' ':
+        buf.setLen(buf.high)
       buf &= ";"
     if ffBold in fmt.flags:
-      buf &= "font-weight: bold;"
+      buf &= "font-weight:bold;"
     if ffItalic in fmt.flags:
-      buf &= "font-style: italic;"
-    #TODO reverse
+      buf &= "font-style:italic;"
+    if buf.len > 0 and buf[^1] == ';':
+      buf.setLen(buf.high)
     buf &= "'>"
     state.puts(buf)
     state.currentFmt = fmt
