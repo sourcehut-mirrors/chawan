@@ -1759,9 +1759,8 @@ Some environment variables are also exported by Chawan:
   Symbolic links are automatically resolved to determine this path.
 * `$CHA_LIBEXEC_DIR`: the directory for all executables Chawan uses
   for operation. By default, this is `$CHA_BIN_DIR/../libexec/chawan`.
-* `$CHA_DIR`: the configuration directory. (This can also be set
-  by the user; see the top section for details. `$CHA_CONFIG_DIR` is a
-  deprecated alias for this.)
+* `$CHA_DIR`: the configuration directory.  (This can also be set
+  by the user; see the top section for details.)
 
 ### Word types
 

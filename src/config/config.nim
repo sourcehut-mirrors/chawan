@@ -790,10 +790,6 @@ proc openConfig*(dir: var string; override: Option[string];
   dir = getEnv("CHA_DIR")
   if dir != "":
     return newPosixStream(dir / "config.toml")
-  dir = getEnv("CHA_CONFIG_DIR")
-  if dir != "":
-    warnings.add("CHA_CONFIG_DIR is deprecated; use CHA_DIR instead")
-    return newPosixStream(dir / "config.toml")
   dir = getEnv("XDG_CONFIG_HOME")
   if dir != "":
     dir = dir / "chawan"
