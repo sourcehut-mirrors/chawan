@@ -410,7 +410,8 @@ proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
     res &= rgb.b
   res &= 'm'
 
-# If needed, quantize colors based on the color mode.
+# If needed, quantize colors based on the color mode, and correct their
+# contrast.
 proc reduceColors(term: Terminal; fgcolor, bgcolor: var CellColor) =
   case term.colorMode
   of cmANSI:
@@ -422,16 +423,23 @@ proc reduceColors(term: Terminal; fgcolor, bgcolor: var CellColor) =
       fgcolor = fgcolor.ansi.toRGB().cellColor()
     if fgcolor.t == ctRGB:
       fgcolor = term.approximateANSIColor(fgcolor.rgb, term.defaultForeground)
+    fgcolor = term.correctContrast(bgcolor, fgcolor)
   of cmEightBit:
     if bgcolor.t == ctRGB:
       bgcolor = bgcolor.rgb.toEightBit().cellColor()
     if fgcolor.t == ctRGB:
       fgcolor = fgcolor.rgb.toEightBit().cellColor()
-  of cmMonochrome, cmTrueColor:
+    fgcolor = term.correctContrast(bgcolor, fgcolor)
+  of cmTrueColor:
+    fgcolor = term.correctContrast(bgcolor, fgcolor)
+  of cmMonochrome:
     discard # nothing to do
 
 proc processFormat*(res: var string; term: Terminal; format: var Format;
     cellf: Format) =
+  var fgcolor = cellf.fgcolor
+  var bgcolor = cellf.bgcolor
+  term.reduceColors(fgcolor, bgcolor)
   if format.flags != cellf.flags:
     var oldFlags {.noinit.}: array[int(FormatFlag.high) + 1, FormatFlag]
     var i = 0
@@ -442,17 +450,19 @@ proc processFormat*(res: var string; term: Terminal; format: var Format;
       if flag notin format.flags and flag in cellf.flags:
         res &= term.startFormat(flag)
     if i > 0:
-      if term.colorMode == cmMonochrome and cellf.flags == {}:
+      # if either
+      # * both fgcolor and bgcolor are the default, or
+      # * both are being changed,
+      # then we can use a general reset when new flags are empty.
+      if cellf.flags == {} and
+          (fgcolor != format.fgcolor and bgcolor != format.bgcolor or
+          fgcolor == defaultColor and bgcolor == defaultColor):
         res &= term.resetFormat()
       else:
         for flag in oldFlags.toOpenArray(0, i - 1):
           res &= term.endFormat(flag)
     format.flags = cellf.flags
   if term.colorMode != cmMonochrome:
-    var fgcolor = cellf.fgcolor
-    var bgcolor = cellf.bgcolor
-    term.reduceColors(fgcolor, bgcolor)
-    fgcolor = term.correctContrast(bgcolor, fgcolor)
     if fgcolor != format.fgcolor:
       res.addColorSGR(fgcolor, bgmod = 0)
       format.fgcolor = fgcolor
