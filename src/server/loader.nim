@@ -23,7 +23,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/deques
 import std/options
 import std/os
 import std/posix
@@ -67,9 +66,10 @@ type
     offset: int64
     path: string
 
-  LoaderBuffer = ref object
+  LoaderBuffer {.acyclic.} = ref object
     len: int
     page: seq[uint8]
+    next: LoaderBuffer
 
   LoaderHandle = ref object of RootObj
     registered: bool # track registered state
@@ -87,12 +87,12 @@ type
     bytesSeen: uint64 # number of bytes read until now
     startTime: Time # time when download of the body was started
     connectionOwner: ClientHandle # set if the handle counts in numConnections
+    lastBuffer: LoaderBuffer # tail of buffer linked list
 
   OutputHandle = ref object of LoaderHandle
     parent: InputHandle
     currentBuffer: LoaderBuffer
     currentBufferIdx: int
-    buffers: Deque[LoaderBuffer]
     owner: ClientHandle
     outputId: int
     istreamAtEnd: bool
@@ -162,7 +162,7 @@ type
     unregWrite: seq[OutputHandle]
     unregClient: seq[ClientHandle]
     downloadList: seq[DownloadItem]
-    cookieStream: OutputHandle
+    cookieStream: InputHandle
     pendingConnections: seq[ClientHandle]
 
   LoaderConfig* = object
@@ -183,9 +183,9 @@ type
 # Forward declarations
 proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
   request: Request; prevURL: URL; config: LoaderClientConfig)
-
-proc pushBuffer(ctx: var LoaderContext; output: OutputHandle;
-  buffer: LoaderBuffer; ignoreSuspension: bool): PushBufferResult
+proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
+  buffer: LoaderBuffer; ignoreSuspension: bool;
+  unregWrite: var seq[OutputHandle])
 
 when defined(debug):
   func `$`*(buffer: LoaderBuffer): string =
@@ -259,14 +259,6 @@ proc newLoaderBuffer(s: openArray[char]): LoaderBuffer =
   copyMem(addr buffer.page[0], unsafeAddr s[0], s.len)
   buffer
 
-proc bufferCleared(output: OutputHandle) =
-  assert output.currentBuffer != nil
-  output.currentBufferIdx = 0
-  if output.buffers.len > 0:
-    output.currentBuffer = output.buffers.popFirst()
-  else:
-    output.currentBuffer = nil
-
 proc tee(ctx: var LoaderContext; outputIn: OutputHandle; ostream: PosixStream;
     owner: ClientHandle): OutputHandle =
   assert outputIn.suspended
@@ -275,7 +267,6 @@ proc tee(ctx: var LoaderContext; outputIn: OutputHandle; ostream: PosixStream;
     stream: ostream,
     currentBuffer: outputIn.currentBuffer,
     currentBufferIdx: outputIn.currentBufferIdx,
-    buffers: outputIn.buffers,
     istreamAtEnd: outputIn.istreamAtEnd,
     outputId: ctx.getOutputId(),
     owner: owner,
@@ -311,7 +302,11 @@ proc sendResult(ctx: var LoaderContext; handle: InputHandle; res: int;
       inc handle.rstate
     else: # error
       w.swrite(msg)
-  return ctx.pushBuffer(output, buffer, ignoreSuspension = true)
+  var unregWrite: seq[OutputHandle] = @[]
+  ctx.pushBuffer(handle, buffer, ignoreSuspension = true, unregWrite)
+  if unregWrite.len > 0:
+    return pbrUnregister
+  pbrDone
 
 proc updateCookies(ctx: var LoaderContext; cookieJar: CookieJar;
     url: URL; owner: ClientHandle; values: openArray[string]) =
@@ -323,11 +318,9 @@ proc updateCookies(ctx: var LoaderContext; cookieJar: CookieJar;
   for i, it in values.mypairs:
     s &= it & [false: '\r', true: '\n'][i == values.high]
   let buffer = newLoaderBuffer(s)
-  case ctx.pushBuffer(ctx.cookieStream, buffer, ignoreSuspension = false)
-  of pbrDone: discard
-  of pbrUnregister:
-    ctx.unregWrite.add(ctx.cookieStream)
-    ctx.cookieStream.dead = true
+  ctx.pushBuffer(ctx.cookieStream, buffer, ignoreSuspension = false,
+    ctx.unregWrite)
+  if ctx.cookieStream.output.dead:
     ctx.cookieStream = nil
 
 proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
@@ -349,7 +342,11 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
   let buffer = bufferFromWriter w:
     w.swrite(status)
     w.swrite(headers)
-  return ctx.pushBuffer(output, buffer, ignoreSuspension = true)
+  var unregWrite: seq[OutputHandle] = @[]
+  ctx.pushBuffer(handle, buffer, ignoreSuspension = true, unregWrite)
+  if unregWrite.len > 0:
+    return pbrUnregister
+  pbrDone
 
 proc writeData(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
   assert buffer.len - si > 0
@@ -480,32 +477,39 @@ proc unregister(ctx: var LoaderContext; client: ClientHandle) =
 # ignoreSuspension is meant to be used when sending the connection
 # result and headers, which are sent irrespective of whether the handle
 # is suspended or not.
-proc pushBuffer(ctx: var LoaderContext; output: OutputHandle;
-    buffer: LoaderBuffer; ignoreSuspension: bool): PushBufferResult =
-  if output.suspended and not ignoreSuspension:
-    if output.currentBuffer == nil:
-      output.currentBuffer = buffer
-      output.currentBufferIdx = 0
-    else:
-      output.buffers.addLast(buffer)
-  elif output.currentBuffer == nil:
-    var n = output.stream.writeData(buffer)
-    if n < 0:
-      let e = errno
-      if e == EAGAIN or e == EWOULDBLOCK:
-        n = 0
-      else:
-        assert e == EPIPE, $strerror(e)
-        return pbrUnregister
-    else:
-      output.bytesSent += uint64(n)
-    if n < buffer.len:
-      output.currentBuffer = buffer
-      output.currentBufferIdx = n
-      ctx.register(output)
+proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
+    buffer: LoaderBuffer; ignoreSuspension: bool;
+    unregWrite: var seq[OutputHandle]) =
+  if handle.lastBuffer == nil:
+    handle.lastBuffer = buffer
   else:
-    output.buffers.addLast(buffer)
-  pbrDone
+    handle.lastBuffer.next = buffer
+    handle.lastBuffer = buffer
+  for output in handle.outputs:
+    if output.dead:
+      # do not push to unregWrite candidates
+      continue
+    if output.currentBuffer == nil:
+      if output.suspended and not ignoreSuspension:
+        output.currentBuffer = buffer
+        output.currentBufferIdx = 0
+      else:
+        var n = output.stream.writeData(buffer)
+        if n < 0:
+          let e = errno
+          if e == EAGAIN or e == EWOULDBLOCK:
+            n = 0
+          else:
+            assert e == EPIPE, $strerror(e)
+            output.dead = true
+            unregWrite.add(output)
+            continue
+        else:
+          output.bytesSent += uint64(n)
+        if n < buffer.len:
+          output.currentBuffer = buffer
+          output.currentBufferIdx = n
+          ctx.register(output)
 
 proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
     targetPath: string; fileOutput: var OutputHandle; osent: var uint64): bool =
@@ -515,17 +519,9 @@ proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
   let ps = newPosixStream(targetPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
   if ps == nil:
     return false
-  if output.currentBuffer != nil:
-    var m = output.currentBufferIdx
-    while m < output.currentBuffer.len:
-      let n = ps.writeData(output.currentBuffer, m)
-      if n <= 0:
-        ps.sclose()
-        return false
-      m += n
-      osent += uint64(n)
-  for buffer in output.buffers:
-    var m = 0
+  var buffer {.cursor.} = output.currentBuffer
+  var m = output.currentBufferIdx
+  while buffer != nil:
     while m < buffer.len:
       let n = ps.writeData(buffer, m)
       if n <= 0:
@@ -533,6 +529,8 @@ proc redirectToFile(ctx: var LoaderContext; output: OutputHandle;
         return false
       m += n
       osent += uint64(n)
+    m = 0
+    buffer = buffer.next
   if output.istreamAtEnd:
     ps.sclose()
   elif output.parent != nil:
@@ -763,8 +761,7 @@ type HandleReadResult = enum
 # Called whenever there is more data available to read.
 proc handleRead(ctx: var LoaderContext; handle: InputHandle;
     unregWrite: var seq[OutputHandle]): HandleReadResult =
-  var unregs = 0
-  let maxUnregs = handle.outputs.len
+  let maxUnregs = unregWrite.len + handle.outputs.len
   while true:
     var buffer = newLoaderBuffer()
     let n = handle.stream.readData(buffer.page)
@@ -799,17 +796,8 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
     else:
       handle.bytesSeen += uint64(n)
       #TODO stop reading if Content-Length exceeded
-    for output in handle.outputs:
-      if output.dead:
-        # do not push to unregWrite candidates
-        continue
-      case ctx.pushBuffer(output, buffer, ignoreSuspension = false)
-      of pbrUnregister:
-        output.dead = true
-        unregWrite.add(output)
-        inc unregs
-      of pbrDone: discard
-    if unregs == maxUnregs:
+    ctx.pushBuffer(handle, buffer, ignoreSuspension = false, unregWrite)
+    if unregWrite.len == maxUnregs:
       # early return: no more outputs to write to
       break
     if n < buffer.cap:
@@ -1194,16 +1182,14 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
       ctx.oclose(output)
     return
   let buffer = newLoaderBuffer(s)
-  case ctx.pushBuffer(output, buffer, ignoreSuspension = false)
-  of pbrUnregister:
+  var dummy: seq[OutputHandle] = @[]
+  ctx.pushBuffer(handle, buffer, ignoreSuspension = false, dummy)
+  if not output.dead and (output.registered or output.suspended):
+    output.istreamAtEnd = true
+  else:
     if output.registered:
       ctx.unregister(output)
     ctx.oclose(output)
-  of pbrDone:
-    if output.registered or output.suspended:
-      output.istreamAtEnd = true
-    else:
-      ctx.oclose(output)
 
 proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
@@ -1372,7 +1358,7 @@ proc loadCookieStream(ctx: var LoaderContext; handle: InputHandle;
   of pbrUnregister:
     ctx.close(handle)
     return
-  ctx.cookieStream = handle.output
+  ctx.cookieStream = handle
 
 proc loadAbout(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
@@ -1840,7 +1826,9 @@ proc handleWrite(ctx: var LoaderContext; output: OutputHandle;
     output.currentBufferIdx += n
     if output.currentBufferIdx < buffer.len:
       break
-    output.bufferCleared() # swap out buffer
+    # swap out buffer
+    output.currentBufferIdx = 0
+    output.currentBuffer = buffer.next
   if output.isEmpty:
     if output.istreamAtEnd:
       # after EOF, no need to send anything more here
