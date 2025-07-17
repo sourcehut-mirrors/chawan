@@ -1,5 +1,4 @@
 import std/algorithm
-import std/deques
 import std/math
 
 type Vector2D* = object
@@ -13,10 +12,13 @@ func `+`(v1, v2: Vector2D): Vector2D =
   return Vector2D(x: v1.x + v2.x, y: v1.y + v2.y)
 
 # scalar multiplication
-func `*`(v: Vector2D, s: float64): Vector2D =
+func `*`(s: float64; v: Vector2D): Vector2D {.inline.} =
   return Vector2D(x: v.x * s, y: v.y * s)
 
-func `/`(v: Vector2D, s: float64): Vector2D =
+func `*`(v: Vector2D; s: float64): Vector2D {.inline.} =
+  return Vector2D(x: v.x * s, y: v.y * s)
+
+func `/`(v: Vector2D; s: float64): Vector2D =
   return Vector2D(x: v.x / s, y: v.y / s)
 
 # dot product
@@ -228,19 +230,15 @@ proc addEllipseSegment(path: Path; o, etan: Vector2D; rx, ry: float64) =
   path.addSegment(segment, etan)
 
 # https://hcklbrrfnn.files.wordpress.com/2012/08/bez.pdf
-func flatEnough(a, b, c: Vector2D): bool =
-  let ux = 3 * c.x - 2 * a.x - b.x
-  let uy = 3 * c.y - 2 * a.y - b.y
-  let vx = 3 * c.x - 2 * b.x - b.x
-  let vy = 3 * c.y - 2 * b.y - b.y
-  return max(ux * ux, vx * vx) + max(uy * uy, vy * vy) <= 0.02
-
 func flatEnough(a, b, c0, c1: Vector2D): bool =
-  let ux = 3 * c0.x - 2 * a.x - b.x
-  let uy = 3 * c0.y - 2 * a.y - b.y
-  let vx = 3 * c1.x - a.x - 2 * b.x
-  let vy = 3 * c1.y - a.y - 2 * b.y
-  return max(ux * ux, vx * vx) + max(uy * uy, vy * vy) <= 0.02
+  let u = 3 * c0 - 2 * a - b
+  let v = 3 * c1 - 2 * b - a
+  let x = max(u.x, v.x)
+  let y = max(u.y, v.y)
+  return x * x + y * y <= 0.02
+
+func flatEnough(a, b, c: Vector2D): bool =
+  return flatEnough(a, b, c, c)
 
 iterator items*(pl: PathLines): lent LineSegment {.inline.} =
   for line in pl.lines:
@@ -267,11 +265,9 @@ iterator quadraticLines(a, b, c: Vector2D): Line {.inline.} =
       points.add((s, b, mid2))
 
 iterator bezierLines(p0, p1, c0, c1: Vector2D): Line {.inline.} =
-  var points = initDeque[tuple[p0, p1, c0, c1: Vector2D]]()
-  let tup = (p0, p1, c0, c1)
-  points.addLast(tup)
+  var points = @[(p0, p1, c0, c1)]
   while points.len > 0:
-    let (p0, p1, c0, c1) = points.popFirst()
+    let (p0, p1, c0, c1) = points.pop()
     if flatEnough(p0, p1, c0, c1):
       yield Line(p0: p0, p1: p1)
     else:
@@ -281,15 +277,15 @@ iterator bezierLines(p0, p1, c0, c1: Vector2D): Line {.inline.} =
       let midb1 = (mida1 + mida2) / 2
       let midb2 = (mida2 + mida3) / 2
       let midc = (midb1 + midb2) / 2
-      points.addLast((p0, midc, mida1, midb1))
-      points.addLast((midc, p1, midb2, mida3))
+      points.add((p0, midc, mida1, midb1))
+      points.add((midc, p1, midb2, mida3))
 
 # https://stackoverflow.com/a/44829356
 func arcControlPoints(p1, p4, o: Vector2D): tuple[c0, c1: Vector2D] =
   let a = p1 - o
   let b = p4 - o
-  let q1 = a.x * a.x + a.y * a.y
-  let q2 = q1 + a.x * b.x + a.y * b.y
+  let q1 = a * a
+  let q2 = q1 + a * b
   let k2 = (4 / 3) * (sqrt(2 * q1 * q2) - q2) / a.cross(b)
   let c0 = o + a + Vector2D(x: -k2 * a.y, y:  k2 * a.x)
   let c1 = o + b + Vector2D(x:  k2 * b.y, y: -k2 * b.x)
@@ -475,7 +471,7 @@ func resolveEllipsePoint(o: Vector2D; angle, radiusX, radiusY,
   let sq = sqrt(b2 + a2 * tan2)
   let sn = if cos(angle) >= 0: 1f64 else: -1f64
   let relx = ab / sq * sn
-  let rely = ab * tanrel / sq * sn
+  let rely = relx * tanrel
   return Vector2D(x: relx, y: rely).rotate(rotation) + o
 
 proc arc*(path: Path; x, y, radius, startAngle, endAngle: float64;
@@ -484,15 +480,24 @@ proc arc*(path: Path; x, y, radius, startAngle, endAngle: float64;
     if classify(v) in {fcInf, fcNegInf, fcNan}:
       return
   let o = Vector2D(x: x, y: y)
-  var s = resolveEllipsePoint(o, startAngle, radius, radius, 0)
-  var e = resolveEllipsePoint(o, endAngle, radius, radius, 0)
+  var startAngle = startAngle
+  var endAngle = endAngle
   if counterclockwise:
-    swap(s, e)
+    swap(startAngle, endAngle)
+  let s = resolveEllipsePoint(o, startAngle, radius, radius, 0)
   if path.subpaths.len > 0:
     path.addStraightSegment(s)
   else:
     path.moveTo(s)
-  path.addArcSegment(o, e, radius, abs(startAngle - endAngle) < PI)
+  if endAngle - startAngle >= 2 * PI:
+    path.addArcSegment(o, s, radius, false)
+  else:
+    let e = resolveEllipsePoint(o, endAngle, radius, radius, 0)
+    let mul = if counterclockwise: -1f64 else: 1f64
+    let sa = (startAngle * mul).euclMod(2 * PI)
+    let ea = (endAngle * mul).euclMod(2 * PI)
+    let innerAngle = if sa == ea: startAngle == endAngle else: abs(sa - ea) < PI
+    path.addArcSegment(o, e, radius, innerAngle)
 
 proc ellipse*(path: Path; x, y, radiusX, radiusY, rotation, startAngle,
     endAngle: float64; counterclockwise: bool) =
