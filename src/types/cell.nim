@@ -12,9 +12,7 @@ type
     ffBlink = "blink"
 
   Format* = object
-    fgcolor*: CellColor
-    bgcolor*: CellColor
-    flags*: set[FormatFlag]
+    u: uint64
 
   SimpleFormatCell* = object
     format*: Format
@@ -44,8 +42,47 @@ proc `[]`*(grid: FixedGrid; i: int): lent FixedCell = grid.cells[i]
 proc `[]`*(grid: FixedGrid; i: BackwardsIndex): lent FixedCell =
   return grid.cells[grid.cells.len - int(i)]
 
-proc len*(grid: FixedGrid): int = grid.cells.len
-proc high*(grid: FixedGrid): int = grid.cells.high
+proc len*(grid: FixedGrid): int {.inline.} = grid.cells.len
+proc high*(grid: FixedGrid): int {.inline.} = grid.cells.high
+
+template bgcolor*(format: Format): CellColor =
+  CellColor(format.u and 0x3FFFFFF)
+
+template fgcolor*(format: Format): CellColor =
+  CellColor((format.u shr 26) and 0x3FFFFFF)
+
+template flags*(format: Format): set[FormatFlag] =
+  cast[set[FormatFlag]](format.u shr 52)
+
+template `bgcolor=`*(format: var Format; bgcolor: CellColor) =
+  format.u = format.u and static(not 0x3FFFFFFu64) or uint64(bgcolor)
+
+template `fgcolor=`*(format: var Format; fgcolor: CellColor) =
+  format.u = format.u and static(not (0x3FFFFFFu64 shl 26)) or
+    (uint64(fgcolor) shl 26)
+
+template `flags=`*(format: var Format; flags: set[FormatFlag]) =
+  format.u = format.u and static(not (0xFFFu64 shl 52)) or
+    (cast[uint64](flags) shl 52)
+
+proc incl*(format: var Format; flag: FormatFlag) {.inline.} =
+  format.flags = format.flags + {flag}
+
+proc excl*(format: var Format; flag: FormatFlag) {.inline.} =
+  format.flags = format.flags - {flag}
+
+static:
+  doAssert {FormatFlag.low..FormatFlag.high}.card <= 12
+
+func initFormat*(bgcolor, fgcolor: CellColor; flags: set[FormatFlag]): Format =
+  return Format(
+    u: uint64(bgcolor.toUint26()) or
+      (uint64(fgcolor.toUint26()) shl 26) or
+      (cast[uint64](flags) shl 52)
+  )
+
+func initFormat*(): Format =
+  return initFormat(defaultColor, defaultColor, {})
 
 iterator items*(grid: FixedGrid): lent FixedCell {.inline.} =
   for cell in grid.cells:

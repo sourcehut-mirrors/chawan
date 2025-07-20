@@ -972,7 +972,7 @@ proc refreshStatusMsg(pager: Pager) =
     pager.lastAlert = move(pager.alerts[0])
     pager.alerts.delete(0)
   else:
-    var format = Format(flags: {ffReverse})
+    var format = initFormat(defaultColor, defaultColor, {ffReverse})
     pager.alertState = pasNormal
     container.clearHover()
     var msg = ""
@@ -1051,7 +1051,8 @@ proc drawBuffer(pager: Pager; container: Container; ofile: File): Opt[void] =
     var s = ""
     if container.bgcolor != defaultColor and
         (line.formats.len == 0 or line.formats[0].pos > 0):
-      s.processFormat(pager.term, format, Format(bgcolor: container.bgcolor))
+      let nformat = initFormat(container.bgcolor, defaultColor, {})
+      s.processFormat(pager.term, format, nformat)
     for f in line.formats:
       var ff = f.format
       if ff.bgcolor == defaultColor:
@@ -1064,7 +1065,8 @@ proc drawBuffer(pager: Pager; container: Container; ofile: File): Opt[void] =
       let ls = line.str.drawBufferAdvance(format.bgcolor, i, x, int.high)
       s.processOutputString(pager.term, ls, w)
     if container.bgcolor != defaultColor and x < container.width:
-      s.processFormat(pager.term, format, Format(bgcolor: container.bgcolor))
+      let nformat = initFormat(container.bgcolor, defaultColor, {})
+      s.processFormat(pager.term, format, nformat)
       let spaces = ' '.repeat(container.width - x)
       s.processOutputString(pager.term, spaces, w)
     s.processFormat(pager.term, format, Format())

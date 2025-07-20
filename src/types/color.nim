@@ -80,7 +80,10 @@ func `==`*(a, b: ANSIColor): bool {.borrow.}
 func `==`*(a, b: CellColor): bool {.borrow.}
 
 func t*(color: CellColor): ColorTag =
-  return cast[ColorTag](uint32(color) shr 24)
+  return cast[ColorTag]((uint32(color) shr 24) and 0x3)
+
+func toUint26*(color: CellColor): uint32 =
+  return uint32(color) and 0x3FFFFFF
 
 func rgb*(color: CellColor): RGBColor =
   return RGBColor(uint32(color) and 0xFFFFFF)

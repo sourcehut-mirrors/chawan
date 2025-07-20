@@ -1962,7 +1962,7 @@ proc drawLines*(container: Container; display: var FixedGrid;
         if hlcolor != defaultColor:
           display[n].format.bgcolor = hlcolor
         else:
-          display[n].format.flags.incl(ffReverse)
+          display[n].format.incl(ffReverse)
     inc by
 
 proc highlightMarks*(container: Container; display: var FixedGrid;
@@ -1976,7 +1976,7 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
       if hlcolor != defaultColor:
         display[n].format.bgcolor = hlcolor
       else:
-        display[n].format.flags.incl(ffReverse)
+        display[n].format.incl(ffReverse)
 
 func findCachedImage*(container: Container; image: PosBitmap;
     offx, erry, dispw: int): CachedImage =

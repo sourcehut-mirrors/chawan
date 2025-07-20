@@ -308,9 +308,9 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
     var x = sx
     let dls = y * display.width
     if select.getCursorY() == y and not select.unselected:
-      format.flags.incl(ffReverse)
+      format.incl(ffReverse)
     else:
-      format.flags.excl(ffReverse)
+      format.excl(ffReverse)
     while j < select.options[i].s.len:
       let pj = j
       let u = select.options[i].s.nextUTF8(j)
@@ -327,7 +327,7 @@ proc drawSelect*(select: Select; display: var FixedGrid) =
       display[dls + x].format = format
       if x == sx:
         # do not reverse the position of the cursor
-        display[dls + x].format.flags.excl(ffReverse)
+        display[dls + x].format.excl(ffReverse)
       inc x
       while x < nx:
         display[dls + x].str = ""

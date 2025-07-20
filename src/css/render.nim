@@ -84,11 +84,8 @@ func toFormat(computed: CSSValues): Format =
     flags.incl(ffBlink)
   if TextDecorationReverse in computed{"text-decoration"}:
     flags.incl(ffReverse)
-  return Format(
-    #TODO this ignores alpha; we should blend somewhere.
-    fgcolor: computed{"color"}.cellColor(),
-    flags: flags
-  )
+  #TODO this ignores alpha; we should blend somewhere.
+  return initFormat(defaultColor, computed{"color"}.cellColor(), flags)
 
 proc findFirstX(line: var FlexibleLine; x: int; outi: var int): int =
   var cx = 0
@@ -129,7 +126,7 @@ proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
 proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
     hadStr: bool; format: Format; node: Element) =
   var fi = line.findFormatN(cx) - 1 # Skip unchanged formats before new string
-  var lformat = Format()
+  var lformat = initFormat()
   var lnode: Element = nil
   if fi != -1:
     # Start by saving the old formatting before padding for later use.
@@ -153,14 +150,14 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
         # branch this isn't necessary because paintBackground adds
         # padding anyway.
         line.formats[fi] = FormatCell(
-          format: Format(bgcolor: lformat.bgcolor),
+          format: initFormat(lformat.bgcolor, defaultColor, {}),
           pos: cx
         )
       else:
         # First format < cx => split it up
         assert pos < cx
         inc fi # insert after first format
-        line.insertFormat(cx, fi, Format(), nil)
+        line.insertFormat(cx, fi, initFormat(), nil)
   # Now for the text's formats:
   var format = format
   if fi == -1:
@@ -283,7 +280,7 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     return
   if grid.len < endy: # make sure we have line y - 1
     grid.setLen(endy)
-  var format = Format(bgcolor: color)
+  var format = initFormat(color, defaultColor, {})
   for line in grid.toOpenArray(starty, endy - 1).mitems:
     # Make sure line.width() >= endx
     var hadStr: bool
@@ -308,7 +305,7 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     var sfi = line.findFormatN(startx) - 1
     if sfi == -1:
       # No format <= startx
-      line.insertFormat(startx, 0, Format(), nil)
+      line.insertFormat(startx, 0, initFormat(), nil)
       inc sfi
     elif line.formats[sfi].pos == startx:
       # Last format equals startx => next comes after, nothing to be done
@@ -317,13 +314,13 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
       # Last format lower than startx => separate format from startx
       if cx < startx and sfi == line.formats.high:
         inc sfi
-        line.insertFormat(cx, sfi, Format(), nil)
+        line.insertFormat(cx, sfi, initFormat(), nil)
       var copy = line.formats[sfi]
       inc sfi
       copy.pos = startx
       line.insertFormat(sfi, copy)
     # Paint format backgrounds between startx and endx
-    var lformat = Format()
+    var lformat = initFormat()
     var lnode: Element = nil
     var ifi = 0
     for fi, it in line.formats.toOpenArray(sfi, line.formats.high).mpairs:
