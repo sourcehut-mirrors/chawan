@@ -16,20 +16,20 @@ const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toPoints()
 const halfFullMap = (func(): seq[tuple[half, full1, full2: uint32]] =
   result = @[]
   const map = staticRead"res/widthconvmap.tab"
-  for line in map.split('\n'):
-    if line == "":
-      break
-    var i = 0
-    let half = line.nextUTF8(i)
-    assert line[i] == '\t'
+  var i = 0
+  while i < map.len:
+    let half = map.nextUTF8(i)
+    assert map[i] == '\t'
     inc i
-    let full1 = line.nextUTF8(i)
+    let full1 = map.nextUTF8(i)
     var full2 = 0u32
-    if i < line.len:
-      assert line[i] == '\t'
+    if i < map.len and map[i] != '\n':
+      assert map[i] == '\t'
       inc i
-      full2 = line.nextUTF8(i)
+      full2 = map.nextUTF8(i)
     result.add((half, full1, full2))
+    assert map[i] == '\n'
+    inc i
 )()
 
 func halfwidth(u: uint32): uint32 =
