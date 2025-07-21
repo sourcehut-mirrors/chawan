@@ -65,11 +65,11 @@ template `flags=`*(format: var Format; flags: set[FormatFlag]) =
   format.u = format.u and static(not (0xFFFu64 shl 52)) or
     (cast[uint64](flags) shl 52)
 
-proc incl*(format: var Format; flag: FormatFlag) {.inline.} =
-  format.flags = format.flags + {flag}
+template incl*(format: var Format; flag: FormatFlag) =
+  format.u = format.u or (cast[uint64]({flag}) shl 52)
 
-proc excl*(format: var Format; flag: FormatFlag) {.inline.} =
-  format.flags = format.flags - {flag}
+template excl*(format: var Format; flag: FormatFlag) =
+  format.u = format.u and not (cast[uint64]({flag}) shl 52)
 
 static:
   doAssert {FormatFlag.low..FormatFlag.high}.card <= 12
