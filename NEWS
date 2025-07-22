@@ -1,3 +1,12 @@
+0.2.2 (2025.07.22)
+
+Patch release.
+Fixes:
+* fix referrer policy handling with referer-from=true
+* fix compilation on OpenBSD + ancient Nim
+* fix crash on hitting C-c on buffers waiting for connection
+* fix a rare fd leak
+
 0.2.1 (2025.06.25)
 
 Patch release.
