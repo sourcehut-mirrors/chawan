@@ -165,7 +165,7 @@ $(OUTDIR_LIBEXEC)/md2html: $(twtstr)
 $(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr)
 $(OUTDIR_LIBEXEC)/img2html: $(twtstr)
 
-$(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim
+$(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
 		-o:"$@" $<
@@ -178,7 +178,7 @@ $(OUTDIR_LIBEXEC)/%: adapter/format/%
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	install -m755 $< "$(OUTDIR_LIBEXEC)"
 
-$(OUTDIR_CGI_BIN)/%: adapter/img/%.nim
+$(OUTDIR_CGI_BIN)/%: adapter/img/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
                 -o:"$@" $<
@@ -190,12 +190,12 @@ $(OUTDIR_CGI_BIN)/gemini: $(OUTDIR_CGI_BIN)/ssl
 $(OUTDIR_CGI_BIN)/sftp: $(OUTDIR_CGI_BIN)/ssl
 	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl sftp)
 
-$(OUTDIR_LIBEXEC)/%: adapter/format/%.nim
+$(OUTDIR_LIBEXEC)/%: adapter/format/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
 		-o:"$@" $<
 
-$(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim
+$(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
 		-o:"$@" $<
