@@ -1064,7 +1064,7 @@ URL.</td>
 <tr>
 <td>mark-links</td>
 <td>boolean</td>
-<td>`buffer.history`</td>
+<td>`buffer.mark-links`</td>
 <td>Add numeric markers before links.</td>
 </tr>
 
@@ -1101,7 +1101,7 @@ expression. Here we only describe the pre-defined actions in the default config;
 for a description of the API, please see:
 
 <!-- MANOFF -->
-[the API documentation](api.md).
+[The API documentation](api.md).
 <!-- MANON -->
 <!-- MANON
 The API documentation at **cha-api**(5).

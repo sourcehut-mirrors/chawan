@@ -75,7 +75,7 @@ file. (This assumes your system has an `fmt` program - if not, `fold -s` may
 be an alternative.)
 
 To always automatically wrap, you can add this to your
-[user style](config.md#stylesheets):
+[user style](config.md#buffer):
 
 ```css
 plaintext { white-space: pre-wrap }
