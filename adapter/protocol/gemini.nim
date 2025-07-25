@@ -14,9 +14,7 @@ proc sdie(s: string) =
   stdout.flushFile()
   quit(1)
 
-proc fopen(filename, mode: cstring): pointer {.importc, nodecl.}
-
-proc openKnownHosts(os: PosixStream): (File, string) =
+proc openKnownHosts(os: PosixStream): (AChaFile, string) =
   var path = getEnv("GMIFETCH_KNOWN_HOSTS")
   if path == "":
     let ourDir = getEnv("CHA_DIR")
@@ -24,16 +22,22 @@ proc openKnownHosts(os: PosixStream): (File, string) =
       os.die("InternalError", "config dir missing")
     path = ourDir & '/' & "gemini_known_hosts"
   discard mkdir(cstring(path.untilLast('/')), 0o700)
-  let f = cast[File](fopen(cstring(path), "a+"))
-  if f == nil:
-    os.die("InternalError", "error opening open known hosts file")
+  let f = chafile.afopen(path, "a+")
+    .orDie(os, "InternalError", "error opening known hosts file")
   return (f, path)
 
-proc c_rename(oldname, newname: cstring): cint {.importc: "rename",
-  header: "<stdio.h>".}
+proc readKnownHosts(f, tmp: AChaFile; buf, host: string): Opt[void] =
+  var line: string
+  while ?f.readLine(line):
+    let j = line.find(' ')
+    if host.len == j and line.startsWith(host):
+      continue # delete this entry
+    ?tmp.writeLine(line)
+  ?tmp.writeLine(buf)
+  ok()
 
 proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
-    knownHosts: var File; tmpEntry: var string) =
+    knownHosts: var AChaFile; tmpEntry: var string) =
   let s = newPosixStream(STDIN_FILENO).readAll()
   if (var i = s.find("input="); i != -1):
     i += "input=".len
@@ -56,26 +60,18 @@ proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
       if t == "once" or t == "no":
         tmpEntry = buf
       else:
-        var knownHostsTmp: File
-        let knownHostsTmpPath = knownHostsPath & '~'
-        if not knownHostsTmp.open(knownHostsTmpPath, fmWrite):
+        let tmpPath = knownHostsPath & '~'
+        let ps = newPosixStream(tmpPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
+        if ps == nil:
           os.die("InternalError", "failed to open temp file")
-        try:
-          var line: string
-          while knownHosts.readLine(line):
-            let j = line.find(' ')
-            if host.len == j and line.startsWith(host):
-              continue # delete this entry
-            knownHostsTmp.writeLine(line)
-          knownHostsTmp.writeLine(buf)
-          knownHostsTmp.close()
-          knownHosts.close()
-        except IOError:
-          os.die("InternalError", "failed to read known hosts")
-        if c_rename(cstring(knownHostsTmpPath), cstring(knownHostsPath)) != 0:
-          os.die("InternalError", "failed to move temporary file")
-        if not knownHosts.open(knownHostsPath, fmRead):
-          os.die("InternalError", "failed to reopen known_hosts")
+        let tmpFile = ps.afdopen("w")
+          .orDie(os, "InternalError", "failed to open temp file")
+        knownHosts.readKnownHosts(tmpFile, buf, host)
+          .orDie(os, "InternalError", "failed to read known hosts")
+        chafile.rename(tmpPath, knownHostsPath)
+          .orDie(os, "InternalError", "failed to move temporary file")
+        knownHosts = chafile.afopen(knownHostsPath, "r")
+          .orDie(os, "InternalError", "failed to reopen known_hosts")
     else:
       os.die("InternalError invalid POST: wrong trust_cert")
   else:
@@ -84,17 +80,21 @@ proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
 type CheckCertResult = enum
   ccrNotFound, ccrNewExpiration, ccrFoundInvalid, ccrFoundValid
 
+proc findHost(f: AChaFile; host: string; line: var string): Opt[bool] =
+  var found = false
+  ?f.seek(0)
+  while not found and ?f.readLine(line):
+    found = line.until(' ') == host
+  ok(found)
+
 proc checkCert0(os: PosixStream; theirDigest, host: string;
-    storedDigest: var string; theirTime: var Time; knownHosts: File;
+    storedDigest: var string; theirTime: var Time; knownHosts: AChaFile;
     tmpEntry: string): CheckCertResult =
   var line = tmpEntry
   var found = line.until(' ') == host
-  try:
-    knownHosts.setFilePos(0)
-    while not found and knownHosts.readLine(line):
-      found = line.until(' ') == host
-  except IOError:
-    os.die("InternalError", "failed to read known hosts")
+  if not found:
+    found = knownHosts.findHost(host, line)
+      .orDie(os, "InternalError", "failed to read known hosts")
   if not found:
     return ccrNotFound
   let ss = line.split(' ')
@@ -111,7 +111,7 @@ proc checkCert0(os: PosixStream; theirDigest, host: string;
         return ccrFoundValid
     else:
       os.die("InternalError", "invalid time in known_hosts file")
-  return ccrNewExpiration
+  ccrNewExpiration
 
 proc hashBuf(ibuf: openArray[uint8]): string =
   const HexTable = "0123456789ABCDEF"
@@ -137,7 +137,7 @@ proc hashBuf(ibuf: openArray[uint8]): string =
     result &= HexTable[u and 0xF]
 
 proc checkCert(os: PosixStream; ssl: ptr SSL; host, port: string;
-    knownHosts: File; storedDigest, theirDigest: var string;
+    knownHosts: AChaFile; storedDigest, theirDigest: var string;
     theirTime: var Time; tmpEntry: string): CheckCertResult =
   let cert = SSL_get_peer_certificate(ssl)
   if cert == nil:

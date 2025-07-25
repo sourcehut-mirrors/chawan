@@ -5,15 +5,17 @@ import std/os
 import std/posix
 import std/strutils
 
+import io/chafile
 import io/dynstream
 import types/opt
 import utils/sandbox
 import utils/twtstr
 
+export chafile
 export dynstream
-export twtstr
-export sandbox
 export opt
+export sandbox
+export twtstr
 
 export STDIN_FILENO, STDOUT_FILENO
 
@@ -24,6 +26,36 @@ proc die*(os: PosixStream; name: string; s = "") {.noreturn.} =
   buf &= '\n'
   discard os.writeDataLoop(buf)
   quit(1)
+
+proc die*(name: string; s = "") {.noreturn.} =
+  var buf = "Cha-Control: ConnectionError " & name
+  if s != "":
+    buf &= ' ' & s
+  buf &= '\n'
+  stdout.fwrite(buf)
+  quit(1)
+
+template orDie*(val: Opt[void]; os: PosixStream; name: string; s = "") =
+  var x = val
+  if x.isErr:
+    os.die(name, s)
+
+template orDie*[T](val: Opt[T]; os: PosixStream; name: string; s = ""): T =
+  var x = val
+  if x.isErr:
+    os.die(name, s)
+  move(x.get)
+
+template orDie*(val: Opt[void]; name: string; s = "") =
+  var x = val
+  if x.isErr:
+    die(name, s)
+
+template orDie*[T](val: Opt[T]; name: string; s = ""): T =
+  var x = val
+  if x.isErr:
+    die(name, s)
+  move(x.get)
 
 proc openSocket(os: PosixStream; host, port, resFail: string;
     res: var ptr AddrInfo): SocketHandle =

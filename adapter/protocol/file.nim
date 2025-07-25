@@ -2,8 +2,7 @@
 
 import std/posix
 
-import io/dynstream
-import utils/twtstr
+import lcgi
 
 proc my_strftime(s: cstring; slen: csize_t; format: cstring;
   tm: ptr Tm): csize_t {.importc: "strftime", header: "<time.h>".}
@@ -11,9 +10,10 @@ proc my_strftime(s: cstring; slen: csize_t; format: cstring;
 proc my_readlink(path: cstring; buf: cstring; buflen: csize_t):
   int {.importc: "readlink", header: "<unistd.h>".}
 
-proc loadDir(path, opath: string) {.raises: [IOError].} =
+proc loadDir(path, opath: string): Opt[void] =
   let title = ("Directory list of " & path).mimeQuote()
-  stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
+  let stdout = cast[ChaFile](stdout)
+  ?stdout.write("Content-Type: text/x-dirlist;title=" & title & "\n\n")
   let d = opendir(path)
   while (let x = readdir(d); x != nil):
     let file = $cast[cstring](addr x.d_name)
@@ -64,7 +64,8 @@ proc loadDir(path, opath: string) {.raises: [IOError].} =
         if S_ISDIR(stats.st_mode) and (target.len == 0 or target[^1] != '/'):
           target &= '/'
       line &= " -> " & target
-    stdout.writeLine(line)
+    ?stdout.writeLine(line)
+  ok()
 
 proc loadFile(os, ps: PosixStream; stats: Stat) =
   const BufferSize = 16384
@@ -95,10 +96,7 @@ proc main() =
       os.write("Status: 301\nLocation: " & path.deleteChars({'\r', '\n'}) &
         "/\n")
     else:
-      try:
-        loadDir(path, opath)
-      except IOError:
-        discard
+      discard loadDir(path, opath)
   elif res == 0 and (let ps = newPosixStream(path); ps != nil):
     os.loadFile(ps, stats)
   else:

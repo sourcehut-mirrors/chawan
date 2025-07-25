@@ -12,6 +12,7 @@ type
   ChaFile* = ptr CFile
 
 let EOF {.importc, header: "<stdio.h>".}: cint
+let SEEK_SET {.importc, header: "<stdio.h>".}: cint
 
 {.push importc, header: "<stdio.h>".}
 proc fopen(pathname, mode: cstring): ChaFile
@@ -26,12 +27,19 @@ proc fgetc(file: ChaFile): cint
 proc ferror(file: ChaFile): cint
 proc popen*(cmd, t: cstring): ChaFile
 proc pclose*(file: ChaFile): cint
+proc fseek(file: ChaFile; offset: clong; whence: cint): cint
 {.pop.} # importc, header: "<stdio.h>"
 
 proc rename*(oldname, newname: string): Opt[void] =
   if rename(cstring(oldname), cstring(newname)) != 0:
     return err()
   ok()
+
+proc fopen*(name: string; mode: cstring): Opt[ChaFile] =
+  let file = fopen(cstring(name), mode)
+  if file == nil:
+    return err()
+  ok(file)
 
 proc fdopen*(ps: PosixStream; mode: cstring): Opt[ChaFile] =
   let file = fdopen(ps.fd, mode)
@@ -89,15 +97,13 @@ proc flush*(file: ChaFile): Opt[void] =
     return err()
   ok()
 
-proc close*(file: ChaFile): Opt[void] =
+proc close*(file: ChaFile): Opt[void] {.discardable.} =
   if fclose(file) != 0:
     return err()
   ok()
 
 proc readFile*(path: string; s: var string): Opt[void] =
-  let file = fopen(path, "r")
-  if file == nil:
-    return err()
+  let file = ?fopen(path, "r")
   let res = file.readAll(s)
   ?file.close()
   res
@@ -110,5 +116,41 @@ proc writeFile*(path, content: string; mode: cint): Opt[void] =
   let res = file.write(content)
   ?file.close()
   res
+
+proc seek*(file: ChaFile; offset: clong): Opt[void] =
+  if fseek(file, offset, SEEK_SET) != 0:
+    return err()
+  ok()
+
+when defined(gcDestructors):
+  type AChaFile* = object
+    p: ChaFile
+
+  proc `=destroy`(f: var AChaFile) =
+    if f.p != nil:
+      discard f.p.fclose()
+
+  proc `=wasMoved`(f: var AChaFile) =
+    f.p = nil
+
+  proc `=copy`(a: var AChaFile; b: AChaFile) {.error.} =
+    discard
+
+  proc afopen*(name: string; mode: cstring): Opt[AChaFile] =
+    let p = ?fopen(name, mode)
+    return ok(AChaFile(p: p))
+
+  proc afdopen*(ps: PosixStream; mode: cstring): Opt[AChaFile] =
+    let p = ?ps.fdopen(mode)
+    return ok(AChaFile(p: p))
+
+  proc readLine*(file: AChaFile; s: var string): Opt[bool] =
+    return file.p.readLine(s)
+
+  proc writeLine*(file: AChaFile; s: openArray[char]): Opt[void] =
+    return file.p.writeLine(s)
+
+  proc seek*(file: AChaFile; offset: clong): Opt[void] =
+    return file.p.seek(offset)
 
 {.pop.} # raises: []

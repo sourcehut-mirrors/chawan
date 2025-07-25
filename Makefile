@@ -135,16 +135,17 @@ unicode_gen:
 
 twtstr = src/utils/twtstr.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim
-lcgi = $(dynstream) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
+lcgi = src/io/chafile.nim src/io/dynstream.nim src/types/opt.nim \
+	src/utils/twtstr.nim $(sandbox) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)
 tinfl = adapter/protocol/tinfl.h
 
-$(OUTDIR_CGI_BIN)/man: $(twtstr)
+$(OUTDIR_CGI_BIN)/man: $(lcgi)
 $(OUTDIR_CGI_BIN)/http: $(sandbox) $(lcgi_ssl) $(tinfl)
-$(OUTDIR_CGI_BIN)/file: $(twtstr)
+$(OUTDIR_CGI_BIN)/file: $(lcgi)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
-$(OUTDIR_CGI_BIN)/sftp: $(lcgi) $(twtstr)
+$(OUTDIR_CGI_BIN)/sftp: $(lcgi)
 $(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/ssl: adapter/protocol/http.nim adapter/protocol/gemini.nim \
 	adapter/protocol/sftp.nim $(lcgi_ssl) $(sandbox) $(tinfl)
@@ -157,7 +158,7 @@ $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
 	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/nanosvg: $(sandbox) adapter/img/nanosvg.nim adapter/img/nanosvg.h
-$(OUTDIR_LIBEXEC)/urlenc: $(twtstr)
+$(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(dynstream)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/gopher2html: $(twtstr)
 $(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim src/io/poll.nim $(twtstr) $(dynstream)

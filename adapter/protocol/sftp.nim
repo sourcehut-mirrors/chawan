@@ -134,11 +134,11 @@ proc matchesPattern(s: string; pats: openArray[string]): bool =
       return true
   return false
 
-proc parseSSHConfig(f: File; host: string; pubKey, privKey: var string)
-    {.raises: [IOError].}=
+proc parseSSHConfig(f: AChaFile; host: string; pubKey, privKey: var string):
+    Opt[void] =
   var skipTillNext = false
   var line = ""
-  while f.readLine(line):
+  while ?f.readLine(line):
     var i = line.skipBlanks(0)
     if i == line.len or line[i] == '#':
       continue
@@ -184,7 +184,7 @@ proc parseSSHConfig(f: File; host: string; pubKey, privKey: var string)
         continue # error
       if pubKey == "":
         pubKey = expandPath(args[0])
-  f.close()
+  ok()
 
 proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
   discard os.writeDataLoop("Status: 401\n")
@@ -197,12 +197,11 @@ proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: string) =
   var pubKey = ""
   var privKey = ""
   for config in configs:
-    var f: File
-    if f.open(config):
-      try:
-        parseSSHConfig(f, host, pubKey, privKey)
-      except IOError:
-        os.die("InternalError", "failed to read SSH config")
+    let f = chafile.afopen(config, "r")
+    if f.isErr:
+      continue
+    parseSSHConfig(f.get, host, pubKey, privKey)
+      .orDie(os, "InternalError", "failed to read SSH config")
   if privKey == "":
     if session.libssh2_userauth_password(cstring(user), cstring(pass)) != 0:
       os.unauthorized(session)
