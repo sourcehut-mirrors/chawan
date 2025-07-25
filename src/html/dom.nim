@@ -2629,7 +2629,7 @@ func referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
 
 proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL):
     CSSStylesheet =
-  s.parseStylesheet(nil, addr window.settings)
+  s.parseStylesheet(baseURL, addr window.settings)
 
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
