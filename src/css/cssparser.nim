@@ -27,9 +27,9 @@ type
     ctfId, ctfSign
 
   CSSToken* = object # token or component value
+    num*: float32 # for number-like
     flags*: set[CSSTokenFlag]
     c*: char # for cttDelim.  if non-ascii, s contains UTF-8
-    num*: float32 # for number-like
     case t*: CSSTokenType
     of cttFunction:
       fun*: CSSFunction
