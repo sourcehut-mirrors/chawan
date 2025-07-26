@@ -502,9 +502,10 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
 # boxes with a resolved position.
 proc resolveBlockOffset(box: CSSBox): Offset =
   var dims: set[DimensionType] = {}
-  let absolute = box.positioned and
+  let absolute = box.positioned and box.computed{"position"} == PositionAbsolute
+  let absoluteOrFixed = box.positioned and
     box.computed{"position"} in PositionAbsoluteFixed
-  if absolute:
+  if absoluteOrFixed:
     if not box.computed{"left"}.auto or not box.computed{"right"}.auto:
       dims.incl(dtHorizontal)
     if not box.computed{"top"}.auto or not box.computed{"bottom"}.auto:
@@ -521,7 +522,7 @@ proc resolveBlockOffset(box: CSSBox): Offset =
   while it2 != nil:
     if absolute and it2.positioned and abs == nil:
       abs = it2 # record first absolute ancestor
-    if it2.render.positioned and (not absolute or it2.positioned):
+    if it2.render.positioned and (not absoluteOrFixed or abs != nil):
       break
     if it2 of BlockBox:
       toPosition.add(BlockBox(it2))
@@ -548,7 +549,7 @@ proc resolveBlockOffset(box: CSSBox): Offset =
       offset: offset + box.state.offset,
       clipBox: DefaultClipBox
     )
-    box.inheritClipBox(if absolute: it2 else: it)
+    box.inheritClipBox(if absoluteOrFixed: it2 else: it)
   return offset
 
 proc renderPositioned(grid: var FlexibleGrid; state: var RenderState;
