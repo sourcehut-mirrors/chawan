@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -352,7 +354,7 @@ proc processData(state: var State; buf: openArray[char]) =
     else: state.putc(c)
 
 proc usage() =
-  stderr.write("Usage: ansi2html [-s] [-t title]\n")
+  stderr.fwrite("Usage: ansi2html [-s] [-t title]\n")
   quit(1)
 
 proc main() =
@@ -410,3 +412,5 @@ proc main() =
   state.flushOutbuf()
 
 main()
+
+{.pop.} # raises: []

@@ -15,6 +15,8 @@ proc getcwd*(): string =
     return ""
   $cs
 
+proc system*(cmd: cstring): cint {.importc, header: "<stdlib.h>".}
+
 #TODO std's implementation is a glitched mess, better rewrite it...
 proc getAppFilename*(): string =
   result = ""

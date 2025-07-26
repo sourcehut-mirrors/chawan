@@ -1,5 +1,11 @@
+{.push raises: [].}
+
 import std/os
-import std/osproc
+
+import io/dynstream
+import types/opt
+import utils/myposix
+import utils/twtstr
 
 proc help(i: int) =
     let s = """
@@ -8,9 +14,9 @@ mancha [-M path] [[-s] section] -k keyword
 mancha [-M path] [[-s] section] name
 mancha -l file"""
     if i == 0:
-      stdout.write(s & '\n')
+      stdout.fwrite(s & '\n')
     else:
-      stderr.write(s & '\n')
+      stderr.fwrite(s & '\n')
     quit(i)
 
 var i = 1
@@ -42,7 +48,10 @@ proc main() =
         help(1)
       case s[1]
       of 'h': help(0)
-      of 'M': putEnv("MANPATH", getnext())
+      of 'M':
+        if twtstr.setEnv("MANPATH", getnext()).isErr:
+          stderr.fwrite("Failed to set MANPATH\n")
+          quit(1)
       of 's':
         section = getnext()
         forceSection = true
@@ -69,7 +78,7 @@ proc main() =
     if local[0] == '~':
       local = expandTilde(local)
     elif local[0] != '/':
-      local = (getCurrentDir() / local)
+      local = (myposix.getcwd() / local)
     "man-l:" & local
   elif keyword != "":
     "man-k:" & keyword & qsec
@@ -78,6 +87,13 @@ proc main() =
   var cha = getEnv("MANCHA_CHA")
   if cha == "":
     cha = "cha"
-  quit(execCmd(cha & " " & quoteShellPosix(query)))
+  let cmd = cha & " " & quoteShellPosix(query)
+  let res = myposix.system(cstring(cmd))
+  if res < 0:
+    stderr.fwrite("failed to fork child process")
+    quit(1)
+  quit(exitStatusLikeShell(res))
 
 main()
+
+{.pop.} # raises: []

@@ -1,3 +1,5 @@
+{.push raises: [].}
+
 import std/options
 import std/os
 import std/posix
@@ -138,3 +140,5 @@ proc main() =
       break
 
 main()
+
+{.pop.} # raises: []

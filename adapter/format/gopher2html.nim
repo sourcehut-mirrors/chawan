@@ -1,6 +1,10 @@
+{.push raises: [].}
+
 import std/os
 import std/strutils
 
+import io/chafile
+import types/opt
 import utils/twtstr
 
 func gopherName(c: char): string =
@@ -20,17 +24,19 @@ func gopherName(c: char): string =
   of ';': "video"
   else: "unsupported"
 
-proc main() =
+proc main(): Opt[void] =
+  let stdout = cast[ChaFile](stdout)
+  let stdin = cast[ChaFile](stdin)
   if paramCount() != 2 or paramStr(1) != "-u":
-    stdout.writeLine("Usage: gopher2html [-u URL]")
+    discard stdout.writeLine("Usage: gopher2html [-u URL]")
     quit(1)
   let url = htmlEscape(paramStr(2))
-  stdout.write("""<!DOCTYPE html>
+  ?stdout.write("""<!DOCTYPE html>
 <title>Index of """ & url & """</title>
 <h1>Index of """ & url & """</h1>""")
   var ispre = false
   var line = ""
-  while stdin.readLine(line):
+  while ?stdin.readLine(line):
     if line.len == 0:
       continue
     let t = line[0]
@@ -66,6 +72,9 @@ proc main() =
       else:
         file.substr("URL:".len)
       outs &= "<a href=\"" & htmlEscape(ourls) & "\">" & names & "</a><br>\n"
-    stdout.write(outs)
+    ?stdout.write(outs)
+  ok()
 
-main()
+discard main()
+
+{.pop.} # raises: []

@@ -54,16 +54,24 @@ proc write*(file: ChaFile; s: openArray[char]): Opt[void] =
       return err()
   ok()
 
+proc read*(file: ChaFile; s: var openArray[uint8]): int =
+  if s.len > 0:
+    return cast[int](fread(addr s[0], 1, csize_t(s.len), file))
+  return 0
+
 proc read*(file: ChaFile; s: var openArray[char]): int =
   if s.len > 0:
     return cast[int](fread(addr s[0], 1, csize_t(s.len), file))
   return 0
 
-proc writeLine*(file: ChaFile; s: openArray[char]): Opt[void] =
-  ?file.write(s)
-  if fputc(cint('\n'), file) != cint('\n'):
+proc write*(file: ChaFile; c: char): Opt[void] =
+  if fputc(cint(c), file) != cint(c):
     return err()
   ok()
+
+proc writeLine*(file: ChaFile; s: openArray[char]): Opt[void] =
+  ?file.write(s)
+  file.write('\n')
 
 proc readLine*(file: ChaFile; s: var string): Opt[bool] =
   s.setLen(0)

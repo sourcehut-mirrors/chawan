@@ -9,6 +9,7 @@ import std/strutils
 import io/dynstream
 import types/opt
 import types/url
+import utils/myposix
 import utils/twtstr
 
 type
@@ -319,8 +320,6 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL): string =
   var canpipe: bool
   return unquoteCommand(ecmd, contentType, outpath, url, canpipe)
 
-proc system(cmd: cstring): cint {.importc, header: "<stdlib.h>".}
-
 proc checkEntry(entry: MailcapEntry; contentType, outpath, mt, st: string;
     url: URL): bool =
   if not entry.t.startsWith("*/") and not entry.t.startsWithIgnoreCase(mt) or
@@ -329,7 +328,7 @@ proc checkEntry(entry: MailcapEntry; contentType, outpath, mt, st: string;
   if entry.test != "":
     var canpipe = true
     let cmd = unquoteCommand(entry.test, contentType, outpath, url, canpipe)
-    return canpipe and system(cstring(cmd)) == 0
+    return canpipe and myposix.system(cstring(cmd)) == 0
   true
 
 proc findPrevMailcapEntry*(mailcap: Mailcap; contentType, outpath: string;

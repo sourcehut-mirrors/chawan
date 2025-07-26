@@ -6,6 +6,8 @@
 # and read it with stbi. (TODO: try switching to a more efficient format
 # like qemacs fbf.)
 
+{.push raises: [].}
+
 import std/algorithm
 import std/os
 import std/posix
@@ -361,3 +363,5 @@ proc main() =
     quit(1)
 
 main()
+
+{.pop.} # raises: []

@@ -2,6 +2,8 @@
 # that it doesn't bloat the distribution's size in statically linked
 # builds.
 
+{.push raises: [].}
+
 import utils/twtstr
 
 import gemini
@@ -18,3 +20,5 @@ proc main() =
     http.main()
 
 main()
+
+{.pop.} # raises: []

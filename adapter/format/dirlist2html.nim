@@ -1,9 +1,12 @@
+{.push raises: [].}
+
 import std/algorithm
 import std/options
 import std/os
 import std/posix
 import std/strutils
 
+import io/chafile
 import types/opt
 import utils/twtstr
 
@@ -23,8 +26,8 @@ type DirlistItem = ref object
   of ditDir:
     discard
 
-proc printDirlist(f: File; items: seq[DirlistItem]; maxw: int) =
-  f.writeLine("<a href=\"../\">[Upper Directory]</a>")
+proc printDirlist(f: ChaFile; items: seq[DirlistItem]; maxw: int): Opt[void] =
+  ?f.writeLine("<a href=\"../\">[Upper Directory]</a>")
   for item in items:
     var path = percentEncode(item.name, PathPercentEncodeSet)
     if item.t == ditLink and item.linkto.len > 0 and item.linkto[^1] == '/':
@@ -45,10 +48,12 @@ proc printDirlist(f: File; items: seq[DirlistItem]; maxw: int) =
       line &= ' ' & convertSize(item.nsize)
     elif item.t == ditLink:
       line &= " -> " & htmlEscape(item.linkto)
-    f.writeLine(line)
+    ?f.writeLine(line)
+  ok()
 
 proc usage() =
-  stderr.write("Usage: dirlist2html [-t title]\n")
+  let stderr = cast[ChaFile](stderr)
+  discard stderr.writeLine("Usage: dirlist2html [-t title]")
   quit(1)
 
 # I'll just assume that wchar_t is int32, as it should be on any sane
@@ -74,14 +79,15 @@ proc addItem(items: var seq[DirlistItem]; item: DirlistItem; maxw: var int) =
   maxw = max(item.width, maxw)
   items.add(item)
 
-proc parseInput(f: File; items: var seq[DirlistItem]; maxw: var int) =
+proc parseInput(f: ChaFile; items: var seq[DirlistItem]; maxw: var int):
+    Opt[void] =
   # wcwidth wants a UTF-8 locale.
   # I don't know how portable this is, but the worst thing that can
   # happen is that too many dots are printed.
   let thisUTF8 = ($setlocale(LC_CTYPE, nil)).until('.') & ".UTF-8"
   discard setlocale(LC_CTYPE, cstring(thisUTF8))
   var line: string
-  while f.readLine(line):
+  while ?f.readLine(line):
     if line.len == 0: continue
     var i = 10 # permission
     template skip_till_space =
@@ -145,6 +151,7 @@ proc parseInput(f: File; items: var seq[DirlistItem]; maxw: var int) =
         modified: dates,
         nsize: int(nsize)
       ), maxw)
+  ok()
 
 proc parseArgs(title: var string) =
   let H = paramCount()
@@ -165,10 +172,11 @@ proc parseArgs(title: var string) =
         usage()
     inc i
 
-proc main() =
+proc main(): Opt[void] =
   var title = ""
   parseArgs(title)
-  stdout.write("""
+  let stdout = cast[ChaFile](stdout)
+  ?stdout.write("""
 <!DOCTYPE html>
 <head>
 <title>""" & title.htmlEscape() & """</title>
@@ -178,7 +186,8 @@ proc main() =
 <pre>""")
   var items: seq[DirlistItem] = @[]
   var maxw = 20
-  stdin.parseInput(items, maxw)
+  let stdin = cast[ChaFile](stdin)
+  ?stdin.parseInput(items, maxw)
   items.sort(proc(a, b: DirlistItem): int =
     if a.t == ditDir and b.t != ditDir:
       return -1
@@ -186,7 +195,10 @@ proc main() =
       return 1
     return cmp(a.dname, b.dname)
   )
-  stdout.printDirlist(items, maxw)
-  stdout.write("</pre></body>")
+  ?stdout.printDirlist(items, maxw)
+  ?stdout.write("</pre></body>")
+  ok()
 
-main()
+discard main()
+
+{.pop.} # raises: []

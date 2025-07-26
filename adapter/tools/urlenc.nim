@@ -4,9 +4,13 @@
 # Note: the last newline is trimmed from the input. Add another one if
 # you wish to keep it.
 
+{.push raises: [].}
+
 import std/os
 
+import io/chafile
 import io/dynstream
+import types/opt
 import utils/twtstr
 
 proc usage() {.noreturn.} =
@@ -26,7 +30,7 @@ The input to be decoded is read from stdin, with the last line feed removed.
 """)
   quit(1)
 
-proc main() =
+proc main(): Opt[void] =
   let isdec = paramStr(0).afterLast('/') == "urldec"
   let npars = paramCount()
   if not isdec and npars > 2:
@@ -47,12 +51,19 @@ proc main() =
         set = ApplicationXWWWFormUrlEncodedSet
       of "-s": spacesAsPlus = true
       else: usage()
-  var s = stdin.readAll()
+  let stdin = cast[ChaFile](stdin)
+  var s: string
+  ?stdin.readAll(s)
   if s.len > 0 and s[^1] == '\n':
     s.setLen(s.len - 1)
+  let stdout = cast[ChaFile](stdout)
   if isdec:
-    stdout.writeLine(s.percentDecode())
+    ?stdout.writeLine(s.percentDecode())
   else:
-    stdout.writeLine(s.percentEncode(set, spacesAsPlus))
+    ?stdout.writeLine(s.percentEncode(set, spacesAsPlus))
+  ok()
 
-main()
+discard main()
+
+{.pop.} # raises: []
+
