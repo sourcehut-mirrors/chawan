@@ -8,13 +8,8 @@ die() {
 test "$1" || die "usage: gen_syscalls [file]"
 
 find_label() {
-	printf '%s\n' "$labels" | while read -r line
-	do	case $line in
-		"$1 "*)	printf '%d\n' "${line#* }"
-			break
-			;;
-		esac
-	done
+	line=$(printf '%s\n' "$labels" | grep -e "$1 " | head -n 1)
+	if test "$line"; then printf '%d\n' "${line#* }"; fi
 }
 
 line_cut_next() {
@@ -52,7 +47,7 @@ put_ret() {
 }
 
 ip=0
-while read -r line
+while IFS= read -r line
 do	line=${line%%#*}
 	case $line in
 	': '*)	line_cut_next
@@ -67,7 +62,7 @@ $line $ip"
 done < "$1"
 
 ip=0
-while read -r line
+while IFS= read -r line
 do	line_cut_next
 	case $next in
 	:)	continue ;;
