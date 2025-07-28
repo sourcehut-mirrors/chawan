@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-from std/strutils import split, toUpperAscii, find, AllChars
+from std/strutils import split, toUpperAscii
 
 import std/macros
 import std/options
@@ -52,6 +52,7 @@ import types/opt
 import types/refstring
 import types/url
 import types/winattrs
+import utils/myposix
 import utils/strwidth
 import utils/twtstr
 

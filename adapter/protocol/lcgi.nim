@@ -8,11 +8,13 @@ import std/strutils
 import io/chafile
 import io/dynstream
 import types/opt
+import utils/myposix
 import utils/sandbox
 import utils/twtstr
 
 export chafile
 export dynstream
+export myposix
 export opt
 export sandbox
 export twtstr

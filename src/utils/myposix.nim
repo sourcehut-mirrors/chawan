@@ -17,6 +17,17 @@ proc getcwd*(): string =
 
 proc system*(cmd: cstring): cint {.importc, header: "<stdlib.h>".}
 
+proc c_fwrite(p: pointer; size, nmemb: csize_t; f: File): csize_t {.
+  importc: "fwrite", header: "<stdio.h>".}
+
+proc fwrite*(f: File; s: openArray[char]) =
+  if s.len > 0:
+    discard c_fwrite(unsafeAddr s[0], 1, csize_t(s.len), f)
+
+proc die*(s: string) {.noreturn.} =
+  stderr.fwrite("cha: " & s & '\n')
+  quit(1)
+
 #TODO std's implementation is a glitched mess, better rewrite it...
 proc getAppFilename*(): string =
   result = ""

@@ -2,7 +2,6 @@
 
 import std/os
 
-import io/dynstream
 import types/opt
 import utils/myposix
 import utils/twtstr

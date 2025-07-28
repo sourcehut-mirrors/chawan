@@ -9,8 +9,8 @@
 import std/os
 
 import io/chafile
-import io/dynstream
 import types/opt
+import utils/myposix
 import utils/twtstr
 
 proc usage() {.noreturn.} =

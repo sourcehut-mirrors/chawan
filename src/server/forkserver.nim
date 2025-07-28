@@ -20,6 +20,7 @@ import server/loaderiface
 import types/opt
 import types/url
 import types/winattrs
+import utils/myposix
 import utils/proctitle
 import utils/sandbox
 import utils/strwidth

@@ -460,15 +460,4 @@ method flush*(s: BufStream): bool =
 proc newBufStream*(s: SocketStream; registerFun: proc(fd: int)): BufStream =
   return BufStream(source: s, registerFun: registerFun)
 
-proc c_fwrite(p: pointer; size, nmemb: csize_t; f: File): csize_t {.
-  importc: "fwrite", header: "<stdio.h>".}
-
-proc fwrite*(f: File; s: openArray[char]) =
-  if s.len > 0:
-    discard c_fwrite(unsafeAddr s[0], 1, csize_t(s.len), f)
-
-proc die*(s: string) {.noreturn.} =
-  stderr.fwrite("cha: " & s & '\n')
-  quit(1)
-
 {.pop.} # raises: []

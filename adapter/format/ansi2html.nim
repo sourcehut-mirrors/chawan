@@ -8,6 +8,7 @@ import io/dynstream
 import io/poll
 import types/color
 import types/opt
+import utils/myposix
 import utils/twtstr
 
 type

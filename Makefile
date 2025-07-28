@@ -108,7 +108,7 @@ twtstr = src/utils/twtstr.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim
 chafile = src/io/chafile.nim $(dynstream)
 myposix = src/utils/myposix.nim
-lcgi = $(chafile) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
+lcgi = $(myposix) $(chafile) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)
 tinfl = adapter/protocol/tinfl.h
@@ -123,7 +123,7 @@ $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim res/* lib/chame0/chame/* \
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
 
-$(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim $(dynstream) $(twtstr) $(myposix)
+$(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim $(twtstr) $(myposix)
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/mancha" $(FLAGS) \
 		-o:"$(OUTDIR_BIN)/mancha" $(FLAGS) adapter/tools/mancha.nim
@@ -159,10 +159,11 @@ $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
 	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/nanosvg: $(sandbox) adapter/img/nanosvg.nim adapter/img/nanosvg.h
-$(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile)
+$(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile) $(myposix)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/gopher2html: $(twtstr) $(chafile)
-$(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim src/io/poll.nim $(twtstr) $(dynstream)
+$(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim src/io/poll.nim $(twtstr) \
+	$(dynstream) $(myposix)
 $(OUTDIR_LIBEXEC)/md2html: $(twtstr) $(chafile)
 $(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr) $(chafile)
 $(OUTDIR_LIBEXEC)/img2html: $(twtstr) $(chafile)

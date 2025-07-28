@@ -17,6 +17,7 @@ import types/cell
 import types/color
 import types/opt
 import types/winattrs
+import utils/myposix
 import utils/strwidth
 import utils/twtstr
 
