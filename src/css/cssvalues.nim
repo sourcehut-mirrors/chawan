@@ -45,19 +45,22 @@ type
     cptWhiteSpace = "white-space"
     cptWordBreak = "word-break"
 
+    # half-word properties: stored as (32-bit) word
+    cptChaColspan = "-cha-colspan"
+    cptChaRowspan = "-cha-rowspan"
+    cptFlexGrow = "flex-grow"
+    cptFlexShrink = "flex-shrink"
+    cptFontWeight = "font-weight"
+    cptOpacity = "opacity"
+
     # word properties: stored as (64-bit) word
     cptBackgroundColor = "background-color"
     cptBorderSpacingBlock = "-cha-border-spacing-block"
     cptBorderSpacingInline = "-cha-border-spacing-inline"
     cptBottom = "bottom"
-    cptChaColspan = "-cha-colspan"
-    cptChaRowspan = "-cha-rowspan"
     cptColor = "color"
     cptFlexBasis = "flex-basis"
-    cptFlexGrow = "flex-grow"
-    cptFlexShrink = "flex-shrink"
     cptFontSize = "font-size"
-    cptFontWeight = "font-weight"
     cptHeight = "height"
     cptLeft = "left"
     cptMarginBottom = "margin-bottom"
@@ -68,7 +71,6 @@ type
     cptMaxWidth = "max-width"
     cptMinHeight = "min-height"
     cptMinWidth = "min-width"
-    cptOpacity = "opacity"
     cptPaddingBottom = "padding-bottom"
     cptPaddingLeft = "padding-left"
     cptPaddingRight = "padding-right"
@@ -88,7 +90,9 @@ type
     cptQuotes = "quotes"
 
 const LastBitPropType = cptWordBreak
-const FirstWordPropType = LastBitPropType.succ
+const FirstHWordPropType = LastBitPropType.succ
+const LastHWordPropType = cptOpacity
+const FirstWordPropType = LastHWordPropType.succ
 const LastWordPropType = cptZIndex
 const FirstObjPropType = LastWordPropType.succ
 
@@ -407,12 +411,15 @@ type
     whiteSpace*: CSSWhiteSpace
     wordBreak*: CSSWordBreak
 
+  CSSValueHWord* {.union.} = object
+    dummy: uint32
+    integer*: int32
+    number*: float32
+
   CSSValueWord* {.union.} = object
     dummy: uint64
     color*: CSSColor
-    integer*: int32
     length*: CSSLength
-    number*: float32
     zIndex*: CSSZIndex
 
   CSSValue* = ref object
@@ -434,6 +441,7 @@ type
 
   CSSValues* = ref object
     bits*: array[CSSPropertyType.low..LastBitPropType, CSSValueBit]
+    hwords*: array[FirstHWordPropType..LastHWordPropType, CSSValueHWord]
     words*: array[FirstWordPropType..LastWordPropType, CSSValueWord]
     objs*: array[FirstObjPropType..CSSPropertyType.high, CSSValue]
     vars*: CSSVariableMap
@@ -444,7 +452,7 @@ type
     coAuthor
 
   CSSEntryType* = enum
-    ceBit, ceObject, ceWord, ceVar, ceGlobal
+    ceBit, ceWord, ceHWord, ceObject, ceVar, ceGlobal
 
   CSSComputedEntry* = object
     cvar*: CAtom # put it here, so ComputedEntry remains 2 words wide
@@ -452,6 +460,8 @@ type
     case et*: CSSEntryType
     of ceBit:
       bit*: uint8
+    of ceHWord:
+      hword*: CSSValueHWord
     of ceWord:
       word*: CSSValueWord
     of ceObject:
@@ -468,6 +478,7 @@ type
 
 static:
   doAssert sizeof(CSSValueBit) == 1
+  doAssert sizeof(CSSValueHWord) <= 4
   doAssert sizeof(CSSValueWord) <= 8
   doAssert sizeof(CSSValue()[]) <= 16
   doAssert sizeof(CSSComputedEntry()) <= 16
@@ -497,19 +508,22 @@ const ValueTypes = [
   cptWhiteSpace: cvtWhiteSpace,
   cptWordBreak: cvtWordBreak,
 
+  # half-words
+  cptChaColspan: cvtInteger,
+  cptChaRowspan: cvtInteger,
+  cptFlexGrow: cvtNumber,
+  cptFlexShrink: cvtNumber,
+  cptFontWeight: cvtInteger,
+  cptOpacity: cvtNumber,
+
   # words
   cptBackgroundColor: cvtColor,
   cptBorderSpacingBlock: cvtLength,
   cptBorderSpacingInline: cvtLength,
   cptBottom: cvtLength,
-  cptChaColspan: cvtInteger,
-  cptChaRowspan: cvtInteger,
   cptColor: cvtColor,
   cptFlexBasis: cvtLength,
-  cptFlexGrow: cvtNumber,
-  cptFlexShrink: cvtNumber,
   cptFontSize: cvtLength,
-  cptFontWeight: cvtInteger,
   cptHeight: cvtLength,
   cptLeft: cvtLength,
   cptMarginBottom: cvtLength,
@@ -520,7 +534,6 @@ const ValueTypes = [
   cptMaxWidth: cvtLength,
   cptMinHeight: cvtLength,
   cptMinWidth: cvtLength,
-  cptOpacity: cvtNumber,
   cptPaddingBottom: cvtLength,
   cptPaddingLeft: cvtLength,
   cptPaddingRight: cvtLength,
@@ -587,11 +600,13 @@ proc putIfAbsent*(map: CSSVariableMap; name: CAtom; cvar: CSSVariable) =
   discard map.table.hasKeyOrPut(name, cvar)
 
 type CSSPropertyReprType* = enum
-  cprtBit, cprtWord, cprtObject
+  cprtBit, cprtHWord, cprtWord, cprtObject
 
 func reprType*(t: CSSPropertyType): CSSPropertyReprType =
   if t <= LastBitPropType:
     return cprtBit
+  if t <= LastHWordPropType:
+    return cprtHWord
   if t <= LastWordPropType:
     return cprtWord
   return cprtObject
@@ -677,12 +692,18 @@ func serialize(val: CSSValue): string =
   of cvtCounterSet: return $val.counterSet
   else: assert false
 
+func serialize(val: CSSValueHWord; t: CSSValueType): string =
+  case t
+  of cvtInteger: return $val.integer
+  of cvtNumber: return $val.number
+  else:
+    assert false
+    return ""
+
 func serialize(val: CSSValueWord; t: CSSValueType): string =
   case t
   of cvtColor: return $val.color
-  of cvtInteger: return $val.integer
   of cvtLength: return $val.length
-  of cvtNumber: return $val.number
   of cvtZIndex: return $val.zIndex
   else:
     assert false
@@ -718,6 +739,7 @@ func serialize(val: CSSValueBit; t: CSSValueType): string =
 func serialize*(computed: CSSValues; p: CSSPropertyType): string =
   case p.reprType
   of cprtBit: return computed.bits[p].serialize(valueType(p))
+  of cprtHWord: return computed.hwords[p].serialize(valueType(p))
   of cprtWord: return computed.words[p].serialize(valueType(p))
   of cprtObject: return computed.objs[p].serialize()
 
@@ -755,6 +777,9 @@ macro `{}`*(vals: CSSValues; s: static string): untyped =
   of cprtBit:
     return quote do:
       `vals`.bits[CSSPropertyType(`t`)].`vs`
+  of cprtHWord:
+    return quote do:
+      `vals`.hwords[CSSPropertyType(`t`)].`vs`
   of cprtWord:
     return quote do:
       `vals`.words[CSSPropertyType(`t`)].`vs`
@@ -770,6 +795,9 @@ macro `{}=`*(vals: CSSValues; s: static string, val: typed) =
   of cprtBit:
     return quote do:
       `vals`.bits[CSSPropertyType(`t`)] = CSSValueBit(`vs`: `val`)
+  of cprtHWord:
+    return quote do:
+      `vals`.words[CSSPropertyType(`t`)] = CSSValueHWord(`vs`: `val`)
   of cprtWord:
     return quote do:
       `vals`.words[CSSPropertyType(`t`)] = CSSValueWord(`vs`: `val`)
@@ -1495,6 +1523,9 @@ func parseNumber(tok: CSSToken; range: Slice[float32]): Opt[float32] =
 proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
   return CSSComputedEntry(et: ceObject, t: t, obj: obj)
 
+proc makeEntry(t: CSSPropertyType; hword: CSSValueHWord): CSSComputedEntry =
+  return CSSComputedEntry(et: ceHWord, t: t, hword: hword)
+
 proc makeEntry(t: CSSPropertyType; word: CSSValueWord): CSSComputedEntry =
   return CSSComputedEntry(et: ceWord, t: t, word: word)
 
@@ -1511,10 +1542,10 @@ proc makeEntry*(t: CSSPropertyType; color: CSSColor): CSSComputedEntry =
   makeEntry(t, CSSValueWord(color: color))
 
 proc makeEntry*(t: CSSPropertyType; integer: int32): CSSComputedEntry =
-  makeEntry(t, CSSValueWord(integer: integer))
+  makeEntry(t, CSSValueHWord(integer: integer))
 
 proc makeEntry(t: CSSPropertyType; number: float32): CSSComputedEntry =
-  makeEntry(t, CSSValueWord(number: number))
+  makeEntry(t, CSSValueHWord(number: number))
 
 proc parseVariable(fun: CSSFunction; t: CSSPropertyType;
     entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
@@ -1558,6 +1589,12 @@ proc parseValue(toks: openArray[CSSToken]; t: CSSPropertyType;
       et: ceWord,
       word: CSSValueWord(prop: val)
     )
+  template set_hword(prop, val: untyped) =
+    entry = CSSComputedEntry(
+      t: t,
+      et: ceHWord,
+      hword: CSSValueHWord(prop: val)
+    )
   template set_bit(prop, val: untyped) =
     entry = CSSComputedEntry(t: t, et: ceBit, bit: cast[uint8](val))
   case v
@@ -1582,9 +1619,9 @@ proc parseValue(toks: openArray[CSSToken]; t: CSSPropertyType;
   of cvtContent: set_new content, ?parseContent(toks)
   of cvtInteger:
     case t
-    of cptFontWeight: set_word integer, ?parseFontWeight(tok)
-    of cptChaColspan: set_word integer, ?parseInteger(tok, 1i32 .. 1000i32)
-    of cptChaRowspan: set_word integer, ?parseInteger(tok, 0i32 .. 65534i32)
+    of cptFontWeight: set_hword integer, ?parseFontWeight(tok)
+    of cptChaColspan: set_hword integer, ?parseInteger(tok, 1i32 .. 1000i32)
+    of cptChaRowspan: set_hword integer, ?parseInteger(tok, 0i32 .. 65534i32)
     else: assert false
   of cvtZIndex: set_word zIndex, ?parseZIndex(tok)
   of cvtTextDecoration: set_bit textDecoration, ?cssTextDecoration(toks)
@@ -1615,8 +1652,8 @@ proc parseValue(toks: openArray[CSSToken]; t: CSSPropertyType;
   of cvtNumber:
     case t
     of cptFlexGrow, cptFlexShrink:
-      set_word number, ?parseNumber(tok, 0f32..float32.high)
-    of cptOpacity: set_word number, ?parseNumber(tok, 0f32..1f32)
+      set_hword number, ?parseNumber(tok, 0f32..float32.high)
+    of cptOpacity: set_hword number, ?parseNumber(tok, 0f32..1f32)
     else: assert false
   of cvtOverflow: set_bit overflow, ?parseIdent[CSSOverflow](tok)
   return ok()
@@ -1661,12 +1698,16 @@ template getDefault*(t: CSSPropertyType): CSSValue =
   {.cast(noSideEffect).}:
     defaultTable[t]
 
+proc getDefaultHWord(t: CSSPropertyType): CSSValueHWord =
+  case valueType(t)
+  of cvtInteger: return CSSValueHWord(integer: getInitialInteger(t))
+  of cvtNumber: return CSSValueHWord(number: getInitialNumber(t))
+  else: return CSSValueHWord(dummy: 0)
+
 proc getDefaultWord(t: CSSPropertyType): CSSValueWord =
   case valueType(t)
   of cvtColor: return CSSValueWord(color: getInitialColor(t))
-  of cvtInteger: return CSSValueWord(integer: getInitialInteger(t))
   of cvtLength: return CSSValueWord(length: getInitialLength(t))
-  of cvtNumber: return CSSValueWord(number: getInitialNumber(t))
   of cvtZIndex: return CSSValueWord(zIndex: CSSZIndex(auto: true))
   else: return CSSValueWord(dummy: 0)
 
@@ -1846,12 +1887,14 @@ proc parseComputedValues*(name: string; value: seq[CSSToken];
 proc copyFrom*(a, b: CSSValues; t: CSSPropertyType) =
   case t.reprType
   of cprtBit: a.bits[t] = b.bits[t]
+  of cprtHWord: a.hwords[t] = b.hwords[t]
   of cprtWord: a.words[t] = b.words[t]
   of cprtObject: a.objs[t] = b.objs[t]
 
 proc setInitial*(a: CSSValues; t: CSSPropertyType) =
   case t.reprType
   of cprtBit: a.bits[t].dummy = 0
+  of cprtHWord: a.hwords[t] = getDefaultHWord(t)
   of cprtWord: a.words[t] = getDefaultWord(t)
   of cprtObject: a.objs[t] = getDefault(t)
 

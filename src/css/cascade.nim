@@ -157,6 +157,7 @@ proc applyValue0(ctx: var ApplyValueContext; entry: CSSComputedEntry;
     entry = ?ctx.resolveVariable(entry.t, entry.cvar, entry.fallback)
   case entry.et
   of ceBit: ctx.vals.bits[entry.t].dummy = entry.bit
+  of ceHWord: ctx.vals.hwords[entry.t] = entry.hword
   of ceWord: ctx.vals.words[entry.t] = entry.word
   of ceObject: ctx.vals.objs[entry.t] = entry.obj
   of ceGlobal: ctx.applyGlobal(entry.t, entry.global, initType)
