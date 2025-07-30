@@ -84,12 +84,10 @@ Shorthands:
 * flex-flow
 * overflow
 
-Variables (the `var` function) are supported only for non-shorthand
-properties and the `background` shorthand.
+Variables (the `var` function) are fully supported.
 
-Values with a `<length>` type support very simple `calc()` expressions
-that consist of one addition or subtraction and do not use the `var`
-function.
+Values with a `<length>` type support `calc()` expressions that can be
+parsed without recursive descent.
 
 ## Selectors
 

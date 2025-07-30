@@ -86,7 +86,7 @@ To do the same for HTML and ANSI text, use `plaintext, pre`.
 ## Why does `$WEBSITE` look awful?
 
 Usually, this is because it uses some CSS features that are not yet implemented
-in Chawan.  The most common offenders are grid and calc().
+in Chawan.  The most common offender is grid.
 
 There are three ways of dealing with this:
 

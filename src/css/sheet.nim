@@ -168,23 +168,29 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
       if decl.name.startsWith("--"):
         let cvar = CSSVariable(
           name: decl.name.toOpenArray(2, decl.name.high).toAtom(),
+          hasVar: decl.hasVar,
           toks: decl.value
         )
         if decl.important:
           ruleDef.importantVars.add(cvar)
         else:
           ruleDef.normalVars.add(cvar)
+      elif decl.hasVar:
+        if entry := parseDeclWithVar(decl.name, decl.value):
+          if decl.important:
+            ruleDef.importantVals.add(entry)
+          else:
+            ruleDef.normalVals.add(entry)
+      elif decl.important:
+        let olen = ruleDef.importantVals.len
+        if ruleDef.importantVals.parseComputedValues(decl.name, decl.value,
+            sheet.settings.attrsp[]).isErr:
+          ruleDef.importantVals.setLen(olen)
       else:
-        if decl.important:
-          let olen = ruleDef.importantVals.len
-          if ruleDef.importantVals.parseComputedValues(decl.name, decl.value,
-              sheet.settings.attrsp[]).isErr:
-            ruleDef.importantVals.setLen(olen)
-        else:
-          let olen = ruleDef.normalVals.len
-          if ruleDef.normalVals.parseComputedValues(decl.name, decl.value,
-              sheet.settings.attrsp[]).isErr:
-            ruleDef.normalVals.setLen(olen)
+        let olen = ruleDef.normalVals.len
+        if ruleDef.normalVals.parseComputedValues(decl.name, decl.value,
+            sheet.settings.attrsp[]).isErr:
+          ruleDef.normalVals.setLen(olen)
     sheet.add(ruleDef)
     inc sheet.len
 
@@ -193,17 +199,17 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
   of cartUnknown: discard
   of cartImport:
     if sheet.len == 0 and base != nil:
-      var i = atrule.prelude.skipBlanks(0)
+      var ctx = initCSSParser(atrule.prelude)
       # Warning: this is a tracking vector minefield. If you implement
       # media query based imports, make sure to not filter here, but in
       # DOM after the sheet has been downloaded. (e.g. importList can
       # get a "media" field, etc.)
-      if i < atrule.prelude.len:
-        if (let url = cssURL(atrule.prelude[i]); url.isSome):
-          if (let url = parseURL(url.get, some(base)); url.isSome):
-            i = atrule.prelude.skipBlanks(i + 1)
+      if ctx.skipBlanksCheckHas().isOk:
+        let tok = ctx.consume()
+        if urls := ctx.parseURL(tok):
+          if (let url = parseURL(urls, some(base)); url.isSome):
             # check if there are really no media queries/layers/etc
-            if i == atrule.prelude.len:
+            if ctx.skipBlanksCheckDone().isOk:
               sheet.importList.add(url.get)
   of cartMedia:
     if atrule.oblock != nil:

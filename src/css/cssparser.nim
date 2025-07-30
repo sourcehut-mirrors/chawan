@@ -17,11 +17,12 @@ type
     tokBuf: CSSToken
 
   CSSTokenType* = enum
-    cttIdent, cttFunctionKeyword, cttAtKeyword, cttHash, cttString,
+    cttIdent, cttFunction, cttAtKeyword, cttHash, cttString,
     cttBadString, cttUrl, cttBadUrl, cttDelim, cttNumber, cttINumber,
     cttPercentage, cttDimension, cttIDimension, cttWhitespace, cttCdo, cttCdc,
     cttColon, cttSemicolon, cttComma, cttRbracket, cttLbracket, cttLparen,
-    cttRparen, cttLbrace, cttRbrace, cttFunction, cttSimpleBlock
+    cttRparen, cttLbrace, cttRbrace, cttSimpleBlockParen, cttSimpleBlockBracket,
+    cttSimpleBlockBrace
 
   CSSTokenFlag = enum
     ctfId, ctfSign
@@ -32,8 +33,8 @@ type
     c*: char # for cttDelim.  if non-ascii, s contains UTF-8
     case t*: CSSTokenType
     of cttFunction:
-      fun*: CSSFunction
-    of cttSimpleBlock:
+      ft*: CSSFunctionType
+    of cttSimpleBlockParen, cttSimpleBlockBracket, cttSimpleBlockBrace:
       oblock*: CSSSimpleBlock
     else:
       s*: string # for ident/string-like, and unit of number tokens
@@ -58,6 +59,7 @@ type
     name*: string
     value*: seq[CSSToken]
     important*: bool
+    hasVar*: bool
 
   CSSFunctionType* = enum
     cftUnknown = "-cha-unknown"
@@ -78,12 +80,7 @@ type
     cftCalc = "calc"
     cftCounter = "counter"
 
-  CSSFunction* = ref object
-    name*: CSSFunctionType
-    value*: seq[CSSToken]
-
   CSSSimpleBlock* = ref object
-    t*: CSSTokenType # starting token
     value*: seq[CSSToken]
 
   CSSAnB* = tuple[A, B: int32]
@@ -184,9 +181,10 @@ type
 proc consumeDeclarations(ctx: var CSSParser): seq[CSSDeclaration]
 proc consumeComponentValue(ctx: var CSSParser): CSSToken
 proc parseSelectors*(toks: seq[CSSToken]): seq[ComplexSelector]
-proc parseSelectorList(toks: seq[CSSToken]; nested, forgiving: bool):
+proc parseSelectorList(state: var SelectorParser; forgiving: bool):
   SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
+proc addComponentValue(ctx: var CSSParser; toks: var seq[CSSToken])
 proc `$`*(tok: CSSToken): string
 proc `$`*(c: CSSRule): string
 proc `$`*(decl: CSSDeclaration): string
@@ -198,7 +196,8 @@ func isDelim*(tok: CSSToken; c: char): bool =
 
 proc `$`*(tok: CSSToken): string =
   case tok.t:
-  of cttFunctionKeyword, cttAtKeyword: return $tok.t & tok.s & '\n'
+  of cttAtKeyword: return $tok.t & tok.s & '\n'
+  of cttFunction: return $tok.ft & '('
   of cttUrl: return "url(" & tok.s & ")"
   of cttHash: return '#' & tok.s
   of cttIdent: return tok.s
@@ -211,12 +210,10 @@ proc `$`*(tok: CSSToken): string =
   of cttWhitespace: return " "
   of cttSemicolon: return ";\n"
   of cttComma: return ","
-  of cttFunction:
-    let fun = tok.fun
-    result &= $fun.name & "("
-    for s in fun.value:
-      result &= $s
-    result &= ")"
+  of cttSimpleBlockBrace: return "{\n" & $tok.oblock & "\n}"
+  of cttSimpleBlockBracket: return "[" & $tok.oblock & "]"
+  of cttSimpleBlockParen: return "(" & $tok.oblock & ")"
+  of cttRparen: return ")"
   else: return $tok.t & '\n'
 
 proc `$`*(decl: CSSDeclaration): string =
@@ -229,26 +226,21 @@ proc `$`*(decl: CSSDeclaration): string =
   result &= ";"
 
 proc `$`*(c: CSSSimpleBlock): string =
-  case c.t
-  of cttLbrace: result = "{\n"
-  of cttLparen: result = "("
-  of cttLbracket: result = "["
-  else: result = ""
+  result = ""
   for s in c.value:
     result &= $s
-  case c.t
-  of cttLbrace: result &= "\n}"
-  of cttLparen: result &= ")"
-  of cttLbracket: result &= "]"
-  else: discard
 
 proc `$`*(c: CSSRule): string =
   result = ""
   if c of CSSAtRule:
     let c = CSSAtRule(c)
     result &= $c.name & ' '
-    result &= $c.prelude & "\n"
-    result &= $c.oblock
+    for it in c.prelude:
+      result &= $it
+    if c.oblock != nil:
+      result &= "{\n"
+      result &= $c.oblock
+      result &= "}"
   else:
     let c = CSSQualifiedRule(c)
     result &= $c.sels & " {\n"
@@ -453,11 +445,12 @@ proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
     if n < iq.len and iq[n] in {'"', '\''} or
         n + 1 < iq.len and iq[n] in {'"', '\''} + AsciiWhitespace and
         iq[n + 1] in {'"', '\''}:
-      return CSSToken(t: cttFunctionKeyword, s: move(s))
+      return CSSToken(t: cttFunction, ft: cftUrl)
     return iq.consumeURL(n)
   if n < iq.len and iq[n] == '(':
+    let ft = parseEnumNoCase[CSSFunctionType](s).get(cftUnknown)
     inc n
-    return CSSToken(t: cttFunctionKeyword, s: move(s))
+    return CSSToken(t: cttFunction, ft: ft)
   return CSSToken(t: cttIdent, s: move(s))
 
 proc nextToken(iq: openArray[char]; n: var int): bool =
@@ -578,11 +571,29 @@ proc skipBlanksCheckDone*(toks: openArray[CSSToken]; i: int): Opt[void] =
     return err()
   ok()
 
+proc checkFunctionEnd*(toks: openArray[CSSToken]; i: int): Opt[void] =
+  let i = toks.skipBlanks(i)
+  if i >= toks.len:
+    return ok()
+  if toks[i].t != cttRparen:
+    return err()
+  toks.skipBlanksCheckDone(i + 1)
+
+proc skipFunction(toks: openArray[CSSToken]; i: int): int =
+  var i = i
+  while i < toks.len and (let t = toks[i].t; t != cttRparen):
+    inc i
+    if t == cttFunction:
+      i = toks.skipFunction(i)
+  return i
+
 func findBlank*(toks: openArray[CSSToken]; i: int): int =
   var i = i
   while i < toks.len:
-    if toks[i].t == cttWhitespace:
-      break
+    case toks[i].t
+    of cttWhitespace: break
+    of cttFunction: i = toks.skipFunction(i + 1)
+    else: discard
     inc i
   return i
 
@@ -600,8 +611,21 @@ proc initCSSParser*(iq: openArray[char]): CSSParser =
 proc initCSSParser*(toks: openArray[CSSToken]): CSSParser =
   return CSSParser(toks: @toks)
 
+proc initSimpleBlockToken(start: CSSTokenType; oblock: CSSSimpleBlock):
+    CSSToken =
+  case start
+  of cttLbrace: return CSSToken(t: cttSimpleBlockBrace, oblock: oblock)
+  of cttLbracket: return CSSToken(t: cttSimpleBlockBracket, oblock: oblock)
+  of cttLparen: return CSSToken(t: cttSimpleBlockParen, oblock: oblock)
+  else:
+    assert false
+    return CSSToken(t: cttIdent)
+
+# Warning: this may return a token or a component value.  Only use this
+# if you are looking for a simple token.
 proc peekToken(ctx: var CSSParser): lent CSSToken =
-  assert ctx.toks.len == 0
+  if ctx.toks.len > 0:
+    return ctx.toks[ctx.i]
   if ctx.hasBuf:
     return ctx.tokBuf
   discard ctx.iq.nextToken(ctx.i)
@@ -625,7 +649,7 @@ proc seekToken(ctx: var CSSParser) =
   else:
     inc ctx.i
 
-func has(ctx: var CSSParser): bool =
+func has*(ctx: var CSSParser): bool =
   if ctx.iqlen > 0:
     return ctx.hasBuf or ctx.iq.nextToken(ctx.i)
   return ctx.i < ctx.toks.len
@@ -638,7 +662,7 @@ proc consumeSimpleBlock(ctx: var CSSParser; start: CSSTokenType):
   of cttLparen: ending = cttRparen
   of cttLbracket: ending = cttRbracket
   else: doAssert false
-  result = CSSSimpleBlock(t: start)
+  result = CSSSimpleBlock()
   while ctx.has():
     let t = ctx.peekToken().t
     if t == ending:
@@ -646,17 +670,20 @@ proc consumeSimpleBlock(ctx: var CSSParser; start: CSSTokenType):
       break
     elif t in {cttLbrace, cttLbracket, cttLparen}:
       ctx.seekToken()
-      result.value.add(CSSToken(
-        t: cttSimpleBlock,
-        oblock: ctx.consumeSimpleBlock(t)
-      ))
+      let oblock = ctx.consumeSimpleBlock(t)
+      result.value.add(initSimpleBlockToken(t, oblock))
     else:
-      result.value.add(ctx.consumeComponentValue())
+      ctx.addComponentValue(result.value)
 
-proc peekTokenType(ctx: var CSSParser): CSSTokenType =
-  if ctx.iqlen > 0:
-    return ctx.peekToken().t
-  return ctx.toks[ctx.i].t
+proc peekTokenType*(ctx: var CSSParser): CSSTokenType =
+  return ctx.peekToken().t
+
+proc peekIdentNoCase*(ctx: var CSSParser; s: string): bool =
+  return ctx.peekTokenType() == cttIdent and
+    ctx.peekToken().s.equalsIgnoreCase(s)
+
+proc peekDelim*(ctx: var CSSParser; c: char): bool =
+  return ctx.peekTokenType() == cttDelim and ctx.peekToken().c == c
 
 proc consumeComponentValue(ctx: var CSSParser): CSSToken =
   if ctx.iqlen == 0:
@@ -666,21 +693,15 @@ proc consumeComponentValue(ctx: var CSSParser): CSSToken =
   case (let t = ctx.peekToken().t; t)
   of cttLbrace, cttLbracket, cttLparen:
     ctx.seekToken()
-    return CSSToken(t: cttSimpleBlock, oblock: ctx.consumeSimpleBlock(t))
-  of cttFunctionKeyword: # consume function
-    let tok = ctx.consumeToken()
-    let name = parseEnumNoCase[CSSFunctionType](tok.s).get(cftUnknown)
-    let fun = CSSFunction(name: name)
-    while ctx.has():
-      if ctx.peekToken().t == cttRparen:
-        ctx.seekToken()
-        break
-      fun.value.add(ctx.consumeComponentValue())
-    return CSSToken(t: cttFunction, fun: fun)
+    let oblock = ctx.consumeSimpleBlock(t)
+    return initSimpleBlockToken(t, oblock)
   else: # preserved token
     return ctx.consumeToken()
 
-proc skipBlanks(ctx: var CSSParser) =
+proc consume*(ctx: var CSSParser): CSSToken =
+  return ctx.consumeComponentValue()
+
+proc skipBlanks*(ctx: var CSSParser) =
   if ctx.iqlen > 0:
     while ctx.has():
       let tok = ctx.peekToken()
@@ -690,21 +711,85 @@ proc skipBlanks(ctx: var CSSParser) =
   else:
     ctx.i = ctx.toks.skipBlanks(ctx.i)
 
+proc skipBlanksCheckHas*(ctx: var CSSParser): Opt[void] =
+  ctx.skipBlanks()
+  if not ctx.has():
+    return err()
+  ok()
+
+proc skipBlanksCheckDone*(ctx: var CSSParser): Opt[void] =
+  ctx.skipBlanks()
+  if ctx.has():
+    return err()
+  ok()
+
+proc addComponentValue(ctx: var CSSParser; toks: var seq[CSSToken]) =
+  var tok = ctx.consumeComponentValue()
+  let t = tok.t
+  toks.add(move(tok))
+  if t == cttFunction:
+    while ctx.has():
+      let t = ctx.peekTokenType()
+      ctx.addComponentValue(toks)
+      if t == cttRparen:
+        break
+
+proc addUntil(ctx: var CSSParser; tt: CSSTokenType; toks: var seq[CSSToken]):
+    Opt[CSSToken] =
+  while ctx.has():
+    var cval = ctx.consumeComponentValue()
+    let t = cval.t
+    if t == tt:
+      return ok(move(cval))
+    toks.add(move(cval))
+    if t == cttFunction:
+      while ctx.has():
+        let t = ctx.peekTokenType()
+        ctx.addComponentValue(toks)
+        if t == cttRparen:
+          break
+  err()
+
+proc addUntil(ctx: var CSSParser; tt: set[CSSTokenType];
+    toks: var seq[CSSToken]): Opt[CSSToken] =
+  while ctx.has():
+    var cval = ctx.consumeComponentValue()
+    let t = cval.t
+    if t in tt:
+      return ok(move(cval))
+    toks.add(move(cval))
+    if t == cttFunction:
+      while ctx.has():
+        let t = ctx.peekTokenType()
+        ctx.addComponentValue(toks)
+        if t == cttRparen:
+          break
+  err()
+
+proc skipFunction*(ctx: var CSSParser) =
+  while ctx.has() and ctx.consumeComponentValue().t != cttRparen:
+    discard
+
+proc seek*(ctx: var CSSParser) =
+  let tok = ctx.consumeComponentValue()
+  if tok.t == cttFunction:
+    ctx.skipFunction()
+
+proc skipUntil(ctx: var CSSParser; t: CSSTokenType) =
+  while ctx.has():
+    let it = ctx.peekTokenType()
+    ctx.seek()
+    if it == t:
+      break
+
 proc consumeQualifiedRule(ctx: var CSSParser): Opt[CSSQualifiedRule] =
-  var oblock: CSSSimpleBlock = nil
   var r = CSSQualifiedRule()
   var prelude: seq[CSSToken] = @[]
-  while ctx.has():
-    var tok = ctx.consumeComponentValue()
-    if tok.t == cttSimpleBlock and tok.oblock.t == cttLbrace:
-      oblock = tok.oblock
-      break
-    prelude.add(move(tok))
-  if oblock != nil:
+  if tok := ctx.addUntil(cttSimpleBlockBrace, prelude):
     r.sels = prelude.parseSelectors()
-    var ctx = CSSParser(toks: move(oblock.value))
+    var ctx = CSSParser(toks: move(tok.oblock.value))
     r.decls = ctx.consumeDeclarations()
-    oblock.value = move(ctx.toks)
+    tok.oblock.value = move(ctx.toks)
     return ok(r)
   err()
 
@@ -715,27 +800,34 @@ proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
   if not ctx.has():
     return err()
   if ctx.peekTokenType() != cttColon:
-    while ctx.has():
-      if ctx.peekTokenType() == cttSemicolon:
-        ctx.seekToken()
-        break
-      discard ctx.consumeComponentValue()
+    ctx.skipUntil(cttSemicolon)
     return err()
   ctx.seekToken()
   ctx.skipBlanks()
   var lastTokIdx1 = -1
   var lastTokIdx2 = -1
+  var hasVar = false
+  var nfuns = 0
   while ctx.has():
     case ctx.peekTokenType()
     of cttSemicolon:
-      ctx.seekToken()
-      break
+      if nfuns == 0:
+        ctx.seekToken()
+        break
     of cttWhitespace:
       discard
-    else:
+    of cttRparen:
+      nfuns = max(0, nfuns - 1)
+    elif nfuns == 0:
       lastTokIdx1 = lastTokIdx2
       lastTokIdx2 = decl.value.len
-    decl.value.add(ctx.consumeComponentValue())
+    var tok = ctx.consume()
+    if tok.t == cttFunction:
+      if tok.ft == cftVar:
+        hasVar = true
+      inc nfuns
+    decl.value.add(move(tok))
+  decl.hasVar = hasVar
   if lastTokIdx1 != -1 and lastTokIdx2 != -1:
     let lastTok1 = decl.value[lastTokIdx1]
     let lastTok2 = decl.value[lastTokIdx2]
@@ -751,15 +843,9 @@ proc consumeAtRule(ctx: var CSSParser): CSSAtRule =
   let tok = ctx.consumeToken()
   let name = parseEnumNoCase[CSSAtRuleType](tok.s).get(cartUnknown)
   result = CSSAtRule(name: name)
-  while ctx.has():
-    if ctx.peekTokenType() == cttSemicolon:
-      ctx.seekToken()
-      break
-    var tok = ctx.consumeComponentValue()
-    if tok.t == cttSimpleBlock and tok.oblock.t == cttLbrace:
-      result.oblock = tok.oblock
-      break
-    result.prelude.add(move(tok))
+  if found := ctx.addUntil({cttSemicolon, cttSimpleBlockBrace}, result.prelude):
+    if found.t == cttSimpleBlockBrace:
+      result.oblock = found.oblock
 
 # > Note: Despite the name, this actually parses a mixed list of
 # > declarations and at-rules, as CSS 2.1 does for @page. Unexpected
@@ -1071,19 +1157,13 @@ func `$`*(sel: Selector): string =
     case sel.pseudo.t
     of pcIs, pcNot, pcWhere:
       result &= '('
-      for fsel in sel.pseudo.fsels:
-        result &= $fsel
-        if fsel != sel.pseudo.fsels[^1]:
-          result &= ", "
+      result &= $sel.pseudo.fsels
       result &= ')'
     of pcNthChild, pcNthLastChild:
       result &= '(' & $sel.pseudo.anb.A & 'n' & $sel.pseudo.anb.B
       if sel.pseudo.ofsels.len != 0:
         result &= " of "
-        for fsel in sel.pseudo.ofsels:
-          result &= $fsel
-          if fsel != sel.pseudo.ofsels[^1]:
-            result &= ','
+        result &= $sel.pseudo.ofsels
       result &= ')'
     else: discard
   of stPseudoElement:
@@ -1165,69 +1245,81 @@ template fail() =
   state.failed = true
   return
 
+proc skipBlanks(state: var SelectorParser) =
+  while state.has() and state.peek().t == cttWhitespace:
+    inc state.at
+
+proc skipFunction(state: var SelectorParser) =
+  while state.has() and state.consume().t != cttRparen:
+    discard
+
 # Functions that may contain other selectors, functions, etc.
 proc parseRecursiveSelectorFunction(state: var SelectorParser;
-    class: PseudoClass; body: seq[CSSToken]; forgiving: bool):
-    Selector =
+    class: PseudoClass; forgiving: bool): Selector =
   var fun = Selector(
     t: stPseudoClass,
     pseudo: PseudoData(t: class),
   )
-  fun.pseudo.fsels = parseSelectorList(body, nested = true, forgiving)
+  let onested = state.nested
+  state.nested = true
+  fun.pseudo.fsels = state.parseSelectorList(forgiving)
+  state.skipFunction()
+  state.nested = onested
   if fun.pseudo.fsels.len == 0: fail
   return fun
 
-proc parseNthChild(state: var SelectorParser; cssfunction: CSSFunction;
-    data: PseudoData): Selector =
+proc parseNthChild(state: var SelectorParser; data: PseudoData): Selector =
   var data = data
-  var i = 0
-  var anb = cssfunction.value.parseAnB(i)
-  if anb.isErr: fail
+  var anb = state.toks.parseAnB(state.at)
+  if anb.isErr:
+    state.skipFunction()
+    fail
   data.anb = anb.get
   var nthchild = Selector(t: stPseudoClass, pseudo: data)
-  i = cssfunction.value.skipBlanks(i)
-  if i >= cssfunction.value.len:
+  state.skipBlanks()
+  if not state.has() or state.peek().t == cttRparen:
+    state.skipFunction()
     return nthchild
-  let lasttok = cssfunction.value[i]
+  let lasttok = state.consume()
   if lasttok.t != cttIdent or not lasttok.s.equalsIgnoreCase("of"):
+    state.skipFunction()
     fail
-  i = cssfunction.value.skipBlanks(i + 1)
-  if i == cssfunction.value.len: fail
-  nthchild.pseudo.ofsels = cssfunction.value[i..^1]
-    .parseSelectorList(nested = true, forgiving = false)
+  state.skipBlanks()
+  if not state.has() or state.peek().t == cttRparen:
+    state.skipFunction()
+    fail
+  let onested = state.nested
+  state.nested = true
+  nthchild.pseudo.ofsels = state.parseSelectorList(forgiving = false)
+  state.skipFunction()
+  state.nested = onested
   if nthchild.pseudo.ofsels.len == 0: fail
   return nthchild
 
-proc skipWhitespace(state: var SelectorParser) =
-  while state.has() and state.peek().t == cttWhitespace:
-    inc state.at
-
-proc parseLang(toks: seq[CSSToken]): Selector =
-  var state = SelectorParser(toks: toks)
-  state.skipWhitespace()
+proc parseLang(state: var SelectorParser): Selector =
+  state.skipBlanks()
   if not state.has(): fail
   let tok = state.consume()
-  if tok.t != cttIdent: fail
+  let b = tok.t != cttIdent or not state.has() or state.peek().t != cttRparen
+  state.skipFunction()
+  if b: fail
   return Selector(t: stPseudoClass, pseudo: PseudoData(t: pcLang, s: tok.s))
 
-proc parseSelectorFunction(state: var SelectorParser; cssfunction: CSSFunction):
+proc parseSelectorFunction(state: var SelectorParser; ft: CSSFunctionType):
     Selector =
-  return case cssfunction.name
+  return case ft
   of cftNot:
-    state.parseRecursiveSelectorFunction(pcNot, cssfunction.value,
-      forgiving = false)
+    state.parseRecursiveSelectorFunction(pcNot, forgiving = false)
   of cftIs:
-    state.parseRecursiveSelectorFunction(pcIs, cssfunction.value,
-      forgiving = true)
+    state.parseRecursiveSelectorFunction(pcIs, forgiving = true)
   of cftWhere:
-    state.parseRecursiveSelectorFunction(pcWhere, cssfunction.value,
-      forgiving = true)
+    state.parseRecursiveSelectorFunction(pcWhere, forgiving = true)
   of cftNthChild:
-    state.parseNthChild(cssfunction, PseudoData(t: pcNthChild))
+    state.parseNthChild(PseudoData(t: pcNthChild))
   of cftNthLastChild:
-    state.parseNthChild(cssfunction, PseudoData(t: pcNthLastChild))
+    state.parseNthChild(PseudoData(t: pcNthLastChild))
   of cftLang:
-    parseLang(cssfunction.value)
+    state.parseLang()
   else: fail
 
 proc parsePseudoSelector(state: var SelectorParser): Selector =
@@ -1235,7 +1327,7 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
   if not state.has(): fail
   let tok = state.consume()
   template add_pseudo_element(element: PseudoElement) =
-    state.skipWhitespace()
+    state.skipBlanks()
     if state.nested or state.has() and state.peek().t != cttComma: fail
     return Selector(t: stPseudoElement, elem: element)
   case tok.t
@@ -1258,18 +1350,17 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
     if x.isErr: fail
     add_pseudo_element x.get
   of cttFunction:
-    return state.parseSelectorFunction(tok.fun)
+    return state.parseSelectorFunction(tok.ft)
   else: fail
 
 proc parseAttributeSelector(state: var SelectorParser;
     cssblock: CSSSimpleBlock): Selector =
-  if cssblock.t != cttLbracket: fail
   var state2 = SelectorParser(toks: cssblock.value)
-  state2.skipWhitespace()
+  state2.skipBlanks()
   if not state2.has(): fail
   let attr = state2.consume()
   if attr.t != cttIdent: fail
-  state2.skipWhitespace()
+  state2.skipBlanks()
   if not state2.has():
     return Selector(
       t: stAttr,
@@ -1289,11 +1380,11 @@ proc parseAttributeSelector(state: var SelectorParser;
   if rel != rtEquals:
     let delim = state2.consume()
     if delim.t != cttDelim or delim.c != '=': fail
-  state2.skipWhitespace()
+  state2.skipBlanks()
   if not state2.has(): fail
   let value = state2.consume()
   if value.t notin {cttIdent, cttString}: fail
-  state2.skipWhitespace()
+  state2.skipBlanks()
   var flag = rfNone
   if state2.has():
     let delim = state2.consume()
@@ -1354,15 +1445,18 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
         if tok.c in {'>', '+', '~'}:
           inc state.at
       break
-    of cttSimpleBlock:
+    of cttSimpleBlockBracket:
       inc state.at
       result.add(state.parseAttributeSelector(tok.oblock))
+    of cttRparen:
+      if not state.nested: fail
+      break
     else: fail
 
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
   result = ComplexSelector()
   while true:
-    state.skipWhitespace()
+    state.skipBlanks()
     let sels = state.parseCompoundSelector()
     if state.failed:
       break
@@ -1370,7 +1464,7 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     result.specificity += sels.getSpecificity()
     result.csels.add(sels)
     if sels.len == 0: fail
-    if not state.has():
+    if not state.has() or state.nested and state.peek().t == cttRparen:
       break # finish
     let tok = state.consume()
     case tok.t
@@ -1391,27 +1485,30 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     #TODO move pseudo check here?
     result.pseudo = result[^1][^1].elem
 
-proc parseSelectorList(toks: seq[CSSToken]; nested, forgiving: bool):
+proc parseSelectorList(state: var SelectorParser; forgiving: bool):
     SelectorList =
-  var state = SelectorParser(
-    toks: toks,
-    nested: nested
-  )
   var res: SelectorList = @[]
-  while state.has():
+  while true:
+    if not state.has() or state.nested and state.peek().t == cttRparen:
+      break
     let csel = state.parseComplexSelector()
     if state.failed:
       if not forgiving:
         return @[]
       state.failed = false
-      while state.has() and state.consume().t != cttComma:
-        discard
+      while state.has() and (not state.nested or state.peek().t != cttRparen):
+        let tok = state.consume()
+        case tok.t
+        of cttComma: break
+        of cttFunction: state.skipFunction()
+        else: discard
     else:
       res.add(csel)
   move(res)
 
 proc parseSelectors*(toks: seq[CSSToken]): seq[ComplexSelector] =
-  return parseSelectorList(toks, nested = false, forgiving = false)
+  var state = SelectorParser(toks: toks)
+  return state.parseSelectorList(forgiving = false)
 
 proc parseSelectors*(ibuf: string): seq[ComplexSelector] =
   return parseSelectors(parseComponentValues(ibuf))

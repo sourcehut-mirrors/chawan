@@ -147,12 +147,10 @@ flex\-flow
 .IP \(bu 2
 overflow
 .PP
-Variables (the \f[CR]var\f[R] function) are supported only for
-non\-shorthand properties and the \f[CR]background\f[R] shorthand.
+Variables (the \f[CR]var\f[R] function) are fully supported.
 .PP
-Values with a \f[CR]<length>\f[R] type support very simple
-\f[CR]calc()\f[R] expressions that consist of one addition or
-subtraction and do not use the \f[CR]var\f[R] function.
+Values with a \f[CR]<length>\f[R] type support \f[CR]calc()\f[R]
+expressions that can be parsed without recursive descent.
 .SS Selectors
 All selector types from CSS 2.1 are supported, except for namespaces.
 .PP

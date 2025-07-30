@@ -2807,19 +2807,14 @@ proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget;
   window.fireEvent(event, target)
 
 proc parseColor(element: Element; s: string): ARGBColor =
-  let cval = parseComponentValue(s)
+  let toks = parseComponentValues(s)
   #TODO return element style
   # For now we just use white.
   let ec = rgba(255, 255, 255, 255)
-  if cval.isErr:
-    return ec
-  let color0 = parseColor(cval.get)
-  if color0.isErr:
-    return ec
-  let color = color0.get
-  if color.isCell:
-    return ec
-  return color.argb
+  if color := parseColor(toks):
+    if not color.isCell:
+      return color.argb
+  return ec
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
 proc reinitURL*(element: Element): Option[URL] =

@@ -109,30 +109,44 @@ proc findVariable(ctx: var ApplyValueContext; varName: CAtom): CSSVariable =
     ctx.vars = ctx.vars.parent
   return nil
 
-proc resolveVariable(ctx: var ApplyValueContext; t: CSSPropertyType;
-    varName: CAtom; fallback: ref CSSComputedEntry): Opt[CSSComputedEntry] =
-  let v = t.valueType
-  let cvar = ctx.findVariable(varName)
-  if cvar == nil:
-    if fallback != nil:
-      return ok(fallback[])
-    return err()
-  for (iv, entry) in cvar.resolved.mitems:
-    if iv == v:
-      entry.t = t # must override, same var can be used for different props
-      return ok(entry)
+proc resolveVariable(ctx: var ApplyValueContext; sh: CSSShorthandType;
+    t: CSSPropertyType; cvar: CSSVarEntry): seq[CSSComputedEntry] =
+  var cvar = cvar
+  var toks: seq[CSSToken] = @[]
+  while true:
+    toks.setLen(0)
+    var ccvar {.cursor.} = cvar
+    var hasVar = false
+    while ccvar != nil:
+      let varName = ccvar.name
+      if varName != CAtomNull:
+        let cv = ctx.findVariable(varName)
+        if cv != nil:
+          if cv.hasVar:
+            if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
+              ctx.varsSeen.clear()
+              return @[]
+            hasVar = true
+          toks.add(cv.toks)
+          ccvar = ccvar.next
+          continue
+      if ccvar.toks.len == 0:
+        return @[]
+      toks.add(ccvar.toks)
+      ccvar = ccvar.next
+    if not hasVar:
+      break
+    cvar = parseDeclWithVar0(toks)
+    if cvar == nil:
+      return @[]
+  # fully resolved
+  ctx.varsSeen.clear()
   var entries: seq[CSSComputedEntry] = @[]
-  if entries.parseComputedValues($t, cvar.toks,
-      ctx.window.settings.attrsp[]).isOk:
-    if entries[0].et == ceVar:
-      if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
-        ctx.varsSeen.clear()
-        return err()
-    else:
-      ctx.varsSeen.clear()
-      cvar.resolved.add((v, entries[0]))
-    return ok(entries[0])
-  err()
+  let name = if sh != cstNone: $sh else: $t
+  let window = ctx.window
+  if entries.parseComputedValues(name, toks, window.settings.attrsp[]).isErr:
+    return @[]
+  move(entries)
 
 proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
     global: CSSGlobalType; initType: InitType) =
@@ -149,25 +163,20 @@ proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
     else:
       ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
 
-proc applyValue0(ctx: var ApplyValueContext; entry: CSSComputedEntry;
-    initType: InitType; nextInitType: set[InitType]): Opt[void] =
-  ctx.vars = ctx.vals.vars
-  var entry = entry
-  while entry.et == ceVar:
-    entry = ?ctx.resolveVariable(entry.t, entry.cvar, entry.fallback)
+proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
+    initType: InitType; nextInitType: set[InitType]) =
   case entry.et
   of ceBit: ctx.vals.bits[entry.t].dummy = entry.bit
   of ceHWord: ctx.vals.hwords[entry.t] = entry.hword
   of ceWord: ctx.vals.words[entry.t] = entry.word
   of ceObject: ctx.vals.objs[entry.t] = entry.obj
   of ceGlobal: ctx.applyGlobal(entry.t, entry.global, initType)
-  of ceVar: assert false
-  ctx.initMap[entry.t] = ctx.initMap[entry.t] + nextInitType
-  ok()
-
-proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
-    initType: InitType; nextInitType: set[InitType]) =
-  discard ctx.applyValue0(entry, initType, nextInitType)
+  of ceVar:
+    ctx.vars = ctx.vals.vars
+    for it in ctx.resolveVariable(entry.sh, entry.t, entry.cvar):
+      ctx.applyValue(it, initType, nextInitType)
+  if entry.et != ceVar:
+    ctx.initMap[entry.t] = ctx.initMap[entry.t] + nextInitType
 
 proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
   ctx.applyValue(entry, itUserAgent, {itUser})
