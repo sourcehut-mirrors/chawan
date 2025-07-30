@@ -143,11 +143,8 @@ unicode_gen:
 	$(OBJDIR)/gencharwidth > res/map/charwidth_gen.nim
 
 $(OUTDIR_CGI_BIN)/man: $(lcgi)
-$(OUTDIR_CGI_BIN)/http: $(sandbox) $(lcgi_ssl) $(tinfl)
 $(OUTDIR_CGI_BIN)/file: $(lcgi)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
-$(OUTDIR_CGI_BIN)/sftp: $(lcgi)
-$(OUTDIR_CGI_BIN)/gemini: $(lcgi_ssl)
 $(OUTDIR_CGI_BIN)/ssl: adapter/protocol/http.nim adapter/protocol/gemini.nim \
 	adapter/protocol/sftp.nim $(lcgi_ssl) $(sandbox) $(tinfl)
 $(OUTDIR_CGI_BIN)/stbi: adapter/img/stbi.nim adapter/img/stb_image.h \
