@@ -991,7 +991,7 @@ proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
       decl.rt = crtImportant
   while decl.value.len > 0 and decl.value[^1].t == cttWhitespace:
     decl.value.setLen(decl.value.len - 1)
-  return ok(decl)
+  ok(move(decl))
 
 proc consumeAtRule(ctx: var CSSParser): CSSAtRule =
   let tok = ctx.consumeToken()
@@ -1019,7 +1019,11 @@ proc consumeDeclarations(ctx: var CSSParser): seq[CSSDeclaration] =
       discard ctx.consumeAtRule() # see above
     of cttIdent:
       if decl := ctx.consumeDeclaration():
-        result.add(decl)
+        # looks ridiculous, but it's the only way to convince refc not
+        # to copy the seq...  TODO remove when moving to ARC
+        var value = move(decl.value)
+        result.add(move(decl))
+        result[^1].value = move(value)
     else:
       while ctx.has() and ctx.peekTokenType() != cttSemicolon:
         discard ctx.consumeComponentValue()
