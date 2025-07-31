@@ -18,98 +18,6 @@ import types/winattrs
 import utils/twtstr
 
 type
-  CSSPropertyType* = enum
-    # primitive/enum properties: stored as byte
-    # (when adding a new property, sort the individual lists, and update
-    # LastBitPropType/LastWordPropType if needed.)
-    cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
-    cptBorderCollapse = "border-collapse"
-    cptBoxSizing = "box-sizing"
-    cptCaptionSide = "caption-side"
-    cptClear = "clear"
-    cptDisplay = "display"
-    cptFlexDirection = "flex-direction"
-    cptFlexWrap = "flex-wrap"
-    cptFloat = "float"
-    cptFontStyle = "font-style"
-    cptListStylePosition = "list-style-position"
-    cptListStyleType = "list-style-type"
-    cptOverflowX = "overflow-x"
-    cptOverflowY = "overflow-y"
-    cptPosition = "position"
-    cptTextAlign = "text-align"
-    cptTextDecoration = "text-decoration"
-    cptTextTransform = "text-transform"
-    cptVerticalAlign = "vertical-align"
-    cptVisibility = "visibility"
-    cptWhiteSpace = "white-space"
-    cptWordBreak = "word-break"
-
-    # half-word properties: stored as (32-bit) word
-    cptChaColspan = "-cha-colspan"
-    cptChaRowspan = "-cha-rowspan"
-    cptFlexGrow = "flex-grow"
-    cptFlexShrink = "flex-shrink"
-    cptFontWeight = "font-weight"
-    cptOpacity = "opacity"
-
-    # word properties: stored as (64-bit) word
-    cptBackgroundColor = "background-color"
-    cptBorderSpacingBlock = "-cha-border-spacing-block"
-    cptBorderSpacingInline = "-cha-border-spacing-inline"
-    cptBottom = "bottom"
-    cptColor = "color"
-    cptFlexBasis = "flex-basis"
-    cptFontSize = "font-size"
-    cptHeight = "height"
-    cptLeft = "left"
-    cptMarginBottom = "margin-bottom"
-    cptMarginLeft = "margin-left"
-    cptMarginRight = "margin-right"
-    cptMarginTop = "margin-top"
-    cptMaxHeight = "max-height"
-    cptMaxWidth = "max-width"
-    cptMinHeight = "min-height"
-    cptMinWidth = "min-width"
-    cptPaddingBottom = "padding-bottom"
-    cptPaddingLeft = "padding-left"
-    cptPaddingRight = "padding-right"
-    cptPaddingTop = "padding-top"
-    cptRight = "right"
-    cptTop = "top"
-    cptVerticalAlignLength = "-cha-vertical-align-length"
-    cptWidth = "width"
-    cptZIndex = "z-index"
-
-    # object properties: stored as a tagged ref object
-    cptBackgroundImage = "background-image"
-    cptContent = "content"
-    cptCounterReset = "counter-reset"
-    cptCounterIncrement = "counter-increment"
-    cptCounterSet = "counter-set"
-    cptQuotes = "quotes"
-
-const LastBitPropType = cptWordBreak
-const FirstHWordPropType = LastBitPropType.succ
-const LastHWordPropType = cptOpacity
-const FirstWordPropType = LastHWordPropType.succ
-const LastWordPropType = cptZIndex
-const FirstObjPropType = LastWordPropType.succ
-
-type
-  CSSShorthandType* = enum
-    cstNone = ""
-    cstAll = "all"
-    cstMargin = "margin"
-    cstPadding = "padding"
-    cstBackground = "background"
-    cstListStyle = "list-style"
-    cstFlex = "flex"
-    cstFlexFlow = "flex-flow"
-    cstOverflow = "overflow"
-    cstVerticalAlign = "vertical-align"
-    cstBorderSpacing = "border-spacing"
-
   CSSUnit* = enum
     cuAuto = ""
     cuCap = "cap"
@@ -460,8 +368,7 @@ type
     next*: CSSVarEntry
 
   CSSComputedEntry* = object
-    sh*: CSSShorthandType # for ceVar
-    t*: CSSPropertyType
+    p*: CSSAnyPropertyType
     case et*: CSSEntryType
     of ceBit:
       bit*: uint8
@@ -617,12 +524,6 @@ func reprType*(t: CSSPropertyType): CSSPropertyReprType =
   if t <= LastWordPropType:
     return cprtWord
   return cprtObject
-
-func shorthandType(s: string): CSSShorthandType =
-  return parseEnumNoCase[CSSShorthandType](s).get(cstNone)
-
-func propertyType(s: string): Opt[CSSPropertyType] =
-  return parseEnumNoCase[CSSPropertyType](s)
 
 func valueType*(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
@@ -1560,19 +1461,19 @@ func parseNumber(tok: CSSToken; range: Slice[float32]): Opt[float32] =
   return err()
 
 proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
-  return CSSComputedEntry(et: ceObject, t: t, obj: obj)
+  return CSSComputedEntry(et: ceObject, p: t, obj: obj)
 
 proc makeEntry(t: CSSPropertyType; hword: CSSValueHWord): CSSComputedEntry =
-  return CSSComputedEntry(et: ceHWord, t: t, hword: hword)
+  return CSSComputedEntry(et: ceHWord, p: t, hword: hword)
 
 proc makeEntry(t: CSSPropertyType; word: CSSValueWord): CSSComputedEntry =
-  return CSSComputedEntry(et: ceWord, t: t, word: word)
+  return CSSComputedEntry(et: ceWord, p: t, word: word)
 
 proc makeEntry*(t: CSSPropertyType; bit: CSSValueBit): CSSComputedEntry =
-  return CSSComputedEntry(et: ceBit, t: t, bit: bit.dummy)
+  return CSSComputedEntry(et: ceBit, p: t, bit: bit.dummy)
 
 proc makeEntry(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
-  return CSSComputedEntry(et: ceGlobal, t: t, global: global)
+  return CSSComputedEntry(et: ceGlobal, p: t, global: global)
 
 proc makeEntry*(t: CSSPropertyType; length: CSSLength): CSSComputedEntry =
   makeEntry(t, CSSValueWord(length: length))
@@ -1623,16 +1524,12 @@ proc parseDeclWithVar0*(toks: openArray[CSSToken]): CSSVarEntry =
       cvar.toks.add(tok)
   return cvar0
 
-proc parseDeclWithVar*(name: string; value: openArray[CSSToken]):
+proc parseDeclWithVar*(p: CSSAnyPropertyType; value: openArray[CSSToken]):
     Opt[CSSComputedEntry] =
-  let sh = shorthandType(name)
-  var t: CSSPropertyType
-  if sh == cstNone:
-    t = ?propertyType(name)
   let cvar = parseDeclWithVar0(value)
   if cvar == nil:
     return err()
-  return ok(CSSComputedEntry(et: ceVar, sh: sh, t: t, cvar: cvar))
+  return ok(CSSComputedEntry(et: ceVar, p: p, cvar: cvar))
 
 proc parseValue(toks: openArray[CSSToken]; t: CSSPropertyType;
     entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
@@ -1642,24 +1539,24 @@ proc parseValue(toks: openArray[CSSToken]; t: CSSPropertyType;
   let v = valueType(t)
   template set_new(prop, val: untyped) =
     entry = CSSComputedEntry(
-      t: t,
+      p: t,
       et: ceObject,
       obj: CSSValue(v: v, prop: val)
     )
   template set_word(prop, val: untyped) =
     entry = CSSComputedEntry(
-      t: t,
+      p: t,
       et: ceWord,
       word: CSSValueWord(prop: val)
     )
   template set_hword(prop, val: untyped) =
     entry = CSSComputedEntry(
-      t: t,
+      p: t,
       et: ceHWord,
       hword: CSSValueHWord(prop: val)
     )
   template set_bit(prop, val: untyped) =
-    entry = CSSComputedEntry(t: t, et: ceBit, bit: cast[uint8](val))
+    entry = CSSComputedEntry(p: t, et: ceBit, bit: cast[uint8](val))
   case v
   of cvtDisplay: set_bit display, ?parseIdent[CSSDisplay](tok)
   of cvtWhiteSpace: set_bit whiteSpace, ?parseIdent[CSSWhiteSpace](tok)
@@ -1819,33 +1716,31 @@ const ShorthandMap = [
   cstBorderSpacing: @[cptBorderSpacingInline, cptBorderSpacingBlock]
 ]
 
-proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
+proc parseComputedValues*(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
     toks: openArray[CSSToken]; attrs: WindowAttributes): Err[void] =
   var i = ?toks.skipBlanksCheckHas(0)
-  let sh = shorthandType(name)
   let tok = toks[i]
   if global := parseGlobal(tok):
     ?toks.skipBlanksCheckDone(i + 1)
-    case sh
-    of cstNone: res.add(makeEntry(?propertyType(name), global))
+    case p.sh
+    of cstNone: res.add(makeEntry(p.p, global))
     of cstAll:
       for t in CSSPropertyType:
         res.add(makeEntry(t, global))
     else:
-      for t in ShorthandMap[sh]:
+      for t in ShorthandMap[p.sh]:
         res.add(makeEntry(t, global))
     return ok()
-  case sh
+  case p.sh
   of cstNone:
-    let t = ?propertyType(name)
     var entry = CSSComputedEntry()
-    ?toks.parseValue(t, entry, attrs)
+    ?toks.parseValue(p.p, entry, attrs)
     res.add(entry)
   of cstAll: return err()
   of cstMargin:
-    ?res.parseLengthShorthand(toks, ShorthandMap[sh], attrs, hasAuto = true)
+    ?res.parseLengthShorthand(toks, ShorthandMap[p.sh], attrs, hasAuto = true)
   of cstPadding:
-    ?res.parseLengthShorthand(toks, ShorthandMap[sh], attrs, hasAuto = false)
+    ?res.parseLengthShorthand(toks, ShorthandMap[p.sh], attrs, hasAuto = false)
   of cstBackground:
     var bgcolor = makeEntry(cptBackgroundColor,
       getDefaultWord(cptBackgroundColor))
@@ -1853,9 +1748,9 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     while i < toks.len:
       let j = toks.findBlank(i)
       let k = j - 1
-      if toks.toOpenArray(i, k).parseValue(bgcolor.t, bgcolor, attrs).isOk:
+      if toks.toOpenArray(i, k).parseValue(bgcolor.p.p, bgcolor, attrs).isOk:
         discard
-      elif toks.toOpenArray(i, k).parseValue(bgimage.t, bgimage, attrs).isOk:
+      elif toks.toOpenArray(i, k).parseValue(bgimage.p.p, bgimage, attrs).isOk:
         discard
       else:
         #TODO when we implement the other shorthands too
@@ -1940,13 +1835,6 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; name: string;
     res.add(makeEntry(cptBorderSpacingInline, a))
     res.add(makeEntry(cptBorderSpacingBlock, b))
   return ok()
-
-proc parseComputedValues*(name: string; value: seq[CSSToken];
-    attrs: WindowAttributes): seq[CSSComputedEntry] =
-  var res: seq[CSSComputedEntry] = @[]
-  if res.parseComputedValues(name, value, attrs).isOk:
-    return move(res)
-  @[]
 
 proc copyFrom*(a, b: CSSValues; t: CSSPropertyType) =
   case t.reprType

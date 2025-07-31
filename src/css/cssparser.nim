@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import std/options
+import std/strutils
 
 import html/catom
 import html/domexception
@@ -15,6 +16,8 @@ type
     iqlen: int # iq.len
     hasBuf: bool
     tokBuf: CSSToken
+
+# Tokens
 
   CSSTokenType* = enum
     cttIdent, cttFunction, cttAtKeyword, cttHash, cttString,
@@ -55,11 +58,30 @@ type
     sels*: SelectorList
     decls*: seq[CSSDeclaration]
 
-  CSSDeclaration* = ref object
-    name*: string
-    value*: seq[CSSToken]
-    important*: bool
+  CSSDeclarationType* = enum
+    cdtUnknown, cdtProperty, cdtVariable
+
+  CSSDeclarationFlag* = enum
+    cdfImportant, cdfHasVar
+
+  CSSAnyPropertyType* = object
+    sh*: CSSShorthandType # if sh is cstNone, then use p
+    p*: CSSPropertyType
+
+  CSSRuleType* = enum
+    crtNormal, crtImportant
+
+  CSSDeclaration* = object
+    rt*: CSSRuleType
     hasVar*: bool
+    case t*: CSSDeclarationType
+    of cdtUnknown:
+      uname*: string
+    of cdtProperty:
+      p*: CSSAnyPropertyType
+    of cdtVariable:
+      v*: CAtom
+    value*: seq[CSSToken]
 
   CSSFunctionType* = enum
     cftUnknown = "-cha-unknown"
@@ -84,6 +106,94 @@ type
     value*: seq[CSSToken]
 
   CSSAnB* = tuple[A, B: int32]
+
+# Properties
+
+  CSSShorthandType* = enum
+    cstNone = ""
+    cstAll = "all"
+    cstMargin = "margin"
+    cstPadding = "padding"
+    cstBackground = "background"
+    cstListStyle = "list-style"
+    cstFlex = "flex"
+    cstFlexFlow = "flex-flow"
+    cstOverflow = "overflow"
+    cstVerticalAlign = "vertical-align"
+    cstBorderSpacing = "border-spacing"
+
+  CSSPropertyType* = enum
+    # primitive/enum properties: stored as byte
+    # (when adding a new property, sort the individual lists, and update
+    # LastBitPropType/LastWordPropType if needed.)
+    cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
+    cptBorderCollapse = "border-collapse"
+    cptBoxSizing = "box-sizing"
+    cptCaptionSide = "caption-side"
+    cptClear = "clear"
+    cptDisplay = "display"
+    cptFlexDirection = "flex-direction"
+    cptFlexWrap = "flex-wrap"
+    cptFloat = "float"
+    cptFontStyle = "font-style"
+    cptListStylePosition = "list-style-position"
+    cptListStyleType = "list-style-type"
+    cptOverflowX = "overflow-x"
+    cptOverflowY = "overflow-y"
+    cptPosition = "position"
+    cptTextAlign = "text-align"
+    cptTextDecoration = "text-decoration"
+    cptTextTransform = "text-transform"
+    cptVerticalAlign = "vertical-align"
+    cptVisibility = "visibility"
+    cptWhiteSpace = "white-space"
+    cptWordBreak = "word-break"
+
+    # half-word properties: stored as (32-bit) word
+    cptChaColspan = "-cha-colspan"
+    cptChaRowspan = "-cha-rowspan"
+    cptFlexGrow = "flex-grow"
+    cptFlexShrink = "flex-shrink"
+    cptFontWeight = "font-weight"
+    cptOpacity = "opacity"
+
+    # word properties: stored as (64-bit) word
+    cptBackgroundColor = "background-color"
+    cptBorderSpacingBlock = "-cha-border-spacing-block"
+    cptBorderSpacingInline = "-cha-border-spacing-inline"
+    cptBottom = "bottom"
+    cptColor = "color"
+    cptFlexBasis = "flex-basis"
+    cptFontSize = "font-size"
+    cptHeight = "height"
+    cptLeft = "left"
+    cptMarginBottom = "margin-bottom"
+    cptMarginLeft = "margin-left"
+    cptMarginRight = "margin-right"
+    cptMarginTop = "margin-top"
+    cptMaxHeight = "max-height"
+    cptMaxWidth = "max-width"
+    cptMinHeight = "min-height"
+    cptMinWidth = "min-width"
+    cptPaddingBottom = "padding-bottom"
+    cptPaddingLeft = "padding-left"
+    cptPaddingRight = "padding-right"
+    cptPaddingTop = "padding-top"
+    cptRight = "right"
+    cptTop = "top"
+    cptVerticalAlignLength = "-cha-vertical-align-length"
+    cptWidth = "width"
+    cptZIndex = "z-index"
+
+    # object properties: stored as a tagged ref object
+    cptBackgroundImage = "background-image"
+    cptContent = "content"
+    cptCounterReset = "counter-reset"
+    cptCounterIncrement = "counter-increment"
+    cptCounterSet = "counter-set"
+    cptQuotes = "quotes"
+
+# Selectors
 
   SelectorType* = enum
     stType, stId, stAttr, stClass, stUniversal, stPseudoClass, stPseudoElement
@@ -216,12 +326,22 @@ proc `$`*(tok: CSSToken): string =
   of cttRparen: return ")"
   else: return $tok.t & '\n'
 
+proc `$`*(p: CSSAnyPropertyType): string =
+  if p.sh != cstNone:
+    return $p.sh
+  return $p.p
+
+proc name*(decl: CSSDeclaration): string =
+  case decl.t
+  of cdtUnknown: result &= decl.uname
+  of cdtProperty: result &= $decl.p
+  of cdtVariable: result &= "--" & $decl.v
+
 proc `$`*(decl: CSSDeclaration): string =
-  result = decl.name
-  result &= ": "
+  result = decl.name & ": "
   for s in decl.value:
     result &= $s
-  if decl.important:
+  if decl.rt == crtImportant:
     result &= " !important"
   result &= ";"
 
@@ -247,6 +367,29 @@ proc `$`*(c: CSSRule): string =
     for decl in c.decls:
       result &= $decl & '\n'
     result &= "}\n"
+
+const LastBitPropType* = cptWordBreak
+const FirstHWordPropType* = LastBitPropType.succ
+const LastHWordPropType* = cptOpacity
+const FirstWordPropType* = LastHWordPropType.succ
+const LastWordPropType* = cptZIndex
+const FirstObjPropType* = LastWordPropType.succ
+
+func shorthandType*(s: string): CSSShorthandType =
+  return parseEnumNoCase[CSSShorthandType](s).get(cstNone)
+
+func propertyType*(s: string): Opt[CSSPropertyType] =
+  return parseEnumNoCase[CSSPropertyType](s)
+
+converter toAnyPropertyType*(p: CSSPropertyType): CSSAnyPropertyType =
+  CSSAnyPropertyType(sh: cstNone, p: p)
+
+func anyPropertyType*(s: string): Opt[CSSAnyPropertyType] =
+  let sh = shorthandType(s)
+  if sh == cstNone:
+    let p = ?propertyType(s)
+    return ok(CSSAnyPropertyType(sh: sh, p: p))
+  return ok(CSSAnyPropertyType(sh: sh))
 
 const IdentStart = AsciiAlpha + NonAscii + {'_'}
 const Ident = IdentStart + AsciiDigit + {'-'}
@@ -621,6 +764,17 @@ proc initSimpleBlockToken(start: CSSTokenType; oblock: CSSSimpleBlock):
     assert false
     return CSSToken(t: cttIdent)
 
+proc initCSSDeclaration*(name: string): CSSDeclaration =
+  if name.startsWith("--"):
+    return CSSDeclaration(
+      t: cdtVariable,
+      v: name.toOpenArray(2, name.high).toAtom()
+    )
+  elif p := anyPropertyType(name):
+    return CSSDeclaration(t: cdtProperty, p: p)
+  else:
+    return CSSDeclaration(t: cdtUnknown, uname: name)
+
 # Warning: this may return a token or a component value.  Only use this
 # if you are looking for a simple token.
 proc peekToken(ctx: var CSSParser): lent CSSToken =
@@ -795,7 +949,7 @@ proc consumeQualifiedRule(ctx: var CSSParser): Opt[CSSQualifiedRule] =
 
 proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
   let tok = ctx.consumeToken()
-  let decl = CSSDeclaration(name: tok.s)
+  var decl = initCSSDeclaration(tok.s)
   ctx.skipBlanks()
   if not ctx.has():
     return err()
@@ -834,7 +988,7 @@ proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
     if lastTok1.t == cttDelim and lastTok1.c == '!' and
         lastTok2.t == cttIdent and lastTok2.s.equalsIgnoreCase("important"):
       decl.value.setLen(lastTokIdx1)
-      decl.important = true
+      decl.rt = crtImportant
   while decl.value.len > 0 and decl.value[^1].t == cttWhitespace:
     decl.value.setLen(decl.value.len - 1)
   return ok(decl)

@@ -4,6 +4,7 @@ import std/algorithm
 import std/math
 
 import css/box
+import css/cssparser
 import css/cssvalues
 import css/lunit
 import types/bitmap

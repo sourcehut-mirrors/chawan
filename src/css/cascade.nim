@@ -22,10 +22,8 @@ import types/opt
 
 type
   RuleListEntry = object
-    normal: seq[CSSComputedEntry]
-    important: seq[CSSComputedEntry]
-    normalVars: seq[CSSVariable]
-    importantVars: seq[CSSVariable]
+    vals: array[CSSRuleType, seq[CSSComputedEntry]]
+    vars: array[CSSRuleType, seq[CSSVariable]]
 
   RuleList = array[CSSOrigin, RuleListEntry]
 
@@ -65,10 +63,9 @@ proc calcRule(tosorts: var ToSorts; element: Element;
         tosorts[sel.pseudo].add((sel.specificity, rule))
 
 proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
-  entry.normal.add(rule.normalVals)
-  entry.important.add(rule.importantVals)
-  entry.normalVars.add(rule.normalVars)
-  entry.importantVars.add(rule.importantVars)
+  for rt in CSSRuleType: # normal, important
+    entry.vals[rt].add(rule.vals[rt])
+    entry.vars[rt].add(rule.vars[rt])
 
 proc calcRules(map: var RuleListMap; element: Element;
     sheet: CSSStylesheet; origin: CSSOrigin; depends: var DependencyInfo) =
@@ -109,8 +106,8 @@ proc findVariable(ctx: var ApplyValueContext; varName: CAtom): CSSVariable =
     ctx.vars = ctx.vars.parent
   return nil
 
-proc resolveVariable(ctx: var ApplyValueContext; sh: CSSShorthandType;
-    t: CSSPropertyType; cvar: CSSVarEntry): seq[CSSComputedEntry] =
+proc resolveVariable(ctx: var ApplyValueContext; p: CSSAnyPropertyType;
+    cvar: CSSVarEntry): seq[CSSComputedEntry] =
   var cvar = cvar
   var toks: seq[CSSToken] = @[]
   while true:
@@ -142,9 +139,8 @@ proc resolveVariable(ctx: var ApplyValueContext; sh: CSSShorthandType;
   # fully resolved
   ctx.varsSeen.clear()
   var entries: seq[CSSComputedEntry] = @[]
-  let name = if sh != cstNone: $sh else: $t
   let window = ctx.window
-  if entries.parseComputedValues(name, toks, window.settings.attrsp[]).isErr:
+  if entries.parseComputedValues(p, toks, window.settings.attrsp[]).isErr:
     return @[]
   move(entries)
 
@@ -166,17 +162,17 @@ proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
 proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
     initType: InitType; nextInitType: set[InitType]) =
   case entry.et
-  of ceBit: ctx.vals.bits[entry.t].dummy = entry.bit
-  of ceHWord: ctx.vals.hwords[entry.t] = entry.hword
-  of ceWord: ctx.vals.words[entry.t] = entry.word
-  of ceObject: ctx.vals.objs[entry.t] = entry.obj
-  of ceGlobal: ctx.applyGlobal(entry.t, entry.global, initType)
+  of ceBit: ctx.vals.bits[entry.p.p].dummy = entry.bit
+  of ceHWord: ctx.vals.hwords[entry.p.p] = entry.hword
+  of ceWord: ctx.vals.words[entry.p.p] = entry.word
+  of ceObject: ctx.vals.objs[entry.p.p] = entry.obj
+  of ceGlobal: ctx.applyGlobal(entry.p.p, entry.global, initType)
   of ceVar:
     ctx.vars = ctx.vals.vars
-    for it in ctx.resolveVariable(entry.sh, entry.t, entry.cvar):
+    for it in ctx.resolveVariable(entry.p, entry.cvar):
       ctx.applyValue(it, initType, nextInitType)
   if entry.et != ceVar:
-    ctx.initMap[entry.t] = ctx.initMap[entry.t] + nextInitType
+    ctx.initMap[entry.p.p] = ctx.initMap[entry.p.p] + nextInitType
 
 proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
   ctx.applyValue(entry, itUserAgent, {itUser})
@@ -287,22 +283,22 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     ctx.parentComputed = parent.computed
     parentVars = ctx.parentComputed.vars
   for origin in CSSOrigin:
-    if rules[origin].importantVars.len > 0:
+    if rules[origin].vars[crtImportant].len > 0:
       if result.vars == nil:
         result.vars = newCSSVariableMap(parentVars)
-      for i in countdown(rules[origin].importantVars.high, 0):
-        let cvar = rules[origin].importantVars[i]
+      for i in countdown(rules[origin].vars[crtImportant].high, 0):
+        let cvar = rules[origin].vars[crtImportant][i]
         result.vars.putIfAbsent(cvar.name, cvar)
   for origin in countdown(CSSOrigin.high, CSSOrigin.low):
-    if rules[origin].normalVars.len > 0:
+    if rules[origin].vars[crtNormal].len > 0:
       if result.vars == nil:
         result.vars = newCSSVariableMap(parentVars)
-      for i in countdown(rules[origin].normalVars.high, 0):
-        let cvar = rules[origin].normalVars[i]
+      for i in countdown(rules[origin].vars[crtNormal].high, 0):
+        let cvar = rules[origin].vars[crtNormal][i]
         result.vars.putIfAbsent(cvar.name, cvar)
   if result.vars == nil:
     result.vars = parentVars # inherit parent
-  for entry in rules[coUserAgent].normal: # user agent
+  for entry in rules[coUserAgent].vals[crtNormal]: # user agent
     ctx.applyValue(entry, itOther, {itUserAgent, itUser})
   let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
@@ -310,19 +306,19 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
   if element != nil:
     ctx.applyPresHints(element)
   ctx.previousOrigin = uaProperties
-  for entry in rules[coUser].normal:
+  for entry in rules[coUser].vals[crtNormal]:
     ctx.applyValue(entry, itUserAgent, {itUser})
   # save user properties so author can use them
   ctx.previousOrigin = result.copyProperties() # use user for author revert
-  for entry in rules[coAuthor].normal:
+  for entry in rules[coAuthor].vals[crtNormal]:
     ctx.applyValue(entry, itUser, {itOther})
-  for entry in rules[coAuthor].important:
+  for entry in rules[coAuthor].vals[crtImportant]:
     ctx.applyValue(entry, itUser, {itOther})
   ctx.previousOrigin = uaProperties # use UA for user important revert
-  for entry in rules[coUser].important:
+  for entry in rules[coUser].vals[crtImportant]:
     ctx.applyValue(entry, itUserAgent, {itOther})
   ctx.previousOrigin = nil # reset origin for UA
-  for entry in rules[coUserAgent].important:
+  for entry in rules[coUserAgent].vals[crtImportant]:
     ctx.applyValue(entry, itUserAgent, {itOther})
   # fill in defaults
   for t in CSSPropertyType:
@@ -346,8 +342,9 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
 
 func hasValues(rules: RuleList): bool =
   for x in rules:
-    if x.normal.len > 0 or x.important.len > 0:
-      return true
+    for y in x.vals:
+      if y.len > 0:
+        return true
   return false
 
 proc applyStyle*(element: Element) =
@@ -363,13 +360,24 @@ proc applyStyle*(element: Element) =
   let style = element.cachedStyle
   if window.settings.styling and style != nil:
     for decl in style.decls:
-      #TODO variables
-      let vals = parseComputedValues(decl.name, decl.value,
-        window.settings.attrsp[])
-      if decl.important:
-        map[peNone][coAuthor].important.add(vals)
-      else:
-        map[peNone][coAuthor].normal.add(vals)
+      let rt = decl.rt
+      case decl.t
+      of cdtUnknown: discard
+      of cdtVariable:
+        map[peNone][coAuthor].vars[rt].add(CSSVariable(
+          name: decl.v,
+          hasVar: decl.hasVar,
+          toks: decl.value
+        ))
+      of cdtProperty:
+        if decl.hasVar:
+          if entry := parseDeclWithVar(decl.p, decl.value):
+            map[peNone][coAuthor].vals[rt].add(entry)
+        else:
+          let olen = map[peNone][coAuthor].vals[rt].len
+          if map[peNone][coAuthor].vals[rt].parseComputedValues(decl.p,
+              decl.value, window.settings.attrsp[]).isErr:
+            map[peNone][coAuthor].vals[rt].setLen(olen)
   element.applyStyleDependencies(depends)
   element.computed =
     map[peNone].applyDeclarations(element.parentElement, element, window)

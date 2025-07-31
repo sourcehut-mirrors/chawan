@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/options
-import std/strutils
 import std/tables
 
 import chame/tags
@@ -17,10 +16,8 @@ type
   CSSRuleDef* = ref object
     sels*: SelectorList
     specificity*: int
-    normalVals*: seq[CSSComputedEntry]
-    importantVals*: seq[CSSComputedEntry]
-    normalVars*: seq[CSSVariable]
-    importantVars*: seq[CSSVariable]
+    vals*: array[CSSRuleType, seq[CSSComputedEntry]]
+    vars*: array[CSSRuleType, seq[CSSVariable]]
     # Absolute position in the stylesheet; used for sorting rules after
     # retrieval from the cache.
     idx*: int
@@ -165,32 +162,24 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
   if rule.sels.len > 0:
     let ruleDef = CSSRuleDef(sels: move(rule.sels), idx: sheet.len)
     for decl in rule.decls:
-      if decl.name.startsWith("--"):
-        let cvar = CSSVariable(
-          name: decl.name.toOpenArray(2, decl.name.high).toAtom(),
+      let rt = decl.rt
+      case decl.t
+      of cdtUnknown: discard
+      of cdtVariable:
+        ruleDef.vars[rt].add(CSSVariable(
+          name: decl.v,
           hasVar: decl.hasVar,
           toks: decl.value
-        )
-        if decl.important:
-          ruleDef.importantVars.add(cvar)
+        ))
+      of cdtProperty:
+        if decl.hasVar:
+          if entry := parseDeclWithVar(decl.p, decl.value):
+            ruleDef.vals[rt].add(entry)
         else:
-          ruleDef.normalVars.add(cvar)
-      elif decl.hasVar:
-        if entry := parseDeclWithVar(decl.name, decl.value):
-          if decl.important:
-            ruleDef.importantVals.add(entry)
-          else:
-            ruleDef.normalVals.add(entry)
-      elif decl.important:
-        let olen = ruleDef.importantVals.len
-        if ruleDef.importantVals.parseComputedValues(decl.name, decl.value,
-            sheet.settings.attrsp[]).isErr:
-          ruleDef.importantVals.setLen(olen)
-      else:
-        let olen = ruleDef.normalVals.len
-        if ruleDef.normalVals.parseComputedValues(decl.name, decl.value,
-            sheet.settings.attrsp[]).isErr:
-          ruleDef.normalVals.setLen(olen)
+          let olen = ruleDef.vals[rt].len
+          if ruleDef.vals[rt].parseComputedValues(decl.p, decl.value,
+              sheet.settings.attrsp[]).isErr:
+            ruleDef.vals[rt].setLen(olen)
     sheet.add(ruleDef)
     inc sheet.len
 

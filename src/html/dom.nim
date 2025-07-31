@@ -3967,7 +3967,7 @@ proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
   let inlineRules = value.parseDeclarations()
   var decls: seq[CSSDeclaration] = @[]
   for rule in inlineRules:
-    if rule.name.isSupportedProperty():
+    if rule.t != cdtUnknown:
       decls.add(rule)
   return CSSStyleDeclaration(
     decls: inlineRules,
@@ -3993,10 +3993,17 @@ func item(this: CSSStyleDeclaration; u: uint32): Option[string] =
     return some(this.decls[int(u)].name)
   return none(string)
 
-func find(this: CSSStyleDeclaration; s: string): int =
-  for i, decl in this.decls:
-    if decl.name == s:
-      return i
+proc find(this: CSSStyleDeclaration; s: string): int =
+  if s.startsWith("--"):
+    let v = s.toOpenArray(2, s.high).toAtom()
+    for i, decl in this.decls.mypairs:
+      if decl.t == cdtVariable and decl.v == v:
+        return i
+    return -1
+  if p := anyPropertyType(s):
+    for i, decl in this.decls.mypairs:
+      if decl.t == cdtProperty and decl.p == p:
+        return i
   return -1
 
 proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
@@ -4024,14 +4031,21 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
     return ctx.toJS(this.getPropertyValue(s))
   return JS_UNINITIALIZED
 
-proc setValue(this: CSSStyleDeclaration; i: int; cvals: seq[CSSToken]):
+# Consumes toks.
+proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
     Err[void] =
   if i notin 0 .. this.decls.high:
     return err()
   # dummyAttrs can be safely used because the result is discarded.
-  var dummy: seq[CSSComputedEntry] = @[]
-  ?dummy.parseComputedValues(this.decls[i].name, cvals, dummyAttrs)
-  this.decls[i].value = cvals
+  case this.decls[i].t
+  of cdtUnknown: discard
+  of cdtProperty:
+    var dummy: seq[CSSComputedEntry] = @[]
+    ?dummy.parseComputedValues(this.decls[i].p, toks, dummyAttrs)
+  of cdtVariable:
+    if parseDeclWithVar0(toks) == nil:
+      return err()
+  this.decls[i].value = move(toks)
   return ok()
 
 proc removeProperty(this: CSSStyleDeclaration; name: string): DOMResult[string]
@@ -4062,17 +4076,25 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
   if value == "":
     discard ?this.removeProperty(name)
     return ok()
-  let cvals = parseComponentValues(value)
+  var toks = parseComponentValues(value)
   if (let i = this.find(name); i != -1):
-    if this.setValue(i, cvals).isErr:
+    if this.setValue(i, toks).isErr:
       # not err! this does not throw.
       return ok()
   else:
-    var dummy: seq[CSSComputedEntry] = @[]
-    let val0 = dummy.parseComputedValues(name, cvals, dummyAttrs)
-    if val0.isErr:
+    var decl = initCSSDeclaration(name)
+    case decl.t
+    of cdtUnknown:
       return ok()
-    this.decls.add(CSSDeclaration(name: name, value: cvals))
+    of cdtProperty:
+      var dummy: seq[CSSComputedEntry] = @[]
+      if dummy.parseComputedValues(decl.p, toks, dummyAttrs).isErr:
+        return ok()
+    of cdtVariable:
+      if parseDeclWithVar0(toks) == nil:
+        return err()
+    decl.value = move(toks)
+    this.decls.add(move(decl))
   this.element.attr(satStyle, $this.decls)
   ok()
 
@@ -4081,8 +4103,8 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
   ?this.checkReadOnly()
   var u: uint32
   if ctx.fromJS(atom, u).isOk:
-    let cvals = parseComponentValues(value)
-    if this.setValue(int(u), cvals).isErr:
+    var toks = parseComponentValues(value)
+    if this.setValue(int(u), toks).isErr:
       this.element.attr(satStyle, $this.decls)
     return ok()
   var name: string
