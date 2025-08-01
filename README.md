@@ -47,6 +47,7 @@ $ mancha cha # read the cha(1) man page using `mancha'
 
 You can also install Chawan from packages maintained by volunteers:
 
+* Alpine: <https://pkgs.alpinelinux.org/packages?name=chawan>
 * AUR: <https://aur.archlinux.org/packages/chawan-git>
 * NixOS: <https://search.nixos.org/packages?show=chawan>
 * AppImage: <https://git.lerch.org/lobo/chawan-appimage/>
