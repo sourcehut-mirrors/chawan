@@ -15,7 +15,6 @@ import types/url
 type
   CSSRuleDef* = ref object
     sels*: SelectorList
-    specificity*: int
     vals*: array[CSSRuleType, seq[CSSComputedEntry]]
     vars*: array[CSSRuleType, seq[CSSVariable]]
     # Absolute position in the stylesheet; used for sorting rules after
@@ -128,19 +127,19 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
     else:
       return false
 
+proc addIfNotLast(s: var seq[CSSRuleDef]; rule: CSSRuleDef) =
+  if s.len == 0 or s[^1] != rule:
+    s.add(rule)
+
 proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
   for cxsel in rule.sels:
     var hashes = SelectorHashes()
     hashes.getSelectorIds(cxsel)
-    if hashes.tags.len > 0:
-      for tag in hashes.tags:
-        sheet.tagTable.withValue(tag, p):
-          if p[][^1] != rule:
-            p[].add(rule)
-        do:
-          sheet.tagTable[tag] = @[rule]
-    elif hashes.id != CAtomNull:
+    if hashes.id != CAtomNull:
       sheet.idTable.mgetOrPut(hashes.id, @[]).add(rule)
+    elif hashes.tags.len > 0:
+      for tag in hashes.tags:
+        sheet.tagTable.mgetOrPut(tag, @[]).addIfNotLast(rule)
     elif hashes.class != CAtomNull:
       sheet.classTable.mgetOrPut(hashes.class, @[]).add(rule)
     elif hashes.attr != CAtomNull:

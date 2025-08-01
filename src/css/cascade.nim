@@ -52,15 +52,16 @@ type
 # Forward declarations
 proc applyStyle*(element: Element)
 
-proc calcRule(tosorts: var ToSorts; element: Element;
-    depends: var DependencyInfo; rule: CSSRuleDef) =
-  for sel in rule.sels:
-    if element.matches(sel, depends):
-      if tosorts[sel.pseudo].len > 0 and tosorts[sel.pseudo][^1].rule == rule:
-        tosorts[sel.pseudo][^1].specificity =
-          max(tosorts[sel.pseudo][^1].specificity, sel.specificity)
-      else:
+proc calcRules(tosorts: var ToSorts; element: Element;
+    depends: var DependencyInfo; rules: openArray[CSSRuleDef]) =
+  for rule in rules:
+    var seen: set[PseudoElement] = {}
+    for sel in rule.sels:
+      if sel.pseudo in seen:
+        continue
+      if element.matches(sel, depends):
         tosorts[sel.pseudo].add((sel.specificity, rule))
+        seen.incl(sel.pseudo)
 
 proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
   for rt in CSSRuleType: # normal, important
@@ -69,26 +70,21 @@ proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
 
 proc calcRules(map: var RuleListMap; element: Element;
     sheet: CSSStylesheet; origin: CSSOrigin; depends: var DependencyInfo) =
-  var rules: seq[CSSRuleDef] = @[]
+  var tosorts = ToSorts.default
   sheet.tagTable.withValue(element.localName, v):
-    rules.add(v[])
+    tosorts.calcRules(element, depends, v[])
   if element.id != CAtomNull:
     sheet.idTable.withValue(element.id.toLowerAscii(), v):
-      rules.add(v[])
+      tosorts.calcRules(element, depends, v[])
   for class in element.classList:
     sheet.classTable.withValue(class.toLowerAscii(), v):
-      rules.add(v[])
+      tosorts.calcRules(element, depends, v[])
   for attr in element.attrs:
     sheet.attrTable.withValue(attr.qualifiedName, v):
-      rules.add(v[])
+      tosorts.calcRules(element, depends, v[])
   if element.parentElement == nil:
-    for rule in sheet.rootList:
-      rules.add(rule)
-  for rule in sheet.generalList:
-    rules.add(rule)
-  var tosorts = ToSorts.default
-  for rule in rules:
-    tosorts.calcRule(element, depends, rule)
+    tosorts.calcRules(element, depends, sheet.rootList)
+  tosorts.calcRules(element, depends, sheet.generalList)
   for pseudo, it in tosorts.mpairs:
     it.sort(proc(x, y: RulePair): int =
       let n = cmp(x.specificity, y.specificity)

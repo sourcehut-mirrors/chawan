@@ -1,5 +1,6 @@
 {.push raises: [].}
 
+import std/algorithm
 import std/options
 import std/strutils
 
@@ -1662,6 +1663,8 @@ proc parseSelectorList(state: var SelectorParser; forgiving: bool):
         else: discard
     else:
       res.add(csel)
+  res.sort(proc(a, b: ComplexSelector): int =
+    cmp(a.specificity, b.specificity), Descending)
   move(res)
 
 proc parseSelectors*(toks: seq[CSSToken]): seq[ComplexSelector] =
