@@ -2654,7 +2654,9 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     diff = 0
     relayout.setLen(0)
     for i, it in mctx.pending.mpairs:
-      if it.weights[wt] == 0:
+      if it.weights[wt] == 0 and it.sizes.space[dim].t != scMaxContent:
+        # force max-content relayout for the performance hack
+        #TODO get rid of the max-content check (weight check must stay)
         mctx.updateMaxSizes(it.child, it.sizes)
         continue
       var uw = unit * it.weights[wt]
