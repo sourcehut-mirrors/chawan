@@ -498,7 +498,7 @@ proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
         var n = output.stream.writeData(buffer)
         if n < 0:
           let e = errno
-          if e == EAGAIN or e == EWOULDBLOCK:
+          if e == EAGAIN or e == EWOULDBLOCK or e == EINTR:
             n = 0
           else:
             assert e == EPIPE, $strerror(e)
@@ -768,7 +768,7 @@ proc handleRead(ctx: var LoaderContext; handle: InputHandle;
     let n = handle.stream.readData(buffer.page)
     if n < 0:
       let e = errno
-      if e == EAGAIN or e == EWOULDBLOCK: # retry later
+      if e == EAGAIN or e == EWOULDBLOCK or e == EINTR: # retry later
         break
       else: # sender died; stop streaming
         assert e == EPIPE, $strerror(e)
@@ -1817,7 +1817,7 @@ proc handleWrite(ctx: var LoaderContext; output: OutputHandle;
     let n = output.stream.writeData(buffer, output.currentBufferIdx)
     if n < 0:
       let e = errno
-      if e == EAGAIN or e == EWOULDBLOCK: # never mind
+      if e == EAGAIN or e == EWOULDBLOCK or e == EINTR: # never mind
         break
       else: # receiver died; stop streaming
         assert e == EPIPE, $strerror(e)
