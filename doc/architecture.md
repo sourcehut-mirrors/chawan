@@ -238,60 +238,10 @@ code manually, we have JS pragmas to automagically turn Nim procedures
 into JavaScript functions. (For details on the specific pragmas, see the
 [manual](https://git.sr.ht/~bptato/monoucha/tree/master/doc/manual.md).)
 
-(TODO: description of type conversion is somewhat outdated.)
-
-The type conversion itself is handled by the overloaded toJS function
-and the generic fromJS function. toJS returns a JSValue, the native
-data type of QuickJS. fromJS returns a Result[T, JSError], which is
-interpreted as follows:
-
-* ok(T) is successful conversion.
-* err(JSError) is an error in the conversion.
-* ok(nil) for reference types is null. For non-nullable types, null is
-  ok(none(T)).
-* err(nil) is JS_EXCEPTION, i.e. an exception has been thrown and is
-  being propagated.
-
-An additional point of interest is reference types: ref types registered
-with the registerType macro can be freely passed to JS, and the
-function-defining macros set functions on their JS prototypes. When
-a ref type is passed to JS, a shim JS object is associated with the
-Nim object, and will remain in memory until neither Nim nor JS has
-references to it.
-
-This means that you can expose Nim objects to JS and take Nim objects
-as arguments through the .jsfunc pragma (& friends) without having
-to bother with manual reference counting. How this is achieved is
-detailed below. (TODO: this probably belongs in the Monoucha manual...)
-
-In fact, there is a complication in this system: QuickJS has a reference-
-counting GC, but Nim also has a reference-counting GC. Associating two objects
-that are managed by two separate GCs is problematic, because even if you can
-freely manage the references on both objects, you now have a cycle that only a
-cycle collector can break up. A cross-GC cycle collector is obviously out of
-question; then it would be easier to just replace the entire GC in one of the
-runtimes.
-
-So instead, we patch a hook into the QuickJS cycle collector. Every time
-a JS companion object of a Nim object would be freed, we first check if
-the Nim object still has references from Nim, and if yes, prevent the JS
-object from being freed by "moving" a reference to the JS object
-(i.e. unref Nim, ref JS).
-
-Then, if we want to pass the object to JS again, we add no references to
-the JS object, only to the Nim object. By this, we "moved" the reference
-back to JS.
-
-This way, the Nim cycle collector can destroy the object without
-problems if no more references to it exist. But also, if you set some
-properties on the JS companion object, it will remain even if no more
-references exist to it in JS for some time, only in Nim. i.e. this
-works:
-
-```js
-document.querySelector("html").canary = "chirp";
-console.log(document.querySelector("html").canary); /* chirp */
-```
+Still, sometimes we have to deal with JSValues manually; in this case,
+the fromJS and toJS functions are used.  fromJS in particular returns an
+Opt[void], and uses a var parameter for overloading and efficient
+returns.
 
 ### JS in the pager
 

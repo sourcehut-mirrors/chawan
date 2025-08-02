@@ -140,9 +140,7 @@ Output headers:
 
 * Cha-Image-Dimensions: {width}x{height}
 
-The size of the decoded image.
-
-The dimension format is such that e.g. for 123x456, 123 is width and 456
+The size of the decoded image.  e.g. for 123x456, 123 is width and 456
 is height.
 
 #### encoding

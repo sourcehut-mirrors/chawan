@@ -204,6 +204,14 @@ $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/nim.cfg
 $(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 	(cd "$(OUTDIR_LIBEXEC)" && ln -sf urlenc urldec)
 
+doc/cha.1: doc/cha.md md2man
+	./md2man $< > $@~
+	mv $@~ $@
+
+doc/mancha.1: doc/mancha.md md2man
+	./md2man $< > $@~
+	mv $@~ $@
+
 doc/cha-%.5: doc/%.md md2man
 	./md2man $< > $@~
 	mv $@~ $@

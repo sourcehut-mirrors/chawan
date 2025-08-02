@@ -155,11 +155,10 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     errid = opt(JSErrorEnum)): JSClassID
 ```
 
-Typically, you would do this using Nim reference types. Non-reference
+Typically, you would do this using Nim reference types.  Non-reference
 types work too, but have some restrictions which will be covered.
 
-Now for the first example. Following code registers a JS interface for
-the Nim ref object `Moon`:
+Following code registers a JS interface for the Nim ref object `Moon`:
 
 ```nim
 type Moon = ref object
@@ -266,8 +265,6 @@ Following parameters also exist:
   yourself).
 
 ### jsget, jsset: basic property reflectors
-
-Time to actually expose some Nim values to JS.
 
 The `jsget` and `jsset` pragmas can be set on fields of registered
 object types to directly expose them to JS:
@@ -653,6 +650,23 @@ In particular, handling JSValues is unavoidable when:
   function calls)
 * You want a dynamically typed variable, e.g. for "union" types.
 
+### Option vs Opt
+
+In converters, the conventional way to represent null values is to use
+`Option[T]`.  This applies to e.g. strings (which are not nilable in
+Nim), but also to refs in fromJS so that a registered ref object
+parameter of a `.jsfunc` is not nullable unless you wrap it in an
+`Option`.
+
+`Opt[T]` in contrast is used for representing errors.  Typically, it is
+returned from fromJS as `Opt[void]`; you can use the nim-results
+functions to handle these.  It is also possible to return a
+`Result[T, JSError]` from a bound procedure, making it easy to return
+error conditions from procs used both in Nim and JS.  (Notably however,
+returning a JSValue is still a more effective alternative.)
+
+Monoucha does not use Nim exceptions.
+
 ### Using raw JSValues
 
 When passing around raw JSValues, it is important to make sure you
@@ -746,3 +760,39 @@ To work around this limitation, you can override `toJS` and `fromJS` for
 specific types. In both cases, it is enough to add an overload for the
 respective function and expose it to the module where the converter is
 needed (i.e. where you call `registerType`).
+
+### Implementation details
+
+As mentioned before, ref types registered with the registerType macro
+can be freely passed to JS, and the function-defining macros set
+functions on their JS prototypes.  When a ref type is passed to JS,
+a shim JS object is associated with the Nim object, and will remain in
+memory until neither Nim nor JS has references to it.
+
+In fact, there is a complication in this system: QuickJS has a
+reference-counting GC, and so does Nim.  Associating two objects managed
+by two separate GCs is problematic: even if you can freely manage the
+references on both objects, you now have a cycle that only a cycle
+collector can break up.  A cross-GC cycle collector is out of question;
+then it would be easier to just replace the entire GC in one of the
+runtimes.  (That is probably how a future ARC-based version will work.)
+
+So instead, we patch a hook into the QuickJS cycle collector.
+Every time a JS companion object of a Nim object would be freed, we
+first check if the Nim object still has references from Nim, and if yes,
+prevent the JS object from being freed by "moving" a reference to the JS
+object (i.e. unref Nim, ref JS).
+
+Then, if we want to pass the object to JS again, we add no references
+to the JS object, only to the Nim object.  By this, we "moved" the
+reference back to JS.
+
+This way, the Nim cycle collector can destroy the object without
+problems if no more references to it exist.  Once you set some
+properties on the JS companion object, it will remain even if no more
+references exist to it in JS for some time, only in Nim.  So this works:
+
+```js
+document.querySelector("html").canary = "chirp";
+console.log(document.querySelector("html").canary); /* chirp */
+```

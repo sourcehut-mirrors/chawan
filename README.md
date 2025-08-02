@@ -99,7 +99,8 @@ Chawan's documentation is available as man pages (`man cha`) and as
 Markdown files.
 
 * build/compilation options: [doc/build.md](doc/build.md)
-* manpage: [doc/cha.1](doc/cha.1)
+* `cha` man page: [doc/cha.md](doc/cha.md)
+* `mancha` man page: [doc/mancha.md](doc/mancha.md)
 * configuration options: [doc/config.md](doc/config.md)
 * API description (for keybindings): [doc/api.md](doc/api.md)
 * mailcap: [doc/mailcap.md](doc/mailcap.md)
