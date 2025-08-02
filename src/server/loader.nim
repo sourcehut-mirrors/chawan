@@ -188,11 +188,10 @@ proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
   buffer: LoaderBuffer; ignoreSuspension: bool;
   unregWrite: var seq[OutputHandle])
 
-when defined(debug):
-  func `$`*(buffer: LoaderBuffer): string =
-    var s = newString(buffer.len)
-    copyMem(addr s[0], addr buffer.page[0], buffer.len)
-    return s
+func `$`*(buffer: LoaderBuffer): string {.deprecated: "for debugging only".} =
+  var s = newString(buffer.len)
+  copyMem(addr s[0], addr buffer.page[0], buffer.len)
+  return s
 
 template withPacketWriter(client: ClientHandle; w, body, fallback: untyped) =
   client.stream.withPacketWriter w:
@@ -350,8 +349,12 @@ proc sendStatus(ctx: var LoaderContext; handle: InputHandle; status: uint16;
   pbrDone
 
 proc writeData(ps: PosixStream; buffer: LoaderBuffer; si = 0): int {.inline.} =
-  assert buffer.len - si > 0
-  return ps.writeData(addr buffer.page[si], buffer.len - si)
+  let len = buffer.len - si
+  if len == 0:
+    # Warning: this can happen when using partially cached handles.
+    return 0
+  assert len > 0
+  return ps.writeData(addr buffer.page[si], len)
 
 proc iclose(ctx: var LoaderContext; handle: InputHandle) =
   if handle.stream != nil:
@@ -821,17 +824,34 @@ proc loadStreamRegular(ctx: var LoaderContext;
     if output.registered:
       ctx.unregister(output)
     handle.outputs.del(i)
-  for output in handle.outputs:
-    if r == hrrBrokenPipe:
+  if r == hrrBrokenPipe:
+    for output in handle.outputs:
       ctx.oclose(output)
-    elif cachedHandle != nil:
+  elif cachedHandle != nil:
+    if handle.lastBuffer != nil:
+      # cachedHandle has a different tail than handle, so output's
+      # linked list will eventually break.
+      # To fix this, we create a "ghost" buffer whose only purpose is to
+      # connect the two chains, by setting it as the tail of both.
+      # Note: we know that handle has read cachedHandle.lastBuffer,
+      # because handle's input is taken synchronously from cachedHandle.
+      let buffer = newLoaderBuffer(1)
+      if cachedHandle.lastBuffer != nil:
+        # I'm not 100% sure if this can be nil, but better safe than
+        # sorry.
+        cachedHandle.lastBuffer.next = buffer
+      cachedHandle.lastBuffer = buffer
+      handle.lastBuffer.next = buffer
+    for output in handle.outputs:
       output.parent = cachedHandle
       cachedHandle.outputs.add(output)
-    elif output.registered or output.suspended:
-      output.parent = nil
-      output.istreamAtEnd = true
-    else:
-      ctx.oclose(output)
+  else:
+    for output in handle.outputs:
+      if output.registered or output.suspended:
+        output.parent = nil
+        output.istreamAtEnd = true
+      else:
+        ctx.oclose(output)
   handle.outputs.setLen(0)
   ctx.iclose(handle)
 
