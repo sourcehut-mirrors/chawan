@@ -42,7 +42,6 @@ type
 
   ApplyValueContext = object
     vals: CSSValues
-    vars: CSSVariableMap
     parentComputed: CSSValues
     previousOrigin: CSSValues
     window: Window
@@ -51,6 +50,9 @@ type
 
 # Forward declarations
 proc applyStyle*(element: Element)
+proc applyValues(ctx: var ApplyValueContext;
+  entries: openArray[CSSComputedEntry]; initType: InitType;
+  nextInitType: set[InitType])
 
 proc calcRules(tosorts: var ToSorts; element: Element;
     depends: var DependencyInfo; rules: openArray[CSSRuleDef]) =
@@ -94,51 +96,47 @@ proc calcRules(map: var RuleListMap; element: Element;
     for item in it:
       map[pseudo][origin].add(item.rule)
 
-proc findVariable(ctx: var ApplyValueContext; varName: CAtom): CSSVariable =
-  while ctx.vars != nil:
-    let cvar = ctx.vars.table.getOrDefault(varName)
-    if cvar != nil:
-      return cvar
-    ctx.vars = ctx.vars.parent
-  return nil
+proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
+    vars: CSSVariableMap; items: openArray[CSSVarItem]): Opt[void] =
+  for item in items:
+    let varName = item.name
+    if varName != CAtomNull:
+      if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
+        ctx.varsSeen.clear()
+        return err()
+      var cv {.cursor.}: CSSVariable = nil
+      var vars {.cursor.} = vars
+      while vars != nil:
+        cv = vars.table.getOrDefault(varName)
+        if cv != nil:
+          break
+        vars = vars.parent
+      if cv != nil:
+        ?ctx.addItems(toks, vars, cv.items)
+        continue
+    if item.toks.len == 0:
+      return err()
+    toks.add(item.toks)
+  ok()
 
 proc resolveVariable(ctx: var ApplyValueContext; p: CSSAnyPropertyType;
-    cvar: CSSVarEntry): seq[CSSComputedEntry] =
-  var cvar = cvar
+    cvar: CSSVarEntry; initType: InitType; nextInitType: set[InitType]):
+    Opt[void] =
+  let vars = ctx.vals.vars
+  for it in cvar.resolved:
+    if it.vars == vars:
+      ctx.applyValues(it.entries, initType, nextInitType)
+      return ok()
   var toks: seq[CSSToken] = @[]
-  while true:
-    toks.setLen(0)
-    var ccvar {.cursor.} = cvar
-    var hasVar = false
-    while ccvar != nil:
-      let varName = ccvar.name
-      if varName != CAtomNull:
-        let cv = ctx.findVariable(varName)
-        if cv != nil:
-          if cv.hasVar:
-            if ctx.varsSeen.containsOrIncl(varName) or ctx.varsSeen.len > 20:
-              ctx.varsSeen.clear()
-              return @[]
-            hasVar = true
-          toks.add(cv.toks)
-          ccvar = ccvar.next
-          continue
-      if ccvar.toks.len == 0:
-        return @[]
-      toks.add(ccvar.toks)
-      ccvar = ccvar.next
-    if not hasVar:
-      break
-    cvar = parseDeclWithVar0(toks)
-    if cvar == nil:
-      return @[]
+  ?ctx.addItems(toks, vars, cvar.items)
   # fully resolved
   ctx.varsSeen.clear()
   var entries: seq[CSSComputedEntry] = @[]
   let window = ctx.window
-  if entries.parseComputedValues(p, toks, window.settings.attrsp[]).isErr:
-    return @[]
-  move(entries)
+  ?entries.parseComputedValues(p, toks, window.settings.attrsp[])
+  ctx.applyValues(entries, initType, nextInitType)
+  cvar.resolved.add((vars, move(entries)))
+  ok()
 
 proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
     global: CSSGlobalType; initType: InitType) =
@@ -164,11 +162,15 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
   of ceObject: ctx.vals.objs[entry.p.p] = entry.obj
   of ceGlobal: ctx.applyGlobal(entry.p.p, entry.global, initType)
   of ceVar:
-    ctx.vars = ctx.vals.vars
-    for it in ctx.resolveVariable(entry.p, entry.cvar):
-      ctx.applyValue(it, initType, nextInitType)
-  if entry.et != ceVar:
-    ctx.initMap[entry.p.p] = ctx.initMap[entry.p.p] + nextInitType
+    discard ctx.resolveVariable(entry.p, entry.cvar, initType, nextInitType)
+    return
+  ctx.initMap[entry.p.p] = ctx.initMap[entry.p.p] + nextInitType
+
+proc applyValues(ctx: var ApplyValueContext;
+    entries: openArray[CSSComputedEntry]; initType: InitType;
+    nextInitType: set[InitType]) =
+  for entry in entries:
+    ctx.applyValue(entry, initType, nextInitType)
 
 proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
   ctx.applyValue(entry, itUserAgent, {itUser})
@@ -294,28 +296,23 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
         result.vars.putIfAbsent(cvar.name, cvar)
   if result.vars == nil:
     result.vars = parentVars # inherit parent
-  for entry in rules[coUserAgent].vals[crtNormal]: # user agent
-    ctx.applyValue(entry, itOther, {itUserAgent, itUser})
+  ctx.applyValues(rules[coUserAgent].vals[crtNormal], itOther,
+    {itUserAgent, itUser})
   let uaProperties = result.copyProperties()
   # Presentational hints override user agent style, but respect user/author
   # style.
   if element != nil:
     ctx.applyPresHints(element)
   ctx.previousOrigin = uaProperties
-  for entry in rules[coUser].vals[crtNormal]:
-    ctx.applyValue(entry, itUserAgent, {itUser})
+  ctx.applyValues(rules[coUser].vals[crtNormal], itUserAgent, {itUser})
   # save user properties so author can use them
   ctx.previousOrigin = result.copyProperties() # use user for author revert
-  for entry in rules[coAuthor].vals[crtNormal]:
-    ctx.applyValue(entry, itUser, {itOther})
-  for entry in rules[coAuthor].vals[crtImportant]:
-    ctx.applyValue(entry, itUser, {itOther})
+  ctx.applyValues(rules[coAuthor].vals[crtNormal], itUser, {itOther})
+  ctx.applyValues(rules[coAuthor].vals[crtImportant], itUser, {itOther})
   ctx.previousOrigin = uaProperties # use UA for user important revert
-  for entry in rules[coUser].vals[crtImportant]:
-    ctx.applyValue(entry, itUserAgent, {itOther})
+  ctx.applyValues(rules[coUser].vals[crtImportant], itUserAgent, {itOther})
   ctx.previousOrigin = nil # reset origin for UA
-  for entry in rules[coUserAgent].vals[crtImportant]:
-    ctx.applyValue(entry, itUserAgent, {itOther})
+  ctx.applyValues(rules[coUserAgent].vals[crtImportant], itUserAgent, {itOther})
   # fill in defaults
   for t in CSSPropertyType:
     if ctx.initMap[t] == {}:
@@ -362,8 +359,7 @@ proc applyStyle*(element: Element) =
       of cdtVariable:
         map[peNone][coAuthor].vars[rt].add(CSSVariable(
           name: decl.v,
-          hasVar: decl.hasVar,
-          toks: decl.value
+          items: parseDeclWithVar0(decl.value)
         ))
       of cdtProperty:
         if decl.hasVar:

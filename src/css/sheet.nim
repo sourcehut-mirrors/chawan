@@ -167,8 +167,7 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
       of cdtVariable:
         ruleDef.vars[rt].add(CSSVariable(
           name: decl.v,
-          hasVar: decl.hasVar,
-          toks: decl.value
+          items: parseDeclWithVar0(decl.value)
         ))
       of cdtProperty:
         if decl.hasVar:

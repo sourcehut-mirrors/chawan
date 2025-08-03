@@ -4043,7 +4043,7 @@ proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
     var dummy: seq[CSSComputedEntry] = @[]
     ?dummy.parseComputedValues(this.decls[i].p, toks, dummyAttrs)
   of cdtVariable:
-    if parseDeclWithVar0(toks) == nil:
+    if parseDeclWithVar0(toks).len == 0:
       return err()
   this.decls[i].value = move(toks)
   return ok()
@@ -4091,7 +4091,7 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
       if dummy.parseComputedValues(decl.p, toks, dummyAttrs).isErr:
         return ok()
     of cdtVariable:
-      if parseDeclWithVar0(toks) == nil:
+      if parseDeclWithVar0(toks).len == 0:
         return err()
     decl.value = move(toks)
     this.decls.add(move(decl))
