@@ -972,29 +972,29 @@ func parseLength(val: float32; u: string; attrs: WindowAttributes):
   let u = ?parseEnumNoCase[CSSUnit](u)
   return ok(resolveLength(u, val, attrs))
 
-func parseDimensionValues*(s: string): Option[CSSLength] =
+func parseDimensionValues*(s: string): Opt[CSSLength] =
   var i = s.skipBlanks(0)
   if i >= s.len or s[i] notin AsciiDigit:
-    return none(CSSLength)
+    return err()
   var n = 0f64
   while s[i] in AsciiDigit:
     n *= 10
     n += float32(decValue(s[i]))
     inc i
     if i >= s.len:
-      return some(cssLength(n))
+      return ok(cssLength(n))
   if s[i] == '.':
     inc i
     if i >= s.len:
-      return some(cssLength(n))
+      return ok(cssLength(n))
     var d = 1
     while i < s.len and s[i] in AsciiDigit:
       n += float32(decValue(s[i])) / float32(d)
       inc d
       inc i
   if i < s.len and s[i] == '%':
-    return some(cssLengthPerc(n))
-  return some(cssLength(n))
+    return ok(cssLengthPerc(n))
+  ok(cssLength(n))
 
 func getColorToken(toks: openArray[CSSToken]; i: int; legacy = false):
     Opt[CSSToken] =

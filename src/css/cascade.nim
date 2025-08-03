@@ -35,24 +35,22 @@ type
 
   ToSorts = array[PseudoElement, seq[RulePair]]
 
-  InitType = enum
-    itUserAgent, itUser, itOther
+  RevertType = enum
+    rtUnset, rtUser, rtUserAgent, rtSet
 
-  InitMap = array[CSSPropertyType, set[InitType]]
+  RevertMap = array[CSSPropertyType, RevertType]
 
   ApplyValueContext = object
     vals: CSSValues
     parentComputed: CSSValues
-    previousOrigin: CSSValues
     window: Window
-    initMap: InitMap
+    revertMap: RevertMap
     varsSeen: HashSet[CAtom]
 
 # Forward declarations
 proc applyStyle*(element: Element)
 proc applyValues(ctx: var ApplyValueContext;
-  entries: openArray[CSSComputedEntry]; initType: InitType;
-  nextInitType: set[InitType])
+  entries: openArray[CSSComputedEntry]; revertType: RevertType)
 
 proc calcRules(tosorts: var ToSorts; element: Element;
     depends: var DependencyInfo; rules: openArray[CSSRuleDef]) =
@@ -120,12 +118,11 @@ proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
   ok()
 
 proc resolveVariable(ctx: var ApplyValueContext; p: CSSAnyPropertyType;
-    cvar: CSSVarEntry; initType: InitType; nextInitType: set[InitType]):
-    Opt[void] =
+    cvar: CSSVarEntry; revertType: RevertType): Opt[void] =
   let vars = ctx.vals.vars
   for it in cvar.resolved:
     if it.vars == vars:
-      ctx.applyValues(it.entries, initType, nextInitType)
+      ctx.applyValues(it.entries, revertType)
       return ok()
   var toks: seq[CSSToken] = @[]
   ?ctx.addItems(toks, vars, cvar.items)
@@ -134,52 +131,64 @@ proc resolveVariable(ctx: var ApplyValueContext; p: CSSAnyPropertyType;
   var entries: seq[CSSComputedEntry] = @[]
   let window = ctx.window
   ?entries.parseComputedValues(p, toks, window.settings.attrsp[])
-  ctx.applyValues(entries, initType, nextInitType)
+  ctx.applyValues(entries, revertType)
   cvar.resolved.add((vars, move(entries)))
   ok()
 
-proc applyGlobal(ctx: ApplyValueContext; t: CSSPropertyType;
-    global: CSSGlobalType; initType: InitType) =
-  case global
-  of cgtInherit:
-    ctx.vals.initialOrCopyFrom(ctx.parentComputed, t)
-  of cgtInitial:
-    ctx.vals.setInitial(t)
-  of cgtUnset:
-    ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
-  of cgtRevert:
-    if ctx.previousOrigin != nil and initType in ctx.initMap[t]:
-      ctx.vals.copyFrom(ctx.previousOrigin, t)
-    else:
-      ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
-
+# applyValues runs backwards on the available entries, so that an
+# important revert can skip non-important entries until the previous
+# layer is reached.
+# e.g. if user important sets revert on property t, then the revertMap
+# of t is set to rtUserAgent, and all entries that are not in the
+# user-agent origin are skipped.  (Alternatively, if user-agent set an
+# important value on t, then revertMap already has t set to rtSet, and
+# the user important entry in question is skipped.)
 proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
-    initType: InitType; nextInitType: set[InitType]) =
-  case entry.et
-  of ceBit: ctx.vals.bits[entry.p.p].dummy = entry.bit
-  of ceHWord: ctx.vals.hwords[entry.p.p] = entry.hword
-  of ceWord: ctx.vals.words[entry.p.p] = entry.word
-  of ceObject: ctx.vals.objs[entry.p.p] = entry.obj
-  of ceGlobal: ctx.applyGlobal(entry.p.p, entry.global, initType)
-  of ceVar:
-    discard ctx.resolveVariable(entry.p, entry.cvar, initType, nextInitType)
+    revertType: RevertType) =
+  if entry.et == ceVar:
+    discard ctx.resolveVariable(entry.p, entry.cvar, revertType)
     return
-  ctx.initMap[entry.p.p] = ctx.initMap[entry.p.p] + nextInitType
+  let t = entry.p.p
+  if ctx.revertMap[t] > revertType.pred:
+    # either already set, or reverted to a subsequent value.
+    return
+  case entry.et
+  of ceBit: ctx.vals.bits[t].dummy = entry.bit
+  of ceHWord: ctx.vals.hwords[t] = entry.hword
+  of ceWord: ctx.vals.words[t] = entry.word
+  of ceObject: ctx.vals.objs[t] = entry.obj
+  of ceGlobal:
+    case entry.global
+    of cgtInherit: ctx.vals.initialOrCopyFrom(ctx.parentComputed, t)
+    of cgtInitial: ctx.vals.setInitial(t)
+    of cgtUnset: ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
+    of cgtRevert:
+      if revertType == rtSet: # user agent
+        ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
+      else:
+        ctx.revertMap[t] = revertType
+        return
+  of ceVar: discard
+  ctx.revertMap[t] = rtSet
 
 proc applyValues(ctx: var ApplyValueContext;
-    entries: openArray[CSSComputedEntry]; initType: InitType;
-    nextInitType: set[InitType]) =
-  for entry in entries:
-    ctx.applyValue(entry, initType, nextInitType)
+    entries: openArray[CSSComputedEntry]; revertType: RevertType) =
+  for i in countdown(entries.high, 0):
+    ctx.applyValue(entries[i], revertType)
 
 proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
-  ctx.applyValue(entry, itUserAgent, {itUser})
+  # This is a bit awkward: presentational hints are below author and
+  # user style in the cascade, but reverting either just skips the
+  # presentational hint.
+  # I guess this means that even with an attr() implementation, it's
+  # impossible to move presentational hints to pure CSS.  Another
+  # spectacular failure of the committee...
+  ctx.applyValue(entry, rtUser)
 
 proc applyDimensionHint(ctx: var ApplyValueContext; p: CSSPropertyType;
     s: string) =
-  let s = parseDimensionValues(s)
-  if s.isSome:
-    ctx.applyPresHint(makeEntry(p, s.get))
+  if dim := parseDimensionValues(s):
+    ctx.applyPresHint(makeEntry(p, dim))
 
 proc applyDimensionHintGz(ctx: var ApplyValueContext; p: CSSPropertyType;
     s: string) =
@@ -203,9 +212,8 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyDimensionHintGz(cptWidth, element.attr(satWidth))
     ctx.applyDimensionHintGz(cptHeight, element.attr(satHeight))
     ctx.applyColorHint(cptBackgroundColor, element.attr(satBgcolor))
-    let s = element.attrul(satCellspacing)
-    if s.isOk:
-      let n = cssLength(float32(s.get))
+    if s := element.attrul(satCellspacing):
+      let n = cssLength(float32(s))
       ctx.applyPresHint(makeEntry(cptBorderSpacingInline, n))
       ctx.applyPresHint(makeEntry(cptBorderSpacingBlock, n))
   of TAG_TD, TAG_TH:
@@ -245,9 +253,8 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   of TAG_INPUT:
     let input = HTMLInputElement(element)
     if input.inputType in InputTypeWithSize:
-      let s = element.attrul(satSize)
-      if s.isOk:
-        ctx.applyLengthHint(cptWidth, cuCh, s.get)
+      if s := element.attrul(satSize):
+        ctx.applyLengthHint(cptWidth, cuCh, s)
   of TAG_SELECT:
     if element.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)
@@ -296,26 +303,19 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
         result.vars.putIfAbsent(cvar.name, cvar)
   if result.vars == nil:
     result.vars = parentVars # inherit parent
-  ctx.applyValues(rules[coUserAgent].vals[crtNormal], itOther,
-    {itUserAgent, itUser})
-  let uaProperties = result.copyProperties()
+  ctx.applyValues(rules[coUserAgent].vals[crtImportant], rtSet)
+  ctx.applyValues(rules[coUser].vals[crtImportant], rtUserAgent)
+  ctx.applyValues(rules[coAuthor].vals[crtImportant], rtUser)
+  ctx.applyValues(rules[coAuthor].vals[crtNormal], rtUser)
+  ctx.applyValues(rules[coUser].vals[crtNormal], rtUserAgent)
   # Presentational hints override user agent style, but respect user/author
   # style.
   if element != nil:
     ctx.applyPresHints(element)
-  ctx.previousOrigin = uaProperties
-  ctx.applyValues(rules[coUser].vals[crtNormal], itUserAgent, {itUser})
-  # save user properties so author can use them
-  ctx.previousOrigin = result.copyProperties() # use user for author revert
-  ctx.applyValues(rules[coAuthor].vals[crtNormal], itUser, {itOther})
-  ctx.applyValues(rules[coAuthor].vals[crtImportant], itUser, {itOther})
-  ctx.previousOrigin = uaProperties # use UA for user important revert
-  ctx.applyValues(rules[coUser].vals[crtImportant], itUserAgent, {itOther})
-  ctx.previousOrigin = nil # reset origin for UA
-  ctx.applyValues(rules[coUserAgent].vals[crtImportant], itUserAgent, {itOther})
+  ctx.applyValues(rules[coUserAgent].vals[crtNormal], rtSet)
   # fill in defaults
   for t in CSSPropertyType:
-    if ctx.initMap[t] == {}:
+    if ctx.revertMap[t] != rtSet:
       result.initialOrInheritFrom(ctx.parentComputed, t)
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.
