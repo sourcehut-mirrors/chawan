@@ -1711,8 +1711,9 @@ const ShorthandMap = [
   cstBorderSpacing: @[cptBorderSpacingInline, cptBorderSpacingBlock]
 ]
 
-proc parseComputedValues*(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
-    toks: openArray[CSSToken]; attrs: WindowAttributes): Err[void] =
+proc parseComputedValues0*(res: var seq[CSSComputedEntry];
+    p: CSSAnyPropertyType; toks: openArray[CSSToken]; attrs: WindowAttributes):
+    Err[void] =
   var i = ?toks.skipBlanksCheckHas(0)
   let tok = toks[i]
   if global := parseGlobal(tok):
@@ -1830,6 +1831,12 @@ proc parseComputedValues*(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
     res.add(makeEntry(cptBorderSpacingInline, a))
     res.add(makeEntry(cptBorderSpacingBlock, b))
   return ok()
+
+proc parseComputedValues*(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
+    toks: openArray[CSSToken]; attrs: WindowAttributes) =
+  let olen = res.len
+  if res.parseComputedValues0(p, toks, attrs).isErr:
+    res.setLen(olen)
 
 proc copyFrom*(a, b: CSSValues; t: CSSPropertyType) =
   case t.reprType

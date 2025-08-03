@@ -130,7 +130,7 @@ proc resolveVariable(ctx: var ApplyValueContext; p: CSSAnyPropertyType;
   ctx.varsSeen.clear()
   var entries: seq[CSSComputedEntry] = @[]
   let window = ctx.window
-  ?entries.parseComputedValues(p, toks, window.settings.attrsp[])
+  ?entries.parseComputedValues0(p, toks, window.settings.attrsp[])
   ctx.applyValues(entries, revertType)
   cvar.resolved.add((vars, move(entries)))
   ok()
@@ -366,10 +366,8 @@ proc applyStyle*(element: Element) =
           if entry := parseDeclWithVar(decl.p, decl.value):
             map[peNone][coAuthor].vals[rt].add(entry)
         else:
-          let olen = map[peNone][coAuthor].vals[rt].len
-          if map[peNone][coAuthor].vals[rt].parseComputedValues(decl.p,
-              decl.value, window.settings.attrsp[]).isErr:
-            map[peNone][coAuthor].vals[rt].setLen(olen)
+          map[peNone][coAuthor].vals[rt].parseComputedValues(decl.p, decl.value,
+            window.settings.attrsp[])
   element.applyStyleDependencies(depends)
   element.computed =
     map[peNone].applyDeclarations(element.parentElement, element, window)
