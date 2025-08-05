@@ -335,10 +335,17 @@ proc parseInline(line: openArray[char]): Opt[void] =
     ?stdout.write("</DEL>")
   ok()
 
-type ListType = enum
-  ltOl, ltUl, ltNoMark
+type
+  ListType = enum
+    ltOl, ltUl, ltNoMark
 
-proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
+  ListItemDesc = object
+    t: ListType
+    start: int32
+    depth: int
+    len: int
+
+proc getListDepth(line: string): ListItemDesc =
   var depth = 0
   for i, c in line:
     if c == '\t':
@@ -347,36 +354,22 @@ proc getListDepth(line: string): tuple[depth, len: int; ol: ListType] =
       inc depth
     elif c in {'*', '-', '+'}:
       inc depth
-      for j, c in line.toOpenArray(i + 1, line.high):
-        if c == '\t':
-          depth += 8
-        elif c == ' ':
-          inc depth
-        elif j == 0:
-          break # fail
-        else:
-          return (depth, i + j, ltUl)
+      if i + 1 < line.len and line[i + 1] in {' ', '\t'}:
+        return ListItemDesc(t: ltUl, depth: depth, len: i + 1)
       break # fail
     elif c in AsciiDigit:
+      let j = i
       var i = i + 1
       inc depth
       while i < line.len and line[i] in AsciiDigit:
-        inc depth
         inc i
-      if i < line.len and line[i] == '.':
-        for j, c in line.toOpenArray(i + 1, line.high):
-          if c == '\t':
-            depth += 8
-          elif c == ' ':
-            inc depth
-          elif j == 0:
-            break # fail
-          else:
-            return (depth, i + j, ltOl)
+      let start = parseInt32(line.toOpenArray(j, i - 1)).get(-1)
+      if i + 1 < line.len and line[i] == '.' and line[i + 1] in {' ', '\t'}:
+        return ListItemDesc(t: ltOl, depth: depth, len: i + 1, start: start)
       break # fail
     else:
-      return (depth, i, ltNoMark)
-  return (-1, -1, ltNoMark)
+      return ListItemDesc(t: ltNoMark, depth: depth, len: i)
+  return ListItemDesc(t: ltNoMark, depth: -1, len: -1)
 
 proc matchHTMLPreStart(line: string): bool =
   var tagn = ""
@@ -428,13 +421,17 @@ type
     listState: ListState
     numPreLines: int
 
-proc pushList(state: var ParseState; t: ListType; depth: int): Opt[void] =
+proc pushList(state: var ParseState; desc: ListItemDesc): Opt[void] =
   let stdout = cast[ChaFile](stdout)
-  case t
-  of ltOl: ?stdout.write("<OL>\n<LI>")
+  case desc.t
+  of ltOl:
+    if desc.start == 1:
+      ?stdout.write("<OL>\n<LI>")
+    else:
+      ?stdout.write("<OL start=" & $desc.start & ">\n<LI>")
   of ltUl: ?stdout.write("<UL>\n<LI>")
   of ltNoMark: assert false
-  state.lists.add(List(t: t, depth: depth))
+  state.lists.add(List(t: desc.t, depth: desc.depth))
   ok()
 
 proc popList(state: var ParseState): Opt[void] =
@@ -502,12 +499,12 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
       ?stdout.write("</P>\n")
     state.blockData = line.substr(1) & "<BR>"
     ?stdout.write("<BLOCKQUOTE>")
-  elif (let (n, len, t) = line.getListDepth(); t != ltNoMark):
+  elif (let desc = line.getListDepth(); desc.t != ltNoMark):
     state.blockType = btList
     state.listState = lsNormal
     state.hasp = false
-    ?state.pushList(t, n)
-    state.blockData = line.substr(len + 1) & '\n'
+    ?state.pushList(desc)
+    state.blockData = line.substr(desc.len + 1) & '\n'
   else:
     state.blockType = btPar
     state.reprocess = true
@@ -550,9 +547,9 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
   elif AllChars - {' ', '\t'} notin line:
     state.listState = lsAfterBlank
   else:
-    let (n, len, t) = line.getListDepth()
-    if t == ltNoMark:
-      if state.lists[0].depth > n:
+    let desc = line.getListDepth()
+    if desc.t == ltNoMark:
+      if state.lists[0].depth > desc.depth:
         if state.listState == lsAfterBlank:
           ?state.flushList()
           state.reprocess = true
@@ -564,25 +561,27 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
           ?stdout.write("<P>\n")
           ?state.blockData.parseInline()
           state.blockData = ""
-          while n < state.lists[^1].depth:
+          while desc.depth < state.lists[^1].depth:
             ?state.popList()
-        state.blockData &= line.substr(len) & '\n'
+        state.blockData &= line.substr(desc.len) & '\n'
     else:
-      if state.listState == lsAfterBlank and state.lists[^1].t == t:
+      if state.listState == lsAfterBlank and state.lists[^1].t == desc.t:
         state.lists[^1].par = true
       if state.lists[^1].par:
         ?stdout.write("<P>\n")
       ?state.blockData.parseInline()
       state.blockData = ""
-      while state.lists.len > 1 and (n < state.lists[^1].depth or
-          n == state.lists[^1].depth and t != state.lists[^1].t):
+      while state.lists.len > 1 and (desc.depth < state.lists[^1].depth or
+          desc.depth == state.lists[^1].depth and desc.t != state.lists[^1].t):
         ?state.popList()
-      if state.lists.len == 0 or state.lists[^1].depth < n or
-          state.lists[^1].t != t:
-        ?state.pushList(t, n)
+      if state.lists.len == 0 or state.lists[^1].depth < desc.depth:
+        ?state.pushList(desc)
+      elif state.lists[^1].t != desc.t:
+        ?state.popList()
+        ?state.pushList(desc)
       else:
         ?stdout.write("<LI>")
-      state.blockData = line.substr(len + 1) & '\n'
+      state.blockData = line.substr(desc.len + 1) & '\n'
     state.listState = lsNormal
   ok()
 

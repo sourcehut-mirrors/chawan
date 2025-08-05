@@ -20,3 +20,16 @@ test
   test
   - test
   1. test
+
+p
+
++ test
+  1. test
+
+p
+
+10. test
+
+* test
+
+*   test
