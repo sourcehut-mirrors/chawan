@@ -154,6 +154,14 @@ the number of colors in Sixel/Kitty images).
 * If `buffer.mark-links` is set, the `::-cha-link-marker` pseudo-element
   will be generated on all anchor elements.
 
+* The `-cha-content-type` media feature can be used to filter documents
+  for their content type.  For example, you can add
+
+  `@media (-cha-content-type: "text/markdown") { body { width: 80ch } }`
+
+  to your user style to set the body width of all markdown documents to
+  80 characters.  (The string is matched case-insensitively.)
+
 ## Rendering quirks
 
 These are willful violations of the standard, usually made to better fit

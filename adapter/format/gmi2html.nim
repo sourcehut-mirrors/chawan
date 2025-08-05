@@ -16,14 +16,7 @@ proc main(): Opt[void] =
   # simplest and most efficient solution, which is just using newlines.)
   let stdout = cast[ChaFile](stdout)
   let stdin = cast[ChaFile](stdin)
-  ?stdout.write("""
-<!DOCTYPE html>
-<style>
-a { display: block }
-body { white-space: pre-line }
-a, pre, ul, blockquote, li, h1, h2, h3 { margin-top: 0; margin-bottom: 0 }
-</style>
-""")
+  ?stdout.write("<!DOCTYPE html>")
   var inpre = false
   var inul = false
   var line = ""

@@ -1,4 +1,5 @@
 import config/conftypes
+import html/catom
 import monoucha/javascript
 import monoucha/quickjs
 import monoucha/tojs
@@ -59,6 +60,7 @@ type
     images*: bool
     styling*: bool
     autofocus*: bool
+    contentType*: CAtom
 
   Script* = ref object
     #TODO setings

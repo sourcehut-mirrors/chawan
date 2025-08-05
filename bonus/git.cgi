@@ -33,8 +33,10 @@ for (const p of std.getenv("QUERY_STRING").split('&')) {
 }
 
 function startGitCmd(config, params) {
-	std.out.puts("Content-Type: text/html\n\n" +
-	"<style>form{display:inline} input{margin:0}</style>");
+	std.out.puts(`Content-Type: text/html
+
+<!DOCTYPE html>
+<style>form{display:inline} input{margin:0} pre{margin:0}</style>`);
 	std.out.flush();
 	const [read_fd, write_fd] = os.pipe();
 	const [read_fd2, write_fd2] = os.pipe();
@@ -46,7 +48,7 @@ function startGitCmd(config, params) {
 	const libexecDir = std.getenv("CHA_LIBEXEC_DIR") ??
 		'/usr/local/libexec/chawan';
 	const title = encodeURIComponent('git ' + params.join(' '));
-	os.exec([libexecDir + "/ansi2html", "-st", title], {
+	os.exec([libexecDir + "/ansi2html", "-t", title], {
 		stdin: read_fd,
 		stdout: write_fd2,
 		block: false

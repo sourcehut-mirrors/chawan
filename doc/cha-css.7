@@ -230,6 +230,18 @@ non\-whitespace contents.
 If \f[CR]buffer.mark\-links\f[R] is set, the
 \f[CR]::\-cha\-link\-marker\f[R] pseudo\-element will be generated on
 all anchor elements.
+.IP \(bu 2
+The \f[CR]\-cha\-content\-type\f[R] media feature can be used to filter
+documents for their content type.
+For example, you can add
+.RS 2
+.PP
+\f[CR]\(atmedia (\-cha\-content\-type: \(dqtext/markdown\(dq) { body { width: 80ch } }\f[R]
+.PP
+to your user style to set the body width of all markdown documents to 80
+characters.
+(The string is matched case\-insensitively.)
+.RE
 .SS Rendering quirks
 These are willful violations of the standard, usually made to better fit
 the display model inherent to projecting the web to a cell\-based

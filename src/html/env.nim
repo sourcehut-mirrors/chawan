@@ -493,7 +493,8 @@ proc addScripting*(window: Window) =
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     colorMode: ColorMode; headless: HeadlessMode; attrsp: ptr WindowAttributes;
     loader: FileLoader; url: URL; urandom: PosixStream;
-    imageTypes: Table[string, string]; userAgent, referrer: string): Window =
+    imageTypes: Table[string, string];
+    userAgent, referrer, contentType: string): Window =
   let window = Window(
     internalConsole: newConsole(cast[ChaFile](stderr)),
     navigator: Navigator(),
@@ -506,7 +507,8 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
       images: images,
       autofocus: autofocus,
       colorMode: colorMode,
-      headless: headless
+      headless: headless,
+      contentType: contentType.toAtom()
     ),
     crypto: Crypto(urandom: urandom),
     imageTypes: imageTypes,

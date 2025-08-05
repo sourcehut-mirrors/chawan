@@ -56,8 +56,8 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
   return process
 
 proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
-    attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset]):
-    tuple[pid: int; cstream: SocketStream] =
+    attrs: WindowAttributes; ishtml: bool; charsetStack: seq[Charset];
+    contentType: string): tuple[pid: int; cstream: SocketStream] =
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return (-1, nil)
@@ -68,6 +68,7 @@ proc forkBuffer*(forkserver: ForkServer; config: BufferConfig; url: URL;
     w.swrite(attrs)
     w.swrite(ishtml)
     w.swrite(charsetStack)
+    w.swrite(contentType)
     w.sendFd(sv[1])
   do:
     fail = true
@@ -120,11 +121,13 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   var attrs: WindowAttributes
   var ishtml: bool
   var charsetStack: seq[Charset]
+  var contentType: string
   r.sread(config)
   r.sread(url)
   r.sread(attrs)
   r.sread(ishtml)
   r.sread(charsetStack)
+  r.sread(contentType)
   let fd = r.recvFd()
   stderr.flushFile()
   let pid = fork()
@@ -149,7 +152,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
     discard signal(SIGPIPE, SIG_DFL)
     enterBufferSandbox()
     launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
-      istream, urandom, cacheId)
+      istream, urandom, cacheId, contentType)
     doAssert false
   discard close(fd)
   return pid

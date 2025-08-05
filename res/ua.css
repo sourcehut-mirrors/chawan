@@ -119,14 +119,14 @@ nobr { white-space: nowrap }
 p { margin: 1em 0 }
 
 @media (prefers-color-scheme: light) {
-a[href] { color: -cha-ansi(blue) }
+	a[href] { color: -cha-ansi(blue) }
 }
 @media (prefers-color-scheme: dark) {
-a[href] { color: -cha-ansi(yellow) }
+	a[href] { color: -cha-ansi(yellow) }
 }
 @media (monochrome) {
-a[href] { text-decoration: underline }
-a[href]:hover { font-weight: bold }
+	a[href] { text-decoration: underline }
+	a[href]:hover { font-weight: bold }
 }
 
 a[href]::-cha-link-marker {
@@ -227,3 +227,11 @@ ul[type=none i] { list-style-type: none }
 ul[type=disc i] { list-style-type: disc }
 ul[type=circle i] { list-style-type: circle }
 ul[type=square i] { list-style-type: square }
+
+@media (-cha-content-type: "text/gemini") {
+	a { display: block }
+	body { white-space: pre-line }
+	a, pre, ul, blockquote, li, h1, h2, h3 { margin-top: 0; margin-bottom: 0 }
+}
+
+@media (-cha-content-type: "text/x-ansi") { pre { margin: 0 } }

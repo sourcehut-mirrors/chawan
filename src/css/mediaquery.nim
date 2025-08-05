@@ -5,6 +5,7 @@ import std/options
 import config/conftypes
 import css/cssparser
 import css/cssvalues
+import html/catom
 import html/script
 import types/opt
 import types/winattrs
@@ -35,6 +36,7 @@ type
     mftWidth = "width"
     mftHeight = "height"
     mftScripting = "scripting"
+    mftContentType = "-cha-content-type"
 
   LengthRange = object
     s: Slice[float32]
@@ -55,7 +57,9 @@ type
     of mftScripting:
       ms: MediaScripting
     of mftWidth, mftHeight:
-      lengthrange*: LengthRange
+      lengthrange: LengthRange
+    of mftContentType:
+      a: CAtom
 
   MediaQuery* = ref object
     case t: MediaConditionType
@@ -98,7 +102,9 @@ func `$`(mf: MediaFeature): string =
       result &= '='
     result &= ' ' & $mf.lengthrange.s.b
   of mftScripting:
-    return "scripting: " & [false: "none", true: "enabled"][mf.b]
+    return "scripting: " & $mf.ms
+  of mftContentType:
+    return $mf.t & ": \"" & ($mf.a).dqEscape() & '"'
 
 func `$`(mq: MediaQuery): string =
   case mq.t
@@ -161,6 +167,11 @@ proc skipBlanksCheckHas(parser: var MediaQueryParser): Err[void] =
 
 proc consumeIdent(parser: var MediaQueryParser): Opt[CSSToken] =
   if parser.peekTokenType() != cttIdent:
+    return err()
+  return ok(parser.consume())
+
+proc consumeString(parser: var MediaQueryParser): Opt[CSSToken] =
+  if parser.peekTokenType() != cttString:
     return err()
   return ok(parser.consume())
 
@@ -276,6 +287,9 @@ proc parseFeature0(parser: var MediaQueryParser; t: MediaFeatureType;
     let tok = ?parser.consumeIdent()
     let ms = ?parseEnumNoCase[MediaScripting](tok.s)
     MediaFeature(t: t, ms: ms)
+  of mftContentType:
+    let tok = ?parser.consumeString()
+    MediaFeature(t: t, a: tok.s.toAtom())
   return ok(feature)
 
 proc parseFeature(parser: var MediaQueryParser; t: MediaFeatureType;
@@ -429,6 +443,8 @@ func applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
     of msNone: return ctx.scripting == smFalse
     of msInitialOnly: return ctx.scripting != smFalse and ctx.headless == hmDump
     of msEnabled: return ctx.scripting != smFalse and ctx.headless != hmDump
+  of mftContentType:
+    return ctx.contentType.equalsIgnoreCase(feature.a)
 
 func applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
   case mq.t

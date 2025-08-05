@@ -2742,7 +2742,8 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
       url,
       attrs,
       cmfHTML in res.flags,
-      container.charsetStack
+      container.charsetStack,
+      container.contentType
     )
     if pid == -1:
       res.ostream.sclose()

@@ -1944,7 +1944,8 @@ proc cleanup(bc: BufferContext) =
 
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
-    pstream, istream: SocketStream; urandom: PosixStream; cacheId: int) =
+    pstream, istream: SocketStream; urandom: PosixStream; cacheId: int;
+    contentType: string) =
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
   else:
@@ -1974,7 +1975,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     urandom,
     config.imageTypes,
     config.userAgent,
-    config.referrer
+    config.referrer,
+    contentType
   )
   if bc.config.scripting != smFalse:
     bc.window.navigate = proc(url: URL) = bc.navigate(url)
