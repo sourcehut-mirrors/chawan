@@ -195,22 +195,20 @@ proc parseBool(parser: var MediaQueryParser; sfalse, strue: string): Opt[bool] =
 
 proc parseComparison(parser: var MediaQueryParser): Opt[MediaQueryComparison] =
   let tok = parser.consume()
-  if tok.t != cttDelim or tok.c notin {'=', '<', '>'}:
-    return err()
-  case tok.c
-  of '<':
+  case tok.t
+  of cttLt:
     if parser.skipBlanksCheckHas().isOk:
-      if parser.ctx.peekDelim('='):
+      if parser.peekTokenType() == cttEquals:
         discard parser.consume()
         return ok(mqcLe)
     return ok(mqcLt)
-  of '>':
+  of cttGt:
     if parser.skipBlanksCheckHas().isOk:
-      if parser.ctx.peekDelim('='):
+      if parser.peekTokenType() == cttEquals:
         discard parser.consume()
         return ok(mqcGe)
     return ok(mqcGt)
-  of '=': return ok(mqcEq)
+  of cttEquals: return ok(mqcEq)
   else: return err()
 
 proc parseIntRange(parser: var MediaQueryParser; ismin, ismax: bool):

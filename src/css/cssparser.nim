@@ -21,11 +21,33 @@ type
 # Tokens
 
   CSSTokenType* = enum
-    cttIdent, cttFunction, cttAtKeyword, cttHash, cttString,
-    cttBadString, cttUrl, cttBadUrl, cttDelim, cttNumber, cttINumber,
-    cttPercentage, cttDimension, cttIDimension, cttWhitespace, cttCdo, cttCdc,
-    cttColon, cttSemicolon, cttComma, cttRbracket, cttLbracket, cttLparen,
-    cttRparen, cttLbrace, cttRbrace
+    cttIdent, cttFunction, cttAtKeyword, cttHash, cttString, cttBadString,
+    cttUrl, cttBadUrl, cttDelim, cttNumber, cttINumber, cttPercentage,
+    cttDimension, cttIDimension, cttWhitespace
+    cttCdo = "<!--"
+    cttCdc = "-->"
+    cttColon = ":"
+    cttSemicolon = ";"
+    cttComma = ","
+    cttRbracket = "["
+    cttLbracket = "]"
+    cttLparen = "("
+    cttRparen = ")"
+    cttLbrace = "{"
+    cttRbrace = "}"
+    cttSlash = "/"
+    cttStar = "*"
+    cttPlus = "+"
+    cttMinus = "-"
+    cttLt = "<"
+    cttGt = ">"
+    cttTilde = "~"
+    cttDot = "."
+    cttPipe = "|"
+    cttCaret = "^"
+    cttDollar = "$"
+    cttEquals = "="
+    cttBang = "!"
 
   CSSTokenFlag = enum
     ctfId, ctfSign
@@ -33,7 +55,7 @@ type
   CSSToken* = object # token or component value
     num*: float32 # for number-like
     flags*: set[CSSTokenFlag]
-    c*: char # for cttDelim.  if non-ascii, s contains UTF-8
+    c: char # for cttDelim.  if non-ascii, s contains UTF-8
     ft*: CSSFunctionType
     t*: CSSTokenType
     s*: string # for ident/string-like, and unit of number tokens
@@ -295,32 +317,22 @@ proc `$`*(decl: CSSDeclaration): string
 proc `$`*(c: CSSSimpleBlock): string
 func `$`*(slist: SelectorList): string
 
-func isDelim*(tok: CSSToken; c: char): bool =
-  return tok.t == cttDelim and tok.c == c
-
 proc `$`*(tok: CSSToken): string =
-  case tok.t:
-  of cttAtKeyword: return $tok.t & tok.s & '\n'
-  of cttFunction: return $tok.ft & '('
-  of cttUrl: return "url(" & tok.s & ")"
-  of cttHash: return '#' & tok.s
-  of cttIdent: return tok.s
-  of cttString: return ("\"" & tok.s & "\"")
-  of cttDelim: return if tok.c in Ascii: $tok.c else: tok.s
-  of cttDimension, cttNumber: return $tok.num & tok.s
-  of cttINumber, cttIDimension: return $int32(tok.num) & tok.s
-  of cttPercentage: return $tok.num & "%"
-  of cttColon: return ":"
-  of cttWhitespace: return " "
-  of cttSemicolon: return ";\n"
-  of cttComma: return ","
-  of cttLparen: return "("
-  of cttRparen: return ")"
-  of cttLbracket: return "["
-  of cttRbracket: return "]"
-  of cttLbrace: return "{"
-  of cttRbrace: return "}\n"
-  else: return $tok.t & '\n'
+  return case tok.t:
+  of cttAtKeyword: $tok.t & tok.s & '\n'
+  of cttFunction: $tok.ft & '('
+  of cttUrl: "url(" & tok.s & ")"
+  of cttHash: '#' & tok.s
+  of cttIdent: tok.s
+  of cttString: ("\"" & tok.s & "\"")
+  of cttDelim: (if tok.c in Ascii: $tok.c else: tok.s)
+  of cttDimension, cttNumber: $tok.num & tok.s
+  of cttINumber, cttIDimension: $int32(tok.num) & tok.s
+  of cttPercentage: $tok.num & "%"
+  of cttWhitespace: " "
+  of cttSemicolon: ";\n"
+  of cttRbrace: "}\n"
+  else: $tok.t
 
 proc `$`*(p: CSSAnyPropertyType): string =
   if p.sh != cstNone:
@@ -622,9 +634,7 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
       if iq.startsWithIdentSequence(n):
         flags.incl(ctfId)
       return CSSToken(t: cttHash, s: iq.consumeIdentSequence(n), flags: flags)
-    else:
-      dec n
-      return iq.consumeDelimToken(n)
+    return CSSToken(t: cttDelim, c: '#')
   of '(': return CSSToken(t: cttLparen)
   of ')': return CSSToken(t: cttRparen)
   of '{': return CSSToken(t: cttLbrace)
@@ -635,8 +645,7 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
         n + 1 < iq.len and iq[n] == '.' and iq[n + 1] in AsciiDigit:
       dec n
       return iq.consumeNumericToken(n)
-    else:
-      return CSSToken(t: cttDelim, c: c)
+    return CSSToken(t: cttPlus)
   of ',': return CSSToken(t: cttComma)
   of '-':
     # starts with a number
@@ -651,14 +660,13 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
       dec n
       return iq.consumeIdentLikeToken(n)
     else:
-      return CSSToken(t: cttDelim, c: c)
+      return CSSToken(t: cttMinus)
   of '.':
     # starts with a number
     if n < iq.len and iq[n] in AsciiDigit:
       dec n
       return iq.consumeNumericToken(n)
-    else:
-      return CSSToken(t: cttDelim, c: c)
+    return CSSToken(t: cttDot)
   of ':': return CSSToken(t: cttColon)
   of ';': return CSSToken(t: cttSemicolon)
   of '<':
@@ -666,20 +674,17 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
         iq[n + 2] == '-':
       n += 3
       return CSSToken(t: cttCdo)
-    else:
-      return CSSToken(t: cttDelim, c: c)
+    return CSSToken(t: cttLt)
   of '@':
     if iq.startsWithIdentSequence(n):
       return CSSToken(t: cttAtKeyword, s: iq.consumeIdentSequence(n))
-    else:
-      return CSSToken(t: cttDelim, c: c)
+    return CSSToken(t: cttDelim, c: c)
   of '[': return CSSToken(t: cttLbracket)
   of '\\':
     if n < iq.len and iq[n] != '\n':
       dec n
       return iq.consumeIdentLikeToken(n)
-    else:
-      return CSSToken(t: cttDelim, c: c)
+    return CSSToken(t: cttDelim, c: c)
   of ']': return CSSToken(t: cttRbracket)
   of AsciiDigit:
     dec n
@@ -687,6 +692,15 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
   of IdentStart:
     dec n
     return iq.consumeIdentLikeToken(n)
+  of '/': return CSSToken(t: cttSlash)
+  of '>': return CSSToken(t: cttGt)
+  of '*': return CSSToken(t: cttStar)
+  of '~': return CSSToken(t: cttTilde)
+  of '|': return CSSToken(t: cttPipe)
+  of '^': return CSSToken(t: cttCaret)
+  of '$': return CSSToken(t: cttDollar)
+  of '=': return CSSToken(t: cttEquals)
+  of '!': return CSSToken(t: cttBang)
   else:
     dec n
     return iq.consumeDelimToken(n)
@@ -812,9 +826,6 @@ proc peekIdentNoCase*(ctx: var CSSParser; s: string): bool =
   return ctx.peekTokenType() == cttIdent and
     ctx.peekToken().s.equalsIgnoreCase(s)
 
-proc peekDelim*(ctx: var CSSParser; c: char): bool =
-  return ctx.peekTokenType() == cttDelim and ctx.peekToken().c == c
-
 proc consume*(ctx: var CSSParser): CSSToken =
   if ctx.iqlen == 0:
     var cval = ctx.toks[ctx.i]
@@ -936,7 +947,7 @@ proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
   if lastTokIdx1 != -1 and lastTokIdx2 != -1:
     let lastTok1 = decl.value[lastTokIdx1]
     let lastTok2 = decl.value[lastTokIdx2]
-    if lastTok1.t == cttDelim and lastTok1.c == '!' and
+    if lastTok1.t == cttBang and
         lastTok2.t == cttIdent and lastTok2.s.equalsIgnoreCase("important"):
       decl.value.setLen(lastTokIdx1)
       decl.rt = crtImportant
@@ -1103,7 +1114,7 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
 
   ?ctx.skipBlanksCheckHas()
   var tok = ctx.consume()
-  let isPlus = tok.t == cttDelim and tok.c == '+'
+  let isPlus = tok.t == cttPlus
   if isPlus:
     tok = ctx.consume()
   case tok.t
@@ -1120,12 +1131,9 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
         if ctx.skipBlanksCheckDone().isOk:
           return ok((1i32, 0i32))
         let tok2 = ctx.peekToken()
-        if tok2.t == cttDelim:
+        if tok2.t in {cttPlus, cttMinus}:
           ctx.seekToken()
-          let sign = case tok2.c
-          of '+': 1i32
-          of '-': -1i32
-          else: return err()
+          let sign = if tok2.t == cttPlus: 1i32 else: -1i32
           ?ctx.skipBlanksCheckHas()
           let tok3 = ctx.peekToken()
           fail_non_signless_integer tok3, ok((1i32, 0i32))
@@ -1140,12 +1148,9 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
         if ctx.skipBlanksCheckDone().isOk:
           return ok((-1i32, 0i32))
         let tok2 = ctx.peekToken()
-        if tok2.t == cttDelim:
+        if tok2.t in {cttPlus, cttMinus}:
           ctx.seekToken()
-          let sign = case tok2.c
-          of '+': 1i32
-          of '-': -1i32
-          else: return err()
+          let sign = if tok2.t == cttPlus: 1i32 else: -1i32
           ?ctx.skipBlanksCheckHas()
           let tok3 = ctx.peekToken()
           fail_non_signless_integer tok3, ok((-1i32, 0i32))
@@ -1187,12 +1192,9 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
       if ctx.skipBlanksCheckDone().isOk:
         return ok((int32(tok.num), 0i32))
       let tok2 = ctx.peekToken()
-      if tok2.t == cttDelim:
+      if tok2.t in {cttPlus, cttMinus}:
         ctx.seekToken()
-        let sign = case tok2.c
-        of '+': 1i32
-        of '-': -1i32
-        else: return err()
+        let sign = if tok2.t == cttPlus: 1i32 else: -1i32
         ?ctx.skipBlanksCheckHas()
         let tok3 = ctx.peekToken()
         fail_non_signless_integer tok3, ok((int32(tok.num), 0i32))
@@ -1502,23 +1504,20 @@ proc parseAttributeSelector(state: var SelectorParser): Selector =
       attr: attr.s.toAtomLower(),
       rel: SelectorRelation(t: rtExists)
     )
-  if delim.t != cttDelim:
-    state.skipUntil(cttRbracket)
-    fail
-  let rel = case delim.c
-  of '~': rtToken
-  of '|': rtBeginDash
-  of '^': rtStartsWith
-  of '$': rtEndsWith
-  of '*': rtContains
-  of '=': rtEquals
+  let rel = case delim.t
+  of cttTilde: rtToken
+  of cttPipe: rtBeginDash
+  of cttCaret: rtStartsWith
+  of cttDollar: rtEndsWith
+  of cttStar: rtContains
+  of cttEquals: rtEquals
   else:
     state.skipUntil(cttRbracket)
     fail
   if rel != rtEquals:
     if not state.has(): fail
     let delim = state.consume()
-    if delim.t != cttDelim or delim.c != '=':
+    if delim.t != cttEquals:
       if delim.t != cttRbracket:
         state.skipUntil(cttRbracket)
       fail
@@ -1575,24 +1574,19 @@ proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
         fail
       let id = tok.s.toAtomLower()
       result.add(Selector(t: stId, id: id))
-    of cttComma: break
-    of cttDelim:
-      case tok.c
-      of '.':
-        state.seekToken()
-        result.add(state.parseClassSelector())
-      of '*':
-        state.seekToken()
-        result.add(Selector(t: stUniversal))
-      of '>', '+', '~': break
-      else: fail
-    of cttWhitespace:
-      break
+    of cttDot:
+      state.seekToken()
+      result.add(state.parseClassSelector())
+    of cttStar:
+      state.seekToken()
+      result.add(Selector(t: stUniversal))
     of cttLbracket:
       state.seekToken()
       result.add(state.parseAttributeSelector())
     of cttRparen:
       if not state.nested: fail
+      break
+    of cttComma, cttPlus, cttGt, cttTilde, cttWhitespace:
       break
     else: fail
 
@@ -1611,23 +1605,17 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
       break # finish
     let tok = state.consume()
     case tok.t
-    of cttDelim:
-      case tok.c
-      of '>': result[^1].ct = ctChild
-      of '+': result[^1].ct = ctNextSibling
-      of '~': result[^1].ct = ctSubsequentSibling
-      else: fail
+    of cttGt: result[^1].ct = ctChild
+    of cttPlus: result[^1].ct = ctNextSibling
+    of cttTilde: result[^1].ct = ctSubsequentSibling
     of cttWhitespace:
       if not state.has() or state.peekTokenType() == cttComma:
         break # skip trailing whitespace
-      elif (let tok = state.peekToken(); tok.t == cttDelim and
-          tok.c in {'>', '+', '~'}):
-        state.seekToken()
-        case tok.c
-        of '>': result[^1].ct = ctChild
-        of '+': result[^1].ct = ctNextSibling
-        of '~': result[^1].ct = ctSubsequentSibling
-        else: fail
+      elif state.peekTokenType() in {cttGt, cttPlus, cttTilde}:
+        case state.consume().t
+        of cttGt: result[^1].ct = ctChild
+        of cttPlus: result[^1].ct = ctNextSibling
+        else: result[^1].ct = ctSubsequentSibling # cttTilde
       else:
         result[^1].ct = ctDescendant
     of cttComma:

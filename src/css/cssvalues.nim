@@ -1028,12 +1028,8 @@ proc parseLegacyColorFun(value: openArray[CSSToken]):
   i = value.skipBlanks(i + 1)
   if value.checkFunctionEnd(i).isOk:
     return ok((v1, v2, v3, 255u8, legacy))
-  if legacy:
-    if value[i].t != cttComma:
-      return err()
-  else:
-    if not value[i].isDelim('/'):
-      return err()
+  if value[i].t != (if legacy: cttComma else: cttSlash):
+    return err()
   i = ?value.skipBlanksCheckHas(i + 1)
   let v4 = value[i]
   if v4.t notin {cttPercentage, cttNumber, cttINumber}:
@@ -1165,22 +1161,22 @@ proc parseCalc(ctx: var CSSParser; attrs: WindowAttributes;
   var ns = CSSLength()
   var nmulx = none(float32)
   var n = 0
-  var delim = '+'
+  var delim = cttPlus
   ctx.skipBlanks()
   if not ctx.has() or ctx.peekTokenType() == cttRparen:
     return err()
   while ctx.has() and ctx.peekTokenType() != cttRparen:
     if n != 0:
       ?ctx.skipBlanksCheckHas()
-      if ctx.peekTokenType() != cttDelim:
+      if ctx.peekTokenType() notin {cttPlus, cttMinus, cttStar}:
         ctx.skipFunction()
         return err()
-      delim = ctx.consume().c
+      delim = ctx.consume().t
     ?ctx.skipBlanksCheckHas()
     if n <= 1 and ctx.peekTokenType() in {cttNumber, cttINumber}:
       let num = ctx.consume().num
       if n == 1:
-        if delim != '*' or nmulx.isSome:
+        if delim != cttStar or nmulx.isSome:
           ctx.skipFunction()
           return err()
         ns.npx *= num
@@ -1193,20 +1189,20 @@ proc parseCalc(ctx: var CSSParser; attrs: WindowAttributes;
       ctx.skipFunction()
       return err()
     let length = ?ctx.parseLength(attrs, hasAuto, allowNegative = true)
-    if length.auto or delim notin {'+', '-', '*'}:
+    if length.auto:
       ctx.skipFunction()
       return err()
-    let sign = if delim == '-': -1f32 else: 1f32
+    let sign = if delim == cttMinus: -1f32 else: 1f32
     ns.npx += length.npx * sign
     ns.perc += length.perc * sign
     if nmulx.isSome:
       let nmul = nmulx.get
-      if n > 1 or delim != '*':
+      if n > 1 or delim != cttStar:
         return err() # invalid or needs recursive descent
       ns.perc *= nmul
       ns.npx *= nmul
       nmulx = none(float32)
-    elif delim == '*':
+    elif delim == cttStar:
       ctx.skipFunction()
       return err()
     inc n
