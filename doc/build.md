@@ -1,21 +1,30 @@
 # Building Chawan
 
-Chawan uses GNU make for builds.
+Chawan uses GNU make for builds.  To build and install it, you'll
+typically want to run `make` and then `make install`.
 
 ## Variables
 
-Following is a list of variables which may be safely overridden. You can
-also override them by setting an environment variable with the same name.
+Unless noted otherwise, variables can be passed either in the
+environment (e.g. `PREFIX=/usr make`) or as arguments to `make`
+(e.g. `make PREFIX=/usr`).
+
+It is recommended to pass the same variables to both the default target
+(`make`) and the install target (`make install`).  The easiest way
+to accomplish this is to export the appropriate variables beforehand
+(e.g. `export PREFIX=/usr`).
+
+Following is a list of variables which may be set.
 
 * `TARGET`: the build target.
 	- `debug`: Generate a debug build, with stack traces and
-	  debugging symbols enabled. Useful for debugging, but generates
-	  huge and slow executables.
-	- `release`: The default target. Uses LTO and strips the final
+	  debugging symbols enabled.  Useful for debugging, but
+	  generates huge and slow executables.
+	- `release`: The default target.  Uses LTO and strips the final
 	  binaries.
-	- `release0`: A release build with stack traces enabled. Useful
-	  when you need to debug a crash that needs a lot of processing
-	  to manifest. Note: this does not enable line traces.
+	- `release0`: A release build with stack traces (**not** line
+	  traces) enabled.  Useful when you need to debug a crash that
+	  needs a lot of processing to manifest.
 	- `release1`: A release build with debugging symbols enabled.
 	  Useful for profiling with cachegrind, or debugging a release
 	  build with gdb.
@@ -23,10 +32,10 @@ also override them by setting an environment variable with the same name.
 * `NIM`: path to the Nim compiler.
 * `CFLAGS`, `LDFLAGS`: flags to pass to the C compiler at compile or
   link time.
-* `OBJDIR`: directory to output compilation artifacts. By default, it is
-  `.obj`.
+* `OBJDIR`: directory to output compilation artifacts.  By default,
+  it is `.obj`.
 * `PREFIX`: installation prefix, by default it is `/usr/local`.
-* `DESTDIR`: directory prepended to `$(PREFIX)`. e.g. you can set it to
+* `DESTDIR`: directory prepended to `$(PREFIX)`.  e.g. you can set it to
   `/tmp`, so that `make install` installs the binary to the path
   `/tmp/usr/local/bin/cha`.
 * `MANPREFIX`, `MANPREFIX1`, `MANPREFIX5`: prefixes for the installation
@@ -35,14 +44,14 @@ also override them by setting an environment variable with the same name.
   set `MANPREFIX1` or `MANPREFIX5` at all, as these are derived from
   `MANPREFIX`.)
 * `LIBEXECDIR`: Path to your libexec directory; by default, it is
-  relative to wherever the binary is placed when it is executed. (i.e.
+  relative to wherever the binary is placed when it is executed.  (i.e.
   after installation it would resolve to `/usr/local/libexec`.)
 * `STATIC_LINK`: Set it to 1 for static linking.
 * `DANGER_DISABLE_SANDBOX`: Set it to 1 to forcibly disable syscall
-  filtering. Note that this is *not* taken from the environment
+  filtering.  Note that this is *not* taken from the environment
   variables, and you must use it like `make DANGER_DISABLE_SANDBOX=1`.  
-  **Warning**: as the name suggests, this is rarely an optimal solution
-  to whatever problem you are facing.
+  As the name suggests, this is rarely an optimal solution to whatever
+  problem you are facing.
 
 This list does not include the `CC` variable, because Nim only supports
 a limited set of C compilers. If you want to override the C compiler:
