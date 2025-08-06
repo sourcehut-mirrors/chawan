@@ -7,10 +7,15 @@ Additions:
 * new API functions Pager#traverse, Pager#navDirection,
   Pager#revDirection, Buffer#find
 * implement <ol start=..., <li value=...
+* -cha-content-type media feature to detect content type of current page
+* complete var() support
 
 Changes:
 * improved highlighting in monochrome mode
 * unify binaries that link to OpenSSL in dynamically linked builds too
+* remove deprecated prepend-https, css and stylesheet config options
+  (use prepend-scheme, user-style instead)
+* optimize CSS parser & cascading
 
 Fixes:
 * fix buffer cloning on musl
@@ -21,6 +26,7 @@ Fixes:
 * fix referrer policy handling with referer-from=true
 * fix compilation on OpenBSD + ancient Nim
 * fix crash on hitting C-c on buffers waiting for connection
+* fix chaseccomp compilation with some ancient shells
 
 0.2.0 (2025.06.15)
 
