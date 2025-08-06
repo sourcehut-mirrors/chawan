@@ -347,10 +347,10 @@ func parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
   var integer: T = 0
   let radix = uint(radix)
   for i in i ..< s.len:
-    let u = uint(hexValue(s[i]))
-    let n = uint(integer) * radix + u
+    let u = uint64(hexValue(s[i]))
+    let n = uint64(integer) * radix + u
     integer = T(n)
-    fail = fail or u >= radix or n != uint(integer) # overflow check
+    fail = fail or u >= radix or n != uint64(integer) # overflow check
   if fail:
     return err() # invalid or overflow
   ok(integer)
