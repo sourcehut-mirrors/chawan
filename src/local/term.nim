@@ -41,6 +41,7 @@ type
     ttMlterm = "mlterm"
     ttMsTerminal = "ms-terminal"
     ttPutty = "putty"
+    ttRio = "rio"
     ttRlogin = "rlogin"
     ttRxvt = "rxvt"
     ttScreen = "screen"
@@ -49,8 +50,8 @@ type
     ttTerminology = "terminology" # pretends to be XTerm
     ttTmux = "tmux"
     ttUrxvt = "rxvt-unicode"
-    ttVt52 = "vt52"
     ttVt100 = "vt100"
+    ttVt52 = "vt52"
     ttVte = "vte" # pretends to be XTerm
     ttWezterm = "wezterm"
     ttWterm = "wterm"
@@ -1267,6 +1268,7 @@ const TermdescMap = [
   ttMlterm: XtermCompatible + {tfTrueColor},
   ttMsTerminal: XtermCompatible + {tfTrueColor},
   ttPutty: XtermCompatible + {tfTrueColor},
+  ttRio: XtermCompatible,
   ttRlogin: XtermCompatible + {tfTrueColor},
   ttRxvt: XtermCompatible + {tfBleedsAPC, tfEightBitColor},
   # screen does true color, but only if you explicitly enable it.
@@ -1284,9 +1286,9 @@ const TermdescMap = [
   # with the direct color given.  I don't think this is much worse than
   # our basic quantization for 256 colors, so we use it anyway.
   ttUrxvt: XtermCompatible + {tfBleedsAPC, tfTrueColor},
-  ttVt52: {},
   # The VT100 had DA1, but couldn't gracefully consume unknown sequences.
   ttVt100: {tfSmcup},
+  ttVt52: {},
   ttVte: XtermCompatible + {tfTrueColor},
   ttWezterm: XtermCompatible,
   ttWterm: XtermCompatible + {tfTrueColor},
