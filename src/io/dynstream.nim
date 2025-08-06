@@ -425,7 +425,7 @@ method writeData*(s: BufStream; buffer: pointer; len: int): int =
       if n == len:
         break nobuf
       let e = errno
-      if n == -1 and e != EAGAIN and e != EWOULDBLOCK:
+      if n == -1 and e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
         return -1
       s.registerFun(s.source.fd)
       s.registered = true
