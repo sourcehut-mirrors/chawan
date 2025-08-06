@@ -1044,11 +1044,12 @@ proc parseANSI(value: openArray[CSSToken]): Opt[CSSColor] =
   var i = ?value.skipBlanksCheckHas(0)
   let tok = value[i]
   ?value.checkFunctionEnd(i + 1) # only 1 param is valid
-  if tok.t == cttINumber:
+  if tok.t in {cttINumber, cttNumber}:
     #TODO calc
-    if int(tok.num) notin 0..255:
+    let i = tok.toi
+    if i notin 0i32..25532:
       return err() # invalid numeric ANSI color
-    return ok(ANSIColor(tok.num).cssColor())
+    return ok(ANSIColor(i).cssColor())
   elif tok.t == cttIdent:
     var name = tok.s
     if name.equalsIgnoreCase("default"):
@@ -1220,13 +1221,15 @@ proc parseLength*(ctx: var CSSParser; attrs: WindowAttributes;
     if tok.num == 0:
       return ok(CSSLengthZero)
   of cttPercentage:
-    if not allowNegative and tok.num < 0:
+    let n = tok.num
+    if not allowNegative and n < 0:
       return err()
-    return parseLength(tok.num, "%", attrs)
+    return parseLength(n, "%", attrs)
   of cttDimension, cttIDimension:
-    if not allowNegative and tok.num < 0:
+    let n = tok.num
+    if not allowNegative and n < 0:
       return err()
-    return parseLength(tok.num, tok.s, attrs)
+    return parseLength(n, tok.s, attrs)
   of cttIdent:
     if hasAuto and tok.s.equalsIgnoreCase("auto"):
       return ok(CSSLengthAuto)
@@ -1249,8 +1252,8 @@ func cssAbsoluteLength(tok: CSSToken; attrs: WindowAttributes):
     if tok.num == 0:
       return ok(CSSLengthZero)
   of cttDimension, cttIDimension:
-    if tok.num >= 0:
-      return parseLength(tok.num, tok.s, attrs)
+    if (let n = tok.num; n >= 0):
+      return parseLength(n, tok.s, attrs)
   else: discard
   err()
 
@@ -1343,7 +1346,8 @@ proc parseContent(toks: openArray[CSSToken]): Opt[seq[CSSContent]] =
   ok(res)
 
 func parseFontWeight(tok: CSSToken): Opt[int32] =
-  if tok.t == cttIdent:
+  case tok.t
+  of cttIdent:
     const FontWeightMap = {
       "bold": 700,
       "bolder": 700,
@@ -1354,8 +1358,9 @@ func parseFontWeight(tok: CSSToken): Opt[int32] =
     if i != -1:
       return ok(int32(i))
   elif tok.t in {cttNumber, cttINumber}:
-    if tok.num in 1f64..1000f64:
-      return ok(int32(tok.num))
+    let i = tok.toi
+    if i in 1i32..1000i32:
+      return ok(i)
   return err()
 
 func cssTextDecoration(toks: openArray[CSSToken]): Opt[set[CSSTextDecoration]] =
@@ -1386,7 +1391,7 @@ proc parseCounterSet(toks: openArray[CSSToken]; n: int32):
     of cttNumber, cttINumber:
       if not s:
         return err()
-      r.num = int32(tok.num)
+      r.num = tok.toi
       res.add(r)
       s = false
     else:
@@ -1442,8 +1447,9 @@ proc parseImage(toks: openArray[CSSToken]): Opt[NetworkBitmap] =
 
 func parseInteger(tok: CSSToken; range: Slice[int32]): Opt[int32] =
   if tok.t in {cttNumber, cttINumber}:
-    if tok.num in float32(range.a)..float32(range.b):
-      return ok(int32(tok.num))
+    let i = tok.toi
+    if i in range:
+      return ok(i)
   return err()
 
 func parseZIndex(tok: CSSToken): Opt[CSSZIndex] =
@@ -1454,8 +1460,8 @@ func parseZIndex(tok: CSSToken): Opt[CSSZIndex] =
 
 func parseNumber(tok: CSSToken; range: Slice[float32]): Opt[float32] =
   if tok.t in {cttNumber, cttINumber}:
-    if tok.num in range:
-      return ok(tok.num)
+    if (let n = tok.num; n in range):
+      return ok(n)
   return err()
 
 proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =

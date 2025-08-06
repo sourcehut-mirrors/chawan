@@ -52,8 +52,12 @@ type
   CSSTokenFlag = enum
     ctfId, ctfSign
 
+  CSSTokenNum {.union.} = object
+    i: int32
+    f: float32
+
   CSSToken* = object # token or component value
-    num*: float32 # for number-like
+    unum: CSSTokenNum # cttINumber, cttIDimension have int32
     flags*: set[CSSTokenFlag]
     c: char # for cttDelim.  if non-ascii, s contains UTF-8
     ft*: CSSFunctionType
@@ -317,6 +321,24 @@ proc `$`*(decl: CSSDeclaration): string
 proc `$`*(c: CSSSimpleBlock): string
 func `$`*(slist: SelectorList): string
 
+template fnum*(tok: CSSToken): float32 =
+  tok.unum.f
+
+template inum*(tok: CSSToken): int32 =
+  tok.unum.i
+
+func num*(tok: CSSToken): float32 {.inline.} =
+  if tok.t in {cttINumber, cttIDimension}:
+    float32(tok.inum)
+  else:
+    tok.fnum
+
+func toi*(tok: CSSToken): int32 {.inline.} =
+  if tok.t in {cttINumber, cttIDimension}:
+    tok.inum
+  else:
+    int32(tok.fnum)
+
 proc `$`*(tok: CSSToken): string =
   return case tok.t:
   of cttAtKeyword: $tok.t & tok.s & '\n'
@@ -327,8 +349,8 @@ proc `$`*(tok: CSSToken): string =
   of cttString: ("\"" & tok.s & "\"")
   of cttDelim: (if tok.c in Ascii: $tok.c else: tok.s)
   of cttDimension, cttNumber: $tok.num & tok.s
-  of cttINumber, cttIDimension: $int32(tok.num) & tok.s
-  of cttPercentage: $tok.num & "%"
+  of cttINumber, cttIDimension: $tok.inum & tok.s
+  of cttPercentage: $tok.fnum & "%"
   of cttWhitespace: " "
   of cttSemicolon: ";\n"
   of cttRbrace: "}\n"
@@ -491,56 +513,64 @@ proc consumeIdentSequence(iq: openArray[char]; n: var int): string =
     inc n
   move(s)
 
-proc consumeNumber(iq: openArray[char]; n: var int):
-    tuple[isInt, hasSign: bool; val: float32] =
-  var isInt = true
-  var hasSign = false
-  let start = n
-  if n < iq.len and iq[n] in {'+', '-'}:
-    hasSign = true
-    inc n
-  while n < iq.len and iq[n] in AsciiDigit:
-    inc n
-  if n + 1 < iq.len and iq[n] == '.' and iq[n + 1] in AsciiDigit:
-    n += 2
-    isInt = false
-    while n < iq.len and iq[n] in AsciiDigit:
-      inc n
-  if n + 1 < iq.len and iq[n] in {'E', 'e'} and iq[n + 1] in AsciiDigit or
-      n + 2 < iq.len and iq[n] in {'E', 'e'} and iq[n + 1] in {'-', '+'} and
-        iq[n + 2] in AsciiDigit:
-    inc n
-    if iq[n] in {'-', '+'}:
-      n += 2
-    else:
-      inc n
-    isInt = false
-    while n < iq.len and iq[n] in AsciiDigit:
-      inc n
-  let val = parseFloat32(iq.toOpenArray(start, n - 1))
-  return (isInt, hasSign, val)
-
 proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
-  let (isInt, hasSign, num) = iq.consumeNumber(n)
+  var isInt = true
   var flags: set[CSSTokenFlag] = {}
-  if hasSign:
+  var m = n
+  let start = m
+  var sign = 1i64
+  if n < iq.len and (let c = iq[m]; c in {'+', '-'}):
+    if c == '-':
+      sign = -1
     flags.incl(ctfSign)
-  if iq.startsWithIdentSequence(n):
-    var unit = iq.consumeIdentSequence(n)
-    return CSSToken(
-      t: if isInt: cttIDimension else: cttDimension,
-      num: num,
-      s: move(unit),
-      flags: flags
-    )
-  if n < iq.len and iq[n] == '%':
-    inc n
-    return CSSToken(t: cttPercentage, num: num, flags: flags)
-  return CSSToken(
-    t: if isInt: cttINumber else: cttNumber,
-    num: num,
-    flags: flags
-  )
+    inc m
+  var integer = 0u32
+  while m < iq.len and (let c = iq[m]; c in AsciiDigit):
+    let u = uint32(c) - uint32('0')
+    let uu = integer * 10 + u
+    isInt = isInt and (uu > integer or u == 0 and integer == 0)
+    integer = uu
+    inc m
+  if m + 1 < iq.len and iq[m] == '.' and iq[m + 1] in AsciiDigit:
+    m += 2
+    isInt = false
+    while m < iq.len and iq[m] in AsciiDigit:
+      inc m
+  if m + 1 < iq.len and iq[m] in {'E', 'e'} and iq[m + 1] in AsciiDigit or
+      m + 2 < iq.len and iq[m] in {'E', 'e'} and iq[m + 1] in {'-', '+'} and
+        iq[m + 2] in AsciiDigit:
+    inc m
+    if iq[m] in {'-', '+'}:
+      m += 2
+    else:
+      inc m
+    isInt = false
+    while m < iq.len and iq[m] in AsciiDigit:
+      inc m
+  if m < iq.len and iq[m] == '%':
+    isInt = false
+    let unum = CSSTokenNum(f: parseFloat32(iq.toOpenArray(start, m - 1)))
+    n = m + 1
+    return CSSToken(t: cttPercentage, flags: flags, unum: unum)
+  let isDim = iq.startsWithIdentSequence(m)
+  if isInt:
+    let i = int64(integer) * sign
+    let ii = cast[int32](i)
+    if int64(ii) == i:
+      let unum = CSSTokenNum(i: ii)
+      if isDim:
+        var s = iq.consumeIdentSequence(m)
+        n = m
+        return CSSToken(t: cttIDimension, unum: unum, s: move(s), flags: flags)
+      n = m
+      return CSSToken(t: cttINumber, unum: unum, flags: flags)
+  let unum = CSSTokenNum(f: parseFloat32(iq.toOpenArray(start, m - 1)))
+  if isDim:
+    var s = iq.consumeIdentSequence(m)
+    n = m
+    return CSSToken(t: cttDimension, unum: unum, s: move(s), flags: flags)
+  n = m
+  return CSSToken(t: cttNumber, unum: unum, flags: flags)
 
 proc consumeBadURL(iq: openArray[char]; n: var int) =
   while n < iq.len:
@@ -1107,8 +1137,7 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
     if isPlus:
       return err()
   template fail_non_signless_integer(tok: CSSToken; res: Opt[CSSAnB]) =
-    if tok.t != cttINumber or int64(tok.num) > int32.high or
-        ctfSign in tok.flags:
+    if tok.t != cttINumber or ctfSign in tok.flags:
       return res
     ctx.seekToken()
 
@@ -1137,10 +1166,10 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
           ?ctx.skipBlanksCheckHas()
           let tok3 = ctx.peekToken()
           fail_non_signless_integer tok3, ok((1i32, 0i32))
-          return ok((1i32, sign * int32(tok3.num)))
-        elif tok2.t == cttINumber and int64(tok2.num) <= int32.high:
+          return ok((1i32, sign * tok3.inum))
+        elif tok2.t == cttINumber:
           ctx.seekToken()
-          return ok((1i32, int32(tok2.num)))
+          return ok((1i32, tok2.inum))
         else:
           return ok((1i32, 0i32))
       of abiDashN:
@@ -1154,23 +1183,23 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
           ?ctx.skipBlanksCheckHas()
           let tok3 = ctx.peekToken()
           fail_non_signless_integer tok3, ok((-1i32, 0i32))
-          return ok((-1i32, sign * int32(tok3.num)))
-        elif tok2.t == cttINumber and int64(tok2.num) <= int32.high:
+          return ok((-1i32, sign * tok3.inum))
+        elif tok2.t == cttINumber:
           ctx.seekToken()
-          return ok((-1i32, int32(tok2.num)))
+          return ok((-1i32, tok2.inum))
         else:
           return ok((-1i32, 0i32))
       of abiNDash:
         ?ctx.skipBlanksCheckHas()
         let tok2 = ctx.peekToken()
         fail_non_signless_integer tok2, err()
-        return ok((1i32, -int32(tok2.num)))
+        return ok((1i32, -tok2.inum))
       of abiDashNDash:
         fail_plus
         ?ctx.skipBlanksCheckHas()
         let tok2 = ctx.peekToken()
         fail_non_signless_integer tok2, err()
-        return ok((-1i32, -int32(tok2.num)))
+        return ok((-1i32, -tok2.inum))
     elif tok.s.startsWithIgnoreCase("n-"):
       let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
       return ok((1i32, n))
@@ -1183,37 +1212,37 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
   of cttINumber:
     fail_plus
     # <integer>
-    return ok((0i32, int32(tok.num)))
+    return ok((0i32, tok.inum))
   of cttIDimension:
     fail_plus
     case tok.s
     of "n", "N":
       # <n-dimension>
       if ctx.skipBlanksCheckDone().isOk:
-        return ok((int32(tok.num), 0i32))
+        return ok((tok.inum, 0i32))
       let tok2 = ctx.peekToken()
       if tok2.t in {cttPlus, cttMinus}:
         ctx.seekToken()
         let sign = if tok2.t == cttPlus: 1i32 else: -1i32
         ?ctx.skipBlanksCheckHas()
         let tok3 = ctx.peekToken()
-        fail_non_signless_integer tok3, ok((int32(tok.num), 0i32))
-        return ok((int32(tok.num), sign * int32(tok3.num)))
-      elif tok2.t == cttINumber and int64(tok2.num) <= int32.high:
+        fail_non_signless_integer tok3, ok((tok.inum, 0i32))
+        return ok((tok.inum, sign * tok3.inum))
+      elif tok2.t == cttINumber:
         ctx.seekToken()
-        return ok((int32(tok.num), int32(tok2.num)))
+        return ok((tok.inum, tok2.inum))
       else:
-        return ok((int32(tok.num), 0i32))
+        return ok((tok.inum, 0i32))
     of "n-", "N-":
       # <ndash-dimension>
       ?ctx.skipBlanksCheckHas()
       let tok2 = ctx.peekToken()
       fail_non_signless_integer tok2, err()
-      return ok((int32(tok.num), -int32(tok2.num)))
+      return ok((tok.inum, -tok2.inum))
     elif tok.s.startsWithIgnoreCase("n-"):
       # <ndashdigit-dimension>
       let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
-      return ok((int32(tok.num), n))
+      return ok((tok.inum, n))
     else:
       return err()
   else:

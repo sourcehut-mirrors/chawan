@@ -51,7 +51,7 @@ type
   MediaFeature = object
     case t: MediaFeatureType
     of mftColor, mftColorIndex, mftMonochrome:
-      range: Slice[int]
+      range: Slice[int32]
     of mftGrid, mftHover, mftPrefersColorScheme:
       b: bool
     of mftScripting:
@@ -150,7 +150,7 @@ proc getBoolFeature(feature: MediaFeatureType): Opt[MediaQuery] =
   of mftColor, mftColorIndex, mftMonochrome:
     return ok(MediaQuery(
       t: mctFeature,
-      feature: MediaFeature(t: feature, range: 1..high(int))
+      feature: MediaFeature(t: feature, range: 1i32 .. int32.high)
     ))
   else:
     return err()
@@ -171,12 +171,12 @@ proc consumeString(parser: var MediaQueryParser): Opt[CSSToken] =
     return err()
   return ok(parser.consume())
 
-proc consumeInt(parser: var MediaQueryParser): Opt[int] =
+proc consumeInt(parser: var MediaQueryParser): Opt[int32] =
   if parser.peekTokenType() != cttINumber:
     return err()
-  return ok(int(parser.consume().num))
+  return ok(parser.consume().inum)
 
-proc parseMqInt(parser: var MediaQueryParser; ifalse, itrue: int): Opt[bool] =
+proc parseMqInt(parser: var MediaQueryParser; ifalse, itrue: int32): Opt[bool] =
   let i = ?parser.consumeInt()
   if i == ifalse:
     return ok(false)
@@ -212,13 +212,13 @@ proc parseComparison(parser: var MediaQueryParser): Opt[MediaQueryComparison] =
   else: return err()
 
 proc parseIntRange(parser: var MediaQueryParser; ismin, ismax: bool):
-    Opt[Slice[int]] =
+    Opt[Slice[int32]] =
   if ismin:
     let a = ?parser.consumeInt()
-    return ok(a .. int.high)
+    return ok(a .. int32.high)
   if ismax:
     let b = ?parser.consumeInt()
-    return ok(0 .. b)
+    return ok(0i32 .. b)
   let comparison = ?parser.parseComparison()
   ?parser.skipBlanksCheckHas()
   let n = ?parser.consumeInt()
@@ -226,9 +226,9 @@ proc parseIntRange(parser: var MediaQueryParser; ismin, ismax: bool):
   of mqcEq: #TODO should be >= 0 (for color at least)
     return ok(n .. n)
   of mqcGt, mqcGe:
-    return ok(n .. int.high)
+    return ok(n .. int32.high)
   of mqcLt, mqcLe:
-    return ok(0 .. n)
+    return ok(0i32 .. n)
 
 proc parseLength(parser: var MediaQueryParser): Opt[float32] =
   let len = ?parser.ctx.parseLength(parser.attrs[], hasAuto = false,
