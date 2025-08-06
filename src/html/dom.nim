@@ -2807,11 +2807,11 @@ proc fireEvent*(window: Window; name: StaticAtom; target: EventTarget;
   window.fireEvent(event, target)
 
 proc parseColor(element: Element; s: string): ARGBColor =
-  let toks = parseComponentValues(s)
+  var ctx = initCSSParser(s)
   #TODO return element style
   # For now we just use white.
   let ec = rgba(255, 255, 255, 255)
-  if color := parseColor(toks):
+  if color := ctx.parseColor():
     if not color.isCell:
       return color.argb
   return ec
@@ -4040,8 +4040,9 @@ proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
   case this.decls[i].t
   of cdtUnknown: discard
   of cdtProperty:
+    var ctx = initCSSParser(toks)
     var dummy: seq[CSSComputedEntry] = @[]
-    ?dummy.parseComputedValues0(this.decls[i].p, toks, dummyAttrs)
+    ?ctx.parseComputedValues0(this.decls[i].p, dummyAttrs, dummy)
   of cdtVariable:
     if parseDeclWithVar0(toks).len == 0:
       return err()
@@ -4087,8 +4088,9 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
     of cdtUnknown:
       return ok()
     of cdtProperty:
+      var ctx = initCSSParser(toks)
       var dummy: seq[CSSComputedEntry] = @[]
-      if dummy.parseComputedValues0(decl.p, toks, dummyAttrs).isErr:
+      if ctx.parseComputedValues0(decl.p, dummyAttrs, dummy).isErr:
         return ok()
     of cdtVariable:
       if parseDeclWithVar0(toks).len == 0:

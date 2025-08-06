@@ -22,8 +22,8 @@ import types/opt
 
 type
   RuleListEntry = object
-    vals: array[CSSRuleType, seq[CSSComputedEntry]]
-    vars: array[CSSRuleType, seq[CSSVariable]]
+    vals: array[CSSImportantFlag, seq[CSSComputedEntry]]
+    vars: array[CSSImportantFlag, seq[CSSVariable]]
 
   RuleList = array[CSSOrigin, RuleListEntry]
 
@@ -64,9 +64,9 @@ proc calcRules(tosorts: var ToSorts; element: Element;
         seen.incl(sel.pseudo)
 
 proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
-  for rt in CSSRuleType: # normal, important
-    entry.vals[rt].add(rule.vals[rt])
-    entry.vars[rt].add(rule.vars[rt])
+  for f in CSSImportantFlag: # normal, important
+    entry.vals[f].add(rule.vals[f])
+    entry.vars[f].add(rule.vars[f])
 
 proc calcRules(map: var RuleListMap; element: Element;
     sheet: CSSStylesheet; origin: CSSOrigin; depends: var DependencyInfo) =
@@ -130,7 +130,8 @@ proc resolveVariable(ctx: var ApplyValueContext; p: CSSAnyPropertyType;
   ctx.varsSeen.clear()
   var entries: seq[CSSComputedEntry] = @[]
   let window = ctx.window
-  ?entries.parseComputedValues0(p, toks, window.settings.attrsp[])
+  var parser = initCSSParserSink(toks)
+  ?parser.parseComputedValues0(p, window.settings.attrsp[], entries)
   ctx.applyValues(entries, revertType)
   cvar.resolved.add((vars, move(entries)))
   ok()
@@ -288,31 +289,31 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     ctx.parentComputed = parent.computed
     parentVars = ctx.parentComputed.vars
   for origin in CSSOrigin:
-    if rules[origin].vars[crtImportant].len > 0:
+    if rules[origin].vars[cifImportant].len > 0:
       if result.vars == nil:
         result.vars = newCSSVariableMap(parentVars)
-      for i in countdown(rules[origin].vars[crtImportant].high, 0):
-        let cvar = rules[origin].vars[crtImportant][i]
+      for i in countdown(rules[origin].vars[cifImportant].high, 0):
+        let cvar = rules[origin].vars[cifImportant][i]
         result.vars.putIfAbsent(cvar.name, cvar)
   for origin in countdown(CSSOrigin.high, CSSOrigin.low):
-    if rules[origin].vars[crtNormal].len > 0:
+    if rules[origin].vars[cifNormal].len > 0:
       if result.vars == nil:
         result.vars = newCSSVariableMap(parentVars)
-      for i in countdown(rules[origin].vars[crtNormal].high, 0):
-        let cvar = rules[origin].vars[crtNormal][i]
+      for i in countdown(rules[origin].vars[cifNormal].high, 0):
+        let cvar = rules[origin].vars[cifNormal][i]
         result.vars.putIfAbsent(cvar.name, cvar)
   if result.vars == nil:
     result.vars = parentVars # inherit parent
-  ctx.applyValues(rules[coUserAgent].vals[crtImportant], rtSet)
-  ctx.applyValues(rules[coUser].vals[crtImportant], rtUserAgent)
-  ctx.applyValues(rules[coAuthor].vals[crtImportant], rtUser)
-  ctx.applyValues(rules[coAuthor].vals[crtNormal], rtUser)
-  ctx.applyValues(rules[coUser].vals[crtNormal], rtUserAgent)
+  ctx.applyValues(rules[coUserAgent].vals[cifImportant], rtSet)
+  ctx.applyValues(rules[coUser].vals[cifImportant], rtUserAgent)
+  ctx.applyValues(rules[coAuthor].vals[cifImportant], rtUser)
+  ctx.applyValues(rules[coAuthor].vals[cifNormal], rtUser)
+  ctx.applyValues(rules[coUser].vals[cifNormal], rtUserAgent)
   # Presentational hints override user agent style, but respect user/author
   # style.
   if element != nil:
     ctx.applyPresHints(element)
-  ctx.applyValues(rules[coUserAgent].vals[crtNormal], rtSet)
+  ctx.applyValues(rules[coUserAgent].vals[cifNormal], rtSet)
   # fill in defaults
   for t in CSSPropertyType:
     if ctx.revertMap[t] != rtSet:
@@ -353,20 +354,20 @@ proc applyStyle*(element: Element) =
   let style = element.cachedStyle
   if window.settings.styling and style != nil:
     for decl in style.decls:
-      let rt = decl.rt
+      let f = decl.f
       case decl.t
       of cdtUnknown: discard
       of cdtVariable:
-        map[peNone][coAuthor].vars[rt].add(CSSVariable(
+        map[peNone][coAuthor].vars[f].add(CSSVariable(
           name: decl.v,
           items: parseDeclWithVar0(decl.value)
         ))
       of cdtProperty:
         if decl.hasVar:
           if entry := parseDeclWithVar(decl.p, decl.value):
-            map[peNone][coAuthor].vals[rt].add(entry)
+            map[peNone][coAuthor].vals[f].add(entry)
         else:
-          map[peNone][coAuthor].vals[rt].parseComputedValues(decl.p, decl.value,
+          map[peNone][coAuthor].vals[f].parseComputedValues(decl.p, decl.value,
             window.settings.attrsp[])
   element.applyStyleDependencies(depends)
   element.computed =

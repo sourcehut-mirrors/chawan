@@ -64,37 +64,42 @@ type
     t*: CSSTokenType
     s*: string # for ident/string-like, and unit of number tokens
 
-  CSSRule* = ref object of RootObj
+  CSSRuleType* = enum
+    crtAt, crtQualified
+
+  CSSRule* = object
+    case t*: CSSRuleType
+    of crtAt:
+      at*: CSSAtRule
+    of crtQualified:
+      qualified*: CSSQualifiedRule
 
   CSSAtRuleType* = enum
     cartUnknown = "-cha-unknown"
     cartImport = "import"
     cartMedia = "media"
 
-  CSSAtRule* = ref object of CSSRule
+  CSSAtRule* = ref object
     name*: CSSAtRuleType
     prelude*: seq[CSSToken]
     oblock*: seq[CSSToken]
 
-  CSSQualifiedRule* = ref object of CSSRule
+  CSSQualifiedRule* = ref object
     sels*: SelectorList
     decls*: seq[CSSDeclaration]
 
   CSSDeclarationType* = enum
     cdtUnknown, cdtProperty, cdtVariable
 
-  CSSDeclarationFlag* = enum
-    cdfImportant, cdfHasVar
+  CSSImportantFlag* = enum
+    cifNormal, cifImportant
 
   CSSAnyPropertyType* = object
     sh*: CSSShorthandType # if sh is cstNone, then use p
     p*: CSSPropertyType
 
-  CSSRuleType* = enum
-    crtNormal, crtImportant
-
   CSSDeclaration* = object
-    rt*: CSSRuleType
+    f*: CSSImportantFlag
     hasVar*: bool
     case t*: CSSDeclarationType
     of cdtUnknown:
@@ -371,7 +376,7 @@ proc `$`*(decl: CSSDeclaration): string =
   result = decl.name & ": "
   for s in decl.value:
     result &= $s
-  if decl.rt == crtImportant:
+  if decl.f == cifImportant:
     result &= " !important"
   result &= ";"
 
@@ -380,23 +385,25 @@ proc `$`*(c: CSSSimpleBlock): string =
   for s in c.value:
     result &= $s
 
+proc `$`*(c: CSSAtRule): string =
+  result = $c.name & ' '
+  for it in c.prelude:
+    result &= $it
+  result &= "{\n"
+  for it in c.oblock:
+    result &= $it
+  result &= "}"
+
+proc `$`*(c: CSSQualifiedRule): string =
+  result = $c.sels & " {\n"
+  for decl in c.decls:
+    result &= $decl & '\n'
+  result &= "}\n"
+
 proc `$`*(c: CSSRule): string =
-  result = ""
-  if c of CSSAtRule:
-    let c = CSSAtRule(c)
-    result &= $c.name & ' '
-    for it in c.prelude:
-      result &= $it
-    result &= "{\n"
-    for it in c.oblock:
-      result &= $it
-    result &= "}"
-  else:
-    let c = CSSQualifiedRule(c)
-    result &= $c.sels & " {\n"
-    for decl in c.decls:
-      result &= $decl & '\n'
-    result &= "}\n"
+  case c.t
+  of crtAt: return $c.at
+  of crtQualified: return $c.qualified
 
 const LastBitPropType* = cptWordBreak
 const FirstHWordPropType* = LastBitPropType.succ
@@ -735,57 +742,12 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
     dec n
     return iq.consumeDelimToken(n)
 
-func skipBlanks*(toks: openArray[CSSToken]; i: int): int =
-  var i = i
-  while i < toks.len:
-    if toks[i].t != cttWhitespace:
-      break
-    inc i
-  return i
-
-proc skipBlanksCheckHas*(toks: openArray[CSSToken]; i: int): Opt[int] =
-  let i = toks.skipBlanks(i)
-  if i >= toks.len:
-    return err()
-  ok(i)
-
-proc skipBlanksCheckDone*(toks: openArray[CSSToken]; i: int): Opt[void] =
-  if toks.skipBlanks(i) < toks.len:
-    return err()
-  ok()
-
-proc checkFunctionEnd*(toks: openArray[CSSToken]; i: int): Opt[void] =
-  let i = toks.skipBlanks(i)
-  if i >= toks.len:
-    return ok()
-  if toks[i].t != cttRparen:
-    return err()
-  toks.skipBlanksCheckDone(i + 1)
-
 func tokenPair(t: CSSTokenType): CSSTokenType =
   case t
   of cttLparen, cttFunction: return cttRparen
   of cttLbracket: return cttRbracket
   of cttLbrace: return cttRbrace
   else: return t
-
-proc seek(toks: openArray[CSSToken]; i: int): int =
-  var i = i
-  let t = toks[i].t
-  inc i
-  let pair = t.tokenPair
-  if t != pair:
-    while i < toks.len and toks[i].t != pair:
-      i = toks.seek(i)
-  return i
-
-func findBlank*(toks: openArray[CSSToken]; i: int): int =
-  var i = i
-  while i < toks.len:
-    if toks[i].t == cttWhitespace:
-      break
-    i = toks.seek(i)
-  return i
 
 template iq(ctx: CSSParser): openArray[char] =
   ctx.iqp.toOpenArray(0, ctx.iqlen - 1)
@@ -816,9 +778,7 @@ proc initCSSDeclaration*(name: string): CSSDeclaration =
   else:
     return CSSDeclaration(t: cdtUnknown, uname: name)
 
-# Warning: this may return a token or a component value.  Only use this
-# if you are looking for a simple token.
-proc peekToken(ctx: var CSSParser): lent CSSToken =
+proc peekToken*(ctx: var CSSParser): lent CSSToken =
   if ctx.toks.len > 0:
     return ctx.toks[ctx.i]
   if ctx.hasBuf:
@@ -838,9 +798,11 @@ proc consumeToken(ctx: var CSSParser): CSSToken =
   inc ctx.i
   return ctx.toks[i]
 
-proc seekToken(ctx: var CSSParser) =
+proc seekToken*(ctx: var CSSParser) =
   if ctx.hasBuf:
     ctx.hasBuf = false
+  elif ctx.iqlen > 0:
+    discard ctx.consumeToken()
   else:
     inc ctx.i
 
@@ -864,14 +826,8 @@ proc consume*(ctx: var CSSParser): CSSToken =
   return ctx.consumeToken()
 
 proc skipBlanks*(ctx: var CSSParser) =
-  if ctx.iqlen > 0:
-    while ctx.has():
-      let tok = ctx.peekToken()
-      if tok.t != cttWhitespace:
-        break
-      ctx.seekToken()
-  else:
-    ctx.i = ctx.toks.skipBlanks(ctx.i)
+  while ctx.has() and ctx.peekTokenType() == cttWhitespace:
+    ctx.seekToken()
 
 proc skipBlanksCheckHas*(ctx: var CSSParser): Opt[void] =
   ctx.skipBlanks()
@@ -883,6 +839,14 @@ proc skipBlanksCheckDone*(ctx: var CSSParser): Opt[void] =
   ctx.skipBlanks()
   if ctx.has():
     return err()
+  ok()
+
+proc checkFunctionEnd*(ctx: var CSSParser): Opt[void] =
+  if ctx.skipBlanksCheckDone().isOk:
+    return ok()
+  if ctx.peekTokenType() != cttRparen:
+    return err()
+  ctx.seekToken()
   ok()
 
 proc addComponentValue(ctx: var CSSParser; toks: var seq[CSSToken]) =
@@ -980,7 +944,7 @@ proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
     if lastTok1.t == cttBang and
         lastTok2.t == cttIdent and lastTok2.s.equalsIgnoreCase("important"):
       decl.value.setLen(lastTokIdx1)
-      decl.rt = crtImportant
+      decl.f = cifImportant
   while decl.value.len > 0 and decl.value[^1].t == cttWhitespace:
     decl.value.setLen(decl.value.len - 1)
   ok(move(decl))
@@ -1002,14 +966,6 @@ proc consumeAtRule(ctx: var CSSParser): CSSAtRule =
       if not valid:
         result.oblock.setLen(0)
 
-# > Note: Despite the name, this actually parses a mixed list of
-# > declarations and at-rules, as CSS 2.1 does for @page. Unexpected
-# > at-rules (which could be all of them, in a given context) are
-# > invalid and should be ignored by the consumer.
-#
-# Currently we never use nested at-rules, so the result of consumeAtRule
-# is just discarded. This should be changed if we ever need nested at
-# rules (e.g. add a flag to include at rules).
 proc consumeDeclarations(ctx: var CSSParser; nested: bool):
     seq[CSSDeclaration] =
   result = @[]
@@ -1037,39 +993,33 @@ proc consumeDeclarations(ctx: var CSSParser; nested: bool):
   if not valid:
     result.setLen(0)
 
+proc consumeRule(ctx: var CSSParser; topLevel: bool): Opt[CSSRule] =
+  ?ctx.skipBlanksCheckHas()
+  let t = ctx.peekTokenType()
+  if t == cttAtKeyword:
+    let at = ctx.consumeAtRule()
+    if at != nil:
+      return ok(CSSRule(t: crtAt, at: at))
+  elif topLevel and t in {cttCdo, cttCdc}:
+    ctx.seekToken()
+    return err()
+  let qualified = ?ctx.consumeQualifiedRule()
+  return ok(CSSRule(t: crtQualified, qualified: qualified))
+
 iterator parseListOfRules*(ctx: var CSSParser; topLevel: bool):
     CSSRule {.closure.} =
   while ctx.has():
-    var rule: CSSRule = nil
-    let t = ctx.peekTokenType()
-    if t == cttWhitespace:
-      ctx.seekToken()
-      continue
-    elif t == cttAtKeyword:
-      rule = ctx.consumeAtRule()
-    elif topLevel and t in {cttCdo, cttCdc}:
-      ctx.seekToken()
-      continue
-    if rule == nil:
-      rule = ctx.consumeQualifiedRule().get(nil)
-    if rule != nil:
+    if rule := ctx.consumeRule(topLevel):
       yield rule
 
 proc parseRule*(iq: openArray[char]): DOMResult[CSSRule] =
   var ctx = initCSSParser(iq)
-  ctx.skipBlanks()
-  if not ctx.has():
-    return errDOMException("Unexpected EOF", "SyntaxError")
-  var res = if ctx.peekTokenType() == cttAtKeyword:
-    ctx.consumeAtRule()
-  elif q := ctx.consumeQualifiedRule():
-    q
-  else:
+  var x = ctx.consumeRule(topLevel = false)
+  if x.isErr:
     return errDOMException("No qualified rule found", "SyntaxError")
-  ctx.skipBlanks()
-  if ctx.has():
+  if ctx.skipBlanksCheckDone().isErr:
     return errDOMException("EOF not reached", "SyntaxError")
-  return ok(res)
+  return ok(move(x.get))
 
 proc parseDeclarations*(iq: openArray[char]): seq[CSSDeclaration] =
   var ctx = initCSSParser(iq)

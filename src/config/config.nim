@@ -728,10 +728,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
   var parser = initCSSParser(v.s)
   var j = 0
   for it in parser.consumeImports():
-    var i = it.prelude.skipBlanks(0)
-    if i >= it.prelude.len or it.prelude.skipBlanks(i + 1) < it.prelude.len:
+    var parser2 = initCSSParserSink(it.prelude)
+    if parser2.skipBlanksCheckHas().isErr:
       break
-    let tok = it.prelude[i]
+    let tok = parser2.consume()
+    if parser2.skipBlanksCheckDone().isErr:
+      break
     if tok.t != cttString:
       return err(k & ": wrong CSS import (unexpected token)")
     let path = ChaPath(tok.s).unquote(ctx.config.dir)

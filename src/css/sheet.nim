@@ -15,8 +15,8 @@ import types/url
 type
   CSSRuleDef* = ref object
     sels*: SelectorList
-    vals*: array[CSSRuleType, seq[CSSComputedEntry]]
-    vars*: array[CSSRuleType, seq[CSSVariable]]
+    vals*: array[CSSImportantFlag, seq[CSSComputedEntry]]
+    vars*: array[CSSImportantFlag, seq[CSSVariable]]
     # Absolute position in the stylesheet; used for sorting rules after
     # retrieval from the cache.
     idx*: int
@@ -152,29 +152,28 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
 proc addRules(sheet: CSSStylesheet; ctx: var CSSParser; topLevel: bool;
     base: URL) =
   for rule in ctx.parseListOfRules(topLevel):
-    if rule of CSSAtRule:
-      sheet.addAtRule(CSSAtRule(rule), base)
-    else:
-      sheet.addRule(CSSQualifiedRule(rule))
+    case rule.t
+    of crtAt: sheet.addAtRule(rule.at, base)
+    of crtQualified: sheet.addRule(rule.qualified)
 
 proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
   if rule.sels.len > 0:
     let ruleDef = CSSRuleDef(sels: move(rule.sels), idx: sheet.len)
     for decl in rule.decls:
-      let rt = decl.rt
+      let f = decl.f
       case decl.t
       of cdtUnknown: discard
       of cdtVariable:
-        ruleDef.vars[rt].add(CSSVariable(
+        ruleDef.vars[f].add(CSSVariable(
           name: decl.v,
           items: parseDeclWithVar0(decl.value)
         ))
       of cdtProperty:
         if decl.hasVar:
           if entry := parseDeclWithVar(decl.p, decl.value):
-            ruleDef.vals[rt].add(entry)
+            ruleDef.vals[f].add(entry)
         else:
-          ruleDef.vals[rt].parseComputedValues(decl.p, decl.value,
+          ruleDef.vals[f].parseComputedValues(decl.p, decl.value,
             sheet.settings.attrsp[])
     sheet.add(ruleDef)
     inc sheet.len
