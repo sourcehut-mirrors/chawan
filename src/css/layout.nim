@@ -718,6 +718,7 @@ type
     oldExclusionsLen: int
     initialMarginTarget: BlockPositionState
     initialTargetOffset: Offset
+    textAlign: CSSTextAlign # text align of parent, for block-level alignment
     # Inline context state:
     lbstate: LineBoxState
     whitespacenum: int
@@ -1583,9 +1584,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
   fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
 
 # Outer layout for block-level children.
-# textAlign is the parent's text-align value.
-proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
-    textAlign: CSSTextAlign) =
+proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   var istate = InlineState(ibox: fstate.lastTextBox)
   fstate.finishLine(istate, wrap = false)
   let lctx = fstate.lctx
@@ -1665,12 +1664,13 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
       child.state.firstBaseline
     fstate.firstBaselineSet = true
   fstate.box.state.baseline = child.state.offset.y + child.state.baseline
-  if textAlign == TextAlignChaCenter:
-    child.state.offset.x += max(space.w.u div 2 -
-      child.state.size.w div 2, 0)
-  elif textAlign == TextAlignChaRight:
-    child.state.offset.x += max(space.w.u - child.state.size.w -
-      sizes.margin.right, 0)
+  if fstate.space.w.t == scStretch:
+    if fstate.textAlign == TextAlignChaCenter:
+      child.state.offset.x += max(space.w.u div 2 -
+        child.state.size.w div 2, 0)
+    elif fstate.textAlign == TextAlignChaRight:
+      child.state.offset.x += max(space.w.u - child.state.size.w -
+        sizes.margin.right, 0)
   if child.computed{"position"} == PositionRelative:
     fstate.lctx.positionRelative(fstate.space, child)
   fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
@@ -1679,8 +1679,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox;
   fstate.whitespacenum = 0
   fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
 
-proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
-    textAlign: CSSTextAlign) =
+proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
   if child.computed{"position"} in PositionAbsoluteFixed:
     # Delay this block's layout until its parent's dimensions are
     # actually known.
@@ -1713,7 +1712,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox;
   elif child.computed{"float"} != FloatNone:
     fstate.layoutFloat(child)
   else:
-    fstate.layoutBlockChild(child, textAlign)
+    fstate.layoutBlockChild(child)
 
 proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
   let box = BlockBox(ibox.firstChild)
@@ -1722,11 +1721,7 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
     # *says* it should blockify, absolutely positioned inline-blocks are
     # placed in a different place than absolutely positioned blocks (and
     # websites depend on this).
-    var textAlign = ibox.computed{"text-align"}
-    if not fstate.space.w.isDefinite():
-      # Aligning min-content or max-content is nonsensical.
-      textAlign = TextAlignLeft
-    fstate.layoutOuterBlock(box, textAlign)
+    fstate.layoutOuterBlock(box)
   elif box.computed{"display"} == DisplayMarker:
     # Marker box. This is a mixture of absolute and inline-block
     # layout, where we don't care about the parent size but want to
@@ -1840,6 +1835,10 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     start: ibox.computed{"padding-left"}.px(fstate.space.w),
     send: ibox.computed{"padding-right"}.px(fstate.space.w)
   )
+  let oldTextAlign = fstate.textAlign
+  # -moz-center uses the inline parent too, which is nonsense if you
+  # consider the CSS 2 anonymous box generation rules, but whatever.
+  fstate.textAlign = ibox.computed{"text-align"}
   if ibox of InlineTextBox:
     let ibox = InlineTextBox(ibox)
     ibox.runs.setLen(0)
@@ -1885,14 +1884,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       if child of InlineBox:
         fstate.layoutInline(InlineBox(child))
       else:
-        # It seems -moz-center uses the inline parent too...  which is
-        # nonsense if you consider the CSS 2 anonymous box generation
-        # rules, but whatever.
-        var textAlign = ibox.computed{"text-align"}
-        if not fstate.space.w.isDefinite():
-          # Aligning min-content or max-content is nonsensical.
-          textAlign = TextAlignLeft
-        fstate.layoutOuterBlock(BlockBox(child), textAlign)
+        fstate.layoutOuterBlock(BlockBox(child))
     if padding.send != 0:
       ibox.state.areas.add(Area(
         offset: offset(x = fstate.lbstate.size.w, y = 0),
@@ -1917,18 +1909,15 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
         w = 0,
         h = fstate.offset.y + fstate.cellHeight - ibox.state.startOffset.y
       ))
+  fstate.textAlign = oldTextAlign
 
-proc layoutFlow0(fstate: var FlowState; sizes: ResolvedSizes; box: BlockBox) =
+proc layoutFlow0(fstate: var FlowState; sizes: ResolvedSizes) =
   fstate.lbstate = fstate.initLineBoxState()
-  var textAlign = fstate.box.computed{"text-align"}
-  if not fstate.space.w.isDefinite():
-    # Aligning min-content or max-content is nonsensical.
-    textAlign = TextAlignLeft
   for child in fstate.box.children:
     if child of InlineBox:
       fstate.layoutInline(InlineBox(child))
     else:
-      fstate.layoutOuterBlock(BlockBox(child), textAlign)
+      fstate.layoutOuterBlock(BlockBox(child))
   var istate = InlineState(ibox: fstate.lastTextBox)
   fstate.finishLine(istate, wrap = false)
   fstate.totalFloatWidth = max(fstate.totalFloatWidth,
@@ -1943,7 +1932,8 @@ proc initFlowState(bctx: var BlockContext; box: BlockBox;
     padding: sizes.padding,
     space: sizes.space,
     oldMarginTodo: bctx.marginTodo,
-    oldExclusionsLen: bctx.exclusions.len
+    oldExclusionsLen: bctx.exclusions.len,
+    textAlign: box.computed{"text-align"}
   )
 
 proc initBlockPositionStates(fstate: var FlowState; box: BlockBox) =
@@ -2029,12 +2019,12 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       (sizes.padding.top != 0 or
       sizes.space.h.isDefinite() and sizes.space.h.u != 0):
     bctx.flushMargins(box.state.offset.y)
-  fstate.layoutFlow0(sizes, box)
+  fstate.layoutFlow0(sizes)
   if fstate.space.w.t == scFitContent:
     # shrink-to-fit size; layout again.
     let oldIntr = fstate.intr
     fstate.initReLayout(bctx, box, sizes)
-    fstate.layoutFlow0(sizes, box)
+    fstate.layoutFlow0(sizes)
     # Restore old intrinsic sizes, as the new ones are a function of the
     # current input and therefore wrong.
     # (This is especially important with max-content, otherwise tables
