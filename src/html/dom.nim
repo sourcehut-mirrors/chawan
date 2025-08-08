@@ -1129,6 +1129,7 @@ const ReflectTable0 = [
   makef(satOnfocus, satFocus),
   makes(satSlot, AllTagTypes),
   makes(satTitle, AllTagTypes),
+  makes(satLang, AllTagTypes),
 ]
 
 func document*(node: Node): Document =

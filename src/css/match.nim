@@ -174,7 +174,10 @@ func matches(element: Element; pseudo: PseudoData;
   of pcIs, pcWhere:
     return element.matches(pseudo.fsels, depends)
   of pcLang:
-    return pseudo.s == "en" #TODO languages?
+    for element in element.branchElems:
+      if element.attrb(satLang):
+        return element.attr(satLang) == pseudo.s
+    return mtFalse
   of pcLink:
     return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
   of pcVisited:
