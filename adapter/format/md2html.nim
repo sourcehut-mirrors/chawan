@@ -52,7 +52,9 @@ type ParseInlineContext = object
   bracketRef: bool
   flags: set[InlineFlag]
 
-proc parseInTag(ctx: var ParseInlineContext; line: openArray[char]): Opt[void] =
+const PreTags = ["pre", "script", "style", "textarea", "head"]
+
+proc parseInTag(ctx: var ParseInlineContext; line: string): Opt[void] =
   let stdout = cast[ChaFile](stdout)
   var buf = ""
   var i = ctx.i + 1
@@ -62,7 +64,17 @@ proc parseInTag(ctx: var ParseInlineContext; line: openArray[char]): Opt[void] =
       if buf.startsWithScheme(): # link
         ?stdout.write("<A HREF='" & buf.htmlEscape() & "'>" & buf & "</A>")
       else: # tag
-        ?stdout.write('<' & buf & '>')
+        let s = '<' & buf & '>'
+        ?stdout.write(s)
+        if PreTags.containsIgnoreCase(buf):
+          let pi = i + 1
+          i = line.find(s, i)
+          if i == -1:
+            i = line.high
+          else:
+            i += s.len
+          if pi <= i:
+            ?stdout.write(line.toOpenArray(pi, i))
       buf = ""
       break
     elif c == '<':
@@ -266,7 +278,7 @@ proc appendToggle(ctx: var ParseInlineContext; f: InlineFlag; s, e: string):
     ?ctx.append(e)
   ok()
 
-proc parseInline(line: openArray[char]): Opt[void] =
+proc parseInline(line: string): Opt[void] =
   let stdout = cast[ChaFile](stdout)
   var ctx = ParseInlineContext()
   while ctx.i < line.len:
@@ -379,7 +391,7 @@ proc matchHTMLPreStart(line: string): bool =
     if c notin AsciiAlpha:
       return false
     tagn &= c.toLowerAscii()
-  return tagn in ["pre", "script", "style", "textarea", "head"]
+  return tagn in PreTags
 
 proc matchHTMLPreEnd(line: string): bool =
   var tagn = ""
@@ -397,7 +409,7 @@ proc matchHTMLPreEnd(line: string): bool =
     if c notin AsciiAlpha:
       return false
     tagn &= c.toLowerAscii()
-  return tagn in ["pre", "script", "style", "textarea", "head"]
+  return tagn in PreTags
 
 type
   BlockType = enum
@@ -442,8 +454,7 @@ proc popList(state: var ParseState): Opt[void] =
   of ltNoMark: assert false
   ok()
 
-proc writeHeading(state: var ParseState; n: int; text: openArray[char]):
-    Opt[void] =
+proc writeHeading(state: var ParseState; n: int; text: string): Opt[void] =
   let stdout = cast[ChaFile](stdout)
   state.hasp = false
   let id = text.getId()
@@ -467,7 +478,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
       H = max(L - 1, H - 1)
     else:
       H = line.high
-    ?state.writeHeading(n, line.toOpenArray(L, H))
+    ?state.writeHeading(n, line.substr(L, H))
   elif line.startsWith("<!--"):
     state.blockType = btComment
     state.reprocess = true
@@ -701,7 +712,7 @@ proc parseComment(state: var ParseState; line: string): Opt[void] =
   if i != -1:
     ?stdout.write(line.substr(0, i + 2))
     state.blockType = btNone
-    ?line.toOpenArray(i + 3, line.high).parseInline()
+    ?line.substr(i + 3).parseInline()
   else:
     ?stdout.write(line & '\n')
   ok()

@@ -245,6 +245,12 @@ func endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
       return false
   return true
 
+func containsIgnoreCase*(ss: openArray[string]; s: string): bool =
+  for it in ss:
+    if it.equalsIgnoreCase(s):
+      return true
+  false
+
 func skipBlanks*(buf: openArray[char]; at: int): int =
   result = at
   while result < buf.len and buf[result] in AsciiWhitespace:
