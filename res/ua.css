@@ -156,6 +156,7 @@ select::before { content: '[' !important; color: initial }
 select::after { content: ']' !important; color: initial }
 :is(select, select > optgroup) > option { display: none }
 :is(select, select > optgroup) > option:checked {
+	overflow: hidden;
 	display: block;
 	color: -cha-ansi(red)
 }
