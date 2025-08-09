@@ -223,7 +223,17 @@ type
 # Selectors
 
   SelectorType* = enum
-    stType, stId, stAttr, stClass, stUniversal, stPseudoClass, stPseudoElement
+    stType, stId, stAttr, stClass, stUniversal, stPseudoClass, stPseudoElement,
+    stIs = "is"
+    stNot = "not"
+    stWhere = "where"
+    stLang = "lang"
+    stNthChild = "nth-child"
+    stNthLastChild = "nth-last-child"
+
+  SelectorTypeRecursive = range[stIs..stWhere]
+
+  SelectorTypeNthChild = range[stNthChild..stNthLastChild]
 
   PseudoElement* = enum
     peNone = "-cha-none"
@@ -238,14 +248,8 @@ type
     pcOnlyChild = "only-child"
     pcHover = "hover"
     pcRoot = "root"
-    pcNthChild = "nth-child"
-    pcNthLastChild = "nth-last-child"
     pcChecked = "checked"
     pcFocus = "focus"
-    pcIs = "is"
-    pcNot = "not"
-    pcWhere = "where"
-    pcLang = "lang"
     pcLink = "link"
     pcVisited = "visited"
     pcTarget = "target"
@@ -272,6 +276,10 @@ type
     t*: RelationType
     flag*: RelationFlag
 
+  CSSNthChild* = object
+    anb*: CSSAnB
+    ofsels*: SelectorList
+
   Selector* = ref object # Simple selector
     case t*: SelectorType
     of stType:
@@ -287,20 +295,15 @@ type
     of stUniversal: #TODO namespaces?
       discard
     of stPseudoClass:
-      pseudo*: PseudoData
+      pc*: PseudoClass
+    of stIs, stWhere, stNot:
+      fsels*: SelectorList
+    of stLang:
+      lang*: string
+    of stNthChild, stNthLastChild:
+      nthChild*: CSSNthChild
     of stPseudoElement:
       elem*: PseudoElement
-
-  PseudoData* = object
-    case t*: PseudoClass
-    of pcNthChild, pcNthLastChild:
-      anb*: CSSAnB
-      ofsels*: SelectorList
-    of pcIs, pcWhere, pcNot:
-      fsels*: SelectorList
-    of pcLang:
-      s*: string
-    else: discard
 
   CompoundSelector* = object
     ct*: CombinatorType # relation to the next entry in a ComplexSelector.
@@ -1236,6 +1239,12 @@ iterator items*(cxsel: ComplexSelector): lent CompoundSelector {.inline.} =
   for it in cxsel.csels:
     yield it
 
+func `$`*(nthChild: CSSNthChild): string =
+  result = $nthChild.anb.A & 'n' & $nthChild.anb.B
+  if nthChild.ofsels.len != 0:
+    result &= " of "
+    result &= $nthChild.ofsels
+
 func `$`*(sel: Selector): string =
   case sel.t
   of stType: return $sel.tag
@@ -1258,19 +1267,13 @@ func `$`*(sel: Selector): string =
   of stUniversal:
     return "*"
   of stPseudoClass:
-    result = ':' & $sel.pseudo.t
-    case sel.pseudo.t
-    of pcIs, pcNot, pcWhere:
-      result &= '('
-      result &= $sel.pseudo.fsels
-      result &= ')'
-    of pcNthChild, pcNthLastChild:
-      result &= '(' & $sel.pseudo.anb.A & 'n' & $sel.pseudo.anb.B
-      if sel.pseudo.ofsels.len != 0:
-        result &= " of "
-        result &= $sel.pseudo.ofsels
-      result &= ')'
-    else: discard
+    return ':' & $sel.pc
+  of stIs, stNot, stWhere:
+    return ":" & $sel.t & '(' & $sel.fsels & ')'
+  of stLang:
+    return ":lang(" & sel.lang & ')'
+  of stNthChild, stNthLastChild:
+    return ':' & $sel.t & '(' & $sel.nthChild & ')'
   of stPseudoElement:
     return "::" & $sel.elem
 
@@ -1300,36 +1303,26 @@ func `$`*(slist: SelectorList): string =
     s = true
 
 func getSpecificity(sel: Selector): int =
-  result = 0
   case sel.t
-  of stId:
-    result += 1000000
-  of stClass, stAttr:
-    result += 1000
-  of stPseudoClass:
-    case sel.pseudo.t
-    of pcIs, pcNot:
-      var best = 0
-      for child in sel.pseudo.fsels:
+  of stId: return 1000000
+  of stClass, stAttr, stPseudoClass, stLang: return 1000
+  of stType, stPseudoElement: return 1
+  of stUniversal, stWhere: return 0
+  of stIs, stNot:
+    var best = 0
+    for child in sel.fsels:
+      let s = child.specificity
+      if s > best:
+        best = s
+    return best
+  of stNthChild, stNthLastChild:
+    var best = 0
+    if sel.nthChild.ofsels.len != 0:
+      for child in sel.nthChild.ofsels:
         let s = child.specificity
         if s > best:
           best = s
-      result += best
-    of pcNthChild, pcNthLastChild:
-      if sel.pseudo.ofsels.len != 0:
-        var best = 0
-        for child in sel.pseudo.ofsels:
-          let s = child.specificity
-          if s > best:
-            best = s
-        result += best
-      result += 1000
-    of pcWhere: discard
-    else: result += 1000
-  of stType, stPseudoElement:
-    result += 1
-  of stUniversal:
-    discard
+    return 1000 + best
 
 func getSpecificity(sels: CompoundSelector): int =
   result= 0
@@ -1366,31 +1359,29 @@ proc skipBlanks(state: var SelectorParser) =
 
 # Functions that may contain other selectors, functions, etc.
 proc parseRecursiveSelectorFunction(state: var SelectorParser;
-    class: PseudoClass; forgiving: bool): Selector =
-  var fun = Selector(
-    t: stPseudoClass,
-    pseudo: PseudoData(t: class),
-  )
+    t: SelectorTypeRecursive; forgiving: bool): Selector =
   let onested = state.nested
   state.nested = true
-  fun.pseudo.fsels = state.parseSelectorList(forgiving)
+  let fun = Selector(
+    t: t,
+    fsels: state.parseSelectorList(forgiving)
+  )
   state.skipFunction()
   state.nested = onested
-  if fun.pseudo.fsels.len == 0: fail
+  if fun.fsels.len == 0: fail
   return fun
 
-proc parseNthChild(state: var SelectorParser; data: PseudoData): Selector =
-  var data = data
-  var anb = state.ctx.parseAnB()
-  if anb.isErr:
+proc parseNthChild(state: var SelectorParser; t: SelectorTypeNthChild):
+    Selector =
+  let x = state.ctx.parseAnB()
+  if x.isErr:
     state.skipFunction()
     fail
-  data.anb = anb.get
-  var nthchild = Selector(t: stPseudoClass, pseudo: data)
+  let anb = x.get
   state.skipBlanks()
   if not state.has() or state.peekTokenType() == cttRparen:
     state.skipFunction()
-    return nthchild
+    return Selector(t: t, nthChild: CSSNthChild(anb: anb))
   let lasttok = state.consume()
   if lasttok.t != cttIdent or not lasttok.s.equalsIgnoreCase("of"):
     state.skipFunction()
@@ -1401,11 +1392,17 @@ proc parseNthChild(state: var SelectorParser; data: PseudoData): Selector =
     fail
   let onested = state.nested
   state.nested = true
-  nthchild.pseudo.ofsels = state.parseSelectorList(forgiving = false)
+  let sel = Selector(
+    t: t,
+    nthChild: CSSNthChild(
+      anb: anb,
+      ofsels: state.parseSelectorList(forgiving = false)
+    )
+  )
   state.skipFunction()
   state.nested = onested
-  if nthchild.pseudo.ofsels.len == 0: fail
-  return nthchild
+  if sel.nthChild.ofsels.len == 0: fail
+  return sel
 
 proc parseLang(state: var SelectorParser): Selector =
   state.skipBlanks()
@@ -1415,21 +1412,21 @@ proc parseLang(state: var SelectorParser): Selector =
     state.peekTokenType() != cttRparen
   state.skipFunction()
   if b: fail
-  return Selector(t: stPseudoClass, pseudo: PseudoData(t: pcLang, s: tok.s))
+  return Selector(t: stLang, lang: tok.s)
 
 proc parseSelectorFunction(state: var SelectorParser; ft: CSSFunctionType):
     Selector =
   return case ft
   of cftNot:
-    state.parseRecursiveSelectorFunction(pcNot, forgiving = false)
+    state.parseRecursiveSelectorFunction(stNot, forgiving = false)
   of cftIs:
-    state.parseRecursiveSelectorFunction(pcIs, forgiving = true)
+    state.parseRecursiveSelectorFunction(stIs, forgiving = true)
   of cftWhere:
-    state.parseRecursiveSelectorFunction(pcWhere, forgiving = true)
+    state.parseRecursiveSelectorFunction(stWhere, forgiving = true)
   of cftNthChild:
-    state.parseNthChild(PseudoData(t: pcNthChild))
+    state.parseNthChild(stNthChild)
   of cftNthLastChild:
-    state.parseNthChild(PseudoData(t: pcNthLastChild))
+    state.parseNthChild(stNthLastChild)
   of cftLang:
     state.parseLang()
   else: fail
@@ -1445,7 +1442,7 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
   case tok.t
   of cttIdent:
     template add_pseudo_class(class: PseudoClass) =
-      return Selector(t: stPseudoClass, pseudo: PseudoData(t: class))
+      return Selector(t: stPseudoClass, pc: class)
     if tok.s.equalsIgnoreCase("before"):
       add_pseudo_element peBefore
     elif tok.s.equalsIgnoreCase("after"):

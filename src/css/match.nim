@@ -84,9 +84,9 @@ func matches(element: Element; slist: SelectorList;
       return true
   return false
 
-func matches(element: Element; pseudo: PseudoData;
-    depends: var DependencyInfo): MatchType =
-  case pseudo.t
+func matches(element: Element; pc: PseudoClass; depends: var DependencyInfo):
+    MatchType =
+  case pc
   of pcFirstChild: return element.parentNode.firstElementChild == element
   of pcLastChild: return element.parentNode.lastElementChild == element
   of pcFirstNode: return element.isFirstVisualNode()
@@ -100,55 +100,6 @@ func matches(element: Element; pseudo: PseudoData;
       return mtTrue
     return mtContinue
   of pcRoot: return element == element.document.documentElement
-  of pcNthChild:
-    let A = pseudo.anb.A # step
-    let B = pseudo.anb.B # start
-    if pseudo.ofsels.len == 0:
-      let i = element.elIndex + 1
-      if A == 0:
-        return i == B
-      let j = (i - B)
-      if A < 0:
-        return j <= 0 and j mod A == 0
-      return j >= 0 and j mod A == 0
-    if element.matches(pseudo.ofsels, depends):
-      var i = 1
-      for child in element.parentNode.elementList:
-        if child == element:
-          if A == 0:
-            return i == B
-          let j = (i - B)
-          if A < 0:
-            return j <= 0 and j mod A == 0
-          return j >= 0 and j mod A == 0
-        if child.matches(pseudo.ofsels, depends):
-          inc i
-    return mtFalse
-  of pcNthLastChild:
-    let A = pseudo.anb.A # step
-    let B = pseudo.anb.B # start
-    if pseudo.ofsels.len == 0:
-      let last = element.parentNode.lastElementChild
-      let i = last.elIndex + 1 - element.elIndex
-      if A == 0:
-        return i == B
-      let j = (i - B)
-      if A < 0:
-        return j <= 0 and j mod A == 0
-      return j >= 0 and j mod A == 0
-    if element.matches(pseudo.ofsels, depends):
-      var i = 1
-      for child in element.parentNode.elementList_rev:
-        if child == element:
-          if A == 0:
-            return i == B
-          let j = (i - B)
-          if A < 0:
-            return j <= 0 and j mod A == 0
-          return j >= 0 and j mod A == 0
-        if child.matches(pseudo.ofsels, depends):
-          inc i
-    return mtFalse
   of pcChecked:
     if element.tagType == TAG_INPUT:
       depends.add(element, dtChecked)
@@ -169,19 +120,69 @@ func matches(element: Element; pseudo: PseudoData;
     if element.document.target == element:
       return mtTrue
     return mtContinue
-  of pcNot:
-    return not element.matches(pseudo.fsels, depends)
-  of pcIs, pcWhere:
-    return element.matches(pseudo.fsels, depends)
-  of pcLang:
-    for element in element.branchElems:
-      if element.attrb(satLang):
-        return element.attr(satLang) == pseudo.s
-    return mtFalse
   of pcLink:
     return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
   of pcVisited:
     return mtFalse
+
+func matchesLang(element: Element; lang: string): bool =
+  for element in element.branchElems:
+    if element.attrb(satLang):
+      return element.attr(satLang) == lang
+  true
+
+func matchesNthChild(element: Element; nthChild: CSSNthChild;
+    depends: var DependencyInfo): bool =
+  let A = nthChild.anb.A # step
+  let B = nthChild.anb.B # start
+  if nthChild.ofsels.len == 0:
+    let i = element.elIndex + 1
+    if A == 0:
+      return i == B
+    let j = (i - B)
+    if A < 0:
+      return j <= 0 and j mod A == 0
+    return j >= 0 and j mod A == 0
+  if element.matches(nthChild.ofsels, depends):
+    var i = 1
+    for child in element.parentNode.elementList:
+      if child == element:
+        if A == 0:
+          return i == B
+        let j = (i - B)
+        if A < 0:
+          return j <= 0 and j mod A == 0
+        return j >= 0 and j mod A == 0
+      if child.matches(nthChild.ofsels, depends):
+        inc i
+  false
+
+func matchesNthLastChild(element: Element; nthChild: CSSNthChild;
+    depends: var DependencyInfo): bool =
+  let A = nthChild.anb.A # step
+  let B = nthChild.anb.B # start
+  if nthChild.ofsels.len == 0:
+    let last = element.parentNode.lastElementChild
+    let i = last.elIndex + 1 - element.elIndex
+    if A == 0:
+      return i == B
+    let j = (i - B)
+    if A < 0:
+      return j <= 0 and j mod A == 0
+    return j >= 0 and j mod A == 0
+  if element.matches(nthChild.ofsels, depends):
+    var i = 1
+    for child in element.parentNode.elementList_rev:
+      if child == element:
+        if A == 0:
+          return i == B
+        let j = (i - B)
+        if A < 0:
+          return j <= 0 and j mod A == 0
+        return j >= 0 and j mod A == 0
+      if child.matches(nthChild.ofsels, depends):
+        inc i
+  false
 
 func matches(element: Element; sel: Selector; depends: var DependencyInfo):
     MatchType =
@@ -198,11 +199,21 @@ func matches(element: Element; sel: Selector; depends: var DependencyInfo):
   of stAttr:
     return element.matchesAttr(sel)
   of stPseudoClass:
-    return element.matches(sel.pseudo, depends)
+    return element.matches(sel.pc, depends)
   of stPseudoElement:
     return mtTrue
   of stUniversal:
     return mtTrue
+  of stNthChild:
+    return element.matchesNthChild(sel.nthChild, depends)
+  of stNthLastChild:
+    return element.matchesNthLastChild(sel.nthChild, depends)
+  of stNot:
+    return not element.matches(sel.fsels, depends)
+  of stIs, stWhere:
+    return element.matches(sel.fsels, depends)
+  of stLang:
+    return element.matchesLang(sel.lang)
 
 func matches(element: Element; sels: CompoundSelector;
     depends: var DependencyInfo): MatchType =
