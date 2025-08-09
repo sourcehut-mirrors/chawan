@@ -306,33 +306,32 @@ func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
           res.mi[dim].send = px
   return res
 
-proc resolveAbsoluteWidth(sizes: var ResolvedSizes; size: Size;
-    positioned: RelativeRect; computed: CSSValues; lctx: LayoutContext) =
+proc resolveAbsoluteWidth(lctx: LayoutContext; size: Size;
+    positioned: RelativeRect; computed: CSSValues; sizes: var ResolvedSizes) =
   let paddingSum = sizes.padding[dtHorizontal].sum()
   if computed{"width"}.auto:
-    let u = max(size.w - positioned[dtHorizontal].sum(), 0)
-    let marginSum = sizes.margin[dtHorizontal].sum()
+    let u = max(size.w - positioned[dtHorizontal].sum() - paddingSum -
+      sizes.margin[dtHorizontal].sum(), 0)
     if not computed{"left"}.auto and not computed{"right"}.auto:
       # Both left and right are known, so we can calculate the width.
-      # Well, but subtract padding and margin first.
-      sizes.space.w = stretch(u - paddingSum - marginSum)
+      sizes.space.w = stretch(u)
     else:
       # Return shrink to fit and solve for left/right.
-      # Well, but subtract padding and margin first.
-      sizes.space.w = fitContent(u - paddingSum - marginSum)
+      sizes.space.w = fitContent(u)
   else:
     let sizepx = computed{"width"}.spx(stretch(size.w), computed, paddingSum)
     sizes.space.w = stretch(sizepx)
 
-proc resolveAbsoluteHeight(sizes: var ResolvedSizes; size: Size;
-    positioned: RelativeRect; computed: CSSValues; lctx: LayoutContext) =
+proc resolveAbsoluteHeight(lctx: LayoutContext; size: Size;
+    positioned: RelativeRect; computed: CSSValues; sizes: var ResolvedSizes) =
   let paddingSum = sizes.padding[dtVertical].sum()
   if computed{"height"}.auto:
-    let u = max(size.h - positioned[dtVertical].sum(), 0)
     if not computed{"top"}.auto and not computed{"bottom"}.auto:
       # Both top and bottom are known, so we can calculate the height.
       # Well, but subtract padding and margin first.
-      sizes.space.h = stretch(u - paddingSum - sizes.margin[dtVertical].sum())
+      let u = max(size.h - positioned[dtVertical].sum() - paddingSum -
+        sizes.margin[dtVertical].sum(), 0)
+      sizes.space.h = stretch(u)
     else:
       # The height is based on the content.
       sizes.space.h = maxContent()
@@ -349,8 +348,8 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
     padding: lctx.resolvePadding(stretch(size.w), computed),
     bounds: DefaultBounds
   )
-  sizes.resolveAbsoluteWidth(size, positioned, computed, lctx)
-  sizes.resolveAbsoluteHeight(size, positioned, computed, lctx)
+  lctx.resolveAbsoluteWidth(size, positioned, computed, sizes)
+  lctx.resolveAbsoluteHeight(size, positioned, computed, sizes)
   return sizes
 
 # Calculate and resolve available width & height for floating boxes.
