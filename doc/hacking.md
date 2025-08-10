@@ -17,7 +17,6 @@ Exceptions:
 
 * Types/constants use PascalCase. enums in cssvalues use PascalCase too,
   to avoid name collisions.
-* Module-local templates use snake_case.
 * We keep style of external C libraries, which is often snake_case.
 * Chame is stuck with `SCREAMING_SNAKE_CASE` for its enums. This is
   unfortunate, but does not warrant an API breakage.
@@ -126,26 +125,37 @@ var buf2 {.noinit.}: array[1234, char] # when you don't need 0-initialization
 
 For primitive types, just set them to 0, "", etc.
 
+#### `out` parameters
+
+`out` parameters crash the 1.6.14 compiler.  Use `var` instead.
+
+#### `seq` parameters
+
+In general, `openArray` is more efficient and composes better, so prefer
+that.
+
 #### Copying operations
 
 `substr` and `x[n..m]` copies. Try to use `toOpenArray` instead, which
-is a non-copying slice. (Obviously, you should use `substr` if you
+is a non-copying slice.  (Obviously, you should use `substr` if you
 *need* to copy.)
 
-Note that `=` usually copies. If you're copying a large object a lot,
-you may want to set its type to `ref`.
+Note that `=` usually copies.  If you're copying a large object a lot,
+you may want to set its type to `ref`.  Alternatively, you can try using
+`move`, but be sure to check the generated code because often times it
+doesn't work in `refc`.
 
-Beware of `pairs` on sequences of objects; it copies. Use `mypairs`
+Beware of `pairs` on sequences of objects; it copies.  Use `mypairs`
 if you don't need mutation, `mpairs` if you do:
 
 ```nim
 proc foo(objs: openArray[SomeObj]) =
-  for i, obj in objs: # this copies. obj is of type "SomeObj".
+  for i, obj in objs: # Bad. this copies. obj's type is "SomeObj".
     obj.bar(i)
   # import utils/twtstr to use mypairs.
-  for i, obj in objs.mypairs: # doesn't copy. obj is of type "lent "SomeObj".
+  for i, obj in objs.mypairs: # OK, doesn't copy. obj's type is "lent "SomeObj".
     obj.bar(i)
-  for i, obj in objs.mpairs: # doesn't copy. obj is of type "var SomeObj".
+  for i, obj in objs.mpairs: # OK, doesn't copy. obj's type is "var SomeObj".
     obj.i = i
 ```
 
@@ -240,6 +250,14 @@ to check like that than looking it up in the syscall table.)
 
 You may find these links useful.
 
+### Chawan
+
+Of particular interest in the documentation are:
+
+* The [architecture](architecture.md) document.
+* The Monoucha [manual](../lib/monoucha0/doc/manual.md), for
+  JS-related documentation.
+
 ### WHATWG
 
 * HTML: <https://html.spec.whatwg.org/multipage/>. Includes everything
@@ -257,15 +275,15 @@ You may find these links useful.
 * Web IDL: <https://webidl.spec.whatwg.org/>. Relevant for Monoucha/JS
   bindings.
 
-Note that these sometimes change daily, especially the HTML standard.
+Note that some of these are updated daily, such as the HTML standard.
 
 ### CSS standards
 
-* CSS 2.1: <https://www.w3.org/TR/CSS2/>. There's also an "Editor's
-  Draft" 2.2 version: <https://drafts.csswg.org/css2/>. Not many
-  differences, but usually it's worth to check 2.2 too.
+* CSS 2.1: <https://www.w3.org/TR/CSS2/>.  There's also an "Editor's
+  Draft" 2.2 version: <https://drafts.csswg.org/css2/>, but so far I
+  haven't encountered significant differences.
 
-Good news is that unlike WHATWG specs, these don't change daily. Bad
+Good news is that unlike WHATWG specs, this doesn't change daily.  Bad
 news is that CSS 2.1 was the last real CSS version, and newer features
 are spread accross a bunch of random documents with questionable status
 of stability: <https://www.w3.org/Style/CSS/specs.en.html>.
@@ -281,7 +299,7 @@ It's unlikely that you will need these, but for completeness' sake:
 
 ### Nim docs
 
-* Manual: <https://nim-lang.org/docs/manual.html>. A detailed
+* Manual: <https://nim-lang.org/docs/manual.html>.  A detailed
   description of all language features.
 * Standard library docs: <https://nim-lang.org/docs/lib.html>.
   Everything found in the "std/" namespace.
