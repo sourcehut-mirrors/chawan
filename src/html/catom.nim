@@ -159,7 +159,7 @@ macro makeStaticAtom =
       satXmlns = "xmlns"
   let decl = quote do:
     type StaticAtom* {.inject.} = enum
-      atUnknown = ""
+      satUnknown = ""
   let decl0 = decl[0][2]
   var seen = HashSet[string].default
   for t in TagType:
@@ -268,7 +268,7 @@ func toAtom*(tagType: TagType): CAtom =
   return CAtom(tagType)
 
 func toAtom*(attrType: StaticAtom): CAtom =
-  assert attrType != atUnknown
+  assert attrType != satUnknown
   return CAtom(attrType)
 
 proc toAtomLower*(s: openArray[char]): CAtom {.sideEffect.} =
@@ -290,7 +290,7 @@ func toStaticAtom*(atom: CAtom): StaticAtom =
   let i = int(atom)
   if i <= int(StaticAtom.high):
     return StaticAtom(i)
-  return atUnknown
+  return satUnknown
 
 func toStaticAtom*(s: string): StaticAtom =
   let factory = getFactory()
@@ -300,7 +300,7 @@ func toStaticAtom*(s: string): StaticAtom =
     if factory.atomMap[int(atom)] == s:
       # Found
       return atom.toStaticAtom()
-  atUnknown
+  satUnknown
 
 func toNamespace*(atom: CAtom): Namespace =
   case atom.toStaticAtom()
@@ -331,6 +331,11 @@ func toAtom*(prefix: NamespacePrefix): CAtom =
   of PREFIX_XML: satXml
   of PREFIX_XMLNS: satXmlns
   of PREFIX_UNKNOWN: satUempty).toAtom()
+
+proc toAtom*(val: Option[string]): CAtom =
+  if val.isSome:
+    return val.unsafeGet.toAtom()
+  CAtomNull
 
 proc `==`*(a: CAtom; b: StaticAtom): bool =
   a.toStaticAtom() == b

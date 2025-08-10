@@ -4534,76 +4534,53 @@ proc reflectEvent(document: Document; target: EventTarget;
 
 const WindowEvents* = [satLoad, satError, satFocus, satBlur]
 
-proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
-  let name = name.toStaticAtom()
-  template reflect_str(element: Element; n: StaticAtom; val: untyped) =
-    if name == n:
-      element.val = value.get("")
-      return
-  template reflect_atom(element: Element; n: StaticAtom; val: untyped) =
-    if name == n:
-      if value.isSome:
-        element.val = value.get.toAtom()
-      else:
-        element.val = CAtomNull
-      return
-  template reflect_bool(element: Element; n: StaticAtom; val: untyped) =
-    if name == n:
-      element.val = true
-      return
-  template reflect_domtoklist0(element: Element; val: untyped) =
-    element.val.toks.setLen(0)
-    if value.isSome:
-      for x in value.get.split(AsciiWhitespace):
-        if x != "":
-          let a = x.toAtom()
-          if a notin element.val:
-            element.val.toks.add(a)
-  template reflect_domtoklist(element: Element; n: StaticAtom; val: untyped) =
-    if name == n:
-      element.reflect_domtoklist0 val
-      return
-  element.reflect_atom satId, id
-  element.reflect_atom satName, name
-  element.reflect_domtoklist satClass, classList
-  #TODO internalNonce
-  if name == satStyle:
-    if value.isSome:
-      element.cachedStyle = newCSSStyleDeclaration(element, value.get)
-    else:
-      element.cachedStyle = nil
-    return
+proc reflectScriptAttr(element: Element; name: StaticAtom;
+    value: Option[string]): bool =
   let document = element.document
-  if element.scriptingEnabled:
-    const ScriptEventMap = {
-      satOnclick: satClick,
-      satOninput: satInput,
-      satOnchange: satChange,
-      satOnload: satLoad,
-      satOnerror: satError,
-      satOnfocus: satFocus,
-      satOnblur: satBlur,
-    }
-    for (n, t) in ScriptEventMap:
-      if n == name:
-        var target = EventTarget(element)
-        var target2 = none(EventTarget)
-        if element.tagType == TAG_BODY and t in WindowEvents:
-          target = document.window
-          target2 = option(EventTarget(element))
-        document.reflectEvent(target, name, t, value.get(""), target2)
-        return
+  const ScriptEventMap = {
+    satOnclick: satClick,
+    satOninput: satInput,
+    satOnchange: satChange,
+    satOnload: satLoad,
+    satOnerror: satError,
+    satOnfocus: satFocus,
+    satOnblur: satBlur,
+  }
+  for (n, t) in ScriptEventMap:
+    if n == name:
+      var target = EventTarget(element)
+      var target2 = none(EventTarget)
+      if element.tagType == TAG_BODY and t in WindowEvents:
+        target = document.window
+        target2 = option(EventTarget(element))
+      document.reflectEvent(target, n, t, value.get(""), target2)
+      return true
+  false
+
+proc reflectTokens(this: DOMTokenList; value: Option[string]) =
+  this.toks.setLen(0)
+  if value.isSome:
+    for x in value.get.split(AsciiWhitespace):
+      if x != "":
+        let a = x.toAtom()
+        if a notin this:
+          this.toks.add(a)
+
+proc reflectLocalAttr(element: Element; name: StaticAtom;
+    value: Option[string]) =
   case element.tagType
   of TAG_INPUT:
     let input = HTMLInputElement(element)
-    input.reflect_str satValue, value
-    if name == satChecked:
-      input.setChecked(value.isSome)
-    elif name == satType:
+    case name
+    of satValue: input.value = value.get("")
+    of satChecked: input.setChecked(value.isSome)
+    of satType:
       input.inputType = parseEnumNoCase[InputType](value.get("")).get(itText)
+    else: discard
   of TAG_OPTION:
     let option = HTMLOptionElement(element)
-    option.reflect_bool satSelected, selected
+    if name == satSelected:
+      option.selected = value.isSome
   of TAG_BUTTON:
     let button = HTMLButtonElement(element)
     if name == satType:
@@ -4611,7 +4588,7 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
   of TAG_LINK:
     let link = HTMLLinkElement(element)
     if name == satRel:
-      link.reflect_domtoklist0 relList # do not return
+      link.relList.reflectTokens(value) # do not return
     if name == satDisabled:
       # IE won :(
       if link.enabled.isNone:
@@ -4624,10 +4601,12 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
         window.loadResource(link)
   of TAG_A:
     let anchor = HTMLAnchorElement(element)
-    anchor.reflect_domtoklist satRel, relList
+    if name == satRel:
+      anchor.relList.reflectTokens(value)
   of TAG_AREA:
     let area = HTMLAreaElement(element)
-    area.reflect_domtoklist satRel, relList
+    if name == satRel:
+      area.relList.reflectTokens(value)
   of TAG_CANVAS:
     if element.scriptingEnabled and name in {satWidth, satHeight}:
       let w = element.attrul(satWidth).get(300)
@@ -4660,6 +4639,24 @@ proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
       if window != nil:
         window.loadResource(image)
   else: discard
+
+proc reflectAttr(element: Element; name: CAtom; value: Option[string]) =
+  let name = name.toStaticAtom()
+  case name
+  of satId: element.id = value.toAtom()
+  of satName: element.name = value.toAtom()
+  of satClass: element.classList.reflectTokens(value)
+  #TODO internalNonce
+  of satStyle:
+    if value.isSome:
+      element.cachedStyle = newCSSStyleDeclaration(element, value.get)
+    else:
+      element.cachedStyle = nil
+  of satUnknown: discard # early return
+  elif element.scriptingEnabled and element.reflectScriptAttr(name, value):
+    discard
+  else:
+    element.reflectLocalAttr(name, value)
 
 func cmpAttrName(a: AttrData; b: CAtom): int =
   return cmp(int(a.qualifiedName), int(b))

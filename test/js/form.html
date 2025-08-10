@@ -46,6 +46,11 @@ let test = document.forms[0];
 let select = document.createElement("select");
 test.append(select);
 let option = document.createElement("option");
+assert(!option.selected);
+option.setAttribute("selected", "");
+assert(option.selected)
+option.removeAttribute("selected");
+assert(!option.selected)
 select.append(option);
 select.remove("test");
 assertEquals(option.parentNode, null);
