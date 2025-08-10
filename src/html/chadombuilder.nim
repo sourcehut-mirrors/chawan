@@ -177,10 +177,10 @@ proc removeImpl(builder: ChaDOMBuilder; child: Node) =
     child.remove(suppressObservers = true)
 
 proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: Node) =
-  var tomove = fromNode.childList
-  for node in tomove:
+  let toMove = fromNode.getChildList()
+  for node in toMove:
     node.remove(suppressObservers = true)
-  for child in tomove:
+  for child in toMove:
     toNode.insert(child, nil)
 
 proc addAttrsIfMissingImpl(builder: ChaDOMBuilder; handle: Node;
@@ -272,7 +272,7 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
   assert res == PRES_CONTINUE
   parser.finish()
   builder.finish()
-  return root.childList
+  return root.getChildList()
 
 proc newHTML5ParserWrapper*(window: Window; url: URL;
     confidence: CharsetConfidence; charset: Charset): HTML5ParserWrapper =

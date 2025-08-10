@@ -178,9 +178,10 @@ type
     target {.cursor.}: HTMLElement
 
   Node* = ref object of EventTarget
-    childList*: seq[Node]
     parentNode* {.jsget.}: Node
-    index*: int # Index in parents children. -1 for nodes without a parent.
+    nextSibling* {.jsget.}: Node
+    internalPrev: Node # either previousSibling or parentNode.lastChild
+    firstChild* {.jsget.}: Node
     # Live collection cache: pointers to live collections are saved in all
     # nodes they refer to. These are removed when the collection is destroyed,
     # and invalidated when the owner node's children or attributes change.
@@ -280,11 +281,12 @@ type
     namespaceURI* {.jsget.}: CAtom
     prefix {.jsget.}: CAtom
     internalHover: bool
+    childElIndicesInvalid: bool
     selfDepends: set[DependencyType]
     localName* {.jsget.}: CAtom
     id* {.jsget.}: CAtom
     name: CAtom
-    elIndex*: int # like index, but for elements only.
+    internalElIndex: int
     classList* {.jsget.}: DOMTokenList
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
     cachedAttributes: NamedNodeMap
@@ -1179,14 +1181,34 @@ func parentElement*(node: Node): Element {.jsfget.} =
     return Element(p)
   return nil
 
+func previousSibling*(node: Node): Node {.jsfget.} =
+  if node.parentNode == nil or node == node.parentNode.firstChild:
+    return nil
+  return node.internalPrev
+
+iterator childList*(node: Node): Node {.inline.} =
+  var it {.cursor.} = node.firstChild
+  while it != nil:
+    yield it
+    it = it.nextSibling
+
+iterator rchildList*(node: Node): Node {.inline.} =
+  let first = node.firstChild
+  if first != nil:
+    var it {.cursor.} = first.internalPrev
+    while true:
+      yield it
+      if it == first:
+        break
+      it = it.internalPrev
+
 iterator elementList*(node: Node): Element {.inline.} =
   for child in node.childList:
     if child of Element:
       yield Element(child)
 
-iterator elementList_rev*(node: Node): Element {.inline.} =
-  for i in countdown(node.childList.high, 0):
-    let child = node.childList[i]
+iterator relementList*(node: Node): Element {.inline.} =
+  for child in node.rchildList:
     if child of Element:
       yield Element(child)
 
@@ -1218,13 +1240,13 @@ iterator branchElems*(node: Node): Element {.inline.} =
 # Returns the node's descendants
 iterator descendants*(node: Node): Node {.inline.} =
   var stack: seq[Node] = @[]
-  for i in countdown(node.childList.high, 0):
-    stack.add(node.childList[i])
+  for child in node.rchildList:
+    stack.add(child)
   while stack.len > 0:
     let node = stack.pop()
     yield node
-    for i in countdown(node.childList.high, 0):
-      stack.add(node.childList[i])
+    for child in node.rchildList:
+      stack.add(child)
 
 # Descendants, and the node itself.
 iterator descendantsIncl(node: Node): Node {.inline.} =
@@ -1232,8 +1254,8 @@ iterator descendantsIncl(node: Node): Node {.inline.} =
   while stack.len > 0:
     let node = stack.pop()
     yield node
-    for i in countdown(node.childList.high, 0):
-      stack.add(node.childList[i])
+    for child in node.rchildList:
+      stack.add(child)
 
 # Element descendants.
 iterator elements*(node: Node): Element {.inline.} =
@@ -1261,8 +1283,8 @@ iterator displayedElements*(window: Window; tag: TagType): Element
     {.inline.} =
   let node = window.document
   var stack: seq[Node] = @[]
-  for i in countdown(node.childList.high, 0):
-    stack.add(node.childList[i])
+  for child in node.rchildList:
+    stack.add(child)
   while stack.len > 0:
     let node = stack.pop()
     if node of Element:
@@ -1270,8 +1292,8 @@ iterator displayedElements*(window: Window; tag: TagType): Element
       window.maybeRestyle(element)
       if element.computed{"display"} != DisplayNone:
         yield element
-        for i in countdown(node.childList.high, 0):
-          stack.add(node.childList[i])
+        for child in node.rchildList:
+          stack.add(child)
 
 iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for control in form.controls:
@@ -1308,6 +1330,11 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
 
 template id(collection: Collection): pointer =
   cast[pointer](addr collection[])
+
+proc getChildList*(node: Node): seq[Node] =
+  result = @[]
+  for child in node.childList:
+    result.add(child)
 
 proc addCollection(node: Node; collection: Collection) =
   let i = node.liveCollections.find(nil)
@@ -1372,7 +1399,7 @@ func ownerDocument(node: Node): Document {.jsfget.} =
   return node.document
 
 func hasChildNodes(node: Node): bool {.jsfunc.} =
-  return node.childList.len > 0
+  return node.firstChild != nil
 
 proc getLength(collection: Collection): int =
   collection.refreshCollection()
@@ -2000,7 +2027,6 @@ proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
     return map.attrlist[i]
   let attr = Attr(
     internalDocument: map.element.document,
-    index: -1,
     dataIdx: dataIdx,
     ownerElement: map.element
   )
@@ -2017,7 +2043,6 @@ func attributes(element: Element): NamedNodeMap {.jsfget.} =
   for i, attr in element.attrs.mypairs:
     element.cachedAttributes.attrlist.add(Attr(
       internalDocument: element.document,
-      index: -1,
       dataIdx: i,
       ownerElement: element
     ))
@@ -2195,20 +2220,22 @@ func hasChildExcept(node: Node; nodeType: type; ex: Node): bool =
       return true
   return false
 
-func isPreviousSiblingOf*(this, other: Node): bool =
-  return this.parentNode == other.parentNode and this.index <= other.index
+proc elIndex*(this: Element): int =
+  if this.parentNode == nil:
+    return -1
+  let parent = this.parentElement
+  if parent == nil:
+    return 0 # <html>
+  if parent.childElIndicesInvalid:
+    var n = 0
+    for element in parent.elementList:
+      element.internalElIndex = n
+      inc n
+    parent.childElIndicesInvalid = false
+  return this.internalElIndex
 
-func previousSibling*(node: Node): Node {.jsfget.} =
-  let i = node.index - 1
-  if node.parentNode == nil or i < 0:
-    return nil
-  return node.parentNode.childList[i]
-
-func nextSibling*(node: Node): Node {.jsfget.} =
-  let i = node.index + 1
-  if node.parentNode == nil or i >= node.parentNode.childList.len:
-    return nil
-  return node.parentNode.childList[i]
+func isPreviousSiblingOf*(this, other: Element): bool =
+  return this.parentNode == other.parentNode and this.elIndex <= other.elIndex
 
 func hasNextSibling(node: Node; nodeType: type): bool =
   var node = node.nextSibling
@@ -2273,15 +2300,10 @@ func contains*(a, b: Node): bool {.jsfunc.} =
         return true
   return false
 
-func firstChild*(node: Node): Node {.jsfget.} =
-  if node.childList.len == 0:
-    return nil
-  return node.childList[0]
-
 func lastChild*(node: Node): Node {.jsfget.} =
-  if node.childList.len == 0:
-    return nil
-  return node.childList[^1]
+  if node.firstChild != nil:
+    return node.firstChild.internalPrev
+  nil
 
 func firstElementChild*(node: Node): Element =
   for child in node.elementList:
@@ -2298,7 +2320,7 @@ func firstElementChild(this: DocumentFragment): Element {.jsfget.} =
   return Node(this).firstElementChild
 
 func lastElementChild*(node: Node): Element =
-  for child in node.elementList_rev:
+  for child in node.relementList:
     return child
   return nil
 
@@ -2338,8 +2360,7 @@ func isFirstVisualNode*(element: Element): bool =
 
 func isLastVisualNode*(element: Element): bool =
   let parent = element.parentNode
-  for i in countdown(parent.childList.high, 0):
-    let child = parent.childList[i]
+  for child in parent.rchildList:
     if child == element:
       return true
     if child of Element:
@@ -2361,7 +2382,7 @@ func findFirstChildOf(node: Node; tagType: TagType): Element =
   return nil
 
 func findLastChildOf(node: Node; tagType: TagType): Element =
-  for element in node.elementList_rev:
+  for element in node.relementList:
     if element.tagType == tagType:
       return element
   return nil
@@ -2452,23 +2473,21 @@ proc getElementsByClassName(element: Element; classNames: string):
     HTMLCollection {.jsfunc.} =
   return element.getElementsByClassNameImpl(classNames)
 
-func previousElementSibling*(elem: Element): Element {.jsfget.} =
-  let p = elem.parentNode
-  if p == nil: return nil
-  for i in countdown(elem.index - 1, 0):
-    let node = p.childList[i]
-    if node of Element:
-      return Element(node)
-  return nil
+func previousElementSibling*(element: Element): Element {.jsfget.} =
+  var it {.cursor.} = element.previousSibling
+  while it != nil:
+    if it of Element:
+      return Element(it)
+    it = it.previousSibling
+  nil
 
-func nextElementSibling*(elem: Element): Element {.jsfget.} =
-  let p = elem.parentNode
-  if p == nil: return nil
-  for i in elem.index + 1 .. p.childList.high:
-    let node = p.childList[i]
-    if node of Element:
-      return Element(node)
-  return nil
+func nextElementSibling*(element: Element): Element {.jsfget.} =
+  var it {.cursor.} = element.nextSibling
+  while it != nil:
+    if it of Element:
+      return Element(it)
+    it = it.nextSibling
+  nil
 
 func documentElement*(document: Document): Element {.jsfget.} =
   return document.firstElementChild()
@@ -3598,34 +3617,25 @@ func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
   return ("", "")
 
 func newText*(document: Document; data: sink string): Text =
-  return Text(
-    internalDocument: document,
-    data: newRefString(data),
-    index: -1
-  )
+  return Text(internalDocument: document, data: newRefString(data))
 
 func newText(ctx: JSContext; data: sink string = ""): Text {.jsctor.} =
   let window = ctx.getGlobal()
   return window.document.newText(data)
 
 func newCDATASection(document: Document; data: string): CDATASection =
-  return CDATASection(
-    internalDocument: document,
-    data: newRefString(data),
-    index: -1
-  )
+  return CDATASection(internalDocument: document, data: newRefString(data))
 
 func newProcessingInstruction(document: Document; target: string;
     data: sink string): ProcessingInstruction =
   return ProcessingInstruction(
     internalDocument: document,
     target: target,
-    data: newRefString(data),
-    index: -1
+    data: newRefString(data)
   )
 
 func newDocumentFragment(document: Document): DocumentFragment =
-  return DocumentFragment(internalDocument: document, index: -1)
+  return DocumentFragment(internalDocument: document)
 
 func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
   let window = ctx.getGlobal()
@@ -3634,8 +3644,7 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
 func newComment(document: Document; data: sink string): Comment =
   return Comment(
     internalDocument: document,
-    data: newRefString(data),
-    index: -1
+    data: newRefString(data)
   )
 
 func newComment(ctx: JSContext; data: sink string = ""): Comment {.jsctor.} =
@@ -3762,8 +3771,7 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
   element.prefix = prefix
   element.internalDocument = document
   element.classList = element.newDOMTokenList(satClassList)
-  element.index = -1
-  element.elIndex = -1
+  element.internalElIndex = -1
   if sns == satNamespaceHTML:
     let element = HTMLElement(element)
     element.dataset = DOMStringMap(target: element)
@@ -3780,7 +3788,6 @@ proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
 proc newDocument*(): Document {.jsctor.} =
   let document = Document(
     url: newURL("about:blank").get,
-    index: -1,
     contentType: "application/xml"
   )
   document.implementation = DOMImplementation(document: document)
@@ -3789,7 +3796,6 @@ proc newDocument*(): Document {.jsctor.} =
 proc newXMLDocument(): XMLDocument =
   let document = XMLDocument(
     url: newURL("about:blank").get,
-    index: -1,
     contentType: "application/xml"
   )
   document.implementation = DOMImplementation(document: document)
@@ -3801,8 +3807,7 @@ func newDocumentType*(document: Document;
     internalDocument: document,
     name: name,
     publicId: publicId,
-    systemId: systemId,
-    index: -1
+    systemId: systemId
   )
 
 func isHostIncludingInclusiveAncestor*(a, b: Node): bool =
@@ -3877,8 +3882,7 @@ proc delAttr(element: Element; i: int; keep = false) =
         let data = attr.data
         attr.ownerElement = AttrDummyElement(
           internalDocument: attr.ownerElement.document,
-          index: -1,
-          elIndex: -1,
+          internalElIndex: -1,
           attrs: @[data]
         )
         attr.dataIdx = 0
@@ -4846,25 +4850,31 @@ proc jsId(element: Element; id: string) {.jsfset: "id".} =
 proc remove*(node: Node; suppressObservers: bool) =
   let parent = node.parentNode
   assert parent != nil
-  assert node.index != -1
   #TODO live ranges
   #TODO NodeIterator
   let element = if node of Element: Element(node) else: nil
-  for i in node.index ..< parent.childList.len - 1:
-    let it = parent.childList[i + 1]
-    it.index = i
-    if element != nil and it of Element:
-      dec Element(it).elIndex
-    parent.childList[i] = it
-  parent.childList.setLen(parent.childList.len - 1)
+  let parentElement = node.parentElement
+  let prev = node.internalPrev
+  let next = node.nextSibling
+  if next != nil:
+    next.internalPrev = prev
+  else:
+    parent.firstChild.internalPrev = prev
+  if parent.firstChild == node:
+    parent.firstChild = next
+  else:
+    prev.nextSibling = next
   parent.invalidateCollections()
   node.invalidateCollections()
-  if parent of Element:
-    Element(parent).invalidate()
+  if parentElement != nil:
+    parentElement.invalidate()
+  node.internalPrev = nil
+  node.nextSibling = nil
   node.parentNode = nil
-  node.index = -1
   if element != nil:
-    element.elIndex = -1
+    if element.internalElIndex == 0 and parentElement != nil:
+      parentElement.childElIndicesInvalid = true
+    element.internalElIndex = -1
     if element.document != nil:
       if element of HTMLStyleElement or element of HTMLLinkElement:
         element.document.applyAuthorSheets()
@@ -5064,31 +5074,34 @@ func preInsertionValidity(parent, node, before: Node): Err[DOMException] =
 
 proc insertNode(parent, node, before: Node) =
   parent.document.adopt(node)
-  parent.childList.setLen(parent.childList.len + 1)
   let element = if node of Element: Element(node) else: nil
   if before == nil:
-    node.index = parent.childList.high
+    let first = parent.firstChild
+    if first != nil:
+      let last = first.internalPrev
+      last.nextSibling = node
+      node.internalPrev = last
+    else:
+      parent.firstChild = node
+    parent.firstChild.internalPrev = node
   else:
-    node.index = before.index
-    if element != nil and before of Element:
-      element.elIndex = Element(before).elIndex
-    for i in countdown(parent.childList.high - 1, node.index):
-      let it = parent.childList[i]
-      let j = i + 1
-      it.index = j
-      if element != nil and it of Element:
-        let it = Element(it)
-        if element.elIndex == -1:
-          element.elIndex = it.elIndex
-        inc it.elIndex
-      parent.childList[j] = it
-  if element != nil and element.elIndex == -1:
-    element.elIndex = 0
-    let last = parent.lastElementChild
-    if last != nil:
-      element.elIndex = last.elIndex + 1
-  parent.childList[node.index] = node
+    node.nextSibling = before
+    let prev = before.internalPrev
+    node.internalPrev = prev
+    if prev.nextSibling != nil:
+      prev.nextSibling = node
+    before.internalPrev = node
+    if before == parent.firstChild:
+      parent.firstChild = node
   node.parentNode = parent
+  if element != nil:
+    if element.nextSibling != nil and parent of Element:
+      let parent = Element(parent)
+      parent.childElIndicesInvalid = true
+    elif (let prev = element.previousElementSibling; prev != nil):
+      element.internalElIndex = prev.internalElIndex + 1
+    else:
+      element.internalElIndex = 0
   node.invalidateCollections()
   parent.invalidateCollections()
   if node.document != nil and (node of HTMLStyleElement or
@@ -5104,16 +5117,13 @@ proc insertNode(parent, node, before: Node) =
 
 # WARNING ditto
 proc insert*(parent, node, before: Node; suppressObservers = false) =
-  var nodes = if node of DocumentFragment:
-    node.childList
-  else:
-    @[node]
+  let nodes = if node of DocumentFragment: node.getChildList() else: @[node]
   let count = nodes.len
   if count == 0:
     return
   if node of DocumentFragment:
-    for i in countdown(node.childList.high, 0):
-      node.childList[i].remove(true)
+    for child in nodes:
+      child.remove(true)
     #TODO tree mutation record
   if before != nil:
     #TODO live ranges
@@ -5200,13 +5210,13 @@ proc replace*(parent, child, node: Node): Err[DOMException] =
   return ok()
 
 proc replaceAll(parent, node: Node) =
-  var removedNodes = parent.childList # copy
+  let removedNodes = parent.getChildList()
   for child in removedNodes:
     child.remove(true)
   assert parent != node
   if node != nil:
     if node of DocumentFragment:
-      var addedNodes = node.childList # copy
+      let addedNodes = node.getChildList()
       for child in addedNodes:
         parent.append(child)
     else:
@@ -5880,8 +5890,7 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
     let x = Attr(
       ownerElement: AttrDummyElement(
         internalDocument: attr.ownerElement.document,
-        index: -1,
-        elIndex: -1,
+        internalElIndex: -1,
         attrs: @[data]
       ),
       dataIdx: 0
@@ -5939,8 +5948,6 @@ func equals(a, b: AttrData): bool =
     a.value == b.value
 
 func isEqualNode(node, other: Node): bool {.jsfunc.} =
-  if node.childList.len != other.childList.len:
-    return false
   if node of DocumentType:
     if not (other of DocumentType):
       return false
@@ -5977,9 +5984,11 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
         node of Comment and not (other of Comment):
       return false
     return CharacterData(node).data == CharacterData(other).data
-  for i, child in node.childList.mypairs:
-    if not child.isEqualNode(other.childList[i]):
+  var it {.cursor.} = other.firstChild
+  for child in node.childList:
+    if it == nil or not child.isEqualNode(it):
       return false
+    it = it.nextSibling
   true
 
 func isSameNode(node, other: Node): bool {.jsfunc.} =

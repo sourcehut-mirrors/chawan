@@ -172,7 +172,7 @@ func matchesNthLastChild(element: Element; nthChild: CSSNthChild;
     return j >= 0 and j mod A == 0
   if element.matches(nthChild.ofsels, depends):
     var i = 1
-    for child in element.parentNode.elementList_rev:
+    for child in element.parentNode.relementList:
       if child == element:
         if A == 0:
           return i == B
@@ -257,18 +257,16 @@ func matches*(element: Element; cxsel: ComplexSelector;
         e = prev
         match = e.matches(csel, mdepends)
     of ctSubsequentSibling:
-      let parent = e.parentNode
-      for j in countdown(e.index - 1, 0):
-        let child = parent.childList[j]
-        if child of Element:
-          let child = Element(child)
-          case child.matches(csel, mdepends)
-          of mtTrue:
-            e = child
-            match = mtTrue
-            break
-          of mtFalse: discard
-          of mtContinue: match = mtContinue # keep looking
+      var it = element.previousElementSibling
+      while it != nil:
+        case it.matches(csel, mdepends)
+        of mtTrue:
+          e = it
+          match = mtTrue
+          break
+        of mtFalse: discard
+        of mtContinue: match = mtContinue # keep looking
+        it = it.previousElementSibling
     if match == mtFalse:
       return false # we can discard depends.
     if pmatch == mtContinue and match == mtTrue or e == nil:
