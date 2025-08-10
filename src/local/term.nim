@@ -154,12 +154,8 @@ const GEOMCELL = CSI & "18t"
 # allow shift-key to override mouse protocol
 const XTSHIFTESCAPE = CSI & ">0s"
 
-# query sixel register number
-template XTSMGRAPHICS(pi, pa, pv: untyped): string =
-  CSI & '?' & $pi & ';' & $pa & ';' & $pv & 'S'
-
 # number of color registers
-const XTNUMREGS = XTSMGRAPHICS(1, 1, 0)
+const XTNUMREGS = CSI & "?1;1;0S"
 
 # horizontal & vertical position
 template HVP(y, x: int): string =
@@ -182,8 +178,6 @@ const XTGETTCAPRGB = DCS & "+q524742" & ST
 
 # OS command
 const OSC = "\e]"
-template XTSETTITLE(s: string): string =
-  OSC & "0;" & s & ST
 
 const XTGETFG = OSC & "10;?" & ST # get foreground color
 const XTGETBG = OSC & "11;?" & ST # get background color
@@ -474,7 +468,7 @@ proc processFormat*(res: var string; term: Terminal; format: var Format;
 
 proc setTitle*(term: Terminal; title: string) =
   if term.setTitle:
-    term.write(XTSETTITLE(title.replaceControls()))
+    term.write(OSC & "0;" & title.replaceControls() & ST)
 
 proc enableMouse*(term: Terminal) =
   case term.termType

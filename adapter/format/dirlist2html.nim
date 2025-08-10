@@ -79,6 +79,12 @@ proc addItem(items: var seq[DirlistItem]; item: DirlistItem; maxw: var int) =
   maxw = max(item.width, maxw)
   items.add(item)
 
+proc skipTillSpace(line: openArray[char]; i: int): int =
+  var i = i
+  while i < line.len and line[i] != ' ':
+    inc i
+  return i
+
 proc parseInput(f: ChaFile; items: var seq[DirlistItem]; maxw: var int):
     Opt[void] =
   # wcwidth wants a UTF-8 locale.
@@ -90,18 +96,15 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]; maxw: var int):
   while ?f.readLine(line):
     if line.len == 0: continue
     var i = 10 # permission
-    template skip_till_space =
-      while i < line.len and line[i] != ' ':
-        inc i
     # link count
     i = line.skipBlanks(i)
-    skip_till_space
+    i = line.skipTillSpace(i)
     # owner
     i = line.skipBlanks(i)
-    skip_till_space
+    i = line.skipTillSpace(i)
     # group
     i = line.skipBlanks(i)
-    skip_till_space
+    i = line.skipTillSpace(i)
     # size
     i = line.skipBlanks(i)
     var sizes = ""
@@ -112,11 +115,11 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]; maxw: var int):
     # date
     i = line.skipBlanks(i)
     let datestarti = i
-    skip_till_space # m
+    i = line.skipTillSpace(i) # m
     i = line.skipBlanks(i)
-    skip_till_space # d
+    i = line.skipTillSpace(i) # d
     i = line.skipBlanks(i)
-    skip_till_space # y
+    i = line.skipTillSpace(i) # y
     let dates = line.substr(datestarti, i)
     inc i
     var j = line.len

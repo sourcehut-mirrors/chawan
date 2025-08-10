@@ -24,6 +24,13 @@ func gopherName(c: char): string =
   of ';': "video"
   else: "unsupported"
 
+proc getField(line: string; i: var int): string =
+  var s = line.until('\t', i)
+  i += s.len
+  if i < line.len and line[i] == '\t':
+    inc i
+  move(s)
+
 proc main(): Opt[void] =
   let stdout = cast[ChaFile](stdout)
   let stdin = cast[ChaFile](stdin)
@@ -43,15 +50,9 @@ proc main(): Opt[void] =
     if t == '.':
       break # end
     var i = 1
-    template get_field(): string =
-      let s = line.until('\t', i)
-      i += s.len
-      if i < line.len and line[i] == '\t':
-        inc i
-      s
-    let name = get_field()
-    var file = get_field()
-    let host = get_field()
+    let name = line.getField(i)
+    var file = line.getField(i)
+    let host = line.getField(i)
     let port = line.until('\t', i) # ignore anything after port
     var outs = ""
     if t == 'i':

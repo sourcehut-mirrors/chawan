@@ -29,23 +29,6 @@ func processBackspace(line: string): string =
   var inB = false
   var pendingInU = false
   var pendingInB = false
-  template flushChar =
-    if pendingInU != inU:
-      s &= (if inU: "</u>" else: "<u>")
-      inU = pendingInU
-    if pendingInB != inB:
-      s &= (if inB: "</b>" else: "<b>")
-      inB = pendingInB
-    if thiscs.len > 0:
-      let cs = case line[thiscs.a]
-      of '&': "&amp;"
-      of '<': "&lt;"
-      of '>': "&gt;"
-      else: line.substr(thiscs.a, thiscs.b)
-      s &= cs
-    thiscs = i ..< i + n
-    pendingInU = false
-    pendingInB = false
   while i < line.len:
     # this is the same "sometimes works" algorithm as in ansi2html
     if line[i] == '\b' and thiscs.len > 0:
@@ -77,10 +60,36 @@ func processBackspace(line: string): string =
         pendingInB = true
       bspace = false
     else:
-      flushChar
+      if pendingInU != inU:
+        s &= (if inU: "</u>" else: "<u>")
+        inU = pendingInU
+      if pendingInB != inB:
+        s &= (if inB: "</b>" else: "<b>")
+        inB = pendingInB
+      if thiscs.len > 0:
+        let cs = case line[thiscs.a]
+        of '&': "&amp;"
+        of '<': "&lt;"
+        of '>': "&gt;"
+        else: line.substr(thiscs.a, thiscs.b)
+        s &= cs
+      thiscs = i ..< i + n
+      pendingInU = false
+      pendingInB = false
     i += n
-  let n = 0
-  flushChar
+  if pendingInU != inU:
+    s &= (if inU: "</u>" else: "<u>")
+    inU = pendingInU
+  if pendingInB != inB:
+    s &= (if inB: "</b>" else: "<b>")
+    inB = pendingInB
+  if thiscs.len > 0:
+    let cs = case line[thiscs.a]
+    of '&': "&amp;"
+    of '<': "&lt;"
+    of '>': "&gt;"
+    else: line.substr(thiscs.a, thiscs.b)
+    s &= cs
   if inU: s &= "</u>"
   if inB: s &= "</b>"
   move(s)

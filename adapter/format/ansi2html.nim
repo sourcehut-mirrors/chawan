@@ -53,26 +53,27 @@ template getParamU8(parser: AnsiCodeParser; i: var int; colon = false): uint8 =
     return false
   u.get
 
+proc setColor(format: var Format; c: CellColor; isfg: bool) =
+  if isfg:
+    format.fgcolor = c
+  else:
+    format.bgcolor = c
+
 proc parseSGRDefColor(parser: AnsiCodeParser; format: var Format;
     i: var int; isfg: bool): bool =
   let u = parser.getParamU8(i, colon = true)
-  template set_color(c: CellColor) =
-    if isfg:
-      format.fgcolor = c
-    else:
-      format.bgcolor = c
   if u == 2:
     let param0 = parser.getParamU8(i, colon = true)
     if i < parser.params.len:
       let r = param0
       let g = parser.getParamU8(i, colon = true)
       let b = parser.getParamU8(i, colon = true)
-      set_color cellColor(rgb(r, g, b))
+      format.setColor(cellColor(rgb(r, g, b)), isfg)
     else:
-      set_color cellColor(gray(param0))
+      format.setColor(cellColor(gray(param0)), isfg)
   elif u == 5:
     let param0 = parser.getParamU8(i, colon = true)
-    set_color ANSIColor(param0).cellColor()
+    format.setColor(ANSIColor(param0).cellColor(), isfg)
   else:
     return false
   return true
