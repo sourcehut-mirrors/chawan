@@ -30,7 +30,7 @@ type
   RuleListMap = array[PseudoElement, RuleList]
 
   RulePair = tuple
-    specificity: int
+    specificity: uint
     rule: CSSRuleDef
 
   ToSorts = array[PseudoElement, seq[RulePair]]

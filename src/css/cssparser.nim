@@ -310,7 +310,7 @@ type
     sels*: seq[Selector]
 
   ComplexSelector* = object
-    specificity*: int
+    specificity*: uint
     pseudo*: PseudoElement
     csels: seq[CompoundSelector]
 
@@ -1302,21 +1302,21 @@ func `$`*(slist: SelectorList): string =
     result &= $cxsel
     s = true
 
-func getSpecificity(sel: Selector): int =
+func getSpecificity(sel: Selector): uint =
   case sel.t
   of stId: return 1000000
   of stClass, stAttr, stPseudoClass, stLang: return 1000
   of stType, stPseudoElement: return 1
   of stUniversal, stWhere: return 0
   of stIs, stNot:
-    var best = 0
+    var best = 0u
     for child in sel.fsels:
       let s = child.specificity
       if s > best:
         best = s
     return best
   of stNthChild, stNthLastChild:
-    var best = 0
+    var best = 0u
     if sel.nthChild.ofsels.len != 0:
       for child in sel.nthChild.ofsels:
         let s = child.specificity
@@ -1324,8 +1324,8 @@ func getSpecificity(sel: Selector): int =
           best = s
     return 1000 + best
 
-func getSpecificity(sels: CompoundSelector): int =
-  result= 0
+func getSpecificity(sels: CompoundSelector): uint =
+  result = 0
   for sel in sels:
     result += getSpecificity(sel)
 
