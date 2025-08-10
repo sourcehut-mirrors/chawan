@@ -20,10 +20,13 @@ ol[third] :nth-child(eVeN) { color: green }
 
 /* invalid */
 ol[first] :nth-last-child(0n++1) { color: purple }
-
+/* invalid, but :is ignores invalid selectors */
+:is(:nth-child(), :nth-child(test()), div) { color: green }
 </style>
 
 <body bgcolor=black text=white>
+<div>green</div>
+
 <ul first>
 <li>test
 <li>test

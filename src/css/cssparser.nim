@@ -1086,47 +1086,44 @@ type AnBIdent = enum
   abiDashNDash = "-n-"
 
 proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
-  template fail_plus =
-    if isPlus:
-      return err()
-  template fail_non_signless_integer(tok: CSSToken; res: Opt[CSSAnB]) =
-    if tok.t != cttINumber or ctfSign in tok.flags:
-      return res
-    ctx.seekToken()
-
   ?ctx.skipBlanksCheckHas()
-  var tok = ctx.consume()
+  var tok = ctx.peekToken()
   let isPlus = tok.t == cttPlus
+  let noPlus = if not isPlus: Opt[void].ok() else: Opt[void].err()
   if isPlus:
-    tok = ctx.consume()
+    ctx.seekToken()
+    tok = ctx.peekToken()
   case tok.t
   of cttIdent:
+    ctx.seekToken()
     if x := parseEnumNoCase[AnBIdent](tok.s):
       case x
       of abiOdd:
-        fail_plus
+        ?noPlus
         return ok((2i32, 1i32))
       of abiEven:
-        fail_plus
+        ?noPlus
         return ok((2i32, 0i32))
       of abiN:
         if ctx.skipBlanksCheckDone().isOk:
           return ok((1i32, 0i32))
-        let tok2 = ctx.peekToken()
-        if tok2.t in {cttPlus, cttMinus}:
+        case (let tok2 = ctx.peekToken(); tok2.t)
+        of cttPlus, cttMinus:
           ctx.seekToken()
           let sign = if tok2.t == cttPlus: 1i32 else: -1i32
           ?ctx.skipBlanksCheckHas()
           let tok3 = ctx.peekToken()
-          fail_non_signless_integer tok3, ok((1i32, 0i32))
+          if tok3.t != cttINumber or ctfSign in tok3.flags:
+            return ok((1i32, 0i32))
+          ctx.seekToken()
           return ok((1i32, sign * tok3.inum))
-        elif tok2.t == cttINumber:
+        of cttINumber:
           ctx.seekToken()
           return ok((1i32, tok2.inum))
         else:
           return ok((1i32, 0i32))
       of abiDashN:
-        fail_plus
+        ?noPlus
         if ctx.skipBlanksCheckDone().isOk:
           return ok((-1i32, 0i32))
         let tok2 = ctx.peekToken()
@@ -1135,7 +1132,9 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
           let sign = if tok2.t == cttPlus: 1i32 else: -1i32
           ?ctx.skipBlanksCheckHas()
           let tok3 = ctx.peekToken()
-          fail_non_signless_integer tok3, ok((-1i32, 0i32))
+          if tok3.t != cttINumber or ctfSign in tok3.flags:
+            return ok((-1i32, 0i32))
+          ctx.seekToken()
           return ok((-1i32, sign * tok3.inum))
         elif tok2.t == cttINumber:
           ctx.seekToken()
@@ -1145,29 +1144,35 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
       of abiNDash:
         ?ctx.skipBlanksCheckHas()
         let tok2 = ctx.peekToken()
-        fail_non_signless_integer tok2, err()
+        if tok2.t != cttINumber or ctfSign in tok2.flags:
+          return err()
+        ctx.seekToken()
         return ok((1i32, -tok2.inum))
       of abiDashNDash:
-        fail_plus
+        ?noPlus
         ?ctx.skipBlanksCheckHas()
         let tok2 = ctx.peekToken()
-        fail_non_signless_integer tok2, err()
+        if tok2.t != cttINumber or ctfSign in tok2.flags:
+          return err()
+        ctx.seekToken()
         return ok((-1i32, -tok2.inum))
     elif tok.s.startsWithIgnoreCase("n-"):
       let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
       return ok((1i32, n))
     elif tok.s.startsWithIgnoreCase("-n-"):
-      fail_plus
+      ?noPlus
       let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
       return ok((-1i32, -n))
     else:
       return err()
   of cttINumber:
-    fail_plus
+    ctx.seekToken()
+    ?noPlus
     # <integer>
     return ok((0i32, tok.inum))
   of cttIDimension:
-    fail_plus
+    ctx.seekToken()
+    ?noPlus
     case tok.s
     of "n", "N":
       # <n-dimension>
@@ -1179,7 +1184,9 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
         let sign = if tok2.t == cttPlus: 1i32 else: -1i32
         ?ctx.skipBlanksCheckHas()
         let tok3 = ctx.peekToken()
-        fail_non_signless_integer tok3, ok((tok.inum, 0i32))
+        if tok3.t != cttINumber or ctfSign in tok3.flags:
+          return ok((tok.inum, 0i32))
+        ctx.seekToken()
         return ok((tok.inum, sign * tok3.inum))
       elif tok2.t == cttINumber:
         ctx.seekToken()
@@ -1190,7 +1197,9 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
       # <ndash-dimension>
       ?ctx.skipBlanksCheckHas()
       let tok2 = ctx.peekToken()
-      fail_non_signless_integer tok2, err()
+      if tok2.t != cttINumber or ctfSign in tok2.flags:
+        return err()
+      ctx.seekToken()
       return ok((tok.inum, -tok2.inum))
     elif tok.s.startsWithIgnoreCase("n-"):
       # <ndashdigit-dimension>
@@ -1435,32 +1444,33 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
   result = nil
   if not state.has(): fail
   let tok = state.consume()
-  template add_pseudo_element(element: PseudoElement) =
-    state.skipBlanks()
-    if state.nested or state.has() and state.peekTokenType() != cttComma: fail
-    return Selector(t: stPseudoElement, elem: element)
+  var pseudoElement = peNone
   case tok.t
   of cttIdent:
-    template add_pseudo_class(class: PseudoClass) =
-      return Selector(t: stPseudoClass, pc: class)
     if tok.s.equalsIgnoreCase("before"):
-      add_pseudo_element peBefore
+      pseudoElement = peBefore
+      # fall through
     elif tok.s.equalsIgnoreCase("after"):
-      add_pseudo_element peAfter
+      pseudoElement = peAfter
+      # fall through
+    elif pc := parseEnumNoCase[PseudoClass](tok.s):
+      return Selector(t: stPseudoClass, pc: pc)
     else:
-      let class = parseEnumNoCase[PseudoClass](tok.s)
-      if class.isErr: fail
-      add_pseudo_class class.get
+      fail
   of cttColon:
     if not state.has(): fail
     let tok = state.consume()
     if tok.t != cttIdent: fail
-    let x = parseEnumNoCase[PseudoElement](tok.s)
-    if x.isErr: fail
-    add_pseudo_element x.get
+    pseudoElement = parseEnumNoCase[PseudoElement](tok.s).get(peNone)
+    if pseudoElement == peNone:
+      fail
+    # fall through
   of cttFunction:
     return state.parseSelectorFunction(tok.ft)
   else: fail
+  state.skipBlanks()
+  if state.nested or state.has() and state.peekTokenType() != cttComma: fail
+  return Selector(t: stPseudoElement, elem: pseudoElement)
 
 proc parseAttributeSelector(state: var SelectorParser): Selector =
   state.skipBlanks()
