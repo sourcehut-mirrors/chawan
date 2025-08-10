@@ -1476,11 +1476,17 @@ proc makeEntry*(t: CSSPropertyType; length: CSSLength): CSSComputedEntry =
 proc makeEntry*(t: CSSPropertyType; color: CSSColor): CSSComputedEntry =
   makeEntry(t, CSSValueWord(color: color))
 
+proc makeEntry(t: CSSPropertyType; zIndex: CSSZIndex): CSSComputedEntry =
+  makeEntry(t, CSSValueWord(zIndex: zIndex))
+
 proc makeEntry*(t: CSSPropertyType; integer: int32): CSSComputedEntry =
   makeEntry(t, CSSValueHWord(integer: integer))
 
 proc makeEntry(t: CSSPropertyType; number: float32): CSSComputedEntry =
   makeEntry(t, CSSValueHWord(number: number))
+
+template makeEntry[T: enum|set](t: CSSPropertyType; val: T): CSSComputedEntry =
+  CSSComputedEntry(et: ceBit, p: t, bit: cast[uint8](val))
 
 proc parseDeclWithVar0*(toks: openArray[CSSToken]): seq[CSSVarItem] =
   var ctx = initCSSParser(toks)
@@ -1523,89 +1529,62 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
     entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void] =
   ?ctx.skipBlanksCheckHas()
   let v = valueType(t)
-  template set_new(prop, val: untyped) =
-    entry = CSSComputedEntry(
-      p: t,
-      et: ceObject,
-      obj: CSSValue(v: v, prop: val)
-    )
-  template set_word(prop, val: untyped) =
-    entry = CSSComputedEntry(
-      p: t,
-      et: ceWord,
-      word: CSSValueWord(prop: val)
-    )
-  template set_hword(prop, val: untyped) =
-    entry = CSSComputedEntry(
-      p: t,
-      et: ceHWord,
-      hword: CSSValueHWord(prop: val)
-    )
-  template set_bit(prop, val: untyped) =
-    entry = CSSComputedEntry(p: t, et: ceBit, bit: cast[uint8](val))
-  case v
-  of cvtDisplay: set_bit display, ?parseIdent[CSSDisplay](ctx)
-  of cvtWhiteSpace: set_bit whiteSpace, ?parseIdent[CSSWhiteSpace](ctx)
-  of cvtWordBreak: set_bit wordBreak, ?parseIdent[CSSWordBreak](ctx)
-  of cvtListStyleType:
-    set_bit listStyleType, ?parseIdent[CSSListStyleType](ctx)
-  of cvtFontStyle: set_bit fontStyle, ?parseIdent[CSSFontStyle](ctx)
-  of cvtColor: set_word color, ?ctx.parseColor()
+  entry = case v
+  of cvtDisplay: makeEntry(t, ?parseIdent[CSSDisplay](ctx))
+  of cvtWhiteSpace: makeEntry(t, ?parseIdent[CSSWhiteSpace](ctx))
+  of cvtWordBreak: makeEntry(t, ?parseIdent[CSSWordBreak](ctx))
+  of cvtListStyleType: makeEntry(t, ?parseIdent[CSSListStyleType](ctx))
+  of cvtFontStyle: makeEntry(t, ?parseIdent[CSSFontStyle](ctx))
+  of cvtColor: makeEntry(t, ?ctx.parseColor())
   of cvtLength:
     case t
     of cptMinWidth, cptMinHeight:
-      set_word length, ?ctx.parseLength(attrs, hasAuto = true,
-        allowNegative = false)
+      makeEntry(t, ?ctx.parseLength(attrs, hasAuto = true,
+        allowNegative = false))
     of cptMaxWidth, cptMaxHeight:
-      set_word length, ?ctx.parseMaxSize(attrs)
+      makeEntry(t, ?ctx.parseMaxSize(attrs))
     of cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom:
-      set_word length, ?ctx.parseLength(attrs, hasAuto = false,
-        allowNegative = true)
+      makeEntry(t, ?ctx.parseLength(attrs, hasAuto = false,
+        allowNegative = true))
     #TODO content for flex-basis
     else:
-      set_word length, ?ctx.parseLength(attrs, hasAuto = true,
-        allowNegative = true)
-  of cvtContent: set_new content, ?ctx.parseContent()
+      makeEntry(t, ?ctx.parseLength(attrs, hasAuto = true,
+        allowNegative = true))
+  of cvtContent: makeEntry(t, CSSValue(v: v, content: ?ctx.parseContent()))
   of cvtInteger:
     case t
-    of cptFontWeight: set_hword integer, ?ctx.parseFontWeight()
-    of cptChaColspan: set_hword integer, ?ctx.parseInteger(1i32 .. 1000i32)
-    of cptChaRowspan: set_hword integer, ?ctx.parseInteger(0i32 .. 65534i32)
-    else: assert false
-  of cvtZIndex: set_word zIndex, ?ctx.parseZIndex()
-  of cvtTextDecoration: set_bit textDecoration, ?ctx.parseTextDecoration()
-  of cvtVerticalAlign:
-    set_bit verticalAlign, ?parseIdent[CSSVerticalAlign](ctx)
-  of cvtTextAlign: set_bit textAlign, ?parseIdent[CSSTextAlign](ctx)
-  of cvtListStylePosition:
-    set_bit listStylePosition, ?parseIdent[CSSListStylePosition](ctx)
-  of cvtPosition: set_bit position, ?parseIdent[CSSPosition](ctx)
-  of cvtCaptionSide: set_bit captionSide, ?parseIdent[CSSCaptionSide](ctx)
-  of cvtBorderCollapse:
-    set_bit borderCollapse, ?parseIdent[CSSBorderCollapse](ctx)
-  of cvtQuotes: set_new quotes, ?ctx.parseQuotes()
+    of cptFontWeight: makeEntry(t, ?ctx.parseFontWeight())
+    of cptChaColspan: makeEntry(t, ?ctx.parseInteger(1i32 .. 1000i32))
+    of cptChaRowspan: makeEntry(t, ?ctx.parseInteger(0i32 .. 65534i32))
+    else: return err()
+  of cvtZIndex: makeEntry(t, ?ctx.parseZIndex())
+  of cvtTextDecoration: makeEntry(t, ?ctx.parseTextDecoration())
+  of cvtVerticalAlign: makeEntry(t, ?parseIdent[CSSVerticalAlign](ctx))
+  of cvtTextAlign: makeEntry(t, ?parseIdent[CSSTextAlign](ctx))
+  of cvtListStylePosition: makeEntry(t, ?parseIdent[CSSListStylePosition](ctx))
+  of cvtPosition: makeEntry(t, ?parseIdent[CSSPosition](ctx))
+  of cvtCaptionSide: makeEntry(t, ?parseIdent[CSSCaptionSide](ctx))
+  of cvtBorderCollapse: makeEntry(t, ?parseIdent[CSSBorderCollapse](ctx))
+  of cvtQuotes: makeEntry(t, CSSValue(v: v, quotes: ?ctx.parseQuotes()))
   of cvtCounterSet:
     let n = if t == cptCounterIncrement: 1i32 else: 0i32
-    set_new counterSet, ?ctx.parseCounterSet(n)
-  of cvtImage: set_new image, ?ctx.parseImage()
-  of cvtFloat: set_bit float, ?parseIdent[CSSFloat](ctx)
-  of cvtVisibility: set_bit visibility, ?parseIdent[CSSVisibility](ctx)
-  of cvtBoxSizing: set_bit boxSizing, ?parseIdent[CSSBoxSizing](ctx)
-  of cvtClear: set_bit clear, ?parseIdent[CSSClear](ctx)
-  of cvtTextTransform:
-    set_bit textTransform, ?parseIdent[CSSTextTransform](ctx)
+    makeEntry(t, CSSValue(v: v, counterSet: ?ctx.parseCounterSet(n)))
+  of cvtImage: makeEntry(t, CSSValue(v: v, image: ?ctx.parseImage()))
+  of cvtFloat: makeEntry(t, ?parseIdent[CSSFloat](ctx))
+  of cvtVisibility: makeEntry(t, ?parseIdent[CSSVisibility](ctx))
+  of cvtBoxSizing: makeEntry(t, ?parseIdent[CSSBoxSizing](ctx))
+  of cvtClear: makeEntry(t, ?parseIdent[CSSClear](ctx))
+  of cvtTextTransform: makeEntry(t, ?parseIdent[CSSTextTransform](ctx))
   of cvtBgcolorIsCanvas: return err() # internal value
-  of cvtFlexDirection:
-    set_bit flexDirection, ?parseIdent[CSSFlexDirection](ctx)
-  of cvtFlexWrap: set_bit flexWrap, ?parseIdent[CSSFlexWrap](ctx)
+  of cvtFlexDirection: makeEntry(t, ?parseIdent[CSSFlexDirection](ctx))
+  of cvtFlexWrap: makeEntry(t, ?parseIdent[CSSFlexWrap](ctx))
   of cvtNumber:
-    case t
-    of cptFlexGrow, cptFlexShrink:
-      set_hword number, ?ctx.parseNumber(0f32..float32.high)
-    of cptOpacity: set_hword number, ?ctx.parseNumber(0f32..1f32)
-    else: assert false
-  of cvtOverflow: set_bit overflow, ?parseIdent[CSSOverflow](ctx)
-  return ok()
+    if t == cptOpacity:
+      makeEntry(t, ?ctx.parseNumber(0f32..1f32))
+    else: # flex-grow, flex-shrink
+      makeEntry(t, ?ctx.parseNumber(0f32..float32.high))
+  of cvtOverflow: makeEntry(t, ?parseIdent[CSSOverflow](ctx))
+  ok()
 
 func getInitialColor(t: CSSPropertyType): CSSColor =
   if t == cptBackgroundColor:
