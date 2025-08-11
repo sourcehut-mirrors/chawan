@@ -32,7 +32,7 @@ type
     ttFbterm = "fbterm"
     ttFoot = "foot"
     ttFreebsd = "freebsd" # pretends to be XTerm
-    ttGhostty = "xterm-ghostty" # hardly XTerm
+    ttGhostty = "ghostty"
     ttIterm2 = "iterm2"
     ttKitty = "xterm-kitty" # hardly XTerm
     ttKonsole = "konsole" # pretends to be XTerm
@@ -1237,6 +1237,8 @@ type
 
 # Probably not 1:1 compatible, but either a) compatible enough for our
 # purposes or b) advertises incompatibilities correctly through queries.
+# Descriptions with XtermCompatible (and no extra flags) are redundant;
+# I'm including them only to have a list of terminals already tested.
 const XtermCompatible = {tfTitle, tfDa1, tfSmcup}
 
 const TermdescMap = [
