@@ -203,12 +203,20 @@ proc addNavigatorModule*(ctx: JSContext) =
 # Window
 proc finalize(window: Window) {.jsfin.} =
   window.timeouts.clearAll()
+  for it in window.weakMap:
+    JS_FreeValueRT(window.jsrt, it)
   for it in window.jsStore.mitems:
     let val = it
     it = JS_UNINITIALIZED
     JS_FreeValueRT(window.jsrt, val)
   window.jsStore.setLen(0)
   window.settings.moduleMap.clear(window.jsrt)
+
+proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
+  for it in window.weakMap:
+    JS_MarkValue(rt, it, markFunc)
+  for it in window.jsStore:
+    JS_MarkValue(rt, it, markFunc)
 
 method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
   return window.settings.origin.isSameOrigin(origin)
@@ -463,6 +471,11 @@ proc addScripting*(window: Window) =
   window.timeouts = newTimeoutState(ctx, evalJSFree, window)
   let performance = JS_NewAtom(ctx, cstringConst("performance"))
   let jsWindow = JS_GetGlobalObject(ctx)
+  let weakMap = JS_GetPropertyStr(ctx, jsWindow, "WeakMap")
+  for it in window.weakMap.mitems:
+    it = JS_CallConstructor(ctx, weakMap, 0, nil)
+    doAssert not JS_IsException(it)
+  JS_FreeValue(ctx, weakMap)
   doAssert JS_DeleteProperty(ctx, jsWindow, performance, 0) == 1
   JS_FreeValue(ctx, jsWindow)
   JS_FreeAtom(ctx, performance)
@@ -516,6 +529,8 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     referrer: referrer
   )
   window.location = window.newLocation()
+  for it in window.weakMap.mitems:
+    it = JS_UNDEFINED
   if scripting != smFalse:
     window.addScripting()
   return window

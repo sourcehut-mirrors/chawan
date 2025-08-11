@@ -19,5 +19,8 @@ assertEquals(x.attributes["pf:test"].prefix, "pf");
 assertEquals(x.attributes["pf:test"].localName, "test");
 assertEquals(x.attributes["pf:test"].value, "b");
 assertEquals(x.getAttributeNS("ns", "test"), "b")
+let attr = x.attributes["pf:test"]
+x.removeAttributeNS("ns", "test")
+assertEquals(attr.value, "b")
 x.textContent = "Success";
 </script>

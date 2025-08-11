@@ -18,6 +18,8 @@ type
     jstPrototype = "prototype"
     jstThen = "then"
     jstCatch = "catch"
+    jstSet = "set"
+    jstGet = "get"
 
   JSValueRef* = enum
     jsvArrayPrototypeValues = "Array.prototype.values"

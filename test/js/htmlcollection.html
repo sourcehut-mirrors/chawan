@@ -16,6 +16,9 @@ for (let i = 0; i < styles.length; ++i)
 	assertEquals(styles[i].textContent, "style " + i);
 for (const style of styles)
 	style.remove();
-const defg = document.getElementsByClassName("defg");
-defg[0].textContent = "Success";
+const x = document.getElementsByClassName("defg")[0];
+const children = x.__lookupGetter__("children").apply(x);
+children.z = "hi";
+assertEquals(x.__lookupGetter__("children").apply(x).z, "hi");
+x.textContent = "Success";
 </script>

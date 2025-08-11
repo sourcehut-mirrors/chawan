@@ -90,6 +90,10 @@ type
     shared: seq[HTMLImageElement]
     bmp: NetworkBitmap
 
+  WindowWeakMap* = enum
+    wwmChildren, wwmChildNodes, wwmSelectedOptions, wwmTBodies, wwmCells,
+    wwmDatalist, wwmAttributes
+
   Window* = ref object of EventTarget
     internalConsole*: Console
     navigator* {.jsget.}: Navigator
@@ -124,6 +128,7 @@ type
     currentModuleURL*: URL
     jsStore*: seq[JSValue]
     jsStoreFree*: int
+    weakMap*: array[WindowWeakMap, JSValue]
 
   # Navigator stuff
   Navigator* = object
@@ -199,8 +204,8 @@ type
     element: Element
     localName: CAtom
 
-  DOMStringMap = object
-    target {.cursor.}: HTMLElement
+  DOMStringMap = ref object
+    target: HTMLElement
 
   Node* = ref object of EventTarget
     parentNode* {.jsget.}: Node
@@ -311,7 +316,6 @@ type
     internalElIndex: int
     classList* {.jsget.}: DOMTokenList
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
-    cachedAttributes: NamedNodeMap
     cachedStyle*: CSSStyleDeclaration
     computed*: CSSValues
 
@@ -324,7 +328,6 @@ type
     element: Element
 
   HTMLElement* = ref object of Element
-    dataset {.jsget.}: DOMStringMap
 
   SVGElement = ref object of Element
 
@@ -592,13 +595,16 @@ proc append*(parent, node: Node)
 proc attr*(element: Element; name: CAtom; value: sink string)
 proc attr*(element: Element; name: StaticAtom; value: sink string)
 proc baseURL*(document: Document): URL
-proc delAttr(element: Element; i: int; keep = false)
+proc delAttr(ctx: JSContext; element: Element; i: int)
 proc execute*(element: HTMLScriptElement)
 proc getImageId(window: Window): int
 proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
 proc invalidateCollections(document: Document)
+func isCell(this: Node): bool
+func isOptionOf(node: Node; select: HTMLSelectElement): bool
+func isTBody(this: Node): bool
 proc logException(window: Window; url: URL)
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
@@ -647,6 +653,24 @@ func getWindow*(ctx: JSContext): Window =
 
 func console(window: Window): Console =
   return window.internalConsole
+
+proc setWeak(ctx: JSContext; wwm: WindowWeakMap; key, val: JSValue): Opt[void] =
+  let global = ctx.getGlobal()
+  let argv = [key, val]
+  let res = JS_Invoke(ctx, global.weakMap[wwm], ctx.getOpaque().strRefs[jstSet],
+    2, argv.toJSValueConstArray())
+  let e = JS_IsException(res)
+  JS_FreeValue(ctx, res)
+  JS_FreeValue(ctx, key)
+  JS_FreeValue(ctx, val)
+  if e:
+    return err()
+  ok()
+
+proc getWeak(ctx: JSContext; wwm: WindowWeakMap; key: JSValueConst): JSValue =
+  let global = ctx.getGlobal()
+  return JS_Invoke(ctx, global.weakMap[wwm], ctx.getOpaque().strRefs[jstGet],
+    1, key.toJSValueConstArray())
 
 proc resetTransform(state: var DrawingState) =
   state.transformMatrix = newIdentityMatrix(3)
@@ -1468,20 +1492,70 @@ func nodeType(node: Node): uint16 {.jsfget.} =
 func isElement(node: Node): bool =
   return node of Element
 
+proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
+    JSValue =
+  case wwm
+  of wwmChildren:
+    return ctx.toJS(this.newHTMLCollection(
+      match = isElement,
+      islive = true,
+      childonly = true
+    ))
+  of wwmChildNodes:
+    return ctx.toJS(this.newNodeList(
+      match = nil,
+      islive = true,
+      childonly = true
+    ))
+  of wwmSelectedOptions:
+    let this = HTMLSelectElement(this)
+    return ctx.toJS(this.newHTMLCollection(
+      match = func(node: Node): bool =
+        return node.isOptionOf(this) and HTMLOptionElement(node).selected,
+      islive = true,
+      childonly = false
+    ))
+  of wwmTBodies:
+    return ctx.toJS(this.newHTMLCollection(
+      match = isTBody,
+      islive = true,
+      childonly = true
+    ))
+  of wwmCells:
+    return ctx.toJS(this.newHTMLCollection(
+      match = isCell,
+      islive = true,
+      childonly = true
+    ))
+  of wwmDatalist:
+    return ctx.toJS(DOMStringMap(target: HTMLElement(this)))
+  of wwmAttributes:
+    let element = Element(this)
+    let map = NamedNodeMap(element: element)
+    for i, attr in element.attrs.mypairs:
+      map.attrlist.add(Attr(
+        internalDocument: element.document,
+        dataIdx: i,
+        ownerElement: element
+      ))
+    return ctx.toJS(map)
+
+proc getWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
+    JSValue =
+  let jsThis = ctx.toJS(this)
+  let res = ctx.getWeak(wwm, jsThis)
+  if JS_IsUndefined(res):
+    let collection = ctx.newWeakCollection(this, wwm)
+    if JS_IsException(collection):
+      return JS_EXCEPTION
+    if ctx.setWeak(wwm, jsThis, JS_DupValue(ctx, collection)).isErr:
+      return JS_EXCEPTION
+    return collection
+  JS_FreeValue(ctx, jsThis)
+  return res
+
 proc parentNodeChildrenImpl(ctx: JSContext; parentNode: Node): JSValue =
-  let children = ctx.toJS(parentNode.newHTMLCollection(
-    match = isElement,
-    islive = true,
-    childonly = true
-  ))
-  let this = ctx.toJS(parentNode)
-  case ctx.definePropertyCW(this, "children", JS_DupValue(ctx, children))
-  of dprException:
-    JS_FreeValue(ctx, this)
-    return JS_EXCEPTION
-  else: discard
-  JS_FreeValue(ctx, this)
-  return children
+  return ctx.getWeakCollection(parentNode, wwmChildren)
 
 func children(ctx: JSContext; parentNode: Document): JSValue {.jsfget.} =
   return parentNodeChildrenImpl(ctx, parentNode)
@@ -1494,19 +1568,7 @@ func children(ctx: JSContext; parentNode: Element): JSValue {.jsfget.} =
   return parentNodeChildrenImpl(ctx, parentNode)
 
 func childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
-  let childNodes = ctx.toJS(node.newNodeList(
-    match = nil,
-    islive = true,
-    childonly = true
-  ))
-  let this = ctx.toJS(node)
-  case ctx.definePropertyCW(this, "childNodes", JS_DupValue(ctx, childNodes))
-  of dprException:
-    JS_FreeValue(ctx, this)
-    return JS_EXCEPTION
-  else: discard
-  JS_FreeValue(ctx, this)
-  return childNodes
+  return ctx.getWeakCollection(node, wwmChildNodes)
 
 func isForm(node: Node): bool =
   return node of HTMLFormElement
@@ -1693,14 +1755,14 @@ proc validateQName(qname: string): DOMResult[void] =
   ok()
 
 # DOMStringMap
-proc delete(map: var DOMStringMap; name: string): bool {.jsfunc.} =
+proc delete(ctx: JSContext; map: DOMStringMap; name: string): bool {.jsfunc.} =
   let name = ("data-" & name.camelToKebabCase()).toAtom()
   let i = map.target.findAttr(name)
   if i != -1:
-    map.target.delAttr(i)
+    ctx.delAttr(map.target, i)
   return i != -1
 
-proc getter(ctx: JSContext; map: var DOMStringMap; name: string): JSValue
+proc getter(ctx: JSContext; map: DOMStringMap; name: string): JSValue
     {.jsgetownprop.} =
   let name = ("data-" & name.camelToKebabCase()).toAtom()
   let i = map.target.findAttr(name)
@@ -1708,7 +1770,7 @@ proc getter(ctx: JSContext; map: var DOMStringMap; name: string): JSValue
     return ctx.toJS(map.target.attrs[i].value)
   return JS_UNINITIALIZED
 
-proc setter(map: var DOMStringMap; name, value: string): Err[DOMException]
+proc setter(map: DOMStringMap; name, value: string): Err[DOMException]
     {.jssetprop.} =
   var washy = false
   for c in name:
@@ -1723,7 +1785,7 @@ proc setter(map: var DOMStringMap; name, value: string): Err[DOMException]
   map.target.attr(aname, value)
   return ok()
 
-func names(ctx: JSContext; map: var DOMStringMap): JSPropertyEnumList
+func names(ctx: JSContext; map: DOMStringMap): JSPropertyEnumList
     {.jspropnames.} =
   var list = newJSPropertyEnumList(ctx, uint32(map.target.attrs.len))
   for attr in map.target.attrs:
@@ -1731,6 +1793,9 @@ func names(ctx: JSContext; map: var DOMStringMap): JSPropertyEnumList
     if k.startsWith("data-") and AsciiUpperAlpha notin k:
       list.add(k["data-".len .. ^1].kebabToCamelCase())
   return list
+
+proc dataset(ctx: JSContext; element: HTMLElement): JSValue {.jsfget.} =
+  return ctx.getWeakCollection(element, wwmDatalist)
 
 # NodeList
 func length(this: NodeList): uint32 {.jsfget.} =
@@ -2023,6 +2088,9 @@ func jsOwnerElement(attr: Attr): Element {.jsfget: "ownerElement".} =
     return nil
   return attr.ownerElement
 
+func ownerDocument(attr: Attr): Document {.jsfget.} =
+  return attr.ownerElement.document
+
 func data(attr: Attr): lent AttrData =
   return attr.ownerElement.attrs[attr.dataIdx]
 
@@ -2062,17 +2130,17 @@ proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
 func hasAttributes(element: Element): bool {.jsfunc.} =
   return element.attrs.len > 0
 
-func attributes(element: Element): NamedNodeMap {.jsfget.} =
-  if element.cachedAttributes != nil:
-    return element.cachedAttributes
-  element.cachedAttributes = NamedNodeMap(element: element)
-  for i, attr in element.attrs.mypairs:
-    element.cachedAttributes.attrlist.add(Attr(
-      internalDocument: element.document,
-      dataIdx: i,
-      ownerElement: element
-    ))
-  return element.cachedAttributes
+proc attributes(ctx: JSContext; element: Element): JSValue {.jsfget.} =
+  return ctx.getWeakCollection(element, wwmAttributes)
+
+proc cachedAttributes(ctx: JSContext; element: Element): NamedNodeMap =
+  let this = ctx.toJS(element)
+  let res = ctx.getWeak(wwmAttributes, this)
+  JS_FreeValue(ctx, this)
+  var map: NamedNodeMap
+  if ctx.fromJSFree(res, map).isErr:
+    return nil
+  return map
 
 proc hasAttribute(element: Element; qualifiedName: CAtom): bool {.jsfunc.} =
   return element.findAttr(qualifiedName) != -1
@@ -3310,21 +3378,7 @@ func namedItem(this: HTMLSelectElement; atom: CAtom): Element {.jsfunc.} =
 
 proc selectedOptions(ctx: JSContext; this: HTMLSelectElement): JSValue
     {.jsfget.} =
-  let selectedOptions = ctx.toJS(this.newHTMLCollection(
-    match = func(node: Node): bool =
-      return node.isOptionOf(this) and HTMLOptionElement(node).selected,
-    islive = true,
-    childonly = false
-  ))
-  let this = ctx.toJS(this)
-  case ctx.definePropertyCW(this, "selectedOptions",
-    JS_DupValue(ctx, selectedOptions))
-  of dprException:
-    JS_FreeValue(ctx, this)
-    return JS_EXCEPTION
-  else: discard
-  JS_FreeValue(ctx, this)
-  return selectedOptions
+  return ctx.getWeakCollection(this, wwmSelectedOptions)
 
 proc selectedIndex*(this: HTMLSelectElement): int {.jsfget.} =
   var i = 0
@@ -3437,19 +3491,7 @@ func isTBody(this: Node): bool =
   return this of Element and Element(this).tagType == TAG_TBODY
 
 proc tBodies(ctx: JSContext; this: HTMLTableElement): JSValue {.jsfget.} =
-  let tBodies = ctx.toJS(this.newHTMLCollection(
-    match = isTBody,
-    islive = true,
-    childonly = true
-  ))
-  let this = ctx.toJS(this)
-  case ctx.definePropertyCW(this, "tBodies", JS_DupValue(ctx, tBodies))
-  of dprException:
-    JS_FreeValue(ctx, this)
-    return JS_EXCEPTION
-  else: discard
-  JS_FreeValue(ctx, this)
-  return tBodies
+  return ctx.getWeakCollection(this, wwmTBodies)
 
 func isRow(this: Node): bool =
   return this of Element and Element(this).tagType == TAG_TR
@@ -3557,23 +3599,11 @@ proc deleteRow(this: HTMLTableSectionElement; index = -1): DOMResult[void]
   return this.rows.deleteRow(index)
 
 # <tr>
-proc isCell(this: Node): bool =
+func isCell(this: Node): bool =
   return this of Element and Element(this).tagType in {TAG_TD, TAG_TH}
 
 proc cells(ctx: JSContext; this: HTMLTableRowElement): JSValue {.jsfget.} =
-  let cells = ctx.toJS(this.newHTMLCollection(
-    match = isCell,
-    islive = true,
-    childonly = true
-  ))
-  let this = ctx.toJS(this)
-  case ctx.definePropertyCW(this, "cells", JS_DupValue(ctx, cells))
-  of dprException:
-    JS_FreeValue(ctx, this)
-    return JS_EXCEPTION
-  else: discard
-  JS_FreeValue(ctx, this)
-  return cells
+  return ctx.getWeakCollection(this, wwmCells)
 
 func rowIndex(this: HTMLTableRowElement): int {.jsfget.} =
   let table = this.findAncestor(TAG_TABLE)
@@ -3798,9 +3828,6 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
   element.internalDocument = document
   element.classList = element.newDOMTokenList(satClassList)
   element.internalElIndex = -1
-  if sns == satNamespaceHTML:
-    let element = HTMLElement(element)
-    element.dataset = DOMStringMap(target: element)
   return element
 
 proc newElement*(document: Document; localName: CAtom;
@@ -3889,10 +3916,9 @@ proc invalidateCollections(document: Document) =
   for id in document.liveCollections:
     cast[Collection](id).invalid = true
 
-proc delAttr(element: Element; i: int; keep = false) =
-  let map = element.cachedAttributes
+proc delAttr(ctx: JSContext; element: Element; i: int) =
   let name = element.attrs[i].qualifiedName
-  element.attrs.delete(i) # ordering matters
+  let map = ctx.cachedAttributes(element)
   if map != nil:
     # delete from attrlist + adjust indices invalidated
     var j = -1
@@ -3902,16 +3928,16 @@ proc delAttr(element: Element; i: int; keep = false) =
       elif attr.dataIdx > i:
         dec attr.dataIdx
     if j != -1:
-      if keep:
-        let attr = map.attrlist[j]
-        let data = attr.data
-        attr.ownerElement = AttrDummyElement(
-          internalDocument: attr.ownerElement.document,
-          internalElIndex: -1,
-          attrs: @[data]
-        )
-        attr.dataIdx = 0
+      let attr = map.attrlist[j]
+      let data = attr.data
+      attr.ownerElement = AttrDummyElement(
+        internalDocument: attr.ownerElement.document,
+        internalElIndex: -1,
+        attrs: @[data]
+      )
+      attr.dataIdx = 0
       map.attrlist.del(j) # ordering does not matter
+  element.attrs.delete(i) # ordering matters
   element.reflectAttr(name, none(string))
   element.document.invalidateCollections()
   element.invalidate()
@@ -4518,7 +4544,7 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
       else:
         let i = element.findAttr(entry.attrname.toAtom())
         if i != -1:
-          element.delAttr(i)
+          ctx.delAttr(element, i)
   of rtLong:
     var x: int32
     if ctx.fromJS(val, x).isOk:
@@ -4797,18 +4823,19 @@ proc setAttributeNS(element: Element; namespace: CAtom; qualifiedName: string;
     ))
   return ok()
 
-proc removeAttribute(element: Element; qualifiedName: CAtom) {.jsfunc.} =
+proc removeAttribute(ctx: JSContext; element: Element; qualifiedName: CAtom)
+    {.jsfunc.} =
   let i = element.findAttr(qualifiedName)
   if i != -1:
-    element.delAttr(i)
+    ctx.delAttr(element, i)
 
-proc removeAttributeNS(element: Element; namespace, localName: CAtom)
-    {.jsfunc.} =
+proc removeAttributeNS(ctx: JSContext; element: Element;
+    namespace, localName: CAtom) {.jsfunc.} =
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
-    element.delAttr(i)
+    ctx.delAttr(element, i)
 
-proc toggleAttribute(element: Element; qualifiedName: string;
+proc toggleAttribute(ctx: JSContext; element: Element; qualifiedName: string;
     force = none(bool)): DOMResult[bool] {.jsfunc.} =
   ?qualifiedName.validateName()
   let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtom())
@@ -4820,7 +4847,7 @@ proc toggleAttribute(element: Element; qualifiedName: string;
   if not force.get(false):
     let i = element.findAttr(qualifiedName)
     if i != -1:
-      element.delAttr(i)
+      ctx.delAttr(element, i)
     return ok(false)
   return ok(true)
 
@@ -4849,21 +4876,21 @@ proc setNamedItemNS(map: NamedNodeMap; attr: Attr): DOMResult[Attr]
     {.jsfunc.} =
   return map.setNamedItem(attr)
 
-proc removeNamedItem(map: NamedNodeMap; qualifiedName: CAtom): DOMResult[Attr]
-    {.jsfunc.} =
+proc removeNamedItem(ctx: JSContext; map: NamedNodeMap; qualifiedName: CAtom):
+    DOMResult[Attr] {.jsfunc.} =
   let i = map.element.findAttr(qualifiedName)
   if i != -1:
     let attr = map.getAttr(i)
-    map.element.delAttr(i, keep = true)
+    ctx.delAttr(map.element, i)
     return ok(attr)
   return errDOMException("Item not found", "NotFoundError")
 
-proc removeNamedItemNS(map: NamedNodeMap; namespace, localName: CAtom):
-    DOMResult[Attr] {.jsfunc.} =
+proc removeNamedItemNS(ctx: JSContext; map: NamedNodeMap;
+    namespace, localName: CAtom): DOMResult[Attr] {.jsfunc.} =
   let i = map.element.findAttrNS(namespace, localName)
   if i != -1:
     let attr = map.getAttr(i)
-    map.element.delAttr(i, keep = true)
+    ctx.delAttr(map.element, i)
     return ok(attr)
   return errDOMException("Item not found", "NotFoundError")
 
@@ -4920,11 +4947,6 @@ proc adopt(document: Document; node: Node) =
     #TODO shadow root
     for desc in node.descendantsIncl:
       desc.internalDocument = document
-      if desc of Element:
-        let desc = Element(desc)
-        if desc.cachedAttributes != nil:
-          for attr in desc.cachedAttributes.attrlist:
-            attr.internalDocument = document
     for i in countdown(oldDocument.liveCollections.high, 0):
       let id = oldDocument.liveCollections[i]
       if cast[Collection](id).root.internalDocument == document:
