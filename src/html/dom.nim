@@ -147,15 +147,40 @@ type
     element: Element
     attrlist: seq[Attr]
 
+  NodeFilterType = enum
+    nftAccept = (1, "FILTER_ACCEPT")
+    nftReject = (2, "FILTER_REJECT")
+    nftSkip = (3, "FILTER_SKIP")
+
+  NodeFilterNode = enum
+    SHOW_ELEMENT = 0
+    SHOW_ATTRIBUTE = 1
+    SHOW_TEXT = 2
+    SHOW_CDATA_SECTION = 3
+    SHOW_ENTITY_REFERENCE = 4
+    SHOW_ENTITY = 5
+    SHOW_PROCESSING_INSTRUCTION = 6
+    SHOW_COMMENT = 7
+    SHOW_DOCUMENT = 8
+    SHOW_DOCUMENT_TYPE = 9
+    SHOW_DOCUMENT_FRAGMENT = 10
+    SHOW_NOTATION = 11
+
   CollectionMatchFun = proc(node: Node): bool {.noSideEffect, raises: [].}
 
   Collection = ref object of RootObj
     islive: bool
     childonly: bool
+    invalid: bool
+    inclusive: bool
     root: Node
     match: CollectionMatchFun
     snapshot: seq[Node]
-    livelen: int
+
+  NodeIterator = ref object of Collection
+    ctx: JSContext
+    filter: JSValue
+    u: uint32
 
   NodeList = ref object of Collection
 
@@ -182,10 +207,6 @@ type
     nextSibling* {.jsget.}: Node
     internalPrev: Node # either previousSibling or parentNode.lastChild
     firstChild* {.jsget.}: Node
-    # Live collection cache: pointers to live collections are saved in all
-    # nodes they refer to. These are removed when the collection is destroyed,
-    # and invalidated when the owner node's children or attributes change.
-    liveCollections: seq[pointer]
     internalDocument: Document # not nil
 
   Attr* = ref object of Node
@@ -235,7 +256,6 @@ type
     contentType* {.jsget.}: string
     renderBlockingElements: seq[Element]
 
-    invalidCollections: HashSet[pointer] # pointers to Collection objects
     invalid*: bool # whether the document must be rendered again
 
     cachedAll: HTMLAllCollection
@@ -244,9 +264,11 @@ type
     userSheet*: CSSStylesheet
     authorSheets*: seq[CSSStylesheet]
     cachedForms: HTMLCollection
+    cachedLinks: HTMLCollection
     parser*: RootRef
 
     internalCookie: string
+    liveCollections: seq[pointer]
 
   XMLDocument = ref object of Document
 
@@ -539,6 +561,7 @@ jsDestructor(HTMLFormControlsCollection)
 jsDestructor(RadioNodeList)
 jsDestructor(HTMLAllCollection)
 jsDestructor(HTMLOptionsCollection)
+jsDestructor(NodeIterator)
 jsDestructor(Location)
 jsDestructor(Document)
 jsDestructor(XMLDocument)
@@ -562,6 +585,7 @@ jsDestructor(DOMRect)
 # Forward declarations
 func attr*(element: Element; s: StaticAtom): lent string
 func attrb*(element: Element; s: CAtom): bool
+func attrb*(element: Element; at: StaticAtom): bool
 func serializeFragment(res: var string; node: Node)
 func serializeFragmentInner(res: var string; child: Node; parentType: TagType)
 func value*(option: HTMLOptionElement): string
@@ -575,7 +599,7 @@ proc getImageId(window: Window): int
 proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
-proc invalidateCollections(node: Node)
+proc invalidateCollections(document: Document)
 proc logException(window: Window; url: URL)
 proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement
 proc parseColor(element: Element; s: string): ARGBColor
@@ -1329,21 +1353,17 @@ iterator options*(select: HTMLSelectElement): HTMLOptionElement {.inline.} =
           yield HTMLOptionElement(opt)
 
 template id(collection: Collection): pointer =
-  cast[pointer](addr collection[])
+  cast[pointer](collection)
 
 proc getChildList*(node: Node): seq[Node] =
   result = @[]
   for child in node.childList:
     result.add(child)
 
-proc addCollection(node: Node; collection: Collection) =
-  let i = node.liveCollections.find(nil)
-  if i != -1:
-    node.liveCollections[i] = collection.id
-  else:
-    node.liveCollections.add(collection.id)
-
 proc populateCollection(collection: Collection) =
+  if collection.inclusive:
+    if collection.match == nil or collection.match(collection.root):
+      collection.snapshot.add(collection.root)
   if collection.childonly:
     for child in collection.root.childList:
       if collection.match == nil or collection.match(child):
@@ -1352,43 +1372,29 @@ proc populateCollection(collection: Collection) =
     for desc in collection.root.descendants:
       if collection.match == nil or collection.match(desc):
         collection.snapshot.add(desc)
-  if collection.islive:
-    for child in collection.snapshot:
-      child.addCollection(collection)
-    collection.root.addCollection(collection)
 
 proc refreshCollection(collection: Collection) =
-  let document = collection.root.document
-  if not document.invalidCollections.missingOrExcl(collection.id):
+  if collection.invalid:
     assert collection.islive
-    for child in collection.snapshot:
-      let i = child.liveCollections.find(collection.id)
-      assert i != -1
-      child.liveCollections.del(i)
     collection.snapshot.setLen(0)
     collection.populateCollection()
+    collection.invalid = false
 
 proc finalize0(collection: Collection) =
   if collection.islive:
-    # Do not del() liveCollections here, so that it remains valid to
-    # iterate over them while allocating anything.
-    # (Otherwise, we could modify the length of the seq if the finalizer
-    # gets called as a result of the invalidateCollections incl call,
-    # thereby breaking the iteration.)
-    for child in collection.snapshot:
-      let i = child.liveCollections.find(collection.id)
-      assert i != -1
-      child.liveCollections[i] = nil
-    let i = collection.root.liveCollections.find(collection.id)
+    let i = collection.root.document.liveCollections.find(collection.id)
     assert i != -1
-    collection.root.liveCollections[i] = nil
-    collection.root.document.invalidCollections.excl(collection.id)
+    collection.root.document.liveCollections.del(i)
 
 proc finalize(collection: HTMLCollection) {.jsfin.} =
   collection.finalize0()
 
 proc finalize(collection: NodeList) {.jsfin.} =
   collection.finalize0()
+
+proc finalize(collection: NodeIterator) {.jsfin.} =
+  collection.finalize0()
+  JS_FreeValue(collection.ctx, collection.filter)
 
 proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
@@ -1410,14 +1416,20 @@ proc findNode(collection: Collection; node: Node): int =
   return collection.snapshot.find(node)
 
 func newCollection[T: Collection](root: Node; match: CollectionMatchFun;
-    islive, childonly: bool): T =
-  result = T(
+    islive, childonly: bool; inclusive = false): T =
+  let collection = T(
     islive: islive,
     childonly: childonly,
+    inclusive: inclusive,
     match: match,
     root: root
   )
-  result.populateCollection()
+  if islive:
+    root.document.liveCollections.add(collection.id)
+    collection.invalid =  true
+  else:
+    collection.populateCollection()
+  return collection
 
 func newHTMLCollection(root: Node; match: CollectionMatchFun;
     islive, childonly: bool): HTMLCollection =
@@ -1451,7 +1463,7 @@ func jsNodeType0(node: Node): NodeType =
   assert false
   ENTITY_NODE
 
-func jsNodeType(node: Node): uint16 {.jsfget: "nodeType".} =
+func nodeType(node: Node): uint16 {.jsfget.} =
   return uint16(node.jsNodeType0)
 
 func isElement(node: Node): bool =
@@ -1500,6 +1512,12 @@ func childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
 func isForm(node: Node): bool =
   return node of HTMLFormElement
 
+proc isLink(node: Node): bool =
+  if not (node of Element):
+    return false
+  let element = Element(node)
+  return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
+
 # Document
 
 func compatMode(document: Document): string {.jsfget.} =
@@ -1515,6 +1533,15 @@ func forms(document: Document): HTMLCollection {.jsfget.} =
       childonly = false
     )
   return document.cachedForms
+
+proc links(document: Document): HTMLCollection {.jsfget.} =
+  if document.cachedLinks == nil:
+    document.cachedLinks = document.newHTMLCollection(
+      match = isLink,
+      islive = true,
+      childonly = false
+    )
+  return document.cachedLinks
 
 func getURL(ctx: JSContext; document: Document): JSValue {.jsfget: "URL".} =
   return ctx.toJS($document.url)
@@ -3321,8 +3348,8 @@ proc setSelectedIndex*(this: HTMLSelectElement; n: int)
     else:
       it.selected = false
     it.invalidate(dtChecked)
-    it.invalidateCollections()
     inc i
+  this.document.invalidateCollections()
 
 proc value(this: HTMLSelectElement): string {.jsfget.} =
   for it in this.options:
@@ -3340,7 +3367,7 @@ proc setValue(this: HTMLSelectElement; value: string) {.jsfset: "value".} =
     else:
       it.selected = false
     it.invalidate(dtChecked)
-    it.invalidateCollections()
+  this.document.invalidateCollections()
 
 proc showPicker(this: HTMLSelectElement): Err[DOMException] {.jsfunc.} =
   # Per spec, we should do something if it's being rendered and on
@@ -3859,10 +3886,9 @@ proc `title=`(document: Document; s: sink string) {.jsfset: "title".} =
     head.append(title)
   title.replaceAll(s)
 
-proc invalidateCollections(node: Node) =
-  for id in node.liveCollections:
-    if id != nil: # may be nil if finalizer removed it
-      node.document.invalidCollections.incl(id)
+proc invalidateCollections(document: Document) =
+  for id in document.liveCollections:
+    cast[Collection](id).invalid = true
 
 proc delAttr(element: Element; i: int; keep = false) =
   let map = element.cachedAttributes
@@ -3888,7 +3914,7 @@ proc delAttr(element: Element; i: int; keep = false) =
         attr.dataIdx = 0
       map.attrlist.del(j) # ordering does not matter
   element.reflectAttr(name, none(string))
-  element.invalidateCollections()
+  element.document.invalidateCollections()
   element.invalidate()
 
 # Styles.
@@ -4679,7 +4705,7 @@ proc attr*(element: Element; name: CAtom; value: sink string) =
   var i = element.findAttrOrNext(name)
   if i >= 0:
     element.attrs[i].value = value
-    element.invalidateCollections()
+    element.document.invalidateCollections()
     element.invalidate()
   else:
     i = -(i + 1)
@@ -4711,8 +4737,6 @@ proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
     element.attrs[i].prefix = prefixAtom
     element.attrs[i].qualifiedName = qualifiedName
     element.attrs[i].value = value
-    element.invalidateCollections()
-    element.invalidate()
   else:
     element.attrs.insert(AttrData(
       prefix: prefixAtom,
@@ -4721,6 +4745,8 @@ proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
       namespace: namespace,
       value: value
     ), element.attrs.upperBound(qualifiedName, cmpAttrName))
+  element.document.invalidateCollections()
+  element.invalidate()
   element.reflectAttr(qualifiedName, some(value))
 
 proc attrl(element: Element; name: StaticAtom; value: int32) =
@@ -4864,13 +4890,13 @@ proc remove*(node: Node; suppressObservers: bool) =
     parent.firstChild = next
   else:
     prev.nextSibling = next
-  parent.invalidateCollections()
-  node.invalidateCollections()
   if parentElement != nil:
     parentElement.invalidate()
   node.internalPrev = nil
   node.nextSibling = nil
   node.parentNode = nil
+  if node.document != nil:
+    node.document.invalidateCollections()
   if element != nil:
     if element.internalElIndex == 0 and parentElement != nil:
       parentElement.childElIndicesInvalid = true
@@ -4901,6 +4927,11 @@ proc adopt(document: Document; node: Node) =
         if desc.cachedAttributes != nil:
           for attr in desc.cachedAttributes.attrlist:
             attr.internalDocument = document
+    for i in countdown(oldDocument.liveCollections.high, 0):
+      let id = oldDocument.liveCollections[i]
+      if cast[Collection](id).root.internalDocument == document:
+        node.document.liveCollections.add(id)
+        oldDocument.liveCollections.del(i)
     #TODO custom elements
     #..adopting steps
 
@@ -4954,7 +4985,7 @@ proc setForm*(element: FormAssociatedElement; form: HTMLFormElement) =
   of TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_IMG:
     discard #TODO
   else: assert false
-  form.invalidateCollections()
+  form.document.invalidateCollections()
 
 proc resetFormOwner(element: FormAssociatedElement) =
   element.parserInserted = false
@@ -5102,8 +5133,7 @@ proc insertNode(parent, node, before: Node) =
       element.internalElIndex = prev.internalElIndex + 1
     else:
       element.internalElIndex = 0
-  node.invalidateCollections()
-  parent.invalidateCollections()
+  node.document.invalidateCollections()
   if node.document != nil and (node of HTMLStyleElement or
       node of HTMLLinkElement):
     node.document.applyAuthorSheets()
@@ -5858,6 +5888,64 @@ proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
   else:
     return errDOMException("Event not supported", "NotSupportedError")
 
+proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
+    whatToShow = 0xFFFFFFFFu32; filter: JSValueConst = JS_NULL): NodeIterator
+    {.jsfunc.} =
+  let collection = newCollection[NodeIterator](
+    root = root,
+    match = nil,
+    islive = true,
+    childonly = false,
+    inclusive = true
+  )
+  collection.filter = JS_DupValue(ctx, filter)
+  collection.ctx = ctx
+  collection.match =
+    proc(node: Node): bool =
+      let n = 1u32 shl (uint32(node.nodeType) - 1)
+      if (whatToShow and n) == 0:
+        return false
+      if JS_IsNull(collection.filter):
+        return true
+      let ctx = collection.ctx
+      let filter = collection.filter
+      let node = ctx.toJS(node)
+      let val = if JS_IsFunction(ctx, filter):
+        JS_Call(ctx, filter, JS_UNDEFINED, 1, node.toJSValueArray())
+      else:
+        let atom = JS_NewAtom(ctx, cstringConst"acceptNode")
+        let val = JS_Invoke(ctx, filter, atom, 1, node.toJSValueArray())
+        JS_FreeAtom(ctx, atom)
+        val
+      JS_FreeValue(ctx, node)
+      if JS_IsException(val):
+        return false
+      var res: uint32
+      if ctx.fromJSFree(val, res).isErr:
+        return false
+      res == uint32(nftAccept)
+  return collection
+
+proc referenceNode(this: NodeIterator): Node {.jsfget.} =
+  if this.u < uint32(this.getLength()):
+    return this.snapshot[this.u]
+  nil
+
+proc nextNode(this: NodeIterator): Node {.jsfunc.} =
+  let res = this.referenceNode
+  if res != nil:
+    inc this.u
+  return res
+
+proc previousNode(this: NodeIterator): Node {.jsfunc.} =
+  if this.u > 0:
+    dec this.u
+    return this.snapshot[this.u]
+  nil
+
+proc detach(this: NodeIterator) {.jsfunc.} =
+  discard
+
 proc clone(node: Node; document = none(Document), deep = false): Node =
   let document = document.get(node.document)
   let copy = if node of Element:
@@ -6256,6 +6344,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.registerType(HTMLFormControlsCollection, parent = htmlCollectionCID)
   ctx.registerType(HTMLOptionsCollection, parent = htmlCollectionCID)
   ctx.registerType(RadioNodeList, parent = nodeListCID)
+  ctx.registerType(NodeIterator)
   ctx.registerType(Location)
   let documentCID = ctx.registerType(Document, parent = nodeCID)
   ctx.registerType(XMLDocument, parent = documentCID)
@@ -6300,6 +6389,15 @@ return option;
   doAssert ctx.definePropertyCW(jsWindow, "Option", optionFun) != dprException
   doAssert ctx.definePropertyCW(jsWindow, "HTMLDocument",
     JS_GetPropertyStr(ctx, jsWindow, "Document")) != dprException
+  let nodeFilter = JS_NewObject(ctx)
+  for e in NodeFilterNode:
+    let n = 1u32 shl uint32(e)
+    if (let res = ctx.definePropertyE(nodeFilter, $e, n); res != dprSuccess):
+      doAssert false
+  doAssert ctx.definePropertyE(nodeFilter, "SHOW_ALL", 0xFFFFFFFFu32) !=
+    dprException
+  doAssert ctx.definePropertyCW(jsWindow, "NodeFilter", nodeFilter) !=
+    dprException
   JS_FreeValue(ctx, jsWindow)
 
 # Forward declaration hack
