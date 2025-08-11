@@ -25,7 +25,7 @@ converter toMatchType(b: bool): MatchType =
   return MatchType(b)
 
 #TODO rfNone should match insensitively for certain properties
-func matchesAttr(element: Element; sel: Selector): bool =
+proc matchesAttr(element: Element; sel: Selector): bool =
   case sel.rel.t
   of rtExists: return element.attrb(sel.attr)
   of rtEquals:
@@ -74,17 +74,17 @@ func matchesAttr(element: Element; sel: Selector): bool =
       return val.contains(selval)
     of rfS: return val.contains(sel.value)
 
-func matches*(element: Element; cxsel: ComplexSelector;
+proc matches*(element: Element; cxsel: ComplexSelector;
   depends: var DependencyInfo): bool
 
-func matches(element: Element; slist: SelectorList;
+proc matches(element: Element; slist: SelectorList;
     depends: var DependencyInfo): bool =
   for cxsel in slist:
     if element.matches(cxsel, depends):
       return true
   return false
 
-func matches(element: Element; pc: PseudoClass; depends: var DependencyInfo):
+proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo):
     MatchType =
   case pc
   of pcFirstChild: return element.parentNode.firstElementChild == element
@@ -125,13 +125,13 @@ func matches(element: Element; pc: PseudoClass; depends: var DependencyInfo):
   of pcVisited:
     return mtFalse
 
-func matchesLang(element: Element; lang: string): bool =
+proc matchesLang(element: Element; lang: string): bool =
   for element in element.branchElems:
     if element.attrb(satLang):
       return element.attr(satLang) == lang
   true
 
-func matchesNthChild(element: Element; nthChild: CSSNthChild;
+proc matchesNthChild(element: Element; nthChild: CSSNthChild;
     depends: var DependencyInfo): bool =
   let A = nthChild.anb.A # step
   let B = nthChild.anb.B # start
@@ -157,7 +157,7 @@ func matchesNthChild(element: Element; nthChild: CSSNthChild;
         inc i
   false
 
-func matchesNthLastChild(element: Element; nthChild: CSSNthChild;
+proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
     depends: var DependencyInfo): bool =
   let A = nthChild.anb.A # step
   let B = nthChild.anb.B # start
@@ -184,7 +184,7 @@ func matchesNthLastChild(element: Element; nthChild: CSSNthChild;
         inc i
   false
 
-func matches(element: Element; sel: Selector; depends: var DependencyInfo):
+proc matches(element: Element; sel: Selector; depends: var DependencyInfo):
     MatchType =
   case sel.t
   of stType:
@@ -215,7 +215,7 @@ func matches(element: Element; sel: Selector; depends: var DependencyInfo):
   of stLang:
     return element.matchesLang(sel.lang)
 
-func matches(element: Element; sels: CompoundSelector;
+proc matches(element: Element; sels: CompoundSelector;
     depends: var DependencyInfo): MatchType =
   var res = mtTrue
   for sel in sels:
@@ -226,7 +226,7 @@ func matches(element: Element; sels: CompoundSelector;
   return res
 
 # Note: this modifies "depends".
-func matches*(element: Element; cxsel: ComplexSelector;
+proc matches*(element: Element; cxsel: ComplexSelector;
     depends: var DependencyInfo): bool =
   var e = element
   var pmatch = mtTrue
@@ -279,7 +279,7 @@ func matches*(element: Element; cxsel: ComplexSelector;
   return true
 
 # Forward declaration hack
-matchesImpl = func(element: Element; cxsels: seq[ComplexSelector]): bool
+matchesImpl = proc(element: Element; cxsels: seq[ComplexSelector]): bool
     {.nimcall.} =
   var dummy = DependencyInfo.default
   return element.matches(cxsels, dummy)

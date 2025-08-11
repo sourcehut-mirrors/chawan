@@ -1317,7 +1317,7 @@ proc implicitSubmit(bc: BufferContext; input: HTMLInputElement): Request =
   let form = input.form
   if form != nil and form.canSubmitImplicitly():
     var defaultButton: Element
-    for element in form.elements:
+    for element in form.elementDescendants:
       if element.isSubmitButton():
         defaultButton = element
         break
@@ -1346,7 +1346,7 @@ proc readSuccess*(bc: BufferContext; s: string; hasFd: bool): Request
         input.files = @[newWebFile(s, fd)]
         input.invalidate()
       else:
-        input.value = s
+        input.setValue(s)
       if bc.config.scripting != smFalse:
         let window = bc.window
         if input.inputType == itFile:
