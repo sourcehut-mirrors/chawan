@@ -14,7 +14,6 @@ import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/opt
-import utils/twtstr
 
 type
   EventPhase = enum
@@ -76,7 +75,7 @@ type
     inputType {.jsget.}: string
 
   EventTarget* = ref object of RootObj
-    eventListeners: seq[EventListener]
+    eventListener: EventListener
 
   EventListener = ref object
     # if callback is undefined, the listener has been removed
@@ -87,6 +86,7 @@ type
     once: bool
     internal: bool
     passive: bool
+    next: EventListener
     #TODO AbortSignal
 
 jsDestructor(Event)
@@ -104,6 +104,12 @@ var getParentImpl*: proc(ctx: JSContext; target: EventTarget; isLoad: bool):
   EventTarget {.nimcall, raises: [].}
 var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect,
   raises: [].}
+
+iterator eventListeners(this: EventTarget): EventListener =
+  var it = this.eventListener
+  while it != nil:
+    yield it
+    it = it.next
 
 proc finalize(target: EventTarget) {.jsfin.} =
   # Can't take rt as param here, because elements may be unbound in JS.
@@ -346,18 +352,18 @@ proc defaultPassiveValue(ctype: CAtom; eventTarget: EventTarget): bool =
   return ctype.toStaticAtom() in check and eventTarget.isDefaultPassiveImpl()
 
 proc findEventListener(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
-    callback: JSValueConst; capture: bool): int =
-  for i, it in eventTarget.eventListeners.mypairs:
+    callback: JSValueConst; capture: bool): EventListener =
+  for it in eventTarget.eventListeners:
     if not it.internal and it.ctype == ctype and
         JS_IsStrictEqual(ctx, it.callback, callback) and it.capture == capture:
-      return i
-  return -1
+      return it
+  nil
 
-proc findInternalEventListener(eventTarget: EventTarget; ctype: CAtom): int =
-  for i, it in eventTarget.eventListeners.mypairs:
-    if it.ctype == ctype and it.internal:
-      return i
-  return -1
+proc hasEventListener*(eventTarget: EventTarget; ctype: CAtom): bool =
+  for it in eventTarget.eventListeners:
+    if it.ctype == ctype:
+      return true
+  false
 
 # EventListener
 proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
@@ -391,24 +397,19 @@ proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
     passive.get
   else:
     defaultPassiveValue(ctype, target)
-  if ctx.findEventListener(target, ctype, callback, capture) == -1: # dedup
-    target.eventListeners.add(EventListener(
+  if ctx.findEventListener(target, ctype, callback, capture) == nil: # dedup
+    let listener = EventListener(
       ctype: ctype,
       capture: capture,
       once: once,
       internal: internal,
       passive: passive,
       rt: JS_GetRuntime(ctx),
-      callback: JS_DupValue(ctx, callback)
-    ))
+      callback: JS_DupValue(ctx, callback),
+      next: target.eventListener
+    )
+    target.eventListener = listener
   #TODO signals
-
-proc removeAnEventListener(eventTarget: EventTarget; ctx: JSContext; i: int) =
-  let listener = eventTarget.eventListeners[i]
-  let callback = listener.callback
-  listener.callback = JS_UNDEFINED
-  JS_FreeValue(ctx, callback)
-  eventTarget.eventListeners.delete(i)
 
 proc flatten(ctx: JSContext; options: JSValueConst): bool =
   result = false
@@ -439,9 +440,14 @@ proc flattenMore(ctx: JSContext; options: JSValueConst):
 
 proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: StaticAtom) =
-  let i = eventTarget.findInternalEventListener(ctype.toAtom())
-  if i != -1:
-    eventTarget.removeAnEventListener(ctx, i)
+  var prev: EventListener = nil
+  for it in eventTarget.eventListeners:
+    if it.ctype == ctype and it.internal:
+      if prev == nil:
+        eventTarget.eventListener = it.next
+      else:
+        prev.next = it.next
+    prev = it
 
 proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: StaticAtom; callback: JSValueConst) =
@@ -530,15 +536,19 @@ proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: CAtom; callback: JSValueConst; options: JSValueConst = JS_UNDEFINED)
     {.jsfunc.} =
   let capture = flatten(ctx, options)
-  let i = ctx.findEventListener(eventTarget, ctype, callback, capture)
-  if i != -1:
-    eventTarget.removeAnEventListener(ctx, i)
-
-proc hasEventListener*(eventTarget: EventTarget; ctype: CAtom): bool =
+  var prev: EventListener = nil
   for it in eventTarget.eventListeners:
-    if it.ctype == ctype:
-      return true
-  return false
+    if not it.internal and it.ctype == ctype and
+        JS_IsStrictEqual(ctx, it.callback, callback) and it.capture == capture:
+      let callback = it.callback
+      it.callback = JS_UNDEFINED
+      JS_FreeValue(ctx, callback)
+      if prev == nil:
+        eventTarget.eventListener = it.next
+      else:
+        prev.next = it.next
+      break
+    prev = it
 
 type
   DispatchItem = object
@@ -577,7 +587,8 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
   let ctx = dctx.ctx
   let event = dctx.event
   event.currentTarget = item.target
-  for el in item.els:
+  for i in countdown(item.els.high, 0):
+    let el = item.els[i]
     if JS_IsUndefined(el.callback):
       continue # removed, presumably by a previous handler
     if el.passive:
