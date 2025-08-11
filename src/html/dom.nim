@@ -2247,8 +2247,22 @@ func names(ctx: JSContext; map: NamedNodeMap): JSPropertyEnumList
     list.add($name)
   return list
 
-func length(characterData: CharacterData): uint32 {.jsfget.} =
-  return uint32(($characterData.data).utf16Len)
+# CharacterData
+
+func length(this: CharacterData): int {.jsfget.} =
+  return ($this.data).utf16Len
+
+func previousElementSibling(this: CharacterData): Element {.jsfget.} =
+  for it in this.precedingSiblings:
+    if it of Element:
+      return Element(it)
+  nil
+
+func nextElementSibling(this: CharacterData): Element {.jsfget.} =
+  for it in this.subsequentSiblings:
+    if it of Element:
+      return Element(it)
+  nil
 
 func tagName(element: Element): string {.jsfget.} =
   result = $element.prefix
