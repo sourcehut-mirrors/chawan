@@ -207,12 +207,19 @@ type
   DOMStringMap = ref object
     target: HTMLElement
 
+  # Nodes are organized as doubly linked lists, which normally have
+  # two unused pointers (prev of head, next of tail).  We exploit this
+  # property to elide two other pointers as follows:
+  # * The tail of the child linked list is stored as the prev pointer of
+  #   the first child.
+  # * The owner document is stored as the next pointer of the last
+  #   child.  (However, a Document has no owner document, so its
+  #   internalNext is always nil.)
   Node* = ref object of EventTarget
     parentNode* {.jsget.}: Node
-    nextSibling* {.jsget.}: Node
-    internalPrev: Node # either previousSibling or parentNode.lastChild
     firstChild* {.jsget.}: Node
-    internalDocument: Document # not nil
+    internalNext: Node # either nextSibling or ownerDocument
+    internalPrev: Node # either previousSibling or parentNode.lastChild
 
   Attr* = ref object of Node
     dataIdx: int
@@ -1182,12 +1189,12 @@ const ReflectTable0 = [
 ]
 
 func document*(node: Node): Document =
-  if node of Document:
+  let next = node.internalNext
+  if next == nil:
     return Document(node)
-  return node.internalDocument
-
-template document*(element: Element): Document =
-  element.internalDocument
+  if next.internalNext == nil:
+    return Document(next)
+  return Document(node.parentNode.firstChild.internalPrev.internalNext)
 
 func tagTypeNoNS(element: Element): TagType =
   return element.localName.toTagType()
@@ -1228,6 +1235,13 @@ func parentElement*(node: Node): Element {.jsfget.} =
     return Element(p)
   return nil
 
+func nextSibling*(node: Node): Node {.jsfget.} =
+  if node.internalNext == nil or node.internalNext.internalNext == nil:
+    # if next is nil, then node is a Document.
+    # if next.next is nil, then next is ownerDocument.
+    return nil
+  return node.internalNext
+
 func previousSibling*(node: Node): Node {.jsfget.} =
   if node.parentNode == nil or node == node.parentNode.firstChild:
     return nil
@@ -1235,9 +1249,12 @@ func previousSibling*(node: Node): Node {.jsfget.} =
 
 iterator childList*(node: Node): Node {.inline.} =
   var it {.cursor.} = node.firstChild
-  while it != nil:
-    yield it
-    it = it.nextSibling
+  if it != nil:
+    while true:
+      yield it
+      it = it.internalNext
+      if it.internalNext == nil:
+        break # it is ownerDocument
 
 iterator rchildList*(node: Node): Node {.inline.} =
   let first = node.firstChild
@@ -1248,6 +1265,25 @@ iterator rchildList*(node: Node): Node {.inline.} =
       if it == first:
         break
       it = it.internalPrev
+
+iterator precedingSiblings*(node: Node): Node {.inline.} =
+  let parent = node.parentNode
+  if parent != nil:
+    let first = parent.firstChild
+    if node != first:
+      var it = node.internalPrev
+      while true:
+        yield it
+        if it == first:
+          break
+        it = it.internalPrev
+
+iterator subsequentSiblings*(node: Node): Node {.inline.} =
+  var it = node.internalNext
+  if it != nil:
+    while true:
+      yield it
+      it = it.internalNext
 
 iterator elementList*(node: Node): Element {.inline.} =
   for child in node.childList:
@@ -1532,9 +1568,10 @@ proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
   of wwmAttributes:
     let element = Element(this)
     let map = NamedNodeMap(element: element)
+    let document = element.document
     for i, attr in element.attrs.mypairs:
       map.attrlist.add(Attr(
-        internalDocument: element.document,
+        internalNext: document,
         dataIdx: i,
         ownerElement: element
       ))
@@ -2089,7 +2126,7 @@ func jsOwnerElement(attr: Attr): Element {.jsfget: "ownerElement".} =
   return attr.ownerElement
 
 func ownerDocument(attr: Attr): Document {.jsfget.} =
-  return attr.ownerElement.document
+  return attr.ownerElement.ownerDocument
 
 func data(attr: Attr): lent AttrData =
   return attr.ownerElement.attrs[attr.dataIdx]
@@ -2120,7 +2157,7 @@ proc getAttr(map: NamedNodeMap; dataIdx: int): Attr =
   if i != -1:
     return map.attrlist[i]
   let attr = Attr(
-    internalDocument: map.element.document,
+    internalNext: map.element.document,
     dataIdx: dataIdx,
     ownerElement: map.element
   )
@@ -2568,19 +2605,15 @@ proc getElementsByClassName(element: Element; classNames: string):
   return element.getElementsByClassNameImpl(classNames)
 
 func previousElementSibling*(element: Element): Element {.jsfget.} =
-  var it {.cursor.} = element.previousSibling
-  while it != nil:
+  for it in element.precedingSiblings:
     if it of Element:
       return Element(it)
-    it = it.previousSibling
   nil
 
 func nextElementSibling*(element: Element): Element {.jsfget.} =
-  var it {.cursor.} = element.nextSibling
-  while it != nil:
+  for it in element.subsequentSiblings:
     if it of Element:
       return Element(it)
-    it = it.nextSibling
   nil
 
 func documentElement*(document: Document): Element {.jsfget.} =
@@ -3673,25 +3706,25 @@ func getSrc*(this: HTMLElement): tuple[src, contentType: string] =
   return ("", "")
 
 func newText*(document: Document; data: sink string): Text =
-  return Text(internalDocument: document, data: newRefString(data))
+  return Text(internalNext: document, data: newRefString(data))
 
 func newText(ctx: JSContext; data: sink string = ""): Text {.jsctor.} =
   let window = ctx.getGlobal()
   return window.document.newText(data)
 
 func newCDATASection(document: Document; data: string): CDATASection =
-  return CDATASection(internalDocument: document, data: newRefString(data))
+  return CDATASection(internalNext: document, data: newRefString(data))
 
 func newProcessingInstruction(document: Document; target: string;
     data: sink string): ProcessingInstruction =
   return ProcessingInstruction(
-    internalDocument: document,
+    internalNext: document,
     target: target,
     data: newRefString(data)
   )
 
 func newDocumentFragment(document: Document): DocumentFragment =
-  return DocumentFragment(internalDocument: document)
+  return DocumentFragment(internalNext: document)
 
 func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
   let window = ctx.getGlobal()
@@ -3699,7 +3732,7 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
 
 func newComment(document: Document; data: sink string): Comment =
   return Comment(
-    internalDocument: document,
+    internalNext: document,
     data: newRefString(data)
   )
 
@@ -3716,7 +3749,7 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
   of TAG_INPUT:
     HTMLInputElement()
   of TAG_A:
-    let anchor = HTMLAnchorElement(internalDocument: document)
+    let anchor = HTMLAnchorElement(internalNext: document)
     anchor.relList = anchor.newDOMTokenList(satRel)
     anchor
   of TAG_SELECT:
@@ -3742,11 +3775,11 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
   of TAG_STYLE:
     HTMLStyleElement()
   of TAG_LINK:
-    let link = HTMLLinkElement(internalDocument: document)
+    let link = HTMLLinkElement(internalNext: document)
     link.relList = link.newDOMTokenList(satRel)
     link
   of TAG_FORM:
-    let form = HTMLFormElement(internalDocument: document)
+    let form = HTMLFormElement(internalNext: document)
     form.relList = form.newDOMTokenList(satRel)
     form
   of TAG_TEMPLATE:
@@ -3788,7 +3821,7 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
   of TAG_AUDIO:
     HTMLAudioElement()
   of TAG_AREA:
-    let area = HTMLAreaElement(internalDocument: document)
+    let area = HTMLAreaElement(internalNext: document)
     area.relList = area.newDOMTokenList(satRel)
     area
   of TAG_TABLE:
@@ -3825,7 +3858,7 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
   element.localName = localName
   element.namespaceURI = namespaceURI
   element.prefix = prefix
-  element.internalDocument = document
+  element.internalNext = document
   element.classList = element.newDOMTokenList(satClassList)
   element.internalElIndex = -1
   return element
@@ -3857,7 +3890,7 @@ proc newXMLDocument(): XMLDocument =
 func newDocumentType*(document: Document;
     name, publicId, systemId: sink string): DocumentType =
   return DocumentType(
-    internalDocument: document,
+    internalNext: document,
     name: name,
     publicId: publicId,
     systemId: systemId
@@ -3931,7 +3964,7 @@ proc delAttr(ctx: JSContext; element: Element; i: int) =
       let attr = map.attrlist[j]
       let data = attr.data
       attr.ownerElement = AttrDummyElement(
-        internalDocument: attr.ownerElement.document,
+        internalNext: attr.ownerElement.document,
         internalElIndex: -1,
         attrs: @[data]
       )
@@ -4900,28 +4933,33 @@ proc jsId(element: Element; id: string) {.jsfset: "id".} =
 # Pass an index to avoid searching for the node in parent's child list.
 proc remove*(node: Node; suppressObservers: bool) =
   let parent = node.parentNode
-  assert parent != nil
+  let document = node.document
+  # document is only nil for Document nodes, but those cannot call
+  # remove().
+  assert parent != nil and document != nil
   #TODO live ranges
   #TODO NodeIterator
   let element = if node of Element: Element(node) else: nil
   let parentElement = node.parentElement
   let prev = node.internalPrev
-  let next = node.nextSibling
-  if next != nil:
+  let next = node.internalNext
+  if next != nil and next.internalNext != nil:
     next.internalPrev = prev
   else:
     parent.firstChild.internalPrev = prev
   if parent.firstChild == node:
-    parent.firstChild = next
+    if next != nil and next.internalNext != nil:
+      parent.firstChild = next
+    else:
+      parent.firstChild = nil
   else:
-    prev.nextSibling = next
+    prev.internalNext = next
   if parentElement != nil:
     parentElement.invalidate()
   node.internalPrev = nil
-  node.nextSibling = nil
+  node.internalNext = document
   node.parentNode = nil
-  if node.document != nil:
-    node.document.invalidateCollections()
+  document.invalidateCollections()
   if element != nil:
     if element.internalElIndex == 0 and parentElement != nil:
       parentElement.childElIndicesInvalid = true
@@ -4946,10 +4984,11 @@ proc adopt(document: Document; node: Node) =
   if oldDocument != document:
     #TODO shadow root
     for desc in node.descendantsIncl:
-      desc.internalDocument = document
+      if desc.nextSibling == nil:
+        desc.internalNext = document
     for i in countdown(oldDocument.liveCollections.high, 0):
       let id = oldDocument.liveCollections[i]
-      if cast[Collection](id).root.internalDocument == document:
+      if cast[Collection](id).root.document == document:
         node.document.liveCollections.add(id)
         oldDocument.liveCollections.del(i)
     #TODO custom elements
@@ -5130,17 +5169,17 @@ proc insertNode(parent, node, before: Node) =
     let first = parent.firstChild
     if first != nil:
       let last = first.internalPrev
-      last.nextSibling = node
+      last.internalNext = node
       node.internalPrev = last
     else:
       parent.firstChild = node
     parent.firstChild.internalPrev = node
   else:
-    node.nextSibling = before
+    node.internalNext = before
     let prev = before.internalPrev
     node.internalPrev = prev
     if prev.nextSibling != nil:
-      prev.nextSibling = node
+      prev.internalNext = node
     before.internalPrev = node
     if before == parent.firstChild:
       parent.firstChild = node
@@ -5997,7 +6036,7 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
     let data = attr.data
     let x = Attr(
       ownerElement: AttrDummyElement(
-        internalDocument: attr.ownerElement.document,
+        internalNext: attr.ownerElement.document,
         internalElIndex: -1,
         attrs: @[data]
       ),
