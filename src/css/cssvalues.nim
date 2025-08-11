@@ -348,11 +348,13 @@ type
     table*: Table[CAtom, CSSVariable]
 
   CSSValues* = ref object
+    pseudo*: PseudoElement
     bits*: array[CSSPropertyType.low..LastBitPropType, CSSValueBit]
     hwords*: array[FirstHWordPropType..LastHWordPropType, CSSValueHWord]
     words*: array[FirstWordPropType..LastWordPropType, CSSValueWord]
     objs*: array[FirstObjPropType..CSSPropertyType.high, CSSValue]
     vars*: CSSVariableMap
+    next*: CSSValues
 
   CSSOrigin* = enum
     coUserAgent

@@ -334,6 +334,11 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     result{"overflow-x"} = result{"overflow-x"}.bfcify()
     result{"overflow-y"} = result{"overflow-y"}.bfcify()
 
+proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
+    parent, element: Element; window: Window): CSSValues =
+  result = map[pseudo].applyDeclarations(parent, element, window)
+  result.pseudo = pseudo
+
 func hasValues(rules: RuleList): bool =
   for x in rules:
     for y in x.vals:
@@ -370,14 +375,15 @@ proc applyStyle*(element: Element) =
           map[peNone][coAuthor].vals[f].parseComputedValues(decl.p, decl.value,
             window.settings.attrsp[])
   element.applyStyleDependencies(depends)
-  element.computed =
-    map[peNone].applyDeclarations(element.parentElement, element, window)
-  assert element.computedMap.len == 0
+  var computed = map.applyDeclarations(peNone, element.parentElement, element,
+    window)
+  element.computed = computed
   for pseudo in peBefore .. PseudoElement.high:
     if map[pseudo].hasValues() or window.settings.scripting == smApp:
-      let computed = map[pseudo].applyDeclarations(element, nil, window)
+      let pcomputed = map.applyDeclarations(pseudo, element, nil, window)
       if pseudo == peMarker:
-        computed{"display"} = DisplayMarker
-      element.computedMap.add((pseudo, computed))
+        pcomputed{"display"} = DisplayMarker
+      computed.next = pcomputed
+      computed = pcomputed
 
 {.pop.} # raises: []

@@ -314,7 +314,6 @@ type
     cachedAttributes: NamedNodeMap
     cachedStyle*: CSSStyleDeclaration
     computed*: CSSValues
-    computedMap*: seq[tuple[pseudo: PseudoElement; computed: CSSValues]]
 
   AttrDummyElement = ref object of Element
 
@@ -3921,7 +3920,6 @@ proc delAttr(element: Element; i: int; keep = false) =
 proc invalidate*(element: Element) =
   let valid = element.computed != nil
   element.computed = nil
-  element.computedMap.setLen(0)
   if element.document != nil:
     element.document.invalid = true
   if valid:
@@ -4152,12 +4150,12 @@ proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
   return element.cachedStyle
 
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues =
-  if pseudo == peNone:
-    return element.computed
-  for it in element.computedMap:
-    if it.pseudo == pseudo:
-      return it.computed
-  return nil
+  var computed = element.computed
+  while computed != nil:
+    if computed.pseudo == pseudo:
+      return computed
+    computed = computed.next
+  nil
 
 proc getComputedStyle0*(window: Window; element: Element;
     pseudoElt: Option[string]): CSSStyleDeclaration =
