@@ -6,6 +6,7 @@ import std/tables
 import config/conftypes
 import css/cssparser
 import css/mediaquery
+import html/canvas
 import html/catom
 import html/chadombuilder
 import html/dom
@@ -491,6 +492,7 @@ proc addScripting*(window: Window) =
   ctx.addConsoleModule()
   ctx.addNavigatorModule()
   ctx.addDOMModule(eventTargetCID)
+  ctx.addCanvasModule()
   ctx.addURLModule()
   ctx.addHTMLModule()
   ctx.addIntlModule()
