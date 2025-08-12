@@ -78,7 +78,7 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   let document = newDocument()
   document.charset = charset
   document.setActiveParser(wrapper)
-  document.contentType = "text/html"
+  document.contentType = satTextHtml
   let oldDocument = builder.document
   document.url = oldDocument.url
   let window = oldDocument.window
@@ -90,9 +90,8 @@ proc restart*(wrapper: HTML5ParserWrapper; charset: Charset) =
   wrapper.parser = initHTML5Parser(builder, wrapper.opts)
 
 proc setQuirksModeImpl(builder: ChaDOMBuilder; quirksMode: QuirksMode) =
-  if not builder.document.parserCannotChangeModeFlag:
-    builder.document.mode = quirksMode
-    builder.document.applyQuirksSheet()
+  builder.document.mode = quirksMode
+  builder.document.applyQuirksSheet()
 
 proc setEncodingImpl(builder: ChaDOMBuilder; encoding: string):
     SetEncodingResult =
@@ -227,7 +226,7 @@ proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
     charset = DefaultCharset): ChaDOMBuilder =
   let document = newDocument()
   document.charset = charset
-  document.contentType = "text/html"
+  document.contentType = satTextHtml
   document.url = url
   if window != nil:
     document.window = window

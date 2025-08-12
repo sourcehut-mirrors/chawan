@@ -237,48 +237,40 @@ type
     i*: int
 
   Document* = ref object of Node
+    activeParserWasAborted: bool
+    invalid*: bool # whether the document must be rendered again
     charset*: Charset
+    mode*: QuirksMode
+    readyState* {.jsget.}: DocumentReadyState
+    contentType* {.jsget.}: StaticAtom
     window* {.jsget: "defaultView".}: Window
     url*: URL # not nil
-    mode*: QuirksMode
     currentScript {.jsget.}: HTMLScriptElement
-    isxml*: bool
     implementation {.jsget.}: DOMImplementation
     origin: Origin
-    readyState* {.jsget.}: DocumentReadyState
     # document.write
     ignoreDestructiveWrites: int
     throwOnDynamicMarkupInsertion*: int
-    activeParserWasAborted: bool
     writeBuffers*: seq[DocumentWriteBuffer]
     styleDependencies: array[DependencyType, DependencyMap]
-
     scriptsToExecSoon: HTMLScriptElement
     scriptsToExecInOrder: HTMLScriptElement
     scriptsToExecInOrderTail: HTMLScriptElement
     scriptsToExecOnLoad*: HTMLScriptElement
     scriptsToExecOnLoadTail*: HTMLScriptElement
     parserBlockingScript*: HTMLScriptElement
-
-    parserCannotChangeModeFlag*: bool
     internalFocus: Element
     internalTarget: Element
-    contentType* {.jsget.}: string
     renderBlockingElements: seq[Element]
-
-    invalid*: bool # whether the document must be rendered again
-
-    cachedAll: HTMLAllCollection
-
     uaSheets*: seq[CSSStylesheet]
     userSheet*: CSSStylesheet
     authorSheets*: seq[CSSStylesheet]
     cachedForms: HTMLCollection
     cachedLinks: HTMLCollection
     parser*: RootRef
-
     internalCookie: string
     liveCollections: seq[pointer]
+    cachedAll: HTMLAllCollection
 
   XMLDocument = ref object of Document
 
@@ -1899,7 +1891,6 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
     x.charset = document.charset
     x.contentType = document.contentType
     x.url = document.url
-    x.isxml = document.isxml
     x.mode = document.mode
     Node(x)
   elif node of DocumentType:
@@ -2356,7 +2347,7 @@ func children(ctx: JSContext; parentNode: DocumentFragment): JSValue
 proc newXMLDocument(): XMLDocument =
   let document = XMLDocument(
     url: newURL("about:blank").get,
-    contentType: "application/xml"
+    contentType: satApplicationXml
   )
   document.implementation = DOMImplementation(document: document)
   return document
@@ -2364,7 +2355,7 @@ proc newXMLDocument(): XMLDocument =
 proc newDocument*(): Document {.jsctor.} =
   let document = Document(
     url: newURL("about:blank").get,
-    contentType: "application/xml"
+    contentType: satApplicationXml
   )
   document.implementation = DOMImplementation(document: document)
   return document
@@ -2377,6 +2368,9 @@ func newDocumentType*(document: Document;
     publicId: publicId,
     systemId: systemId
   )
+
+func isxml(document: Document): bool =
+  return document.contentType != satTextHtml
 
 proc adopt(document: Document; node: Node) =
   let oldDocument = node.document
@@ -2690,15 +2684,15 @@ proc createDocument(ctx: JSContext; implementation: var DOMImplementation;
     document.append(element)
   document.origin = implementation.document.origin
   case namespace.toStaticAtom()
-  of satNamespaceHTML: document.contentType = "application/xml+html"
-  of satNamespaceSVG: document.contentType = "image/svg+xml"
+  of satNamespaceHTML: document.contentType = satApplicationXmlHtml
+  of satNamespaceSVG: document.contentType = satImageSvgXml
   else: discard
   return ok(document)
 
 proc createHTMLDocument(implementation: var DOMImplementation;
     title = none(string)): Document {.jsfunc.} =
   let doc = newDocument()
-  doc.contentType = "text/html"
+  doc.contentType = satTextHtml
   doc.append(doc.newDocumentType("html", "", ""))
   let html = doc.newHTMLElement(TAG_HTML)
   doc.append(html)
@@ -4169,7 +4163,7 @@ proc renderBlocking(element: Element): bool =
 
 proc blockRendering(element: Element) =
   let document = element.document
-  if document.contentType == "text/html" and document.body == nil:
+  if document.contentType == satTextHtml and document.body == nil:
     element.document.renderBlockingElements.add(element)
 
 proc invalidate*(element: Element) =
