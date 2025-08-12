@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/options
 import std/sets
 import std/tables
 

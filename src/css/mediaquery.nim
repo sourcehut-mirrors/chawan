@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-import std/options
-
 import config/conftypes
 import css/cssparser
 import css/cssvalues

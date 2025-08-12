@@ -14,7 +14,6 @@
 
 {.push raises: [].}
 
-import std/options
 import std/tables
 import std/times
 

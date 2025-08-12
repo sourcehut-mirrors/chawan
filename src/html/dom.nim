@@ -2,7 +2,6 @@
 
 import std/algorithm
 import std/hashes
-import std/math
 import std/options
 import std/posix
 import std/sets
