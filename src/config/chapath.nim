@@ -86,7 +86,7 @@ proc stateDollar(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
     let c = ctx.p[ctx.i]
     return ctx.stateCurlyStart(c)
   else:
-    return err("Unrecognized dollar substitution $" & c)
+    return err("unrecognized dollar substitution $" & c)
   ok()
 
 proc flushIdent(ctx: var UnquoteContext) =
@@ -144,7 +144,7 @@ proc stateCurly(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
       ctx.state = usCurlyExpand
     return ok()
   of '1'..'9':
-    return err("Parameter substitution is not supported")
+    return err("parameter substitution is not supported")
   of BareChars - {'1'..'9'}:
     ctx.identStr &= c
     return ok()

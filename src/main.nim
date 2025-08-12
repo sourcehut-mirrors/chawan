@@ -206,7 +206,7 @@ proc initConfig(ctx: ParamParseContext; config: Config;
   let ps = openConfig(config.dir, ctx.configPath, warnings)
   if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
-    return err("Failed to open config file " & ctx.configPath.get)
+    return err("failed to open config file " & ctx.configPath.get)
   if twtstr.setEnv("CHA_DIR", config.dir).isErr:
     die("failed to set env vars")
   ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")

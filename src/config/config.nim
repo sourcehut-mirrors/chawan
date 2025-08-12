@@ -779,7 +779,7 @@ proc parseConfig*(config: Config; dir: string; buf: openArray[char];
   let toml = parseToml(buf, dir / name, laxnames, config.arraySeen)
   if toml.isOk:
     return config.parseConfig(dir, toml.get, warnings, jsctx)
-  return err("Fatal error: failed to parse config\n" & toml.error)
+  return err("fatal error: failed to parse config\n" & toml.error)
 
 template getNormalAction*(config: Config; s: string): string =
   config.page.getOrDefault(s)
