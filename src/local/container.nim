@@ -520,9 +520,7 @@ func getHoverText*(container: Container): string =
   ""
 
 proc isHoverURL*(container: Container; url: URL): bool =
-  let x = parseURL(container.hoverText[htLink])
-  if x.isSome:
-    let hoverUrl = x.get
+  if hoverUrl := parseURL(container.hoverText[htLink]):
     return url.authOrigin.isSameOrigin(hoverUrl.authOrigin)
   return false
 

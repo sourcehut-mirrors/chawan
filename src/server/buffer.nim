@@ -337,7 +337,7 @@ proc isClickable(element: Element): bool =
   if element.hasEventListener(satClick.toAtom()):
     return true
   if element of HTMLAnchorElement:
-    return HTMLAnchorElement(element).reinitURL().isSome
+    return HTMLAnchorElement(element).reinitURL().isOk
   if element.isButton() and FormAssociatedElement(element).form == nil:
     return false
   return element.tagType in ClickableElements
@@ -365,9 +365,8 @@ proc getImageHover(bc: BufferContext; element: Element): string =
     let image = HTMLImageElement(element)
     let src = image.attr(satSrc)
     if src != "":
-      let url = image.document.parseURL(src)
-      if url.isSome:
-        return $url.get
+      if url := image.document.parseURL(src):
+        return $url
   ""
 
 proc getClickHover(bc: BufferContext; element: Element): string =
@@ -375,23 +374,20 @@ proc getClickHover(bc: BufferContext; element: Element): string =
   if clickable != nil:
     case clickable.tagType
     of TAG_A:
-      let url = HTMLAnchorElement(clickable).reinitURL()
-      if url.isSome:
-        return $url.get
+      if url := HTMLAnchorElement(clickable).reinitURL():
+        return $url
     of TAG_OPTION:
       return "<option>"
     of TAG_VIDEO, TAG_AUDIO:
       let (src, _) = HTMLElement(clickable).getSrc()
       if src != "":
-        let url = clickable.document.parseURL(src)
-        if url.isSome:
-          return $url.get
+        if url := clickable.document.parseURL(src):
+          return $url
     of TAG_FRAME, TAG_IFRAME:
       let src = clickable.attr(satSrc)
       if src != "":
-        let url = clickable.document.parseURL(src)
-        if url.isSome:
-          return $url.get
+        if url := clickable.document.parseURL(src):
+          return $url
     elif clickable of FormAssociatedElement:
       #TODO this is inefficient and also quite stupid
       let fae = FormAssociatedElement(clickable)
@@ -1288,10 +1284,9 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement; submitter: Element):
   else:
     $form.document.url
   #TODO encoding-parse
-  let url = submitter.document.parseURL(action)
-  if url.isNone:
+  let parsedAction = submitter.document.parseURL0(action)
+  if parsedAction == nil:
     return nil
-  let parsedAction = url.get
   let enctype = submitter.enctype()
   let formMethod = submitter.formmethod()
   let httpMethod = case formMethod
@@ -1422,9 +1417,7 @@ proc evalJSURL(bc: BufferContext; url: URL): Opt[string] =
 
 proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
   bc.restoreFocus()
-  let url = anchor.reinitURL()
-  if url.isSome:
-    var url = url.get
+  if url := anchor.reinitURL():
     if url.schemeType == stJavascript:
       if bc.config.scripting == smFalse:
         return ClickResult()
@@ -1432,10 +1425,10 @@ proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
       bc.maybeReshape()
       if s.isErr:
         return ClickResult()
-      let urls = newURL("data:text/html," & s.get)
-      if urls.isErr:
+      let urls = newURL("data:text/html," & s.get).get(nil)
+      if urls == nil:
         return ClickResult()
-      url = urls.get
+      url = urls
     return ClickResult(open: newRequest(url, hmGet))
   return ClickResult()
 
@@ -1477,18 +1470,16 @@ proc click(bc: BufferContext; audio: HTMLAudioElement): ClickResult =
   bc.restoreFocus()
   let (src, contentType) = audio.getSrc()
   if src != "":
-    let url = audio.document.parseURL(src)
-    if url.isSome:
-      return ClickResult(open: newRequest(url.get), contentType: contentType)
+    if url := audio.document.parseURL(src):
+      return ClickResult(open: newRequest(url), contentType: contentType)
   return ClickResult()
 
 proc click(bc: BufferContext; video: HTMLVideoElement): ClickResult =
   bc.restoreFocus()
   let (src, contentType) = video.getSrc()
   if src != "":
-    let url = video.document.parseURL(src)
-    if url.isSome:
-      return ClickResult(open: newRequest(url.get), contentType: contentType)
+    if url := video.document.parseURL(src):
+      return ClickResult(open: newRequest(url), contentType: contentType)
   return ClickResult()
 
 # Used for frame, ifframe
@@ -1496,9 +1487,8 @@ proc clickFrame(bc: BufferContext; frame: Element): ClickResult =
   bc.restoreFocus()
   let src = frame.attr(satSrc)
   if src != "":
-    let url = frame.document.parseURL(src)
-    if url.isSome:
-      return ClickResult(open: newRequest(url.get))
+    if url := frame.document.parseURL(src):
+      return ClickResult(open: newRequest(url))
   return ClickResult()
 
 const InputTypePrompt = [
@@ -1671,9 +1661,8 @@ proc getLinks*(bc: BufferContext): seq[string] {.proxy.} =
   if bc.document != nil:
     for element in bc.window.displayedElements(TAG_A):
       if element.attrb(satHref):
-        let x = HTMLAnchorElement(element).reinitURL()
-        if x.isSome:
-          result.add($x.get)
+        if url := HTMLAnchorElement(element).reinitURL():
+          result.add($url)
         else:
           result.add(element.attr(satHref))
 

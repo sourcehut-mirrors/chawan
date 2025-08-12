@@ -46,7 +46,7 @@ type
     stWss = "wss"
 
   URLSearchParams* = ref object
-    list*: seq[tuple[name, value: string]]
+    list: seq[tuple[name, value: string]]
     url: URL
 
   URL* = ref object
@@ -75,10 +75,9 @@ jsDestructor(URL)
 jsDestructor(URLSearchParams)
 
 # Forward declarations
-proc parseURL*(input: string; base = none(URL); override = none(URLState)):
-    Option[URL]
+proc parseURL0*(input: string; base = none(URL)): URL
 func serialize*(url: URL; excludeHash = false; excludePassword = false):
-    string
+  string
 func serializeip(ipv4: uint32): string
 func serializeip(ipv6: array[8, uint16]): string
 proc host*(url: URL): string
@@ -95,7 +94,7 @@ proc sread*(r: var PacketReader; url: var URL) =
   if s == "":
     url = nil
   else:
-    url = parseURL(s).get(nil)
+    url = parseURL0(s)
 
 # -1 if not special
 # 0 if file
@@ -197,28 +196,28 @@ func parseIpv4Number(s: string): uint32 =
     return 0
   return parseUInt32Base(input, allowSign = false, R).get(uint32.high)
 
-func parseIpv4(input: string): Option[uint32] =
+func parseIpv4(input: string): Opt[uint32] =
   var numbers: seq[uint32] = @[]
   var prevEmpty = false
   var i = 0
   for part in input.split('.'):
     if i > 4 or prevEmpty:
-      return none(uint32)
+      return err()
     inc i
     if part == "":
       prevEmpty = true
       continue
     let num = parseIpv4Number(part)
     if num notin 0u32..255u32:
-      return none(uint32)
+      return err()
     numbers.add(num)
   if numbers[^1] >= 1u32 shl ((5 - numbers.len) * 8):
-    return none(uint32)
+    return err()
   var ipv4 = uint32(numbers[^1])
   for i in 0 ..< numbers.high:
     let n = uint32(numbers[i])
     ipv4 += n * (1u32 shl ((3 - i) * 8))
-  return some(ipv4)
+  ok(ipv4)
 
 const ForbiddenHostChars = {
   char(0x00), '\t', '\n', '\r', ' ', '#', '/', ':', '<', '>', '?', '@', '[',
@@ -502,11 +501,10 @@ proc parseHost*(input: string; special: bool; hostType: var HostType): string =
   if asciiDomain == "" or ForbiddenDomainChars in asciiDomain:
     return ""
   if asciiDomain.endsInNumber():
-    let ipv4 = parseIpv4(asciiDomain)
-    if ipv4.isNone:
-      return ""
-    hostType = htIpv4
-    return ipv4.get.serializeip()
+    if ipv4 := parseIpv4(asciiDomain):
+      hostType = htIpv4
+      return ipv4.serializeip()
+    return ""
   hostType = htDomain
   move(asciiDomain)
 
@@ -964,14 +962,13 @@ proc parseQuery(input: openArray[char]; pointer: var int; url: URL;
     return usFragment
   return usDone
 
-proc basicParseURL0(input: openArray[char]; base: Option[URL]; url: URL;
-    stateOverride: Option[URLState]): Option[URL] =
+proc parseURLImpl(input: openArray[char]; base: Option[URL]; url: URL;
+    state: URLState; override: bool): URLState =
   var pointer = 0
   # The URL is special if this is >= 0.
   # A special port of "0" means "no port" (i.e. file scheme).
   let input = input.deleteChars({'\n', '\t'})
-  let override = stateOverride.isSome
-  var state = stateOverride.get(usSchemeStart)
+  var state = state
   if state == usSchemeStart:
     state = input.parseSchemeStart(pointer, base, url, override)
   if state == usAuthority:
@@ -992,39 +989,37 @@ proc basicParseURL0(input: openArray[char]; base: Option[URL]; url: URL;
     while pointer < input.len:
       url.hash.percentEncode(input[pointer], FragmentPercentEncodeSet)
       inc pointer
-  if state == usFail:
-    return none(URL)
-  return some(url)
+  return state
 
 #TODO encoding
-proc basicParseURL(input: string; base = none(URL); url: URL = nil;
-    stateOverride = none(URLState)): Option[URL] =
-  if url != nil:
-    return input.basicParseURL0(base, url, stateOverride)
+proc parseURL0*(input: string; base = none(URL)): URL =
   let url = URL()
   const NoStrip = AllChars - C0Controls - {' '}
   let starti0 = input.find(NoStrip)
   let starti = if starti0 == -1: 0 else: starti0
   let endi0 = input.rfind(NoStrip)
   let endi = if endi0 == -1: input.high else: endi0
-  return input.toOpenArray(starti, endi).basicParseURL0(base, url,
-    stateOverride)
-
-proc parseURL*(input: string; base = none(URL); override = none(URLState)):
-    Option[URL] =
-  let url = basicParseURL(input, base, stateOverride = override)
-  if url.isNone:
-    return url
-  if url.get.schemeType == stBlob:
-    #TODO blob urls
-    discard
+  if input.toOpenArray(starti, endi).parseURLImpl(base, url, usSchemeStart,
+      override = false) == usFail:
+    return nil
   return url
 
+proc parseURL1(input: string; url: URL; state: URLState) =
+  discard input.parseURLImpl(base = none(URL), url, state, override = true)
+
+proc parseURL*(input: string; base = none(URL)): Opt[URL] =
+  let url = parseURL0(input, base)
+  if url == nil:
+    return err()
+  if url.schemeType == stBlob:
+    #TODO blob urls
+    discard
+  ok(url)
+
 proc parseJSURL*(s: string; base = none(URL)): JSResult[URL] =
-  let url = parseURL(s, base)
-  if url.isNone:
-    return errTypeError(s & " is not a valid URL")
-  return ok(url.get)
+  if url := parseURL(s, base):
+    return ok(url)
+  return errTypeError(s & " is not a valid URL")
 
 func serializeip(ipv4: uint32): string =
   result = ""
@@ -1119,9 +1114,9 @@ proc newURL*(url: URL): URL =
   url.cloneInto(result)
 
 proc setHref(ctx: JSContext; url: URL; s: string) {.jsfset: "href".} =
-  let purl = basicParseURL(s)
-  if purl.isSome:
-    purl.get.cloneInto(url)
+  let purl = parseURL0(s)
+  if purl != nil:
+    purl.cloneInto(url)
   else:
     JS_ThrowTypeError(ctx, "%s is not a valid URL", s)
 
@@ -1232,10 +1227,10 @@ proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
 
 proc parseAPIURL(s: string; base: Option[string]): JSResult[URL] =
   let baseURL = if base.isSome:
-    let x = parseURL(base.get)
-    if x.isNone:
+    let x = parseURL0(base.get)
+    if x == nil:
       return errTypeError(base.get & " is not a valid URL")
-    x
+    some(x)
   else:
     none(URL)
   return parseJSURL(s, baseURL)
@@ -1249,7 +1244,7 @@ proc origin*(url: URL): Origin =
   of stBlob:
     #TODO
     let pathURL = parseURL(url.pathname)
-    if pathURL.isNone:
+    if pathURL.isErr:
       return Origin(t: otOpaque, s: $url)
     return pathURL.get.origin
   of stFtp, stHttp, stHttps, stWs, stWss:
@@ -1291,8 +1286,7 @@ proc protocol*(url: URL): string {.jsfget.} =
   return url.scheme & ':'
 
 proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
-  discard basicParseURL(s & ':', url = url,
-    stateOverride = some(usSchemeStart))
+  parseURL1(s & ':', url, usSchemeStart)
 
 func scheme*(url: URL): lent string =
   return url.scheme
@@ -1314,11 +1308,11 @@ proc host*(url: URL): string {.jsfget.} =
 
 proc setHost*(url: URL; s: string) {.jsfset: "host".} =
   if not url.opaquePath:
-    discard basicParseURL(s, url = url, stateOverride = some(usHost))
+    parseURL1(s, url, usHost)
 
 proc setHostname*(url: URL; s: string) {.jsfset: "hostname".} =
   if not url.opaquePath:
-    discard basicParseURL(s, url = url, stateOverride = some(usHostname))
+    parseURL1(s, url, usHostname)
 
 proc port*(url: URL): string {.jsfget.} =
   if url.port.isSome:
@@ -1330,12 +1324,12 @@ proc setPort*(url: URL; s: string) {.jsfset: "port".} =
     if s == "":
       url.port = none(uint16)
     else:
-      discard basicParseURL(s, url = url, stateOverride = some(usPort))
+      parseURL1(s, url, usPort)
 
 proc setPathname*(url: URL; s: string) {.jsfset: "pathname".} =
   if not url.opaquePath:
     url.pathname = ""
-    discard basicParseURL(s, url = url, stateOverride = some(usPathStart))
+    parseURL1(s, url, usPathStart)
 
 proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
   if s == "":
@@ -1345,7 +1339,7 @@ proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
     return
   let s = if s[0] == '?': s.substr(1) else: s
   url.search = "?"
-  discard basicParseURL(s, url = url, stateOverride = some(usQuery))
+  parseURL1(s, url, usQuery)
   if url.searchParamsInternal != nil:
     url.searchParamsInternal.list = parseFromURLEncoded(s)
 
@@ -1355,7 +1349,7 @@ proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
   else:
     let s = if s[0] == '#': s.substr(1) else: s
     url.hash = "#"
-    discard basicParseURL(s, url = url, stateOverride = some(usFragment))
+    parseURL1(s, url, usFragment)
 
 proc jsParse(url: string; base = none(string)): URL {.jsstfunc: "URL.parse".} =
   return parseAPIURL(url, base).get(nil)

@@ -402,14 +402,14 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   let moduleName = $moduleName
   let x = if moduleName.startsWith("/") or moduleName.startsWith("./") or
       moduleName.startsWith("../"):
-    parseURL(moduleName, parseURL("file://" & myposix.getcwd() & "/"))
+    parseURL0(moduleName, option(parseURL0("file://" & myposix.getcwd() & "/")))
   else:
-    parseURL(moduleName)
-  if x.isNone or x.get.schemeType != stFile:
+    parseURL0(moduleName)
+  if x == nil or x.schemeType != stFile:
     JS_ThrowTypeError(ctx, "invalid URL: %s", cstring(moduleName))
     return nil
   var source: string
-  if chafile.readFile(x.get.pathname, source).isOk:
+  if chafile.readFile(x.pathname, source).isOk:
     return ctx.finishLoadModule(source, moduleName)
   JS_ThrowTypeError(ctx, "failed to read file %s", cstring(moduleName))
   return nil
@@ -456,12 +456,12 @@ proc onReadCookieStream(response: Response) =
       headers.add(header)
       i += header.len + 1
     let cookieJar = pager.cookieJars.getOrDefault(jarId)
-    let url = parseURL(urls)
+    let url = parseURL0(urls)
     let persist = persists != "0"
-    if cookieJar == nil or url.isNone or persist and persists != "1":
+    if cookieJar == nil or url == nil or persist and persists != "1":
       pager.alert("Error: received wrong set-cookie notification")
       continue
-    cookieJar.setCookie(headers, url.get, persist)
+    cookieJar.setCookie(headers, url, persist)
   if i > 0:
     opaque.buffer.delete(0 ..< i)
 
@@ -1994,26 +1994,24 @@ proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
   let url = expandPath(url0)
   if url.len == 0:
     return
-  let firstparse = parseURL(url)
-  if firstparse.isSome:
+  if firstparse := parseURL(url):
     let prev = if pager.container != nil:
       some(pager.container.url)
     else:
       none(URL)
-    discard pager.gotoURL(newRequest(firstparse.get), prev, contentType, cs,
+    discard pager.gotoURL(newRequest(firstparse), prev, contentType, cs,
       history = history)
     return
   var urls: seq[URL] = @[]
   if pager.config.network.prependScheme != "" and url[0] != '/':
-    let pageurl = parseURL(pager.config.network.prependScheme & url)
-    if pageurl.isSome: # attempt to load remote page
-      urls.add(pageurl.get)
-  let cdir = parseURL("file://" & percentEncode(myposix.getcwd(),
-    LocalPathPercentEncodeSet) & DirSep)
+    if pageurl := parseURL(pager.config.network.prependScheme & url):
+      # attempt to load remote page
+      urls.add(pageurl)
+  let cdir = option(parseURL0("file://" & percentEncode(myposix.getcwd(),
+    LocalPathPercentEncodeSet) & DirSep))
   let localurl = percentEncode(url, LocalPathPercentEncodeSet)
-  let newurl = parseURL(localurl, cdir)
-  if newurl.isSome:
-    urls.add(newurl.get) # attempt to load local file
+  if newurl := parseURL(localurl, cdir):
+    urls.add(newurl) # attempt to load local file
   if urls.len == 0:
     pager.alert("Invalid URL " & url)
   else:

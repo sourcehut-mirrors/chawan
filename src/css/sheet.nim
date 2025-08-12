@@ -191,10 +191,10 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
       if ctx.skipBlanksCheckHas().isOk:
         let tok = ctx.consume()
         if urls := ctx.parseURL(tok):
-          if (let url = parseURL(urls, some(base)); url.isSome):
+          if url := parseURL(urls, some(base)):
             # check if there are really no media queries/layers/etc
             if ctx.skipBlanksCheckDone().isOk:
-              sheet.importList.add(url.get)
+              sheet.importList.add(url)
   of cartMedia:
     let query = parseMediaQueryList(atrule.prelude, sheet.settings.attrsp)
     if query.applies(sheet.settings):

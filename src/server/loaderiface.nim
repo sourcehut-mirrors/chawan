@@ -88,14 +88,13 @@ type
 proc getRedirect*(response: Response; request: Request): Request =
   if response.status in 301u16..303u16 or response.status in 307u16..308u16:
     let location = response.headers.getFirst("Location")
-    let url = parseURL(location, option(request.url))
-    if url.isSome:
+    if url := parseURL(location, option(request.url)):
       let status = response.status
       if status == 303 and request.httpMethod notin {hmGet, hmHead} or
           status == 301 or
           status == 302 and request.httpMethod == hmPost:
-        return newRequest(url.get, hmGet)
-      return newRequest(url.get, request.httpMethod, body = request.body)
+        return newRequest(url, hmGet)
+      return newRequest(url, request.httpMethod, body = request.body)
   return nil
 
 # Sometimes, we can return a value even after the loader crashed.

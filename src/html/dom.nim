@@ -585,7 +585,8 @@ proc applyStyleDependencies*(element: Element; depends: DependencyInfo)
 proc baseURL*(document: Document): URL
 func documentElement*(document: Document): Element
 proc invalidateCollections(document: Document)
-proc parseURL*(document: Document; s: string): Option[URL]
+proc parseURL0*(document: Document; s: string): URL
+proc parseURL*(document: Document; s: string): Opt[URL]
 proc reflectEvent(document: Document; target: EventTarget;
   name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
 
@@ -1139,9 +1140,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
   let href = link.attr(satHref)
   if href == "":
     return
-  let url = parseURL(href, window.document.url.some)
-  if url.isSome:
-    let url = url.get
+  if url := parseURL(href, window.document.url.some):
     let media = link.attr(satMedia)
     var applies = true
     if media != "":
@@ -1187,9 +1186,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
   let src = image.attr(satSrc)
   if src == "":
     return
-  let url = parseURL(src, window.document.url.some)
-  if url.isSome:
-    let url = url.get
+  if url := parseURL(src, window.document.url.some):
     if window.document.url.schemeType == stHttps and url.schemeType == stHttp:
       # mixed content :/
       #TODO maybe do this in loader?
@@ -1227,11 +1224,11 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           # it's the best way, so I added b) as a fallback measure.
           t = window.imageTypes.getOrDefault(ext, "x-unknown")
         let cacheId = window.loader.addCacheFile(response.outputId)
-        let url = newURL("img-codec+" & t & ":decode")
-        if url.isErr:
+        let url = newURL("img-codec+" & t & ":decode").get(nil)
+        if url == nil:
           return newResolvedPromise()
         let request = newRequest(
-          url.get,
+          url,
           httpMethod = hmPost,
           headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
           body = RequestBody(t: rbtOutput, outputId: response.outputId),
@@ -2505,10 +2502,10 @@ proc setLocation*(document: Document; s: string): Err[JSError]
     {.jsfset: "location".} =
   if document.location == nil:
     return errTypeError("document.location is not an object")
-  let url = document.parseURL(s)
-  if url.isNone:
+  let url = document.parseURL0(s)
+  if url == nil:
     return errDOMException("Invalid URL", "SyntaxError")
-  document.window.navigate(url.get)
+  document.window.navigate(url)
   return ok()
 
 func scriptingEnabled*(document: Document): bool =
@@ -2588,14 +2585,21 @@ proc baseURL*(document: Document): URL =
       href = base.attr(satHref)
   if href == "":
     return document.url
-  let url = parseURL(href, some(document.url))
-  if url.isNone:
+  let url = parseURL0(href, some(document.url))
+  if url == nil:
     return document.url
-  return url.get
+  return url
 
-proc parseURL*(document: Document; s: string): Option[URL] =
+proc parseURL0*(document: Document; s: string): URL =
   #TODO encodings
-  return parseURL(s, some(document.baseURL))
+  return parseURL0(s, some(document.baseURL))
+
+proc parseURL*(document: Document; s: string): Opt[URL] =
+  #TODO encodings
+  let url = document.parseURL0(s)
+  if url == nil:
+    return err()
+  ok(url)
 
 func title*(document: Document): string {.jsfget.} =
   if (let title = document.findFirst(TAG_TITLE); title != nil):
@@ -4711,12 +4715,12 @@ func crossOriginImpl(element: HTMLElement): CORSAttribute =
     return caAnonymous
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
-proc reinitURL*(element: Element): Option[URL] =
+proc reinitURL*(element: Element): Opt[URL] =
   if element.attrb(satHref):
-    let url = parseURL(element.attr(satHref), some(element.document.baseURL))
-    if url.isSome and url.get.schemeType != stBlob:
+    let url = element.document.parseURL(element.attr(satHref))
+    if url.isOk and url.get.schemeType != stBlob:
       return url
-  return none(URL)
+  return err()
 
 proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
@@ -4724,9 +4728,8 @@ proc hyperlinkGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
   if ctx.fromJS(this, element).isErr:
     return JS_EXCEPTION
   let sa = StaticAtom(magic)
-  let url = element.reinitURL()
-  if url.isSome:
-    let href = ctx.toJS(url.get)
+  if url := element.reinitURL():
+    let href = ctx.toJS(url)
     let res = JS_GetPropertyStr(ctx, href, cstring($sa))
     JS_FreeValue(ctx, href)
     return res
@@ -4746,8 +4749,7 @@ proc hyperlinkSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
       element.attr(satHref, s)
       return JS_DupValue(ctx, val)
     return JS_EXCEPTION
-  let url = element.reinitURL()
-  if url.isSome:
+  if url := element.reinitURL():
     let href = ctx.toJS(url)
     let res = JS_SetPropertyStr(ctx, href, cstring($sa), JS_DupValue(ctx, val))
     if res < 0:
@@ -4782,9 +4784,8 @@ proc getter(ctx: JSContext; this: HTMLAnchorElement; a: JSAtom;
   return ctx.hyperlinkGetProp(this, a, desc)
 
 proc toString(anchor: HTMLAnchorElement): string {.jsfunc.} =
-  let href = anchor.reinitURL()
-  if href.isSome:
-    return $href.get
+  if href := anchor.reinitURL():
+    return $href
   return ""
 
 proc setRelList(anchor: HTMLAnchorElement; s: string) {.jsfset: "relList".} =
@@ -4796,9 +4797,8 @@ proc getter(ctx: JSContext; this: HTMLAreaElement; a: JSAtom;
   return ctx.hyperlinkGetProp(this, a, desc)
 
 proc toString(area: HTMLAreaElement): string {.jsfunc.} =
-  let href = area.reinitURL()
-  if href.isSome:
-    return $href.get
+  if href := area.reinitURL():
+    return $href
   return ""
 
 proc setRelList(area: HTMLAreaElement; s: string) {.jsfset: "relList".} =
@@ -4807,9 +4807,8 @@ proc setRelList(area: HTMLAreaElement; s: string) {.jsfset: "relList".} =
 # <base>
 proc href(base: HTMLBaseElement): string {.jsfget.} =
   #TODO with fallback base url
-  let url = parseURL(base.attr(satHref))
-  if url.isSome:
-    return $url.get
+  if url := parseURL(base.attr(satHref)):
+    return $url
   return ""
 
 # <button>
@@ -5136,9 +5135,8 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
 # <q>, <blockquote>
 proc cite(this: HTMLQuoteElement): string {.jsfget.} =
   var s = this.attr(satCite)
-  let url = parseURL(s, some(this.document.url))
-  if url.isSome:
-    return $url.get
+  if url := parseURL(s, some(this.document.url)):
+    return $url
   move(s)
 
 proc `cite=`(this: HTMLQuoteElement; s: sink string) {.jsfset: "cite".} =
@@ -5656,9 +5654,9 @@ proc prepare*(element: HTMLScriptElement) =
   var response: Response = nil
   if element.attrb(satSrc):
     let src = element.attr(satSrc)
-    let url = element.document.parseURL(src)
+    let url = element.document.parseURL0(src)
     element.external = src != "" and element.ctype != stImportMap
-    if element.ctype == stImportMap or url.isNone:
+    if element.ctype == stImportMap or url == nil:
       window.fireEvent(satError, element, bubbles = false,
         cancelable = false, trusted = true)
       return
@@ -5668,9 +5666,9 @@ proc prepare*(element: HTMLScriptElement) =
     if element in element.document.renderBlockingElements:
       options.renderBlocking = true
     if element.ctype == stClassic:
-      response = element.fetchClassicScript(url.get, classicCORS, markAsReady)
+      response = element.fetchClassicScript(url, classicCORS, markAsReady)
     else: # stModule
-      element.fetchExternalModuleGraph(url.get, options, markAsReady)
+      element.fetchExternalModuleGraph(url, options, markAsReady)
   else:
     let baseURL = element.document.baseURL
     case element.ctype

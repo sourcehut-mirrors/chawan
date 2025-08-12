@@ -142,10 +142,10 @@ proc referrer(this: JSRequest): string {.jsfget.} =
   return this.request.headers.getFirst("Referer")
 
 proc getReferrer*(this: Request): URL =
-  return parseURL(this.headers.getFirst("Referer")).get(nil)
+  return parseURL0(this.headers.getFirst("Referer"))
 
 proc takeReferrer*(this: Request; policy: ReferrerPolicy): string =
-  let url = parseURL(this.headers.takeFirstRemoveAll("Referer")).get(nil)
+  let url = parseURL0(this.headers.takeFirstRemoveAll("Referer"))
   if url != nil:
     return url.getReferrer(this.url, policy)
   return ""

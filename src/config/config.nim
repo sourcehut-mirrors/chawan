@@ -598,10 +598,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
 proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
-  let y = parseURL(v.s)
-  if y.isNone:
+  let y = parseURL0(v.s)
+  if y == nil:
     return err(k & ": invalid URL " & v.s)
-  x = y.get
+  x = y
   ok()
 
 proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;

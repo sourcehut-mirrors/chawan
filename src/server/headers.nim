@@ -359,10 +359,9 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   var s2 = s.substr(i)
   if q and s2.len > 0 and s[^1] in {'"', '\''}:
     s2.setLen(s2.high)
-  let url = parseURL(s2, some(baseURL))
-  if url.isNone:
-    return CheckRefreshResult(n: -1)
-  return CheckRefreshResult(n: n, url: url.get)
+  if url := parseURL(s2, some(baseURL)):
+    return CheckRefreshResult(n: n, url: url)
+  return CheckRefreshResult(n: -1)
 
 proc addHeadersModule*(ctx: JSContext) =
   ctx.registerType(Headers)

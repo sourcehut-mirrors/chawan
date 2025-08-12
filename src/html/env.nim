@@ -408,13 +408,13 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   # at least we'd have to set currentModuleURL before every script
   # execution...
   let url = window.currentModuleURL
-  var x = none(URL)
+  var x = Opt[URL].err()
   let moduleName = $moduleName
   if url != nil and
       (moduleName.startsWith("/") or moduleName.startsWith("./") or
       moduleName.startsWith("../")):
     x = parseURL($moduleName, some(url))
-  if x.isNone or not x.get.origin.isSameOrigin(url.origin):
+  if x.isErr or not x.get.origin.isSameOrigin(url.origin):
     JS_ThrowTypeError(ctx, "Invalid URL: %s", cstring(moduleName))
     return nil
   let request = newRequest(x.get)
