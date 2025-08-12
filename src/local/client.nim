@@ -4,10 +4,10 @@ import std/tables
 
 import config/config
 import config/conftypes
-import html/canvas
 import html/catom
 import html/chadombuilder
 import html/dom
+import html/domcanvas
 import html/domexception
 import html/env
 import html/formdata

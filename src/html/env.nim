@@ -6,10 +6,10 @@ import std/tables
 import config/conftypes
 import css/cssparser
 import css/mediaquery
-import html/canvas
 import html/catom
 import html/chadombuilder
 import html/dom
+import html/domcanvas
 import html/domexception
 import html/event
 import html/formdata

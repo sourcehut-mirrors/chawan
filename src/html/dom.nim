@@ -18,8 +18,8 @@ import css/cssparser
 import css/cssvalues
 import css/mediaquery
 import css/sheet
-import html/canvas
 import html/catom
+import html/domcanvas
 import html/domexception
 import html/enums
 import html/event
