@@ -842,9 +842,9 @@ protocol.</td>
 ## Omnirule
 
 The omni-bar (by default opened with C-l) can be used to perform
-searches using omni-rules.  These are to be specified as sub-keys to table
-`[omnirule]`.  (The sub-key itself is ignored; you can use anything as
-long it doesn't conflict with other keys.)
+searches using omni-rules.  These are to be specified as sub-keys
+to table `[omnirule]`.  (The sub-key itself is ignored; you can use
+anything as long it doesn't conflict with other keys.)
 
 Examples:
 
@@ -856,6 +856,12 @@ Examples:
 match = '^ddg:'
 substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
 
+# To use the above rule, open the URL bar with C-k, clear it with
+# C-u, and type ddg:keyword.
+# Alternatively, you can also redefine C-k like:
+[page]
+'C-k' = '() => pager.load("ddg:")'
+
 # Search using Wikipedia, Firefox-style.
 # The [[omnirule]] syntax introduces an anonymous omnirule; it is
 # equivalent to the named one.
@@ -863,6 +869,17 @@ substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + en
 match = '^@wikipedia'
 substitute-url = '(x) => "https://en.wikipedia.org/wiki/Special:Search?search=" + encodeURIComponent(x.replace(/@wikipedia/, ""))'
 ```
+
+As noted above, the default config includes some built-in rules,
+selected according to the maintainer's preference and the minimum
+criterion that they must work without cookies and JavaScript.
+Currently, these are:
+
+* `ddg:` - DuckDuckGo Lite.
+* `go:` - Google Search.
+* `wk:` - English Wikipedia.
+* `wd:` - English Wikitionary.
+* `mo:` - Mojeek.
 
 Omnirule options:
 

@@ -132,10 +132,10 @@ x => "https://en.wiktionary.org/w/index.php?title=Special:Search&search=" +
 	encodeURIComponent(x.split(":").slice(1).join(":"))
 '''
 
-[omnirule.ms]
-match = '^ms:'
+[omnirule.mo]
+match = '^mo:'
 substitute-url = '''
-x => "https://marginalia-search.com/search?query=" +
+x => "https://mojeek.com/search?q=" +
 	encodeURIComponent(x.split(":").slice(1).join(":"));
 '''
 

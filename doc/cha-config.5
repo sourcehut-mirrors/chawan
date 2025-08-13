@@ -1036,6 +1036,12 @@ Examples:
 match = \(aq\(haddg:\(aq
 substitute\-url = \(aq(x) => \(dqhttps://lite.duckduckgo.com/lite/?kp=\-1&kd=\-1&q=\(dq + encodeURIComponent(x.split(\(dq:\(dq).slice(1).join(\(dq:\(dq))\(aq
 
+# To use the above rule, open the URL bar with C\-k, clear it with
+# C\-u, and type ddg:keyword.
+# Alternatively, you can also redefine C\-k like:
+[page]
+\(aqC\-k\(aq = \(aq() => pager.load(\(dqddg:\(dq)\(aq
+
 # Search using Wikipedia, Firefox\-style.
 # The [[omnirule]] syntax introduces an anonymous omnirule; it is
 # equivalent to the named one.
@@ -1043,6 +1049,21 @@ substitute\-url = \(aq(x) => \(dqhttps://lite.duckduckgo.com/lite/?kp=\-1&kd=\-1
 match = \(aq\(ha\(atwikipedia\(aq
 substitute\-url = \(aq(x) => \(dqhttps://en.wikipedia.org/wiki/Special:Search?search=\(dq + encodeURIComponent(x.replace(/\(atwikipedia/, \(dq\(dq))\(aq
 .EE
+.PP
+As noted above, the default config includes some built\-in rules,
+selected according to the maintainer\(cqs preference and the minimum
+criterion that they must work without cookies and JavaScript.
+Currently, these are:
+.IP \(bu 2
+\f[CR]ddg:\f[R] \- DuckDuckGo Lite.
+.IP \(bu 2
+\f[CR]go:\f[R] \- Google Search.
+.IP \(bu 2
+\f[CR]wk:\f[R] \- English Wikipedia.
+.IP \(bu 2
+\f[CR]wd:\f[R] \- English Wikitionary.
+.IP \(bu 2
+\f[CR]mo:\f[R] \- Mojeek.
 .PP
 Omnirule options:
 .PP
