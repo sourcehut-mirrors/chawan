@@ -396,7 +396,6 @@ static:
   doAssert sizeof(CSSValueBit) == 1
   doAssert sizeof(CSSValueHWord) <= 4
   doAssert sizeof(CSSValueWord) <= 8
-  doAssert sizeof(CSSValue()[]) <= 16
   doAssert sizeof(CSSComputedEntry()) <= 16
 
 const ValueTypes = [

@@ -1344,13 +1344,13 @@ template jsDestructor*[U](T: typedesc[ref U]) =
   static:
     jsDtors.incl($T)
   proc `=destroy`(obj: var U) =
-    nim_finalize_for_js(addr obj, getTypePtr(T))
+    nim_finalize_for_js(addr obj, getTypePtr(obj))
 
 template jsDestructor*(T: typedesc[object]) =
   static:
     jsDtors.incl($T)
   proc `=destroy`(obj: var T) =
-    nim_finalize_for_js(addr obj, getTypePtr(T))
+    nim_finalize_for_js(addr obj, getTypePtr(obj))
 
 proc bindConstructor(stmts: NimNode; info: var RegistryInfo): NimNode =
   if info.ctorFun != nil:

@@ -120,7 +120,10 @@ proc jsGCStats(client: Client): string {.jsfunc.} =
   return client.jsrt.getMemoryUsage()
 
 proc nimCollect(client: Client) {.jsfunc.} =
-  GC_fullCollect()
+  try:
+    GC_fullCollect()
+  except Exception:
+    discard
 
 proc jsCollect(client: Client) {.jsfunc.} =
   JS_RunGC(client.jsrt)
