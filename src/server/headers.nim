@@ -163,7 +163,7 @@ proc removeAll(this: Headers; name: string; n: int) =
       break
     m = n + 1
   if n != m:
-    let L = this.list.len - m + n
+    let L = this.list.len - m
     for n in n ..< L:
       this.list[n] = move(this.list[m])
       inc m
@@ -179,12 +179,15 @@ proc removeAll*(this: Headers; name: string) =
   this.removeAll(name, this.lowerBound(name))
 
 proc add(headers: Headers; name, value: string; n: int) =
+  var n = n
+  while n < headers.list.len and headers.contains(name, n):
+    inc n
   headers.list.insert((name, value), n)
 
 proc addIfNotFound*(headers: Headers; name, value: string) =
   let n = headers.lowerBound(name)
   if not headers.contains(name, n):
-    headers.add(name, value, n)
+    headers.list.insert((name, value), n)
 
 func get(this: Headers; name: string; n: int): string =
   var s = ""
@@ -227,7 +230,8 @@ proc append(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
 
 proc delete(this: Headers; name: string): JSResult[void] {.jsfunc.} =
   if not ?this.validate(name, "") or
-      not name.isNoCorsSafelistedName() and not name.equalsIgnoreCase("Range"):
+      this.guard == hgRequestNoCors and not name.isNoCorsSafelistedName() and
+      not name.equalsIgnoreCase("Range"):
     return ok()
   let n = this.lowerBound(name)
   if this.contains(name, n):

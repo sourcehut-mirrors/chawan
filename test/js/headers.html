@@ -5,8 +5,14 @@
 <script>
 const x = new Headers();
 x.append("hi", "world");
+x.append("test", "test")
+x.append("test", "a")
+x.append("test", "b")
+x.append("z", "g")
+x.delete("z")
 assertEquals(x.get("hi"), "world");
 assertEquals(x.get("Hi"), "world");
 assertEquals(x.get("hI"), "world");
+assertEquals(x.get("test"), "test, a, b");
 document.getElementById("x").textContent = "Success";
 </script>
