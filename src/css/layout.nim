@@ -162,17 +162,17 @@ func minClamp(x: LUnit; span: Span): LUnit =
   return max(min(x, span.send), span.start)
 
 # Note: padding must still be applied after this.
-proc applySize(box: BlockBox; sizes: ResolvedSizes;
-    maxChildSize: LUnit; space: AvailableSpace; dim: DimensionType) =
+proc applySize(box: BlockBox; bounds: Bounds; maxChildSize: LUnit;
+    space: AvailableSpace; dim: DimensionType) =
   # Make the box as small/large as the content's width or specified width.
   box.state.size[dim] = maxChildSize.applySizeConstraint(space[dim])
   # Then, clamp it to minWidth and maxWidth (if applicable).
-  box.state.size[dim] = box.state.size[dim].minClamp(sizes.bounds.a[dim])
+  box.state.size[dim] = box.state.size[dim].minClamp(bounds.a[dim])
 
 proc applySize(box: BlockBox; sizes: ResolvedSizes; maxChildSize: Size;
     space: AvailableSpace) =
   for dim in DimensionType:
-    box.applySize(sizes, maxChildSize[dim], space, dim)
+    box.applySize(sizes.bounds, maxChildSize[dim], space, dim)
 
 proc applyIntr(box: BlockBox; sizes: ResolvedSizes; intr: Size) =
   for dim in DimensionType:
@@ -395,8 +395,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       sizes.bounds.mi[dim].start = max(u, sizes.bounds.mi[dim].start)
     if computed{"flex-grow"} == 0:
       sizes.bounds.mi[dim].send = min(u, sizes.bounds.mi[dim].send)
-  elif sizes.bounds.a[dim].send < LUnit.high:
-    sizes.space[dim] = fitContent(sizes.bounds.a[dim].max())
+  elif space[dim].t == scStretch and sizes.bounds.a[dim].send < LUnit.high:
+    sizes.space[dim] = stretch(sizes.bounds.a[dim].max())
   else:
     # Ensure that space is indefinite in the first pass if no width has
     # been specified.
@@ -420,7 +420,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
         computed.getLength(MarginEndMap[odim]).auto:
       sizes.space[odim].t = scFitContent
   elif sizes.bounds.a[odim].send < LUnit.high:
-    sizes.space[odim] = fitContent(sizes.bounds.a[odim].max())
+    sizes.space[odim] = stretch(sizes.bounds.a[odim].max())
   return sizes
 
 proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
@@ -441,6 +441,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     if underflow >= 0:
       sizes.space.w = stretch(underflow)
     else:
+      sizes.space.w = stretch(0)
       sizes.margin[dtHorizontal].send += underflow
   if sizes.space.w.isDefinite() and sizes.maxWidth < sizes.space.w.u or
       sizes.maxWidth < LUnit.high and sizes.space.w.t == scMaxContent:
@@ -1462,12 +1463,6 @@ proc popPositioned(lctx: LayoutContext; size: Size) =
     var offset = it.offset
     offset.x += sizes.margin.left
     lctx.layoutRootBlock(child, offset, sizes)
-    if sizes.space.w.t == scFitContent and child.state.intr.w > size.w:
-      # In case the width is shrink-to-fit, and the available width is
-      # less than the minimum width, then the minimum width overrides
-      # the available width, and we must re-layout.
-      sizes.space.w = stretch(child.state.intr.w)
-      lctx.layoutRootBlock(child, offset, sizes)
     if not child.computed{"left"}.auto:
       child.state.offset.x = positioned.left + sizes.margin.left
     elif not child.computed{"right"}.auto:
@@ -1910,7 +1905,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       ))
   fstate.textAlign = oldTextAlign
 
-proc layoutFlow0(fstate: var FlowState; sizes: ResolvedSizes) =
+proc layoutFlow0(fstate: var FlowState) =
   fstate.lbstate = fstate.initLineBoxState()
   for child in fstate.box.children:
     if child of InlineBox:
@@ -1996,7 +1991,10 @@ proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
       # We have just established a new BFC. Resolve the margins immediately.
       bctx.marginTarget = nil
   bctx.exclusions.setLen(fstate.oldExclusionsLen)
-  box.applySize(sizes, fstate.maxChildWidth + fstate.totalFloatWidth,
+  var bounds = sizes.bounds
+  bounds.a[dtHorizontal].start = max(bounds.a[dtHorizontal].start,
+    fstate.intr.w)
+  box.applySize(bounds, fstate.maxChildWidth + fstate.totalFloatWidth,
     sizes.space, dtHorizontal)
   # Save prev bps & margin target; these are assumed to remain
   # identical.
@@ -2018,12 +2016,12 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       (sizes.padding.top != 0 or
       sizes.space.h.isDefinite() and sizes.space.h.u != 0):
     bctx.flushMargins(box.state.offset.y)
-  fstate.layoutFlow0(sizes)
+  fstate.layoutFlow0()
   if fstate.space.w.t == scFitContent:
     # shrink-to-fit size; layout again.
     let oldIntr = fstate.intr
     fstate.initReLayout(bctx, box, sizes)
-    fstate.layoutFlow0(sizes)
+    fstate.layoutFlow0()
     # Restore old intrinsic sizes, as the new ones are a function of the
     # current input and therefore wrong.
     # (This is especially important with max-content, otherwise tables
@@ -2769,6 +2767,10 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
   let dim = fctx.dim
   var childSizes = lctx.resolveFlexItemSizes(sizes.space, dim, child.computed)
   let flexBasis = child.computed{"flex-basis"}
+  let childMinBounds = childSizes.bounds.a[dim]
+  let skipBounds = childSizes.space[dim].t == scMaxContent
+  if skipBounds:
+    childSizes.bounds.a[dim] = DefaultSpan
   lctx.layoutFlexItem(child, childSizes)
   if not flexBasis.auto and sizes.space[dim].isDefinite:
     # we can't skip this pass; it is needed to calculate the minimum
@@ -2783,6 +2785,8 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
       # something more usable.
       childSizes.space[dim] = stretch(minu)
     lctx.layoutFlexItem(child, childSizes)
+  if skipBounds:
+    childSizes.bounds.a[dim] = childMinBounds
   if child.computed{"position"} in PositionAbsoluteFixed:
     # Absolutely positioned flex children do not participate in flex layout.
     lctx.queueAbsolute(child, offset(x = 0, y = 0))
