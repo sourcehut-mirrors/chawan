@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/os
 import std/posix
 import std/tables
