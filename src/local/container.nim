@@ -1702,7 +1702,7 @@ proc saveSource*(container: Container) {.jsfunc.} =
     return
   container.triggerEvent(ContainerEvent(
     t: cetOpen,
-    request: newRequest(newURL("cache:" & $container.cacheId).get),
+    request: newRequest("cache:" & $container.cacheId),
     save: true,
     url: container.url
   ))

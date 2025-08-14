@@ -1111,7 +1111,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     of rbtCache:
       if ostream != nil:
         let handle = ctx.newInputHandle(ostream, client,
-          newURL("cache:/dev/null").get, credentials = false, suspended = false)
+          parseURL0("cache:/dev/null"), credentials = false, suspended = false)
         handle.stream = istream2
         ostream.setBlocking(false)
         ctx.loadStreamRegular(handle, cachedHandle)
@@ -1409,9 +1409,9 @@ proc loadResource(ctx: var LoaderContext; client: ClientHandle;
     if ctx.config.w3mCGICompat and request.url.schemeType == stFile:
       let path = request.url.pathname.percentDecode()
       if ctx.canRewriteForCGICompat(path):
-        let newURL = newURL("cgi-bin:" & path & request.url.search)
-        if newURL.isOk:
-          request.url = newURL.get
+        let url = parseURL0("cgi-bin:" & path & request.url.search)
+        if url != nil:
+          request.url = url
           inc tries
           redo = true
           continue

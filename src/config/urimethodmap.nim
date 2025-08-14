@@ -38,7 +38,7 @@ proc findAndRewrite*(this: URIMethodMap; url: var URL): URIMethodMapResult =
   let s = this.map.getOrDefault(url.protocol)
   if s != "":
     let surl = s.rewriteURL($url)
-    if x := newURL(surl):
+    if x := parseURL(surl):
       url = x
       return ummrSuccess
     return ummrWrongURL

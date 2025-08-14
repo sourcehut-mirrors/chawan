@@ -1225,7 +1225,7 @@ proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
       param.value = value
       break
 
-proc parseAPIURL(s: string; base: Option[string]): JSResult[URL] =
+proc newURL*(s: string; base = none(string)): JSResult[URL] {.jsctor.} =
   let baseURL = if base.isSome:
     let x = parseURL0(base.get)
     if x == nil:
@@ -1234,10 +1234,6 @@ proc parseAPIURL(s: string; base: Option[string]): JSResult[URL] =
   else:
     none(URL)
   return parseJSURL(s, baseURL)
-
-proc newURL*(s: string; base: Option[string] = none(string)):
-    JSResult[URL] {.jsctor.} =
-  return parseAPIURL(s, base)
 
 proc origin*(url: URL): Origin =
   case url.schemeType
@@ -1352,10 +1348,10 @@ proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
     parseURL1(s, url, usFragment)
 
 proc jsParse(url: string; base = none(string)): URL {.jsstfunc: "URL.parse".} =
-  return parseAPIURL(url, base).get(nil)
+  return newURL(url, base).get(nil)
 
 proc canParse(url: string; base = none(string)): bool {.jsstfunc: "URL".} =
-  return parseAPIURL(url, base).isOk
+  return newURL(url, base).isOk
 
 proc addURLModule*(ctx: JSContext) =
   ctx.registerType(URL)

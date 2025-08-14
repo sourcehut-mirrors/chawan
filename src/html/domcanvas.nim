@@ -16,7 +16,6 @@ import types/canvastypes
 import types/color
 import types/opt
 import types/path
-import types/url
 import utils/strwidth
 import utils/twtstr
 
@@ -86,7 +85,7 @@ proc create2DContext*(loader: FileLoader; target: EventTarget;
   let cacheId = loader.addCacheFile(ctlres.outputId)
   bitmap.cacheId = cacheId
   let request = newRequest(
-    newURL("img-codec+x-cha-canvas:decode").get,
+    "img-codec+x-cha-canvas:decode",
     httpMethod = hmPost,
     headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
     body = RequestBody(t: rbtOutput, outputId: ctlres.outputId)

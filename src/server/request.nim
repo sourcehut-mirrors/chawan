@@ -153,6 +153,7 @@ proc takeReferrer*(this: Request; policy: ReferrerPolicy): string =
 func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;
     credentialsMode = cmSameOrigin): Request =
+  assert url != nil
   if referrer != nil:
     headers["Referer"] = $referrer
   return Request(
@@ -163,6 +164,12 @@ func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     tocache: tocache,
     credentialsMode: credentialsMode
   )
+
+func newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
+    body = RequestBody(); referrer: URL = nil; tocache = false;
+    credentialsMode = cmSameOrigin): Request =
+  return newRequest(parseURL0(s), httpMethod, headers, body, referrer, tocache,
+    credentialsMode)
 
 func createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     cors: CORSAttribute; fallbackFlag = false): JSRequest =

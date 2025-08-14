@@ -481,7 +481,7 @@ proc initLoader(pager: Pager) =
     pager.pollData.register(fd, POLLIN)
   pager.loader.unregisterFun = proc(fd: int) =
     pager.pollData.unregister(fd)
-  let request = newRequest(newURL("about:cookie-stream").get)
+  let request = newRequest("about:cookie-stream")
   loader.fetch(request).then(proc(res: JSResult[Response]) =
     if res.isErr:
       pager.alert("failed to open cookie stream")
@@ -1110,7 +1110,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     return
   let imageMode = pager.term.imageMode
   pager.loader.fetch(newRequest(
-    newURL("img-codec+" & bmp.contentType.after('/') & ":decode").get,
+    "img-codec+" & bmp.contentType.after('/') & ":decode",
     httpMethod = hmPost,
     body = RequestBody(t: rbtCache, cacheId: bmp.cacheId),
     tocache = true
@@ -1134,7 +1134,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       "Cha-Image-Target-Dimensions": $image.width & 'x' & $image.height
     })
     let p = pager.loader.fetch(newRequest(
-      newURL("cgi-bin:resize").get,
+      "cgi-bin:resize",
       httpMethod = hmPost,
       headers = headers,
       body = RequestBody(t: rbtCache, cacheId: cacheId),
@@ -1161,13 +1161,13 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     var url: URL = nil
     case imageMode
     of imSixel:
-      url = newURL("img-codec+x-sixel:encode").get
+      url = parseURL0("img-codec+x-sixel:encode")
       headers.add("Cha-Image-Sixel-Halfdump", "1")
       headers.add("Cha-Image-Sixel-Palette", $pager.term.sixelRegisterNum)
       headers.add("Cha-Image-Offset", $offx & 'x' & $erry)
       headers.add("Cha-Image-Crop-Width", $dispw)
     of imKitty:
-      url = newURL("img-codec+png:encode").get
+      url = parseURL0("img-codec+png:encode")
     of imNone: assert false
     let request = newRequest(
       url,
@@ -1416,11 +1416,10 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
 
 proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     Container =
-  let url = newURL("cache:" & $container.cacheId).get
   return pager.newContainer(
     container.config,
     container.loaderConfig,
-    newRequest(url),
+    newRequest("cache:" & $container.cacheId),
     contentType = contentType,
     charsetStack = container.charsetStack,
     url = container.url
@@ -2047,7 +2046,7 @@ proc readPipe0(pager: Pager; contentType: string; cs: Charset;
 
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
     title: string) =
-  let url = newURL("stream:-").get
+  let url = parseURL0("stream:-")
   pager.loader.passFd(url.pathname, ps.fd)
   ps.sclose()
   let container = pager.readPipe0(contentType, cs, url, title,
@@ -2057,7 +2056,7 @@ proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
     inc pager.numload
 
 proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
-  let url = newURL("stream:history").get
+  let url = parseURL0("stream:history")
   let ps = pager.loader.addPipe(url.pathname)
   if ps == nil:
     return nil
@@ -2080,7 +2079,7 @@ proc hideConsole(pager: Pager) =
     pager.setContainer(pager.consoleWrapper.prev)
 
 proc clearConsole(pager: Pager) =
-  let url = newURL("stream:console").get
+  let url = parseURL0("stream:console")
   let ps = pager.loader.addPipe(url.pathname)
   if ps != nil:
     ps.setCloseOnExec()
@@ -2099,7 +2098,7 @@ proc clearConsole(pager: Pager) =
 
 proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
   if interactive and pager.config.start.consoleBuffer:
-    let url = newURL("stream:console").get
+    let url = parseURL0("stream:console")
     let ps = pager.loader.addPipe(url.pathname)
     if ps != nil:
       ps.setCloseOnExec()
@@ -2187,7 +2186,7 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     data.stream.sclose()
     pager.lineData = nil
     if pager.config.external.showDownloadPanel:
-      let request = newRequest(parseURL0("about:downloads"))
+      let request = newRequest("about:downloads")
       let downloads = pager.downloads
       if downloads != nil:
         pager.setContainer(downloads)
@@ -2606,7 +2605,7 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
     if not ishtml and mfAnsioutput in entry.flags:
       pins = pager.ansiDecode(url, ishtml, pins)
     twtstr.unsetEnv("MAILCAP_URL")
-    let url = parseURL("stream:" & $pid).get
+    let url = parseURL0("stream:" & $pid)
     pager.loader.passFd(url.pathname, pins.fd)
     pins.sclose()
     let response = pager.loader.doRequest(newRequest(url))

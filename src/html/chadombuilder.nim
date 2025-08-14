@@ -241,7 +241,7 @@ proc newChaDOMBuilder(url: URL; window: Window; confidence: CharsetConfidence;
 
 # https://html.spec.whatwg.org/multipage/parsing.html#parsing-html-fragments
 proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
-  let url = parseURL("about:blank").get
+  let url = parseURL0("about:blank")
   let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
   let document = builder.document
   document.mode = element.document.mode
@@ -370,7 +370,7 @@ proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
     let url = if window.document != nil:
       window.document.url
     else:
-      newURL("about:blank").get
+      parseURL0("about:blank")
     let builder = newChaDOMBuilder(url, window, ccIrrelevant)
     var parser = initHTML5Parser(builder, HTML5ParserOpts[Node, CAtom]())
     let res = parser.parseChunk(str)

@@ -1230,7 +1230,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
           # it's the best way, so I added b) as a fallback measure.
           t = window.imageTypes.getOrDefault(ext, "x-unknown")
         let cacheId = window.loader.addCacheFile(response.outputId)
-        let url = newURL("img-codec+" & t & ":decode").get(nil)
+        let url = parseURL0("img-codec+" & t & ":decode")
         if url == nil:
           return newResolvedPromise()
         let request = newRequest(
@@ -1319,7 +1319,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
     return
   ps.sclose()
   let request = newRequest(
-    newURL("img-codec+svg+xml:decode").get,
+    "img-codec+svg+xml:decode",
     httpMethod = hmPost,
     headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
     body = RequestBody(t: rbtOutput, outputId: svgres.outputId)
@@ -2393,7 +2393,7 @@ func children(ctx: JSContext; parentNode: DocumentFragment): JSValue
 # Document
 proc newXMLDocument(): XMLDocument =
   let document = XMLDocument(
-    url: newURL("about:blank").get,
+    url: parseURL0("about:blank"),
     contentType: satApplicationXml
   )
   document.implementation = DOMImplementation(document: document)
@@ -2401,7 +2401,7 @@ proc newXMLDocument(): XMLDocument =
 
 proc newDocument*(): Document {.jsctor.} =
   let document = Document(
-    url: newURL("about:blank").get,
+    url: parseURL0("about:blank"),
     contentType: satApplicationXml
   )
   document.implementation = DOMImplementation(document: document)
@@ -3328,7 +3328,7 @@ proc url(location: Location): URL =
   let document = location.document
   if document != nil:
     return document.url
-  return newURL("about:blank").get
+  return parseURL0("about:blank")
 
 # Note: we do not implement security checks (as documents are in separate
 # windows anyway).
@@ -4876,10 +4876,9 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
   let contentType = contentType.toLowerAscii()
   if not contentType.startsWith("image/") or this.bitmap.cacheId == 0:
     return
-  let url0 = newURL("img-codec+" & contentType.after('/') & ":encode")
-  if url0.isErr:
+  let url = parseURL0("img-codec+" & contentType.after('/') & ":encode")
+  if url == nil:
     return
-  let url = url0.get
   let headers = newHeaders(hgRequest, {
     "Cha-Image-Dimensions": $this.bitmap.width & 'x' & $this.bitmap.height
   })
@@ -4891,7 +4890,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
   let callback = JS_DupValue(ctx, callback)
   let window = this.document.window
   window.corsFetch(newRequest(
-    newURL("img-codec+x-cha-canvas:decode").get,
+    "img-codec+x-cha-canvas:decode",
     httpMethod = hmPost,
     body = RequestBody(t: rbtCache, cacheId: this.bitmap.cacheId)
   )).then(proc(res: JSResult[Response]): FetchPromise =
@@ -5464,7 +5463,7 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
     url,
     rdScript,
     options,
-    parseURL("about:client").get,
+    parseURL0("about:client"),
     isTopLevel = true,
     onComplete = proc(element: HTMLScriptElement; res: ScriptResult) =
       if res.t == srtNull:

@@ -883,7 +883,7 @@ proc loadImages(bc: BufferContext): EmptyPromise =
 
 proc rewind(bc: BufferContext; data: InputData; offset: int;
     unregister = true): bool =
-  let url = newURL("cache:" & $bc.cacheId & "?" & $offset).get
+  let url = parseURL0("cache:" & $bc.cacheId & "?" & $offset)
   let response = bc.loader.doRequest(newRequest(url))
   if response.body == nil:
     return false
@@ -1425,7 +1425,7 @@ proc click(bc: BufferContext; anchor: HTMLAnchorElement): ClickResult =
       bc.maybeReshape()
       if s.isErr:
         return ClickResult()
-      let urls = newURL("data:text/html," & s.get).get(nil)
+      let urls = parseURL0("data:text/html," & s.get)
       if urls == nil:
         return ClickResult()
       url = urls

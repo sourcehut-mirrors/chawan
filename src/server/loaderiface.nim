@@ -517,7 +517,7 @@ proc doPipeRequest*(loader: FileLoader; id: string):
   let ps = loader.addPipe(id)
   if ps == nil:
     return (nil, nil)
-  let request = newRequest(newURL("stream:" & id).get)
+  let request = newRequest("stream:" & id)
   let response = loader.doRequest(request)
   if response.res != 0:
     ps.sclose()
