@@ -116,7 +116,7 @@ proc getTemplateContentImpl(builder: ChaDOMBuilder; handle: Node): Node =
   return HTMLTemplateElement(handle).content
 
 proc getParentNodeImpl(builder: ChaDOMBuilder; handle: Node): Option[Node] =
-  return option(handle.parentNode)
+  return option(Node(handle.parentNode))
 
 proc getLocalNameImpl(builder: ChaDOMBuilder; handle: Node): CAtom =
   return Element(handle).localName
@@ -176,6 +176,8 @@ proc removeImpl(builder: ChaDOMBuilder; child: Node) =
     child.remove(suppressObservers = true)
 
 proc moveChildrenImpl(builder: ChaDOMBuilder; fromNode, toNode: Node) =
+  let fromNode = ParentNode(fromNode)
+  let toNode = ParentNode(toNode)
   let toMove = fromNode.getChildList()
   for node in toMove:
     node.remove(suppressObservers = true)

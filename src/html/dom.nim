@@ -213,11 +213,15 @@ type
   # * The owner document is stored as the next pointer of the last
   #   child.  (However, a Document has no owner document, so its
   #   internalNext is always nil.)
+  # Additionally, we separate out the firstChild property into a subtype
+  # (ParentNode) so that it doesn't take up space in e.g. Text nodes.
   Node* = ref object of EventTarget
-    parentNode* {.jsget.}: Node
-    firstChild* {.jsget.}: Node
+    parentNode*: ParentNode
     internalNext: Node # either nextSibling or ownerDocument
     internalPrev: Node # either previousSibling or parentNode.lastChild
+
+  ParentNode* = ref object of Node
+    firstChild*: Node
 
   Attr* = ref object of Node
     dataIdx: int
@@ -236,7 +240,7 @@ type
     data*: string
     i*: int
 
-  Document* = ref object of Node
+  Document* = ref object of ParentNode
     activeParserWasAborted: bool
     invalid*: bool # whether the document must be rendered again
     charset*: Charset
@@ -286,7 +290,7 @@ type
   ProcessingInstruction = ref object of CharacterData
     target {.jsget.}: string
 
-  DocumentFragment* = ref object of Node
+  DocumentFragment* = ref object of ParentNode
     host*: Element
 
   DocumentType* = ref object of Node
@@ -301,7 +305,7 @@ type
     namespace*: CAtom
     value*: string
 
-  Element* = ref object of Node
+  Element* = ref object of ParentNode
     namespaceURI* {.jsget.}: CAtom
     prefix {.jsget.}: CAtom
     internalHover: bool
@@ -582,13 +586,19 @@ proc reflectEvent(document: Document; target: EventTarget;
   name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
 
 func document*(node: Node): Document
-proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
 func parentElement*(node: Node): Element
-proc remove*(node: Node)
-proc replace*(parent, child, node: Node): Err[DOMException]
-proc replaceAll(parent: Node; s: sink string)
 func serializeFragment(res: var string; node: Node)
 func serializeFragmentInner(res: var string; child: Node; parentType: TagType)
+proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
+proc remove*(node: Node)
+proc replace*(parent, child, node: Node): Err[DOMException]
+
+func countChildren(node: ParentNode; nodeType: type): int
+func hasChild(node: ParentNode; nodeType: type): bool
+func hasChildExcept(node: ParentNode; nodeType: type; ex: Node): bool
+proc insert*(parent: ParentNode; node, before: Node; suppressObservers = false)
+proc replaceAll(parent: ParentNode; node: Node)
+proc replaceAll(parent: ParentNode; s: sink string)
 
 func containsIgnoreCase(tokenList: DOMTokenList; a: StaticAtom): bool
 
@@ -788,7 +798,7 @@ const ReflectTable0 = [
 ]
 
 # Iterators
-iterator childList*(node: Node): Node {.inline.} =
+iterator childList*(node: ParentNode): Node {.inline.} =
   var it {.cursor.} = node.firstChild
   if it != nil:
     while true:
@@ -797,7 +807,7 @@ iterator childList*(node: Node): Node {.inline.} =
       if it.internalNext == nil:
         break # it is ownerDocument
 
-iterator rchildList*(node: Node): Node {.inline.} =
+iterator rchildList*(node: ParentNode): Node {.inline.} =
   let first = node.firstChild
   if first != nil:
     var it {.cursor.} = first.internalPrev
@@ -826,12 +836,12 @@ iterator subsequentSiblings*(node: Node): Node {.inline.} =
       yield it
       it = it.internalNext
 
-iterator elementList*(node: Node): Element {.inline.} =
+iterator elementList*(node: ParentNode): Element {.inline.} =
   for child in node.childList:
     if child of Element:
       yield Element(child)
 
-iterator relementList*(node: Node): Element {.inline.} =
+iterator relementList*(node: ParentNode): Element {.inline.} =
   for child in node.rchildList:
     if child of Element:
       yield Element(child)
@@ -860,40 +870,45 @@ iterator branchElems*(node: Node): Element {.inline.} =
     if node of Element:
       yield Element(node)
 
-iterator descendants*(node: Node): Node {.inline.} =
+iterator descendants*(node: ParentNode): Node {.inline.} =
   var stack: seq[Node] = @[]
   for child in node.rchildList:
     stack.add(child)
   while stack.len > 0:
     let node = stack.pop()
     yield node
-    for child in node.rchildList:
-      stack.add(child)
+    if node of ParentNode:
+      let node = cast[ParentNode](node)
+      for child in node.rchildList:
+        stack.add(child)
 
-iterator descendantsIncl(node: Node): Node {.inline.} =
-  var stack = @[node]
+iterator descendantsIncl(node: ParentNode): Node {.inline.} =
+  var stack = @[Node(node)]
   while stack.len > 0:
     let node = stack.pop()
     yield node
-    for child in node.rchildList:
-      stack.add(child)
+    if node of ParentNode:
+      let node = cast[ParentNode](node)
+      for child in node.rchildList:
+        stack.add(child)
 
-iterator elementDescendants*(node: Node): Element {.inline.} =
+iterator elementDescendants*(node: ParentNode): Element {.inline.} =
   for child in node.descendants:
     if child of Element:
       yield Element(child)
 
-iterator elementDescendantsIncl(node: Node): Element {.inline.} =
+iterator elementDescendantsIncl(node: ParentNode): Element {.inline.} =
   for child in node.descendantsIncl:
     if child of Element:
       yield Element(child)
 
-iterator elementDescendants(node: Node; tag: TagType): Element {.inline.} =
+iterator elementDescendants(node: ParentNode; tag: TagType): Element
+    {.inline.} =
   for desc in node.elementDescendants:
     if desc.tagType == tag:
       yield desc
 
-iterator elementDescendants*(node: Node; tag: set[TagType]): Element
+iterator elementDescendants*(node: ParentNode; tag: set[TagType]): Element
     {.inline.} =
   for desc in node.elementDescendants:
     if desc.tagType in tag:
@@ -912,7 +927,7 @@ iterator displayedElements*(window: Window; tag: TagType): Element
       window.maybeRestyle(element)
       if element.computed{"display"} != DisplayNone:
         yield element
-        for child in node.rchildList:
+        for child in element.rchildList:
           stack.add(child)
 
 iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
@@ -934,7 +949,7 @@ iterator radiogroup*(input: HTMLInputElement): HTMLInputElement {.inline.} =
             input.inputType == itRadio:
           yield input
 
-iterator textNodes*(node: Node): Text {.inline.} =
+iterator textNodes*(node: ParentNode): Text {.inline.} =
   for node in node.childList:
     if node of Text:
       yield Text(node)
@@ -1404,14 +1419,6 @@ func previousSibling*(node: Node): Node {.jsfget.} =
     return nil
   return node.internalPrev
 
-proc getChildList*(node: Node): seq[Node] =
-  result = @[]
-  for child in node.childList:
-    result.add(child)
-
-func hasChildNodes(node: Node): bool {.jsfunc.} =
-  return node.firstChild != nil
-
 func ownerDocument(node: Node): Document {.jsfget.} =
   if node of Document:
     return nil
@@ -1464,16 +1471,14 @@ func nodeName(node: Node): string {.jsfget.} =
   assert node of Text
   return "#text"
 
-func isValidParent(node: Node): bool =
-  return node of Element or node of Document or node of DocumentFragment
-
 func isValidChild(node: Node): bool =
-  return node.isValidParent or node of DocumentType or node of CharacterData
+  return node of DocumentFragment or node of DocumentType or node of Element or
+    node of CharacterData
 
-func checkParentValidity(parent: Node): Err[DOMException] =
-  if parent.isValidParent():
-    return ok()
-  const msg = "Parent must be a document, a document fragment, or an element."
+func checkParentValidity(parent: Node): DOMResult[ParentNode] =
+  if parent of ParentNode:
+    return ok(cast[ParentNode](parent))
+  const msg = "Parent must be a document, a document fragment, or an element"
   return errDOMException(msg, "HierarchyRequestError")
 
 func rootNode(node: Node): Node =
@@ -1481,18 +1486,6 @@ func rootNode(node: Node): Node =
   while node.parentNode != nil:
     node = node.parentNode
   return node
-
-func countChildren(node: Node; nodeType: type): int =
-  result = 0
-  for child in node.childList:
-    if child of nodeType:
-      inc result
-
-func hasChild(node: Node; nodeType: type): bool =
-  for child in node.childList:
-    if child of nodeType:
-      return true
-  return false
 
 func isHostIncludingInclusiveAncestor(a, b: Node): bool =
   for parent in b.branch:
@@ -1521,14 +1514,6 @@ func hasPreviousSibling(node: Node; nodeType: type): bool =
     node = node.previousSibling
   return false
 
-func hasChildExcept(node: Node; nodeType: type; ex: Node): bool =
-  for child in node.childList:
-    if child == ex:
-      continue
-    if child of nodeType:
-      return true
-  return false
-
 func nodeValue(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   if node of CharacterData:
     return ctx.toJS(CharacterData(node).data)
@@ -1537,10 +1522,11 @@ func nodeValue(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   return JS_NULL
 
 func textContent*(node: Node): string =
+  result = ""
   if node of CharacterData:
     result = CharacterData(node).data
-  else:
-    result = ""
+  elif node of ParentNode:
+    let node = ParentNode(node)
     for child in node.childList:
       if not (child of Comment):
         result &= child.textContent
@@ -1549,12 +1535,6 @@ func textContent(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   if node of Document or node of DocumentType:
     return JS_NULL
   return ctx.toJS(node.textContent)
-
-func childTextContent*(node: Node): string =
-  result = ""
-  for child in node.childList:
-    if child of Text:
-      result &= Text(child).data
 
 func isConnected(node: Node): bool {.jsfget.} =
   return node.rootNode of Document #TODO shadow root
@@ -1570,20 +1550,27 @@ func contains*(a, b: Node): bool {.jsfunc.} =
         return true
   return false
 
-func lastChild*(node: Node): Node {.jsfget.} =
-  if node.firstChild != nil:
-    return node.firstChild.internalPrev
+func jsParentNode(node: Node): Node {.jsfget: "parentNode".} =
+  return node.parentNode
+
+func firstChild*(node: Node): Node {.jsfget.} =
+  if node of ParentNode:
+    return cast[ParentNode](node).firstChild
   nil
 
-func firstElementChild*(node: Node): Element =
-  for child in node.elementList:
-    return child
-  return nil
+func lastChild*(node: Node): Node {.jsfget.} =
+  let first = node.firstChild
+  if first != nil:
+    return first.internalPrev
+  nil
+
+func hasChildNodes(node: Node): bool {.jsfunc.} =
+  return node.firstChild != nil
 
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
-func preInsertionValidity(parent, node, before: Node): Err[DOMException] =
-  ?checkParentValidity(parent)
+func preInsertionValidity(parent, node, before: Node): DOMResult[ParentNode] =
+  let parent = ?parent.checkParentValidity()
   if node.isHostIncludingInclusiveAncestor(parent):
     return errDOMException("Parent must be an ancestor",
       "HierarchyRequestError")
@@ -1600,6 +1587,7 @@ func preInsertionValidity(parent, node, before: Node): Err[DOMException] =
       "HierarchyRequestError")
   if parent of Document:
     if node of DocumentFragment:
+      let node = DocumentFragment(node)
       let elems = node.countChildren(Element)
       if elems > 1 or node.hasChild(Text):
         return errDOMException("Document fragment has invalid children",
@@ -1624,49 +1612,7 @@ func preInsertionValidity(parent, node, before: Node): Err[DOMException] =
         const msg = "Cannot insert document type before an element node"
         return errDOMException(msg, "HierarchyRequestError")
     else: discard
-  return ok() # no exception reached
-
-proc insertNode(parent, node, before: Node) =
-  parent.document.adopt(node)
-  let element = if node of Element: Element(node) else: nil
-  if before == nil:
-    let first = parent.firstChild
-    if first != nil:
-      let last = first.internalPrev
-      last.internalNext = node
-      node.internalPrev = last
-    else:
-      parent.firstChild = node
-    parent.firstChild.internalPrev = node
-  else:
-    node.internalNext = before
-    let prev = before.internalPrev
-    node.internalPrev = prev
-    if prev.nextSibling != nil:
-      prev.internalNext = node
-    before.internalPrev = node
-    if before == parent.firstChild:
-      parent.firstChild = node
-  node.parentNode = parent
-  if element != nil:
-    if element.nextSibling != nil and parent of Element:
-      let parent = Element(parent)
-      parent.childElIndicesInvalid = true
-    elif (let prev = element.previousElementSibling; prev != nil):
-      element.internalElIndex = prev.internalElIndex + 1
-    else:
-      element.internalElIndex = 0
-  node.document.invalidateCollections()
-  if node.document != nil and (node of HTMLStyleElement or
-      node of HTMLLinkElement):
-    node.document.applyAuthorSheets()
-  var nodes: seq[Element] = @[]
-  for el in node.elementDescendantsIncl:
-    #TODO shadow root
-    if el.elementInsertionSteps():
-      nodes.add(el)
-  for el in nodes:
-    el.postConnectionSteps()
+  ok(parent)
 
 # Pass an index to avoid searching for the node in parent's child list.
 proc remove*(node: Node; suppressObservers: bool) =
@@ -1716,33 +1662,15 @@ proc remove*(node: Node) {.jsfunc.} =
     node.remove(suppressObservers = false)
 
 proc removeChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
-  if node.parentNode != parent:
+  if Node(node.parentNode) != parent:
     return errDOMException("Node is not a child of parent", "NotFoundError")
   node.remove()
   return ok(node)
 
-# WARNING ditto
-proc insert*(parent, node, before: Node; suppressObservers = false) =
-  let nodes = if node of DocumentFragment: node.getChildList() else: @[node]
-  let count = nodes.len
-  if count == 0:
-    return
-  if node of DocumentFragment:
-    for child in nodes:
-      child.remove(true)
-    #TODO tree mutation record
-  if before != nil:
-    #TODO live ranges
-    discard
-  if parent of Element:
-    Element(parent).invalidate()
-  for node in nodes:
-    insertNode(parent, node, before)
-
 proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
     {.jsfunc.} =
   let before = before.get(nil)
-  ?parent.preInsertionValidity(node, before)
+  let parent = ?parent.preInsertionValidity(node, before)
   let referenceChild = if before == node:
     node.nextSibling
   else:
@@ -1761,7 +1689,7 @@ proc append*(parent, node: Node) =
 # Note: the standard returns child if not err. We don't, it's just a
 # pointless copy.
 proc replace*(parent, child, node: Node): Err[DOMException] =
-  ?checkParentValidity(parent)
+  let parent = ?parent.checkParentValidity()
   if node.isHostIncludingInclusiveAncestor(parent):
     return errDOMException("Parent must be an ancestor",
       "HierarchyRequestError")
@@ -1778,6 +1706,7 @@ proc replace*(parent, child, node: Node): Err[DOMException] =
   let childPreviousSibling = child.previousSibling
   if parent of Document:
     if node of DocumentFragment:
+      let node = DocumentFragment(node)
       let elems = node.countChildren(Element)
       if elems > 1 or node.hasChild(Text):
         return errDOMException("Document fragment has invalid children",
@@ -1808,23 +1737,6 @@ proc replace*(parent, child, node: Node): Err[DOMException] =
   parent.insert(node, referenceChild, suppressObservers = true)
   #TODO tree mutation record
   return ok()
-
-proc replaceAll(parent, node: Node) =
-  let removedNodes = parent.getChildList()
-  for child in removedNodes:
-    child.remove(true)
-  assert parent != node
-  if node != nil:
-    if node of DocumentFragment:
-      let addedNodes = node.getChildList()
-      for child in addedNodes:
-        parent.append(child)
-    else:
-      parent.append(node)
-  #TODO tree mutation record
-
-proc replaceAll(parent: Node; s: sink string) =
-  parent.replaceAll(parent.document.newText(s))
 
 proc replaceChild(parent, node, child: Node): DOMResult[Node] {.jsfunc.} =
   ?parent.replace(child, node)
@@ -1904,7 +1816,8 @@ proc clone(node: Node; document = none(Document), deep = false): Node =
   else:
     assert false
     Node(nil)
-  if deep:
+  if deep and node of ParentNode:
+    let node = ParentNode(node)
     for child in node.childList:
       copy.append(child.clone(deep = true))
   return copy
@@ -1915,46 +1828,6 @@ proc cloneNode(node: Node; deep = false): Node {.jsfunc.} =
 
 func isSameNode(node, other: Node): bool {.jsfunc.} =
   return node == other
-
-proc getElementsByTagNameImpl(root: Node; tagName: string): HTMLCollection =
-  if tagName == "*":
-    return root.newHTMLCollection(isElement, islive = true, childonly = false)
-  let localName = tagName.toAtom()
-  let localNameLower = localName.toLowerAscii()
-  return root.newHTMLCollection(
-    func(node: Node): bool =
-      if node of Element:
-        let element = Element(node)
-        if element.namespaceURI == satNamespaceHTML:
-          return element.localName == localNameLower
-        return element.localName == localName
-      return false,
-    islive = true,
-    childonly = false
-  )
-
-proc getElementsByClassNameImpl(node: Node; classNames: string):
-    HTMLCollection =
-  var classAtoms = newSeq[CAtom]()
-  for class in classNames.split(AsciiWhitespace):
-    classAtoms.add(class.toAtom())
-  return node.newHTMLCollection(
-    func(node: Node): bool =
-      if node of Element:
-        let element = Element(node)
-        if element.document.mode == QUIRKS:
-          for class in classAtoms:
-            if not element.classList.toks.containsIgnoreCase(class):
-              return false
-        else:
-          for class in classAtoms:
-            if class notin element.classList.toks:
-              return false
-        return true
-      false,
-    islive = true,
-    childonly = false
-  )
 
 func previousElementSiblingImpl(this: Node): Element =
   for it in this.precedingSiblings:
@@ -1967,32 +1840,6 @@ func nextElementSiblingImpl(this: Node): Element =
     if it of Element:
       return Element(it)
   nil
-
-proc querySelectorImpl(node: Node; q: string): DOMResult[Element] =
-  let selectors = parseSelectors(q)
-  if selectors.len == 0:
-    return errDOMException("Invalid selector: " & q, "SyntaxError")
-  for element in node.elementDescendants:
-    if element.matchesImpl(selectors):
-      return ok(element)
-  return ok(nil)
-
-proc querySelectorAllImpl(node: Node; q: string): DOMResult[NodeList] =
-  let selectors = parseSelectors(q)
-  if selectors.len == 0:
-    return errDOMException("Invalid selector: " & q, "SyntaxError")
-  return ok(node.newNodeList(
-    match = func(node: Node): bool =
-      if node of Element:
-        {.cast(noSideEffect).}:
-          return Element(node).matchesImpl(selectors)
-      false,
-    islive = false,
-    childonly = false
-  ))
-
-proc parentNodeChildrenImpl(ctx: JSContext; parentNode: Node): JSValue =
-  return ctx.getWeakCollection(parentNode, wwmChildren)
 
 func childNodes(ctx: JSContext; node: Node): JSValue {.jsfget.} =
   return ctx.getWeakCollection(node, wwmChildNodes)
@@ -2011,17 +1858,24 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
     if node.name != other.name or node.publicId != other.publicId or
         node.systemId != other.systemId:
       return false
-  elif node of Element:
-    if not (other of Element):
-      return false
-    let node = Element(node)
-    let other = Element(other)
-    if node.namespaceURI != other.namespaceURI or node.prefix != other.prefix or
-        node.localName != other.localName or node.attrs.len != other.attrs.len:
-      return false
-    for i, attr in node.attrs.mypairs:
-      if not attr.equals(other.attrs[i]):
+  elif node of ParentNode:
+    let node = ParentNode(node)
+    if node of Element:
+      let node = Element(node)
+      if not (other of ParentNode):
         return false
+      let other = Element(other)
+      if node.namespaceURI != other.namespaceURI or node.prefix != other.prefix or
+          node.localName != other.localName or node.attrs.len != other.attrs.len:
+        return false
+      for i, attr in node.attrs.mypairs:
+        if not attr.equals(other.attrs[i]):
+          return false
+    var it {.cursor.} = other.firstChild
+    for child in node.childList:
+      if it == nil or not child.isEqualNode(it):
+        return false
+      it = it.nextSibling
   elif node of Attr:
     if not (other of Attr):
       return false
@@ -2039,11 +1893,6 @@ func isEqualNode(node, other: Node): bool {.jsfunc.} =
         node of Comment and not (other of Comment):
       return false
     return CharacterData(node).data == CharacterData(other).data
-  var it {.cursor.} = other.firstChild
-  for child in node.childList:
-    if it == nil or not child.isEqualNode(it):
-      return false
-    it = it.nextSibling
   true
 
 func serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
@@ -2096,45 +1945,18 @@ func serializeFragment(res: var string; node: Node) =
         # Pretend parentType is not noscript, so we do not append literally
         # in serializeFragmentInner.
         parentType = TAG_UNKNOWN
-  for child in node.childList:
-    res.serializeFragmentInner(child, parentType)
+  if node of ParentNode:
+    let node = ParentNode(node)
+    for child in node.childList:
+      res.serializeFragmentInner(child, parentType)
 
 func serializeFragment*(node: Node): string =
   result = ""
   result.serializeFragment(node)
 
-func lastElementChild*(node: Node): Element =
-  for child in node.relementList:
-    return child
-  return nil
-
-proc childElementCountImpl(node: Node): int =
-  let last = node.lastElementChild
-  if last == nil:
-    return 0
-  return last.elIndex + 1
-
 func findAncestor*(node: Node; tagType: TagType): Element =
   for element in node.ancestors:
     if element.tagType == tagType:
-      return element
-  return nil
-
-func findFirstChildOf(node: Node; tagType: TagType): Element =
-  for element in node.elementList:
-    if element.tagType == tagType:
-      return element
-  return nil
-
-func findLastChildOf(node: Node; tagType: TagType): Element =
-  for element in node.relementList:
-    if element.tagType == tagType:
-      return element
-  return nil
-
-func findFirstChildNotOf(node: Node; tagType: set[TagType]): Element =
-  for element in node.elementList:
-    if element.tagType notin tagType:
       return element
   return nil
 
@@ -2155,6 +1977,7 @@ proc setNodeValue(ctx: JSContext; node: Node; data: JSValueConst): Err[void]
 proc setTextContent(ctx: JSContext; node: Node; data: JSValueConst): Err[void]
     {.jsfset: "textContent".} =
   if node of Element or node of DocumentFragment:
+    let node = ParentNode(node)
     if JS_IsNull(data):
       node.replaceAll(nil)
     else:
@@ -2197,9 +2020,225 @@ proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
 proc replaceChildrenImpl(ctx: JSContext; parent: Node;
     nodes: openArray[JSValueConst]): Err[DOMException] =
   let node = ctx.toNode(nodes, parent.document)
-  ?parent.preInsertionValidity(node, nil)
+  let parent = ?parent.preInsertionValidity(node, nil)
   parent.replaceAll(node)
   ok()
+
+# ParentNode
+func firstElementChild*(node: ParentNode): Element =
+  for child in node.elementList:
+    return child
+  return nil
+
+func lastElementChild*(node: ParentNode): Element =
+  for child in node.relementList:
+    return child
+  return nil
+
+func findFirstChildOf(node: ParentNode; tagType: TagType): Element =
+  for element in node.elementList:
+    if element.tagType == tagType:
+      return element
+  return nil
+
+func findLastChildOf(node: ParentNode; tagType: TagType): Element =
+  for element in node.relementList:
+    if element.tagType == tagType:
+      return element
+  return nil
+
+func findFirstChildNotOf(node: ParentNode; tagType: set[TagType]): Element =
+  for element in node.elementList:
+    if element.tagType notin tagType:
+      return element
+  return nil
+
+proc getChildList*(node: ParentNode): seq[Node] =
+  result = @[]
+  for child in node.childList:
+    result.add(child)
+
+proc replaceAll(parent: ParentNode; node: Node) =
+  let removedNodes = parent.getChildList()
+  for child in removedNodes:
+    child.remove(true)
+  if node != nil:
+    if node of DocumentFragment:
+      let node = DocumentFragment(node)
+      let addedNodes = node.getChildList()
+      for child in addedNodes:
+        parent.append(child)
+    else:
+      parent.append(node)
+  #TODO tree mutation record
+
+proc replaceAll(parent: ParentNode; s: sink string) =
+  parent.replaceAll(parent.document.newText(s))
+
+proc childrenImpl(ctx: JSContext; node: ParentNode): JSValue =
+  return ctx.getWeakCollection(node, wwmChildren)
+
+proc childElementCountImpl(node: ParentNode): int =
+  let last = node.lastElementChild
+  if last == nil:
+    return 0
+  return last.elIndex + 1
+
+func countChildren(node: ParentNode; nodeType: type): int =
+  result = 0
+  for child in node.childList:
+    if child of nodeType:
+      inc result
+
+func hasChild(node: ParentNode; nodeType: type): bool =
+  for child in node.childList:
+    if child of nodeType:
+      return true
+  return false
+
+func hasChildExcept(node: ParentNode; nodeType: type; ex: Node): bool =
+  for child in node.childList:
+    if child == ex:
+      continue
+    if child of nodeType:
+      return true
+  return false
+
+func childTextContent*(node: ParentNode): string =
+  result = ""
+  for child in node.childList:
+    if child of Text:
+      result &= Text(child).data
+
+proc getElementsByTagNameImpl(root: ParentNode; tagName: string):
+    HTMLCollection =
+  if tagName == "*":
+    return root.newHTMLCollection(isElement, islive = true, childonly = false)
+  let localName = tagName.toAtom()
+  let localNameLower = localName.toLowerAscii()
+  return root.newHTMLCollection(
+    func(node: Node): bool =
+      if node of Element:
+        let element = Element(node)
+        if element.namespaceURI == satNamespaceHTML:
+          return element.localName == localNameLower
+        return element.localName == localName
+      return false,
+    islive = true,
+    childonly = false
+  )
+
+proc getElementsByClassNameImpl(node: ParentNode; classNames: string):
+    HTMLCollection =
+  var classAtoms = newSeq[CAtom]()
+  for class in classNames.split(AsciiWhitespace):
+    classAtoms.add(class.toAtom())
+  return node.newHTMLCollection(
+    func(node: Node): bool =
+      if node of Element:
+        let element = Element(node)
+        if element.document.mode == QUIRKS:
+          for class in classAtoms:
+            if not element.classList.toks.containsIgnoreCase(class):
+              return false
+        else:
+          for class in classAtoms:
+            if class notin element.classList.toks:
+              return false
+        return true
+      false,
+    islive = true,
+    childonly = false
+  )
+
+proc insertNode(parent: ParentNode; node, before: Node) =
+  parent.document.adopt(node)
+  let element = if node of Element: Element(node) else: nil
+  if before == nil:
+    let first = parent.firstChild
+    if first != nil:
+      let last = first.internalPrev
+      last.internalNext = node
+      node.internalPrev = last
+    else:
+      parent.firstChild = node
+    parent.firstChild.internalPrev = node
+  else:
+    node.internalNext = before
+    let prev = before.internalPrev
+    node.internalPrev = prev
+    if prev.nextSibling != nil:
+      prev.internalNext = node
+    before.internalPrev = node
+    if before == parent.firstChild:
+      parent.firstChild = node
+  node.parentNode = parent
+  if element != nil:
+    if element.nextSibling != nil and parent of Element:
+      let parent = Element(parent)
+      parent.childElIndicesInvalid = true
+    elif (let prev = element.previousElementSibling; prev != nil):
+      element.internalElIndex = prev.internalElIndex + 1
+    else:
+      element.internalElIndex = 0
+  node.document.invalidateCollections()
+  if node of ParentNode:
+    let document = node.document
+    if document != nil and (node of HTMLStyleElement or
+        node of HTMLLinkElement):
+      document.applyAuthorSheets()
+    var nodes: seq[Element] = @[]
+    for el in cast[ParentNode](node).elementDescendantsIncl:
+      #TODO shadow root
+      if el.elementInsertionSteps():
+        nodes.add(el)
+    for el in nodes:
+      el.postConnectionSteps()
+
+# WARNING ditto
+proc insert*(parent: ParentNode; node, before: Node;
+    suppressObservers = false) =
+  let nodes = if node of DocumentFragment:
+    DocumentFragment(node).getChildList()
+  else:
+    @[node]
+  let count = nodes.len
+  if count == 0:
+    return
+  if node of DocumentFragment:
+    for child in nodes:
+      child.remove(true)
+    #TODO tree mutation record
+  if before != nil:
+    #TODO live ranges
+    discard
+  if parent of Element:
+    Element(parent).invalidate()
+  for node in nodes:
+    parent.insertNode(node, before)
+
+proc querySelectorImpl(node: ParentNode; q: string): DOMResult[Element] =
+  let selectors = parseSelectors(q)
+  if selectors.len == 0:
+    return errDOMException("Invalid selector: " & q, "SyntaxError")
+  for element in node.elementDescendants:
+    if element.matchesImpl(selectors):
+      return ok(element)
+  return ok(nil)
+
+proc querySelectorAllImpl(node: ParentNode; q: string): DOMResult[NodeList] =
+  let selectors = parseSelectors(q)
+  if selectors.len == 0:
+    return errDOMException("Invalid selector: " & q, "SyntaxError")
+  return ok(node.newNodeList(
+    match = func(node: Node): bool =
+      if node of Element:
+        {.cast(noSideEffect).}:
+          return Element(node).matchesImpl(selectors)
+      false,
+    islive = false,
+    childonly = false
+  ))
 
 # Collection
 template id(collection: Collection): pointer =
@@ -2209,14 +2248,16 @@ proc populateCollection(collection: Collection) =
   if collection.inclusive:
     if collection.match == nil or collection.match(collection.root):
       collection.snapshot.add(collection.root)
-  if collection.childonly:
-    for child in collection.root.childList:
-      if collection.match == nil or collection.match(child):
-        collection.snapshot.add(child)
-  else:
-    for desc in collection.root.descendants:
-      if collection.match == nil or collection.match(desc):
-        collection.snapshot.add(desc)
+  if collection.root of ParentNode:
+    let root = ParentNode(collection.root)
+    if collection.childonly:
+      for child in root.childList:
+        if collection.match == nil or collection.match(child):
+          collection.snapshot.add(child)
+    else:
+      for desc in root.descendants:
+        if collection.match == nil or collection.match(desc):
+          collection.snapshot.add(desc)
 
 proc refreshCollection(collection: Collection) =
   if collection.invalid:
@@ -2317,7 +2358,13 @@ func newDocumentFragment(ctx: JSContext): DocumentFragment {.jsctor.} =
   return window.document.newDocumentFragment()
 
 func firstElementChild(this: DocumentFragment): Element {.jsfget.} =
-  return Node(this).firstElementChild
+  return ParentNode(this).firstElementChild
+
+func lastElementChild(this: DocumentFragment): Element {.jsfget.} =
+  return ParentNode(this).lastElementChild
+
+proc childElementCount(this: DocumentFragment): int {.jsfget.} =
+  return this.childElementCountImpl
 
 proc querySelector(this: DocumentFragment; q: string): DOMResult[Element]
     {.jsfunc.} =
@@ -2341,7 +2388,7 @@ proc replaceChildren(ctx: JSContext; this: DocumentFragment;
 
 func children(ctx: JSContext; parentNode: DocumentFragment): JSValue
     {.jsfget.} =
-  return parentNodeChildrenImpl(ctx, parentNode)
+  return childrenImpl(ctx, parentNode)
 
 # Document
 proc newXMLDocument(): XMLDocument =
@@ -2369,6 +2416,12 @@ func newDocumentType*(document: Document;
     systemId: systemId
   )
 
+func firstElementChild(this: Document): Element {.jsfget.} =
+  return ParentNode(this).firstElementChild
+
+func lastElementChild(this: Document): Element {.jsfget.} =
+  return ParentNode(this).lastElementChild
+
 func isxml(document: Document): bool =
   return document.contentType != satTextHtml
 
@@ -2378,9 +2431,11 @@ proc adopt(document: Document; node: Node) =
     remove(node)
   if oldDocument != document:
     #TODO shadow root
-    for desc in node.descendantsIncl:
-      if desc.nextSibling == nil:
-        desc.internalNext = document
+    if node of ParentNode:
+      let node = ParentNode(node)
+      for desc in node.descendantsIncl:
+        if desc.nextSibling == nil:
+          desc.internalNext = document
     for i in countdown(oldDocument.liveCollections.high, 0):
       let id = oldDocument.liveCollections[i]
       if cast[Collection](id).root.document == document:
@@ -2550,7 +2605,7 @@ proc getElementsByClassName(document: Document; classNames: string):
   return document.getElementsByClassNameImpl(classNames)
 
 func children(ctx: JSContext; parentNode: Document): JSValue {.jsfget.} =
-  return parentNodeChildrenImpl(ctx, parentNode)
+  return childrenImpl(ctx, parentNode)
 
 proc querySelector(this: Document; q: string): DOMResult[Element] {.jsfunc.} =
   return this.querySelectorImpl(q)
@@ -3515,50 +3570,8 @@ proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
     parseDocumentWriteChunkImpl(document.parser)
   return ok()
 
-func firstElementChild(this: Element): Element {.jsfget.} =
-  return Node(this).firstElementChild
-
-func firstElementChild(this: Document): Element {.jsfget.} =
-  return Node(this).firstElementChild
-
-func lastElementChild(this: Element): Element {.jsfget.} =
-  return Node(this).lastElementChild
-
-func lastElementChild(this: Document): Element {.jsfget.} =
-  return Node(this).lastElementChild
-
-func lastElementChild(this: DocumentFragment): Element {.jsfget.} =
-  return Node(this).lastElementChild
-
-proc childElementCount(this: Element): int {.jsfget.} =
-  return this.childElementCountImpl
-
 proc childElementCount(this: Document): int {.jsfget.} =
   return this.childElementCountImpl
-
-proc childElementCount(this: DocumentFragment): int {.jsfget.} =
-  return this.childElementCountImpl
-
-proc isFirstVisualNode*(element: Element): bool =
-  if element.elIndex == 0:
-    let parent = element.parentNode
-    for child in parent.childList:
-      if child == element:
-        return true
-      if child of Text and not Text(child).data.onlyWhitespace():
-        break
-  return false
-
-proc isLastVisualNode*(element: Element): bool =
-  let parent = element.parentNode
-  for child in parent.rchildList:
-    if child == element:
-      return true
-    if child of Element:
-      break
-    if child of Text and not Text(child).data.onlyWhitespace():
-      break
-  return false
 
 func documentElement*(document: Document): Element {.jsfget.} =
   return document.firstElementChild()
@@ -3594,6 +3607,36 @@ proc getter(ctx: JSContext; document: Document; s: string): JSValue
 # Element
 proc hash(element: Element): Hash =
   return hash(cast[pointer](element))
+
+func firstElementChild(this: Element): Element {.jsfget.} =
+  return ParentNode(this).firstElementChild
+
+func lastElementChild(this: Element): Element {.jsfget.} =
+  return ParentNode(this).lastElementChild
+
+proc childElementCount(this: Element): int {.jsfget.} =
+  return this.childElementCountImpl
+
+proc isFirstVisualNode*(element: Element): bool =
+  if element.elIndex == 0:
+    let parent = element.parentNode
+    for child in parent.childList:
+      if child == element:
+        return true
+      if child of Text and not Text(child).data.onlyWhitespace():
+        break
+  return false
+
+proc isLastVisualNode*(element: Element): bool =
+  let parent = element.parentNode
+  for child in parent.rchildList:
+    if child == element:
+      return true
+    if child of Element:
+      break
+    if child of Text and not Text(child).data.onlyWhitespace():
+      break
+  return false
 
 func innerHTML(element: Element): string {.jsfget.} =
   #TODO xml
@@ -3713,7 +3756,7 @@ proc getElementsByClassName(element: Element; classNames: string):
   return element.getElementsByClassNameImpl(classNames)
 
 func children(ctx: JSContext; parentNode: Element): JSValue {.jsfget.} =
-  return parentNodeChildrenImpl(ctx, parentNode)
+  return childrenImpl(ctx, parentNode)
 
 func previousElementSibling*(element: Element): Element {.jsfget.} =
   return element.previousElementSiblingImpl
