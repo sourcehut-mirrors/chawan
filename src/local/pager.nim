@@ -2186,11 +2186,13 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.loader.resume(data.outputId)
     data.stream.sclose()
     pager.lineData = nil
-    if pager.downloads != nil:
-      pager.setContainer(pager.downloads)
-    elif pager.config.external.showDownloadPanel:
-      let url = newURL("about:downloads").get
-      pager.downloads = pager.gotoURL(newRequest(url), history = false)
+    if pager.config.external.showDownloadPanel:
+      let request = newRequest(parseURL0("about:downloads"))
+      let downloads = pager.downloads
+      if downloads != nil:
+        pager.setContainer(downloads)
+      pager.downloads = pager.gotoURL(request, history = false,
+        replace = downloads)
   else:
     pager.ask("Failed to save to " & path & ". Retry?").then(
       proc(x: bool) =
