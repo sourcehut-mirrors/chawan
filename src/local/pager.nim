@@ -854,12 +854,8 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   let ps = newPosixStream(STDIN_FILENO)
   if pager.config.start.headless == hmFalse:
     let os = newPosixStream(STDOUT_FILENO)
-    #TODO doesn't work if stdout is the same, because then setting stdin
-    # to non-blocking breaks stdout (which is still expected to be
-    # blocking)
-    # To fix this, we should handle stdout in a non-blocking manner too.
-    #if ps.isatty():
-    #  istream = ps
+    if ps.isatty():
+      istream = ps
     if os.isatty():
       if istream == nil:
         istream = newPosixStream("/dev/tty", O_RDONLY, 0)
@@ -868,7 +864,8 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     if istream == nil:
       pager.config.start.headless = hmDump
   pager.pollData.register(pager.forkserver.estream.fd, POLLIN)
-  case pager.term.start(istream)
+  case pager.term.start(istream, proc(fd: int) =
+    pager.pollData.register(fd, POLLOUT))
   of tsrSuccess: discard
   of tsrDA1Fail:
     pager.alert("Failed to query DA1, please set display.query-da1 = false")
@@ -1329,7 +1326,6 @@ proc draw(pager: Pager) =
       pager.term.setCursor(container.acursorx, container.acursory)
   if redraw:
     pager.term.showCursor()
-  pager.term.flush()
 
 proc writeAskPrompt(pager: Pager; s = "") =
   let maxwidth = pager.status.grid.width - s.width()
@@ -3249,10 +3245,14 @@ proc handleRead(pager: Pager; fd: int) =
     assert false
 
 proc handleWrite(pager: Pager; fd: int) =
-  let container = ContainerData(pager.loader.get(fd)).container
-  if container.iface.stream.flushWrite():
-    pager.pollData.unregister(fd)
-    pager.pollData.register(fd, POLLIN)
+  if pager.term.ostream != nil and pager.term.ostream.fd == fd:
+    if pager.term.flush():
+      pager.pollData.unregister(pager.term.ostream.fd)
+  else:
+    let container = ContainerData(pager.loader.get(fd)).container
+    if container.iface.stream.flushWrite():
+      pager.pollData.unregister(fd)
+      pager.pollData.register(fd, POLLIN)
 
 proc handleError(pager: Pager; fd: int) =
   if pager.term.istream != nil and fd == pager.term.istream.fd:

@@ -96,6 +96,11 @@ type
     ry: int
     data: Blob
 
+  TerminalPage {.acyclic.} = ref object
+    a: seq[uint8] # bytes to flush
+    n: int # bytes of s already flushed
+    next: TerminalPage
+
   Terminal* = ref object
     termType: TerminalType
     cs*: Charset
@@ -129,8 +134,9 @@ type
     ibufn: int # position in ibuf
     dynbuf: string # buffer for UTF-8 text input by the user, for areadChar
     dynbufn: int # position in dynbuf
-    obuf: array[16384, char] # buffer for output data
-    obufLen: int # len of obuf
+    pageHead: TerminalPage # output buffer queue
+    pageTail: TerminalPage # last output buffer
+    registerCb: proc(fd: int) {.raises: [].} # callback to register ostream
     sixelRegisterNum*: int
     kittyId: int # counter for kitty image (*not* placement) ids.
     cursorx: int
@@ -288,24 +294,55 @@ const APC = "\e_"
 
 const KITTYQUERY = APC & "Gi=1,a=q;" & ST
 
-proc write0(term: Terminal; buffer: openArray[char]) =
-  if not term.ostream.writeDataLoop(buffer):
-    die("error writing to stdout")
-
-proc flush*(term: Terminal) =
-  if term.obufLen > 0:
-    term.write0(term.obuf.toOpenArray(0, term.obufLen - 1))
-    term.obufLen = 0
+proc flush*(term: Terminal): bool =
+  var page = term.pageHead
+  while page != nil:
+    var n = page.n
+    let H = page.a.len - 1
+    while n < page.a.len:
+      let m = term.ostream.writeData(page.a.toOpenArray(n, H))
+      if m < 0:
+        let e = errno
+        if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
+          die("error writing to stdout: " & $strerror(e))
+        break
+      n += m
+    if n < page.a.len:
+      page.n = n
+      break
+    page = page.next
+  term.pageHead = page
+  if page == nil:
+    term.pageTail = nil
+    return true
+  false
 
 proc write(term: Terminal; s: openArray[char]) =
   if s.len > 0:
-    if s.len + term.obufLen > term.obuf.len:
-      term.flush()
-    if s.len > term.obuf.len:
-      term.write0(s)
-    else:
-      copyMem(addr term.obuf[term.obufLen], unsafeAddr s[0], s.len)
-      term.obufLen += s.len
+    var n = 0
+    if term.pageHead == nil:
+      while n < s.len:
+        let m = term.ostream.writeData(s.toOpenArray(n, s.high))
+        if m < 0:
+          let e = errno
+          if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
+            die("error writing to stdout: " & $strerror(e))
+          break
+        n += m
+    if n < s.len:
+      let page = TerminalPage()
+      if term.pageTail == nil:
+        term.pageHead = page
+        term.pageTail = page
+        term.registerCb(int(term.ostream.fd))
+      else:
+        term.pageTail.next = page
+        term.pageTail = page
+      # I'd much rather just use @, but that introduces a ridiculous
+      # copy function :(
+      let len = s.len - n
+      page.a = newSeqUninit[uint8](len)
+      copyMem(addr page.a[0], unsafeAddr s[n], len)
 
 proc readChar(term: Terminal): char =
   if term.ibufn == term.ibufLen:
@@ -323,6 +360,7 @@ proc ahandleRead*(term: Terminal): bool =
     let e = errno
     if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
       term.istream.setBlocking(true)
+      term.ostream.setBlocking(true)
       die("error reading from stdin")
     term.ibufLen = 0
     return false
@@ -493,11 +531,13 @@ proc isatty*(term: Terminal): bool =
 
 proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
-    term.write(term.clearEnd() & msg)
-    term.flush()
     term.istream.setBlocking(true)
+    term.ostream.setBlocking(true)
+    doAssert term.flush()
+    term.write(term.clearEnd() & msg)
     discard term.readChar()
     term.istream.setBlocking(false)
+    term.ostream.setBlocking(false)
 
 proc resetFormat(term: Terminal): string =
   case term.termType
@@ -1139,7 +1179,6 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   if image.kittyId != 0:
     outs &= ",i=" & $image.kittyId & ",a=p;" & ST
     term.write(outs)
-    term.flush()
     return
   inc term.kittyId # skip i=0
   image.kittyId = term.kittyId
@@ -1250,7 +1289,6 @@ proc quit*(term: Terminal) =
       term.write(XTPOPTITLE)
     term.showCursor()
     term.clearCanvas()
-  term.flush()
 
 type
   QueryAttrs = enum
@@ -1352,7 +1390,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
     outs &= XTGETANSI
   outs &= static(GEOMPIXEL & CELLSIZE & GEOMCELL & DA1)
   term.write(outs)
-  term.flush()
+  doAssert term.flush()
   result = QueryResult(success: false, attrs: {})
   while true:
     template fail =
@@ -1702,9 +1740,12 @@ proc initScreen(term: Terminal) =
   term.cursorx = -1
   term.cursory = -1
   term.istream.setBlocking(false)
+  term.ostream.setBlocking(false)
 
-proc start*(term: Terminal; istream: PosixStream): TermStartResult =
+proc start*(term: Terminal; istream: PosixStream;
+    registerCb: (proc(fd: int) {.raises: [].})): TermStartResult =
   term.istream = istream
+  term.registerCb = registerCb
   if term.isatty():
     term.enableRawMode()
   result = term.detectTermAttributes(windowOnly = false)
