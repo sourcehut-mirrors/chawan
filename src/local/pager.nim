@@ -853,9 +853,13 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   var istream: PosixStream = nil
   let ps = newPosixStream(STDIN_FILENO)
   if pager.config.start.headless == hmFalse:
-    if ps.isatty():
-      istream = ps
     let os = newPosixStream(STDOUT_FILENO)
+    #TODO doesn't work if stdout is the same, because then setting stdin
+    # to non-blocking breaks stdout (which is still expected to be
+    # blocking)
+    # To fix this, we should handle stdout in a non-blocking manner too.
+    #if ps.isatty():
+    #  istream = ps
     if os.isatty():
       if istream == nil:
         istream = newPosixStream("/dev/tty", O_RDONLY, 0)
