@@ -1721,11 +1721,15 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
   return res
 
 proc windowChange*(term: Terminal) =
+  term.istream.setBlocking(true)
+  term.ostream.setBlocking(true)
   discard term.detectTermAttributes(windowOnly = true)
   term.applyConfigDimensions()
   term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
   term.lineDamage = newSeq[int](term.attrs.height)
   term.clearCanvas()
+  term.istream.setBlocking(false)
+  term.ostream.setBlocking(false)
 
 proc initScreen(term: Terminal) =
   # note: deinit happens in quit()
