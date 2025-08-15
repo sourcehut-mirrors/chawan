@@ -180,7 +180,7 @@ Description
 T}
 _
 T{
-\f[CR]load(url)\f[R]
+\f[CR]load(url = pager.buffer.url)\f[R]
 T}@T{
 Put the specified address into the URL bar, and optionally load it.
 .PP
@@ -190,17 +190,19 @@ with the default scheme/local files, etc.
 .PP
 Opens a prompt with the current URL when no parameters are specified;
 otherwise, the string passed is displayed in the prompt.
-If this string ends with a newline
+.PP
+\f[B]Deprecated quirk\f[R]: If this string ends with a newline
 (e.g.\ \f[CR]pager.load(\(dqabout:chawan\(rsn\(dq)\f[R]), the URL is
 loaded directly.
+This usage isn\(cqt recommended; use loadSubmit instead.
 T}
 _
 T{
 \f[CR]loadSubmit(url)\f[R]
 T}@T{
-Act as if \f[CR]url\f[R] had been input into the address bar.
-.PP
-Same as \f[CR]pager.load(url + \(dq\(rsn\(dq)\f[R].
+Act as if \f[CR]url\f[R] had been entered to the URL bar.
+\f[CR]loadSubmit\f[R] differs from \f[CR]gotoURL\f[R] in that it also
+evaluates omni\-rules, tries to prepend a scheme, etc.
 T}
 _
 T{

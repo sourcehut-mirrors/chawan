@@ -12,7 +12,7 @@
 #   }
 #   const text = await pager.getSelectionText(pager.currentSelection);
 #   pager.cursorToggleSelection();
-#   pager.load(`cgi-bin:trans.cgi?${encodeURIComponent(text)}\n`);
+#   pager.loadSubmit(`cgi-bin:trans.cgi?${encodeURIComponent(text)}`);
 # }
 # '''
 

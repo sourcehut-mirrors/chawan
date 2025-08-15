@@ -163,7 +163,7 @@ Following properties (functions/getters) are defined by `Pager`:
 </tr>
 
 <tr>
-<td>`load(url)`</td>
+<td>`load(url = pager.buffer.url)`</td>
 <td>Put the specified address into the URL bar, and optionally load it.
 <p>
 Note that this performs auto-expansion of URLs, so Chawan will expand any
@@ -171,15 +171,20 @@ matching omni-rules (e.g. search), try to open schemeless URLs with the default
 scheme/local files, etc.
 <p>
 Opens a prompt with the current URL when no parameters are specified; otherwise,
-the string passed is displayed in the prompt. If this string ends with a newline
-(e.g. `pager.load("about:chawan\n")`), the URL is loaded directly.</td>
+the string passed is displayed in the prompt.
+<p>
+**Deprecated quirk**: If this string ends with a newline
+(e.g. `pager.load("about:chawan\n")`), the URL is loaded directly.
+This usage isn't recommended; use loadSubmit instead.
+</td>
 </tr>
 
 <tr>
 <td>`loadSubmit(url)`</td>
-<td>Act as if `url` had been input into the address bar.
-<p>
-Same as `pager.load(url + "\n")`.</td>
+<td>Act as if `url` had been entered to the URL bar.  `loadSubmit`
+differs from `gotoURL` in that it also evaluates omni-rules, tries to
+prepend a scheme, etc.
+</td>
 </tr>
 
 <tr>

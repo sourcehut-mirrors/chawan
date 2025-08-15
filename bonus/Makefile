@@ -72,6 +72,6 @@ install-trans.cgi: trans.cgi
 	@echo '  }'
 	@echo '  const text = await pager.getSelectionText(pager.currentSelection);'
 	@echo '  pager.cursorToggleSelection();'
-	@echo '  pager.load(`cgi-bin:trans.cgi?${encodeURIComponent(text)}\n`);'
+	@echo '  pager.loadSubmit(`cgi-bin:trans.cgi?${encodeURIComponent(text)}`);'
 	@echo '}'
 	@echo "'''"
