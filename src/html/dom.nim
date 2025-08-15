@@ -1697,7 +1697,7 @@ proc replace*(parent, child, node: Node): Err[DOMException] =
     return errDOMException("Node to replace is not a child of parent",
       "NotFoundError")
   if not node.isValidChild():
-    return errDOMException("Node is not a valid child", "HierarchyRequesError")
+    return errDOMException("Node is not a valid child", "HierarchyRequestError")
   if node of Text and parent of Document or
       node of DocumentType and not (parent of Document):
     return errDOMException("Replacement cannot be placed in parent",
@@ -2431,9 +2431,10 @@ proc adopt(document: Document; node: Node) =
     remove(node)
   if oldDocument != document:
     #TODO shadow root
+    node.internalNext = document
     if node of ParentNode:
       let node = ParentNode(node)
-      for desc in node.descendantsIncl:
+      for desc in node.descendants:
         if desc.nextSibling == nil:
           desc.internalNext = document
     for i in countdown(oldDocument.liveCollections.high, 0):

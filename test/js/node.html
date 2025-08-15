@@ -1,0 +1,12 @@
+<!doctype html>
+<title>Node test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+let doc = new Document();
+let text = doc.createTextNode("test");
+let elem = document.createElement("div");
+elem.append(text);
+assertEquals(text.ownerDocument, document);
+document.getElementById("x").textContent = "Success";
+</script>
