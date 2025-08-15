@@ -633,6 +633,22 @@ The current implementation imitates w3m.
 T}
 _
 T{
+bracketed\-paste
+T}@T{
+boolean
+T}@T{
+true
+T}@T{
+Whether Chawan should ask for bracketed paste.
+.PP
+When true, the terminal will (hopefully) mark pasted text with escape
+sequences, which a) ensures that pasting a newline character into the
+line editor does not submit the editor, b) allows Chawan to intercept
+text pasted into the pager, automatically loading it into the
+browser\(cqs URL bar.
+T}
+_
+T{
 wheel\-scroll
 T}@T{
 number

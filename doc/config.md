@@ -34,6 +34,7 @@ the search path accommodates XDG basedirs as well:
 * [Buffer](#buffer)
 * [Encoding](#encoding)
 * [External](#external)
+* [Input](#input)
 * [Network](#network)
 * [Display](#display)
 * [Protocol](#protocol)
@@ -536,6 +537,20 @@ Only applies for keybindings defined in `[page]`.</td>
 <td>Whether Chawan is allowed to intercept mouse clicks.
 <p>
 The current implementation imitates w3m.</td>
+</tr>
+
+<tr>
+<td>bracketed-paste</td>
+<td>boolean</td>
+<td>true</td>
+<td>Whether Chawan should ask for bracketed paste.
+<p>
+When true, the terminal will (hopefully) mark pasted text with escape
+sequences, which a) ensures that pasting a newline character into the
+line editor does not submit the editor, b) allows Chawan to intercept
+text pasted into the pager, automatically loading it into the browser's
+URL bar.
+</td>
 </tr>
 
 <tr>

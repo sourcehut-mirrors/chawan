@@ -764,6 +764,8 @@ proc handleMouseInput(pager: Pager; input: MouseInput) =
       pager.handleMouseInput(input, container)
   if not pager.blockTillRelease:
     pager.handleMouseInputGeneric(input)
+  pager.refreshStatusMsg()
+  pager.handleEvents()
 
 # The maximum number we are willing to accept.
 # This should be fine for 32-bit signed ints (which precnum currently is).
@@ -771,88 +773,77 @@ proc handleMouseInput(pager: Pager; input: MouseInput) =
 # it proves to be too low.
 const MaxPrecNum = 100000000
 
-proc handleCommandInput(pager: Pager; c: char): EmptyPromise =
-  if pager.config.input.viNumericPrefix and not pager.notnum:
-    if pager.precnum != 0 and c == '0' or c in '1' .. '9':
-      if pager.precnum < MaxPrecNum: # better ignore than eval...
-        pager.precnum *= 10
-        pager.precnum += int32(decValue(c))
-      return
+proc handleAskInput(pager: Pager; e: InputEvent) =
+  case e.t
+  of ietKey: pager.inputBuffer &= e.c
+  of ietKeyEnd:
+    pager.fulfillAsk(pager.inputBuffer)
+    pager.inputBuffer = ""
+  of ietMouse: pager.handleMouseInput(e.m)
+  else: discard
+
+proc handleLineInput(pager: Pager; e: InputEvent) =
+  case e.t
+  of ietKey: pager.inputBuffer &= e.c
+  of ietKeyEnd:
+    let edit = pager.lineedit
+    if edit.escNext:
+      edit.escNext = false
+      edit.write(move(pager.inputBuffer))
     else:
-      pager.notnum = true
-  pager.inputBuffer &= c
-  let action = getNormalAction(pager.config, pager.inputBuffer)
-  if action != "":
-    let p = pager.evalAction(action, pager.precnum)
+      let action = pager.config.getLinedAction(pager.inputBuffer)
+      if action == "":
+        edit.write(move(pager.inputBuffer))
+      else:
+        discard pager.evalAction(action, 0)
+      if not pager.feednext:
+        pager.updateReadLine()
+        pager.inputBuffer = ""
+      pager.feednext = false
+  of ietMouse: pager.handleMouseInput(e.m)
+  of ietPaste: pager.lineedit.write(move(pager.inputBuffer))
+
+proc handleCommandInput(pager: Pager; e: InputEvent) =
+  case e.t
+  of ietMouse: pager.handleMouseInput(e.m)
+  of ietKey: pager.inputBuffer &= e.c
+  of ietPaste: pager.setLineEdit(lmLocation, move(pager.inputBuffer))
+  of ietKeyEnd:
+    if pager.config.input.viNumericPrefix and not pager.notnum:
+      let c = pager.inputBuffer[0]
+      if pager.precnum != 0 and c == '0' or c in '1' .. '9':
+        if pager.precnum < MaxPrecNum: # better ignore than eval...
+          pager.precnum *= 10
+          pager.precnum += int32(decValue(c))
+        pager.inputBuffer = ""
+      else:
+        pager.notnum = true
+    let action = pager.config.getNormalAction(pager.inputBuffer)
+    let p = if action != "": pager.evalAction(action, pager.precnum) else: nil
     if not pager.feednext:
+      pager.inputBuffer = ""
       pager.precnum = 0
       pager.notnum = false
+      if p != nil:
+        p.then(proc() =
+          pager.refreshStatusMsg()
+          pager.handleEvents()
+        )
+    if p == nil:
+      pager.refreshStatusMsg()
       pager.handleEvents()
-    return p
-  if pager.config.input.useMouse:
-    if pager.inputBuffer == "\e[<":
-      let input = pager.term.parseMouseInput()
-      if input.isOk:
-        let input = input.get
-        pager.handleMouseInput(input)
-      pager.inputBuffer = ""
-    elif "\e[<".startsWith(pager.inputBuffer):
-      pager.feednext = true
-  return nil
+    pager.feednext = false
 
-proc input(pager: Pager): EmptyPromise =
-  var p: EmptyPromise = nil
-  var buf = ""
-  while true:
-    let c = pager.term.readChar()
+proc handleUserInput(pager: Pager) =
+  if not pager.term.ahandleRead():
+    return
+  while e := pager.term.areadEvent():
     if pager.askPromise != nil:
-      buf &= c
-      #TODO this probably doesn't work with legacy charsets
-      if buf.validateUTF8Surr() != -1:
-        continue
-      pager.fulfillAsk(buf)
+      pager.handleAskInput(e)
     elif pager.lineedit != nil:
-      pager.inputBuffer &= c
-      let edit = pager.lineedit
-      if edit.escNext:
-        edit.escNext = false
-        if edit.write(pager.inputBuffer, pager.term.cs):
-          pager.inputBuffer = ""
-      else:
-        let action = pager.config.getLinedAction(pager.inputBuffer)
-        if action == "":
-          if edit.write(pager.inputBuffer, pager.term.cs):
-            pager.inputBuffer = ""
-          else:
-            pager.feednext = true
-        elif not pager.feednext:
-          discard pager.evalAction(action, 0)
-        if not pager.feednext:
-          pager.updateReadLine()
+      pager.handleLineInput(e)
     else:
-      p = pager.handleCommandInput(c)
-      if not pager.feednext:
-        pager.inputBuffer = ""
-        pager.refreshStatusMsg()
-        break
-      #TODO this is not perfect, because it results in us never displaying
-      # lone escape. maybe a timeout for escape display would be useful
-      if not "\e[<".startsWith(pager.inputBuffer):
-        pager.refreshStatusMsg()
-        pager.draw()
-    if not pager.feednext:
-      pager.inputBuffer = ""
-      break
-    else:
-      pager.feednext = false
-  pager.inputBuffer = ""
-  if p == nil:
-    p = newResolvedPromise()
-  if pager.term.hasBuffer():
-    return p.then(proc(): EmptyPromise =
-      return pager.input()
-    )
-  return p
+      pager.handleCommandInput(e)
 
 proc atexit(f: proc() {.cdecl, raises: [].}): cint
   {.importc, header: "<stdlib.h>".}
@@ -2290,19 +2281,25 @@ proc updateReadLine(pager: Pager) =
   if lineedit.state in {lesCancel, lesFinish} and pager.lineedit == lineedit:
     pager.clearLineEdit()
 
-# Same as load(s + '\n')
 proc loadSubmit(pager: Pager; s: string) {.jsfunc.} =
   pager.loadURL(s)
 
 # Open a URL prompt and visit the specified URL.
-proc load(pager: Pager; s = "") {.jsfunc.} =
-  if s.len > 0 and s[^1] == '\n':
-    if s.len > 1:
-      pager.loadURL(s[0..^2])
-  elif s == "":
+proc load(ctx: JSContext; pager: Pager; val: JSValueConst = JS_NULL): Opt[void]
+    {.jsfunc.} =
+  if JS_IsNull(val):
     pager.setLineEdit(lmLocation, $pager.container.url)
   else:
-    pager.setLineEdit(lmLocation, s)
+    var s: string
+    ?ctx.fromJS(val, s)
+    if s.len > 0 and s[^1] == '\n':
+      const msg = "pager.load(\"...\\n\") is deprecated, use loadSubmit instead"
+      if s.len > 1:
+        pager.alert(msg)
+        pager.loadURL(s[0..^2])
+    else:
+      pager.setLineEdit(lmLocation, s)
+  ok()
 
 # Go to specific URL (for JS)
 type GotoURLDict = object of JSDict
@@ -3229,9 +3226,7 @@ proc handleStderr(pager: Pager) =
 
 proc handleRead(pager: Pager; fd: int) =
   if pager.term.istream != nil and fd == pager.term.istream.fd:
-    pager.input().then(proc() =
-      pager.handleEvents()
-    )
+    pager.handleUserInput()
   elif fd == pager.forkserver.estream.fd:
     pager.handleStderr()
   elif (let data = pager.loader.get(fd); data != nil):

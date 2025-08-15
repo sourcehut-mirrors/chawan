@@ -2,7 +2,6 @@
 
 import std/strutils
 
-import chagashi/charset
 import chagashi/decoder
 import config/history
 import monoucha/javascript
@@ -136,25 +135,16 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
     edit.cursorx -= u.width()
     edit.redraw = true
  
-proc write*(edit: LineEdit; s: string; cs: Charset): bool =
-  if cs == CHARSET_UTF_8:
-    if s.validateUTF8Surr() != -1:
-      return false
-    edit.insertCharseq(s)
-  else:
-    let td = newTextDecoder(cs)
-    var success = false
-    let s = td.decodeAll(s, success)
-    if not success:
-      return false
-    edit.insertCharseq(s)
-  return true
-
-proc write(edit: LineEdit; s: string): bool {.jsfunc.} =
-  if s.validateUTF8Surr() != -1:
-    return false
+proc write*(edit: LineEdit; s: string) =
   edit.insertCharseq(s)
-  return true
+
+proc write(ctx: JSContext; edit: LineEdit; s: string): JSValue {.jsfunc.} =
+  if s.validateUTF8Surr() != -1:
+    # Note: pretty sure this is dead code, as QJS converts surrogates to
+    # replacement chars.
+    return JS_ThrowTypeError(ctx, "string contains surrogate codepoints")
+  edit.insertCharseq(s)
+  return JS_UNDEFINED
 
 proc delete(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
