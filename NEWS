@@ -9,13 +9,17 @@ Additions:
 * implement <ol start=..., <li value=...
 * -cha-content-type media feature to detect content type of current page
 * complete var() support
+* bracketed paste - pasting a URL now opens the URL bar automatically
+* NodeIterator
 
 Changes:
 * improved highlighting in monochrome mode
 * unify binaries that link to OpenSSL in dynamically linked builds too
 * remove deprecated prepend-https, css and stylesheet config options
   (use prepend-scheme, user-style instead)
-* optimize CSS parser & cascading
+* optimize CSS parser, cascading, DOM representation
+* more sensible semantics for pager.load() - empty string now works,
+  newline at end deprecated in favor of pager.loadSubmit()
 
 Fixes:
 * fix buffer cloning on musl
@@ -27,6 +31,7 @@ Fixes:
 * fix compilation on OpenBSD + ancient Nim
 * fix crash on hitting C-c on buffers waiting for connection
 * fix chaseccomp compilation with some ancient shells
+* fix lang() CSS selector
 
 0.2.0 (2025.06.15)
 
