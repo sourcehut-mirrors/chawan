@@ -216,23 +216,23 @@ const CSI = "\e["
 const DA1 = CSI & 'c'
 
 # push/pop current title to/from the terminal's title stack
-const XTPUSHTITLE = CSI & "22t"
-const XTPOPTITLE = CSI & "23t"
+const PushTitle = CSI & "22t"
+const PopTitle = CSI & "23t"
 
 # report xterm text area size in pixels
-const GEOMPIXEL = CSI & "14t"
+const QueryWindowPixels = CSI & "14t"
 
 # report cell size
-const CELLSIZE = CSI & "16t"
+const QueryCellSize = CSI & "16t"
 
 # report window size in chars
-const GEOMCELL = CSI & "18t"
+const QueryWindowCells = CSI & "18t"
 
 # allow shift-key to override mouse protocol
-const XTSHIFTESCAPE = CSI & ">0s"
+const SetShiftEscape = CSI & ">0s"
 
 # number of color registers
-const XTNUMREGS = CSI & "?1;1;0S"
+const QueryColorRegisters = CSI & "?1;1;0S"
 
 # horizontal & vertical position
 template HVP(y, x: int): string =
@@ -251,14 +251,14 @@ const DCS = "\eP"
 const ST = "\e\\"
 
 # xterm get terminal capability rgb
-const XTGETTCAPRGB = DCS & "+q524742" & ST
+const QueryTcapRGB = DCS & "+q524742" & ST
 
 # OS command
 const OSC = "\e]"
 
-const XTGETFG = OSC & "10;?" & ST # get foreground color
-const XTGETBG = OSC & "11;?" & ST # get background color
-const XTGETANSI = block: # get ansi colors
+const QueryForegroundColor = OSC & "10;?" & ST
+const QueryBackgroundColor = OSC & "11;?" & ST
+const QueryANSIColors = block:
   var s = ""
   for n in 0 ..< 16:
     s &= OSC & "4;" & $n & ";?" & ST
@@ -266,22 +266,22 @@ const XTGETANSI = block: # get ansi colors
 
 # DEC set
 template DECSET(s: varargs[string, `$`]): string =
-  "\e[?" & s.join(';') & 'h'
+  CSI & '?' & s.join(';') & 'h'
 
 # DEC reset
 template DECRST(s: varargs[string, `$`]): string =
-  "\e[?" & s.join(';') & 'l'
+  CSI & '?' & s.join(';') & 'l'
 
 # alt screen
-const SMCUP = DECSET(1049)
-const RMCUP = DECRST(1049)
+const SetAltScreen = DECSET(1049)
+const ResetAltScreen = DECRST(1049)
 
 # mouse tracking
-const SGRMOUSEBTNON = DECSET(1002, 1006)
-const SGRMOUSEBTNOFF = DECRST(1002, 1006)
+const SetSGRMouse = DECSET(1002, 1006)
+const ResetSGRMouse = DECRST(1002, 1006)
 
-const BracketedPasteOn = DECSET(2004)
-const BracketedPasteOff = DECRST(2004)
+const SetBracketedPaste= DECSET(2004)
+const ResetBracketedPaste = DECRST(2004)
 const BracketedPasteStart* = CSI & "200~"
 const BracketedPasteEnd* = CSI & "201~"
 
@@ -292,7 +292,7 @@ const CIVIS = DECRST(25)
 # application program command
 const APC = "\e_"
 
-const KITTYQUERY = APC & "Gi=1,a=q;" & ST
+const KittyQuery = APC & "Gi=1,a=q;" & ST
 
 proc flush*(term: Terminal): bool =
   var page = term.pageHead
@@ -568,10 +568,10 @@ proc setCursor*(term: Terminal; x, y: int) =
     term.cursory = y
 
 proc enableAltScreen(term: Terminal): string =
-  return SMCUP
+  return SetAltScreen
 
 proc disableAltScreen(term: Terminal): string =
-  return RMCUP
+  return ResetAltScreen
 
 proc getRGB(term: Terminal; a: CellColor; termDefault: RGBColor): RGBColor =
   case a.t
@@ -742,22 +742,22 @@ proc setTitle*(term: Terminal; title: string) =
 proc enableMouse*(term: Terminal) =
   case term.termType
   of ttAdm3a, ttVt52, ttVt100: discard
-  else: term.write(XTSHIFTESCAPE & SGRMOUSEBTNON)
+  else: term.write(SetShiftEscape & SetSGRMouse)
 
 proc disableMouse*(term: Terminal) =
   case term.termType
   of ttAdm3a, ttVt52, ttVt100: discard
-  else: term.write(SGRMOUSEBTNOFF)
+  else: term.write(ResetSGRMouse)
 
 proc enableBracketedPaste(term: Terminal) =
   case term.termType
   of ttAdm3a, ttVt52, ttVt100: discard
-  else: term.write(BracketedPasteOn)
+  else: term.write(SetBracketedPaste)
 
 proc disableBracketedPaste(term: Terminal) =
   case term.termType
   of ttAdm3a, ttVt52, ttVt100: discard
-  else: term.write(BracketedPasteOff)
+  else: term.write(ResetBracketedPaste)
 
 proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
     iq: openArray[uint8]) =
@@ -1286,7 +1286,7 @@ proc quit*(term: Terminal) =
       term.write(term.cursorGoto(0, term.attrs.height - 1) &
         term.resetFormat() & "\n")
     if term.setTitle:
-      term.write(XTPOPTITLE)
+      term.write(PopTitle)
     term.showCursor()
     term.clearCanvas()
 
@@ -1376,19 +1376,19 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       # from terminals that don't support this query.  So I'll do the
       # sole reasonable thing and skip default color queries.
       if term.config.display.defaultBackgroundColor.isNone:
-        outs &= XTGETBG
+        outs &= QueryBackgroundColor
       if term.config.display.defaultForegroundColor.isNone:
-        outs &= XTGETFG
+        outs &= QueryForegroundColor
     if term.config.display.imageMode.isNone:
       if not term.bleedsAPC:
-        outs &= KITTYQUERY
-      outs &= XTNUMREGS
+        outs &= KittyQuery
+      outs &= QueryColorRegisters
     elif term.config.display.imageMode.get == imSixel:
-      outs &= XTNUMREGS
+      outs &= QueryColorRegisters
     if term.config.display.colorMode.isNone:
-      outs &= XTGETTCAPRGB
-    outs &= XTGETANSI
-  outs &= static(GEOMPIXEL & CELLSIZE & GEOMCELL & DA1)
+      outs &= QueryTcapRGB
+    outs &= QueryANSIColors
+  outs &= QueryWindowPixels & QueryCellSize & QueryWindowCells & DA1
   term.write(outs)
   doAssert term.flush()
   result = QueryResult(success: false, attrs: {})
@@ -1400,8 +1400,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         fail
     term.expect '\e'
     case term.readChar()
-    of '[':
-      # CSI
+    of '[': # CSI
       case (let c = term.readChar(); c)
       of '?': # DA1, XTSMGRAPHICS
         var params = newSeq[int]()
@@ -1430,24 +1429,23 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         term.termType = ttSyncterm
         result.success = true
         break # we're done
-      of '4', '6', '8': # GEOMPIXEL, CELLSIZE, GEOMCELL
+      of '4', '6', '8':
         term.expect ';'
         let height = term.consumeIntUntil(';')
         let width = term.consumeIntUntil('t')
         if width == -1 or height == -1:
           discard
-        elif c == '4': # GEOMSIZE
+        elif c == '4':
           result.widthPx = width
           result.heightPx = height
-        elif c == '6': # CELLSIZE
+        elif c == '6':
           result.ppc = width
           result.ppl = height
-        elif c == '8': # GEOMCELL
+        elif c == '8':
           result.width = width
           result.height = height
       else: fail
-    of ']':
-      # OSC
+    of ']': # OSC
       let c = term.consumeIntUntil(';')
       var n: int
       if c == 4:
@@ -1468,8 +1466,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       else:
         # not RGB, give up
         term.skipUntilST()
-    of 'P':
-      # DCS
+    of 'P': # DCS
       let c = term.readChar()
       if c notin {'0', '1'}:
         fail
@@ -1734,7 +1731,7 @@ proc windowChange*(term: Terminal) =
 proc initScreen(term: Terminal) =
   # note: deinit happens in quit()
   if term.setTitle:
-    term.write(XTPUSHTITLE)
+    term.write(PushTitle)
   if term.smcup:
     term.write(term.enableAltScreen())
   if term.config.input.useMouse:
