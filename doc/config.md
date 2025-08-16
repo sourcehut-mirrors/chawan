@@ -1233,6 +1233,15 @@ downloading something, that will be delayed until you restart the process.</td>
 </tr>
 
 <tr>
+<td><kbd>M-l</kbd></td>
+<td>`cmd.pager.loadCursor`</td>
+<td>Open the address of the link or image being hovered in the URL
+bar.
+<p>
+If no link/image is under the cursor, an empty URL bar is opened.</td>
+</tr>
+
+<tr>
 <td><kbd>C-k</kbd></td>
 <td>`cmd.pager.webSearch`</td>
 <td>Open the URL bar with an arbitrary search engine. At the moment, this is
