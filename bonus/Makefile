@@ -12,7 +12,6 @@ none:
 install-git.cgi: git.cgi
 	mkdir -p $(CHA_CGI_DIR)
 	cp git.cgi $(CHA_CGI_DIR)
-	./addurimethod git git.cgi
 #TODO this will almost never work unless the user is root...
 	ln -s $(CHA_CGI_DIR)/git.cgi $(bindir)/gitcha
 
