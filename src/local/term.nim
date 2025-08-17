@@ -1276,6 +1276,7 @@ proc quit*(term: Terminal) =
     if term.config.input.bracketedPaste:
       term.disableBracketedPaste()
     term.istream.setBlocking(true)
+    term.ostream.setBlocking(true)
     if term.smcup:
       if term.imageMode == imSixel:
         # xterm seems to keep sixels in the alt screen; clear these so
