@@ -603,7 +603,7 @@ proc evalActionJS(pager: Pager; action: string): JSValue =
 proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
   var ret = pager.evalActionJS(action)
   let ctx = pager.jsctx
-  var p = newResolvedPromise()
+  var p: EmptyPromise = nil
   if JS_IsFunction(ctx, ret):
     if arg0 != 0:
       let arg0 = toJS(ctx, arg0)
@@ -811,11 +811,13 @@ proc handleCommandInput(pager: Pager; e: InputEvent) =
   of ietKeyEnd:
     if pager.config.input.viNumericPrefix and not pager.notnum:
       let c = pager.inputBuffer[0]
-      if pager.precnum != 0 and c == '0' or c in '1' .. '9':
+      if pager.precnum != 0 and c == '0' or c in '1'..'9':
         if pager.precnum < MaxPrecNum: # better ignore than eval...
           pager.precnum *= 10
           pager.precnum += int32(decValue(c))
         pager.inputBuffer = ""
+        pager.refreshStatusMsg()
+        return
       else:
         pager.notnum = true
     let action = pager.config.getNormalAction(pager.inputBuffer)
