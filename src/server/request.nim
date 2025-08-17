@@ -165,7 +165,7 @@ func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     credentialsMode: credentialsMode
   )
 
-func newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
+proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;
     credentialsMode = cmSameOrigin): Request =
   return newRequest(parseURL0(s), httpMethod, headers, body, referrer, tocache,
