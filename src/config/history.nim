@@ -24,8 +24,10 @@ type
     prev* {.cursor.}: HistoryEntry
     next*: HistoryEntry
 
-proc add(hist: History; entry: sink HistoryEntry) =
+proc add(hist: History; entry: sink HistoryEntry; merge = false) =
   let old = hist.map.getOrDefault(entry.s)
+  if merge and old != nil:
+    return
   if old != nil:
     if hist.first == old:
       hist.first = old.next
@@ -57,27 +59,28 @@ func newHistory*(maxLen: int; mtime = 0i64): History =
   return History(maxLen: maxLen, mtime: mtime)
 
 proc add*(hist: History; s: sink string) =
-  hist.add(HistoryEntry(s: s))
+  hist.add(HistoryEntry(s: s), merge = false)
 
-proc parse0(hist: History; file: ChaFile): Opt[void] =
+proc parse0(hist: History; file: ChaFile; merge: bool): Opt[void] =
   var line = ""
   while ?file.readLine(line):
-    hist.add(line)
+    hist.add(HistoryEntry(s: move(line)), merge)
   ok()
 
 # Consumes `ps'.
 # If the history file's mtime is less than otime, it won't be parsed.
 # (This is used when writing the file, to merge in new data from other
 # instances written after we first parsed the file.)
-proc parse*(hist: History; ps: PosixStream; otime = int64.high): Opt[void] =
+proc parse*(hist: History; ps: PosixStream; otime = int64.low;
+    merge = false): Opt[void] =
   var stats: Stat
   if fstat(ps.fd, stats) == -1:
     ps.sclose()
     return err()
   let mtime = int64(stats.st_mtime)
-  if mtime < otime:
+  if otime < mtime:
     let file = ?ps.fdopen("r")
-    let res = hist.parse0(file)
+    let res = hist.parse0(file, merge)
     ?file.close()
     ?res
     hist.mtime = mtime
@@ -109,7 +112,7 @@ proc write*(hist: History; ps: PosixStream; sync, reverse: bool): Opt[void] =
 proc write*(hist: History; file: string): Opt[void] =
   let ps = newPosixStream(file)
   if ps != nil:
-    ?hist.parse(ps, hist.mtime)
+    ?hist.parse(ps, hist.mtime, merge = true)
   if hist.first == nil:
     return ok()
   let tmp = file & '~'
