@@ -201,23 +201,13 @@ proc prevWord(edit: LineEdit) {.jsfunc.} =
     edit.redraw = true
 
 proc nextWord(edit: LineEdit) {.jsfunc.} =
-  if edit.cursori >= edit.news.len:
-    return
-  let pi = edit.cursori
-  let u = edit.news.nextUTF8(edit.cursori)
-  if edit.luctx.breaksWord(u):
-    edit.cursorx += u.width()
-  else:
-    edit.cursori = pi
   while edit.cursori < edit.news.len:
-    let pi = edit.cursori
     let u = edit.news.nextUTF8(edit.cursori)
-    if edit.luctx.breaksWord(u):
-      edit.cursori = pi
-      break
     edit.cursorx += u.width()
-  if edit.cursorx >= edit.shiftx + edit.maxwidth:
-    edit.redraw = true
+    if edit.luctx.breaksWord(u):
+      if edit.cursorx >= edit.shiftx + edit.maxwidth:
+        edit.redraw = true
+      break
 
 proc clearWord(edit: LineEdit) {.jsfunc.} =
   let oc = edit.cursori
