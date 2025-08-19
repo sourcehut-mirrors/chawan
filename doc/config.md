@@ -1730,7 +1730,7 @@ position.</td>
 </tr>
 
 <tr>
-<td><kbd>C-u</kbd>, <kbd>C-k</kbd></td>
+<td><kbd>C-u</kbd>/<kbd>C-xC-?</kbd>, <kbd>C-k</kbd></td>
 <td>`cmd.line.clear`, `cmd.line.kill`</td>
 <td>Delete text before (clear)/after (kill) the cursor.</td>
 </tr>
