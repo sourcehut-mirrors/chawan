@@ -4,7 +4,7 @@
 
 from std/posix import TPollfd, POLLNVAL
 
-# NB: nfds_t on SVR4 this was unsigned long, but BSDs use unsigned int.
+# NB: nfds_t on SVR4 was unsigned long, but BSDs use unsigned int.
 # Linux and Haiku emulate the former, BSDs inherit the latter.
 # ...except bionic copy-pasted from BSD headers, so it uses the latter
 # too.

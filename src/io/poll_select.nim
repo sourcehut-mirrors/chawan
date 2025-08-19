@@ -106,10 +106,9 @@ proc trim(ctx: var PollData) =
 
 proc poll*(ctx: var PollData; timeout: cint) =
   ctx.trim()
-  const UsecMax = 1_000_000
   var tv = Timeval(
-    tv_sec: Time(max(timeout div UsecMax, 0)),
-    tv_usec: Suseconds(max(timeout mod UsecMax, 0))
+    tv_sec: Time(max(timeout div 1000, 0)),
+    tv_usec: Suseconds(max((timeout mod 1000) * 1000, 0))
   )
   let ptv = if timeout != -1: addr tv else: nil
   if ctx.nfds == 0:
