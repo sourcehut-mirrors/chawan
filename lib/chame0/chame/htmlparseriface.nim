@@ -121,14 +121,14 @@ when defined(nimdocdummy):
 else:
   macro doc(f: untyped) = f
 
-proc strToAtomImpl(builder: DOMBuilderImpl, s: string): AtomImpl {.doc.}
+proc strToAtomImpl(builder: DOMBuilderImpl; s: string): AtomImpl {.doc.}
   ## Turn a string `s` into an Atom.
   ##
   ## This must always convert *every* string with the same value into the
   ## same Atom. We recommend using a hash table-based approach for this
   ## (see e.g. MAtomFactory).
 
-proc tagTypeToAtomImpl(builder: DOMBuilderImpl, tagType: TagType): AtomImpl
+proc tagTypeToAtomImpl(builder: DOMBuilderImpl; tagType: TagType): AtomImpl
     {.doc.}
   ## Turn a TagType `tagType` into an Atom.
   ##
@@ -140,7 +140,7 @@ proc tagTypeToAtomImpl(builder: DOMBuilderImpl, tagType: TagType): AtomImpl
   ##   return builder.strToAtomImpl($tt)
   ## ```
 
-proc atomToTagTypeImpl(builder: DOMBuilderImpl, atom: AtomImpl): TagType {.doc.}
+proc atomToTagTypeImpl(builder: DOMBuilderImpl; atom: AtomImpl): TagType {.doc.}
   ## Turn an Atom `atom` into a TagType. This is the inverse function of
   ## `tagTypeToAtomImpl`.
 
@@ -148,7 +148,7 @@ proc getDocumentImpl(builder: DOMBuilderImpl): HandleImpl {.doc.}
   ## Get the root document node's handle.
   ## This must not return nil, not even in the fragment parsing case.
 
-proc getParentNodeImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+proc getParentNodeImpl(builder: DOMBuilderImpl; handle: HandleImpl):
     Option[HandleImpl] {.doc.}
   ## Retrieve a handle to the parent node.
   ## May return none(Handle) if no parent node exists.
@@ -160,9 +160,9 @@ proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl {.doc.}
   ## This should not be confused with the "create an element for a token"
   ## step, which is not executed here.
 
-proc createElementForTokenImpl(builder: DOMBuilderImpl, localName: AtomImpl,
-    namespace: Namespace, intendedParent: HandleImpl,
-    htmlAttrs: Table[AtomImpl, string], xmlAttrs: seq[ParsedAttr[AtomImpl]]):
+proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
+    namespace: Namespace; intendedParent: HandleImpl;
+    htmlAttrs: Table[AtomImpl, string]; xmlAttrs: seq[ParsedAttr[AtomImpl]]):
     HandleImpl {.doc.}
   ## Create a new element node.
   ##
@@ -208,12 +208,12 @@ proc createElementForTokenImpl(builder: DOMBuilderImpl, localName: AtomImpl,
   ## in the same tree as the element pointed to by the form element pointer")
   ## are fulfilled.
 
-proc getLocalNameImpl(builder: DOMBuilderImpl, handle: HandleImpl): AtomImpl
+proc getLocalNameImpl(builder: DOMBuilderImpl; handle: HandleImpl): AtomImpl
     {.doc.}
   ## Retrieve the local name (also known as the tag name) of the element
   ## represented by `handle`.
 
-proc getNamespaceImpl(builder: DOMBuilderImpl, handle: HandleImpl): Namespace
+proc getNamespaceImpl(builder: DOMBuilderImpl; handle: HandleImpl): Namespace
     {.doc.}
   ## Retrieve the namespace of element. For HTML elements, this should be
   ## `Namespace.HTML`. For embedded SVG or MathML elements, it should be
@@ -222,14 +222,14 @@ proc getNamespaceImpl(builder: DOMBuilderImpl, handle: HandleImpl): Namespace
   ## (In general, you should just return the namespace that was passed to
   ## `createElement`.)
 
-proc getTemplateContentImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+proc getTemplateContentImpl(builder: DOMBuilderImpl; handle: HandleImpl):
     HandleImpl {.doc.}
   ## Retrieve a handle to the template element's contents. Every element
   ## where `builder.atomToTagTypeImpl(element.localName)` equals TAG_TEMPLATE
   ## and `builder.getNamespaceImpl(element)` equals `Namespace.HTML` must have
   ## an associated "template contents" node which this function must return.
 
-proc addAttrsIfMissingImpl(builder: DOMBuilderImpl, handle: HandleImpl,
+proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
     attrs: Table[AtomImpl, string]) {.doc.}
   ## Add the attributes in `attrs` to the element node `element`.
   ## This is only called with the HTML and BODY tags, when more than one
@@ -242,16 +242,16 @@ proc addAttrsIfMissingImpl(builder: DOMBuilderImpl, handle: HandleImpl,
   ##     element.attrs.add(attr)
   ## ```
 
-proc createCommentImpl(builder: DOMBuilderImpl, text: string): HandleImpl
+proc createCommentImpl(builder: DOMBuilderImpl; text: string): HandleImpl
     {.doc.}
   ## Create a new comment node. `text` is a string representing the new comment
   ## node's character data.
 
-proc createDocumentTypeImpl(builder: DOMBuilderImpl, name, publicId,
+proc createDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
     systemId: string): HandleImpl {.doc.}
   ## Create a new document type node.
 
-proc insertBeforeImpl(builder: DOMBuilderImpl, parent, child: HandleImpl,
+proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
     before: Option[HandleImpl]) {.doc.}
   ## Insert node `child` before the node called `before`.
   ##
@@ -264,7 +264,7 @@ proc insertBeforeImpl(builder: DOMBuilderImpl, parent, child: HandleImpl,
   ##
   ## Note: parent may be either an Element or a Document node.
 
-proc insertTextImpl(builder: DOMBuilderImpl, parent: HandleImpl, text: string,
+proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl; text: string;
     before: Option[HandleImpl]) {.doc.}
   ## Insert a text node at the specified location with contents `text`. If
   ## the specified location has a previous sibling that is a text node, no new
@@ -272,72 +272,72 @@ proc insertTextImpl(builder: DOMBuilderImpl, parent: HandleImpl, text: string,
   ## previous sibling's character data (or if `before` is `none(Handle)`,
   ## to the last element).
 
-proc removeImpl(builder: DOMBuilderImpl, child: HandleImpl) {.doc.}
+proc removeImpl(builder: DOMBuilderImpl; child: HandleImpl) {.doc.}
   ## If `child` does not have a parent node, do nothing. Otherwise, remove
   ## `child` from its parent node.
 
-proc moveChildrenImpl(builder: DOMBuilderImpl, fromNode, toNode: HandleImpl)
+proc moveChildrenImpl(builder: DOMBuilderImpl; fromNode, toNode: HandleImpl)
     {.doc.}
   ## Remove all children from the node `fromHandle`, then append them to
   ## `toHandle`.
 
 when defined(nimdocdummy):
   # Dummy definitions
-  proc strToAtomImpl(builder: DOMBuilderImpl, s: string): AtomImpl =
+  proc strToAtomImpl(builder: DOMBuilderImpl; s: string): AtomImpl =
     discard
 
-  proc tagTypeToAtomImpl(builder: DOMBuilderImpl, tagType: TagType): AtomImpl =
+  proc tagTypeToAtomImpl(builder: DOMBuilderImpl; tagType: TagType): AtomImpl =
     discard
 
-  proc atomToTagTypeImpl(builder: DOMBuilderImpl, atom: AtomImpl): TagType =
+  proc atomToTagTypeImpl(builder: DOMBuilderImpl; atom: AtomImpl): TagType =
     discard
 
   proc getDocumentImpl(builder: DOMBuilderImpl): HandleImpl =
     discard
 
-  proc getParentNodeImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+  proc getParentNodeImpl(builder: DOMBuilderImpl; handle: HandleImpl):
       Option[HandleImpl] =
     discard
 
   proc createHTMLElementImpl(builder: DOMBuilderImpl): HandleImpl = discard
 
-  proc createElementForTokenImpl(builder: DOMBuilderImpl, localName: AtomImpl,
-      namespace: Namespace, intendedParent: HandleImpl,
-      htmlAttrs: Table[AtomImpl, string], xmlAttrs: seq[ParsedAttr[AtomImpl]]):
+  proc createElementForTokenImpl(builder: DOMBuilderImpl; localName: AtomImpl;
+      namespace: Namespace; intendedParent: HandleImpl;
+      htmlAttrs: Table[AtomImpl, string]; xmlAttrs: seq[ParsedAttr[AtomImpl]]):
       HandleImpl = discard
 
-  proc getLocalNameImpl(builder: DOMBuilderImpl, handle: HandleImpl): AtomImpl =
+  proc getLocalNameImpl(builder: DOMBuilderImpl; handle: HandleImpl): AtomImpl =
     discard
 
-  proc getNamespaceImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+  proc getNamespaceImpl(builder: DOMBuilderImpl; handle: HandleImpl):
       Namespace =
     discard
 
-  proc getTemplateContentImpl(builder: DOMBuilderImpl, handle: HandleImpl):
+  proc getTemplateContentImpl(builder: DOMBuilderImpl; handle: HandleImpl):
       HandleImpl =
     discard
 
-  proc addAttrsIfMissingImpl(builder: DOMBuilderImpl, handle: HandleImpl,
+  proc addAttrsIfMissingImpl(builder: DOMBuilderImpl; handle: HandleImpl,
       attrs: Table[AtomImpl, string]) =
     discard
 
-  proc createCommentImpl(builder: DOMBuilderImpl, text: string): HandleImpl =
+  proc createCommentImpl(builder: DOMBuilderImpl; text: string): HandleImpl =
     discard
 
-  proc createDocumentTypeImpl(builder: DOMBuilderImpl, name, publicId,
+  proc createDocumentTypeImpl(builder: DOMBuilderImpl; name, publicId,
       systemId: string): HandleImpl =
     discard
 
-  proc insertBeforeImpl(builder: DOMBuilderImpl, parent, child: HandleImpl,
+  proc insertBeforeImpl(builder: DOMBuilderImpl; parent, child: HandleImpl;
       before: Option[HandleImpl]) =
     discard
 
-  proc insertTextImpl(builder: DOMBuilderImpl, parent: HandleImpl, text: string,
+  proc insertTextImpl(builder: DOMBuilderImpl; parent: HandleImpl; text: string;
       before: Option[HandleImpl]) =
     discard
 
-  proc removeImpl(builder: DOMBuilderImpl, child: HandleImpl) =
+  proc removeImpl(builder: DOMBuilderImpl; child: HandleImpl) =
     discard
 
-  proc moveChildrenImpl(builder: DOMBuilderImpl, fromNode, toNode: HandleImpl) =
+  proc moveChildrenImpl(builder: DOMBuilderImpl; fromNode, toNode: HandleImpl) =
     discard

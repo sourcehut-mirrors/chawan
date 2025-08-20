@@ -37,7 +37,7 @@ type
 func `==`*(a, b: MAtom): bool {.borrow.}
 func hash*(atom: MAtom): Hash {.borrow.}
 
-func strToAtom*(factory: MAtomFactory, s: string): MAtom
+func strToAtom*(factory: MAtomFactory; s: string): MAtom
 
 proc newMAtomFactory*(): MAtomFactory =
   const minCap = int(TagType.high) + 1
@@ -49,7 +49,7 @@ proc newMAtomFactory*(): MAtomFactory =
     discard factory.strToAtom($tagType)
   return factory
 
-func strToAtom*(factory: MAtomFactory, s: string): MAtom =
+func strToAtom*(factory: MAtomFactory; s: string): MAtom =
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
   for atom in factory.strMap[i]:
@@ -62,11 +62,11 @@ func strToAtom*(factory: MAtomFactory, s: string): MAtom =
   factory.strMap[i].add(atom)
   return atom
 
-func tagTypeToAtom*(factory: MAtomFactory, tagType: TagType): MAtom =
+func tagTypeToAtom*(factory: MAtomFactory; tagType: TagType): MAtom =
   assert tagType != TAG_UNKNOWN
   return MAtom(tagType)
 
-func atomToStr*(factory: MAtomFactory, atom: MAtom): string =
+func atomToStr*(factory: MAtomFactory; atom: MAtom): string =
   return factory.atomMap[int(atom)]
 
 # Node types
@@ -181,19 +181,19 @@ iterator attrsStr*(element: Element): tuple[name, value: string] =
 proc strToAtomImpl(builder: MiniDOMBuilder, s: string): MAtom =
   return builder.factory.strToAtom(s)
 
-proc tagTypeToAtomImpl(builder: MiniDOMBuilder, tagType: TagType): MAtom =
+proc tagTypeToAtomImpl(builder: MiniDOMBuilder; tagType: TagType): MAtom =
   return builder.factory.tagTypeToAtom(tagType)
 
-proc atomToTagTypeImpl(builder: MiniDOMBuilder, atom: MAtom): TagType =
+proc atomToTagTypeImpl(builder: MiniDOMBuilder; atom: MAtom): TagType =
   return atom.toTagType()
 
 proc getDocumentImpl(builder: MiniDOMBuilder): Node =
   return builder.document
 
-proc getParentNodeImpl(builder: MiniDOMBuilder, handle: Node): Option[Node] =
+proc getParentNodeImpl(builder: MiniDOMBuilder; handle: Node): Option[Node] =
   return option(handle.parentNode)
 
-proc createElement(document: Document, localName: MAtom, namespace: Namespace):
+proc createElement(document: Document; localName: MAtom; namespace: Namespace):
     Element =
   let element = if localName.toTagType() == TAG_TEMPLATE and
       namespace == Namespace.HTML:
@@ -211,8 +211,8 @@ proc createHTMLElementImpl(builder: MiniDOMBuilder): Node =
   let localName = builder.factory.tagTypeToAtom(TAG_HTML)
   return builder.document.createElement(localName, Namespace.HTML)
 
-proc createElementForTokenImpl(builder: MiniDOMBuilder, localName: MAtom,
-    namespace: Namespace, intendedParent: Node, htmlAttrs: Table[MAtom, string],
+proc createElementForTokenImpl(builder: MiniDOMBuilder; localName: MAtom;
+    namespace: Namespace; intendedParent: Node; htmlAttrs: Table[MAtom, string];
     xmlAttrs: seq[Attribute]): Node =
   let element = builder.document.createElement(localName, namespace)
   element.attrs = xmlAttrs
@@ -221,16 +221,16 @@ proc createElementForTokenImpl(builder: MiniDOMBuilder, localName: MAtom,
   element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
   return element
 
-proc getLocalNameImpl(builder: MiniDOMBuilder, handle: Node): MAtom =
+proc getLocalNameImpl(builder: MiniDOMBuilder; handle: Node): MAtom =
   return Element(handle).localName
 
-proc getNamespaceImpl(builder: MiniDOMBuilder, handle: Node): Namespace =
+proc getNamespaceImpl(builder: MiniDOMBuilder; handle: Node): Namespace =
   return Element(handle).namespace
 
 proc getTemplateContentImpl(builder: MiniDOMBuilder, handle: Node): Node =
   return HTMLTemplateElement(handle).content
 
-proc createCommentImpl(builder: MiniDOMBuilder, text: string): Node =
+proc createCommentImpl(builder: MiniDOMBuilder; text: string): Node =
   return Comment(data: text.toValidUTF8())
 
 proc createDocumentTypeImpl(builder: MiniDOMBuilder, name, publicId,
@@ -298,7 +298,7 @@ func isValidChild(node: Node): bool =
 
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
-func preInsertionValidity*(parent, node: Node, before: Node): bool =
+func preInsertionValidity*(parent, node, before: Node): bool =
   if not parent.isValidParent:
     return false
   if node.isHostIncludingInclusiveAncestor(parent):
@@ -333,7 +333,7 @@ func preInsertionValidity*(parent, node: Node, before: Node): bool =
         return false
   return true # no exception reached
 
-proc insertBefore(parent, child: Node, before: Option[Node]) =
+proc insertBefore(parent, child: Node; before: Option[Node]) =
   let before = before.get(nil)
   if parent.preInsertionValidity(child, before):
     assert child.parentNode == nil
@@ -344,11 +344,11 @@ proc insertBefore(parent, child: Node, before: Option[Node]) =
       parent.childList.insert(child, i)
     child.parentNode = parent
 
-proc insertBeforeImpl(builder: MiniDOMBuilder, parent, child: Node,
+proc insertBeforeImpl(builder: MiniDOMBuilder; parent, child: Node;
     before: Option[Node]) =
   parent.insertBefore(child, before)
 
-proc insertTextImpl(builder: MiniDOMBuilder, parent: Node, text: string,
+proc insertTextImpl(builder: MiniDOMBuilder; parent: Node; text: string;
     before: Option[Node]) =
   let text = text.toValidUTF8()
   let before = before.get(nil)
@@ -368,20 +368,20 @@ proc insertTextImpl(builder: MiniDOMBuilder, parent: Node, text: string,
     let text = Text(data: text)
     parent.insertBefore(text, option(before))
 
-proc removeImpl(builder: MiniDOMBuilder, child: Node) =
+proc removeImpl(builder: MiniDOMBuilder; child: Node) =
   if child.parentNode != nil:
     let i = child.parentNode.childList.find(child)
     child.parentNode.childList.delete(i)
     child.parentNode = nil
 
-proc moveChildrenImpl(builder: MiniDOMBuilder, fromNode, toNode: Node) =
+proc moveChildrenImpl(builder: MiniDOMBuilder; fromNode, toNode: Node) =
   let tomove = @(fromNode.childList)
   fromNode.childList.setLen(0)
   for child in tomove:
     child.parentNode = nil
     toNode.insertBefore(child, none(Node))
 
-proc addAttrsIfMissingImpl(builder: MiniDOMBuilder, handle: Node,
+proc addAttrsIfMissingImpl(builder: MiniDOMBuilder; handle: Node;
     attrs: Table[MAtom, string]) =
   let element = Element(handle)
   var oldNames = initHashSet[MAtom]()
@@ -392,7 +392,7 @@ proc addAttrsIfMissingImpl(builder: MiniDOMBuilder, handle: Node,
       element.attrs.add((NO_PREFIX, NO_NAMESPACE, name, value.toValidUTF8()))
   element.attrs.sort(func(a, b: Attribute): int = cmp(a.name, b.name))
 
-method setEncodingImpl(builder: MiniDOMBuilder, encoding: string):
+method setEncodingImpl(builder: MiniDOMBuilder; encoding: string):
     SetEncodingResult {.base.} =
   # Provided as a method for minidom_cs to override.
   return SET_ENCODING_CONTINUE
@@ -405,7 +405,7 @@ proc newMiniDOMBuilder*(factory: MAtomFactory): MiniDOMBuilder =
   )
   return builder
 
-proc parseFromStream(parser: var HTML5Parser[Node, MAtom],
+proc parseFromStream(parser: var HTML5Parser[Node, MAtom];
     inputStream: Stream) =
   var buffer {.noinit.}: array[4096, char]
   while true:
@@ -424,7 +424,7 @@ proc parseFromStream(parser: var HTML5Parser[Node, MAtom],
       res = parser.parseChunk(buffer.toOpenArray(ip, n - 1))
   parser.finish()
 
-proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node, MAtom](),
+proc parseHTML*(inputStream: Stream; opts = HTML5ParserOpts[Node, MAtom]();
     factory = newMAtomFactory()): Document =
   ## Read, parse and return an HTML document from `inputStream`, using
   ## parser options `opts` and MAtom factory `factory`.
@@ -438,8 +438,8 @@ proc parseHTML*(inputStream: Stream, opts = HTML5ParserOpts[Node, MAtom](),
   parser.parseFromStream(inputStream)
   return builder.document
 
-proc parseHTMLFragment*(inputStream: Stream, element: Element,
-    opts: HTML5ParserOpts[Node, MAtom], factory = newMAtomFactory()):
+proc parseHTMLFragment*(inputStream: Stream; element: Element;
+    opts: HTML5ParserOpts[Node, MAtom]; factory = newMAtomFactory()):
     seq[Node] =
   ## Read, parse and return the children of an HTML fragment from `inputStream`,
   ## using context element `element` and parser options `opts`.
@@ -480,7 +480,7 @@ proc parseHTMLFragment*(inputStream: Stream, element: Element,
   parser.parseFromStream(inputStream)
   return root.childList
 
-proc parseHTMLFragment*(s: string, element: Element): seq[Node] =
+proc parseHTMLFragment*(s: string; element: Element): seq[Node] =
   ## Convenience wrapper around parseHTMLFragment with opts.
   ##
   ## Read, parse and return the children of an HTML fragment from the string `s`,

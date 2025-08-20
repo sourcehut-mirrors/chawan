@@ -78,25 +78,25 @@ func `$`*(tok: Token): string =
   of CHARACTER, CHARACTER_WHITESPACE, COMMENT: result &= ' ' & tok.s
   else: discard
 
-proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom],
+proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom];
     s: string): Atom =
   mixin strToAtomImpl
   return tokenizer.dombuilder.strToAtomImpl(s)
 
-proc newTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom],
+proc newTokenizer*[Handle, Atom](dombuilder: DOMBuilder[Handle, Atom];
     initialState = DATA): Tokenizer[Handle, Atom] =
   return Tokenizer[Handle, Atom](state: initialState, dombuilder: dombuilder)
 
-proc reconsume(tokenizer: var Tokenizer, s: openArray[char]) =
+proc reconsume(tokenizer: var Tokenizer; s: openArray[char]) =
   for i in countdown(s.high, 0):
     tokenizer.peekBuf[tokenizer.peekBufLen] = s[i]
     inc tokenizer.peekBufLen
 
-proc reconsume(tokenizer: var Tokenizer, c: char) =
+proc reconsume(tokenizer: var Tokenizer; c: char) =
   tokenizer.peekBuf[tokenizer.peekBufLen] = c
   inc tokenizer.peekBufLen
 
-proc consume(tokenizer: var Tokenizer, ibuf: openArray[char]): int =
+proc consume(tokenizer: var Tokenizer; ibuf: openArray[char]): int =
   if tokenizer.peekBufLen > 0:
     dec tokenizer.peekBufLen
     return int(tokenizer.peekBuf[tokenizer.peekBufLen])
@@ -138,12 +138,12 @@ const AttributeStates = {
 func consumedAsAttribute(tokenizer: Tokenizer): bool =
   return tokenizer.rstate in AttributeStates
 
-proc appendToAttrValue(tokenizer: var Tokenizer, s: openArray[char]) =
+proc appendToAttrValue(tokenizer: var Tokenizer; s: openArray[char]) =
   if tokenizer.attr:
     for c in s:
       tokenizer.attrv &= c
 
-proc emit(tokenizer: var Tokenizer, c: char) =
+proc emit(tokenizer: var Tokenizer; c: char) =
   let isws = c in AsciiWhitespace
   if tokenizer.isws != isws:
     # Emit whitespace & non-whitespace separately.
@@ -153,7 +153,7 @@ proc emit(tokenizer: var Tokenizer, c: char) =
 
 type CharRefResult = tuple[i, ci: int, entry: cstring]
 
-proc findCharRef(tokenizer: var Tokenizer, c: char, ibuf: openArray[char]):
+proc findCharRef(tokenizer: var Tokenizer; c: char; ibuf: openArray[char]):
     CharRefResult =
   var i = charMap[c]
   if i == -1:
@@ -217,7 +217,7 @@ proc findCharRef(tokenizer: var Tokenizer, c: char, ibuf: openArray[char]):
     inc ci
   return (i, ci, entry)
 
-proc appendAttrOrEmit(tokenizer: var Tokenizer, s: openArray[char]) =
+proc appendAttrOrEmit(tokenizer: var Tokenizer; s: openArray[char]) =
   if tokenizer.consumedAsAttribute():
     tokenizer.appendToAttrValue(s)
   else:
@@ -283,7 +283,7 @@ proc eatStr(tokenizer: var Tokenizer, c: char, s, ibuf: openArray[char]):
       return esrFail
   return esrSuccess
 
-proc eatStrNoCase0(tokenizer: var Tokenizer, c: char, s, ibuf: openArray[char]):
+proc eatStrNoCase0(tokenizer: var Tokenizer; c: char; s, ibuf: openArray[char]):
     EatStrResult =
   var cs = $c
   for c in s:
@@ -298,7 +298,7 @@ proc eatStrNoCase0(tokenizer: var Tokenizer, c: char, s, ibuf: openArray[char]):
   return esrSuccess
 
 # convenience template for eatStrNoCase0 (to make sure it's called correctly)
-template eatStrNoCase(tokenizer: var Tokenizer, c: char, s: static string,
+template eatStrNoCase(tokenizer: var Tokenizer; c: char; s: static string;
     ibuf: openArray[char]): EatStrResult =
   const s0 = s.toLowerAscii()
   tokenizer.eatStrNoCase0(c, s0, ibuf)
@@ -376,7 +376,7 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
 type TokenizeResult* = enum
   trDone, trEmit
 
-proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom],
+proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
     ibuf: openArray[char]): TokenizeResult =
   template emit(s: static string) =
     static:

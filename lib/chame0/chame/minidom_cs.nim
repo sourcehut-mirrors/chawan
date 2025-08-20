@@ -29,7 +29,7 @@ type CharsetMiniDOMBuilder = ref object of MiniDOMBuilder
   charset: Charset
   confidence: CharsetConfidence
 
-method setEncodingImpl(builder: CharsetMiniDOMBuilder, encoding: string):
+method setEncodingImpl(builder: CharsetMiniDOMBuilder; encoding: string):
     SetEncodingResult =
   let charset = getCharset(encoding)
   if charset == CHARSET_UNKNOWN:
@@ -64,8 +64,8 @@ proc bomSniff(inputStream: Stream): Charset =
   inputStream.setPosition(0)
   return CHARSET_UNKNOWN
 
-proc parseHTML*(inputStream: Stream, opts: HTML5ParserOpts[Node, MAtom],
-    charsets: seq[Charset], seekable = true,
+proc parseHTML*(inputStream: Stream; opts: HTML5ParserOpts[Node, MAtom];
+    charsets: seq[Charset]; seekable = true;
     factory = newMAtomFactory()): Document =
   ## Read, parse and return an HTML document from `inputStream`.
   ##
