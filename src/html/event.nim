@@ -226,7 +226,7 @@ proc newCustomEvent*(ctx: JSContext; ctype: CAtom;
     rt: JS_GetRuntime(ctx),
     detail: JS_DupValue(ctx, eventInitDict.detail)
   )
-  event.innerEventCreationSteps(eventInitDict)
+  event.innerEventCreationSteps(EventInit(eventInitDict))
   return event
 
 proc finalize(this: CustomEvent) {.jsfin.} =
@@ -252,7 +252,7 @@ proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
     data: JS_DupValue(ctx, eventInit.data),
     origin: eventInit.origin
   )
-  event.innerEventCreationSteps(eventInit)
+  event.innerEventCreationSteps(EventInit(eventInit))
   return event
 
 # UIEvent
@@ -277,7 +277,7 @@ proc newUIEvent*(ctype: CAtom; eventInit = UIEventInit()): UIEvent {.jsctor.} =
     view: EventTarget(eventInit.view),
     detail: eventInit.detail
   )
-  event.innerEventCreationSteps(eventInit)
+  event.innerEventCreationSteps(EventInit(eventInit))
   return event
 
 proc initUIEvent(this: UIEvent; ctype: CAtom; bubbles = false;
@@ -322,7 +322,7 @@ proc newMouseEvent*(ctype: CAtom; eventInit = MouseEventInit()): MouseEvent
     buttons: uint16(eventInit.buttons),
     relatedTarget: eventInit.relatedTarget.get(nil)
   )
-  event.innerEventCreationSteps(eventInit)
+  event.innerEventCreationSteps(EventInit(eventInit))
   return event
 
 # InputEvent
@@ -340,7 +340,7 @@ proc newInputEvent*(ctype: CAtom; eventInit = InputEventInit()): InputEvent =
     inputType: eventInit.inputType,
     detail: eventInit.detail
   )
-  event.innerEventCreationSteps(eventInit)
+  event.innerEventCreationSteps(EventInit(eventInit))
   return event
 
 # EventTarget

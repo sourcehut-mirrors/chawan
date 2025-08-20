@@ -101,7 +101,7 @@ proc newProgressEvent(ctype: CAtom; init = ProgressEventInit()): ProgressEvent
     loaded: init.loaded,
     total: init.total
   )
-  Event(event).innerEventCreationSteps(init)
+  Event(event).innerEventCreationSteps(EventInit(init))
   return event
 
 func readyState(this: XMLHttpRequest): uint16 {.jsfget.} =
