@@ -70,7 +70,7 @@ proc toJS*(ctx: JSContext; err: JSError): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue
 proc toJS*(ctx: JSContext; u8a: JSUint8Array): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
-proc toJS*(ctx: JSContext; dict: JSDict): JSValue
+proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
 
 # Convert Nim types to the corresponding JavaScript type, with knowledge of
 # the parent object.
@@ -409,14 +409,19 @@ proc toJS*(ctx: JSContext; u8a: JSUint8Array): JSValue =
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue =
   return JS_NewNarrowStringLen(ctx, cstring(ns), csize_t(string(ns).len))
 
-proc toJS*(ctx: JSContext; dict: JSDict): JSValue =
+proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue =
   let obj = JS_NewObject(ctx)
   if JS_IsException(obj):
     return obj
-  for k, v in dict.fieldPairs:
-    when k != "toFree":
-      ctx.defineProperty(obj, k, v)
-  return obj
+  block good:
+    for k, v in dict.fieldPairs:
+      when k != "toFree":
+        case ctx.defineProperty(obj, k, v)
+        of dprSuccess, dprFail: discard
+        of dprException: break good
+    return obj
+  JS_FreeValue(ctx, obj)
+  return JS_EXCEPTION
 
 proc toJSP1(ctx: JSContext; p, tp, toRef: pointer): JSValue =
   JS_GetRuntime(ctx).getOpaque().parentMap[p] = toRef
