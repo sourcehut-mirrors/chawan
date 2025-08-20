@@ -2,8 +2,6 @@
 
 {.push raises: [].}
 
-import std/options
-import std/os
 import std/strutils
 import std/times
 
@@ -191,8 +189,8 @@ proc unauthorized(os: PosixStream; session: ptr LIBSSH2_SESSION) =
   quit(0)
 
 proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: string) =
-  let user = getEnv("MAPPED_URI_USERNAME")
-  let pass = getEnv("MAPPED_URI_PASSWORD")
+  let user = getEnvEmpty("MAPPED_URI_USERNAME")
+  let pass = getEnvEmpty("MAPPED_URI_PASSWORD")
   let configs = ["/etc/ssh/ssh_config", expandPath("~/.ssh/config")]
   var pubKey = ""
   var privKey = ""
@@ -308,12 +306,13 @@ Content-Type: text/html
 proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION;
     host, port: string; hostsPath: var string): ptr LIBSSH2_KNOWNHOSTS =
   hostsPath = ""
-  if getEnv("CHA_INSECURE_SSL_NO_VERIFY") == "1":
+  if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY") == "1":
     return nil
   let hosts = libssh2_knownhost_init(session)
   if hosts == nil:
     os.die("InternalError", "failed to init knownhost")
-  hostsPath = getEnv("CHA_SSH_KNOWN_HOSTS", expandPath("~/.ssh/known_hosts"))
+  hostsPath = getEnvEmpty("CHA_SSH_KNOWN_HOSTS",
+    expandPath("~/.ssh/known_hosts"))
   discard hosts.libssh2_knownhost_readfile(cstring(hostsPath),
     LIBSSH2_KNOWNHOST_FILE_OPENSSH)
   var store: ptr libssh2_knownhost = nil
@@ -394,9 +393,9 @@ please remove this host from """ & hostsPath & ".")
 
 proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
-  if getEnv("REQUEST_METHOD") != "GET":
+  if getEnvEmpty("REQUEST_METHOD") != "GET":
     os.die("InvalidMethod")
-  let host = getEnv("MAPPED_URI_HOST")
+  let host = getEnvEmpty("MAPPED_URI_HOST")
   let port = getEnvEmpty("MAPPED_URI_PORT", "22")
   let ps = os.connectSocket(host, port)
   if libssh2_init(0) < 0:

@@ -24,8 +24,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/options
-import std/os
 import std/posix
 import std/strutils
 
@@ -494,7 +492,7 @@ proc parseDimensions(os: PosixStream; s: string; allowZero: bool): (int, int) =
 
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
-  if getEnv("MAPPED_URI_PATH") == "encode":
+  if getEnvEmpty("MAPPED_URI_PATH") == "encode":
     var width = 0
     var height = 0
     var offx = 0
@@ -503,7 +501,7 @@ proc main() =
     var palette = -1
     var cropw = -1
     var quality = -1
-    for hdr in getEnv("REQUEST_HEADERS").split('\n'):
+    for hdr in getEnvEmpty("REQUEST_HEADERS").split('\n'):
       let s = hdr.after(':').strip()
       case hdr.until(':')
       of "Cha-Image-Dimensions":

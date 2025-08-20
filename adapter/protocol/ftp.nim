@@ -1,13 +1,9 @@
 {.push raises: [].}
 
-import std/options
-import std/os
 import std/posix
 import std/strutils
 
 import lcgi
-
-import utils/twtstr
 
 #TODO this is awfully inefficient
 proc readLine(ps: PosixStream; outs: var string): bool =
@@ -96,11 +92,11 @@ proc passiveMode(os, ps: PosixStream; host: string; ipv6: bool): PosixStream =
 
 proc main() =
   let os = newPosixStream(STDOUT_FILENO)
-  let host = getEnv("MAPPED_URI_HOST")
-  let username = getEnv("MAPPED_URI_USERNAME")
-  let password = getEnv("MAPPED_URI_PASSWORD")
+  let host = getEnvEmpty("MAPPED_URI_HOST")
+  let username = getEnvEmpty("MAPPED_URI_USERNAME")
+  let password = getEnvEmpty("MAPPED_URI_PASSWORD")
   let port = getEnvEmpty("MAPPED_URI_PORT", "21")
-  if getEnv("REQUEST_METHOD") != "GET":
+  if getEnvEmpty("REQUEST_METHOD") != "GET":
     os.die("InvalidMethod")
   var ipv6: bool
   let ps = os.connectSocket(host, port, ipv6)

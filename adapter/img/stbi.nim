@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-import std/options
-import std/os
 import std/posix
 import std/strutils
 
@@ -113,8 +111,8 @@ proc die(s: string) {.noreturn.} =
   quit(1)
 
 proc main() =
-  let f = getEnv("MAPPED_URI_SCHEME").after('+')
-  case getEnv("MAPPED_URI_PATH")
+  let f = getEnvEmpty("MAPPED_URI_SCHEME").after('+')
+  case getEnvEmpty("MAPPED_URI_PATH")
   of "decode":
     if f notin ["jpeg", "gif", "bmp", "png", "x-unknown"]:
       die("Cha-Control: ConnectionError 1 unknown format " & f)
@@ -129,7 +127,7 @@ proc main() =
       eof: myEof
     )
     var infoOnly = false
-    for hdr in getEnv("REQUEST_HEADERS").split('\n'):
+    for hdr in getEnvEmpty("REQUEST_HEADERS").split('\n'):
       let v = hdr.after(':').strip()
       if hdr.until(':') == "Cha-Image-Info-Only":
         infoOnly = v == "1"
@@ -154,7 +152,7 @@ proc main() =
   of "encode":
     if f notin ["png", "bmp", "jpeg"]:
       die("Cha-Control: ConnectionError 1 unknown format " & f & '\n')
-    let headers = getEnv("REQUEST_HEADERS")
+    let headers = getEnvEmpty("REQUEST_HEADERS")
     var quality = cint(50)
     var width = cint(0)
     var height = cint(0)

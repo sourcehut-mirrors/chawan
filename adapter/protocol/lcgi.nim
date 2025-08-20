@@ -1,7 +1,5 @@
 {.push raises: [].}
 
-import std/options
-import std/os
 import std/posix
 import std/strutils
 
@@ -255,7 +253,7 @@ proc connectSocket*(os: PosixStream; host, port: string; outIpv6: var bool):
     #TODO set outIpv6?
     host.delete(0..0)
     host.setLen(host.high)
-  let proxy = getEnv("ALL_PROXY")
+  let proxy = getEnvEmpty("ALL_PROXY")
   if proxy != "":
     return os.connectProxySocket(host, port, proxy, outIpv6)
   return os.connectSocket(host, port, "FailedToResolveHost",

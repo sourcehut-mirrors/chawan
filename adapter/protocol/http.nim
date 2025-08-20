@@ -2,7 +2,6 @@
 
 {.push raises: [].}
 
-import std/options
 import std/posix
 import std/strutils
 

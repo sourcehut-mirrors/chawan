@@ -2,7 +2,6 @@
 
 {.push raises: [].}
 
-import std/os
 import std/posix
 import std/strutils
 
@@ -15,9 +14,9 @@ proc sdie(s: string) =
   quit(1)
 
 proc openKnownHosts(os: PosixStream): (AChaFile, string) =
-  var path = getEnv("GMIFETCH_KNOWN_HOSTS")
+  var path = getEnvEmpty("GMIFETCH_KNOWN_HOSTS")
   if path == "":
-    let ourDir = getEnv("CHA_DIR")
+    let ourDir = getEnvEmpty("CHA_DIR")
     if ourDir == "":
       os.die("InternalError", "config dir missing")
     path = ourDir & '/' & "gemini_known_hosts"
@@ -157,7 +156,7 @@ proc checkCert(os: PosixStream; ssl: ptr SSL; host, port: string;
   var theirTm: Tm
   if ASN1_TIME_to_tm(notAfter, addr theirTm) == 0:
     sdie("Failed to parse time");
-  if getEnv("CHA_INSECURE_SSL_NO_VERIFY") != "1":
+  if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY") != "1":
     if X509_cmp_current_time(X509_get0_notBefore(cert)) >= 0 or
         X509_cmp_current_time(notAfter) <= 0:
       os.die("InvalidResponse", "received an expired certificate");
@@ -270,14 +269,14 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
 
 proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
-  let host = getEnv("MAPPED_URI_HOST")
+  let host = getEnvEmpty("MAPPED_URI_HOST")
   var (knownHosts, knownHostsPath) = os.openKnownHosts()
   let port = getEnvEmpty("MAPPED_URI_PORT", "1965")
   let path = getEnvEmpty("MAPPED_URI_PATH", "/")
   var reqBuf = "gemini://" & host & path
-  var query = getEnv("MAPPED_URI_QUERY")
+  var query = getEnvEmpty("MAPPED_URI_QUERY")
   var tmpEntry = "" # for accepting a self signed cert "once"
-  if getEnv("REQUEST_METHOD") == "POST":
+  if getEnvEmpty("REQUEST_METHOD") == "POST":
     os.readPost(query, host, knownHostsPath, knownHosts, tmpEntry)
   if query != "":
     reqBuf &= '?' & query
