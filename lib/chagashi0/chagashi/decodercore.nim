@@ -243,25 +243,26 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
     while (let i = td.i; i < iq.len):
       let b = iq[i]
       if td.needed == 0:
-        case b
-        of 0x00u8 .. 0x7Fu8: td.ri = td.i
-        of 0xC2u8 .. 0xDFu8:
-          td.needed = 1
-        of 0xE0u8 .. 0xEFu8:
-          if b == 0xE0: td.bounds.a = 0xA0
-          if b == 0xED: td.bounds.b = 0x9F
-          td.needed = 2
-        of 0xF0u8 .. 0xF4u8:
-          if b == 0xF0: td.bounds.a = 0x90
-          if b == 0xF4: td.bounds.b = 0x8F
-          td.needed = 3
+        if b <= 0x7F:
+          td.ri = td.i
         else:
-          # needs consume
-          if td.ri == -1:
-            td.bufLen = 0 # no valid character seen yet; clear buffer
-          read_input tdufErrorConsume
-          break
-          {.linearScanEnd.}
+          case b
+          of 0xC2u8 .. 0xDFu8:
+            td.needed = 1
+          of 0xE0u8 .. 0xEFu8:
+            if b == 0xE0: td.bounds.a = 0xA0
+            if b == 0xED: td.bounds.b = 0x9F
+            td.needed = 2
+          of 0xF0u8 .. 0xF4u8:
+            if b == 0xF0: td.bounds.a = 0x90
+            if b == 0xF4: td.bounds.b = 0x8F
+            td.needed = 3
+          else:
+            # needs consume
+            if td.ri == -1:
+              td.bufLen = 0 # no valid character seen yet; clear buffer
+            read_input tdufErrorConsume
+            break
       else:
         if b notin td.bounds:
           td.needed = 0

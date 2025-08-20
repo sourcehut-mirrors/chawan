@@ -368,7 +368,6 @@ proc hasElementInScopeWithXML[Handle, Atom](parser: HTML5Parser[Handle, Atom],
     let tagType = parser.atomToTagType(localName)
     case parser.getNamespace(element)
     of Namespace.HTML:
-      {.linearScanEnd.}
       if tagType in list:
         return false
     of Namespace.MATHML:
@@ -960,7 +959,6 @@ proc isSpecialElement[Handle, Atom](parser: HTML5Parser[Handle, Atom],
   let tagType = parser.atomToTagType(parser.getLocalName(element))
   case parser.getNamespace(element)
   of Namespace.HTML:
-    {.linearScanEnd.}
     return tagType in SpecialElements
   of Namespace.MATHML:
     const elements = {
