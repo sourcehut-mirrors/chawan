@@ -37,8 +37,8 @@ type
     inputBufIdx*: int # last character consumed in input buf
 
   TokenType* = enum
-    DOCTYPE, START_TAG, END_TAG, COMMENT, CHARACTER, CHARACTER_WHITESPACE,
-    CHARACTER_NULL, EOF
+    ttDoctype, ttStartTag, ttEndTag, ttComment, ttCharacter, ttWhitespace,
+    ttNull
 
   TokenFlag* = enum
     tfQuirks, tfPubid, tfSysid, tfSelfClosing
@@ -46,16 +46,16 @@ type
   Token*[Atom] = ref object
     flags*: set[TokenFlag]
     case t*: TokenType
-    of DOCTYPE:
+    of ttDoctype:
       name*: string
       pubid*: string
       sysid*: string
-    of START_TAG, END_TAG:
+    of ttStartTag, ttEndTag:
       tagname*: Atom
       attrs*: Table[Atom, string]
-    of CHARACTER, CHARACTER_WHITESPACE, COMMENT:
+    of ttCharacter, ttWhitespace, ttComment:
       s*: string
-    of EOF, CHARACTER_NULL: discard
+    of ttNull: discard
 
 const AsciiUpperAlpha = {'A'..'Z'}
 const AsciiLowerAlpha = {'a'..'z'}
@@ -67,15 +67,15 @@ const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 func `$`*(tok: Token): string =
   result = $tok.t
   case tok.t
-  of DOCTYPE:
+  of ttDoctype:
     result &= ' ' & tok.name & ' ' & tok.pubid & ' ' & tok.sysid
     if tfQuirks in tok.flags:
       result &= " (quirks)"
-  of START_TAG, END_TAG:
+  of ttStartTag, ttEndTag:
     result &= ' ' & tok.tagname & ' ' & $tok.attrs
     if tfSelfClosing in tok.flags:
       result &= " (self-closing)"
-  of CHARACTER, CHARACTER_WHITESPACE, COMMENT: result &= ' ' & tok.s
+  of ttCharacter, ttWhitespace, ttComment: result &= ' ' & tok.s
   else: discard
 
 proc strToAtom[Handle, Atom](tokenizer: Tokenizer[Handle, Atom];
@@ -120,12 +120,12 @@ proc flushChars[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]) =
   if tokenizer.charbuf.len > 0:
     if tokenizer.isws:
       tokenizer.tokqueue.add(Token[Atom](
-        t: CHARACTER_WHITESPACE,
+        t: ttWhitespace,
         s: move(tokenizer.charbuf)
       ))
     else:
       tokenizer.tokqueue.add(Token[Atom](
-        t: CHARACTER,
+        t: ttCharacter,
         s: move(tokenizer.charbuf)
       ))
     tokenizer.isws = false
@@ -255,9 +255,9 @@ proc numericCharacterReferenceEndState(tokenizer: var Tokenizer) =
   tokenizer.appendAttrOrEmit(s)
 
 proc flushAttr(tokenizer: var Tokenizer) =
-  # This can also be called with tok.t == END_TAG, in that case we do
+  # This can also be called with tok.t == ttEndTag, in that case we do
   # not want to flush attributes.
-  if tokenizer.tok.t == START_TAG and tokenizer.attr:
+  if tokenizer.tok.t == ttStartTag and tokenizer.attr:
     tokenizer.tok.attrs[tokenizer.attrna] = move(tokenizer.attrv)
 
 proc startNewAttribute(tokenizer: var Tokenizer) =
@@ -335,10 +335,10 @@ proc tokenizeEOF[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom]): bool =
     tokenizer.tokqueue.add(tokenizer.tok)
   of MARKUP_DECLARATION_OPEN:
     tokenizer.flushChars()
-    tokenizer.tokqueue.add(Token[Atom](t: COMMENT))
+    tokenizer.tokqueue.add(Token[Atom](t: ttComment))
   of DOCTYPE, BEFORE_DOCTYPE_NAME:
     tokenizer.flushChars()
-    tokenizer.tokqueue.add(Token[Atom](t: DOCTYPE, flags: {tfQuirks}))
+    tokenizer.tokqueue.add(Token[Atom](t: ttDoctype, flags: {tfQuirks}))
   of DOCTYPE_NAME, AFTER_DOCTYPE_NAME, AFTER_DOCTYPE_PUBLIC_KEYWORD,
       BEFORE_DOCTYPE_PUBLIC_IDENTIFIER, DOCTYPE_PUBLIC_IDENTIFIER_QUOTED,
       AFTER_DOCTYPE_PUBLIC_IDENTIFIER,
@@ -388,7 +388,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
     tokenizer.emit(ch)
   template emit_null =
     tokenizer.flushChars()
-    tokenizer.tokqueue.add(Token[Atom](t: CHARACTER_NULL))
+    tokenizer.tokqueue.add(Token[Atom](t: ttNull))
   template emit_tok =
     tokenizer.flushChars()
     tokenizer.tokqueue.add(tokenizer.tok)
@@ -455,13 +455,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       of '!': switch_state MARKUP_DECLARATION_OPEN
       of '/': switch_state END_TAG_OPEN
       of AsciiAlpha:
-        new_token Token[Atom](t: START_TAG)
+        new_token Token[Atom](t: ttStartTag)
         tokenizer.laststart = tokenizer.tok
         tokenizer.tagNameBuf = $c.toLowerAscii()
         # note: was reconsume
         switch_state TAG_NAME
       of '?':
-        new_token Token[Atom](t: COMMENT, s: "?")
+        new_token Token[Atom](t: ttComment, s: "?")
         # note: was reconsume
         switch_state BOGUS_COMMENT
       else:
@@ -471,13 +471,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
     of END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token[Atom](t: END_TAG)
+        new_token Token[Atom](t: ttEndTag)
         tokenizer.tagNameBuf = $c.toLowerAscii()
         # note: was reconsume
         switch_state TAG_NAME
       of '>': switch_state DATA
       else:
-        new_token Token[Atom](t: COMMENT)
+        new_token Token[Atom](t: ttComment)
         reconsume_in BOGUS_COMMENT
 
     of TAG_NAME:
@@ -507,7 +507,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
     of RCDATA_END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token[Atom](t: END_TAG)
+        new_token Token[Atom](t: ttEndTag)
         tokenizer.tagNameBuf = $c.toLowerAscii()
         tokenizer.tmp &= c
         # note: was reconsume
@@ -558,7 +558,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
     of RAWTEXT_END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token[Atom](t: END_TAG)
+        new_token Token[Atom](t: ttEndTag)
         tokenizer.tagNameBuf = $c.toLowerAscii()
         tokenizer.tmp &= c
         # note: was reconsume
@@ -612,7 +612,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
     of SCRIPT_DATA_END_TAG_OPEN:
       case c
       of AsciiAlpha:
-        new_token Token[Atom](t: END_TAG)
+        new_token Token[Atom](t: ttEndTag)
         tokenizer.tagNameBuf = $c.toLowerAscii()
         tokenizer.tmp &= c
         # note: was reconsume
@@ -723,7 +723,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
 
     of SCRIPT_DATA_ESCAPED_END_TAG_OPEN:
       if c in AsciiAlpha:
-        new_token Token[Atom](t: END_TAG)
+        new_token Token[Atom](t: ttEndTag)
         tokenizer.tagNameBuf = $c.toLowerAscii()
         tokenizer.tmp &= c
         # note: was reconsume
@@ -938,7 +938,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       else: reconsume_in BEFORE_ATTRIBUTE_NAME
 
     of BOGUS_COMMENT:
-      assert tokenizer.tok.t == COMMENT
+      assert tokenizer.tok.t == ttComment
       case c
       of '>':
         switch_state DATA
@@ -948,13 +948,13 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
 
     of MARKUP_DECLARATION_OPEN: # note: rewritten to fit case model as we consume a char anyway
       template anything_else =
-        new_token Token[Atom](t: COMMENT)
+        new_token Token[Atom](t: ttComment)
         switch_state BOGUS_COMMENT
       case c
       of '-':
         case tokenizer.eatStr(c, "-", ibuf)
         of esrSuccess:
-          new_token Token[Atom](t: COMMENT)
+          new_token Token[Atom](t: ttComment)
           tokenizer.state = COMMENT_START
         of esrRetry: break
         of esrFail: anything_else
@@ -969,7 +969,7 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
           if tokenizer.hasnonhtml:
             switch_state CDATA_SECTION
           else:
-            new_token Token[Atom](t: COMMENT, s: "[CDATA[")
+            new_token Token[Atom](t: ttComment, s: "[CDATA[")
             switch_state BOGUS_COMMENT
         of esrRetry: break
         of esrFail: anything_else
@@ -1069,14 +1069,14 @@ proc tokenize*[Handle, Atom](tokenizer: var Tokenizer[Handle, Atom];
       case c
       of AsciiWhitespace: discard
       of '\0':
-        new_token Token[Atom](t: DOCTYPE, name: "\uFFFD")
+        new_token Token[Atom](t: ttDoctype, name: "\uFFFD")
         switch_state DOCTYPE_NAME
       of '>':
-        new_token Token[Atom](t: DOCTYPE, flags: {tfQuirks})
+        new_token Token[Atom](t: ttDoctype, flags: {tfQuirks})
         switch_state DATA
         emit_tok
       else:
-        new_token Token[Atom](t: DOCTYPE, name: $c.toLowerAscii())
+        new_token Token[Atom](t: ttDoctype, name: $c.toLowerAscii())
         switch_state DOCTYPE_NAME
 
     of DOCTYPE_NAME:

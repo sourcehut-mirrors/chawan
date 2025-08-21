@@ -64,14 +64,14 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
   case a[0].getStr()
   of "StartTag":
     return Token[MAtom](
-      t: START_TAG,
+      t: ttStartTag,
       tagname: factory.strToAtom(a[1].getStr()),
       attrs: getAttrs(factory, a[2], esc),
       flags: if a.len > 3 and a[3].getBool(): {tfSelfClosing} else: {}
     )
   of "EndTag":
     return Token[MAtom](
-      t: END_TAG,
+      t: ttEndTag,
       tagname: factory.strToAtom(a[1].getStr())
     )
   of "Character":
@@ -80,7 +80,7 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     else:
       a[1].getStr()
     return Token[MAtom](
-      t: CHARACTER,
+      t: ttCharacter,
       s: s
     )
   of "DOCTYPE":
@@ -92,7 +92,7 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
     if not a[4].getBool(): # yes, this is reversed. don't ask
       flags.incl(tfQuirks)
     return Token[MAtom](
-      t: TokenType.DOCTYPE,
+      t: ttDoctype,
       name: if a[1].kind == JNull: "" else: a[1].getStr(),
       pubid: if a[2].kind == JNull: "" else: a[2].getStr(),
       sysid: if a[3].kind == JNull: "" else: a[3].getStr(),
@@ -103,25 +103,25 @@ proc getToken(factory: MAtomFactory, a: seq[JsonNode], esc: bool):
       doubleEscape(a[1].getStr())
     else:
       a[1].getStr()
-    return Token[MAtom](t: TokenType.COMMENT, s: s)
+    return Token[MAtom](t: ttComment, s: s)
   else: discard
 
 proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
   doAssert otok.t == tok.t, desc & " (tok t: " & $tok.t & " otok t: " &
     $otok.t & ")"
   case tok.t
-  of TokenType.DOCTYPE:
+  of ttDoctype:
     doAssert tok.name == otok.name, desc & " (" & "tok name: " & $tok.name &
       " otok name: " & $otok.name & ")"
     doAssert tok.pubid == otok.pubid, desc & " (" & "tok pubid: " &
       $tok.pubid & " otok pubid: " & $otok.pubid & ")"
     doAssert tok.sysid == otok.sysid, desc
     doAssert tok.flags == otok.flags, desc
-  of TokenType.START_TAG, TokenType.END_TAG:
+  of ttStartTag, ttEndTag:
     doAssert tok.tagname == otok.tagname, desc & " (tok tagname: " &
       factory.atomToStr(tok.tagname) & " otok tagname " &
       factory.atomToStr(otok.tagname) & ")"
-    if tok.t == TokenType.START_TAG: # otherwise a test incorrectly fails
+    if tok.t == ttStartTag: # otherwise a test incorrectly fails
       doAssert tok.flags == otok.flags, desc
     var attrs = ""
     var i = 0
@@ -143,17 +143,17 @@ proc checkEquals(factory: MAtomFactory, tok, otok: Token, desc: string) =
       inc i
     doAssert tok.attrs == otok.attrs, desc & " (tok attrs: " & attrs &
       " otok attrs (" & oattrs & ")"
-  of TokenType.CHARACTER, TokenType.CHARACTER_WHITESPACE, TokenType.COMMENT:
+  of ttCharacter, ttWhitespace, ttComment:
     doAssert tok.s == otok.s, desc & " (tok s: " & tok.s & " otok s: " &
       otok.s & ")"
-  of EOF, CHARACTER_NULL: discard
+  of ttNull: discard
 
 proc runTest(builder: MiniDOMBuilder, desc: string,
     output: seq[JsonNode], laststart: MAtom, esc: bool,
     input: string, state = TokenizerState.DATA) =
   let factory = builder.factory
   var tokenizer = newTokenizer(builder, state)
-  tokenizer.laststart = Token[MAtom](t: START_TAG, tagname: laststart)
+  tokenizer.laststart = Token[MAtom](t: ttStartTag, tagname: laststart)
   var i = 0
   var chartok: Token[MAtom] = nil
   var toks = newSeq[Token[MAtom]]()
@@ -169,19 +169,18 @@ proc runTest(builder: MiniDOMBuilder, desc: string,
       break
   for tok in toks:
     check tok != nil
-    if chartok != nil and tok.t notin {CHARACTER, CHARACTER_WHITESPACE,
-        CHARACTER_NULL}:
+    if chartok != nil and tok.t notin {ttCharacter, ttWhitespace, ttNull}:
       let otok = getToken(factory, output[i].getElems(), esc)
       checkEquals(factory, chartok, otok, desc)
       inc i
       chartok = nil
-    if tok.t in {CHARACTER, CHARACTER_WHITESPACE}:
+    if tok.t in {ttCharacter, ttWhitespace}:
       if chartok == nil:
-        chartok = Token[MAtom](t: CHARACTER)
+        chartok = Token[MAtom](t: ttCharacter)
       chartok.s &= tok.s
-    elif tok.t == CHARACTER_NULL:
+    elif tok.t == ttNull:
       if chartok == nil:
-        chartok = Token[MAtom](t: CHARACTER)
+        chartok = Token[MAtom](t: ttCharacter)
       chartok.s &= char(0)
     else:
       let otok = getToken(factory, output[i].getElems(), esc)

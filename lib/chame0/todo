@@ -1,4 +1,13 @@
-interface:
-* reduce use of getNamespace (maybe store ns on the stack of open elements?)
+v2:
+* use non-deduped seq for attrs; leave foreign attr adjustment to impl
+  (I think caseTable can be removed too)
+* createComment -> insertComment (so Handle can be set to ParentNode)
+* zero-copy insertCharacter
+  (maybe attr values too? but that needs a more elaborate CoW scheme)
+* non-ref Token
+* sink/lent in iface
+* standardize identifier names
+* omit openElementsInit, just add HTML based on ctx?
+* allow custom seq?
 etc:
 * add getElementById and some more basic stuff to minidom
