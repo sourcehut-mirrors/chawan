@@ -528,8 +528,7 @@ proc resolveBlockOffset(box: CSSBox): Offset =
       toPosition.add(BlockBox(it2))
     it2 = it2.parent
   var offset = if it2 != nil: it2.render.offset else: offset(0, 0)
-  for i in countdown(toPosition.high, 0):
-    let it = toPosition[i]
+  for it in toPosition.ritems:
     offset += it.state.offset
     it.render = BoxRenderState(
       offset: offset,

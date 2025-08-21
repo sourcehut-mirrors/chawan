@@ -231,9 +231,8 @@ proc matches*(element: Element; cxsel: ComplexSelector;
   var e = element
   var pmatch = mtTrue
   var mdepends = DependencyInfo.default
-  for i in countdown(cxsel.high, 0):
+  for csel in cxsel.ritems:
     var match = mtFalse
-    let csel = cxsel[i]
     case csel.ct
     of ctNone:
       match = e.matches(csel, mdepends)

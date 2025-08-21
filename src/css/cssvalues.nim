@@ -769,8 +769,8 @@ func numToBase(n: int; map: openArray[uint32]): string =
     tmp &= map[n mod map.len]
     n = n div map.len
   var res = ""
-  for i in countdown(tmp.high, 0):
-    res.addUTF8(tmp[i])
+  for u in tmp.ritems:
+    res.addUTF8(u)
   move(res)
 
 func numToFixed(n: int32; map: openArray[uint32]): string =

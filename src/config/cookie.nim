@@ -217,8 +217,7 @@ proc serialize*(cookieJar: CookieJar; url: URL): string =
     res &= cookie.name
     res &= "="
     res &= cookie.value
-  for j in countdown(expired.high, 0):
-    let i = expired[j]
+  for i in expired.ritems:
     cookieJar.map.del(cookieJar.cookies[i].getMapKey())
     cookieJar.cookies.delete(i)
   move(res)

@@ -1226,6 +1226,10 @@ func len*(csel: CompoundSelector): int {.inline.} =
 proc add*(csel: var CompoundSelector; sel: sink Selector) {.inline.} =
   csel.sels.add(sel)
 
+iterator ritems*(cxsel: ComplexSelector): lent CompoundSelector {.inline.} =
+  for csel in cxsel.csels.ritems:
+    yield csel
+
 func `[]`*(cxsel: ComplexSelector; i: int): lent CompoundSelector {.inline.} =
   return cxsel.csels[i]
 
@@ -1239,9 +1243,6 @@ func `[]`*(cxsel: var ComplexSelector; i: BackwardsIndex): var CompoundSelector
 
 func len*(cxsel: ComplexSelector): int {.inline.} =
   return cxsel.csels.len
-
-func high*(cxsel: ComplexSelector): int {.inline.} =
-  return cxsel.csels.high
 
 iterator items*(cxsel: ComplexSelector): lent CompoundSelector {.inline.} =
   for it in cxsel.csels:

@@ -312,8 +312,8 @@ proc handleHeaders(op: HTTPHandle; iq: openArray[char]): int =
         buf &= "\r\n"
         if not op.os.writeDataLoop(buf):
           quit(1)
-        for i in countdown(contentEncodings.high, 0):
-          case contentEncodings[i]
+        for ce in contentEncodings.ritems:
+          case ce
           of ceBr: op.unbrotli()
           of ceGzip: op.inflate(TINFL_FLAG_PARSE_GZIP_HEADER)
           of ceDeflate: op.inflate(TINFL_FLAG_PARSE_ZLIB_HEADER)

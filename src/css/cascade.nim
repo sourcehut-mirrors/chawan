@@ -18,6 +18,7 @@ import html/script
 import types/color
 import types/jscolor
 import types/opt
+import utils/twtstr
 
 type
   RuleListEntry = object
@@ -173,8 +174,8 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
 
 proc applyValues(ctx: var ApplyValueContext;
     entries: openArray[CSSComputedEntry]; revertType: RevertType) =
-  for i in countdown(entries.high, 0):
-    ctx.applyValue(entries[i], revertType)
+  for entry in entries.ritems:
+    ctx.applyValue(entry, revertType)
 
 proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
   # This is a bit awkward: presentational hints are below author and
@@ -291,15 +292,13 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     if rules[origin].vars[cifImportant].len > 0:
       if result.vars == nil:
         result.vars = newCSSVariableMap(parentVars)
-      for i in countdown(rules[origin].vars[cifImportant].high, 0):
-        let cvar = rules[origin].vars[cifImportant][i]
+      for cvar in rules[origin].vars[cifImportant].ritems:
         result.vars.putIfAbsent(cvar.name, cvar)
   for origin in countdown(CSSOrigin.high, CSSOrigin.low):
     if rules[origin].vars[cifNormal].len > 0:
       if result.vars == nil:
         result.vars = newCSSVariableMap(parentVars)
-      for i in countdown(rules[origin].vars[cifNormal].high, 0):
-        let cvar = rules[origin].vars[cifNormal][i]
+      for cvar in rules[origin].vars[cifNormal].ritems:
         result.vars.putIfAbsent(cvar.name, cvar)
   if result.vars == nil:
     result.vars = parentVars # inherit parent

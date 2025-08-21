@@ -14,6 +14,7 @@ import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import types/opt
+import utils/twtstr
 
 type
   EventPhase = enum
@@ -587,8 +588,7 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
   let ctx = dctx.ctx
   let event = dctx.event
   event.currentTarget = item.target
-  for i in countdown(item.els.high, 0):
-    let el = item.els[i]
+  for el in item.els.ritems:
     if JS_IsUndefined(el.callback):
       continue # removed, presumably by a previous handler
     if el.passive:
@@ -614,10 +614,9 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
     event.target = target
   dctx.collectItems(target)
   event.eventPhase = 1
-  for i in countdown(dctx.capture.high, 0):
+  for item in dctx.capture.ritems:
     if dctx.stop:
       break
-    let item = dctx.capture[i]
     if item.target == target:
       event.eventPhase = 2
     dctx.dispatchEvent0(item)

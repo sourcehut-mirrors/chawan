@@ -143,8 +143,8 @@ proc updateOffsets(map: var array[RegexType, RegexResult]; len: int;
           it.e += offset
       if overlap:
         toDel.add(i)
-    for i in countdown(toDel.high, 0):
-      res.captures.delete(toDel[i])
+    for i in toDel.ritems:
+      res.captures.delete(i)
     first = false
 
 proc processManpage(ofile, efile: AChaFile; header, keyword: string):

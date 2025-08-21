@@ -1612,8 +1612,8 @@ proc applyResponse*(container: Container; response: Response;
     container.charsetStack = @[charset]
   else:
     container.charsetStack = @[]
-    for i in countdown(container.config.charsets.high, 0):
-      container.charsetStack.add(container.config.charsets[i])
+    for charset in container.config.charsets.ritems:
+      container.charsetStack.add(charset)
     if container.charsetStack.len == 0:
       container.charsetStack.add(DefaultCharset)
   container.charset = container.charsetStack[^1]

@@ -925,6 +925,12 @@ iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
     yield (cast[int](i), a[i])
     inc i
 
+iterator ritems*[T](a: openArray[T]): lent T {.inline.} =
+  var i = uint(a.len)
+  while i > 0:
+    dec i
+    yield a[i]
+
 proc getFileExt*(path: string): string =
   let n = path.rfind({'/', '.'})
   if n == -1 or path[n] != '.':

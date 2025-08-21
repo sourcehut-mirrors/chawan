@@ -816,8 +816,7 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
   let obj = JS_NewObject(ctx)
   if JS_IsException(obj):
     return err(ctx.getExceptionMsg())
-  for i in countdown(config.cmd.init.high, 0):
-    let (k, cmd) = config.cmd.init[i]
+  for (k, cmd) in config.cmd.init.ritems:
     if k in config.cmd.map:
       # already in map; skip
       continue

@@ -236,13 +236,13 @@ func console(pager: Pager): Console =
 # depth-first descendant iterator
 iterator descendants(parent: Container): Container {.inline.} =
   var stack = newSeqOfCap[Container](parent.children.len)
-  for i in countdown(parent.children.high, 0):
-    stack.add(parent.children[i])
+  for child in parent.children.ritems:
+    stack.add(child)
   while stack.len > 0:
     let c = stack.pop()
     # add children first, so that deleteContainer works on c
-    for i in countdown(c.children.high, 0):
-      stack.add(c.children[i])
+    for child in c.children.ritems:
+      stack.add(child)
     yield c
 
 iterator containers*(pager: Pager): Container {.inline.} =
@@ -1534,8 +1534,7 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     let parent = container.parent
     let n = parent.children.find(container)
     assert n != -1, "Container not a child of its parent"
-    for i in countdown(container.children.high, 0):
-      let child = container.children[i]
+    for child in container.children.ritems:
       child.parent = container.parent
       parent.children.insert(child, n + 1)
     parent.children.delete(n)

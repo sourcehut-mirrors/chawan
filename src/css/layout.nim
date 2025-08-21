@@ -2446,14 +2446,13 @@ proc redistributeWidth(tctx: var TableContext) =
       tctx.cols[j].reflow = true
 
 proc reflowTableCells(tctx: var TableContext) =
-  for i in countdown(tctx.rows.high, 0):
-    var row = addr tctx.rows[i]
+  for row in tctx.rows.ritems:
     var n = tctx.cols.len - 1
-    for j in countdown(row.cells.high, 0):
-      let m = n - row.cells[j].colspan
+    for cell in row.cells.ritems:
+      let m = n - cell.colspan
       while n > m:
         if tctx.cols[n].reflow:
-          row.cells[j].reflow = true
+          cell.reflow = true
         if n < row.reflow.len and row.reflow[n]:
           tctx.cols[n].reflow = true
         dec n
