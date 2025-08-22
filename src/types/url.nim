@@ -1206,7 +1206,7 @@ proc get(ctx: JSContext; params: URLSearchParams; name: string): JSValue
   return JS_NULL
 
 proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
-  result = @[]
+  result = newSeq[string]()
   for it in params.list:
     if it.name == name:
       result.add(it.value)

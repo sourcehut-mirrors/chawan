@@ -106,8 +106,8 @@ proc then*[T](promise: EmptyPromise; cb: (proc(): T {.raises: [].})): Promise[T]
     next.resolve())
   return next
 
-proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): U {.raises: [].})):
-    Promise[U] {.discardable.} =
+proc then*[T, U: not void](promise: Promise[T];
+    cb: (proc(x: T): U {.raises: [].})): Promise[U] {.discardable.} =
   let next = Promise[U]()
   promise.then(proc(x: T) =
     next.res = cb(x)

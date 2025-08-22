@@ -734,7 +734,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput; select: Select) =
         elif outside:
           select.cursorLeft()
         # forget about where we started once btn3 is released
-        pager.pressed = (-1, -1)
+        pager.pressed = (-1i32, -1i32)
       of mitMove: discard
     else: # mibLeft
       case input.t
@@ -3090,7 +3090,7 @@ proc openMenu(pager: Pager; x = -1; y = -1) {.jsfunc.} =
     pager.container.acursory
   else:
     max(y, 0)
-  var options: seq[SelectOption] = @[]
+  var options = newSeq[SelectOption]()
   for (s, cmd) in MenuMap:
     options.add(SelectOption(s: s, nop: cmd == ""))
   pager.menu = newSelect(options, -1, x, y, pager.bufWidth, pager.bufHeight,

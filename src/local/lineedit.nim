@@ -4,8 +4,10 @@ import std/strutils
 
 import chagashi/decoder
 import config/history
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/quickjs
+import monoucha/tojs
 import types/cell
 import types/opt
 import types/winattrs

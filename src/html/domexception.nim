@@ -1,3 +1,4 @@
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/quickjs

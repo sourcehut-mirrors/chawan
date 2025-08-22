@@ -8,6 +8,7 @@ import html/enums
 import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
+import monoucha/quickjs
 import monoucha/tojs
 import types/blob
 import types/formdata
@@ -85,7 +86,7 @@ proc get(ctx: JSContext; this: FormData; name: string): JSValue {.jsfunc.} =
 
 proc getAll(ctx: JSContext; this: FormData; name: string): seq[JSValue]
     {.jsfunc.} =
-  result = @[]
+  result = newSeq[JSValue]()
   for entry in this.entries:
     if entry.name == name:
       if entry.isstr:

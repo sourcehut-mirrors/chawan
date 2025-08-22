@@ -15,10 +15,12 @@ import io/dynstream
 import io/packetwriter
 import io/promise
 import local/select
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jsregex
 import monoucha/jstypes
 import monoucha/quickjs
+import monoucha/tojs
 import server/buffer
 import server/headers
 import server/loaderiface
@@ -273,7 +275,7 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   return p.then(proc(pid: int): tuple[c: Container; fd: cint] =
     if pid == -1:
       discard close(sv[0])
-      return (nil, -1)
+      return (nil, cint(-1))
     let nc = Container()
     nc[] = container[]
     nc.url = url
@@ -1497,7 +1499,7 @@ proc getSelectionText(container: Container; hl = none(Highlight)):
 proc markURL(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
-  var schemes: seq[string] = @[]
+  var schemes = newSeq[string]()
   for key in container.mainConfig.external.urimethodmap.map.keys:
     schemes.add(key.until(':'))
   container.iface.markURL(schemes)

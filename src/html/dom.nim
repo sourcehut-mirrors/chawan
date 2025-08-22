@@ -3043,7 +3043,7 @@ proc validateDOMToken(ctx: JSContext; tok: JSValueConst): DOMResult[CAtom] =
 
 proc add(ctx: JSContext; tokenList: DOMTokenList;
     tokens: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
-  var toks: seq[CAtom] = @[]
+  var toks = newSeqOfCap[CAtom](tokens.len)
   for tok in tokens:
     toks.add(?ctx.validateDOMToken(tok))
   tokenList.toks.add(toks)
@@ -3052,7 +3052,7 @@ proc add(ctx: JSContext; tokenList: DOMTokenList;
 
 proc remove(ctx: JSContext; tokenList: DOMTokenList;
     tokens: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
-  var toks: seq[CAtom] = @[]
+  var toks = newSeqOfCap[CAtom](tokens.len)
   for tok in tokens:
     toks.add(?ctx.validateDOMToken(tok))
   for tok in toks:
@@ -4696,7 +4696,7 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
       return ok()
     of cdtProperty:
       var ctx = initCSSParser(toks)
-      var dummy: seq[CSSComputedEntry] = @[]
+      var dummy = newSeq[CSSComputedEntry]()
       if ctx.parseComputedValues0(decl.p, dummyAttrs, dummy).isErr:
         return ok()
     of cdtVariable:

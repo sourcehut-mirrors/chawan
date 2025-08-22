@@ -1,9 +1,11 @@
 import chagashi/charset
 import chagashi/decoder
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/jstypes
 import monoucha/quickjs
+import monoucha/tojs
 import types/opt
 
 type

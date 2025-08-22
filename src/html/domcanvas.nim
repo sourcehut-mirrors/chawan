@@ -6,7 +6,10 @@ import html/domexception
 import html/event
 import io/dynstream
 import io/packetwriter
+import monoucha/fromjs
 import monoucha/javascript
+import monoucha/quickjs
+import monoucha/tojs
 import server/headers
 import server/loaderiface
 import server/request
@@ -360,7 +363,7 @@ proc setLineDash(ctx: CanvasRenderingContext2D; segments: seq[float64])
 
 proc getLineDash(ctx: CanvasRenderingContext2D): seq[float64] {.jsfunc.} =
   discard #TODO implement
-  @[]
+  newSeq[float64]()
 
 proc textAlign(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   return $ctx.state.textAlign

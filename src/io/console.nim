@@ -3,6 +3,8 @@
 import io/chafile
 import monoucha/fromjs
 import monoucha/javascript
+import monoucha/quickjs
+import monoucha/tojs
 import types/opt
 import utils/twtstr
 

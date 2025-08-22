@@ -831,14 +831,14 @@ const HoverFun = [
 proc updateHover*(bc: BufferContext; cursorx, cursory: int): UpdateHoverResult
     {.proxy.} =
   if cursory >= bc.lines.len:
-    return @[]
+    return UpdateHoverResult.default
   let thisNode = bc.getCursorElement(cursorx, cursory)
-  var hover: seq[tuple[t: HoverType, s: string]] = @[]
+  var hover = newSeq[tuple[t: HoverType, s: string]]()
   var repaint = false
   let prevNode = bc.prevHover
   if thisNode != prevNode and (thisNode == nil or prevNode == nil or
       thisNode != prevNode):
-    var oldHover: seq[Element] = @[]
+    var oldHover = newSeq[Element]()
     for element in prevNode.branchElems:
       if element.hover:
         oldHover.add(element)
@@ -911,7 +911,7 @@ proc clone*(bc: BufferContext; newurl: URL): int {.proxy.} =
   do: # EOF, pager died
     return -1
   # suspend outputs before tee'ing
-  var ids: seq[int] = @[]
+  var ids = newSeq[int]()
   for it in bc.loader.ongoing:
     if it.response.onRead != nil:
       ids.add(it.response.outputId)
@@ -929,8 +929,8 @@ proc clone*(bc: BufferContext; newurl: URL): int {.proxy.} =
   if pid == 0: # child
     pins.sclose()
     bc.pollData.clear()
-    var connecting: seq[ConnectData] = @[]
-    var ongoing: seq[OngoingData] = @[]
+    var connecting = newSeq[ConnectData]()
+    var ongoing = newSeq[OngoingData]()
     var istream: InputData = nil
     for it in bc.loader.data:
       if it of ConnectData:
@@ -1657,7 +1657,7 @@ proc getLines*(bc: BufferContext; w: Slice[int]): GetLinesResult {.proxy.} =
         result.images.add(image)
 
 proc getLinks*(bc: BufferContext): seq[string] {.proxy.} =
-  result = @[]
+  result = newSeq[string]()
   if bc.document != nil:
     for element in bc.window.displayedElements(TAG_A):
       if element.attrb(satHref):
@@ -1692,9 +1692,9 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
   var stack = @[bc.document.body]
   while stack.len > 0:
     let element = stack.pop()
-    var toRemove: seq[Node] = @[]
-    var texts: seq[Text] = @[]
-    var stackNext: seq[HTMLElement] = @[]
+    var toRemove = newSeq[Node]()
+    var texts = newSeq[Text]()
+    var stackNext = newSeq[HTMLElement]()
     var lastText: Text = nil
     for node in element.childList:
       if node of Text:

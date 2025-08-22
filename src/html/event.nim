@@ -186,7 +186,7 @@ func srcElement(this: Event): EventTarget {.jsfget.} =
 #TODO shadow DOM etc.
 func composedPath(this: Event): seq[EventTarget] {.jsfunc.} =
   if this.currentTarget == nil:
-    return @[]
+    return newSeq[EventTarget]()
   return @[this.currentTarget]
 
 proc stopPropagation(this: Event) {.jsfunc.} =

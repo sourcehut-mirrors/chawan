@@ -1,8 +1,12 @@
 {.push raises: [].}
 
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jsregex
+import monoucha/quickjs
+import monoucha/tojs
 import types/cell
+import types/opt
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr

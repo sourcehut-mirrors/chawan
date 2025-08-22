@@ -4,8 +4,11 @@ import std/times
 import config/conftypes
 import html/event
 import io/timeout
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/quickjs
+import monoucha/tojs
+import types/opt
 
 type Performance* = ref object of EventTarget
   timeOrigin {.jsget.}: float64

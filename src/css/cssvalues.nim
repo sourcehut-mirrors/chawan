@@ -17,6 +17,8 @@ import types/refstring
 import types/winattrs
 import utils/twtstr
 
+export CSSPropertyType
+
 type
   CSSUnit* = enum
     cuAuto = ""
@@ -793,10 +795,11 @@ func numberAdditive(i: int32; range: Slice[int32];
     inc at
   move(s)
 
+type Z = cstring
 const romanNumbers = [
-  (1000i32, cstring"M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"),
-  (90, "XC"), (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"),
-  (1, "I")
+  (1000i32, Z"M"), (900i32, Z"CM"), (500i32, Z"D"), (400i32, Z"CD"),
+  (100i32, Z"C"), (90i32, Z"XC"), (50i32, Z"L"), (40i32, Z"XL"), (10i32, Z"X"),
+  (9i32, Z"IX"), (5i32, Z"V"), (4i32, Z"IV"), (1i32, Z"I")
 ]
 
 func romanNumber(i: int32): string =

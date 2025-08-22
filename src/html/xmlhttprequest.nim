@@ -2,7 +2,6 @@ import std/algorithm
 import std/options
 import std/strutils
 
-import types/formdata
 import chagashi/charset
 import chagashi/decoder
 import html/catom
@@ -16,6 +15,7 @@ import io/promise
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
+import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers
@@ -23,6 +23,7 @@ import server/loaderiface
 import server/request
 import server/response
 import types/blob
+import types/formdata
 import types/opt
 import types/url
 import utils/twtstr
@@ -403,7 +404,7 @@ proc getResponseHeader(ctx: JSContext; this: XMLHttpRequest; name: string):
   return res
 
 proc getAllResponseHeaders(this: XMLHttpRequest): string {.jsfunc.} =
-  var list: seq[string] = @[]
+  var list = newSeq[string]()
   for k, v in this.response.headers:
     list.add(k & ": " & v)
   list.sort(proc(a, b: string): int {.nimcall.} =

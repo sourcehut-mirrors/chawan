@@ -8,6 +8,7 @@ import chagashi/decoder
 import config/mimetypes
 import io/dynstream
 import io/promise
+import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
 import monoucha/quickjs
