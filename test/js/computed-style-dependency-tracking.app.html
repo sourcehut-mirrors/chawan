@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- Beware: this doesn't work in Gecko. -->
+<title>Selector dependency tracking</title>
+<style>
+:not(input:checked) + p { display: none; }
+</style>
+<div id=x>Fail</div>
+<input id=y type=checkbox>
+<p id=z>This paragraph is only shown when the checkbox above is checked.
+<script src=asserts.js></script>
+<script>
+const y = document.getElementById("y");
+const z = document.getElementById("z");
+assertEquals(window.getComputedStyle(z).display, "none");
+y.checked = true;
+assertEquals(window.getComputedStyle(z).display, "block");
+y.checked = false;
+assertEquals(window.getComputedStyle(z).display, "none");
+y.remove();
+z.remove();
+document.getElementById("x").textContent = "Success";
+</script>
