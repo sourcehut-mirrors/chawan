@@ -3,7 +3,6 @@
 import std/algorithm
 import std/math
 import std/options
-import std/os
 import std/posix
 import std/strutils
 
@@ -463,7 +462,7 @@ const ComponentPercentEncodeSet* = UserInfoPercentEncodeSet +
 const ApplicationXWWWFormUrlEncodedSet* = ComponentPercentEncodeSet +
   {'!', '\''..')', '~'}
 # used by pager
-when DirSep == '\\':
+when defined(windows):
   const LocalPathPercentEncodeSet* = Ascii - AsciiAlpha - AsciiDigit -
     {'.', '\\', '/'}
 else:
@@ -625,16 +624,40 @@ func utf16Len*(s: openArray[char]): int =
     else: # surrogate
       result += 2
 
+proc c_getenv(name: cstring): cstring {.
+  header: "<stdlib.h>", importc: "getenv".}
+proc c_setenv(envname, envval: cstring; overwrite: cint): cint {.
+  header: "<stdlib.h>", importc: "setenv".}
+proc c_unsetenv(name: cstring): cint {.
+  header: "<stdlib.h>", importc: "unsetenv".}
+
+proc getEnvCString*(name: string): cstring =
+  return c_getenv(cstring(name))
+
+proc getEnvEmpty*(name: string; fallback = ""): string =
+  var res = getEnvCString(name)
+  if res == nil or res[0] == '\0':
+    return fallback
+  return $res
+
+proc setEnv*(name, value: string): Opt[void] =
+  if c_setenv(cstring(name), cstring(value), 1) != 0:
+    return err()
+  ok()
+
+proc unsetEnv*(name: string) =
+  discard c_unsetenv(cstring(name))
+
 proc expandPath*(path: string): string =
   if path.len > 0 and path[0] == '~':
     if path.len == 1:
-      return getHomeDir()
+      return getEnvEmpty("HOME")
     if path[1] == '/':
-      return getHomeDir() / path.substr(2)
+      return getEnvEmpty("HOME") & path.substr(1)
     let usr = path.until({'/'}, 1)
     let p = getpwnam(cstring(usr))
     if p != nil and p.pw_dir != nil:
-      return $p.pw_dir / path.substr(usr.len)
+      return $p.pw_dir & '/' & path.substr(usr.len)
   return path
 
 func deleteChars*(s: openArray[char]; todel: set[char]): string =
@@ -893,30 +916,6 @@ func btoa*(data: openArray[uint8]): string =
 
 func btoa*(data: openArray[char]): string =
   return btoa(data.toOpenArrayByte(0, data.len - 1))
-
-proc c_getenv(name: cstring): cstring {.
-  header: "<stdlib.h>", importc: "getenv".}
-proc c_setenv(envname, envval: cstring; overwrite: cint): cint {.
-  header: "<stdlib.h>", importc: "setenv".}
-proc c_unsetenv(name: cstring): cint {.
-  header: "<stdlib.h>", importc: "unsetenv".}
-
-proc getEnvCString*(name: string): cstring =
-  return c_getenv(cstring(name))
-
-proc getEnvEmpty*(name: string; fallback = ""): string =
-  var res = getEnvCString(name)
-  if res == nil or res[0] == '\0':
-    return fallback
-  return $res
-
-proc setEnv*(name, value: string): Opt[void] =
-  if c_setenv(cstring(name), cstring(value), 1) != 0:
-    return err()
-  ok()
-
-proc unsetEnv*(name: string) =
-  discard c_unsetenv(cstring(name))
 
 iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =
   var i = 0u

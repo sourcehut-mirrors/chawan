@@ -54,7 +54,7 @@ proc stateTilde(ctx: var UnquoteContext; c: char) =
   if c != '/':
     ctx.identStr &= c
   else:
-    ctx.s &= expandPath(ctx.identStr)
+    ctx.s &= expandPath(ctx.identStr) & '/'
     ctx.state = usNormal
 
 # Kind of a hack. We special case `\$' (backslash-dollar) in TOML, so that
