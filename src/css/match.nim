@@ -8,21 +8,28 @@ import html/catom
 import html/dom
 import utils/twtstr
 
-# We use three match types.
-# "mtTrue" and "mtFalse" are self-explanatory.
-# "mtContinue" is like "mtFalse", but also modifies "depends".  This
-# "depends" change is only propagated at the end if no selector before
-# the pseudo element matches the element, and the last match was
-# "mtContinue".
+# Matching is slightly complicated by dependency tracking.
+# In general, dependencies must be added for any element whose state
+# affects the selectors matched onto the element.  However, consider the
+# following situation:
 #
-# Since style is only recomputed (e.g. when the hovered element changes)
-# for elements that are included in "depends", this has the effect of
-# minimizing such recomputations to cases where it's really necessary.
-type MatchType = enum
-  mtFalse, mtTrue, mtContinue
+#   * to match: x > y:hover
+#   * on elements: <z><y>test</y></z>
+#
+# A naive algorithm would mark a dependency of y on itself, since it
+# y:hover depends on y's hover status.  But upon closer inspection, we
+# can see that it is *not necessary*: y's parent is x, not z, so no
+# matter if y is hovered, matching it again would be pointless.
+#
+# Hence it is more efficient for us to *continue matching* upon seeing
+# y:hover, and discard the dependency once it is determined that the
+# parent doesn't match z.
+#
+# A similar situation arises for compound selectors as well, and even
+# selector lists (in case of pseudo-class functions).
 
-converter toMatchType(b: bool): MatchType =
-  return MatchType(b)
+proc matches(element: Element; cxsel: ComplexSelector;
+  depends: var DependencyInfo; ohasDeps: var bool): bool
 
 #TODO rfNone should match insensitively for certain properties
 proc matchesAttr(element: Element; sel: Selector): bool =
@@ -74,18 +81,28 @@ proc matchesAttr(element: Element; sel: Selector): bool =
       return val.contains(selval)
     of rfS: return val.contains(sel.value)
 
-proc matches*(element: Element; cxsel: ComplexSelector;
-  depends: var DependencyInfo): bool
-
 proc matches(element: Element; slist: SelectorList;
-    depends: var DependencyInfo): bool =
+    depends: var DependencyInfo; ohasDeps: var bool): bool =
+  var pmatch = false
+  var rhasDeps = false
   for cxsel in slist:
-    if element.matches(cxsel, depends):
-      return true
-  return false
+    var hasDeps = false
+    let match = element.matches(cxsel, depends, hasDeps)
+    if not hasDeps:
+      if match:
+        return true
+      if pmatch:
+        # already seen a matching selector; merge depends and return
+        # false.
+        break
+    else:
+      rhasDeps = true
+      pmatch = match
+  ohasDeps = rhasDeps
+  return pmatch
 
-proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo):
-    MatchType =
+proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
+    hasDeps: var bool): bool =
   case pc
   of pcFirstChild: return element.parentNode.firstElementChild == element
   of pcLastChild: return element.parentNode.lastElementChild == element
@@ -95,35 +112,32 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo):
     return element.parentNode.firstElementChild == element and
       element.parentNode.lastElementChild == element
   of pcHover:
+    hasDeps = true
     depends.add(element, dtHover)
-    if element.hover:
-      return mtTrue
-    return mtContinue
+    return element.hover
   of pcRoot: return element == element.document.documentElement
   of pcChecked:
-    if element.tagType == TAG_INPUT:
+    if element of HTMLInputElement:
+      hasDeps = true
       depends.add(element, dtChecked)
-      if HTMLInputElement(element).checked:
-        return mtTrue
-    elif element.tagType == TAG_OPTION:
+      return HTMLInputElement(element).checked
+    elif element of HTMLOptionElement:
+      hasDeps = true
       depends.add(element, dtChecked)
-      if HTMLOptionElement(element).selected:
-        return mtTrue
-    return mtContinue
+      return HTMLOptionElement(element).selected
+    return false
   of pcFocus:
+    hasDeps = true
     depends.add(element, dtFocus)
-    if element.document.focus == element:
-      return mtTrue
-    return mtContinue
+    return element.document.focus == element
   of pcTarget:
+    hasDeps = true
     depends.add(element, dtTarget)
-    if element.document.target == element:
-      return mtTrue
-    return mtContinue
+    return element.document.target == element
   of pcLink:
     return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
   of pcVisited:
-    return mtFalse
+    return false
 
 proc matchesLang(element: Element; lang: string): bool =
   for element in element.branchElems:
@@ -132,7 +146,7 @@ proc matchesLang(element: Element; lang: string): bool =
   true
 
 proc matchesNthChild(element: Element; nthChild: CSSNthChild;
-    depends: var DependencyInfo): bool =
+    depends: var DependencyInfo; ohasDeps: var bool): bool =
   let A = nthChild.anb.A # step
   let B = nthChild.anb.B # start
   if nthChild.ofsels.len == 0:
@@ -143,7 +157,7 @@ proc matchesNthChild(element: Element; nthChild: CSSNthChild;
     if A < 0:
       return j <= 0 and j mod A == 0
     return j >= 0 and j mod A == 0
-  if element.matches(nthChild.ofsels, depends):
+  if element.matches(nthChild.ofsels, depends, ohasDeps):
     var i = 1
     for child in element.parentNode.elementList:
       if child == element:
@@ -153,12 +167,14 @@ proc matchesNthChild(element: Element; nthChild: CSSNthChild;
         if A < 0:
           return j <= 0 and j mod A == 0
         return j >= 0 and j mod A == 0
-      if child.matches(nthChild.ofsels, depends):
+      var hasDeps = false
+      if child.matches(nthChild.ofsels, depends, hasDeps):
         inc i
+      ohasDeps = ohasDeps or hasDeps
   false
 
 proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
-    depends: var DependencyInfo): bool =
+    depends: var DependencyInfo; ohasDeps: var bool): bool =
   let A = nthChild.anb.A # step
   let B = nthChild.anb.B # start
   if nthChild.ofsels.len == 0:
@@ -170,7 +186,7 @@ proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
     if A < 0:
       return j <= 0 and j mod A == 0
     return j >= 0 and j mod A == 0
-  if element.matches(nthChild.ofsels, depends):
+  if element.matches(nthChild.ofsels, depends, ohasDeps):
     var i = 1
     for child in element.parentNode.relementList:
       if child == element:
@@ -180,107 +196,118 @@ proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
         if A < 0:
           return j <= 0 and j mod A == 0
         return j >= 0 and j mod A == 0
-      if child.matches(nthChild.ofsels, depends):
+      var hasDeps: bool
+      if child.matches(nthChild.ofsels, depends, hasDeps):
         inc i
+      ohasDeps = ohasDeps or hasDeps
   false
 
-proc matches(element: Element; sel: Selector; depends: var DependencyInfo):
-    MatchType =
+proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
+    ohasDeps: var bool): bool =
   case sel.t
   of stType:
     return element.localName == sel.tag
   of stClass:
     for it in element.classList:
       if sel.class == it.toLowerAscii():
-        return mtTrue
-    return mtFalse
+        return true
+    return false
   of stId:
     return sel.id == element.id.toLowerAscii()
   of stAttr:
     return element.matchesAttr(sel)
   of stPseudoClass:
-    return element.matches(sel.pc, depends)
+    return element.matches(sel.pc, depends, ohasDeps)
   of stPseudoElement:
-    return mtTrue
+    return true
   of stUniversal:
-    return mtTrue
+    return true
   of stNthChild:
-    return element.matchesNthChild(sel.nthChild, depends)
+    return element.matchesNthChild(sel.nthChild, depends, ohasDeps)
   of stNthLastChild:
-    return element.matchesNthLastChild(sel.nthChild, depends)
+    return element.matchesNthLastChild(sel.nthChild, depends, ohasDeps)
   of stNot:
-    return not element.matches(sel.fsels, depends)
+    return not element.matches(sel.fsels, depends, ohasDeps)
   of stIs, stWhere:
-    return element.matches(sel.fsels, depends)
+    return element.matches(sel.fsels, depends, ohasDeps)
   of stLang:
     return element.matchesLang(sel.lang)
 
 proc matches(element: Element; sels: CompoundSelector;
-    depends: var DependencyInfo): MatchType =
-  var res = mtTrue
+    depends: var DependencyInfo; ohasDeps: var bool): bool =
+  var pmatch = true
   for sel in sels:
-    case element.matches(sel, depends)
-    of mtFalse: return mtFalse
-    of mtTrue: discard
-    of mtContinue: res = mtContinue
-  return res
+    var hasDeps = false
+    let match = element.matches(sel, depends, hasDeps)
+    if not hasDeps:
+      if not match:
+        return false
+      if not pmatch:
+        # already seen a matching selector; merge depends and return
+        # false.
+        break
+    else:
+      ohasDeps = true
+      pmatch = match
+  return pmatch
+
+proc matches(element: Element; cxsel: ComplexSelector;
+    depends: var DependencyInfo; ohasDeps: var bool): bool =
+  var e = element
+  var pmatch = true
+  var mdepends = DependencyInfo.default
+  for csel in cxsel.ritems:
+    var match = false
+    var hasDeps = false
+    case csel.ct
+    of ctNone:
+      match = e.matches(csel, mdepends, hasDeps)
+    of ctDescendant:
+      e = e.parentElement
+      while e != nil:
+        if e.matches(csel, mdepends, hasDeps):
+          match = true
+          break
+        e = e.parentElement
+    of ctChild:
+      e = e.parentElement
+      match = e != nil and e.matches(csel, mdepends, hasDeps)
+    of ctNextSibling:
+      e = e.previousElementSibling
+      match = e != nil and e.matches(csel, mdepends, hasDeps)
+    of ctSubsequentSibling:
+      var it = element.previousElementSibling
+      while it != nil:
+        if it.matches(csel, mdepends, hasDeps):
+          e = it
+          match = true
+          break
+        it = it.previousElementSibling
+    if not hasDeps:
+      if not match:
+        return false # we can discard depends.
+      if not pmatch:
+        # already seen a non-matching selector; merge depends and return
+        # false.
+        break
+    else:
+      ohasDeps = true
+      pmatch = match
+    if e == nil:
+      break
+  depends.merge(mdepends)
+  return pmatch
 
 # Note: this modifies "depends".
 proc matches*(element: Element; cxsel: ComplexSelector;
     depends: var DependencyInfo): bool =
-  var e = element
-  var pmatch = mtTrue
-  var mdepends = DependencyInfo.default
-  for csel in cxsel.ritems:
-    var match = mtFalse
-    case csel.ct
-    of ctNone:
-      match = e.matches(csel, mdepends)
-    of ctDescendant:
-      e = e.parentElement
-      while e != nil:
-        case e.matches(csel, mdepends)
-        of mtFalse: discard
-        of mtTrue:
-          match = mtTrue
-          break
-        of mtContinue: match = mtContinue # keep looking
-        e = e.parentElement
-    of ctChild:
-      e = e.parentElement
-      if e != nil:
-        match = e.matches(csel, mdepends)
-    of ctNextSibling:
-      let prev = e.previousElementSibling
-      if prev != nil:
-        e = prev
-        match = e.matches(csel, mdepends)
-    of ctSubsequentSibling:
-      var it = element.previousElementSibling
-      while it != nil:
-        case it.matches(csel, mdepends)
-        of mtTrue:
-          e = it
-          match = mtTrue
-          break
-        of mtFalse: discard
-        of mtContinue: match = mtContinue # keep looking
-        it = it.previousElementSibling
-    if match == mtFalse:
-      return false # we can discard depends.
-    if pmatch == mtContinue and match == mtTrue or e == nil:
-      pmatch = mtContinue
-      break # we must update depends.
-    pmatch = match
-  depends.merge(mdepends)
-  if pmatch == mtContinue:
-    return false
-  return true
+  var dummy: bool
+  return element.matches(cxsel, depends, dummy)
 
 # Forward declaration hack
-matchesImpl = proc(element: Element; cxsels: seq[ComplexSelector]): bool
-    {.nimcall.} =
+matchesImpl = proc(element: Element; slist: SelectorList): bool {.nimcall.} =
   var dummy = DependencyInfo.default
-  return element.matches(cxsels, dummy)
+  var dummy2: bool
+  return element.matches(slist, dummy, dummy2)
 
 {.pop.} # raises: []
