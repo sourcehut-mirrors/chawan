@@ -11,6 +11,7 @@ MANPREFIX5 ?= $(MANPREFIX)/man5
 MANPREFIX7 ?= $(MANPREFIX)/man7
 TARGET ?= release
 PANDOC ?= pandoc
+PKG_CONFIG ?= pkg-config
 
 # Note: this is not a real shell substitution.
 # The default setting is at {the binary's path}/../libexec/chawan.
@@ -74,15 +75,24 @@ ifeq ($(FORCE_POLL_MODE),2)
 CFLAGS += -DCHA_FORCE_SELECT
 endif
 
-ifneq ($(CFLAGS),)
-FLAGS += $(foreach flag,$(CFLAGS),--passc:$(flag))
-endif
-ifneq ($(LDFLAGS),)
-FLAGS += $(foreach flag,$(LDFLAGS),--passl:$(flag))
-endif
+FLAGS += $(foreach flag,$(CFLAGS),-t:$(flag))
+FLAGS += $(foreach flag,$(LDFLAGS),-l:$(flag))
 
 FLAGS += -d:disableSandbox=$(DANGER_DISABLE_SANDBOX)
 FLAGS += -d:forcePollMode=$(FORCE_POLL_MODE)
+
+ssl_libs = libssl libcrypto libbrotlidec libbrotlicommon libssh2
+ssl_flags = $(FLAGS)
+ssl_cflags != $(PKG_CONFIG) --cflags $(ssl_libs)
+status = $(.SHELLSTATUS)
+ssl_ldflags != $(PKG_CONFIG) --libs $(ssl_libs)
+status += $(.SHELLSTATUS)
+ssl_flags += $(foreach flag,$(ssl_cflags),-t:$(flag))
+ssl_flags += $(foreach flag,$(ssl_ldflags),-l:$(flag))
+
+ifneq ($(status),0 0)
+$(error failed to find some dependencies)
+endif
 
 export CC CFLAGS LDFLAGS PANDOC
 
@@ -169,6 +179,11 @@ $(OUTDIR_LIBEXEC)/gmi2html: $(twtstr) $(chafile)
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
+		-o:"$@" $<
+
+$(OUTDIR_CGI_BIN)/ssl: adapter/protocol/ssl.nim adapter/nim.cfg
+	@mkdir -p "$(OUTDIR_CGI_BIN)"
+	$(NIMC) $(ssl_flags) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
 		-o:"$@" $<
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%

@@ -6,12 +6,6 @@ import lcgi
 
 export lcgi, dynstream, twtstr, sandbox
 
-const libssl = staticExec("pkg-config --libs libssl libcrypto")
-const cflags = staticExec("pkg-config --cflags libssl libcrypto")
-
-{.passc: cflags.}
-{.passl: libssl.}
-
 type
   ASN1_TIME* = pointer
   EVP_PKEY* = pointer

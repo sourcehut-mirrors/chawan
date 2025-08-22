@@ -30,6 +30,7 @@ Following is a list of variables which may be set.
 	  build with gdb.
 * `OUTDIR`: where to output the files.
 * `NIM`: path to the Nim compiler.
+* `PKG_CONFIG`: path to pkg-config.  You can set it to pkgconf too.
 * `CFLAGS`, `LDFLAGS`: flags to pass to the C compiler at compile or
   link time.
 * `OBJDIR`: directory to output compilation artifacts.  By default,

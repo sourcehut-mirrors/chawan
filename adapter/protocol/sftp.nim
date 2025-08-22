@@ -9,12 +9,6 @@ import utils/twtstr
 
 import lcgi
 
-const cflags = staticExec("pkg-config --cflags libssh2")
-const libssh2 = staticExec("pkg-config --libs libssh2")
-
-{.passc: cflags.}
-{.passl: libssh2.}
-
 # libssh2 bindings
 
 type

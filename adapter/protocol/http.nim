@@ -69,12 +69,6 @@ proc tinfl_decompress(r: var tinfl_decompressor; pIn_buf_next: ptr uint8;
 const InputBufferSize = 16384
 
 # libbrotli bindings
-const libbrotlidec = staticExec("pkg-config --libs libbrotlidec libbrotlicommon")
-const libbrotlidecCflags = staticExec("pkg-config --cflags libbrotlidec libbrotlicommon")
-
-{.passl: libbrotlidec.}
-{.passc: libbrotlidecCflags.}
-
 type BrotliDecoderState {.importc, header: "<brotli/decode.h>",
   incompleteStruct.} = object
 
