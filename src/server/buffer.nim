@@ -11,6 +11,7 @@ import std/tables
 import chagashi/charset
 import chagashi/decoder
 import chagashi/decodercore
+import chame/htmlparser
 import chame/tags
 import config/config
 import config/conftypes

@@ -19,8 +19,6 @@ import types/opt
 import types/refstring
 import types/url
 
-export htmlparser.ParseResult
-
 # DOMBuilder implementation for Chawan.
 
 type CharsetConfidence* = enum
