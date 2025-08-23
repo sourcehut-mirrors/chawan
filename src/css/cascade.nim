@@ -384,4 +384,7 @@ proc applyStyle*(element: Element) =
       computed.next = pcomputed
       computed = pcomputed
 
+# Forward declaration hack
+applyStyleImpl = applyStyle
+
 {.pop.} # raises: []

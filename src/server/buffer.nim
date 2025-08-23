@@ -16,7 +16,6 @@ import chame/tags
 import config/config
 import config/conftypes
 import css/box
-import css/cascade
 import css/csstree
 import css/layout
 import css/lunit
@@ -1970,9 +1969,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   )
   if bc.config.scripting != smFalse:
     bc.window.navigate = proc(url: URL) = bc.navigate(url)
-  bc.window.maybeRestyle = proc(element: Element) =
-    if element.computed == nil:
-      element.applyStyle()
   bc.charset = bc.charsetStack.pop()
   istream.setBlocking(false)
   bc.loader.put(InputData(stream: istream))

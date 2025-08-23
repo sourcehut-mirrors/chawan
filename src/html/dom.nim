@@ -121,7 +121,6 @@ type
     imageTypes*: Table[string, string]
     userAgent*: string
     referrer* {.jsget.}: string
-    maybeRestyle*: proc(element: Element)
     performance* {.jsget.}: Performance
     currentModuleURL*: URL
     jsStore*: seq[JSValue]
@@ -624,6 +623,7 @@ func findAttrNS(element: Element; namespace, localName: CAtom): int
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
+proc ensureStyle(element: Element)
 func outerHTML(element: Element): string
 proc postConnectionSteps(element: Element)
 func previousElementSibling*(element: Element): Element
@@ -659,6 +659,7 @@ var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall, raises: [].}
 # set in html/env
 var fetchImpl*: proc(window: Window; input: JSRequest): JSResult[FetchPromise]
   {.nimcall, raises: [].}
+var applyStyleImpl*: proc(element: Element) {.nimcall, raises: [].}
 
 # Reflected attributes.
 type
@@ -924,7 +925,7 @@ iterator displayedElements*(window: Window; tag: TagType): Element
     let node = stack.pop()
     if node of Element:
       let element = Element(node)
-      window.maybeRestyle(element)
+      element.ensureStyle()
       if element.computed{"display"} != DisplayNone:
         yield element
         for child in element.rchildList:
@@ -1374,7 +1375,7 @@ proc getComputedStyle0*(window: Window; element: Element;
   of "": peNone
   else: return newCSSStyleDeclaration(nil, "")
   if window.settings.scripting == smApp:
-    window.maybeRestyle(element)
+    element.ensureStyle()
     return newCSSStyleDeclaration(element, $element.getComputedStyle(pseudo),
       computed = true, readonly = true)
   # In lite mode, we just parse the "style" attribute and hope for
@@ -4218,6 +4219,10 @@ proc invalidate*(element: Element) =
   if valid:
     for it in element.elementList:
       it.invalidate()
+
+proc ensureStyle(element: Element) =
+  if element.computed == nil:
+    element.applyStyleImpl()
 
 proc resetElement*(element: Element) =
   case element.tagType
