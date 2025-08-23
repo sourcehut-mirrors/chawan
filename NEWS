@@ -15,11 +15,16 @@ Additions:
 Changes:
 * improved highlighting in monochrome mode
 * unify binaries that link to OpenSSL in dynamically linked builds too
-* remove deprecated prepend-https, css and stylesheet config options
-  (use prepend-scheme, user-style instead)
 * optimize CSS parser, cascading, DOM representation
 * more sensible semantics for pager.load() - empty string now works,
   newline at end deprecated in favor of pager.loadSubmit()
+* allow overriding pkg-config path in Makefile (using PKG_CONFIG)
+
+Removals:
+* remove deprecated prepend-https, css and stylesheet config options
+  (use prepend-scheme, user-style instead)
+* remove protocol.form-request config option (read the body in CGI
+  instead)
 
 Fixes:
 * fix buffer cloning on musl
@@ -32,6 +37,8 @@ Fixes:
 * fix crash on hitting C-c on buffers waiting for connection
 * fix chaseccomp compilation with some ancient shells
 * fix lang() CSS selector
+* fix setTimeout needlessly spinning the CPU on macOS
+* fix selector dependency tracking for :not
 
 0.2.0 (2025.06.15)
 
