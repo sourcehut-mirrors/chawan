@@ -58,9 +58,9 @@ assertEquals(select.parentNode, test);
 select.remove();
 const formData = new FormData();
 formData.append("test", "a");
-assertThrows(`formData.append("test", "b", {
+assertThrows(() => formData.append("test", "b", {
 	toString: function() { throw new Error("test"); }
-})`, TypeError);
+}), TypeError);
 assertEquals(formData.get("test"), "a");
 document.getElementById("x").textContent = "Success";
 </script>

@@ -4,16 +4,18 @@ function assert(x, msg) {
 		throw new TypeError("Assertion failed" + mymsg);
 }
 
-function assertThrows(expr, error) {
+function assertThrows(fun, error) {
+	if (!(fun instanceof Function))
+		throw new TypeError("error expected to be Function");
 	let me;
 	try {
-		eval(expr);
+		fun();
 	} catch (e) {
 		if (e instanceof error)
 			return;
 		me = e;
 	}
-	throw new TypeError("Assertion failed: expected " + error + ", got " + me + " for expression: " + expr);
+	throw new TypeError("Assertion failed: expected " + error + ", got " + me + " for: " + fun);
 }
 
 function assertEquals(a, b) {
