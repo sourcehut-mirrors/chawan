@@ -1336,15 +1336,7 @@ proc restoreFocus(bc: BufferContext) =
 proc implicitSubmit(bc: BufferContext; input: HTMLInputElement): Request =
   let form = input.form
   if form != nil and form.canSubmitImplicitly():
-    var defaultButton: Element
-    for element in form.elementDescendants:
-      if element.isSubmitButton():
-        defaultButton = element
-        break
-    if defaultButton != nil:
-      return bc.submitForm(form, defaultButton)
-    else:
-      return bc.submitForm(form, form)
+    return bc.submitForm(form, form)
   return nil
 
 proc readSuccess*(bc: BufferContext; s: string; hasFd: bool): Request
