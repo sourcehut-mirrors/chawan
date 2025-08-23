@@ -50,6 +50,7 @@ You can also install Chawan from packages maintained by volunteers:
 * Alpine: <https://pkgs.alpinelinux.org/packages?name=chawan>
 * AUR: <https://aur.archlinux.org/packages/chawan-git>
 * NixOS: <https://search.nixos.org/packages?show=chawan>
+* Slackware (SBo): <https://slackbuilds.org/repository/15.0/network/chawan/>
 * AppImage: <https://git.lerch.org/lobo/chawan-appimage/>
 * Homebrew: <https://formulae.brew.sh/formula/chawan>
 
