@@ -173,16 +173,16 @@ func camelToKebabCase*(s: openArray[char]; dashPrefix = false): string =
 
 func hexValue*(c: char): int =
   if c in AsciiDigit:
-    return int(c) - int('0')
+    return int(uint8(c) - uint8('0'))
   if c in 'a'..'f':
-    return int(c) - int('a') + 0xA
+    return int(uint8(c) - uint8('a') + 0xA)
   if c in 'A'..'F':
-    return int(c) - int('A') + 0xA
+    return int(uint8(c) - uint8('A') + 0xA)
   return -1
 
 func decValue*(c: char): int =
   if c in AsciiDigit:
-    return int(c) - int('0')
+    return int(uint8(c) - uint8('0'))
   return -1
 
 const HexCharsUpper = "0123456789ABCDEF"
@@ -345,13 +345,14 @@ func convertSize*(size: int): string =
 # https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#numbers
 func parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
     radix: T): Opt[T] =
-  var i = 0
-  if i < s.len and allowSign and s[i] == '+':
-    inc i
-  var fail = i == s.len # fail on empty input
   var integer: T = 0
   let radix = uint(radix)
-  for i in i ..< s.len:
+  var i = 0u
+  let L = uint(s.len)
+  if allowSign and i < L and s[i] == '+':
+    inc i
+  var fail = i == L # fail on empty input
+  for i in i ..< L:
     let u = uint64(hexValue(s[i]))
     let n = uint64(integer) * radix + u
     integer = T(n)
@@ -718,7 +719,9 @@ func strictParseEnum*[T: enum](s: string): Opt[T] =
   const IdentMap = getIdentMap(T)
   let n = IdentMap.strictParseEnum0(s)
   if n != -1:
+    {.push rangeChecks: off.}
     return ok(T(n))
+    {.pop.}
   err()
 
 func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): int =
@@ -733,7 +736,9 @@ func parseEnumNoCase*[T: enum](s: string): Opt[T] =
   const IdentMap = getIdentMap(T)
   let n = IdentMap.parseEnumNoCase0(s)
   if n != -1:
+    {.push rangeChecks: off.}
     return ok(T(n))
+    {.pop.}
   return err()
 
 const tchar = AsciiAlphaNumeric +
