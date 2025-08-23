@@ -1,0 +1,9 @@
+<!doctype html>
+<title>Document type</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+document.implementation.createDocumentType('test\u00B7\u0301', '', '');
+assertThrows("document.implementation.createDocumentType('test!!test', '', '')", DOMException);
+document.getElementById("x").textContent = "Success";
+</script>

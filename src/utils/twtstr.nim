@@ -557,49 +557,45 @@ func join*(ss: openArray[string]; sep: char): string =
 
 # https://www.w3.org/TR/xml/#NT-Name
 const NameStartCharRanges = [
-  (0xC0u32, 0xD6u32),
-  (0xD8u32, 0xF6u32),
-  (0xF8u32, 0x2FFu32),
-  (0x370u32, 0x37Du32),
-  (0x37Fu32, 0x1FFFu32),
-  (0x200Cu32, 0x200Du32),
-  (0x2070u32, 0x218Fu32),
-  (0x2C00u32, 0x2FEFu32),
-  (0x3001u32, 0xD7FFu32),
-  (0xF900u32, 0xFDCFu32),
-  (0xFDF0u32, 0xFFFDu32),
-  (0x10000u32, 0xEFFFFu32)
-]
-const NameCharRanges = [ # + NameStartCharRanges
-  (0xB7u32, 0xB7u32),
-  (0x0300u32, 0x036Fu32),
-  (0x203Fu32, 0x2040u32)
+  (0xC0u16, 0xD6u16),
+  (0xD8u16, 0xF6u16),
+  (0xF8u16, 0x2FFu16),
+  (0x370u16, 0x37Du16),
+  (0x37Fu16, 0x1FFFu16),
+  (0x200Cu16, 0x200Du16),
+  (0x2070u16, 0x218Fu16),
+  (0x2C00u16, 0x2FEFu16),
+  (0x3001u16, 0xD7FFu16),
+  (0xF900u16, 0xFDCFu16),
+  (0xFDF0u16, 0xFFFDu16)
 ]
 const NameStartCharAscii = {':', '_'} + AsciiAlpha
 const NameCharAscii = NameStartCharAscii + {'-', '.'} + AsciiDigit
+
+func isNameStartCharHigh(u: uint32): bool =
+  return u <= uint16.high and NameStartCharRanges.isInRange(uint16(u)) or
+    u in 0x10000u32..0xEFFFFu32
+
 func matchNameProduction*(s: openArray[char]): bool =
   if s.len == 0:
     return false
   # NameStartChar
   var i = 0
-  if s[i] in Ascii:
-    if s[i] notin NameStartCharAscii:
+  let u = s.nextUTF8(i)
+  if u <= 0x7F:
+    if char(u) notin NameStartCharAscii:
       return false
-    inc i
-  else:
-    let u = s.nextUTF8(i)
-    if not NameStartCharRanges.isInRange(u):
-      return false
+  elif not u.isNameStartCharHigh():
+    return false
   # NameChar
   while i < s.len:
-    if s[i] in Ascii:
-      if s[i] notin NameCharAscii:
+    let u = s.nextUTF8(i)
+    if u <= 0x7F:
+      if char(u) notin NameCharAscii:
         return false
-      inc i
-    else:
-      let u = s.nextUTF8(i)
-      if not NameStartCharRanges.isInRange(u) and not NameCharRanges.isInMap(u):
-        return false
+    elif not u.isNameStartCharHigh() and u != 0xB7 and
+        u notin 0x300u32..0x36Fu32 and u notin 0x203Fu32..0x2040u32:
+      return false
   return true
 
 func matchQNameProduction*(s: openArray[char]): bool =
