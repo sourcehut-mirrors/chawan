@@ -1,6 +1,6 @@
 {.push raises: [].}
 
-from std/strutils import split, toUpperAscii
+from std/strutils import split
 
 import std/macros
 import std/options
@@ -20,7 +20,6 @@ import css/csstree
 import css/layout
 import css/lunit
 import css/render
-import css/sheet
 import html/catom
 import html/chadombuilder
 import html/dom
@@ -58,16 +57,36 @@ import utils/twtstr
 
 type
   BufferCommand* = enum
-    bcLoad, bcForceReshape, bcWindowChange, bcReadSuccess, bcReadCanceled,
-    bcClick, bcFindNextLink, bcFindPrevLink, bcFindNthLink, bcFindRevNthLink,
-    bcFindNextMatch, bcFindPrevMatch, bcGetLines, bcUpdateHover, bcGotoAnchor,
-    bcCancel, bcGetTitle, bcSelect, bcClone, bcFindPrevParagraph,
-    bcFindNextParagraph, bcMarkURL, bcToggleImages, bcCheckRefresh, bcOnReshape,
-    bcGetLinks
+    bcCancel = "cancel"
+    bcCheckRefresh = "checkRefresh"
+    bcClick = "click"
+    bcClone = "clone"
+    bcFindNextLink = "findNextLink"
+    bcFindNextMatch = "findNextMatch"
+    bcFindNextParagraph = "findNextParagraph"
+    bcFindNthLink = "findNthLink"
+    bcFindPrevLink = "findPrevLink"
+    bcFindPrevMatch = "findPrevMatch"
+    bcFindPrevParagraph = "findPrevParagraph"
+    bcFindRevNthLink = "findRevNthLink"
+    bcForceReshape = "forceReshape"
+    bcGetLines = "getLines"
+    bcGetLinks = "getLinks"
+    bcGetTitle = "getTitle"
+    bcGotoAnchor = "gotoAnchor"
+    bcLoad = "load"
+    bcMarkURL = "markURL"
+    bcOnReshape = "onReshape"
+    bcReadCanceled = "readCanceled"
+    bcReadSuccess = "readSuccess"
+    bcSelect = "select"
+    bcToggleImages = "toggleImages"
+    bcUpdateHover = "updateHover"
+    bcWindowChange = "windowChange"
 
   BufferState = enum
-    bsLoadingPage, bsLoadingResources, bsLoadingImages,
-    bsLoadingImagesAck, bsLoaded
+    bsLoadingPage, bsLoadingResources, bsLoadingImages, bsLoadingImagesAck,
+    bsLoaded
 
   HoverType* = enum
     htTitle, htLink, htImage, htCachedImage
@@ -81,36 +100,34 @@ type
   InputData = ref object of MapData
 
   BufferContext = ref object
-    attrs: WindowAttributes
+    firstBufferRead: bool
+    headlessLoading: bool
+    ishtml: bool
+    needsBOMSniff: bool
+    onReshapeImmediately: bool
+    savetask: bool
+    state: BufferState
+    charset: Charset
     bgcolor: CellColor
+    attrs: WindowAttributes
     bytesRead: int
     cacheId: int
-    charset: Charset
     charsetStack: seq[Charset]
     config: BufferConfig
     ctx: TextDecoderContext
-    firstBufferRead: bool
-    headlessLoading: bool
     hoverText: array[HoverType, string]
     htmlParser: HTML5ParserWrapper
     images: seq[PosBitmap]
-    ishtml: bool
     lines: FlexibleGrid
     loader: FileLoader
     navigateUrl: URL # stored when JS tries to navigate
-    needsBOMSniff: bool
-    onReshapeImmediately: bool
     outputId: int
     pollData: PollData
     prevHover: Element
     pstream: SocketStream # control stream
-    quirkstyle: CSSStylesheet
     reportedBytesRead: int
     rootBox: BlockBox
-    savetask: bool
-    state: BufferState
     tasks: array[BufferCommand, int] #TODO this should have arguments
-    url: URL # URL before readFromFd
     window: Window
 
   BufferIfaceItem = object
@@ -174,8 +191,8 @@ proc addEmptyPromise(iface: BufferInterface; id: int): EmptyPromise =
   return promise
 
 func findPromise(iface: BufferInterface; id: int): int =
-  for i in 0 ..< iface.map.len:
-    if iface.map[i].id == id:
+  for i, it in iface.map.mypairs:
+    if it.id == id:
       return i
   return -1
 
@@ -225,18 +242,17 @@ proc resolve*(iface: BufferInterface; packetid, len, nfds: int) =
 proc hasPromises*(iface: BufferInterface): bool =
   return iface.map.len > 0
 
-# get enum identifier of proxy function
-func getFunId(fun: NimNode): string =
-  let name = fun[0] # sym
-  return "bc" & name.strVal[0].toUpperAscii() & name.strVal.substr(1)
+# For each proxied command, we create two procs: a) an interface proc to
+# send packets to buffer, then read result (overloaded, but has the same
+# name); b) a proxy proc to read packets in buffer, call proxied proc,
+# and send back the result (nameCmd).
+type ProxyFlag = enum
+  pfNone, pfTask
 
-proc buildInterfaceProc(fun: NimNode; funid: string):
-    tuple[fun, name: NimNode] =
-  let name = fun[0] # sym
-  let params = fun[3] # formalparams
+proc buildInterfaceProc(name, params: NimNode; cmd: BufferCommand): NimNode =
+  let name = ident(name.strVal).postfix("*")
   let retval = params[0] # sym
   assert params.len >= 2 # return type, this value
-  let nup = ident(funid) # add this to enums
   let this2 = newIdentDefs(ident("iface"), ident("BufferInterface"))
   let thisval = this2[0]
   var retval2: NimNode
@@ -262,7 +278,7 @@ proc buildInterfaceProc(fun: NimNode; funid: string):
     writeStmts.add(quote do: writer.swrite(`s`))
   let body = quote do:
     `thisval`.stream.withPacketWriterFire writer:
-      writer.swrite(BufferCommand.`nup`)
+      writer.swrite(BufferCommand(`cmd`))
       writer.swrite(`thisval`.packetid)
       `writeStmts`
     let promise = `addfun`
@@ -272,54 +288,76 @@ proc buildInterfaceProc(fun: NimNode; funid: string):
     newNimNode(nnkPragma).add(ident("discardable"))
   else:
     newEmptyNode()
-  return (newProc(name, params2, body, pragmas = pragmas), nup)
+  return newProc(name, params2, body, pragmas = pragmas)
 
-type
-  ProxyFunction = ref object
-    iname: NimNode # internal name
-    ename: NimNode # enum name
-    params: seq[NimNode]
-    istask: bool
-  ProxyMap = Table[string, ProxyFunction]
-
-# Name -> ProxyFunction
-var ProxyFunctions {.compileTime.}: ProxyMap
-
-proc getProxyFunction(funid: string): ProxyFunction =
-  return ProxyFunctions.mgetOrPut(funid, ProxyFunction())
-
-macro proxy0(fun: untyped) =
-  fun[0] = ident(fun[0].strVal & "_internal")
-  return fun
-
-macro proxy1(fun: typed) =
-  let funid = getFunId(fun)
-  let iproc = buildInterfaceProc(fun, funid)
-  let pfun = getProxyFunction(funid)
-  pfun.iname = ident(fun[0].strVal & "_internal")
-  pfun.ename = iproc[1]
-  pfun.params.add(fun[3][0])
-  var params2: seq[NimNode] = @[]
-  params2.add(fun[3][0])
-  for i in 1 ..< fun[3].len:
-    let param = fun[3][i]
-    pfun.params.add(param)
+proc buildProxyProc(name, params: NimNode; cmd: BufferCommand; flag: ProxyFlag):
+    NimNode =
+  let stmts = newStmtList()
+  let r = ident("r")
+  let bc = ident("bc")
+  let packetid = ident("packetid")
+  let call = newCall(name, ident("bc"))
+  for i in 2 ..< params.len:
+    let param = params[i]
     for i in 0 ..< param.len - 2:
-      let id2 = newIdentDefs(ident(param[i].strVal), param[^2])
-      params2.add(id2)
-  ProxyFunctions[funid] = pfun
-  return iproc[0]
-
-macro proxy(fun: typed) =
+      let id = ident(param[i].strVal)
+      let typ = param[^2]
+      stmts.add(quote do:
+        var `id`: `typ`
+        `r`.sread(`id`)
+      )
+      call.add(id)
+  let hasRes = params[0].kind == nnkEmpty
+  if hasRes:
+    stmts.add(call)
+  else:
+    stmts.add(quote do:
+      let retval {.inject.} = `call`)
+  let resolve = if hasRes:
+    quote do:
+      `bc`.pstream.withPacketWriter wt:
+        wt.swrite(`packetid`)
+      do:
+        quit(1)
+  else:
+    quote do:
+      `bc`.pstream.withPacketWriter wt:
+        wt.swrite(`packetid`)
+        wt.swrite(retval)
+      do:
+        quit(1)
+  case flag
+  of pfTask:
+    stmts.add(quote do:
+      if `bc`.savetask:
+        `bc`.savetask = false
+        `bc`.tasks[BufferCommand(`cmd`)] = `packetid`
+      else:
+        `resolve`
+    )
+  of pfNone:
+    stmts.add(resolve)
+  let name = ident(name.strVal & "Cmd")
   quote do:
-    proxy0(`fun`)
-    proxy1(`fun`)
+    proc `name`(`bc`: BufferContext; `r`: var PacketReader; `packetid`: int) =
+      `stmts`
 
-macro task(fun: typed) =
-  let funid = getFunId(fun)
-  let pfun = getProxyFunction(funid)
-  pfun.istask = true
-  fun
+macro proxyt(flag: static ProxyFlag; fun: typed) =
+  let name = fun.name # sym
+  let params = fun.params # formalParams
+  let cmd = strictParseEnum[BufferCommand](name.strVal).get
+  let iproc = buildInterfaceProc(name, params, cmd)
+  let pproc = buildProxyProc(name, params, cmd, flag)
+  quote do:
+    `fun`
+    `iproc`
+    `pproc`
+
+template proxy(fun: untyped) =
+  proxyt(pfNone, fun)
+
+template proxy(flag, fun: untyped) =
+  proxyt(flag, fun)
 
 func getTitleAttr(bc: BufferContext; element: Element): string =
   if element != nil:
@@ -389,7 +427,6 @@ proc getClickHover(bc: BufferContext; element: Element): string =
         if url := clickable.document.parseURL(src):
           return $url
     elif clickable of FormAssociatedElement:
-      #TODO this is inefficient and also quite stupid
       let fae = FormAssociatedElement(clickable)
       if fae.canSubmitOnClick():
         let req = bc.submitForm(fae.form, fae)
@@ -710,7 +747,7 @@ proc checkRefresh*(bc: BufferContext): CheckRefreshResult {.proxy.} =
   let element = bc.document.findMetaRefresh()
   if element == nil:
     return CheckRefreshResult(n: -1)
-  return parseRefresh(element.attr(satContent), bc.url)
+  return parseRefresh(element.attr(satContent), bc.document.url)
 
 proc hasTask(bc: BufferContext; cmd: BufferCommand): bool =
   return bc.tasks[cmd] != 0
@@ -835,11 +872,9 @@ proc updateHover*(bc: BufferContext; cursorx, cursory: int): UpdateHoverResult
   let thisNode = bc.getCursorElement(cursorx, cursory)
   var hover = newSeq[tuple[t: HoverType, s: string]]()
   var repaint = false
-  let prevNode = bc.prevHover
-  if thisNode != prevNode and (thisNode == nil or prevNode == nil or
-      thisNode != prevNode):
+  if thisNode != bc.prevHover:
     var oldHover = newSeq[Element]()
-    for element in prevNode.branchElems:
+    for element in bc.prevHover.branchElems:
       if element.hover:
         oldHover.add(element)
     for ht in HoverType:
@@ -964,7 +999,6 @@ proc clone*(bc: BufferContext; newurl: URL): int {.proxy.} =
     bc.pstream.sclose()
     pouts.write(char(0))
     pouts.sclose()
-    bc.url = newurl
     for it in bc.tasks.mitems:
       it = 0
     bc.pstream = pstream
@@ -1043,7 +1077,7 @@ proc headlessMustWait(bc: BufferContext): bool =
 # * -1 if loading is done
 # * a positive number for reporting the number of bytes loaded and that the page
 #   has been partially rendered.
-proc load*(bc: BufferContext): int {.proxy, task.} =
+proc load*(bc: BufferContext): int {.proxy: pfTask.} =
   if bc.state == bsLoaded:
     if bc.config.headless == hmTrue and bc.headlessMustWait():
       bc.headlessLoading = true
@@ -1127,7 +1161,7 @@ proc onload(bc: BufferContext; data: InputData) =
     if bc.hasTask(bcLoad):
       bc.resolveTask(bcLoad, bc.bytesRead)
 
-proc getTitle*(bc: BufferContext): string {.proxy, task.} =
+proc getTitle*(bc: BufferContext): string {.proxy: pfTask.} =
   if bc.document != nil:
     let title = bc.document.findFirst(TAG_TITLE)
     if title != nil:
@@ -1142,17 +1176,14 @@ proc forceReshape0(bc: BufferContext) =
     bc.document.invalid = true
   bc.maybeReshape()
 
-proc forceReshape2(bc: BufferContext) =
+proc forceReshape*(bc: BufferContext) {.proxy.} =
   if bc.document != nil and bc.document.documentElement != nil:
     bc.document.documentElement.invalidate()
   bc.forceReshape0()
 
-proc forceReshape*(bc: BufferContext) {.proxy.} =
-  bc.forceReshape2()
-
 proc windowChange*(bc: BufferContext; attrs: WindowAttributes) {.proxy.} =
   bc.attrs = attrs
-  bc.forceReshape2()
+  bc.forceReshape()
 
 proc cancel*(bc: BufferContext) {.proxy.} =
   if bc.state == bsLoaded:
@@ -1666,7 +1697,7 @@ proc getLinks*(bc: BufferContext): seq[string] {.proxy.} =
         else:
           result.add(element.attr(satHref))
 
-proc onReshape*(bc: BufferContext) {.proxy, task.} =
+proc onReshape*(bc: BufferContext) {.proxy: pfTask.} =
   if bc.onReshapeImmediately:
     # We got a reshape before the container even asked us for the event.
     # This variable prevents the race that would otherwise occur if
@@ -1767,7 +1798,7 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
     stack.add(stackNext)
   bc.forceReshape0()
 
-proc toggleImages0(bc: BufferContext): bool =
+proc toggleImages*(bc: BufferContext): bool {.proxy: pfTask.} =
   bc.config.images = not bc.config.images
   bc.window.settings.images = bc.config.images
   bc.window.svgCache.clear()
@@ -1783,69 +1814,39 @@ proc toggleImages0(bc: BufferContext): bool =
       bc.savetask = false
     else:
       bc.resolveTask(bcToggleImages, bc.config.images)
-    bc.forceReshape2()
+    bc.forceReshape()
   )
   return bc.config.images
 
-proc toggleImages*(bc: BufferContext): bool {.proxy, task.} =
-  bc.toggleImages0()
-
-macro bufferDispatcher(funs: static ProxyMap; bc: BufferContext;
-    cmd: BufferCommand; packetid: int; r: var PacketReader) =
-  let switch = newNimNode(nnkCaseStmt)
-  switch.add(ident("cmd"))
-  for k, v in funs:
-    let ofbranch = newNimNode(nnkOfBranch)
-    ofbranch.add(v.ename)
-    let stmts = newStmtList()
-    let call = newCall(v.iname, bc)
-    for i in 2 ..< v.params.len:
-      let param = v.params[i]
-      for i in 0 ..< param.len - 2:
-        let id = ident(param[i].strVal)
-        let typ = param[^2]
-        stmts.add(quote do:
-          var `id`: `typ`
-          `r`.sread(`id`)
-        )
-        call.add(id)
-    var rval: NimNode
-    if v.params[0].kind == nnkEmpty:
-      stmts.add(call)
-    else:
-      rval = ident("retval")
-      stmts.add(quote do:
-        let `rval` = `call`)
-    var resolve = newStmtList()
-    if rval == nil:
-      resolve.add(quote do:
-        bc.pstream.withPacketWriter wt:
-          wt.swrite(`packetid`)
-        do:
-          quit(1)
-      )
-    else:
-      resolve.add(quote do:
-        bc.pstream.withPacketWriter wt:
-          wt.swrite(`packetid`)
-          wt.swrite(`rval`)
-        do:
-          quit(1)
-      )
-    if v.istask:
-      let en = v.ename
-      stmts.add(quote do:
-        if bc.savetask:
-          bc.savetask = false
-          bc.tasks[BufferCommand.`en`] = `packetid`
-        else:
-          `resolve`
-      )
-    else:
-      stmts.add(resolve)
-    ofbranch.add(stmts)
-    switch.add(ofbranch)
-  return switch
+# Note: these functions are automatically generated by the .proxy macro.
+const ProxyMap = [
+  bcCancel: cancelCmd,
+  bcCheckRefresh: checkRefreshCmd,
+  bcClick: clickCmd,
+  bcClone: cloneCmd,
+  bcFindNextLink: findNextLinkCmd,
+  bcFindNextMatch: findNextMatchCmd,
+  bcFindNextParagraph: findNextParagraphCmd,
+  bcFindNthLink: findNthLinkCmd,
+  bcFindPrevLink: findPrevLinkCmd,
+  bcFindPrevMatch: findPrevMatchCmd,
+  bcFindPrevParagraph: findPrevParagraphCmd,
+  bcFindRevNthLink: findRevNthLinkCmd,
+  bcForceReshape: forceReshapeCmd,
+  bcGetLines: getLinesCmd,
+  bcGetLinks: getLinksCmd,
+  bcGetTitle: getTitleCmd,
+  bcGotoAnchor: gotoAnchorCmd,
+  bcLoad: loadCmd,
+  bcMarkURL: markURLCmd,
+  bcOnReshape: onReshapeCmd,
+  bcReadCanceled: readCanceledCmd,
+  bcReadSuccess: readSuccessCmd,
+  bcSelect: selectCmd,
+  bcToggleImages: toggleImagesCmd,
+  bcUpdateHover: updateHoverCmd,
+  bcWindowChange: windowChangeCmd,
+]
 
 proc readCommand(bc: BufferContext): bool =
   bc.pstream.withPacketReader r:
@@ -1853,7 +1854,7 @@ proc readCommand(bc: BufferContext): bool =
     var packetid: int
     r.sread(cmd)
     r.sread(packetid)
-    bufferDispatcher(ProxyFunctions, bc, cmd, packetid, r)
+    ProxyMap[cmd](bc, r, packetid)
   do: # EOF, pager died
     return false
   true
@@ -1946,7 +1947,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     loader: loader,
     needsBOMSniff: config.charsetOverride == CHARSET_UNKNOWN,
     pstream: pstream,
-    url: url,
     charsetStack: charsetStack,
     cacheId: cacheId,
     outputId: -1
@@ -1981,7 +1981,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   bc.initDecoder()
   bc.htmlParser = newHTML5ParserWrapper(
     bc.window,
-    bc.url,
+    url,
     confidence,
     bc.charset
   )
