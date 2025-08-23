@@ -177,7 +177,6 @@ type
     input* {.jsget.}: InputConfig
     display* {.jsget.}: DisplayConfig
     #TODO getset
-    protocol*: Table[string, ProtocolConfig]
     siteconf*: OrderedTable[string, SiteConfig]
     omnirule*: OrderedTable[string, OmniRule]
     cmd*: CommandConfig

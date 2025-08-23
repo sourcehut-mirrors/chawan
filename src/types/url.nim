@@ -41,6 +41,7 @@ type
     stHttp = "http"
     stHttps = "https"
     stJavascript = "javascript"
+    stMailto = "mailto"
     stStream = "stream"
     stWs = "ws"
     stWss = "wss"
@@ -111,6 +112,7 @@ const SpecialPort = [
   stHttp: 80,
   stHttps: 443,
   stJavascript: -1,
+  stMailto: -1,
   stStream: -1,
   stWs: 80,
   stWss: 443,

@@ -4,15 +4,6 @@ startup-script = ""
 headless = false
 console-buffer = true
 
-[protocol.ftp]
-form-request = "ftp"
-
-[protocol.mailto]
-form-request = "mailto"
-
-[protocol.data]
-form-request = "data"
-
 [buffer]
 styling = true
 images = false

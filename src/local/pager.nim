@@ -1784,7 +1784,6 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     history: pager.config.buffer.history,
     headless: pager.config.start.headless,
     charsetOverride: charsetOverride,
-    protocol: pager.config.protocol,
     metaRefresh: pager.config.buffer.metaRefresh,
     markLinks: pager.config.buffer.markLinks,
     colorMode: pager.term.colorMode

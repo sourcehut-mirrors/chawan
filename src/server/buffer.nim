@@ -155,7 +155,6 @@ type
     metaRefresh*: MetaRefresh
     colorMode*: ColorMode
     charsets*: seq[Charset]
-    protocol*: Table[string, ProtocolConfig]
     imageTypes*: Table[string, string]
     userAgent*: string
     referrer*: string
@@ -1233,19 +1232,14 @@ func pickCharset(form: HTMLFormElement): Charset =
     return CHARSET_UTF_8
   return form.document.charset.getOutputEncoding()
 
-proc getFormRequestType(bc: BufferContext; scheme: string): FormRequestType =
-  bc.config.protocol.withValue(scheme, p):
-    return p[].formRequest
-  return frtHttp
-
 proc makeFormRequest(bc: BufferContext; parsedAction: URL;
     httpMethod: HttpMethod; entryList: seq[FormDataEntry];
     enctype: FormEncodingType): Request =
   assert httpMethod in {hmGet, hmPost}
-  case bc.getFormRequestType(parsedAction.scheme)
-  of frtFtp:
+  case parsedAction.schemeType
+  of stFtp:
     return newRequest(parsedAction) # get action URL
-  of frtData:
+  of stData:
     if httpMethod == hmGet:
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()
@@ -1253,7 +1247,7 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       parsedAction.setSearch('?' & serializeFormURLEncoded(kvlist))
       return newRequest(parsedAction, httpMethod)
     return newRequest(parsedAction) # get action URL
-  of frtMailto:
+  of stMailto:
     if httpMethod == hmGet:
       # mailWithHeaders
       let kvlist = entryList.toNameValuePairs()
@@ -1274,7 +1268,7 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       parsedAction.search &= '&'
     parsedAction.search &= "body=" & body
     return newRequest(parsedAction, httpMethod)
-  of frtHttp:
+  else:
     if httpMethod == hmGet:
       # mutate action URL
       let kvlist = entryList.toNameValuePairs()

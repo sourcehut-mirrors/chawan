@@ -37,7 +37,6 @@ the search path accommodates XDG basedirs as well:
 * [Input](#input)
 * [Network](#network)
 * [Display](#display)
-* [Protocol](#protocol)
 * [Omnirule](#omnirule)
 * [Siteconf](#siteconf)
 * [Keybindings](#keybindings)
@@ -824,32 +823,6 @@ force-pixels-per-line</td>
 <td>false</td>
 <td>Force-set columns, lines, pixels per column, or pixels per line to the
 fallback values provided above.</td>
-</tr>
-
-</table>
-
-## Protocol
-
-Protocol-related rules are to be placed in objects keyed as
-`[protocol.{protocol-name}]`. e.g. FTP related rules are placed in in
-`[protocol.ftp]`.
-
-<table>
-<col width=20%><col width=10%><col width=10%><col width=60%>
-
-<tr>
-<th>Name</th>
-<th>Value</th>
-<th>Default</th>
-<th>Function</th>
-</tr>
-
-<tr>
-<td>form-request</td>
-<td>"http" / "ftp" / "data" / "mailto"</td>
-<td>"http"</td>
-<td>Specify which protocol to imitate when submitting forms to this
-protocol.</td>
 </tr>
 
 </table>
