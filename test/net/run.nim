@@ -46,25 +46,14 @@ proc runServer(server: AsyncHttpServer) {.async.} =
       # wait 500ms for FDs to be closed
       await sleepAsync(500)
 
-proc main() {.async.} =
-  var server = newAsyncHttpServer()
-  if paramCount() >= 1 and paramStr(1) == "-x":
-    server.listen(Port(8000))
-    await server.runServer()
-    quit(0)
-  server.listen(Port(0))
-  let port = server.getPort()
-  case fork()
-  of 0:
-    let cmd = getAppFilename().untilLast('/') & "/run.sh " & $uint16(port)
-    discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
-    quit(1)
-  of -1:
-    stderr.write("Failed to start run.sh")
-    quit(1)
-  else:
-    await server.runServer()
-    var x: cint
-    quit(WEXITSTATUS(wait(addr x)))
+proc main() =
+  let server = newAsyncHttpServer()
+  if paramCount() >= 1:
+    if paramStr(1) == "-a":
+      server.listen(Port(0), "localhost")
+    else:
+      server.listen(Port(8000), "localhost")
+  echo $uint16(server.getPort())
+  waitFor server.runServer()
 
-waitFor main()
+main()

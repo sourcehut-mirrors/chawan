@@ -17,10 +17,10 @@ assertEquals(myFunction, x.onreadystatechange);
 assertEquals(x.readyState, XMLHttpRequest.UNSENT);
 assertEquals(x.UNSENT, XMLHttpRequest.UNSENT);
 x.open("GET", "ping", false);
-assertThrows("x.responseType = 'document'", DOMException);
+assertThrows(() => x.responseType = 'document', DOMException);
 x.overrideMimeType("text/plain");
 x.send();
-assertThrows(`x.overrideMimeType("text/plain")`, DOMException);
+assertThrows(() => x.overrideMimeType("text/plain"), DOMException);
 assertEquals(x.readyState, XMLHttpRequest.DONE);
 assert(changed);
 changed = false;
@@ -35,7 +35,7 @@ x.open("GET", "json", true, undefined, undefined);
 x.responseType = "json";
 x.withCredentials = true;
 x.send();
-assertThrows("x.withCredentials = true", DOMException);
+assertThrows(() => x.withCredentials = true, DOMException);
 let y = new XMLHttpRequest();
 y.onreadystatechange = function() {
 	if (y.readyState === XMLHttpRequest.DONE) {

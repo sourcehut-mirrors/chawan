@@ -326,7 +326,7 @@ test_md:
 
 .PHONY: test_net
 test_net: test/net/run
-	(cd test/net && ./run)
+	(cd test/net && ./run.sh)
 
 .PHONY: test
 test: test_js test_layout test_net test_md
