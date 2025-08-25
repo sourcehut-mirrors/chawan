@@ -108,6 +108,7 @@ type
     document* {.jsufget.}: Document
     timeouts*: TimeoutState
     navigate*: proc(url: URL)
+    click*: proc(element: HTMLElement)
     importMapsAllowed*: bool
     inMicrotaskCheckpoint: bool
     pendingResources*: seq[EmptyPromise]
@@ -387,6 +388,7 @@ type
 
   HTMLFormElement* = ref object of HTMLElement
     constructingEntryList*: bool
+    firing*: bool
     controls*: seq[FormAssociatedElement]
     cachedElements: HTMLFormControlsCollection
     relList {.jsget.}: DOMTokenList
@@ -793,6 +795,7 @@ const ReflectTable0 = [
   makef(satOnerror, satError),
   makef(satOnblur, satBlur),
   makef(satOnfocus, satFocus),
+  makef(satOnsubmit, satSubmit),
   makes(satSlot, AllTagTypes),
   makes(satTitle, AllTagTypes),
   makes(satLang, AllTagTypes),
@@ -4488,12 +4491,6 @@ proc blur(ctx: JSContext; element: Element) {.jsfunc.} =
     if element.document.focus == element:
       element.document.setFocus(nil)
 
-proc click(ctx: JSContext; element: Element) {.jsfunc.} =
-  #TODO should also trigger click on inputs.
-  let event = newEvent(satClick.toAtom(), element, bubbles = true,
-    cancelable = true)
-  discard ctx.dispatch(element, event)
-
 # DOMRect
 func left(rect: DOMRect): float64 {.jsfget.} =
   return min(rect.x, rect.x + rect.width)
@@ -4819,6 +4816,15 @@ proc hyperlinkGetProp(ctx: JSContext; element: HTMLElement; a: JSAtom;
         desc.flags = JS_PROP_GETSET
       return JS_TRUE # dummy value
   return JS_UNINITIALIZED
+
+proc click(ctx: JSContext; element: HTMLElement) {.jsfunc.} =
+  let event = newEvent(satClick.toAtom(), element, bubbles = true,
+    cancelable = true)
+  let canceled = ctx.dispatch(element, event)
+  if not canceled:
+    let window = ctx.getWindow()
+    if window != nil:
+      window.click(element)
 
 # <a>
 proc getter(ctx: JSContext; this: HTMLAnchorElement; a: JSAtom;

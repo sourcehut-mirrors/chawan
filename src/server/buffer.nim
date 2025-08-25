@@ -124,6 +124,7 @@ type
     outputId: int
     pollData: PollData
     prevHover: Element
+    clickResult: ClickResult
     pstream: SocketStream # control stream
     reportedBytesRead: int
     rootBox: BlockBox
@@ -163,9 +164,29 @@ type
   GetValueProc = proc(iface: BufferInterface; promise: EmptyPromise) {.
     nimcall, raises: [].}
 
+  ReadLineType* = enum
+    rltText, rltArea, rltFile
+
+  ReadLineResult* = ref object
+    t*: ReadLineType
+    hide*: bool
+    prompt*: string
+    value*: string
+
+  SelectResult* = ref object
+    options*: seq[SelectOption]
+    selected*: int
+
+  ClickResult* = ref object
+    open*: Request
+    contentType*: string
+    readline*: Option[ReadLineResult]
+    select*: Option[SelectResult]
+
 # Forward declarations
-proc submitForm(bc: BufferContext; form: HTMLFormElement; submitter: Element):
-  Request
+proc click(bc: BufferContext; clickable: Element): ClickResult
+proc submitForm(bc: BufferContext; form: HTMLFormElement;
+  submitter: HTMLElement; jsSubmitCall = false): Request
 
 template document(bc: BufferContext): Document =
   bc.window.document
@@ -674,28 +695,6 @@ proc findNextMatch*(bc: BufferContext; regex: Regex; cursorx, cursory: int;
       break
     inc y
   BufferMatch()
-
-type
-  ReadLineType* = enum
-    rltText, rltArea, rltFile
-
-  ReadLineResult* = ref object
-    t*: ReadLineType
-    hide*: bool
-    prompt*: string
-    value*: string
-
-  SelectResult* = ref object
-    options*: seq[SelectOption]
-    selected*: int
-
-  ClickResult* = object
-    open*: Request
-    contentType*: string
-    readline*: Option[ReadLineResult]
-    select*: Option[SelectResult]
-
-proc click(bc: BufferContext; clickable: Element): ClickResult
 
 type GotoAnchorResult* = object
   found*: bool
@@ -1295,11 +1294,26 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
     return newRequest(parsedAction, httpMethod, headers, body)
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
-proc submitForm(bc: BufferContext; form: HTMLFormElement; submitter: Element):
-    Request =
+proc submitForm(bc: BufferContext; form: HTMLFormElement;
+    submitter: HTMLElement; jsSubmitCall = false): Request =
   if form.constructingEntryList:
     return nil
-  #TODO submit()
+  if not jsSubmitCall:
+    if form.firing:
+      return nil
+    form.firing = true
+    #TODO user validity/validity constraints
+    let jsSubmitter = if submitter != form: submitter else: nil
+    let event = newSubmitEvent(satSubmit.toAtom(), SubmitEventInit(
+      submitter: EventTargetHTMLElement(jsSubmitter),
+      bubbles: true,
+      cancelable: true
+    ))
+    event.isTrusted = true
+    let canceled = bc.window.jsctx.dispatch(form, event)
+    form.firing = false
+    if canceled:
+      return nil
   let charset = form.pickCharset()
   discard charset #TODO pass to constructEntryList
   let entryList = form.constructEntryList(submitter)
@@ -1617,12 +1631,15 @@ proc click*(bc: BufferContext; cursorx, cursory: int): ClickResult {.proxy.} =
   if bc.config.scripting != smFalse:
     let element = bc.getCursorElement(cursorx, cursory)
     if element != nil:
+      bc.clickResult = nil
       let window = bc.window
       let event = newEvent(satClick.toAtom(), element, bubbles = true,
         cancelable = true)
       event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
       bc.maybeReshape()
+      if bc.clickResult != nil:
+        return bc.clickResult
   let url = bc.navigateUrl
   bc.navigateUrl = nil
   if not canceled and clickable != nil:
@@ -1955,6 +1972,10 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
   )
   if bc.config.scripting != smFalse:
     bc.window.navigate = proc(url: URL) = bc.navigate(url)
+    bc.window.click = proc(element: HTMLElement) =
+      #TODO not sure if this is the right behavior for app mode.
+      # (for normal mode it's the right design, I think.)
+      bc.clickResult = bc.click(element)
   bc.charset = bc.charsetStack.pop()
   istream.setBlocking(false)
   bc.loader.put(InputData(stream: istream))

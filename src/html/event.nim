@@ -52,6 +52,9 @@ type
     data {.jsget.}: JSValue
     origin {.jsget.}: string
 
+  SubmitEvent* = ref object of Event
+    submitter {.jsget.}: EventTarget
+
   UIEvent* = ref object of Event
     detail {.jsget.}: int32
     view {.jsget.}: EventTarget
@@ -93,6 +96,7 @@ type
 jsDestructor(Event)
 jsDestructor(CustomEvent)
 jsDestructor(MessageEvent)
+jsDestructor(SubmitEvent)
 jsDestructor(UIEvent)
 jsDestructor(MouseEvent)
 jsDestructor(InputEvent)
@@ -105,6 +109,7 @@ var getParentImpl*: proc(ctx: JSContext; target: EventTarget; isLoad: bool):
   EventTarget {.nimcall, raises: [].}
 var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect,
   raises: [].}
+var isHTMLElementImpl*: proc(target: EventTarget): bool {.nimcall, raises: [].}
 
 iterator eventListeners(this: EventTarget): EventListener =
   var it = this.eventListener
@@ -252,6 +257,30 @@ proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
     rt: JS_GetRuntime(ctx),
     data: JS_DupValue(ctx, eventInit.data),
     origin: eventInit.origin
+  )
+  event.innerEventCreationSteps(EventInit(eventInit))
+  return event
+
+# SubmitEvent
+type EventTargetHTMLElement* = distinct EventTarget
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetHTMLElement):
+    Opt[void] =
+  var res0: EventTarget
+  ?ctx.fromJS(val, res0)
+  if not res0.isHTMLElementImpl():
+    JS_ThrowTypeError(ctx, "HTMLElement expected")
+    return err()
+  res = EventTargetHTMLElement(res0)
+  ok()
+
+type SubmitEventInit* = object of EventInit
+  submitter* {.jsdefault.}: EventTargetHTMLElement
+
+proc newSubmitEvent*(ctype: CAtom; eventInit = SubmitEventInit()): SubmitEvent
+    {.jsctor.} =
+  let event = SubmitEvent(
+    ctype: ctype,
+    submitter: EventTarget(eventInit.submitter)
   )
   event.innerEventCreationSteps(EventInit(eventInit))
   return event
@@ -646,6 +675,7 @@ proc addEventModule*(ctx: JSContext):
   let eventCID = ctx.registerType(Event)
   ctx.registerType(CustomEvent, parent = eventCID)
   ctx.registerType(MessageEvent, parent = eventCID)
+  ctx.registerType(SubmitEvent, parent = eventCID)
   let uiEventCID = ctx.registerType(UIEvent, parent = eventCID)
   ctx.registerType(MouseEvent, parent = uiEventCID)
   ctx.registerType(InputEvent, parent = uiEventCID)
