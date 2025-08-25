@@ -836,7 +836,7 @@ iterator precedingSiblings*(node: Node): Node {.inline.} =
 iterator subsequentSiblings*(node: Node): Node {.inline.} =
   var it = node.internalNext
   if it != nil:
-    while true:
+    while it.internalNext != nil:
       yield it
       it = it.internalNext
 

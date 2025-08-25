@@ -1,6 +1,7 @@
 <!doctype html>
 <title>Element test</title>
 <div id=x class="a b c d" lang=asdf>Fail</div>
+<div id=y>test</div>
 <script src=asserts.js></script>
 <script>
 const x = document.getElementById("x");
@@ -22,5 +23,10 @@ assertEquals(x.getAttributeNS("ns", "test"), "b")
 let attr = x.attributes["pf:test"]
 x.removeAttributeNS("ns", "test")
 assertEquals(attr.value, "b")
+const y = document.getElementById("y");
+assertEquals(x.nextElementSibling, y);
+for (let z = y; z; z = z.nextElementSibling)
+	;
+y.remove();
 x.textContent = "Success";
 </script>
