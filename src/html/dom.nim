@@ -6159,6 +6159,9 @@ getAPIBaseURLImpl = proc(ctx: JSContext): URL =
 isWindowImpl = proc(target: EventTarget): bool {.noSideEffect.} =
   return target of Window
 
+isHTMLElementImpl = proc(target: EventTarget): bool =
+  return target of HTMLElement
+
 parseColorImpl = proc(target: EventTarget; s: string): ARGBColor =
   return Element(target).parseColor(s)
 

@@ -15,6 +15,9 @@ function bodyOnload(event) {
 	document.body.dispatchEvent(new Event("load"));
 	const x = document.getElementById("x")
 	const y = document.getElementById("y")
+	assertEquals(new SubmitEvent("submit", {submitter: x}).submitter, x);
+	assertEquals(new SubmitEvent("submit", {}).submitter, null);
+	assertThrows(() => new SubmitEvent("submit", {submitter: window}), TypeError);
 	let n = 0;
 	let ok1 = true, ok2 = true, ok3 = true, ok4 = true, ok5 = true;
 	x.addEventListener("test", e => {
