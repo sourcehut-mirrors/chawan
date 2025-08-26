@@ -5,6 +5,8 @@ import std/os
 import std/posix
 import std/strutils
 
+import io/chafile
+import types/opt
 import utils/twtstr
 
 proc cb(req: Request) {.async.} =
@@ -17,9 +19,7 @@ proc cb(req: Request) {.async.} =
     for k, v in req.headers:
       res &= k & ": " & v & '\n'
   else:
-    try:
-      res = readFile(req.url.path.after('/'))
-    except IOError:
+    if chafile.readFile(req.url.path.after('/'), res).isErr:
       await req.respond(Http404, "Not found")
       return
     if req.url.path.endsWith(".http"):
