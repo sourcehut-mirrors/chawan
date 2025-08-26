@@ -283,7 +283,7 @@ proc eatStr(tokenizer: var Tokenizer, c: char, s, ibuf: openArray[char]):
       return esrFail
   return esrSuccess
 
-proc eatStrNoCase0(tokenizer: var Tokenizer; c: char; s, ibuf: openArray[char]):
+proc eatStrNoCase(tokenizer: var Tokenizer; c: char; s, ibuf: openArray[char]):
     EatStrResult =
   var cs = $c
   for c in s:
@@ -296,12 +296,6 @@ proc eatStrNoCase0(tokenizer: var Tokenizer; c: char; s, ibuf: openArray[char]):
         return esrRetry
       return esrFail
   return esrSuccess
-
-# convenience template for eatStrNoCase0 (to make sure it's called correctly)
-template eatStrNoCase(tokenizer: var Tokenizer; c: char; s: static string;
-    ibuf: openArray[char]): EatStrResult =
-  const s0 = s.toLowerAscii()
-  tokenizer.eatStrNoCase0(c, s0, ibuf)
 
 proc flushTagName(tokenizer: var Tokenizer) =
   tokenizer.tok.tagname = tokenizer.strToAtom(tokenizer.tagNameBuf)

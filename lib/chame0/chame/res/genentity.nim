@@ -29,6 +29,7 @@ proc main() =
     entityMap.add((k.substr(1), v{"characters"}.getStr()))
   let n = entityMap.len
   echo "const entityMap*: array[" & $n & ", Z] = ["
+  writer.write("Z ")
   var i = 0
   for (k, v) in entityMap:
     if k[0] != cc:

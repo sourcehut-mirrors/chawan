@@ -1,6 +1,6 @@
 type Z = cstring
 const entityMap*: array[2231, Z] = [
-"AElig:\xC3\x86","AElig;:\xC3\x86","AMP:&","AMP;:&","Aacute:\xC3\x81",
+Z "AElig:\xC3\x86","AElig;:\xC3\x86","AMP:&","AMP;:&","Aacute:\xC3\x81",
 "Aacute;:\xC3\x81","Abreve;:\xC4\x82","Acirc:\xC3\x82","Acirc;:\xC3\x82",
 "Acy;:\xD0\x90","Afr;:\xF0\x9D\x94\x84","Agrave:\xC3\x80","Agrave;:\xC3\x80",
 "Alpha;:\xCE\x91","Amacr;:\xC4\x80","And;:\xE2\xA9\x93","Aogon;:\xC4\x84",
