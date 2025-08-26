@@ -9,5 +9,3 @@ skipDirs      = @["test"]
 # Dependencies
 
 requires "nim >= 1.6.10"
-when declared(taskRequires):
-  taskRequires "test", "chagashi >= 0.5.0"
