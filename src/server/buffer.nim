@@ -1302,7 +1302,7 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
       return nil
     form.firing = true
     #TODO user validity/validity constraints
-    let jsSubmitter = if submitter != form: submitter else: nil
+    let jsSubmitter = EventTarget(if submitter != form: submitter else: nil)
     let event = newSubmitEvent(satSubmit.toAtom(), SubmitEventInit(
       submitter: EventTargetHTMLElement(jsSubmitter),
       bubbles: true,
