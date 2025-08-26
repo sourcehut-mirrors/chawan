@@ -13,7 +13,6 @@ import css/match
 import css/sheet
 import html/catom
 import html/dom
-import html/enums
 import html/script
 import types/color
 import types/jscolor
@@ -253,6 +252,9 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyColorHint(cptColor, element.attr(satColor))
   of TAG_INPUT:
     let input = HTMLInputElement(element)
+    const InputTypeWithSize = {
+      itSearch, itText, itEmail, itPassword, itURL, itTel
+    }
     if input.inputType in InputTypeWithSize:
       if s := element.attrul(satSize):
         ctx.applyLengthHint(cptWidth, cuCh, s)

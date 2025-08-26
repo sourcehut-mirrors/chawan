@@ -4,7 +4,6 @@ import chame/tags
 import html/catom
 import html/dom
 import html/domexception
-import html/enums
 import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
@@ -109,6 +108,11 @@ func toNameValuePairs*(list: seq[FormDataEntry]):
       result.add((entry.name, entry.svalue))
     else:
       result.add((entry.name, entry.name))
+
+const AutoDirInput = {
+  itHidden, itText, itSearch, itTel, itURL, itEmail, itPassword, itSubmit,
+  itReset, itButton
+}
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-form-data-set
 # Warning: we skip the first "constructing entry list" check; the caller must

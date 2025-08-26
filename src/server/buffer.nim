@@ -23,7 +23,6 @@ import css/render
 import html/catom
 import html/chadombuilder
 import html/dom
-import html/enums
 import html/env
 import html/event
 import html/formdata as formdata_impl

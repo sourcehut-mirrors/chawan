@@ -9,7 +9,6 @@ import chame/tags
 import config/conftypes
 import html/catom
 import html/dom
-import html/enums
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
@@ -126,6 +125,10 @@ proc getNamespaceImpl(builder: ChaDOMBuilder; handle: Node): Namespace =
 
 proc createHTMLElementImpl(builder: ChaDOMBuilder): Node =
   return builder.document.newHTMLElement(TAG_HTML)
+
+const ResettableElements = {
+  TAG_INPUT, TAG_OUTPUT, TAG_SELECT, TAG_TEXTAREA
+}
 
 proc createElementForTokenImpl(builder: ChaDOMBuilder; localName: CAtom;
     namespace: Namespace; intendedParent: Node; htmlAttrs: Table[CAtom, string];

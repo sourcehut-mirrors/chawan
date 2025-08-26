@@ -21,7 +21,6 @@ import css/sheet
 import html/catom
 import html/domcanvas
 import html/domexception
-import html/enums
 import html/event
 import html/performance
 import html/script
@@ -68,6 +67,50 @@ type
     rsLoading = "loading"
     rsInteractive = "interactive"
     rsComplete = "complete"
+
+type
+  InputType* = enum
+    itText = "text"
+    itButton = "button"
+    itCheckbox = "checkbox"
+    itColor = "color"
+    itDate = "date"
+    itDatetimeLocal = "datetime-local"
+    itEmail = "email"
+    itFile = "file"
+    itHidden = "hidden"
+    itImage = "image"
+    itMonth = "month"
+    itNumber = "number"
+    itPassword = "password"
+    itRadio = "radio"
+    itRange = "range"
+    itReset = "reset"
+    itSearch = "search"
+    itSubmit = "submit"
+    itTel = "tel"
+    itTime = "time"
+    itURL = "url"
+    itWeek = "week"
+
+  ButtonType* = enum
+    btSubmit = "submit"
+    btReset = "reset"
+    btButton = "button"
+
+  NodeType = enum
+    ntElement = (1u16, "ELEMENT_NODE")
+    ntAttribute = (2u16, "ATTRIBUTE_NODE")
+    ntText = (3u16, "TEXT_NODE")
+    ntCdataSection = (4u16, "CDATA_SECTION_NODE")
+    ntEntityReference = (5u16, "ENTITY_REFERENCE_NODE")
+    ntEntity = (6u16, "ENTITY_NODE")
+    ntProcessingInstruction = (7u16, "PROCESSING_INSTRUCTION_NODE")
+    ntComment = (8u16, "COMMENT_NODE")
+    ntDocument = (9u16, "DOCUMENT_NODE")
+    ntDocumentType = (10u16, "DOCUMENT_TYPE_NODE")
+    ntDocumentFragment = (11u16, "DOCUMENT_FRAGMENT_NODE")
+    ntNotation = (12u16, "NOTATION_NODE")
 
 type
   DependencyType* = enum
@@ -801,6 +844,17 @@ const ReflectTable0 = [
   makes(satLang, AllTagTypes),
 ]
 
+const LabelableElements = {
+  # input only if type not hidden
+  TAG_BUTTON, TAG_INPUT, TAG_METER, TAG_OUTPUT, TAG_PROGRESS, TAG_SELECT,
+  TAG_TEXTAREA
+}
+
+const VoidElements = {
+  TAG_AREA, TAG_BASE, TAG_BR, TAG_COL, TAG_EMBED, TAG_HR, TAG_IMG, TAG_INPUT,
+  TAG_LINK, TAG_META, TAG_SOURCE, TAG_TRACK, TAG_WBR
+}
+
 # Iterators
 iterator childList*(node: ParentNode): Node {.inline.} =
   var it {.cursor.} = node.firstChild
@@ -1431,26 +1485,23 @@ func ownerDocument(node: Node): Document {.jsfget.} =
 func jsNodeType0(node: Node): NodeType =
   if node of CharacterData:
     if node of Text:
-      return TEXT_NODE
+      return ntText
     elif node of Comment:
-      return COMMENT_NODE
+      return ntComment
     elif node of CDATASection:
-      return CDATA_SECTION_NODE
-    elif node of ProcessingInstruction:
-      return PROCESSING_INSTRUCTION_NODE
-    assert false
+      return ntCdataSection
+    else: # ProcessingInstruction
+      return ntProcessingInstruction
   elif node of Element:
-    return ELEMENT_NODE
+    return ntElement
   elif node of Document:
-    return DOCUMENT_NODE
+    return ntDocument
   elif node of DocumentType:
-    return DOCUMENT_TYPE_NODE
+    return ntDocumentType
   elif node of Attr:
-    return ATTRIBUTE_NODE
-  elif node of DocumentFragment:
-    return DOCUMENT_FRAGMENT_NODE
-  assert false
-  ENTITY_NODE
+    return ntAttribute
+  else: # DocumentFragment
+    return ntDocumentFragment
 
 func nodeType(node: Node): uint16 {.jsfget.} =
   return uint16(node.jsNodeType0)
