@@ -5,7 +5,7 @@ import utils/twtstr
 type BreakCategory* = enum
   bcAlpha, bcSpace, bcSymbol, bcHan, bcHiragana, bcKatakana, bcHangul
 
-func isDigitAscii(u: uint32): bool =
+proc isDigitAscii(u: uint32): bool =
   return u < 128 and char(u) in AsciiDigit
 
 proc breaksWord*(ctx: LUContext; u: uint32): bool =

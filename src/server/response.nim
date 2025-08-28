@@ -71,7 +71,7 @@ proc newResponse*(body: JSValueConst = JS_UNDEFINED;
     return errInternalError("Response constructor with body or init")
   return ok(newResponse(0, nil, nil, -1))
 
-func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
+proc makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
   #TODO use "create" function
   return Response(
     res: 0,
@@ -84,10 +84,10 @@ func makeNetworkError*(): Response {.jsstfunc: "Response.error".} =
 proc newFetchTypeError*(): JSError =
   return newTypeError("NetworkError when attempting to fetch resource")
 
-func jsOk(response: Response): bool {.jsfget: "ok".} =
+proc jsOk(response: Response): bool {.jsfget: "ok".} =
   return response.status in 200u16 .. 299u16
 
-func surl*(response: Response): string {.jsfget: "url".} =
+proc surl*(response: Response): string {.jsfget: "url".} =
   if response.responseType == rtError or response.url == nil:
     return ""
   return $response.url
@@ -105,7 +105,7 @@ proc close*(response: Response) =
     response.body.sclose()
     response.body = nil
 
-func getCharset*(this: Response; fallback: Charset): Charset =
+proc getCharset*(this: Response; fallback: Charset): Charset =
   let header = this.headers.getFirst("Content-Type").toLowerAscii()
   if header != "":
     let cs = header.getContentTypeAttr("charset").getCharset()
@@ -113,7 +113,7 @@ func getCharset*(this: Response; fallback: Charset): Charset =
       return cs
   return fallback
 
-func getLongContentType*(this: Response; fallback: string): string =
+proc getLongContentType*(this: Response; fallback: string): string =
   let header = this.headers.getFirst("Content-Type")
   if header != "":
     return header.toValidUTF8().toLowerAscii().strip()
@@ -121,18 +121,18 @@ func getLongContentType*(this: Response; fallback: string): string =
   # override buffer mime.types
   return DefaultGuess.guessContentType(this.url.pathname, fallback)
 
-func getContentType*(this: Response; fallback = "application/octet-stream"):
+proc getContentType*(this: Response; fallback = "application/octet-stream"):
     string =
   return this.getLongContentType(fallback).until(';')
 
-func getContentLength*(this: Response): int64 =
+proc getContentLength*(this: Response): int64 =
   let x = this.headers.getFirst("Content-Length")
   let u = parseUInt64(x.strip(), allowSign = false).get(uint64.high)
   if u <= uint64(int64.high):
     return int64(u)
   return -1
 
-func getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =
+proc getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =
   let header = this.headers.getFirst("Referrer-Policy")
   if p := strictParseEnum[ReferrerPolicy](header):
     return some(p)

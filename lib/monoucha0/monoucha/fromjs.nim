@@ -38,7 +38,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
   Opt[void]
 
-func isInstanceOf*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID):
+proc isInstanceOf*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID):
     bool =
   let ctxOpaque = ctx.getOpaque()
   var classid = JS_GetClassID(val)
@@ -60,7 +60,7 @@ func isInstanceOf*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID):
       break
   return found
 
-func isSequence*(ctx: JSContext; o: JSValueConst): bool =
+proc isSequence*(ctx: JSContext; o: JSValueConst): bool =
   if not JS_IsObject(o):
     return false
   let prop = JS_GetProperty(ctx, o, ctx.getOpaque().symRefs[jsyIterator])
@@ -284,7 +284,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): Opt[void] =
 
 type IdentMapItem = tuple[s: string; n: int]
 
-func getIdentMap[T: enum](e: typedesc[T]): seq[IdentMapItem] =
+proc getIdentMap[T: enum](e: typedesc[T]): seq[IdentMapItem] =
   result = @[]
   for e in T.low .. T.high:
     result.add(($e, int(e)))
@@ -495,7 +495,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
 
 const JS_ATOM_TAG_INT = 1u32 shl 31
 
-func JS_IsNumber*(v: JSAtom): JS_BOOL =
+proc JS_IsNumber*(v: JSAtom): JS_BOOL =
   return (uint32(v) and JS_ATOM_TAG_INT) != 0
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): Opt[void] =

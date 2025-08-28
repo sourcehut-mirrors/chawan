@@ -521,7 +521,7 @@ proc putIfAbsent*(map: CSSVariableMap; name: CAtom; cvar: CSSVariable) =
 type CSSPropertyReprType* = enum
   cprtBit, cprtHWord, cprtWord, cprtObject
 
-func reprType*(t: CSSPropertyType): CSSPropertyReprType =
+proc reprType*(t: CSSPropertyType): CSSPropertyReprType =
   if t <= LastBitPropType:
     return cprtBit
   if t <= LastHWordPropType:
@@ -530,10 +530,10 @@ func reprType*(t: CSSPropertyType): CSSPropertyReprType =
     return cprtWord
   return cprtObject
 
-func valueType*(prop: CSSPropertyType): CSSValueType =
+proc valueType*(prop: CSSPropertyType): CSSValueType =
   return ValueTypes[prop]
 
-func isSupportedProperty*(s: string): bool =
+proc isSupportedProperty*(s: string): bool =
   return propertyType(s).isOk
 
 template auto*(length: CSSLength): bool =
@@ -542,13 +542,13 @@ template auto*(length: CSSLength): bool =
 template isPx*(length: CSSLength): bool =
   length.perc == 0
 
-func isPerc*(length: CSSLength): bool {.inline.} =
+proc isPerc*(length: CSSLength): bool {.inline.} =
   not isNaN(length.perc) and length.perc != 0
 
-func isZero*(length: CSSLength): bool {.inline.} =
+proc isZero*(length: CSSLength): bool {.inline.} =
   length.npx == 0 and length.perc == 0
 
-func `$`*(length: CSSLength): string =
+proc `$`*(length: CSSLength): string =
   if length.auto:
     return "auto"
   result = ""
@@ -559,10 +559,10 @@ func `$`*(length: CSSLength): string =
       result &= " + "
     result &= $length.npx & "px"
 
-func `$`*(bmp: NetworkBitmap): string =
+proc `$`*(bmp: NetworkBitmap): string =
   return "" #TODO
 
-func `$`*(content: CSSContent): string =
+proc `$`*(content: CSSContent): string =
   case content.t
   of ContentString:
     return content.s
@@ -572,26 +572,26 @@ func `$`*(content: CSSContent): string =
       ContentNoCloseQuote:
     return $content.t
 
-func `$`(quotes: CSSQuotes): string =
+proc `$`(quotes: CSSQuotes): string =
   if quotes == nil:
     return "auto"
   result = ""
   for (s, e) in quotes.qs:
     result &= "'" & ($s).cssEscape() & "' '" & ($e).cssEscape() & "'"
 
-func `$`(counterreset: seq[CSSCounterSet]): string =
+proc `$`(counterreset: seq[CSSCounterSet]): string =
   result = ""
   for it in counterreset:
     result &= $it.name
     result &= ' '
     result &= $it.num
 
-func `$`(zIndex: CSSZIndex): string =
+proc `$`(zIndex: CSSZIndex): string =
   if zIndex.auto:
     return "auto"
   return $zIndex.num
 
-func serialize(val: CSSValue): string =
+proc serialize(val: CSSValue): string =
   result = ""
   case val.v
   of cvtImage: return $val.image
@@ -605,7 +605,7 @@ func serialize(val: CSSValue): string =
   of cvtCounterSet: return $val.counterSet
   else: assert false
 
-func serialize(val: CSSValueHWord; t: CSSValueType): string =
+proc serialize(val: CSSValueHWord; t: CSSValueType): string =
   case t
   of cvtInteger: return $val.integer
   of cvtNumber: return $val.number
@@ -613,7 +613,7 @@ func serialize(val: CSSValueHWord; t: CSSValueType): string =
     assert false
     return ""
 
-func serialize(val: CSSValueWord; t: CSSValueType): string =
+proc serialize(val: CSSValueWord; t: CSSValueType): string =
   case t
   of cvtColor: return $val.color
   of cvtLength: return $val.length
@@ -622,7 +622,7 @@ func serialize(val: CSSValueWord; t: CSSValueType): string =
     assert false
     return ""
 
-func serialize(val: CSSValueBit; t: CSSValueType): string =
+proc serialize(val: CSSValueBit; t: CSSValueType): string =
   case t
   of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
   of cvtBorderCollapse: return $val.borderCollapse
@@ -649,7 +649,7 @@ func serialize(val: CSSValueBit; t: CSSValueType): string =
     assert false
     return ""
 
-func serialize*(computed: CSSValues; p: CSSPropertyType): string =
+proc serialize*(computed: CSSValues; p: CSSPropertyType): string =
   case p.reprType
   of cprtBit: return computed.bits[p].serialize(valueType(p))
   of cprtHWord: return computed.hwords[p].serialize(valueType(p))
@@ -677,7 +677,7 @@ proc `$`*(computed: CSSValues): string =
     computed.serialize(cptBorderSpacingBlock) & ';'
 
 when defined(debug):
-  func `$`*(val: CSSValue): string =
+  proc `$`*(val: CSSValue): string =
     return val.serialize()
 
 proc getLength*(vals: CSSValues; p: CSSPropertyType): CSSLength =
@@ -721,10 +721,10 @@ macro `{}=`*(vals: CSSValues; s: static string, val: typed) =
         `vs`: `val`
       )
 
-func inherited*(t: CSSPropertyType): bool =
+proc inherited*(t: CSSPropertyType): bool =
   return t in InheritedProperties
 
-func blockify*(display: CSSDisplay): CSSDisplay =
+proc blockify*(display: CSSDisplay): CSSDisplay =
   case display
   of DisplayBlock, DisplayTable, DisplayListItem, DisplayNone, DisplayFlowRoot,
       DisplayFlex, DisplayTableWrapper, DisplayGrid, DisplayMarker:
@@ -741,7 +741,7 @@ func blockify*(display: CSSDisplay): CSSDisplay =
   of DisplayInlineGrid:
     return DisplayGrid
 
-func bfcify*(overflow: CSSOverflow): CSSOverflow =
+proc bfcify*(overflow: CSSOverflow): CSSOverflow =
   if overflow == OverflowVisible:
     return OverflowAuto
   if overflow == OverflowClip:
@@ -761,7 +761,7 @@ const KatakanaIrohaMap = ("イロハニホヘトチリヌルヲワカヨタレ�
 const EarthlyBranchMap = "子丑寅卯辰巳午未申酉戌亥".toPoints()
 const HeavenlyStemMap = "甲乙丙丁戊己庚辛壬癸".toPoints()
 
-func numToBase(n: int; map: openArray[uint32]): string =
+proc numToBase(n: int; map: openArray[uint32]): string =
   if n <= 0:
     return $n
   var tmp: seq[uint32] = @[]
@@ -775,12 +775,12 @@ func numToBase(n: int; map: openArray[uint32]): string =
     res.addUTF8(u)
   move(res)
 
-func numToFixed(n: int32; map: openArray[uint32]): string =
+proc numToFixed(n: int32; map: openArray[uint32]): string =
   if n in 1 .. map.len:
     return map[n - 1].toUTF8()
   return $n
 
-func numberAdditive(i: int32; range: Slice[int32];
+proc numberAdditive(i: int32; range: Slice[int32];
     symbols: openArray[(int32, cstring)]): string =
   if i notin range:
     return $i
@@ -802,10 +802,10 @@ const romanNumbers = [
   (9i32, Z"IX"), (5i32, Z"V"), (4i32, Z"IV"), (1i32, Z"I")
 ]
 
-func romanNumber(i: int32): string =
+proc romanNumber(i: int32): string =
   return numberAdditive(i, 1i32..3999i32, romanNumbers)
 
-func japaneseNumber(i: int32; formal: bool): string =
+proc japaneseNumber(i: int32; formal: bool): string =
   if i == 0:
     return if formal: "〇" else: "零"
   var n = i
@@ -873,7 +873,7 @@ func japaneseNumber(i: int32; formal: bool): string =
     s &= $ss[j]
   move(s)
 
-func listMarker0(t: CSSListStyleType; i: int32): string =
+proc listMarker0(t: CSSListStyleType; i: int32): string =
   return case t
   of ListStyleTypeNone: ""
   of ListStyleTypeDisc: "•" # U+2022
@@ -896,7 +896,7 @@ func listMarker0(t: CSSListStyleType; i: int32): string =
   of ListStyleTypeJapaneseInformal: japaneseNumber(i, formal = false)
   of ListStyleTypeJapaneseFormal: japaneseNumber(i, formal = true)
 
-func listMarkerSuffix(t: CSSListStyleType): string =
+proc listMarkerSuffix(t: CSSListStyleType): string =
   return case t
   of ListStyleTypeNone: ""
   of ListStyleTypeDisc, ListStyleTypeCircle, ListStyleTypeSquare,
@@ -911,28 +911,28 @@ func listMarkerSuffix(t: CSSListStyleType): string =
       ListStyleTypeJapaneseFormal:
     "、"
 
-func listMarker*(t: CSSListStyleType; i: int32; suffix: bool): RefString =
+proc listMarker*(t: CSSListStyleType; i: int32; suffix: bool): RefString =
   let res = newRefString(listMarker0(t, i))
   if suffix:
     res.s &= listMarkerSuffix(t)
   return res
 
-func quoteStart*(level: int): string =
+proc quoteStart*(level: int): string =
   if level == 0:
     return "“"
   return "‘"
 
-func quoteEnd*(level: int): string =
+proc quoteEnd*(level: int): string =
   if level == 0:
     return "“"
   return "‘"
 
-func parseIdent(map: openArray[IdentMapItem]; tok: CSSToken): int =
+proc parseIdent(map: openArray[IdentMapItem]; tok: CSSToken): int =
   if tok.t == cttIdent:
     return map.parseEnumNoCase0(tok.s)
   return -1
 
-func parseIdent[T: enum](tok: CSSToken): Opt[T] =
+proc parseIdent[T: enum](tok: CSSToken): Opt[T] =
   const IdentMap = getIdentMap(T)
   let i = IdentMap.parseIdent(tok)
   if i != -1:
@@ -951,7 +951,7 @@ template cssLengthPerc*(n: float32): CSSLength =
 const CSSLengthAuto* = CSSLength(npx: NaN, perc: NaN)
 const CSSLengthZero* = CSSLength(npx: 0, perc: 0)
 
-func resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
+proc resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
     CSSLength =
   return case u
   of cuAuto: CSSLengthAuto
@@ -974,12 +974,12 @@ func resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
   of cuVmax, cuSvmax, cuLvmax, cuDvmax:
     cssLength(max(attrs.widthPx, attrs.heightPx) / 100 * val)
 
-func parseLength(val: float32; u: string; attrs: WindowAttributes):
+proc parseLength(val: float32; u: string; attrs: WindowAttributes):
     Opt[CSSLength] =
   let u = ?parseEnumNoCase[CSSUnit](u)
   return ok(resolveLength(u, val, attrs))
 
-func parseDimensionValues*(s: string): Opt[CSSLength] =
+proc parseDimensionValues*(s: string): Opt[CSSLength] =
   var i = s.skipBlanks(0)
   if i >= s.len or s[i] notin AsciiDigit:
     return err()
@@ -1003,7 +1003,7 @@ func parseDimensionValues*(s: string): Opt[CSSLength] =
     return ok(cssLengthPerc(n))
   ok(cssLength(n))
 
-func consumeColorToken(ctx: var CSSParser; legacy = false): Opt[CSSToken] =
+proc consumeColorToken(ctx: var CSSParser; legacy = false): Opt[CSSToken] =
   let tok = ctx.consume()
   if tok.t in {cttNumber, cttINumber, cttDimension, cttIDimension,
       cttPercentage}:
@@ -1257,7 +1257,7 @@ proc parseLength*(toks: openArray[CSSToken]; attrs: WindowAttributes;
   var ctx = initCSSParser(toks)
   return ctx.parseLength(attrs, hasAuto, allowNegative)
 
-func parseAbsoluteLength(tok: CSSToken; attrs: WindowAttributes):
+proc parseAbsoluteLength(tok: CSSToken; attrs: WindowAttributes):
     Opt[CSSLength] =
   case tok.t
   of cttNumber, cttINumber:
@@ -1269,7 +1269,7 @@ func parseAbsoluteLength(tok: CSSToken; attrs: WindowAttributes):
   else: discard
   err()
 
-func parseQuotes(ctx: var CSSParser): Opt[CSSQuotes] =
+proc parseQuotes(ctx: var CSSParser): Opt[CSSQuotes] =
   case ctx.peekTokenType()
   of cttIdent:
     let tok = ctx.consume()
@@ -1344,7 +1344,7 @@ proc parseContent(ctx: var CSSParser): Opt[seq[CSSContent]] =
       return err()
   ok(res)
 
-func parseFontWeight(ctx: var CSSParser): Opt[int32] =
+proc parseFontWeight(ctx: var CSSParser): Opt[int32] =
   let tok = ctx.consume()
   case tok.t
   of cttIdent:
@@ -1363,7 +1363,7 @@ func parseFontWeight(ctx: var CSSParser): Opt[int32] =
       return ok(i)
   return err()
 
-func parseTextDecoration(ctx: var CSSParser): Opt[set[CSSTextDecoration]] =
+proc parseTextDecoration(ctx: var CSSParser): Opt[set[CSSTextDecoration]] =
   var s: set[CSSTextDecoration] = {}
   while ctx.has():
     let tok = ctx.consume()
@@ -1436,7 +1436,7 @@ proc parseImage(ctx: var CSSParser): Opt[NetworkBitmap] =
   discard url
   return ok(NetworkBitmap(cacheId: -1, imageId: -1))
 
-func parseInteger(ctx: var CSSParser; range: Slice[int32]): Opt[int32] =
+proc parseInteger(ctx: var CSSParser; range: Slice[int32]): Opt[int32] =
   let tok = ctx.consume()
   if tok.t in {cttNumber, cttINumber}:
     let i = tok.toi
@@ -1444,14 +1444,14 @@ func parseInteger(ctx: var CSSParser; range: Slice[int32]): Opt[int32] =
       return ok(i)
   return err()
 
-func parseZIndex(ctx: var CSSParser): Opt[CSSZIndex] =
+proc parseZIndex(ctx: var CSSParser): Opt[CSSZIndex] =
   if ctx.peekIdentNoCase("auto"):
     ctx.seekToken()
     return ok(CSSZIndex(auto: true))
   let n = ?ctx.parseInteger(-65534i32 .. 65534i32)
   return ok(CSSZIndex(num: n))
 
-func parseNumber(ctx: var CSSParser; range: Slice[float32]): Opt[float32] =
+proc parseNumber(ctx: var CSSParser; range: Slice[float32]): Opt[float32] =
   let tok = ctx.peekToken()
   if tok.t in {cttNumber, cttINumber}:
     if (let n = tok.num; n in range):
@@ -1590,12 +1590,12 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   of cvtOverflow: makeEntry(t, ?parseIdent[CSSOverflow](ctx))
   ok()
 
-func getInitialColor(t: CSSPropertyType): CSSColor =
+proc getInitialColor(t: CSSPropertyType): CSSColor =
   if t == cptBackgroundColor:
     return rgba(0, 0, 0, 0).cssColor()
   return defaultColor.cssColor()
 
-func getInitialLength(t: CSSPropertyType): CSSLength =
+proc getInitialLength(t: CSSPropertyType): CSSLength =
   case t
   of cptWidth, cptHeight, cptLeft, cptRight, cptTop, cptBottom, cptMaxWidth,
       cptMaxHeight, cptMinWidth, cptMinHeight, cptFlexBasis:
@@ -1605,7 +1605,7 @@ func getInitialLength(t: CSSPropertyType): CSSLength =
   else:
     return CSSLengthZero
 
-func getInitialInteger(t: CSSPropertyType): int32 =
+proc getInitialInteger(t: CSSPropertyType): int32 =
   case t
   of cptChaColspan, cptChaRowspan:
     return 1
@@ -1614,12 +1614,12 @@ func getInitialInteger(t: CSSPropertyType): int32 =
   else:
     return 0
 
-func getInitialNumber(t: CSSPropertyType): float32 =
+proc getInitialNumber(t: CSSPropertyType): float32 =
   if t in {cptFlexShrink, cptOpacity}:
     return 1
   return 0
 
-func getInitialTable(): array[CSSPropertyType, CSSValue] =
+proc getInitialTable(): array[CSSPropertyType, CSSValue] =
   result = array[CSSPropertyType, CSSValue].default
   for t in CSSPropertyType:
     result[t] = CSSValue(v: valueType(t))
@@ -1627,8 +1627,7 @@ func getInitialTable(): array[CSSPropertyType, CSSValue] =
 let defaultTable = getInitialTable()
 
 template getDefault*(t: CSSPropertyType): CSSValue =
-  {.cast(noSideEffect).}:
-    defaultTable[t]
+  defaultTable[t]
 
 proc getDefaultHWord(t: CSSPropertyType): CSSValueHWord =
   case valueType(t)
@@ -1840,7 +1839,7 @@ proc initialOrCopyFrom*(a, b: CSSValues; t: CSSPropertyType) =
   else:
     a.setInitial(t)
 
-func inheritProperties*(parent: CSSValues): CSSValues =
+proc inheritProperties*(parent: CSSValues): CSSValues =
   result = CSSValues()
   for t in CSSPropertyType:
     if t.inherited:
@@ -1848,18 +1847,18 @@ func inheritProperties*(parent: CSSValues): CSSValues =
     else:
       result.setInitial(t)
 
-func copyProperties*(props: CSSValues): CSSValues =
+proc copyProperties*(props: CSSValues): CSSValues =
   result = CSSValues()
   result[] = props[]
 
-func rootProperties*(): CSSValues =
+proc rootProperties*(): CSSValues =
   result = CSSValues()
   for t in CSSPropertyType:
     result.setInitial(t)
 
 # Separate CSSValues of a table into those of the wrapper and the actual
 # table.
-func splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
+proc splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
   var outer = CSSValues()
   var inner = CSSValues()
   const props = {
@@ -1885,7 +1884,7 @@ func splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
   return (outer, inner)
 
 when defined(debug):
-  func serializeEmpty*(computed: CSSValues): string =
+  proc serializeEmpty*(computed: CSSValues): string =
     let default = rootProperties()
     result = ""
     for p in CSSPropertyType:

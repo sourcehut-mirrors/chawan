@@ -24,7 +24,7 @@ include res/map/charwidth_gen
 #   hard tabs, and in selection mode, where *all* tabs become hard tabs.
 const TabPUARange* = 0xE000u32 .. 0xE007u32
 
-func tabPUAPoint*(n: int): uint32 =
+proc tabPUAPoint*(n: int): uint32 =
   let u = 0xE000 + uint32(n) - 1
   assert u in TabPUARange
   return u
@@ -32,7 +32,7 @@ func tabPUAPoint*(n: int): uint32 =
 var isCJKAmbiguous* {.global.} = false
 
 # Warning: this shouldn't be called without normalization.
-func width*(u: uint32): int =
+proc width*(u: uint32): int =
   if u <= 0xFFFF: # fast path for BMP
     if u in DoubleWidthTable:
       return 2
@@ -44,18 +44,17 @@ func width*(u: uint32): int =
   else:
     if DoubleWidthRanges.isInRange(u):
       return 2
-  {.cast(noSideEffect).}:
-    if isCJKAmbiguous and DoubleWidthAmbiguousRanges.isInRange(u):
-      return 2
+  if isCJKAmbiguous and DoubleWidthAmbiguousRanges.isInRange(u):
+    return 2
   return 1
 
-func width*(s: openArray[char]): int =
+proc width*(s: openArray[char]): int =
   var w = 0
   for u in s.points:
     w += u.width()
   return w
 
-func width*(s: string; start, len: int): int =
+proc width*(s: string; start, len: int): int =
   var w = 0
   var i = start
   var m = len
@@ -66,7 +65,7 @@ func width*(s: string; start, len: int): int =
     w += u.width()
   return w
 
-func padToWidth*(s: string; size: uint32; schar = '$'): string =
+proc padToWidth*(s: string; size: uint32; schar = '$'): string =
   result = newStringOfCap(s.len)
   var w = 0u32
   var i = 0
@@ -91,7 +90,7 @@ func padToWidth*(s: string; size: uint32; schar = '$'): string =
 # Expand all PUA tabs into hard tabs, disregarding their position.
 # (This is mainly intended for copy/paste, where the actual characters
 # are more interesting than cell alignment.)
-func expandPUATabsHard*(s: openArray[char]): string =
+proc expandPUATabsHard*(s: openArray[char]): string =
   var res = newStringOfCap(s.len)
   var i = 0
   while i < s.len:

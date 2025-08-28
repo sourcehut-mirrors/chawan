@@ -55,7 +55,7 @@ proc add(hist: History; entry: sink HistoryEntry; merge = false) =
       hist.last = nil
     dec hist.len
 
-func newHistory*(maxLen: int; mtime = 0i64): History =
+proc newHistory*(maxLen: int; mtime = 0i64): History =
   return History(maxLen: maxLen, mtime: mtime)
 
 proc add*(hist: History; s: sink string) =

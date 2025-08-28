@@ -110,11 +110,11 @@ proc colorDepth(screen: var Screen): int {.jsfget.} = 24
 proc pixelDepth(screen: var Screen): int {.jsfget.} = screen.colorDepth
 
 # History
-func length(history: var History): uint32 {.jsfget.} = 1
-func state(history: var History): JSValue {.jsfget.} = JS_NULL
-func go(history: var History) {.jsfunc.} = discard
-func back(history: var History) {.jsfunc.} = discard
-func forward(history: var History) {.jsfunc.} = discard
+proc length(history: var History): uint32 {.jsfget.} = 1
+proc state(history: var History): JSValue {.jsfget.} = JS_NULL
+proc go(history: var History) {.jsfunc.} = discard
+proc back(history: var History) {.jsfunc.} = discard
+proc forward(history: var History) {.jsfunc.} = discard
 proc pushState(ctx: JSContext; history: var History;
     data, unused: JSValueConst; s: string): JSResult[void] {.jsfunc.} =
   let window = ctx.getWindow()
@@ -123,27 +123,27 @@ proc pushState(ctx: JSContext; history: var History;
   return ok()
 
 # Storage
-func find(this: Storage; key: string): int =
+proc find(this: Storage; key: string): int =
   for i in 0 ..< this.map.len:
     if this.map[i].key == key:
       return i
   return -1
 
-func length(this: var Storage): uint32 {.jsfget.} =
+proc length(this: var Storage): uint32 {.jsfget.} =
   return uint32(this.map.len)
 
-func key(ctx: JSContext; this: var Storage; i: uint32): JSValue {.jsfunc.} =
+proc key(ctx: JSContext; this: var Storage; i: uint32): JSValue {.jsfunc.} =
   if int(i) < this.map.len:
     return ctx.toJS(this.map[int(i)].value)
   return JS_NULL
 
-func getItem(ctx: JSContext; this: var Storage; s: string): JSValue {.jsfunc.} =
+proc getItem(ctx: JSContext; this: var Storage; s: string): JSValue {.jsfunc.} =
   let i = this.find(s)
   if i != -1:
     return ctx.toJS(this.map[i].value)
   return JS_NULL
 
-func setItem(this: var Storage; key, value: string):
+proc setItem(this: var Storage; key, value: string):
     Err[DOMException] {.jsfunc.} =
   let i = this.find(key)
   if i != -1:
@@ -154,27 +154,27 @@ func setItem(this: var Storage; key, value: string):
     this.map.add((key, value))
   ok()
 
-func removeItem(this: var Storage; key: string) {.jsfunc.} =
+proc removeItem(this: var Storage; key: string) {.jsfunc.} =
   let i = this.find(key)
   if i != -1:
     this.map.del(i)
 
-func names(ctx: JSContext; this: var Storage): JSPropertyEnumList
+proc names(ctx: JSContext; this: var Storage): JSPropertyEnumList
     {.jspropnames.} =
   var list = newJSPropertyEnumList(ctx, uint32(this.map.len))
   for it in this.map:
     list.add(it.key)
   return list
 
-func getter(ctx: JSContext; this: var Storage; s: string): JSValue
+proc getter(ctx: JSContext; this: var Storage; s: string): JSValue
     {.jsgetownprop.} =
   return ctx.toJS(ctx.getItem(this, s)).uninitIfNull()
 
-func setter(this: var Storage; k, v: string): Err[DOMException]
+proc setter(this: var Storage; k, v: string): Err[DOMException]
     {.jssetprop.} =
   return this.setItem(k, v)
 
-func delete(this: var Storage; k: string): bool {.jsdelprop.} =
+proc delete(this: var Storage; k: string): bool {.jsdelprop.} =
   this.removeItem(k)
   return true
 
@@ -285,7 +285,7 @@ proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
 proc clearInterval(window: Window; id: int32) {.jsfunc.} =
   window.clearTimeout(id)
 
-func console*(window: Window): Console {.jsrfget.} =
+proc console*(window: Window): Console {.jsrfget.} =
   return window.internalConsole
 
 proc screenX(window: Window): int {.jsrfget.} = 0
@@ -313,19 +313,19 @@ proc setLocation(window: Window; s: string): Err[JSError]
     return errTypeError("document is null")
   return window.document.setLocation(s)
 
-func getWindow(window: Window): Window {.jsuffget: "window".} =
+proc getWindow(window: Window): Window {.jsuffget: "window".} =
   return window
 
-func getSelf(window: Window): Window {.jsrfget: "self".} =
+proc getSelf(window: Window): Window {.jsrfget: "self".} =
   return window
 
-func getFrames(window: Window): Window {.jsrfget: "frames".} =
+proc getFrames(window: Window): Window {.jsrfget: "frames".} =
   return window
 
-func getTop(window: Window): Window {.jsuffget: "top".} =
+proc getTop(window: Window): Window {.jsuffget: "top".} =
   return window #TODO frames?
 
-func getParent(window: Window): Window {.jsrfget: "parent".} =
+proc getParent(window: Window): Window {.jsrfget: "parent".} =
   return window #TODO frames?
 
 # See twtstr for the actual implementations.

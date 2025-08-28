@@ -244,7 +244,7 @@ proc setTransform(ctx: CanvasRenderingContext2D; a, b, c, d, e, f: float64)
 proc resetTransform(ctx: CanvasRenderingContext2D) {.jsfunc.} =
   ctx.state.resetTransform()
 
-func transform(ctx: CanvasRenderingContext2D; v: Vector2D): Vector2D =
+proc transform(ctx: CanvasRenderingContext2D; v: Vector2D): Vector2D =
   let mul = ctx.state.transformMatrix * newMatrix(@[v.x, v.y, 1], 1, 3)
   return Vector2D(x: mul.me[0], y: mul.me[1])
 

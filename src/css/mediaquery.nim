@@ -81,7 +81,7 @@ proc parseMediaCondition(parser: var MediaQueryParser; non = false;
 # Serializer.
 # As usual, the spec is incomplete, so it's hard to say if it's
 # compliant.  What can you do :/
-func `$`(mf: MediaFeature): string =
+proc `$`(mf: MediaFeature): string =
   case mf.t
   of mftColor, mftColorIndex, mftMonochrome:
     return $mf.range.a & " <= " & $mf.t & " <= " & $mf.range.b
@@ -104,7 +104,7 @@ func `$`(mf: MediaFeature): string =
   of mftContentType:
     return $mf.t & ": \"" & ($mf.a).dqEscape() & '"'
 
-func `$`(mq: MediaQuery): string =
+proc `$`(mq: MediaQuery): string =
   case mq.t
   of mctMedia: return $mq.media
   of mctFeature: return $mq.feature
@@ -112,7 +112,7 @@ func `$`(mq: MediaQuery): string =
   of mctOr: return "(" & $mq.left & ") or (" & $mq.right & ")"
   of mctAnd: return "(" & $mq.left & ") or (" & $mq.right & ")"
 
-func `$`*(mqlist: seq[MediaQuery]): string =
+proc `$`*(mqlist: seq[MediaQuery]): string =
   result = ""
   for it in mqlist:
     if result.len > 0:
@@ -332,7 +332,7 @@ proc parseMediaAnd(parser: var MediaQueryParser; left: MediaQuery;
   let right = ?parser.parseMediaCondition(noor = noor, nested = true)
   return ok(MediaQuery(t: mctAnd, left: left, right: right))
 
-func negateIf(mq: MediaQuery; non: bool): MediaQuery =
+proc negateIf(mq: MediaQuery; non: bool): MediaQuery =
   if non:
     return MediaQuery(t: mctNot, n: mq)
   return mq
@@ -402,13 +402,13 @@ proc parseMediaQueryList*(toks: seq[CSSToken]; attrs: ptr WindowAttributes):
 type
   MediaApplyContext = ptr EnvironmentSettings
 
-func appliesLR(feature: MediaFeature; n: float32): bool =
+proc appliesLR(feature: MediaFeature; n: float32): bool =
   let a = feature.lengthrange.s.a
   let b = feature.lengthrange.s.b
   return (feature.lengthrange.aeq and a == n or a < n) and
     (feature.lengthrange.beq and b == n or n < b)
 
-func applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
+proc applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
   case feature.t
   of mftColor:
     let bitDepth = if ctx.colorMode != cmMonochrome: 8 else: 0
@@ -440,7 +440,7 @@ func applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
   of mftContentType:
     return ctx.contentType.equalsIgnoreCase(feature.a)
 
-func applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
+proc applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
   case mq.t
   of mctMedia: return mq.media in {mtAll, mtScreen, mtTty}
   of mctNot: return not ctx.applies(mq.n)
@@ -448,13 +448,13 @@ func applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
   of mctOr: return ctx.applies(mq.left) or ctx.applies(mq.right)
   of mctFeature: return ctx.applies(mq.feature)
 
-func applies(ctx: MediaApplyContext; mqlist: seq[MediaQuery]): bool =
+proc applies(ctx: MediaApplyContext; mqlist: seq[MediaQuery]): bool =
   for mq in mqlist:
     if ctx.applies(mq):
       return true
   return false
 
-func applies*(mqlist: seq[MediaQuery]; ctx: MediaApplyContext): bool =
+proc applies*(mqlist: seq[MediaQuery]; ctx: MediaApplyContext): bool =
   return ctx.applies(mqlist)
 
 {.pop.} # raises: []

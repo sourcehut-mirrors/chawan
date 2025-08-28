@@ -7,7 +7,7 @@ import io/chafile
 import types/opt
 import utils/twtstr
 
-func gopherName(c: char): string =
+proc gopherName(c: char): string =
   return case c
   of '0': "text file"
   of '1': "directory"

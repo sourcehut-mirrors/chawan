@@ -10,7 +10,7 @@ import types/color
 import types/opt
 import utils/twtstr
 
-func parseLegacyColor*(s: string): Result[RGBColor, cstring] =
+proc parseLegacyColor*(s: string): Result[RGBColor, cstring] =
   if s == "":
     return err(cstring"color value must not be the empty string")
   let s = s.strip(chars = AsciiWhitespace).toLowerAscii()

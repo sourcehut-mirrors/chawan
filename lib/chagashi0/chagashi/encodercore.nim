@@ -105,7 +105,7 @@ proc gb18030RangesPointer(c: uint32): uint32 =
     # is found.
     # We want the last that is <=, so decrease index by one.
     let i = upperBound(GB18030RangesEncode, c,
-      func(a: tuple[ucs, p: uint16]; b: uint32): int =
+      proc(a: tuple[ucs, p: uint16]; b: uint32): int =
         cmp(uint32(a.ucs), b)
     )
     let elem = GB18030RangesEncode[i - 1]
@@ -113,19 +113,19 @@ proc gb18030RangesPointer(c: uint32): uint32 =
     p = elem.p
   return p + c - offset
 
-func findPair(map: openArray[UCS32x16]; u: uint32): int =
+proc findPair(map: openArray[UCS32x16]; u: uint32): int =
   return map.binarySearch(u, proc(x: UCS32x16; y: uint32): int = cmp(x[0], y))
 
-func findPair(map: openArray[UCS16x16]; u: uint16): int =
+proc findPair(map: openArray[UCS16x16]; u: uint16): int =
   return map.binarySearch(u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
 
-func findPair16(map: openArray[UCS16x16]; u: uint32): int =
+proc findPair16(map: openArray[UCS16x16]; u: uint32): int =
   if u > uint16.high:
     return -1
   let u = uint16(u)
   return map.binarySearch(u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
 
-func findPair16(map: openArray[tuple[ucs: uint16; val: char]]; u: uint32): int =
+proc findPair16(map: openArray[tuple[ucs: uint16; val: char]]; u: uint32): int =
   if u > uint16.high:
     return -1
   let u = uint16(u)
@@ -133,7 +133,7 @@ func findPair16(map: openArray[tuple[ucs: uint16; val: char]]; u: uint32): int =
     cmp(x[0], y)
   )
 
-func findRun(runs: openArray[uint32]; offset, ic: uint16): uint16 =
+proc findRun(runs: openArray[uint32]; offset, ic: uint16): uint16 =
   let i = runs.upperBound(ic, proc(x: uint32; y: uint16): int =
     let op = x and 0x1FFF # this is the pointer
     let diff = (x shr 13) and 0xFFF # difference between op and the point
@@ -309,7 +309,7 @@ method encode*(te: TextEncoderBig5; iq: openArray[uint8];
   te.i = 0
   terDone
 
-func ucsToJis0208(c: uint16): uint16 =
+proc ucsToJis0208(c: uint16): uint16 =
   if (let i = Jis0208Encode.findPair16(c); i != -1):
     return Jis0208Encode[i].p + 1
   return 0
@@ -342,7 +342,7 @@ method encode*(te: TextEncoderEUC_JP; iq: openArray[uint8];
   te.i = 0
   terDone
 
-func ucsToISO2022JP(c: uint16): uint16 =
+proc ucsToISO2022JP(c: uint16): uint16 =
   var c = c
   if c in 0xFF61u32..0xFF9Fu32:
     c = ISO2022JPKatakanaMap[uint8(c - 0xFF61)]
@@ -408,7 +408,7 @@ method finish*(te: TextEncoderISO2022_JP): TextEncoderFinishResult =
     return tefrOutputISO2022JPSetAscii
   tefrDone
 
-func ucsToSJIS(c: uint16): uint16 =
+proc ucsToSJIS(c: uint16): uint16 =
   if (let i = ShiftJISEncode.findPair16(c); i != -1):
     return ShiftJISEncode[i].p + 1
   return ucsToJis0208(c)

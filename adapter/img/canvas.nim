@@ -144,7 +144,7 @@ proc strokePath(bmp: Bitmap; lines: seq[Line]; color: ARGBColor) =
   for line in lines:
     bmp.plotLine(line, color)
 
-func isInside(windingNumber: int; fillRule: CanvasFillRule): bool =
+proc isInside(windingNumber: int; fillRule: CanvasFillRule): bool =
   return case fillRule
   of cfrNonZero: windingNumber != 0
   of cfrEvenOdd: windingNumber mod 2 == 0

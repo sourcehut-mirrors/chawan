@@ -326,7 +326,7 @@ proc `$`*(tok: CSSToken): string
 proc `$`*(c: CSSRule): string
 proc `$`*(decl: CSSDeclaration): string
 proc `$`*(c: CSSSimpleBlock): string
-func `$`*(slist: SelectorList): string
+proc `$`*(slist: SelectorList): string
 
 template fnum*(tok: CSSToken): float32 =
   tok.unum.f
@@ -334,13 +334,13 @@ template fnum*(tok: CSSToken): float32 =
 template inum*(tok: CSSToken): int32 =
   tok.unum.i
 
-func num*(tok: CSSToken): float32 {.inline.} =
+proc num*(tok: CSSToken): float32 {.inline.} =
   if tok.t in {cttINumber, cttIDimension}:
     float32(tok.inum)
   else:
     tok.fnum
 
-func toi*(tok: CSSToken): int32 {.inline.} =
+proc toi*(tok: CSSToken): int32 {.inline.} =
   if tok.t in {cttINumber, cttIDimension}:
     tok.inum
   else:
@@ -414,16 +414,16 @@ const FirstWordPropType* = LastHWordPropType.succ
 const LastWordPropType* = cptZIndex
 const FirstObjPropType* = LastWordPropType.succ
 
-func shorthandType*(s: string): CSSShorthandType =
+proc shorthandType*(s: string): CSSShorthandType =
   return parseEnumNoCase[CSSShorthandType](s).get(cstNone)
 
-func propertyType*(s: string): Opt[CSSPropertyType] =
+proc propertyType*(s: string): Opt[CSSPropertyType] =
   return parseEnumNoCase[CSSPropertyType](s)
 
 converter toAnyPropertyType*(p: CSSPropertyType): CSSAnyPropertyType =
   CSSAnyPropertyType(sh: cstNone, p: p)
 
-func anyPropertyType*(s: string): Opt[CSSAnyPropertyType] =
+proc anyPropertyType*(s: string): Opt[CSSAnyPropertyType] =
   let sh = shorthandType(s)
   if sh == cstNone:
     let p = ?propertyType(s)
@@ -744,7 +744,7 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
     dec n
     return iq.consumeDelimToken(n)
 
-func tokenPair(t: CSSTokenType): CSSTokenType =
+proc tokenPair(t: CSSTokenType): CSSTokenType =
   case t
   of cttLparen, cttFunction: return cttRparen
   of cttLbracket: return cttRbracket
@@ -808,7 +808,7 @@ proc seekToken*(ctx: var CSSParser) =
   else:
     inc ctx.i
 
-func has*(ctx: var CSSParser): bool =
+proc has*(ctx: var CSSParser): bool =
   if ctx.iqlen > 0:
     return ctx.hasBuf or ctx.iq.nextToken(ctx.i)
   return ctx.i < ctx.toks.len
@@ -1213,14 +1213,14 @@ iterator items*(csel: CompoundSelector): lent Selector {.inline.} =
   for it in csel.sels:
     yield it
 
-func `[]`*(csel: CompoundSelector; i: int): lent Selector {.inline.} =
+proc `[]`*(csel: CompoundSelector; i: int): lent Selector {.inline.} =
   return csel.sels[i]
 
-func `[]`*(csel: CompoundSelector; i: BackwardsIndex): lent Selector
+proc `[]`*(csel: CompoundSelector; i: BackwardsIndex): lent Selector
     {.inline.} =
   return csel[csel.sels.len - int(i)]
 
-func len*(csel: CompoundSelector): int {.inline.} =
+proc len*(csel: CompoundSelector): int {.inline.} =
   return csel.sels.len
 
 proc add*(csel: var CompoundSelector; sel: sink Selector) {.inline.} =
@@ -1230,31 +1230,31 @@ iterator ritems*(cxsel: ComplexSelector): lent CompoundSelector {.inline.} =
   for csel in cxsel.csels.ritems:
     yield csel
 
-func `[]`*(cxsel: ComplexSelector; i: int): lent CompoundSelector {.inline.} =
+proc `[]`*(cxsel: ComplexSelector; i: int): lent CompoundSelector {.inline.} =
   return cxsel.csels[i]
 
-func `[]`*(cxsel: ComplexSelector; i: BackwardsIndex): lent CompoundSelector
+proc `[]`*(cxsel: ComplexSelector; i: BackwardsIndex): lent CompoundSelector
     {.inline.} =
   return cxsel[cxsel.csels.len - int(i)]
 
-func `[]`*(cxsel: var ComplexSelector; i: BackwardsIndex): var CompoundSelector
+proc `[]`*(cxsel: var ComplexSelector; i: BackwardsIndex): var CompoundSelector
     {.inline.} =
   return cxsel.csels[i]
 
-func len*(cxsel: ComplexSelector): int {.inline.} =
+proc len*(cxsel: ComplexSelector): int {.inline.} =
   return cxsel.csels.len
 
 iterator items*(cxsel: ComplexSelector): lent CompoundSelector {.inline.} =
   for it in cxsel.csels:
     yield it
 
-func `$`*(nthChild: CSSNthChild): string =
+proc `$`*(nthChild: CSSNthChild): string =
   result = $nthChild.anb.A & 'n' & $nthChild.anb.B
   if nthChild.ofsels.len != 0:
     result &= " of "
     result &= $nthChild.ofsels
 
-func `$`*(sel: Selector): string =
+proc `$`*(sel: Selector): string =
   case sel.t
   of stType: return $sel.tag
   of stId: return "#" & $sel.id
@@ -1286,12 +1286,12 @@ func `$`*(sel: Selector): string =
   of stPseudoElement:
     return "::" & $sel.elem
 
-func `$`*(sels: CompoundSelector): string =
+proc `$`*(sels: CompoundSelector): string =
   result = ""
   for sel in sels:
     result &= $sel
 
-func `$`*(cxsel: ComplexSelector): string =
+proc `$`*(cxsel: ComplexSelector): string =
   result = ""
   for sels in cxsel:
     result &= $sels
@@ -1302,7 +1302,7 @@ func `$`*(cxsel: ComplexSelector): string =
     of ctSubsequentSibling: result &= " ~ "
     of ctNone: discard
 
-func `$`*(slist: SelectorList): string =
+proc `$`*(slist: SelectorList): string =
   result = ""
   var s = false
   for cxsel in slist:
@@ -1311,7 +1311,7 @@ func `$`*(slist: SelectorList): string =
     result &= $cxsel
     s = true
 
-func getSpecificity(sel: Selector): uint =
+proc getSpecificity(sel: Selector): uint =
   case sel.t
   of stId: return 1000000
   of stClass, stAttr, stPseudoClass, stLang: return 1000
@@ -1333,7 +1333,7 @@ func getSpecificity(sel: Selector): uint =
           best = s
     return 1000 + best
 
-func getSpecificity(sels: CompoundSelector): uint =
+proc getSpecificity(sels: CompoundSelector): uint =
   result = 0
   for sel in sels:
     result += getSpecificity(sel)
@@ -1347,7 +1347,7 @@ proc has(state: var SelectorParser): bool =
 proc peekToken(state: var SelectorParser): lent CSSToken =
   return state.ctx.peekToken()
 
-func peekTokenType(state: var SelectorParser): CSSTokenType =
+proc peekTokenType(state: var SelectorParser): CSSTokenType =
   return state.ctx.peekTokenType()
 
 proc seekToken(state: var SelectorParser) =

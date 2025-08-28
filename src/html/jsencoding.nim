@@ -26,7 +26,7 @@ type TextDecoderOptions = object of JSDict
   fatal {.jsdefault.}: bool
   ignoreBOM {.jsdefault.}: bool
 
-func newJSTextDecoder(label = "utf-8"; options = TextDecoderOptions()):
+proc newJSTextDecoder(label = "utf-8"; options = TextDecoderOptions()):
     JSResult[JSTextDecoder] {.jsctor.} =
   let encoding = getCharset(label)
   if encoding in {CHARSET_UNKNOWN, CHARSET_REPLACEMENT}:
@@ -39,7 +39,7 @@ func newJSTextDecoder(label = "utf-8"; options = TextDecoderOptions()):
     encoding: encoding
   ))
 
-func fatal(this: JSTextDecoder): bool {.jsfget.} =
+proc fatal(this: JSTextDecoder): bool {.jsfget.} =
   return this.errorMode == demFatal
 
 type TextDecodeOptions = object of JSDict
@@ -66,13 +66,13 @@ proc decode(ctx: JSContext; this: JSTextDecoder;
     return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
   return JS_NewString(ctx, "")
 
-func jencoding(this: JSTextDecoder): string {.jsfget: "encoding".} =
+proc jencoding(this: JSTextDecoder): string {.jsfget: "encoding".} =
   return $this.encoding
 
-func newTextEncoder(): JSTextEncoder {.jsctor.} =
+proc newTextEncoder(): JSTextEncoder {.jsctor.} =
   return JSTextEncoder()
 
-func jencoding(this: JSTextEncoder): string {.jsfget: "encoding".} =
+proc jencoding(this: JSTextEncoder): string {.jsfget: "encoding".} =
   return "utf-8"
 
 proc dealloc_wrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =

@@ -188,7 +188,7 @@ proc pushBuffer(ctx: var LoaderContext; handle: InputHandle;
   buffer: LoaderBuffer; ignoreSuspension: bool;
   unregWrite: var seq[OutputHandle])
 
-func `$`*(buffer: LoaderBuffer): string {.deprecated: "for debugging only".} =
+proc `$`*(buffer: LoaderBuffer): string {.deprecated: "for debugging only".} =
   var s = newString(buffer.len)
   copyMem(addr s[0], addr buffer.page[0], buffer.len)
   return s
@@ -244,7 +244,7 @@ proc newInputHandle(ctx: var LoaderContext; ostream: PosixStream;
   handle.outputs.add(output)
   return handle
 
-func cap(buffer: LoaderBuffer): int {.inline.} =
+proc cap(buffer: LoaderBuffer): int {.inline.} =
   return LoaderBufferPageSize
 
 template isEmpty(output: OutputHandle): bool =
@@ -389,13 +389,13 @@ proc close(ctx: var LoaderContext; client: ClientHandle) =
     if it.refc == 0:
       discard unlink(cstring(it.path))
 
-func isPrivileged(ctx: LoaderContext; client: ClientHandle): bool =
+proc isPrivileged(ctx: LoaderContext; client: ClientHandle): bool =
   return ctx.pagerClient == client
 
 #TODO this may be too low if we want to use urimethodmap for everything
 const MaxRewrites = 4
 
-func canRewriteForCGICompat(ctx: LoaderContext; path: string): bool =
+proc canRewriteForCGICompat(ctx: LoaderContext; path: string): bool =
   if path.startsWith("/cgi-bin/") or path.startsWith("/$LIB/"):
     return true
   for dir in ctx.config.cgiDir:
@@ -421,7 +421,7 @@ iterator outputHandles(ctx: LoaderContext): OutputHandle {.inline.} =
     if it != nil and it of OutputHandle:
       yield OutputHandle(it)
 
-func findOutput(ctx: var LoaderContext; id: int;
+proc findOutput(ctx: var LoaderContext; id: int;
     client: ClientHandle): OutputHandle =
   assert id != -1
   for it in ctx.outputHandles:
@@ -431,14 +431,14 @@ func findOutput(ctx: var LoaderContext; id: int;
       return it
   return nil
 
-func findCachedHandle(ctx: LoaderContext; cacheId: int): InputHandle =
+proc findCachedHandle(ctx: LoaderContext; cacheId: int): InputHandle =
   assert cacheId != -1
   for it in ctx.inputHandles:
     if it.cacheId == cacheId:
       return it
   return nil
 
-func find(cacheMap: openArray[CachedItem]; id: int): int =
+proc find(cacheMap: openArray[CachedItem]; id: int): int =
   for i, it in cacheMap.mypairs:
     if it.id == id:
       return i
@@ -1120,7 +1120,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     of rbtNone:
       discard
 
-func findPassedFd(client: ClientHandle; name: string): int =
+proc findPassedFd(client: ClientHandle; name: string): int =
   for i in 0 ..< client.passedFdMap.len:
     if client.passedFdMap[i].name == name:
       return i
@@ -1231,7 +1231,7 @@ proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
     ctx.loadDataSend(handle, body, ct)
 
 # Download manager. Based on (you guessed it) w3m.
-func formatSize(size: uint64): string =
+proc formatSize(size: uint64): string =
   result = ""
   var size = size
   while size > 0:

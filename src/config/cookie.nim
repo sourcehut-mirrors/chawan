@@ -148,13 +148,13 @@ proc `$`*(cookieJar: CookieJar): string =
     result &= "\n"
 
 # https://www.rfc-editor.org/rfc/rfc6265#section-5.1.4
-func defaultCookiePath(url: URL): string =
+proc defaultCookiePath(url: URL): string =
   var path = url.pathname.untilLast('/')
   if path == "" or path[0] != '/':
     return "/"
   move(path)
 
-func cookiePathMatches(cookiePath, requestPath: string): bool =
+proc cookiePathMatches(cookiePath, requestPath: string): bool =
   if requestPath.startsWith(cookiePath):
     if requestPath.len == cookiePath.len:
       return true
@@ -164,7 +164,7 @@ func cookiePathMatches(cookiePath, requestPath: string): bool =
       return true
   return false
 
-func cookieDomainMatches(cookieDomain: string; url: URL): bool =
+proc cookieDomainMatches(cookieDomain: string; url: URL): bool =
   if cookieDomain.len == 0:
     return false
   if url.isIP():

@@ -13,7 +13,7 @@ const HasDakuten = ("がぎぐげござじずぜぞだぢづでどばびぶべ�
 const HasHanDakuten = "ぱぴぷぺぽパピプペポ".toPoints()
 
 # Halfwidth to fullwidth & vice versa
-const halfFullMap = (func(): seq[tuple[half, full1, full2: uint32]] =
+const halfFullMap = (proc(): seq[tuple[half, full1, full2: uint32]] =
   result = @[]
   const map = staticRead"res/widthconvmap.tab"
   var i = 0
@@ -32,7 +32,7 @@ const halfFullMap = (func(): seq[tuple[half, full1, full2: uint32]] =
     inc i
 )()
 
-func halfwidth(u: uint32): uint32 =
+proc halfwidth(u: uint32): uint32 =
   if u != 0: # special case to avoid comparison with f2
     for (h, f1, f2) in halfFullMap:
       if f1 == u or f2 == u:
@@ -44,7 +44,7 @@ const HalfHanDakuten = 0xFF9Fu32 # half-width handakuten
 
 # Note: in unicode, char + 1 is dakuten and char + 2 handakuten
 
-func halfwidth*(s: string): string =
+proc halfwidth*(s: string): string =
   result = ""
   for u in s.points:
     case u
@@ -57,14 +57,14 @@ func halfwidth*(s: string): string =
     else:
       result.addUTF8(halfwidth(u))
 
-func fullwidth(r: uint32): uint32 =
+proc fullwidth(r: uint32): uint32 =
   if r != 0: # special case to avoid comparison with f2
     for (h, f1, f2) in halfFullMap:
       if h == r:
         return f1
   return r
 
-func fullwidth*(s: string): string =
+proc fullwidth*(s: string): string =
   result = ""
   var lastu = 0u32
   for u in s.points:
@@ -91,7 +91,7 @@ func fullwidth*(s: string): string =
     result.addUTF8(lastu)
 
 const kanamap = staticRead"res/kanamap.tab"
-func genFullSizeMap(): seq[(uint32, uint32)] =
+proc genFullSizeMap(): seq[(uint32, uint32)] =
   result = @[]
   for line in kanamap.split('\n'):
     if line.len == 0: break

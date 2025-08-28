@@ -20,7 +20,7 @@ type
     captures*: seq[seq[RegexCapture]]
 
 when defined(debug):
-  func `$`*(regex: Regex): string =
+  proc `$`*(regex: Regex): string =
     regex.buf
 
 proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =

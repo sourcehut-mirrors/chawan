@@ -166,7 +166,7 @@ proc set*(moduleMap: var ModuleMap; url: URL; moduleType: string;
   else:
     moduleMap.add(ModuleMapEntry(key: ($url, moduleType), value: value))
 
-func moduleTypeToRequestDest*(moduleType: string; default: RequestDestination):
+proc moduleTypeToRequestDest*(moduleType: string; default: RequestDestination):
     RequestDestination =
   if moduleType == "json":
     return rdJson
@@ -230,7 +230,7 @@ proc finishLoadModule*(ctx: JSContext; source, name: string): JSModuleDef =
 proc logException*(ctx: JSContext) =
   ctx.errorImpl(ctx.getExceptionMsg())
 
-func uninitIfNull*(val: JSValue): JSValue =
+proc uninitIfNull*(val: JSValue): JSValue =
   if JS_IsNull(val):
     return JS_UNINITIALIZED
   return val

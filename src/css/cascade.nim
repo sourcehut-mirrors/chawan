@@ -339,7 +339,7 @@ proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
   result = map[pseudo].applyDeclarations(parent, element, window)
   result.pseudo = pseudo
 
-func hasValues(rules: RuleList): bool =
+proc hasValues(rules: RuleList): bool =
   for x in rules:
     for y in x.vals:
       if y.len > 0:

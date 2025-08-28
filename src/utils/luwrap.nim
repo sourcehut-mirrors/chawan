@@ -11,19 +11,18 @@ proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
 proc normalize*(rs: seq[uint32]; form = UNICODE_NFC): seq[uint32] =
-  {.cast(noSideEffect).}:
-    if rs.len == 0:
-      return @[]
-    var outbuf: ptr uint32
-    let p = cast[ptr uint32](unsafeAddr rs[0])
-    let out_len = unicode_normalize(addr outbuf, p, cint(rs.len), form, nil,
-      passRealloc)
-    if out_len <= 0:
-      return @[]
-    var rs = newSeqUninit[uint32](out_len)
-    copyMem(addr rs[0], outbuf, out_len * sizeof(uint32))
-    dealloc(outbuf)
-    return rs
+  if rs.len == 0:
+    return @[]
+  var outbuf: ptr uint32
+  let p = cast[ptr uint32](unsafeAddr rs[0])
+  let out_len = unicode_normalize(addr outbuf, p, cint(rs.len), form, nil,
+    passRealloc)
+  if out_len <= 0:
+    return @[]
+  var rs = newSeqUninit[uint32](out_len)
+  copyMem(addr rs[0], outbuf, out_len * sizeof(uint32))
+  dealloc(outbuf)
+  return rs
 
 proc mnormalize*(s: var string) =
   if NonAscii notin s:
@@ -64,14 +63,14 @@ type u32pair* {.packed.} = object
   a: uint32
   b: uint32
 
-func cmpRange*(x: u32pair; y: uint32): int =
+proc cmpRange*(x: u32pair; y: uint32): int =
   if x.a > y:
     return 1
   elif x.b <= y:
     return -1
   return 0
 
-func contains(cr: CharRange; u: uint32): bool =
+proc contains(cr: CharRange; u: uint32): bool =
   let cps = cast[ptr UncheckedArray[u32pair]](cr.points)
   let L = cr.len div 2 - 1
   return cps.toOpenArray(0, L).binarySearch(u, cmpRange) != -1

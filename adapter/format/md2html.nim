@@ -37,7 +37,7 @@ proc getId(line: openArray[char]): string =
 type InlineFlag = enum
   ifItalic, ifBold, ifDel
 
-func startsWithScheme(s: string): bool =
+proc startsWithScheme(s: string): bool =
   for i, c in s:
     if i > 0 and c == ':':
       return true

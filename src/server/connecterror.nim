@@ -68,7 +68,7 @@ const ErrorMessages* = [
 converter toInt*(code: ConnectionError): int =
   return int(code)
 
-func getLoaderErrorMessage*(code: int): string =
+proc getLoaderErrorMessage*(code: int): string =
   if code in int(ConnectionError.low)..int(ConnectionError.high):
     return ErrorMessages[ConnectionError(code)]
   return "unexpected error code " & $code

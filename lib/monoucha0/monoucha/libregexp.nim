@@ -51,10 +51,10 @@ type
 
   LREFlags* = set[LREFlag]
 
-func toCInt*(flags: LREFlags): cint =
+proc toCInt*(flags: LREFlags): cint =
   cint(cast[uint8](flags))
 
-func toLREFlags*(flags: cint): LREFlags =
+proc toLREFlags*(flags: cint): LREFlags =
   cast[LREFlags](flags)
 
 {.passc: "-I" & currentSourcePath().parentDir().}

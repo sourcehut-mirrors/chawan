@@ -288,7 +288,7 @@ type
 proc `==`*(a, b: JSValue): bool {.error.} =
   discard
 
-func `==`*(a, b: JSAtom): bool {.borrow.}
+proc `==`*(a, b: JSAtom): bool {.borrow.}
 
 converter toJSValueConst*(val: JSValue): JSValueConst {.importc,
     header: "quickjs-aux.h".} =

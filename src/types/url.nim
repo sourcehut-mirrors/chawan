@@ -77,10 +77,10 @@ jsDestructor(URLSearchParams)
 
 # Forward declarations
 proc parseURL0*(input: string; base = none(URL)): URL
-func serialize*(url: URL; excludeHash = false; excludePassword = false):
+proc serialize*(url: URL; excludeHash = false; excludePassword = false):
   string
-func serializeip(ipv4: uint32): string
-func serializeip(ipv6: array[8, uint16]): string
+proc serializeip(ipv4: uint32): string
+proc serializeip(ipv6: array[8, uint16]): string
 proc host*(url: URL): string
 
 proc swrite*(w: var PacketWriter; url: URL) =
@@ -121,10 +121,10 @@ const SpecialPort = [
 template isSpecial(url: URL): bool =
   SpecialPort[url.schemeType] >= 0
 
-func parseSchemeType(buffer: string): SchemeType =
+proc parseSchemeType(buffer: string): SchemeType =
   return parseEnumNoCase[SchemeType](buffer).get(stUnknown)
 
-func parseIpv6(input: openArray[char]): string =
+proc parseIpv6(input: openArray[char]): string =
   var pieceIndex = 0
   var compress = -1
   var i = 0
@@ -184,7 +184,7 @@ func parseIpv6(input: openArray[char]): string =
     return ""
   return address.serializeip()
 
-func parseIpv4Number(s: string): uint32 =
+proc parseIpv4Number(s: string): uint32 =
   var input = s
   var R = 10u32
   if input.len >= 2 and input[0] == '0':
@@ -198,7 +198,7 @@ func parseIpv4Number(s: string): uint32 =
     return 0
   return parseUInt32Base(input, allowSign = false, R).get(uint32.high)
 
-func parseIpv4(input: string): Opt[uint32] =
+proc parseIpv4(input: string): Opt[uint32] =
   var numbers: seq[uint32] = @[]
   var prevEmpty = false
   var i = 0
@@ -226,7 +226,7 @@ const ForbiddenHostChars = {
   '\\', ']', '^', '|'
 }
 const ForbiddenDomainChars = ForbiddenHostChars + {'%'}
-func opaqueParseHost(input: string): string =
+proc opaqueParseHost(input: string): string =
   var o = ""
   for c in input:
     if c in ForbiddenHostChars:
@@ -234,7 +234,7 @@ func opaqueParseHost(input: string): string =
     o.percentEncode(c, ControlPercentEncodeSet)
   return o
 
-func endsInNumber(input: string): bool =
+proc endsInNumber(input: string): bool =
   if input.len == 0:
     return false
   var i = input.high
@@ -262,7 +262,7 @@ type
   IDNATableStatus = enum
     itsValid, itsIgnored, itsMapped, itsDeviation, itsDisallowed
 
-func getIdnaTableStatus(u: uint32): IDNATableStatus =
+proc getIdnaTableStatus(u: uint32): IDNATableStatus =
   if u <= high(uint16):
     let u = uint16(u)
     if u in IgnoredLow:
@@ -280,7 +280,7 @@ func getIdnaTableStatus(u: uint32): IDNATableStatus =
       return itsMapped
   return itsValid
 
-func getIdnaMapped(u: uint32): string =
+proc getIdnaMapped(u: uint32): string =
   if u <= high(uint16):
     let u = uint16(u)
     let n = MappedMapLow.searchInMap(u)
@@ -519,10 +519,10 @@ proc shortenPath(url: URL) =
   if url.pathname.len > 0:
     url.pathname.setLen(url.pathname.rfind('/'))
 
-func includesCredentials(url: URL): bool =
+proc includesCredentials(url: URL): bool =
   return url.username != "" or url.password != ""
 
-func isWinDriveLetter(s: string): bool =
+proc isWinDriveLetter(s: string): bool =
   return s.len == 2 and s[0] in AsciiAlpha and s[1] in {':', '|'}
 
 proc parseOpaquePath(input: openArray[char]; pointer: var int; url: URL):
@@ -804,7 +804,7 @@ proc parsePort(input: openArray[char]; pointer: var int; url: URL;
     return usFail
   return usPathStart
 
-func startsWithWinDriveLetter(input: openArray[char]; i: int): bool =
+proc startsWithWinDriveLetter(input: openArray[char]; i: int): bool =
   if i + 1 >= input.len:
     return false
   return input[i] in AsciiAlpha and input[i + 1] in {':', '|'}
@@ -883,10 +883,10 @@ proc parsePathStart(input: openArray[char]; pointer: var int; url: URL;
     inc pointer
   return usDone
 
-func isSingleDotPathSegment(s: string): bool =
+proc isSingleDotPathSegment(s: string): bool =
   s == "." or s.equalsIgnoreCase("%2e")
 
-func isDoubleDotPathSegment(s: string): bool =
+proc isDoubleDotPathSegment(s: string): bool =
   s == ".." or s.equalsIgnoreCase(".%2e") or s.equalsIgnoreCase("%2e.") or
     s.equalsIgnoreCase("%2e%2e")
 
@@ -1023,7 +1023,7 @@ proc parseJSURL*(s: string; base = none(URL)): JSResult[URL] =
     return ok(url)
   return errTypeError(s & " is not a valid URL")
 
-func serializeip(ipv4: uint32): string =
+proc serializeip(ipv4: uint32): string =
   result = ""
   var n = ipv4
   for i in 1..4:
@@ -1033,7 +1033,7 @@ func serializeip(ipv4: uint32): string =
     n = n div 256
   assert n == 0
 
-func findZeroSeq(ipv6: array[8, uint16]): int =
+proc findZeroSeq(ipv6: array[8, uint16]): int =
   var maxi = -1
   var maxn = 0
   var newi = -1
@@ -1053,7 +1053,7 @@ func findZeroSeq(ipv6: array[8, uint16]): int =
     return newi
   return maxi
 
-func serializeip(ipv6: array[8, uint16]): string =
+proc serializeip(ipv6: array[8, uint16]): string =
   let compress = findZeroSeq(ipv6)
   var ignore0 = false
   result = "["
@@ -1075,7 +1075,7 @@ func serializeip(ipv6: array[8, uint16]): string =
       result &= ':'
   result &= ']'
 
-func serialize*(url: URL; excludeHash = false; excludePassword = false):
+proc serialize*(url: URL; excludeHash = false; excludePassword = false):
     string =
   result = url.scheme & ':'
   if url.hostType != htNone:
@@ -1095,15 +1095,15 @@ func serialize*(url: URL; excludeHash = false; excludePassword = false):
   if not excludeHash:
     result &= url.hash
 
-func equals*(a, b: URL; excludeHash = false): bool =
+proc equals*(a, b: URL; excludeHash = false): bool =
   return a.serialize(excludeHash) == b.serialize(excludeHash)
 
-func `$`*(url: URL): string {.jsfunc: "toString".} = url.serialize()
+proc `$`*(url: URL): string {.jsfunc: "toString".} = url.serialize()
 
-func href(url: URL): string {.jsfget.} =
+proc href(url: URL): string {.jsfget.} =
   return $url
 
-func toJSON(url: URL): string {.jsfget.} =
+proc toJSON(url: URL): string {.jsfget.} =
   return $url
 
 # from a to b
@@ -1122,7 +1122,7 @@ proc setHref(ctx: JSContext; url: URL; s: string) {.jsfset: "href".} =
   else:
     JS_ThrowTypeError(ctx, "%s is not a valid URL", s)
 
-func isIP*(url: URL): bool =
+proc isIP*(url: URL): bool =
   return url.hostType in {htIpv4, htIpv6}
 
 # https://url.spec.whatwg.org/#urlencoded-parsing
@@ -1255,7 +1255,7 @@ proc origin*(url: URL): Origin =
 # "scheme://host:port/blah" instead of "scheme:/blah", *except* for
 # file URLs which are special-cased for legacy reasons (they become
 # "file:///blah", but are treated as absoluteURI).
-func isNetPath*(url: URL): bool =
+proc isNetPath*(url: URL): bool =
   return url.hostType != htNone and url.schemeType != stFile
 
 # This follows somewhat different rules from the standard:
@@ -1286,7 +1286,7 @@ proc protocol*(url: URL): string {.jsfget.} =
 proc setProtocol*(url: URL; s: string) {.jsfset: "protocol".} =
   parseURL1(s & ':', url, usSchemeStart)
 
-func scheme*(url: URL): lent string =
+proc scheme*(url: URL): lent string =
   return url.scheme
 
 proc setUsername*(url: URL; username: string) {.jsfset: "username".} =

@@ -32,7 +32,7 @@ type
 
 jsDestructor(Headers)
 
-func isForbiddenResponseHeaderName*(name: string): bool
+proc isForbiddenResponseHeaderName*(name: string): bool
 
 iterator pairs*(this: Headers): tuple[name, value: lent string] =
   for (name, value) in this.list:
@@ -65,14 +65,14 @@ const TokenChars = {
   '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'
 } + AsciiAlphaNumeric
 
-func isValidHeaderName*(s: string): bool =
+proc isValidHeaderName*(s: string): bool =
   return s.len > 0 and AllChars - TokenChars notin s
 
-func isValidHeaderValue*(s: string): bool =
+proc isValidHeaderValue*(s: string): bool =
   return s.len == 0 or s[0] notin {' ', '\t'} and s[^1] notin {' ', '\t'} and
     '\n' notin s
 
-func isForbiddenRequestHeader*(name, value: string): bool =
+proc isForbiddenRequestHeader*(name, value: string): bool =
   const ForbiddenNames = [
     "Accept-Charset",
     "Accept-Encoding",
@@ -107,7 +107,7 @@ func isForbiddenRequestHeader*(name, value: string): bool =
     return true # meh
   return false
 
-func isForbiddenResponseHeaderName*(name: string): bool =
+proc isForbiddenResponseHeaderName*(name: string): bool =
   return name.equalsIgnoreCase("Set-Cookie") or
     name.equalsIgnoreCase("Set-Cookie2")
 
@@ -122,7 +122,7 @@ proc validate(this: Headers; name, value: string): JSResult[bool] =
     return ok(false)
   return ok(true)
 
-func isNoCorsSafelistedName(name: string): bool =
+proc isNoCorsSafelistedName(name: string): bool =
   return name.equalsIgnoreCase("Accept") or
     name.equalsIgnoreCase("Accept-Language") or
     name.equalsIgnoreCase("Content-Language") or
@@ -133,7 +133,7 @@ const CorsUnsafeRequestByte = {
   '?', '@', '[', '\\', ']', '{', '}', '\e'
 }
 
-func isNoCorsSafelisted(name, value: string): bool =
+proc isNoCorsSafelisted(name, value: string): bool =
   if value.len > 128:
     return false
   if name.equalsIgnoreCase("Accept"):
@@ -151,7 +151,7 @@ func isNoCorsSafelisted(name, value: string): bool =
     ]
   return false
 
-func lowerBound(this: Headers; name: string): int =
+proc lowerBound(this: Headers; name: string): int =
   return this.list.lowerBound(name, proc(it: HTTPHeader; name: string): int =
     cmpIgnoreCase(it.name, name)
   )
@@ -172,7 +172,7 @@ proc removeAll(this: Headers; name: string; n: int) =
 proc contains(this: Headers; name: string; n: int): bool =
   return n < this.list.len and this.list[n].name.equalsIgnoreCase(name)
 
-func contains*(this: Headers; name: string): bool =
+proc contains*(this: Headers; name: string): bool =
   return this.contains(name, this.lowerBound(name))
 
 proc removeAll*(this: Headers; name: string) =
@@ -189,7 +189,7 @@ proc addIfNotFound*(headers: Headers; name, value: string) =
   if not headers.contains(name, n):
     headers.list.insert((name, value), n)
 
-func get(this: Headers; name: string; n: int): string =
+proc get(this: Headers; name: string; n: int): string =
   var s = ""
   for it in this.list.toOpenArray(n, this.list.high):
     if not it.name.equalsIgnoreCase(name):
@@ -261,23 +261,23 @@ proc fill*(headers: Headers; init: HeadersInit): JSResult[void] =
     ?headers.append(k, v)
   ok()
 
-func newHeaders*(guard: HeaderGuard): Headers =
+proc newHeaders*(guard: HeaderGuard): Headers =
   return Headers(guard: guard)
 
-func newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
+proc newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
     Headers =
   let headers = newHeaders(guard)
   headers.list = @list
   headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
   return headers
 
-func newHeaders(obj = none(HeadersInit)): JSResult[Headers] {.jsctor.} =
+proc newHeaders(obj = none(HeadersInit)): JSResult[Headers] {.jsctor.} =
   let headers = newHeaders(hgNone)
   if obj.isSome:
     ?headers.fill(obj.get)
   return ok(headers)
 
-func clone*(headers: Headers): Headers =
+proc clone*(headers: Headers): Headers =
   return Headers(guard: headers.guard, list: headers.list)
 
 proc add*(headers: Headers; name, value: string) =
@@ -288,21 +288,20 @@ proc `[]=`*(this: Headers; name, value: string) =
   this.removeAll(name, n)
   this.add(name, value, n)
 
-func `[]`*(this: Headers; name: string): var string =
+proc `[]`*(this: Headers; name: string): var string =
   let n = this.lowerBound(name)
   return this.list[n].value
 
-func getFirst(headers: Headers; name: string; n: int): lent string =
+proc getFirst(headers: Headers; name: string; n: int): lent string =
   if headers.contains(name, n):
     return headers.list[n].value
   let emptyStr {.global.} = ""
-  {.cast(noSideEffect).}:
-    return emptyStr
+  return emptyStr
 
-func getFirst*(headers: Headers; name: string): lent string =
+proc getFirst*(headers: Headers; name: string): lent string =
   return headers.getFirst(name, headers.lowerBound(name))
 
-func takeFirstRemoveAll*(headers: Headers; name: string): string =
+proc takeFirstRemoveAll*(headers: Headers; name: string): string =
   let n = headers.lowerBound(name)
   var s = ""
   if headers.contains(name, n):
@@ -310,7 +309,7 @@ func takeFirstRemoveAll*(headers: Headers; name: string): string =
   headers.removeAll(name, n)
   move(s)
 
-func getAllNoComma*(this: Headers; k: string): seq[string] =
+proc getAllNoComma*(this: Headers; k: string): seq[string] =
   result = @[]
   let n = this.lowerBound(k)
   for it in this.list.toOpenArray(n, this.list.high):
@@ -318,7 +317,7 @@ func getAllNoComma*(this: Headers; k: string): seq[string] =
       break
     result.add(it.value)
 
-func getAllCommaSplit*(this: Headers; k: string): seq[string] =
+proc getAllCommaSplit*(this: Headers; k: string): seq[string] =
   result = @[]
   let n = this.lowerBound(k)
   for it in this.list.toOpenArray(n, this.list.high):

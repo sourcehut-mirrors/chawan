@@ -9,7 +9,7 @@ type
   RangeMap* = openArray[(uint32, uint32)]
 
 {.push boundChecks:off.}
-func contains*(props: PropertyTable; u: ptint): bool {.inline.} =
+proc contains*(props: PropertyTable; u: ptint): bool {.inline.} =
   const isz = sizeof(ptint) * 8
   let i = u div isz
   let m = u mod isz

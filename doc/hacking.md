@@ -159,6 +159,10 @@ proc foo(objs: openArray[SomeObj]) =
     obj.i = i
 ```
 
+#### `func`, `.noSideEffect`
+
+These introduce function coloring for little to no benefit.
+
 ### Fixing cyclic imports
 
 In Nim, you can't have circular dependencies between modules. This gets

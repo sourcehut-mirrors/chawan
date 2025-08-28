@@ -332,7 +332,7 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
       0, ctx.getOpaque().ctors[parent])
   return JS_NewCFunction2(ctx, ctor, className, 0, JS_CFUNC_constructor, 0)
 
-func newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
+proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
     asglobal, nointerface: bool; finalizer: JSFinalizerFunction;
     namespace: JSValueConst; unforgeable, staticfuns: JSFunctionList): JSClassID
@@ -803,7 +803,7 @@ proc newJSProc(gen: var JSFuncGenerator; params: openArray[NimNode];
     .add(newTree(nnkExprColonExpr, ident("raises"), newNimNode(nnkBracket)))
   return newProc(gen.newName, params, jsBody, pragmas = jsPragmas)
 
-func getFuncName(fun: NimNode; jsname, staticName: string): string =
+proc getFuncName(fun: NimNode; jsname, staticName: string): string =
   if jsname != "":
     return jsname
   if staticName != "":
@@ -1172,24 +1172,24 @@ type
     varsym: NimNode
     flag: BoundFunctionFlag
 
-func getPragmaName(varPragma: NimNode): string =
+proc getPragmaName(varPragma: NimNode): string =
   if varPragma.kind == nnkExprColonExpr:
     return $varPragma[0]
   return $varPragma
 
-func getStringFromPragma(varPragma: NimNode): Option[string] =
+proc getStringFromPragma(varPragma: NimNode): Option[string] =
   if varPragma.kind == nnkExprColonExpr:
     if not varPragma.len == 1 and varPragma[1].kind == nnkStrLit:
       error("Expected string as pragma argument")
     return some($varPragma[1])
   return none(string)
 
-func tname(info: RegistryInfo): string =
+proc tname(info: RegistryInfo): string =
   return info.t.strVal
 
 # Differs from tname if the Nim object's name differs from the JS object's
 # name.
-func jsname(info: RegistryInfo): string =
+proc jsname(info: RegistryInfo): string =
   if info.name != "":
     return info.name
   return info.tname

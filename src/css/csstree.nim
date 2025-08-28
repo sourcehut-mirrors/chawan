@@ -96,7 +96,7 @@ template ctx(frame: TreeFrame): var TreeContext =
   frame.pctx[]
 
 when defined(debug):
-  func `$`*(node: StyledNode): string =
+  proc `$`*(node: StyledNode): string =
     case node.t
     of stText:
       return node.text
@@ -157,7 +157,7 @@ proc counter(ctx: var TreeContext; name: CAtom): int32 =
       return counter.n
   return 0
 
-func inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
+proc inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
   result = frame.computed.inheritProperties()
   result{"display"} = display
 

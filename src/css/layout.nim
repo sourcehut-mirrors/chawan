@@ -41,87 +41,87 @@ type
 
 const DefaultSpan = Span(start: 0, send: LUnit.high)
 
-func minWidth(sizes: ResolvedSizes): LUnit =
+proc minWidth(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtHorizontal].start
 
-func maxWidth(sizes: ResolvedSizes): LUnit =
+proc maxWidth(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtHorizontal].send
 
-func minHeight(sizes: ResolvedSizes): LUnit =
+proc minHeight(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtVertical].start
 
-func maxHeight(sizes: ResolvedSizes): LUnit =
+proc maxHeight(sizes: ResolvedSizes): LUnit =
   return sizes.bounds.a[dtVertical].send
 
-func sum(span: Span): LUnit =
+proc sum(span: Span): LUnit =
   return span.start + span.send
 
-func sum(rect: RelativeRect): Size =
+proc sum(rect: RelativeRect): Size =
   return [
     dtHorizontal: rect[dtHorizontal].sum(),
     dtVertical: rect[dtVertical].sum()
   ]
 
-func startOffset(rect: RelativeRect): Offset =
+proc startOffset(rect: RelativeRect): Offset =
   return offset(x = rect[dtHorizontal].start, y = rect[dtVertical].start)
 
-func opposite(dim: DimensionType): DimensionType =
+proc opposite(dim: DimensionType): DimensionType =
   case dim
   of dtHorizontal: return dtVertical
   of dtVertical: return dtHorizontal
 
-func availableSpace(w, h: SizeConstraint): AvailableSpace =
+proc availableSpace(w, h: SizeConstraint): AvailableSpace =
   return [dtHorizontal: w, dtVertical: h]
 
-func w(space: AvailableSpace): SizeConstraint {.inline.} =
+proc w(space: AvailableSpace): SizeConstraint {.inline.} =
   return space[dtHorizontal]
 
-func w(space: var AvailableSpace): var SizeConstraint {.inline.} =
+proc w(space: var AvailableSpace): var SizeConstraint {.inline.} =
   return space[dtHorizontal]
 
-func `w=`(space: var AvailableSpace; w: SizeConstraint) {.inline.} =
+proc `w=`(space: var AvailableSpace; w: SizeConstraint) {.inline.} =
   space[dtHorizontal] = w
 
-func h(space: var AvailableSpace): var SizeConstraint {.inline.} =
+proc h(space: var AvailableSpace): var SizeConstraint {.inline.} =
   return space[dtVertical]
 
-func h(space: AvailableSpace): SizeConstraint {.inline.} =
+proc h(space: AvailableSpace): SizeConstraint {.inline.} =
   return space[dtVertical]
 
-func `h=`(space: var AvailableSpace; h: SizeConstraint) {.inline.} =
+proc `h=`(space: var AvailableSpace; h: SizeConstraint) {.inline.} =
   space[dtVertical] = h
 
 template attrs(state: LayoutContext): WindowAttributes =
   state.attrsp[]
 
-func maxContent(): SizeConstraint =
+proc maxContent(): SizeConstraint =
   return SizeConstraint(t: scMaxContent)
 
-func stretch(u: LUnit): SizeConstraint =
+proc stretch(u: LUnit): SizeConstraint =
   return SizeConstraint(t: scStretch, u: u)
 
-func fitContent(u: LUnit): SizeConstraint =
+proc fitContent(u: LUnit): SizeConstraint =
   return SizeConstraint(t: scFitContent, u: u)
 
-func fitContent(sc: SizeConstraint): SizeConstraint =
+proc fitContent(sc: SizeConstraint): SizeConstraint =
   case sc.t
   of scMinContent, scMaxContent:
     return sc
   of scStretch, scFitContent:
     return SizeConstraint(t: scFitContent, u: sc.u)
 
-func isDefinite(sc: SizeConstraint): bool =
+proc isDefinite(sc: SizeConstraint): bool =
   return sc.t in {scStretch, scFitContent}
 
-func canpx(l: CSSLength; sc: SizeConstraint): bool =
+proc canpx(l: CSSLength; sc: SizeConstraint): bool =
   return not l.auto and (l.perc == 0 or sc.t == scStretch)
 
-func px(l: CSSLength; p: LUnit): LUnit {.inline.} =
+proc px(l: CSSLength; p: LUnit): LUnit {.inline.} =
   if l.auto:
     return 0
   return (p.toFloat32() * l.perc + l.npx).toLUnit()
 
-func px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
+proc px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
   if l.perc == 0:
     return l.npx.toLUnit()
   if l.auto:
@@ -130,12 +130,12 @@ func px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
     return (p.u.toFloat32() * l.perc + l.npx).toLUnit()
   return 0
 
-func stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =
+proc stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =
   if l.canpx(sc):
     return stretch(l.px(sc))
   return maxContent()
 
-func applySizeConstraint(u: LUnit; availableSize: SizeConstraint): LUnit =
+proc applySizeConstraint(u: LUnit; availableSize: SizeConstraint): LUnit =
   case availableSize.t
   of scStretch:
     return availableSize.u
@@ -145,20 +145,20 @@ func applySizeConstraint(u: LUnit; availableSize: SizeConstraint): LUnit =
   of scFitContent:
     return min(u, availableSize.u)
 
-func outerSize(box: BlockBox; dim: DimensionType; sizes: ResolvedSizes): LUnit =
+proc outerSize(box: BlockBox; dim: DimensionType; sizes: ResolvedSizes): LUnit =
   return sizes.margin[dim].sum() + box.state.size[dim]
 
-func outerSize(box: BlockBox; sizes: ResolvedSizes): Size =
+proc outerSize(box: BlockBox; sizes: ResolvedSizes): Size =
   return size(
     w = box.outerSize(dtHorizontal, sizes),
     h = box.outerSize(dtVertical, sizes)
   )
 
-func max(span: Span): LUnit =
+proc max(span: Span): LUnit =
   return max(span.start, span.send)
 
 # In CSS, "min" beats "max".
-func minClamp(x: LUnit; span: Span): LUnit =
+proc minClamp(x: LUnit; span: Span): LUnit =
   return max(min(x, span.send), span.start)
 
 # Note: padding must still be applied after this.
@@ -202,7 +202,7 @@ const MarginEndMap = [
   dtVertical: cptMarginBottom
 ]
 
-func spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
+proc spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
     padding: LUnit): LUnit =
   let u = l.px(p)
   if computed{"box-sizing"} == BoxSizingBorderBox:
@@ -263,7 +263,7 @@ proc roundSmallMarginsAndPadding(lctx: LayoutContext;
     it.start = (it.start div cs).toInt.toLUnit * cs
     it.send = (it.send div cs).toInt.toLUnit * cs
 
-func resolvePositioned(lctx: LayoutContext; size: Size;
+proc resolvePositioned(lctx: LayoutContext; size: Size;
     computed: CSSValues): RelativeRect =
   # As per standard, vertical percentages refer to the *height*, not the width
   # (unlike with margin/padding)
@@ -287,7 +287,7 @@ const SizeMap = [dtHorizontal: cptWidth, dtVertical: cptHeight]
 const MinSizeMap = [dtHorizontal: cptMinWidth, dtVertical: cptMinHeight]
 const MaxSizeMap = [dtHorizontal: cptMaxWidth, dtVertical: cptMaxHeight]
 
-func resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
+proc resolveBounds(lctx: LayoutContext; space: AvailableSpace; padding: Size;
     computed: CSSValues; flexItem = false): Bounds =
   var res = DefaultBounds
   for dim in DimensionType:
@@ -751,26 +751,26 @@ template bctx(fstate: FlowState): BlockContext =
 template lctx(fstate: FlowState): LayoutContext =
   fstate.bctx.lctx
 
-func whitespacepre(computed: CSSValues): bool =
+proc whitespacepre(computed: CSSValues): bool =
   computed{"white-space"} in {WhitespacePre, WhitespacePreLine,
     WhitespacePreWrap}
 
-func nowrap(computed: CSSValues): bool =
+proc nowrap(computed: CSSValues): bool =
   computed{"white-space"} in {WhitespaceNowrap, WhitespacePre}
 
-func cellWidth(lctx: LayoutContext): int =
+proc cellWidth(lctx: LayoutContext): int =
   lctx.attrs.ppc
 
-func cellWidth(fstate: FlowState): int =
+proc cellWidth(fstate: FlowState): int =
   fstate.lctx.cellWidth
 
-func cellHeight(fstate: FlowState): int =
+proc cellHeight(fstate: FlowState): int =
   fstate.lctx.attrs.ppl
 
 template computed(fstate: FlowState): CSSValues =
   fstate.box.computed
 
-func bfcOffset(bctx: BlockContext): Offset =
+proc bfcOffset(bctx: BlockContext): Offset =
   if bctx.parentBps != nil:
     return bctx.parentBps.offset
   return offset(x = 0, y = 0)
@@ -784,7 +784,7 @@ proc append(a: var Strut; b: LUnit) =
   else:
     a.pos = max(b, a.pos)
 
-func sum(a: Strut): LUnit =
+proc sum(a: Strut): LUnit =
   return a.pos + a.neg
 
 proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
@@ -808,7 +808,7 @@ proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
     bctx.clearIndex[FloatNone] = max(bctx.clearIndex[FloatNone], k)
   offsety = y - bfcOffsety
 
-func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
+proc findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
     space: AvailableSpace; float: CSSFloat; outw: var LUnit): Offset =
   # Algorithm originally from QEmacs.
   var y = offset.y
@@ -842,12 +842,12 @@ func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
   assert false
   offset(-1, -1)
 
-func findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
+proc findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
     space: AvailableSpace; float: CSSFloat): Offset =
   var dummy: LUnit
   return bctx.findNextFloatOffset(offset, size, space, float, dummy)
 
-func findNextBlockOffset(bctx: BlockContext; offset: Offset; size: Size;
+proc findNextBlockOffset(bctx: BlockContext; offset: Offset; size: Size;
     space: AvailableSpace; outw: var LUnit): Offset =
   return bctx.findNextFloatOffset(offset, size, space, FloatLeft, outw)
 
@@ -939,7 +939,7 @@ proc initLine(fstate: var FlowState; flag = ilfRegular) =
     fstate.lbstate.init = lisUninited
 
 # Whitespace between words
-func computeShift(fstate: FlowState; istate: InlineState): LUnit =
+proc computeShift(fstate: FlowState; istate: InlineState): LUnit =
   if fstate.whitespacenum == 0:
     return 0
   if fstate.whitespaceIsLF and istate.lastrw == 2 and istate.firstrw == 2:
@@ -991,13 +991,13 @@ proc positionAtom(lbstate: LineBoxState; iastate: var InlineAtomState) =
     # See baseline (with len = 0).
     iastate.offset.y = lbstate.baseline - iastate.baseline
 
-func getLineWidth(fstate: FlowState): LUnit =
+proc getLineWidth(fstate: FlowState): LUnit =
   return case fstate.space.w.t
   of scMinContent, scMaxContent: fstate.maxChildWidth
   of scFitContent: fstate.space.w.u
   of scStretch: max(fstate.maxChildWidth, fstate.space.w.u)
 
-func getLineXShift(fstate: FlowState; width: LUnit): LUnit =
+proc getLineXShift(fstate: FlowState; width: LUnit): LUnit =
   return case fstate.computed{"text-align"}
   of TextAlignNone: LUnit(0)
   of TextAlignEnd, TextAlignRight, TextAlignChaRight:
@@ -1192,7 +1192,7 @@ proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
     fstate.lbstate.totalFloatWidth)
   fstate.lbstate = fstate.initLineBoxState()
 
-func shouldWrap(fstate: FlowState; w: LUnit;
+proc shouldWrap(fstate: FlowState; w: LUnit;
     pcomputed: CSSValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
     return false
@@ -1202,13 +1202,13 @@ func shouldWrap(fstate: FlowState; w: LUnit;
     return true # always wrap with min-content
   return fstate.lbstate.size.w + w > fstate.lbstate.availableWidth
 
-func shouldWrap2(fstate: FlowState; w: LUnit): bool =
+proc shouldWrap2(fstate: FlowState; w: LUnit): bool =
   assert fstate.lbstate.init != lisUninited
   if fstate.lbstate.init == lisNoExclusions:
     return false
   return fstate.lbstate.size.w + w > fstate.lbstate.availableWidth
 
-func getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
+proc getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
   return case iastate.vertalign
   of VerticalAlignBaseline:
     iastate.baseline
@@ -1527,7 +1527,7 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   if positioned:
     bctx.lctx.popPositioned(box.state.size)
 
-func clearedBy(floats: set[CSSFloat]; clear: CSSClear): bool =
+proc clearedBy(floats: set[CSSFloat]; clear: CSSClear): bool =
   return case clear
   of ClearNone: false
   of ClearBoth: floats != {}
@@ -2371,7 +2371,7 @@ proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
   tctx.preLayoutTableRows(tbody, table)
   tctx.preLayoutTableRows(tfoot, table)
 
-func calcSpecifiedRatio(tctx: TableContext; W: LUnit): LUnit =
+proc calcSpecifiedRatio(tctx: TableContext; W: LUnit): LUnit =
   var totalSpecified: LUnit = 0
   var hasUnspecified = false
   for col in tctx.cols:
@@ -2407,7 +2407,7 @@ proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
       W -= col.width
   move(avail)
 
-func needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
+proc needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
   case tctx.space.w.t
   of scMinContent, scMaxContent:
     return false

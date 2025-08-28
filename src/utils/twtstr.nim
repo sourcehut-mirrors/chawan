@@ -21,7 +21,7 @@ const AsciiHexDigit* = AsciiDigit + {'a'..'f', 'A'..'F'}
 const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
 const HTTPWhitespace* = {' ', '\n', '\r', '\t'}
 
-func nextUTF8*(s: openArray[char]; i: var int): uint32 =
+proc nextUTF8*(s: openArray[char]; i: var int): uint32 =
   var j = i
   var u = uint32(s[j])
   {.push overflowChecks: off, boundChecks: off.}
@@ -62,14 +62,14 @@ func nextUTF8*(s: openArray[char]; i: var int): uint32 =
   i = j
   0xFFFD
 
-func prevUTF8*(s: openArray[char]; i: var int): uint32 =
+proc prevUTF8*(s: openArray[char]; i: var int): uint32 =
   var j = i - 1
   while uint32(s[j]) shr 6 == 2:
     dec j
   i = j
   return s.nextUTF8(j)
 
-func pointLenAt*(s: openArray[char]; i: int): int =
+proc pointLenAt*(s: openArray[char]; i: int): int =
   var j = i
   discard s.nextUTF8(j)
   return j - i
@@ -80,7 +80,7 @@ iterator points*(s: openArray[char]): uint32 {.inline.} =
     let u = s.nextUTF8(i)
     yield u
 
-func toPoints*(s: openArray[char]): seq[uint32] =
+proc toPoints*(s: openArray[char]): seq[uint32] =
   result = @[]
   for u in s.points:
     result.add(u)
@@ -101,31 +101,31 @@ proc addUTF8*(res: var string; u: uint32) =
     res &= char(u shr 6 and 0x3F or 0x80)
     res &= char(u and 0x3F or 0x80)
 
-func addUTF8*(res: var string; us: openArray[uint32]) =
+proc addUTF8*(res: var string; us: openArray[uint32]) =
   for u in us:
     res.addUTF8(u)
 
-func toUTF8*(u: uint32): string =
+proc toUTF8*(u: uint32): string =
   result = ""
   result.addUTF8(u)
 
-func toUTF8*(us: openArray[uint32]): string =
+proc toUTF8*(us: openArray[uint32]): string =
   result = newStringOfCap(us.len)
   result.addUTF8(us)
 
-func pointLen*(s: openArray[char]): int =
+proc pointLen*(s: openArray[char]): int =
   var n = 0
   for u in s.points:
     inc n
   return n
 
-func searchInMap*[U, T](a: openArray[(U, T)]; u: U): int =
+proc searchInMap*[U, T](a: openArray[(U, T)]; u: U): int =
   binarySearch(a, u, proc(x: (U, T); y: U): int = cmp(x[0], y))
 
-func isInMap*[U, T](a: openArray[(U, T)]; u: U): bool =
+proc isInMap*[U, T](a: openArray[(U, T)]; u: U): bool =
   a.searchInMap(u) != -1
 
-func isInRange*[U](a: openArray[(U, U)]; u: U): bool =
+proc isInRange*[U](a: openArray[(U, U)]; u: U): bool =
   let res = binarySearch(a, u, proc(x: (U, U); y: U): int =
     if x[0] > y:
       1
@@ -136,18 +136,18 @@ func isInRange*[U](a: openArray[(U, U)]; u: U): bool =
   )
   return res != -1
 
-func onlyWhitespace*(s: string): bool =
+proc onlyWhitespace*(s: string): bool =
   return AllChars - AsciiWhitespace notin s
 
-func isControlChar*(u: uint32): bool =
+proc isControlChar*(u: uint32): bool =
   return u <= 0x1F or u >= 0x7F and u <= 0x9F
 
-func getControlChar*(c: char): char =
+proc getControlChar*(c: char): char =
   if c == '?':
     return '\x7F'
   return char(int(c) and 0x1F)
 
-func kebabToCamelCase*(s: string): string =
+proc kebabToCamelCase*(s: string): string =
   result = ""
   var flip = false
   for c in s:
@@ -160,7 +160,7 @@ func kebabToCamelCase*(s: string): string =
         result &= c
       flip = false
 
-func camelToKebabCase*(s: openArray[char]; dashPrefix = false): string =
+proc camelToKebabCase*(s: openArray[char]; dashPrefix = false): string =
   result = newStringOfCap(s.len)
   if dashPrefix:
     result &= '-'
@@ -171,7 +171,7 @@ func camelToKebabCase*(s: openArray[char]; dashPrefix = false): string =
     else:
       result &= c
 
-func hexValue*(c: char): int =
+proc hexValue*(c: char): int =
   if c in AsciiDigit:
     return int(uint8(c) - uint8('0'))
   if c in 'a'..'f':
@@ -180,21 +180,21 @@ func hexValue*(c: char): int =
     return int(uint8(c) - uint8('A') + 0xA)
   return -1
 
-func decValue*(c: char): int =
+proc decValue*(c: char): int =
   if c in AsciiDigit:
     return int(uint8(c) - uint8('0'))
   return -1
 
 const HexCharsUpper = "0123456789ABCDEF"
 const HexCharsLower = "0123456789abcdef"
-func pushHex*(buf: var string; u: uint8) =
+proc pushHex*(buf: var string; u: uint8) =
   buf &= HexCharsUpper[u shr 4]
   buf &= HexCharsUpper[u and 0xF]
 
-func pushHex*(buf: var string; c: char) =
+proc pushHex*(buf: var string; c: char) =
   buf.pushHex(uint8(c))
 
-func toHexLower*(u: uint16): string =
+proc toHexLower*(u: uint16): string =
   var x = u
   let len = if (u and 0xF000) != 0:
     4
@@ -210,7 +210,7 @@ func toHexLower*(u: uint16): string =
     x = x shr 4
   move(s)
 
-func controlToVisual*(u: uint32): string =
+proc controlToVisual*(u: uint32): string =
   if u <= 0x1F:
     return "^" & char(u or 0x40)
   if u == 0x7F:
@@ -223,10 +223,10 @@ func controlToVisual*(u: uint32): string =
 proc add*(s: var string; u: uint8) =
   s.addInt(uint64(u))
 
-func equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
+proc equalsIgnoreCase*(s1, s2: string): bool {.inline.} =
   return s1.cmpIgnoreCase(s2) == 0
 
-func startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
+proc startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
   if s1.len < s2.len:
     return false
   for i in 0 ..< s2.len:
@@ -234,7 +234,7 @@ func startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
       return false
   return true
 
-func endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
+proc endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
   if s1.len < s2.len:
     return false
   let h1 = s1.high
@@ -244,23 +244,23 @@ func endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
       return false
   return true
 
-func containsIgnoreCase*(ss: openArray[string]; s: string): bool =
+proc containsIgnoreCase*(ss: openArray[string]; s: string): bool =
   for it in ss:
     if it.equalsIgnoreCase(s):
       return true
   false
 
-func skipBlanks*(buf: openArray[char]; at: int): int =
+proc skipBlanks*(buf: openArray[char]; at: int): int =
   result = at
   while result < buf.len and buf[result] in AsciiWhitespace:
     inc result
 
-func skipBlanksTillLF*(buf: openArray[char]; at: int): int =
+proc skipBlanksTillLF*(buf: openArray[char]; at: int): int =
   result = at
   while result < buf.len and buf[result] in AsciiWhitespace - {'\n'}:
     inc result
 
-func stripAndCollapse*(s: openArray[char]): string =
+proc stripAndCollapse*(s: openArray[char]): string =
   var res = newStringOfCap(s.len)
   var space = false
   for c in s.toOpenArray(s.skipBlanks(0), s.high):
@@ -272,35 +272,35 @@ func stripAndCollapse*(s: openArray[char]): string =
     space = cspace
   move(res)
 
-func until*(s: openArray[char]; c: set[char]; starti = 0): string =
+proc until*(s: openArray[char]; c: set[char]; starti = 0): string =
   result = ""
   for i in starti ..< s.len:
     if s[i] in c:
       break
     result &= s[i]
 
-func untilLower*(s: openArray[char]; c: set[char]; starti = 0): string =
+proc untilLower*(s: openArray[char]; c: set[char]; starti = 0): string =
   result = ""
   for i in starti ..< s.len:
     if s[i] in c:
       break
     result.add(s[i].toLowerAscii())
 
-func until*(s: openArray[char]; c: char; starti = 0): string =
+proc until*(s: openArray[char]; c: char; starti = 0): string =
   return s.until({c}, starti)
 
-func untilLower*(s: openArray[char]; c: char; starti = 0): string =
+proc untilLower*(s: openArray[char]; c: char; starti = 0): string =
   return s.untilLower({c}, starti)
 
-func after*(s: string; c: set[char]): string =
+proc after*(s: string; c: set[char]): string =
   let i = s.find(c)
   if i != -1:
     return s.substr(i + 1)
   return ""
 
-func after*(s: string; c: char): string = s.after({c})
+proc after*(s: string; c: char): string = s.after({c})
 
-func afterLast*(s: string; c: set[char]; n = 1): string =
+proc afterLast*(s: string; c: set[char]; n = 1): string =
   var j = 0
   for i in countdown(s.high, 0):
     if s[i] in c:
@@ -309,9 +309,9 @@ func afterLast*(s: string; c: set[char]; n = 1): string =
         return s.substr(i + 1)
   return s
 
-func afterLast*(s: string; c: char; n = 1): string = s.afterLast({c}, n)
+proc afterLast*(s: string; c: char; n = 1): string = s.afterLast({c}, n)
 
-func untilLast*(s: string; c: set[char]; n = 1): string =
+proc untilLast*(s: string; c: set[char]; n = 1): string =
   var j = 0
   for i in countdown(s.high, 0):
     if s[i] in c:
@@ -320,7 +320,7 @@ func untilLast*(s: string; c: set[char]; n = 1): string =
         return s.substr(0, i)
   return s
 
-func untilLast*(s: string; c: char; n = 1): string = s.untilLast({c}, n)
+proc untilLast*(s: string; c: char; n = 1): string = s.untilLast({c}, n)
 
 proc snprintf(str: cstring; size: csize_t; format: cstring): cint
   {.header: "<stdio.h>", importc, varargs}
@@ -330,7 +330,7 @@ const SizeUnit = [
   cstring"b", cstring"kb", cstring"Mb", cstring"Gb", cstring"Tb", cstring"Pb",
   cstring"Eb", cstring"Zb", cstring"Bb", cstring"Yb"
 ]
-func convertSize*(size: int): string =
+proc convertSize*(size: int): string =
   var sizepos = 0
   var csize = float32(size)
   while csize >= 999.495 and sizepos < SizeUnit.len:
@@ -343,7 +343,7 @@ func convertSize*(size: int): string =
   result.setLen(cstring(result).len)
 
 # https://html.spec.whatwg.org/multipage/common-microsyntaxes.html#numbers
-func parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
+proc parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
     radix: T): Opt[T] =
   var integer: T = 0
   let radix = uint(radix)
@@ -361,28 +361,28 @@ func parseUIntImpl[T: SomeUnsignedInt](s: openArray[char]; allowSign: bool;
     return err() # invalid or overflow
   ok(integer)
 
-func parseUInt8*(s: openArray[char]; allowSign = false): Opt[uint8] =
+proc parseUInt8*(s: openArray[char]; allowSign = false): Opt[uint8] =
   return parseUIntImpl[uint8](s, allowSign, 10)
 
-func parseUInt8NoLeadingZero*(s: openArray[char]): Opt[uint8] =
+proc parseUInt8NoLeadingZero*(s: openArray[char]): Opt[uint8] =
   if s.len > 1 and s[0] == '0':
     return err()
   return parseUInt8(s)
 
-func parseUInt16*(s: openArray[char]; allowSign = false): Opt[uint16] =
+proc parseUInt16*(s: openArray[char]; allowSign = false): Opt[uint16] =
   return parseUIntImpl[uint16](s, allowSign, 10)
 
-func parseUInt32Base*(s: openArray[char]; allowSign = false; radix: uint32):
+proc parseUInt32Base*(s: openArray[char]; allowSign = false; radix: uint32):
     Opt[uint32] =
   return parseUIntImpl[uint32](s, allowSign, radix)
 
-func parseUInt32*(s: openArray[char]; allowSign = false): Opt[uint32] =
+proc parseUInt32*(s: openArray[char]; allowSign = false): Opt[uint32] =
   return parseUInt32Base(s, allowSign, 10)
 
-func parseUInt64*(s: openArray[char]; allowSign = false): Opt[uint64] =
+proc parseUInt64*(s: openArray[char]; allowSign = false): Opt[uint64] =
   return parseUIntImpl[uint64](s, allowSign, 10)
 
-func parseIntImpl[T: SomeSignedInt; U: SomeUnsignedInt](s: openArray[char];
+proc parseIntImpl[T: SomeSignedInt; U: SomeUnsignedInt](s: openArray[char];
     radix: U): Opt[T] =
   var sign: T = 1
   var i = 0
@@ -397,23 +397,23 @@ func parseIntImpl[T: SomeSignedInt; U: SomeUnsignedInt](s: openArray[char];
     return ok(T(u) * sign)
   err()
 
-func parseInt32*(s: openArray[char]): Opt[int32] =
+proc parseInt32*(s: openArray[char]): Opt[int32] =
   return parseIntImpl[int32, uint32](s, 10)
 
-func parseInt64*(s: openArray[char]): Opt[int64] =
+proc parseInt64*(s: openArray[char]): Opt[int64] =
   return parseIntImpl[int64, uint64](s, 10)
 
-func parseOctInt64*(s: openArray[char]): Opt[int64] =
+proc parseOctInt64*(s: openArray[char]): Opt[int64] =
   return parseIntImpl[int64, uint64](s, 8)
 
-func parseHexInt64*(s: openArray[char]): Opt[int64] =
+proc parseHexInt64*(s: openArray[char]): Opt[int64] =
   return parseIntImpl[int64, uint64](s, 16)
 
-func parseIntP*(s: openArray[char]): Opt[int] =
+proc parseIntP*(s: openArray[char]): Opt[int] =
   return parseIntImpl[int, uint](s, 10)
 
 # https://www.w3.org/TR/css-syntax-3/#convert-string-to-number
-func parseFloat32*(s: openArray[char]): float32 =
+proc parseFloat32*(s: openArray[char]): float32 =
   var sign = 1f64
   var t = 1
   var d = 0
@@ -485,12 +485,12 @@ proc percentEncode*(append: var string; s: openArray[char]; set: set[char];
   for c in s:
     append.percentEncode(c, set, spaceAsPlus)
 
-func percentEncode*(s: openArray[char]; set: set[char]; spaceAsPlus = false):
+proc percentEncode*(s: openArray[char]; set: set[char]; spaceAsPlus = false):
     string =
   result = ""
   result.percentEncode(s, set, spaceAsPlus)
 
-func percentDecode*(input: openArray[char]): string =
+proc percentDecode*(input: openArray[char]): string =
   result = ""
   var i = 0
   while i < input.len:
@@ -512,7 +512,7 @@ type EscapeMode* = enum
   emAttribute # text chars plus double quote ("attribute mode" in spec)
   emText # &, nbsp, <, > (default mode in spec)
 
-func htmlEscape*(s: openArray[char]; mode = emAll): string =
+proc htmlEscape*(s: openArray[char]; mode = emAll): string =
   result = newStringOfCap(s.len)
   var nbspMode = false
   for c in s:
@@ -532,14 +532,14 @@ func htmlEscape*(s: openArray[char]; mode = emAll): string =
     elif c == '\'' and mode == emAll: result &= "&apos;"
     else: result &= c
 
-func dqEscape*(s: openArray[char]): string =
+proc dqEscape*(s: openArray[char]): string =
   result = newStringOfCap(s.len)
   for c in s:
     if c == '"':
       result &= '\\'
     result &= c
 
-func cssEscape*(s: openArray[char]): string =
+proc cssEscape*(s: openArray[char]): string =
   result = ""
   for c in s:
     if c == '\'':
@@ -547,7 +547,7 @@ func cssEscape*(s: openArray[char]): string =
     result &= c
 
 #basically std join but with char
-func join*(ss: openArray[string]; sep: char): string =
+proc join*(ss: openArray[string]; sep: char): string =
   if ss.len == 0:
     return ""
   result = ss[0]
@@ -572,11 +572,11 @@ const NameStartCharRanges = [
 const NameStartCharAscii = {':', '_'} + AsciiAlpha
 const NameCharAscii = NameStartCharAscii + {'-', '.'} + AsciiDigit
 
-func isNameStartCharHigh(u: uint32): bool =
+proc isNameStartCharHigh(u: uint32): bool =
   return u <= uint16.high and NameStartCharRanges.isInRange(uint16(u)) or
     u in 0x10000u32..0xEFFFFu32
 
-func matchNameProduction*(s: openArray[char]): bool =
+proc matchNameProduction*(s: openArray[char]): bool =
   if s.len == 0:
     return false
   # NameStartChar
@@ -598,7 +598,7 @@ func matchNameProduction*(s: openArray[char]): bool =
       return false
   return true
 
-func matchQNameProduction*(s: openArray[char]): bool =
+proc matchQNameProduction*(s: openArray[char]): bool =
   if s.len == 0:
     return false
   if s[0] == ':':
@@ -613,7 +613,7 @@ func matchQNameProduction*(s: openArray[char]): bool =
       colon = true
   return s.matchNameProduction()
 
-func utf16Len*(s: openArray[char]): int =
+proc utf16Len*(s: openArray[char]): int =
   result = 0
   for u in s.points:
     if u < 0x10000: # ucs-2
@@ -657,13 +657,13 @@ proc expandPath*(path: string): string =
       return $p.pw_dir & '/' & path.substr(usr.len)
   return path
 
-func deleteChars*(s: openArray[char]; todel: set[char]): string =
+proc deleteChars*(s: openArray[char]; todel: set[char]): string =
   result = newStringOfCap(s.len)
   for c in s:
     if c notin todel:
       result &= c
 
-func replaceControls*(s: openArray[char]): string =
+proc replaceControls*(s: openArray[char]): string =
   result = newStringOfCap(s.len)
   for u in s.points:
     if u.isControlChar():
@@ -696,22 +696,22 @@ proc makeCRLF*(s: openArray[char]): string =
 
 type IdentMapItem* = tuple[s: string; n: int]
 
-func getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
+proc getIdentMap*[T: enum](e: typedesc[T]): seq[IdentMapItem] =
   result = @[]
   for e in T.low .. T.high:
     result.add(($e, int(e)))
   result.sort(proc(x, y: IdentMapItem): int = cmp(x.s, y.s))
 
-func cmpItem(x: IdentMapItem; y: string): int =
+proc cmpItem(x: IdentMapItem; y: string): int =
   return x.s.cmp(y)
 
-func strictParseEnum0(map: openArray[IdentMapItem]; s: string): int =
+proc strictParseEnum0(map: openArray[IdentMapItem]; s: string): int =
   let i = map.binarySearch(s, cmpItem)
   if i != -1:
     return map[i].n
   return -1
 
-func strictParseEnum*[T: enum](s: string): Opt[T] =
+proc strictParseEnum*[T: enum](s: string): Opt[T] =
   const IdentMap = getIdentMap(T)
   let n = IdentMap.strictParseEnum0(s)
   if n != -1:
@@ -720,7 +720,7 @@ func strictParseEnum*[T: enum](s: string): Opt[T] =
     {.pop.}
   err()
 
-func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): int =
+proc parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): int =
   let i = map.binarySearch(s, proc(x: IdentMapItem; y: string): int =
     return x[0].cmpIgnoreCase(y)
   )
@@ -728,7 +728,7 @@ func parseEnumNoCase0*(map: openArray[IdentMapItem]; s: string): int =
     return map[i].n
   return -1
 
-func parseEnumNoCase*[T: enum](s: string): Opt[T] =
+proc parseEnumNoCase*[T: enum](s: string): Opt[T] =
   const IdentMap = getIdentMap(T)
   let n = IdentMap.parseEnumNoCase0(s)
   if n != -1:
@@ -813,7 +813,7 @@ proc setContentTypeAttr*(contentType: var string; attrname, value: string) =
     inc j
   contentType[i..<j] = value.mimeQuote()
 
-func atob(c: char): uint8 {.inline.} =
+proc atob(c: char): uint8 {.inline.} =
   # see RFC 4648 table
   if c in AsciiUpperAlpha:
     return uint8(c) - uint8('A')
@@ -828,7 +828,7 @@ func atob(c: char): uint8 {.inline.} =
   return uint8.high
 
 # Warning: this overrides outs.
-func atob*(outs: var string; data: string): Err[cstring] =
+proc atob*(outs: var string; data: string): Err[cstring] =
   outs = newStringOfCap(data.len div 4 * 3)
   var buf = array[4, uint8].default
   var i = 0
@@ -879,7 +879,7 @@ func atob*(outs: var string; data: string): Err[cstring] =
 
 const AMap = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
-func btoa*(s: var string; data: openArray[uint8]) =
+proc btoa*(s: var string; data: openArray[uint8]) =
   var i = 0
   let endw = data.len - 2
   while i < endw:
@@ -905,7 +905,7 @@ func btoa*(s: var string; data: openArray[uint8]) =
       s &= '='
     s &= '='
 
-func btoa*(data: openArray[uint8]): string =
+proc btoa*(data: openArray[uint8]): string =
   if data.len == 0:
     return ""
   var L = data.len div 3 * 4
@@ -915,7 +915,7 @@ func btoa*(data: openArray[uint8]): string =
   s.btoa(data)
   move(s)
 
-func btoa*(data: openArray[char]): string =
+proc btoa*(data: openArray[char]): string =
   return btoa(data.toOpenArrayByte(0, data.len - 1))
 
 iterator mypairs*[T](a: openArray[T]): tuple[key: int; val: lent T] {.inline.} =

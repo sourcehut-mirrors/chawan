@@ -205,10 +205,10 @@ type
 const CAtomNull* = CAtom(0)
 
 # Mandatory Atom functions
-func `==`*(a, b: CAtom): bool {.borrow.}
-func hash*(atom: CAtom): Hash {.borrow.}
+proc `==`*(a, b: CAtom): bool {.borrow.}
+proc hash*(atom: CAtom): Hash {.borrow.}
 
-func toAtom(factory: var CAtomFactoryObj; s: openArray[char]; addLower = true):
+proc toAtom(factory: var CAtomFactoryObj; s: openArray[char]; addLower = true):
     CAtom =
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
@@ -236,8 +236,7 @@ func toAtom(factory: var CAtomFactoryObj; s: openArray[char]; addLower = true):
 var factory {.global.}: CAtomFactoryObj
 
 template getFactory(): CAtomFactory =
-  {.cast(noSideEffect).}:
-    addr factory
+  addr factory
 
 proc initCAtomFactory*() =
   # Null atom
@@ -253,13 +252,13 @@ proc initCAtomFactory*() =
   while factory.lowerMap.len < factory.atomMap.len:
     factory.lowerMap.add(CAtom(factory.lowerMap.len))
 
-func toLowerAscii*(a: CAtom): CAtom =
+proc toLowerAscii*(a: CAtom): CAtom =
   return getFactory().lowerMap[int32(a)]
 
-func equalsIgnoreCase*(a, b: CAtom): bool =
+proc equalsIgnoreCase*(a, b: CAtom): bool =
   return getFactory().lowerMap[int32(a)] == getFactory().lowerMap[int32(b)]
 
-func containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
+proc containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
   let a = a.toLowerAscii()
   for it in aa:
     if a == it.toLowerAscii():
@@ -269,36 +268,36 @@ func containsIgnoreCase*(aa: openArray[CAtom]; a: CAtom): bool =
 proc toAtom*(s: openArray[char]): CAtom {.sideEffect.} =
   return getFactory()[].toAtom(s)
 
-func toAtom*(tagType: TagType): CAtom =
+proc toAtom*(tagType: TagType): CAtom =
   assert tagType != TAG_UNKNOWN
   return CAtom(tagType)
 
-func toAtom*(attrType: StaticAtom): CAtom =
+proc toAtom*(attrType: StaticAtom): CAtom =
   assert attrType != satUnknown
   return CAtom(attrType)
 
 proc toAtomLower*(s: openArray[char]): CAtom {.sideEffect.} =
   return getFactory().lowerMap[int32(s.toAtom())]
 
-func containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
+proc containsIgnoreCase*(aa: openArray[CAtom]; a: StaticAtom): bool =
   return aa.containsIgnoreCase(a.toAtom())
 
-func `$`*(atom: CAtom): lent string =
+proc `$`*(atom: CAtom): lent string =
   return getFactory().atomMap[int(atom)]
 
-func toTagType*(atom: CAtom): TagType =
+proc toTagType*(atom: CAtom): TagType =
   let i = int(atom)
   if i <= int(TagType.high):
     return TagType(i)
   return TAG_UNKNOWN
 
-func toStaticAtom*(atom: CAtom): StaticAtom =
+proc toStaticAtom*(atom: CAtom): StaticAtom =
   let i = int(atom)
   if i <= int(StaticAtom.high):
     return StaticAtom(i)
   return satUnknown
 
-func toStaticAtom*(s: string): StaticAtom =
+proc toStaticAtom*(s: string): StaticAtom =
   let factory = getFactory()
   let h = s.hash()
   let i = h and (factory.strMap.len - 1)
@@ -308,7 +307,7 @@ func toStaticAtom*(s: string): StaticAtom =
       return atom.toStaticAtom()
   satUnknown
 
-func toNamespace*(atom: CAtom): Namespace =
+proc toNamespace*(atom: CAtom): Namespace =
   case atom.toStaticAtom()
   of satUempty: return NO_NAMESPACE
   of satNamespaceHTML: return Namespace.HTML
@@ -319,7 +318,7 @@ func toNamespace*(atom: CAtom): Namespace =
   of satNamespaceXMLNS: return Namespace.XMLNS
   else: return NAMESPACE_UNKNOWN
 
-func toAtom*(namespace: Namespace): CAtom =
+proc toAtom*(namespace: Namespace): CAtom =
   return (case namespace
   of NO_NAMESPACE: satUempty
   of Namespace.HTML: satNamespaceHTML
@@ -330,7 +329,7 @@ func toAtom*(namespace: Namespace): CAtom =
   of Namespace.XMLNS: satNamespaceXMLNS
   of NAMESPACE_UNKNOWN: satUempty).toAtom()
 
-func toAtom*(prefix: NamespacePrefix): CAtom =
+proc toAtom*(prefix: NamespacePrefix): CAtom =
   return (case prefix
   of NO_PREFIX: satUempty
   of PREFIX_XLINK: satXlink

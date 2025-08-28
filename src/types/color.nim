@@ -44,87 +44,87 @@ type
     isCell*: bool # if true, n is a CellColor. otherwise, it's ARGBColor.
     n: uint32
 
-func rgba*(r, g, b, a: uint8): ARGBColor
+proc rgba*(r, g, b, a: uint8): ARGBColor
 
 # bitmasked so nimvm doesn't choke on it
-func r*(c: ARGBColor): uint8 =
+proc r*(c: ARGBColor): uint8 =
   return uint8((uint32(c) shr 16) and 0xFF)
 
-func g*(c: ARGBColor): uint8 =
+proc g*(c: ARGBColor): uint8 =
   return uint8((uint32(c) shr 8) and 0xFF)
 
-func b*(c: ARGBColor): uint8 =
+proc b*(c: ARGBColor): uint8 =
   return uint8((uint32(c) and 0xFF))
 
-func a*(c: ARGBColor): uint8 =
+proc a*(c: ARGBColor): uint8 =
   return uint8(uint32(c) shr 24)
 
-func rgb*(c: ARGBColor): RGBColor =
+proc rgb*(c: ARGBColor): RGBColor =
   return RGBColor(uint32(c) and 0xFFFFFFu32)
 
-func argb*(c: RGBColor; a: uint8): ARGBColor =
+proc argb*(c: RGBColor; a: uint8): ARGBColor =
   return ARGBColor((uint32(c) and 0x00FFFFFFu32) or (uint32(a) shl 24))
 
-func argb*(c: RGBColor): ARGBColor =
+proc argb*(c: RGBColor): ARGBColor =
   return ARGBColor(uint32(c) or 0xFF000000u32)
 
 proc argb*(c: RGBAColorBE): ARGBColor =
   return rgba(c.r, c.g, c.b, c.a)
 
-func `==`*(a, b: ARGBColor): bool {.borrow.}
+proc `==`*(a, b: ARGBColor): bool {.borrow.}
 
-func `==`*(a, b: RGBColor): bool {.borrow.}
+proc `==`*(a, b: RGBColor): bool {.borrow.}
 
-func `==`*(a, b: ANSIColor): bool {.borrow.}
+proc `==`*(a, b: ANSIColor): bool {.borrow.}
 
-func `==`*(a, b: CellColor): bool {.borrow.}
+proc `==`*(a, b: CellColor): bool {.borrow.}
 
-func t*(color: CellColor): ColorTag =
+proc t*(color: CellColor): ColorTag =
   return cast[ColorTag]((uint32(color) shr 24) and 0x3)
 
-func toUint26*(color: CellColor): uint32 =
+proc toUint26*(color: CellColor): uint32 =
   return uint32(color) and 0x3FFFFFF
 
-func rgb*(color: CellColor): RGBColor =
+proc rgb*(color: CellColor): RGBColor =
   return RGBColor(uint32(color) and 0xFFFFFF)
 
-func ansi*(color: CellColor): ANSIColor =
+proc ansi*(color: CellColor): ANSIColor =
   return ANSIColor(color)
 
-func cellColor(t: ColorTag; n: uint32): CellColor =
+proc cellColor(t: ColorTag; n: uint32): CellColor =
   return CellColor((uint32(t) shl 24) or (n and 0xFFFFFF))
 
-func cellColor*(rgb: RGBColor): CellColor =
+proc cellColor*(rgb: RGBColor): CellColor =
   return cellColor(ctRGB, uint32(rgb))
 
-func cellColor*(c: ANSIColor): CellColor =
+proc cellColor*(c: ANSIColor): CellColor =
   return cellColor(ctANSI, uint32(c))
 
 const defaultColor* = cellColor(ctNone, 0)
 
-func cssColor*(c: ARGBColor): CSSColor =
+proc cssColor*(c: ARGBColor): CSSColor =
   return CSSColor(isCell: false, n: uint32(c))
 
-func cssColor*(c: RGBColor): CSSColor =
+proc cssColor*(c: RGBColor): CSSColor =
   return c.argb.cssColor()
 
-func cssColor*(c: CellColor): CSSColor =
+proc cssColor*(c: CellColor): CSSColor =
   return CSSColor(isCell: true, n: uint32(c))
 
-func cssColor*(c: ANSIColor): CSSColor =
+proc cssColor*(c: ANSIColor): CSSColor =
   return c.cellColor().cssColor()
 
-func argb*(c: CSSColor): ARGBColor =
+proc argb*(c: CSSColor): ARGBColor =
   return ARGBColor(c.n)
 
-func a*(c: CSSColor): uint8 =
+proc a*(c: CSSColor): uint8 =
   if c.isCell:
     if CellColor(c.n).t == ctNone:
       return 0
     return 255
   return ARGBColor(c.n).a
 
-func cellColor*(c: CSSColor): CellColor =
+proc cellColor*(c: CSSColor): CellColor =
   if c.isCell:
     return CellColor(c.n)
   if c.argb.a == 0:
@@ -282,7 +282,7 @@ const ColorsRGBMap = {
   "yellowgreen": 0x9ACD32u32,
 }
 
-func namedRGBColor*(s: string): Option[RGBColor] =
+proc namedRGBColor*(s: string): Option[RGBColor] =
   let i = ColorsRGBMap.binarySearch(s,
     proc(x: (string, uint32); y: string): int =
       return x[0].cmpIgnoreCase(y)
@@ -292,7 +292,7 @@ func namedRGBColor*(s: string): Option[RGBColor] =
   return none(RGBColor)
 
 # https://html.spec.whatwg.org/#serialisation-of-a-color
-func serialize*(c: ARGBColor): string =
+proc serialize*(c: ARGBColor): string =
   if c.a == 255:
     var res = "#"
     res.pushHex(c.r)
@@ -302,13 +302,13 @@ func serialize*(c: ARGBColor): string =
   let a = float64(c.a) / 255
   return "rgba(" & $c.r & ", " & $c.g & ", " & $c.b & ", " & $a & ")"
 
-func `$`*(c: ARGBColor): string =
+proc `$`*(c: ARGBColor): string =
   return c.serialize()
 
-func `$`*(c: RGBColor): string =
+proc `$`*(c: RGBColor): string =
   return c.argb().serialize()
 
-func `$`*(c: CSSColor): string =
+proc `$`*(c: CSSColor): string =
   if c.isCell:
     return "-cha-ansi(" & $c.n & ")"
   let c = c.argb()
@@ -316,7 +316,7 @@ func `$`*(c: CSSColor): string =
     return c.serialize()
   return "rgb(" & $c.r & ", " & $c.g & ", " & $c.b & ")"
 
-func `$`*(color: CellColor): string =
+proc `$`*(color: CellColor): string =
   case color.t
   of ctNone: "none"
   of ctRGB: $color.rgb
@@ -324,7 +324,7 @@ func `$`*(color: CellColor): string =
 
 # Divide each component by 255, multiply them by n, and discard the fractions.
 # See https://arxiv.org/pdf/2202.02864.pdf for details.
-func fastmul*(c: ARGBColor; n: uint32): ARGBColor =
+proc fastmul*(c: ARGBColor; n: uint32): ARGBColor =
   var c = (uint64(c) shl 24) or uint64(c)
   c = c and 0x00FF00FF00FF00FFu64
   c *= n
@@ -334,7 +334,7 @@ func fastmul*(c: ARGBColor; n: uint32): ARGBColor =
   c = (c shr 32) or (c shr 8)
   return ARGBColor(c)
 
-func premul(c: ARGBColor): ARGBColor =
+proc premul(c: ARGBColor): ARGBColor =
   let a = uint32(c.a)
   let c = ARGBColor(uint32(c) or 0xFF000000u32)
   return c.fastmul(a)
@@ -353,7 +353,7 @@ proc straight(c: ARGBColor): ARGBColor =
 
 # Note: this is a very poor approximation, as the premultiplication
 # already discards fractions...
-func blend*(c0, c1: ARGBColor): ARGBColor =
+proc blend*(c0, c1: ARGBColor): ARGBColor =
   let pc0 = c0.premul()
   let pc1 = c1.premul()
   let k = 255 - pc1.a
@@ -370,45 +370,45 @@ func blend*(c0, c1: ARGBColor): ARGBColor =
 # is not one, we can just return fg.
 # (This does mean that blending over -cha-ansi is arguably broken.
 # Luckily, we get to define how it works because it's our extension :)
-func blend*(bg, fg: CellColor; a: uint8): CellColor =
+proc blend*(bg, fg: CellColor; a: uint8): CellColor =
   if bg.t != ctRGB or fg.t != ctRGB:
     return fg
   let bg = bg.rgb.argb
   let fg = fg.rgb.argb(a)
   return bg.blend(fg).rgb.cellColor()
 
-func rgb*(r, g, b: uint8): RGBColor =
+proc rgb*(r, g, b: uint8): RGBColor =
   return RGBColor((uint32(r) shl 16) or (uint32(g) shl 8) or uint32(b))
 
-func r*(c: RGBColor): uint8 =
+proc r*(c: RGBColor): uint8 =
   return uint8(uint32(c) shr 16)
 
-func g*(c: RGBColor): uint8 =
+proc g*(c: RGBColor): uint8 =
   return uint8(uint32(c) shr 8)
 
-func b*(c: RGBColor): uint8 =
+proc b*(c: RGBColor): uint8 =
   return uint8(uint32(c))
 
 # see https://learn.microsoft.com/en-us/previous-versions/windows/embedded/ms893078(v=msdn.10)
-func Y*(c: RGBColor): uint8 =
+proc Y*(c: RGBColor): uint8 =
   let rmul = uint16(c.r) * 66u16
   let gmul = uint16(c.g) * 129u16
   let bmul = uint16(c.b) * 25u16
   return uint8(((rmul + gmul + bmul + 128) shr 8) + 16)
 
-func U*(c: RGBColor): uint8 =
+proc U*(c: RGBColor): uint8 =
   let rmul = uint16(c.r) * 38u16
   let gmul = uint16(c.g) * 74u16
   let bmul = uint16(c.b) * 112u16
   return uint8(((128 + bmul - rmul - gmul) shr 8) + 128)
 
-func V*(c: RGBColor): uint8 =
+proc V*(c: RGBColor): uint8 =
   let rmul = uint16(c.r) * 112u16
   let gmul = uint16(c.g) * 94u16
   let bmul = uint16(c.b) * 18u16
   return uint8(((128 + rmul - gmul - bmul) shr 8) + 128)
 
-func YUV*(Y, U, V: uint8): RGBColor =
+proc YUV*(Y, U, V: uint8): RGBColor =
   let C = int(Y) - 16
   let D = int(U) - 128
   let E = int(V) - 128
@@ -417,22 +417,22 @@ func YUV*(Y, U, V: uint8): RGBColor =
   let b = max(min((298 * C + 516 * D + 128) shr 8, 255), 0)
   return rgb(uint8(r), uint8(g), uint8(b))
 
-func rgba*(r, g, b, a: uint8): ARGBColor =
+proc rgba*(r, g, b, a: uint8): ARGBColor =
   return ARGBColor((uint32(a) shl 24) or (uint32(r) shl 16) or
     (uint32(g) shl 8) or uint32(b))
 
-func rgba_be*(r, g, b, a: uint8): RGBAColorBE =
+proc rgba_be*(r, g, b, a: uint8): RGBAColorBE =
   return RGBAColorBE(r: r, g: g, b: b, a: a)
 
-func rgba*(r, g, b, a: int): ARGBColor =
+proc rgba*(r, g, b, a: int): ARGBColor =
   return rgba(uint8(r), uint8(g), uint8(b), uint8(a))
 
-func gray*(n: uint8): RGBColor =
+proc gray*(n: uint8): RGBColor =
   return rgb(n, n, n)
 
 # ref. https://drafts.csswg.org/css-color/#hsl-to-rgb and
 # https://en.wikipedia.org/wiki/HSL_and_HSV#HSL_to_RGB_alternative
-func hsla*(h, s, l: float32; a: uint8): ARGBColor =
+proc hsla*(h, s, l: float32; a: uint8): ARGBColor =
   let h = h mod 360
   let s = float32(s) / 100
   let l = float32(l) / 100
@@ -447,7 +447,7 @@ func hsla*(h, s, l: float32; a: uint8): ARGBColor =
   return rgba(r, g, b, a)
 
 # NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
-func toRGB*(param0: ANSIColor): RGBColor =
+proc toRGB*(param0: ANSIColor): RGBColor =
   doAssert uint8(param0) notin 0u8..15u8
   let u = uint8(param0)
   if u in 16u8..231u8:
@@ -462,7 +462,7 @@ func toRGB*(param0: ANSIColor): RGBColor =
     let n = (u - 232) * 10 + 8
     return gray(n)
 
-func toEightBit*(c: RGBColor): ANSIColor =
+proc toEightBit*(c: RGBColor): ANSIColor =
   let r = int(c.r)
   let g = int(c.g)
   let b = int(c.b)
@@ -479,7 +479,7 @@ func toEightBit*(c: RGBColor): ANSIColor =
   return ANSIColor(uint8(16 + 36 * (r * 5 div 255) + 6 * (g * 5 div 255) +
     (b * 5 div 255)))
 
-func parseHexColor*(s: openArray[char]): Option[ARGBColor] =
+proc parseHexColor*(s: openArray[char]): Option[ARGBColor] =
   for c in s:
     if c notin AsciiHexDigit:
       return none(ARGBColor)
@@ -511,7 +511,7 @@ func parseHexColor*(s: openArray[char]): Option[ARGBColor] =
   else:
     return none(ARGBColor)
 
-func parseARGBColor*(s: string): Option[ARGBColor] =
+proc parseARGBColor*(s: string): Option[ARGBColor] =
   if (let x = namedRGBColor(s); x.isSome):
     return some(x.get.argb)
   if (s.len == 3 or s.len == 4 or s.len == 6 or s.len == 8) and s[0] == '#':
@@ -520,13 +520,13 @@ func parseARGBColor*(s: string): Option[ARGBColor] =
     return parseHexColor(s.toOpenArray(2, s.high))
   return parseHexColor(s)
 
-func myHexValue(c: char): uint32 =
+proc myHexValue(c: char): uint32 =
   let n = hexValue(c)
   if n != -1:
     return uint32(n)
   return 0
 
-func parseLegacyColor0*(s: string): RGBColor =
+proc parseLegacyColor0*(s: string): RGBColor =
   assert s != ""
   if (let x = namedRGBColor(s); x.isSome):
     return x.get

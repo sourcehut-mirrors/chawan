@@ -43,7 +43,7 @@ type
 jsDestructor(LineEdit)
 
 # Note: capped at edit.maxwidth.
-func getDisplayWidth(edit: LineEdit): int =
+proc getDisplayWidth(edit: LineEdit): int =
   var dispw = 0
   var i = edit.shifti
   while i < edit.news.len and dispw < edit.maxwidth:

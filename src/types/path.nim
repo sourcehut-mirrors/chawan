@@ -5,38 +5,38 @@ type Vector2D* = object
   x*: float64
   y*: float64
 
-func `-`(v1, v2: Vector2D): Vector2D =
+proc `-`(v1, v2: Vector2D): Vector2D =
   return Vector2D(x: v1.x - v2.x, y: v1.y - v2.y)
 
-func `+`(v1, v2: Vector2D): Vector2D =
+proc `+`(v1, v2: Vector2D): Vector2D =
   return Vector2D(x: v1.x + v2.x, y: v1.y + v2.y)
 
 # scalar multiplication
-func `*`(s: float64; v: Vector2D): Vector2D {.inline.} =
+proc `*`(s: float64; v: Vector2D): Vector2D {.inline.} =
   return Vector2D(x: v.x * s, y: v.y * s)
 
-func `*`(v: Vector2D; s: float64): Vector2D {.inline.} =
+proc `*`(v: Vector2D; s: float64): Vector2D {.inline.} =
   return Vector2D(x: v.x * s, y: v.y * s)
 
-func `/`(v: Vector2D; s: float64): Vector2D =
+proc `/`(v: Vector2D; s: float64): Vector2D =
   return Vector2D(x: v.x / s, y: v.y / s)
 
 # dot product
-func `*`(v1, v2: Vector2D): float64 =
+proc `*`(v1, v2: Vector2D): float64 =
   return v1.x * v2.x + v1.y * v2.y
 
-func norm(v: Vector2D): float64 =
+proc norm(v: Vector2D): float64 =
   return sqrt(v.x * v.x + v.y * v.y)
 
 # kind of a cross product?
-func cross(v1, v2: Vector2D): float64 =
+proc cross(v1, v2: Vector2D): float64 =
   return v1.x * v2.y - v1.y * v2.x
 
 # https://en.wikipedia.org/wiki/Inner_product_space
-func innerAngle(v1, v2: Vector2D): float64 =
+proc innerAngle(v1, v2: Vector2D): float64 =
   return arccos((v1 * v2) / (v1.norm() * v2.norm()))
 
-func rotate(v: Vector2D, alpha: float64): Vector2D =
+proc rotate(v: Vector2D, alpha: float64): Vector2D =
   let sa = sin(alpha)
   let ca = cos(alpha)
   return Vector2D(
@@ -44,7 +44,7 @@ func rotate(v: Vector2D, alpha: float64): Vector2D =
     y: v.x * sa + v.y * ca
   )
 
-func collinear(v1, v2, v3: Vector2D): bool =
+proc collinear(v1, v2, v3: Vector2D): bool =
   return almostEqual((v1.y - v2.y) * (v1.x - v3.x),
     (v1.y - v3.y) * (v1.x - v2.x))
 
@@ -60,19 +60,19 @@ type
     minyx*: float64
     islope*: float64
 
-func minyx(line: Line): float64 =
+proc minyx(line: Line): float64 =
   if line.p0.y < line.p1.y:
     return line.p0.x
   return line.p1.x
 
-func miny(line: Line): float64 =
+proc miny(line: Line): float64 =
   return min(line.p0.y, line.p1.y)
 
-func maxy(line: Line): float64 =
+proc maxy(line: Line): float64 =
   return max(line.p0.y, line.p1.y)
 
 # inverse slope
-func islope(line: Line): float64 =
+proc islope(line: Line): float64 =
   let ydiff = (line.p0.y - line.p1.y)
   if ydiff == 0:
     return 0
@@ -84,8 +84,8 @@ proc cmpLineSegmentY*(l1, l2: LineSegment): int =
 proc cmpLineSegmentX*(l1, l2: LineSegment): int =
   return cmp(l1.minyx, l2.minyx)
 
-func p0*(ls: LineSegment): Vector2D {.inline.} = ls.line.p0
-func p1*(ls: LineSegment): Vector2D {.inline.} = ls.line.p1
+proc p0*(ls: LineSegment): Vector2D {.inline.} = ls.line.p0
+proc p1*(ls: LineSegment): Vector2D {.inline.} = ls.line.p1
 
 proc toLineSegment*(line: Line): LineSegment =
   LineSegment(
@@ -230,24 +230,24 @@ proc addEllipseSegment(path: Path; o, etan: Vector2D; rx, ry: float64) =
   path.addSegment(segment, etan)
 
 # https://hcklbrrfnn.files.wordpress.com/2012/08/bez.pdf
-func flatEnough(a, b, c0, c1: Vector2D): bool =
+proc flatEnough(a, b, c0, c1: Vector2D): bool =
   let u = 3 * c0 - 2 * a - b
   let v = 3 * c1 - 2 * b - a
   let x = max(u.x, v.x)
   let y = max(u.y, v.y)
   return x * x + y * y <= 0.02
 
-func flatEnough(a, b, c: Vector2D): bool =
+proc flatEnough(a, b, c: Vector2D): bool =
   return flatEnough(a, b, c, c)
 
 iterator items*(pl: PathLines): lent LineSegment {.inline.} =
   for line in pl.lines:
     yield line
 
-func `[]`*(pl: PathLines; i: int): lent LineSegment = pl.lines[i]
-func `[]`*(pl: PathLines; i: BackwardsIndex): lent LineSegment =
+proc `[]`*(pl: PathLines; i: int): lent LineSegment = pl.lines[i]
+proc `[]`*(pl: PathLines; i: BackwardsIndex): lent LineSegment =
   return pl.lines[pl.lines.len - int(i)]
-func len*(pl: PathLines): int = pl.lines.len
+proc len*(pl: PathLines): int = pl.lines.len
 
 iterator quadraticLines(a, b, c: Vector2D): Line {.inline.} =
   var points = newSeq[tuple[a, b, c: Vector2D]]()
@@ -281,7 +281,7 @@ iterator bezierLines(p0, p1, c0, c1: Vector2D): Line {.inline.} =
       points.add((midc, p1, midb2, mida3))
 
 # https://stackoverflow.com/a/44829356
-func arcControlPoints(p1, p4, o: Vector2D): tuple[c0, c1: Vector2D] =
+proc arcControlPoints(p1, p4, o: Vector2D): tuple[c0, c1: Vector2D] =
   let a = p1 - o
   let b = p4 - o
   let q1 = a * a
@@ -461,7 +461,7 @@ proc arcTo*(path: Path; x1, y1, x2, y2, radius: float64) =
 
 # Ref. https://math.stackexchange.com/a/22067
 # (Originally found it in SerenityOS.)
-func resolveEllipsePoint(o: Vector2D; angle, radiusX, radiusY,
+proc resolveEllipsePoint(o: Vector2D; angle, radiusX, radiusY,
     rotation: float64): Vector2D =
   let tanrel = tan(angle)
   let tan2 = tanrel * tanrel

@@ -100,7 +100,7 @@ proc add(list: var seq[FormDataEntry], entry: tuple[name, value: string]) =
     svalue: entry.value
   ))
 
-func toNameValuePairs*(list: seq[FormDataEntry]):
+proc toNameValuePairs*(list: seq[FormDataEntry]):
     seq[tuple[name, value: string]] =
   result = @[]
   for entry in list:

@@ -126,16 +126,16 @@ proc contentLength*(body: RequestBody): int =
   of rbtOutput: return 0
   of rbtCache: return 0
 
-func headers(this: JSRequest): Headers {.jsfget.} =
+proc headers(this: JSRequest): Headers {.jsfget.} =
   return this.request.headers
 
-func url(this: JSRequest): URL =
+proc url(this: JSRequest): URL =
   return this.request.url
 
 proc jsUrl(this: JSRequest): string {.jsfget: "url".} =
   return $this.url
 
-func credentialsMode(this: JSRequest): string {.jsfget.} =
+proc credentialsMode(this: JSRequest): string {.jsfget.} =
   return $this.request.credentialsMode
 
 #TODO pretty sure this is incorrect
@@ -151,7 +151,7 @@ proc takeReferrer*(this: Request; policy: ReferrerPolicy): string =
     return url.getReferrer(this.url, policy)
   return ""
 
-func newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
+proc newRequest*(url: URL; httpMethod = hmGet; headers = newHeaders(hgRequest);
     body = RequestBody(); referrer: URL = nil; tocache = false;
     credentialsMode = cmSameOrigin): Request =
   assert url != nil
@@ -172,7 +172,7 @@ proc newRequest*(s: string; httpMethod = hmGet; headers = newHeaders(hgRequest);
   return newRequest(parseURL0(s), httpMethod, headers, body, referrer, tocache,
     credentialsMode)
 
-func createPotentialCORSRequest*(url: URL; destination: RequestDestination;
+proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
     cors: CORSAttribute; fallbackFlag = false): JSRequest =
   var mode = if cors == caNoCors:
     rmNoCors
@@ -300,7 +300,7 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
     window: window
   ))
 
-func credentialsMode*(attribute: CORSAttribute): CredentialsMode =
+proc credentialsMode*(attribute: CORSAttribute): CredentialsMode =
   case attribute
   of caNoCors, caAnonymous:
     return cmSameOrigin

@@ -35,7 +35,7 @@ type
     evalJSFree: EvalJSFree
     opaque: RootRef
 
-func newTimeoutState*(jsctx: JSContext; evalJSFree: EvalJSFree;
+proc newTimeoutState*(jsctx: JSContext; evalJSFree: EvalJSFree;
     opaque: RootRef): TimeoutState =
   return TimeoutState(
     jsrt: JS_GetRuntime(jsctx),
@@ -45,7 +45,7 @@ func newTimeoutState*(jsctx: JSContext; evalJSFree: EvalJSFree;
     sorted: true
   )
 
-func empty*(state: TimeoutState): bool =
+proc empty*(state: TimeoutState): bool =
   return state.timeouts.len == 0
 
 proc clearTimeout0(state: var TimeoutState; i: int) =

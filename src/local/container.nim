@@ -289,17 +289,16 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     return (nc, sv[0])
   )
 
-func lineLoaded(container: Container; y: int): bool =
+proc lineLoaded(container: Container; y: int): bool =
   return y - container.lineshift in 0..container.lines.high
 
-func getLine(container: Container; y: int): lent SimpleFlexibleLine =
+proc getLine(container: Container; y: int): lent SimpleFlexibleLine =
   if container.lineLoaded(y):
     return container.lines[y - container.lineshift]
-  {.cast(noSideEffect).}:
-    let line {.global.} = SimpleFlexibleLine()
-    return line
+  let line {.global.} = SimpleFlexibleLine()
+  return line
 
-func getLineStr(container: Container; y: int): lent string =
+proc getLineStr(container: Container; y: int): lent string =
   return container.getLine(y).str
 
 iterator ilines(container: Container; slice: Slice[int]):
@@ -307,40 +306,40 @@ iterator ilines(container: Container; slice: Slice[int]):
   for y in slice:
     yield container.getLine(y)
 
-func alive(container: Container): bool {.jsfget.} =
+proc alive(container: Container): bool {.jsfget.} =
   return container.iface != nil
 
-func history(container: Container): bool {.jsfget.} =
+proc history(container: Container): bool {.jsfget.} =
   return cfHistory in container.flags
 
-func scripting(ctx: JSContext; container: Container): ScriptingMode {.jsfget.} =
+proc scripting(ctx: JSContext; container: Container): ScriptingMode {.jsfget.} =
   return container.config.scripting
 
-func cookie(ctx: JSContext; container: Container): CookieMode {.jsfget.} =
+proc cookie(ctx: JSContext; container: Container): CookieMode {.jsfget.} =
   return container.loaderConfig.cookieMode
 
-func cursorx*(container: Container): int {.jsfget.} =
+proc cursorx*(container: Container): int {.jsfget.} =
   container.pos.cursorx
 
-func cursory*(container: Container): int {.jsfget.} =
+proc cursory*(container: Container): int {.jsfget.} =
   container.pos.cursory
 
-func fromx*(container: Container): int {.jsfget.} =
+proc fromx*(container: Container): int {.jsfget.} =
   container.pos.fromx
 
-func fromy*(container: Container): int {.jsfget.} =
+proc fromy*(container: Container): int {.jsfget.} =
   container.pos.fromy
 
-func xend(container: Container): int {.inline.} =
+proc xend(container: Container): int {.inline.} =
   container.pos.xend
 
-func lastVisibleLine(container: Container): int =
+proc lastVisibleLine(container: Container): int =
   min(container.fromy + container.height, container.numLines) - 1
 
-func currentLine(container: Container): lent string =
+proc currentLine(container: Container): lent string =
   return container.getLineStr(container.cursory)
 
-func findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
+proc findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
   var w = startx
   var i = starti
   while i < s.len and w < endx:
@@ -348,15 +347,15 @@ func findColBytes(s: string; endx: int; startx = 0; starti = 0): int =
     w += u.width()
   return i
 
-func cursorBytes(container: Container; y: int; cc = container.cursorx): int =
+proc cursorBytes(container: Container; y: int; cc = container.cursorx): int =
   return container.getLineStr(y).findColBytes(cc, 0, 0)
 
-func currentCursorBytes(container: Container; cc = container.cursorx): int =
+proc currentCursorBytes(container: Container; cc = container.cursorx): int =
   return container.cursorBytes(container.cursory, cc)
 
 # Returns the X position of the first cell occupied by the character the cursor
 # currently points to.
-func cursorFirstX(container: Container): int =
+proc cursorFirstX(container: Container): int =
   if container.numLines == 0: return 0
   let line = container.currentLine
   var w = 0
@@ -372,7 +371,7 @@ func cursorFirstX(container: Container): int =
 
 # Returns the X position of the last cell occupied by the character the cursor
 # currently points to.
-func cursorLastX(container: Container): int =
+proc cursorLastX(container: Container): int =
   if container.numLines == 0: return 0
   let line = container.currentLine
   var w = 0
@@ -386,7 +385,7 @@ func cursorLastX(container: Container): int =
 # Last cell for tab, first cell for everything else (e.g. double width.)
 # This is needed because moving the cursor to the 2nd cell of a double
 # width character clears it on some terminals.
-func cursorDispX(container: Container): int =
+proc cursorDispX(container: Container): int =
   if container.numLines == 0: return 0
   let line = container.currentLine
   if line.len == 0: return 0
@@ -403,37 +402,37 @@ func cursorDispX(container: Container): int =
     return max(w - 1, 0)
   return pw
 
-func acursorx*(container: Container): int =
+proc acursorx*(container: Container): int =
   max(0, container.cursorDispX() - container.fromx)
 
-func acursory*(container: Container): int =
+proc acursory*(container: Container): int =
   container.cursory - container.fromy
 
-func maxScreenWidth(container: Container): int =
+proc maxScreenWidth(container: Container): int =
   result = 0
   for y in container.fromy..container.lastVisibleLine:
     result = max(container.getLineStr(y).width(), result)
 
-func getTitle*(container: Container): string {.jsfget: "title".} =
+proc getTitle*(container: Container): string {.jsfget: "title".} =
   if container.title != "":
     return container.title
   return container.url.serialize(excludepassword = true)
 
-func currentLineWidth(container: Container): int =
+proc currentLineWidth(container: Container): int =
   if container.numLines == 0: return 0
   return container.currentLine.width()
 
-func maxfromy(container: Container): int =
+proc maxfromy(container: Container): int =
   return max(container.numLines - container.height, 0)
 
-func maxfromx(container: Container): int =
+proc maxfromx(container: Container): int =
   return max(container.maxScreenWidth() - container.width, 0)
 
-func atPercentOf*(container: Container): int =
+proc atPercentOf*(container: Container): int =
   if container.numLines == 0: return 100
   return (100 * (container.cursory + 1)) div container.numLines
 
-func lineWindow(container: Container): Slice[int] =
+proc lineWindow(container: Container): Slice[int] =
   if container.numLines == 0: # not loaded
     return 0..container.height * 5
   let n = (container.height * 5) div 2
@@ -447,7 +446,7 @@ func lineWindow(container: Container): Slice[int] =
     x = 0
   return x .. y
 
-func startx(hl: Highlight): int =
+proc startx(hl: Highlight): int =
   if hl.y1 < hl.y2:
     hl.x1
   elif hl.y2 < hl.y1:
@@ -455,10 +454,10 @@ func startx(hl: Highlight): int =
   else:
     min(hl.x1, hl.x2)
 
-func starty(hl: Highlight): int =
+proc starty(hl: Highlight): int =
   return min(hl.y1, hl.y2)
 
-func endx(hl: Highlight): int =
+proc endx(hl: Highlight): int =
   if hl.y1 > hl.y2:
     hl.x1
   elif hl.y2 > hl.y1:
@@ -466,10 +465,10 @@ func endx(hl: Highlight): int =
   else:
     max(hl.x1, hl.x2)
 
-func endy(hl: Highlight): int =
+proc endy(hl: Highlight): int =
   return max(hl.y1, hl.y2)
 
-func colorNormal(container: Container; hl: Highlight; y: int;
+proc colorNormal(container: Container; hl: Highlight; y: int;
     limitx: Slice[int]): Slice[int] =
   let starty = hl.starty
   let endy = hl.endy
@@ -486,7 +485,7 @@ func colorNormal(container: Container; hl: Highlight; y: int;
     return min(limitx.a, w) .. min(hl.endx, limitx.b)
   0 .. 0
 
-func colorArea(container: Container; hl: Highlight; y: int;
+proc colorArea(container: Container; hl: Highlight; y: int;
     limitx: Slice[int]): Slice[int] =
   case hl.t
   of hltSelect:
@@ -509,13 +508,13 @@ func colorArea(container: Container; hl: Highlight; y: int;
   else:
     return container.colorNormal(hl, y, limitx)
 
-func findHighlights*(container: Container; y: int): seq[Highlight] =
+proc findHighlights*(container: Container; y: int): seq[Highlight] =
   result = @[]
   for hl in container.highlights:
     if y in hl.starty .. hl.endy:
       result.add(hl)
 
-func getHoverText*(container: Container): string =
+proc getHoverText*(container: Container): string =
   for t in HoverType:
     if container.hoverText[t] != "":
       return container.hoverText[t]
@@ -1740,19 +1739,19 @@ proc peekCursor(container: Container) {.jsfunc.} =
     container.alert(container.hoverText[p])
   container.lastPeek = p
 
-func hoverLink(container: Container): string {.jsfget.} =
+proc hoverLink(container: Container): string {.jsfget.} =
   return container.hoverText[htLink]
 
-func hoverTitle(container: Container): string {.jsfget.} =
+proc hoverTitle(container: Container): string {.jsfget.} =
   return container.hoverText[htTitle]
 
-func hoverImage(container: Container): string {.jsfget.} =
+proc hoverImage(container: Container): string {.jsfget.} =
   return container.hoverText[htImage]
 
-func hoverCachedImage(container: Container): string {.jsfget.} =
+proc hoverCachedImage(container: Container): string {.jsfget.} =
   return container.hoverText[htCachedImage]
 
-func findPrev(container: Container): Container =
+proc findPrev(container: Container): Container =
   if container.parent == nil:
     return nil
   let n = container.parent.children.find(container)
@@ -1764,7 +1763,7 @@ func findPrev(container: Container): Container =
     container = container.children[^1]
   return container
 
-func findNext(container: Container): Container =
+proc findNext(container: Container): Container =
   if container.children.len > 0:
     return container.children[0]
   var container = container
@@ -1776,7 +1775,7 @@ func findNext(container: Container): Container =
     container = container.parent
   return nil
 
-func findPrevSibling(container: Container): Container =
+proc findPrevSibling(container: Container): Container =
   if container.parent == nil:
     return nil
   var n = container.parent.children.find(container)
@@ -1785,7 +1784,7 @@ func findPrevSibling(container: Container): Container =
     n = container.parent.children.len
   return container.parent.children[n - 1]
 
-func findNextSibling(container: Container): Container =
+proc findNextSibling(container: Container): Container =
   if container.parent == nil:
     return nil
   var n = container.parent.children.find(container)
@@ -1794,21 +1793,21 @@ func findNextSibling(container: Container): Container =
     n = -1
   return container.parent.children[n + 1]
 
-func findParent(container: Container): Container =
+proc findParent(container: Container): Container =
   return container.parent
 
-func findFirstChild(container: Container): Container =
+proc findFirstChild(container: Container): Container =
   if container.children.len == 0:
     return nil
   return container.children[0]
 
-func findAny(container: Container): Container =
+proc findAny(container: Container): Container =
   let prev = container.findPrev()
   if prev != nil:
     return prev
   return container.findNext()
 
-func find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
+proc find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
   return case dir
   of ndPrev: container.findPrev()
   of ndNext: container.findNext()
@@ -1978,7 +1977,7 @@ proc highlightMarks*(container: Container; display: var FixedGrid;
       else:
         display[n].format.incl(ffReverse)
 
-func findCachedImage*(container: Container; image: PosBitmap;
+proc findCachedImage*(container: Container; image: PosBitmap;
     offx, erry, dispw: int): CachedImage =
   let imageId = image.bmp.imageId
   for it in container.cachedImages:

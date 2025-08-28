@@ -65,7 +65,7 @@ iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
     for fin in rtOpaque.fins[classid]:
       yield fin
 
-func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
+proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
   let opaque = JSContextOpaque(global: JS_GetGlobalObject(ctx))
   let sym = JS_GetPropertyStr(ctx, opaque.global, "Symbol")
   for s in JSSymbolRef:
@@ -88,16 +88,16 @@ func newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
       opaque.errCtorRefs[e] = JS_GetPropertyStr(ctx, opaque.global, cstring($e))
   return opaque
 
-func getOpaque*(ctx: JSContext): JSContextOpaque =
+proc getOpaque*(ctx: JSContext): JSContextOpaque =
   return cast[JSContextOpaque](JS_GetContextOpaque(ctx))
 
-func getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
+proc getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
   return cast[JSRuntimeOpaque](JS_GetRuntimeOpaque(rt))
 
-func isGlobal*(ctx: JSContext; class: JSClassID): bool =
+proc isGlobal*(ctx: JSContext; class: JSClassID): bool =
   return ctx.getOpaque().gclass == class
 
-func getOpaque*(val: JSValue): pointer =
+proc getOpaque*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
   return nil

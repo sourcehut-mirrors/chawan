@@ -15,7 +15,7 @@ type
     is_enumerable: bool
     name: string
 
-func newJSPropertyEnumList*(ctx: JSContext; size: uint32): JSPropertyEnumList =
+proc newJSPropertyEnumList*(ctx: JSContext; size: uint32): JSPropertyEnumList =
   let p = if size != 0:
     js_malloc(ctx, csize_t(sizeof(JSPropertyEnum)) * csize_t(size))
   else:

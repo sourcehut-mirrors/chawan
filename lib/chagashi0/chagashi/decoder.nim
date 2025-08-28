@@ -162,7 +162,7 @@ proc `&=`*(s: var string; sl: UnsafeSlice) =
     s.setLen(s.len + sl.len)
     copyMem(addr s[L], sl.p, sl.len)
 
-func high*(sl: UnsafeSlice): int =
+proc high*(sl: UnsafeSlice): int =
   return sl.len - 1
 
 template toOpenArray*(sl: UnsafeSlice; lo, hi: int): openArray[char] =

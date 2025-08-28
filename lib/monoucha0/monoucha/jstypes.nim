@@ -59,7 +59,7 @@ type
     offset*: csize_t # offset into the buffer
     nmemb*: csize_t # number of members
 
-func high*(abuf: JSArrayBuffer): int =
+proc high*(abuf: JSArrayBuffer): int =
   return int(abuf.len) - 1
 
 # A specialization of JSValue to make writing generic code for functions

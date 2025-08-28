@@ -5,7 +5,7 @@ import monoucha/libregexp
 import types/opt
 import utils/twtstr
 
-func countBackslashes(buf: string; i: int): int =
+proc countBackslashes(buf: string; i: int): int =
   var j = 0
   for i in countdown(i, 0):
     if buf[i] != '\\':

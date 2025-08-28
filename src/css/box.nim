@@ -123,52 +123,52 @@ type
   LayoutResult* = ref object
     stack*: StackItem
 
-func offset*(x, y: LUnit): Offset =
+proc offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
 
-func x*(offset: Offset): LUnit {.inline.} =
+proc x*(offset: Offset): LUnit {.inline.} =
   return offset[dtHorizontal]
 
-func x*(offset: var Offset): var LUnit {.inline.} =
+proc x*(offset: var Offset): var LUnit {.inline.} =
   return offset[dtHorizontal]
 
-func `x=`*(offset: var Offset; x: LUnit) {.inline.} =
+proc `x=`*(offset: var Offset; x: LUnit) {.inline.} =
   offset[dtHorizontal] = x
 
-func y*(offset: Offset): LUnit {.inline.} =
+proc y*(offset: Offset): LUnit {.inline.} =
   return offset[dtVertical]
 
-func y*(offset: var Offset): var LUnit {.inline.} =
+proc y*(offset: var Offset): var LUnit {.inline.} =
   return offset[dtVertical]
 
-func `y=`*(offset: var Offset; y: LUnit) {.inline.} =
+proc `y=`*(offset: var Offset; y: LUnit) {.inline.} =
   offset[dtVertical] = y
 
-func size*(w, h: LUnit): Size =
+proc size*(w, h: LUnit): Size =
   return [dtHorizontal: w, dtVertical: h]
 
-func w*(size: Size): LUnit {.inline.} =
+proc w*(size: Size): LUnit {.inline.} =
   return size[dtHorizontal]
 
-func w*(size: var Size): var LUnit {.inline.} =
+proc w*(size: var Size): var LUnit {.inline.} =
   return size[dtHorizontal]
 
-func `w=`*(size: var Size; w: LUnit) {.inline.} =
+proc `w=`*(size: var Size; w: LUnit) {.inline.} =
   size[dtHorizontal] = w
 
-func h*(size: Size): LUnit {.inline.} =
+proc h*(size: Size): LUnit {.inline.} =
   return size[dtVertical]
 
-func h*(size: var Size): var LUnit {.inline.} =
+proc h*(size: var Size): var LUnit {.inline.} =
   return size[dtVertical]
 
-func `h=`*(size: var Size; h: LUnit) {.inline.} =
+proc `h=`*(size: var Size; h: LUnit) {.inline.} =
   size[dtVertical] = h
 
-func `+`*(a, b: Offset): Offset =
+proc `+`*(a, b: Offset): Offset =
   return offset(x = a.x + b.x, y = a.y + b.y)
 
-func `-`*(a, b: Offset): Offset =
+proc `-`*(a, b: Offset): Offset =
   return offset(x = a.x - b.x, y = a.y - b.y)
 
 proc `+=`*(a: var Offset; b: Offset) =
@@ -179,26 +179,26 @@ proc `-=`*(a: var Offset; b: Offset) =
   a.x -= b.x
   a.y -= b.y
 
-func left*(s: RelativeRect): LUnit =
+proc left*(s: RelativeRect): LUnit =
   return s[dtHorizontal].start
 
-func right*(s: RelativeRect): LUnit =
+proc right*(s: RelativeRect): LUnit =
   return s[dtHorizontal].send
 
-func top*(s: RelativeRect): LUnit =
+proc top*(s: RelativeRect): LUnit =
   return s[dtVertical].start
 
-func bottom*(s: RelativeRect): LUnit =
+proc bottom*(s: RelativeRect): LUnit =
   return s[dtVertical].send
 
-func topLeft*(s: RelativeRect): Offset =
+proc topLeft*(s: RelativeRect): Offset =
   return offset(x = s.left, y = s.top)
 
 proc `+=`*(span: var Span; u: LUnit) =
   span.start += u
   span.send += u
 
-func `<`*(a, b: Offset): bool =
+proc `<`*(a, b: Offset): bool =
   return a.x < b.x and a.y < b.y
 
 iterator children*(box: CSSBox): CSSBox =

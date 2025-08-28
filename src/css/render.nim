@@ -51,7 +51,7 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
 template attrs(state: RenderState): WindowAttributes =
   state.attrsp[]
 
-func findFormatN*(line: FlexibleLine; pos: int; start = 0): int =
+proc findFormatN*(line: FlexibleLine; pos: int; start = 0): int =
   var i = start
   while i < line.formats.len:
     if line.formats[i].pos > pos:
@@ -66,7 +66,7 @@ proc insertFormat(line: var FlexibleLine; pos, i: int; format: Format;
     node: Element) =
   line.insertFormat(i, FormatCell(format: format, node: node, pos: pos))
 
-func toFormat(computed: CSSValues): Format =
+proc toFormat(computed: CSSValues): Format =
   if computed == nil:
     return Format()
   var flags: set[FormatFlag] = {}

@@ -954,7 +954,7 @@ proc outputGrid*(term: Terminal) =
   term.cursorx = -1
   term.cursory = -1
 
-func findImage(term: Terminal; pid, imageId: int; rx, ry, width, height,
+proc findImage(term: Terminal; pid, imageId: int; rx, ry, width, height,
     erry, offx, dispw: int): CanvasImage =
   for it in term.canvasImages:
     if not it.dead and it.pid == pid and it.imageId == imageId and
@@ -1088,7 +1088,7 @@ proc loadImage*(term: Terminal; data: Blob; pid, imageId, x, y, width, height,
   # no longer on screen
   return nil
 
-func getU32BE(data: openArray[char]; i: int): uint32 =
+proc getU32BE(data: openArray[char]; i: int): uint32 =
   return uint32(data[i + 3]) or
     (uint32(data[i + 2]) shl 8) or
     (uint32(data[i + 1]) shl 16) or

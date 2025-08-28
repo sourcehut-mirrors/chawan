@@ -74,28 +74,28 @@ template excl*(format: var Format; flag: FormatFlag) =
 static:
   doAssert {FormatFlag.low..FormatFlag.high}.card <= 12
 
-func initFormat*(bgcolor, fgcolor: CellColor; flags: set[FormatFlag]): Format =
+proc initFormat*(bgcolor, fgcolor: CellColor; flags: set[FormatFlag]): Format =
   return Format(
     u: uint64(bgcolor.toUint26()) or
       (uint64(fgcolor.toUint26()) shl 26) or
       (cast[uint64](flags) shl 52)
   )
 
-func initFormat*(): Format =
+proc initFormat*(): Format =
   return initFormat(defaultColor, defaultColor, {})
 
 iterator items*(grid: FixedGrid): lent FixedCell {.inline.} =
   for cell in grid.cells:
     yield cell
 
-func newFixedGrid*(w: int; h: int = 1): FixedGrid =
+proc newFixedGrid*(w: int; h: int = 1): FixedGrid =
   return FixedGrid(width: w, height: h, cells: newSeq[FixedCell](w * h))
 
-func width*(cell: FixedCell): int =
+proc width*(cell: FixedCell): int =
   return cell.str.width()
 
 # Get the first format cell after pos, if any.
-func findFormatN*(line: SimpleFlexibleLine; pos: int): int =
+proc findFormatN*(line: SimpleFlexibleLine; pos: int): int =
   var i = 0
   while i < line.formats.len:
     if line.formats[i].pos > pos:
@@ -103,13 +103,13 @@ func findFormatN*(line: SimpleFlexibleLine; pos: int): int =
     inc i
   return i
 
-func findFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
+proc findFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
   let i = line.findFormatN(pos) - 1
   if i != -1:
     return line.formats[i]
   return SimpleFormatCell(pos: -1)
 
-func findNextFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
+proc findNextFormat*(line: SimpleFlexibleLine; pos: int): SimpleFormatCell =
   let i = line.findFormatN(pos)
   if i < line.formats.len:
     return line.formats[i]

@@ -104,11 +104,10 @@ jsDestructor(EventTarget)
 
 # Forward declaration hack
 var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
-  noSideEffect, raises: [].}
+  raises: [].}
 var getParentImpl*: proc(ctx: JSContext; target: EventTarget; isLoad: bool):
   EventTarget {.nimcall, raises: [].}
-var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, noSideEffect,
-  raises: [].}
+var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, raises: [].}
 var isHTMLElementImpl*: proc(target: EventTarget): bool {.nimcall, raises: [].}
 
 iterator eventListeners(this: EventTarget): EventListener =
@@ -185,11 +184,11 @@ proc initEvent(this: Event; ctype: CAtom; bubbles, cancelable: bool)
   if efDispatch notin this.flags:
     this.initialize(ctype, bubbles, cancelable)
 
-func srcElement(this: Event): EventTarget {.jsfget.} =
+proc srcElement(this: Event): EventTarget {.jsfget.} =
   return this.target
 
 #TODO shadow DOM etc.
-func composedPath(this: Event): seq[EventTarget] {.jsfunc.} =
+proc composedPath(this: Event): seq[EventTarget] {.jsfunc.} =
   if this.currentTarget == nil:
     return newSeq[EventTarget]()
   return @[this.currentTarget]
@@ -197,7 +196,7 @@ func composedPath(this: Event): seq[EventTarget] {.jsfunc.} =
 proc stopPropagation(this: Event) {.jsfunc.} =
   this.flags.incl(efStopPropagation)
 
-func cancelBubble(this: Event): bool {.jsfget.} =
+proc cancelBubble(this: Event): bool {.jsfget.} =
   return efStopPropagation in this.flags
 
 proc `cancelBubble=`(this: Event; cancel: bool) {.jsfset: "cancelBubble".} =
@@ -218,10 +217,10 @@ proc `returnValue=`(this: Event; value: bool) {.jsfset: "returnValue".} =
   if not value:
     this.preventDefault()
 
-func defaultPrevented(this: Event): bool {.jsfget.} =
+proc defaultPrevented(this: Event): bool {.jsfget.} =
   return efCanceled in this.flags
 
-func composed(this: Event): bool {.jsfget.} =
+proc composed(this: Event): bool {.jsfget.} =
   return efComposed in this.flags
 
 # CustomEvent

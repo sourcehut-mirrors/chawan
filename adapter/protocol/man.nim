@@ -20,7 +20,7 @@ proc parseSection(query: string): tuple[page, section: string] =
     return (query.substr(0, query.high - 2 - section.len), section)
   return (query, "")
 
-func processBackspace(line: string): string =
+proc processBackspace(line: string): string =
   var s = ""
   var i = 0
   var thiscs = 0 .. -1

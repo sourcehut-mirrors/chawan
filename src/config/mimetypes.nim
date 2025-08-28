@@ -48,7 +48,7 @@ const DefaultImages* = block:
     s.incl(v)
   s
 
-func guessContentType*(mimeTypes: MimeTypes; path: string;
+proc guessContentType*(mimeTypes: MimeTypes; path: string;
     fallback = "application/octet-stream"): string =
   let ext = path.getFileExt()
   if ext.len > 0:
@@ -74,8 +74,8 @@ const JavaScriptTypes = [
   "text/x-javascript"
 ]
 
-func isJavaScriptType*(s: string): bool =
+proc isJavaScriptType*(s: string): bool =
   return JavaScriptTypes.binarySearch(s, cmpIgnoreCase) != -1
 
-func isTextType*(s: string): bool =
+proc isTextType*(s: string): bool =
   return s.startsWithIgnoreCase("text/") or s.isJavaScriptType()

@@ -12,7 +12,7 @@ import utils/twtstr
 
 type ChaPath* = distinct string
 
-func `$`*(p: ChaPath): string =
+proc `$`*(p: ChaPath): string =
   return string(p)
 
 type

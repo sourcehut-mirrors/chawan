@@ -11,7 +11,7 @@ type URIMethodMap* = object
   map*: Table[string, string]
   imageProtos*: seq[string]
 
-func rewriteURL(pattern, surl: string): string =
+proc rewriteURL(pattern, surl: string): string =
   result = ""
   var was_perc = false
   for c in pattern:

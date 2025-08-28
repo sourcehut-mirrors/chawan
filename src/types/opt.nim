@@ -70,11 +70,11 @@ template isOk*(res: Result): bool = res.has
 
 template isErr*(res: Result): bool = not res.has
 
-func get*[T, E](res: Result[T, E]): lent T {.inline.} = res.val
+proc get*[T, E](res: Result[T, E]): lent T {.inline.} = res.val
 
-func get*[T, E](res: var Result[T, E]): var T = res.val
+proc get*[T, E](res: var Result[T, E]): var T = res.val
 
-func get*[T, E](res: Result[T, E]; v: T): T =
+proc get*[T, E](res: Result[T, E]; v: T): T =
   if res.has:
     {.push checks: off.}
     result = res.val
@@ -82,7 +82,7 @@ func get*[T, E](res: Result[T, E]; v: T): T =
   else:
     result = v
 
-func uncheckedGet[T, E](res: var Result[T, E]): var T {.inline.} =
+proc uncheckedGet[T, E](res: var Result[T, E]): var T {.inline.} =
   {.push checks: off.}
   result = res.val
   {.pop.}

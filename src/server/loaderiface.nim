@@ -161,7 +161,7 @@ iterator ongoing*(loader: FileLoader): OngoingData {.inline.} =
     if it of OngoingData:
       yield OngoingData(it)
 
-func fd*(data: MapData): int =
+proc fd*(data: MapData): int =
   return int(data.stream.fd)
 
 proc put*(loader: FileLoader; data: MapData) =
@@ -188,7 +188,7 @@ proc unset*(loader: FileLoader; data: MapData) =
   if loader.get(fd) != nil:
     loader.unset(fd)
 
-func hasFds*(loader: FileLoader): bool =
+proc hasFds*(loader: FileLoader): bool =
   return loader.mapFds > 0 or loader.registerQueue.len > 0
 
 proc register(loader: FileLoader; data: ConnectData) =

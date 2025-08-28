@@ -209,7 +209,7 @@ proc addEmptyPromise(iface: BufferInterface; id: int): EmptyPromise =
   iface.map.add(BufferIfaceItem(id: id, p: promise, get: nil))
   return promise
 
-func findPromise(iface: BufferInterface; id: int): int =
+proc findPromise(iface: BufferInterface; id: int): int =
   for i, it in iface.map.mypairs:
     if it.id == id:
       return i
@@ -378,7 +378,7 @@ template proxy(fun: untyped) =
 template proxy(flag, fun: untyped) =
   proxyt(flag, fun)
 
-func getTitleAttr(bc: BufferContext; element: Element): string =
+proc getTitleAttr(bc: BufferContext; element: Element): string =
   if element != nil:
     for element in element.branchElems:
       if element.attrb(satTitle):
@@ -405,7 +405,7 @@ proc getClickable(element: Element): Element =
       return element
   return nil
 
-func canSubmitOnClick(fae: FormAssociatedElement): bool =
+proc canSubmitOnClick(fae: FormAssociatedElement): bool =
   if fae.form == nil:
     return false
   if fae.form.canSubmitImplicitly():
@@ -465,7 +465,7 @@ proc getCachedImageHover(bc: BufferContext; element: Element): string =
       return $image.bitmap.cacheId & ' ' & image.bitmap.contentType
   ""
 
-func getCursorElement(bc: BufferContext; cursorx, cursory: int): Element =
+proc getCursorElement(bc: BufferContext; cursorx, cursory: int): Element =
   let i = bc.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
     return bc.lines[cursory].formats[i].node
@@ -477,7 +477,7 @@ proc getCursorClickable(bc: BufferContext; cursorx, cursory: int): Element =
     return element.getClickable()
   return nil
 
-func cursorBytes(bc: BufferContext; y, cc: int): int =
+proc cursorBytes(bc: BufferContext; y, cc: int): int =
   let line = bc.lines[y].str
   var w = 0
   var i = 0
@@ -805,7 +805,7 @@ proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
       plaintext.invalidate()
   true
 
-func canSwitch(bc: BufferContext): bool {.inline.} =
+proc canSwitch(bc: BufferContext): bool {.inline.} =
   return bc.htmlParser.builder.confidence == ccTentative and
     bc.charsetStack.len > 0
 
@@ -1215,12 +1215,12 @@ proc serializePlainTextFormData(kvs: seq[(string, string)]): string =
     result &= value
     result &= "\r\n"
 
-func getOutputEncoding(charset: Charset): Charset =
+proc getOutputEncoding(charset: Charset): Charset =
   if charset in {CHARSET_REPLACEMENT, CHARSET_UTF_16_BE, CHARSET_UTF_16_LE}:
     return CHARSET_UTF_8
   return charset
 
-func pickCharset(form: HTMLFormElement): Charset =
+proc pickCharset(form: HTMLFormElement): Charset =
   if form.attrb(satAcceptCharset):
     let input = form.attr(satAcceptCharset)
     for label in input.split(AsciiWhitespace):

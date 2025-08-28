@@ -218,19 +218,19 @@ proc updateReadLine(pager: Pager)
 template attrs(pager: Pager): WindowAttributes =
   pager.term.attrs
 
-func getRoot(container: Container): Container =
+proc getRoot(container: Container): Container =
   var c = container
   while c.parent != nil:
     c = c.parent
   return c
 
-func bufWidth(pager: Pager): int =
+proc bufWidth(pager: Pager): int =
   return pager.attrs.width
 
-func bufHeight(pager: Pager): int =
+proc bufHeight(pager: Pager): int =
   return pager.attrs.height - 1
 
-func console(pager: Pager): Console =
+proc console(pager: Pager): Console =
   return pager.consoleWrapper.console
 
 # depth-first descendant iterator
@@ -1418,7 +1418,7 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     url = container.url
   )
 
-func findConnectingContainer(pager: Pager; container: Container):
+proc findConnectingContainer(pager: Pager; container: Container):
     ConnectingContainer =
   for item in pager.loader.data:
     if item of ConnectingContainer:
@@ -1453,11 +1453,11 @@ const OppositeMap = [
   ndAny: ndAny
 ]
 
-func opposite(dir: NavDirection): NavDirection
+proc opposite(dir: NavDirection): NavDirection
     {.jsstfunc: "Pager.oppositeDir".} =
   return OppositeMap[dir]
 
-func revDirection(pager: Pager): NavDirection {.jsfget.} =
+proc revDirection(pager: Pager): NavDirection {.jsfget.} =
   return pager.navDirection.opposite()
 
 proc traverse(pager: Pager; dir: NavDirection): bool {.jsfunc.} =
@@ -3348,7 +3348,7 @@ proc inputLoop(pager: Pager) =
     pager.showAlerts()
     pager.draw()
 
-func hasSelectFds(pager: Pager): bool =
+proc hasSelectFds(pager: Pager): bool =
   return not pager.timeouts.empty or pager.numload > 0 or
     pager.loader.hasFds()
 

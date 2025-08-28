@@ -75,10 +75,10 @@ template errDOMException*(message, name: string): untyped =
 proc JS_ThrowDOMException*(ctx: JSContext; message, name: string): JSValue =
   return JS_Throw(ctx, ctx.toJS(newDOMException(message, name)))
 
-func getMessage(this: DOMException): string {.jsfget: "message".} =
+proc getMessage(this: DOMException): string {.jsfget: "message".} =
   return this.message
 
-func getCode(this: DOMException): uint16 {.jsfget: "code".} =
+proc getCode(this: DOMException): uint16 {.jsfget: "code".} =
   if this.code == -1:
     this.code = 0
     for it in NamesTable:

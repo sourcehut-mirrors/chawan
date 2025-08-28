@@ -317,13 +317,13 @@ const CharsetMap = {
   "x-user-defined": CHARSET_X_USER_DEFINED
 }.toTable()
 
-func normalizeLocale(s: openArray[char]): string =
+proc normalizeLocale(s: openArray[char]): string =
   result = ""
   for c in s:
     if uint8(c) > 0x20 and c notin {'_', '-'}:
       result &= c.toLowerAscii()
 
-const NormalizedCharsetMap = (func(): Table[string, Charset] =
+const NormalizedCharsetMap = (proc(): Table[string, Charset] =
   for k, v in CharsetMap:
     result[k.normalizeLocale()] = v)()
 

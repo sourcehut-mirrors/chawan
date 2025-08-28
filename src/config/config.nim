@@ -219,7 +219,7 @@ template getOrDefault(a: ActionMap; b: string): string =
 proc contains*(a: ActionMap; b: string): bool =
   return b in a.t
 
-func getRealKey(key: string): string =
+proc getRealKey(key: string): string =
   var realk = ""
   var control = 0
   var meta = 0
@@ -284,7 +284,7 @@ proc delete(a: var ActionMap; k: string): bool {.jsdelprop.} =
   a.t.del(k)
   return ina
 
-func names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
+proc names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
     {.jspropnames.} =
   let L = uint32(a.t.len)
   var list = newJSPropertyEnumList(ctx, L)
@@ -699,7 +699,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   x.append(DefaultURIMethodMap)
   ok()
 
-func isCompatibleIdent(s: string): bool =
+proc isCompatibleIdent(s: string): bool =
   if s.len == 0 or s[0] notin AsciiAlpha + {'_', '$'}:
     return false
   for i in 1 ..< s.len:

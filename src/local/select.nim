@@ -43,10 +43,10 @@ proc queueDraw(select: Select) =
 proc setFromY(select: Select; y: int) =
   select.fromy = max(min(y, select.options.len - select.maxh), 0)
 
-func width*(select: Select): int =
+proc width*(select: Select): int =
   return select.maxw + 2
 
-func height*(select: Select): int =
+proc height*(select: Select): int =
   return select.maxh + 2
 
 proc setCursorY*(select: Select; y: int) =

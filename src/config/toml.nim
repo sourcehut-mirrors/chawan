@@ -72,11 +72,11 @@ type
     nodes: seq[TomlNode]
     map: OrderedTable[string, TomlValue]
 
-func `$`*(val: TomlValue): string
+proc `$`*(val: TomlValue): string
 
-func `$`(tab: TomlTable): string
+proc `$`(tab: TomlTable): string
 
-func `$`(kvpair: TomlKVPair): string =
+proc `$`(kvpair: TomlKVPair): string =
   if kvpair.key.len > 0:
     #TODO escape
     result = kvpair.key[0]
@@ -89,7 +89,7 @@ func `$`(kvpair: TomlKVPair): string =
   result &= $kvpair.value
   result &= '\n'
 
-func `$`(tab: TomlTable): string =
+proc `$`(tab: TomlTable): string =
   result = ""
   if tab.comment != "":
     result &= "#" & tab.comment & '\n'
@@ -97,7 +97,7 @@ func `$`(tab: TomlTable): string =
     result &= key & " = " & $val & '\n'
   result &= '\n'
 
-func `$`*(val: TomlValue): string =
+proc `$`*(val: TomlValue): string =
   case val.t
   of tvtString:
     result = "\""
@@ -135,7 +135,7 @@ iterator pairs*(val: TomlValue): (string, TomlValue) {.inline.} =
 
 const ValidBare = AsciiAlphaNumeric + {'-', '_'}
 
-func peek(state: TomlParser; buf: openArray[char]; i: int): char =
+proc peek(state: TomlParser; buf: openArray[char]; i: int): char =
   return buf[state.at + i]
 
 template err(state: TomlParser; msg: string): untyped =

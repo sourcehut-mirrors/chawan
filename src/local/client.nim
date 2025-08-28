@@ -43,10 +43,10 @@ type
   Client* = ref object of Window
     pager* {.jsget.}: Pager
 
-func config(client: Client): Config {.jsfget.} =
+proc config(client: Client): Config {.jsfget.} =
   return client.pager.config
 
-func console(client: Client): Console {.jsrfget.} =
+proc console(client: Client): Console {.jsrfget.} =
   return client.pager.consoleWrapper.console
 
 proc suspend(client: Client) {.jsfunc.} =
@@ -131,7 +131,7 @@ proc jsCollect(client: Client) {.jsfunc.} =
 proc sleep(client: Client; millis: int) {.jsfunc.} =
   os.sleep(millis)
 
-func line(client: Client): LineEdit {.jsfget.} =
+proc line(client: Client): LineEdit {.jsfget.} =
   return client.pager.lineedit
 
 method isSameOrigin(client: Client; origin: Origin): bool =

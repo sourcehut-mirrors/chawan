@@ -213,7 +213,7 @@ proc gb18030RangesCodepoint(p: uint32): uint32 =
     # is found.
     # We want the last that is <=, so decrease index by one.
     let i = GB18030RangesDecode.upperBound(p,
-      func(a: tuple[p, ucs: uint16], b: uint32): int =
+      proc(a: tuple[p, ucs: uint16], b: uint32): int =
         cmp(uint32(a.p), b)
     )
     let elem = GB18030RangesDecode[i - 1]
@@ -316,7 +316,7 @@ method finish*(td: TextDecoderUTF8): TextDecoderFinishResult =
   td.bufLen = 0
   td.bounds = 0x80u8 .. 0xBFu8
 
-func findInRuns(runs: openArray[uint32]; offset, p: uint16): uint16 =
+proc findInRuns(runs: openArray[uint32]; offset, p: uint16): uint16 =
   let i = runs.upperBound(p, proc(x: uint32; y: uint16): int =
     let x = x and 0x1FFF # mask off first 13 bits; this is the pointer
     return cmp(x, y)
@@ -329,7 +329,7 @@ func findInRuns(runs: openArray[uint32]; offset, p: uint16): uint16 =
     return offset + p + diff
   return 0
 
-func gb18030ToU16(row, col: uint16): uint16 =
+proc gb18030ToU16(row, col: uint16): uint16 =
   if row <= 0x1F:
     let p = row * 190 + col
     return GB18030Runs.findInRuns(GB18030RunsOffset, p)
@@ -499,13 +499,13 @@ method finish*(td: TextDecoderBig5): TextDecoderFinishResult =
     result = tdfrError
   td.lead = 0
 
-func jis0212ToU16(row, col: uint16): uint16 =
+proc jis0212ToU16(row, col: uint16): uint16 =
   let p = row * 94 + col
   if p < Jis0212Decode.len:
     return Jis0212Decode[p]
   return 0
 
-func jis0208ToU16(row, col: uint16): uint16 =
+proc jis0208ToU16(row, col: uint16): uint16 =
   var row = row
   if row >= 0x5C:
     if row <= 0x71:
@@ -763,7 +763,7 @@ method finish*(td: TextDecoderShiftJIS): TextDecoderFinishResult =
     result = tdfrError
   td.lead = 0
 
-func eucKRToU16(row, col: uint16): uint16 =
+proc eucKRToU16(row, col: uint16): uint16 =
   var col = col
   var row = row
   if row <= 0x1F: # runs 1
