@@ -81,7 +81,7 @@ type
   EventTarget* = ref object of RootObj
     eventListener: EventListener
 
-  EventListener = ref object
+  EventListener {.acyclic.} = ref object
     # if callback is undefined, the listener has been removed
     callback: JSValue
     rt: JSRuntime
@@ -473,10 +473,15 @@ proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
   var prev: EventListener = nil
   for it in eventTarget.eventListeners:
     if it.ctype == ctype and it.internal:
+      let callback = it.callback
+      it.callback = JS_UNDEFINED
+      it.rt = nil
+      JS_FreeValue(ctx, callback)
       if prev == nil:
         eventTarget.eventListener = it.next
       else:
         prev.next = it.next
+      break
     prev = it
 
 proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
@@ -572,6 +577,7 @@ proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
         JS_IsStrictEqual(ctx, it.callback, callback) and it.capture == capture:
       let callback = it.callback
       it.callback = JS_UNDEFINED
+      it.rt = nil
       JS_FreeValue(ctx, callback)
       if prev == nil:
         eventTarget.eventListener = it.next
