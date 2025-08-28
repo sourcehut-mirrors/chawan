@@ -94,6 +94,10 @@ proc newXMLHttpRequest(ctx: JSContext): XMLHttpRequest {.jsctor.} =
 proc finalize(this: XMLHttpRequest) {.jsfin.} =
   JS_FreeValueRT(this.rt, this.responseObject)
 
+proc mark(rt: JSRuntime; this: XMLHttpRequest; markFun: JS_MarkFunc)
+    {.jsmark.} =
+  JS_MarkValue(rt, this.responseObject, markFun)
+
 proc newProgressEvent(ctype: CAtom; init = ProgressEventInit()): ProgressEvent
     {.jsctor.} =
   let event = ProgressEvent(

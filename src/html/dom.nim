@@ -2334,6 +2334,9 @@ proc finalize(collection: NodeIterator) {.jsfin.} =
   collection.finalize0()
   JS_FreeValue(collection.ctx, collection.filter)
 
+proc mark(rt: JSRuntime; this: NodeIterator; markFun: JS_MarkFunc) {.jsmark.} =
+  JS_MarkValue(rt, this.filter, markFun)
+
 proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
 

@@ -450,7 +450,6 @@ type
     replaceableSetFun: NimNode # replaceable setter function ident
     tabReplaceableNames: NimNode # replaceable names array
     markFun: NimNode # gc_mark for class
-    markList: NimNode # list of members to mark
 
 var BoundFunctions {.compileTime.}: Table[string, RegistryInfo]
 
@@ -469,8 +468,7 @@ proc newRegistryInfo(t: NimNode): RegistryInfo =
     propDelFun: newNilLit(),
     propHasFun: newNilLit(),
     propNamesFun: newNilLit(),
-    markFun: newNilLit(),
-    markList: newStmtList()
+    markFun: newNilLit()
   )
 
 proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
@@ -1299,9 +1297,12 @@ proc registerPragmas(stmts: NimNode; info: RegistryInfo; t: NimNode) =
         let typ = identDefs[^2]
         if typ.getTypeInst().sameType(JSValue.getType()) or
             JSValue.getType().sameType(typ):
-          info.markList.add(quote do:
-            JS_MarkValue(rt, this.`varNode`, markFunc)
-          )
+          if info.markFun.kind == nnkNilLit:
+            warning(info.tname & " misses .jsmark for member " &
+              varNode.strVal & ".  This will cause memory leaks.")
+          if info.finFun.kind == nnkNilLit:
+            warning(info.tname & " misses .jsfin for member " &
+              varNode.strVal & ".  This will cause memory leaks.")
 
 proc nim_finalize_for_js*(obj, typeptr: pointer) =
   var lastrt: JSRuntime = nil
@@ -1515,22 +1516,6 @@ proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
       let classDef {.inject.} = JSClassDefConst(addr cd)
     )
 
-proc bindMarkFunc(stmts: NimNode; info: RegistryInfo) =
-  let t = info.t
-  let id = ident("mark_" & info.tname)
-  let markList = info.markList
-  stmts.add(quote do:
-    proc `id`(rt {.inject.}: JSRuntime; val: JSValueConst;
-        markFunc {.inject.}: JS_MarkFunc) {.cdecl.} =
-      let p = JS_GetOpaque(val, JS_GetClassID(val))
-      if p == nil:
-        return
-      # Disgusting cast, but try not to confuse refc.
-      let this {.inject.} = cast[ptr typeof(`t`.default[])](p)
-      `markList`
-  )
-  info.markFun = id
-
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;
     nointerface = false; name: static string = "";
@@ -1554,10 +1539,8 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   else:
     info.dfin = newNilLit()
     if info.tname in jsDtors:
-      error("Global object " & info.tname & " must not have a destructor!")
+      error("Global object " & info.tname & " must not have a destructor.")
   stmts.registerPragmas(info, t)
-  if info.markFun.kind == nnkNilLit and info.markList.len > 0:
-    stmts.bindMarkFunc(info)
   if info.tabReplaceableNames.len > 0:
     stmts.bindReplaceableSet(info)
   stmts.bindGetSet(info)

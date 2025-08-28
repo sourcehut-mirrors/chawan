@@ -237,6 +237,9 @@ proc newCustomEvent*(ctx: JSContext; ctype: CAtom;
 proc finalize(this: CustomEvent) {.jsfin.} =
   JS_FreeValueRT(this.rt, this.detail)
 
+proc mark(rt: JSRuntime; this: CustomEvent; markFun: JS_MarkFunc) {.jsmark.} =
+  JS_MarkValue(rt, this.detail, markFun)
+
 proc initCustomEvent(ctx: JSContext; this: CustomEvent; ctype: CAtom;
     bubbles, cancelable: bool; detail: JSValueConst) {.jsfunc.} =
   if efDispatch notin this.flags:
@@ -246,9 +249,6 @@ proc initCustomEvent(ctx: JSContext; this: CustomEvent; ctype: CAtom;
     this.initialize(ctype, bubbles, cancelable)
 
 # MessageEvent
-proc finalize(this: MessageEvent) {.jsfin.} =
-  JS_FreeValueRT(this.rt, this.data)
-
 proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
     eventInit = MessageEventInit(data: JS_NULL)): MessageEvent =
   let event = MessageEvent(
@@ -259,6 +259,12 @@ proc newMessageEvent*(ctx: JSContext; ctype: CAtom;
   )
   event.innerEventCreationSteps(EventInit(eventInit))
   return event
+
+proc finalize(this: MessageEvent) {.jsfin.} =
+  JS_FreeValueRT(this.rt, this.data)
+
+proc mark(rt: JSRuntime; this: MessageEvent; markFun: JS_MarkFunc) {.jsmark.} =
+  JS_MarkValue(rt, this.data, markFun)
 
 # SubmitEvent
 type EventTargetHTMLElement* = distinct EventTarget
