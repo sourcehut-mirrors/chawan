@@ -630,6 +630,7 @@ proc reflectEvent(document: Document; target: EventTarget;
   name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
 
 func document*(node: Node): Document
+func nextDescendant(node: Node): Node
 func parentElement*(node: Node): Element
 func serializeFragment(res: var string; node: Node)
 func serializeFragmentInner(res: var string; child: Node; parentType: TagType)
@@ -663,12 +664,13 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32)
 proc delAttr(ctx: JSContext; element: Element; i: int)
 proc elementInsertionSteps(element: Element): bool
 proc elIndex*(this: Element): int
+proc ensureStyle(element: Element)
 func findAttr(element: Element; qualifiedName: CAtom): int
 func findAttrNS(element: Element; namespace, localName: CAtom): int
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
-proc ensureStyle(element: Element)
+proc nextDisplayedElement(element: Element): Element
 func outerHTML(element: Element): string
 proc postConnectionSteps(element: Element)
 func previousElementSibling*(element: Element): Element
@@ -929,33 +931,23 @@ iterator branchElems*(node: Node): Element {.inline.} =
       yield Element(node)
 
 iterator descendants*(node: ParentNode): Node {.inline.} =
-  var stack: seq[Node] = @[]
-  for child in node.rchildList:
-    stack.add(child)
-  while stack.len > 0:
-    let node = stack.pop()
+  var node = node.firstChild
+  while node != nil:
     yield node
-    if node of ParentNode:
-      let node = cast[ParentNode](node)
-      for child in node.rchildList:
-        stack.add(child)
+    node = node.nextDescendant
 
-iterator descendantsIncl(node: ParentNode): Node {.inline.} =
-  var stack = @[Node(node)]
-  while stack.len > 0:
-    let node = stack.pop()
+iterator descendantsIncl(node: Node): Node {.inline.} =
+  var node = node
+  while node != nil:
     yield node
-    if node of ParentNode:
-      let node = cast[ParentNode](node)
-      for child in node.rchildList:
-        stack.add(child)
+    node = node.nextDescendant
 
 iterator elementDescendants*(node: ParentNode): Element {.inline.} =
   for child in node.descendants:
     if child of Element:
       yield Element(child)
 
-iterator elementDescendantsIncl(node: ParentNode): Element {.inline.} =
+iterator elementDescendantsIncl(node: Node): Element {.inline.} =
   for child in node.descendantsIncl:
     if child of Element:
       yield Element(child)
@@ -974,19 +966,10 @@ iterator elementDescendants*(node: ParentNode; tag: set[TagType]): Element
 
 iterator displayedElements*(window: Window; tag: TagType): Element
     {.inline.} =
-  let node = window.document
-  var stack: seq[Node] = @[]
-  for child in node.rchildList:
-    stack.add(child)
-  while stack.len > 0:
-    let node = stack.pop()
-    if node of Element:
-      let element = Element(node)
-      element.ensureStyle()
-      if element.computed{"display"} != DisplayNone:
-        yield element
-        for child in element.rchildList:
-          stack.add(child)
+  var element = window.document.documentElement
+  while element != nil:
+    yield element
+    element = element.nextDisplayedElement
 
 iterator inputs(form: HTMLFormElement): HTMLInputElement {.inline.} =
   for control in form.controls:
@@ -1476,6 +1459,23 @@ func previousSibling*(node: Node): Node {.jsfget.} =
   if node.parentNode == nil or node == node.parentNode.firstChild:
     return nil
   return node.internalPrev
+
+func nextDescendant(node: Node): Node =
+  if node of ParentNode: # parent
+    let node = cast[ParentNode](node)
+    if node.firstChild != nil:
+      return node.firstChild
+  # climb up until we find a non-last leaf (this might be node itself)
+  var node = node
+  while true:
+    let next = node.nextSibling
+    if next != nil:
+      return next
+    node = node.parentNode
+    if node == nil:
+      break
+  # done
+  return nil
 
 func ownerDocument(node: Node): Document {.jsfget.} =
   if node of Document:
@@ -2237,18 +2237,16 @@ proc insertNode(parent: ParentNode; node, before: Node) =
     else:
       element.internalElIndex = 0
   node.document.invalidateCollections()
-  if node of ParentNode:
-    let document = node.document
-    if document != nil and (node of HTMLStyleElement or
-        node of HTMLLinkElement):
-      document.applyAuthorSheets()
-    var nodes: seq[Element] = @[]
-    for el in cast[ParentNode](node).elementDescendantsIncl:
-      #TODO shadow root
-      if el.elementInsertionSteps():
-        nodes.add(el)
-    for el in nodes:
-      el.postConnectionSteps()
+  let document = node.document
+  if document != nil and (node of HTMLStyleElement or node of HTMLLinkElement):
+    document.applyAuthorSheets()
+  var nodes: seq[Element] = @[]
+  for el in node.elementDescendantsIncl:
+    #TODO shadow root
+    if el.elementInsertionSteps():
+      nodes.add(el)
+  for el in nodes:
+    el.postConnectionSteps()
 
 # WARNING ditto
 proc insert*(parent: ParentNode; node, before: Node;
@@ -3819,6 +3817,28 @@ func previousElementSibling*(element: Element): Element {.jsfget.} =
 
 func nextElementSibling*(element: Element): Element {.jsfget.} =
   return element.nextElementSiblingImpl
+
+proc isDisplayed(element: Element): bool =
+  element.ensureStyle()
+  return element.computed{"display"} != DisplayNone
+
+proc nextDisplayedElement(element: Element): Element =
+  for child in element.elementList:
+    if child.isDisplayed():
+      return child
+  # climb up until we find a non-last leaf (this might be node itself)
+  var element = element
+  while true:
+    var next = element.nextElementSibling
+    while next != nil:
+      if next.isDisplayed():
+        return next
+      next = next.nextElementSibling
+    element = element.parentElement
+    if element == nil:
+      break
+  # done
+  return nil
 
 func scriptingEnabled(element: Element): bool =
   return element.document.scriptingEnabled
