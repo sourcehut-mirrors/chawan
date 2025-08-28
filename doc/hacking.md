@@ -243,8 +243,8 @@ You got a syscall number (assuming you're on Linux); look it up in the
 Linux syscall table for your architecture.
 
 To get more context on what happened, you can run
-`strace -f ./cha -o start.console-buffer [...] 2>a`, trigger the crash,
-then search for the last occurrence of "--- SIGSYS". Then search
+`strace -f ./cha -o start.console-buffer=false [...] 2>a`, trigger the
+crash, then search for the last occurrence of "--- SIGSYS". Then search
 backwards on the PID to see the last syscalls.
 
 (Incidentally, strace also shows the syscall name, so it may be easier
