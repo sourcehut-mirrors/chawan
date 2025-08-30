@@ -448,36 +448,42 @@ proc hsla*(h, s, l: float32; a: uint8): ARGBColor =
 
 # NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
 proc toRGB*(param0: ANSIColor): RGBColor =
-  doAssert uint8(param0) notin 0u8..15u8
   let u = uint8(param0)
+  assert u notin 0u8..15u8
   if u in 16u8..231u8:
-    #16 + 36 * r + 6 * g + b
+    # see below for rationale of dividing by 6 instead of 5
     let n = u - 16
-    let r = uint8(int(n div 36) * 255 div 5)
-    let m = int(n mod 36)
-    let g = uint8(((m div 6) * 255) div 5)
-    let b = uint8(((m mod 6) * 255) div 5)
+    let r = uint8(n div 36 * static(255 div 6))
+    let m = n mod 36
+    let g = uint8((m div 6 * static(255 div 6)))
+    let b = uint8((m mod 6 * static(255 div 6)))
     return rgb(r, g, b)
-  else: # 232..255
-    let n = (u - 232) * 10 + 8
-    return gray(n)
+  # 232..255
+  return gray((u - 232) * 10 + 8)
 
 proc toEightBit*(c: RGBColor): ANSIColor =
-  let r = int(c.r)
-  let g = int(c.g)
-  let b = int(c.b)
-  # Idea from here: https://github.com/Qix-/color-convert/pull/75
-  # This seems to work about as well as checking for
-  # abs(U - 128) < 5 & abs(V - 128 < 5), but is definitely faster.
-  if r shr 4 == g shr 4 and g shr 4 == b shr 4:
-    if r < 8:
-      return ANSIColor(16)
-    if r > 248:
-      return ANSIColor(231)
-    return ANSIColor(uint8(((r - 8) * 24 div 247) + 232))
-  #16 + 36 * r + 6 * g + b
-  return ANSIColor(uint8(16 + 36 * (r * 5 div 255) + 6 * (g * 5 div 255) +
-    (b * 5 div 255)))
+  # XTerm's cube is components rotated as 0, 95, 135, 175, 215, 255.
+  # Given that there are 6 indices (0..5), it is tempting to just multiply c by
+  # 5, divide by 255, and choose the location on the cube with that.  However,
+  # that's incorrect, since our indices aren't mapped uniformly over 0..255.
+  # So instead, we approximate 0..95 by using two sevenths of the range.
+  let cc = c.argb().fastmul(6)
+  let r0 = max(cc.r, 1) - 1
+  let g0 = max(cc.g, 1) - 1
+  let b0 = max(cc.b, 1) - 1
+  if r0 == g0 and g0 == b0:
+    let mid = min(min(max(c.r, c.g), max(c.g, c.b)), max(c.r, c.b))
+    # First check for mid < 5 and mid > 249, consider that black or white.
+    # (Note: we cheat with wraparound.)
+    # Then, check for an approximate match with the alternative grays on the
+    # cube; if there is no match, go with the gradient.
+    if mid - 5 < 245 and mid shr 2 notin [0x17u8, 0x21u8, 0x2Bu8, 0x35u8]:
+      # Multiply by 25, then divide by 255.
+      let x = uint8((uint32(mid) * 25 + 0x80) shr 8)
+      # Gray values start at 232, but we index from 1 because we skip black.
+      # (This is not a perfect approximation, but it's good enough in practice.)
+      return ANSIColor(x + 231)
+  return ANSIColor(uint8(16 + r0 * 36 + g0 * 6 + b0))
 
 proc parseHexColor*(s: openArray[char]): Option[ARGBColor] =
   for c in s:
