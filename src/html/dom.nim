@@ -399,23 +399,23 @@ type
     userValidity: bool
     cachedOptions: HTMLOptionsCollection
 
-  HTMLSpanElement* = ref object of HTMLElement
+  HTMLSpanElement = ref object of HTMLElement
 
-  HTMLOptGroupElement* = ref object of HTMLElement
+  HTMLOptGroupElement = ref object of HTMLElement
 
   HTMLOptionElement* = ref object of HTMLElement
     selected* {.jsget.}: bool
     dirty: bool
 
-  HTMLHeadingElement* = ref object of HTMLElement
+  HTMLHeadingElement = ref object of HTMLElement
 
-  HTMLBRElement* = ref object of HTMLElement
+  HTMLBRElement = ref object of HTMLElement
 
-  HTMLMenuElement* = ref object of HTMLElement
+  HTMLMenuElement = ref object of HTMLElement
 
-  HTMLUListElement* = ref object of HTMLElement
+  HTMLUListElement = ref object of HTMLElement
 
-  HTMLOListElement* = ref object of HTMLElement
+  HTMLOListElement = ref object of HTMLElement
 
   HTMLLIElement* = ref object of HTMLElement
     value* {.jsget.}: Option[int32]
@@ -439,8 +439,6 @@ type
   HTMLTemplateElement* = ref object of HTMLElement
     content* {.jsget.}: DocumentFragment
 
-  HTMLUnknownElement* = ref object of HTMLElement
-
   HTMLScriptElement* = ref object of HTMLElement
     parserDocument*: Document
     preparationTimeDocument*: Document
@@ -455,11 +453,11 @@ type
     onReady: (proc(element: HTMLScriptElement) {.nimcall, raises: [].})
     next*: HTMLScriptElement # scriptsToExecSoon/InOrder/OnLoad
 
-  OnCompleteProc = proc(element: HTMLScriptElement, res: ScriptResult)
+  OnCompleteProc = proc(element: HTMLScriptElement; res: ScriptResult)
 
-  HTMLBaseElement* = ref object of HTMLElement
+  HTMLBaseElement = ref object of HTMLElement
 
-  HTMLAreaElement* = ref object of HTMLElement
+  HTMLAreaElement = ref object of HTMLElement
     relList {.jsget.}: DOMTokenList
 
   HTMLButtonElement* = ref object of FormAssociatedElement
@@ -483,7 +481,7 @@ type
 
   HTMLAudioElement* = ref object of HTMLElement
 
-  HTMLIFrameElement* = ref object of HTMLElement
+  HTMLIFrameElement = ref object of HTMLElement
 
   HTMLTableElement = ref object of HTMLElement
     cachedRows: HTMLCollection
@@ -510,6 +508,8 @@ type
   HTMLHeadElement = ref object of HTMLElement
 
   HTMLTitleElement = ref object of HTMLElement
+
+  HTMLUnknownElement = ref object of HTMLElement
 
 jsDestructor(Navigator)
 jsDestructor(PluginArray)
@@ -612,11 +612,6 @@ proc newNodeList(root: Node; match: CollectionMatchFun;
 proc newDOMTokenList(element: Element; name: StaticAtom): DOMTokenList
 proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
   readonly = false): CSSStyleDeclaration
-
-proc getImageId(window: Window): int
-proc loadResource(window: Window; link: HTMLLinkElement)
-proc loadResource*(window: Window; image: HTMLImageElement)
-proc logException(window: Window; url: URL)
 
 proc adopt(document: Document; node: Node)
 proc applyAuthorSheets*(document: Document)
@@ -1068,6 +1063,11 @@ proc isLink(node: Node): bool =
     return false
   let element = Element(node)
   return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
+
+proc logException(window: Window; url: URL) =
+  #TODO excludepassword seems pointless?
+  window.console.error("Exception in document",
+    url.serialize(excludepassword = true), window.jsctx.getExceptionMsg())
 
 proc newWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
     JSValue =
@@ -1608,7 +1608,7 @@ proc contains*(a, b: Node): bool {.jsfunc.} =
 proc jsParentNode(node: Node): Node {.jsfget: "parentNode".} =
   return node.parentNode
 
-proc firstChild*(node: Node): Node {.jsfget.} =
+proc firstChild(node: Node): Node {.jsfget.} =
   if node of ParentNode:
     return cast[ParentNode](node).firstChild
   nil
@@ -4796,7 +4796,7 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
     name = "float"
   return this.setProperty(name, value)
 
-proc style*(element: Element): CSSStyleDeclaration {.jsfget.} =
+proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.cachedStyle == nil:
     element.cachedStyle = newCSSStyleDeclaration(element, "")
   return element.cachedStyle
@@ -5555,11 +5555,6 @@ proc fetchExternalModuleGraph(element: HTMLScriptElement; url: URL;
       else:
         element.fetchDescendantsAndLink(res.script, rdScript, onComplete)
   )
-
-proc logException(window: Window; url: URL) =
-  #TODO excludepassword seems pointless?
-  window.console.error("Exception in document",
-    url.serialize(excludepassword = true), window.jsctx.getExceptionMsg())
 
 proc fetchInlineModuleGraph(element: HTMLScriptElement; sourceText: string;
     url: URL; options: ScriptOptions; onComplete: OnCompleteProc) =

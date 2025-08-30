@@ -845,12 +845,13 @@ proc isHTMLIntegrationPoint[Handle, Atom](parser: HTML5Parser[Handle, Atom];
 
 const AsciiWhitespace = {' ', '\n', '\r', '\t', '\f'}
 
-func until(s: string, c1, c2: char, starti: int): string =
+func until(s: string; c1, c2: char; starti: int): string =
   result = ""
   for i in starti ..< s.len:
-    if s[i] == c1 or s[i] == c2:
+    let c = s[i]
+    if c == c1 or c == c2:
       break
-    result &= s[i]
+    result &= c
 
 func extractEncFromMeta(s: string): string =
   var i = 0
