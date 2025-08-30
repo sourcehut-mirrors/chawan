@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- Note: yet another test that Gecko can't handle. -->
 <title>Element test</title>
 <div id=x class="a b c d" lang=asdf>Fail</div>
 <div id=y>test</div>
@@ -15,14 +16,23 @@ assertEquals(document.createElementNS("test", "test:div").tagName, "test:div");
 assertEquals(x.lang, "asdf");
 x.setAttributeNS("ns", "pf:test", "a");
 x.setAttributeNS("ns", "pf:test", "b");
+/*
+ * The spec, as far as I can tell, says that this shouldn't change
+ * pf:test's prefix.  Neither does Blink.  But Gecko does.
+ *sigh* I hate XML.
+ */
+x.setAttributeNS("ns", "as:test", "d");
+x.setAttributeNS("ns2", "as:test", "c");
+x.setAttributeNS("ns3", "pf:test", "c");
+assertEquals(x.attributes["pf:test"].prefix, "pf");
 assertEquals(x.attributes["pf:test"].namespaceURI, "ns");
 assertEquals(x.attributes["pf:test"].prefix, "pf");
 assertEquals(x.attributes["pf:test"].localName, "test");
-assertEquals(x.attributes["pf:test"].value, "b");
-assertEquals(x.getAttributeNS("ns", "test"), "b")
+assertEquals(x.attributes["pf:test"].value, "d");
+assertEquals(x.getAttributeNS("ns", "test"), "d")
 let attr = x.attributes["pf:test"]
 x.removeAttributeNS("ns", "test")
-assertEquals(attr.value, "b")
+assertEquals(attr.value, "d")
 const y = document.getElementById("y");
 assertEquals(x.nextElementSibling, y);
 for (let z = y; z; z = z.nextElementSibling)
