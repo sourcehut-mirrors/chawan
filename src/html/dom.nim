@@ -5066,26 +5066,8 @@ proc reset*(form: HTMLFormElement) =
 
 # FormAssociatedElement
 proc setForm*(element: FormAssociatedElement; form: HTMLFormElement) =
-  case element.tagType
-  of TAG_INPUT:
-    let input = HTMLInputElement(element)
-    input.form = form
-    form.controls.add(input)
-  of TAG_SELECT:
-    let select = HTMLSelectElement(element)
-    select.form = form
-    form.controls.add(select)
-  of TAG_BUTTON:
-    let button = HTMLButtonElement(element)
-    button.form = form
-    form.controls.add(button)
-  of TAG_TEXTAREA:
-    let textarea = HTMLTextAreaElement(element)
-    textarea.form = form
-    form.controls.add(textarea)
-  of TAG_FIELDSET, TAG_OBJECT, TAG_OUTPUT, TAG_IMG:
-    discard #TODO
-  else: assert false
+  element.form = form
+  form.controls.add(element)
   form.document.invalidateCollections()
 
 proc resetFormOwner(element: FormAssociatedElement) =
