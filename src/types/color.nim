@@ -446,17 +446,21 @@ proc hsla*(h, s, l: float32; a: uint8): ARGBColor =
   let b = f(4)
   return rgba(r, g, b, a)
 
-# NOTE: this assumes n notin 0..15 (which would be ANSI 4-bit)
+# Note: this assumes n notin 0..15 (which would be ANSI 4-bit)
 proc toRGB*(param0: ANSIColor): RGBColor =
   let u = uint8(param0)
   assert u notin 0u8..15u8
-  if u in 16u8..231u8:
-    # see below for rationale of dividing by 6 instead of 5
+  if u < 232:
     let n = u - 16
-    let r = uint8(n div 36 * static(255 div 6))
-    let m = n mod 36
-    let g = uint8((m div 6 * static(255 div 6)))
-    let b = uint8((m mod 6 * static(255 div 6)))
+    var r = (n div 36) * 40
+    var g = ((n mod 36) div 6) * 40
+    var b = (n mod 6) * 40
+    if r > 0:
+      r += 55
+    if g > 0:
+      g += 55
+    if b > 0:
+      b += 55
     return rgb(r, g, b)
   # 232..255
   return gray((u - 232) * 10 + 8)
