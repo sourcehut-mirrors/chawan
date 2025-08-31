@@ -1108,16 +1108,22 @@ proc parseAngle(tok: CSSToken): Opt[float32] =
     of catTurn: return ok(tok.num * 360f32)
   return err()
 
-proc parseHue(tok: CSSToken): Opt[float32] =
+proc parseHue(tok: CSSToken): Opt[uint32] =
   if tok.t in {cttNumber, cttINumber}:
-    return ok(tok.num)
+    var n = tok.num mod 360
+    if n < 0:
+      n = n + 360
+    return ok(uint32(n))
   if tok.t == cttIdent: # none
     return ok(0)
-  return parseAngle(tok)
+  var n = ?parseAngle(tok) mod 360
+  if n < 0:
+    n = n + 360
+  return ok(uint32(n))
 
-proc parseSatOrLight(tok: CSSToken): Opt[float32] =
+proc parseSatOrLight(tok: CSSToken): Opt[uint8] =
   if tok.t in {cttNumber, cttINumber, cttPercentage}:
-    return ok(clamp(tok.num, 0f32, 100f32))
+    return ok(uint8(clamp(tok.inum, 0i32, 100i32)))
   return err()
 
 proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =

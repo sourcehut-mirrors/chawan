@@ -430,20 +430,32 @@ proc rgba*(r, g, b, a: int): ARGBColor =
 proc gray*(n: uint8): RGBColor =
   return rgb(n, n, n)
 
-# ref. https://drafts.csswg.org/css-color/#hsl-to-rgb and
-# https://en.wikipedia.org/wiki/HSL_and_HSV#HSL_to_RGB_alternative
-proc hsla*(h, s, l: float32; a: uint8): ARGBColor =
-  let h = h mod 360
-  let s = float32(s) / 100
-  let l = float32(l) / 100
-  let alpha = s * min(l, 1 - l)
-  template f(n: auto): uint8 =
-    let k = (n + h / 30) mod 12
-    let x = l - alpha * max(-1f32, min(k - 3, min(9 - k, 1f32)))
-    uint8(x * 255)
-  let r = f(0)
-  let g = f(8)
-  let b = f(4)
+# I found this algorithm in yaft, but as far as I can tell, it
+# originates from Microsoft.
+proc hue2rgb(n1, n2, h: uint32): uint32 =
+  let h = if h > 360: h - 360 else: h
+  if h < 60:
+    return n1 + (((n2 - n1) * h + 30) div 60)
+  if h < 180:
+    return n2
+  if h < 240:
+    return n1 + (((n2 - n1) * h + 30) div 60)
+  return n1
+
+proc hsla*(h: uint32; s, l, a: uint8): ARGBColor =
+  let s = uint32(s)
+  let l = uint32(l)
+  if s == 0:
+    let c = uint8(l * 255 div 100)
+    return rgba(c, c, c, a)
+  let magic2 = if l < 50:
+    (l * (100 + s) + 50) div 100
+  else:
+    l + s - ((l * s) + 50) div 100
+  let magic1 = l * 2 - magic2
+  let r = uint8((hue2rgb(magic1, magic2, h + 120) * 255 + 50) div 100)
+  let g = uint8((hue2rgb(magic1, magic2, h) * 255 + 50) div 100)
+  let b = uint8((hue2rgb(magic1, magic2, h + 240) * 255 + 50) div 100)
   return rgba(r, g, b, a)
 
 # Note: this assumes n notin 0..15 (which would be ANSI 4-bit)
