@@ -1,7 +1,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/math
 import std/options
 import std/strutils
 
@@ -435,20 +434,17 @@ proc gray*(n: uint8): RGBColor =
 proc hue2rgb(n1, n2, h: uint32): uint32 =
   let h = if h > 360: h - 360 else: h
   if h < 60:
-    return n1 + (((n2 - n1) * h + 30) div 60)
+    return n1 + ((n2 - n1) * h + 30) div 60
   if h < 180:
     return n2
   if h < 240:
-    return n1 + (((n2 - n1) * h + 30) div 60)
+    return n1 + ((n2 - n1) * (240 - h) + 30) div 60
   return n1
 
 proc hsla*(h: uint32; s, l, a: uint8): ARGBColor =
   let s = uint32(s)
   let l = uint32(l)
-  if s == 0:
-    let c = uint8(l * 255 div 100)
-    return rgba(c, c, c, a)
-  let magic2 = if l < 50:
+  let magic2 = if l <= 50:
     (l * (100 + s) + 50) div 100
   else:
     l + s - ((l * s) + 50) div 100
