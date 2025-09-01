@@ -1123,7 +1123,7 @@ proc parseHue(tok: CSSToken): Opt[uint32] =
 
 proc parseSatOrLight(tok: CSSToken): Opt[uint8] =
   if tok.t in {cttNumber, cttINumber, cttPercentage}:
-    return ok(uint8(clamp(tok.inum, 0i32, 100i32)))
+    return ok(uint8(clamp(tok.toi, 0i32, 100i32)))
   return err()
 
 proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
