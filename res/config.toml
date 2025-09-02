@@ -73,6 +73,7 @@ allow-http-from-file = false
 [input]
 vi-numeric-prefix = true
 use-mouse = true
+osc52-copy = 'auto'
 bracketed-paste = true
 wheel-scroll = 5
 side-wheel-scroll = 5
@@ -324,7 +325,7 @@ quit = '() => quit()'
 suspend = '() => suspend()'
 copyURL = '''
 () => {
-	if (pager.externInto(config.external.copyCmd, pager.url))
+	if (pager.clipboardWrite(pager.url))
 		pager.alert("Copied URL to clipboard.");
 	else
 		pager.alert("Error; please install xsel or adjust external.copy-cmd");

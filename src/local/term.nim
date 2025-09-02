@@ -125,6 +125,7 @@ type
     bleedsAPC: bool
     margin: bool
     asciiOnly: bool
+    osc52Copy: bool
     origTermios: Termios
     newTermios: Termios
     defaultBackground: RGBColor
@@ -264,6 +265,8 @@ const QueryANSIColors = block:
     s &= OSC & "4;" & $n & ";?" & ST
   s
 
+const QueryXtermWindowOps = OSC & "61;allowWinOps" & ST
+
 # DEC set
 template DECSET(s: varargs[string, `$`]): string =
   CSI & '?' & s.join(';') & 'h'
@@ -353,14 +356,21 @@ proc readChar(term: Terminal): char =
   result = term.ibuf[term.ibufn]
   inc term.ibufn
 
+proc blockIO(term: Terminal) =
+  term.istream.setBlocking(true)
+  term.ostream.setBlocking(true)
+
+proc unblockIO(term: Terminal) =
+  term.istream.setBlocking(false)
+  term.ostream.setBlocking(false)
+
 proc ahandleRead*(term: Terminal): bool =
   term.ibufn = 0
   term.ibufLen = term.istream.readData(term.ibuf)
   if term.ibufLen < 0:
     let e = errno
     if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
-      term.istream.setBlocking(true)
-      term.ostream.setBlocking(true)
+      term.blockIO()
       die("error reading from stdin")
     term.ibufLen = 0
     return false
@@ -531,13 +541,11 @@ proc isatty*(term: Terminal): bool =
 
 proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
-    term.istream.setBlocking(true)
-    term.ostream.setBlocking(true)
+    term.blockIO()
     doAssert term.flush()
     term.write(term.clearEnd() & msg)
     discard term.readChar()
-    term.istream.setBlocking(false)
-    term.ostream.setBlocking(false)
+    term.unblockIO()
 
 proc resetFormat(term: Terminal): string =
   case term.termType
@@ -920,6 +928,8 @@ proc applyConfig(term: Terminal) =
   if term.config.display.defaultForegroundColor.isSome:
     term.defaultForeground = term.config.display.defaultForegroundColor.get
   term.attrs.prefersDark = term.defaultBackground.Y < 125
+  if term.config.input.osc52Copy.isSome:
+    term.osc52Copy = term.config.input.osc52Copy.get
   # charsets
   if term.config.encoding.displayCharset.isSome:
     term.cs = term.config.encoding.displayCharset.get
@@ -1236,6 +1246,15 @@ proc clearCanvas*(term: Terminal) =
   term.clearImages(maxh)
   term.canvasImages = newImages
 
+proc sendOSC52*(term: Terminal; s: string): bool =
+  if not term.osc52Copy:
+    return false
+  term.blockIO()
+  doAssert term.flush()
+  term.write(OSC & "52;c;" & btoa(s) & ST)
+  term.unblockIO()
+  return true
+
 # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 proc disableRawMode(term: Terminal) =
   discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.origTermios)
@@ -1275,8 +1294,7 @@ proc quit*(term: Terminal) =
       term.disableMouse()
     if term.config.input.bracketedPaste:
       term.disableBracketedPaste()
-    term.istream.setBlocking(true)
-    term.ostream.setBlocking(true)
+    term.blockIO()
     if term.smcup:
       if term.imageMode == imSixel:
         # xterm seems to keep sixels in the alt screen; clear these so
@@ -1293,7 +1311,7 @@ proc quit*(term: Terminal) =
 
 type
   QueryAttrs = enum
-    qaAnsiColor, qaRGB, qaSixel, qaKittyImage
+    qaAnsiColor, qaRGB, qaSixel, qaKittyImage, qaOSC52
 
   QueryResult = object
     success: bool
@@ -1380,6 +1398,12 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         outs &= QueryBackgroundColor
       if term.config.display.defaultForegroundColor.isNone:
         outs &= QueryForegroundColor
+    if term.termType == ttXterm:
+      # XTerm doesn't implement the OSC 52 DA1 response, unfortunately.
+      # So we do this, which isn't exactly right (technically you are
+      # supposed to check OSC 60 too), and not even documented, but
+      # frankly I don't care.
+      outs &= QueryXtermWindowOps
     if term.config.display.imageMode.isNone:
       if not term.bleedsAPC:
         outs &= KittyQuery
@@ -1417,6 +1441,7 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
             case n
             of 4: result.attrs.incl(qaSixel)
             of 22: result.attrs.incl(qaAnsiColor)
+            of 52: result.attrs.incl(qaOSC52)
             else: discard
           result.success = true
           break
@@ -1448,25 +1473,41 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       else: fail
     of ']': # OSC
       let c = term.consumeIntUntil(';')
-      var n: int
-      if c == 4:
-        n = term.consumeIntUntil(';')
-      if term.readChar() == 'r' and term.readChar() == 'g' and
-          term.readChar() == 'b':
-        term.expect ':'
-        let r = term.eatColor('/')
-        let g = term.eatColor('/')
-        let b = term.eatColor('\e')
-        let C = rgb(r, g, b)
-        if c == 4:
-          result.colorMap.add((n, C))
-        elif c == 10:
-          result.fgcolor = some(C)
-        else: # 11
-          result.bgcolor = some(C)
+      if c == 61:
+        var hasOsc52 = true
+        var s: string
+        while true:
+          let c = term.readChar()
+          if c == '\a' or c == '\e' and term.readChar() == '\\':
+            break
+          if c == ',':
+            if s.equalsIgnoreCase("SetSelection"):
+              hasOsc52 = false
+            s.setLen(0)
+          else:
+            s &= c
+        if hasOsc52:
+          result.attrs.incl(qaOSC52)
       else:
-        # not RGB, give up
-        term.skipUntilST()
+        var n: int
+        if c == 4:
+          n = term.consumeIntUntil(';')
+        if term.readChar() == 'r' and term.readChar() == 'g' and
+            term.readChar() == 'b':
+          term.expect ':'
+          let r = term.eatColor('/')
+          let g = term.eatColor('/')
+          let b = term.eatColor('\e')
+          let C = rgb(r, g, b)
+          if c == 4:
+            result.colorMap.add((n, C))
+          elif c == 10:
+            result.fgcolor = some(C)
+          else: # 11
+            result.bgcolor = some(C)
+        else:
+          # not RGB, give up
+          term.skipUntilST()
     of 'P': # DCS
       let c = term.readChar()
       if c notin {'0', '1'}:
@@ -1694,6 +1735,8 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.colorMode = cmANSI
       if qaRGB in r.attrs:
         term.colorMode = cmTrueColor
+      if qaOSC52 in r.attrs:
+        term.osc52Copy = true
       if term.termType == ttSyncterm:
         # Ask SyncTERM to stop moving the cursor on EOL.
         term.write(static(CSI & "=5h"))
@@ -1719,15 +1762,13 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
   return res
 
 proc windowChange*(term: Terminal) =
-  term.istream.setBlocking(true)
-  term.ostream.setBlocking(true)
+  term.blockIO()
   discard term.detectTermAttributes(windowOnly = true)
   term.applyConfigDimensions()
   term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
   term.lineDamage = newSeq[int](term.attrs.height)
   term.clearCanvas()
-  term.istream.setBlocking(false)
-  term.ostream.setBlocking(false)
+  term.unblockIO()
 
 proc initScreen(term: Terminal) =
   # note: deinit happens in quit()
@@ -1741,8 +1782,7 @@ proc initScreen(term: Terminal) =
     term.enableBracketedPaste()
   term.cursorx = -1
   term.cursory = -1
-  term.istream.setBlocking(false)
-  term.ostream.setBlocking(false)
+  term.unblockIO()
 
 proc start*(term: Terminal; istream: PosixStream;
     registerCb: (proc(fd: int) {.raises: [].})): TermStartResult =

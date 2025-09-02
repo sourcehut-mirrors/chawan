@@ -2359,6 +2359,11 @@ proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
   pager.setEnvVars(JS_UNDEFINED)
   return runProcessInto(cmd, ins)
 
+proc clipboardWrite(pager: Pager; s: string): bool {.jsfunc.} =
+  if pager.term.sendOSC52(s):
+    return true
+  return pager.externInto(pager.config.external.copyCmd, s)
+
 proc externFilterSource(pager: Pager; cmd: string; c = none(Container);
     contentType = none(string)) {.jsfunc.} =
   let fromc = c.get(pager.container)

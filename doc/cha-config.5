@@ -633,6 +633,21 @@ The current implementation imitates w3m.
 T}
 _
 T{
+osc52\-copy
+T}@T{
+boolean / \(lqauto\(rq
+T}@T{
+auto
+T}@T{
+Whether Chawan should use the OSC 52 escape sequence for copying to the
+clipboard directly through the terminal.
+When available, OSC 52 overrides \f[CR]external.copy\-cmd\f[R].
+.PP
+When set to \(lqauto\(rq (the default), Chawan tries to detect whether
+OSC 52 is available on launch.
+T}
+_
+T{
 bracketed\-paste
 T}@T{
 boolean

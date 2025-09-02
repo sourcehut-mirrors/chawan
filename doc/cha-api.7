@@ -364,6 +364,18 @@ Like \f[CR]pager.ask\f[R], but the return value is a character.
 T}
 _
 T{
+\f[CR]clipboardWrite(s)\f[R]
+T}@T{
+Write \f[CR]s\f[R] to the clipboard (copy).
+By default, it tries using OSC 52; if that fails, it tries to run
+\f[CR]external.copy\-cmd\f[R] (defaults to \f[CR]xsel\f[R]).
+.PP
+Returns true if the copy succeeded, false otherwise.
+(There may be false positives in case OSC 52 is used and the terminal
+doesn\(cqt consume the text.)
+T}
+_
+T{
 \f[CR]extern(cmd, options = {env: { ... }, suspend: true, wait: false})\f[R]
 T}@T{
 Run an external command \f[CR]cmd\f[R].

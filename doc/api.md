@@ -326,6 +326,18 @@ Like `pager.ask`, but the return value is a character.</td>
 </tr>
 
 <tr>
+<td>`clipboardWrite(s)`</td>
+<td>Write `s` to the clipboard (copy).  By default, it tries using OSC
+52; if that fails, it tries to run `external.copy-cmd` (defaults to
+`xsel`).
+<p>
+Returns true if the copy succeeded, false otherwise.  (There may be
+false positives in case OSC 52 is used and the terminal doesn't consume
+the text.)
+</td>
+</tr>
+
+<tr>
 <td>`extern(cmd, options = {env: { ... }, suspend: true, wait: false})`
 </td>
 <td>Run an external command `cmd`.

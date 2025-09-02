@@ -111,6 +111,7 @@ type
   InputConfig = object
     viNumericPrefix* {.jsgetset.}: bool
     useMouse* {.jsgetset.}: bool
+    osc52Copy* {.jsgetset.}: Option[bool]
     bracketedPaste* {.jsgetset.}: bool
     wheelScroll* {.jsgetset.}: int32
     sideWheelScroll* {.jsgetset.}: int32

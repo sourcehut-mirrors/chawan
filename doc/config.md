@@ -539,6 +539,19 @@ The current implementation imitates w3m.</td>
 </tr>
 
 <tr>
+<td>osc52-copy</td>
+<td>boolean / "auto"</td>
+<td>auto</td>
+<td>Whether Chawan should use the OSC 52 escape sequence for copying
+to the clipboard directly through the terminal.  When available, OSC 52
+overrides `external.copy-cmd`.
+<p>
+When set to "auto" (the default), Chawan tries to detect whether OSC
+52 is available on launch.
+</td>
+</tr>
+
+<tr>
 <td>bracketed-paste</td>
 <td>boolean</td>
 <td>true</td>
