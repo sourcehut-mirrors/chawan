@@ -779,6 +779,8 @@ proc handleAskInput(pager: Pager; e: InputEvent) =
   of ietKeyEnd:
     pager.fulfillAsk(pager.inputBuffer)
     pager.inputBuffer = ""
+    pager.refreshStatusMsg()
+    pager.handleEvents()
   of ietMouse: pager.handleMouseInput(e.m)
   else: discard
 
