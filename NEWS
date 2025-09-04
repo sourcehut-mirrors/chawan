@@ -9,8 +9,9 @@ Additions:
 * implement <ol start=..., <li value=...
 * -cha-content-type media feature to detect content type of current page
 * complete var() support
-* bracketed paste - pasting a URL now opens the URL bar automatically
-* NodeIterator
+* bracketed paste - pasting a URL now opens the URL bar automatically,
+* "copy URL", "copy selection" now works over SSH when OSC 52 is supported
+* NodeIterator, onsubmit
 
 Changes:
 * improved highlighting in monochrome mode
@@ -19,12 +20,14 @@ Changes:
 * more sensible semantics for pager.load() - empty string now works,
   newline at end deprecated in favor of pager.loadSubmit()
 * allow overriding pkg-config path in Makefile (using PKG_CONFIG)
+* better color approximation in "eight-bit" color mode (256 colors)
+* mouse click on status bar opens URL bar: left click -> current URL,
+  right click -> URL under cursor, middle click -> empty URL bar
 
 Removals:
 * remove deprecated prepend-https, css and stylesheet config options
   (use prepend-scheme, user-style instead)
-* remove protocol.form-request config option (read the body in CGI
-  instead)
+* remove protocol.form-request config option (read the body in CGI instead)
 
 Fixes:
 * fix buffer cloning on musl
