@@ -1228,6 +1228,12 @@ If no link/image is under the cursor, an empty URL bar is opened.</td>
 </tr>
 
 <tr>
+<td>None</td>
+<td>`cmd.pager.loadEmpty`</td>
+<td>Open an empty address bar.</td>
+</tr>
+
+<tr>
 <td><kbd>C-k</kbd></td>
 <td>`cmd.pager.webSearch`</td>
 <td>Open the URL bar with an arbitrary search engine. At the moment, this is

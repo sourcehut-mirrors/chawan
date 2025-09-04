@@ -644,7 +644,10 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
     of mitPress:
       pager.pressed = (input.col, input.row)
     of mitRelease:
-      if pager.pressed != (-1i32, -1i32):
+      if input.row == pager.attrs.height - 1 and
+          pager.pressed == (input.col, input.row):
+        discard pager.evalAction("cmd.pager.load", 0)
+      elif pager.pressed != (-1i32, -1i32):
         let dcol = input.col - pager.pressed.col
         let drow = input.row - pager.pressed.row
         if dcol > 0:
@@ -656,6 +659,24 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
         elif drow < 0:
           discard pager.evalAction("cmd.buffer.scrollDown", -drow)
         pager.pressed = (-1i32, -1i32)
+    else: discard
+  of mibRight:
+    case input.t
+    of mitPress:
+      pager.pressed = (input.col, input.row)
+    of mitRelease:
+      if pager.pressed == (input.col, input.row) and
+          input.row == pager.attrs.height - 1:
+        discard pager.evalAction("cmd.pager.loadCursor", 0)
+    else: discard
+  of mibMiddle:
+    case input.t
+    of mitPress:
+      pager.pressed = (input.col, input.row)
+    of mitRelease:
+      if pager.pressed == (input.col, input.row) and
+          input.row == pager.attrs.height - 1:
+        discard pager.evalAction("cmd.pager.loadEmpty", 0)
     else: discard
   of mibWheelUp:
     if input.t == mitPress:
@@ -678,23 +699,25 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
 proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
   case input.button
   of mibLeft:
-    if input.t == mitRelease and pager.pressed == (input.col, input.row):
+    if input.t == mitRelease and pager.pressed == (input.col, input.row) and
+        input.row < pager.attrs.height - 1:
       let prevx = container.cursorx
       let prevy = container.cursory
-      #TODO I wish we could avoid setCursorXY if we're just going to
-      # click, but that doesn't work with double-width chars
       container.setCursorXY(container.fromx + input.col,
         container.fromy + input.row)
       if container.cursorx == prevx and container.cursory == prevy:
         discard pager.evalAction("cmd.buffer.click", 0)
   of mibMiddle:
-    if input.t == mitRelease: # release, to emulate w3m
+    if input.t == mitRelease and pager.pressed == (input.col, input.row) and
+        input.row < pager.attrs.height - 1:
       discard pager.evalAction("cmd.pager.discardBuffer", 0)
   of mibRight:
-    if input.t == mitPress: # w3m uses release, but I like this better
+    if input.t == mitPress and input.row < pager.attrs.height - 1:
+      # w3m uses release, but I like press better
       pager.pressed = (input.col, input.row)
-      container.setCursorXY(container.fromx + input.col,
-        container.fromy + input.row)
+      if container.currentSelection == nil:
+        container.setCursorXY(container.fromx + input.col,
+          container.fromy + input.row)
       pager.openMenu(input.col, input.row)
       pager.menu.unselect()
   of mibThumbInner:

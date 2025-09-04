@@ -175,7 +175,7 @@ type
     startpos: Option[CursorPosition]
     redirectDepth*: int
     select* {.jsget.}: Select
-    currentSelection {.jsget.}: Highlight
+    currentSelection* {.jsget.}: Highlight
     tmpJumpMark: PagePos
     jumpMark: PagePos
     marks: Table[string, PagePos]
