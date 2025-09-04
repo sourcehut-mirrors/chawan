@@ -676,15 +676,15 @@ proc restoreCursorX(container: Container) {.jsfunc.} =
 
 proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
   let y = max(min(y, container.numLines - 1), 0)
-  if container.cursory == y: return
-  if y - container.fromy >= 0 and y - container.height < container.fromy:
-    container.pos.cursory = y
+  if container.cursory == y:
+    return
+  if y >= container.fromy and y - container.height < container.fromy:
+    discard
+  elif y > container.cursory:
+    container.setFromY(y - container.height + 1)
   else:
-    if y > container.cursory:
-      container.setFromY(y - container.height + 1)
-    else:
-      container.setFromY(y)
-    container.pos.cursory = y
+    container.setFromY(y)
+  container.pos.cursory = y
   if container.currentSelection != nil and container.currentSelection.y2 != y:
     container.queueDraw()
     container.currentSelection.y2 = y
