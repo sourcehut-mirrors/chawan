@@ -94,7 +94,7 @@ proc main() =
   var writer = LineWriter(s: newFileStream(stdout))
   for (ucs, mapped) in DoubleWidthRanges:
     if ucs > uint16.high: # lower ranges are added to DoubleWidthTable
-      writer.write("(" & $ucs & "," & $mapped & "),")
+      writer.write("(" & $ucs & "u32," & $mapped & "u32),")
   writer.flush()
   echo "]"
   echo ""
@@ -102,12 +102,13 @@ proc main() =
   echo "const DoubleWidthAmbiguousRanges: array[" &
     $DoubleWidthAmbiguousRanges.len & ", tuple[ucs, mapped: uint32]] = ["
   for (ucs, mapped) in DoubleWidthAmbiguousRanges:
-    writer.write("(" & $ucs & "," & $mapped & "),")
+    writer.write("(" & $ucs & "u32," & $mapped & "u32),")
   writer.flush()
   echo "]"
   echo ""
 
   echo "const DoubleWidthTable: PropertyTable = ["
+  writer.write("uint32 ")
   for u in DoubleWidthTable:
     writer.write($u & "u32,")
   writer.flush()

@@ -263,9 +263,9 @@ type
     itsValid, itsIgnored, itsMapped, itsDeviation, itsDisallowed
 
 proc getIdnaTableStatus(u: uint32; idx: var uint32): IDNATableStatus =
-  if u <= high(uint16):
+  if u < 0x10000:
     let u = uint16(u)
-    if u in IgnoredLow:
+    if IgnoredLow.isInRange(u):
       return itsIgnored
     if u in DisallowedLow or DisallowedRangesLow.isInRange(u):
       return itsDisallowed
@@ -274,14 +274,21 @@ proc getIdnaTableStatus(u: uint32; idx: var uint32): IDNATableStatus =
       idx = uint32(MappedMapLow[n].idx)
       return itsMapped
   else:
-    if u in IgnoredHigh:
+    if IgnoredHigh.isInRange(u):
       return itsIgnored
     if u in DisallowedHigh or DisallowedRangesHigh.isInRange(u):
       return itsDisallowed
-    let n = MappedMapHigh.searchInMap(u)
-    if n != -1:
-      idx = MappedMapHigh[n].idx
-      return itsMapped
+    if u < 0x20000:
+      let n = MappedMapHigh1.searchInMap(uint16(u - 0x10000))
+      if n != -1:
+        idx = MappedMapHigh1[n].idx
+        return itsMapped
+    else:
+      assert u < 0x20000
+      let n = MappedMapHigh2.searchInMap(uint16(u - 0x20000))
+      if n != -1:
+        idx = MappedMapHigh2[n].idx
+        return itsMapped
   return itsValid
 
 # RFC 3492
