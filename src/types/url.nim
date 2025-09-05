@@ -262,35 +262,27 @@ type
   IDNATableStatus = enum
     itsValid, itsIgnored, itsMapped, itsDeviation, itsDisallowed
 
-proc getIdnaTableStatus(u: uint32): IDNATableStatus =
+proc getIdnaTableStatus(u: uint32; idx: var uint32): IDNATableStatus =
   if u <= high(uint16):
     let u = uint16(u)
     if u in IgnoredLow:
       return itsIgnored
     if u in DisallowedLow or DisallowedRangesLow.isInRange(u):
       return itsDisallowed
-    if MappedMapLow.isInMap(u):
+    let n = MappedMapLow.searchInMap(u)
+    if n != -1:
+      idx = uint32(MappedMapLow[n].idx)
       return itsMapped
   else:
     if u in IgnoredHigh:
       return itsIgnored
     if u in DisallowedHigh or DisallowedRangesHigh.isInRange(u):
       return itsDisallowed
-    if MappedMapHigh.isInMap(u):
+    let n = MappedMapHigh.searchInMap(u)
+    if n != -1:
+      idx = MappedMapHigh[n].idx
       return itsMapped
   return itsValid
-
-proc getIdnaMapped(u: uint32): string =
-  if u <= high(uint16):
-    let u = uint16(u)
-    let n = MappedMapLow.searchInMap(u)
-    let idx = MappedMapLow[n].idx
-    let e = MappedMapData.find('\0', idx)
-    return MappedMapData[idx ..< e]
-  let n = MappedMapHigh.searchInMap(u)
-  let idx = MappedMapHigh[n].idx
-  let e = MappedMapData.find('\0', idx)
-  return MappedMapData[idx ..< e]
 
 # RFC 3492
 proc punyAdapt(delta, len: uint32; first: bool): uint32 =
@@ -416,11 +408,14 @@ proc processIdna(str: string; beStrict: bool): string =
   # VerifyDnsLength = beStrict
   var mapped: seq[uint32] = @[]
   for u in str.points:
-    let status = getIdnaTableStatus(u)
+    var idx: uint32
+    let status = getIdnaTableStatus(u, idx)
     case status
     of itsDisallowed: return "" #error
     of itsIgnored: discard
-    of itsMapped: mapped &= getIdnaMapped(u).toPoints()
+    of itsMapped:
+      let e = MappedMapData.find('\0', idx)
+      mapped.addPoints(MappedMapData[idx ..< e])
     of itsDeviation: mapped &= u
     of itsValid: mapped &= u
   if mapped.len == 0: return
@@ -439,7 +434,8 @@ proc processIdna(str: string; beStrict: bool): string =
       for u in x1:
         if u == uint32('.'):
           return "" #error
-        let status = getIdnaTableStatus(u)
+        var dummy: uint32
+        let status = getIdnaTableStatus(u, dummy)
         if status in {itsDisallowed, itsIgnored, itsMapped}:
           return "" #error
         #TODO check joiners

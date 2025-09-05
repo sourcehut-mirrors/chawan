@@ -80,10 +80,13 @@ iterator points*(s: openArray[char]): uint32 {.inline.} =
     let u = s.nextUTF8(i)
     yield u
 
+proc addPoints*(res: var seq[uint32]; s: openArray[char]) =
+  for u in s.points:
+    res.add(u)
+
 proc toPoints*(s: openArray[char]): seq[uint32] =
   result = @[]
-  for u in s.points:
-    result.add(u)
+  result.addPoints(s)
 
 proc addUTF8*(res: var string; u: uint32) =
   if u < 0x80:
@@ -121,9 +124,6 @@ proc pointLen*(s: openArray[char]): int =
 
 proc searchInMap*[U, T](a: openArray[(U, T)]; u: U): int =
   binarySearch(a, u, proc(x: (U, T); y: U): int = cmp(x[0], y))
-
-proc isInMap*[U, T](a: openArray[(U, T)]; u: U): bool =
-  a.searchInMap(u) != -1
 
 proc isInRange*[U](a: openArray[(U, U)]; u: U): bool =
   let res = binarySearch(a, u, proc(x: (U, U); y: U): int =
