@@ -9,7 +9,7 @@ Additions:
 * implement <ol start=..., <li value=...
 * -cha-content-type media feature to detect content type of current page
 * complete var() support
-* bracketed paste - pasting a URL now opens the URL bar automatically,
+* bracketed paste - pasting a URL now opens the URL bar automatically
 * "copy URL", "copy selection" now works over SSH when OSC 52 is supported
 * NodeIterator, onsubmit
 
