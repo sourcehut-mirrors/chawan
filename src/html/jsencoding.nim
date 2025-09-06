@@ -1,3 +1,5 @@
+import std/options
+
 import chagashi/charset
 import chagashi/decoder
 import monoucha/fromjs

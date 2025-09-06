@@ -49,7 +49,6 @@
 {.push raises: [].}
 
 import std/macros
-import std/options
 import std/sets
 import std/strutils
 import std/tables
@@ -61,8 +60,6 @@ import jsutils
 import optshim
 import quickjs
 import tojs
-
-export options
 
 export
   JS_NULL, JS_UNDEFINED, JS_FALSE, JS_TRUE, JS_EXCEPTION, JS_UNINITIALIZED,
@@ -399,7 +396,7 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
 type
   FuncParam = tuple
     t: NimNode
-    val: Option[NimNode]
+    val: NimNode # may be nil
 
   JSFuncGenerator = object
     t: BoundFunctionType
@@ -409,7 +406,7 @@ type
     funcParams: seq[FuncParam]
     thisType: string
     thisTypeNode: NimNode
-    returnType: Option[NimNode]
+    returnType: NimNode # may be nil
     newName: NimNode
     dielabel: NimNode # die: jump to exception return code (JS_EXCEPTION or -1)
     jsFunCallList: NimNode
@@ -463,7 +460,7 @@ proc newRegistryInfo(t: NimNode): RegistryInfo =
 proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
   let formalParams = fun.params
   if formalParams[0].kind != nnkEmpty:
-    gen.returnType = some(formalParams[0])
+    gen.returnType = formalParams[0]
   var minArgsSeen = false
   for i in 1 ..< formalParams.len:
     let it = formalParams[i]
@@ -489,7 +486,7 @@ proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
         minArgsSeen = true
     else: discard
     for i in 0 ..< it.len - 2:
-      gen.funcParams.add((t, option(val)))
+      gen.funcParams.add((t, val))
     if val != nil:
       minArgsSeen = true
     elif not minArgsSeen:
@@ -671,10 +668,10 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
         error("Only JSValueConst varargs are supported")
     else:
       let fallback = gen.funcParams[gen.i].val
-      if fallback.isNone:
+      if fallback == nil:
         error("No fallback value. Maybe a non-optional parameter follows an " &
           "optional parameter?")
-      gen.addValueParam(s, tt, fallback.get)
+      gen.addValueParam(s, tt, fallback)
     if gen.funcParams[gen.i].t.kind == nnkPtrTy:
       s = quote do: `s`[]
     gen.jsFunCall.add(s)
@@ -808,7 +805,7 @@ proc addThisName(gen: var JSFuncGenerator; hasThis: bool) =
     gen.thisType = $t
     gen.newName = ident($gen.t & "_" & gen.thisType & "_" & gen.funcName)
   else:
-    let rt = gen.returnType.get
+    let rt = gen.returnType
     if rt.kind in {nnkRefTy, nnkPtrTy}:
       gen.thisTypeNode = rt[0]
       gen.thisType = rt[0].strVal
@@ -844,7 +841,7 @@ proc initGenerator(fun: NimNode; t: BoundFunctionType; hasThis: bool;
 proc makeJSCallAndRet(gen: var JSFuncGenerator; okstmt, errstmt: NimNode) =
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
-  gen.jsCallAndRet = if gen.returnType.isSome:
+  gen.jsCallAndRet = if gen.returnType != nil:
     quote do:
       block `dl`:
         return ctx.toJS(`jfcl`)
@@ -954,7 +951,7 @@ macro jssetprop*(fun: typed) =
   gen.finishFunCallList()
   let jfcl = gen.jsFunCallList
   let dl = gen.dielabel
-  gen.jsCallAndRet = if gen.returnType.isSome:
+  gen.jsCallAndRet = if gen.returnType != nil:
     quote do:
       block `dl`:
         let v = toJS(ctx, `jfcl`)
@@ -1011,7 +1008,7 @@ macro jsfgetn(jsname: static string; flag: static BoundFunctionFlag;
   var gen = initGenerator(fun, bfGetter, hasThis = true, jsname, flag)
   if gen.actualMinArgs != 0 or gen.funcParams.len != gen.minArgs:
     error("jsfget functions must only accept one parameter.")
-  if gen.returnType.isNone:
+  if gen.returnType == nil:
     error("jsfget functions must have a return type.")
   gen.addThisParam()
   gen.finishFunCallList()
@@ -1164,12 +1161,12 @@ proc getPragmaName(varPragma: NimNode): string =
     return $varPragma[0]
   return $varPragma
 
-proc getStringFromPragma(varPragma: NimNode): Option[string] =
+proc getStringFromPragma(varPragma, fallback: NimNode): string =
   if varPragma.kind == nnkExprColonExpr:
     if not varPragma.len == 1 and varPragma[1].kind == nnkStrLit:
       error("Expected string as pragma argument")
-    return some($varPragma[1])
-  return none(string)
+    return $varPragma[1]
+  return $fallback
 
 proc tname(info: RegistryInfo): string =
   return info.t.strVal
@@ -1266,7 +1263,7 @@ proc registerPragmas(stmts: NimNode; info: RegistryInfo; t: NimNode) =
           for varPragma in varPragmas:
             let pragmaName = getPragmaName(varPragma)
             var op = JSObjectPragma(
-              name: getStringFromPragma(varPragma).get($varNode),
+              name: getStringFromPragma(varPragma, varNode),
               varsym: varNode
             )
             case pragmaName

@@ -1,3 +1,7 @@
+{.push raises: [].}
+
+import std/options
+
 import config/conftypes
 import html/catom
 import monoucha/javascript
@@ -247,3 +251,5 @@ proc storeJS*(ctx: JSContext; v: JSValue): int =
 
 proc fetchJS*(ctx: JSContext; n: int): JSValue =
   return fetchJSImpl(ctx, n)
+
+{.pop.} # raises: []

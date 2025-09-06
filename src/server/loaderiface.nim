@@ -3,13 +3,14 @@
 #
 # See server/loader for a more detailed description of the protocol.
 
+import std/options
+
 import config/conftypes
 import config/cookie
 import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/promise
-import monoucha/javascript
 import monoucha/jserror
 import server/connecterror
 import server/headers

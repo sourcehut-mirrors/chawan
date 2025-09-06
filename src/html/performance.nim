@@ -1,4 +1,5 @@
 import std/math
+import std/options
 import std/times
 
 import config/conftypes

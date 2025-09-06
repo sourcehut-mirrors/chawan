@@ -1,3 +1,4 @@
+import std/options
 import std/strutils
 
 import io/dynstream

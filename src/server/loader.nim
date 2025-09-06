@@ -39,7 +39,6 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
-import monoucha/javascript
 import server/connecterror
 import server/headers
 import server/loaderiface

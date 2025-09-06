@@ -1,5 +1,7 @@
 {.push raises: [].}
 
+import std/options
+
 import chame/tags
 import html/catom
 import html/dom

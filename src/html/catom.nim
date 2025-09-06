@@ -9,6 +9,7 @@
 
 import std/hashes
 import std/macros
+import std/options
 import std/sets
 import std/strutils
 
