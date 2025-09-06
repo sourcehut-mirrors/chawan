@@ -79,8 +79,10 @@ proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
 # The idea here is to allow conversion of var objects to quasi-reference types
 # by saving a pointer to their ancestor and incrementing/decrementing the
 # ancestor's reference count instead.
-proc toJSP*(ctx: JSContext; parent: ref object; child: var object): JSValue
-proc toJSP*(ctx: JSContext; parent: ptr object; child: var object): JSValue
+proc toJSP*[T: object](ctx: JSContext; parent: ref object; child: var T):
+  JSValue
+proc toJSP*[T: object](ctx: JSContext; parent: ptr object; child: var T):
+  JSValue
 
 # Same as toJS, but used in constructors. ctor contains the target prototype,
 # used for subclassing from JS.
@@ -427,13 +429,15 @@ proc toJSP1(ctx: JSContext; p, tp, toRef: pointer): JSValue =
   JS_GetRuntime(ctx).getOpaque().parentMap[p] = toRef
   return ctx.toJSP0(p, tp, toRef, JS_UNDEFINED)
 
-proc toJSP*(ctx: JSContext; parent: ref object; child: var object): JSValue =
+proc toJSP*[T: object](ctx: JSContext; parent: ref object; child: var T):
+    JSValue =
   let p = addr child
   # Save parent as the original ancestor for this tree.
   let tp = getTypePtr(child)
   return ctx.toJSP1(p, tp, cast[pointer](parent))
 
-proc toJSP*(ctx: JSContext; parent: ptr object; child: var object): JSValue =
+proc toJSP*[T: object](ctx: JSContext; parent: ptr object; child: var T):
+    JSValue =
   let p = addr child
   # Increment the reference count of parent's root ancestor, and save the
   # increment/decrement callbacks for the child as well.

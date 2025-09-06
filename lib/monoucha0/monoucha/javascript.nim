@@ -672,7 +672,7 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
     let j = gen.j
     var s = ident("arg_" & $gen.i)
     let tt = gen.funcParams[gen.i].t
-    if tt.typeKind == varargs.getType().typeKind: # pray it's not a generic...
+    if tt.typeKind == ntyVarargs:
       let vt = tt[1]
       if vt.sameType(JSValueConst.getType()) or
           JSValueConst.getType().sameType(vt):
