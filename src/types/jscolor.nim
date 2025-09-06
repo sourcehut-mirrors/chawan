@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/strutils
 
 import monoucha/fromjs
@@ -52,8 +51,8 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor): Err[void] =
   # parse
   var s: string
   ?ctx.fromJS(val, s)
-  if (let x = parseARGBColor(s); x.isSome):
-    res = x.get
+  if x := parseARGBColor(s):
+    res = x
     return ok()
   JS_ThrowTypeError(ctx, "unrecognized color")
   return err()

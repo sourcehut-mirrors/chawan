@@ -525,7 +525,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
   let c = parseARGBColor(v.s)
-  if c.isNone:
+  if c.isErr:
     return err(k & ": invalid color '" & v.s & "'")
   x = c.get
   ok()

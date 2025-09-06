@@ -1,9 +1,9 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/options
 import std/strutils
 
+import types/opt
 import utils/twtstr
 
 type
@@ -281,14 +281,14 @@ const ColorsRGBMap = {
   "yellowgreen": 0x9ACD32u32,
 }
 
-proc namedRGBColor*(s: string): Option[RGBColor] =
+proc namedRGBColor*(s: string): Opt[RGBColor] =
   let i = ColorsRGBMap.binarySearch(s,
     proc(x: (string, uint32); y: string): int =
       return x[0].cmpIgnoreCase(y)
   )
   if i != -1:
-    return some(RGBColor(ColorsRGBMap[i][1]))
-  return none(RGBColor)
+    return ok(RGBColor(ColorsRGBMap[i][1]))
+  return err()
 
 # https://html.spec.whatwg.org/#serialisation-of-a-color
 proc serialize*(c: ARGBColor): string =
@@ -497,41 +497,41 @@ proc toEightBit*(c: RGBColor): ANSIColor =
       return ANSIColor(x + 231)
   return ANSIColor(uint8(16 + r0 * 36 + g0 * 6 + b0))
 
-proc parseHexColor*(s: openArray[char]): Option[ARGBColor] =
+proc parseHexColor*(s: openArray[char]): Opt[ARGBColor] =
   for c in s:
     if c notin AsciiHexDigit:
-      return none(ARGBColor)
+      return err()
   case s.len
   of 6:
     let c = 0xFF000000 or
       (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
       (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
       (hexValue(s[4]) shl 4) or hexValue(s[5])
-    return some(ARGBColor(c))
+    return ok(ARGBColor(c))
   of 8:
     let c = (hexValue(s[6]) shl 28) or (hexValue(s[7]) shl 24) or
       (hexValue(s[0]) shl 20) or (hexValue(s[1]) shl 16) or
       (hexValue(s[2]) shl 12) or (hexValue(s[3]) shl 8) or
       (hexValue(s[4]) shl 4) or hexValue(s[5])
-    return some(ARGBColor(c))
+    return ok(ARGBColor(c))
   of 3:
     let c = 0xFF000000 or
       (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
       (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
       (hexValue(s[2]) shl 4) or hexValue(s[2])
-    return some(ARGBColor(c))
+    return ok(ARGBColor(c))
   of 4:
     let c = (hexValue(s[3]) shl 28) or (hexValue(s[3]) shl 24) or
       (hexValue(s[0]) shl 20) or (hexValue(s[0]) shl 16) or
       (hexValue(s[1]) shl 12) or (hexValue(s[1]) shl 8) or
       (hexValue(s[2]) shl 4) or hexValue(s[2])
-    return some(ARGBColor(c))
+    return ok(ARGBColor(c))
   else:
-    return none(ARGBColor)
+    return err()
 
-proc parseARGBColor*(s: string): Option[ARGBColor] =
-  if (let x = namedRGBColor(s); x.isSome):
-    return some(x.get.argb)
+proc parseARGBColor*(s: string): Opt[ARGBColor] =
+  if x := namedRGBColor(s):
+    return ok(x.argb)
   if (s.len == 3 or s.len == 4 or s.len == 6 or s.len == 8) and s[0] == '#':
     return parseHexColor(s.toOpenArray(1, s.high))
   if s.len > 2 and s[0] == '0' and s[1] == 'x':
@@ -546,8 +546,8 @@ proc myHexValue(c: char): uint32 =
 
 proc parseLegacyColor0*(s: string): RGBColor =
   assert s != ""
-  if (let x = namedRGBColor(s); x.isSome):
-    return x.get
+  if x := namedRGBColor(s):
+    return x
   if s.len == 4 and s[0] == '#':
     let r = hexValue(s[1])
     let g = hexValue(s[2])

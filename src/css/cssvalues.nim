@@ -1131,15 +1131,13 @@ proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
   let tok = ctx.consume()
   case tok.t
   of cttHash:
-    let c = parseHexColor(tok.s)
-    if c.isSome:
-      return ok(c.get.cssColor())
+    if c := parseHexColor(tok.s):
+      return ok(c.cssColor())
   of cttIdent:
     if tok.s.equalsIgnoreCase("transparent"):
       return ok(rgba(0, 0, 0, 0).cssColor())
-    let x = namedRGBColor(tok.s)
-    if x.isSome:
-      return ok(x.get.cssColor())
+    if x := namedRGBColor(tok.s):
+      return ok(x.cssColor())
     elif tok.s.equalsIgnoreCase("canvas") or
         tok.s.equalsIgnoreCase("canvastext"):
       # Not really compliant, but if you're setting text color to
