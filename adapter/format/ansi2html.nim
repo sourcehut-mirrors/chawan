@@ -4,7 +4,6 @@ import std/os
 import std/posix
 
 import io/dynstream
-import io/poll
 import types/color
 import types/opt
 import utils/myposix
@@ -44,13 +43,10 @@ proc getParam(parser: AnsiCodeParser; i: var int; colon = false): string =
   if i < parser.params.len:
     inc i
 
-template getParamU8(parser: AnsiCodeParser; i: var int; colon = false): uint8 =
+proc getParamU8(parser: AnsiCodeParser; i: var int; colon = false): Opt[uint8] =
   if i >= parser.params.len:
-    return false
-  let u = parseUInt8(parser.getParam(i), allowSign = false)
-  if u.isErr:
-    return false
-  u.get
+    return err()
+  parseUInt8(parser.getParam(i), allowSign = false)
 
 proc setColor(format: var Format; c: CellColor; isfg: bool) =
   if isfg:
@@ -59,26 +55,26 @@ proc setColor(format: var Format; c: CellColor; isfg: bool) =
     format.bgcolor = c
 
 proc parseSGRDefColor(parser: AnsiCodeParser; format: var Format;
-    i: var int; isfg: bool): bool =
-  let u = parser.getParamU8(i, colon = true)
+    i: var int; isfg: bool): Opt[void] =
+  let u = ?parser.getParamU8(i, colon = true)
   if u == 2:
-    let param0 = parser.getParamU8(i, colon = true)
+    let param0 = ?parser.getParamU8(i, colon = true)
     if i < parser.params.len:
       let r = param0
-      let g = parser.getParamU8(i, colon = true)
-      let b = parser.getParamU8(i, colon = true)
+      let g = ?parser.getParamU8(i, colon = true)
+      let b = ?parser.getParamU8(i, colon = true)
       format.setColor(cellColor(rgb(r, g, b)), isfg)
     else:
       format.setColor(cellColor(gray(param0)), isfg)
   elif u == 5:
-    let param0 = parser.getParamU8(i, colon = true)
+    let param0 = ?parser.getParamU8(i, colon = true)
     format.setColor(ANSIColor(param0).cellColor(), isfg)
   else:
-    return false
-  return true
+    return err()
+  ok()
 
 proc parseSGRColor(parser: AnsiCodeParser; format: var Format;
-    i: var int; u: uint8): bool =
+    i: var int; u: uint8): Opt[void] =
   if u in 30u8..37u8:
     format.fgcolor = cellColor(ANSIColor(u - 30))
   elif u == 38:
@@ -96,8 +92,8 @@ proc parseSGRColor(parser: AnsiCodeParser; format: var Format;
   elif u in 100u8..107u8:
     format.bgcolor = cellColor(ANSIColor(u - 92))
   else:
-    return false
-  return true
+    return err()
+  ok()
 
 const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
   ffBold: (1u8, 22u8),
@@ -110,18 +106,18 @@ const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
 ]
 
 proc parseSGRAspect(parser: AnsiCodeParser; format: var Format;
-    i: var int): bool =
-  let u = parser.getParamU8(i)
+    i: var int): Opt[void] =
+  let u = ?parser.getParamU8(i)
   for flag, (s, e) in FormatCodes:
     if u == s:
       format.flags.incl(flag)
-      return true
+      return ok()
     if u == e:
       format.flags.excl(flag)
-      return true
+      return ok()
   if u == 0:
     format = Format()
-    return true
+    return ok()
   else:
     return parser.parseSGRColor(format, i, u)
 
@@ -131,7 +127,7 @@ proc parseSGR(parser: AnsiCodeParser; format: var Format) =
   else:
     var i = 0
     while i < parser.params.len:
-      if not parser.parseSGRAspect(format, i):
+      if parser.parseSGRAspect(format, i).isErr:
         break
 
 proc parseControlFunction(parser: var AnsiCodeParser; format: var Format;
@@ -169,7 +165,7 @@ proc putc(state: var State; c: char) {.inline.} =
   inc state.outbufIdx
 
 proc puts(state: var State; s: openArray[char]) {.inline.} =
-  #TODO this is slower than it could be
+  #TODO this is slower than it should be
   for c in s:
     state.putc(c)
 
@@ -389,28 +385,18 @@ proc main() =
   if standalone:
     state.puts("<body>\n")
   state.puts("<pre>\n")
+  state.flushOutbuf()
   let ps = newPosixStream(STDIN_FILENO)
-  ps.setBlocking(false)
   var buffer {.noinit.}: array[4096, char]
-  var pollData = PollData()
   while true:
     let n = ps.readData(buffer)
-    if n < 0:
-      let e = errno
-      if e == EAGAIN or e == EWOULDBLOCK:
-        state.flushOutbuf()
-        pollData.register(ps.fd, POLLIN)
-        pollData.poll(-1)
-        pollData.unregister(ps.fd)
-        continue
-      else:
-        break
-    if n == 0:
+    if n <= 0:
       break
     state.processData(buffer.toOpenArray(0, n - 1))
+    state.flushOutbuf()
   if standalone:
     state.puts("</body>")
-  state.flushOutbuf()
+    state.flushOutbuf()
 
 main()
 

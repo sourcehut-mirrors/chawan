@@ -169,8 +169,7 @@ $(OUTDIR_CGI_BIN)/nanosvg: $(sandbox) adapter/img/nanosvg.nim adapter/img/nanosv
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile) $(myposix)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/gopher2html: $(twtstr) $(chafile)
-$(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim src/io/poll.nim $(twtstr) \
-	$(dynstream) $(myposix)
+$(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim $(twtstr) $(dynstream) $(myposix)
 $(OUTDIR_LIBEXEC)/md2html: $(twtstr) $(chafile)
 $(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr) $(chafile)
 $(OUTDIR_LIBEXEC)/img2html: $(twtstr) $(chafile)
