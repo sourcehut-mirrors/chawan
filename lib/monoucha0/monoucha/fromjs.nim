@@ -52,8 +52,8 @@ proc isInstanceOf*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID):
     if classid == tclassid:
       found = true
       break
-    if int(classid) < ctxOpaque.parents.len:
-      classid = ctxOpaque.parents[int(classid)]
+    if int(classid) < ctxOpaque.classes.len:
+      classid = ctxOpaque.classes[int(classid)].parent
     else:
       classid = 0 # not defined by us; assume parent is Object.
     if classid == 0:

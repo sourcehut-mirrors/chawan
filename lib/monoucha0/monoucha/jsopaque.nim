@@ -28,13 +28,16 @@ type
     jsvSet = "Set"
     jsvFunction = "Function"
 
-  JSContextOpaque* = ref object
-    ctors*: seq[JSValue] # JSClassID -> JSValue
-    parents*: seq[JSClassID] # JSClassID -> JSClassID
+  JSClassData* = object
+    parent*: JSClassID
+    ctor*: JSValue
     # Parent unforgeables are merged on class creation.
     # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
     # `unforgeable[classid]'.)
-    unforgeable*: seq[seq[JSCFunctionListEntry]] # JSClassID -> seq
+    unforgeable*: seq[JSCFunctionListEntry]
+
+  JSContextOpaque* = ref object
+    classes*: seq[JSClassData] # JSClassID -> data
     gclass*: JSClassID # class ID of the global object
     global*: JSValue
     symRefs*: array[JSSymbolRef, JSAtom]
@@ -46,12 +49,9 @@ type
   JSFinalizerFunction* = proc(rt: JSRuntime; opaque: pointer) {.nimcall,
     raises: [].}
 
-  JSEmptyOpaqueCallback* = (proc() {.closure, raises: [].})
-
   JSRuntimeOpaque* = ref object
     typemap*: Table[pointer, JSClassID]
     plist*: Table[pointer, pointer] # Nim -> JS
-    flist*: seq[seq[JSCFunctionListEntry]]
     fins*: seq[seq[JSFinalizerFunction]]
     parentMap*: Table[pointer, pointer]
     destroying*: pointer
