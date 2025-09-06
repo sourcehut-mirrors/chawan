@@ -50,7 +50,7 @@ g/.*/p
 wq" | ed -s "$dir/$library"/version.nim
 
 git add .
-git commit -m "Version $vs"
+git commit -m "$library version $vs"
 
 tmp2=$(mktemp)
 

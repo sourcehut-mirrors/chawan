@@ -1,3 +1,8 @@
+0.7.1 (2025.09.06)
+* Fix decoding of 4-byte GB-18030 characters
+* Reduce map sizes
+* Unbreak compilation on Nim 1.6.10
+
 0.7.0 (2024.12.07)
 * Update GB-18030 encoder and decoder with the spec changes from October
 This is a breaking change - although it does not change the API, it
