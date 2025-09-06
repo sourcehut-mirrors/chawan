@@ -104,17 +104,13 @@ proc gb18030RangesPointer(c: uint32): uint32 =
     # Find the first range that is greater than p, or last if no such element
     # is found.
     # We want the last that is <=, so decrease index by one.
-    let i = upperBound(GB18030RangesEncode, c,
-      proc(a: tuple[ucs, p: uint16]; b: uint32): int =
+    let i = GB18030Ranges.upperBound(c, proc(a: UCS16x16; b: uint32): int =
         cmp(uint32(a.ucs), b)
     )
-    let elem = GB18030RangesEncode[i - 1]
+    let elem = GB18030Ranges[i - 1]
     offset = elem.ucs
     p = elem.p
   return p + c - offset
-
-proc findPair(map: openArray[UCS32x16]; u: uint32): int =
-  return map.binarySearch(u, proc(x: UCS32x16; y: uint32): int = cmp(x[0], y))
 
 proc findPair(map: openArray[UCS16x16]; u: uint16): int =
   return map.binarySearch(u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
@@ -125,13 +121,11 @@ proc findPair16(map: openArray[UCS16x16]; u: uint32): int =
   let u = uint16(u)
   return map.binarySearch(u, proc(x: UCS16x16; y: uint16): int = cmp(x[0], y))
 
-proc findPair16(map: openArray[tuple[ucs: uint16; val: char]]; u: uint32): int =
+proc findPair16(map: openArray[UCS16x8]; u: uint32): int =
   if u > uint16.high:
     return -1
   let u = uint16(u)
-  return map.binarySearch(u, proc(x: (uint16, char); y: uint16): int =
-    cmp(x[0], y)
-  )
+  return map.binarySearch(u, proc(x: UCS16x8; y: uint16): int = cmp(x[0], y))
 
 proc findRun(runs: openArray[uint32]; offset, ic: uint16): uint16 =
   let i = runs.upperBound(ic, proc(x: uint32; y: uint16): int =
@@ -150,7 +144,7 @@ proc findRun(runs: openArray[uint32]; offset, ic: uint16): uint16 =
   return 0
 
 template try_put_byte(oq: var openArray[uint8]; b: uint8; n: var int) =
-  if n + 1 > oq.len:
+  if n >= oq.len:
     return terReqOutput
   oq[n] = b
   inc n
@@ -296,7 +290,7 @@ method encode*(te: TextEncoderBig5; iq: openArray[uint8];
         return terError
       Big5EncodeLow[i].p
     else:
-      let i = Big5EncodeHigh.findPair(c)
+      let i = Big5EncodeHigh.findPair(uint16(c - 0x20000))
       if i == -1:
         te.i += cl
         return terError
@@ -508,9 +502,8 @@ method encode*(te: TextEncoderXUserDefined; iq: openArray[uint8];
   te.i = 0
   terDone
 
-proc encode0(te: TextEncoder; iq: openArray[uint8];
-    oq: var openArray[uint8]; n: var int;
-    map: openArray[tuple[ucs: uint16; val: char]]): TextEncoderResult =
+proc encode0(te: TextEncoder; iq: openArray[uint8]; oq: var openArray[uint8];
+    n: var int; map: openArray[UCS16x8]): TextEncoderResult =
   while te.i < iq.len:
     let b = iq[te.i]
     if b < 0x80:
@@ -519,7 +512,7 @@ proc encode0(te: TextEncoder; iq: openArray[uint8];
       continue
     let cl = te.try_get_utf8(iq, b)
     if (let j = map.findPair16(te.c); j != -1):
-      oq.try_put_byte uint8(map[j].val) + 0x80, n
+      oq.try_put_byte map[j].p, n
       te.i += cl
       continue
     te.i += cl

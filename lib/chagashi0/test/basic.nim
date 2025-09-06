@@ -199,3 +199,11 @@ test "getLocaleCharset":
 test "Shift_JIS U+2212":
   check "\u2212".encodeAll(CHARSET_SHIFT_JIS) ==
     "\uFF0D".encodeAll(CHARSET_SHIFT_JIS)
+
+test "GB18030 ranges":
+  let first = "\u0080".encodeAll(CHARSET_GB18030)
+  check first == "\x81\x30\x81\x30"
+  check first.decodeAll(CHARSET_GB18030) == "\u0080"
+  let last = "\u{10000}".encodeAll(CHARSET_GB18030)
+  check last == "\x90\x30\x81\x30"
+  check last.decodeAll(CHARSET_GB18030) == "\u{10000}"

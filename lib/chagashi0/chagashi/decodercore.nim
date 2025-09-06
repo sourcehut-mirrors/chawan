@@ -212,11 +212,10 @@ proc gb18030RangesCodepoint(p: uint32): uint32 =
     # Find the first range that is greater than p, or last if no such element
     # is found.
     # We want the last that is <=, so decrease index by one.
-    let i = GB18030RangesDecode.upperBound(p,
-      proc(a: tuple[p, ucs: uint16], b: uint32): int =
+    let i = GB18030Ranges.upperBound(p, proc(a: UCS16x16; b: uint32): int =
         cmp(uint32(a.p), b)
     )
-    let elem = GB18030RangesDecode[i - 1]
+    let elem = GB18030Ranges[i - 1]
     offset = elem.p
     c = elem.ucs
   c + p - offset
@@ -473,7 +472,7 @@ method decode*(td: TextDecoderBig5; iq: openArray[uint8];
             # must linear search as it's sorted by ucs
             for (ucs, itp) in Big5EncodeHigh:
               if p == itp:
-                c = ucs
+                c = uint32(ucs) + 0x20000
                 break
           if c != 0:
             oq.try_put_utf8 c, n
