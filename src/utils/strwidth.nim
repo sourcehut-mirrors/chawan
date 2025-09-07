@@ -1,7 +1,7 @@
 import utils/proptable
 import utils/twtstr
 
-include res/map/charwidth_gen
+include res/charwidth_gen
 
 # Tabs are a bit of a problem: depending on their position in text, they may
 # represent one to eight characters. Inferring their size after layout is wrong

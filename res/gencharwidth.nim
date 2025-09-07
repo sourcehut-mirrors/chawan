@@ -1,28 +1,32 @@
-import std/streams
+{.push raises: [].}
+
 import std/strutils
 
+import io/chafile
+import types/opt
+import utils/myposix
 import utils/proptable
 import utils/twtstr
 
 var DoubleWidthRanges: seq[(uint32, uint32)] = @[]
 var DoubleWidthAmbiguousRanges: seq[(uint32, uint32)] = @[]
 
+proc add(res: var seq[(uint32, uint32)]; firstcol: string) =
+  let (rstart, rend) = if ".." in firstcol:
+    let fcs = firstcol.split("..")
+    (uint32(parseHexInt64(fcs[0]).get), uint32(parseHexInt64(fcs[1]).get))
+  else:
+    let u = uint32(parseHexInt64(firstcol).get)
+    (u, u)
+  if res.len > 0 and res[^1][1] + 1 == rstart:
+    res[^1][1] = rend
+  else:
+    res.add((rstart, rend))
+
 proc loadRanges() =
-  template add(firstcol: string, res: var seq[(uint32, uint32)]) =
-    if firstcol.contains(".."):
-      let fcs = firstcol.split("..")
-      let rstart = uint32(parseHexInt(fcs[0]))
-      let rend = uint32(parseHexInt(fcs[1]))
-      res.add((rstart, rend))
-    else:
-      let cp = uint32(parseHexInt(firstcol))
-      res.add((cp, cp))
-  var f: File
-  if not open(f, "res/map/EastAsianWidth.txt"):
-    stderr.write("res/map/EastAsianWidth.txt not found\n")
-    quit(1)
-  let s = f.readAll()
-  f.close()
+  var s: string
+  if readFile("res/EastAsianWidth.txt", s).isErr:
+    die("failed to read res/EastAsianWidth.txt")
   for line in s.split('\n'):
     if line.len == 0 or line[0] == '#':
       continue
@@ -40,23 +44,20 @@ proc loadRanges() =
         status &= line[i]
       inc i
     case status
-    of "W", "F": add(firstcol, DoubleWidthRanges)
-    of "A": add(firstcol, DoubleWidthAmbiguousRanges)
-    #of "H": add(firstcol, HalfWidthRanges)
+    of "W", "F": DoubleWidthRanges.add(firstcol)
+    of "A": DoubleWidthAmbiguousRanges.add(firstcol)
 
 type LineWriter = object
-  s: Stream
   line: string
+
+proc flush(writer: var LineWriter) =
+  stdout.fwrite(writer.line & '\n')
+  writer.line = ""
 
 proc write(writer: var LineWriter, s: string) =
   if s.len + writer.line.len > 80:
-    writer.s.writeLine(writer.line)
-    writer.line = ""
+    writer.flush()
   writer.line &= s
-
-proc flush(writer: var LineWriter) =
-  writer.s.writeLine(writer.line)
-  writer.line = ""
 
 func makePropertyTable(ranges: RangeMap): PropertyTable =
   var ucs = 0u32
@@ -91,7 +92,7 @@ proc main() =
       inc dwrLen
   echo "const DoubleWidthRanges: array[" & $dwrLen &
     ", tuple[ucs, mapped: uint32]] = ["
-  var writer = LineWriter(s: newFileStream(stdout))
+  var writer = LineWriter()
   for (ucs, mapped) in DoubleWidthRanges:
     if ucs > uint16.high: # lower ranges are added to DoubleWidthTable
       writer.write("(" & $ucs & "u32," & $mapped & "u32),")
@@ -116,3 +117,5 @@ proc main() =
   echo ""
 
 main()
+
+{.pop.} # raises: []
