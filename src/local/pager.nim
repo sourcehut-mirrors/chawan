@@ -665,6 +665,12 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
         pager.mouse.inSelection = false
       elif input.pos.y == pager.attrs.height - 1 and pressed == input.pos:
         discard pager.evalAction("cmd.pager.load", 0)
+      elif input.pos.y >= pager.attrs.height - 2 and pressed.y == input.pos.y:
+        let dcol = input.pos.x - pressed.x
+        if dcol <= -2:
+          discard pager.evalAction("cmd.pager.nextBuffer", 0)
+        elif dcol >= 2:
+          discard pager.evalAction("cmd.pager.prevBuffer", 0)
       elif pressed != (-1i32, -1i32):
         let dcol = input.pos.x - pressed.x
         let drow = input.pos.y - pressed.y
