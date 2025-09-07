@@ -37,8 +37,24 @@ assertEquals(new URL("https://xn--zckzah") + "", "https://xn--zckzah/");
 assertEquals(new URL("https://他们为什么不说中文") + "", "https://xn--ihqwcrb4cv8a8dqg056pqjye/");
 assertEquals(new URL("https://xn--ihqwcrb4cv8a8dqg056pqjye") + "", "https://xn--ihqwcrb4cv8a8dqg056pqjye/");
 assertEquals(new URL("https://3年b組金八先生") + "", "https://xn--3b-ww4c5e180e575a65lsy2b/");
+assertEquals(new URL("https://straße.example") + "", "https://xn--strae-oqa.example/");
+assertEquals(new URL("https://\uFF61.example") + "", "https://..example/"); // o_0
+assertEquals(new URL("https://\u4E3D.example") + "", "https://xn--viq.example/");
+assertEquals(new URL("https://\u{2F800}.example") + "", "https://xn--viq.example/");
+assertEquals(new URL("https://\u53EF.example") + "", "https://xn--jpr.example/")
+assertEquals(new URL("https://\u{1F251}.example") + "", "https://xn--jpr.example/")
+assertEquals(new URL("https://\u{31350}.example") + "", "https://xn--8o8n.example/")
 assertEquals(new URL("https://xn--3B-ww4c5e180e575a65lsy2b") + "", "https://xn--3b-ww4c5e180e575a65lsy2b/");
 assertEquals(new URL("https://あああ") + "", "https://xn--l8jaa/");
+assertEquals(new URL("https://\u00DF.example") + "", "https://xn--zca.example/");
+assertEquals(new URL("https://\u03C2.example") + "", "https://xn--3xa.example/");
+assertThrows(() => new URL("https://xn--ta.example"), TypeError);
+assertThrows(() => new URL("https://\u{2F800}\u0093.example"), TypeError);
+assertThrows(() => new URL("https://\u202D.example"), TypeError);
+assertThrows(() => new URL("https://\u200C.example"), TypeError);
+assertThrows(() => new URL("https://\u200D.example"), TypeError);
+assertThrows(() => new URL("https://\uFFFC.example"), TypeError);
+assertThrows(() => new URL("https://\uFFFD.example"), TypeError);
 assertThrows(() => new URL("https://xn--"), TypeError);
 assertEquals(new URL("https://いろは-にほへと") + "", "https://xn----07t3els0dua4l/");
 assertEquals(new URL("https://xn----07t3els0dua4l/") + "", "https://xn----07t3els0dua4l/");

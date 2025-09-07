@@ -10,7 +10,7 @@ import utils/twtstr
 proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
-proc normalize*(rs: seq[uint32]; form = UNICODE_NFC): seq[uint32] =
+proc normalize*(rs: openArray[uint32]; form = UNICODE_NFC): seq[uint32] =
   if rs.len == 0:
     return @[]
   var outbuf: ptr uint32
@@ -79,6 +79,7 @@ type
   LURangeType = enum
     lurLetter = "Letter"
     lurSeparator = "Separator"
+    lurOther = "Other"
     lurMark = "Mark"
     lurHan = "Han"
     lurHiragana = "Hiragana"
@@ -87,6 +88,10 @@ type
     lurEnclosingMark = "Me"
     lurNonspacingMark = "Mn"
     lurFormat = "Cf"
+    lurBidiControl = "Bidi_Control"
+    lurIDSU = "IDSU"
+    lurIDSB = "IDSB"
+    lurIDST = "IDST"
 
   LUContextObj = object
     crs: array[LURangeType, CharRange]
@@ -114,6 +119,13 @@ proc initScript(ctx: LUContext; lur: LURangeType) =
     doAssert unicode_script(p, cstring($lur), false) == 0
     ctx.inited.incl(lur)
 
+proc initProp(ctx: LUContext; lur: LURangeType) =
+  if lur notin ctx.inited:
+    let p = addr ctx.crs[lur]
+    cr_init(p, nil, passRealloc)
+    doAssert unicode_prop(p, cstring($lur)) == 0
+    ctx.inited.incl(lur)
+
 proc isAlpha*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurLetter)
   return u in ctx.crs[lurLetter]
@@ -121,6 +133,10 @@ proc isAlpha*(ctx: LUContext; u: uint32): bool =
 proc isWhiteSpace*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurSeparator)
   return u in ctx.crs[lurSeparator]
+
+proc isOther*(ctx: LUContext; u: uint32): bool =
+  ctx.initGeneralCategory(lurOther)
+  return u in ctx.crs[lurOther]
 
 proc isMark*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurMark)
@@ -153,5 +169,15 @@ proc isNonspacingMark*(ctx: LUContext; u: uint32): bool =
 proc isFormat*(ctx: LUContext; u: uint32): bool =
   ctx.initGeneralCategory(lurFormat)
   return u in ctx.crs[lurFormat]
+
+proc isBidiControl*(ctx: LUContext; u: uint32): bool =
+  ctx.initProp(lurBidiControl)
+  return u in ctx.crs[lurBidiControl]
+
+proc isIDSOperator*(ctx: LUContext; u: uint32): bool =
+  ctx.initProp(lurIDSU)
+  ctx.initProp(lurIDSB)
+  ctx.initProp(lurIDST)
+  return u in ctx.crs[lurIDSU] or u in ctx.crs[lurIDSB] or u in ctx.crs[lurIDST]
 
 {.pop.} # raises: []

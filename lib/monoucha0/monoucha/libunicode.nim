@@ -26,7 +26,7 @@ type
     realloc_func*: DynBufReallocFunc
 
   UnicodeNormalizationEnum* {.size: sizeof(cint).} = enum
-    UNICODE_NFC, UNICODE_NFD, UNICODE_NKFC, UNICODE_NKFD
+    UNICODE_NFC, UNICODE_NFD, UNICODE_NFKC, UNICODE_NFKD
 
   JS_BOOL* {.importc: "bool".} = bool
 
@@ -44,6 +44,8 @@ proc cr_free*(cr: ptr CharRange)
 # 1 = to lower
 # 2 = case folding
 # res must be an array of LRE_CC_RES_LEN_MAX
+const LRE_CC_RES_LEN_MAX* = 3
+
 proc lre_case_conv*(res: ptr UncheckedArray[uint32]; c: uint32;
   conv_type: cint): cint
 

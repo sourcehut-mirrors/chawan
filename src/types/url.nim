@@ -18,8 +18,6 @@ import types/opt
 import utils/luwrap
 import utils/twtstr
 
-include res/map/idna_gen
-
 type
   URLState = enum
     usFail, usDone, usSchemeStart, usNoScheme, usFile, usFragment, usAuthority,
@@ -258,38 +256,6 @@ proc endsInNumber(input: string): bool =
       inc i
   return true
 
-type
-  IDNATableStatus = enum
-    itsValid, itsIgnored, itsMapped, itsDeviation, itsDisallowed
-
-proc getIdnaTableStatus(u: uint32; idx: var uint32): IDNATableStatus =
-  if u < 0x10000:
-    let u = uint16(u)
-    if IgnoredLow.isInRange(u):
-      return itsIgnored
-    if u in DisallowedLow or DisallowedRangesLow.isInRange(u):
-      return itsDisallowed
-    let n = MappedMapLow.searchInMap(u)
-    if n != -1:
-      idx = uint32(MappedMapLow[n].idx)
-      return itsMapped
-  else:
-    if IgnoredHigh.isInRange(u):
-      return itsIgnored
-    if u in DisallowedHigh or DisallowedRangesHigh.isInRange(u):
-      return itsDisallowed
-    if u < 0x20000:
-      let n = MappedMapHigh1.searchInMap(uint16(u - 0x10000))
-      if n != -1:
-        idx = MappedMapHigh1[n].idx
-        return itsMapped
-    elif u < 0x20000:
-      let n = MappedMapHigh2.searchInMap(uint16(u - 0x20000))
-      if n != -1:
-        idx = MappedMapHigh2[n].idx
-        return itsMapped
-  return itsValid
-
 # RFC 3492
 proc punyAdapt(delta, len: uint32; first: bool): uint32 =
   var delta = if first:
@@ -405,29 +371,43 @@ proc punyEncode(s: openArray[char]): Opt[string] =
     inc delta
   ok(move(res))
 
+proc mapIdna(ctx: LUContext; mapped: var seq[uint32]; u: uint32): Opt[void] =
+  case u
+  of 0xFF0E, 0x3002, 0xFF61: mapped &= 0x2E # dot-likes map to period
+  of 0xDF, 0x1E9E: mapped &= 0xDF # scharfes S
+  of 0x03C2: mapped &= u # sigma maps to itself
+  elif ctx.isBidiControl(u): return err() # bidi_control is disallowed
+  else:
+    var res {.noinit.}: array[3, uint32]
+    let p = cast[ptr UncheckedArray[uint32]](addr res[0])
+    let len = lre_case_conv(p, u, 2) # case fold
+    let mapping = res.toOpenArray(0, len - 1).normalize(UNICODE_NFKC)
+    for mu in mapping:
+      if mu == 0xFFFC or mu == 0xFFFD or mu in 0xE0001u32..0xE007Fu32:
+        return err() # base exclusion set
+      if ctx.isIDSOperator(mu) or ctx.isWhiteSpace(mu) or ctx.isOther(mu):
+        return err() # not in base valid set
+    mapped &= mapping
+  ok()
+
 proc processIdna(str: string; beStrict: bool): string =
   # CheckHyphens = false
   # CheckBidi = true
   # CheckJoiners = true
-  # UseSTD3ASCIIRules = beStrict (but STD3 is not implemented)
+  # UseSTD3ASCIIRules = beStrict
   # Transitional_Processing = false
   # VerifyDnsLength = beStrict
   var mapped: seq[uint32] = @[]
+  let ctx = LUContext()
   for u in str.points:
-    var idx: uint32
-    let status = getIdnaTableStatus(u, idx)
-    case status
-    of itsDisallowed: return "" #error
-    of itsIgnored: discard
-    of itsMapped:
-      let e = MappedMapData.find('\0', idx)
-      mapped.addPoints(MappedMapData[idx ..< e])
-    of itsDeviation: mapped &= u
-    of itsValid: mapped &= u
-  if mapped.len == 0: return
+    if ctx.mapIdna(mapped, u).isErr:
+      return ""
   mapped = mapped.normalize()
+  if mapped.len == 0:
+    return ""
   let luctx = LUContext()
   var labels = ""
+  var first = true
   for label in mapped.toUTF8().split('.'):
     if label.startsWith("xn--"):
       let x0 = punyDecode(label.toOpenArray("xn--".len, label.high))
@@ -440,25 +420,30 @@ proc processIdna(str: string; beStrict: bool): string =
       for u in x1:
         if u == uint32('.'):
           return "" #error
-        var dummy: uint32
-        let status = getIdnaTableStatus(u, dummy)
-        if status in {itsDisallowed, itsIgnored, itsMapped}:
-          return "" #error
+        var mapping: seq[uint32] = @[]
+        if ctx.mapIdna(mapping, u).isErr:
+          return "" # error
+        if mapping.len != 1 or mapping[0] != u:
+          return "" # error, mapped value
+        if beStrict and u < 0x80 and char(u) notin AsciiAlphaNumeric + {'-'}:
+          return "" # error, STD3 rules
         #TODO check joiners
         #TODO check bidi
-      if labels.len > 0:
+      if not first:
         labels &= '.'
       labels &= x1.toUTF8()
     else:
-      if labels.len > 0:
+      if not first:
         labels &= '.'
       labels &= label
+    first = false
   move(labels)
 
 proc unicodeToAscii(s: string; beStrict: bool): string =
   let processed = s.processIdna(beStrict)
   var labels = ""
   var all = 0
+  var first = true
   for label in processed.split('.'):
     var s = ""
     if AllChars - Ascii in label:
@@ -473,9 +458,10 @@ proc unicodeToAscii(s: string; beStrict: bool): string =
       if rl notin 1..63:
         return ""
       all += rl
-    if labels.len > 0:
+    if not first:
       labels &= '.'
     labels &= s
+    first = false
   if beStrict: # VerifyDnsLength
     if all notin 1..253:
       return "" #error

@@ -128,7 +128,7 @@ tinfl = adapter/protocol/tinfl.h
 $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim res/* lib/chame0/chame/* \
 		lib/chagashi0/chagashi/* lib/monoucha0/monoucha/* \
 		lib/monoucha0/monoucha/qjs/* $(chaseccomp) \
-		res/map/idna_gen.nim nim.cfg
+		res/map/charwidth_gen.nim nim.cfg
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/cha" -d:libexecPath=$(LIBEXECDIR) \
                 $(FLAGS) -o:"$(OUTDIR_BIN)/cha" src/main.nim
@@ -142,14 +142,11 @@ unicode_version = 16.0.0
 
 .PHONY: unicode_gen
 unicode_gen:
-	@printf 'Download EastAsianWidth.txt and IdnaMappingTable.txt from www.unicode.org? (y/n) '
+	@printf 'Download EastAsianWidth.txt from www.unicode.org? (y/n) '
 	@read res; if test "$$res" = "y"; then \
-	cha -d 'https://www.unicode.org/Public/idna/$(unicode_version)/IdnaMappingTable.txt' >res/map/IdnaMappingTable.txt; \
 	cha -d 'https://www.unicode.org/Public/$(unicode_version)/ucd/EastAsianWidth.txt' >res/map/EastAsianWidth.txt; \
 	fi
-	$(NIMC) --nimcache:"$(OBJDIR)/idna_gen_cache" -d:danger -o:"$(OBJDIR)/genidna" res/genidna.nim
 	$(NIMC) --nimcache:"$(OBJDIR)/charwidth_gen_cache" -d:danger -o:"$(OBJDIR)/gencharwidth" res/gencharwidth.nim
-	$(OBJDIR)/genidna > res/map/idna_gen.nim
 	$(OBJDIR)/gencharwidth > res/map/charwidth_gen.nim
 
 $(OUTDIR_CGI_BIN)/man: $(lcgi)

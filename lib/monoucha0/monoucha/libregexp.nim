@@ -70,8 +70,6 @@ proc lre_get_capture_count*(bc_buf: ptr uint8): cint
 
 proc lre_get_flags*(bc_buf: ptr uint8): cint
 
-const LRE_CC_RES_LEN_MAX* = 3
-
 proc lre_is_space_non_ascii*(c: uint32): JS_BOOL
 
 proc lre_is_space*(c: uint32): JS_BOOL
