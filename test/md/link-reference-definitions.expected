@@ -1,0 +1,19 @@
+test [4mhello[m test [4mfirst[ma[second] [oops not found]
+
+[second]:
+
+test
+
+[what]: [4mhttps://wrong.example[m 'title' wrong, because the line has more text
+
+[what]
+
+'title' not parsed
+
+[4mthis one's right, but has no title[m
+
+[4mbut incredibly, this is correct[m
+
+[4mTest[m asdf
+
+[img]

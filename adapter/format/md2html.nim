@@ -1,13 +1,82 @@
 {.push raises: [].}
 
 import std/strutils
+import std/tables
 
 import io/chafile
 import types/opt
 import utils/twtstr
 
-type BracketState = enum
-  bsNone, bsInBracket
+type
+  BracketState = enum
+    bsNone, bsInBracket
+
+  BlockType = enum
+    btNone, btPar, btList, btPre, btTabPre, btSpacePre, btBlockquote, btHTML,
+    btHTMLPre, btComment, btLinkDef
+
+  ListState = enum
+    lsNormal, lsAfterBlank, lsLastLine
+
+  ListType = enum
+    ltOl, ltUl, ltNoMark
+
+  ListItemDesc = object
+    t: ListType
+    start: int32
+    depth: int
+    len: int
+
+  List = object
+    depth: int
+    t: ListType
+    par: bool
+
+  LinkDefState = enum
+    ldsLink, ldsTitle
+
+  ParseState = object
+    ofile: ChaFile
+    blockData: string
+    lists: seq[List]
+    numPreLines: int
+    linkDefIdx: int
+    linkDefName: string
+    linkDefLink: string
+    refMap: TableRef[string, tuple[link, title: string]]
+    slurpBuf: string
+    slurpIdx: int
+    slurping: bool
+    reprocess: bool
+    hasp: bool
+    listState: ListState
+    blockType: BlockType
+    linkDefState: LinkDefState
+
+# Forward declarations
+proc parse(state: var ParseState): Opt[void]
+
+proc write(state: ParseState; c: char): Opt[void] =
+  if state.ofile != nil:
+    return state.ofile.write(c)
+  ok()
+
+proc write(state: ParseState; s: openArray[char]): Opt[void] =
+  if state.ofile != nil:
+    return state.ofile.write(s)
+  ok()
+
+proc writeLine(state: ParseState; s: openArray[char]): Opt[void] =
+  if state.ofile != nil:
+    return state.ofile.writeLine(s)
+  ok()
+
+proc slurp(state: var ParseState): Opt[void] =
+  var state2 = ParseState(slurpIdx: -2, ofile: nil, refMap: state.refMap)
+  ?state2.parse()
+  state.slurpBuf = move(state2.slurpBuf)
+  state.slurpIdx = 0
+  return ok()
 
 proc getId(line: openArray[char]): string =
   result = ""
@@ -49,23 +118,22 @@ type ParseInlineContext = object
   i: int
   bracketChars: string
   bs: BracketState
-  bracketRef: bool
   flags: set[InlineFlag]
 
 const PreTags = ["pre", "script", "style", "textarea", "head"]
 
-proc parseInTag(ctx: var ParseInlineContext; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
+proc parseInTag(ctx: var ParseInlineContext; line: string; state: ParseState):
+    Opt[void] =
   var buf = ""
   var i = ctx.i + 1
   while i < line.len:
     let c = line[i]
     if c == '>': # done
       if buf.startsWithScheme(): # link
-        ?stdout.write("<A HREF='" & buf.htmlEscape() & "'>" & buf & "</A>")
+        ?state.write("<A HREF='" & buf.htmlEscape() & "'>" & buf & "</A>")
       else: # tag
         let s = '<' & buf & '>'
-        ?stdout.write(s)
+        ?state.write(s)
         if PreTags.containsIgnoreCase(buf):
           let pi = i + 1
           i = line.find(s, i)
@@ -74,11 +142,11 @@ proc parseInTag(ctx: var ParseInlineContext; line: string): Opt[void] =
           else:
             i += s.len
           if pi <= i:
-            ?stdout.write(line.toOpenArray(pi, i))
+            ?state.write(line.toOpenArray(pi, i))
       buf = ""
       break
     elif c == '<':
-      ?stdout.write('<' & buf)
+      ?state.write('<' & buf)
       buf = ""
       dec i
       break
@@ -86,32 +154,32 @@ proc parseInTag(ctx: var ParseInlineContext; line: string): Opt[void] =
       buf &= c
     inc i
   if buf != "":
-    ?stdout.write('<')
-  ?stdout.write(buf)
+    ?state.write('<')
+  ?state.write(buf)
   ctx.i = i
   ok()
 
-proc append(ctx: var ParseInlineContext; s: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
+proc append(ctx: var ParseInlineContext; s: string; state: ParseState):
+    Opt[void] =
   if ctx.bs == bsInBracket:
     ctx.bracketChars &= s
   else:
-    ?stdout.write(s)
+    ?state.write(s)
   ok()
 
-proc append(ctx: var ParseInlineContext; c: char): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
+proc append(ctx: var ParseInlineContext; c: char; state: ParseState):
+    Opt[void] =
   if ctx.bs == bsInBracket:
     ctx.bracketChars &= c
   else:
-    ?stdout.write(c)
+    ?state.write(c)
   ok()
 
 type CommentState = enum
   csNone, csDash, csDashDash
 
-proc parseComment(ctx: var ParseInlineContext; line: openArray[char]):
-    Opt[void] =
+proc parseComment(ctx: var ParseInlineContext; line: openArray[char];
+    state: ParseState): Opt[void] =
   var i = ctx.i
   var cs = csNone
   var buf = ""
@@ -126,23 +194,25 @@ proc parseComment(ctx: var ParseInlineContext; line: openArray[char]):
       cs = csNone
     buf &= c
     inc i
-  ?ctx.append(buf)
+  ?ctx.append(buf, state)
   ctx.i = i
   ok()
 
-proc parseCode(ctx: var ParseInlineContext; line: openArray[char]): Opt[void] =
+proc parseCode(ctx: var ParseInlineContext; line: openArray[char];
+    state: ParseState): Opt[void] =
   let i = ctx.i + 1
   let j = line.toOpenArray(i, line.high).find('`')
   if j != -1:
-    ?ctx.append("<CODE>")
-    ?ctx.append(line.toOpenArray(i, i + j - 1).htmlEscape())
-    ?ctx.append("</CODE>")
+    ?ctx.append("<CODE>", state)
+    ?ctx.append(line.toOpenArray(i, i + j - 1).htmlEscape(), state)
+    ?ctx.append("</CODE>", state)
     ctx.i = i + j
   else:
-    ?ctx.append('`')
+    ?ctx.append('`', state)
   ok()
 
-proc parseLinkDestination(url: var string; line: openArray[char]; i: int): int =
+proc parseLinkDestination(link: var string; line: openArray[char];
+    i: int): int =
   var i = i
   var quote = false
   var parens = 0
@@ -161,18 +231,18 @@ proc parseLinkDestination(url: var string; line: openArray[char]; i: int): int =
       quote = true
     elif c == '(':
       inc parens
-      url &= c
+      link &= c
     elif c == ')' and sc != '>':
       if parens == 0:
         break
       dec parens
-      url &= c
+      link &= c
     else:
-      url &= c
+      link &= c
     inc i
-  if sc != '>' and parens != 0 or quote:
+  if sc != '<' and parens != 0 or quote:
     return -1
-  return line.skipBlanks(i)
+  return line.skipBlanks(i + int(sc == '<'))
 
 proc parseTitle(title: var string; line: openArray[char]; i: int): int =
   let ec = line[i]
@@ -192,34 +262,57 @@ proc parseTitle(title: var string; line: openArray[char]; i: int): int =
     inc i
   return line.skipBlanks(i)
 
-proc parseLink(ctx: var ParseInlineContext; line: openArray[char]): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
+proc parseLinkBail(ctx: var ParseInlineContext; i: int; state: ParseState):
+    Opt[void] =
+  ctx.i = i
+  return state.write('[' & ctx.bracketChars & ']')
+
+proc parseLinkWrite(ctx: ParseInlineContext; url, title: string;
+    state: ParseState): Opt[void] =
+  ?state.write("<A HREF='" & url.htmlEscape())
+  if title != "":
+    ?state.write("' TITLE='" & title.htmlEscape())
+  return state.write("'>" & ctx.bracketChars & "</A>")
+
+proc parseLink(ctx: var ParseInlineContext; line: string;
+    state: var ParseState): Opt[void] =
   var i = ctx.i + 1
-  if i >= line.len or line[i] != '(':
-    #TODO reference links
-    ?stdout.write('[' & ctx.bracketChars & ']')
-    return ok()
+  if i >= line.len:
+    return ctx.parseLinkBail(i, state)
+  if (let c = line[i]; c != '('):
+    if state.slurpIdx == -1:
+      ?state.slurp()
+    if c == '[':
+      let j = line.find(']', i + 1)
+      if j == -1:
+        return ctx.parseLinkBail(i - 1, state)
+      let s = line.substr(i + 1, j - 1).toLowerAscii()
+      if s != "":
+        let (link, title) = state.refMap.getOrDefault(s)
+        if link == "":
+          return ctx.parseLinkBail(i - 1, state)
+        ctx.i = j
+        return ctx.parseLinkWrite(link, title, state)
+      else: # [link][]
+        i += 2
+    let s = ctx.bracketChars.toLowerAscii()
+    let (link, title) = state.refMap.getOrDefault(s)
+    if link == "":
+      return ctx.parseLinkBail(i - 1, state)
+    ctx.i = i - 1
+    return ctx.parseLinkWrite(link, title, state)
   i = line.skipBlanks(i + 1)
   if i >= line.len:
-    ?stdout.write('[' & ctx.bracketChars & ']')
-    return ok()
+    return ctx.parseLinkBail(i, state)
   var url = ""
   var j = url.parseLinkDestination(line, i)
   var title = ""
   if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
     j = title.parseTitle(line, j)
   if j == -1 or j >= line.len or line[j] != ')':
-    ?stdout.write('[' & ctx.bracketChars & ']')
-  else:
-    let url = url.htmlEscape()
-    ?stdout.write("<A HREF='" & url)
-    if title != "":
-      ?stdout.write("' TITLE='" & title.htmlEscape())
-    ?stdout.write("'>")
-    ?stdout.write(ctx.bracketChars)
-    ?stdout.write("</A>")
-    ctx.i = j
-  ok()
+    return ctx.parseLinkBail(i, state)
+  ctx.i = j
+  return ctx.parseLinkWrite(url, title, state)
 
 proc parseImageAlt(text: var string; line: openArray[char]; i: int): int =
   var i = i
@@ -245,48 +338,65 @@ proc parseImageAlt(text: var string; line: openArray[char]; i: int): int =
     inc i
   return i
 
-proc parseImage(ctx: var ParseInlineContext; line: openArray[char]): Opt[void] =
-  var text = ""
-  let i = text.parseImageAlt(line, ctx.i + 2)
-  if i == -1 or i + 1 >= line.len or line[i] != ']' or line[i + 1] != '(':
-    ?ctx.append("![")
-    return ok()
-  var url = ""
-  var j = url.parseLinkDestination(line, line.skipBlanks(i + 2))
+proc parseImageWrite(ctx: var ParseInlineContext; link, title, alt: string;
+    state: ParseState): Opt[void] =
+  ?ctx.append("<IMG SRC='" & link.htmlEscape(), state)
+  if title != "":
+    ?ctx.append("' TITLE='" & title.htmlEscape(), state)
+  if alt != "":
+    ?ctx.append("' ALT='" & alt.htmlEscape(), state)
+  return ctx.append("'>", state)
+
+proc parseImage(ctx: var ParseInlineContext; line: string;
+    state: var ParseState): Opt[void] =
+  var alt = ""
+  var i = alt.parseImageAlt(line, ctx.i + 2)
+  if i == -1 or i + 1 >= line.len or line[i] != ']':
+    return ctx.append("![", state)
+  inc i
+  let c = line[i]
+  if c == '[':
+    if state.slurpIdx == -1:
+      ?state.slurp()
+    let j = line.find(']', i + 1)
+    if j == -1:
+      return ctx.append("![", state)
+    let s = line.substr(i + 1, j - 1).toLowerAscii()
+    let (link, title) = state.refMap.getOrDefault(s)
+    if link == "":
+      return ctx.append("![", state)
+    ctx.i = j
+    return ctx.parseImageWrite(link, title, alt, state)
+  if c != '(':
+    return ctx.append("![", state)
+  var link = ""
+  var j = link.parseLinkDestination(line, line.skipBlanks(i + 1))
   var title = ""
   if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
     j = title.parseTitle(line, j)
   if j == -1 or j >= line.len or line[j] != ')':
-    ?ctx.append("![")
-  else:
-    ?ctx.append("<IMG SRC='" & url.htmlEscape())
-    if title != "":
-      ?ctx.append("' TITLE='" & title.htmlEscape())
-    if text != "":
-      ?ctx.append("' ALT='" & text.htmlEscape())
-    ?ctx.append("'>")
-    ctx.i = j
-  ok()
+    return ctx.append("![", state)
+  ctx.i = j
+  return ctx.parseImageWrite(link, title, alt, state)
 
-proc appendToggle(ctx: var ParseInlineContext; f: InlineFlag; s, e: string):
-    Opt[void] =
+proc appendToggle(ctx: var ParseInlineContext; f: InlineFlag; s, e: string;
+    state: ParseState): Opt[void] =
   if f notin ctx.flags:
     ctx.flags.incl(f)
-    ?ctx.append(s)
+    ?ctx.append(s, state)
   else:
     ctx.flags.excl(f)
-    ?ctx.append(e)
+    ?ctx.append(e, state)
   ok()
 
-proc parseInline(line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
+proc parseInline(state: var ParseState; line: string): Opt[void] =
   var ctx = ParseInlineContext()
   while ctx.i < line.len:
     let c = line[ctx.i]
     if c == '\\':
       inc ctx.i
       if ctx.i < line.len:
-        ?ctx.append(line[ctx.i])
+        ?ctx.append(line[ctx.i], state)
     elif (ctx.i > 0 and line[ctx.i - 1] notin AsciiWhitespace or
           ctx.i + 1 < line.len and line[ctx.i + 1] notin AsciiWhitespace) and
         (c == '*' or
@@ -295,67 +405,49 @@ proc parseInline(line: string): Opt[void] =
               ctx.i + 1 >= line.len or
               line[ctx.i + 1] notin AsciiAlphaNumeric + {'_'})):
       if ctx.i + 1 < line.len and line[ctx.i + 1] == c:
-        ?ctx.appendToggle(ifBold, "<B>", "</B>")
+        ?ctx.appendToggle(ifBold, "<B>", "</B>", state)
         inc ctx.i
       else:
-        ?ctx.appendToggle(ifItalic, "<I>", "</I>")
+        ?ctx.appendToggle(ifItalic, "<I>", "</I>", state)
     elif c == '`':
-      ?ctx.parseCode(line)
+      ?ctx.parseCode(line, state)
     elif c == '~' and ctx.i + 1 < line.len and line[ctx.i + 1] == '~':
-      ?ctx.appendToggle(ifDel, "<DEL>", "</DEL>")
+      ?ctx.appendToggle(ifDel, "<DEL>", "</DEL>", state)
       inc ctx.i
     elif c == '!' and ctx.i + 1 < line.len and line[ctx.i + 1] == '[':
-      ?ctx.parseImage(line)
+      ?ctx.parseImage(line, state)
     elif c == '[':
       if ctx.bs == bsInBracket:
-        ?stdout.write('[' & ctx.bracketChars)
+        ?state.write('[' & ctx.bracketChars)
         ctx.bracketChars = ""
       ctx.bs = bsInBracket
-      ctx.bracketRef = ctx.i + 1 < line.len and line[ctx.i + 1] == '^'
-      if ctx.bracketRef:
-        inc ctx.i
     elif c == ']' and ctx.bs == bsInBracket:
-      if ctx.bracketRef:
-        let id = ctx.bracketChars.getId()
-        ?stdout.write("<A HREF='#" & id & "'>" & ctx.bracketChars & "</A>")
-      else:
-        ?ctx.parseLink(line)
+      ?ctx.parseLink(line, state)
       ctx.bracketChars = ""
-      ctx.bracketRef = false
       ctx.bs = bsNone
     elif c == '<':
-      ?ctx.parseInTag(line)
+      ?ctx.parseInTag(line, state)
     elif ctx.i + 4 < line.len and line.toOpenArray(ctx.i, ctx.i + 3) == "<!--":
-      ?ctx.append("<!--")
+      ?ctx.append("<!--", state)
       ctx.i += 3
-      ?ctx.parseComment(line)
+      ?ctx.parseComment(line, state)
     elif c == '\n' and ctx.i >= 2 and line[ctx.i - 1] == ' ' and
         line[ctx.i - 2] == ' ':
-      ?ctx.append("<BR>")
+      ?ctx.append("<BR>", state)
     else:
-      ?ctx.append(c)
+      ?ctx.append(c, state)
     inc ctx.i
   if ctx.bs == bsInBracket:
-    ?stdout.write("[")
+    ?state.write("[")
   if ctx.bracketChars != "":
-    ?stdout.write(ctx.bracketChars)
+    ?state.write(ctx.bracketChars)
   if ifBold in ctx.flags:
-    ?stdout.write("</B>")
+    ?state.write("</B>")
   if ifItalic in ctx.flags:
-    ?stdout.write("</I>")
+    ?state.write("</I>")
   if ifDel in ctx.flags:
-    ?stdout.write("</DEL>")
+    ?state.write("</DEL>")
   ok()
-
-type
-  ListType = enum
-    ltOl, ltUl, ltNoMark
-
-  ListItemDesc = object
-    t: ListType
-    start: int32
-    depth: int
-    len: int
 
 proc getListDepth(line: string): ListItemDesc =
   var depth = 0
@@ -411,67 +503,41 @@ proc matchHTMLPreEnd(line: string): bool =
     tagn &= c.toLowerAscii()
   return tagn in PreTags
 
-type
-  BlockType = enum
-    btNone, btPar, btList, btPre, btTabPre, btSpacePre, btBlockquote, btHTML,
-    btHTMLPre, btComment
-
-  ListState = enum
-    lsNormal, lsAfterBlank, lsLastLine
-
-  List = object
-    depth: int
-    t: ListType
-    par: bool
-
-  ParseState = object
-    blockType: BlockType
-    blockData: string
-    lists: seq[List]
-    hasp: bool
-    reprocess: bool
-    listState: ListState
-    numPreLines: int
-
 proc pushList(state: var ParseState; desc: ListItemDesc): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   case desc.t
   of ltOl:
     if desc.start == 1:
-      ?stdout.write("<OL>\n<LI>")
+      ?state.write("<OL>\n<LI>")
     else:
-      ?stdout.write("<OL start=" & $desc.start & ">\n<LI>")
-  of ltUl: ?stdout.write("<UL>\n<LI>")
+      ?state.write("<OL start=" & $desc.start & ">\n<LI>")
+  of ltUl: ?state.write("<UL>\n<LI>")
   of ltNoMark: assert false
   state.lists.add(List(t: desc.t, depth: desc.depth))
   ok()
 
 proc popList(state: var ParseState): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   case state.lists.pop().t
-  of ltOl: ?stdout.write("</OL>\n")
-  of ltUl: ?stdout.write("</UL>\n")
+  of ltOl: ?state.writeLine("</OL>")
+  of ltUl: ?state.writeLine("</UL>")
   of ltNoMark: assert false
   ok()
 
 proc writeHeading(state: var ParseState; n: int; text: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   state.hasp = false
   let id = text.getId()
-  ?stdout.write("<H" & $n & " id='" & id & "'><A HREF='#" & id &
+  ?state.write("<H" & $n & " id='" & id & "'><A HREF='#" & id &
     "' CLASS=heading>" & '#'.repeat(n) & "</A> ")
-  ?text.parseInline()
-  ?stdout.write("</H" & $n & ">\n")
+  ?state.parseInline(text)
+  ?state.writeLine("</H" & $n & '>')
   ok()
 
 proc parseNone(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if AllChars - {' ', '\t'} notin line:
     discard
   elif (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
     if state.hasp:
       state.hasp = false
-      ?stdout.write("</P>")
+      ?state.write("</P>")
     let L = n + 1
     var H = line.rfind(AllChars - {'#'})
     if H != -1 and line[H] == ' ':
@@ -488,28 +554,36 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
   elif line.startsWith("```") or line.startsWith("~~~"):
     state.blockType = btPre
     state.blockData = line.substr(0, 2)
-    ?stdout.write("<PRE>")
+    ?state.write("<PRE>")
+  elif line[0] == '[' and (var i = line.find(']');
+      i != -1 and i > 1 and i + 1 < line.len and line[i + 1] == ':'):
+    state.blockType = btLinkDef
+    state.linkDefState = ldsLink
+    state.linkDefIdx = i + 2
+    state.linkDefName = line.substr(1, i - 1).toLowerAscii()
+    state.linkDefLink = ""
+    state.reprocess = true
   elif line[0] == '\t':
     state.blockType = btTabPre
     if state.hasp:
       state.hasp = false
-      ?stdout.write("</P>\n")
-    ?stdout.write("<PRE>")
+      ?state.writeLine("</P>")
+    ?state.write("<PRE>")
     state.blockData = line.substr(1) & '\n'
   elif line.startsWith("    "):
     state.blockType = btSpacePre
     if state.hasp:
       state.hasp = false
-      ?stdout.write("</P>\n")
-    ?stdout.write("<PRE>")
+      ?state.writeLine("</P>")
+    ?state.write("<PRE>")
     state.blockData = line.substr(4) & '\n'
   elif line[0] == '>':
     state.blockType = btBlockquote
     if state.hasp:
       state.hasp = false
-      ?stdout.write("</P>\n")
+      ?state.writeLine("</P>")
     state.blockData = line.substr(1) & "<BR>"
-    ?stdout.write("<BLOCKQUOTE>")
+    ?state.write("<BLOCKQUOTE>")
   elif (let desc = line.getListDepth(); desc.t != ltNoMark):
     state.blockType = btList
     state.listState = lsNormal
@@ -522,29 +596,26 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parsePre(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if line.startsWith(state.blockData):
     state.blockType = btNone
     state.blockData = ""
-    ?stdout.write("</PRE>\n")
+    ?state.writeLine("</PRE>")
   else:
-    ?stdout.write(line.htmlEscape() & '\n')
+    ?state.writeLine(line.htmlEscape())
   ok()
 
 proc flushPar(state: var ParseState): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if state.blockData != "":
     state.hasp = true
-    ?stdout.write("<P>\n")
-    ?state.blockData.parseInline()
+    ?state.writeLine("<P>")
+    ?state.parseInline(state.blockData)
     state.blockData = ""
   ok()
 
 proc flushList(state: var ParseState): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if state.lists[^1].par and state.blockData != "":
-    ?stdout.write("<P>\n")
-  ?state.blockData.parseInline()
+    ?state.writeLine("<P>")
+  ?state.parseInline(state.blockData)
   state.blockData = ""
   while state.lists.len > 0:
     ?state.popList()
@@ -552,7 +623,6 @@ proc flushList(state: var ParseState): Opt[void] =
   ok()
 
 proc parseList(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if state.listState == lsLastLine:
     ?state.flushList()
   elif AllChars - {' ', '\t'} notin line:
@@ -569,8 +639,8 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
       else:
         if state.listState == lsAfterBlank:
           state.lists[^1].par = true
-          ?stdout.write("<P>\n")
-          ?state.blockData.parseInline()
+          ?state.writeLine("<P>")
+          ?state.parseInline(state.blockData)
           state.blockData = ""
           while desc.depth < state.lists[^1].depth:
             ?state.popList()
@@ -579,8 +649,8 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
       if state.listState == lsAfterBlank and state.lists[^1].t == desc.t:
         state.lists[^1].par = true
       if state.lists[^1].par:
-        ?stdout.write("<P>\n")
-      ?state.blockData.parseInline()
+        ?state.writeLine("<P>")
+      ?state.parseInline(state.blockData)
       state.blockData = ""
       while state.lists.len > 1 and (desc.depth < state.lists[^1].depth or
           desc.depth == state.lists[^1].depth and desc.t != state.lists[^1].t):
@@ -591,13 +661,12 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
         ?state.popList()
         ?state.pushList(desc)
       else:
-        ?stdout.write("<LI>")
+        ?state.write("<LI>")
       state.blockData = line.substr(desc.len + 1) & '\n'
     state.listState = lsNormal
   ok()
 
 proc parsePar(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if line == "":
     ?state.flushPar()
     state.blockType = btNone
@@ -613,7 +682,7 @@ proc parsePar(state: var ParseState; line: string): Opt[void] =
     state.blockData = line.substr(0, 2)
     state.blockType = btPre
     state.hasp = false
-    ?stdout.write("<PRE>")
+    ?state.write("<PRE>")
   elif line[0] in {'-', '=', '*', '_', ' ', '\t'} and
       AllChars - {line[0]} notin line:
     if line[0] in {' ', '\t'}: # lines with space only also count as blank
@@ -632,12 +701,11 @@ proc parsePar(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parseHTML(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if state.hasp:
     state.hasp = false
-    ?stdout.write("</P>\n")
+    ?state.write("</P>\n")
   if AllChars - {' ', '\t'} notin line:
-    ?state.blockData.parseInline()
+    ?state.parseInline(state.blockData)
     state.blockData = ""
     state.blockType = btNone
   else:
@@ -645,13 +713,12 @@ proc parseHTML(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parseHTMLPre(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if state.hasp:
     state.hasp = false
-    ?stdout.write("</P>\n")
+    ?state.writeLine("</P>")
   if line.matchHTMLPreEnd():
-    ?stdout.write(state.blockData)
-    ?stdout.write(line)
+    ?state.write(state.blockData)
+    ?state.write(line)
     state.blockData = ""
     state.blockType = btNone
   else:
@@ -659,13 +726,12 @@ proc parseHTMLPre(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parseTabPre(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if line.len == 0:
     inc state.numPreLines
   elif line[0] != '\t':
     state.numPreLines = 0
-    ?stdout.write(state.blockData)
-    ?stdout.write("</PRE>")
+    ?state.write(state.blockData)
+    ?state.write("</PRE>")
     state.blockData = ""
     state.reprocess = true
     state.blockType = btNone
@@ -677,13 +743,12 @@ proc parseTabPre(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parseSpacePre(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if line.len == 0:
     inc state.numPreLines
   elif not line.startsWith("    "):
     state.numPreLines = 0
-    ?stdout.write(state.blockData)
-    ?stdout.write("</PRE>")
+    ?state.write(state.blockData)
+    ?state.write("</PRE>")
     state.blockData = ""
     state.reprocess = true
     state.blockType = btNone
@@ -695,10 +760,9 @@ proc parseSpacePre(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parseBlockquote(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   if line.len == 0 or line[0] != '>':
-    ?stdout.write(state.blockData)
-    ?stdout.write("</BLOCKQUOTE>")
+    ?state.write(state.blockData)
+    ?state.write("</BLOCKQUOTE>")
     state.blockData = ""
     state.reprocess = true
     state.blockType = btNone
@@ -707,28 +771,82 @@ proc parseBlockquote(state: var ParseState; line: string): Opt[void] =
   ok()
 
 proc parseComment(state: var ParseState; line: string): Opt[void] =
-  let stdout = cast[ChaFile](stdout)
   let i = line.find("-->")
   if i != -1:
-    ?stdout.write(line.substr(0, i + 2))
+    ?state.write(line.substr(0, i + 2))
     state.blockType = btNone
-    ?line.substr(i + 3).parseInline()
+    ?state.parseInline(line.substr(i + 3))
   else:
-    ?stdout.write(line & '\n')
+    ?state.writeLine(line)
+  ok()
+
+proc parseLinkDef(state: var ParseState; line: string): Opt[void] =
+  let pi = state.linkDefIdx
+  state.linkDefIdx = 0
+  var i = line.skipBlanks(pi)
+  if i >= line.len:
+    if pi == 0:
+      if state.linkDefLink != "":
+        discard state.refMap.mgetOrPut(state.linkDefName,
+          (move(state.linkDefLink), ""))
+        state.blockData = ""
+        state.blockType = btNone
+      else:
+        state.blockType = btPar
+      state.reprocess = true
+    else:
+      state.blockData &= line
+    return ok()
+  if state.linkDefLink == "":
+    i = state.linkDefLink.parseLinkDestination(line, i)
+    if i == -1:
+      state.blockType = btPar
+      state.reprocess = true
+      return ok()
+    if i < line.len:
+      i = line.skipBlanks(i)
+    state.linkDefState = ldsTitle
+  if i >= line.len: # next line
+    state.blockData &= line
+    return ok()
+  var title = ""
+  if line[i] in {'"', '\''}:
+    i = title.parseTitle(line, i)
+  if i == -1 or i < line.len:
+    if pi == 0: # not the first line. put & reprocess
+      discard state.refMap.mgetOrPut(state.linkDefName,
+        (move(state.linkDefLink), move(title)))
+      state.blockType = btNone
+      state.blockData = ""
+    else:
+      state.blockType = btPar
+    state.reprocess = true
+    return ok()
+  discard state.refMap.mgetOrPut(state.linkDefName,
+    (move(state.linkDefLink), move(title)))
+  state.blockData = ""
+  state.blockType = btNone
   ok()
 
 proc readLine(state: var ParseState; line: var string): Opt[bool] =
   let stdin = cast[ChaFile](stdin)
   let hadLine = line != "" or state.blockType == btList
-  if ?stdin.readLine(line):
-    return ok(true)
+  if state.slurpIdx < 0:
+    if ?stdin.readLine(line):
+      if state.slurpIdx == -2:
+        state.slurpBuf &= line & '\n'
+      return ok(true)
+  else:
+    if state.slurpIdx < state.slurpBuf.len:
+      line = state.slurpBuf.until('\n', state.slurpIdx)
+      state.slurpIdx += line.len + 1
+      return ok(true)
   line = ""
   state.listState = lsLastLine
   ok(hadLine) # add one last iteration with a blank after EOF
 
-proc main(): Opt[void] =
+proc parse(state: var ParseState): Opt[void] =
   var line = ""
-  var state = ParseState()
   while state.reprocess or ?state.readLine(line):
     state.reprocess = false
     case state.blockType
@@ -742,7 +860,16 @@ proc main(): Opt[void] =
     of btHTML: ?state.parseHTML(line)
     of btHTMLPre: ?state.parseHTMLPre(line)
     of btComment: ?state.parseComment(line)
+    of btLinkDef: ?state.parseLinkDef(line)
   ok()
+
+proc main(): Opt[void] =
+  var state = ParseState(
+    slurpIdx: -1,
+    ofile: cast[ChaFile](stdout),
+    refMap: newTable[string, tuple[link, title: string]]()
+  )
+  state.parse()
 
 discard main()
 
