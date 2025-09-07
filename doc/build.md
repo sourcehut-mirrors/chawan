@@ -73,9 +73,15 @@ a limited set of C compilers. If you want to override the C compiler:
 * `manpage`: rebuild man pages; note that this is not part of `all`.
   Manual pages are included in the repository, so this only needs to be called
   when you modify the documentation.
+* `unicode_gen`: rebuild the EastAsianWidth mapping from the source.
+  Like `manpage`, this is intended for development only.
 * `install`: install the `cha` binary, and if man pages were generated,
   those as well
 * `uninstall`: remove the `cha` binary and Chawan man pages
+* `test`: run tests.  For now, these have no additional dependencies, but
+  this may change in the future.  Additionally, no guarantees are made
+  about their reliability - I *think* they always work, but there have been
+  counterexamples in the past.
 
 ## Cross-compiling
 
