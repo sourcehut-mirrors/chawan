@@ -1009,14 +1009,10 @@ proc parseJSURL*(s: string; base: URL = nil): JSResult[URL] =
   return errTypeError(s & " is not a valid URL")
 
 proc serializeip(ipv4: uint32): string =
-  result = ""
-  var n = ipv4
-  for i in 1..4:
-    result = $(n mod 256) & result
-    if i != 4:
-      result = '.' & result
-    n = n div 256
-  assert n == 0
+  return $(ipv4 shr 24) & '.' &
+    $((ipv4 shr 16) and 0xFF) & '.' &
+    $((ipv4 shr 8) and 0xFF) & '.' &
+    $(ipv4 and 0xFF)
 
 proc findZeroSeq(ipv6: array[8, uint16]): int =
   var maxi = -1
