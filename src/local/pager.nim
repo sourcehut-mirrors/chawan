@@ -3113,17 +3113,15 @@ if (replace.alive) {
     JS_FreeValue(ctx, arg)
 
 const MenuMap = [
-  ("Select text              (v)", "cmd.buffer.cursorToggleSelection(1)"),
-  ("Copy selection           (y)", "cmd.buffer.copySelection(1)"),
+  ("Select text              (v)", "cmd.buffer.selectOrCopy()"),
   ("Previous buffer          (,)", "cmd.pager.prevBuffer(1)"),
   ("Next buffer              (.)", "cmd.pager.nextBuffer(1)"),
   ("Discard buffer           (D)", "cmd.pager.discardBuffer(1)"),
   ("────────────────────────────", ""),
-  ("View image               (I)", "cmd.buffer.viewImage(1)"),
-  ("Peek                     (u)", "cmd.pager.peekCursor(1)"),
+  ("Copy page URL          (M-y)", "cmd.pager.copyURL(1)"),
   ("Copy link               (yu)", "cmd.pager.copyCursorLink(1)"),
+  ("View image               (I)", "cmd.buffer.viewImage(1)"),
   ("Copy image link         (yI)", "cmd.pager.copyCursorImage(1)"),
-  ("Paste link             (M-p)", "cmd.pager.gotoClipboardURL(1)"),
   ("Reload                   (U)", "cmd.pager.reloadBuffer(1)"),
   ("────────────────────────────", ""),
   ("Save link             (sC-m)", "cmd.buffer.saveLink(1)"),
@@ -3162,6 +3160,8 @@ proc openMenu(pager: Pager; x = -1; y = -1) {.jsfunc.} =
   var options = newSeq[SelectOption]()
   for (s, cmd) in MenuMap:
     options.add(SelectOption(s: s, nop: cmd == ""))
+  if pager.container != nil and pager.container.currentSelection != nil:
+    options[0].s = "Copy selection           (y)"
   pager.menu = newSelect(options, -1, x, y, pager.bufWidth, pager.bufHeight,
     menuFinish, pager)
 

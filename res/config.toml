@@ -512,6 +512,14 @@ centerLine = 'n => pager.centerLine(n)'
 raisePage = 'n => pager.raisePage(n)'
 lowerPage = 'n => pager.lowerPage(n)'
 cursorToggleSelection = 'n => pager.cursorToggleSelection(n)'
+selectOrCopy = '''
+n => {
+	if (pager.currentSelection)
+		cmd.buffer.copySelection();
+	else
+		pager.cursorToggleSelection(n)
+}
+'''
 cursorToggleSelectionLine = 'n => pager.cursorToggleSelection(n, {selectionType: "line"})'
 cursorToggleSelectionBlock = 'n => pager.cursorToggleSelection(n, {selectionType: "block"})'
 sourceEdit = '''
