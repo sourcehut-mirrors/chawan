@@ -132,14 +132,20 @@ type
     moveType: MouseMoveType
 
   Pager* = ref object of RootObj
-    alertState: PagerAlertState
-    alerts: seq[string]
     alive: bool
+    blockTillRelease: bool
+    commandMode {.jsget.}: bool
+    feednext*: bool
+    hasload: bool # has a page been successfully loaded since startup?
+    inEval: bool
+    notnum: bool # has a non-numeric character been input already?
+    reverseSearch: bool
+    alertState: PagerAlertState
+    precnum: int32 # current number prefix (when vi-numeric-prefix is true)
+    alerts: seq[string]
     askCursor: int
     askPromise*: Promise[string]
     askPrompt: string
-    blockTillRelease: bool
-    commandMode {.jsget.}: bool
     config*: Config
     consoleWrapper*: ConsoleWrapper
     container {.jsget: "buffer".}: Container
@@ -147,10 +153,7 @@ type
     display: Surface
     downloads: Container
     exitCode*: int
-    feednext*: bool
     forkserver*: ForkServer
-    hasload: bool # has a page been successfully loaded since startup?
-    inEval: bool
     inputBuffer: string # currently uninterpreted characters
     iregex: Result[Regex, string]
     isearchpromise: EmptyPromise
@@ -167,13 +170,10 @@ type
     menu: Select
     mouse: Mouse
     navDirection {.jsget.}: NavDirection
-    notnum: bool # has a non-numeric character been input already?
     numload: int # number of pages currently being loaded
     pollData: PollData
-    precnum: int32 # current number prefix (when vi-numeric-prefix is true)
     refreshAllowed: HashSet[string]
     regex: Option[Regex]
-    reverseSearch: bool
     scommand: string
     status: Surface
     term*: Terminal
