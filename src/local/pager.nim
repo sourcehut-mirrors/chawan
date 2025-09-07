@@ -2832,6 +2832,11 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
   let loader = pager.loader
   let cstream = loader.addClient(container.process, container.loaderConfig,
     container.clonedFrom)
+  if cstream == nil:
+    stream.sclose()
+    ostream.sclose()
+    pager.alert("failed to create new loader client")
+    return
   let bufStream = newBufStream(stream, proc(fd: int) =
     pager.pollData.unregister(fd)
     pager.pollData.register(fd, POLLIN or POLLOUT))
