@@ -714,7 +714,11 @@ proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
     GotoAnchorResult {.proxy.} =
   if bc.document == nil:
     return GotoAnchorResult(found: false)
-  var anchor = bc.document.findAnchor(anchor.percentDecode())
+  if anchor.len > 0 and anchor[0] == 'L' and not bc.ishtml:
+    let y = parseIntP(anchor.toOpenArray(1, anchor.high)).get(-1)
+    if y > 0:
+      return GotoAnchorResult(found: true, x: 0, y: y - 1)
+  var anchor = bc.document.findAnchor(anchor)
   if target and anchor != nil:
     bc.document.setTarget(anchor)
   var focus: ReadLineResult = nil
