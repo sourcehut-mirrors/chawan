@@ -89,7 +89,7 @@ type
 proc getRedirect*(response: Response; request: Request): Request =
   if response.status in 301u16..303u16 or response.status in 307u16..308u16:
     let location = response.headers.getFirst("Location")
-    if url := parseURL(location, option(request.url)):
+    if url := parseURL(location, request.url):
       let status = response.status
       if status == 303 and request.httpMethod notin {hmGet, hmHead} or
           status == 301 or

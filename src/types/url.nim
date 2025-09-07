@@ -76,7 +76,7 @@ jsDestructor(URL)
 jsDestructor(URLSearchParams)
 
 # Forward declarations
-proc parseURL0*(input: string; base = none(URL)): URL
+proc parseURL0*(input: string; base: URL = nil): URL
 proc serialize*(url: URL; excludeHash = false; excludePassword = false):
   string
 proc serializeip(ipv4: uint32): string
@@ -602,8 +602,8 @@ proc parseSpecialRelativeOrAuthority(input: openArray[char]; pointer: var int;
     return input.parseSpecialAuthorityIgnoreSlashes(pointer)
   return input.parseRelative(pointer, base, url)
 
-proc parseScheme(input: openArray[char]; pointer: var int; base: Option[URL];
-    url: URL; override: bool): URLState =
+proc parseScheme(input: openArray[char]; pointer: var int; base, url: URL;
+    override: bool): URLState =
   var buffer = ""
   var i = pointer
   while i < input.len:
@@ -631,8 +631,8 @@ proc parseScheme(input: openArray[char]; pointer: var int; base: Option[URL];
       if url.schemeType == stFile:
         return usFile
       if url.isSpecial:
-        if base.isSome and base.get.scheme == url.scheme:
-          return input.parseSpecialRelativeOrAuthority(pointer, base.get, url)
+        if base != nil and base.scheme == url.scheme:
+          return input.parseSpecialRelativeOrAuthority(pointer, base, url)
         # special authority slashes state
         if pointer + 1 < input.len and input[pointer] == '/' and
             input[pointer + 1] == '/':
@@ -654,7 +654,7 @@ proc parseScheme(input: openArray[char]; pointer: var int; base: Option[URL];
   return usNoScheme
 
 proc parseSchemeStart(input: openArray[char]; pointer: var int;
-    base: Option[URL]; url: URL; override: bool): URLState =
+    base, url: URL; override: bool): URLState =
   var state = usNoScheme
   if pointer < input.len and input[pointer] in AsciiAlpha:
     # continue to scheme state
@@ -664,9 +664,8 @@ proc parseSchemeStart(input: openArray[char]; pointer: var int;
   if override:
     return usDone
   if state == usNoScheme:
-    if base.isNone:
+    if base == nil:
       return usFail
-    let base = base.get
     if base.opaquePath and (pointer >= input.len or input[pointer] != '#'):
       return usFail
     if base.opaquePath and pointer < input.len and input[pointer] == '#':
@@ -811,13 +810,12 @@ proc startsWithWinDriveLetter(input: openArray[char]; i: int): bool =
     return false
   return input[i] in AsciiAlpha and input[i + 1] in {':', '|'}
 
-proc parseFileSlash(input: openArray[char]; pointer: var int; base: Option[URL];
-    url: URL; override: bool): URLState =
+proc parseFileSlash(input: openArray[char]; pointer: var int; base, url: URL;
+    override: bool): URLState =
   if pointer < input.len and input[pointer] in {'/', '\\'}:
     inc pointer
     return input.parseFileHost(pointer, url, override)
-  if base.isSome and base.get.schemeType == stFile:
-    let base = base.get
+  if base != nil and base.schemeType == stFile:
     url.hostname = base.hostname
     url.hostType = base.hostType
     if not input.startsWithWinDriveLetter(pointer) and
@@ -826,8 +824,8 @@ proc parseFileSlash(input: openArray[char]; pointer: var int; base: Option[URL];
       url.pathname &= base.pathname.until('/') & '/'
   return usPath
 
-proc parseFile(input: openArray[char]; pointer: var int; base: Option[URL];
-    url: URL; override: bool): URLState =
+proc parseFile(input: openArray[char]; pointer: var int; base, url: URL;
+    override: bool): URLState =
   url.scheme = "file"
   url.schemeType = stFile
   url.hostname = ""
@@ -835,8 +833,7 @@ proc parseFile(input: openArray[char]; pointer: var int; base: Option[URL];
   if pointer < input.len and input[pointer] in {'/', '\\'}:
     inc pointer
     return input.parseFileSlash(pointer, base, url, override)
-  if base.isSome and base.get.schemeType == stFile:
-    let base = base.get
+  if base != nil and base.schemeType == stFile:
     url.hostname = base.hostname
     url.hostType = base.hostType
     url.pathname = base.pathname
@@ -966,7 +963,7 @@ proc parseQuery(input: openArray[char]; pointer: var int; url: URL;
     return usFragment
   return usDone
 
-proc parseURLImpl(input: openArray[char]; base: Option[URL]; url: URL;
+proc parseURLImpl(input: openArray[char]; base, url: URL;
     state: URLState; override: bool): URLState =
   var pointer = 0
   # The URL is special if this is >= 0.
@@ -996,7 +993,7 @@ proc parseURLImpl(input: openArray[char]; base: Option[URL]; url: URL;
   return state
 
 #TODO encoding
-proc parseURL0*(input: string; base = none(URL)): URL =
+proc parseURL0*(input: string; base: URL = nil): URL =
   let url = URL()
   const NoStrip = AllChars - C0Controls - {' '}
   let starti0 = input.find(NoStrip)
@@ -1009,9 +1006,9 @@ proc parseURL0*(input: string; base = none(URL)): URL =
   return url
 
 proc parseURL1(input: string; url: URL; state: URLState) =
-  discard input.parseURLImpl(base = none(URL), url, state, override = true)
+  discard input.parseURLImpl(base = nil, url, state, override = true)
 
-proc parseURL*(input: string; base = none(URL)): Opt[URL] =
+proc parseURL*(input: string; base: URL = nil): Opt[URL] =
   let url = parseURL0(input, base)
   if url == nil:
     return err()
@@ -1020,7 +1017,7 @@ proc parseURL*(input: string; base = none(URL)): Opt[URL] =
     discard
   ok(url)
 
-proc parseJSURL*(s: string; base = none(URL)): JSResult[URL] =
+proc parseJSURL*(s: string; base: URL = nil): JSResult[URL] =
   if url := parseURL(s, base):
     return ok(url)
   return errTypeError(s & " is not a valid URL")
@@ -1231,12 +1228,11 @@ proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
 
 proc newURL*(s: string; base = none(string)): JSResult[URL] {.jsctor.} =
   let baseURL = if base.isSome:
-    let x = parseURL0(base.get)
-    if x == nil:
-      return errTypeError(base.get & " is not a valid URL")
-    some(x)
+    parseURL0(base.get)
   else:
-    none(URL)
+    nil
+  if baseURL == nil and base.isSome:
+    return errTypeError(base.get & " is not a valid URL")
   return parseJSURL(s, baseURL)
 
 proc origin*(url: URL): Origin =

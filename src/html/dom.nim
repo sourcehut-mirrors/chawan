@@ -1183,7 +1183,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
   let href = link.attr(satHref)
   if href == "":
     return
-  if url := parseURL(href, window.document.url.some):
+  if url := parseURL(href, window.document.url):
     let media = link.attr(satMedia)
     var applies = true
     if media != "":
@@ -1229,7 +1229,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
   let src = image.attr(satSrc)
   if src == "":
     return
-  if url := parseURL(src, window.document.url.some):
+  if url := parseURL(src, window.document.url):
     if window.document.url.schemeType == stHttps and url.schemeType == stHttp:
       # mixed content :/
       #TODO maybe do this in loader?
@@ -2677,14 +2677,14 @@ proc baseURL*(document: Document): URL =
       href = base.attr(satHref)
   if href == "":
     return document.url
-  let url = parseURL0(href, some(document.url))
+  let url = parseURL0(href, document.url)
   if url == nil:
     return document.url
   return url
 
 proc parseURL0*(document: Document; s: string): URL =
   #TODO encodings
-  return parseURL0(s, some(document.baseURL))
+  return parseURL0(s, document.baseURL)
 
 proc parseURL*(document: Document; s: string): Opt[URL] =
   #TODO encodings
@@ -5240,7 +5240,7 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
 # <q>, <blockquote>
 proc cite(this: HTMLQuoteElement): string {.jsfget.} =
   var s = this.attr(satCite)
-  if url := parseURL(s, some(this.document.url)):
+  if url := parseURL(s, this.document.url):
     return $url
   move(s)
 

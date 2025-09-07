@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/tables
 
 import chame/tags
@@ -191,7 +190,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
       if ctx.skipBlanksCheckHas().isOk:
         let tok = ctx.consume()
         if urls := ctx.parseURL(tok):
-          if url := parseURL(urls, some(base)):
+          if url := parseURL(urls, base):
             # check if there are really no media queries/layers/etc
             if ctx.skipBlanksCheckDone().isOk:
               sheet.importList.add(url)

@@ -363,7 +363,7 @@ proc parseRefresh*(s: string; baseURL: URL): CheckRefreshResult =
   var s2 = s.substr(i)
   if q and s2.len > 0 and s[^1] in {'"', '\''}:
     s2.setLen(s2.high)
-  if url := parseURL(s2, some(baseURL)):
+  if url := parseURL(s2, baseURL):
     return CheckRefreshResult(n: n, url: url)
   return CheckRefreshResult(n: -1)
 

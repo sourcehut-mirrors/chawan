@@ -414,7 +414,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   if url != nil and
       (moduleName.startsWith("/") or moduleName.startsWith("./") or
       moduleName.startsWith("../")):
-    x = parseURL($moduleName, some(url))
+    x = parseURL($moduleName, url)
   if x.isErr or not x.get.origin.isSameOrigin(url.origin):
     JS_ThrowTypeError(ctx, "Invalid URL: %s", cstring(moduleName))
     return nil

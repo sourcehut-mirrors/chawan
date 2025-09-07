@@ -134,7 +134,7 @@ proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
     misc: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
   let httpMethod = ?parseMethod(httpMethod)
   let global = ctx.getGlobal()
-  let parsedURL = parseURL0(url, some(global.document.baseURL))
+  let parsedURL = parseURL0(url, global.document.baseURL)
   if parsedURL == nil:
     return errDOMException("Invalid URL", "SyntaxError")
   var async = true

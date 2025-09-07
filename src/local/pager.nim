@@ -416,7 +416,7 @@ proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
   let moduleName = $moduleName
   let x = if moduleName.startsWith("/") or moduleName.startsWith("./") or
       moduleName.startsWith("../"):
-    parseURL0(moduleName, option(parseURL0("file://" & myposix.getcwd() & "/")))
+    parseURL0(moduleName, parseURL0("file://" & myposix.getcwd() & "/"))
   else:
     parseURL0(moduleName)
   if x == nil or x.schemeType != stFile:
@@ -2068,8 +2068,8 @@ proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
     if pageurl := parseURL(pager.config.network.prependScheme & url):
       # attempt to load remote page
       urls.add(pageurl)
-  let cdir = option(parseURL0("file://" & percentEncode(myposix.getcwd(),
-    LocalPathPercentEncodeSet) & DirSep))
+  let cdir = parseURL0("file://" & percentEncode(myposix.getcwd(),
+    LocalPathPercentEncodeSet) & DirSep)
   let localurl = percentEncode(url, LocalPathPercentEncodeSet)
   if newurl := parseURL(localurl, cdir):
     urls.add(newurl) # attempt to load local file
