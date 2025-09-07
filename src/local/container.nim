@@ -78,16 +78,17 @@ type
   HighlightType = enum
     hltSearch, hltSelect
 
-  SelectionType = enum
+  SelectionType* = enum
     stNormal = "normal"
     stBlock = "block"
     stLine = "line"
 
-  Highlight = ref object
+  Highlight* = ref object
     case t: HighlightType
     of hltSearch: discard
     of hltSelect:
       selectionType {.jsget.}: SelectionType
+      mouse*: bool
     x1, y1: int
     x2, y2: int
 
@@ -695,6 +696,9 @@ proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
 proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
   container.setCursorY(y, refresh)
   container.setCursorX(x, refresh)
+
+proc setAbsoluteCursorXY*(container: Container; x, y: int; refresh = true) =
+  container.setCursorXY(container.fromx + x, container.fromy + y, refresh)
 
 proc cursorLineTextStart(container: Container) {.jsfunc.} =
   if container.numLines == 0: return
@@ -1429,28 +1433,38 @@ type
   SelectionOptions = object of JSDict
     selectionType {.jsdefault.}: SelectionType
 
+proc startSelection*(container: Container; t: SelectionType; mouse: bool;
+    start = -1) =
+  let cx = if start != -1: start else: container.cursorFirstX()
+  let highlight = Highlight(
+    t: hltSelect,
+    selectionType: t,
+    x1: cx,
+    y1: container.cursory,
+    x2: container.cursorx,
+    y2: container.cursory,
+    mouse: mouse
+  )
+  container.highlights.add(highlight)
+  container.currentSelection = highlight
+  container.queueDraw()
+
+proc clearSelection*(container: Container) =
+  let i = container.highlights.find(container.currentSelection)
+  if i != -1:
+    container.highlights.delete(i)
+  container.currentSelection = nil
+  container.queueDraw()
+
 proc cursorToggleSelection(container: Container; n = 1;
     opts = SelectionOptions()): Highlight {.jsfunc.} =
   if container.currentSelection != nil:
-    let i = container.highlights.find(container.currentSelection)
-    if i != -1:
-      container.highlights.delete(i)
-    container.currentSelection = nil
+    container.clearSelection()
   else:
     let cx = container.cursorFirstX()
     let n = n - 1
     container.cursorRight(n)
-    let hl = Highlight(
-      t: hltSelect,
-      selectionType: opts.selectionType,
-      x1: cx,
-      y1: container.cursory,
-      x2: container.cursorx,
-      y2: container.cursory
-    )
-    container.highlights.add(hl)
-    container.currentSelection = hl
-  container.queueDraw()
+    container.startSelection(opts.selectionType, mouse = false, cx)
   return container.currentSelection
 
 #TODO I don't like this API

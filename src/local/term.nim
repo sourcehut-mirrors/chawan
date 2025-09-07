@@ -190,7 +190,7 @@ type
   MouseInputMod* = enum
     mimShift = "shift", mimCtrl = "ctrl", mimMeta = "meta"
 
-  MouseInputButton* = enum
+  MouseButton* = enum
     mibLeft = (1, "left")
     mibMiddle = (2, "middle")
     mibRight = (3, "right")
@@ -203,12 +203,13 @@ type
     mibButton10 = (10, "button10")
     mibButton11 = (11, "button11")
 
+  MouseInputPosition* = tuple[x, y: int32]
+
   MouseInput* = object
     t*: MouseInputType
-    button*: MouseInputButton
+    button*: MouseButton
     mods*: set[MouseInputMod]
-    col*: int32
-    row*: int32
+    pos*: MouseInputPosition
 
 # control sequence introducer
 const CSI = "\e["
@@ -476,7 +477,7 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
           var mouse = term.eparser.mouse
           if mouse.t != mitMove:
             mouse.t = if c == 'M': mitPress else: mitRelease
-          mouse.row = int32(term.eparser.mouseNum) - 1
+          mouse.pos.y = int32(term.eparser.mouseNum) - 1
           term.eparser.state = esNone
           return ok(InputEvent(t: ietMouse, m: mouse))
         else:
@@ -498,14 +499,13 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
             button += 3
           if (btn and 128) != 0:
             button += 7
-          if button in
-              uint32(MouseInputButton.low)..uint32(MouseInputButton.high):
-            term.eparser.mouse.button = MouseInputButton(button)
+          if button in uint32(MouseButton.low)..uint32(MouseButton.high):
+            term.eparser.mouse.button = MouseButton(button)
             term.eparser.state = esMousePx
           else:
             term.eparser.state = esMouseSkip
         of esMousePx:
-          term.eparser.mouse.col = int32(term.eparser.mouseNum) - 1
+          term.eparser.mouse.pos.x = int32(term.eparser.mouseNum) - 1
           term.eparser.state = esMousePy
         else: # esMousePy
           term.eparser.state = esMouseSkip
