@@ -47,7 +47,6 @@ import server/headers
 import server/loaderiface
 import server/request
 import server/response
-import server/urlfilter
 import types/bitmap
 import types/blob
 import types/cell
@@ -487,7 +486,7 @@ proc initLoader(pager: Pager) =
   let clientConfig = LoaderClientConfig(
     defaultHeaders: pager.config.network.defaultHeaders,
     proxy: pager.config.network.proxy,
-    filter: newURLFilter(default = true),
+    allowAllSchemes: true
   )
   let loader = pager.loader
   discard loader.addClient(loader.clientPid, clientConfig, -1, isPager = true)
@@ -1864,18 +1863,14 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     defaultHeaders: pager.config.network.defaultHeaders,
     cookiejar: nil,
     proxy: pager.config.network.proxy,
-    filter: newURLFilter(
-      scheme = some(url.scheme),
-      allowschemes = @["data", "cache", "stream"],
-      default = true
-    ),
+    allowSchemes: @["data", "cache", "stream"],
     cookieMode: pager.config.buffer.cookie,
     insecureSslNoVerify: false
   )
   if pager.config.network.allowHttpFromFile and
       url.schemeType in {stFile, stStream}:
-    loaderConfig.filter.allowschemes.add("http")
-    loaderConfig.filter.allowschemes.add("https")
+    loaderConfig.allowSchemes.add("http")
+    loaderConfig.allowSchemes.add("https")
   cookieJarId = url.host
   let surl = $url
   for sc in pager.config.siteconf.values:
@@ -1933,8 +1928,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       result.markLinks = sc.markLinks.get
     if sc.userStyle.isSome:
       result.userStyle &= string(sc.userStyle.get) & '\n'
-  loaderConfig.filter.allowschemes
-    .add(pager.config.external.urimethodmap.imageProtos)
+  loaderConfig.allowSchemes.add(pager.config.external.urimethodmap.imageProtos)
   if result.images:
     result.imageTypes = pager.config.external.mimeTypes.image
   result.userAgent = loaderConfig.defaultHeaders.getFirst("User-Agent")

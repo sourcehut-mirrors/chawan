@@ -23,7 +23,6 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/options
 import std/os
 import std/posix
 import std/strutils
@@ -43,7 +42,6 @@ import server/connecterror
 import server/headers
 import server/loaderiface
 import server/request
-import server/urlfilter
 import types/formdata
 import types/opt
 import types/url
@@ -1474,7 +1472,9 @@ proc load(ctx: var LoaderContext; request: Request; client: ClientHandle;
     stream.setBlocking(false)
     let credentials = config.includeCredentials(request, request.url)
     let handle = ctx.newInputHandle(stream, client, request.url, credentials)
-    if not config.filter.match(request.url):
+    if not config.allowAllSchemes and
+        request.url.scheme != config.originURL.scheme and
+        request.url.scheme notin config.allowSchemes:
       ctx.rejectHandle(handle, ceDisallowedURL)
     else:
       request.setupRequestDefaults(config, credentials)

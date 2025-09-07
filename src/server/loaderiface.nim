@@ -3,8 +3,6 @@
 #
 # See server/loader for a more detailed description of the protocol.
 
-import std/options
-
 import config/conftypes
 import config/cookie
 import io/dynstream
@@ -16,7 +14,6 @@ import server/connecterror
 import server/headers
 import server/request
 import server/response
-import server/urlfilter
 import types/opt
 import types/referrer
 import types/url
@@ -80,10 +77,11 @@ type
     originURL*: URL
     cookieJar*: CookieJar
     defaultHeaders*: Headers
-    filter*: URLFilter
     proxy*: URL
-    referrerPolicy*: ReferrerPolicy
+    allowSchemes*: seq[string]
+    allowAllSchemes*: bool # only true for pager process
     insecureSslNoVerify*: bool
+    referrerPolicy*: ReferrerPolicy
     cookieMode*: CookieMode
 
 proc getRedirect*(response: Response; request: Request): Request =
