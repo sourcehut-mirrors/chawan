@@ -438,6 +438,10 @@ proc cssDimensionToken*(n: float32; dim: string): CSSToken =
   let unum = CSSTokenNum(f: n)
   return CSSToken(t: cttDimension, unum: unum, s: dim)
 
+proc cssPercentageToken*(n: float32): CSSToken =
+  let unum = CSSTokenNum(f: n)
+  return CSSToken(t: cttPercentage, unum: unum)
+
 func normt*(tok: CSSToken): CSSTokenType =
   case tok.t
   of cttINumber: return cttNumber

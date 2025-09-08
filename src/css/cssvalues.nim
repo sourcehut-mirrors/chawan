@@ -36,7 +36,6 @@ type
     cuLvmin = "lvmin"
     cuMm = "mm"
     cuPc = "pc"
-    cuPerc = "%"
     cuPt = "pt"
     cuPx = "px"
     cuRcap = "rcap"
@@ -980,7 +979,6 @@ proc resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
   of cuCh, cuRch: cssLength(val * float32(attrs.ppc))
   of cuIc, cuRic: cssLength(val * float32(attrs.ppc) * 2)
   of cuEx, cuRex: cssLength(val * float32(attrs.ppc) / 2)
-  of cuPerc: cssLengthPerc(val)
   of cuPx: cssLength(val)
   of cuCm: cssLength(val * 37.8)
   of cuMm: cssLength(val * 3.78)
@@ -1065,6 +1063,10 @@ proc parseCalcValue(ctx: var CSSParser; attrs: ptr WindowAttributes):
       res = Opt[CSSCalcSum].err()
     ctx.skipFunction()
     return res
+  of cttPercentage:
+    let tok = ctx.consume()
+    let length = cssLengthPerc(tok.num)
+    return ok(CSSCalcSum(t: ccstLength, l: length))
   of cttDimension, cttIDimension:
     let tok = ctx.consume()
     if deg := parseAngle(tok):
@@ -1149,7 +1151,7 @@ proc consumeColorToken(ctx: var CSSParser; acceptNone: bool): Opt[CSSToken] =
     case res.t
     of ccstNumber: return ok(cssNumberToken(res.n))
     of ccstDegree: return ok(cssDimensionToken(res.deg, "deg"))
-    else: return err()
+    of ccstLength: return ok(cssPercentageToken(res.l.perc))
   of cttNumber, cttINumber, cttDimension, cttIDimension, cttPercentage:
     return ok(ctx.consume())
   of cttIdent:
@@ -1315,7 +1317,7 @@ proc parseLength*(ctx: var CSSParser; attrs: WindowAttributes;
     let n = tok.num
     if not allowNegative and n < 0:
       return err()
-    return parseLength(n, "%", attrs)
+    return ok(cssLengthPerc(n))
   of cttDimension, cttIDimension:
     let n = tok.num
     if not allowNegative and n < 0:
