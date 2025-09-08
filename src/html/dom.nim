@@ -625,7 +625,7 @@ proc reflectEvent(document: Document; target: EventTarget;
   name, ctype: StaticAtom; value: string; target2 = none(EventTarget))
 
 proc document*(node: Node): Document
-proc nextDescendant(node: Node): Node
+proc nextDescendant(node, start: Node): Node
 proc parentElement*(node: Node): Element
 proc serializeFragment(res: var string; node: Node)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType)
@@ -927,16 +927,16 @@ iterator branchElems*(node: Node): Element {.inline.} =
       yield Element(node)
 
 iterator descendants*(node: ParentNode): Node {.inline.} =
-  var node = node.firstChild
-  while node != nil:
-    yield node
-    node = node.nextDescendant
+  var it = node.firstChild
+  while it != nil:
+    yield it
+    it = it.nextDescendant(node)
 
 iterator descendantsIncl(node: Node): Node {.inline.} =
-  var node = node
-  while node != nil:
-    yield node
-    node = node.nextDescendant
+  var it = node
+  while it != nil:
+    yield it
+    it = it.nextDescendant(node)
 
 iterator elementDescendants*(node: ParentNode): Element {.inline.} =
   for child in node.descendants:
@@ -1456,20 +1456,20 @@ proc previousSibling*(node: Node): Node {.jsfget.} =
     return nil
   return node.internalPrev
 
-proc nextDescendant(node: Node): Node =
+# Return the next descendant if it isn't `start', and nil otherwise.
+# Note: `start' must be either a parent of `node', `node` itself, or nil.
+proc nextDescendant(node, start: Node): Node =
   if node of ParentNode: # parent
     let node = cast[ParentNode](node)
     if node.firstChild != nil:
       return node.firstChild
   # climb up until we find a non-last leaf (this might be node itself)
   var node = node
-  while true:
+  while node != start:
     let next = node.nextSibling
     if next != nil:
       return next
     node = node.parentNode
-    if node == nil:
-      break
   # done
   return nil
 
