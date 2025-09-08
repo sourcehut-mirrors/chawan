@@ -506,11 +506,31 @@ const WhiteSpacePreserve* = {
   WhitespacePre, WhitespacePreLine, WhitespacePreWrap
 }
 
+type
+  CSSCalcSumType = enum
+    ccstNumber, ccstLength, ccstDegree
+
+  CSSCalcKeyword = enum
+    ccskE = "e"
+    ccskPi = "pi"
+    ccskInfinity = "infinity"
+    ccskMinusInfinity = "-infinity"
+    ccskNaN = "NaN"
+
+  CSSCalcSum = object
+    case t: CSSCalcSumType
+    of ccstNumber:
+      n: float32
+    of ccstLength:
+      l: CSSLength
+    of ccstDegree:
+      deg: float32
+
 # Forward declarations
 proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   entry: var CSSComputedEntry; attrs: WindowAttributes): Opt[void]
-proc parseLength*(ctx: var CSSParser; attrs: WindowAttributes;
-  hasAuto = true; allowNegative = true): Opt[CSSLength]
+proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
+  Opt[CSSCalcSum]
 
 proc newCSSVariableMap*(parent: CSSVariableMap): CSSVariableMap =
   return CSSVariableMap(parent: parent)
@@ -1003,46 +1023,170 @@ proc parseDimensionValues*(s: string): Opt[CSSLength] =
     return ok(cssLengthPerc(n))
   ok(cssLength(n))
 
-proc consumeColorToken(ctx: var CSSParser; legacy = false): Opt[CSSToken] =
-  let tok = ctx.consume()
-  if tok.t in {cttNumber, cttINumber, cttDimension, cttIDimension,
-      cttPercentage}:
-    return ok(tok)
-  if not legacy and tok.t == cttIdent and tok.s.equalsIgnoreCase("none"):
-    return ok(tok)
-  return err()
+type CSSAngleType = enum
+  catDeg = "deg"
+  catGrad = "grad"
+  catRad = "rad"
+  catTurn = "turn"
+
+# The return value is in degrees.
+proc parseAngle(tok: CSSToken): Opt[float32] =
+  case ?parseEnumNoCase[CSSAngleType](tok.s)
+  of catDeg: return ok(tok.num)
+  of catGrad: return ok(tok.num * 0.9f32)
+  of catRad: return ok(radToDeg(tok.num))
+  of catTurn: return ok(tok.num * 360f32)
+
+template calcSumNumber(num: float32): CSSCalcSum =
+  CSSCalcSum(t: ccstNumber, n: num)
+
+proc parseCalcValue(ctx: var CSSParser; attrs: ptr WindowAttributes):
+    Opt[CSSCalcSum] =
+  ?ctx.skipBlanksCheckHas()
+  case (let t = ctx.peekTokenType(); t)
+  of cttNumber, cttINumber:
+    let tok = ctx.consume()
+    return ok(calcSumNumber(tok.num))
+  of cttIdent:
+    let tok = ctx.consume()
+    let keyword = ?parseEnumNoCase[CSSCalcKeyword](tok.s)
+    case keyword
+    of ccskE: return ok(calcSumNumber(E))
+    of ccskPi: return ok(calcSumNumber(PI))
+    of ccskInfinity: return ok(calcSumNumber(Inf))
+    of ccskMinusInfinity: return ok(calcSumNumber(-Inf))
+    of ccskNaN: return err() #TODO it seems nobody implements this yet?
+  of cttLparen, cttFunction:
+    if t == cttFunction and ctx.peekToken().ft != cftCalc:
+      return err()
+    ctx.seekToken()
+    var res = ctx.parseCalcSum(attrs)
+    if ctx.has() and ctx.peekTokenType() != cttRparen:
+      res = Opt[CSSCalcSum].err()
+    ctx.skipFunction()
+    return res
+  of cttDimension, cttIDimension:
+    let tok = ctx.consume()
+    if deg := parseAngle(tok):
+      return ok(CSSCalcSum(t: ccstDegree, deg: deg))
+    if attrs == nil:
+      return err()
+    let length = ?parseLength(tok.num, tok.s, attrs[])
+    return ok(CSSCalcSum(t: ccstLength, l: length))
+  else:
+    return err()
+
+proc parseCalcProduct(ctx: var CSSParser; attrs: ptr WindowAttributes):
+    Opt[CSSCalcSum] =
+  var a = ?ctx.parseCalcValue(attrs)
+  while ctx.skipBlanksCheckHas().isOk:
+    let t = ctx.peekTokenType()
+    if t notin {cttStar, cttSlash}:
+      break
+    let delim = ctx.consume().t
+    var b = ?ctx.parseCalcProduct(attrs)
+    var n = 0f32
+    if delim == cttSlash: # division: b must be a number
+      if b.t != ccstNumber or b.n == 0:
+        return err()
+      n = 1 / b.n
+    else: # multiplication: either can be length, but not both
+      if b.t != ccstNumber:
+        swap(a, b)
+      if b.t != ccstNumber:
+        return err()
+      n = b.n
+    case a.t
+    of ccstLength:
+      a.l.npx *= n
+      a.l.perc *= n
+    of ccstNumber:
+      a.n *= n
+    of ccstDegree:
+      a.deg *= n
+  ok(a)
+
+proc parseCalcSum(ctx: var CSSParser; attrs: ptr WindowAttributes):
+    Opt[CSSCalcSum] =
+  var a = ?ctx.parseCalcProduct(attrs)
+  while ctx.skipBlanksCheckHas().isOk:
+    let t = ctx.peekTokenType()
+    if t notin {cttPlus, cttMinus}:
+      break
+    let mul = if ctx.consume().t == cttPlus: 1f32 else: -1f32
+    var b = ?ctx.parseCalcProduct(attrs)
+    if a.t != b.t:
+      # cannot add length to number
+      return err()
+    case b.t
+    of ccstLength:
+      a.l.npx += mul * b.l.npx
+      a.l.perc += mul * b.l.perc
+    of ccstDegree:
+      a.deg += mul * b.deg
+    of ccstNumber:
+      a.n += mul * b.n
+  ok(a)
+
+# Note: `attrs' may be nil, in that case only numbers are accepted.
+proc parseCalc(ctx: var CSSParser; attrs: ptr WindowAttributes):
+    Opt[CSSCalcSum] =
+  var res = ctx.parseCalcSum(attrs)
+  if ctx.has() and ctx.peekTokenType() != cttRparen:
+    res = Opt[CSSCalcSum].err()
+  ctx.skipFunction()
+  res
+
+proc consumeColorToken(ctx: var CSSParser; acceptNone: bool): Opt[CSSToken] =
+  ?ctx.skipBlanksCheckHas()
+  case ctx.peekTokenType()
+  of cttFunction:
+    if ctx.peekToken().ft != cftCalc:
+      ctx.seek()
+      return err()
+    ctx.seekToken()
+    let res = ?ctx.parseCalc(nil)
+    case res.t
+    of ccstNumber: return ok(cssNumberToken(res.n))
+    of ccstDegree: return ok(cssDimensionToken(res.deg, "deg"))
+    else: return err()
+  of cttNumber, cttINumber, cttDimension, cttIDimension, cttPercentage:
+    return ok(ctx.consume())
+  of cttIdent:
+    if not acceptNone or not ctx.peekIdentNoCase("none"):
+      return err()
+    return ok(ctx.consume())
+  else: return err()
 
 # For rgb(), rgba(), hsl(), hsla().
-proc parseLegacyColorFun(ctx: var CSSParser):
+proc parseColorFun(ctx: var CSSParser):
     Opt[tuple[v1, v2, v3: CSSToken; a: uint8; legacy: bool]] =
-  ?ctx.skipBlanksCheckHas()
-  let v1 = ?ctx.consumeColorToken()
+  let v1 = ?ctx.consumeColorToken(acceptNone = true)
   ?ctx.skipBlanksCheckHas()
   let legacy = ctx.peekTokenType() == cttComma
   if legacy:
     if v1.t == cttIdent:
       return err() # legacy doesn't accept "none"
     ctx.seekToken()
-  ?ctx.skipBlanksCheckHas()
-  let v2 = ?ctx.consumeColorToken(legacy)
+  let v2 = ?ctx.consumeColorToken(not legacy)
   if legacy:
     ?ctx.skipBlanksCheckHas()
     if ctx.consume().t != cttComma:
       return err()
-  ?ctx.skipBlanksCheckHas()
-  let v3 = ?ctx.consumeColorToken(legacy)
-  ctx.skipBlanks()
+  let v3 = ?ctx.consumeColorToken(not legacy)
   if ctx.checkFunctionEnd().isOk:
     return ok((v1, v2, v3, 255u8, legacy))
   if ctx.peekTokenType() != (if legacy: cttComma else: cttSlash):
     return err()
   ctx.seekToken()
-  ?ctx.skipBlanksCheckHas()
-  let v4 = ctx.consume()
-  if v4.t notin {cttPercentage, cttNumber, cttINumber}:
-    return err()
+  let v4 = ?ctx.consumeColorToken(acceptNone = false)
   ?ctx.checkFunctionEnd()
   return ok((v1, v2, v3, uint8(clamp(v4.num, 0, 1) * 255), legacy))
+
+proc ansiColorNumeric(n: int32): Opt[CSSColor] =
+  if n < 0 or n > 255:
+    return err()
+  ok(ANSIColor(n).cssColor())
 
 # syntax: -cha-ansi( number | ident )
 # where number is an ANSI color (0..255)
@@ -1050,16 +1194,19 @@ proc parseLegacyColorFun(ctx: var CSSParser):
 proc parseANSI(ctx: var CSSParser): Opt[CSSColor] =
   ?ctx.skipBlanksCheckHas()
   let tok = ctx.consume()
-  if tok.t in {cttINumber, cttNumber}:
-    #TODO calc
-    let i = tok.toi
-    if i notin 0i32..25532:
-      return err() # invalid numeric ANSI color
-    return ok(ANSIColor(i).cssColor())
-  elif tok.t == cttIdent:
+  case tok.t
+  of cttINumber, cttNumber:
+    return ansiColorNumeric(tok.toi)
+  of cttFunction:
+    if tok.ft != cftCalc:
+      ctx.skipFunction()
+      return err()
+    let res = ?ctx.parseCalc(nil)
+    if res.t == ccstNumber:
+      return ansiColorNumeric(int32(res.n))
+  of cttIdent:
     var name = tok.s
     if name.equalsIgnoreCase("default"):
-      ?ctx.checkFunctionEnd()
       return ok(defaultColor.cssColor())
     var bright = false
     if name.startsWithIgnoreCase("bright-"):
@@ -1080,8 +1227,8 @@ proc parseANSI(ctx: var CSSParser): Opt[CSSColor] =
         var i = int(i)
         if bright:
           i += 8
-        ?ctx.checkFunctionEnd()
         return ok(ANSIColor(i).cssColor())
+  else: discard
   return err()
 
 proc parseRGBComponent(tok: CSSToken): uint8 =
@@ -1092,31 +1239,16 @@ proc parseRGBComponent(tok: CSSToken): uint8 =
     res *= 2.55
   return uint8(clamp(res, 0, 255)) # number
 
-type CSSAngleType = enum
-  catDeg = "deg"
-  catGrad = "grad"
-  catRad = "rad"
-  catTurn = "turn"
-
-# The return value is in degrees.
-proc parseAngle(tok: CSSToken): Opt[float32] =
-  if tok.t in {cttDimension, cttIDimension}:
-    case ?parseEnumNoCase[CSSAngleType](tok.s)
-    of catDeg: return ok(tok.num)
-    of catGrad: return ok(tok.num * 0.9f32)
-    of catRad: return ok(radToDeg(tok.num))
-    of catTurn: return ok(tok.num * 360f32)
-  return err()
-
 proc parseHue(tok: CSSToken): Opt[uint32] =
-  if tok.t in {cttNumber, cttINumber}:
-    var n = tok.num mod 360
-    if n < 0:
-      n = n + 360
-    return ok(uint32(n))
-  if tok.t == cttIdent: # none
-    return ok(0)
-  var n = ?parseAngle(tok) mod 360
+  var n = 0i32
+  case tok.t
+  of cttNumber, cttINumber:
+    n = tok.toi
+  of cttIdent: discard # none -> 0
+  of cttDimension, cttIDimension:
+    n = int32(?parseAngle(tok))
+  else: return err()
+  n = n mod 360
   if n < 0:
     n = n + 360
   return ok(uint32(n))
@@ -1146,22 +1278,21 @@ proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
   of cttFunction:
     case tok.ft
     of cftRgb, cftRgba:
-      if x := ctx.parseLegacyColorFun():
+      if x := ctx.parseColorFun():
         let (r, g, b, a, legacy) = x
-        if r.t == g.t and g.t == b.t or not legacy:
+        if r.normt == g.normt and g.normt == b.normt or not legacy:
           let r = parseRGBComponent(r)
           let g = parseRGBComponent(g)
           let b = parseRGBComponent(b)
           return ok(rgba(r, g, b, a).cssColor())
     of cftHsl, cftHsla:
-      if x := ctx.parseLegacyColorFun():
+      if x := ctx.parseColorFun():
         let (h, s, l, a, legacy) = x
         if h.t != cttIdent and s.t == cttPercentage and l.t == cttPercentage or
             not legacy:
           let h = ?parseHue(h)
           let s = ?parseSatOrLight(s)
           let l = ?parseSatOrLight(l)
-          ?ctx.checkFunctionEnd()
           return ok(hsla(h, s, l, a).cssColor())
     of cftChaAnsi:
       let res = ctx.parseANSI()
@@ -1172,62 +1303,6 @@ proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
     ctx.skipFunction()
   else: discard
   return err()
-
-proc parseCalc(ctx: var CSSParser; attrs: WindowAttributes;
-    hasAuto, allowNegative: bool): Opt[CSSLength] =
-  var ns = CSSLength()
-  var nmulx = none(float32)
-  var n = 0
-  var delim = cttPlus
-  ctx.skipBlanks()
-  if not ctx.has() or ctx.peekTokenType() == cttRparen:
-    return err()
-  while ctx.has() and ctx.peekTokenType() != cttRparen:
-    if n != 0:
-      ?ctx.skipBlanksCheckHas()
-      if ctx.peekTokenType() notin {cttPlus, cttMinus, cttStar}:
-        ctx.skipFunction()
-        return err()
-      delim = ctx.consume().t
-    ?ctx.skipBlanksCheckHas()
-    if n <= 1 and ctx.peekTokenType() in {cttNumber, cttINumber}:
-      let num = ctx.consume().num
-      if n == 1:
-        if delim != cttStar or nmulx.isSome:
-          ctx.skipFunction()
-          return err()
-        ns.npx *= num
-        ns.perc *= num
-      else:
-        nmulx = some(num)
-      inc n
-      continue
-    if ctx.peekTokenType() == cttRparen:
-      ctx.skipFunction()
-      return err()
-    let length = ?ctx.parseLength(attrs, hasAuto, allowNegative = true)
-    if length.auto:
-      ctx.skipFunction()
-      return err()
-    let sign = if delim == cttMinus: -1f32 else: 1f32
-    ns.npx += length.npx * sign
-    ns.perc += length.perc * sign
-    if nmulx.isSome:
-      let nmul = nmulx.get
-      if n > 1 or delim != cttStar:
-        return err() # invalid or needs recursive descent
-      ns.perc *= nmul
-      ns.npx *= nmul
-      nmulx = none(float32)
-    elif delim == cttStar:
-      ctx.skipFunction()
-      return err()
-    inc n
-  if ctx.has():
-    assert ctx.consume().t == cttRparen
-  if nmulx.isSome:
-    return err()
-  return ok(ns)
 
 proc parseLength*(ctx: var CSSParser; attrs: WindowAttributes;
     hasAuto = true; allowNegative = true): Opt[CSSLength] =
@@ -1251,8 +1326,11 @@ proc parseLength*(ctx: var CSSParser; attrs: WindowAttributes;
       return ok(CSSLengthAuto)
   of cttFunction:
     if tok.ft != cftCalc:
+      ctx.skipFunction()
       return err()
-    return ctx.parseCalc(attrs, hasAuto, allowNegative)
+    let res = ?ctx.parseCalc(unsafeAddr attrs)
+    if res.t == ccstLength:
+      return ok(res.l)
   else: discard
   err()
 
@@ -1493,6 +1571,9 @@ proc makeEntry*(t: CSSPropertyType; integer: int32): CSSComputedEntry =
 proc makeEntry(t: CSSPropertyType; number: float32): CSSComputedEntry =
   makeEntry(t, CSSValueHWord(number: number))
 
+proc makeEntry(t: CSSPropertyType; image: NetworkBitmap): CSSComputedEntry =
+  makeEntry(t, CSSValue(v: cvtImage, image: image))
+
 template makeEntry[T: enum|set](t: CSSPropertyType; val: T): CSSComputedEntry =
   CSSComputedEntry(et: ceBit, p: t, bit: cast[uint8](val))
 
@@ -1630,7 +1711,7 @@ proc getInitialTable(): array[CSSPropertyType, CSSValue] =
 
 let defaultTable = getInitialTable()
 
-template getDefault*(t: CSSPropertyType): CSSValue =
+template getDefault(t: CSSPropertyType): CSSValue =
   defaultTable[t]
 
 proc getDefaultHWord(t: CSSPropertyType): CSSValueHWord =
@@ -1645,6 +1726,13 @@ proc getDefaultWord(t: CSSPropertyType): CSSValueWord =
   of cvtLength: return CSSValueWord(length: getInitialLength(t))
   of cvtZIndex: return CSSValueWord(zIndex: CSSZIndex(auto: true))
   else: return CSSValueWord(dummy: 0)
+
+proc makeDefaultEntry(t: CSSPropertyType): CSSComputedEntry =
+  case t.reprType
+  of cprtBit: return makeEntry(t, CSSValueBit(dummy: 0))
+  of cprtHWord: return makeEntry(t, getDefaultHWord(t))
+  of cprtWord: return makeEntry(t, getDefaultWord(t))
+  of cprtObject: return makeEntry(t, getDefault(t))
 
 proc parseLengthShorthand(ctx: var CSSParser; props: openArray[CSSPropertyType];
     attrs: WindowAttributes; hasAuto: bool; res: var seq[CSSComputedEntry]):
@@ -1718,22 +1806,32 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
   of cstPadding:
     ?ctx.parseLengthShorthand(ShorthandMap[p.sh], attrs, hasAuto = false, res)
   of cstBackground:
-    var bgcolor = makeEntry(cptBackgroundColor,
-      getDefaultWord(cptBackgroundColor))
-    var bgimage = makeEntry(cptBackgroundImage, getDefault(cptBackgroundImage))
+    var color = makeDefaultEntry(cptBackgroundColor)
+    var image = makeDefaultEntry(cptBackgroundImage)
     while ctx.has():
-      if color := ctx.parseColor():
-        bgcolor = makeEntry(cptBackgroundColor, color)
-      elif image := ctx.parseImage():
-        let val = CSSValue(v: cvtImage, image: image)
-        bgimage = makeEntry(cptBackgroundImage, val)
+      case ctx.peekTokenType()
+      of cttHash:
+        color = makeEntry(cptBackgroundColor, ?ctx.parseColor())
+      of cttString:
+        image = makeEntry(cptBackgroundImage, ?ctx.parseImage())
+      of cttIdent:
+        if ctx.peekIdentNoCase("none"):
+          image = makeEntry(cptBackgroundImage, ?ctx.parseImage())
+        elif x := ctx.parseColor():
+          color = makeEntry(cptBackgroundColor, x)
+      of cttFunction:
+        if ctx.peekToken().ft == cftUrl:
+          image = makeEntry(cptBackgroundImage, ?ctx.parseImage())
+        elif x := ctx.parseColor():
+          color = makeEntry(cptBackgroundColor, x)
       else:
         #TODO when we implement the other shorthands too
         #return err()
-        discard
+        while ctx.has() and ctx.peekTokenType() != cttWhitespace:
+          ctx.seek()
       ctx.skipBlanks()
-    res.add(bgcolor)
-    res.add(bgimage)
+    res.add(color)
+    res.add(image)
   of cstListStyle:
     var typeVal = CSSValueBit()
     var positionVal = CSSValueBit()

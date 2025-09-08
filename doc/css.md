@@ -84,10 +84,9 @@ Shorthands:
 * flex-flow
 * overflow
 
-Variables (the `var` function) are fully supported.
+Variables (the `var()` function) are fully supported.
 
-Values with a `<length>` type support `calc()` expressions that can be
-parsed without recursive descent.
+Values of `<length>` or `<color>` types fully support `calc()` expressions.
 
 ## Selectors
 

@@ -6,8 +6,18 @@
 <div style="width: calc(1ch * 2); background: red">2ch</div>
 <div style="width: calc(1ch + calc(2ch - 1ch)); background: red">2ch</div>
 <div style="width: calc(1ch * 2 + calc(2ch - 1ch)); background: red">3ch</div>
+<div style="background: red; width: calc(1ch">1ch</div>
+<div style="background: red; width: calc(1ch + 10ch * 4 / 20 - 1ch">2ch</div>
+<div style="background: red; width: calc(-1ch + (1ch + 1ch">1ch</div>
+<div style="color: rgba(calc(1 * 255), 0, 0, 1)">red</div>
+<div style="color: rgb(calc(1 * 255) 0 0)">red</div>
+<div style="color: rgba(calc(1 * 255) 0 0 / 1)">red</div>
+<div style="color: hsl(calc(1turn) 100 50 / 1)">red</div>
 <!-- invalid -->
+<div style="background: red; width: calc(- 1ch)">test</div>
 <div style="width: calc(1 * 2); background: red">test</div>
 <div style="width: calc(); background: red">test</div>
 <div style="width: calc(1); background: red">test</div>
 <div style="width: calc(1ch + + 1ch); background: red">test</div>
+<div style="color: rgba(calc(1ch) 0 0 / 1)">test</div>
+<div style="color: rgba(calc(1 * 255), 50%, 0)">red</div>
