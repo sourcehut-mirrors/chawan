@@ -49,6 +49,7 @@ type
     slurping: bool
     reprocess: bool
     hasp: bool
+    skipp: bool
     listState: ListState
     blockType: BlockType
     linkDefState: LinkDefState
@@ -298,6 +299,8 @@ proc parseLink(ctx: var ParseInlineContext; line: string;
     let s = ctx.bracketChars.toLowerAscii()
     let (link, title) = state.refMap.getOrDefault(s)
     if link == "":
+      if c == '[':
+        i -= 2
       return ctx.parseLinkBail(i - 1, state)
     ctx.i = i - 1
     return ctx.parseLinkWrite(link, title, state)
@@ -582,7 +585,8 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     if state.hasp:
       state.hasp = false
       ?state.writeLine("</P>")
-    state.blockData = line.substr(1) & "<BR>"
+    let i = if line.len < 2 or line[1] != ' ': 1 else: 2
+    state.blockData = line.substr(i) & "\n"
     ?state.write("<BLOCKQUOTE>")
   elif (let desc = line.getListDepth(); desc.t != ltNoMark):
     state.blockType = btList
@@ -607,7 +611,9 @@ proc parsePre(state: var ParseState; line: string): Opt[void] =
 proc flushPar(state: var ParseState): Opt[void] =
   if state.blockData != "":
     state.hasp = true
-    ?state.writeLine("<P>")
+    if not state.skipp:
+      ?state.writeLine("<P>")
+    state.skipp = false
     ?state.parseInline(state.blockData)
     state.blockData = ""
   ok()
@@ -615,8 +621,14 @@ proc flushPar(state: var ParseState): Opt[void] =
 proc flushList(state: var ParseState): Opt[void] =
   if state.lists[^1].par and state.blockData != "":
     ?state.writeLine("<P>")
-  ?state.parseInline(state.blockData)
-  state.blockData = ""
+  var state2 = ParseState(
+    slurpIdx: 0,
+    ofile: state.ofile,
+    refMap: state.refMap,
+    slurpBuf: move(state.blockData),
+    skipp: true
+  )
+  ?state2.parse()
   while state.lists.len > 0:
     ?state.popList()
   state.blockType = btNone
@@ -639,9 +651,13 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
       else:
         if state.listState == lsAfterBlank:
           state.lists[^1].par = true
-          ?state.writeLine("<P>")
-          ?state.parseInline(state.blockData)
-          state.blockData = ""
+          var state2 = ParseState(
+            slurpIdx: 0,
+            ofile: state.ofile,
+            refMap: state.refMap,
+            slurpBuf: move(state.blockData)
+          )
+          ?state2.parse()
           while desc.depth < state.lists[^1].depth:
             ?state.popList()
         state.blockData &= line.substr(desc.len) & '\n'
@@ -650,8 +666,14 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
         state.lists[^1].par = true
       if state.lists[^1].par:
         ?state.writeLine("<P>")
-      ?state.parseInline(state.blockData)
-      state.blockData = ""
+      var state2 = ParseState(
+        slurpIdx: 0,
+        ofile: state.ofile,
+        refMap: state.refMap,
+        slurpBuf: move(state.blockData),
+        skipp: true
+      )
+      ?state2.parse()
       while state.lists.len > 1 and (desc.depth < state.lists[^1].depth or
           desc.depth == state.lists[^1].depth and desc.t != state.lists[^1].t):
         ?state.popList()
@@ -761,13 +783,20 @@ proc parseSpacePre(state: var ParseState; line: string): Opt[void] =
 
 proc parseBlockquote(state: var ParseState; line: string): Opt[void] =
   if line.len == 0 or line[0] != '>':
-    ?state.write(state.blockData)
+    var state2 = ParseState(
+      slurpIdx: 0,
+      ofile: state.ofile,
+      refMap: state.refMap,
+      slurpBuf: move(state.blockData),
+      skipp: true
+    )
+    ?state2.parse()
     ?state.write("</BLOCKQUOTE>")
-    state.blockData = ""
     state.reprocess = true
     state.blockType = btNone
   else:
-    state.blockData &= line.substr(1) & "<BR>"
+    let i = if line.len < 2 or line[1] != ' ': 1 else: 2
+    state.blockData &= line.substr(i) & '\n'
   ok()
 
 proc parseComment(state: var ParseState; line: string): Opt[void] =
