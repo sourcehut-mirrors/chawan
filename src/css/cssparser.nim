@@ -921,18 +921,21 @@ proc consumeQualifiedRule(ctx: var CSSParser): Opt[CSSQualifiedRule] =
     return ok(r)
   err()
 
+proc skipDeclaration(ctx: var CSSParser) =
+  while ctx.has():
+    let it = ctx.peekTokenType()
+    if it == cttRbrace:
+      break
+    ctx.seek()
+    if it == cttSemicolon:
+      break
+
 proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
   let tok = ctx.consumeToken()
   var decl = initCSSDeclaration(tok.s)
   ctx.skipBlanks()
   if not ctx.has() or ctx.peekTokenType() != cttColon:
-    while ctx.has():
-      let it = ctx.peekTokenType()
-      if it == cttRbrace:
-        break
-      ctx.seek()
-      if it == cttSemicolon:
-        break
+    ctx.skipDeclaration()
     return err()
   ctx.seekToken()
   ctx.skipBlanks()
@@ -1009,7 +1012,7 @@ proc consumeDeclarations(ctx: var CSSParser; nested: bool):
         valid = true
         break
     else:
-      ctx.skipUntil(cttSemicolon)
+      ctx.skipDeclaration()
   if not valid:
     result.setLen(0)
 
