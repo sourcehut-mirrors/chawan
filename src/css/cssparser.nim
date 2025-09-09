@@ -88,7 +88,7 @@ type
     decls*: seq[CSSDeclaration]
 
   CSSDeclarationType* = enum
-    cdtUnknown, cdtProperty, cdtVariable
+    cdtProperty, cdtVariable
 
   CSSImportantFlag* = enum
     cifNormal, cifImportant
@@ -101,8 +101,6 @@ type
     f*: CSSImportantFlag
     hasVar*: bool
     case t*: CSSDeclarationType
-    of cdtUnknown:
-      uname*: string
     of cdtProperty:
       p*: CSSAnyPropertyType
     of cdtVariable:
@@ -370,7 +368,6 @@ proc `$`*(p: CSSAnyPropertyType): string =
 
 proc name*(decl: CSSDeclaration): string =
   case decl.t
-  of cdtUnknown: result &= decl.uname
   of cdtProperty: result &= $decl.p
   of cdtVariable: result &= "--" & $decl.v
 
@@ -787,16 +784,14 @@ proc initCSSParser*(toks: openArray[CSSToken]): CSSParser =
 proc initCSSParserSink*(toks: var seq[CSSToken]): CSSParser =
   return CSSParser(toks: move(toks))
 
-proc initCSSDeclaration*(name: string): CSSDeclaration =
+proc initCSSDeclaration*(name: string): Opt[CSSDeclaration] =
   if name.startsWith("--"):
-    return CSSDeclaration(
+    return ok(CSSDeclaration(
       t: cdtVariable,
       v: name.toOpenArray(2, name.high).toAtom()
-    )
-  elif p := anyPropertyType(name):
-    return CSSDeclaration(t: cdtProperty, p: p)
-  else:
-    return CSSDeclaration(t: cdtUnknown, uname: name)
+    ))
+  let p = ?anyPropertyType(name)
+  ok(CSSDeclaration(t: cdtProperty, p: p))
 
 proc peekToken*(ctx: var CSSParser): lent CSSToken =
   if ctx.toks.len > 0:
@@ -932,11 +927,12 @@ proc skipDeclaration(ctx: var CSSParser) =
 
 proc consumeDeclaration(ctx: var CSSParser): Opt[CSSDeclaration] =
   let tok = ctx.consumeToken()
-  var decl = initCSSDeclaration(tok.s)
-  ctx.skipBlanks()
-  if not ctx.has() or ctx.peekTokenType() != cttColon:
+  let x = initCSSDeclaration(tok.s)
+  ?ctx.skipBlanksCheckHas()
+  if ctx.peekTokenType() != cttColon or x.isErr:
     ctx.skipDeclaration()
     return err()
+  var decl = x.get
   ctx.seekToken()
   ctx.skipBlanks()
   var lastTokIdx1 = -1
@@ -998,7 +994,7 @@ proc consumeDeclarations(ctx: var CSSParser; nested: bool):
     of cttWhitespace, cttSemicolon:
       ctx.seekToken()
     of cttAtKeyword:
-      discard ctx.consumeAtRule() # see above
+      discard ctx.consumeAtRule()
     of cttIdent:
       if decl := ctx.consumeDeclaration():
         # looks ridiculous, but it's the only way to convince refc not

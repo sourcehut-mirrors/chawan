@@ -161,7 +161,6 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
     for decl in rule.decls:
       let f = decl.f
       case decl.t
-      of cdtUnknown: discard
       of cdtVariable:
         ruleDef.vars[f].add(CSSVariable(
           name: decl.v,

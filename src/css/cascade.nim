@@ -361,7 +361,6 @@ proc applyStyle*(element: Element) =
     for decl in style.decls:
       let f = decl.f
       case decl.t
-      of cdtUnknown: discard
       of cdtVariable:
         map[peNone][coAuthor].vars[f].add(CSSVariable(
           name: decl.v,

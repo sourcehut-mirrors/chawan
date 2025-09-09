@@ -4649,13 +4649,8 @@ proc merge*(a: var DependencyInfo; b: DependencyInfo) =
 proc newCSSStyleDeclaration(element: Element; value: string; computed = false;
     readonly = false): CSSStyleDeclaration =
   # Note: element may be nil
-  let inlineRules = value.parseDeclarations()
-  var decls: seq[CSSDeclaration] = @[]
-  for rule in inlineRules:
-    if rule.t != cdtUnknown:
-      decls.add(rule)
   return CSSStyleDeclaration(
-    decls: inlineRules,
+    decls: value.parseDeclarations(),
     element: element,
     computed: computed,
     readonly: readonly
@@ -4723,7 +4718,6 @@ proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
     return err()
   # dummyAttrs can be safely used because the result is discarded.
   case this.decls[i].t
-  of cdtUnknown: discard
   of cdtProperty:
     var ctx = initCSSParser(toks)
     var dummy: seq[CSSComputedEntry] = @[]
@@ -4768,10 +4762,11 @@ proc setProperty(this: CSSStyleDeclaration; name, value: string):
       # not err! this does not throw.
       return ok()
   else:
-    var decl = initCSSDeclaration(name)
+    let x = initCSSDeclaration(name)
+    if x.isErr:
+      return ok() # ignore
+    var decl = x.get
     case decl.t
-    of cdtUnknown:
-      return ok()
     of cdtProperty:
       var ctx = initCSSParser(toks)
       var dummy = newSeq[CSSComputedEntry]()
