@@ -1,0 +1,10 @@
+#!/bin/sh
+
+if test -z "$1"
+then	echo "Usage: test/layout/add test/layout/[test-name].html"
+	exit 1
+fi
+
+CHA=${CHA:-./cha}
+
+$CHA -Ctest/layout/config.toml "$1" >"$(dirname "$1")/$(basename "$1" .html).expected"

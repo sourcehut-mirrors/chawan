@@ -12,11 +12,6 @@ do	printf '%s\r' "$h"
 		then	failed=$(($failed+1))
 			printf 'FAIL: %s\n' "$h"
 		fi
-	elif test -f "$color_expected"
-	then	if ! "$CHA" -C config.color.toml "$h" | diff "$color_expected" -
-		then	failed=$(($failed+1))
-			printf 'FAIL: %s\n' "$h"
-		fi
 	else	printf 'WARNING: expected file not found for %s\n' "$h"
 	fi
 done

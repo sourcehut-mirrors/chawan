@@ -1,2 +1,2 @@
- test test
- col2 test col4
+ test [48;2;0;0;255mtest[49m
+ col2 [48;2;0;0;255mtest[49m col4
