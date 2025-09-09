@@ -718,22 +718,26 @@ proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
     let y = parseIntP(anchor.toOpenArray(1, anchor.high)).get(-1)
     if y > 0:
       return GotoAnchorResult(found: true, x: 0, y: y - 1)
-  var anchor = bc.document.findAnchor(anchor)
-  if target and anchor != nil:
-    bc.document.setTarget(anchor)
+  var element = bc.document.findAnchor(anchor)
+  if element == nil:
+    let s = percentDecode(anchor)
+    if s != anchor:
+      element = bc.document.findAnchor(s)
+  if target and element != nil:
+    bc.document.setTarget(element)
   var focus: ReadLineResult = nil
   # Do not use bc.config.autofocus when we just want to check if the
   # anchor can be found.
   if autofocus:
     let autofocus = bc.document.findAutoFocus()
     if autofocus != nil:
-      if anchor == nil:
-        anchor = autofocus # jump to autofocus instead
+      if element == nil:
+        element = autofocus # jump to autofocus instead
       let res = bc.click(autofocus)
       focus = res.readline.get(nil)
-  if anchor == nil:
+  if element == nil:
     return GotoAnchorResult(found: false)
-  let offset = bc.rootBox.findAnchor(anchor)
+  let offset = bc.rootBox.findAnchor(element)
   let x = max(offset.x div bc.attrs.ppc, 0).toInt
   let y = max(offset.y div bc.attrs.ppl, 0).toInt
   return GotoAnchorResult(found: true, x: x, y: y, focus: focus)
