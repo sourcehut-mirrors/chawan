@@ -1,3 +1,11 @@
+1.0.5 (2025.09.09)
+* Unbreak compilation on 1.6.10
+* Eliminate macro use (for faster compilation)
+* Update code style
+* Minor optimizations
+Note that this removes some exported symbols (in particular, the macros
+module) which weren't advertised in the public API.
+
 1.0.4 (2025.05.23)
 * Fix bug in parsing invalid character references that start with
   #x10FFFF or its decimal counterpart
