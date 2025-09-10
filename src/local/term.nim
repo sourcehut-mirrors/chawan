@@ -1289,12 +1289,10 @@ proc respectSigint*(term: Terminal) =
 
 proc quit*(term: Terminal) =
   if term.isatty():
-    term.disableRawMode()
     if term.config.input.useMouse:
       term.disableMouse()
     if term.config.input.bracketedPaste:
       term.disableBracketedPaste()
-    term.blockIO()
     if term.smcup:
       if term.imageMode == imSixel:
         # xterm seems to keep sixels in the alt screen; clear these so
@@ -1307,6 +1305,9 @@ proc quit*(term: Terminal) =
     if term.setTitle:
       term.write(PopTitle)
     term.showCursor()
+    term.blockIO()
+    doAssert term.flush()
+    term.disableRawMode()
     term.clearCanvas()
 
 type
@@ -1612,7 +1613,7 @@ const TermdescMap = [
   ttXst: XtermCompatible + {tfTrueColor},
   ttXterm: XtermCompatible,
   # yaft supports Sixel, but can't tell us so in DA1.
-  ttYaft: XtermCompatible + {tfBleedsAPC, tfSixel},
+  ttYaft: XtermCompatible + {tfBleedsAPC, tfSixel} - {tfSmcup},
   # zellij supports Sixel, but doesn't advertise it.
   # However, the feature barely works, so we don't force it here.
   ttZellij: XtermCompatible + {tfTrueColor},
