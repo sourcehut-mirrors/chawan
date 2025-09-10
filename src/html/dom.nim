@@ -1457,7 +1457,7 @@ proc previousSibling*(node: Node): Node {.jsfget.} =
   return node.internalPrev
 
 # Return the next descendant if it isn't `start', and nil otherwise.
-# Note: `start' must be either a parent of `node', `node` itself, or nil.
+# Note: `start' must be either an ancestor of `node', `node` itself, or nil.
 proc nextDescendant(node, start: Node): Node =
   if node of ParentNode: # parent
     let node = cast[ParentNode](node)
