@@ -1539,17 +1539,19 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let endstmts = newStmtList()
   endstmts.bindEndStmts(info)
   let finFun = info.finFun
-  let flist = info.tabFuns
-  let flen = flist.len
-  let sflist = info.tabStatic
-  let sflen = sflist.len
-  let uflist = info.tabUnforgeable
-  let uflen = uflist.len
+  let flist0 = info.tabFuns
+  let flen = flist0.len
+  let sflist0 = info.tabStatic
+  let sflen = sflist0.len
+  let uflist0 = info.tabUnforgeable
+  let uflen = uflist0.len
   let global = asglobal and not globalparent
   endstmts.add(quote do:
-    let flist {.global.}: array[`flen`, JSCFunctionListEntry] = `flist`
-    let sflist {.global.}: array[`sflen`, JSCFunctionListEntry] = `sflist`
-    let uflist {.global.}: array[`uflen`, JSCFunctionListEntry] = `uflist`
+    let flist {.global, inject.}: array[`flen`, JSCFunctionListEntry] = `flist0`
+    let sflist {.global, inject.}: array[`sflen`, JSCFunctionListEntry] =
+      `sflist0`
+    let uflist {.global, inject.}: array[`uflen`, JSCFunctionListEntry] =
+      `uflist0`
     `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, flist, `parent`,
       cast[bool](`global`), `nointerface`, `finFun`, `namespace`, uflist,
       sflist)
