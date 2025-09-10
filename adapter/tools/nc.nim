@@ -12,11 +12,13 @@ import std/os
 import std/posix
 
 import ../protocol/lcgi
+import io/chafile
 import io/poll
 import utils/sandbox
 
 proc usage() {.noreturn.} =
-  stderr.fwrite("Usage: " & paramStr(0) & " [host] [port] [-m msg]\n")
+  let stderr = cast[ChaFile](stderr)
+  discard stderr.writeLine("Usage: " & paramStr(0) & " [host] [port] [-m msg]")
   quit(1)
 
 proc main() =

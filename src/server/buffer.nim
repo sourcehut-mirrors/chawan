@@ -26,6 +26,7 @@ import html/dom
 import html/env
 import html/event
 import html/formdata as formdata_impl
+import io/chafile
 import io/console
 import io/dynstream
 import io/packetreader
@@ -50,7 +51,6 @@ import types/opt
 import types/refstring
 import types/url
 import types/winattrs
-import utils/myposix
 import utils/strwidth
 import utils/twtstr
 
@@ -487,8 +487,9 @@ proc cursorBytes(bc: BufferContext; y, cc: int): int =
   return i
 
 proc navigate(bc: BufferContext; url: URL) =
+  let stderr = cast[ChaFile](stderr)
   bc.navigateUrl = url
-  stderr.fwrite("navigate to " & $url & "\n")
+  discard stderr.writeLine("navigate to " & $url)
 
 #TODO rewrite findPrevLink, findNextLink to use the box tree instead
 proc findPrevLink*(bc: BufferContext; cursorx, cursory, n: int):

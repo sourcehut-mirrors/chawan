@@ -560,7 +560,7 @@ proc cleanup(pager: Pager) =
       if pager.cookieJars.write(pager.config.external.cookieFile).isErr:
         pager.alert("failed to save cookies")
     for msg in pager.alerts:
-      stderr.fwrite("cha: " & msg & '\n')
+      discard cast[ChaFile](stderr).write("cha: " & msg & '\n')
     for val in pager.config.cmd.map.values:
       JS_FreeValue(pager.jsctx, val)
     for fn in pager.config.jsvfns:
@@ -1106,9 +1106,9 @@ proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
   ox = x
   move(ls)
 
-proc drawBuffer(pager: Pager; container: Container; ofile: File): Opt[void] =
+proc drawBuffer(pager: Pager; container: Container; ofile: ChaFile): Opt[void] =
   var format = Format()
-  let res = container.readLines(proc(line: SimpleFlexibleLine) =
+  let res = container.readLines(proc(line: SimpleFlexibleLine): Opt[void] =
     var x = 0
     var w = -1
     var i = 0
@@ -1135,9 +1135,9 @@ proc drawBuffer(pager: Pager; container: Container; ofile: File): Opt[void] =
       s.processOutputString(pager.term, spaces, w)
     s.processFormat(pager.term, format, Format())
     s &= '\n'
-    ofile.fwrite(s)
+    ofile.write(s)
   )
-  ofile.flushFile()
+  ?ofile.flush()
   res
 
 proc redraw(pager: Pager) {.jsfunc.} =
@@ -3448,7 +3448,7 @@ proc headlessLoop(pager: Pager) =
 proc dumpBuffers(pager: Pager) =
   pager.headlessLoop()
   for container in pager.containers:
-    if pager.drawBuffer(container, stdout).isOk:
+    if pager.drawBuffer(container, cast[ChaFile](stdout)).isOk:
       pager.handleEvents(container)
     else:
       pager.console.error("Error in buffer", $container.url)

@@ -8,9 +8,9 @@ import std/strutils
 import lcgi_ssl
 
 proc sdie(s: string) =
-  stdout.fwrite("Cha-Control: ConnectionError 5 " & s & ": ")
-  ERR_print_errors_fp(stdout)
-  stdout.flushFile()
+  let stdout = cast[ChaFile](stdout)
+  if stdout.write("Cha-Control: ConnectionError 5 " & s & ": ").isOk:
+    ERR_print_errors_fp(stdout)
   quit(1)
 
 proc openKnownHosts(os: PosixStream): (AChaFile, string) =

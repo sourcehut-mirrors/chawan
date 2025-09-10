@@ -149,6 +149,7 @@ proc updateOffsets(map: var array[RegexType, RegexResult]; len: int;
 
 proc processManpage(ofile, efile: AChaFile; header, keyword: string):
     Opt[void] =
+  let stdout = cast[ChaFile](stdout)
   var line = ""
   # The "right thing" would be to check for the error code and output error
   # messages accordingly. Unfortunately that would prevent us from streaming
@@ -164,13 +165,12 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
     var wstatus: cint
     discard wait(addr wstatus)
     if not WIFEXITED(wstatus) or WEXITSTATUS(wstatus) != 0:
-      stdout.fwrite("Cha-Control: ConnectionError 4 " &
+      discard stdout.writeLine("Cha-Control: ConnectionError 4 " &
         efile.readErrorMsg(line))
       quit(1)
   # skip formatting of line 0, like w3mman does
   # this is useful because otherwise the header would get caught in the man
   # regex, and that makes navigation slightly more annoying
-  let stdout = cast[ChaFile](stdout)
   ?stdout.write(header)
   ?stdout.writeLine(line.processBackspace())
   var wasBlank = false
@@ -179,7 +179,7 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
   for t, re in reMap.mpairs:
     let x = ($t).compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE})
     if x.isErr:
-      stderr.fwrite($t & ": " & x.error)
+      discard cast[ChaFile](stderr).writeLine($t & ": " & x.error)
       quit(1)
     re = x.get
   var paths: seq[string] = @[]
@@ -314,6 +314,7 @@ proc doLocal(man, path: string) =
 <pre>""", keyword = path.afterLast('/').until('.'))
 
 proc doKeyword(man, keyword, section: string): Opt[void] =
+  let stdout = cast[ChaFile](stdout)
   let sectionOpt = if section == "": "" else: " -s " & quoteShellPosix(section)
   let cmd = man & sectionOpt & " -k " & quoteShellPosix(keyword)
   let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
@@ -322,10 +323,9 @@ proc doKeyword(man, keyword, section: string): Opt[void] =
     var wstatus = cint(0)
     if wait(addr wstatus) >= 0 and not WIFEXITED(wstatus) or
         WEXITSTATUS(wstatus) != 0:
-      stdout.fwrite("Cha-Control: ConnectionError 4 " &
+      discard stdout.writeLine("Cha-Control: ConnectionError 4 " &
         efile.readErrorMsg(line))
       quit(1)
-  let stdout = cast[ChaFile](stdout)
   ?stdout.write("Content-Type: text/html\n\n")
   ?stdout.write("<title>man" & sectionOpt & " -k " & keyword & "</title>\n")
   ?stdout.write("<h1>man" & sectionOpt & " -k <b>" & keyword & "</b></h1>\n")
@@ -399,7 +399,8 @@ proc main() =
   elif scheme == "man-l":
     doLocal(man, path)
   else:
-    stdout.fwrite("Cha-Control: ConnectionError 1 invalid scheme")
+    let stdout = cast[ChaFile](stdout)
+    discard stdout.writeLine("Cha-Control: ConnectionError 1 invalid scheme")
 
 main()
 

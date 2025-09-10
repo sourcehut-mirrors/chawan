@@ -3,10 +3,10 @@
 import std/os
 import std/posix
 
+import io/chafile
 import io/dynstream
 import types/color
 import types/opt
-import utils/myposix
 import utils/twtstr
 
 type
@@ -381,7 +381,8 @@ proc processData(state: var State; buf: openArray[char]) =
     else: state.putc(c)
 
 proc usage() =
-  stderr.fwrite("Usage: ansi2html [-s] [-t title]\n")
+  let stderr = cast[ChaFile](stderr)
+  discard stderr.writeLine("Usage: ansi2html [-s] [-t title]")
   quit(1)
 
 proc main() =

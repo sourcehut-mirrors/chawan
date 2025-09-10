@@ -51,7 +51,8 @@ type LineWriter = object
   line: string
 
 proc flush(writer: var LineWriter) =
-  stdout.fwrite(writer.line & '\n')
+  let stdout = cast[ChaFile](stdout)
+  discard stdout.write(writer.line & '\n')
   writer.line = ""
 
 proc write(writer: var LineWriter, s: string) =

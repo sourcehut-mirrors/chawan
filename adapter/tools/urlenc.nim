@@ -10,11 +10,11 @@ import std/os
 
 import io/chafile
 import types/opt
-import utils/myposix
 import utils/twtstr
 
 proc usage() {.noreturn.} =
-  stderr.fwrite("""
+  let stderr = cast[ChaFile](stderr)
+  discard stderr.write("""
 Usage: urlenc [-s] [set]
 The input to be decoded is read from stdin, with the last line feed removed.
 [set] decides which characters are encoded, and defaults to "form".

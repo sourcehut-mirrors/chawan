@@ -8,6 +8,7 @@ import chagashi/charset
 import config/config
 import config/urimethodmap
 import html/catom
+import io/chafile
 import io/dynstream
 import io/packetreader
 import io/packetwriter
@@ -186,16 +187,18 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     discard signal(SIGPIPE, SIG_DFL)
     const ExecErrorMsg = "Cha-Control: ConnectionError " &
       $int(ceFailedToExecuteCGIScript)
+    let stdout = cast[ChaFile](stdout)
     for it in env:
       if twtstr.setEnv(it.name, it.value).isErr:
-        stdout.fwrite(ExecErrorMsg & " failed to set env vars\n")
+        discard stdout.writeLine(ExecErrorMsg & " failed to set env vars")
         exitnow(1)
     if chdir(cstring(dir)) != 0:
-      stdout.fwrite(ExecErrorMsg & " failed to set working directory\n")
+      discard stdout.writeLine(ExecErrorMsg &
+        " failed to set working directory")
       exitnow(1)
     discard execl(cstring(cmd), cstring(basename), nil)
     let es = $strerror(errno)
-    stdout.fwrite(ExecErrorMsg & ' ' & es.deleteChars({'\n', '\r'}) & '\n')
+    discard stdout.writeLine(ExecErrorMsg & ' ' & es.deleteChars({'\n', '\r'}))
     exitnow(1)
   else: # parent or error
     istream.sclose()

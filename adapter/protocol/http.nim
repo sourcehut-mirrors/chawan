@@ -132,7 +132,8 @@ type
     teDeflate = "deflate"
 
 proc die(s: string) {.noreturn.} =
-  stderr.fwrite("newhttp: " & s & '\n')
+  let stderr = cast[ChaFile](stderr)
+  discard stderr.writeLine("newhttp: " & s)
   quit(1)
 
 proc inflate(op: HTTPHandle; flag: uint32) =

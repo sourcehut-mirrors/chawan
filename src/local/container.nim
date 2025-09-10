@@ -1864,12 +1864,14 @@ proc setCloneStream*(container: Container; stream: BufStream) =
     # Maybe we have to resume loading. Let's try.
     container.startLoad()
 
-proc onReadLine(container: Container; w: Slice[int];
-    handle: (proc(line: SimpleFlexibleLine)); res: GetLinesResult):
-    EmptyPromise =
+type HandleReadLine = proc(line: SimpleFlexibleLine): Opt[void]
+
+proc onReadLine(container: Container; w: Slice[int]; handle: HandleReadLine;
+    res: GetLinesResult): EmptyPromise =
   container.bgcolor = res.bgcolor
   for line in res.lines:
-    handle(line)
+    if handle(line).isErr:
+      return nil
   if res.numLines > w.b + 1:
     var w = w
     w.a += 24
@@ -1878,14 +1880,12 @@ proc onReadLine(container: Container; w: Slice[int];
         EmptyPromise =
       return container.onReadLine(w, handle, res)
     )
-  else:
-    container.numLines = res.numLines
-    return newResolvedPromise()
+  container.numLines = res.numLines
+  return nil
 
 # Synchronously read all lines in the buffer.
 # Returns false on I/O error.
-proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)):
-    Opt[void] =
+proc readLines*(container: Container; handle: HandleReadLine): Opt[void] =
   # load succeded
   let w = 0 .. 23
   container.iface.getLines(w).then(proc(res: GetLinesResult): EmptyPromise =
@@ -1895,9 +1895,12 @@ proc readLines*(container: Container; handle: proc(line: SimpleFlexibleLine)):
       # avoid coloring link markers
       container.bgcolor = defaultColor
       container.iface.getLinks.then(proc(res: seq[string]) =
-        handle(SimpleFlexibleLine())
+        if handle(SimpleFlexibleLine()).isErr:
+          return
         for i, link in res.mypairs:
-          handle(SimpleFlexibleLine(str: "[" & $(i + 1) & "] " & link))
+          var s = "[" & $(i + 1) & "] " & link
+          if handle(SimpleFlexibleLine(str: move(s))).isErr:
+            return
       )
   )
   while container.iface.hasPromises:

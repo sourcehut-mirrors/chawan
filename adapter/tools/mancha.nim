@@ -2,6 +2,7 @@
 
 import std/os
 
+import io/chafile
 import types/opt
 import utils/myposix
 import utils/twtstr
@@ -13,9 +14,9 @@ mancha [-M path] [[-s] section] -k keyword
 mancha [-M path] [[-s] section] name
 mancha -l file"""
     if i == 0:
-      stdout.fwrite(s & '\n')
+      discard cast[ChaFile](stdout).writeLine(s)
     else:
-      stderr.fwrite(s & '\n')
+      discard cast[ChaFile](stderr).writeLine(s)
     quit(i)
 
 var i = 1
@@ -49,7 +50,7 @@ proc main() =
       of 'h': help(0)
       of 'M':
         if twtstr.setEnv("MANPATH", getnext()).isErr:
-          stderr.fwrite("Failed to set MANPATH\n")
+          discard cast[ChaFile](stderr).writeLine("Failed to set MANPATH")
           quit(1)
       of 's':
         section = getnext()
@@ -89,7 +90,7 @@ proc main() =
   let cmd = cha & " " & quoteShellPosix(query)
   let res = myposix.system(cstring(cmd))
   if res < 0:
-    stderr.fwrite("failed to fork child process")
+    discard cast[ChaFile](stderr).writeLine("failed to fork child process")
     quit(1)
   quit(exitStatusLikeShell(res))
 

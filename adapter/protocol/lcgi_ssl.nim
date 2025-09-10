@@ -33,7 +33,7 @@ let EVP_MAX_MD_SIZE* {.nodecl, header: "<openssl/evp.h>".}: cint
 
 {.push cdecl.}
 {.push header: "<openssl/err.h>".}
-proc ERR_print_errors_fp*(fp: File)
+proc ERR_print_errors_fp*(fp: ChaFile)
 proc ERR_get_error(): culong
 proc ERR_reason_error_string(e: culong): cstring
 {.pop.}

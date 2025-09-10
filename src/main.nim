@@ -9,6 +9,7 @@ import chagashi/charset
 import config/chapath
 import config/config
 import config/conftypes
+import io/chafile
 import io/dynstream
 import io/poll
 import local/client
@@ -70,13 +71,13 @@ Options:
     -V, --visual                Visual startup mode
 """
   if i == 0:
-    stdout.fwrite(s)
+    discard cast[ChaFile](stdout).write(s)
   else:
-    stderr.fwrite(s)
+    discard cast[ChaFile](stderr).write(s)
   quit(i)
 
 proc version() =
-  stdout.fwrite(ChaVersionStrLong)
+  discard cast[ChaFile](stdout).write(ChaVersionStrLong)
   quit(0)
 
 type ParamParseContext = object
