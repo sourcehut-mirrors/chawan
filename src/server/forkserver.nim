@@ -13,7 +13,7 @@ import io/packetreader
 import io/packetwriter
 import io/poll
 import server/buffer
-import server/connecterror
+import server/connectionerror
 import server/loader
 import server/loaderiface
 import types/opt

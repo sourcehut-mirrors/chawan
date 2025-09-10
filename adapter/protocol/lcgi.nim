@@ -5,12 +5,14 @@ import std/strutils
 
 import io/chafile
 import io/dynstream
+import server/connectionerror
 import types/opt
 import utils/myposix
 import utils/sandbox
 import utils/twtstr
 
 export chafile
+export connectionerror
 export dynstream
 export myposix
 export opt
@@ -19,46 +21,49 @@ export twtstr
 
 export STDIN_FILENO, STDOUT_FILENO
 
-proc die*(os: PosixStream; name: string; s = "") {.noreturn.} =
-  var buf = "Cha-Control: ConnectionError " & name
-  if s != "":
-    buf &= ' ' & s
-  buf &= '\n'
-  discard os.writeDataLoop(buf)
+type
+  CGIError = object
+    code*: ConnectionError
+    s*: cstring
+
+  CGIResult*[T] = Result[T, CGIError]
+
+proc cgiDie*(code: ConnectionError; s: cstring = nil) {.noreturn.} =
+  let stdout = cast[ChaFile](stdout)
+  discard stdout.write("Cha-Control: ConnectionError " & $int(code))
+  if s != nil and s[0] != '\0':
+    discard stdout.write(' ')
+    discard stdout.writecstr(s)
+  discard stdout.writeLine()
   quit(1)
 
-proc die*(name: string; s = "") {.noreturn.} =
-  var buf = "Cha-Control: ConnectionError " & name
-  if s != "":
-    buf &= ' ' & s
-  buf &= '\n'
-  stdout.fwrite(buf)
-  quit(1)
+proc cgiDie*(e: CGIError) {.noreturn.} =
+  cgiDie(e.code, e.s)
 
-template orDie*(val: Opt[void]; os: PosixStream; name: string; s = "") =
+proc orDie*(x: Opt[void]; name: ConnectionError; s: cstring = nil) =
+  if x.isErr:
+    cgiDie(name, s)
+
+template orDie*[T](val: Opt[T]; name: ConnectionError; s: cstring = nil): T =
   var x = val
   if x.isErr:
-    os.die(name, s)
-
-template orDie*[T](val: Opt[T]; os: PosixStream; name: string; s = ""): T =
-  var x = val
-  if x.isErr:
-    os.die(name, s)
+    cgiDie(name, s)
   move(x.get)
 
-template orDie*(val: Opt[void]; name: string; s = "") =
+template orDie*[T](val: CGIResult[T]): T =
   var x = val
   if x.isErr:
-    die(name, s)
-
-template orDie*[T](val: Opt[T]; name: string; s = ""): T =
-  var x = val
-  if x.isErr:
-    die(name, s)
+    cgiDie(val.error)
   move(x.get)
 
-proc openSocket(os: PosixStream; host, port, resFail: string;
-    res: var ptr AddrInfo): SocketHandle =
+proc initCGIError*(code: ConnectionError; s: cstring = nil): CGIError =
+  CGIError(code: code, s: s)
+
+template errCGIError*(code: ConnectionError; s: cstring = nil): untyped =
+  err(initCGIError(code, s))
+
+proc openSocket(host, port: string; res: var ptr AddrInfo):
+    CGIResult[SocketHandle] =
   var err: cint
   for family in [AF_INET, AF_INET6, AF_UNSPEC]:
     var hints = AddrInfo(
@@ -70,113 +75,124 @@ proc openSocket(os: PosixStream; host, port, resFail: string;
     if err == 0:
       break
   if err != 0:
-    os.die(resFail, $gai_strerror(err))
+    return err(initCGIError(ceFailedToResolveProxy, gai_strerror(err)))
   let sock = socket(res.ai_family, res.ai_socktype, res.ai_protocol)
   if cint(sock) < 0:
-    os.die("InternalError", "could not open socket")
-  return sock
+    return errCGIError(ceInternalError, "could not open socket")
+  ok(sock)
 
-proc connectSocket(os: PosixStream; host, port, resFail, connFail: string;
-    outIpv6: var bool): PosixStream =
+proc connectSimpleSocket(host, port: string; outIpv6: var bool):
+    CGIResult[PosixStream] =
   var res: ptr AddrInfo
-  let sock = os.openSocket(host, port, resFail, res)
+  let sock = ?openSocket(host, port, res)
   let ps = newPosixStream(sock)
   if connect(sock, res.ai_addr, res.ai_addrlen) < 0:
     ps.sclose()
-    os.die(connFail)
+    return err(initCGIError(ceConnectionRefused))
   outIpv6 = res.ai_family == AF_INET6
   freeAddrInfo(res)
-  return ps
+  ok(ps)
 
-proc authenticateSocks5(os, ps: PosixStream; buf: array[2, uint8];
-    user, pass: string) =
+proc authenticateSocks5(ps: PosixStream; buf: array[2, uint8];
+    user, pass: string): CGIResult[void] =
   if buf[0] != 5:
-    os.die("ProxyInvalidResponse", "wrong socks version")
+    return errCGIError(ceProxyInvalidResponse, "wrong socks version")
   case buf[1]
   of 0x00:
     discard # no auth
   of 0x02:
     if user.len > 255 or pass.len > 255:
-      os.die("InternalError", "username or password too long")
+      return errCGIError(ceInternalError, "username or password too long")
     let sbuf = "\x01" & char(user.len) & user & char(pass.len) & pass
     if not ps.writeDataLoop(sbuf):
-      os.die("ProxyAuthFail")
+      return errCGIError(ceProxyAuthFail)
     var rbuf = array[2, uint8].default
     if not ps.readDataLoop(rbuf):
-      os.die("ProxyInvalidResponse", "failed to read proxy response")
+      return errCGIError(ceProxyInvalidResponse,
+        "failed to read proxy response")
     if rbuf[0] != 1:
-      os.die("ProxyInvalidResponse", "wrong auth version")
+      return errCGIError(ceProxyInvalidResponse, "wrong auth version")
     if rbuf[1] != 0:
-      os.die("ProxyAuthFail")
+      return errCGIError(ceProxyAuthFail)
   of 0xFF:
-    os.die("ProxyAuthFail proxy doesn't support our auth")
+    return errCGIError(ceProxyAuthFail, "proxy doesn't support our auth")
   else:
-    os.die("ProxyInvalidResponse received wrong auth method " & $buf[1])
+    return errCGIError(ceProxyInvalidResponse, "received wrong auth method")
+  ok()
 
-proc sendSocks5Domain(os, ps: PosixStream; host, port: string;
-    outIpv6: var bool) =
+proc sendSocks5Domain(ps: PosixStream; host, port: string; outIpv6: var bool):
+    CGIResult[void] =
   if host.len > 255:
-    os.die("InternalError", "host too long to send to proxy")
+    return errCGIError(ceInternalError, "host too long to send to proxy")
   let dstaddr = "\x03" & char(host.len) & host
   let x = parseUInt16(port)
   if x.isErr:
-    os.die("InternalError", "wrong port")
+    return errCGIError(ceInternalError, "wrong port")
   let port = x.get
   let sbuf = "\x05\x01\x00" & dstaddr & char(port shr 8) & char(port and 0xFF)
   if not ps.writeDataLoop(sbuf):
-    os.die("ProxyRefusedToConnect")
+    return errCGIError(ceProxyRefusedToConnect)
   var rbuf = array[4, uint8].default
   if not ps.readDataLoop(rbuf) or rbuf[0] != 5:
-    os.die("ProxyInvalidResponse")
+    return errCGIError(ceProxyInvalidResponse)
   if rbuf[1] != 0:
-    os.die("ProxyRefusedToConnect")
+    return errCGIError(ceProxyRefusedToConnect)
   case rbuf[3]
   of 0x01:
     var ipv4 = array[4, uint8].default
     if not ps.readDataLoop(ipv4):
-      os.die("ProxyInvalidResponse")
+      return errCGIError(ceProxyInvalidResponse)
     outIpv6 = false
   of 0x03:
     var len = [0u8]
     if not ps.readDataLoop(len):
-      os.die("ProxyInvalidResponse")
+      return errCGIError(ceProxyInvalidResponse)
     var domain = newString(int(len[0]))
     if not ps.readDataLoop(domain):
-      os.die("ProxyInvalidResponse")
+      return errCGIError(ceProxyInvalidResponse)
     # we don't really know, so just assume it's ipv4.
     outIpv6 = false
   of 0x04:
     var ipv6 = array[16, uint8].default
     if not ps.readDataLoop(ipv6):
-      os.die("ProxyInvalidResponse")
+      return errCGIError(ceProxyInvalidResponse)
     outIpv6 = true
   else:
-    os.die("ProxyInvalidResponse")
+    return errCGIError(ceProxyInvalidResponse)
   var bndport = array[2, uint8].default
   if not ps.readDataLoop(bndport):
-    os.die("ProxyInvalidResponse")
+    return errCGIError(ceProxyInvalidResponse)
+  ok()
 
-proc connectSocks5Socket(os: PosixStream; host, port, proxyHost, proxyPort,
-    proxyUser, proxyPass: string; outIpv6: var bool): PosixStream =
+proc toProxyResult(res: CGIResult[PosixStream]): CGIResult[PosixStream] =
+  if res.isErr:
+    let e = res.error
+    case e.code
+    of ceFailedToResolveHost: return errCGIError(ceFailedToResolveProxy, e.s)
+    of ceConnectionRefused: return errCGIError(ceProxyRefusedToConnect, e.s)
+    else: discard
+  res
+
+proc connectSocks5Socket(host, port, proxyHost, proxyPort,
+    proxyUser, proxyPass: string; outIpv6: var bool):
+    CGIResult[PosixStream] =
   var dummy = false
-  let ps = os.connectSocket(proxyHost, proxyPort, "FailedToResolveProxy",
-    "ProxyRefusedToConnect", dummy)
+  let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy).toProxyResult()
   const NoAuth = "\x05\x01\x00"
   const WithAuth = "\x05\x02\x00\x02"
   if not ps.writeDataLoop(if proxyUser != "": NoAuth else: WithAuth):
-    os.die("ProxyRefusedToConnect")
+    return errCGIError(ceProxyRefusedToConnect)
   var buf = array[2, uint8].default
   if not ps.readDataLoop(buf):
-    os.die("ProxyInvalidResponse")
-  os.authenticateSocks5(ps, buf, proxyUser, proxyPass)
-  os.sendSocks5Domain(ps, host, port, outIpv6)
-  return ps
+    return errCGIError(ceProxyInvalidResponse)
+  ?ps.authenticateSocks5(buf, proxyUser, proxyPass)
+  ?ps.sendSocks5Domain(host, port, outIpv6)
+  ok(ps)
 
-proc connectHTTPSocket(os: PosixStream; host, port, proxyHost, proxyPort,
-    proxyUser, proxyPass: string): PosixStream =
+proc connectHTTPSocket(host, port, proxyHost, proxyPort,
+    proxyUser, proxyPass: string): CGIResult[PosixStream] =
   var dummy = false
-  let ps = os.connectSocket(proxyHost, proxyPort, "FailedToResolveProxy",
-    "ProxyRefusedToConnect", dummy)
+  let ps = ?connectSimpleSocket(proxyHost, proxyPort, dummy).toProxyResult()
   var buf = "CONNECT " & host & ':' & port & " HTTP/1.1\r\n"
   buf &= "Host: " & host & ':' & port & "\r\n"
   if proxyUser != "" or proxyPass != "":
@@ -184,7 +200,7 @@ proc connectHTTPSocket(os: PosixStream; host, port, proxyHost, proxyPort,
     buf &= "Proxy-Authorization: basic " & s & "\r\n"
   buf &= "\r\n"
   if not ps.writeDataLoop(buf):
-    os.die("ProxyRefusedToConnect")
+    return errCGIError(ceProxyRefusedToConnect)
   var res = ""
   var crlfState = 0
   while crlfState < 4:
@@ -200,11 +216,11 @@ proc connectHTTPSocket(os: PosixStream; host, port, proxyHost, proxyPort,
     res &= buf[0]
   if not res.startsWithIgnoreCase("HTTP/1.1 200") and
       not res.startsWithIgnoreCase("HTTP/1.0 200"):
-    os.die("ProxyRefusedToConnect")
-  return ps
+    return errCGIError(ceProxyRefusedToConnect)
+  ok(ps)
 
-proc connectProxySocket(os: PosixStream; host, port, proxy: string;
-    outIpv6: var bool): PosixStream =
+proc connectProxySocket(host, port, proxy: string; outIpv6: var bool):
+    CGIResult[PosixStream] =
   let scheme = proxy.until(':')
   var i = scheme.len + 1
   while i < proxy.len and proxy[i] == '/':
@@ -235,19 +251,21 @@ proc connectProxySocket(os: PosixStream; host, port, proxy: string;
     inc i
   if scheme == "socks5" or scheme == "socks5h":
     # We always use socks5h, actually.
-    return os.connectSocks5Socket(host, port, proxyHost, proxyPort, user, pass,
+    return connectSocks5Socket(host, port, proxyHost, proxyPort, user, pass,
       outIpv6)
   elif scheme == "http":
-    return os.connectHTTPSocket(host, port, proxyHost, proxyPort, user, pass)
-  os.die("InternalError", "only socks5 or http proxies are supported")
+    return connectHTTPSocket(host, port, proxyHost, proxyPort, user, pass)
+  else:
+    return errCGIError(ceInternalError,
+      "only socks5 or http proxies are supported")
 
 # Note: outIpv6 is not read; it just indicates whether the socket's
 # address is IPv6.
 # In case we connect to a proxy, only the target matters.
-proc connectSocket*(os: PosixStream; host, port: string; outIpv6: var bool):
-    PosixStream =
+proc connectSocket*(host, port: string; outIpv6: var bool):
+    CGIResult[PosixStream] =
   if host.len == 0:
-    os.die("InvalidURL", "missing hostname")
+    return errCGIError(ceInvalidURL, "missing hostname")
   var host = host
   if host.len > 0 and host[0] == '[' and host[^1] == ']':
     #TODO set outIpv6?
@@ -255,12 +273,11 @@ proc connectSocket*(os: PosixStream; host, port: string; outIpv6: var bool):
     host.setLen(host.high)
   let proxy = getEnvEmpty("ALL_PROXY")
   if proxy != "":
-    return os.connectProxySocket(host, port, proxy, outIpv6)
-  return os.connectSocket(host, port, "FailedToResolveHost",
-    "ConnectionRefused", outIpv6)
+    return connectProxySocket(host, port, proxy, outIpv6)
+  return connectSimpleSocket(host, port, outIpv6)
 
-proc connectSocket*(os: PosixStream; host, port: string): PosixStream =
+proc connectSocket*(host, port: string): CGIResult[PosixStream] =
   var dummy = false
-  return os.connectSocket(host, port, dummy)
+  return connectSocket(host, port, dummy)
 
 {.pop.} # raises: []

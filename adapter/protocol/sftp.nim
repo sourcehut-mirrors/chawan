@@ -193,7 +193,7 @@ proc authenticate(os: PosixStream; session: ptr LIBSSH2_SESSION; host: string) =
     if f.isErr:
       continue
     parseSSHConfig(f.get, host, pubKey, privKey)
-      .orDie(os, "InternalError", "failed to read SSH config")
+      .orDie(ceInternalError, "failed to read SSH config")
   if privKey == "":
     if session.libssh2_userauth_password(cstring(user), cstring(pass)) != 0:
       os.unauthorized(session)
@@ -304,7 +304,7 @@ proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION;
     return nil
   let hosts = libssh2_knownhost_init(session)
   if hosts == nil:
-    os.die("InternalError", "failed to init knownhost")
+    cgiDie(ceInternalError, "failed to init knownhost")
   hostsPath = getEnvEmpty("CHA_SSH_KNOWN_HOSTS",
     expandPath("~/.ssh/known_hosts"))
   discard hosts.libssh2_knownhost_readfile(cstring(hostsPath),
@@ -333,7 +333,7 @@ proc setMethod(os: PosixStream; session: ptr LIBSSH2_SESSION;
     else: nil
     if meth != nil:
       if session.libssh2_session_method_pref(LIBSSH2_METHOD_HOSTKEY, meth) != 0:
-        os.die("InternalError", "failed to set host key method to " & $meth)
+        cgiDie(ceInternalError, "failed to set host key method")
   return hosts
 
 proc checkFingerprint(os: PosixStream; session: ptr LIBSSH2_SESSION;
@@ -342,9 +342,9 @@ proc checkFingerprint(os: PosixStream; session: ptr LIBSSH2_SESSION;
   var t: cint
   let fingerprint = session.libssh2_session_hostkey(len, t)
   if fingerprint == nil:
-    os.die("InternalError", "missing fingerprint")
+    cgiDie(ceInternalError, "missing fingerprint")
   if t == LIBSSH2_HOSTKEY_TYPE_UNKNOWN:
-    os.die("InternalError", "unknown host key type")
+    cgiDie(ceInternalError, "unknown host key type")
   let port = cint(parseIntP(port).get(-1))
   var knownhost: ptr libssh2_knownhost
   let hostBit = (t + 1) shl LIBSSH2_KNOWNHOST_KEY_SHIFT # wtf?
@@ -352,7 +352,7 @@ proc checkFingerprint(os: PosixStream; session: ptr LIBSSH2_SESSION;
     fingerprint, len, LIBSSH2_KNOWNHOST_TYPE_PLAIN or
     LIBSSH2_KNOWNHOST_KEYENC_RAW or hostBit, knownhost)
   if check == LIBSSH2_KNOWNHOST_CHECK_FAILURE:
-    os.die("InternalError", "failure in known hosts check")
+    cgiDie(ceInternalError, "failure in known hosts check")
   elif check == LIBSSH2_KNOWNHOST_CHECK_MATCH:
     discard
   elif check == LIBSSH2_KNOWNHOST_CHECK_NOTFOUND:
@@ -388,17 +388,17 @@ please remove this host from """ & hostsPath & ".")
 proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
   if getEnvEmpty("REQUEST_METHOD") != "GET":
-    os.die("InvalidMethod")
+    cgiDie(ceInvalidMethod)
   let host = getEnvEmpty("MAPPED_URI_HOST")
   let port = getEnvEmpty("MAPPED_URI_PORT", "22")
-  let ps = os.connectSocket(host, port)
+  let ps = connectSocket(host, port).orDie()
   if libssh2_init(0) < 0:
-    os.die("InternalError")
+    cgiDie(ceInternalError)
   let session = libssh2_session_init()
   var hostsPath: string
   let hosts = os.setMethod(session, host, port, hostsPath)
   if session.libssh2_session_handshake(ps.fd) < 0:
-    os.die("InternalError", "handshake failed")
+    cgiDie(ceInternalError, "handshake failed")
   if hosts != nil:
     os.checkFingerprint(session, hosts, host, port, hostsPath)
   os.authenticate(session, host)

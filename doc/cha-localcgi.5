@@ -134,15 +134,25 @@ or peer\-to\-peer file retrieval mechanisms.
 A server responding with \(lqno file found\(rq is NOT a connection
 error, and is better represented as a response with a 404 status code.
 .IP \(bu 2
-\f[CR]5 FailedToResolveHost\f[R]: The hostname could not be resolved.
-.IP \(bu 2
-\f[CR]6 FailedToResolveProxy\f[R]: The proxy could not be resolved.
-.IP \(bu 2
-\f[CR]7 ConnectionRefused\f[R]: The server refused to establish a
+\f[CR]5 ConnectionRefused\f[R]: The server refused to establish a
 connection.
 .IP \(bu 2
-\f[CR]8 ProxyRefusedToConnect\f[R]: The proxy refused to establish a
+\f[CR]6 ProxyRefusedToConnect\f[R]: The proxy refused to establish a
 connection.
+.IP \(bu 2
+\f[CR]7 FailedToResolveHost\f[R]: The hostname could not be resolved.
+.IP \(bu 2
+\f[CR]8 FailedToResolveProxy\f[R]: The proxy could not be resolved.
+.IP \(bu 2
+\f[CR]9 ProxyAuthFail\f[R]: The proxy refused the provided
+username/password.
+.IP \(bu 2
+\f[CR]10 InvalidResponse\f[R]: The server\(cqs response deviates from
+the specification so badly that it cannot be meaningfully processed.
+.IP \(bu 2
+\f[CR]11 ProxyInvalidResponse\f[R]: The proxy\(cqs response deviates
+from the specification so badly that it cannot be meaningfully
+processed.
 .SS Environment variables
 Chawan sets the following environment variables:
 .IP \(bu 2

@@ -18,11 +18,11 @@ proc openKnownHosts(os: PosixStream): (AChaFile, string) =
   if path == "":
     let ourDir = getEnvEmpty("CHA_DIR")
     if ourDir == "":
-      os.die("InternalError", "config dir missing")
+      cgiDie(ceInternalError, "config dir missing")
     path = ourDir & '/' & "gemini_known_hosts"
   discard mkdir(cstring(path.untilLast('/')), 0o700)
   let f = chafile.afopen(path, "a+")
-    .orDie(os, "InternalError", "error opening known hosts file")
+    .orDie(ceInternalError, "error opening known hosts file")
   return (f, path)
 
 proc readKnownHosts(f, tmp: AChaFile; buf, host: string): Opt[void] =
@@ -47,7 +47,7 @@ proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
     if t in ["always", "yes", "no", "once"]:
       i = s.find("entry=", i)
       if i == -1:
-        os.die("InternalError", "missing entry field in POST")
+        cgiDie(ceInternalError, "missing entry field in POST")
       i += "entry=".len
       var buf = ""
       for i in i ..< s.len:
@@ -62,19 +62,19 @@ proc readPost(os: PosixStream; query: var string; host, knownHostsPath: string;
         let tmpPath = knownHostsPath & '~'
         let ps = newPosixStream(tmpPath, O_CREAT or O_WRONLY or O_TRUNC, 0o600)
         if ps == nil:
-          os.die("InternalError", "failed to open temp file")
+          cgiDie(ceInternalError, "failed to open temp file")
         let tmpFile = ps.afdopen("w")
-          .orDie(os, "InternalError", "failed to open temp file")
+          .orDie(ceInternalError, "failed to open temp file")
         knownHosts.readKnownHosts(tmpFile, buf, host)
-          .orDie(os, "InternalError", "failed to read known hosts")
+          .orDie(ceInternalError, "failed to read known hosts")
         chafile.rename(tmpPath, knownHostsPath)
-          .orDie(os, "InternalError", "failed to move temporary file")
+          .orDie(ceInternalError, "failed to move temporary file")
         knownHosts = chafile.afopen(knownHostsPath, "r")
-          .orDie(os, "InternalError", "failed to reopen known_hosts")
+          .orDie(ceInternalError, "failed to reopen known_hosts")
     else:
-      os.die("InternalError invalid POST: wrong trust_cert")
+      cgiDie(ceInternalError, "invalid POST: wrong trust_cert")
   else:
-    os.die("InternalError invalid POST: no input or trust_cert")
+    cgiDie(ceInternalError, "invalid POST: no input or trust_cert")
 
 type CheckCertResult = enum
   ccrNotFound, ccrNewExpiration, ccrFoundInvalid, ccrFoundValid
@@ -93,14 +93,14 @@ proc checkCert0(os: PosixStream; theirDigest, host: string;
   var found = line.until(' ') == host
   if not found:
     found = knownHosts.findHost(host, line)
-      .orDie(os, "InternalError", "failed to read known hosts")
+      .orDie(ceInternalError, "failed to read known hosts")
   if not found:
     return ccrNotFound
   let ss = line.split(' ')
   if ss.len < 3:
-    os.die("InternalError", "wrong line in known_hosts file")
+    cgiDie(ceInternalError, "wrong line in known_hosts file")
   if ss[1] != "sha256":
-    os.die("InternalError", "unsupported digest format in known_hosts file")
+    cgiDie(ceInternalError, "unsupported digest format in known_hosts file")
   storedDigest = ss[2]
   if storedDigest != theirDigest:
     return ccrFoundInvalid
@@ -109,7 +109,7 @@ proc checkCert0(os: PosixStream; theirDigest, host: string;
       if Time(n) == theirTime:
         return ccrFoundValid
     else:
-      os.die("InternalError", "invalid time in known_hosts file")
+      cgiDie(ceInternalError, "invalid time in known_hosts file")
   ccrNewExpiration
 
 proc hashBuf(ibuf: openArray[uint8]): string =
@@ -147,10 +147,10 @@ proc checkCert(os: PosixStream; ssl: ptr SSL; host, port: string;
   var pubkeyBuf {.noinit.}: array[16384, uint8]
   let len = i2d_PUBKEY(pkey, nil);
   if len * 3 > pubkeyBuf.len:
-    os.die("InternalError", "pubkey too long")
+    cgiDie(ceInternalError, "pubkey too long")
   var r = addr pubkeyBuf[0]
   if i2d_PUBKEY(pkey, addr r) != len:
-    os.die("InternalError", "wat")
+    cgiDie(ceInternalError, "wat")
   theirDigest = pubkeyBuf.toOpenArray(0, len - 1).hashBuf()
   let notAfter = X509_get0_notAfter(cert)
   var theirTm: Tm
@@ -159,7 +159,7 @@ proc checkCert(os: PosixStream; ssl: ptr SSL; host, port: string;
   if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY") != "1":
     if X509_cmp_current_time(X509_get0_notBefore(cert)) >= 0 or
         X509_cmp_current_time(notAfter) <= 0:
-      os.die("InvalidResponse", "received an expired certificate");
+      cgiDie(ceInvalidResponse, "received an expired certificate");
   theirTime = mktime(theirTm)
   X509_free(cert)
   return os.checkCert0(theirDigest, host, storedDigest, theirTime, knownHosts,
@@ -176,7 +176,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
   let status0 = buffer[0]
   let status1 = buffer[1]
   if status0 notin AsciiDigit or status1 notin AsciiDigit:
-    os.die("InvalidResponse", "invalid status code")
+    cgiDie(ceInvalidResponse, "invalid status code")
   while n < 1024 + 3: # max meta len is 1024
     let m = SSL_read(ssl, addr buffer[n], cint(buffer.len - n))
     if m <= 0:
@@ -184,10 +184,10 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
     n += m
   let i = buffer.find("\r\n")
   if i == -1:
-    os.die("InvalidResponse", "invalid status line")
+    cgiDie(ceInvalidResponse, "invalid status line")
   var meta = buffer.substr(3, i - 1)
   if '\n' in meta:
-    os.die("InvalidResponse", "invalid status line")
+    cgiDie(ceInvalidResponse, "invalid status line")
   case status0
   of '1': # input
     # META is the prompt.
@@ -265,7 +265,7 @@ proc readResponse(os: PosixStream; ssl: ptr SSL; reqBuf: string) =
 <p>
 """ & meta.htmlEscape())
   else:
-    os.die("InvalidResponse", "Wrong status code")
+    cgiDie(ceInvalidResponse, "Wrong status code")
 
 proc main*() =
   let os = newPosixStream(STDOUT_FILENO)
@@ -281,7 +281,7 @@ proc main*() =
   if query != "":
     reqBuf &= '?' & query
   reqBuf &= "\r\n"
-  let ssl = os.connectSSLSocket(host, port, useDefaultCA = false)
+  let ssl = connectSSLSocket(host, port, useDefaultCA = false).orDie()
   var storedDigest: string
   var theirDigest: string
   var theirTime: Time

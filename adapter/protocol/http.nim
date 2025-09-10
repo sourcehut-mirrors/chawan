@@ -131,7 +131,7 @@ type
     teGzip = "gzip"
     teDeflate = "deflate"
 
-proc die*(s: string) {.noreturn.} =
+proc die(s: string) {.noreturn.} =
   stderr.fwrite("newhttp: " & s & '\n')
   quit(1)
 
@@ -406,11 +406,11 @@ proc handleBuffer(op: HTTPHandle; iq: openArray[char]): int =
   of hsTrailers: return op.handleTrailers(iq)
   of hsDone: return -1
 
-proc checkCert(os: PosixStream; ssl: ptr SSL) =
+proc checkCert(ssl: ptr SSL) =
   let res = SSL_get_verify_result(ssl)
   if res != X509_V_OK:
     let s = X509_verify_cert_error_string(res)
-    os.die("InvalidResponse", $s)
+    cgiDie(ceInvalidResponse, s)
 
 proc main*() =
   let secure = getEnvEmpty("MAPPED_URI_SCHEME") == "https"
@@ -422,12 +422,12 @@ proc main*() =
   let query = getEnvEmpty("MAPPED_URI_QUERY")
   let os = newPosixStream(STDOUT_FILENO)
   let ps = if secure:
-    let ssl = os.connectSSLSocket(host, port, useDefaultCA = true)
+    let ssl = connectSSLSocket(host, port, useDefaultCA = true).orDie()
     if getEnvEmpty("CHA_INSECURE_SSL_NO_VERIFY", "0") != "1":
-      os.checkCert(ssl)
+      checkCert(ssl)
     newSSLStream(ssl)
   else:
-    os.connectSocket(host, port)
+    connectSocket(host, port).orDie()
   let op = HTTPHandle(ps: ps, os: os)
   let requestMethod = getEnvEmpty("REQUEST_METHOD")
   var buf = requestMethod & ' ' & path
@@ -447,13 +447,13 @@ proc main*() =
   buf &= getEnvEmpty("REQUEST_HEADERS")
   buf &= "\r\n"
   if not op.ps.writeDataLoop(buf):
-    os.die("ConnectionRefused", "error sending request header")
+    cgiDie(ceConnectionRefused, "error sending request header")
   var iq {.noinit.}: array[InputBufferSize, char]
   if requestMethod == "POST":
     let ps = newPosixStream(STDIN_FILENO)
     while (let n = ps.readData(iq); n > 0):
       if not op.ps.writeDataLoop(iq.toOpenArray(0, n - 1)):
-        os.die("ConnectionRefused", "error sending request body")
+        cgiDie(ceConnectionRefused, "error sending request body")
   if not os.writeDataLoop("Cha-Control: Connected\r\n"):
     quit(1)
   block readResponse:

@@ -118,7 +118,9 @@ twtstr = src/utils/twtstr.nim src/types/opt.nim
 dynstream = src/io/dynstream.nim
 chafile = src/io/chafile.nim $(dynstream)
 myposix = src/utils/myposix.nim
-lcgi = $(myposix) $(chafile) $(twtstr) $(sandbox) adapter/protocol/lcgi.nim
+connectionerror = src/server/connectionerror.nim
+lcgi = $(myposix) $(chafile) $(twtstr) $(sandbox) $(connectionerror) \
+	adapter/protocol/lcgi.nim
 lcgi_ssl = $(lcgi) adapter/protocol/lcgi_ssl.nim
 sandbox = src/utils/sandbox.nim $(chaseccomp)
 tinfl = adapter/protocol/tinfl.h

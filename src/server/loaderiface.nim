@@ -10,7 +10,7 @@ import io/packetreader
 import io/packetwriter
 import io/promise
 import monoucha/jserror
-import server/connecterror
+import server/connectionerror
 import server/headers
 import server/request
 import server/response

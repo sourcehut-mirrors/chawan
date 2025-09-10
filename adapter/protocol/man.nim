@@ -293,8 +293,7 @@ proc doMan(man, keyword, section: string) =
   let sectionOpt = if section == "": "" else: ' ' & quoteShellPosix(section)
   let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
     man & sectionOpt & ' ' & quoteShellPosix(keyword)
-  let (ofile, efile) = myOpen(cmd)
-    .orDie("InternalError", "failed to run " & cmd)
+  let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
   var manword = keyword
   if section != "":
     manword &= '(' & section & ')'
@@ -308,8 +307,7 @@ proc doLocal(man, path: string) =
   # various systems (at the very least FreeBSD, NetBSD).
   let cmd = "MANCOLOR=1 GROFF_NO_SGR=1 MAN_KEEP_FORMATTING=1 " &
     man & ' ' & quoteShellPosix(path)
-  let (ofile, efile) = myOpen(cmd)
-    .orDie("InternalError", "failed to run " & cmd)
+  let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
   discard ofile.processManpage(efile, header = """Content-Type: text/html
 
 <title>man -l """ & path & """</title>
@@ -318,8 +316,7 @@ proc doLocal(man, path: string) =
 proc doKeyword(man, keyword, section: string): Opt[void] =
   let sectionOpt = if section == "": "" else: " -s " & quoteShellPosix(section)
   let cmd = man & sectionOpt & " -k " & quoteShellPosix(keyword)
-  let (ofile, efile) = myOpen(cmd)
-    .orDie("InternalError", "failed to run " & cmd)
+  let (ofile, efile) = myOpen(cmd).orDie(ceInternalError, "failed to run man")
   var line: string
   if not ofile.readLine(line).get(false):
     var wstatus = cint(0)

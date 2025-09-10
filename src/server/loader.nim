@@ -38,7 +38,7 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/poll
-import server/connecterror
+import server/connectionerror
 import server/headers
 import server/loaderiface
 import server/request

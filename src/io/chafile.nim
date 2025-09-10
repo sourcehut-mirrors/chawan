@@ -23,6 +23,7 @@ proc rename(oldname, newname: cstring): cint
 proc fwrite(p: pointer; size, nmemb: csize_t; f: ChaFile): csize_t
 proc fread(p: pointer; size, nmemb: csize_t; f: ChaFile): csize_t
 proc fputc(c: cint; file: ChaFile): cint
+proc fputs(s: cstring; file: ChaFile): cint
 proc fgetc(file: ChaFile): cint
 proc ferror(file: ChaFile): cint
 proc popen*(cmd, t: cstring): ChaFile
@@ -48,6 +49,19 @@ proc fdopen*(ps: PosixStream; mode: cstring): Opt[ChaFile] =
     return err()
   ok(file)
 
+# Some Nim versions can't deal with overloading cstring and openArray[char],
+# better use a different name.
+proc writecstr*(file: ChaFile; s: cstring): Opt[void] =
+  if fputs(s, file) == EOF:
+    return err()
+  ok()
+
+proc write*(file: ChaFile; s: openArray[uint8]): Opt[void] =
+  if s.len > 0:
+    if fwrite(unsafeAddr s[0], 1, csize_t(s.len), file) != csize_t(s.len):
+      return err()
+  ok()
+
 proc write*(file: ChaFile; s: openArray[char]): Opt[void] =
   if s.len > 0:
     if fwrite(unsafeAddr s[0], 1, csize_t(s.len), file) != csize_t(s.len):
@@ -69,9 +83,17 @@ proc write*(file: ChaFile; c: char): Opt[void] =
     return err()
   ok()
 
+proc writeLine*(file: ChaFile): Opt[void] =
+  file.write('\n')
+
 proc writeLine*(file: ChaFile; s: openArray[char]): Opt[void] =
   ?file.write(s)
-  file.write('\n')
+  file.writeLine()
+
+proc writeCRLine*(file: ChaFile; s: openArray[char]): Opt[void] =
+  ?file.write(s)
+  ?file.write('\r')
+  file.writeLine()
 
 proc readLine*(file: ChaFile; s: var string): Opt[bool] =
   s.setLen(0)
@@ -146,19 +168,34 @@ when defined(gcDestructors):
 
   proc afopen*(name: string; mode: cstring): Opt[AChaFile] =
     let p = ?fopen(name, mode)
-    return ok(AChaFile(p: p))
+    ok(AChaFile(p: p))
 
   proc afdopen*(ps: PosixStream; mode: cstring): Opt[AChaFile] =
     let p = ?ps.fdopen(mode)
-    return ok(AChaFile(p: p))
+    ok(AChaFile(p: p))
+
+  proc read*(file: AChaFile; s: var openArray[uint8]): int =
+    file.p.read(s)
+
+  proc read*(file: AChaFile; s: var openArray[char]): int =
+    file.p.read(s)
 
   proc readLine*(file: AChaFile; s: var string): Opt[bool] =
-    return file.p.readLine(s)
+    file.p.readLine(s)
+
+  proc write*(file: AChaFile; s: openArray[char]): Opt[void] =
+    file.p.write(s)
 
   proc writeLine*(file: AChaFile; s: openArray[char]): Opt[void] =
-    return file.p.writeLine(s)
+    file.p.writeLine(s)
+
+  proc writeCRLine*(file: AChaFile; s: openArray[char]): Opt[void] =
+    file.p.writeCRLine(s)
+
+  proc flush*(file: AChaFile): Opt[void] =
+    file.p.flush()
 
   proc seek*(file: AChaFile; offset: clong): Opt[void] =
-    return file.p.seek(offset)
+    file.p.seek(offset)
 
 {.pop.} # raises: []

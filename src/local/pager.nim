@@ -41,7 +41,7 @@ import monoucha/libregexp
 import monoucha/quickjs
 import monoucha/tojs
 import server/buffer
-import server/connecterror
+import server/connectionerror
 import server/forkserver
 import server/headers
 import server/loaderiface

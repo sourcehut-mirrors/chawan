@@ -96,10 +96,15 @@ may use either (but not both) in a ConnectionError header.
   local databases, or peer-to-peer file retrieval mechanisms. A server
   responding with "no file found" is NOT a connection error, and is better
   represented as a response with a 404 status code.
-* `5 FailedToResolveHost`: The hostname could not be resolved.
-* `6 FailedToResolveProxy`: The proxy could not be resolved.
-* `7 ConnectionRefused`: The server refused to establish a connection.
-* `8 ProxyRefusedToConnect`: The proxy refused to establish a connection.
+* `5 ConnectionRefused`: The server refused to establish a connection.
+* `6 ProxyRefusedToConnect`: The proxy refused to establish a connection.
+* `7 FailedToResolveHost`: The hostname could not be resolved.
+* `8 FailedToResolveProxy`: The proxy could not be resolved.
+* `9 ProxyAuthFail`: The proxy refused the provided username/password.
+* `10 InvalidResponse`: The server's response deviates from the
+  specification so badly that it cannot be meaningfully processed.
+* `11 ProxyInvalidResponse`: The proxy's response deviates from the
+  specification so badly that it cannot be meaningfully processed.
 
 ## Environment variables
 

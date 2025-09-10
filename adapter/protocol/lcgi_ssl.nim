@@ -34,6 +34,8 @@ let EVP_MAX_MD_SIZE* {.nodecl, header: "<openssl/evp.h>".}: cint
 {.push cdecl.}
 {.push header: "<openssl/err.h>".}
 proc ERR_print_errors_fp*(fp: File)
+proc ERR_get_error(): culong
+proc ERR_reason_error_string(e: culong): cstring
 {.pop.}
 
 {.push header: "<openssl/x509.h>".}
@@ -109,35 +111,33 @@ proc SSL_free(ssl: ptr SSL)
 
 # WARNING: you must call SSL_get_verify_result on the returned SSL
 # yourself.
-proc connectSSLSocket*(os: PosixStream; host, port: string;
-    useDefaultCA: bool): ptr SSL =
-  let ps = os.connectSocket(host, port)
+proc connectSSLSocket*(host, port: string; useDefaultCA: bool):
+    CGIResult[ptr SSL] =
+  let ps = ?connectSocket(host, port)
   let ctx = SSL_CTX_new(TLS_client_method())
   if useDefaultCA:
     SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nil)
     if SSL_CTX_set_default_verify_paths(ctx) == 0:
-      os.die("InternalError", "failed to set default verify paths")
+      return errCGIError(ceInternalError, "failed to set default verify paths")
   if ctx.SSL_CTX_set_min_proto_version(TLS1_2_VERSION) == 0:
-    os.die("InternalError", "failed to set min proto version")
+    return errCGIError(ceInternalError, "failed to set min proto version")
   const preferredCiphers = "HIGH:!aNULL:!kRSA:!PSK:!SRP:!MD5:!RC4:!DSS:!DHE"
   if ctx.SSL_CTX_set_cipher_list(preferredCiphers) == 0:
-    os.die("InternalError", "failed to set cipher list")
+    return errCGIError(ceInternalError, "failed to set cipher list")
   let ssl = SSL_new(ctx)
   if SSL_set_fd(ssl, ps.fd) != 1:
-    os.die("InternalError", "failed to set SSL fd")
+    return errCGIError(ceInternalError, "failed to set SSL fd")
   if SSL_set1_host(ssl, cstring(host)) == 0:
-    os.die("InternalError", "failed to set host")
+    return errCGIError(ceInternalError, "failed to set host")
   if SSL_set_tlsext_host_name(ssl, cstring(host)) == 0:
-    os.die("InternalError", "failed to set tlsext host name")
+    return errCGIError(ceInternalError, "failed to set tlsext host name")
   if SSL_connect(ssl) <= 0:
-    stdout.fwrite("Cha-Control: ConnectionError 5 connect: ")
-    ERR_print_errors_fp(stdout)
-    quit(1)
+    let e = ERR_get_error()
+    return errCGIError(ceConnectionRefused, ERR_reason_error_string(e))
   if SSL_do_handshake(ssl) <= 0:
-    stdout.fwrite("Cha-Control: ConnectionError 5 handshake: ")
-    ERR_print_errors_fp(stdout)
-    quit(1)
-  return ssl
+    let e = ERR_get_error()
+    return errCGIError(ceConnectionRefused, ERR_reason_error_string(e))
+  ok(ssl)
 
 proc closeSSLSocket*(ssl: ptr SSL) =
   let ctx = SSL_get_SSL_CTX(ssl)
