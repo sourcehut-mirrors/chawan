@@ -28,7 +28,7 @@ type
 type
   AnsiCodeParseState = enum
     acpsDone, acpsStart, acpsParams, acpsInterm, acpsFinal, acpsBackspace,
-    acpsInBackspaceTransition, acpsInBackspace
+    acpsInBackspaceTransition, acpsInBackspace, acpsOSC, acpsOSCEsc
 
   AnsiCodeParser = object
     state: AnsiCodeParseState
@@ -215,6 +215,18 @@ proc flushFmt(state: var State) =
     state.currentFmt = fmt
     state.hasPrintingBuf = false
 
+proc parseOSC(state: var State) =
+  let p1 = state.parser.params.until(';')
+  let n = parseIntP(p1).get(-1)
+  if n == 8: # hyperlink
+    let p2start = p1.len + 1
+    let id = state.parser.params.until(';', p2start)
+    let url = state.parser.params.until(';', p2start + id.len + 1)
+    # This isn't valid HTML, but the parser can deal with it.
+    state.puts("</a>")
+    if url != "":
+      state.puts("<a href='" & url.htmlEscape() & "'>")
+
 type ParseAnsiCodeResult = enum
   pacrProcess, pacrSkip
 
@@ -223,22 +235,25 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
   case state.parser.state
   of acpsStart:
     if 0x40 <= int(c) and int(c) <= 0x5F:
-      if c != '[':
+      case c
+      of '[':
+        state.parser.state = acpsParams
+      of ']':
+        state.parser.state = acpsOSC
+      else:
         #C1, TODO?
         state.parser.state = acpsDone
-      else:
-        state.parser.state = acpsParams
     else:
       state.parser.state = acpsDone
       return pacrProcess
   of acpsParams:
-    if 0x30 <= int(c) and int(c) <= 0x3F:
+    if c in '0' .. '?':
       state.parser.params &= c
     else:
       state.parser.state = acpsInterm
       return state.parseAnsiCode(format, c)
   of acpsInterm:
-    if 0x20 <= int(c) and int(c) <= 0x2F:
+    if c in ' ' .. '/':
       discard
     else:
       state.parser.state = acpsFinal
@@ -321,6 +336,21 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
       state.puts(s)
       state.parser.state = acpsDone
     return pacrProcess
+  of acpsOSC:
+    if c == '\a':
+      state.parseOSC()
+      state.parser.state = acpsDone
+    elif c == '\e':
+      state.parser.state = acpsOSCEsc
+    else:
+      state.parser.params &= c
+  of acpsOSCEsc:
+    if c == '\\':
+      state.parseOSC()
+      state.parser.state = acpsDone
+    else:
+      state.parser.params &= '\e'
+      state.parser.params &= c
   state.flushFmt()
   pacrSkip
 
