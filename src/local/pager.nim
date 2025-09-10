@@ -118,7 +118,7 @@ type
 
   # Mouse data
   MouseClickState = enum
-    mcsNormal, mcsDouble, mcsTriple
+    mcsNormal, mcsDouble
 
   MouseMoveType = enum
     mmtNone, mmtDrag, mmtSelect
@@ -710,7 +710,7 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
   of mitPress:
     pager.mouse.pressed[button] = input.pos
     if input.pos == pager.mouse.lastPressed[input.button]:
-      if pager.mouse.click[button] < mcsTriple:
+      if pager.mouse.click[button] < MouseClickState.high:
         inc pager.mouse.click[button]
   of mitMove: discard
   of mitRelease:
