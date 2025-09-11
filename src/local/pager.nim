@@ -288,13 +288,15 @@ proc setContainer(pager: Pager; c: Container) {.jsfunc.} =
         pager.loader.removeCachedItem(cachedImage.cacheId)
       cachedImage.state = cisCanceled
     pager.container.cachedImages.setLen(0)
-  if c.tab != pager.tab:
-    assert c.tab != nil
-    pager.tab = c.tab
-  c.tab.current = c
   if c != nil:
+    if c.tab != pager.tab:
+      assert c.tab != nil
+      pager.tab = c.tab
+    c.tab.current = c
     c.queueDraw()
     pager.term.setTitle(c.getTitle())
+  else:
+    pager.tab.current = nil
 
 proc reflect(ctx: JSContext; this_val: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray): JSValue
@@ -1607,6 +1609,9 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     container.replaceRef.replace = nil
     container.replaceRef.replaceBackup = nil
     container.replaceRef = nil
+  if container.tab != nil and container.tab.head == container:
+    container.tab.head = container.next
+  container.tab = nil
   if container.prev != nil:
     container.prev.next = container.next
   if container.next != nil:
