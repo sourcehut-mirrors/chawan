@@ -1563,17 +1563,14 @@ T}@T{
 \f[CR]cmd.pager.prevSiblingBuffer\f[R],
 \f[CR]cmd.pager.nextSiblingBufer\f[R], \f[CR]cmd.pager.parentBuffer\f[R]
 T}@T{
-Traverse the buffer tree.
+Traverse the buffer list.
 .PP
-\f[CR]nextBuffer\f[R] and \f[CR]prevBuffer\f[R] are the most intuitive,
-traversing the tree as if it were a linked list.
+\f[CR]nextBuffer\f[R] and \f[CR]prevBuffer\f[R] switch to the next or
+previous buffer respectively.
 .PP
-\f[CR]prevSiblingBuffer\f[R] and \f[CR]nextSiblingBuffer\f[R] cycle
-through the buffers opened from the same buffer.
-.PP
-Finally, \f[CR]parentBuffer\f[R] always returns to the buffer the
-current buffer was opened from, even if e.g.\ the user returns and opens
-another page \(lqin between\(rq.
+\f[CR]prevSiblingBuffer\f[R] and \f[CR]parentBuffer\f[R] are deprecated
+aliases for \f[CR]prevBuffer\f[R], while \f[CR]nextSiblingBuffer\f[R] is
+a deprecated alias for \f[CR]nextBuffer\f[R].
 T}
 _
 T{

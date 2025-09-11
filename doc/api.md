@@ -389,7 +389,7 @@ below.</td>
 
 <tr>
 <td>`navDirection`</td>
-<td>The direction the user last moved in the buffer tree using
+<td>The direction the user last moved in the buffer list using
 `traverse`.  Possible values are `prev`, `next`, `prev-sibling`,
 `next-sibling`, `parent`, `first-child`, `any`.</td>
 </tr>
@@ -691,19 +691,16 @@ position if it is outside the screen.</td>
 
 <tr>
 <td>`find(dir)`</td>
-<td>Find the next buffer in the tree in a specific direction.
+<td>Find the next buffer in the list in a specific direction.
 <p>
 Possible values of `dir` are: `prev`, `next`, `prev-sibling`,
 `next-sibling`, `parent`, `first-child`, `any`.
-"next" and "prev" do a depth-first traversal.
+"next" and "prev" return the next/previous buffer respectively.
 <p>
-"prev-sibling" and "next-sibling" cycle through sibling buffers.
+"prev-sibling", "parent" are deprecated aliases for "prev", while
+"next-sibling" and "first-child" are deprecated aliases for "next".
 <p>
-"parent" moves to the parent buffer, "first-child" to the first
-child.
-<p>
-Finally, "any" moves either to "next", or if it does not exist, to
-"prev".
+Finally, "any" returns either "prev", or if it's null, "next".
 </td>
 </tr>
 
@@ -754,13 +751,13 @@ title.</td>
 </tr>
 
 <tr>
-<td>`parent`</td>
-<td>Parent buffer in the buffer tree. May be null.</td>
+<td>`next`</td>
+<td>Next buffer in the buffer list.  May be `null`.</td>
 </tr>
 
 <tr>
-<td>`children`</td>
-<td>Array of child buffers in the buffer tree.</td>
+<td>`prev`</td>
+<td>Previous buffer in the buffer list.  May be `null`.</td>
 </tr>
 
 <tr>

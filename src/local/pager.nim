@@ -107,6 +107,9 @@ type
     response: Response
     sx: int
 
+  SurfaceType = enum
+    stDisplay, stStatus
+
   Surface = object
     redraw: bool
     grid: FixedGrid
@@ -147,9 +150,10 @@ type
     askPrompt: string
     config*: Config
     consoleWrapper*: ConsoleWrapper
-    container {.jsget: "buffer".}: Container
+    tabHead: Tab # not nil
+    tab: Tab # not nil
     cookieJars: CookieJarMap
-    display: Surface
+    surfaces: array[SurfaceType, Surface]
     downloads: Container
     exitCode*: int
     forkserver*: ForkServer
@@ -174,7 +178,6 @@ type
     refreshAllowed: HashSet[string]
     regex: Option[Regex]
     scommand: string
-    status: Surface
     term*: Terminal
     timeouts*: TimeoutState
     tmpfSeq: uint
@@ -231,11 +234,8 @@ proc updateReadLine(pager: Pager)
 template attrs(pager: Pager): WindowAttributes =
   pager.term.attrs
 
-proc getRoot(container: Container): Container =
-  var c = container
-  while c.parent != nil:
-    c = c.parent
-  return c
+proc container(pager: Pager): Container {.jsfget: "buffer".} =
+  pager.tab.current
 
 proc bufWidth(pager: Pager): int =
   return pager.attrs.width
@@ -246,36 +246,40 @@ proc bufHeight(pager: Pager): int =
 proc console(pager: Pager): Console =
   return pager.consoleWrapper.console
 
-# depth-first descendant iterator
-iterator descendants(parent: Container): Container {.inline.} =
-  var stack = newSeqOfCap[Container](parent.children.len)
-  for child in parent.children.ritems:
-    stack.add(child)
-  while stack.len > 0:
-    let c = stack.pop()
-    # add children first, so that deleteContainer works on c
-    for child in c.children.ritems:
-      stack.add(child)
-    yield c
+iterator tabs(pager: Pager): Tab {.inline.} =
+  var tab = pager.tabHead
+  while tab != nil:
+    yield tab
+    tab = tab.next
 
-iterator containers*(pager: Pager): Container {.inline.} =
-  if pager.container != nil:
-    let root = getRoot(pager.container)
-    yield root
-    for c in root.descendants:
+iterator containers(tab: Tab): Container {.inline.} =
+  var c = tab.head
+  while c != nil:
+    yield c
+    c = c.next
+
+iterator containers(pager: Pager): Container {.inline.} =
+  for tab in pager.tabs:
+    for c in tab.containers:
       yield c
 
-proc clearDisplay(pager: Pager) =
-  pager.display = Surface(
-    grid: newFixedGrid(pager.bufWidth, pager.bufHeight),
+proc surfaceSize(pager: Pager; t: SurfaceType): tuple[w, h: int] =
+  case t
+  of stDisplay: return (pager.bufWidth, pager.bufHeight)
+  of stStatus: return (pager.attrs.width, 1)
+
+proc clear(pager: Pager; t: SurfaceType) =
+  let (w, h) = pager.surfaceSize(t)
+  pager.surfaces[t] = Surface(
+    grid: newFixedGrid(w, h),
     redraw: true
   )
 
-proc clearStatus(pager: Pager) =
-  pager.status = Surface(
-    grid: newFixedGrid(pager.attrs.width),
-    redraw: true
-  )
+template status(pager: Pager): Surface =
+  pager.surfaces[stStatus]
+
+template display(pager: Pager): Surface =
+  pager.surfaces[stDisplay]
 
 proc setContainer(pager: Pager; c: Container) {.jsfunc.} =
   if pager.term.imageMode != imNone and pager.container != nil:
@@ -284,7 +288,10 @@ proc setContainer(pager: Pager; c: Container) {.jsfunc.} =
         pager.loader.removeCachedItem(cachedImage.cacheId)
       cachedImage.state = cisCanceled
     pager.container.cachedImages.setLen(0)
-  pager.container = c
+  if c.tab != pager.tab:
+    assert c.tab != nil
+    pager.tab = c.tab
+  c.tab.current = c
   if c != nil:
     c.queueDraw()
     pager.term.setTitle(c.getTitle())
@@ -511,6 +518,7 @@ proc initLoader(pager: Pager) =
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int): Pager =
+  let tab = Tab()
   let pager = Pager(
     alive: true,
     config: config,
@@ -523,7 +531,9 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     exitCode: -1,
     loader: loader,
     loaderPid: loaderPid,
-    cookieJars: newCookieJarMap()
+    cookieJars: newCookieJarMap(),
+    tabHead: tab,
+    tab: tab
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
@@ -941,8 +951,8 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   of tsrSuccess: discard
   of tsrDA1Fail:
     pager.alert("Failed to query DA1, please set display.query-da1 = false")
-  pager.clearDisplay()
-  pager.clearStatus()
+  for st in SurfaceType:
+    pager.clear(st)
   pager.consoleWrapper = pager.addConsole(interactive = istream != nil)
   var gpager {.global.}: Pager = nil
   gpager = pager
@@ -975,16 +985,16 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     pager.dumpBuffers()
 
 # Note: this function does not work correctly if start < x of last written char
-proc writeStatusMessage(pager: Pager; str: string; format = Format();
+proc writeStatusMessage(status: var Surface; str: string; format = Format();
     start = 0; maxwidth = -1): int =
   var maxwidth = maxwidth
   if maxwidth == -1:
-    maxwidth = pager.status.grid.len
+    maxwidth = status.grid.len
   var x = start
-  let e = min(start + maxwidth, pager.status.grid.width)
+  let e = min(start + maxwidth, status.grid.width)
   if x >= e:
     return x
-  pager.status.redraw = true
+  status.redraw = true
   for u in str.points:
     var u = u
     var w = u.width()
@@ -995,25 +1005,24 @@ proc writeStatusMessage(pager: Pager; str: string; format = Format();
     if u.isControlChar():
       if u == uint32('\t'):
         while w > 0:
-          pager.status.grid[x].str = " "
-          pager.status.grid[x].format = format
+          status.grid[x].str = " "
+          status.grid[x].format = format
           inc x
           dec w
         continue
-      pager.status.grid[x].str = u.controlToVisual()
+      status.grid[x].str = u.controlToVisual()
     else:
-      pager.status.grid[x].str = u.toUTF8()
-    pager.status.grid[x].format = format
+      status.grid[x].str = u.toUTF8()
+    status.grid[x].format = format
     let nx = x + w
     inc x
     while x < nx: # clear unset cells
-      pager.status.grid[x].str = ""
-      pager.status.grid[x].format = Format()
+      status.grid[x].str = ""
+      status.grid[x].format = Format()
       inc x
   result = x
   while x < e:
-    pager.status.grid[x].str = ""
-    pager.status.grid[x].format = Format()
+    status.grid[x] = FixedCell()
     inc x
 
 # Note: should only be called directly after user interaction.
@@ -1023,12 +1032,12 @@ proc refreshStatusMsg(pager: Pager) =
   if pager.askPromise != nil:
     return
   if pager.precnum != 0:
-    discard pager.writeStatusMessage($pager.precnum & pager.inputBuffer)
+    discard pager.status.writeStatusMessage($pager.precnum & pager.inputBuffer)
   elif pager.inputBuffer != "":
-    discard pager.writeStatusMessage(pager.inputBuffer)
+    discard pager.status.writeStatusMessage(pager.inputBuffer)
   elif pager.alerts.len > 0:
     pager.alertState = pasAlertOn
-    discard pager.writeStatusMessage(pager.alerts[0])
+    discard pager.status.writeStatusMessage(pager.alerts[0])
     # save to alert history
     if pager.lastAlert != "":
       let hist = pager.getHist(lmAlert)
@@ -1068,7 +1077,7 @@ proc refreshStatusMsg(pager: Pager) =
     msg &= hover
     if container.numLines == 0:
       msg &= "\tNo Line"
-    discard pager.writeStatusMessage(msg, format)
+    discard pager.status.writeStatusMessage(msg, format)
 
 # Call refreshStatusMsg if no alert is being displayed on the screen.
 # Alerts take precedence over load info, but load info is preserved when no
@@ -1142,8 +1151,8 @@ proc drawBuffer(pager: Pager; container: Container; ofile: ChaFile): Opt[void] =
 
 proc redraw(pager: Pager) {.jsfunc.} =
   pager.term.clearCanvas()
-  pager.display.redraw = true
-  pager.status.redraw = true
+  for surface in pager.surfaces.mitems:
+    surface.redraw = true
   if pager.container != nil:
     pager.container.redraw = true
     if pager.container.select != nil:
@@ -1320,7 +1329,6 @@ proc draw(pager: Pager) =
   let container = pager.container
   if container != nil:
     if container.redraw:
-      pager.clearDisplay()
       let hlcolor = if pager.term.colorMode != cmMonochrome:
         cellColor(pager.config.display.highlightColor.rgb)
       else:
@@ -1350,11 +1358,7 @@ proc draw(pager: Pager) =
     pager.term.writeGrid(pager.display.grid)
     pager.display.redraw = false
     redraw = true
-  if pager.askPromise != nil:
-    pager.term.writeGrid(pager.status.grid, 0, pager.attrs.height - 1)
-    pager.status.redraw = false
-    redraw = true
-  elif pager.lineedit != nil:
+  if pager.lineedit != nil:
     if pager.lineedit.redraw:
       let x = pager.lineedit.generateOutput()
       pager.term.writeGrid(x, 0, pager.attrs.height - 1)
@@ -1401,8 +1405,8 @@ proc draw(pager: Pager) =
 
 proc writeAskPrompt(pager: Pager; s = "") =
   let maxwidth = pager.status.grid.width - s.width()
-  let i = pager.writeStatusMessage(pager.askPrompt, maxwidth = maxwidth)
-  pager.askCursor = pager.writeStatusMessage(s, start = i)
+  let i = pager.status.writeStatusMessage(pager.askPrompt, maxwidth = maxwidth)
+  pager.askCursor = pager.status.writeStatusMessage(s, start = i)
 
 proc askChar(pager: Pager; prompt: string): Promise[string] {.jsfunc.} =
   pager.askPrompt = prompt
@@ -1426,10 +1430,12 @@ proc fulfillAsk(pager: Pager; s: string) =
   pager.askPrompt = ""
   p.resolve(s)
 
-proc addContainer*(pager: Pager; container: Container) =
-  container.parent = pager.container
-  if pager.container != nil:
-    pager.container.children.insert(container, 0)
+proc addContainer(pager: Pager; container: Container) =
+  if pager.tab.head == nil:
+    pager.tab.head = container
+  else:
+    pager.tab.current.next = container
+    container.prev = pager.tab.current
   pager.setContainer(container)
 
 proc onSetLoadInfo(pager: Pager; container: Container) =
@@ -1437,14 +1443,14 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
     if container.loadinfo == "":
       pager.alertState = pasNormal
     else:
-      discard pager.writeStatusMessage(container.loadinfo)
+      discard pager.status.writeStatusMessage(container.loadinfo)
       pager.alertState = pasLoadInfo
 
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; title = "";
     redirectDepth = 0; flags = {cfCanReinterpret, cfUserRequested};
-    contentType = ""; charsetStack: seq[Charset] = @[]; url = request.url):
-    Container =
+    contentType = ""; charsetStack: seq[Charset] = @[]; url = request.url;
+    tab: Tab = nil): Container =
   let stream = pager.loader.startRequest(request, loaderConfig)
   if stream == nil:
     pager.alert("failed to start request for " & $request.url)
@@ -1467,7 +1473,8 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     contentType,
     charsetStack,
     cacheId,
-    pager.config
+    pager.config,
+    if tab != nil: tab else: pager.tab
   )
   pager.loader.put(ConnectingContainer(
     state: ccsBeforeResult,
@@ -1540,14 +1547,13 @@ proc traverse(pager: Pager; dir: NavDirection): bool {.jsfunc.} =
   pager.setContainer(next)
   true
 
-# The prevBuffer and nextBuffer procedures emulate w3m's PREV and NEXT
-# commands by traversing the container tree in a depth-first order.
 proc prevBuffer(pager: Pager): bool {.jsfunc.} =
   pager.traverse(ndPrev)
 
 proc nextBuffer(pager: Pager): bool {.jsfunc.} =
   pager.traverse(ndNext)
 
+# Backwards compatibility with the now-removed buffer tree
 proc parentBuffer(pager: Pager): bool {.jsfunc.} =
   pager.traverse(ndParent)
 
@@ -1561,28 +1567,29 @@ proc alert*(pager: Pager; msg: string) {.jsfunc.} =
   if msg != "":
     pager.alerts.add(msg)
 
-# replace target with container in the tree
+# replace target with container
 proc replace(pager: Pager; target, container: Container) =
-  let n = target.children.find(container)
-  if n != -1:
-    target.children.delete(n)
-    container.parent = nil
-  let n2 = container.children.find(target)
-  if n2 != -1:
-    container.children.delete(n2)
-    target.parent = nil
-  container.children.add(target.children)
-  for child in container.children:
-    child.parent = container
-  target.children.setLen(0)
-  if target.parent != nil:
-    container.parent = target.parent
-    let n = target.parent.children.find(target)
-    assert n != -1, "Container not a child of its parent"
-    container.parent.children[n] = container
-    target.parent = nil
-  if pager.downloads == target:
-    pager.downloads = container
+  assert container != target
+  if container.prev != nil:
+    container.prev.next = container.next
+  if container.next != nil:
+    container.next.prev = container.prev
+  if target.tab.head == target:
+    target.tab.head = container
+  #TODO move() when we switch to arc
+  container.prev = target.prev
+  container.next = target.next
+  container.tab = target.tab
+  assert container.tab != nil
+  target.prev = nil
+  target.next = nil
+  target.tab = nil
+  if container.prev != nil:
+    container.prev.next = container
+  if container.next != nil:
+    container.next.prev = container
+  if pager.downloads == container:
+    pager.downloads = target
   if pager.container == target:
     pager.setContainer(container)
 
@@ -1600,22 +1607,12 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     container.replaceRef.replace = nil
     container.replaceRef.replaceBackup = nil
     container.replaceRef = nil
-  if container.parent != nil:
-    let parent = container.parent
-    let n = parent.children.find(container)
-    assert n != -1, "Container not a child of its parent"
-    for child in container.children.ritems:
-      child.parent = container.parent
-      parent.children.insert(child, n + 1)
-    parent.children.delete(n)
-  elif container.children.len > 0:
-    let parent = container.children[0]
-    parent.parent = nil
-    for i in 1..container.children.high:
-      container.children[i].parent = parent
-      parent.children.add(container.children[i])
-  container.parent = nil
-  container.children.setLen(0)
+  if container.prev != nil:
+    container.prev.next = container.next
+  if container.next != nil:
+    container.next.prev = container.prev
+  container.prev = nil
+  container.next = nil
   if pager.downloads == container:
     pager.downloads = nil
   if container.replace != nil:
@@ -1656,10 +1653,13 @@ proc discardBuffer(pager: Pager; container = none(Container);
 proc discardTree(pager: Pager; container = none(Container)) {.jsfunc.} =
   let container = container.get(pager.container)
   if container != nil:
-    for c in container.descendants:
-      pager.deleteContainer(container, nil)
+    var c = container.next
+    while c != nil:
+      let next = c.next
+      pager.deleteContainer(c, nil)
+      c = next
   else:
-    pager.alert("Buffer has no children!")
+    pager.alert("Buffer has no siblings!")
 
 template myFork(): cint =
   stderr.flushFile()
@@ -1828,8 +1828,8 @@ proc windowChange(pager: Pager) =
     return
   if pager.lineedit != nil:
     pager.lineedit.windowChange(pager.attrs)
-  pager.clearDisplay()
-  pager.clearStatus()
+  for st in SurfaceType:
+    pager.clear(st)
   for container in pager.containers:
     container.windowChange(pager.attrs)
   if pager.askPrompt != "":
@@ -3447,14 +3447,17 @@ proc headlessLoop(pager: Pager) =
 
 proc dumpBuffers(pager: Pager) =
   pager.headlessLoop()
-  for container in pager.containers:
-    if pager.drawBuffer(container, cast[ChaFile](stdout)).isOk:
-      pager.handleEvents(container)
-    else:
-      pager.console.error("Error in buffer", $container.url)
-      # check for errors
-      pager.handleRead(pager.forkserver.estream.fd)
-      pager.quit(1)
+  for tab in pager.tabs:
+    if tab.hidden:
+      continue
+    for container in tab.containers:
+      if pager.drawBuffer(container, cast[ChaFile](stdout)).isOk:
+        pager.handleEvents(container)
+      else:
+        pager.console.error("Error in buffer", $container.url)
+        # check for errors
+        pager.handleRead(pager.forkserver.estream.fd)
+        pager.quit(1)
 
 proc addPagerModule*(ctx: JSContext) =
   ctx.registerType(Pager)

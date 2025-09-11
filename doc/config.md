@@ -1292,16 +1292,14 @@ open the link under the cursor.</td>
 <td>`cmd.pager.nextBuffer`, `cmd.pager.prevBuffer`,
 `cmd.pager.prevSiblingBuffer`, `cmd.pager.nextSiblingBufer`,
 `cmd.pager.parentBuffer`</td>
-<td>Traverse the buffer tree.
+<td>Traverse the buffer list.
 <p>
-`nextBuffer` and `prevBuffer` are the most intuitive, traversing the tree as if
-it were a linked list.
+`nextBuffer` and `prevBuffer` switch to the next or previous buffer
+respectively.
 <p>
-`prevSiblingBuffer` and `nextSiblingBuffer` cycle through the buffers opened
-from the same buffer.
-<p>
-Finally, `parentBuffer` always returns to the buffer the current buffer was
-opened from, even if e.g. the user returns and opens another page "in between".
+`prevSiblingBuffer` and `parentBuffer` are deprecated aliases for
+`prevBuffer`, while `nextSiblingBuffer` is a deprecated alias for
+`nextBuffer`.
 </td>
 </tr>
 

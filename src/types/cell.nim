@@ -88,7 +88,13 @@ iterator items*(grid: FixedGrid): lent FixedCell {.inline.} =
   for cell in grid.cells:
     yield cell
 
-proc newFixedGrid*(w: int; h: int = 1): FixedGrid =
+iterator mline*(grid: var FixedGrid; y: int; startx = 0): var FixedCell
+    {.inline.} =
+  let dls = y * grid.width
+  for cell in grid.cells.toOpenArray(dls + startx, dls + grid.width - 1).mitems:
+    yield cell
+
+proc newFixedGrid*(w, h: int): FixedGrid =
   return FixedGrid(width: w, height: h, cells: newSeq[FixedCell](w * h))
 
 proc width*(cell: FixedCell): int =

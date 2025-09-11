@@ -437,7 +437,7 @@ _
 T{
 \f[CR]navDirection\f[R]
 T}@T{
-The direction the user last moved in the buffer tree using
+The direction the user last moved in the buffer list using
 \f[CR]traverse\f[R].
 Possible values are \f[CR]prev\f[R], \f[CR]next\f[R],
 \f[CR]prev\-sibling\f[R], \f[CR]next\-sibling\f[R], \f[CR]parent\f[R],
@@ -805,21 +805,20 @@ _
 T{
 \f[CR]find(dir)\f[R]
 T}@T{
-Find the next buffer in the tree in a specific direction.
+Find the next buffer in the list in a specific direction.
 .PP
 Possible values of \f[CR]dir\f[R] are: \f[CR]prev\f[R], \f[CR]next\f[R],
 \f[CR]prev\-sibling\f[R], \f[CR]next\-sibling\f[R], \f[CR]parent\f[R],
 \f[CR]first\-child\f[R], \f[CR]any\f[R].
-\(lqnext\(rq and \(lqprev\(rq do a depth\-first traversal.
+\(lqnext\(rq and \(lqprev\(rq return the next/previous buffer
+respectively.
 .PP
-\(lqprev\-sibling\(rq and \(lqnext\-sibling\(rq cycle through sibling
-buffers.
+\(lqprev\-sibling\(rq, \(lqparent\(rq are deprecated aliases for
+\(lqprev\(rq, while \(lqnext\-sibling\(rq and \(lqfirst\-child\(rq are
+deprecated aliases for \(lqnext\(rq.
 .PP
-\(lqparent\(rq moves to the parent buffer, \(lqfirst\-child\(rq to the
-first child.
-.PP
-Finally, \(lqany\(rq moves either to \(lqnext\(rq, or if it does not
-exist, to \(lqprev\(rq.
+Finally, \(lqany\(rq returns either \(lqprev\(rq, or if it\(cqs null,
+\(lqnext\(rq.
 T}
 _
 T{
@@ -879,16 +878,17 @@ is no title.
 T}
 _
 T{
-\f[CR]parent\f[R]
+\f[CR]next\f[R]
 T}@T{
-Parent buffer in the buffer tree.
-May be null.
+Next buffer in the buffer list.
+May be \f[CR]null\f[R].
 T}
 _
 T{
-\f[CR]children\f[R]
+\f[CR]prev\f[R]
 T}@T{
-Array of child buffers in the buffer tree.
+Previous buffer in the buffer list.
+May be \f[CR]null\f[R].
 T}
 _
 T{

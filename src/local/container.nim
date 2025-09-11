@@ -2,6 +2,7 @@
 
 import std/options
 import std/posix
+import std/strutils
 import std/tables
 
 import chagashi/charset
@@ -131,6 +132,13 @@ type
     # length of introducer, raster, palette data before pixel data
     preludeLen*: int
 
+  Tab* {.acyclic.} = ref object
+    head*: Container
+    current*: Container
+    prev*: Tab
+    next*: Tab
+    hidden*: bool # primarily for console
+
   Container* = ref object of RootObj
     # note: this is not the same as source.request.url (but should be synced
     # with buffer.url)
@@ -140,8 +148,8 @@ type
     # re-interpret the original input, and buffer can rewind the (potentially
     # mailcap) output.
     cacheId* {.jsget.}: int
-    parent* {.jsget.}: Container
-    children* {.jsget.}: seq[Container]
+    prev* {.jsget.}: Container
+    next* {.jsget.}: Container
     config*: BufferConfig
     loaderConfig*: LoaderClientConfig
     iface*: BufferInterface
@@ -194,6 +202,7 @@ type
     cachedImages*: seq[CachedImage]
     luctx: LUContext
     refreshHeader: string
+    tab*: Tab
 
   NavDirection* = enum
     ndPrev = "prev"
@@ -217,7 +226,7 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
     title: string; redirectDepth: int; flags: set[ContainerFlag];
     contentType: string; charsetStack: seq[Charset]; cacheId: int;
-    mainConfig: Config): Container =
+    mainConfig: Config; tab: Tab): Container =
   return Container(
     url: url,
     request: request,
@@ -239,7 +248,8 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     flags: flags,
     luctx: luctx,
     redraw: true,
-    lastPeek: HoverType.high
+    lastPeek: HoverType.high,
+    tab: tab
   )
 
 proc clone*(container: Container; newurl: URL; loader: FileLoader):
@@ -284,8 +294,8 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     nc.clonedFrom = container.process
     nc.flags.incl(cfCloned)
     nc.retry = @[]
-    nc.parent = nil
-    nc.children = @[]
+    nc.prev = nil
+    nc.next = nil
     nc.cachedImages = @[]
     return (nc, sv[0])
   )
@@ -1765,71 +1775,12 @@ proc hoverImage(container: Container): string {.jsfget.} =
 proc hoverCachedImage(container: Container): string {.jsfget.} =
   return container.hoverText[htCachedImage]
 
-proc findPrev(container: Container): Container =
-  if container.parent == nil:
-    return nil
-  let n = container.parent.children.find(container)
-  assert n != -1, "Container not a child of its parent"
-  if n == 0:
-    return container.parent
-  var container = container.parent.children[n - 1]
-  while container.children.len > 0:
-    container = container.children[^1]
-  return container
-
-proc findNext(container: Container): Container =
-  if container.children.len > 0:
-    return container.children[0]
-  var container = container
-  while container.parent != nil:
-    let n = container.parent.children.find(container)
-    assert n != -1, "Container not a child of its parent"
-    if n < container.parent.children.high:
-      return container.parent.children[n + 1]
-    container = container.parent
-  return nil
-
-proc findPrevSibling(container: Container): Container =
-  if container.parent == nil:
-    return nil
-  var n = container.parent.children.find(container)
-  assert n != -1, "Container not a child of its parent"
-  if n == 0:
-    n = container.parent.children.len
-  return container.parent.children[n - 1]
-
-proc findNextSibling(container: Container): Container =
-  if container.parent == nil:
-    return nil
-  var n = container.parent.children.find(container)
-  assert n != -1, "Container not a child of its parent"
-  if n == container.parent.children.high:
-    n = -1
-  return container.parent.children[n + 1]
-
-proc findParent(container: Container): Container =
-  return container.parent
-
-proc findFirstChild(container: Container): Container =
-  if container.children.len == 0:
-    return nil
-  return container.children[0]
-
-proc findAny(container: Container): Container =
-  let prev = container.findPrev()
-  if prev != nil:
-    return prev
-  return container.findNext()
-
 proc find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
   return case dir
-  of ndPrev: container.findPrev()
-  of ndNext: container.findNext()
-  of ndPrevSibling: container.findPrevSibling()
-  of ndNextSibling: container.findNextSibling()
-  of ndParent: container.findParent()
-  of ndFirstChild: container.findFirstChild()
-  of ndAny: container.findAny()
+  of ndPrev, ndPrevSibling, ndParent: container.prev
+  of ndNext, ndNextSibling, ndFirstChild: container.next
+  of ndAny:
+    if container.prev != nil: container.prev else: container.next
 
 # Returns false on I/O error.
 proc handleCommand(container: Container): Opt[void] =
@@ -1909,16 +1860,24 @@ proc readLines*(container: Container; handle: HandleReadLine): Opt[void] =
   ok()
 
 proc setFormat(cell: var FixedCell; cf: SimpleFormatCell; bgcolor: CellColor) =
-  if cf.pos != -1:
-    cell.format = cf.format
+  cell.format = cf.format
   if bgcolor != defaultColor and cell.format.bgcolor == defaultColor:
     cell.format.bgcolor = bgcolor
+
+proc setText(cell: var FixedCell; u: uint32; i, pi, uw: int; s: string) =
+  if u.isControlChar():
+    cell.str = u.controlToVisual()
+  elif u in TabPUARange:
+    cell.str = ' '.repeat(uw)
+  else:
+    cell.str = s.substr(pi, i - 1)
 
 proc drawLines*(container: Container; display: var FixedGrid;
     hlcolor: CellColor) =
   let bgcolor = container.bgcolor
   var by = 0
   let endy = min(container.fromy + display.height, container.numLines)
+  let maxw = container.fromx + display.width
   for line in container.ilines(container.fromy ..< endy):
     var w = 0 # width of the row so far
     var i = 0 # byte in line.str
@@ -1933,7 +1892,7 @@ proc drawLines*(container: Container; display: var FixedGrid;
     var nf = line.findNextFormat(w)
     var k = 0
     while k < w - container.fromx:
-      display[dls + k].str &= ' '
+      display[dls + k] = FixedCell(str: " ")
       display[dls + k].setFormat(cf, bgcolor)
       inc k
     let startw = w # save this for later
@@ -1944,27 +1903,25 @@ proc drawLines*(container: Container; display: var FixedGrid;
       let u = line.str.nextUTF8(i)
       let uw = u.width()
       w += uw
-      if w > container.fromx + display.width:
-        break # die on exceeding the width limit
+      if w > maxw:
+        break
       if nf.pos != -1 and nf.pos <= pw:
         cf = nf
         nf = line.findNextFormat(pw)
-      if u.isControlChar():
-        display[dls + k].str = u.controlToVisual()
-      elif u in TabPUARange:
-        for i in 0 ..< uw:
-          display[dls + k].str &= ' '
-      else:
-        for j in pi ..< i:
-          display[dls + k].str &= line.str[j]
+      display[dls + k].setText(u, i, pi, uw, line.str)
       display[dls + k].setFormat(cf, bgcolor)
-      k += uw
+      inc k
+      for i in 1 ..< uw:
+        display[dls + k] = FixedCell()
+        inc k
     if bgcolor != defaultColor:
       # Fill the screen if bgcolor is not default.
-      while k < display.width:
-        display[dls + k].str &= ' '
-        display[dls + k].format.bgcolor = bgcolor
-        inc k
+      let format = initFormat(bgcolor, defaultColor, {})
+      for cell in display.mline(by, k):
+        cell = FixedCell(str: " ", format: format)
+    else:
+      for cell in display.mline(by, k):
+        cell = FixedCell()
     # Finally, override cell formatting for highlighted cells.
     let hls = container.findHighlights(container.fromy + by)
     let aw = display.width - (startw - container.fromx) # actual width
@@ -1980,6 +1937,9 @@ proc drawLines*(container: Container; display: var FixedGrid;
         else:
           display[n].format.incl(ffReverse)
     inc by
+  for y in by ..< display.height: # clear the rest
+    for cell in display.mline(y):
+      cell = FixedCell()
 
 proc highlightMarks*(container: Container; display: var FixedGrid;
     hlcolor: CellColor) =
