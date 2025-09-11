@@ -145,13 +145,18 @@ type
     cstOverflow = "overflow"
     cstVerticalAlign = "vertical-align"
     cstBorderSpacing = "border-spacing"
+    cstBorderStyle = "border-style"
 
   CSSPropertyType* = enum
     # primitive/enum properties: stored as byte
     # (when adding a new property, sort the individual lists, and update
     # LastBitPropType/LastWordPropType if needed.)
     cptBgcolorIsCanvas = "-cha-bgcolor-is-canvas"
+    cptBorderBottomStyle = "border-bottom-style"
     cptBorderCollapse = "border-collapse"
+    cptBorderLeftStyle = "border-left-style"
+    cptBorderRightStyle = "border-right-style"
+    cptBorderTopStyle = "border-top-style"
     cptBoxSizing = "box-sizing"
     cptCaptionSide = "caption-side"
     cptClear = "clear"

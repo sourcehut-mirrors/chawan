@@ -54,35 +54,36 @@ type
     cuVw = "vw"
 
   CSSValueType* = enum
-    cvtLength = "length"
+    cvtBgcolorIsCanvas = "bgcolorIsCanvas"
+    cvtBorderCollapse = "borderCollapse"
+    cvtBorderStyle = "borderStyle"
+    cvtBoxSizing = "boxSizing"
+    cvtCaptionSide = "captionSide"
+    cvtClear = "clear"
     cvtColor = "color"
     cvtContent = "content"
-    cvtDisplay = "display"
-    cvtFontStyle = "fontStyle"
-    cvtWhiteSpace = "whiteSpace"
-    cvtInteger = "integer"
-    cvtTextDecoration = "textDecoration"
-    cvtWordBreak = "wordBreak"
-    cvtListStyleType = "listStyleType"
-    cvtVerticalAlign = "verticalAlign"
-    cvtTextAlign = "textAlign"
-    cvtListStylePosition = "listStylePosition"
-    cvtPosition = "position"
-    cvtCaptionSide = "captionSide"
-    cvtBorderCollapse = "borderCollapse"
-    cvtQuotes = "quotes"
     cvtCounterSet = "counterSet"
-    cvtImage = "image"
-    cvtFloat = "float"
-    cvtVisibility = "visibility"
-    cvtBoxSizing = "boxSizing"
-    cvtClear = "clear"
-    cvtTextTransform = "textTransform"
-    cvtBgcolorIsCanvas = "bgcolorIsCanvas"
+    cvtDisplay = "display"
     cvtFlexDirection = "flexDirection"
     cvtFlexWrap = "flexWrap"
+    cvtFloat = "float"
+    cvtFontStyle = "fontStyle"
+    cvtImage = "image"
+    cvtInteger = "integer"
+    cvtLength = "length"
+    cvtListStylePosition = "listStylePosition"
+    cvtListStyleType = "listStyleType"
     cvtNumber = "number"
     cvtOverflow = "overflow"
+    cvtPosition = "position"
+    cvtQuotes = "quotes"
+    cvtTextAlign = "textAlign"
+    cvtTextDecoration = "textDecoration"
+    cvtTextTransform = "textTransform"
+    cvtVerticalAlign = "verticalAlign"
+    cvtVisibility = "visibility"
+    cvtWhiteSpace = "whiteSpace"
+    cvtWordBreak = "wordBreak"
     cvtZIndex = "zIndex"
 
   CSSGlobalType* = enum
@@ -264,6 +265,18 @@ type
     OverflowAuto = "auto"
     OverflowOverlay = "overlay"
 
+  CSSBorderStyle* = enum
+    BorderStyleNone = "none"
+    BorderStyleHidden = "hidden"
+    BorderStyleDotted = "dotted"
+    BorderStyleDashed = "dashed"
+    BorderStyleSolid = "solid"
+    BorderStyleDouble = "double"
+    BorderStyleGroove = "groove"
+    BorderStyleRidge = "ridge"
+    BorderStyleInset = "inset"
+    BorderStyleOutset = "outset"
+
 type
   # CSSLength may represent:
   # * if isNaN(px) and isNaN(perc), the ident "auto"
@@ -300,6 +313,7 @@ type
     dummy*: uint8
     bgcolorIsCanvas*: bool
     borderCollapse*: CSSBorderCollapse
+    borderStyle*: CSSBorderStyle
     boxSizing*: CSSBoxSizing
     captionSide*: CSSCaptionSide
     clear*: CSSClear
@@ -402,7 +416,11 @@ static:
 const ValueTypes = [
   # bits
   cptBgcolorIsCanvas: cvtBgcolorIsCanvas,
+  cptBorderBottomStyle: cvtBorderStyle,
   cptBorderCollapse: cvtBorderCollapse,
+  cptBorderLeftStyle: cvtBorderStyle,
+  cptBorderRightStyle: cvtBorderStyle,
+  cptBorderTopStyle: cvtBorderStyle,
   cptBoxSizing: cvtBoxSizing,
   cptCaptionSide: cvtCaptionSide,
   cptClear: cvtClear,
@@ -645,6 +663,7 @@ proc serialize(val: CSSValueBit; t: CSSValueType): string =
   case t
   of cvtBgcolorIsCanvas: return $val.bgcolorIsCanvas
   of cvtBorderCollapse: return $val.borderCollapse
+  of cvtBorderStyle: return $val.borderStyle
   of cvtBoxSizing: return $val.boxSizing
   of cvtCaptionSide: return $val.captionSide
   of cvtClear: return $val.clear
@@ -1585,7 +1604,7 @@ proc makeEntry(t: CSSPropertyType; number: float32): CSSComputedEntry =
 proc makeEntry(t: CSSPropertyType; image: NetworkBitmap): CSSComputedEntry =
   makeEntry(t, CSSValue(v: cvtImage, image: image))
 
-template makeEntry[T: enum|set](t: CSSPropertyType; val: T): CSSComputedEntry =
+template makeEntry*[T: enum|set](t: CSSPropertyType; val: T): CSSComputedEntry =
   CSSComputedEntry(et: ceBit, p: t, bit: cast[uint8](val))
 
 proc parseDeclWithVar0*(toks: openArray[CSSToken]): seq[CSSVarItem] =
@@ -1665,6 +1684,7 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   of cvtPosition: makeEntry(t, ?parseIdent[CSSPosition](ctx))
   of cvtCaptionSide: makeEntry(t, ?parseIdent[CSSCaptionSide](ctx))
   of cvtBorderCollapse: makeEntry(t, ?parseIdent[CSSBorderCollapse](ctx))
+  of cvtBorderStyle: makeEntry(t, ?parseIdent[CSSBorderStyle](ctx))
   of cvtQuotes: makeEntry(t, CSSValue(v: v, quotes: ?ctx.parseQuotes()))
   of cvtCounterSet:
     let n = if t == cptCounterIncrement: 1i32 else: 0i32
@@ -1745,6 +1765,23 @@ proc makeDefaultEntry(t: CSSPropertyType): CSSComputedEntry =
   of cprtWord: return makeEntry(t, getDefaultWord(t))
   of cprtObject: return makeEntry(t, getDefault(t))
 
+const ShorthandMap = [
+  cstNone: @[],
+  cstAll: @[],
+  cstMargin: @[cptMarginTop, cptMarginRight, cptMarginBottom, cptMarginLeft],
+  cstPadding: @[cptPaddingTop, cptPaddingRight, cptPaddingBottom,
+    cptPaddingLeft],
+  cstBackground: @[cptBackgroundColor, cptBackgroundImage],
+  cstListStyle: @[cptListStylePosition, cptListStyleType],
+  cstFlex: @[cptFlexGrow, cptFlexShrink, cptFlexBasis],
+  cstFlexFlow: @[cptFlexDirection, cptFlexWrap],
+  cstOverflow: @[cptOverflowX, cptOverflowY],
+  cstVerticalAlign: @[cptVerticalAlign, cptVerticalAlignLength],
+  cstBorderSpacing: @[cptBorderSpacingInline, cptBorderSpacingBlock],
+  cstBorderStyle: @[cptBorderBottomStyle, cptBorderLeftStyle,
+    cptBorderRightStyle, cptBorderTopStyle]
+]
+
 proc parseLengthShorthand(ctx: var CSSParser; props: openArray[CSSPropertyType];
     attrs: WindowAttributes; hasAuto: bool; res: var seq[CSSComputedEntry]):
     Opt[void] =
@@ -1773,21 +1810,6 @@ proc parseLengthShorthand(ctx: var CSSParser; props: openArray[CSSPropertyType];
   else:
     return err()
   ok()
-
-const ShorthandMap = [
-  cstNone: @[],
-  cstAll: @[],
-  cstMargin: @[cptMarginTop, cptMarginRight, cptMarginBottom, cptMarginLeft],
-  cstPadding: @[cptPaddingTop, cptPaddingRight, cptPaddingBottom,
-    cptPaddingLeft],
-  cstBackground: @[cptBackgroundColor, cptBackgroundImage],
-  cstListStyle: @[cptListStylePosition, cptListStyleType],
-  cstFlex: @[cptFlexGrow, cptFlexShrink, cptFlexBasis],
-  cstFlexFlow: @[cptFlexDirection, cptFlexWrap],
-  cstOverflow: @[cptOverflowX, cptOverflowY],
-  cstVerticalAlign: @[cptVerticalAlign, cptVerticalAlignLength],
-  cstBorderSpacing: @[cptBorderSpacingInline, cptBorderSpacingBlock]
-]
 
 proc parseBackground(ctx: var CSSParser; attrs: WindowAttributes;
     res: var seq[CSSComputedEntry]): Opt[void] =
@@ -1910,6 +1932,35 @@ proc parseBorderSpacing(ctx: var CSSParser; attrs: WindowAttributes;
   res.add(makeEntry(cptBorderSpacingBlock, b))
   return ctx.skipBlanksCheckDone()
 
+proc parseBorderStyle(ctx: var CSSParser; props: openArray[CSSPropertyType];
+    res: var seq[CSSComputedEntry]): Opt[void] =
+  var lengths: seq[CSSBorderStyle] = @[]
+  while ctx.skipBlanksCheckHas().isOk:
+    let tok = ctx.consume()
+    lengths.add(?parseIdent[CSSBorderStyle](tok))
+  case lengths.len
+  of 1: # top, bottom, left, right
+    for t in props:
+      res.add(makeEntry(t, lengths[0]))
+  of 2: # top, bottom | left, right
+    for i, t in props.mypairs:
+      res.add(makeEntry(t, lengths[i mod 2]))
+  of 3: # top | left, right | bottom
+    for i, t in props.mypairs:
+      let j = if i == 0:
+        0 # top
+      elif i == 2:
+        2 # bottom
+      else:
+        1 # left, right
+      res.add(makeEntry(t, lengths[j]))
+  of 4: # top | right | bottom | left
+    for i, t in props.mypairs:
+      res.add(makeEntry(t, lengths[i]))
+  else:
+    return err()
+  ok()
+
 proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
     attrs: WindowAttributes; res: var seq[CSSComputedEntry]): Opt[void] =
   ?ctx.skipBlanksCheckHas()
@@ -1945,6 +1996,7 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
   of cstOverflow: return ctx.parseOverflow(attrs, tok, res)
   of cstVerticalAlign: return ctx.parseVerticalAlign(attrs, res)
   of cstBorderSpacing: return ctx.parseBorderSpacing(attrs, tok, res)
+  of cstBorderStyle: return ctx.parseBorderStyle(ShorthandMap[p.sh], res)
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
     toks: openArray[CSSToken]; attrs: WindowAttributes) =

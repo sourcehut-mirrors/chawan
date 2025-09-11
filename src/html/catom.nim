@@ -40,6 +40,7 @@ macro makeStaticAtom =
       satBgcolor = "bgcolor"
       satBlocking = "blocking"
       satBlur = "blur"
+      satBorder = "border"
       satCellspacing = "cellspacing"
       satChange = "change"
       satCharset = "charset"
