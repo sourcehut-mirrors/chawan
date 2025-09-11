@@ -24,29 +24,40 @@ type
     bgcolor: CellColor
     flags: set[FormatFlag]
 
-# https://www.ecma-international.org/wp-content/uploads/ECMA-48_5th_edition_june_1991.pdf
-type
   AnsiCodeParseState = enum
     acpsDone, acpsStart, acpsParams, acpsInterm, acpsFinal, acpsBackspace,
     acpsInBackspaceTransition, acpsInBackspace, acpsOSC, acpsOSCEsc
 
-  AnsiCodeParser = object
-    state: AnsiCodeParseState
-    params: string
+  State = object
+    os: PosixStream
+    outbufIdx: int
+    outbuf: array[4096, char]
+    currentFmt: Format
+    pendingFmt: Format
+    ansiParams: string
+    ansiState: AnsiCodeParseState
+    backspaceDecay: int
+    tmpFlags: set[FormatFlag]
+    af: bool
+    spanOpen: bool
+    aOpen: bool
+    hasPrintingBuf: bool
 
-proc getParam(parser: AnsiCodeParser; i: var int; colon = false): string =
+proc getParam(state: State; i: var int; colon = false): string =
   result = ""
-  while i < parser.params.len and
-      not (parser.params[i] == ';' or colon and parser.params[i] == ':'):
-    result &= parser.params[i]
+  while i < state.ansiParams.len:
+    let c = state.ansiParams[i]
+    if c == ';' or colon and c == ':':
+      break
+    result &= c
     inc i
-  if i < parser.params.len:
+  if i < state.ansiParams.len:
     inc i
 
-proc getParamU8(parser: AnsiCodeParser; i: var int; colon = false): Opt[uint8] =
-  if i >= parser.params.len:
+proc getParamU8(state: State; i: var int; colon = false): Opt[uint8] =
+  if i >= state.ansiParams.len:
     return err()
-  parseUInt8(parser.getParam(i), allowSign = false)
+  parseUInt8(state.getParam(i), allowSign = false)
 
 proc setColor(format: var Format; c: CellColor; isfg: bool) =
   if isfg:
@@ -54,37 +65,37 @@ proc setColor(format: var Format; c: CellColor; isfg: bool) =
   else:
     format.bgcolor = c
 
-proc parseSGRDefColor(parser: AnsiCodeParser; format: var Format;
+proc parseSGRDefColor(state: State; format: var Format;
     i: var int; isfg: bool): Opt[void] =
-  let u = ?parser.getParamU8(i, colon = true)
+  let u = ?state.getParamU8(i, colon = true)
   if u == 2:
-    let param0 = ?parser.getParamU8(i, colon = true)
-    if i < parser.params.len:
+    let param0 = ?state.getParamU8(i, colon = true)
+    if i < state.ansiParams.len:
       let r = param0
-      let g = ?parser.getParamU8(i, colon = true)
-      let b = ?parser.getParamU8(i, colon = true)
+      let g = ?state.getParamU8(i, colon = true)
+      let b = ?state.getParamU8(i, colon = true)
       format.setColor(cellColor(rgb(r, g, b)), isfg)
     else:
       format.setColor(cellColor(gray(param0)), isfg)
   elif u == 5:
-    let param0 = ?parser.getParamU8(i, colon = true)
+    let param0 = ?state.getParamU8(i, colon = true)
     format.setColor(ANSIColor(param0).cellColor(), isfg)
   else:
     return err()
   ok()
 
-proc parseSGRColor(parser: AnsiCodeParser; format: var Format;
+proc parseSGRColor(state: State; format: var Format;
     i: var int; u: uint8): Opt[void] =
   if u in 30u8..37u8:
     format.fgcolor = cellColor(ANSIColor(u - 30))
   elif u == 38:
-    return parser.parseSGRDefColor(format, i, isfg = true)
+    return state.parseSGRDefColor(format, i, isfg = true)
   elif u == 39:
     format.fgcolor = defaultColor
   elif u in 40u8..47u8:
     format.bgcolor = cellColor(ANSIColor(u - 40))
   elif u == 48:
-    return parser.parseSGRDefColor(format, i, isfg = false)
+    return state.parseSGRDefColor(format, i, isfg = false)
   elif u == 49:
     format.bgcolor = defaultColor
   elif u in 90u8..97u8:
@@ -105,9 +116,9 @@ const FormatCodes: array[FormatFlag, tuple[s, e: uint8]] = [
   ffBlink: (5u8, 25u8),
 ]
 
-proc parseSGRAspect(parser: AnsiCodeParser; format: var Format;
+proc parseSGRAspect(state: State; format: var Format;
     i: var int): Opt[void] =
-  let u = ?parser.getParamU8(i)
+  let u = ?state.getParamU8(i)
   for flag, (s, e) in FormatCodes:
     if u == s:
       format.flags.incl(flag)
@@ -119,43 +130,28 @@ proc parseSGRAspect(parser: AnsiCodeParser; format: var Format;
     format = Format()
     return ok()
   else:
-    return parser.parseSGRColor(format, i, u)
+    return state.parseSGRColor(format, i, u)
 
-proc parseSGR(parser: AnsiCodeParser; format: var Format) =
-  if parser.params.len == 0:
+proc parseSGR(state: State; format: var Format) =
+  if state.ansiParams.len == 0:
     format = Format()
   else:
     var i = 0
-    while i < parser.params.len:
-      if parser.parseSGRAspect(format, i).isErr:
+    while i < state.ansiParams.len:
+      if state.parseSGRAspect(format, i).isErr:
         break
 
-proc parseControlFunction(parser: var AnsiCodeParser; format: var Format;
-    f: char) =
+proc parseControlFunction(state: var State; format: var Format; f: char) =
   if f == 'm':
-    parser.parseSGR(format)
+    state.parseSGR(format)
   else:
     discard # unknown
 
-proc reset(parser: var AnsiCodeParser) =
-  parser.state = acpsStart
-  parser.params = ""
-
-type State = object
-  outbufIdx: int
-  outbuf: array[4096, char]
-  parser: AnsiCodeParser
-  currentFmt: Format
-  pendingFmt: Format
-  tmpFlags: set[FormatFlag]
-  af: bool
-  spanOpen: bool
-  hasPrintingBuf: bool
-  backspaceDecay: int
-
 proc flushOutbuf(state: var State) =
   if state.outbufIdx > 0:
-    discard write(STDOUT_FILENO, addr state.outbuf[0], state.outbufIdx)
+    if not state.os.writeDataLoop(
+        state.outbuf.toOpenArray(0, state.outbufIdx - 1)):
+      quit(1)
     state.outbufIdx = 0
 
 proc putc(state: var State; c: char) {.inline.} =
@@ -216,52 +212,53 @@ proc flushFmt(state: var State) =
     state.hasPrintingBuf = false
 
 proc parseOSC(state: var State) =
-  let p1 = state.parser.params.until(';')
+  let p1 = state.ansiParams.until(';')
   let n = parseIntP(p1).get(-1)
   if n == 8: # hyperlink
     let p2start = p1.len + 1
-    let id = state.parser.params.until(';', p2start)
-    let url = state.parser.params.until(';', p2start + id.len + 1)
-    # This isn't valid HTML, but the parser can deal with it.
-    state.puts("</a>")
+    let p1 = state.ansiParams.until(';', p2start)
+    let url = state.ansiParams.until(';', p2start + p1.len + 1)
+    if state.aOpen:
+      state.puts("</a>")
+      state.aOpen = false
     if url != "":
       state.puts("<a href='" & url.htmlEscape() & "'>")
+      state.aOpen = true
 
 type ParseAnsiCodeResult = enum
   pacrProcess, pacrSkip
 
 proc parseAnsiCode(state: var State; format: var Format; c: char):
     ParseAnsiCodeResult =
-  case state.parser.state
+  case state.ansiState
   of acpsStart:
-    if 0x40 <= int(c) and int(c) <= 0x5F:
+    if c in '@'..'_':
       case c
       of '[':
-        state.parser.state = acpsParams
+        state.ansiState = acpsParams
       of ']':
-        state.parser.state = acpsOSC
+        state.ansiState = acpsOSC
       else:
-        #C1, TODO?
-        state.parser.state = acpsDone
+        state.ansiState = acpsDone
     else:
-      state.parser.state = acpsDone
+      state.ansiState = acpsDone
       return pacrProcess
   of acpsParams:
-    if c in '0' .. '?':
-      state.parser.params &= c
+    if c in '0'..'?':
+      state.ansiParams &= c
     else:
-      state.parser.state = acpsInterm
+      state.ansiState = acpsInterm
       return state.parseAnsiCode(format, c)
   of acpsInterm:
-    if c in ' ' .. '/':
+    if c in ' '..'/':
       discard
     else:
-      state.parser.state = acpsFinal
+      state.ansiState = acpsFinal
       return state.parseAnsiCode(format, c)
   of acpsFinal:
-    state.parser.state = acpsDone
-    if 0x40 <= int(c) and int(c) <= 0x7E:
-      state.parser.parseControlFunction(format, c)
+    state.ansiState = acpsDone
+    if c in '@'..'~':
+      state.parseControlFunction(format, c)
     else:
       return pacrProcess
   of acpsDone:
@@ -278,12 +275,12 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
     # So we buffer only the last non-formatted UTF-8 char, and override it when
     # necessary.
     if not state.hasPrintingBuf:
-      state.parser.state = acpsDone
+      state.ansiState = acpsDone
       return pacrProcess
     var i = state.outbufIdx - 1
     while true:
       if i < 0:
-        state.parser.state = acpsDone
+        state.ansiState = acpsDone
         return pacrProcess
       if (int(state.outbuf[i]) and 0xC0) != 0x80:
         break
@@ -303,13 +300,13 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
         state.tmpFlags.incl(ffBold)
         state.pendingFmt.flags.incl(ffBold)
     state.outbufIdx = i # move back output pointer
-    state.parser.state = acpsInBackspaceTransition
+    state.ansiState = acpsInBackspaceTransition
     state.flushFmt()
     return pacrProcess
   of acpsInBackspaceTransition:
     if (int(c) and 0xC0) != 0x80:
       # backspace char end, next char begin
-      state.parser.state = acpsInBackspace
+      state.ansiState = acpsInBackspace
     return pacrProcess
   of acpsInBackspace:
     if (int(c) and 0xC0) != 0x80:
@@ -317,7 +314,7 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
       if c == '\b':
         # got backspace again, overstriking previous char. here we don't have to
         # override anything
-        state.parser.state = acpsBackspace
+        state.ansiState = acpsBackspace
         return pacrProcess
       # welp. we have to fixup the previous char's formatting
       var i = state.outbufIdx - 1
@@ -334,29 +331,29 @@ proc parseAnsiCode(state: var State; format: var Format; c: char):
       state.tmpFlags = {}
       state.flushFmt()
       state.puts(s)
-      state.parser.state = acpsDone
+      state.ansiState = acpsDone
     return pacrProcess
   of acpsOSC:
     if c == '\a':
       state.parseOSC()
-      state.parser.state = acpsDone
+      state.ansiState = acpsDone
     elif c == '\e':
-      state.parser.state = acpsOSCEsc
+      state.ansiState = acpsOSCEsc
     else:
-      state.parser.params &= c
+      state.ansiParams &= c
   of acpsOSCEsc:
     if c == '\\':
       state.parseOSC()
-      state.parser.state = acpsDone
+      state.ansiState = acpsDone
     else:
-      state.parser.params &= '\e'
-      state.parser.params &= c
+      state.ansiParams &= '\e'
+      state.ansiParams &= c
   state.flushFmt()
   pacrSkip
 
 proc processData(state: var State; buf: openArray[char]) =
   for c in buf:
-    if state.parser.state != acpsDone:
+    if state.ansiState != acpsDone:
       case state.parseAnsiCode(state.pendingFmt, c)
       of pacrSkip: continue
       of pacrProcess: discard
@@ -375,8 +372,10 @@ proc processData(state: var State; buf: openArray[char]) =
       state.putc('\t')
       state.pendingFmt.bgcolor = obgcolor
       state.flushFmt()
-    of '\e': state.parser.reset()
-    of '\b': state.parser.state = acpsBackspace
+    of '\e':
+      state.ansiState = acpsStart
+      state.ansiParams = ""
+    of '\b': state.ansiState = acpsBackspace
     of '\0': state.puts("\uFFFD") # HTML eats NUL, so replace it here
     else: state.putc(c)
 
@@ -386,7 +385,7 @@ proc usage() =
   quit(1)
 
 proc main() =
-  var state = State()
+  var state = State(os: newPosixStream(STDOUT_FILENO))
   # parse args
   let H = paramCount()
   var i = 1
@@ -416,18 +415,17 @@ proc main() =
   if standalone:
     state.puts("<body>\n")
   state.puts("<pre>\n")
-  state.flushOutbuf()
   let ps = newPosixStream(STDIN_FILENO)
   var buffer {.noinit.}: array[4096, char]
   while true:
+    state.flushOutbuf()
     let n = ps.readData(buffer)
     if n <= 0:
       break
     state.processData(buffer.toOpenArray(0, n - 1))
-    state.flushOutbuf()
   if standalone:
     state.puts("</body>")
-    state.flushOutbuf()
+  state.flushOutbuf()
 
 main()
 
