@@ -2261,11 +2261,11 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
 proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
   let firstChild = BlockBox(cell.firstChild)
   if firstChild != nil:
-    firstChild.state.offset.y = case cell.computed{"vertical-align"}
+    firstChild.state.offset.y += (case cell.computed{"vertical-align"}
     of VerticalAlignTop: 0.toLUnit()
     of VerticalAlignMiddle: availableHeight div 2 - cell.state.size.h div 2
     of VerticalAlignBottom: availableHeight - cell.state.size.h
-    else: baseline - cell.state.firstBaseline
+    else: baseline - cell.state.firstBaseline)
   cell.state.size.h = availableHeight
 
 proc layoutTableRow(tctx: TableContext; ctx: RowContext;
