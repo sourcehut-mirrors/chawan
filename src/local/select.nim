@@ -226,13 +226,6 @@ proc unselect*(select: Select) =
     select.unselected = true
     select.queueDraw()
 
-const HorizontalBar = "\u2500"
-const VerticalBar = "\u2502"
-const CornerTopLeft = "\u250C"
-const CornerTopRight = "\u2510"
-const CornerBottomLeft = "\u2514"
-const CornerBottomRight = "\u2518"
-
 proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
     upmore, downmore: bool) =
   for y in sy .. ey:

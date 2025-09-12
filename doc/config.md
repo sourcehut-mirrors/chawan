@@ -60,7 +60,7 @@ Start-up options are to be placed in the `[start]` section.
 
 Following is a list of start-up options:
 
-<table>
+<table border>
 <col width=20%><col width=10%><col width=15%><col width=55%>
 
 <tr>
@@ -155,7 +155,7 @@ a[href] { text-decoration: revert !important }
 
 Following is a list of buffer options:
 
-<table>
+<table border>
 <col width=20%><col width=15%><col width=10%><col width=55%>
 
 <tr>
@@ -277,7 +277,7 @@ Search options are to be placed in the `[search]` section.
 
 Following is a list of search options:
 
-<table>
+<table border>
 <col width=20%><col width=15%><col width=10%><col width=55%>
 
 <tr>
@@ -315,7 +315,7 @@ Encoding options are to be placed in the `[encoding]` section.
 
 Following is a list of encoding options:
 
-<table>
+<table border>
 <col width=20%><col width=15%><col width=15%><col width=50%>
 
 <tr>
@@ -358,7 +358,7 @@ External options are to be placed in the `[external]` section.
 
 Following is a list of external options:
 
-<table>
+<table border>
 <col width=25%><col width=10%><col width=20%><col width=45%>
 
 <tr>
@@ -511,12 +511,13 @@ sets the cookie-file to a "read-only" mode.</td>
 
 Input options are to be placed in the `[input]` section.
 
-<table>
+<table border>
 <col width=20%><col width=10%><col width=10%><col width=60%>
 
 <tr>
 <th>Name</th>
 <th>Value</th>
+<th>Default</th>
 <th>Function</th>
 </tr>
 
@@ -598,7 +599,7 @@ G = 'n => n ? pager.gotoLine(n) : pager.cursorLastLine()'
 
 Network options are to be placed in the `[network]` section.
 
-<table>
+<table border>
 <col width=25%><col width=12%><col width=13%><col width=50%>
 
 <tr>
@@ -678,7 +679,7 @@ Display options are to be placed in the `[display]` section.
 
 Following is a list of display options:
 
-<table>
+<table border>
 <col width=33%><col width=17%><col width=10%><col width=40%>
 
 <tr>
@@ -884,7 +885,7 @@ Currently, these are:
 
 Omnirule options:
 
-<table>
+<table border>
 <col width=25%><col width=25%><col width=50%>
 
 <tr>
@@ -969,7 +970,7 @@ default-headers = {
 
 Siteconf options:
 
-<table>
+<table border>
 <col width=25%><col width=15%><col width=28%><col width=32%>
 
 <tr>
@@ -1188,7 +1189,7 @@ Examples:
 
 ### Pager actions
 
-<table>
+<table border>
 <col width=20%><col width=30%><col width=50%>
 
 <tr>
@@ -1394,7 +1395,7 @@ Note: `n` in the following text refers to a number preceding the action.  e.g.
 in `10gg`, n = 10.  If no preceding number is input, then it is left
 unspecified.
 
-<table>
+<table border>
 <col width=20%><col width=35%><col width=45%>
 
 <tr>
@@ -1692,7 +1693,7 @@ position.</td>
 
 ### Line-editing actions
 
-<table>
+<table border>
 <col width=20%><col width=30%><col width=50%>
 
 <tr>

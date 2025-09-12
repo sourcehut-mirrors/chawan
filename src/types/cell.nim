@@ -71,6 +71,10 @@ template incl*(format: var Format; flag: FormatFlag) =
 template excl*(format: var Format; flag: FormatFlag) =
   format.u = format.u and not (cast[uint64]({flag}) shl 52)
 
+proc `$`*(format: Format): string =
+  return "(bg: " & $format.bgcolor & ", fg: " & $format.fgcolor & ", flags: " &
+    $format.flags & ")"
+
 static:
   doAssert {FormatFlag.low..FormatFlag.high}.card <= 12
 

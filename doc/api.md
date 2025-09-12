@@ -52,7 +52,7 @@ just include it in an action:
 The global object (`globalThis`) implements the `Client` interface. Documented
 functions of this are:
 
-<table>
+<table border>
 
 <tr>
 <th>Property</th>
@@ -155,7 +155,7 @@ is actually equivalent to `pager.buffer.url`, because `Pager` has no
 
 Following properties (functions/getters) are defined by `Pager`:
 
-<table>
+<table border>
 
 <tr>
 <th>Property</th>
@@ -403,7 +403,7 @@ below.</td>
 
 Also, the following static function is defined on `Pager` itself:
 
-<table>
+<table border>
 
 <tr>
 <th>Property</th>
@@ -432,7 +432,7 @@ properties onto the current buffer.
 
 Following properties (functions/getters) are defined by `Buffer`:
 
-<table>
+<table border>
 
 <tr>
 <th>Property</th>
@@ -783,7 +783,7 @@ simply returns `null`.
 
 Following properties (functions/getters) are defined by `LineEdit`:
 
-<table>
+<table border>
 
 <tr>
 <th>Property</th>

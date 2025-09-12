@@ -12,12 +12,13 @@ open a ticket at <https://todo.sr.ht/~bptato/chawan>.
 
 ## Standard properties
 
-A list of supported standard properties, with notes on unimplemented
-values:
+A list of supported standard properties, with notes on unimplemented values:
 
 * background-color (see color)
 * background-image (displays placeholders only)
 * border-collapse
+* border-left-style, border-right-style, border-top-style,
+  border-bottom-style (only works on tables)
 * border-spacing
 * bottom
 * box-sizing
@@ -83,6 +84,7 @@ Shorthands:
 * flex
 * flex-flow
 * overflow
+* border-style (only works on tables)
 
 Variables (the `var()` function) are fully supported.
 

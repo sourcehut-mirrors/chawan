@@ -20,6 +20,14 @@ type
     offset*: Offset
     str*: string
 
+  BorderStyleSpan* = object
+    start*: CSSBorderStyle
+    send*: CSSBorderStyle
+
+  CSSBorder* = object
+    s*: array[DimensionType, BorderStyleSpan]
+    merge*: array[DimensionType, bool]
+
   BoxLayoutState* = object
     # offset relative to parent
     offset*: Offset
@@ -34,6 +42,7 @@ type
     # Bottom margin of the box, collapsed with the margin of children.
     # This is already added to size, and only used by flex layout.
     marginBottom*: LUnit
+    border*: CSSBorder
 
   Area* = object
     offset*: Offset
@@ -190,6 +199,18 @@ proc top*(s: RelativeRect): LUnit =
 
 proc bottom*(s: RelativeRect): LUnit =
   return s[dtVertical].send
+
+proc left*(b: CSSBorder): CSSBorderStyle =
+  return b.s[dtHorizontal].start
+
+proc right*(b: CSSBorder): CSSBorderStyle =
+  return b.s[dtHorizontal].send
+
+proc top*(b: CSSBorder): CSSBorderStyle =
+  return b.s[dtVertical].start
+
+proc bottom*(b: CSSBorder): CSSBorderStyle =
+  return b.s[dtVertical].send
 
 proc topLeft*(s: RelativeRect): Offset =
   return offset(x = s.left, y = s.top)

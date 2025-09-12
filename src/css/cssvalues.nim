@@ -522,6 +522,7 @@ const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
 const WhiteSpacePreserve* = {
   WhitespacePre, WhitespacePreLine, WhitespacePreWrap
 }
+const BorderStyleNoneHidden* = {BorderStyleNone, BorderStyleHidden}
 
 type
   CSSCalcSumType = enum
@@ -2060,7 +2061,8 @@ proc splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
     # wrapper & actual table layouts share the same sizing from the wrapper,
     # so we must add them here.
     cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom,
-    cptWidth, cptHeight, cptBoxSizing,
+    cptWidth, cptHeight, cptBoxSizing, cptBorderLeftStyle, cptBorderRightStyle,
+    cptBorderTopStyle, cptBorderBottomStyle,
     # no clue why this isn't included in the standard
     cptClear, cptPosition
   }

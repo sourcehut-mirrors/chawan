@@ -6,6 +6,7 @@ import chame/tags
 import css/cssparser
 import html/catom
 import html/dom
+import types/opt
 import utils/twtstr
 
 # Matching is slightly complicated by dependency tracking.
@@ -140,6 +141,8 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
     return false
   of pcDisabled:
     return element.isDisabled()
+  of pcBorderNonzero:
+    return element.attrb(satBorder) and element.attrul(satBorder).get(1) != 0
 
 proc matchesLang(element: Element; lang: string): bool =
   for element in element.branchElems:

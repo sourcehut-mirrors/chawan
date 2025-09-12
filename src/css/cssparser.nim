@@ -258,6 +258,7 @@ type
     pcDisabled = "disabled"
     pcFirstNode = "-cha-first-node"
     pcLastNode = "-cha-last-node"
+    pcBorderNonzero = "-cha-border-nonzero"
 
   CombinatorType* = enum
     ctNone, ctDescendant, ctChild, ctNextSibling, ctSubsequentSibling

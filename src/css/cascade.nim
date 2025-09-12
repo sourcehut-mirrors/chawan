@@ -216,15 +216,6 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
       let n = cssLength(float32(s))
       ctx.applyPresHint(makeEntry(cptBorderSpacingInline, n))
       ctx.applyPresHint(makeEntry(cptBorderSpacingBlock, n))
-    if element.attrb(satBorder):
-      let n = element.attrul(satBorder).get(1)
-      const BorderStyle = [
-        cptBorderLeftStyle, cptBorderRightStyle, cptBorderTopStyle,
-        cptBorderBottomStyle
-      ]
-      if n != 0:
-        for it in BorderStyle:
-          ctx.applyPresHint(makeEntry(it, BorderStyleOutset))
   of TAG_TD, TAG_TH:
     ctx.applyDimensionHintGz(cptWidth, element.attr(satWidth))
     ctx.applyDimensionHintGz(cptHeight, element.attr(satHeight))

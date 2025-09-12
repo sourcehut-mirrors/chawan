@@ -46,6 +46,12 @@ table {
 	box-sizing: border-box
 }
 
+table:-cha-border-nonzero,
+table:-cha-border-nonzero > tr > :is(td, th),
+table:-cha-border-nonzero > :is(thead, tbody, tfoot) > tr > :is(td, th) {
+	border-style: solid
+}
+
 tbody { display: table-row-group; vertical-align: middle }
 thead { display: table-header-group }
 tfoot { display: table-footer-group; }

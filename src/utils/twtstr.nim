@@ -20,6 +20,18 @@ const AsciiHexDigit* = AsciiDigit + {'a'..'f', 'A'..'F'}
 const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
 const HTTPWhitespace* = {' ', '\n', '\r', '\t'}
 
+const HorizontalBar* = "\u2500"
+const VerticalBar* = "\u2502"
+const CornerTopLeft* = "\u250C"
+const CornerTopRight* = "\u2510"
+const CornerBottomLeft* = "\u2514"
+const CornerBottomRight* = "\u2518"
+const SideBarLeft* = "\u251C"
+const SideBarRight* = "\u2524"
+const SideBarTop* = "\u252C"
+const SideBarBottom* = "\u2534"
+const SideBarCross* = "\u253C"
+
 proc nextUTF8*(s: openArray[char]; i: var int): uint32 =
   var j = i
   var u = uint32(s[j])
