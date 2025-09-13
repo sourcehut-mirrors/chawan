@@ -206,6 +206,17 @@ proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
       # we insert the continuation of the last format we replaced after
       # our string.  (Default format when we haven't replaced anything.)
       line.insertFormat(ostrx, fi, lformat, lnode)
+  else:
+    if fi == line.formats.len:
+      # We have skipped all formats.  There are two cases:
+      # a) Our text overwrites the old text, but ends at the same x position
+      # as the old text.  Then, the last format's background is correct,
+      # nothing to do.
+      # b) The old text is shorter than ours.  We must add a new format to
+      # restore the background of the chunk that was not covered.
+      if nx < targetX and format.bgcolor != defaultColor:
+        format.bgcolor = defaultColor
+        line.insertFormat(nx, fi, format, node)
   dec fi # go back to previous format, so that pos <= targetX
   assert line.formats[fi].pos <= targetX
   # That's it!
