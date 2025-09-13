@@ -1436,8 +1436,11 @@ proc addContainer(pager: Pager; container: Container) =
   if pager.tab.head == nil:
     pager.tab.head = container
   else:
+    container.next = pager.tab.current.next
     pager.tab.current.next = container
     container.prev = pager.tab.current
+    if container.next != nil:
+      container.next.prev = container
   pager.setContainer(container)
 
 proc onSetLoadInfo(pager: Pager; container: Container) =
