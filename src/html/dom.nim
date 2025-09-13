@@ -4157,6 +4157,29 @@ proc querySelectorAll(this: Element; q: string): DOMResult[NodeList]
     {.jsfunc.} =
   return this.querySelectorAllImpl(q)
 
+proc isDisabled*(this: Element): bool =
+  case this.tagType
+  of TAG_BUTTON, TAG_INPUT, TAG_SELECT, TAG_TEXTAREA, TAG_FIELDSET:
+    if this.attrb(satDisabled):
+      return true
+    var lastLegend: Element = nil
+    for it in this.ancestors:
+      case it.tagType
+      of TAG_LEGEND: lastLegend = it
+      of TAG_FIELDSET:
+        if it.attrb(satDisabled):
+          return it.firstChild != lastLegend
+      else: discard
+    return false
+  of TAG_OPTGROUP:
+    return this.attrb(satDisabled)
+  of TAG_OPTION:
+    let parent = this.parentElement
+    return parent.tagType == TAG_OPTGROUP and parent.attrb(satDisabled) or
+      this.attrb(satDisabled)
+  else: #TODO form-associated custom element
+    return false
+
 #TODO custom elements
 proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     Element =
@@ -5181,13 +5204,6 @@ proc setRelList(link: HTMLLinkElement; s: string) {.jsfset: "relList".} =
   link.attr(satRel, s)
 
 # <option>
-# https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
-proc isDisabled*(option: HTMLOptionElement): bool =
-  if option.parentElement of HTMLOptGroupElement and
-      option.parentElement.attrb(satDisabled):
-    return true
-  return option.attrb(satDisabled)
-
 proc text(option: HTMLOptionElement): string {.jsfget.} =
   var s = ""
   for child in option.descendants:

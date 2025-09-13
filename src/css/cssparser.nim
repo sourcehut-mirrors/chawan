@@ -255,6 +255,7 @@ type
     pcLink = "link"
     pcVisited = "visited"
     pcTarget = "target"
+    pcDisabled = "disabled"
     pcFirstNode = "-cha-first-node"
     pcLastNode = "-cha-last-node"
 

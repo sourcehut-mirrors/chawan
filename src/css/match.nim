@@ -138,6 +138,8 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
     return element.tagType in {TAG_A, TAG_AREA} and element.attrb(satHref)
   of pcVisited:
     return false
+  of pcDisabled:
+    return element.isDisabled()
 
 proc matchesLang(element: Element; lang: string): bool =
   for element in element.branchElems:

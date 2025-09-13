@@ -95,7 +95,7 @@ All selector types from CSS 2.1 are supported, except for namespaces.
 Following standard pseudo-classes are supported: `:first-child`,
 `:last-child`, `:only-child`, `:hover`, `:root`, `:nth-child()`,
 `:nth-last-child()`, `:checked`, `:focus`, `:is()`, `:not()`,
-`:where()`, `:lang()`, `:link`, `:target`.
+`:where()`, `:lang()`, `:link`, `:target`, `:disabled`.
 
 `:visited` is parsed, but for now it is not matched.
 
