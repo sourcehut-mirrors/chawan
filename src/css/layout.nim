@@ -724,6 +724,7 @@ type
     whitespacenum: int
     whitespaceBox: InlineTextBox
     word: InlineAtomState
+    wordIntrSize: LUnit # intrinsic size of currently processed word segment
     wrappos: int # position of last wrapping opportunity, or -1
     lastTextBox: InlineBox
     padding: RelativeRect
@@ -1271,6 +1272,10 @@ proc addAtom(fstate: var FlowState; istate: var InlineState;
     # In all cases, the line's height must at least equal the atom's height.
     fstate.lbstate.size.h = max(fstate.lbstate.size.h, iastate.size.h)
 
+proc flushWordIntrSize(fstate: var FlowState) =
+  fstate.intr.w = max(fstate.intr.w, fstate.wordIntrSize)
+  fstate.wordIntrSize = 0
+
 # Returns true if wrapped.
 proc addWord(fstate: var FlowState; istate: var InlineState): bool =
   if fstate.word.run.str == "":
@@ -1278,18 +1283,7 @@ proc addWord(fstate: var FlowState; istate: var InlineState): bool =
   fstate.word.run.str.mnormalize() #TODO this may break on EOL.
   if fstate.word.run.str == "":
     return false
-  let wordBreak = istate.ibox.computed{"word-break"}
-  if fstate.wrappos != -1:
-    # set intr.w to the first wrapping opportunity
-    fstate.intr.w = max(fstate.intr.w, fstate.wrappos)
-  elif istate.prevrw >= 2 and wordBreak != WordBreakKeepAll or
-      wordBreak == WordBreakBreakAll:
-    # last char was double width; we can wrap anywhere.
-    # (I think this isn't quite right when double width + half width
-    # are mixed, but whatever...)
-    fstate.intr.w = max(fstate.intr.w, istate.prevrw)
-  else:
-    fstate.intr.w = max(fstate.intr.w, fstate.word.size.w)
+  fstate.flushWordIntrSize()
   let wrapped = fstate.addAtom(istate, fstate.word)
   fstate.newWord(istate.ibox)
   return wrapped
@@ -1320,12 +1314,13 @@ proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
   state.prevrw = uw
   if fstate.word.run.str.len == 0:
     state.firstrw = uw
-  if uw >= 2:
-    # remove wrap opportunity, so we wrap properly on the last CJK char (instead
-    # of any dash inside CJK sentences)
-    fstate.wrappos = -1
   case state.ibox.computed{"word-break"}
   of WordBreakNormal:
+    if uw == 2:
+      # remove wrap opportunity, so we wrap properly on the last CJK char
+      # (instead of any dash inside CJK sentences)
+      fstate.wrappos = -1
+      fstate.flushWordIntrSize()
     if uw == 2 or fstate.wrappos != -1: # break on cjk and wrap opportunities
       let plusWidth = fstate.word.size.w + shift + uw * fstate.cellWidth
       if fstate.shouldWrap(plusWidth, nil):
@@ -1333,6 +1328,8 @@ proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
           fstate.finishLine(state, wrap = true)
           fstate.whitespacenum = 0
   of WordBreakBreakAll:
+    fstate.wrappos = -1
+    fstate.flushWordIntrSize()
     let plusWidth = fstate.word.size.w + shift + uw * fstate.cellWidth
     if fstate.shouldWrap(plusWidth, nil):
       if not fstate.addWordEOL(state): # no line wrapping occured in addAtom
@@ -1385,6 +1382,13 @@ proc processWhitespace(fstate: var FlowState; istate: var InlineState;
   # set the "last word's last rune width" to the previous rune width
   istate.lastrw = istate.prevrw
 
+proc addWrapPos(fstate: var FlowState; shy: bool) =
+  # largest gap between wrapping opportunities is the intrinsic minimum
+  # width
+  fstate.flushWordIntrSize()
+  fstate.wrappos = fstate.word.run.str.len
+  fstate.hasshy = shy
+
 proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
     str: string) =
   let luctx = fstate.lctx.luctx
@@ -1398,31 +1402,32 @@ proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
         let w = uint32(c).width()
         fstate.checkWrap(state, uint32(c), w)
         fstate.word.run.str &= c
-        fstate.word.size.w += w * fstate.cellWidth
+        let cw = w * fstate.cellWidth
+        fstate.word.size.w += cw
+        fstate.wordIntrSize += cw
         fstate.lbstate.charwidth += w
         if c == '-': # ascii dash
-          fstate.wrappos = fstate.word.run.str.len
-          fstate.hasshy = false
+          fstate.addWrapPos(shy = false)
       inc i
     else:
       let pi = i
-      let u = str.nextUTF8(i)
+      var u = str.nextUTF8(i)
       if luctx.isEnclosingMark(u) or luctx.isNonspacingMark(u) or
           luctx.isFormat(u):
         continue
+      if u == 0xAD: # soft hyphen
+        fstate.addWrapPos(shy = true)
+        continue
+      if u in TabPUARange: # filter out chars placed in our PUA range
+        u = 0xFFFD
       let w = u.width()
       fstate.checkWrap(state, u, w)
-      if u == 0xAD: # soft hyphen
-        fstate.wrappos = fstate.word.run.str.len
-        fstate.hasshy = true
-      elif u in TabPUARange: # filter out chars placed in our PUA range
-        fstate.word.run.str &= "\uFFFD"
-        fstate.word.size.w += 0xFFFD.width() * fstate.cellWidth
-      else:
-        for j in pi ..< i:
-          fstate.word.run.str &= str[j]
-        fstate.word.size.w += w * fstate.cellWidth
-        fstate.lbstate.charwidth += w
+      for j in pi ..< i:
+        fstate.word.run.str &= str[j]
+      let cw = w * fstate.cellWidth
+      fstate.word.size.w += cw
+      fstate.wordIntrSize += cw
+      fstate.lbstate.charwidth += w
   discard fstate.addWord(state)
   let shift = fstate.computeShift(state)
   fstate.lbstate.widthAfterWhitespace = fstate.lbstate.size.w + shift
