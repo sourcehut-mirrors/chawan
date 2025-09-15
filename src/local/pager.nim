@@ -1669,10 +1669,6 @@ proc discardTree(pager: Pager; container = none(Container)) {.jsfunc.} =
   else:
     pager.alert("Buffer has no siblings!")
 
-template myFork(): cint =
-  stderr.flushFile()
-  fork()
-
 template myExec(cmd: string) =
   discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
   exitnow(127)
@@ -1709,7 +1705,7 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
       sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
     pager.alert("Failed to run process")
     return false
-  case (let pid = myFork(); pid)
+  case (let pid = fork(); pid)
   of -1:
     pager.alert("Failed to run process")
     return false
@@ -1733,12 +1729,13 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
         pager.term.istream.moveFd(STDIN_FILENO)
     myExec(cmd)
   else:
-    discard sigaction(SIGINT, oldint, act)
-    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     var wstatus: cint
     while waitpid(pid, wstatus, 0) == -1:
       if errno != EINTR:
         return false
+    discard sigaction(SIGINT, oldint, act)
+    discard sigaction(SIGQUIT, oldquit, act)
+    discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     if suspend:
       if wait:
         pager.term.anyKey()
@@ -2463,7 +2460,7 @@ proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
       sigprocmask(SIG_BLOCK, act.sa_mask, oldmask) < 0:
     pager.alert("Failed to run process (errno " & $errno & ")")
     return -1
-  case (let pid = myFork(); pid)
+  case (let pid = fork(); pid)
   of -1:
     pager.alert("Failed to fork process")
     return -1
@@ -2523,7 +2520,7 @@ proc runMailcapWritePipe(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd: string) =
   if needsterminal:
     pager.term.quit()
-  let pid = myFork()
+  let pid = fork()
   if pid == -1:
     pager.alert("Error: failed to fork mailcap write process")
   elif pid == 0:
@@ -2559,7 +2556,7 @@ proc writeToFile(istream: PosixStream; outpath: string): bool =
 # needsterminal is ignored.
 proc runMailcapReadFile(pager: Pager; stream: PosixStream;
     cmd, outpath: string; pouts: PosixStream): int =
-  case (let pid = myFork(); pid)
+  case (let pid = fork(); pid)
   of -1:
     pager.alert("Error: failed to fork mailcap read process")
     pouts.sclose()
@@ -2601,7 +2598,7 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
         pager.alert("Error: " & cmd & " exited with status " & $ret)
   else:
     # don't block
-    let pid = myFork()
+    let pid = fork()
     if pid == 0:
       # child process
       closeStderr()
