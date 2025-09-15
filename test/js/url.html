@@ -127,6 +127,7 @@ assertThrows(() => new URL("https://example.org:7z"), TypeError);
 	x.searchParams.append("hi", "world");
 	assert(x.searchParams.has("hi"));
 	assert(x.searchParams.has("hi", "world"));
+	assertEquals(new URLSearchParams(undefined) + "", "")
 }
 document.getElementById("x").textContent = "Success";
 </script>
