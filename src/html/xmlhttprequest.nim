@@ -1,5 +1,4 @@
 import std/algorithm
-import std/options
 import std/strutils
 
 import chagashi/charset

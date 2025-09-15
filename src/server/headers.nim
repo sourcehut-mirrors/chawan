@@ -3,11 +3,11 @@
 import std/algorithm
 import std/options
 import std/strutils
-import std/tables
 
 import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jserror
+import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
 import types/opt
@@ -56,10 +56,9 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     if ctx.fromJS(val, res.s).isOk:
       return ok()
   res = HeadersInit()
-  var tab: Table[string, string]
-  ?ctx.fromJS(val, tab)
-  for k, v in tab:
-    res.s.add((k, v))
+  var record: JSKeyValuePair[string, string]
+  ?ctx.fromJS(val, record)
+  res.s = move(record.s)
   return ok()
 
 const TokenChars = {

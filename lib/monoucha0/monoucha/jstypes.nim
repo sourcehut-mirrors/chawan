@@ -73,4 +73,8 @@ converter toJSValue*(f: JSValueFunction): JSValue =
 converter toJSValueConst*(f: JSValueFunction): JSValueConst =
   f.fun
 
+# A key-value pair: in WebIDL terms, this is a record.
+type JSKeyValuePair*[K, T] = object
+  s*: seq[tuple[name: string; value: T]]
+
 {.pop.} # raises

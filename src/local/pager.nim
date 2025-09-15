@@ -1673,25 +1673,27 @@ template myExec(cmd: string) =
   discard execl("/bin/sh", "sh", "-c", cstring(cmd), nil)
   exitnow(127)
 
-proc setEnvVars0(pager: Pager; env: JSValueConst): Opt[void] =
-  if pager.container != nil and JS_IsUndefined(env):
-    ?twtstr.setEnv("CHA_URL", $pager.container.url)
-    ?twtstr.setEnv("CHA_CHARSET", $pager.container.charset)
-  else:
-    var tab: Table[string, string]
-    if pager.jsctx.fromJS(env, tab).isOk:
-      for k, v in tab:
-        ?twtstr.setEnv(k, v)
+type EnvVar = tuple[name, value: string]
+
+proc defaultEnv(pager: Pager): seq[EnvVar] =
+  let c = pager.container
+  if c != nil:
+    return @[("CHA_URL", $c.url), ("CHA_CHARSET", $c.charset)]
+  return @[]
+
+proc setEnvVars0(pager: Pager; env: openArray[EnvVar]): Opt[void] =
+  for it in env:
+    ?twtstr.setEnv(it.name, it.value)
   ok()
 
-proc setEnvVars(pager: Pager; env: JSValueConst) =
+proc setEnvVars(pager: Pager; env: openArray[EnvVar]) =
   if pager.setEnvVars0(env).isErr:
     pager.alert("Warning: failed to set some environment variables")
 
 # Run process (and suspend the terminal controller).
 # For the most part, this emulates system(3).
 proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
-    env: JSValueConst): bool =
+    env: openArray[EnvVar]): bool =
   if suspend:
     pager.term.quit()
   var oldint, oldquit, act: Sigaction
@@ -1710,16 +1712,13 @@ proc runCommand(pager: Pager; cmd: string; suspend, wait: bool;
     pager.alert("Failed to run process")
     return false
   of 0:
+    if pager.setEnvVars0(env).isErr:
+      quit(1)
     act.sa_handler = SIG_DFL
     discard sigemptyset(act.sa_mask)
     discard sigaction(SIGINT, oldint, act)
     discard sigaction(SIGQUIT, oldquit, act)
     discard sigprocmask(SIG_SETMASK, oldmask, dummy);
-    #TODO this is probably a bad idea: we are interacting with a js
-    # context in a forked process.
-    # likely not much of a problem unless the user does something very
-    # stupid, but may still be surprising.
-    pager.setEnvVars(env)
     if not suspend:
       closeStdin()
       closeStdout()
@@ -1817,7 +1816,7 @@ proc openInEditor(pager: Pager; input: var string): bool =
   let cmd = pager.getEditorCommand(tmpf)
   if cmd == "":
     pager.alert("invalid external.editor command")
-  elif pager.runCommand(cmd, suspend = true, wait = false, JS_UNDEFINED):
+  elif pager.runCommand(cmd, suspend = true, wait = false, pager.defaultEnv()):
     if chafile.readFile(tmpf, input).isOk:
       discard unlink(cstring(tmpf))
       if input.len > 0 and input[input.high] == '\n':
@@ -2410,23 +2409,35 @@ type ExternDict = object of JSDict
   suspend {.jsdefault: true.}: bool
   wait {.jsdefault: false.}: bool
 
+proc readEnvSeq(ctx: JSContext; pager: Pager; val: JSValueConst;
+    s: var seq[EnvVar]): Opt[void] =
+  if JS_IsUndefined(val):
+    s = pager.defaultEnv()
+    return ok()
+  var record: JSKeyValuePair[string, string]
+  ?ctx.fromJS(val, record)
+  s = move(record.s)
+  ok()
+
 #TODO we should have versions with retval as int?
 # or perhaps just an extern2 that can use JS readablestreams and returns
 # retval, then deprecate the rest.
-proc extern(pager: Pager; cmd: string;
-    t = ExternDict(env: JS_UNDEFINED, suspend: true)): bool {.jsfunc.} =
-  return pager.runCommand(cmd, t.suspend, t.wait, t.env)
+proc extern(ctx: JSContext; pager: Pager; cmd: string;
+    t = ExternDict(env: JS_UNDEFINED, suspend: true)): Opt[bool] {.jsfunc.} =
+  var env = newSeq[EnvVar]()
+  ?ctx.readEnvSeq(pager, t.env, env)
+  ok(pager.runCommand(cmd, t.suspend, t.wait, env))
 
 proc externCapture(ctx: JSContext; pager: Pager; cmd: string): JSValue
     {.jsfunc.} =
-  pager.setEnvVars(JS_UNDEFINED)
+  pager.setEnvVars(pager.defaultEnv())
   var s: string
   if runProcessCapture(cmd, s):
     return ctx.toJS(s)
   return JS_NULL
 
 proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
-  pager.setEnvVars(JS_UNDEFINED)
+  pager.setEnvVars(pager.defaultEnv())
   return runProcessInto(cmd, ins)
 
 proc clipboardWrite(pager: Pager; s: string): bool {.jsfunc.} =
@@ -2616,7 +2627,7 @@ proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
     stream.sclose()
 
 proc filterBuffer(pager: Pager; ps: PosixStream; cmd: string): PosixStream =
-  pager.setEnvVars(JS_UNDEFINED)
+  pager.setEnvVars(pager.defaultEnv())
   let (pins, pouts) = pager.createPipe()
   if pins == nil:
     return nil

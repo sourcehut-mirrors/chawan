@@ -20,8 +20,8 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): Opt[void]
 proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T): Opt[void]
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): Opt[void]
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): Opt[void]
-proc fromJS*[A, B](ctx: JSContext; val: JSValueConst; res: var Table[A, B]):
-  Opt[void]
+proc fromJS*[A, B](ctx: JSContext; val: JSValueConst;
+  res: var JSKeyValuePair[A, B]): Opt[void]
 proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
   Opt[void]
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): Opt[void]
@@ -232,8 +232,8 @@ proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): Opt[void] =
   JS_FreeValue(ctx, nextMethod)
   return status
 
-proc fromJS*[A, B](ctx: JSContext; val: JSValueConst; res: var Table[A, B]):
-    Opt[void] =
+proc fromJS*[A, B](ctx: JSContext; val: JSValueConst;
+    res: var JSKeyValuePair[A, B]): Opt[void] =
   if JS_IsException(val):
     return err()
   var ptab: ptr UncheckedArray[JSPropertyEnum]
@@ -242,7 +242,7 @@ proc fromJS*[A, B](ctx: JSContext; val: JSValueConst; res: var Table[A, B]):
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
     return err()
-  var tmp = initTable[A, B]()
+  var tmp = newSeqOfCap[tuple[name: A, value: B]](plen)
   for i in 0 ..< plen:
     let atom = ptab[i].atom
     let k = JS_AtomToValue(ctx, atom)
@@ -255,9 +255,9 @@ proc fromJS*[A, B](ctx: JSContext; val: JSValueConst; res: var Table[A, B]):
     if ctx.fromJSFree(v, vn).isErr:
       JS_FreePropertyEnum(ctx, ptab, plen)
       return err()
-    tmp[kn] = move(vn)
+    tmp.add((move(kn), move(vn)))
   JS_FreePropertyEnum(ctx, ptab, plen)
-  res = move(tmp)
+  res = JSKeyValuePair[A, B](s: move(tmp))
   return ok()
 
 # Option vs Opt:
