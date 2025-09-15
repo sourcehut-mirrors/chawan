@@ -83,16 +83,16 @@ FLAGS += -d:forcePollMode=$(FORCE_POLL_MODE)
 
 ssl_libs = libssl libcrypto libbrotlidec libbrotlicommon libssh2
 ssl_flags = $(FLAGS)
-ssl_cflags != $(PKG_CONFIG) --cflags $(ssl_libs)
-status = $(.SHELLSTATUS)
-ssl_ldflags != $(PKG_CONFIG) --libs $(ssl_libs)
-status += $(.SHELLSTATUS)
-ssl_flags += $(foreach flag,$(ssl_cflags),-t:$(flag))
-ssl_flags += $(foreach flag,$(ssl_ldflags),-l:$(flag))
-
-ifneq ($(status),0 0)
+ssl_cflags != $(PKG_CONFIG) --cflags $(ssl_libs) || echo _cha_error
+ssl_ldflags != $(PKG_CONFIG) --libs $(ssl_libs) || echo _cha_error
+ifeq ($(ssl_cflags),_cha_error)
 $(error failed to find some dependencies)
 endif
+ifeq ($(ssl_ldflags),_cha_error)
+$(error failed to find some dependencies)
+endif
+ssl_flags += $(foreach flag,$(ssl_cflags),-t:$(flag))
+ssl_flags += $(foreach flag,$(ssl_ldflags),-l:$(flag))
 
 export CC CFLAGS LDFLAGS PANDOC
 
