@@ -3399,7 +3399,7 @@ proc reload(location: Location) {.jsuffunc.} =
     return
   location.document.window.navigate(location.url)
 
-proc origin(location: Location): string {.jsuffget.} =
+proc origin*(location: Location): string {.jsuffget.} =
   return location.url.jsOrigin
 
 proc protocol(location: Location): string {.jsuffget.} =

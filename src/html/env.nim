@@ -329,6 +329,9 @@ proc getTop(window: Window): Window {.jsuffget: "top".} =
 proc getParent(window: Window): Window {.jsrfget: "parent".} =
   return window #TODO frames?
 
+proc origin(window: Window): string {.jsrfget.} =
+  return window.location.origin
+
 # See twtstr for the actual implementations.
 proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
   var s: string
