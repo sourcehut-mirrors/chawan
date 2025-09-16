@@ -223,6 +223,8 @@ type
     getter_magic*: JSGetterMagicFunction
     setter_magic*: JSSetterMagicFunction
 
+  JSCFunctionListP* = ptr UncheckedArray[JSCFunctionListEntry]
+
   JSCFunctionListEntryFunc = object
     length*: uint8
     cproto*: JSCFunctionEnum
@@ -237,7 +239,7 @@ type
     base: cint
 
   JSCFunctionListEntryPropList = object
-    tab: ptr UncheckedArray[JSCFunctionListEntry]
+    tab: JSCFunctionListP
     len: cint
 
   JSCFunctionListEntryU* {.union.} = object
@@ -823,7 +825,7 @@ proc JS_SetConstructor*(ctx: JSContext; func_obj, proto: JSValueConst)
 
 # C property definition
 proc JS_SetPropertyFunctionList*(ctx: JSContext; obj: JSValueConst;
-  tab: ptr UncheckedArray[JSCFunctionListEntry]; len: cint)
+  tab: JSCFunctionListP; len: cint)
 
 # C module definition
 type JSModuleInitFunc* = proc(ctx: JSContext; m: JSModuleDef): cint
@@ -833,12 +835,12 @@ proc JS_NewCModule*(ctx: JSContext; name_str: cstringConst;
 proc JS_AddModuleExport*(ctx: JSContext; m: JSModuleDef; name_str: cstringConst):
   cint
 proc JS_AddModuleExportList*(ctx: JSContext; m: JSModuleDef;
-  tab: ptr UncheckedArray[JSCFunctionListEntry]; len: cint): cint
+  tab: JSCFunctionListP; len: cint): cint
 # can only be called after the module is instantiated
 proc JS_SetModuleExport*(ctx: JSContext; m: JSModuleDef;
   export_name: cstringConst; val: JSValue): cint
 proc JS_SetModuleExportList*(ctx: JSContext; m: JSModuleDef;
-  tab: ptr UncheckedArray[JSCFunctionListEntry]; len: cint): cint
+  tab: JSCFunctionListP; len: cint): cint
 
 proc JS_GetVersion*(): cstring
 

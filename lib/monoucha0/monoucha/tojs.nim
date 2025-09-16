@@ -307,7 +307,7 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
   if int(class) < ctxOpaque.classes.len and
       ctxOpaque.classes[int(class)].unforgeable.len > 0:
     let ufp0 = addr ctxOpaque.classes[int(class)].unforgeable[0]
-    let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
+    let ufp = cast[JSCFunctionListP](ufp0)
     JS_SetPropertyFunctionList(ctx, jsObj, ufp,
       cint(ctxOpaque.classes[int(class)].unforgeable.len))
   GC_ref(cast[RootRef](toRef))

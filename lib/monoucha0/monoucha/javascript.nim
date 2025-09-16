@@ -299,7 +299,7 @@ proc addClassUnforgeableAndFinalizer(ctx: JSContext; proto: JSValueConst;
   if merged.len > 0:
     ctxOpaque.classes[int(classid)].unforgeable = move(merged)
     let ufp0 = addr ctxOpaque.classes[int(classid)].unforgeable[0]
-    let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
+    let ufp = cast[JSCFunctionListP](ufp0)
     JS_SetPropertyFunctionList(ctx, proto, ufp, cint(merged.len))
   var fins: seq[JSFinalizerFunction] = @[]
   if finalizer != nil:
@@ -338,15 +338,14 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   let ctxOpaque = ctx.getOpaque()
   let rtOpaque = rt.getOpaque()
   if JS_NewClass(rt, result, cdef) != 0:
-    raise newException(Defect, "Failed to allocate JS class: " &
-      $cdef.class_name)
+    raise newException(Defect, "Failed to allocate JS class")
   rtOpaque.typemap[nimt] = result
   if ctxOpaque.classes.len <= int(result):
     ctxOpaque.classes.setLen(int(result) + 1)
   ctxOpaque.classes[result].parent = parent
   let proto = ctx.newProtoFromParentClass(parent)
   if funcs.len > 0:
-    let fp = cast[ptr UncheckedArray[JSCFunctionListEntry]](unsafeAddr funcs[0])
+    let fp = cast[JSCFunctionListP](unsafeAddr funcs[0])
     JS_SetPropertyFunctionList(ctx, proto, fp, cint(funcs.len))
   #TODO check if this is an indexed property getter
   if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
@@ -367,19 +366,17 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     doAssert ctx.definePropertyC(global, ctxOpaque.symRefs[jsyToStringTag],
       JS_DupValue(ctx, news)) == dprSuccess
     if JS_SetPrototype(ctx, global, proto) != 1:
-      raise newException(Defect, "Failed to set global prototype: " &
-        $cdef.class_name)
+      raise newException(Defect, "Failed to set global prototype")
     # Global already exists, so set unforgeable functions here
     if ctxOpaque.classes[int(result)].unforgeable.len > 0:
       let ufp0 = addr ctxOpaque.classes[int(result)].unforgeable[0]
-      let ufp = cast[ptr UncheckedArray[JSCFunctionListEntry]](ufp0)
+      let ufp = cast[JSCFunctionListP](ufp0)
       JS_SetPropertyFunctionList(ctx, global, ufp,
         cint(ctxOpaque.classes[int(result)].unforgeable.len))
   JS_FreeValue(ctx, news)
   let jctor = ctx.newCtorFunFromParentClass(ctor, cdef.class_name, parent)
   if staticfuns.len > 0:
-    let fp0 = unsafeAddr staticfuns[0]
-    let fp = cast[ptr UncheckedArray[JSCFunctionListEntry]](fp0)
+    let fp = cast[JSCFunctionListP](unsafeAddr staticfuns[0])
     JS_SetPropertyFunctionList(ctx, jctor, fp, cint(staticfuns.len))
   JS_SetConstructor(ctx, jctor, proto)
   ctxOpaque.classes[result].ctor = JS_DupValue(ctx, jctor)
@@ -691,13 +688,13 @@ proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
     case fun.flag
     of bffNone:
       info.tabFuns.add(quote do:
-        JS_CFUNC_DEF(`name`, 0, cast[JSCFunction](`id`)))
+        JS_CFUNC_DEF(`name`, 0, `id`))
     of bffUnforgeable:
       info.tabUnforgeable.add(quote do:
-        JS_CFUNC_DEF_NOCONF(`name`, 0, cast[JSCFunction](`id`)))
+        JS_CFUNC_DEF_NOCONF(`name`, 0, `id`))
     of bffStatic:
       info.tabStatic.add(quote do:
-        JS_CFUNC_DEF(`name`, 0, cast[JSCFunction](`id`)))
+        JS_CFUNC_DEF(`name`, 0, `id`))
     of bffReplaceable:
       assert false #TODO
   of bfConstructor:
@@ -765,7 +762,7 @@ proc registerFunction(gen: JSFuncGenerator) =
     flag: gen.flag
   ))
 
-proc jsCheckNumArgs(ctx: JSContext; argc, minargs: cint): bool =
+proc jsCheckNumArgs*(ctx: JSContext; argc, minargs: cint): bool =
   if argc < minargs:
     JS_ThrowTypeError(ctx, "At least %d arguments required, but only %d passed",
       minargs, argc)
