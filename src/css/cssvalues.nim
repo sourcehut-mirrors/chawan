@@ -71,6 +71,7 @@ type
     cvtImage = "image"
     cvtInteger = "integer"
     cvtLength = "length"
+    cvtLineWidth = "lineWidth"
     cvtListStylePosition = "listStylePosition"
     cvtListStyleType = "listStyleType"
     cvtNumber = "number"
@@ -338,6 +339,7 @@ type
     dummy: uint32
     integer*: int32
     number*: float32
+    lineWidth*: float32
 
   CSSValueWord* {.union.} = object
     dummy: uint64
@@ -443,6 +445,10 @@ const ValueTypes = [
   cptWordBreak: cvtWordBreak,
 
   # half-words
+  cptBorderBottomWidth: cvtLineWidth,
+  cptBorderLeftWidth: cvtLineWidth,
+  cptBorderRightWidth: cvtLineWidth,
+  cptBorderTopWidth: cvtLineWidth,
   cptChaColspan: cvtInteger,
   cptChaRowspan: cvtInteger,
   cptFlexGrow: cvtNumber,
@@ -452,8 +458,12 @@ const ValueTypes = [
 
   # words
   cptBackgroundColor: cvtColor,
+  cptBorderBottomColor: cvtColor,
+  cptBorderLeftColor: cvtColor,
+  cptBorderRightColor: cvtColor,
   cptBorderSpacingBlock: cvtLength,
   cptBorderSpacingInline: cvtLength,
+  cptBorderTopColor: cvtColor,
   cptBottom: cvtLength,
   cptColor: cvtColor,
   cptFlexBasis: cvtLength,
@@ -647,6 +657,7 @@ proc serialize(val: CSSValueHWord; t: CSSValueType): string =
   case t
   of cvtInteger: return $val.integer
   of cvtNumber: return $val.number
+  of cvtLineWidth: return $val.lineWidth & "px"
   else:
     assert false
     return ""
@@ -1572,6 +1583,22 @@ proc parseNumber(ctx: var CSSParser; range: Slice[float32]): Opt[float32] =
       return ok(n)
   return err()
 
+type LineWidthKeyword = enum
+  lwkThin = (1, "thin")
+  lwkMedium = (2, "medium")
+  lwkThick = (3, "thick")
+
+proc parseLineWidth(ctx: var CSSParser; attrs: WindowAttributes): Opt[float32] =
+  let tok = ctx.peekToken()
+  if tok.t == cttIdent:
+    ctx.seek()
+    let s = ?parseEnumNoCase[LineWidthKeyword](tok.s)
+    return ok(float32(s))
+  let l = ?ctx.parseLength(attrs, hasAuto = false, allowNegative = false)
+  if l.isPerc:
+    return err()
+  ok(l.npx)
+
 proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
   return CSSComputedEntry(et: ceObject, p: t, obj: obj)
 
@@ -1705,6 +1732,7 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
     else: # flex-grow, flex-shrink
       makeEntry(t, ?ctx.parseNumber(0f32..float32.high))
   of cvtOverflow: makeEntry(t, ?parseIdent[CSSOverflow](ctx))
+  of cvtLineWidth: makeEntry(t, ?ctx.parseLineWidth(attrs))
   ok()
 
 proc getInitialColor(t: CSSPropertyType): CSSColor =
@@ -1750,6 +1778,7 @@ proc getDefaultHWord(t: CSSPropertyType): CSSValueHWord =
   case valueType(t)
   of cvtInteger: return CSSValueHWord(integer: getInitialInteger(t))
   of cvtNumber: return CSSValueHWord(number: getInitialNumber(t))
+  of cvtLineWidth: return CSSValueHWord(lineWidth: 1) # medium
   else: return CSSValueHWord(dummy: 0)
 
 proc getDefaultWord(t: CSSPropertyType): CSSValueWord =
@@ -1772,6 +1801,12 @@ const ShorthandMap = [
   cstMargin: @[cptMarginTop, cptMarginRight, cptMarginBottom, cptMarginLeft],
   cstPadding: @[cptPaddingTop, cptPaddingRight, cptPaddingBottom,
     cptPaddingLeft],
+  cstBorderStyle: @[cptBorderTopStyle, cptBorderRightStyle,
+    cptBorderBottomStyle, cptBorderLeftStyle],
+  cstBorderColor: @[cptBorderTopColor, cptBorderRightColor,
+    cptBorderBottomColor, cptBorderLeftColor],
+  cstBorderWidth: @[cptBorderTopWidth, cptBorderRightWidth,
+    cptBorderBottomWidth, cptBorderLeftWidth],
   cstBackground: @[cptBackgroundColor, cptBackgroundImage],
   cstListStyle: @[cptListStylePosition, cptListStyleType],
   cstFlex: @[cptFlexGrow, cptFlexShrink, cptFlexBasis],
@@ -1779,23 +1814,91 @@ const ShorthandMap = [
   cstOverflow: @[cptOverflowX, cptOverflowY],
   cstVerticalAlign: @[cptVerticalAlign, cptVerticalAlignLength],
   cstBorderSpacing: @[cptBorderSpacingInline, cptBorderSpacingBlock],
-  cstBorderStyle: @[cptBorderBottomStyle, cptBorderLeftStyle,
-    cptBorderRightStyle, cptBorderTopStyle]
+  cstBorderBottom: @[cptBorderBottomStyle, cptBorderBottomColor,
+    cptBorderBottomWidth],
+  cstBorderLeft: @[cptBorderLeftStyle, cptBorderLeftColor, cptBorderLeftWidth],
+  cstBorderRight: @[cptBorderRightStyle, cptBorderRightColor,
+    cptBorderRightWidth],
+  cstBorderTop: @[cptBorderTopStyle, cptBorderTopColor, cptBorderTopWidth],
+  cstBorder: @[cptBorderTopStyle, cptBorderRightStyle, cptBorderBottomStyle,
+    cptBorderLeftStyle, cptBorderTopColor, cptBorderRightColor,
+    cptBorderBottomColor, cptBorderLeftColor, cptBorderTopWidth,
+    cptBorderRightWidth, cptBorderBottomWidth, cptBorderLeftWidth],
 ]
 
-proc parseLengthShorthand(ctx: var CSSParser; props: openArray[CSSPropertyType];
-    attrs: WindowAttributes; hasAuto: bool; res: var seq[CSSComputedEntry]):
-    Opt[void] =
-  var lengths: seq[CSSLength] = @[]
-  while ctx.skipBlanksCheckHas().isOk:
-    lengths.add(?ctx.parseLength(attrs, hasAuto, allowNegative = true))
-  case lengths.len
+proc parseBorder(ctx: var CSSParser; sh: CSSShorthandType;
+    attrs: WindowAttributes; res: var seq[CSSComputedEntry]): Opt[void] =
+  var style = makeDefaultEntry(cptBorderLeftStyle)
+  var color = makeDefaultEntry(cptBorderLeftColor)
+  var width = makeDefaultEntry(cptBorderLeftWidth)
+  var nstyle = 0u
+  var ncolor = 0u
+  var nwidth = 0u
+  while ctx.has():
+    case ctx.peekTokenType()
+    of cttHash:
+      color = makeEntry(cptBorderLeftColor, ?ctx.parseColor())
+      inc ncolor
+    of cttIdent:
+      let s = ctx.peekToken().s
+      if x := parseEnumNoCase[CSSBorderStyle](s):
+        ctx.seek()
+        style = makeEntry(cptBorderLeftStyle, x)
+        inc nstyle
+      elif x := parseEnumNoCase[LineWidthKeyword](s):
+        ctx.seek()
+        width = makeEntry(cptBorderLeftWidth, float32(x))
+        inc nwidth
+      else:
+        color = makeEntry(cptBorderLeftColor, ?ctx.parseColor())
+        inc ncolor
+    of cttFunction:
+      if ctx.peekToken().ft == cftCalc:
+        width = makeEntry(cptBorderLeftWidth, ?ctx.parseLineWidth(attrs))
+        inc nwidth
+      else:
+        color = makeEntry(cptBackgroundColor, ?ctx.parseColor())
+        inc ncolor
+    of cttDimension, cttNumber, cttIDimension, cttINumber:
+      width = makeEntry(cptBorderLeftWidth, ?ctx.parseLineWidth(attrs))
+      inc nwidth
+    else:
+      return err()
+    ctx.skipBlanks()
+  if ncolor > 1 or nwidth > 1 or nstyle > 1:
+    return err()
+  for t in ShorthandMap[sh]:
+    case valueType(t)
+    of cvtBorderStyle:
+      style.p = t
+      res.add(style)
+    of cvtColor:
+      color.p = t
+      res.add(color)
+    of cvtLineWidth:
+      width.p = t
+      res.add(width)
+    else: discard
+  return ctx.skipBlanksCheckDone()
+
+proc parseBoxShorthand(ctx: var CSSParser; props: openArray[CSSPropertyType];
+    attrs: WindowAttributes; res: var seq[CSSComputedEntry]): Opt[void] =
+  var entries: seq[CSSComputedEntry] = @[]
+  for i, t in props:
+    if ctx.skipBlanksCheckHas().isErr:
+      break
+    var entry: CSSComputedEntry
+    ?ctx.parseValue(t, entry, attrs)
+    entries.add(entry)
+  case entries.len
   of 1: # top, bottom, left, right
     for t in props:
-      res.add(makeEntry(t, lengths[0]))
+      entries[0].p = t
+      res.add(entries[0])
   of 2: # top, bottom | left, right
     for i, t in props.mypairs:
-      res.add(makeEntry(t, lengths[i mod 2]))
+      entries[i mod 2].p = t
+      res.add(entries[i mod 2])
   of 3: # top | left, right | bottom
     for i, t in props.mypairs:
       let j = if i == 0:
@@ -1804,13 +1907,12 @@ proc parseLengthShorthand(ctx: var CSSParser; props: openArray[CSSPropertyType];
         2 # bottom
       else:
         1 # left, right
-      res.add(makeEntry(t, lengths[j]))
+      entries[j].p = t
+      res.add(entries[j])
   of 4: # top | right | bottom | left
-    for i, t in props.mypairs:
-      res.add(makeEntry(t, lengths[i]))
-  else:
-    return err()
-  ok()
+    res.add(entries)
+  else: discard
+  return ctx.skipBlanksCheckDone()
 
 proc parseBackground(ctx: var CSSParser; attrs: WindowAttributes;
     res: var seq[CSSComputedEntry]): Opt[void] =
@@ -1933,34 +2035,16 @@ proc parseBorderSpacing(ctx: var CSSParser; attrs: WindowAttributes;
   res.add(makeEntry(cptBorderSpacingBlock, b))
   return ctx.skipBlanksCheckDone()
 
-proc parseBorderStyle(ctx: var CSSParser; props: openArray[CSSPropertyType];
-    res: var seq[CSSComputedEntry]): Opt[void] =
-  var lengths: seq[CSSBorderStyle] = @[]
-  while ctx.skipBlanksCheckHas().isOk:
-    let tok = ctx.consume()
-    lengths.add(?parseIdent[CSSBorderStyle](tok))
-  case lengths.len
-  of 1: # top, bottom, left, right
-    for t in props:
-      res.add(makeEntry(t, lengths[0]))
-  of 2: # top, bottom | left, right
-    for i, t in props.mypairs:
-      res.add(makeEntry(t, lengths[i mod 2]))
-  of 3: # top | left, right | bottom
-    for i, t in props.mypairs:
-      let j = if i == 0:
-        0 # top
-      elif i == 2:
-        2 # bottom
-      else:
-        1 # left, right
-      res.add(makeEntry(t, lengths[j]))
-  of 4: # top | right | bottom | left
-    for i, t in props.mypairs:
-      res.add(makeEntry(t, lengths[i]))
+proc addGlobal(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
+    global: CSSGlobalType) =
+  case p.sh
+  of cstNone: res.add(makeEntry(p.p, global))
+  of cstAll:
+    for t in CSSPropertyType:
+      res.add(makeEntry(t, global))
   else:
-    return err()
-  ok()
+    for t in ShorthandMap[p.sh]:
+      res.add(makeEntry(t, global))
 
 proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
     attrs: WindowAttributes; res: var seq[CSSComputedEntry]): Opt[void] =
@@ -1968,14 +2052,7 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
   let tok = ctx.peekToken()
   if global := parseIdent[CSSGlobalType](tok):
     ctx.seekToken()
-    case p.sh
-    of cstNone: res.add(makeEntry(p.p, global))
-    of cstAll:
-      for t in CSSPropertyType:
-        res.add(makeEntry(t, global))
-    else:
-      for t in ShorthandMap[p.sh]:
-        res.add(makeEntry(t, global))
+    res.addGlobal(p, global)
     return ctx.skipBlanksCheckDone()
   case p.sh
   of cstNone:
@@ -1984,12 +2061,10 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
     res.add(entry)
     return ctx.skipBlanksCheckDone()
   of cstAll: return err()
-  of cstMargin:
-    return ctx.parseLengthShorthand(ShorthandMap[p.sh], attrs, hasAuto = true,
-      res)
-  of cstPadding:
-    return ctx.parseLengthShorthand(ShorthandMap[p.sh], attrs, hasAuto = false,
-      res)
+  of cstBorder, cstBorderBottom, cstBorderLeft, cstBorderRight, cstBorderTop:
+    return ctx.parseBorder(p.sh, attrs, res)
+  of cstMargin, cstPadding, cstBorderStyle, cstBorderColor, cstBorderWidth:
+    return ctx.parseBoxShorthand(ShorthandMap[p.sh], attrs, res)
   of cstBackground: return ctx.parseBackground(attrs, res)
   of cstListStyle: return ctx.parseListStyle(attrs, res)
   of cstFlex: return ctx.parseFlex(attrs, res)
@@ -1997,7 +2072,6 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
   of cstOverflow: return ctx.parseOverflow(attrs, tok, res)
   of cstVerticalAlign: return ctx.parseVerticalAlign(attrs, res)
   of cstBorderSpacing: return ctx.parseBorderSpacing(attrs, tok, res)
-  of cstBorderStyle: return ctx.parseBorderStyle(ShorthandMap[p.sh], res)
 
 proc parseComputedValues*(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
     toks: openArray[CSSToken]; attrs: WindowAttributes) =
@@ -2061,8 +2135,7 @@ proc splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
     # wrapper & actual table layouts share the same sizing from the wrapper,
     # so we must add them here.
     cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom,
-    cptWidth, cptHeight, cptBoxSizing, cptBorderLeftStyle, cptBorderRightStyle,
-    cptBorderTopStyle, cptBorderBottomStyle,
+    cptWidth, cptHeight, cptBoxSizing,
     # no clue why this isn't included in the standard
     cptClear, cptPosition
   }
@@ -2076,6 +2149,49 @@ proc splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
   outer{"display"} = computed{"display"}
   inner{"display"} = DisplayTableWrapper
   return (outer, inner)
+
+proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): string =
+  return case style
+  of BorderStyleNone, BorderStyleHidden: ""
+  of BorderStyleDotted:
+    case c
+    of bdcHorizontalBar: "\u2508"
+    of bdcVerticalBar: "\u250A"
+    else: $c # no dotted corners in Unicode
+  of BorderStyleDashed:
+    case c
+    of bdcHorizontalBar: "\u254C"
+    of bdcVerticalBar: "\u254E"
+    else: $c # likewise
+  of BorderStyleSolid: # the default
+    $c
+  of BorderStyleOutset, BorderStyleGroove: # like solid, but thicker
+    case c
+    of bdcHorizontalBar: "\u2501"
+    of bdcVerticalBar: "\u2503"
+    of bdcCornerTopLeft: "\u250F"
+    of bdcCornerTopRight: "\u2513"
+    of bdcCornerBottomLeft: "\u2517"
+    of bdcCornerBottomRight: "\u251B"
+    of bdcSideBarLeft: "\u2523"
+    of bdcSideBarRight: "\u252B"
+    of bdcSideBarTop: "\u2533"
+    of bdcSideBarBottom: "\u253B"
+    of bdcSideBarCross: "\u254B"
+  of BorderStyleDouble, BorderStyleInset, BorderStyleRidge:
+    # interpret inset/ridge as double
+    case c
+    of bdcHorizontalBar: "\u2550"
+    of bdcVerticalBar: "\u2551"
+    of bdcCornerTopLeft: "\u2554"
+    of bdcCornerTopRight: "\u2557"
+    of bdcCornerBottomLeft: "\u255A"
+    of bdcCornerBottomRight: "\u255D"
+    of bdcSideBarLeft: "\u2560"
+    of bdcSideBarRight: "\u2563"
+    of bdcSideBarTop: "\u2566"
+    of bdcSideBarBottom: "\u2569"
+    of bdcSideBarCross: "\u256C"
 
 when defined(debug):
   proc serializeEmpty*(computed: CSSValues): string =

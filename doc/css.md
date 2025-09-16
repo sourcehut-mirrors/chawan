@@ -17,8 +17,8 @@ A list of supported standard properties, with notes on unimplemented values:
 * background-color (see color)
 * background-image (displays placeholders only)
 * border-collapse
-* border-left-style, border-right-style, border-top-style,
-  border-bottom-style (only works on tables)
+* border-\*-style, border-\*-color, border-\*-width (but see
+  [borders](#borders))
 * border-spacing
 * bottom
 * box-sizing
@@ -79,12 +79,13 @@ Shorthands:
 * all
 * margin
 * padding
+* border, border-style, border-color, border-width (but see
+  [borders](#borders))
 * background (only color and url; other components are skipped)
 * list-style (list-style-image is skipped)
 * flex
 * flex-flow
 * overflow
-* border-style (only works on tables)
 
 Variables (the `var()` function) are fully supported.
 
@@ -238,6 +239,18 @@ algorithm is unspecified and subject to change.)
 This unfortunately breaks spoiler mechanisms that rely on "black on
 black" text not being visible.  The issue disappears when `visibility:
 hidden` is applied to the text as well.
+
+### Borders
+
+CSS borders are difficult to accurately display on a cell-based display.
+So while the functionality exists, it has some limitations:
+
+* On tables, borders are always collapsed, even when `border-collapse` is
+  set to `separate`.
+* With `border-collapse: separate`, the spacing between cells is the largest
+  of `border-spacing` times two and the cell width.
+* `border-*-width` is interpreted as a binary value: a width of 0 results in
+  no border, while any other width results in a border of a single type.
 
 <!-- MANON
 

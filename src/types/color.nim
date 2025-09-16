@@ -121,7 +121,10 @@ proc a*(c: CSSColor): uint8 =
     if CellColor(c.n).t == ctNone:
       return 0
     return 255
-  return ARGBColor(c.n).a
+  return c.argb().a
+
+proc rgbTransparent*(c: CSSColor): bool =
+  return not c.isCell and c.argb().a == 0
 
 proc cellColor*(c: CSSColor): CellColor =
   if c.isCell:

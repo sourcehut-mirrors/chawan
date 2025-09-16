@@ -20,8 +20,7 @@ background\-image (displays placeholders only)
 .IP \(bu 2
 border\-collapse
 .IP \(bu 2
-border\-left\-style, border\-right\-style, border\-top\-style,
-border\-bottom\-style (only works on tables)
+border\-*\-style, border\-*\-color, border\-*\-width (but see borders)
 .IP \(bu 2
 border\-spacing
 .IP \(bu 2
@@ -140,6 +139,8 @@ margin
 .IP \(bu 2
 padding
 .IP \(bu 2
+border, border\-style, border\-color, border\-width (but see borders)
+.IP \(bu 2
 background (only color and url; other components are skipped)
 .IP \(bu 2
 list\-style (list\-style\-image is skipped)
@@ -149,8 +150,6 @@ flex
 flex\-flow
 .IP \(bu 2
 overflow
-.IP \(bu 2
-border\-style (only works on tables)
 .PP
 Variables (the \f[CR]var()\f[R] function) are fully supported.
 .PP
@@ -321,5 +320,19 @@ This unfortunately breaks spoiler mechanisms that rely on \(lqblack on
 black\(rq text not being visible.
 The issue disappears when \f[CR]visibility: hidden\f[R] is applied to
 the text as well.
+.SS Borders
+CSS borders are difficult to accurately display on a cell\-based
+display.
+So while the functionality exists, it has some limitations:
+.IP \(bu 2
+On tables, borders are always collapsed, even when
+\f[CR]border\-collapse\f[R] is set to \f[CR]separate\f[R].
+.IP \(bu 2
+With \f[CR]border\-collapse: separate\f[R], the spacing between cells is
+the largest of \f[CR]border\-spacing\f[R] times two and the cell width.
+.IP \(bu 2
+\f[CR]border\-*\-width\f[R] is interpreted as a binary value: a width of
+0 results in no border, while any other width results in a border of a
+single type.
 .SS See also
 \f[B]cha\f[R](1)

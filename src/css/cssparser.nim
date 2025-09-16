@@ -138,6 +138,9 @@ type
     cstAll = "all"
     cstMargin = "margin"
     cstPadding = "padding"
+    cstBorderStyle = "border-style"
+    cstBorderColor = "border-color"
+    cstBorderWidth = "border-width"
     cstBackground = "background"
     cstListStyle = "list-style"
     cstFlex = "flex"
@@ -145,7 +148,11 @@ type
     cstOverflow = "overflow"
     cstVerticalAlign = "vertical-align"
     cstBorderSpacing = "border-spacing"
-    cstBorderStyle = "border-style"
+    cstBorderBottom = "border-bottom"
+    cstBorderLeft = "border-left"
+    cstBorderRight = "border-right"
+    cstBorderTop = "border-top"
+    cstBorder = "border"
 
   CSSPropertyType* = enum
     # primitive/enum properties: stored as byte
@@ -179,6 +186,10 @@ type
     cptWordBreak = "word-break"
 
     # half-word properties: stored as (32-bit) word
+    cptBorderBottomWidth = "border-bottom-width"
+    cptBorderLeftWidth = "border-left-width"
+    cptBorderRightWidth = "border-right-width"
+    cptBorderTopWidth = "border-top-width"
     cptChaColspan = "-cha-colspan"
     cptChaRowspan = "-cha-rowspan"
     cptFlexGrow = "flex-grow"
@@ -188,8 +199,12 @@ type
 
     # word properties: stored as (64-bit) word
     cptBackgroundColor = "background-color"
+    cptBorderBottomColor = "border-bottom-color"
+    cptBorderLeftColor = "border-left-color"
+    cptBorderRightColor = "border-right-color"
     cptBorderSpacingBlock = "-cha-border-spacing-block"
     cptBorderSpacingInline = "-cha-border-spacing-inline"
+    cptBorderTopColor = "border-top-color"
     cptBottom = "bottom"
     cptColor = "color"
     cptFlexBasis = "flex-basis"

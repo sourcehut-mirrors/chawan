@@ -8,6 +8,7 @@ import css/cssparser
 import css/cssvalues
 import css/lunit
 import types/bitmap
+import types/color
 import types/winattrs
 import utils/luwrap
 import utils/strwidth
@@ -145,13 +146,32 @@ proc applySizeConstraint(u: LUnit; availableSize: SizeConstraint): LUnit =
   of scFitContent:
     return min(u, availableSize.u)
 
-proc outerSize(box: BlockBox; dim: DimensionType; sizes: ResolvedSizes): LUnit =
-  return sizes.margin[dim].sum() + box.state.size[dim]
+proc borderTopLeft(sizes: ResolvedSizes; lctx: LayoutContext): Offset =
+  var o = offset(0, 0)
+  if sizes.border.left notin BorderStyleNoneHidden:
+    o.x += lctx.cellSize.w
+  if sizes.border.top notin BorderStyleNoneHidden:
+    o.y += lctx.cellSize.h
+  o
 
-proc outerSize(box: BlockBox; sizes: ResolvedSizes): Size =
+proc borderSize(sizes: ResolvedSizes; dim: DimensionType; lctx: LayoutContext):
+    Span =
+  var span = Span()
+  if sizes.border[dim].start notin BorderStyleNoneHidden:
+    span.start = lctx.cellSize[dim]
+  if sizes.border[dim].send notin BorderStyleNoneHidden:
+    span.send = lctx.cellSize[dim]
+  return span
+
+proc outerSize(box: BlockBox; dim: DimensionType; sizes: ResolvedSizes;
+    lctx: LayoutContext): LUnit =
+  return sizes.margin[dim].sum() + box.state.size[dim] +
+    sizes.borderSize(dim, lctx).sum()
+
+proc outerSize(box: BlockBox; sizes: ResolvedSizes; lctx: LayoutContext): Size =
   return size(
-    w = box.outerSize(dtHorizontal, sizes),
-    h = box.outerSize(dtVertical, sizes)
+    w = box.outerSize(dtHorizontal, sizes, lctx),
+    h = box.outerSize(dtVertical, sizes, lctx)
   )
 
 proc max(span: Span): LUnit =
@@ -210,14 +230,15 @@ proc spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
   return max(u, 0)
 
 proc resolveUnderflow(sizes: var ResolvedSizes; parentSize: SizeConstraint;
-    computed: CSSValues) =
+    computed: CSSValues; lctx: LayoutContext) =
   let dim = dtHorizontal
   # width must be definite, so that conflicts can be resolved
   if sizes.space[dim].isDefinite() and parentSize.t == scStretch:
     let start = computed.getLength(MarginStartMap[dim])
     let send = computed.getLength(MarginEndMap[dim])
     let underflow = parentSize.u - sizes.space[dim].u -
-      sizes.margin[dim].sum() - sizes.padding[dim].sum()
+      sizes.margin[dim].sum() - sizes.padding[dim].sum() -
+      sizes.borderSize(dim, lctx).sum()
     if underflow > 0 and start.auto:
       if not send.auto:
         sizes.margin[dim].start = underflow
@@ -262,6 +283,28 @@ proc roundSmallMarginsAndPadding(lctx: LayoutContext;
     let cs = lctx.cellSize[i]
     it.start = (it.start div cs).toInt.toLUnit * cs
     it.send = (it.send div cs).toInt.toLUnit * cs
+
+proc resolveBorder(computed: CSSValues): CSSBorder =
+  var left = computed{"border-left-style"}
+  var right = computed{"border-right-style"}
+  var top = computed{"border-top-style"}
+  var bottom = computed{"border-bottom-style"}
+  if computed{"border-left-width"} == 0 or
+      computed{"border-left-color"}.rgbTransparent:
+    left = BorderStyleNone
+  if computed{"border-right-width"} == 0 or
+      computed{"border-right-color"}.rgbTransparent:
+    right = BorderStyleNone
+  if computed{"border-top-width"} == 0 or
+      computed{"border-top-color"}.rgbTransparent:
+    top = BorderStyleNone
+  if computed{"border-bottom-width"} == 0 or
+      computed{"border-bottom-color"}.rgbTransparent:
+    bottom = BorderStyleNone
+  return [
+    dtHorizontal: BorderStyleSpan(start: left, send: right),
+    dtVertical: BorderStyleSpan(start: top, send: bottom)
+  ]
 
 proc resolvePositioned(lctx: LayoutContext; size: Size;
     computed: CSSValues): RelativeRect =
@@ -361,7 +404,8 @@ proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     margin: lctx.resolveMargins(space.w, computed),
     padding: padding,
     space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed)
+    bounds: lctx.resolveBounds(space, paddingSum, computed),
+    border: computed.resolveBorder()
   )
   sizes.space.h = maxContent()
   for dim in DimensionType:
@@ -430,14 +474,14 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
   let width = computed{"width"}
   if width.canpx(parentWidth):
     sizes.space.w = stretch(width.spx(parentWidth, computed, inlinePadding))
-    sizes.resolveUnderflow(parentWidth, computed)
+    sizes.resolveUnderflow(parentWidth, computed, lctx)
     if width.isPx:
       let px = sizes.space.w.u
       sizes.bounds.mi[dim].start = max(sizes.bounds.mi[dim].start, px)
       sizes.bounds.mi[dim].send = min(sizes.bounds.mi[dim].send, px)
   elif parentWidth.t == scStretch:
     let underflow = parentWidth.u - sizes.margin[dim].sum() -
-      sizes.padding[dim].sum()
+      sizes.padding[dim].sum() - sizes.borderSize(dim, lctx).sum()
     if underflow >= 0:
       sizes.space.w = stretch(underflow)
     else:
@@ -451,7 +495,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     else: # scFitContent
       # available width could be higher than max-width (but not necessarily)
       sizes.space.w = fitContent(sizes.maxWidth)
-    sizes.resolveUnderflow(parentWidth, computed)
+    sizes.resolveUnderflow(parentWidth, computed, lctx)
     sizes.bounds.mi[dim].send = sizes.space.w.u
   if sizes.space.w.isDefinite() and sizes.minWidth > sizes.space.w.u or
       sizes.minWidth > 0 and sizes.space.w.t == scMinContent:
@@ -461,7 +505,7 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
     # * available width is fit under min-width. in this case, stretch to
     #   min-width as well (as we must satisfy min-width >= width).
     sizes.space.w = stretch(sizes.minWidth)
-    sizes.resolveUnderflow(parentWidth, computed)
+    sizes.resolveUnderflow(parentWidth, computed, lctx)
 
 proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
     blockPadding: LUnit; computed: CSSValues;
@@ -494,7 +538,8 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     margin: lctx.resolveMargins(space.w, computed),
     padding: padding,
     space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed)
+    bounds: lctx.resolveBounds(space, paddingSum, computed),
+    border: computed.resolveBorder()
   )
   # height is max-content normally, but fit-content for clip.
   sizes.space.h = if computed{"overflow-y"} != OverflowClip:
@@ -510,6 +555,12 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     # Eliminate distracting margins and padding here, because
     # resolveBlockWidth may change them beforehand.
     lctx.roundSmallMarginsAndPadding(sizes)
+  if sizes.space.h.isDefinite() and sizes.space.h.u == 0 and
+      paddingSum[dtVertical] == 0:
+    # prevent ugly <hr> when set using border (not just border-style-bottom)
+    sizes.border[dtHorizontal] = BorderStyleSpan()
+    if sizes.border[dtVertical].send notin BorderStyleNoneHidden:
+      sizes.border[dtVertical].start = BorderStyleHidden
   return sizes
 
 # Flow layout.  Probably the most complex part of CSS.
@@ -1508,6 +1559,7 @@ proc positionRelative(lctx: LayoutContext; space: AvailableSpace;
 # flexItem is true if box is a flex item.
 proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
     sizes: ResolvedSizes; flexItem = false) =
+  let offset = offset + sizes.borderTopLeft(lctx)
   if box.sizes == sizes:
     box.state.offset = offset
     return
@@ -1543,7 +1595,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
   let lctx = fstate.lctx
   let sizes = lctx.resolveFloatSizes(fstate.space, child.computed)
   lctx.layoutRootBlock(child, fstate.offset + sizes.margin.topLeft, sizes)
-  let outerSize = child.outerSize(sizes)
+  let outerSize = child.outerSize(sizes, lctx)
   if fstate.space.w.t in {scFitContent, scMaxContent}:
     # Float position depends on the available width, but in this case
     # the parent width is not known.  Skip this box; we will position
@@ -1642,7 +1694,9 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
         lctx.layoutRootBlock(child, roffset, sizes)
   else:
     child.resetState()
+    offset += sizes.borderTopLeft(lctx)
     child.state.offset = offset
+    child.sizes = sizes
     if clear != ClearNone:
       fstate.bctx.flushMargins(child.state.offset.y)
       child.state.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
@@ -1653,10 +1707,11 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
       lctx.popPositioned(child.state.size)
   fstate.bctx.marginTodo.append(sizes.margin.bottom)
   let outerSize = size(
-    w = child.outerSize(dtHorizontal, sizes),
+    w = child.outerSize(dtHorizontal, sizes, lctx),
     # delta y is difference between old and new offsets (margin-top),
-    # plus height.
-    h = child.state.offset.y - fstate.offset.y + child.state.size.h
+    # plus height, plus border size.
+    h = child.state.offset.y - fstate.offset.y + child.state.size.h +
+      sizes.borderSize(dtVertical, lctx).send
   )
   if not fstate.firstBaselineSet:
     fstate.box.state.firstBaseline = child.state.offset.y +
@@ -1742,7 +1797,7 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
       baseline: box.state.baseline + sizes.margin.top,
       vertalign: box.computed{"vertical-align"},
       baselineShift: ibox.computed{"-cha-vertical-align-length"},
-      size: box.outerSize(sizes)
+      size: box.outerSize(sizes, lctx)
     )
     var istate = InlineState(ibox: ibox)
     discard fstate.addAtom(istate, iastate)
@@ -2019,7 +2074,8 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   fstate.initBlockPositionStates(box)
   if box.computed{"position"} notin PositionAbsoluteFixed and
       (sizes.padding.top != 0 or
-      sizes.space.h.isDefinite() and sizes.space.h.u != 0):
+      sizes.space.h.isDefinite() and sizes.space.h.u != 0 or
+      sizes.border[dtVertical].start notin BorderStyleNoneHidden):
     bctx.flushMargins(box.state.offset.y)
   fstate.layoutFlow0()
   if fstate.space.w.t == scFitContent:
@@ -2085,6 +2141,7 @@ type
     reflow: bool
     height: LUnit
     baseline: LUnit
+    inlineBorder: Span
 
   RowContext = object
     cells: seq[CellWrapper]
@@ -2092,8 +2149,7 @@ type
     width: LUnit
     height: LUnit
     borderWidth: LUnit
-    borderTop: LUnit
-    borderBottom: LUnit
+    blockBorder: Span
     box: BlockBox
     ncols: int
 
@@ -2114,23 +2170,23 @@ type
     inlineSpacing: LUnit
     borderWidth: LUnit
     space: AvailableSpace # space we got from parent
-    border: CSSBorder
 
 proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
-    space: AvailableSpace; border: CSSBorder) =
-  var sizes = ResolvedSizes(
+    space: AvailableSpace; border: CSSBorder; merge: CSSBorderMerge) =
+  box.sizes = ResolvedSizes(
     padding: lctx.resolvePadding(space.w, box.computed),
     space: availableSpace(w = space.w, h = maxContent()),
-    bounds: DefaultBounds
+    bounds: DefaultBounds,
+    border: border
   )
   box.resetState()
-  box.state.border = border
-  if sizes.space.w.isDefinite():
-    sizes.space.w.u -= sizes.padding[dtHorizontal].sum()
+  box.state.merge = merge
+  if box.sizes.space.w.isDefinite():
+    box.sizes.space.w.u -= box.sizes.padding[dtHorizontal].sum()
   var bctx = BlockContext(lctx: lctx)
   if box.computed{"position"} != PositionStatic:
     lctx.pushPositioned(box)
-  bctx.layout(box, sizes)
+  bctx.layout(box, box.sizes)
   if box.computed{"position"} != PositionStatic:
     lctx.popPositioned(box.state.size)
   assert bctx.unpositionedFloats.len == 0
@@ -2141,7 +2197,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
   box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight)
   if space.h.t == scStretch:
     box.state.size.h = max(box.state.size.h, space.h.u -
-      sizes.padding[dtVertical].sum())
+      box.sizes.padding[dtVertical].sum())
   # A table cell's minimum width overrides its width.
   box.state.size.w = max(box.state.size.w, box.state.intr.w)
 
@@ -2172,46 +2228,24 @@ proc growRowspan(pctx: var TableContext; ctx: var RowContext;
       rowspan: cellw.rowspan,
       coli: n,
       real: cellw,
-      last: cellw.grown == 0
+      last: cellw.grown == 0,
+      inlineBorder: cellw.inlineBorder
     )
     ctx.cells.add(nil)
     ctx.cells[i] = rowspanFiller
-    for i in n ..< n + colspan:
+    let nextn = n + colspan
+    for i in n ..< nextn:
       ctx.width += pctx.cols[i].width
       ctx.width += pctx.inlineSpacing * 2
-    n += cellw.colspan
+    n = nextn
     inc i
     inc growi
-
-proc getBorder(computed: CSSValues): CSSBorder =
-  return CSSBorder(
-    s: [
-      dtHorizontal: BorderStyleSpan(
-        start: computed{"border-left-style"},
-        send: computed{"border-right-style"},
-      ),
-      dtVertical: BorderStyleSpan(
-        start: computed{"border-top-style"},
-        send: computed{"border-bottom-style"},
-      )
-    ]
-  )
-
-proc getCellBorder(box: BlockBox; firstCell, firstRow, lastCell, lastRow: bool):
-    CSSBorder =
-  var border = box.computed.getBorder()
-  border.merge[dtHorizontal] = not firstCell
-  border.merge[dtVertical] = not firstRow
-  if not lastCell:
-    border.s[dtHorizontal].send = BorderStyleNone
-  if not lastRow:
-    border.s[dtVertical].send = BorderStyleNone
-  border
 
 proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
     rowi, numrows: int): RowContext =
   let lctx = pctx.lctx
   result = RowContext(box: row)
+  var blockBorder = Span(start: pctx.blockSpacing, send: pctx.blockSpacing)
   var n = 0
   var i = 0
   var growi = 0
@@ -2219,6 +2253,7 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
   # were added by previous rows.
   let growlen = pctx.growing.len
   for box in row.children:
+    #TODO specified table height should be distributed among rows.
     let box = BlockBox(box)
     assert box.computed{"display"} == DisplayTableCell
     let firstCell = i == 0
@@ -2231,41 +2266,45 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
       w = cw.stretchOrMaxContent(pctx.space.w),
       h = ch.stretchOrMaxContent(pctx.space.h)
     )
-    #TODO specified table height should be distributed among rows.
-    # Allow the table cell to use its specified width.
-    let border = box.getCellBorder(firstCell, rowi == 0, box.next == nil,
-      row.next == nil)
-    lctx.layoutTableCell(box, space, border)
+    var border = box.computed.resolveBorder()
+    var inlineBorder = Span(start: pctx.inlineSpacing, send: pctx.inlineSpacing)
+    if border.left notin BorderStyleNoneHidden:
+      inlineBorder.start = max(lctx.cellSize.w div 2, inlineBorder.start)
+    if border.right notin BorderStyleNoneHidden:
+      inlineBorder.send = max(lctx.cellSize.w div 2, inlineBorder.send)
+    if border.top notin BorderStyleNoneHidden:
+      let d = if rowi == 0: 1 else: 2
+      blockBorder.start = max(blockBorder.start, lctx.cellSize.h div d)
+    if border.bottom notin BorderStyleNoneHidden:
+      let d = if row.next == nil: 1 else: 2
+      blockBorder.send = max(blockBorder.send, lctx.cellSize.h div d)
+    if box.next != nil:
+      border[dtHorizontal].send = BorderStyleNone
+    if row.next != nil:
+      border[dtVertical].send = BorderStyleNone
+    result.borderWidth += inlineBorder.sum()
+    let merge = [dtHorizontal: not firstCell, dtVertical: rowi > 0]
+    lctx.layoutTableCell(box, space, border, merge)
     let wrapper = CellWrapper(
       box: box,
       colspan: colspan,
       rowspan: rowspan,
       coli: n,
+      inlineBorder: inlineBorder,
       reflow: space.w.t == scMaxContent #TODO performance hack
     )
     result.cells.add(wrapper)
     if rowspan > 1:
       pctx.growing.add(wrapper)
       wrapper.grown = rowspan - 1
-    if pctx.cols.len < n + colspan:
-      pctx.cols.setLen(n + colspan)
-    if result.reflow.len < n + colspan:
-      result.reflow.setLen(n + colspan)
+    let nextn = n + colspan
+    if pctx.cols.len < nextn:
+      pctx.cols.setLen(nextn)
+    if result.reflow.len < nextn:
+      result.reflow.setLen(nextn)
     let minw = box.state.intr.w div colspan
-    if border.left notin BorderStyleNoneHidden:
-      result.width += lctx.cellSize.w
-      result.borderWidth += lctx.cellSize.w
-    if border.right notin BorderStyleNoneHidden:
-      result.width += lctx.cellSize.w
-      result.borderWidth += lctx.cellSize.w
-    if border.top notin BorderStyleNoneHidden:
-      result.borderTop = max(lctx.cellSize.h, result.borderTop)
-    if border.bottom notin BorderStyleNoneHidden:
-      result.borderBottom = max(lctx.cellSize.h, result.borderBottom)
     let w = box.state.size.w div colspan
-    for i in n ..< n + colspan:
-      # Add spacing.
-      result.width += pctx.inlineSpacing
+    for i in n ..< nextn:
       # Figure out this cell's effect on the column's width.
       # Four cases exist:
       # 1. colwidth already fixed, cell width is fixed: take maximum
@@ -2297,10 +2336,12 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
           pctx.cols[i].width = minw
           result.reflow[i] = true
       result.width += pctx.cols[i].width
-      # Add spacing to the right side.
-      result.width += pctx.inlineSpacing
+    # add spacing for border inside colspan
+    result.width += pctx.inlineSpacing * (colspan - 1) * 2
     n += colspan
     inc i
+  result.blockBorder = blockBorder
+  result.width += result.borderWidth
   pctx.growRowspan(result, growi, i, n, growlen)
   pctx.sortGrowing()
   when defined(debug):
@@ -2349,21 +2390,18 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
       # </TABLE>
       # the TD with a width of 5ch should be 9ch wide as well.
       let space = availableSpace(w = stretch(w), h = maxContent())
-      let border = cellw.box.state.border
-      tctx.lctx.layoutTableCell(cellw.box, space, border)
+      let border = cellw.box.sizes.border
+      let merge = cellw.box.state.merge
+      tctx.lctx.layoutTableCell(cellw.box, space, border, merge)
       w = max(w, cellw.box.state.size.w)
       row.state.intr.w += cellw.box.state.intr.w
     let cell = cellw.box
-    x += tctx.inlineSpacing
+    x += cellw.inlineBorder.start
     if cell != nil:
-      if cell.state.border.left notin BorderStyleNoneHidden:
-        x += tctx.lctx.attrs.ppc
       cell.state.offset.x += x
-      if cell.state.border.right notin BorderStyleNoneHidden:
-        w += tctx.lctx.attrs.ppc
-    x += tctx.inlineSpacing
+    x += cellw.inlineBorder.send
     x += w
-    row.state.intr.w += tctx.inlineSpacing * 2
+    row.state.intr.w += cellw.inlineBorder.sum()
     n += cellw.colspan
     const HasNoBaseline = {
       VerticalAlignTop, VerticalAlignMiddle, VerticalAlignBottom
@@ -2475,8 +2513,7 @@ proc needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
 
 proc redistributeWidth(tctx: var TableContext) =
   # Remove inline spacing from distributable width.
-  var W = max(tctx.space.w.u - tctx.cols.len * tctx.inlineSpacing * 2 -
-    tctx.borderWidth, 0)
+  var W = max(tctx.space.w.u - tctx.borderWidth, 0)
   var weight = 0f32
   var avail = tctx.calcUnspecifiedColIndices(W, weight)
   var redo = true
@@ -2520,13 +2557,13 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
   for roww in tctx.rows:
     if roww.box.computed{"visibility"} == VisibilityCollapse:
       continue
-    y += tctx.blockSpacing + roww.borderTop
+    y += roww.blockBorder.start
     let row = roww.box
     tctx.layoutTableRow(roww, table, row)
     row.state.offset.y += y
     row.state.offset.x += sizes.padding.left
     row.state.size.w += sizes.padding[dtHorizontal].sum()
-    y += tctx.blockSpacing + roww.borderBottom
+    y += roww.blockBorder.send
     y += row.state.size.h
     table.state.size.w = max(row.state.size.w, table.state.size.w)
     table.state.intr.w = max(row.state.intr.w, table.state.intr.w)
@@ -2547,13 +2584,7 @@ proc layoutCaption(lctx: LayoutContext; box: BlockBox; space: AvailableSpace;
 
 proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
     sizes: ResolvedSizes) =
-  if table.computed{"border-collapse"} != BorderCollapseCollapse and
-      tctx.border.left in BorderStyleNoneHidden and
-      tctx.border.right in BorderStyleNoneHidden and
-      tctx.border.top in BorderStyleNoneHidden and
-      tctx.border.bottom in BorderStyleNoneHidden:
-    # if borders aren't default, ignore border-collapse
-    #TODO this doesn't look like a very good solution
+  if table.computed{"border-collapse"} != BorderCollapseCollapse:
     tctx.inlineSpacing = table.computed{"-cha-border-spacing-inline"}.px(0)
     tctx.blockSpacing = table.computed{"-cha-border-spacing-block"}.px(0)
   tctx.preLayoutTableRows(table) # first pass
@@ -2596,11 +2627,7 @@ proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   let lctx = bctx.lctx
   let table = BlockBox(box.firstChild)
   table.resetState()
-  var tctx = TableContext(
-    lctx: lctx,
-    space: sizes.space,
-    border: box.computed.getBorder()
-  )
+  var tctx = TableContext(lctx: lctx, space: sizes.space)
   let caption = BlockBox(table.next)
   var captionSpace = availableSpace(
     w = fitContent(sizes.space.w),
@@ -2625,7 +2652,7 @@ proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
         captionSpace.w = stretch(table.state.size.w)
       if captionSpace.w.u != caption.state.size.w: # desired size changed; redo
         lctx.layoutCaption(caption, captionSpace, captionSizes)
-    let outerSize = caption.outerSize(captionSizes)
+    let outerSize = caption.outerSize(captionSizes, lctx)
     case caption.computed{"caption-side"}
     of CaptionSideTop, CaptionSideBlockStart:
       table.state.offset.y += outerSize.h
@@ -2676,13 +2703,13 @@ proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox;
-    sizes: ResolvedSizes) =
+    sizes: ResolvedSizes; lctx: LayoutContext) =
   for dim in DimensionType:
     mctx.maxSize[dim] = max(mctx.maxSize[dim], child.state.size[dim])
     mctx.maxMargin[dim].start = max(mctx.maxMargin[dim].start,
-      sizes.margin[dim].start)
+      sizes.margin[dim].start + sizes.borderSize(dim, lctx).start)
     mctx.maxMargin[dim].send = max(mctx.maxMargin[dim].send,
-      sizes.margin[dim].send)
+      sizes.margin[dim].send + sizes.borderSize(dim, lctx).send)
 
 proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     wt: FlexWeightType; dim: DimensionType; lctx: LayoutContext) =
@@ -2710,7 +2737,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       if it.weights[wt] == 0 and it.sizes.space[dim].t != scMaxContent:
         # force max-content relayout for the performance hack
         #TODO get rid of the max-content check (weight check must stay)
-        mctx.updateMaxSizes(it.child, it.sizes)
+        mctx.updateMaxSizes(it.child, it.sizes, lctx)
         continue
       var uw = unit * it.weights[wt]
       if wt == fwtShrink:
@@ -2740,13 +2767,13 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
       totalWeight += it.weights[wt]
       if it.weights[wt] == 0: # frozen, relayout immediately
         lctx.layoutFlexItem(it.child, it.sizes)
-        mctx.updateMaxSizes(it.child, it.sizes)
+        mctx.updateMaxSizes(it.child, it.sizes, lctx)
       else: # delay relayout
         relayout.add(i)
     for i in relayout:
       let child = mctx.pending[i].child
       lctx.layoutFlexItem(child, mctx.pending[i].sizes)
-      mctx.updateMaxSizes(child, mctx.pending[i].sizes)
+      mctx.updateMaxSizes(child, mctx.pending[i].sizes, lctx)
 
 proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     sizes: ResolvedSizes) =
@@ -2790,7 +2817,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       # We can get by without adding offset, because flex items are
       # always layouted at (0, 0).
       let underflow = sizes.space[odim].u - it.child.state.size[odim] -
-        it.sizes.margin[odim].sum()
+        it.sizes.margin[odim].sum() - it.sizes.borderSize(odim, lctx).sum()
       if underflow > 0 and start.auto:
         # we don't really care about the end margin, because that is
         # already taken into account by AvailableSpace
@@ -2799,9 +2826,11 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
         else:
           it.sizes.margin[odim].start = underflow div 2
     # margins are added here, since they belong to the flex item.
-    it.child.state.offset[odim] += offset[odim] + it.sizes.margin[odim].start
+    it.child.state.offset[odim] += offset[odim] + it.sizes.margin[odim].start +
+      it.sizes.borderSize(odim, lctx).start
     offset[dim] += it.child.state.size[dim]
     offset[dim] += it.sizes.margin[dim].send
+    offset[dim] += it.sizes.borderSize(dim, lctx).send
     let intru = it.child.state.intr[dim] + it.sizes.margin[dim].sum()
     if fctx.canWrap:
       intr[dim] = max(intr[dim], intru)
@@ -2861,8 +2890,8 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
         sizes.space[dim].isDefinite and
         mctx.totalSize[dim] + child.state.size[dim] > sizes.space[dim].u):
       fctx.flushMain(mctx, sizes)
-    let outerSize = child.outerSize(dim, childSizes)
-    mctx.updateMaxSizes(child, childSizes)
+    let outerSize = child.outerSize(dim, childSizes, lctx)
+    mctx.updateMaxSizes(child, childSizes, lctx)
     let grow = child.computed{"flex-grow"}
     let shrink = child.computed{"flex-shrink"}
     mctx.totalWeight[fwtGrow] += grow

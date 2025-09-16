@@ -24,9 +24,9 @@ type
     start*: CSSBorderStyle
     send*: CSSBorderStyle
 
-  CSSBorder* = object
-    s*: array[DimensionType, BorderStyleSpan]
-    merge*: array[DimensionType, bool]
+  CSSBorder* = array[DimensionType, BorderStyleSpan]
+
+  CSSBorderMerge* = array[DimensionType, bool]
 
   BoxLayoutState* = object
     # offset relative to parent
@@ -42,7 +42,8 @@ type
     # Bottom margin of the box, collapsed with the margin of children.
     # This is already added to size, and only used by flex layout.
     marginBottom*: LUnit
-    border*: CSSBorder
+    # Indicates which borders have been merged with an adjacent one.
+    merge*: CSSBorderMerge
 
   Area* = object
     offset*: Offset
@@ -99,6 +100,7 @@ type
     padding*: RelativeRect
     space*: AvailableSpace
     bounds*: Bounds
+    border*: CSSBorder
 
   CSSBox* = ref object of RootObj
     parent* {.cursor.}: CSSBox
@@ -201,16 +203,16 @@ proc bottom*(s: RelativeRect): LUnit =
   return s[dtVertical].send
 
 proc left*(b: CSSBorder): CSSBorderStyle =
-  return b.s[dtHorizontal].start
+  return b[dtHorizontal].start
 
 proc right*(b: CSSBorder): CSSBorderStyle =
-  return b.s[dtHorizontal].send
+  return b[dtHorizontal].send
 
 proc top*(b: CSSBorder): CSSBorderStyle =
-  return b.s[dtVertical].start
+  return b[dtVertical].start
 
 proc bottom*(b: CSSBorder): CSSBorderStyle =
-  return b.s[dtVertical].send
+  return b[dtVertical].send
 
 proc topLeft*(s: RelativeRect): Offset =
   return offset(x = s.left, y = s.top)

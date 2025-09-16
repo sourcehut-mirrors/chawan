@@ -242,22 +242,22 @@ proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
         break
       x += w
   # Draw corners.
-  let tl = if upmore: VerticalBar else: CornerTopLeft
-  let tr = if upmore: VerticalBar else: CornerTopRight
-  let bl = if downmore: VerticalBar else: CornerBottomLeft
-  let br = if downmore: VerticalBar else: CornerBottomRight
+  let tl = if upmore: bdcVerticalBar else: bdcCornerTopLeft
+  let tr = if upmore: bdcVerticalBar else: bdcCornerTopRight
+  let bl = if downmore: bdcVerticalBar else: bdcCornerBottomLeft
+  let br = if downmore: bdcVerticalBar else: bdcCornerBottomRight
   const fmt = Format()
-  display[sy * display.width + sx].str = tl
-  display[sy * display.width + ex].str = tr
-  display[ey * display.width + sx].str = bl
-  display[ey * display.width + ex].str = br
+  display[sy * display.width + sx].str = $tl
+  display[sy * display.width + ex].str = $tr
+  display[ey * display.width + sx].str = $bl
+  display[ey * display.width + ex].str = $br
   display[sy * display.width + sx].format = fmt
   display[sy * display.width + ex].format = fmt
   display[ey * display.width + sx].format = fmt
   display[ey * display.width + ex].format = fmt
   # Draw top, bottom borders.
-  let ups = if upmore: " " else: HorizontalBar
-  let downs = if downmore: " " else: HorizontalBar
+  let ups = if upmore: " " else: $bdcHorizontalBar
+  let downs = if downmore: " " else: $bdcHorizontalBar
   for x in sx + 1 .. ex - 1:
     display[sy * display.width + x].str = ups
     display[ey * display.width + x].str = downs
@@ -269,8 +269,8 @@ proc drawBorders(display: var FixedGrid; sx, ex, sy, ey: int;
     display[ey * display.width + sx + (ex - sx) div 2].str = ":"
   # Draw left, right borders.
   for y in sy + 1 .. ey - 1:
-    display[y * display.width + sx].str = VerticalBar
-    display[y * display.width + ex].str = VerticalBar
+    display[y * display.width + sx].str = $bdcVerticalBar
+    display[y * display.width + ex].str = $bdcVerticalBar
     display[y * display.width + sx].format = fmt
     display[y * display.width + ex].format = fmt
 

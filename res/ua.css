@@ -35,6 +35,8 @@ ol > li:nth-child(n+10000) { margin-left: 3ch }
 
 blockquote { margin: 1em }
 
+hr { border-bottom-style: outset; display: flow-root }
+
 q::before { content: open-quote }
 q::after { content: close-quote }
 

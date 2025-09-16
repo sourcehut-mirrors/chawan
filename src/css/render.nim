@@ -457,8 +457,7 @@ proc inheritClipBox(box: BlockBox; parent: CSSBox) =
   box.render.clipBox = clipBox
 
 proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
-    border: CSSBorder; start, send: Offset; element: Element;
-    clipBox: ClipBox) =
+    start, send: Offset; box: BlockBox) =
   let start = start - state.cellSize
   let send = send + state.cellSize
   let startx = (start.x div state.attrs.ppc).toInt()
@@ -466,63 +465,70 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
   let endx = (send.x div state.attrs.ppc).toInt()
   let endy = (send.y div state.attrs.ppl).toInt()
   var buf = ""
-  if border.top notin BorderStyleNoneHidden:
-    if border.left notin BorderStyleNoneHidden:
-      if border.merge[dtHorizontal]:
-        if border.merge[dtVertical]:
-          buf &= SideBarCross
+  var top = box.sizes.border.top
+  var bottom = box.sizes.border.bottom
+  var left = box.sizes.border.left
+  var right = box.sizes.border.right
+  if top notin BorderStyleNoneHidden:
+    if left notin BorderStyleNoneHidden:
+      if box.state.merge[dtHorizontal]:
+        if box.state.merge[dtVertical]:
+          buf &= top.borderChar(bdcSideBarCross)
         else:
-          buf &= SideBarTop
+          buf &= top.borderChar(bdcSideBarTop)
       else:
-        if border.merge[dtVertical]:
-          buf &= SideBarLeft
+        if box.state.merge[dtVertical]:
+          buf &= left.borderChar(bdcSideBarLeft)
         else:
-          buf &= CornerTopLeft
-    else:
-      buf &= HorizontalBar
+          buf &= left.borderChar(bdcCornerTopLeft)
     for i in startx + 1 ..< endx - 1:
-      buf &= HorizontalBar
-    if border.right notin BorderStyleNoneHidden:
-      if border.merge[dtVertical]:
-        buf &= SideBarRight
+      buf &= top.borderChar(bdcHorizontalBar)
+    if right notin BorderStyleNoneHidden:
+      if box.state.merge[dtVertical]:
+        buf &= right.borderChar(bdcSideBarRight)
       else:
-        buf &= CornerTopRight
-    else:
-      buf &= HorizontalBar
-    grid.setText(state, buf, start, Format(), element, clipBox)
+        buf &= top.borderChar(bdcCornerTopRight)
+    let fgcolor = box.computed{"border-top-color"}.cellColor()
+    let format = initFormat(defaultColor, fgcolor, {})
+    grid.setText(state, buf, start, format, box.element, box.render.clipBox)
     buf.setLen(0)
-  let hasLeft = border.left notin BorderStyleNoneHidden
-  let hasRight = border.right notin BorderStyleNoneHidden
+  let hasLeft = left notin BorderStyleNoneHidden
+  let hasRight = right notin BorderStyleNoneHidden
   if hasLeft or hasRight:
-    buf &= VerticalBar
+    buf &= left.borderChar(bdcVerticalBar)
+    let rbuf = right.borderChar(bdcVerticalBar)
     var soff = start
     var eoff = send
     eoff.x -= state.cellSize.w
-    for y in starty + 1 ..< endy:
+    let fgcolorLeft = box.computed{"border-left-color"}.cellColor()
+    let formatLeft = initFormat(defaultColor, fgcolorLeft, {})
+    let fgcolorRight = box.computed{"border-left-color"}.cellColor()
+    let formatRight = initFormat(defaultColor, fgcolorRight, {})
+    for y in starty + 1 ..< endy - 1:
       let sy = (y * state.attrs.ppl).toLUnit()
       if hasLeft:
         soff.y = sy
-        grid.setText(state, buf, soff, Format(), element, clipBox)
+        grid.setText(state, buf, soff, formatLeft, box.element,
+          box.render.clipBox)
       if hasRight:
         eoff.y = sy
-        grid.setText(state, buf, eoff, Format(), element, clipBox)
+        grid.setText(state, rbuf, eoff, formatRight, box.element,
+          box.render.clipBox)
     buf.setLen(0)
-  if border.bottom notin BorderStyleNoneHidden:
-    if border.left notin BorderStyleNoneHidden:
-      if border.merge[dtHorizontal]:
-        buf &= SideBarBottom
+  if bottom notin BorderStyleNoneHidden:
+    if left notin BorderStyleNoneHidden:
+      if box.state.merge[dtHorizontal]:
+        buf &= bottom.borderChar(bdcSideBarBottom)
       else:
-        buf &= CornerBottomLeft
-    else:
-      buf &= HorizontalBar
+        buf &= bottom.borderChar(bdcCornerBottomLeft)
     for i in startx + 1 ..< endx - 1:
-      buf &= HorizontalBar
-    if border.right notin BorderStyleNoneHidden:
-      buf &= CornerBottomRight
-    else:
-      buf &= HorizontalBar
+      buf &= bottom.borderChar(bdcHorizontalBar)
+    if right notin BorderStyleNoneHidden:
+      buf &= bottom.borderChar(bdcCornerBottomRight)
     var offset = offset(x = start.x, y = send.y - state.attrs.ppl)
-    grid.setText(state, buf, offset, Format(), element, clipBox)
+    let fgcolor = box.computed{"border-left-color"}.cellColor()
+    let format = initFormat(defaultColor, fgcolor, {})
+    grid.setText(state, buf, offset, format, box.element, box.render.clipBox)
 
 proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
     box: BlockBox; offset: Offset; pass2 = false) =
@@ -548,8 +554,7 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
       else:
         grid.paintBackground(state, bgcolor, offset, endOffset, box.element,
           bgcolor0.a, box.render.clipBox)
-    grid.paintBorder(state, box.state.border, offset, endOffset, box.element,
-      box.render.clipBox)
+    grid.paintBorder(state, offset, endOffset, box)
     if box.computed{"background-image"} != nil:
       # ugly hack for background-image display... TODO actually display images
       const s = "[img]"
