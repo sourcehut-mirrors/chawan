@@ -1,15 +1,10 @@
 reduce binary size:
 - fbf for unifont
-- init some JS APIs from byte-code compiled JS?
-	* ones that return static values could just use a
-	  defineProperty. e.g. most of navigator, parts of screen
 charsets:
 - set up some fuzzer
 - use appropriate charsets in forms, urls, etc.
 display:
-- important: buffer list
-	* either a buffer list buffer, or a buffer list popup menu. ideally
-	  both.
+- important: buffer list menu
 - dark mode (basically max Y)
 config:
 - important: config editor
@@ -31,7 +26,6 @@ buffer:
 	* needs some sort of conditional formatting in pager, e.g. give
 	  all Formats an id in buffer and send a list of "if URL
 	  visited, change Format" commands
-- configurable/better url filtering in loader
 - when the log buffer crashes, print its contents to stderr
 	* easiest way seems to be to just dump its cache file
 - add tabs
@@ -55,11 +49,6 @@ javascript:
 - ReadableStream
 - separate console for each buffer
 layout:
-- box borders
-	* will probably need special treatment, as borders must round to
-	  1ch in x direction and 1em in y direction.
-	* table is high priority; for other boxes, I don't know if it
-	  would work
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
 - layout caching
