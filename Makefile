@@ -140,7 +140,7 @@ $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim $(twtstr) $(myposix) $(chafile)
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/mancha" $(FLAGS) \
 		-o:"$(OUTDIR_BIN)/mancha" $(FLAGS) adapter/tools/mancha.nim
 
-unicode_version = 16.0.0
+unicode_version = 17.0.0
 
 .PHONY: unicode_gen
 unicode_gen:
