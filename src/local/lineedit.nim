@@ -42,12 +42,24 @@ type
 
 jsDestructor(LineEdit)
 
+proc width(edit: LineEdit; u: uint32): int =
+  if edit.hide:
+    return 1
+  return u.width()
+
+proc width(edit: LineEdit; s: string): int =
+  var n = 0
+  for u in s.points:
+    n += edit.width(u)
+  n
+
 # Note: capped at edit.maxwidth.
 proc getDisplayWidth(edit: LineEdit): int =
   var dispw = 0
   var i = edit.shifti
   while i < edit.news.len and dispw < edit.maxwidth:
-    dispw += edit.news.nextUTF8(i).width()
+    let u = edit.news.nextUTF8(i)
+    dispw += edit.width(u)
   return dispw
 
 proc shiftView(edit: LineEdit) =
@@ -66,13 +78,14 @@ proc shiftView(edit: LineEdit) =
       else:
         while edit.shiftx > targetx:
           let u = edit.news.prevUTF8(edit.shifti)
-          edit.shiftx -= u.width()
+          edit.shiftx -= edit.width(u)
   edit.padding = 0
   # Shift view so it contains the cursor. (act 2)
   if edit.shiftx < edit.cursorx - edit.maxwidth:
     while edit.shiftx < edit.cursorx - edit.maxwidth and
         edit.shifti < edit.news.len:
-      edit.shiftx += edit.news.nextUTF8(edit.shifti).width()
+      let u = edit.news.nextUTF8(edit.shifti)
+      edit.shiftx += edit.width(u)
     if edit.shiftx > edit.cursorx - edit.maxwidth:
       # skipped over a cell because of a double-width char
       edit.padding = 1
@@ -94,20 +107,18 @@ proc generateOutput*(edit: LineEdit): FixedGrid =
   while i < edit.news.len:
     let pi = i
     let u = edit.news.nextUTF8(i)
+    let w = edit.width(u)
+    if x + w > result.width:
+      break
     if not edit.hide:
-      let w = u.width()
-      if x + w > result.width: break
       if u.isControlChar():
         result[x].str = u.controlToVisual()
-        x += result[x].str.len
       else:
         for j in pi ..< i:
           result[x].str &= edit.news[j]
-        x += w
     else:
-      if x + 1 > result.width: break
       result[x].str &= '*'
-      inc x
+    x += w
 
 proc getCursorX*(edit: LineEdit): int =
   return edit.promptw + edit.cursorx + edit.padding - edit.shiftx
@@ -118,7 +129,7 @@ proc insertCharseq(edit: LineEdit; s: string) =
     return
   edit.news.insert(s, edit.cursori)
   edit.cursori += s.len
-  edit.cursorx += s.width()
+  edit.cursorx += edit.width(s)
   edit.redraw = true
 
 proc cancel(edit: LineEdit) {.jsfunc.} =
@@ -134,7 +145,7 @@ proc backspace(edit: LineEdit) {.jsfunc.} =
     let pi = edit.cursori
     let u = edit.news.prevUTF8(edit.cursori)
     edit.news.delete(edit.cursori ..< pi)
-    edit.cursorx -= u.width()
+    edit.cursorx -= edit.width(u)
     edit.redraw = true
  
 proc write*(edit: LineEdit; s: string) =
@@ -172,14 +183,14 @@ proc kill(edit: LineEdit) {.jsfunc.} =
 proc backward(edit: LineEdit) {.jsfunc.} =
   if edit.cursori > 0:
     let u = edit.news.prevUTF8(edit.cursori)
-    edit.cursorx -= u.width()
+    edit.cursorx -= edit.width(u)
     if edit.cursorx < edit.shiftx:
       edit.redraw = true
 
 proc forward(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
     let u = edit.news.nextUTF8(edit.cursori)
-    edit.cursorx += u.width()
+    edit.cursorx += edit.width(u)
     if edit.cursorx >= edit.shiftx + edit.maxwidth:
       edit.redraw = true
 
@@ -189,7 +200,7 @@ proc prevWord(edit: LineEdit) {.jsfunc.} =
   let pi = edit.cursori
   let u = edit.news.prevUTF8(edit.cursori)
   if edit.luctx.breaksWord(u):
-    edit.cursorx -= u.width()
+    edit.cursorx -= edit.width(u)
   else:
     edit.cursori = pi
   while edit.cursori > 0:
@@ -198,14 +209,14 @@ proc prevWord(edit: LineEdit) {.jsfunc.} =
     if edit.luctx.breaksWord(u):
       edit.cursori = pi
       break
-    edit.cursorx -= u.width()
+    edit.cursorx -= edit.width(u)
   if edit.cursorx < edit.shiftx:
     edit.redraw = true
 
 proc nextWord(edit: LineEdit) {.jsfunc.} =
   while edit.cursori < edit.news.len:
     let u = edit.news.nextUTF8(edit.cursori)
-    edit.cursorx += u.width()
+    edit.cursorx += edit.width(u)
     if edit.luctx.breaksWord(u):
       if edit.cursorx >= edit.shiftx + edit.maxwidth:
         edit.redraw = true
@@ -242,7 +253,7 @@ proc begin(edit: LineEdit) {.jsfunc.} =
 proc `end`(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
     edit.cursori = edit.news.len
-    edit.cursorx = edit.news.width()
+    edit.cursorx = edit.width(edit.news)
     if edit.cursorx >= edit.shiftx + edit.maxwidth:
       edit.redraw = true
 
@@ -284,14 +295,13 @@ proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
 proc readLine*(prompt, current: string; termwidth: int; hide: bool;
     hist: History; luctx: LUContext): LineEdit =
   let promptw = prompt.width()
-  return LineEdit(
+  let edit = LineEdit(
     prompt: prompt,
     promptw: promptw,
     news: current,
     hide: hide,
     redraw: true,
     cursori: current.len,
-    cursorx: current.width(),
     # - 1, so that the cursor always has place
     maxwidth: termwidth - promptw - 1,
     hist: hist,
@@ -300,6 +310,8 @@ proc readLine*(prompt, current: string; termwidth: int; hide: bool;
     # Skip the last history entry if it's identical to the input.
     skipLast: hist.last != nil and hist.last.s == current
   )
+  edit.cursorx = edit.width(current)
+  return edit
 
 proc addLineEditModule*(ctx: JSContext) =
   ctx.registerType(LineEdit)

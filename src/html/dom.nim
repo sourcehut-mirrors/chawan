@@ -5155,7 +5155,7 @@ proc inputString*(input: HTMLInputElement): RefString =
       return newRefString("*")
     return newRefString(" ")
   of itPassword:
-    return newRefString('*'.repeat(input.value.len))
+    return newRefString('*'.repeat(input.value.pointLen))
   of itReset:
     if input.attrb(satValue):
       return input.internalValue
