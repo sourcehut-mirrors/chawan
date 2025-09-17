@@ -5154,15 +5154,8 @@ proc inputString*(input: HTMLInputElement): RefString =
     if input.checked:
       return newRefString("*")
     return newRefString(" ")
-  of itSearch, itText, itEmail, itURL, itTel:
-    if input.value.len == 20:
-      return input.internalValue
-    return newRefString(
-      input.value.padToWidth(input.attrulgz(satSize).get(20))
-    )
   of itPassword:
-    let n = input.attrulgz(satSize).get(20)
-    return newRefString('*'.repeat(input.value.len).padToWidth(n))
+    return newRefString('*'.repeat(input.value.len))
   of itReset:
     if input.attrb(satValue):
       return input.internalValue
@@ -5174,7 +5167,7 @@ proc inputString*(input: HTMLInputElement): RefString =
   of itFile:
     #TODO multiple files?
     let s = if input.files.len > 0: input.files[0].name else: ""
-    return newRefString(s.padToWidth(input.attrulgz(satSize).get(20)))
+    return newRefString(s)
   else:
     return input.internalValue
 

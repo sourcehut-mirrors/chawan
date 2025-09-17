@@ -74,35 +74,29 @@ caption[align=bottom] { caption-side: bottom }
 
 input {
 	margin-right: 1ch;
+	padding: 0 !important;
 	white-space: pre !important;
-	color: -cha-ansi(red);
-	text-decoration: underline
+	color: -cha-ansi(red) !important;
+	text-decoration: underline;
+	border-style: none -cha-bracket -cha-bracket !important;
+	border-color: -cha-ansi(default) -cha-ansi(default) -cha-ansi(red) !important;
+	height: 1em !important
 }
+input::before, input::after { content: '' !important }
 input[type=hidden i] { display: none }
-input::before { content: '[' !important; text-decoration: none; color: initial }
-input::after { content: ']' !important; text-decoration: none; color: initial }
-
 input:is([type=button i], [type=submit i], [type=reset i], [type=radio i],
 	[type=checkbox i]) {
-	text-decoration: none
-}
-
-input[type=radio i]::before {
-	content: '(' !important;
 	text-decoration: none;
-	color: initial
+	border-style: none -cha-bracket !important
+}
+input:is([type=submit i], [type=button i], [type=reset i]) {
+	border-color: -cha-ansi(red) !important
 }
 
-input[type=radio i]::after {
-	content: ')' !important;
-	text-decoration: none;
-	color: initial
-}
+input[type=radio i] { border-style: none -cha-paren !important }
 
-input:is([type=submit i], [type=button i], [type=reset i])::before,
-input:is([type=submit i], [type=button i], [type=reset i])::after, button {
-	color: -cha-ansi(red);
-	text-decoration: none
+input:is([type=submit i], [type=button i], [type=reset i]), button {
+	color: -cha-ansi(red)
 }
 
 textarea { color: -cha-ansi(red); white-space: pre }

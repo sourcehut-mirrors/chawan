@@ -277,6 +277,8 @@ type
     BorderStyleRidge = "ridge"
     BorderStyleInset = "inset"
     BorderStyleOutset = "outset"
+    BorderStyleBracket = "-cha-bracket"
+    BorderStyleParen = "-cha-paren"
 
 type
   # CSSLength may represent:
@@ -454,6 +456,7 @@ const ValueTypes = [
   cptFlexGrow: cvtNumber,
   cptFlexShrink: cvtNumber,
   cptFontWeight: cvtInteger,
+  cptInputIntrinsicSize: cvtNumber,
   cptOpacity: cvtNumber,
 
   # words
@@ -533,6 +536,7 @@ const WhiteSpacePreserve* = {
   WhitespacePre, WhitespacePreLine, WhitespacePreWrap
 }
 const BorderStyleNoneHidden* = {BorderStyleNone, BorderStyleHidden}
+const BorderStyleInput* = {BorderStyleBracket, BorderStyleParen}
 
 type
   CSSCalcSumType = enum
@@ -1626,7 +1630,7 @@ proc makeEntry(t: CSSPropertyType; zIndex: CSSZIndex): CSSComputedEntry =
 proc makeEntry*(t: CSSPropertyType; integer: int32): CSSComputedEntry =
   makeEntry(t, CSSValueHWord(integer: integer))
 
-proc makeEntry(t: CSSPropertyType; number: float32): CSSComputedEntry =
+proc makeEntry*(t: CSSPropertyType; number: float32): CSSComputedEntry =
   makeEntry(t, CSSValueHWord(number: number))
 
 proc makeEntry(t: CSSPropertyType; image: NetworkBitmap): CSSComputedEntry =
@@ -2155,20 +2159,20 @@ proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): string =
   of BorderStyleNone, BorderStyleHidden: ""
   of BorderStyleDotted:
     case c
-    of bdcHorizontalBar: "\u2508"
-    of bdcVerticalBar: "\u250A"
+    of HorizontalBar: "\u2508"
+    of VerticalBar: "\u250A"
     else: $c # no dotted corners in Unicode
   of BorderStyleDashed:
     case c
-    of bdcHorizontalBar: "\u254C"
-    of bdcVerticalBar: "\u254E"
+    of HorizontalBar: "\u254C"
+    of VerticalBar: "\u254E"
     else: $c # likewise
   of BorderStyleSolid: # the default
     $c
   of BorderStyleOutset, BorderStyleGroove: # like solid, but thicker
     case c
-    of bdcHorizontalBar: "\u2501"
-    of bdcVerticalBar: "\u2503"
+    of HorizontalBar: "\u2501"
+    of VerticalBar: "\u2503"
     of bdcCornerTopLeft: "\u250F"
     of bdcCornerTopRight: "\u2513"
     of bdcCornerBottomLeft: "\u2517"
@@ -2181,8 +2185,8 @@ proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): string =
   of BorderStyleDouble, BorderStyleInset, BorderStyleRidge:
     # interpret inset/ridge as double
     case c
-    of bdcHorizontalBar: "\u2550"
-    of bdcVerticalBar: "\u2551"
+    of HorizontalBar: "\u2550"
+    of VerticalBar: "\u2551"
     of bdcCornerTopLeft: "\u2554"
     of bdcCornerTopRight: "\u2557"
     of bdcCornerBottomLeft: "\u255A"
@@ -2192,6 +2196,16 @@ proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): string =
     of bdcSideBarTop: "\u2566"
     of bdcSideBarBottom: "\u2569"
     of bdcSideBarCross: "\u256C"
+  of BorderStyleBracket: # proprietary extension
+    case c
+    of bdcVerticalBarLeft: "["
+    of bdcVerticalBarRight: "]"
+    else: " "
+  of BorderStyleParen: # likewise
+    case c
+    of bdcVerticalBarLeft: "("
+    of bdcVerticalBarRight: ")"
+    else: " "
 
 when defined(debug):
   proc serializeEmpty*(computed: CSSValues): string =

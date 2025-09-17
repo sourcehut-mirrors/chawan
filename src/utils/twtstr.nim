@@ -21,8 +21,10 @@ const AsciiWhitespace* = {' ', '\n', '\r', '\t', '\f'}
 const HTTPWhitespace* = {' ', '\n', '\r', '\t'}
 
 type BoxDrawingChar* = enum
-  bdcHorizontalBar = "\u2500"
-  bdcVerticalBar = "\u2502"
+  bdcHorizontalBarTop = "\u2500"
+  bdcHorizontalBarBottom = "\u2500"
+  bdcVerticalBarLeft = "\u2502"
+  bdcVerticalBarRight = "\u2502"
   bdcCornerTopLeft = "\u250C"
   bdcCornerTopRight = "\u2510"
   bdcCornerBottomLeft = "\u2514"
@@ -32,6 +34,9 @@ type BoxDrawingChar* = enum
   bdcSideBarTop = "\u252C"
   bdcSideBarBottom = "\u2534"
   bdcSideBarCross = "\u253C"
+
+const HorizontalBar* = {bdcHorizontalBarTop, bdcHorizontalBarBottom}
+const VerticalBar* = {bdcVerticalBarLeft, bdcVerticalBarRight}
 
 proc nextUTF8*(s: openArray[char]; i: var int): uint32 =
   var j = i

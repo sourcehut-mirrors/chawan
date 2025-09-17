@@ -206,6 +206,10 @@ proc applyLengthHint(ctx: var ApplyValueContext; p: CSSPropertyType;
   let length = resolveLength(unit, float32(u), ctx.window.settings.attrsp[])
   ctx.applyPresHint(makeEntry(p, length))
 
+const InputTypeWithSize* = {
+  itSearch, itText, itEmail, itPassword, itURL, itTel
+}
+
 proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   case element.tagType
   of TAG_TABLE:
@@ -252,12 +256,10 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
     ctx.applyColorHint(cptColor, element.attr(satColor))
   of TAG_INPUT:
     let input = HTMLInputElement(element)
-    const InputTypeWithSize = {
-      itSearch, itText, itEmail, itPassword, itURL, itTel
-    }
     if input.inputType in InputTypeWithSize:
-      if s := element.attrul(satSize):
-        ctx.applyLengthHint(cptWidth, cuCh, s)
+      let n = float32(element.attrulgz(satSize).get(20))
+      let length = resolveLength(cuCh, n, ctx.window.settings.attrsp[])
+      ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, length.npx))
   of TAG_SELECT:
     if element.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)

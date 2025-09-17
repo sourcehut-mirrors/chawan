@@ -252,16 +252,18 @@ proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
     return
   if offset.x > clipBox.send.x:
     return
-  var x = (offset.x div state.attrs.ppc).toInt
+  let rx = offset.x div state.attrs.ppc
+  var x = rx.toInt
   # Give room for rounding errors.
-  #TODO I'm sure there is a better way to do this, but this seems OK for now.
-  let sx = max((clipBox.start.x - state.attrs.ppc) div state.attrs.ppc, 0)
+  let sx = max((clipBox.start.x div state.attrs.ppc).toInt, 0)
   var i = 0
   while x < sx and i < s.len:
     x += s.nextUTF8(i).width()
   if x < sx: # highest x is outside the clipping box, no need to draw
     return
-  let ex = ((clipBox.send.x + state.attrs.ppc) div state.attrs.ppc).toInt
+  let diff = rx - x.toLUnit()
+  let ppc2 = state.attrs.ppc div 2
+  let ex = ((clipBox.send.x + ppc2 - diff) div state.attrs.ppc).toInt
   var j = i
   var targetX = x
   while targetX < ex and j < s.len:
@@ -463,7 +465,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
   let startx = (start.x div state.attrs.ppc).toInt()
   let starty = (start.y div state.attrs.ppl).toInt()
   let endx = (send.x div state.attrs.ppc).toInt()
-  let endy = (send.y div state.attrs.ppl).toInt()
+  var endy = (send.y div state.attrs.ppl).toInt()
   var buf = ""
   var top = box.sizes.border.top
   var bottom = box.sizes.border.bottom
@@ -482,7 +484,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
         else:
           buf &= left.borderChar(bdcCornerTopLeft)
     for i in startx + 1 ..< endx - 1:
-      buf &= top.borderChar(bdcHorizontalBar)
+      buf &= top.borderChar(bdcHorizontalBarTop)
     if right notin BorderStyleNoneHidden:
       if box.state.merge[dtVertical]:
         buf &= right.borderChar(bdcSideBarRight)
@@ -495,8 +497,8 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
   let hasLeft = left notin BorderStyleNoneHidden
   let hasRight = right notin BorderStyleNoneHidden
   if hasLeft or hasRight:
-    buf &= left.borderChar(bdcVerticalBar)
-    let rbuf = right.borderChar(bdcVerticalBar)
+    buf &= left.borderChar(bdcVerticalBarLeft)
+    let rbuf = right.borderChar(bdcVerticalBarRight)
     var soff = start
     var eoff = send
     eoff.x -= state.cellSize.w
@@ -516,18 +518,24 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
           box.render.clipBox)
     buf.setLen(0)
   if bottom notin BorderStyleNoneHidden:
-    if left notin BorderStyleNoneHidden:
+    let proprietary = bottom in {BorderStyleBracket, BorderStyleParen}
+    if left notin BorderStyleNoneHidden and not proprietary:
       if box.state.merge[dtHorizontal]:
         buf &= bottom.borderChar(bdcSideBarBottom)
       else:
         buf &= bottom.borderChar(bdcCornerBottomLeft)
     for i in startx + 1 ..< endx - 1:
-      buf &= bottom.borderChar(bdcHorizontalBar)
-    if right notin BorderStyleNoneHidden:
+      buf &= bottom.borderChar(bdcHorizontalBarBottom)
+    if right notin BorderStyleNoneHidden and not proprietary:
       buf &= bottom.borderChar(bdcCornerBottomRight)
     var offset = offset(x = start.x, y = send.y - state.attrs.ppl)
-    let fgcolor = box.computed{"border-left-color"}.cellColor()
-    let format = initFormat(defaultColor, fgcolor, {})
+    var flags: set[FormatFlag] = {}
+    if proprietary:
+      offset.x += state.attrs.ppc
+      offset.y -= state.attrs.ppl
+      flags.incl(ffUnderline)
+    let fgcolor = box.computed{"border-bottom-color"}.cellColor()
+    let format = initFormat(defaultColor, fgcolor, flags)
     grid.setText(state, buf, offset, format, box.element, box.render.clipBox)
 
 proc renderBlock(grid: var FlexibleGrid; state: var RenderState;

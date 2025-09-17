@@ -195,6 +195,7 @@ type
     cptFlexGrow = "flex-grow"
     cptFlexShrink = "flex-shrink"
     cptFontWeight = "font-weight"
+    cptInputIntrinsicSize = "-cha-input-intrinsic-size"
     cptOpacity = "opacity"
 
     # word properties: stored as (64-bit) word

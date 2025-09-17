@@ -159,7 +159,8 @@ proc borderSize(sizes: ResolvedSizes; dim: DimensionType; lctx: LayoutContext):
   var span = Span()
   if sizes.border[dim].start notin BorderStyleNoneHidden:
     span.start = lctx.cellSize[dim]
-  if sizes.border[dim].send notin BorderStyleNoneHidden:
+  if sizes.border[dim].send notin BorderStyleNoneHidden and
+      (dim == dtHorizontal or sizes.border[dim].send notin BorderStyleInput):
     span.send = lctx.cellSize[dim]
   return span
 
@@ -389,7 +390,8 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
   var sizes = ResolvedSizes(
     margin: lctx.resolveMargins(stretch(size.w), computed),
     padding: lctx.resolvePadding(stretch(size.w), computed),
-    bounds: DefaultBounds
+    bounds: DefaultBounds,
+    border: computed.resolveBorder()
   )
   lctx.resolveAbsoluteWidth(size, positioned, computed, sizes)
   lctx.resolveAbsoluteHeight(size, positioned, computed, sizes)
@@ -426,7 +428,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
     margin: lctx.resolveMargins(space.w, computed),
     padding: padding,
     space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed, flexItem = true)
+    bounds: lctx.resolveBounds(space, paddingSum, computed, flexItem = true),
+    border: computed.resolveBorder()
   )
   if dim != dtHorizontal:
     sizes.space.h = maxContent()
@@ -556,7 +559,8 @@ proc resolveBlockSizes(lctx: LayoutContext; space: AvailableSpace;
     # resolveBlockWidth may change them beforehand.
     lctx.roundSmallMarginsAndPadding(sizes)
   if sizes.space.h.isDefinite() and sizes.space.h.u == 0 and
-      paddingSum[dtVertical] == 0:
+      paddingSum[dtVertical] == 0 and
+      sizes.border.bottom notin BorderStyleInput:
     # prevent ugly <hr> when set using border (not just border-style-bottom)
     sizes.border[dtHorizontal] = BorderStyleSpan()
     if sizes.border[dtVertical].send notin BorderStyleNoneHidden:
@@ -2712,11 +2716,12 @@ const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox;
     sizes: ResolvedSizes; lctx: LayoutContext) =
   for dim in DimensionType:
-    mctx.maxSize[dim] = max(mctx.maxSize[dim], child.state.size[dim])
+    mctx.maxSize[dim] = max(mctx.maxSize[dim], child.state.size[dim] +
+      sizes.borderSize(dim, lctx).sum())
     mctx.maxMargin[dim].start = max(mctx.maxMargin[dim].start,
-      sizes.margin[dim].start + sizes.borderSize(dim, lctx).start)
+      sizes.margin[dim].start)
     mctx.maxMargin[dim].send = max(mctx.maxMargin[dim].send,
-      sizes.margin[dim].send + sizes.borderSize(dim, lctx).send)
+      sizes.margin[dim].send)
 
 proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     wt: FlexWeightType; dim: DimensionType; lctx: LayoutContext) =
@@ -2809,7 +2814,8 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       # if the max height is greater than our height, then take max height
       # instead. (if the box's available height is definite, then this will
       # change nothing, so we skip it as an optimization.)
-      it.sizes.space[odim] = stretch(h - it.sizes.margin[odim].sum())
+      it.sizes.space[odim] = stretch(h - it.sizes.margin[odim].sum() -
+        it.sizes.borderSize(odim, lctx).sum())
       if odim == dtVertical:
         # Exclude the bottom margin; space only applies to the actual
         # height.
@@ -2833,11 +2839,10 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
         else:
           it.sizes.margin[odim].start = underflow div 2
     # margins are added here, since they belong to the flex item.
-    it.child.state.offset[odim] += offset[odim] + it.sizes.margin[odim].start +
-      it.sizes.borderSize(odim, lctx).start
+    it.child.state.offset[odim] += offset[odim] + it.sizes.margin[odim].start
     offset[dim] += it.child.state.size[dim]
     offset[dim] += it.sizes.margin[dim].send
-    offset[dim] += it.sizes.borderSize(dim, lctx).send
+    offset[dim] += it.sizes.borderSize(dim, lctx).sum()
     let intru = it.child.state.intr[dim] + it.sizes.margin[dim].sum()
     if fctx.canWrap:
       intr[dim] = max(intr[dim], intru)

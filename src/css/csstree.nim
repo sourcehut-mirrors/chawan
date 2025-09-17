@@ -436,9 +436,21 @@ proc addAnchorChildren(frame: var TreeFrame) =
 proc addChildren(frame: var TreeFrame) =
   case frame.parent.tagType
   of TAG_INPUT:
-    let cdata = HTMLInputElement(frame.parent).inputString()
-    if cdata != nil:
-      frame.addText(cdata)
+    let input = HTMLInputElement(frame.parent)
+    let cdata = input.inputString()
+    if input.inputType in InputTypeWithSize:
+      let computed = frame.computed.inheritProperties()
+      let n = frame.computed{"-cha-input-intrinsic-size"}
+      computed{"display"} = DisplayBlock
+      computed{"width"} = cssLength(n)
+      computed{"overflow-x"} = OverflowHidden
+      var aframe = frame.ctx.initTreeFrame(input, computed)
+      if cdata != nil:
+        aframe.addText(cdata)
+      frame.addAnon(computed, move(aframe.children))
+    else:
+      if cdata != nil:
+        frame.addText(cdata)
   of TAG_TEXTAREA:
     #TODO cache (do the same as with input, and add borders in render)
     frame.addText(HTMLTextAreaElement(frame.parent).textAreaString())
