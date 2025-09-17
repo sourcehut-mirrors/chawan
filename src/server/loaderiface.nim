@@ -258,7 +258,8 @@ proc tee*(loader: FileLoader; sourceId, targetPid: int): (SocketStream, int) =
   var fd = cint(-1)
   loader.withPacketReaderFire r:
     r.sread(outputId)
-    fd = r.recvFd()
+    if outputId != -1:
+      fd = r.recvFd()
   if fd != -1:
     return (newSocketStream(fd), outputId)
   return (nil, -1)

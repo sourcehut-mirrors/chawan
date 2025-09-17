@@ -127,7 +127,7 @@ type
     pstream: SocketStream # control stream
     reportedBytesRead: int
     rootBox: BlockBox
-    tasks: array[BufferCommand, int] #TODO this should have arguments
+    tasks: array[BufferCommand, int]
     window: Window
 
   BufferIfaceItem = object
@@ -199,14 +199,19 @@ proc getFromStream[T](iface: BufferInterface; promise: EmptyPromise) =
     iface.len = 0
     iface.nfds = 0
 
-proc addPromise[T](iface: BufferInterface; id: int): Promise[T] =
+proc addPromise(iface: BufferInterface; promise: EmptyPromise;
+    get: GetValueProc) =
+  iface.map.add(BufferIfaceItem(id: iface.packetid, p: promise, get: get))
+  inc iface.packetid
+
+proc addPromise[T](iface: BufferInterface): Promise[T] =
   let promise = Promise[T]()
-  iface.map.add(BufferIfaceItem(id: id, p: promise, get: getFromStream[T]))
+  iface.addPromise(promise, getFromStream[T])
   return promise
 
-proc addEmptyPromise(iface: BufferInterface; id: int): EmptyPromise =
+proc addEmptyPromise(iface: BufferInterface): EmptyPromise =
   let promise = EmptyPromise()
-  iface.map.add(BufferIfaceItem(id: id, p: promise, get: nil))
+  iface.addPromise(promise, nil)
   return promise
 
 proc findPromise(iface: BufferInterface; id: int): int =
@@ -229,24 +234,6 @@ proc newBufferInterface*(stream: BufStream): BufferInterface =
     packetid: 1, # ids below 1 are invalid
     stream: stream
   )
-
-# After cloning a buffer, we need a new interface to the new buffer
-# process.
-# Here we create a new interface for that clone.
-proc cloneInterface*(stream: BufStream): BufferInterface =
-  let iface = newBufferInterface(stream)
-  #TODO buffered data should probably be copied here
-  # We have just fork'ed the buffer process inside an interface
-  # function, from which the new buffer is going to return as well.
-  # So we must also consume the return value of the clone function,
-  # which is the pid 0.
-  var pid = -1
-  stream.withPacketReaderFire r:
-    r.sread(iface.packetid)
-    r.sread(pid)
-  if pid == -1:
-    return nil
-  return iface
 
 proc resolve*(iface: BufferInterface; packetid, len, nfds: int) =
   iface.len = len
@@ -278,11 +265,11 @@ proc buildInterfaceProc(name, params: NimNode; cmd: BufferCommand): NimNode =
   var addfun: NimNode
   if retval.kind == nnkEmpty:
     addfun = quote do:
-      `thisval`.addEmptyPromise(`thisval`.packetid)
+      `thisval`.addEmptyPromise()
     retval2 = ident("EmptyPromise")
   else:
     addfun = quote do:
-      addPromise[`retval`](`thisval`, `thisval`.packetid)
+      addPromise[`retval`](`thisval`)
     retval2 = newNimNode(nnkBracketExpr).add(ident("Promise"), retval)
   var params2 = @[retval2, this2]
   # flatten args
@@ -300,9 +287,7 @@ proc buildInterfaceProc(name, params: NimNode; cmd: BufferCommand): NimNode =
       writer.swrite(BufferCommand(`cmd`))
       writer.swrite(`thisval`.packetid)
       `writeStmts`
-    let promise = `addfun`
-    inc `thisval`.packetid
-    return promise
+    return `addfun`
   let pragmas = if retval.kind == nnkEmpty:
     newNimNode(nnkPragma).add(ident("discardable"))
   else:
@@ -941,16 +926,16 @@ proc rewind(bc: BufferContext; data: InputData; offset: int;
   return true
 
 # Create an exact clone of the current buffer.
-# This clone will share the loader process with the previous buffer.
-proc clone*(bc: BufferContext; newurl: URL): int {.proxy.} =
-  var pstream: SocketStream
-  var pins, pouts: PosixStream
-  bc.pstream.withPacketReader r:
-    pstream = newSocketStream(r.recvFd())
-    pins = newPosixStream(r.recvFd())
-    pouts = newPosixStream(r.recvFd())
-  do: # EOF, pager died
-    return -1
+# Required sequence of operations:
+#  suspend -> fork -> return pid -> send controlStream -> tee -> resume
+# Proxy functions are not flexible enough for this, so we just handle
+# the packets inline.
+proc cloneCmd(bc: BufferContext; r: var PacketReader; packetid: int) =
+  var newurl: URL
+  r.sread(newurl)
+  let pstream = newSocketStream(r.recvFd())
+  let pins = newPosixStream(r.recvFd())
+  let pouts = newPosixStream(r.recvFd())
   # suspend outputs before tee'ing
   var ids = newSeq[int]()
   for it in bc.loader.ongoing:
@@ -963,12 +948,14 @@ proc clone*(bc: BufferContext; newurl: URL): int {.proxy.} =
   for it in bc.loader.ongoing:
     if it.response.onRead != nil:
       bc.loader.onRead(it.fd)
-  var pid = fork()
-  if pid == -1:
-    bc.window.console.error("Failed to clone bc.")
-    return -1
+  let pid = fork()
   if pid == 0: # child
     pins.sclose()
+    var controlStream: SocketStream
+    pstream.withPacketReader r:
+      controlStream = newSocketStream(r.recvFd())
+    do: # EOF, pager died
+      quit(1)
     bc.pollData.clear()
     var connecting = newSeq[ConnectData]()
     var ongoing = newSeq[OngoingData]()
@@ -1009,12 +996,9 @@ proc clone*(bc: BufferContext; newurl: URL): int {.proxy.} =
       it = 0
     bc.pstream = pstream
     bc.loader.clientPid = myPid
-    # get key for new buffer
+    # replace control stream
     bc.loader.controlStream.sclose()
-    bc.pstream.withPacketReader r:
-      bc.loader.controlStream = newSocketStream(r.recvFd())
-    do: # EOF, pager died
-      quit(1)
+    bc.loader.controlStream = controlStream
     bc.pollData.register(bc.pstream.fd, POLLIN)
     # must reconnect after the new client is set up, or the client pids get
     # mixed up.
@@ -1026,19 +1010,37 @@ proc clone*(bc: BufferContext; newurl: URL): int {.proxy.} =
     # isn't called at all.)
     let target = bc.document.findAnchor(newurl.hash)
     bc.document.setTarget(target)
-    return 0
   else: # parent
     pouts.sclose()
     pstream.sclose()
-    # We must wait for child to tee its ongoing streams.
-    var c: char
-    if pins.readData(addr c, 1) == 1:
-      assert c == char(0)
-    else:
-      pid = -1
+    # Ask pager to get a loader handle for child.
+    bc.pstream.withPacketWriter w:
+      w.swrite(packetid)
+      w.swrite(int(pid))
+    do:
+      quit(1)
+    if pid != -1:
+      # Wait for child to tee its ongoing streams before resuming.
+      var c: char
+      if pins.readData(addr c, 1) == 1:
+        assert c == char(0)
     pins.sclose()
     bc.loader.resume(ids)
-    return pid
+
+proc clone*(iface: BufferInterface; newurl: URL;
+    pstreamFd, pinsFd, poutsFd: cint): Promise[int] =
+  if not iface.stream.flush():
+    return nil
+  iface.stream.source.withPacketWriter w:
+    w.swrite(bcClone)
+    w.swrite(iface.packetid)
+    w.swrite(newurl)
+    w.sendFd(pstreamFd)
+    w.sendFd(pinsFd)
+    w.sendFd(poutsFd)
+  do:
+    return nil
+  return addPromise[int](iface)
 
 proc dispatchDOMContentLoadedEvent(bc: BufferContext) =
   let window = bc.window

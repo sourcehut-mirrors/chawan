@@ -256,11 +256,6 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     Promise[tuple[c: Container; fd: cint]] =
   if container.iface == nil:
     return nil
-  let url = if newurl != nil:
-    newurl
-  else:
-    container.url
-  let p = container.iface.clone(url)
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
     return nil
@@ -271,17 +266,15 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
     discard close(sv[0])
     discard close(sv[1])
     return nil
-  var fail = false
-  container.iface.stream.source.withPacketWriter w:
-    w.sendFd(sv[1])
-    w.sendFd(pipefd[0])
-    w.sendFd(pipefd[1])
-  do:
-    fail = true
+  let url = if newurl != nil:
+    newurl
+  else:
+    container.url
+  let p = container.iface.clone(url, sv[1], pipefd[0], pipefd[1])
   discard close(sv[1])
   discard close(pipefd[0])
   discard close(pipefd[1])
-  if fail:
+  if p == nil:
     return nil
   return p.then(proc(pid: int): tuple[c: Container; fd: cint] =
     if pid == -1:
@@ -1810,7 +1803,7 @@ proc setStream*(container: Container; stream: BufStream) =
 
 proc setCloneStream*(container: Container; stream: BufStream) =
   assert cfCloned in container.flags
-  container.iface = cloneInterface(stream)
+  container.iface = newBufferInterface(stream)
   if container.iface != nil: # if nil, the buffer is dead.
     # Maybe we have to resume loading. Let's try.
     container.startLoad()
