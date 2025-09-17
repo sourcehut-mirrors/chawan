@@ -170,9 +170,7 @@ proc consumeString(parser: var MediaQueryParser): Opt[CSSToken] =
   return ok(parser.consume())
 
 proc consumeInt(parser: var MediaQueryParser): Opt[int32] =
-  if parser.peekTokenType() != cttINumber:
-    return err()
-  return ok(parser.consume().inum)
+  parser.ctx.consumeInt()
 
 proc parseMqInt(parser: var MediaQueryParser; ifalse, itrue: int32): Opt[bool] =
   let i = ?parser.consumeInt()

@@ -21,8 +21,8 @@ type
 
   CSSTokenType* = enum
     cttIdent, cttFunction, cttAtKeyword, cttHash, cttString, cttBadString,
-    cttUrl, cttBadUrl, cttDelim, cttNumber, cttINumber, cttPercentage,
-    cttDimension, cttIDimension, cttWhitespace
+    cttUrl, cttBadUrl, cttDelim, cttNumber, cttPercentage, cttDimension,
+    cttWhitespace
     cttCdo = "<!--"
     cttCdc = "-->"
     cttColon = ":"
@@ -49,18 +49,64 @@ type
     cttBang = "!"
 
   CSSTokenFlag = enum
-    ctfId, ctfSign
+    ctfId, ctfSign, ctfInteger
 
-  CSSTokenNum {.union.} = object
-    i: int32
-    f: float32
+  CSSTokenUnion {.union.} = object
+    i: int32 # cttNumber with ctfInteger
+    f: float32 # cttNumber without ctfInteger
+    u: uint32 # cttDelim (codepoint)
+    ft: CSSFunctionType # cttFunction
 
-  CSSToken* = object # token or component value
-    unum: CSSTokenNum # cttINumber, cttIDimension have int32
-    flags*: set[CSSTokenFlag]
-    c: char # for cttDelim.  if non-ascii, s contains UTF-8
-    ft*: CSSFunctionType
+  CSSDimensionType* = enum
+    cdtUnknown = ""
+    # AnB
+    cdtN = "n"
+    cdtNDash = "n-"
+    # CSSUnit
+    cuAuto = ""
+    cuCap = "cap"
+    cuCh = "ch"
+    cuCm = "cm"
+    cuDvmax = "dvmax"
+    cuDvmin = "dvmin"
+    cuEm = "em"
+    cuEx = "ex"
+    cuIc = "ic"
+    cuIn = "in"
+    cuLh = "lh"
+    cuLvmax = "lvmax"
+    cuLvmin = "lvmin"
+    cuMm = "mm"
+    cuPc = "pc"
+    cuPt = "pt"
+    cuPx = "px"
+    cuRcap = "rcap"
+    cuRch = "rch"
+    cuRem = "rem"
+    cuRex = "rex"
+    cuRic = "ric"
+    cuRlh = "rlh"
+    cuSvmax = "svmax"
+    cuSvmin = "svmin"
+    cuVb = "vb"
+    cuVh = "vh"
+    cuVi = "vi"
+    cuVmax = "vmax"
+    cuVmin = "vmin"
+    cuVw = "vw"
+    # CSSAngle
+    catDeg = "deg"
+    catGrad = "grad"
+    catRad = "rad"
+    catTurn = "turn"
+  CSSUnit* = range[cuAuto..cuVw]
+  CSSAngleType* = range[catDeg..catTurn]
+
+  CSSToken* = object
     t*: CSSTokenType
+    flags*: set[CSSTokenFlag]
+    dt*: CSSDimensionType
+    tu: CSSTokenUnion
     s*: string # for ident/string-like, and unit of number tokens
 
   CSSRuleType* = enum
@@ -349,20 +395,26 @@ proc `$`*(decl: CSSDeclaration): string
 proc `$`*(c: CSSSimpleBlock): string
 proc `$`*(slist: SelectorList): string
 
-template fnum*(tok: CSSToken): float32 =
-  tok.unum.f
+template fnum(tok: CSSToken): float32 =
+  tok.tu.f
 
-template inum*(tok: CSSToken): int32 =
-  tok.unum.i
+template inum(tok: CSSToken): int32 =
+  tok.tu.i
+
+template ft*(tok: CSSToken): CSSFunctionType =
+  tok.tu.ft
+
+template delim(tok: CSSToken): uint32 =
+  tok.tu.u
 
 proc num*(tok: CSSToken): float32 {.inline.} =
-  if tok.t in {cttINumber, cttIDimension}:
+  if ctfInteger in tok.flags:
     float32(tok.inum)
   else:
     tok.fnum
 
 proc toi*(tok: CSSToken): int32 {.inline.} =
-  if tok.t in {cttINumber, cttIDimension}:
+  if ctfInteger in tok.flags:
     tok.inum
   else:
     int32(tok.fnum)
@@ -371,14 +423,22 @@ proc `$`*(tok: CSSToken): string =
   return case tok.t:
   of cttAtKeyword: $tok.t & tok.s & '\n'
   of cttFunction: $tok.ft & '('
-  of cttUrl: "url(" & tok.s & ")"
+  of cttUrl: "url(" & tok.s & ')'
   of cttHash: '#' & tok.s
   of cttIdent: tok.s
   of cttString: ("\"" & tok.s & "\"")
-  of cttDelim: (if tok.c in Ascii: $tok.c else: tok.s)
-  of cttDimension, cttNumber: $tok.num & tok.s
-  of cttINumber, cttIDimension: $tok.inum & tok.s
-  of cttPercentage: $tok.fnum & "%"
+  of cttDelim: tok.delim.toUTF8()
+  of cttNumber:
+    if ctfInteger in tok.flags:
+      $tok.inum
+    else:
+      $tok.fnum
+  of cttDimension:
+    if ctfInteger in tok.flags:
+      $tok.inum & tok.s
+    else:
+      $tok.fnum & tok.s
+  of cttPercentage: $tok.fnum & '%'
   of cttWhitespace: " "
   of cttSemicolon: ";\n"
   of cttRbrace: "}\n"
@@ -451,33 +511,32 @@ proc anyPropertyType*(s: string): Opt[CSSAnyPropertyType] =
   return ok(CSSAnyPropertyType(sh: sh))
 
 proc cssNumberToken*(n: float32): CSSToken =
-  let unum = CSSTokenNum(f: n)
-  return CSSToken(t: cttNumber, unum: unum)
+  let tu = CSSTokenUnion(f: n)
+  return CSSToken(t: cttNumber, tu: tu)
 
-proc cssDimensionToken*(n: float32; dim: string): CSSToken =
-  let unum = CSSTokenNum(f: n)
-  return CSSToken(t: cttDimension, unum: unum, s: dim)
+proc cssDimensionToken*(n: float32; dt: CSSDimensionType): CSSToken =
+  let tu = CSSTokenUnion(f: n)
+  CSSToken(t: cttDimension, tu: tu, dt: dt)
 
-proc cssPercentageToken*(n: float32): CSSToken =
-  let unum = CSSTokenNum(f: n)
-  return CSSToken(t: cttPercentage, unum: unum)
+proc cssPercentageToken*(n: float32; flags: set[CSSTokenFlag] = {}): CSSToken =
+  let tu = CSSTokenUnion(f: n)
+  return CSSToken(t: cttPercentage, tu: tu, flags: flags)
 
-func normt*(tok: CSSToken): CSSTokenType =
-  case tok.t
-  of cttINumber: return cttNumber
-  of cttIDimension: return cttDimension
-  else: return tok.t
+proc cssDelimToken(c: char): CSSToken =
+  let tu = CSSTokenUnion(u: uint32(c))
+  return CSSToken(t: cttDelim, tu: tu)
+
+proc cssFunctionToken(ft: CSSFunctionType): CSSToken =
+  let tu = CSSTokenUnion(ft: ft)
+  return CSSToken(t: cttFunction, tu: tu)
 
 const IdentStart = AsciiAlpha + NonAscii + {'_'}
 const Ident = IdentStart + AsciiDigit + {'-'}
 
 proc consumeDelimToken(iq: openArray[char]; n: var int): CSSToken =
-  let c = iq[n]
-  if c in Ascii:
-    inc n
-    return CSSToken(t: cttDelim, c: c)
   let u = iq.nextUTF8(n)
-  return CSSToken(t: cttDelim, c: c, s: u.toUTF8())
+  let tu = CSSTokenUnion(u: u)
+  return CSSToken(t: cttDelim, tu: tu)
 
 # next, next(1)
 proc startsWithIdentSequenceDash(iq: openArray[char]; n: int): bool =
@@ -583,41 +642,44 @@ proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
     isInt = false
     while m < iq.len and iq[m] in AsciiDigit:
       inc m
-  if m + 1 < iq.len and iq[m] in {'E', 'e'} and iq[m + 1] in AsciiDigit or
-      m + 2 < iq.len and iq[m] in {'E', 'e'} and iq[m + 1] in {'-', '+'} and
-        iq[m + 2] in AsciiDigit:
-    inc m
-    if iq[m] in {'-', '+'}:
-      m += 2
-    else:
-      inc m
-    isInt = false
-    while m < iq.len and iq[m] in AsciiDigit:
-      inc m
+  if m + 1 < iq.len and iq[m] in {'E', 'e'}:
+    let c = iq[m + 1]
+    let signed = c in {'-', '+'}
+    if c in AsciiDigit or signed and m + 2 < iq.len and iq[m + 2] in AsciiDigit:
+      isInt = false
+      m += (if signed: 3 else: 2)
+      while m < iq.len and iq[m] in AsciiDigit:
+        inc m
   if m < iq.len and iq[m] == '%':
-    isInt = false
-    let unum = CSSTokenNum(f: parseFloat32(iq.toOpenArray(start, m - 1)))
+    let f = parseFloat32(iq.toOpenArray(start, m - 1))
     n = m + 1
-    return CSSToken(t: cttPercentage, flags: flags, unum: unum)
+    return cssPercentageToken(f, flags)
   let isDim = iq.startsWithIdentSequence(m)
+  var ii: int32
   if isInt:
     let i = int64(integer) * sign
-    let ii = cast[int32](i)
-    if int64(ii) == i:
-      let unum = CSSTokenNum(i: ii)
-      if isDim:
-        var s = iq.consumeIdentSequence(m)
-        n = m
-        return CSSToken(t: cttIDimension, unum: unum, s: move(s), flags: flags)
-      n = m
-      return CSSToken(t: cttINumber, unum: unum, flags: flags)
-  let unum = CSSTokenNum(f: parseFloat32(iq.toOpenArray(start, m - 1)))
+    ii = cast[int32](i)
+    if int64(ii) != i:
+      isInt = false
+  let tu = if isInt:
+    flags.incl(ctfInteger)
+    CSSTokenUnion(i: ii)
+  else:
+    CSSTokenUnion(f: parseFloat32(iq.toOpenArray(start, m - 1)))
   if isDim:
     var s = iq.consumeIdentSequence(m)
     n = m
-    return CSSToken(t: cttDimension, unum: unum, s: move(s), flags: flags)
+    if dt := parseEnumNoCase[CSSDimensionType](s):
+      return CSSToken(t: cttDimension, tu: tu, dt: dt, flags: flags)
+    return CSSToken(
+      t: cttDimension,
+      tu: tu,
+      dt: cdtUnknown,
+      s: move(s),
+      flags: flags
+    )
   n = m
-  return CSSToken(t: cttNumber, unum: unum, flags: flags)
+  return CSSToken(t: cttNumber, tu: tu, flags: flags)
 
 proc consumeBadURL(iq: openArray[char]; n: var int) =
   while n < iq.len:
@@ -673,12 +735,12 @@ proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
     if n < iq.len and iq[n] in {'"', '\''} or
         n + 1 < iq.len and iq[n] in {'"', '\''} + AsciiWhitespace and
         iq[n + 1] in {'"', '\''}:
-      return CSSToken(t: cttFunction, ft: cftUrl)
+      return cssFunctionToken(cftUrl)
     return iq.consumeURL(n)
   if n < iq.len and iq[n] == '(':
     let ft = parseEnumNoCase[CSSFunctionType](s).get(cftUnknown)
     inc n
-    return CSSToken(t: cttFunction, ft: ft)
+    return cssFunctionToken(ft)
   return CSSToken(t: cttIdent, s: move(s))
 
 proc nextToken(iq: openArray[char]; n: var int): bool =
@@ -711,7 +773,7 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
       if iq.startsWithIdentSequence(n):
         flags.incl(ctfId)
       return CSSToken(t: cttHash, s: iq.consumeIdentSequence(n), flags: flags)
-    return CSSToken(t: cttDelim, c: '#')
+    return cssDelimToken('#')
   of '(': return CSSToken(t: cttLparen)
   of ')': return CSSToken(t: cttRparen)
   of '{': return CSSToken(t: cttLbrace)
@@ -755,13 +817,13 @@ proc consumeToken(iq: openArray[char]; n: var int): CSSToken =
   of '@':
     if iq.startsWithIdentSequence(n):
       return CSSToken(t: cttAtKeyword, s: iq.consumeIdentSequence(n))
-    return CSSToken(t: cttDelim, c: c)
+    return cssDelimToken('@')
   of '[': return CSSToken(t: cttLbracket)
   of '\\':
     if n < iq.len and iq[n] != '\n':
       dec n
       return iq.consumeIdentLikeToken(n)
-    return CSSToken(t: cttDelim, c: c)
+    return cssDelimToken('\\')
   of ']': return CSSToken(t: cttRbracket)
   of AsciiDigit:
     dec n
@@ -862,6 +924,12 @@ proc consume*(ctx: var CSSParser): CSSToken =
     inc ctx.i
     return move(cval)
   return ctx.consumeToken()
+
+proc consumeInt*(ctx: var CSSParser): Opt[int32] =
+  let tok = ctx.peekToken()
+  if tok.t != cttNumber or ctfInteger notin tok.flags:
+    return err()
+  ok(ctx.consume().inum)
 
 proc skipBlanks*(ctx: var CSSParser) =
   while ctx.has() and ctx.peekTokenType() == cttWhitespace:
@@ -1124,6 +1192,12 @@ type AnBIdent = enum
   abiNDash = "n-"
   abiDashNDash = "-n-"
 
+proc isInteger(tok: CSSToken): bool =
+  tok.t == cttNumber and ctfInteger in tok.flags
+
+proc isUnsignedInteger(tok: CSSToken): bool =
+  tok.isInteger() and ctfSign notin tok.flags
+
 proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
   ?ctx.skipBlanksCheckHas()
   var tok = ctx.peekToken()
@@ -1146,17 +1220,19 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
       of abiN:
         if ctx.skipBlanksCheckDone().isOk:
           return ok((1i32, 0i32))
-        case (let tok2 = ctx.peekToken(); tok2.t)
-        of cttPlus, cttMinus:
+        let tok2 = ctx.peekToken()
+        if tok2.t in {cttPlus, cttMinus}:
           ctx.seekToken()
           let sign = if tok2.t == cttPlus: 1i32 else: -1i32
           ?ctx.skipBlanksCheckHas()
           let tok3 = ctx.peekToken()
-          if tok3.t != cttINumber or ctfSign in tok3.flags:
+          if not tok3.isUnsignedInteger():
             return ok((1i32, 0i32))
           ctx.seekToken()
           return ok((1i32, sign * tok3.inum))
-        of cttINumber:
+        elif tok2.isInteger():
+          if ctfInteger notin tok2.flags:
+            return ok((1i32, 0i32))
           ctx.seekToken()
           return ok((1i32, tok2.inum))
         else:
@@ -1171,11 +1247,11 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
           let sign = if tok2.t == cttPlus: 1i32 else: -1i32
           ?ctx.skipBlanksCheckHas()
           let tok3 = ctx.peekToken()
-          if tok3.t != cttINumber or ctfSign in tok3.flags:
+          if not tok3.isUnsignedInteger():
             return ok((-1i32, 0i32))
           ctx.seekToken()
           return ok((-1i32, sign * tok3.inum))
-        elif tok2.t == cttINumber:
+        elif tok2.isInteger():
           ctx.seekToken()
           return ok((-1i32, tok2.inum))
         else:
@@ -1183,7 +1259,7 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
       of abiNDash:
         ?ctx.skipBlanksCheckHas()
         let tok2 = ctx.peekToken()
-        if tok2.t != cttINumber or ctfSign in tok2.flags:
+        if not tok2.isUnsignedInteger():
           return err()
         ctx.seekToken()
         return ok((1i32, -tok2.inum))
@@ -1191,7 +1267,7 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
         ?noPlus
         ?ctx.skipBlanksCheckHas()
         let tok2 = ctx.peekToken()
-        if tok2.t != cttINumber or ctfSign in tok2.flags:
+        if not tok2.isUnsignedInteger():
           return err()
         ctx.seekToken()
         return ok((-1i32, -tok2.inum))
@@ -1204,16 +1280,20 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
       return ok((-1i32, -n))
     else:
       return err()
-  of cttINumber:
+  of cttNumber:
+    if ctfInteger notin tok.flags:
+      return err()
     ctx.seekToken()
     ?noPlus
     # <integer>
     return ok((0i32, tok.inum))
-  of cttIDimension:
+  of cttDimension:
+    if ctfInteger notin tok.flags:
+      return err()
     ctx.seekToken()
     ?noPlus
-    case tok.s
-    of "n", "N":
+    case tok.dt
+    of cdtN:
       # <n-dimension>
       if ctx.skipBlanksCheckDone().isOk:
         return ok((tok.inum, 0i32))
@@ -1223,27 +1303,29 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
         let sign = if tok2.t == cttPlus: 1i32 else: -1i32
         ?ctx.skipBlanksCheckHas()
         let tok3 = ctx.peekToken()
-        if tok3.t != cttINumber or ctfSign in tok3.flags:
+        if not tok3.isUnsignedInteger():
           return ok((tok.inum, 0i32))
         ctx.seekToken()
         return ok((tok.inum, sign * tok3.inum))
-      elif tok2.t == cttINumber:
+      elif tok2.isInteger():
         ctx.seekToken()
         return ok((tok.inum, tok2.inum))
       else:
         return ok((tok.inum, 0i32))
-    of "n-", "N-":
+    of cdtNDash:
       # <ndash-dimension>
       ?ctx.skipBlanksCheckHas()
       let tok2 = ctx.peekToken()
-      if tok2.t != cttINumber or ctfSign in tok2.flags:
+      if not tok2.isUnsignedInteger():
         return err()
       ctx.seekToken()
       return ok((tok.inum, -tok2.inum))
-    elif tok.s.startsWithIgnoreCase("n-"):
-      # <ndashdigit-dimension>
-      let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
-      return ok((tok.inum, n))
+    of cdtUnknown:
+      if tok.s.startsWithIgnoreCase("n-"):
+        # <ndashdigit-dimension>
+        let n = ?parseInt32(tok.s.toOpenArray(2, tok.s.high))
+        return ok((tok.inum, n))
+      return err()
     else:
       return err()
   else:
