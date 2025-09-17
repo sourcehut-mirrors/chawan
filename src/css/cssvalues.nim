@@ -1657,7 +1657,7 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
       makeEntry(t, ?ctx.parseMaxSize(attrs))
     of cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom:
       makeEntry(t, ?ctx.parseLength(attrs, hasAuto = false,
-        allowNegative = true))
+        allowNegative = false))
     #TODO content for flex-basis
     else:
       makeEntry(t, ?ctx.parseLength(attrs, hasAuto = true,
