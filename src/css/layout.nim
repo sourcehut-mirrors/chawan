@@ -1792,13 +1792,20 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
     lctx.roundSmallMarginsAndPadding(sizes)
     lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
     # Apply the block box's properties to the atom itself.
-    let iastate = InlineAtomState(
+    var iastate = InlineAtomState(
       ibox: ibox,
       baseline: box.state.baseline + sizes.margin.top,
       vertalign: box.computed{"vertical-align"},
       baselineShift: ibox.computed{"-cha-vertical-align-length"},
       size: box.outerSize(sizes, lctx)
     )
+    # Not sure how this works, but it seems that an unset baseline is turned
+    # into the box size.
+    if box.state.baseline == 0:
+      iastate.baseline += box.state.size.h
+    if box.state.firstBaseline == 0 and not fstate.firstBaselineSet:
+      fstate.box.state.firstBaseline = box.state.size.h
+      fstate.firstBaselineSet = true
     var istate = InlineState(ibox: ibox)
     discard fstate.addAtom(istate, iastate)
     fstate.intr.w = max(fstate.intr.w, box.state.intr.w)
