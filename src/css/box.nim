@@ -44,6 +44,8 @@ type
     marginBottom*: LUnit
     # Indicates which borders have been merged with an adjacent one.
     merge*: CSSBorderMerge
+    # Whether or not a line box has set a baseline for us.
+    baselineSet*: bool
 
   Area* = object
     offset*: Offset

@@ -785,7 +785,6 @@ type
     padding: RelativeRect
     hasshy: bool
     whitespaceIsLF: bool
-    firstBaselineSet: bool
 
 # Forward declarations
 proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
@@ -1208,9 +1207,9 @@ proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
     # * set first baseline if this is the first line box
     # * always set last baseline (so the baseline of the last line box remains)
     fstate.box.state.baseline = y + fstate.lbstate.baseline
-    if not fstate.firstBaselineSet:
-      fstate.box.state.firstBaseline = fstate.lbstate.baseline
-      fstate.firstBaselineSet = true
+    if not fstate.box.state.baselineSet:
+      fstate.box.state.firstBaseline = y + fstate.lbstate.baseline
+      fstate.box.state.baselineSet = true
     fstate.offset.y += fstate.lbstate.size.h
     fstate.intr.h += fstate.lbstate.intrh
     let lineWidth = if wrap:
@@ -1717,11 +1716,12 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
     h = child.state.offset.y - fstate.offset.y + child.state.size.h +
       sizes.borderSize(dtVertical, lctx).send
   )
-  if not fstate.firstBaselineSet:
-    fstate.box.state.firstBaseline = child.state.offset.y +
-      child.state.firstBaseline
-    fstate.firstBaselineSet = true
-  fstate.box.state.baseline = child.state.offset.y + child.state.baseline
+  if child.state.baselineSet:
+    if not fstate.box.state.baselineSet:
+      fstate.box.state.firstBaseline = child.state.offset.y +
+        child.state.firstBaseline
+      fstate.box.state.baselineSet = true
+    fstate.box.state.baseline = child.state.offset.y + child.state.baseline
   if fstate.space.w.t == scStretch:
     if fstate.textAlign == TextAlignChaCenter:
       child.state.offset.x += max(space.w.u div 2 -
@@ -1803,13 +1803,8 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
       baselineShift: ibox.computed{"-cha-vertical-align-length"},
       size: box.outerSize(sizes, lctx)
     )
-    # Not sure how this works, but it seems that an unset baseline is turned
-    # into the box size.
-    if box.state.baseline == 0:
+    if not box.state.baselineSet:
       iastate.baseline += box.state.size.h
-    if box.state.firstBaseline == 0 and not fstate.firstBaselineSet:
-      fstate.box.state.firstBaseline = box.state.size.h
-      fstate.firstBaselineSet = true
     var istate = InlineState(ibox: ibox)
     discard fstate.addAtom(istate, iastate)
     fstate.intr.w = max(fstate.intr.w, box.state.intr.w)
@@ -2211,6 +2206,11 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
       box.sizes.padding[dtVertical].sum())
   # A table cell's minimum width overrides its width.
   box.state.size.w = max(box.state.size.w, box.state.intr.w)
+  # Ensure the cell has at least *some* baseline.
+  if not box.state.baselineSet:
+    box.state.firstBaseline = box.state.size.h
+    box.state.baseline = box.state.size.h
+    box.state.baselineSet = true
 
 # Sort growing cells, and filter out cells that have grown to their intended
 # rowspan.
@@ -2418,7 +2418,7 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
       VerticalAlignTop, VerticalAlignMiddle, VerticalAlignBottom
     }
     if cell != nil:
-      if cell.computed{"vertical-align"} notin HasNoBaseline: # baseline
+      if cell.computed{"vertical-align"} notin HasNoBaseline:
         baseline = max(cell.state.firstBaseline, baseline)
         if cellw.rowspan > 1:
           toBaseline.add(cellw)
@@ -2654,9 +2654,8 @@ proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
         tctx.space.w.u = captionSpace.w.u
   tctx.layoutInnerTable(table, box, sizes)
   box.state.size = table.state.size
-  box.state.baseline = table.state.size.h
-  box.state.firstBaseline = table.state.size.h
   box.state.intr = table.state.intr
+  var baseline = 0.toLUnit()
   if caption != nil:
     if captionSpace.w.isDefinite():
       if table.state.size.w > captionSpace.w.u:
@@ -2674,6 +2673,11 @@ proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     box.state.size.h += outerSize.h
     box.state.intr.h += outerSize.h - caption.state.size.h +
       caption.state.intr.h
+    if caption.state.baselineSet:
+      baseline = max(baseline, caption.state.offset.y + caption.state.size.h)
+  box.state.baseline = max(baseline, table.state.offset.y + table.state.size.h)
+  box.state.firstBaseline = baseline
+  box.state.baselineSet = true
 
 # Flex layout.
 type
@@ -2698,7 +2702,7 @@ type
     canWrap: bool
     reverse: bool
     dim: DimensionType # main dimension
-    firstBaselineSet: bool
+    baselineSet: bool
 
   FlexMainContext = object
     totalSize: Size
@@ -2852,8 +2856,8 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     if it.child.computed{"position"} == PositionRelative:
       fctx.relativeChildren.add(it.child)
     let baseline = it.child.state.offset.y + it.child.state.baseline
-    if not fctx.firstBaselineSet:
-      fctx.firstBaselineSet = true
+    if not fctx.baselineSet:
+      fctx.baselineSet = true
       fctx.firstBaseline = baseline
     fctx.baseline = baseline
   if fctx.reverse:
@@ -2944,6 +2948,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   size[odim] = fctx.offset[odim]
   box.applySize(sizes, size, sizes.space)
   box.applyIntr(sizes, fctx.intr)
+  box.state.baselineSet = fctx.baselineSet
   box.state.firstBaseline = fctx.firstBaseline
   box.state.baseline = fctx.baseline
   for child in fctx.relativeChildren:
