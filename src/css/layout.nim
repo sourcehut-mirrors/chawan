@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/algorithm
 import std/math
 
 import css/box
@@ -2126,32 +2125,46 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   # Reset parentBps to the previous node.
   bctx.parentBps = fstate.prevParentBps
 
-# Table layout. We try to emulate w3m's behavior here:
-# 1. Calculate minimum and preferred width of each column
-# 2. If column width is not auto, set width to max(min_col_width, specified)
+# Table layout.  This imitates what mainstream browsers do, and that
+# precludes a w3m-like single-pass algorithm.  Ours rather looks like:
+# 1. Calculate minimum, maximum and preferred width of each column.
+# 2. If column width is not auto, set width to max(min_width, specified).
 # 3. Calculate the maximum preferred row width. If this is
 # a) less than the specified table width, or
 # b) greater than the table's content width:
-#      Distribute the table's content width among cells with an unspecified
-#      width. If this would give any cell a width < min_width, set that
-#      cell's width to min_width, then re-do the distribution.
+#      Distribute the table's content width among cells proportionally to
+#      their specified width.  If this would give any cell a width <
+#      min_width, set that cell's width to min_width, then re-do the
+#      distribution.
+# 4. Relayout cells whose width changed since step 1.
+# 5. Align cells based on their text-align.
+#
+# Rowspan/colspan handling: in general, overlapping rowspan & colspan is
+# left to be.  However, if a column would *start* at a rowspan, then it is
+# moved to the right by one column.  This means that a column only has one
+# multi-row cell at a given time.
+#
+#TODO:
+# * respect percentage width in redistribution - note this is a constraint,
+#   not just a percentage of the table's parent width...
+# * <col>, <colgroup>
+# * distribute table height too
 type
   CellWrapper = ref object
-    box: BlockBox
+    box: BlockBox # may be nil
     coli: int
     colspan: int
     rowspan: int
-    grown: int # number of remaining rows
     real: CellWrapper # for filler wrappers
     last: bool # is this the last filler?
     reflow: bool
     height: LUnit
     baseline: LUnit
     inlineBorder: Span
+    next: CellWrapper
 
   RowContext = object
-    cells: seq[CellWrapper]
-    reflow: seq[bool]
+    cellHead: CellWrapper
     width: LUnit
     height: LUnit
     borderWidth: LUnit
@@ -2163,14 +2176,15 @@ type
     minwidth: LUnit
     width: LUnit
     wspecified: bool
-    reflow: bool
     weight: float32
+    reflow: int # last row index that need not be reflowed
+    grown: int # number of remaining rows
+    growing: CellWrapper
 
   TableContext = object
     lctx: LayoutContext
     rows: seq[RowContext]
     cols: seq[ColumnContext]
-    growing: seq[CellWrapper]
     maxwidth: LUnit
     blockSpacing: LUnit
     inlineSpacing: LUnit
@@ -2212,91 +2226,142 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
     box.state.baseline = box.state.size.h
     box.state.baselineSet = true
 
-# Sort growing cells, and filter out cells that have grown to their intended
-# rowspan.
-proc sortGrowing(pctx: var TableContext) =
-  var i = 0
-  for j, cellw in pctx.growing:
-    if pctx.growing[i].grown == 0:
-      continue
-    if j != i:
-      pctx.growing[i] = cellw
-    inc i
-  pctx.growing.setLen(i)
-  pctx.growing.sort(proc(a, b: CellWrapper): int = cmp(a.coli, b.coli))
-
 # Grow cells with a rowspan > 1 (to occupy their place in a new row).
-proc growRowspan(pctx: var TableContext; ctx: var RowContext;
-    growi, i, n: var int; growlen: int) =
+proc growRowspan(tctx: var TableContext; growi, n: var int; ntill, growlen: int;
+    width: var LUnit; cellHead, cellTail: var CellWrapper) =
   while growi < growlen:
-    let cellw = pctx.growing[growi]
-    if cellw.coli > n:
+    let cellw = tctx.cols[growi].growing
+    if cellw == nil:
+      inc growi
+      continue
+    if growi > ntill:
       break
-    dec cellw.grown
+    dec tctx.cols[growi].grown
+    let grown = tctx.cols[growi].grown
+    if grown == 0:
+      tctx.cols[growi].growing = nil
     let colspan = cellw.colspan - (n - cellw.coli)
     let rowspanFiller = CellWrapper(
       colspan: colspan,
       rowspan: cellw.rowspan,
       coli: n,
       real: cellw,
-      last: cellw.grown == 0,
+      last: grown == 0,
       inlineBorder: cellw.inlineBorder
     )
-    ctx.cells.add(nil)
-    ctx.cells[i] = rowspanFiller
-    let nextn = n + colspan
-    for i in n ..< nextn:
-      ctx.width += pctx.cols[i].width
-      ctx.width += pctx.inlineSpacing * 2
-    n = nextn
-    inc i
+    if cellTail != nil:
+      cellTail.next = rowspanFiller
+    else:
+      cellHead = rowspanFiller
+    cellTail = rowspanFiller
+    for i in n ..< n + colspan:
+      width += tctx.cols[i].width
+      width += tctx.inlineSpacing * 2
+    n += colspan
     inc growi
 
-proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
+proc resolveBorder(tctx: var TableContext; computed: CSSValues;
+    firstRow, lastCell, lastRow: bool; inlineBorder, blockBorder: var Span):
+    CSSBorder =
+  let lctx = tctx.lctx
+  var border = computed.resolveBorder()
+  if border.left notin BorderStyleNoneHidden:
+    inlineBorder.start = max(lctx.cellSize.w div 2, inlineBorder.start)
+  if border.right notin BorderStyleNoneHidden:
+    inlineBorder.send = max(lctx.cellSize.w div 2, inlineBorder.send)
+  if border.top notin BorderStyleNoneHidden:
+    let d = if firstRow: 1 else: 2
+    blockBorder.start = max(blockBorder.start, lctx.cellSize.h div d)
+  if border.bottom notin BorderStyleNoneHidden:
+    let d = if lastRow: 1 else: 2
+    blockBorder.send = max(blockBorder.send, lctx.cellSize.h div d)
+  if not lastCell:
+    border[dtHorizontal].send = BorderStyleNone
+  if not lastRow:
+    border[dtVertical].send = BorderStyleNone
+  border
+
+proc preLayoutTableColspan(tctx: var TableContext; cellw: CellWrapper;
+    space: AvailableSpace; rowi, n, nextn: int): LUnit =
+  var width = 0.toLUnit()
+  let colspan = cellw.colspan
+  let minw = cellw.box.state.intr.w div colspan
+  let w = cellw.box.state.size.w div colspan
+  if tctx.cols.len < nextn:
+    tctx.cols.setLen(nextn)
+  for col in tctx.cols.toOpenArray(n, nextn - 1).mitems:
+    # Figure out this cell's effect on the column's width.
+    # Four cases exist:
+    # 1. colwidth already fixed, cell width is fixed: take maximum
+    # 2. colwidth already fixed, cell width is auto: take colwidth
+    # 3. colwidth is not fixed, cell width is fixed: take cell width
+    # 4. neither of colwidth or cell width are fixed: take maximum
+    if col.wspecified:
+      if space.w.isDefinite():
+        # A specified column already exists; we take the larger width.
+        if w > col.width:
+          col.width = w
+          col.reflow = rowi
+      if col.width != w:
+        cellw.reflow = true
+    elif space.w.isDefinite():
+      # This is the first specified column. Replace colwidth with whatever
+      # we have.
+      col.reflow = rowi
+      col.wspecified = true
+      col.width = w
+    elif w > col.width:
+      col.width = w
+      col.reflow = rowi
+    else:
+      cellw.reflow = true
+    if col.minwidth < minw:
+      col.minwidth = minw
+      if col.width < minw:
+        col.width = minw
+        col.reflow = rowi
+    width += col.width
+  let grown = cellw.rowspan - 1
+  if grown > 0:
+    tctx.cols[n].grown = grown
+    tctx.cols[n].growing = cellw
+  width
+
+proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
     rowi, numrows: int): RowContext =
-  let lctx = pctx.lctx
-  result = RowContext(box: row)
-  var blockBorder = Span(start: pctx.blockSpacing, send: pctx.blockSpacing)
+  let lctx = tctx.lctx
+  var cellHead: CellWrapper = nil
+  var cellTail: CellWrapper = nil
+  var blockBorder = Span(start: tctx.blockSpacing, send: tctx.blockSpacing)
   var n = 0
-  var i = 0
   var growi = 0
+  var width = 0.toLUnit()
+  var borderWidth = 0.toLUnit()
+  var firstCell = true
   # this increases in the loop, but we only want to check growing cells that
   # were added by previous rows.
-  let growlen = pctx.growing.len
+  let growlen = tctx.cols.len
   for box in row.children:
-    #TODO specified table height should be distributed among rows.
     let box = BlockBox(box)
     assert box.computed{"display"} == DisplayTableCell
-    let firstCell = i == 0
-    pctx.growRowspan(result, growi, i, n, growlen)
+    let firstRow = rowi == 0
     let colspan = box.computed{"-cha-colspan"}
+    # grow until n, but not more
+    tctx.growRowspan(growi, n, n, growlen, width, cellHead, cellTail)
     let rowspan = min(box.computed{"-cha-rowspan"}, numrows - rowi)
     let cw = box.computed{"width"}
     let ch = box.computed{"height"}
     let space = availableSpace(
-      w = cw.stretchOrMaxContent(pctx.space.w),
-      h = ch.stretchOrMaxContent(pctx.space.h)
+      w = cw.stretchOrMaxContent(tctx.space.w),
+      h = ch.stretchOrMaxContent(tctx.space.h)
     )
-    var border = box.computed.resolveBorder()
-    var inlineBorder = Span(start: pctx.inlineSpacing, send: pctx.inlineSpacing)
-    if border.left notin BorderStyleNoneHidden:
-      inlineBorder.start = max(lctx.cellSize.w div 2, inlineBorder.start)
-    if border.right notin BorderStyleNoneHidden:
-      inlineBorder.send = max(lctx.cellSize.w div 2, inlineBorder.send)
-    if border.top notin BorderStyleNoneHidden:
-      let d = if rowi == 0: 1 else: 2
-      blockBorder.start = max(blockBorder.start, lctx.cellSize.h div d)
-    if border.bottom notin BorderStyleNoneHidden:
-      let d = if row.next == nil: 1 else: 2
-      blockBorder.send = max(blockBorder.send, lctx.cellSize.h div d)
-    if box.next != nil:
-      border[dtHorizontal].send = BorderStyleNone
-    if row.next != nil:
-      border[dtVertical].send = BorderStyleNone
-    result.borderWidth += inlineBorder.sum()
-    let merge = [dtHorizontal: not firstCell, dtVertical: rowi > 0]
+    var inlineBorder = Span(start: tctx.inlineSpacing, send: tctx.inlineSpacing)
+    var border = tctx.resolveBorder(box.computed, firstRow, box.next == nil,
+      row.next == nil, inlineBorder, blockBorder)
+    borderWidth += inlineBorder.sum()
+    let merge = [dtHorizontal: not firstCell, dtVertical: not firstRow]
     lctx.layoutTableCell(box, space, border, merge)
-    let wrapper = CellWrapper(
+    let cellw = CellWrapper(
       box: box,
       colspan: colspan,
       rowspan: rowspan,
@@ -2304,61 +2369,26 @@ proc preLayoutTableRow(pctx: var TableContext; row, parent: BlockBox;
       inlineBorder: inlineBorder,
       reflow: space.w.t == scMaxContent #TODO performance hack
     )
-    result.cells.add(wrapper)
-    if rowspan > 1:
-      pctx.growing.add(wrapper)
-      wrapper.grown = rowspan - 1
+    if cellTail != nil:
+      cellTail.next = cellw
+    else:
+      cellHead = cellw
+    cellTail = cellw
     let nextn = n + colspan
-    if pctx.cols.len < nextn:
-      pctx.cols.setLen(nextn)
-    if result.reflow.len < nextn:
-      result.reflow.setLen(nextn)
-    let minw = box.state.intr.w div colspan
-    let w = box.state.size.w div colspan
-    for i in n ..< nextn:
-      # Figure out this cell's effect on the column's width.
-      # Four cases exist:
-      # 1. colwidth already fixed, cell width is fixed: take maximum
-      # 2. colwidth already fixed, cell width is auto: take colwidth
-      # 3. colwidth is not fixed, cell width is fixed: take cell width
-      # 4. neither of colwidth or cell width are fixed: take maximum
-      if pctx.cols[i].wspecified:
-        if space.w.isDefinite():
-          # A specified column already exists; we take the larger width.
-          if w > pctx.cols[i].width:
-            pctx.cols[i].width = w
-            result.reflow[i] = true
-        if pctx.cols[i].width != w:
-          wrapper.reflow = true
-      elif space.w.isDefinite():
-        # This is the first specified column. Replace colwidth with whatever
-        # we have.
-        result.reflow[i] = true
-        pctx.cols[i].wspecified = true
-        pctx.cols[i].width = w
-      elif w > pctx.cols[i].width:
-        pctx.cols[i].width = w
-        result.reflow[i] = true
-      else:
-        wrapper.reflow = true
-      if pctx.cols[i].minwidth < minw:
-        pctx.cols[i].minwidth = minw
-        if pctx.cols[i].width < minw:
-          pctx.cols[i].width = minw
-          result.reflow[i] = true
-      result.width += pctx.cols[i].width
+    width += tctx.preLayoutTableColspan(cellw, space, rowi, n, nextn)
     # add spacing for border inside colspan
-    result.width += pctx.inlineSpacing * (colspan - 1) * 2
-    n += colspan
-    inc i
-  result.blockBorder = blockBorder
-  result.width += result.borderWidth
-  pctx.growRowspan(result, growi, i, n, growlen)
-  pctx.sortGrowing()
-  when defined(debug):
-    for cell in result.cells:
-      assert cell != nil
-  result.ncols = n
+    width += tctx.inlineSpacing * (colspan - 1) * 2
+    n = nextn
+    firstCell = false
+  tctx.growRowspan(growi, n, tctx.cols.len, growlen, width, cellHead, cellTail)
+  RowContext(
+    box: row,
+    cellHead: cellHead,
+    width: width + borderWidth,
+    borderWidth: borderWidth,
+    blockBorder: blockBorder,
+    ncols: n
+  )
 
 proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
   let firstChild = BlockBox(cell.firstChild)
@@ -2371,7 +2401,7 @@ proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
   cell.state.size.h = availableHeight
 
 proc layoutTableRow(tctx: TableContext; ctx: RowContext;
-    parent, row: BlockBox) =
+    parent, row: BlockBox; rowi: int) =
   row.resetState()
   var x: LUnit = 0
   var n = 0
@@ -2382,13 +2412,17 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
   var toBaseline: seq[CellWrapper] = @[]
   # cells that we must update row height of
   var toHeight: seq[CellWrapper] = @[]
-  for i, cellw in ctx.cells.mypairs:
+  var cellw = ctx.cellHead
+  while cellw != nil:
     var w: LUnit = 0
-    for i in n ..< n + cellw.colspan:
-      w += tctx.cols[i].width
+    var reflow = cellw.reflow
+    let colspan1 = cellw.colspan - 1
+    for col in tctx.cols.toOpenArray(n, n + colspan1):
+      w += col.width
+      reflow = reflow or rowi < col.reflow
     # Add inline spacing for merged columns.
-    w += tctx.inlineSpacing * (cellw.colspan - 1) * 2
-    if cellw.reflow and cellw.box != nil:
+    w += tctx.inlineSpacing * colspan1 * 2
+    if reflow and cellw.box != nil:
       # Do not allow the table cell to make use of its specified width.
       # e.g. in the following table
       # <TABLE>
@@ -2432,6 +2466,7 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
       toHeight.add(cellw.real)
       if cellw.last:
         toAlign.add(cellw.real)
+    cellw = cellw.next
   for cellw in toHeight:
     cellw.height += row.state.size.h
   for cellw in toBaseline:
@@ -2508,7 +2543,7 @@ proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
     else:
       if specifiedRatio != 1:
         col.width *= specifiedRatio
-        col.reflow = true
+        col.reflow = tctx.rows.len
       W -= col.width
   move(avail)
 
@@ -2548,29 +2583,17 @@ proc redistributeWidth(tctx: var TableContext) =
         redo = true
       else:
         weight += tctx.cols[j].weight
-      tctx.cols[j].reflow = true
-
-proc reflowTableCells(tctx: var TableContext) =
-  for row in tctx.rows.ritems:
-    var n = tctx.cols.len - 1
-    for cell in row.cells.ritems:
-      let m = n - cell.colspan
-      while n > m:
-        if tctx.cols[n].reflow:
-          cell.reflow = true
-        if n < row.reflow.len and row.reflow[n]:
-          tctx.cols[n].reflow = true
-        dec n
+      tctx.cols[j].reflow = tctx.rows.len
 
 proc layoutTableRows(tctx: TableContext; table: BlockBox;
     sizes: ResolvedSizes) =
   var y: LUnit = 0
-  for roww in tctx.rows:
+  for i, roww in tctx.rows.mypairs:
     if roww.box.computed{"visibility"} == VisibilityCollapse:
       continue
     y += roww.blockBorder.start
     let row = roww.box
-    tctx.layoutTableRow(roww, table, row)
+    tctx.layoutTableRow(roww, table, row, i)
     row.state.offset.y += y
     row.state.offset.x += sizes.padding.left
     row.state.size.w += sizes.padding[dtHorizontal].sum()
@@ -2614,7 +2637,6 @@ proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
     tctx.redistributeWidth()
   for col in tctx.cols:
     table.state.size.w += col.width
-  tctx.reflowTableCells()
   tctx.layoutTableRows(table, sizes) # second pass
   # Table height is minimum by default, and non-negotiable when
   # specified, ergo it always equals the intrinisc minimum height.
