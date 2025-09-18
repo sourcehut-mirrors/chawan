@@ -2605,10 +2605,11 @@ proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
   # specified width.  This isn't a problem however, because canpx will
   # still return true after that.)
   if tctx.space.w.t == scStretch:
-    if not parent.computed{"width"}.canpx(tctx.space.w):
-      tctx.space.w = fitContent(tctx.space.w.u)
-    else:
+    let width = parent.computed{"width"}
+    if width.isPx():
       table.state.intr.w = tctx.space.w.u
+    elif not width.canpx(tctx.space.w):
+      tctx.space.w = fitContent(tctx.space.w.u)
   if tctx.needsRedistribution(table.computed):
     tctx.redistributeWidth()
   for col in tctx.cols:
