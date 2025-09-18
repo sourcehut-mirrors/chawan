@@ -1830,7 +1830,7 @@ proc onReadLine(container: Container; w: Slice[int]; handle: HandleReadLine;
 # Synchronously read all lines in the buffer.
 # Returns false on I/O error.
 proc readLines*(container: Container; handle: HandleReadLine): Opt[void] =
-  # load succeded
+  # load succeeded
   let w = 0 .. 23
   container.iface.getLines(w).then(proc(res: GetLinesResult): EmptyPromise =
     return container.onReadLine(w, handle, res)

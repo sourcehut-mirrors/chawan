@@ -84,10 +84,9 @@ for non-obvious reasons.
 
 #### Exceptions
 
-Exceptions don't work well with JS embedding; use Result/Opt/Option
-instead.  Note that these kill RVO, so if you're returning large
-objects, either make them `ref`, or use manual RVO (return bool, set
-var param).
+Avoid; use Result/Opt/Option instead.  Note that these kill RVO, so if
+you're returning large objects, either make them `ref`, or use manual RVO
+(return bool, set var param).
 
 In new modules, always specify:
 
@@ -162,6 +161,8 @@ proc foo(objs: openArray[SomeObj]) =
 #### `func`, `.noSideEffect`
 
 These introduce function coloring for little to no benefit.
+
+Just use `proc` without `.noSideEffect`.
 
 ### Fixing cyclic imports
 
@@ -289,7 +290,7 @@ Note that some of these are updated daily, such as the HTML standard.
 
 Good news is that unlike WHATWG specs, this doesn't change daily.  Bad
 news is that CSS 2.1 was the last real CSS version, and newer features
-are spread accross a bunch of random documents with questionable status
+are spread across a bunch of random documents with questionable status
 of stability: <https://www.w3.org/Style/CSS/specs.en.html>.
 
 ### Other standards
