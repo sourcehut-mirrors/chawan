@@ -74,7 +74,7 @@ type
     lmGotoLine = "Goto line: "
     lmDownload = "(Download)Save file to: "
     lmBufferFile = "(Upload)Filename: "
-    lmAlert = "Alert: "
+    lmAlert = ""
     lmMailcap = "Mailcap: "
 
   PagerAlertState = enum
