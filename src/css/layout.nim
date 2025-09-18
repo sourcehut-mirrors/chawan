@@ -15,28 +15,8 @@ import utils/twtstr
 import utils/widthconv
 
 type
-  # position: absolute is annoying in that its position depends on its
-  # containing box's size and position, which of course is rarely its
-  # parent box.
-  #
-  # So we must delay its positioning until before the outermost box is
-  # popped off the stack, and we do this by queuing up absolute boxes in
-  # the initial pass.
-  #
-  # (Technically, its layout could be done earlier, but we aren't sure
-  # of the parent's size before its layout is finished, so this way we
-  # can avoid pointless sub-layout passes.)
-  QueuedAbsolute = object
-    offset: Offset
-    child: BlockBox
-
-  PositionedItem = object
-    queue: seq[QueuedAbsolute]
-
   LayoutContext = ref object
-    attrsp: ptr WindowAttributes
-    cellSize: Size # size(w = attrsp.ppc, h = attrsp.ppl)
-    positioned: seq[PositionedItem]
+    cellSize: Size # size(w = attrs.ppc, h = attrs.ppl)
     luctx: LUContext
 
 const DefaultSpan = Span(start: 0, send: LUnit.high)
@@ -91,8 +71,8 @@ proc h(space: AvailableSpace): SizeConstraint {.inline.} =
 proc `h=`(space: var AvailableSpace; h: SizeConstraint) {.inline.} =
   space[dtVertical] = h
 
-template attrs(state: LayoutContext): WindowAttributes =
-  state.attrsp[]
+proc measure(): SizeConstraint =
+  return SizeConstraint(t: scMeasure)
 
 proc maxContent(): SizeConstraint =
   return SizeConstraint(t: scMaxContent)
@@ -105,7 +85,7 @@ proc fitContent(u: LUnit): SizeConstraint =
 
 proc fitContent(sc: SizeConstraint): SizeConstraint =
   case sc.t
-  of scMinContent, scMaxContent:
+  of scMinContent, scMaxContent, scMeasure:
     return sc
   of scStretch, scFitContent:
     return SizeConstraint(t: scFitContent, u: sc.u)
@@ -130,6 +110,11 @@ proc px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
     return (p.u.toFloat32() * l.perc + l.npx).toLUnit()
   return 0
 
+proc stretchOrMeasure(l: CSSLength; sc: SizeConstraint): SizeConstraint =
+  if l.canpx(sc):
+    return stretch(l.px(sc))
+  return measure()
+
 proc stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =
   if l.canpx(sc):
     return stretch(l.px(sc))
@@ -139,7 +124,7 @@ proc applySizeConstraint(u: LUnit; availableSize: SizeConstraint): LUnit =
   case availableSize.t
   of scStretch:
     return availableSize.u
-  of scMinContent, scMaxContent:
+  of scMinContent, scMaxContent, scMeasure:
     # must be calculated elsewhere...
     return u
   of scFitContent:
@@ -491,7 +476,8 @@ proc resolveBlockWidth(sizes: var ResolvedSizes; parentWidth: SizeConstraint;
       sizes.space.w = stretch(0)
       sizes.margin[dtHorizontal].send += underflow
   if sizes.space.w.isDefinite() and sizes.maxWidth < sizes.space.w.u or
-      sizes.maxWidth < LUnit.high and sizes.space.w.t == scMaxContent:
+      sizes.maxWidth < LUnit.high and
+      sizes.space.w.t in {scMaxContent, scMeasure}:
     if sizes.space.w.t == scStretch:
       # available width would stretch over max-width
       sizes.space.w = stretch(sizes.maxWidth)
@@ -522,7 +508,8 @@ proc resolveBlockHeight(sizes: var ResolvedSizes; parentHeight: SizeConstraint;
       sizes.bounds.mi[dim].start = max(sizes.bounds.mi[dim].start, px)
       sizes.bounds.mi[dim].send = min(sizes.bounds.mi[dim].send, px)
   if sizes.space.h.isDefinite() and sizes.maxHeight < sizes.space.h.u or
-      sizes.maxHeight < LUnit.high and sizes.space.h.t == scMaxContent:
+      sizes.maxHeight < LUnit.high and
+      sizes.space.h.t in {scMaxContent, scMeasure}:
     # same reasoning as for width.
     if sizes.space.h.t == scStretch:
       sizes.space.h = stretch(sizes.maxHeight)
@@ -813,14 +800,8 @@ proc whitespacepre(computed: CSSValues): bool =
 proc nowrap(computed: CSSValues): bool =
   computed{"white-space"} in {WhitespaceNowrap, WhitespacePre}
 
-proc cellWidth(lctx: LayoutContext): int =
-  lctx.attrs.ppc
-
-proc cellWidth(fstate: FlowState): int =
-  fstate.lctx.cellWidth
-
-proc cellHeight(fstate: FlowState): int =
-  fstate.lctx.attrs.ppl
+template cellSize(fstate: FlowState): Size =
+  fstate.lctx.cellSize
 
 template computed(fstate: FlowState): CSSValues =
   fstate.box.computed
@@ -1008,10 +989,10 @@ proc computeShift(fstate: FlowState; istate: InlineState): LUnit =
       let ibox = InlineTextBox(ibox)
       if ibox.runs.len > 0 and ibox.runs[^1].str[^1] == ' ':
         return 0
-  return fstate.cellWidth * fstate.whitespacenum
+  return fstate.cellSize.w * fstate.whitespacenum
 
 proc newWord(fstate: var FlowState; ibox: InlineBox) =
-  let ch = fstate.cellHeight.toLUnit()
+  let ch = fstate.cellSize.h
   fstate.word = InlineAtomState(
     ibox: ibox,
     run: TextRun(),
@@ -1048,7 +1029,7 @@ proc positionAtom(lbstate: LineBoxState; iastate: var InlineAtomState) =
 
 proc getLineWidth(fstate: FlowState): LUnit =
   return case fstate.space.w.t
-  of scMinContent, scMaxContent: fstate.maxChildWidth
+  of scMinContent, scMaxContent, scMeasure: fstate.maxChildWidth
   of scFitContent: fstate.space.w.u
   of scStretch: max(fstate.maxChildWidth, fstate.space.w.u)
 
@@ -1070,8 +1051,8 @@ proc alignLine(fstate: var FlowState) =
   var totalWidth: LUnit = 0
   var currentAreaOffsetX: LUnit = 0
   var currentBox: InlineBox = nil
-  let areaY = fstate.offset.y + fstate.lbstate.baseline - fstate.cellHeight
-  var minHeight = fstate.cellHeight.toLUnit()
+  let areaY = fstate.offset.y + fstate.lbstate.baseline - fstate.cellSize.h
+  var minHeight = fstate.cellSize.h
   for (box, i) in fstate.lbstate.paddingTodo:
     box.state.areas[i].offset.x += xshift
     box.state.areas[i].offset.y = areaY
@@ -1092,7 +1073,7 @@ proc alignLine(fstate: var FlowState) =
         if w != 0:
           currentBox.state.areas.add(Area(
             offset: offset(x = currentAreaOffsetX, y = areaY),
-            size: size(w = w, h = fstate.cellHeight)
+            size: size(w = w, h = fstate.cellSize.h)
           ))
       # init new box
       currentBox = box
@@ -1118,17 +1099,17 @@ proc alignLine(fstate: var FlowState) =
         lastArea.offset.x == offset.x and lastArea.size.w == w and
         lastArea.offset.y + lastArea.size.h == offset.y:
       # merge contiguous areas
-      lastArea.size.h += fstate.cellHeight
+      lastArea.size.h += fstate.cellSize.h
     else:
       currentBox.state.areas.add(Area(
         offset: offset,
-        size: size(w = w, h = fstate.cellHeight)
+        size: size(w = w, h = fstate.cellSize.h)
       ))
   if fstate.space.w.t == scFitContent:
     fstate.maxChildWidth = max(totalWidth, fstate.maxChildWidth)
   # Ensure that the line is exactly as high as its highest atom demands,
   # rounded up to the next line.
-  fstate.lbstate.size.h = minHeight.ceilTo(fstate.cellHeight)
+  fstate.lbstate.size.h = minHeight.ceilTo(fstate.cellSize.h.toInt())
 
 proc putAtom(lbstate: var LineBoxState; iastate: InlineAtomState) =
   lbstate.iastates.add(iastate)
@@ -1140,17 +1121,17 @@ proc addSpacing(fstate: var FlowState; width: LUnit; hang = false) =
   let ibox = fstate.whitespaceBox
   if ibox.runs.len == 0 or fstate.lbstate.iastates.len == 0 or
       (let orun = ibox.runs[^1]; orun != fstate.lbstate.iastates[^1].run):
-    let ch = fstate.cellHeight.toLUnit()
+    let cellHeight = fstate.cellSize.h
     let iastate = InlineAtomState(
       ibox: ibox,
-      baseline: ch,
+      baseline: cellHeight,
       run: TextRun(),
-      offset: offset(x = fstate.lbstate.size.w, y = ch),
-      size: size(w = 0, h = ch)
+      offset: offset(x = fstate.lbstate.size.w, y = cellHeight),
+      size: size(w = 0, h = cellHeight)
     )
     fstate.lbstate.putAtom(iastate)
   let iastate = addr fstate.lbstate.iastates[^1]
-  let n = (width div fstate.cellWidth).toInt #TODO
+  let n = (width div fstate.cellSize.w).toInt #TODO
   for i in 0 ..< n:
     iastate.run.str &= ' '
   iastate.size.w += width
@@ -1169,7 +1150,7 @@ proc flushWhitespace(fstate: var FlowState; istate: InlineState;
     fstate.addSpacing(shift, hang)
 
 proc initLineBoxState(fstate: FlowState): LineBoxState =
-  let cellHeight = fstate.cellHeight.toLUnit()
+  let cellHeight = fstate.cellSize.h
   result = LineBoxState(
     intrh: cellHeight,
     baseline: cellHeight,
@@ -1251,7 +1232,7 @@ proc shouldWrap(fstate: FlowState; w: LUnit;
     pcomputed: CSSValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
     return false
-  if fstate.space.w.t == scMaxContent:
+  if fstate.space.w.t in {scMaxContent, scMeasure}:
     return false # no wrap with max-content
   if fstate.space.w.t == scMinContent:
     return true # always wrap with min-content
@@ -1268,7 +1249,7 @@ proc getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
   of VerticalAlignBaseline:
     iastate.baseline
   of VerticalAlignLength:
-    iastate.baseline + iastate.baselineShift.px(fstate.cellHeight)
+    iastate.baseline + iastate.baselineShift.px(fstate.cellSize.h)
   of VerticalAlignTop:
     0
   of VerticalAlignMiddle:
@@ -1353,7 +1334,7 @@ proc addWordEOL(fstate: var FlowState; state: var InlineState): bool =
       fstate.word.run.str &= shy
       fstate.hasshy = false
     let wrapped = fstate.addWord(state)
-    fstate.word.size.w = leftstr.width() * fstate.cellWidth
+    fstate.word.size.w = leftstr.width() * fstate.cellSize.w
     fstate.word.run.str = move(leftstr)
     return wrapped
   else:
@@ -1376,7 +1357,7 @@ proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
       fstate.wrappos = -1
       fstate.flushWordIntrSize()
     if uw == 2 or fstate.wrappos != -1: # break on cjk and wrap opportunities
-      let plusWidth = fstate.word.size.w + shift + uw * fstate.cellWidth
+      let plusWidth = fstate.word.size.w + shift + uw * fstate.cellSize.w
       if fstate.shouldWrap(plusWidth, nil):
         if not fstate.addWordEOL(state): # no line wrapping occured in addAtom
           fstate.finishLine(state, wrap = true)
@@ -1384,13 +1365,13 @@ proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
   of WordBreakBreakAll:
     fstate.wrappos = -1
     fstate.flushWordIntrSize()
-    let plusWidth = fstate.word.size.w + shift + uw * fstate.cellWidth
+    let plusWidth = fstate.word.size.w + shift + uw * fstate.cellSize.w
     if fstate.shouldWrap(plusWidth, nil):
       if not fstate.addWordEOL(state): # no line wrapping occured in addAtom
         fstate.finishLine(state, wrap = true)
         fstate.whitespacenum = 0
   of WordBreakKeepAll:
-    let plusWidth = fstate.word.size.w + shift + uw * fstate.cellWidth
+    let plusWidth = fstate.word.size.w + shift + uw * fstate.cellSize.w
     if fstate.shouldWrap(plusWidth, nil):
       fstate.finishLine(state, wrap = true)
       fstate.whitespacenum = 0
@@ -1425,7 +1406,7 @@ proc processWhitespace(fstate: var FlowState; istate: var InlineState;
       fstate.flushWhitespace(istate)
       let w = ((realWidth + 8) and not 7) - realWidth
       fstate.word.run.str.addUTF8(tabPUAPoint(w))
-      fstate.word.size.w += w * fstate.cellWidth
+      fstate.word.size.w += w * fstate.cellSize.w
       fstate.lbstate.charwidth += w
       # Ditto here - we don't want the tab stop to get merged into the next
       # word.
@@ -1456,7 +1437,7 @@ proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
         let w = uint32(c).width()
         fstate.checkWrap(state, uint32(c), w)
         fstate.word.run.str &= c
-        let cw = w * fstate.cellWidth
+        let cw = w * fstate.cellSize.w
         fstate.word.size.w += cw
         fstate.wordIntrSize += cw
         fstate.lbstate.charwidth += w
@@ -1478,7 +1459,7 @@ proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
       fstate.checkWrap(state, u, w)
       for j in pi ..< i:
         fstate.word.run.str &= str[j]
-      let cw = w * fstate.cellWidth
+      let cw = w * fstate.cellSize.w
       fstate.word.size.w += cw
       fstate.wordIntrSize += cw
       fstate.lbstate.charwidth += w
@@ -1503,23 +1484,20 @@ proc layoutText(fstate: var FlowState; istate: var InlineState; s: string) =
     else: ""
     fstate.layoutTextLoop(istate, s)
 
-proc pushPositioned(lctx: LayoutContext; box: CSSBox) =
-  lctx.positioned.add(PositionedItem())
-
 # size is the parent's size.
-proc popPositioned(lctx: LayoutContext; size: Size) =
-  let item = lctx.positioned.pop()
-  for it in item.queue:
-    let child = it.child
+proc popPositioned(lctx: LayoutContext; head: CSSAbsolute; size: Size) =
+  var it = head
+  while it != nil:
+    let child = it.box
     var size = size
     #TODO this is very ugly.
     # I'm subtracting the X offset because it's normally equivalent to
     # the float-induced offset. But this isn't always true, e.g. it
     # definitely isn't in flex layout.
-    size.w -= it.offset.x
+    var offset = child.state.offset
+    size.w -= offset.x
     let positioned = lctx.resolvePositioned(size, child.computed)
     var sizes = lctx.resolveAbsoluteSizes(size, positioned, child.computed)
-    var offset = it.offset
     offset.x += sizes.margin.left
     lctx.layoutRootBlock(child, offset, sizes)
     if not child.computed{"left"}.auto:
@@ -1535,14 +1513,7 @@ proc popPositioned(lctx: LayoutContext; size: Size) =
         sizes.margin.bottom
     else:
       child.state.offset.y += sizes.margin.top
-
-proc queueAbsolute(lctx: LayoutContext; box: BlockBox; offset: Offset) =
-  case box.computed{"position"}
-  of PositionAbsolute:
-    lctx.positioned[^1].queue.add(QueuedAbsolute(child: box, offset: offset))
-  of PositionFixed:
-    lctx.positioned[1].queue.add(QueuedAbsolute(child: box, offset: offset))
-  else: assert false
+    it = it.next
 
 proc positionRelative(lctx: LayoutContext; space: AvailableSpace;
     box: BlockBox) =
@@ -1572,10 +1543,6 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state.offset = offset
   # For some reason beyond mortal comprehension, flex items always
   # behave as positioned boxes.
-  let positioned = flexItem and not box.computed{"z-index"}.auto or
-    box.computed{"position"} != PositionStatic
-  if positioned:
-    bctx.lctx.pushPositioned(box)
   bctx.layout(box, sizes)
   assert bctx.unpositionedFloats.len == 0
   let marginBottom = bctx.marginTodo.sum()
@@ -1584,8 +1551,8 @@ proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
   box.state.size.h = max(box.state.size.h + marginBottom, bctx.maxFloatHeight)
   box.state.intr.h = max(box.state.intr.h + marginBottom, bctx.maxFloatHeight)
   box.state.marginBottom = marginBottom
-  if positioned:
-    bctx.lctx.popPositioned(box.state.size)
+  if sizes.space.w.t != scMeasure:
+    bctx.lctx.popPositioned(box.absolute, box.state.size)
 
 proc clearedBy(floats: set[CSSFloat]; clear: CSSClear): bool =
   return case clear
@@ -1599,7 +1566,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
   let sizes = lctx.resolveFloatSizes(fstate.space, child.computed)
   lctx.layoutRootBlock(child, fstate.offset + sizes.margin.topLeft, sizes)
   let outerSize = child.outerSize(sizes, lctx)
-  if fstate.space.w.t in {scFitContent, scMaxContent}:
+  if fstate.space.w.t == scMeasure:
     # Float position depends on the available width, but in this case
     # the parent width is not known.  Skip this box; we will position
     # it in the next pass.
@@ -1610,6 +1577,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
     # in initReLayout.
     fstate.lbstate.totalFloatWidth += outerSize.w
   else:
+    assert fstate.space.w.t == scStretch
     fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
     fstate.initLine(flag = ilfFloat)
     var newLine = true
@@ -1685,7 +1653,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
         x = pbfcOffset.x + child.state.offset.x,
         y = max(pbfcOffset.y + child.state.offset.y, fstate.bctx.clearOffset)
       )
-      let minSize = size(w = child.state.intr.w, h = lctx.attrs.ppl)
+      let minSize = size(w = child.state.intr.w, h = lctx.cellSize.h)
       var outw: LUnit
       let offset = fstate.bctx.findNextBlockOffset(bfcOffset, minSize,
         fstate.space, outw)
@@ -1703,11 +1671,9 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
     if clear != ClearNone:
       fstate.bctx.flushMargins(child.state.offset.y)
       child.state.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
-    if child.computed{"position"} != PositionStatic:
-      lctx.pushPositioned(child)
     fstate.bctx.layout(child, sizes)
-    if child.computed{"position"} != PositionStatic:
-      lctx.popPositioned(child.state.size)
+    if sizes.space.w.t != scMeasure:
+      lctx.popPositioned(child.absolute, child.state.size)
   fstate.bctx.marginTodo.append(sizes.margin.bottom)
   let outerSize = size(
     w = child.outerSize(dtHorizontal, sizes, lctx),
@@ -1749,10 +1715,9 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
     # Here our job is much easier in the unresolved case: subsequent
     # children's layout doesn't depend on our position; so we can just
     # defer margin resolution to the parent.
-    if fstate.space.w.t in {scFitContent, scMaxContent}:
+    if fstate.space.w.t == scMeasure:
       # Do not queue in the first pass.
       return
-    let lctx = fstate.lctx
     var offset = fstate.offset
     fstate.initLine(flag = ilfAbsolute)
     if fstate.bctx.marginTarget != fstate.initialMarginTarget:
@@ -1765,8 +1730,8 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
     elif fstate.lbstate.iastates.len > 0:
       # flush if there is already something on the line *and* our outer
       # display is block.
-      offset.y += fstate.cellHeight
-    fstate.lctx.queueAbsolute(child, offset)
+      offset.y += fstate.cellSize.h
+    child.state.offset = offset
   elif child.computed{"float"} != FloatNone:
     fstate.layoutFloat(child)
   else:
@@ -1932,13 +1897,11 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     if padding.start != 0:
       ibox.state.areas.add(Area(
         offset: offset(x = fstate.lbstate.widthAfterWhitespace, y = 0),
-        size: size(w = padding.start, h = fstate.cellHeight)
+        size: size(w = padding.start, h = fstate.cellSize.h)
       ))
       fstate.lbstate.paddingTodo.add((ibox, 0))
       fstate.initLine()
       fstate.lbstate.size.w += padding.start
-    if ibox.computed{"position"} != PositionStatic:
-      lctx.pushPositioned(ibox)
     for child in ibox.children:
       if child of InlineBox:
         fstate.layoutInline(InlineBox(child))
@@ -1947,7 +1910,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     if padding.send != 0:
       ibox.state.areas.add(Area(
         offset: offset(x = fstate.lbstate.size.w, y = 0),
-        size: size(w = padding.send, h = fstate.cellHeight)
+        size: size(w = padding.send, h = fstate.cellSize.h)
       ))
       fstate.lbstate.paddingTodo.add((ibox, ibox.state.areas.high))
       fstate.initLine()
@@ -1956,7 +1919,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     if marginRight != 0:
       fstate.initLine()
       fstate.lbstate.size.w += marginRight
-    if ibox.computed{"position"} != PositionStatic:
+    if fstate.space.w.t != scMeasure:
       # This is UB in CSS 2.1, I can't find a newer spec about it,
       # and Gecko can't even layout it consistently (???)
       #
@@ -1964,9 +1927,9 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       # since this uses cellHeight instead of the actual line height
       # for the last line.
       # Well, it seems good enough.
-      lctx.popPositioned(size(
+      lctx.popPositioned(ibox.absolute, size(
         w = 0,
-        h = fstate.offset.y + fstate.cellHeight - ibox.state.startOffset.y
+        h = fstate.offset.y + fstate.cellSize.h - ibox.state.startOffset.y
       ))
   fstate.textAlign = oldTextAlign
 
@@ -2082,19 +2045,21 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
       sizes.space.h.isDefinite() and sizes.space.h.u != 0 or
       sizes.border[dtVertical].start notin BorderStyleNoneHidden):
     bctx.flushMargins(box.state.offset.y)
+  let spacew = fstate.space.w
+  let indefinite = spacew.t in {scFitContent, scMaxContent}
+  if indefinite:
+    fstate.space.w = measure()
   fstate.layoutFlow0()
-  if fstate.space.w.t == scFitContent:
+  if indefinite:
+    fstate.space.w = spacew
     # shrink-to-fit size; layout again.
     let oldIntr = fstate.intr
     fstate.initReLayout(bctx, box, sizes)
     fstate.layoutFlow0()
     # Restore old intrinsic sizes, as the new ones are a function of the
     # current input and therefore wrong.
-    # (This is especially important with max-content, otherwise tables
-    # break horribly.)
     fstate.intr = oldIntr
-  elif fstate.space.w.t == scMaxContent:
-    #TODO performance hack
+  elif fstate.space.w.t == scMeasure:
     fstate.maxChildWidth += fstate.totalFloatWidth
   # Apply width, and height. For height, temporarily remove padding we have
   # applied before so that percentage resolution works correctly.
@@ -2204,11 +2169,9 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
   if box.sizes.space.w.isDefinite():
     box.sizes.space.w.u -= box.sizes.padding[dtHorizontal].sum()
   var bctx = BlockContext(lctx: lctx)
-  if box.computed{"position"} != PositionStatic:
-    lctx.pushPositioned(box)
   bctx.layout(box, box.sizes)
-  if box.computed{"position"} != PositionStatic:
-    lctx.popPositioned(box.state.size)
+  if box.sizes.space.w.t != scMeasure:
+    lctx.popPositioned(box.absolute, box.state.size)
   assert bctx.unpositionedFloats.len == 0
   # Table cells ignore margins.
   box.state.offset.y = 0
@@ -2352,7 +2315,7 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
     let cw = box.computed{"width"}
     let ch = box.computed{"height"}
     let space = availableSpace(
-      w = cw.stretchOrMaxContent(tctx.space.w),
+      w = cw.stretchOrMeasure(tctx.space.w),
       h = ch.stretchOrMaxContent(tctx.space.h)
     )
     var inlineBorder = Span(start: tctx.inlineSpacing, send: tctx.inlineSpacing)
@@ -2367,7 +2330,7 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
       rowspan: rowspan,
       coli: n,
       inlineBorder: inlineBorder,
-      reflow: space.w.t == scMaxContent #TODO performance hack
+      reflow: space.w.t == scMeasure
     )
     if cellTail != nil:
       cellTail.next = cellw
@@ -2549,7 +2512,7 @@ proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
 
 proc needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
   case tctx.space.w.t
-  of scMinContent, scMaxContent:
+  of scMinContent, scMaxContent, scMeasure:
     return false
   of scStretch:
     return tctx.space.w.u != tctx.maxwidth
@@ -2606,7 +2569,7 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
   case tctx.space.h.t
   of scStretch:
     table.state.size.h = max(tctx.space.h.u, y)
-  of scMinContent, scMaxContent, scFitContent:
+  of scMinContent, scMaxContent, scMeasure, scFitContent:
     # I don't think these are ever used here; not that they make much sense for
     # min-height...
     table.state.size.h = y
@@ -2773,9 +2736,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     diff = 0
     relayout.setLen(0)
     for i, it in mctx.pending.mpairs:
-      if it.weights[wt] == 0 and it.sizes.space[dim].t != scMaxContent:
-        # force max-content relayout for the performance hack
-        #TODO get rid of the max-content check (weight check must stay)
+      if it.weights[wt] == 0:
         mctx.updateMaxSizes(it.child, it.sizes, lctx)
         continue
       var uw = unit * it.weights[wt]
@@ -2923,7 +2884,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     childSizes.bounds.a[dim] = childMinBounds
   if child.computed{"position"} in PositionAbsoluteFixed:
     # Absolutely positioned flex children do not participate in flex layout.
-    lctx.queueAbsolute(child, offset(x = 0, y = 0))
+    child.state.offset = offset(0, 0)
   else:
     if fctx.canWrap and (sizes.space[dim].t == scMinContent or
         sizes.space[dim].isDefinite and
@@ -2969,6 +2930,7 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     fctx.flushMain(mctx, sizes)
   var size = fctx.totalMaxSize
   size[odim] = fctx.offset[odim]
+  size += sizes.padding.bottomRight
   box.applySize(sizes, size, sizes.space)
   box.applyIntr(sizes, fctx.intr)
   box.state.baselineSet = fctx.baselineSet
@@ -2989,39 +2951,26 @@ proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   of DisplayInnerGrid: bctx.layoutGrid(box, sizes)
   else: assert false
 
-proc layout*(box: BlockBox; attrsp: ptr WindowAttributes) =
+proc layout*(box: BlockBox; attrs: WindowAttributes; fixedHead: CSSAbsolute;
+    luctx: LUContext) =
   let space = availableSpace(
-    w = stretch(attrsp[].widthPx),
-    h = stretch(attrsp[].heightPx)
+    w = stretch(attrs.widthPx),
+    h = stretch(attrs.heightPx)
   )
-  let lctx = LayoutContext(
-    attrsp: attrsp,
-    cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
-    positioned: @[
-      # add another to catch fixed boxes pushed to the stack
-      PositionedItem(),
-      PositionedItem(),
-      PositionedItem()
-    ],
-    luctx: LUContext()
-  )
+  let cellSize = size(w = attrs.ppc, h = attrs.ppl)
+  let lctx = LayoutContext(cellSize: cellSize, luctx: luctx)
   let sizes = lctx.resolveBlockSizes(space, box.computed)
   # the bottom margin is unused.
   lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
-  var size = size(w = attrsp[].widthPx, h = attrsp[].heightPx)
-  # Last absolute layer.
-  lctx.popPositioned(size)
   # Fixed containing block.
   # The idea is to move fixed boxes to the real edges of the page,
   # so that they do not overlap with other boxes *and* we don't have
   # to move them on scroll. It's still not compatible with what desktop
   # browsers do, but the alternative would completely break search (and
   # slow down the renderer to a crawl.)
+  var size = size(w = attrs.widthPx, h = attrs.heightPx)
   size.w = max(size.w, box.state.size.w)
   size.h = max(size.h, box.state.size.h)
-  lctx.popPositioned(size)
-  # I'm not sure why the third PositionedItem is needed, but without
-  # this fixed boxes appear in the wrong place.
-  lctx.popPositioned(size)
+  lctx.popPositioned(fixedHead, size)
 
 {.pop.} # raises: []

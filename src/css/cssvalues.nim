@@ -496,8 +496,7 @@ const DisplayInnerTable* = {DisplayTable, DisplayInlineTable}
 const DisplayInternalTable* = {
   DisplayTableCell, DisplayTableRow, DisplayTableCaption
 } + RowGroupBox
-const DisplayNeverHasStack* = DisplayInternalTable + DisplayInnerTable -
-  {DisplayTableCell}
+const DisplayNeverHasStack* = DisplayInternalTable - {DisplayTableCell}
 const PositionAbsoluteFixed* = {PositionAbsolute, PositionFixed}
 const WhiteSpacePreserve* = {
   WhitespacePre, WhitespacePreLine, WhitespacePreWrap
@@ -1526,11 +1525,9 @@ proc parseImage(ctx: var CSSParser): Opt[NetworkBitmap] =
   return ok(NetworkBitmap(cacheId: -1, imageId: -1))
 
 proc parseInteger(ctx: var CSSParser; range: Slice[int32]): Opt[int32] =
-  let tok = ctx.consume()
-  if tok.t == cttNumber:
-    let i = tok.toi
-    if i in range:
-      return ok(i)
+  let i = ?ctx.consumeInt()
+  if i in range:
+    return ok(i)
   return err()
 
 proc parseZIndex(ctx: var CSSParser): Opt[CSSZIndex] =
@@ -2102,7 +2099,7 @@ proc splitTable*(computed: CSSValues): tuple[outer, innner: CSSValues] =
     cptPaddingLeft, cptPaddingRight, cptPaddingTop, cptPaddingBottom,
     cptWidth, cptHeight, cptBoxSizing,
     # no clue why this isn't included in the standard
-    cptClear, cptPosition
+    cptClear, cptZIndex
   }
   for t in CSSPropertyType:
     if t in props:

@@ -85,7 +85,7 @@ type
   #   in other words, as wide as needed, but wrap if wider than allowed
   # (note: I write width here, but it can apply for any constraint)
   SizeConstraintType* = enum
-    scStretch, scFitContent, scMinContent, scMaxContent
+    scStretch, scFitContent, scMinContent, scMaxContent, scMeasure
 
   SizeConstraint* = object
     t*: SizeConstraintType
@@ -108,10 +108,15 @@ type
     parent* {.cursor.}: CSSBox
     firstChild*: CSSBox
     next*: CSSBox
+    absolute*: CSSAbsolute
     positioned*: bool # set if we participate in positioned layout
     render*: BoxRenderState # render output
     computed*: CSSValues
     element*: Element
+
+  CSSAbsolute* {.acyclic.} = ref object
+    box*: BlockBox
+    next*: CSSAbsolute
 
   BlockBox* = ref object of CSSBox
     sizes*: ResolvedSizes # tree builder output -> layout input
@@ -218,6 +223,9 @@ proc bottom*(b: CSSBorder): CSSBorderStyle =
 
 proc topLeft*(s: RelativeRect): Offset =
   return offset(x = s.left, y = s.top)
+
+proc bottomRight*(s: RelativeRect): Offset =
+  return offset(x = s.right, y = s.bottom)
 
 proc `+=`*(span: var Span; u: LUnit) =
   span.start += u

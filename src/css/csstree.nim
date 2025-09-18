@@ -76,7 +76,11 @@ type
     quoteLevel: int
     counters: seq[CSSCounter]
     rootProperties: CSSValues
-    stackItems: seq[StackItem]
+    stackItem: StackItem
+    absoluteHead: CSSAbsolute
+    absoluteTail: CSSAbsolute
+    fixedHead: CSSAbsolute
+    fixedTail: CSSAbsolute
 
   TreeFrame = object
     parent: Element
@@ -566,17 +570,32 @@ proc pushStackItem(ctx: var TreeContext; styledNode: StyledNode):
     StackItem =
   let index = styledNode.computed{"z-index"}
   let stack = StackItem(index: index.num)
-  ctx.stackItems[^1].children.add(stack)
-  let nextStack = if index.auto:
-    ctx.stackItems[^1]
-  else:
-    stack
-  ctx.stackItems.add(nextStack)
+  ctx.stackItem.children.add(stack)
+  if not index.auto:
+    ctx.stackItem = stack
   return stack
 
-proc popStackItem(ctx: var TreeContext) =
-  let stack = ctx.stackItems.pop()
-  stack.children.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
+proc popStackItem(ctx: var TreeContext; old: StackItem) =
+  let stackItem = ctx.stackItem
+  if stackItem != old:
+    stackItem.children.sort(proc(x, y: StackItem): int = cmp(x.index, y.index))
+  ctx.stackItem = old
+
+proc addAbsolute(ctx: var TreeContext; box: CSSBox) =
+  let absolute = CSSAbsolute(box: BlockBox(box))
+  if ctx.absoluteHead == nil:
+    ctx.absoluteHead = absolute
+  else:
+    ctx.absoluteTail.next = absolute
+  ctx.absoluteTail = absolute
+
+proc addFixed(ctx: var TreeContext; box: CSSBox) =
+  let absolute = CSSAbsolute(box: BlockBox(box))
+  if ctx.fixedHead == nil:
+    ctx.fixedHead = absolute
+  else:
+    ctx.fixedTail.next = absolute
+  ctx.fixedTail = absolute
 
 proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     forceZ: bool): CSSBox =
@@ -588,8 +607,13 @@ proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
   var stackItem: StackItem = nil
   let display = frame.computed{"display"}
   let position = frame.computed{"position"}
+  let oldStackItem = ctx.stackItem
+  let oldAbsoluteHead = ctx.absoluteHead
+  let oldAbsoluteTail = ctx.absoluteTail
   if position != PositionStatic and display notin DisplayNeverHasStack or
       forceZ and not frame.computed{"z-index"}.auto:
+    ctx.absoluteHead = nil
+    ctx.absoluteTail = nil
     stackItem = ctx.pushStackItem(styledNode)
   frame.buildChildren(styledNode)
   let box = ctx.buildInnerBox(frame, cached)
@@ -601,7 +625,14 @@ proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     else:
       stackItem.box = box
     box.positioned = position != PositionStatic
-    ctx.popStackItem()
+    box.absolute = ctx.absoluteHead
+    ctx.absoluteHead = oldAbsoluteHead
+    ctx.absoluteTail = oldAbsoluteTail
+    ctx.popStackItem(oldStackItem)
+    case position
+    of PositionAbsolute: ctx.addAbsolute(box)
+    of PositionFixed: ctx.addFixed(box)
+    else: discard
   if display in DisplayInlineBlockLike:
     let wrapper = InlineBlockBox(
       computed: ctx.rootProperties,
@@ -644,7 +675,8 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     )
 
 # Root
-proc buildTree*(element: Element; cached: CSSBox; markLinks: bool): StackItem =
+proc buildTree*(element: Element; cached: CSSBox; markLinks: bool):
+    tuple[stack: StackItem, fixedHead: CSSAbsolute] =
   if element.computed == nil:
     element.applyStyle()
   let styledNode = StyledNode(
@@ -656,11 +688,12 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool): StackItem =
   var ctx = TreeContext(
     rootProperties: rootProperties(),
     markLinks: markLinks,
-    stackItems: @[stack]
+    stackItem: stack
   )
   let root = BlockBox(ctx.build(cached, styledNode, forceZ = false))
   stack.box = root
-  ctx.popStackItem()
-  return stack
+  root.absolute = ctx.absoluteHead
+  ctx.popStackItem(nil)
+  return (stack, ctx.fixedHead)
 
 {.pop.} # raises: []

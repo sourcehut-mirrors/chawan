@@ -51,6 +51,7 @@ import types/opt
 import types/refstring
 import types/url
 import types/winattrs
+import utils/luwrap
 import utils/strwidth
 import utils/twtstr
 
@@ -129,6 +130,7 @@ type
     rootBox: BlockBox
     tasks: array[BufferCommand, int]
     window: Window
+    luctx: LUContext
 
   BufferIfaceItem = object
     id: int
@@ -767,10 +769,10 @@ proc maybeReshape(bc: BufferContext) =
   if document == nil or document.documentElement == nil:
     return # not parsed yet, nothing to render
   if document.invalid:
-    let stack = document.documentElement.buildTree(bc.rootBox,
+    let (stack, fixedHead) = document.documentElement.buildTree(bc.rootBox,
       bc.config.markLinks)
     bc.rootBox = BlockBox(stack.box)
-    bc.rootBox.layout(addr bc.attrs)
+    bc.rootBox.layout(bc.attrs, fixedHead, bc.luctx)
     bc.lines.render(bc.bgcolor, stack, addr bc.attrs, bc.images)
     document.invalid = false
     if bc.hasTask(bcOnReshape):
@@ -1962,7 +1964,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     pstream: pstream,
     charsetStack: charsetStack,
     cacheId: cacheId,
-    outputId: -1
+    outputId: -1,
+    luctx: LUContext()
   )
   bc.window = newWindow(
     config.scripting,
