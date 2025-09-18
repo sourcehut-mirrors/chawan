@@ -6,7 +6,7 @@ import io/chafile
 import types/opt
 import utils/twtstr
 
-proc main(): Opt[void] =
+proc parse(): Opt[void] =
   let stdout = cast[ChaFile](stdout)
   let stdin = cast[ChaFile](stdin)
   let stderr = cast[ChaFile](stderr)
@@ -27,6 +27,7 @@ proc main(): Opt[void] =
   ?stdout.write("'>")
   ok()
 
-discard main()
+proc main*() =
+  discard parse()
 
 {.pop.} # raises: []

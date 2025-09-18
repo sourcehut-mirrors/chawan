@@ -11,7 +11,9 @@ You can find network adapters in the source distribution\(cqs
 \f[CR]adapter/protocol\f[R] directory.
 For protocol\-specific file formats (like gemtext or gopher directories)
 you will also find an appropriate HTML converter in
-\f[CR]adapter/format\f[R].
+\f[CR]adapter/format\f[R] \- note that these are ultimately compiled
+into a single \f[CR]tohtml\f[R] program that dispatches based on its
+\f[CR]argv[0]\f[R].
 .SS OpenSSL\-based adapters
 The HTTP(S), SFTP, and Gemini modules all depend on OpenSSL.
 This is a huge library, and linking it separately with each adapter

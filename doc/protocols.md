@@ -12,7 +12,8 @@ protocols is outlined in this document.
 You can find network adapters in the source distribution's
 `adapter/protocol` directory.  For protocol-specific file formats (like
 gemtext or gopher directories) you will also find an appropriate HTML
-converter in `adapter/format`.
+converter in `adapter/format` - note that these are ultimately compiled
+into a single `tohtml` program that dispatches based on its `argv[0]`.
 
 <!-- MANOFF -->
 **Table of contents**

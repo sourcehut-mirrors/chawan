@@ -6,7 +6,7 @@ import io/chafile
 import types/opt
 import utils/twtstr
 
-proc main(): Opt[void] =
+proc parse(): Opt[void] =
   # We use `display: block' for anchors because they are supposed to be
   # presented on separate lines per standard.
   # We use `white-space: pre-line' on the entire body so that we do not have
@@ -68,6 +68,7 @@ proc main(): Opt[void] =
       ?stdout.write(line.htmlEscape() & '\n')
   ok()
 
-discard main()
+proc main*() =
+  discard parse()
 
 {.pop.} # raises: []

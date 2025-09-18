@@ -174,7 +174,7 @@ proc parseArgs(title: var string) =
         usage()
     inc i
 
-proc main(): Opt[void] =
+proc parse(): Opt[void] =
   var title = ""
   parseArgs(title)
   let stdout = cast[ChaFile](stdout)
@@ -201,6 +201,7 @@ proc main(): Opt[void] =
   ?stdout.write("</pre></body>")
   ok()
 
-discard main()
+proc main*() =
+  discard parse()
 
 {.pop.} # raises: []

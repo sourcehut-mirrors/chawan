@@ -892,14 +892,12 @@ proc parse(state: var ParseState): Opt[void] =
     of btLinkDef: ?state.parseLinkDef(line)
   ok()
 
-proc main(): Opt[void] =
+proc main*() =
   var state = ParseState(
     slurpIdx: -1,
     ofile: cast[ChaFile](stdout),
     refMap: newTable[string, tuple[link, title: string]]()
   )
-  state.parse()
-
-discard main()
+  discard state.parse()
 
 {.pop.} # raises: []

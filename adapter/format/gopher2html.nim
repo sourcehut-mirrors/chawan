@@ -31,7 +31,7 @@ proc getField(line: string; i: var int): string =
     inc i
   move(s)
 
-proc main(): Opt[void] =
+proc parse(): Opt[void] =
   let stdout = cast[ChaFile](stdout)
   let stdin = cast[ChaFile](stdin)
   if paramCount() != 2 or paramStr(1) != "-u":
@@ -76,6 +76,7 @@ proc main(): Opt[void] =
     ?stdout.write(outs)
   ok()
 
-discard main()
+proc main*() =
+  discard parse()
 
 {.pop.} # raises: []

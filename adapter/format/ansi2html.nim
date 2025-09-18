@@ -384,7 +384,7 @@ proc usage() =
   discard stderr.writeLine("Usage: ansi2html [-s] [-t title]")
   quit(1)
 
-proc main() =
+proc main*() =
   var state = State(os: newPosixStream(STDOUT_FILENO))
   # parse args
   let H = paramCount()
@@ -426,7 +426,5 @@ proc main() =
   if standalone:
     state.puts("</body>")
   state.flushOutbuf()
-
-main()
 
 {.pop.} # raises: []

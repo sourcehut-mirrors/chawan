@@ -61,10 +61,16 @@ else ifeq ($(TARGET),release1)
 FLAGS += -d:release --debugger:native
 endif
 
-protocols = file ftp gopher finger man spartan chabookmark \
-	stbi jebp sixel canvas resize nanosvg http gemini sftp ssl
-converters = gopher2html md2html ansi2html gmi2html dirlist2html uri2html img2html
-tools = urlenc nc
+ssl_link = http gemini sftp
+tohtml_link = gopher2html md2html ansi2html gmi2html dirlist2html img2html
+
+protocols_bin = file ftp gopher finger man spartan chabookmark stbi jebp sixel \
+	canvas resize nanosvg ssl
+converters_bin = uri2html tohtml
+tools_bin = urlenc nc
+protocols = $(protocols_bin) $(ssl_link)
+converters = $(converters_bin) $(tohtml_link)
+tools = $(tools_bin) urldec
 
 ifeq ($(STATIC_LINK),1)
 LDFLAGS += -static
@@ -100,7 +106,6 @@ binaries = $(OUTDIR_BIN)/cha $(OUTDIR_BIN)/mancha
 binaries += $(foreach bin,$(protocols),$(OUTDIR_CGI_BIN)/$(bin))
 binaries += $(foreach bin,$(converters),$(OUTDIR_LIBEXEC)/$(bin))
 binaries += $(foreach bin,$(tools),$(OUTDIR_LIBEXEC)/$(bin))
-binaries += $(OUTDIR_LIBEXEC)/urldec
 
 .PHONY: all
 all: $(binaries)
@@ -168,22 +173,24 @@ $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(sandbox) $(dynstream)
 $(OUTDIR_CGI_BIN)/nanosvg: $(sandbox) adapter/img/nanosvg.nim adapter/img/nanosvg.h
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
-$(OUTDIR_LIBEXEC)/gopher2html: $(twtstr) $(chafile)
-$(OUTDIR_LIBEXEC)/ansi2html: src/types/color.nim $(twtstr) $(dynstream) $(chafile)
-$(OUTDIR_LIBEXEC)/md2html: $(twtstr) $(chafile)
-$(OUTDIR_LIBEXEC)/dirlist2html: $(twtstr) $(chafile)
-$(OUTDIR_LIBEXEC)/img2html: $(twtstr) $(chafile)
-$(OUTDIR_LIBEXEC)/gmi2html: $(twtstr) $(chafile)
+$(OUTDIR_LIBEXEC)/tohtml: adapter/format/ansi2html.nim adapter/format/dirlist2html.nim \
+	adapter/format/gmi2html.nim adapter/format/gopher2html.nim \
+	adapter/format/img2html.nim \
+	$(twtstr) $(chafile) $(dynstream) src/types/color.nim
+
+$(foreach it,$(ssl_link),$(OUTDIR_CGI_BIN)/$(it)): | $(OUTDIR_CGI_BIN)/ssl
+	(cd "$(OUTDIR_CGI_BIN)" && ln -sf $(notdir $<) $(notdir $@))
+
+$(foreach it,$(tohtml_link),$(OUTDIR_LIBEXEC)/$(it)): | $(OUTDIR_LIBEXEC)/tohtml
+	(cd "$(OUTDIR_LIBEXEC)" && ln -sf $(notdir $<) $(notdir $@))
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
-		-o:"$@" $<
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(notdir $@)" -o:"$@" $<
 
 $(OUTDIR_CGI_BIN)/ssl: adapter/protocol/ssl.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(ssl_flags) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
-		-o:"$@" $<
+	$(NIMC) $(ssl_flags) --nimcache:"$(OBJDIR)/$(TARGET)/$(notdir $@)" -o:"$@" $<
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
@@ -195,34 +202,20 @@ $(OUTDIR_LIBEXEC)/%: adapter/format/%
 
 $(OUTDIR_CGI_BIN)/%: adapter/img/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_CGI_BIN)/,,$@)" \
-                -o:"$@" $<
-
-$(OUTDIR_CGI_BIN)/http: $(OUTDIR_CGI_BIN)/ssl
-	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl http)
-$(OUTDIR_CGI_BIN)/gemini: $(OUTDIR_CGI_BIN)/ssl
-	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl gemini)
-$(OUTDIR_CGI_BIN)/sftp: $(OUTDIR_CGI_BIN)/ssl
-	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl sftp)
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(notdir $@)" -o:"$@" $<
 
 $(OUTDIR_LIBEXEC)/%: adapter/format/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
-		-o:"$@" $<
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(notdir $@)" -o:"$@" $<
 
 $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
-	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(subst $(OUTDIR_LIBEXEC)/,,$@)" \
-		-o:"$@" $<
+	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(notdir $@)" -o:"$@" $<
 
-$(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
+$(OUTDIR_LIBEXEC)/urldec: | $(OUTDIR_LIBEXEC)/urlenc
 	(cd "$(OUTDIR_LIBEXEC)" && ln -sf urlenc urldec)
 
-doc/cha.1: doc/cha.md md2man
-	./md2man $< > $@~
-	mv $@~ $@
-
-doc/mancha.1: doc/mancha.md md2man
+doc/%.1: doc/%.md md2man
 	./md2man $< > $@~
 	mv $@~ $@
 
@@ -260,17 +253,15 @@ install:
 	install -m755 "$(OUTDIR_BIN)/mancha" "$(DESTDIR)$(PREFIX)/bin"
 # intentionally not quoted
 	mkdir -p $(LIBEXECDIR_CHAWAN)/cgi-bin
-	for f in $(protocols); do \
+	for f in $(protocols_bin); do \
 	install -m755 "$(OUTDIR_CGI_BIN)/$$f" $(LIBEXECDIR_CHAWAN)/cgi-bin; \
 	done
-	for f in $(converters) $(tools); \
+	for f in $(converters_bin) $(tools_bin); \
 	do install -m755 "$(OUTDIR_LIBEXEC)/$$f" $(LIBEXECDIR_CHAWAN); \
 	done
-# urldec is just a symlink to urlenc
 	(cd $(LIBEXECDIR_CHAWAN) && ln -sf urlenc urldec)
-	(cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl http)
-	(cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl gemini)
-	(cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl sftp)
+	for f in $(ssl_link); do (cd $(LIBEXECDIR_CHAWAN)/cgi-bin && ln -sf ssl "$$f"); done
+	for f in $(tohtml_link); do (cd $(LIBEXECDIR_CHAWAN) && ln -sf tohtml "$$f"); done
 	mkdir -p "$(DESTDIR)$(MANPREFIX1)"
 	for f in $(manpages1); do install -m644 "doc/$$f" "$(DESTDIR)$(MANPREFIX1)"; done
 	mkdir -p "$(DESTDIR)$(MANPREFIX5)"
@@ -284,10 +275,10 @@ uninstall:
 	rm -f "$(DESTDIR)$(PREFIX)/bin/mancha"
 # intentionally not quoted
 	for f in $(protocols); do rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/$$f; done
+	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
 # We only want to uninstall binaries that the main distribution
 # includes or has ever included, but not those that the user might have
-# added.  However, some of these cannot be directly derived from our
-# variables:
+# added.  Some of these cannot be directly derived from our variables:
 # * png has been removed in favor of stbi
 # * data, about have been moved back into the main binary
 # * gmifetch has been replaced by gemini
@@ -298,9 +289,6 @@ uninstall:
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/gmifetch
 	rm -f $(LIBEXECDIR_CHAWAN)/cgi-bin/png
 	rmdir $(LIBEXECDIR_CHAWAN)/cgi-bin || true
-	for f in $(converters) $(tools); do rm -f $(LIBEXECDIR_CHAWAN)/$$f; done
-# urldec is just a symlink to urlenc
-	rm -f $(LIBEXECDIR_CHAWAN)/urldec
 	rmdir $(LIBEXECDIR_CHAWAN) || true
 	for f in $(manpages7); do rm -f "$(DESTDIR)$(MANPREFIX7)/$$f"; done
 	for f in $(manpages5); do rm -f "$(DESTDIR)$(MANPREFIX5)/$$f"; done
