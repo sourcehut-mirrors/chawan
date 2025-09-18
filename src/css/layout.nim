@@ -399,15 +399,16 @@ proc resolveAbsoluteSizes(lctx: LayoutContext; size: Size;
 # Calculate and resolve available width & height for floating boxes.
 proc resolveFloatSizes(lctx: LayoutContext; space: AvailableSpace;
     computed: CSSValues): ResolvedSizes =
-  let padding = lctx.resolvePadding(space.w, computed)
-  let paddingSum = padding.sum()
   var sizes = ResolvedSizes(
     margin: lctx.resolveMargins(space.w, computed),
-    padding: padding,
+    padding: lctx.resolvePadding(space.w, computed),
     space: space,
-    bounds: lctx.resolveBounds(space, paddingSum, computed),
     border: computed.resolveBorder()
   )
+  if computed{"display"} in DisplayInlineBlockLike:
+    lctx.roundSmallMarginsAndPadding(sizes)
+  let paddingSum = sizes.padding.sum()
+  sizes.bounds = lctx.resolveBounds(space, paddingSum, computed)
   sizes.space.h = maxContent()
   for dim in DimensionType:
     let length = computed.getLength(SizeMap[dim])
@@ -1792,7 +1793,6 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
     # A real inline block.
     let lctx = fstate.lctx
     var sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
-    lctx.roundSmallMarginsAndPadding(sizes)
     lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
     # Apply the block box's properties to the atom itself.
     var iastate = InlineAtomState(
