@@ -492,7 +492,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
         buf &= top.borderChar(bdcCornerTopRight)
     let fgcolor = box.computed{"border-top-color"}.cellColor()
     let format = initFormat(defaultColor, fgcolor, {})
-    grid.setText(state, buf, start, format, nil, box.render.clipBox)
+    grid.setText(state, buf, start, format, box.element, box.render.clipBox)
     buf.setLen(0)
   let hasLeft = left notin BorderStyleNoneHidden
   let hasRight = right notin BorderStyleNoneHidden
