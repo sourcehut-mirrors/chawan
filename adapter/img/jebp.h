@@ -126,7 +126,7 @@
  *
  * This is not a feature-complete WebP decoder and has the following
  * limitations:
- *   - Does not support extended file-formats with VP8X.
+ *   - Does not support animated VP8X images, or filtered VP8X alpha.
  *   - Does not support VP8L lossless images with the color-indexing transform
  *     (palleted images).
  *   - Does not support VP8L images with more than 256 huffman groups. This is
@@ -152,6 +152,9 @@
  *   `JEBP_NO_VP8L` will disable VP8L (lossless) decoding support. Note that
  *                  either VP8 or VP8L decoding support is required and it is an
  *                  error to disable both.
+ *   `JEBP_NO_VP8X` will disable VP8X (extended format) support. This is a
+ *                  container for VP8 and VP8X, so disabling either of those
+ *                  also disables VP8X containing the respective format.
  *   `JEBP_ONLY_VP8` and `JEBP_ONLY_VP8L` will disable all other features except
  *                   the specified feature.
  *   `JEBP_ALLOC` and `JEBP_FREE` can be defined to functions for a custom
@@ -352,6 +355,7 @@ jebp_error_t jebp_read(jebp_image_t *image, const char *path);
 #endif
 
 #if defined(JEBP_ONLY_VP8) || defined(JEBP_ONLY_VP8L)
+#define JEBP_NO_VP8X
 #ifndef JEBP_ONLY_VP8
 #define JEBP_NO_VP8L
 #endif // JEBP_ONLY_VP8
@@ -636,11 +640,11 @@ static jebp_error_t jebp__map_reader(jebp__reader_t *reader,
 }
 
 static void jebp__unmap_reader(jebp__reader_t *map) {
-#ifndef JEBP_NO_STDIO
+#ifndef JEBP_NO_CALLBACKS
     JEBP_FREE(map->buffer);
-#else  // JEBP_NO_STDIO
+#else  // JEBP_NO_CALLBACKS
     (void)map;
-#endif // JEBP_NO_STDIO
+#endif // JEBP_NO_CALLBACKS
 }
 #endif // JEBP_NO_VP8
 
@@ -655,7 +659,7 @@ static jebp_ubyte jebp__read_uint8(jebp__reader_t *reader, jebp_error_t *err) {
     return *(reader->bytes++);
 }
 
-// 16-bit and 24-bit uint reading is only used by VP8
+// 16-bit uint reading is only used by VP8
 #ifndef JEBP_NO_VP8
 static jebp_ushort jebp__read_uint16(jebp__reader_t *reader,
                                      jebp_error_t *err) {
@@ -672,7 +676,10 @@ static jebp_ushort jebp__read_uint16(jebp__reader_t *reader,
     return bytes[0] | (bytes[1] << 8);
 #endif // JEBP__LITTLE_ENDIAN
 }
+#endif // JEBP_NO_VP8
 
+// 24-bit uint reading is only used by VP8 and VP8X
+#if !defined(JEBP_NO_VP8) || !defined(JEBP_NO_VP8X)
 static jebp_int jebp__read_uint24(jebp__reader_t *reader, jebp_error_t *err) {
     if (*err != JEBP_OK) {
         return 0;
@@ -688,7 +695,7 @@ static jebp_int jebp__read_uint24(jebp__reader_t *reader, jebp_error_t *err) {
            ((jebp_int)bytes[2] << 16);
 #endif // JEBP__LITTLE_ENDIAN
 }
-#endif // JEBP_NO_VP8
+#endif // !defined(JEBP_NO_VP8) || !defined(JEBP_NO_VP8X)
 
 static jebp_uint jebp__read_uint32(jebp__reader_t *reader, jebp_error_t *err) {
     if (*err != JEBP_OK) {
@@ -4080,6 +4087,187 @@ static jebp_error_t jebp__read_vp8l(jebp_image_t *image, jebp__reader_t *reader,
 #endif // JEBP_NO_VP8L
 
 /**
+ * VP8X image
+ */
+
+#ifndef JEBP_NO_VP8X
+#define JEBP__VP8X_TAG 0x58385056
+#define JEBP__ICCP_TAG 0x50434349
+#define JEBP__ALPH_TAG 0x48504c41
+
+#define JEBP__VP8X_FLAG_ICCP (1 << 3)
+#define JEBP__VP8X_FLAG_ALPH (1 << 4)
+#define JEBP__VP8X_FLAG_ANIM (1 << 7)
+
+typedef struct jebp__vp8x_header_t {
+    jebp_uint flags;
+} jebp__vp8x_header_t;
+
+static void jebp__init_vp8x_header(jebp__vp8x_header_t *hdr) {
+    JEBP__CLEAR(hdr, sizeof(jebp__vp8x_header_t));
+}
+
+static jebp_error_t jebp__read_vp8x_header(jebp__vp8x_header_t *hdr,
+                                           jebp_image_t *image,
+                                           jebp__reader_t *reader,
+                                           jebp__chunk_t *chunk) {
+    jebp_error_t err = JEBP_OK;
+    if (chunk->size != 10) {
+        return jebp__error(&err, JEBP_ERROR_INVDATA_HEADER);
+    }
+    hdr->flags = jebp__read_uint32(reader, &err);
+    if ((hdr->flags & JEBP__VP8X_FLAG_ANIM) != 0) {
+        return jebp__error(&err, JEBP_ERROR_NOSUP);
+    }
+    image->width = jebp__read_uint24(reader, &err) + 1;
+    image->height = jebp__read_uint24(reader, &err) + 1;
+    if (image->width > 0xffffffffL / image->height) {
+        return jebp__error(&err, JEBP_ERROR_INVDATA);
+    }
+    return err;
+}
+
+static jebp_error_t jebp__read_vp8x_size(jebp_image_t *image,
+                                         jebp__reader_t *reader,
+                                         jebp__chunk_t *chunk) {
+    jebp__vp8x_header_t hdr;
+    jebp__init_vp8x_header(&hdr);
+    return jebp__read_vp8x_header(&hdr, image, reader, chunk);
+}
+
+static void jebp__skip_vp8x_iccp(jebp__riff_reader_t *riff, jebp_error_t *err,
+                                 jebp_uint flags) {
+    jebp__chunk_t chunk;
+    jebp_uint i;
+    if ((flags & JEBP__VP8X_FLAG_ICCP) == 0 || *err != JEBP_OK) {
+        return;
+    }
+    if ((*err = jebp__read_riff_chunk(riff, &chunk)) != JEBP_OK) {
+        return;
+    }
+    if (chunk.tag == JEBP__ICCP_TAG) {
+        for (i = 0; i < chunk.size; i++) {
+            jebp__read_uint8(riff->reader, err);
+        }
+    } else {
+        *err = JEBP_ERROR_INVDATA;
+    }
+}
+
+static jebp_ubyte *jebp__read_vp8x_alpha(jebp__riff_reader_t *riff,
+                                         jebp_error_t *err, jebp_uint flags,
+                                         jebp_image_t *canvas,
+                                         jebp_int *osize, jebp_int *ostep) {
+    jebp__chunk_t chunk;
+    jebp_uint aflags, filter, compression;
+    if ((flags & JEBP__VP8X_FLAG_ALPH) == 0 || *err != JEBP_OK) {
+        return NULL;
+    }
+    if ((*err = jebp__read_riff_chunk(riff, &chunk)) != JEBP_OK) {
+        return NULL;
+    }
+    if (chunk.tag != JEBP__ALPH_TAG || chunk.size < 2) {
+        *err = JEBP_ERROR_INVDATA;
+        return NULL;
+    }
+    aflags = jebp__read_uint8(riff->reader, err);
+    compression = (aflags) & 3;
+    filter = (aflags >> 2) & 3;
+    if (compression > 1) {
+        *err = JEBP_ERROR_NOSUP;
+        return NULL;
+    }
+    if (filter) {
+        *err = JEBP_ERROR_NOSUP; /* TODO */
+        return NULL;
+    }
+    if (compression) {
+#ifndef JEBP_NO_VP8L
+        jebp__bit_reader_t bits;
+        jebp_image_t uncompress = *canvas;
+        uncompress.pixels = NULL;
+        jepb__init_bit_reader(&bits, riff->reader, chunk.size - 1);
+        if ((*err = jebp__read_vp8l_nohead(&uncompress, &bits)) != JEBP_OK) {
+            return NULL;
+        }
+        *osize = uncompress.width * uncompress.height;
+        *ostep = 4;
+        return (jebp_ubyte *)uncompress.pixels;
+#else
+        *err = JEBP_ERROR_NOSUP;
+        return NULL;
+#endif // JEBP_NO_VP8L
+    }
+    jebp_ubyte *alpha;
+    *osize = chunk.size - 1;
+    *ostep = 1;
+    if ((alpha = JEBP_ALLOC(*osize)) == NULL) {
+        *err = JEBP_ERROR_NOMEM;
+        return NULL;
+    }
+    if ((*err = jebp__read_bytes(riff->reader, *osize, alpha)) != JEBP_OK) {
+        JEBP_FREE(alpha);
+        return NULL;
+    }
+    return alpha;
+}
+
+static jebp_error_t jebp__read_vp8x(jebp_image_t *image,
+                                    jebp__reader_t *reader,
+                                    jebp__chunk_t *vp8x_chunk,
+                                    jebp__riff_reader_t *riff) {
+    jebp_error_t err;
+    jebp__vp8x_header_t hdr;
+    jebp_uint flags;
+    jebp_ubyte *alpha;
+    jebp__chunk_t chunk;
+    jebp_int asize, astep;
+    jebp__init_vp8x_header(&hdr);
+    err = jebp__read_vp8x_header(&hdr, image, reader, vp8x_chunk);
+    flags = hdr.flags;
+    jebp__skip_vp8x_iccp(riff, &err, flags);
+    if (err != JEBP_OK) {
+        return err;
+    }
+    alpha = jebp__read_vp8x_alpha(riff, &err, flags, image, &asize, &astep);
+    if (err != JEBP_OK) {
+        return err;
+    }
+    if ((err = jebp__read_riff_chunk(riff, &chunk)) != JEBP_OK) {
+        goto free_alpha;
+    }
+    switch (chunk.tag) {
+#ifndef JEBP_NO_VP8
+    case JEBP__VP8_TAG:
+        err = jebp__read_vp8(image, reader, &chunk);
+        if (err == JEBP_OK && alpha != NULL) {
+            jebp_uint i, j, len;
+            len = JEBP__MIN(image->width * image->height, asize);
+            /* if astep is 4, start with offset 1 */
+            for (i = 0, j = astep == 4; i < len; i++, j += astep) {
+                image->pixels[i].a = alpha[j];
+            }
+        }
+        break;
+#endif // JEBP_NO_VP8
+#ifndef JEBP_NO_VP8L
+    case JEBP__VP8L_TAG:
+        err = jebp__read_vp8l(image, reader, &chunk);
+        break;
+#endif // JEBP_NO_VP8L
+    default:
+        err = JEBP_ERROR_NOSUP_CODEC;
+    }
+free_alpha:
+    if (alpha != NULL) {
+        JEBP_FREE(alpha);
+    }
+    return err;
+}
+
+#endif // JEBP_NO_VP8X
+
+/**
  * Public API
  */
 static const char *const jebp__error_strings[JEBP_NB_ERRORS];
@@ -4120,6 +4308,10 @@ static jebp_error_t jebp__read_size(jebp_image_t *image,
     case JEBP__VP8L_TAG:
         return jebp__read_vp8l_size(image, reader, &chunk);
 #endif // JEBP_NO_VP8L
+#ifndef JEBP_NO_VP8X
+    case JEBP__VP8X_TAG:
+        return jebp__read_vp8x_size(image, reader, &chunk);
+#endif // JEBP_NO_VP8X
     default:
         return JEBP_ERROR_NOSUP_CODEC;
     }
@@ -4156,6 +4348,10 @@ static jebp_error_t jebp__read(jebp_image_t *image, jebp__reader_t *reader) {
     case JEBP__VP8L_TAG:
         return jebp__read_vp8l(image, reader, &chunk);
 #endif // JEBP_NO_VP8L
+#ifndef JEBP_NO_VP8X
+    case JEBP__VP8X_TAG:
+        return jebp__read_vp8x(image, reader, &chunk, &riff);
+#endif // JEBP_NO_VP8X
     default:
         return JEBP_ERROR_NOSUP_CODEC;
     }

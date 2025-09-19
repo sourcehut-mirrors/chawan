@@ -14,9 +14,6 @@ else:
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
-const STDIN_FILENO = 0
-const STDOUT_FILENO = 1
-
 {.push header: """
 #define JEBP_NO_STDIO
 /* #define JEBP_NO_SIMD */
@@ -57,16 +54,16 @@ proc myRead(data: pointer; size: csize_t; user: pointer): csize_t {.cdecl.} =
   while n < size:
     let i = read(STDIN_FILENO, addr cast[ptr UncheckedArray[char]](data)[n],
       int(size - n))
-    if i == 0:
+    if i <= 0:
       break
     n += csize_t(i)
   return n
 
 proc writeAll(data: pointer; size: int) =
   var n = 0
+  let data = cast[ptr UncheckedArray[uint8]](data)
   while n < size:
-    let i = write(STDOUT_FILENO, addr cast[ptr UncheckedArray[uint8]](data)[n],
-      int(size) - n)
+    let i = write(STDOUT_FILENO, addr data[n], size - n)
     assert i >= 0
     n += i
 
@@ -96,12 +93,12 @@ proc main() =
     if infoOnly:
       let res = jebp_read_size_from_callbacks(addr image, addr cb, nil)
       if res == 0:
-        puts("Cha-Image-Dimensions: " & $image.width & "x" &
-          $image.height & "\n\n")
+        puts("Cha-Image-Dimensions: " & $image.width & "x" & $image.height &
+          "\n\n")
         quit(0)
       else:
         die("Cha-Control: ConnectionError 1 jepb error " &
-          $jebp_error_string(res))
+          $jebp_error_string(res) & "\n")
     let res = jebp_read_from_callbacks(addr image, addr cb, nil)
     if res != 0:
       die("Cha-Control: ConnectionError 1 jebp error " &
