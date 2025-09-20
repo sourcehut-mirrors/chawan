@@ -153,7 +153,7 @@
  *                  either VP8 or VP8L decoding support is required and it is an
  *                  error to disable both.
  *   `JEBP_NO_VP8X` will disable VP8X (extended format) support. This is a
- *                  container for VP8 and VP8X, so disabling either of those
+ *                  container for VP8 and VP8L, so disabling either of those
  *                  also disables VP8X containing the respective format.
  *   `JEBP_ONLY_VP8` and `JEBP_ONLY_VP8L` will disable all other features except
  *                   the specified feature.
