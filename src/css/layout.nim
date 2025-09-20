@@ -774,9 +774,8 @@ type
     whitespaceIsLF: bool
 
 # Forward declarations
-proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes)
-proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
-  sizes: ResolvedSizes; flexItem = false)
+proc layout(bctx: var BlockContext; box: BlockBox; offset: Offset;
+  sizes: ResolvedSizes; forceRoot = false)
 
 iterator relevantExclusions(bctx: BlockContext): lent Exclusion {.inline.} =
   for i in bctx.clearIndex[FloatNone] ..< bctx.exclusions.len:
@@ -786,6 +785,9 @@ iterator relevantExclusionPairs(bctx: BlockContext):
     tuple[i: int; ex: lent Exclusion] {.inline.} =
   for i in bctx.clearIndex[FloatNone] ..< bctx.exclusions.len:
     yield (i, bctx.exclusions[i])
+
+proc initBlockContext(lctx: LayoutContext): BlockContext =
+  BlockContext(lctx: lctx)
 
 template bctx(fstate: FlowState): BlockContext =
   fstate.pbctx[]
@@ -1499,13 +1501,14 @@ proc popPositioned(lctx: LayoutContext; head: CSSAbsolute; size: Size) =
     let positioned = lctx.resolvePositioned(size, child.computed)
     var sizes = lctx.resolveAbsoluteSizes(size, positioned, child.computed)
     offset.x += sizes.margin.left
-    lctx.layoutRootBlock(child, offset, sizes)
+    var bctx = initBlockContext(lctx)
+    bctx.layout(child, offset, sizes)
     if not child.computed{"left"}.auto:
       child.state.offset.x = positioned.left + sizes.margin.left
     elif not child.computed{"right"}.auto:
       child.state.offset.x = size.w - positioned.right - child.state.size.w -
         sizes.margin.right
-    # margin.left is added in layoutRootBlock
+    # margin.left is added in layout
     if not child.computed{"top"}.auto:
       child.state.offset.y = positioned.top + sizes.margin.top
     elif not child.computed{"bottom"}.auto:
@@ -1528,32 +1531,6 @@ proc positionRelative(lctx: LayoutContext; space: AvailableSpace;
   elif box.computed{"bottom"}.canpx(space.h):
     box.state.offset.y -= box.computed{"bottom"}.px(space.h)
 
-# Inner layout for boxes that establish a new block formatting context,
-# or have an inner layout that is not flow.
-# flexItem is true if box is a flex item.
-proc layoutRootBlock(lctx: LayoutContext; box: BlockBox; offset: Offset;
-    sizes: ResolvedSizes; flexItem = false) =
-  let offset = offset + sizes.borderTopLeft(lctx)
-  if box.sizes == sizes:
-    box.state.offset = offset
-    return
-  box.sizes = sizes
-  var bctx = BlockContext(lctx: lctx)
-  box.resetState()
-  box.state.offset = offset
-  # For some reason beyond mortal comprehension, flex items always
-  # behave as positioned boxes.
-  bctx.layout(box, sizes)
-  assert bctx.unpositionedFloats.len == 0
-  let marginBottom = bctx.marginTodo.sum()
-  # If the highest float edge is higher than the box itself, set that as
-  # the box height.
-  box.state.size.h = max(box.state.size.h + marginBottom, bctx.maxFloatHeight)
-  box.state.intr.h = max(box.state.intr.h + marginBottom, bctx.maxFloatHeight)
-  box.state.marginBottom = marginBottom
-  if sizes.space.w.t != scMeasure:
-    bctx.lctx.popPositioned(box.absolute, box.state.size)
-
 proc clearedBy(floats: set[CSSFloat]; clear: CSSClear): bool =
   return case clear
   of ClearNone: false
@@ -1564,7 +1541,8 @@ proc clearedBy(floats: set[CSSFloat]; clear: CSSClear): bool =
 proc layoutFloat(fstate: var FlowState; child: BlockBox) =
   let lctx = fstate.lctx
   let sizes = lctx.resolveFloatSizes(fstate.space, child.computed)
-  lctx.layoutRootBlock(child, fstate.offset + sizes.margin.topLeft, sizes)
+  var bctx = initBlockContext(lctx)
+  bctx.layout(child, fstate.offset + sizes.margin.topLeft, sizes)
   let outerSize = child.outerSize(sizes, lctx)
   if fstate.space.w.t == scMeasure:
     # Float position depends on the available width, but in this case
@@ -1622,7 +1600,8 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   if child.computed{"display"} in DisplayWithBFC or
       child.computed{"overflow-x"} notin {OverflowVisible, OverflowClip}:
     # This box establishes a new BFC.
-    lctx.layoutRootBlock(child, offset, sizes)
+    var bctx = initBlockContext(lctx)
+    bctx.layout(child, offset, sizes)
     fstate.bctx.flushMargins(child.state.offset.y)
     if clear != ClearNone:
       fstate.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
@@ -1662,18 +1641,14 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
       if outw != fstate.space.w.u or roffset != child.state.offset:
         space = availableSpace(w = stretch(outw), h = fstate.space.h)
         sizes = lctx.resolveBlockSizes(space, child.computed)
-        lctx.layoutRootBlock(child, roffset, sizes)
+        var bctx = initBlockContext(lctx)
+        bctx.layout(child, roffset, sizes)
   else:
-    child.resetState()
     offset += sizes.borderTopLeft(lctx)
-    child.state.offset = offset
-    child.sizes = sizes
     if clear != ClearNone:
-      fstate.bctx.flushMargins(child.state.offset.y)
-      child.state.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
-    fstate.bctx.layout(child, sizes)
-    if sizes.space.w.t != scMeasure:
-      lctx.popPositioned(child.absolute, child.state.size)
+      fstate.bctx.flushMargins(offset.y)
+      offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
+    fstate.bctx.layout(child, offset, sizes)
   fstate.bctx.marginTodo.append(sizes.margin.bottom)
   let outerSize = size(
     w = child.outerSize(dtHorizontal, sizes, lctx),
@@ -1738,6 +1713,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
     fstate.layoutBlockChild(child)
 
 proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
+  let lctx = fstate.lctx
   let box = BlockBox(ibox.firstChild)
   if box.computed{"position"} in PositionAbsoluteFixed:
     # Absolute is a bit of a special case in inline: while the spec
@@ -1749,16 +1725,16 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
     # Marker box. This is a mixture of absolute and inline-block
     # layout, where we don't care about the parent size but want to
     # place ourselves outside the left edge of our parent box.
-    let lctx = fstate.lctx
     var sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
-    lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
+    var bctx = initBlockContext(lctx)
+    bctx.layout(box, sizes.margin.topLeft, sizes)
     fstate.initLine(flag = ilfAbsolute)
     box.state.offset.x = fstate.lbstate.size.w - box.state.size.w
   else:
     # A real inline block.
-    let lctx = fstate.lctx
     var sizes = lctx.resolveFloatSizes(fstate.space, box.computed)
-    lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
+    var bctx = initBlockContext(lctx)
+    bctx.layout(box, sizes.margin.topLeft, sizes)
     # Apply the block box's properties to the atom itself.
     var iastate = InlineAtomState(
       ibox: ibox,
@@ -2033,10 +2009,6 @@ proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
   fstate.prevParentBps = prevParentBps
   fstate.initialMarginTarget = initialMarginTarget
 
-# canClear signals if the box should clear in its inner (flow) layout.
-# In general, this is only true for block boxes that do not establish
-# a BFC; other boxes (e.g. flex) either have nothing to clear, or clear
-# in their parent BFC (e.g. flow-root).
 proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   var fstate = bctx.initFlowState(box, sizes)
   fstate.initBlockPositionStates(box)
@@ -2089,6 +2061,40 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     bctx.marginTarget = nil
   # Reset parentBps to the previous node.
   bctx.parentBps = fstate.prevParentBps
+
+proc layoutFlowDescendant(bctx: var BlockContext; box: BlockBox; offset: Offset;
+    sizes: ResolvedSizes) =
+  box.resetState()
+  box.sizes = sizes
+  box.state.offset = offset
+  bctx.layoutFlow(box, sizes)
+
+proc layoutFlowRootPre(lctx: LayoutContext; box: BlockBox; offset: Offset;
+    sizes: ResolvedSizes): bool =
+  let offset = offset + sizes.borderTopLeft(lctx)
+  if box.sizes == sizes:
+    box.state.offset = offset
+    return false
+  box.sizes = sizes
+  box.resetState()
+  box.state.offset = offset
+  true
+
+proc layoutFlowRootPost(bctx: BlockContext; box: BlockBox) =
+  assert bctx.unpositionedFloats.len == 0
+  let marginBottom = bctx.marginTodo.sum()
+  # If the highest float edge is higher than the box itself, set that as
+  # the box height.
+  box.state.size.h = max(box.state.size.h + marginBottom, bctx.maxFloatHeight)
+  box.state.intr.h = max(box.state.intr.h + marginBottom, bctx.maxFloatHeight)
+  box.state.marginBottom = marginBottom
+
+proc layoutFlowRoot(bctx: var BlockContext; box: BlockBox; offset: Offset;
+    sizes: ResolvedSizes) =
+  if not bctx.lctx.layoutFlowRootPre(box, offset, sizes):
+    return
+  bctx.layoutFlow(box, sizes)
+  bctx.layoutFlowRootPost(box)
 
 # Table layout.  This imitates what mainstream browsers do, and that
 # precludes a w3m-like single-pass algorithm.  Ours rather looks like:
@@ -2168,13 +2174,9 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox;
   box.state.merge = merge
   if box.sizes.space.w.isDefinite():
     box.sizes.space.w.u -= box.sizes.padding[dtHorizontal].sum()
-  var bctx = BlockContext(lctx: lctx)
-  bctx.layout(box, box.sizes)
-  if box.sizes.space.w.t != scMeasure:
-    lctx.popPositioned(box.absolute, box.state.size)
+  var bctx = initBlockContext(lctx)
+  bctx.layout(box, offset(0, 0), box.sizes)
   assert bctx.unpositionedFloats.len == 0
-  # Table cells ignore margins.
-  box.state.offset.y = 0
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
   box.state.size.h = max(box.state.size.h, bctx.maxFloatHeight)
@@ -2577,7 +2579,8 @@ proc layoutTableRows(tctx: TableContext; table: BlockBox;
 proc layoutCaption(lctx: LayoutContext; box: BlockBox; space: AvailableSpace;
     sizes: var ResolvedSizes) =
   sizes = lctx.resolveBlockSizes(space, box.computed)
-  lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
+  var bctx = initBlockContext(lctx)
+  bctx.layout(box, sizes.margin.topLeft, sizes)
 
 proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
     sizes: ResolvedSizes) =
@@ -2620,8 +2623,10 @@ proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
 # width exceeds caption's width.  (In practice, the second layout is
 # skipped if there will be a third one, so we never layout more than
 # twice.)
-proc layoutTable(bctx: BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  let lctx = bctx.lctx
+proc layoutTable(lctx: LayoutContext; box: BlockBox; offset: Offset;
+    sizes: ResolvedSizes) =
+  if not lctx.layoutFlowRootPre(box, offset, sizes):
+    return
   let table = BlockBox(box.firstChild)
   table.resetState()
   var tctx = TableContext(lctx: lctx, space: sizes.space)
@@ -2699,7 +2704,8 @@ type
     pending: seq[FlexPendingItem]
 
 proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; sizes: ResolvedSizes) =
-  lctx.layoutRootBlock(box, offset(x = 0, y = 0), sizes, flexItem = true)
+  var bctx = initBlockContext(lctx)
+  bctx.layout(box, offset(x = 0, y = 0), sizes, forceRoot = true)
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
@@ -2905,8 +2911,10 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
       sizes: childSizes
     ))
 
-proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  let lctx = bctx.lctx
+proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
+    sizes: ResolvedSizes) =
+  if not lctx.layoutFlowRootPre(box, offset, sizes):
+    return
   let flexDir = box.computed{"flex-direction"}
   let dim = if flexDir in FlexRow: dtHorizontal else: dtVertical
   let odim = dim.opposite()
@@ -2939,17 +2947,25 @@ proc layoutFlex(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   for child in fctx.relativeChildren:
     lctx.positionRelative(sizes.space, child)
 
-proc layoutGrid(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  #TODO implement grid
-  bctx.layoutFlow(box, sizes)
-
-proc layout(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
+proc layout(bctx: var BlockContext; box: BlockBox; offset: Offset;
+    sizes: ResolvedSizes; forceRoot = false) =
   case box.computed{"display"}
-  of DisplayInnerBlock: bctx.layoutFlow(box, sizes)
-  of DisplayInnerTable: bctx.layoutTable(box, sizes)
-  of DisplayInnerFlex: bctx.layoutFlex(box, sizes)
-  of DisplayInnerGrid: bctx.layoutGrid(box, sizes)
+  of DisplayFlowRoot, DisplayTableCaption, DisplayInlineBlock, DisplayInnerGrid,
+      DisplayMarker:
+    bctx.layoutFlowRoot(box, offset, sizes)
+  of DisplayBlock, DisplayListItem:
+    if forceRoot or box.computed{"position"} in PositionAbsoluteFixed or
+        box.computed{"float"} != FloatNone or
+        box.computed{"overflow-x"} notin {OverflowVisible, OverflowClip}:
+      bctx.layoutFlowRoot(box, offset, sizes)
+    else:
+      bctx.layoutFlowDescendant(box, offset, sizes)
+  of DisplayTableCell: bctx.layoutFlow(box, sizes)
+  of DisplayInnerTable: bctx.lctx.layoutTable(box, offset, sizes)
+  of DisplayInnerFlex: bctx.lctx.layoutFlex(box, offset, sizes)
   else: assert false
+  if sizes.space.w.t != scMeasure:
+    bctx.lctx.popPositioned(box.absolute, box.state.size)
 
 proc layout*(box: BlockBox; attrs: WindowAttributes; fixedHead: CSSAbsolute;
     luctx: LUContext) =
@@ -2960,8 +2976,9 @@ proc layout*(box: BlockBox; attrs: WindowAttributes; fixedHead: CSSAbsolute;
   let cellSize = size(w = attrs.ppc, h = attrs.ppl)
   let lctx = LayoutContext(cellSize: cellSize, luctx: luctx)
   let sizes = lctx.resolveBlockSizes(space, box.computed)
+  var bctx = initBlockContext(lctx)
   # the bottom margin is unused.
-  lctx.layoutRootBlock(box, sizes.margin.topLeft, sizes)
+  bctx.layout(box, sizes.margin.topLeft, sizes, forceRoot = true)
   # Fixed containing block.
   # The idea is to move fixed boxes to the real edges of the page,
   # so that they do not overlap with other boxes *and* we don't have
