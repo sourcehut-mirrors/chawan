@@ -709,7 +709,8 @@ type
     lisUninited, lisNoExclusions, lisExclusions
 
   LineBoxState = object
-    iastates: seq[InlineAtomState]
+    iastatesHead: InlineAtomState
+    iastatesTail: InlineAtomState
     charwidth: int
     paddingTodo: seq[tuple[box: InlineBox; i: int]]
     size: Size
@@ -729,14 +730,12 @@ type
     # float values currently included in unpositionedFloats.
     floatsSeen: set[CSSFloat]
 
-  InlineAtomState = object
-    vertalign: CSSVerticalAlign
-    baseline: LUnit
+  InlineAtomState = ref object
     ibox: InlineBox
     run: TextRun
     offset: Offset
     size: Size
-    baselineShift: CSSLength
+    next: InlineAtomState
 
   InlineState = object
     ibox: InlineBox
@@ -980,9 +979,9 @@ proc computeShift(fstate: FlowState; istate: InlineState): int =
     # skip line feed between double-width characters
     return 0
   if istate.ibox.computed{"white-space"} notin WhiteSpacePreserve:
-    if fstate.lbstate.iastates.len == 0:
+    if fstate.lbstate.iastatesTail == nil:
       return 0
-    let ibox = fstate.lbstate.iastates[^1].ibox
+    let ibox = fstate.lbstate.iastatesTail.ibox
     if ibox of InlineTextBox:
       let ibox = InlineTextBox(ibox)
       if ibox.runs.len > 0 and ibox.runs[^1].str[^1] == ' ':
@@ -990,14 +989,10 @@ proc computeShift(fstate: FlowState; istate: InlineState): int =
   return fstate.whitespacenum
 
 proc newWord(fstate: var FlowState; ibox: InlineBox) =
-  let ch = fstate.cellSize.h
   fstate.word = InlineAtomState(
     ibox: ibox,
-    run: TextRun(),
-    size: size(w = 0, h = ch),
-    vertalign: ibox.computed{"vertical-align"},
-    baselineShift: ibox.computed{"-cha-vertical-align-length"},
-    baseline: ch
+    size: size(w = 0, h = fstate.cellSize.h),
+    run: TextRun()
   )
   fstate.wrappos = -1
   fstate.hasshy = false
@@ -1006,6 +1001,23 @@ proc newWord(fstate: var FlowState; ibox: InlineBox) =
 const TextAlignNone = {
   TextAlignStart, TextAlignLeft, TextAlignChaLeft, TextAlignJustify
 }
+
+proc baseline(iastate: InlineAtomState): LUnit =
+  if iastate.ibox of InlineBlockBox:
+    let ibox = InlineBlockBox(iastate.ibox)
+    let box = BlockBox(ibox.firstChild)
+    let baseline = if box.state.baselineSet:
+      box.state.baseline
+    else:
+      box.state.size.h
+    return baseline + box.sizes.margin.top
+  return iastate.size.h
+
+proc vertalign(iastate: InlineAtomState): CSSVerticalAlign =
+  let ibox = iastate.ibox
+  if ibox of InlineBlockBox:
+    return ibox.firstChild.computed{"vertical-align"}
+  ibox.computed{"vertical-align"}
 
 proc positionAtom(lbstate: LineBoxState; iastate: var InlineAtomState) =
   case iastate.vertalign
@@ -1054,7 +1066,9 @@ proc alignLine(fstate: var FlowState) =
   for (box, i) in fstate.lbstate.paddingTodo:
     box.state.areas[i].offset.x += xshift
     box.state.areas[i].offset.y = areaY
-  for i, iastate in fstate.lbstate.iastates.mpairs:
+  var iastate = fstate.lbstate.iastatesHead
+  var lastAtom: InlineAtomState = nil
+  while iastate != nil:
     fstate.lbstate.positionAtom(iastate)
     iastate.offset.y += fstate.offset.y
     minHeight = max(minHeight, iastate.offset.y - fstate.offset.y +
@@ -1066,7 +1080,6 @@ proc alignLine(fstate: var FlowState) =
     if currentBox != box:
       if currentBox != nil:
         # flush area
-        let lastAtom = addr fstate.lbstate.iastates[i - 1]
         let w = lastAtom.offset.x + lastAtom.size.w - currentAreaOffsetX
         if w != 0:
           currentBox.state.areas.add(Area(
@@ -1087,10 +1100,12 @@ proc alignLine(fstate: var FlowState) =
       ibox.imgstate.offset = iastate.offset
     else:
       assert false
+    lastAtom = iastate
+    iastate = iastate.next
   if currentBox != nil:
     # flush area
-    let iastate = addr fstate.lbstate.iastates[^1]
-    let w = iastate.offset.x + iastate[].size.w - currentAreaOffsetX
+    let iastate = fstate.lbstate.iastatesTail
+    let w = iastate.offset.x + iastate.size.w - currentAreaOffsetX
     let offset = offset(x = currentAreaOffsetX, y = areaY)
     template lastArea: Area = currentBox.state.areas[^1]
     if currentBox.state.areas.len > 0 and
@@ -1109,30 +1124,33 @@ proc alignLine(fstate: var FlowState) =
   # rounded up to the next line.
   fstate.lbstate.size.h = minHeight.ceilTo(fstate.cellSize.h.toInt())
 
-proc putAtom(lbstate: var LineBoxState; iastate: InlineAtomState) =
-  lbstate.iastates.add(iastate)
+proc putAtom(lbstate: var LineBoxState; iastate: var InlineAtomState) =
   if iastate.ibox of InlineTextBox:
     let ibox = InlineTextBox(iastate.ibox)
     ibox.runs.add(iastate.run)
+  if lbstate.iastatesTail == nil:
+    lbstate.iastatesHead = iastate
+  else:
+    lbstate.iastatesTail.next = iastate
+  lbstate.iastatesTail = iastate
 
 proc addSpacing(fstate: var FlowState; shift: int; hang = false) =
   let ibox = fstate.whitespaceBox
-  if ibox.runs.len == 0 or fstate.lbstate.iastates.len == 0 or
-      (let orun = ibox.runs[^1]; orun != fstate.lbstate.iastates[^1].run):
+  if ibox.runs.len == 0 or fstate.lbstate.iastatesTail == nil or
+      fstate.lbstate.iastatesTail.run != ibox.runs[^1]:
     let cellHeight = fstate.cellSize.h
-    let iastate = InlineAtomState(
+    var iastate = InlineAtomState(
       ibox: ibox,
-      baseline: cellHeight,
-      run: TextRun(),
       offset: offset(x = fstate.lbstate.size.w, y = cellHeight),
-      size: size(w = 0, h = cellHeight)
+      size: size(w = 0, h = cellHeight),
+      run: TextRun()
     )
     fstate.lbstate.putAtom(iastate)
-  let iastate = addr fstate.lbstate.iastates[^1]
+  let run = ibox.runs[^1]
   for i in 0 ..< shift:
-    iastate.run.str &= ' '
+    run.str &= ' '
   let w = shift * fstate.cellSize.w
-  iastate.size.w += w
+  fstate.lbstate.iastatesTail.size.w += w
   if not hang:
     # In some cases, whitespace may "hang" at the end of the line. This means
     # it is written, but is not actually counted in the box's width.
@@ -1157,7 +1175,7 @@ proc initLineBoxState(fstate: FlowState): LineBoxState =
 
 proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
     force = false; clear = ClearNone) =
-  if fstate.lbstate.iastates.len != 0 or force or
+  if fstate.lbstate.iastatesHead != nil or force or
       fstate.whitespacenum != 0 and istate.ibox != nil and
       istate.ibox.computed{"white-space"} in {WhitespacePre, WhitespacePreWrap}:
     fstate.initLine()
@@ -1244,10 +1262,9 @@ proc shouldWrap2(fstate: FlowState; w: LUnit): bool =
 
 proc getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
   return case iastate.vertalign
-  of VerticalAlignBaseline:
-    iastate.baseline
   of VerticalAlignLength:
-    iastate.baseline + iastate.baselineShift.px(fstate.cellSize.h)
+    let length = iastate.ibox.computed{"-cha-vertical-align-length"}
+    iastate.baseline + length.px(fstate.cellSize.h)
   of VerticalAlignTop:
     0
   of VerticalAlignMiddle:
@@ -1260,7 +1277,7 @@ proc getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
 # Add an inline atom atom, with state iastate.
 # Returns true on newline.
 proc addAtom(fstate: var FlowState; istate: var InlineState;
-    iastate: InlineAtomState): bool =
+    iastate: var InlineAtomState): bool =
   fstate.initLine()
   result = false
   var shift = fstate.computeShift(istate)
@@ -1285,23 +1302,19 @@ proc addAtom(fstate: var FlowState; istate: var InlineState;
       iastate.ibox of InlineBlockBox:
     if shift > 0:
       fstate.addSpacing(shift)
-    if iastate.run != nil and fstate.lbstate.iastates.len > 0 and
-        istate.ibox of InlineTextBox:
-      let ibox = InlineTextBox(istate.ibox)
-      if ibox.runs.len > 0:
-        let oiastate = addr fstate.lbstate.iastates[^1]
-        let orun = oiastate.run
-        if orun != nil and orun == ibox.runs[^1]:
-          orun.str &= iastate.run.str
-          oiastate.size.w += iastate.size.w
-          fstate.lbstate.size.w += iastate.size.w
-          return
-    fstate.lbstate.putAtom(iastate)
-    fstate.lbstate.iastates[^1].offset.x += fstate.lbstate.size.w
+    iastate.offset.x += fstate.lbstate.size.w
     fstate.lbstate.size.w += iastate.size.w
+    let tail = fstate.lbstate.iastatesTail
+    if iastate.run != nil and tail != nil and istate.ibox of InlineTextBox:
+      let ibox = InlineTextBox(istate.ibox)
+      if ibox.runs.len > 0 and tail.run == ibox.runs[^1]:
+        tail.run.str &= iastate.run.str
+        tail.size.w += iastate.size.w
+        return
     # store for later use in alignLine
     let baseline = fstate.getBaseline(iastate)
-    fstate.lbstate.iastates[^1].offset.y = baseline
+    iastate.offset.y = baseline
+    fstate.lbstate.putAtom(iastate)
     fstate.lbstate.baseline = max(fstate.lbstate.baseline, baseline)
     # In all cases, the line's height must at least equal the atom's height.
     fstate.lbstate.size.h = max(fstate.lbstate.size.h, iastate.size.h)
@@ -1381,7 +1394,7 @@ proc processWhitespace(fstate: var FlowState; istate: var InlineState;
   discard fstate.addWord(istate)
   case ibox.computed{"white-space"}
   of WhitespaceNormal, WhitespaceNowrap:
-    if fstate.whitespacenum < 1 and fstate.lbstate.iastates.len > 0:
+    if fstate.whitespacenum < 1 and fstate.lbstate.iastatesHead != nil:
       fstate.whitespacenum = 1
       fstate.whitespaceBox = ibox
       fstate.whitespaceIsLF = c == '\n'
@@ -1563,8 +1576,10 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
       # We can still cram floats into the line.
       if float == FloatLeft:
         fstate.lbstate.size.w += outerSize.w
-        for iastate in fstate.lbstate.iastates.mitems:
+        var iastate = fstate.lbstate.iastatesHead
+        while iastate != nil:
           iastate.offset.x += outerSize.w
+          iastate = iastate.next
       else:
         fstate.lbstate.availableWidth -= outerSize.w
       fstate.lbstate.floatsSeen.incl(float)
@@ -1698,7 +1713,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
       # (I don't add pending spacing because other browsers don't add
       # it either.)
       offset.x += fstate.lbstate.size.w
-    elif fstate.lbstate.iastates.len > 0:
+    elif fstate.lbstate.iastatesHead != nil:
       # flush if there is already something on the line *and* our outer
       # display is block.
       offset.y += fstate.cellSize.h
@@ -1734,13 +1749,8 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
     # Apply the block box's properties to the atom itself.
     var iastate = InlineAtomState(
       ibox: ibox,
-      baseline: box.state.baseline + sizes.margin.top,
-      vertalign: box.computed{"vertical-align"},
-      baselineShift: ibox.computed{"-cha-vertical-align-length"},
       size: box.outerSize(sizes, lctx)
     )
-    if not box.state.baselineSet:
-      iastate.baseline += box.state.size.h
     var istate = InlineState(ibox: ibox)
     discard fstate.addAtom(istate, iastate)
     fstate.intr.w = max(fstate.intr.w, box.state.intr.w)
@@ -1799,13 +1809,7 @@ proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
     ibox.imgstate.size.h = osize.h div osize.w * ibox.imgstate.size.w
   elif not hasWidth and osize.h != 0:
     ibox.imgstate.size.w = osize.w div osize.h * ibox.imgstate.size.h
-  let iastate = InlineAtomState(
-    ibox: ibox,
-    vertalign: ibox.computed{"vertical-align"},
-    baselineShift: ibox.computed{"-cha-vertical-align-length"},
-    baseline: ibox.imgstate.size.h,
-    size: ibox.imgstate.size
-  )
+  var iastate = InlineAtomState(ibox: ibox, size: ibox.imgstate.size)
   var istate = InlineState(ibox: ibox)
   discard fstate.addAtom(istate, iastate)
   fstate.lbstate.charwidth = 0

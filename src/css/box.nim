@@ -16,6 +16,8 @@ type
     offset*: Offset
     size*: Size
 
+  # Note: with some effort this could be turned into a non-ref object,
+  # but that's slower (at least with refc).
   TextRun* = ref object
     offset*: Offset
     str*: string
