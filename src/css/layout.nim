@@ -795,10 +795,6 @@ template bctx(fstate: FlowState): BlockContext =
 template lctx(fstate: FlowState): LayoutContext =
   fstate.bctx.lctx
 
-proc whitespacepre(computed: CSSValues): bool =
-  computed{"white-space"} in {WhitespacePre, WhitespacePreLine,
-    WhitespacePreWrap}
-
 proc nowrap(computed: CSSValues): bool =
   computed{"white-space"} in {WhitespaceNowrap, WhitespacePre}
 
@@ -977,13 +973,13 @@ proc initLine(fstate: var FlowState; flag = ilfRegular) =
     fstate.lbstate.init = lisUninited
 
 # Whitespace between words
-proc computeShift(fstate: FlowState; istate: InlineState): LUnit =
+proc computeShift(fstate: FlowState; istate: InlineState): int =
   if fstate.whitespacenum == 0:
     return 0
   if fstate.whitespaceIsLF and istate.lastrw == 2 and istate.firstrw == 2:
     # skip line feed between double-width characters
     return 0
-  if not istate.ibox.computed.whitespacepre:
+  if istate.ibox.computed{"white-space"} notin WhiteSpacePreserve:
     if fstate.lbstate.iastates.len == 0:
       return 0
     let ibox = fstate.lbstate.iastates[^1].ibox
@@ -991,7 +987,7 @@ proc computeShift(fstate: FlowState; istate: InlineState): LUnit =
       let ibox = InlineTextBox(ibox)
       if ibox.runs.len > 0 and ibox.runs[^1].str[^1] == ' ':
         return 0
-  return fstate.cellSize.w * fstate.whitespacenum
+  return fstate.whitespacenum
 
 proc newWord(fstate: var FlowState; ibox: InlineBox) =
   let ch = fstate.cellSize.h
@@ -1119,7 +1115,7 @@ proc putAtom(lbstate: var LineBoxState; iastate: InlineAtomState) =
     let ibox = InlineTextBox(iastate.ibox)
     ibox.runs.add(iastate.run)
 
-proc addSpacing(fstate: var FlowState; width: LUnit; hang = false) =
+proc addSpacing(fstate: var FlowState; shift: int; hang = false) =
   let ibox = fstate.whitespaceBox
   if ibox.runs.len == 0 or fstate.lbstate.iastates.len == 0 or
       (let orun = ibox.runs[^1]; orun != fstate.lbstate.iastates[^1].run):
@@ -1133,14 +1129,14 @@ proc addSpacing(fstate: var FlowState; width: LUnit; hang = false) =
     )
     fstate.lbstate.putAtom(iastate)
   let iastate = addr fstate.lbstate.iastates[^1]
-  let n = (width div fstate.cellSize.w).toInt #TODO
-  for i in 0 ..< n:
+  for i in 0 ..< shift:
     iastate.run.str &= ' '
-  iastate.size.w += width
+  let w = shift * fstate.cellSize.w
+  iastate.size.w += w
   if not hang:
     # In some cases, whitespace may "hang" at the end of the line. This means
     # it is written, but is not actually counted in the box's width.
-    fstate.lbstate.size.w += width
+    fstate.lbstate.size.w += w
 
 proc flushWhitespace(fstate: var FlowState; istate: InlineState;
     hang = false) =
@@ -1271,7 +1267,8 @@ proc addAtom(fstate: var FlowState; istate: var InlineState;
   fstate.lbstate.charwidth += fstate.whitespacenum
   fstate.whitespacenum = 0
   # Line wrapping
-  if fstate.shouldWrap(iastate.size.w + shift, istate.ibox.computed):
+  if fstate.shouldWrap(iastate.size.w + shift * fstate.cellSize.w,
+      istate.ibox.computed):
     fstate.finishLine(istate, wrap = true)
     fstate.initLine()
     result = true
@@ -1279,7 +1276,7 @@ proc addAtom(fstate: var FlowState; istate: var InlineState;
     shift = fstate.computeShift(istate)
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
-    while fstate.shouldWrap2(iastate.size.w + shift):
+    while fstate.shouldWrap2(iastate.size.w + shift * fstate.cellSize.w):
       fstate.finishLine(istate, wrap = false, force = true)
       fstate.initLine()
       # Recompute on newline
@@ -1347,7 +1344,7 @@ proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
   if state.ibox.computed.nowrap:
     return
   fstate.initLine()
-  let shift = fstate.computeShift(state)
+  let shiftw = fstate.computeShift(state) * fstate.cellSize.w
   state.prevrw = uw
   if fstate.word.run.str.len == 0:
     state.firstrw = uw
@@ -1359,7 +1356,7 @@ proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
       fstate.wrappos = -1
       fstate.flushWordIntrSize()
     if uw == 2 or fstate.wrappos != -1: # break on cjk and wrap opportunities
-      let plusWidth = fstate.word.size.w + shift + uw * fstate.cellSize.w
+      let plusWidth = fstate.word.size.w + shiftw + uw * fstate.cellSize.w
       if fstate.shouldWrap(plusWidth, nil):
         if not fstate.addWordEOL(state): # no line wrapping occured in addAtom
           fstate.finishLine(state, wrap = true)
@@ -1367,13 +1364,13 @@ proc checkWrap(fstate: var FlowState; state: var InlineState; u: uint32;
   of WordBreakBreakAll:
     fstate.wrappos = -1
     fstate.flushWordIntrSize()
-    let plusWidth = fstate.word.size.w + shift + uw * fstate.cellSize.w
+    let plusWidth = fstate.word.size.w + shiftw + uw * fstate.cellSize.w
     if fstate.shouldWrap(plusWidth, nil):
       if not fstate.addWordEOL(state): # no line wrapping occured in addAtom
         fstate.finishLine(state, wrap = true)
         fstate.whitespacenum = 0
   of WordBreakKeepAll:
-    let plusWidth = fstate.word.size.w + shift + uw * fstate.cellSize.w
+    let plusWidth = fstate.word.size.w + shiftw + uw * fstate.cellSize.w
     if fstate.shouldWrap(plusWidth, nil):
       fstate.finishLine(state, wrap = true)
       fstate.whitespacenum = 0
@@ -1431,13 +1428,15 @@ proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
   let luctx = fstate.lctx.luctx
   var i = 0
   while i < str.len:
-    let c = str[i]
-    if c in Ascii:
+    let pi = i
+    var u = str.nextUTF8(i)
+    if u < 0x80:
+      let c = char(u)
       if c in AsciiWhitespace:
         fstate.processWhitespace(state, c)
       else:
-        let w = uint32(c).width()
-        fstate.checkWrap(state, uint32(c), w)
+        let w = u.width()
+        fstate.checkWrap(state, u, w)
         fstate.word.run.str &= c
         let cw = w * fstate.cellSize.w
         fstate.word.size.w += cw
@@ -1445,16 +1444,13 @@ proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
         fstate.lbstate.charwidth += w
         if c == '-': # ascii dash
           fstate.addWrapPos(shy = false)
-      inc i
+    elif luctx.isEnclosingMark(u) or luctx.isNonspacingMark(u) or
+        luctx.isFormat(u):
+      continue
+    elif u == 0xAD: # soft hyphen
+      fstate.addWrapPos(shy = true)
+      continue
     else:
-      let pi = i
-      var u = str.nextUTF8(i)
-      if luctx.isEnclosingMark(u) or luctx.isNonspacingMark(u) or
-          luctx.isFormat(u):
-        continue
-      if u == 0xAD: # soft hyphen
-        fstate.addWrapPos(shy = true)
-        continue
       if u in TabPUARange: # filter out chars placed in our PUA range
         u = 0xFFFD
       let w = u.width()
@@ -1466,8 +1462,8 @@ proc layoutTextLoop(fstate: var FlowState; state: var InlineState;
       fstate.wordIntrSize += cw
       fstate.lbstate.charwidth += w
   discard fstate.addWord(state)
-  let shift = fstate.computeShift(state)
-  fstate.lbstate.widthAfterWhitespace = fstate.lbstate.size.w + shift
+  let shiftw = fstate.computeShift(state) * fstate.cellSize.w
+  fstate.lbstate.widthAfterWhitespace = fstate.lbstate.size.w + shiftw
 
 proc layoutText(fstate: var FlowState; istate: var InlineState; s: string) =
   fstate.flushWhitespace(istate)
