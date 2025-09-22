@@ -35,7 +35,7 @@ ol > li:nth-child(n+10000) { margin-left: 3ch }
 
 blockquote { margin: 1em }
 
-hr { border-bottom-style: outset; display: flow-root }
+hr { border-bottom-style: outset }
 
 q::before { content: open-quote }
 q::after { content: close-quote }
@@ -84,13 +84,19 @@ input {
 }
 input::before, input::after { content: '' !important }
 input[type=hidden i] { display: none }
-input:is([type=button i], [type=submit i], [type=reset i], [type=radio i],
-	[type=checkbox i]) {
+input:is([type=radio i], [type=checkbox i]) {
 	text-decoration: none;
 	border-style: none -cha-bracket !important
 }
 input:is([type=submit i], [type=button i], [type=reset i]) {
-	border-color: -cha-ansi(red) !important
+	text-decoration: none;
+	border-style: none !important
+}
+input:is([type=submit i], [type=button i], [type=reset i])::before {
+	content: '[' !important
+}
+input:is([type=submit i], [type=button i], [type=reset i])::after {
+	content: ']' !important
 }
 
 input[type=radio i] { border-style: none -cha-paren !important }
