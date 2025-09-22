@@ -2872,9 +2872,10 @@ static void jebp__colcache_insert(jebp__colcache_t *colcache,
         return;
     }
 #if defined(JEBP__LITTLE_ENDIAN) && defined(JEBP__SWAP32)
-    jebp_uint hash = *(jebp_uint *)color; // ABGR due to little-endian
-    hash = JEBP__SWAP32(hash);            // RGBA
-    hash = (hash >> 8) | (hash << 24);    // ARGB
+    jebp_uint hash;
+    memcpy(&hash, color, sizeof(jebp_color_t)); // ABGR due to little-endian
+    hash = JEBP__SWAP32(hash);                  // RGBA
+    hash = (hash >> 8) | (hash << 24);          // ARGB
 #else
     jebp_uint hash = ((jebp_uint)color->a << 24) | ((jebp_uint)color->r << 16) |
                      ((jebp_uint)color->g << 8) | (jebp_uint)color->b;
@@ -2889,9 +2890,7 @@ static void jebp__colcache_insert(jebp__colcache_t *colcache,
 #define JEBP__NB_VP8L_OFFSETS 120
 
 typedef struct jebp__subimage_t {
-    jebp_int width;
-    jebp_int height;
-    jebp_color_t *pixels;
+    jebp_image_t s;
     jebp_int block_bits;
 } jebp__subimage_t;
 
@@ -2919,9 +2918,9 @@ static jebp_error_t jebp__read_vp8l_image(jebp_image_t *image,
     jebp_int nb_groups = 1;
     jebp__huffman_group_t *groups = &(jebp__huffman_group_t){0};
     if (huffman_image != NULL) {
-        for (jebp_int i = 0; i < huffman_image->width * huffman_image->height;
-             i += 1) {
-            jebp_color_t *huffman = &huffman_image->pixels[i];
+        jebp_int size = huffman_image->s.width * huffman_image->s.height;
+        for (jebp_int i = 0; i < size; i += 1) {
+            jebp_color_t *huffman = &huffman_image->s.pixels[i];
             if (huffman->r != 0) {
                 // Currently only 256 huffman groups are supported
                 return JEBP_ERROR_NOSUP;
@@ -2969,8 +2968,8 @@ static jebp_error_t jebp__read_vp8l_image(jebp_image_t *image,
         jebp_color_t *huffman_row = NULL;
         if (huffman_image != NULL) {
             huffman_row =
-                &huffman_image->pixels[(y >> huffman_image->block_bits) *
-                                       huffman_image->width];
+                &huffman_image->s.pixels[(y >> huffman_image->block_bits) *
+                                         huffman_image->s.width];
         }
         do {
             jebp__huffman_group_t *group;
@@ -3040,8 +3039,8 @@ static jebp_error_t jebp__read_subimage(jebp__subimage_t *subimage,
                                         jebp_image_t *image) {
     jebp_error_t err = JEBP_OK;
     subimage->block_bits = jebp__read_bits(bits, 3, &err) + 2;
-    subimage->width = JEBP__CSHIFT(image->width, subimage->block_bits);
-    subimage->height = JEBP__CSHIFT(image->height, subimage->block_bits);
+    subimage->s.width = JEBP__CSHIFT(image->width, subimage->block_bits);
+    subimage->s.height = JEBP__CSHIFT(image->height, subimage->block_bits);
     if (err != JEBP_OK) {
         return err;
     }
@@ -3049,8 +3048,7 @@ static jebp_error_t jebp__read_subimage(jebp__subimage_t *subimage,
     if ((err = jebp__read_colcache(&colcache, bits)) != JEBP_OK) {
         return err;
     }
-    err =
-        jebp__read_vp8l_image((jebp_image_t *)subimage, bits, &colcache, NULL);
+    err = jebp__read_vp8l_image(&subimage->s, bits, &colcache, NULL);
     jebp__free_colcache(&colcache);
     return err;
 }
@@ -3068,18 +3066,18 @@ static jebp_error_t jebp__read_palette(jebp__subimage_t *subimage,
         return JEBP_ERROR_NOSUP_PALETTE;
     }
     subimage->block_bits = 0;
-    subimage->width = len;
-    subimage->height = 1;
+    subimage->s.width = len;
+    subimage->s.height = 1;
     jebp__colcache_t colcache;
     if ((err = jebp__read_colcache(&colcache, bits)) != JEBP_OK) {
         return err;
     }
-    if ((err = jebp__read_vp8l_image((jebp_image_t *)subimage, bits, &colcache,
+    if ((err = jebp__read_vp8l_image(&subimage->s, bits, &colcache,
                                      NULL)) != JEBP_OK) {
         goto free_colcache;
     }
     for (i = 0; i < len; i++) {
-        jebp_color_t *px1 = &subimage->pixels[i];
+        jebp_color_t *px1 = &subimage->s.pixels[i];
         px1->r += px0.r;
         px1->g += px0.g;
         px1->b += px0.b;
@@ -3227,7 +3225,9 @@ JEBP__INLINE void jebp__vp8l_pred_left(jebp_color_t *pixel, jebp_int width) {
 #if defined(JEBP__SIMD_SSE2)
     __m128i v_left;
     if (width >= 4) {
-        v_left = _mm_cvtsi32_si128(*(int *)&pixel[-1]);
+        int v_left_i;
+        memcpy(&v_left_i, &pixel[-1], sizeof(int));
+        v_left = _mm_cvtsi32_si128(v_left_i);
     }
     for (; x + 4 <= width; x += 4) {
         __m128i v_pixel = _mm_loadu_si128((__m128i *)&pixel[x]);
@@ -3319,7 +3319,9 @@ static void jebp__vp8l_pred5(jebp_color_t *pixel, jebp_color_t *top,
     __m128i v_left;
     __m128i v_top;
     if (width >= 4) {
-        v_left = _mm_cvtsi32_si128(*(int *)&pixel[-1]);
+        int v_left_i;
+        memcpy(&v_left_i, &pixel[-1], sizeof(int));
+        v_left = _mm_cvtsi32_si128(v_left_i);
         v_top = _mm_loadu_si128((__m128i *)top);
     }
     for (; x + 4 <= width; x += 4) {
@@ -3378,7 +3380,9 @@ JEBP__INLINE void jebp__vp8l_pred_avgtl(jebp_color_t *pixel, jebp_color_t *top,
 #if defined(JEBP__SIMD_SSE2)
     __m128i v_left;
     if (width >= 4) {
-        v_left = _mm_cvtsi32_si128(*(int *)&pixel[-1]);
+        int v_left_i;
+        memcpy(&v_left_i, &pixel[-1], sizeof(int));
+        v_left = _mm_cvtsi32_si128(v_left_i);
     }
     for (; x + 4 <= width; x += 4) {
         __m128i v_pixel = _mm_loadu_si128((__m128i *)&pixel[x]);
@@ -3487,8 +3491,11 @@ static void jebp__vp8l_pred10(jebp_color_t *pixel, jebp_color_t *top,
     __m128i v_tl;
     __m128i v_top;
     if (width >= 4) {
-        v_left = _mm_cvtsi32_si128(*(int *)&pixel[-1]);
-        v_tl = _mm_cvtsi32_si128(*(int *)&top[-1]);
+        int v_left_i, v_tl_i;
+        memcpy(&v_left_i, &pixel[-1], sizeof(int));
+        memcpy(&v_tl_i, &top[-1], sizeof(int));
+        v_left = _mm_cvtsi32_si128(v_left_i);
+        v_tl = _mm_cvtsi32_si128(v_tl_i);
         v_top = _mm_loadu_si128((__m128i *)top);
     }
     for (; x + 4 <= width; x += 4) {
@@ -3563,8 +3570,11 @@ static void jebp__vp8l_pred11(jebp_color_t *pixel, jebp_color_t *top,
     __m128i v_left;
     __m128i v_tl;
     if (width >= 4) {
-        v_left = _mm_cvtsi32_si128(*(int *)&pixel[-1]);
-        v_tl = _mm_cvtsi32_si128(*(int *)&top[-1]);
+        int v_left_i, v_tl_i;
+        memcpy(&v_left_i, &pixel[-1], sizeof(int));
+        memcpy(&v_tl_i, &top[-1], sizeof(int));
+        v_left = _mm_cvtsi32_si128(v_left_i);
+        v_tl = _mm_cvtsi32_si128(v_tl_i);
     }
     for (; x + 4 <= width; x += 4) {
         __m128i v_ldist, v_tdist, v_cmp, v_pixello, v_pixelhi;
@@ -3655,8 +3665,11 @@ static void jebp__vp8l_pred12(jebp_color_t *pixel, jebp_color_t *top,
     __m128i v_left;
     __m128i v_tl;
     if (width >= 4) {
-        v_left = _mm_cvtsi32_si128(*(int *)&pixel[-1]);
-        v_tl = _mm_cvtsi32_si128(*(int *)&top[-1]);
+        int v_left_i, v_tl_i;
+        memcpy(&v_left_i, &pixel[-1], sizeof(int));
+        memcpy(&v_tl_i, &top[-1], sizeof(int));
+        v_left = _mm_cvtsi32_si128(v_left_i);
+        v_tl = _mm_cvtsi32_si128(v_tl_i);
     }
     for (; x + 4 <= width; x += 4) {
         __m128i v_pixel = _mm_loadu_si128((__m128i *)&pixel[x]);
@@ -3724,8 +3737,11 @@ static void jebp__vp8l_pred13(jebp_color_t *pixel, jebp_color_t *top,
     __m128i v_left;
     __m128i v_tl;
     if (width >= 4) {
-        v_left = _mm_cvtsi32_si128(*(int *)&pixel[-1]);
-        v_tl = _mm_cvtsi32_si128(*(int *)&top[-1]);
+        int v_left_i, v_tl_i;
+        memcpy(&v_left_i, &pixel[-1], sizeof(int));
+        memcpy(&v_tl_i, &top[-1], sizeof(int));
+        v_left = _mm_cvtsi32_si128(v_left_i);
+        v_tl = _mm_cvtsi32_si128(v_tl_i);
     }
     for (; x + 4 <= width; x += 4) {
         __m128i v_pixel = _mm_loadu_si128((__m128i *)&pixel[x]);
@@ -3830,7 +3846,7 @@ static jebp_error_t jebp__read_transform(jebp__transform_t *transform,
 
 static void jebp__free_transform(jebp__transform_t *transform) {
     if (transform->type != JEBP__TRANSFORM_GREEN) {
-        jebp_free_image((jebp_image_t *)&transform->image);
+        jebp_free_image(&transform->image.s);
     }
 }
 
@@ -3850,7 +3866,7 @@ JEBP__INLINE jebp_error_t jebp__apply_predict_transform(
     jebp_error_t err;
     jebp_color_t *pixel = image->pixels;
     jebp_color_t *top = pixel;
-    jebp_int predict_width = predict_image->width - 1;
+    jebp_int predict_width = predict_image->s.width - 1;
     jebp_int block_size = 1 << predict_image->block_bits;
     jebp_int end_size =
         image->width - (predict_width << predict_image->block_bits);
@@ -3869,8 +3885,8 @@ JEBP__INLINE jebp_error_t jebp__apply_predict_transform(
     pixel += image->width;
     for (jebp_int y = 1; y < image->height; y += 1) {
         jebp_color_t *predict_row =
-            &predict_image->pixels[(y >> predict_image->block_bits) *
-                                   predict_image->width];
+            &predict_image->s.pixels[(y >> predict_image->block_bits) *
+                                     predict_image->s.width];
         // Use top prediction for the left column
         jebp__vp8l_pred_top(pixel, top, 1);
         // Finish the rest of the first block
@@ -3950,13 +3966,13 @@ JEBP__INLINE void jebp__apply_color_row(jebp_color_t *pixel, jebp_int width,
 JEBP__INLINE jebp_error_t jebp__apply_color_transform(
     jebp_image_t *image, jebp__subimage_t *color_image) {
     jebp_color_t *pixel = image->pixels;
-    jebp_int color_width = color_image->width - 1;
+    jebp_int color_width = color_image->s.width - 1;
     jebp_int block_size = 1 << color_image->block_bits;
     jebp_int end_size = image->width - (color_width << color_image->block_bits);
     for (jebp_int y = 0; y < image->height; y += 1) {
         jebp_color_t *color_row =
-            &color_image
-                 ->pixels[(y >> color_image->block_bits) * color_image->width];
+            &color_image->s
+                .pixels[(y >> color_image->block_bits) * color_image->s.width];
         for (jebp_int x = 0; x < color_width; x += 1) {
             jebp__apply_color_row(pixel, block_size, &color_row[x]);
             pixel += block_size;
@@ -4000,12 +4016,13 @@ JEBP__INLINE jebp_error_t jebp__apply_green_transform(jebp_image_t *image) {
 JEBP__INLINE jebp_error_t jebp__apply_palette_transform(
     jebp_image_t *image, jebp__subimage_t *palette_image) {
     jebp_int size = image->width * image->height;
+    jebp_int palette_size = palette_image->s.width;
     jebp_int i;
     for (i = 0; i < size; i++) {
         jebp_color_t *pixel = &image->pixels[i];
         jebp_int idx = pixel->g;
-        if (idx < palette_image->width) {
-            *pixel = palette_image->pixels[idx];
+        if (idx < palette_size) {
+            *pixel = palette_image->s.pixels[idx];
         } else {
             return JEBP_ERROR_INVDATA;
         }
@@ -4110,7 +4127,7 @@ static jebp_error_t jebp__read_vp8l_nohead(jebp_image_t *image,
     }
     err = jebp__read_vp8l_image(image, bits, &colcache, huffman_image);
     jebp__free_colcache(&colcache);
-    jebp_free_image((jebp_image_t *)huffman_image);
+    jebp_free_image(&huffman_image->s);
 
 free_transforms:
     for (nb_transforms -= 1; nb_transforms >= 0; nb_transforms -= 1) {

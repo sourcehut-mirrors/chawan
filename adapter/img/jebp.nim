@@ -25,9 +25,9 @@ type
     read: proc(data: pointer; size: csize_t; user: pointer): csize_t {.cdecl.}
     check_error: proc(user: pointer): cint {.cdecl.}
 
-  jebp_error_t = cint
+  jebp_error_t {.importc.} = cint
 
-  jebp_color_t = object
+  jebp_color_t {.importc.} = object
     r: uint8
     g: uint8
     b: uint8
