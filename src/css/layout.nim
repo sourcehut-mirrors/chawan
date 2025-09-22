@@ -1404,7 +1404,7 @@ proc processWhitespace(fstate: var FlowState; istate: var InlineState;
   of WhitespacePreLine:
     if c == '\n':
       fstate.finishLine(istate, wrap = false, force = true)
-    elif fstate.whitespacenum < 1:
+    elif fstate.whitespacenum < 1 and fstate.lbstate.iastatesHead != nil:
       fstate.whitespaceIsLF = false
       fstate.whitespacenum = 1
       fstate.whitespaceBox = ibox
