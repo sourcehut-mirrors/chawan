@@ -106,11 +106,11 @@
  *                      be disabled (see `JEBP_NO_VP8` and `JEBP_NO_VP8L`).
  *   `JEBP_ERROR_NOSUP_PALETTE` is a suberror of `NOSUP` that indicates that the
  *                      image has a color-index transform (in WebP terminology,
- *                      this would be a paletted image). Color-indexing
- *                      transforms are not currently supported (see below). Note
- *                      that this error code might be removed after
- *                      color-indexing transform support is added, this is only
- *                      here for now to help detecting common issues.
+ *                      this would be a paletted image) with bit packing. Such
+ *                      color-indexing transforms are not currently supported
+ *                      (see below). Note that this error code might be removed
+ *                      after color-indexing transform support is added, this is
+ *                      only here for now to help detecting common issues.
  *   `JEBP_ERROR_NOMEM` means that a memory allocation failed, indicating that
  *                      there is no more memory available.
  *   `JEBP_ERROR_IO` represents any generic I/O error, usually from
@@ -127,8 +127,8 @@
  * This is not a feature-complete WebP decoder and has the following
  * limitations:
  *   - Does not support animated VP8X images, or filtered VP8X alpha.
- *   - Does not support VP8L lossless images with the color-indexing transform
- *     (palleted images).
+ *   - Does not support VP8L lossless images with bit-packed color-indexing
+ *     transforms (palleted images with a palette size <= 16).
  *   - Does not support VP8L images with more than 256 huffman groups. This is
  *     an arbitrary limit to prevent bad images from using too much memory. In
  *     theory, images requiring more groups should be very rare. This limit may
@@ -139,9 +139,7 @@
  *   - Decoding color profiles.
  *   - Decoding metadata.
  *   - Full color-indexing/palette support will be a bit of a mess, so don't
- *     expect full support of that coming anytime soon. Simple color-indexing
- *     support (more than 16 colors, skipping the need for bit-packing) is
- *     definitely alot more do-able.
+ *     expect full support of that coming anytime soon.
  *
  * Along with `JEBP_IMPLEMENTATION` defined above, there are a few other macros
  * that can be defined to change how JebP operates:
@@ -3057,6 +3055,42 @@ static jebp_error_t jebp__read_subimage(jebp__subimage_t *subimage,
     return err;
 }
 
+static jebp_error_t jebp__read_palette(jebp__subimage_t *subimage,
+                                       jebp__bit_reader_t *bits) {
+    jebp_error_t err = JEBP_OK;
+    jebp_uint len = jebp__read_bits(bits, 8, &err) + 1;
+    jebp_uint i;
+    jebp_color_t px0 = {0};
+    if (err != JEBP_OK) {
+        return err;
+    }
+    if (len <= 16) {
+        return JEBP_ERROR_NOSUP_PALETTE;
+    }
+    subimage->block_bits = 0;
+    subimage->width = len;
+    subimage->height = 1;
+    jebp__colcache_t colcache;
+    if ((err = jebp__read_colcache(&colcache, bits)) != JEBP_OK) {
+        return err;
+    }
+    if ((err = jebp__read_vp8l_image((jebp_image_t *)subimage, bits, &colcache,
+                                     NULL)) != JEBP_OK) {
+        goto free_colcache;
+    }
+    for (i = 0; i < len; i++) {
+        jebp_color_t *px1 = &subimage->pixels[i];
+        px1->r += px0.r;
+        px1->g += px0.g;
+        px1->b += px0.b;
+        px1->a = 255;
+        px0 = *px1;
+    }
+free_colcache:
+    jebp__free_colcache(&colcache);
+    return err;
+}
+
 /**
  * VP8L predictions
  */
@@ -3787,8 +3821,7 @@ static jebp_error_t jebp__read_transform(jebp__transform_t *transform,
         return err;
     }
     if (transform->type == JEBP__TRANSFORM_PALETTE) {
-        // TODO: support palette images
-        return JEBP_ERROR_NOSUP_PALETTE;
+        err = jebp__read_palette(&transform->image, bits);
     } else if (transform->type != JEBP__TRANSFORM_GREEN) {
         err = jebp__read_subimage(&transform->image, bits, image);
     }
@@ -3964,6 +3997,22 @@ JEBP__INLINE jebp_error_t jebp__apply_green_transform(jebp_image_t *image) {
     return JEBP_OK;
 }
 
+JEBP__INLINE jebp_error_t jebp__apply_palette_transform(
+    jebp_image_t *image, jebp__subimage_t *palette_image) {
+    jebp_int size = image->width * image->height;
+    jebp_int i;
+    for (i = 0; i < size; i++) {
+        jebp_color_t *pixel = &image->pixels[i];
+        jebp_int idx = pixel->g;
+        if (idx < palette_image->width) {
+            *pixel = palette_image->pixels[idx];
+        } else {
+            return JEBP_ERROR_INVDATA;
+        }
+    }
+    return JEBP_OK;
+}
+
 static jebp_error_t jebp__apply_transform(jebp__transform_t *transform,
                                           jebp_image_t *image) {
     switch (transform->type) {
@@ -3973,6 +4022,8 @@ static jebp_error_t jebp__apply_transform(jebp__transform_t *transform,
         return jebp__apply_color_transform(image, &transform->image);
     case JEBP__TRANSFORM_GREEN:
         return jebp__apply_green_transform(image);
+    case JEBP__TRANSFORM_PALETTE:
+        return jebp__apply_palette_transform(image, &transform->image);
     default:
         return JEBP_ERROR_NOSUP;
     }

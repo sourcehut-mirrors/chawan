@@ -81,7 +81,7 @@ proc main() =
   let f = scheme.after('+')
   if getEnv("MAPPED_URI_PATH") == "decode":
     if f != "webp":
-      die("Cha-Control: ConnectionError 1 unknown format " & f)
+      die("Cha-Control: ConnectionError 1 unknown format " & f & '\n')
     let headers = getEnv("REQUEST_HEADERS")
     var infoOnly = false
     for hdr in headers.split('\n'):
@@ -98,11 +98,11 @@ proc main() =
         quit(0)
       else:
         die("Cha-Control: ConnectionError 1 jepb error " &
-          $jebp_error_string(res) & "\n")
+          $jebp_error_string(res) & '\n')
     let res = jebp_read_from_callbacks(addr image, addr cb, nil)
     if res != 0:
       die("Cha-Control: ConnectionError 1 jebp error " &
-        $jebp_error_string(res))
+        $jebp_error_string(res) & '\n')
     else:
       puts("Cha-Image-Dimensions: " & $image.width & "x" & $image.height &
         "\n\n")
