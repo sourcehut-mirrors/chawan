@@ -518,19 +518,20 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
     buf.setLen(0)
   if bottom notin BorderStyleNoneHidden:
     let proprietary = bottom in {BorderStyleBracket, BorderStyleParen}
+    var offset = offset(x = start.x, y = send.y - state.attrs.ppl)
     if left notin BorderStyleNoneHidden and not proprietary:
       if box.state.merge[dtHorizontal]:
         buf &= bottom.borderChar(bdcSideBarBottom)
       else:
         buf &= bottom.borderChar(bdcCornerBottomLeft)
+    else:
+      offset.x += state.attrs.ppc
     for i in startx + 1 ..< endx - 1:
       buf &= bottom.borderChar(bdcHorizontalBarBottom)
     if right notin BorderStyleNoneHidden and not proprietary:
       buf &= bottom.borderChar(bdcCornerBottomRight)
-    var offset = offset(x = start.x, y = send.y - state.attrs.ppl)
     var flags: set[FormatFlag] = {}
     if proprietary:
-      offset.x += state.attrs.ppc
       offset.y -= state.attrs.ppl
       flags.incl(ffUnderline)
     let fgcolor = box.computed{"border-bottom-color"}.cellColor()

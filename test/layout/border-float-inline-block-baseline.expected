@@ -1,0 +1,12 @@
+┌─────┐     ┌────────────┐
+│float│test │inline-block│ test
+└─────┘     └────────────┘
+height test height test
+     ┌────────────┐
+test │inline-block│ test
+     └────────────┘
+height test
+┌─────┐┌─────┐test┌─────┐┌─────┐
+│float││float│    │float││float│
+└─────┘└─────┘    └─────┘└─────┘
+height test

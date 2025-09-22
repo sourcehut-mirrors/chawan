@@ -1002,7 +1002,7 @@ const TextAlignNone = {
   TextAlignStart, TextAlignLeft, TextAlignChaLeft, TextAlignJustify
 }
 
-proc baseline(iastate: InlineAtomState): LUnit =
+proc baseline(iastate: InlineAtomState; lctx: LayoutContext): LUnit =
   if iastate.ibox of InlineBlockBox:
     let ibox = InlineBlockBox(iastate.ibox)
     let box = BlockBox(ibox.firstChild)
@@ -1010,7 +1010,8 @@ proc baseline(iastate: InlineAtomState): LUnit =
       box.state.baseline
     else:
       box.state.size.h
-    return baseline + box.sizes.margin.top
+    return baseline + box.sizes.margin.top +
+      box.sizes.borderSize(dtVertical, lctx).start
   return iastate.size.h
 
 proc vertalign(iastate: InlineAtomState): CSSVerticalAlign =
@@ -1019,7 +1020,8 @@ proc vertalign(iastate: InlineAtomState): CSSVerticalAlign =
     return ibox.firstChild.computed{"vertical-align"}
   ibox.computed{"vertical-align"}
 
-proc positionAtom(lbstate: LineBoxState; iastate: var InlineAtomState) =
+proc positionAtom(lbstate: LineBoxState; iastate: var InlineAtomState;
+    lctx: LayoutContext) =
   case iastate.vertalign
   of VerticalAlignBaseline:
     # Atom is placed at (line baseline) - (atom baseline) - len
@@ -1035,7 +1037,7 @@ proc positionAtom(lbstate: LineBoxState; iastate: var InlineAtomState) =
     iastate.offset.y = lbstate.size.h - iastate.size.h
   else:
     # See baseline (with len = 0).
-    iastate.offset.y = lbstate.baseline - iastate.baseline
+    iastate.offset.y = lbstate.baseline - iastate.baseline(lctx)
 
 proc getLineWidth(fstate: FlowState): LUnit =
   return case fstate.space.w.t
@@ -1069,7 +1071,7 @@ proc alignLine(fstate: var FlowState) =
   var iastate = fstate.lbstate.iastatesHead
   var lastAtom: InlineAtomState = nil
   while iastate != nil:
-    fstate.lbstate.positionAtom(iastate)
+    fstate.lbstate.positionAtom(iastate, fstate.lctx)
     iastate.offset.y += fstate.offset.y
     minHeight = max(minHeight, iastate.offset.y - fstate.offset.y +
       iastate.size.h)
@@ -1244,8 +1246,7 @@ proc finishLine(fstate: var FlowState; istate: var InlineState; wrap: bool;
     fstate.lbstate.totalFloatWidth)
   fstate.lbstate = fstate.initLineBoxState()
 
-proc shouldWrap(fstate: FlowState; w: LUnit;
-    pcomputed: CSSValues): bool =
+proc shouldWrap(fstate: FlowState; w: LUnit; pcomputed: CSSValues): bool =
   if pcomputed != nil and pcomputed.nowrap:
     return false
   if fstate.space.w.t in {scMaxContent, scMeasure}:
@@ -1264,7 +1265,7 @@ proc getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
   return case iastate.vertalign
   of VerticalAlignLength:
     let length = iastate.ibox.computed{"-cha-vertical-align-length"}
-    iastate.baseline + length.px(fstate.cellSize.h)
+    iastate.baseline(fstate.lctx) + length.px(fstate.cellSize.h)
   of VerticalAlignTop:
     0
   of VerticalAlignMiddle:
@@ -1272,7 +1273,7 @@ proc getBaseline(fstate: FlowState; iastate: InlineAtomState): LUnit =
   of VerticalAlignBottom:
     iastate.size.h
   else:
-    iastate.baseline
+    iastate.baseline(fstate.lctx)
 
 # Add an inline atom atom, with state iastate.
 # Returns true on newline.
@@ -1588,7 +1589,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
       space: fstate.space,
       parentBps: fstate.bctx.parentBps,
       box: child,
-      marginOffset: sizes.margin.startOffset(),
+      marginOffset: sizes.margin.startOffset() + sizes.borderTopLeft(lctx),
       outerSize: outerSize,
       newLine: newLine
     ))
