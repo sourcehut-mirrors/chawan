@@ -443,7 +443,12 @@ proc encode(os: PosixStream; img: openArray[RGBAColorBE];
             moveMem(addr chunk.data[diff], addr chunk.data[0], olen)
             zeroMem(addr chunk.data[0], diff)
           elif chunk.data.len < j - chunk.x:
+            let olen = chunk.data.len
             chunk.data.setLen(j - chunk.x)
+            when NimMajor < 2:
+              zeroMem(addr chunk.data[olen], j - chunk.x - olen)
+            else:
+              discard olen
         let k = j - chunk.x
         if k < chunk.data.len:
           chunk.data[k] = chunk.data[k] or mask
