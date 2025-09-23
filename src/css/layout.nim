@@ -715,6 +715,11 @@ type
     paddingTodo: seq[tuple[box: InlineBox; i: int]]
     size: Size
     unpositionedFloats: seq[UnpositionedFloat]
+    lastrw: int # last rune width of the previous word
+    firstrw: int # first rune width of the current word
+    prevrw: int # last processed rune's width
+    whitespaceBox: InlineTextBox
+    whitespaceNum: int
     # Set at the end of layoutText. It helps determine the beginning of the
     # next inline box.
     widthAfterWhitespace: LUnit
@@ -729,9 +734,15 @@ type
     init: LineInitState
     # float values currently included in unpositionedFloats.
     floatsSeen: set[CSSFloat]
-    lastrw: int # last rune width of the previous word
-    firstrw: int # first rune width of the current word
-    prevrw: int # last processed rune's width
+    whitespaceIsLF: bool
+
+  WordState = object
+    s: string
+    ibox: InlineTextBox
+    wrapPos: int # position of last wrapping opportunity, or -1
+    width: LUnit
+    intrWidth: LUnit # intrinsic size of currently processed word segment
+    hasSoftHyphen: bool
 
   InlineAtom = ref object
     ibox: InlineBox
@@ -757,15 +768,7 @@ type
     textAlign: CSSTextAlign # text align of parent, for block-level alignment
     # Inline context state:
     lbstate: LineBoxState
-    whitespacenum: int
-    whitespaceBox: InlineTextBox
-    word: InlineAtom
-    wordIntrSize: LUnit # intrinsic size of currently processed word segment
-    wrappos: int # position of last wrapping opportunity, or -1
-    lastTextBox: InlineBox
     padding: RelativeRect
-    hasshy: bool
-    whitespaceIsLF: bool
 
 # Forward declarations
 proc layout(bctx: var BlockContext; box: BlockBox; offset: Offset;
@@ -797,6 +800,13 @@ template cellSize(fstate: FlowState): Size =
 
 template computed(fstate: FlowState): CSSValues =
   fstate.box.computed
+
+proc lastTextBox(fstate: FlowState): InlineBox =
+  if fstate.lbstate.whitespaceBox != nil:
+    return fstate.lbstate.whitespaceBox
+  if fstate.lbstate.atomsTail != nil:
+    return fstate.lbstate.atomsTail.ibox
+  nil
 
 proc bfcOffset(bctx: BlockContext): Offset =
   if bctx.parentBps != nil:
@@ -967,31 +977,24 @@ proc initLine(fstate: var FlowState; flag = ilfRegular) =
     fstate.lbstate.init = lisUninited
 
 # Whitespace between words
-proc computeShift(fstate: FlowState; ibox: InlineBox): int =
-  if fstate.whitespacenum == 0:
+proc computeShift(lbstate: LineBoxState; ibox: InlineBox): int =
+  if lbstate.whitespaceNum == 0:
     return 0
-  if fstate.whitespaceIsLF and fstate.lbstate.lastrw == 2 and
-      fstate.lbstate.firstrw == 2:
+  if lbstate.whitespaceIsLF and lbstate.lastrw == 2 and lbstate.firstrw == 2:
     # skip line feed between double-width characters
     return 0
   if ibox.computed{"white-space"} notin WhiteSpacePreserve:
-    if fstate.lbstate.atomsTail == nil:
+    if lbstate.atomsTail == nil:
       return 0
-    let ibox = fstate.lbstate.atomsTail.ibox
+    let ibox = lbstate.atomsTail.ibox
     if ibox of InlineTextBox:
       let ibox = InlineTextBox(ibox)
-      if ibox.runs.len > 0 and ibox.runs[^1].str[^1] == ' ':
+      if ibox.runs.len > 0 and ibox.runs[^1].s[^1] == ' ':
         return 0
-  return fstate.whitespacenum
+  return lbstate.whitespaceNum
 
-proc newWord(fstate: var FlowState; ibox: InlineBox) =
-  fstate.word = InlineAtom(
-    ibox: ibox,
-    size: size(w = 0, h = fstate.cellSize.h),
-    run: TextRun()
-  )
-  fstate.wrappos = -1
-  fstate.hasshy = false
+proc initWord(fstate: var FlowState; ibox: InlineTextBox): WordState =
+  WordState(ibox: ibox, wrapPos: -1)
 
 #TODO start & justify would be nice to have
 const TextAlignNone = {
@@ -1121,30 +1124,50 @@ proc alignLine(fstate: var FlowState) =
   # rounded up to the next line.
   fstate.lbstate.size.h = minHeight.ceilTo(fstate.cellSize.h.toInt())
 
-proc putAtom(lbstate: var LineBoxState; atom: InlineAtom) =
-  if atom.ibox of InlineTextBox:
-    let ibox = InlineTextBox(atom.ibox)
-    ibox.runs.add(atom.run)
+proc getBaseline(atom: InlineAtom; lctx: LayoutContext): LUnit =
+  return case atom.vertalign
+  of VerticalAlignLength:
+    let length = atom.ibox.computed{"-cha-vertical-align-length"}
+    atom.baseline(lctx) + length.px(lctx.cellSize.h)
+  of VerticalAlignTop:
+    0
+  of VerticalAlignMiddle:
+    atom.size.h div 2
+  of VerticalAlignBottom:
+    atom.size.h
+  else:
+    atom.baseline(lctx)
+
+proc putAtom(lbstate: var LineBoxState; atom: InlineAtom; lctx: LayoutContext) =
+  atom.offset = offset(x = lbstate.size.w, y = atom.getBaseline(lctx))
+  lbstate.size.w += atom.size.w
+  lbstate.baseline = max(lbstate.baseline, atom.offset.y)
+  # In all cases, the line's height must at least equal the atom's height.
+  lbstate.size.h = max(lbstate.size.h, atom.size.h)
   if lbstate.atomsTail == nil:
     lbstate.atomsHead = atom
   else:
     lbstate.atomsTail.next = atom
   lbstate.atomsTail = atom
 
-proc addSpacing(fstate: var FlowState; shift: int; hang = false) =
-  let ibox = fstate.whitespaceBox
+proc putAtom(fstate: var FlowState; atom: InlineAtom) =
+  fstate.lbstate.putAtom(atom, fstate.lctx)
+
+proc addSpacing(fstate: var FlowState; ibox: InlineTextBox; shift: int;
+    hang = false) =
   if ibox.runs.len == 0 or fstate.lbstate.atomsTail == nil or
       fstate.lbstate.atomsTail.run != ibox.runs[^1]:
     let cellHeight = fstate.cellSize.h
-    fstate.lbstate.putAtom(InlineAtom(
+    let run = TextRun()
+    ibox.runs.add(run)
+    fstate.putAtom(InlineAtom(
       ibox: ibox,
-      offset: offset(x = fstate.lbstate.size.w, y = cellHeight),
       size: size(w = 0, h = cellHeight),
-      run: TextRun()
+      run: run
     ))
   let run = ibox.runs[^1]
   for i in 0 ..< shift:
-    run.str &= ' '
+    run.s &= ' '
   let w = shift * fstate.cellSize.w
   fstate.lbstate.atomsTail.size.w += w
   if not hang:
@@ -1153,12 +1176,14 @@ proc addSpacing(fstate: var FlowState; shift: int; hang = false) =
     fstate.lbstate.size.w += w
 
 proc flushWhitespace(fstate: var FlowState; ibox: InlineBox; hang = false) =
-  let shift = fstate.computeShift(ibox)
-  fstate.lbstate.charwidth += fstate.whitespacenum
-  fstate.whitespacenum = 0
+  let shift = fstate.lbstate.computeShift(ibox)
+  fstate.lbstate.charwidth += fstate.lbstate.whitespaceNum
+  fstate.lbstate.whitespaceNum = 0
+  let wbox = fstate.lbstate.whitespaceBox
+  fstate.lbstate.whitespaceBox = nil
   if shift > 0:
     fstate.initLine()
-    fstate.addSpacing(shift, hang)
+    fstate.addSpacing(wbox, shift, hang)
 
 proc initLineBoxState(fstate: FlowState): LineBoxState =
   let cellHeight = fstate.cellSize.h
@@ -1171,7 +1196,7 @@ proc initLineBoxState(fstate: FlowState): LineBoxState =
 proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     force = false; clear = ClearNone) =
   if fstate.lbstate.atomsHead != nil or force or
-      fstate.whitespacenum != 0 and ibox != nil and
+      fstate.lbstate.whitespaceNum != 0 and ibox != nil and
       ibox.computed{"white-space"} in {WhitespacePre, WhitespacePreWrap}:
     fstate.initLine()
     let whitespace = ibox.computed{"white-space"}
@@ -1183,7 +1208,7 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     elif whitespace == WhitespacePreWrap:
       fstate.flushWhitespace(ibox, hang = true)
     else:
-      fstate.whitespacenum = 0
+      fstate.lbstate.whitespaceNum = 0
     # align atoms + calculate width for fit-content + place
     fstate.alignLine()
     for f in fstate.lbstate.unpositionedFloats:
@@ -1254,178 +1279,162 @@ proc shouldWrap2(fstate: FlowState; w: LUnit): bool =
     return false
   return fstate.lbstate.size.w + w > fstate.lbstate.availableWidth
 
-proc getBaseline(fstate: FlowState; atom: InlineAtom): LUnit =
-  return case atom.vertalign
-  of VerticalAlignLength:
-    let length = atom.ibox.computed{"-cha-vertical-align-length"}
-    atom.baseline(fstate.lctx) + length.px(fstate.cellSize.h)
-  of VerticalAlignTop:
-    0
-  of VerticalAlignMiddle:
-    atom.size.h div 2
-  of VerticalAlignBottom:
-    atom.size.h
-  else:
-    atom.baseline(fstate.lctx)
-
-# Add an inline atom.
-# Returns true on newline.
-proc addAtom(fstate: var FlowState; atom: InlineAtom): bool =
+# Wrap assuming the next atom is "width" wide and associated with "ibox".
+# Returns true if wrapped (i.e. on newline).
+proc prepareSpace(fstate: var FlowState; ibox: InlineBox; width: LUnit): bool =
   fstate.initLine()
-  let ibox = atom.ibox
   var wrapped = false
-  var shift = fstate.computeShift(ibox)
-  fstate.lbstate.charwidth += fstate.whitespacenum
-  fstate.whitespacenum = 0
+  var shift = fstate.lbstate.computeShift(ibox)
+  fstate.lbstate.charwidth += fstate.lbstate.whitespaceNum
+  fstate.lbstate.whitespaceNum = 0
+  let wbox = fstate.lbstate.whitespaceBox
+  fstate.lbstate.whitespaceBox = nil
   # Line wrapping
-  if fstate.shouldWrap(atom.size.w + shift * fstate.cellSize.w, ibox):
+  if fstate.shouldWrap(width + shift * fstate.cellSize.w, ibox):
     fstate.finishLine(ibox, wrap = true)
     fstate.initLine()
     wrapped = true
     # Recompute on newline
-    shift = fstate.computeShift(ibox)
+    shift = fstate.lbstate.computeShift(ibox)
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
-    while fstate.shouldWrap2(atom.size.w + shift * fstate.cellSize.w):
+    while fstate.shouldWrap2(width + shift * fstate.cellSize.w):
       fstate.finishLine(ibox, wrap = false, force = true)
       fstate.initLine()
       # Recompute on newline
-      shift = fstate.computeShift(ibox)
-  if atom.size.w > 0 and atom.size.h > 0 or ibox of InlineBlockBox:
-    if shift > 0:
-      fstate.addSpacing(shift)
-    atom.offset.x += fstate.lbstate.size.w
-    fstate.lbstate.size.w += atom.size.w
-    let tail = fstate.lbstate.atomsTail
-    if atom.run != nil and tail != nil and ibox of InlineTextBox:
-      let ibox = InlineTextBox(ibox)
-      if ibox.runs.len > 0 and tail.run == ibox.runs[^1]:
-        tail.run.str &= atom.run.str
-        tail.size.w += atom.size.w
-        return wrapped
-    # store for later use in alignLine
-    let baseline = fstate.getBaseline(atom)
-    atom.offset.y = baseline
-    fstate.lbstate.putAtom(atom)
-    fstate.lbstate.baseline = max(fstate.lbstate.baseline, baseline)
-    # In all cases, the line's height must at least equal the atom's height.
-    fstate.lbstate.size.h = max(fstate.lbstate.size.h, atom.size.h)
-  return wrapped
+      shift = fstate.lbstate.computeShift(ibox)
+  if shift > 0:
+    fstate.addSpacing(wbox, shift)
+  wrapped
 
-proc flushWordIntrSize(fstate: var FlowState) =
-  fstate.intr.w = max(fstate.intr.w, fstate.wordIntrSize)
-  fstate.wordIntrSize = 0
+proc flushIntrSize(fstate: var FlowState; word: var WordState) =
+  fstate.intr.w = max(fstate.intr.w, word.intrWidth)
+  word.intrWidth = 0
 
 # Returns true if wrapped.
-proc addWord(fstate: var FlowState; ibox: InlineBox): bool =
-  if fstate.word.run.str == "":
+proc addWord(fstate: var FlowState; word: var WordState): bool =
+  if word.s == "" or word.width == 0:
     return false
-  fstate.word.run.str.mnormalize() #TODO this may break on EOL.
-  if fstate.word.run.str == "":
+  word.s.mnormalize() #TODO this may break on EOL.
+  if word.s == "":
     return false
-  fstate.flushWordIntrSize()
-  let wrapped = fstate.addAtom(fstate.word)
-  fstate.newWord(ibox)
+  fstate.flushIntrSize(word)
+  let ibox = word.ibox
+  let wrapped = fstate.prepareSpace(ibox, word.width)
+  let tail = fstate.lbstate.atomsTail
+  if tail != nil and ibox.runs.len > 0 and tail.run == ibox.runs[^1]:
+    tail.run.s &= word.s
+    tail.size.w += word.width
+    fstate.lbstate.size.w += word.width
+  else:
+    let size = size(w = word.width, h = fstate.cellSize.h)
+    let run = TextRun(s: move(word.s))
+    ibox.runs.add(run)
+    fstate.putAtom(InlineAtom(ibox: ibox, run: run, size: size))
+  word = fstate.initWord(ibox)
   return wrapped
 
-proc addWordEOL(fstate: var FlowState; ibox: InlineBox): bool =
-  if fstate.word.run.str == "":
+proc addWordEOL(fstate: var FlowState; word: var WordState): bool =
+  if word.s == "":
     return false
-  if fstate.wrappos != -1:
-    var leftstr = fstate.word.run.str.substr(fstate.wrappos)
-    fstate.word.run.str.setLen(fstate.wrappos)
-    if fstate.hasshy:
+  let wrapPos = word.wrapPos
+  if wrapPos != -1:
+    var leftstr = word.s.substr(wrapPos)
+    word.s.setLen(wrapPos)
+    if word.hasSoftHyphen:
       const shy = "\u00AD" # soft hyphen
-      fstate.word.run.str &= shy
-      fstate.hasshy = false
-    let wrapped = fstate.addWord(ibox)
-    fstate.word.size.w = leftstr.width() * fstate.cellSize.w
-    fstate.word.run.str = move(leftstr)
+      word.s &= shy
+      word.hasSoftHyphen = false
+    let wrapped = fstate.addWord(word)
+    word.width = leftstr.width() * fstate.cellSize.w
+    word.s = move(leftstr)
     return wrapped
-  return fstate.addWord(ibox)
+  return fstate.addWord(word)
 
-proc checkWrap(fstate: var FlowState; ibox: InlineBox; u: uint32; uw: int) =
+proc checkWrap(fstate: var FlowState; word: var WordState; u: uint32;
+    uw: int) =
+  let ibox = word.ibox
   if ibox.computed.nowrap:
     return
   fstate.initLine()
-  let shiftw = fstate.computeShift(ibox) * fstate.cellSize.w
+  let shiftw = fstate.lbstate.computeShift(ibox) * fstate.cellSize.w
   fstate.lbstate.prevrw = uw
-  if fstate.word.run.str.len == 0:
+  if word.s.len == 0:
     fstate.lbstate.firstrw = uw
   case ibox.computed{"word-break"}
   of WordBreakNormal:
     if uw == 2:
       # remove wrap opportunity, so we wrap properly on the last CJK char
       # (instead of any dash inside CJK sentences)
-      fstate.wrappos = -1
-      fstate.flushWordIntrSize()
-    if uw == 2 or fstate.wrappos != -1: # break on cjk and wrap opportunities
-      let plusWidth = fstate.word.size.w + shiftw + uw * fstate.cellSize.w
+      word.wrapPos = -1
+      fstate.flushIntrSize(word)
+    if uw == 2 or word.wrapPos != -1:
+      # break on cjk and wrap opportunities
+      let plusWidth = word.width + shiftw + uw * fstate.cellSize.w
       if fstate.shouldWrap(plusWidth, nil):
-        if not fstate.addWordEOL(ibox): # no line wrapping occured in addAtom
+        if not fstate.addWordEOL(word): # no line wrapping occurred in addWord
           fstate.finishLine(ibox, wrap = true)
-          fstate.whitespacenum = 0
   of WordBreakBreakAll:
-    fstate.wrappos = -1
-    fstate.flushWordIntrSize()
-    let plusWidth = fstate.word.size.w + shiftw + uw * fstate.cellSize.w
+    word.wrapPos = -1
+    fstate.flushIntrSize(word)
+    let plusWidth = word.width + shiftw + uw * fstate.cellSize.w
     if fstate.shouldWrap(plusWidth, nil):
-      if not fstate.addWordEOL(ibox): # no line wrapping occurred in addAtom
+      if not fstate.addWordEOL(word): # no line wrapping occurred in addWord
         fstate.finishLine(ibox, wrap = true)
-        fstate.whitespacenum = 0
   of WordBreakKeepAll:
-    let plusWidth = fstate.word.size.w + shiftw + uw * fstate.cellSize.w
+    let plusWidth = word.width + shiftw + uw * fstate.cellSize.w
     if fstate.shouldWrap(plusWidth, nil):
       fstate.finishLine(ibox, wrap = true)
-      fstate.whitespacenum = 0
 
-proc processWhitespace(fstate: var FlowState; ibox: InlineTextBox; c: char) =
-  discard fstate.addWord(ibox)
+proc processWhitespace(fstate: var FlowState; word: var WordState; c: char) =
+  let ibox = word.ibox
+  discard fstate.addWord(word)
   case ibox.computed{"white-space"}
   of WhitespaceNormal, WhitespaceNowrap:
-    if fstate.whitespacenum < 1 and fstate.lbstate.atomsHead != nil:
-      fstate.whitespacenum = 1
-      fstate.whitespaceBox = ibox
-      fstate.whitespaceIsLF = c == '\n'
+    if fstate.lbstate.whitespaceNum < 1 and fstate.lbstate.atomsHead != nil:
+      fstate.lbstate.whitespaceNum = 1
+      fstate.lbstate.whitespaceBox = ibox
+      fstate.lbstate.whitespaceIsLF = c == '\n'
     if c != '\n':
-      fstate.whitespaceIsLF = false
+      fstate.lbstate.whitespaceIsLF = false
   of WhitespacePreLine:
     if c == '\n':
       fstate.finishLine(ibox, wrap = false, force = true)
-    elif fstate.whitespacenum < 1 and fstate.lbstate.atomsHead != nil:
-      fstate.whitespaceIsLF = false
-      fstate.whitespacenum = 1
-      fstate.whitespaceBox = ibox
+    elif fstate.lbstate.whitespaceNum < 1 and fstate.lbstate.atomsHead != nil:
+      fstate.lbstate.whitespaceIsLF = false
+      fstate.lbstate.whitespaceNum = 1
+      fstate.lbstate.whitespaceBox = ibox
   of WhitespacePre, WhitespacePreWrap:
-    fstate.whitespaceIsLF = false
+    fstate.lbstate.whitespaceIsLF = false
     if c == '\n':
       fstate.finishLine(ibox, wrap = false, force = true)
     elif c == '\t':
-      let realWidth = fstate.lbstate.charwidth + fstate.whitespacenum
+      let realWidth = fstate.lbstate.charwidth + fstate.lbstate.whitespaceNum
       # We must flush first, because addWord would otherwise try to wrap the
       # line. (I think.)
       fstate.flushWhitespace(ibox)
       let w = ((realWidth + 8) and not 7) - realWidth
-      fstate.word.run.str.addUTF8(tabPUAPoint(w))
-      fstate.word.size.w += w * fstate.cellSize.w
+      word.s.addUTF8(tabPUAPoint(w))
+      word.width += w * fstate.cellSize.w
       fstate.lbstate.charwidth += w
       # Ditto here - we don't want the tab stop to get merged into the next
       # word.
-      discard fstate.addWord(ibox)
+      discard fstate.addWord(word)
     else:
-      inc fstate.whitespacenum
-      fstate.whitespaceBox = ibox
+      inc fstate.lbstate.whitespaceNum
+      fstate.lbstate.whitespaceBox = ibox
   # set the "last word's last rune width" to the previous rune width
   fstate.lbstate.lastrw = fstate.lbstate.prevrw
 
-proc addWrapPos(fstate: var FlowState; shy: bool) =
+proc addWrapPos(fstate: var FlowState; word: var WordState) =
   # largest gap between wrapping opportunities is the intrinsic minimum
   # width
-  fstate.flushWordIntrSize()
-  fstate.wrappos = fstate.word.run.str.len
-  fstate.hasshy = shy
+  fstate.flushIntrSize(word)
+  word.wrapPos = word.s.len
 
 proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox; s: string) =
+  fstate.flushWhitespace(ibox)
+  var word = fstate.initWord(ibox)
   let luctx = fstate.lctx.luctx
   var i = 0
   while i < s.len:
@@ -1434,41 +1443,41 @@ proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox; s: string) =
     if u < 0x80:
       let c = char(u)
       if c in AsciiWhitespace:
-        fstate.processWhitespace(ibox, c)
+        fstate.processWhitespace(word, c)
       else:
         let w = u.width()
-        fstate.checkWrap(ibox, u, w)
-        fstate.word.run.str &= c
+        fstate.checkWrap(word, u, w)
+        word.s &= c
         let cw = w * fstate.cellSize.w
-        fstate.word.size.w += cw
-        fstate.wordIntrSize += cw
+        word.width += cw
+        word.intrWidth += cw
         fstate.lbstate.charwidth += w
         if c == '-': # ascii dash
-          fstate.addWrapPos(shy = false)
+          fstate.addWrapPos(word)
+          word.hasSoftHyphen = false # override soft hyphen
     elif luctx.isEnclosingMark(u) or luctx.isNonspacingMark(u) or
         luctx.isFormat(u):
       continue
     elif u == 0xAD: # soft hyphen
-      fstate.addWrapPos(shy = true)
+      fstate.addWrapPos(word)
+      word.hasSoftHyphen = true
       continue
     else:
       if u in TabPUARange: # filter out chars placed in our PUA range
         u = 0xFFFD
       let w = u.width()
-      fstate.checkWrap(ibox, u, w)
+      fstate.checkWrap(word, u, w)
       for j in pi ..< i:
-        fstate.word.run.str &= s[j]
+        word.s &= s[j]
       let cw = w * fstate.cellSize.w
-      fstate.word.size.w += cw
-      fstate.wordIntrSize += cw
+      word.width += cw
+      word.intrWidth += cw
       fstate.lbstate.charwidth += w
-  discard fstate.addWord(ibox)
-  let shiftw = fstate.computeShift(ibox) * fstate.cellSize.w
+  discard fstate.addWord(word)
+  let shiftw = fstate.lbstate.computeShift(ibox) * fstate.cellSize.w
   fstate.lbstate.widthAfterWhitespace = fstate.lbstate.size.w + shiftw
 
 proc layoutText(fstate: var FlowState; ibox: InlineTextBox; s: string) =
-  fstate.flushWhitespace(ibox)
-  fstate.newWord(ibox)
   let transform = ibox.computed{"text-transform"}
   if transform == TextTransformNone:
     fstate.layoutTextLoop(ibox, s)
@@ -1673,7 +1682,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
   fstate.offset.y += outerSize.h
   fstate.intr.h += outerSize.h - child.state.size.h + child.state.intr.h
-  fstate.whitespacenum = 0
+  fstate.lbstate.whitespaceNum = 0
   fstate.intr.w = max(fstate.intr.w, child.state.intr.w)
 
 proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
@@ -1738,11 +1747,12 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
       ibox: ibox,
       size: box.outerSize(sizes, lctx)
     )
-    discard fstate.addAtom(atom)
+    discard fstate.prepareSpace(ibox, atom.size.w)
+    fstate.putAtom(atom)
     fstate.intr.w = max(fstate.intr.w, box.state.intr.w)
     fstate.lbstate.intrh = max(fstate.lbstate.intrh, atom.size.h)
     fstate.lbstate.charwidth = 0
-    fstate.whitespacenum = 0
+    fstate.lbstate.whitespaceNum = 0
 
 proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
   ibox.imgstate = InlineImageState(
@@ -1795,8 +1805,10 @@ proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
     ibox.imgstate.size.h = osize.h div osize.w * ibox.imgstate.size.w
   elif not hasWidth and osize.h != 0:
     ibox.imgstate.size.w = osize.w div osize.h * ibox.imgstate.size.h
-  let atom = InlineAtom(ibox: ibox, size: ibox.imgstate.size)
-  discard fstate.addAtom(atom)
+  if ibox.imgstate.size.w > 0 and ibox.imgstate.size.h > 0:
+    let atom = InlineAtom(ibox: ibox, size: ibox.imgstate.size)
+    discard fstate.prepareSpace(ibox, atom.size.w)
+    fstate.putAtom(atom)
   fstate.lbstate.charwidth = 0
   if ibox.imgstate.size.h > 0:
     # Setting the atom size as intr.w might result in a circular dependency
@@ -1828,19 +1840,15 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
     let ibox = InlineTextBox(ibox)
     ibox.runs.setLen(0)
     fstate.layoutText(ibox, ibox.text.s)
-    fstate.lastTextBox = ibox
   elif ibox of InlineNewLineBox:
     let ibox = InlineNewLineBox(ibox)
     fstate.finishLine(ibox, wrap = false, force = true, ibox.computed{"clear"})
-    fstate.lastTextBox = ibox
   elif ibox of InlineBlockBox:
     let ibox = InlineBlockBox(ibox)
     fstate.layoutInlineBlock(ibox)
-    fstate.lastTextBox = ibox
   elif ibox of InlineImageBox:
     let ibox = InlineImageBox(ibox)
     fstate.layoutImage(ibox, padding.sum())
-    fstate.lastTextBox = ibox
   else:
     ibox.state.startOffset = offset(
       x = fstate.lbstate.widthAfterWhitespace,
@@ -2352,12 +2360,6 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
   var x: LUnit = 0
   var n = 0
   var baseline: LUnit = 0
-  # real cellwrappers of fillers
-  var toAlign: seq[CellWrapper] = @[]
-  # cells with rowspan > 1 that must store baseline
-  var toBaseline: seq[CellWrapper] = @[]
-  # cells that we must update row height of
-  var toHeight: seq[CellWrapper] = @[]
   var cellw = ctx.cellHead
   while cellw != nil:
     var w: LUnit = 0
@@ -2369,17 +2371,6 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     # Add inline spacing for merged columns.
     w += tctx.inlineSpacing * colspan1 * 2
     if reflow and cellw.box != nil:
-      # Do not allow the table cell to make use of its specified width.
-      # e.g. in the following table
-      # <TABLE>
-      # <TR>
-      # <TD style="width: 5ch" bgcolor=blue>5ch</TD>
-      # </TR>
-      # <TR>
-      # <TD style="width: 9ch" bgcolor=red>9ch</TD>
-      # </TR>
-      # </TABLE>
-      # the TD with a width of 5ch should be 9ch wide as well.
       let space = availableSpace(w = stretch(w), h = maxContent())
       let border = cellw.box.sizes.border
       let merge = cellw.box.state.merge
@@ -2400,28 +2391,26 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     if cell != nil:
       if cell.computed{"vertical-align"} notin HasNoBaseline:
         baseline = max(cell.state.firstBaseline, baseline)
-        if cellw.rowspan > 1:
-          toBaseline.add(cellw)
-      if cellw.rowspan > 1:
-        toHeight.add(cellw)
       row.state.size.h = max(row.state.size.h,
         cell.state.size.h div cellw.rowspan)
     else:
       row.state.size.h = max(row.state.size.h,
         cellw.real.box.state.size.h div cellw.rowspan)
-      toHeight.add(cellw.real)
-      if cellw.last:
-        toAlign.add(cellw.real)
     cellw = cellw.next
-  for cellw in toHeight:
-    cellw.height += row.state.size.h
-  for cellw in toBaseline:
-    cellw.baseline = baseline
-  for cellw in toAlign:
-    alignTableCell(cellw.box, cellw.height, cellw.baseline)
-  for cell in row.children:
-    let cell = BlockBox(cell)
-    alignTableCell(cell, row.state.size.h, baseline)
+  cellw = ctx.cellHead
+  while cellw != nil:
+    if cellw.box != nil:
+      if cellw.rowspan > 1:
+        cellw.height += row.state.size.h
+        cellw.baseline = baseline
+      else:
+        alignTableCell(cellw.box, row.state.size.h, baseline)
+    else:
+      let real = cellw.real
+      real.height += row.state.size.h
+      if cellw.last:
+        alignTableCell(real.box, real.height, real.baseline)
+    cellw = cellw.next
   row.state.size.w = x
 
 proc preLayoutTableRows(tctx: var TableContext; rows: openArray[BlockBox];
@@ -2662,7 +2651,6 @@ type
     sizes: ResolvedSizes
 
   FlexContext = object
-    mains: seq[FlexMainContext]
     offset: Offset
     lctx: LayoutContext
     totalMaxSize: Size
@@ -2837,7 +2825,6 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       child.state.offset[dim] = offset[dim] - child.state.offset[dim] -
         child.state.size[dim]
   fctx.totalMaxSize[dim] = max(fctx.totalMaxSize[dim], offset[dim])
-  fctx.mains.add(mctx)
   fctx.intr[dim] = max(fctx.intr[dim], intr[dim])
   fctx.intr[odim] += intr[odim] + maxMarginSum
   mctx = FlexMainContext()

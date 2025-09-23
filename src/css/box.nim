@@ -20,7 +20,7 @@ type
   # but that's slower (at least with refc).
   TextRun* = ref object
     offset*: Offset
-    str*: string
+    s*: string
 
   BorderStyleSpan* = object
     start*: CSSBorderStyle
@@ -139,9 +139,6 @@ type
 
   InlineBlockBox* = ref object of InlineBox
     # InlineBlockBox always has one block child.
-
-  LayoutResult* = ref object
-    stack*: StackItem
 
 proc offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
@@ -289,7 +286,7 @@ when defined(debug):
       result &= `$`(it, pass2 = false)
     if box of InlineTextBox:
       for run in InlineTextBox(box).runs:
-        result &= run.str
+        result &= run.s
     if box of BlockBox:
       result &= '\n'
     result &= "</" & name & ">"

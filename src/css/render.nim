@@ -401,7 +401,7 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
     let format = ibox.computed.toFormat()
     for run in ibox.runs:
       let offset = offset + run.offset
-      grid.setText(state, run.str, offset, format, ibox.element, clipBox)
+      grid.setText(state, run.s, offset, format, ibox.element, clipBox)
   elif ibox of InlineImageBox:
     let ibox = InlineImageBox(ibox)
     if ibox.computed{"visibility"} != VisibilityVisible:
