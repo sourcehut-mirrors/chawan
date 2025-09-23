@@ -473,6 +473,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
   var left = box.sizes.border.left
   var right = box.sizes.border.right
   if top notin BorderStyleNoneHidden:
+    var offset = start
     if left notin BorderStyleNoneHidden:
       if box.state.merge[dtHorizontal]:
         if box.state.merge[dtVertical]:
@@ -484,6 +485,8 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
           buf &= left.borderChar(bdcSideBarLeft)
         else:
           buf &= left.borderChar(bdcCornerTopLeft)
+    else:
+      offset.x += state.attrs.ppc
     for i in startx + 1 ..< endx - 1:
       buf &= top.borderChar(bdcHorizontalBarTop)
     if right notin BorderStyleNoneHidden:
@@ -493,7 +496,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
         buf &= top.borderChar(bdcCornerTopRight)
     let fgcolor = box.computed{"border-top-color"}.cellColor()
     let format = initFormat(defaultColor, fgcolor, {})
-    grid.setText(state, buf, start, format, box.element, box.render.clipBox)
+    grid.setText(state, buf, offset, format, box.element, box.render.clipBox)
     buf.setLen(0)
   let hasLeft = left notin BorderStyleNoneHidden
   let hasRight = right notin BorderStyleNoneHidden
