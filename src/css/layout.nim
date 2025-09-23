@@ -674,13 +674,13 @@ type
     marginTarget: BlockPositionState
     ancestorsHead: BlockPositionState
     parentBps: BlockPositionState
-    exclusions: seq[Exclusion]
+    exclusionsTail: Exclusion
     unpositionedFloats: seq[UnpositionedFloat]
     maxFloatHeight: LUnit
     clearOffset: LUnit
-    # Index of the first uncleared float per float value.
+    # The first uncleared float per float value.
     # The highest value of clear: both is stored in FloatNone.
-    clearIndex: array[CSSFloat, int]
+    clearedTo: array[CSSFloat, Exclusion]
 
   UnpositionedFloat = object
     parentBps: BlockPositionState
@@ -696,10 +696,12 @@ type
     offset: Offset # offset relative to the block formatting context
     resolved: bool # has the position been resolved yet?
 
-  Exclusion = object
+  Exclusion = ref object
     offset: Offset
     size: Size
     t: CSSFloat
+    id: uint32
+    next: Exclusion
 
   Strut = object
     pos: LUnit
@@ -762,7 +764,9 @@ type
     prevParentBps: BlockPositionState
     # State kept for when a re-layout is necessary:
     oldMarginTodo: Strut
-    oldExclusionsLen: int
+    oldExclusionsTail: Exclusion
+    oldClearedTo: array[CSSFloat, Exclusion]
+    oldClearOffset: LUnit
     initialMarginTarget: BlockPositionState
     initialTargetOffset: Offset
     textAlign: CSSTextAlign # text align of parent, for block-level alignment
@@ -774,14 +778,11 @@ type
 proc layout(bctx: var BlockContext; box: BlockBox; offset: Offset;
   sizes: ResolvedSizes; forceRoot = false)
 
-iterator relevantExclusions(bctx: BlockContext): lent Exclusion {.inline.} =
-  for i in bctx.clearIndex[FloatNone] ..< bctx.exclusions.len:
-    yield bctx.exclusions[i]
-
-iterator relevantExclusionPairs(bctx: BlockContext):
-    tuple[i: int; ex: lent Exclusion] {.inline.} =
-  for i in bctx.clearIndex[FloatNone] ..< bctx.exclusions.len:
-    yield (i, bctx.exclusions[i])
+iterator relevantExclusions(bctx: BlockContext): Exclusion {.inline.} =
+  var ex = bctx.clearedTo[FloatNone]
+  while ex != nil:
+    yield ex
+    ex = ex.next
 
 proc initBlockContext(lctx: LayoutContext): BlockContext =
   BlockContext(lctx: lctx)
@@ -832,18 +833,24 @@ proc clearFloats(offsety: var LUnit; bctx: var BlockContext;
   of ClearLeft, ClearInlineStart: FloatLeft
   of ClearRight, ClearInlineEnd: FloatRight
   of ClearBoth, ClearNone: FloatNone
-  var j = bctx.clearIndex[target] - 1
-  for i, ex in bctx.relevantExclusionPairs:
+  var clearedTo = bctx.clearedTo[target]
+  for ex in bctx.relevantExclusions:
     if ex.t == target or target == FloatNone:
       let iy = ex.offset.y + ex.size.h
       if iy > y:
         y = iy
-        j = i
+      clearedTo = ex.next
   bctx.clearOffset = y
-  bctx.clearIndex[target] = j + 1
-  if target != FloatNone:
-    let k = min(bctx.clearIndex[FloatLeft], bctx.clearIndex[FloatRight])
-    bctx.clearIndex[FloatNone] = max(bctx.clearIndex[FloatNone], k)
+  bctx.clearedTo[target] = clearedTo
+  if target != FloatNone: # set first of left and right as clear: both
+    let left = bctx.clearedTo[FloatLeft]
+    let right = bctx.clearedTo[FloatRight]
+    let leftId = if left != nil: left.id else: uint32.high
+    let rightId = if right != nil: right.id else: uint32.high
+    bctx.clearedTo[FloatNone] = if leftId < rightId: left else: right
+  else: # update both left & right
+    bctx.clearedTo[FloatLeft] = clearedTo
+    bctx.clearedTo[FloatRight] = clearedTo
   offsety = y - bfcOffsety
 
 proc findNextFloatOffset(bctx: BlockContext; offset: Offset; size: Size;
@@ -902,7 +909,14 @@ proc positionFloat(bctx: var BlockContext; child: BlockBox;
   assert ft != FloatNone
   let offset = bctx.findNextFloatOffset(childBfcOffset, outerSize, space, ft)
   child.state.offset = offset - bfcOffset + marginOffset
-  bctx.exclusions.add(Exclusion(offset: offset, size: outerSize, t: ft))
+  let ex = Exclusion(offset: offset, size: outerSize, t: ft)
+  for it in bctx.clearedTo.mitems:
+    if it == nil:
+      it = ex
+  if bctx.exclusionsTail != nil:
+    ex.id = bctx.exclusionsTail.id + 1
+    bctx.exclusionsTail.next = ex
+  bctx.exclusionsTail = ex
   bctx.maxFloatHeight = max(bctx.maxFloatHeight, offset.y + outerSize.h)
 
 proc positionFloats(bctx: var BlockContext) =
@@ -958,7 +972,7 @@ proc initLine(fstate: var FlowState; flag = ilfRegular) =
   fstate.lbstate.size.w = fstate.padding.left
   fstate.lbstate.init = lisNoExclusions
   #TODO what if maxContent/minContent?
-  if fstate.bctx.exclusions.len > 0:
+  if fstate.bctx.exclusionsTail != nil:
     let bfcOffset = fstate.bfcOffset
     let y = fstate.offset.y + bfcOffset.y
     var left = bfcOffset.x + fstate.lbstate.size.w
@@ -1612,7 +1626,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
     fstate.bctx.flushMargins(child.state.offset.y)
     if clear != ClearNone:
       fstate.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
-    if fstate.bctx.exclusions.len > 0:
+    if fstate.bctx.exclusionsTail != nil:
       # From the standard (abridged):
       #
       # > The border box of an element that establishes a new BFC must
@@ -1919,7 +1933,9 @@ proc initFlowState(bctx: var BlockContext; box: BlockBox;
     padding: sizes.padding,
     space: sizes.space,
     oldMarginTodo: bctx.marginTodo,
-    oldExclusionsLen: bctx.exclusions.len,
+    oldExclusionsTail: bctx.exclusionsTail,
+    oldClearedTo: bctx.clearedTo,
+    oldClearOffset: bctx.clearOffset,
     textAlign: box.computed{"text-align"}
   )
 
@@ -1983,7 +1999,11 @@ proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
     if fstate.prevParentBps == nil:
       # We have just established a new BFC. Resolve the margins immediately.
       bctx.marginTarget = nil
-  bctx.exclusions.setLen(fstate.oldExclusionsLen)
+  bctx.exclusionsTail = fstate.oldExclusionsTail
+  if bctx.exclusionsTail != nil:
+    bctx.exclusionsTail.next = nil
+  bctx.clearedTo = fstate.oldClearedTo
+  bctx.clearOffset = fstate.oldClearOffset
   var bounds = sizes.bounds
   bounds.a[dtHorizontal].start = max(bounds.a[dtHorizontal].start,
     fstate.intr.w)
