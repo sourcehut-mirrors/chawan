@@ -986,8 +986,8 @@ proc resolveLength*(u: CSSUnit; val: float32; attrs: WindowAttributes):
   of cuIn: cssLength(val * 96)
   of cuPc: cssLength(val * 16)
   of cuPt: cssLength(val * 4 / 3)
-  of cuVw, cuVi: cssLength(float32(attrs.widthPx) * val / 100)
-  of cuVh, cuVb: cssLength(float32(attrs.heightPx) * val / 100)
+  of cuDvw, cuVw, cuDvi, cuVi: cssLength(float32(attrs.widthPx) * val / 100)
+  of cuDvh, cuVh, cuDvb, cuVb: cssLength(float32(attrs.heightPx) * val / 100)
   of cuVmin, cuSvmin, cuLvmin, cuDvmin:
     cssLength(min(attrs.widthPx, attrs.heightPx) / 100 * val)
   of cuVmax, cuSvmax, cuLvmax, cuDvmax:
