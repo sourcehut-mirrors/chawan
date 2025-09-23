@@ -175,14 +175,14 @@ $(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/tohtml: adapter/format/ansi2html.nim adapter/format/dirlist2html.nim \
 	adapter/format/gmi2html.nim adapter/format/gopher2html.nim \
-	adapter/format/img2html.nim \
+	adapter/format/md2html.nim adapter/format/img2html.nim \
 	$(twtstr) $(chafile) $(dynstream) src/types/color.nim
 
 $(foreach it,$(ssl_link),$(OUTDIR_CGI_BIN)/$(it)): | $(OUTDIR_CGI_BIN)/ssl
-	(cd "$(OUTDIR_CGI_BIN)" && ln -sf $(notdir $<) $(notdir $@))
+	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl $(notdir $@))
 
 $(foreach it,$(tohtml_link),$(OUTDIR_LIBEXEC)/$(it)): | $(OUTDIR_LIBEXEC)/tohtml
-	(cd "$(OUTDIR_LIBEXEC)" && ln -sf $(notdir $<) $(notdir $@))
+	(cd "$(OUTDIR_LIBEXEC)" && ln -sf tohtml $(notdir $@))
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
