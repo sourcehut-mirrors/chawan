@@ -334,5 +334,11 @@ the largest of \f[CR]border\-spacing\f[R] times two and the cell width.
 \f[CR]border\-*\-width\f[R] is interpreted as a binary value: a width of
 0 results in no border, while any other width results in a border of a
 single type.
+.IP \(bu 2
+\f[CR]box\-sizing: border\-box\f[R] actually sets the padding box size,
+so that borders rounded up to the cell size do not accidentally take all
+space from the actual content.
+(That in turn would cause problems if a child box set
+\f[CR]overflow: hidden\f[R], etc.)
 .SS See also
 \f[B]cha\f[R](1)

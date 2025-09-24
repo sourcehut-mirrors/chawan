@@ -233,6 +233,22 @@ proc `+=`*(span: var Span; u: LUnit) =
 proc `<`*(a, b: Offset): bool =
   return a.x < b.x and a.y < b.y
 
+proc borderTopLeft*(sizes: ResolvedSizes; cellSize: Size): Offset =
+  var o = offset(0, 0)
+  if sizes.border.left notin BorderStyleNoneHidden:
+    o.x += cellSize.w
+  if sizes.border.top notin BorderStyleNoneHidden:
+    o.y += cellSize.h
+  o
+
+proc borderBottomRight*(sizes: ResolvedSizes; cellSize: Size): Offset =
+  var o = offset(0, 0)
+  if sizes.border.right notin BorderStyleNoneHidden:
+    o.x += cellSize.w
+  if sizes.border.bottom notin BorderStyleNoneHidden:
+    o.y += cellSize.h
+  o
+
 iterator children*(box: CSSBox): CSSBox =
   var it {.cursor.} = box.firstChild
   while it != nil:

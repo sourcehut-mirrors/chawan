@@ -160,10 +160,14 @@ dd { margin-left: 4ch }
 dl[compact] dt + br { display: none }
 
 select, optgroup { display: inline-flex !important; white-space: nowrap !important }
-select::before { content: '[' !important; color: initial }
-select::after { content: ']' !important; color: initial }
+select {
+	height: 1em !important;
+	border-style: none -cha-bracket !important;
+	border-color: initial
+}
 :is(select, select > optgroup) > option { display: none }
 :is(select, select > optgroup) > option:checked {
+	height: 1em !important;
 	overflow: hidden;
 	display: block;
 	color: -cha-ansi(red)
@@ -174,7 +178,7 @@ select[multiple] {
 	display: flow-root !important;
 	margin-top: 1em
 }
-select[multiple]::before, select[multiple]::after { content: '' !important }
+select[multiple] { border-style: none !important }
 select[multiple] > optgroup { display: flow-root !important }
 :is(select[multiple], select[multiple] > optgroup) > option {
 	display: flex !important;

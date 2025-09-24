@@ -131,12 +131,7 @@ proc applySizeConstraint(u: LUnit; availableSize: SizeConstraint): LUnit =
     return min(u, availableSize.u)
 
 proc borderTopLeft(sizes: ResolvedSizes; lctx: LayoutContext): Offset =
-  var o = offset(0, 0)
-  if sizes.border.left notin BorderStyleNoneHidden:
-    o.x += lctx.cellSize.w
-  if sizes.border.top notin BorderStyleNoneHidden:
-    o.y += lctx.cellSize.h
-  o
+  sizes.borderTopLeft(lctx.cellSize)
 
 proc borderSize(sizes: ResolvedSizes; dim: DimensionType; lctx: LayoutContext):
     Span =
@@ -207,8 +202,8 @@ const MarginEndMap = [
   dtVertical: cptMarginBottom
 ]
 
-proc spx(l: CSSLength; p: SizeConstraint; computed: CSSValues;
-    padding: LUnit): LUnit =
+proc spx(l: CSSLength; p: SizeConstraint; computed: CSSValues; padding: LUnit):
+    LUnit =
   let u = l.px(p)
   if computed{"box-sizing"} == BoxSizingBorderBox:
     return max(u - padding, 0)
@@ -443,7 +438,8 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: AvailableSpace;
       sizes.bounds.mi[odim].start = max(u, sizes.bounds.mi[odim].start)
       sizes.bounds.mi[odim].send = min(u, sizes.bounds.mi[odim].send)
   elif sizes.space[odim].isDefinite():
-    let u = sizes.space[odim].u - sizes.margin[odim].sum() - paddingSum[odim]
+    let u = sizes.space[odim].u - sizes.margin[odim].sum() - paddingSum[odim] -
+      sizes.borderSize(odim, lctx).sum()
     sizes.space[odim] = SizeConstraint(
       t: sizes.space[odim].t,
       u: minClamp(u, sizes.bounds.a[odim])
@@ -2057,8 +2053,8 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   # Intrinsic minimum size includes the sum of our padding.  (However,
   # this padding must also be clamped to the same bounds.)
   box.applyIntr(sizes, fstate.intr + paddingSum)
-  # Add padding; we cannot do this further up without influencing
-  # relative positioning.
+  # Add padding after applying space, since space applies to the content
+  # box.
   box.state.size += paddingSum
   if bctx.marginTarget != fstate.initialMarginTarget or
       fstate.prevParentBps != nil and fstate.prevParentBps.resolved:
@@ -2793,12 +2789,14 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   var intr = size(w = 0, h = 0)
   var offset = fctx.offset
   for it in mctx.pending.mitems:
-    if it.child.state.size[odim] < h and not it.sizes.space[odim].isDefinite:
+    let oborder = it.child.sizes.borderSize(odim, lctx).sum()
+    if it.child.state.size[odim] + oborder < h and
+        not it.sizes.space[odim].isDefinite:
       # if the max height is greater than our height, then take max height
       # instead. (if the box's available height is definite, then this will
       # change nothing, so we skip it as an optimization.)
       it.sizes.space[odim] = stretch(h - it.sizes.margin[odim].sum() -
-        it.sizes.borderSize(odim, lctx).sum())
+        it.sizes.padding[odim].sum() - oborder)
       if odim == dtVertical:
         # Exclude the bottom margin; space only applies to the actual
         # height.
@@ -2813,7 +2811,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       # We can get by without adding offset, because flex items are
       # always layouted at (0, 0).
       let underflow = sizes.space[odim].u - it.child.state.size[odim] -
-        it.sizes.margin[odim].sum() - it.sizes.borderSize(odim, lctx).sum()
+        it.sizes.margin[odim].sum() - oborder
       if underflow > 0 and start.auto:
         # we don't really care about the end margin, because that is
         # already taken into account by AvailableSpace
@@ -2924,11 +2922,13 @@ proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
     fctx.layoutFlexIter(mctx, child, sizes)
   if mctx.pending.len > 0:
     fctx.flushMain(mctx, sizes)
+  let paddingSum = sizes.padding.sum()
   var size = fctx.totalMaxSize
   size[odim] = fctx.offset[odim]
-  size += sizes.padding.bottomRight
+  size -= sizes.padding.topLeft
   box.applySize(sizes, size, sizes.space)
-  box.applyIntr(sizes, fctx.intr)
+  box.state.size += paddingSum
+  box.applyIntr(sizes, fctx.intr + paddingSum)
   box.state.baselineSet = fctx.baselineSet
   box.state.firstBaseline = fctx.firstBaseline
   box.state.baseline = fctx.baseline

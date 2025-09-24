@@ -438,7 +438,7 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
       else:
         grid.renderBlock(state, BlockBox(child), offset)
 
-proc inheritClipBox(box: BlockBox; parent: CSSBox) =
+proc inheritClipBox(box: BlockBox; parent: CSSBox; state: RenderState) =
   if parent == nil:
     box.render.clipBox = DefaultClipBox
     return
@@ -447,16 +447,21 @@ proc inheritClipBox(box: BlockBox; parent: CSSBox) =
   let overflowX = box.computed{"overflow-x"}
   let overflowY = box.computed{"overflow-y"}
   if overflowX != OverflowVisible or overflowY != OverflowVisible:
-    let offset = box.render.offset
+    var offset = box.render.offset
+    var size = box.state.size
+    let topLeft = box.sizes.borderTopLeft(state.cellSize)
+    offset -= topLeft
+    size += topLeft
+    size += box.sizes.borderBottomRight(state.cellSize)
     if overflowX in OverflowHiddenLike:
       clipBox.start.x = max(offset.x, clipBox.start.x)
-      clipBox.send.x = min(offset.x + box.state.size.w, clipBox.send.x)
+      clipBox.send.x = min(offset.x + size.w, clipBox.send.x)
     else: # scroll like
       clipBox.start.x = max(min(offset.x, clipBox.start.x), 0)
-      clipBox.send.x = max(offset.x + box.state.size.w, clipBox.send.x)
+      clipBox.send.x = max(offset.x + size.w, clipBox.send.x)
     if overflowY in OverflowHiddenLike:
       clipBox.start.y = max(offset.y, clipBox.start.y)
-      clipBox.send.y = min(offset.y + box.state.size.h, clipBox.send.y)
+      clipBox.send.y = min(offset.y + size.h, clipBox.send.y)
   box.render.clipBox = clipBox
 
 proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
@@ -549,7 +554,7 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
   if not pass2:
     box.render.offset = offset
     box.render.positioned = true
-    box.inheritClipBox(box.parent)
+    box.inheritClipBox(box.parent, state)
   let opacity = box.computed{"opacity"}
   if box.computed{"visibility"} == VisibilityVisible and opacity != 0:
     #TODO maybe blend with the terminal background?
@@ -594,7 +599,7 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
 # InlineBox offsets in the process - this means that there may be inline
 # boxes after this pass with an unresolved position which contain block
 # boxes with a resolved position.
-proc resolveBlockOffset(box: CSSBox): Offset =
+proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
   var dims: set[DimensionType] = {}
   let absolute = box.positioned and box.computed{"position"} == PositionAbsolute
   let absoluteOrFixed = box.positioned and
@@ -629,7 +634,7 @@ proc resolveBlockOffset(box: CSSBox): Offset =
       clipBox: DefaultClipBox,
       positioned: true
     )
-    it.inheritClipBox(parent)
+    it.inheritClipBox(parent, state)
     parent = it
   let absOffset = if abs != nil: abs.render.offset else: offset(0, 0)
   for dim in DimensionType:
@@ -642,12 +647,12 @@ proc resolveBlockOffset(box: CSSBox): Offset =
       offset: offset + box.state.offset,
       clipBox: DefaultClipBox
     )
-    box.inheritClipBox(if absoluteOrFixed: it2 else: it)
+    box.inheritClipBox(if absoluteOrFixed: it2 else: it, state)
   return offset
 
 proc renderPositioned(grid: var FlexibleGrid; state: var RenderState;
     box: CSSBox) =
-  let offset = box.resolveBlockOffset()
+  let offset = box.resolveBlockOffset(state)
   if box of BlockBox:
     grid.renderBlock(state, BlockBox(box), offset, pass2 = true)
   else:
