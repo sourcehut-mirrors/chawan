@@ -1051,13 +1051,16 @@ proc refreshStatusMsg(pager: Pager) =
     pager.alertState = pasNormal
     container.clearHover()
     var msg = ""
-    if container.numLines > 0:
+    if container.numLines > 0 and pager.config.status.showCursorPosition:
       msg &= $(container.cursory + 1) & "/" & $container.numLines &
         " (" & $container.atPercentOf() & "%)"
     else:
       msg &= "Viewing"
     msg &= " <" & container.getTitle()
-    let hover = container.getHoverText()
+    let hover = if pager.config.status.showHoverLink:
+      container.getHoverText()
+    else:
+      ""
     let sl = hover.width()
     var l = 0
     var i = 0

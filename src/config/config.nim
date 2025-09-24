@@ -81,6 +81,10 @@ type
     wrap* {.jsgetset.}: bool
     ignoreCase* {.jsgetset.}: Option[bool]
 
+  StatusConfig = object
+    showCursorPosition* {.jsgetset.}: bool
+    showHoverLink* {.jsgetset.}: bool
+
   EncodingConfig = object
     displayCharset* {.jsgetset.}: Option[Charset]
     documentCharset* {.jsgetset.}: seq[Charset]
@@ -177,6 +181,7 @@ type
     network* {.jsget.}: NetworkConfig
     input* {.jsget.}: InputConfig
     display* {.jsget.}: DisplayConfig
+    status* {.jsget.}: StatusConfig
     #TODO getset
     siteconf*: OrderedTable[string, SiteConfig]
     omnirule*: OrderedTable[string, OmniRule]
@@ -193,6 +198,7 @@ jsDestructor(NetworkConfig)
 jsDestructor(DisplayConfig)
 jsDestructor(BufferSectionConfig)
 jsDestructor(Config)
+jsDestructor(StatusConfig)
 
 converter toStr*(p: ChaPathResolved): lent string {.inline.} =
   return string(p)
@@ -865,6 +871,7 @@ proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(ExternalConfig)
   ctx.registerType(NetworkConfig)
   ctx.registerType(DisplayConfig)
+  ctx.registerType(StatusConfig)
   ctx.registerType(BufferSectionConfig, name = "BufferConfig")
   ctx.registerType(Config)
 

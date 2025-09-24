@@ -78,6 +78,10 @@ bracketed-paste = true
 wheel-scroll = 5
 side-wheel-scroll = 5
 
+[status]
+show-cursor-position = true
+show-hover-link = true
+
 [display]
 color-mode = "auto"
 format-mode = "auto"

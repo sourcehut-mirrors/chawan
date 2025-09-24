@@ -1022,6 +1022,45 @@ Force\-set columns, lines, pixels per column, or pixels per line to the
 fallback values provided above.
 T}
 .TE
+.SS Status
+Options concerning the status bar (last line on the screen) are to be
+placed in the \f[CR][status]\f[R] section.
+.PP
+Following is a list of status options:
+.PP
+.TS
+tab(@);
+lw(23.1n) lw(11.9n) lw(7.0n) lw(28.0n).
+T{
+Name
+T}@T{
+Value
+T}@T{
+Default
+T}@T{
+Function
+T}
+_
+T{
+show\-cursor\-position
+T}@T{
+boolean
+T}@T{
+true
+T}@T{
+Whether or not the current line number should be displayed.
+T}
+_
+T{
+show\-hover\-link
+T}@T{
+boolean
+T}@T{
+true
+T}@T{
+Whether or not the link under the cursor should be displayed.
+T}
+.TE
 .SS Omnirule
 The omni\-bar (by default opened with C\-l) can be used to perform
 searches using omni\-rules.

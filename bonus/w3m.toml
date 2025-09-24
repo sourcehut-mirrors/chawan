@@ -3,6 +3,11 @@
 # ~/.chawan/w3m.toml ~/.config/chawan/w3m.toml, then at the beginning of
 # ~/.chawan/config.toml, include = "w3m.toml".)
 
+# these are disabled by default in w3m
+[status]
+show-cursor-position = false
+show-hover-link = false
+
 [cmd.w3m.buffer]
 pageDown = 'n => pager.scrollDown(pager.height * (n ?? 1))'
 pageUp = 'n => pager.scrollUp(pager.height * (n ?? 1))'

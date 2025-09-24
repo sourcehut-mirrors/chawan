@@ -37,6 +37,7 @@ the search path accommodates XDG basedirs as well:
 * [Input](#input)
 * [Network](#network)
 * [Display](#display)
+* [Status](#status)
 * [Omnirule](#omnirule)
 * [Siteconf](#siteconf)
 * [Keybindings](#keybindings)
@@ -837,6 +838,39 @@ force-pixels-per-line</td>
 <td>false</td>
 <td>Force-set columns, lines, pixels per column, or pixels per line to the
 fallback values provided above.</td>
+</tr>
+
+</table>
+
+## Status
+
+Options concerning the status bar (last line on the screen) are to be placed
+in the `[status]` section.
+
+Following is a list of status options:
+
+<table border>
+<col width=33%><col width=17%><col width=10%><col width=40%>
+
+<tr>
+<th>Name</th>
+<th>Value</th>
+<th>Default</th>
+<th>Function</th>
+</tr>
+
+<tr>
+<td>show-cursor-position</td>
+<td>boolean</td>
+<td>true</td>
+<td>Whether or not the current line number should be displayed.</td>
+</tr>
+
+<tr>
+<td>show-hover-link</td>
+<td>boolean</td>
+<td>true</td>
+<td>Whether or not the link under the cursor should be displayed.</td>
 </tr>
 
 </table>
