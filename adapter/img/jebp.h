@@ -819,7 +819,9 @@ static jebp_error_t jebp__alloc_yuv_image(jebp__yuv_image_t *image) {
     // We also have one row above for the same reason
     size_t y_size = image->stride * (image->height + 1);
     size_t uv_size = image->uv_stride * (image->uv_height + 1);
-    image->buffer = JEBP_ALLOC(y_size + uv_size * 2 + JEBP__SIMD_ALIGN);
+    size_t uv_offset = image->uv_stride + JEBP__SIMD_ALIGN;
+    image->buffer = JEBP_ALLOC(y_size + uv_size * 2 + uv_offset * 2 +
+                               JEBP__SIMD_ALIGN);
     if (image->buffer == NULL) {
         return JEBP_ERROR_NOMEM;
     }
@@ -831,7 +833,6 @@ static jebp_error_t jebp__alloc_yuv_image(jebp__yuv_image_t *image) {
     image->u = image->y + y_size;
     image->v = image->u + uv_size;
     image->y += image->stride + JEBP__SIMD_ALIGN;
-    size_t uv_offset = image->uv_stride + JEBP__SIMD_ALIGN;
     image->u += uv_offset;
     image->v += uv_offset;
     // Setup default values for edge prediction
@@ -852,8 +853,10 @@ JEBP__INLINE void jebp__upscale_uv_row(jebp_ubyte *out, jebp_ubyte *in,
         out[x * 2] = in[x];
         out[x * 2 + 1] = JEBP__RAVG(in[x], in[x + 1]);
     }
-    out[x * 2] = in[x];
-    out[x * 2 + 1] = in[x];
+    if (x < width) {
+        out[x * 2] = in[x];
+        out[x * 2 + 1] = in[x];
+    }
 }
 
 static jebp_error_t jebp__convert_yuv_image(jebp_image_t *out,
@@ -978,6 +981,10 @@ static jebp_int jebp__read_bool(jebp__bec_reader_t *bec, jebp_ubyte prob,
     if (*err != JEBP_OK) {
         return 0;
     }
+    if (bec->nb_bytes == 0 && bec->nb_bits == 0) {
+        jebp__error(err, JEBP_ERROR_INVDATA);
+        return 0;
+    }
     jebp_int split = 1 + (((bec->range - 1) * prob) >> 8);
     jebp_int split_high = split << 8;
     jebp_int boolval = bec->value >= split_high;
@@ -994,8 +1001,7 @@ static jebp_int jebp__read_bool(jebp__bec_reader_t *bec, jebp_ubyte prob,
         bec->nb_bits -= 1;
         if (bec->nb_bits == 0) {
             if (bec->nb_bytes == 0) {
-                jebp__error(err, JEBP_ERROR_INVDATA);
-                return 0;
+                break;
             }
             bec->value |= jebp__read_uint8(bec->reader, err);
             bec->nb_bytes -= 1;
@@ -1099,6 +1105,7 @@ typedef enum jebp__token_t {
 typedef struct jebp__vp8_header_t {
     jebp_int bec_size;
     jebp__segment_type_t segment_type;
+    jebp_int skip_prob;
     jebp_int abs_segments;
     jebp__segment_t segments[JEBP__NB_SEGMENTS];
     jebp_ubyte segment_probs[JEBP__NB_PROBS(JEBP__NB_SEGMENTS)];
@@ -1237,8 +1244,9 @@ static jebp_error_t jebp__read_token_header(jebp__vp8_header_t *hdr,
         }
     }
     if (jebp__read_flag(bec, &err)) {
-        // TODO: support coefficient skipping
-        return jebp__error(&err, JEBP_ERROR_NOSUP);
+        hdr->skip_prob = jebp__read_bec_uint(bec, 8, &err);
+    } else {
+        hdr->skip_prob = -1;
     }
     return err;
 }
@@ -1349,6 +1357,7 @@ typedef struct jebp__macro_header_t {
     jebp__segment_t *segment;
     jebp__vp8_pred_type_t y_pred;
     jebp__vp8_pred_type_t uv_pred;
+    jebp_ubyte skip_flag;
     jebp__b_pred_type_t b_preds[JEBP__NB_Y_BLOCKS];
 } jebp__macro_header_t;
 
@@ -1373,6 +1382,11 @@ static jebp_error_t jebp__read_macro_header(jebp__macro_header_t *hdr,
     if (hdr->vp8->segment_type == JEBP__SEGMENT_ID) {
         segment = jebp__read_tree(bec, jebp__segment_tree,
                                   hdr->vp8->segment_probs, &err);
+    }
+    if (hdr->vp8->skip_prob >= 0) {
+        hdr->skip_flag = jebp__read_bool(bec, hdr->vp8->skip_prob, &err);
+    } else {
+        hdr->skip_flag = 0;
     }
     hdr->segment = &hdr->vp8->segments[segment];
 
@@ -2071,6 +2085,9 @@ static jebp_int jebp__read_dct(jebp__macro_header_t *hdr, jebp_short *dct,
                                jebp__block_type_t type, jebp_int complex,
                                jebp__bec_reader_t *bec, jebp_error_t *err) {
     if (*err != JEBP_OK) {
+        return 0;
+    }
+    if (hdr->skip_flag) {
         return 0;
     }
     jebp_int coeff = type == JEBP__BLOCK_Y1 ? 1 : 0;
