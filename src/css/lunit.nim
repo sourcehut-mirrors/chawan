@@ -11,41 +11,13 @@ template satlu(a: int64): LUnit =
   else:
     LUnit(a)
 
-when sizeof(int) == 4 and not defined(nimEmulateOverflowChecks) and
-    (defined(gcc) or defined(clang)):
-  proc nimAddInt(a, b: int; res: ptr int): bool {.importc, nodecl.}
-  proc nimSubInt(a, b: int; res: ptr int): bool {.importc, nodecl.}
+proc `+`*(a, b: LUnit): LUnit {.inline.} =
+  let ab = int64(a) + int64(b)
+  return satlu(ab)
 
-  proc `+`*(a, b: LUnit): LUnit {.inline.} =
-    let a = int(a)
-    let b = int(b)
-    var res {.noinit.}: int
-    if nimAddInt(a, b, addr res):
-      if a > 0:
-        return LUnit.high
-      return LUnit.low
-    return LUnit(res)
-
-  proc `-`*(a, b: LUnit): LUnit {.inline.} =
-    let a = int(a)
-    let b = int(b)
-    var res {.noinit.}: int
-    if nimSubInt(a, b, addr res):
-      if b < 0:
-        return LUnit.high
-      return LUnit.low
-    return LUnit(res)
-else:
-  when sizeof(int) == 4:
-    {.warning: "Using 64-bit lunit ops on a 32-bit arch".}
-
-  proc `+`*(a, b: LUnit): LUnit {.inline.} =
-    let ab = int64(a) + int64(b)
-    return satlu(ab)
-
-  proc `-`*(a, b: LUnit): LUnit {.inline.} =
-    let ab = int64(a) - int64(b)
-    return satlu(ab)
+proc `-`*(a, b: LUnit): LUnit {.inline.} =
+  let ab = int64(a) - int64(b)
+  return satlu(ab)
 
 proc `*`*(a, b: LUnit): LUnit {.inline.} =
   let ab = (int64(a) * int64(b)) shr 6
