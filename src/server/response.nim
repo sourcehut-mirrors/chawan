@@ -133,11 +133,11 @@ proc getContentLength*(this: Response): int64 =
     return int64(u)
   return -1
 
-proc getReferrerPolicy*(this: Response): Option[ReferrerPolicy] =
-  let header = this.headers.getFirst("Referrer-Policy")
-  if p := strictParseEnum[ReferrerPolicy](header):
-    return some(p)
-  none(ReferrerPolicy)
+proc getReferrerPolicy*(this: Response): Opt[ReferrerPolicy] =
+  for value in this.headers.getAllCommaSplit("Referrer-Policy"):
+    if policy := parseEnumNoCase[ReferrerPolicy](value):
+      return ok(policy)
+  err()
 
 proc resume*(response: Response) =
   response.resumeFun(response.outputId)

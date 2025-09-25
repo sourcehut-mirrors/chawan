@@ -323,7 +323,8 @@ proc getAllCommaSplit*(this: Headers; k: string): seq[string] =
   for it in this.list.toOpenArray(n, this.list.high):
     if not it.name.equalsIgnoreCase(k):
       break
-    result.add(it.value.split(','))
+    for value in it.value.split(','):
+      result.add(value.strip(chars = {' ', '\t'}))
 
 type CheckRefreshResult* = object
   # n is timeout in millis. -1 => not found

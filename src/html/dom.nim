@@ -509,6 +509,12 @@ type
 
   HTMLTitleElement = ref object of HTMLElement
 
+  HTMLObjectElement = ref object of HTMLElement
+
+  HTMLSourceElement = ref object of HTMLElement
+
+  HTMLModElement = ref object of HTMLElement
+
   HTMLUnknownElement = ref object of HTMLElement
 
 jsDestructor(Navigator)
@@ -561,6 +567,9 @@ jsDestructor(HTMLQuoteElement)
 jsDestructor(HTMLDataElement)
 jsDestructor(HTMLHeadElement)
 jsDestructor(HTMLTitleElement)
+jsDestructor(HTMLObjectElement)
+jsDestructor(HTMLSourceElement)
+jsDestructor(HTMLModElement)
 jsDestructor(SVGElement)
 jsDestructor(SVGSVGElement)
 jsDestructor(Node)
@@ -675,6 +684,9 @@ proc scriptingEnabled(element: Element): bool
 proc tagName(element: Element): string
 proc tagType*(element: Element; namespace = satNamespaceHTML): TagType
 
+proc crossOrigin(element: HTMLElement): CORSAttribute
+proc referrerPolicy(element: HTMLElement): Opt[ReferrerPolicy]
+
 proc resetFormOwner(element: FormAssociatedElement)
 proc checked*(input: HTMLInputElement): bool {.inline.}
 proc setChecked*(input: HTMLInputElement; b: bool)
@@ -707,7 +719,8 @@ var applyStyleImpl*: proc(element: Element) {.nimcall, raises: [].}
 # Reflected attributes.
 type
   ReflectType = enum
-    rtStr, rtBool, rtLong, rtUlongGz, rtUlong, rtFunction
+    rtStr, rtUrl, rtBool, rtLong, rtUlongGz, rtUlong, rtFunction,
+    rtReferrerPolicy, rtCrossOrigin, rtMethod
 
   ReflectEntry = object
     attrname: StaticAtom
@@ -750,6 +763,14 @@ proc makes(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
 proc makes(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
   makes(attrname, funcname, toset(ts))
 
+proc makeurl(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
+  ReflectEntry(
+    attrname: name,
+    funcname: name,
+    t: rtUrl,
+    tags: toset(ts)
+  )
+
 proc makeb(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
   ReflectEntry(
     attrname: attrname,
@@ -790,6 +811,35 @@ proc makef(name, ctype: StaticAtom): ReflectEntry =
     ctype: ctype
   )
 
+proc makerp(attrName, funcName: StaticAtom; ts: varargs[TagType]):
+    ReflectEntry =
+  ReflectEntry(
+    attrname: attrName,
+    funcname: funcName,
+    t: rtReferrerPolicy,
+    tags: toset(ts)
+  )
+
+proc makeco(attrName, funcName: StaticAtom; ts: varargs[TagType]):
+    ReflectEntry =
+  ReflectEntry(
+    attrname: attrName,
+    funcname: funcName,
+    t: rtCrossOrigin,
+    tags: toset(ts)
+  )
+
+proc makem(attrname, funcname: StaticAtom; ts: varargs[TagType]): ReflectEntry =
+  ReflectEntry(
+    attrname: attrname,
+    funcname: funcname,
+    t: rtMethod,
+    tags: toset(ts)
+  )
+
+proc makem(name: StaticAtom; ts: varargs[TagType]): ReflectEntry =
+  makem(name, name, ts)
+
 # Note: this table only works for tag types with a registered interface.
 const ReflectTable0 = [
   # non-global attributes
@@ -807,26 +857,30 @@ const ReflectTable0 = [
   makes(satFor, satHtmlFor, TAG_LABEL),
   makes(satHttpEquiv, satHHttpEquiv, TAG_META),
   makes(satContent, TAG_META),
-  makes(satMedia, TAG_META),
-  makes(satDatetime, satHDateTime, TAG_TIME),
+  makes(satMedia, TAG_META, TAG_SOURCE),
+  makes(satDatetime, satHDateTime, TAG_TIME, TAG_INS, TAG_DEL),
+  makes(satType, TAG_SOURCE, TAG_A, TAG_OL, TAG_LINK, TAG_SCRIPT, TAG_OBJECT),
   makeul(satCols, TAG_TEXTAREA, 20u32),
   makeul(satRows, TAG_TEXTAREA, 1u32),
-# > For historical reasons, the default value of the size IDL attribute
-# > does not return the actual size used, which, in the absence of the
-# > size content attribute, is either 1 or 4 depending on the presence
-# > of the multiple attribute.
   makeulgz(satSize, TAG_SELECT, 0u32),
   makeulgz(satSize, TAG_INPUT, 20u32),
-  makeul(satWidth, TAG_CANVAS, 300u32),
-  makeul(satHeight, TAG_CANVAS, 150u32),
+  makeul(satWidth, TAG_CANVAS, TAG_SOURCE, 300u32),
+  makeul(satHeight, TAG_CANVAS, TAG_SOURCE, 150u32),
   makes(satAlt, TAG_IMG),
-  makes(satSrc, TAG_IMG, TAG_SCRIPT, TAG_IFRAME, TAG_FRAME, TAG_INPUT),
-  makes(satSrcset, TAG_IMG),
-  makes(satSizes, TAG_IMG),
-  #TODO can we add crossOrigin here?
+  makes(satSrcset, TAG_IMG, TAG_SOURCE),
+  makes(satSizes, TAG_IMG, TAG_SOURCE),
+  makeco(satCrossorigin, satHCrossOrigin, TAG_IMG, TAG_SCRIPT),
+  makerp(satReferrerpolicy, satHReferrerPolicy, TAG_IMG, TAG_SCRIPT),
+  makem(satMethod, TAG_FORM),
+  makem(satFormmethod, satHFormMethod, TAG_INPUT, TAG_BUTTON),
   makes(satUsemap, satHUseMap, TAG_IMG),
   makeb(satIsmap, satHIsMap, TAG_IMG),
   makeb(satDisabled, TAG_LINK, TAG_OPTION, TAG_SELECT, TAG_OPTGROUP),
+  makeurl(satSrc, TAG_IMG, TAG_SCRIPT, TAG_IFRAME, TAG_FRAME, TAG_INPUT,
+    TAG_SOURCE),
+  makeurl(satCite, TAG_BLOCKQUOTE, TAG_Q, TAG_INS, TAG_DEL),
+  makeurl(satHref, TAG_LINK),
+  makeurl(satData, TAG_OBJECT),
   # super-global attributes
   makes(satClass, satClassName, AllTagTypes),
   makef(satOnclick, satClick),
@@ -1281,13 +1335,11 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
         response.close()
         var expiry = -1i64
         for s in response.headers.getAllCommaSplit("Cache-Control"):
-          let s = s.strip()
           if s.startsWithIgnoreCase("max-age="):
             let i = s.skipBlanks("max-age=".len)
             let s = s.until(AllChars - AsciiDigit, i)
-            let pi = parseInt64(s)
-            if pi.isOk:
-              expiry = getTime().toUnix() + pi.get
+            if pi := parseInt64(s):
+              expiry = getTime().toUnix() + pi
             break
         cachedURL.loading = false
         cachedURL.expiry = expiry
@@ -2841,16 +2893,37 @@ const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (proc(): (
     inc i
 )()
 
+proc parseFormMethod(s: string): FormMethod =
+  return parseEnumNoCase[FormMethod](s).get(fmGet)
+
 proc jsReflectGet(ctx: JSContext; this: JSValueConst; magic: cint): JSValue
     {.cdecl.} =
   let entry = ReflectTable[uint16(magic)]
-  var element: Element
+  var element: HTMLElement
   if ctx.fromJS(this, element).isErr:
     return JS_EXCEPTION
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
   of rtStr: return ctx.toJS(element.attr(entry.attrname))
+  of rtUrl:
+    let s = element.attr(entry.attrname)
+    if url := element.document.parseURL(s):
+      return ctx.toJS($url)
+    return ctx.toJS(s)
+  of rtReferrerPolicy:
+    if s := element.referrerPolicy:
+      return ctx.toJS($s)
+    return ctx.toJS("")
+  of rtCrossOrigin:
+    case (let co = element.crossOrigin; co)
+    of caNoCors: return JS_NULL
+    else: return ctx.toJS($co)
+  of rtMethod:
+    let s = element.attr(entry.attrname)
+    if entry.attrname == satFormmethod and s == "":
+      return ctx.toJS("")
+    return ctx.toJS($parseFormMethod(s))
   of rtBool: return ctx.toJS(element.attrb(entry.attrname))
   of rtLong: return ctx.toJS(element.attrl(entry.attrname).get(entry.i))
   of rtUlong: return ctx.toJS(element.attrul(entry.attrname).get(entry.u))
@@ -2866,10 +2939,19 @@ proc jsReflectSet(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
   if element.tagType notin entry.tags:
     return JS_ThrowTypeError(ctx, "Invalid tag type %s", element.tagType)
   case entry.t
-  of rtStr:
+  of rtStr, rtUrl, rtReferrerPolicy, rtMethod:
     var x: string
     if ctx.fromJS(val, x).isOk:
       element.attr(entry.attrname, x)
+  of rtCrossOrigin:
+    if JS_IsNull(val):
+      let i = element.findAttr(entry.attrname.toAtom())
+      if i != -1:
+        ctx.delAttr(element, i)
+    else:
+      var x: string
+      if ctx.fromJS(val, x).isOk:
+        element.attr(entry.attrname, x)
   of rtBool:
     var x: bool
     if ctx.fromJS(val, x).isOk:
@@ -3904,11 +3986,8 @@ proc enctype*(element: Element): FormEncodingType =
         return parseEnumNoCase[FormEncodingType](s).get(fetUrlencoded)
   return fetUrlencoded
 
-proc parseFormMethod(s: string): FormMethod =
-  return parseEnumNoCase[FormMethod](s).get(fmGet)
-
-proc formmethod*(element: Element): FormMethod =
-  if element of HTMLFormElement:
+proc getFormMethod*(element: Element): FormMethod =
+  if element.tagType == TAG_FORM:
     # The standard says nothing about this, but this code path is reached
     # on implicit form submission and other browsers seem to agree on this
     # behavior.
@@ -4288,6 +4367,12 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
     HTMLHeadElement()
   of TAG_TITLE:
     HTMLTitleElement()
+  of TAG_OBJECT:
+    HTMLObjectElement()
+  of TAG_SOURCE:
+    HTMLSourceElement()
+  of TAG_INS, TAG_DEL:
+    HTMLModElement()
   elif sns == satNamespaceSVG:
     if tagType == TAG_SVG:
       SVGSVGElement()
@@ -4836,16 +4921,16 @@ proc newHTMLElement*(document: Document; tagType: TagType): HTMLElement =
   let localName = tagType.toAtom()
   return HTMLElement(document.newElement(localName, Namespace.HTML, NO_PREFIX))
 
-proc crossOriginImpl(element: HTMLElement): CORSAttribute =
+proc crossOrigin(element: HTMLElement): CORSAttribute =
   if not element.attrb(satCrossorigin):
     return caNoCors
-  case element.attr(satCrossorigin)
-  of "anonymous", "":
-    return caAnonymous
-  of "use-credentials":
+  let s = element.attr(satCrossorigin)
+  if s.equalsIgnoreCase("use-credentials"):
     return caUseCredentials
-  else:
-    return caAnonymous
+  caAnonymous
+
+proc referrerPolicy(element: HTMLElement): Opt[ReferrerPolicy] =
+  parseEnumNoCase[ReferrerPolicy](element.attr(satReferrerpolicy))
 
 # HTMLHyperlinkElementUtils (for <a> and <area>)
 proc reinitURL*(element: Element): Opt[URL] =
@@ -5106,10 +5191,6 @@ proc resetFormOwner(element: FormAssociatedElement) =
       if ancestor of HTMLFormElement:
         element.setForm(HTMLFormElement(ancestor))
 
-# <img>
-proc crossOrigin(element: HTMLImageElement): CORSAttribute {.jsfget.} =
-  return element.crossOriginImpl
-
 # <input>
 proc jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
@@ -5240,16 +5321,6 @@ proc setSelected*(option: HTMLOptionElement; selected: bool)
         prevSelected == nil and firstOption != nil:
       firstOption.selected = true
       firstOption.invalidate(dtChecked)
-
-# <q>, <blockquote>
-proc cite(this: HTMLQuoteElement): string {.jsfget.} =
-  var s = this.attr(satCite)
-  if url := parseURL(s, this.document.url):
-    return $url
-  move(s)
-
-proc `cite=`(this: HTMLQuoteElement; s: sink string) {.jsfset: "cite".} =
-  this.attr(satCite, s)
 
 # <select>
 proc displaySize(select: HTMLSelectElement): uint32 =
@@ -5471,14 +5542,6 @@ proc mark(rt: JSRuntime; element: HTMLScriptElement; markFunc: JS_MarkFunc)
     if script.rt != nil and not JS_IsUninitialized(script.record):
       JS_MarkValue(rt, script.record, markFunc)
 
-proc crossOrigin(element: HTMLScriptElement): CORSAttribute {.jsfget.} =
-  return element.crossOriginImpl
-
-proc referrerpolicy(element: HTMLScriptElement): Option[ReferrerPolicy] =
-  if o := strictParseEnum[ReferrerPolicy](element.attr(satReferrerpolicy)):
-    return some(o)
-  none(ReferrerPolicy)
-
 proc markAsReady(element: HTMLScriptElement; res: ScriptResult) =
   element.scriptResult = res
   if element.onReady != nil:
@@ -5639,7 +5702,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
             window.logException(res.script.baseURL)
             element.onComplete(ScriptResult(t: srtNull))
           else:
-            if referrerPolicy.isSome:
+            if referrerPolicy.isOk:
               res.script.options.referrerPolicy = referrerPolicy
             # set & onComplete both take ownership
             settings.moduleMap.set(url, moduleType, res.clone(), ctx)
@@ -5752,7 +5815,7 @@ proc prepare*(element: HTMLScriptElement) =
     nonce: element.internalNonce,
     integrity: element.attr(satIntegrity),
     parserMetadata: parserMetadata,
-    referrerpolicy: element.referrerpolicy
+    referrerPolicy: element.referrerPolicy
   )
   #TODO settings object
   var response: Response = nil
@@ -6118,6 +6181,9 @@ proc registerElements(ctx: JSContext; nodeCID: JSClassID) =
   register(HTMLDataElement, TAG_DATA)
   register(HTMLHeadElement, TAG_HEAD)
   register(HTMLTitleElement, TAG_TITLE)
+  register(HTMLObjectElement, TAG_OBJECT)
+  register(HTMLSourceElement, TAG_SOURCE)
+  register(HTMLModElement, [TAG_INS, TAG_DEL])
   let svgElementCID = ctx.registerType(SVGElement, parent = elementCID)
   ctx.registerType(SVGSVGElement, parent = svgElementCID)
 

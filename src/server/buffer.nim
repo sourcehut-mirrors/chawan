@@ -1339,7 +1339,7 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
   if parsedAction == nil:
     return nil
   let enctype = submitter.enctype()
-  let formMethod = submitter.formmethod()
+  let formMethod = submitter.getFormMethod()
   let httpMethod = case formMethod
   of fmDialog: return nil #TODO
   of fmGet: hmGet

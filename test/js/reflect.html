@@ -2,6 +2,14 @@
 <div id=abc>Fail</div>
 <a class=claz target="abcd">test test</a>
 <script src=asserts.js></script>
+<img id=b src=test.png>
+<script id=c referrerpolicy=strict-Origin-when-Cross-origin></script>
+<form id=d></form>
+<form id=e method=post>
+<input id=f method=get formmethod=get>
+<input id=g>
+<button id=h formmethod=asdf>
+</form>
 <script>
 const x = document.getElementById("abc")
 const a = document.getElementsByTagName("a")[0];
@@ -12,6 +20,37 @@ assertEquals(a.relList + "", "");
 a.relList = "...";
 assertEquals(a.relList + "", "...");
 assertEquals(a.className, "claz");
+const b = document.getElementById("b");
+assertEquals(b.crossOrigin, null);
+b.crossOrigin = "test";
+assertEquals(b.crossOrigin, "anonymous");
+b.crossOrigin = "";
+assertEquals(b.crossOrigin, "anonymous");
+b.crossOrigin = "Anonymous";
+assertEquals(b.crossOrigin, "anonymous");
+b.crossOrigin = "No-cors";
+assertEquals(b.crossOrigin, "anonymous");
+b.crossOrigin = null;
+assertEquals(b.crossOrigin, null);
+b.crossOrigin = "Use-Credentials";
+assertEquals(b.crossOrigin, "use-credentials");
+const c = document.getElementById("c");
+assertEquals(c.referrerPolicy, "strict-origin-when-cross-origin");
+c.referrerPolicy = null;
+assertEquals(c.referrerPolicy, "");
+const d = document.getElementById("d");
+const e = document.getElementById("e");
+const f = document.getElementById("f");
+const g = document.getElementById("g");
+const h = document.getElementById("h");
+assertEquals(d.method, "get");
+assertEquals(e.formMethod, undefined);
+assertEquals(e.method, "post");
+assertEquals(f.formMethod, "get");
+assertEquals(f.method, undefined);
+assertEquals(g.formMethod, "")
+assertEquals(h.formMethod, "get")
+for (const it of [a, b, c, d, e, f, g, h])
+	it.remove();
 x.textContent = "Success";
-a.remove(); /* ignore target... */
 </script>

@@ -1,12 +1,11 @@
 {.push raises: [].}
 
-import std/options
-
 import config/conftypes
 import html/catom
 import monoucha/javascript
 import monoucha/quickjs
 import monoucha/tojs
+import types/opt
 import types/referrer
 import types/url
 import types/winattrs
@@ -80,7 +79,7 @@ type
     integrity*: string
     parserMetadata*: ParserMetadata
     credentialsMode*: CredentialsMode
-    referrerPolicy*: Option[ReferrerPolicy]
+    referrerPolicy*: Opt[ReferrerPolicy]
     renderBlocking*: bool
 
   ScriptResult* = ref object
