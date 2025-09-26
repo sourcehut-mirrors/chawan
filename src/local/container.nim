@@ -1816,16 +1816,16 @@ proc peekCursor(container: Container) {.jsfunc.} =
     container.alert(container.hoverText[p])
   container.lastPeek = p
 
-proc hoverLink(container: Container): string {.jsfget.} =
+proc hoverLink(container: Container): lent string {.jsfget.} =
   return container.hoverText[htLink]
 
-proc hoverTitle(container: Container): string {.jsfget.} =
+proc hoverTitle(container: Container): lent string {.jsfget.} =
   return container.hoverText[htTitle]
 
-proc hoverImage(container: Container): string {.jsfget.} =
+proc hoverImage(container: Container): lent string {.jsfget.} =
   return container.hoverText[htImage]
 
-proc hoverCachedImage(container: Container): string {.jsfget.} =
+proc hoverCachedImage(container: Container): lent string {.jsfget.} =
   return container.hoverText[htCachedImage]
 
 proc find*(container: Container; dir: NavDirection): Container {.jsfunc.} =

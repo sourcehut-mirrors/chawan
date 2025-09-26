@@ -477,7 +477,7 @@ proc readParams(gen: var JSFuncGenerator; fun: NimNode) =
       if t.len == 2 and t[0].eqIdent("sink"):
         t = t[1]
     of nnkBracketExpr:
-      if t.typeKind == ntyVarargs:
+      if t[0].eqIdent("varargs"):
         if i != formalParams.len - 1:
           error("varargs must be the last parameter")
         minArgsSeen = true
@@ -655,14 +655,10 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
     let j = gen.j
     var s = ident("arg_" & $gen.i)
     let tt = gen.funcParams[gen.i].t
-    if tt.typeKind == ntyVarargs:
+    if tt.kind == nnkBracketExpr and tt[0].eqIdent("varargs"):
       let vt = tt[1]
-      if vt.sameType(JSValueConst.getType()) or
-          JSValueConst.getType().sameType(vt):
-        s = quote do:
-          argv.toOpenArray(`j`, argc - 1)
-      else:
-        error("Only JSValueConst varargs are supported")
+      s = quote do:
+        argv.toOpenArray(`j`, argc - 1)
     else:
       let fallback = gen.funcParams[gen.i].val
       if fallback == nil:
@@ -791,7 +787,7 @@ proc getFuncName(fun: NimNode; jsname, staticName: string): string =
     let i = staticName.find('.')
     if i != -1:
       return staticName.substr(i + 1)
-  return $fun[0]
+  return $fun.name
 
 proc addThisName(gen: var JSFuncGenerator; hasThis: bool) =
   if hasThis:
@@ -817,13 +813,16 @@ proc addThisName(gen: var JSFuncGenerator; hasThis: bool) =
 
 proc initGenerator(fun: NimNode; t: BoundFunctionType; hasThis: bool;
     jsname = ""; flag = bffNone; staticName = ""): JSFuncGenerator =
+  var funCallName = fun[0]
+  if funCallName.kind == nnkPostfix:
+    funCallName = funCallName[1]
   result = JSFuncGenerator(
     t: t,
     funcName: getFuncName(fun, jsname, staticName),
     hasThis: hasThis,
     dielabel: ident("ondie"),
     jsFunCallList: newStmtList(),
-    jsFunCall: newCall(fun[0]),
+    jsFunCall: newCall(funCallName),
     flag: flag
   )
   result.readParams(fun)
@@ -850,7 +849,7 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; okstmt, errstmt: NimNode) =
         `okstmt`
       `errstmt`
 
-macro jsctor*(fun: typed) =
+macro jsctor*(fun: untyped) =
   var gen = initGenerator(fun, bfConstructor, hasThis = false)
   gen.addRequiredParams()
   gen.addOptionalParams()
@@ -865,7 +864,7 @@ macro jsctor*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jshasprop*(fun: typed) =
+macro jshasprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyHas, hasThis = true)
   gen.addThisParam()
   gen.addFixParam("atom")
@@ -881,7 +880,7 @@ macro jshasprop*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jsgetownprop*(fun: typed) =
+macro jsgetownprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyGetOwn, hasThis = true)
   gen.addThisParam()
   gen.addFixParam("prop")
@@ -921,7 +920,7 @@ macro jsgetownprop*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jsgetprop*(fun: typed) =
+macro jsgetprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyGet, hasThis = true)
   gen.addThisParam("receiver")
   gen.addFixParam("prop")
@@ -938,7 +937,7 @@ macro jsgetprop*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jssetprop*(fun: typed) =
+macro jssetprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertySet, hasThis = true)
   gen.addThisParam("receiver")
   gen.addFixParam("atom")
@@ -967,7 +966,7 @@ macro jssetprop*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jsdelprop*(fun: typed) =
+macro jsdelprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyDel, hasThis = true)
   gen.addThisParam()
   gen.addFixParam("prop")
@@ -983,7 +982,7 @@ macro jsdelprop*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jspropnames*(fun: typed) =
+macro jspropnames*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyNames, hasThis = true)
   gen.addThisParam()
   gen.finishFunCallList()
@@ -1001,7 +1000,7 @@ macro jspropnames*(fun: typed) =
   return newStmtList(fun, jsProc)
 
 macro jsfgetn(jsname: static string; flag: static BoundFunctionFlag;
-    fun: typed) =
+    fun: untyped) =
   var gen = initGenerator(fun, bfGetter, hasThis = true, jsname, flag)
   if gen.actualMinArgs != 0 or gen.funcParams.len != gen.minArgs:
     error("jsfget functions must only accept one parameter.")
@@ -1039,7 +1038,7 @@ template jsrfget*(jsname, fun: untyped) =
 
 # Ideally we could simulate JS setters using nim setters, but nim setters
 # won't accept types that don't match their reflected field's type.
-macro jsfsetn(jsname: static string; fun: typed) =
+macro jsfsetn(jsname: static string; fun: untyped) =
   var gen = initGenerator(fun, bfSetter, hasThis = true, jsname = jsname)
   if gen.actualMinArgs != 1 or gen.funcParams.len != gen.minArgs:
     error("jsfset functions must accept two parameters")
@@ -1062,7 +1061,7 @@ template jsfset*(jsname, fun: untyped) =
   jsfsetn(jsname, fun)
 
 macro jsfuncn*(jsname: static string; flag: static BoundFunctionFlag;
-    staticName: static string; fun: typed) =
+    staticName: static string; fun: untyped) =
   var gen = initGenerator(fun, bfFunction, hasThis = true, jsname = jsname,
     flag = flag, staticName = staticName)
   if gen.minArgs == 0 and gen.flag != bffStatic:
@@ -1098,7 +1097,7 @@ template jsuffunc*(jsname, fun: untyped) =
 template jsstfunc*(name, fun: untyped) =
   jsfuncn("", bffStatic, name, fun)
 
-macro jsfin*(fun: typed) =
+macro jsfin*(fun: untyped) =
   var gen = initGenerator(fun, bfFinalizer, hasThis = true)
   let finName = gen.newName
   let finFun = ident(gen.funcName)
@@ -1116,7 +1115,7 @@ macro jsfin*(fun: typed) =
   gen.registerFunction()
   return newStmtList(fun, jsProc)
 
-macro jsmark*(fun: typed) =
+macro jsmark*(fun: untyped) =
   var gen = initGenerator(fun, bfMark, hasThis = true)
   let markName = gen.newName
   let markFun = ident(gen.funcName)

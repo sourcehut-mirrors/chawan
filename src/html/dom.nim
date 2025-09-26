@@ -2567,7 +2567,7 @@ proc getURL(ctx: JSContext; document: Document): JSValue {.jsfget: "URL".} =
   return ctx.toJS($document.url)
 
 #TODO take cookie jar from loader
-proc cookie(document: Document): string {.jsfget.} =
+proc cookie(document: Document): lent string {.jsfget.} =
   return document.internalCookie
 
 proc setCookie(document: Document; cookie: string) {.jsfset: "cookie".} =
@@ -5195,15 +5195,10 @@ proc resetFormOwner(element: FormAssociatedElement) =
 proc jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
   return this.form
 
-proc value*(this: HTMLInputElement): lent string =
+proc value*(this: HTMLInputElement): lent string {.jsfget.} =
   if this.internalValue == nil:
     this.internalValue = newRefString("")
   return this.internalValue
-
-proc jsValue(ctx: JSContext; this: HTMLInputElement): JSValue
-    {.jsfget: "value".} =
-  #TODO wat
-  return ctx.toJS(this.value)
 
 proc setValue*(this: HTMLInputElement; value: sink string) {.jsfset: "value".} =
   if this.internalValue == nil:
