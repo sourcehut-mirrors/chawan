@@ -220,10 +220,11 @@ jsDestructor(Highlight)
 jsDestructor(Container)
 
 # Forward declarations
-proc onclick(container: Container; res: ClickResult; save: bool)
-proc updateCursor(container: Container)
 proc cursorLastLine*(container: Container)
+proc find*(container: Container; dir: NavDirection): Container
+proc onclick(container: Container; res: ClickResult; save: bool)
 proc triggerEvent(container: Container; t: ContainerEventType)
+proc updateCursor(container: Container)
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
@@ -256,19 +257,19 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
   )
 
 proc clone*(container: Container; newurl: URL; loader: FileLoader):
-    Promise[tuple[c: Container; fd: cint]] =
+    tuple[p: Promise[cint], c: Container] =
   if container.iface == nil:
-    return nil
+    return (nil, nil)
   var sv {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sv) != 0:
-    return nil
+    return (nil, nil)
   # Send a pipe for synchronization in the clone proc.
   # (Do it here, so buffers do not need pipe rights.)
   var pipefd {.noinit.}: array[2, cint]
   if pipe(pipefd) == -1:
     discard close(sv[0])
     discard close(sv[1])
-    return nil
+    return (nil, nil)
   let url = if newurl != nil:
     newurl
   else:
@@ -278,23 +279,69 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   discard close(pipefd[0])
   discard close(pipefd[1])
   if p == nil:
-    return nil
-  return p.then(proc(pid: int): tuple[c: Container; fd: cint] =
+    return (nil, nil)
+  let nc = Container()
+  nc[] = container[]
+  nc.url = url
+  nc.process = -1
+  nc.clonedFrom = container.process
+  nc.flags.incl(cfCloned)
+  nc.retry = @[]
+  nc.prev = nil
+  nc.next = nil
+  nc.select = nil
+  nc.cachedImages = @[]
+  nc.images = @[]
+  nc.needslines = true
+  let pp = p.then(proc(pid: int): cint =
     if pid == -1:
       discard close(sv[0])
-      return (nil, cint(-1))
-    let nc = Container()
-    nc[] = container[]
-    nc.url = url
+      return cint(-1)
     nc.process = pid
-    nc.clonedFrom = container.process
-    nc.flags.incl(cfCloned)
-    nc.retry = @[]
-    nc.prev = nil
-    nc.next = nil
-    nc.cachedImages = @[]
-    return (nc, sv[0])
+    return sv[0]
   )
+  (pp, nc)
+
+proc append*(this, other: Container) =
+  if other.prev != nil:
+    other.prev.next = other.next
+  if other.next != nil:
+    other.next.prev = other.prev
+  other.next = this.next
+  if this.next != nil:
+    this.next.prev = other
+  other.prev = this
+  this.next = other
+
+proc remove*(this: Container) =
+  if this.prev != nil:
+    this.prev.next = this.next
+  if this.next != nil:
+    this.next.prev = this.prev
+  if this.tab.current == this:
+    this.tab.current = this.find(ndAny)
+  if this.tab.head == this:
+    this.tab.head = this.next
+  this.tab = nil
+  this.next = nil
+  this.prev = nil
+
+# tab may be nil.
+# Returns the old tab if it has become empty.
+proc setTab*(container: Container; tab: Tab): Tab =
+  let oldTab = container.tab
+  if oldTab != nil:
+    container.remove()
+  container.tab = tab
+  if tab != nil:
+    if tab.current == nil:
+      tab.current = container
+      tab.head = container
+    else:
+      tab.current.append(container)
+  if oldTab != nil and oldTab.current == nil:
+    return oldTab
+  nil
 
 proc lineLoaded(container: Container; y: int): bool =
   return y - container.lineshift in 0..container.lines.high

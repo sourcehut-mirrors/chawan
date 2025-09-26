@@ -257,7 +257,31 @@ _
 T{
 \f[CR]discardTree()\f[R]
 T}@T{
-Discard all child buffers of the current buffer.
+Discard all next siblings of the current buffer.
+This function is deprecated, and may be removed in the future.
+T}
+_
+T{
+\f[CR]addTab(target)\f[R]
+T}@T{
+Open a new tab.
+.PP
+If \f[CR]target\f[R] is a buffer, it is removed from its current tab and
+added to the newly created tab.
+Otherwise, \f[CR]target\f[R] is interpreted as a URL to open with
+\f[CR]gotoURL\f[R].
+T}
+_
+T{
+\f[CR]prevTab()\f[R], \f[CR]nextTab()\f[R]
+T}@T{
+Switch to the previous/next tab in the tab list.
+T}
+_
+T{
+\f[CR]discardTab()\f[R]
+T}@T{
+Discard the current tab.
 T}
 _
 T{

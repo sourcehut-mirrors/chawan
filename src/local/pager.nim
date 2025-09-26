@@ -209,6 +209,7 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
 proc connected3(pager: Pager; container: Container; stream: SocketStream;
   ostream: PosixStream; istreamOutputId, ostreamOutputId: int;
   redirected: bool)
+proc deleteContainer(pager: Pager; container, setTarget: Container)
 proc draw(pager: Pager)
 proc dumpBuffers(pager: Pager)
 proc evalJS(pager: Pager; src, filename: string; module = false): JSValue
@@ -281,7 +282,7 @@ template status(pager: Pager): Surface =
 template display(pager: Pager): Surface =
   pager.surfaces[stDisplay]
 
-proc setContainer(pager: Pager; c: Container) {.jsfunc.} =
+proc setContainer(pager: Pager; c: Container) =
   if pager.term.imageMode != imNone and pager.container != nil:
     for cachedImage in pager.container.cachedImages:
       if cachedImage.state == cisLoaded:
@@ -1435,15 +1436,24 @@ proc fulfillAsk(pager: Pager; s: string) =
   pager.askPrompt = ""
   p.resolve(s)
 
+proc setTab(pager: Pager; container: Container; tab: Tab) =
+  let removed = container.setTab(tab)
+  if removed != nil:
+    if removed.next != nil:
+      removed.next.prev = removed.prev
+    if removed.prev != nil:
+      removed.prev.next = removed.next
+    if pager.tabHead == removed:
+      pager.tabHead = removed.next
+    removed.prev = nil
+    removed.next = nil
+    if pager.tabHead == nil:
+      # tab cannot be nil, so create a dummy...
+      pager.tabHead = Tab()
+      pager.tab = pager.tabHead
+
 proc addContainer(pager: Pager; container: Container) =
-  if pager.tab.head == nil:
-    pager.tab.head = container
-  else:
-    container.next = pager.tab.current.next
-    pager.tab.current.next = container
-    container.prev = pager.tab.current
-    if container.next != nil:
-      container.next.prev = container
+  pager.setTab(container, pager.tab)
   pager.setContainer(container)
 
 proc onSetLoadInfo(pager: Pager; container: Container) =
@@ -1512,20 +1522,23 @@ proc findConnectingContainer(pager: Pager; container: Container):
         return item
   return nil
 
-proc dupeBuffer(pager: Pager; container: Container; url: URL) =
-  let p = container.clone(url, pager.loader)
-  if p == nil:
+proc dupeBuffer(pager: Pager; container: Container; url: URL): Container =
+  let res = container.clone(url, pager.loader)
+  if res.p == nil:
     pager.alert("Failed to duplicate buffer.")
-  else:
-    p.then(proc(res: tuple[c: Container; fd: cint]) =
-      if res.c == nil:
-        pager.alert("Failed to duplicate buffer.")
-      else:
-        pager.addContainer(res.c)
-        pager.connected3(res.c, newSocketStream(res.fd), nil, -1, -1, false)
-    )
+    return nil
+  pager.addContainer(res.c)
+  let nc = res.c
+  res.p.then(proc(fd: cint) =
+    if fd == -1:
+      pager.alert("Failed to duplicate buffer.")
+      pager.deleteContainer(nc, nil)
+    else:
+      pager.connected3(nc, newSocketStream(fd), nil, -1, -1, false)
+  )
+  return nc
 
-proc dupeBuffer(pager: Pager) {.jsfunc.} =
+proc dupeBuffer(pager: Pager): Container {.jsfunc.} =
   pager.dupeBuffer(pager.container, pager.container.url)
 
 const OppositeMap = [
@@ -1614,22 +1627,15 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     container.replaceRef.replace = nil
     container.replaceRef.replaceBackup = nil
     container.replaceRef = nil
-  if container.tab != nil and container.tab.head == container:
-    container.tab.head = container.next
-  container.tab = nil
-  if container.prev != nil:
-    container.prev.next = container.next
-  if container.next != nil:
-    container.next.prev = container.prev
-  container.prev = nil
-  container.next = nil
+  let wasCurrent = pager.container == container
+  pager.setTab(container, nil)
   if pager.downloads == container:
     pager.downloads = nil
   if container.replace != nil:
     container.replace = nil
   elif container.replaceBackup != nil:
     container.replaceBackup = nil
-  elif pager.container == container:
+  elif wasCurrent:
     pager.setContainer(setTarget)
   if container.process != -1:
     pager.loader.removeCachedItem(container.cacheId)
@@ -1656,7 +1662,11 @@ proc discardBuffer(pager: Pager; container = none(Container);
   let dir = pager.revDirection
   let setTarget = container.find(dir)
   if container == nil or setTarget == nil:
-    pager.alert("No buffer in direction: " & $dir)
+    let s = if dir in {ndNext, ndNextSibling}:
+      "No next buffer"
+    else:
+      "No previous buffer"
+    pager.alert(s)
   else:
     pager.deleteContainer(container, setTarget)
 
@@ -1952,8 +1962,8 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     contentType = ""; cs = CHARSET_UNKNOWN; replace: Container = nil;
     replaceBackup: Container = nil; redirectDepth = 0;
     referrer: Container = nil; save = false; history = true;
-    url: URL = nil; scripting = none(ScriptingMode); cookie = none(CookieMode)):
-    Container =
+    url: URL = nil; scripting = none(ScriptingMode); cookie = none(CookieMode);
+    add = true): Container =
   pager.navDirection = ndNext
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
@@ -2012,7 +2022,8 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
           container.replaceBackup = replaceBackup
           replaceBackup.replaceRef = container
       else:
-        pager.addContainer(container)
+        if add:
+          pager.addContainer(container)
       inc pager.numload
     return container
   else:
@@ -2022,7 +2033,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     container.iface.gotoAnchor(anchor, false, false).then(
       proc(res: GotoAnchorResult) =
         if res.found:
-          pager.dupeBuffer(container, url)
+          discard pager.dupeBuffer(container, url)
         else:
           pager.alert("Anchor " & url.hash & " not found")
     )
@@ -2080,6 +2091,80 @@ proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
       contentType = contentType, cs = cs, history = history)
     if container != nil:
       container.retry = urls
+
+proc fromJSURL(ctx: JSContext; val: JSValueConst): Opt[URL] =
+  var url: URL
+  if ctx.fromJS(val, url).isOk:
+    return ok(url)
+  var s: string
+  ?ctx.fromJS(val, s)
+  url = ?ctx.newURL(s)
+  ok(url)
+
+proc addTab(ctx: JSContext; pager: Pager; buffer: JSValueConst = JS_UNDEFINED):
+    JSValue {.jsfunc.} =
+  let tab = Tab()
+  var c: Container
+  if ctx.fromJS(buffer, c).isErr:
+    let url = if JS_IsUndefined(buffer):
+      parseURL0("about:blank")
+    else:
+      let parsed = ctx.fromJSURL(buffer)
+      if parsed.isErr:
+        return JS_EXCEPTION
+      parsed.get
+    c = pager.gotoURL(newRequest(url), history = false, add = false)
+  if pager.tab.next != nil:
+    pager.tab.next.prev = tab
+  # add to link first, or setTab dies
+  tab.prev = pager.tab
+  tab.next = pager.tab.next
+  if tab.next != nil:
+    tab.next.prev = tab
+  pager.tab.next = tab
+  pager.setTab(c, tab)
+  tab.current = c
+  c.queueDraw()
+  pager.tab = tab
+  JS_UNDEFINED
+
+proc prevTab(pager: Pager) {.jsfunc.} =
+  if pager.tab.prev != nil:
+    pager.tab = pager.tab.prev
+    pager.container.queueDraw()
+  else:
+    pager.alert("No previous tab")
+
+proc nextTab(pager: Pager) {.jsfunc.} =
+  if pager.tab.next != nil:
+    pager.tab = pager.tab.next
+    pager.container.queueDraw()
+  else:
+    pager.alert("No next tab")
+
+proc discardTab(pager: Pager) {.jsfunc.} =
+  let tab = pager.tab
+  if tab.prev != nil or tab.next != nil:
+    var c = tab.head
+    while c != nil:
+      let next = c.next
+      pager.deleteContainer(c, nil)
+      c = next
+    if tab.prev != nil:
+      if tab.next != nil:
+        tab.next.prev = tab.prev
+      tab.prev.next = tab.next
+      pager.tab = tab.prev
+    else:
+      if tab.prev != nil:
+        tab.prev.next = tab.next
+      tab.next.prev = tab.prev
+      if tab == pager.tabHead:
+        pager.tabHead = tab.next
+      pager.tab = tab.next
+    pager.container.queueDraw()
+  else:
+    pager.alert("This is the last tab")
 
 proc createPipe(pager: Pager): (PosixStream, PosixStream) =
   var pipefds {.noinit.}: array[2, cint]
@@ -2393,11 +2478,7 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
   if ctx.fromJS(v, jsRequest).isOk:
     request = jsRequest.request
   else:
-    var url: URL = nil
-    if ctx.fromJS(v, url).isErr:
-      var s: string
-      ?ctx.fromJS(v, s)
-      url = ?ctx.newURL(s)
+    let url = ?ctx.fromJSURL(v)
     request = newRequest(url)
   return ok(pager.gotoURL(request, contentType = t.contentType.get(""),
     replace = t.replace.get(nil), save = t.save, history = t.history,

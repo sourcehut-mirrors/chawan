@@ -235,7 +235,28 @@ pager.navDirection)`</td>
 
 <tr>
 <td>`discardTree()`</td>
-<td>Discard all child buffers of the current buffer.</td>
+<td>Discard all next siblings of the current buffer.  This function is
+deprecated, and may be removed in the future.</td>
+</tr>
+
+<tr>
+<td>`addTab(target)`</td>
+<td>Open a new tab.
+<p>
+If `target` is a buffer, it is removed from its current tab and added to the
+newly created tab.  Otherwise, `target` is interpreted as a URL to open with
+`gotoURL`.
+</td>
+</tr>
+
+<tr>
+<td>`prevTab()`, `nextTab()`</td>
+<td>Switch to the previous/next tab in the tab list.</td>
+</tr>
+
+<tr>
+<td>`discardTab()`</td>
+<td>Discard the current tab.</td>
 </tr>
 
 <tr>
