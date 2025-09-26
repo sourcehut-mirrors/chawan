@@ -2311,16 +2311,21 @@ proc updateReadLine(pager: Pager) =
         pager.container.gotoLine(lineedit.news)
       of lmDownload:
         let data = LineDataDownload(pager.lineData)
-        if fileExists(lineedit.news):
-          pager.ask("Override file " & lineedit.news & "?").then(
-            proc(x: bool) =
-              if x:
-                pager.saveTo(data, lineedit.news)
-              else:
-                pager.setLineEdit(lmDownload, lineedit.news)
-          )
+        let path = ChaPath(lineedit.news).unquote(myposix.getcwd())
+        if path.isErr:
+          pager.alert(path.error)
         else:
-          pager.saveTo(data, lineedit.news)
+          let path = path.get
+          if fileExists(path):
+            pager.ask("Override file " & path & "?").then(
+              proc(x: bool) =
+                if x:
+                  pager.saveTo(data, path)
+                else:
+                  pager.setLineEdit(lmDownload, path)
+            )
+          else:
+            pager.saveTo(data, path)
       of lmMailcap:
         var mailcap = Mailcap.default
         let res = mailcap.parseMailcap(lineedit.news, "<input>")
