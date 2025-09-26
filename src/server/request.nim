@@ -252,7 +252,10 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   else:
     var s: string
     ?ctx.fromJS(resource, s)
-    url = ?parseJSURL(s, ctx.getAPIBaseURLImpl())
+    let x = ctx.parseJSURL(s, ctx.getAPIBaseURLImpl())
+    if x.isErr:
+      return err(nil)
+    url = x.get
   if url.username != "" or url.password != "":
     return errTypeError("Input URL contains a username or password")
   var mode = fallbackMode.get(rmNoCors)

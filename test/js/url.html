@@ -87,6 +87,7 @@ assertThrows(() => new URL("https://:443"), TypeError);
 assertThrows(() => new URL("https://user:pass@"), TypeError);
 assertThrows(() => new URL("https://example.org:70000"), TypeError);
 assertThrows(() => new URL("https://example.org:7z"), TypeError);
+assertThrows(() => new URL("https://example.org", null), TypeError);
 {
 	const x = new URL("file:/test");
 	x.protocol = "abcd";
@@ -126,6 +127,8 @@ assertThrows(() => new URL("https://example.org:7z"), TypeError);
 	assertEquals(x.search, "");
 	x.searchParams.append("hi", "world");
 	assert(x.searchParams.has("hi"));
+	assert(!x.searchParams.has("hi", null));
+	assert(!x.searchParams.has("hi", ""));
 	assert(x.searchParams.has("hi", "world"));
 	assertEquals(new URLSearchParams(undefined) + "", "")
 }

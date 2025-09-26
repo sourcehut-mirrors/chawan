@@ -2382,18 +2382,18 @@ type GotoURLDict = object of JSDict
   scripting {.jsdefault.}: Option[ScriptingMode]
   cookie {.jsdefault.}: Option[CookieMode]
 
-proc jsGotoURL(pager: Pager; v: JSValueConst; t = GotoURLDict()):
-    JSResult[Container] {.jsfunc: "gotoURL".} =
+proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
+    t = GotoURLDict()): Opt[Container] {.jsfunc: "gotoURL".} =
   var request: Request = nil
   var jsRequest: JSRequest = nil
-  if pager.jsctx.fromJS(v, jsRequest).isOk:
+  if ctx.fromJS(v, jsRequest).isOk:
     request = jsRequest.request
   else:
     var url: URL = nil
-    if pager.jsctx.fromJS(v, url).isErr:
+    if ctx.fromJS(v, url).isErr:
       var s: string
-      ?pager.jsctx.fromJS(v, s)
-      url = ?newURL(s)
+      ?ctx.fromJS(v, s)
+      url = ?ctx.newURL(s)
     request = newRequest(url)
   return ok(pager.gotoURL(request, contentType = t.contentType.get(""),
     replace = t.replace.get(nil), save = t.save, history = t.history,

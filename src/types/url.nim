@@ -2,14 +2,12 @@
 {.push raises: [].}
 
 import std/algorithm
-import std/options
 import std/strutils
 
 import io/packetreader
 import io/packetwriter
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jstypes
 import monoucha/libunicode
 import monoucha/quickjs
@@ -55,7 +53,7 @@ type
     opaquePath: bool
     hostType: HostType
     schemeType*: SchemeType
-    port: Option[uint16]
+    port: int32 # -1 -> no port, other values: has port
     hostname* {.jsget.}: string
     pathname* {.jsget.}: string
     search* {.jsget.}: string
@@ -183,18 +181,18 @@ proc parseIpv6(input: openArray[char]): string =
   return address.serializeip()
 
 proc parseIpv4Number(s: string): uint32 =
-  var input = s
+  var i = 0
   var R = 10u32
-  if input.len >= 2 and input[0] == '0':
-    if input[1] in {'x', 'X'}:
-      input.delete(0..1)
+  if s.len >= 2 and s[0] == '0':
+    if s[1] in {'x', 'X'}:
+      i = 2
       R = 16
     else:
-      input.delete(0..0)
+      i = 1
       R = 8
-  if input == "":
+  if i >= s.len:
     return 0
-  return parseUInt32Base(input, allowSign = false, R).get(uint32.high)
+  return parseUInt32Base(s.toOpenArray(i, s.high), radix = R).get(uint32.high)
 
 proc parseIpv4(input: string): Opt[uint32] =
   var numbers: seq[uint32] = @[]
@@ -230,7 +228,7 @@ proc opaqueParseHost(input: string): string =
     if c in ForbiddenHostChars:
       return ""
     o.percentEncode(c, ControlPercentEncodeSet)
-  return o
+  move(o)
 
 proc endsInNumber(input: string): bool =
   if input.len == 0:
@@ -479,10 +477,10 @@ proc parseHost*(input: string; special: bool; hostType: var HostType): string =
   if input[0] == '[':
     if input[^1] != ']' or input.len < 3:
       return ""
-    let ipv6 = parseIpv6(input.toOpenArray(1, input.high - 1))
+    var ipv6 = parseIpv6(input.toOpenArray(1, input.high - 1))
     if ipv6 != "":
       hostType = htIpv6
-    return ipv6
+    return move(ipv6)
   if not special:
     hostType = htOpaque
     return opaqueParseHost(input)
@@ -602,16 +600,15 @@ proc parseScheme(input: openArray[char]; pointer: var int; base, url: URL;
       if override:
         if url.isSpecial != (port >= 0):
           return usNoScheme
-        if (url.includesCredentials or url.port.isSome) and
-            schemeType == stFile:
+        if (url.includesCredentials or url.port >= 0) and schemeType == stFile:
           return usNoScheme
         if url.hostType == htNone and url.schemeType == stFile:
           return usNoScheme
       url.scheme = move(buffer)
       url.schemeType = schemeType
       if override:
-        if url.port.isSome and port == int32(url.port.get):
-          url.port = none(uint16)
+        if port == url.port:
+          url.port = -1
         return usDone
       pointer = i + 1
       if url.schemeType == stFile:
@@ -711,13 +708,14 @@ proc parseFileHost(input: openArray[char]; pointer: var int; url: URL;
     url.hostname = ""
   else:
     var t = htNone
-    let hostname = parseHost(buffer, url.isSpecial, t)
+    var hostname = parseHost(buffer, url.isSpecial, t)
     if hostname == "":
       return usFail
     url.hostType = t
-    url.hostname = hostname
     if t == htDomain and hostname == "localhost":
       url.hostname = ""
+    else:
+      url.hostname = move(hostname)
   if override:
     return usFail
   return usPathStart
@@ -752,7 +750,7 @@ proc parseHostState(input: openArray[char]; pointer: var int; url: URL;
     inc pointer
   if url.isSpecial and buffer == "":
     return usFail
-  if override and buffer == "" and (url.includesCredentials or url.port.isSome):
+  if override and buffer == "" and (url.includesCredentials or url.port >= 0):
     return usFail
   var t = htNone
   let hostname = parseHost(buffer, url.isSpecial, t)
@@ -784,9 +782,9 @@ proc parsePort(input: openArray[char]; pointer: var int; url: URL;
     if i > 65535:
       return usFail
     if SpecialPort[url.schemeType] == i:
-      url.port = none(uint16)
+      url.port = -1
     else:
-      url.port = some(uint16(i))
+      url.port = i
   if override:
     return usFail
   return usPathStart
@@ -980,7 +978,7 @@ proc parseURLImpl(input: openArray[char]; base, url: URL;
 
 #TODO encoding
 proc parseURL0*(input: string; base: URL = nil): URL =
-  let url = URL()
+  let url = URL(port: -1)
   const NoStrip = AllChars - C0Controls - {' '}
   let starti0 = input.find(NoStrip)
   let starti = if starti0 == -1: 0 else: starti0
@@ -1003,10 +1001,12 @@ proc parseURL*(input: string; base: URL = nil): Opt[URL] =
     discard
   ok(url)
 
-proc parseJSURL*(s: string; base: URL = nil): JSResult[URL] =
-  if url := parseURL(s, base):
-    return ok(url)
-  return errTypeError(s & " is not a valid URL")
+proc parseJSURL*(ctx: JSContext; s: string; base: URL = nil): Opt[URL] =
+  let url = parseURL0(s, base)
+  if url == nil:
+    JS_ThrowTypeError(ctx, "%s is not a valid URL", cstring(s))
+    return err()
+  ok(url)
 
 proc serializeip(ipv4: uint32): string =
   return $(ipv4 shr 24) & '.' &
@@ -1067,8 +1067,8 @@ proc serialize*(url: URL; excludeHash = false; excludePassword = false):
         result &= ':' & url.password
       result &= '@'
     result &= url.hostname
-    if url.port.isSome:
-      result &= ':' & $url.port.get
+    if url.port >= 0:
+      result &= ':' & $url.port
   elif not url.opaquePath and url.pathname.len >= 2 and url.pathname[1] == '/':
     result &= "/."
   result &= url.pathname
@@ -1192,13 +1192,20 @@ proc getAll(params: URLSearchParams; name: string): seq[string] {.jsfunc.} =
     if it.name == name:
       result.add(it.value)
 
-proc has(params: URLSearchParams; name: string; value = none(string)): bool
-    {.jsfunc.} =
-  for it in params.list:
-    if it.name == name:
-      if value.isNone or value.get == it.value:
-        return true
-  return false
+proc has(ctx: JSContext; params: URLSearchParams; name: string;
+    jsValue: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
+  if JS_IsUndefined(jsValue):
+    for it in params.list:
+      if it.name == name:
+        return JS_TRUE
+  else:
+    var value: string
+    if ctx.fromJS(jsValue, value).isErr:
+      return JS_EXCEPTION
+    for it in params.list:
+      if it.name == name and value == it.value:
+        return JS_TRUE
+  return JS_FALSE
 
 proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
   for param in params.list.mitems:
@@ -1206,14 +1213,15 @@ proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
       param.value = value
       break
 
-proc newURL*(s: string; base = none(string)): JSResult[URL] {.jsctor.} =
-  let baseURL = if base.isSome:
-    parseURL0(base.get)
-  else:
-    nil
-  if baseURL == nil and base.isSome:
-    return errTypeError(base.get & " is not a valid URL")
-  return parseJSURL(s, baseURL)
+proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
+    Opt[URL] {.jsctor.} =
+  var baseURL: URL = nil
+  if not JS_IsUndefined(base):
+    var s: string
+    if ctx.fromJS(base, s).isErr:
+      return err()
+    baseURL = ?ctx.parseJSURL(s)
+  ctx.parseJSURL(s, baseURL)
 
 proc origin*(url: URL): Origin =
   case url.schemeType
@@ -1278,9 +1286,9 @@ proc setPassword*(url: URL; password: string) {.jsfset: "password".} =
 proc host*(url: URL): string {.jsfget.} =
   if url.hostType == htNone:
     return ""
-  if url.port.isNone:
-    return url.hostname
-  return url.hostname & ':' & $url.port.get
+  if url.port >= 0:
+    return url.hostname & ':' & $url.port
+  return url.hostname
 
 proc setHost*(url: URL; s: string) {.jsfset: "host".} =
   if not url.opaquePath:
@@ -1291,14 +1299,14 @@ proc setHostname*(url: URL; s: string) {.jsfset: "hostname".} =
     parseURL1(s, url, usHostname)
 
 proc port*(url: URL): string {.jsfget.} =
-  if url.port.isSome:
-    return $url.port.get
+  if url.port >= 0:
+    return $url.port
   return ""
 
 proc setPort*(url: URL; s: string) {.jsfset: "port".} =
   if url.isNetPath():
     if s == "":
-      url.port = none(uint16)
+      url.port = -1
     else:
       parseURL1(s, url, usPort)
 
@@ -1327,11 +1335,13 @@ proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
     url.hash = "#"
     parseURL1(s, url, usFragment)
 
-proc jsParse(url: string; base = none(string)): URL {.jsstfunc: "URL.parse".} =
-  return newURL(url, base).get(nil)
+proc jsParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
+    URL {.jsstfunc: "URL.parse".} =
+  return ctx.newURL(url, base).get(nil)
 
-proc canParse(url: string; base = none(string)): bool {.jsstfunc: "URL".} =
-  return newURL(url, base).isOk
+proc canParse(ctx: JSContext; url: string; base: JSValueConst = JS_UNDEFINED):
+    bool {.jsstfunc: "URL".} =
+  return ctx.newURL(url, base).isOk
 
 proc addURLModule*(ctx: JSContext) =
   ctx.registerType(URL)
