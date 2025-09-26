@@ -222,13 +222,13 @@ proc toJS*(ctx: JSContext; opt: Option): JSValue =
 proc toJS*[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
   if opt.isOk:
     when not (T is void):
-      return toJS(ctx, opt.get)
+      return ctx.toJS(opt.get)
     else:
       return JS_UNDEFINED
   else:
     when not (E is void):
       if opt.error != nil:
-        return JS_Throw(ctx, toJS(ctx, opt.error))
+        return JS_Throw(ctx, ctx.toJS(opt.error))
     return JS_EXCEPTION
 
 proc toJS*(ctx: JSContext; s: seq): JSValue =
@@ -369,15 +369,14 @@ proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValueConst):
     JSValue =
   if opt.isOk:
     when not (T is void):
-      return toJSNew(ctx, opt.get, ctor)
+      return ctx.toJSNew(opt.get, ctor)
     else:
       return JS_UNDEFINED
   else:
     when not (E is void):
-      let res = toJS(ctx, opt.error)
-      if not JS_IsNull(res):
-        return JS_Throw(ctx, res)
-    return JS_NULL
+      if opt.error != nil:
+        return JS_Throw(ctx, ctx.toJS(opt.error))
+    return JS_EXCEPTION
 
 proc toJS(ctx: JSContext; e: enum): JSValue =
   return toJS(ctx, $e)
