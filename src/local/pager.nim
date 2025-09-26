@@ -2968,7 +2968,6 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
       # pass down ostream
       w.sendFd(ostream.fd)
     ostream.sclose()
-    container.setStream(bufStream)
   else: # cloned buffer
     stream.withPacketWriterFire w: # if EOF, poll will notify us later
       w.sendFd(cstream.fd)
@@ -2977,7 +2976,7 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
     # also add a reference here; it will be removed when the container is
     # deleted
     discard loader.shareCachedItem(container.cacheId, loader.clientPid)
-    container.setCloneStream(bufStream)
+  container.setStream(bufStream)
   cstream.sclose()
   loader.put(ContainerData(stream: stream, container: container))
   pager.pollData.register(stream.fd, POLLIN)
@@ -3013,8 +3012,7 @@ proc askMailcapMsg(pager: Pager; shortContentType: string; i: int; sx: var int;
       j = pj
       sx = px
       break
-  msg = msg.substr(j)
-  move(msg)
+  msg.substr(j)
 
 proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
     contentType: string; i: int; response: Response; sx: int) =

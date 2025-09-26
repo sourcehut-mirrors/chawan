@@ -104,7 +104,7 @@ type
     lsLoading, lsCanceled, lsLoaded
 
   ContainerFlag* = enum
-    cfCloned, cfUserRequested, cfHasStart, cfCanReinterpret, cfSave, cfIsHTML,
+    cfUserRequested, cfHasStart, cfCanReinterpret, cfSave, cfIsHTML,
     cfHistory, cfHighlight, cfTailOnLoad
 
   CachedImageState* = enum
@@ -285,7 +285,6 @@ proc clone*(container: Container; newurl: URL; loader: FileLoader):
   nc.url = url
   nc.process = -1
   nc.clonedFrom = container.process
-  nc.flags.incl(cfCloned)
   nc.retry = @[]
   nc.prev = nil
   nc.next = nil
@@ -1858,16 +1857,8 @@ proc startLoad(container: Container) =
   )
 
 proc setStream*(container: Container; stream: BufStream) =
-  assert cfCloned notin container.flags
   container.iface = newBufferInterface(stream)
   container.startLoad()
-
-proc setCloneStream*(container: Container; stream: BufStream) =
-  assert cfCloned in container.flags
-  container.iface = newBufferInterface(stream)
-  if container.iface != nil: # if nil, the buffer is dead.
-    # Maybe we have to resume loading. Let's try.
-    container.startLoad()
 
 type HandleReadLine = proc(line: SimpleFlexibleLine): Opt[void]
 
