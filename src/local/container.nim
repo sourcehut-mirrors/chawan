@@ -139,6 +139,10 @@ type
     next*: Tab
     hidden*: bool # primarily for console
 
+  Mark = object
+    id: string
+    pos: PagePos
+
   Container* = ref object of RootObj
     # note: this is not the same as source.request.url (but should be synced
     # with buffer.url)
@@ -178,7 +182,6 @@ type
     replaceRef*: Container
     retry*: seq[URL]
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
-    loadState*: LoadState
     event: ContainerEvent
     lastEvent: ContainerEvent
     startpos: Option[CursorPosition]
@@ -187,9 +190,10 @@ type
     currentSelection* {.jsget.}: Highlight
     tmpJumpMark: PagePos
     jumpMark: PagePos
-    marks: Table[string, PagePos]
+    marks: seq[Mark]
     filter*: BufferFilter
     bgcolor*: CellColor
+    loadState*: LoadState
     redraw*: bool
     needslines: bool
     lastPeek: HoverType
@@ -1284,76 +1288,87 @@ proc cursorPrevParagraph(container: Container; n = 1) {.jsfunc.} =
       container.markPos()
     )
 
-proc setMark(container: Container; id: string; x = none(int); y = none(int)):
-    bool {.jsfunc.} =
-  let x = x.get(container.cursorx)
-  let y = y.get(container.cursory)
-  container.marks.withValue(id, p):
-    p[] = (x, y)
-    container.queueDraw()
-    return false
-  do:
-    container.marks[id] = (x, y)
-    container.queueDraw()
-    return true
+proc findMark(container: Container; id: string): int =
+  for i, it in container.marks.mypairs:
+    if it.id == id:
+      return i
+  -1
+
+proc setMark(container: Container; id: string; x = -1; y = -1): bool
+    {.jsfunc.} =
+  let x = if x == -1: container.cursorx else: x
+  let y = if y == -1: container.cursory else: y
+  let i = container.findMark(id)
+  if i != -1:
+    container.marks[i].pos = (x, y)
+  else:
+    container.marks.add(Mark(id: id, pos: (x, y)))
+  container.queueDraw()
+  i == -1
 
 proc clearMark(container: Container; id: string): bool {.jsfunc.} =
-  result = id in container.marks
-  container.marks.del(id)
-  container.queueDraw()
+  let i = container.findMark(id)
+  if i != -1:
+    container.marks.del(i)
+    container.queueDraw()
+  i != -1
 
-proc getMarkPos(container: Container; id: string): Opt[PagePos] {.jsfunc.} =
+proc getMarkPos(ctx: JSContext; container: Container; id: string): JSValue {.jsfunc.} =
   if id == "`" or id == "'":
-    return ok(container.jumpMark)
-  container.marks.withValue(id, p):
-    return ok(p[])
-  return err()
+    return ctx.toJS(container.jumpMark)
+  let i = container.findMark(id)
+  if i != -1:
+    return ctx.toJS(container.marks[i].pos)
+  return JS_NULL
 
 proc gotoMark(container: Container; id: string): bool {.jsfunc.} =
   container.markPos0()
-  if mark := container.getMarkPos(id):
+  let i = container.findMark(id)
+  if i != -1:
+    let mark = container.marks[i].pos
     container.setCursorXYCenter(mark.x, mark.y)
     container.markPos()
-    return true
-  return false
+  i != -1
 
 proc gotoMarkY(container: Container; id: string): bool {.jsfunc.} =
-  container.markPos0()
-  if mark := container.getMarkPos(id):
+  let i = container.findMark(id)
+  if i != -1:
+    let mark = container.marks[i].pos
     container.setCursorXYCenter(0, mark.y)
     container.markPos()
-    return true
-  return false
+  i != -1
 
-proc findNextMark(container: Container; x = none(int); y = none(int)):
-    Option[string] {.jsfunc.} =
-  #TODO optimize (maybe store marks in an OrderedTable and sort on insert?)
-  let x = x.get(container.cursorx)
-  let y = y.get(container.cursory)
-  var best: PagePos = (high(int), high(int))
-  var bestid = none(string)
-  for id, mark in container.marks:
-    if mark.y < y or mark.y == y and mark.x <= x:
+proc findNextMark(ctx: JSContext; container: Container; x = -1; y = -1): JSValue
+    {.jsfunc.} =
+  let x = if x < 0: container.cursorx else: x
+  let y = if y < 0: container.cursory else: y
+  var best: PagePos = (int.high, int.high)
+  var j = -1
+  for i, mark in container.marks.mypairs:
+    if mark.pos.y < y or mark.pos.y == y and mark.pos.x <= x:
       continue
-    if mark.y < best.y or mark.y == best.y and mark.x < best.x:
-      best = mark
-      bestid = some(id)
-  return bestid
+    if mark.pos.y < best.y or mark.pos.y == best.y and mark.pos.x < best.x:
+      best = mark.pos
+      j = i
+  if j != -1:
+    return ctx.toJS(container.marks[j].id)
+  return JS_NULL
 
-proc findPrevMark(container: Container; x = none(int); y = none(int)):
-    Option[string] {.jsfunc.} =
-  #TODO optimize (maybe store marks in an OrderedTable and sort on insert?)
-  let x = x.get(container.cursorx)
-  let y = y.get(container.cursory)
+proc findPrevMark(ctx: JSContext; container: Container; x = -1; y = -1):
+    JSValue {.jsfunc.} =
+  let x = if x < 0: container.cursorx else: x
+  let y = if y < 0: container.cursory else: y
   var best: PagePos = (-1, -1)
-  var bestid = none(string)
-  for id, mark in container.marks:
-    if mark.y > y or mark.y == y and mark.x >= x:
+  var j = -1
+  for i, mark in container.marks.mypairs:
+    if mark.pos.y > y or mark.pos.y == y and mark.pos.x >= x:
       continue
-    if mark.y > best.y or mark.y == best.y and mark.x > best.x:
-      best = mark
-      bestid = some(id)
-  return bestid
+    if mark.pos.y > best.y or mark.pos.y == best.y and mark.pos.x > best.x:
+      best = mark.pos
+      j = i
+  if j != -1:
+    return ctx.toJS(container.marks[j].id)
+  return JS_NULL
 
 proc cursorNthLink(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
@@ -1936,11 +1951,11 @@ proc drawLines*(container: Container; display: var FixedGrid;
 
 proc highlightMarks*(container: Container; display: var FixedGrid;
     hlcolor: CellColor) =
-  for mark in container.marks.values:
-    if mark.x in container.fromx ..< container.fromx + display.width and
-        mark.y in container.fromy ..< container.fromy + display.height:
-      let x = mark.x - container.fromx
-      let y = mark.y - container.fromy
+  for mark in container.marks:
+    if mark.pos.x in container.fromx ..< container.fromx + display.width and
+        mark.pos.y in container.fromy ..< container.fromy + display.height:
+      let x = mark.pos.x - container.fromx
+      let y = mark.pos.y - container.fromy
       let n = y * display.width + x
       if hlcolor != defaultColor:
         display[n].format.bgcolor = hlcolor
