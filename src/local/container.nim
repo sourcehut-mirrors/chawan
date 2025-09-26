@@ -214,7 +214,6 @@ type
     ndPrevSibling = "prev-sibling"
     ndNextSibling = "next-sibling"
     ndParent = "parent"
-    ndFirstChild
     ndAny = "any"
 
 jsDestructor(Highlight)
@@ -1786,7 +1785,7 @@ proc hoverCachedImage(container: Container): string {.jsfget.} =
 proc find*(container: Container; dir: NavDirection): Container {.jsfunc.} =
   return case dir
   of ndPrev, ndPrevSibling, ndParent: container.prev
-  of ndNext, ndNextSibling, ndFirstChild: container.next
+  of ndNext, ndNextSibling: container.next
   of ndAny:
     if container.prev != nil: container.prev else: container.next
 

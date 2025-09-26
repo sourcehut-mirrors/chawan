@@ -1533,8 +1533,7 @@ const OppositeMap = [
   ndNext: ndPrev,
   ndPrevSibling: ndNextSibling,
   ndNextSibling: ndPrevSibling,
-  ndParent: ndFirstChild,
-  ndFirstChild: ndParent,
+  ndParent: ndNext,
   ndAny: ndAny
 ]
 
