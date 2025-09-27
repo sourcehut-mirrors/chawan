@@ -45,6 +45,7 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
       cgiDir: seq[string](config.external.cgiDir),
       tmpdir: config.external.tmpdir,
       configDir: config.dir,
+      dataDir: config.dataDir,
       bookmark: config.external.bookmark,
       maxNetConnections: config.network.maxNetConnections
     ))

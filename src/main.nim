@@ -204,13 +204,12 @@ const defaultConfig = staticRead"res/config.toml"
 
 proc initConfig(ctx: ParamParseContext; config: Config;
     warnings: var seq[string]; jsctx: JSContext): Err[string] =
-  var dataDir: string
-  let ps = openConfig(config.dir, dataDir, ctx.configPath, warnings)
+  let ps = openConfig(config.dir, config.dataDir, ctx.configPath, warnings)
   if ps == nil and ctx.configPath.isSome:
     # The user specified a non-existent config file.
     return err("failed to open config file " & ctx.configPath.get)
   if twtstr.setEnv("CHA_DIR", config.dir).isErr or
-      twtstr.setEnv("CHA_DATA_DIR", dataDir).isErr:
+      twtstr.setEnv("CHA_DATA_DIR", config.dataDir).isErr:
     die("failed to set env vars")
   ?config.parseConfig("res", defaultConfig, warnings, jsctx, "res/config.toml")
   let cwd = myposix.getcwd()
