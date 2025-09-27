@@ -45,33 +45,35 @@ proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
   dealloc(bytecode)
   return ok(move(regex))
 
-proc exec*(regex: Regex; str: string; start = 0; length = -1; nocaps = false):
-    RegexResult =
+proc exec*(regex: Regex; s: openArray[char]; start = 0; length = -1;
+    nocaps = false): RegexResult =
   let length = if length == -1:
-    str.len
+    s.len
   else:
     length
-  assert start in 0 .. length
+  assert start >= 0
+  if start >= length:
+    return RegexResult()
   let bytecode = unsafeAddr regex.bytecode[0]
   let captureCount = lre_get_capture_count(bytecode)
   var capture: ptr UncheckedArray[int] = nil
   if captureCount > 0:
     let size = sizeof(ptr uint8) * captureCount * 2
     capture = cast[ptr UncheckedArray[int]](alloc0(size))
-  var cstr = cstring(str)
+  let base = cast[ptr uint8](unsafeAddr s[0])
   let flags = lre_get_flags(bytecode).toLREFlags
   var start = start
   result = RegexResult()
   while true:
-    let ret = lre_exec(cast[ptr ptr uint8](capture), bytecode,
-      cast[ptr uint8](cstr), cint(start), cint(length), cint(3), nil)
+    let ret = lre_exec(cast[ptr ptr uint8](capture), bytecode, base,
+      cint(start), cint(length), cint(3), nil)
     if ret != 1: #TODO error handling? (-1)
       break
     result.success = true
     if captureCount == 0 or nocaps:
       break
     var caps: seq[RegexCapture] = @[]
-    let cstrAddress = cast[int](cstr)
+    let cstrAddress = cast[int](base)
     let ps = start
     start = capture[1] - cstrAddress
     for i in 0 ..< captureCount:
@@ -81,11 +83,11 @@ proc exec*(regex: Regex; str: string; start = 0; length = -1; nocaps = false):
     result.captures.add(caps)
     if LRE_FLAG_GLOBAL notin flags:
       break
-    if start >= str.len:
+    if start >= s.len:
       break
     if ps == start: # avoid infinite loop: skip the first UTF-8 char.
       inc start
-      while start < str.len and uint8(str[start]) in 0x80u8 .. 0xBFu8:
+      while start < s.len and uint8(s[start]) in 0x80u8 .. 0xBFu8:
         inc start
   if captureCount > 0:
     dealloc(capture)

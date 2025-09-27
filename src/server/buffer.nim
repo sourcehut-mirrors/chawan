@@ -1765,7 +1765,7 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
     for it in toRemove:
       it.remove()
     for text in texts:
-      var res = regex.exec(text.data)
+      var res = regex.exec(text.data.s)
       if res.success:
         var offset = 0
         var data = ""
