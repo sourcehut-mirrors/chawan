@@ -21,10 +21,12 @@ The canonical configuration file path is ~/.chawan/config.toml, but
 the search path accommodates XDG basedirs as well:
 
 1. config file specified through -C switch -> use that
-2. `$CHA_DIR` is set -> use `$CHA_DIR`/config.toml
-3. `$XDG_CONFIG_HOME` is set -> use `$XDG_CONFIG_HOME`/chawan/config.toml
-4. ~/.config/chawan/config.toml exists -> use that
-5. ~/.chawan/config.toml exists -> use that
+2. `$CHA_DIR` is set -> use `$CHA_DIR/config.toml`
+3. `${XDG_CONFIG_HOME:-~/.config}/chawan/config.toml` exists -> use that
+4. `~/.chawan/config.toml` exists -> use that
+
+See the [path handling](#path-handling) section for details on how the
+config directory can be accessed.
 
 <!-- MANOFF -->
 **Table of contents**
@@ -1875,10 +1877,16 @@ Some environment variables are also exported by Chawan:
 
 * `$CHA_BIN_DIR`: the directory which the `cha` binary resides in.
   Symbolic links are automatically resolved to determine this path.
-* `$CHA_LIBEXEC_DIR`: the directory for all executables Chawan uses
-  for operation. By default, this is `$CHA_BIN_DIR/../libexec/chawan`.
-* `$CHA_DIR`: the configuration directory.  (This can also be set
-  by the user; see the top section for details.)
+* `$CHA_LIBEXEC_DIR`: the directory for all executables Chawan uses for
+  operation. By default, this is `$CHA_BIN_DIR/../libexec/chawan`.
+* `$CHA_DIR`: the configuration directory.  (This can also be set by the
+  user; see the top section for details.)
+* `$CHA_DATA_DIR`: if the configuration file uses XDG base directories, this
+  is `${XDG_DATA_HOME:-$HOME/.local/share}/chawan`.  Otherwise, it is the
+  same as `$CHA_DIR`.
+	- Exception: if `$CHA_DIR` is set before `cha` is invoked, then
+	  `$CHA_DATA_DIR` is also read.  This is to make nested invocations
+	  work in configurations with XDG basedirs.
 
 ### Word types
 

@@ -39,7 +39,7 @@
 # * think of a better structured bookmark format?
 # * rewrite in Nim?
 
-bookmark_file=${CHA_BOOKMARK:-"${CHA_DIR:-"$HOME/.chawan"}/bookmark.md"}
+bookmark_file=${CHA_BOOKMARK:-"${CHA_DATA_DIR:-"$HOME/.chawan"}/bookmark.md"}
 
 # utils
 die() {
@@ -188,6 +188,7 @@ a.heading { display: none }
 # Bookmarks'
 
 init() {
+	mkdir -p "$(dirname "$bookmark_file")"
 	safe_println "$init_string" >>"$bookmark_file"
 }
 

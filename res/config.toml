@@ -43,10 +43,10 @@ urimethodmap = [
 	"/etc/urimethodmap",
 	"/usr/local/etc/w3m/urimethodmap"
 ]
-bookmark = "bookmark.md"
-history-file = "history.uri"
+bookmark = "$CHA_DATA_DIR/bookmark.md"
+history-file = "$CHA_DATA_DIR/history.uri"
 history-size = 100
-cookie-file = "cookies.txt"
+cookie-file = "$CHA_DATA_DIR/cookies.txt"
 tmpdir = "${TMPDIR:-/tmp}/cha-tmp-$LOGNAME"
 editor = "${VISUAL:-${EDITOR:-vi}}"
 cgi-dir = ["cgi-bin", "$CHA_LIBEXEC_DIR/cgi-bin"]

@@ -26,14 +26,15 @@ the search path accommodates XDG basedirs as well:
 .IP "1." 3
 config file specified through \-C switch \-> use that
 .IP "2." 3
-\f[CR]$CHA_DIR\f[R] is set \-> use \f[CR]$CHA_DIR\f[R]/config.toml
+\f[CR]$CHA_DIR\f[R] is set \-> use \f[CR]$CHA_DIR/config.toml\f[R]
 .IP "3." 3
-\f[CR]$XDG_CONFIG_HOME\f[R] is set \-> use
-\f[CR]$XDG_CONFIG_HOME\f[R]/chawan/config.toml
+\f[CR]${XDG_CONFIG_HOME:\-\(ti/.config}/chawan/config.toml\f[R] exists
+\-> use that
 .IP "4." 3
-\(ti/.config/chawan/config.toml exists \-> use that
-.IP "5." 3
-\(ti/.chawan/config.toml exists \-> use that
+\f[CR]\(ti/.chawan/config.toml\f[R] exists \-> use that
+.PP
+See the path handling section for details on how the config directory
+can be accessed.
 .SS Start
 Start\-up options are to be placed in the \f[CR][start]\f[R] section.
 .PP
@@ -2304,6 +2305,18 @@ By default, this is \f[CR]$CHA_BIN_DIR/../libexec/chawan\f[R].
 .IP \(bu 2
 \f[CR]$CHA_DIR\f[R]: the configuration directory.
 (This can also be set by the user; see the top section for details.)
+.IP \(bu 2
+\f[CR]$CHA_DATA_DIR\f[R]: if the configuration file uses XDG base
+directories, this is
+\f[CR]${XDG_DATA_HOME:\-$HOME/.local/share}/chawan\f[R].
+Otherwise, it is the same as \f[CR]$CHA_DIR\f[R].
+.RS 2
+.IP \(bu 2
+Exception: if \f[CR]$CHA_DIR\f[R] is set before \f[CR]cha\f[R] is
+invoked, then \f[CR]$CHA_DATA_DIR\f[R] is also read.
+This is to make nested invocations work in configurations with XDG
+basedirs.
+.RE
 .SS Word types
 Word\-based pager commands can operate with different definitions of
 words.

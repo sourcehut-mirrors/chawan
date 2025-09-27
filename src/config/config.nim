@@ -172,6 +172,7 @@ type
     jsvfns*: seq[JSValueFunction]
     arraySeen*: TableRef[string, int] # table arrays seen
     dir* {.jsget.}: string
+    dataDir* {.jsget.}: string
     `include` {.jsget.}: seq[ChaPathResolved]
     start* {.jsget.}: StartConfig
     buffer* {.jsget.}: BufferSectionConfig
@@ -390,7 +391,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
   when x isnot typeof(Config()[]):
     let k = k & '.'
   for fk, fv in x.fieldPairs:
-    when fk notin ["jsvfns", "arraySeen", "dir"]:
+    when fk notin ["jsvfns", "arraySeen", "dir", "dataDir"]:
       const kebabk = camelToKebabCase(fk)
       var x: TomlValue
       if v.pop(kebabk, x):
@@ -794,27 +795,35 @@ template getNormalAction*(config: Config; s: string): string =
 template getLinedAction*(config: Config; s: string): string =
   config.line.getOrDefault(s)
 
-proc openConfig*(dir: var string; override: Option[string];
+proc openConfig*(dir, dataDir: var string; override: Option[string];
     warnings: var seq[string]): PosixStream =
   if override.isSome:
     if override.get.len > 0 and override.get[0] == '/':
       dir = parentDir(override.get)
+      dataDir = dir
       return newPosixStream(override.get)
-    else:
-      let path = myposix.getcwd() / override.get
-      dir = parentDir(path)
-      return newPosixStream(path)
-  dir = getEnv("CHA_DIR")
+    let path = myposix.getcwd() / override.get
+    dir = parentDir(path)
+    return newPosixStream(path)
+  dir = getEnvEmpty("CHA_DIR")
   if dir != "":
+    # mainly just to behave sanely in nested invocations
+    dataDir = getEnvEmpty("CHA_DATA_DIR", dir)
     return newPosixStream(dir / "config.toml")
-  dir = getEnv("XDG_CONFIG_HOME")
+  dir = getEnvEmpty("XDG_CONFIG_HOME")
   if dir != "":
     dir = dir / "chawan"
-    return newPosixStream(dir / "config.toml")
-  dir = expandPath("~/.config/chawan")
+  else:
+    dir = expandPath("~/.config/chawan")
   if (let fs = newPosixStream(dir / "config.toml"); fs != nil):
+    let s = getEnvEmpty("XDG_DATA_HOME")
+    if s != "":
+      dataDir = s / "chawan"
+    else:
+      dataDir = expandPath("~/.local/share/chawan")
     return fs
   dir = expandPath("~/.chawan")
+  dataDir = dir
   return newPosixStream(dir / "config.toml")
 
 # called after parseConfig returns

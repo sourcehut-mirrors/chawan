@@ -16,7 +16,7 @@ proc sdie(s: string) =
 proc openKnownHosts(os: PosixStream): (AChaFile, string) =
   var path = getEnvEmpty("GMIFETCH_KNOWN_HOSTS")
   if path == "":
-    let ourDir = getEnvEmpty("CHA_DIR")
+    let ourDir = getEnvEmpty("CHA_DATA_DIR")
     if ourDir == "":
       cgiDie(ceInternalError, "config dir missing")
     path = ourDir & '/' & "gemini_known_hosts"

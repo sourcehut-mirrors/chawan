@@ -44,7 +44,7 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
       w3mCGICompat: config.external.w3mCgiCompat,
       cgiDir: seq[string](config.external.cgiDir),
       tmpdir: config.external.tmpdir,
-      configdir: config.dir,
+      configDir: config.dir,
       bookmark: config.external.bookmark,
       maxNetConnections: config.network.maxNetConnections
     ))
@@ -216,7 +216,8 @@ proc setupForkServerEnv(config: LoaderConfig): Opt[void] =
   ?twtstr.setEnv("GATEWAY_INTERFACE", "CGI/1.1")
   ?twtstr.setEnv("CHA_INSECURE_SSL_NO_VERIFY", "0")
   ?twtstr.setEnv("CHA_TMP_DIR", config.tmpdir)
-  ?twtstr.setEnv("CHA_DIR", config.configdir)
+  ?twtstr.setEnv("CHA_DIR", config.configDir)
+  ?twtstr.setEnv("CHA_DATA_DIR", config.dataDir)
   ?twtstr.setEnv("CHA_BOOKMARK", config.bookmark)
   ok()
 

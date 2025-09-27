@@ -564,13 +564,22 @@ proc cleanup(pager: Pager) =
     pager.alive = false
     pager.term.quit()
     let hist = pager.lineHist[lmLocation]
+    let hasConfigDir = dirExists(pager.config.dir)
     if not hist.transient:
+      if hasConfigDir and not dirExists(pager.config.dataDir):
+        # Basedir case: data dir is not the same as config dir.
+        # I'd try to make parent dirs but in all likelihood some other
+        # program has already spammed this nonsense into $HOME so whatever.
+        discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
       if hist.write(pager.config.external.historyFile).isErr:
-        if dirExists(pager.config.dir):
+        if not hasConfigDir:
           # History is enabled by default, so do not print the error
           # message if no config dir exists.
           pager.alert("failed to save history")
     if not pager.cookieJars.transient:
+      if hasConfigDir and not dirExists(pager.config.dataDir):
+        # see above
+        discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
       if pager.cookieJars.write(pager.config.external.cookieFile).isErr:
         pager.alert("failed to save cookies")
     for msg in pager.alerts:

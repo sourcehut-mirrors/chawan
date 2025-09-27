@@ -168,7 +168,8 @@ type
     uriMethodMap*: URIMethodMap
     w3mCGICompat*: bool
     tmpdir*: string
-    configdir*: string
+    configDir*: string
+    dataDir*: string
     bookmark*: string
     maxNetConnections*: int
 
