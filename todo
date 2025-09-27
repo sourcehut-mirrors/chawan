@@ -26,9 +26,6 @@ buffer:
 	* needs some sort of conditional formatting in pager, e.g. give
 	  all Formats an id in buffer and send a list of "if URL
 	  visited, change Format" commands
-- when the log buffer crashes, print its contents to stderr
-	* easiest way seems to be to just dump its cache file
-- add tabs
 - xhtml
 pager:
 - handle long lines

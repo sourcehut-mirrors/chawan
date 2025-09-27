@@ -47,7 +47,7 @@ proc config(client: Client): Config {.jsfget.} =
   return client.pager.config
 
 proc console(client: Client): Console {.jsrfget.} =
-  return client.pager.consoleWrapper.console
+  return client.pager.console
 
 proc suspend(client: Client) {.jsfunc.} =
   client.pager.term.quit()
@@ -68,7 +68,7 @@ proc alert(client: Client; msg: string) {.jsfunc.} =
   client.pager.alert(msg)
 
 proc consoleBuffer(client: Client): Container {.jsfget.} =
-  return client.pager.consoleWrapper.container
+  return client.pager.pinned.console
 
 proc flushConsole*(client: Client) {.jsfunc.} =
   client.pager.flushConsole()

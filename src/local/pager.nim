@@ -114,11 +114,6 @@ type
     redraw: bool
     grid: FixedGrid
 
-  ConsoleWrapper* = object
-    console*: Console
-    container*: Container
-    prev*: Container
-
   # Mouse data
   MouseClickState = enum
     mcsNormal, mcsDouble
@@ -133,6 +128,11 @@ type
     inSelection: bool
     moveType: MouseMoveType
 
+  Pinned = object
+    downloads: Container
+    console*: Container
+    prev: Container
+
   Pager* = ref object of RootObj
     alive: bool
     blockTillRelease: bool
@@ -142,6 +142,9 @@ type
     inEval: bool
     notnum: bool # has a non-numeric character been input already?
     reverseSearch: bool
+    dumpConsoleFile: bool
+    consoleCacheId: int
+    consoleFile: string
     alertState: PagerAlertState
     precnum: int32 # current number prefix (when vi-numeric-prefix is true)
     alerts: seq[string]
@@ -149,12 +152,12 @@ type
     askPromise*: Promise[string]
     askPrompt: string
     config*: Config
-    consoleWrapper*: ConsoleWrapper
+    console*: Console
     tabHead: Tab # not nil
     tab: Tab # not nil
     cookieJars: CookieJarMap
     surfaces: array[SurfaceType, Surface]
-    downloads: Container
+    pinned*: Pinned
     exitCode*: int
     forkserver*: ForkServer
     inputBuffer: string # currently uninterpreted characters
@@ -200,7 +203,7 @@ type
 jsDestructor(Pager)
 
 # Forward declarations
-proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper
+proc addConsole(pager: Pager; interactive: bool): Console
 proc alert*(pager: Pager; msg: string)
 proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
   contentType: string; i: int; response: Response; sx: int)
@@ -243,9 +246,6 @@ proc bufWidth(pager: Pager): int =
 
 proc bufHeight(pager: Pager): int =
   return pager.attrs.height - 1
-
-proc console(pager: Pager): Console =
-  return pager.consoleWrapper.console
 
 iterator tabs(pager: Pager): Tab {.inline.} =
   var tab = pager.tabHead
@@ -536,7 +536,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     loaderPid: loaderPid,
     cookieJars: newCookieJarMap(),
     tabHead: tab,
-    tab: tab
+    tab: tab,
+    consoleCacheId: -1
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
@@ -582,6 +583,13 @@ proc cleanup(pager: Pager) =
     assert not pager.inEval
     pager.jsctx.free()
     pager.jsrt.free()
+    if pager.console != nil and pager.dumpConsoleFile:
+      if file := chafile.fopen(pager.consoleFile, "r+"):
+        let stderr = cast[ChaFile](stderr)
+        var buffer {.noinit.}: array[1024, uint8]
+        while (let n = file.read(buffer); n != 0):
+          if stderr.write(buffer.toOpenArray(0, n - 1)).isErr:
+            break
 
 proc quit*(pager: Pager; code: int) =
   pager.cleanup()
@@ -956,7 +964,7 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     pager.alert("Failed to query DA1, please set display.query-da1 = false")
   for st in SurfaceType:
     pager.clear(st)
-  pager.consoleWrapper = pager.addConsole(interactive = istream != nil)
+  pager.console = pager.addConsole(istream != nil)
   var gpager {.global.}: Pager = nil
   gpager = pager
   discard atexit(proc() {.cdecl.} =
@@ -1587,6 +1595,14 @@ proc alert*(pager: Pager; msg: string) {.jsfunc.} =
   if msg != "":
     pager.alerts.add(msg)
 
+proc updatePinned(pager: Pager; container, target: Container) =
+  if pager.pinned.downloads == container:
+    pager.pinned.downloads = target
+  if pager.pinned.console == container:
+    pager.pinned.console = target
+  if pager.pinned.prev == container:
+    pager.pinned.prev = target
+
 # replace target with container
 proc replace(pager: Pager; target, container: Container) =
   assert container != target
@@ -1608,8 +1624,7 @@ proc replace(pager: Pager; target, container: Container) =
     container.prev.next = container
   if container.next != nil:
     container.next.prev = container
-  if pager.downloads == container:
-    pager.downloads = target
+  pager.updatePinned(container, target)
   if pager.container == target:
     pager.setContainer(container)
 
@@ -1629,8 +1644,7 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     container.replaceRef = nil
   let wasCurrent = pager.container == container
   pager.setTab(container, nil)
-  if pager.downloads == container:
-    pager.downloads = nil
+  pager.updatePinned(container, nil)
   if container.replace != nil:
     container.replace = nil
   elif container.replaceBackup != nil:
@@ -1963,7 +1977,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     replaceBackup: Container = nil; redirectDepth = 0;
     referrer: Container = nil; save = false; history = true;
     url: URL = nil; scripting = none(ScriptingMode); cookie = none(CookieMode);
-    add = true): Container =
+    add = true; title = ""): Container =
   pager.navDirection = ndNext
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
@@ -2005,6 +2019,7 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
       bufferConfig,
       loaderConfig,
       request,
+      title = title,
       redirectDepth = redirectDepth,
       contentType = contentType,
       flags = flags,
@@ -2101,19 +2116,8 @@ proc fromJSURL(ctx: JSContext; val: JSValueConst): Opt[URL] =
   url = ?ctx.newURL(s)
   ok(url)
 
-proc addTab(ctx: JSContext; pager: Pager; buffer: JSValueConst = JS_UNDEFINED):
-    JSValue {.jsfunc.} =
+proc addTab(pager: Pager; c: Container) =
   let tab = Tab()
-  var c: Container
-  if ctx.fromJS(buffer, c).isErr:
-    let url = if JS_IsUndefined(buffer):
-      parseURL0("about:blank")
-    else:
-      let parsed = ctx.fromJSURL(buffer)
-      if parsed.isErr:
-        return JS_EXCEPTION
-      parsed.get
-    c = pager.gotoURL(newRequest(url), history = false, add = false)
   if pager.tab.next != nil:
     pager.tab.next.prev = tab
   # add to link first, or setTab dies
@@ -2126,6 +2130,20 @@ proc addTab(ctx: JSContext; pager: Pager; buffer: JSValueConst = JS_UNDEFINED):
   tab.current = c
   c.queueDraw()
   pager.tab = tab
+
+proc addTab(ctx: JSContext; pager: Pager; buffer: JSValueConst = JS_UNDEFINED):
+    JSValue {.jsfunc.} =
+  var c: Container
+  if ctx.fromJS(buffer, c).isErr:
+    let url = if JS_IsUndefined(buffer):
+      parseURL0("about:blank")
+    else:
+      let parsed = ctx.fromJSURL(buffer)
+      if parsed.isErr:
+        return JS_EXCEPTION
+      parsed.get
+    c = pager.gotoURL(newRequest(url), history = false, add = false)
+  pager.addTab(c)
   JS_UNDEFINED
 
 proc prevTab(pager: Pager) {.jsfunc.} =
@@ -2215,64 +2233,82 @@ proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
     pager.alert("failed to write history")
   return url
 
+proc addConsoleFile(pager: Pager): Opt[ChaFile] =
+  let url = parseURL0("stream:console")
+  let ps = pager.loader.addPipe(url.pathname)
+  if ps == nil:
+    return err()
+  ps.setCloseOnExec()
+  let file = ?ps.fdopen("w")
+  let response = pager.loader.doRequest(newRequest(url))
+  if response.res != 0:
+    discard file.close()
+    return err()
+  let cacheId = pager.loader.addCacheFile(response.outputId)
+  if cacheId == -1:
+    discard file.close()
+    return err()
+  response.close()
+  pager.consoleCacheId = cacheId
+  pager.consoleFile = pager.getCacheFile(cacheId)
+  ok(file)
+
 const ConsoleTitle = "Browser Console"
 
 proc showConsole(pager: Pager) =
-  let container = pager.consoleWrapper.container
-  if pager.container != container:
-    pager.consoleWrapper.prev = pager.container
-    pager.setContainer(container)
+  if pager.consoleCacheId == -1:
+    return
+  let current = pager.container
+  if pager.pinned.console == nil:
+    let request = newRequest("cache:" & $pager.consoleCacheId)
+    let console = pager.gotoURL(request, none(URL), "text/plain",
+      CHARSET_UNKNOWN, add = false, title = ConsoleTitle)
+    pager.pinned.console = console
+    pager.addTab(console)
+  if current != pager.pinned.console:
+    pager.pinned.prev = current
+    pager.setContainer(pager.pinned.console)
 
 proc hideConsole(pager: Pager) =
-  if pager.container == pager.consoleWrapper.container:
-    pager.setContainer(pager.consoleWrapper.prev)
+  if pager.consoleCacheId != -1 and pager.container == pager.pinned.console:
+    pager.setContainer(pager.pinned.prev)
 
 proc clearConsole(pager: Pager) =
-  let url = parseURL0("stream:console")
-  let ps = pager.loader.addPipe(url.pathname)
-  if ps != nil:
-    ps.setCloseOnExec()
-    let replacement = pager.readPipe0("text/plain", CHARSET_UNKNOWN, url,
-      ConsoleTitle, {})
-    if replacement != nil:
-      replacement.replace = pager.consoleWrapper.container
-      pager.replace(pager.consoleWrapper.container, replacement)
-      pager.consoleWrapper.container = replacement
-      let console = pager.console
-      let file = ps.fdopen("w")
-      if file.isOk:
-        console.setStream(file.get)
-    else:
-      ps.sclose()
+  if pager.consoleCacheId == -1:
+    return
+  let oldCacheId = pager.consoleCacheId
+  let file = pager.addConsoleFile()
+  if file.isErr:
+    return
+  pager.loader.removeCachedItem(oldCacheId)
+  pager.console.setStream(file.get)
+  if pager.pinned.console != nil:
+    let request = newRequest("cache:" & $pager.consoleCacheId)
+    let console = pager.gotoURL(request, none(URL), "text/plain",
+      CHARSET_UNKNOWN, replace = pager.pinned.console, add = false,
+      title = ConsoleTitle)
+    pager.pinned.console = console
+    pager.addTab(console)
 
-proc addConsole(pager: Pager; interactive: bool): ConsoleWrapper =
+proc addConsole(pager: Pager; interactive: bool): Console =
   if interactive and pager.config.start.consoleBuffer:
-    let url = parseURL0("stream:console")
-    let ps = pager.loader.addPipe(url.pathname)
-    if ps != nil:
-      ps.setCloseOnExec()
+    if f := pager.addConsoleFile():
+      discard f.writeLine("Type (M-c) console.hide() to return to buffer mode.")
+      discard f.flush()
       let clearFun = proc() =
         pager.clearConsole()
       let showFun = proc() =
         pager.showConsole()
       let hideFun = proc() =
         pager.hideConsole()
-      let container = pager.readPipe0("text/plain", CHARSET_UNKNOWN, url,
-        ConsoleTitle, {})
-      if container != nil:
-        ps.write("Type (M-c) console.hide() to return to buffer mode.\n")
-        if file := ps.fdopen("w"):
-          let console = newConsole(file, clearFun, showFun, hideFun)
-          return ConsoleWrapper(console: console, container: container)
-      else:
-        ps.sclose()
-  return ConsoleWrapper(console: newConsole(cast[ChaFile](stderr)))
+      return newConsole(f, clearFun, showFun, hideFun)
+    pager.alert("Failed to open temp file for console")
+  return newConsole(cast[ChaFile](stderr))
 
 proc flushConsole*(pager: Pager) =
   if pager.console == nil:
     # hack for when client crashes before console has been initialized
-    let console = newConsole(cast[ChaFile](stderr))
-    pager.consoleWrapper = ConsoleWrapper(console: console)
+    pager.console = newConsole(cast[ChaFile](stderr))
   pager.handleRead(pager.forkserver.estream.fd)
 
 proc command(pager: Pager) {.jsfunc.} =
@@ -2336,10 +2372,10 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.lineData = nil
     if pager.config.external.showDownloadPanel:
       let request = newRequest("about:downloads")
-      let downloads = pager.downloads
+      let downloads = pager.pinned.downloads
       if downloads != nil:
         pager.setContainer(downloads)
-      pager.downloads = pager.gotoURL(request, history = false,
+      pager.pinned.downloads = pager.gotoURL(request, history = false,
         replace = downloads)
   else:
     pager.ask("Failed to save to " & path & ". Retry?").then(
@@ -3368,7 +3404,7 @@ proc handleEvent(pager: Pager; container: Container) =
 proc runCommand(pager: Pager) =
   if pager.scommand != "":
     pager.command0(pager.scommand)
-    let container = pager.consoleWrapper.container
+    let container = pager.pinned.console
     if container != nil:
       container.flags.incl(cfTailOnLoad)
     pager.scommand = ""
@@ -3443,23 +3479,24 @@ proc handleError(pager: Pager; fd: int) =
       pager.handleError(ConnectingContainer(data))
     elif data of ContainerData:
       let container = ContainerData(data).container
-      if container != pager.consoleWrapper.container:
-        pager.console.error("Error in buffer", $container.url)
-      else:
-        pager.consoleWrapper.container = nil
       pager.pollData.unregister(fd)
       pager.loader.unset(fd)
       if container.iface != nil:
         container.iface.stream.sclose()
         container.iface = nil
-      doAssert pager.consoleWrapper.container != nil
-      pager.showConsole()
+      let isConsole = container == pager.pinned.console
+      if isConsole:
+        pager.dumpConsoleFile = true
+      pager.deleteContainer(container, container.find(ndAny))
+      pager.console.error("Error in buffer", $container.url)
+      if not isConsole:
+        pager.showConsole()
+      dec pager.numload
     else:
       discard pager.loader.onError(fd) #TODO handle connection error?
   elif fd in pager.loader.unregistered:
     discard # already unregistered...
   else:
-    doAssert pager.consoleWrapper.container != nil
     pager.showConsole()
 
 let SIGWINCH {.importc, header: "<signal.h>", nodecl.}: cint
@@ -3501,9 +3538,8 @@ proc inputLoop(pager: Pager) =
       if (event.revents and POLLERR) != 0 or (event.revents and POLLHUP) != 0:
         pager.handleError(efd)
     if pager.timeouts.run(pager.console):
-      let container = pager.consoleWrapper.container
-      if container != nil:
-        container.flags.incl(cfTailOnLoad)
+      if pager.pinned.console != nil:
+        pager.pinned.console.flags.incl(cfTailOnLoad)
     pager.loader.unblockRegister()
     pager.loader.unregistered.setLen(0)
     pager.runJSJobs()
@@ -3552,9 +3588,9 @@ proc headlessLoop(pager: Pager) =
 proc dumpBuffers(pager: Pager) =
   pager.headlessLoop()
   for tab in pager.tabs:
-    if tab.hidden:
-      continue
     for container in tab.containers:
+      if container.iface == nil:
+        continue # ignore crashed buffers; they are already logged anyway
       if pager.drawBuffer(container, cast[ChaFile](stdout)).isOk:
         pager.handleEvents(container)
       else:
