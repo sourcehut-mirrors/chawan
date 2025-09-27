@@ -2206,7 +2206,7 @@ proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   let url = parseURL0("stream:-")
   pager.loader.passFd(url.pathname, ps.fd)
   ps.sclose()
-  discard pager.gotoURL(newRequest(url), "text/plain", cs, title = title)
+  discard pager.gotoURL(newRequest(url), contentType, cs, title = title)
 
 proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
   let url = parseURL0("stream:history")
