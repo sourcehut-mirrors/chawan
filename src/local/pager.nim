@@ -2145,23 +2145,25 @@ proc nextTab(pager: Pager) {.jsfunc.} =
 proc discardTab(pager: Pager) {.jsfunc.} =
   let tab = pager.tab
   if tab.prev != nil or tab.next != nil:
+    let prevTab = tab.prev
+    let nextTab = tab.next
     var c = tab.head
     while c != nil:
       let next = c.next
       pager.deleteContainer(c, nil)
       c = next
-    if tab.prev != nil:
-      if tab.next != nil:
-        tab.next.prev = tab.prev
-      tab.prev.next = tab.next
-      pager.tab = tab.prev
+    if prevTab != nil:
+      if nextTab != nil:
+        nextTab.prev = prevTab
+      prevTab.next = nextTab
+      pager.tab = prevTab
     else:
-      if tab.prev != nil:
-        tab.prev.next = tab.next
-      tab.next.prev = tab.prev
+      if prevTab != nil:
+        prevTab.next = nextTab
+      nextTab.prev = prevTab
       if tab == pager.tabHead:
-        pager.tabHead = tab.next
-      pager.tab = tab.next
+        pager.tabHead = nextTab
+      pager.tab = nextTab
     pager.container.queueDraw()
   else:
     pager.alert("This is the last tab")
