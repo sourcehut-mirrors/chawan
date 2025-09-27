@@ -100,7 +100,6 @@ proc forkLoader(ctx: var ForkServerContext; config: LoaderConfig;
     let forkStream = newSocketStream(sv[1])
     setProcessTitle("cha loader")
     runFileLoader(config, loaderStream, forkStream)
-    doAssert false
     exitnow(1)
   else:
     discard close(sv[1])
