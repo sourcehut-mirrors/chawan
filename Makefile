@@ -170,7 +170,8 @@ $(OUTDIR_CGI_BIN)/canvas: src/types/canvastypes.nim src/types/path.nim \
 	src/io/packetreader.nim src/types/color.nim adapter/img/stb_image.h \
 	$(sandbox) $(dynstream) $(twtstr)
 $(OUTDIR_CGI_BIN)/resize: adapter/img/stb_image_resize.h $(sandbox) $(dynstream) $(twtstr)
-$(OUTDIR_CGI_BIN)/nanosvg: $(sandbox) adapter/img/nanosvg.nim adapter/img/nanosvg.h
+$(OUTDIR_CGI_BIN)/nanosvg: $(sandbox) adapter/img/nanosvg.nim adapter/img/nanosvg.h \
+	adapter/img/nanosvgrast.h
 $(OUTDIR_LIBEXEC)/urlenc: $(twtstr) $(chafile)
 $(OUTDIR_LIBEXEC)/nc: $(lcgi)
 $(OUTDIR_LIBEXEC)/tohtml: adapter/format/ansi2html.nim adapter/format/dirlist2html.nim \
@@ -202,6 +203,7 @@ $(OUTDIR_LIBEXEC)/%: adapter/format/%
 
 $(OUTDIR_CGI_BIN)/%: adapter/img/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_CGI_BIN)"
+	rm -rf "$(OBJDIR)/$(TARGET)/$(notdir $@)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(notdir $@)" -o:"$@" $<
 
 $(OUTDIR_LIBEXEC)/%: adapter/format/%.nim adapter/nim.cfg

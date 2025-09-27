@@ -54,6 +54,11 @@ proc main() =
     # wants to modify it.
     var ss = newPosixStream(STDIN_FILENO).readAll()
     let image = nsvgParse(cstring(ss), "px", 96)
+    if image == nil or image.width < 0 or image.height < 0 or
+        cdouble(image.width) >= cdouble(cint.high) or
+        cdouble(image.height) >= cdouble(cint.high):
+      os.write("Cha-Control: ConnectionError 1 decoding failed\n")
+      quit(1)
     let width = cint(image.width)
     let height = cint(image.height)
     os.write("Cha-Image-Dimensions: " & $width & 'x' & $height & "\n\n")
@@ -61,8 +66,10 @@ proc main() =
       let v = hdr.after(':').strip()
       if hdr.until(':') == "Cha-Image-Info-Only" and v == "1":
         return
-    if width != 0 and height != 0:
+    if width >= 0 and height >= 0:
       let r = nsvgCreateRasterizer()
+      if r == nil:
+        quit(1)
       var obuf = newSeqUninit[uint8](width * height * 4)
       r.nsvgRasterize(image, 0, 0, 1, addr obuf[0], width, height, width * 4)
       discard os.writeDataLoop(obuf)

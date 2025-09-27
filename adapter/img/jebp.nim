@@ -18,10 +18,6 @@ else:
 #define JEBP_NO_STDIO
 /* #define JEBP_NO_SIMD */
 #define JEBP_IMPLEMENTATION
-/* increment this when you update jebp.h so it actually recompiles
- * (TODO: find a better way...)
- */
-#define cha_dummy 1
 #include "jebp.h"
 """.}
 type
