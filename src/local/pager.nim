@@ -222,8 +222,8 @@ proc handleEvents(pager: Pager)
 proc handleRead(pager: Pager; fd: int)
 proc headlessLoop(pager: Pager)
 proc inputLoop(pager: Pager)
-proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
-  history = true)
+proc loadURL(pager: Pager; url: string; contentType = "";
+  charset = CHARSET_UNKNOWN; history = true)
 proc openMenu(pager: Pager; x = -1; y = -1)
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   title: string)
@@ -1473,10 +1473,9 @@ proc onSetLoadInfo(pager: Pager; container: Container) =
       pager.alertState = pasLoadInfo
 
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
-    loaderConfig: LoaderClientConfig; request: Request; title = "";
-    redirectDepth = 0; flags = {cfCanReinterpret, cfUserRequested};
-    contentType = ""; charsetStack: seq[Charset] = @[]; url = request.url;
-    tab: Tab = nil): Container =
+    loaderConfig: LoaderClientConfig; request: Request; url: URL; title = "";
+    redirectDepth = 0; flags: set[ContainerFlag] = {}; contentType = "";
+    charsetStack: seq[Charset] = @[]; tab: Tab = nil): Container =
   let stream = pager.loader.startRequest(request, loaderConfig)
   if stream == nil:
     pager.alert("failed to start request for " & $request.url)
@@ -1516,9 +1515,9 @@ proc newContainerFrom(pager: Pager; container: Container; contentType: string):
     container.config,
     container.loaderConfig,
     newRequest("cache:" & $container.cacheId),
+    container.url,
     contentType = contentType,
-    charsetStack = container.charsetStack,
-    url = container.url
+    charsetStack = container.charsetStack
   )
 
 proc findConnectingContainer(pager: Pager; container: Container):
@@ -1791,8 +1790,6 @@ proc runProcessInto(cmd, ins: string): bool =
   return rv == 0
 
 proc toggleSource(pager: Pager) {.jsfunc.} =
-  if cfCanReinterpret notin pager.container.flags:
-    return
   if pager.container.sourcepair != nil:
     pager.setContainer(pager.container.sourcepair)
   else:
@@ -1971,20 +1968,14 @@ proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
       cookieJar = pager.cookieJars.addNew(cookieJarId)
     loaderConfig.cookieJar = cookieJar
 
-# Load request in a new buffer.
-proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
-    contentType = ""; cs = CHARSET_UNKNOWN; replace: Container = nil;
-    replaceBackup: Container = nil; redirectDepth = 0;
-    referrer: Container = nil; save = false; history = true;
-    url: URL = nil; scripting = none(ScriptingMode); cookie = none(CookieMode);
-    add = true; title = ""): Container =
+proc initGotoURL(pager: Pager; request: Request; charset: Charset;
+    referrer: Container; cookie: Option[CookieMode];
+    loaderConfig: var LoaderClientConfig; bufferConfig: var BufferConfig) =
   pager.navDirection = ndNext
-  var loaderConfig: LoaderClientConfig
-  var bufferConfig: BufferConfig
   var cookieJarId: string
   for i in 0 ..< pager.config.network.maxRedirect:
     var ourl: URL = nil
-    bufferConfig = pager.applySiteconf(request.url, cs, loaderConfig, ourl,
+    bufferConfig = pager.applySiteconf(request.url, charset, loaderConfig, ourl,
       cookieJarId)
     if ourl == nil:
       break
@@ -1993,66 +1984,78 @@ proc gotoURL(pager: Pager; request: Request; prevurl = none(URL);
     let referer = $referrer.url
     request.headers["Referer"] = referer
     bufferConfig.referrer = referer
-  if scripting.isSome:
-    bufferConfig.scripting = scripting.get
-  if cookie.isSome:
-    loaderConfig.cookieMode = cookie.get
+  loaderConfig.cookieMode = cookie.get(loaderConfig.cookieMode)
   pager.applyCookieJar(loaderConfig, cookieJarId)
   if request.url.username != "":
     pager.loader.addAuth(request.url)
   request.url.password = ""
-  if prevurl.isNone or
-      not prevurl.get.equals(request.url, excludeHash = true) or
-      request.url.hash == "" or request.httpMethod != hmGet or save:
-    # Basically, we want to reload the page *only* when
-    # a) we force a reload (by setting prevurl to none)
-    # b) or the new URL isn't just the old URL + an anchor
-    # I think this makes navigation pretty natural, or at least very close to
-    # what other browsers do. Still, it would be nice if we got some visual
-    # feedback on what is actually going to happen when typing a URL; TODO.
-    var flags = {cfCanReinterpret, cfUserRequested}
-    if save:
-      flags.incl(cfSave)
-    if history and bufferConfig.history:
-      flags.incl(cfHistory)
-    let container = pager.newContainer(
-      bufferConfig,
-      loaderConfig,
-      request,
-      title = title,
-      redirectDepth = redirectDepth,
-      contentType = contentType,
-      flags = flags,
-      # override the URL so that the file name is correct for saveSource
-      # (but NOT up above, so that rewrite-url works too)
-      url = if url != nil: url else: request.url
-    )
-    if container != nil:
-      if replace != nil:
-        pager.replace(replace, container)
-        if replaceBackup == nil:
-          container.replace = replace
-          replace.replaceRef = container
-        else:
-          container.replaceBackup = replaceBackup
-          replaceBackup.replaceRef = container
-      else:
-        if add:
-          pager.addContainer(container)
-      inc pager.numload
-    return container
+
+proc gotoURL0(pager: Pager; request: Request; save, history, add: bool;
+    bufferConfig: BufferConfig; loaderConfig: LoaderClientConfig;
+    title, contentType: string; redirectDepth: int; url: URL;
+    replace, replaceBackup: Container): Container =
+  var flags: set[ContainerFlag] = {}
+  if save:
+    flags.incl(cfSave)
+  if history and bufferConfig.history:
+    flags.incl(cfHistory)
+  let container = pager.newContainer(
+    bufferConfig,
+    loaderConfig,
+    request,
+    # override the URL so that the file name is correct for saveSource
+    url = if url != nil: url else: request.url,
+    title = title,
+    redirectDepth = redirectDepth,
+    contentType = contentType,
+    flags = flags,
+  )
+  if replace != nil:
+    pager.replace(replace, container)
+    #TODO surely there's a less convoluted way to achieve this...
+    if replaceBackup == nil:
+      container.replace = replace
+      replace.replaceRef = container
+    else:
+      container.replaceBackup = replaceBackup
+      replaceBackup.replaceRef = container
   else:
-    let container = pager.container
-    let url = request.url
-    let anchor = url.hash.substr(1)
-    container.iface.gotoAnchor(anchor, false, false).then(
-      proc(res: GotoAnchorResult) =
-        if res.found:
-          discard pager.dupeBuffer(container, url)
-        else:
-          pager.alert("Anchor " & url.hash & " not found")
-    )
-    return nil
+    if add:
+      pager.addContainer(container)
+  inc pager.numload
+  return container
+
+# Load request in a new buffer.
+proc gotoURL(pager: Pager; request: Request; contentType = "";
+    charset = CHARSET_UNKNOWN; replace: Container = nil;
+    replaceBackup: Container = nil; redirectDepth = 0;
+    referrer: Container = nil; save = false; history = true; url: URL = nil;
+    add = true; title = ""): Container =
+  var loaderConfig: LoaderClientConfig
+  var bufferConfig: BufferConfig
+  pager.initGotoURL(request, charset, referrer, none(CookieMode), loaderConfig,
+    bufferConfig)
+  return pager.gotoURL0(request, save, history, add, bufferConfig,
+    loaderConfig, title, contentType, redirectDepth, url, replace,
+    replaceBackup)
+
+# Check if the user is trying to go to an anchor of the current buffer.
+# If yes, the caller need not call gotoURL.
+proc gotoURLHash(pager: Pager; request: Request; current: Container;
+    save: bool): bool =
+  let url = request.url
+  if current == nil or current.url.equals(url, excludeHash = true) or
+      url.hash == "" or request.httpMethod != hmGet or not save:
+    return false
+  let anchor = url.hash.substr(1)
+  current.iface.gotoAnchor(anchor, false, false).then(
+    proc(res: GotoAnchorResult) =
+      if res.found:
+        discard pager.dupeBuffer(current, url)
+      else:
+        pager.alert("Anchor " & url.hash & " not found")
+  )
+  true
 
 proc omniRewrite(pager: Pager; s: string): string =
   for rule in pager.config.omnirule.values:
@@ -2075,19 +2078,16 @@ proc omniRewrite(pager: Pager; s: string): string =
 # * file://$PWD/<file>
 # * https://<url>
 # So we attempt to load both, and see what works.
-proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
-    history = true) =
+proc loadURL(pager: Pager; url: string; contentType = "";
+    charset = CHARSET_UNKNOWN; history = true) =
   let url0 = pager.omniRewrite(url)
   let url = expandPath(url0)
   if url.len == 0:
     return
-  if firstparse := parseURL(url):
-    let prev = if pager.container != nil:
-      some(pager.container.url)
-    else:
-      none(URL)
-    discard pager.gotoURL(newRequest(firstparse), prev, contentType, cs,
-      history = history)
+  if firstParse := parseURL(url):
+    let request = newRequest(firstParse)
+    if not pager.gotoURLHash(request, pager.container, save = false):
+      discard pager.gotoURL(request, contentType, charset, history = history)
     return
   var urls: seq[URL] = @[]
   if pager.config.network.prependScheme != "" and url[0] != '/':
@@ -2102,10 +2102,9 @@ proc loadURL(pager: Pager; url: string; contentType = ""; cs = CHARSET_UNKNOWN;
   if urls.len == 0:
     pager.alert("Invalid URL " & url)
   else:
-    let container = pager.gotoURL(newRequest(urls.pop()),
-      contentType = contentType, cs = cs, history = history)
-    if container != nil:
-      container.retry = urls
+    let container = pager.gotoURL(newRequest(urls.pop()), contentType,
+      charset = charset, history = history)
+    container.retry = urls
 
 proc fromJSURL(ctx: JSContext; val: JSValueConst): Opt[URL] =
   var url: URL
@@ -2193,34 +2192,12 @@ proc createPipe(pager: Pager): (PosixStream, PosixStream) =
     return (nil, nil)
   return (newPosixStream(pipefds[0]), newPosixStream(pipefds[1]))
 
-proc readPipe0(pager: Pager; contentType: string; cs: Charset;
-    url: URL; title: string; flags: set[ContainerFlag]): Container =
-  var url = url
-  var loaderConfig: LoaderClientConfig
-  var ourl: URL
-  var cookieJarId: string
-  let bufferConfig = pager.applySiteconf(url, cs, loaderConfig, ourl,
-    cookieJarId)
-  pager.applyCookieJar(loaderConfig, cookieJarId)
-  return pager.newContainer(
-    bufferConfig,
-    loaderConfig,
-    newRequest(url),
-    title = title,
-    flags = flags,
-    contentType = contentType
-  )
-
 proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
     title: string) =
   let url = parseURL0("stream:-")
   pager.loader.passFd(url.pathname, ps.fd)
   ps.sclose()
-  let container = pager.readPipe0(contentType, cs, url, title,
-    {cfCanReinterpret, cfUserRequested})
-  if container != nil:
-    pager.addContainer(container)
-    inc pager.numload
+  discard pager.gotoURL(newRequest(url), "text/plain", cs, title = title)
 
 proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
   let url = parseURL0("stream:history")
@@ -2261,8 +2238,8 @@ proc showConsole(pager: Pager) =
   let current = pager.container
   if pager.pinned.console == nil:
     let request = newRequest("cache:" & $pager.consoleCacheId)
-    let console = pager.gotoURL(request, none(URL), "text/plain",
-      CHARSET_UNKNOWN, add = false, title = ConsoleTitle)
+    let console = pager.gotoURL(request, "text/plain", CHARSET_UNKNOWN,
+      add = false, title = ConsoleTitle)
     pager.pinned.console = console
     pager.addTab(console)
   if current != pager.pinned.console:
@@ -2284,9 +2261,8 @@ proc clearConsole(pager: Pager) =
   pager.console.setStream(file.get)
   if pager.pinned.console != nil:
     let request = newRequest("cache:" & $pager.consoleCacheId)
-    let console = pager.gotoURL(request, none(URL), "text/plain",
-      CHARSET_UNKNOWN, replace = pager.pinned.console, add = false,
-      title = ConsoleTitle)
+    let console = pager.gotoURL(request, "text/plain", CHARSET_UNKNOWN,
+      replace = pager.pinned.console, add = false, title = ConsoleTitle)
     pager.pinned.console = console
     pager.addTab(console)
 
@@ -2403,8 +2379,8 @@ proc updateReadLine(pager: Pager) =
       of lmPassword:
         let url = LineDataAuth(pager.lineData).url
         url.password = lineedit.news
-        discard pager.gotoURL(newRequest(url), some(pager.container.url),
-          replace = pager.container, referrer = pager.container)
+        discard pager.gotoURL(newRequest(url), replace = pager.container,
+          referrer = pager.container)
         pager.lineData = nil
       of lmCommand:
         pager.scommand = lineedit.news
@@ -2518,14 +2494,19 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
   else:
     let url = ?ctx.fromJSURL(v)
     request = newRequest(url)
-  return ok(pager.gotoURL(request, contentType = t.contentType.get(""),
-    replace = t.replace.get(nil), save = t.save, history = t.history,
-    scripting = t.scripting, cookie = t.cookie))
+  var loaderConfig: LoaderClientConfig
+  var bufferConfig: BufferConfig
+  pager.initGotoURL(request, CHARSET_UNKNOWN, referrer = nil, t.cookie,
+    loaderConfig, bufferConfig)
+  bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
+  ok(pager.gotoURL0(request, t.save, t.history, add = true, bufferConfig,
+    loaderConfig, title = "", t.contentType.get(""), redirectDepth = 0,
+    url = nil, t.replace.get(nil), replaceBackup = nil))
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
   let old = pager.container
-  let container = pager.gotoURL(newRequest(pager.container.url), none(URL),
+  let container = pager.gotoURL(newRequest(pager.container.url),
     pager.container.contentType, replace = old,
     history = cfHistory in old.flags)
   container.copyCursorPos(old)
@@ -2841,12 +2822,14 @@ proc redirectTo(pager: Pager; container: Container; request: Request) =
     container.replaceBackup
   else:
     container.find(ndAny)
-  let nc = pager.gotoURL(request, some(container.url), replace = container,
-    replaceBackup = replaceBackup, redirectDepth = container.redirectDepth + 1,
-    referrer = container, save = cfSave in container.flags,
-    history = cfHistory in container.flags)
-  nc.loadinfo = "Redirecting to " & $request.url
-  pager.onSetLoadInfo(nc)
+  let save = cfSave in container.flags
+  if not pager.gotoURLHash(request, pager.container, save):
+    let nc = pager.gotoURL(request, replace = container,
+      replaceBackup = replaceBackup, redirectDepth = container.redirectDepth + 1,
+      referrer = container, save = save, history = cfHistory in container.flags)
+    if nc != nil:
+      nc.loadinfo = "Redirecting to " & $request.url
+      pager.onSetLoadInfo(nc)
   dec pager.numload
 
 proc fail(pager: Pager; container: Container; errorMessage: string) =
@@ -2854,8 +2837,7 @@ proc fail(pager: Pager; container: Container; errorMessage: string) =
   pager.deleteContainer(container, container.find(ndAny))
   if container.retry.len > 0:
     discard pager.gotoURL(newRequest(container.retry.pop()),
-      contentType = container.contentType,
-      history = cfHistory in container.flags)
+      container.contentType, history = cfHistory in container.flags)
   else:
     # Add to the history anyway, so that the user can edit the URL.
     if cfHistory in container.flags:
@@ -3154,10 +3136,7 @@ proc connected(pager: Pager; container: Container; response: Response) =
     istream.sclose()
     return
   # This forces client to ask for confirmation before quitting.
-  # (It checks a flag on container, because console buffers must not affect this
-  # variable.)
-  if cfUserRequested in container.flags:
-    pager.hasload = true
+  pager.hasload = true
   if cfHistory in container.flags:
     pager.lineHist[lmLocation].add($container.url)
   # contentType must have been set by applyResponse.
@@ -3340,14 +3319,14 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
         not event.save and not container.isHoverURL(url):
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
         if x:
-          discard pager.gotoURL(event.request, some(container.url),
-            contentType = event.contentType, referrer = pager.container,
-            save = event.save)
+          if not pager.gotoURLHash(event.request, container, event.save):
+            discard pager.gotoURL(event.request, event.contentType,
+              referrer = pager.container, save = event.save)
       )
     else:
-      discard pager.gotoURL(event.request, some(container.url),
-        contentType = event.contentType, referrer = pager.container,
-        save = event.save, url = event.url)
+      if not pager.gotoURLHash(event.request, container, event.save):
+        discard pager.gotoURL(event.request, event.contentType,
+          referrer = pager.container, save = event.save, url = event.url)
   of cetStatus:
     if pager.container == container:
       pager.showAlerts()
