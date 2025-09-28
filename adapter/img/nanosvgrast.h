@@ -956,8 +956,8 @@ static void nsvg__fillActiveEdges(unsigned char* scanline, int len, NSVGactiveEd
 }
 
 static float nsvg__clampf(float a, float mn, float mx) {
-	if ((a >= 0.0f) == (a < 0.0f))
-		return 0;
+	if (isnan(a))
+		return mn;
 	return a < mn ? mn : (a > mx ? mx : a);
 }
 
