@@ -4111,6 +4111,7 @@ proc reflectScriptAttr(element: Element; name: StaticAtom;
     satOnerror: satError,
     satOnfocus: satFocus,
     satOnblur: satBlur,
+    satOnsubmit: satSubmit,
   }
   for (n, t) in ScriptEventMap:
     if n == name:
