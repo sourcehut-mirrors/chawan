@@ -1,0 +1,10 @@
+test           flush
+[48;2;255;0;0m test test test test test[49m
+[48;2;255;0;0m           [48;2;0;0;255mwhere am I?[48;2;255;0;0mest[49m
+           [48;2;0;0;255m           [49m
+test test
+[38;2;255;40;40mhi[39mst
+[38;2;255;40;40mhi[39mst test
+test
+test test
+[38;2;255;40;40mhi[39mst

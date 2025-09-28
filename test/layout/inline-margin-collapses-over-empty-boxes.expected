@@ -1,15 +1,15 @@
-test1
+[48;2;255;0;0mtest1[49m
 test2
-test3 
-test4
+[48;2;255;0;0mtest3[49m
+[48;2;255;0;0mtest4[49m
 test5
 
 test6
-test7
+[48;2;255;0;0mtest7[49m
 test8
 
-test9 
-testa
+[48;2;255;0;0mtest9[49m
+[48;2;255;0;0mtesta[49m
 testb
 
 

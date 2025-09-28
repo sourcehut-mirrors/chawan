@@ -711,6 +711,8 @@ type
     atomsTail: InlineAtom
     charwidth: int
     paddingTodo: seq[tuple[box: InlineBox; i: int]]
+    # absolutes that want to stick to the next atom
+    pendingAbsolutes: seq[BlockBox]
     size: Size
     unpositionedFloats: seq[UnpositionedFloat]
     lastrw: int # last rune width of the previous word
@@ -747,6 +749,7 @@ type
     run: TextRun
     offset: Offset
     size: Size
+    absolutes: seq[BlockBox]
     next: InlineAtom
 
   FlowState = object
@@ -1054,7 +1057,8 @@ proc getLineWidth(fstate: FlowState): LUnit =
   of scFitContent: fstate.space.w.u
   of scStretch: max(fstate.maxChildWidth, fstate.space.w.u)
 
-proc getLineXShift(fstate: FlowState; width: LUnit): LUnit =
+proc getLineXShift(fstate: FlowState): LUnit =
+  let width = fstate.getLineWidth()
   return case fstate.computed{"text-align"}
   of TextAlignNone: LUnit(0)
   of TextAlignEnd, TextAlignRight, TextAlignChaRight:
@@ -1067,8 +1071,7 @@ proc getLineXShift(fstate: FlowState; width: LUnit): LUnit =
 # Calculate the position of atoms and background areas inside the
 # line.
 proc alignLine(fstate: var FlowState) =
-  let width = fstate.getLineWidth()
-  let xshift = fstate.getLineXShift(width)
+  let xshift = fstate.getLineXShift()
   var totalWidth: LUnit = 0
   var currentAreaOffsetX: LUnit = 0
   var currentBox: InlineBox = nil
@@ -1085,6 +1088,12 @@ proc alignLine(fstate: var FlowState) =
     minHeight = max(minHeight, atom.offset.y - fstate.offset.y + atom.size.h)
     # now position on the inline axis
     atom.offset.x += xshift
+    # absolutes track the atom, except if they have a position themselves
+    for absolute in atom.absolutes:
+      if absolute.computed{"left"}.auto and absolute.computed{"right"}.auto:
+        absolute.state.offset.x = atom.offset.x
+      if absolute.computed{"top"}.auto and absolute.computed{"bottom"}.auto:
+        absolute.state.offset.y = atom.offset.y
     totalWidth += atom.size.w
     let box = atom.ibox
     if currentBox != box:
@@ -1099,6 +1108,14 @@ proc alignLine(fstate: var FlowState) =
       # init new box
       currentBox = box
       currentAreaOffsetX = atom.offset.x
+      var it = currentBox
+      while it != nil:
+        if not it.state.startOffsetSet:
+          it.state.startOffset = atom.offset
+          it.state.startOffsetSet = true
+        if not (it.parent of InlineBox):
+          break
+        it = InlineBox(it.parent)
     if atom.ibox of InlineTextBox:
       atom.run.offset = atom.offset
     elif atom.ibox of InlineBlockBox:
@@ -1148,7 +1165,10 @@ proc getBaseline(atom: InlineAtom; lctx: LayoutContext): LUnit =
   else:
     atom.baseline(lctx)
 
-proc putAtom(lbstate: var LineBoxState; atom: InlineAtom; lctx: LayoutContext) =
+proc putAtom(lbstate: var LineBoxState; atom: InlineAtom; lctx: LayoutContext;
+    takeAbsolutes: bool) =
+  if takeAbsolutes:
+    atom.absolutes = move(lbstate.pendingAbsolutes)
   atom.offset = offset(x = lbstate.size.w, y = atom.getBaseline(lctx))
   lbstate.size.w += atom.size.w
   lbstate.baseline = max(lbstate.baseline, atom.offset.y)
@@ -1160,8 +1180,8 @@ proc putAtom(lbstate: var LineBoxState; atom: InlineAtom; lctx: LayoutContext) =
     lbstate.atomsTail.next = atom
   lbstate.atomsTail = atom
 
-proc putAtom(fstate: var FlowState; atom: InlineAtom) =
-  fstate.lbstate.putAtom(atom, fstate.lctx)
+proc putAtom(fstate: var FlowState; atom: InlineAtom; takeAbsolutes = true) =
+  fstate.lbstate.putAtom(atom, fstate.lctx, takeAbsolutes)
 
 proc addSpacing(fstate: var FlowState; ibox: InlineTextBox; shift: int;
     hang = false) =
@@ -1174,15 +1194,15 @@ proc addSpacing(fstate: var FlowState; ibox: InlineTextBox; shift: int;
       ibox: ibox,
       size: size(w = 0, h = cellHeight),
       run: run
-    ))
+    ), takeAbsolutes = false)
   let run = ibox.runs[^1]
   for i in 0 ..< shift:
     run.s &= ' '
   let w = shift * fstate.cellSize.w
-  fstate.lbstate.atomsTail.size.w += w
   if not hang:
     # In some cases, whitespace may "hang" at the end of the line. This means
     # it is written, but is not actually counted in the box's width.
+    fstate.lbstate.atomsTail.size.w += w
     fstate.lbstate.size.w += w
 
 proc flushWhitespace(fstate: var FlowState; ibox: InlineBox; hang = false) =
@@ -1195,12 +1215,17 @@ proc flushWhitespace(fstate: var FlowState; ibox: InlineBox; hang = false) =
     fstate.initLine()
     fstate.addSpacing(wbox, shift, hang)
 
-proc initLineBoxState(fstate: FlowState): LineBoxState =
+proc initLineBoxState(fstate: var FlowState): LineBoxState =
   let cellHeight = fstate.cellSize.h
+  # move over pendingAbsolutes
+  # (I guess this means it doesn't quite belong in lbstate, but FlowState is
+  # also way too overloaded so it still seems preferable)
+  var pendingAbsolutes = move(fstate.lbstate.pendingAbsolutes)
   result = LineBoxState(
     intrh: cellHeight,
     baseline: cellHeight,
-    size: size(w = 0, h = cellHeight)
+    size: size(w = 0, h = cellHeight),
+    pendingAbsolutes: move(pendingAbsolutes)
   )
 
 proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
@@ -1218,6 +1243,10 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     elif whitespace == WhitespacePreWrap:
       fstate.flushWhitespace(ibox, hang = true)
     else:
+      # Note: per standard, we really should always flush with hang except
+      # on pre, but a) w3m doesn't, b) I find hang annoying, so we don't.
+      # (I'm leaving the hang code in so it's easy to add if I ever change
+      # my mind (or add a graphical mode.))
       fstate.lbstate.whitespaceNum = 0
     # align atoms + calculate width for fit-content + place
     fstate.alignLine()
@@ -1443,7 +1472,6 @@ proc addWrapPos(fstate: var FlowState; word: var WordState) =
   word.wrapPos = word.s.len
 
 proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox; s: string) =
-  fstate.flushWhitespace(ibox)
   var word = fstate.initWord(ibox)
   let luctx = fstate.lctx.luctx
   var i = 0
@@ -1716,9 +1744,12 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
       offset.y += fstate.bctx.marginTodo.sum()
     if child.computed{"display"} in DisplayOuterInline:
       # inline-block or similar. put it on the current line.
-      # (I don't add pending spacing because other browsers don't add
-      # it either.)
-      offset.x += fstate.lbstate.size.w
+      # our position will stick to the next atom's end, which may be moved
+      # at alignLine.
+      fstate.lbstate.pendingAbsolutes.add(child)
+      # ...however, that is not guaraneteed to happen before we are actually
+      # positioned, so we also have to set a sensible offset here.
+      offset.x = fstate.lbstate.size.w + fstate.getLineXShift()
     elif fstate.lbstate.atomsHead != nil:
       # flush if there is already something on the line *and* our outer
       # display is block.
@@ -1904,7 +1935,7 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       # for the last line.
       # Well, it seems good enough.
       lctx.popPositioned(ibox.absolute, size(
-        w = 0,
+        w = fstate.maxChildWidth,
         h = fstate.offset.y + fstate.cellSize.h - ibox.state.startOffset.y
       ))
   fstate.textAlign = oldTextAlign

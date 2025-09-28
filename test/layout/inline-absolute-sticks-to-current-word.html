@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--
+This matches neither Blink, nor Gecko, but this is fine:
+* Gecko measures absolute height as one line, but we (like Blink) measure it
+  as the container's height.  This is an arbitrary decision (implementation
+  convenience.)
+* Blink doesn't flush EOL absolutes, but we (like Gecko, sort of) do.
+  This is intentional, as otherwise the link marker pseudo-elements would
+  not stick to the links in many cases.
+	- Do note however that Gecko keeps absolutes at EOL if they are
+	  preceeded by a space.  I don't, because this is more convenient
+	  to implement and also seems more consistent.
+--->
+<style>* { font-family: monospace; font-size: 16px }</style>
+<div style="position: absolute">
+test
+<div style="width: 25ch; text-align: right; background: red; position: relative">
+<span style="position: relative">
+test
+<span>
+test  
+<span style="position: absolute; height: 100%; background: blue; top: 1em">
+where am I?
+</span>
+</span>
+test test test test test
+</div>
+</div>
+</div>
+<div align=right style="width: 20ch">flush</div>
+<div style="width: 10ch; margin-top: 3em">
+<span>test test <span style="position: absolute; color: red">hi</span>test
+</div>
+<div style="width: 10ch; position: relative">
+<span style="position: relative">test test <span style="position: absolute; color: red; top: 0">hi</span></span>test
+</div>
+<!-- diverges from Gecko: -->
+<div style="width: 10ch">
+<span>test test <span style="position: absolute; color: red">hi</span> test
+</div>
