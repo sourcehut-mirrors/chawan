@@ -309,6 +309,7 @@ type
     peAfter = "after"
     peMarker = "marker"
     peLinkMarker = "-cha-link-marker"
+    peLinkHint = "-cha-link-hint"
 
   PseudoClass* = enum
     pcFirstChild = "first-child"

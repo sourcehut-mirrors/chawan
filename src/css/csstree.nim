@@ -73,6 +73,7 @@ type
 
   TreeContext = object
     markLinks: bool
+    nhints: int
     quoteLevel: int
     counters: seq[CSSCounter]
     rootProperties: CSSValues
@@ -418,6 +419,22 @@ proc addElementChildren(frame: var TreeFrame) =
       let text = Text(it)
       frame.addText(text.data)
 
+proc addInputChildren(frame: var TreeFrame; input: HTMLInputElement) =
+  let cdata = input.inputString()
+  if input.inputType in InputTypeWithSize:
+    let computed = frame.computed.inheritProperties()
+    let n = frame.computed{"-cha-input-intrinsic-size"}
+    computed{"display"} = DisplayBlock
+    computed{"width"} = cssLength(n)
+    computed{"overflow-x"} = OverflowHidden
+    var aframe = frame.ctx.initTreeFrame(input, computed)
+    if cdata != nil:
+      aframe.addText(cdata)
+    frame.addAnon(computed, move(aframe.children))
+  else:
+    if cdata != nil:
+      frame.addText(cdata)
+
 proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
   if option.select != nil and option.select.attrb(satMultiple):
     frame.addText("[")
@@ -432,29 +449,16 @@ proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
     frame.addText("]")
   frame.addElementChildren()
 
-proc addAnchorChildren(frame: var TreeFrame) =
+proc addAnchorChildren(frame: var TreeFrame; anchor: HTMLAnchorElement) =
   if frame.ctx.markLinks:
     frame.addPseudo(peLinkMarker)
+  if anchor.hint:
+    frame.addPseudo(peLinkHint)
   frame.addElementChildren()
 
 proc addChildren(frame: var TreeFrame) =
   case frame.parent.tagType
-  of TAG_INPUT:
-    let input = HTMLInputElement(frame.parent)
-    let cdata = input.inputString()
-    if input.inputType in InputTypeWithSize:
-      let computed = frame.computed.inheritProperties()
-      let n = frame.computed{"-cha-input-intrinsic-size"}
-      computed{"display"} = DisplayBlock
-      computed{"width"} = cssLength(n)
-      computed{"overflow-x"} = OverflowHidden
-      var aframe = frame.ctx.initTreeFrame(input, computed)
-      if cdata != nil:
-        aframe.addText(cdata)
-      frame.addAnon(computed, move(aframe.children))
-    else:
-      if cdata != nil:
-        frame.addText(cdata)
+  of TAG_INPUT: frame.addInputChildren(HTMLInputElement(frame.parent))
   of TAG_TEXTAREA:
     #TODO cache (do the same as with input, and add borders in render)
     frame.addText(HTMLTextAreaElement(frame.parent).textAreaString())
@@ -469,7 +473,7 @@ proc addChildren(frame: var TreeFrame) =
     let option = HTMLOptionElement(frame.parent)
     frame.addOptionChildren(option)
   of TAG_A:
-    frame.addAnchorChildren()
+    frame.addAnchorChildren(HTMLAnchorElement(frame.parent))
   elif frame.parent.tagType(satNamespaceSVG) == TAG_SVG:
     frame.addImage(SVGSVGElement(frame.parent).bitmap)
   else:
@@ -617,6 +621,8 @@ proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     stackItem = ctx.pushStackItem(styledNode)
   frame.buildChildren(styledNode)
   let box = ctx.buildInnerBox(frame, cached)
+  if styledNode.t == stElement:
+    box.element.box = box
   ctx.resetCounters(styledNode.element, countersLen, oldCountersLen,
     firstSetCounterIdx)
   if stackItem != nil:
@@ -665,7 +671,7 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     return InlineTextBox(
       computed: styledNode.computed,
       element: styledNode.element,
-      text: styledNode.counterStyle.listMarker(counter, addSuffix)
+      text: styledNode.counterStyle.listMarker(counter, addSuffix, ctx.nhints)
     )
   of stImage:
     return InlineImageBox(
@@ -675,7 +681,7 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     )
 
 # Root
-proc buildTree*(element: Element; cached: CSSBox; markLinks: bool):
+proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int):
     tuple[stack: StackItem, fixedHead: CSSAbsolute] =
   if element.computed == nil:
     element.applyStyle()
@@ -688,8 +694,13 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool):
   var ctx = TreeContext(
     rootProperties: rootProperties(),
     markLinks: markLinks,
-    stackItem: stack
+    stackItem: stack,
+    nhints: nhints
   )
+  ctx.resetCounter(satDashChaLinkCounter.toAtom(), 0, element)
+  var hintOffset = (nhints + HintMap.len - 2) div (HintMap.len - 1)
+  hintOffset = min(int(int32.high), hintOffset)
+  ctx.resetCounter(satDashChaHintCounter.toAtom(), int32(hintOffset), element)
   let root = BlockBox(ctx.build(cached, styledNode, forceZ = false))
   stack.box = root
   root.absolute = ctx.absoluteHead

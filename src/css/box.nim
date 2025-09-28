@@ -231,7 +231,10 @@ proc `+=`*(span: var Span; u: LUnit) =
   span.send += u
 
 proc `<`*(a, b: Offset): bool =
-  return a.x < b.x and a.y < b.y
+  a.x < b.x and a.y < b.y
+
+proc `<=`*(a, b: Offset): bool =
+  a.x <= b.x and a.y <= b.y
 
 proc borderTopLeft*(sizes: ResolvedSizes; cellSize: Size): Offset =
   var o = offset(0, 0)

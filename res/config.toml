@@ -410,6 +410,39 @@ toggleCommandMode = '''
 }
 '''
 showFullAlert = '() => pager.showFullAlert()'
+toggleLinkHints = '''
+async () => {
+	const urls = await pager.toggleLinkHints();
+	const chars = "abcdef";
+	function hint(n) {
+		let tmp = [];
+		for (n--; n >= 0; n = Math.floor(n / 6) - 1)
+			tmp.push(chars[n % 6]);
+		return tmp.reverse().join("");
+	}
+	const map = {};
+	let offset = Math.floor((urls.length + chars.length - 2) / (chars.length - 1));
+	for (let i = 0, j = offset; i < urls.length; i++, j++) {
+		let h = hint(j);
+		let it = map;
+		for (let k = 0, L = h.length - 1; k < L; k++)
+			it = it[h[k]] ?? (it[h[k]] = {});
+		it[h.at(-1)] = urls[i];
+	}
+	let s = "";
+	let it = map;
+	while (it && !it.url) {
+		const c = await pager.askChar(s);
+		it = it[c];
+		s += c;
+	}
+	pager.hideLinkHints();
+	if (it.url)
+		pager.setCursorXY(it.x, it.y);
+	else
+		pager.alert("no such hint");
+}
+'''
 
 [cmd.buffer]
 cursorLeft = 'n => pager.cursorLeft(n)'

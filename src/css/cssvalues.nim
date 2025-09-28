@@ -138,6 +138,7 @@ type
     ListStyleTypeKatakanaIroha = "katakana-iroha"
     ListStyleTypeJapaneseInformal = "japanese-informal"
     ListStyleTypeJapaneseFormal = "japanese-formal"
+    ListStyleTypeHint = "-cha-hint"
 
   CSSVerticalAlign* = enum
     VerticalAlignBaseline = "baseline"
@@ -893,7 +894,12 @@ proc japaneseNumber(i: int32; formal: bool): string =
     s &= $ss[j]
   move(s)
 
-proc listMarker0(t: CSSListStyleType; i: int32): string =
+#TODO some way to specify hint map?
+const HintMap* = "abcdef".toPoints()
+proc getHint(i: int32; nhints: int): string =
+  numToBase(i - 1, HintMap)
+
+proc listMarker0(t: CSSListStyleType; i: int32; nhints: int): string =
   return case t
   of ListStyleTypeNone: ""
   of ListStyleTypeDisc: "•" # U+2022
@@ -915,10 +921,11 @@ proc listMarker0(t: CSSListStyleType; i: int32): string =
   of ListStyleTypeCjkHeavenlyStem: numToFixed(i, HeavenlyStemMap)
   of ListStyleTypeJapaneseInformal: japaneseNumber(i, formal = false)
   of ListStyleTypeJapaneseFormal: japaneseNumber(i, formal = true)
+  of ListStyleTypeHint: getHint(i, nhints)
 
 proc listMarkerSuffix(t: CSSListStyleType): string =
   return case t
-  of ListStyleTypeNone: ""
+  of ListStyleTypeNone, ListStyleTypeHint: ""
   of ListStyleTypeDisc, ListStyleTypeCircle, ListStyleTypeSquare,
       ListStyleTypeDisclosureOpen, ListStyleTypeDisclosureClosed:
     " "
@@ -931,8 +938,9 @@ proc listMarkerSuffix(t: CSSListStyleType): string =
       ListStyleTypeJapaneseFormal:
     "、"
 
-proc listMarker*(t: CSSListStyleType; i: int32; suffix: bool): RefString =
-  let res = newRefString(listMarker0(t, i))
+proc listMarker*(t: CSSListStyleType; i: int32; suffix: bool; nhints: int):
+    RefString =
+  let res = newRefString(listMarker0(t, i, nhints))
   if suffix:
     res.s &= listMarkerSuffix(t)
   return res
@@ -1403,7 +1411,8 @@ proc parseContent(ctx: var CSSParser): Opt[seq[CSSContent]] =
     of cttWhitespace:
       discard
     of cttFunction:
-      if tok.ft == cftCounter:
+      case tok.ft
+      of cftCounter:
         ctx.skipBlanks()
         if ctx.peekTokenType() != cttIdent:
           ctx.skipFunction()
@@ -1428,6 +1437,9 @@ proc parseContent(ctx: var CSSParser): Opt[seq[CSSContent]] =
           counter: name,
           counterStyle: style
         ))
+      else:
+        ctx.skipFunction()
+        return err()
     else:
       return err()
   ok(res)

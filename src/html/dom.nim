@@ -362,6 +362,7 @@ type
     attrs*: seq[AttrData] # sorted by int(qualifiedName)
     cachedStyle*: CSSStyleDeclaration
     computed*: CSSValues
+    box*: RootRef # CSSBox
 
   AttrDummyElement = ref object of Element
 
@@ -394,6 +395,7 @@ type
 
   HTMLAnchorElement* = ref object of HTMLElement
     relList {.jsget.}: DOMTokenList
+    internalHint: bool # mark for "hints" mode
 
   HTMLSelectElement* = ref object of FormAssociatedElement
     userValidity: bool
@@ -1002,7 +1004,7 @@ iterator elementDescendantsIncl(node: Node): Element {.inline.} =
     if child of Element:
       yield Element(child)
 
-iterator elementDescendants(node: ParentNode; tag: TagType): Element
+iterator elementDescendants*(node: ParentNode; tag: TagType): Element
     {.inline.} =
   for desc in node.elementDescendants:
     if desc.tagType == tag:
@@ -1748,6 +1750,7 @@ proc remove*(node: Node; suppressObservers: bool) =
   node.parentNode = nil
   document.invalidateCollections()
   if element != nil:
+    element.box = nil
     if element.internalElIndex == 0 and parentElement != nil:
       parentElement.childElIndicesInvalid = true
     element.internalElIndex = -1
@@ -5017,6 +5020,14 @@ proc toString(anchor: HTMLAnchorElement): string {.jsfunc.} =
 
 proc setRelList(anchor: HTMLAnchorElement; s: string) {.jsfset: "relList".} =
   anchor.attr(satRel, s)
+
+proc setHint*(anchor: HTMLAnchorElement; hint: bool) =
+  if anchor.internalHint != hint:
+    anchor.internalHint = hint
+    anchor.invalidate()
+
+proc hint*(anchor: HTMLAnchorElement): bool =
+  anchor.internalHint
 
 # <area>
 proc getter(ctx: JSContext; this: HTMLAreaElement; a: JSAtom;

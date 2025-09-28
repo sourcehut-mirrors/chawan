@@ -1585,6 +1585,20 @@ proc toggleImages(container: Container) {.jsfunc.} =
     container.config.images = images
   )
 
+proc toggleLinkHints(container: Container): Promise[HintResult] {.jsfunc.} =
+  if container.iface == nil:
+    return newResolvedPromise[HintResult](HintResult.default)
+  let sx = container.fromx
+  let sy = container.fromy
+  let ex = sx + container.width
+  let ey = sy + container.height
+  return container.iface.showHints(sx, sy, ex, ey)
+
+proc hideLinkHints(container: Container) {.jsfunc.} =
+  if container.iface == nil:
+    return
+  container.iface.hideHints().then(proc() = container.needslines = true)
+
 proc setLoadInfo(container: Container; msg: string) =
   container.loadinfo = msg
   container.triggerEvent(cetSetLoadInfo)
