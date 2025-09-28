@@ -804,6 +804,7 @@ proc openConfig*(dir, dataDir: var string; override: Option[string];
       return newPosixStream(override.get)
     let path = myposix.getcwd() / override.get
     dir = parentDir(path)
+    dataDir = dir
     return newPosixStream(path)
   dir = getEnvEmpty("CHA_DIR")
   if dir != "":
