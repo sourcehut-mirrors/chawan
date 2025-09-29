@@ -191,14 +191,12 @@ proc setRequestHeader(this: XMLHttpRequest; name, value: string):
   this.headers[name] = value
   ok()
 
-proc `withCredentials=`(this: XMLHttpRequest; withCredentials: bool):
+proc setWithCredentials(this: XMLHttpRequest; withCredentials: bool):
     DOMResult[void] {.jsfset: "withCredentials".} =
   if this.readyState notin {xhrsUnsent, xhrsOpened}:
     return errDOMException(
-      "ready state was expected to be `unsent' or `opened'",
-      "InvalidStateError")
-  if xhrfSend in this.flags:
-    return errDOMException("send flag is set", "InvalidStateError")
+      "ready state was expected to be `unsent' or `opened'", "InvalidStateError")
+  ?this.checkSendFlag()
   this.withCredentials = withCredentials
   ok()
 
@@ -441,8 +439,8 @@ proc getCharset(this: XMLHttpRequest): Charset =
 
 proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
   if this.responseType notin {xhrtUnknown, xhrtText}:
-    return JS_ThrowDOMException(ctx,
-      "Response type was expected to be '' or 'text'", "InvalidStateError")
+    return JS_ThrowDOMException(ctx, "InvalidStateError",
+      "Response type was expected to be '' or 'text'")
   if this.readyState notin {xhrsLoading, xhrsDone}:
     return ctx.toJS("")
   let charset = this.getCharset()

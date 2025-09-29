@@ -186,10 +186,10 @@ proc getRandomValues(ctx: JSContext; crypto: var Crypto; array: JSValueConst):
   if ctx.fromJS(array, view).isErr:
     return JS_EXCEPTION
   if view.t < 0 or view.t > cint(JS_TYPED_ARRAY_BIG_UINT64):
-    return JS_ThrowDOMException(ctx, "Wrong typed array type",
-      "TypeMismatchError")
+    return JS_ThrowDOMException(ctx, "TypeMismatchError",
+      "Wrong typed array type")
   if view.abuf.len > 65536:
-    return JS_ThrowDOMException(ctx, "Too large array", "QuotaExceededError")
+    return JS_ThrowDOMException(ctx, "QuotaExceededError", "Too large array")
   doAssert crypto.urandom.readDataLoop(view.abuf.p, int(view.abuf.len))
   return JS_DupValue(ctx, array)
 
@@ -336,7 +336,7 @@ proc origin(window: Window): string {.jsrfget.} =
 proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
   var s: string
   if (let r = s.atob(data); r.isErr):
-    return JS_ThrowDOMException(ctx, $r.error, "InvalidCharacterError")
+    return JS_ThrowDOMException(ctx, "InvalidCharacterError", $r.error)
   return ctx.toJS(NarrowString(s))
 
 proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
@@ -347,8 +347,8 @@ proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
   doAssert JS_IsString(data)
   if JS_IsStringWideChar(data):
     JS_FreeValue(ctx, data)
-    return JS_ThrowDOMException(ctx, "Invalid character in string",
-      "InvalidCharacterError")
+    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "Invalid character in string")
   let len = int(JS_GetStringLength(data))
   if len == 0:
     JS_FreeValue(ctx, data)

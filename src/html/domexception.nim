@@ -72,7 +72,7 @@ proc newDOMException*(message = ""; name = "Error"): DOMException {.jsctor.} =
 template errDOMException*(message, name: string): untyped =
   err(newDOMException(message, name))
 
-proc JS_ThrowDOMException*(ctx: JSContext; message, name: string): JSValue =
+proc JS_ThrowDOMException*(ctx: JSContext; name, message: string): JSValue =
   return JS_Throw(ctx, ctx.toJS(newDOMException(message, name)))
 
 proc getMessage(this: DOMException): string {.jsfget: "message".} =

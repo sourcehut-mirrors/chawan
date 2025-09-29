@@ -1767,11 +1767,12 @@ proc remove*(node: Node) {.jsfunc.} =
   if node.parentNode != nil:
     node.remove(suppressObservers = false)
 
-proc removeChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
+proc removeChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
   if Node(node.parentNode) != parent:
-    return errDOMException("Node is not a child of parent", "NotFoundError")
+    return JS_ThrowDOMException(ctx, "NotFoundError",
+      "Node is not a child of parent")
   node.remove()
-  return ok(node)
+  return ctx.toJS(node)
 
 proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
     {.jsfunc.} =
@@ -3225,14 +3226,16 @@ const SupportedTokensMap = {
   ]
 }
 
-proc supports(tokenList: DOMTokenList; token: string):
-    JSResult[bool] {.jsfunc.} =
+proc supports(ctx: JSContext; tokenList: DOMTokenList; token: string): JSValue
+    {.jsfunc.} =
   let localName = tokenList.localName.toStaticAtom()
   for it in SupportedTokensMap:
     if it[0] == localName:
       let lowercase = token.toLowerAscii()
-      return ok(lowercase in it[1])
-  return errTypeError("No supported tokens defined for attribute")
+      if lowercase in it[1]:
+        return JS_TRUE
+      return JS_FALSE
+  return JS_ThrowTypeError(ctx, "No supported tokens defined for attribute")
 
 proc value(tokenList: DOMTokenList): string {.jsfget.} =
   return $tokenList
@@ -5373,11 +5376,11 @@ proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
     return JS_EXCEPTION
   for it in this.root.ancestors:
     if element == it:
-      return JS_ThrowDOMException(ctx, "Can't add ancestor of select",
-        "HierarchyRequestError")
+      return JS_ThrowDOMException(ctx, "HierarchyRequestError",
+        "Can't add ancestor of select")
   if beforeEl != nil and this.root notin beforeEl:
-    return JS_ThrowDOMException(ctx, "select is not a descendant of before",
-      "NotFoundError")
+    return JS_ThrowDOMException(ctx, "NotFoundError",
+      "select is not a descendant of before")
   if element != beforeEl:
     if beforeEl == nil:
       let it = this.item(uint32(beforeIdx))
