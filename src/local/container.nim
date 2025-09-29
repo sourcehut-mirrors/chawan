@@ -1597,7 +1597,7 @@ proc toggleLinkHints(container: Container): Promise[HintResult] {.jsfunc.} =
 proc hideLinkHints(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
-  container.iface.hideHints().then(proc() = container.needslines = true)
+  container.iface.hideHints()
 
 proc setLoadInfo(container: Container; msg: string) =
   container.loadinfo = msg

@@ -83,6 +83,8 @@ proc calcRules(map: var RuleListMap; element: Element;
       tosorts.calcRules(element, depends, v[])
   if element.parentElement == nil:
     tosorts.calcRules(element, depends, sheet.rootList)
+  if element.hint:
+    tosorts.calcRules(element, depends, sheet.hintList)
   tosorts.calcRules(element, depends, sheet.generalList)
   for pseudo, it in tosorts.mpairs:
     it.sort(proc(x, y: RulePair): int =

@@ -27,16 +27,20 @@ type
     attrTable*: Table[CAtom, seq[CSSRuleDef]]
     rootList*: seq[CSSRuleDef]
     generalList*: seq[CSSRuleDef]
+    hintList*: seq[CSSRuleDef]
     importList*: seq[URL]
     len: int
     settings: ptr EnvironmentSettings
+
+  SelectorHashType = enum
+    shtGeneral, shtRoot, shtHint
 
   SelectorHashes = object
     tags: seq[CAtom]
     id: CAtom
     class: CAtom
     attr: CAtom
-    root: bool
+    t: SelectorHashType
 
 # Forward declarations
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool
@@ -76,7 +80,7 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
     var cancelId = false
     var cancelClass = false
     var cancelAttr = false
-    var cancelRoot = false
+    var cancelT = false
     var i = 0
     if i < sel.fsels.len:
       hashes.getSelectorIds(sel.fsels[i])
@@ -97,8 +101,8 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
         hashes.attr = nhashes.attr
       elif nhashes.attr != CAtomNull and nhashes.attr != hashes.attr:
         cancelAttr = true
-      if hashes.root != nhashes.root:
-        cancelRoot = true
+      if hashes.t != nhashes.t:
+        cancelT = true
       inc i
     if cancelId:
       hashes.id = CAtomNull
@@ -106,15 +110,15 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       hashes.class = CAtomNull
     if cancelAttr:
       hashes.attr = CAtomNull
-    if cancelRoot:
-      hashes.root = false
+    if cancelT:
+      hashes.t = shtGeneral
     return hashes.tags.len > 0 or hashes.id != CAtomNull or
       hashes.class != CAtomNull or hashes.attr != CAtomNull or
-      hashes.root
+      hashes.t != shtGeneral
   of stPseudoClass:
     case sel.pc
     of pcRoot:
-      hashes.root = true
+      hashes.t = shtRoot
       return true
     of pcLink, pcVisited:
       hashes.tags.add(TAG_A.toAtom())
@@ -123,7 +127,12 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       return true
     else:
       return false
-  of stPseudoElement, stUniversal, stNot, stLang, stNthChild, stNthLastChild:
+  of stPseudoElement:
+    if sel.elem == peLinkHint:
+      hashes.t = shtHint
+      return true
+    return false
+  of stUniversal, stNot, stLang, stNthChild, stNthLastChild:
     return false
 
 proc addIfNotLast(s: var seq[CSSRuleDef]; rule: CSSRuleDef) =
@@ -143,10 +152,11 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
       sheet.classTable.mgetOrPut(hashes.class, @[]).add(rule)
     elif hashes.attr != CAtomNull:
       sheet.attrTable.mgetOrPut(hashes.attr, @[]).add(rule)
-    elif hashes.root:
-      sheet.rootList.add(rule)
     else:
-      sheet.generalList.add(rule)
+      case hashes.t
+      of shtRoot: sheet.rootList.add(rule)
+      of shtHint: sheet.hintList.add(rule)
+      of shtGeneral: sheet.generalList.add(rule)
 
 proc addRules(sheet: CSSStylesheet; ctx: var CSSParser; topLevel: bool;
     base: URL) =

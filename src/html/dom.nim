@@ -353,6 +353,7 @@ type
     prefix {.jsget.}: CAtom
     internalHover: bool
     childElIndicesInvalid: bool
+    hint*: bool # mark for "hints" mode
     selfDepends: set[DependencyType]
     localName* {.jsget.}: CAtom
     id* {.jsget.}: CAtom
@@ -395,7 +396,6 @@ type
 
   HTMLAnchorElement* = ref object of HTMLElement
     relList {.jsget.}: DOMTokenList
-    internalHint: bool # mark for "hints" mode
 
   HTMLSelectElement* = ref object of FormAssociatedElement
     userValidity: bool
@@ -1016,7 +1016,7 @@ iterator elementDescendants*(node: ParentNode; tag: set[TagType]): Element
     if desc.tagType in tag:
       yield desc
 
-iterator displayedElements*(window: Window; tag: TagType): Element
+iterator displayedElements*(window: Window): Element
     {.inline.} =
   var element = window.document.documentElement
   while element != nil:
@@ -4679,6 +4679,11 @@ proc blur(ctx: JSContext; element: Element) {.jsfunc.} =
     if element.document.focus == element:
       element.document.setFocus(nil)
 
+proc setHint*(element: Element; hint: bool) =
+  if element.hint != hint:
+    element.hint = hint
+    element.invalidate()
+
 # DOMRect
 proc left(rect: DOMRect): float64 {.jsfget.} =
   return min(rect.x, rect.x + rect.width)
@@ -5021,14 +5026,6 @@ proc toString(anchor: HTMLAnchorElement): string {.jsfunc.} =
 
 proc setRelList(anchor: HTMLAnchorElement; s: string) {.jsfset: "relList".} =
   anchor.attr(satRel, s)
-
-proc setHint*(anchor: HTMLAnchorElement; hint: bool) =
-  if anchor.internalHint != hint:
-    anchor.internalHint = hint
-    anchor.invalidate()
-
-proc hint*(anchor: HTMLAnchorElement): bool =
-  anchor.internalHint
 
 # <area>
 proc getter(ctx: JSContext; this: HTMLAreaElement; a: JSAtom;

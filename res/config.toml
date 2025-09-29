@@ -427,20 +427,36 @@ async () => {
 		let it = map;
 		for (let k = 0, L = h.length - 1; k < L; k++)
 			it = it[h[k]] ?? (it[h[k]] = {});
+		urls[i].leaf = true;
 		it[h.at(-1)] = urls[i];
 	}
 	let s = "";
 	let it = map;
-	while (it && !it.url) {
+	let alert = true;
+	while (it && !it.leaf) {
 		const c = await pager.askChar(s);
-		it = it[c];
-		s += c;
+		if (c == '\b' || c == '\x7f') {
+			if (s.length == 0) {
+				alert = false;
+				break;
+			}
+			s = s.substring(0, s.length - 1);
+			it = map;
+			for (const c2 of s)
+				it = it[c2];
+		} else if (c == '\x03') {
+			alert = false;
+			break;
+		} else {
+			it = it[c];
+			s += c;
+		}
 	}
 	pager.hideLinkHints();
-	if (it.url)
+	if (it?.leaf)
 		pager.setCursorXY(it.x, it.y);
-	else
-		pager.alert("no such hint");
+	else if (alert)
+		pager.alert("No such hint");
 }
 '''
 

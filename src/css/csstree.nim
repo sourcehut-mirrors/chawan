@@ -452,8 +452,6 @@ proc addOptionChildren(frame: var TreeFrame; option: HTMLOptionElement) =
 proc addAnchorChildren(frame: var TreeFrame; anchor: HTMLAnchorElement) =
   if frame.ctx.markLinks:
     frame.addPseudo(peLinkMarker)
-  if anchor.hint:
-    frame.addPseudo(peLinkHint)
   frame.addElementChildren()
 
 proc addChildren(frame: var TreeFrame) =
@@ -514,6 +512,8 @@ proc buildChildren(frame: var TreeFrame; styledNode: StyledNode) =
   if not styledNode.skipChildren:
     if styledNode.pseudo == peNone:
       frame.addPseudo(peBefore)
+      if frame.parent.hint:
+        frame.addPseudo(peLinkHint)
       frame.addChildren()
       frame.addPseudo(peAfter)
     else:
