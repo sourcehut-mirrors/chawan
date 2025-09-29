@@ -1292,6 +1292,7 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       parsedAction.setSearch(search)
       return newRequest(parsedAction, httpMethod)
     # submit as entity body
+    var contentType = $enctype
     let body = case enctype
     of fetUrlencoded:
       #TODO with charset
@@ -1301,12 +1302,13 @@ proc makeFormRequest(bc: BufferContext; parsedAction: URL;
       #TODO with charset
       let multipart = serializeMultipart(entryList,
         bc.window.crypto.urandom)
+      contentType = multipart.getContentType()
       RequestBody(t: rbtMultipart, multipart: multipart)
     of fetTextPlain:
       #TODO with charset
       let kvlist = entryList.toNameValuePairs()
       RequestBody(t: rbtString, s: serializePlainTextFormData(kvlist))
-    let headers = newHeaders(hgRequest, {"Content-Type": $enctype})
+    let headers = newHeaders(hgRequest, {"Content-Type": move(contentType)})
     return newRequest(parsedAction, httpMethod, headers, body)
 
 # https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
