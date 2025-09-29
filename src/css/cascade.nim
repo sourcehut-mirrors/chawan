@@ -209,7 +209,8 @@ proc applyLengthHint(ctx: var ApplyValueContext; p: CSSPropertyType;
   ctx.applyPresHint(makeEntry(p, length))
 
 const InputTypeWithSize* = {
-  itSearch, itText, itEmail, itPassword, itURL, itTel
+  itColor, itDate, itDatetimeLocal, itEmail, itFile, itImage, itMonth, itNumber,
+  itPassword, itRange, itSearch, itTel, itText, itTime, itURL, itWeek
 }
 
 proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
