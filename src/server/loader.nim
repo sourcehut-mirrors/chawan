@@ -1332,7 +1332,6 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
 <title>Download List Panel</title>
 <body>
 <h1 align=center>Download List Panel</h1>
-<hr>
 <form method=POST action=about:downloads>
 <hr>
 <pre>
