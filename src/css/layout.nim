@@ -143,6 +143,16 @@ proc borderSize(sizes: ResolvedSizes; dim: DimensionType; lctx: LayoutContext):
     span.send = lctx.cellSize[dim]
   return span
 
+proc borderTop(sizes: ResolvedSizes; lctx: LayoutContext): LUnit =
+  if sizes.border[dtVertical].start notin BorderStyleNoneHidden:
+    return lctx.cellSize[dtVertical]
+  return 0
+
+proc borderBottom(sizes: ResolvedSizes; lctx: LayoutContext): LUnit =
+  if sizes.border[dtVertical].send notin BorderStyleNoneHidden:
+    return lctx.cellSize[dtVertical]
+  return 0
+
 proc outerSize(box: BlockBox; dim: DimensionType; sizes: ResolvedSizes;
     lctx: LayoutContext): LUnit =
   return sizes.margin[dim].sum() + box.state.size[dim] +
@@ -1022,8 +1032,7 @@ proc baseline(atom: InlineAtom; lctx: LayoutContext): LUnit =
       box.state.baseline
     else:
       box.state.size.h
-    return baseline + box.sizes.margin.top +
-      box.sizes.borderSize(dtVertical, lctx).start
+    return baseline + box.sizes.margin.top + box.sizes.borderTop(lctx)
   return atom.size.h
 
 proc vertalign(atom: InlineAtom): CSSVerticalAlign =
@@ -1700,7 +1709,7 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
     # delta y is difference between old and new offsets (margin-top),
     # plus height, plus border size.
     h = child.state.offset.y - fstate.offset.y + child.state.size.h +
-      sizes.borderSize(dtVertical, lctx).send
+      sizes.borderBottom(lctx)
   )
   if child.state.baselineSet:
     if not fstate.box.state.baselineSet:
@@ -2049,9 +2058,8 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   var fstate = bctx.initFlowState(box, sizes)
   fstate.initBlockPositionStates(box)
   if box.computed{"position"} notin PositionAbsoluteFixed and
-      (sizes.padding.top != 0 or
-      sizes.space.h.isDefinite() and sizes.space.h.u != 0 or
-      sizes.border[dtVertical].start notin BorderStyleNoneHidden):
+      (sizes.padding.top != 0 or sizes.borderTop(bctx.lctx) != 0 or
+      sizes.space.h.isDefinite() and sizes.space.h.u != 0):
     bctx.flushMargins(box.state.offset.y)
   let spacew = fstate.space.w
   let indefinite = spacew.t in {scFitContent, scMaxContent}
@@ -2075,7 +2083,7 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     w = fstate.maxChildWidth,
     h = fstate.offset.y - sizes.padding.top
   )
-  if sizes.padding.bottom != 0:
+  if sizes.padding.bottom != 0 or sizes.borderBottom(bctx.lctx) != 0:
     let oldHeight = childSize.h
     bctx.flushMargins(childSize.h)
     fstate.intr.h += childSize.h - oldHeight
