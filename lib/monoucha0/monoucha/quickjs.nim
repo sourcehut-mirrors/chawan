@@ -608,6 +608,9 @@ proc JS_SetConstructorBit*(ctx: JSContext; func_obj: JSValueConst;
   val: JS_BOOL): JS_BOOL
 
 proc JS_NewArray*(ctx: JSContext): JSValue
+# takes ownership of the values
+proc JS_NewArrayFrom*(ctx: JSContext; count: cint; values: JSValueArray):
+  JSValue
 proc JS_IsArray*(ctx: JSContext; v: JSValueConst): cint
 
 proc JS_NewDate*(ctx: JSContext; epoch_ms: float64): JSValue
