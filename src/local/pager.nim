@@ -2053,8 +2053,8 @@ proc gotoURL(pager: Pager; request: Request; contentType = "";
 proc gotoURLHash(pager: Pager; request: Request; current: Container;
     save: bool): bool =
   let url = request.url
-  if current == nil or current.url.equals(url, excludeHash = true) or
-      url.hash == "" or request.httpMethod != hmGet or not save:
+  if current == nil or not current.url.equals(url, excludeHash = true) or
+      url.hash == "" or request.httpMethod != hmGet or save:
     return false
   let anchor = url.hash.substr(1)
   current.iface.gotoAnchor(anchor, false, false).then(
