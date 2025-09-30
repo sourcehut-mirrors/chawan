@@ -783,7 +783,7 @@ const EarthlyBranchMap = "子丑寅卯辰巳午未申酉戌亥".toPoints()
 const HeavenlyStemMap = "甲乙丙丁戊己庚辛壬癸".toPoints()
 
 proc numToBase(n: int; map: openArray[uint32]): string =
-  if n <= 0:
+  if n <= 0 or map.len == 0:
     return $n
   var tmp: seq[uint32] = @[]
   var n = n
@@ -894,12 +894,8 @@ proc japaneseNumber(i: int32; formal: bool): string =
     s &= $ss[j]
   move(s)
 
-#TODO some way to specify hint map?
-const HintMap* = "abcdef".toPoints()
-proc getHint(i: int32; nhints: int): string =
-  numToBase(i - 1, HintMap)
-
-proc listMarker0(t: CSSListStyleType; i: int32; nhints: int): string =
+proc listMarker0(t: CSSListStyleType; i: int32; hintMap: openArray[uint32]):
+    string =
   return case t
   of ListStyleTypeNone: ""
   of ListStyleTypeDisc: "•" # U+2022
@@ -921,7 +917,7 @@ proc listMarker0(t: CSSListStyleType; i: int32; nhints: int): string =
   of ListStyleTypeCjkHeavenlyStem: numToFixed(i, HeavenlyStemMap)
   of ListStyleTypeJapaneseInformal: japaneseNumber(i, formal = false)
   of ListStyleTypeJapaneseFormal: japaneseNumber(i, formal = true)
-  of ListStyleTypeHint: getHint(i, nhints)
+  of ListStyleTypeHint: numToBase(i, hintMap)
 
 proc listMarkerSuffix(t: CSSListStyleType): string =
   return case t
@@ -938,12 +934,12 @@ proc listMarkerSuffix(t: CSSListStyleType): string =
       ListStyleTypeJapaneseFormal:
     "、"
 
-proc listMarker*(t: CSSListStyleType; i: int32; suffix: bool; nhints: int):
-    RefString =
-  let res = newRefString(listMarker0(t, i, nhints))
+proc listMarker*(t: CSSListStyleType; i: int32; suffix: bool;
+    hintMap: openArray[uint32]): RefString =
+  let res = newRefString(listMarker0(t, i, hintMap))
   if suffix:
     res.s &= listMarkerSuffix(t)
-  return res
+  res
 
 proc quoteStart*(level: int): string =
   if level == 0:

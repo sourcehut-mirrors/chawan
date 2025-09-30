@@ -35,10 +35,12 @@ type
     stream: SocketStream
     loaderStream: SocketStream
     pollData: PollData
+    linkHintChars: seq[uint32]
 
 proc loadConfig*(forkserver: ForkServer; config: Config): int =
   forkserver.stream.withPacketWriter w:
     w.swrite(config.display.doubleWidthAmbiguous)
+    w.swrite(config.input.linkHintChars.s)
     w.swrite(LoaderConfig(
       urimethodmap: config.external.urimethodmap,
       w3mCGICompat: config.external.w3mCgiCompat,
@@ -152,7 +154,7 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
     discard signal(SIGPIPE, SIG_DFL)
     enterBufferSandbox()
     launchBuffer(config, url, attrs, ishtml, charsetStack, loader, pstream,
-      istream, urandom, cacheId, contentType)
+      istream, urandom, cacheId, contentType, move(ctx.linkHintChars))
     doAssert false
   discard close(fd)
   return pid
@@ -230,6 +232,7 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
   ctx.stream.withPacketReader r:
     var config: LoaderConfig
     r.sread(isCJKAmbiguous)
+    r.sread(ctx.linkHintChars)
     r.sread(config)
     # for CGI
     if setupForkServerEnv(config).isErr:

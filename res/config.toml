@@ -77,6 +77,7 @@ osc52-copy = 'auto'
 bracketed-paste = true
 wheel-scroll = 5
 side-wheel-scroll = 5
+link-hint-chars = 'abcdefghijklmnoprstuvxyz'
 
 [status]
 show-cursor-position = true
@@ -289,6 +290,7 @@ su = 'cmd.pager.showFullAlert'
 C-w = 'cmd.pager.toggleWrap'
 M-y = 'cmd.pager.copyURL'
 M-p = 'cmd.pager.gotoClipboardURL'
+f = 'cmd.pager.toggleLinkHints'
 
 [line]
 C-m = 'cmd.line.submit'
@@ -412,12 +414,17 @@ toggleCommandMode = '''
 showFullAlert = '() => pager.showFullAlert()'
 toggleLinkHints = '''
 async () => {
-	const urls = await pager.toggleLinkHints();
-	const chars = "abcdef";
+	pager.markPos0();
+	const urls = await pager.showLinkHints();
+	if (urls.length == 0) {
+		pager.alert("No links on page");
+		return;
+	}
+	const chars = config.input.linkHintChars;
 	function hint(n) {
 		let tmp = [];
-		for (n--; n >= 0; n = Math.floor(n / 6) - 1)
-			tmp.push(chars[n % 6]);
+		for (n--; n >= 0; n = Math.floor(n / chars.length) - 1)
+			tmp.push(chars[n % chars.length]);
 		return tmp.reverse().join("");
 	}
 	const map = {};
@@ -453,9 +460,10 @@ async () => {
 		}
 	}
 	pager.hideLinkHints();
-	if (it?.leaf)
+	if (it?.leaf) {
 		pager.setCursorXY(it.x, it.y);
-	else if (alert)
+		pager.markPos();
+	} else if (alert)
 		pager.alert("No such hint");
 }
 '''

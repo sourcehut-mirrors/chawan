@@ -44,6 +44,7 @@ config directory can be accessed.
 * [Siteconf](#siteconf)
 * [Keybindings](#keybindings)
    * [Pager actions](#pager-actions)
+   * [Buffer actions](#buffer-actions)
    * [Line-editing actions](#line-editing-actions)
 * [Appendix](#appendix)
    * [Regex handling](#regex-handling)
@@ -581,6 +582,15 @@ URL bar.
 <td>number</td>
 <td>5</td>
 <td>Number of columns to scroll for a mouse side-wheel event.</td>
+</tr>
+
+<tr>
+<td>link-hint-chars</td>
+<td>string</td>
+<td>abcdefghijklmnoprstuvxyz</td>
+<td>A string of characters to use in `cmd.pager.toggleLinkHints`.
+Any Unicode codepoint is accepted, and they are ordered as specified
+in this option.</td>
 </tr>
 
 </table>
@@ -1421,6 +1431,16 @@ ones using C-p or C-n.</td>
 <td><kbd>M-a</kbd></td>
 <td>`cmd.pager.addBookmark`</td>
 <td>Add the current page to your bookmarks.</td>
+</tr>
+
+<tr>
+<td><kbd>f</kbd></td>
+<td>`cmd.pager.toggleLinkHints`</td>
+<td>Show hints before each link (or button).  After typing a hint, the
+cursor is placed on the respective link.
+<p>
+The hint character set may be customized with `input.link-hint-chars`.
+</td>
 </tr>
 
 </table>

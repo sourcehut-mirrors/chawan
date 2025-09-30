@@ -73,8 +73,8 @@ type
 
   TreeContext = object
     markLinks: bool
-    nhints: int
     quoteLevel: int
+    linkHintChars: ref seq[uint32]
     counters: seq[CSSCounter]
     rootProperties: CSSValues
     stackItem: StackItem
@@ -671,7 +671,8 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     return InlineTextBox(
       computed: styledNode.computed,
       element: styledNode.element,
-      text: styledNode.counterStyle.listMarker(counter, addSuffix, ctx.nhints)
+      text: styledNode.counterStyle.listMarker(counter, addSuffix,
+        ctx.linkHintChars[])
     )
   of stImage:
     return InlineImageBox(
@@ -681,7 +682,8 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     )
 
 # Root
-proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int):
+proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
+    linkHintChars: ref seq[uint32]):
     tuple[stack: StackItem, fixedHead: CSSAbsolute] =
   if element.computed == nil:
     element.applyStyle()
@@ -695,11 +697,14 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int):
     rootProperties: rootProperties(),
     markLinks: markLinks,
     stackItem: stack,
-    nhints: nhints
+    linkHintChars: linkHintChars
   )
   ctx.resetCounter(satDashChaLinkCounter.toAtom(), 0, element)
-  var hintOffset = (nhints + HintMap.len - 2) div (HintMap.len - 1)
-  hintOffset = min(int(int32.high), hintOffset)
+  let hintHigh = max(linkHintChars[].high, 0)
+  let hintOffset = if hintHigh > 0:
+    min(int(int32.high), ((nhints + hintHigh - 1) div hintHigh) - 1)
+  else:
+    hintHigh
   ctx.resetCounter(satDashChaHintCounter.toAtom(), int32(hintOffset), element)
   let root = BlockBox(ctx.build(cached, styledNode, forceZ = false))
   stack.box = root

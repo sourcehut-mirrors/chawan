@@ -2,6 +2,7 @@
 
 import std/options
 import std/os
+import std/sets
 import std/strutils
 import std/tables
 
@@ -21,6 +22,7 @@ import monoucha/javascript
 import monoucha/jspropenumlist
 import monoucha/jsregex
 import monoucha/jstypes
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers
@@ -37,6 +39,9 @@ type
   StyleString* = distinct string
 
   ChaPathResolved* = distinct string
+
+  CodepointSet* = object
+    s*: seq[uint32]
 
   ActionMap = object
     t: Table[string, string]
@@ -119,6 +124,7 @@ type
     bracketedPaste* {.jsgetset.}: bool
     wheelScroll* {.jsgetset.}: int32
     sideWheelScroll* {.jsgetset.}: int32
+    linkHintChars*: CodepointSet
 
   NetworkConfig = object
     maxRedirect* {.jsgetset.}: int32
@@ -196,6 +202,7 @@ jsDestructor(SearchConfig)
 jsDestructor(EncodingConfig)
 jsDestructor(ExternalConfig)
 jsDestructor(NetworkConfig)
+jsDestructor(InputConfig)
 jsDestructor(DisplayConfig)
 jsDestructor(BufferSectionConfig)
 jsDestructor(Config)
@@ -300,6 +307,23 @@ proc names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
     list.add(key)
   return list
 
+proc jsLinkHintChars(ctx: JSContext; input: var InputConfig): JSValue
+    {.jsfget: "linkHintChars".} =
+  var vals: seq[JSValue] = @[]
+  block good:
+    var buf = ""
+    for u in input.linkHintChars.s:
+      buf.setLen(0)
+      buf.addUTF8(u)
+      let val = ctx.toJS(buf)
+      if JS_IsException(val):
+        break good
+      vals.add(val)
+    return JS_NewArrayFrom(ctx, cint(vals.len), vals.toJSValueArray())
+  for val in vals:
+    JS_FreeValue(ctx, val)
+  return JS_EXCEPTION
+
 type ConfigParser = object
   jsctx: JSContext
   config: Config
@@ -368,6 +392,8 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var Headers; v: TomlValue;
   k: string): Err[string]
+proc parseConfigValue(ctx: var ConfigParser; x: var CodepointSet; v: TomlValue;
+  k: string): Err[string]
 
 proc typeCheck(v: TomlValue; t: TomlValueType; k: string): Err[string] =
   if v.t != t:
@@ -416,14 +442,27 @@ proc parseConfigValue[U, V](ctx: var ConfigParser; x: var Table[U, V];
     ?ctx.parseConfigValue(x.mgetOrPut(kk, default(V)), vv, kkk)
   ok()
 
-proc parseConfigValue(ctx: var ConfigParser; x: var Headers;
-    v: TomlValue; k: string): Err[string] =
+proc parseConfigValue(ctx: var ConfigParser; x: var Headers; v: TomlValue;
+    k: string): Err[string] =
   ?typeCheck(v, tvtTable, k)
   if v.tab.clear or x == nil:
     x = newHeaders(hgRequest)
   for kk, vv in v:
     ?typeCheck(vv, tvtString, k & "[" & kk & "]")
     x[kk] = vv.s
+  ok()
+
+proc parseConfigValue(ctx: var ConfigParser; x: var CodepointSet; v: TomlValue;
+    k: string): Err[string] =
+  ?typeCheck(v, tvtString, k)
+  x = CodepointSet()
+  var seen = initHashSet[uint32]()
+  for u in v.s.points:
+    if seen.containsOrIncl(u):
+      return err(k & ": duplicate codepoint '" & u.toUTF8() & "'")
+    if x.s.len > int(cint.high):
+      return err(k & ": too many values")
+    x.s.add(u)
   ok()
 
 proc parseConfigValue[U, V](ctx: var ConfigParser; x: var OrderedTable[U, V];
@@ -880,6 +919,7 @@ proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(EncodingConfig)
   ctx.registerType(ExternalConfig)
   ctx.registerType(NetworkConfig)
+  ctx.registerType(InputConfig)
   ctx.registerType(DisplayConfig)
   ctx.registerType(StatusConfig)
   ctx.registerType(BufferSectionConfig, name = "BufferConfig")

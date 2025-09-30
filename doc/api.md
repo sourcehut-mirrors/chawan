@@ -685,6 +685,16 @@ Returns a promise, so consumers must `await` it to get the text.</td>
 </tr>
 
 <tr>
+<td>`showLinkHints()`</td>
+<td>Display link hints on the page.  Mainly intended for the built-in
+toggleLinkHints command.
+<p>
+Returns an array of objects with `x` representing the x position, `y` the y
+position of a link.
+</td>
+</tr>
+
+<tr>
 <td>`toggleImages()`</td>
 <td>Toggle display of images in this buffer.</td>
 </tr>

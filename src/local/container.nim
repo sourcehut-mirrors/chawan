@@ -1094,10 +1094,10 @@ proc halfPageLeft(container: Container; n = 1) {.jsfunc.} =
 proc halfPageRight(container: Container; n = 1) {.jsfunc.} =
   container.setFromX(container.fromx + (container.width + 1) div 2 * n)
 
-proc markPos0*(container: Container) =
+proc markPos0*(container: Container) {.jsfunc.} =
   container.tmpJumpMark = (container.cursorx, container.cursory)
 
-proc markPos*(container: Container) =
+proc markPos*(container: Container) {.jsfunc.} =
   let pos = container.tmpJumpMark
   if container.cursorx != pos.x or container.cursory != pos.y:
     container.jumpMark = pos
@@ -1367,11 +1367,15 @@ proc getMarkPos(ctx: JSContext; container: Container; id: string): JSValue {.jsf
 proc gotoMark(container: Container; id: string): bool {.jsfunc.} =
   container.markPos0()
   let i = container.findMark(id)
-  if i != -1:
-    let mark = container.marks[i].pos
-    container.setCursorXYCenter(mark.x, mark.y)
-    container.markPos()
-  i != -1
+  let pos = if i != -1:
+    container.marks[i].pos
+  elif id == "`" or id == "'":
+    container.jumpMark
+  else:
+    return false
+  container.setCursorXYCenter(pos.x, pos.y)
+  container.markPos()
+  true
 
 proc gotoMarkY(container: Container; id: string): bool {.jsfunc.} =
   let i = container.findMark(id)
@@ -1585,7 +1589,7 @@ proc toggleImages(container: Container) {.jsfunc.} =
     container.config.images = images
   )
 
-proc toggleLinkHints(container: Container): Promise[HintResult] {.jsfunc.} =
+proc showLinkHints(container: Container): Promise[HintResult] {.jsfunc.} =
   if container.iface == nil:
     return newResolvedPromise[HintResult](HintResult.default)
   let sx = container.fromx

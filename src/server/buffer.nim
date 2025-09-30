@@ -121,6 +121,7 @@ type
     hoverText: array[HoverType, string]
     htmlParser: HTML5ParserWrapper
     images: seq[PosBitmap]
+    linkHintChars: ref seq[uint32]
     lines: FlexibleGrid
     loader: FileLoader
     navigateUrl: URL # stored when JS tries to navigate
@@ -774,7 +775,7 @@ proc maybeReshape(bc: BufferContext) =
     return # not parsed yet, nothing to render
   if document.invalid:
     let (stack, fixedHead) = document.documentElement.buildTree(bc.rootBox,
-      bc.config.markLinks, bc.nhints)
+      bc.config.markLinks, bc.nhints, bc.linkHintChars)
     bc.rootBox = BlockBox(stack.box)
     bc.rootBox.layout(bc.attrs, fixedHead, bc.luctx)
     bc.lines.render(bc.bgcolor, stack, addr bc.attrs, bc.images)
@@ -2000,7 +2001,7 @@ proc cleanup(bc: BufferContext) =
 proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     ishtml: bool; charsetStack: seq[Charset]; loader: FileLoader;
     pstream, istream: SocketStream; urandom: PosixStream; cacheId: int;
-    contentType: string) =
+    contentType: string; linkHintChars: sink seq[uint32]) =
   let confidence = if config.charsetOverride == CHARSET_UNKNOWN:
     ccTentative
   else:
@@ -2017,6 +2018,8 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     outputId: -1,
     luctx: LUContext()
   )
+  bc.linkHintChars = new(seq[uint32])
+  bc.linkHintChars[] = linkHintChars
   bc.window = newWindow(
     config.scripting,
     config.images,

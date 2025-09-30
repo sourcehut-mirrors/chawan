@@ -684,6 +684,18 @@ T}@T{
 T}@T{
 Number of columns to scroll for a mouse side\-wheel event.
 T}
+_
+T{
+link\-hint\-chars
+T}@T{
+string
+T}@T{
+abcdefghijklmnoprstuvxyz
+T}@T{
+A string of characters to use in \f[CR]cmd.pager.toggleLinkHints\f[R].
+Any Unicode codepoint is accepted, and they are ordered as specified in
+this option.
+T}
 .TE
 .PP
 Examples:
@@ -1723,6 +1735,18 @@ T}@T{
 \f[CR]cmd.pager.addBookmark\f[R]
 T}@T{
 Add the current page to your bookmarks.
+T}
+_
+T{
+f
+T}@T{
+\f[CR]cmd.pager.toggleLinkHints\f[R]
+T}@T{
+Show hints before each link (or button).
+After typing a hint, the cursor is placed on the respective link.
+.PP
+The hint character set may be customized with
+\f[CR]input.link\-hint\-chars\f[R].
 T}
 .TE
 .SS Buffer actions
