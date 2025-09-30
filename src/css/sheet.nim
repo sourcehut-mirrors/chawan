@@ -53,7 +53,10 @@ proc getSelectorIds(hashes: var SelectorHashes; sels: CompoundSelector) =
       break
 
 proc getSelectorIds(hashes: var SelectorHashes; cxsel: ComplexSelector) =
-  hashes.getSelectorIds(cxsel[^1])
+  if cxsel.pseudo == peLinkHint:
+    hashes.t = shtHint
+  else:
+    hashes.getSelectorIds(cxsel[^1])
 
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
   case sel.t
@@ -127,11 +130,6 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       return true
     else:
       return false
-  of stPseudoElement:
-    if sel.elem == peLinkHint:
-      hashes.t = shtHint
-      return true
-    return false
   of stUniversal, stNot, stLang, stNthChild, stNthLastChild:
     return false
 

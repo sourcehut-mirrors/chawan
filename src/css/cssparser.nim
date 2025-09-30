@@ -291,7 +291,7 @@ type
 # Selectors
 
   SelectorType* = enum
-    stType, stId, stAttr, stClass, stUniversal, stPseudoClass, stPseudoElement,
+    stType, stId, stAttr, stClass, stUniversal, stPseudoClass,
     stIs = "is"
     stNot = "not"
     stWhere = "where"
@@ -331,7 +331,6 @@ type
     ctNone, ctDescendant, ctChild, ctNextSibling, ctSubsequentSibling
 
   SelectorParser = object
-    selectors: seq[ComplexSelector]
     ctx: CSSParser
     failed: bool
     nested: bool
@@ -373,12 +372,11 @@ type
       lang*: string
     of stNthChild, stNthLastChild:
       nthChild*: CSSNthChild
-    of stPseudoElement:
-      elem*: PseudoElement
+    next: Selector
 
   CompoundSelector* = object
     ct*: CombinatorType # relation to the next entry in a ComplexSelector.
-    sels*: seq[Selector]
+    head: Selector
 
   ComplexSelector* = object
     specificity*: uint
@@ -389,7 +387,7 @@ type
 
 # Forward declarations
 proc consumeDeclarations(ctx: var CSSParser; nested: bool): seq[CSSDeclaration]
-proc parseSelectorsConsume(toks: var seq[CSSToken]): seq[ComplexSelector]
+proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList
 proc parseSelectorList(state: var SelectorParser; forgiving: bool): SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
 proc addComponentValue(ctx: var CSSParser; toks: var seq[CSSToken])
@@ -1336,22 +1334,11 @@ proc parseAnB(ctx: var CSSParser): Opt[CSSAnB] =
   else:
     return err()
 
-iterator items*(csel: CompoundSelector): lent Selector {.inline.} =
-  for it in csel.sels:
+iterator items*(csel: CompoundSelector): Selector {.inline.} =
+  var it = csel.head
+  while it != nil:
     yield it
-
-proc `[]`*(csel: CompoundSelector; i: int): lent Selector {.inline.} =
-  return csel.sels[i]
-
-proc `[]`*(csel: CompoundSelector; i: BackwardsIndex): lent Selector
-    {.inline.} =
-  return csel[csel.sels.len - int(i)]
-
-proc len*(csel: CompoundSelector): int {.inline.} =
-  return csel.sels.len
-
-proc add*(csel: var CompoundSelector; sel: sink Selector) {.inline.} =
-  csel.sels.add(sel)
+    it = it.next
 
 iterator ritems*(cxsel: ComplexSelector): lent CompoundSelector {.inline.} =
   for csel in cxsel.csels.ritems:
@@ -1410,8 +1397,6 @@ proc `$`*(sel: Selector): string =
     return ":lang(" & sel.lang & ')'
   of stNthChild, stNthLastChild:
     return ':' & $sel.t & '(' & $sel.nthChild & ')'
-  of stPseudoElement:
-    return "::" & $sel.elem
 
 proc `$`*(sels: CompoundSelector): string =
   result = ""
@@ -1428,6 +1413,8 @@ proc `$`*(cxsel: ComplexSelector): string =
     of ctNextSibling: result &= " + "
     of ctSubsequentSibling: result &= " ~ "
     of ctNone: discard
+  if cxsel.pseudo != peNone:
+    result &= "::" & $cxsel.pseudo
 
 proc `$`*(slist: SelectorList): string =
   result = ""
@@ -1442,7 +1429,7 @@ proc getSpecificity(sel: Selector): uint =
   case sel.t
   of stId: return 1000000
   of stClass, stAttr, stPseudoClass, stLang: return 1000
-  of stType, stPseudoElement: return 1
+  of stType: return 1
   of stUniversal, stWhere: return 0
   of stIs, stNot:
     var best = 0u
@@ -1459,11 +1446,6 @@ proc getSpecificity(sel: Selector): uint =
         if s > best:
           best = s
     return 1000 + best
-
-proc getSpecificity(sels: CompoundSelector): uint =
-  result = 0
-  for sel in sels:
-    result += getSpecificity(sel)
 
 proc consume(state: var SelectorParser): CSSToken =
   state.ctx.consume()
@@ -1567,11 +1549,12 @@ proc parseSelectorFunction(state: var SelectorParser; ft: CSSFunctionType):
     state.parseLang()
   else: fail
 
-proc parsePseudoSelector(state: var SelectorParser): Selector =
+proc parsePseudoSelector(state: var SelectorParser;
+    pseudoElement: var PseudoElement): Selector =
   result = nil
   if not state.has(): fail
   let tok = state.consume()
-  var pseudoElement = peNone
+  pseudoElement = peNone
   case tok.t
   of cttIdent:
     if tok.s.equalsIgnoreCase("before"):
@@ -1597,7 +1580,6 @@ proc parsePseudoSelector(state: var SelectorParser): Selector =
   else: fail
   state.skipBlanks()
   if state.nested or state.has() and state.peekTokenType() != cttComma: fail
-  return Selector(t: stPseudoElement, elem: pseudoElement)
 
 proc parseAttributeSelector(state: var SelectorParser): Selector =
   state.skipBlanks()
@@ -1669,51 +1651,64 @@ proc parseClassSelector(state: var SelectorParser): Selector =
   let class = tok.s.toAtomLower()
   Selector(t: stClass, class: class)
 
-proc parseCompoundSelector(state: var SelectorParser): CompoundSelector =
-  result = CompoundSelector()
+# returns head
+proc parseCompoundSelector(state: var SelectorParser;
+    pseudoElement: var PseudoElement; specificityOut: var uint): Selector =
+  var head: Selector = nil
+  var tail: Selector = nil
+  var specificity = 0u
   while state.has():
     let tok = state.peekToken()
+    var sel: Selector
     case tok.t
     of cttIdent:
       state.seekToken()
-      let tag = tok.s.toAtomLower()
-      result.add(Selector(t: stType, tag: tag))
+      sel = Selector(t: stType, tag: tok.s.toAtomLower())
     of cttColon:
       state.seekToken()
-      result.add(state.parsePseudoSelector())
+      sel = state.parsePseudoSelector(pseudoElement)
     of cttHash:
       state.seekToken()
       if ctfId notin tok.flags:
         fail
-      let id = tok.s.toAtomLower()
-      result.add(Selector(t: stId, id: id))
+      sel = Selector(t: stId, id: tok.s.toAtomLower())
     of cttDot:
       state.seekToken()
-      result.add(state.parseClassSelector())
+      sel = state.parseClassSelector()
     of cttStar:
       state.seekToken()
-      result.add(Selector(t: stUniversal))
+      sel = Selector(t: stUniversal)
     of cttLbracket:
       state.seekToken()
-      result.add(state.parseAttributeSelector())
+      sel = state.parseAttributeSelector()
     of cttRparen:
       if not state.nested: fail
       break
     of cttComma, cttPlus, cttGt, cttTilde, cttWhitespace:
       break
     else: fail
+    if sel != nil:
+      if head == nil:
+        head = sel
+      else:
+        tail.next = sel
+      tail = sel
+      specificity += sel.getSpecificity()
+  specificityOut = specificity
+  head
 
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
+  var pseudo = peNone
   result = ComplexSelector()
   while true:
     state.skipBlanks()
-    let sels = state.parseCompoundSelector()
+    var specificity: uint
+    let head = state.parseCompoundSelector(pseudo, specificity)
     if state.failed:
       break
-    #TODO propagate from parser
-    result.specificity += sels.getSpecificity()
-    result.csels.add(sels)
-    if sels.len == 0: fail
+    if head == nil and pseudo == peNone: fail
+    result.specificity += specificity
+    result.csels.add(CompoundSelector(head: head))
     if not state.has() or state.nested and state.peekTokenType() == cttRparen:
       break # finish
     let tok = state.consume()
@@ -1736,9 +1731,9 @@ proc parseComplexSelector(state: var SelectorParser): ComplexSelector =
     else: fail
   if result.len == 0 or result[^1].ct != ctNone:
     fail
-  if result[^1][^1].t == stPseudoElement:
-    #TODO move pseudo check here?
-    result.pseudo = result[^1][^1].elem
+  result.pseudo = pseudo
+  if pseudo != peNone: # pseudo-elements have a specificity of 1
+    inc result.specificity
 
 proc parseSelectorList(state: var SelectorParser; forgiving: bool):
     SelectorList =
@@ -1766,11 +1761,11 @@ proc parseSelectorList(state: var SelectorParser; forgiving: bool):
     cmp(a.specificity, b.specificity), Descending)
   move(res)
 
-proc parseSelectorsConsume(toks: var seq[CSSToken]): seq[ComplexSelector] =
+proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList =
   var state = SelectorParser(ctx: initCSSParserSink(toks))
   state.parseSelectorList(forgiving = false)
 
-proc parseSelectors*(ibuf: openArray[char]): seq[ComplexSelector] =
+proc parseSelectors*(ibuf: openArray[char]): SelectorList =
   var state = SelectorParser(ctx: initCSSParser(ibuf))
   state.parseSelectorList(forgiving = false)
 

@@ -223,8 +223,6 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
     return element.matchesAttr(sel)
   of stPseudoClass:
     return element.matches(sel.pc, depends, ohasDeps)
-  of stPseudoElement:
-    return true
   of stUniversal:
     return true
   of stNthChild:

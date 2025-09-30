@@ -707,8 +707,8 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
 
 # Forward declaration hacks
 # set in css/match
-var matchesImpl*: proc(element: Element; cxsels: seq[ComplexSelector]): bool
-  {.nimcall, raises: [].}
+var matchesImpl*: proc(element: Element; cxsels: SelectorList): bool {.nimcall,
+  raises: [].}
 # set in html/chadombuilder
 var parseHTMLFragmentImpl*: proc(element: Element; s: string): seq[Node]
   {.nimcall, raises: [].}
