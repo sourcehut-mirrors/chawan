@@ -17,6 +17,7 @@ import config/config
 import config/conftypes
 import css/box
 import css/csstree
+import css/cssvalues
 import css/layout
 import css/lunit
 import css/render
@@ -694,15 +695,6 @@ type GotoAnchorResult* = object
   y*: int
   focus*: ReadLineResult
 
-proc findAnchor(box: CSSBox; anchor: Element): Offset =
-  for child in box.children:
-    let off = child.findAnchor(anchor)
-    if off.y >= 0:
-      return off
-  if box.element == anchor:
-    return box.render.offset
-  return offset(-1, -1)
-
 proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
     GotoAnchorResult {.proxy.} =
   if bc.document == nil:
@@ -728,9 +720,9 @@ proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
         element = autofocus # jump to autofocus instead
       let res = bc.click(autofocus)
       focus = res.readline.get(nil)
-  if element == nil:
+  if element == nil or element.box == nil:
     return GotoAnchorResult(found: false)
-  let offset = bc.rootBox.findAnchor(element)
+  let offset = CSSBox(element.box).render.offset
   let x = max(offset.x div bc.attrs.ppc, 0).toInt
   let y = max(offset.y div bc.attrs.ppl, 0).toInt
   return GotoAnchorResult(found: true, x: x, y: y, focus: focus)
@@ -1860,6 +1852,16 @@ proc toJS*(ctx: JSContext; x: HintItem): JSValue =
   JS_FreeValue(ctx, obj)
   return JS_EXCEPTION
 
+proc findLeaf(box: CSSBox; element: Element): CSSBox =
+  for it in box.children:
+    if it.element == element or
+        it.element.parentNode == element and not it.element.isClickable():
+      let box = it.findLeaf(it.element)
+      if box.computed{"visibility"} == VisibilityVisible and
+          box of InlineTextBox:
+        return box
+  return box
+
 proc showHints*(bc: BufferContext; sx, sy, ex, ey: int): HintResult {.proxy.} =
   result = @[]
   bc.maybeReshape()
@@ -1867,7 +1869,8 @@ proc showHints*(bc: BufferContext; sx, sy, ex, ey: int): HintResult {.proxy.} =
   let eo = offset(x = ex * bc.attrs.ppc, y = ey * bc.attrs.ppl)
   for element in bc.window.displayedElements:
     if element.box != nil and element.isClickable():
-      let offset = CSSBox(element.box).render.offset
+      let box = CSSBox(element.box).findLeaf(element)
+      let offset = box.render.offset
       if offset >= so and offset < eo:
         result.add(HintItem(
           x: (offset.x div bc.attrs.ppc).toInt(),
