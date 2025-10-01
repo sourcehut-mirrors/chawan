@@ -7,23 +7,6 @@ import io/chafile
 import types/opt
 import utils/twtstr
 
-proc gopherName(c: char): string =
-  return case c
-  of '0': "text file"
-  of '1': "directory"
-  of '3': "error"
-  of '5': "DOS binary"
-  of '7': "search"
-  of 'm': "message"
-  of 's', '<': "sound"
-  of 'g': "gif"
-  of 'h': "HTML"
-  of 'I', ':': "image"
-  of '9': "binary"
-  of 'p': "png"
-  of ';': "video"
-  else: "unsupported"
-
 proc getField(line: string; i: var int): string =
   var s = line.until('\t', i)
   i += s.len
@@ -64,7 +47,6 @@ proc parse(): Opt[void] =
       if ispre:
         outs &= "</pre>"
         ispre = false
-      let names = '[' & gopherName(t) & ']' & htmlEscape(name)
       let ourls = if not file.startsWith("URL:"):
         if file.len == 0 or file[0] != '/':
           file = '/' & file
@@ -72,7 +54,8 @@ proc parse(): Opt[void] =
         "gopher://" & host & ":" & port & "/" & t & pefile
       else:
         file.substr("URL:".len)
-      outs &= "<a href=\"" & htmlEscape(ourls) & "\">" & names & "</a><br>\n"
+      outs &= "<a item-type=\"" & htmlEscape([t]) & "\" href=\"" &
+        htmlEscape(ourls) & "\">" & htmlEscape(name) & "</a><br>\n"
     ?stdout.write(outs)
   ok()
 

@@ -256,3 +256,20 @@ ul[type=square i] { list-style-type: square }
 }
 
 @media (-cha-content-type: "text/x-ansi") { pre { margin: 0 } }
+
+@media (-cha-content-type: "text/gopher") {
+	a[item-type]::before { content: "[unsupported] " }
+	a[item-type='0']::before { content: "[text file] " }
+	a[item-type='1']::before { content: "[directory] " }
+	a[item-type='3']::before { content: "[error] " }
+	a[item-type='5']::before { content: "[DOS binary] " }
+	a[item-type='7']::before { content: "[search] " }
+	a[item-type='m']::before { content: "[message] " }
+	a:is([item-type='s'], [item-type='>'])::before { content: "[sound] " }
+	a[item-type='g']::before { content: "[gif] " }
+	a[item-type='h']::before { content: "[HTML] " }
+	a[item-type='I']::before { content: "[image] " }
+	a[item-type='9']::before { content: "[binary] " }
+	a[item-type='p']::before { content: "[png] " }
+	a[item-type=';']::before { content: "[video] " }
+}
