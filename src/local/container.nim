@@ -1856,7 +1856,6 @@ proc handleCommand(container: Container): Opt[void] =
   var packet {.noinit.}: array[3, int] # 0 len, 1 auxLen, 2 packetid
   if not container.iface.stream.readDataLoop(addr packet[0], sizeof(packet)):
     return err()
-  assert packet[1] == 0 # no ancillary data possible for BufStream
   container.iface.resolve(packet[2], packet[0] - sizeof(packet[2]), packet[1])
   ok()
 
