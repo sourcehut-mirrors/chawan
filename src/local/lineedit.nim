@@ -291,6 +291,7 @@ proc nextHist(edit: LineEdit) {.jsfunc.} =
 
 proc windowChange*(edit: LineEdit; attrs: WindowAttributes) =
   edit.maxwidth = attrs.width - edit.promptw - 1
+  edit.redraw = true
 
 proc readLine*(prompt, current: string; termwidth: int; hide: bool;
     hist: History; luctx: LUContext): LineEdit =

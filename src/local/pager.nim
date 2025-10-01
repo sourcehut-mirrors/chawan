@@ -1180,6 +1180,8 @@ proc redraw(pager: Pager) {.jsfunc.} =
     pager.container.redraw = true
     if pager.container.select != nil:
       pager.container.select.redraw = true
+  if pager.lineedit != nil:
+    pager.lineedit.redraw = true
 
 proc getTempFile(pager: Pager; ext = ""): string =
   result = pager.config.external.tmpdir / "chaptmp" &
