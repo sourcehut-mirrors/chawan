@@ -14,9 +14,9 @@ export libregexp.JS_BOOL
 {.passl: "-lm".}
 
 when not compileOption("threads"):
-  const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
+  const CFLAGS = "-fwrapv -DMNC_NO_THREADS"
 else:
-  const CFLAGS = "-O2 -fwrapv"
+  const CFLAGS = "-fwrapv"
   {.passl: "-lpthread".}
 
 {.compile("qjs/quickjs.c", CFLAGS).}

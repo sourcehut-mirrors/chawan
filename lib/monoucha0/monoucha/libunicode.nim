@@ -6,9 +6,9 @@ from std/os import parentDir
 # used so that we can import it from libregexp.nim
 
 when not compileOption("threads"):
-  const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
+  const CFLAGS = "-fwrapv -DMNC_NO_THREADS"
 else:
-  const CFLAGS = "-O2 -fwrapv"
+  const CFLAGS = "-fwrapv"
 
 {.compile("qjs/libunicode.c", CFLAGS).}
 {.compile("qjs/cutils.c", CFLAGS).}

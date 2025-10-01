@@ -10,9 +10,9 @@ import libunicode
 export libunicode.JS_BOOL
 
 when not compileOption("threads"):
-  const CFLAGS = "-O2 -fwrapv -DMNC_NO_THREADS"
+  const CFLAGS = "-fwrapv -DMNC_NO_THREADS"
 else:
-  const CFLAGS = "-O2 -fwrapv"
+  const CFLAGS = "-fwrapv"
 
 {.compile("qjs/libregexp.c", CFLAGS).}
 
