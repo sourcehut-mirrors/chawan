@@ -2045,6 +2045,9 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
       #TODO not sure if this is the right behavior for app mode.
       # (for normal mode it's the right design, I think.)
       bc.clickResult = bc.click(element)
+    if bc.config.scripting == smApp:
+      bc.window.ensureLayout = proc(element: Element) =
+        bc.maybeReshape()
   bc.charset = bc.charsetStack.pop()
   istream.setBlocking(false)
   bc.loader.put(InputData(stream: istream))

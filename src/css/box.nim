@@ -272,6 +272,34 @@ proc resetState*(box: BlockBox) =
 
 const DefaultClipBox* = ClipBox(send: offset(LUnit.high, LUnit.high))
 
+proc newDOMRect(offset: Offset; size: Size): DOMRect =
+  DOMRect(
+    x: offset.x.toFloat64(),
+    y: offset.y.toFloat64(),
+    width: size.w.toFloat64(),
+    height: size.h.toFloat64()
+  )
+
+proc getClientRects(res: var seq[DOMRect]; box: CSSBox; firstOnly: bool) =
+  if box of BlockBox:
+    let box = BlockBox(box)
+    res.add(newDOMRect(box.render.offset, box.state.size))
+  else:
+    let ibox = InlineBox(box)
+    for area in ibox.state.areas:
+      let offset = ibox.render.offset - ibox.state.startOffset + area.offset
+      res.add(newDOMRect(offset, area.size))
+      if firstOnly:
+        break
+    for it in ibox.children:
+      if it.element == box.element and it of InlineBox:
+        res.getClientRects(it, firstOnly)
+
+getClientRectsImpl = proc(element: Element; firstOnly: bool): seq[DOMRect] =
+  result = @[]
+  if element.box != nil:
+    result.getClientRects(CSSBox(element.box), firstOnly)
+
 when defined(debug):
   import chame/tags
 

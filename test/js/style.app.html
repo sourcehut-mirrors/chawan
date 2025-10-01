@@ -4,13 +4,15 @@
 </style>
 <title>Style test</title>
 <div id=x>Fail</div>
-<div id=y style="color: red; display: inline">test</div>
+<div id=y style="color: red; display: inline; margin-left: 1ch">test</div>
 <script src=asserts.js></script>
 <script>
 const y = document.getElementById("y");
-assertEquals(y.style.cssText, "color: red; display: inline;");
+assertEquals(y.style.cssText, "color: red; display: inline; margin-left: 1ch;");
 assertEquals(window.getComputedStyle(y).cssText, "");
 assertEquals(window.getComputedStyle(y, "::before").color, "rgb(0, 0, 255)");
+const charSize = parseInt(window.getComputedStyle(y).marginLeft);
+assertEquals(y.getBoundingClientRect().width, charSize * 4);
 y.remove();
 document.getElementById("x").textContent = "Success";
 </script>

@@ -151,6 +151,7 @@ type
     document* {.jsufget.}: Document
     timeouts*: TimeoutState
     navigate*: proc(url: URL)
+    ensureLayout*: proc(element: Element)
     click*: proc(element: HTMLElement)
     importMapsAllowed*: bool
     inMicrotaskCheckpoint: bool
@@ -275,11 +276,14 @@ type
   DOMImplementation = object
     document: Document
 
-  DOMRect = ref object
-    x {.jsgetset.}: float64
-    y {.jsgetset.}: float64
-    width {.jsgetset.}: float64
-    height {.jsgetset.}: float64
+  DOMRect* = ref object
+    x* {.jsgetset.}: float64
+    y* {.jsgetset.}: float64
+    width* {.jsgetset.}: float64
+    height* {.jsgetset.}: float64
+
+  DOMRectList = ref object
+    list: seq[DOMRect]
 
   DocumentWriteBuffer* = ref object
     data*: string
@@ -599,6 +603,7 @@ jsDestructor(Attr)
 jsDestructor(NamedNodeMap)
 jsDestructor(CSSStyleDeclaration)
 jsDestructor(DOMRect)
+jsDestructor(DOMRectList)
 
 # Forward declarations
 proc newCDATASection(document: Document; data: string): CDATASection
@@ -640,7 +645,7 @@ proc nextDescendant(node, start: Node): Node
 proc parentElement*(node: Node): Element
 proc serializeFragment(res: var string; node: Node)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType)
-proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
+proc insertBefore(parent, node: Node; before: Option[Node]): DOMResult[Node]
 proc remove*(node: Node)
 proc replace*(parent, child, node: Node): Err[DOMException]
 
@@ -717,6 +722,8 @@ var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall, raises: [].}
 var fetchImpl*: proc(window: Window; input: JSRequest): JSResult[FetchPromise]
   {.nimcall, raises: [].}
 var applyStyleImpl*: proc(element: Element) {.nimcall, raises: [].}
+var getClientRectsImpl*: proc(element: Element; firstOnly: bool): seq[DOMRect]
+  {.nimcall, raises: [].}
 
 # Reflected attributes.
 type
@@ -1774,7 +1781,7 @@ proc removeChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
   node.remove()
   return ctx.toJS(node)
 
-proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
+proc insertBefore(parent, node: Node; before: Option[Node]): DOMResult[Node]
     {.jsfunc.} =
   let before = before.get(nil)
   let parent = ?parent.preInsertionValidity(node, before)
@@ -1788,7 +1795,7 @@ proc insertBefore*(parent, node: Node; before: Option[Node]): DOMResult[Node]
 proc appendChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
   return parent.insertBefore(node, none(Node))
 
-proc append*(parent, node: Node) =
+proc append(parent, node: Node) =
   discard parent.appendChild(node)
 
 # WARNING the ordering of the arguments in the standard is whack so this
@@ -1849,7 +1856,7 @@ proc replaceChild(parent, node, child: Node): DOMResult[Node] {.jsfunc.} =
   ?parent.replace(child, node)
   return ok(child)
 
-proc clone(node: Node; document = none(Document), deep = false): Node =
+proc clone(node: Node; document = none(Document); deep = false): Node =
   let document = document.get(node.document)
   let copy = if node of Element:
     #TODO is value
@@ -2163,12 +2170,11 @@ proc replaceAll(parent: ParentNode; node: Node) =
     child.remove(true)
   if node != nil:
     if node of DocumentFragment:
-      let node = DocumentFragment(node)
-      let addedNodes = node.getChildList()
-      for child in addedNodes:
-        parent.append(child)
+      let nodes = DocumentFragment(node).getChildList()
+      for it in nodes:
+        parent.insert(it, nil, suppressObservers = true)
     else:
-      parent.append(node)
+      parent.insert(node, nil, suppressObservers = true)
   #TODO tree mutation record
 
 proc replaceAll(parent: ParentNode; s: sink string) =
@@ -4075,6 +4081,30 @@ proc insertAdjacentHTML(this: Element; position, text: string):
   of iapAfterEnd: this.parentNode.insert(fragment, this.nextSibling)
   ok()
 
+proc insertAdjacent(this: Node; position: string; node: Node): DOMResult[Node] =
+  let pos0 = parseEnumNoCase[InsertAdjacentPosition](position)
+  if pos0.isErr:
+    return errDOMException("Invalid position", "SyntaxError")
+  let position = pos0.get
+  return case position
+  of iapBeforeBegin:
+    if this.parentNode == nil:
+      ok(nil)
+    else:
+      this.parentNode.insertBefore(node, option(this))
+  of iapAfterBegin: this.insertBefore(node, option(this.firstChild))
+  of iapBeforeEnd: this.insertBefore(node, none(Node))
+  of iapAfterEnd: this.parentNode.insertBefore(node, option(this.nextSibling))
+
+proc insertAdjacentElement(this: Element; position: string; element: Element):
+    DOMResult[Node] {.jsfunc.} =
+  this.insertAdjacent(position, element)
+
+proc insertAdjacentText(this: Element; position, s: string): DOMResult[void]
+    {.jsfunc.} =
+  discard ?this.insertAdjacent(position, this.document.newText(s))
+  ok()
+
 proc hover*(element: Element): bool =
   return element.internalHover
 
@@ -4093,13 +4123,29 @@ proc parseColor(element: Element; s: string): ARGBColor =
   return ec
 
 proc getBoundingClientRect(element: Element): DOMRect {.jsfunc.} =
-  #TODO should be implemented properly in app mode.
-  return DOMRect(
-    x: 0,
-    y: 0,
-    width: float64(dummyAttrs.ppc),
-    height: float64(dummyAttrs.ppl)
-  )
+  let window = element.document.window
+  if window == nil:
+    return DOMRect()
+  if window.settings.scripting == smApp:
+    window.ensureLayout(element)
+    let objs = getClientRectsImpl(element, firstOnly = true)
+    if objs.len > 0:
+      return objs[0]
+    return DOMRect()
+  let width = float64(dummyAttrs.ppc)
+  let height = float64(dummyAttrs.ppl)
+  return DOMRect(x: 0, y: 0, width: width, height: height)
+
+proc getClientRects(element: Element): DOMRectList {.jsfunc.} =
+  let res = DOMRectList()
+  let window = element.document.window
+  if window != nil:
+    if window.settings.scripting == smApp:
+      window.ensureLayout(element)
+      res.list = getClientRectsImpl(element, firstOnly = false)
+    else:
+      res.list.add(element.getBoundingClientRect())
+  res
 
 const WindowEvents* = [satLoad, satError, satFocus, satBlur]
 
@@ -4699,6 +4745,15 @@ proc top(rect: DOMRect): float64 {.jsfget.} =
 
 proc bottom(rect: DOMRect): float64 {.jsfget.} =
   return max(rect.y, rect.y + rect.height)
+
+# DOMRectList
+proc length(this: DOMRectList): int {.jsfget.} =
+  this.list.len
+
+proc getter(this: DOMRectList; u: uint32): DOMRect {.jsgetownprop.} =
+  if int64(u) > int64(this.list.len):
+    return nil
+  return this.list[int(u)]
 
 # CSSStyleDeclaration
 #
@@ -6221,6 +6276,7 @@ proc addDOMModule*(ctx: JSContext; eventTargetCID: JSClassID) =
   ctx.registerType(NamedNodeMap)
   ctx.registerType(CSSStyleDeclaration)
   ctx.registerType(DOMRect)
+  ctx.registerType(DOMRectList)
   ctx.registerElements(nodeCID)
   let imageFun = ctx.newFunction(["width", "height"], """
 const x = document.createElement("img");

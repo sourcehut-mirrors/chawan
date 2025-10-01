@@ -72,6 +72,9 @@ proc toLUnit*(a: float32): LUnit =
 proc toFloat32*(a: LUnit): float32 =
   return float32(int32(a)) / 64
 
+proc toFloat64*(a: LUnit): float64 =
+  return float64(int32(a)) / 64
+
 proc `$`*(a: LUnit): string =
   $toFloat32(a)
 

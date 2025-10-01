@@ -158,12 +158,13 @@ proc createDocumentTypeImpl(builder: ChaDOMBuilder; name, publicId,
 
 proc insertBeforeImpl(builder: ChaDOMBuilder; parent, child: Node;
     before: Option[Node]) =
-  discard parent.insertBefore(child, before)
+  ParentNode(parent).insert(child, before.get(nil))
 
 proc insertTextImpl(builder: ChaDOMBuilder; parent: Node; text: string;
     before: Option[Node]) =
-  let prevSibling = if before.isSome:
-    before.get.previousSibling
+  let before = before.get(nil)
+  let prevSibling = if before != nil:
+    before.previousSibling
   else:
     parent.lastChild
   if prevSibling != nil and prevSibling of Text:
@@ -172,7 +173,7 @@ proc insertTextImpl(builder: ChaDOMBuilder; parent: Node; text: string;
       Element(parent).invalidate()
   else:
     let text = builder.document.newText(text)
-    discard parent.insertBefore(text, before)
+    ParentNode(parent).insert(text, before)
 
 proc removeImpl(builder: ChaDOMBuilder; child: Node) =
   if child.parentNode != nil:
@@ -261,7 +262,7 @@ proc parseHTMLFragment*(element: Element; s: string): seq[Node] =
     PLAINTEXT
   else: DATA
   let root = document.newHTMLElement(TAG_HTML)
-  document.append(root)
+  document.insert(root, nil)
   let opts = HTML5ParserOpts[Node, CAtom](
     isIframeSrcdoc: false, #TODO?
     scripting: false,
