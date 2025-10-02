@@ -2385,7 +2385,9 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
     let nextn = n + colspan
     width += tctx.preLayoutTableColspan(cellw, space, rowi, n, nextn)
     # add spacing for border inside colspan
-    width += tctx.inlineSpacing * (colspan - 1) * 2
+    let spacing = tctx.inlineSpacing * (colspan - 1) * 2
+    width += spacing
+    borderWidth += spacing
     n = nextn
     firstCell = false
   tctx.growRowspan(growi, n, tctx.cols.len, growlen, width, cellHead, cellTail)

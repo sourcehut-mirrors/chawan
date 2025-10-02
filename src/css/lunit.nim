@@ -1,5 +1,7 @@
 # 32-bit fixed-point number, with 6 bits of precision.
 
+import std/math
+
 type LUnit* = distinct int32
 
 {.push overflowChecks: off, rangeChecks: off.}
@@ -62,11 +64,11 @@ proc `*=`*(a: var LUnit; b: LUnit) {.inline.} =
   a = a * b
 
 proc toLUnit*(a: float32): LUnit =
-  let a = a * 64
+  let a = round(a * 64)
   if unlikely(a == Inf):
-    return LUnit(high(int32))
+    return LUnit(int32.high)
   elif unlikely(a == -Inf):
-    return LUnit(low(int32))
+    return LUnit(int32.low)
   return LUnit(int32(a))
 
 proc toFloat32*(a: LUnit): float32 =
