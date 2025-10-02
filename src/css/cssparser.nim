@@ -862,13 +862,21 @@ proc tokenPair(t: CSSTokenType): CSSTokenType =
 template iq(ctx: CSSParser): openArray[char] =
   ctx.iqp.toOpenArray(0, ctx.iqlen - 1)
 
-proc initCSSParser*(iq: openArray[char]): CSSParser =
+proc initCSSParser0(iq: openArray[char]): CSSParser =
   if iq.len == 0:
     return CSSParser()
   return CSSParser(
     iqp: cast[ptr UncheckedArray[char]](unsafeAddr iq[0]),
     iqlen: iq.len
   )
+
+proc initCSSParser*(iq: openArray[char]; skipBOM = false): CSSParser =
+  var i = 0
+  if iq.len > 0 and skipBOM:
+    let u = iq.nextUTF8(i)
+    if u != 0xFEFF:
+      i = 0
+  initCSSParser0(iq.toOpenArray(i, iq.high))
 
 proc initCSSParser*(toks: openArray[CSSToken]): CSSParser =
   return CSSParser(toks: @toks)
