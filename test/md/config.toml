@@ -1,3 +1,6 @@
+[buffer]
+history = false
+
 [display]
 columns = 80
 lines = 24
