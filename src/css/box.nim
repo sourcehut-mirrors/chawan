@@ -94,7 +94,7 @@ type
     t*: SizeConstraintType
     u*: LUnit
 
-  AvailableSpace* = array[DimensionType, SizeConstraint]
+  Space* = array[DimensionType, SizeConstraint]
 
   Bounds* = object
     a*: array[DimensionType, Span] # width clamp
@@ -103,7 +103,7 @@ type
   ResolvedSizes* = object
     margin*: RelativeRect
     padding*: RelativeRect
-    space*: AvailableSpace
+    space*: Space
     bounds*: Bounds
     border*: CSSBorder
 
