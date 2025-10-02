@@ -130,6 +130,10 @@ assertThrows(() => new URL("https://example.org", null), TypeError);
 	assert(!x.searchParams.has("hi", null));
 	assert(!x.searchParams.has("hi", ""));
 	assert(x.searchParams.has("hi", "world"));
+	x.searchParams.set("hi", "ho");
+	assert(x.searchParams.has("hi", "ho"));
+	x.searchParams.set("ho", "hi");
+	assert(x.searchParams.has("ho", "hi"));
 	assertEquals(new URLSearchParams(undefined) + "", "")
 }
 document.getElementById("x").textContent = "Success";

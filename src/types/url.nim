@@ -1208,10 +1208,16 @@ proc has(ctx: JSContext; params: URLSearchParams; name: string;
   return JS_FALSE
 
 proc set(params: URLSearchParams; name: string; value: sink string) {.jsfunc.} =
+  var found = false
   for param in params.list.mitems:
     if param.name == name:
       param.value = value
+      found = true
       break
+  if found:
+    params.update()
+  else:
+    params.append(name, value)
 
 proc newURL*(ctx: JSContext; s: string; base: JSValueConst = JS_UNDEFINED):
     Opt[URL] {.jsctor.} =
