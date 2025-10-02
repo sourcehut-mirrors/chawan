@@ -9,24 +9,57 @@ This document lists common problems you may run into when using Chawan.
 If you encounter a problem not described in this document, please open a
 ticket at <https://todo.sr.ht/~bptato/chawan>.
 
+## It doesn't compile?
+
+Please open a ticket.  Don't forget to include the compilation error, and
+your operating system (and its version).
+
+## It crashes?
+
+Please open a ticket that describes how to reproduce the crash.  Don't
+forget to include a stack trace - that's the wall of text you see after
+your buffer disappeared.
+
+If you don't see a stack trace, try:
+`cha example.org -o start.console-buffer=false 2>err.log`.  Then check the
+contents of `err.log` after the crash.
+
+If you *still* don't see a stack trace, no problem, just report that you
+couldn't get a stack trace.
+
 ## I can't select/copy text with my mouse?
 
-Right click -> select text, then right click -> copy selection.
+Right click -> select text, then right click -> copy selection.  (You can
+also double click and drag the mouse to the left/right to select.)
 
 If Chawan complains about xsel, either install it or edit
 `external.copy-cmd` and `external.paste-cmd` to your liking.
 
+## I was promised images but I see nothing?
+
+The most common reason is that you didn't add following to `config.toml`:
+
+```toml
+[buffer]
+images = true
+```
+
+The second most common reason is that your terminal supports neither Sixel
+nor Kitty images.
+
+Other reasons are enumerated <!-- MANOFF -->[here](image.md).<!-- MANON --> <!-- MANON here: **cha-image**(7) MANOFF -->
+
 ## Why do I get strange/incorrect/ugly colors?
 
-Chawan's display capabilities depend on what your terminal reports.  In
-particular:
+By default, Chawan's display capabilities are limited to what your terminal
+reports.  In particular:
 
-* if the `$COLORTERM` variable is not set, then it may fall back to 8-bit or
-  ANSI colors.  Make sure you export it as `COLORTERM=truecolor`.
-* if it does not respond to querying the background color, then Chawan's color
-  contrast correction will likely malfunction. you can correct this using the
-  `display.default-background-color`/`display.default-foreground-color`
-  variables.
+* If the `$COLORTERM` environment variable is not set, it may fall back to
+  8-bit or ANSI colors.  Make sure you export it as `COLORTERM=truecolor`.
+* If it does not respond to querying the background color, then Chawan's
+  color contrast correction will likely malfunction.  You can correct this
+  using the `display.default-background-color` and
+  `display.default-foreground-color` options.
 
 See [config.md](config.md#display) for details.
 
@@ -91,9 +124,9 @@ in Chawan.  The most common offender is grid.
 There are three ways of dealing with this:
 
 1. If the website's contents are mostly text, install
-   [rdrview](https://github.com/eafer/rdrview).
-   Then bind the following command to a key of your choice in the
-   [config](config.md#keybindings) (e.g. `<space> r`):
+   [rdrview](https://github.com/eafer/rdrview).  Then bind the following
+   command to a key of your choice in the [config](config.md#keybindings)
+   (e.g. `<space> r`):
 
    `' r' = "pager.externFilterSource('rdrview -Hu \"$CHA_URL\"')"`
 
@@ -101,7 +134,8 @@ There are three ways of dealing with this:
    reading experience anyway.
 
 2. Complain [here](https://todo.sr.ht/~bptato/chawan), and wait until the
-   problem goes away.
+   problem goes away.  It helps if you can reduce the issue to a minimal
+   reproducible example (ideally a small HTML fragment.)
 
 3. Write a patch to fix the problem, and send it
    [here](https://lists.sr.ht/~bptato/chawan-devel).
@@ -121,10 +155,6 @@ Some potential fixes:
 
 * Enable JavaScript.  If something broke, type M-c M-c to check the
   browser console, then follow step 3. of the previous answer.
-
-  Warning: remote JavaScript execution is inherently unsafe (inasmuch as
-  it is in all browsers).  Please only enable JavaScript on websites
-  you trust.
 
 ## Text areas discard my edits when I type C-c in my editor!
 
