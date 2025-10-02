@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<div style="width: 20ch">
+<table>
+<tr>
+<td width=1% bgcolor=red>1
+<td bgcolor=blue width=100>test
+<td bgcolor=blue width=50>test
+<tr>
+<td width=100 bgcolor=red>t <!-- width ignored -->
+</table>
+
+<table>
+<tr>
+<td width=1% bgcolor=red>2
+<td bgcolor=blue width=2%>test
+</table>
+
+<table>
+<tr>
+<td width=1% bgcolor=red>3
+<td bgcolor=blue>test test test
+<td bgcolor=purple>test
+</table>
+</div>
+
+<!-- tests with larger space -->
+<div style="width: 80ch">
+
+<!-- last column's weight overrides (expands) other columns' width -->
+<table>
+<tr>
+<td bgcolor=blue width=100>test
+<td bgcolor=blue width=50>test
+<td width=1% bgcolor=red>4
+</table>
+
+<!-- first column's weight overrides (shrinks) other columns' width -->
+<table>
+<tr>
+<td width=100% bgcolor=red>5
+<td bgcolor=blue width=200>test
+<td bgcolor=blue width=50>test
+</table>
+
+<!-- width and weight don't conflict, respect both -->
+<table bgcolor=yellow>
+<tr>
+<td width=60% bgcolor=red>6
+<td bgcolor=blue width=100>test
+<td bgcolor=blue width=50>test
+</table>
+
+<table>
+<tr>
+<td width=1% bgcolor=red>7
+<td bgcolor=blue>test test
+<td bgcolor=purple>test
+</table>
+
+<table>
+<tr>
+<td width=5% bgcolor=red>8
+<td bgcolor=blue>test test test
+<td bgcolor=purple>test
+</table>
+
+<table>
+<tr>
+<td width=50% bgcolor=red>7
+<td bgcolor=blue>test test test
+<td bgcolor=purple>test
+</table>
