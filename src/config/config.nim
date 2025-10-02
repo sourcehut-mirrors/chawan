@@ -71,6 +71,7 @@ type
     history*: Option[bool]
     markLinks*: Option[bool]
     userStyle*: Option[StyleString]
+    filterCmd*: Option[string]
 
   OmniRule* = ref object
     match*: Option[Regex]

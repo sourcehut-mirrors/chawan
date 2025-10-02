@@ -1878,7 +1878,7 @@ proc windowChange(pager: Pager) =
 # Note that this may modify the URL passed.
 proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     loaderConfig: var LoaderClientConfig; ourl: var URL;
-    cookieJarId: var string): BufferConfig =
+    cookieJarId: var string; filterCmd: var string): BufferConfig =
   let host = url.host
   let ctx = pager.jsctx
   result = BufferConfig(
@@ -1966,6 +1966,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       result.markLinks = sc.markLinks.get
     if sc.userStyle.isSome:
       result.userStyle &= string(sc.userStyle.get) & '\n'
+    if sc.filterCmd.isSome:
+      filterCmd = sc.filterCmd.get
   loaderConfig.allowSchemes.add(pager.config.external.urimethodmap.imageProtos)
   if result.images:
     result.imageTypes = pager.config.external.mimeTypes.image
@@ -1981,13 +1983,14 @@ proc applyCookieJar(pager: Pager; loaderConfig: var LoaderClientConfig;
 
 proc initGotoURL(pager: Pager; request: Request; charset: Charset;
     referrer: Container; cookie: Option[CookieMode];
-    loaderConfig: var LoaderClientConfig; bufferConfig: var BufferConfig) =
+    loaderConfig: var LoaderClientConfig; bufferConfig: var BufferConfig;
+    filterCmd: var string) =
   pager.navDirection = ndNext
   var cookieJarId: string
   for i in 0 ..< pager.config.network.maxRedirect:
     var ourl: URL = nil
     bufferConfig = pager.applySiteconf(request.url, charset, loaderConfig, ourl,
-      cookieJarId)
+      cookieJarId, filterCmd)
     if ourl == nil:
       break
     request.url = ourl
@@ -2001,10 +2004,12 @@ proc initGotoURL(pager: Pager; request: Request; charset: Charset;
     pager.loader.addAuth(request.url)
   request.url.password = ""
 
+#TODO maybe we should create the container object before starting the
+# request?  then we wouldn't have to pass around these million params...
 proc gotoURL0(pager: Pager; request: Request; save, history, add: bool;
     bufferConfig: BufferConfig; loaderConfig: LoaderClientConfig;
     title, contentType: string; redirectDepth: int; url: URL;
-    replace, replaceBackup: Container): Container =
+    replace, replaceBackup: Container; filterCmd: string): Container =
   var flags: set[ContainerFlag] = {}
   if save:
     flags.incl(cfSave)
@@ -2021,6 +2026,8 @@ proc gotoURL0(pager: Pager; request: Request; save, history, add: bool;
     contentType = contentType,
     flags = flags,
   )
+  if filterCmd != "":
+    container.filter = BufferFilter(cmd: filterCmd)
   if replace != nil:
     pager.replace(replace, container)
     #TODO surely there's a less convoluted way to achieve this...
@@ -2044,11 +2051,12 @@ proc gotoURL(pager: Pager; request: Request; contentType = "";
     add = true; title = ""): Container =
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
+  var filterCmd: string
   pager.initGotoURL(request, charset, referrer, none(CookieMode), loaderConfig,
-    bufferConfig)
+    bufferConfig, filterCmd)
   return pager.gotoURL0(request, save, history, add, bufferConfig,
     loaderConfig, title, contentType, redirectDepth, url, replace,
-    replaceBackup)
+    replaceBackup, filterCmd)
 
 # Check if the user is trying to go to an anchor of the current buffer.
 # If yes, the caller need not call gotoURL.
@@ -2511,12 +2519,13 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
     request = newRequest(url)
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
+  var filterCmd: string
   pager.initGotoURL(request, CHARSET_UNKNOWN, referrer = nil, t.cookie,
-    loaderConfig, bufferConfig)
+    loaderConfig, bufferConfig, filterCmd)
   bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
   ok(pager.gotoURL0(request, t.save, t.history, add = true, bufferConfig,
     loaderConfig, title = "", t.contentType.get(""), redirectDepth = 0,
-    url = nil, t.replace.get(nil), replaceBackup = nil))
+    url = nil, t.replace.get(nil), replaceBackup = nil, filterCmd))
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
