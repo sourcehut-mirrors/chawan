@@ -2442,9 +2442,10 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     var w: LUnit = 0
     var reflow = cellw.reflow
     let colspan1 = cellw.colspan - 1
-    for col in tctx.cols.toOpenArray(n, n + colspan1):
-      w += col.width
-      reflow = reflow or rowi < col.reflow
+    if n < tctx.cols.len:
+      for col in tctx.cols.toOpenArray(n, n + colspan1):
+        w += col.width
+        reflow = reflow or rowi < col.reflow
     # Add inline spacing for merged columns.
     w += tctx.inlineSpacing * colspan1 * 2
     if reflow and cellw.box != nil:
