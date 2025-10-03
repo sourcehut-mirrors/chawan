@@ -426,7 +426,6 @@ proc addInputChildren(frame: var TreeFrame; input: HTMLInputElement) =
     let n = frame.computed{"-cha-input-intrinsic-size"}
     computed{"display"} = DisplayBlock
     computed{"width"} = cssLength(n)
-    computed{"overflow-x"} = OverflowHidden
     var aframe = frame.ctx.initTreeFrame(input, computed)
     if cdata != nil:
       aframe.addText(cdata)

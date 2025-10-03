@@ -78,6 +78,8 @@ input {
 	white-space: pre !important;
 	color: -cha-ansi(red) !important;
 	text-decoration: underline;
+	overflow-x: hidden !important;
+	text-align: left !important;
 	border-style: none -cha-bracket -cha-bracket !important;
 	border-color: -cha-ansi(default) -cha-ansi(default) -cha-ansi(red) !important;
 	height: 1em !important
