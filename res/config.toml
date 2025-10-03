@@ -137,33 +137,66 @@ x => "https://mojeek.com/search?q=" +
 	encodeURIComponent(x.split(":").slice(1).join(":"));
 '''
 
-# strip tracking
 [siteconf.google-com]
 url = '^https?://(www\.)?google\.com'
 rewrite-url = '''
 x => {
-	if (x.pathname == "/url") {
-		let q = x.searchParams.get("q");
+	let q = x.searchParams.get("q");
+	if (x.pathname == "/url") { /* strip tracking */
 		if (q[0] == '/')
 			q = x.protocol + x.host + q;
 		return new URL(q);
 	}
 	for (const name of ["sca_esv", "sca_upv", "oq", "aqs", "ved", "sa", "source", "ei"])
 		x.searchParams.delete(name);
+	/* async search, thanks: SearxNG */
+	const udm = parseInt(x.searchParams.get("udm") ?? 14);
+	const start = parseInt(x.searchParams.get("start") ?? 0);
+	const params = [["start", start], ["filter", 0], ["safe", "off"],
+			["ie", "utf8"], ["oe", "utf8"], ["udm", udm],
+			["hl", "en-US"], ["asearch", "arc"]];
+	for (const [n, v] of params)
+		x.searchParams.set(n, v);
+	const range = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
+	let id = globalThis.googleSearchId;
+	let prev = globalThis.googleSearchIdTime;
+	if (!id || ((new Date() - prev) / 1000 / 60 / 60) > 1) {
+		id = "";
+		for (let i = 0; i < 23; i++)
+			id += range.charAt(Math.floor(Math.random() * range.length));
+		globalThis.googleSearchId = id;
+		globalThis.googleSearchIdTime = new Date();
+	}
+	x.searchParams.set("async", `arc_id:srp_${id}_1${(start+"").padStart(2, 0)},use_ac:true,_fmt:html`);
+	const map = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot', "'": '&apos;'};
+	const qq = decodeURIComponent(q).replaceAll(/[<>&"']/g, x => map[x] ?? x)
+	let head = `<title>${qq} - Google search</title><center><header><form action=/search><input type=search size=60 name=q value="${qq}"><input type=submit value=Search></form><a right href="/search?q=${qq}&start=${start+10}&udm=${udm}">Next page</a>`;
+	if (start >= 10)
+		head += `<a left href="/search?q=${qq}&start=${start-10}&udm=${udm}">Previous page</a>`;
+	head += "<center>";
+	for (const [n, u] of [["IMAGES", 2], ["VIDEOS", 7], ["NEWS", 12], ["FORUMS", 18], ["BOOKS", 36]])
+		head += `<a href="/search?q=${qq}&udm=${u}">${n}</a> `;
+	head += "</center></header><main>";
+	setenv("CHA_GOOG_HEAD", head);
 }
 '''
-# it seems they no longer allow searches without JS.
-# at least the old page still works
 default-headers = {
-	User-Agent = "Mozilla/5.0 (iPhone; CPU iPhone OS 6_0 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10A5376e Safari/8536.25",
-	Accept = "text/html, text/*;q=0.5, */*;q=0.4",
-	Accept-Encoding = "gzip, deflate",
-	Accept-Language = "en;q=1.0",
-	Pragma = "no-cache",
-	Cache-Control = "no-cache"
+	User-Agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
+	Accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+	Accept-Language = 'en-US,en;q=0.5',
+	Accept-Encoding = 'gzip, deflate, br',
+	Sec-GPC = '1'
 }
-# the old style lacks a background, but sets foreground to black...
-user-style = "html { background: white }"
+filter-cmd = 'echo "$CHA_GOOG_HEAD";cat;echo "$CHA_GOOG_HEAD"'
+user-style = '''
+html { background: white; text-align: -cha-center }
+header, main { text-align: -cha-left; width: 80ch; display: flow-root }
+form { display: flex }
+header > a[left] { float: left }
+header > a[right] { float: right }
+input[type=search] { flex-grow: 1 }
+a { color: blue }
+'''
 
 [siteconf.downloads]
 url = 'about:downloads'
