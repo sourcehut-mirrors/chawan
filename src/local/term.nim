@@ -1479,11 +1479,11 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         var s: string
         while true:
           let c = term.readChar()
-          if c == '\a' or c == '\e' and term.readChar() == '\\':
-            break
-          if c == ',':
+          if c == ',' or c == '\a' or c == '\e' and term.readChar() == '\\':
             if s.equalsIgnoreCase("SetSelection"):
               hasOsc52 = false
+            if c != ',':
+              break
             s.setLen(0)
           else:
             s &= c
