@@ -114,7 +114,7 @@ substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + enco
 
 [omnirule.go]
 match = '^go:'
-substitute-url = 'x => `https://www.google.com/search?gbv=1&ucbcb=1&oe=UTF-8&q=${x.split(":").slice(1).join(":")}`'
+substitute-url = 'x => `https://www.google.com/search?q=${x.split(":").slice(1).join(":")}`'
 
 [omnirule.wk]
 match = '^wk:'
@@ -138,25 +138,16 @@ x => "https://mojeek.com/search?q=" +
 '''
 
 [siteconf.google-com]
-url = '^https?://(www\.)?google\.com'
+url = '^https?://(www\.)?google\.com/search'
 rewrite-url = '''
 x => {
-	let q = x.searchParams.get("q");
-	if (x.pathname == "/url") { /* strip tracking */
-		if (q[0] == '/')
-			q = x.protocol + x.host + q;
-		return new URL(q);
-	}
-	for (const name of ["sca_esv", "sca_upv", "oq", "aqs", "ved", "sa", "source", "ei"])
+	const q = x.searchParams.get("q");
+	for (const name of ["sca_esv", "sca_upv", "oq", "aqs", "ved", "sa",
+		"source", "ei", "biw", "bih", "iflsig", "gbv"])
 		x.searchParams.delete(name);
 	/* async search, thanks: SearxNG */
 	const udm = parseInt(x.searchParams.get("udm") ?? 14);
 	const start = parseInt(x.searchParams.get("start") ?? 0);
-	const params = [["start", start], ["filter", 0], ["safe", "off"],
-			["ie", "utf8"], ["oe", "utf8"], ["udm", udm],
-			["hl", "en-US"], ["asearch", "arc"]];
-	for (const [n, v] of params)
-		x.searchParams.set(n, v);
 	const range = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
 	let id = globalThis.googleSearchId;
 	let prev = globalThis.googleSearchIdTime;
@@ -167,10 +158,15 @@ x => {
 		globalThis.googleSearchId = id;
 		globalThis.googleSearchIdTime = new Date();
 	}
-	x.searchParams.set("async", `arc_id:srp_${id}_1${(start+"").padStart(2, 0)},use_ac:true,_fmt:html`);
+	const asyncs = `arc_id:srp_${id}_1${(start+"").padStart(2, 0)},use_ac:true,_fmt:html`;
+	const params = [["start", start], ["filter", 0], ["safe", "off"],
+			["ie", "utf8"], ["oe", "utf8"], ["udm", udm],
+			["hl", "en-US"], ["asearch", "arc"], ["async", asyncs]];
+	for (const [n, v] of params)
+		x.searchParams.set(n, v);
 	const map = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot', "'": '&apos;'};
 	const qq = decodeURIComponent(q).replaceAll(/[<>&"']/g, x => map[x] ?? x)
-	let head = `<title>${qq} - Google search</title><center><header><form action=/search><input type=search size=60 name=q value="${qq}"><input type=submit value=Search></form><a right href="/search?q=${qq}&start=${start+10}&udm=${udm}">Next page</a>`;
+	let head = `<title>${qq} - Google search</title><center><header><form action=/search><input type=search name=q value="${qq}"><input type=submit value=Search></form><a right href="/search?q=${qq}&start=${start+10}&udm=${udm}">Next page</a>`;
 	if (start >= 10)
 		head += `<a left href="/search?q=${qq}&start=${start-10}&udm=${udm}">Previous page</a>`;
 	head += "<center>";
