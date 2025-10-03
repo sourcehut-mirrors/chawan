@@ -1480,14 +1480,13 @@ proc parseCounterSet(ctx: var CSSParser; n: int32): Opt[seq[CSSCounterSet]] =
     let name = ctx.consume().s.toAtom()
     var r = CSSCounterSet(name: name)
     ctx.skipBlanks()
-    if not ctx.has() or ctx.peekTokenType() == cttWhitespace:
-      r.num = n
-      res.add(r)
-    elif ctx.peekTokenType() == cttNumber:
+    if ctx.has() and ctx.peekTokenType() == cttNumber:
       r.num = ctx.consume().toi
       res.add(r)
     else:
-      return err()
+      r.num = n
+      res.add(r)
+    ctx.skipBlanks()
   return ok(move(res))
 
 proc parseMaxSize(ctx: var CSSParser; attrs: WindowAttributes):

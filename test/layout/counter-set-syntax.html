@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<style>
+#a { counter-set: a b c 2 }
+#b { counter-increment: b }
+#c::before { content: counter(b) }
+</style>
+<div id=a>
+<div>
+<div id=b>test</div>
+</div>
+<div id=c>test</div>
+</div>
