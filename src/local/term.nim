@@ -126,6 +126,7 @@ type
     margin: bool
     asciiOnly: bool
     osc52Copy: bool
+    ttyFlag: bool
     origTermios: Termios
     newTermios: Termios
     defaultBackground: RGBColor
@@ -537,7 +538,7 @@ proc clearDisplay(term: Terminal): string =
   else: return ED
 
 proc isatty*(term: Terminal): bool =
-  return term.istream != nil and term.istream.isatty() and term.ostream.isatty()
+  term.ttyFlag
 
 proc anyKey*(term: Terminal; msg = "[Hit any key]") =
   if term.isatty():
@@ -1787,6 +1788,7 @@ proc initScreen(term: Terminal) =
 
 proc start*(term: Terminal; istream: PosixStream;
     registerCb: (proc(fd: int) {.raises: [].})): TermStartResult =
+  term.ttyFlag = istream != nil and istream.isatty() and term.ostream.isatty()
   term.istream = istream
   term.registerCb = registerCb
   if term.isatty():
