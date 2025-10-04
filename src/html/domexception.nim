@@ -58,22 +58,18 @@ type
     INVALID_NODE_TYPE_ERR = 24
     DATA_CLONE_ERR = 25
 
-  DOMException* = ref object of JSError
-    name* {.jsget.}: string
+  DOMException = ref object of JSError
+    name {.jsget.}: string
     code: int
-
-  DOMResult*[T] = Result[T, DOMException]
 
 jsDestructor(DOMException)
 
-proc newDOMException*(message = ""; name = "Error"): DOMException {.jsctor.} =
+proc newDOMException(message = ""; name = "Error"): DOMException {.jsctor.} =
   return DOMException(e: jeCustom, name: name, message: message, code: -1)
 
-template errDOMException*(message, name: string): untyped =
-  err(newDOMException(message, name))
-
-proc JS_ThrowDOMException*(ctx: JSContext; name, message: string): JSValue =
-  return JS_Throw(ctx, ctx.toJS(newDOMException(message, name)))
+proc JS_ThrowDOMException*(ctx: JSContext; name: cstring; message: string):
+    JSValue {.discardable.} =
+  return JS_Throw(ctx, ctx.toJS(newDOMException(message, $name)))
 
 proc getMessage(this: DOMException): string {.jsfget: "message".} =
   return this.message

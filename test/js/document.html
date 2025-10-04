@@ -9,6 +9,7 @@
 <script src=asserts.js></script>
 <script>
 assertEquals(document.toString, document.getElementById("toString"));
+assertThrows(() => document.remove(), TypeError);
 document.toString.remove();
 document.testtest = "hi";
 assertEquals(document.ELEMENT_NODE, 1);

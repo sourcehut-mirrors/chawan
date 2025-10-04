@@ -42,7 +42,7 @@ import types/winattrs
 import utils/twtstr
 
 # Forward declarations
-proc setLocation(window: Window; s: string): Err[JSError]
+proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
 
 # NavigatorID
 proc appCodeName(navigator: var Navigator): string {.jsfget.} = "Mozilla"
@@ -116,12 +116,13 @@ proc state(history: var History): JSValue {.jsfget.} = JS_NULL
 proc go(history: var History) {.jsfunc.} = discard
 proc back(history: var History) {.jsfunc.} = discard
 proc forward(history: var History) {.jsfunc.} = discard
+
 proc pushState(ctx: JSContext; history: var History;
-    data, unused: JSValueConst; s: string): JSResult[void] {.jsfunc.} =
+    data, unused: JSValueConst; s: string): JSValue {.jsfunc.} =
   let window = ctx.getWindow()
   if window != nil:
-    return window.setLocation(s)
-  return ok()
+    return ctx.setLocation(window, s)
+  return JS_UNDEFINED
 
 # Storage
 proc find(this: Storage; key: string): int =
@@ -144,16 +145,16 @@ proc getItem(ctx: JSContext; this: var Storage; s: string): JSValue {.jsfunc.} =
     return ctx.toJS(this.map[i].value)
   return JS_NULL
 
-proc setItem(this: var Storage; key, value: string):
-    Err[DOMException] {.jsfunc.} =
+proc setItem(ctx: JSContext; this: var Storage; key, value: string): JSValue
+    {.jsfunc.} =
   let i = this.find(key)
   if i != -1:
     this.map[i].value = value
   else:
     if this.map.len >= 64:
-      return errDOMException("Quota exceeded", "QuotaExceededError")
+      return JS_ThrowDOMException(ctx, "QuotaExceededError", "quota exceeded")
     this.map.add((key, value))
-  ok()
+  return JS_UNDEFINED
 
 proc removeItem(this: var Storage; key: string) {.jsfunc.} =
   let i = this.find(key)
@@ -171,9 +172,9 @@ proc getter(ctx: JSContext; this: var Storage; s: string): JSValue
     {.jsgetownprop.} =
   return ctx.toJS(ctx.getItem(this, s)).uninitIfNull()
 
-proc setter(this: var Storage; k, v: string): Err[DOMException]
+proc setter(ctx: JSContext; this: var Storage; k, v: string): JSValue
     {.jssetprop.} =
-  return this.setItem(k, v)
+  return ctx.setItem(this, k, v)
 
 proc delete(this: var Storage; k: string): bool {.jsdelprop.} =
   this.removeItem(k)
@@ -223,19 +224,19 @@ proc mark(rt: JSRuntime; window: Window; markFunc: JS_MarkFunc) {.jsmark.} =
 method isSameOrigin*(window: Window; origin: Origin): bool {.base.} =
   return window.settings.origin.isSameOrigin(origin)
 
-proc fetch0(window: Window; input: JSRequest): JSResult[FetchPromise] =
+proc fetch0(window: Window; input: JSRequest): FetchPromise =
   #TODO cors requests?
   if input.request.url.schemeType != stData and
       not window.isSameOrigin(input.request.url.origin):
     let err = newFetchTypeError()
-    return ok(newResolvedPromise(JSResult[Response].err(err)))
-  return ok(window.loader.fetch(input.request))
+    return newResolvedPromise(JSResult[Response].err(err))
+  return window.loader.fetch(input.request)
 
-proc fetch(window: Window; input: JSValueConst;
+proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
     init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
     {.jsfunc.} =
-  let input = ?newRequest(window.jsctx, input, init)
-  return window.fetch0(input)
+  let input = ?newRequest(ctx, input, init)
+  ok(window.fetch0(input))
 
 proc storeJS0(ctx: JSContext; v: JSValue): int =
   assert not JS_IsUninitialized(v)
@@ -308,19 +309,14 @@ proc innerHeight(ctx: JSContext; window: Window): int {.jsrfget.} =
 
 proc devicePixelRatio(window: Window): float64 {.jsrfget.} = 1
 
-proc setLocation(window: Window; s: string): Err[JSError]
+proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
     {.jsfset: "location".} =
   if window.document == nil:
-    return errTypeError("document is null")
-  return window.document.setLocation(s)
+    return JS_ThrowTypeError(ctx, "document is null")
+  return ctx.setLocation(window.document, s)
 
-proc getWindow(window: Window): Window {.jsuffget: "window".} =
-  return window
-
-proc getSelf(window: Window): Window {.jsrfget: "self".} =
-  return window
-
-proc getFrames(window: Window): Window {.jsrfget: "frames".} =
+proc getWindow(window: Window): Window {.jsuffget: "window", jsrfget: "frames",
+    jsrfget: "self".} =
   return window
 
 proc getTop(window: Window): Window {.jsuffget: "top".} =

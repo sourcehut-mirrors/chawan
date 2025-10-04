@@ -671,15 +671,18 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
   event.flags.excl(efDispatch)
   return dctx.canceled
 
-proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event):
-    DOMResult[bool] {.jsfunc.} =
+proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event): JSValue
+    {.jsfunc.} =
   if efDispatch in event.flags:
-    return errDOMException("Event's dispatch flag is already set",
-      "InvalidStateError")
+    return JS_ThrowDOMException(ctx, "InvalidStateError",
+      "event's dispatch flag is already set")
   if efInitialized notin event.flags:
-    return errDOMException("Event is not initialized", "InvalidStateError")
+    return JS_ThrowDOMException(ctx, "InvalidStateError",
+      "event is not initialized")
   event.isTrusted = false
-  return ok(not ctx.dispatch(this, event))
+  if ctx.dispatch(this, event):
+    return JS_FALSE
+  return JS_TRUE
 
 proc addEventModule*(ctx: JSContext):
     tuple[eventCID, eventTargetCID: JSClassID] =

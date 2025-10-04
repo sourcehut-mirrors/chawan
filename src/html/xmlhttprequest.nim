@@ -111,7 +111,7 @@ proc newProgressEvent(ctype: CAtom; init = ProgressEventInit()): ProgressEvent
 proc readyState(this: XMLHttpRequest): uint16 {.jsfget.} =
   return uint16(this.readyState)
 
-proc parseMethod(s: string): DOMResult[HttpMethod] =
+proc parseMethod(ctx: JSContext; s: string): Opt[HttpMethod] =
   return case s.toLowerAscii()
   of "get": ok(hmGet)
   of "delete": ok(hmDelete)
@@ -121,21 +121,24 @@ proc parseMethod(s: string): DOMResult[HttpMethod] =
   of "post": ok(hmPost)
   of "put": ok(hmPut)
   of "connect", "trace", "track":
-    errDOMException("Forbidden method", "SecurityError")
+    JS_ThrowDOMException(ctx, "SecurityError", "forbidden method")
+    err()
   else:
-    errDOMException("Invalid method", "SyntaxError")
+    JS_ThrowDOMException(ctx, "SyntaxError", "invalid method")
+    err()
 
 proc fireReadyStateChangeEvent(window: Window; target: EventTarget) =
   window.fireEvent(satReadystatechange, target, bubbles = false,
     cancelable = false, trusted = true)
 
 proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
-    misc: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
-  let httpMethod = ?parseMethod(httpMethod)
+    misc: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
+  let httpMethod = ?ctx.parseMethod(httpMethod)
   let global = ctx.getGlobal()
   let parsedURL = parseURL0(url, global.document.baseURL)
   if parsedURL == nil:
-    return errDOMException("Invalid URL", "SyntaxError")
+    JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
+    return err()
   var async = true
   if misc.len > 0: # standard weirdness
     ?ctx.fromJS(misc[0], async)
@@ -149,8 +152,9 @@ proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
       parsedURL.setPassword(password)
   if not async and ctx.getWindow() != nil and
       (this.timeout != 0 or this.responseType != xhrtUnknown):
-    return errDOMException("Today's horoscope: don't go outside",
-      "InvalidAccessError")
+    JS_ThrowDOMException(ctx, "InvalidAccessError",
+      "today's horoscope: don't go outside")
+    return err()
   #TODO terminate fetch controller
   this.flags.excl(xhrfSend)
   this.flags.excl(xhrfUploadListener)
@@ -167,46 +171,50 @@ proc open(ctx: JSContext; this: XMLHttpRequest; httpMethod, url: string;
   if this.readyState != xhrsOpened:
     this.readyState = xhrsOpened
     global.fireReadyStateChangeEvent(this)
-  return ok()
+  ok()
 
-proc checkOpened(this: XMLHttpRequest): DOMResult[void] =
+proc checkOpened(ctx: JSContext; this: XMLHttpRequest): Opt[void] =
   if this.readyState != xhrsOpened:
-    return errDOMException("ready state was expected to be `opened'",
-      "InvalidStateError")
+    JS_ThrowDOMException(ctx, "InvalidStateError",
+      "ready state was expected to be `opened'")
+    return err()
   ok()
 
-proc checkSendFlag(this: XMLHttpRequest): DOMResult[void] =
+proc checkSendFlag(ctx: JSContext; this: XMLHttpRequest): Opt[void] =
   if xhrfSend in this.flags:
-    return errDOMException("`send' flag is set", "InvalidStateError")
+    JS_ThrowDOMException(ctx, "InvalidStateError", "`send' flag is set")
+    return err()
   ok()
 
-proc setRequestHeader(this: XMLHttpRequest; name, value: string):
-    DOMResult[void] {.jsfunc.} =
-  ?this.checkOpened()
-  ?this.checkSendFlag()
+proc setRequestHeader(ctx: JSContext; this: XMLHttpRequest;
+    name, value: string): Opt[void] {.jsfunc.} =
+  ?ctx.checkOpened(this)
+  ?ctx.checkSendFlag(this)
   if not name.isValidHeaderName() or not value.isValidHeaderValue():
-    return errDOMException("Invalid header name or value", "SyntaxError")
+    JS_ThrowDOMException(ctx, "SyntaxError", "invalid header name or value")
+    return err()
   if isForbiddenRequestHeader(name, value):
     return ok()
   this.headers[name] = value
   ok()
 
-proc setWithCredentials(this: XMLHttpRequest; withCredentials: bool):
-    DOMResult[void] {.jsfset: "withCredentials".} =
+proc setWithCredentials(ctx: JSContext; this: XMLHttpRequest;
+    withCredentials: bool): Opt[void] {.jsfset: "withCredentials".} =
   if this.readyState notin {xhrsUnsent, xhrsOpened}:
-    return errDOMException(
-      "ready state was expected to be `unsent' or `opened'", "InvalidStateError")
-  ?this.checkSendFlag()
+    JS_ThrowDOMException(ctx,  "InvalidStateError",
+      "ready state was expected to be `unsent' or `opened'")
+    return err()
+  ?ctx.checkSendFlag(this)
   this.withCredentials = withCredentials
   ok()
 
-proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32):
-    Err[DOMException] {.jsfset: "timeout".} =
+proc setTimeout(ctx: JSContext; this: XMLHttpRequest; value: uint32): JSValue
+    {.jsfset: "timeout".} =
   if ctx.getWindow() != nil and xhrfSync in this.flags:
-    return errDOMException("timeout may not be set on synchronous XHR",
-      "InvalidAccessError")
+    return JS_ThrowDOMException(ctx, "InvalidAccessError",
+      "timeout may not be set on synchronous XHR")
   this.timeout = value
-  ok()
+  return JS_UNDEFINED
 
 proc fireProgressEvent(window: Window; target: EventTarget; name: StaticAtom;
     loaded, length: int64) =
@@ -232,22 +240,26 @@ proc errorSteps(window: Window; this: XMLHttpRequest; name: StaticAtom) =
     window.fireProgressEvent(this, name, 0, 0)
     window.fireProgressEvent(this, satLoadend, 0, 0)
 
-proc handleErrors(window: Window; this: XMLHttpRequest): DOMException =
+proc handleErrors(window: Window; this: XMLHttpRequest; ctx: JSContext):
+    Opt[void] =
   if xhrfSend notin this.flags:
-    return nil
+    return ok()
   if xhrfTimedOut in this.flags:
     window.errorSteps(this, satTimeout)
-    if xhrfSync in this.flags:
-      return newDOMException("XHR timed out", "TimeoutError")
+    if ctx != nil:
+      JS_ThrowDOMException(ctx, "TimeoutError", "XHR timed out")
+      return err()
   elif rfAborted in this.response.flags:
     window.errorSteps(this, satAbort)
-    if xhrfSync in this.flags:
-      return newDOMException("XHR aborted", "AbortError")
+    if ctx != nil:
+      JS_ThrowDOMException(ctx, "AbortError", "XHR aborted")
+      return err()
   elif this.response.responseType == rtError:
     window.errorSteps(this, satError)
-    if xhrfSync in this.flags:
-      return newDOMException("Network error in XHR", "NetworkError")
-  return nil
+    if ctx != nil:
+      JS_ThrowDOMException(ctx, "NetworkError", "network error in XHR")
+      return err()
+  ok()
 
 type XHROpaque = ref object of RootObj
   this: XMLHttpRequest
@@ -278,7 +290,7 @@ proc onFinishXHR(response: Response; success: bool) =
   let this = opaque.this
   let window = opaque.window
   if success:
-    discard window.handleErrors(this)
+    discard window.handleErrors(this, nil)
     if response.responseType != rtError:
       let recvLen = int64(this.received.len)
       window.fireProgressEvent(this, satProgress, recvLen, opaque.len)
@@ -289,12 +301,12 @@ proc onFinishXHR(response: Response; success: bool) =
       window.fireProgressEvent(this, satLoadend, recvLen, opaque.len)
   else:
     this.response = makeNetworkError()
-    discard window.handleErrors(this)
+    discard window.handleErrors(this, nil)
 
 proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
-    JSResult[void] {.jsfunc.} =
-  ?this.checkOpened()
-  ?this.checkSendFlag()
+    Opt[void] {.jsfunc.} =
+  ?ctx.checkOpened(this)
+  ?ctx.checkSendFlag(this)
   var body = body
   if this.requestMethod in {hmGet, hmHead}:
     body = JS_NULL
@@ -346,11 +358,11 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   let window = ctx.getWindow()
   if xhrfSync notin this.flags: # async
     window.fireProgressEvent(this, satLoadstart, 0, 0)
-    let p = ?window.fetchImpl(jsRequest)
+    let p = window.fetchImpl(jsRequest)
     p.then(proc(res: JSResult[Response]) =
       if res.isErr:
         this.response = makeNetworkError()
-        discard window.handleErrors(this)
+        discard window.handleErrors(this, nil)
         return
       let response = res.get
       this.response = response
@@ -380,10 +392,9 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
         response.opaque = XHROpaque(this: this, window: window, len: len)
         response.onFinishXHR(true)
         return ok()
-    let ex = window.handleErrors(this)
+    let res = window.handleErrors(this, ctx)
     this.response = makeNetworkError()
-    if ex != nil:
-      return err(ex)
+    ?res
   ok()
 
 #TODO abort
@@ -447,29 +458,28 @@ proc responseText(ctx: JSContext; this: XMLHttpRequest): JSValue {.jsfget.} =
   #TODO XML encoding stuff?
   return ctx.toJS(this.received.decodeAll(charset))
 
-proc overrideMimeType(this: XMLHttpRequest; s: string): DOMResult[void]
+proc overrideMimeType(ctx: JSContext; this: XMLHttpRequest; s: string): JSValue
     {.jsfunc.} =
   if this.readyState in {xhrsLoading, xhrsDone}:
-    return errDOMException("readyState must not be loading or done",
-      "InvalidStateError")
+    return JS_ThrowDOMException(ctx, "InvalidStateError",
+      "readyState must not be loading or done")
   #TODO parse
   this.contentTypeOverride = s
-  return ok()
+  return JS_UNDEFINED
 
 proc setResponseType(ctx: JSContext; this: XMLHttpRequest;
-    value: XMLHttpRequestResponseType): Err[DOMException]
-    {.jsfset: "responseType".} =
+    value: XMLHttpRequestResponseType): JSValue {.jsfset: "responseType".} =
   let window = ctx.getWindow()
   if window == nil and value == xhrtDocument:
-    return ok()
+    return JS_UNDEFINED
   if this.readyState in {xhrsLoading, xhrsDone}:
-    return errDOMException("readyState must not be loading or done",
-      "InvalidStateError")
+    return JS_ThrowDOMException(ctx, "InvalidStateError",
+      "readyState must not be loading or done")
   if window != nil and xhrfSync in this.flags:
-    return errDOMException("responseType may not be set on synchronous XHR",
-      "InvalidAccessError")
+    return JS_ThrowDOMException(ctx, "InvalidAccessError",
+      "responseType may not be set on synchronous XHR")
   this.responseType = value
-  ok()
+  return JS_UNDEFINED
 
 proc getContentType(this: XMLHttpRequest): string =
   if this.contentTypeOverride != "":

@@ -645,9 +645,6 @@ proc nextDescendant(node, start: Node): Node
 proc parentElement*(node: Node): Element
 proc serializeFragment(res: var string; node: Node)
 proc serializeFragmentInner(res: var string; child: Node; parentType: TagType)
-proc insertBefore(parent, node: Node; before: Option[Node]): DOMResult[Node]
-proc remove*(node: Node)
-proc replace*(parent, child, node: Node): Err[DOMException]
 
 proc countChildren(node: ParentNode; nodeType: type): int
 proc hasChild(node: ParentNode; nodeType: type): bool
@@ -719,8 +716,8 @@ var parseHTMLFragmentImpl*: proc(element: Element; s: string): seq[Node]
   {.nimcall, raises: [].}
 var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall, raises: [].}
 # set in html/env
-var fetchImpl*: proc(window: Window; input: JSRequest): JSResult[FetchPromise]
-  {.nimcall, raises: [].}
+var fetchImpl*: proc(window: Window; input: JSRequest): FetchPromise {.
+  nimcall, raises: [].}
 var applyStyleImpl*: proc(element: Element) {.nimcall, raises: [].}
 var getClientRectsImpl*: proc(element: Element; firstOnly: bool): seq[DOMRect]
   {.nimcall, raises: [].}
@@ -1587,11 +1584,10 @@ proc isValidChild(node: Node): bool =
   return node of DocumentFragment or node of DocumentType or node of Element or
     node of CharacterData
 
-proc checkParentValidity(parent: Node): DOMResult[ParentNode] =
+proc checkParentValidity(parent: Node): Result[ParentNode, cstring] =
   if parent of ParentNode:
     return ok(cast[ParentNode](parent))
-  const msg = "Parent must be a document, a document fragment, or an element"
-  return errDOMException(msg, "HierarchyRequestError")
+  return err("parent must be a document, a document fragment, or an element")
 
 proc rootNode(node: Node): Node =
   var node = node
@@ -1681,48 +1677,40 @@ proc hasChildNodes(node: Node): bool {.jsfunc.} =
 
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
-proc preInsertionValidity(parent, node, before: Node): DOMResult[ParentNode] =
+proc preInsertionValidity(parent, node, before: Node):
+    Result[ParentNode, cstring] =
   let parent = ?parent.checkParentValidity()
   if node.isHostIncludingInclusiveAncestor(parent):
-    return errDOMException("Parent must be an ancestor",
-      "HierarchyRequestError")
+    return err("parent must be an ancestor")
   if before != nil and before.parentNode != parent:
-    return errDOMException("Reference node is not a child of parent",
-      "NotFoundError")
+    return err(nil)
   if not node.isValidChild():
-    return errDOMException("Node is not a valid child", "HierarchyRequestError")
+    return err("node is not a valid child")
   if node of Text and parent of Document:
-    return errDOMException("Cannot insert text into document",
-      "HierarchyRequestError")
+    return err("cannot insert text into document")
   if node of DocumentType and not (parent of Document):
-    return errDOMException("Document type can only be inserted into document",
-      "HierarchyRequestError")
+    return err("document type can only be inserted into document")
   if parent of Document:
     if node of DocumentFragment:
       let node = DocumentFragment(node)
       let elems = node.countChildren(Element)
       if elems > 1 or node.hasChild(Text):
-        return errDOMException("Document fragment has invalid children",
-          "HierarchyRequestError")
+        return err("document fragment has invalid children")
       elif elems == 1 and (parent.hasChild(Element) or
           before != nil and (before of DocumentType or
           before.hasNextSibling(DocumentType))):
-        return errDOMException("Document fragment has invalid children",
-          "HierarchyRequestError")
+        return err("document fragment has invalid children")
     elif node of Element:
       if parent.hasChild(Element):
-        return errDOMException("Document already has an element child",
-          "HierarchyRequestError")
+        return err("document already has an element child")
       elif before != nil and (before of DocumentType or
             before.hasNextSibling(DocumentType)):
-        return errDOMException("Cannot insert element before document type",
-          "HierarchyRequestError")
+        return err("cannot insert element before document type")
     elif node of DocumentType:
       if parent.hasChild(DocumentType) or
           before != nil and before.hasPreviousSibling(Element) or
           before == nil and parent.hasChild(Element):
-        const msg = "Cannot insert document type before an element node"
-        return errDOMException(msg, "HierarchyRequestError")
+        return err("cannot insert document type before an element node")
     else: discard
   ok(parent)
 
@@ -1770,52 +1758,69 @@ proc remove*(node: Node; suppressObservers: bool) =
   # observers
   #TODO not suppress observers => queue tree mutation record
 
-proc remove*(node: Node) {.jsfunc.} =
+proc remove*(node: Node) =
   if node.parentNode != nil:
     node.remove(suppressObservers = false)
 
+# e may be nil
+proc insertThrow(ctx: JSContext; e: cstring): JSValue =
+  if e == nil:
+    return JS_ThrowDOMException(ctx, "NotFoundError",
+      "reference node is not a child of parent")
+  return JS_ThrowDOMException(ctx, "HierarchyRequestError", $e)
+
 proc removeChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
   if Node(node.parentNode) != parent:
-    return JS_ThrowDOMException(ctx, "NotFoundError",
-      "Node is not a child of parent")
+    return ctx.insertThrow(nil)
   node.remove()
   return ctx.toJS(node)
 
-proc insertBefore(parent, node: Node; before: Option[Node]): DOMResult[Node]
-    {.jsfunc.} =
-  let before = before.get(nil)
+# before may be nil
+proc insertBefore(parent, node, before: Node): Err[cstring] =
   let parent = ?parent.preInsertionValidity(node, before)
   let referenceChild = if before == node:
     node.nextSibling
   else:
     before
   parent.insert(node, referenceChild)
-  return ok(node)
+  ok()
 
-proc appendChild(parent, node: Node): DOMResult[Node] {.jsfunc.} =
-  return parent.insertBefore(node, none(Node))
+proc insertBefore(ctx: JSContext; parent, node: Node; before: Option[Node]):
+    JSValue {.jsfunc.} =
+  let res = parent.insertBefore(node, before.get(nil))
+  if res.isErr:
+    return ctx.insertThrow(res.error)
+  return ctx.toJS(node)
 
+proc insertBeforeUndefined(ctx: JSContext; parent, node: Node;
+    before: Option[Node]): JSValue =
+  let res = parent.insertBefore(node, before.get(nil))
+  if res.isErr:
+    return ctx.insertThrow(res.error)
+  return JS_UNDEFINED
+
+proc appendChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
+  return ctx.insertBefore(parent, node, none(Node))
+
+#TODO this looks wrong. either pre-insert and throw or just insert...
 proc append(parent, node: Node) =
-  discard parent.appendChild(node)
+  discard parent.insertBefore(node, nil)
 
 # WARNING the ordering of the arguments in the standard is whack so this
 # doesn't match that
 # Note: the standard returns child if not err. We don't, it's just a
 # pointless copy.
-proc replace*(parent, child, node: Node): Err[DOMException] =
+proc replace*(parent, child, node: Node): Err[cstring] =
   let parent = ?parent.checkParentValidity()
   if node.isHostIncludingInclusiveAncestor(parent):
-    return errDOMException("Parent must be an ancestor",
-      "HierarchyRequestError")
+    return err("parent must be an ancestor")
   if child.parentNode != parent:
-    return errDOMException("Node to replace is not a child of parent",
-      "NotFoundError")
+    return err(nil)
   if not node.isValidChild():
-    return errDOMException("Node is not a valid child", "HierarchyRequestError")
+    return err("node is not a valid child")
   if node of Text and parent of Document or
       node of DocumentType and not (parent of Document):
-    return errDOMException("Replacement cannot be placed in parent",
-      "HierarchyRequesError")
+    return err("replacement cannot be placed in parent")
   let childNextSibling = child.nextSibling
   let childPreviousSibling = child.previousSibling
   if parent of Document:
@@ -1823,24 +1828,19 @@ proc replace*(parent, child, node: Node): Err[DOMException] =
       let node = DocumentFragment(node)
       let elems = node.countChildren(Element)
       if elems > 1 or node.hasChild(Text):
-        return errDOMException("Document fragment has invalid children",
-          "HierarchyRequestError")
+        return err("document fragment has invalid children")
       elif elems == 1 and (parent.hasChildExcept(Element, child) or
           childNextSibling != nil and childNextSibling of DocumentType):
-        return errDOMException("Document fragment has invalid children",
-          "HierarchyRequestError")
+        return err("document fragment has invalid children")
     elif node of Element:
       if parent.hasChildExcept(Element, child):
-        return errDOMException("Document already has an element child",
-          "HierarchyRequestError")
+        return err("document already has an element child")
       elif childNextSibling != nil and childNextSibling of DocumentType:
-        return errDOMException("Cannot insert element before document type ",
-          "HierarchyRequestError")
+        return err("cannot insert element before document type")
     elif node of DocumentType:
       if parent.hasChildExcept(DocumentType, child) or
           childPreviousSibling != nil and childPreviousSibling of DocumentType:
-        const msg = "Cannot insert document type before an element node"
-        return errDOMException(msg, "HierarchyRequestError")
+        return err("cannot insert document type before an element node")
   let referenceChild = if childNextSibling == node:
     node.nextSibling
   else:
@@ -1850,11 +1850,19 @@ proc replace*(parent, child, node: Node): Err[DOMException] =
   child.remove(suppressObservers = true)
   parent.insert(node, referenceChild, suppressObservers = true)
   #TODO tree mutation record
-  return ok()
+  ok()
 
-proc replaceChild(parent, node, child: Node): DOMResult[Node] {.jsfunc.} =
-  ?parent.replace(child, node)
-  return ok(child)
+proc replaceChild(ctx: JSContext; parent, node, child: Node): JSValue {.jsfunc.} =
+  let res = parent.replace(child, node)
+  if res.isErr:
+    return ctx.insertThrow(res.error)
+  return ctx.toJS(child)
+
+proc replaceChildUndefined(ctx: JSContext; parent, node, child: Node): JSValue =
+  let res = parent.replace(child, node)
+  if res.isErr:
+    return ctx.insertThrow(res.error)
+  return JS_UNDEFINED
 
 proc clone(node: Node; document = none(Document); deep = false): Node =
   let document = document.get(node.document)
@@ -2066,7 +2074,7 @@ proc findAncestor*(node: Node; tagType: TagType): Element =
       return element
   return nil
 
-proc setNodeValue(ctx: JSContext; node: Node; data: JSValueConst): Err[void]
+proc setNodeValue(ctx: JSContext; node: Node; data: JSValueConst): Opt[void]
     {.jsfset: "nodeValue".} =
   if node of CharacterData:
     var res = ""
@@ -2080,7 +2088,7 @@ proc setNodeValue(ctx: JSContext; node: Node; data: JSValueConst): Err[void]
     Attr(node).setValue(move(res))
   return ok()
 
-proc setTextContent(ctx: JSContext; node: Node; data: JSValueConst): Err[void]
+proc setTextContent(ctx: JSContext; node: Node; data: JSValueConst): Opt[void]
     {.jsfset: "textContent".} =
   if node of Element or node of DocumentFragment:
     let node = ParentNode(node)
@@ -2112,23 +2120,24 @@ proc toNode(ctx: JSContext; nodes: openArray[JSValueConst]; document: Document):
   return fragment
 
 proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
-    Err[DOMException] =
+    JSValue =
   let node = ctx.toNode(nodes, parent.document)
-  discard ?parent.insertBefore(node, option(parent.firstChild))
-  ok()
+  return ctx.insertBeforeUndefined(parent, node, option(parent.firstChild))
 
 proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
-    Err[DOMException] =
+    JSValue =
   let node = ctx.toNode(nodes, parent.document)
-  discard ?parent.appendChild(node)
-  ok()
+  return ctx.insertBeforeUndefined(parent, node, none(Node))
 
 proc replaceChildrenImpl(ctx: JSContext; parent: Node;
-    nodes: openArray[JSValueConst]): Err[DOMException] =
+    nodes: openArray[JSValueConst]): JSValue =
   let node = ctx.toNode(nodes, parent.document)
-  let parent = ?parent.preInsertionValidity(node, nil)
+  let x = parent.preInsertionValidity(node, nil)
+  if x.isErr:
+    return ctx.insertThrow(x.error)
+  let parent = x.get
   parent.replaceAll(node)
-  ok()
+  return JS_UNDEFINED
 
 # ParentNode
 proc firstElementChild*(node: ParentNode): Element =
@@ -2320,20 +2329,20 @@ proc insert*(parent: ParentNode; node, before: Node;
   for node in nodes:
     parent.insertNode(node, before)
 
-proc querySelectorImpl(node: ParentNode; q: string): DOMResult[Element] =
+proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: string): JSValue =
   let selectors = parseSelectors(q)
   if selectors.len == 0:
-    return errDOMException("Invalid selector: " & q, "SyntaxError")
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: " & q)
   for element in node.elementDescendants:
     if element.matchesImpl(selectors):
-      return ok(element)
-  return ok(nil)
+      return ctx.toJS(element)
+  return JS_NULL
 
-proc querySelectorAllImpl(node: ParentNode; q: string): DOMResult[NodeList] =
+proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: string): JSValue =
   let selectors = parseSelectors(q)
   if selectors.len == 0:
-    return errDOMException("Invalid selector: " & q, "SyntaxError")
-  return ok(node.newNodeList(
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: " & q)
+  return ctx.toJS(node.newNodeList(
     match = proc(node: Node): bool =
       if node of Element:
         return Element(node).matchesImpl(selectors)
@@ -2471,24 +2480,24 @@ proc lastElementChild(this: DocumentFragment): Element {.jsfget.} =
 proc childElementCount(this: DocumentFragment): int {.jsfget.} =
   return this.childElementCountImpl
 
-proc querySelector(this: DocumentFragment; q: string): DOMResult[Element]
+proc querySelector(ctx: JSContext; this: DocumentFragment; q: string): JSValue
     {.jsfunc.} =
-  return this.querySelectorImpl(q)
+  return ctx.querySelectorImpl(this, q)
 
-proc querySelectorAll(this: DocumentFragment; q: string): DOMResult[NodeList]
-    {.jsfunc.} =
-  return this.querySelectorAllImpl(q)
+proc querySelectorAll(ctx: JSContext; this: DocumentFragment; q: string):
+    JSValue {.jsfunc.} =
+  return ctx.querySelectorAllImpl(this, q)
 
 proc prepend(ctx: JSContext; this: DocumentFragment;
-    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
+    nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
   return ctx.prependImpl(this, nodes)
 
 proc append(ctx: JSContext; this: DocumentFragment;
-    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
+    nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
   return ctx.appendImpl(this, nodes)
 
 proc replaceChildren(ctx: JSContext; this: DocumentFragment;
-    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
+    nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
   return ctx.replaceChildrenImpl(this, nodes)
 
 proc children(ctx: JSContext; parentNode: DocumentFragment): JSValue
@@ -2612,55 +2621,55 @@ proc setTarget*(document: Document; element: Element) =
 proc queryCommandSupported(document: Document): bool {.jsfunc.} =
   return false
 
-proc createCDATASection(document: Document; data: string):
-    DOMResult[CDATASection] {.jsfunc.} =
+proc createCDATASection(ctx: JSContext; document: Document; data: string):
+    JSValue {.jsfunc.} =
   if not document.isxml:
-    return errDOMException("CDATA sections are not supported in HTML",
-      "NotSupportedError")
+    return JS_ThrowDOMException(ctx, "NotSupportedError",
+      "CDATA sections are not supported in HTML")
   if "]]>" in data:
-    return errDOMException("CDATA sections may not contain the string ]]>",
-      "InvalidCharacterError")
-  return ok(newCDATASection(document, data))
+    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "CDATA sections may not contain the string ]]>")
+  return ctx.toJS(newCDATASection(document, data))
 
 proc createComment*(document: Document; data: string): Comment {.jsfunc.} =
   return newComment(document, data)
 
-proc createProcessingInstruction(document: Document; target, data: string):
-    DOMResult[ProcessingInstruction] {.jsfunc.} =
+proc createProcessingInstruction(ctx: JSContext; document: Document;
+    target, data: string): JSValue {.jsfunc.} =
   if not target.matchNameProduction() or "?>" in data:
-    return errDOMException("Invalid data for processing instruction",
-      "InvalidCharacterError")
-  return ok(newProcessingInstruction(document, target, data))
+    return JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "invalid data for processing instruction")
+  return ctx.toJS(newProcessingInstruction(document, target, data))
 
 proc createEvent(ctx: JSContext; document: Document; atom: CAtom):
-    DOMResult[Event] {.jsfunc.} =
+    JSValue {.jsfunc.} =
   case atom.toLowerAscii().toStaticAtom()
   of satCustomevent:
-    return ok(ctx.newCustomEvent(satUempty.toAtom()))
+    return ctx.toJS(ctx.newCustomEvent(satUempty.toAtom()))
   of satEvent, satEvents, satHtmlevents, satSvgevents:
-    return ok(newEvent(satUempty.toAtom(), nil,
+    return ctx.toJS(newEvent(satUempty.toAtom(), nil,
       bubbles = false, cancelable = false))
   of satUievent, satUievents:
-    return ok(newUIEvent(satUempty.toAtom()))
+    return ctx.toJS(newUIEvent(satUempty.toAtom()))
   of satMouseevent, satMouseevents:
-    return ok(newMouseEvent(satUempty.toAtom()))
+    return ctx.toJS(newMouseEvent(satUempty.toAtom()))
   else:
-    return errDOMException("Event not supported", "NotSupportedError")
+    return JS_ThrowDOMException(ctx, "NotSupportedError", "event not supported")
 
 proc location(document: Document): Location {.jsfget.} =
   if document.window == nil:
     return nil
   return document.window.location
 
-proc setLocation*(document: Document; s: string): Err[JSError]
+proc setLocation*(ctx: JSContext; document: Document; s: string): JSValue
     {.jsfset: "location".} =
   if document.location == nil:
-    return errTypeError("document.location is not an object")
+    return JS_ThrowTypeError(ctx, "document.location is not an object")
   let url = document.parseURL0(s)
   if url == nil:
-    return errDOMException("Invalid URL", "SyntaxError")
+    return JS_ThrowDOMException(ctx, "Invalid URL", "SyntaxError")
   document.window.navigate(url)
-  return ok()
+  return JS_UNDEFINED
 
 proc scriptingEnabled*(document: Document): bool =
   if document.window == nil:
@@ -2713,22 +2722,26 @@ proc getElementsByClassName(document: Document; classNames: string):
 proc children(ctx: JSContext; parentNode: Document): JSValue {.jsfget.} =
   return childrenImpl(ctx, parentNode)
 
-proc querySelector(this: Document; q: string): DOMResult[Element] {.jsfunc.} =
-  return this.querySelectorImpl(q)
-
-proc querySelectorAll(this: Document; q: string): DOMResult[NodeList]
+proc querySelector(ctx: JSContext; this: Document; q: string): JSValue
     {.jsfunc.} =
-  return this.querySelectorAllImpl(q)
+  return ctx.querySelectorImpl(this, q)
 
-proc validateName(name: string): DOMResult[void] =
+proc querySelectorAll(ctx: JSContext; this: Document; q: string): JSValue
+    {.jsfunc.} =
+  return ctx.querySelectorAllImpl(this, q)
+
+proc validateName(ctx: JSContext; name: string): Opt[void] =
   if not name.matchNameProduction():
-    return errDOMException("Invalid character in name", "InvalidCharacterError")
+    JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "invalid character in name")
+    return err()
   ok()
 
-proc validateQName(qname: string): DOMResult[void] =
+proc validateQName(ctx: JSContext; qname: string): Opt[void] =
   if not qname.matchQNameProduction():
-    return errDOMException("Invalid character in qualified name",
-      "InvalidCharacterError")
+    JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "invalid character in qualified name")
+    return err()
   ok()
 
 proc baseURL*(document: Document): URL =
@@ -2775,9 +2788,9 @@ proc invalidateCollections(document: Document) =
     cast[Collection](id).invalid = true
 
 #TODO options/custom elements
-proc createElement(document: Document; localName: string): DOMResult[Element]
-    {.jsfunc.} =
-  ?localName.validateName()
+proc createElement(ctx: JSContext; document: Document; localName: string):
+    Opt[Element] {.jsfunc.} =
+  ?ctx.validateName(localName)
   let localName = if not document.isxml:
     localName.toAtomLower()
   else:
@@ -2787,11 +2800,11 @@ proc createElement(document: Document; localName: string): DOMResult[Element]
     Namespace.HTML
   else:
     NO_NAMESPACE
-  return ok(document.newElement(localName, namespace))
+  ok(document.newElement(localName, namespace))
 
 proc validateAndExtract(ctx: JSContext; document: Document; qname: string;
-    namespace, prefixOut, localNameOut: var CAtom): DOMResult[void] =
-  ?qname.validateQName()
+    namespace, prefixOut, localNameOut: var CAtom): Opt[void] =
+  ?ctx.validateQName(qname)
   if namespace == satUempty.toAtom():
     namespace = CAtomNull
   var prefix = ""
@@ -2800,19 +2813,22 @@ proc validateAndExtract(ctx: JSContext; document: Document; qname: string;
     prefix = move(localName)
     localName = qname.substr(prefix.len + 1)
   if namespace == CAtomNull and prefix != "":
-    return errDOMException("Got namespace prefix, but no namespace",
-      "NamespaceError")
+    JS_ThrowDOMException(ctx, "NamespaceError",
+      "got namespace prefix, but no namespace")
+    return err()
   let sns = namespace.toStaticAtom()
   if prefix == "xml" and sns != satNamespaceXML:
-    return errDOMException("Expected XML namespace", "NamespaceError")
+    JS_ThrowDOMException(ctx, "NamespaceError", "expected XML namespace")
+    return err()
   if (qname == "xmlns" or prefix == "xmlns") != (sns == satNamespaceXMLNS):
-    return errDOMException("Expected XMLNS namespace", "NamespaceError")
+    JS_ThrowDOMException(ctx, "NamespaceError", "expected XMLNS namespace")
+    return err()
   prefixOut = if prefix == "": CAtomNull else: prefix.toAtom()
   localNameOut = localName.toAtom()
   ok()
 
 proc createElementNS(ctx: JSContext; document: Document; namespace: CAtom;
-    qname: string): DOMResult[Element] {.jsfunc.} =
+    qname: string): Opt[Element] {.jsfunc.} =
   var namespace = namespace
   var prefix, localName: CAtom
   ?ctx.validateAndExtract(document, qname, namespace, prefix, localName)
@@ -2822,15 +2838,15 @@ proc createElementNS(ctx: JSContext; document: Document; namespace: CAtom;
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
-proc createDocumentType(implementation: var DOMImplementation; qualifiedName,
-    publicId, systemId: string): DOMResult[DocumentType] {.jsfunc.} =
-  ?qualifiedName.validateQName()
+proc createDocumentType(ctx: JSContext; implementation: var DOMImplementation;
+    qualifiedName, publicId, systemId: string): Opt[DocumentType] {.jsfunc.} =
+  ?ctx.validateQName(qualifiedName)
   let document = implementation.document
-  return ok(document.newDocumentType(qualifiedName, publicId, systemId))
+  ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
 proc createDocument(ctx: JSContext; implementation: var DOMImplementation;
     namespace: CAtom; qname0: JSValueConst = JS_NULL;
-    doctype = none(DocumentType)): DOMResult[XMLDocument] {.jsfunc.} =
+    doctype = none(DocumentType)): Opt[XMLDocument] {.jsfunc.} =
   let document = newXMLDocument()
   var qname = ""
   if not JS_IsNull(qname0):
@@ -2873,12 +2889,16 @@ proc hasFeature(implementation: var DOMImplementation): bool {.jsfunc.} =
 proc createTextNode(document: Document; data: sink string): Text {.jsfunc.} =
   return newText(document, data)
 
+proc prepend(ctx: JSContext; this: Document; nodes: varargs[JSValueConst]):
+    JSValue {.jsfunc.} =
+  return ctx.prependImpl(this, nodes)
+
 proc append(ctx: JSContext; this: Document; nodes: varargs[JSValueConst]):
-    Err[DOMException] {.jsfunc.} =
+    JSValue {.jsfunc.} =
   return ctx.appendImpl(this, nodes)
 
 proc replaceChildren(ctx: JSContext; this: Document;
-    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
+    nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
   return ctx.replaceChildrenImpl(this, nodes)
 
 const (ReflectTable, TagReflectMap, ReflectAllStartIndex) = (proc(): (
@@ -3064,6 +3084,71 @@ proc findMetaRefresh*(document: Document): Element =
       return child
   return nil
 
+# https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
+proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
+    JSValue {.jsfunc.} =
+  if document.isxml:
+    return JS_ThrowDOMException(ctx, "InvalidStateError",
+      "document.write not supported in XML documents")
+  if document.throwOnDynamicMarkupInsertion > 0:
+    return JS_ThrowDOMException(ctx, "InvalidStateError",
+      "throw-on-dynamic-markup-insertion counter > 0")
+  if document.activeParserWasAborted:
+    return JS_UNDEFINED
+  assert document.parser != nil
+  #TODO if insertion point is undefined... (open document)
+  if document.writeBuffers.len == 0:
+    return JS_UNDEFINED #TODO (probably covered by open above)
+  let buffer = document.writeBuffers[^1]
+  var text = ""
+  for arg in args:
+    var s: string
+    if ctx.fromJS(arg, s).isErr:
+      return JS_UNDEFINED
+    text &= s
+  buffer.data &= text
+  if document.parserBlockingScript == nil:
+    parseDocumentWriteChunkImpl(document.parser)
+  return JS_UNDEFINED
+
+proc childElementCount(this: Document): int {.jsfget.} =
+  return this.childElementCountImpl
+
+proc documentElement*(document: Document): Element {.jsfget.} =
+  return document.firstElementChild()
+
+proc names(ctx: JSContext; document: Document): JSPropertyEnumList
+    {.jspropnames.} =
+  var list = newJSPropertyEnumList(ctx, 0)
+  #TODO I'm not quite sure why location isn't added, so I'll add it
+  # manually for now.
+  list.add("location")
+  #TODO exposed embed, exposed object
+  for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
+    if child.name != CAtomNull and child.name != satUempty.toAtom():
+      if child.tagType == TAG_IMG and child.id != CAtomNull and
+          child.id != satUempty.toAtom():
+        list.add($child.id)
+      list.add($child.name)
+  return list
+
+proc getter(ctx: JSContext; document: Document; s: string): JSValue
+    {.jsgetownprop.} =
+  if s.len != 0:
+    let id = s.toAtom()
+    #TODO exposed embed, exposed object
+    for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
+      if child.tagType == TAG_IMG and child.id == id and
+          child.name != CAtomNull and child.name != satUempty.toAtom():
+        return ctx.toJS(child)
+      if child.name == id:
+        return ctx.toJS(child)
+  return JS_UNINITIALIZED
+
+# DocumentType
+proc remove(this: DocumentType) {.jsfunc.} =
+  Node(this).remove()
+
 # NodeIterator
 proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
     whatToShow = 0xFFFFFFFFu32; filter: JSValueConst = JS_NULL): NodeIterator
@@ -3166,27 +3251,29 @@ proc update(tokenList: DOMTokenList) =
     return
   tokenList.element.attr(tokenList.localName, $tokenList)
 
-proc validateDOMToken(ctx: JSContext; tok: JSValueConst): DOMResult[CAtom] =
+proc validateDOMToken(ctx: JSContext; tok: JSValueConst): Opt[CAtom] =
   var res: string
   ?ctx.fromJS(tok, res)
   if res == "":
-    return errDOMException("Got an empty string", "SyntaxError")
+    JS_ThrowDOMException(ctx, "SyntaxError", "got an empty string")
+    return err()
   if AsciiWhitespace in res:
-    return errDOMException("Got a string containing whitespace",
-      "InvalidCharacterError")
-  return ok(res.toAtom())
+    JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "got a string containing whitespace")
+    return err()
+  ok(res.toAtom())
 
 proc add(ctx: JSContext; tokenList: DOMTokenList;
-    tokens: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
+    tokens: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
   var toks = newSeqOfCap[CAtom](tokens.len)
   for tok in tokens:
     toks.add(?ctx.validateDOMToken(tok))
   tokenList.toks.add(toks)
   tokenList.update()
-  return ok()
+  ok()
 
 proc remove(ctx: JSContext; tokenList: DOMTokenList;
-    tokens: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
+    tokens: varargs[JSValueConst]): Opt[void] {.jsfunc.} =
   var toks = newSeqOfCap[CAtom](tokens.len)
   for tok in tokens:
     toks.add(?ctx.validateDOMToken(tok))
@@ -3195,10 +3282,10 @@ proc remove(ctx: JSContext; tokenList: DOMTokenList;
     if i != -1:
       tokenList.toks.delete(i)
   tokenList.update()
-  return ok()
+  ok()
 
 proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: JSValueConst;
-    force = none(bool)): DOMResult[bool] {.jsfunc.} =
+    force = none(bool)): Opt[bool] {.jsfunc.} =
   let token = ?ctx.validateDOMToken(token)
   let i = tokenList.toks.find(token)
   if i != -1:
@@ -3211,10 +3298,10 @@ proc toggle(ctx: JSContext; tokenList: DOMTokenList; token: JSValueConst;
     tokenList.toks.add(token)
     tokenList.update()
     return ok(true)
-  return ok(false)
+  ok(false)
 
 proc replace(ctx: JSContext; tokenList: DOMTokenList;
-    token, newToken: JSValueConst): DOMResult[bool] {.jsfunc.} =
+    token, newToken: JSValueConst): Opt[bool] {.jsfunc.} =
   let token = ?ctx.validateDOMToken(token)
   let newToken = ?ctx.validateDOMToken(newToken)
   let i = tokenList.toks.find(token)
@@ -3278,20 +3365,21 @@ proc getter(ctx: JSContext; map: DOMStringMap; name: string): JSValue
     return ctx.toJS(map.target.attrs[i].value)
   return JS_UNINITIALIZED
 
-proc setter(map: DOMStringMap; name, value: string): Err[DOMException]
+proc setter(ctx: JSContext; map: DOMStringMap; name, value: string): Opt[void]
     {.jssetprop.} =
   var washy = false
   for c in name:
     if not washy or c notin AsciiLowerAlpha:
       washy = c == '-'
       continue
-    return errDOMException("Lower case after hyphen is not allowed in dataset",
-      "InvalidCharacterError")
+    JS_ThrowDOMException(ctx, "InvalidCharacterError",
+      "lower case after hyphen is not allowed in dataset")
+    return err()
   let name = "data-" & name.camelToKebabCase()
-  ?name.validateName()
+  ?ctx.validateName(name)
   let aname = name.toAtom()
   map.target.attr(aname, value)
-  return ok()
+  ok()
 
 proc names(ctx: JSContext; map: DOMStringMap): JSPropertyEnumList
     {.jspropnames.} =
@@ -3476,17 +3564,11 @@ proc `$`(location: Location): string {.jsuffunc: "toString".} =
 proc href(location: Location): string {.jsuffget.} =
   return $location
 
-proc setHref(location: Location; s: string): Err[JSError]
-    {.jsfset: "href".} =
+proc setHref(ctx: JSContext; location: Location; s: string): JSValue {.
+    jsfset: "href", jsuffunc: "assign", jsuffunc: "replace".} =
   if location.document == nil:
-    return ok()
-  return location.document.setLocation(s)
-
-proc assign(location: Location; s: string): Err[JSError] {.jsuffunc.} =
-  location.setHref(s)
-
-proc replace(location: Location; s: string): Err[JSError] {.jsuffunc.} =
-  location.setHref(s)
+    return JS_UNDEFINED
+  return ctx.setLocation(location.document, s)
 
 proc reload(location: Location) {.jsuffunc.} =
   if location.document == nil:
@@ -3499,16 +3581,17 @@ proc origin*(location: Location): string {.jsuffget.} =
 proc protocol(location: Location): string {.jsuffget.} =
   return location.url.protocol
 
-proc protocol(location: Location; s: string): Err[DOMException] {.jsfset.} =
+proc setProtocol(ctx: JSContext; location: Location; s: string): JSValue
+    {.jsfset: "protocol".} =
   let document = location.document
   if document == nil:
-    return
+    return JS_UNDEFINED
   let copyURL = newURL(location.url)
   copyURL.setProtocol(s)
   if copyURL.schemeType notin {stHttp, stHttps}:
-    return errDOMException("Invalid URL", "SyntaxError")
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid URL")
   document.window.navigate(copyURL)
-  return ok()
+  return JS_UNDEFINED
 
 proc host(location: Location): string {.jsuffget.} =
   return location.url.host
@@ -3690,65 +3773,8 @@ proc previousElementSibling(this: CharacterData): Element {.jsfget.} =
 proc nextElementSibling(this: CharacterData): Element {.jsfget.} =
   return this.nextElementSiblingImpl
 
-# https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
-proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
-    Err[DOMException] {.jsfunc.} =
-  if document.isxml:
-    return errDOMException("document.write not supported in XML documents",
-      "InvalidStateError")
-  if document.throwOnDynamicMarkupInsertion > 0:
-    return errDOMException("throw-on-dynamic-markup-insertion counter > 0",
-      "InvalidStateError")
-  if document.activeParserWasAborted:
-    return ok()
-  assert document.parser != nil
-  #TODO if insertion point is undefined... (open document)
-  if document.writeBuffers.len == 0:
-    return ok() #TODO (probably covered by open above)
-  let buffer = document.writeBuffers[^1]
-  var text = ""
-  for arg in args:
-    var s: string
-    ?ctx.fromJS(arg, s)
-    text &= s
-  buffer.data &= text
-  if document.parserBlockingScript == nil:
-    parseDocumentWriteChunkImpl(document.parser)
-  return ok()
-
-proc childElementCount(this: Document): int {.jsfget.} =
-  return this.childElementCountImpl
-
-proc documentElement*(document: Document): Element {.jsfget.} =
-  return document.firstElementChild()
-
-proc names(ctx: JSContext; document: Document): JSPropertyEnumList
-    {.jspropnames.} =
-  var list = newJSPropertyEnumList(ctx, 0)
-  #TODO I'm not quite sure why location isn't added, so I'll add it
-  # manually for now.
-  list.add("location")
-  #TODO exposed embed, exposed object
-  for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
-    if child.name != CAtomNull and child.name != satUempty.toAtom():
-      if child.tagType == TAG_IMG and child.id != CAtomNull and
-          child.id != satUempty.toAtom():
-        list.add($child.id)
-      list.add($child.name)
-  return list
-
-proc getter(ctx: JSContext; document: Document; s: string): JSValue
-    {.jsgetownprop.} =
-  if s.len != 0:
-    let id = s.toAtom()
-    #TODO exposed embed, exposed object
-    for child in document.elementDescendants({TAG_FORM, TAG_IFRAME, TAG_IMG}):
-      if child.tagType == TAG_IMG and child.id == id and
-          child.name != CAtomNull and child.name != satUempty.toAtom():
-        return ctx.toJS(child)
-      if child.name == id:
-        return ctx.toJS(child)
-  return JS_UNINITIALIZED
+proc remove(this: CharacterData) {.jsfunc.} =
+  Node(this).remove()
 
 # Element
 proc hash(element: Element): Hash =
@@ -3926,6 +3952,9 @@ proc previousElementSibling*(element: Element): Element {.jsfget.} =
 proc nextElementSibling*(element: Element): Element {.jsfget.} =
   return element.nextElementSiblingImpl
 
+proc remove(element: Element) {.jsfunc.} =
+  Node(element).remove()
+
 proc isDisplayed(element: Element): bool =
   element.ensureStyle()
   return element.computed{"display"} != DisplayNone
@@ -4037,13 +4066,14 @@ proc innerHTML(element: Element; s: string) {.jsfset.} =
     element
   ctx.replaceAll(fragment)
 
-proc outerHTML(element: Element; s: string): DOMResult[void] {.jsfset.} =
+proc outerHTML(ctx: JSContext; element: Element; s: string): JSValue
+    {.jsfset.} =
   let parent0 = element.parentNode
   if parent0 == nil:
-    return ok()
+    return JS_UNDEFINED
   if parent0 of Document:
-    return errDOMException("outerHTML is disallowed for Document children",
-      "NoModificationAllowedError")
+    return JS_ThrowDOMException(ctx, "NoModificationAllowedError",
+      "outerHTML is disallowed for document elements")
   let parent: Element = if parent0 of DocumentFragment:
     element.document.newHTMLElement(TAG_BODY)
   else:
@@ -4051,7 +4081,7 @@ proc outerHTML(element: Element; s: string): DOMResult[void] {.jsfset.} =
     # element node
     Element(parent0)
   let fragment = fragmentParsingAlgorithm(parent, s)
-  return parent.replace(element, fragment)
+  return ctx.replaceChildUndefined(parent, element, fragment)
 
 type InsertAdjacentPosition = enum
   iapBeforeBegin = "beforebegin"
@@ -4059,51 +4089,52 @@ type InsertAdjacentPosition = enum
   iapAfterBegin = "afterbegin"
   iapBeforeEnd = "beforeend"
 
-proc insertAdjacentHTML(this: Element; position, text: string):
-    Err[DOMException] {.jsfunc.} =
+proc insertAdjacentHTML(ctx: JSContext; this: Element; position, text: string):
+    JSValue {.jsfunc.} =
   let pos0 = parseEnumNoCase[InsertAdjacentPosition](position)
   if pos0.isErr:
-    return errDOMException("Invalid position", "SyntaxError")
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid position")
   let position = pos0.get
-  var ctx = this
+  var nodeCtx = this
   if position in {iapBeforeBegin, iapAfterEnd}:
     if this.parentNode of Document or this.parentNode == nil:
-      return errDOMException("Parent is not a valid element",
-        "NoModificationAllowedError")
-    ctx = this.parentElement
-  if ctx == nil or not this.document.isxml and ctx.tagType == TAG_HTML:
-    ctx = this.document.newHTMLElement(TAG_BODY)
-  let fragment = ctx.fragmentParsingAlgorithm(text)
+      return JS_ThrowDOMException(ctx, "NoModificationAllowedError",
+        "parent is not a valid element")
+    nodeCtx = this.parentElement
+  if nodeCtx == nil or not this.document.isxml and nodeCtx.tagType == TAG_HTML:
+    nodeCtx = this.document.newHTMLElement(TAG_BODY)
+  let fragment = nodeCtx.fragmentParsingAlgorithm(text)
   case position
   of iapBeforeBegin: this.parentNode.insert(fragment, this)
   of iapAfterBegin: this.insert(fragment, this.firstChild)
   of iapBeforeEnd: this.append(fragment)
   of iapAfterEnd: this.parentNode.insert(fragment, this.nextSibling)
-  ok()
+  return JS_UNDEFINED
 
-proc insertAdjacent(this: Node; position: string; node: Node): DOMResult[Node] =
+proc insertAdjacent(ctx: JSContext; this: Node; position: string; node: Node):
+    JSValue =
   let pos0 = parseEnumNoCase[InsertAdjacentPosition](position)
   if pos0.isErr:
-    return errDOMException("Invalid position", "SyntaxError")
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid position")
   let position = pos0.get
   return case position
   of iapBeforeBegin:
     if this.parentNode == nil:
-      ok(nil)
+      JS_NULL
     else:
-      this.parentNode.insertBefore(node, option(this))
-  of iapAfterBegin: this.insertBefore(node, option(this.firstChild))
-  of iapBeforeEnd: this.insertBefore(node, none(Node))
-  of iapAfterEnd: this.parentNode.insertBefore(node, option(this.nextSibling))
+      ctx.insertBefore(this.parentNode, node, option(this))
+  of iapAfterBegin: ctx.insertBefore(this, node, option(this.firstChild))
+  of iapBeforeEnd: ctx.insertBefore(this, node, none(Node))
+  of iapAfterEnd:
+    ctx.insertBefore(this.parentNode, node, option(this.nextSibling))
 
-proc insertAdjacentElement(this: Element; position: string; element: Element):
-    DOMResult[Node] {.jsfunc.} =
-  this.insertAdjacent(position, element)
+proc insertAdjacentElement(ctx: JSContext; this: Element; position: string;
+    element: Element): JSValue {.jsfunc.} =
+  ctx.insertAdjacent(this, position, element)
 
-proc insertAdjacentText(this: Element; position, s: string): DOMResult[void]
-    {.jsfunc.} =
-  discard ?this.insertAdjacent(position, this.document.newText(s))
-  ok()
+proc insertAdjacentText(ctx: JSContext; this: Element; position, s: string):
+    JSValue {.jsfunc.} =
+  ctx.toUndefined(ctx.insertAdjacent(this, position, this.document.newText(s)))
 
 proc hover*(element: Element): bool =
   return element.internalHover
@@ -4282,12 +4313,13 @@ proc elIndex*(this: Element): int =
 proc isPreviousSiblingOf*(this, other: Element): bool =
   return this.parentNode == other.parentNode and this.elIndex <= other.elIndex
 
-proc querySelector(this: Element; q: string): DOMResult[Element] {.jsfunc.} =
-  return this.querySelectorImpl(q)
-
-proc querySelectorAll(this: Element; q: string): DOMResult[NodeList]
+proc querySelector(ctx: JSContext; this: Element; q: string): JSValue
     {.jsfunc.} =
-  return this.querySelectorAllImpl(q)
+  return ctx.querySelectorImpl(this, q)
+
+proc querySelectorAll(ctx: JSContext; this: Element; q: string): JSValue
+    {.jsfunc.} =
+  return ctx.querySelectorAllImpl(this, q)
 
 proc isDisabled*(this: Element): bool =
   case this.tagType
@@ -4543,20 +4575,16 @@ proc postConnectionSteps(element: Element) =
     script.prepare()
 
 proc prepend(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
-    Err[DOMException] {.jsfunc.} =
+    JSValue {.jsfunc.} =
   return ctx.prependImpl(this, nodes)
 
 proc append(ctx: JSContext; this: Element; nodes: varargs[JSValueConst]):
-    Err[DOMException] {.jsfunc.} =
+    JSValue {.jsfunc.} =
   return ctx.appendImpl(this, nodes)
 
 proc replaceChildren(ctx: JSContext; this: Element;
-    nodes: varargs[JSValueConst]): Err[DOMException] {.jsfunc.} =
+    nodes: varargs[JSValueConst]): JSValue {.jsfunc.} =
   return ctx.replaceChildrenImpl(this, nodes)
-
-proc prepend(ctx: JSContext; this: Document; nodes: varargs[JSValueConst]):
-    Err[DOMException] {.jsfunc.} =
-  return ctx.prependImpl(this, nodes)
 
 proc delAttr(ctx: JSContext; element: Element; i: int) =
   let name = element.attrs[i].qualifiedName
@@ -4645,20 +4673,20 @@ proc attrulgz(element: Element; name: StaticAtom; value: uint32) =
   if value > 0:
     element.attrul(name, value)
 
-proc setAttribute(element: Element; qualifiedName: string; value: sink string):
-    Err[DOMException] {.jsfunc.} =
-  ?qualifiedName.validateName()
+proc setAttribute(ctx: JSContext; element: Element; qualifiedName: string;
+    value: sink string): Opt[void] {.jsfunc.} =
+  ?ctx.validateName(qualifiedName)
   let qualifiedName = if element.namespaceURI == satNamespaceHTML and
       not element.document.isxml:
     qualifiedName.toAtomLower()
   else:
     qualifiedName.toAtom()
   element.attr(qualifiedName, value)
-  return ok()
+  ok()
 
-proc setAttributeNS(element: Element; namespace: CAtom; qualifiedName: string;
-    value: sink string): Err[DOMException] {.jsfunc.} =
-  ?qualifiedName.validateQName()
+proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtom;
+    qualifiedName: string; value: sink string): Opt[void] {.jsfunc.} =
+  ?ctx.validateQName(qualifiedName)
   let j = qualifiedName.find(':')
   let sprefix = if j != -1: qualifiedName.substr(0, j - 1) else: ""
   let qualifiedName = qualifiedName.toAtom()
@@ -4671,7 +4699,8 @@ proc setAttributeNS(element: Element; namespace: CAtom; qualifiedName: string;
       prefix == satXml and namespace != satNamespaceXML or
       satXmlns in [prefix, qualifiedName] and namespace != satNamespaceXMLNS or
       satXmlns notin [prefix, qualifiedName] and namespace == satNamespaceXMLNS:
-    return errDOMException("Unexpected namespace", "NamespaceError")
+    JS_ThrowDOMException(ctx, "NamespaceError", "unexpected namespace")
+    return err()
   let i = element.findAttrNS(namespace, localName)
   if i != -1:
     element.attrs[i].value = value
@@ -4684,7 +4713,7 @@ proc setAttributeNS(element: Element; namespace: CAtom; qualifiedName: string;
   element.reflectAttr(qualifiedName, some(value))
   element.document.invalidateCollections()
   element.invalidate()
-  return ok()
+  ok()
 
 proc removeAttribute(ctx: JSContext; element: Element; qualifiedName: CAtom)
     {.jsfunc.} =
@@ -4699,8 +4728,8 @@ proc removeAttributeNS(ctx: JSContext; element: Element;
     ctx.delAttr(element, i)
 
 proc toggleAttribute(ctx: JSContext; element: Element; qualifiedName: string;
-    force = none(bool)): DOMResult[bool] {.jsfunc.} =
-  ?qualifiedName.validateName()
+    force = none(bool)): Opt[bool] {.jsfunc.} =
+  ?ctx.validateName(qualifiedName)
   let qualifiedName = element.normalizeAttrQName(qualifiedName.toAtom())
   if not element.attrb(qualifiedName):
     if force.get(true):
@@ -4888,7 +4917,7 @@ proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
 
 # Consumes toks.
 proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
-    Err[void] =
+    Opt[void] =
   if i notin 0 .. this.decls.high:
     return err()
   # dummyAttrs can be safely used because the result is discarded.
@@ -4903,72 +4932,75 @@ proc setValue(this: CSSStyleDeclaration; i: int; toks: var seq[CSSToken]):
   this.decls[i].value = move(toks)
   return ok()
 
-proc removeProperty(this: CSSStyleDeclaration; name: string): DOMResult[string]
-    {.jsfunc.} =
+proc removeProperty(ctx: JSContext; this: CSSStyleDeclaration; name: string):
+    JSValue {.jsfunc.} =
   if this.readonly:
-    return errDOMException("Cannot modify read-only declaration",
-      "NoModificationAllowedError")
+    return JS_ThrowDOMException(ctx, "NoModificationAllowedError",
+      "cannot modify read-only declaration")
   let name = name.toLowerAscii()
   let value = this.getPropertyValue(name)
   #TODO shorthand
   let i = this.find(name)
   if i != -1:
     this.decls.delete(i)
-  return ok(value)
+  return ctx.toJS(value)
 
-proc checkReadOnly(this: CSSStyleDeclaration): DOMResult[void] =
+proc checkReadOnly(ctx: JSContext; this: CSSStyleDeclaration): Opt[void] =
   if this.readonly:
-    return errDOMException("Cannot modify read-only declaration",
-      "NoModificationAllowedError")
+    JS_ThrowDOMException(ctx, "NoModificationAllowedError",
+      "cannot modify read-only declaration")
+    return err()
   ok()
 
-proc setProperty(this: CSSStyleDeclaration; name, value: string):
-    DOMResult[void] {.jsfunc.} =
-  ?this.checkReadOnly()
+proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
+    name, value: string): JSValue {.jsfunc.} =
+  if ctx.checkReadOnly(this).isErr:
+    return JS_EXCEPTION
   let name = name.toLowerAscii()
   if not name.isSupportedProperty():
-    return ok()
+    return JS_UNDEFINED
   if value == "":
-    discard ?this.removeProperty(name)
-    return ok()
+    return ctx.removeProperty(this, name)
   var toks = parseComponentValues(value)
   if (let i = this.find(name); i != -1):
     if this.setValue(i, toks).isErr:
-      # not err! this does not throw.
-      return ok()
+      # this does not throw.
+      return JS_UNDEFINED
   else:
     let x = initCSSDeclaration(name)
     if x.isErr:
-      return ok() # ignore
+      return JS_UNDEFINED # ignore
     var decl = x.get
     case decl.t
     of cdtProperty:
       var ctx = initCSSParser(toks)
       var dummy = newSeq[CSSComputedEntry]()
       if ctx.parseComputedValues0(decl.p, dummyAttrs, dummy).isErr:
-        return ok()
+        return JS_UNDEFINED
     of cdtVariable:
       if parseDeclWithVar0(toks).len == 0:
-        return err()
+        return JS_UNDEFINED
     decl.value = move(toks)
     this.decls.add(move(decl))
   this.element.attr(satStyle, $this.decls)
-  ok()
+  return JS_UNDEFINED
 
 proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
-    value: string): DOMResult[void] {.jssetprop.} =
-  ?this.checkReadOnly()
+    value: string): JSValue {.jssetprop.} =
+  if ctx.checkReadOnly(this).isErr:
+    return JS_EXCEPTION
   var u: uint32
   if ctx.fromJS(atom, u).isOk:
     var toks = parseComponentValues(value)
     if this.setValue(int(u), toks).isErr:
       this.element.attr(satStyle, $this.decls)
-    return ok()
+    return JS_UNDEFINED
   var name: string
-  ?ctx.fromJS(atom, name)
+  if ctx.fromJS(atom, name).isErr:
+    return JS_EXCEPTION
   if name == "cssFloat":
     name = "float"
-  return this.setProperty(name, value)
+  return ctx.setProperty(this, name, value)
 
 proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
   if element.cachedStyle == nil:
@@ -5431,21 +5463,16 @@ proc add(ctx: JSContext; this: HTMLOptionsCollection; element: Element;
     return JS_EXCEPTION
   for it in this.root.ancestors:
     if element == it:
-      return JS_ThrowDOMException(ctx, "HierarchyRequestError",
-        "Can't add ancestor of select")
+      return ctx.insertThrow("can't add ancestor of select")
   if beforeEl != nil and this.root notin beforeEl:
-    return JS_ThrowDOMException(ctx, "NotFoundError",
-      "select is not a descendant of before")
+    return ctx.insertThrow(nil)
   if element != beforeEl:
     if beforeEl == nil:
       let it = this.item(uint32(beforeIdx))
       if it of HTMLElement:
         beforeEl = HTMLElement(it)
     let parent = if beforeEl != nil: beforeEl.parentNode else: this.root
-    let res = ctx.toJS(parent.insertBefore(element, option(Node(beforeEl))))
-    if JS_IsException(res):
-      return res
-    JS_FreeValue(ctx, res)
+    return ctx.insertBeforeUndefined(parent, element, option(Node(beforeEl)))
   return JS_UNDEFINED
 
 proc remove(this: HTMLOptionsCollection; i: int32) {.jsfunc.} =
@@ -5481,23 +5508,24 @@ proc jsOptions(this: HTMLSelectElement): HTMLOptionsCollection
   return this.cachedOptions
 
 proc setter(ctx: JSContext; this: HTMLOptionsCollection; u: uint32;
-    value: Option[HTMLOptionElement]): DOMResult[void] {.jssetprop.} =
+    value: Option[HTMLOptionElement]): JSValue {.jssetprop.} =
   let element = this.item(u)
   if value.isNone:
+    let element = this.item(u)
     if element != nil:
       element.remove()
-    return ok()
+    return JS_UNDEFINED
   let value = value.get
   let parent = this.root
   if element != nil:
-    ?parent.replace(element, value)
-  else:
-    let L = uint32(this.getLength())
-    let document = parent.document
-    for i in L ..< u:
-      parent.append(document.newHTMLElement(TAG_OPTION))
-    parent.append(value)
-  return ok()
+    return ctx.replaceChild(parent, element, value)
+  let L = uint32(this.getLength())
+  let document = parent.document
+  for i in L ..< u:
+    let res = parent.insertBefore(document.newHTMLElement(TAG_OPTION), nil)
+    if res.isErr:
+      return ctx.insertThrow(res.error)
+  return ctx.insertBeforeUndefined(parent, value, none(Node))
 
 proc length(this: HTMLSelectElement): int {.jsfget.} =
   return this.jsOptions.getLength()
@@ -5561,12 +5589,12 @@ proc setValue(this: HTMLSelectElement; value: string) {.jsfset: "value".} =
     it.invalidate(dtChecked)
   this.document.invalidateCollections()
 
-proc showPicker(this: HTMLSelectElement): Err[DOMException] {.jsfunc.} =
+proc showPicker(ctx: JSContext; this: HTMLSelectElement): JSValue {.jsfunc.} =
   # Per spec, we should do something if it's being rendered and on
   # transient user activation.
   # If this is ever implemented, then the "is rendered" check must
   # be app mode only.
-  return errDOMException("not allowed", "NotAllowedError")
+  return JS_ThrowDOMException(ctx, "NotAllowedError", "not allowed")
 
 proc add(ctx: JSContext; this: HTMLSelectElement; element: Element;
     before: JSValueConst = JS_NULL): JSValue {.jsfunc.} =
@@ -5708,7 +5736,7 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
 
 #TODO settings object
 proc fetchSingleModule(element: HTMLScriptElement; url: URL;
-    destination: RequestDestination; options: ScriptOptions,
+    destination: RequestDestination; options: ScriptOptions;
     referrer: URL; isTopLevel: bool; onComplete: OnCompleteProc) =
   let moduleType = "javascript"
   #TODO moduleRequest
@@ -5739,41 +5767,40 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   #TODO set up module script request
   #TODO performFetch
   let p = window.fetchImpl(request)
-  if p.isOk:
-    p.get.then(proc(res: JSResult[Response]) =
-      let ctx = window.jsctx
-      if res.isErr:
+  p.then(proc(res: JSResult[Response]) =
+    let ctx = window.jsctx
+    if res.isErr:
+      let res = ScriptResult(t: srtNull)
+      settings.moduleMap.set(url, moduleType, res, ctx)
+      element.onComplete(res)
+      return
+    let res = res.get
+    let contentType = res.getContentType()
+    let referrerPolicy = res.getReferrerPolicy()
+    res.text().then(proc(s: JSResult[string]) =
+      if s.isErr:
         let res = ScriptResult(t: srtNull)
         settings.moduleMap.set(url, moduleType, res, ctx)
         element.onComplete(res)
         return
-      let res = res.get
-      let contentType = res.getContentType()
-      let referrerPolicy = res.getReferrerPolicy()
-      res.text().then(proc(s: JSResult[string]) =
-        if s.isErr:
-          let res = ScriptResult(t: srtNull)
-          settings.moduleMap.set(url, moduleType, res, ctx)
-          element.onComplete(res)
-          return
-        if contentType.isJavaScriptType():
-          window.currentModuleURL = url
-          let res = ctx.newJSModuleScript(s.get, url, options)
-          #TODO can't we just return null from newJSModuleScript?
-          if JS_IsException(res.script.record):
-            window.logException(res.script.baseURL)
-            element.onComplete(ScriptResult(t: srtNull))
-          else:
-            if referrerPolicy.isOk:
-              res.script.options.referrerPolicy = referrerPolicy
-            # set & onComplete both take ownership
-            settings.moduleMap.set(url, moduleType, res.clone(), ctx)
-            element.onComplete(res)
+      if contentType.isJavaScriptType():
+        window.currentModuleURL = url
+        let res = ctx.newJSModuleScript(s.get, url, options)
+        #TODO can't we just return null from newJSModuleScript?
+        if JS_IsException(res.script.record):
+          window.logException(res.script.baseURL)
+          element.onComplete(ScriptResult(t: srtNull))
         else:
-          #TODO non-JS modules
-          discard
-      )
+          if referrerPolicy.isOk:
+            res.script.options.referrerPolicy = referrerPolicy
+          # set & onComplete both take ownership
+          settings.moduleMap.set(url, moduleType, res.clone(), ctx)
+          element.onComplete(res)
+      else:
+        #TODO non-JS modules
+        discard
     )
+  )
 
 proc execute*(element: HTMLScriptElement) =
   let document = element.document
@@ -5961,13 +5988,12 @@ proc prepare*(element: HTMLScriptElement) =
 proc caption(this: HTMLTableElement): Element {.jsfget.} =
   return this.findFirstChildOf(TAG_CAPTION)
 
-proc setCaption(this: HTMLTableElement; caption: HTMLTableCaptionElement):
-    DOMResult[void] {.jsfset: "caption".} =
+proc setCaption(ctx: JSContext; this: HTMLTableElement;
+    caption: HTMLTableCaptionElement): JSValue {.jsfset: "caption".} =
   let old = this.caption
   if old != nil:
     old.remove()
-  discard ?this.insertBefore(caption, option(this.firstChild))
-  ok()
+  return ctx.insertBeforeUndefined(this, caption, option(this.firstChild))
 
 proc tHead(this: HTMLTableElement): Element {.jsfget.} =
   return this.findFirstChildOf(TAG_THEAD)
@@ -5975,23 +6001,22 @@ proc tHead(this: HTMLTableElement): Element {.jsfget.} =
 proc tFoot(this: HTMLTableElement): Element {.jsfget.} =
   return this.findFirstChildOf(TAG_TFOOT)
 
-proc setTSectImpl(this: HTMLTableElement; sect: HTMLTableSectionElement;
-    tagType: TagType): DOMResult[void] =
+proc setTSectImpl(ctx: JSContext; this: HTMLTableElement;
+    sect: HTMLTableSectionElement; tagType: TagType): JSValue =
   if sect != nil and sect.tagType != tagType:
-    return errDOMException("Wrong element type", "HierarchyRequestError")
+    return ctx.insertThrow("wrong element type")
   let old = this.findFirstChildOf(tagType)
   if old != nil:
     old.remove()
-  discard ?this.insertBefore(sect, option(this.firstChild))
-  ok()
+  return ctx.insertBeforeUndefined(this, sect, option(this.firstChild))
 
-proc setTHead(this: HTMLTableElement; tHead: HTMLTableSectionElement):
-    DOMResult[void] {.jsfset: "tHead".} =
-  return this.setTSectImpl(tHead, TAG_THEAD)
+proc setTHead(ctx: JSContext; this: HTMLTableElement;
+    tHead: HTMLTableSectionElement): JSValue {.jsfset: "tHead".} =
+  return ctx.setTSectImpl(this, tHead, TAG_THEAD)
 
-proc setTFoot(this: HTMLTableElement; tFoot: HTMLTableSectionElement):
-    DOMResult[void] {.jsfset: "tFoot".} =
-  return this.setTSectImpl(tFoot, TAG_TFOOT)
+proc setTFoot(ctx: JSContext; this: HTMLTableElement;
+    tFoot: HTMLTableSectionElement): JSValue {.jsfset: "tFoot".} =
+  return ctx.setTSectImpl(this, tFoot, TAG_TFOOT)
 
 proc tBodies(ctx: JSContext; this: HTMLTableElement): JSValue {.jsfget.} =
   return ctx.getWeakCollection(this, wwmTBodies)
@@ -6013,7 +6038,7 @@ proc create(this: HTMLTableElement; tagType: TagType; before: Node):
   var element = this.findFirstChildOf(tagType)
   if element == nil:
     element = this.document.newHTMLElement(tagType)
-    discard this.insertBefore(element, option(before))
+    this.insert(element, before)
   return element
 
 proc delete(this: HTMLTableElement; tagType: TagType) =
@@ -6044,11 +6069,11 @@ proc deleteTHead(this: HTMLTableElement) {.jsfunc.} =
 proc deleteTFoot(this: HTMLTableElement) {.jsfunc.} =
   this.delete(TAG_TFOOT)
 
-proc insertRow(this: HTMLTableElement; index = -1): DOMResult[Element]
+proc insertRow(ctx: JSContext; this: HTMLTableElement; index = -1): JSValue
     {.jsfunc.} =
   let nrows = this.rows.getLength()
   if index < -1 or index > nrows:
-    return errDOMException("Index out of bounds", "IndexSizeError")
+    return JS_ThrowDOMException(ctx, "IndexSizeError", "index out of bounds")
   let tr = this.document.newHTMLElement(TAG_TR)
   if nrows == 0:
     this.createTBody().append(tr)
@@ -6056,21 +6081,22 @@ proc insertRow(this: HTMLTableElement; index = -1): DOMResult[Element]
     this.rows.item(uint32(nrows) - 1).parentNode.append(tr)
   else:
     let it = this.rows.item(uint32(index))
-    discard it.parentNode.insertBefore(tr, option(Node(it)))
-  return ok(tr)
+    it.parentNode.insert(tr, it)
+  return ctx.toJS(tr)
 
-proc deleteRow(rows: HTMLCollection; index: int): DOMResult[void] =
+proc deleteRow(ctx: JSContext; rows: HTMLCollection; index: int): JSValue =
   let nrows = rows.getLength()
   if index < -1 or index >= nrows:
-    return errDOMException("Index out of bounds", "IndexSizeError")
+    return JS_ThrowDOMException(ctx, "IndexSizeError", "index out of bounds")
   if index == -1:
     rows.item(uint32(nrows - 1)).remove()
   elif nrows > 0:
     rows.item(uint32(index)).remove()
-  ok()
+  return JS_UNDEFINED
 
-proc deleteRow(this: HTMLTableElement; index = -1): DOMResult[void] {.jsfunc.} =
-  return this.rows.deleteRow(index)
+proc deleteRow(ctx: JSContext; this: HTMLTableElement; index = -1): JSValue
+    {.jsfunc.} =
+  return ctx.deleteRow(this.rows, index)
 
 # <tbody>
 proc rows(this: HTMLTableSectionElement): HTMLCollection {.jsfget.} =
@@ -6082,21 +6108,21 @@ proc rows(this: HTMLTableSectionElement): HTMLCollection {.jsfget.} =
     )
   return this.cachedRows
 
-proc insertRow(this: HTMLTableSectionElement; index = -1): DOMResult[Element]
-    {.jsfunc.} =
+proc insertRow(ctx: JSContext; this: HTMLTableSectionElement; index = -1):
+    JSValue {.jsfunc.} =
   let nrows = this.rows.getLength()
   if index < -1 or index > nrows:
-    return errDOMException("Index out of bounds", "IndexSizeError")
+    return JS_ThrowDOMException(ctx, "index out of bounds", "IndexSizeError")
   let tr = this.document.newHTMLElement(TAG_TR)
   if index == -1 or index == nrows:
     this.append(tr)
   else:
-    discard this.insertBefore(tr, option(Node(this.rows.item(uint32(index)))))
-  return ok(tr)
+    this.insert(tr, this.rows.item(uint32(index)))
+  return ctx.toJS(tr)
 
-proc deleteRow(this: HTMLTableSectionElement; index = -1): DOMResult[void]
-    {.jsfunc.} =
-  return this.rows.deleteRow(index)
+proc deleteRow(ctx: JSContext; this: HTMLTableSectionElement; index = -1):
+    JSValue {.jsfunc.} =
+  return ctx.deleteRow(this.rows, index)
 
 # <tr>
 proc cells(ctx: JSContext; this: HTMLTableRowElement): JSValue {.jsfget.} =

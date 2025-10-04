@@ -28,4 +28,12 @@ proc JS_CallFree*(ctx: JSContext; funcObj: JSValue; this: JSValueConst;
   result = JS_Call(ctx, funcObj, this, argc, argv)
   JS_FreeValue(ctx, funcObj)
 
+# Free JSValue, and return JS_EXCEPTION if it's an exception (or undefined
+# otherwise).
+proc toUndefined*(ctx: JSContext; val: JSValue): JSValue =
+  if JS_IsException(val):
+    return JS_EXCEPTION
+  JS_FreeValue(ctx, val)
+  return JS_UNDEFINED
+
 {.pop.} # raises

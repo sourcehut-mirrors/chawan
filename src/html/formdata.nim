@@ -30,22 +30,24 @@ proc newFormData0*(entries: sink seq[FormDataEntry]; urandom: PosixStream):
   return FormData(boundary: urandom.generateBoundary(), entries: entries)
 
 proc newFormData(ctx: JSContext; form = none(HTMLFormElement);
-    submitter = none(HTMLElement)): DOMResult[FormData] {.jsctor.} =
+    submitter = none(HTMLElement)): Opt[FormData] {.jsctor.} =
   let urandom = ctx.getGlobal().crypto.urandom
   let this = FormData(boundary: urandom.generateBoundary())
-  if form.isSome:
-    let form = form.get
-    if submitter.isSome:
-      let submitter = submitter.get
+  let form = form.get(nil)
+  if form != nil:
+    let submitter = submitter.get(nil)
+    if submitter != nil:
       if not submitter.isSubmitButton():
-        return errDOMException("Submitter must be a submit button",
-          "InvalidStateError")
+        JS_ThrowDOMException(ctx, "InvalidStateError",
+          "submitter must be a submit button")
+        return err()
       if FormAssociatedElement(submitter).form != form:
-        return errDOMException("Submitter's form owner is not form",
-          "InvalidStateError")
+        JS_ThrowDOMException(ctx, "InvalidStateError",
+          "submitter's form owner is not form",)
+        return err()
     if not form.constructingEntryList:
-      this.entries = constructEntryList(form, submitter.get(nil))
-  return ok(this)
+      this.entries = constructEntryList(form, submitter)
+  ok(this)
 
 proc append*(ctx: JSContext; this: FormData; name: string; val: JSValueConst;
     rest: varargs[JSValueConst]): Opt[void] {.jsfunc.} =

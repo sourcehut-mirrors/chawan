@@ -385,32 +385,33 @@ proc quadraticCurveTo(ctx: CanvasRenderingContext2D; cpx, cpy, x,
     y: float64) {.jsfunc.} =
   ctx.state.path.quadraticCurveTo(cpx, cpy, x, y)
 
-proc arcTo(ctx: CanvasRenderingContext2D; x1, y1, x2, y2, radius: float64):
-    Err[DOMException] {.jsfunc.} =
+proc radiusThrow(ctx: JSContext): JSValue =
+  return JS_ThrowDOMException(ctx, "IndexSizeError",
+    "expected positive radius, but got negative")
+
+proc arcTo(jsctx: JSContext; ctx: CanvasRenderingContext2D;
+    x1, y1, x2, y2, radius: float64): JSValue {.jsfunc.} =
   if radius < 0:
-    return errDOMException("Expected positive radius, but got negative",
-      "IndexSizeError")
+    return jsctx.radiusThrow()
   ctx.state.path.arcTo(x1, y1, x2, y2, radius)
-  return ok()
+  return JS_UNDEFINED
 
-proc arc(ctx: CanvasRenderingContext2D; x, y, radius, startAngle,
-    endAngle: float64; counterclockwise = false): Err[DOMException]
-    {.jsfunc.} =
+proc arc(jsctx: JSContext; ctx: CanvasRenderingContext2D;
+    x, y, radius, startAngle, endAngle: float64;
+    counterclockwise = false): JSValue {.jsfunc.} =
   if radius < 0:
-    return errDOMException("Expected positive radius, but got negative",
-      "IndexSizeError")
+    return jsctx.radiusThrow()
   ctx.state.path.arc(x, y, radius, startAngle, endAngle, counterclockwise)
-  return ok()
+  return JS_UNDEFINED
 
-proc ellipse(ctx: CanvasRenderingContext2D; x, y, radiusX, radiusY, rotation,
-    startAngle, endAngle: float64; counterclockwise = false): Err[DOMException]
-    {.jsfunc.} =
+proc ellipse(jsctx: JSContext; ctx: CanvasRenderingContext2D;
+    x, y, radiusX, radiusY, rotation, startAngle, endAngle: float64;
+    counterclockwise = false): JSValue {.jsfunc.} =
   if radiusX < 0 or radiusY < 0:
-    return errDOMException("Expected positive radius, but got negative",
-      "IndexSizeError")
+    return jsctx.radiusThrow()
   ctx.state.path.ellipse(x, y, radiusX, radiusY, rotation, startAngle, endAngle,
     counterclockwise)
-  return ok()
+  return JS_UNDEFINED
 
 proc rect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   ctx.state.path.rect(x, y, w, h)
