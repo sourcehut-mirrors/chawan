@@ -3,6 +3,8 @@ import std/sets
 import std/strutils
 import std/tables
 
+import io/chafile
+import types/opt
 import utils/twtstr
 
 # extension -> type
@@ -13,33 +15,37 @@ type MimeTypes* = object
 template getOrDefault*(mimeTypes: MimeTypes; k, fallback: string): string =
   mimeTypes.t.getOrDefault(k, fallback)
 
-# No error handling for now.
-proc parseMimeTypes*(mimeTypes: var MimeTypes; buf: openArray[char];
+proc parseMimeTypesLine(mimeTypes: var MimeTypes; buf: openArray[char];
     defaultImages: HashSet[string]) =
-  var i = 0
+  if buf.len == 0 or buf[0] == '#':
+    return
+  let t = buf.untilLower(AsciiWhitespace)
+  var i = t.len
   while i < buf.len:
-    if buf[i] == '#': # comment
-      while i < buf.len and buf[i] != '\n':
-        inc i
-    else:
-      let t = buf.untilLower(AsciiWhitespace, i)
-      i += t.len
-      while i < buf.len and buf[i] != '\n':
-        i = buf.skipBlanksTillLF(i)
-        let ext = buf.untilLower(AsciiWhitespace, i)
-        i += ext.len
-        if ext.len > 0 and not mimeTypes.t.hasKeyOrPut(ext, t) and
-            t.startsWith("image/"):
-          let t = t.after('/')
-          # As a fingerprinting countermeasure: prevent additional
-          # extensions for predefined inline image type detection.
-          if t notin defaultImages:
-            mimeTypes.image[ext] = t
-    inc i
+    i = buf.skipBlanks(i)
+    let ext = buf.untilLower(AsciiWhitespace, i)
+    i += ext.len
+    if ext.len > 0 and not mimeTypes.t.hasKeyOrPut(ext, t) and
+        t.startsWith("image/"):
+      let t = t.after('/')
+      # As a fingerprinting countermeasure: prevent additional
+      # extensions for predefined inline image type detection.
+      if t notin defaultImages:
+        mimeTypes.image[ext] = t
+
+proc parseMimeTypes*(mimeTypes: var MimeTypes; file: ChaFile;
+    defaultImages: HashSet[string]): Opt[void] =
+  var line: string
+  while ?file.readLine(line):
+    mimeTypes.parseMimeTypesLine(line, defaultImages)
+  ok()
 
 const DefaultGuess* = block:
   var mimeTypes = MimeTypes()
-  mimeTypes.parseMimeTypes(staticRead"res/mime.types", initHashSet[string]())
+  let s = staticRead"res/mime.types"
+  let dummy = initHashSet[string]()
+  for (si, ei) in s.lineIndices:
+    mimeTypes.parseMimeTypesLine(s.toOpenArray(si, ei), dummy)
   mimeTypes
 
 const DefaultImages* = block:

@@ -16,6 +16,7 @@ import config/toml
 import config/urimethodmap
 import css/cssparser
 import html/script
+import io/chafile
 import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript
@@ -679,12 +680,11 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
   ?ctx.parseConfigValue(paths, v, k)
   x = MimeTypes.default
   for p in paths:
-    let ps = newPosixStream(p)
-    if ps != nil:
-      let src = ps.readAllOrMmap()
-      x.parseMimeTypes(src.toOpenArray(), DefaultImages)
-      deallocMem(src)
-      ps.sclose()
+    if f := chafile.fopen(p, "r"):
+      let res = x.parseMimeTypes(f, DefaultImages)
+      f.close()
+      if res.isErr:
+        return err(k & ": error reading file " & p)
   ok()
 
 const DefaultMailcap = block:

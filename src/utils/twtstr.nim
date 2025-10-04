@@ -954,4 +954,14 @@ proc getFileExt*(path: string): string =
     return ""
   return path.substr(n + 1)
 
+iterator lineIndices*(s: openArray[char]): tuple[si, ei: int] {.inline.} =
+  var i = 0
+  let H = s.high
+  while i < s.len:
+    var j = i + s.toOpenArray(i, H).find('\n')
+    if j == -1:
+      j = H
+    yield (i, j - 1)
+    i = j + 1
+
 {.pop.} # raises: []
