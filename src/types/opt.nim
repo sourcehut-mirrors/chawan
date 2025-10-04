@@ -2,24 +2,24 @@
 
 type
   Result*[T, E] = object
-    when E is void and T is void: # weirdness
-      has*: bool
-    elif E is void and T isnot void: # opt
-      case has*: bool
+    when E is void and T is void: # Opt[void]
+      isOk*: bool
+    elif E is void and T isnot void: # Opt[T]
+      case isOk*: bool
       of true:
-        val*: T
+        get*: T
       else:
         discard
-    elif E isnot void and T is void: # err
-      case has*: bool
+    elif E isnot void and T is void: # Err[T]
+      case isOk*: bool
       of true:
         discard
       else:
         error*: E
-    else: # result
-      case has*: bool
+    else: # Result[T, E]
+      case isOk*: bool
       of true:
-        val*: T
+        get*: T
       else:
         error*: E
 
@@ -28,10 +28,10 @@ type
   Err*[E] = Result[void, E]
 
 template ok*[E](t: type Err[E]): Err[E] =
-  Err[E](has: true)
+  Err[E](isOk: true)
 
 template ok*[T, E](t: type Result[T, E]; x: T): Result[T, E] =
-  Result[T, E](val: x, has: true)
+  Result[T, E](get: x, isOk: true)
 
 template ok*[T](x: T): auto =
   ok(typeof(result), x)
@@ -40,13 +40,13 @@ template ok*(): auto =
   ok(typeof(result))
 
 template err*[T, E](t: type Result[T, E]; e: E): Result[T, E] =
-  Result[T, E](has: false, error: e)
+  Result[T, E](isOk: false, error: e)
 
 template err*[T](t: type Result[T, ref object]): auto =
-  t(has: false, error: nil)
+  t(isOk: false, error: nil)
 
 template err*[T](t: type Result[T, void]): Result[T, void] =
-  Result[T, void](has: false)
+  Result[T, void](isOk: false)
 
 template err*(): auto =
   err(typeof(result))
@@ -60,57 +60,34 @@ template opt*[T](v: T): auto =
 template opt*(t: typedesc): auto =
   err(Result[t, void])
 
-template opt*[T, E: not void](r: Result[T, E]): Opt[T] =
-  if r.isOk:
-    Opt[T].ok(r.get)
-  else:
-    Opt[T].err()
-
-template isOk*(res: Result): bool = res.has
-
-template isErr*(res: Result): bool = not res.has
-
-proc get*[T, E](res: Result[T, E]): lent T {.inline.} = res.val
-
-proc get*[T, E](res: var Result[T, E]): var T = res.val
+template isErr*(res: Result): bool = not res.isOk
 
 proc get*[T, E](res: Result[T, E]; v: T): T =
-  if res.has:
-    {.push checks: off.}
-    result = res.val
-    {.pop.}
+  if res.isOk:
+    result = res.get
   else:
     result = v
 
-proc uncheckedGet[T, E](res: var Result[T, E]): var T {.inline.} =
-  {.push checks: off.}
-  result = res.val
-  {.pop.}
-
-template valType*[T, E](res: type Result[T, E]): auto = T
-
-template errType*[T, E](res: type Result[T, E]): auto = E
-
-template `?`*[T, E](res: Result[T, E]): auto =
+template `?`*[T, E](res: Result[T, E]): T =
   var x = res # for when res is a funcall
-  if not x.has:
+  if not x.isOk:
     when typeof(result) is Result[T, E]:
       return move(x)
-    elif E isnot void and typeof(result).errType is E:
+    elif E isnot void:
       {.push checks: off.}
       return err(move(x.error))
       {.pop.}
     else:
       return err()
   when T isnot void:
-    move(x.uncheckedGet)
+    move(x.get)
 
 template `:=`*(a, res: untyped): bool =
   var x = res # for when res is a funcall
-  var a: typeof(x).valType
-  let r = x.has
+  var a: typeof(x).T
+  let r = x.isOk
   if r:
     {.push checks: off.}
-    a = move(x.val)
+    a = move(x.get)
     {.pop.}
   r
