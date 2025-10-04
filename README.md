@@ -45,7 +45,8 @@ $ mancha cha # read the cha(1) man page using `mancha'
 
 ## Packages
 
-You can also install Chawan from packages maintained by volunteers:
+You can also install Chawan from packages maintained by volunteers.
+Known stable packages are:
 
 * Alpine: <https://pkgs.alpinelinux.org/packages?name=chawan>
 * AUR: <https://aur.archlinux.org/packages/chawan-git>
@@ -53,6 +54,16 @@ You can also install Chawan from packages maintained by volunteers:
 * Slackware (SBo): <https://slackbuilds.org/repository/15.0/network/chawan/>
 * AppImage: <https://git.lerch.org/lobo/chawan-appimage/>
 * Homebrew: <https://formulae.brew.sh/formula/chawan>
+
+Unstable packages (tip of the `master` branch):
+
+* AUR: <https://aur.archlinux.org/packages/chawan-git>
+* AppImage: <https://git.lerch.org/lobo/chawan-appimage/>
+* Homebrew (using `--HEAD`): <https://formulae.brew.sh/formula/chawan>
+
+Each [release](https://chawan.net/news/index.html) also comes with static
+binaries.  However, their dependencies can quickly get out of date, so
+installing a package or compiling Chawan yourself is preferable.
 
 ## Features
 
