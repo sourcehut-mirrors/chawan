@@ -6,7 +6,6 @@ import std/os
 import std/posix
 import std/strutils
 
-import io/chafile
 import utils/twtstr
 
 # std's getcwd binding uses int for size, but it's size_t...
@@ -21,10 +20,6 @@ proc getcwd*(): string =
   $cs
 
 proc system*(cmd: cstring): cint {.importc, header: "<stdlib.h>".}
-
-proc die*(s: string) {.noreturn.} =
-  discard cast[ChaFile](stderr).writeLine("cha: " & s)
-  quit(1)
 
 proc free(p: pointer) {.importc, header: "<stdlib.h>".}
 

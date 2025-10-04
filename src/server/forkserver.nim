@@ -20,15 +20,14 @@ import server/loaderiface
 import types/opt
 import types/url
 import types/winattrs
-import utils/myposix
 import utils/proctitle
 import utils/sandbox
 import utils/strwidth
 import utils/twtstr
 
 type
-  ForkServer* = ref object
-    stream: SocketStream
+  ForkServer* = object
+    stream*: SocketStream
     estream*: PosixStream
 
   ForkServerContext = object
@@ -224,7 +223,7 @@ proc setupForkServerEnv(config: LoaderConfig): Opt[void] =
   ?twtstr.setEnv("CHA_BOOKMARK", config.bookmark)
   ok()
 
-proc runForkServer(controlStream, loaderStream: SocketStream) =
+proc runForkServer*(controlStream, loaderStream: SocketStream) =
   setProcessTitle("cha forkserver")
   var ctx = ForkServerContext(stream: controlStream)
   discard signal(SIGCHLD, SIG_IGN)
@@ -236,7 +235,7 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
     r.sread(config)
     # for CGI
     if setupForkServerEnv(config).isErr:
-      die("failed to set env vars")
+      quit(1)
     # returns a new stream that connects fork server <-> loader and
     # gives away main process <-> loader
     var (pid, loaderStream) = ctx.forkLoader(config, loaderStream)
@@ -282,40 +281,5 @@ proc runForkServer(controlStream, loaderStream: SocketStream) =
   # Clean up when the main process crashed.
   discard kill(0, cint(SIGTERM))
   quit(0)
-
-proc newForkServer*(loaderSockVec: array[2, cint]): ForkServer =
-  var sockVec {.noinit.}: array[2, cint] # stdin in forkserver
-  var pipeFdErr {.noinit.}: array[2, cint] # stderr in forkserver
-  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sockVec) != 0:
-    die("failed to open fork server i/o socket")
-  if pipe(pipeFdErr) == -1:
-    die("failed to open fork server error pipe")
-  let pid = fork()
-  if pid == -1:
-    die("failed to fork fork the server process")
-  elif pid == 0:
-    # child process
-    discard setsid()
-    closeStdin()
-    closeStdout()
-    newPosixStream(pipeFdErr[1]).moveFd(STDERR_FILENO)
-    discard close(pipeFdErr[0]) # close read
-    discard close(sockVec[0])
-    discard close(loaderSockVec[0])
-    let controlStream = newSocketStream(sockVec[1])
-    let loaderStream = newSocketStream(loaderSockVec[1])
-    runForkServer(controlStream, loaderStream)
-    doAssert false
-    exitnow(1)
-  else:
-    discard close(pipeFdErr[1]) # close write
-    discard close(sockVec[1])
-    discard close(loaderSockVec[1])
-    let stream = newSocketStream(sockVec[0])
-    stream.setCloseOnExec()
-    let estream = newPosixStream(pipeFdErr[0])
-    estream.setCloseOnExec()
-    estream.setBlocking(false)
-    return ForkServer(stream: stream, estream: estream)
 
 {.pop.} # raises: []

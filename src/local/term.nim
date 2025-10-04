@@ -18,7 +18,6 @@ import types/cell
 import types/color
 import types/opt
 import types/winattrs
-import utils/myposix
 import utils/strwidth
 import utils/twtstr
 
@@ -127,6 +126,7 @@ type
     asciiOnly: bool
     osc52Copy: bool
     ttyFlag: bool
+    mouseEnabled: bool
     origTermios: Termios
     newTermios: Termios
     defaultBackground: RGBColor
@@ -299,7 +299,7 @@ const APC = "\e_"
 
 const KittyQuery = APC & "Gi=1,a=q;" & ST
 
-proc flush*(term: Terminal): bool =
+proc flush*(term: Terminal): Opt[bool] =
   var page = term.pageHead
   while page != nil:
     var n = page.n
@@ -309,7 +309,7 @@ proc flush*(term: Terminal): bool =
       if m < 0:
         let e = errno
         if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
-          die("error writing to stdout: " & $strerror(e))
+          return err()
         break
       n += m
     if n < page.a.len:
@@ -319,10 +319,10 @@ proc flush*(term: Terminal): bool =
   term.pageHead = page
   if page == nil:
     term.pageTail = nil
-    return true
-  false
+    return ok(true)
+  ok(false)
 
-proc write(term: Terminal; s: openArray[char]) =
+proc write(term: Terminal; s: openArray[char]): Opt[void] =
   if s.len > 0:
     var n = 0
     if term.pageHead == nil:
@@ -331,7 +331,7 @@ proc write(term: Terminal; s: openArray[char]) =
         if m < 0:
           let e = errno
           if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
-            die("error writing to stdout: " & $strerror(e))
+            return err()
           break
         n += m
     if n < s.len:
@@ -345,17 +345,20 @@ proc write(term: Terminal; s: openArray[char]) =
         term.pageTail = page
       # I'd much rather just use @, but that introduces a ridiculous
       # copy function :(
+      #TODO fixed on current devel, switch when it's released & becomes
+      # widespread enough
       let len = s.len - n
       page.a = newSeqUninit[uint8](len)
       copyMem(addr page.a[0], unsafeAddr s[n], len)
+  ok()
 
-proc readChar(term: Terminal): char =
+proc readChar(term: Terminal): Opt[char] =
   if term.ibufn == term.ibufLen:
     term.ibufn = 0
     term.ibufLen = term.istream.readData(term.ibuf)
     if term.ibufLen == -1:
-      die("error reading from stdin")
-  result = term.ibuf[term.ibufn]
+      return err()
+  result = ok(term.ibuf[term.ibufn])
   inc term.ibufn
 
 proc blockIO(term: Terminal) =
@@ -366,17 +369,17 @@ proc unblockIO(term: Terminal) =
   term.istream.setBlocking(false)
   term.ostream.setBlocking(false)
 
-proc ahandleRead*(term: Terminal): bool =
+proc ahandleRead*(term: Terminal): Opt[bool] =
   term.ibufn = 0
   term.ibufLen = term.istream.readData(term.ibuf)
   if term.ibufLen < 0:
     let e = errno
     if e != EAGAIN and e != EWOULDBLOCK and e != EINTR:
       term.blockIO()
-      die("error reading from stdin")
+      return err()
     term.ibufLen = 0
-    return false
-  true
+    return ok(false)
+  ok(true)
 
 # Note: in theory, we should run the escape parser state machine
 # *before* parsing the input.
@@ -540,13 +543,14 @@ proc clearDisplay(term: Terminal): string =
 proc isatty*(term: Terminal): bool =
   term.ttyFlag
 
-proc anyKey*(term: Terminal; msg = "[Hit any key]") =
+proc anyKey*(term: Terminal; msg = "[Hit any key]"): Opt[void] =
   if term.isatty():
     term.blockIO()
-    doAssert term.flush()
-    term.write(term.clearEnd() & msg)
+    doAssert ?term.flush()
+    ?term.write(term.clearEnd() & msg)
     discard term.readChar()
     term.unblockIO()
+  ok()
 
 proc resetFormat(term: Terminal): string =
   case term.termType
@@ -569,12 +573,13 @@ proc startFormat(term: Terminal; flag: FormatFlag): string =
 proc endFormat(term: Terminal; flag: FormatFlag): string =
   return CSI & $FormatCodes[flag].e & 'm'
 
-proc setCursor*(term: Terminal; x, y: int) =
+proc setCursor*(term: Terminal; x, y: int): Opt[void] =
   assert x >= 0 and y >= 0
   if x != term.cursorx or y != term.cursory:
-    term.write(term.cursorGoto(x, y))
+    ?term.write(term.cursorGoto(x, y))
     term.cursorx = x
     term.cursory = y
+  ok()
 
 proc enableAltScreen(term: Terminal): string =
   return SetAltScreen
@@ -744,28 +749,35 @@ proc processFormat*(res: var string; term: Terminal; format: var Format;
       res.addColorSGR(bgcolor, bgmod = 10)
       format.bgcolor = bgcolor
 
-proc setTitle*(term: Terminal; title: string) =
+proc setTitle*(term: Terminal; title: string): Opt[void] =
   if term.setTitle:
-    term.write(OSC & "0;" & title.replaceControls() & ST)
+    ?term.write(OSC & "0;" & title.replaceControls() & ST)
+  ok()
 
-proc enableMouse*(term: Terminal) =
-  case term.termType
-  of ttAdm3a, ttVt52, ttVt100: discard
-  else: term.write(SetShiftEscape & SetSGRMouse)
+proc enableMouse*(term: Terminal): Opt[void] =
+  if not term.mouseEnabled:
+    case term.termType
+    of ttAdm3a, ttVt52, ttVt100: discard
+    else: ?term.write(SetShiftEscape & SetSGRMouse)
+    term.mouseEnabled = true
+  ok()
 
-proc disableMouse*(term: Terminal) =
-  case term.termType
-  of ttAdm3a, ttVt52, ttVt100: discard
-  else: term.write(ResetSGRMouse)
+proc disableMouse*(term: Terminal): Opt[void] =
+  if term.mouseEnabled:
+    case term.termType
+    of ttAdm3a, ttVt52, ttVt100: discard
+    else: ?term.write(ResetSGRMouse)
+    term.mouseEnabled = false
+  ok()
 
-proc enableBracketedPaste(term: Terminal) =
+proc enableBracketedPaste(term: Terminal): Opt[void] =
   case term.termType
-  of ttAdm3a, ttVt52, ttVt100: discard
+  of ttAdm3a, ttVt52, ttVt100: ok()
   else: term.write(SetBracketedPaste)
 
-proc disableBracketedPaste(term: Terminal) =
+proc disableBracketedPaste(term: Terminal): Opt[void] =
   case term.termType
-  of ttAdm3a, ttVt52, ttVt100: discard
+  of ttAdm3a, ttVt52, ttVt100: ok()
   else: term.write(ResetBracketedPaste)
 
 proc encodeAllQMark(res: var string; start: int; te: TextEncoder;
@@ -868,15 +880,17 @@ proc generateSwapOutput(term: Terminal): string =
       # damage is gone
       term.lineDamage[y] = term.attrs.width
 
-proc hideCursor*(term: Terminal) =
+proc hideCursor*(term: Terminal): Opt[void] =
   case term.termType
   of ttAdm3a, ttVt52: discard
-  else: term.write(CIVIS)
+  else: ?term.write(CIVIS)
+  ok()
 
-proc showCursor*(term: Terminal) =
+proc showCursor*(term: Terminal): Opt[void] =
   case term.termType
   of ttAdm3a, ttVt52: discard
-  else: term.write(CNORM)
+  else: ?term.write(CNORM)
+  ok()
 
 proc writeGrid*(term: Terminal; grid: FixedGrid; x = 0, y = 0) =
   for ly in y ..< y + grid.height:
@@ -955,15 +969,16 @@ proc applyConfig(term: Terminal) =
   term.tdctx = initTextDecoderContext(term.cs)
   term.applyConfigDimensions()
 
-proc outputGrid*(term: Terminal) =
-  term.write(term.resetFormat())
+proc outputGrid*(term: Terminal): Opt[void] =
+  ?term.write(term.resetFormat())
   if term.config.display.forceClear or not term.cleared:
-    term.write(term.generateFullOutput())
+    ?term.write(term.generateFullOutput())
     term.cleared = true
   else:
-    term.write(term.generateSwapOutput())
+    ?term.write(term.generateSwapOutput())
   term.cursorx = -1
   term.cursory = -1
+  ok()
 
 proc findImage(term: Terminal; pid, imageId: int; rx, ry, width, height,
     erry, offx, dispw: int): CanvasImage =
@@ -1123,7 +1138,7 @@ proc appendSixelAttrs(outs: var string; data: openArray[char];
     copyMem(addr outs[ol], unsafeAddr data[i], data.len - i)
 
 proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
-    data: openArray[char]) =
+    data: openArray[char]): Opt[void] =
   let offx = image.offx
   let offy = image.offy
   let dispw = image.dispw
@@ -1132,53 +1147,55 @@ proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage;
   let realh = disph - offy
   let preludeLen = image.preludeLen
   if preludeLen > data.len or data.len < 4:
-    return
+    return ok()
   let L = data.len - int(data.getU32BE(data.len - 4)) - 4
   if L < 0:
-    return
+    return ok()
   var outs = term.cursorGoto(x, y)
   outs.appendSixelAttrs(data.toOpenArray(0, preludeLen - 1), realw, realh)
-  term.write(outs)
+  ?term.write(outs)
   # Note: we only crop images when it is possible to do so in near constant
   # time. Otherwise, the image is re-coded in a cropped form.
   if realh == image.height: # don't crop
-    term.write(data.toOpenArray(preludeLen, L - 1))
-  else:
-    let si = preludeLen + int(data.getU32BE(L + (offy div 6) * 4))
-    if si >= data.len: # bounds check
-      term.write(ST)
-    elif disph == image.height: # crop top only
-      term.write(data.toOpenArray(si, L - 1))
-    else: # crop both top & bottom
-      let ed6 = (disph - image.erry) div 6
-      let ei = preludeLen + int(data.getU32BE(L + ed6 * 4)) - 1
-      if ei <= data.len: # bounds check
-        term.write(data.toOpenArray(si, ei - 1))
-      # calculate difference between target Y & actual position in the map
-      # note: it must be offset by image.erry; that's where the map starts.
-      let herry = disph - (ed6 * 6 + image.erry)
-      if herry > 0:
-        # can't write out the last row completely; mask off the bottom part.
-        let mask = (1u8 shl herry) - 1
-        var s = "-"
-        var i = ei + 1
-        while i < L and (let c = data[i]; c notin {'-', '\e'}): # newline or ST
-          let u = uint8(c) - 0x3F # may underflow, but that's no problem
-          if u < 0x40:
-            s &= char((u and mask) + 0x3F)
-          else:
-            s &= c
-          inc i
-        term.write(s)
-      term.write(ST)
+    return term.write(data.toOpenArray(preludeLen, L - 1))
+  let si = preludeLen + int(data.getU32BE(L + (offy div 6) * 4))
+  if si >= data.len: # bounds check
+    return term.write(ST)
+  if disph == image.height: # crop top only
+    return term.write(data.toOpenArray(si, L - 1))
+  # crop both top & bottom
+  let ed6 = (disph - image.erry) div 6
+  let ei = preludeLen + int(data.getU32BE(L + ed6 * 4)) - 1
+  if ei <= data.len: # bounds check
+    ?term.write(data.toOpenArray(si, ei - 1))
+  # calculate difference between target Y & actual position in the map
+  # note: it must be offset by image.erry; that's where the map starts.
+  let herry = disph - (ed6 * 6 + image.erry)
+  if herry > 0:
+    # can't write out the last row completely; mask off the bottom part.
+    let mask = (1u8 shl herry) - 1
+    var s = "-"
+    var i = ei + 1
+    while i < L and (let c = data[i]; c notin {'-', '\e'}): # newline or ST
+      let u = uint8(c) - 0x3F # may underflow, but that's no problem
+      if u < 0x40:
+        s &= char((u and mask) + 0x3F)
+      else:
+        s &= c
+      inc i
+    ?term.write(s)
+  term.write(ST)
 
-proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage) =
+proc outputSixelImage(term: Terminal; x, y: int; image: CanvasImage):
+    Opt[void] =
   var p = cast[ptr UncheckedArray[char]](image.data.buffer)
   if image.data.size > 0:
     let H = image.data.size - 1
-    term.outputSixelImage(x, y, image, p.toOpenArray(0, H))
+    ?term.outputSixelImage(x, y, image, p.toOpenArray(0, H))
+  ok()
 
-proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
+proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage):
+    Opt[void] =
   var outs = term.cursorGoto(x, y) &
     APC & "GC=1,s=" & $image.width & ",v=" & $image.height &
     ",x=" & $image.offx & ",y=" & $image.offy &
@@ -1189,8 +1206,7 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
     ",p=1,q=2"
   if image.kittyId != 0:
     outs &= ",i=" & $image.kittyId & ",a=p;" & ST
-    term.write(outs)
-    return
+    return term.write(outs)
   inc term.kittyId # skip i=0
   image.kittyId = term.kittyId
   outs &= ",i=" & $image.kittyId
@@ -1202,7 +1218,7 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
   outs &= ",a=T,f=100,m=" & m & ';'
   outs.btoa(p.toOpenArray(0, min(L, i) - 1))
   outs &= ST
-  term.write(outs)
+  ?term.write(outs)
   while i < L:
     let j = i
     i += MaxBytes
@@ -1210,9 +1226,10 @@ proc outputKittyImage(term: Terminal; x, y: int; image: CanvasImage) =
     var outs = APC & "Gm=" & m & ';'
     outs.btoa(p.toOpenArray(j, min(L, i) - 1))
     outs &= ST
-    term.write(outs)
+    ?term.write(outs)
+  ok()
 
-proc outputImages*(term: Terminal) =
+proc outputImages*(term: Terminal): Opt[void] =
   if term.imageMode == imKitty:
     # clean up unused kitty images
     var s = ""
@@ -1220,7 +1237,7 @@ proc outputImages*(term: Terminal) =
       if image.kittyId == 0:
         continue # maybe it was never displayed...
       s &= APC & "Ga=d,d=I,i=" & $image.kittyId & ",p=1,q=2;" & ST
-    term.write(s)
+    ?term.write(s)
     term.imagesToClear.setLen(0)
   for image in term.canvasImages:
     if image.damaged:
@@ -1229,9 +1246,10 @@ proc outputImages*(term: Terminal) =
       let y = max(image.y, 0)
       case term.imageMode
       of imNone: assert false
-      of imSixel: term.outputSixelImage(x, y, image)
-      of imKitty: term.outputKittyImage(x, y, image)
+      of imSixel: ?term.outputSixelImage(x, y, image)
+      of imKitty: ?term.outputKittyImage(x, y, image)
       image.damaged = false
+  ok()
 
 proc clearCanvas*(term: Terminal) =
   term.cleared = false
@@ -1247,14 +1265,14 @@ proc clearCanvas*(term: Terminal) =
   term.clearImages(maxh)
   term.canvasImages = newImages
 
-proc sendOSC52*(term: Terminal; s: string): bool =
+proc sendOSC52*(term: Terminal; s: string): Opt[bool] =
   if not term.osc52Copy:
-    return false
+    return ok(false)
   term.blockIO()
-  doAssert term.flush()
-  term.write(OSC & "52;c;" & btoa(s) & ST)
+  doAssert ?term.flush()
+  ?term.write(OSC & "52;c;" & btoa(s) & ST)
   term.unblockIO()
-  return true
+  ok(true)
 
 # see https://viewsourcecode.org/snaptoken/kilo/02.enteringRawMode.html
 proc disableRawMode(term: Terminal) =
@@ -1288,35 +1306,35 @@ proc respectSigint*(term: Terminal) =
   term.newTermios.c_lflag = term.newTermios.c_lflag and not ISIG
   discard tcSetAttr(term.istream.fd, TCSAFLUSH, addr term.newTermios)
 
-proc quit*(term: Terminal) =
+proc quit*(term: Terminal): Opt[void] =
   if term.isatty():
     if term.config.input.useMouse:
-      term.disableMouse()
+      ?term.disableMouse()
     if term.config.input.bracketedPaste:
-      term.disableBracketedPaste()
+      ?term.disableBracketedPaste()
     if term.smcup:
       if term.imageMode == imSixel:
         # xterm seems to keep sixels in the alt screen; clear these so
         # it doesn't flash in the user's face the next time they do smcup
-        term.write(term.clearDisplay())
-      term.write(term.disableAltScreen())
+        ?term.write(term.clearDisplay())
+      ?term.write(term.disableAltScreen())
     else:
-      term.write(term.cursorGoto(0, term.attrs.height - 1) &
+      ?term.write(term.cursorGoto(0, term.attrs.height - 1) &
         term.resetFormat() & "\n")
     if term.setTitle:
-      term.write(PopTitle)
-    term.showCursor()
+      ?term.write(PopTitle)
+    ?term.showCursor()
     term.blockIO()
-    doAssert term.flush()
+    doAssert ?term.flush()
     term.disableRawMode()
     term.clearCanvas()
+  ok()
 
 type
   QueryAttrs = enum
     qaAnsiColor, qaRGB, qaSixel, qaKittyImage, qaOSC52
 
   QueryResult = object
-    success: bool
     attrs: set[QueryAttrs]
     fgcolor: Option[RGBColor]
     bgcolor: Option[RGBColor]
@@ -1329,33 +1347,34 @@ type
     height: int
     registers: int
 
-proc consumeIntUntil(term: Terminal; sentinel: char): int =
+#TODO overflow checks
+proc consumeIntUntil(term: Terminal; sentinel: char): Opt[int] =
   var n = 0
-  while (let c = term.readChar(); c != sentinel):
+  while (let c = ?term.readChar(); c != sentinel):
     if (let x = decValue(c); x != -1):
       n *= 10
       n += x
     else:
-      return -1
-  return n
+      return ok(-1)
+  ok(n)
 
-proc consumeIntGreedy(term: Terminal; lastc: var char): int =
+proc consumeIntGreedy(term: Terminal; lastc: var char): Opt[int] =
   var n = 0
   while true:
-    let c = term.readChar()
+    let c = ?term.readChar()
     if (let x = decValue(c); x != -1):
       n *= 10
       n += x
     else:
       lastc = c
       break
-  return n
+  ok(n)
 
-proc eatColor(term: Terminal; tc: char): uint8 =
+proc eatColor(term: Terminal; tc: char): Opt[uint8] =
   var val = 0u8
   var i = 0
   var c = char(0)
-  while (c = term.readChar(); c != tc and c != '\a'):
+  while (c = ?term.readChar(); c != tc and c != '\a'):
     let v0 = hexValue(c)
     if i > 4 or v0 == -1:
       break # wat
@@ -1367,24 +1386,30 @@ proc eatColor(term: Terminal; tc: char): uint8 =
     # all other places are irrelevant
     inc i
   if tc == '\e' and c != '\a':
-    if term.readChar() != '\\':
-      return 0 # error
+    if ?term.readChar() != '\\':
+      return ok(0) # error
   if tc != '\e' and c == '\a':
-    return 0 # error
-  return val
+    return ok(0) # error
+  ok(val)
 
-proc skipUntil(term: Terminal; c: char) =
-  while term.readChar() != c:
+proc skipUntil(term: Terminal; c: char): Opt[void] =
+  while ?term.readChar() != c:
     discard
+  ok()
 
-proc skipUntilST(term: Terminal) =
+proc skipUntilST(term: Terminal): Opt[void] =
   while true:
-    let c = term.readChar()
+    let c = ?term.readChar()
     # st returns BEL *despite* us sending ST. Ugh.
-    if c == '\a' or c == '\e' and term.readChar() == '\\':
+    if c == '\a' or c == '\e' and ?term.readChar() == '\\':
       break
+  ok()
 
-proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
+# err() -> I/O error
+# ok(false) -> parse error
+# ok(true) -> success, read res
+proc queryAttrs(term: Terminal; windowOnly: bool; res: var QueryResult):
+    Opt[bool] =
   const tcapRGB = 0x524742 # RGB supported?
   var outs = ""
   if not windowOnly:
@@ -1416,24 +1441,22 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
       outs &= QueryTcapRGB
     outs &= QueryANSIColors
   outs &= QueryWindowPixels & QueryCellSize & QueryWindowCells & DA1
-  term.write(outs)
-  doAssert term.flush()
-  result = QueryResult(success: false, attrs: {})
+  ?term.write(outs)
+  res = QueryResult(attrs: {})
+  doAssert ?term.flush() # we must be blocked
   while true:
-    template fail =
-      return
     template expect(term: Terminal; c: char) =
-      if term.readChar() != c:
-        fail
+      if ?term.readChar() != c:
+        return ok(false)
     term.expect '\e'
-    case term.readChar()
+    case ?term.readChar()
     of '[': # CSI
-      case (let c = term.readChar(); c)
+      case (let c = ?term.readChar(); c)
       of '?': # DA1, XTSMGRAPHICS
         var params = newSeq[int]()
         var lastc = char(0)
         while lastc notin {'c', 'S'}:
-          let n = term.consumeIntGreedy(lastc)
+          let n = ?term.consumeIntGreedy(lastc)
           if lastc notin {'c', 'S', ';'}:
             # skip entry
             break
@@ -1441,46 +1464,45 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
         if lastc == 'c': # DA1
           for n in params:
             case n
-            of 4: result.attrs.incl(qaSixel)
-            of 22: result.attrs.incl(qaAnsiColor)
-            of 52: result.attrs.incl(qaOSC52)
+            of 4: res.attrs.incl(qaSixel)
+            of 22: res.attrs.incl(qaAnsiColor)
+            of 52: res.attrs.incl(qaOSC52)
             else: discard
-          result.success = true
-          break
+          return ok(true)
         else: # 'S' (XTSMGRAPHICS)
           if params.len >= 3:
             if params[0] == 1 and params[1] == 0:
-              result.registers = params[2]
+              res.registers = params[2]
       of '=':
         # = is SyncTERM's response to DA1. Nothing useful will come after this.
-        term.skipUntil('c')
+        ?term.skipUntil('c')
         term.termType = ttSyncterm
-        result.success = true
-        break # we're done
+        return ok(true)
       of '4', '6', '8':
         term.expect ';'
-        let height = term.consumeIntUntil(';')
-        let width = term.consumeIntUntil('t')
+        let height = ?term.consumeIntUntil(';')
+        let width = ?term.consumeIntUntil('t')
         if width == -1 or height == -1:
           discard
         elif c == '4':
-          result.widthPx = width
-          result.heightPx = height
+          res.widthPx = width
+          res.heightPx = height
         elif c == '6':
-          result.ppc = width
-          result.ppl = height
+          res.ppc = width
+          res.ppl = height
         elif c == '8':
-          result.width = width
-          result.height = height
-      else: fail
+          res.width = width
+          res.height = height
+      else:
+        break
     of ']': # OSC
-      let c = term.consumeIntUntil(';')
+      let c = ?term.consumeIntUntil(';')
       if c == 61:
         var hasOsc52 = true
         var s: string
         while true:
-          let c = term.readChar()
-          if c == ',' or c == '\a' or c == '\e' and term.readChar() == '\\':
+          let c = ?term.readChar()
+          if c == ',' or c == '\a' or c == '\e' and ?term.readChar() == '\\':
             if s.equalsIgnoreCase("SetSelection"):
               hasOsc52 = false
             if c != ',':
@@ -1489,49 +1511,50 @@ proc queryAttrs(term: Terminal; windowOnly: bool): QueryResult =
           else:
             s &= c
         if hasOsc52:
-          result.attrs.incl(qaOSC52)
+          res.attrs.incl(qaOSC52)
       else:
         var n: int
         if c == 4:
-          n = term.consumeIntUntil(';')
-        if term.readChar() == 'r' and term.readChar() == 'g' and
-            term.readChar() == 'b':
+          n = ?term.consumeIntUntil(';')
+        if ?term.readChar() == 'r' and ?term.readChar() == 'g' and
+            ?term.readChar() == 'b':
           term.expect ':'
-          let r = term.eatColor('/')
-          let g = term.eatColor('/')
-          let b = term.eatColor('\e')
+          let r = ?term.eatColor('/')
+          let g = ?term.eatColor('/')
+          let b = ?term.eatColor('\e')
           let C = rgb(r, g, b)
           if c == 4:
-            result.colorMap.add((n, C))
+            res.colorMap.add((n, C))
           elif c == 10:
-            result.fgcolor = some(C)
+            res.fgcolor = some(C)
           else: # 11
-            result.bgcolor = some(C)
+            res.bgcolor = some(C)
         else:
           # not RGB, give up
-          term.skipUntilST()
+          ?term.skipUntilST()
     of 'P': # DCS
-      let c = term.readChar()
+      let c = ?term.readChar()
       if c notin {'0', '1'}:
-        fail
+        break
       term.expect '+'
       term.expect 'r'
       if c == '1':
         var id = 0
-        while (let c = term.readChar(); c != '='):
+        while (let c = ?term.readChar(); c != '='):
           if c notin AsciiHexDigit:
-            fail
+            return ok(false)
           id *= 0x10
           id += hexValue(c)
         if id == tcapRGB:
-          result.attrs.incl(qaRGB)
-      term.skipUntilST()
+          res.attrs.incl(qaRGB)
+      ?term.skipUntilST()
     of '_': # APC
       term.expect 'G'
-      result.attrs.incl(qaKittyImage)
-      term.skipUntilST()
+      res.attrs.incl(qaKittyImage)
+      ?term.skipUntilST()
     else:
-      fail
+      break
+  ok(false)
 
 type TermStartResult* = enum
   tsrSuccess, tsrDA1Fail
@@ -1680,10 +1703,11 @@ proc applyTermDesc(term: Terminal; desc: Termdesc) =
   term.bleedsAPC = tfBleedsAPC in desc
 
 # when windowOnly, only refresh window size.
-proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
+proc detectTermAttributes(term: Terminal; windowOnly: bool):
+    Opt[TermStartResult] =
   var res = tsrSuccess
   if not term.isatty():
-    return res
+    return ok(res)
   var win: IOctl_WinSize
   if ioctl(term.istream.fd, TIOCGWINSZ, addr win) != -1:
     if win.ws_col > 0:
@@ -1701,8 +1725,9 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
     term.termType = term.parseTERM()
     term.applyTermDesc(TermdescMap[term.termType])
   if term.queryDa1 and term.config.display.queryDa1:
-    let r = term.queryAttrs(windowOnly)
-    if r.success: # DA1 success
+    var r: QueryResult
+    let s = ?term.queryAttrs(windowOnly, r)
+    if s: # DA1 success
       if r.width != 0:
         term.attrs.width = r.width
         if r.ppc != 0:
@@ -1732,7 +1757,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
           # assume 256 - tell me if you have more.
           term.sixelRegisterNum = 256
       if windowOnly:
-        return res
+        return ok(res)
       if qaAnsiColor in r.attrs and term.colorMode < cmANSI:
         term.colorMode = cmANSI
       if qaRGB in r.attrs:
@@ -1741,7 +1766,7 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
         term.osc52Copy = true
       if term.termType == ttSyncterm:
         # Ask SyncTERM to stop moving the cursor on EOL.
-        term.write(static(CSI & "=5h"))
+        ?term.write(static(CSI & "=5h"))
       if r.bgcolor.isSome:
         term.defaultBackground = r.bgcolor.get
       if r.fgcolor.isSome:
@@ -1755,13 +1780,12 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool): TermStartResult =
       res = tsrDA1Fail
   if term.margin:
     dec term.attrs.width
-  if windowOnly:
-    return res
-  if term.colorMode != cmTrueColor:
-    let colorterm = getEnv("COLORTERM")
-    if colorterm in ["24bit", "truecolor"]:
-      term.colorMode = cmTrueColor
-  return res
+  if not windowOnly:
+    if term.colorMode != cmTrueColor:
+      let colorterm = getEnv("COLORTERM")
+      if colorterm in ["24bit", "truecolor"]:
+        term.colorMode = cmTrueColor
+  ok(res)
 
 proc windowChange*(term: Terminal) =
   term.blockIO()
@@ -1772,40 +1796,43 @@ proc windowChange*(term: Terminal) =
   term.clearCanvas()
   term.unblockIO()
 
-proc initScreen(term: Terminal) =
+proc initScreen(term: Terminal): Opt[void] =
   # note: deinit happens in quit()
   if term.setTitle:
-    term.write(PushTitle)
+    ?term.write(PushTitle)
   if term.smcup:
-    term.write(term.enableAltScreen())
+    ?term.write(term.enableAltScreen())
   if term.config.input.useMouse:
-    term.enableMouse()
+    ?term.enableMouse()
   if term.config.input.bracketedPaste:
-    term.enableBracketedPaste()
+    ?term.enableBracketedPaste()
   term.cursorx = -1
   term.cursory = -1
   term.unblockIO()
+  ok()
 
 proc start*(term: Terminal; istream: PosixStream;
-    registerCb: (proc(fd: int) {.raises: [].})): TermStartResult =
+    registerCb: (proc(fd: int) {.raises: [].})): Opt[TermStartResult] =
   term.ttyFlag = istream != nil and istream.isatty() and term.ostream.isatty()
   term.istream = istream
   term.registerCb = registerCb
   if term.isatty():
     term.enableRawMode()
-  result = term.detectTermAttributes(windowOnly = false)
-  if result == tsrDA1Fail:
+  let res = ?term.detectTermAttributes(windowOnly = false)
+  if res == tsrDA1Fail:
     term.queryDa1 = false
   term.applyConfig()
   if term.isatty():
-    term.initScreen()
+    ?term.initScreen()
   term.canvas = newSeq[FixedCell](term.attrs.width * term.attrs.height)
   term.lineDamage = newSeq[int](term.attrs.height)
+  ok(res)
 
-proc restart*(term: Terminal) =
+proc restart*(term: Terminal): Opt[void] =
   if term.isatty():
     term.enableRawMode()
-    term.initScreen()
+    ?term.initScreen()
+  ok()
 
 const ANSIColorMap = [
   rgb(0, 0, 0),

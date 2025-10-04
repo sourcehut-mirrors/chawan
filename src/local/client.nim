@@ -25,7 +25,6 @@ import local/select
 import local/term
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jsopaque
 import monoucha/quickjs
 import monoucha/tojs
@@ -49,17 +48,16 @@ proc config(client: Client): Config {.jsfget.} =
 proc console(client: Client): Console {.jsrfget.} =
   return client.pager.console
 
-proc suspend(client: Client) {.jsfunc.} =
-  client.pager.term.quit()
+proc suspend(ctx: JSContext; client: Client): JSValue {.jsfunc.} =
+  if client.pager.term.quit().isErr:
+    return ctx.jsQuit(client.pager, 1)
   discard kill(0, cint(SIGTSTP))
-  client.pager.term.restart()
+  discard client.pager.term.restart() #TODO
+  return JS_UNDEFINED
 
-proc jsQuit(client: Client; code: uint32 = 0): JSValue {.jsfunc: "quit".} =
-  client.pager.exitCode = int(code)
-  let ctx = client.jsctx
-  let err = ctx.toJS(JSError(e: jeInternalError))
-  JS_SetUncatchableError(ctx, err);
-  return JS_Throw(ctx, err)
+proc jsQuit(ctx: JSContext; client: Client; code = 0): JSValue
+    {.jsfunc: "quit".} =
+  ctx.jsQuit(client.pager, code)
 
 proc feedNext(client: Client) {.jsfunc.} =
   client.pager.feednext = true
@@ -69,9 +67,6 @@ proc alert(client: Client; msg: string) {.jsfunc.} =
 
 proc consoleBuffer(client: Client): Container {.jsfget.} =
   return client.pager.pinned.console
-
-proc flushConsole*(client: Client) {.jsfunc.} =
-  client.pager.flushConsole()
 
 proc readBlob(client: Client; path: string): WebFile {.jsfunc.} =
   let ps = newPosixStream(path, O_RDONLY, 0)

@@ -52,6 +52,10 @@ const ChaVersionStrLong = block:
   s &= "poll uses " & $PollMode
   s & ")\n"
 
+proc die(s: string) {.noreturn.} =
+  discard cast[ChaFile](stderr).writeLine("cha: " & s)
+  quit(1)
+
 proc help(i: int) {.noreturn.} =
   let s = ChaVersionStr & """
 Usage: cha [options] [URL(s) or file(s)...]
@@ -232,6 +236,40 @@ proc initConfig(ctx: ParamParseContext; config: Config;
 
 const libexecPath {.strdefine.} = "$CHA_BIN_DIR/../libexec/chawan"
 
+proc forkForkServer(loaderSockVec: array[2, cint]): ForkServer =
+  var sockVec {.noinit.}: array[2, cint] # stdin in forkserver
+  var pipeFdErr {.noinit.}: array[2, cint] # stderr in forkserver
+  if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, sockVec) != 0:
+    die("failed to open fork server i/o socket")
+  if pipe(pipeFdErr) == -1:
+    die("failed to open fork server error pipe")
+  let pid = fork()
+  if pid == -1:
+    die("failed to fork fork the server process")
+  elif pid == 0:
+    # child process
+    discard setsid()
+    closeStdin()
+    closeStdout()
+    newPosixStream(pipeFdErr[1]).moveFd(STDERR_FILENO)
+    discard close(pipeFdErr[0]) # close read
+    discard close(sockVec[0])
+    discard close(loaderSockVec[0])
+    let controlStream = newSocketStream(sockVec[1])
+    let loaderStream = newSocketStream(loaderSockVec[1])
+    runForkServer(controlStream, loaderStream)
+    exitnow(1)
+  else:
+    discard close(pipeFdErr[1]) # close write
+    discard close(sockVec[1])
+    discard close(loaderSockVec[1])
+    let stream = newSocketStream(sockVec[0])
+    stream.setCloseOnExec()
+    let estream = newPosixStream(pipeFdErr[0])
+    estream.setCloseOnExec()
+    estream.setBlocking(false)
+    return ForkServer(stream: stream, estream: estream)
+
 proc main() =
   let binDir = myposix.getAppFilename().untilLast('/')
   if twtstr.setEnv("CHA_BIN_DIR", binDir).isErr or
@@ -240,7 +278,7 @@ proc main() =
   var loaderSockVec {.noinit.}: array[2, cint]
   if socketpair(AF_UNIX, SOCK_STREAM, IPPROTO_IP, loaderSockVec) != 0:
     die("failed to set up initial socket pair")
-  let forkserver = newForkServer(loaderSockVec)
+  let forkserver = forkForkServer(loaderSockVec)
   let urandom = newPosixStream("/dev/urandom", O_RDONLY, 0)
   urandom.setCloseOnExec()
   var ctx = ParamParseContext(params: commandLineParams(), i: 0)

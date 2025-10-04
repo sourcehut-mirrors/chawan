@@ -45,7 +45,6 @@ import server/request
 import types/formdata
 import types/opt
 import types/url
-import utils/myposix
 import utils/twtstr
 
 # Try to make it a SmallChunk.
@@ -1977,7 +1976,7 @@ proc runFileLoader*(config: LoaderConfig; stream, forkStream: SocketStream) =
   do:
     fail = true
   if fail:
-    die("initialization error in loader")
+    quit(1)
   ctx.register(ctx.pagerClient)
   ctx.put(ctx.pagerClient)
   ctx.loaderLoop()
