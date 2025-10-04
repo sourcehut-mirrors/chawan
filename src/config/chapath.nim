@@ -258,7 +258,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ChaPath): Opt[void] =
 
 proc unquote*(p: ChaPath; base: string): ChaPathResult[string] =
   var s = ?unquote(string(p))
-  if s.len == 0:
+  if s.len <= 0:
     return ok(s)
   if base != "" and s[0] != '/':
     s.insert(base & '/', 0)

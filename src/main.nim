@@ -151,7 +151,7 @@ proc parse(ctx: var ParamParseContext) =
       ctx.pages.add(param)
       inc ctx.i
       continue
-    if param.len == 0:
+    if param.len <= 0:
       inc ctx.i
       continue
     if param[0] == '-':

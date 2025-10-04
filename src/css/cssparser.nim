@@ -863,7 +863,7 @@ template iq(ctx: CSSParser): openArray[char] =
   ctx.iqp.toOpenArray(0, ctx.iqlen - 1)
 
 proc initCSSParser0(iq: openArray[char]): CSSParser =
-  if iq.len == 0:
+  if iq.len <= 0:
     return CSSParser()
   return CSSParser(
     iqp: cast[ptr UncheckedArray[char]](unsafeAddr iq[0]),

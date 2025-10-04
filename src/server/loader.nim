@@ -935,7 +935,7 @@ proc parseCGIPath(ctx: LoaderContext; request: Request): CGIPath =
   elif path.startsWith("/$LIB/"):
     path.delete(0 .. "/$LIB/".high)
   var cpath = CGIPath()
-  if path == "" or request.url.hostname != "":
+  if path.len <= 0 or request.url.hostname != "":
     return cpath
   if path[0] == '/':
     for dir in ctx.config.cgiDir:
@@ -976,8 +976,8 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
       return
     inc client.numConnections
   let cpath = ctx.parseCGIPath(request)
-  if cpath.cmd == "" or cpath.basename in ["", ".", ".."] or
-      cpath.basename[0] == '~':
+  if cpath.cmd == "" or cpath.basename.len <= 0 or cpath.basename == "." or
+      cpath.basename == ".." or cpath.basename[0] == '~':
     ctx.rejectHandle(handle, ceInvalidCGIPath)
     ctx.close(handle)
     return

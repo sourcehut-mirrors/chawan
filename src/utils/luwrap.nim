@@ -11,7 +11,7 @@ proc passRealloc(opaque, p: pointer; size: csize_t): pointer {.cdecl.} =
   return realloc(p, size)
 
 proc normalize*(rs: openArray[uint32]; form = UNICODE_NFC): seq[uint32] =
-  if rs.len == 0:
+  if rs.len <= 0:
     return @[]
   var outbuf: ptr uint32
   let p = cast[ptr uint32](unsafeAddr rs[0])

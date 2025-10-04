@@ -18,7 +18,7 @@ proc countBackslashes(buf: string; i: int): int =
 # ^ijkl$ -> ^ijkl$
 # mnop -> ^mnop$
 proc compileMatchRegex*(buf: string): Result[Regex, string] =
-  if buf.len == 0:
+  if buf.len <= 0:
     return compileRegex(buf)
   if buf[0] == '^':
     return compileRegex(buf)

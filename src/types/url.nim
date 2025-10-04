@@ -1322,7 +1322,7 @@ proc setPathname*(url: URL; s: string) {.jsfset: "pathname".} =
     parseURL1(s, url, usPathStart)
 
 proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
-  if s == "":
+  if s.len <= 0:
     url.search = ""
     if url.searchParamsInternal != nil:
       url.searchParamsInternal.list.setLen(0)
@@ -1334,7 +1334,7 @@ proc setSearch*(url: URL; s: string) {.jsfset: "search".} =
     url.searchParamsInternal.list = parseFromURLEncoded(s)
 
 proc setHash*(url: URL; s: string) {.jsfset: "hash".} =
-  if s == "":
+  if s.len <= 0:
     url.hash = ""
   else:
     let s = if s[0] == '#': s.substr(1) else: s

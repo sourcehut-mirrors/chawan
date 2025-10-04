@@ -2121,7 +2121,7 @@ proc loadURL(pager: Pager; url: string; contentType = "";
   let localurl = percentEncode(url, LocalPathPercentEncodeSet)
   if newurl := parseURL(localurl, cdir):
     urls.add(newurl) # attempt to load local file
-  if urls.len == 0:
+  if urls.len <= 0:
     pager.alert("Invalid URL " & url)
   else:
     let container = pager.gotoURL(newRequest(urls.pop()), contentType,
