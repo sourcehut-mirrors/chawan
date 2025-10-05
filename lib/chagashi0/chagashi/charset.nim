@@ -324,6 +324,7 @@ proc normalizeLocale(s: openArray[char]): string =
       result &= c.toLowerAscii()
 
 const NormalizedCharsetMap = (proc(): Table[string, Charset] =
+  result = initTable[string, Charset]()
   for k, v in CharsetMap:
     result[k.normalizeLocale()] = v)()
 

@@ -138,6 +138,7 @@ type
 method decode*(td: TextDecoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult {.base.} =
   assert false
+  tdrDone
 
 method finish*(td: TextDecoder): TextDecoderFinishResult {.base.} =
   tdfrDone

@@ -48,9 +48,10 @@ proc newTextEncoder*(charset: Charset): TextEncoder =
   of CHARSET_SHIFT_JIS: return TextEncoderShiftJIS()
   of CHARSET_EUC_KR: return TextEncoderEUC_KR()
   of CHARSET_X_USER_DEFINED: return TextEncoderXUserDefined()
-  of CHARSET_UTF_8, CHARSET_UTF_16_BE, CHARSET_UTF_16_LE,
-      CHARSET_REPLACEMENT, CHARSET_UNKNOWN:
-    doAssert false
+  of CHARSET_UTF_8, CHARSET_UTF_16_BE, CHARSET_UTF_16_LE, CHARSET_REPLACEMENT,
+      CHARSET_UNKNOWN:
+    assert false
+    return nil
 
 proc encodeAll*(te: TextEncoder; iq: openArray[uint8]; success: var bool):
     string =

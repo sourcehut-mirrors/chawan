@@ -51,7 +51,9 @@ proc newTextDecoder*(charset: Charset): TextDecoder =
   of CHARSET_UTF_16_LE: return TextDecoderUTF16_LE()
   of CHARSET_UTF_16_BE: return TextDecoderUTF16_BE()
   of CHARSET_X_USER_DEFINED: return TextDecoderXUserDefined()
-  of CHARSET_UNKNOWN: assert false
+  of CHARSET_UNKNOWN:
+    assert false
+    return nil
 
 type UnsafeSlice* = object
   p*: ptr UncheckedArray[char]
@@ -81,7 +83,7 @@ proc toUnsafeSlice(s: string): UnsafeSlice =
 type TextDecoderContext* = object
   td*: TextDecoder
   n*: int
-  oq*: seq[char]
+  oq*: seq[uint8]
   failed*: bool
   errorMode*: DecoderErrorMode
 
@@ -101,13 +103,43 @@ proc initTextDecoderContext*(td: TextDecoder; errorMode = demReplacement;
   ## `bufLen` is the size of the internal buffer in bytes.
   return TextDecoderContext(
     td: td,
-    oq: newSeq[char](bufLen),
+    oq: newSeq[uint8](bufLen),
     errorMode: errorMode
   )
 
 proc initTextDecoderContext*(charset: Charset; errorMode = demReplacement;
     bufLen = 4096): TextDecoderContext =
   return initTextDecoderContext(newTextDecoder(charset), errorMode, bufLen)
+
+# returns whether this is the last iteration
+proc decodeIter(ctx: var TextDecoderContext; iq: openArray[uint8];
+    slices: var array[2, UnsafeSlice]; finish: bool): bool =
+  result = false
+  let td = ctx.td
+  case td.decode(iq, ctx.oq, ctx.n)
+  of tdrDone:
+    slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
+    if finish:
+      if td.finish() == tdfrError:
+        case ctx.errorMode
+        of demReplacement: slices[1] = "\uFFFD".toUnsafeSlice()
+        of demFatal: ctx.failed = true
+    result = true
+  of tdrReadInput:
+    if ctx.n > 0:
+      slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
+    slices[1] = iq.toOpenArray(td.pi, td.ri).toUnsafeSlice()
+  of tdrReqOutput:
+    slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
+  of tdrError:
+    slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
+    case ctx.errorMode
+    of demReplacement:
+      slices[1] = "\uFFFD".toUnsafeSlice()
+    of demFatal:
+      ctx.failed = true
+      result = true
+  ctx.n = 0
 
 iterator decode*(ctx: var TextDecoderContext; iq: openArray[uint8];
     finish: bool): UnsafeSlice =
@@ -120,37 +152,13 @@ iterator decode*(ctx: var TextDecoderContext; iq: openArray[uint8];
   ## openArray or a string. WARNING: these are simply pointers into the input
   ## data and/or the output buffer. Never use an `UnsafeSlice` object after the
   ## iteration you received it in.
-  let td = ctx.td
   var done = false
   while not done:
     var slices: array[2, UnsafeSlice]
-    case td.decode(iq, ctx.oq.toOpenArrayByte(0, ctx.oq.high), ctx.n)
-    of tdrDone:
-      slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
-      if finish:
-        if td.finish() == tdfrError:
-          case ctx.errorMode
-          of demReplacement: slices[1] = "\uFFFD".toUnsafeSlice()
-          of demFatal: ctx.failed = true
-      done = true
-    of tdrReadInput:
-      if ctx.n > 0:
-        slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
-      slices[1] = iq.toOpenArray(td.pi, td.ri).toUnsafeSlice()
-    of tdrReqOutput:
-      slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
-    of tdrError:
-      slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
-      case ctx.errorMode
-      of demReplacement:
-        slices[1] = "\uFFFD".toUnsafeSlice()
-      of demFatal:
-        ctx.failed = true
-        done = true
+    done = ctx.decodeIter(iq, slices, finish)
     for slice in slices:
       if slice.p != nil:
         yield slice
-    ctx.n = 0
 
 proc `&=`*(s: var string; sl: UnsafeSlice) =
   ## Append the slice `sl` to `s` without unnecessary copying.

@@ -192,6 +192,7 @@ template try_get_utf8(te: TextEncoder; iq: openArray[uint8]; b: uint8): int =
 method encode*(te: TextEncoder; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextEncoderResult {.base.} =
   assert false
+  terDone
 
 method finish*(te: TextEncoder): TextEncoderFinishResult {.base.} =
   tefrDone
