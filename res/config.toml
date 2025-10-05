@@ -164,11 +164,12 @@ x => {
 			["hl", "en-US"], ["asearch", "arc"], ["async", asyncs]];
 	for (const [n, v] of params)
 		x.searchParams.set(n, v);
-	const map = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot', "'": '&apos;'};
+	const map = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;'};
 	const qq = decodeURIComponent(q).replaceAll(/[<>&"']/g, x => map[x] ?? x)
 	let head = `<title>${qq} - Google search</title><center><header><form action=/search><input type=search name=q value="${qq}"><input type=submit value=Search></form><a right href="/search?q=${qq}&start=${start+10}&udm=${udm}">Next page</a>`;
 	if (start >= 10)
 		head += `<a left href="/search?q=${qq}&start=${start-10}&udm=${udm}">Previous page</a>`;
+	setenv("CHA_GOOG_FOOT", head);
 	head += "<center>";
 	for (const [n, u] of [["IMAGES", 2], ["VIDEOS", 7], ["NEWS", 12], ["FORUMS", 18], ["BOOKS", 36]])
 		head += `<a href="/search?q=${qq}&udm=${u}">${n}</a> `;
@@ -183,7 +184,7 @@ default-headers = {
 	Accept-Encoding = 'gzip, deflate, br',
 	Sec-GPC = '1'
 }
-filter-cmd = 'echo "$CHA_GOOG_HEAD";cat;echo "$CHA_GOOG_HEAD"'
+filter-cmd = 'echo "$CHA_GOOG_HEAD";cat;echo "$CHA_GOOG_FOOT"'
 user-style = '''
 html { background: white; text-align: -cha-center }
 header, main { text-align: -cha-left; width: 80ch; display: flow-root }
