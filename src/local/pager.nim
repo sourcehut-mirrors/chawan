@@ -33,7 +33,6 @@ import local/select
 import local/term
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jsregex
 import monoucha/jstypes
 import monoucha/jsutils
@@ -350,19 +349,19 @@ proc searchPrev(pager: Pager; n = 1) {.jsfunc.} =
   else:
     pager.alert("No previous regular expression")
 
-proc setSearchRegex(pager: Pager; s: string; flags0 = ""; reverse = false):
-    JSResult[void] {.jsfunc.} =
+proc setSearchRegex(ctx: JSContext; pager: Pager; s: string; flags0 = "";
+    reverse = false): JSValue {.jsfunc.} =
   var flags = {LRE_FLAG_GLOBAL}
   for c in flags0:
     let x = strictParseEnum[LREFlag]($c)
     if x.isErr:
-      return errTypeError("invalid flag " & c)
+      return JS_ThrowTypeError(ctx, "invalid flag %c", c)
   let re = compileRegex(s, flags)
   if re.isErr:
-    return errTypeError(re.error)
+    return JS_ThrowTypeError(ctx, cstring(re.error))
   pager.regex = some(re.get)
   pager.reverseSearch = reverse
-  return ok()
+  return JS_UNDEFINED
 
 proc getHist(pager: Pager; mode: LineMode): History =
   if pager.lineHist[mode] == nil:
@@ -497,7 +496,7 @@ proc initLoader(pager: Pager) =
   pager.loader.unregisterFun = proc(fd: int) =
     pager.pollData.unregister(fd)
   let request = newRequest("about:cookie-stream")
-  loader.fetch(request).then(proc(res: JSResult[Response]) =
+  loader.fetch(request).then(proc(res: FetchResult) =
     if res.isErr:
       pager.alert("failed to open cookie stream")
       return
@@ -1203,7 +1202,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     httpMethod = hmPost,
     body = RequestBody(t: rbtCache, cacheId: bmp.cacheId),
     tocache = true
-  )).then(proc(res: JSResult[Response]): FetchPromise =
+  )).then(proc(res: FetchResult): FetchPromise =
     # remove previous step
     pager.loader.removeCachedItem(bmp.cacheId)
     if res.isErr:
@@ -1228,7 +1227,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
       headers = headers,
       body = RequestBody(t: rbtCache, cacheId: cacheId),
       tocache = true
-    )).then(proc(res: JSResult[Response]): FetchPromise =
+    )).then(proc(res: FetchResult): FetchPromise =
       # ugh. I must remove the previous cached item, but only after
       # resize is done...
       pager.loader.removeCachedItem(cacheId)
@@ -1236,7 +1235,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     )
     response.close()
     return p
-  ).then(proc(res: JSResult[Response]) =
+  ).then(proc(res: FetchResult) =
     if res.isErr:
       return
     let response = res.get
@@ -1267,7 +1266,7 @@ proc loadCachedImage(pager: Pager; container: Container; image: PosBitmap;
     )
     let r = pager.loader.fetch(request)
     response.close()
-    r.then(proc(res: JSResult[Response]) =
+    r.then(proc(res: FetchResult) =
       # remove previous step
       pager.loader.removeCachedItem(cacheId)
       if res.isErr:

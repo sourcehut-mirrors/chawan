@@ -30,7 +30,6 @@ import io/promise
 import io/timeout
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jsopaque
 import monoucha/jspropenumlist
 import monoucha/jsutils
@@ -1190,7 +1189,7 @@ proc getWeakCollection(ctx: JSContext; this: Node; wwm: WindowWeakMap):
 
 proc corsFetch(window: Window; input: Request): FetchPromise =
   if not window.settings.images and input.url.scheme.startsWith("img-codec+"):
-    return newResolvedPromise(JSResult[Response].err(newFetchTypeError()))
+    return newResolvedPromise(FetchResult.err())
   return window.loader.fetch(input)
 
 proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL):
@@ -1201,14 +1200,14 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
     Promise[CSSStylesheet] =
   let p = window.corsFetch(
     newRequest(url)
-  ).then(proc(res: JSResult[Response]): Promise[JSResult[string]] =
+  ).then(proc(res: FetchResult): Promise[TextResult] =
     if res.isOk:
       let res = res.get
       if res.getContentType().equalsIgnoreCase("text/css"):
         return res.text()
       res.close()
-    return newResolvedPromise(JSResult[string].err(nil))
-  ).then(proc(s: JSResult[string]): Promise[CSSStylesheet] =
+    return newResolvedPromise(TextResult.err())
+  ).then(proc(s: TextResult): Promise[CSSStylesheet] =
     if s.isOk:
       let sheet = window.parseStylesheet(s.get, url)
       var promises: seq[EmptyPromise] = @[]
@@ -1306,7 +1305,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
     window.imageURLCache[surl] = cachedURL
     let headers = newHeaders(hgRequest, {"Accept": "*/*"})
     let p = window.corsFetch(newRequest(url, headers = headers)).then(
-      proc(res: JSResult[Response]): EmptyPromise =
+      proc(res: FetchResult): EmptyPromise =
         if res.isErr:
           return newResolvedPromise()
         let response = res.get
@@ -1349,7 +1348,7 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
             break
         cachedURL.loading = false
         cachedURL.expiry = expiry
-        return r.then(proc(res: JSResult[Response]) =
+        return r.then(proc(res: FetchResult) =
           if res.isErr:
             return
           let response = res.get
@@ -1419,7 +1418,7 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
     headers = newHeaders(hgRequest, {"Cha-Image-Info-Only": "1"}),
     body = RequestBody(t: rbtOutput, outputId: svgres.outputId)
   )
-  let p = loader.fetch(request).then(proc(res: JSResult[Response]) =
+  let p = loader.fetch(request).then(proc(res: FetchResult) =
     svgres.close()
     if res.isErr: # no SVG module; give up
       return
@@ -5183,7 +5182,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
     "img-codec+x-cha-canvas:decode",
     httpMethod = hmPost,
     body = RequestBody(t: rbtCache, cacheId: this.bitmap.cacheId)
-  )).then(proc(res: JSResult[Response]): FetchPromise =
+  )).then(proc(res: FetchResult): FetchPromise =
     if res.isErr:
       return newResolvedPromise(res)
     let res = res.get
@@ -5195,7 +5194,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
     ))
     res.close()
     return p
-  ).then(proc(res: JSResult[Response]) =
+  ).then(proc(res: FetchResult) =
     if res.isErr:
       if contentType != "image/png":
         # redo as PNG.
@@ -5206,7 +5205,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
         window.console.error("missing/broken PNG encoder")
       JS_FreeValue(ctx, callback)
       return
-    res.get.blob().then(proc(blob: JSResult[Blob]) =
+    res.get.blob().then(proc(blob: BlobResult) =
       let jsBlob = ctx.toJS(blob)
       let res = JS_CallFree(ctx, callback, JS_UNDEFINED, 1,
         jsBlob.toJSValueArray())
@@ -5767,7 +5766,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
   #TODO set up module script request
   #TODO performFetch
   let p = window.fetchImpl(request)
-  p.then(proc(res: JSResult[Response]) =
+  p.then(proc(res: FetchResult) =
     let ctx = window.jsctx
     if res.isErr:
       let res = ScriptResult(t: srtNull)
@@ -5777,7 +5776,7 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
     let res = res.get
     let contentType = res.getContentType()
     let referrerPolicy = res.getReferrerPolicy()
-    res.text().then(proc(s: JSResult[string]) =
+    res.text().then(proc(s: TextResult) =
       if s.isErr:
         let res = ScriptResult(t: srtNull)
         settings.moduleMap.set(url, moduleType, res, ctx)

@@ -3,7 +3,6 @@ import std/strutils
 
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -113,18 +112,20 @@ proc fromJSGetProp[T](ctx: JSContext; this: JSValueConst; name: cstring;
   ok(true)
 
 proc newNumberFormat(ctx: JSContext; name = "en-US";
-    options: JSValueConst = JS_UNDEFINED): JSResult[NumberFormat] {.jsctor.} =
+    options: JSValueConst = JS_UNDEFINED): Opt[NumberFormat] {.jsctor.} =
   let nf = NumberFormat()
   if JS_IsObject(options):
     discard ?ctx.fromJSGetProp(options, "maximumFractionDigits",
       nf.maximumFractionDigits)
     if nf.maximumFractionDigits notin 0..100:
-      return errRangeError("invalid digits value: " &
-        $nf.maximumFractionDigits)
+      let s = $nf.maximumFractionDigits
+      JS_ThrowRangeError(ctx, "invalid digits value: %s", cstring(s))
+      return err()
     discard ?ctx.fromJSGetProp(options, "style", nf.style)
     if not ?ctx.fromJSGetProp(options, "unit", nf.unit) and nf.style == nsUnit:
-      return errTypeError("undefined unit in NumberFormat() with unit style")
-  return ok(nf)
+      JS_ThrowTypeError(ctx, "undefined unit in NumberFormat() with unit style")
+      return err()
+  ok(nf)
 
 proc newPluralRules(): PluralRules {.jsctor.} =
   return PluralRules()

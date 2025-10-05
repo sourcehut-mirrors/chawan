@@ -13,7 +13,6 @@ import io/dynstream
 import io/promise
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -358,8 +357,7 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
   let window = ctx.getWindow()
   if xhrfSync notin this.flags: # async
     window.fireProgressEvent(this, satLoadstart, 0, 0)
-    let p = window.fetchImpl(jsRequest)
-    p.then(proc(res: JSResult[Response]) =
+    window.fetchImpl(jsRequest).then(proc(res: FetchResult) =
       if res.isErr:
         this.response = makeNetworkError()
         discard window.handleErrors(this, nil)

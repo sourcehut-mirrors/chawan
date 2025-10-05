@@ -6,7 +6,6 @@ import std/strutils
 
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -111,16 +110,18 @@ proc isForbiddenResponseHeaderName*(name: string): bool =
   return name.equalsIgnoreCase("Set-Cookie") or
     name.equalsIgnoreCase("Set-Cookie2")
 
-proc validate(this: Headers; name, value: string): JSResult[bool] =
+proc validate(ctx: JSContext; this: Headers; name, value: string): Opt[bool] =
   if not name.isValidHeaderName() or not value.isValidHeaderValue():
-    return errTypeError("Invalid header name or value")
+    JS_ThrowTypeError(ctx, "invalid header name or value")
+    return err()
   if this.guard == hgImmutable:
-    return errTypeError("Tried to modify immutable Headers object")
+    JS_ThrowTypeError(ctx, "tried to modify immutable Headers object")
+    return err()
   if this.guard == hgRequest and isForbiddenRequestHeader(name, value):
     return ok(false)
   if this.guard == hgResponse and name.isForbiddenResponseHeaderName():
     return ok(false)
-  return ok(true)
+  ok(true)
 
 proc isNoCorsSafelistedName(name: string): bool =
   return name.equalsIgnoreCase("Accept") or
@@ -212,9 +213,10 @@ proc removeRange(this: Headers) =
   if this.guard == hgRequestNoCors:
     this.removeAll("Range") # privileged no-CORS request headers
 
-proc append(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
+proc append(ctx: JSContext; this: Headers; name, value: string): Opt[void]
+    {.jsfunc.} =
   let value = value.strip(chars = HTTPWhitespace)
-  if not ?this.validate(name, value):
+  if not ?ctx.validate(this, name, value):
     return ok()
   let n = this.lowerBound(name)
   if this.guard == hgRequestNoCors:
@@ -228,8 +230,8 @@ proc append(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
   this.removeRange()
   ok()
 
-proc delete(this: Headers; name: string): JSResult[void] {.jsfunc.} =
-  if not ?this.validate(name, "") or
+proc delete(ctx: JSContext; this: Headers; name: string): Opt[void] {.jsfunc.} =
+  if not ?ctx.validate(this, name, "") or
       this.guard == hgRequestNoCors and not name.isNoCorsSafelistedName() and
       not name.equalsIgnoreCase("Range"):
     return ok()
@@ -239,14 +241,17 @@ proc delete(this: Headers; name: string): JSResult[void] {.jsfunc.} =
     this.removeRange()
   ok()
 
-proc has(this: Headers; name: string): JSResult[bool] {.jsfunc.} =
+proc has(ctx: JSContext; this: Headers; name: string): JSValue {.jsfunc.} =
   if not name.isValidHeaderName():
-    return errTypeError("Invalid header name")
-  return ok(name in this)
+    return JS_ThrowTypeError(ctx, "invalid header name")
+  if name in this:
+    return JS_TRUE
+  return JS_FALSE
 
-proc set(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
+proc set(ctx: JSContext; this: Headers; name, value: string): Opt[void]
+    {.jsfunc.} =
   let value = value.strip(chars = HTTPWhitespace)
-  if not ?this.validate(name, value):
+  if not ?ctx.validate(this, name, value):
     return ok()
   if this.guard == hgRequestNoCors and not name.isNoCorsSafelisted(value):
     return ok()
@@ -256,9 +261,9 @@ proc set(this: Headers; name, value: string): JSResult[void] {.jsfunc.} =
   this.removeRange()
   ok()
 
-proc fill*(headers: Headers; init: HeadersInit): JSResult[void] =
+proc fill*(ctx: JSContext; headers: Headers; init: HeadersInit): Opt[void] =
   for (k, v) in init.s:
-    ?headers.append(k, v)
+    ?ctx.append(headers, k, v)
   ok()
 
 proc newHeaders*(guard: HeaderGuard): Headers =
@@ -271,11 +276,12 @@ proc newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
   headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
   return headers
 
-proc newHeaders(obj = none(HeadersInit)): JSResult[Headers] {.jsctor.} =
+proc newHeaders(ctx: JSContext; obj = none(HeadersInit)): Opt[Headers]
+    {.jsctor.} =
   let headers = newHeaders(hgNone)
   if obj.isSome:
-    ?headers.fill(obj.get)
-  return ok(headers)
+    ?ctx.fill(headers, obj.get)
+  ok(headers)
 
 proc clone*(headers: Headers): Headers =
   return Headers(guard: headers.guard, list: headers.list)

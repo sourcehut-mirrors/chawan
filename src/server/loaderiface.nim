@@ -9,7 +9,6 @@ import io/dynstream
 import io/packetreader
 import io/packetwriter
 import io/promise
-import monoucha/jserror
 import server/connectionerror
 import server/headers
 import server/request
@@ -323,7 +322,7 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
         stream.sclose()
         # delete before resolving the promise
         loader.unset(connectData)
-        promise.resolve(JSResult[Response].err(newFetchTypeError()))
+        promise.resolve(FetchResult.err())
     of cdsBeforeStatus:
       let response = newResponse(connectData.res, request, stream,
         connectData.outputId)
@@ -353,16 +352,16 @@ proc onConnected(loader: FileLoader; connectData: ConnectData) =
         if redirectNum < 5: #TODO use config.network.max_redirect?
           loader.fetch0(redirect, promise, redirectNum)
         else:
-          promise.resolve(JSResult[Response].err(newFetchTypeError()))
+          promise.resolve(FetchResult.err())
       else:
-        promise.resolve(JSResult[Response].ok(response))
+        promise.resolve(FetchResult.ok(response))
   do: # loader died
     loader.unregisterFun(connectData.fd)
     loader.unregistered.add(connectData.fd)
     stream.sclose()
     # delete before resolving the promise
     loader.unset(connectData)
-    promise.resolve(JSResult[Response].err(newFetchTypeError()))
+    promise.resolve(FetchResult.err())
 
 proc onRead*(loader: FileLoader; data: OngoingData) =
   let response = data.response

@@ -7,7 +7,6 @@ import io/packetreader
 import io/packetwriter
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -231,7 +230,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var BodyInit): Opt[void] =
   return err()
 
 proc newRequest*(ctx: JSContext; resource: JSValueConst;
-    init = RequestInit(window: JS_UNDEFINED)): JSResult[JSRequest] {.jsctor.} =
+    init = RequestInit(window: JS_UNDEFINED)): Opt[JSRequest] {.jsctor.} =
   var headers = newHeaders(hgRequest)
   var fallbackMode = opt(rmCors)
   var window = RequestWindow(t: rwtClient)
@@ -252,18 +251,17 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   else:
     var s: string
     ?ctx.fromJS(resource, s)
-    let x = ctx.parseJSURL(s, ctx.getAPIBaseURLImpl())
-    if x.isErr:
-      return err(nil)
-    url = x.get
+    url = ?ctx.parseJSURL(s, ctx.getAPIBaseURLImpl())
   if url.username != "" or url.password != "":
-    return errTypeError("Input URL contains a username or password")
+    JS_ThrowTypeError(ctx, "input URL contains a username or password")
+    return err()
   var mode = fallbackMode.get(rmNoCors)
   let destination = rdNone
   #TODO origin, window
   if not JS_IsUndefined(init.window):
     if not JS_IsNull(init.window):
-      return errTypeError("Expected window to be null")
+      JS_ThrowTypeError(ctx, "expected window to be null")
+      return err()
     window = RequestWindow(t: rwtNoWindow)
   if mode == rmNavigate:
     mode = rmSameOrigin
@@ -280,9 +278,10 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
       body = RequestBody(t: rbtString, s: ibody.str)
     else: discard #TODO
     if httpMethod in {hmGet, hmHead}:
-      return errTypeError("HEAD or GET Request cannot have a body.")
+      JS_ThrowTypeError(ctx, "HEAD or GET requests cannot have a body")
+      return err()
   if init.headers.isSome:
-    ?headers.fill(init.headers.get)
+    ?ctx.fill(headers, init.headers.get)
   if init.credentials.isSome:
     credentials = init.credentials.get
   if init.mode.isSome:

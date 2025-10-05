@@ -8,7 +8,6 @@ import html/script
 import io/timeout
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
@@ -562,15 +561,15 @@ proc eventReflectSet*(ctx: JSContext; this, val: JSValueConst; magic: cint):
   return ctx.eventReflectSet0(target, val, magic, eventReflectSet,
     EventReflectMap[magic])
 
-proc addEventListener*(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
-    callback: JSValueConst; options: JSValueConst = JS_UNDEFINED): Err[JSError]
+proc addEventListener(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
+    callback: JSValueConst; options: JSValueConst = JS_UNDEFINED): JSValue
     {.jsfunc.} =
   if not JS_IsObject(callback) and not JS_IsNull(callback):
-    return errTypeError("callback is not an object")
+    return JS_ThrowTypeError(ctx, "callback is not an object")
   let (capture, once, passive) = flattenMore(ctx, options)
   ctx.addEventListener0(eventTarget, ctype, capture, once, internal = false,
     passive, callback)
-  ok()
+  return JS_UNDEFINED
 
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: CAtom; callback: JSValueConst; options: JSValueConst = JS_UNDEFINED)

@@ -4,7 +4,6 @@ import chagashi/charset
 import chagashi/decoder
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -28,11 +27,12 @@ type TextDecoderOptions = object of JSDict
   fatal {.jsdefault.}: bool
   ignoreBOM {.jsdefault.}: bool
 
-proc newJSTextDecoder(label = "utf-8"; options = TextDecoderOptions()):
-    JSResult[JSTextDecoder] {.jsctor.} =
+proc newJSTextDecoder(ctx: JSContext; label = "utf-8";
+    options = TextDecoderOptions()): Opt[JSTextDecoder] {.jsctor.} =
   let encoding = getCharset(label)
   if encoding in {CHARSET_UNKNOWN, CHARSET_REPLACEMENT}:
-    return errRangeError("Invalid encoding label")
+    JS_ThrowRangeError(ctx, "invalid encoding label")
+    return err()
   let errorMode = if options.fatal: demFatal else: demReplacement
   return ok(JSTextDecoder(
     ignoreBOM: options.ignoreBOM,

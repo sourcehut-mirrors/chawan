@@ -1,6 +1,5 @@
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/quickjs
 import monoucha/tojs
 import types/opt
@@ -58,21 +57,19 @@ type
     INVALID_NODE_TYPE_ERR = 24
     DATA_CLONE_ERR = 25
 
-  DOMException = ref object of JSError
+  DOMException = ref object
     name {.jsget.}: string
+    message {.jsget.}: string
     code: int
 
 jsDestructor(DOMException)
 
 proc newDOMException(message = ""; name = "Error"): DOMException {.jsctor.} =
-  return DOMException(e: jeCustom, name: name, message: message, code: -1)
+  return DOMException(name: name, message: message, code: -1)
 
 proc JS_ThrowDOMException*(ctx: JSContext; name: cstring; message: string):
     JSValue {.discardable.} =
   return JS_Throw(ctx, ctx.toJS(newDOMException(message, $name)))
-
-proc getMessage(this: DOMException): string {.jsfget: "message".} =
-  return this.message
 
 proc getCode(this: DOMException): uint16 {.jsfget: "code".} =
   if this.code == -1:

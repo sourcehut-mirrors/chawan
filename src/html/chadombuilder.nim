@@ -11,7 +11,6 @@ import html/catom
 import html/dom
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/quickjs
 import monoucha/tojs
 import types/opt
@@ -367,7 +366,7 @@ proc newDOMParser*(): DOMParser {.jsctor.} =
   return DOMParser()
 
 proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
-    JSResult[Document] {.jsfunc.} =
+    JSValue {.jsfunc.} =
   case t
   of "text/html":
     let window = ctx.getWindow()
@@ -381,11 +380,11 @@ proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
     assert res == PRES_CONTINUE
     parser.finish()
     builder.finish()
-    return ok(builder.document)
+    return ctx.toJS(builder.document)
   of "text/xml", "application/xml", "application/xhtml+xml", "image/svg+xml":
-    return errInternalError("XML parsing is not supported yet")
+    return JS_ThrowInternalError(ctx, "XML parsing is not supported yet")
   else:
-    return errTypeError("Invalid mime type")
+    return JS_ThrowTypeError(ctx, "invalid mime type")
 
 # Forward declaration hack
 parseHTMLFragmentImpl = parseHTMLFragment

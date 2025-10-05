@@ -26,7 +26,6 @@ import io/promise
 import io/timeout
 import monoucha/fromjs
 import monoucha/javascript
-import monoucha/jserror
 import monoucha/jspropenumlist
 import monoucha/jstypes
 import monoucha/quickjs
@@ -228,13 +227,11 @@ proc fetch0(window: Window; input: JSRequest): FetchPromise =
   #TODO cors requests?
   if input.request.url.schemeType != stData and
       not window.isSameOrigin(input.request.url.origin):
-    let err = newFetchTypeError()
-    return newResolvedPromise(JSResult[Response].err(err))
+    return newResolvedPromise(FetchResult.err())
   return window.loader.fetch(input.request)
 
 proc fetch(ctx: JSContext; window: Window; input: JSValueConst;
-    init = RequestInit(window: JS_UNDEFINED)): JSResult[FetchPromise]
-    {.jsfunc.} =
+    init = RequestInit(window: JS_UNDEFINED)): Opt[FetchPromise] {.jsfunc.} =
   let input = ?newRequest(ctx, input, init)
   ok(window.fetch0(input))
 
