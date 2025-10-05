@@ -98,6 +98,17 @@ test "UTF-16-LE to UTF-8":
   for (s, t) in list:
     let td = TextDecoderUTF16_LE()
     check td.decodeAll(s) == t
+  var s = ""
+  var s8 = ""
+  for i in 0 ..< 10:
+    s &= "t\0e\0s\0t\0"
+    s8 &= "test"
+  let td = TextDecoderUTF16_LE()
+  var ctx = initTextDecoderContext(td, bufLen = 32)
+  var res = ""
+  for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
+    res &= s
+  check res == s8
 
 test "encode from surrogate to GB18030":
   let te = TextEncoderGB18030()
