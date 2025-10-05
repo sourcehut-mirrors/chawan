@@ -1,0 +1,14 @@
+<!doctype html>
+<title>onclick setter/getter</title>
+<link href=utf16-bom.css rel=stylesheet>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script type=module>
+const res = await fetch("/utf16-bom.css");
+const s = await res.text();
+const x = document.getElementById("x");
+assertEquals(window.getComputedStyle(x).textAlign, "right");
+assertEquals(s.length, 53);
+x.style.textAlign = "left";
+x.textContent = "Success";
+</script>

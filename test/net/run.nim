@@ -48,11 +48,10 @@ proc runServer(server: AsyncHttpServer) {.async.} =
 
 proc main() =
   let server = newAsyncHttpServer()
-  if paramCount() >= 1:
-    if paramStr(1) == "-a":
-      server.listen(Port(0), "localhost")
-    else:
-      server.listen(Port(8000), "localhost")
+  if paramCount() >= 1 and paramStr(1) == "-a":
+    server.listen(Port(0), "localhost")
+  else:
+    server.listen(Port(8000), "localhost")
   echo $uint16(server.getPort())
   waitFor server.runServer()
 

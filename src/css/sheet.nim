@@ -210,7 +210,7 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
 proc parseStylesheet*(iq: openArray[char]; base: URL;
     settings: ptr EnvironmentSettings): CSSStylesheet =
   let sheet = CSSStylesheet(settings: settings)
-  var ctx = initCSSParser(iq, skipBOM = true)
+  var ctx = initCSSParser(iq)
   sheet.addRules(ctx, topLevel = true, base)
   return sheet
 

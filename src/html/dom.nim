@@ -675,6 +675,7 @@ proc elIndex*(this: Element): int
 proc ensureStyle(element: Element)
 proc findAttr(element: Element; qualifiedName: CAtom): int
 proc findAttrNS(element: Element; namespace, localName: CAtom): int
+proc getCharset(element: Element): Charset
 proc getComputedStyle*(element: Element; pseudo: PseudoElement): CSSValues
 proc invalidate*(element: Element)
 proc invalidate*(element: Element; dep: DependencyType)
@@ -1198,13 +1199,14 @@ proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL):
 
 proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
     Promise[CSSStylesheet] =
+  let charset = link.getCharset()
   let p = window.corsFetch(
     newRequest(url)
   ).then(proc(res: FetchResult): Promise[TextResult] =
     if res.isOk:
       let res = res.get
       if res.getContentType().equalsIgnoreCase("text/css"):
-        return res.text()
+        return res.cssText(charset)
       res.close()
     return newResolvedPromise(TextResult.err())
   ).then(proc(s: TextResult): Promise[CSSStylesheet] =
@@ -4761,6 +4763,12 @@ proc setHint*(element: Element; hint: bool) =
     element.hint = hint
     element.invalidate()
 
+proc getCharset(element: Element): Charset =
+  let charset = getCharset(element.attr(satCharset))
+  if charset != CHARSET_UNKNOWN:
+    return charset
+  return element.document.charset
+
 # DOMRect
 proc left(rect: DOMRect): float64 {.jsfget.} =
   return min(rect.x, rect.x + rect.width)
@@ -5886,8 +5894,7 @@ proc prepare*(element: HTMLScriptElement) =
         not event.equalsIgnoreCase("onload") and
         not event.equalsIgnoreCase("onload()"):
       return
-  let cs = getCharset(element.attr(satCharset))
-  let encoding = if cs != CHARSET_UNKNOWN: cs else: element.document.charset
+  let encoding = element.getCharset()
   let classicCORS = element.crossOrigin
   let parserMetadata = if element.parserDocument != nil:
     pmParserInserted

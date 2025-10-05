@@ -251,6 +251,14 @@ proc startsWithIgnoreCase*(s1, s2: openArray[char]): bool =
       return false
   return true
 
+proc startsWith2*(s1, s2: openArray[char]): bool =
+  if s1.len < s2.len:
+    return false
+  for i in 0 ..< s2.len:
+    if s1[i] != s2[i]:
+      return false
+  return true
+
 proc endsWithIgnoreCase*(s1, s2: openArray[char]): bool =
   if s1.len < s2.len:
     return false

@@ -5,7 +5,7 @@ headless = true
 urimethodmap = []
 
 [buffer]
-scripting = true
+scripting = 'app'
 cookie = true
 history = false
 

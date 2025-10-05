@@ -262,7 +262,36 @@ proc text*(response: Response): Promise[TextResult] {.jsfunc.} =
   return response.blob().then(proc(res: BlobResult): TextResult =
     if res.isErr:
       return TextResult.err()
-    return TextResult.ok(res.get.toOpenArray().toValidUTF8())
+    TextResult.ok(res.get.toOpenArray().toValidUTF8())
+  )
+
+proc cssDecode(iq: openArray[char]; fallback: Charset): string =
+  var charset = fallback
+  var offset = 0
+  const charsetRule = "@charset \""
+  if iq.startsWith2("\xFE\xFF"):
+    charset = CHARSET_UTF_16_BE
+    offset = 2
+  elif iq.startsWith2("\xFF\xFE"):
+    charset = CHARSET_UTF_16_LE
+    offset = 2
+  elif iq.startsWith2("\xEF\xBB\xBF"):
+    charset = CHARSET_UTF_8
+    offset = 3
+  elif iq.startsWith2(charsetRule):
+    let s = iq.toOpenArray(charsetRule.len, min(1024, iq.high)).until('"')
+    let n = charsetRule.len + s.len
+    if n >= 0 and n + 1 < iq.len and iq[n] == '"' and iq[n + 1] == ';':
+      charset = getCharset(s)
+      if charset in {CHARSET_UTF_16_LE, CHARSET_UTF_16_BE}:
+        charset = CHARSET_UTF_8
+  iq.toOpenArray(offset, iq.high).decodeAll(charset)
+
+proc cssText*(response: Response; fallback: Charset): Promise[TextResult] =
+  return response.blob().then(proc(res: BlobResult): TextResult =
+    if res.isErr:
+      return TextResult.err()
+    TextResult.ok(res.get.toOpenArray().cssDecode(fallback))
   )
 
 proc json(ctx: JSContext; this: Response): Promise[JSValue] {.jsfunc.} =
