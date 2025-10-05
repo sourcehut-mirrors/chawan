@@ -4981,7 +4981,7 @@ proc setProperty(ctx: JSContext; this: CSSStyleDeclaration;
         return JS_UNDEFINED
     decl.value = move(toks)
     this.decls.add(move(decl))
-  this.element.attr(satStyle, $this.decls)
+  this.element.attr(satStyle, this.cssText)
   return JS_UNDEFINED
 
 proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
@@ -4992,13 +4992,14 @@ proc setter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom;
   if ctx.fromJS(atom, u).isOk:
     var toks = parseComponentValues(value)
     if this.setValue(int(u), toks).isErr:
-      this.element.attr(satStyle, $this.decls)
+      this.element.attr(satStyle, this.cssText)
     return JS_UNDEFINED
   var name: string
   if ctx.fromJS(atom, name).isErr:
     return JS_EXCEPTION
   if name == "cssFloat":
     name = "float"
+  name = camelToKebabCase(name)
   return ctx.setProperty(this, name, value)
 
 proc style(element: Element): CSSStyleDeclaration {.jsfget.} =
