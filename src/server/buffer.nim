@@ -110,6 +110,7 @@ type
     needsBOMSniff: bool
     onReshapeImmediately: bool
     savetask: bool
+    checkJobs: bool
     state: BufferState
     charset: Charset
     bgcolor: CellColor
@@ -1077,7 +1078,7 @@ proc finishLoad(bc: BufferContext; data: InputData): EmptyPromise =
 
 proc headlessMustWait(bc: BufferContext): bool =
   return bc.config.scripting != smFalse and
-    not bc.window.timeouts.empty or
+      (not bc.window.timeouts.empty or bc.checkJobs) or
     bc.loader.hasFds()
 
 # Returns:
@@ -1124,6 +1125,7 @@ proc onload(bc: BufferContext; data: InputData) =
           continue
         if bc.rewind(data, 0):
           continue
+      bc.checkJobs = true
       bc.firstBufferRead = true
       reprocess = false
     else: # EOF
@@ -1936,8 +1938,7 @@ proc handleRead(bc: BufferContext; fd: int): bool =
       bc.onload(InputData(data))
     else:
       bc.loader.onRead(fd)
-      if bc.config.scripting != smFalse:
-        bc.window.runJSJobs()
+      bc.checkJobs = true
   elif fd in bc.loader.unregistered:
     discard # ignore
   else:
@@ -1955,8 +1956,7 @@ proc handleError(bc: BufferContext; fd: int): bool =
       if not bc.loader.onError(fd):
         #TODO handle connection error
         assert false, $fd
-      if bc.config.scripting != smFalse:
-        bc.window.runJSJobs()
+      bc.checkJobs = true
   elif fd in bc.loader.unregistered:
     discard # ignore
   else:
@@ -1990,9 +1990,10 @@ proc runBuffer(bc: BufferContext) =
     bc.loader.unregistered.setLen(0)
     bc.loader.unblockRegister()
     if bc.config.scripting != smFalse:
-      if bc.window.timeouts.run(bc.window.console):
+      if bc.window.timeouts.run(bc.window.console) or bc.checkJobs:
         bc.window.runJSJobs()
         bc.maybeReshape()
+        bc.checkJobs = false
 
 proc cleanup(bc: BufferContext) =
   bc.pstream.sclose()

@@ -460,6 +460,21 @@ proc evalJSFree(opaque: RootRef; src, file: string) =
   else:
     JS_FreeValue(window.jsctx, ret)
 
+proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
+    is_handled: JS_BOOL; opaque: pointer) {.cdecl.} =
+  if not is_handled:
+    let window = ctx.getGlobal()
+    var s: string
+    if fromJS(ctx, reason, s).isOk:
+      s &= '\n'
+    let stack = JS_GetPropertyStr(ctx, reason, "stack");
+    var ss: string
+    if not JS_IsUndefined(stack) and ctx.fromJS(stack, ss).isOk:
+      s &= ss
+    JS_FreeValue(ctx, stack)
+    window.console.error("Unhandled promise in document", $window.document.url,
+      s)
+
 proc addScripting*(window: Window) =
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
@@ -467,6 +482,7 @@ proc addScripting*(window: Window) =
   window.jsctx = ctx
   window.importMapsAllowed = true
   window.timeouts = newTimeoutState(ctx, evalJSFree, window)
+  JS_SetHostPromiseRejectionTracker(rt, rejectionHandler, nil)
   let performance = JS_NewAtom(ctx, cstringConst("performance"))
   let jsWindow = JS_GetGlobalObject(ctx)
   let weakMap = JS_GetPropertyStr(ctx, jsWindow, "WeakMap")

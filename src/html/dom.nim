@@ -5711,7 +5711,6 @@ proc fetchInlineModuleGraph(element: HTMLScriptElement; sourceText: string;
 
 proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
     destination: RequestDestination; onComplete: OnCompleteProc) =
-  #TODO ummm...
   let window = element.document.window
   let ctx = window.jsctx
   let record = script.record
@@ -5725,13 +5724,7 @@ proc fetchDescendantsAndLink(element: HTMLScriptElement; script: Script;
   let res = JS_EvalFunction(ctx, record) # consumes record
   if JS_IsException(res):
     window.logException(script.baseURL)
-    return
-  var p: Promise[JSValueConst]
-  if ctx.fromJSFree(res, p).isOk:
-    p.then(proc(res: JSValueConst) =
-      if JS_IsException(res):
-        window.logException(script.baseURL)
-    )
+  JS_FreeValue(ctx, res)
 
 #TODO settings object
 proc fetchSingleModule(element: HTMLScriptElement; url: URL;
