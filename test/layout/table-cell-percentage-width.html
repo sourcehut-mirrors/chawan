@@ -70,3 +70,27 @@
 <td bgcolor=blue>test test test
 <td bgcolor=purple>test
 </table>
+
+<!-- first column expands to take unassigned width -->
+<table width=500>
+<tr>
+<td width=100 bgcolor=red>a
+<td width=50% bgcolor=blue>b
+</table>
+
+<!-- last column expands to take unassigned width -->
+<table width=500>
+<tr>
+<td width=100 bgcolor=red>a
+<td width=50% bgcolor=blue>b
+<td bgcolor=purple>c
+</table>
+
+<!-- note that width: 0 also counts as specified, it's just unrepresentable
+     in HTML (for good reasons, but CSS of course does its own thing...) -->
+<table width=500>
+<tr>
+<td width=100 bgcolor=red>a
+<td width=50% bgcolor=blue>b
+<td bgcolor=purple style="width: 0">c
+</table>

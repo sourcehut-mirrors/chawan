@@ -2166,10 +2166,9 @@ proc layoutFlowRoot(bctx: var BlockContext; box: BlockBox; offset: Offset;
 # 5. set the table's max width to the largest value computed in the previous
 #    step.
 # 6. in the second pass, first fix the width of columns with an author weight,
-#    *then* columns with an author width.  (not implemented yet)
+#    *then* columns with an author width.
 #
 #TODO:
-# * percentage width point 6
 # * <col>, <colgroup>
 # * distribute table height too
 type
@@ -2524,33 +2523,41 @@ proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
   tctx.preLayoutTableRows(tbody, table)
   tctx.preLayoutTableRows(tfoot, table)
 
-proc calcSpecifiedRatio(tctx: var TableContext; wf: float32): float32 =
+proc calcSpecifiedRatio(tctx: var TableContext;
+    totalWidth, weightRatio: float32): float32 =
   var totalSpecified: LUnit = 0
   var hasUnspecified = false
+  let hasWeightRatio = not almostEqual(weightRatio, 1)
   for col in tctx.cols.mitems:
+    let minwidth = col.minwidth
     if col.weight > 0:
-      let width = max((col.weight * wf).toLUnit(), col.minwidth)
+      let width = max((col.weight * totalWidth).toLUnit(), minwidth)
       totalSpecified += width
       col.width = width
     elif col.widthSpecified:
+      if hasWeightRatio:
+        let scaled = (col.width.toFloat32() * weightRatio).toLUnit()
+        col.width = max(scaled, minwidth)
+        col.reflow = tctx.rows.len
       totalSpecified += col.width
     else:
       hasUnspecified = true
-      totalSpecified += col.minwidth
+      totalSpecified += minwidth
   # Only grow specified columns if no unspecified column exists to take the
   # rest of the space.
   if totalSpecified == 0:
     return 1
   let ftotalSpecified = totalSpecified.toFloat32()
-  if hasUnspecified and wf > ftotalSpecified:
+  if hasUnspecified and totalWidth > ftotalSpecified:
     return 1
-  return wf / ftotalSpecified
+  return totalWidth / ftotalSpecified
 
 proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
-    weight: var float32): seq[int] =
-  let wf = W.toFloat32()
-  let rwf = 1 / W.toFloat32()
-  let specifiedRatio = tctx.calcSpecifiedRatio(wf)
+    weight: var float32; weightRatio: float32): seq[int] =
+  let totalWidth = W.toFloat32()
+  let rtotalWidth = 1 / W.toFloat32()
+  let specifiedRatio = tctx.calcSpecifiedRatio(totalWidth, weightRatio)
+  let hasSpecifiedRatio = not almostEqual(specifiedRatio, 1)
   # Spacing for each column:
   var avail = newSeqOfCap[int](tctx.cols.len)
   for i, col in tctx.cols.mpairs:
@@ -2559,16 +2566,20 @@ proc calcUnspecifiedColIndices(tctx: var TableContext; W: var LUnit;
       col.width = (col.width.toFloat32() * specifiedRatio).toLUnit()
       col.reflow = tctx.rows.len
     elif col.widthSpecified:
-      if specifiedRatio != 1:
+      if hasSpecifiedRatio:
         col.width = (col.width.toFloat32() * specifiedRatio).toLUnit()
         col.reflow = tctx.rows.len
       W -= col.width
     else:
       avail.add(i)
       let width = col.width.toFloat32()
-      let w = if width < wf: width else: wf * (ln(width * rwf) + 1)
-      col.weight = w * specifiedRatio
-      weight += col.weight
+      let w = if width < totalWidth:
+        width
+      else:
+        totalWidth * (ln(width * rtotalWidth) + 1)
+      let colWeight = w * specifiedRatio
+      col.weight = colWeight
+      weight += colWeight
   move(avail)
 
 proc needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
@@ -2581,31 +2592,51 @@ proc needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
     return tctx.space.w.u > tctx.maxwidth and not computed{"width"}.auto or
         tctx.space.w.u < tctx.maxwidth
 
-proc expandToWeight(tctx: var TableContext) =
+proc expandToWeight(tctx: var TableContext): float32 =
   var maxwidth = tctx.maxwidth
   var avail = 1f32
   var unassigned = 0.toLUnit()
+  var specified = 0.toLUnit()
+  var hasUnspecified = false
   for col in tctx.cols.mitems:
     let weight = min(col.weight, avail)
     if weight == 0:
       unassigned += col.width
+      if col.widthSpecified:
+        specified += col.width
+      else:
+        hasUnspecified = true
       continue
     let colTarget = (1 / weight).toLUnit() * col.minwidth
     maxwidth = max(maxwidth, colTarget)
     col.weight = weight
     avail -= weight
+  let omaxwidth = maxwidth
   if avail > 0:
     let restTarget = (1 / avail).toLUnit() * unassigned
-    maxwidth = max(maxwidth, restTarget)
+    maxwidth = max(maxwidth, restTarget) + tctx.borderWidth
   elif unassigned > 0:
     maxwidth = tctx.space.w.u
-  tctx.space.w = stretch(min(tctx.space.w.u, maxwidth))
+  else:
+    maxwidth += tctx.borderWidth
+  if tctx.space.w.t == scFitContent:
+    tctx.space.w = stretch(min(tctx.space.w.u, maxwidth))
+  if hasUnspecified and tctx.space.w.u > omaxwidth + unassigned:
+    # the unspecified column will take the rest of the width
+    return 1
+  let fspecified = unassigned.toFloat32()
+  if fspecified == 0:
+    return 1
+  # either the total column width too small, and there are no unspecified
+  # columns to take the rest, or columns overflow the table and must be
+  # rescaled.
+  return (tctx.space.w.u.toFloat32() * avail) / fspecified
 
-proc redistributeWidth(tctx: var TableContext) =
+proc redistributeWidth(tctx: var TableContext; weightRatio: float32) =
   # Remove inline spacing from distributable width.
   var W = max(tctx.space.w.u - tctx.borderWidth, 0)
   var weight = 0f32
-  var avail = tctx.calcUnspecifiedColIndices(W, weight)
+  var avail = tctx.calcUnspecifiedColIndices(W, weight, weightRatio)
   var redo = true
   while redo and avail.len > 0 and weight != 0:
     if weight == 0: break # zero weight; nothing to distribute
@@ -2678,10 +2709,12 @@ proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
     tctx.inlineSpacing = table.computed{"-cha-border-spacing-inline"}.px(0)
     tctx.blockSpacing = table.computed{"-cha-border-spacing-block"}.px(0)
   tctx.preLayoutTableRows(table) # first pass
-  if tctx.hasAuthorWeight and tctx.space.w.t == scFitContent:
+  let weightRatio = if tctx.hasAuthorWeight and tctx.space.w.isDefinite():
     tctx.expandToWeight()
+  else:
+    1f32
   if tctx.needsRedistribution(table.computed):
-    tctx.redistributeWidth()
+    tctx.redistributeWidth(weightRatio)
   for col in tctx.cols:
     table.state.size.w += col.width
   tctx.layoutTableRows(table, sizes) # second pass
