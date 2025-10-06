@@ -966,8 +966,6 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
   for st in SurfaceType:
     pager.clear(st)
   pager.console = pager.addConsole(istream != nil)
-  var gpager {.global.}: Pager = nil
-  gpager = pager
   if pager.config.start.startupScript != "":
     let ps = newPosixStream(pager.config.start.startupScript)
     let s = if ps != nil:
