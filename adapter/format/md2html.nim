@@ -144,18 +144,15 @@ proc parseInTag(ctx: var ParseInlineContext; line: string; state: ParseState):
             i += s.len
           if pi <= i:
             ?state.write(line.toOpenArray(pi, i))
-      buf = ""
-      break
+      ctx.i = i
+      return ok()
     elif c == '<':
-      ?state.write('<' & buf)
-      buf = ""
       dec i
       break
     else:
       buf &= c
     inc i
-  if buf != "":
-    ?state.write('<')
+  ?state.write("&lt;")
   ?state.write(buf)
   ctx.i = i
   ok()
@@ -224,9 +221,10 @@ proc parseLinkDestination(link: var string; line: openArray[char];
     let c = line[i]
     if quote:
       quote = false
-    elif sc == '<' and c == '>' or sc != '<' and c in AsciiWhitespace:
+    elif sc == '<' and c == '>':
       break
-    elif c in {'<', '\n'} or c in Controls and sc != '<':
+    elif sc == '<' and c in {'<', '\n'} or
+        sc != '<' and c in Controls + AsciiWhitespace:
       return -1
     elif c == '\\':
       quote = true
@@ -304,16 +302,17 @@ proc parseLink(ctx: var ParseInlineContext; line: string;
       return ctx.parseLinkBail(i - 1, state)
     ctx.i = i - 1
     return ctx.parseLinkWrite(link, title, state)
+  let bi = i - 1
   i = line.skipBlanks(i + 1)
   if i >= line.len:
-    return ctx.parseLinkBail(i, state)
+    return ctx.parseLinkBail(bi, state)
   var url = ""
   var j = url.parseLinkDestination(line, i)
   var title = ""
   if j != -1 and j < line.len and line[j] in {'(', '"', '\''}:
     j = title.parseTitle(line, j)
   if j == -1 or j >= line.len or line[j] != ')':
-    return ctx.parseLinkBail(i, state)
+    return ctx.parseLinkBail(bi, state)
   ctx.i = j
   return ctx.parseLinkWrite(url, title, state)
 
