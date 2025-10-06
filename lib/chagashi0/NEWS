@@ -1,3 +1,7 @@
+0.7.2 (2025.10.06)
+* Fix broken decoding of multiple chunks of UTF-16 in some cases
+* Slightly optimize decode iterator
+
 0.7.1 (2025.09.06)
 * Fix decoding of 4-byte GB-18030 characters
 * Reduce map sizes
