@@ -179,10 +179,10 @@ $(OUTDIR_LIBEXEC)/tohtml: adapter/format/ansi2html.nim adapter/format/dirlist2ht
 	adapter/format/md2html.nim adapter/format/img2html.nim \
 	$(twtstr) $(chafile) $(dynstream) src/types/color.nim
 
-$(foreach it,$(ssl_link),$(OUTDIR_CGI_BIN)/$(it)): | $(OUTDIR_CGI_BIN)/ssl
+$(foreach it,$(ssl_link),$(OUTDIR_CGI_BIN)/$(it)): $(OUTDIR_CGI_BIN)/ssl
 	(cd "$(OUTDIR_CGI_BIN)" && ln -sf ssl $(notdir $@))
 
-$(foreach it,$(tohtml_link),$(OUTDIR_LIBEXEC)/$(it)): | $(OUTDIR_LIBEXEC)/tohtml
+$(foreach it,$(tohtml_link),$(OUTDIR_LIBEXEC)/$(it)): $(OUTDIR_LIBEXEC)/tohtml
 	(cd "$(OUTDIR_LIBEXEC)" && ln -sf tohtml $(notdir $@))
 
 $(OUTDIR_CGI_BIN)/%: adapter/protocol/%.nim adapter/nim.cfg
@@ -214,7 +214,7 @@ $(OUTDIR_LIBEXEC)/%: adapter/tools/%.nim adapter/nim.cfg
 	@mkdir -p "$(OUTDIR_LIBEXEC)"
 	$(NIMC) $(FLAGS) --nimcache:"$(OBJDIR)/$(TARGET)/$(notdir $@)" -o:"$@" $<
 
-$(OUTDIR_LIBEXEC)/urldec: | $(OUTDIR_LIBEXEC)/urlenc
+$(OUTDIR_LIBEXEC)/urldec: $(OUTDIR_LIBEXEC)/urlenc
 	(cd "$(OUTDIR_LIBEXEC)" && ln -sf urlenc urldec)
 
 doc/%.1: doc/%.md md2man
