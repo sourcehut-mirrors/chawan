@@ -143,7 +143,7 @@ $(OUTDIR_BIN)/cha: src/*.nim src/*/*.nim res/* lib/chame0/chame/* \
 $(OUTDIR_BIN)/mancha: adapter/tools/mancha.nim $(twtstr) $(myposix) $(chafile)
 	@mkdir -p "$(OUTDIR_BIN)"
 	$(NIMC) --nimcache:"$(OBJDIR)/$(TARGET)/mancha" $(FLAGS) \
-		-o:"$(OUTDIR_BIN)/mancha" $(FLAGS) adapter/tools/mancha.nim
+		-o:"$(OUTDIR_BIN)/mancha" adapter/tools/mancha.nim
 
 unicode_version = 17.0.0
 
