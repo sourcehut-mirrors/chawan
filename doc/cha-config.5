@@ -1085,8 +1085,8 @@ Examples:
 .IP
 .EX
 # Search using DuckDuckGo Lite.
-# (This rule is included in the default config, although C\-k now invokes
-# Google search.)
+# (This rule is included in the default config, although C\-k invokes
+# Brave search.)
 [omnirule.ddg]
 match = \(aq\(haddg:\(aq
 substitute\-url = \(aq(x) => \(dqhttps://lite.duckduckgo.com/lite/?kp=\-1&kd=\-1&q=\(dq + encodeURIComponent(x.split(\(dq:\(dq).slice(1).join(\(dq:\(dq))\(aq
@@ -1112,7 +1112,7 @@ Currently, these are:
 .IP \(bu 2
 \f[CR]ddg:\f[R] \- DuckDuckGo Lite.
 .IP \(bu 2
-\f[CR]go:\f[R] \- Google Search.
+\f[CR]br:\f[R] \- Brave Search.
 .IP \(bu 2
 \f[CR]wk:\f[R] \- English Wikipedia.
 .IP \(bu 2
@@ -1545,7 +1545,7 @@ T}@T{
 \f[CR]cmd.pager.webSearch\f[R]
 T}@T{
 Open the URL bar with an arbitrary search engine.
-At the moment, this is Google Search, but this may change in the future.
+At the moment, this is Brave Search, but this may change in the future.
 T}
 _
 T{

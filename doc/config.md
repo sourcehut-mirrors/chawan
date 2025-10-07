@@ -898,8 +898,8 @@ Examples:
 
 ```
 # Search using DuckDuckGo Lite.
-# (This rule is included in the default config, although C-k now invokes
-# Google search.)
+# (This rule is included in the default config, although C-k invokes
+# Brave search.)
 [omnirule.ddg]
 match = '^ddg:'
 substitute-url = '(x) => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
@@ -924,7 +924,7 @@ criterion that they must work without cookies and JavaScript.
 Currently, these are:
 
 * `ddg:` - DuckDuckGo Lite.
-* `go:` - Google Search.
+* `br:` - Brave Search.
 * `wk:` - English Wikipedia.
 * `wd:` - English Wikitionary.
 * `mo:` - Mojeek.
@@ -1284,7 +1284,7 @@ If no link/image is under the cursor, an empty URL bar is opened.</td>
 <td><kbd>C-k</kbd></td>
 <td>`cmd.pager.webSearch`</td>
 <td>Open the URL bar with an arbitrary search engine. At the moment, this is
-Google Search, but this may change in the future.</td>
+Brave Search, but this may change in the future.</td>
 </tr>
 
 <tr>

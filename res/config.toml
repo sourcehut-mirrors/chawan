@@ -112,9 +112,9 @@ force-pixels-per-line = false
 match = '^ddg:'
 substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
 
-[omnirule.go]
-match = '^go:'
-substitute-url = 'x => `https://www.google.com/search?q=${x.split(":").slice(1).join(":")}`'
+[omnirule.br]
+match = '^br:'
+substitute-url = 'x => "https://search.brave.com/search?country=all&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
 
 [omnirule.wk]
 match = '^wk:'
@@ -135,64 +135,6 @@ match = '^mo:'
 substitute-url = '''
 x => "https://mojeek.com/search?q=" +
 	encodeURIComponent(x.split(":").slice(1).join(":"));
-'''
-
-[siteconf.google-com]
-url = '^https?://(www\.)?google\.com/search'
-rewrite-url = '''
-x => {
-	const q = x.searchParams.get("q");
-	for (const name of ["sca_esv", "sca_upv", "oq", "aqs", "ved", "sa",
-		"source", "ei", "biw", "bih", "iflsig", "gbv"])
-		x.searchParams.delete(name);
-	/* async search, thanks: SearxNG */
-	const udm = parseInt(x.searchParams.get("udm") ?? 14);
-	const start = parseInt(x.searchParams.get("start") ?? 0);
-	const range = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-";
-	let id = globalThis.googleSearchId;
-	let prev = globalThis.googleSearchIdTime;
-	if (!id || ((new Date() - prev) / 1000 / 60 / 60) > 1) {
-		id = "";
-		for (let i = 0; i < 23; i++)
-			id += range.charAt(Math.floor(Math.random() * range.length));
-		globalThis.googleSearchId = id;
-		globalThis.googleSearchIdTime = new Date();
-	}
-	const asyncs = `arc_id:srp_${id}_1${(start+"").padStart(2, 0)},use_ac:true,_fmt:html`;
-	const params = [["start", start], ["filter", 0], ["safe", "off"],
-			["ie", "utf8"], ["oe", "utf8"], ["udm", udm],
-			["hl", "en-US"], ["asearch", "arc"], ["async", asyncs]];
-	for (const [n, v] of params)
-		x.searchParams.set(n, v);
-	const map = {'<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;'};
-	const qq = decodeURIComponent(q).replaceAll(/[<>&"']/g, x => map[x] ?? x)
-	let head = `<title>${qq} - Google search</title><center><header><form action=/search><input type=search name=q value="${qq}"><input type=submit value=Search></form><a right href="/search?q=${qq}&start=${start+10}&udm=${udm}">Next page</a>`;
-	if (start >= 10)
-		head += `<a left href="/search?q=${qq}&start=${start-10}&udm=${udm}">Previous page</a>`;
-	setenv("CHA_GOOG_FOOT", head);
-	head += "<center>";
-	for (const [n, u] of [["IMAGES", 2], ["VIDEOS", 7], ["NEWS", 12], ["FORUMS", 18], ["BOOKS", 36]])
-		head += `<a href="/search?q=${qq}&udm=${u}">${n}</a> `;
-	head += "</center></header><main>";
-	setenv("CHA_GOOG_HEAD", head);
-}
-'''
-default-headers = {
-	User-Agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0',
-	Accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-	Accept-Language = 'en-US,en;q=0.5',
-	Accept-Encoding = 'gzip, deflate, br',
-	Sec-GPC = '1'
-}
-filter-cmd = 'echo "$CHA_GOOG_HEAD";cat;echo "$CHA_GOOG_FOOT"'
-user-style = '''
-html { background: white; text-align: -cha-center }
-header, main { text-align: -cha-left; width: 80ch; display: flow-root }
-form { display: flex }
-header > a[left] { float: left }
-header > a[right] { float: right }
-input[type=search] { flex-grow: 1 }
-a { color: blue }
 '''
 
 [siteconf.downloads]
@@ -410,7 +352,7 @@ dupeBuffer = '() => pager.dupeBuffer()'
 load = '() => pager.load()'
 loadCursor = '() => pager.load(pager.hoverLink || pager.hoverImage)'
 loadEmpty = '() => pager.load("")'
-webSearch = '() => pager.load("go:")'
+webSearch = '() => pager.load("br:")'
 addBookmark = '() => pager.gotoURL(`cgi-bin:chabookmark?url=${encodeURIComponent(pager.url)}&title=${encodeURIComponent(pager.title)}`)'
 openBookmarks = '() => pager.gotoURL(`cgi-bin:chabookmark?action=view`, {history: false})'
 openHistory = '() => pager.gotoURL(pager.getHistoryURL(), {contentType: `text/uri-list;title="History Page"`, history: false})'
