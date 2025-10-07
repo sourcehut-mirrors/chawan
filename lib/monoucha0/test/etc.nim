@@ -1,3 +1,4 @@
+import std/options
 import std/unittest
 
 import monoucha/fromjs

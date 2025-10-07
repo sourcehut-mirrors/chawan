@@ -163,10 +163,7 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
     if opaque != nil: # JS held a ref to the Nim object.
       JS_SetOpaque(val, nil)
       assert opaque == it.nimp
-      rtOpaque.parentMap.withValue(opaque, pp): # var object
-        GC_unref(cast[RootRef](pp[]))
-      do: # ref object
-        GC_unref(cast[RootRef](opaque))
+      GC_unref(cast[RootRef](opaque))
     else: # Nim held a ref to the JS object.
       JS_FreeValueRT(rt, val)
       assert cast[ptr cint](it.jsp)[] >= 0
@@ -656,7 +653,6 @@ proc addOptionalParams(gen: var JSFuncGenerator) =
     var s = ident("arg_" & $gen.i)
     let tt = gen.funcParams[gen.i].t
     if tt.kind == nnkBracketExpr and tt[0].eqIdent("varargs"):
-      let vt = tt[1]
       s = quote do:
         argv.toOpenArray(`j`, argc - 1)
     else:
@@ -1182,16 +1178,11 @@ proc registerGetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
   let id = ident($bfGetter & "_" & tname & "_" & fn)
   stmts.add(quote do:
     proc `id`(ctx: JSContext; this: JSValueConst): JSValue {.cdecl.} =
-      when `t` is object:
-        var arg_0 {.noinit.}: ptr `t`
-      else:
-        var arg_0: `t`
+      var arg_0: `t`
       if ctx.fromJSThis(this, arg_0).isErr:
         return JS_EXCEPTION
       when arg0.`node` is JSValue:
         return JS_DupValue(ctx, arg0.`node`)
-      elif arg_0.`node` is object:
-        return ctx.toJSP(arg_0, arg_0.`node`)
       else:
         return ctx.toJS(arg_0.`node`)
   )
@@ -1210,10 +1201,7 @@ proc registerSetter(stmts: NimNode; info: RegistryInfo; op: JSObjectPragma) =
   let id = ident($bfSetter & "_" & tname & "_" & fn)
   stmts.add(quote do:
     proc `id`(ctx: JSContext; this, val: JSValueConst): JSValue {.cdecl.} =
-      when `t` is object:
-        var arg_0 {.noinit.}: ptr `t`
-      else:
-        var arg_0: `t`
+      var arg_0: `t`
       if ctx.fromJSThis(this, arg_0).isErr:
         return JS_EXCEPTION
       # We can't just set arg_0.`node` directly, or fromJS may damage it.
@@ -1329,12 +1317,6 @@ template jsDestructor*[U](T: typedesc[ref U]) =
   proc `=destroy`(obj: var U) =
     nim_finalize_for_js(addr obj, getTypePtr(obj))
 
-template jsDestructor*(T: typedesc[object]) =
-  static:
-    jsDtors.incl($T)
-  proc `=destroy`(obj: var T) =
-    nim_finalize_for_js(addr obj, getTypePtr(obj))
-
 proc bindConstructor(stmts: NimNode; info: var RegistryInfo): NimNode =
   if info.ctorFun != nil:
     return info.ctorFun
@@ -1349,10 +1331,7 @@ proc bindReplaceableSet(stmts: NimNode; info: var RegistryInfo) =
     const replaceableNames = `trns`
     proc `rsf`(ctx: JSContext; this, val: JSValueConst; magic: cint): JSValue
         {.cdecl.} =
-      when `t` is object:
-        var dummy {.noinit.}: ptr `t`
-      else:
-        var dummy: `t`
+      var dummy: `t`
       if ctx.fromJSThis(this, dummy).isErr:
         return JS_EXCEPTION
       let name = replaceableNames[int(magic)]
@@ -1393,7 +1372,7 @@ proc bindExtraGetSet(stmts: NimNode; info: var RegistryInfo;
     let m = x.magic
     info.tabFuns.add(quote do: JS_CGETSET_MAGIC_DEF(`k`, `g`, `s`, `m`))
 
-proc jsCheckDestroyRef*(rt: JSRuntime; val: JSValueConst): JS_BOOL {.cdecl.} =
+proc jsCheckDestroy*(rt: JSRuntime; val: JSValueConst): JS_BOOL {.cdecl.} =
   let opaque = JS_GetOpaque(val, JS_GetClassID(val))
   if opaque != nil:
     # Before this function is called, the ownership model is
@@ -1433,26 +1412,6 @@ proc jsCheckDestroyRef*(rt: JSRuntime; val: JSValueConst): JS_BOOL {.cdecl.} =
       # refcount (and that of its children) will be set to one again,
       # and later its opaque to NULL.
       return false
-  return true
-
-proc jsCheckDestroyNonRef*(rt: JSRuntime; val: JSValueConst): JS_BOOL
-    {.cdecl.} =
-  let opaque = JS_GetOpaque(val, JS_GetClassID(val))
-  if opaque != nil:
-    # This is not a reference, just a pointer with a reference to the
-    # root ancestor object.
-    # Remove the reference, allowing destruction of the root object once
-    # again.
-    let rtOpaque = rt.getOpaque()
-    var parent: pointer = nil
-    discard rtOpaque.parentMap.pop(opaque, parent)
-    GC_unref(cast[RootRef](parent))
-    # Of course, nim_finalize_for_js might only be called later for
-    # this object, because the parent can still have references to it.
-    # (And for the same reason, a reference to the same object might
-    # still be necessary.)
-    # Accordingly, we return false here as well.
-    return false
   return true
 
 proc bindEndStmts(endstmts: NimNode; info: RegistryInfo) =
@@ -1513,9 +1472,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   if not asglobal:
     let impl = t.getTypeInst()[1].getTypeImpl()
     if impl.kind == nnkRefTy:
-      info.dfin = quote do: jsCheckDestroyRef
-    else:
-      info.dfin = quote do: jsCheckDestroyNonRef
+      info.dfin = quote do: jsCheckDestroy
     if info.tname notin jsDtors:
       warning("No destructor has been defined for type " & info.tname)
   else:

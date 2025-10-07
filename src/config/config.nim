@@ -44,7 +44,7 @@ type
   CodepointSet* = object
     s*: seq[uint32]
 
-  ActionMap = object
+  ActionMap = ref object
     t: Table[string, string]
 
   FormRequestType* = enum
@@ -78,21 +78,21 @@ type
     match*: Option[Regex]
     substituteUrl*: Option[JSValueFunction]
 
-  StartConfig = object
+  StartConfig = ref object
     visualHome* {.jsgetset.}: string
     startupScript* {.jsgetset.}: string
     headless* {.jsgetset.}: HeadlessMode
     consoleBuffer* {.jsgetset.}: bool
 
-  SearchConfig = object
+  SearchConfig = ref object
     wrap* {.jsgetset.}: bool
     ignoreCase* {.jsgetset.}: Option[bool]
 
-  StatusConfig = object
+  StatusConfig = ref object
     showCursorPosition* {.jsgetset.}: bool
     showHoverLink* {.jsgetset.}: bool
 
-  EncodingConfig = object
+  EncodingConfig = ref object
     displayCharset* {.jsgetset.}: Option[Charset]
     documentCharset* {.jsgetset.}: seq[Charset]
 
@@ -101,7 +101,7 @@ type
     init*: seq[tuple[k, cmd: string]] # initial k/v map
     map*: Table[string, JSValue] # qualified name -> function
 
-  ExternalConfig = object
+  ExternalConfig = ref object
     tmpdir* {.jsgetset.}: ChaPathResolved
     editor* {.jsgetset.}: string
     mailcap*: Mailcap
@@ -119,7 +119,7 @@ type
     copyCmd* {.jsgetset.}: string
     pasteCmd* {.jsgetset.}: string
 
-  InputConfig = object
+  InputConfig = ref object
     viNumericPrefix* {.jsgetset.}: bool
     useMouse* {.jsgetset.}: bool
     osc52Copy* {.jsgetset.}: Option[bool]
@@ -128,7 +128,7 @@ type
     sideWheelScroll* {.jsgetset.}: int32
     linkHintChars*: CodepointSet
 
-  NetworkConfig = object
+  NetworkConfig = ref object
     maxRedirect* {.jsgetset.}: int32
     maxNetConnections* {.jsgetset.}: int32
     prependScheme* {.jsgetset.}: string
@@ -136,7 +136,7 @@ type
     defaultHeaders* {.jsgetset.}: Headers
     allowHttpFromFile* {.jsgetset.}: bool
 
-  DisplayConfig = object
+  DisplayConfig = ref object
     colorMode* {.jsgetset.}: Option[ColorMode]
     formatMode* {.jsgetset.}: Option[set[FormatFlag]]
     noFormatMode* {.jsgetset.}: set[FormatFlag]
@@ -161,10 +161,7 @@ type
     forcePixelsPerColumn* {.jsgetset.}: bool
     forcePixelsPerLine* {.jsgetset.}: bool
 
-  ProtocolConfig* = ref object
-    formRequest*: FormRequestType
-
-  BufferSectionConfig* = object
+  BufferSectionConfig* = ref object
     styling* {.jsgetset.}: bool
     scripting* {.jsgetset.}: ScriptingMode
     images* {.jsgetset.}: bool
@@ -223,7 +220,7 @@ proc toJS*(ctx: JSContext; cookie: CookieMode): JSValue =
   of cmNone: return JS_FALSE
   of cmSave: return JS_NewString(ctx, "save")
 
-proc `[]=`(a: var ActionMap; b: string; c: sink string) =
+proc `[]=`(a: ActionMap; b: string; c: sink string) =
   a.t[b] = c
 
 # Can't be lent string on 2.0.4 yet.
@@ -278,13 +275,13 @@ proc getRealKey(key: string): string =
     realk &= '\\'
   move(realk)
 
-proc getter(ctx: JSContext; a: var ActionMap; s: string): JSValue
+proc getter(ctx: JSContext; a: ActionMap; s: string): JSValue
     {.jsgetownprop.} =
   a.t.withValue(s, p):
     return ctx.toJS(p[])
   return JS_NULL
 
-proc setter(a: var ActionMap; k, v: string) {.jssetprop.} =
+proc setter(a: ActionMap; k, v: string) {.jssetprop.} =
   let k = getRealKey(k)
   if k == "":
     return
@@ -295,13 +292,13 @@ proc setter(a: var ActionMap; k, v: string) {.jssetprop.} =
     discard a.t.hasKeyOrPut(teststr, "window.feedNext()")
     teststr.setLen(i)
 
-proc delete(a: var ActionMap; k: string): bool {.jsdelprop.} =
+proc delete(a: ActionMap; k: string): bool {.jsdelprop.} =
   let k = getRealKey(k)
   let ina = k in a
   a.t.del(k)
   return ina
 
-proc names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
+proc names(ctx: JSContext; a: ActionMap): JSPropertyEnumList
     {.jspropnames.} =
   let L = uint32(a.t.len)
   var list = newJSPropertyEnumList(ctx, L)
@@ -309,7 +306,7 @@ proc names(ctx: JSContext; a: var ActionMap): JSPropertyEnumList
     list.add(key)
   return list
 
-proc jsLinkHintChars(ctx: JSContext; input: var InputConfig): JSValue
+proc jsLinkHintChars(ctx: JSContext; input: InputConfig): JSValue
     {.jsfget: "linkHintChars".} =
   var vals: seq[JSValue] = @[]
   block good:
@@ -912,6 +909,22 @@ proc initCommands*(ctx: JSContext; config: Config): Err[string] =
   config.cmd.jsObj = obj
   config.cmd.init = @[]
   ok()
+
+proc newConfig*(): Config =
+  Config(
+    arraySeen: newTable[string, int](),
+    page: ActionMap(),
+    line: ActionMap(),
+    start: StartConfig(),
+    search: SearchConfig(),
+    encoding: EncodingConfig(),
+    external: ExternalConfig(),
+    network: NetworkConfig(),
+    input: InputConfig(),
+    display: DisplayConfig(),
+    status: StatusConfig(),
+    buffer: BufferSectionConfig()
+  )
 
 proc addConfigModule*(ctx: JSContext) =
   ctx.registerType(ActionMap)

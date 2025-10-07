@@ -28,11 +28,6 @@
 # * Similarly, the Nim object is kept alive so long as the JS object is alive.
 # * The patched in can_destroy hook is used to synchronize reference counts
 #   of the two objects; this way, no memory leak occurs.
-#
-# There are also toJSP variants of object converters. These work identically
-# to ref object converters, except the reference count of the closest
-# `ref object' ancestor is incremented/decremented when synchronizing refcounts
-# with the JS object pair.
 
 {.push raises: [].}
 
@@ -72,36 +67,11 @@ proc toJS*(ctx: JSContext; u8a: JSUint8Array): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
 proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
 
-# Convert Nim types to the corresponding JavaScript type, with knowledge of
-# the parent object.
-# This supports conversion of var object types.
-#
-# The idea here is to allow conversion of var objects to quasi-reference types
-# by saving a pointer to their ancestor and incrementing/decrementing the
-# ancestor's reference count instead.
-proc toJSP*[T: object](ctx: JSContext; parent: ref object; child: var T):
-  JSValue
-proc toJSP*[T: object](ctx: JSContext; parent: ptr object; child: var T):
-  JSValue
-
 # Same as toJS, but used in constructors. ctor contains the target prototype,
 # used for subclassing from JS.
 proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue
 proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValueConst):
   JSValue
-
-# Avoid accidentally calling toJSP on objects that we have explicit toJS
-# converters for.
-template makeToJSP(typ: untyped) =
-  template toJSP*(ctx: JSContext; parent: ref object; child: var typ): JSValue =
-    toJS(ctx, child)
-  template toJSP*(ctx: JSContext; parent: ptr object; child: var typ): JSValue =
-    toJS(ctx, child)
-makeToJSP(Table)
-makeToJSP(Option)
-makeToJSP(Result)
-makeToJSP(JSValue)
-makeToJSP(JSDict)
 
 type DefinePropertyResult* = enum
   dprException, dprSuccess, dprFail
@@ -423,25 +393,5 @@ proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue =
     return obj
   JS_FreeValue(ctx, obj)
   return JS_EXCEPTION
-
-proc toJSP1(ctx: JSContext; p, tp, toRef: pointer): JSValue =
-  JS_GetRuntime(ctx).getOpaque().parentMap[p] = toRef
-  return ctx.toJSP0(p, tp, toRef, JS_UNDEFINED)
-
-proc toJSP*[T: object](ctx: JSContext; parent: ref object; child: var T):
-    JSValue =
-  let p = addr child
-  # Save parent as the original ancestor for this tree.
-  let tp = getTypePtr(child)
-  return ctx.toJSP1(p, tp, cast[pointer](parent))
-
-proc toJSP*[T: object](ctx: JSContext; parent: ptr object; child: var T):
-    JSValue =
-  let p = addr child
-  # Increment the reference count of parent's root ancestor, and save the
-  # increment/decrement callbacks for the child as well.
-  let grandparent = JS_GetRuntime(ctx).getOpaque().refmap[parent]
-  let tp = getTypePtr(child)
-  return ctx.toJSP1(p, tp, grandparent)
 
 {.pop.} # raises: []

@@ -44,26 +44,26 @@ import utils/twtstr
 proc setLocation(ctx: JSContext; window: Window; s: string): JSValue
 
 # NavigatorID
-proc appCodeName(navigator: var Navigator): string {.jsfget.} = "Mozilla"
-proc appName(navigator: var Navigator): string {.jsfget.} = "Netscape"
-proc appVersion(navigator: var Navigator): string {.jsfget.} = "5.0 (Windows)"
-proc platform(navigator: var Navigator): string {.jsfget.} = "Win32"
-proc product(navigator: var Navigator): string {.jsfget.} = "Gecko"
-proc productSub(navigator: var Navigator): string {.jsfget.} = "20100101"
-proc userAgent(ctx: JSContext; navigator: var Navigator): string {.jsfget.} =
+proc appCodeName(navigator: Navigator): string {.jsfget.} = "Mozilla"
+proc appName(navigator: Navigator): string {.jsfget.} = "Netscape"
+proc appVersion(navigator: Navigator): string {.jsfget.} = "5.0 (Windows)"
+proc platform(navigator: Navigator): string {.jsfget.} = "Win32"
+proc product(navigator: Navigator): string {.jsfget.} = "Gecko"
+proc productSub(navigator: Navigator): string {.jsfget.} = "20100101"
+proc userAgent(ctx: JSContext; navigator: Navigator): string {.jsfget.} =
   return ctx.getWindow().userAgent
-proc vendor(navigator: var Navigator): string {.jsfget.} = ""
-proc vendorSub(navigator: var Navigator): string {.jsfget.} = ""
-proc taintEnabled(navigator: var Navigator): bool {.jsfunc.} = false
-proc oscpu(navigator: var Navigator): string {.jsfget.} = "Windows NT 10.0"
+proc vendor(navigator: Navigator): string {.jsfget.} = ""
+proc vendorSub(navigator: Navigator): string {.jsfget.} = ""
+proc taintEnabled(navigator: Navigator): bool {.jsfunc.} = false
+proc oscpu(navigator: Navigator): string {.jsfget.} = "Windows NT 10.0"
 
 # NavigatorLanguage
-proc language(navigator: var Navigator): string {.jsfget.} = "en-US"
-proc languages(navigator: var Navigator): seq[string] {.jsfget.} =
+proc language(navigator: Navigator): string {.jsfget.} = "en-US"
+proc languages(navigator: Navigator): seq[string] {.jsfget.} =
   @["en-US"] #TODO frozen array?
 
 # NavigatorOnline
-proc onLine(navigator: var Navigator): bool {.jsfget.} =
+proc onLine(navigator: Navigator): bool {.jsfget.} =
   true # at the very least, the terminal is on-line :)
 
 #TODO NavigatorContentUtils
@@ -71,42 +71,42 @@ proc onLine(navigator: var Navigator): bool {.jsfget.} =
 # NavigatorCookies
 # "this website needs cookies to be enabled to function correctly"
 # It's probably better to lie here.
-proc cookieEnabled(navigator: var Navigator): bool {.jsfget.} = true
+proc cookieEnabled(navigator: Navigator): bool {.jsfget.} = true
 
 # NavigatorPlugins
-proc pdfViewerEnabled(navigator: var Navigator): bool {.jsfget.} = false
-proc javaEnabled(navigator: var Navigator): bool {.jsfunc.} = false
-proc namedItem(pluginArray: var PluginArray): string {.jsfunc.} = ""
-proc namedItem(mimeTypeArray: var MimeTypeArray): string {.jsfunc.} = ""
-proc item(pluginArray: var PluginArray): JSValue {.jsfunc.} = JS_NULL
-proc length(pluginArray: var PluginArray): uint32 {.jsfget.} = 0
-proc item(mimeTypeArray: var MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
-proc length(mimeTypeArray: var MimeTypeArray): uint32 {.jsfget.} = 0
-proc getter(pluginArray: var PluginArray; atom: JSAtom): JSValue
+proc pdfViewerEnabled(navigator: Navigator): bool {.jsfget.} = false
+proc javaEnabled(navigator: Navigator): bool {.jsfunc.} = false
+proc namedItem(pluginArray: PluginArray): string {.jsfunc.} = ""
+proc namedItem(mimeTypeArray: MimeTypeArray): string {.jsfunc.} = ""
+proc item(pluginArray: PluginArray): JSValue {.jsfunc.} = JS_NULL
+proc length(pluginArray: PluginArray): uint32 {.jsfget.} = 0
+proc item(mimeTypeArray: MimeTypeArray): JSValue {.jsfunc.} = JS_NULL
+proc length(mimeTypeArray: MimeTypeArray): uint32 {.jsfget.} = 0
+proc getter(pluginArray: PluginArray; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   return JS_UNINITIALIZED
-proc getter(mimeTypeArray: var MimeTypeArray; atom: JSAtom): JSValue
+proc getter(mimeTypeArray: MimeTypeArray; atom: JSAtom): JSValue
     {.jsgetownprop.} =
   return JS_UNINITIALIZED
 
 # Screen
 
 # These are fingerprinting vectors; only app mode gets the real values.
-proc availWidth(ctx: JSContext; screen: var Screen): int {.jsfget.} =
+proc availWidth(ctx: JSContext; screen: Screen): int {.jsfget.} =
   let window = ctx.getWindow()
   return window.settings.scriptAttrsp.widthPx
 
-proc availHeight(ctx: JSContext; screen: var Screen): int {.jsfget.} =
+proc availHeight(ctx: JSContext; screen: Screen): int {.jsfget.} =
   let window = ctx.getWindow()
   return window.settings.scriptAttrsp.heightPx
 
-proc width(ctx: JSContext; screen: var Screen): int {.jsfget.} =
+proc width(ctx: JSContext; screen: Screen): int {.jsfget.} =
   return ctx.availWidth(screen)
 
-proc height(ctx: JSContext; screen: var Screen): int {.jsfget.} =
+proc height(ctx: JSContext; screen: Screen): int {.jsfget.} =
   return ctx.availHeight(screen)
 
-proc colorDepth(ctx: JSContext; screen: var Screen): int32 {.jsfget.} =
+proc colorDepth(ctx: JSContext; screen: Screen): int32 {.jsfget.} =
   let window = ctx.getWindow()
   case window.settings.scriptAttrsp.colorMode
   of cmMonochrome: return 1
@@ -114,18 +114,18 @@ proc colorDepth(ctx: JSContext; screen: var Screen): int32 {.jsfget.} =
   of cmEightBit: return 8
   of cmTrueColor: return 24
 
-proc pixelDepth(ctx: JSContext; screen: var Screen): int32 {.jsfget.} =
+proc pixelDepth(ctx: JSContext; screen: Screen): int32 {.jsfget.} =
   ctx.colorDepth(screen)
 
 # History
-proc length(history: var History): uint32 {.jsfget.} = 1
-proc state(history: var History): JSValue {.jsfget.} = JS_NULL
-proc go(history: var History) {.jsfunc.} = discard
-proc back(history: var History) {.jsfunc.} = discard
-proc forward(history: var History) {.jsfunc.} = discard
+proc length(history: History): uint32 {.jsfget.} = 1
+proc state(history: History): JSValue {.jsfget.} = JS_NULL
+proc go(history: History) {.jsfunc.} = discard
+proc back(history: History) {.jsfunc.} = discard
+proc forward(history: History) {.jsfunc.} = discard
 
-proc pushState(ctx: JSContext; history: var History;
-    data, unused: JSValueConst; s: string): JSValue {.jsfunc.} =
+proc pushState(ctx: JSContext; history: History; data, unused: JSValueConst;
+    s: string): JSValue {.jsfunc.} =
   let window = ctx.getWindow()
   if window != nil:
     return ctx.setLocation(window, s)
@@ -138,21 +138,21 @@ proc find(this: Storage; key: string): int =
       return i
   return -1
 
-proc length(this: var Storage): uint32 {.jsfget.} =
+proc length(this: Storage): uint32 {.jsfget.} =
   return uint32(this.map.len)
 
-proc key(ctx: JSContext; this: var Storage; i: uint32): JSValue {.jsfunc.} =
+proc key(ctx: JSContext; this: Storage; i: uint32): JSValue {.jsfunc.} =
   if int(i) < this.map.len:
     return ctx.toJS(this.map[int(i)].value)
   return JS_NULL
 
-proc getItem(ctx: JSContext; this: var Storage; s: string): JSValue {.jsfunc.} =
+proc getItem(ctx: JSContext; this: Storage; s: string): JSValue {.jsfunc.} =
   let i = this.find(s)
   if i != -1:
     return ctx.toJS(this.map[i].value)
   return JS_NULL
 
-proc setItem(ctx: JSContext; this: var Storage; key, value: string): JSValue
+proc setItem(ctx: JSContext; this: Storage; key, value: string): JSValue
     {.jsfunc.} =
   let i = this.find(key)
   if i != -1:
@@ -163,32 +163,32 @@ proc setItem(ctx: JSContext; this: var Storage; key, value: string): JSValue
     this.map.add((key, value))
   return JS_UNDEFINED
 
-proc removeItem(this: var Storage; key: string) {.jsfunc.} =
+proc removeItem(this: Storage; key: string) {.jsfunc.} =
   let i = this.find(key)
   if i != -1:
     this.map.del(i)
 
-proc names(ctx: JSContext; this: var Storage): JSPropertyEnumList
+proc names(ctx: JSContext; this: Storage): JSPropertyEnumList
     {.jspropnames.} =
   var list = newJSPropertyEnumList(ctx, uint32(this.map.len))
   for it in this.map:
     list.add(it.key)
   return list
 
-proc getter(ctx: JSContext; this: var Storage; s: string): JSValue
+proc getter(ctx: JSContext; this: Storage; s: string): JSValue
     {.jsgetownprop.} =
   return ctx.toJS(ctx.getItem(this, s)).uninitIfNull()
 
-proc setter(ctx: JSContext; this: var Storage; k, v: string): JSValue
+proc setter(ctx: JSContext; this: Storage; k, v: string): JSValue
     {.jssetprop.} =
   return ctx.setItem(this, k, v)
 
-proc delete(this: var Storage; k: string): bool {.jsdelprop.} =
+proc delete(this: Storage; k: string): bool {.jsdelprop.} =
   this.removeItem(k)
   return true
 
 # Crypto
-proc getRandomValues(ctx: JSContext; crypto: var Crypto; array: JSValueConst):
+proc getRandomValues(ctx: JSContext; crypto: Crypto; array: JSValueConst):
     JSValue {.jsfunc.} =
   var view: JSArrayBufferView
   if ctx.fromJS(array, view).isErr:
@@ -532,7 +532,7 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     userAgent, referrer, contentType: string): Window =
   let window = Window(
     internalConsole: newConsole(cast[ChaFile](stderr)),
-    navigator: Navigator(),
+    navigator: Navigator(plugins: PluginArray(), mimeTypes: MimeTypeArray()),
     loader: loader,
     settings: EnvironmentSettings(
       attrsp: attrsp,
@@ -547,7 +547,11 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     crypto: Crypto(urandom: urandom),
     imageTypes: imageTypes,
     userAgent: userAgent,
-    referrer: referrer
+    referrer: referrer,
+    screen: Screen(),
+    history: History(),
+    localStorage: Storage(),
+    sessionStorage: Storage(),
   )
   window.location = window.newLocation()
   for it in window.weakMap.mitems:

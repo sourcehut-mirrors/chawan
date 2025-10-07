@@ -358,10 +358,6 @@ proc fromJS*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
   res = cast[T](x)
   return ok()
 
-proc fromJSThis*[T: ptr object](ctx: JSContext; val: JSValueConst; res: var T):
-    Opt[void] =
-  return ctx.fromJS(val, res)
-
 proc fromJSThis*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
     Opt[void] =
   # translate undefined -> global

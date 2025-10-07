@@ -53,7 +53,6 @@ type
     typemap*: Table[pointer, JSClassID]
     plist*: Table[pointer, pointer] # Nim -> JS
     fins*: seq[seq[JSFinalizerFunction]]
-    parentMap*: Table[pointer, pointer]
     destroying*: pointer
     # temp list for uninit
     tmplist*: seq[tuple[nimp, jsp: pointer]]

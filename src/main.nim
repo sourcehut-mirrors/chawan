@@ -3,7 +3,6 @@
 import std/options
 import std/os
 import std/posix
-import std/tables
 
 import chagashi/charset
 import config/chapath
@@ -286,7 +285,7 @@ proc main() =
   let jsrt = newJSRuntime()
   let jsctx = jsrt.newJSContext()
   var warnings = newSeq[string]()
-  let config = Config(arraySeen: newTable[string, int]())
+  let config = newConfig()
   if (let res = ctx.initConfig(config, warnings, jsctx); res.isErr):
     die(res.error)
   var history = true

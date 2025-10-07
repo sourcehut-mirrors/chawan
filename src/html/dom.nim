@@ -172,21 +172,22 @@ type
     weakMap*: array[WindowWeakMap, JSValue]
 
   # Navigator stuff
-  Navigator* = object
-    plugins: PluginArray
+  Navigator* = ref object
+    plugins* {.jsget.}: PluginArray
+    mimeTypes* {.jsget.}: MimeTypeArray
 
-  PluginArray* = object
+  PluginArray* = ref object
 
-  MimeTypeArray* = object
+  MimeTypeArray* = ref object
 
-  Screen* = object
+  Screen* = ref object
 
-  History* = object
+  History* = ref object
 
-  Storage* = object
+  Storage* = ref object
     map*: seq[tuple[key, value: string]]
 
-  Crypto* = object
+  Crypto* = ref object
     urandom*: PosixStream
 
   NamedNodeMap = ref object
@@ -272,7 +273,7 @@ type
     prefix {.jsget.}: CAtom
     localName {.jsget.}: CAtom
 
-  DOMImplementation = object
+  DOMImplementation = ref object
     document: Document
 
   DOMRect* = ref object
@@ -2840,13 +2841,13 @@ proc createElementNS(ctx: JSContext; document: Document; namespace: CAtom;
 proc createDocumentFragment(document: Document): DocumentFragment {.jsfunc.} =
   return newDocumentFragment(document)
 
-proc createDocumentType(ctx: JSContext; implementation: var DOMImplementation;
+proc createDocumentType(ctx: JSContext; implementation: DOMImplementation;
     qualifiedName, publicId, systemId: string): Opt[DocumentType] {.jsfunc.} =
   ?ctx.validateQName(qualifiedName)
   let document = implementation.document
   ok(document.newDocumentType(qualifiedName, publicId, systemId))
 
-proc createDocument(ctx: JSContext; implementation: var DOMImplementation;
+proc createDocument(ctx: JSContext; implementation: DOMImplementation;
     namespace: CAtom; qname0: JSValueConst = JS_NULL;
     doctype = none(DocumentType)): Opt[XMLDocument] {.jsfunc.} =
   let document = newXMLDocument()
@@ -2868,7 +2869,7 @@ proc createDocument(ctx: JSContext; implementation: var DOMImplementation;
   else: discard
   return ok(document)
 
-proc createHTMLDocument(implementation: var DOMImplementation;
+proc createHTMLDocument(implementation: DOMImplementation;
     title = none(string)): Document {.jsfunc.} =
   let doc = newDocument()
   doc.contentType = satTextHtml
@@ -2885,7 +2886,7 @@ proc createHTMLDocument(implementation: var DOMImplementation;
   doc.origin = implementation.document.origin
   return doc
 
-proc hasFeature(implementation: var DOMImplementation): bool {.jsfunc.} =
+proc hasFeature(implementation: DOMImplementation): bool {.jsfunc.} =
   return true
 
 proc createTextNode(document: Document; data: sink string): Text {.jsfunc.} =

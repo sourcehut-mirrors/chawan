@@ -18,7 +18,6 @@ I hope to fix this in the future. For now, please use refc.
 		* [Inheritance](#inheritance)
 		* [Misc registerType parameters](#misc-registertype-parameters)
 	- [jsget, jsset: basic property reflectors](#jsget-jsset-basic-property-reflection)
-	- [Non-reference objects](#non-reference-objects)
 * [Function pragmas](#function-pragmas)
 	- [jsfunc: regular functions](#jsfunc-regular-functions)
 	- [jsctor: constructors](#jsctor-constructors)
@@ -264,40 +263,6 @@ and modify/inspect it.  By default, object fields are not exposed to
 JS; `{.jsget.}` gives JS read-only access, `{.jsset.}` write-only, and
 `jsgetset` expands to `{.jsget, jsset.}` (both read and write).
 
-### Non-reference objects
-
-JavaScript objects have reference semantics, so this does not make much
-sense at first glance.  However, children of heap-allocated objects do
-in fact have a permanent address, which we can convert to JS so long as
-we hold a reference to their parent.
-
-e.g. this works:
-
-```nim
-type
-  Moon = object
-
-  Earth = ref object
-    moon {.jsget.}: Moon
-
-jsDestructor(Moon)
-
-# [...]
-let earth = Earth(moon: Moon())
-ctx.registerType(Earth, asglobal = true)
-ctx.registerType(Moon)
-ctx.setGlobal(earth)
-const code = "globalThis.moon"
-let val = ctx.eval(code)
-var res: string
-assert ctx.fromJS(val, res).isOk # no error
-echo res # [object Moon]
-JS_FreeValue(ctx, val)
-```
-
-This still has some restrictions: for example, you cannot return a
-non-reference object from a [wrapped](#function-pragmas) function.
-
 ## Function pragmas
 
 The main feature of Monoucha is that it can automatically wrap functions
@@ -352,8 +317,7 @@ tries to adhere to the WebIDL standard in this regard - the main exception
 is that `float64` is mapped to `unrestricted double`, not just `double`.
 
 The first parameter must be a reference type that has been registered using
-`registerType`. Alternatively, you can also use a registered non-reference
-object type, but in this case, you *must* annotate it with `var`:
+`registerType`.
 
 ```nim
 type Console2 = object # not ref!
@@ -701,14 +665,11 @@ being thrown.
 ### Custom type converters
 
 In Monoucha, object reference types are automatically converted to JS
-reference types.  However, value types are different:
-
-* A non-reference `object` is converted to a JS reference by implicitly
-  turning it into `ptr object`, as noted [above](#non-reference-objects).
-* Trying to pass any other type to/from JS errors out at compilation.
+reference types.  However, value types are different: trying to pass any
+other type to/from JS errors out at compilation time.
 
 To work around this limitation, you can override `toJS` and `fromJS` for
-specific types.  In both cases, it is enough to add an overload for the
+such types.  In both cases, it is enough to add an overload for the
 respective function and expose it to the module where the converter is
 needed (i.e. where you call `registerType`).
 
