@@ -28,17 +28,21 @@ type
     jsvSet = "Set"
     jsvFunction = "Function"
 
+  BoundRefDestructor* = proc(x: pointer) {.nimcall, raises: [].}
+
   JSClassData* = object
     parent*: JSClassID
-    ctor*: JSValue
     # Parent unforgeables are merged on class creation.
     # (i.e. to set all unforgeables on the prototype chain, it is enough to set)
     # `unforgeable[classid]'.)
     unforgeable*: seq[JSCFunctionListEntry]
+    fins*: seq[JSFinalizerFunction]
+    when defined(gcDestructors):
+      dtor*: BoundRefDestructor
 
   JSContextOpaque* = ref object
-    classes*: seq[JSClassData] # JSClassID -> data
     gclass*: JSClassID # class ID of the global object
+    ctors*: seq[JSValue] # class ID -> constructor
     global*: JSValue
     symRefs*: array[JSSymbolRef, JSAtom]
     strRefs*: array[JSStrRef, JSAtom]
@@ -50,9 +54,9 @@ type
     raises: [].}
 
   JSRuntimeOpaque* = ref object
-    typemap*: Table[pointer, JSClassID]
+    classes*: seq[JSClassData] # JSClassID -> data
+    typemap*: Table[pointer, JSClassID] # getTypePtr -> JSClassID
     plist*: Table[pointer, pointer] # Nim -> JS
-    fins*: seq[seq[JSFinalizerFunction]]
     destroying*: pointer
     # temp list for uninit
     tmplist*: seq[tuple[nimp, jsp: pointer]]
@@ -60,8 +64,8 @@ type
 iterator finalizers*(rtOpaque: JSRuntimeOpaque; classid: JSClassID):
     JSFinalizerFunction =
   let classid = int(classid)
-  if classid < rtOpaque.fins.len:
-    for fin in rtOpaque.fins[classid]:
+  if classid < rtOpaque.classes.len:
+    for fin in rtOpaque.classes[classid].fins:
       yield fin
 
 proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =

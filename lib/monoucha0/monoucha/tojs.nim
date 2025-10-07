@@ -274,21 +274,27 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
   let ctxOpaque = ctx.getOpaque()
-  if int(class) < ctxOpaque.classes.len and
-      ctxOpaque.classes[int(class)].unforgeable.len > 0:
-    let ufp0 = addr ctxOpaque.classes[int(class)].unforgeable[0]
+  let iclass = int(class)
+  if iclass < rtOpaque.classes.len and
+      rtOpaque.classes[iclass].unforgeable.len > 0:
+    let ufp0 = addr rtOpaque.classes[iclass].unforgeable[0]
     let ufp = cast[JSCFunctionListP](ufp0)
     JS_SetPropertyFunctionList(ctx, jsObj, ufp,
-      cint(ctxOpaque.classes[int(class)].unforgeable.len))
+      cint(rtOpaque.classes[iclass].unforgeable.len))
   GC_ref(cast[RootRef](toRef))
   return jsObj
 
 type NonInheritable = (object and not RootObj) or (ref object and not RootRef)
 
+when defined(gcDestructors):
+  proc getTypeInfo2[T](x: T): pointer {.magic: "GetTypeInfoV2".}
+else:
+  template getTypeInfo2[T](x: T): pointer = getTypeInfo(x)
+
 # Get a unique pointer for each type.
 template getTypePtr*[T: NonInheritable](x: T): pointer =
   # This only seems to work for non-inheritable objects.
-  getTypeInfo(x)
+  getTypeInfo2(x)
 
 template getTypePtr*[T: RootObj](x: T): pointer {.error:
     "Please make it var".} =
@@ -298,9 +304,14 @@ template getTypePtr*(x: RootRef): pointer =
   # Dereference the object's first member, m_type.
   cast[ptr pointer](x)[]
 
-template getTypePtr*[T: RootObj](x: var T): pointer =
-  # See above.
-  cast[ptr pointer](addr x)[]
+when defined(gcDestructors):
+  proc getTypePtr*[T: RootObj](x: var T): pointer {.nodestroy.} =
+    # ARC somehow doesn't return the same pointer without this...
+    getTypePtr(cast[ref T](addr x))
+else:
+  template getTypePtr*[T: RootObj](x: var T): pointer =
+    # See above.
+    cast[ptr pointer](addr x)[]
 
 # For some reason, getTypeInfo for ref object of RootObj returns a
 # different pointer from m_type.
@@ -308,15 +319,11 @@ template getTypePtr*[T: RootObj](x: var T): pointer =
 # object returns a different type than on the same non-ref object.
 template getTypePtr*[T: RootRef](t: typedesc[T]): pointer =
   var x: typeof(t()[])
-  getTypeInfo(x)
+  getTypeInfo2(x)
 
-template getTypePtr*[T: object](t: typedesc[ref T]): pointer =
-  var x: t
-  getTypeInfo(x)
-
-template getTypePtr*[T: object](t: typedesc[T]): pointer =
-  var x: t
-  getTypeInfo(x)
+template getTypePtr*[T: ref object](t: typedesc[T]): pointer =
+  var x: T
+  getTypeInfo2(x)
 
 proc toJSRefObj(ctx: JSContext; obj: ref object): JSValue =
   let p = cast[pointer](obj)

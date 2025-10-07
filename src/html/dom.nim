@@ -223,6 +223,9 @@ type
     root: Node
     match: CollectionMatchFun
     snapshot: seq[Node]
+    # for some reason, refs disappear before I get to destroy the collection
+    # (in ORC only, refc works fine)
+    document: ptr DocumentObj
 
   NodeIterator = ref object of Collection
     ctx: JSContext
@@ -290,7 +293,9 @@ type
     i*: int
     prev*: DocumentWriteBuffer
 
-  Document* = ref object of ParentNode
+  Document* = ref DocumentObj
+
+  DocumentObj = object of ParentNode
     activeParserWasAborted: bool
     invalid*: bool # whether the document must be rendered again
     charset*: Charset
@@ -2382,9 +2387,10 @@ proc refreshCollection(collection: Collection) =
 
 proc finalize0(collection: Collection) =
   if collection.islive:
-    let i = collection.root.document.liveCollections.find(collection.id)
+    assert collection.document != nil
+    let i = collection.document.liveCollections.find(collection.id)
     assert i != -1
-    collection.root.document.liveCollections.del(i)
+    collection.document.liveCollections.del(i)
 
 proc finalize(collection: HTMLCollection) {.jsfin.} =
   collection.finalize0()
@@ -2412,15 +2418,17 @@ proc findNode(collection: Collection; node: Node): int =
 
 proc newCollection[T: Collection](root: Node; match: CollectionMatchFun;
     islive, childonly: bool; inclusive = false): T =
+  let document = root.document
   let collection = T(
     islive: islive,
     childonly: childonly,
     inclusive: inclusive,
     match: match,
-    root: root
+    root: root,
+    document: cast[ptr DocumentObj](document)
   )
   if islive:
-    root.document.liveCollections.add(collection.id)
+    document.liveCollections.add(collection.id)
     collection.invalid =  true
   else:
     collection.populateCollection()
@@ -2556,7 +2564,7 @@ proc adopt(document: Document; node: Node) =
           desc.internalNext = document
     for i in countdown(oldDocument.liveCollections.high, 0):
       let id = oldDocument.liveCollections[i]
-      if cast[Collection](id).root.document == document:
+      if cast[Collection](id).document == cast[ptr DocumentObj](document):
         node.document.liveCollections.add(id)
         oldDocument.liveCollections.del(i)
     #TODO custom elements

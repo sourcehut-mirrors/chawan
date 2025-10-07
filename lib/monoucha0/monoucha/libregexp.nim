@@ -18,6 +18,10 @@ else:
 
 # this is hardcoded into quickjs, so we must override it here.
 proc lre_realloc(opaque, p: pointer; size: csize_t): pointer {.exportc.} =
+  if size == 0:
+    if p != nil:
+      dealloc(p)
+    return nil
   return realloc(p, size)
 
 # Hack: quickjs provides a lre_check_stack_overflow, but that basically
