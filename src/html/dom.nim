@@ -287,6 +287,7 @@ type
   DocumentWriteBuffer* = ref object
     data*: string
     i*: int
+    prev*: DocumentWriteBuffer
 
   Document* = ref object of ParentNode
     activeParserWasAborted: bool
@@ -303,7 +304,7 @@ type
     # document.write
     ignoreDestructiveWrites: int
     throwOnDynamicMarkupInsertion*: int
-    writeBuffers*: seq[DocumentWriteBuffer]
+    writeBuffersTop*: DocumentWriteBuffer
     styleDependencies: array[DependencyType, DependencyMap]
     scriptsToExecSoon: HTMLScriptElement
     scriptsToExecInOrder: HTMLScriptElement
@@ -3088,6 +3089,12 @@ proc findMetaRefresh*(document: Document): Element =
 # https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#document-write-steps
 proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
     JSValue {.jsfunc.} =
+  var text = ""
+  for arg in args:
+    var s: string
+    if ctx.fromJS(arg, s).isErr:
+      return JS_EXCEPTION
+    text &= s
   if document.isxml:
     return JS_ThrowDOMException(ctx, "InvalidStateError",
       "document.write not supported in XML documents")
@@ -3098,15 +3105,9 @@ proc write(ctx: JSContext; document: Document; args: varargs[JSValueConst]):
     return JS_UNDEFINED
   assert document.parser != nil
   #TODO if insertion point is undefined... (open document)
-  if document.writeBuffers.len == 0:
+  let buffer = document.writeBuffersTop
+  if buffer == nil:
     return JS_UNDEFINED #TODO (probably covered by open above)
-  let buffer = document.writeBuffers[^1]
-  var text = ""
-  for arg in args:
-    var s: string
-    if ctx.fromJS(arg, s).isErr:
-      return JS_UNDEFINED
-    text &= s
   buffer.data &= text
   if document.parserBlockingScript == nil:
     parseDocumentWriteChunkImpl(document.parser)

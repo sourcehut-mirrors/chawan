@@ -292,8 +292,12 @@ proc newHTML5ParserWrapper*(window: Window; url: URL;
   builder.document.setActiveParser(wrapper)
   return wrapper
 
-template toOA(writeBuffer: DocumentWriteBuffer): openArray[char] =
+template toOpenArray(writeBuffer: DocumentWriteBuffer): openArray[char] =
   writeBuffer.data.toOpenArray(writeBuffer.i, writeBuffer.data.high)
+
+proc addWriteBuffer(document: Document) =
+  let buffer = DocumentWriteBuffer(prev: document.writeBuffersTop)
+  document.writeBuffersTop = buffer
 
 proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
     ParseResult =
@@ -305,7 +309,7 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
   while res == PRES_SCRIPT:
     let script = builder.poppedScript
     builder.poppedScript = nil
-    document.writeBuffers.add(DocumentWriteBuffer())
+    document.addWriteBuffer()
     script.prepare()
     while document.parserBlockingScript != nil:
       let script = document.parserBlockingScript
@@ -316,9 +320,9 @@ proc parseBuffer*(wrapper: HTML5ParserWrapper; buffer: openArray[char]):
     if wrapper.stoppedFromScript:
       # document.write inserted a meta charset tag
       break
-    assert document.writeBuffers[^1].toOA().len == 0
-    discard document.writeBuffers.pop()
-    assert document.writeBuffers.len == 0
+    assert document.writeBuffersTop.toOpenArray().len == 0
+    document.writeBuffersTop = document.writeBuffersTop.prev
+    assert document.writeBuffersTop == nil
     if ip == buffer.len:
       # script was at the end of the buffer; nothing to parse
       break
@@ -333,10 +337,10 @@ proc parseDocumentWriteChunk(wrapper: RootRef) =
   let wrapper = HTML5ParserWrapper(wrapper)
   let builder = wrapper.builder
   let document = builder.document
-  let buffer = document.writeBuffers[^1]
-  var res = wrapper.parser.parseChunk(buffer.toOA())
+  let buffer = document.writeBuffersTop
+  var res = wrapper.parser.parseChunk(buffer.toOpenArray())
   if res == PRES_SCRIPT:
-    document.writeBuffers.add(DocumentWriteBuffer())
+    document.addWriteBuffer()
     while true:
       buffer.i += wrapper.parser.getInsertionPoint()
       let script = builder.poppedScript
@@ -348,11 +352,11 @@ proc parseDocumentWriteChunk(wrapper: RootRef) =
         #TODO style sheet
         script.execute()
         assert document.parserBlockingScript != script
-      res = wrapper.parser.parseChunk(buffer.toOA())
+      res = wrapper.parser.parseChunk(buffer.toOpenArray())
       if res != PRES_SCRIPT:
         break
-    assert document.writeBuffers[^1].i == document.writeBuffers[^1].data.len
-    discard document.writeBuffers.pop()
+    assert document.writeBuffersTop.i == document.writeBuffersTop.data.len
+    document.writeBuffersTop = document.writeBuffersTop.prev
   assert builder.poppedScript == nil
   buffer.i = buffer.data.len
   if res == PRES_STOP:
