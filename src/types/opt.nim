@@ -7,7 +7,7 @@ type
     elif E is void and T isnot void: # Opt[T]
       case isOk*: bool
       of true:
-        get*: T
+        value*: T
       else:
         discard
     elif E isnot void and T is void: # Err[T]
@@ -19,7 +19,7 @@ type
     else: # Result[T, E]
       case isOk*: bool
       of true:
-        get*: T
+        value*: T
       else:
         error*: E
 
@@ -31,7 +31,7 @@ template ok*[E](t: type Err[E]): Err[E] =
   Err[E](isOk: true)
 
 template ok*[T, E](t: type Result[T, E]; x: T): Result[T, E] =
-  Result[T, E](get: x, isOk: true)
+  Result[T, E](value: x, isOk: true)
 
 template ok*[T](x: T): auto =
   ok(typeof(result), x)
@@ -62,13 +62,16 @@ template opt*(t: typedesc): auto =
 
 template isErr*(res: Result): bool = not res.isOk
 
+template get*[T, E](res: Result[T, E]): T =
+  res.value
+
 proc get*[T, E](res: Result[T, E]; v: T): T =
   if res.isOk:
-    result = res.get
+    result = res.value
   else:
     result = v
 
-template `?`*[T, E](res: Result[T, E]): T =
+template `?`*[T, E](res: Result[T, E]): auto =
   var x = res # for when res is a funcall
   if not x.isOk:
     when typeof(result) is Result[T, E]:
