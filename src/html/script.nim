@@ -58,7 +58,6 @@ type
     moduleMap*: ModuleMap
     origin*: Origin
     scripting*: ScriptingMode
-    colorMode*: ColorMode
     headless*: HeadlessMode
     images*: bool
     styling*: bool

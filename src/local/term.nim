@@ -114,7 +114,6 @@ type
     imagesToClear*: seq[CanvasImage]
     lineDamage: seq[int]
     attrs*: WindowAttributes
-    colorMode*: ColorMode
     formatMode: set[FormatFlag]
     imageMode*: ImageMode
     cleared: bool
@@ -651,7 +650,7 @@ proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
         if fgY < 0:
           fgY = 255
     let newrgb = YUV(uint8(fgY), fgcolor.U, fgcolor.V)
-    case term.colorMode
+    case term.attrs.colorMode
     of cmTrueColor:
       return cellColor(newrgb)
     of cmANSI:
@@ -692,7 +691,7 @@ proc addColorSGR(res: var string; c: CellColor; bgmod: uint8) =
 # If needed, quantize colors based on the color mode, and correct their
 # contrast.
 proc reduceColors(term: Terminal; fgcolor, bgcolor: var CellColor) =
-  case term.colorMode
+  case term.attrs.colorMode
   of cmANSI:
     if bgcolor.t == ctANSI and uint8(bgcolor.ansi) > 15:
       bgcolor = fgcolor.ansi.toRGB().cellColor()
@@ -741,7 +740,7 @@ proc processFormat*(res: var string; term: Terminal; format: var Format;
         for flag in oldFlags.toOpenArray(0, i - 1):
           res &= term.endFormat(flag)
     format.flags = cellf.flags
-  if term.colorMode != cmMonochrome:
+  if term.attrs.colorMode != cmMonochrome:
     if fgcolor != format.fgcolor:
       res.addColorSGR(fgcolor, bgmod = 0)
       format.fgcolor = fgcolor
@@ -922,7 +921,7 @@ proc applyConfigDimensions(term: Terminal) =
 proc applyConfig(term: Terminal) =
   # colors, formatting
   if term.config.display.colorMode.isSome:
-    term.colorMode = term.config.display.colorMode.get
+    term.attrs.colorMode = term.config.display.colorMode.get
   if term.config.display.formatMode.isSome:
     term.formatMode = term.config.display.formatMode.get
   for fm in FormatFlag:
@@ -1655,16 +1654,16 @@ proc parseTERM(term: Terminal): TerminalType =
     if i != -1:
       let n = parseInt32(s.toOpenArray(i + 1, s.high - "color".len)).get(-1)
       if n == 256:
-        term.colorMode = cmEightBit
+        term.attrs.colorMode = cmEightBit
       elif n >= 16:
-        term.colorMode = cmANSI
+        term.attrs.colorMode = cmANSI
       s.setLen(i)
   else:
     var i = s.high
     while i >= 0 and s[i] in AsciiDigit:
       dec i
     if s.substr(0, i).endsWith("-direct"):
-      term.colorMode = cmTrueColor
+      term.attrs.colorMode = cmTrueColor
       s.setLen(i + 1 - "-direct".len)
   # XTerm is the universal fallback.
   var res = strictParseEnum[TerminalType](s).get(ttXterm)
@@ -1682,11 +1681,11 @@ proc parseTERM(term: Terminal): TerminalType =
 
 proc applyTermDesc(term: Terminal; desc: Termdesc) =
   if tfAnsiColor in desc:
-    term.colorMode = cmANSI
+    term.attrs.colorMode = cmANSI
   elif tfEightBitColor in desc:
-    term.colorMode = cmEightBit
+    term.attrs.colorMode = cmEightBit
   elif tfTrueColor in desc:
-    term.colorMode = cmTrueColor
+    term.attrs.colorMode = cmTrueColor
   if tfSixel in desc:
     term.imageMode = imSixel
   term.setTitle = tfTitle in desc
@@ -1758,10 +1757,10 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool):
           term.sixelRegisterNum = 256
       if windowOnly:
         return ok(res)
-      if qaAnsiColor in r.attrs and term.colorMode < cmANSI:
-        term.colorMode = cmANSI
+      if qaAnsiColor in r.attrs and term.attrs.colorMode < cmANSI:
+        term.attrs.colorMode = cmANSI
       if qaRGB in r.attrs:
-        term.colorMode = cmTrueColor
+        term.attrs.colorMode = cmTrueColor
       if qaOSC52 in r.attrs:
         term.osc52Copy = true
       if term.termType == ttSyncterm:
@@ -1781,10 +1780,10 @@ proc detectTermAttributes(term: Terminal; windowOnly: bool):
   if term.margin:
     dec term.attrs.width
   if not windowOnly:
-    if term.colorMode != cmTrueColor:
+    if term.attrs.colorMode != cmTrueColor:
       let colorterm = getEnv("COLORTERM")
       if colorterm in ["24bit", "truecolor"]:
-        term.colorMode = cmTrueColor
+        term.attrs.colorMode = cmTrueColor
   ok(res)
 
 proc windowChange*(term: Terminal) =

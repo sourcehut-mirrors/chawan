@@ -162,7 +162,6 @@ type
     markLinks*: bool
     charsetOverride*: Charset
     metaRefresh*: MetaRefresh
-    colorMode*: ColorMode
     charsets*: seq[Charset]
     imageTypes*: Table[string, string]
     userAgent*: string
@@ -2029,7 +2028,6 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
     config.images,
     config.styling,
     config.autofocus,
-    config.colorMode,
     config.headless,
     addr bc.attrs,
     loader,

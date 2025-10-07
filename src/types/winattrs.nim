@@ -1,3 +1,5 @@
+import config/conftypes
+
 type WindowAttributes* = object
   width*: int
   height*: int
@@ -6,6 +8,7 @@ type WindowAttributes* = object
   widthPx*: int
   heightPx*: int
   prefersDark*: bool # prefers-color-scheme accepts "dark" (not "light")
+  colorMode*: ColorMode
 
 let dummyAttrs* {.global.} = WindowAttributes(
   width: 80,
@@ -14,5 +17,6 @@ let dummyAttrs* {.global.} = WindowAttributes(
   ppl: 18,
   widthPx: 80 * 9,
   heightPx: 24 * 18,
-  prefersDark: true
+  prefersDark: true,
+  colorMode: cmTrueColor
 )

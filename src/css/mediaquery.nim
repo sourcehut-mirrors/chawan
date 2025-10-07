@@ -409,16 +409,16 @@ proc appliesLR(feature: MediaFeature; n: float32): bool =
 proc applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
   case feature.t
   of mftColor:
-    let bitDepth = if ctx.colorMode != cmMonochrome: 8 else: 0
+    let bitDepth = if ctx.attrsp.colorMode != cmMonochrome: 8 else: 0
     return bitDepth in feature.range
   of mftColorIndex:
-    let mapSize = case ctx.colorMode
+    let mapSize = case ctx.attrsp.colorMode
     of cmANSI: 16
     of cmEightBit: 256
     of cmMonochrome, cmTrueColor: 0
     return mapSize in feature.range
   of mftMonochrome:
-    let bitDepth = if ctx.colorMode == cmMonochrome: 1 else: 0
+    let bitDepth = if ctx.attrsp.colorMode == cmMonochrome: 1 else: 0
     return bitDepth in feature.range
   of mftGrid:
     return feature.b

@@ -106,8 +106,16 @@ proc width(ctx: JSContext; screen: var Screen): int {.jsfget.} =
 proc height(ctx: JSContext; screen: var Screen): int {.jsfget.} =
   return ctx.availHeight(screen)
 
-proc colorDepth(screen: var Screen): int {.jsfget.} = 24
-proc pixelDepth(screen: var Screen): int {.jsfget.} = screen.colorDepth
+proc colorDepth(ctx: JSContext; screen: var Screen): int32 {.jsfget.} =
+  let window = ctx.getWindow()
+  case window.settings.scriptAttrsp.colorMode
+  of cmMonochrome: return 1
+  of cmANSI: return 4
+  of cmEightBit: return 8
+  of cmTrueColor: return 24
+
+proc pixelDepth(ctx: JSContext; screen: var Screen): int32 {.jsfget.} =
+  ctx.colorDepth(screen)
 
 # History
 proc length(history: var History): uint32 {.jsfget.} = 1
@@ -519,9 +527,8 @@ proc addScripting*(window: Window) =
   ctx.addPerformanceModule(eventTargetCID)
 
 proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
-    colorMode: ColorMode; headless: HeadlessMode; attrsp: ptr WindowAttributes;
-    loader: FileLoader; url: URL; urandom: PosixStream;
-    imageTypes: Table[string, string];
+    headless: HeadlessMode; attrsp: ptr WindowAttributes; loader: FileLoader;
+    url: URL; urandom: PosixStream; imageTypes: Table[string, string];
     userAgent, referrer, contentType: string): Window =
   let window = Window(
     internalConsole: newConsole(cast[ChaFile](stderr)),
@@ -534,7 +541,6 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
       origin: url.origin,
       images: images,
       autofocus: autofocus,
-      colorMode: colorMode,
       headless: headless,
       contentType: contentType.toAtom()
     ),

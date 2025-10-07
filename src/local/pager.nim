@@ -1342,7 +1342,7 @@ proc draw(pager: Pager): Opt[void] =
   let container = pager.container
   if container != nil:
     if container.redraw:
-      let hlcolor = if pager.term.colorMode != cmMonochrome:
+      let hlcolor = if pager.attrs.colorMode != cmMonochrome:
         cellColor(pager.config.display.highlightColor.rgb)
       else:
         defaultColor
@@ -1889,8 +1889,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     headless: pager.config.start.headless,
     charsetOverride: charsetOverride,
     metaRefresh: pager.config.buffer.metaRefresh,
-    markLinks: pager.config.buffer.markLinks,
-    colorMode: pager.term.colorMode
+    markLinks: pager.config.buffer.markLinks
   )
   loaderConfig = LoaderClientConfig(
     originURL: url,
