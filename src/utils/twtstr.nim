@@ -972,4 +972,8 @@ iterator lineIndices*(s: openArray[char]): tuple[si, ei: int] {.inline.} =
     yield (i, j - 1)
     i = j + 1
 
+when not defined(nimHasXorSet):
+  proc toggle*[T](x: var set[T]; y: set[T]) =
+    x = x + y - (x * y)
+
 {.pop.} # raises: []

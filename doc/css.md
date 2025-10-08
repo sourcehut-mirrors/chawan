@@ -102,6 +102,9 @@ Following standard pseudo-classes are supported: `:first-child`,
 
 `:visited` is parsed, but for now it is not matched.
 
+`:defined`, `:host`, and `:host()` are matched for compatibility; however,
+custom elements and shadow DOM are not supported yet.
+
 The standard pseudo-elements `::before`, `::after`, and `::marker` are
 supported.
 

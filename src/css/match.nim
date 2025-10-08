@@ -143,6 +143,10 @@ proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
     return element.isDisabled()
   of pcBorderNonzero:
     return element.attrb(satBorder) and element.attrul(satBorder).get(1) != 0
+  of pcHost:
+    return false #TODO shadow DOM
+  of pcDefined:
+    return element.isDefined()
 
 proc matchesLang(element: Element; lang: string): bool =
   for element in element.branchElems:
@@ -235,6 +239,8 @@ proc matches(element: Element; sel: Selector; depends: var DependencyInfo;
     return element.matches(sel.fsels, depends, ohasDeps)
   of stLang:
     return element.matchesLang(sel.lang)
+  of stHost:
+    return false #TODO shadow DOM
 
 proc matches(element: Element; sels: CompoundSelector;
     depends: var DependencyInfo; ohasDeps: var bool): bool =

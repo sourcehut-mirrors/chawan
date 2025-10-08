@@ -130,7 +130,7 @@ proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool =
       return true
     else:
       return false
-  of stUniversal, stNot, stLang, stNthChild, stNthLastChild:
+  of stUniversal, stNot, stLang, stNthChild, stNthLastChild, stHost:
     return false
 
 proc addIfNotLast(s: var seq[CSSRuleDef]; rule: CSSRuleDef) =

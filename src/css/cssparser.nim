@@ -158,22 +158,23 @@ type
 
   CSSFunctionType* = enum
     cftUnknown = "-cha-unknown"
-    cftNot = "not"
-    cftIs = "is"
-    cftWhere = "where"
-    cftNthChild = "nth-child"
-    cftNthLastChild = "nth-last-child"
-    cftLang = "lang"
-    cftRgb = "rgb"
-    cftRgba = "rgba"
+    cftCalc = "calc"
     cftChaAnsi = "-cha-ansi"
-    cftUrl = "url"
-    cftSrc = "src"
-    cftVar = "var"
+    cftCounter = "counter"
+    cftHost = "host"
     cftHsl = "hsl"
     cftHsla = "hsla"
-    cftCalc = "calc"
-    cftCounter = "counter"
+    cftIs = "is"
+    cftLang = "lang"
+    cftNot = "not"
+    cftNthChild = "nth-child"
+    cftNthLastChild = "nth-last-child"
+    cftRgb = "rgb"
+    cftRgba = "rgba"
+    cftSrc = "src"
+    cftUrl = "url"
+    cftVar = "var"
+    cftWhere = "where"
 
   CSSSimpleBlock* = ref object
     value*: seq[CSSToken]
@@ -297,6 +298,7 @@ type
     stLang = "lang"
     stNthChild = "nth-child"
     stNthLastChild = "nth-last-child"
+    stHost = "host"
 
   SelectorTypeRecursive = range[stIs..stWhere]
 
@@ -322,6 +324,8 @@ type
     pcVisited = "visited"
     pcTarget = "target"
     pcDisabled = "disabled"
+    pcHost = "host"
+    pcDefined = "defined"
     pcFirstNode = "-cha-first-node"
     pcLastNode = "-cha-last-node"
     pcBorderNonzero = "-cha-border-nonzero"
@@ -349,6 +353,10 @@ type
     anb*: CSSAnB
     ofsels*: SelectorList
 
+  HostSelector* = ref object
+    specificity*: uint
+    csel*: CompoundSelector
+
   Selector* = ref object # Simple selector
     case t*: SelectorType
     of stType:
@@ -367,6 +375,8 @@ type
       pc*: PseudoClass
     of stIs, stWhere, stNot:
       fsels*: SelectorList
+    of stHost:
+      host*: HostSelector
     of stLang:
       lang*: string
     of stNthChild, stNthLastChild:
@@ -389,6 +399,8 @@ proc consumeDeclarations(ctx: var CSSParser; nested: bool): seq[CSSDeclaration]
 proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList
 proc parseSelectorList(state: var SelectorParser; forgiving: bool): SelectorList
 proc parseComplexSelector(state: var SelectorParser): ComplexSelector
+proc parseCompoundSelector(state: var SelectorParser;
+  pseudoElement: var PseudoElement; specificityOut: var uint): Selector
 proc addComponentValue(ctx: var CSSParser; toks: var seq[CSSToken])
 proc seek*(ctx: var CSSParser)
 proc `$`*(tok: CSSToken): string
@@ -1375,7 +1387,7 @@ proc `$`*(sel: Selector): string =
     return "*"
   of stPseudoClass:
     return ':' & $sel.pc
-  of stIs, stNot, stWhere:
+  of stIs, stNot, stWhere, stHost:
     return ":" & $sel.t & '(' & $sel.fsels & ')'
   of stLang:
     return ":lang(" & sel.lang & ')'
@@ -1422,6 +1434,8 @@ proc getSpecificity(sel: Selector): uint =
       if s > best:
         best = s
     return best
+  of stHost:
+    return sel.host.specificity
   of stNthChild, stNthLastChild:
     var best = 0u
     if sel.nthChild.ofsels.len != 0:
@@ -1472,6 +1486,21 @@ proc parseRecursiveSelectorFunction(state: var SelectorParser;
   state.nested = onested
   if fun.fsels.len == 0: fail
   return fun
+
+proc parseHost(state: var SelectorParser): Selector =
+  let onested = state.nested
+  state.nested = true
+  var pseudo = peNone
+  var specificity: uint
+  let head = state.parseCompoundSelector(pseudo, specificity)
+  state.skipFunction()
+  state.nested = onested
+  if head == nil or pseudo != peNone: fail
+  let host = HostSelector(
+    csel: CompoundSelector(head: head),
+    specificity: specificity + 1000
+  )
+  Selector(t: stHost, host: host)
 
 proc parseNthChild(state: var SelectorParser; t: SelectorTypeNthChild):
     Selector =
@@ -1525,6 +1554,8 @@ proc parseSelectorFunction(state: var SelectorParser; ft: CSSFunctionType):
     state.parseRecursiveSelectorFunction(stIs, forgiving = true)
   of cftWhere:
     state.parseRecursiveSelectorFunction(stWhere, forgiving = true)
+  of cftHost:
+    state.parseHost()
   of cftNthChild:
     state.parseNthChild(stNthChild)
   of cftNthLastChild:
