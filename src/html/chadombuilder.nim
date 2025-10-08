@@ -378,7 +378,7 @@ proc parseFromString*(ctx: JSContext; parser: DOMParser; str, t: string):
       window.document.url
     else:
       parseURL0("about:blank")
-    let builder = newChaDOMBuilder(url, window, ccIrrelevant)
+    let builder = newChaDOMBuilder(url, nil, ccIrrelevant)
     var parser = initHTML5Parser(builder, HTML5ParserOpts[Node, CAtom]())
     let res = parser.parseChunk(str)
     assert res == PRES_CONTINUE

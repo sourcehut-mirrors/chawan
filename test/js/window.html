@@ -23,5 +23,8 @@ window.onload = () => "first"
 let second = () => "second"
 window.onload = second;
 assertEquals(second, window.onload);
+let old = window.document;
+new DOMParser().parseFromString("asdf", "text/html");
+assertEquals(old, window.document);
 document.getElementById("x").textContent = "Success";
 </script>
