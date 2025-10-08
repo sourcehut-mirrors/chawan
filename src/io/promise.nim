@@ -29,10 +29,11 @@ proc resolve*(promise: EmptyPromise) =
       promise.cb()
     promise.cb = nil
     promise.state = psFulfilled
-    promise = promise.next
-    if promise == nil:
-      break
+    let next = promise.next
     promise.next = nil
+    if next == nil:
+      break
+    promise = next
 
 proc resolve*[T](promise: Promise[T]; res: T) =
   promise.res = res
@@ -60,11 +61,10 @@ proc then*(promise: EmptyPromise; cb: (proc(): EmptyPromise {.raises: [].})):
     EmptyPromise {.discardable.} =
   let next = EmptyPromise()
   promise.then(proc() =
-    var p2 = cb()
+    let p2 = cb()
     if p2 != nil:
-      p2.then(proc() =
-        next.resolve())
-    else:
+      p2.next = next
+    if p2 == nil or p2.state == psFulfilled:
       next.resolve())
   return next
 
@@ -76,14 +76,17 @@ proc then*[T](promise: EmptyPromise; cb: (proc(): Promise[T] {.raises: [].})):
     Promise[T] {.discardable.} =
   let next = Promise[T]()
   promise.then(proc() =
-    var p2 = cb()
+    let p2 = cb()
     if p2 != nil:
-      p2.then(proc(x: T) =
-        next.res = x
-        next.resolve())
-    else:
+      if p2.state == psFulfilled:
+        next.res = p2.res
+      else:
+        p2.next = next
+        p2.cb = proc() =
+          next.res = p2.res
+    if p2 == nil or p2.state == psFulfilled:
       next.resolve())
-  return next
+  next
 
 proc then*[T](promise: Promise[T];
     cb: (proc(x: T): EmptyPromise {.raises: [].})): EmptyPromise
@@ -92,30 +95,39 @@ proc then*[T](promise: Promise[T];
   promise.then(proc(x: T) =
     let p2 = cb(x)
     if p2 != nil:
-      p2.then(proc() =
-        next.resolve())
+      p2.next = next
+      if next.state == psFulfilled:
+        next.resolve()
     else:
       next.resolve())
-  return next
+  next
 
 proc then*[T](promise: EmptyPromise; cb: (proc(): T {.raises: [].})): Promise[T]
     {.discardable.} =
   let next = Promise[T]()
-  promise.then(proc() =
+  promise.next = next
+  if promise.state == psFulfilled:
     next.res = cb()
-    next.resolve())
-  return next
+    next.resolve()
+  else:
+    promise.cb = proc() =
+      next.res = cb()
+  next
 
 proc then*[T, U: not void](promise: Promise[T];
     cb: (proc(x: T): U {.raises: [].})): Promise[U] {.discardable.} =
   let next = Promise[U]()
-  promise.then(proc(x: T) =
-    next.res = cb(x)
-    next.resolve())
-  return next
+  promise.next = next
+  if promise.state == psFulfilled:
+    next.res = cb(promise.res)
+    promise.resolve()
+  else:
+    promise.cb = proc() =
+      next.res = cb(promise.res)
+  next
 
-proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): Promise[U])): Promise[U]
-    {.discardable.} =
+proc then*[T, U](promise: Promise[T];
+    cb: (proc(x: T): Promise[U] {.raises: [].})): Promise[U] {.discardable.} =
   let next = Promise[U]()
   promise.then(proc(x: T) =
     let p2 = cb(x)
@@ -125,7 +137,7 @@ proc then*[T, U](promise: Promise[T]; cb: (proc(x: T): Promise[U])): Promise[U]
         next.resolve())
     else:
       next.resolve())
-  return next
+  next
 
 proc all*(promises: seq[EmptyPromise]): EmptyPromise =
   let res = EmptyPromise()
@@ -137,7 +149,7 @@ proc all*(promises: seq[EmptyPromise]): EmptyPromise =
         res.resolve())
   if promises.len == 0:
     res.resolve()
-  return res
+  res
 
 # Promise is converted to a JS promise which will be resolved when the Nim
 # promise is resolved.
