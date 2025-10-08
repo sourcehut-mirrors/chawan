@@ -273,7 +273,6 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
   JS_SetOpaque(jsObj, p)
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
-  let ctxOpaque = ctx.getOpaque()
   let iclass = int(class)
   if iclass < rtOpaque.classes.len and
       rtOpaque.classes[iclass].unforgeable.len > 0:

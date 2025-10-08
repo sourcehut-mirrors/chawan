@@ -1489,9 +1489,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   if name != "":
     info.name = name
   if not asglobal:
-    let impl = t.getTypeInst()[1].getTypeImpl()
-    if impl.kind == nnkRefTy:
-      info.dfin = quote do: jsCheckDestroy
+    info.dfin = quote do: jsCheckDestroy
     if info.tname notin jsDtors:
       warning("No destructor has been defined for type " & info.tname)
   else:
