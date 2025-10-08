@@ -217,15 +217,14 @@ type
   CollectionMatchFun = proc(node: Node): bool {.raises: [].}
 
   Collection = ref object of RootObj
-    islive: bool
     childonly: bool
     invalid: bool
     inclusive: bool
     root: Node
     match: CollectionMatchFun
     snapshot: seq[Node]
-    # for some reason, refs disappear before I get to destroy the collection
-    # (in ORC only, refc works fine)
+    # if not nil, this is a live collection.  (uses a ptr instead of a ref
+    # because ORC likes to set refs to nil before the destructor is called)
     document: ptr DocumentObj
 
   NodeIterator = ref object of Collection
@@ -2391,14 +2390,13 @@ proc populateCollection(collection: Collection) =
 
 proc refreshCollection(collection: Collection) =
   if collection.invalid:
-    assert collection.islive
+    assert collection.document != nil
     collection.snapshot.setLen(0)
     collection.populateCollection()
     collection.invalid = false
 
 proc finalize0(collection: Collection) =
-  if collection.islive:
-    assert collection.document != nil
+  if collection.document != nil:
     let i = collection.document.liveCollections.find(collection.id)
     assert i != -1
     collection.document.liveCollections.del(i)
@@ -2419,6 +2417,10 @@ proc mark(rt: JSRuntime; this: NodeIterator; markFun: JS_MarkFunc) {.jsmark.} =
 proc finalize(collection: HTMLAllCollection) {.jsfin.} =
   collection.finalize0()
 
+proc finalize(document: Document) {.jsfin.} =
+  for it in document.liveCollections:
+    cast[Collection](it).document = nil
+
 proc getLength(collection: Collection): int =
   collection.refreshCollection()
   return collection.snapshot.len
@@ -2431,12 +2433,11 @@ proc newCollection[T: Collection](root: Node; match: CollectionMatchFun;
     islive, childonly: bool; inclusive = false): T =
   let document = root.document
   let collection = T(
-    islive: islive,
     childonly: childonly,
     inclusive: inclusive,
     match: match,
     root: root,
-    document: cast[ptr DocumentObj](document)
+    document: if islive: cast[ptr DocumentObj](document) else: nil
   )
   if islive:
     document.liveCollections.add(collection.id)
