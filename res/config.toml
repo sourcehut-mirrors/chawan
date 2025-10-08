@@ -114,7 +114,7 @@ substitute-url = 'x => "https://lite.duckduckgo.com/lite/?kp=-1&kd=-1&q=" + enco
 
 [omnirule.br]
 match = '^br:'
-substitute-url = 'x => "https://search.brave.com/search?country=all&q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
+substitute-url = 'x => "https://search.brave.com/search?q=" + encodeURIComponent(x.split(":").slice(1).join(":"))'
 
 [omnirule.wk]
 match = '^wk:'
