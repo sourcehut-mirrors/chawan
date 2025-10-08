@@ -2318,7 +2318,8 @@ proc compileSearchRegex(pager: Pager; s: string): Result[Regex, string] =
 
 proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
   let lineedit = pager.lineedit
-  pager.isearchpromise = pager.isearchpromise.then(proc(): EmptyPromise =
+  let prev = pager.isearchpromise
+  pager.isearchpromise = prev.then(proc(): EmptyPromise =
     case lineedit.state
     of lesCancel:
       pager.iregex = Result[Regex, string].err("")
