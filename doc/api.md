@@ -16,14 +16,14 @@ gpn = 'n => pager.alert(n)' # e.g. 2gpn prints `2' to the status line
 ```
 
 Note however, that JavaScript functions must be called with an appropriate
-`this` value. Unfortunately, this also means that the following does not work:
+`this` value.  So e.g. the following does not work:
 
 ```
 gpn = 'pager.alert' # broken!!!
 ```
 
-To work around this limitation, actions have to wrap the target function in a
-closure, as above. However, this has very poor reusability; for more complex
+To work around this limitation, actions have to wrap the target function in
+a closure, as above.  However, this has poor reusability; for more complex
 actions, you would have to copy and paste the entire function every time you
 re-bind it or call it from a different function.
 
@@ -35,13 +35,15 @@ showNumber = 'n => pager.alert(n)'
 ```
 
 `my.namespace` can be anything you want; it is to avoid collisions when
-including multiple configs. Avoid setting it to `pager` or `line`, because these
-are used by the default config.
+including multiple configs.  The only restriction is that the first
+component (in this case, "my") must not contain an upper-case letter.
 
 Now you can call `cmd.my.namespace.showNumber()` from any other function, or
-just include it in an action:
+include it in a keybinding (in that case, `cmd.` is optional):
 
 ```toml
+'gpn' = 'my.namespace.showNumber'
+# same as
 'gpn' = 'cmd.my.namespace.showNumber'
 ```
 

@@ -328,6 +328,7 @@ type ConfigParser = object
   config: Config
   dir: string
   warnings: seq[string]
+  builtin: bool
 
 proc parseConfigValue(ctx: var ConfigParser; x: var object; v: TomlValue;
   k: string): Err[string]
@@ -760,6 +761,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
     ?typeCheck(vv, {tvtTable, tvtString}, kkk)
     if not kk.isCompatibleIdent():
       return err(kkk & ": invalid command name")
+    if not ctx.builtin and AsciiUpperAlpha in kk and
+        k in ["cmd", "cmd.pager", "cmd.buffer"]:
+      ctx.warnings.add("Please move " & kkk &
+        " to a lowercase namespace (e.g. [cmd.me]) to avoid name clashes.")
     if vv.t == tvtTable:
       ?ctx.parseConfigValue(x, vv, kkk)
     else: # tvtString
@@ -794,12 +799,17 @@ proc parseConfigValue(ctx: var ConfigParser; x: var StyleString; v: TomlValue;
   ok()
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-  warnings: var seq[string]; jsctx: JSContext; name: string;
+  warnings: var seq[string]; jsctx: JSContext; name: string; builtin: bool;
   laxnames = false): Err[string]
 
 proc parseConfig(config: Config; dir: string; t: TomlValue;
-    warnings: var seq[string]; jsctx: JSContext): Err[string] =
-  var ctx = ConfigParser(config: config, dir: dir, jsctx: jsctx)
+    warnings: var seq[string]; jsctx: JSContext; builtin: bool): Err[string] =
+  var ctx = ConfigParser(
+    config: config,
+    dir: dir,
+    jsctx: jsctx,
+    builtin: builtin
+  )
   ?ctx.parseConfigValue(config[], t, "")
   for name, value in config.omnirule:
     if value.match.isNone:
@@ -813,17 +823,18 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
       let ps = newPosixStream(s)
       if ps == nil:
         return err("include file not found: " & s)
-      ?config.parseConfig(dir, ps.readAll(), warnings, jsctx, s.afterLast('/'))
+      ?config.parseConfig(dir, ps.readAll(), warnings, jsctx, s.afterLast('/'),
+        builtin)
       ps.sclose()
   warnings.add(ctx.warnings)
   ok()
 
 proc parseConfig*(config: Config; dir: string; buf: openArray[char];
-    warnings: var seq[string]; jsctx: JSContext; name: string;
+    warnings: var seq[string]; jsctx: JSContext; name: string; builtin: bool;
     laxnames = false): Err[string] =
   let toml = parseToml(buf, dir / name, laxnames, config.arraySeen)
   if toml.isOk:
-    return config.parseConfig(dir, toml.get, warnings, jsctx)
+    return config.parseConfig(dir, toml.get, warnings, jsctx, builtin)
   return err("fatal error: failed to parse config\n" & toml.error)
 
 template getNormalAction*(config: Config; s: string): string =
@@ -868,7 +879,19 @@ proc openConfig*(dir, dataDir: var string; override: Option[string];
 proc initCommands*(ctx: JSContext; config: Config): Err[string] =
   let obj = JS_NewObject(ctx)
   if JS_IsException(obj):
+    JS_FreeValue(ctx, obj)
     return err(ctx.getExceptionMsg())
+  # backwards compat: cmd.pager and cmd.buffer used to be separate
+  case ctx.definePropertyE(obj, "buffer", JS_DupValue(ctx, obj))
+  of dprException:
+    JS_FreeValue(ctx, obj)
+    return err(ctx.getExceptionMsg())
+  else: discard
+  case ctx.definePropertyE(obj, "pager", JS_DupValue(ctx, obj))
+  of dprException:
+    JS_FreeValue(ctx, obj)
+    return err(ctx.getExceptionMsg())
+  else: discard
   for (k, cmd) in config.cmd.init.ritems:
     if k in config.cmd.map:
       # already in map; skip

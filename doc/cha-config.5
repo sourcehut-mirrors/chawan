@@ -692,7 +692,7 @@ string
 T}@T{
 abcdefghijklmnoprstuvxyz
 T}@T{
-A string of characters to use in \f[CR]cmd.pager.toggleLinkHints\f[R].
+A string of characters to use in \f[CR]toggleLinkHints\f[R].
 Any Unicode codepoint is accepted, and they are ordered as specified in
 this option.
 T}
@@ -1468,11 +1468,11 @@ Examples:
 .IP
 .EX
 \f[I]# show change URL when Control, Escape and j are pressed\f[R]
-\(aqC\-M\-j\(aq = \(aqcmd.pager.load\(aq
+\(aqC\-M\-j\(aq = \(aqload\(aq
 
 \f[I]# go to the first line of the page when g is pressed twice without a preceding\f[R]
 \f[I]# number, or to the line when a preceding number is given.\f[R]
-\(aqgg\(aq = \(aqcmd.buffer.gotoLineOrStart\(aq
+\(aqgg\(aq = \(aqgotoLineOrStart\(aq
 
 \f[I]# JS functions and expressions are accepted too. Following replaces the\f[R]
 \f[I]# default search engine with DuckDuckGo Lite.\f[R]
@@ -1496,7 +1496,7 @@ _
 T{
 q
 T}@T{
-\f[CR]cmd.pager.quit\f[R]
+\f[CR]quit\f[R]
 T}@T{
 Exit the browser.
 T}
@@ -1504,7 +1504,7 @@ _
 T{
 C\-z
 T}@T{
-\f[CR]cmd.pager.suspend\f[R]
+\f[CR]suspend\f[R]
 T}@T{
 Temporarily suspend the browser
 .PP
@@ -1516,7 +1516,7 @@ _
 T{
 C\-l
 T}@T{
-\f[CR]cmd.pager.load\f[R]
+\f[CR]load\f[R]
 T}@T{
 Open the current address in the URL bar.
 T}
@@ -1524,7 +1524,7 @@ _
 T{
 M\-l
 T}@T{
-\f[CR]cmd.pager.loadCursor\f[R]
+\f[CR]loadCursor\f[R]
 T}@T{
 Open the address of the link or image being hovered in the URL bar.
 .PP
@@ -1534,7 +1534,7 @@ _
 T{
 None
 T}@T{
-\f[CR]cmd.pager.loadEmpty\f[R]
+\f[CR]loadEmpty\f[R]
 T}@T{
 Open an empty address bar.
 T}
@@ -1542,7 +1542,7 @@ _
 T{
 C\-k
 T}@T{
-\f[CR]cmd.pager.webSearch\f[R]
+\f[CR]webSearch\f[R]
 T}@T{
 Open the URL bar with an arbitrary search engine.
 At the moment, this is Brave Search, but this may change in the future.
@@ -1551,7 +1551,7 @@ _
 T{
 M\-u
 T}@T{
-\f[CR]cmd.pager.dupeBuffer\f[R]
+\f[CR]dupeBuffer\f[R]
 T}@T{
 Duplicate the current buffer by loading its source to a new buffer.
 T}
@@ -1559,7 +1559,7 @@ _
 T{
 U
 T}@T{
-\f[CR]cmd.pager.reloadBuffer\f[R]
+\f[CR]reloadBuffer\f[R]
 T}@T{
 Open a new buffer with the current buffer\(cqs URL, replacing the
 current buffer.
@@ -1568,7 +1568,7 @@ _
 T{
 C\-g
 T}@T{
-\f[CR]cmd.pager.lineInfo\f[R]
+\f[CR]lineInfo\f[R]
 T}@T{
 Display information about the current line on the status line.
 T}
@@ -1576,7 +1576,7 @@ _
 T{
 \(rs
 T}@T{
-\f[CR]cmd.pager.toggleSource\f[R]
+\f[CR]toggleSource\f[R]
 T}@T{
 If viewing an HTML buffer, open a new buffer with its source.
 Otherwise, open the current buffer\(cqs contents as HTML.
@@ -1585,7 +1585,7 @@ _
 T{
 D
 T}@T{
-\f[CR]cmd.pager.discardBuffer\f[R]
+\f[CR]discardBuffer\f[R]
 T}@T{
 Discard the current buffer, and move back to the previous/next buffer
 depending on what the previously viewed buffer was.
@@ -1594,8 +1594,7 @@ _
 T{
 d,, d.
 T}@T{
-\f[CR]cmd.pager.discardBufferPrev\f[R],
-\f[CR]cmd.pager.discardBufferNext\f[R]
+\f[CR]discardBufferPrev\f[R], \f[CR]discardBufferNext\f[R]
 T}@T{
 Discard the current buffer, and move back to the previous/next buffer,
 or open the link under the cursor.
@@ -1604,7 +1603,7 @@ _
 T{
 M\-d
 T}@T{
-\f[CR]cmd.pager.discardTree\f[R]
+\f[CR]discardTree\f[R]
 T}@T{
 Discard all child buffers of the current buffer.
 T}
@@ -1612,9 +1611,9 @@ _
 T{
 \&., ,, M\-,, M\-., M\-/
 T}@T{
-\f[CR]cmd.pager.nextBuffer\f[R], \f[CR]cmd.pager.prevBuffer\f[R],
-\f[CR]cmd.pager.prevSiblingBuffer\f[R],
-\f[CR]cmd.pager.nextSiblingBufer\f[R], \f[CR]cmd.pager.parentBuffer\f[R]
+\f[CR]nextBuffer\f[R], \f[CR]prevBuffer\f[R],
+\f[CR]prevSiblingBuffer\f[R], \f[CR]nextSiblingBuffer\f[R],
+\f[CR]parentBuffer\f[R]
 T}@T{
 Traverse the buffer list.
 .PP
@@ -1629,7 +1628,7 @@ _
 T{
 M\-c
 T}@T{
-\f[CR]cmd.pager.enterCommand\f[R]
+\f[CR]enterCommand\f[R]
 T}@T{
 Directly enter a JavaScript command.
 Note that this interacts with the pager, not the website being
@@ -1639,7 +1638,7 @@ _
 T{
 None
 T}@T{
-\f[CR]cmd.pager.searchForward\f[R], \f[CR]cmd.pager.searchBackward\f[R]
+\f[CR]searchForward\f[R], \f[CR]searchBackward\f[R]
 T}@T{
 Search for a string in the current buffer, forwards or backwards.
 T}
@@ -1647,7 +1646,7 @@ _
 T{
 /, ?
 T}@T{
-\f[CR]cmd.pager.isearchForward\f[R], \f[CR]cmd.pager.searchBackward\f[R]
+\f[CR]isearchForward\f[R], \f[CR]searchBackward\f[R]
 T}@T{
 Incremental\-search for a string, highlighting the first result,
 forwards or backwards.
@@ -1656,7 +1655,7 @@ _
 T{
 n, N
 T}@T{
-\f[CR]cmd.pager.searchNext\f[R], \f[CR]cmd.pager.searchPrev\f[R]
+\f[CR]searchNext\f[R], \f[CR]searchPrev\f[R]
 T}@T{
 Jump to the nth (or if unspecified, first) next/previous search result.
 T}
@@ -1664,7 +1663,7 @@ _
 T{
 c
 T}@T{
-\f[CR]cmd.pager.peek\f[R]
+\f[CR]peek\f[R]
 T}@T{
 Display a message of the current buffer\(cqs URL on the status line.
 T}
@@ -1672,7 +1671,7 @@ _
 T{
 u
 T}@T{
-\f[CR]cmd.pager.peekCursor\f[R]
+\f[CR]peekCursor\f[R]
 T}@T{
 Display a message of the URL or title under the cursor on the status
 line.
@@ -1683,7 +1682,7 @@ _
 T{
 su
 T}@T{
-\f[CR]cmd.pager.showFullAlert\f[R]
+\f[CR]showFullAlert\f[R]
 T}@T{
 Show the last alert inside the line editor.
 You can also view previous ones using C\-p or C\-n.
@@ -1692,7 +1691,7 @@ _
 T{
 M\-y
 T}@T{
-\f[CR]cmd.pager.copyURL\f[R]
+\f[CR]copyURL\f[R]
 T}@T{
 Copy the current buffer\(cqs URL to the system clipboard.
 T}
@@ -1700,7 +1699,7 @@ _
 T{
 yu
 T}@T{
-\f[CR]cmd.pager.copyCursorLink\f[R]
+\f[CR]copyCursorLink\f[R]
 T}@T{
 Copy the link under the cursor to the system clipboard.
 T}
@@ -1708,7 +1707,7 @@ _
 T{
 yI
 T}@T{
-\f[CR]cmd.pager.copyCursorImage\f[R]
+\f[CR]copyCursorImage\f[R]
 T}@T{
 Copy the URL of the image under the cursor to the system clipboard.
 T}
@@ -1716,7 +1715,7 @@ _
 T{
 M\-p
 T}@T{
-\f[CR]cmd.pager.gotoClipboardURL\f[R]
+\f[CR]gotoClipboardURL\f[R]
 T}@T{
 Go to the URL currently on the clipboard.
 T}
@@ -1724,7 +1723,7 @@ _
 T{
 M\-b
 T}@T{
-\f[CR]cmd.pager.openBookmarks\f[R]
+\f[CR]openBookmarks\f[R]
 T}@T{
 Open the bookmark file.
 T}
@@ -1732,7 +1731,7 @@ _
 T{
 M\-a
 T}@T{
-\f[CR]cmd.pager.addBookmark\f[R]
+\f[CR]addBookmark\f[R]
 T}@T{
 Add the current page to your bookmarks.
 T}
@@ -1740,7 +1739,7 @@ _
 T{
 f
 T}@T{
-\f[CR]cmd.pager.toggleLinkHints\f[R]
+\f[CR]toggleLinkHints\f[R]
 T}@T{
 Show hints before each link (or button).
 After typing a hint, the cursor is placed on the respective link.
@@ -1770,7 +1769,7 @@ _
 T{
 j, k
 T}@T{
-\f[CR]cmd.buffer.cursorUp\f[R], \f[CR]cmd.buffer.cursorDown\f[R]
+\f[CR]cursorUp\f[R], \f[CR]cursorDown\f[R]
 T}@T{
 Move the cursor upwards/downwards by n lines, or if n is unspecified, by
 1.
@@ -1779,7 +1778,7 @@ _
 T{
 h, l
 T}@T{
-\f[CR]cmd.buffer.cursorLeft\f[R], \f[CR]cmd.buffer.cursorRight\f[R]
+\f[CR]cursorLeft\f[R], \f[CR]cursorRight\f[R]
 T}@T{
 Move the cursor to the left/right by n cells, or if n is unspecified, by
 1.
@@ -1788,7 +1787,7 @@ _
 T{
 0/Home
 T}@T{
-\f[CR]cmd.buffer.cursorLineBegin\f[R]
+\f[CR]cursorLineBegin\f[R]
 T}@T{
 Move the cursor to the first cell of the line.
 T}
@@ -1796,7 +1795,7 @@ _
 T{
 \(ha
 T}@T{
-\f[CR]cmd.buffer.cursorLineTextStart\f[R]
+\f[CR]cursorLineTextStart\f[R]
 T}@T{
 Move the cursor to the first non\-blank character of the line.
 T}
@@ -1804,7 +1803,7 @@ _
 T{
 $/End
 T}@T{
-\f[CR]cmd.buffer.cursorLineEnd\f[R]
+\f[CR]cursorLineEnd\f[R]
 T}@T{
 Move the cursor to the last cell of the line.
 T}
@@ -1812,9 +1811,8 @@ _
 T{
 w, W
 T}@T{
-\f[CR]cmd.buffer.cursorNextWord\f[R],
-\f[CR]cmd.buffer.cursorNextViWord\f[R],
-\f[CR]cmd.buffer.cursorNextBigWord\f[R]
+\f[CR]cursorNextWord\f[R], \f[CR]cursorNextViWord\f[R],
+\f[CR]cursorNextBigWord\f[R]
 T}@T{
 Move the cursor to the beginning of the next word.
 T}
@@ -1822,9 +1820,8 @@ _
 T{
 None
 T}@T{
-\f[CR]cmd.buffer.cursorPrevWord\f[R],
-\f[CR]cmd.buffer.cursorPrevViWord\f[R],
-\f[CR]cmd.buffer.cursorPrevBigWord\f[R]
+\f[CR]cursorPrevWord\f[R], \f[CR]cursorPrevViWord\f[R],
+\f[CR]cursorPrevBigWord\f[R]
 T}@T{
 Move the cursor to the end of the previous word.
 T}
@@ -1832,9 +1829,8 @@ _
 T{
 e, E
 T}@T{
-\f[CR]cmd.buffer.cursorWordEnd\f[R],
-\f[CR]cmd.buffer.cursorViWordEnd\f[R],
-\f[CR]cmd.buffer.cursorBigWordEnd\f[R]
+\f[CR]cursorWordEnd\f[R], \f[CR]cursorViWordEnd\f[R],
+\f[CR]cursorBigWordEnd\f[R]
 T}@T{
 Move the cursor to the end of the current word, or if already there, to
 the end of the next word.
@@ -1843,9 +1839,8 @@ _
 T{
 b, B
 T}@T{
-\f[CR]cmd.buffer.cursorWordBegin\f[R],
-\f[CR]cmd.buffer.cursorViWordBegin\f[R],
-\f[CR]cmd.buffer.cursorBigWordBegin\f[R]
+\f[CR]cursorWordBegin\f[R], \f[CR]cursorViWordBegin\f[R],
+\f[CR]cursorBigWordBegin\f[R]
 T}@T{
 Move the cursor to the beginning of the current word, or if already
 there, to the end of the previous word.
@@ -1854,8 +1849,7 @@ _
 T{
 [, ]
 T}@T{
-\f[CR]cmd.buffer.cursorPrevLink\f[R],
-\f[CR]cmd.buffer.cursorNextLink\f[R]
+\f[CR]cursorPrevLink\f[R], \f[CR]cursorNextLink\f[R]
 T}@T{
 Move the cursor to the end/beginning of the previous/next clickable
 element (e.g.\ link, input field, etc).
@@ -1864,8 +1858,7 @@ _
 T{
 {, }
 T}@T{
-\f[CR]cmd.buffer.cursorPrevParagraph\f[R],
-\f[CR]cmd.buffer.cursorNextParagraph\f[R]
+\f[CR]cursorPrevParagraph\f[R], \f[CR]cursorNextParagraph\f[R]
 T}@T{
 Move the cursor to the end/beginning of the nth previous/next paragraph.
 T}
@@ -1873,7 +1866,7 @@ _
 T{
 None
 T}@T{
-\f[CR]cmd.buffer.cursorRevNthLink\f[R]
+\f[CR]cursorRevNthLink\f[R]
 T}@T{
 Move the cursor to the nth link of the document, counting backwards from
 the document\(cqs last line.
@@ -1882,7 +1875,7 @@ _
 T{
 None
 T}@T{
-\f[CR]cmd.buffer.cursorNthLink\f[R]
+\f[CR]cursorNthLink\f[R]
 T}@T{
 Move the cursor to the nth link of the document.
 T}
@@ -1890,8 +1883,8 @@ _
 T{
 C\-b, C\-f, zH, zL
 T}@T{
-\f[CR]cmd.buffer.pageUp\f[R], \f[CR]cmd.buffer.pageDown\f[R],
-\f[CR]cmd.buffer.pageLeft\f[R], \f[CR]cmd.buffer.pageRight\f[R]
+\f[CR]pageUp\f[R], \f[CR]pageDown\f[R], \f[CR]pageLeft\f[R],
+\f[CR]pageRight\f[R]
 T}@T{
 Scroll up/down/left/right by n pages, or if n is unspecified, by one
 page.
@@ -1900,8 +1893,8 @@ _
 T{
 C\-u, C\-d
 T}@T{
-\f[CR]cmd.buffer.halfPageUp\f[R], \f[CR]cmd.buffer.halfPageDown\f[R],
-\f[CR]cmd.buffer.halfPageLeft\f[R], \f[CR]cmd.buffer.halfPageUp\f[R]
+\f[CR]halfPageUp\f[R], \f[CR]halfPageDown\f[R], \f[CR]halfPageLeft\f[R],
+\f[CR]halfPageUp\f[R]
 T}@T{
 Scroll up/down/left/right by n half pages, or if n is unspecified, by
 one page.
@@ -1910,8 +1903,8 @@ _
 T{
 K/C\-y, J/C\-e, zh, zl
 T}@T{
-\f[CR]cmd.buffer.scrollUp\f[R], \f[CR]cmd.buffer.scrollDown\f[R],
-\f[CR]cmd.buffer.scrollLeft\f[R], \f[CR]cmd.buffer.scrollRight\f[R]
+\f[CR]scrollUp\f[R], \f[CR]scrollDown\f[R], \f[CR]scrollLeft\f[R],
+\f[CR]scrollRight\f[R]
 T}@T{
 Scroll up/down/left/right by n lines, or if n is unspecified, by one
 line.
@@ -1920,7 +1913,7 @@ _
 T{
 Enter/Return
 T}@T{
-\f[CR]cmd.buffer.click\f[R]
+\f[CR]click\f[R]
 T}@T{
 Click the HTML element currently under the cursor.
 T}
@@ -1928,7 +1921,7 @@ _
 T{
 I
 T}@T{
-\f[CR]cmd.buffer.viewImage\f[R]
+\f[CR]viewImage\f[R]
 T}@T{
 View the image currently under the cursor in an external viewer.
 T}
@@ -1936,7 +1929,7 @@ _
 T{
 R
 T}@T{
-\f[CR]cmd.buffer.reshape\f[R]
+\f[CR]reshape\f[R]
 T}@T{
 Reshape the current buffer (=render the current page anew.)
 Useful if the layout is not updating even though it should have.
@@ -1945,7 +1938,7 @@ _
 T{
 r
 T}@T{
-\f[CR]cmd.buffer.redraw\f[R]
+\f[CR]redraw\f[R]
 T}@T{
 Redraw screen contents.
 Useful if something messed up the display.
@@ -1954,45 +1947,26 @@ _
 T{
 None (see gotoLineOrStart/End instead)
 T}@T{
-\f[CR]cmd.buffer.cursorFirstLine\f[R],
-\f[CR]cmd.buffer.cursorLastLine\f[R]
+\f[CR]cursorFirstLine\f[R], \f[CR]cursorLastLine\f[R]
 T}@T{
 Move to the beginning/end in the buffer.
 T}
 _
 T{
-H
+H, M, L
 T}@T{
-\f[CR]cmd.buffer.cursorTop\f[R]
+\f[CR]cursorTop\f[R], \f[CR]cursorMiddle\f[R], \f[CR]cursorBottom\f[R]
 T}@T{
-Move to the first line on the screen.
-(Equivalent to H in vi.)
-T}
-_
-T{
-M
-T}@T{
-\f[CR]cmd.buffer.cursorMiddle\f[R]
-T}@T{
-Move to the line in the middle of the screen.
-(Equivalent to M in vi.)
-T}
-_
-T{
-L
-T}@T{
-\f[CR]cmd.buffer.cursorBottom\f[R]
-T}@T{
-Move to the last line on the screen.
-(Equivalent to L in vi.)
+Move to the first line/line in the middle of/last line on the screen.
+(Equivalent to \f[CR]H\f[R], \f[CR]M\f[R], \f[CR]L\f[R] in vi.)
 T}
 _
 T{
 zt, z Return, zz, z., zb, z\-
 T}@T{
-\f[CR]cmd.buffer.raisePage\f[R], \f[CR]cmd.buffer.raisePageBegin\f[R],
-\f[CR]cmd.buffer.centerLine\f[R], \f[CR]cmd.buffer.centerLineBegin\f[R],
-\f[CR]cmd.buffer.lowerPage\f[R], \f[CR]cmd.buffer.lowerPageBegin\f[R]
+\f[CR]raisePage\f[R], \f[CR]raisePageBegin\f[R], \f[CR]centerLine\f[R],
+\f[CR]centerLineBegin\f[R], \f[CR]lowerPage\f[R],
+\f[CR]lowerPageBegin\f[R]
 T}@T{
 .PP
 If n is specified, move cursor to line n.\ Then,
@@ -2015,29 +1989,28 @@ _
 T{
 z+
 T}@T{
-\f[CR]cmd.buffer.nextPageBegin\f[R]
+\f[CR]nextPageBegin\f[R]
 T}@T{
 If n is specified, move to the screen before the nth line and raise the
 page.
-Otherwise, go to the previous screen\(cqs last line and raise the page.
+Otherwise, go to the next screen\(cqs first line and raise the page.
 T}
 _
 T{
 z\(ha
 T}@T{
-\f[CR]cmd.buffer.previousPageBegin\f[R]
+\f[CR]previousPageBegin\f[R]
 T}@T{
-If n is specified, move to the screen before the nth line and raise the
+If n is specified, move to the screen before the nth line and lower the
 page.
-Otherwise, go to the previous screen\(cqs last line and raise the page.
+Otherwise, go to the previous screen\(cqs last line and lower the page.
 T}
 _
 T{
 g0, gc, g$
 T}@T{
-\f[CR]cmd.buffer.cursorLeftEdge\f[R],
-\f[CR]cmd.buffer.cursorMiddleColumn\f[R],
-\f[CR]cmd.buffer.cursorRightEdge\f[R]
+\f[CR]cursorLeftEdge\f[R], \f[CR]cursorMiddleColumn\f[R],
+\f[CR]cursorRightEdge\f[R]
 T}@T{
 Move to the first/middle/last column on the screen.
 T}
@@ -2045,7 +2018,7 @@ _
 T{
 None
 T}@T{
-\f[CR]cmd.buffer.centerColumn\f[R]
+\f[CR]centerColumn\f[R]
 T}@T{
 Center screen around the current column.
 (w3m \f[CR]Z\f[R].)
@@ -2054,8 +2027,7 @@ _
 T{
 gg, G
 T}@T{
-\f[CR]cmd.buffer.gotoLineOrStart\f[R],
-\f[CR]cmd.buffer.gotoLineOrEnd\f[R]
+\f[CR]gotoLineOrStart\f[R], \f[CR]gotoLineOrEnd\f[R]
 T}@T{
 If n is specified, jump to line n.\ Otherwise, jump to the start/end of
 the page.
@@ -2064,8 +2036,7 @@ _
 T{
 |, None
 T}@T{
-\f[CR]cmd.buffer.gotoColumnOrBegin\f[R],
-\f[CR]cmd.buffer.gotoColumnOrEnd\f[R]
+\f[CR]gotoColumnOrBegin\f[R], \f[CR]gotoColumnOrEnd\f[R]
 T}@T{
 If n is specified, jump to column n of the current line.
 Otherwise, jump to the first/last column.
@@ -2074,7 +2045,7 @@ _
 T{
 m
 T}@T{
-\f[CR]cmd.buffer.mark\f[R]
+\f[CR]mark\f[R]
 T}@T{
 Wait for a character \f[CR]x\f[R] and then set a mark with the ID
 \f[CR]x\f[R].
@@ -2083,7 +2054,7 @@ _
 T{
 \(ga, \(cq
 T}@T{
-\f[CR]cmd.buffer.gotoMark\f[R], \f[CR]cmd.buffer.gotoMarkY\f[R]
+\f[CR]gotoMark\f[R], \f[CR]gotoMarkY\f[R]
 T}@T{
 Wait for a character \f[CR]x\f[R] and then jump to the mark with the ID
 \f[CR]x\f[R] (if it exists on the page).
@@ -2095,7 +2066,7 @@ _
 T{
 :
 T}@T{
-\f[CR]cmd.buffer.markURL\f[R]
+\f[CR]markURL\f[R]
 T}@T{
 Convert URL\-like strings to anchors on the current page.
 T}
@@ -2103,7 +2074,7 @@ _
 T{
 s Return
 T}@T{
-\f[CR]cmd.buffer.saveLink\f[R]
+\f[CR]saveLink\f[R]
 T}@T{
 Save resource from the URL pointed to by the cursor to the disk.
 T}
@@ -2111,7 +2082,7 @@ _
 T{
 sS
 T}@T{
-\f[CR]cmd.buffer.saveSource\f[R]
+\f[CR]saveSource\f[R]
 T}@T{
 Save the source of the current buffer to the disk.
 T}
@@ -2119,7 +2090,7 @@ _
 T{
 sI
 T}@T{
-\f[CR]cmd.buffer.saveImage\f[R]
+\f[CR]saveImage\f[R]
 T}@T{
 Save the image currently under the cursor.
 T}
@@ -2127,7 +2098,7 @@ _
 T{
 M\-i
 T}@T{
-\f[CR]cmd.buffer.toggleImages\f[R]
+\f[CR]toggleImages\f[R]
 T}@T{
 Toggle display of images in the current buffer.
 T}
@@ -2135,7 +2106,7 @@ _
 T{
 M\-j
 T}@T{
-\f[CR]cmd.buffer.toggleScripting\f[R]
+\f[CR]toggleScripting\f[R]
 T}@T{
 Reload the current buffer with scripting enabled/disabled.
 T}
@@ -2143,7 +2114,7 @@ _
 T{
 M\-k
 T}@T{
-\f[CR]cmd.buffer.toggleCookie\f[R]
+\f[CR]toggleCookie\f[R]
 T}@T{
 Reload the current buffer with cookies enabled/disabled.
 T}
@@ -2164,7 +2135,7 @@ _
 T{
 Return
 T}@T{
-\f[CR]cmd.line.submit\f[R]
+\f[CR]line.submit\f[R]
 T}@T{
 Submit the line.
 T}
@@ -2172,7 +2143,7 @@ _
 T{
 C\-c
 T}@T{
-\f[CR]cmd.line.cancel\f[R]
+\f[CR]line.cancel\f[R]
 T}@T{
 Cancel the current operation.
 T}
@@ -2180,7 +2151,7 @@ _
 T{
 C\-h, C\-d
 T}@T{
-\f[CR]cmd.line.backspace\f[R], \f[CR]cmd.line.delete\f[R]
+\f[CR]line.backspace\f[R], \f[CR]line.delete\f[R]
 T}@T{
 Delete character before (backspace)/after (delete) the cursor.
 T}
@@ -2188,7 +2159,7 @@ _
 T{
 C\-u/C\-xC\-?, C\-k
 T}@T{
-\f[CR]cmd.line.clear\f[R], \f[CR]cmd.line.kill\f[R]
+\f[CR]line.clear\f[R], \f[CR]line.kill\f[R]
 T}@T{
 Delete text before (clear)/after (kill) the cursor.
 T}
@@ -2196,7 +2167,7 @@ _
 T{
 C\-w, M\-d
 T}@T{
-\f[CR]cmd.line.clearWord\f[R], \f[CR]cmd.line.killWord\f[R]
+\f[CR]line.clearWord\f[R], \f[CR]line.killWord\f[R]
 T}@T{
 Delete word before (clear)/after (kill) the cursor.
 T}
@@ -2204,7 +2175,7 @@ _
 T{
 C\-b, C\-f
 T}@T{
-\f[CR]cmd.line.backward\f[R], \f[CR]cmd.line.forward\f[R]
+\f[CR]line.backward\f[R], \f[CR]line.forward\f[R]
 T}@T{
 Move cursor backward/forward by one character.
 T}
@@ -2212,7 +2183,7 @@ _
 T{
 M\-b, M\-f
 T}@T{
-\f[CR]cmd.line.prevWord\f[R], \f[CR]cmd.line.nextWord\f[R]
+\f[CR]line.prevWord\f[R], \f[CR]line.nextWord\f[R]
 T}@T{
 Move cursor to the previous/next word by one character
 T}
@@ -2220,7 +2191,7 @@ _
 T{
 C\-a/Home, C\-e/End
 T}@T{
-\f[CR]cmd.line.begin\f[R], \f[CR]cmd.line.end\f[R]
+\f[CR]line.begin\f[R], \f[CR]line.end\f[R]
 T}@T{
 Move cursor to the beginning/end of the line.
 T}
@@ -2228,7 +2199,7 @@ _
 T{
 C\-v
 T}@T{
-\f[CR]cmd.line.escape\f[R]
+\f[CR]line.escape\f[R]
 T}@T{
 Ignore keybindings for next character.
 T}
@@ -2236,7 +2207,7 @@ _
 T{
 C\-p, C\-n
 T}@T{
-\f[CR]cmd.line.prevHist\f[R], \f[CR]cmd.line.nextHist\f[R]
+\f[CR]line.prevHist\f[R], \f[CR]line.nextHist\f[R]
 T}@T{
 Jump to the previous/next history entry
 T}
@@ -2251,11 +2222,11 @@ characters, or any single non\-alphanumeric character.
 .IP
 .EX
 # Control+A moves the cursor to the beginning of the line.
-\(aqC\-a\(aq = \(aqcmd.line.begin\(aq
+\(aqC\-a\(aq = \(aqline.begin\(aq
 
 # Escape+D deletes everything after the cursor until it reaches a word\-breaking
 # character.
-\(aqM\-d\(aq = \(aqcmd.line.killWord\(aq
+\(aqM\-d\(aq = \(aqline.killWord\(aq
 .EE
 .SS Appendix
 .SS Regex handling

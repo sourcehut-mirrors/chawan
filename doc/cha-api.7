@@ -16,7 +16,7 @@ gpn = \(aqn => pager.alert(n)\(aq # e.g. 2gpn prints \(ga2\(aq to the status lin
 .PP
 Note however, that JavaScript functions must be called with an
 appropriate \f[CR]this\f[R] value.
-Unfortunately, this also means that the following does not work:
+So e.g.\ the following does not work:
 .IP
 .EX
 gpn = \(aqpager.alert\(aq # broken!!!
@@ -24,9 +24,9 @@ gpn = \(aqpager.alert\(aq # broken!!!
 .PP
 To work around this limitation, actions have to wrap the target function
 in a closure, as above.
-However, this has very poor reusability; for more complex actions, you
-would have to copy and paste the entire function every time you re\-bind
-it or call it from a different function.
+However, this has poor reusability; for more complex actions, you would
+have to copy and paste the entire function every time you re\-bind it or
+call it from a different function.
 .PP
 To fix this, it is possible to define a command in the \f[CR][cmd]\f[R]
 section:
@@ -38,13 +38,16 @@ showNumber = \(aqn => pager.alert(n)\(aq
 .PP
 \f[CR]my.namespace\f[R] can be anything you want; it is to avoid
 collisions when including multiple configs.
-Avoid setting it to \f[CR]pager\f[R] or \f[CR]line\f[R], because these
-are used by the default config.
+The only restriction is that the first component (in this case,
+\(lqmy\(rq) must not contain an upper\-case letter.
 .PP
 Now you can call \f[CR]cmd.my.namespace.showNumber()\f[R] from any other
-function, or just include it in an action:
+function, or include it in a keybinding (in that case, \f[CR]cmd.\f[R]
+is optional):
 .IP
 .EX
+\(aqgpn\(aq = \(aqmy.namespace.showNumber\(aq
+\f[I]# same as\f[R]
 \(aqgpn\(aq = \(aqcmd.my.namespace.showNumber\(aq
 .EE
 .SS Interfaces

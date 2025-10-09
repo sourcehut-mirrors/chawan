@@ -588,9 +588,9 @@ URL bar.
 <td>link-hint-chars</td>
 <td>string</td>
 <td>abcdefghijklmnoprstuvxyz</td>
-<td>A string of characters to use in `cmd.pager.toggleLinkHints`.
-Any Unicode codepoint is accepted, and they are ordered as specified
-in this option.</td>
+<td>A string of characters to use in `toggleLinkHints`.  Any Unicode
+codepoint is accepted, and they are ordered as specified in this
+option.</td>
 </tr>
 
 </table>
@@ -1220,11 +1220,11 @@ Examples:
 
 ```toml
 # show change URL when Control, Escape and j are pressed
-'C-M-j' = 'cmd.pager.load'
+'C-M-j' = 'load'
 
 # go to the first line of the page when g is pressed twice without a preceding
 # number, or to the line when a preceding number is given.
-'gg' = 'cmd.buffer.gotoLineOrStart'
+'gg' = 'gotoLineOrStart'
 
 # JS functions and expressions are accepted too. Following replaces the
 # default search engine with DuckDuckGo Lite.
@@ -1246,13 +1246,13 @@ Examples:
 
 <tr>
 <td><kbd>q</kbd></td>
-<td>`cmd.pager.quit`</td>
+<td>`quit`</td>
 <td>Exit the browser.</td>
 </tr>
 
 <tr>
 <td><kbd>C-z</kbd></td>
-<td>`cmd.pager.suspend`</td>
+<td>`suspend`</td>
 <td>Temporarily suspend the browser
 <p>
 Note: this also suspends e.g. buffer processes or CGI scripts. So if you are
@@ -1261,13 +1261,13 @@ downloading something, that will be delayed until you restart the process.</td>
 
 <tr>
 <td><kbd>C-l</kbd></td>
-<td>`cmd.pager.load`</td>
+<td>`load`</td>
 <td>Open the current address in the URL bar.</td>
 </tr>
 
 <tr>
 <td><kbd>M-l</kbd></td>
-<td>`cmd.pager.loadCursor`</td>
+<td>`loadCursor`</td>
 <td>Open the address of the link or image being hovered in the URL
 bar.
 <p>
@@ -1276,69 +1276,68 @@ If no link/image is under the cursor, an empty URL bar is opened.</td>
 
 <tr>
 <td>None</td>
-<td>`cmd.pager.loadEmpty`</td>
+<td>`loadEmpty`</td>
 <td>Open an empty address bar.</td>
 </tr>
 
 <tr>
 <td><kbd>C-k</kbd></td>
-<td>`cmd.pager.webSearch`</td>
+<td>`webSearch`</td>
 <td>Open the URL bar with an arbitrary search engine. At the moment, this is
 Brave Search, but this may change in the future.</td>
 </tr>
 
 <tr>
 <td><kbd>M-u</kbd></td>
-<td>`cmd.pager.dupeBuffer`</td>
+<td>`dupeBuffer`</td>
 <td>Duplicate the current buffer by loading its source to a new buffer.</td>
 </tr>
 
 <tr>
 <td><kbd>U</kbd></td>
-<td>`cmd.pager.reloadBuffer`</td>
+<td>`reloadBuffer`</td>
 <td>Open a new buffer with the current buffer's URL, replacing the current
 buffer.</td>
 </tr>
 
 <tr>
 <td><kbd>C-g</kbd></td>
-<td>`cmd.pager.lineInfo`</td>
+<td>`lineInfo`</td>
 <td>Display information about the current line on the status line.</td>
 </tr>
 
 <tr>
 <td><kbd>&bsol;</kbd></td>
-<td>`cmd.pager.toggleSource`</td>
+<td>`toggleSource`</td>
 <td>If viewing an HTML buffer, open a new buffer with its source. Otherwise,
 open the current buffer's contents as HTML.</td>
 </tr>
 
 <tr>
 <td><kbd>D</kbd></td>
-<td>`cmd.pager.discardBuffer`</td>
+<td>`discardBuffer`</td>
 <td>Discard the current buffer, and move back to the previous/next buffer
 depending on what the previously viewed buffer was.</td>
 </tr>
 
 <tr>
 <td><kbd>d,</kbd>, <kbd>d.</kbd></td>
-<td>`cmd.pager.discardBufferPrev`, `cmd.pager.discardBufferNext`</td>
+<td>`discardBufferPrev`, `discardBufferNext`</td>
 <td>Discard the current buffer, and move back to the previous/next buffer, or
 open the link under the cursor.</td>
 </tr>
 
 <tr>
 <td><kbd>M-d</kbd></td>
-<td>`cmd.pager.discardTree`</td>
+<td>`discardTree`</td>
 <td>Discard all child buffers of the current buffer.</td>
 </tr>
 
 <tr>
 <td><kbd>.</kbd>, <kbd>,</kbd>, <kbd>M-,</kbd>, <kbd>M-.</kbd>,
 <kbd>M-/</kbd></td>
-<td>`cmd.pager.nextBuffer`, `cmd.pager.prevBuffer`,
-`cmd.pager.prevSiblingBuffer`, `cmd.pager.nextSiblingBufer`,
-`cmd.pager.parentBuffer`</td>
+<td>`nextBuffer`, `prevBuffer`, `prevSiblingBuffer`, `nextSiblingBuffer`,
+`parentBuffer`</td>
 <td>Traverse the buffer list.
 <p>
 `nextBuffer` and `prevBuffer` switch to the next or previous buffer
@@ -1352,39 +1351,39 @@ respectively.
 
 <tr>
 <td><kbd>M-c</kbd></td>
-<td>`cmd.pager.enterCommand`</td>
+<td>`enterCommand`</td>
 <td>Directly enter a JavaScript command. Note that this interacts with
 the pager, not the website being displayed.</td>
 </tr>
 
 <tr>
 <td>None</td>
-<td>`cmd.pager.searchForward`, `cmd.pager.searchBackward`</td>
+<td>`searchForward`, `searchBackward`</td>
 <td>Search for a string in the current buffer, forwards or backwards.</td>
 </tr>
 
 <tr>
 <td><kbd>/</kbd>, <kbd>?</kbd></td>
-<td>`cmd.pager.isearchForward`, `cmd.pager.searchBackward`</td>
+<td>`isearchForward`, `searchBackward`</td>
 <td>Incremental-search for a string, highlighting the first result, forwards or
 backwards.</td>
 </tr>
 
 <tr>
 <td><kbd>n</kbd>, <kbd>N</kbd></td>
-<td>`cmd.pager.searchNext`, `cmd.pager.searchPrev`</td>
+<td>`searchNext`, `searchPrev`</td>
 <td>Jump to the nth (or if unspecified, first) next/previous search result.</td>
 </tr>
 
 <tr>
 <td><kbd>c</kbd></td>
-<td>`cmd.pager.peek`</td>
+<td>`peek`</td>
 <td>Display a message of the current buffer's URL on the status line.</td>
 </tr>
 
 <tr>
 <td><kbd>u</kbd></td>
-<td>`cmd.pager.peekCursor`</td>
+<td>`peekCursor`</td>
 <td>Display a message of the URL or title under the cursor on the status line.
 Multiple calls allow cycling through the two. (i.e. by default, press u once ->
 title, press again -> URL)</td>
@@ -1392,50 +1391,50 @@ title, press again -> URL)</td>
 
 <tr>
 <td><kbd>su</kbd></td>
-<td>`cmd.pager.showFullAlert`</td>
+<td>`showFullAlert`</td>
 <td>Show the last alert inside the line editor. You can also view previous
 ones using C-p or C-n.</td>
 </tr>
 
 <tr>
 <td><kbd>M-y</kbd></td>
-<td>`cmd.pager.copyURL`</td>
+<td>`copyURL`</td>
 <td>Copy the current buffer's URL to the system clipboard.</td>
 </tr>
 
 <tr>
 <td><kbd>yu</kbd></td>
-<td>`cmd.pager.copyCursorLink`</td>
+<td>`copyCursorLink`</td>
 <td>Copy the link under the cursor to the system clipboard.</td>
 </tr>
 
 <tr>
 <td><kbd>yI</kbd></td>
-<td>`cmd.pager.copyCursorImage`</td>
+<td>`copyCursorImage`</td>
 <td>Copy the URL of the image under the cursor to the system clipboard.</td>
 </tr>
 
 <tr>
 <td><kbd>M-p</kbd></td>
-<td>`cmd.pager.gotoClipboardURL`</td>
+<td>`gotoClipboardURL`</td>
 <td>Go to the URL currently on the clipboard.</td>
 </tr>
 
 <tr>
 <td><kbd>M-b</kbd></td>
-<td>`cmd.pager.openBookmarks`</td>
+<td>`openBookmarks`</td>
 <td>Open the bookmark file.</td>
 </tr>
 
 <tr>
 <td><kbd>M-a</kbd></td>
-<td>`cmd.pager.addBookmark`</td>
+<td>`addBookmark`</td>
 <td>Add the current page to your bookmarks.</td>
 </tr>
 
 <tr>
 <td><kbd>f</kbd></td>
-<td>`cmd.pager.toggleLinkHints`</td>
+<td>`toggleLinkHints`</td>
 <td>Show hints before each link (or button).  After typing a hint, the
 cursor is placed on the respective link.
 <p>
@@ -1462,105 +1461,99 @@ unspecified.
 
 <tr>
 <td><kbd>j</kbd>, <kbd>k</kbd></td>
-<td>`cmd.buffer.cursorUp`, `cmd.buffer.cursorDown`</td>
+<td>`cursorUp`, `cursorDown`</td>
 <td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
 1.</td>
 </tr>
 
 <tr>
 <td><kbd>h</kbd>, <kbd>l</kbd></td>
-<td>`cmd.buffer.cursorLeft`, `cmd.buffer.cursorRight`</td>
+<td>`cursorLeft`, `cursorRight`</td>
 <td>Move the cursor to the left/right by n cells, or if n is unspecified, by
 1.</td>
 </tr>
 
 <tr>
 <td><kbd>0</kbd>/<kbd>Home</kbd></td>
-<td>`cmd.buffer.cursorLineBegin`</td>
+<td>`cursorLineBegin`</td>
 <td>Move the cursor to the first cell of the line.</td>
 </tr>
 
 <tr>
 <td><kbd>^</kbd></td>
-<td>`cmd.buffer.cursorLineTextStart`</td>
+<td>`cursorLineTextStart`</td>
 <td>Move the cursor to the first non-blank character of the line.</td>
 </tr>
 
 <tr>
 <td><kbd>&dollar;</kbd>/<kbd>End</kbd></td>
-<td>`cmd.buffer.cursorLineEnd`</td>
+<td>`cursorLineEnd`</td>
 <td>Move the cursor to the last cell of the line.</td>
 </tr>
 
 <tr>
 <td><kbd>w</kbd>, <kbd>W</kbd></td>
-<td>`cmd.buffer.cursorNextWord`, `cmd.buffer.cursorNextViWord`,
-`cmd.buffer.cursorNextBigWord`</td>
+<td>`cursorNextWord`, `cursorNextViWord`, `cursorNextBigWord`</td>
 <td>Move the cursor to the beginning of the next [word](#word-types).</td>
 </tr>
 
 <tr>
 <td>None</td>
-<td>`cmd.buffer.cursorPrevWord`, `cmd.buffer.cursorPrevViWord`,
-`cmd.buffer.cursorPrevBigWord`</td>
+<td>`cursorPrevWord`, `cursorPrevViWord`, `cursorPrevBigWord`</td>
 <td>Move the cursor to the end of the previous [word](#word-types).</td>
 </tr>
 
 <tr>
 <td><kbd>e</kbd>, <kbd>E</kbd></td>
-<td>`cmd.buffer.cursorWordEnd`, `cmd.buffer.cursorViWordEnd`,
-`cmd.buffer.cursorBigWordEnd`</td>
+<td>`cursorWordEnd`, `cursorViWordEnd`, `cursorBigWordEnd`</td>
 <td>Move the cursor to the end of the current [word](#word-types), or if already
 there, to the end of the next word.</td>
 </tr>
 
 <tr>
 <td><kbd>b</kbd>, <kbd>B</kbd></td>
-<td>`cmd.buffer.cursorWordBegin`, `cmd.buffer.cursorViWordBegin`,
-`cmd.buffer.cursorBigWordBegin`</td>
+<td>`cursorWordBegin`, `cursorViWordBegin`, `cursorBigWordBegin`</td>
 <td>Move the cursor to the beginning of the current [word](#word-types), or if
 already there, to the end of the previous word.</td>
 </tr>
 
 <tr>
 <td><kbd>[</kbd>, <kbd>]</kbd></td>
-<td>`cmd.buffer.cursorPrevLink`, `cmd.buffer.cursorNextLink`</td>
+<td>`cursorPrevLink`, `cursorNextLink`</td>
 <td>Move the cursor to the end/beginning of the previous/next clickable
 element (e.g. link, input field, etc).</td>
 </tr>
 
 <tr>
 <td><kbd>{</kbd>, <kbd>}</kbd></td>
-<td>`cmd.buffer.cursorPrevParagraph`, `cmd.buffer.cursorNextParagraph`</td>
+<td>`cursorPrevParagraph`, `cursorNextParagraph`</td>
 <td>Move the cursor to the end/beginning of the nth previous/next
 paragraph.</td>
 </tr>
 
 <tr>
 <td>None</td>
-<td>`cmd.buffer.cursorRevNthLink`</td>
+<td>`cursorRevNthLink`</td>
 <td>Move the cursor to the nth link of the document, counting backwards
 from the document's last line.</td>
 </tr>
 
 <tr>
 <td>None</td>
-<td>`cmd.buffer.cursorNthLink`</td>
+<td>`cursorNthLink`</td>
 <td>Move the cursor to the nth link of the document.</td>
 </tr>
 
 <tr>
 <td><kbd>C-b</kbd>, <kbd>C-f</kbd>, <kbd>zH</kbd>, <kbd>zL</kbd></td>
-<td>`cmd.buffer.pageUp`, `cmd.buffer.pageDown`, `cmd.buffer.pageLeft`,
-`cmd.buffer.pageRight`</td>
+<td>`pageUp`, `pageDown`, `pageLeft`, `pageRight`</td>
 <td>Scroll up/down/left/right by n pages, or if n is unspecified, by one
 page.</td>
 </tr>
 
 <tr>
 <td><kbd>C-u</kbd>, <kbd>C-d</kbd></td>
-<td>`cmd.buffer.halfPageUp`, `cmd.buffer.halfPageDown`, `cmd.buffer.halfPageLeft`,
-`cmd.buffer.halfPageUp`</td>
+<td>`halfPageUp`, `halfPageDown`, `halfPageLeft`, `halfPageUp`</td>
 <td>Scroll up/down/left/right by n half pages, or if n is unspecified, by one
 page.</td>
 </tr>
@@ -1568,69 +1561,55 @@ page.</td>
 <tr>
 <td><kbd>K</kbd>/<kbd>C-y</kbd>, <kbd>J</kbd>/<kbd>C-e</kbd>,
 <kbd>zh</kbd>, <kbd>zl</kbd></td>
-<td>`cmd.buffer.scrollUp`, `cmd.buffer.scrollDown`, `cmd.buffer.scrollLeft`,
-`cmd.buffer.scrollRight`</td>
+<td>`scrollUp`, `scrollDown`, `scrollLeft`, `scrollRight`</td>
 <td>Scroll up/down/left/right by n lines, or if n is unspecified, by one
 line.</td>
 </tr>
 
 <tr>
 <td><kbd>Enter</kbd>/<kbd>Return</kbd></td>
-<td>`cmd.buffer.click`</td>
+<td>`click`</td>
 <td>Click the HTML element currently under the cursor.</td>
 </tr>
 
 <tr>
 <td><kbd>I</kbd></td>
-<td>`cmd.buffer.viewImage`</td>
+<td>`viewImage`</td>
 <td>View the image currently under the cursor in an external
 viewer.</td>
 </tr>
 
 <tr>
 <td><kbd>R</kbd></td>
-<td>`cmd.buffer.reshape`</td>
+<td>`reshape`</td>
 <td>Reshape the current buffer (=render the current page anew.) Useful
 if the layout is not updating even though it should have.</td>
 </tr>
 
 <tr>
 <td><kbd>r</kbd></td>
-<td>`cmd.buffer.redraw`</td>
+<td>`redraw`</td>
 <td>Redraw screen contents. Useful if something messed up the display.</td>
 </tr>
 
 <tr>
 <td>None (see gotoLineOrStart/End instead)</td>
-<td>`cmd.buffer.cursorFirstLine`, `cmd.buffer.cursorLastLine`</td>
+<td>`cursorFirstLine`, `cursorLastLine`</td>
 <td>Move to the beginning/end in the buffer.</td>
 </tr>
 
 <tr>
-<td><kbd>H</kbd></td>
-<td>`cmd.buffer.cursorTop`</td>
-<td>Move to the first line on the screen. (Equivalent to H in vi.)</td>
+<td><kbd>H</kbd>, <kbd>M</kbd>, <kbd>L</kbd></td>
+<td>`cursorTop`, `cursorMiddle`, `cursorBottom`</td>
+<td>Move to the first line/line in the middle of/last line on the screen.
+(Equivalent to `H`, `M`, `L` in vi.)</td>
 </tr>
 
 <tr>
-<td><kbd>M</kbd></td>
-<td>`cmd.buffer.cursorMiddle`</td>
-<td>Move to the line in the middle of the screen. (Equivalent to M in vi.)</td>
-</tr>
-
-<tr>
-<td><kbd>L</kbd></td>
-<td>`cmd.buffer.cursorBottom`</td>
-<td>Move to the last line on the screen. (Equivalent to L in vi.)</td>
-</tr>
-
-<tr>
-<td><kbd>zt</kbd>, <kbd>z Return</kbd>,
-<kbd>zz</kbd>, <kbd>z.</kbd>,
+<td><kbd>zt</kbd>, <kbd>z Return</kbd>, <kbd>zz</kbd>, <kbd>z.</kbd>,
 <kbd>zb</kbd>, <kbd>z-</kbd></td>
-<td>`cmd.buffer.raisePage`, `cmd.buffer.raisePageBegin`,
-`cmd.buffer.centerLine`, `cmd.buffer.centerLineBegin`,
-`cmd.buffer.lowerPage`, `cmd.buffer.lowerPageBegin`</td>
+<td>`raisePage`, `raisePageBegin`, `centerLine`, `centerLineBegin`,
+`lowerPage`, `lowerPageBegin`</td>
 <td>If n is specified, move cursor to line n. Then,
 
 * `raisePage` scrolls down so that the cursor is on the top line of the screen.
@@ -1647,54 +1626,55 @@ character, as the variants originating from vi do.
 
 <tr>
 <td><kbd>z+</kbd></td>
-<td>`cmd.buffer.nextPageBegin`</td>
-<td>If n is specified, move to the screen before the nth line and raise the page.
-Otherwise, go to the previous screen's last line and raise the page.</td>
+<td>`nextPageBegin`</td>
+<td>If n is specified, move to the screen before the nth line and raise
+the page.  Otherwise, go to the next screen's first line and raise the
+page.</td>
 </tr>
 
 <tr>
 <td><kbd>z^</kbd></td>
-<td>`cmd.buffer.previousPageBegin`</td>
-<td>If n is specified, move to the screen before the nth line and raise the
-page.  Otherwise, go to the previous screen's last line and raise the page.</td>
+<td>`previousPageBegin`</td>
+<td>If n is specified, move to the screen before the nth line and lower
+the page.  Otherwise, go to the previous screen's last line and lower the
+page.</td>
 </tr>
 
 <tr>
 <td><kbd>g0</kbd>, <kbd>gc</kbd>, <kbd>g$</kbd></td>
-<td>`cmd.buffer.cursorLeftEdge`, `cmd.buffer.cursorMiddleColumn`,
-`cmd.buffer.cursorRightEdge`</td>
+<td>`cursorLeftEdge`, `cursorMiddleColumn`, `cursorRightEdge`</td>
 <td>Move to the first/middle/last column on the screen.</td>
 </tr>
 
 <tr>
 <td>None</td>
-<td>`cmd.buffer.centerColumn`</td>
+<td>`centerColumn`</td>
 <td>Center screen around the current column. (w3m `Z`.)</td>
 </tr>
 
 <tr>
 <td><kbd>gg</kbd>, <kbd>G</kbd></td>
-<td>`cmd.buffer.gotoLineOrStart`, `cmd.buffer.gotoLineOrEnd`</td>
+<td>`gotoLineOrStart`, `gotoLineOrEnd`</td>
 <td>If n is specified, jump to line n. Otherwise, jump to the start/end of the
 page.</td>
 </tr>
 
 <tr>
 <td><kbd>&vert;</kbd>, None</td>
-<td>`cmd.buffer.gotoColumnOrBegin`, `cmd.buffer.gotoColumnOrEnd`</td>
+<td>`gotoColumnOrBegin`, `gotoColumnOrEnd`</td>
 <td>If n is specified, jump to column n of the current line.
 Otherwise, jump to the first/last column.</td>
 </tr>
 
 <tr>
 <td><kbd>m</kbd></td>
-<td>`cmd.buffer.mark`</td>
+<td>`mark`</td>
 <td>Wait for a character `x` and then set a mark with the ID `x`.</td>
 </tr>
 
 <tr>
 <td><kbd>&grave;</kbd>, <kbd>'</kbd></td>
-<td>`cmd.buffer.gotoMark`, `cmd.buffer.gotoMarkY`</td>
+<td>`gotoMark`, `gotoMarkY`</td>
 <td>Wait for a character `x` and then jump to the mark with the ID `x` (if it
 exists on the page).
 <p>
@@ -1704,43 +1684,43 @@ position.</td>
 
 <tr>
 <td><kbd>:</kbd></td>
-<td>`cmd.buffer.markURL`</td>
+<td>`markURL`</td>
 <td>Convert URL-like strings to anchors on the current page.</td>
 </tr>
 
 <tr>
 <td><kbd>s Return</kbd></td>
-<td>`cmd.buffer.saveLink`</td>
+<td>`saveLink`</td>
 <td>Save resource from the URL pointed to by the cursor to the disk.</td>
 </tr>
 
 <tr>
 <td><kbd>sS</kbd></td>
-<td>`cmd.buffer.saveSource`</td>
+<td>`saveSource`</td>
 <td>Save the source of the current buffer to the disk.</td>
 </tr>
 
 <tr>
 <td><kbd>sI</kbd></td>
-<td>`cmd.buffer.saveImage`</td>
+<td>`saveImage`</td>
 <td>Save the image currently under the cursor.</td>
 </tr>
 
 <tr>
 <td><kbd>M-i</kbd></td>
-<td>`cmd.buffer.toggleImages`</td>
+<td>`toggleImages`</td>
 <td>Toggle display of images in the current buffer.</td>
 </tr>
 
 <tr>
 <td><kbd>M-j</kbd></td>
-<td>`cmd.buffer.toggleScripting`</td>
+<td>`toggleScripting`</td>
 <td>Reload the current buffer with scripting enabled/disabled.</td>
 </tr>
 
 <tr>
 <td><kbd>M-k</kbd></td>
-<td>`cmd.buffer.toggleCookie`</td>
+<td>`toggleCookie`</td>
 <td>Reload the current buffer with cookies enabled/disabled.</td>
 </tr>
 
@@ -1760,61 +1740,61 @@ position.</td>
 
 <tr>
 <td><kbd>Return</kbd></td>
-<td>`cmd.line.submit`</td>
+<td>`line.submit`</td>
 <td>Submit the line.</td>
 </tr>
 
 <tr>
 <td><kbd>C-c</kbd></td>
-<td>`cmd.line.cancel`</td>
+<td>`line.cancel`</td>
 <td>Cancel the current operation.</td>
 </tr>
 
 <tr>
 <td><kbd>C-h</kbd>, <kbd>C-d</kbd></td>
-<td>`cmd.line.backspace`, `cmd.line.delete`</td>
+<td>`line.backspace`, `line.delete`</td>
 <td>Delete character before (backspace)/after (delete) the cursor.</td>
 </tr>
 
 <tr>
 <td><kbd>C-u</kbd>/<kbd>C-xC-?</kbd>, <kbd>C-k</kbd></td>
-<td>`cmd.line.clear`, `cmd.line.kill`</td>
+<td>`line.clear`, `line.kill`</td>
 <td>Delete text before (clear)/after (kill) the cursor.</td>
 </tr>
 
 <tr>
 <td><kbd>C-w</kbd>, <kbd>M-d</kbd></td>
-<td>`cmd.line.clearWord`, `cmd.line.killWord`</td>
+<td>`line.clearWord`, `line.killWord`</td>
 <td>Delete word before (clear)/after (kill) the cursor.</td>
 </tr>
 
 <tr>
 <td><kbd>C-b</kbd>, <kbd>C-f</kbd></td>
-<td>`cmd.line.backward`, `cmd.line.forward`</td>
+<td>`line.backward`, `line.forward`</td>
 <td>Move cursor backward/forward by one character.</td>
 </tr>
 
 <tr>
 <td><kbd>M-b</kbd>, <kbd>M-f</kbd></td>
-<td>`cmd.line.prevWord`, `cmd.line.nextWord`</td>
+<td>`line.prevWord`, `line.nextWord`</td>
 <td>Move cursor to the previous/next word by one character</td>
 </tr>
 
 <tr>
 <td><kbd>C-a</kbd>/<kbd>Home</kbd>, <kbd>C-e</kbd>/<kbd>End</kbd></td>
-<td>`cmd.line.begin`, `cmd.line.end`</td>
+<td>`line.begin`, `line.end`</td>
 <td>Move cursor to the beginning/end of the line.</td>
 </tr>
 
 <tr>
 <td><kbd>C-v</kbd></td>
-<td>`cmd.line.escape`</td>
+<td>`line.escape`</td>
 <td>Ignore keybindings for next character.</td>
 </tr>
 
 <tr>
 <td><kbd>C-p</kbd>, <kbd>C-n</kbd></td>
-<td>`cmd.line.prevHist`, `cmd.line.nextHist`</td>
+<td>`line.prevHist`, `line.nextHist`</td>
 <td>Jump to the previous/next history entry</td>
 </tr>
 
@@ -1828,11 +1808,11 @@ character. (This means that e.g. `https://` consists of four words: `https`,
 
 ```Examples:
 # Control+A moves the cursor to the beginning of the line.
-'C-a' = 'cmd.line.begin'
+'C-a' = 'line.begin'
 
 # Escape+D deletes everything after the cursor until it reaches a word-breaking
 # character.
-'M-d' = 'cmd.line.killWord'
+'M-d' = 'line.killWord'
 ```
 
 ## Appendix

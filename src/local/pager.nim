@@ -626,11 +626,9 @@ proc evalJS(pager: Pager; src, filename: string; module = false): JSValue =
     pager.term.respectSigint()
 
 proc evalActionJS(pager: Pager; action: string): JSValue =
-  if action.startsWith("cmd."):
-    let k = action.substr("cmd.".len)
-    let val = pager.config.cmd.map.getOrDefault(k, JS_UNINITIALIZED)
-    if not JS_IsUninitialized(val):
-      return JS_DupValue(pager.jsctx, val)
+  let val = pager.config.cmd.map.getOrDefault(action, JS_UNINITIALIZED)
+  if not JS_IsUninitialized(val):
+    return JS_DupValue(pager.jsctx, val)
   return pager.evalJS(action, "<command>")
 
 # Warning: this is not re-entrant.
@@ -684,47 +682,44 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
       if pager.mouse.inSelection:
         pager.mouse.inSelection = false
       elif input.pos.y == pager.attrs.height - 1 and pressed == input.pos:
-        discard pager.evalAction("cmd.pager.load", 0)
+        discard pager.evalAction("load", 0)
       elif input.pos.y >= pager.attrs.height - 2 and pressed.y == input.pos.y:
         let dcol = input.pos.x - pressed.x
         if dcol <= -2:
-          discard pager.evalAction("cmd.pager.nextBuffer", 0)
+          discard pager.evalAction("nextBuffer", 0)
         elif dcol >= 2:
-          discard pager.evalAction("cmd.pager.prevBuffer", 0)
+          discard pager.evalAction("prevBuffer", 0)
       elif pressed != (-1i32, -1i32):
         let dcol = input.pos.x - pressed.x
         let drow = input.pos.y - pressed.y
         if dcol > 0:
-          discard pager.evalAction("cmd.buffer.scrollLeft", dcol)
+          discard pager.evalAction("scrollLeft", dcol)
         elif dcol < 0:
-          discard pager.evalAction("cmd.buffer.scrollRight", -dcol)
+          discard pager.evalAction("scrollRight", -dcol)
         if drow > 0:
-          discard pager.evalAction("cmd.buffer.scrollUp", drow)
+          discard pager.evalAction("scrollUp", drow)
         elif drow < 0:
-          discard pager.evalAction("cmd.buffer.scrollDown", -drow)
+          discard pager.evalAction("scrollDown", -drow)
   of mibRight:
     if input.t == mitRelease and pressed == input.pos and
         input.pos.y == pager.attrs.height - 1:
-      discard pager.evalAction("cmd.pager.loadCursor", 0)
+      discard pager.evalAction("loadCursor", 0)
   of mibMiddle:
     if input.t == mitRelease and pressed == input.pos and
         input.pos.y == pager.attrs.height - 1:
-      discard pager.evalAction("cmd.pager.loadEmpty", 0)
+      discard pager.evalAction("loadEmpty", 0)
   of mibWheelUp:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.buffer.scrollUp",
-        pager.config.input.wheelScroll)
+      discard pager.evalAction("scrollUp", pager.config.input.wheelScroll)
   of mibWheelDown:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.buffer.scrollDown",
-        pager.config.input.wheelScroll)
+      discard pager.evalAction("scrollDown", pager.config.input.wheelScroll)
   of mibWheelLeft:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.buffer.scrollLeft",
-        pager.config.input.sideWheelScroll)
+      discard pager.evalAction("scrollLeft", pager.config.input.sideWheelScroll)
   of mibWheelRight:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.buffer.scrollRight",
+      discard pager.evalAction("scrollRight",
         pager.config.input.sideWheelScroll)
   else: discard
   case input.t
@@ -754,7 +749,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
         let prevy = container.cursory
         container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
         if prevx == container.cursorx and prevy == container.cursory:
-          discard pager.evalAction("cmd.buffer.click", 0)
+          discard pager.evalAction("click", 0)
       pager.mouse.moveType = mmtNone
     of mitPress:
       if pager.hasMouseSelection():
@@ -778,7 +773,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
   of mibMiddle:
     if input.t == mitRelease and input.pos == pressed and
         input.pos.y < pager.attrs.height - 1:
-      discard pager.evalAction("cmd.pager.discardBuffer", 0)
+      discard pager.evalAction("discardBuffer", 0)
   of mibRight:
     if input.t == mitPress and input.pos.y < pager.attrs.height - 1:
       # w3m uses release, but I like press better
@@ -788,10 +783,10 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
       pager.menu.unselect()
   of mibThumbInner:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.pager.prevBuffer", 0)
+      discard pager.evalAction("prevBuffer", 0)
   of mibThumbTip:
     if input.t == mitPress:
-      discard pager.evalAction("cmd.pager.nextBuffer", 0)
+      discard pager.evalAction("nextBuffer", 0)
   else: discard
 
 proc handleMouseInput(pager: Pager; input: MouseInput; select: Select) =
@@ -3261,37 +3256,37 @@ if (replace.alive) {
     JS_FreeValue(ctx, arg)
 
 const MenuMap = [
-  ("Select text              (v)", "cmd.buffer.selectOrCopy()"),
-  ("Previous buffer          (,)", "cmd.pager.prevBuffer(1)"),
-  ("Next buffer              (.)", "cmd.pager.nextBuffer(1)"),
-  ("Discard buffer           (D)", "cmd.pager.discardBuffer(1)"),
+  ("Select text              (v)", "selectOrCopy"),
+  ("Previous buffer          (,)", "prevBuffer"),
+  ("Next buffer              (.)", "nextBuffer"),
+  ("Discard buffer           (D)", "discardBuffer"),
   ("────────────────────────────", ""),
-  ("Copy page URL          (M-y)", "cmd.pager.copyURL(1)"),
-  ("Copy link               (yu)", "cmd.pager.copyCursorLink(1)"),
-  ("View image               (I)", "cmd.buffer.viewImage(1)"),
-  ("Copy image link         (yI)", "cmd.pager.copyCursorImage(1)"),
-  ("Reload                   (U)", "cmd.pager.reloadBuffer(1)"),
+  ("Copy page URL          (M-y)", "copyURL"),
+  ("Copy link               (yu)", "copyCursorLink"),
+  ("View image               (I)", "viewImage"),
+  ("Copy image link         (yI)", "copyCursorImage"),
+  ("Reload                   (U)", "reloadBuffer"),
   ("────────────────────────────", ""),
-  ("Save link             (sC-m)", "cmd.buffer.saveLink(1)"),
-  ("View source              (\\)", "cmd.pager.toggleSource(1)"),
-  ("Edit source             (sE)", "cmd.buffer.sourceEdit(1)"),
-  ("Save source             (sS)", "cmd.buffer.saveSource(1)"),
+  ("Save link             (sC-m)", "saveLink"),
+  ("View source              (\\)", "toggleSource"),
+  ("Edit source             (sE)", "sourceEdit"),
+  ("Save source             (sS)", "saveSource"),
   ("────────────────────────────", ""),
-  ("Linkify URLs             (:)", "cmd.buffer.markURL(1)"),
-  ("Toggle images          (M-i)", "cmd.buffer.toggleImages(1)"),
-  ("Toggle JS & reload     (M-j)", "cmd.buffer.toggleScripting(1)"),
-  ("Toggle cookie & reload (M-k)", "cmd.buffer.toggleCookie(1)"),
+  ("Linkify URLs             (:)", "markURL"),
+  ("Toggle images          (M-i)", "toggleImages"),
+  ("Toggle JS & reload     (M-j)", "toggleScripting"),
+  ("Toggle cookie & reload (M-k)", "toggleCookie"),
   ("────────────────────────────", ""),
-  ("Bookmark page          (M-a)", "cmd.pager.addBookmark(1)"),
-  ("Open bookmarks         (M-b)", "cmd.pager.openBookmarks(1)"),
-  ("Open history           (C-h)", "cmd.pager.openHistory(1)"),
+  ("Bookmark page          (M-a)", "addBookmark"),
+  ("Open bookmarks         (M-b)", "openBookmarks"),
+  ("Open history           (C-h)", "openHistory"),
 ]
 
 proc menuFinish(opaque: RootRef; select: Select) =
   let pager = Pager(opaque)
-  if select.selected != -1:
-    pager.scommand = MenuMap[select.selected][1]
   pager.menu = nil
+  if select.selected != -1:
+    discard pager.evalAction(MenuMap[select.selected][1], 0)
   if pager.container != nil:
     pager.container.queueDraw()
 
