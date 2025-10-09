@@ -216,7 +216,7 @@ type
 
   CollectionMatchFun = proc(node: Node): bool {.raises: [].}
 
-  Collection = ref object of RootObj
+  CollectionObj = object of RootObj
     childonly: bool
     invalid: bool
     inclusive: bool
@@ -226,6 +226,8 @@ type
     # if not nil, this is a live collection.  (uses a ptr instead of a ref
     # because ORC likes to set refs to nil before the destructor is called)
     document: ptr DocumentObj
+
+  Collection = ref CollectionObj
 
   NodeIterator = ref object of Collection
     ctx: JSContext
@@ -328,7 +330,7 @@ type
     cachedLinks: HTMLCollection
     parser*: RootRef
     internalCookie: string
-    liveCollections: seq[pointer]
+    liveCollections: seq[ptr CollectionObj]
     cachedAll: HTMLAllCollection
 
   XMLDocument = ref object of Document
@@ -2370,9 +2372,6 @@ proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: string): JSValue 
   ))
 
 # Collection
-template id(collection: Collection): pointer =
-  cast[pointer](collection)
-
 proc populateCollection(collection: Collection) =
   if collection.inclusive:
     if collection.match == nil or collection.match(collection.root):
@@ -2397,9 +2396,10 @@ proc refreshCollection(collection: Collection) =
 
 proc finalize0(collection: Collection) =
   if collection.document != nil:
-    let i = collection.document.liveCollections.find(collection.id)
+    let document = collection.document
+    let i = document.liveCollections.find(cast[ptr CollectionObj](collection))
     assert i != -1
-    collection.document.liveCollections.del(i)
+    document.liveCollections.del(i)
 
 proc finalize(collection: HTMLCollection) {.jsfin.} =
   collection.finalize0()
@@ -2440,7 +2440,7 @@ proc newCollection[T: Collection](root: Node; match: CollectionMatchFun;
     document: if islive: cast[ptr DocumentObj](document) else: nil
   )
   if islive:
-    document.liveCollections.add(collection.id)
+    document.liveCollections.add(cast[ptr CollectionObj](collection))
     collection.invalid =  true
   else:
     collection.populateCollection()
@@ -2575,9 +2575,10 @@ proc adopt(document: Document; node: Node) =
         if desc.nextSibling == nil:
           desc.internalNext = document
     for i in countdown(oldDocument.liveCollections.high, 0):
-      let id = oldDocument.liveCollections[i]
-      if cast[Collection](id).document == cast[ptr DocumentObj](document):
-        node.document.liveCollections.add(id)
+      let collection = oldDocument.liveCollections[i]
+      if collection.document == cast[ptr DocumentObj](document):
+        collection.document = cast[ptr DocumentObj](document)
+        document.liveCollections.add(collection)
         oldDocument.liveCollections.del(i)
     #TODO custom elements
     #..adopting steps
@@ -2807,8 +2808,8 @@ proc `title=`(document: Document; s: sink string) {.jsfset: "title".} =
   title.replaceAll(s)
 
 proc invalidateCollections(document: Document) =
-  for id in document.liveCollections:
-    cast[Collection](id).invalid = true
+  for collection in document.liveCollections:
+    collection.invalid = true
 
 proc isValidCustomElementName(atom: CAtom): bool =
   const Disallowed = [
