@@ -1,5 +1,4 @@
 import std/math
-import std/options
 import std/times
 
 import config/conftypes
@@ -37,7 +36,7 @@ proc getEntriesByType(ctx: JSContext; performance: Performance; t: string):
   return JS_NewArray(ctx)
 
 proc getEntriesByName(ctx: JSContext; performance: Performance; name: string;
-    t = none(string)): JSValue {.jsfunc.} =
+    t: JSValueConst = JS_UNDEFINED): JSValue {.jsfunc.} =
   return JS_NewArray(ctx)
 
 proc addPerformanceModule*(ctx: JSContext; eventTargetCID: JSClassID) =

@@ -1,6 +1,7 @@
 <!doctype html>
 <style>
 #y::before { color: blue }
+#y::marker { color: green }
 </style>
 <title>Style test</title>
 <div id=x>Fail</div>
@@ -11,6 +12,12 @@ const y = document.getElementById("y");
 assertEquals(y.style.cssText, "color: red; display: inline; margin-left: 1ch;");
 assertEquals(window.getComputedStyle(y).cssText, "");
 assertEquals(window.getComputedStyle(y, "::before").color, "rgb(0, 0, 255)");
+/* note: Gecko fails the following case */
+assertEquals(window.getComputedStyle(y, "::bEfOre").color, "rgb(0, 0, 255)");
+assertEquals(window.getComputedStyle(y, "::marker").color, "rgb(0, 128, 0)");
+assertEquals(window.getComputedStyle(y, ":marker").color, "");
+assertEquals(window.getComputedStyle(y, "::").color, "");
+assertEquals(window.getComputedStyle(y, "").color, "rgb(255, 0, 0)");
 const charSize = parseInt(window.getComputedStyle(y).marginLeft);
 assertEquals(y.getBoundingClientRect().width, charSize * 4);
 y.remove();

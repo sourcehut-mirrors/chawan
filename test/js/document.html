@@ -28,6 +28,7 @@ assertEquals(document.img2, document.getElementById("img2"));
 assertEquals(document.img3, document.getElementById("img2"));
 assertEquals(document.asdf, document.getElementById("myform"));
 assertEquals(document.img4, undefined);
+assertEquals(document.implementation.createHTMLDocument(null).title, "null");
 document.getElementById("img4").remove();
 document.asdf.remove();
 document.img2.remove();

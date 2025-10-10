@@ -373,9 +373,10 @@ callback(new Event("").timeStamp);
   JS_FreeValue(ctx, handler)
   res
 
-proc getComputedStyle(window: Window; element: Element;
-    pseudoElt = none(string)): CSSStyleDeclaration {.jsfunc.} =
-  return window.getComputedStyle0(element, pseudoElt)
+proc getComputedStyle(ctx: JSContext; window: Window; element: Element;
+    pseudoElt: JSValueConst = JS_UNDEFINED): Opt[CSSStyleDeclaration]
+    {.jsfunc.} =
+  return ctx.getComputedStyle0(window, element, pseudoElt)
 
 type MediaQueryList = ref object of EventTarget
   media: string

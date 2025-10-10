@@ -1481,21 +1481,28 @@ proc performMicrotaskCheckpoint*(window: Window) =
   window.runJSJobs()
   window.inMicrotaskCheckpoint = false
 
-proc getComputedStyle0*(window: Window; element: Element;
-    pseudoElt: Option[string]): CSSStyleDeclaration =
-  let pseudo = case pseudoElt.get("")
-  of ":before", "::before": peBefore
-  of ":after", "::after": peAfter
-  of "": peNone
-  else: return newCSSStyleDeclaration(nil, "")
+proc getComputedStyle0*(ctx: JSContext; window: Window; element: Element;
+    pseudoElt: JSValueConst): Opt[CSSStyleDeclaration] =
+  var pseudo = peNone
+  if not JS_IsUndefined(pseudoElt):
+    # This isn't what the spec says, but it seems to be what others do.
+    # Note: in Gecko this is case-sensitive, in Blink it isn't.  CSS itself
+    # is case-insensitive so I assume it's a Gecko bug.
+    var s: string
+    ?ctx.fromJS(pseudoElt, s)
+    let i = if s.startsWith("::"): 2 elif s.startsWith(":"): 1 else: 0
+    if i != 0: # if no : at the beginning, ignore pseudoElt
+      pseudo = parseEnumNoCase[PseudoElement](s.substr(i)).get(peNone)
+      if pseudo == peNone or pseudo notin {peBefore, peAfter} and i == 1:
+        return ok(newCSSStyleDeclaration(nil, ""))
   if window.settings.scripting == smApp:
     element.ensureStyle()
-    return newCSSStyleDeclaration(element, $element.getComputedStyle(pseudo),
-      computed = true, readonly = true)
+    return ok(newCSSStyleDeclaration(element, $element.getComputedStyle(pseudo),
+      computed = true, readonly = true))
   # In lite mode, we just parse the "style" attribute and hope for
   # the best.
-  return newCSSStyleDeclaration(element, element.attr(satStyle),
-    computed = true, readonly = true)
+  ok(newCSSStyleDeclaration(element, element.attr(satStyle), computed = true,
+    readonly = true))
 
 # Node
 when defined(debug):
@@ -2909,8 +2916,8 @@ proc createDocument(ctx: JSContext; implementation: DOMImplementation;
   else: discard
   return ok(document)
 
-proc createHTMLDocument(implementation: DOMImplementation;
-    title = none(string)): Document {.jsfunc.} =
+proc createHTMLDocument(ctx: JSContext; implementation: DOMImplementation;
+    title: JSValueConst = JS_UNDEFINED): Opt[Document] {.jsfunc.} =
   let doc = newDocument()
   doc.contentType = satTextHtml
   doc.append(doc.newDocumentType("html", "", ""))
@@ -2918,13 +2925,15 @@ proc createHTMLDocument(implementation: DOMImplementation;
   doc.append(html)
   let head = doc.newHTMLElement(TAG_HEAD)
   html.append(head)
-  if title.isSome:
+  if not JS_IsUndefined(title):
+    var s: string
+    ?ctx.fromJS(title, s)
     let titleElement = doc.newHTMLElement(TAG_TITLE)
-    titleElement.append(doc.newText(title.get))
+    titleElement.append(doc.newText(s))
     head.append(titleElement)
   html.append(doc.newHTMLElement(TAG_BODY))
   doc.origin = implementation.document.origin
-  return doc
+  ok(doc)
 
 proc hasFeature(implementation: DOMImplementation): bool {.jsfunc.} =
   return true
@@ -4932,10 +4941,11 @@ proc cssText(this: CSSStyleDeclaration): string {.jsfget.} =
 proc length(this: CSSStyleDeclaration): uint32 =
   return uint32(this.decls.len)
 
-proc item(this: CSSStyleDeclaration; u: uint32): Option[string] =
+proc item(ctx: JSContext; this: CSSStyleDeclaration; u: uint32): JSValue
+    {.jsfunc.} =
   if u < this.length:
-    return some(this.decls[int(u)].name)
-  return none(string)
+    return ctx.toJS(this.decls[int(u)].name)
+  return ctx.toJS("")
 
 proc find(this: CSSStyleDeclaration; s: string): int =
   if s.startsWith("--"):
@@ -4958,11 +4968,13 @@ proc getPropertyValue(this: CSSStyleDeclaration; s: string): string {.jsfunc.} =
     return move(s)
   return ""
 
-proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom):
-    JSValue {.jsgetownprop.} =
+proc getter(ctx: JSContext; this: CSSStyleDeclaration; atom: JSAtom): JSValue
+    {.jsgetownprop.} =
   var u: uint32
   if ctx.fromJS(atom, u).isOk:
-    return ctx.toJS(this.item(u)).uninitIfNull()
+    if u < this.length:
+      return ctx.toJS(this.decls[int(u)].name)
+    return JS_UNDEFINED
   var s: string
   if ctx.fromJS(atom, s).isErr:
     return JS_EXCEPTION
