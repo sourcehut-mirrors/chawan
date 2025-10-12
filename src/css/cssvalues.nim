@@ -577,6 +577,8 @@ proc `$`*(length: CSSLength): string =
     if result.len > 0:
       result &= " + "
     result &= $length.npx & "px"
+  if result.len == 0:
+    result &= '0'
 
 proc `$`*(bmp: NetworkBitmap): string =
   return "" #TODO
