@@ -449,10 +449,10 @@ proc inheritClipBox(box: BlockBox; parent: CSSBox; state: RenderState) =
   if overflowX != OverflowVisible or overflowY != OverflowVisible:
     var offset = box.render.offset
     var size = box.state.size
-    let topLeft = box.sizes.borderTopLeft(state.cellSize)
+    let topLeft = box.input.borderTopLeft(state.cellSize)
     offset -= topLeft
     size += topLeft
-    size += box.sizes.borderBottomRight(state.cellSize)
+    size += box.input.borderBottomRight(state.cellSize)
     if overflowX in OverflowHiddenLike:
       clipBox.start.x = max(offset.x, clipBox.start.x)
       clipBox.send.x = min(offset.x + size.w, clipBox.send.x)
@@ -473,10 +473,10 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
   let endx = (send.x div state.attrs.ppc).toInt()
   var endy = (send.y div state.attrs.ppl).toInt()
   var buf = ""
-  var top = box.sizes.border.top
-  var bottom = box.sizes.border.bottom
-  var left = box.sizes.border.left
-  var right = box.sizes.border.right
+  var top = box.input.border.top
+  var bottom = box.input.border.bottom
+  var left = box.input.border.left
+  var right = box.input.border.right
   if top notin BorderStyleNoneHidden:
     var offset = start
     if left notin BorderStyleNoneHidden:

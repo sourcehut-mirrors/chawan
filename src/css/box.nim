@@ -30,6 +30,22 @@ type
 
   CSSBorderMerge* = array[DimensionType, bool]
 
+  PendingFloat* = ref object
+    bfcOffset*: Offset
+    space*: Space
+    box*: BlockBox
+    marginOffset*: Offset
+    outerSize*: Size
+    newLine*: bool # "should we put this on a new line?"
+    next*: PendingFloat
+
+  Exclusion* = ref object
+    offset*: Offset
+    size*: Size
+    t*: CSSFloat
+    id*: uint32
+    next*: Exclusion
+
   BoxLayoutState* = object
     # offset relative to parent
     offset*: Offset
@@ -37,13 +53,28 @@ type
     size*: Size
     # intrinsic minimum size (e.g. longest word)
     intr*: Size
+    # Margin left to add to the next box.
+    marginTodo*: Span
+    # The first uncleared float.  (clear: both flushes existing floats.)
+    exclusionsHead*: Exclusion
+    # Last float seen among descendants.
+    exclusionsTail*: Exclusion
+    # First float whose Y position is not resolved yet.
+    pendingFloatsHead*: PendingFloat
+    # Last float whose Y position is not resolved yet.
+    pendingFloatsTail*: PendingFloat
     # baseline of the first line box of all descendants
     firstBaseline*: LUnit
     # baseline of the last line box of all descendants
     baseline*: LUnit
-    # Bottom margin of the box, collapsed with the margin of children.
-    # This is already added to size, and only used by flex layout.
-    marginBottom*: LUnit
+    # Top margin that was resolved in this box, but belongs to an ancestor.
+    marginOutput*: LUnit
+    # Additional y position to be added to our own offset (=flushed margin).
+    yshift*: LUnit
+    # Maximum float height relative to the BFC.
+    maxFloatHeight*: LUnit
+    # Clear offset relative to the BFC.
+    clearOffset*: LUnit
     # Indicates which borders have been merged with an adjacent one.
     merge*: CSSBorderMerge
     # Whether or not a line box has set a baseline for us.
@@ -51,8 +82,6 @@ type
     # Whether our margin has been flushed (either by this box or its
     # descendants.)
     marginResolved*: bool
-    # Top margin that was resolved in this box, but belongs to an ancestor.
-    marginOutput*: LUnit
 
   Area* = object
     offset*: Offset
@@ -105,12 +134,18 @@ type
     a*: array[DimensionType, Span] # width clamp
     mi*: array[DimensionType, Span] # intrinsic clamp
 
-  ResolvedSizes* = object
+  LayoutInput* = object
     bfcOffset*: Offset # BFC offset before flushing margins
     margin*: RelativeRect
     padding*: RelativeRect
     space*: Space
     bounds*: Bounds
+    marginTodo*: Span
+    pendingFloatsHead*: PendingFloat
+    pendingFloatsTail*: PendingFloat
+    exclusionsHead*: Exclusion
+    exclusionsTail*: Exclusion
+    clearOffset*: LUnit
     border*: CSSBorder
     marginResolved*: bool
 
@@ -129,7 +164,7 @@ type
     next*: CSSAbsolute
 
   BlockBox* = ref object of CSSBox
-    sizes*: ResolvedSizes # tree builder output -> layout input
+    input*: LayoutInput # tree builder output -> layout input
     state*: BoxLayoutState # layout output -> render input
 
   InlineBox* = ref object of CSSBox
@@ -244,19 +279,19 @@ proc `<`*(a, b: Offset): bool =
 proc `<=`*(a, b: Offset): bool =
   a.x <= b.x and a.y <= b.y
 
-proc borderTopLeft*(sizes: ResolvedSizes; cellSize: Size): Offset =
+proc borderTopLeft*(input: LayoutInput; cellSize: Size): Offset =
   var o = offset(0, 0)
-  if sizes.border.left notin BorderStyleNoneHidden:
+  if input.border.left notin BorderStyleNoneHidden:
     o.x += cellSize.w
-  if sizes.border.top notin BorderStyleNoneHidden:
+  if input.border.top notin BorderStyleNoneHidden:
     o.y += cellSize.h
   o
 
-proc borderBottomRight*(sizes: ResolvedSizes; cellSize: Size): Offset =
+proc borderBottomRight*(input: LayoutInput; cellSize: Size): Offset =
   var o = offset(0, 0)
-  if sizes.border.right notin BorderStyleNoneHidden:
+  if input.border.right notin BorderStyleNoneHidden:
     o.x += cellSize.w
-  if sizes.border.bottom notin BorderStyleNoneHidden:
+  if input.border.bottom notin BorderStyleNoneHidden:
     o.y += cellSize.h
   o
 
