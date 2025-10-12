@@ -1050,7 +1050,6 @@ proc refreshStatusMsg(pager: Pager) =
   else:
     var format = initFormat(defaultColor, defaultColor, {ffReverse})
     pager.alertState = pasNormal
-    container.clearHover()
     var msg = ""
     if container.numLines > 0 and pager.config.status.showCursorPosition:
       msg &= $(container.cursory + 1) & "/" & $container.numLines &
@@ -1411,6 +1410,8 @@ proc draw(pager: Pager): Opt[void] =
   elif (let menu = pager.menu; menu != nil):
     ?pager.term.setCursor(menu.getCursorX(), menu.getCursorY())
   elif container != nil:
+    if pager.alertState == pasNormal:
+      container.clearHover()
     if (let select = container.select; select != nil):
       ?pager.term.setCursor(select.getCursorX(), select.getCursorY())
     else:
