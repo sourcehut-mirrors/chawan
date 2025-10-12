@@ -782,14 +782,13 @@ proc addMargin(a: var Span; b: LUnit) =
     a.send = max(b, a.send)
 
 proc clearFloats(offsety: var LUnit; fstate: var FlowState; bfcOffsety: LUnit;
-    clear: CSSClear) =
-  var y = bfcOffsety + offsety
+    clear: CSSClear; cleared: var bool) =
+  let oy = bfcOffsety + offsety
+  var y = oy
   let target = case clear
   of ClearLeft, ClearInlineStart: FloatLeft
   of ClearRight, ClearInlineEnd: FloatRight
   of ClearBoth, ClearNone: FloatNone
-  #TODO maybe it's no longer worth storing this if it costs us 3 words in
-  # BlockBox...
   var clearedTo = fstate.exclusionsHead
   for ex in fstate.exclusions:
     if ex.t == target or target == FloatNone:
@@ -797,10 +796,17 @@ proc clearFloats(offsety: var LUnit; fstate: var FlowState; bfcOffsety: LUnit;
       if iy > y:
         y = iy
       clearedTo = ex.next
+  if clearedTo != fstate.exclusionsHead:
+    cleared = y > max(fstate.clearOffset, oy)
   fstate.clearOffset = y
   if target == FloatNone:
     fstate.exclusionsHead = clearedTo
   offsety = y - bfcOffsety
+
+proc clearFloats(offsety: var LUnit; fstate: var FlowState; bfcOffsety: LUnit;
+    clear: CSSClear) =
+  var dummy: bool
+  offsety.clearFloats(fstate, bfcOffsety, clear, dummy)
 
 proc findNextFloatOffset(fstate: FlowState; offset: Offset; size: Size;
     space: Space; float: CSSFloat; outw: var LUnit): Offset =
@@ -1586,21 +1592,38 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   let lctx = fstate.lctx
   var input = lctx.resolveBlockSizes(fstate.space, child.computed)
   var space = fstate.space # may be modified if child is a BFC
+  var offset = fstate.offset
+  offset.x += input.margin.left
+  let clear = child.computed{"clear"}
+  if clear != ClearNone:
+    let target = case clear
+    of ClearLeft, ClearInlineStart: FloatLeft
+    of ClearRight, ClearInlineEnd: FloatRight
+    of ClearBoth, ClearNone: FloatNone
+    var f = fstate.pendingFloatsHead
+    while f != nil:
+      if target == FloatNone or f.box.computed{"float"} == target:
+        fstate.flushMargins(offset.y)
+        break
+      f = f.next
+    var cleared = false
+    offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear, cleared)
+    if cleared:
+      # subtract our own margin so that the top edge of this box touches
+      # the bottom edge of the last cleared float
+      # (margin must be collapsed with subsequent boxes as usual, so we
+      # can't just skip addMargin)
+      offset.y -= input.margin.top
   const DisplayWithBFC = {
     DisplayFlowRoot, DisplayTable, DisplayFlex, DisplayGrid
   }
-  var offset = fstate.offset
-  offset.x += input.margin.left
   fstate.marginTodo.addMargin(input.margin.top)
-  let clear = child.computed{"clear"}
   if child.computed{"display"} in DisplayWithBFC or
       child.computed{"overflow-x"} notin {OverflowVisible, OverflowClip}:
     # This box establishes a new BFC.
     input.marginResolved = fstate.marginResolved
     fstate.flushMargins(offset.y)
     lctx.layout(child, offset, input)
-    if clear != ClearNone:
-      fstate.offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear)
     if fstate.exclusionsTail != nil:
       # From the standard (abridged):
       #
@@ -1617,9 +1640,8 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
       # * place the longest word (i.e. intr.w) somewhere
       # * run another pass with the placement we got
       #
-      # Some browsers prefer to try again until they find enough
-      # available space; I won't do that because it's unnecessarily
-      # complex and slow. (Maybe one day, when layout is faster...)
+      #TODO other browsers just try again until they find enough available
+      # space; we should do that too once we have proper layout caching.
       #
       # Note that this does not apply to absolutely positioned elements,
       # as those ignore floats.
@@ -1639,9 +1661,6 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
         lctx.layout(child, roffset, input)
   else:
     offset += input.borderTopLeft(lctx)
-    if clear != ClearNone:
-      fstate.positionFloats()
-      offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear)
     input.bfcOffset = fstate.bfcOffset + offset
     input.marginResolved = fstate.marginResolved
     input.marginTodo = fstate.marginTodo
