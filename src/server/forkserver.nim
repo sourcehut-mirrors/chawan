@@ -159,7 +159,9 @@ proc forkBuffer(ctx: var ForkServerContext; r: var PacketReader): int =
   return pid
 
 proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
-  let istream = newPosixStream(r.recvFd())
+  var hasIstream: bool
+  r.sread(hasIstream)
+  let istream = if hasIstream: newPosixStream(r.recvFd()) else: nil
   let ostream = newPosixStream(r.recvFd())
   # hack to detect when the child died
   var hasOstreamOut2: bool
@@ -178,7 +180,11 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     ctx.stream.sclose()
     ctx.loaderStream.sclose()
     # we leave stderr open, so it can be seen in the browser console
-    istream.moveFd(STDIN_FILENO)
+    if istream != nil:
+      istream.moveFd(STDIN_FILENO)
+    else:
+      discard close(STDIN_FILENO)
+      discard open("/dev/null", O_RDONLY)
     ostream.moveFd(STDOUT_FILENO)
     # reset SIGCHLD to the default handler. this is useful if the child
     # process expects SIGCHLD to be untouched.
@@ -202,7 +208,8 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     discard stdout.writeLine(ExecErrorMsg & ' ' & es.deleteChars({'\n', '\r'}))
     exitnow(1)
   else: # parent or error
-    istream.sclose()
+    if istream != nil:
+      istream.sclose()
     ostream.sclose()
     if ostreamOut2 != nil:
       ostreamOut2.sclose()

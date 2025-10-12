@@ -1053,12 +1053,10 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
   let auth = if prevURL != nil: client.findAuth(request, prevURL) else: nil
   let env = setupEnv(cpath, request, contentLen, prevURL, config, auth)
   var pid: int
-  let istream3 = if istream != nil: nil else: newPosixStream("/dev/null")
   ctx.forkStream.withPacketWriter w:
+    w.swrite(istream != nil)
     if istream != nil:
       w.sendFd(istream.fd)
-    else:
-      w.sendFd(istream3.fd)
     w.sendFd(ostreamOut.fd)
     w.swrite(ostreamOut2 != nil)
     if ostreamOut2 != nil:
@@ -1069,8 +1067,6 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     w.swrite(cpath.basename)
   do:
     pid = -1
-  if istream3 != nil:
-    istream3.sclose()
   if pid != -1:
     ctx.forkStream.withPacketReader r:
       r.sread(pid)
