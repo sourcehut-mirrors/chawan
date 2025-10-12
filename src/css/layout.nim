@@ -659,22 +659,26 @@ proc resolveBlockSizes(lctx: LayoutContext; space: Space; computed: CSSValues):
 #
 ## Margin collapsing
 #
-# We use a linked list to store boxes with unresolved margins for some
-# reason.  Then we call flushMargins occasionally and hope for the best.
+# The algorithm looks something like:
+# * track BFC position for each (non-root) flow block
+# * look for the first child that resolves the margin (flushMargins)
+# * position floats in said child, pretending that the parent's y position
+#   is already flushed
+# * once the child's layout is finished, move the ancestors' BFC position by
+#   the margin the child has output (marginOutput)
+# * finally, as the first ancestor box is reached for which the margin is
+#   unresolved but the margin of its parent isn't, move said ancestor by
+#   marginOutput, and then set it to 0.
+#
+# But it gets messy when floats are involved.  Currently, unpositioned
+# floats on the current line just use the BFC position of the line's
+# flow state, while unpositioned floats in the BFC are always moved in
+# flushMargins.  That means we still have to access global state to the BFC,
+# so this approach may have to be revised for block-level caching.
 type
   BlockContext = object
     lctx: LayoutContext
     marginTodo: Strut
-    # We use a linked list to set the correct BFC offset and relative offset
-    # for every block with an unresolved y offset on margin resolution.
-    # marginTarget is a pointer to the last unresolved ancestor.
-    # ancestorsHead is a pointer to the last element of the ancestor list
-    # (which may in fact be a pointer to the BPS of a previous sibling's
-    # child).
-    # parentBps is a pointer to the currently layouted parent block's BPS.
-    marginTarget: BlockPositionState
-    ancestorsHead: BlockPositionState
-    parentBps: BlockPositionState
     exclusionsTail: Exclusion
     unpositionedFloats: seq[UnpositionedFloat]
     maxFloatHeight: LUnit
@@ -684,18 +688,12 @@ type
     clearedTo: array[CSSFloat, Exclusion]
 
   UnpositionedFloat = object
-    parentBps: BlockPositionState
+    bfcOffset: Offset
     space: Space
     box: BlockBox
     marginOffset: Offset
     outerSize: Size
     newLine: bool # relevant in inline only; "should we put this on a new line?"
-
-  BlockPositionState = ref object
-    next: BlockPositionState
-    box: BlockBox
-    offset: Offset # offset relative to the block formatting context
-    resolved: bool # has the position been resolved yet?
 
   Exclusion = ref object
     offset: Offset
@@ -760,20 +758,21 @@ type
   FlowState = object
     box: BlockBox
     pbctx: ptr BlockContext
+    bfcOffset: Offset
     offset: Offset
     maxChildWidth: LUnit
     totalFloatWidth: LUnit # used for re-layouts
     space: Space
     intr: Size
-    prevParentBps: BlockPositionState
+    marginResolved: bool
+    textAlign: CSSTextAlign # text align of parent, for block-level alignment
+    marginOutput: LUnit
     # State kept for when a re-layout is necessary:
     oldMarginTodo: Strut
     oldExclusionsTail: Exclusion
     oldClearedTo: array[CSSFloat, Exclusion]
     oldClearOffset: LUnit
-    initialMarginTarget: BlockPositionState
     initialTargetOffset: Offset
-    textAlign: CSSTextAlign # text align of parent, for block-level alignment
     # Inline context state:
     lbstate: LineBoxState
     padding: RelativeRect
@@ -812,14 +811,6 @@ proc lastTextBox(fstate: FlowState): InlineBox =
   if fstate.lbstate.atomsTail != nil:
     return fstate.lbstate.atomsTail.ibox
   nil
-
-proc bfcOffset(bctx: BlockContext): Offset =
-  if bctx.parentBps != nil:
-    return bctx.parentBps.offset
-  return offset(x = 0, y = 0)
-
-template bfcOffset(fstate: FlowState): Offset =
-  fstate.bctx.bfcOffset
 
 proc append(a: var Strut; b: LUnit) =
   if b < 0:
@@ -900,52 +891,50 @@ proc findNextBlockOffset(bctx: BlockContext; offset: Offset; size: Size;
     space: Space; outw: var LUnit): Offset =
   return bctx.findNextFloatOffset(offset, size, space, FloatLeft, outw)
 
-proc positionFloat(bctx: var BlockContext; child: BlockBox; space: Space;
+proc positionFloat(fstate: var FlowState; child: BlockBox; space: Space;
     outerSize: Size; marginOffset, bfcOffset: Offset) =
   assert space.w.t != scFitContent
-  child.state.offset.y += bctx.marginTodo.sum()
+  child.state.offset.y += fstate.bctx.marginTodo.sum()
   let clear = child.computed{"clear"}
   if clear != ClearNone:
-    child.state.offset.y.clearFloats(bctx, bctx.bfcOffset.y, clear)
+    child.state.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
   var childBfcOffset = bfcOffset + child.state.offset - marginOffset
-  childBfcOffset.y = max(bctx.clearOffset, childBfcOffset.y)
+  childBfcOffset.y = max(fstate.bctx.clearOffset, childBfcOffset.y)
   let ft = child.computed{"float"}
   assert ft != FloatNone
-  let offset = bctx.findNextFloatOffset(childBfcOffset, outerSize, space, ft)
+  let offset = fstate.bctx.findNextFloatOffset(childBfcOffset, outerSize, space,
+    ft)
   child.state.offset = offset - bfcOffset + marginOffset
   let ex = Exclusion(offset: offset, size: outerSize, t: ft)
-  for it in bctx.clearedTo.mitems:
+  for it in fstate.bctx.clearedTo.mitems:
     if it == nil:
       it = ex
-  if bctx.exclusionsTail != nil:
-    ex.id = bctx.exclusionsTail.id + 1
-    bctx.exclusionsTail.next = ex
-  bctx.exclusionsTail = ex
-  bctx.maxFloatHeight = max(bctx.maxFloatHeight, offset.y + outerSize.h)
+  if fstate.bctx.exclusionsTail != nil:
+    ex.id = fstate.bctx.exclusionsTail.id + 1
+    fstate.bctx.exclusionsTail.next = ex
+  fstate.bctx.exclusionsTail = ex
+  fstate.bctx.maxFloatHeight = max(fstate.bctx.maxFloatHeight,
+    offset.y + outerSize.h)
 
-proc positionFloats(bctx: var BlockContext) =
-  for f in bctx.unpositionedFloats:
-    bctx.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
-      f.parentBps.offset)
-  bctx.unpositionedFloats.setLen(0)
+proc positionFloats(fstate: var FlowState) =
+  for f in fstate.bctx.unpositionedFloats:
+    fstate.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
+      f.bfcOffset)
+  fstate.bctx.unpositionedFloats.setLen(0)
 
-proc flushMargins(bctx: var BlockContext; offsety: var LUnit) =
+proc flushMargins(fstate: var FlowState; offsety: var LUnit) =
   # Apply uncommitted margins.
-  let margin = bctx.marginTodo.sum()
-  if bctx.marginTarget == nil:
+  let margin = fstate.bctx.marginTodo.sum()
+  if fstate.marginResolved:
     offsety += margin
   else:
-    if bctx.marginTarget.box != nil:
-      bctx.marginTarget.box.state.offset.y += margin
-    var p = bctx.marginTarget
-    while true:
-      p.offset.y += margin
-      p.resolved = true
-      p = p.next
-      if p == nil: break
-    bctx.marginTarget = nil
-  bctx.marginTodo = Strut()
-  bctx.positionFloats()
+    fstate.marginOutput = margin
+    fstate.bfcOffset.y += margin
+    for it in fstate.bctx.unpositionedFloats.mitems:
+      it.bfcOffset.y += margin
+    fstate.marginResolved = true
+  fstate.bctx.marginTodo = Strut()
+  fstate.positionFloats()
 
 # Prepare the next line's initial width and available width.
 # (If space on the left is excluded by floats, set the initial width to
@@ -964,10 +953,10 @@ proc initLine(fstate: var FlowState; flag = ilfRegular) =
     # been somewhat broken and should be fixed some time.
     if flag != ilfAbsolute:
       let poffsety = fstate.offset.y
-      fstate.bctx.flushMargins(fstate.offset.y)
+      fstate.flushMargins(fstate.offset.y)
       # Don't forget to add it to intrinsic height...
       fstate.intr.h += fstate.offset.y - poffsety
-    fstate.bctx.positionFloats()
+    fstate.positionFloats()
   if fstate.lbstate.init != lisUninited:
     return
   # we want to start from padding-left, but normally exclude padding
@@ -1257,8 +1246,8 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     for f in fstate.lbstate.unpositionedFloats:
       if whitespace != WhitespacePre and f.newLine:
         f.box.state.offset.y += fstate.lbstate.size.h
-      fstate.bctx.positionFloat(f.box, f.space, f.outerSize,
-        f.marginOffset, f.parentBps.offset)
+      fstate.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
+        fstate.bfcOffset)
     # add line to fstate
     let y = fstate.offset.y
     if clear != ClearNone:
@@ -1290,16 +1279,11 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     #    positioning until our y offset is resolved.
     # b) `box' has resolved its y offset, so the float can already
     #    be positioned.
-    # We check whether our y offset has been positioned as follows:
-    # * save marginTarget in FlowState at layoutFlow's start
-    # * if our saved marginTarget and bctx's marginTarget no longer
-    #   point to the same object, that means our (or an ancestor's)
-    #   offset has been resolved, i.e. we can position floats already.
-    if fstate.bctx.marginTarget != fstate.initialMarginTarget:
+    if fstate.marginResolved:
       # y offset resolved
       for f in fstate.lbstate.unpositionedFloats:
-        fstate.bctx.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
-          f.parentBps.offset)
+        fstate.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
+          fstate.bfcOffset)
     else:
       fstate.bctx.unpositionedFloats.add(fstate.lbstate.unpositionedFloats)
   # Reinit in both cases.
@@ -1624,7 +1608,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
       newLine = false
     fstate.lbstate.unpositionedFloats.add(UnpositionedFloat(
       space: fstate.space,
-      parentBps: fstate.bctx.parentBps,
+      bfcOffset: fstate.bfcOffset,
       box: child,
       marginOffset: sizes.margin.startOffset() + sizes.borderTopLeft(lctx),
       outerSize: outerSize,
@@ -1648,9 +1632,10 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   if child.computed{"display"} in DisplayWithBFC or
       child.computed{"overflow-x"} notin {OverflowVisible, OverflowClip}:
     # This box establishes a new BFC.
+    sizes.marginResolved = fstate.marginResolved
     var bctx = initBlockContext(lctx)
     bctx.layout(child, offset, sizes)
-    fstate.bctx.flushMargins(child.state.offset.y)
+    fstate.flushMargins(child.state.offset.y)
     if clear != ClearNone:
       fstate.offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
     if fstate.bctx.exclusionsTail != nil:
@@ -1694,9 +1679,19 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
   else:
     offset += sizes.borderTopLeft(lctx)
     if clear != ClearNone:
-      fstate.bctx.flushMargins(offset.y)
+      fstate.positionFloats()
       offset.y.clearFloats(fstate.bctx, fstate.bfcOffset.y, clear)
+    sizes.bfcOffset = fstate.bfcOffset + offset
+    sizes.marginResolved = fstate.marginResolved
     fstate.bctx.layout(child, offset, sizes)
+    if not fstate.marginResolved and child.state.marginResolved:
+      # We are "inheriting" the margin flushed by a descendant, so we must
+      # move our BFC offset by said margin (as flushMargins only did it for
+      # the descendant.)
+      let marginOutput = child.state.marginOutput
+      fstate.marginOutput = marginOutput
+      fstate.bfcOffset.y += marginOutput
+      fstate.marginResolved = true
   fstate.bctx.marginTodo.append(sizes.margin.bottom)
   let outerSize = size(
     w = child.outerSize(dtHorizontal, sizes, lctx),
@@ -1743,7 +1738,7 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
       return
     var offset = fstate.offset
     fstate.initLine(flag = ilfAbsolute)
-    if fstate.bctx.marginTarget != fstate.initialMarginTarget:
+    if fstate.marginResolved:
       offset.y += fstate.bctx.marginTodo.sum()
     if child.computed{"display"} in DisplayOuterInline:
       # inline-block or similar. put it on the current line.
@@ -1945,7 +1940,8 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
 
 proc layoutFlow0(fstate: var FlowState) =
   fstate.lbstate = fstate.initLineBoxState()
-  for child in fstate.box.children:
+  let box = fstate.box
+  for child in box.children:
     if child of InlineBox:
       fstate.layoutInline(InlineBox(child))
     else:
@@ -1955,80 +1951,28 @@ proc layoutFlow0(fstate: var FlowState) =
     fstate.lbstate.totalFloatWidth)
 
 proc initFlowState(bctx: var BlockContext; box: BlockBox;
-    sizes: ResolvedSizes): FlowState =
+    sizes: ResolvedSizes; root: bool): FlowState =
   result = FlowState(
     box: box,
     pbctx: addr bctx,
     offset: sizes.padding.topLeft,
+    bfcOffset: sizes.bfcOffset,
     padding: sizes.padding,
     space: sizes.space,
     oldMarginTodo: bctx.marginTodo,
     oldExclusionsTail: bctx.exclusionsTail,
     oldClearedTo: bctx.clearedTo,
     oldClearOffset: bctx.clearOffset,
-    textAlign: box.computed{"text-align"}
+    textAlign: box.computed{"text-align"},
+    marginResolved: root
   )
-
-proc initBlockPositionStates(fstate: var FlowState; box: BlockBox) =
-  let bctx = fstate.pbctx
-  let prevBps = bctx.ancestorsHead
-  bctx.ancestorsHead = BlockPositionState(
-    box: box,
-    offset: fstate.offset,
-    resolved: bctx.parentBps == nil
-  )
-  if prevBps != nil:
-    prevBps.next = bctx.ancestorsHead
-  if bctx.parentBps != nil:
-    bctx.ancestorsHead.offset += bctx.parentBps.offset
-    # If parentBps is not nil, then our starting position is not in a new
-    # BFC -> we must add it to our BFC offset.
-    bctx.ancestorsHead.offset += box.state.offset
-  if bctx.marginTarget == nil:
-    bctx.marginTarget = bctx.ancestorsHead
-  fstate.initialMarginTarget = bctx.marginTarget
-  fstate.initialTargetOffset = bctx.marginTarget.offset
-  if bctx.parentBps == nil:
-    # We have just established a new BFC. Resolve the margins immediately.
-    bctx.marginTarget = nil
-  fstate.prevParentBps = bctx.parentBps
-  bctx.parentBps = bctx.ancestorsHead
 
 # Unlucky path, where we have a fit-content width.
 # Reset marginTodo & the starting offset, and stretch the box to the
 # max child width.
 proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
-    sizes: ResolvedSizes) =
+    sizes: ResolvedSizes; root: bool) =
   bctx.marginTodo = fstate.oldMarginTodo
-  # Note: we do not reset our own BlockPositionState's offset; we assume it
-  # has already been resolved in the previous pass.
-  # (If not, it won't be resolved in this pass either, so the following code
-  # does not really change anything.)
-  bctx.parentBps.next = nil
-  if fstate.initialMarginTarget != bctx.marginTarget:
-    # Reset the initial margin target to its previous state, and then set
-    # it as the marginTarget again.
-    # Two solutions exist:
-    # a) Store the initial margin target offset, then restore it here. Seems
-    #    clean, but it would require a linked list traversal to update all
-    #    child margin positions.
-    # b) Re-use the previous margin target offsets; they are guaranteed
-    #    to remain the same, because out-of-flow elements (like floats) do not
-    #    participate in margin resolution. We do this by setting the margin
-    #    target to a dummy object, which is a small price to pay compared
-    #    to solution a).
-    bctx.marginTarget = BlockPositionState(
-      # Use initialTargetOffset to emulate the BFC positioning of the
-      # previous pass.
-      offset: fstate.initialTargetOffset,
-      resolved: fstate.initialMarginTarget.resolved
-    )
-    # Also set ancestorsHead as the dummy object, so next elements are
-    # chained to that.
-    bctx.ancestorsHead = bctx.marginTarget
-    if fstate.prevParentBps == nil:
-      # We have just established a new BFC. Resolve the margins immediately.
-      bctx.marginTarget = nil
   bctx.exclusionsTail = fstate.oldExclusionsTail
   if bctx.exclusionsTail != nil:
     bctx.exclusionsTail.next = nil
@@ -2039,22 +1983,16 @@ proc initReLayout(fstate: var FlowState; bctx: var BlockContext; box: BlockBox;
     fstate.intr.w)
   box.applySize(bounds, fstate.maxChildWidth + fstate.totalFloatWidth,
     sizes.space, dtHorizontal)
-  # Save prev bps & margin target; these are assumed to remain
-  # identical.
-  let prevParentBps = fstate.prevParentBps
-  let initialMarginTarget = fstate.initialMarginTarget
-  fstate = bctx.initFlowState(box, sizes)
+  fstate = bctx.initFlowState(box, sizes, root)
   fstate.space.w = stretch(box.state.size.w)
-  fstate.prevParentBps = prevParentBps
-  fstate.initialMarginTarget = initialMarginTarget
 
-proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
-  var fstate = bctx.initFlowState(box, sizes)
-  fstate.initBlockPositionStates(box)
+proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes;
+    root: bool) =
+  var fstate = bctx.initFlowState(box, sizes, root)
   if box.computed{"position"} notin PositionAbsoluteFixed and
       (sizes.padding.top != 0 or sizes.borderTop(bctx.lctx) != 0 or
       sizes.space.h.isDefinite() and sizes.space.h.u != 0):
-    bctx.flushMargins(box.state.offset.y)
+    fstate.flushMargins(box.state.offset.y)
   let spacew = fstate.space.w
   let indefinite = spacew.t in {scFitContent, scMaxContent}
   if indefinite:
@@ -2064,7 +2002,7 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
     fstate.space.w = spacew
     # shrink-to-fit size; layout again.
     let oldIntr = fstate.intr
-    fstate.initReLayout(bctx, box, sizes)
+    fstate.initReLayout(bctx, box, sizes, root)
     fstate.layoutFlow0()
     # Restore old intrinsic sizes, as the new ones are a function of the
     # current input and therefore wrong.
@@ -2079,7 +2017,7 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   )
   if sizes.padding.bottom != 0 or sizes.borderBottom(bctx.lctx) != 0:
     let oldHeight = childSize.h
-    bctx.flushMargins(childSize.h)
+    fstate.flushMargins(childSize.h)
     fstate.intr.h += childSize.h - oldHeight
   box.applySize(sizes, childSize, fstate.space)
   let paddingSum = sizes.padding.sum()
@@ -2089,23 +2027,23 @@ proc layoutFlow(bctx: var BlockContext; box: BlockBox; sizes: ResolvedSizes) =
   # Add padding after applying space, since space applies to the content
   # box.
   box.state.size += paddingSum
-  if bctx.marginTarget != fstate.initialMarginTarget or
-      fstate.prevParentBps != nil and fstate.prevParentBps.resolved:
+  if not root and fstate.marginResolved and box.sizes.marginResolved:
+    box.state.offset.y += fstate.marginOutput
+    fstate.marginOutput = 0
+  if fstate.marginResolved or sizes.marginResolved:
     # Our offset has already been resolved, ergo any margins in
-    # marginTodo will be passed onto the next box. Set marginTarget to
-    # nil, so that if we (or one of our ancestors) were still set as a
-    # marginTarget, we no longer are.
-    bctx.positionFloats()
-    bctx.marginTarget = nil
-  # Reset parentBps to the previous node.
-  bctx.parentBps = fstate.prevParentBps
+    # marginTodo will be passed onto the next box.
+    fstate.positionFloats()
+    fstate.marginResolved = true
+  box.state.marginOutput = fstate.marginOutput
+  box.state.marginResolved = fstate.marginResolved
 
 proc layoutFlowDescendant(bctx: var BlockContext; box: BlockBox; offset: Offset;
     sizes: ResolvedSizes) =
   box.resetState()
   box.sizes = sizes
   box.state.offset = offset
-  bctx.layoutFlow(box, sizes)
+  bctx.layoutFlow(box, sizes, root = false)
 
 proc layoutFlowRootPre(lctx: LayoutContext; box: BlockBox; offset: Offset;
     sizes: ResolvedSizes): bool =
@@ -2131,7 +2069,7 @@ proc layoutFlowRoot(bctx: var BlockContext; box: BlockBox; offset: Offset;
     sizes: ResolvedSizes) =
   if not bctx.lctx.layoutFlowRootPre(box, offset, sizes):
     return
-  bctx.layoutFlow(box, sizes)
+  bctx.layoutFlow(box, sizes, root = true)
   bctx.layoutFlowRootPost(box)
 
 # Table layout.  This imitates what mainstream browsers do:
@@ -3076,7 +3014,7 @@ proc layout(bctx: var BlockContext; box: BlockBox; offset: Offset;
       bctx.layoutFlowRoot(box, offset, sizes)
     else:
       bctx.layoutFlowDescendant(box, offset, sizes)
-  of DisplayTableCell: bctx.layoutFlow(box, sizes)
+  of DisplayTableCell: bctx.layoutFlow(box, sizes, root = true)
   of DisplayInnerTable: bctx.lctx.layoutTable(box, offset, sizes)
   of DisplayInnerFlex: bctx.lctx.layoutFlex(box, offset, sizes)
   else: assert false

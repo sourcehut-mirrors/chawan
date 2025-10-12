@@ -48,6 +48,11 @@ type
     merge*: CSSBorderMerge
     # Whether or not a line box has set a baseline for us.
     baselineSet*: bool
+    # Whether our margin has been flushed (either by this box or its
+    # descendants.)
+    marginResolved*: bool
+    # Top margin that was resolved in this box, but belongs to an ancestor.
+    marginOutput*: LUnit
 
   Area* = object
     offset*: Offset
@@ -101,11 +106,13 @@ type
     mi*: array[DimensionType, Span] # intrinsic clamp
 
   ResolvedSizes* = object
+    bfcOffset*: Offset # BFC offset before flushing margins
     margin*: RelativeRect
     padding*: RelativeRect
     space*: Space
     bounds*: Bounds
     border*: CSSBorder
+    marginResolved*: bool
 
   CSSBox* = ref object of RootObj
     parent* {.cursor.}: CSSBox
