@@ -709,8 +709,11 @@ proc parsePar(state: var ParseState; line: string): Opt[void] =
     if line[0] in {' ', '\t'}: # lines with space only also count as blank
       ?state.flushPar()
       state.blockType = btNone
-    elif state.blockData == "" and line[0] in {'-', '*', '_'}: # thematic break
-      state.blockData &= "<HR>\n"
+    elif state.blockData == "" and line[0] in {'-', '*', '_'} and line.len >= 3:
+      # thematic break
+      ?state.write("<HR>\n")
+      state.hasp = false
+      state.blockType = btNone
     elif state.blockData != "" and line[0] in {'-', '='}: # setext heading
       let n = if line[0] == '=': 1 else: 2
       ?state.writeHeading(n, state.blockData)
