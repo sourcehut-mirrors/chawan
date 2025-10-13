@@ -144,8 +144,10 @@ method sclose*(s: PosixStream) =
   s.closed = true
 
 proc closeHandle(fd, flags: cint) =
+  discard close(fd)
   let devnull = open("/dev/null", flags)
-  doAssert devnull != -1
+  if devnull == -1:
+    quit(1)
   if devnull != fd:
     discard dup2(devnull, fd)
     discard close(devnull)
