@@ -183,8 +183,7 @@ proc forkCGI(ctx: var ForkServerContext; r: var PacketReader): int =
     if istream != nil:
       istream.moveFd(STDIN_FILENO)
     else:
-      discard close(STDIN_FILENO)
-      discard open("/dev/null", O_RDONLY)
+      closeStdin()
     ostream.moveFd(STDOUT_FILENO)
     # reset SIGCHLD to the default handler. this is useful if the child
     # process expects SIGCHLD to be untouched.
