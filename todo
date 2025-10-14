@@ -48,8 +48,14 @@ layout:
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
 - layout caching
-	* the current approach is unmaintainable, we must factor out
-	  tree traversal from layout first (i.e. rewrite it in CPS)
+	* make each layout depend on own input & modify own output only
+		- not sure about table...
+	* factor out tree traversal from layout
+		- split each layout into pre, child pre, child post, post,
+		- pre result: abort, continue
+		- post result: redo, continue
+	* merge csstree into layout
+		- should be easy after the previous step
 - partial rendering
 	* buffer.lines must go, so rewrite getCursorStyledNode and
 	  findPrev/NextLink to use the box tree
@@ -62,7 +68,10 @@ layout:
 	  deal with tall inline boxes (like the <plaintext> tag in
 	  text/plain buffers)
 - frame, iframe
-- z order for images
+- fix image issues
+	* important: sizing bugs
+	* z order
+	* clipping
 - grid
 images:
 - animation
