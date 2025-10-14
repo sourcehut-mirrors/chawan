@@ -1862,6 +1862,8 @@ proc windowChange(pager: Pager) =
     pager.clear(st)
   for container in pager.containers:
     container.windowChange(pager.attrs)
+  if pager.menu != nil:
+    pager.menu.windowChange(pager.bufWidth, pager.bufHeight)
   if pager.askPrompt != "":
     pager.writeAskPrompt()
   pager.showAlerts()
