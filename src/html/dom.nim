@@ -143,6 +143,7 @@ type
     localStorage* {.jsget.}: Storage
     sessionStorage* {.jsget.}: Storage
     crypto* {.jsget.}: Crypto
+    event* {.jsget.}: Event
     settings*: EnvironmentSettings
     loader*: FileLoader
     location* {.jsget.}: Location
@@ -738,8 +739,8 @@ var parseDocumentWriteChunkImpl*: proc(wrapper: RootRef) {.nimcall, raises: [].}
 var fetchImpl*: proc(window: Window; input: JSRequest): FetchPromise {.
   nimcall, raises: [].}
 var applyStyleImpl*: proc(element: Element) {.nimcall, raises: [].}
-var getClientRectsImpl*: proc(element: Element; firstOnly: bool): seq[DOMRect]
-  {.nimcall, raises: [].}
+var getClientRectsImpl*: proc(element: Element; firstOnly, blockOnly: bool):
+  seq[DOMRect] {.nimcall, raises: [].}
 
 # Reflected attributes.
 type
@@ -916,6 +917,7 @@ const ReflectTable0 = [
   makef(satOnblur, satBlur),
   makef(satOnfocus, satFocus),
   makef(satOnsubmit, satSubmit),
+  makef(satOncontextmenu, satContextmenu),
   makes(satSlot, AllTagTypes),
   makes(satTitle, AllTagTypes),
   makes(satLang, AllTagTypes),
@@ -4212,7 +4214,7 @@ proc getBoundingClientRect(element: Element): DOMRect {.jsfunc.} =
     return DOMRect()
   if window.settings.scripting == smApp:
     window.ensureLayout(element)
-    let objs = getClientRectsImpl(element, firstOnly = true)
+    let objs = getClientRectsImpl(element, firstOnly = true, blockOnly = false)
     if objs.len > 0:
       return objs[0]
     return DOMRect()
@@ -4226,10 +4228,34 @@ proc getClientRects(element: Element): DOMRectList {.jsfunc.} =
   if window != nil:
     if window.settings.scripting == smApp:
       window.ensureLayout(element)
-      res.list = getClientRectsImpl(element, firstOnly = false)
+      res.list = getClientRectsImpl(element, firstOnly = false,
+        blockOnly = false)
     else:
       res.list.add(element.getBoundingClientRect())
   res
+
+proc getBlockRect(element: Element): DOMRect =
+  let window = element.document.window
+  if window != nil:
+    if window.settings.scripting != smApp:
+      return element.getBoundingClientRect()
+    window.ensureLayout(element)
+    let res = element.getClientRectsImpl(firstOnly = true, blockOnly = true)
+    if res.len > 0:
+      return res[0]
+  return DOMRect()
+
+proc clientWidth(element: Element): int32 {.jsfget.} =
+  let rect = element.getBlockRect()
+  if rect != nil and rect.width <= float64(int32.high):
+    return int32(rect.width)
+  0
+
+proc clientHeight(element: Element): int32 {.jsfget.} =
+  let rect = element.getBlockRect()
+  if rect != nil and rect.height <= float64(int32.high):
+    return int32(rect.height)
+  0
 
 const WindowEvents* = [satLoad, satError, satFocus, satBlur]
 
@@ -4245,6 +4271,7 @@ proc reflectScriptAttr(element: Element; name: StaticAtom;
     satOnfocus: satFocus,
     satOnblur: satBlur,
     satOnsubmit: satSubmit,
+    satOncontextmenu: satContextmenu
   }
   for (n, t) in ScriptEventMap:
     if n == name:
@@ -6441,5 +6468,13 @@ isHTMLElementImpl = proc(target: EventTarget): bool =
 
 parseColorImpl = proc(target: EventTarget; s: string): ARGBColor =
   return Element(target).parseColor(s)
+
+setEventImpl = proc(ctx: JSContext; event: Event): Event =
+  let window = ctx.getWindow()
+  if window != nil:
+    let res = window.event
+    window.event = event
+    return res
+  nil
 
 {.pop.} # raises: []

@@ -63,6 +63,7 @@ type
     bcCheckRefresh = "checkRefresh"
     bcClick = "click"
     bcClone = "clone"
+    bcContextMenu = "contextMenu"
     bcFindNextLink = "findNextLink"
     bcFindNextMatch = "findNextMatch"
     bcFindNextParagraph = "findNextParagraph"
@@ -794,7 +795,6 @@ proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
         Text(lastChild).data.s &= data
       else:
         plaintext.insert(bc.document.newText($data), nil)
-      #TODO just invalidate document?
       plaintext.invalidate()
   true
 
@@ -1310,7 +1310,7 @@ proc submitForm(bc: BufferContext; form: HTMLFormElement;
     submitter: HTMLElement; jsSubmitCall = false): Request =
   if form.constructingEntryList:
     return nil
-  if not jsSubmitCall:
+  if not jsSubmitCall and bc.config.scripting != smFalse:
     if form.firing:
       return nil
     form.firing = true
@@ -1636,6 +1636,28 @@ proc click(bc: BufferContext; clickable: Element): ClickResult =
     bc.restoreFocus()
     return ClickResult()
 
+proc initMouseEventInit(bc: BufferContext; button: int32; buttons: uint32;
+    x, y: int): MouseEventInit =
+  let x = if bc.config.scripting == smApp and x <= int32.high div bc.attrs.ppc:
+    int32(x * bc.attrs.ppc)
+  else:
+    0
+  let y = if bc.config.scripting == smApp and y <= int32.high div bc.attrs.ppl:
+    int32(y * bc.attrs.ppl)
+  else:
+    0
+  MouseEventInit(
+    bubbles: true,
+    cancelable: true,
+    button: button,
+    buttons: buttons,
+    view: EventTargetWindow(bc.window),
+    clientX: x,
+    clientY: y,
+    screenX: x,
+    screenY: y
+  )
+
 proc click*(bc: BufferContext; cursorx, cursory: int): ClickResult {.proxy.} =
   if bc.lines.len <= cursory: return ClickResult()
   var canceled = false
@@ -1645,8 +1667,8 @@ proc click*(bc: BufferContext; cursorx, cursory: int): ClickResult {.proxy.} =
     if element != nil:
       bc.clickResult = nil
       let window = bc.window
-      let event = newEvent(satClick.toAtom(), element, bubbles = true,
-        cancelable = true)
+      let init = bc.initMouseEventInit(0, 0, cursorx, cursory)
+      let event = newMouseEvent(satClick.toAtom(), init)
       event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
       bc.maybeReshape()
@@ -1659,6 +1681,18 @@ proc click*(bc: BufferContext; cursorx, cursory: int): ClickResult {.proxy.} =
   if url != nil:
     return ClickResult(open: newRequest(url, hmGet))
   return ClickResult()
+
+proc contextMenu*(bc: BufferContext; cursorx, cursory: int) {.proxy.} =
+  if bc.config.scripting != smFalse:
+    let element = bc.getCursorElement(cursorx, cursory)
+    if element != nil:
+      bc.clickResult = nil
+      let window = bc.window
+      let init = bc.initMouseEventInit(2, 2, cursorx, cursory)
+      let event = newMouseEvent(satContextmenu.toAtom(), init)
+      event.isTrusted = true
+      discard window.jsctx.dispatch(element, event)
+      bc.maybeReshape()
 
 proc select*(bc: BufferContext; selected: int): ClickResult {.proxy.} =
   if bc.document.focus != nil and
@@ -1892,6 +1926,7 @@ const ProxyMap = [
   bcCheckRefresh: checkRefreshCmd,
   bcClick: clickCmd,
   bcClone: cloneCmd,
+  bcContextMenu: contextMenuCmd,
   bcFindNextLink: findNextLinkCmd,
   bcFindNextMatch: findNextMatchCmd,
   bcFindNextParagraph: findNextParagraphCmd,

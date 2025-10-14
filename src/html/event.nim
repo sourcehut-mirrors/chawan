@@ -61,8 +61,8 @@ type
   MouseEvent* = ref object of UIEvent
     screenX {.jsget.}: int32
     screenY {.jsget.}: int32
-    clientX {.jsget.}: int32
-    clientY {.jsget.}: int32
+    clientX {.jsget, jsget: "x".}: int32
+    clientY {.jsget, jsget: "y".}: int32
     button {.jsget.}: int16
     buttons {.jsget.}: uint16
     ctrlKey {.jsget.}: bool
@@ -108,6 +108,8 @@ var getParentImpl*: proc(ctx: JSContext; target: EventTarget; isLoad: bool):
   EventTarget {.nimcall, raises: [].}
 var isWindowImpl*: proc(target: EventTarget): bool {.nimcall, raises: [].}
 var isHTMLElementImpl*: proc(target: EventTarget): bool {.nimcall, raises: [].}
+var setEventImpl*: proc(ctx: JSContext; event: Event): Event {.
+  nimcall, raises: [].}
 
 iterator eventListeners(this: EventTarget): EventListener =
   var it = this.eventListener
@@ -290,7 +292,7 @@ proc newSubmitEvent*(ctype: CAtom; eventInit = SubmitEventInit()): SubmitEvent
   return event
 
 # UIEvent
-type EventTargetWindow = distinct EventTarget
+type EventTargetWindow* = distinct EventTarget
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindow):
     Opt[void] =
   var res0: EventTarget
@@ -302,7 +304,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindow):
   ok()
 
 type UIEventInit = object of EventInit
-  view {.jsdefault.}: EventTargetWindow
+  view* {.jsdefault.}: EventTargetWindow
   detail {.jsdefault.}: int32
 
 proc newUIEvent*(ctype: CAtom; eventInit = UIEventInit()): UIEvent {.jsctor.} =
@@ -330,13 +332,13 @@ type EventModifierInit = object of UIEventInit
   #TODO and the others...
 
 # MouseEvent
-type MouseEventInit = object of EventModifierInit
-  screenX {.jsdefault.}: int32
-  screenY {.jsdefault.}: int32
-  clientX {.jsdefault.}: int32
-  clientY {.jsdefault.}: int32
-  button {.jsdefault.}: int32 #TODO int16?
-  buttons {.jsdefault.}: uint32 #TODO uint16?
+type MouseEventInit* = object of EventModifierInit
+  screenX* {.jsdefault.}: int32
+  screenY* {.jsdefault.}: int32
+  clientX* {.jsdefault.}: int32
+  clientY* {.jsdefault.}: int32
+  button* {.jsdefault.}: int32 #TODO int16?
+  buttons* {.jsdefault.}: uint32 #TODO uint16?
   relatedTarget {.jsdefault.}: Option[EventTarget]
 
 proc newMouseEvent*(ctype: CAtom; eventInit = MouseEventInit()): MouseEvent
@@ -647,6 +649,7 @@ proc dispatchEvent0(dctx: var DispatchContext; item: DispatchItem) =
 
 proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
     targetOverride = false): bool =
+  let prev = ctx.setEventImpl(event)
   var dctx = DispatchContext(ctx: ctx, event: event)
   event.flags.incl(efDispatch)
   if not targetOverride:
@@ -668,6 +671,7 @@ proc dispatch*(ctx: JSContext; target: EventTarget; event: Event;
     dctx.dispatchEvent0(item)
   event.eventPhase = 0
   event.flags.excl(efDispatch)
+  discard ctx.setEventImpl(prev)
   return dctx.canceled
 
 proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event): JSValue

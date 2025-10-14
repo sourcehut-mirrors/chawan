@@ -322,11 +322,12 @@ proc newDOMRect(offset: Offset; size: Size): DOMRect =
     height: size.h.toFloat64()
   )
 
-proc getClientRects(res: var seq[DOMRect]; box: CSSBox; firstOnly: bool) =
+proc getClientRects(res: var seq[DOMRect]; box: CSSBox;
+    firstOnly, blockOnly: bool) =
   if box of BlockBox:
     let box = BlockBox(box)
     res.add(newDOMRect(box.render.offset, box.state.size))
-  else:
+  elif not blockOnly:
     let ibox = InlineBox(box)
     for area in ibox.state.areas:
       let offset = ibox.render.offset - ibox.state.startOffset + area.offset
@@ -335,12 +336,13 @@ proc getClientRects(res: var seq[DOMRect]; box: CSSBox; firstOnly: bool) =
         break
     for it in ibox.children:
       if it.element == box.element and it of InlineBox:
-        res.getClientRects(it, firstOnly)
+        res.getClientRects(it, firstOnly, false)
 
-getClientRectsImpl = proc(element: Element; firstOnly: bool): seq[DOMRect] =
+getClientRectsImpl = proc(element: Element; firstOnly, blockOnly: bool):
+    seq[DOMRect] =
   result = @[]
   if element.box != nil:
-    result.getClientRects(CSSBox(element.box), firstOnly)
+    result.getClientRects(CSSBox(element.box), firstOnly, blockOnly)
 
 when defined(debug):
   import chame/tags
