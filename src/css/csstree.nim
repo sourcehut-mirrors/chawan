@@ -245,9 +245,15 @@ proc addAnonTable(frame: var TreeFrame; parentDisplay, display: CSSDisplay):
   ))
   return frame.children[^1].anonChildren[0].anonChildren[^1].anonChildren
 
-proc getParent(frame: var TreeFrame; computed: CSSValues; display: CSSDisplay):
-    var seq[StyledNode] =
+proc madd(s: var seq[StyledNode]; node: StyledNode): var StyledNode =
+  s.add(node)
+  s[^1]
+
+proc getParent(frame: var TreeFrame; display: CSSDisplay): var seq[StyledNode] =
   let parentDisplay = frame.computed{"display"}
+  if display in DisplayInlineBlockLike and parentDisplay != DisplayInline:
+    return frame.getParent(DisplayInline)
+      .madd(initStyledAnon(frame.parent, frame.ctx.rootProperties)).anonChildren
   case parentDisplay
   of DisplayInnerFlex, DisplayInnerGrid:
     if display in DisplayOuterInline:
@@ -315,14 +321,14 @@ proc addListItem(frame: var TreeFrame; node: sink StyledNode) =
       @[markerText]))
   of ListStylePositionInside:
     node.anonChildren.add(markerText)
-  frame.getParent(node.computed, node.computed{"display"}).add(node)
+  frame.getParent(node.computed{"display"}).add(node)
 
 proc addTable(frame: var TreeFrame; node: sink StyledNode) =
   var node = node
   let (outer, inner) = node.computed.splitTable()
   node.computed = outer
   node.anonChildren.add(initStyledAnon(node.element, inner))
-  frame.getParent(node.computed, node.computed{"display"}).add(node)
+  frame.getParent(node.computed{"display"}).add(node)
 
 proc add(frame: var TreeFrame; node: sink StyledNode) =
   let display = node.computed{"display"}
@@ -339,7 +345,7 @@ proc add(frame: var TreeFrame; node: sink StyledNode) =
       frame.lastChildWasInline = false
       return # already added
     else: discard
-  frame.getParent(node.computed, display).add(node)
+  frame.getParent(display).add(node)
   frame.lastChildWasInline = display in DisplayOuterInline
   frame.captionSeen = frame.captionSeen or display == DisplayTableCaption
 
@@ -528,7 +534,7 @@ proc buildInnerBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox):
     BlockBox(computed: frame.computed, element: frame.parent)
   # Grid and flex items always respect z-index.  Other boxes only
   # respect it with position != static.
-  let forceZ = display in DisplayInnerFlex or display in DisplayInnerGrid
+  let forceZ = display in DisplayInnerFlex + DisplayInnerGrid
   var last: CSSBox = nil
   for child in frame.children:
     let childBox = ctx.build(nil, child, forceZ)
@@ -625,10 +631,7 @@ proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
   ctx.resetCounters(styledNode.element, countersLen, oldCountersLen,
     firstSetCounterIdx)
   if stackItem != nil:
-    if box of InlineBlockBox:
-      stackItem.box = box.firstChild
-    else:
-      stackItem.box = box
+    stackItem.box = box
     box.positioned = position != PositionStatic
     box.absolute = ctx.absoluteHead
     ctx.absoluteHead = oldAbsoluteHead
@@ -638,14 +641,6 @@ proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     of PositionAbsolute: ctx.addAbsolute(box)
     of PositionFixed: ctx.addFixed(box)
     else: discard
-  if display in DisplayInlineBlockLike:
-    let wrapper = InlineBlockBox(
-      computed: ctx.rootProperties,
-      element: frame.parent,
-      firstChild: box
-    )
-    box.parent = wrapper
-    return wrapper
   return box
 
 proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;

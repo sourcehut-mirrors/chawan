@@ -180,9 +180,6 @@ type
     imgstate*: InlineImageState
     bmp*: NetworkBitmap
 
-  InlineBlockBox* = ref object of InlineBox
-    # InlineBlockBox always has one block child.
-
 proc offset*(x, y: LUnit): Offset =
   return [dtHorizontal: x, dtVertical: y]
 

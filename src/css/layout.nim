@@ -720,6 +720,7 @@ type
 
   InlineAtom = ref object
     ibox: InlineBox
+    box: BlockBox
     run: TextRun
     offset: Offset
     size: Size
@@ -969,9 +970,8 @@ const TextAlignNone = {
 }
 
 proc baseline(atom: InlineAtom; lctx: LayoutContext): LUnit =
-  if atom.ibox of InlineBlockBox:
-    let ibox = InlineBlockBox(atom.ibox)
-    let box = BlockBox(ibox.firstChild)
+  let box = atom.box
+  if box != nil:
     let baseline = if box.state.baselineSet:
       box.state.baseline
     else:
@@ -980,10 +980,9 @@ proc baseline(atom: InlineAtom; lctx: LayoutContext): LUnit =
   return atom.size.h
 
 proc vertalign(atom: InlineAtom): CSSVerticalAlign =
-  let ibox = atom.ibox
-  if ibox of InlineBlockBox:
-    return ibox.firstChild.computed{"vertical-align"}
-  ibox.computed{"vertical-align"}
+  if atom.box != nil:
+    return atom.box.computed{"vertical-align"}
+  atom.ibox.computed{"vertical-align"}
 
 proc positionAtom(lbstate: LineBoxState; atom: InlineAtom;
     lctx: LayoutContext) =
@@ -1071,10 +1070,9 @@ proc alignLine(fstate: var FlowState) =
         it = InlineBox(it.parent)
     if atom.ibox of InlineTextBox:
       atom.run.offset = atom.offset
-    elif atom.ibox of InlineBlockBox:
-      let ibox = InlineBlockBox(atom.ibox)
+    elif atom.box != nil:
       # Add the offset to avoid destroying margins (etc.) of the block.
-      BlockBox(ibox.firstChild).state.offset += atom.offset
+      atom.box.state.offset += atom.offset
     elif atom.ibox of InlineImageBox:
       let ibox = InlineImageBox(atom.ibox)
       ibox.imgstate.offset = atom.offset
@@ -1752,9 +1750,8 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
   else:
     fstate.layoutBlockChild(child)
 
-proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
+proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBox; box: BlockBox) =
   let lctx = fstate.lctx
-  let box = BlockBox(ibox.firstChild)
   if box.computed{"position"} in PositionAbsoluteFixed:
     # Absolute is a bit of a special case in inline: while the spec
     # *says* it should blockify, absolutely positioned inline-blocks are
@@ -1776,6 +1773,7 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBlockBox) =
     # Apply the block box's properties to the atom itself.
     let atom = InlineAtom(
       ibox: ibox,
+      box: box,
       size: box.outerSize(input, lctx)
     )
     discard fstate.prepareSpace(ibox, atom.size.w)
@@ -1874,9 +1872,6 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
   elif ibox of InlineNewLineBox:
     let ibox = InlineNewLineBox(ibox)
     fstate.finishLine(ibox, wrap = false, force = true, ibox.computed{"clear"})
-  elif ibox of InlineBlockBox:
-    let ibox = InlineBlockBox(ibox)
-    fstate.layoutInlineBlock(ibox)
   elif ibox of InlineImageBox:
     let ibox = InlineImageBox(ibox)
     fstate.layoutImage(ibox, padding.sum())
@@ -1903,7 +1898,11 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       if child of InlineBox:
         fstate.layoutInline(InlineBox(child))
       else:
-        fstate.layoutOuterBlock(BlockBox(child))
+        let child = BlockBox(child)
+        if child.computed{"display"} in DisplayInlineBlockLike:
+          fstate.layoutInlineBlock(ibox, child)
+        else:
+          fstate.layoutOuterBlock(child)
     if padding.send != 0:
       ibox.state.areas.add(Area(
         offset: offset(x = fstate.lbstate.size.w, y = 0),
