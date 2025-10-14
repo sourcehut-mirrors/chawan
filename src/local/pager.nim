@@ -2589,12 +2589,14 @@ proc externFilterSource(pager: Pager; cmd: string; c = none(Container);
     pager.addContainer(container)
     container.filter = BufferFilter(cmd: cmd)
 
-# Execute cmd, with ps moved onto stdin, os onto stdout, and stderr closed.
+# Execute cmd, with ps moved onto stdin, os onto stdout, and the browser
+# console onto stderr.
 # ps remains open, but os is consumed.
 proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
   var oldint, oldquit: Sigaction
   var act = Sigaction(sa_handler: SIG_IGN, sa_flags: SA_RESTART)
   var oldmask, dummy: Sigset
+  let westream = pager.forkserver.westream
   if sigemptyset(act.sa_mask) < 0 or
       sigaction(SIGINT, act, oldint) < 0 or
       sigaction(SIGQUIT, act, oldquit) < 0 or
@@ -2614,7 +2616,7 @@ proc execPipe(pager: Pager; cmd: string; ps, os: PosixStream): int =
     discard sigprocmask(SIG_SETMASK, oldmask, dummy);
     ps.moveFd(STDIN_FILENO)
     os.moveFd(STDOUT_FILENO)
-    closeStderr()
+    westream.moveFd(STDERR_FILENO)
     myExec(cmd)
   else:
     discard sigaction(SIGINT, oldint, act)

@@ -29,6 +29,7 @@ type
   ForkServer* = object
     stream*: SocketStream
     estream*: PosixStream
+    westream*: PosixStream
 
   ForkServerContext = object
     stream: SocketStream

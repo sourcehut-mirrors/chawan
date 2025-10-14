@@ -32,7 +32,6 @@ pager:
 - save/edit buffer output
 	* just reuse dump mode code
 - alert on external command failure
-- pipe copiousoutput, x-htmloutput stderr to console
 network:
 - uBO integration? (or at least implement filter lists)
 - dict

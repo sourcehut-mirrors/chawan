@@ -245,6 +245,7 @@ proc forkForkServer(loaderSockVec: array[2, cint]): ForkServer =
     die("failed to open fork server i/o socket")
   if pipe(pipeFdErr) == -1:
     die("failed to open fork server error pipe")
+  let westream = newPosixStream(pipeFdErr[1])
   let pid = fork()
   if pid == -1:
     die("failed to fork fork the server process")
@@ -253,7 +254,7 @@ proc forkForkServer(loaderSockVec: array[2, cint]): ForkServer =
     discard setsid()
     closeStdin()
     closeStdout()
-    newPosixStream(pipeFdErr[1]).moveFd(STDERR_FILENO)
+    westream.moveFd(STDERR_FILENO)
     discard close(pipeFdErr[0]) # close read
     discard close(sockVec[0])
     discard close(loaderSockVec[0])
@@ -262,7 +263,6 @@ proc forkForkServer(loaderSockVec: array[2, cint]): ForkServer =
     runForkServer(controlStream, loaderStream)
     exitnow(1)
   else:
-    discard close(pipeFdErr[1]) # close write
     discard close(sockVec[1])
     discard close(loaderSockVec[1])
     let stream = newSocketStream(sockVec[0])
@@ -270,7 +270,7 @@ proc forkForkServer(loaderSockVec: array[2, cint]): ForkServer =
     let estream = newPosixStream(pipeFdErr[0])
     estream.setCloseOnExec()
     estream.setBlocking(false)
-    return ForkServer(stream: stream, estream: estream)
+    return ForkServer(stream: stream, estream: estream, westream: westream)
 
 proc main() =
   let binDir = myposix.getAppFilename().untilLast('/')
