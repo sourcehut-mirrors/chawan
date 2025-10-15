@@ -317,7 +317,7 @@ copyCursorLink = '''
 	const link = pager.hoverLink;
 	if (!link)
 		pager.alert("Please move the cursor above a link and try again.");
-	else if (pager.externInto(config.external.copyCmd, link))
+	else if (pager.clipboardWrite(link))
 		pager.alert("Copied URL to clipboard.");
 	else
 		pager.alert("Error; please install xsel or adjust external.copy-cmd");
@@ -328,7 +328,7 @@ copyCursorImage = '''
 	const link = pager.hoverImage;
 	if (!link)
 		pager.alert("Please move the cursor above an image and try again.");
-	else if (pager.externInto(config.external.copyCmd, link))
+	else if (pager.clipboardWrite(link))
 		pager.alert("Copied URL to clipboard.");
 	else
 		pager.alert("Error; please install xsel or adjust external.copy-cmd");
@@ -595,8 +595,9 @@ async () => {
 		return;
 	}
 	const text = await pager.getSelectionText(pager.currentSelection);
-	if (pager.externInto(config.external.copyCmd, text))
-		pager.alert("Copied selection to clipboard.");
+	const s = text.length != 1 ? "s" : "";
+	if (pager.clipboardWrite(text))
+		pager.alert(`Copied ${text.length} character${s}.`);
 	else
 		pager.alert("Error; please install xsel or adjust external.copy-cmd");
 	pager.cursorToggleSelection();
