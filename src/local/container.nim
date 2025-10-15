@@ -173,10 +173,8 @@ type
     lineshift: int
     numLines* {.jsget.}: int
     replace*: Container
-    replaceBackup*: Container # for redirection; when set, we get discarded
     # if we are referenced by another container, replaceRef is set so that we
     # can clear ourselves on discard
-    #TODO this is a mess :(
     replaceRef*: Container
     retry*: seq[URL]
     sourcepair*: Container # pointer to buffer with a source view (may be nil)

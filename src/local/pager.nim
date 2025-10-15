@@ -1633,25 +1633,19 @@ proc replace(pager: Pager; target, container: Container) =
 proc deleteContainer(pager: Pager; container, setTarget: Container) =
   if container.loadState == lsLoading:
     container.cancel()
-  if container.replaceBackup != nil:
-    pager.setContainer(container.replaceBackup)
-  elif container.replace != nil:
-    pager.replace(container, container.replace)
   if container.sourcepair != nil:
     container.sourcepair.sourcepair = nil
     container.sourcepair = nil
   if container.replaceRef != nil:
     container.replaceRef.replace = nil
-    container.replaceRef.replaceBackup = nil
     container.replaceRef = nil
+  if container.replace != nil:
+    container.replace.replaceRef = nil
+    container.replace = nil
   let wasCurrent = pager.container == container
   pager.setTab(container, nil)
   pager.updatePinned(container, nil)
-  if container.replace != nil:
-    container.replace = nil
-  elif container.replaceBackup != nil:
-    container.replaceBackup = nil
-  elif wasCurrent:
+  if wasCurrent:
     pager.setContainer(setTarget)
   if container.process != -1:
     pager.loader.removeCachedItem(container.cacheId)
@@ -1999,10 +1993,10 @@ proc initGotoURL(pager: Pager; request: Request; charset: Charset;
 
 #TODO maybe we should create the container object before starting the
 # request?  then we wouldn't have to pass around these million params...
-proc gotoURL0(pager: Pager; request: Request; save, history, add: bool;
+proc gotoURL0(pager: Pager; request: Request; save, history: bool;
     bufferConfig: BufferConfig; loaderConfig: LoaderClientConfig;
     title, contentType: string; redirectDepth: int; url: URL;
-    replace: Container; redirect: bool; filterCmd: string): Container =
+    replace: Container; filterCmd: string): Container =
   var flags: set[ContainerFlag] = {}
   if save:
     flags.incl(cfSave)
@@ -2022,38 +2016,30 @@ proc gotoURL0(pager: Pager; request: Request; save, history, add: bool;
   if filterCmd != "":
     container.filter = BufferFilter(cmd: filterCmd)
   if replace != nil:
-    let replaceBackup = if replace.replaceBackup != nil:
-      replace.replaceBackup
-    else:
-      replace.find(ndAny)
     pager.replace(replace, container)
-    #TODO surely there's a less convoluted way to achieve this...
-    if redirect:
-      if replaceBackup != nil:
-        replaceBackup.replaceRef = container
-        container.replaceBackup = replaceBackup
-    else:
-      container.replace = replace
-      replace.replaceRef = container
-  else:
-    if add:
-      pager.addContainer(container)
+    var replace = replace
+    let old = replace
+    if old.replace != nil:
+      # handle replacement chains by just dropping everything in the middle
+      replace = old.replace
+      pager.deleteContainer(old, nil)
+    container.replace = replace
+    replace.replaceRef = container
   inc pager.numload
   return container
 
 # Load request in a new buffer.
 proc gotoURL(pager: Pager; request: Request; contentType = "";
-    charset = CHARSET_UNKNOWN; replace: Container = nil;
-    redirect: bool = false; redirectDepth = 0; referrer: Container = nil;
-    save = false; history = true; url: URL = nil; add = true; title = ""):
-    Container =
+    charset = CHARSET_UNKNOWN; replace: Container = nil; redirectDepth = 0;
+    referrer: Container = nil; save = false; history = true; url: URL = nil;
+    title = ""): Container =
   var loaderConfig: LoaderClientConfig
   var bufferConfig: BufferConfig
   var filterCmd: string
   pager.initGotoURL(request, charset, referrer, none(CookieMode), loaderConfig,
     bufferConfig, filterCmd)
-  return pager.gotoURL0(request, save, history, add, bufferConfig, loaderConfig,
-    title, contentType, redirectDepth, url, replace, redirect, filterCmd)
+  return pager.gotoURL0(request, save, history, bufferConfig, loaderConfig,
+    title, contentType, redirectDepth, url, replace, filterCmd)
 
 # Check if the user is trying to go to an anchor of the current buffer.
 # If yes, the caller need not call gotoURL.
@@ -2103,7 +2089,9 @@ proc loadURL(pager: Pager; url: string; contentType = "";
   if firstParse := parseURL(url):
     let request = newRequest(firstParse)
     if not pager.gotoURLHash(request, pager.container, save = false):
-      discard pager.gotoURL(request, contentType, charset, history = history)
+      let container = pager.gotoURL(request, contentType, charset,
+        history = history)
+      pager.addContainer(container)
     return
   var urls: seq[URL] = @[]
   if pager.config.network.prependScheme != "" and url[0] != '/':
@@ -2120,6 +2108,7 @@ proc loadURL(pager: Pager; url: string; contentType = "";
   else:
     let container = pager.gotoURL(newRequest(urls.pop()), contentType,
       charset = charset, history = history)
+    pager.addContainer(container)
     container.retry = urls
 
 proc fromJSURL(ctx: JSContext; val: JSValueConst): Opt[URL] =
@@ -2157,7 +2146,7 @@ proc addTab(ctx: JSContext; pager: Pager; buffer: JSValueConst = JS_UNDEFINED):
       if parsed.isErr:
         return JS_EXCEPTION
       parsed.get
-    c = pager.gotoURL(newRequest(url), history = false, add = false)
+    c = pager.gotoURL(newRequest(url), history = false)
   pager.addTab(c)
   JS_UNDEFINED
 
@@ -2213,7 +2202,8 @@ proc readPipe(pager: Pager; contentType: string; cs: Charset; ps: PosixStream;
   let url = parseURL0("stream:-")
   pager.loader.passFd(url.pathname, ps.fd)
   ps.sclose()
-  discard pager.gotoURL(newRequest(url), contentType, cs, title = title)
+  let container = pager.gotoURL(newRequest(url), contentType, cs, title = title)
+  pager.addContainer(container)
 
 proc getHistoryURL(pager: Pager): URL {.jsfunc.} =
   let url = parseURL0("stream:history")
@@ -2255,7 +2245,7 @@ proc showConsole(pager: Pager) =
   if pager.pinned.console == nil:
     let request = newRequest("cache:" & $pager.consoleCacheId)
     let console = pager.gotoURL(request, "text/plain", CHARSET_UNKNOWN,
-      add = false, title = ConsoleTitle)
+      title = ConsoleTitle)
     pager.pinned.console = console
     pager.addTab(console)
   if current != pager.pinned.console:
@@ -2278,7 +2268,7 @@ proc clearConsole(pager: Pager) =
   if pager.pinned.console != nil:
     let request = newRequest("cache:" & $pager.consoleCacheId)
     let console = pager.gotoURL(request, "text/plain", CHARSET_UNKNOWN,
-      replace = pager.pinned.console, add = false, title = ConsoleTitle)
+      replace = pager.pinned.console, title = ConsoleTitle)
     pager.pinned.console = console
     pager.addTab(console)
 
@@ -2515,16 +2505,17 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
   pager.initGotoURL(request, CHARSET_UNKNOWN, referrer = nil, t.cookie,
     loaderConfig, bufferConfig, filterCmd)
   bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
-  ok(pager.gotoURL0(request, t.save, t.history, add = true, bufferConfig,
+  let container = pager.gotoURL0(request, t.save, t.history, bufferConfig,
     loaderConfig, title = "", t.contentType.get(""), redirectDepth = 0,
-    url = nil, t.replace.get(nil), redirect = false, filterCmd))
+    url = nil, t.replace.get(nil), filterCmd)
+  pager.addContainer(container)
+  ok(container)
 
 # Reload the page in a new buffer, then kill the previous buffer.
 proc reload(pager: Pager) {.jsfunc.} =
   let old = pager.container
-  let container = pager.gotoURL(newRequest(pager.container.url),
-    pager.container.contentType, replace = old,
-    history = cfHistory in old.flags)
+  let container = pager.gotoURL(newRequest(old.url), old.contentType,
+    replace = old, history = cfHistory in old.flags)
   container.copyCursorPos(old)
 
 type ExternDict = object of JSDict
@@ -2847,21 +2838,29 @@ proc runMailcap(pager: Pager; url: URL; stream: PosixStream;
 
 proc redirectTo(pager: Pager; container: Container; request: Request) =
   let save = cfSave in container.flags
-  if not pager.gotoURLHash(request, pager.container, save):
-    let nc = pager.gotoURL(request, replace = container, redirect = true,
-      redirectDepth = container.redirectDepth + 1, referrer = container,
-      save = save, history = cfHistory in container.flags)
+  if not pager.gotoURLHash(request, container, save):
+    let nc = pager.gotoURL(request, redirectDepth = container.redirectDepth + 1,
+      referrer = container, save = save, history = cfHistory in container.flags)
     if nc != nil:
+      let replace = container.replace
+      pager.replace(container, nc)
+      if replace != nil:
+        container.replace = nil
+        replace.replaceRef = nc
+        nc.replace = replace
       nc.loadinfo = "Redirecting to " & $request.url
       pager.onSetLoadInfo(nc)
   dec pager.numload
 
 proc fail(pager: Pager; container: Container; errorMessage: string) =
   dec pager.numload
+  if container.replace != nil: # deleteContainer unsets replace etc.
+    pager.replace(container, container.replace)
   pager.deleteContainer(container, container.find(ndAny))
   if container.retry.len > 0:
-    discard pager.gotoURL(newRequest(container.retry.pop()),
+    let container = pager.gotoURL(newRequest(container.retry.pop()),
       container.contentType, history = cfHistory in container.flags)
+    pager.addContainer(container)
   else:
     # Add to the history anyway, so that the user can edit the URL.
     if cfHistory in container.flags:
@@ -2965,8 +2964,10 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
     else:
       container.process = pid
       if container.replace != nil:
-        pager.deleteContainer(container.replace, container.find(ndAny))
+        let replace = container.replace
+        replace.replaceRef = nil
         container.replace = nil
+        pager.deleteContainer(replace, container)
       pager.connected3(container, cstream, res.ostream, response.outputId,
         res.ostreamOutputId, cmfRedirected in res.flags)
   else:
@@ -3027,8 +3028,9 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
   # clear replacement references, because we can't fail to load this
   # buffer anymore
   container.replaceRef = nil
-  container.replace = nil
-  container.replaceBackup = nil
+  if container.replace != nil:
+    container.replace.replaceRef = nil
+    container.replace = nil
 
 proc saveEntry(pager: Pager; entry: MailcapEntry) =
   if not pager.config.external.autoMailcap.saveEntry(entry):
@@ -3343,13 +3345,15 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
         if x:
           if not pager.gotoURLHash(event.request, container, event.save):
-            discard pager.gotoURL(event.request, event.contentType,
+            let container = pager.gotoURL(event.request, event.contentType,
               referrer = pager.container, save = event.save)
+            pager.addContainer(container)
       )
     else:
       if not pager.gotoURLHash(event.request, container, event.save):
-        discard pager.gotoURL(event.request, event.contentType,
+        let container = pager.gotoURL(event.request, event.contentType,
           referrer = pager.container, save = event.save, url = event.url)
+        pager.addContainer(container)
   of cetStatus:
     if pager.container == container:
       pager.showAlerts()
