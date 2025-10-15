@@ -145,6 +145,9 @@ proc toJS*(ctx: JSContext; s: cstring): JSValue =
 proc toJS*(ctx: JSContext; s: string): JSValue =
   return JS_NewStringLen(ctx, cstring(s), csize_t(s.len))
 
+proc toJS*(ctx: JSContext; n: int16): JSValue =
+  return JS_NewInt32(ctx, int32(n))
+
 proc toJS*(ctx: JSContext; n: int32): JSValue =
   return JS_NewInt32(ctx, n)
 
@@ -154,8 +157,10 @@ proc toJS*(ctx: JSContext; n: int64): JSValue =
 proc toJS*(ctx: JSContext; n: int): JSValue =
   when sizeof(int) > 4:
     return ctx.toJS(int64(n))
-  else:
+  elif sizeof(int) > 2:
     return ctx.toJS(int32(n))
+  else:
+    return ctx.toJS(int16(n))
 
 proc toJS*(ctx: JSContext; n: uint16): JSValue =
   return JS_NewUint32(ctx, uint32(n))

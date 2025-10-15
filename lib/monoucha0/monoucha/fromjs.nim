@@ -12,8 +12,10 @@ import quickjs
 import tojs
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): Opt[void]
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): Opt[void]
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): Opt[void]
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int64): Opt[void]
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint16): Opt[void]
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint32): Opt[void]
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int): Opt[void]
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): Opt[void]
@@ -84,6 +86,13 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): Opt[void] =
   JS_FreeCString(ctx, outp)
   return ok()
 
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): Opt[void] =
+  var n {.noinit.}: int32
+  if JS_ToInt32(ctx, n, val) < 0:
+    return err()
+  res = cast[int16](n)
+  return ok()
+
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): Opt[void] =
   var n {.noinit.}: int32
   if JS_ToInt32(ctx, n, val) < 0:
@@ -96,6 +105,13 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int64): Opt[void] =
   if JS_ToInt64(ctx, n, val) < 0:
     return err()
   res = n
+  return ok()
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint16): Opt[void] =
+  var n {.noinit.}: uint32
+  if JS_ToUint32(ctx, n, val) < 0:
+    return err()
+  res = uint16(n)
   return ok()
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint32): Opt[void] =

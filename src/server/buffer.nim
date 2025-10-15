@@ -1636,7 +1636,7 @@ proc click(bc: BufferContext; clickable: Element): ClickResult =
     bc.restoreFocus()
     return ClickResult()
 
-proc initMouseEventInit(bc: BufferContext; button: int32; buttons: uint32;
+proc initMouseEventInit(bc: BufferContext; button: int16; buttons: uint16;
     x, y: int): MouseEventInit =
   let x = if bc.config.scripting == smApp and x <= int32.high div bc.attrs.ppc:
     int32(x * bc.attrs.ppc)

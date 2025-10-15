@@ -337,8 +337,8 @@ type MouseEventInit* = object of EventModifierInit
   screenY* {.jsdefault.}: int32
   clientX* {.jsdefault.}: int32
   clientY* {.jsdefault.}: int32
-  button* {.jsdefault.}: int32 #TODO int16?
-  buttons* {.jsdefault.}: uint32 #TODO uint16?
+  button* {.jsdefault.}: int16
+  buttons* {.jsdefault.}: uint16
   relatedTarget {.jsdefault.}: Option[EventTarget]
 
 proc newMouseEvent*(ctype: CAtom; eventInit = MouseEventInit()): MouseEvent
