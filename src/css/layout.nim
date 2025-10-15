@@ -748,7 +748,6 @@ type
     exclusionsTail: Exclusion
     # Inline context state:
     lbstate: LineBoxState
-    padding: RelativeRect
 
 # Forward declarations
 proc layout(lctx: LayoutContext; box: BlockBox; offset: Offset;
@@ -922,8 +921,9 @@ proc initLine(fstate: var FlowState; flag = ilfRegular) =
     return
   # we want to start from padding-left, but normally exclude padding
   # from space. so we must offset available width with padding-left too
-  fstate.lbstate.availableWidth = fstate.space.w.u + fstate.padding.left
-  fstate.lbstate.size.w = fstate.padding.left
+  let paddingLeft = fstate.box.input.padding.left
+  fstate.lbstate.availableWidth = fstate.space.w.u + paddingLeft
+  fstate.lbstate.size.w = paddingLeft
   fstate.lbstate.init = lisNoExclusions
   #TODO what if maxContent/minContent?
   if fstate.exclusionsTail != nil:
@@ -1190,7 +1190,7 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
       fstate.flushWhitespace(ibox)
       # see below on padding
       fstate.intr.w = max(fstate.intr.w, fstate.lbstate.size.w -
-        fstate.padding.left)
+        fstate.box.input.padding.left)
     elif whitespace == WhitespacePreWrap:
       fstate.flushWhitespace(ibox, hang = true)
     else:
@@ -1227,7 +1227,7 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     # padding-left is added to the line to aid float exclusion; undo
     # this here to prevent double-padding later
     fstate.maxChildWidth = max(fstate.maxChildWidth,
-      lineWidth - fstate.padding.left)
+      lineWidth - fstate.box.input.padding.left)
   else:
     # Two cases exist:
     # a) The float cannot be positioned, because `fstate.box' has not
@@ -1948,7 +1948,6 @@ proc initFlowState(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
     box: box,
     offset: input.padding.topLeft,
     bfcOffset: input.bfcOffset,
-    padding: input.padding,
     space: input.space,
     exclusionsHead: input.exclusionsHead,
     exclusionsTail: input.exclusionsTail,
