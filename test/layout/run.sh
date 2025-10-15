@@ -6,7 +6,6 @@ failed=0
 for h in *.html
 do	printf '%s\r' "$h"
 	expected="$(basename "$h" .html).expected"
-	color_expected="$(basename "$h" .html).color.expected"
 	if test -f "$expected"
 	then	if ! "$CHA" -C config.toml "$h" | diff "$expected" -
 		then	failed=$(($failed+1))
