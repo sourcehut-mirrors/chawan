@@ -1714,27 +1714,50 @@ proc readCanceled*(bc: BufferContext) {.proxy.} =
 
 type GetLinesResult* = object
   numLines*: int
-  lines*: seq[SimpleFlexibleLine]
   bgcolor*: CellColor
+  lines*: seq[SimpleFlexibleLine]
   images*: seq[PosBitmap]
 
-proc getLines*(bc: BufferContext; w: Slice[int]): GetLinesResult {.proxy.} =
-  result = GetLinesResult(numLines: bc.lines.len, bgcolor: bc.bgcolor)
-  var w = w
-  if w.b < 0 or w.b > bc.lines.high:
-    w.b = bc.lines.high
-  #TODO this is horribly inefficient
-  for y in w:
-    var line = SimpleFlexibleLine(str: bc.lines[y].str)
-    for f in bc.lines[y].formats:
-      line.formats.add(SimpleFormatCell(format: f.format, pos: f.pos))
-    result.lines.add(line)
-  if bc.config.images:
-    let ppl = bc.attrs.ppl
-    for image in bc.images:
-      let ey = image.y + (image.height + ppl - 1) div ppl # ceil
-      if image.y <= w.b and ey >= w.a:
-        result.images.add(image)
+# hack: avoid writing element in FormatCell by hand-rolling a serialization
+# function that matches SimpleFlexibleLine
+# (TODO: elements really don't belong in FormatCell...)
+proc swrite(w: var PacketWriter; x: FlexibleLine) =
+  w.swrite(x.str)
+  w.swrite(x.formats.len)
+  for f in x.formats:
+    w.swrite(f.format)
+    w.swrite(f.pos)
+
+proc getLinesCmd(bc: BufferContext; r: var PacketReader; packetid: int) =
+  var slice: Slice[int]
+  r.sread(slice)
+  if slice.b < 0 or slice.b > bc.lines.high:
+    slice.b = bc.lines.high
+  bc.pstream.withPacketWriter w:
+    w.swrite(packetid)
+    w.swrite(bc.lines.len) # numLines
+    w.swrite(bc.bgcolor) # bgcolor
+    w.swrite(slice.len) # lines.len
+    for y in slice: # lines.data
+      w.swrite(bc.lines[y])
+    var images: seq[PosBitmap]
+    if bc.config.images:
+      let ppl = bc.attrs.ppl
+      for image in bc.images:
+        let ey = image.y + (image.height + ppl - 1) div ppl # ceil
+        if image.y <= slice.b and ey >= slice.a:
+          images.add(image)
+    w.swrite(images) # images
+  do:
+    quit(1)
+
+proc getLines*(iface: BufferInterface; slice: Slice[int]):
+    Promise[GetLinesResult] =
+  iface.stream.withPacketWriterFire w:
+    w.swrite(bcGetLines)
+    w.swrite(iface.packetid)
+    w.swrite(slice)
+  return addPromise[GetLinesResult](iface)
 
 proc getLinks*(bc: BufferContext): seq[string] {.proxy.} =
   result = newSeq[string]()
