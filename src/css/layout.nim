@@ -1,5 +1,8 @@
 {.push raises: [].}
 
+# Note: if you start (or stop) using a property in layout, don't forget to
+# modify LayoutProperties in cssvalues.
+
 import std/math
 
 import css/box
@@ -757,6 +760,8 @@ iterator exclusions(fstate: FlowState): Exclusion {.inline.} =
   var ex = fstate.exclusionsHead
   while ex != nil:
     yield ex
+    if ex == fstate.exclusionsTail:
+      break
     ex = ex.next
 
 proc nowrap(computed: CSSValues): bool =
@@ -852,17 +857,18 @@ proc findNextBlockOffset(fstate: FlowState; offset: Offset; size: Size;
   return fstate.findNextFloatOffset(offset, size, fstate.space, FloatLeft, outw)
 
 proc positionFloat(fstate: var FlowState; child: BlockBox; space: Space;
-    outerSize: Size; marginOffset, bfcOffset: Offset) =
+    outerSize: Size; marginOffset, bfcOffset, offset: Offset) =
   assert space.w.t != scFitContent
-  child.state.offset.y += fstate.marginTodo.sum()
+  var offset = offset
+  offset.y += fstate.marginTodo.sum()
   let clear = child.computed{"clear"}
   if clear != ClearNone:
-    child.state.offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear)
-  var childBfcOffset = bfcOffset + child.state.offset - marginOffset
+    offset.y.clearFloats(fstate, fstate.bfcOffset.y, clear)
+  var childBfcOffset = bfcOffset + offset - marginOffset
   childBfcOffset.y = max(fstate.clearOffset, childBfcOffset.y)
   let ft = child.computed{"float"}
   assert ft != FloatNone
-  let offset = fstate.findNextFloatOffset(childBfcOffset, outerSize, space, ft)
+  offset = fstate.findNextFloatOffset(childBfcOffset, outerSize, space, ft)
   child.state.offset = offset - bfcOffset + marginOffset
   let ex = Exclusion(offset: offset, size: outerSize, t: ft)
   if fstate.exclusionsHead == nil:
@@ -877,7 +883,10 @@ proc positionFloats(fstate: var FlowState; yshift: LUnit = 0) =
   while f != nil:
     var bfcOffset = f.bfcOffset
     bfcOffset.y += yshift
-    fstate.positionFloat(f.box, f.space, f.outerSize, f.marginOffset, bfcOffset)
+    fstate.positionFloat(f.box, f.space, f.outerSize, f.marginOffset, bfcOffset,
+      f.offset)
+    if f == fstate.pendingFloatsTail:
+      break
     f = f.next
   fstate.pendingFloatsHead = nil
   fstate.pendingFloatsTail = nil
@@ -906,17 +915,11 @@ type InitLineFlag = enum
   ilfAbsolute # set size, but allow further calls to override the state.
 
 proc initLine(fstate: var FlowState; flag = ilfRegular) =
-  if flag != ilfFloat:
-    #TODO ^ this should really be ilfRegular, but that summons another,
-    # much worse bug.
-    # In fact, absolute handling in the presence of floats has always
-    # been somewhat broken and should be fixed some time.
-    if flag != ilfAbsolute:
-      let poffsety = fstate.offset.y
-      fstate.flushMargins(fstate.offset.y)
-      # Don't forget to add it to intrinsic height...
-      fstate.intr.h += fstate.offset.y - poffsety
-    fstate.positionFloats()
+  if flag == ilfRegular:
+    let poffsety = fstate.offset.y
+    fstate.flushMargins(fstate.offset.y)
+    # Don't forget to add it to intrinsic height...
+    fstate.intr.h += fstate.offset.y - poffsety
   if fstate.lbstate.init != lisUninited:
     return
   # we want to start from padding-left, but normally exclude padding
@@ -1043,8 +1046,10 @@ proc alignLine(fstate: var FlowState) =
     # absolutes track the atom, except if they have a position themselves
     for absolute in atom.absolutes:
       if absolute.computed{"left"}.auto and absolute.computed{"right"}.auto:
+        absolute.input.bfcOffset.x = atom.offset.x
         absolute.state.offset.x = atom.offset.x
       if absolute.computed{"top"}.auto and absolute.computed{"bottom"}.auto:
+        absolute.input.bfcOffset.y = atom.offset.y
         absolute.state.offset.y = atom.offset.y
     totalWidth += atom.size.w
     let box = atom.ibox
@@ -1204,9 +1209,9 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
     var f = fstate.lbstate.pendingFloatsHead
     while f != nil:
       if whitespace != WhitespacePre and f.newLine:
-        f.box.state.offset.y += fstate.lbstate.size.h
+        f.offset.y += fstate.lbstate.size.h
       fstate.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
-        fstate.bfcOffset)
+        fstate.bfcOffset, f.offset)
       f = f.next
     # add line to fstate
     let y = fstate.offset.y
@@ -1243,7 +1248,7 @@ proc finishLine(fstate: var FlowState; ibox: InlineBox; wrap: bool;
       var f = fstate.lbstate.pendingFloatsHead
       while f != nil:
         fstate.positionFloat(f.box, f.space, f.outerSize, f.marginOffset,
-          fstate.bfcOffset)
+          fstate.bfcOffset, f.offset)
         f = f.next
     elif fstate.lbstate.pendingFloatsHead != nil:
       if fstate.pendingFloatsHead != nil:
@@ -1493,10 +1498,11 @@ proc popPositioned(lctx: LayoutContext; head: CSSAbsolute; size: Size) =
     # I'm subtracting the X offset because it's normally equivalent to
     # the float-induced offset. But this isn't always true, e.g. it
     # definitely isn't in flex layout.
-    var offset = child.state.offset
+    var offset = child.input.bfcOffset
     size.w -= offset.x
     let positioned = lctx.resolvePositioned(size, child.computed)
     var input = lctx.resolveAbsoluteSizes(size, positioned, child.computed)
+    input.bfcOffset = offset
     offset.x += input.margin.left
     lctx.layout(child, offset, input)
     if not child.computed{"left"}.auto:
@@ -1571,6 +1577,7 @@ proc layoutFloat(fstate: var FlowState; child: BlockBox) =
       newLine = false
     let f = PendingFloat(
       space: fstate.space,
+      offset: child.state.offset,
       bfcOffset: fstate.bfcOffset,
       box: child,
       marginOffset: input.margin.startOffset() + input.borderTopLeft(lctx),
@@ -1744,7 +1751,9 @@ proc layoutOuterBlock(fstate: var FlowState; child: BlockBox) =
       # flush if there is already something on the line *and* our outer
       # display is block.
       offset.y += fstate.cellSize.h
-    child.state.offset = offset
+    # This really has nothing to do with bfcOffset, but I don't want to
+    # waste more bytes in LayoutInput.
+    child.input.bfcOffset = offset
   elif child.computed{"float"} != FloatNone:
     fstate.layoutFloat(child)
   else:
@@ -1763,8 +1772,8 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBox; box: BlockBox) =
     # layout, where we don't care about the parent size but want to
     # place ourselves outside the left edge of our parent box.
     var input = lctx.resolveFloatSizes(fstate.space, box.computed)
-    lctx.layout(box, input.margin.topLeft, input)
     fstate.initLine(flag = ilfAbsolute)
+    lctx.layout(box, input.margin.topLeft, input)
     box.state.offset.x = fstate.lbstate.size.w - box.state.size.w
   else:
     # A real inline block.
@@ -1856,6 +1865,7 @@ proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
 
 proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
   let lctx = fstate.lctx
+  ibox.keepLayout = true
   ibox.resetState()
   let padding = Span(
     start: ibox.computed{"padding-left"}.px(fstate.space.w),
@@ -1958,6 +1968,9 @@ proc initFlowState(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
     pendingFloatsHead: input.pendingFloatsHead,
     pendingFloatsTail: input.pendingFloatsTail
   )
+  if box.computed{"position"} in PositionAbsoluteFixed:
+    # absolute abuses bfcOffset as its own offset, so unset it
+    result.bfcOffset = offset(0, 0)
 
 # Second layout.  Reset the starting offset, and stretch the box to the
 # max child width.
@@ -2036,11 +2049,12 @@ proc layoutFlow(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
 
 proc layoutFlowDescendant(lctx: LayoutContext; box: BlockBox; offset: Offset;
     input: LayoutInput) =
-  if box.input == input:
+  if box.keepLayout and box.input == input:
     box.state.offset = offset
     box.state.offset.y += box.state.yshift
     return
   box.input = input
+  box.keepLayout = true
   box.resetState()
   box.state.offset = offset
   lctx.layoutFlow(box, input, root = false)
@@ -2048,10 +2062,11 @@ proc layoutFlowDescendant(lctx: LayoutContext; box: BlockBox; offset: Offset;
 proc layoutFlowRootPre(lctx: LayoutContext; box: BlockBox; offset: Offset;
     input: LayoutInput): bool =
   let offset = offset + input.borderTopLeft(lctx)
-  if box.input == input:
+  if box.keepLayout and box.input == input:
     box.state.offset = offset
     return false
   box.input = input
+  box.keepLayout = true
   box.resetState()
   box.state.offset = offset
   true
@@ -2157,6 +2172,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox; space: Space;
     bounds: DefaultBounds,
     border: border
   )
+  box.keepLayout = true
   box.resetState()
   box.state.merge = merge
   if box.input.space.w.isDefinite():
@@ -2366,6 +2382,7 @@ proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
 
 proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     parent, row: BlockBox; rowi: int) =
+  row.keepLayout = true
   row.resetState()
   var x: LUnit = 0
   var n = 0
@@ -2447,6 +2464,7 @@ proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
     if display == DisplayTableRow:
       tbody.add(child)
     else:
+      child.keepLayout = true
       for it in child.children:
         case display
         of DisplayTableHeaderGroup: thead.add(BlockBox(it))
@@ -2674,6 +2692,7 @@ proc layoutTable(lctx: LayoutContext; box: BlockBox; offset: Offset;
   if not lctx.layoutFlowRootPre(box, offset, input):
     return
   let table = BlockBox(box.firstChild)
+  table.keepLayout = true
   table.resetState()
   var tctx = TableContext(lctx: lctx, space: input.space)
   let caption = BlockBox(table.next)
@@ -2935,7 +2954,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     childSizes.bounds.a[dim] = childMinBounds
   if child.computed{"position"} in PositionAbsoluteFixed:
     # Absolutely positioned flex children do not participate in flex layout.
-    child.state.offset = offset(0, 0)
+    child.input.bfcOffset = offset(0, 0)
   else:
     if fctx.canWrap and (input.space[dim].t == scMinContent or
         input.space[dim].isDefinite and

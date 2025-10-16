@@ -1187,6 +1187,7 @@ proc forceReshape0(bc: BufferContext) =
 proc forceReshape*(bc: BufferContext) {.proxy.} =
   if bc.document != nil and bc.document.documentElement != nil:
     bc.document.documentElement.invalidate()
+  bc.rootBox = nil
   bc.forceReshape0()
 
 proc windowChange*(bc: BufferContext; attrs: WindowAttributes) {.proxy.} =

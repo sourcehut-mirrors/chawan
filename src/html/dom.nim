@@ -337,6 +337,7 @@ type
   XMLDocument = ref object of Document
 
   CharacterData* = ref object of Node
+    # Note: layout assumes this is only modified directly by appending text.
     data* {.jsgetset.}: RefString
 
   Text* = ref object of CharacterData
@@ -4577,8 +4578,9 @@ proc blockRendering(element: Element) =
     element.document.renderBlockingElements.add(element)
 
 proc invalidate*(element: Element) =
-  let valid = element.computed != nil
-  element.computed = nil
+  let valid = element.computed != nil and not element.computed.invalid
+  if element.computed != nil:
+    element.computed.invalid = true
   if element.document != nil:
     element.document.invalid = true
   if valid:
@@ -4586,7 +4588,7 @@ proc invalidate*(element: Element) =
       it.invalidate()
 
 proc ensureStyle(element: Element) =
-  if element.computed == nil:
+  if element.computed == nil or element.computed.invalid:
     element.applyStyleImpl()
 
 proc resetElement*(element: Element) =

@@ -1,8 +1,9 @@
 # Tree building.
 #
-# This is currently a separate pass from layout, meaning at least two
-# tree traversals are required.  I'm not sure if the two can be
-# meaningfully collapsed.
+# This is currently a separate pass from layout, meaning at least two tree
+# traversals are required.  (We should merge these at some point, but that
+# will require some refactoring in layout as well as in the invalidation
+# logic.)
 #
 # ---
 #
@@ -354,8 +355,7 @@ proc addAnon(frame: var TreeFrame; computed: CSSValues;
   frame.add(initStyledAnon(frame.parent, computed, children))
 
 proc addElement(frame: var TreeFrame; element: Element) =
-  if element.computed == nil:
-    element.applyStyle()
+  element.ensureStyle()
   if frame.displayed(element):
     frame.add(StyledNode(
       t: stElement,
@@ -525,26 +525,125 @@ proc buildChildren(frame: var TreeFrame; styledNode: StyledNode) =
       for content in frame.computed{"content"}:
         frame.addContent(content)
 
-proc buildInnerBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox):
+proc newBoxOrTakeCached(cached: CSSBox; display: CSSDisplay; node: StyledNode):
     CSSBox =
-  let display = frame.computed{"display"}
-  let box = if display == DisplayInline:
-    InlineBox(computed: frame.computed, element: frame.parent)
+  let t = if node.skipChildren: cbtAnonymous else: cbtElement
+  if cached != nil:
+    cached.firstChild = nil
+    return cached
+  elif display == DisplayInline:
+    return InlineBox(
+      t: t,
+      computed: node.computed,
+      element: node.element,
+      pseudo: node.pseudo
+    )
   else:
-    BlockBox(computed: frame.computed, element: frame.parent)
+    return BlockBox(
+      t: t,
+      computed: node.computed,
+      element: node.element,
+      pseudo: node.pseudo
+    )
+
+proc matchCache(node: StyledNode; box: CSSBox): bool =
+  if box == nil or box.element != node.element:
+    return false
+  case box.t
+  of cbtAnonymous:
+    return node.skipChildren and
+      node.computed{"display"} == box.computed{"display"}
+  of cbtElement:
+    # Do not reuse anon boxes as non-anon boxes, incorrect pseudo-elements,
+    # or boxes of the wrong type for the display.  (Could be less granular
+    # but it probably doesn't matter.)
+    if node.t == stElement and not node.skipChildren and
+        node.pseudo == box.pseudo and
+        node.computed{"display"} == box.computed{"display"}:
+      if node.computed.relayout:
+        box.keepLayout = false
+      box.computed = node.computed
+      box.absolute = nil
+      return true
+    return false
+  of cbtText:
+    case node.t
+    of stText:
+      if box of InlineTextBox:
+        let box = InlineTextBox(box)
+        # We don't have to check computed here; it's always derived from the
+        # parent so it would be pointless.
+        # (That does bring up the question why we have a computed field for
+        # text boxes at at all.  I really don't know...)
+        box.keepLayout = box.len == node.text.s.len and
+          (box.text == node.text or box.text.s == node.text.s)
+        box.len = node.text.s.len
+        box.computed = node.computed
+        box.text = node.text
+        return true
+      return false
+    of stImage:
+      if box of InlineImageBox:
+        let box = InlineImageBox(box)
+        # For images, there is in fact a difference because we check
+        # padding.
+        # Unfortunately, like above, it's still derived from the parent,
+        # so that's probably a bug.  But image sizing has bigger problems :(
+        box.keepLayout = box.bmp == node.bmp and
+          box.computed{"padding-left"} == node.computed{"padding-left"} and
+          box.computed{"padding-right"} == node.computed{"padding-right"}
+        box.computed = node.computed
+        box.bmp = node.bmp
+        return true
+      return false
+    of stBr:
+      if box of InlineNewLineBox:
+        # br only checks clear.  (And white-space, which is a bug.)
+        if box.computed{"clear"} != node.computed{"clear"} or
+            box.computed{"white-space"} != node.computed{"white-space"}:
+          box.keepLayout = false
+        box.computed = node.computed
+        return true
+      return false
+    of stCounter:
+      if box of InlineTextBox:
+        box.computed = node.computed
+        return true
+      return false
+    of stElement: return false
+
+proc takeCache(node: StyledNode; box: CSSBox): CSSBox =
+  if node.matchCache(box):
+    box.parent = nil
+    box.next = nil
+    return box
+  nil
+
+proc buildInnerBox(ctx: var TreeContext; frame: TreeFrame; cached: CSSBox;
+    node: StyledNode): CSSBox =
+  let display = frame.computed{"display"}
+  var cachedIt = if cached != nil: cached.firstChild else: nil
+  let box = newBoxOrTakeCached(cached, display, node)
+  box.computed.relayout = false
   # Grid and flex items always respect z-index.  Other boxes only
   # respect it with position != static.
   let forceZ = display in DisplayInnerFlex + DisplayInnerGrid
   var last: CSSBox = nil
+  var keepLayout = true
   for child in frame.children:
-    let childBox = ctx.build(nil, child, forceZ)
+    let next = if cachedIt != nil: cachedIt.next else: nil
+    let cached = child.takeCache(cachedIt)
+    let childBox = ctx.build(cached, child, forceZ)
     childBox.parent = box
     if last != nil:
       last.next = childBox
     else:
       box.firstChild = childBox
     last = childBox
-  return box
+    keepLayout = keepLayout and childBox.keepLayout
+    cachedIt = next
+  box.keepLayout = box.keepLayout and keepLayout and cachedIt == nil
+  box
 
 proc applyCounters(ctx: var TreeContext; styledNode: StyledNode;
     firstSetCounterIdx: var int) =
@@ -625,7 +724,7 @@ proc buildOuterBox(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
     ctx.absoluteTail = nil
     stackItem = ctx.pushStackItem(styledNode)
   frame.buildChildren(styledNode)
-  let box = ctx.buildInnerBox(frame, cached)
+  let box = ctx.buildInnerBox(frame, cached, styledNode)
   if styledNode.t == stElement:
     box.element.box = box
   ctx.resetCounters(styledNode.element, countersLen, oldCountersLen,
@@ -649,27 +748,45 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
   of stElement:
     return ctx.buildOuterBox(cached, styledNode, forceZ)
   of stText:
+    if cached != nil:
+      return cached
     return InlineTextBox(
+      t: cbtText,
       computed: styledNode.computed,
       element: styledNode.element,
-      text: styledNode.text
+      text: styledNode.text,
+      len: styledNode.text.s.len
     )
   of stBr:
+    if cached != nil:
+      return cached
     return InlineNewLineBox(
+      t: cbtText,
       computed: styledNode.computed,
       element: styledNode.element
     )
   of stCounter:
     let counter = ctx.counter(styledNode.counterName)
     let addSuffix = styledNode.counterSuffix # only used for markers
+    let text = styledNode.counterStyle.listMarker(counter, addSuffix,
+      ctx.linkHintChars[])
+    if cached != nil:
+      let cached = InlineTextBox(cached)
+      cached.keepLayout = cached.text.s == text.s
+      cached.text = text
+      return cached
     return InlineTextBox(
+      t: cbtText,
       computed: styledNode.computed,
       element: styledNode.element,
       text: styledNode.counterStyle.listMarker(counter, addSuffix,
         ctx.linkHintChars[])
     )
   of stImage:
+    if cached != nil:
+      return cached
     return InlineImageBox(
+      t: cbtText,
       computed: styledNode.computed,
       element: styledNode.element,
       bmp: styledNode.bmp
@@ -679,8 +796,7 @@ proc build(ctx: var TreeContext; cached: CSSBox; styledNode: StyledNode;
 proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
     linkHintChars: ref seq[uint32]):
     tuple[stack: StackItem, fixedHead: CSSAbsolute] =
-  if element.computed == nil:
-    element.applyStyle()
+  element.ensureStyle()
   let styledNode = StyledNode(
     t: stElement,
     element: element,
@@ -704,6 +820,14 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
   stack.box = root
   root.absolute = ctx.absoluteHead
   ctx.popStackItem(nil)
-  return (stack, ctx.fixedHead)
+  # fixed boxes are appended in the wrong order, so invert it
+  var it = ctx.fixedHead
+  var prev: CSSAbsolute = nil
+  while it != nil:
+    let next = it.next
+    it.next = prev
+    prev = it
+    it = next
+  return (stack, ctx.fixedTail)
 
 {.pop.} # raises: []

@@ -47,23 +47,22 @@ javascript:
 layout:
 - flexbox: align-self, align-items, justify-content, proper margin handling
 - details element
-- layout caching
-	* make each layout depend on own input & modify own output only
-		- not sure about table...
-	* factor out tree traversal from layout
-		- split each layout into pre, child pre, child post, post,
-		- pre result: abort, continue
-		- post result: redo, continue
-	* merge csstree into layout
-		- should be easy after the previous step
+- merge csstree into layout: first factor out tree traversal, then move
+  build to before each layout
+	* split each layout into pre, child pre, child post, post,
+	* pre result: abort, continue
+	* post result: redo, continue
+	* probably box invalidation has to be reworked too, since we can't
+	  just skip layout without checking children first (maybe move it to
+	  the DOM?)
 - partial rendering
-	* buffer.lines must go, so rewrite getCursorStyledNode and
-	  findPrev/NextLink to use the box tree
-		- also findPrevMatch/findNextMatch, but it's hard
-		  without a line array... probably we'll have to change
-		  it to traverse the DOM instead
-	* we must calculate the overflow box, but the current approach
-	  is broken, easier to just set it as a property on render
+	* element pointers must go from buffer.lines, so rewrite
+	  getCursorStyledNode and findPrev/NextLink to use the box tree
+		- this definitely needs an overflow box (maybe just add a
+		  pass after layout() that inherits it from children?)
+			* if that's not enough, even a separate tree...
+			  (otherwise documents like `gitcha log' may take an
+			  eternity to hit test)
 	* inline layout's output must be flattened again, so that we can
 	  deal with tall inline boxes (like the <plaintext> tag in
 	  text/plain buffers)

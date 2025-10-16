@@ -620,7 +620,8 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       absAncestor = it # record first absolute ancestor
     if it of BlockBox:
       let it = BlockBox(it)
-      blockAncestor = it
+      if blockAncestor == nil:
+        blockAncestor = it
     if blockAncestor != nil:
       if it.render.positioned and (not absoluteOrFixed or absAncestor != nil):
         offset = it.render.offset
@@ -650,7 +651,8 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
       offset: offset + box.state.offset,
       clipBox: DefaultClipBox
     )
-    box.inheritClipBox(if absoluteOrFixed: it else: blockAncestor, state)
+    box.inheritClipBox(if absoluteOrFixed: absAncestor else: blockAncestor,
+      state)
   return offset
 
 proc renderPositioned(grid: var FlexibleGrid; state: var RenderState;

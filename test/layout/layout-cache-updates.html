@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<div style="display: flow-root">
+<div style="float: left">left<br>left</div>
+<br id=x>
+test
+</div>
+<script>
+var x = document.getElementById("x");
+x.getBoundingClientRect();
+x.style.clear = "both";
+</script>
+</div>
+
+<div style="display: flow-root">
+<div style="float: left">left<br>left</div>
+<div id=y>blah</div>
+test
+</div>
+<script>
+var x = document.getElementById("y");
+x.getBoundingClientRect();
+x.style.clear = "both";
+x.getBoundingClientRect();
+x.style.marginLeft = "1ch";
+</script>
+</div>

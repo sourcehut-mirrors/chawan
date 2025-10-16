@@ -43,11 +43,13 @@ type
     vals: CSSValues
     parentComputed: CSSValues
     window: Window
+    relayout: bool
+    old: CSSValues
     revertMap: RevertMap
     varsSeen: HashSet[CAtom]
 
 # Forward declarations
-proc applyStyle*(element: Element)
+proc ensureStyle*(element: Element)
 proc applyValues(ctx: var ApplyValueContext;
   entries: openArray[CSSComputedEntry]; revertType: RevertType)
 
@@ -171,6 +173,8 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
         ctx.revertMap[t] = revertType
         return
   of ceVar: discard
+  if ctx.old != nil and t in LayoutProperties:
+    ctx.relayout = ctx.relayout or not ctx.vals.equals(ctx.old, t)
   ctx.revertMap[t] = rtSet
 
 proc applyValues(ctx: var ApplyValueContext;
@@ -286,13 +290,13 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
   else: discard
 
 proc applyDeclarations(rules: RuleList; parent, element: Element;
-    window: Window): CSSValues =
+    window: Window; old: CSSValues): CSSValues =
   result = CSSValues()
   var parentVars: CSSVariableMap = nil
-  var ctx = ApplyValueContext(window: window, vals: result)
+  var ctx = ApplyValueContext(window: window, vals: result, old: old)
+  ctx.relayout = old != nil and old.relayout
   if parent != nil:
-    if parent.computed == nil:
-      parent.applyStyle()
+    parent.ensureStyle()
     ctx.parentComputed = parent.computed
     parentVars = ctx.parentComputed.vars
   for origin in CSSOrigin:
@@ -323,6 +327,9 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
   for t in CSSPropertyType:
     if ctx.revertMap[t] != rtSet:
       result.initialOrInheritFrom(ctx.parentComputed, t)
+      if old != nil and t in LayoutProperties:
+        ctx.relayout = ctx.relayout or not result.equals(old, t)
+  result.relayout = ctx.relayout
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.
   # Well, neither will I, because the spec breaks on actual websites.
@@ -340,8 +347,8 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     result{"overflow-y"} = result{"overflow-y"}.bfcify()
 
 proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
-    parent, element: Element; window: Window): CSSValues =
-  result = map[pseudo].applyDeclarations(parent, element, window)
+    parent, element: Element; window: Window; old: CSSValues): CSSValues =
+  result = map[pseudo].applyDeclarations(parent, element, window, old)
   result.pseudo = pseudo
 
 proc hasValues(rules: RuleList): bool =
@@ -351,7 +358,7 @@ proc hasValues(rules: RuleList): bool =
         return true
   return false
 
-proc applyStyle*(element: Element) =
+proc applyStyle(element: Element) =
   let document = element.document
   let window = document.window
   var depends = DependencyInfo.default
@@ -380,15 +387,21 @@ proc applyStyle*(element: Element) =
             window.settings.attrsp[])
   element.applyStyleDependencies(depends)
   var computed = map.applyDeclarations(peNone, element.parentElement, element,
-    window)
+    window, element.computed)
   element.computed = computed
   for pseudo in peBefore .. PseudoElement.high:
     if map[pseudo].hasValues() or window.settings.scripting == smApp:
-      let pcomputed = map.applyDeclarations(pseudo, element, nil, window)
+      let next = computed.next
+      let old = if next != nil and next.pseudo == pseudo: next else: nil
+      let pcomputed = map.applyDeclarations(pseudo, element, nil, window, old)
       if pseudo == peMarker:
         pcomputed{"display"} = DisplayMarker
       computed.next = pcomputed
       computed = pcomputed
+
+proc ensureStyle*(element: Element) =
+  if element.computed == nil or element.computed.invalid:
+    element.applyStyle()
 
 # Forward declaration hack
 applyStyleImpl = applyStyle

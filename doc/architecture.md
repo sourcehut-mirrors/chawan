@@ -300,25 +300,31 @@ enough in most cases.)
 
 ### Layout
 
-Our layout engine is a rather "simple" procedural layout implementation.
-It runs in two passes:
+Layout runs whenever a page is loaded, or some action (e.g. hover, DOM
+change by JS, etc.) invalidates the page currently visible to the user.
 
-1. Build a layout tree. Anonymous block and table boxes are generated
-   here. After this pass, the tree is no longer mutated, only the
-   `state` and `render` fields of the respective boxes.
-2. Position said boxes, always relative to their parent. This pass
-   sets the values in the `state` field.
+Our layout engine is a "simple" procedural implementation which consists of
+two passes:
 
-In practice, step 2 is often repeated for subsections of the tree
-to resolve cyclic dependencies in CSS layout (e.g. in table, flex).
-However, the input sizes are cached between sub-layout passes, and
-the entire sub-layout is skipped if the sizes remained identical.
-(This usually happens if a box's inner layout does not depend on its
-parent box's sizes at all, e.g. with a non-percentage specified width.)
+1. css/csstree.nim: build a layout tree, possibly reusing the tree from the
+   previous layout.  Anonymous block and table boxes are generated here.
+   After this pass, the tree is no longer mutated, only the `state` and
+   `render` fields of the respective boxes.
 
-Since we do not cache layout results, and the whole page is layouted,
-it gets quite slow on large documents.  (Layout is being incrementally
-refactored to make implementing a cache simpler.)
+2. css/layout.nim: position said boxes, always relative to their parent.
+   This pass takes `input` and compares it with input previously taken; if
+   they differ, it recurses through its children and then stores the box
+   size and other output in `state`.
+
+   But if `input` is the same as in the previous pass and `keepLayout`
+   wasn't unset, it is assumed that layout for the subtree has not changed,
+   and it is simply skipped (for the box itself as well as for all its
+   children.)
+
+In practice, step 2 is often repeated for subsections of the tree to resolve
+cyclic dependencies in CSS layout (e.g. in table, flex).  However, this
+rarely results in quadratic behavior thanks to the aforementioned caching
+mechanism.
 
 ### Rendering
 
@@ -330,10 +336,10 @@ the respective DOM nodes; in the future, it won't.)
 Additionally, boxes are assigned an offset in the `render` field here,
 which is used when jumping to anchors.
 
-The entire document is rendered, and this is our main performance
-bottleneck right now.  (In fact, rendering takes much longer than
-layout.  Styling is even slower, but that's less of a problem because it
-only happens once for most elements.)
+The entire document is rendered, which is a performance bottleneck in some
+cases.  (Styling is usually slower, as well as layout (usually), but those
+are cached.  Rendering isn't, but all it really does is just copying around
+a bunch of strings so it's not that bad.)
 
 The positive side of this design is that search is very simple (and
 fast), since we are just running regexes over a linear sequence of

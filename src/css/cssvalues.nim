@@ -312,7 +312,7 @@ type
     lineWidth*: float32
 
   CSSValueWord* {.union.} = object
-    dummy: uint64
+    dummy*: uint64
     color*: CSSColor
     length*: CSSLength
     zIndex*: CSSZIndex
@@ -336,6 +336,8 @@ type
 
   CSSValues* = ref object
     pseudo*: PseudoElement
+    invalid*: bool
+    relayout*: bool
     bits*: array[CSSPropertyType.low..LastBitPropType, CSSValueBit]
     hwords*: array[FirstHWordPropType..LastHWordPropType, CSSValueHWord]
     words*: array[FirstWordPropType..LastWordPropType, CSSValueWord]
@@ -504,6 +506,28 @@ const WhiteSpacePreserve* = {
 }
 const BorderStyleNoneHidden* = {BorderStyleNone, BorderStyleHidden}
 const BorderStyleInput* = {BorderStyleBracket, BorderStyleParen}
+
+# Changing these properties triggers a relayout for the box.
+const LayoutProperties* = {
+  cptMarginLeft, cptMarginRight, cptMarginTop, cptMarginBottom, cptPaddingLeft,
+  cptPaddingRight, cptPaddingTop, cptPaddingBottom, cptBoxSizing,
+  cptBorderLeftStyle, cptBorderRightStyle, cptBorderTopStyle,
+  cptBorderBottomStyle,
+  cptBorderLeftWidth, cptBorderRightWidth, cptBorderTopWidth,
+  cptBorderBottomWidth,
+  #TODO right now, transparent is interpreted as width=0; it probably
+  # shouldn't be
+  cptBorderLeftColor, cptBorderRightColor, cptBorderTopColor,
+  cptBorderBottomColor,
+  cptLeft, cptRight, cptTop, cptBottom, cptWidth, cptHeight,
+  cptFlexShrink, cptFlexGrow,  cptFlexBasis, cptOverflowX, cptOverflowY,
+  cptWhiteSpace, cptVerticalAlign, cptTextAlign, cptVerticalAlignLength,
+  cptWordBreak, cptTextTransform, cptFloat, cptClear,
+  cptMinWidth, cptMinHeight, cptMaxWidth, cptMaxHeight,
+  cptChaColspan, cptChaRowspan, cptVisibility, # collapse affects tables
+  cptBorderCollapse, cptBorderSpacingInline, cptBorderSpacingBlock,
+  cptCaptionSide, cptPosition
+}
 
 type
   CSSCalcSumType = enum
@@ -2065,6 +2089,24 @@ proc setInitial*(a: CSSValues; t: CSSPropertyType) =
   of cprtWord: a.words[t] = getDefaultWord(t)
   of cprtObject: a.objs[t] = getDefault(t)
 
+proc setAllInitial*(a: CSSValues) =
+  for it in a.bits.mitems:
+    it.dummy = 0
+  for t, it in a.hwords.mpairs:
+    it = getDefaultHWord(t)
+  for t, it in a.words.mpairs:
+    it = getDefaultWord(t)
+  for t, it in a.objs.mpairs:
+    it = getDefault(t)
+
+# Note: this doesn't work with objects (it doesn't have to.)
+proc equals*(a, b: CSSValues; t: CSSPropertyType): bool =
+  return case t.reprType
+  of cprtBit: a.bits[t].dummy == b.bits[t].dummy
+  of cprtHWord: a.hwords[t].dummy == b.hwords[t].dummy
+  of cprtWord: a.words[t].dummy == b.words[t].dummy
+  of cprtObject: false
+
 proc initialOrInheritFrom*(a, b: CSSValues; t: CSSPropertyType) =
   if t.inherited and b != nil:
     a.copyFrom(b, t)
@@ -2091,8 +2133,7 @@ proc copyProperties*(props: CSSValues): CSSValues =
 
 proc rootProperties*(): CSSValues =
   result = CSSValues()
-  for t in CSSPropertyType:
-    result.setInitial(t)
+  result.setAllInitial()
 
 # Separate CSSValues of a table into those of the wrapper and the actual
 # table.

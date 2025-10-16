@@ -1,3 +1,4 @@
+import css/cssparser
 import css/cssvalues
 import css/lunit
 import html/dom
@@ -31,6 +32,7 @@ type
   CSSBorderMerge* = array[DimensionType, bool]
 
   PendingFloat* = ref object
+    offset*: Offset
     bfcOffset*: Offset
     space*: Space
     box*: BlockBox
@@ -135,7 +137,10 @@ type
     mi*: array[DimensionType, Span] # intrinsic clamp
 
   LayoutInput* = object
-    bfcOffset*: Offset # BFC offset before flushing margins
+    # BFC offset before flushing margins.
+    # Also, `position: absolute' recycles bfcOffset for storing storing its
+    # own position which is typically computed by other boxes in the tree.
+    bfcOffset*: Offset
     margin*: RelativeRect
     padding*: RelativeRect
     space*: Space
@@ -149,11 +154,17 @@ type
     border*: CSSBorder
     marginResolved*: bool
 
+  CSSBoxType* = enum
+    cbtElement, cbtAnonymous, cbtText
+
   CSSBox* = ref object of RootObj
     parent* {.cursor.}: CSSBox
     firstChild*: CSSBox
     next*: CSSBox
     absolute*: CSSAbsolute
+    pseudo*: PseudoElement
+    t*: CSSBoxType
+    keepLayout*: bool
     positioned*: bool # set if we participate in positioned layout
     render*: BoxRenderState # render output
     computed*: CSSValues
@@ -173,6 +184,7 @@ type
   InlineTextBox* = ref object of InlineBox
     runs*: seq[TextRun] # state
     text*: RefString
+    len*: int # must invalidate if text.s.len != len
 
   InlineNewLineBox* = ref object of InlineBox
 
