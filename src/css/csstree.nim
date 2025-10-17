@@ -815,14 +815,6 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
   stack.box = root
   root.absolute = ctx.absoluteHead
   ctx.popStackItem(nil)
-  # fixed boxes are appended in the wrong order, so invert it
-  var it = ctx.fixedHead
-  var prev: CSSAbsolute = nil
-  while it != nil:
-    let next = it.next
-    it.next = prev
-    prev = it
-    it = next
-  return (stack, ctx.fixedTail)
+  return (stack, ctx.fixedHead)
 
 {.pop.} # raises: []
