@@ -77,7 +77,6 @@ type
     quoteLevel: int
     linkHintChars: ref seq[uint32]
     counters: seq[CSSCounter]
-    rootProperties: CSSValues
     stackItem: StackItem
     absoluteHead: CSSAbsolute
     absoluteTail: CSSAbsolute
@@ -250,8 +249,9 @@ proc madd(s: var seq[StyledNode]; node: StyledNode): var StyledNode =
 proc getParent(frame: var TreeFrame; display: CSSDisplay): var seq[StyledNode] =
   let parentDisplay = frame.computed{"display"}
   if display in DisplayInlineBlockLike and parentDisplay != DisplayInline:
+    let computed = frame.getAnonInlineComputed()
     return frame.getParent(DisplayInline)
-      .madd(initStyledAnon(frame.parent, frame.ctx.rootProperties)).anonChildren
+      .madd(initStyledAnon(frame.parent, computed)).anonChildren
   case parentDisplay
   of DisplayInnerFlex, DisplayInnerGrid:
     if display in DisplayOuterInline:
@@ -800,7 +800,6 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
   )
   let stack = StackItem()
   let ctx = TreeContext(
-    rootProperties: rootProperties(),
     markLinks: markLinks,
     stackItem: stack,
     linkHintChars: linkHintChars
