@@ -252,12 +252,12 @@ proc resolvePadding(lctx: LayoutContext; availableWidth: SizeConstraint;
   # Note: we use availableWidth for percentage resolution intentionally.
   return [
     dtHorizontal: Span(
-      start: computed{"padding-left"}.px(availableWidth),
-      send: computed{"padding-right"}.px(availableWidth)
+      start: max(computed{"padding-left"}.px(availableWidth), 0),
+      send: max(computed{"padding-right"}.px(availableWidth), 0)
     ),
     dtVertical: Span(
-      start: computed{"padding-top"}.px(availableWidth),
-      send: computed{"padding-bottom"}.px(availableWidth),
+      start: max(computed{"padding-top"}.px(availableWidth), 0),
+      send: max(computed{"padding-bottom"}.px(availableWidth), 0)
     )
   ]
 
