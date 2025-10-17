@@ -203,6 +203,8 @@ m = 'mark'
 '+' = 'scrollRight'
 C-m = 'click'
 C-j = 'click'
+c = 'rightClick'
+C = 'openMenu'
 I = 'viewImage'
 sI = 'saveImage'
 M-i = 'toggleImages'
@@ -256,7 +258,6 @@ M-c = 'enterCommand'
 '?' = 'isearchBackward'
 n = 'searchNext'
 N = 'searchPrev'
-c = 'peek'
 u = 'peekCursor'
 su = 'showFullAlert'
 C-w = 'toggleWrap'
@@ -481,6 +482,14 @@ scrollUp = 'n => pager.scrollUp(n)'
 scrollLeft = 'n => pager.scrollLeft(n)'
 scrollRight = 'n => pager.scrollRight(n)'
 click = 'n => pager.click(n)'
+rightClick = '''
+async () => {
+	const canceled = await pager.contextMenu();
+	if (!canceled)
+		pager.openMenu();
+}
+'''
+openMenu = '() => pager.openMenu()'
 viewImage = '''
 (_, save) => {
 	let contentType = null;

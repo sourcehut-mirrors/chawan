@@ -1376,7 +1376,7 @@ backwards.</td>
 </tr>
 
 <tr>
-<td><kbd>c</kbd></td>
+<td>None</td>
 <td>`peek`</td>
 <td>Display a message of the current buffer's URL on the status line.</td>
 </tr>
@@ -1571,6 +1571,19 @@ line.</td>
 <td>`click`</td>
 <td>Click the HTML element currently under the cursor.  n specifies the
 number of clicks in JS events.</td>
+</tr>
+
+<tr>
+<td><kbd>c</kbd></td>
+<td>`rightClick`</td>
+<td>Send a right click to the buffer.  If it doesn't catch the event
+(i.e. no JS context menu is shown), open the menu instead.</td>
+</tr>
+
+<tr>
+<td><kbd>C</kbd></td>
+<td>`openMenu`</td>
+<td>Open the menu.</td>
 </tr>
 
 <tr>

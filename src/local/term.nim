@@ -492,9 +492,9 @@ proc areadEvent*(term: Terminal): Opt[InputEvent] =
           if (btn and 4) != 0:
             term.eparser.mouse.mods.incl(mimShift)
           if (btn and 8) != 0:
-            term.eparser.mouse.mods.incl(mimCtrl)
-          if (btn and 16) != 0:
             term.eparser.mouse.mods.incl(mimMeta)
+          if (btn and 16) != 0:
+            term.eparser.mouse.mods.incl(mimCtrl)
           if (btn and 32) != 0:
             term.eparser.mouse.t = mitMove
           var button = (btn and 3) + 1

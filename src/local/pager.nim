@@ -779,10 +779,16 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
   of mibRight:
     if input.t == mitPress and input.pos.y < pager.attrs.height - 1:
       # w3m uses release, but I like press better
-      if container.currentSelection == nil:
+      if container.currentSelection == nil and mimMeta notin input.mods:
         container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
-      pager.openMenu(input.pos.x, input.pos.y)
-      pager.menu.unselect()
+        container.contextMenu().then(proc(canceled: bool) =
+          if not canceled:
+            pager.openMenu(input.pos.x, input.pos.y)
+            pager.menu.unselect()
+        )
+      else:
+        pager.openMenu(input.pos.x, input.pos.y)
+        pager.menu.unselect()
   of mibThumbInner:
     if input.t == mitPress:
       discard pager.evalAction("prevBuffer", 0)

@@ -1783,10 +1783,10 @@ proc click*(container: Container; n = 1) {.jsfunc.} =
   container.iface.click(container.cursorx, container.cursory, n)
     .then(proc(res: ClickResult) = container.onclick(res, save = false))
 
-proc contextMenu*(container: Container) {.jsfunc.} =
+proc contextMenu*(container: Container): Promise[bool] {.jsfunc.} =
   if container.iface == nil:
     return
-  container.iface.contextMenu(container.cursorx, container.cursory)
+  return container.iface.contextMenu(container.cursorx, container.cursory)
 
 proc saveLink*(container: Container) {.jsfunc.} =
   if container.iface == nil:

@@ -1690,7 +1690,8 @@ proc click*(bc: BufferContext; cursorx, cursory, n: int): ClickResult {.
     return ClickResult(open: newRequest(url, hmGet))
   return ClickResult()
 
-proc contextMenu*(bc: BufferContext; cursorx, cursory: int) {.proxy.} =
+proc contextMenu*(bc: BufferContext; cursorx, cursory: int): bool {.proxy.} =
+  var canceled = false
   if bc.config.scripting != smFalse:
     let element = bc.getCursorElement(cursorx, cursory)
     if element != nil:
@@ -1699,8 +1700,9 @@ proc contextMenu*(bc: BufferContext; cursorx, cursory: int) {.proxy.} =
       let init = bc.initMouseEventInit(2, 2, cursorx, cursory, 1)
       let event = newMouseEvent(satContextmenu.toAtom(), init)
       event.isTrusted = true
-      discard window.jsctx.dispatch(element, event)
+      canceled = window.jsctx.dispatch(element, event)
       bc.maybeReshape()
+  canceled
 
 proc select*(bc: BufferContext; selected: int): ClickResult {.proxy.} =
   if bc.document.focus != nil and
