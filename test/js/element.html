@@ -42,5 +42,9 @@ for (let z = y; z; z = z.nextElementSibling)
 y.remove();
 const z = document.getElementById("z");
 z.remove();
+assertThrows(() => x.prepend({toString: () => new Error()}), TypeError);
+assertThrows(() => x.append({toString: () => new Error()}), TypeError);
+x.prepend();
+x.append();
 x.textContent = "Success";
 </script>

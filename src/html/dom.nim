@@ -2132,36 +2132,47 @@ proc setTextContent(ctx: JSContext; node: Node; data: JSValueConst): Opt[void]
   return ctx.setNodeValue(node, data)
 
 proc toNode(ctx: JSContext; nodes: openArray[JSValueConst]; document: Document):
-    Node =
-  var ns: seq[Node] = @[]
+    Opt[Node] =
+  var node: Node = nil
+  var fragment = false
   for it in nodes:
-    var node: Node
-    if ctx.fromJS(it, node).isOk:
-      ns.add(node)
-    else:
+    var node0: Node
+    if ctx.fromJS(it, node0).isErr:
       var s: string
-      if ctx.fromJS(it, s).isOk:
-        ns.add(ctx.newText(s))
-  if ns.len == 1:
-    return ns[0]
-  let fragment = document.newDocumentFragment()
-  for node in ns:
-    fragment.append(node)
-  return fragment
+      ?ctx.fromJS(it, s)
+      node0 = ctx.newText(s)
+    if node == nil:
+      node = node0
+    else:
+      if not fragment:
+        let fragment = document.newDocumentFragment()
+        fragment.append(node)
+        node = fragment
+      node.append(node0)
+  if node == nil:
+    node = document.newDocumentFragment()
+  ok(node)
 
 proc prependImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     JSValue =
   let node = ctx.toNode(nodes, parent.document)
-  return ctx.insertBeforeUndefined(parent, node, option(parent.firstChild))
+  if node.isErr:
+    return JS_EXCEPTION
+  return ctx.insertBeforeUndefined(parent, node.get, option(parent.firstChild))
 
 proc appendImpl(ctx: JSContext; parent: Node; nodes: openArray[JSValueConst]):
     JSValue =
   let node = ctx.toNode(nodes, parent.document)
-  return ctx.insertBeforeUndefined(parent, node, none(Node))
+  if node.isErr:
+    return JS_EXCEPTION
+  return ctx.insertBeforeUndefined(parent, node.get, none(Node))
 
 proc replaceChildrenImpl(ctx: JSContext; parent: Node;
     nodes: openArray[JSValueConst]): JSValue =
-  let node = ctx.toNode(nodes, parent.document)
+  let node0 = ctx.toNode(nodes, parent.document)
+  if node0.isErr:
+    return JS_EXCEPTION
+  let node = node0.get
   let x = parent.preInsertionValidity(node, nil)
   if x.isErr:
     return ctx.insertThrow(x.error)
