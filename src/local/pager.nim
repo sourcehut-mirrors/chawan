@@ -2326,6 +2326,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
     of lesEdit:
       if lineedit.news != "":
         pager.iregex = pager.compileSearchRegex(lineedit.news)
+        pager.regex = none(Regex)
       pager.container.popCursorPos(true)
       pager.container.pushCursorPos()
       if pager.iregex.isOk:
@@ -2336,14 +2337,17 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
         else:
           pager.container.cursorPrevMatch(pager.iregex.get, wrap, false, 1)
     of lesFinish:
-      if lineedit.news != "":
-        pager.regex = pager.checkRegex(pager.iregex)
+      if lineedit.news == "" and pager.regex.isNone:
+        pager.container.popCursorPos()
       else:
-        pager.searchNext()
-      pager.reverseSearch = linemode == lmISearchB
-      pager.container.markPos()
+        if lineedit.news != "":
+          pager.regex = pager.checkRegex(pager.iregex)
+        else:
+          pager.searchNext()
+        pager.reverseSearch = linemode == lmISearchB
+        pager.container.markPos()
+        pager.container.sendCursorPosition()
       pager.container.clearSearchHighlights()
-      pager.container.sendCursorPosition()
       pager.container.redraw = true
       pager.isearchpromise = newResolvedPromise()
     return nil
