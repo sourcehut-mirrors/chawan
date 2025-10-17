@@ -21,7 +21,7 @@ pre code { text-decoration: none }
 
 @media (scripting: enabled) { noscript { display: none } }
 
-textarea, iframe, input, canvas { display: inline-block }
+textarea, iframe, input, canvas, progress { display: inline-block }
 
 ol, ul, menu, dir { padding-left: 4ch; margin: 1em 0 }
 ol > li:nth-child(n+100) { margin-left: 1ch }
@@ -34,6 +34,12 @@ ol > li:nth-child(n+10000) { margin-left: 3ch }
 }
 
 blockquote { margin: 1em }
+
+progress[value] {
+	height: 0 !important;
+	width: 20ch;
+	border-top-style: -cha-hash
+}
 
 hr { border-bottom-style: outset }
 

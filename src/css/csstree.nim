@@ -456,6 +456,17 @@ proc addAnchorChildren(frame: var TreeFrame; anchor: HTMLAnchorElement) =
     frame.addPseudo(peLinkMarker)
   frame.addElementChildren()
 
+proc addProgress(frame: var TreeFrame; element: Element) =
+  if element.attr(satValue) != "":
+    let computed = frame.computed.inheritProperties()
+    computed{"display"} = DisplayBlock
+    let n = frame.computed{"-cha-input-intrinsic-size"}
+    computed{"width"} = cssLengthFrac(clamp(n, 0, 1))
+    computed{"border-bottom-style"} = BorderStyleHash
+    frame.addAnon(computed, @[])
+  else:
+    frame.addElementChildren()
+
 proc addChildren(frame: var TreeFrame) =
   case frame.parent.tagType
   of TAG_INPUT: frame.addInputChildren(HTMLInputElement(frame.parent))
@@ -469,6 +480,7 @@ proc addChildren(frame: var TreeFrame) =
   of TAG_BR: frame.addBr()
   of TAG_IFRAME: frame.addText("[iframe]")
   of TAG_FRAME: frame.addText("[frame]")
+  of TAG_PROGRESS: frame.addProgress(frame.parent)
   of TAG_OPTION:
     let option = HTMLOptionElement(frame.parent)
     frame.addOptionChildren(option)

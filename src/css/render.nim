@@ -525,7 +525,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
         grid.setText(state, rbuf, eoff, formatRight, nil, box.render.clipBox)
     buf.setLen(0)
   if bottom notin BorderStyleNoneHidden:
-    let proprietary = bottom in {BorderStyleBracket, BorderStyleParen}
+    let proprietary = bottom in BorderStyleInput
     var offset = offset(x = start.x, y = send.y - state.attrs.ppl)
     if left notin BorderStyleNoneHidden and not proprietary:
       if box.state.merge[dtHorizontal]:
@@ -541,7 +541,8 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
     var flags: set[FormatFlag] = {}
     if proprietary:
       offset.y -= state.attrs.ppl
-      flags.incl(ffUnderline)
+      if bottom != BorderStyleHash:
+        flags.incl(ffUnderline)
     let fgcolor = box.computed{"border-bottom-color"}.cellColor()
     let format = initFormat(defaultColor, fgcolor, flags)
     grid.setText(state, buf, offset, format, box.element, box.render.clipBox)

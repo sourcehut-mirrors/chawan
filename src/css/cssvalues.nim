@@ -247,6 +247,7 @@ type
     BorderStyleOutset = "outset"
     BorderStyleBracket = "-cha-bracket"
     BorderStyleParen = "-cha-paren"
+    BorderStyleHash = "-cha-hash"
 
 type
   # CSSLength may represent:
@@ -505,7 +506,9 @@ const WhiteSpacePreserve* = {
   WhitespacePre, WhitespacePreLine, WhitespacePreWrap
 }
 const BorderStyleNoneHidden* = {BorderStyleNone, BorderStyleHidden}
-const BorderStyleInput* = {BorderStyleBracket, BorderStyleParen}
+const BorderStyleInput* = {
+  BorderStyleBracket, BorderStyleParen, BorderStyleHash
+}
 
 # Changing these properties triggers a relayout for the box.
 const LayoutProperties* = {
@@ -995,8 +998,11 @@ proc parseIdent[T: enum](ctx: var CSSParser): Opt[T] =
 template cssLength*(n: float32): CSSLength =
   CSSLength(npx: n)
 
+template cssLengthFrac*(n: float32): CSSLength =
+  CSSLength(perc: n)
+
 template cssLengthPerc*(n: float32): CSSLength =
-  CSSLength(perc: n / 100)
+  cssLengthFrac(n / 100)
 
 const CSSLengthAuto* = CSSLength(npx: NaN, perc: NaN)
 const CSSLengthZero* = CSSLength(npx: 0, perc: 0)
@@ -2214,6 +2220,11 @@ proc borderChar*(style: CSSBorderStyle; c: BoxDrawingChar): string =
     case c
     of bdcVerticalBarLeft: "("
     of bdcVerticalBarRight: ")"
+    else: " "
+  of BorderStyleHash: # likewise
+    case c
+    of bdcHorizontalBarBottom: return "#"
+    of bdcHorizontalBarTop: return "_"
     else: " "
 
 when defined(debug):

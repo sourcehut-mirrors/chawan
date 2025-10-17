@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<div style="width: 30ch">
+<progress value=.1>test</progress>
+<progress value=2>test</progress>
+<!--
+the following makes progress disappear, whcih kind of sucks but it also
+matches Blink so meh
+(Gecko does something entirely different in the next cases)
+-->
+<progress style="width: auto" value=.5>test</progress>
+<progress style="width: auto; display: block" value=.5>test</progress>

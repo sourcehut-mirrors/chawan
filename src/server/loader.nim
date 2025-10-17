@@ -1257,18 +1257,8 @@ proc formatDuration(dur: Duration): string =
 proc makeProgress(it: DownloadItem; now: Time): string =
   result = it.displayUrl.htmlEscape() & '\n'
   result &= "  -> " & it.path & '\n'
-  result &= "  "
-  #TODO implement progress element and use that
-  var rat = 0u64
-  if it.contentLen == uint64.high and it.sent > 0 and it.output == nil:
-    rat = 80
-  elif it.contentLen < uint64.high and it.contentLen > 0:
-    rat = it.sent * 80 div it.contentLen
-  for i in 0 ..< rat:
-    result &= '#'
-  for i in rat ..< 80:
-    result &= '_'
-  result &= "\n  "
+  result &= "  <progress value=" & $it.sent & " max="
+  result &= $it.contentLen & "></progress>  \n  "
   result &= formatSize(it.sent)
   if it.sent < it.contentLen and
       (it.contentLen < uint64.high or it.output != nil):
@@ -1325,6 +1315,7 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
   var body = """
 <!DOCTYPE html>
 <title>Download List Panel</title>
+<style>progress { width: calc(100% - 4ch) } </style>
 <body>
 <h1 align=center>Download List Panel</h1>
 <form method=POST action=about:downloads>
@@ -1345,8 +1336,7 @@ proc loadDownloads(ctx: var LoaderContext; handle: InputHandle;
       body &= " value=STOP"
     else:
       body &= " value=OK"
-    body &= ">"
-    body &= "<hr>"
+    body &= ">\n\n<hr>"
   if refresh:
     body &= "<meta http-equiv=refresh content=1>" # :P
   body &= """
