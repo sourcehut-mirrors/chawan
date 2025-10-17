@@ -2361,11 +2361,14 @@ proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
     pager.lineData = nil
     if pager.config.external.showDownloadPanel:
       let request = newRequest("about:downloads")
-      let downloads = pager.pinned.downloads
-      if downloads != nil:
+      let old = pager.pinned.downloads
+      let downloads = pager.gotoURL(request, history = false,
+        replace = old)
+      if old == nil:
+        pager.addContainer(downloads)
+      else:
         pager.setContainer(downloads)
-      pager.pinned.downloads = pager.gotoURL(request, history = false,
-        replace = downloads)
+      pager.pinned.downloads = downloads
   else:
     pager.ask("Failed to save to " & path & ". Retry?").then(
       proc(x: bool) =
@@ -2517,10 +2520,12 @@ proc jsGotoURL(ctx: JSContext; pager: Pager; v: JSValueConst;
   pager.initGotoURL(request, CHARSET_UNKNOWN, referrer = nil, t.cookie,
     loaderConfig, bufferConfig, filterCmd)
   bufferConfig.scripting = t.scripting.get(bufferConfig.scripting)
+  let replace = t.replace.get(nil)
   let container = pager.gotoURL0(request, t.save, t.history, bufferConfig,
     loaderConfig, title = "", t.contentType.get(""), redirectDepth = 0,
-    url = nil, t.replace.get(nil), filterCmd)
-  pager.addContainer(container)
+    url = nil, replace, filterCmd)
+  if replace == nil:
+    pager.addContainer(container)
   ok(container)
 
 # Reload the page in a new buffer, then kill the previous buffer.
