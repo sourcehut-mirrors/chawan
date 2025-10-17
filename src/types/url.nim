@@ -65,7 +65,6 @@ type
 
   Origin* = ref object
     t*: OriginType
-    domain: string
     s: string
 
 jsDestructor(URL)
