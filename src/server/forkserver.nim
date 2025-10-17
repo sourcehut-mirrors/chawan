@@ -45,10 +45,10 @@ proc loadConfig*(forkserver: ForkServer; config: Config): int =
       urimethodmap: config.external.urimethodmap,
       w3mCGICompat: config.external.w3mCgiCompat,
       cgiDir: seq[string](config.external.cgiDir),
-      tmpdir: config.external.tmpdir,
+      tmpdir: $config.external.tmpdir,
       configDir: config.dir,
       dataDir: config.dataDir,
-      bookmark: config.external.bookmark,
+      bookmark: $config.external.bookmark,
       maxNetConnections: config.network.maxNetConnections
     ))
   do:

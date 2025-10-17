@@ -1804,7 +1804,7 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
       if node of Text:
         let text = Text(node)
         if lastText != nil:
-          lastText.data &= text.data
+          lastText.data &= text.data.s
           toRemove.add(text)
         else:
           texts.add(text)
@@ -1852,7 +1852,7 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
             inc j
           cap[0].s += offset
           cap[0].e += offset
-          let s = text.data[j ..< j + capLen]
+          let s = text.data.s[j ..< j + capLen]
           let news = "<a href=\"" & s & "\">" & s.htmlEscape() & "</a>"
           data &= news
           j += cap[0].e - cap[0].s

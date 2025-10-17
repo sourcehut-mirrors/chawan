@@ -65,9 +65,6 @@ const ErrorMessages* = [
   ceProxyInvalidResponse: "proxy returned an invalid response",
 ]
 
-converter toInt*(code: ConnectionError): int =
-  return int(code)
-
 proc getLoaderErrorMessage*(code: int): string =
   if code in int(ConnectionError.low)..int(ConnectionError.high):
     return ErrorMessages[ConnectionError(code)]

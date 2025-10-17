@@ -207,8 +207,8 @@ jsDestructor(BufferSectionConfig)
 jsDestructor(Config)
 jsDestructor(StatusConfig)
 
-converter toStr*(p: ChaPathResolved): lent string {.inline.} =
-  return string(p)
+proc `$`*(p: ChaPathResolved): lent string =
+  string(p)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var ChaPathResolved):
     Opt[void] =
@@ -219,6 +219,9 @@ proc toJS*(ctx: JSContext; cookie: CookieMode): JSValue =
   of cmReadOnly: return JS_TRUE
   of cmNone: return JS_FALSE
   of cmSave: return JS_NewString(ctx, "save")
+
+proc toJS*(ctx: JSContext; p: ChaPathResolved): JSValue =
+  ctx.toJS($p)
 
 proc `[]=`(a: ActionMap; b: string; c: sink string) =
   a.t[b] = c
@@ -678,11 +681,11 @@ proc parseConfigValue(ctx: var ConfigParser; x: var MimeTypes; v: TomlValue;
   ?ctx.parseConfigValue(paths, v, k)
   x = MimeTypes.default
   for p in paths:
-    if f := chafile.fopen(p, "r"):
+    if f := chafile.fopen($p, "r"):
       let res = x.parseMimeTypes(f, DefaultImages)
       f.close()
       if res.isErr:
-        return err(k & ": error reading file " & p)
+        return err(k & ": error reading file " & $p)
   ok()
 
 const DefaultMailcap = block:
@@ -697,10 +700,10 @@ proc parseConfigValue(ctx: var ConfigParser; x: var Mailcap; v: TomlValue;
   ?ctx.parseConfigValue(paths, v, k)
   x = Mailcap.default
   for p in paths:
-    let ps = newPosixStream(p)
+    let ps = newPosixStream($p)
     if ps != nil:
       let src = ps.readAllOrMmap()
-      let res = x.parseMailcap(src.toOpenArray(), p)
+      let res = x.parseMailcap(src.toOpenArray(), $p)
       deallocMem(src)
       ps.sclose()
       if res.isErr:
@@ -718,11 +721,11 @@ proc parseConfigValue(ctx: var ConfigParser; x: var AutoMailcap;
     v: TomlValue; k: string): Err[string] =
   var path: ChaPathResolved
   ?ctx.parseConfigValue(path, v, k)
-  x = AutoMailcap(path: path)
-  let ps = newPosixStream(path)
+  x = AutoMailcap(path: $path)
+  let ps = newPosixStream($path)
   if ps != nil:
     let src = ps.readAllOrMmap()
-    let res = x.entries.parseMailcap(src.toOpenArray(), path)
+    let res = x.entries.parseMailcap(src.toOpenArray(), $path)
     deallocMem(src)
     ps.sclose()
     if res.isErr:
@@ -738,7 +741,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var URIMethodMap; v: TomlValue;
   ?ctx.parseConfigValue(paths, v, k)
   x = URIMethodMap.default
   for p in paths:
-    let ps = newPosixStream(p)
+    let ps = newPosixStream($p)
     if ps != nil:
       x.parseURIMethodMap(ps.readAll())
       ps.sclose()
@@ -820,11 +823,11 @@ proc parseConfig(config: Config; dir: string; t: TomlValue;
     var includes = config.`include`
     config.`include`.setLen(0)
     for s in includes:
-      let ps = newPosixStream(s)
+      let ps = newPosixStream($s)
       if ps == nil:
-        return err("include file not found: " & s)
-      ?config.parseConfig(dir, ps.readAll(), warnings, jsctx, s.afterLast('/'),
-        builtin)
+        return err("include file not found: " & $s)
+      ?config.parseConfig(dir, ps.readAll(), warnings, jsctx,
+        ($s).afterLast('/'), builtin)
       ps.sclose()
   warnings.add(ctx.warnings)
   ok()

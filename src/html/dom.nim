@@ -1662,7 +1662,7 @@ proc nodeValue(ctx: JSContext; node: Node): JSValue {.jsfget.} =
 proc textContent*(node: Node): string =
   result = ""
   if node of CharacterData:
-    result = CharacterData(node).data
+    result = CharacterData(node).data.s
   elif node of ParentNode:
     let node = ParentNode(node)
     for child in node.childList:
@@ -1931,7 +1931,7 @@ proc clone(node: Node; document = none(Document); deep = false): Node =
     Node(dummy.newAttr(0))
   elif node of Text:
     let text = Text(node)
-    let x = document.newText(text.data)
+    let x = document.newText(text.data.s)
     Node(x)
   elif node of CDATASection:
     let x = document.newCDATASection("")
@@ -1940,11 +1940,11 @@ proc clone(node: Node; document = none(Document); deep = false): Node =
     Node(x)
   elif node of Comment:
     let comment = Comment(node)
-    let x = document.newComment(comment.data)
+    let x = document.newComment(comment.data.s)
     Node(x)
   elif node of ProcessingInstruction:
     let procinst = ProcessingInstruction(node)
-    let x = document.newProcessingInstruction(procinst.target, procinst.data)
+    let x = document.newProcessingInstruction(procinst.target, procinst.data.s)
     Node(x)
   elif node of Document:
     let document = Document(node)
@@ -2062,14 +2062,14 @@ proc serializeFragmentInner(res: var string; child: Node; parentType: TagType) =
       TAG_PLAINTEXT, TAG_NOSCRIPT
     }
     if parentType in LiteralTags:
-      res &= text.data
+      res &= text.data.s
     else:
-      res &= ($text.data).htmlEscape(mode = emText)
+      res &= text.data.s.htmlEscape(mode = emText)
   elif child of Comment:
-    res &= "<!--" & Comment(child).data & "-->"
+    res &= "<!--" & Comment(child).data.s & "-->"
   elif child of ProcessingInstruction:
     let inst = ProcessingInstruction(child)
-    res &= "<?" & inst.target & " " & inst.data & '>'
+    res &= "<?" & inst.target & " " & inst.data.s & '>'
   elif child of DocumentType:
     res &= "<!DOCTYPE " & DocumentType(child).name & '>'
 
@@ -2252,7 +2252,7 @@ proc childTextContent*(node: ParentNode): string =
   result = ""
   for child in node.childList:
     if child of Text:
-      result &= Text(child).data
+      result &= Text(child).data.s
 
 proc getElementsByTagNameImpl(root: ParentNode; tagName: string):
     HTMLCollection =
@@ -3850,7 +3850,7 @@ proc isFirstVisualNode*(element: Element): bool =
     for child in parent.childList:
       if child == element:
         return true
-      if child of Text and not Text(child).data.onlyWhitespace():
+      if child of Text and not Text(child).data.s.onlyWhitespace():
         break
   return false
 
@@ -3861,7 +3861,7 @@ proc isLastVisualNode*(element: Element): bool =
       return true
     if child of Element:
       break
-    if child of Text and not Text(child).data.onlyWhitespace():
+    if child of Text and not Text(child).data.s.onlyWhitespace():
       break
   return false
 
@@ -5399,7 +5399,7 @@ proc jsForm(this: HTMLInputElement): HTMLFormElement {.jsfget: "form".} =
 proc value*(this: HTMLInputElement): lent string {.jsfget.} =
   if this.internalValue == nil:
     this.internalValue = newRefString("")
-  return this.internalValue
+  return this.internalValue.s
 
 proc setValue*(this: HTMLInputElement; value: sink string) {.jsfset: "value".} =
   if this.internalValue == nil:
@@ -5480,7 +5480,7 @@ proc text(option: HTMLOptionElement): string {.jsfget.} =
     let parent = child.parentElement
     if child of Text and (parent.tagTypeNoNS != TAG_SCRIPT or
         parent.namespaceURI notin [satNamespaceHTML, satNamespaceSVG]):
-      s &= Text(child).data
+      s &= Text(child).data.s
   return s.stripAndCollapse()
 
 proc value*(option: HTMLOptionElement): string {.jsfget.} =

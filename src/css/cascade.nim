@@ -120,7 +120,7 @@ proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
     toks.add(item.toks)
   ok()
 
-proc resolveVariable(ctx: var ApplyValueContext; p: CSSAnyPropertyType;
+proc resolveVariable(ctx: var ApplyValueContext; p: CSSWidePropertyType;
     cvar: CSSVarEntry; revertType: RevertType): Opt[void] =
   let vars = ctx.vals.vars
   for it in cvar.resolved:

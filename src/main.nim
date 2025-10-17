@@ -310,9 +310,9 @@ proc main() =
   let tmpdir = cstring(config.external.tmpdir)
   discard mkdir(tmpdir, 0o700)
   if chown(tmpdir, getuid(), getgid()) != 0:
-    die("failed to set ownership of " & config.external.tmpdir)
+    die("failed to set ownership of " & $config.external.tmpdir)
   if chmod(tmpdir, 0o700) != 0:
-    die("failed to set permissions of " & config.external.tmpdir)
+    die("failed to set permissions of " & $config.external.tmpdir)
   let loaderPid = forkserver.loadConfig(config)
   if loaderPid == -1:
     die("failed to fork loader process")

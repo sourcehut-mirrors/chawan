@@ -102,7 +102,7 @@ when defined(debug):
   proc `$`*(node: StyledNode): string =
     case node.t
     of stText:
-      return node.text
+      return node.text.s
     of stElement:
       if node.pseudo != peNone:
         return $node.element.tagType & "::" & $node.pseudo
@@ -182,7 +182,7 @@ proc displayed(frame: TreeFrame; text: RefString): bool =
   return frame.computed{"display"} == DisplayInline or
     frame.lastChildWasInline or
     frame.computed{"white-space"} in WhiteSpacePreserve or
-    not text.onlyWhitespace()
+    not text.s.onlyWhitespace()
 
 #TODO implement table columns
 const DisplayNoneLike = {
@@ -572,9 +572,9 @@ proc matchCache(node: StyledNode; box: CSSBox): bool =
         # parent so it would be pointless.
         # (That does bring up the question why we have a computed field for
         # text boxes at at all.  I really don't know...)
-        box.keepLayout = box.len == node.text.s.len and
+        box.keepLayout = box.len == node.text.len and
           (box.text == node.text or box.text.s == node.text.s)
-        box.len = node.text.s.len
+        box.len = node.text.len
         box.computed = node.computed
         box.text = node.text
         return true
@@ -751,7 +751,7 @@ proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
       computed: styledNode.computed,
       element: styledNode.element,
       text: styledNode.text,
-      len: styledNode.text.s.len
+      len: styledNode.text.len
     )
   of stBr:
     if cached != nil:

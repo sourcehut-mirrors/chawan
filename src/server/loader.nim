@@ -402,7 +402,7 @@ proc canRewriteForCGICompat(ctx: LoaderContext; path: string): bool =
 
 proc rejectHandle(ctx: var LoaderContext; handle: InputHandle;
     code: ConnectionError; msg = "") =
-  case ctx.sendResult(handle, code, msg)
+  case ctx.sendResult(handle, int(code), msg)
   of pbrDone: discard
   of pbrUnregister:
     ctx.unregWrite.add(handle.output)

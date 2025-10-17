@@ -362,7 +362,7 @@ type
     items*: seq[CSSVarItem]
 
   CSSComputedEntry* = object
-    p*: CSSAnyPropertyType
+    p*: CSSWidePropertyType
     case et*: CSSEntryType
     of ceBit:
       bit*: uint8
@@ -610,7 +610,7 @@ proc `$`*(bmp: NetworkBitmap): string =
 proc `$`*(content: CSSContent): string =
   case content.t
   of ContentString:
-    return content.s
+    return $content.s
   of ContentCounter:
     return "counter(" & $content.counter & ", " & $content.counterStyle & ')'
   of ContentOpenQuote, ContentCloseQuote, ContentNoOpenQuote,
@@ -1595,19 +1595,19 @@ proc parseLineWidth(ctx: var CSSParser; attrs: WindowAttributes): Opt[float32] =
   ok(l.npx)
 
 proc makeEntry*(t: CSSPropertyType; obj: CSSValue): CSSComputedEntry =
-  return CSSComputedEntry(et: ceObject, p: t, obj: obj)
+  return CSSComputedEntry(et: ceObject, p: wide(t), obj: obj)
 
 proc makeEntry(t: CSSPropertyType; hword: CSSValueHWord): CSSComputedEntry =
-  return CSSComputedEntry(et: ceHWord, p: t, hword: hword)
+  return CSSComputedEntry(et: ceHWord, p: wide(t), hword: hword)
 
 proc makeEntry(t: CSSPropertyType; word: CSSValueWord): CSSComputedEntry =
-  return CSSComputedEntry(et: ceWord, p: t, word: word)
+  return CSSComputedEntry(et: ceWord, p: wide(t), word: word)
 
 proc makeEntry*(t: CSSPropertyType; bit: CSSValueBit): CSSComputedEntry =
-  return CSSComputedEntry(et: ceBit, p: t, bit: bit.dummy)
+  return CSSComputedEntry(et: ceBit, p: wide(t), bit: bit.dummy)
 
 proc makeEntry(t: CSSPropertyType; global: CSSGlobalType): CSSComputedEntry =
-  return CSSComputedEntry(et: ceGlobal, p: t, global: global)
+  return CSSComputedEntry(et: ceGlobal, p: wide(t), global: global)
 
 proc makeEntry*(t: CSSPropertyType; length: CSSLength): CSSComputedEntry =
   makeEntry(t, CSSValueWord(length: length))
@@ -1628,7 +1628,7 @@ proc makeEntry(t: CSSPropertyType; image: NetworkBitmap): CSSComputedEntry =
   makeEntry(t, CSSValue(v: cvtImage, image: image))
 
 template makeEntry*[T: enum|set](t: CSSPropertyType; val: T): CSSComputedEntry =
-  CSSComputedEntry(et: ceBit, p: t, bit: cast[uint8](val))
+  CSSComputedEntry(et: ceBit, p: wide(t), bit: cast[uint8](val))
 
 proc parseDeclWithVar0*(toks: openArray[CSSToken]): seq[CSSVarItem] =
   var ctx = initCSSParser(toks)
@@ -1659,7 +1659,7 @@ proc parseDeclWithVar0*(toks: openArray[CSSToken]): seq[CSSVarItem] =
       items[^1].toks.add(tok)
   move(items)
 
-proc parseDeclWithVar*(p: CSSAnyPropertyType; value: openArray[CSSToken]):
+proc parseDeclWithVar*(p: CSSWidePropertyType; value: openArray[CSSToken]):
     Opt[CSSComputedEntry] =
   var items = parseDeclWithVar0(value)
   if items.len == 0:
@@ -1865,13 +1865,13 @@ proc parseBorder(ctx: var CSSParser; sh: CSSShorthandType;
   for t in ShorthandMap[sh]:
     case valueType(t)
     of cvtBorderStyle:
-      style.p = t
+      style.p = wide(t)
       res.add(style)
     of cvtColor:
-      color.p = t
+      color.p = wide(t)
       res.add(color)
     of cvtLineWidth:
-      width.p = t
+      width.p = wide(t)
       res.add(width)
     else: discard
   return ctx.skipBlanksCheckDone()
@@ -1888,11 +1888,11 @@ proc parseBoxShorthand(ctx: var CSSParser; props: openArray[CSSPropertyType];
   case entries.len
   of 1: # top, bottom, left, right
     for t in props:
-      entries[0].p = t
+      entries[0].p = wide(t)
       res.add(entries[0])
   of 2: # top, bottom | left, right
     for i, t in props.mypairs:
-      entries[i mod 2].p = t
+      entries[i mod 2].p = wide(t)
       res.add(entries[i mod 2])
   of 3: # top | left, right | bottom
     for i, t in props.mypairs:
@@ -1902,7 +1902,7 @@ proc parseBoxShorthand(ctx: var CSSParser; props: openArray[CSSPropertyType];
         2 # bottom
       else:
         1 # left, right
-      entries[j].p = t
+      entries[j].p = wide(t)
       res.add(entries[j])
   of 4: # top | right | bottom | left
     res.add(entries)
@@ -2030,7 +2030,7 @@ proc parseBorderSpacing(ctx: var CSSParser; attrs: WindowAttributes;
   res.add(makeEntry(cptBorderSpacingBlock, b))
   return ctx.skipBlanksCheckDone()
 
-proc addGlobal(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
+proc addGlobal(res: var seq[CSSComputedEntry]; p: CSSWidePropertyType;
     global: CSSGlobalType) =
   case p.sh
   of cstNone: res.add(makeEntry(p.p, global))
@@ -2041,7 +2041,7 @@ proc addGlobal(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
     for t in ShorthandMap[p.sh]:
       res.add(makeEntry(t, global))
 
-proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
+proc parseComputedValues0*(ctx: var CSSParser; p: CSSWidePropertyType;
     attrs: WindowAttributes; res: var seq[CSSComputedEntry]): Opt[void] =
   ?ctx.skipBlanksCheckHas()
   let tok = ctx.peekToken()
@@ -2068,8 +2068,9 @@ proc parseComputedValues0*(ctx: var CSSParser; p: CSSAnyPropertyType;
   of cstVerticalAlign: return ctx.parseVerticalAlign(attrs, res)
   of cstBorderSpacing: return ctx.parseBorderSpacing(attrs, tok, res)
 
-proc parseComputedValues*(res: var seq[CSSComputedEntry]; p: CSSAnyPropertyType;
-    toks: openArray[CSSToken]; attrs: WindowAttributes) =
+proc parseComputedValues*(res: var seq[CSSComputedEntry];
+    p: CSSWidePropertyType; toks: openArray[CSSToken];
+    attrs: WindowAttributes) =
   var ctx = initCSSParser(toks)
   let olen = res.len
   if ctx.parseComputedValues0(p, attrs, res).isErr:

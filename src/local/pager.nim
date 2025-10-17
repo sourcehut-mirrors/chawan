@@ -536,14 +536,14 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
   pager.initLoader()
   block history:
     let hist = newHistory(pager.config.external.historySize, getTime().toUnix())
-    let ps = newPosixStream(pager.config.external.historyFile)
+    let ps = newPosixStream($pager.config.external.historyFile)
     if ps != nil:
       if hist.parse(ps).isErr:
         hist.transient = true
         pager.alert("failed to read history")
     pager.lineHist[lmLocation] = hist
   block cookie:
-    let ps = newPosixStream(pager.config.external.cookieFile)
+    let ps = newPosixStream($pager.config.external.cookieFile)
     if ps != nil:
       if pager.cookieJars.parse(ps, pager.alerts).isErr:
         pager.cookieJars.transient = true
@@ -561,8 +561,8 @@ proc cleanup(pager: Pager) =
         # Basedir case: data dir is not the same as config dir.
         # I'd try to make parent dirs but in all likelihood some other
         # program has already spammed this nonsense into $HOME so whatever.
-        discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
-      if hist.write(pager.config.external.historyFile).isErr:
+        discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
+      if hist.write($pager.config.external.historyFile).isErr:
         if not hasConfigDir:
           # History is enabled by default, so do not print the error
           # message if no config dir exists.
@@ -570,8 +570,8 @@ proc cleanup(pager: Pager) =
     if not pager.cookieJars.transient:
       if hasConfigDir and not dirExists(pager.config.dataDir):
         # see above
-        discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
-      if pager.cookieJars.write(pager.config.external.cookieFile).isErr:
+        discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
+      if pager.cookieJars.write($pager.config.external.cookieFile).isErr:
         pager.alert("failed to save cookies")
     for msg in pager.alerts:
       discard cast[ChaFile](stderr).write("cha: " & msg & '\n')
@@ -1166,7 +1166,7 @@ proc redraw(pager: Pager) {.jsfunc.} =
     pager.lineedit.redraw = true
 
 proc getTempFile(pager: Pager; ext = ""): string =
-  result = pager.config.external.tmpdir / "chaptmp" &
+  result = $pager.config.external.tmpdir / "chaptmp" &
     $pager.loader.clientPid & "-" & $pager.tmpfSeq
   if ext != "":
     result &= "."
@@ -1828,7 +1828,7 @@ proc getEditorCommand(pager: Pager; file: string; line = 1): string {.jsfunc.} =
 
 proc openInEditor(pager: Pager; input: var string): bool =
   let tmpf = pager.getTempFile()
-  discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
+  discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
   input &= '\n'
   if chafile.writeFile(tmpf, input, 0o600).isErr:
     pager.alert("failed to write temporary file")
@@ -2718,7 +2718,7 @@ proc runMailcapReadFile(pager: Pager; stream: PosixStream;
 # If needsterminal, leave stderr and stdout open and wait for the process.
 proc runMailcapWriteFile(pager: Pager; stream: PosixStream;
     needsterminal: bool; cmd, outpath: string) =
-  discard mkdir(cstring(pager.config.external.tmpdir), 0o700)
+  discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
   if needsterminal:
     discard pager.term.quit() #TODO
     let os = newPosixStream(dup(pager.term.ostream.fd))

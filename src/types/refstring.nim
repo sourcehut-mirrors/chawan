@@ -9,11 +9,17 @@ type RefString* = ref object
 proc newRefString*(s: sink string): RefString =
   return RefString(s: s)
 
-converter `$`*(rs: RefString): lent string =
+proc `$`*(rs: RefString): lent string =
   rs.s
 
 template `&=`*(rs: var RefString; ss: string) =
   rs.s &= ss
+
+template `[]`*(rs: RefString; i: int): char =
+  rs.s[i]
+
+proc len*(rs: RefString): int =
+  rs.s.len
 
 proc toJS*(ctx: JSContext; rs: RefString): JSValue =
   return ctx.toJS($rs)

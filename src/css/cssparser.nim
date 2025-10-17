@@ -142,7 +142,7 @@ type
   CSSImportantFlag* = enum
     cifNormal, cifImportant
 
-  CSSAnyPropertyType* = object
+  CSSWidePropertyType* = object
     sh*: CSSShorthandType # if sh is cstNone, then use p
     p*: CSSPropertyType
 
@@ -151,7 +151,7 @@ type
     hasVar*: bool
     case t*: CSSDeclarationType
     of cdtProperty:
-      p*: CSSAnyPropertyType
+      p*: CSSWidePropertyType
     of cdtVariable:
       v*: CAtom
     value*: seq[CSSToken]
@@ -463,7 +463,7 @@ proc `$`*(tok: CSSToken): string =
   of cttRbrace: "}\n"
   else: $tok.t
 
-proc `$`*(p: CSSAnyPropertyType): string =
+proc `$`*(p: CSSWidePropertyType): string =
   if p.sh != cstNone:
     return $p.sh
   return $p.p
@@ -519,15 +519,15 @@ proc shorthandType*(s: string): CSSShorthandType =
 proc propertyType*(s: string): Opt[CSSPropertyType] =
   return parseEnumNoCase[CSSPropertyType](s)
 
-converter toAnyPropertyType*(p: CSSPropertyType): CSSAnyPropertyType =
-  CSSAnyPropertyType(sh: cstNone, p: p)
+proc wide*(p: CSSPropertyType): CSSWidePropertyType =
+  CSSWidePropertyType(sh: cstNone, p: p)
 
-proc anyPropertyType*(s: string): Opt[CSSAnyPropertyType] =
+proc anyPropertyType*(s: string): Opt[CSSWidePropertyType] =
   let sh = shorthandType(s)
   if sh == cstNone:
     let p = ?propertyType(s)
-    return ok(CSSAnyPropertyType(sh: sh, p: p))
-  return ok(CSSAnyPropertyType(sh: sh))
+    return ok(CSSWidePropertyType(sh: sh, p: p))
+  return ok(CSSWidePropertyType(sh: sh))
 
 proc cssNumberToken*(n: float32): CSSToken =
   let tu = CSSTokenUnion(f: n)
