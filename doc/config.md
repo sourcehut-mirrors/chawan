@@ -1569,7 +1569,8 @@ line.</td>
 <tr>
 <td><kbd>Enter</kbd>/<kbd>Return</kbd></td>
 <td>`click`</td>
-<td>Click the HTML element currently under the cursor.</td>
+<td>Click the HTML element currently under the cursor.  n specifies the
+number of clicks in JS events.</td>
 </tr>
 
 <tr>

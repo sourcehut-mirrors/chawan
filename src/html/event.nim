@@ -305,7 +305,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindow):
 
 type UIEventInit = object of EventInit
   view* {.jsdefault.}: EventTargetWindow
-  detail {.jsdefault.}: int32
+  detail* {.jsdefault.}: int32
 
 proc newUIEvent*(ctype: CAtom; eventInit = UIEventInit()): UIEvent {.jsctor.} =
   let event = UIEvent(

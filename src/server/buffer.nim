@@ -1638,7 +1638,7 @@ proc click(bc: BufferContext; clickable: Element): ClickResult =
     return ClickResult()
 
 proc initMouseEventInit(bc: BufferContext; button: int16; buttons: uint16;
-    x, y: int): MouseEventInit =
+    x, y, detail: int): MouseEventInit =
   let x = if bc.config.scripting == smApp and x <= int32.high div bc.attrs.ppc:
     int32(x * bc.attrs.ppc)
   else:
@@ -1656,10 +1656,12 @@ proc initMouseEventInit(bc: BufferContext; button: int16; buttons: uint16;
     clientX: x,
     clientY: y,
     screenX: x,
-    screenY: y
+    screenY: y,
+    detail: int32(clamp(detail, 0, int32.high))
   )
 
-proc click*(bc: BufferContext; cursorx, cursory: int): ClickResult {.proxy.} =
+proc click*(bc: BufferContext; cursorx, cursory, n: int): ClickResult {.
+    proxy.} =
   if bc.lines.len <= cursory: return ClickResult()
   var canceled = false
   let clickable = bc.getCursorClickable(cursorx, cursory)
@@ -1668,10 +1670,15 @@ proc click*(bc: BufferContext; cursorx, cursory: int): ClickResult {.proxy.} =
     if element != nil:
       bc.clickResult = nil
       let window = bc.window
-      let init = bc.initMouseEventInit(0, 0, cursorx, cursory)
+      let init = bc.initMouseEventInit(0, 0, cursorx, cursory, n)
       let event = newMouseEvent(satClick.toAtom(), init)
       event.isTrusted = true
       canceled = window.jsctx.dispatch(element, event)
+      if n == 2:
+        let init = bc.initMouseEventInit(0, 0, cursorx, cursory, n)
+        let event = newMouseEvent(satDblclick.toAtom(), init)
+        event.isTrusted = true
+        discard window.jsctx.dispatch(element, event)
       bc.maybeReshape()
       if bc.clickResult != nil:
         return bc.clickResult
@@ -1689,7 +1696,7 @@ proc contextMenu*(bc: BufferContext; cursorx, cursory: int) {.proxy.} =
     if element != nil:
       bc.clickResult = nil
       let window = bc.window
-      let init = bc.initMouseEventInit(2, 2, cursorx, cursory)
+      let init = bc.initMouseEventInit(2, 2, cursorx, cursory, 1)
       let event = newMouseEvent(satContextmenu.toAtom(), init)
       event.isTrusted = true
       discard window.jsctx.dispatch(element, event)

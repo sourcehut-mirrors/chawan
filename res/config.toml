@@ -480,7 +480,7 @@ scrollDown = 'n => pager.scrollDown(n)'
 scrollUp = 'n => pager.scrollUp(n)'
 scrollLeft = 'n => pager.scrollLeft(n)'
 scrollRight = 'n => pager.scrollRight(n)'
-click = '() => pager.click()'
+click = 'n => pager.click(n)'
 viewImage = '''
 (_, save) => {
 	let contentType = null;

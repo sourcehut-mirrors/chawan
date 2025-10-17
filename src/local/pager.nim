@@ -115,7 +115,7 @@ type
 
   # Mouse data
   MouseClickState = enum
-    mcsNormal, mcsDouble
+    mcsNormal, mcsDouble, mcsTriple
 
   MouseMoveType = enum
     mmtNone, mmtDrag, mmtSelect
@@ -728,6 +728,8 @@ proc handleMouseInputGeneric(pager: Pager; input: MouseInput) =
     if input.pos == pager.mouse.lastPressed[input.button]:
       if pager.mouse.click[button] < MouseClickState.high:
         inc pager.mouse.click[button]
+    else:
+      pager.mouse.click[button] = mcsNormal
   of mitMove: discard
   of mitRelease:
     if pressed != input.pos:
@@ -749,13 +751,13 @@ proc handleMouseInput(pager: Pager; input: MouseInput; container: Container) =
         let prevy = container.cursory
         container.setAbsoluteCursorXY(input.pos.x, input.pos.y)
         if prevx == container.cursorx and prevy == container.cursory:
-          discard pager.evalAction("click", 0)
+          discard pager.evalAction("click", int32(pager.mouse.click[button]))
       pager.mouse.moveType = mmtNone
     of mitPress:
       if pager.hasMouseSelection():
         pager.container.clearSelection()
     of mitMove:
-      if pager.mouse.click[button] == mcsDouble:
+      if pager.mouse.click[button] >= mcsDouble:
         case pager.mouse.moveType
         of mmtNone:
           # if mouse moved downwards, grab.

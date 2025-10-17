@@ -558,8 +558,10 @@ from the document's last line.</td>
 </tr>
 
 <tr>
-<td>`click()`</td>
-<td>Click the HTML element currently under the cursor.</td>
+<td>`click(n = 1)`</td>
+<td>Click the HTML element currently under the cursor.  `n` controls the
+number of clicks, e.g. `n = 2` is a double click.  (The number of clicks is
+only relevant in JS apps.)</td>
 </tr>
 
 <tr>

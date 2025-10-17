@@ -919,6 +919,7 @@ const ReflectTable0 = [
   makef(satOnfocus, satFocus),
   makef(satOnsubmit, satSubmit),
   makef(satOncontextmenu, satContextmenu),
+  makef(satOndblclick, satDblclick),
   makes(satSlot, AllTagTypes),
   makes(satTitle, AllTagTypes),
   makes(satLang, AllTagTypes),
@@ -4280,10 +4281,11 @@ proc reflectScriptAttr(element: Element; name: StaticAtom;
     satOnchange: satChange,
     satOnload: satLoad,
     satOnerror: satError,
-    satOnfocus: satFocus,
     satOnblur: satBlur,
+    satOnfocus: satFocus,
     satOnsubmit: satSubmit,
-    satOncontextmenu: satContextmenu
+    satOncontextmenu: satContextmenu,
+    satOndblclick: satDblclick,
   }
   for (n, t) in ScriptEventMap:
     if n == name:
