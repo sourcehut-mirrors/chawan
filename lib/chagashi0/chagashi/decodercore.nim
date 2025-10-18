@@ -21,8 +21,7 @@
 ## accordingly (subtracting the removed input bytes).
 ##
 ## `tdrReadInput` instructs the consumer to read the input queue between the
-## bytes `pi..ri` (warning: it's inclusive!) as decoded output. Typically this
-## is returned when the input queue contains ASCII characters only.
+## bytes `pi..<ri` (exclusive) as decoded output.
 ##
 ## WARNING: this does not mean that `oq` is left unmodified. In particular, in
 ## the UTF-8 decoder, if the previous `iq` ended with a split up UTF-8
@@ -57,9 +56,6 @@ type
   TextDecoderResult* = enum
     tdrDone, tdrReadInput, tdrReqOutput, tdrError
 
-  TextDecoderUTF8Flag = enum
-    tdufDone, tdufError, tdufErrorConsume
-
   TextDecoderFinishResult* = enum
     tdfrDone, tdfrError
 
@@ -71,15 +67,15 @@ type
     i*: int
     ri*: int
     pi*: int
-    ppi: int
 
   TextDecoderUTF8* = ref object of TextDecoder
-    flag: TextDecoderUTF8Flag
-    seen: int
-    needed: int
     bounds: Slice[uint8]
+    flag: TextDecoderResult
     buf: array[3, uint8]
-    bufLen: int
+    seen: uint8
+    needed: uint8
+    bufLen: uint8
+    ppi: int
 
   TextDecoderGB18030* = ref object of TextDecoder
     buf: uint8
@@ -223,85 +219,95 @@ proc gb18030RangesCodepoint(p: uint32): uint32 =
 
 method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
     oq: var openArray[uint8]; n: var int): TextDecoderResult =
-  template read_input(f: TextDecoderUTF8Flag) =
-    if td.bufLen > 0 and td.ri != -1:
-      if td.bufLen > oq.len:
-        return tdrReqOutput
-      for i in 0 ..< td.bufLen:
-        oq[n] = td.buf[i]
-        inc n
-    td.flag = f
-    if td.ppi <= td.ri or td.bufLen > 0 and td.ri != -1:
-      td.bufLen = 0
-      td.pi = td.ppi
-      td.ppi = td.i
-      return tdrReadInput
-  if td.bounds.a == 0: # unset
-    td.bounds = 0x80u8 .. 0xBFu8
-    td.ri = -1
-  if td.flag == tdufDone:
-    while (let i = td.i; i < iq.len):
+  var bounds = td.bounds
+  var flag = td.flag
+  var i = td.i
+  var ri = td.ri
+  var needed = td.needed
+  var seen = td.seen
+  var bufLen = td.bufLen
+  let obuf = td.buf
+  var buf = obuf
+  let ppi = td.ppi
+  if flag == tdrDone:
+    while i < iq.len:
       let b = iq[i]
-      if td.needed == 0:
+      let ni = i + 1
+      if needed == 0:
         if b <= 0x7F:
-          td.ri = td.i
+          ri = ni
         else:
+          bounds = 0x80u8 .. 0xBFu8
           case b
           of 0xC2u8 .. 0xDFu8:
-            td.needed = 1
+            needed = 1
           of 0xE0u8 .. 0xEFu8:
-            if b == 0xE0: td.bounds.a = 0xA0
-            if b == 0xED: td.bounds.b = 0x9F
-            td.needed = 2
+            if b == 0xE0: bounds.a = 0xA0
+            elif b == 0xED: bounds.b = 0x9F
+            needed = 2
           of 0xF0u8 .. 0xF4u8:
-            if b == 0xF0: td.bounds.a = 0x90
-            if b == 0xF4: td.bounds.b = 0x8F
-            td.needed = 3
+            if b == 0xF0: bounds.a = 0x90
+            elif b == 0xF4: bounds.b = 0x8F
+            needed = 3
           else:
             # needs consume
-            if td.ri == -1:
-              td.bufLen = 0 # no valid character seen yet; clear buffer
-            read_input tdufErrorConsume
-            break
+            needed = 1
+            bounds = 1u8 .. 0u8
+          buf[0] = b
       else:
-        if b notin td.bounds:
-          td.needed = 0
-          td.seen = 0
-          td.bounds = 0x80u8 .. 0xBFu8
+        if b notin bounds:
+          needed = 0
+          seen = 0
+          bounds = 0x80u8 .. 0xBFu8
           # prepend, no consume
-          if td.ri == -1:
-            td.bufLen = 0 # no valid character seen yet; clear buffer
-          read_input tdufError
+          if ri == 0:
+            bufLen = 0 # no valid character seen yet; clear buffer
+          flag = tdrError
           break
-        inc td.seen
-        if td.seen == td.needed:
-          td.needed = 0
-          td.seen = 0
-          td.ri = td.i
-        td.bounds = 0x80u8 .. 0xBFu8
-      inc td.i
-  let flag = td.flag
-  td.flag = tdufDone
+        inc seen
+        if seen == needed:
+          needed = 0
+          seen = 0
+          ri = ni
+        else:
+          buf[seen] = b
+        bounds = 0x80u8 .. 0xBFu8
+      i = ni
+  td.bounds = bounds
+  td.ri = ri
+  td.i = i
+  td.needed = needed
+  td.seen = seen
+  td.bufLen = bufLen
+  if bufLen > 0 and ri != 0:
+    let L = int(bufLen)
+    if L > oq.len:
+      return tdrReqOutput
+    for i in 0 ..< L:
+      oq[n] = buf[i]
+      inc n
+  if ppi < ri or bufLen > 0 and ri != 0:
+    td.bufLen = seen
+    td.ppi = i
+    td.pi = ppi
+    td.flag = flag
+    td.buf = buf
+    return tdrReadInput
+  td.flag = tdrDone
   case flag
-  of tdufError:
-    td.pi = td.ppi
-    td.ppi = td.i
-    return tdrError
-  of tdufErrorConsume:
-    inc td.i
-    td.pi = td.ppi
-    td.ppi = td.i
-    return tdrError
-  of tdufDone:
-    read_input tdufDone
-    if td.needed > 0:
-      for i in max(iq.len - td.seen - 1, 0) ..< iq.len:
-        td.buf[td.bufLen] = iq[i]
-        inc td.bufLen
-    td.ri = -1
+  of tdrError:
+    td.ppi = i
+    td.pi = ppi
+  of tdrDone:
+    if needed > 0:
+      td.buf = buf
+      bufLen = seen + 1
+    td.bufLen = bufLen
+    td.ri = 0
     td.i = 0
     td.ppi = 0
-    return tdrDone
+  else: discard # unreachable
+  flag
 
 method finish*(td: TextDecoderUTF8): TextDecoderFinishResult =
   result = tdfrDone
@@ -311,7 +317,7 @@ method finish*(td: TextDecoderUTF8): TextDecoderFinishResult =
   td.seen = 0
   td.i = 0
   td.pi = 0
-  td.ri = -1
+  td.ri = 0
   td.ppi = 0
   td.bufLen = 0
   td.bounds = 0x80u8 .. 0xBFu8

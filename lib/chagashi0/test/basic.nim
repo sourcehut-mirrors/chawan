@@ -10,12 +10,15 @@ const iroha = "いろはにほへとちりぬるをわかよたれそつねな�
 test "roundtrip iroha":
   const css = [
     CHARSET_SHIFT_JIS, CHARSET_ISO_2022_JP, CHARSET_EUC_JP, CHARSET_EUC_KR,
-    CHARSET_GB18030, CHARSET_GBK, CHARSET_BIG5
+    CHARSET_GB18030, CHARSET_GBK, CHARSET_BIG5, CHARSET_UTF_8
   ]
   let iroha100 = iroha.repeat(100)
   for cs in css:
-    let te = newTextEncoder(cs)
-    let sencoded = te.encodeAll(iroha)
+    let sencoded = if cs != CHARSET_UTF_8:
+      let te = newTextEncoder(cs)
+      te.encodeAll(iroha)
+    else:
+      iroha
     let td = newTextDecoder(cs)
     let sdecoded = td.decodeAll(sencoded)
     check sdecoded == iroha
@@ -59,6 +62,12 @@ test "validate valid UTF-8":
   for s in utf8_valid:
     check s.toValidUTF8() == s
     check s.toValidUTF8() & 'x' == s & 'x'
+    let td = TextDecoderUTF8()
+    var ctx = initTextDecoderContext(td, bufLen = 1)
+    var res = ""
+    for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
+      res &= s
+    check res == s
 
 test "validate invalid UTF-8":
   const utf8_error = {
@@ -68,10 +77,18 @@ test "validate invalid UTF-8":
     "\uD83E\uDD72": "\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD\uFFFD", # paired surrogates
     "\uD83C": "\uFFFD\uFFFD\uFFFD", # some unpaired surrogate
     "r\xC8sum\xC8s": "r\uFFFDsum\uFFFDs", # latin-1 mis-declared as UTF-8
+    "\x41\xC0\xAF\x41\xF4\x80\x80\x41": "A\uFFFD\uFFFDA\uFFFDA",
   }
   for (s, t) in utf8_error:
     check s.toValidUTF8() == t
     check (s & 'x').toValidUTF8() == t & 'x'
+    let td = TextDecoderUTF8()
+    var ctx = initTextDecoderContext(td, bufLen = 2)
+    var res = ""
+    for i in 0 ..< s.len:
+      for s in ctx.decode([uint8(s[i])], finish = i == s.high):
+        res &= s
+    check res == t
 
 test "UTF-16-BE to UTF-8":
   const list = {

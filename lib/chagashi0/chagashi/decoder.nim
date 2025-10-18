@@ -128,7 +128,7 @@ proc decodeIter(ctx: var TextDecoderContext; iq: openArray[uint8];
   of tdrReadInput:
     if ctx.n > 0:
       slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
-    slices[1] = iq.toOpenArray(td.pi, td.ri).toUnsafeSlice()
+    slices[1] = iq.toOpenArray(td.pi, td.ri - 1).toUnsafeSlice()
   of tdrReqOutput:
     slices[0] = ctx.oq.toOpenArray(0, ctx.n - 1).toUnsafeSlice()
   of tdrError:
@@ -230,7 +230,7 @@ proc validateUTF8Surr*(s: openArray[char]; start = 0): int =
   for chunk in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
     discard
   if ctx.failed:
-    return ctx.td.ri + 1
+    return ctx.td.ri
   return -1
 
 {.pop.}
