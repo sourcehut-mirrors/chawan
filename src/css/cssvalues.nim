@@ -518,10 +518,6 @@ const LayoutProperties* = {
   cptBorderBottomStyle,
   cptBorderLeftWidth, cptBorderRightWidth, cptBorderTopWidth,
   cptBorderBottomWidth,
-  #TODO right now, transparent is interpreted as width=0; it probably
-  # shouldn't be
-  cptBorderLeftColor, cptBorderRightColor, cptBorderTopColor,
-  cptBorderBottomColor,
   cptLeft, cptRight, cptTop, cptBottom, cptWidth, cptHeight,
   cptFlexShrink, cptFlexGrow,  cptFlexBasis, cptOverflowX, cptOverflowY,
   cptWhiteSpace, cptVerticalAlign, cptTextAlign, cptVerticalAlignLength,
@@ -732,6 +728,12 @@ when defined(debug):
 
 proc getLength*(vals: CSSValues; p: CSSPropertyType): CSSLength =
   return vals.words[p].length
+
+proc getLineWidth*(vals: CSSValues; p: CSSPropertyType): float32 =
+  return vals.hwords[p].lineWidth
+
+proc getBorderStyle*(vals: CSSValues; p: CSSPropertyType): CSSBorderStyle =
+  return vals.bits[p].borderStyle
 
 macro `{}`*(vals: CSSValues; s: static string): untyped =
   let t = propertyType(s).get

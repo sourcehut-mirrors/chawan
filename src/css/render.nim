@@ -477,9 +477,17 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
   var bottom = box.input.border.bottom
   var left = box.input.border.left
   var right = box.input.border.right
-  if top notin BorderStyleNoneHidden:
+  let colorTop = box.computed{"border-top-color"}
+  let colorBottom = box.computed{"border-bottom-color"}
+  let colorLeft = box.computed{"border-left-color"}
+  let colorRight = box.computed{"border-right-color"}
+  let hasLeft = left notin BorderStyleNoneHidden and
+    not colorLeft.rgbTransparent
+  let hasRight = right notin BorderStyleNoneHidden and
+    not colorRight.rgbTransparent
+  if top notin BorderStyleNoneHidden and not colorTop.rgbTransparent:
     var offset = start
-    if left notin BorderStyleNoneHidden:
+    if hasLeft:
       if box.state.merge[dtHorizontal]:
         if box.state.merge[dtVertical]:
           buf &= top.borderChar(bdcSideBarCross)
@@ -494,27 +502,22 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
       offset.x += state.attrs.ppc
     for i in startx + 1 ..< endx - 1:
       buf &= top.borderChar(bdcHorizontalBarTop)
-    if right notin BorderStyleNoneHidden:
+    if hasRight:
       if box.state.merge[dtVertical]:
         buf &= right.borderChar(bdcSideBarRight)
       else:
         buf &= top.borderChar(bdcCornerTopRight)
-    let fgcolor = box.computed{"border-top-color"}.cellColor()
-    let format = initFormat(defaultColor, fgcolor, {})
+    let format = initFormat(defaultColor, colorTop.cellColor(), {})
     grid.setText(state, buf, offset, format, box.element, box.render.clipBox)
     buf.setLen(0)
-  let hasLeft = left notin BorderStyleNoneHidden
-  let hasRight = right notin BorderStyleNoneHidden
   if hasLeft or hasRight:
     buf &= left.borderChar(bdcVerticalBarLeft)
     let rbuf = right.borderChar(bdcVerticalBarRight)
     var soff = start
     var eoff = send
     eoff.x -= state.cellSize.w
-    let fgcolorLeft = box.computed{"border-left-color"}.cellColor()
-    let formatLeft = initFormat(defaultColor, fgcolorLeft, {})
-    let fgcolorRight = box.computed{"border-left-color"}.cellColor()
-    let formatRight = initFormat(defaultColor, fgcolorRight, {})
+    let formatLeft = initFormat(defaultColor, colorLeft.cellColor(), {})
+    let formatRight = initFormat(defaultColor, colorRight.cellColor(), {})
     for y in starty + 1 ..< endy - 1:
       let sy = (y * state.attrs.ppl).toLUnit()
       if hasLeft:
@@ -524,10 +527,10 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
         eoff.y = sy
         grid.setText(state, rbuf, eoff, formatRight, nil, box.render.clipBox)
     buf.setLen(0)
-  if bottom notin BorderStyleNoneHidden:
+  if bottom notin BorderStyleNoneHidden and not colorBottom.rgbTransparent:
     let proprietary = bottom in BorderStyleInput
     var offset = offset(x = start.x, y = send.y - state.attrs.ppl)
-    if left notin BorderStyleNoneHidden and not proprietary:
+    if hasLeft and not proprietary:
       if box.state.merge[dtHorizontal]:
         buf &= bottom.borderChar(bdcSideBarBottom)
       else:
@@ -543,8 +546,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
       offset.y -= state.attrs.ppl
       if bottom != BorderStyleHash:
         flags.incl(ffUnderline)
-    let fgcolor = box.computed{"border-bottom-color"}.cellColor()
-    let format = initFormat(defaultColor, fgcolor, flags)
+    let format = initFormat(defaultColor, colorBottom.cellColor(), flags)
     grid.setText(state, buf, offset, format, box.element, box.render.clipBox)
 
 proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
