@@ -737,9 +737,9 @@ proc buildOuterBox(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
     box.element.box = box
   ctx.resetCounters(styledNode.element, countersLen, oldCountersLen,
     firstSetCounterIdx)
+  box.positioned = stackItem != nil and position != PositionStatic
   if stackItem != nil:
     stackItem.box = box
-    box.positioned = position != PositionStatic
     box.absolute = ctx.absoluteHead
     ctx.absoluteHead = oldAbsoluteHead
     ctx.absoluteTail = oldAbsoluteTail
