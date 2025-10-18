@@ -160,7 +160,10 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
   case entry.et
   of ceBit: ctx.vals.bits[t].dummy = entry.bit
   of ceHWord: ctx.vals.hwords[t] = entry.hword
-  of ceWord: ctx.vals.words[t] = entry.word
+  of ceWord:
+    ctx.vals.words[t] = entry.word
+    if t == cptColor and entry.word.color.t == cctCurrent:
+      ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
   of ceObject: ctx.vals.objs[t] = entry.obj
   of ceGlobal:
     case entry.global
@@ -174,8 +177,6 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
         ctx.revertMap[t] = revertType
         return
   of ceVar: discard
-  if ctx.old != nil and t in LayoutProperties:
-    ctx.relayout = ctx.relayout or not ctx.vals.equals(ctx.old, t)
   ctx.revertMap[t] = rtSet
 
 proc applyValues(ctx: var ApplyValueContext;
@@ -333,11 +334,15 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     ctx.applyPresHints(element)
   ctx.applyValues(rules[coUserAgent].vals[cifNormal], rtSet)
   # fill in defaults
+  if ctx.revertMap[cptColor] != rtSet: # do this first for currentcolor
+    result.initialOrInheritFrom(ctx.parentComputed, cptColor)
   for t in CSSPropertyType:
     if ctx.revertMap[t] != rtSet:
       result.initialOrInheritFrom(ctx.parentComputed, t)
-      if old != nil and t in LayoutProperties:
-        ctx.relayout = ctx.relayout or not result.equals(old, t)
+    if valueType(t) == cvtColor and ctx.vals.words[t].color.t == cctCurrent:
+      ctx.vals.words[t].color = ctx.vals.words[cptColor].color
+    if old != nil and t in LayoutProperties:
+      ctx.relayout = ctx.relayout or not result.equals(old, t)
   result.relayout = ctx.relayout
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.

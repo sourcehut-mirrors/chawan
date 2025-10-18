@@ -385,7 +385,7 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
   )
   let bgcolor = ibox.computed{"background-color"}
   var bgcolor0 = bgcolor0
-  if bgcolor.isCell:
+  if bgcolor.t == cctCell:
     let bgcolor = bgcolor.cellColor()
     if bgcolor.t != ctNone:
       grid.paintInlineBox(state, ibox, offset, bgcolor, 255)

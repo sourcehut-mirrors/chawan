@@ -63,10 +63,10 @@ jsDestructor(CanvasRenderingContext2D)
 jsDestructor(TextMetrics)
 
 # Forward declaration hack
-var parseColorImpl*: proc(target: EventTarget; s: string): ARGBColor
+var parseColorImpl*: proc(target: EventTarget; s: string): Opt[ARGBColor]
   {.nimcall, raises: [].}
 
-proc parseColor(target: EventTarget; s: string): ARGBColor =
+proc parseColor(target: EventTarget; s: string): Opt[ARGBColor] =
   return target.parseColorImpl(s)
 
 proc resetTransform(state: var DrawingState) =
@@ -253,14 +253,16 @@ proc fillStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
 
 proc fillStyle(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
   #TODO gradient, pattern
-  ctx.state.fillStyle = ctx.canvas.parseColor(s)
+  if color := ctx.canvas.parseColor(s):
+    ctx.state.fillStyle = color
 
 proc strokeStyle(ctx: CanvasRenderingContext2D): string {.jsfget.} =
   return ctx.state.strokeStyle.serialize()
 
 proc strokeStyle(ctx: CanvasRenderingContext2D; s: string) {.jsfset.} =
   #TODO gradient, pattern
-  ctx.state.strokeStyle = ctx.canvas.parseColor(s)
+  if color := ctx.canvas.parseColor(s):
+    ctx.state.strokeStyle = color
 
 proc clearRect(ctx: CanvasRenderingContext2D; x, y, w, h: float64) {.jsfunc.} =
   for v in [x, y, w, h]:

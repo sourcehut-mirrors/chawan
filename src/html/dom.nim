@@ -4211,15 +4211,20 @@ proc setHover*(element: Element; hover: bool) =
     element.flags.toggle({efHover})
     element.invalidate(dtHover)
 
-proc parseColor(element: Element; s: string): ARGBColor =
+proc parseColor(element: Element; s: string): Opt[ARGBColor] =
   var ctx = initCSSParser(s)
-  #TODO return element style
-  # For now we just use white.
-  let ec = rgba(255, 255, 255, 255)
   if color := ctx.parseColor():
-    if not color.isCell:
-      return color.argb
-  return ec
+    case color.t
+    of cctARGB: return ok(color.argb)
+    of cctCurrent:
+      let window = element.document.window
+      if window != nil and window.settings.scripting == smApp:
+        element.ensureStyle()
+        if element.computed{"color"}.t == cctARGB:
+          return ok(element.computed{"color"}.argb)
+      return ok(rgba(0, 0, 0, 255))
+    of cctCell: discard
+  return err()
 
 proc getBoundingClientRect(element: Element): DOMRect {.jsfunc.} =
   let window = element.document.window
@@ -6481,7 +6486,7 @@ isWindowImpl = proc(target: EventTarget): bool =
 isHTMLElementImpl = proc(target: EventTarget): bool =
   return target of HTMLElement
 
-parseColorImpl = proc(target: EventTarget; s: string): ARGBColor =
+parseColorImpl = proc(target: EventTarget; s: string): Opt[ARGBColor] =
   return Element(target).parseColor(s)
 
 setEventImpl = proc(ctx: JSContext; event: Event): Event =

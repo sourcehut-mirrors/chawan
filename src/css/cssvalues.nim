@@ -1326,6 +1326,8 @@ proc parseColor*(ctx: var CSSParser): Opt[CSSColor] =
   of cttIdent:
     if tok.s.equalsIgnoreCase("transparent"):
       return ok(rgba(0, 0, 0, 0).cssColor())
+    if tok.s.equalsIgnoreCase("currentcolor"):
+      return ok(cssCurrentColor())
     if x := namedRGBColor(tok.s):
       return ok(x.cssColor())
     elif tok.s.equalsIgnoreCase("canvas") or
@@ -1737,9 +1739,12 @@ proc parseValue(ctx: var CSSParser; t: CSSPropertyType;
   ok()
 
 proc getInitialColor(t: CSSPropertyType): CSSColor =
-  if t == cptBackgroundColor:
-    return rgba(0, 0, 0, 0).cssColor()
-  return defaultColor.cssColor()
+  case t
+  of cptBackgroundColor: return rgba(0, 0, 0, 0).cssColor()
+  of cptBorderLeftColor, cptBorderRightColor, cptBorderTopColor,
+      cptBorderBottomColor:
+    return cssCurrentColor()
+  else: return defaultColor.cssColor()
 
 proc getInitialLength(t: CSSPropertyType): CSSLength =
   case t

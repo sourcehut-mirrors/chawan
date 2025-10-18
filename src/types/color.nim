@@ -34,13 +34,16 @@ type
   # Crucially, this does not include colors with an alpha channel.
   CellColor* = distinct uint32
 
+  CSSColorType* = enum
+    cctARGB, cctCell, cctCurrent
+
   # Color that can be represented in CSS.
   # As an extension, we also recognize ANSI colors, so ARGB does not suffice.
   # (Actually, it would, but then we'd have to copy over the ANSI color
   # table and then re-quantize on render. I'm fine with wasting a few
   # bytes instead.)
   CSSColor* = object
-    isCell*: bool # if true, n is a CellColor. otherwise, it's ARGBColor.
+    t*: CSSColorType
     n: uint32
 
 proc rgba*(r, g, b, a: uint8): ARGBColor
@@ -102,32 +105,35 @@ proc cellColor*(c: ANSIColor): CellColor =
 const defaultColor* = cellColor(ctNone, 0)
 
 proc cssColor*(c: ARGBColor): CSSColor =
-  return CSSColor(isCell: false, n: uint32(c))
+  return CSSColor(t: cctARGB, n: uint32(c))
 
 proc cssColor*(c: RGBColor): CSSColor =
   return c.argb.cssColor()
 
 proc cssColor*(c: CellColor): CSSColor =
-  return CSSColor(isCell: true, n: uint32(c))
+  return CSSColor(t: cctCell, n: uint32(c))
 
 proc cssColor*(c: ANSIColor): CSSColor =
   return c.cellColor().cssColor()
+
+proc cssCurrentColor*(): CSSColor =
+  return CSSColor(t: cctCurrent)
 
 proc argb*(c: CSSColor): ARGBColor =
   return ARGBColor(c.n)
 
 proc a*(c: CSSColor): uint8 =
-  if c.isCell:
+  if c.t == cctCell:
     if CellColor(c.n).t == ctNone:
       return 0
     return 255
   return c.argb().a
 
 proc rgbTransparent*(c: CSSColor): bool =
-  return not c.isCell and c.argb().a == 0
+  return c.t == cctARGB and c.argb().a == 0
 
 proc cellColor*(c: CSSColor): CellColor =
-  if c.isCell:
+  if c.t == cctCell:
     return CellColor(c.n)
   if c.argb.a == 0:
     return defaultColor
@@ -311,7 +317,7 @@ proc `$`*(c: RGBColor): string =
   return c.argb().serialize()
 
 proc `$`*(c: CSSColor): string =
-  if c.isCell:
+  if c.t == cctCell:
     return "-cha-ansi(" & $c.n & ")"
   let c = c.argb()
   if c.a != 255:
