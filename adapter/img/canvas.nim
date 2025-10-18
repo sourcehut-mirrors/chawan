@@ -237,13 +237,14 @@ proc getCharBmp(u: uint32): Bitmap =
       glyphCacheI = 0
   return bmp
 
-proc drawBitmap(a, b: Bitmap; p: Vector2D) =
+proc drawBitmap(a, b: Bitmap; p: Vector2D; color: ARGBColor) =
   for y in 0 ..< b.height:
     for x in 0 ..< b.width:
       let ax = int(p.x) + x
       let ay = int(p.y) + y
-      if ax >= 0 and ay >= y and ax < a.width and ay < a.height:
-        a.setpxb(ax, ay, b.getpx(x, y))
+      if ax >= 0 and ay >= y and ax < a.width and ay < a.height and
+          b.getpx(x, y).a != 0:
+        a.setpxb(ax, ay, color)
 
 proc fillText(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
     textAlign: CanvasTextAlign) =
@@ -260,7 +261,7 @@ proc fillText(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
   of ctaRight, ctaEnd: x -= w
   of ctaCenter: x -= w / 2
   for glyph in glyphs:
-    bmp.drawBitmap(glyph, Vector2D(x: x, y: y - 8))
+    bmp.drawBitmap(glyph, Vector2D(x: x, y: y - 8), color)
     x += float64(glyph.width)
 
 proc strokeText(bmp: Bitmap; text: string; x, y: float64; color: ARGBColor;
