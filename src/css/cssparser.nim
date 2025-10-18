@@ -580,112 +580,105 @@ proc startsWithIdentSequence(iq: openArray[char]; n: int): bool =
 proc consumeEscape(iq: openArray[char]; n: var int): string =
   if n >= iq.len:
     return "\uFFFD"
-  let c = iq[n]
-  inc n
+  var m = n
+  let c = iq[m]
+  inc m
   if c in AsciiHexDigit:
     var num = uint32(hexValue(c))
     var i = 0
-    while i <= 5 and n < iq.len:
-      let val = hexValue(iq[n])
+    while i <= 5 and m < iq.len:
+      let val = hexValue(iq[m])
       if val == -1:
         break
       num *= 0x10
       num += uint32(val)
-      inc n
+      inc m
       inc i
-    if n < iq.len and iq[n] in AsciiWhitespace:
-      inc n
+    if m < iq.len and iq[m] in AsciiWhitespace:
+      inc m
+    n = m
     if num == 0 or num > 0x10FFFF or num in 0xD800u32..0xDFFFu32:
       return "\uFFFD"
     return num.toUTF8()
+  n = m
   return $c # assume the caller doesn't care about non-ascii
 
 proc consumeStringToken(iq: openArray[char]; ending: char; n: var int):
     CSSToken =
+  var m = n
   var s = ""
-  while n < iq.len:
-    let c = iq[n]
+  while m < iq.len:
+    let c = iq[m]
     case c
     of '\n':
+      n = m
       return CSSToken(t: cttBadString)
     of '\\':
-      if n + 1 >= iq.len or iq[n + 1] == '\n':
+      if m + 1 >= iq.len or iq[m + 1] == '\n':
         discard
       else:
-        inc n
-        s &= iq.consumeEscape(n)
+        inc m
+        s &= iq.consumeEscape(m)
         continue
     elif c == ending:
-      inc n
+      inc m
       break
     else:
       s &= c
-    inc n
+    inc m
+  n = m
   return CSSToken(t: cttString, s: move(s))
 
 proc consumeIdentSequence(iq: openArray[char]; n: var int): string =
   var s = ""
-  while n < iq.len:
-    let c = iq[n]
-    if c == '\\' and n + 1 < iq.len and iq[n + 1] != '\n':
-      inc n
-      s &= iq.consumeEscape(n)
+  var m = n
+  while m < iq.len:
+    let c = iq[m]
+    if c == '\\' and m + 1 < iq.len and iq[m + 1] != '\n':
+      inc m
+      s &= iq.consumeEscape(m)
       continue
     elif c in Ident:
       s &= c
     else:
       break
-    inc n
+    inc m
+  n = m
   move(s)
 
 proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
-  var isInt = true
   var flags: set[CSSTokenFlag] = {}
   var m = n
-  let start = m
-  var sign = 1i64
-  if n < iq.len and (let c = iq[m]; c in {'+', '-'}):
-    if c == '-':
-      sign = -1
-    flags.incl(ctfSign)
-    inc m
-  var integer = 0u32
-  while m < iq.len and (let c = iq[m]; c in AsciiDigit):
-    let u = uint32(c) - uint32('0')
-    let uu = integer * 10 + u
-    isInt = isInt and (uu > integer or u == 0 and integer == 0)
-    integer = uu
-    inc m
-  if m + 1 < iq.len and iq[m] == '.' and iq[m + 1] in AsciiDigit:
-    m += 2
-    isInt = false
-    while m < iq.len and iq[m] in AsciiDigit:
+  var sign = 1i32
+  if m < iq.len:
+    let c = iq[m]
+    let s = if c == '+': 1i32 elif c == '-': -1i32 else: 0i32
+    if s != 0:
+      flags.incl(ctfSign)
+      sign = s
       inc m
-  if m + 1 < iq.len and iq[m] in {'E', 'e'}:
-    let c = iq[m + 1]
-    let signed = c in {'-', '+'}
-    if c in AsciiDigit or signed and m + 2 < iq.len and iq[m + 2] in AsciiDigit:
-      isInt = false
-      m += (if signed: 3 else: 2)
-      while m < iq.len and iq[m] in AsciiDigit:
-        inc m
-  if m < iq.len and iq[m] == '%':
-    let f = parseFloat32(iq.toOpenArray(start, m - 1))
-    n = m + 1
-    return cssPercentageToken(f, flags)
-  let isDim = iq.startsWithIdentSequence(m)
-  var ii: int32
-  if isInt:
-    let i = int64(integer) * sign
-    ii = cast[int32](i)
-    if int64(ii) != i:
-      isInt = false
-  let tu = if isInt:
-    flags.incl(ctfInteger)
-    CSSTokenUnion(i: ii)
+  var integer = 0u32
+  while m < iq.len:
+    let u = uint32(iq[m]) - uint32('0')
+    if u > 9:
+      break
+    integer = max(integer * 10 + u, integer)
+    inc m
+  var tu = CSSTokenUnion()
+  if m < iq.len and iq[m] == '%' or
+      m + 1 < iq.len and iq[m] in {'.', 'e', 'E'} and iq[m + 1] in AsciiDigit or
+      m + 2 < iq.len and iq[m] in {'e', 'E'} and iq[m + 1] in {'+', '-'} and
+        iq[m + 2] in AsciiDigit:
+    tu.f = parseFloat32(iq, n)
+    m = n
+    if m < iq.len and iq[m] == '%':
+      n = m + 1
+      return cssPercentageToken(tu.f, flags)
   else:
-    CSSTokenUnion(f: parseFloat32(iq.toOpenArray(start, m - 1)))
-  if isDim:
+    flags.incl(ctfInteger)
+    let ii = int64(integer) * sign
+    tu.i = cast[int32](clamp(ii, int64(int32.low), int64(int32.high)))
+  if iq.startsWithIdentSequence(m):
     var s = iq.consumeIdentSequence(m)
     n = m
     if dt := parseEnumNoCase[CSSDimensionType](s):
@@ -700,7 +693,8 @@ proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
   n = m
   return CSSToken(t: cttNumber, tu: tu, flags: flags)
 
-proc consumeBadURL(iq: openArray[char]; n: var int) =
+proc consumeBadURL(iq: openArray[char]; n: int): int =
+  var n = n
   while n < iq.len:
     let c = iq[n]
     inc n
@@ -708,55 +702,57 @@ proc consumeBadURL(iq: openArray[char]; n: var int) =
       break
     if c == '\\' and n < iq.len and iq[n] != '\n':
       discard iq.consumeEscape(n)
+  n
 
-const NonPrintable = {
-  '\0'..char(0x08), '\v', char(0x0E)..char(0x1F), char(0x7F)
-}
+const NonPrintable = {'\0'..'\8', '\v', '\x0E'..'\x1F', '\x7F'}
 
 proc consumeURL(iq: openArray[char]; n: var int): CSSToken =
   var res = CSSToken(t: cttUrl)
-  n = iq.skipBlanks(n)
-  while n < iq.len:
-    let c = iq[n]
-    inc n
+  var m = iq.skipBlanks(n)
+  while m < iq.len:
+    let c = iq[m]
+    inc m
     case c
     of ')':
-      return res
+      break
     of '"', '\'', '(', NonPrintable:
-      iq.consumeBadURL(n)
+      n = iq.consumeBadURL(m)
       return CSSToken(t: cttBadUrl)
     of AsciiWhitespace:
-      n = iq.skipBlanks(n)
-      if n >= iq.len:
-        return res
-      if iq[n] == ')':
-        inc n
-        return res
-      iq.consumeBadURL(n)
+      m = iq.skipBlanks(m)
+      if m >= iq.len:
+        break
+      if iq[m] == ')':
+        inc m
+        break
+      n = iq.consumeBadURL(m)
       return CSSToken(t: cttBadUrl)
     of '\\':
-      if n < iq.len and iq[n] != '\n':
-        res.s &= iq.consumeEscape(n)
+      if m < iq.len and iq[m] != '\n':
+        res.s &= iq.consumeEscape(m)
       else:
-        iq.consumeBadURL(n)
+        n = iq.consumeBadURL(m)
         return CSSToken(t: cttBadUrl)
     else:
       res.s &= c
+  n = m
   move(res)
 
 proc consumeIdentLikeToken(iq: openArray[char]; n: var int): CSSToken =
   var s = iq.consumeIdentSequence(n)
-  if s.equalsIgnoreCase("url") and n < iq.len and iq[n] == '(':
-    inc n
-    while n + 1 < iq.len and iq[n] in AsciiWhitespace and
-        iq[n + 1] in AsciiWhitespace:
-      inc n
-    if n < iq.len and iq[n] in {'"', '\''} or
-        n + 1 < iq.len and iq[n] in {'"', '\''} + AsciiWhitespace and
-        iq[n + 1] in {'"', '\''}:
+  var m = n
+  if s.equalsIgnoreCase("url") and m < iq.len and iq[m] == '(':
+    inc m
+    while m + 1 < iq.len and iq[m] in AsciiWhitespace and
+        iq[m + 1] in AsciiWhitespace:
+      inc m
+    n = m
+    if m < iq.len and iq[m] in {'"', '\''} or
+        m + 1 < iq.len and iq[m] in {'"', '\''} + AsciiWhitespace and
+        iq[m + 1] in {'"', '\''}:
       return cssFunctionToken(cftUrl)
     return iq.consumeURL(n)
-  if n < iq.len and iq[n] == '(':
+  if m < iq.len and iq[m] == '(':
     let ft = parseEnumNoCase[CSSFunctionType](s).get(cftUnknown)
     inc n
     return cssFunctionToken(ft)

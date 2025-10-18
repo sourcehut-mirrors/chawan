@@ -1,6 +1,7 @@
 {.push raises: [].}
 
 import std/algorithm
+import std/math
 import std/sets
 import std/tables
 
@@ -268,15 +269,13 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
       let length = resolveLength(cuCh, n, ctx.window.settings.attrsp[])
       ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, length.npx))
   of TAG_PROGRESS:
-    let value = element.attr(satValue)
-    if value != "":
-      #TODO why can't parseFloat32 handle errors anyway
-      let n = parseFloat32(value)
+    let value = parseFloat32(element.attr(satValue))
+    if not isNaN(value):
       let maxs = element.attr(satMax)
       var max = parseFloat32(maxs)
       if not (max > 0): # catches NaN
         max = 1
-      ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, n / max))
+      ctx.applyPresHint(makeEntry(cptInputIntrinsicSize, value / max))
   of TAG_SELECT:
     if element.attrb(satMultiple):
       let size = element.attrulgz(satSize).get(4)
