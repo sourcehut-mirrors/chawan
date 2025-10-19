@@ -140,6 +140,10 @@ proc borderSize(input: LayoutInput; dim: DimensionType; lctx: LayoutContext):
     span.send = lctx.cellSize[dim]
   return span
 
+proc borderSum(input: LayoutInput; dim: DimensionType; lctx: LayoutContext):
+    LUnit =
+  input.borderSize(dim, lctx).sum()
+
 proc borderTop(input: LayoutInput; lctx: LayoutContext): LUnit =
   if input.border[dtVertical].start notin BorderStyleNoneHidden:
     return lctx.cellSize[dtVertical]
@@ -150,10 +154,20 @@ proc borderBottom(input: LayoutInput; lctx: LayoutContext): LUnit =
     return lctx.cellSize[dtVertical]
   return 0
 
+proc borderLeft(input: LayoutInput; lctx: LayoutContext): LUnit =
+  if input.border[dtHorizontal].start notin BorderStyleNoneHidden:
+    return lctx.cellSize[dtHorizontal]
+  return 0
+
+proc borderRight(input: LayoutInput; lctx: LayoutContext): LUnit =
+  if input.border[dtHorizontal].send notin BorderStyleNoneHidden:
+    return lctx.cellSize[dtHorizontal]
+  return 0
+
 proc outerSize(box: BlockBox; dim: DimensionType; input: LayoutInput;
     lctx: LayoutContext): LUnit =
   return input.margin[dim].sum() + box.state.size[dim] +
-    input.borderSize(dim, lctx).sum()
+    input.borderSum(dim, lctx)
 
 proc outerSize(box: BlockBox; input: LayoutInput; lctx: LayoutContext): Size =
   return size(
@@ -225,7 +239,7 @@ proc resolveUnderflow(input: var LayoutInput; parentSize: SizeConstraint;
     let send = computed.getLength(MarginEndMap[dim])
     let underflow = parentSize.u - input.space[dim].u -
       input.margin[dim].sum() - input.padding[dim].sum() -
-      input.borderSize(dim, lctx).sum()
+      input.borderSum(dim, lctx)
     if underflow > 0 and start.auto:
       if not send.auto:
         input.margin[dim].start = underflow
@@ -349,7 +363,7 @@ proc resolveAbsoluteWidth(lctx: LayoutContext; size: Size;
   let paddingSum = input.padding[dtHorizontal].sum()
   if computed{"width"}.auto:
     let u = max(size.w - positioned[dtHorizontal].sum() - paddingSum -
-      input.margin[dtHorizontal].sum(), 0)
+      input.margin[dtHorizontal].sum() - input.borderSum(dtHorizontal, lctx), 0)
     if not computed{"left"}.auto and not computed{"right"}.auto:
       # Both left and right are known, so we can calculate the width.
       input.space.w = stretch(u)
@@ -368,7 +382,7 @@ proc resolveAbsoluteHeight(lctx: LayoutContext; size: Size;
       # Both top and bottom are known, so we can calculate the height.
       # Well, but subtract padding and margin first.
       let u = max(size.h - positioned[dtVertical].sum() - paddingSum -
-        input.margin[dtVertical].sum(), 0)
+        input.margin[dtVertical].sum() - input.borderSum(dtVertical, lctx), 0)
       input.space.h = stretch(u)
     else:
       # The height is based on the content.
@@ -454,7 +468,7 @@ proc resolveFlexItemSizes(lctx: LayoutContext; space: Space; dim: DimensionType;
       input.bounds.mi[odim].send = min(u, input.bounds.mi[odim].send)
   elif input.space[odim].isDefinite():
     let u = input.space[odim].u - input.margin[odim].sum() - paddingSum[odim] -
-      input.borderSize(odim, lctx).sum()
+      input.borderSum(odim, lctx)
     input.space[odim] = SizeConstraint(
       t: input.space[odim].t,
       u: minClamp(u, input.bounds.a[odim])
@@ -480,7 +494,7 @@ proc resolveBlockWidth(input: var LayoutInput; parentWidth: SizeConstraint;
       input.bounds.mi[dim].send = min(input.bounds.mi[dim].send, px)
   elif parentWidth.t == scStretch:
     let underflow = parentWidth.u - input.margin[dim].sum() -
-      input.padding[dim].sum() - input.borderSize(dim, lctx).sum()
+      input.padding[dim].sum() - input.borderSum(dim, lctx)
     if underflow >= 0:
       input.space.w = stretch(underflow)
     else:
@@ -1513,16 +1527,18 @@ proc popPositioned(lctx: LayoutContext; head: CSSAbsolute; size: Size) =
     offset.x += input.margin.left
     lctx.layout(child, offset, input)
     if not child.computed{"left"}.auto:
-      child.state.offset.x = positioned.left + input.margin.left
+      child.state.offset.x = positioned.left + input.margin.left +
+        input.borderLeft(lctx)
     elif not child.computed{"right"}.auto:
       child.state.offset.x = size.w - positioned.right - child.state.size.w -
-        input.margin.right
+        input.margin.right + input.borderRight(lctx)
     # margin.left is added in layout
     if not child.computed{"top"}.auto:
-      child.state.offset.y = positioned.top + input.margin.top
+      child.state.offset.y = positioned.top + input.margin.top +
+        input.borderTop(lctx)
     elif not child.computed{"bottom"}.auto:
       child.state.offset.y = size.h - positioned.bottom - child.state.size.h -
-        input.margin.bottom
+        input.margin.bottom + input.borderBottom(lctx)
     else:
       child.state.offset.y += input.margin.top
     it = it.next
@@ -2784,7 +2800,7 @@ proc updateMaxSizes(mctx: var FlexMainContext; child: BlockBox;
     input: LayoutInput; lctx: LayoutContext) =
   for dim in DimensionType:
     mctx.maxSize[dim] = max(mctx.maxSize[dim], child.state.size[dim] +
-      input.borderSize(dim, lctx).sum())
+      input.borderSum(dim, lctx))
     mctx.maxMargin[dim].start = max(mctx.maxMargin[dim].start,
       input.margin[dim].start)
     mctx.maxMargin[dim].send = max(mctx.maxMargin[dim].send,
@@ -2875,7 +2891,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   var intr = size(w = 0, h = 0)
   var offset = fctx.offset
   for it in mctx.pending.mitems:
-    let oborder = it.child.input.borderSize(odim, lctx).sum()
+    let oborder = it.child.input.borderSum(odim, lctx)
     if it.child.state.size[odim] + oborder < h and
         not it.input.space[odim].isDefinite:
       # if the max height is greater than our height, then take max height
@@ -2909,7 +2925,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
     it.child.state.offset[odim] += offset[odim] + it.input.margin[odim].start
     offset[dim] += it.child.state.size[dim]
     offset[dim] += it.input.margin[dim].send
-    offset[dim] += it.input.borderSize(dim, lctx).sum()
+    offset[dim] += it.input.borderSum(dim, lctx)
     let intru = it.child.state.intr[dim] + it.input.margin[dim].sum()
     if fctx.canWrap:
       intr[dim] = max(intr[dim], intru)
