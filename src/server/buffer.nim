@@ -724,8 +724,8 @@ proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
   if element == nil or element.box == nil:
     return GotoAnchorResult(found: false)
   let offset = CSSBox(element.box).render.offset
-  let x = max(offset.x div bc.attrs.ppc, 0).toInt
-  let y = max(offset.y div bc.attrs.ppl, 0).toInt
+  let x = max(offset.x div bc.attrs.ppc.toLUnit(), 0'lu).toInt
+  let y = max(offset.y div bc.attrs.ppl.toLUnit(), 0'lu).toInt
   return GotoAnchorResult(found: true, x: x, y: y, focus: focus)
 
 proc checkRefresh*(bc: BufferContext): CheckRefreshResult {.proxy.} =
@@ -771,7 +771,7 @@ proc maybeReshape(bc: BufferContext) =
       bc.config.markLinks, bc.nhints, bc.linkHintChars)
     bc.rootBox = BlockBox(stack.box)
     bc.rootBox.layout(bc.attrs, fixedHead, bc.luctx)
-    bc.lines.render(bc.bgcolor, stack, addr bc.attrs, bc.images)
+    bc.lines.render(bc.bgcolor, stack, bc.attrs, bc.images)
     document.invalid = false
     if bc.hasTask(bcOnReshape):
       bc.resolveTask(bcOnReshape)
@@ -1933,16 +1933,18 @@ proc findLeaf(box: CSSBox; element: Element): CSSBox =
 proc showHints*(bc: BufferContext; sx, sy, ex, ey: int): HintResult {.proxy.} =
   result = @[]
   bc.maybeReshape()
-  let so = offset(x = sx * bc.attrs.ppc, y = sy * bc.attrs.ppl)
-  let eo = offset(x = ex * bc.attrs.ppc, y = ey * bc.attrs.ppl)
+  let ppc = bc.attrs.ppc.toLUnit()
+  let ppl = bc.attrs.ppl.toLUnit()
+  let so = offset(x = sx.toLUnit() * ppc, y = sy.toLUnit() * ppl)
+  let eo = offset(x = ex.toLUnit() * ppc, y = ey.toLUnit() * ppl)
   for element in bc.window.displayedElements:
     if element.box != nil and element.isClickable():
       let box = CSSBox(element.box).findLeaf(element)
       let offset = box.render.offset
       if offset >= so and offset < eo:
         result.add(HintItem(
-          x: (offset.x div bc.attrs.ppc).toInt(),
-          y: (offset.y div bc.attrs.ppl).toInt()
+          x: (offset.x div ppc).toInt(),
+          y: (offset.y div ppl).toInt()
         ))
         element.setHint(true)
   bc.nhints = result.len

@@ -288,8 +288,10 @@ proc `<`*(a, b: Offset): bool =
 proc `<=`*(a, b: Offset): bool =
   a.x <= b.x and a.y <= b.y
 
+const Offset0* = offset(0'lu, 0'lu)
+
 proc borderTopLeft*(input: LayoutInput; cellSize: Size): Offset =
-  var o = offset(0, 0)
+  var o = Offset0
   if input.border.left notin BorderStyleNoneHidden:
     o.x += cellSize.w
   if input.border.top notin BorderStyleNoneHidden:
@@ -297,7 +299,7 @@ proc borderTopLeft*(input: LayoutInput; cellSize: Size): Offset =
   o
 
 proc borderBottomRight*(input: LayoutInput; cellSize: Size): Offset =
-  var o = offset(0, 0)
+  var o = Offset0
   if input.border.right notin BorderStyleNoneHidden:
     o.x += cellSize.w
   if input.border.bottom notin BorderStyleNoneHidden:

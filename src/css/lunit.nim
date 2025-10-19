@@ -2,6 +2,9 @@
 
 import std/math
 
+import types/opt
+import utils/twtstr
+
 type LUnit* = distinct int32
 
 {.push overflowChecks: off, rangeChecks: off.}
@@ -30,13 +33,11 @@ proc `div`*(a, b: LUnit): LUnit {.inline.} =
   let b = int64(b)
   return LUnit((a div b) shr 6)
 
-converter toLUnit*(a: int32): LUnit =
-  let a = int64(a) shl 6
-  return satlu(a)
+proc toLUnit*(a: int32): LUnit =
+  satlu(int64(a) shl 6)
 
-converter toLUnit*(a: int): LUnit =
-  let a = int64(a) shl 6
-  return satlu(a)
+proc toLUnit*(a: int): LUnit =
+  satlu(int64(a) shl 6)
 
 proc `-`*(a: LUnit): LUnit {.inline.} =
   let a = int32(a)
@@ -45,12 +46,15 @@ proc `-`*(a: LUnit): LUnit {.inline.} =
   return LUnit(-a)
 {.pop.} # overflowChecks, rangeChecks
 
+template `'lu`*(s: static string): LUnit =
+  (static(parseInt32(s).get.toLUnit()))
+
 proc `==`*(a, b: LUnit): bool {.borrow.}
 proc `<`*(a, b: LUnit): bool {.borrow.}
 proc `<=`*(a, b: LUnit): bool {.borrow.}
 
 proc toInt*(a: LUnit): int =
-  if a < 0:
+  if a < 0'lu:
     return -(int32(-a) shr 6)
   return int32(a) shr 6
 
@@ -84,4 +88,5 @@ proc min*(a, b: LUnit): LUnit {.borrow.}
 proc max*(a, b: LUnit): LUnit {.borrow.}
 
 proc ceilTo*(a: LUnit; prec: int): LUnit =
-  return (1 + ((a - 1) div prec).toInt) * prec
+  let prec = prec.toLUnit()
+  return (1 + ((a - 1'lu) div prec).toInt).toLUnit() * prec

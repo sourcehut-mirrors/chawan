@@ -9,7 +9,6 @@ import chame/tags
 import config/conftypes
 import css/cssparser
 import css/cssvalues
-import css/lunit
 import css/match
 import css/sheet
 import html/catom

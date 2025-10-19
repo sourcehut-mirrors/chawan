@@ -21,7 +21,7 @@ type
     cellSize: Size # size(w = attrs.ppc, h = attrs.ppl)
     luctx: LUContext
 
-const DefaultSpan = Span(start: 0, send: LUnit.high)
+const DefaultSpan = Span(start: 0'lu, send: LUnit.high)
 
 proc minWidth(input: LayoutInput): LUnit =
   return input.bounds.a[dtHorizontal].start
@@ -100,17 +100,17 @@ proc canpx(l: CSSLength; sc: SizeConstraint): bool =
 
 proc px(l: CSSLength; p: LUnit): LUnit {.inline.} =
   if l.auto:
-    return 0
+    return 0'lu
   return (p.toFloat32() * l.perc + l.npx).toLUnit()
 
 proc px(l: CSSLength; p: SizeConstraint): LUnit {.inline.} =
   if l.perc == 0:
     return l.npx.toLUnit()
   if l.auto:
-    return 0
+    return 0'lu
   if p.t == scStretch:
     return (p.u.toFloat32() * l.perc + l.npx).toLUnit()
-  return 0
+  return 0'lu
 
 proc stretchOrMaxContent(l: CSSLength; sc: SizeConstraint): SizeConstraint =
   if l.canpx(sc):
@@ -147,22 +147,22 @@ proc borderSum(input: LayoutInput; dim: DimensionType; lctx: LayoutContext):
 proc borderTop(input: LayoutInput; lctx: LayoutContext): LUnit =
   if input.border[dtVertical].start notin BorderStyleNoneHidden:
     return lctx.cellSize[dtVertical]
-  return 0
+  return 0'lu
 
 proc borderBottom(input: LayoutInput; lctx: LayoutContext): LUnit =
   if input.border[dtVertical].send notin BorderStyleNoneHidden:
     return lctx.cellSize[dtVertical]
-  return 0
+  return 0'lu
 
 proc borderLeft(input: LayoutInput; lctx: LayoutContext): LUnit =
   if input.border[dtHorizontal].start notin BorderStyleNoneHidden:
     return lctx.cellSize[dtHorizontal]
-  return 0
+  return 0'lu
 
 proc borderRight(input: LayoutInput; lctx: LayoutContext): LUnit =
   if input.border[dtHorizontal].send notin BorderStyleNoneHidden:
     return lctx.cellSize[dtHorizontal]
-  return 0
+  return 0'lu
 
 proc outerSize(box: BlockBox; dim: DimensionType; input: LayoutInput;
     lctx: LayoutContext): LUnit =
@@ -227,8 +227,8 @@ proc spx(l: CSSLength; p: SizeConstraint; computed: CSSValues; padding: LUnit):
     LUnit =
   let u = l.px(p)
   if computed{"box-sizing"} == BoxSizingBorderBox:
-    return max(u - padding, 0)
-  return max(u, 0)
+    return max(u - padding, 0'lu)
+  return max(u, 0'lu)
 
 proc resolveUnderflow(input: var LayoutInput; parentSize: SizeConstraint;
     computed: CSSValues; lctx: LayoutContext) =
@@ -240,11 +240,11 @@ proc resolveUnderflow(input: var LayoutInput; parentSize: SizeConstraint;
     let underflow = parentSize.u - input.space[dim].u -
       input.margin[dim].sum() - input.padding[dim].sum() -
       input.borderSum(dim, lctx)
-    if underflow > 0 and start.auto:
+    if underflow > 0'lu and start.auto:
       if not send.auto:
         input.margin[dim].start = underflow
       else:
-        input.margin[dim].start = underflow div 2
+        input.margin[dim].start = underflow div 2'lu
 
 proc resolveMargins(lctx: LayoutContext; availableWidth: SizeConstraint;
     computed: CSSValues): RelativeRect =
@@ -265,12 +265,12 @@ proc resolvePadding(lctx: LayoutContext; availableWidth: SizeConstraint;
   # Note: we use availableWidth for percentage resolution intentionally.
   return [
     dtHorizontal: Span(
-      start: max(computed{"padding-left"}.px(availableWidth), 0),
-      send: max(computed{"padding-right"}.px(availableWidth), 0)
+      start: max(computed{"padding-left"}.px(availableWidth), 0'lu),
+      send: max(computed{"padding-right"}.px(availableWidth), 0'lu)
     ),
     dtVertical: Span(
-      start: max(computed{"padding-top"}.px(availableWidth), 0),
-      send: max(computed{"padding-bottom"}.px(availableWidth), 0)
+      start: max(computed{"padding-top"}.px(availableWidth), 0'lu),
+      send: max(computed{"padding-bottom"}.px(availableWidth), 0'lu)
     )
   ]
 
@@ -301,17 +301,17 @@ proc resolveBorder(computed: CSSValues; margin: var RelativeRect): CSSBorder =
     let styleStart = computed.getBorderStyle(it[0][0])
     if styleStart != BorderStyleNone:
       let w = computed.getLineWidth(it[0][1]).toLUnit()
-      if w != 0:
-        let e = 1 - w
-        if e > 0 and margin[dim].start <= e:
+      if w != 0'lu:
+        let e = 1'lu - w
+        if e > 0'lu and margin[dim].start <= e:
           margin[dim].start -= e # correct error
         result[dim].start = styleStart
     let styleEnd = computed.getBorderStyle(it[1][0])
     if styleEnd != BorderStyleNone:
       let w = computed.getLineWidth(it[1][1]).toLUnit()
-      if w != 0:
-        let e = 1 - w
-        if e > 0 and margin[dim].send <= e:
+      if w != 0'lu:
+        let e = 1'lu - w
+        if e > 0'lu and margin[dim].send <= e:
           margin[dim].send -= e # correct error
         result[dim].send = styleEnd
 
@@ -363,7 +363,8 @@ proc resolveAbsoluteWidth(lctx: LayoutContext; size: Size;
   let paddingSum = input.padding[dtHorizontal].sum()
   if computed{"width"}.auto:
     let u = max(size.w - positioned[dtHorizontal].sum() - paddingSum -
-      input.margin[dtHorizontal].sum() - input.borderSum(dtHorizontal, lctx), 0)
+      input.margin[dtHorizontal].sum() - input.borderSum(dtHorizontal, lctx),
+      0'lu)
     if not computed{"left"}.auto and not computed{"right"}.auto:
       # Both left and right are known, so we can calculate the width.
       input.space.w = stretch(u)
@@ -382,7 +383,8 @@ proc resolveAbsoluteHeight(lctx: LayoutContext; size: Size;
       # Both top and bottom are known, so we can calculate the height.
       # Well, but subtract padding and margin first.
       let u = max(size.h - positioned[dtVertical].sum() - paddingSum -
-        input.margin[dtVertical].sum() - input.borderSum(dtVertical, lctx), 0)
+        input.margin[dtVertical].sum() - input.borderSum(dtVertical, lctx),
+        0'lu)
       input.space.h = stretch(u)
     else:
       # The height is based on the content.
@@ -495,10 +497,10 @@ proc resolveBlockWidth(input: var LayoutInput; parentWidth: SizeConstraint;
   elif parentWidth.t == scStretch:
     let underflow = parentWidth.u - input.margin[dim].sum() -
       input.padding[dim].sum() - input.borderSum(dim, lctx)
-    if underflow >= 0:
+    if underflow >= 0'lu:
       input.space.w = stretch(underflow)
     else:
-      input.space.w = stretch(0)
+      input.space.w = stretch(0'lu)
       input.margin[dtHorizontal].send += underflow
   if input.space.w.isDefinite() and input.maxWidth < input.space.w.u or
       input.maxWidth < LUnit.high and
@@ -512,7 +514,7 @@ proc resolveBlockWidth(input: var LayoutInput; parentWidth: SizeConstraint;
     input.resolveUnderflow(parentWidth, computed, lctx)
     input.bounds.mi[dim].send = input.space.w.u
   if input.space.w.isDefinite() and input.minWidth > input.space.w.u or
-      input.minWidth > 0 and input.space.w.t == scMinContent:
+      input.minWidth > 0'lu and input.space.w.t == scMinContent:
     # two cases:
     # * available width is stretched under min-width. in this case,
     #   stretch to min-width instead.
@@ -541,7 +543,7 @@ proc resolveBlockHeight(input: var LayoutInput; parentHeight: SizeConstraint;
     else: # scFitContent
       input.space.h = fitContent(input.maxHeight)
   if input.space.h.isDefinite() and input.minHeight > input.space.h.u or
-      input.minHeight > 0 and input.space.h.t == scMinContent:
+      input.minHeight > 0'lu and input.space.h.t == scMinContent:
     # same reasoning as for width.
     input.space.h = stretch(input.minHeight)
 
@@ -570,8 +572,8 @@ proc resolveBlockSizes(lctx: LayoutContext; space: Space; computed: CSSValues):
     # Eliminate distracting margins and padding here, because
     # resolveBlockWidth may change them beforehand.
     lctx.roundSmallMarginsAndPadding(input)
-  if input.space.h.isDefinite() and input.space.h.u == 0 and
-      paddingSum[dtVertical] == 0 and
+  if input.space.h.isDefinite() and input.space.h.u == 0'lu and
+      paddingSum[dtVertical] == 0'lu and
       input.border.bottom notin BorderStyleInput:
     # prevent ugly <hr> when set using border (not just border-style-bottom)
     input.border[dtHorizontal] = BorderStyleSpan()
@@ -802,7 +804,7 @@ proc lastTextBox(fstate: FlowState): InlineBox =
   nil
 
 proc addMargin(a: var Span; b: LUnit) =
-  if b < 0:
+  if b < 0'lu:
     a.start = min(b, a.start)
   else:
     a.send = max(b, a.send)
@@ -866,7 +868,7 @@ proc findNextFloatOffset(fstate: FlowState; offset: Offset; size: Size;
     # still intersects with the previous y).
     y = miny
   assert false
-  offset(-1, -1)
+  Offset0
 
 proc findNextFloatOffset(fstate: FlowState; offset: Offset; size: Size;
     space: Space; float: CSSFloat): Offset =
@@ -899,7 +901,7 @@ proc positionFloat(fstate: var FlowState; child: BlockBox; space: Space;
   fstate.exclusionsTail = ex
   fstate.maxFloatHeight = max(fstate.maxFloatHeight, offset.y + outerSize.h)
 
-proc positionFloats(fstate: var FlowState; yshift: LUnit = 0) =
+proc positionFloats(fstate: var FlowState; yshift = 0'lu) =
   var f = fstate.pendingFloatsHead
   while f != nil:
     var bfcOffset = f.bfcOffset
@@ -915,7 +917,7 @@ proc positionFloats(fstate: var FlowState; yshift: LUnit = 0) =
 proc flushMargins(fstate: var FlowState; offsety: var LUnit) =
   # Apply uncommitted margins.
   let margin = fstate.marginTodo.sum()
-  var yshift: LUnit = 0
+  var yshift = 0'lu
   if fstate.marginResolved:
     offsety += margin
   else:
@@ -1016,10 +1018,10 @@ proc positionAtom(lbstate: LineBoxState; atom: InlineAtom;
     atom.offset.y = lbstate.baseline - atom.offset.y
   of VerticalAlignMiddle:
     # Atom is placed at (line baseline) - ((atom height) / 2)
-    atom.offset.y = lbstate.baseline - atom.size.h div 2
+    atom.offset.y = lbstate.baseline - atom.size.h div 2'lu
   of VerticalAlignTop:
     # Atom is placed at the top of the line.
-    atom.offset.y = 0
+    atom.offset.y = 0'lu
   of VerticalAlignBottom:
     # Atom is placed at the bottom of the line.
     atom.offset.y = lbstate.size.h - atom.size.h
@@ -1042,14 +1044,15 @@ proc getLineXShift(fstate: FlowState): LUnit =
     max(width, fstate.lbstate.size.w) - fstate.lbstate.size.w
   of TextAlignCenter, TextAlignChaCenter:
     let w = min(width, fstate.lbstate.availableWidth)
-    max(max(w, fstate.lbstate.size.w) div 2 - fstate.lbstate.size.w div 2, 0)
+    max(max(w, fstate.lbstate.size.w) div 2'lu -
+      fstate.lbstate.size.w div 2'lu, 0'lu)
 
 # Calculate the position of atoms and background areas inside the
 # line.
 proc alignLine(fstate: var FlowState) =
   let xshift = fstate.getLineXShift()
-  var totalWidth: LUnit = 0
-  var currentAreaOffsetX: LUnit = 0
+  var totalWidth = 0'lu
+  var currentAreaOffsetX = 0'lu
   var currentBox: InlineBox = nil
   let areaY = fstate.offset.y + fstate.lbstate.baseline - fstate.cellSize.h
   var minHeight = fstate.cellSize.h
@@ -1078,7 +1081,7 @@ proc alignLine(fstate: var FlowState) =
       if currentBox != nil:
         # flush area
         let w = lastAtom.offset.x + lastAtom.size.w - currentAreaOffsetX
-        if w != 0:
+        if w != 0'lu:
           currentBox.state.areas.add(Area(
             offset: offset(x = currentAreaOffsetX, y = areaY),
             size: size(w = w, h = fstate.cellSize.h)
@@ -1134,9 +1137,9 @@ proc getBaseline(atom: InlineAtom; lctx: LayoutContext): LUnit =
     let length = atom.ibox.computed{"-cha-vertical-align-length"}
     atom.baseline(lctx) + length.px(lctx.cellSize.h)
   of VerticalAlignTop:
-    0
+    0'lu
   of VerticalAlignMiddle:
-    atom.size.h div 2
+    atom.size.h div 2'lu
   of VerticalAlignBottom:
     atom.size.h
   else:
@@ -1169,13 +1172,13 @@ proc addSpacing(fstate: var FlowState; ibox: InlineTextBox; shift: int;
     ibox.runs.add(run)
     fstate.putAtom(InlineAtom(
       ibox: ibox,
-      size: size(w = 0, h = cellHeight),
+      size: size(w = 0'lu, h = cellHeight),
       run: run
     ), takeAbsolutes = false)
   let run = ibox.runs[^1]
   for i in 0 ..< shift:
     run.s &= ' '
-  let w = shift * fstate.cellSize.w
+  let w = shift.toLUnit() * fstate.cellSize.w
   if not hang:
     # In some cases, whitespace may "hang" at the end of the line. This means
     # it is written, but is not actually counted in the box's width.
@@ -1201,7 +1204,7 @@ proc initLineBoxState(fstate: var FlowState): LineBoxState =
   result = LineBoxState(
     intrh: cellHeight,
     baseline: cellHeight,
-    size: size(w = 0, h = cellHeight),
+    size: size(w = 0'lu, h = cellHeight),
     pendingAbsolutes: move(pendingAbsolutes)
   )
 
@@ -1308,7 +1311,7 @@ proc prepareSpace(fstate: var FlowState; ibox: InlineBox; width: LUnit): bool =
   let wbox = fstate.lbstate.whitespaceBox
   fstate.lbstate.whitespaceBox = nil
   # Line wrapping
-  if fstate.shouldWrap(width + shift * fstate.cellSize.w, ibox):
+  if fstate.shouldWrap(width + shift.toLUnit() * fstate.cellSize.w, ibox):
     fstate.finishLine(ibox, wrap = true)
     fstate.initLine()
     wrapped = true
@@ -1316,7 +1319,7 @@ proc prepareSpace(fstate: var FlowState; ibox: InlineBox; width: LUnit): bool =
     shift = fstate.lbstate.computeShift(ibox)
     # For floats: flush lines until we can place the atom.
     #TODO this is inefficient
-    while fstate.shouldWrap2(width + shift * fstate.cellSize.w):
+    while fstate.shouldWrap2(width + shift.toLUnit() * fstate.cellSize.w):
       fstate.finishLine(ibox, wrap = false, force = true)
       fstate.initLine()
       # Recompute on newline
@@ -1327,11 +1330,11 @@ proc prepareSpace(fstate: var FlowState; ibox: InlineBox; width: LUnit): bool =
 
 proc flushIntrSize(fstate: var FlowState; word: var WordState) =
   fstate.intr.w = max(fstate.intr.w, word.intrWidth)
-  word.intrWidth = 0
+  word.intrWidth = 0'lu
 
 # Returns true if wrapped.
 proc addWord(fstate: var FlowState; word: var WordState): bool =
-  if word.s == "" or word.width == 0:
+  if word.s == "" or word.width == 0'lu:
     return false
   word.s.mnormalize() #TODO this may break on EOL.
   if word.s == "":
@@ -1364,7 +1367,7 @@ proc addWordEOL(fstate: var FlowState; word: var WordState): bool =
       word.s &= shy
       word.hasSoftHyphen = false
     let wrapped = fstate.addWord(word)
-    word.width = leftstr.width() * fstate.cellSize.w
+    word.width = leftstr.width().toLUnit() * fstate.cellSize.w
     word.s = move(leftstr)
     return wrapped
   return fstate.addWord(word)
@@ -1375,10 +1378,11 @@ proc checkWrap(fstate: var FlowState; word: var WordState; u: uint32;
   if ibox.computed.nowrap:
     return
   fstate.initLine()
-  let shiftw = fstate.lbstate.computeShift(ibox) * fstate.cellSize.w
+  let shiftw = fstate.lbstate.computeShift(ibox).toLUnit() * fstate.cellSize.w
   fstate.lbstate.prevrw = uw
   if word.s.len == 0:
     fstate.lbstate.firstrw = uw
+  let luw = uw.toLUnit()
   case ibox.computed{"word-break"}
   of WordBreakNormal:
     if uw == 2:
@@ -1388,19 +1392,19 @@ proc checkWrap(fstate: var FlowState; word: var WordState; u: uint32;
       fstate.flushIntrSize(word)
     if uw == 2 or word.wrapPos != -1:
       # break on cjk and wrap opportunities
-      let plusWidth = word.width + shiftw + uw * fstate.cellSize.w
+      let plusWidth = word.width + shiftw + luw * fstate.cellSize.w
       if fstate.shouldWrap(plusWidth, nil):
         if not fstate.addWordEOL(word): # no line wrapping occurred in addWord
           fstate.finishLine(ibox, wrap = true)
   of WordBreakBreakAll:
     word.wrapPos = -1
     fstate.flushIntrSize(word)
-    let plusWidth = word.width + shiftw + uw * fstate.cellSize.w
+    let plusWidth = word.width + shiftw + luw * fstate.cellSize.w
     if fstate.shouldWrap(plusWidth, nil):
       if not fstate.addWordEOL(word): # no line wrapping occurred in addWord
         fstate.finishLine(ibox, wrap = true)
   of WordBreakKeepAll:
-    let plusWidth = word.width + shiftw + uw * fstate.cellSize.w
+    let plusWidth = word.width + shiftw + luw * fstate.cellSize.w
     if fstate.shouldWrap(plusWidth, nil):
       fstate.finishLine(ibox, wrap = true)
 
@@ -1433,7 +1437,7 @@ proc processWhitespace(fstate: var FlowState; word: var WordState; c: char) =
       fstate.flushWhitespace(ibox)
       let w = ((realWidth + 8) and not 7) - realWidth
       word.s.addUTF8(tabPUAPoint(w))
-      word.width += w * fstate.cellSize.w
+      word.width += w.toLUnit() * fstate.cellSize.w
       fstate.lbstate.charwidth += w
       # Ditto here - we don't want the tab stop to get merged into the next
       # word.
@@ -1465,7 +1469,7 @@ proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox; s: string) =
         let w = u.width()
         fstate.checkWrap(word, u, w)
         word.s &= c
-        let cw = w * fstate.cellSize.w
+        let cw = w.toLUnit() * fstate.cellSize.w
         word.width += cw
         word.intrWidth += cw
         fstate.lbstate.charwidth += w
@@ -1486,12 +1490,12 @@ proc layoutTextLoop(fstate: var FlowState; ibox: InlineTextBox; s: string) =
       fstate.checkWrap(word, u, w)
       for j in pi ..< i:
         word.s &= s[j]
-      let cw = w * fstate.cellSize.w
+      let cw = w.toLUnit() * fstate.cellSize.w
       word.width += cw
       word.intrWidth += cw
       fstate.lbstate.charwidth += w
   discard fstate.addWord(word)
-  let shiftw = fstate.lbstate.computeShift(ibox) * fstate.cellSize.w
+  let shiftw = fstate.lbstate.computeShift(ibox).toLUnit() * fstate.cellSize.w
   fstate.lbstate.widthAfterWhitespace = fstate.lbstate.size.w + shiftw
 
 proc layoutText(fstate: var FlowState; ibox: InlineTextBox; s: string) =
@@ -1730,11 +1734,11 @@ proc layoutBlockChild(fstate: var FlowState; child: BlockBox) =
     fstate.box.state.baseline = child.state.offset.y + child.state.baseline
   if fstate.space.w.t == scStretch:
     if fstate.textAlign == TextAlignChaCenter:
-      child.state.offset.x += max(space.w.u div 2 -
-        child.state.size.w div 2, 0)
+      child.state.offset.x += max(space.w.u div 2'lu -
+        child.state.size.w div 2'lu, 0'lu)
     elif fstate.textAlign == TextAlignChaRight:
       child.state.offset.x += max(space.w.u - child.state.size.w -
-        input.margin.right, 0)
+        input.margin.right, 0'lu)
   if child.computed{"position"} == PositionRelative:
     fstate.lctx.positionRelative(fstate.space, child)
   fstate.maxChildWidth = max(fstate.maxChildWidth, outerSize.w)
@@ -1817,7 +1821,7 @@ proc layoutInlineBlock(fstate: var FlowState; ibox: InlineBox; box: BlockBox) =
 
 proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
   ibox.imgstate = InlineImageState(
-    size: size(w = ibox.bmp.width, h = ibox.bmp.height)
+    size: size(w = ibox.bmp.width.toLUnit(), h = ibox.bmp.height.toLUnit())
   )
   #TODO this is hopelessly broken.
   # The core problem is that we generate an inner and an outer box for
@@ -1857,21 +1861,21 @@ proc layoutImage(fstate: var FlowState; ibox: InlineImageBox; padding: LUnit) =
   if not hasHeight and not hasWidth:
     if osize.w >= osize.h or
         not fstate.space.h.isDefinite() and fstate.space.w.isDefinite():
-      if osize.w > 0:
+      if osize.w > 0'lu:
         ibox.imgstate.size.h = osize.h div osize.w * ibox.imgstate.size.w
     else:
-      if osize.h > 0:
+      if osize.h > 0'lu:
         ibox.imgstate.size.w = osize.w div osize.h * ibox.imgstate.size.h
-  elif not hasHeight and osize.w != 0:
+  elif not hasHeight and osize.w != 0'lu:
     ibox.imgstate.size.h = osize.h div osize.w * ibox.imgstate.size.w
-  elif not hasWidth and osize.h != 0:
+  elif not hasWidth and osize.h != 0'lu:
     ibox.imgstate.size.w = osize.w div osize.h * ibox.imgstate.size.h
-  if ibox.imgstate.size.w > 0 and ibox.imgstate.size.h > 0:
+  if ibox.imgstate.size.w > 0'lu and ibox.imgstate.size.h > 0'lu:
     let atom = InlineAtom(ibox: ibox, size: ibox.imgstate.size)
     discard fstate.prepareSpace(ibox, atom.size.w)
     fstate.putAtom(atom)
   fstate.lbstate.charwidth = 0
-  if ibox.imgstate.size.h > 0:
+  if ibox.imgstate.size.h > 0'lu:
     # Setting the atom size as intr.w might result in a circular dependency
     # between table cell sizing and image sizing when we don't have a definite
     # parent size yet. e.g. <img width=100% ...> with an indefinite containing
@@ -1914,14 +1918,14 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
       y = fstate.offset.y
     )
     let w = ibox.computed{"margin-left"}.px(fstate.space.w)
-    if w != 0:
+    if w != 0'lu:
       fstate.initLine()
       fstate.lbstate.size.w += w
       fstate.lbstate.widthAfterWhitespace += w
       ibox.state.startOffset.x += w
-    if padding.start != 0:
+    if padding.start != 0'lu:
       ibox.state.areas.add(Area(
-        offset: offset(x = fstate.lbstate.widthAfterWhitespace, y = 0),
+        offset: offset(x = fstate.lbstate.widthAfterWhitespace, y = 0'lu),
         size: size(w = padding.start, h = fstate.cellSize.h)
       ))
       fstate.lbstate.paddingTodo.add((ibox, 0))
@@ -1936,16 +1940,16 @@ proc layoutInline(fstate: var FlowState; ibox: InlineBox) =
           fstate.layoutInlineBlock(ibox, child)
         else:
           fstate.layoutOuterBlock(child)
-    if padding.send != 0:
+    if padding.send != 0'lu:
       ibox.state.areas.add(Area(
-        offset: offset(x = fstate.lbstate.size.w, y = 0),
+        offset: offset(x = fstate.lbstate.size.w, y = 0'lu),
         size: size(w = padding.send, h = fstate.cellSize.h)
       ))
       fstate.lbstate.paddingTodo.add((ibox, ibox.state.areas.high))
       fstate.initLine()
       fstate.lbstate.size.w += padding.send
     let marginRight = ibox.computed{"margin-right"}.px(fstate.space.w)
-    if marginRight != 0:
+    if marginRight != 0'lu:
       fstate.initLine()
       fstate.lbstate.size.w += marginRight
     if fstate.space.w.t != scMeasure:
@@ -1993,7 +1997,7 @@ proc initFlowState(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
   )
   if box.computed{"position"} in PositionAbsoluteFixed:
     # absolute abuses bfcOffset as its own offset, so unset it
-    result.bfcOffset = offset(0, 0)
+    result.bfcOffset = Offset0
 
 # Second layout.  Reset the starting offset, and stretch the box to the
 # max child width.
@@ -2014,8 +2018,8 @@ proc layoutFlow(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
     root: bool) =
   var fstate = lctx.initFlowState(box, input, root)
   if box.computed{"position"} notin PositionAbsoluteFixed and
-      (input.padding.top != 0 or input.borderTop(lctx) != 0 or
-      input.space.h.isDefinite() and input.space.h.u != 0):
+      (input.padding.top != 0'lu or input.borderTop(lctx) != 0'lu or
+      input.space.h.isDefinite() and input.space.h.u != 0'lu):
     fstate.flushMargins(box.state.yshift)
   let spacew = fstate.space.w
   let indefinite = spacew.t in {scFitContent, scMaxContent}
@@ -2039,7 +2043,7 @@ proc layoutFlow(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
     w = fstate.maxChildWidth,
     h = fstate.offset.y - input.padding.top
   )
-  if input.padding.bottom != 0 or input.borderBottom(lctx) != 0:
+  if input.padding.bottom != 0'lu or input.borderBottom(lctx) != 0'lu:
     let oldHeight = childSize.h
     fstate.flushMargins(childSize.h)
     fstate.intr.h += childSize.h - oldHeight
@@ -2053,7 +2057,7 @@ proc layoutFlow(lctx: LayoutContext; box: BlockBox; input: LayoutInput;
   box.state.size += paddingSum
   if not root and fstate.marginResolved and box.input.marginResolved:
     box.state.yshift += fstate.marginOutput
-    fstate.marginOutput = 0
+    fstate.marginOutput = 0'lu
   if fstate.marginResolved or input.marginResolved:
     # Our offset has already been resolved, ergo any margins in
     # marginTodo will be passed onto the next box.
@@ -2200,7 +2204,7 @@ proc layoutTableCell(lctx: LayoutContext; box: BlockBox; space: Space;
   box.state.merge = merge
   if box.input.space.w.isDefinite():
     box.input.space.w.u -= box.input.padding[dtHorizontal].sum()
-  lctx.layout(box, offset(0, 0), box.input)
+  lctx.layout(box, Offset0, box.input)
   assert box.state.pendingFloatsTail == nil
   # If the highest float edge is higher than the box itself, set that as
   # the box height.
@@ -2246,7 +2250,7 @@ proc growRowspan(tctx: var TableContext; growi, n: var int; ntill, growlen: int;
     cellTail = rowspanFiller
     for i in n ..< n + colspan:
       width += tctx.cols[i].width
-      width += tctx.inlineSpacing * 2
+      width += tctx.inlineSpacing * 2'lu
     n += colspan
     inc growi
 
@@ -2257,14 +2261,14 @@ proc resolveBorder(tctx: var TableContext; computed: CSSValues;
   var dummyMargin = RelativeRect.default # table cells have no margin
   var border = computed.resolveBorder(dummyMargin)
   if border.left notin BorderStyleNoneHidden:
-    inlineBorder.start = max(lctx.cellSize.w div 2, inlineBorder.start)
+    inlineBorder.start = max(lctx.cellSize.w div 2'lu, inlineBorder.start)
   if border.right notin BorderStyleNoneHidden:
-    inlineBorder.send = max(lctx.cellSize.w div 2, inlineBorder.send)
+    inlineBorder.send = max(lctx.cellSize.w div 2'lu, inlineBorder.send)
   if border.top notin BorderStyleNoneHidden:
-    let d = if firstRow: 1 else: 2
+    let d = if firstRow: 1'lu else: 2'lu
     blockBorder.start = max(blockBorder.start, lctx.cellSize.h div d)
   if border.bottom notin BorderStyleNoneHidden:
-    let d = if lastRow: 1 else: 2
+    let d = if lastRow: 1'lu else: 2'lu
     blockBorder.send = max(blockBorder.send, lctx.cellSize.h div d)
   if not lastCell:
     border[dtHorizontal].send = BorderStyleNone
@@ -2274,11 +2278,12 @@ proc resolveBorder(tctx: var TableContext; computed: CSSValues;
 
 proc preLayoutTableColspan(tctx: var TableContext; cellw: CellWrapper;
     space: Space; rowi, n, nextn: int; weight: float32): LUnit =
-  var width = 0.toLUnit()
+  var width = 0'lu
   let colspan = cellw.colspan
-  let minw = cellw.box.state.intr.w div colspan
+  let lcolspan = colspan.toLUnit()
+  let minw = cellw.box.state.intr.w div lcolspan
   let weight = weight / float32(colspan)
-  let w = cellw.box.state.size.w div colspan
+  let w = cellw.box.state.size.w div lcolspan
   if tctx.cols.len < nextn:
     tctx.cols.setLen(nextn)
   for col in tctx.cols.toOpenArray(n, nextn - 1).mitems:
@@ -2336,8 +2341,8 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
   var blockBorder = Span(start: tctx.blockSpacing, send: tctx.blockSpacing)
   var n = 0
   var growi = 0
-  var width = 0.toLUnit()
-  var borderWidth = 0.toLUnit()
+  var width = 0'lu
+  var borderWidth = 0'lu
   var firstCell = true
   # this increases in the loop, but we only want to check growing cells that
   # were added by previous rows.
@@ -2379,7 +2384,7 @@ proc preLayoutTableRow(tctx: var TableContext; row, parent: BlockBox;
     let nextn = n + colspan
     width += tctx.preLayoutTableColspan(cellw, space, rowi, n, nextn, perc)
     # add spacing for border inside colspan
-    let spacing = tctx.inlineSpacing * (colspan - 1) * 2
+    let spacing = tctx.inlineSpacing * ((colspan - 1) * 2).toLUnit()
     width += spacing
     borderWidth += spacing
     n = nextn
@@ -2398,22 +2403,26 @@ proc alignTableCell(cell: BlockBox; availableHeight, baseline: LUnit) =
   let firstChild = BlockBox(cell.firstChild)
   if firstChild != nil:
     firstChild.state.offset.y += (case cell.computed{"vertical-align"}
-    of VerticalAlignTop: 0.toLUnit()
-    of VerticalAlignMiddle: availableHeight div 2 - cell.state.size.h div 2
-    of VerticalAlignBottom: availableHeight - cell.state.size.h
-    else: baseline - cell.state.firstBaseline)
+    of VerticalAlignTop:
+      0'lu
+    of VerticalAlignMiddle:
+      availableHeight div 2'lu - cell.state.size.h div 2'lu
+    of VerticalAlignBottom:
+      availableHeight - cell.state.size.h
+    else:
+      baseline - cell.state.firstBaseline)
   cell.state.size.h = availableHeight
 
 proc layoutTableRow(tctx: TableContext; ctx: RowContext;
     parent, row: BlockBox; rowi: int) =
   row.keepLayout = true
   row.resetState()
-  var x: LUnit = 0
+  var x = 0'lu
   var n = 0
-  var baseline: LUnit = 0
+  var baseline = 0'lu
   var cellw = ctx.cellHead
   while cellw != nil:
-    var w: LUnit = 0
+    var w = 0'lu
     var reflow = cellw.reflow
     let colspan1 = cellw.colspan - 1
     if n < tctx.cols.len:
@@ -2421,7 +2430,7 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
         w += col.width
         reflow = reflow or rowi < col.reflow
     # Add inline spacing for merged columns.
-    w += tctx.inlineSpacing * colspan1 * 2
+    w += tctx.inlineSpacing * colspan1.toLUnit() * 2'lu
     if reflow and cellw.box != nil:
       let space = initSpace(w = stretch(w), h = maxContent())
       let border = cellw.box.input.border
@@ -2444,10 +2453,10 @@ proc layoutTableRow(tctx: TableContext; ctx: RowContext;
       if cell.computed{"vertical-align"} notin HasNoBaseline:
         baseline = max(cell.state.firstBaseline, baseline)
       row.state.size.h = max(row.state.size.h,
-        cell.state.size.h div cellw.rowspan)
+        cell.state.size.h div cellw.rowspan.toLUnit())
     else:
       row.state.size.h = max(row.state.size.h,
-        cellw.real.box.state.size.h div cellw.rowspan)
+        cellw.real.box.state.size.h div cellw.rowspan.toLUnit())
     cellw = cellw.next
   cellw = ctx.cellHead
   while cellw != nil:
@@ -2501,7 +2510,7 @@ proc preLayoutTableRows(tctx: var TableContext; table: BlockBox) =
 
 proc calcSpecifiedRatio(tctx: var TableContext;
     totalWidth, weightRatio: float32): float32 =
-  var totalSpecified: LUnit = 0
+  var totalSpecified = 0'lu
   var hasUnspecified = false
   let hasWeightRatio = not almostEqual(weightRatio, 1)
   for col in tctx.cols.mitems:
@@ -2521,7 +2530,7 @@ proc calcSpecifiedRatio(tctx: var TableContext;
       totalSpecified += minwidth
   # Only grow specified columns if no unspecified column exists to take the
   # rest of the space.
-  if totalSpecified == 0:
+  if totalSpecified == 0'lu:
     return 1
   let ftotalSpecified = totalSpecified.toFloat32()
   if hasUnspecified and totalWidth > ftotalSpecified:
@@ -2571,8 +2580,8 @@ proc needsRedistribution(tctx: TableContext; computed: CSSValues): bool =
 proc expandToWeight(tctx: var TableContext): float32 =
   var maxwidth = tctx.maxwidth
   var avail = 1f32
-  var unassigned = 0.toLUnit()
-  var specified = 0.toLUnit()
+  var unassigned = 0'lu
+  var specified = 0'lu
   var hasUnspecified = false
   for col in tctx.cols.mitems:
     let weight = min(col.weight, avail)
@@ -2591,7 +2600,7 @@ proc expandToWeight(tctx: var TableContext): float32 =
   if avail > 0:
     let restTarget = (1 / avail).toLUnit() * unassigned
     maxwidth = max(maxwidth, restTarget) + tctx.borderWidth
-  elif unassigned > 0:
+  elif unassigned > 0'lu:
     maxwidth = tctx.space.w.u
   else:
     maxwidth += tctx.borderWidth
@@ -2610,14 +2619,13 @@ proc expandToWeight(tctx: var TableContext): float32 =
 
 proc redistributeWidth(tctx: var TableContext; weightRatio: float32) =
   # Remove inline spacing from distributable width.
-  var W = max(tctx.space.w.u - tctx.borderWidth, 0)
+  var W = max(tctx.space.w.u - tctx.borderWidth, 0'lu)
   var weight = 0f32
   var avail = tctx.calcUnspecifiedColIndices(W, weight, weightRatio)
   var redo = true
   while redo and avail.len > 0 and weight != 0:
     if weight == 0: break # zero weight; nothing to distribute
-    if W < 0:
-      W = 0
+    W = max(W, 0'lu)
     redo = false
     # divide delta width by sum of ln(width) for all elem in avail
     let unit = W.toFloat32() / weight
@@ -2637,7 +2645,7 @@ proc redistributeWidth(tctx: var TableContext; weightRatio: float32) =
       tctx.cols[j].reflow = tctx.rows.len
 
 proc layoutTableRows(tctx: TableContext; table: BlockBox; input: LayoutInput) =
-  var y: LUnit = 0
+  var y = 0'lu
   for i, roww in tctx.rows.mypairs:
     if roww.box.computed{"visibility"} == VisibilityCollapse:
       continue
@@ -2680,8 +2688,8 @@ proc layoutInnerTable(tctx: var TableContext; table, parent: BlockBox;
     elif not width.canpx(tctx.space.w):
       tctx.space.w = fitContent(tctx.space.w.u)
   if table.computed{"border-collapse"} != BorderCollapseCollapse:
-    tctx.inlineSpacing = table.computed{"-cha-border-spacing-inline"}.px(0)
-    tctx.blockSpacing = table.computed{"-cha-border-spacing-block"}.px(0)
+    tctx.inlineSpacing = table.computed{"-cha-border-spacing-inline"}.px(0'lu)
+    tctx.blockSpacing = table.computed{"-cha-border-spacing-block"}.px(0'lu)
   tctx.preLayoutTableRows(table) # first pass
   let weightRatio = if tctx.hasAuthorWeight and tctx.space.w.isDefinite():
     tctx.expandToWeight()
@@ -2735,7 +2743,7 @@ proc layoutTable(lctx: LayoutContext; box: BlockBox; offset: Offset;
   tctx.layoutInnerTable(table, box, input)
   box.state.size = table.state.size
   box.state.intr = table.state.intr
-  var baseline = 0.toLUnit()
+  var baseline = 0'lu
   if caption != nil:
     if captionSpace.w.isDefinite():
       if table.state.size.w > captionSpace.w.u:
@@ -2792,7 +2800,7 @@ type
     pending: seq[FlexPendingItem]
 
 proc layoutFlexItem(lctx: LayoutContext; box: BlockBox; input: LayoutInput) =
-  lctx.layout(box, offset(x = 0, y = 0), input, forceRoot = true)
+  lctx.layout(box, Offset0, input, forceRoot = true)
 
 const FlexRow = {FlexDirectionRow, FlexDirectionRowReverse}
 
@@ -2812,10 +2820,10 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
   var totalWeight = mctx.totalWeight[wt]
   let odim = dim.opposite
   var relayout: seq[int] = @[]
-  while (wt == fwtGrow and diff > 0 or wt == fwtShrink and diff < 0) and
+  while (wt == fwtGrow and diff > 0'lu or wt == fwtShrink and diff < 0'lu) and
       totalWeight > 0:
     # redo maxSize calculation; we only need height here
-    mctx.maxSize[odim] = 0
+    mctx.maxSize[odim] = 0'lu
     var udiv = totalWeight
     if wt == fwtShrink:
       udiv *= mctx.shrinkSize.toFloat32() / totalWeight
@@ -2826,7 +2834,7 @@ proc redistributeMainSize(mctx: var FlexMainContext; diff: LUnit;
     # reset total weight & available diff for the next iteration (if there is
     # one)
     totalWeight = 0
-    diff = 0
+    diff = 0'lu
     relayout.setLen(0)
     for i, it in mctx.pending.mpairs:
       if it.weights[wt] == 0:
@@ -2875,11 +2883,11 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
   let lctx = fctx.lctx
   if fctx.redistSpace.isDefinite:
     let diff = fctx.redistSpace.u - mctx.totalSize[dim]
-    let wt = if diff > 0: fwtGrow else: fwtShrink
+    let wt = if diff > 0'lu: fwtGrow else: fwtShrink
     # Do not grow shrink-to-fit input.
     if wt == fwtShrink or fctx.redistSpace.t == scStretch:
       mctx.redistributeMainSize(diff, wt, dim, lctx)
-  elif input.bounds.a[dim].start > 0:
+  elif input.bounds.a[dim].start > 0'lu:
     # Override with min-width/min-height, but *only* if we are smaller
     # than the desired size. (Otherwise, we would incorrectly limit
     # max-content size when only a min-width is requested.)
@@ -2888,7 +2896,7 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       mctx.redistributeMainSize(diff, fwtGrow, dim, lctx)
   let maxMarginSum = mctx.maxMargin[odim].sum()
   let h = mctx.maxSize[odim] + maxMarginSum
-  var intr = size(w = 0, h = 0)
+  var intr = size(w = 0'lu, h = 0'lu)
   var offset = fctx.offset
   for it in mctx.pending.mitems:
     let oborder = it.child.input.borderSum(odim, lctx)
@@ -2914,13 +2922,13 @@ proc flushMain(fctx: var FlexContext; mctx: var FlexMainContext;
       # always layouted at (0, 0).
       let underflow = input.space[odim].u - it.child.state.size[odim] -
         it.input.margin[odim].sum() - oborder
-      if underflow > 0 and start.auto:
+      if underflow > 0'lu and start.auto:
         # we don't really care about the end margin, because that is
         # already taken into account by Space
         if not send.auto:
           it.input.margin[odim].start = underflow
         else:
-          it.input.margin[odim].start = underflow div 2
+          it.input.margin[odim].start = underflow div 2'lu
     # margins are added here, since they belong to the flex item.
     it.child.state.offset[odim] += offset[odim] + it.input.margin[odim].start
     offset[dim] += it.child.state.size[dim]
@@ -2978,7 +2986,7 @@ proc layoutFlexIter(fctx: var FlexContext; mctx: var FlexMainContext;
     childSizes.bounds.a[dim] = childMinBounds
   if child.computed{"position"} in PositionAbsoluteFixed:
     # Absolutely positioned flex children do not participate in flex layout.
-    child.input.bfcOffset = offset(0, 0)
+    child.input.bfcOffset = Offset0
   else:
     if fctx.canWrap and (input.space[dim].t == scMinContent or
         input.space[dim].isDefinite and
@@ -3014,7 +3022,7 @@ proc layoutFlex(lctx: LayoutContext; box: BlockBox; offset: Offset;
     reverse: box.computed{"flex-direction"} in FlexReverse,
     dim: dim
   )
-  if fctx.redistSpace.t == scFitContent and input.bounds.a[dim].start > 0:
+  if fctx.redistSpace.t == scFitContent and input.bounds.a[dim].start > 0'lu:
     fctx.redistSpace = stretch(input.bounds.a[dim].start)
   if fctx.redistSpace.isDefinite:
     fctx.redistSpace.u = fctx.redistSpace.u.minClamp(input.bounds.a[dim])
@@ -3059,8 +3067,9 @@ proc layout(lctx: LayoutContext; box: BlockBox; offset: Offset;
 
 proc layout*(box: BlockBox; attrs: WindowAttributes; fixedHead: CSSAbsolute;
     luctx: LUContext) =
-  let space = initSpace(w = stretch(attrs.widthPx), h = stretch(attrs.heightPx))
-  let cellSize = size(w = attrs.ppc, h = attrs.ppl)
+  var size = size(w = attrs.widthPx.toLUnit(), h = attrs.heightPx.toLUnit())
+  let space = initSpace(w = stretch(size.w), h = stretch(size.h))
+  let cellSize = size(w = attrs.ppc.toLUnit(), h = attrs.ppl.toLUnit())
   let lctx = LayoutContext(cellSize: cellSize, luctx: luctx)
   let input = lctx.resolveBlockSizes(space, box.computed)
   # the bottom margin is unused.
@@ -3071,7 +3080,6 @@ proc layout*(box: BlockBox; attrs: WindowAttributes; fixedHead: CSSAbsolute;
   # to move them on scroll. It's still not compatible with what desktop
   # browsers do, but the alternative would completely break search (and
   # slow down the renderer to a crawl.)
-  var size = size(w = attrs.widthPx, h = attrs.heightPx)
   size.w = max(size.w, box.state.size.w)
   size.h = max(size.h, box.state.size.h)
   lctx.popPositioned(fixedHead, size)

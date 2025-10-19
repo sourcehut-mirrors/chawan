@@ -40,17 +40,13 @@ type
 
   RenderState = object
     bgcolor: CellColor
-    attrsp: ptr WindowAttributes
     images: seq[PosBitmap]
     spaces: string # buffer filled with spaces for padding
-    cellSize: Size # size(w = attrsp.ppc, h = attrsp.ppl)
+    cellSize: Size # size(w = attrs.ppc, h = attrs.ppl)
 
 # Forward declarations
 proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
   box: BlockBox; offset: Offset; pass2 = false)
-
-template attrs(state: RenderState): WindowAttributes =
-  state.attrsp[]
 
 proc findFormatN*(line: FlexibleLine; pos: int; start = 0): int =
   var i = start
@@ -252,24 +248,24 @@ proc setText(grid: var FlexibleGrid; state: var RenderState; s: string;
     return
   if offset.x > clipBox.send.x:
     return
-  let rx = offset.x div state.attrs.ppc
+  let rx = offset.x div state.cellSize.w
   var x = rx.toInt
   # Give room for rounding errors.
-  let sx = max((clipBox.start.x div state.attrs.ppc).toInt, 0)
+  let sx = max((clipBox.start.x div state.cellSize.w).toInt, 0)
   var i = 0
   while x < sx and i < s.len:
     x += s.nextUTF8(i).width()
   if x < sx: # highest x is outside the clipping box, no need to draw
     return
   let diff = rx - x.toLUnit()
-  let ppc2 = state.attrs.ppc div 2
-  let ex = ((clipBox.send.x + ppc2 - diff) div state.attrs.ppc).toInt
+  let ppc2 = state.cellSize.w div 2'lu
+  let ex = ((clipBox.send.x + ppc2 - diff) div state.cellSize.w).toInt
   var j = i
   var targetX = x
   while targetX < ex and j < s.len:
     targetX += s.nextUTF8(j).width()
   if i < j:
-    let y = (offset.y div state.attrs.ppl).toInt
+    let y = (offset.y div state.cellSize.h).toInt
     # make sure we have line y
     if grid.len < y + 1:
       grid.setLen(y + 1)
@@ -294,10 +290,10 @@ proc paintBackground(grid: var FlexibleGrid; state: var RenderState;
     color: CellColor; start, send: Offset; node: Element; alpha: uint8;
     clipBox: ClipBox) =
   let (start, send) = clipBox.clip(state, start, send)
-  let startx = (start.x div state.attrs.ppc).toInt()
-  let starty = (start.y div state.attrs.ppl).toInt()
-  let endx = (send.x div state.attrs.ppc).toInt()
-  let endy = (send.y div state.attrs.ppl).toInt()
+  let startx = (start.x div state.cellSize.w).toInt()
+  let starty = (start.y div state.cellSize.h).toInt()
+  let endx = (send.x div state.cellSize.w).toInt()
+  let endy = (send.y div state.cellSize.h).toInt()
   if starty >= endy or startx >= endx:
     return
   if grid.len < endy: # make sure we have line y - 1
@@ -414,10 +410,10 @@ proc renderInline(grid: var FlexibleGrid; state: var RenderState;
       # add Element to background (but don't actually color it)
       grid.paintBackground(state, defaultColor, offset, p2, ibox.element, 0,
         ibox.render.clipBox)
-      let x = (offset.x div state.attrs.ppc).toInt
-      let y = (offset.y div state.attrs.ppl).toInt
-      let offx = (offset.x - x.toLUnit * state.attrs.ppc).toInt
-      let offy = (offset.y - y.toLUnit * state.attrs.ppl).toInt
+      let x = (offset.x div state.cellSize.w).toInt
+      let y = (offset.y div state.cellSize.h).toInt
+      let offx = (offset.x - x.toLUnit * state.cellSize.w).toInt
+      let offy = (offset.y - y.toLUnit * state.cellSize.h).toInt
       state.images.add(PosBitmap(
         x: x,
         y: y,
@@ -457,7 +453,7 @@ proc inheritClipBox(box: BlockBox; parent: CSSBox; state: RenderState) =
       clipBox.start.x = max(offset.x, clipBox.start.x)
       clipBox.send.x = min(offset.x + size.w, clipBox.send.x)
     else: # scroll like
-      clipBox.start.x = max(min(offset.x, clipBox.start.x), 0)
+      clipBox.start.x = max(min(offset.x, clipBox.start.x), 0'lu)
       clipBox.send.x = max(offset.x + size.w, clipBox.send.x)
     if overflowY in OverflowHiddenLike:
       clipBox.start.y = max(offset.y, clipBox.start.y)
@@ -468,10 +464,10 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
     start, send: Offset; box: BlockBox) =
   let start = start - state.cellSize
   let send = send + state.cellSize
-  let startx = (start.x div state.attrs.ppc).toInt()
-  let starty = (start.y div state.attrs.ppl).toInt()
-  let endx = (send.x div state.attrs.ppc).toInt()
-  var endy = (send.y div state.attrs.ppl).toInt()
+  let startx = (start.x div state.cellSize.w).toInt()
+  let starty = (start.y div state.cellSize.h).toInt()
+  let endx = (send.x div state.cellSize.w).toInt()
+  var endy = (send.y div state.cellSize.h).toInt()
   var buf = ""
   var top = box.input.border.top
   var bottom = box.input.border.bottom
@@ -499,7 +495,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
         else:
           buf &= left.borderChar(bdcCornerTopLeft)
     else:
-      offset.x += state.attrs.ppc
+      offset.x += state.cellSize.w
     for i in startx + 1 ..< endx - 1:
       buf &= top.borderChar(bdcHorizontalBarTop)
     if hasRight:
@@ -519,7 +515,7 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
     let formatLeft = initFormat(defaultColor, colorLeft.cellColor(), {})
     let formatRight = initFormat(defaultColor, colorRight.cellColor(), {})
     for y in starty + 1 ..< endy - 1:
-      let sy = (y * state.attrs.ppl).toLUnit()
+      let sy = y.toLUnit() * state.cellSize.h
       if hasLeft:
         soff.y = sy
         grid.setText(state, buf, soff, formatLeft, nil, box.render.clipBox)
@@ -529,21 +525,21 @@ proc paintBorder(grid: var FlexibleGrid; state: var RenderState;
     buf.setLen(0)
   if bottom notin BorderStyleNoneHidden and not colorBottom.rgbTransparent:
     let proprietary = bottom in BorderStyleInput
-    var offset = offset(x = start.x, y = send.y - state.attrs.ppl)
+    var offset = offset(x = start.x, y = send.y - state.cellSize.h)
     if hasLeft and not proprietary:
       if box.state.merge[dtHorizontal]:
         buf &= bottom.borderChar(bdcSideBarBottom)
       else:
         buf &= bottom.borderChar(bdcCornerBottomLeft)
     else:
-      offset.x += state.attrs.ppc
+      offset.x += state.cellSize.w
     for i in startx + 1 ..< endx - 1:
       buf &= bottom.borderChar(bdcHorizontalBarBottom)
     if right notin BorderStyleNoneHidden and not proprietary:
       buf &= bottom.borderChar(bdcCornerBottomRight)
     var flags: set[FormatFlag] = {}
     if proprietary:
-      offset.y -= state.attrs.ppl
+      offset.y -= state.cellSize.h
       if bottom != BorderStyleHash:
         flags.incl(ffUnderline)
     let format = initFormat(defaultColor, colorBottom.cellColor(), flags)
@@ -577,12 +573,12 @@ proc renderBlock(grid: var FlexibleGrid; state: var RenderState;
     if box.computed{"background-image"} != nil:
       # ugly hack for background-image display... TODO actually display images
       const s = "[img]"
-      let w = s.len * state.attrs.ppc
+      let w = s.len.toLUnit() * state.cellSize.w
       var offset = offset
       if box.state.size.w < w:
         # text is larger than image; center it to minimize error
-        offset.x -= w div 2
-        offset.x += box.state.size.w div 2
+        offset.x -= w div 2'lu
+        offset.x += box.state.size.w div 2'lu
       grid.setText(state, s, offset, box.computed.toFormat(), box.element,
         box.render.clipBox)
   if opacity != 0: #TODO this isn't right...
@@ -617,7 +613,7 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
   var absAncestor: CSSBox = nil
   var toPosition: seq[BlockBox] = @[]
   var parent: CSSBox = nil
-  var offset = offset(0, 0)
+  var offset = Offset0
   while it != nil:
     if absolute and it.positioned and absAncestor == nil:
       absAncestor = it # record first absolute ancestor
@@ -641,7 +637,7 @@ proc resolveBlockOffset(box: CSSBox; state: RenderState): Offset =
     )
     it.inheritClipBox(parent, state)
     parent = it
-  var absOffset = offset(0, 0)
+  var absOffset = Offset0
   if absAncestor != nil:
     absOffset = absAncestor.render.offset
   for dim in DimensionType:
@@ -682,12 +678,11 @@ proc renderStack(grid: var FlexibleGrid; state: var RenderState;
     grid.renderStack(state, it)
 
 proc render*(grid: var FlexibleGrid; bgcolor: var CellColor; stack: StackItem;
-    attrsp: ptr WindowAttributes; images: var seq[PosBitmap]) =
+    attrs: WindowAttributes; images: var seq[PosBitmap]) =
   grid.setLen(0)
   var state = RenderState(
-    attrsp: attrsp,
     bgcolor: defaultColor,
-    cellSize: size(w = attrsp.ppc, h = attrsp.ppl),
+    cellSize: size(w = attrs.ppc.toLUnit(), h = attrs.ppl.toLUnit()),
   )
   grid.renderStack(state, stack)
   bgcolor = state.bgcolor
