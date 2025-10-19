@@ -286,7 +286,7 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
     for i in 0 ..< L:
       oq[n] = buf[i]
       inc n
-  if ppi < ri or bufLen > 0 and ri != 0:
+  if ppi < ri:
     td.bufLen = seen
     td.ppi = i
     td.pi = ppi
@@ -296,6 +296,7 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
   td.flag = tdrDone
   case flag
   of tdrError:
+    td.bufLen = 0
     td.ppi = i
     td.pi = ppi
   of tdrDone:
