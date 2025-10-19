@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/strutils
 import std/tables
 
