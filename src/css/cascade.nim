@@ -159,10 +159,7 @@ proc applyValue(ctx: var ApplyValueContext; entry: CSSComputedEntry;
   case entry.et
   of ceBit: ctx.vals.bits[t].dummy = entry.bit
   of ceHWord: ctx.vals.hwords[t] = entry.hword
-  of ceWord:
-    ctx.vals.words[t] = entry.word
-    if t == cptColor and entry.word.color.t == cctCurrent:
-      ctx.vals.initialOrInheritFrom(ctx.parentComputed, t)
+  of ceWord: ctx.vals.words[t] = entry.word
   of ceObject: ctx.vals.objs[t] = entry.obj
   of ceGlobal:
     case entry.global
@@ -333,13 +330,14 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     ctx.applyPresHints(element)
   ctx.applyValues(rules[coUserAgent].vals[cifNormal], rtSet)
   # fill in defaults
-  if ctx.revertMap[cptColor] != rtSet: # do this first for currentcolor
+  if ctx.revertMap[cptColor] != rtSet or result{"color"}.t == cctCurrent:
+    # do this first so currentcolor works
     result.initialOrInheritFrom(ctx.parentComputed, cptColor)
   for t in CSSPropertyType:
     if ctx.revertMap[t] != rtSet:
       result.initialOrInheritFrom(ctx.parentComputed, t)
-    if valueType(t) == cvtColor and ctx.vals.words[t].color.t == cctCurrent:
-      ctx.vals.words[t].color = ctx.vals.words[cptColor].color
+    if valueType(t) == cvtColor and result.words[t].color.t == cctCurrent:
+      result.words[t].color = result{"color"}
     if old != nil and t in LayoutProperties:
       ctx.relayout = ctx.relayout or not result.equals(old, t)
   result.relayout = ctx.relayout
