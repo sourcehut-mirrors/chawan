@@ -197,6 +197,7 @@ import_w3m() {
 	then	printf '\n\nFile not found: %s\n' "$w3m_path"
 		exit 1
 	fi
+	mkdir -p "$(dirname "$bookmark_file")"
 	import_w3m_tmp="$bookmark_file~"
 	safe_rm "$import_w3m_tmp"
 	safe_println "$init_string" >>"$import_w3m_tmp"
