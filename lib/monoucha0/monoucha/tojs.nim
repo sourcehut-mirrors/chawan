@@ -288,34 +288,26 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
   GC_ref(cast[RootRef](toRef))
   return jsObj
 
-type NonInheritable = (object and not RootObj) or (ref object and not RootRef)
-
 when defined(gcDestructors):
   proc getTypeInfo2[T](x: T): pointer {.magic: "GetTypeInfoV2".}
 else:
   template getTypeInfo2[T](x: T): pointer = getTypeInfo(x)
 
 # Get a unique pointer for each type.
-template getTypePtr*[T: NonInheritable](x: T): pointer =
+template getTypePtr*[T: ref object and not RootRef](x: T): pointer =
   # This only seems to work for non-inheritable objects.
-  getTypeInfo2(x)
+  getTypeInfo2(x[])
 
-template getTypePtr*[T: RootObj](x: T): pointer {.error:
-    "Please make it var".} =
-  discard
+template getTypePtr*[T: object and not RootObj](x: var T): pointer =
+  getTypeInfo2(x)
 
 template getTypePtr*(x: RootRef): pointer =
   # Dereference the object's first member, m_type.
   cast[ptr pointer](x)[]
 
-when defined(gcDestructors):
-  proc getTypePtr*[T: RootObj](x: var T): pointer {.nodestroy.} =
-    # ARC somehow doesn't return the same pointer without this...
-    getTypePtr(cast[ref T](addr x))
-else:
-  template getTypePtr*[T: RootObj](x: var T): pointer =
-    # See above.
-    cast[ptr pointer](addr x)[]
+template getTypePtr*[T: RootObj](x: var T): pointer =
+  # See above.
+  cast[ptr pointer](addr x)[]
 
 # For some reason, getTypeInfo for ref object of RootObj returns a
 # different pointer from m_type.
@@ -326,7 +318,7 @@ template getTypePtr*[T: RootRef](t: typedesc[T]): pointer =
   getTypeInfo2(x)
 
 template getTypePtr*[T: ref object](t: typedesc[T]): pointer =
-  var x: T
+  var x: typeof(T()[])
   getTypeInfo2(x)
 
 proc toJSRefObj(ctx: JSContext; obj: ref object): JSValue =
