@@ -295,7 +295,8 @@ else:
 
 # Get a unique pointer for each type.
 template getTypePtr*[T: ref object and not RootRef](x: T): pointer =
-  # This only seems to work for non-inheritable objects.
+  # This returns static type info, so it only works for non-inheritable
+  # objects.
   getTypeInfo2(x[])
 
 template getTypePtr*[T: object and not RootObj](x: var T): pointer =
@@ -308,14 +309,6 @@ template getTypePtr*(x: RootRef): pointer =
 template getTypePtr*[T: RootObj](x: var T): pointer =
   # See above.
   cast[ptr pointer](addr x)[]
-
-# For some reason, getTypeInfo for ref object of RootObj returns a
-# different pointer from m_type.
-# To make matters even more confusing, getTypeInfo on non-inherited ref
-# object returns a different type than on the same non-ref object.
-template getTypePtr*[T: RootRef](t: typedesc[T]): pointer =
-  var x: typeof(t()[])
-  getTypeInfo2(x)
 
 template getTypePtr*[T: ref object](t: typedesc[T]): pointer =
   var x: typeof(T()[])
