@@ -395,6 +395,13 @@ type
 
   SelectorList* = seq[ComplexSelector]
 
+when defined(gcDestructors):
+  proc `=destroy`*(a: var CSSTokenUnion) =
+    discard
+
+  proc `=copy`*(a: var CSSTokenUnion; b: CSSTokenUnion) =
+    copyMem(addr a, unsafeAddr b, sizeof(a))
+
 # Forward declarations
 proc consumeDeclarations(ctx: var CSSParser; nested: bool): seq[CSSDeclaration]
 proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList
