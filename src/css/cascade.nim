@@ -43,7 +43,6 @@ type
     vals: CSSValues
     parentComputed: CSSValues
     window: Window
-    relayout: bool
     old: CSSValues
     revertMap: RevertMap
     varsSeen: HashSet[CAtom]
@@ -300,7 +299,6 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
   result = CSSValues()
   var parentVars: CSSVariableMap = nil
   var ctx = ApplyValueContext(window: window, vals: result, old: old)
-  ctx.relayout = old != nil and old.relayout
   if parent != nil:
     parent.ensureStyle()
     ctx.parentComputed = parent.computed
@@ -333,14 +331,15 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
   if ctx.revertMap[cptColor] != rtSet or result{"color"}.t == cctCurrent:
     # do this first so currentcolor works
     result.initialOrInheritFrom(ctx.parentComputed, cptColor)
+  var relayout = old != nil and old.relayout
   for t in CSSPropertyType:
     if ctx.revertMap[t] != rtSet:
       result.initialOrInheritFrom(ctx.parentComputed, t)
     if valueType(t) == cvtColor and result.words[t].color.t == cctCurrent:
       result.words[t].color = result{"color"}
     if old != nil and t in LayoutProperties:
-      ctx.relayout = ctx.relayout or not result.equals(old, t)
-  result.relayout = ctx.relayout
+      relayout = relayout or not result.equals(old, t)
+  result.relayout = relayout
   # Quirk: it seems others aren't implementing what the spec says about
   # blockification.
   # Well, neither will I, because the spec breaks on actual websites.
