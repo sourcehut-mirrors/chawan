@@ -168,7 +168,6 @@ type
     userAgent*: string
     referrer* {.jsget.}: string
     performance* {.jsget.}: Performance
-    currentModuleURL*: URL
     jsStore*: seq[JSValue]
     jsStoreFree*: int
     weakMap*: array[WindowWeakMap, JSValue]
@@ -5897,7 +5896,6 @@ proc fetchSingleModule(element: HTMLScriptElement; url: URL;
         element.onComplete(res)
         return
       if contentType.isJavaScriptType():
-        window.currentModuleURL = url
         let res = ctx.newJSModuleScript(s.get, url, options)
         #TODO can't we just return null from newJSModuleScript?
         if JS_IsException(res.script.record):

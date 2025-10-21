@@ -1,0 +1,26 @@
+<!doctype html>
+<title>onclick setter/getter</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+window.seen = 0;
+import("./module.http");
+import(new URL("module4.http", window.location)).catch(x => 0);
+import('module3.http').catch(x => 0);
+</script>
+<script type=module>
+import './module2.http';
+</script>
+<script src="nested/moduletest.js"></script>
+<script>
+window.onload = () => {
+	if (window.seen == 3)
+		document.getElementById("x").textContent = "Success"
+	/* TODO use this once the eval test works
+	window.x.then(() => {
+		if (window.seen == 4)
+			document.getElementById("x").textContent = "Success"
+	});
+	*/
+}
+</script>

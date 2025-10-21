@@ -1,0 +1,4 @@
+Content-Type: text/javascript
+
+assert(new URL(import.meta.url).pathname.startsWith("/module"));
+window.seen++;

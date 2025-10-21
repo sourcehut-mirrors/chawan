@@ -1447,7 +1447,7 @@ proc evalJSURL(bc: BufferContext; url: URL): Opt[string] =
   let surl = $url
   let source = surl.toOpenArray("javascript:".len, surl.high).percentDecode()
   let ctx = bc.window.jsctx
-  let ret = ctx.eval(source, '<' & $bc.baseURL & '>', JS_EVAL_TYPE_GLOBAL)
+  let ret = ctx.eval(source, $bc.baseURL, JS_EVAL_TYPE_GLOBAL)
   if JS_IsException(ret):
     bc.window.console.writeException(ctx)
     return err() # error

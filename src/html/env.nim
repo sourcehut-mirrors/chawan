@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/strutils
 import std/tables
 
 import config/conftypes
@@ -406,31 +405,39 @@ proc postMessage(ctx: JSContext; window: Window; value: JSValueConst): Err[void]
   window.fireEvent(event, window)
   ok()
 
+proc normalizeModuleName*(ctx: JSContext; baseName, name: cstringConst;
+    opaque: pointer): cstring {.cdecl.} =
+  let sname = $name
+  let url = parseURL0(sname)
+  if url != nil:
+    return js_strdup(ctx, cstring(name))
+  if name[0] == '.' and name[1] == '.' and name[2] == '/' or
+      name[0] == '.' and name[1] == '/' or
+      name[0] == '/':
+    let url = parseURL0(sname, parseURL0($baseName))
+    if url != nil:
+      let surl = $url
+      return js_strdup(ctx, cstring(surl))
+  JS_ThrowTypeError(ctx, "relative module names must start with ./, ../ or /")
+  return nil
+
 proc loadJSModule(ctx: JSContext; moduleName: cstringConst; opaque: pointer):
     JSModuleDef {.cdecl.} =
   let window = ctx.getWindow()
-  #TODO I suspect this doesn't work with dynamically loaded modules?
-  # at least we'd have to set currentModuleURL before every script
-  # execution...
-  let url = window.currentModuleURL
-  var x = Opt[URL].err()
-  let moduleName = $moduleName
-  if url != nil and
-      (moduleName.startsWith("/") or moduleName.startsWith("./") or
-      moduleName.startsWith("../")):
-    x = parseURL($moduleName, url)
-  if x.isErr or not x.get.origin.isSameOrigin(url.origin):
-    JS_ThrowTypeError(ctx, "Invalid URL: %s", cstring(moduleName))
+  let name = $moduleName
+  let url = parseURL0(name)
+  if url == nil or not window.isSameOrigin(url.origin):
+    JS_ThrowTypeError(ctx, "invalid URL: %s", moduleName)
     return nil
-  let request = newRequest(x.get)
+  let request = newRequest(url)
   let response = window.loader.doRequest(request)
   if response.res != 0:
-    JS_ThrowTypeError(ctx, "Failed to load module %s", cstring(moduleName))
+    JS_ThrowTypeError(ctx, "Failed to load module %s", moduleName)
     return nil
   response.resume()
   let source = response.body.readAll()
   response.close()
-  return ctx.finishLoadModule(source, moduleName)
+  return ctx.finishLoadModule(source, name)
 
 proc collectWindowGetSet(): seq[TabGetSet] =
   result = @[]

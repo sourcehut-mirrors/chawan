@@ -178,8 +178,7 @@ proc moduleTypeToRequestDest*(moduleType: string; default: RequestDestination):
 
 proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
     options: ScriptOptions; mutedErrors = false): ScriptResult =
-  let urls = '<' & baseURL.serialize() & '>'
-  let record = ctx.compileScript(source, urls)
+  let record = ctx.compileScript(source, $baseURL)
   return ScriptResult(
     t: srtScript,
     script: Script(
@@ -193,8 +192,7 @@ proc newClassicScript*(ctx: JSContext; source: string; baseURL: URL;
 
 proc newJSModuleScript*(ctx: JSContext; source: string; baseURL: URL;
     options: ScriptOptions): ScriptResult =
-  let urls = baseURL.serialize(excludepassword = true)
-  let record = ctx.compileModule(source, urls)
+  let record = ctx.compileModule(source, $baseURL)
   return ScriptResult(
     t: srtScript,
     script: Script(
@@ -214,10 +212,6 @@ proc setImportMeta*(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   doAssert ctx.definePropertyCWE(metaObj, "main", false) == dprSuccess
   JS_FreeValue(ctx, metaObj)
   JS_FreeAtom(ctx, moduleNameAtom)
-
-proc normalizeModuleName*(ctx: JSContext; base_name, name: cstringConst;
-    opaque: pointer): cstring {.cdecl.} =
-  return js_strdup(ctx, cstring(name))
 
 proc finishLoadModule*(ctx: JSContext; source, name: string): JSModuleDef =
   let funcVal = compileModule(ctx, source, name)

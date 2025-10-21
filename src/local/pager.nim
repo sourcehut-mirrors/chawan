@@ -510,6 +510,10 @@ proc initLoader(pager: Pager) =
     response.resume()
   )
 
+proc normalizeModuleName(ctx: JSContext; baseName, name: cstringConst;
+    opaque: pointer): cstring {.cdecl.} =
+  return js_strdup(ctx, name)
+
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     alerts: seq[string]; loader: FileLoader; loaderPid: int): Pager =
   let tab = Tab()

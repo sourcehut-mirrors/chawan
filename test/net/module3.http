@@ -1,0 +1,4 @@
+Content-Type: text/javascript
+
+window.seen--;
+throw new TypeError(JSON.stringify(import.meta));
