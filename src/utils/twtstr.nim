@@ -505,9 +505,9 @@ const FragmentPercentEncodeSet* = ControlPercentEncodeSet +
   {' ', '"', '<', '>', '`'}
 const QueryPercentEncodeSet* = FragmentPercentEncodeSet - {'`'} + {'#'}
 const SpecialQueryPercentEncodeSet* = QueryPercentEncodeSet + {'\''}
-const PathPercentEncodeSet* = QueryPercentEncodeSet + {'?', '`', '{', '}'}
+const PathPercentEncodeSet* = QueryPercentEncodeSet + {'?', '`', '{', '}', '^'}
 const UserInfoPercentEncodeSet* = PathPercentEncodeSet +
-  {'/', ':', ';', '=', '@', '['..'^', '|'}
+  {'/', ':', ';', '=', '@', '['..']', '|'}
 const ComponentPercentEncodeSet* = UserInfoPercentEncodeSet +
   {'$'..'&', '+', ','}
 const ApplicationXWWWFormUrlEncodedSet* = ComponentPercentEncodeSet +

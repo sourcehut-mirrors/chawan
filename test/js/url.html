@@ -48,6 +48,7 @@ assertEquals(new URL("https://xn--3B-ww4c5e180e575a65lsy2b") + "", "https://xn--
 assertEquals(new URL("https://あああ") + "", "https://xn--l8jaa/");
 assertEquals(new URL("https://\u00DF.example") + "", "https://xn--zca.example/");
 assertEquals(new URL("https://\u03C2.example") + "", "https://xn--3xa.example/");
+assertEquals(new URL("test://") + "", "test://");
 assertThrows(() => new URL("https://xn--ta.example"), TypeError);
 assertThrows(() => new URL("https://\u{2F800}\u0093.example"), TypeError);
 assertThrows(() => new URL("https://\u202D.example"), TypeError);
@@ -135,6 +136,12 @@ assertThrows(() => new URL("https://example.org", null), TypeError);
 	x.searchParams.set("ho", "hi");
 	assert(x.searchParams.has("ho", "hi"));
 	assertEquals(new URLSearchParams(undefined) + "", "")
+}
+{
+	const url = new URL("data:blah  #a");
+	assertEquals(url.pathname, "blah %20");
+	url.hash = "";
+	assertEquals(url.pathname, "blah %20");
 }
 document.getElementById("x").textContent = "Success";
 </script>

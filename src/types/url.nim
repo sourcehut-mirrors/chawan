@@ -221,12 +221,13 @@ const ForbiddenHostChars = {
   '\\', ']', '^', '|'
 }
 const ForbiddenDomainChars = ForbiddenHostChars + {'%'}
-proc opaqueParseHost(input: string): string =
+proc opaqueParseHost(input: string; hostType: var HostType): string =
   var o = ""
   for c in input:
     if c in ForbiddenHostChars:
       return ""
     o.percentEncode(c, ControlPercentEncodeSet)
+  hostType = htOpaque
   move(o)
 
 proc endsInNumber(input: string): bool =
@@ -471,7 +472,9 @@ proc domainToAscii(domain: string; beStrict: bool): string =
     result = domain.unicodeToAscii(beStrict)
 
 proc parseHost*(input: string; special: bool; hostType: var HostType): string =
-  if input.len == 0:
+  if input.len <= 0:
+    if not special:
+      hostType = htOpaque
     return ""
   if input[0] == '[':
     if input[^1] != ']' or input.len < 3:
@@ -481,8 +484,7 @@ proc parseHost*(input: string; special: bool; hostType: var HostType): string =
       hostType = htIpv6
     return move(ipv6)
   if not special:
-    hostType = htOpaque
-    return opaqueParseHost(input)
+    return opaqueParseHost(input, hostType)
   let domain = percentDecode(input)
   var asciiDomain = domain.domainToAscii(beStrict = false)
   if asciiDomain == "" or ForbiddenDomainChars in asciiDomain:
@@ -512,19 +514,28 @@ proc isWinDriveLetter(s: string): bool =
 
 proc parseOpaquePath(input: openArray[char]; pointer: var int; url: URL):
     URLState =
-  while pointer < input.len:
-    let c = input[pointer]
-    if c == '?':
+  var i = pointer
+  while i < input.len:
+    let c = input[i]
+    let nexti = i + 1
+    case c
+    of '?':
       url.search = "?"
-      inc pointer
+      pointer = nexti
       return usQuery
-    elif c == '#':
+    of '#':
       url.hash = "#"
-      inc pointer
+      pointer = nexti
       return usFragment
+    of ' ':
+      if nexti < input.len and input[nexti] in {'?', '#'}:
+        url.pathname &= "%20"
+      else:
+        url.pathname &= ' '
     else:
       url.pathname.percentEncode(c, ControlPercentEncodeSet)
-    inc pointer
+    i = nexti
+  pointer = i
   return usDone
 
 proc parseSpecialAuthorityIgnoreSlashes(input: openArray[char];
@@ -670,8 +681,10 @@ proc parseAuthority(input: openArray[char]; pointer: var int; url: URL):
   var passwordSeen = false
   var buffer = ""
   var beforeBuffer = pointer
-  while pointer < input.len:
-    let c = input[pointer]
+  var i = pointer
+  while i < input.len:
+    let c = input[i]
+    let nexti = i + 1
     if c in {'/', '?', '#'} or url.isSpecial and c == '\\':
       break
     if c == '@':
@@ -687,10 +700,10 @@ proc parseAuthority(input: openArray[char]; pointer: var int; url: URL):
         else:
           url.username.percentEncode(c, UserInfoPercentEncodeSet)
       buffer = ""
-      beforeBuffer = pointer + 1
+      beforeBuffer = nexti
     else:
       buffer &= c
-    inc pointer
+    i = nexti
   if atSignSeen and buffer == "":
     return usFail
   pointer = beforeBuffer
@@ -708,7 +721,7 @@ proc parseFileHost(input: openArray[char]; pointer: var int; url: URL;
   else:
     var t = htNone
     var hostname = parseHost(buffer, url.isSpecial, t)
-    if hostname == "":
+    if t == htNone:
       return usFail
     url.hostType = t
     if t == htDomain and hostname == "localhost":
@@ -732,7 +745,7 @@ proc parseHostState(input: openArray[char]; pointer: var int; url: URL;
         return usFail
       var t = htNone
       let hostname = parseHost(buffer, url.isSpecial, t)
-      if hostname == "":
+      if t == htNone:
         return usFail
       url.hostname = hostname
       url.hostType = t
@@ -753,7 +766,7 @@ proc parseHostState(input: openArray[char]; pointer: var int; url: URL;
     return usFail
   var t = htNone
   let hostname = parseHost(buffer, url.isSpecial, t)
-  if hostname == "":
+  if t == htNone:
     return usFail
   url.hostname = hostname
   url.hostType = t
