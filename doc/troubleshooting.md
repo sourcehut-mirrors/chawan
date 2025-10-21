@@ -17,8 +17,8 @@ your operating system (and its version).
 ## It crashes?
 
 Please open a ticket that describes how to reproduce the crash.  Don't
-forget to include a stack trace - that's the wall of text you see after
-your buffer disappeared.
+forget to include a stack trace - that's the text (typically a line or two)
+you see after your buffer disappeared.
 
 If you don't see a stack trace, try:
 `cha example.org -o start.console-buffer=false 2>err.log`.  Then check the
