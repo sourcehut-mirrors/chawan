@@ -94,7 +94,7 @@ type
 
 # Forward declarations
 proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
-  forceZ: bool): CSSBox
+  forceZ, root: bool): CSSBox
 
 when defined(debug):
   proc `$`*(node: StyledNode): string =
@@ -641,7 +641,7 @@ proc buildInnerBox(ctx: TreeContext; frame: TreeFrame; cached: CSSBox;
   for child in frame.children:
     let next = if cachedIt != nil: cachedIt.next else: nil
     let cached = child.takeCache(cachedIt)
-    let childBox = ctx.build(cached, child, forceZ)
+    let childBox = ctx.build(cached, child, forceZ, root = false)
     childBox.parent = box
     if last != nil:
       last.next = childBox
@@ -713,7 +713,7 @@ proc addFixed(ctx: TreeContext; box: CSSBox) =
   ctx.fixedTail = absolute
 
 proc buildOuterBox(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
-    forceZ: bool): CSSBox =
+    forceZ, root: bool): CSSBox =
   let oldCountersLen = ctx.counters.len
   var firstSetCounterIdx: int
   ctx.applyCounters(styledNode, firstSetCounterIdx)
@@ -725,8 +725,9 @@ proc buildOuterBox(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
   let oldStackItem = ctx.stackItem
   let oldAbsoluteHead = ctx.absoluteHead
   let oldAbsoluteTail = ctx.absoluteTail
-  if position != PositionStatic and display notin DisplayNeverHasStack or
-      forceZ and not frame.computed{"z-index"}.auto:
+  if not root and
+      (position != PositionStatic and display notin DisplayNeverHasStack or
+      forceZ and not frame.computed{"z-index"}.auto):
     ctx.absoluteHead = nil
     ctx.absoluteTail = nil
     stackItem = ctx.pushStackItem(styledNode)
@@ -750,10 +751,10 @@ proc buildOuterBox(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
   return box
 
 proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
-    forceZ: bool): CSSBox =
+    forceZ, root: bool): CSSBox =
   case styledNode.t
   of stElement:
-    return ctx.buildOuterBox(cached, styledNode, forceZ)
+    return ctx.buildOuterBox(cached, styledNode, forceZ, root)
   of stText:
     if cached != nil:
       return cached
@@ -822,7 +823,8 @@ proc buildTree*(element: Element; cached: CSSBox; markLinks: bool; nhints: int;
   else:
     hintHigh
   ctx.resetCounter(satDashChaHintCounter.toAtom(), int32(hintOffset), element)
-  let root = BlockBox(ctx.build(cached, styledNode, forceZ = false))
+  let root = BlockBox(ctx.build(cached, styledNode, forceZ = false,
+    root = true))
   stack.box = root
   root.absolute = ctx.absoluteHead
   ctx.popStackItem(nil)
