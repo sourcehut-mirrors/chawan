@@ -1060,7 +1060,11 @@ proc refreshStatusMsg(pager: Pager) =
     pager.lastAlert = move(pager.alerts[0])
     pager.alerts.delete(0)
   else:
-    var format = initFormat(defaultColor, defaultColor, {ffReverse})
+    let fgcolor = if cfCrashed in container.flags:
+      ANSIColor(1).cellColor()
+    else:
+      defaultColor
+    var format = initFormat(defaultColor, fgcolor, {ffReverse})
     pager.alertState = pasNormal
     var msg = ""
     if container.numLines > 0 and pager.config.status.showCursorPosition:
@@ -1068,6 +1072,8 @@ proc refreshStatusMsg(pager: Pager) =
         " (" & $container.atPercentOf() & "%)"
     else:
       msg &= "Viewing"
+    if cfCrashed in container.flags:
+      msg &= " CRASHED!"
     msg &= " <" & container.getTitle()
     let hover = if pager.config.status.showHoverLink:
       container.getHoverText()
@@ -1642,6 +1648,21 @@ proc replace(pager: Pager; target, container: Container) =
   if pager.container == target:
     pager.setContainer(container)
 
+proc unregisterContainer(pager: Pager; container: Container) =
+  if container.iface != nil: # fully connected
+    let stream = container.iface.stream
+    let fd = int(stream.source.fd)
+    pager.unregisterFd(fd)
+    pager.loader.unset(fd)
+    stream.sclose()
+    container.iface = nil
+  elif (let item = pager.findConnectingContainer(container); item != nil):
+    # connecting to URL
+    let stream = item.stream
+    pager.unregisterFd(int(stream.fd))
+    pager.loader.unset(item)
+    stream.sclose()
+
 proc deleteContainer(pager: Pager; container, setTarget: Container) =
   if container.loadState == lsLoading:
     container.cancel()
@@ -1661,20 +1682,9 @@ proc deleteContainer(pager: Pager; container, setTarget: Container) =
     pager.setContainer(setTarget)
   if container.process != -1:
     pager.loader.removeCachedItem(container.cacheId)
-    pager.loader.removeClient(container.process)
-  if container.iface != nil: # fully connected
-    let stream = container.iface.stream
-    let fd = int(stream.source.fd)
-    pager.unregisterFd(fd)
-    pager.loader.unset(fd)
-    stream.sclose()
-    container.iface = nil
-  elif (let item = pager.findConnectingContainer(container); item != nil):
-    # connecting to URL
-    let stream = item.stream
-    pager.unregisterFd(int(stream.fd))
-    pager.loader.unset(item)
-    stream.sclose()
+    if cfCrashed notin container.flags:
+      pager.loader.removeClient(container.process)
+  pager.unregisterContainer(container)
 
 proc discardBuffer(pager: Pager; container = none(Container);
     dir = none(NavDirection)) {.jsfunc.} =
@@ -3518,7 +3528,8 @@ proc handleError(pager: Pager; fd: int): Opt[void] =
       let isConsole = container == pager.pinned.console
       if isConsole:
         pager.dumpConsoleFile = true
-      pager.deleteContainer(container, container.find(ndAny))
+      container.flags.incl(cfCrashed)
+      pager.unregisterContainer(container)
       pager.console.error("error in buffer", $container.url)
       if not isConsole:
         pager.showConsole()

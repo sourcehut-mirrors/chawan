@@ -104,7 +104,8 @@ type
     lsLoading, lsCanceled, lsLoaded
 
   ContainerFlag* = enum
-    cfHasStart, cfSave, cfIsHTML, cfHistory, cfHighlight, cfTailOnLoad
+    cfHasStart, cfSave, cfIsHTML, cfHistory, cfHighlight, cfTailOnLoad,
+    cfCrashed
 
   CachedImageState* = enum
     cisLoading, cisCanceled, cisLoaded
