@@ -764,10 +764,14 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CommandConfig; v: TomlValue;
     ?typeCheck(vv, {tvtTable, tvtString}, kkk)
     if not kk.isCompatibleIdent():
       return err(kkk & ": invalid command name")
-    if not ctx.builtin and AsciiUpperAlpha in kk and
-        k in ["cmd", "cmd.pager", "cmd.buffer"]:
-      ctx.warnings.add("Please move " & kkk &
-        " to a lowercase namespace (e.g. [cmd.me]) to avoid name clashes.")
+    if not ctx.builtin and k in ["cmd", "cmd.pager", "cmd.buffer"]:
+      if vv.t == tvtTable:
+        if AsciiUpperAlpha in kk:
+          ctx.warnings.add(kkk &
+            ": the first component of namespaces must be lower-case.")
+      else: # tvtString
+        ctx.warnings.add("Please move " & kkk &
+          " to your own namespace (e.g. [cmd.me]) to avoid name clashes.")
     if vv.t == tvtTable:
       ?ctx.parseConfigValue(x, vv, kkk)
     else: # tvtString

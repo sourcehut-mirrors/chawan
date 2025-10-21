@@ -1,3 +1,8 @@
+# Warning: this is an internal resource file, *not* a template.
+# Using it as your personal config.toml isn't recommended; if you still
+# decide to do so, search for [cmd] and delete everything that comes after
+# it or you'll get a million warnings on startup.
+
 [start]
 visual-home = "about:chawan"
 startup-script = ""
