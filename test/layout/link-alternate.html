@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<link rel=stylesheet href='data:invalid'>
+<link rel="alternate stylesheet" href='data:text/css,div{margin-left:1ch}' title="hi0" disabled>
+<link rel="alternate stylesheet" href='data:text/css,div{margin-left:10ch}' disabled>
+<link rel="alternate stylesheet" href='data:text/css,div{background:red!important}' title="hi1">
+<link rel="stylesheet" href='data:text/css,div{background:yellow}' title="hi2">
+<link rel="stylesheet" href='data:text/css,div{background:red}' title="hi3" disabled>
+<link rel="stylesheet" href='data:text/css,div{background:red}' title="hi4">
+<link rel="stylesheet" href='data:text/css,div{background:yellow}'>
+<link rel="alternate stylesheet" href='data:text/css,div{color:green}' title="hi2">
+<link rel="alternate stylesheet" href='data:text/css,div{color:red}' title="hi3">
+<script>
+/* note: layout tests don't use headless mode so we can't do this on onload */
+const links = document.getElementsByTagName("link");
+links[1].disabled = false; // hi0
+links[2].disabled = false;
+links[3].disabled = false; // hi1
+links[4].disabled = true; // hi2
+links[5].disabled = true; // hi3
+links[7].disabled = true; // hi3
+let link = document.createElement("link");
+link.rel = "stylesheet";
+link.title = "hi2";
+link.href = "data:text/css,div{background:purple}";
+document.head.appendChild(link);
+</script>
+<div style="width: 4ch">
+test
+</div>

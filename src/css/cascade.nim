@@ -68,8 +68,8 @@ proc add(entry: var RuleListEntry; rule: CSSRuleDef) =
     entry.vals[f].add(rule.vals[f])
     entry.vars[f].add(rule.vars[f])
 
-proc calcRules(map: var RuleListMap; element: Element;
-    sheet: CSSStylesheet; origin: CSSOrigin; depends: var DependencyInfo) =
+proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
+    depends: var DependencyInfo) =
   var tosorts = ToSorts.default
   sheet.tagTable.withValue(element.localName, v):
     tosorts.calcRules(element, depends, v[])
@@ -94,7 +94,7 @@ proc calcRules(map: var RuleListMap; element: Element;
         return n
       return cmp(x.rule.idx, y.rule.idx), order = Ascending)
     for item in it:
-      map[pseudo][origin].add(item.rule)
+      map[pseudo][item.rule.origin].add(item.rule)
 
 proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
     vars: CSSVariableMap; items: openArray[CSSVarItem]): Opt[void] =
@@ -373,11 +373,7 @@ proc applyStyle(element: Element) =
   let window = document.window
   var depends = DependencyInfo.default
   var map = RuleListMap.default
-  for sheet in document.uaSheets:
-    map.calcRules(element, sheet, coUserAgent, depends)
-  map.calcRules(element, document.userSheet, coUser, depends)
-  for sheet in document.authorSheets:
-    map.calcRules(element, sheet, coAuthor, depends)
+  map.calcRules(element, document.getRuleMap(), depends)
   let style = element.cachedStyle
   if window.settings.styling and style != nil:
     for decl in style.decls:

@@ -18,9 +18,22 @@ type
     vars*: array[CSSImportantFlag, seq[CSSVariable]]
     # Absolute position in the stylesheet; used for sorting rules after
     # retrieval from the cache.
-    idx*: int
+    # Top 32 bits: sheet id; bottom 32 bits: rule id.
+    idx*: uint64
+    origin*: CSSOrigin
+    next: CSSRuleDef
 
   CSSStylesheet* = ref object
+    importList*: seq[URL]
+    len: uint32
+    idx*: uint32
+    settings: ptr EnvironmentSettings
+    defsHead: CSSRuleDef
+    defsTail: CSSRuleDef
+    next*: CSSStylesheet
+    disabled*: bool
+
+  CSSRuleMap* = ref object
     tagTable*: Table[CAtom, seq[CSSRuleDef]]
     idTable*: Table[CAtom, seq[CSSRuleDef]]
     classTable*: Table[CAtom, seq[CSSRuleDef]]
@@ -28,9 +41,6 @@ type
     rootList*: seq[CSSRuleDef]
     generalList*: seq[CSSRuleDef]
     hintList*: seq[CSSRuleDef]
-    importList*: seq[URL]
-    len: int
-    settings: ptr EnvironmentSettings
 
   SelectorHashType = enum
     shtGeneral, shtRoot, shtHint
@@ -44,8 +54,9 @@ type
 
 # Forward declarations
 proc getSelectorIds(hashes: var SelectorHashes; sel: Selector): bool
-proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule)
-proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL)
+proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; origin: CSSOrigin)
+proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
+  origin: CSSOrigin)
 
 proc getSelectorIds(hashes: var SelectorHashes; sels: CompoundSelector) =
   for sel in sels:
@@ -137,7 +148,7 @@ proc addIfNotLast(s: var seq[CSSRuleDef]; rule: CSSRuleDef) =
   if s.len == 0 or s[^1] != rule:
     s.add(rule)
 
-proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
+proc add(sheet: CSSRuleMap; rule: CSSRuleDef) =
   for cxsel in rule.sels:
     var hashes = SelectorHashes()
     hashes.getSelectorIds(cxsel)
@@ -156,16 +167,28 @@ proc add(sheet: CSSStylesheet; rule: CSSRuleDef) =
       of shtHint: sheet.hintList.add(rule)
       of shtGeneral: sheet.generalList.add(rule)
 
+proc add*(map: CSSRuleMap; sheet: CSSStylesheet; sheetId: uint32) =
+  sheet.idx = sheetId
+  var def = sheet.defsHead
+  while def != nil:
+    def.idx = (uint64(sheetId) shl 32) or uint32(def.idx)
+    map.add(def)
+    def = def.next
+
 proc addRules(sheet: CSSStylesheet; ctx: var CSSParser; topLevel: bool;
-    base: URL) =
+    base: URL; origin: CSSOrigin) =
   for rule in ctx.parseListOfRules(topLevel):
     case rule.t
-    of crtAt: sheet.addAtRule(rule.at, base)
-    of crtQualified: sheet.addRule(rule.qualified)
+    of crtAt: sheet.addAtRule(rule.at, base, origin)
+    of crtQualified: sheet.addRule(rule.qualified, origin)
 
-proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
+proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; origin: CSSOrigin) =
   if rule.sels.len > 0:
-    let ruleDef = CSSRuleDef(sels: move(rule.sels), idx: sheet.len)
+    let ruleDef = CSSRuleDef(
+      sels: move(rule.sels),
+      idx: sheet.len,
+      origin: origin
+    )
     for decl in rule.decls:
       let f = decl.f
       case decl.t
@@ -181,10 +204,15 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule) =
         else:
           ruleDef.vals[f].parseComputedValues(decl.p, decl.value,
             sheet.settings.attrsp[])
-    sheet.add(ruleDef)
+    if sheet.defsTail == nil:
+      sheet.defsHead = ruleDef
+    else:
+      sheet.defsTail.next = ruleDef
+    sheet.defsTail = ruleDef
     inc sheet.len
 
-proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
+proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
+    origin: CSSOrigin) =
   case atrule.name
   of cartUnknown: discard
   of cartImport:
@@ -205,13 +233,13 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL) =
     let query = parseMediaQueryList(atrule.prelude, sheet.settings.attrsp)
     if query.applies(sheet.settings):
       var ctx = initCSSParser(atrule.oblock)
-      sheet.addRules(ctx, topLevel = false, base = nil)
+      sheet.addRules(ctx, topLevel = false, base = nil, origin)
 
 proc parseStylesheet*(iq: openArray[char]; base: URL;
-    settings: ptr EnvironmentSettings): CSSStylesheet =
+    settings: ptr EnvironmentSettings; origin: CSSOrigin): CSSStylesheet =
   let sheet = CSSStylesheet(settings: settings)
   var ctx = initCSSParser(iq)
-  sheet.addRules(ctx, topLevel = true, base)
+  sheet.addRules(ctx, topLevel = true, base, origin)
   return sheet
 
 {.pop.} # raises: []
