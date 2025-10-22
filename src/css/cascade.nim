@@ -24,7 +24,13 @@ type
     vals: array[CSSImportantFlag, seq[CSSComputedEntry]]
     vars: array[CSSImportantFlag, seq[CSSVariable]]
 
-  RuleList = array[CSSOrigin, RuleListEntry]
+  LayeredRuleList = object
+    unlayered: RuleListEntry
+    layers: seq[RuleListEntry]
+
+  RuleList = object
+    a: array[CSSOrigin, LayeredRuleList]
+    hasValues: bool
 
   RuleListMap = array[PseudoElement, RuleList]
 
@@ -94,7 +100,18 @@ proc calcRules(map: var RuleListMap; element: Element; sheet: CSSRuleMap;
         return n
       return cmp(x.rule.idx, y.rule.idx), order = Ascending)
     for item in it:
-      map[pseudo][item.rule.origin].add(item.rule)
+      let rule = item.rule
+      let origin = rule.origin
+      let layerId = rule.layerId
+      if rule.vals[cifNormal].len > 0 or rule.vals[cifImportant].len > 0:
+        map[pseudo].hasValues = true
+      if layerId == 0:
+        map[pseudo].a[origin].unlayered.add(rule)
+      else:
+        let n = int(layerId)
+        if n > map[pseudo].a[origin].layers.len:
+          map[pseudo].a[origin].layers.setLen(n)
+        map[pseudo].a[origin].layers[n - 1].add(rule)
 
 proc addItems(ctx: var ApplyValueContext; toks: var seq[CSSToken];
     vars: CSSVariableMap; items: openArray[CSSVarItem]): Opt[void] =
@@ -178,6 +195,18 @@ proc applyValues(ctx: var ApplyValueContext;
     entries: openArray[CSSComputedEntry]; revertType: RevertType) =
   for entry in entries.ritems:
     ctx.applyValue(entry, revertType)
+
+proc applyNormalValues(ctx: var ApplyValueContext;
+    list: LayeredRuleList; revertType: RevertType) =
+  ctx.applyValues(list.unlayered.vals[cifNormal], revertType)
+  for layer in list.layers.ritems:
+    ctx.applyValues(layer.vals[cifNormal], revertType)
+
+proc applyImportantValues(ctx: var ApplyValueContext;
+    list: LayeredRuleList; revertType: RevertType) =
+  for layer in list.layers:
+    ctx.applyValues(layer.vals[cifImportant], revertType)
+  ctx.applyValues(list.unlayered.vals[cifImportant], revertType)
 
 proc applyPresHint(ctx: var ApplyValueContext; entry: CSSComputedEntry) =
   # This is a bit awkward: presentational hints are below author and
@@ -294,6 +323,14 @@ proc applyPresHints(ctx: var ApplyValueContext; element: Element) =
       ctx.applyPresHint(makeEntry(cptCounterSet, val))
   else: discard
 
+proc applyVars(ctx: var ApplyValueContext; vars: seq[CSSVariable];
+    parentVars: CSSVariableMap) =
+  if vars.len > 0:
+    if ctx.vals.vars == nil:
+      ctx.vals.vars = newCSSVariableMap(parentVars)
+    for cvar in vars.ritems:
+      ctx.vals.vars.putIfAbsent(cvar.name, cvar)
+
 proc applyDeclarations(rules: RuleList; parent, element: Element;
     window: Window; old: CSSValues): CSSValues =
   result = CSSValues()
@@ -304,29 +341,25 @@ proc applyDeclarations(rules: RuleList; parent, element: Element;
     ctx.parentComputed = parent.computed
     parentVars = ctx.parentComputed.vars
   for origin in CSSOrigin:
-    if rules[origin].vars[cifImportant].len > 0:
-      if result.vars == nil:
-        result.vars = newCSSVariableMap(parentVars)
-      for cvar in rules[origin].vars[cifImportant].ritems:
-        result.vars.putIfAbsent(cvar.name, cvar)
+    for layer in rules.a[origin].layers:
+      ctx.applyVars(layer.vars[cifImportant], parentVars)
+    ctx.applyVars(rules.a[origin].unlayered.vars[cifImportant], parentVars)
   for origin in countdown(CSSOrigin.high, CSSOrigin.low):
-    if rules[origin].vars[cifNormal].len > 0:
-      if result.vars == nil:
-        result.vars = newCSSVariableMap(parentVars)
-      for cvar in rules[origin].vars[cifNormal].ritems:
-        result.vars.putIfAbsent(cvar.name, cvar)
+    ctx.applyVars(rules.a[origin].unlayered.vars[cifNormal], parentVars)
+    for layer in rules.a[origin].layers:
+      ctx.applyVars(layer.vars[cifNormal], parentVars)
   if result.vars == nil:
     result.vars = parentVars # inherit parent
-  ctx.applyValues(rules[coUserAgent].vals[cifImportant], rtSet)
-  ctx.applyValues(rules[coUser].vals[cifImportant], rtUserAgent)
-  ctx.applyValues(rules[coAuthor].vals[cifImportant], rtUser)
-  ctx.applyValues(rules[coAuthor].vals[cifNormal], rtUser)
-  ctx.applyValues(rules[coUser].vals[cifNormal], rtUserAgent)
+  ctx.applyImportantValues(rules.a[coUserAgent], rtSet)
+  ctx.applyImportantValues(rules.a[coUser], rtUserAgent)
+  ctx.applyImportantValues(rules.a[coAuthor], rtUser)
+  ctx.applyNormalValues(rules.a[coAuthor], rtUser)
+  ctx.applyNormalValues(rules.a[coUser], rtUserAgent)
   # Presentational hints override user agent style, but respect user/author
   # style.
   if element != nil:
     ctx.applyPresHints(element)
-  ctx.applyValues(rules[coUserAgent].vals[cifNormal], rtSet)
+  ctx.applyNormalValues(rules.a[coUserAgent], rtSet)
   # fill in defaults
   if ctx.revertMap[cptColor] != rtSet or result{"color"}.t == cctCurrent:
     # do this first so currentcolor works
@@ -361,13 +394,6 @@ proc applyDeclarations(map: RuleListMap; pseudo: PseudoElement;
   result = map[pseudo].applyDeclarations(parent, element, window, old)
   result.pseudo = pseudo
 
-proc hasValues(rules: RuleList): bool =
-  for x in rules:
-    for y in x.vals:
-      if y.len > 0:
-        return true
-  return false
-
 proc applyStyle(element: Element) =
   let document = element.document
   let window = document.window
@@ -380,23 +406,23 @@ proc applyStyle(element: Element) =
       let f = decl.f
       case decl.t
       of cdtVariable:
-        map[peNone][coAuthor].vars[f].add(CSSVariable(
+        map[peNone].a[coAuthor].unlayered.vars[f].add(CSSVariable(
           name: decl.v,
           items: parseDeclWithVar0(decl.value)
         ))
       of cdtProperty:
         if decl.hasVar:
           if entry := parseDeclWithVar(decl.p, decl.value):
-            map[peNone][coAuthor].vals[f].add(entry)
+            map[peNone].a[coAuthor].unlayered.vals[f].add(entry)
         else:
-          map[peNone][coAuthor].vals[f].parseComputedValues(decl.p, decl.value,
-            window.settings.attrsp[])
+          map[peNone].a[coAuthor].unlayered.vals[f].parseComputedValues(decl.p,
+            decl.value, window.settings.attrsp[])
   element.applyStyleDependencies(depends)
   var computed = map.applyDeclarations(peNone, element.parentElement, element,
     window, element.computed)
   element.computed = computed
   for pseudo in peBefore .. PseudoElement.high:
-    if map[pseudo].hasValues() or window.settings.scripting == smApp:
+    if map[pseudo].hasValues or window.settings.scripting == smApp:
       let next = computed.next
       let old = if next != nil and next.pseudo == pseudo: next else: nil
       let pcomputed = map.applyDeclarations(pseudo, element, nil, window, old)

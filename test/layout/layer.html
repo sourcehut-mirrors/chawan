@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<style>
+@layer c, a;
+</style>
+<style>
+@layer a {
+	#a { color: red }
+	#b { color: red }
+	#c { color: red !important }
+	#d { color: red !important }
+}
+@layer b {
+	#a { color: green }
+	#b { color: green }
+	#c { color: green !important }
+	#d { color: green !important }
+}
+@layer c {
+	#a { color: blue }
+	#b { color: blue }
+	#c { color: blue !important }
+	#d { color: blue !important }
+}
+#b { color: purple }
+#d { color: purple !important }
+</style>
+<div id=a>test</div>
+<div id=b>test</div>
+<div id=c>test</div>
+<div id=d>test</div>

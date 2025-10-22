@@ -122,6 +122,10 @@ type
 
   DependencyInfo* = array[DependencyType, seq[Element]]
 
+  LoadSheetResult = object
+    head: CSSStylesheet
+    tail: CSSStylesheet
+
   Location = ref object
     window: Window
 
@@ -629,6 +633,9 @@ jsDestructor(DOMRect)
 jsDestructor(DOMRectList)
 
 # Forward declarations
+proc loadSheet(window: Window; url: URL; charset: Charset; layer: CAtom):
+  Promise[LoadSheetResult]
+
 proc newCDATASection(document: Document; data: string): CDATASection
 proc newComment(document: Document; data: sink string): Comment
 proc newText*(document: Document; data: sink string): Text
@@ -1232,17 +1239,37 @@ proc corsFetch(window: Window; input: Request): FetchPromise =
     return newResolvedPromise(FetchResult.err())
   return window.loader.fetch(input)
 
-proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL):
-    CSSStylesheet =
-  s.parseStylesheet(baseURL, addr window.settings, coAuthor)
+proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL;
+    charset: Charset; layer: CAtom): Promise[LoadSheetResult] =
+  let sheet = s.parseStylesheet(baseURL, addr window.settings, coAuthor, layer)
+  var promises: seq[EmptyPromise] = @[]
+  var sheets = newSeq[LoadSheetResult](sheet.importList.len)
+  for i, it in sheet.importList.mypairs:
+    let url = it.url
+    let layer = it.layer
+    (proc(i: int) =
+      let p = window.loadSheet(url, charset, layer).then(
+        proc(res: LoadSheetResult) =
+          sheets[i] = res
+      )
+      promises.add(p)
+    )(i)
+  return promises.all().then(proc(): LoadSheetResult =
+    var head: CSSStylesheet = sheet
+    var tail: CSSStylesheet = sheet
+    for res in sheets:
+      if res.head != nil:
+        #TODO check import media query here
+        if tail == nil:
+          head = res.head
+        else:
+          tail.next = res.head
+        tail = res.tail
+    return LoadSheetResult(head: head, tail: tail)
+  )
 
-type LoadSheetResult = object
-  head: CSSStylesheet
-  tail: CSSStylesheet
-
-proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
+proc loadSheet(window: Window; url: URL; charset: Charset; layer: CAtom):
     Promise[LoadSheetResult] =
-  let charset = link.getCharset()
   let p = window.corsFetch(
     newRequest(url)
   ).then(proc(res: FetchResult): Promise[TextResult] =
@@ -1255,31 +1282,14 @@ proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
   ).then(proc(s: TextResult): Promise[LoadSheetResult] =
     if s.isErr:
       return newResolvedPromise(LoadSheetResult())
-    let sheet = window.parseStylesheet(s.get, url)
-    var promises: seq[EmptyPromise] = @[]
-    var sheets = newSeq[LoadSheetResult](sheet.importList.len)
-    for i, url in sheet.importList:
-      (proc(i: int) =
-        let p = window.loadSheet(link, url).then(proc(res: LoadSheetResult) =
-          sheets[i] = res
-        )
-        promises.add(p)
-      )(i)
-    return promises.all().then(proc(): LoadSheetResult =
-      var head: CSSStylesheet = sheet
-      var tail: CSSStylesheet = sheet
-      for res in sheets:
-        if res.head != nil:
-          #TODO check import media query here
-          if tail == nil:
-            head = res.head
-          else:
-            tail.next = res.head
-          tail = res.tail
-      return LoadSheetResult(head: head, tail: tail)
-    )
+    return window.parseStylesheet(s.get, url, charset, layer)
   )
   return p
+
+proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
+    Promise[LoadSheetResult] =
+  let charset = link.getCharset()
+  return window.loadSheet(url, charset, CAtomNull)
 
 proc loadResource(window: Window; link: HTMLLinkElement) =
   if not window.settings.styling or
@@ -3132,7 +3142,7 @@ proc reflectEvent(document: Document; target: EventTarget;
 proc applyUASheet*(document: Document) =
   const ua = staticRead"res/ua.css"
   let sheet = parseStylesheet(ua, nil, addr document.window.settings,
-    coUserAgent)
+    coUserAgent, CAtomNull)
   document.uaSheetsHead = sheet
   if document.documentElement != nil:
     document.documentElement.invalidate()
@@ -3142,33 +3152,29 @@ proc applyQuirksSheet*(document: Document) =
     return
   const quirks = staticRead"res/quirk.css"
   let sheet = parseStylesheet(quirks, nil, addr document.window.settings,
-    coUserAgent)
+    coUserAgent, CAtomNull)
   document.uaSheetsHead.next = sheet
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
 proc applyUserSheet*(document: Document; user: string) =
   document.userSheet = parseStylesheet(user, nil,
-    addr document.window.settings, coUser)
+    addr document.window.settings, coUser, CAtomNull)
   if document.documentElement != nil:
     document.documentElement.invalidate()
 
 proc getRuleMap*(document: Document): CSSRuleMap =
   if document.ruleMap == nil:
     let map = CSSRuleMap()
-    var idx = 0u32
     var sheet = document.uaSheetsHead
     while sheet != nil:
-      map.add(sheet, idx)
+      map.add(sheet)
       sheet = sheet.next
-      inc idx
-    map.add(document.userSheet, idx)
-    inc idx
+    map.add(document.userSheet)
     sheet = document.authorSheetsHead
     while sheet != nil:
       if not sheet.disabled:
-        map.add(sheet, idx)
-        inc idx
+        map.add(sheet)
       sheet = sheet.next
     document.ruleMap = map
   return document.ruleMap
@@ -5573,10 +5579,8 @@ proc insertSheet(this: SheetElement) =
     this.sheetTail.next = next
     if document.ruleMap != nil and not this.isDisabled():
       if next == nil:
-        var idx = if prev == nil: 0u32 else: prev.idx + 1
         for sheet in this.sheets:
-          document.ruleMap.add(sheet, idx)
-          inc idx
+          document.ruleMap.add(sheet)
       else:
         document.ruleMap = nil
     let html = document.documentElement
@@ -5863,12 +5867,15 @@ proc updateSheet*(this: HTMLStyleElement) =
   let document = this.document
   let window = document.window
   if window != nil:
-    #TODO also fetch imports
-    let sheet = window.parseStylesheet(this.textContent, document.baseURL)
-    if this.isConnected():
-      let title = this.attr(satTitle)
-      sheet.disabled = title != "" and title != document.sheetTitle
-    this.updateSheet(sheet, sheet)
+    let p = window.parseStylesheet(this.textContent, document.baseURL,
+        DefaultCharset, CAtomNull).then(proc(res: LoadSheetResult) =
+      this.updateSheet(res.head, res.tail)
+      if this.isConnected():
+        let title = this.attr(satTitle)
+        for sheet in this.sheets:
+          sheet.disabled = title != "" and title != document.sheetTitle
+    )
+    window.pendingResources.add(p)
 
 # <script>
 proc finalize(element: HTMLScriptElement) {.jsfin.} =

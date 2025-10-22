@@ -126,6 +126,7 @@ type
     cartUnknown = "-cha-unknown"
     cartImport = "import"
     cartMedia = "media"
+    cartLayer = "layer"
 
   CSSAtRule* = ref object
     name*: CSSAtRuleType
@@ -176,6 +177,7 @@ type
     cftUrl = "url"
     cftVar = "var"
     cftWhere = "where"
+    cftLayer = "layer"
 
   CSSSimpleBlock* = ref object
     value*: seq[CSSToken]
