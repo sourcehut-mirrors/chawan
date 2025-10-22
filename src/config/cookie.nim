@@ -32,10 +32,13 @@ type
     name*: string
     cookies: seq[Cookie]
     map: Table[string, Cookie] # {host}{path}\t{name}
+    next: CookieJar
 
   CookieJarMap* = ref object
     mtime: int64
-    jars: OrderedTable[cstring, CookieJar]
+    jars: Table[cstring, CookieJar]
+    jarsHead: CookieJar
+    jarsTail: CookieJar
     transient*: bool # set if there is a failure in parsing cookies
 
 # Forward declarations
@@ -66,6 +69,11 @@ proc newCookieJarMap*(): CookieJarMap =
 proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
   let jar = CookieJar(name: name)
   map.jars[cstring(jar.name)] = jar
+  if map.jarsTail == nil:
+    map.jarsHead = jar
+  else:
+    map.jarsTail.next = jar
+  map.jarsTail = jar
   return jar
 
 proc getOrDefault*(map: CookieJarMap; name: string): CookieJar =
@@ -394,15 +402,16 @@ proc write0(map: CookieJarMap; file: ChaFile; ps: PosixStream;
 """)
   var i = 0
   let time = getTime().toUnix()
-  for name, jar in map.jars:
+  var jar = map.jarsHead
+  while jar != nil:
     for cookie in jar.cookies:
       if cookie.expires <= time or not cookie.persist:
         continue # session cookie
       var buf = ""
       if cookie.httpOnly:
         buf &= "#HttpOnly_"
-      if cstring(cookie.domain) != name:
-        buf &= $name & "@"
+      if cookie.domain != jar.name:
+        buf &= jar.name & "@"
       if not cookie.hostOnly:
         buf &= '.'
       buf &= cookie.domain & '\t'
@@ -415,6 +424,7 @@ proc write0(map: CookieJarMap; file: ChaFile; ps: PosixStream;
       buf &= cookie.value & '\n'
       ?file.write(buf)
       inc i
+    jar = jar.next
   if i == 0:
     discard unlink(cstring(tmp))
     discard unlink(cstring(path))
@@ -428,7 +438,7 @@ proc write*(map: CookieJarMap; path: string): Opt[void] =
   if ps != nil:
     var dummy: seq[string] = @[]
     ?map.parse(ps, dummy, map.mtime)
-  elif map.jars.len == 0:
+  elif map.jarsHead == nil:
     return ok()
   let tmp = path & '~'
   let ps2 = newPosixStream(tmp, O_WRONLY or O_CREAT, 0o600)
