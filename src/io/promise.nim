@@ -51,11 +51,12 @@ proc newResolvedPromise*[T](x: T): Promise[T] =
 
 proc then*(promise: EmptyPromise; cb: (proc() {.raises: [].})): EmptyPromise
     {.discardable.} =
+  let next = EmptyPromise()
   promise.cb = cb
-  promise.next = EmptyPromise()
+  promise.next = next
   if promise.state == psFulfilled:
     promise.resolve()
-  return promise.next
+  next
 
 proc then*(promise: EmptyPromise; cb: (proc(): EmptyPromise {.raises: [].})):
     EmptyPromise {.discardable.} =
