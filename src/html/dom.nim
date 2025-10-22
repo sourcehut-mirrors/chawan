@@ -4743,17 +4743,9 @@ proc attr*(element: Element; name: CAtom; value: sink string) =
 proc attr*(element: Element; name: StaticAtom; value: sink string) =
   element.attr(name.toAtom(), value)
 
-proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
-    namespace: Namespace; value: sink string) =
-  if prefix == NO_PREFIX and namespace == NO_NAMESPACE:
-    element.attr(localName, value)
-    return
-  let namespace = namespace.toAtom()
+proc attrns0(element: Element; namespace, localName, qualifiedName: CAtom;
+    value: sink string) =
   let i = element.findAttrNS(namespace, localName)
-  let qualifiedName = if prefix != NO_PREFIX:
-    ($prefix & ':' & $localName).toAtom()
-  else:
-    localName
   if i != -1:
     element.attrs[i].value = value
   else:
@@ -4765,6 +4757,18 @@ proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
   element.reflectAttr(qualifiedName, some(value))
   element.document.invalidateCollections()
   element.invalidate()
+
+proc attrns*(element: Element; localName: CAtom; prefix: NamespacePrefix;
+    namespace: Namespace; value: sink string) =
+  if prefix == NO_PREFIX and namespace == NO_NAMESPACE:
+    element.attr(localName, value)
+    return
+  let namespace = namespace.toAtom()
+  let qualifiedName = if prefix != NO_PREFIX:
+    ($prefix & ':' & $localName).toAtom()
+  else:
+    localName
+  element.attrns0(namespace, localName, qualifiedName, value)
 
 proc attrl(element: Element; name: StaticAtom; value: int32) =
   element.attr(name, $value)
@@ -4804,18 +4808,7 @@ proc setAttributeNS(ctx: JSContext; element: Element; namespace: CAtom;
       satXmlns notin [prefix, qualifiedName] and namespace == satNamespaceXMLNS:
     JS_ThrowDOMException(ctx, "NamespaceError", "unexpected namespace")
     return err()
-  let i = element.findAttrNS(namespace, localName)
-  if i != -1:
-    element.attrs[i].value = value
-  else:
-    element.attrs.insert(AttrData(
-      namespace: namespace,
-      qualifiedName: qualifiedName,
-      value: value
-    ), element.attrs.upperBound(qualifiedName, cmpAttrName))
-  element.reflectAttr(qualifiedName, some(value))
-  element.document.invalidateCollections()
-  element.invalidate()
+  element.attrns0(namespace, localName, qualifiedName, value)
   ok()
 
 proc removeAttribute(ctx: JSContext; element: Element; qualifiedName: CAtom)
