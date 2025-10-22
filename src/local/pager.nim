@@ -179,7 +179,7 @@ type
     numload: int # number of pages currently being loaded
     pollData: PollData
     refreshAllowed: HashSet[string]
-    regex: Option[Regex]
+    regex: Opt[Regex]
     scommand: string
     term*: Terminal
     timeouts*: TimeoutState
@@ -326,7 +326,7 @@ proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetownprop.} =
   return JS_UNINITIALIZED
 
 proc searchNext(pager: Pager; n = 1) {.jsfunc.} =
-  if pager.regex.isSome:
+  if pager.regex.isOk:
     let wrap = pager.config.search.wrap
     pager.container.markPos0()
     if not pager.reverseSearch:
@@ -338,7 +338,7 @@ proc searchNext(pager: Pager; n = 1) {.jsfunc.} =
     pager.alert("No previous regular expression")
 
 proc searchPrev(pager: Pager; n = 1) {.jsfunc.} =
-  if pager.regex.isSome:
+  if pager.regex.isOk:
     let wrap = pager.config.search.wrap
     pager.container.markPos0()
     if not pager.reverseSearch:
@@ -359,7 +359,7 @@ proc setSearchRegex(ctx: JSContext; pager: Pager; s: string; flags0 = "";
   let re = compileRegex(s, flags)
   if re.isErr:
     return JS_ThrowTypeError(ctx, cstring(re.error))
-  pager.regex = some(re.get)
+  pager.regex = Opt[Regex].ok(re.get)
   pager.reverseSearch = reverse
   return JS_UNDEFINED
 
@@ -2317,11 +2317,11 @@ proc commandMode(pager: Pager; val: bool) {.jsfset.} =
   if val:
     pager.command()
 
-proc checkRegex(pager: Pager; regex: Result[Regex, string]): Option[Regex] =
+proc checkRegex(pager: Pager; regex: Result[Regex, string]): Opt[Regex] =
   if regex.isErr:
     pager.alert("Invalid regex: " & regex.error)
-    return none(Regex)
-  return some(regex.get)
+    return err()
+  ok(regex.get)
 
 proc compileSearchRegex(pager: Pager; s: string): Result[Regex, string] =
   return compileSearchRegex(s, pager.config.search.ignoreCase)
@@ -2340,7 +2340,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
     of lesEdit:
       if lineedit.news != "":
         pager.iregex = pager.compileSearchRegex(lineedit.news)
-        pager.regex = none(Regex)
+        pager.regex = Opt[Regex].err()
       pager.container.popCursorPos(true)
       pager.container.pushCursorPos()
       if pager.iregex.isOk:
@@ -2351,7 +2351,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
         else:
           pager.container.cursorPrevMatch(pager.iregex.get, wrap, false, 1)
     of lesFinish:
-      if lineedit.news == "" and pager.regex.isNone:
+      if lineedit.news == "" and pager.regex.isErr:
         pager.container.popCursorPos()
       else:
         if lineedit.news != "":
