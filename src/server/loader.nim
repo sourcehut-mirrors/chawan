@@ -1208,7 +1208,7 @@ proc loadDataSend(ctx: var LoaderContext; handle: InputHandle; s, ct: string) =
 proc loadData(ctx: var LoaderContext; handle: InputHandle; request: Request) =
   let url = request.url
   var ct = url.pathname.until(',')
-  if AllChars - Ascii + Controls - {'\t'} in ct:
+  if ct.len == url.pathname.len or AllChars - Ascii + Controls - {'\t'} in ct:
     ctx.rejectHandle(handle, ceInvalidURL, "invalid data URL")
     return
   let sd = ct.len + 1 # data start
