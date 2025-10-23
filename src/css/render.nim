@@ -100,13 +100,28 @@ proc findFirstX(line: var FlexibleLine; x: int; outi: var int): int =
   outi = i
   return cx
 
-proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
-    i, x, cx, nx, targetX: int) =
+proc setTextStr(line: var FlexibleLine; s: openArray[char];
+    i, j, x, cx, nx, targetX: int) =
   var i = i
   let padlen = i + x - cx
   var widthError = max(nx - targetX, 0)
   let targeti = padlen + s.len
-  line.str.setLen(targeti + widthError + ostr.len)
+  let remainingLen = line.str.len - j
+  let nj = targeti + widthError
+  let nlen = nj + remainingLen
+  if remainingLen > 0:
+    # we are overprinting *some* text, but the rest remains and must be
+    # moved to the right place.
+    # if the new offset is smaller, this must happen before the resize so
+    # the data isn't destroyed.  otherwise it must happen afterwards so we
+    # have enough space.
+    if nj < j:
+      moveMem(addr line.str[nj], unsafeAddr line.str[j], remainingLen)
+    line.str.setLen(nlen)
+    if nj > j:
+      moveMem(addr line.str[nj], unsafeAddr line.str[j], remainingLen)
+  else:
+    line.str.setLen(nlen)
   while i < padlen: # place before new string
     line.str[i] = ' '
     inc i
@@ -117,8 +132,6 @@ proc setTextStr(line: var FlexibleLine; s, ostr: openArray[char];
     line.str[i] = ' '
     dec widthError
     inc i
-  if ostr.len > 0:
-    copyMem(addr line.str[i], unsafeAddr ostr[0], ostr.len)
 
 proc setTextFormat(line: var FlexibleLine; x, cx, targetX, nx: int;
     hadStr: bool; format: Format; node: Element) =
@@ -227,11 +240,10 @@ proc setText0(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
   # (nx starts from cx, not x; we are still advancing in the old string)
   while nx < targetX and j < line.str.len:
     nx += line.str.nextUTF8(j).width()
-  let ostr = line.str.substr(j)
   ocx = cx
   onx = nx
-  hadStr = ostr.len > 0
-  line.setTextStr(s, ostr, i, x, cx, nx, targetX)
+  hadStr = j < line.str.len
+  line.setTextStr(s, i, j, x, cx, nx, targetX)
 
 proc setText1(line: var FlexibleLine; s: openArray[char]; x, targetX: int;
     format: Format; node: Element) =
