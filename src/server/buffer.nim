@@ -1797,7 +1797,7 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
     if i > 0:
       buf &= '|'
     buf &= scheme
-  buf &= r"):(//[\w%:.-]+)?[\w/@%:.~-]*\??[\w%:~.=&]*#?[\w:~.=-]*[\w/~=-]"
+  buf &= r"):(//[\w%:.-]+)?[\w/@%:.~-]*\??[\w%:~.=&-]*#?[\w:~.=-]*[\w/~=-]"
   let regex = compileRegex(buf, {LRE_FLAG_GLOBAL}).get
   # Dummy element for the fragment parsing algorithm. We can't just use parent
   # there, because e.g. plaintext would not parse the text correctly.
