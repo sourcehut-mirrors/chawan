@@ -307,13 +307,15 @@ type
 
   SelectorTypeNthChild = range[stNthChild..stNthLastChild]
 
+  # Note: this must match the order csstree processes pseudo-elements.
   PseudoElement* = enum
     peNone = "-cha-none"
     peBefore = "before"
-    peAfter = "after"
-    peMarker = "marker"
-    peLinkMarker = "-cha-link-marker"
     peLinkHint = "-cha-link-hint"
+    peLinkMarker = "-cha-link-marker"
+    peMarker = "marker"
+    peBackdrop = "backdrop"
+    peAfter = "after"
 
   PseudoClass* = enum
     pcFirstChild = "first-child"

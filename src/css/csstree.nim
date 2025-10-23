@@ -85,6 +85,7 @@ type
   TreeFrame = object
     parent: Element
     computed: CSSValues
+    pseudoComputed: CSSValues
     children: seq[StyledNode]
     lastChildWasInline: bool
     captionSeen: bool
@@ -164,7 +165,12 @@ proc inheritFor(frame: TreeFrame; display: CSSDisplay): CSSValues =
 
 proc initTreeFrame(ctx: TreeContext; parent: Element; computed: CSSValues):
     TreeFrame =
-  result = TreeFrame(parent: parent, computed: computed, ctx: ctx)
+  result = TreeFrame(
+    parent: parent,
+    computed: computed,
+    pseudoComputed: computed.next,
+    ctx: ctx
+  )
 
 proc getAnonInlineComputed(frame: var TreeFrame): CSSValues =
   if frame.anonInlineComputed == nil:
@@ -360,7 +366,12 @@ proc addElement(frame: var TreeFrame; element: Element) =
     ))
 
 proc addPseudo(frame: var TreeFrame; pseudo: PseudoElement) =
-  let computed = frame.parent.getComputedStyle(pseudo)
+  var computed = frame.pseudoComputed
+  while computed != nil:
+    if computed.pseudo == pseudo:
+      break
+    computed = computed.next
+  frame.pseudoComputed = computed
   if computed != nil and computed{"display"} notin DisplayNoneLike and
       computed{"content"}.len > 0:
     frame.add(StyledNode(
