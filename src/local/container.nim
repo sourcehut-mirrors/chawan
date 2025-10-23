@@ -1629,7 +1629,7 @@ proc onReadLine(container: Container; rl: ReadLineResult) =
 proc onload(container: Container; res: int) =
   if container.loadState == lsCanceled:
     return
-  if res == -2:
+  if res == -1:
     container.loadState = lsLoaded
     container.setLoadInfo("")
     container.triggerEvent(cetStatus)
@@ -1665,7 +1665,10 @@ proc onload(container: Container; res: int) =
             ))
         )
   else:
-    if res == -1:
+    case res
+    of -3:
+      container.setLoadInfo("Loading stylesheets...")
+    of -2:
       container.setLoadInfo("Loading images...")
     else:
       container.setLoadInfo(convertSize(res) & " loaded")

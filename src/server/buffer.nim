@@ -90,8 +90,8 @@ type
     bcWindowChange = "windowChange"
 
   BufferState = enum
-    bsLoadingPage, bsLoadingResources, bsLoadingImages, bsLoadingImagesAck,
-    bsLoaded
+    bsLoadingPage, bsLoadingResources, bsLoadingResourcesAck, bsLoadingImages,
+    bsLoadingImagesAck, bsLoaded
 
   HoverType* = enum
     htTitle, htLink, htImage, htCachedImage
@@ -762,7 +762,7 @@ proc resolveTask[T](bc: BufferContext; cmd: BufferCommand; res: T) =
     quit(1)
   bc.tasks[cmd] = 0
 
-proc maybeReshape(bc: BufferContext) =
+proc maybeReshape(bc: BufferContext; suppressFouc = false) =
   let document = bc.document
   if document == nil or document.documentElement == nil:
     return # not parsed yet, nothing to render
@@ -773,10 +773,14 @@ proc maybeReshape(bc: BufferContext) =
     bc.rootBox.layout(bc.attrs, fixedHead, bc.luctx)
     bc.lines.render(bc.bgcolor, stack, bc.attrs, bc.images)
     document.invalid = false
-    if bc.hasTask(bcOnReshape):
-      bc.resolveTask(bcOnReshape)
-    else:
-      bc.onReshapeImmediately = true
+    # We don't want a FOUC on automatic reshape, but we still want to allow
+    # the user to override this and interact with the page (useful if e.g. a
+    # sheet really doesn't want to load).
+    if not suppressFouc or bc.window.numLoadingSheets == 0:
+      if bc.hasTask(bcOnReshape):
+        bc.resolveTask(bcOnReshape)
+      else:
+        bc.onReshapeImmediately = true
 
 proc processData0(bc: BufferContext; data: UnsafeSlice): bool =
   if bc.ishtml:
@@ -1045,7 +1049,7 @@ proc dispatchDOMContentLoadedEvent(bc: BufferContext) =
   let window = bc.window
   window.fireEvent(satDOMContentLoaded, bc.document, bubbles = false,
     cancelable = false, trusted = true)
-  bc.maybeReshape()
+  bc.maybeReshape(suppressFouc = true)
 
 proc dispatchLoadEvent(bc: BufferContext) =
   let window = bc.window
@@ -1055,7 +1059,7 @@ proc dispatchLoadEvent(bc: BufferContext) =
   discard window.jsctx.dispatch(window, event, targetOverride = true)
   bc.maybeReshape()
 
-proc finishLoad(bc: BufferContext; data: InputData): EmptyPromise =
+proc finishLoad(bc: BufferContext; data: InputData) =
   if bc.ctx.td != nil and bc.ctx.td.finish() == tdfrError:
     var s = "\uFFFD"
     doAssert bc.processData0(UnsafeSlice(
@@ -1073,7 +1077,6 @@ proc finishLoad(bc: BufferContext; data: InputData): EmptyPromise =
   bc.outputId = -1
   bc.loader.unset(data)
   data.stream.sclose()
-  return bc.loadResources()
 
 proc headlessMustWait(bc: BufferContext): bool =
   return bc.config.scripting != smFalse and
@@ -1085,23 +1088,28 @@ proc headlessMustWait(bc: BufferContext): bool =
 # * a positive number for reporting the number of bytes loaded and that the page
 #   has been partially rendered.
 proc load*(bc: BufferContext): int {.proxy: pfTask.} =
-  if bc.state == bsLoaded:
+  case bc.state
+  of bsLoaded:
     if bc.config.headless == hmTrue and bc.headlessMustWait():
       bc.headlessLoading = true
       return -999 # unused
     else:
-      return -2
-  elif bc.state == bsLoadingImages:
+      return -1
+  of bsLoadingImages:
     bc.state = bsLoadingImagesAck
-    return -1
-  elif bc.bytesRead > bc.reportedBytesRead:
-    bc.maybeReshape()
-    bc.reportedBytesRead = bc.bytesRead
-    return bc.bytesRead
-  else:
-    # will be resolved in onload
-    bc.savetask = true
-    return -999 # unused
+    return -2
+  of bsLoadingResources:
+    bc.state = bsLoadingResourcesAck
+    return -3
+  of bsLoadingPage:
+    if bc.bytesRead > bc.reportedBytesRead:
+      bc.maybeReshape(suppressFouc = true)
+      bc.reportedBytesRead = bc.bytesRead
+      return bc.bytesRead
+  else: discard
+  # will be resolved in onload
+  bc.savetask = true
+  return -999 # unused
 
 proc onload(bc: BufferContext; data: InputData) =
   if bc.state != bsLoadingPage:
@@ -1128,14 +1136,19 @@ proc onload(bc: BufferContext; data: InputData) =
       bc.firstBufferRead = true
       reprocess = false
     else: # EOF
-      bc.state = bsLoadingResources
-      bc.finishLoad(data).then(proc() =
+      bc.finishLoad(data)
+      if bc.window.pendingResources.len > 0:
+        bc.state = bsLoadingResources
+        if bc.hasTask(bcLoad):
+          bc.resolveTask(bcLoad, -3)
+          bc.state = bsLoadingResourcesAck
+      bc.loadResources().then(proc() =
         # CSS loaded
         if bc.window.pendingImages.len > 0:
           bc.maybeReshape()
           bc.state = bsLoadingImages
           if bc.hasTask(bcLoad):
-            bc.resolveTask(bcLoad, -1)
+            bc.resolveTask(bcLoad, -2)
             bc.state = bsLoadingImagesAck
         bc.loadImages().then(proc() =
           # images loaded
@@ -1154,7 +1167,7 @@ proc onload(bc: BufferContext; data: InputData) =
             if bc.config.headless == hmTrue and bc.headlessMustWait():
               bc.headlessLoading = true
             else:
-              bc.resolveTask(bcLoad, -2)
+              bc.resolveTask(bcLoad, -1)
         )
       )
       return # skip incr render
@@ -1162,7 +1175,7 @@ proc onload(bc: BufferContext; data: InputData) =
   # pass
   if bc.config.headless == hmFalse and bc.tasks[bcLoad] != 0:
     # only makes sense when not in dump mode (and the user has requested a load)
-    bc.maybeReshape()
+    bc.maybeReshape(suppressFouc = true)
     bc.reportedBytesRead = bc.bytesRead
     if bc.hasTask(bcGetTitle):
       bc.resolveTask(bcGetTitle, bc.document.title)
@@ -2061,7 +2074,7 @@ proc runBuffer(bc: BufferContext) =
     if bc.config.scripting != smFalse:
       if bc.window.timeouts.run(bc.window.console) or bc.checkJobs:
         bc.window.runJSJobs()
-        bc.maybeReshape()
+        bc.maybeReshape(suppressFouc = true)
         bc.checkJobs = false
 
 proc cleanup(bc: BufferContext) =
@@ -2116,7 +2129,7 @@ proc launchBuffer*(config: BufferConfig; url: URL; attrs: WindowAttributes;
       bc.clickResult = bc.click(element)
     if bc.config.scripting == smApp:
       bc.window.ensureLayout = proc(element: Element) =
-        bc.maybeReshape()
+        bc.maybeReshape(suppressFouc = true)
   bc.charset = bc.charsetStack.pop()
   istream.setBlocking(false)
   bc.loader.put(InputData(stream: istream))

@@ -160,6 +160,7 @@ type
     click*: proc(element: HTMLElement)
     importMapsAllowed*: bool
     inMicrotaskCheckpoint: bool
+    numLoadingSheets*: uint32
     pendingResources*: seq[EmptyPromise]
     pendingImages*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
@@ -1248,8 +1249,10 @@ proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL;
     let url = it.url
     let layer = it.layer
     (proc(i: int) =
+      inc window.numLoadingSheets
       let p = window.loadSheet(url, charset, layer).then(
         proc(res: LoadSheetResult) =
+          dec window.numLoadingSheets
           sheets[i] = res
       )
       promises.add(p)
@@ -1270,7 +1273,7 @@ proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL;
 
 proc loadSheet(window: Window; url: URL; charset: Charset; layer: CAtom):
     Promise[LoadSheetResult] =
-  let p = window.corsFetch(
+  return window.corsFetch(
     newRequest(url)
   ).then(proc(res: FetchResult): Promise[TextResult] =
     if res.isOk:
@@ -1284,7 +1287,6 @@ proc loadSheet(window: Window; url: URL; charset: Charset; layer: CAtom):
       return newResolvedPromise(LoadSheetResult())
     return window.parseStylesheet(s.get, url, charset, layer)
   )
-  return p
 
 proc loadSheet(window: Window; link: HTMLLinkElement; url: URL):
     Promise[LoadSheetResult] =
@@ -1307,6 +1309,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals, window.settings.attrsp)
       applies = media.applies(addr window.settings)
+    inc window.numLoadingSheets
     let p = window.loadSheet(link, url).then(proc(res: LoadSheetResult) =
       # Note: we intentionally load all sheets first and *then* check
       # whether media applies, to prevent media query based tracking.
@@ -1316,6 +1319,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
         let disabled = link.isDisabled()
         for sheet in link.sheets:
           sheet.disabled = disabled
+      dec window.numLoadingSheets
     )
     window.pendingResources.add(p)
 
