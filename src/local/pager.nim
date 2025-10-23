@@ -96,6 +96,7 @@ type
     url: URL
 
   LineDataAuth = ref object of LineData
+    container: Container
     url: URL
 
   LineDataMailcap = ref object of LineData
@@ -1351,7 +1352,16 @@ proc draw(pager: Pager): Opt[void] =
   var redraw = false
   var imageRedraw = false
   var hasMenu = false
-  let container = pager.container
+  var container = pager.container
+  if container != nil and container.loadState == lsLoading and
+      cfShowLoading notin container.flags and container.numLines == 0:
+    # Make buffers that haven't loaded anything yet "transparent".
+    # Exception: if the user tries to interact with the page, show the ugly
+    # truth.
+    if container.replace != nil:
+      container = container.replace
+    elif container.prev != nil:
+      container = container.prev
   if container != nil:
     if container.redraw:
       let hlcolor = if pager.attrs.colorMode != cmMonochrome:
@@ -1486,7 +1496,7 @@ proc addContainer(pager: Pager; container: Container) =
   pager.setContainer(container)
 
 proc onSetLoadInfo(pager: Pager; container: Container) =
-  if pager.alertState != pasAlertOn:
+  if pager.alertState != pasAlertOn and pager.askPromise == nil:
     if container.loadinfo == "":
       pager.alertState = pasNormal
     else:
@@ -2407,10 +2417,12 @@ proc updateReadLine(pager: Pager) =
         LineDataAuth(pager.lineData).url.username = lineedit.news
         pager.setLineEdit(lmPassword, hide = true)
       of lmPassword:
-        let url = LineDataAuth(pager.lineData).url
+        let lineData = LineDataAuth(pager.lineData)
+        let old = lineData.container
+        let url = lineData.url
         url.password = lineedit.news
-        discard pager.gotoURL(newRequest(url), replace = pager.container,
-          referrer = pager.container)
+        let container = pager.gotoURL(newRequest(url), referrer = old)
+        pager.replace(old, container)
         pager.lineData = nil
       of lmCommand:
         pager.scommand = lineedit.news
@@ -2994,11 +3006,6 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
       pager.fail(container, "Error forking new process for buffer")
     else:
       container.process = pid
-      if container.replace != nil:
-        let replace = container.replace
-        replace.replaceRef = nil
-        container.replace = nil
-        pager.deleteContainer(replace, container)
       pager.connected3(container, cstream, res.ostream, response.outputId,
         res.ostreamOutputId, cmfRedirected in res.flags)
   else:
@@ -3056,12 +3063,6 @@ proc connected3(pager: Pager; container: Container; stream: SocketStream;
   cstream.sclose()
   loader.put(ContainerData(stream: stream, container: container))
   pager.pollData.register(stream.fd, POLLIN)
-  # clear replacement references, because we can't fail to load this
-  # buffer anymore
-  container.replaceRef = nil
-  if container.replace != nil:
-    container.replace.replaceRef = nil
-    container.replace = nil
 
 proc saveEntry(pager: Pager; entry: MailcapEntry) =
   if not pager.config.external.autoMailcap.saveEntry(entry):
@@ -3189,7 +3190,8 @@ proc connected(pager: Pager; container: Container; response: Response) =
   container.applyResponse(response, pager.config.external.mimeTypes)
   if response.status == 401: # unauthorized
     pager.setLineEdit(lmUsername, container.url.username)
-    pager.lineData = LineDataAuth(url: newURL(container.url))
+    let url = newURL(container.url)
+    pager.lineData = LineDataAuth(container: container, url: url)
     istream.sclose()
     return
   # This forces client to ask for confirmation before quitting.
@@ -3348,6 +3350,11 @@ proc openMenu(pager: Pager; x = -1; y = -1) {.jsfunc.} =
 proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
   case event.t
   of cetLoaded:
+    if container.replace != nil:
+      let replace = container.replace
+      replace.replaceRef = nil
+      container.replace = nil
+      pager.deleteContainer(replace, container)
     dec pager.numload
   of cetReadLine:
     if container == pager.container:

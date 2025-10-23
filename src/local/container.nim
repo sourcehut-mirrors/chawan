@@ -105,7 +105,7 @@ type
 
   ContainerFlag* = enum
     cfHasStart, cfSave, cfIsHTML, cfHistory, cfHighlight, cfTailOnLoad,
-    cfCrashed
+    cfCrashed, cfShowLoading
 
   CachedImageState* = enum
     cisLoading, cisCanceled, cisLoaded
@@ -661,6 +661,8 @@ proc setFromY(container: Container; y: int) {.jsfunc.} =
     container.queueDraw()
 
 proc setFromX(container: Container; x: int; refresh = true) {.jsfunc.} =
+  if refresh:
+    container.flags.incl(cfShowLoading)
   if container.pos.fromx != x:
     container.pos.fromx = max(min(x, container.maxfromx), 0)
     if container.pos.fromx > container.cursorx:
@@ -681,6 +683,8 @@ proc setFromXY(container: Container; x, y: int) {.jsfunc.} =
 #   movement.
 proc setCursorX(container: Container; x: int; refresh = true; save = true)
     {.jsfunc.} =
+  if refresh:
+    container.flags.incl(cfShowLoading)
   if not container.lineLoaded(container.cursory):
     container.pos.setx = x
     container.pos.setxrefresh = refresh
@@ -725,6 +729,8 @@ proc restoreCursorX(container: Container) {.jsfunc.} =
   container.setCursorX(x, false, false)
 
 proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
+  if refresh:
+    container.flags.incl(cfShowLoading)
   let y = max(min(y, container.numLines - 1), 0)
   if container.cursory == y:
     return
@@ -1784,6 +1790,7 @@ proc onclick(container: Container; res: ClickResult; save: bool) =
     container.onReadLine(res.readline.get)
 
 proc click*(container: Container; n = 1) {.jsfunc.} =
+  container.flags.incl(cfShowLoading)
   if container.iface == nil:
     return
   container.iface.click(container.cursorx, container.cursory, n)
