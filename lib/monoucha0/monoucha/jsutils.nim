@@ -11,6 +11,12 @@ template toJSValueArray*(a: openArray[JSValue]): JSValueArray =
 template toJSValueConstArray*(a: openArray[JSValue]): JSValueConstArray =
   cast[JSValueConstArray](a.toJSValueArray())
 
+template toJSValueConstArray*(a: openArray[JSValueConst]): JSValueConstArray =
+  if a.len > 0:
+    cast[ptr UncheckedArray[JSValueConst]](unsafeAddr a[0])
+  else:
+    nil
+
 template toJSValueConstOpenArray*(a: openArray[JSValue]):
     openArray[JSValueConst] =
   a.toJSValueConstArray().toOpenArray(0, a.high)
