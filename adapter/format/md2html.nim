@@ -533,10 +533,19 @@ proc writeHeading(state: var ParseState; n: int; text: string): Opt[void] =
   ?state.writeLine("</H" & $n & '>')
   ok()
 
+const ThematicBreakChars = {'-', '*', '_'}
+
+proc isThematicBreak(line: string): bool =
+  if line.len < 3:
+    return false
+  let c0 = line[0]
+  return c0 in ThematicBreakChars and AllChars - {c0} notin line
+
 proc parseNone(state: var ParseState; line: string): Opt[void] =
   if AllChars - {' ', '\t'} notin line:
-    discard
-  elif (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
+    return ok()
+  let c0 = line[0]
+  if (let n = line.find(AllChars - {'#'}); n in 1..6 and line[n] == ' '):
     if state.hasp:
       state.hasp = false
       ?state.write("</P>")
@@ -550,14 +559,14 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
   elif line.startsWith("<!--"):
     state.blockType = btComment
     state.reprocess = true
-  elif line[0] == '<' and line.find('>') == line.high:
+  elif c0 == '<' and line[^1] == '>':
     state.blockType = if line.matchHTMLPreStart(): btHTMLPre else: btHTML
     state.reprocess = true
   elif line.startsWith("```") or line.startsWith("~~~"):
     state.blockType = btPre
     state.blockData = line.substr(0, 2)
     ?state.write("<PRE>")
-  elif line[0] == '[' and (var i = line.find(']');
+  elif c0 == '[' and (var i = line.find(']');
       i != -1 and i > 1 and i + 1 < line.len and line[i + 1] == ':'):
     state.blockType = btLinkDef
     state.linkDefState = ldsLink
@@ -565,7 +574,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     state.linkDefName = line.substr(1, i - 1).toLowerAscii()
     state.linkDefLink = ""
     state.reprocess = true
-  elif line[0] == '\t':
+  elif c0 == '\t':
     state.blockType = btTabPre
     if state.hasp:
       state.hasp = false
@@ -579,7 +588,7 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
       ?state.writeLine("</P>")
     ?state.write("<PRE>")
     state.blockData = line.substr(4) & '\n'
-  elif line[0] == '>':
+  elif c0 == '>':
     state.blockType = btBlockquote
     if state.hasp:
       state.hasp = false
@@ -593,6 +602,10 @@ proc parseNone(state: var ParseState; line: string): Opt[void] =
     state.hasp = false
     ?state.pushList(desc)
     state.blockData = line.substr(desc.len + 1) & '\n'
+  elif line.isThematicBreak():
+    # avoid entering par state so we don't get mistaken for setext heading
+    ?state.write("<HR>\n")
+    state.hasp = false
   else:
     state.blockType = btPar
     state.reprocess = true
@@ -638,6 +651,9 @@ proc parseList(state: var ParseState; line: string): Opt[void] =
     ?state.flushList()
   elif AllChars - {' ', '\t'} notin line:
     state.listState = lsAfterBlank
+  elif line.isThematicBreak():
+    ?state.flushList()
+    state.reprocess = true
   else:
     let desc = line.getListDepth()
     if desc.t == ltNoMark:
@@ -691,7 +707,9 @@ proc parsePar(state: var ParseState; line: string): Opt[void] =
   if line == "":
     ?state.flushPar()
     state.blockType = btNone
-  elif line[0] == '<' and line.find('>') == line.high:
+    return ok()
+  let c0 = line[0]
+  if c0 == '<' and line[^1] == '>':
     ?state.flushPar()
     if line.matchHTMLPreStart():
       state.blockType = btHTMLPre
@@ -704,20 +722,27 @@ proc parsePar(state: var ParseState; line: string): Opt[void] =
     state.blockType = btPre
     state.hasp = false
     ?state.write("<PRE>")
-  elif line[0] in {'-', '=', '*', '_', ' ', '\t'} and
-      AllChars - {line[0]} notin line:
-    if line[0] in {' ', '\t'}: # lines with space only also count as blank
+  elif (let desc = line.getListDepth(); desc.t != ltNoMark):
+    ?state.flushPar()
+    state.blockType = btList
+    state.listState = lsNormal
+    state.hasp = false
+    ?state.pushList(desc)
+    state.blockData = line.substr(desc.len + 1) & '\n'
+  elif c0 in {'-', '=', '*', '_', ' ', '\t'} and AllChars - {c0} notin line:
+    if c0 in {' ', '\t'}: # lines with space only also count as blank
       ?state.flushPar()
       state.blockType = btNone
-    elif state.blockData == "" and line[0] in {'-', '*', '_'} and line.len >= 3:
+    elif state.blockData != "" and c0 in {'-', '='}: # setext heading
+      let n = if c0 == '=': 1 else: 2
+      ?state.writeHeading(n, state.blockData)
+      state.blockData = ""
+    elif line.len >= 3 and c0 in ThematicBreakChars:
       # thematic break
+      ?state.flushPar()
       ?state.write("<HR>\n")
       state.hasp = false
       state.blockType = btNone
-    elif state.blockData != "" and line[0] in {'-', '='}: # setext heading
-      let n = if line[0] == '=': 1 else: 2
-      ?state.writeHeading(n, state.blockData)
-      state.blockData = ""
     else:
       state.blockData = line & '\n'
   else:
