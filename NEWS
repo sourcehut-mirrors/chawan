@@ -1,45 +1,74 @@
 unreleased
 
-Additions:
-* monochrome, color, color-index media queries
-* wheel-scroll, side-wheel-scroll config options (Tim Culverhouse
-  <tim@timculverhouse.com>)
+UI additions
+* wheel-scroll, side-wheel-scroll config options (by Tim Culverhouse)
 * new API functions Pager#traverse, Pager#navDirection,
   Pager#revDirection, Buffer#find
+* bracketed paste - pasting a URL now opens the URL bar automatically
+* "copy URL", "copy selection" now works over SSH when OSC 52 is
+  supported
+* "hints mode" for jumping to specific links on the page (default
+  keybinding is `f`, configurable using `input.link-hint-chars`)
+* fixed flash of unstyled content and removed blank screen on page load
+---
+CSS additions
+* monochrome, color, color-index media queries
 * implement <ol start=..., <li value=...
 * -cha-content-type media feature to detect content type of current page
-* complete var() and improved calc() support
-* bracketed paste - pasting a URL now opens the URL bar automatically
-* "copy URL", "copy selection" now works over SSH when OSC 52 is supported
-* NodeIterator, onsubmit
+* complete var() support, improved calc() support, @layer
+* support CSS borders
+* support progress element (rendering inspired by w3m's download panel)
+* support non-UTF-8 CSS files
+---
+JS additions
+* NodeIterator, AbortSignal (etc.), onsubmit
+* getBoundingClientRect, getClientRects (only returns real values in
+  app mode)
+* better module script support
+---
+Misc additions
 * support blockquote, reference links, block lists in markdown
+* support OSC 8 in ANSI text parser
 * support more kinds of webp images (VP8X, VP8 with coeff. skipping, etc.)
-
-Changes:
+* support customizing gopher selector text by moving it to ua.css
+---
+UI changes
 * improved highlighting in monochrome mode
-* unify binaries that link to OpenSSL in dynamically linked builds, and
-  unify markdown, gemini, etc. -> HTML converters
-* optimize CSS parser, cascading, DOM representation
 * more sensible semantics for pager.load() - empty string now works,
   newline at end deprecated in favor of pager.loadSubmit()
-* allow overriding pkg-config path in Makefile (using PKG_CONFIG)
-* better color approximation in "eight-bit" color mode (256 colors)
 * mouse improvements:
-	- click on status bar opens URL bar: left click -> current URL,
-	  right click -> URL under cursor, middle click -> empty URL bar
+	- click on status bar opens URL bar: left click -> current
+	  URL, right click -> URL under cursor, middle click ->
+	  empty URL bar
 	- double click + drag selects text
-* #L{n} (e.g. #L1) jumps to nth line in plain text files (idea from Dillo)
+---
+Misc changes
 * history, cookies, etc. are now saved in XDG_DATA_HOME for XDG basedir
   users (instead of XDG_CONFIG_HOME)
 	- users that store their config in ~/.chawan are not affected
-* do not spawn process for console buffer until the user requests one
-
-Removals:
+* unify binaries that link to OpenSSL in dynamically linked builds, and
+  unify markdown, gemini, etc. -> HTML converters
+* allow overriding pkg-config path in Makefile (using PKG_CONFIG)
+* better color approximation in "eight-bit" color mode (256 colors)
+* #L{n} (e.g. #L1) jumps to nth line in plain text files (idea from
+  Dillo)
+* console buffer is now spawned on demand
+---
+Removals
 * remove deprecated prepend-https, css and stylesheet config options
   (use prepend-scheme, user-style instead)
 * remove protocol.form-request config option (read the body in CGI instead)
-
-Fixes:
+---
+Optimizations
+* layout caching (makes a huge difference in memory usage and performance)
+* CSS parser is now single-pass (kind of)
+* cascade: eliminate several allocations, merge hash maps for separate origins
+* more compact DOM representation (uses doubly linked list instead of a vector)
+* insert style sheets incrementally instead of traversing DOM several times
+* async terminal handling (printing large Sixels no longer blocks the rest
+  of the pager)
+---
+Fixes
 * fix buffer cloning on musl
 * fix crash when saving cookies
 * fix possible crash in CanvasRenderingContext2D#closePath
@@ -53,11 +82,15 @@ Fixes:
 * fix setTimeout needlessly spinning the CPU on macOS
 * fix selector dependency tracking for :not
 * fix double width char measurement in passwords
+* fix Content-Type header in multipart forms
+* fix crash on file upload
+* fix DOMParser#parseFromString replacing the entire document
+* fix specificity being applied incorrectly with multiple author sheets
 
 0.2.0 (2025.06.15)
 
 Initial release.
 Thanks for patches applied prior to this release to:
-commodorian <c@commodorian.org>
-Alex <alex@lagomor.ph>
-hrdl <git@hrdl.eu>
+commodorian
+Alex
+hrdl

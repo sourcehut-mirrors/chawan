@@ -106,7 +106,8 @@ Following standard pseudo-classes are supported: `:first-child`,
 custom elements and shadow DOM are not supported yet.
 
 The standard pseudo-elements `::before`, `::after`, and `::marker` are
-supported.
+supported.  `::backdrop` is parsed for compatibility, but is not supported
+yet.
 
 ## Media queries
 
@@ -159,12 +160,23 @@ the number of colors in Sixel/Kitty images).
 * If `buffer.mark-links` is set, the `::-cha-link-marker` pseudo-element
   will be generated on all anchor elements.
 
+* In hints mode (by default, the `f` key) the markers are implemented by
+  generating `::-cha-link-hint` on all applicable elements.  So you can
+  change the marker background in your `user-style` (`[buffer]` section in
+  `config.toml`):
+
+  ```css
+  ::-cha-link-hint { background: gainsboro }
+  ```
+
 * The `-cha-content-type` media feature can be used to filter documents
   for their content type.  For example, you can add
 
-  `@media (-cha-content-type: "text/markdown") { body { width: 80ch } }`
+  ```css
+  @media (-cha-content-type: "text/markdown") { body { width: 80ch } }
+  ```
 
-  to your user style to set the body width of all markdown documents to
+  to your `user-style` to set the body width of all markdown documents to
   80 characters.  (The string is matched case-insensitively.)
 
 ## Rendering quirks

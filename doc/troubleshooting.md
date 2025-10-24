@@ -17,15 +17,14 @@ your operating system (and its version).
 ## It crashes?
 
 Please open a ticket that describes how to reproduce the crash.  Don't
-forget to include a stack trace - that's the text (typically a line or two)
-you see after your buffer disappeared.
+forget to include the error message you see after your buffer disappeared.
 
-If you don't see a stack trace, try:
+If you don't see an error message, try:
 `cha example.org -o start.console-buffer=false 2>err.log`.  Then check the
 contents of `err.log` after the crash.
 
-If you *still* don't see a stack trace, no problem, just report that you
-couldn't get a stack trace.
+If you *still* don't see an error message, no problem, just report that you
+couldn't get an error message.
 
 ## I can't select/copy text with my mouse?
 
