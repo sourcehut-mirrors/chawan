@@ -369,9 +369,9 @@ proc addPseudo(frame: var TreeFrame; pseudo: PseudoElement) =
   var computed = frame.pseudoComputed
   while computed != nil:
     if computed.pseudo == pseudo:
+      frame.pseudoComputed = computed.next
       break
     computed = computed.next
-  frame.pseudoComputed = computed
   if computed != nil and computed{"display"} notin DisplayNoneLike and
       computed{"content"}.len > 0:
     frame.add(StyledNode(
