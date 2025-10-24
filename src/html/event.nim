@@ -90,7 +90,17 @@ type
     internal: bool
     passive: bool
     next: EventListener
-    #TODO AbortSignal
+    signal: AbortSignal
+
+  AbortSignal = ref object of EventTarget
+    rt: JSRuntime
+    reason {.jsget.}: JSValue
+    aborted {.jsget.}: bool
+    abortSteps: seq[JSValue]
+    #TODO source/dependent signals
+
+  AbortController = ref object
+    signal {.jsget.}: AbortSignal
 
 jsDestructor(Event)
 jsDestructor(CustomEvent)
@@ -100,6 +110,8 @@ jsDestructor(UIEvent)
 jsDestructor(MouseEvent)
 jsDestructor(InputEvent)
 jsDestructor(EventTarget)
+jsDestructor(AbortSignal)
+jsDestructor(AbortController)
 
 # Forward declaration hack
 var isDefaultPassiveImpl*: proc(target: EventTarget): bool {.nimcall,
@@ -425,14 +437,10 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
 # shared
 proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
     capture, once, internal: bool; passive: Option[bool];
-    callback: JSValueConst) =
-  #TODO signals
-  if JS_IsUndefined(callback):
+    callback: JSValueConst; signal: AbortSignal) =
+  if signal != nil and signal.aborted or JS_IsUndefined(callback):
     return
-  let passive = if passive.isSome:
-    passive.get
-  else:
-    defaultPassiveValue(ctype, target)
+  let passive = passive.get(defaultPassiveValue(ctype, target))
   if ctx.findEventListener(target, ctype, callback, capture) == nil: # dedup
     let listener = EventListener(
       ctype: ctype,
@@ -442,10 +450,25 @@ proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
       passive: passive,
       rt: JS_GetRuntime(ctx),
       callback: JS_DupValue(ctx, callback),
-      next: target.eventListener
+      next: target.eventListener,
+      signal: signal
     )
     target.eventListener = listener
-  #TODO signals
+    if signal != nil:
+      #TODO pin removeEventListener or something
+      let funFun = newFunction(ctx, ["type", "callback", "capture"],
+        "() => this.removeEventListener(type, callback, capture)")
+      if JS_IsException(funFun):
+        return
+      let jsTarget = ctx.toJS(target)
+      let jsCapture = ctx.toJS(capture)
+      let argv = [callback, jsCapture]
+      let fun = JS_Call(ctx, funFun, jsTarget, 2, argv.toJSValueConstArray())
+      JS_FreeValue(ctx, funFun)
+      JS_FreeValue(ctx, jsTarget)
+      JS_FreeValue(ctx, jsCapture)
+      if not JS_IsException(fun):
+        signal.abortSteps.add(fun)
 
 proc flatten(ctx: JSContext; options: JSValueConst): bool =
   result = false
@@ -455,24 +478,36 @@ proc flatten(ctx: JSContext; options: JSValueConst): bool =
     let x = JS_GetPropertyStr(ctx, options, "capture")
     discard ctx.fromJSFree(x, result)
 
-proc flattenMore(ctx: JSContext; options: JSValueConst):
-    tuple[
-      capture: bool,
-      once: bool,
-      passive: Option[bool]
-      #TODO signals
-    ] =
+type FlattenMoreResult = object
+  capture: bool
+  once: bool
+  passive: Option[bool]
+  signal: AbortSignal
+
+proc flattenMore(ctx: JSContext; options: JSValueConst;
+    res: var FlattenMoreResult): Opt[void] =
   let capture = flatten(ctx, options)
   var once = false
   var passive = none(bool)
+  var signal: AbortSignal = nil
   if JS_IsObject(options):
     let jsOnce = JS_GetPropertyStr(ctx, options, "once")
-    discard ctx.fromJSFree(jsOnce, once)
+    ?ctx.fromJSFree(jsOnce, once)
     let jsPassive = JS_GetPropertyStr(ctx, options, "passive")
-    var x: bool
-    if ctx.fromJSFree(jsPassive, x).isOk:
+    if not JS_IsUndefined(jsPassive):
+      var x: bool
+      ?ctx.fromJSFree(jsPassive, x)
       passive = some(x)
-  return (capture, once, passive)
+    let jsSignal = JS_GetPropertyStr(ctx, options, "signal")
+    if not JS_IsUndefined(jsSignal):
+      ?ctx.fromJSFree(jsSignal, signal)
+  res = FlattenMoreResult(
+    capture: capture,
+    once: once,
+    passive: passive,
+    signal: signal
+  )
+  ok()
 
 proc removeInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: StaticAtom) =
@@ -494,7 +529,7 @@ proc addInternalEventListener(ctx: JSContext; eventTarget: EventTarget;
     ctype: StaticAtom; callback: JSValueConst) =
   ctx.removeInternalEventListener(eventTarget, ctype)
   ctx.addEventListener0(eventTarget, ctype.toAtom(), capture = false,
-    once = false, internal = true, passive = none(bool), callback)
+    once = false, internal = true, passive = none(bool), callback, signal = nil)
 
 # Event reflection
 const EventReflectMap* = [
@@ -568,9 +603,11 @@ proc addEventListener(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
     {.jsfunc.} =
   if not JS_IsObject(callback) and not JS_IsNull(callback):
     return JS_ThrowTypeError(ctx, "callback is not an object")
-  let (capture, once, passive) = flattenMore(ctx, options)
-  ctx.addEventListener0(eventTarget, ctype, capture, once, internal = false,
-    passive, callback)
+  var res: FlattenMoreResult
+  if ctx.flattenMore(options, res).isErr:
+    return JS_EXCEPTION
+  ctx.addEventListener0(eventTarget, ctype, res.capture, res.once,
+    internal = false, res.passive, callback, res.signal)
   return JS_UNDEFINED
 
 proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
@@ -687,6 +724,56 @@ proc dispatchEvent(ctx: JSContext; this: EventTarget; event: Event): JSValue
     return JS_FALSE
   return JS_TRUE
 
+# AbortSignal
+proc finalize(this: AbortSignal) {.jsfin.} =
+  JS_FreeValueRT(this.rt, this.reason)
+  for it in this.abortSteps:
+    JS_FreeValueRT(this.rt, it)
+
+proc mark(rt: JSRuntime; this: AbortSignal; markFun: JS_MarkFunc) {.jsmark.} =
+  JS_MarkValue(rt, this.reason, markFun)
+  for it in this.abortSteps:
+    JS_MarkValue(rt, it, markFun)
+
+proc toSignalReason(ctx: JSContext; reason: JSValueConst): JSValue =
+  if not JS_IsUndefined(reason):
+    return JS_DupValue(ctx, reason)
+  JS_ThrowDOMException(ctx, "AbortError", "aborted (core not dumped)")
+  return JS_GetException(ctx)
+
+proc abortSignalAbort(ctx: JSContext; reason: JSValueConst = JS_UNDEFINED):
+    AbortSignal {.jsstfunc: "AbortSignal.abort".} =
+  AbortSignal(rt: JS_GetRuntime(ctx), reason: ctx.toSignalReason(reason))
+
+proc throwIfAborted(ctx: JSContext; signal: AbortSignal): JSValue {.jsfunc.} =
+  if signal.aborted:
+    return JS_Throw(ctx, JS_DupValueRT(signal.rt, signal.reason))
+  return JS_UNDEFINED
+
+#TODO _any
+
+# AbortController
+proc newAbortController(ctx: JSContext): AbortController {.jsctor.} =
+  let signal = AbortSignal(rt: JS_GetRuntime(ctx), reason: JS_UNDEFINED)
+  AbortController(signal: signal)
+
+proc abort(ctx: JSContext; this: AbortController; reason: JSValueConst): JSValue
+    {.jsfunc.} =
+  let signal = this.signal
+  if not signal.aborted:
+    signal.reason = ctx.toSignalReason(reason)
+    #TODO dependent signals
+    for step in signal.abortSteps:
+      let res = JS_Call(ctx, step, JS_UNDEFINED, 0, nil)
+      if JS_IsException(res):
+        return res
+      JS_FreeValue(ctx, res)
+    let event = newEvent(satAbort.toAtom(), signal, bubbles = false,
+      cancelable = false)
+    event.isTrusted = true
+    discard ctx.dispatch(signal, event)
+  return JS_UNDEFINED
+
 proc addEventModule*(ctx: JSContext):
     tuple[eventCID, eventTargetCID: JSClassID] =
   let eventCID = ctx.registerType(Event)
@@ -698,6 +785,15 @@ proc addEventModule*(ctx: JSContext):
   ctx.registerType(InputEvent, parent = uiEventCID)
   doAssert ctx.defineConsts(eventCID, EventPhase) == dprSuccess
   let eventTargetCID = ctx.registerType(EventTarget)
+  const getset = [TabGetSet(
+    name: "onabort",
+    get: eventReflectGet,
+    set: eventReflectSet,
+    magic: int16(EventReflectMap.find(satAbort))
+  )]
+  ctx.registerType(AbortSignal, parent = eventTargetCID, hasExtraGetSet = true,
+    extraGetSet = getset)
+  ctx.registerType(AbortController)
   return (eventCID, eventTargetCID)
 
 {.pop.} # raises: []
