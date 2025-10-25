@@ -317,12 +317,14 @@ proc `$`*(c: RGBColor): string =
   return c.argb().serialize()
 
 proc `$`*(c: CSSColor): string =
-  if c.t == cctCell:
-    return "-cha-ansi(" & $c.n & ")"
-  let c = c.argb()
-  if c.a != 255:
-    return c.serialize()
-  return "rgb(" & $c.r & ", " & $c.g & ", " & $c.b & ")"
+  case c.t
+  of cctCell: return "-cha-ansi(" & $c.n & ")"
+  of cctCurrent: return "currentcolor"
+  of cctARGB:
+    let c = c.argb()
+    if c.a != 255:
+      return c.serialize()
+    return "rgb(" & $c.r & ", " & $c.g & ", " & $c.b & ")"
 
 proc `$`*(color: CellColor): string =
   case color.t
