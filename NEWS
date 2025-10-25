@@ -2,14 +2,13 @@ unreleased
 
 UI additions
 * wheel-scroll, side-wheel-scroll config options (by Tim Culverhouse)
-* new API functions Pager#traverse, Pager#navDirection,
-  Pager#revDirection, Buffer#find
+* new API functions Pager#traverse, Pager#navDirection, Pager#revDirection,
+  Buffer#find
 * bracketed paste - pasting a URL now opens the URL bar automatically
-* "copy URL", "copy selection" now works over SSH when OSC 52 is
-  supported
+* "copy URL", "copy selection" now works over SSH when OSC 52 is supported
 * "hints mode" for jumping to specific links on the page (default
   keybinding is `f`, configurable using `input.link-hint-chars`)
-* fixed flash of unstyled content and removed blank screen on page load
+* added loaded stylesheet/image counters
 ---
 CSS additions
 * monochrome, color, color-index media queries
@@ -22,8 +21,7 @@ CSS additions
 ---
 JS additions
 * NodeIterator, AbortSignal (etc.), onsubmit
-* getBoundingClientRect, getClientRects (only returns real values in
-  app mode)
+* getBoundingClientRect, getClientRects (only returns real values in app mode)
 * better module script support
 ---
 Misc additions
@@ -34,29 +32,28 @@ Misc additions
 ---
 UI changes
 * improved highlighting in monochrome mode
-* more sensible semantics for pager.load() - empty string now works,
-  newline at end deprecated in favor of pager.loadSubmit()
+* more sensible semantics for pager.load() - empty string now works, newline at
+  end deprecated in favor of pager.loadSubmit()
 * mouse improvements:
-	- click on status bar opens URL bar: left click -> current
-	  URL, right click -> URL under cursor, middle click ->
-	  empty URL bar
+	- click on status bar opens URL bar: left click -> current URL, right
+	  click -> URL under cursor, middle click -> empty URL bar
 	- double click + drag selects text
+* fixed flash of unstyled content and removed blank screen on page load
 ---
 Misc changes
-* history, cookies, etc. are now saved in XDG_DATA_HOME for XDG basedir
-  users (instead of XDG_CONFIG_HOME)
+* history, cookies, etc. are now saved in XDG_DATA_HOME for XDG basedir users
+  (instead of XDG_CONFIG_HOME)
 	- users that store their config in ~/.chawan are not affected
 * unify binaries that link to OpenSSL in dynamically linked builds, and
   unify markdown, gemini, etc. -> HTML converters
 * allow overriding pkg-config path in Makefile (using PKG_CONFIG)
 * better color approximation in "eight-bit" color mode (256 colors)
-* #L{n} (e.g. #L1) jumps to nth line in plain text files (idea from
-  Dillo)
+* #L{n} (e.g. #L1) jumps to nth line in plain text files (idea from Dillo)
 * console buffer is now spawned on demand
 ---
 Removals
-* remove deprecated prepend-https, css and stylesheet config options
-  (use prepend-scheme, user-style instead)
+* remove deprecated prepend-https, css and stylesheet config options (use
+  prepend-scheme, user-style instead)
 * remove protocol.form-request config option (read the body in CGI instead)
 ---
 Optimizations
@@ -65,8 +62,8 @@ Optimizations
 * cascade: eliminate several allocations, merge hash maps for separate origins
 * more compact DOM representation (uses doubly linked list instead of a vector)
 * insert style sheets incrementally instead of traversing DOM several times
-* async terminal handling (printing large Sixels no longer blocks the rest
-  of the pager)
+* async terminal handling (printing large Sixels no longer blocks the rest of
+  the pager)
 ---
 Fixes
 * fix buffer cloning on musl
