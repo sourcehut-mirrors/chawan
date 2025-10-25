@@ -89,9 +89,8 @@ type
     bcUpdateHover = "updateHover"
     bcWindowChange = "windowChange"
 
-  BufferState = enum
-    bsLoadingPage, bsLoadingResources, bsLoadingResourcesAck, bsLoadingImages,
-    bsLoadingImagesAck, bsLoaded
+  BufferState* = enum
+    bsLoadingPage, bsLoadingResources, bsLoadingImages, bsLoaded
 
   HoverType* = enum
     htTitle, htLink, htImage, htCachedImage
@@ -116,7 +115,7 @@ type
     charset: Charset
     bgcolor: CellColor
     attrs: WindowAttributes
-    bytesRead: int
+    bytesRead: uint64
     cacheId: int
     charsetStack: seq[Charset]
     config: BufferConfig
@@ -133,7 +132,7 @@ type
     prevHover: Element
     clickResult: ClickResult
     pstream: SocketStream # control stream
-    reportedBytesRead: int
+    reportedLoad: LoadResult
     rootBox: BlockBox
     tasks: array[BufferCommand, int]
     window: Window
@@ -190,6 +189,11 @@ type
     contentType*: string
     readline*: Option[ReadLineResult]
     select*: Option[SelectResult]
+
+  LoadResult* = object
+    n*: uint64
+    len*: uint64
+    bs*: BufferState
 
 # Forward declarations
 proc click(bc: BufferContext; clickable: Element): ClickResult
@@ -762,6 +766,11 @@ proc resolveTask[T](bc: BufferContext; cmd: BufferCommand; res: T) =
     quit(1)
   bc.tasks[cmd] = 0
 
+proc resolveLoad(bc: BufferContext; n, len: uint64) =
+  let res = LoadResult(n: n, len: len, bs: bc.state)
+  bc.reportedLoad = res
+  bc.resolveTask(bcLoad, res)
+
 proc maybeReshape(bc: BufferContext; suppressFouc = false) =
   let document = bc.document
   if document == nil or document.documentElement == nil:
@@ -776,7 +785,7 @@ proc maybeReshape(bc: BufferContext; suppressFouc = false) =
     # We don't want a FOUC on automatic reshape, but we still want to allow
     # the user to override this and interact with the page (useful if e.g. a
     # sheet really doesn't want to load).
-    if not suppressFouc or bc.window.numLoadingSheets == 0:
+    if not suppressFouc or bc.window.loadedSheetNum == bc.window.remoteSheetNum:
       if bc.hasTask(bcOnReshape):
         bc.resolveTask(bcOnReshape)
       else:
@@ -894,23 +903,47 @@ proc updateHover*(bc: BufferContext; cursorx, cursory: int): UpdateHoverResult
 
 proc loadResources(bc: BufferContext): EmptyPromise =
   if bc.window.pendingResources.len > 0:
-    let pendingResources = move(bc.window.pendingResources)
-    bc.window.pendingResources = @[]
-    return pendingResources.all().then(proc(): EmptyPromise =
-      return bc.loadResources()
-    )
+    let promises = move(bc.window.pendingResources)
+    if promises.len > 0:
+      bc.window.pendingResources = @[]
+      let res = EmptyPromise()
+      var u = 0u
+      let L = uint(promises.len)
+      for promise in promises:
+        promise.then(proc() =
+          if bc.hasTask(bcLoad) and bc.state == bsLoadingResources:
+            bc.resolveLoad(bc.window.loadedSheetNum, bc.window.remoteSheetNum)
+          inc u
+          if u == L:
+            res.resolve()
+        )
+      return res.then(proc(): EmptyPromise =
+        return bc.loadResources()
+      )
   return newResolvedPromise()
 
 proc loadImages(bc: BufferContext): EmptyPromise =
   if bc.window.pendingImages.len > 0:
-    let pendingImages = move(bc.window.pendingImages)
-    bc.window.pendingImages = @[]
-    return pendingImages.all().then(proc(): EmptyPromise =
-      return bc.loadImages()
-    )
+    let promises = move(bc.window.pendingImages)
+    if promises.len > 0:
+      bc.window.pendingImages = @[]
+      let res = EmptyPromise()
+      var u = 0u
+      let L = uint(promises.len)
+      for promise in promises:
+        promise.then(proc() =
+          if bc.hasTask(bcLoad) and bc.state == bsLoadingImages:
+            bc.resolveLoad(bc.window.loadedImageNum, bc.window.remoteImageNum)
+          inc u
+          if u == L:
+            res.resolve()
+        )
+      return res.then(proc(): EmptyPromise =
+        return bc.loadImages()
+      )
   return newResolvedPromise()
 
-proc rewind(bc: BufferContext; data: InputData; offset: int;
+proc rewind(bc: BufferContext; data: InputData; offset: uint64;
     unregister = true): bool =
   let url = parseURL0("cache:" & $bc.cacheId & "?" & $offset)
   let response = bc.loader.doRequest(newRequest(url))
@@ -1087,29 +1120,36 @@ proc headlessMustWait(bc: BufferContext): bool =
 # * -1 if loading is done
 # * a positive number for reporting the number of bytes loaded and that the page
 #   has been partially rendered.
-proc load*(bc: BufferContext): int {.proxy: pfTask.} =
+proc load*(bc: BufferContext): LoadResult {.proxy: pfTask.} =
+  var res = LoadResult(bs: bc.state)
   case bc.state
   of bsLoaded:
     if bc.config.headless == hmTrue and bc.headlessMustWait():
+      # suppress load event until all scripts have finished
+      # (obviously, this might never happen)
+      bc.savetask = true
       bc.headlessLoading = true
-      return -999 # unused
-    else:
-      return -1
   of bsLoadingImages:
-    bc.state = bsLoadingImagesAck
-    return -2
+    res.n = bc.window.loadedImageNum
+    res.len = bc.window.remoteImageNum
   of bsLoadingResources:
-    bc.state = bsLoadingResourcesAck
-    return -3
+    res.n = bc.window.loadedSheetNum
+    res.len = bc.window.remoteSheetNum
   of bsLoadingPage:
-    if bc.bytesRead > bc.reportedBytesRead:
+    res.n = bc.bytesRead
+    #TODO the problem here is that content-length is for compressed size,
+    # but we already uncompress inside CGI so it's impossible to compare
+    # the two
+    # probably we'll need some reporting mechanism in BGI
+    if res.n > bc.reportedLoad.n:
       bc.maybeReshape(suppressFouc = true)
-      bc.reportedBytesRead = bc.bytesRead
-      return bc.bytesRead
-  else: discard
-  # will be resolved in onload
-  bc.savetask = true
-  return -999 # unused
+  let old = bc.reportedLoad
+  if res.bs != bsLoaded and old.bs == res.bs and res.n == old.n:
+    # drop this result, resolve in onload instead
+    bc.savetask = true
+  else:
+    bc.reportedLoad = res
+  res
 
 proc onload(bc: BufferContext; data: InputData) =
   if bc.state != bsLoadingPage:
@@ -1124,7 +1164,7 @@ proc onload(bc: BufferContext; data: InputData) =
       n = data.stream.readData(iq)
       if n < 0:
         break
-      bc.bytesRead += n
+      bc.bytesRead += uint64(n)
     if n != 0:
       if not bc.processData(iq.toOpenArray(0, n - 1)):
         if not bc.firstBufferRead:
@@ -1140,16 +1180,14 @@ proc onload(bc: BufferContext; data: InputData) =
       if bc.window.pendingResources.len > 0:
         bc.state = bsLoadingResources
         if bc.hasTask(bcLoad):
-          bc.resolveTask(bcLoad, -3)
-          bc.state = bsLoadingResourcesAck
+          bc.resolveLoad(bc.window.loadedSheetNum, bc.window.remoteSheetNum)
       bc.loadResources().then(proc() =
         # CSS loaded
         if bc.window.pendingImages.len > 0:
           bc.maybeReshape()
           bc.state = bsLoadingImages
           if bc.hasTask(bcLoad):
-            bc.resolveTask(bcLoad, -2)
-            bc.state = bsLoadingImagesAck
+            bc.resolveLoad(bc.window.loadedImageNum, bc.window.remoteImageNum)
         bc.loadImages().then(proc() =
           # images loaded
           bc.maybeReshape()
@@ -1167,20 +1205,18 @@ proc onload(bc: BufferContext; data: InputData) =
             if bc.config.headless == hmTrue and bc.headlessMustWait():
               bc.headlessLoading = true
             else:
-              bc.resolveTask(bcLoad, -1)
+              bc.resolveLoad(0, 0)
         )
       )
       return # skip incr render
   # incremental rendering: only if we cannot read the entire stream in one
   # pass
-  if bc.config.headless == hmFalse and bc.tasks[bcLoad] != 0:
+  if bc.config.headless == hmFalse and bc.hasTask(bcLoad):
     # only makes sense when not in dump mode (and the user has requested a load)
     bc.maybeReshape(suppressFouc = true)
-    bc.reportedBytesRead = bc.bytesRead
     if bc.hasTask(bcGetTitle):
       bc.resolveTask(bcGetTitle, bc.document.title)
-    if bc.hasTask(bcLoad):
-      bc.resolveTask(bcLoad, bc.bytesRead)
+    bc.resolveLoad(bc.bytesRead, 0) #TODO content-length
 
 proc getTitle*(bc: BufferContext): string {.proxy: pfTask.} =
   if bc.document != nil:
@@ -2055,7 +2091,7 @@ proc runBuffer(bc: BufferContext) =
   while alive:
     if bc.headlessLoading and not bc.headlessMustWait():
       bc.headlessLoading = false
-      bc.resolveTask(bcLoad, -1)
+      bc.resolveLoad(0, 0) # already set to bsLoad
     let timeout = bc.getPollTimeout()
     bc.pollData.poll(timeout)
     bc.loader.blockRegister()

@@ -1272,7 +1272,7 @@ proc makeProgress(it: DownloadItem; now: Time): string =
     result &= "  rate "
     let udur = max(uint64(dur.inSeconds()), 1)
     let rate = it.sent div udur
-    result &= convertSize(int(rate)) & "/sec"
+    result &= convertSize(rate) & "/sec"
     if it.contentLen < uint64.high:
       let left = it.contentLen - it.sent
       let eta = initDuration(seconds = int64(left div max(rate, 1)))

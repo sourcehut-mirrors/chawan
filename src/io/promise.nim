@@ -96,9 +96,7 @@ proc then*[T](promise: Promise[T];
   promise.then(proc(x: T) =
     let p2 = cb(x)
     if p2 != nil:
-      p2.next = next
-      if next.state == psFulfilled:
-        next.resolve()
+      p2.then(proc() = next.resolve())
     else:
       next.resolve())
   next
@@ -142,12 +140,14 @@ proc then*[T, U](promise: Promise[T];
 
 proc all*(promises: seq[EmptyPromise]): EmptyPromise =
   let res = EmptyPromise()
-  var i = 0
+  var u = 0u
+  let L = uint(promises.len)
   for promise in promises:
     promise.then(proc() =
-      inc i
-      if i == promises.len:
-        res.resolve())
+      inc u
+      if u == L:
+        res.resolve()
+    )
   if promises.len == 0:
     res.resolve()
   res

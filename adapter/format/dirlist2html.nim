@@ -21,7 +21,7 @@ type DirlistItem = ref object
   of ditLink:
     linkto: string
   of ditFile:
-    nsize: int
+    nsize: int64
   of ditDir:
     discard
 
@@ -44,7 +44,7 @@ proc printDirlist(f: ChaFile; items: seq[DirlistItem]; maxw: int): Opt[void] =
       line &= ' '
     line &= htmlEscape(item.modified)
     if item.t == ditFile:
-      line &= ' ' & convertSize(item.nsize)
+      line &= ' ' & convertSize(uint64(max(item.nsize, 0)))
     elif item.t == ditLink:
       line &= " -> " & htmlEscape(item.linkto)
     ?f.writeLine(line)
@@ -151,7 +151,7 @@ proc parseInput(f: ChaFile; items: var seq[DirlistItem]; maxw: var int):
         t: ditFile,
         name: name,
         modified: dates,
-        nsize: int(nsize)
+        nsize: nsize
       ), maxw)
   ok()
 

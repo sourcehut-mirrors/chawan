@@ -1632,13 +1632,13 @@ proc onReadLine(container: Container; rl: ReadLineResult) =
     container.triggerEvent(ContainerEvent(t: cetReadFile))
 
 #TODO this should be called with a timeout.
-proc onload(container: Container; res: int) =
+proc onload(container: Container; res: LoadResult) =
   if container.loadState == lsCanceled:
     return
-  if res == -1:
+  case res.bs
+  of bsLoaded:
     container.loadState = lsLoaded
     container.setLoadInfo("")
-    container.triggerEvent(cetStatus)
     container.triggerEvent(cetLoaded)
     if cfHasStart notin container.flags:
       let anchor = container.url.hash.substr(1)
@@ -1670,17 +1670,16 @@ proc onload(container: Container; res: int) =
               refreshURL: if res.url != nil: res.url else: container.url
             ))
         )
-  else:
-    case res
-    of -3:
-      container.setLoadInfo("Loading stylesheets...")
-    of -2:
-      container.setLoadInfo("Loading images...")
-    else:
-      container.setLoadInfo(convertSize(res) & " loaded")
-    discard container.iface.load().then(proc(res: int) =
-      container.onload(res)
-    )
+    return # skip next load
+  of bsLoadingResources:
+    container.setLoadInfo($res.n & "/" & $res.len & " stylesheets loaded")
+  of bsLoadingImages:
+    container.setLoadInfo($res.n & "/" & $res.len & " images loaded")
+  of bsLoadingPage:
+    container.setLoadInfo(convertSize(res.n) & " loaded")
+  discard container.iface.load().then(proc(res: LoadResult) =
+    container.onload(res)
+  )
 
 # Apply data received in response.
 # Note: pager must call this before checkMailcap.
@@ -1878,7 +1877,7 @@ proc handleCommand(container: Container): Opt[void] =
 proc startLoad(container: Container) =
   if container.config.headless == hmFalse:
     container.repaintLoop()
-  container.iface.load().then(proc(res: int) =
+  container.iface.load().then(proc(res: LoadResult) =
     container.onload(res)
   )
   container.iface.getTitle().then(proc(title: string) =

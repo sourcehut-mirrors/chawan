@@ -355,7 +355,7 @@ const SizeUnit = [
   cstring"b", cstring"kb", cstring"Mb", cstring"Gb", cstring"Tb", cstring"Pb",
   cstring"Eb", cstring"Zb", cstring"Bb", cstring"Yb"
 ]
-proc convertSize*(size: int): string =
+proc convertSize*(size: uint64): string =
   var sizepos = 0
   var csize = float32(size)
   while csize >= 999.495 and sizepos < SizeUnit.len:

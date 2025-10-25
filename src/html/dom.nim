@@ -160,7 +160,10 @@ type
     click*: proc(element: HTMLElement)
     importMapsAllowed*: bool
     inMicrotaskCheckpoint: bool
-    numLoadingSheets*: uint32
+    remoteSheetNum*: uint32
+    loadedSheetNum*: uint32
+    remoteImageNum*: uint32
+    loadedImageNum*: uint32
     pendingResources*: seq[EmptyPromise]
     pendingImages*: seq[EmptyPromise]
     imageURLCache: Table[string, CachedURLImage]
@@ -1249,10 +1252,10 @@ proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL;
     let url = it.url
     let layer = it.layer
     (proc(i: int) =
-      inc window.numLoadingSheets
+      inc window.remoteSheetNum
       let p = window.loadSheet(url, charset, layer).then(
         proc(res: LoadSheetResult) =
-          dec window.numLoadingSheets
+          inc window.loadedSheetNum
           sheets[i] = res
       )
       promises.add(p)
@@ -1309,7 +1312,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
       let cvals = parseComponentValues(media)
       let media = parseMediaQueryList(cvals, window.settings.attrsp)
       applies = media.applies(addr window.settings)
-    inc window.numLoadingSheets
+    inc window.remoteSheetNum
     let p = window.loadSheet(link, url).then(proc(res: LoadSheetResult) =
       # Note: we intentionally load all sheets first and *then* check
       # whether media applies, to prevent media query based tracking.
@@ -1319,7 +1322,7 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
         let disabled = link.isDisabled()
         for sheet in link.sheets:
           sheet.disabled = disabled
-      dec window.numLoadingSheets
+      inc window.loadedSheetNum
     )
     window.pendingResources.add(p)
 
@@ -1365,8 +1368,10 @@ proc loadResource*(window: Window; image: HTMLImageElement) =
     let cachedURL = CachedURLImage(expiry: -1, loading: true)
     window.imageURLCache[surl] = cachedURL
     let headers = newHeaders(hgRequest, {"Accept": "*/*"})
+    inc window.remoteImageNum
     let p = window.corsFetch(newRequest(url, headers = headers)).then(
       proc(res: FetchResult): EmptyPromise =
+        inc window.loadedImageNum
         if res.isErr:
           return newResolvedPromise()
         let response = res.get

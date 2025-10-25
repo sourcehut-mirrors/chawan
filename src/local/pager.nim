@@ -3360,6 +3360,8 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       container.replace = nil
       pager.deleteContainer(replace, container)
     dec pager.numload
+    if pager.container == container:
+      pager.showAlerts()
   of cetReadLine:
     if container == pager.container:
       pager.setLineEdit(lmBuffer, event.value, event.password, event.prompt)
