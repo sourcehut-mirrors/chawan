@@ -1577,13 +1577,13 @@ number of clicks in JS events.</td>
 <td><kbd>c</kbd></td>
 <td>`rightClick`</td>
 <td>Send a right click to the buffer.  If it doesn't catch the event
-(i.e. no JS context menu is shown), open the menu instead.</td>
+(i.e. no JS context menu is shown), toggle the menu instead.</td>
 </tr>
 
 <tr>
 <td><kbd>C</kbd></td>
-<td>`openMenu`</td>
-<td>Open the menu.</td>
+<td>`toggleMenu`</td>
+<td>Toggle the menu.</td>
 </tr>
 
 <tr>

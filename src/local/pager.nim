@@ -174,7 +174,7 @@ type
     loader: FileLoader
     loaderPid {.jsget.}: int
     luctx: LUContext
-    menu: Select
+    menu {.jsget.}: Select
     mouse: Mouse
     navDirection {.jsget.}: NavDirection
     numload: int # number of pages currently being loaded
@@ -3346,6 +3346,10 @@ proc openMenu(pager: Pager; x = -1; y = -1) {.jsfunc.} =
     options[0].s = "Copy selection           (y)"
   pager.menu = newSelect(options, -1, x, y, pager.bufWidth, pager.bufHeight,
     menuFinish, pager)
+
+proc closeMenu(pager: Pager) {.jsfunc.} =
+  if pager.menu != nil:
+    pager.menuFinish(pager.menu)
 
 proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
   case event.t

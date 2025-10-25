@@ -405,9 +405,25 @@ Returns `undefined`. (It should return a promise; TODO.)</td>
 </tr>
 
 <tr>
+<td>`openMenu(x = pager.cursorx - pager.fromx, y = pager.cursory -
+pager.fromy)`</td>
+<td>Opens the context menu at the specified x/y positions.</td>
+</tr>
+
+<tr>
+<td>`closeMenu()`</td>
+<td>Closes the menu if it is opened.</td>
+</tr>
+
+<tr>
 <td>`buffer`</td>
 <td>Getter for the currently displayed buffer.  Returns a `Buffer` object; see
 below.</td>
+</tr>
+
+<tr>
+<td>`menu`</td>
+<td>Getter for the currently displayed menu.  Returns a `Select` object.</td>
 </tr>
 
 <tr>

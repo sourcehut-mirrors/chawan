@@ -209,7 +209,7 @@ m = 'mark'
 C-m = 'click'
 C-j = 'click'
 c = 'rightClick'
-C = 'openMenu'
+C = 'toggleMenu'
 I = 'viewImage'
 sI = 'saveImage'
 M-i = 'toggleImages'
@@ -489,12 +489,15 @@ scrollRight = 'n => pager.scrollRight(n)'
 click = 'n => pager.click(n)'
 rightClick = '''
 async () => {
-	const canceled = await pager.contextMenu();
-	if (!canceled)
-		pager.openMenu();
+	if (!pager.menu) {
+		const canceled = await pager.contextMenu();
+		if (!canceled)
+			pager.openMenu();
+	} else
+		pager.closeMenu()
 }
 '''
-openMenu = '() => pager.openMenu()'
+toggleMenu = '() => pager.menu ? pager.closeMenu() : pager.openMenu()'
 viewImage = '''
 (_, save) => {
 	let contentType = null;

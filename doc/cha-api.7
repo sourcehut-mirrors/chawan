@@ -455,10 +455,29 @@ Returns \f[CR]undefined\f[R].
 T}
 _
 T{
+\f[CR]openMenu(x = pager.cursorx \- pager.fromx, y = pager.cursory \- pager.fromy)\f[R]
+T}@T{
+Opens the context menu at the specified x/y positions.
+T}
+_
+T{
+\f[CR]closeMenu()\f[R]
+T}@T{
+Closes the menu if it is opened.
+T}
+_
+T{
 \f[CR]buffer\f[R]
 T}@T{
 Getter for the currently displayed buffer.
 Returns a \f[CR]Buffer\f[R] object; see below.
+T}
+_
+T{
+\f[CR]menu\f[R]
+T}@T{
+Getter for the currently displayed menu.
+Returns a \f[CR]Select\f[R] object.
 T}
 _
 T{
