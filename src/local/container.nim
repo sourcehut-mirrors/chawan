@@ -104,7 +104,7 @@ type
 
   ContainerFlag* = enum
     cfHasStart, cfSave, cfIsHTML, cfHistory, cfHighlight, cfTailOnLoad,
-    cfCrashed, cfShowLoading
+    cfCrashed, cfShowLoading, cfDeferLoad, cfGotLines
 
   CachedImageState* = enum
     cisLoading, cisCanceled, cisLoaded
@@ -222,6 +222,7 @@ proc onclick(container: Container; res: ClickResult; save: bool)
 proc triggerEvent(container: Container; t: ContainerEventType)
 proc updateCursor(container: Container)
 proc sendCursorPosition*(container: Container): EmptyPromise {.discardable.}
+proc loaded(container: Container)
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
@@ -603,6 +604,7 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
   return container.iface.getLines(w).then(proc(res: GetLinesResult) =
     container.lines.setLen(w.len)
     container.lineshift = w.a
+    container.flags.incl(cfGotLines)
     for y in 0 ..< min(res.lines.len, w.len):
       container.lines[y] = res.lines[y]
     let isBgNew = container.bgcolor != res.bgcolor
@@ -632,6 +634,9 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
       if image.width > 0 and image.height > 0 and
           image.bmp.width > 0 and image.bmp.height > 0:
         container.images.add(image)
+    if cfDeferLoad in container.flags:
+      container.flags.excl(cfDeferLoad)
+      container.loaded()
   )
 
 proc repaintLoop(container: Container) =
@@ -1630,47 +1635,59 @@ proc onReadLine(container: Container; rl: ReadLineResult) =
   of rltFile:
     container.triggerEvent(ContainerEvent(t: cetReadFile))
 
+proc loaded(container: Container) =
+  container.loadinfo = ""
+  container.loadState = lsLoaded
+  container.triggerEvent(cetLoaded)
+  if cfHasStart notin container.flags:
+    if container.config.headless == hmFalse:
+      container.sendCursorPosition()
+    let anchor = container.url.hash.substr(1)
+    if anchor != "" or container.config.autofocus:
+      container.iface.gotoAnchor(anchor, container.config.autofocus,
+          true).then(proc(res: GotoAnchorResult) =
+        if res.found:
+          container.setCursorXYCenter(res.x, res.y)
+          if res.focus != nil:
+            container.onReadLine(res.focus)
+      )
+  if container.config.metaRefresh != mrNever:
+    let res = parseRefresh(container.refreshHeader, container.url)
+    container.refreshHeader = ""
+    if res.n != -1:
+      container.triggerEvent(ContainerEvent(
+        t: cetMetaRefresh,
+        refreshIn: res.n,
+        refreshURL: if res.url != nil: res.url else: container.url
+      ))
+    else:
+      container.iface.checkRefresh().then(proc(res: CheckRefreshResult) =
+        if res.n >= 0:
+          container.triggerEvent(ContainerEvent(
+            t: cetMetaRefresh,
+            refreshIn: res.n,
+            refreshURL: if res.url != nil: res.url else: container.url
+          ))
+      )
+
 #TODO this should be called with a timeout.
 proc onload(container: Container; res: LoadResult) =
   if container.loadState == lsCanceled:
     return
   case res.bs
   of bsLoaded:
-    container.loadState = lsLoaded
-    container.loadinfo = ""
-    container.triggerEvent(cetLoaded)
-    if cfHasStart notin container.flags:
-      if container.config.headless == hmFalse:
-        container.sendCursorPosition()
-      let anchor = container.url.hash.substr(1)
-      if anchor != "" or container.config.autofocus:
-        container.requestLines().then(proc(): Promise[GotoAnchorResult] =
-          return container.iface.gotoAnchor(anchor, container.config.autofocus,
-            true)
-        ).then(proc(res: GotoAnchorResult) =
-          if res.found:
-            container.setCursorXYCenter(res.x, res.y)
-            if res.focus != nil:
-              container.onReadLine(res.focus)
-        )
-    if container.config.metaRefresh != mrNever:
-      let res = parseRefresh(container.refreshHeader, container.url)
-      container.refreshHeader = ""
-      if res.n != -1:
-        container.triggerEvent(ContainerEvent(
-          t: cetMetaRefresh,
-          refreshIn: res.n,
-          refreshURL: if res.url != nil: res.url else: container.url
-        ))
-      else:
-        container.iface.checkRefresh().then(proc(res: CheckRefreshResult) =
-          if res.n >= 0:
-            container.triggerEvent(ContainerEvent(
-              t: cetMetaRefresh,
-              refreshIn: res.n,
-              refreshURL: if res.url != nil: res.url else: container.url
-            ))
-        )
+    if cfGotLines notin container.flags:
+      # We cannot call loaded here because of a subtle phase ordering issue
+      # on reload:
+      # * load sends a cetLoad event to pager
+      # * pager deletes the buffer we are replacing
+      # * now, if lines haven't been requested yet, then we'll necessarily
+      #   see an empty screen flash because the reloaded buffer is already
+      #   deleted
+      container.flags.incl(cfDeferLoad)
+      container.needslines = true
+    else:
+      container.loaded()
     return # skip next load
   of bsLoadingResources:
     container.setLoadInfo($res.n & "/" & $res.len & " stylesheets loaded")
