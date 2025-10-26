@@ -133,6 +133,9 @@ type
     console*: Container
     prev: Container
 
+  UpdateStatusState = enum
+    ussNone, ussUpdate, ussSkip
+
   Pager* = ref object of RootObj
     alive: bool
     blockTillRelease: bool
@@ -144,6 +147,7 @@ type
     reverseSearch: bool
     dumpConsoleFile: bool
     updateTitle: bool
+    updateStatus: UpdateStatusState
     consoleCacheId: int
     consoleFile: string
     alertState: PagerAlertState
@@ -661,6 +665,10 @@ proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
   JS_FreeValue(ctx, ret)
   return p
 
+proc queueStatusUpdate(pager: Pager) =
+  if pager.updateStatus == ussNone:
+    pager.updateStatus = ussUpdate
+
 proc command0(pager: Pager; src: string; filename = "<command>";
     silence = false; module = false) =
   let ret = pager.evalJS(src, filename, module = module)
@@ -861,7 +869,7 @@ proc handleMouseInput(pager: Pager; input: MouseInput) =
       pager.handleMouseInput(input, container)
   if not pager.blockTillRelease:
     pager.handleMouseInputGeneric(input)
-  pager.refreshStatusMsg()
+  pager.updateStatus = ussUpdate
   pager.handleEvents()
 
 # The maximum number we are willing to accept.
@@ -876,7 +884,7 @@ proc handleAskInput(pager: Pager; e: InputEvent) =
   of ietKeyEnd:
     pager.fulfillAsk(pager.inputBuffer)
     pager.inputBuffer = ""
-    pager.refreshStatusMsg()
+    pager.queueStatusUpdate()
     pager.handleEvents()
   of ietMouse: pager.handleMouseInput(e.m)
   else: discard
@@ -915,7 +923,7 @@ proc handleCommandInput(pager: Pager; e: InputEvent) =
           pager.precnum *= 10
           pager.precnum += int32(decValue(c))
         pager.inputBuffer = ""
-        pager.refreshStatusMsg()
+        pager.queueStatusUpdate()
         return
       else:
         pager.notnum = true
@@ -927,11 +935,11 @@ proc handleCommandInput(pager: Pager; e: InputEvent) =
       pager.notnum = false
       if p != nil:
         p.then(proc() =
-          pager.refreshStatusMsg()
+          pager.queueStatusUpdate()
           pager.handleEvents()
         )
     if p == nil:
-      pager.refreshStatusMsg()
+      pager.queueStatusUpdate()
       pager.handleEvents()
     pager.feednext = false
 
@@ -1110,7 +1118,7 @@ proc showAlerts(pager: Pager) =
   if (pager.alertState == pasNormal or
       pager.alertState == pasLoadInfo and pager.alerts.len > 0) and
       pager.inputBuffer == "" and pager.precnum == 0:
-    pager.refreshStatusMsg()
+    pager.queueStatusUpdate()
 
 proc drawBufferAdvance(s: openArray[char]; bgcolor: CellColor; oi, ox: var int;
     ex: int): string =
@@ -1497,11 +1505,9 @@ proc addContainer(pager: Pager; container: Container) =
 
 proc onSetLoadInfo(pager: Pager; container: Container) =
   if pager.alertState != pasAlertOn and pager.askPromise == nil:
-    if container.loadinfo == "":
-      pager.alertState = pasNormal
-    else:
-      discard pager.status.writeStatusMessage(container.loadinfo)
-      pager.alertState = pasLoadInfo
+    discard pager.status.writeStatusMessage(container.loadinfo)
+    pager.alertState = pasLoadInfo
+    pager.updateStatus = ussSkip
 
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; url: URL; title = "";
@@ -1892,7 +1898,7 @@ proc windowChange(pager: Pager) =
     pager.menu.windowChange(pager.bufWidth, pager.bufHeight)
   if pager.askPrompt != "":
     pager.writeAskPrompt()
-  pager.showAlerts()
+  pager.queueStatusUpdate()
 
 # Apply siteconf settings to a request.
 # Note that this may modify the URL passed.
@@ -2891,8 +2897,7 @@ proc redirectTo(pager: Pager; container: Container; request: Request) =
         container.replace = nil
         replace.replaceRef = nc
         nc.replace = replace
-      nc.loadinfo = "Redirecting to " & $request.url
-      pager.onSetLoadInfo(nc)
+      nc.setLoadInfo("Redirecting to " & $request.url)
   dec pager.numload
 
 proc fail(pager: Pager; container: Container; errorMessage: string) =
@@ -2964,7 +2969,7 @@ proc askDownloadPath(pager: Pager; container: Container; stream: PosixStream;
     url: container.url
   )
   pager.deleteContainer(container, container.find(ndAny))
-  pager.refreshStatusMsg()
+  pager.queueStatusUpdate()
   dec pager.numload
 
 proc connected2(pager: Pager; container: Container; res: MailcapResult;
@@ -3011,7 +3016,7 @@ proc connected2(pager: Pager; container: Container; res: MailcapResult;
   else:
     dec pager.numload
     pager.deleteContainer(container, container.find(ndAny))
-    pager.refreshStatusMsg()
+    pager.queueStatusUpdate()
 
 proc connected3(pager: Pager; container: Container; stream: SocketStream;
     ostream: PosixStream; istreamOutputId, ostreamOutputId: int;
@@ -3251,9 +3256,8 @@ proc handleRead(pager: Pager; item: ConnectingContainer) =
       if res == 0: # continue
         r.sread(item.outputId)
         inc item.state
-        container.loadinfo = "Connected to " & $container.url &
-          ". Downloading..."
-        pager.onSetLoadInfo(container)
+        container.setLoadInfo("Connected to " & $container.url &
+          ". Downloading...")
       else:
         r.sread(msg)
     if res != 0: # done
@@ -3361,7 +3365,9 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       pager.deleteContainer(replace, container)
     dec pager.numload
     if pager.container == container:
-      pager.showAlerts()
+      if pager.alertState == pasLoadInfo:
+        pager.alertState = pasNormal
+      pager.queueStatusUpdate()
   of cetReadLine:
     if container == pager.container:
       pager.setLineEdit(lmBuffer, event.value, event.password, event.prompt)
@@ -3406,7 +3412,8 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       pager.onSetLoadInfo(container)
   of cetTitle:
     if pager.container == container:
-      pager.showAlerts()
+      if container.loadState != lsLoading:
+        pager.queueStatusUpdate()
       pager.updateTitle = true
   of cetAlert:
     if pager.container == container:
@@ -3616,7 +3623,10 @@ proc inputLoop(pager: Pager): Opt[void] =
         discard pager.term.setCursor(0, pager.term.attrs.height - 1)
         discard pager.term.anyKey("Hit any key to quit Chawan:")
         return
-    pager.showAlerts()
+    case pager.updateStatus
+    of ussNone, ussSkip: discard
+    of ussUpdate: pager.refreshStatusMsg()
+    pager.updateStatus = ussNone
     ?pager.draw()
   ok()
 

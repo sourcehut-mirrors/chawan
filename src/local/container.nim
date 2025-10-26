@@ -1609,7 +1609,7 @@ proc hideLinkHints(container: Container) {.jsfunc.} =
     return
   container.iface.hideHints()
 
-proc setLoadInfo(container: Container; msg: string) =
+proc setLoadInfo*(container: Container; msg: string) =
   container.loadinfo = msg
   container.triggerEvent(cetSetLoadInfo)
 
@@ -1637,7 +1637,7 @@ proc onload(container: Container; res: LoadResult) =
   case res.bs
   of bsLoaded:
     container.loadState = lsLoaded
-    container.setLoadInfo("")
+    container.loadinfo = ""
     container.triggerEvent(cetLoaded)
     if cfHasStart notin container.flags:
       if container.config.headless == hmFalse:
