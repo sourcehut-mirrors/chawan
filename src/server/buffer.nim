@@ -187,13 +187,19 @@ type
   ClickResult* = ref object
     open*: Request
     contentType*: string
-    readline*: Option[ReadLineResult]
-    select*: Option[SelectResult]
+    readline*: ReadLineResult
+    select*: SelectResult
 
   LoadResult* = object
     n*: uint64
     len*: uint64
     bs*: BufferState
+
+  CursorXY* = object
+    x*: int
+    y*: int
+
+  HintResult* = seq[CursorXY]
 
 # Forward declarations
 proc click(bc: BufferContext; clickable: Element): ClickResult
@@ -724,7 +730,7 @@ proc gotoAnchor*(bc: BufferContext; anchor: string; autofocus, target: bool):
       if element == nil:
         element = autofocus # jump to autofocus instead
       let res = bc.click(autofocus)
-      focus = res.readline.get(nil)
+      focus = res.readline
   if element == nil or element.box == nil:
     return GotoAnchorResult(found: false)
   let offset = CSSBox(element.box).render.offset
@@ -1239,9 +1245,23 @@ proc forceReshape*(bc: BufferContext) {.proxy.} =
   bc.rootBox = nil
   bc.forceReshape0()
 
-proc windowChange*(bc: BufferContext; attrs: WindowAttributes) {.proxy.} =
+proc windowChange*(bc: BufferContext; attrs: WindowAttributes; x, y: int):
+    CursorXY {.proxy.} =
+  let element = bc.getCursorElement(x, y)
+  let box = CSSBox(element.box)
+  let offset = if box != nil: box.render.offset else: offset(0'lu, 0'lu)
+  let ppc = attrs.ppc.toLUnit()
+  let ppl = attrs.ppl.toLUnit()
+  let dx = x - (offset.x div ppc).toInt()
+  let dy = y - (offset.y div ppl).toInt()
   bc.attrs = attrs
   bc.forceReshape()
+  if element.box != nil:
+    let offset = CSSBox(element.box).render.offset
+    let x = (offset.x div ppc).toInt() + dx
+    let y = (offset.y div ppl).toInt() + dy
+    return CursorXY(x: x, y: y)
+  return CursorXY(x: x, y: y)
 
 proc cancel*(bc: BufferContext) {.proxy.} =
   if bc.state == bsLoaded:
@@ -1486,7 +1506,7 @@ proc click(bc: BufferContext; select: HTMLSelectElement): ClickResult =
       selected = i
     inc i
   return ClickResult(
-    select: some(SelectResult(options: move(options), selected: selected))
+    select: SelectResult(options: move(options), selected: selected)
   )
 
 proc baseURL(bc: BufferContext): URL =
@@ -1553,11 +1573,7 @@ proc click(bc: BufferContext; button: HTMLButtonElement): ClickResult =
 
 proc click(bc: BufferContext; textarea: HTMLTextAreaElement): ClickResult =
   bc.setFocus(textarea)
-  let readline = ReadLineResult(
-    t: rltArea,
-    value: textarea.value
-  )
-  return ClickResult(readline: some(readline))
+  ClickResult(readline: ReadLineResult(t: rltArea, value: textarea.value))
 
 proc click(bc: BufferContext; audio: HTMLAudioElement): ClickResult =
   bc.restoreFocus()
@@ -1615,7 +1631,7 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
   of itFile:
     #TODO we should somehow extract the path name from the current file
     bc.setFocus(input)
-    return ClickResult(readline: some(ReadLineResult(t: rltFile)))
+    return ClickResult(readline: ReadLineResult(t: rltFile))
   of itCheckbox:
     input.setChecked(not input.checked)
     if bc.config.scripting != smFalse:
@@ -1652,13 +1668,11 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
     if input.inputType == itRange:
       prompt &= " (" & input.attr(satMin) & ".." & input.attr(satMax) & ")"
     bc.setFocus(input)
-    return ClickResult(
-      readline: some(ReadLineResult(
-        prompt: prompt & ": ",
-        value: input.value,
-        hide: input.inputType == itPassword
-      ))
-    )
+    return ClickResult(readline: ReadLineResult(
+      prompt: prompt & ": ",
+      value: input.value,
+      hide: input.inputType == itPassword
+    ))
 
 proc click(bc: BufferContext; clickable: Element): ClickResult =
   case clickable.tagType
@@ -1949,14 +1963,7 @@ proc toggleImages*(bc: BufferContext): bool {.proxy: pfTask.} =
   )
   return bc.config.images
 
-type
-  HintResult* = seq[HintItem]
-
-  HintItem* = object
-    x: int
-    y: int
-
-proc toJS*(ctx: JSContext; x: HintItem): JSValue =
+proc toJS*(ctx: JSContext; x: CursorXY): JSValue =
   let obj = JS_NewObject(ctx)
   if JS_IsException(obj):
     return JS_EXCEPTION
@@ -1991,7 +1998,7 @@ proc showHints*(bc: BufferContext; sx, sy, ex, ey: int): HintResult {.proxy.} =
       let box = CSSBox(element.box).findLeaf(element)
       let offset = box.render.offset
       if offset >= so and offset < eo:
-        result.add(HintItem(
+        result.add(CursorXY(
           x: (offset.x div ppc).toInt(),
           y: (offset.y div ppl).toInt()
         ))

@@ -41,12 +41,11 @@ import utils/twtstr
 import utils/wordbreak
 
 type
-  CursorPosition* = object
-    cursorx*: int
-    cursory*: int
-    xend*: int
-    fromx*: int
-    fromy*: int
+  CursorState = object
+    cursor: CursorXY
+    xend: int
+    fromx: int
+    fromy: int
     setx: int
     setxrefresh: bool
     setxsave: bool
@@ -164,8 +163,8 @@ type
     # if set, this *overrides* any content type received from the network. (this
     # is because it stores the content type from the -T flag.)
     contentType* {.jsget.}: string
-    pos: CursorPosition
-    bpos: seq[CursorPosition]
+    pos: CursorState
+    bpos: seq[CursorState]
     highlights: seq[Highlight]
     process* {.jsget.}: int
     clonedFrom*: int
@@ -181,7 +180,7 @@ type
     sourcepair*: Container # pointer to buffer with a source view (may be nil)
     event: ContainerEvent
     lastEvent: ContainerEvent
-    startpos: Option[CursorPosition]
+    startpos: Option[CursorState]
     redirectDepth*: int
     select* {.jsget.}: Select
     currentSelection* {.jsget.}: Highlight
@@ -222,6 +221,7 @@ proc find*(container: Container; dir: NavDirection): Container
 proc onclick(container: Container; res: ClickResult; save: bool)
 proc triggerEvent(container: Container; t: ContainerEventType)
 proc updateCursor(container: Container)
+proc sendCursorPosition*(container: Container): EmptyPromise {.discardable.}
 
 proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     url: URL; request: Request; luctx: LUContext; attrs: WindowAttributes;
@@ -238,9 +238,7 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     config: config,
     loaderConfig: loaderConfig,
     redirectDepth: redirectDepth,
-    pos: CursorPosition(
-      setx: -1
-    ),
+    pos: CursorState(setx: -1),
     loadinfo: "Connecting to " & request.url.host & "...",
     cacheId: cacheId,
     process: -1,
@@ -369,10 +367,10 @@ proc cookie(ctx: JSContext; container: Container): CookieMode {.jsfget.} =
   return container.loaderConfig.cookieMode
 
 proc cursorx*(container: Container): int {.jsfget.} =
-  container.pos.cursorx
+  container.pos.cursor.x
 
 proc cursory*(container: Container): int {.jsfget.} =
-  container.pos.cursory
+  container.pos.cursor.y
 
 proc fromx*(container: Container): int {.jsfget.} =
   container.pos.fromx
@@ -614,10 +612,11 @@ proc requestLines(container: Container): EmptyPromise {.discardable.} =
       container.numLines = res.numLines
       container.updateCursor()
       if container.startpos.isSome and
-          res.numLines >= container.startpos.get.cursory:
+          res.numLines >= container.startpos.get.cursor.y:
         container.pos = container.startpos.get
         container.needslines = true
-        container.startpos = none(CursorPosition)
+        container.startpos = none(CursorState)
+        container.sendCursorPosition()
       if container.loadState != lsLoading:
         container.triggerEvent(cetStatus)
     if res.numLines > 0:
@@ -666,7 +665,7 @@ proc setFromX(container: Container; x: int; refresh = true) {.jsfunc.} =
   if container.pos.fromx != x:
     container.pos.fromx = max(min(x, container.maxfromx), 0)
     if container.pos.fromx > container.cursorx:
-      container.pos.cursorx = min(container.pos.fromx,
+      container.pos.cursor.x = min(container.pos.fromx,
         container.currentLineWidth())
       if refresh:
         container.sendCursorPosition()
@@ -697,7 +696,7 @@ proc setCursorX(container: Container; x: int; refresh = true; save = true)
   # we check for save here, because it is only set by restoreCursorX where
   # we do not want to move the cursor just because it is outside the window.
   if not save or container.fromx <= x and x < container.fromx + container.width:
-    container.pos.cursorx = x
+    container.pos.cursor.x = x
   elif save and container.fromx > x:
     # target x is before the screen start
     if x2 < container.cursorx:
@@ -709,12 +708,12 @@ proc setCursorX(container: Container; x: int; refresh = true; save = true)
       else:
         container.setFromX(cw - 1, false)
     # take whatever position the jump has resulted in.
-    container.pos.cursorx = container.fromx
+    container.pos.cursor.x = container.fromx
   elif x > container.cursorx:
     # target x is greater than current x; a simple case, just shift fromx too
     # accordingly
     container.setFromX(max(x - container.width + 1, container.fromx), false)
-    container.pos.cursorx = x
+    container.pos.cursor.x = x
   if container.cursorx == x and container.currentSelection != nil and
       container.currentSelection.x2 != x:
     container.currentSelection.x2 = x
@@ -732,15 +731,15 @@ proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
   if refresh:
     container.flags.incl(cfShowLoading)
   let y = max(min(y, container.numLines - 1), 0)
-  if container.cursory == y:
-    return
   if y >= container.fromy and y - container.height < container.fromy:
     discard
   elif y > container.cursory:
     container.setFromY(y - container.height + 1)
   else:
     container.setFromY(y)
-  container.pos.cursory = y
+  if container.cursory == y:
+    return
+  container.pos.cursor.y = y
   if container.currentSelection != nil and container.currentSelection.y2 != y:
     container.queueDraw()
     container.currentSelection.y2 = y
@@ -1641,6 +1640,8 @@ proc onload(container: Container; res: LoadResult) =
     container.setLoadInfo("")
     container.triggerEvent(cetLoaded)
     if cfHasStart notin container.flags:
+      if container.config.headless == hmFalse:
+        container.sendCursorPosition()
       let anchor = container.url.hash.substr(1)
       if anchor != "" or container.config.autofocus:
         container.requestLines().then(proc(): Promise[GotoAnchorResult] =
@@ -1783,10 +1784,10 @@ proc onclick(container: Container; res: ClickResult; save: bool) =
       save: save,
       contentType: res.contentType
     ))
-  if res.select.isSome and not save and res.select.get.options.len > 0:
-    container.displaySelect(res.select.get)
-  if res.readline.isSome:
-    container.onReadLine(res.readline.get)
+  if res.select != nil and not save and res.select.options.len > 0:
+    container.displaySelect(res.select)
+  if res.readline != nil:
+    container.onReadLine(res.readline)
 
 proc click*(container: Container; n = 1) {.jsfunc.} =
   container.flags.incl(cfShowLoading)
@@ -1824,7 +1825,11 @@ proc windowChange*(container: Container; attrs: WindowAttributes) =
     # subtract status line height
     attrs.height -= 1
     attrs.heightPx -= attrs.ppl
-    container.iface.windowChange(attrs)
+    let x = container.cursorx
+    let y = container.cursory
+    container.iface.windowChange(attrs, x, y).then(proc(pos: CursorXY) =
+      container.setCursorXYCenter(pos.x, pos.y)
+    )
   if container.select != nil:
     container.select.windowChange(container.width, container.height)
 
