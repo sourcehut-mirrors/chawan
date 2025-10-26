@@ -39,6 +39,8 @@ UI changes
 	  click -> URL under cursor, middle click -> empty URL bar
 	- double click + drag selects text
 * fixed flash of unstyled content and removed blank screen on page load
+* moved all commands in `cmd.pager` and `cmd.buffer` into `cmd`
+* binding keys no longer requires `cmd.` prefix for built-in commands
 ---
 Misc changes
 * history, cookies, etc. are now saved in XDG_DATA_HOME for XDG basedir users
@@ -55,6 +57,8 @@ Removals
 * remove deprecated prepend-https, css and stylesheet config options (use
   prepend-scheme, user-style instead)
 * remove protocol.form-request config option (read the body in CGI instead)
+* remove buffer tree; buffers are now organized in lists, and buffer lists
+  belong in tabs (note: the latter does not have a real UI yet)
 ---
 Optimizations
 * layout caching (makes a huge difference in memory usage and performance)
