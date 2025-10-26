@@ -1361,6 +1361,10 @@ proc draw(pager: Pager): Opt[void] =
   var imageRedraw = false
   var hasMenu = false
   var container = pager.container
+  if pager.updateTitle:
+    if container != nil:
+      ?pager.term.setTitle(container.getTitle())
+    pager.updateTitle = false
   if container != nil and container.loadState == lsLoading and
       cfShowLoading notin container.flags and container.numLines == 0:
     # Make buffers that haven't loaded anything yet "transparent".
@@ -1390,9 +1394,6 @@ proc draw(pager: Pager): Opt[void] =
       select.redraw = false
       pager.display.redraw = true
       hasMenu = true
-    if pager.updateTitle:
-      ?pager.term.setTitle(container.getTitle())
-      pager.updateTitle = false
   if (let menu = pager.menu; menu != nil and
       (menu.redraw or pager.display.redraw)):
     menu.drawSelect(pager.display.grid)
@@ -1630,6 +1631,7 @@ proc nextSiblingBuffer(pager: Pager): bool {.jsfunc.} =
 proc alert*(pager: Pager; msg: string) {.jsfunc.} =
   if msg != "":
     pager.alerts.add(msg)
+    pager.queueStatusUpdate()
 
 proc updatePinned(pager: Pager; old, replacement: Container) =
   if pager.pinned.downloads == old:
@@ -2507,6 +2509,7 @@ proc updateReadLine(pager: Pager) =
       pager.lineData = nil
   if lineedit.state in {lesCancel, lesFinish} and pager.lineedit == lineedit:
     pager.lineedit = nil
+    pager.queueStatusUpdate()
 
 proc loadSubmit(pager: Pager; s: string) {.jsfunc.} =
   pager.loadURL(s)
