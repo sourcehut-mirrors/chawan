@@ -260,8 +260,6 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
           seen = 0
           bounds = 0x80u8 .. 0xBFu8
           # prepend, no consume
-          if ri == 0:
-            bufLen = 0 # no valid character seen yet; clear buffer
           flag = tdrError
           break
         inc seen
@@ -279,12 +277,12 @@ method decode*(td: TextDecoderUTF8; iq: openArray[uint8];
   td.needed = needed
   td.seen = seen
   td.bufLen = bufLen
-  if bufLen > 0 and ri != 0:
+  if bufLen > 0 and ppi == 0 and ri != 0:
     let L = int(bufLen)
     if L > oq.len:
       return tdrReqOutput
     for i in 0 ..< L:
-      oq[n] = buf[i]
+      oq[n] = obuf[i]
       inc n
   if ppi < ri:
     td.bufLen = seen

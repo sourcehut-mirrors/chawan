@@ -57,17 +57,28 @@ test "validate valid UTF-8":
     "aiueo",
     "äöüß",
     "あいうえお",
+    "あöあüあöあüあöあü",
+    "asdf asdf asdfasd fasdfas dfあöあüa lksdjf alskdfj asalkdf kldfj asdあ aklsdjf asd",
     "\u1F972"
   ]
   for s in utf8_valid:
     check s.toValidUTF8() == s
     check s.toValidUTF8() & 'x' == s & 'x'
     let td = TextDecoderUTF8()
-    var ctx = initTextDecoderContext(td, bufLen = 1)
-    var res = ""
-    for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
-      res &= s
-    check res == s
+    var ctx = initTextDecoderContext(td, bufLen = 3)
+    block:
+      var res = ""
+      for s in ctx.decode(s.toOpenArrayByte(0, s.high), finish = true):
+        res &= s
+      check res == s
+    for j in 2 .. 10:
+      var res = ""
+      var i = 0
+      while i < s.len:
+        for s in ctx.decode(s.toOpenArrayByte(i, min(i + j, s.len) - 1), finish = i + j >= s.len):
+          res &= s
+        i += j
+      check res == s
 
 test "validate invalid UTF-8":
   const utf8_error = {
@@ -83,12 +94,22 @@ test "validate invalid UTF-8":
     check s.toValidUTF8() == t
     check (s & 'x').toValidUTF8() == t & 'x'
     let td = TextDecoderUTF8()
-    var ctx = initTextDecoderContext(td, bufLen = 2)
-    var res = ""
-    for i in 0 ..< s.len:
-      for s in ctx.decode([uint8(s[i])], finish = i == s.high):
-        res &= s
-    check res == t
+    block:
+      var ctx = initTextDecoderContext(td, bufLen = 2)
+      var res = ""
+      for i in 0 ..< s.len:
+        for s in ctx.decode([uint8(s[i])], finish = i == s.high):
+          res &= s
+      check res == t
+    block:
+      var ctx = initTextDecoderContext(td, bufLen = 2)
+      var res = ""
+      var i = 0
+      while i < s.len:
+        for s in ctx.decode(s.toOpenArrayByte(i, min(i + 2, s.len) - 1), finish = i + 2 >= s.len):
+          res &= s
+        i += 2
+      check res == t
 
 test "UTF-16-BE to UTF-8":
   const list = {
