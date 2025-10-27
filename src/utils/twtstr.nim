@@ -72,7 +72,7 @@ proc nextUTF8*(s: openArray[char]; i: var int): uint32 =
       dec n
       if n == 0:
         break
-    if likely(u >= min and u <= 0x10FFFF):
+    if u - min <= 0x10FFFF - min:
       i = j
       return u
   {.pop.}
