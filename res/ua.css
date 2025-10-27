@@ -117,7 +117,7 @@ textarea { color: -cha-ansi(red); white-space: pre }
 
 li, summary { display: list-item }
 
-i, em, address { font-style: italic }
+i, em, address, cite { font-style: italic }
 
 b, strong { font-weight: bold }
 
