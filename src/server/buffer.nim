@@ -470,6 +470,8 @@ proc getCachedImageHover(bc: BufferContext; element: Element): string =
   ""
 
 proc getCursorElement(bc: BufferContext; cursorx, cursory: int): Element =
+  if cursory < 0 or cursory >= bc.lines.len:
+    return nil
   let i = bc.lines[cursory].findFormatN(cursorx) - 1
   if i >= 0:
     return bc.lines[cursory].formats[i].node
@@ -876,8 +878,6 @@ const HoverFun = [
 ]
 proc updateHover*(bc: BufferContext; cursorx, cursory: int): UpdateHoverResult
     {.proxy.} =
-  if cursory >= bc.lines.len:
-    return UpdateHoverResult.default
   let thisNode = bc.getCursorElement(cursorx, cursory)
   var hover = newSeq[tuple[t: HoverType, s: string]]()
   var repaint = false
@@ -1248,7 +1248,7 @@ proc forceReshape*(bc: BufferContext) {.proxy.} =
 proc windowChange*(bc: BufferContext; attrs: WindowAttributes; x, y: int):
     CursorXY {.proxy.} =
   let element = bc.getCursorElement(x, y)
-  let box = CSSBox(element.box)
+  let box = if element != nil: CSSBox(element.box) else: nil
   let offset = if box != nil: box.render.offset else: offset(0'lu, 0'lu)
   let ppc = attrs.ppc.toLUnit()
   let ppl = attrs.ppl.toLUnit()
@@ -1256,7 +1256,7 @@ proc windowChange*(bc: BufferContext; attrs: WindowAttributes; x, y: int):
   let dy = y - (offset.y div ppl).toInt()
   bc.attrs = attrs
   bc.forceReshape()
-  if element.box != nil:
+  if element != nil and element.box != nil:
     let offset = CSSBox(element.box).render.offset
     let x = (offset.x div ppc).toInt() + dx
     let y = (offset.y div ppl).toInt() + dy
