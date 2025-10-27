@@ -5485,9 +5485,7 @@ proc value*(this: HTMLInputElement): lent string {.jsfget.} =
   return this.internalValue.s
 
 proc setValue*(this: HTMLInputElement; value: sink string) {.jsfset: "value".} =
-  if this.internalValue == nil:
-    this.internalValue = newRefString("")
-  this.internalValue.s = value
+  this.internalValue = newRefString(value)
   this.invalidate()
 
 proc setType(this: HTMLInputElement; s: string) {.jsfset: "type".} =
