@@ -476,8 +476,8 @@ proc evalJSFree(opaque: RootRef; src, file: string) =
     JS_FreeValue(window.jsctx, ret)
 
 proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
-    is_handled: JS_BOOL; opaque: pointer) {.cdecl.} =
-  if not is_handled:
+    isHandled: JS_BOOL; opaque: pointer) {.cdecl.} =
+  if not isHandled:
     let window = ctx.getGlobal()
     var s: string
     if fromJS(ctx, reason, s).isOk:

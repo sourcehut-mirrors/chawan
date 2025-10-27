@@ -7,27 +7,27 @@ import std/streams
 import chame/tags
 import chame/minidom
 
-func escapeText(s: string, attribute_mode = false): string =
+func escapeText(s: string, attributeMode = false): string =
   result = ""
-  var nbsp_mode = false
-  var nbsp_prev = '\0'
+  var nbspMode = false
+  var nbspPrev = '\0'
   for c in s:
-    if nbsp_mode:
+    if nbspMode:
       if c == char(0xA0):
         result &= "&nbsp;"
       else:
         result &= nbsp_prev & c
-      nbsp_mode = false
+      nbspMode = false
     elif c == '&':
       result &= "&amp;"
     elif c == char(0xC2):
-      nbsp_mode = true
-      nbsp_prev = c
-    elif attribute_mode and c == '"':
+      nbspMode = true
+      nbspPrev = c
+    elif attributeMode and c == '"':
       result &= "&quot;"
-    elif not attribute_mode and c == '<':
+    elif not attributeMode and c == '<':
       result &= "&lt;"
-    elif not attribute_mode and c == '>':
+    elif not attributeMode and c == '>':
       result &= "&gt;"
     else:
       result &= c

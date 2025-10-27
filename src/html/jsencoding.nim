@@ -77,7 +77,7 @@ proc newTextEncoder(): JSTextEncoder {.jsctor.} =
 proc jencoding(this: JSTextEncoder): string {.jsfget: "encoding".} =
   return "utf-8"
 
-proc dealloc_wrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
+proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
   if p != nil:
     dealloc(p)
 
@@ -88,9 +88,9 @@ proc encode(this: JSTextEncoder; input = ""): JSUint8Array {.jsfunc.} =
   let abuf = if input.len > 0:
     let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
     copyMem(buf, unsafeAddr input[0], input.len)
-    JSArrayBuffer(p: buf, len: csize_t(input.len), dealloc: dealloc_wrap)
+    JSArrayBuffer(p: buf, len: csize_t(input.len), dealloc: deallocWrap)
   else:
-    JSArrayBuffer(p: nil, len: 0, dealloc: dealloc_wrap)
+    JSArrayBuffer(p: nil, len: 0, dealloc: deallocWrap)
   return JSUint8Array(
     abuf: abuf,
     offset: 0,

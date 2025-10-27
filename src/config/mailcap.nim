@@ -248,7 +248,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
       attrname &= c.toLowerAscii()
       state = usAttr
     of usNormal, usDollar:
-      let prev_dollar = state == usDollar
+      let prevDollar = state == usDollar
       state = usNormal
       case c
       of '%':
@@ -272,7 +272,7 @@ proc unquoteCommand*(ecmd, contentType, outpath: string; url: URL;
           state = usDollar
         cmd &= c
       of '(':
-        if prev_dollar:
+        if prevDollar:
           qss.add(qsNormal)
         cmd &= c
       of ')':

@@ -303,10 +303,10 @@ proc setContainer(pager: Pager; c: Container) =
     pager.tab.current = nil
 
 proc reflect(ctx: JSContext; this_val: JSValueConst; argc: cint;
-    argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray): JSValue
+    argv: JSValueConstArray; magic: cint; funcData: JSValueConstArray): JSValue
     {.cdecl.} =
-  let obj = func_data[0]
-  let fun = func_data[1]
+  let obj = funcData[0]
+  let fun = funcData[1]
   return JS_Call(ctx, fun, obj, argc, argv)
 
 proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetownprop.} =
@@ -319,9 +319,9 @@ proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetownprop.} =
       ctx.toJS(pager.container)
     let val = JS_GetProperty(ctx, cval, a)
     if JS_IsFunction(ctx, val):
-      let func_data = @[cval, val]
+      let funcData = @[cval, val]
       let fun = JS_NewCFunctionData(ctx, reflect, 1, 0, 2,
-        func_data.toJSValueArray())
+        funcData.toJSValueArray())
       JS_FreeValue(ctx, cval)
       JS_FreeValue(ctx, val)
       return fun

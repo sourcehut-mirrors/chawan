@@ -196,7 +196,7 @@ proc consumeString(state: var TomlParser; buf: openArray[char]; first: char):
     inc state.line
     state.seek(1)
   var escape = false
-  var ml_trim = false
+  var mlTrim = false
   var res = ""
   while state.has(buf):
     let c = state.consume(buf)
@@ -225,14 +225,14 @@ proc consumeString(state: var TomlParser; buf: openArray[char]; first: char):
       of '"': res &= '"'
       of '\\': res &= '\\'
       of 'u', 'U': res.addUTF8(?state.consumeEscape(buf, c))
-      of '\n': ml_trim = true
+      of '\n': mlTrim = true
       of '$': res &= "\\$" # special case for substitution in paths
       else: return state.err("invalid escape sequence \\" & c)
       escape = false
-    elif ml_trim:
+    elif mlTrim:
       if c notin {'\n', ' ', '\t'}:
         res &= c
-        ml_trim = false
+        mlTrim = false
       if c == '\n':
         inc state.line
     else:

@@ -13,9 +13,9 @@ type URIMethodMap* = object
 
 proc rewriteURL(pattern, surl: string): string =
   result = ""
-  var was_perc = false
+  var wasPerc = false
   for c in pattern:
-    if was_perc:
+    if wasPerc:
       if c == '%':
         result &= '%'
       elif c == 's':
@@ -23,12 +23,12 @@ proc rewriteURL(pattern, surl: string): string =
       else:
         result &= '%'
         result &= c
-      was_perc = false
+      wasPerc = false
     elif c != '%':
       result &= c
     else:
-      was_perc = true
-  if was_perc:
+      wasPerc = true
+  if wasPerc:
     result &= '%'
 
 type URIMethodMapResult* = enum
