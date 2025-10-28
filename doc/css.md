@@ -109,7 +109,11 @@ The standard pseudo-elements `::before`, `::after`, and `::marker` are
 supported.  `::backdrop` is parsed for compatibility, but is not supported
 yet.
 
-## Media queries
+## At-rules
+
+Following rules starting with an `@` sign are supported.
+
+### `@media`
 
 The `grid`, `hover`, `prefers-color-scheme`, `scripting`, `width`, and
 `height` media features are fully supported.
@@ -118,6 +122,16 @@ The `color`, `color-index`, and `monochrome` features are supported, but
 only consider the number of supported text colors (which can differ from
 the number of colors in Sixel/Kitty images).
 
+### `@import`
+
+Importing to layers is supported.
+
+`@import` combined with media queries is not yet supported.
+
+### `@layer`
+
+`@layer` is fully supported.  (I think.)
+
 ## Proprietary extensions
 
 * `text-align` accepts the values `-cha-center`, `-cha-left`, and
@@ -125,7 +139,7 @@ the number of colors in Sixel/Kitty images).
   and `<div align=right>` elements.  (Analogous to `-moz-center` etc.)
 
 * Properties with a `<color>` value accept the function `-cha-ansi()`,
-  which takes one parameter that is either:
+  mapping to terminal-specific ("ANSI") colors.  The function takes one of
 
 	- An 8-bit integer, indicating a color value as set by XTerm's
 	  indexed color feature.
@@ -134,8 +148,6 @@ the number of colors in Sixel/Kitty images).
 	  "magenta", "cyan", "white" for an ANSI color, possibly
 	  prefixed by the string "bright-" to indicate an aixterm
 	  16-color value.
-
-  The actual palette in use is specified by the user/terminal.
 
 * `text-decoration` accepts the keyword `-cha-reverse`, which sets
   the *reverse video* parameter on the text.  (This is used by the UA

@@ -38,6 +38,7 @@ type
     defsTail: CSSRuleDef
     next*: CSSStylesheet
     disabled*: bool
+    anonLayerCount: uint16
     layers: seq[CAtom]
 
   CSSRuleMap* = ref object
@@ -50,6 +51,7 @@ type
     hintList*: seq[CSSRuleDef]
     sheetId: uint32
     layers: seq[CAtom]
+    anonLayers: uint16
 
   SelectorHashType = enum
     shtGeneral, shtRoot, shtHint
@@ -181,8 +183,8 @@ proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
   let sheetId = map.sheetId
   sheet.idx = sheetId
   inc map.sheetId
-  # We don't have to dedupe, it won't make linear search any faster (and
-  # layer switches happen rarely enough anyway.)
+  # We don't have to dedupe, it won't make linear search much faster and
+  # layer switches happen rarely enough anyway.
   map.layers.add(sheet.layers)
   var def = sheet.defsHead
   var prevLayer = CAtomNull
@@ -193,7 +195,11 @@ proc add*(map: CSSRuleMap; sheet: CSSStylesheet) =
     let layer = def.layer
     if layer != CAtomNull:
       if layer != prevLayer:
-        layerId = uint16(map.layers.find(layer)) + 1
+        if ($layer)[0] == '!':
+          layerId = 20000 + map.anonLayers # ought to be enough for everyone
+          inc map.anonLayers
+        else:
+          layerId = uint16(map.layers.find(layer)) + 1
         prevLayer = layer
       def.layerId = layerId
     map.add(def)
@@ -237,6 +243,49 @@ proc addRule(sheet: CSSStylesheet; rule: CSSQualifiedRule; origin: CSSOrigin;
     sheet.defsTail = ruleDef
     inc sheet.len
 
+proc nextAnonLayer(sheet: CSSStylesheet): CAtom =
+  let res = sheet.anonLayerCount
+  inc sheet.anonLayerCount
+  ('!' & $res).toAtom()
+
+proc consumeLayerName(ctx: var CSSParser; parent: CAtom; anon: var bool):
+    Opt[CAtom] =
+  var name = ""
+  if parent != CAtomNull:
+    name &= $parent & '.'
+  while ctx.has():
+    case ctx.peekTokenType()
+    of cttIdent:
+      name &= ctx.consume().s
+    of cttDot:
+      if name.len <= 0 or name[^1] == '.':
+        return err()
+      name &= '.'
+      ctx.seekToken()
+    else:
+      break
+  if name.len <= 0 or name[^1] == '.':
+    return err()
+  anon = name[0] == '!'
+  ok(name.toAtom())
+
+proc parseImportLayer(ctx: var CSSParser; sheet: CSSStylesheet;
+    oldLayer: CAtom): Opt[CAtom] =
+  if ctx.skipBlanksCheckHas().isErr:
+    return ok(oldLayer)
+  if ctx.peekFunction(cftLayer):
+    ctx.seekToken()
+    if ctx.skipBlanksCheckDone().isOk:
+      return ok(sheet.nextAnonLayer())
+    var anon: bool
+    let layer = ?ctx.consumeLayerName(oldLayer, anon)
+    ?ctx.checkFunctionEnd()
+    return ok(layer)
+  if ctx.peekIdentNoCase("layer"):
+    ctx.seekToken()
+    return ok(sheet.nextAnonLayer())
+  ok(oldLayer)
+
 proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
     origin: CSSOrigin; layer: CAtom): Opt[void] =
   case atrule.name
@@ -244,28 +293,16 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
   of cartImport:
     if sheet.len == 0 and base != nil:
       var ctx = initCSSParser(atrule.prelude)
-      # Warning: this is a tracking vector minefield. If you implement
-      # media query based imports, make sure to not filter here, but in
-      # DOM after the sheet has been downloaded. (e.g. importList can
-      # get a "media" field, etc.)
       ?ctx.skipBlanksCheckHas()
       let tok = ctx.consume()
       let urls = ?ctx.parseURL(tok)
       let url = ?parseURL(urls, base)
-      var layer = layer
-      if ctx.skipBlanksCheckHas().isOk:
-        let tok = ctx.consume()
-        #TODO anonymous layer (just use a global counter in dom for id?)
-        if tok.t == cttFunction:
-          if tok.ft != cftLayer:
-            return err()
-          ?ctx.skipBlanksCheckHas()
-          let tok = ctx.consume()
-          if tok.t != cttIdent:
-            return err()
-          layer = tok.s.toAtom()
-          ?ctx.checkFunctionEnd()
+      let layer = ?ctx.parseImportLayer(sheet, layer)
       #TODO media queries
+      # Warning: this is a tracking vector minefield.  If you implement
+      # media query based imports, make sure to not filter here, but in
+      # DOM after the sheet has been downloaded.  (e.g. importList can
+      # get a "media" field, etc.)
       ?ctx.skipBlanksCheckDone()
       sheet.importList.add(CSSImport(url: url, layer: layer))
   of cartMedia:
@@ -276,26 +313,27 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
   of cartLayer:
     var ctx = initCSSParser(atrule.prelude)
     if atrule.hasBlock:
-      ?ctx.skipBlanksCheckHas()
-      let tok = ctx.consume()
-      if tok.t != cttIdent:
-        return err()
-      ?ctx.skipBlanksCheckDone()
-      let name = tok.s.toAtom()
-      sheet.layers.add(name) # note: we intentionally don't dedupe
+      let name = if ctx.skipBlanksCheckHas().isOk:
+        var anon: bool
+        let name = ?ctx.consumeLayerName(layer, anon)
+        ?ctx.skipBlanksCheckDone()
+        if anon:
+          sheet.layers.add(name) # note: we intentionally don't dedupe
+        name
+      else:
+        sheet.nextAnonLayer()
       var ctx = initCSSParser(atrule.oblock)
       sheet.addRules(ctx, topLevel = false, base = nil, origin, name)
     else:
       var names: seq[CAtom] = @[]
       while ctx.skipBlanksCheckHas().isOk:
-        let tok = ctx.consume()
-        if tok.t != cttIdent:
-          return err()
+        var anon: bool
+        let name = ?ctx.consumeLayerName(layer, anon)
         if ctx.skipBlanksCheckHas().isErr:
           break
         if ctx.consume().t != cttComma:
           return err()
-        names.add(tok.s.toAtom())
+        names.add(name)
       sheet.layers.add(names)
   ok()
 

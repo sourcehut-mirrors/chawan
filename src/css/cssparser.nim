@@ -942,11 +942,13 @@ proc has*(ctx: var CSSParser): bool =
   return ctx.i < ctx.toks.len
 
 proc peekTokenType*(ctx: var CSSParser): CSSTokenType =
-  return ctx.peekToken().t
+  ctx.peekToken().t
 
 proc peekIdentNoCase*(ctx: var CSSParser; s: string): bool =
-  return ctx.peekTokenType() == cttIdent and
-    ctx.peekToken().s.equalsIgnoreCase(s)
+  ctx.peekTokenType() == cttIdent and ctx.peekToken().s.equalsIgnoreCase(s)
+
+proc peekFunction*(ctx: var CSSParser; ft: CSSFunctionType): bool =
+  ctx.peekTokenType() == cttFunction and ctx.peekToken().ft == ft
 
 proc consume*(ctx: var CSSParser): CSSToken =
   if ctx.iqlen == 0:

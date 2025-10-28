@@ -176,7 +176,9 @@ The standard pseudo\-elements \f[CR]::before\f[R], \f[CR]::after\f[R],
 and \f[CR]::marker\f[R] are supported.
 \f[CR]::backdrop\f[R] is parsed for compatibility, but is not supported
 yet.
-.SS Media queries
+.SS At\-rules
+Following rules starting with an \f[CR]\(at\f[R] sign are supported.
+.SS \f[CR]\(atmedia\f[R]
 The \f[CR]grid\f[R], \f[CR]hover\f[R],
 \f[CR]prefers\-color\-scheme\f[R], \f[CR]scripting\f[R],
 \f[CR]width\f[R], and \f[CR]height\f[R] media features are fully
@@ -186,6 +188,13 @@ The \f[CR]color\f[R], \f[CR]color\-index\f[R], and \f[CR]monochrome\f[R]
 features are supported, but only consider the number of supported text
 colors (which can differ from the number of colors in Sixel/Kitty
 images).
+.SS \f[CR]\(atimport\f[R]
+Importing to layers is supported.
+.PP
+\f[CR]\(atimport\f[R] combined with media queries is not yet supported.
+.SS \f[CR]\(atlayer\f[R]
+\f[CR]\(atlayer\f[R] is fully supported.
+(I think.)
 .SS Proprietary extensions
 .IP \(bu 2
 \f[CR]text\-align\f[R] accepts the values \f[CR]\-cha\-center\f[R],
@@ -195,7 +204,9 @@ images).
 (Analogous to \f[CR]\-moz\-center\f[R] etc.)
 .IP \(bu 2
 Properties with a \f[CR]<color>\f[R] value accept the function
-\f[CR]\-cha\-ansi()\f[R], which takes one parameter that is either:
+\f[CR]\-cha\-ansi()\f[R], mapping to terminal\-specific (\(lqANSI\(rq)
+colors.
+The function takes one of
 .RS 2
 .IP \(bu 2
 An 8\-bit integer, indicating a color value as set by XTerm\(cqs indexed
@@ -205,8 +216,6 @@ One of the strings \(lqblack\(rq, \(lqred\(rq, \(lqgreen\(rq,
 \(lqyellow\(rq, \(lqblue\(rq, \(lqmagenta\(rq, \(lqcyan\(rq,
 \(lqwhite\(rq for an ANSI color, possibly prefixed by the string
 \(lqbright\-\(rq to indicate an aixterm 16\-color value.
-.PP
-The actual palette in use is specified by the user/terminal.
 .RE
 .IP \(bu 2
 \f[CR]text\-decoration\f[R] accepts the keyword

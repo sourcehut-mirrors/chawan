@@ -21,6 +21,10 @@
 	#c { color: blue !important }
 	#d { color: blue !important }
 }
+@layer { body > div#e { color: red } }
+@layer { div#e { color: green } }
+@layer { body > div#e { color: red } }
+@layer { div#e { color: green } }
 #b { color: purple }
 #d { color: purple !important }
 </style>
@@ -28,3 +32,34 @@
 <div id=b>test</div>
 <div id=c>test</div>
 <div id=d>test</div>
+<div id=e>test</div>
+<style>
+/* anonymous */
+@layer {
+	@layer test {
+		body > div#f { color: pink }
+		body > div#g { color: green }
+	}
+	@layer test {
+		div#f { color: red }
+		div#g { color: red }
+	}
+}
+@layer {
+	@layer test {
+		div#f { color: green }
+	}
+}
+@layer test.hi {
+	div#h { color: green }
+}
+@layer test..hi {
+	div#h { color: red }
+}
+@layer test. {
+	div#h { color: red }
+}
+</style>
+<div id=f>test</div>
+<div id=g>test</div>
+<div id=h>test</div>
