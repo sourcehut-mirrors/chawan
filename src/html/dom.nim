@@ -21,7 +21,6 @@ import css/mediaquery
 import css/sheet
 import html/catom
 import html/domcanvas
-import html/domexception
 import html/event
 import html/performance
 import html/script
@@ -1850,7 +1849,7 @@ proc insertThrow(ctx: JSContext; e: cstring): JSValue =
   if e == nil:
     return JS_ThrowDOMException(ctx, "NotFoundError",
       "reference node is not a child of parent")
-  return JS_ThrowDOMException(ctx, "HierarchyRequestError", $e)
+  return JS_ThrowDOMException(ctx, "HierarchyRequestError", e)
 
 proc removeChild(ctx: JSContext; parent, node: Node): JSValue {.jsfunc.} =
   if Node(node.parentNode) != parent:
@@ -2423,7 +2422,8 @@ proc insert*(parent: ParentNode; node, before: Node;
 proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: string): JSValue =
   let selectors = parseSelectors(q)
   if selectors.len == 0:
-    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: " & q)
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
+      cstring(q))
   for element in node.elementDescendants:
     if element.matchesImpl(selectors):
       return ctx.toJS(element)
@@ -2432,7 +2432,8 @@ proc querySelectorImpl(ctx: JSContext; node: ParentNode; q: string): JSValue =
 proc querySelectorAllImpl(ctx: JSContext; node: ParentNode; q: string): JSValue =
   let selectors = parseSelectors(q)
   if selectors.len == 0:
-    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: " & q)
+    return JS_ThrowDOMException(ctx, "SyntaxError", "invalid selector: %s",
+      cstring(q))
   return ctx.toJS(node.newNodeList(
     match = proc(node: Node): bool =
       if node of Element:

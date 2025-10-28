@@ -8,7 +8,6 @@ import html/catom
 import html/chadombuilder
 import html/dom
 import html/domcanvas
-import html/domexception
 import html/env
 import html/formdata
 import html/jsencoding
@@ -134,7 +133,6 @@ method isSameOrigin(client: Client; origin: Origin): bool =
 
 proc addJSModules(client: Client; ctx: JSContext): JSClassID =
   let (windowCID, eventCID, eventTargetCID) = ctx.addWindowModule2()
-  ctx.addDOMExceptionModule()
   ctx.addConsoleModule()
   ctx.addNavigatorModule()
   ctx.addDOMModule(eventTargetCID)

@@ -522,10 +522,17 @@ proc fromJS*(ctx: JSContext; atom: JSAtom; res: var uint32): Opt[void] =
   return err()
 
 proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): Opt[void] =
-  let cs = JS_AtomToCString(ctx, atom)
+  var len: csize_t
+  let cs = JS_AtomToCStringLen(ctx, addr len, atom)
   if cs == nil:
     return err()
-  res = $cs
+  if len > csize_t(int.high):
+    JS_FreeCString(ctx, cs)
+    JS_ThrowRangeError(ctx, "string length out of bounds")
+    return err()
+  res = newString(int(len))
+  if len > 0:
+    copyMem(addr res[0], cast[pointer](cs), len)
   JS_FreeCString(ctx, cs)
   return ok()
 

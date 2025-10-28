@@ -383,6 +383,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): Opt[void] =
       return err()
     if len > csize_t(int.high):
       JS_FreeCString(ctx, cs)
+      JS_ThrowRangeError(ctx, "string length out of bounds")
       return err()
     {.push overflowChecks: off.}
     let H = cast[int](len) - 1

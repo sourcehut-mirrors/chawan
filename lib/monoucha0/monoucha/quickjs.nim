@@ -20,7 +20,7 @@ else:
   {.passl: "-lpthread".}
 
 {.compile("qjs/quickjs.c", CFLAGS).}
-{.compile("qjs/xsum.c", CFLAGS).}
+{.compile("qjs/dtoa.c", CFLAGS).}
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
@@ -465,6 +465,7 @@ proc JS_AddIntrinsicPromise*(ctx: JSContext)
 proc JS_AddIntrinsicBigInt*(ctx: JSContext)
 proc JS_AddIntrinsicWeakRef*(ctx: JSContext)
 proc JS_AddPerformance*(ctx: JSContext)
+proc JS_AddIntrinsicDOMException*(ctx: JSContext)
 
 # for equality comparisons and sameness
 proc JS_IsEqual*(ctx: JSContext; op1, op2: JSValueConst): cint
@@ -506,11 +507,13 @@ proc JS_FreeAtom*(ctx: JSContext; atom: JSAtom)
 proc JS_FreeAtomRT*(rt: JSRuntime; atom: JSAtom)
 proc JS_AtomToValue*(ctx: JSContext; atom: JSAtom): JSValue
 proc JS_AtomToString*(ctx: JSContext; atom: JSAtom): JSValue
+proc JS_AtomToCStringLen*(ctx: JSContext; plen: ptr csize_t; atom: JSAtom):
+  cstringConst
 proc JS_AtomToCString*(ctx: JSContext; atom: JSAtom): cstringConst
 proc JS_ValueToAtom*(ctx: JSContext; val: JSValueConst): JSAtom
 
 # object class support
-const JS_INVALID_CLASS_ID* = cint(0)
+const JS_INVALID_CLASS_ID* = JSClassID(0)
 
 proc JS_NewClassID*(rt: JSRuntime; pclass_id: var JSClassID): JSClassID
 proc JS_GetClassID*(obj: JSValueConst): JSClassID
@@ -541,24 +544,38 @@ proc JS_IsObject*(v: JSValueConst): JS_BOOL
 
 proc JS_Throw*(ctx: JSContext; obj: JSValue): JSValue
 proc JS_GetException*(ctx: JSContext): JSValue
-proc JS_IsError*(ctx: JSContext; v: JSValueConst): JS_BOOL
-proc JS_IsUncatchableError*(ctx: JSContext; val: JSValueConst): JS_BOOL
+proc JS_IsError*(v: JSValueConst): JS_BOOL
+proc JS_IsUncatchableError*(val: JSValueConst): JS_BOOL
 proc JS_SetUncatchableError*(ctx: JSContext; val: JSValueConst)
 proc JS_ClearUncatchableError*(ctx: JSContext; val: JSValueConst)
 proc JS_ResetUncatchableError*(ctx: JSContext)
 proc JS_NewError*(ctx: JSContext): JSValue
+proc JS_NewInternalError*(ctx: JSContext; fmt: cstring): JSValue {.
+  varargs, discardable.}
+proc JS_NewPlainError*(ctx: JSContext; fmt: cstring): JSValue {.
+  varargs, discardable.}
+proc JS_NewRangeError*(ctx: JSContext; fmt: cstring): JSValue {.
+  varargs, discardable.}
+proc JS_NewReferenceError*(ctx: JSContext; fmt: cstring): JSValue {.
+  varargs, discardable.}
+proc JS_NewSyntaxError*(ctx: JSContext; fmt: cstring): JSValue {.
+  varargs, discardable.}
+proc JS_NewTypeError*(ctx: JSContext; fmt: cstring): JSValue {.
+  varargs, discardable.}
 proc JS_ThrowPlainError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
+  discardable.}
+proc JS_ThrowRangeError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
+  discardable.}
+proc JS_ThrowReferenceError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
 proc JS_ThrowSyntaxError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
 proc JS_ThrowTypeError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
-proc JS_ThrowReferenceError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
-  discardable.}
-proc JS_ThrowRangeError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
-  discardable.}
 proc JS_ThrowInternalError*(ctx: JSContext; fmt: cstring): JSValue {.varargs,
   discardable.}
+proc JS_ThrowDOMException*(ctx: JSContext; name, fmt: cstring): JSValue {.
+  varargs, discardable.}
 
 proc JS_FreeValue*(ctx: JSContext; v: JSValue)
 proc JS_FreeValueRT*(rt: JSRuntime; v: JSValue)
@@ -598,7 +615,7 @@ proc JS_GetStringLength*(str: JSValueConst): uint32
 
 proc JS_NewObjectProtoClass*(ctx: JSContext; proto: JSValueConst;
   class_id: JSClassID): JSValue
-proc JS_NewObjectClass*(ctx: JSContext; class_id: cint): JSValue
+proc JS_NewObjectClass*(ctx: JSContext; class_id: JSClassID): JSValue
 proc JS_NewObjectProto*(ctx: JSContext; proto: JSValueConst): JSValue
 proc JS_NewObject*(ctx: JSContext): JSValue
 
@@ -606,6 +623,14 @@ proc JS_IsFunction*(ctx: JSContext; val: JSValueConst): JS_BOOL
 proc JS_IsConstructor*(ctx: JSContext; val: JSValueConst): JS_BOOL
 proc JS_SetConstructorBit*(ctx: JSContext; func_obj: JSValueConst;
   val: JS_BOOL): JS_BOOL
+
+proc JS_IsRegExp*(val: JSValueConst): JS_BOOL
+proc JS_IsMap*(val: JSValueConst): JS_BOOL
+proc JS_IsSet*(val: JSValueConst): JS_BOOL
+proc JS_IsWeakRef*(val: JSValueConst): JS_BOOL
+proc JS_IsWeakSet*(val: JSValueConst): JS_BOOL
+proc JS_IsWeakMap*(val: JSValueConst): JS_BOOL
+proc JS_IsDataView*(val: JSValueConst): JS_BOOL
 
 proc JS_NewArray*(ctx: JSContext): JSValue
 # takes ownership of the values
@@ -635,8 +660,7 @@ proc JS_IsExtensible*(ctx: JSContext; obj: JSValueConst): cint
 proc JS_PreventExtensions*(ctx: JSContext; obj: JSValueConst): cint
 proc JS_DeleteProperty*(ctx: JSContext; obj: JSValueConst; prop: JSAtom;
   flags: cint): cint
-proc JS_SetPrototype*(ctx: JSContext; obj: JSValueConst; proto_val: JSValue):
-  cint
+proc JS_SetPrototype*(ctx: JSContext; obj, proto_val: JSValueConst): cint
 proc JS_GetPrototype*(ctx: JSContext; val: JSValueConst): JSValue
 proc JS_GetLength*(ctx: JSContext; obj: JSValueConst; pres: ptr uint64): JSValue
 proc JS_SetLength*(ctx: JSContext; obj: JSValueConst; len: uint64): cint
@@ -822,13 +846,16 @@ proc JS_NewCFunction3*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
   JSValue
 proc JS_NewCFunctionData*(ctx: JSContext; cfunc: JSCFunctionData;
   length, magic, data_len: cint; data: JSValueConstArray): JSValue
+proc JS_NewCFunctionData2*(ctx: JSContext; cfunc: JSCFunctionData;
+  name: cstring; length, magic, data_len: cint; data: JSValueConstArray):
+  JSValue
 proc JS_NewCFunction*(ctx: JSContext; cfunc: JSCFunction; name: cstring;
   length: cint): JSValue
 proc JS_SetConstructor*(ctx: JSContext; func_obj, proto: JSValueConst)
 
 # C property definition
 proc JS_SetPropertyFunctionList*(ctx: JSContext; obj: JSValueConst;
-  tab: JSCFunctionListP; len: cint)
+  tab: JSCFunctionListP; len: cint): cint
 
 # C module definition
 type JSModuleInitFunc* = proc(ctx: JSContext; m: JSModuleDef): cint

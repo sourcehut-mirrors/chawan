@@ -5,7 +5,6 @@ import std/options
 import chame/tags
 import html/catom
 import html/dom
-import html/domexception
 import io/dynstream
 import monoucha/fromjs
 import monoucha/javascript

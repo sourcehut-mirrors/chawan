@@ -9,7 +9,6 @@ import html/catom
 import html/chadombuilder
 import html/dom
 import html/domcanvas
-import html/domexception
 import html/event
 import html/formdata
 import html/jsencoding
@@ -335,7 +334,7 @@ proc origin(window: Window): string {.jsrfget.} =
 proc atob(ctx: JSContext; window: Window; data: string): JSValue {.jsfunc.} =
   var s: string
   if (let r = s.atob(data); r.isErr):
-    return JS_ThrowDOMException(ctx, "InvalidCharacterError", $r.error)
+    return JS_ThrowDOMException(ctx, "InvalidCharacterError", r.error)
   return ctx.toJS(NarrowString(s))
 
 proc btoa(ctx: JSContext; window: Window; data: JSValueConst): JSValue
@@ -516,7 +515,6 @@ proc addScripting*(window: Window) =
     window.settings.scriptAttrsp = unsafeAddr dummyAttrs
   let (eventCID, eventTargetCID) = ctx.addWindowModule()
   ctx.setGlobal(window)
-  ctx.addDOMExceptionModule()
   ctx.addConsoleModule()
   ctx.addNavigatorModule()
   ctx.addDOMModule(eventTargetCID)
