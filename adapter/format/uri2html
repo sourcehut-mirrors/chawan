@@ -1,4 +1,4 @@
 #!/bin/sh
-echo "<!DOCTYPE html>${1:+"<h1>$1</h1><hr>"}<ol>"
+echo "<!DOCTYPE html>${1:+"<title>$1</title><h1>$1</h1><hr>"}<ol>"
 "$CHA_LIBEXEC_DIR"/urldec | \
 sed '/^#/d;s/</\&gt;/g;s/>/\&lt;/g;s/&/\&amp;/g;s/"/\&quot;/g;s@.*@<li><a href="&">&</a>@'
