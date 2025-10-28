@@ -1242,8 +1242,8 @@ proc corsFetch(window: Window; input: Request): FetchPromise =
     return newResolvedPromise(FetchResult.err())
   return window.loader.fetch(input)
 
-proc parseStylesheet(window: Window; s: openArray[char]; baseURL: URL;
-    charset: Charset; layer: CAtom): Promise[LoadSheetResult] =
+proc parseStylesheet(window: Window; s: string; baseURL: URL; charset: Charset;
+    layer: CAtom): Promise[LoadSheetResult] =
   let sheet = s.parseStylesheet(baseURL, addr window.settings, coAuthor, layer)
   var promises: seq[EmptyPromise] = @[]
   var sheets = newSeq[LoadSheetResult](sheet.importList.len)

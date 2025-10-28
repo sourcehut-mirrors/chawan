@@ -437,69 +437,6 @@ proc parseHexInt64*(s: openArray[char]): Opt[int64] =
 proc parseIntP*(s: openArray[char]): Opt[int] =
   return parseIntImpl[int, uint](s, 10)
 
-# https://www.w3.org/TR/css-syntax-3/#convert-string-to-number
-# n: start pointer -> end pointer
-# returns NaN if doesn't start with a number
-#TODO use atod from next QJS version
-proc parseFloat32*(s: openArray[char]; n: var int): float32 =
-  var sign = 1f32
-  var t = 1f32
-  var d = 0u32
-  var integer = 0f64
-  var f = 0f64
-  var e = 0f32
-  var i = n
-  if i < s.len and s[i] == '-':
-    sign = -1f32
-    inc i
-  elif i < s.len and s[i] == '+':
-    inc i
-  if i >= s.len:
-    return NaN
-  while i < s.len:
-    let c = s[i]
-    let u = uint32(c) - uint32('0')
-    if u > 9:
-      break
-    integer *= 10
-    integer += float64(u)
-    inc i
-  if i + 1 < s.len and s[i] == '.' and s[i + 1] in AsciiDigit:
-    inc i
-    while i < s.len:
-      let u = uint8(s[i]) - uint8('0')
-      if u > 9:
-        break
-      f *= 10
-      f += float32(u)
-      inc i
-      inc d
-  if i < s.len and s[i] in {'e', 'E'}:
-    if i + 1 < s.len and s[i + 1] in AsciiDigit or
-        i + 2 < s.len and s[i + 1] in {'+', '-'} and s[i + 2] in AsciiDigit:
-      inc i
-      if i < s.len and s[i] == '-':
-        t = -1f32
-        inc i
-      elif i < s.len and s[i] == '+':
-        inc i
-      while i < s.len:
-        let u = uint8(s[i]) - uint8('0')
-        if u > 9:
-          break
-        e *= 10
-        e += float32(u)
-        inc i
-  n = i
-  return sign * float32(integer + f * pow(10, -float64(d))) * pow(10, (t * e))
-
-proc parseFloat32*(s: openArray[char]): float32 =
-  var i = 0
-  let res = parseFloat32(s, i)
-  if i < s.len:
-    return NaN
-  return res
-
 const ControlPercentEncodeSet* = Controls + NonAscii
 const FragmentPercentEncodeSet* = ControlPercentEncodeSet +
   {' ', '"', '<', '>', '`'}

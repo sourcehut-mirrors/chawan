@@ -5,6 +5,7 @@ import std/strutils
 
 import html/catom
 import types/opt
+import utils/dtoawrap
 import utils/twtstr
 
 type
@@ -681,7 +682,8 @@ proc consumeNumericToken(iq: openArray[char]; n: var int): CSSToken =
       m + 1 < iq.len and iq[m] in {'.', 'e', 'E'} and iq[m + 1] in AsciiDigit or
       m + 2 < iq.len and iq[m] in {'e', 'E'} and iq[m + 1] in {'+', '-'} and
         iq[m + 2] in AsciiDigit:
-    tu.f = parseFloat32(iq, n)
+    # this works because initCSSParser takes string only
+    tu.f = float32(parseFloat64(cast[cstring](unsafeAddr iq[0]), n))
     m = n
     if m < iq.len and iq[m] == '%':
       n = m + 1
@@ -881,7 +883,8 @@ proc tokenPair(t: CSSTokenType): CSSTokenType =
 template iq(ctx: CSSParser): openArray[char] =
   ctx.iqp.toOpenArray(0, ctx.iqlen - 1)
 
-proc initCSSParser*(iq: openArray[char]): CSSParser =
+# iq *must* be a string, because parseFloat32 needs the NUL terminator.
+proc initCSSParser*(iq: string): CSSParser =
   if iq.len <= 0:
     return CSSParser()
   return CSSParser(
@@ -1146,11 +1149,11 @@ iterator parseListOfRules*(ctx: var CSSParser; topLevel: bool):
     if rule := ctx.consumeRule(topLevel):
       yield rule
 
-proc parseDeclarations*(iq: openArray[char]): seq[CSSDeclaration] =
+proc parseDeclarations*(iq: string): seq[CSSDeclaration] =
   var ctx = initCSSParser(iq)
   return ctx.consumeDeclarations(nested = false)
 
-proc parseComponentValues*(iq: openArray[char]): seq[CSSToken] =
+proc parseComponentValues*(iq: string): seq[CSSToken] =
   var ctx = initCSSParser(iq)
   result = @[]
   while ctx.has():
@@ -1785,7 +1788,7 @@ proc parseSelectorsConsume(toks: var seq[CSSToken]): SelectorList =
   var state = SelectorParser(ctx: initCSSParserSink(toks))
   state.parseSelectorList(forgiving = false)
 
-proc parseSelectors*(ibuf: openArray[char]): SelectorList =
+proc parseSelectors*(ibuf: string): SelectorList =
   var state = SelectorParser(ctx: initCSSParser(ibuf))
   state.parseSelectorList(forgiving = false)
 

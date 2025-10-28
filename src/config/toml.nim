@@ -18,6 +18,7 @@ import std/tables
 import std/times
 
 import types/opt
+import utils/dtoawrap
 import utils/twtstr
 
 type
@@ -51,7 +52,7 @@ type
     of tvtInteger:
       i*: int64
     of tvtFloat:
-      f*: float32
+      f*: float64
     of tvtBoolean:
       b*: bool
     of tvtTable:
@@ -453,7 +454,7 @@ proc consumeNumber(state: var TomlParser; buf: openArray[char]; c: char):
       return state.err("invalid octal number")
     return ok(TomlValue(t: tvtInteger, i: val.get))
   of pntFloat:
-    let val = parseFloat32(repr)
+    let val = parseFloat64(cstring(repr))
     return ok(TomlValue(t: tvtFloat, f: val))
 
 proc consumeValue(state: var TomlParser; buf: openArray[char]): TomlResult

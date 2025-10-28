@@ -299,9 +299,8 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
       sheet.layers.add(names)
   ok()
 
-proc parseStylesheet*(iq: openArray[char]; base: URL;
-    settings: ptr EnvironmentSettings; origin: CSSOrigin; layer: CAtom):
-    CSSStylesheet =
+proc parseStylesheet*(iq: string; base: URL; settings: ptr EnvironmentSettings;
+    origin: CSSOrigin; layer: CAtom): CSSStylesheet =
   let sheet = CSSStylesheet(settings: settings)
   var ctx = initCSSParser(iq)
   sheet.addRules(ctx, topLevel = true, base, origin, layer)

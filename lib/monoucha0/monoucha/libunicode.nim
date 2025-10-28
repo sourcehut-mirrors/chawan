@@ -2,16 +2,13 @@
 
 from std/os import parentDir
 
+import cutils
+
+export cutils.JS_BOOL
+
 {.used.}
-# used so that we can import it from libregexp.nim
 
-when not compileOption("threads"):
-  const CFLAGS = "-fwrapv -DMNC_NO_THREADS"
-else:
-  const CFLAGS = "-fwrapv"
-
-{.compile("qjs/libunicode.c", CFLAGS).}
-{.compile("qjs/cutils.c", CFLAGS).}
+{.compile("qjs/libunicode.c", "-fwrapv").}
 
 const luheader = "qjs/libunicode.h"
 
@@ -27,8 +24,6 @@ type
 
   UnicodeNormalizationEnum* {.size: sizeof(cint).} = enum
     UNICODE_NFC, UNICODE_NFD, UNICODE_NFKC, UNICODE_NFKD
-
-  JS_BOOL* {.importc: "bool".} = bool
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 

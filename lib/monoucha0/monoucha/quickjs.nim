@@ -4,6 +4,7 @@ from std/os import parentDir
 
 import constcharp
 import libregexp
+import dtoa
 
 export constcharp
 
@@ -20,7 +21,6 @@ else:
   {.passl: "-lpthread".}
 
 {.compile("qjs/quickjs.c", CFLAGS).}
-{.compile("qjs/dtoa.c", CFLAGS).}
 
 {.passc: "-I" & currentSourcePath().parentDir().}
 
