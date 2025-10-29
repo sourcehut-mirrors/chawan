@@ -34,6 +34,14 @@ also double click and drag the mouse to the left/right to select.)
 If Chawan complains about xsel, either install it or edit
 `external.copy-cmd` and `external.paste-cmd` to your liking.
 
+You can also disable mouse tracking temporarily by holding down shift, or
+permanently by setting in `config.toml`:
+
+```toml
+[input]
+use-mouse = false
+```
+
 ## I was promised images but I see nothing?
 
 The most common reason is that you didn't add following to `config.toml`:

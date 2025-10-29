@@ -92,6 +92,16 @@ Throws a TypeError if this failed for whatever reason.
 </tr>
 
 <tr>
+<td>`openEditor(text)`</td>
+<td>Open "text" in the command configured as `external.editor` (this is
+typically just `$EDITOR`.)
+<p>
+If the editor signals an error (crash or non-zero exit code), `null` is
+returned.  Otherwise, the user's input is returned as a string.
+</td>
+</tr>
+
+<tr>
 <td>`getenv(name, fallback = null)`</td>
 <td>Get an environment variable by `name`.
 <p>
@@ -904,6 +914,11 @@ Following properties (functions/getters) are defined by `LineEdit`:
 <tr>
 <td>`nextHist()`, `prevHist()`</td>
 <td>Jump to the previous/next history entry.</td>
+</tr>
+
+<tr>
+<td>`text`</td>
+<td>The currently entered text.</td>
 </tr>
 
 </table>

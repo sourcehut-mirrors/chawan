@@ -32,6 +32,14 @@ select.)
 If Chawan complains about xsel, either install it or edit
 \f[CR]external.copy\-cmd\f[R] and \f[CR]external.paste\-cmd\f[R] to your
 liking.
+.PP
+You can also disable mouse tracking temporarily by holding down shift,
+or permanently by setting in \f[CR]config.toml\f[R]:
+.IP
+.EX
+\f[B][input]\f[R]
+use\-mouse = false
+.EE
 .SS I was promised images but I see nothing?
 The most common reason is that you didn\(cqt add following to
 \f[CR]config.toml\f[R]:

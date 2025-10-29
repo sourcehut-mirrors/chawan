@@ -160,6 +160,8 @@ l = 'cursorRight'
 'M-[B' = 'cursorDown'
 'M-[A' = 'cursorUp'
 'M-[C' = 'cursorRight'
+C-n = 'cursorDown'
+C-p = 'cursorUp'
 '0' = 'cursorLineBegin'
 'M-[H' = 'cursorLineBegin'
 '^' = 'cursorLineTextStart'
@@ -284,6 +286,7 @@ C-b = 'line.backward'
 C-f = 'line.forward'
 C-u = 'line.clear'
 'C-xC-?' = 'line.clear'
+C-xC-e = 'line.openEditor'
 C-_ = 'line.clear'
 M-k = 'line.clear'
 C-k = 'line.kill'
@@ -641,3 +644,10 @@ end = '() => line.end()'
 escape = '() => line.escape()'
 prevHist = '() => line.prevHist()'
 nextHist = '() => line.nextHist()'
+openEditor = '''
+() => {
+	const res = pager.openEditor(line.text);
+	if (res != null)
+		line.write(res);
+}
+'''

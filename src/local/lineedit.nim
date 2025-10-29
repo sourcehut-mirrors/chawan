@@ -21,7 +21,7 @@ type
     lesEdit, lesFinish, lesCancel
 
   LineEdit* = ref object
-    news*: string
+    news* {.jsget: "text".}: string
     prompt: string
     promptw: int
     state*: LineEditState
@@ -175,7 +175,7 @@ proc clear(edit: LineEdit) {.jsfunc.} =
     edit.cursorx = 0
     edit.redraw = true
 
-proc kill(edit: LineEdit) {.jsfunc.} =
+proc kill*(edit: LineEdit) {.jsfunc.} =
   if edit.cursori < edit.news.len:
     edit.news.setLen(edit.cursori)
     edit.redraw = true
@@ -244,7 +244,7 @@ proc killWord(edit: LineEdit) {.jsfunc.} =
   edit.news.delete(edit.cursori ..< i)
   edit.redraw = true
 
-proc begin(edit: LineEdit) {.jsfunc.} =
+proc begin*(edit: LineEdit) {.jsfunc.} =
   edit.cursori = 0
   edit.cursorx = 0
   if edit.shiftx > 0:

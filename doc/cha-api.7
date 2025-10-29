@@ -98,6 +98,17 @@ Throws a TypeError if this failed for whatever reason.
 T}
 _
 T{
+\f[CR]openEditor(text)\f[R]
+T}@T{
+Open \(lqtext\(rq in the command configured as
+\f[CR]external.editor\f[R] (this is typically just \f[CR]$EDITOR\f[R].)
+.PP
+If the editor signals an error (crash or non\-zero exit code),
+\f[CR]null\f[R] is returned.
+Otherwise, the user\(cqs input is returned as a string.
+T}
+_
+T{
 \f[CR]getenv(name, fallback = null)\f[R]
 T}@T{
 Get an environment variable by \f[CR]name\f[R].
@@ -1060,6 +1071,12 @@ T{
 \f[CR]nextHist()\f[R], \f[CR]prevHist()\f[R]
 T}@T{
 Jump to the previous/next history entry.
+T}
+_
+T{
+\f[CR]text\f[R]
+T}@T{
+The currently entered text.
 T}
 .TE
 .SS See also

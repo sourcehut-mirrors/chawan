@@ -2335,6 +2335,12 @@ proc commandMode(pager: Pager; val: bool) {.jsfset.} =
   if val:
     pager.command()
 
+proc openEditor(ctx: JSContext; pager: Pager; s: string): JSValue {.jsfunc.} =
+  var s = s
+  if pager.openInEditor(s):
+    return ctx.toJS(s)
+  return JS_NULL
+
 proc checkRegex(pager: Pager; regex: Result[Regex, string]): Opt[Regex] =
   if regex.isErr:
     pager.alert("Invalid regex: " & regex.error)

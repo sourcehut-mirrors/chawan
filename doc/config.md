@@ -1460,14 +1460,16 @@ unspecified.
 </tr>
 
 <tr>
-<td><kbd>j</kbd>, <kbd>k</kbd></td>
+<td><kbd>j</kbd>/<kbd>C-p</kbd>/<kbd>Up arrow</kbd>,
+<kbd>k</kbd>/<kbd>C-n</kbd>/<kbd>Down arrow</kbd></td>
 <td>`cursorUp`, `cursorDown`</td>
 <td>Move the cursor upwards/downwards by n lines, or if n is unspecified, by
 1.</td>
 </tr>
 
 <tr>
-<td><kbd>h</kbd>, <kbd>l</kbd></td>
+<td><kbd>h</kbd>/<kbd>Left arrow</kbd>,
+<kbd>l</kbd>/<kbd>Right arrow</kbd></td>
 <td>`cursorLeft`, `cursorRight`</td>
 <td>Move the cursor to the left/right by n cells, or if n is unspecified, by
 1.</td>
@@ -1774,6 +1776,12 @@ position.</td>
 <td><kbd>C-u</kbd>/<kbd>C-xC-?</kbd>, <kbd>C-k</kbd></td>
 <td>`line.clear`, `line.kill`</td>
 <td>Delete text before (clear)/after (kill) the cursor.</td>
+</tr>
+
+<tr>
+<td><kbd>C-xC-e</kbd></td>
+<td>`line.openEditor`</td>
+<td>Open the line editor's contents in `$EDITOR`.</td>
 </tr>
 
 <tr>
