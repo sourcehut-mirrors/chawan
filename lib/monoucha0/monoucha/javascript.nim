@@ -110,20 +110,15 @@ type
 
 var runtimes {.threadvar.}: seq[JSRuntime]
 
-proc bindCalloc(s: pointer; count, size: csize_t): pointer {.cdecl.} =
-  let n = count * size
-  if n > size:
-    return nil
-  return alloc0(count * size)
-
-proc bindMalloc(s: pointer; size: csize_t): pointer {.cdecl.} =
+proc bindMalloc(s: JSMallocStateP; size: csize_t): pointer {.cdecl.} =
   return alloc(size)
 
-proc bindFree(s: pointer; p: pointer) {.cdecl.} =
+proc bindFree(s: JSMallocStateP; p: pointer) {.cdecl.} =
   if p != nil:
     dealloc(p)
 
-proc bindRealloc(s: pointer; p: pointer; size: csize_t): pointer {.cdecl.} =
+proc bindRealloc(s: JSMallocStateP; p: pointer; size: csize_t): pointer
+    {.cdecl.} =
   return realloc(p, size)
 
 proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
@@ -180,7 +175,6 @@ proc jsRuntimeCleanUp(rt: JSRuntime) {.cdecl.} =
 proc newJSRuntime*(): JSRuntime =
   ## Instantiate a Monoucha `JSRuntime`.
   var mf {.global.} = JSMallocFunctions(
-    js_calloc: bindCalloc,
     js_malloc: bindMalloc,
     js_free: bindFree,
     js_realloc: bindRealloc,
@@ -328,7 +322,7 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
     className: cstring; parent: JSClassID; ctorType: JSCFunctionEnum): JSValue =
   if parent != 0:
     return JS_NewCFunction3(ctx, ctor, className, 0, ctorType, 0,
-      ctx.getOpaque().ctors[int(parent)])
+      ctx.getOpaque().ctors[int(parent)], 0)
   return JS_NewCFunction2(ctx, ctor, className, 0, ctorType, 0)
 
 # On exception, this returns JS_INVALID_CLASS_ID, but doesn't undo the
@@ -341,7 +335,7 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   var res: uint32
-  discard JS_NewClassID(rt, res)
+  discard JS_NewClassID(res)
   let ctxOpaque = ctx.getOpaque()
   let rtOpaque = rt.getOpaque()
   if JS_NewClass(rt, res, cdef) != 0:

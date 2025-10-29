@@ -2646,9 +2646,8 @@ proc externInto(pager: Pager; cmd, ins: string): bool {.jsfunc.} =
 proc jsQuit*(ctx: JSContext; pager: Pager; code = 0): JSValue =
   pager.exitCode = int(code)
   JS_ThrowInternalError(ctx, "interrupted")
-  let ex = JS_GetException(ctx)
-  JS_SetUncatchableError(ctx, ex)
-  return JS_Throw(ctx, ex)
+  JS_SetUncatchableException(ctx, true)
+  return JS_EXCEPTION
 
 proc clipboardWrite(ctx: JSContext; pager: Pager; s: string): JSValue
     {.jsfunc.} =

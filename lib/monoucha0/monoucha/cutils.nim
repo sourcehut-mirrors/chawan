@@ -6,4 +6,10 @@ else:
 
 {.compile("qjs/cutils.c", CFLAGS).}
 
-type JS_BOOL* {.importc: "bool".} = bool
+type JS_BOOL* = distinct cint
+
+converter toBool*(x: JS_BOOL): bool =
+  cast[bool](x)
+
+converter toJSBool*(x: bool): JS_BOOL =
+  JS_BOOL(x)

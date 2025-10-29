@@ -28,10 +28,6 @@
 #include <stddef.h>
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct list_head {
     struct list_head *prev;
     struct list_head *next;
@@ -99,9 +95,5 @@ static inline int list_empty(struct list_head *el)
 #define list_for_each_prev_safe(el, el1, head)           \
     for(el = (head)->prev, el1 = el->prev; el != (head); \
         el = el1, el1 = el->prev)
-
-#ifdef __cplusplus
-} /* extern "C" { */
-#endif
 
 #endif /* LIST_H */

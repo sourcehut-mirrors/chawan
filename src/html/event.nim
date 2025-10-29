@@ -402,7 +402,7 @@ proc findEventListener(ctx: JSContext; eventTarget: EventTarget; ctype: CAtom;
     callback: JSValueConst; capture: bool): EventListener =
   for it in eventTarget.eventListeners:
     if not it.internal and it.ctype == ctype and
-        JS_IsStrictEqual(ctx, it.callback, callback) and it.capture == capture:
+        JS_StrictEq(ctx, it.callback, callback) and it.capture == capture:
       return it
   nil
 
@@ -616,7 +616,7 @@ proc removeEventListener(ctx: JSContext; eventTarget: EventTarget;
   var prev: EventListener = nil
   for it in eventTarget.eventListeners:
     if not it.internal and it.ctype == ctype and
-        JS_IsStrictEqual(ctx, it.callback, callback) and it.capture == capture:
+        JS_StrictEq(ctx, it.callback, callback) and it.capture == capture:
       let callback = it.callback
       it.callback = JS_UNDEFINED
       it.rt = nil

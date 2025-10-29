@@ -28,9 +28,7 @@
 #include <string.h>
 #include <assert.h>
 #include <ctype.h>
-// #include <sys/time.h>
 #include <math.h>
-// #include <setjmp.h>
 
 #include "cutils.h"
 #include "dtoa.h"
@@ -890,7 +888,7 @@ static int output_digits(char *buf,
 
 /* return (a, e_offset) such that a = a * (radix1*2^radix_shift)^f *
    2^-e_offset. 'f' can be negative. */
-static int mul_pow(mpb_t *a, int radix1, int radix_shift, int f, bool is_int, int e)
+static int mul_pow(mpb_t *a, int radix1, int radix_shift, int f, BOOL is_int, int e)
 {
     int e_offset, d, n, n0;
 
@@ -962,7 +960,7 @@ static void mul_pow_round(mpb_t *tmp1, uint64_t m, int e, int radix1, int radix_
     int e_offset;
 
     mpb_set_u64(tmp1, m);
-    e_offset = mul_pow(tmp1, radix1, radix_shift, f, true, e);
+    e_offset = mul_pow(tmp1, radix1, radix_shift, f, TRUE, e);
     mpb_shr_round(tmp1, -e + e_offset, rnd_mode);
 }
 
@@ -1008,7 +1006,7 @@ static uint64_t mul_pow_round_to_d(int *pe, mpb_t *a,
 {
     int e_offset;
 
-    e_offset = mul_pow(a, radix1, radix_shift, f, false, 55);
+    e_offset = mul_pow(a, radix1, radix_shift, f, FALSE, 55);
     return round_to_d(pe, a, e_offset, rnd_mode);
 }
 
@@ -1264,7 +1262,7 @@ int js_dtoa(char *buf, double d, int radix, int n_digits, int flags,
         /* mant_max = radix^P */
         mant_max->len = 1;
         mant_max->tab[0] = 1;
-        pow_shift = mul_pow(mant_max, radix1, radix_shift, P, false, 0);
+        pow_shift = mul_pow(mant_max, radix1, radix_shift, P, FALSE, 0);
         mpb_shr_round(mant_max, pow_shift, JS_RNDZ);
         
         for(;;) {
@@ -1361,7 +1359,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
     int radix_bits, expn, e, max_digits, expn_offset, dot_pos, sig_pos, pos;
     mpb_t *tmp0;
     double dval;
-    bool is_bin_exp, is_zero, expn_overflow;
+    BOOL is_bin_exp, is_zero, expn_overflow;
     uint64_t m, a;
 
     tmp0 = dtoa_malloc(&mptr, sizeof(mpb_t) + sizeof(limb_t) * DBIGNUM_LEN_MAX);
@@ -1413,7 +1411,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
             goto fail;
     no_prefix: ;
     } else {
-        if (!(flags & JS_ATOD_INT_ONLY) && js__strstart(p, "Infinity", &p))
+        if (!(flags & JS_ATOD_INT_ONLY) && strstart(p, "Infinity", &p))
             goto overflow;
     }
     if (radix == 0)
@@ -1495,10 +1493,10 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
         mpb_mul1_base(tmp0, pow_ui(radix, limb_digit_count), cur_limb);
     }
     if (digit_count == 0) {
-        is_zero = true;
+        is_zero = TRUE;
         expn_offset = 0;
     } else {
-        is_zero = false;
+        is_zero = FALSE;
         if (dot_pos < 0)
             dot_pos = pos;
         expn_offset = sig_pos + digit_count - dot_pos;
@@ -1512,23 +1510,23 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
     
     /* parse the exponent, if any */
     expn = 0;
-    expn_overflow = false;
-    is_bin_exp = false;
+    expn_overflow = FALSE;
+    is_bin_exp = FALSE;
     if (!(flags & JS_ATOD_INT_ONLY) &&
         ((radix == 10 && (*p == 'e' || *p == 'E')) ||
          (radix != 10 && (*p == '@' ||
                           (radix_bits >= 1 && radix_bits <= 4 && (*p == 'p' || *p == 'P'))))) &&
         p > p_start) {
-        bool exp_is_neg;
+        BOOL exp_is_neg;
         int c;
         const char *exp_start = p;
         is_bin_exp = (*p == 'p' || *p == 'P');
         p++;
-        exp_is_neg = false;
+        exp_is_neg = 0;
         if (*p == '+') {
             p++;
         } else if (*p == '-') {
-            exp_is_neg = true;
+            exp_is_neg = 1;
             p++;
         }
         c = to_digit(*p);
@@ -1546,7 +1544,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
                 break;
             if (!expn_overflow) {
                 if (unlikely(expn > ((INT32_MAX - 2 - 9) / 10))) {
-                    expn_overflow = true;
+                    expn_overflow = TRUE;
                 } else {
                     expn = expn * 10 + c;
                 }
