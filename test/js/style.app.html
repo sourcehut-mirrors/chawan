@@ -2,10 +2,12 @@
 <style>
 #y::before { color: blue }
 #y::marker { color: green }
+#y:first-child { text-align: right }
 </style>
 <title>Style test</title>
-<div id=x>Fail</div>
+<div id=x>Fail
 <div id=y style="color: red; display: inline; margin-left: 1ch">test</div>
+</div>
 <script src=asserts.js></script>
 <script>
 const y = document.getElementById("y");
@@ -18,8 +20,12 @@ assertEquals(window.getComputedStyle(y, "::marker").color, "rgb(0, 128, 0)");
 assertEquals(window.getComputedStyle(y, ":marker").color, "");
 assertEquals(window.getComputedStyle(y, "::").color, "");
 assertEquals(window.getComputedStyle(y, "").color, "rgb(255, 0, 0)");
+assertEquals(window.getComputedStyle(y, "").textAlign, "right");
 const charSize = parseInt(window.getComputedStyle(y).marginLeft);
 assertEquals(y.getBoundingClientRect().width, charSize * 4);
 y.remove();
+assertEquals(window.getComputedStyle(y, "").textAlign, "start");
+y.style.textAlign = "center";
+assertEquals(window.getComputedStyle(y, "").textAlign, "center");
 document.getElementById("x").textContent = "Success";
 </script>

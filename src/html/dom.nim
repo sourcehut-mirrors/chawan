@@ -1808,6 +1808,8 @@ proc remove*(node: Node; suppressObservers: bool) =
   #TODO NodeIterator
   let element = if node of Element: Element(node) else: nil
   let parentElement = node.parentElement
+  if parentElement != nil:
+    parentElement.invalidate()
   let prev = node.internalPrev
   let next = node.internalNext
   if next != nil and next.internalNext != nil:
@@ -1821,13 +1823,13 @@ proc remove*(node: Node; suppressObservers: bool) =
       parent.firstChild = nil
   else:
     prev.internalNext = next
-  if parentElement != nil:
-    parentElement.invalidate()
   node.internalPrev = nil
   node.internalNext = document
   node.parentNode = nil
   document.invalidateCollections()
   if element != nil:
+    if parentElement == nil:
+      element.invalidate()
     element.box = nil
     if element.internalElIndex == 0 and parentElement != nil:
       parentElement.childElIndicesInvalid = true

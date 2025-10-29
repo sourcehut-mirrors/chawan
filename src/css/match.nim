@@ -105,13 +105,18 @@ proc matches(element: Element; slist: SelectorList;
 proc matches(element: Element; pc: PseudoClass; depends: var DependencyInfo;
     hasDeps: var bool): bool =
   case pc
-  of pcFirstChild: return element.parentNode.firstElementChild == element
-  of pcLastChild: return element.parentNode.lastElementChild == element
+  of pcFirstChild:
+    let parentNode = element.parentNode
+    return parentNode != nil and parentNode.firstElementChild == element
+  of pcLastChild:
+    let parentNode = element.parentNode
+    return parentNode != nil and parentNode.lastElementChild == element
   of pcFirstNode: return element.isFirstVisualNode()
   of pcLastNode: return element.isLastVisualNode()
   of pcOnlyChild:
-    return element.parentNode.firstElementChild == element and
-      element.parentNode.lastElementChild == element
+    let parentNode = element.parentNode
+    return parentNode != nil and parentNode.firstElementChild == element and
+      parentNode.lastElementChild == element
   of pcHover:
     hasDeps = true
     depends.add(element, dtHover)
@@ -156,6 +161,9 @@ proc matchesLang(element: Element; lang: string): bool =
 
 proc matchesNthChild(element: Element; nthChild: CSSNthChild;
     depends: var DependencyInfo; ohasDeps: var bool): bool =
+  let parentNode = element.parentNode
+  if parentNode == nil:
+    return false
   let A = nthChild.anb.A # step
   let B = nthChild.anb.B # start
   if nthChild.ofsels.len == 0:
@@ -168,7 +176,7 @@ proc matchesNthChild(element: Element; nthChild: CSSNthChild;
     return j >= 0 and j mod A == 0
   if element.matches(nthChild.ofsels, depends, ohasDeps):
     var i = 1
-    for child in element.parentNode.elementList:
+    for child in parentNode.elementList:
       if child == element:
         if A == 0:
           return i == B
@@ -184,6 +192,9 @@ proc matchesNthChild(element: Element; nthChild: CSSNthChild;
 
 proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
     depends: var DependencyInfo; ohasDeps: var bool): bool =
+  let parentNode = element.parentNode
+  if parentNode == nil:
+    return false
   let A = nthChild.anb.A # step
   let B = nthChild.anb.B # start
   if nthChild.ofsels.len == 0:
@@ -197,7 +208,7 @@ proc matchesNthLastChild(element: Element; nthChild: CSSNthChild;
     return j >= 0 and j mod A == 0
   if element.matches(nthChild.ofsels, depends, ohasDeps):
     var i = 1
-    for child in element.parentNode.relementList:
+    for child in parentNode.relementList:
       if child == element:
         if A == 0:
           return i == B
