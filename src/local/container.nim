@@ -1473,35 +1473,30 @@ proc onMatch(container: Container; res: BufferMatch; refresh: bool) =
 proc cursorNextMatch*(container: Container; regex: Regex; wrap, refresh: bool;
     n: int): EmptyPromise {.discardable.} =
   if container.select != nil:
-    #TODO
-    for _ in 0 ..< n:
-      container.select.cursorNextMatch(regex, wrap)
+    container.select.cursorNextMatch(regex, wrap, n)
     return newResolvedPromise()
-  else:
-    if container.iface == nil:
-      return
-    return container.iface
-      .findNextMatch(regex, container.cursorx, container.cursory, wrap, n)
-      .then(proc(res: BufferMatch) =
-        container.onMatch(res, refresh))
+  if container.iface == nil:
+    return newResolvedPromise()
+  return container.iface
+    .findNextMatch(regex, container.cursorx, container.cursory, wrap, n)
+    .then(proc(res: BufferMatch) =
+      container.onMatch(res, refresh)
+    )
 
 proc cursorPrevMatch*(container: Container; regex: Regex; wrap, refresh: bool;
     n: int): EmptyPromise {.discardable.} =
   if container.select != nil:
-    #TODO
-    for _ in 0 ..< n:
-      container.select.cursorPrevMatch(regex, wrap)
+    container.select.cursorPrevMatch(regex, wrap, n)
     return newResolvedPromise()
-  else:
-    if container.iface == nil:
-      return
-    container.markPos0()
-    return container.iface
-      .findPrevMatch(regex, container.cursorx, container.cursory, wrap, n)
-      .then(proc(res: BufferMatch) =
-        container.onMatch(res, refresh)
-        container.markPos()
-      )
+  if container.iface == nil:
+    return newResolvedPromise()
+  container.markPos0()
+  return container.iface
+    .findPrevMatch(regex, container.cursorx, container.cursory, wrap, n)
+    .then(proc(res: BufferMatch) =
+      container.onMatch(res, refresh)
+      container.markPos()
+    )
 
 type
   SelectionOptions = object of JSDict

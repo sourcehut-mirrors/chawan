@@ -330,14 +330,28 @@ proc getter(ctx: JSContext; pager: Pager; a: JSAtom): JSValue {.jsgetownprop.} =
       return val
   return JS_UNINITIALIZED
 
+proc cursorNextMatch(pager: Pager; regex: Regex; wrap, refresh: bool; n: int):
+    EmptyPromise =
+  if pager.menu != nil:
+    pager.menu.cursorNextMatch(regex, wrap, n)
+    return newResolvedPromise()
+  return pager.container.cursorNextMatch(regex, wrap, refresh, n)
+
+proc cursorPrevMatch(pager: Pager; regex: Regex; wrap, refresh: bool; n: int):
+    EmptyPromise =
+  if pager.menu != nil:
+    pager.menu.cursorPrevMatch(regex, wrap, n)
+    return newResolvedPromise()
+  return pager.container.cursorPrevMatch(regex, wrap, refresh, n)
+
 proc searchNext(pager: Pager; n = 1) {.jsfunc.} =
   if pager.regex.isOk:
     let wrap = pager.config.search.wrap
     pager.container.markPos0()
     if not pager.reverseSearch:
-      pager.container.cursorNextMatch(pager.regex.get, wrap, true, n)
+      discard pager.cursorNextMatch(pager.regex.get, wrap, true, n)
     else:
-      pager.container.cursorPrevMatch(pager.regex.get, wrap, true, n)
+      discard pager.cursorPrevMatch(pager.regex.get, wrap, true, n)
     pager.container.markPos()
   else:
     pager.alert("No previous regular expression")
@@ -347,9 +361,9 @@ proc searchPrev(pager: Pager; n = 1) {.jsfunc.} =
     let wrap = pager.config.search.wrap
     pager.container.markPos0()
     if not pager.reverseSearch:
-      pager.container.cursorPrevMatch(pager.regex.get, wrap, true, n)
+      discard pager.cursorPrevMatch(pager.regex.get, wrap, true, n)
     else:
-      pager.container.cursorNextMatch(pager.regex.get, wrap, true, n)
+      discard pager.cursorNextMatch(pager.regex.get, wrap, true, n)
     pager.container.markPos()
   else:
     pager.alert("No previous regular expression")
@@ -392,19 +406,35 @@ proc searchBackward(pager: Pager) {.jsfunc.} =
   pager.setLineEdit(lmSearchB)
 
 proc isearchForward(pager: Pager) {.jsfunc.} =
-  pager.container.pushCursorPos()
-  pager.isearchpromise = newResolvedPromise()
-  pager.container.markPos0()
-  pager.setLineEdit(lmISearchF)
+  let container = pager.container
+  if container != nil:
+    if pager.menu != nil or container.select != nil:
+      # isearch doesn't work in menus.
+      #TODO it probably should
+      pager.searchForward()
+    else:
+      container.pushCursorPos()
+      pager.isearchpromise = newResolvedPromise()
+      container.markPos0()
+      pager.setLineEdit(lmISearchF)
 
 proc isearchBackward(pager: Pager) {.jsfunc.} =
-  pager.container.pushCursorPos()
-  pager.isearchpromise = newResolvedPromise()
-  pager.container.markPos0()
-  pager.setLineEdit(lmISearchB)
+  let container = pager.container
+  if container != nil:
+    if pager.menu != nil or container.select != nil:
+      # see above
+      pager.searchForward()
+    else:
+      container.pushCursorPos()
+      pager.isearchpromise = newResolvedPromise()
+      container.markPos0()
+      pager.setLineEdit(lmISearchB)
 
 proc gotoLine(ctx: JSContext; pager: Pager; val: JSValueConst = JS_UNDEFINED):
     Opt[void] {.jsfunc.} =
+  let container = pager.container
+  if container == nil:
+    return ok()
   var n: int
   if JS_IsNumber(val) and ctx.fromJS(val, n).isOk:
     pager.container.gotoLine(n)
@@ -1500,15 +1530,16 @@ proc setTab(pager: Pager; container: Container; tab: Tab) =
       pager.tabHead = Tab()
       pager.tab = pager.tabHead
 
-proc addContainer(pager: Pager; container: Container) =
-  pager.setTab(container, pager.tab)
-  pager.setContainer(container)
-
 proc onSetLoadInfo(pager: Pager; container: Container) =
   if pager.alertState != pasAlertOn and pager.askPromise == nil:
     discard pager.status.writeStatusMessage(container.loadinfo)
     pager.alertState = pasLoadInfo
     pager.updateStatus = ussSkip
+
+proc addContainer(pager: Pager; container: Container) =
+  pager.setTab(container, pager.tab)
+  pager.setContainer(container)
+  pager.onSetLoadInfo(container)
 
 proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     loaderConfig: LoaderClientConfig; request: Request; url: URL; title = "";
@@ -1544,7 +1575,6 @@ proc newContainer(pager: Pager; bufferConfig: BufferConfig;
     container: container,
     stream: stream
   ))
-  pager.onSetLoadInfo(container)
   return container
 
 proc newContainerFrom(pager: Pager; container: Container; contentType: string):
@@ -1665,6 +1695,7 @@ proc replace(pager: Pager; target, container: Container) =
   pager.updatePinned(target, container)
   if pager.container == target:
     pager.setContainer(container)
+    pager.onSetLoadInfo(container)
 
 proc unregisterContainer(pager: Pager; container: Container) =
   if container.iface != nil: # fully connected
@@ -2371,9 +2402,9 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
         pager.container.flags.incl(cfHighlight)
         let wrap = pager.config.search.wrap
         return if linemode == lmISearchF:
-          pager.container.cursorNextMatch(pager.iregex.get, wrap, false, 1)
+          pager.cursorNextMatch(pager.iregex.get, wrap, false, 1)
         else:
-          pager.container.cursorPrevMatch(pager.iregex.get, wrap, false, 1)
+          pager.cursorPrevMatch(pager.iregex.get, wrap, false, 1)
     of lesFinish:
       if lineedit.news == "" and pager.regex.isErr:
         pager.container.popCursorPos()

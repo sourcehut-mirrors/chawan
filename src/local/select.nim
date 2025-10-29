@@ -213,6 +213,14 @@ proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool) =
       select.setCursorY(j)
       select.queueDraw()
 
+proc cursorPrevMatch*(select: Select; regex: Regex; wrap: bool; n: int) =
+  for i in 0 ..< n:
+    select.cursorPrevMatch(regex, wrap)
+
+proc cursorNextMatch*(select: Select; regex: Regex; wrap: bool; n: int) =
+  for i in 0 ..< n:
+    select.cursorNextMatch(regex, wrap)
+
 proc pushCursorPos*(select: Select) =
   select.bpos.add(select.cursory)
 
