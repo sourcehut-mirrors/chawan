@@ -1,4 +1,3 @@
-import std/options
 import std/strutils
 
 import monoucha/fromjs
@@ -65,7 +64,7 @@ type
 
   NumberUnit = object
     part1: NumberUnitPart
-    part2: Option[NumberUnitPart]
+    part2: Opt[NumberUnitPart]
 
   NumberFormat = ref object
     maximumFractionDigits: int32
@@ -91,7 +90,7 @@ proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
     if part1.isErr or part2.isErr:
       JS_ThrowRangeError(ctx, "wrong unit %s", cstring(s))
       return err()
-    unit = NumberUnit(part1: part1.get, part2: some(part2.get))
+    unit = NumberUnit(part1: part1.get, part2: part2)
   else:
     let part1 = parseEnumNoCase[NumberUnitPart](s)
     if part1.isErr:
@@ -112,7 +111,7 @@ proc fromJSGetProp[T](ctx: JSContext; this: JSValueConst; name: cstring;
   ok(true)
 
 proc newNumberFormat(ctx: JSContext; name = "en-US";
-    options: JSValueConst = JS_UNDEFINED): Opt[NumberFormat] {.jsctor.} =
+    options: JSValueConst = JS_UNDEFINED): Opt[NumberFormat] {.jsfctor.} =
   let nf = NumberFormat()
   if JS_IsObject(options):
     discard ?ctx.fromJSGetProp(options, "maximumFractionDigits",
@@ -197,7 +196,7 @@ proc stringifyUnit(unit: NumberUnit; s: string): string =
   if unit.part1 notin {nupCelsius, nupFahrenheit, nupPercent}:
     result &= ' '
   result &= unit.part1.stringify(s)
-  if unit.part1 != nupPercent and unit.part2.isSome:
+  if unit.part1 != nupPercent and unit.part2.isOk:
     result &= '/'
     result &= unit.part2.get.stringify(s, part2 = true)
 

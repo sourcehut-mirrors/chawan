@@ -86,6 +86,7 @@ type
   BoundFunctionType = enum
     bfFunction = "js_func"
     bfConstructor = "js_ctor"
+    bfConstructorFunction = "js_fctor"
     bfGetter = "js_get"
     bfSetter = "js_set"
     bfPropertyGetOwn = "js_prop_get_own"
@@ -324,19 +325,20 @@ proc newProtoFromParentClass(ctx: JSContext; parent: JSClassID): JSValue =
   return JS_NewObject(ctx)
 
 proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
-    className: cstring; parent: JSClassID): JSValue =
+    className: cstring; parent: JSClassID; ctorType: JSCFunctionEnum): JSValue =
   if parent != 0:
-    return JS_NewCFunction3(ctx, ctor, className, 0, JS_CFUNC_constructor,
-      0, ctx.getOpaque().ctors[int(parent)])
-  return JS_NewCFunction2(ctx, ctor, className, 0, JS_CFUNC_constructor, 0)
+    return JS_NewCFunction3(ctx, ctor, className, 0, ctorType, 0,
+      ctx.getOpaque().ctors[int(parent)])
+  return JS_NewCFunction2(ctx, ctor, className, 0, ctorType, 0)
 
 # On exception, this returns JS_INVALID_CLASS_ID, but doesn't undo the
 # changes to the global object.
 proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
-    asglobal, nointerface: bool; finalizer: JSFinalizerFunction;
-    namespace: JSValueConst; unforgeable, staticfuns: JSFunctionList;
-    dtor: BoundRefDestructor): JSClassID {.discardable.} =
+    asglobal, nointerface: bool; ctorType: JSCFunctionEnum;
+    finalizer: JSFinalizerFunction; namespace: JSValueConst;
+    unforgeable, staticfuns: JSFunctionList; dtor: BoundRefDestructor):
+    JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   var res: uint32
   discard JS_NewClassID(rt, res)
@@ -395,7 +397,8 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
         return JS_INVALID_CLASS_ID
   else:
     JS_FreeValue(ctx, news)
-  let jctor = ctx.newCtorFunFromParentClass(ctor, cdef.class_name, parent)
+  let jctor = ctx.newCtorFunFromParentClass(ctor, cdef.class_name, parent,
+    ctorType)
   if staticfuns.len > 0:
     let fp = cast[JSCFunctionListP](unsafeAddr staticfuns[0])
     if JS_SetPropertyFunctionList(ctx, jctor, fp, cint(staticfuns.len)) == -1:
@@ -449,6 +452,7 @@ type
     tabUnforgeable: NimNode # array of unforgeable function table
     tabStatic: NimNode # array of static function table
     ctorFun: NimNode # constructor ident
+    ctorType: JSCFunctionEnum # JS_CFUNC_constructor or [...]constructor_or_func
     getset: Table[string, (NimNode, NimNode, BoundFunctionFlag)] # name -> value
     propGetOwnFun: NimNode # custom own get function ident
     propGetFun: NimNode # custom get function ident
@@ -472,6 +476,7 @@ proc newRegistryInfo(t: NimNode): RegistryInfo =
     tabUnforgeable: newNimNode(nnkBracket),
     tabStatic: newNimNode(nnkBracket),
     tabReplaceableNames: newNimNode(nnkBracket),
+    ctorType: JS_CFUNC_constructor,
     finFun: newNilLit(),
     propGetOwnFun: newNilLit(),
     propGetFun: newNilLit(),
@@ -720,10 +725,12 @@ proc registerFunction(info: RegistryInfo; fun: BoundFunction) =
         JS_CFUNC_DEF(`name`, 0, `id`))
     of bffReplaceable:
       assert false #TODO
-  of bfConstructor:
+  of bfConstructor, bfConstructorFunction:
     if info.ctorFun != nil:
       error("Class " & info.name & " has 2+ constructors.")
     info.ctorFun = id
+    if fun.t == bfConstructorFunction:
+      info.ctorType = JS_CFUNC_constructor_or_func
   of bfGetter:
     info.getset.withValue(name, exv):
       exv[0] = id
@@ -876,8 +883,8 @@ proc makeJSCallAndRet(gen: var JSFuncGenerator; okstmt, errstmt: NimNode) =
         `okstmt`
       `errstmt`
 
-macro jsctor*(fun: untyped) =
-  var gen = initGenerator(fun, bfConstructor, hasThis = false)
+macro jsctor0*(fun: untyped; t: static BoundFunctionType) =
+  var gen = initGenerator(fun, t, hasThis = false)
   gen.addRequiredParams()
   gen.addOptionalParams()
   gen.finishFunCallList()
@@ -890,6 +897,12 @@ macro jsctor*(fun: untyped) =
   let jsProc = gen.newJSProc(getJSParams())
   gen.registerFunction()
   return newStmtList(fun, jsProc)
+
+template jsctor*(fun: untyped) =
+  jsctor0(fun, bfConstructor)
+
+template jsfctor*(fun: untyped) =
+  jsctor0(fun, bfConstructorFunction)
 
 macro jshasprop*(fun: untyped) =
   var gen = initGenerator(fun, bfPropertyHas, hasThis = true)
@@ -1539,6 +1552,7 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   let sflen = sflist0.len
   let uflist0 = info.tabUnforgeable
   let uflen = uflist0.len
+  let ctorType = info.ctorType
   let global = asglobal and not globalparent
   endstmts.add(quote do:
     let flist {.global, inject.}: array[`flen`, JSCFunctionListEntry] = `flist0`
@@ -1547,8 +1561,8 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     let uflist {.global, inject.}: array[`uflen`, JSCFunctionListEntry] =
       `uflist0`
     `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, flist, `parent`,
-      cast[bool](`global`), `nointerface`, `finFun`, `namespace`, uflist,
-      sflist, mncGetDtor(`t`))
+      cast[bool](`global`), `nointerface`, cast[JSCFunctionEnum](`ctorType`),
+      `finFun`, `namespace`, uflist, sflist, mncGetDtor(`t`))
   )
   stmts.add(newBlockStmt(endstmts))
   return stmts
