@@ -229,6 +229,11 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     title: string; redirectDepth: int; flags: set[ContainerFlag];
     contentType: string; charsetStack: seq[Charset]; cacheId: int;
     mainConfig: Config; tab: Tab): Container =
+  let host = request.url.host
+  let loadinfo = (if host != "":
+    "Connecting to " & host
+  else:
+    "Loading " & $request.url) & "..."
   return Container(
     url: url,
     request: request,
@@ -240,7 +245,7 @@ proc newContainer*(config: BufferConfig; loaderConfig: LoaderClientConfig;
     loaderConfig: loaderConfig,
     redirectDepth: redirectDepth,
     pos: CursorState(setx: -1),
-    loadinfo: "Connecting to " & request.url.host & "...",
+    loadinfo: loadinfo,
     cacheId: cacheId,
     process: -1,
     clonedFrom: -1,
