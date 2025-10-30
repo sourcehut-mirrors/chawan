@@ -278,6 +278,8 @@ So while the functionality exists, it has some limitations:
   of `border-spacing` times two and the cell width.
 * `border-*-width` is interpreted as a binary value: a width of 0 results in
   no border, while any other width results in a border of a single type.
+  If the width is smaller than one cell (in the respective direction), the
+  rest is subtracted from the margin (if there is any margin).
 * `box-sizing: border-box` actually sets the padding box size, so that
   borders rounded up to the cell size do not accidentally take all space
   from the actual content.  (That in turn would cause problems if a child

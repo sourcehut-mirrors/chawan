@@ -52,6 +52,7 @@ Misc changes
 * better color approximation in "eight-bit" color mode (256 colors)
 * #L{n} (e.g. #L1) jumps to nth line in plain text files (idea from Dillo)
 * console buffer is now spawned on demand
+* switched from QJS-NG to QJS (with patches from NG)
 ---
 Removals
 * remove deprecated prepend-https, css and stylesheet config options (use
