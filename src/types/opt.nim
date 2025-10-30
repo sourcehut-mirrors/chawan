@@ -76,6 +76,8 @@ template `?`*[T, E](res: Result[T, E]): auto =
   if not x.isOk:
     when typeof(result) is Result[T, E]:
       return move(x)
+    elif E is cstring:
+      return err(x.error)
     elif E isnot void:
       {.push checks: off.}
       return err(move(x.error))

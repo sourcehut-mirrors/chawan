@@ -36,7 +36,7 @@ type
 
   CookieJarMap* = ref object
     mtime: int64
-    jars: Table[cstring, CookieJar]
+    jars: Table[string, CookieJar]
     jarsHead: CookieJar
     jarsTail: CookieJar
     transient*: bool # set if there is a failure in parsing cookies
@@ -68,7 +68,7 @@ proc newCookieJarMap*(): CookieJarMap =
 
 proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
   let jar = CookieJar(name: name)
-  map.jars[cstring(jar.name)] = jar
+  map.jars[jar.name] = jar
   if map.jarsTail == nil:
     map.jarsHead = jar
   else:
@@ -77,7 +77,7 @@ proc addNew*(map: CookieJarMap; name: sink string): CookieJar =
   return jar
 
 proc getOrDefault*(map: CookieJarMap; name: string): CookieJar =
-  return map.jars.getOrDefault(cstring(name))
+  return map.jars.getOrDefault(name)
 
 proc getMapKey(cookie: Cookie): string =
   return cookie.domain & cookie.path & '\t' & cookie.name
