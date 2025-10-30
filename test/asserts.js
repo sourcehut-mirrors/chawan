@@ -5,6 +5,8 @@ function assert(x, msg) {
 }
 
 function assertThrows(fun, error) {
+	if (typeof fun == "string")
+		fun = () => eval(fun);
 	if (!(fun instanceof Function))
 		throw new TypeError("error expected to be Function");
 	let me;

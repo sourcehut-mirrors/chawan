@@ -1,0 +1,16 @@
+<!doctype html>
+<title>QuickJS tests</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+function testNumberLiterals()
+{
+    assertEquals(0.1.a, undefined);
+    assertEquals(0x1.a, undefined);
+    assertEquals(0b1.a, undefined);
+    assertEquals(01.a, undefined);
+    assertEquals(0o1.a, undefined);
+    assertThrows('0.a', SyntaxError);
+}
+document.getElementById("x").textContent = "Success";
+</script>
