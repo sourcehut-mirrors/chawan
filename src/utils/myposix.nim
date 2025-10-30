@@ -3,7 +3,6 @@
 {.push raises: [].}
 
 import std/os
-import std/posix
 
 # std's getcwd binding uses int for size, but it's size_t...
 proc my_getcwd(buf: cstring; size: csize_t): cstring {.
