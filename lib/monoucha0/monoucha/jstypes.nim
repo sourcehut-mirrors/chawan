@@ -32,12 +32,9 @@ proc `=destroy`*(x: var JSDictToFreeAuxObj) =
 template jsdefault*(x: untyped) {.pragma.}
 template jsdefault*() {.pragma.}
 
-# Containers compatible with the internal representation of strings in QuickJS.
-# To convert these, a copy is still needed; however, they remove the UTF-8
-# transcoding step.
-type
-  NarrowString* = distinct string
-  WideString* = distinct seq[uint16]
+# Container compatible with the internal representation of narrow strings in
+# QuickJS (Latin-1).
+type NarrowString* = distinct string
 
 # Various containers for array buffer types.
 # Converting these only requires copying the metadata; buffers are never copied.
@@ -61,17 +58,6 @@ type
 
 proc high*(abuf: JSArrayBuffer): int =
   return int(abuf.len) - 1
-
-# A specialization of JSValue to make writing generic code for functions
-# easier.
-type JSValueFunction* = ref object
-  fun*: JSValue
-
-converter toJSValue*(f: JSValueFunction): JSValue =
-  f.fun
-
-converter toJSValueConst*(f: JSValueFunction): JSValueConst =
-  f.fun
 
 # A key-value pair: in WebIDL terms, this is a record.
 type JSKeyValuePair*[K, T] = object

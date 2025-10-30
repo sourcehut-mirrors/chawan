@@ -619,7 +619,7 @@ proc cleanup(pager: Pager) =
     for val in pager.config.cmd.map.values:
       JS_FreeValue(pager.jsctx, val)
     for fn in pager.config.jsvfns:
-      JS_FreeValue(pager.jsctx, fn)
+      JS_FreeValue(pager.jsctx, fn.val)
     pager.timeouts.clearAll()
     assert not pager.inEval
     pager.jsctx.free()
@@ -1980,7 +1980,7 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
       let fun = sc.rewriteUrl.get
       var tmpUrl = newURL(url)
       var arg0 = ctx.toJS(tmpUrl)
-      let ret = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
+      let ret = JS_Call(ctx, fun.val, JS_UNDEFINED, 1, arg0.toJSValueArray())
       if not JS_IsException(ret):
         # Warning: we must only print exceptions if the *call* returned one.
         # Conversion may simply error out because the function didn't return a
@@ -2138,7 +2138,7 @@ proc omniRewrite(pager: Pager; s: string): string =
       let fun = rule.substituteUrl.get
       let ctx = pager.jsctx
       var arg0 = ctx.toJS(s)
-      let jsRet = JS_Call(ctx, fun, JS_UNDEFINED, 1, arg0.toJSValueArray())
+      let jsRet = JS_Call(ctx, fun.val, JS_UNDEFINED, 1, arg0.toJSValueArray())
       JS_FreeValue(ctx, arg0)
       var res: string
       if ctx.fromJSFree(jsRet, res).isOk:

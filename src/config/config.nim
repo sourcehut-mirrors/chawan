@@ -22,7 +22,6 @@ import monoucha/fromjs
 import monoucha/javascript
 import monoucha/jspropenumlist
 import monoucha/jsregex
-import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -194,6 +193,9 @@ type
     cmd*: CommandConfig
     page* {.jsget.}: ActionMap
     line* {.jsget.}: ActionMap
+
+  JSValueFunction* = ref object
+    val*: JSValue
 
 jsDestructor(ActionMap)
 jsDestructor(StartConfig)
@@ -662,7 +664,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
     return err(k & ": " & ctx.jsctx.getExceptionMsg())
   if not JS_IsFunction(ctx.jsctx, fun):
     return err(k & ": not a function")
-  x = JSValueFunction(fun: fun)
+  x = JSValueFunction(val: fun)
   ctx.config.jsvfns.add(x) # so we can clean it up on exit
   ok()
 
