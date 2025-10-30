@@ -4,7 +4,7 @@ import std/strutils
 import io/dynstream
 import io/packetreader
 import io/packetwriter
-import monoucha/javascript
+import monoucha/jsbind
 import types/blob
 import utils/twtstr
 

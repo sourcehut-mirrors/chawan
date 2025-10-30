@@ -11,8 +11,9 @@ import html/script
 import io/dynstream
 import io/promise
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/jstypes
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers
@@ -21,6 +22,7 @@ import server/request
 import server/response
 import types/blob
 import types/formdata
+import types/jsopt
 import types/opt
 import types/url
 import utils/twtstr

@@ -22,9 +22,10 @@ import io/dynstream
 import io/promise
 import io/timeout
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/jspropenumlist
 import monoucha/jstypes
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers
@@ -32,6 +33,7 @@ import server/loaderiface
 import server/request
 import server/response
 import types/blob
+import types/jsopt
 import types/opt
 import types/url
 import types/winattrs

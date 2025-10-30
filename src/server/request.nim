@@ -6,13 +6,15 @@ import html/script
 import io/packetreader
 import io/packetwriter
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers
 import types/blob
 import types/formdata
+import types/jsopt
 import types/opt
 import types/referrer
 import types/url
@@ -212,22 +214,23 @@ type
     mode* {.jsdefault.}: Option[RequestMode]
     window* {.jsdefault: JS_UNDEFINED.}: JSValueConst
 
-proc fromJS(ctx: JSContext; val: JSValueConst; res: var BodyInit): Opt[void] =
+proc fromJS(ctx: JSContext; val: JSValueConst; res: var BodyInit):
+    FromJSResult =
   if not JS_IsUndefined(val) and not JS_IsNull(val):
     res = BodyInit(t: bitFormData)
     if ctx.fromJS(val, res.formData).isOk:
-      return ok()
+      return fjOk
     res = BodyInit(t: bitBlob)
     if ctx.fromJS(val, res.blob).isOk:
-      return ok()
+      return fjOk
     res = BodyInit(t: bitUrlSearchParams)
     if ctx.fromJS(val, res.searchParams).isOk:
-      return ok()
+      return fjOk
     res = BodyInit(t: bitString)
     if ctx.fromJS(val, res.str).isOk:
-      return ok()
+      return fjOk
   JS_ThrowTypeError(ctx, "invalid body init type")
-  return err()
+  fjErr
 
 proc newRequest*(ctx: JSContext; resource: JSValueConst;
     init = RequestInit(window: JS_UNDEFINED)): Opt[JSRequest] {.jsctor.} =

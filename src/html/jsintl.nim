@@ -1,10 +1,12 @@
 import std/strutils
 
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/jstypes
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
+import types/jsopt
 import types/opt
 import utils/twtstr
 
@@ -80,7 +82,7 @@ jsDestructor(NumberFormat)
 jsDestructor(PluralRules)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
-    Opt[void] =
+    FromJSResult =
   var s: string
   ?ctx.fromJS(val, s)
   let i = s.find("-per-")
@@ -89,15 +91,15 @@ proc fromJS(ctx: JSContext; val: JSValueConst; unit: var NumberUnit):
     let part2 = strictParseEnum[NumberUnitPart](s.substr(i + "-per-".len))
     if part1.isErr or part2.isErr:
       JS_ThrowRangeError(ctx, "wrong unit %s", cstring(s))
-      return err()
+      return fjErr
     unit = NumberUnit(part1: part1.get, part2: part2)
   else:
     let part1 = parseEnumNoCase[NumberUnitPart](s)
     if part1.isErr:
       JS_ThrowRangeError(ctx, "wrong unit %s", cstring(s))
-      return err()
+      return fjErr
     unit = NumberUnit(part1: part1.get)
-  ok()
+  fjOk
 
 proc fromJSGetProp[T](ctx: JSContext; this: JSValueConst; name: cstring;
     res: var T): Opt[bool] =

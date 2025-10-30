@@ -3,10 +3,10 @@
 import std/strutils
 
 import monoucha/fromjs
-import monoucha/javascript
 import monoucha/quickjs
 import monoucha/tojs
 import types/color
+import types/jsopt
 import types/opt
 import utils/twtstr
 
@@ -25,15 +25,16 @@ proc toJS*(ctx: JSContext; rgb: RGBColor): JSValue =
   res.pushHex(rgb.b)
   return toJS(ctx, res)
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var RGBColor): Err[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var RGBColor):
+    FromJSResult =
   var s: string
   ?ctx.fromJS(val, s)
   let x = parseLegacyColor(s)
   if x.isErr:
     JS_ThrowTypeError(ctx, x.error)
-    return err()
+    return fjErr
   res = x.get
-  return ok()
+  fjOk
 
 proc toJS*(ctx: JSContext; rgba: ARGBColor): JSValue =
   var res = "#"
@@ -43,18 +44,18 @@ proc toJS*(ctx: JSContext; rgba: ARGBColor): JSValue =
   res.pushHex(rgba.a)
   return toJS(ctx, res)
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor): Err[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor):
+    FromJSResult =
   if JS_IsNumber(val):
     # as hex
-    ?ctx.fromJS(val, uint32(res))
-    return ok()
+    return ctx.fromJS(val, uint32(res))
   # parse
   var s: string
   ?ctx.fromJS(val, s)
   if x := parseARGBColor(s):
     res = x
-    return ok()
+    return fjOk
   JS_ThrowTypeError(ctx, "unrecognized color")
-  return err()
+  fjErr
 
 {.pop.} # raises: []

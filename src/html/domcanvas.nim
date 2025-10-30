@@ -6,7 +6,7 @@ import html/event
 import io/dynstream
 import io/packetwriter
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers

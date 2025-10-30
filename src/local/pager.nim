@@ -32,7 +32,8 @@ import local/lineedit
 import local/select
 import local/term
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jsregex
 import monoucha/jstypes
 import monoucha/jsutils
@@ -50,6 +51,7 @@ import types/bitmap
 import types/blob
 import types/cell
 import types/color
+import types/jsopt
 import types/opt
 import types/url
 import types/winattrs
@@ -375,10 +377,10 @@ proc setSearchRegex(ctx: JSContext; pager: Pager; s: string; flags0 = "";
     let x = strictParseEnum[LREFlag]($c)
     if x.isErr:
       return JS_ThrowTypeError(ctx, "invalid flag %c", c)
-  let re = compileRegex(s, flags)
-  if re.isErr:
-    return JS_ThrowTypeError(ctx, cstring(re.error))
-  pager.regex = Opt[Regex].ok(re.get)
+  var regex: Regex
+  if not compileRegex(s, flags, regex):
+    return JS_ThrowTypeError(ctx, cstring(regex.bytecode))
+  pager.regex = Opt[Regex].ok(move(regex))
   pager.reverseSearch = reverse
   return JS_UNDEFINED
 
@@ -638,10 +640,9 @@ proc quit(pager: Pager; code: int) =
 
 proc runJSJobs(pager: Pager) =
   while true:
-    let r = pager.jsrt.runJSJobs()
-    if r.isOk:
+    let ctx = pager.jsrt.runJSJobs()
+    if ctx == nil:
       break
-    let ctx = r.error
     pager.console.writeException(ctx)
   if pager.exitCode != -1:
     pager.quit(pager.exitCode)
@@ -679,12 +680,12 @@ proc evalAction(pager: Pager; action: string; arg0: int32): EmptyPromise =
   var p: EmptyPromise = nil
   if JS_IsFunction(ctx, ret):
     if arg0 != 0:
-      let arg0 = toJS(ctx, arg0)
-      let ret2 = JS_CallFree(ctx, ret, JS_UNDEFINED, 1, arg0.toJSValueArray())
+      let arg0 = ctx.toJS(arg0)
+      let ret2 = ctx.callFree(ret, JS_UNDEFINED, arg0)
       JS_FreeValue(ctx, arg0)
       ret = ret2
     else: # no precnum
-      ret = JS_CallFree(ctx, ret, JS_UNDEFINED, 0, nil)
+      ret = ctx.callFree(ret, JS_UNDEFINED)
     if pager.exitCode != -1:
       assert not pager.inEval
       pager.quit(pager.exitCode)
@@ -1979,8 +1980,8 @@ proc applySiteconf(pager: Pager; url: URL; charsetOverride: Charset;
     if sc.rewriteUrl.isSome:
       let fun = sc.rewriteUrl.get
       var tmpUrl = newURL(url)
-      var arg0 = ctx.toJS(tmpUrl)
-      let ret = JS_Call(ctx, fun.val, JS_UNDEFINED, 1, arg0.toJSValueArray())
+      let arg0 = ctx.toJS(tmpUrl)
+      let ret = ctx.call(fun.val, JS_UNDEFINED, arg0)
       if not JS_IsException(ret):
         # Warning: we must only print exceptions if the *call* returned one.
         # Conversion may simply error out because the function didn't return a
@@ -2137,8 +2138,8 @@ proc omniRewrite(pager: Pager; s: string): string =
     if rule.match.get.match(s):
       let fun = rule.substituteUrl.get
       let ctx = pager.jsctx
-      var arg0 = ctx.toJS(s)
-      let jsRet = JS_Call(ctx, fun.val, JS_UNDEFINED, 1, arg0.toJSValueArray())
+      let arg0 = ctx.toJS(s)
+      let jsRet = ctx.call(fun.val, JS_UNDEFINED, arg0)
       JS_FreeValue(ctx, arg0)
       var res: string
       if ctx.fromJSFree(jsRet, res).isOk:

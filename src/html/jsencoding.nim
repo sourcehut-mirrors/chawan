@@ -3,10 +3,12 @@ import std/options
 import chagashi/charset
 import chagashi/decoder
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
+import types/jsopt
 import types/opt
 
 type
@@ -81,20 +83,19 @@ proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
   if p != nil:
     dealloc(p)
 
-proc encode(this: JSTextEncoder; input = ""): JSUint8Array {.jsfunc.} =
+proc encode(this: JSTextEncoder; input = ""): JSTypedArray {.jsfunc.} =
   # we have to validate input first :/
   #TODO it is possible to do less copies here...
   let input = input.toValidUTF8()
-  let abuf = if input.len > 0:
+  let p = if input.len > 0:
     let buf = cast[ptr UncheckedArray[uint8]](alloc(input.len))
     copyMem(buf, unsafeAddr input[0], input.len)
-    JSArrayBuffer(p: buf, len: csize_t(input.len), dealloc: deallocWrap)
+    buf
   else:
-    JSArrayBuffer(p: nil, len: 0, dealloc: deallocWrap)
-  return JSUint8Array(
-    abuf: abuf,
-    offset: 0,
-    nmemb: csize_t(input.len)
+    nil
+  JSTypedArray(
+    t: JS_TYPED_ARRAY_UINT8,
+    abuf: JSArrayBuffer(p: p, len: csize_t(input.len), dealloc: deallocWrap)
   )
 
 #TODO encodeInto

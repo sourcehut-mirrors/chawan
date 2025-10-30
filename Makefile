@@ -157,7 +157,11 @@ unicode_gen:
 	$(OBJDIR)/gencharwidth > res/charwidth_gen.nim~
 	mv res/charwidth_gen.nim~ res/charwidth_gen.nim
 
-$(OUTDIR_CGI_BIN)/man: $(lcgi)
+$(OUTDIR_CGI_BIN)/man: $(lcgi) lib/monoucha0/monoucha/jsregex.nim \
+	lib/monoucha0/monoucha/libregexp.nim \
+	lib/monoucha0/monoucha/qjs/libregexp.* \
+	lib/monoucha0/monoucha/qjs/libunicode.* \
+	lib/monoucha0/monoucha/qjs/cutils.*
 $(OUTDIR_CGI_BIN)/file: $(lcgi)
 $(OUTDIR_CGI_BIN)/ftp: $(lcgi)
 $(OUTDIR_CGI_BIN)/ssl: adapter/protocol/http.nim adapter/protocol/gemini.nim \

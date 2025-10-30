@@ -10,10 +10,9 @@ import config/conftypes
 import html/catom
 import html/dom
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/quickjs
 import monoucha/tojs
-import types/opt
 import types/refstring
 import types/url
 

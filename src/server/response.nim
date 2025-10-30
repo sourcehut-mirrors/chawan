@@ -10,12 +10,13 @@ import config/mimetypes
 import io/dynstream
 import io/promise
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/quickjs
 import monoucha/tojs
 import server/headers
 import server/request
 import types/blob
+import types/jsopt
 import types/opt
 import types/referrer
 import types/url

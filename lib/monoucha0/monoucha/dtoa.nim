@@ -60,9 +60,9 @@ type
 proc js_dtoa_max_len*(d: cdouble; radix, n_digits, flags: cint): cint
 # return the string length
 proc js_dtoa*(buf: cstring; d: cdouble; radix, n_digits, flags: cint;
-  tmp_mem: ptr JSDTOATempMem): cint
+  tmp_mem: var JSDTOATempMem): cint
 proc js_atod*(str: cstringConst; pnext: ptr cstringConst; radix, flags: cint;
-  tmp_mem: ptr JSATODTempMem): cdouble
+  tmp_mem: var JSATODTempMem): cdouble
 
 # additional exported functions
 proc u32toa*(buf: cstring; n: uint32): csize_t

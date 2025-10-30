@@ -2,20 +2,17 @@
 
 import std/tables
 
-import jserror
 import quickjs
 
 type
   JSSymbolRef* = enum
     jsyIterator = "iterator"
-    jsyAsyncIterator = "asyncIterator"
     jsyToStringTag = "toStringTag"
 
   JSStrRef* = enum
     jstDone = "done"
     jstValue = "value"
     jstNext = "next"
-    jstPrototype = "prototype"
     jstThen = "then"
     jstCatch = "catch"
     jstSet = "set"
@@ -23,7 +20,6 @@ type
 
   JSValueRef* = enum
     jsvArrayPrototypeValues = "Array.prototype.values"
-    jsvUint8Array = "Uint8Array"
     jsvObjectPrototypeValueOf = "Object.prototype.valueOf"
     jsvSet = "Set"
     jsvFunction = "Function"
@@ -47,7 +43,6 @@ type
     symRefs*: array[JSSymbolRef, JSAtom]
     strRefs*: array[JSStrRef, JSAtom]
     valRefs*: array[JSValueRef, JSValue]
-    errCtorRefs*: array[JSErrorEnum, JSValue]
     globalObj*: pointer
 
   JSFinalizerFunction* = proc(rt: JSRuntime; opaque: pointer) {.nimcall,
@@ -86,9 +81,6 @@ proc newJSContextOpaque*(ctx: JSContext): JSContextOpaque =
     let ret = JS_Eval(ctx, cstring(ss), csize_t(ss.len), "<init>", 0)
     assert JS_IsFunction(ctx, ret)
     opaque.valRefs[s] = ret
-  for e in JSErrorEnum:
-    if e != jeCustom:
-      opaque.errCtorRefs[e] = JS_GetPropertyStr(ctx, opaque.global, cstring($e))
   return opaque
 
 proc getOpaque*(ctx: JSContext): JSContextOpaque =

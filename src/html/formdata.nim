@@ -7,11 +7,13 @@ import html/catom
 import html/dom
 import io/dynstream
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/quickjs
 import monoucha/tojs
 import types/blob
 import types/formdata
+import types/jsopt
 import types/opt
 import utils/twtstr
 

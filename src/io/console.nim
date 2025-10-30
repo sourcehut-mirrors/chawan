@@ -2,11 +2,10 @@
 
 import io/chafile
 import monoucha/fromjs
-import monoucha/javascript
 import monoucha/jsopaque
+import monoucha/jsutils
 import monoucha/quickjs
-import monoucha/tojs
-import types/opt
+import types/jsopt
 import utils/twtstr
 
 type Console* = ref object
@@ -54,8 +53,7 @@ proc jsConsoleLog(ctx: JSContext; this: JSValueConst; argc: cint;
   let H = argc - 1
   for i, val in argv.toOpenArray(0, H):
     var res: string
-    if ctx.fromJS(val, res).isErr:
-      return JS_EXCEPTION
+    ?ctx.fromJS(val, res)
     buf &= res
     if i != H:
       buf &= ' '

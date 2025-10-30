@@ -117,7 +117,7 @@ type
   JSSetterMagicFunction* = proc(ctx: JSContext; this_val, val: JSValueConst;
     magic: cint): JSValue {.cdecl, raises: [].}
   JSClassID* = uint32
-  JSAtom* = distinct uint32
+  JSAtom* {.importc: "JSAtom".} = distinct uint32
   JSClassFinalizer* = proc(rt: JSRuntime; val: JSValueConst) {.
     cdecl, raises: [].}
   JSClassCheckDestroy* = proc(rt: JSRuntime; val: JSValueConst): JS_BOOL
@@ -637,14 +637,6 @@ proc JS_IsFunction*(ctx: JSContext; val: JSValueConst): JS_BOOL
 proc JS_IsConstructor*(ctx: JSContext; val: JSValueConst): JS_BOOL
 proc JS_SetConstructorBit*(ctx: JSContext; func_obj: JSValueConst;
   val: JS_BOOL): JS_BOOL
-
-proc JS_IsRegExp*(val: JSValueConst): JS_BOOL
-proc JS_IsMap*(val: JSValueConst): JS_BOOL
-proc JS_IsSet*(val: JSValueConst): JS_BOOL
-proc JS_IsWeakRef*(val: JSValueConst): JS_BOOL
-proc JS_IsWeakSet*(val: JSValueConst): JS_BOOL
-proc JS_IsWeakMap*(val: JSValueConst): JS_BOOL
-proc JS_IsDataView*(val: JSValueConst): JS_BOOL
 
 proc JS_NewArray*(ctx: JSContext): JSValue
 # takes ownership of the values

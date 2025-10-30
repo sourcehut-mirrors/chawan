@@ -1,7 +1,6 @@
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/quickjs
 import monoucha/tojs
-import types/opt
 
 type RefString* = ref object
   s*: string
@@ -24,7 +23,7 @@ proc len*(rs: RefString): int =
 proc toJS*(ctx: JSContext; rs: RefString): JSValue =
   return ctx.toJS($rs)
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; rs: var RefString): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; rs: var RefString):
+    FromJSResult =
   rs = RefString()
-  ?ctx.fromJS(val, rs.s)
-  ok()
+  ctx.fromJS(val, rs.s)

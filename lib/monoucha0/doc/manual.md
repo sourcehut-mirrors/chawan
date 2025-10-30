@@ -24,6 +24,7 @@ Using Monoucha with ORC may result in memory leaks.  See the
 	- [jsgetownprop, jsgetprop, jssetprop, jsdelprop, jshasprop, jspropnames: magic functions](#jsgetownprop-jsgetprop-jssetprop-jsdelprop-jshasprop-jspropnames-magic-functions)
 	- [jsfin: object finalizers](#jsfin-object-finalizers)
 * [toJS, fromJS](#tojs-fromjs)
+	- [Option vs Opt](#option-vs-opt)
 	- [Using raw JSValues](#using-raw-jsvalues)
 	- [Using toJS](#using-tojs)
 	- [Using fromJS](#using-fromjs)
@@ -46,10 +47,7 @@ version if you need a stable API.
 
 ### Hello, world
 
-A simple example:
-
 ```nim
-import monoucha/fromjs
 import monoucha/javascript
 
 let rt = newJSRuntime()
@@ -95,6 +93,16 @@ if JS_IsException(res):
 
 Usually you'll want to wrap `eval` in a function that deals with exceptions
 in a way appropriate for your application.
+
+### More convenient error handling with nim-results
+
+There is a convenience wrapper for error handling which uses nim-results,
+which allows writing procedures that throw exceptions but are still generic
+to JS and Nim.  It also includes an `evalConvert` which is like `eval` but
+returns a `Result` of the desired value or an exception.
+
+This is *not* zero-cost, it requires more allocations than just using the
+QJS APIs.  But it does allow for prettier code.
 
 ## Registering objects
 
@@ -558,19 +566,30 @@ In particular, handling JSValues is unavoidable when:
 
 ### Option vs Opt
 
-In converters, the conventional way to represent null values is to use
-`Option[T]`.  This applies to e.g. strings (which are not nilable in Nim),
-but also to refs in fromJS so that a registered ref object parameter of a
-`.jsfunc` is not nullable unless you wrap it in an `Option`.
+In converters, the conventional way to represent null values is to
+`import std/options`, `import monoucha/jsnull`, and use `Option[T]`.
 
-`Opt[T]` in contrast is used for representing errors.  Typically, it is
-returned from fromJS as `Opt[void]`; you can use the nim-results functions
-to handle these.  It is also possible to return a `Result[T, JSError]` from
-a bound procedure, making it easy to return error conditions from procs used
-both in Nim and JS.  (Notably however, returning a JSValue is still a more
-effective alternative.)
+This applies to e.g. strings (which are not nilable in Nim), but also to
+refs in fromJS so that a registered ref object parameter of a `.jsfunc` is
+not nullable unless you wrap it in an `Option`.
 
-Monoucha does not use Nim exceptions.
+`Opt[T]` in contrast is used for representing errors - to use this, make
+sure to add:
+
+```nim
+import monoucha/jserror
+```
+
+Typically, it is returned from fromJS as `Opt[void]`; you can use the
+nim-results functions to handle these.  It is also possible to return a
+`Result[T, JSError]` from a bound procedure, making it easy to return error
+conditions from procs used both in Nim and JS.  (However, returning a
+JSValue is more efficient.)
+
+Monoucha does not use Nim exceptions, and throwing an exception across bound
+function boundaries will result in undefined behavior.
+(`--exceptions:setjmp` will mess up the interpreter's internal state; with
+`--exceptions:goto` it probably just swallows the exception.)
 
 ### Using raw JSValues
 
@@ -610,8 +629,8 @@ Monoucha internally uses the overloaded `toJS` function to convert bound
 function return values to JS values. This is available to user code too;
 simply import the `monoucha/tojs` module.
 
-Naturally, `JSValue`s you get from toJS are owned by you, so you should
-call `JS_FreeValue` on these when you no longer need them.
+`JSValue`s you get from toJS are owned by you, so you should call
+`JS_FreeValue` on these when you no longer need them.
 
 The `tojs` module also includes some other convenience functions:
 
@@ -631,16 +650,16 @@ The `tojs` module also includes some other convenience functions:
 ### Using fromJS
 
 ```nim
-proc fromJS[T](ctx: JSContext; val: JSValueConst; res: var T): Err[void]
+proc fromJS[T](ctx: JSContext; val: JSValueConst; res: var T): FromJSResult
 ```
 
-`fromJS` converts QJS `JSValue`s into Nim values.  To use it, import
-`monoucha/fromjs`.
+`fromJS` converts QJS `JSValue`s into Nim values.  The default converters
+reside in `monoucha/fromjs`.
 
-On success, `fromJS` fills `res` and returns `Opt[void].some()`.
+On success, `fromJS` fills `res` and returns `fjOk`.
 
 On failure, `res` is set to an unspecified value, a QuickJS exception is
-thrown (using `JS_Throw()`), and `Opt[void].none()` is returned.
+thrown (typically a `TypeError`), and `fjErr` is returned.
 
 **Warning**: JSDict in general is somewhat finnicky: you must make
 sure that their destructors run before deinitializing the runtime.

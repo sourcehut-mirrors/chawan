@@ -2,9 +2,8 @@
 
 import config/conftypes
 import html/catom
-import monoucha/javascript
+import monoucha/jsutils
 import monoucha/quickjs
-import monoucha/tojs
 import types/opt
 import types/referrer
 import types/url
@@ -209,7 +208,7 @@ proc setImportMeta*(ctx: JSContext; funcVal: JSValue; isMain: bool) =
   let metaObj = JS_GetImportMeta(ctx, m)
   doAssert ctx.definePropertyCWE(metaObj, "url",
     JS_AtomToValue(ctx, moduleNameAtom)) == dprSuccess
-  doAssert ctx.definePropertyCWE(metaObj, "main", false) == dprSuccess
+  doAssert ctx.definePropertyCWE(metaObj, "main", JS_FALSE) == dprSuccess
   JS_FreeValue(ctx, metaObj)
   JS_FreeAtom(ctx, moduleNameAtom)
 

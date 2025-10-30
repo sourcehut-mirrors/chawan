@@ -1,8 +1,9 @@
 import std/unittest
 
 import monoucha/fromjs
-import monoucha/javascript
-import monoucha/optshim
+import monoucha/jsbind
+import monoucha/jsutils
+import monoucha/quickjs
 
 type MyGlobal = ref object
   s: string

@@ -17,7 +17,8 @@ import io/packetwriter
 import io/promise
 import local/select
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jsregex
 import monoucha/jstypes
 import monoucha/quickjs

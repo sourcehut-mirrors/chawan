@@ -3,12 +3,12 @@
 import std/tables
 
 import html/script
-import monoucha/javascript
+import monoucha/fromjs
 import monoucha/jsopaque
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
-import types/opt
+import types/jsopt
 
 type
   PromiseState = enum
@@ -180,10 +180,10 @@ proc promiseCatchCallback(ctx: JSContext; this: JSValueConst; argc: cint;
   return JS_UNDEFINED
 
 proc fromJS*(ctx: JSContext; val: JSValueConst;
-    res: var Promise[seq[JSValueConst]]): Opt[void] =
+    res: var Promise[seq[JSValueConst]]): FromJSResult =
   if not JS_IsObject(val):
     JS_ThrowTypeError(ctx, "value is not an object")
-    return err()
+    return fjErr
   res = Promise[seq[JSValueConst]]()
   let tmp = JS_NewObject(ctx)
   JS_SetOpaque(tmp, cast[pointer](res))
@@ -196,7 +196,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst;
     if JS_IsException(val):
       JS_FreeValue(ctx, tmp)
       res = nil
-      return err()
+      return fjErr
     JS_FreeValue(ctx, val)
   block catch:
     let fun = JS_NewCFunctionData(ctx, promiseCatchCallback, 0, 0, 1,
@@ -207,14 +207,14 @@ proc fromJS*(ctx: JSContext; val: JSValueConst;
     if JS_IsException(val):
       JS_FreeValue(ctx, tmp)
       res = nil
-      return err()
+      return fjErr
     JS_FreeValue(ctx, val)
   JS_FreeValue(ctx, tmp)
   GC_ref(res)
-  return ok()
+  fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var EmptyPromise):
-    Opt[void] =
+    FromJSResult =
   var res1: Promise[seq[JSValueConst]]
   ?ctx.fromJS(val, res1)
   let res2 = EmptyPromise()
@@ -222,10 +222,10 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var EmptyPromise):
     res2.resolve()
   )
   res = res2
-  return ok()
+  fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var Promise[JSValueConst]):
-    Opt[void] =
+    FromJSResult =
   var res1: Promise[seq[JSValueConst]]
   ?ctx.fromJS(val, res1)
   let res2 = Promise[JSValueConst]()
@@ -236,7 +236,7 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var Promise[JSValueConst]):
       res2.resolve(JS_UNDEFINED)
   )
   res = res2
-  return ok()
+  fjOk
 
 proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
   if promise == nil:
@@ -250,7 +250,7 @@ proc toJS*(ctx: JSContext; promise: EmptyPromise): JSValue =
   promise.then(proc() =
     let resolve = ctx.fetchJS(nthen)
     if not JS_IsUninitialized(resolve):
-      JS_FreeValue(ctx, JS_CallFree(ctx, resolve, JS_UNDEFINED, 0, nil))
+      JS_FreeValue(ctx, ctx.callFree(resolve, JS_UNDEFINED))
   )
   return jsPromise
 

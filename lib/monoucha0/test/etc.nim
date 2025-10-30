@@ -2,10 +2,11 @@ import std/options
 import std/unittest
 
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jspropenumlist
 import monoucha/jstypes
-import monoucha/optshim
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 

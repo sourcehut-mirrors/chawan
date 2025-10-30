@@ -30,17 +30,22 @@ Therefore, for best results you should put the following in your nim.cfg:
 
 ## Dependencies
 
-monoucha depends on the [nim-results](https://github.com/arnetheduck/nim-results.git)
-library.
+Monoucha has no hard dependencies other than QuickJS and the standard
+library (in particular, the `tables` module.)  QuickJS in turn has no
+dependencies other than libc.
 
-QuickJS is already included in this repository; you do not need to install
+There is an optional `jserror` module which enables error handling that is
+generic to Nim and QuickJS using the
+[nim-results](https://github.com/arnetheduck/nim-results) library.
+
+QuickJS is already included in this repository; you do not have to install
 it separately.
 
 ## Q&A
 
 * Cool, so how do I use this thing?
 
-I'm working on a [manual](doc/manual.md). Please read the manual.
+There is a [manual](doc/manual.md). Please read the manual.
 
 * I'm getting memory leaks?
 

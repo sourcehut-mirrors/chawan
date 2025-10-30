@@ -2,15 +2,16 @@
 {.push raises: [].}
 
 import libregexp
-import optshim
 
 export LREFlags
 
 type
   Regex* = object
-    bytecode: seq[uint8]
-    when defined(debug):
-      buf: string
+    bytecode*: string
+
+  CompileRegexResult* = object
+    regex*: Regex ## If regex.bytecode.len == 0, compilation failed.
+    error*: string ## Contains the error message on failure.
 
   RegexCapture* = tuple # start, end, index
     s, e: int
@@ -19,13 +20,10 @@ type
     success*: bool
     captures*: seq[seq[RegexCapture]]
 
-when defined(debug):
-  proc `$`*(regex: Regex): string =
-    regex.buf
-
-proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
+proc compileRegex*(buf: string; flags: LREFlags; regex: var Regex): bool =
   ## Compile a regular expression using QuickJS's libregexp library.
-  ## The result is either a regex, or the error message emitted by libregexp.
+  ## If the result is false, regex.bytecode stores the error message emitted
+  ## by libregexp instead.
   ##
   ## Use `exec` to actually use the resulting bytecode on a string.
   var errorMsg = newString(64)
@@ -36,17 +34,18 @@ proc compileRegex*(buf: string; flags: LREFlags = {}): Result[Regex, string] =
     let i = errorMsg.find('\0')
     if i != -1:
       errorMsg.setLen(i)
-    return err(errorMsg)
+    regex = Regex(bytecode: move(errorMsg))
+    return false
   assert plen > 0
-  var regex = Regex(bytecode: newSeq[uint8](plen))
-  when defined(debug):
-    regex.buf = buf
-  copyMem(addr regex.bytecode[0], bytecode, plen)
+  var byteSeq = newString(plen)
+  copyMem(addr byteSeq[0], bytecode, plen)
   dealloc(bytecode)
-  return ok(move(regex))
+  regex = Regex(bytecode: move(byteSeq))
+  true
 
 proc exec*(regex: Regex; s: openArray[char]; start = 0; length = -1;
     nocaps = false): RegexResult =
+  ## execute the regex found in `bytecode`.
   let length = if length == -1:
     s.len
   else:
@@ -54,7 +53,7 @@ proc exec*(regex: Regex; s: openArray[char]; start = 0; length = -1;
   assert start >= 0
   if start >= length:
     return RegexResult()
-  let bytecode = unsafeAddr regex.bytecode[0]
+  let bytecode = cast[ptr uint8](unsafeAddr regex.bytecode[0])
   let captureCount = lre_get_capture_count(bytecode)
   var capture: ptr UncheckedArray[int] = nil
   if captureCount > 0:

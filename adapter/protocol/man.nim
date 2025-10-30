@@ -177,11 +177,9 @@ proc processManpage(ofile, efile: AChaFile; header, keyword: string):
   # regexes partially from w3mman2html
   var reMap = array[RegexType, Regex].default
   for t, re in reMap.mpairs:
-    let x = ($t).compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE})
-    if x.isErr:
-      discard cast[ChaFile](stderr).writeLine($t & ": " & x.error)
+    if not ($t).compileRegex({LRE_FLAG_GLOBAL, LRE_FLAG_UNICODE}, re):
+      discard cast[ChaFile](stderr).writeLine($t & ": " & re.bytecode)
       quit(1)
-    re = x.get
   var paths: seq[string] = @[]
   var ignoreMan = keyword.toUpperAscii()
   if ignoreMan == keyword or keyword.len == 1:

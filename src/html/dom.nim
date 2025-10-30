@@ -29,7 +29,8 @@ import io/dynstream
 import io/promise
 import io/timeout
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jsopaque
 import monoucha/jspropenumlist
 import monoucha/jsutils
@@ -42,6 +43,7 @@ import server/response
 import types/bitmap
 import types/blob
 import types/color
+import types/jsopt
 import types/opt
 import types/path
 import types/referrer
@@ -1509,10 +1511,9 @@ proc loadResource*(window: Window; svg: SVGSVGElement) =
 
 proc runJSJobs*(window: Window) =
   while true:
-    let r = window.jsrt.runJSJobs()
-    if r.isOk:
+    let ctx = window.jsrt.runJSJobs()
+    if ctx == nil:
       break
-    let ctx = r.error
     window.console.writeException(ctx)
 
 proc performMicrotaskCheckpoint*(window: Window) =
@@ -3294,7 +3295,7 @@ proc createNodeIterator(ctx: JSContext; document: Document; root: Node;
       let filter = collection.filter
       let node = ctx.toJS(node)
       let val = if JS_IsFunction(ctx, filter):
-        JS_Call(ctx, filter, JS_UNDEFINED, 1, node.toJSValueArray())
+        ctx.call(filter, JS_UNDEFINED, node)
       else:
         let atom = JS_NewAtom(ctx, cstringConst"acceptNode")
         let val = JS_Invoke(ctx, filter, atom, 1, node.toJSValueArray())
@@ -5393,8 +5394,8 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
       return
     res.get.blob().then(proc(blob: BlobResult) =
       let jsBlob = ctx.toJS(blob)
-      let res = JS_CallFree(ctx, callback, JS_UNDEFINED, 1,
-        jsBlob.toJSValueArray())
+      let res = ctx.callFree(callback, JS_UNDEFINED, jsBlob)
+      JS_FreeValue(ctx, jsBlob)
       if JS_IsException(res):
         window.console.error("Exception in canvas toBlob:",
           ctx.getExceptionMsg())
@@ -6587,13 +6588,13 @@ return option;
     JS_GetPropertyStr(ctx, jsWindow, "Document")) != dprException
   let nodeFilter = JS_NewObject(ctx)
   for e in NodeFilterNode:
-    let n = 1u32 shl uint32(e)
+    let n = ctx.toJS(1u32 shl uint32(e))
     if (let res = ctx.definePropertyE(nodeFilter, $e, n); res != dprSuccess):
       doAssert false
-  doAssert ctx.definePropertyE(nodeFilter, "SHOW_ALL", 0xFFFFFFFFu32) !=
-    dprException
-  doAssert ctx.definePropertyCW(jsWindow, "NodeFilter", nodeFilter) !=
-    dprException
+  doAssert ctx.definePropertyE(nodeFilter, "SHOW_ALL",
+    ctx.toJS(0xFFFFFFFFu32)) != dprException
+  doAssert ctx.definePropertyCW(jsWindow, "NodeFilter",
+    ctx.toJS(nodeFilter)) != dprException
   JS_FreeValue(ctx, jsWindow)
 
 # Forward declaration hack

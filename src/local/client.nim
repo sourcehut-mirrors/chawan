@@ -23,8 +23,9 @@ import local/pager
 import local/select
 import local/term
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/jsopaque
+import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
 import server/forkserver
@@ -33,6 +34,7 @@ import server/loaderiface
 import server/request
 import server/response
 import types/blob
+import types/jsopt
 import types/opt
 import types/url
 import utils/twtstr
@@ -97,11 +99,9 @@ proc setenv(ctx: JSContext; client: Client; s: string; val: JSValueConst):
     twtstr.unsetEnv(s)
   else:
     var vals: string
-    if ctx.fromJS(val, vals).isOk:
-      if twtstr.setEnv(s, vals).isErr:
-        return JS_ThrowTypeError(ctx, "Failed to set environment variable")
-    else:
-      return JS_EXCEPTION
+    ?ctx.fromJS(val, vals)
+    if twtstr.setEnv(s, vals).isErr:
+      return JS_ThrowTypeError(ctx, "Failed to set environment variable")
   return JS_UNDEFINED
 
 proc nimGCStats(client: Client): string {.jsfunc.} =

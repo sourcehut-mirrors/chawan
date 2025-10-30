@@ -1,12 +1,13 @@
 import std/unittest
 
 import monoucha/jsregex
-import monoucha/optshim
 
 test "regex only":
-  let re = compileRegex(".*").get
+  var re: Regex
+  doAssert compileRegex(".*", {}, re)
   check re.match("whatever")
 
 test r"\b":
-  let re = compileRegex"\bth\b".get
+  var re: Regex
+  doAssert compileRegex("\bth\b", {}, re)
   check not re.match("Weather")

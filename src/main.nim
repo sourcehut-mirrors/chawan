@@ -14,7 +14,8 @@ import io/poll
 import local/client
 import local/pager
 import local/term
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/quickjs
 import server/forkserver
 import types/opt
 import utils/myposix

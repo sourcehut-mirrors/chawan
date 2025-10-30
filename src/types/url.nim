@@ -7,11 +7,12 @@ import std/strutils
 import io/packetreader
 import io/packetwriter
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/jstypes
 import monoucha/libunicode
 import monoucha/quickjs
 import monoucha/tojs
+import types/jsopt
 import types/opt
 import utils/luwrap
 import utils/twtstr

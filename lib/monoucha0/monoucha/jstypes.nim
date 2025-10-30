@@ -51,10 +51,10 @@ type
     nsize*: csize_t # member size
     t*: cint # type
 
-  JSUint8Array* = object
+  JSTypedArray* = object
+    t*: JSTypedArrayEnum
     abuf*: JSArrayBuffer
-    offset*: csize_t # offset into the buffer
-    nmemb*: csize_t # number of members
+    #TODO offset/nmemb
 
 proc high*(abuf: JSArrayBuffer): int =
   return int(abuf.len) - 1

@@ -13,6 +13,12 @@ proc countBackslashes(buf: string; i: int): int =
     inc j
   return j
 
+proc compileRegex(buf: string; flags: LREFlags = {}): Result[Regex, string] =
+  var regex: Regex
+  if not compileRegex(buf, flags, regex):
+    return err(regex.bytecode)
+  ok(move(regex))
+
 # ^abcd -> ^abcd
 # efgh$ -> efgh$
 # ^ijkl$ -> ^ijkl$

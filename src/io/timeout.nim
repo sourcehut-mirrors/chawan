@@ -5,10 +5,8 @@ import std/times
 
 import io/console
 import monoucha/fromjs
-import monoucha/javascript
 import monoucha/jsutils
 import monoucha/quickjs
-import types/opt
 
 type
   TimeoutType* = enum

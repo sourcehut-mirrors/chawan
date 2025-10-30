@@ -5,10 +5,12 @@ import std/options
 import std/strutils
 
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
+import types/jsopt
 import types/opt
 import types/url
 import utils/twtstr
@@ -45,20 +47,20 @@ iterator allPairs*(headers: Headers): tuple[name, value: lent string] =
     yield (name, value)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
-    Err[void] =
+    FromJSResult =
   var headers: Headers
   if ctx.fromJS(val, headers).isOk:
     res = HeadersInit(s: headers.list)
-    return ok()
+    return fjOk
   if ctx.isSequence(val):
     res = HeadersInit()
     if ctx.fromJS(val, res.s).isOk:
-      return ok()
+      return fjOk
   res = HeadersInit()
   var record: JSKeyValuePair[string, string]
   ?ctx.fromJS(val, record)
   res.s = move(record.s)
-  return ok()
+  fjOk
 
 const TokenChars = {
   '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~'

@@ -1,48 +1,46 @@
-# Automatic conversion of Nim types to JavaScript types.
-#
-# Every conversion involves copying unless explicitly noted below.
-#
-# * Primitives are converted to their respective JavaScript counterparts.
-# * seq is converted to a JS array. Note: this always copies the seq's contents.
-# * enum is converted to its stringifier's output.
-# * JSValue is returned as-is, *without* a DupValue operation.
-# * JSError is converted to a new error object corresponding to the error
-#   it represents.
-# * JSArrayBuffer, JSUint8Array are converted to a JS object without copying
-#   their contents.
-# * NarrowString is converted to a JS narrow string (with copying). For more
-#   information on JS string handling, see js/jstypes.nim.
-# * Finally, ref object is converted to a JS object whose opaque is the ref
-#   object. (See below.)
-#
-# Note that ref objects can be seamlessly converted to JS objects, despite
-# the fact that they are managed by two separate garbage collectors. This
-# works thanks to a patch in QJS and machine oil. Basically:
-#
-# * Nim objects registered with registerType can be paired with one (1)
-#   JS object each.
-# * This happens on-demand, whenever the Nim object has to be converted into JS.
-# * Once the conversion happened, the JS object will be kept alive until the
-#   Nim object is destroyed, so that JS properties on the JS object are not
-#   lost during a re-conversion.
-# * Similarly, the Nim object is kept alive so long as the JS object is alive.
-# * The patched in can_destroy hook is used to synchronize reference counts
-#   of the two objects; this way, no memory leak occurs.
+## Automatic conversion of Nim types to JavaScript types.
+##
+## Every conversion involves copying unless explicitly noted below.
+##
+## * Primitives are converted to their respective JavaScript counterparts.
+## * seq is converted to a JS array. Note: this always copies the seq's
+##   contents.
+## * enum is converted to its stringifier's output.
+## * JSValue is returned as-is, *without* a DupValue operation.
+## * JSError is converted to a new error object corresponding to the error
+##   it represents.
+## * JSArrayBuffer, JSUint8Array are converted to a JS object without copying
+##   their contents.
+## * NarrowString is converted to a JS narrow string (with copying). For more
+##   information on JS string handling, see js/jstypes.nim.
+## * Finally, ref object is converted to a JS object whose opaque is the ref
+##   object. (See below.)
+##
+## ref objects can be seamlessly converted to JS objects despite the fact
+## that they are managed by two separate garbage collectors thanks to a patch
+## in QJS:
+##
+## * Nim objects registered with registerType can be paired with one JS
+##   object each.  This happens on-demand, whenever the Nim object has to be
+##   converted into JS.
+## * Once the conversion happened, the JS object will be kept alive until the
+##   Nim object is destroyed, so that JS properties on the JS object are not
+##   lost during a re-conversion.
+## * Similarly, the Nim object is kept alive so long as the JS object is alive.
+## * The patched in can_destroy hook is used to synchronize reference counts
+##   of the two objects; this way, no memory leak occurs.
 
 {.push raises: [].}
 
-import std/options
 import std/tables
+import std/typetraits
 
-import jserror
 import jsopaque
 import jstypes
 import jsutils
-import optshim
 import quickjs
 
 # Convert Nim types to the corresponding JavaScript type.
-# This does not work with var objects.
 proc toJS*(ctx: JSContext; s: string): JSValue
 proc toJS*(ctx: JSContext; n: int64): JSValue
 proc toJS*(ctx: JSContext; n: int32): JSValue
@@ -52,80 +50,20 @@ proc toJS*(ctx: JSContext; n: uint32): JSValue
 proc toJS*(ctx: JSContext; n: uint64): JSValue
 proc toJS*(ctx: JSContext; n: float64): JSValue
 proc toJS*(ctx: JSContext; b: bool): JSValue
-proc toJS*[U, V](ctx: JSContext; t: Table[U, V]): JSValue
-proc toJS*(ctx: JSContext; opt: Option): JSValue
-proc toJS*[T, E](ctx: JSContext; opt: Result[T, E]): JSValue
-proc toJS*(ctx: JSContext; s: seq): JSValue
+proc toJS*[T](ctx: JSContext; s: seq[T]): JSValue
 proc toJS*[T](ctx: JSContext; s: set[T]): JSValue
-proc toJS*(ctx: JSContext; t: tuple): JSValue
-proc toJS*(ctx: JSContext; e: enum): JSValue
+proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue
+proc toJS*[T: enum](ctx: JSContext; e: T): JSValue
 proc toJS*(ctx: JSContext; j: JSValue): JSValue
 proc toJS*(ctx: JSContext; obj: ref object): JSValue
-proc toJS*(ctx: JSContext; err: JSError): JSValue
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue
-proc toJS*(ctx: JSContext; u8a: JSUint8Array): JSValue
+proc toJS*(ctx: JSContext; u8a: JSTypedArray): JSValue
 proc toJS*(ctx: JSContext; ns: NarrowString): JSValue
 proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue
 
 # Same as toJS, but used in constructors. ctor contains the target prototype,
 # used for subclassing from JS.
 proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue
-proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValueConst):
-  JSValue
-
-type DefinePropertyResult* = enum
-  dprException, dprSuccess, dprFail
-
-# Note: this consumes `prop'.
-proc defineProperty*(ctx: JSContext; this: JSValueConst; name: JSAtom;
-    prop: JSValue; flags = cint(0)): DefinePropertyResult =
-  return case JS_DefinePropertyValue(ctx, this, name, prop, flags)
-  of 0: dprFail
-  of 1: dprSuccess
-  else: dprException
-
-# Note: this consumes `prop'.
-proc defineProperty(ctx: JSContext; this: JSValueConst; name: int64;
-    prop: JSValue; flags = cint(0)): DefinePropertyResult =
-  let name = JS_NewInt64(ctx, name)
-  let atom = JS_ValueToAtom(ctx, name)
-  JS_FreeValue(ctx, name)
-  if unlikely(atom == JS_ATOM_NULL):
-    return dprException
-  result = ctx.defineProperty(this, atom, prop, flags)
-  JS_FreeAtom(ctx, atom)
-
-proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: JSAtom;
-    prop: JSValue): DefinePropertyResult =
-  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
-
-proc defineProperty(ctx: JSContext; this: JSValueConst; name: string;
-    prop: JSValue; flags = cint(0)): DefinePropertyResult =
-  return case JS_DefinePropertyValueStr(ctx, this, cstring(name), prop, flags)
-  of 0: dprFail
-  of 1: dprSuccess
-  else: dprException
-
-proc definePropertyC*(ctx: JSContext; this: JSValueConst; name: string;
-    prop: JSValue): DefinePropertyResult =
-  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE)
-
-proc defineProperty*[T](ctx: JSContext; this: JSValueConst; name: string;
-    prop: T; flags = cint(0)): DefinePropertyResult =
-  ctx.defineProperty(this, name, ctx.toJS(prop), flags)
-
-proc definePropertyE*[T](ctx: JSContext; this: JSValueConst; name: string;
-    prop: T): DefinePropertyResult =
-  ctx.defineProperty(this, name, prop, JS_PROP_ENUMERABLE)
-
-proc definePropertyCW*[T](ctx: JSContext; this: JSValueConst; name: string;
-    prop: T): DefinePropertyResult =
-  ctx.defineProperty(this, name, prop, JS_PROP_CONFIGURABLE or
-    JS_PROP_WRITABLE)
-
-proc definePropertyCWE*[T](ctx: JSContext; this: JSValueConst; name: string;
-    prop: T): DefinePropertyResult =
-  ctx.defineProperty(this, name, prop, JS_PROP_C_W_E)
 
 proc newFunction*(ctx: JSContext; args: openArray[string]; body: string):
     JSValue =
@@ -178,81 +116,47 @@ proc toJS*(ctx: JSContext; n: float64): JSValue =
 proc toJS*(ctx: JSContext; b: bool): JSValue =
   return JS_NewBool(ctx, b)
 
-proc toJS*[U, V](ctx: JSContext; t: Table[U, V]): JSValue =
-  let obj = JS_NewObject(ctx)
-  if not JS_IsException(obj):
-    for k, v in t:
-      case ctx.definePropertyCWE(obj, k, v)
-      of dprException:
-        JS_FreeValue(ctx, obj)
-        return JS_EXCEPTION
-      else: discard
-  return obj
-
-proc toJS*(ctx: JSContext; opt: Option): JSValue =
-  if opt.isSome:
-    return ctx.toJS(opt.get)
-  return JS_NULL
-
-proc toJS*[T, E](ctx: JSContext; opt: Result[T, E]): JSValue =
-  if opt.isOk:
-    when not (T is void):
-      return ctx.toJS(opt.get)
-    else:
-      return JS_UNDEFINED
-  else:
-    when not (E is void):
-      if opt.error != nil:
-        return JS_Throw(ctx, ctx.toJS(opt.error))
-    return JS_EXCEPTION
-
-proc toJS*(ctx: JSContext; s: seq): JSValue =
-  let a = JS_NewArray(ctx)
-  if not JS_IsException(a):
-    for i in 0 ..< s.len:
-      let val = toJS(ctx, s[i])
-      if JS_IsException(val):
-        return val
-      case ctx.defineProperty(a, int64(i), val, JS_PROP_C_W_E or JS_PROP_THROW)
-      of dprException: return JS_EXCEPTION
-      else: discard
-  return a
+proc toJS*[T](ctx: JSContext; s: seq[T]): JSValue =
+  var vals = newSeqOfCap[JSValue](s.len)
+  for it in s:
+    let val = ctx.toJS(it)
+    if JS_IsException(val):
+      ctx.freeValues(vals)
+      return val
+    vals.add(val)
+  return ctx.newArrayFrom(vals)
 
 proc toJS*[T](ctx: JSContext; s: set[T]): JSValue =
-  let a = JS_NewArray(ctx)
-  if JS_IsException(a):
-    return a
-  var i = 0i64
+  var vals: seq[JSValue] = @[]
   for e in s:
     let val = ctx.toJS(e)
     if JS_IsException(val):
+      ctx.freeValues(vals)
       return val
-    case ctx.defineProperty(a, i, val, JS_PROP_C_W_E or JS_PROP_THROW)
-    of dprException:
-      JS_FreeValue(ctx, a)
-      return JS_EXCEPTION
-    else: discard
-    inc i
+    vals.add(val)
+  let a = ctx.newArrayFrom(vals)
+  if JS_IsException(a):
+    return a
   let ret = JS_CallConstructor(ctx, ctx.getOpaque().valRefs[jsvSet], 1,
     a.toJSValueArray())
   JS_FreeValue(ctx, a)
   return ret
 
-proc toJS(ctx: JSContext; t: tuple): JSValue =
-  let a = JS_NewArray(ctx)
-  if not JS_IsException(a):
-    var i = 0i64
-    for f in t.fields:
-      let val = toJS(ctx, f)
-      if JS_IsException(val):
-        return val
-      case ctx.defineProperty(a, i, val, JS_PROP_C_W_E or JS_PROP_THROW)
-      of dprException:
-        JS_FreeValue(ctx, a)
-        return JS_EXCEPTION
-      else: discard
-      inc i
-  return a
+proc toJS*[T: tuple](ctx: JSContext; t: T): JSValue =
+  const L = uint(T.tupleLen)
+  var vals {.noinit.}: array[L, JSValue]
+  var u = 0u
+  for it in t.fields:
+    let val = ctx.toJS(it)
+    if JS_IsException(val):
+      break
+    vals[u] = val
+    inc u
+  if u != L:
+    if u > 0:
+      ctx.freeValues(vals.toOpenArray(0, u - 1))
+    return JS_EXCEPTION
+  return ctx.newArrayFrom(vals)
 
 proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
     JSValue =
@@ -315,7 +219,7 @@ template getTypePtr*[T: ref object](t: typedesc[T]): pointer =
   var x: typeof(T()[])
   getTypeInfo2(x)
 
-proc toJSRefObj(ctx: JSContext; obj: ref object): JSValue =
+proc toJSRefObj*(ctx: JSContext; obj: ref object): JSValue =
   let p = cast[pointer](obj)
   let tp = getTypePtr(obj)
   return ctx.toJSP0(p, tp, p, JS_UNDEFINED)
@@ -332,45 +236,22 @@ proc toJSNew*(ctx: JSContext; obj: ref object; ctor: JSValueConst): JSValue =
   let tp = getTypePtr(obj)
   return ctx.toJSP0(p, tp, p, ctor)
 
-proc toJSNew*[T, E](ctx: JSContext; opt: Result[T, E]; ctor: JSValueConst):
-    JSValue =
-  if opt.isOk:
-    when not (T is void):
-      return ctx.toJSNew(opt.get, ctor)
-    else:
-      return JS_UNDEFINED
-  else:
-    when not (E is void):
-      if opt.error != nil:
-        return JS_Throw(ctx, ctx.toJS(opt.error))
-    return JS_EXCEPTION
-
-proc toJS(ctx: JSContext; e: enum): JSValue =
+proc toJS*[T: enum](ctx: JSContext; e: T): JSValue =
   return toJS(ctx, $e)
 
 proc toJS(ctx: JSContext; j: JSValue): JSValue =
   return j
 
-proc toJS*(ctx: JSContext; err: JSError): JSValue =
-  if err == nil:
-    return JS_EXCEPTION
-  if err.e == jeCustom:
-    return ctx.toJSRefObj(err)
-  var msg = toJS(ctx, err.message)
-  if JS_IsException(msg):
-    return msg
-  let ctor = ctx.getOpaque().errCtorRefs[err.e]
-  let ret = JS_CallConstructor(ctx, ctor, 1, msg.toJSValueArray())
-  JS_FreeValue(ctx, msg)
-  return ret
-
 proc toJS*(ctx: JSContext; abuf: JSArrayBuffer): JSValue =
   return JS_NewArrayBuffer(ctx, abuf.p, abuf.len, abuf.dealloc, nil, false)
 
-proc toJS*(ctx: JSContext; u8a: JSUint8Array): JSValue =
-  let jsabuf = toJS(ctx, u8a.abuf)
-  let ctor = ctx.getOpaque().valRefs[jsvUint8Array]
-  let ret = JS_CallConstructor(ctx, ctor, 1, jsabuf.toJSValueArray())
+proc toJS*(ctx: JSContext; u8a: JSTypedArray): JSValue =
+  let jsabuf = ctx.toJS(u8a.abuf)
+  if JS_IsException(jsabuf):
+    return jsabuf
+  let argv = [JSValueConst(jsabuf), JS_UNDEFINED, JS_UNDEFINED]
+  let ret = JS_NewTypedArray(ctx, 3, argv.toJSValueConstArray(),
+    JS_TYPED_ARRAY_UINT8)
   JS_FreeValue(ctx, jsabuf)
   return ret
 
@@ -384,7 +265,7 @@ proc toJS*[T: JSDict](ctx: JSContext; dict: T): JSValue =
   block good:
     for k, v in dict.fieldPairs:
       when k != "toFree":
-        case ctx.defineProperty(obj, k, v)
+        case ctx.defineProperty(obj, k, ctx.toJS(v))
         of dprSuccess, dprFail: discard
         of dprException: break good
     return obj

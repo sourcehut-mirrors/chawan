@@ -2,43 +2,56 @@
 
 import std/algorithm
 import std/macros
-import std/options
 import std/tables
 
 import jsopaque
 import jstypes
-import optshim
 import quickjs
 import tojs
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): Opt[void]
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): Opt[void]
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): Opt[void]
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int64): Opt[void]
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint16): Opt[void]
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint32): Opt[void]
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int): Opt[void]
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): Opt[void]
-proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T): Opt[void]
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): Opt[void]
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): Opt[void]
+type FromJSResult* = enum
+  fjErr, fjOk
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int64): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint16): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint32): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): FromJSResult
+proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
+  FromJSResult
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]):
+  FromJSResult
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]):
+  FromJSResult
 proc fromJS*[A, B](ctx: JSContext; val: JSValueConst;
-  res: var JSKeyValuePair[A, B]): Opt[void]
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
-  Opt[void]
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): Opt[void]
-proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T): Opt[void]
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var ptr T): Opt[void]
+  res: var JSKeyValuePair[A, B]): FromJSResult
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): FromJSResult
+proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T):
+  FromJSResult
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var ptr T): FromJSResult
 proc fromJS*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
-  Opt[void]
+  FromJSResult
 proc fromJS*[T: JSDict](ctx: JSContext; val: JSValueConst; res: var T):
-  Opt[void]
+  FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBuffer):
-  Opt[void]
+  FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
-  Opt[void]
+  FromJSResult
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
-  Opt[void]
+  FromJSResult
+
+template isOk*(res: FromJSResult): bool =
+  res == fjOk
+
+template isErr*(res: FromJSResult): bool =
+  res == fjErr
+
+template `?`(res: FromJSResult) =
+  if res == fjErr:
+    return fjErr
 
 proc isInstanceOf*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID):
     bool =
@@ -71,73 +84,73 @@ proc isSequence*(ctx: JSContext; o: JSValueConst): bool =
   result = not JS_IsUndefined(prop)
   JS_FreeValue(ctx, prop)
 
-proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): Opt[void] =
+proc fromJSFree*[T](ctx: JSContext; val: JSValue; res: var T): FromJSResult =
   result = ctx.fromJS(val, res)
   JS_FreeValue(ctx, val)
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var string): FromJSResult =
   var plen {.noinit.}: csize_t
   let outp = JS_ToCStringLen(ctx, plen, val) # cstring
   if outp == nil:
-    return err()
+    return fjErr
   res = newString(plen)
   if plen != 0:
     copyMem(addr res[0], cstring(outp), plen)
   JS_FreeCString(ctx, outp)
-  return ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int16): FromJSResult =
   var n {.noinit.}: int32
   if JS_ToInt32(ctx, n, val) < 0:
-    return err()
+    return fjErr
   res = cast[int16](n)
-  return ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int32): FromJSResult =
   var n {.noinit.}: int32
   if JS_ToInt32(ctx, n, val) < 0:
-    return err()
+    return fjErr
   res = n
-  return ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int64): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int64): FromJSResult =
   var n {.noinit.}: int64
   if JS_ToInt64(ctx, n, val) < 0:
-    return err()
+    return fjErr
   res = n
-  return ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint16): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint16): FromJSResult =
   var n {.noinit.}: uint32
   if JS_ToUint32(ctx, n, val) < 0:
-    return err()
+    return fjErr
   res = uint16(n)
-  return ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint32): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var uint32): FromJSResult =
   var n {.noinit.}: uint32
   if JS_ToUint32(ctx, n, val) < 0:
-    return err()
+    return fjErr
   res = n
-  return ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var int): FromJSResult =
   when sizeof(int) > 4:
     var x: int64
   else:
     var x: int32
   ?ctx.fromJS(val, x)
   res = int(x)
-  return ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var float64): FromJSResult =
   var n {.noinit.}: float64
   if JS_ToFloat64(ctx, n, val) < 0:
-    return err()
+    return fjErr
   res = n
-  return ok()
+  fjOk
 
-proc readTupleDone(ctx: JSContext; it, nextMethod: JSValueConst): Opt[void] =
+proc readTupleDone(ctx: JSContext; it, nextMethod: JSValueConst): FromJSResult =
   let next = JS_Call(ctx, nextMethod, it, 0, nil)
   let ctxOpaque = ctx.getOpaque()
   let doneVal = JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstDone])
@@ -145,8 +158,8 @@ proc readTupleDone(ctx: JSContext; it, nextMethod: JSValueConst): Opt[void] =
   if ctx.fromJSFree(doneVal, done).isErr or done:
     JS_FreeValue(ctx, next)
     if not done:
-      return err()
-    return ok()
+      return fjErr
+    return fjOk
   while true:
     let next = JS_Call(ctx, nextMethod, it, 0, nil)
     let doneVal = JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstDone])
@@ -155,13 +168,13 @@ proc readTupleDone(ctx: JSContext; it, nextMethod: JSValueConst): Opt[void] =
       JS_FreeValue(ctx, next)
       if done:
         JS_ThrowTypeError(ctx, "too many tuple members")
-      return err()
+      return fjErr
     JS_FreeValue(ctx, JS_GetProperty(ctx, next, ctxOpaque.strRefs[jstValue]))
     JS_FreeValue(ctx, next)
-  ok()
+  fjOk
 
 proc fromJSTupleBody[T](ctx: JSContext; it, nextMethod: JSValueConst;
-    res: var T): Opt[void] =
+    res: var T): FromJSResult =
   for f in res.fields:
     let next = JS_Call(ctx, nextMethod, it, 0, nil)
     let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
@@ -170,7 +183,7 @@ proc fromJSTupleBody[T](ctx: JSContext; it, nextMethod: JSValueConst;
       if done:
         JS_ThrowTypeError(ctx, "too few arguments in sequence")
       JS_FreeValue(ctx, next)
-      return err()
+      return fjErr
     let valueVal = JS_GetProperty(ctx, next,
       ctx.getOpaque().strRefs[jstValue])
     JS_FreeValue(ctx, next)
@@ -178,87 +191,92 @@ proc fromJSTupleBody[T](ctx: JSContext; it, nextMethod: JSValueConst;
   ctx.readTupleDone(it, nextMethod)
 
 proc fromJS*[T: tuple](ctx: JSContext; val: JSValueConst; res: var T):
-    Opt[void] =
+    FromJSResult =
   let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
   let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
   if JS_IsException(nextMethod):
     JS_FreeValue(ctx, it)
-    return err()
+    return fjErr
   result = ctx.fromJSTupleBody(it, nextMethod, res)
   JS_FreeValue(ctx, it)
   JS_FreeValue(ctx, nextMethod)
 
+type SeqItResult = enum
+  sirDone, sirContinue, sirException
+
 proc fromJSSeqIt(ctx: JSContext; it, nextMethod: JSValueConst;
-    res: var JSValue): Opt[bool] =
+    res: var JSValue): SeqItResult =
   let next = JS_Call(ctx, nextMethod, it, 0, nil)
   let doneVal = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstDone])
   var done = false
   if ctx.fromJSFree(doneVal, done).isOk and not done:
     res = JS_GetProperty(ctx, next, ctx.getOpaque().strRefs[jstValue])
     JS_FreeValue(ctx, next)
-    return ok(false)
+    return sirContinue
   JS_FreeValue(ctx, next)
   if not done:
-    return err() # conversion error
-  ok(true) # actually done
+    return sirException # conversion error
+  sirDone # actually done
 
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): Opt[void] =
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var seq[T]): FromJSResult =
   let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
   let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
   if JS_IsException(nextMethod):
     JS_FreeValue(ctx, it)
-    return err()
-  var status = ok()
+    return fjErr
+  var status = fjOk
   var tmp = newSeq[T]()
   while status.isOk:
     var val: JSValue
-    let done = ctx.fromJSSeqIt(it, nextMethod, val)
-    if done.isErr:
-      status = err()
+    case ctx.fromJSSeqIt(it, nextMethod, val)
+    of sirException:
+      status = fjErr
       break
-    if done.get:
+    of sirDone:
       res = move(tmp)
       break
-    tmp.add(default(T))
-    status = ctx.fromJSFree(val, tmp[^1])
+    of sirContinue:
+      tmp.add(default(T))
+      status = ctx.fromJSFree(val, tmp[^1])
   JS_FreeValue(ctx, it)
   JS_FreeValue(ctx, nextMethod)
-  return status
+  status
 
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): Opt[void] =
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var set[T]): FromJSResult =
   let it = JS_Invoke(ctx, val, ctx.getOpaque().symRefs[jsyIterator], 0, nil)
   let nextMethod = JS_GetProperty(ctx, it, ctx.getOpaque().strRefs[jstNext])
   if JS_IsException(nextMethod):
     JS_FreeValue(ctx, it)
-    return err()
-  var status = ok()
+    return fjErr
+  var status = fjOk
   var tmp: set[T] = {}
   while status.isOk:
     var val: JSValue
-    let next = ctx.fromJSSeqIt(it, nextMethod, val)
-    if next.isErr:
-      status = err()
+    case ctx.fromJSSeqIt(it, nextMethod, val)
+    of sirException:
+      status = fjErr
       break
-    if next.get:
+    of sirDone:
       res = tmp
       break
-    var x: T
-    status = ctx.fromJSFree(val, x)
-    tmp.incl(x)
+    of sirContinue:
+      var x: T
+      status = ctx.fromJSFree(val, x)
+      tmp.incl(x)
   JS_FreeValue(ctx, it)
   JS_FreeValue(ctx, nextMethod)
-  return status
+  status
 
 proc fromJS*[A, B](ctx: JSContext; val: JSValueConst;
-    res: var JSKeyValuePair[A, B]): Opt[void] =
+    res: var JSKeyValuePair[A, B]): FromJSResult =
   if JS_IsException(val):
-    return err()
+    return fjErr
   var ptab: ptr UncheckedArray[JSPropertyEnum]
   var plen: uint32
   let flags = cint(JS_GPN_STRING_MASK)
   if JS_GetOwnPropertyNames(ctx, addr ptab, addr plen, val, flags) == -1:
     # exception
-    return err()
+    return fjErr
   var tmp = newSeqOfCap[tuple[name: A, value: B]](plen)
   for i in 0 ..< plen:
     let atom = ptab[i].atom
@@ -266,38 +284,23 @@ proc fromJS*[A, B](ctx: JSContext; val: JSValueConst;
     var kn: A
     if ctx.fromJSFree(k, kn).isErr:
       JS_FreePropertyEnum(ctx, ptab, plen)
-      return err()
+      return fjErr
     let v = JS_GetProperty(ctx, val, atom)
     var vn: B
     if ctx.fromJSFree(v, vn).isErr:
       JS_FreePropertyEnum(ctx, ptab, plen)
-      return err()
+      return fjErr
     tmp.add((move(kn), move(vn)))
   JS_FreePropertyEnum(ctx, ptab, plen)
   res = JSKeyValuePair[A, B](s: move(tmp))
-  return ok()
+  fjOk
 
-# Option vs Opt:
-# Option is for nullable types, e.g. if you want to return either a string
-# or null. (This is rather pointless for anything else.)
-# Opt is for passing down exceptions received up in the chain.
-# So e.g. none(T) translates to JS_NULL, but err() translates to JS_EXCEPTION.
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var Option[T]):
-    Opt[void] =
-  if JS_IsNull(val):
-    res = none(T)
-  else:
-    var x: T
-    ?ctx.fromJS(val, x)
-    res = option(move(x))
-  return ok()
-
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var bool): FromJSResult =
   let ret = JS_ToBool(ctx, val)
   if ret == -1: # exception
-    return err()
+    return fjErr
   res = ret != 0
-  return ok()
+  fjOk
 
 type IdentMapItem = tuple[s: string; n: int]
 
@@ -329,20 +332,20 @@ proc fromJSEnumBody(map: openArray[IdentMapItem]; ctx: JSContext;
   return i
 
 proc fromJS*[T: enum](ctx: JSContext; val: JSValueConst; res: var T):
-    Opt[void] =
+    FromJSResult =
   const IdentMap = getIdentMap(T)
   const tname = cstring($T)
   if (let i = fromJSEnumBody(IdentMap, ctx, val, tname); i >= 0):
     res = T(IdentMap[i].n)
-    return ok()
-  err()
+    return fjOk
+  fjErr
 
 proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
-    Opt[void] =
+    FromJSResult =
   if not JS_IsObject(val):
     if not JS_IsException(val):
       JS_ThrowTypeError(ctx, "value is not an object")
-    return err()
+    return fjErr
   let p = JS_GetOpaque(val, JS_GetClassID(val))
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   let tclassid = rtOpaque.typemap.getOrDefault(nimt, JS_CLASS_OBJECT)
@@ -356,27 +359,27 @@ proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
       JS_ThrowTypeError(ctx, "%s expected", cs)
       JS_FreeCString(ctx, cs)
     JS_FreeValue(ctx, name)
-    return err()
+    return fjErr
   res = p
-  return ok()
+  fjOk
 
-proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var ptr T): Opt[void] =
+proc fromJS*[T](ctx: JSContext; val: JSValueConst; res: var ptr T): FromJSResult =
   let nimt = getTypePtr(T)
   var x: pointer
   ?ctx.fromJS(val, nimt, x)
   res = cast[ptr T](x)
-  return ok()
+  fjOk
 
 proc fromJS*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
-    Opt[void] =
+    FromJSResult =
   let nimt = getTypePtr(T)
   var x: pointer
   ?ctx.fromJS(val, nimt, x)
   res = cast[T](x)
-  return ok()
+  fjOk
 
 proc fromJSThis*[T: ref object](ctx: JSContext; val: JSValueConst; res: var T):
-    Opt[void] =
+    FromJSResult =
   # translate undefined -> global
   if JS_IsUndefined(val):
     return ctx.fromJS(ctx.getOpaque().global, res)
@@ -439,7 +442,8 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
       it.add(quote do:
         if not JS_IsUndefined(prop):
           res.toFree.vals.add(prop)
-          ?`ctx`.fromJS(prop, `res`.`name`)
+          if `ctx`.fromJS(prop, `res`.`name`) == fjErr:
+            return fjErr
         else:
           `missingStmt`
       )
@@ -448,7 +452,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
     quote do:
       if JS_IsUndefined(val) or JS_IsNull(val):
         res = `undefInit`
-        return ok()
+        return fjOk
   else:
     newStmtList()
   result = quote do:
@@ -456,7 +460,7 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
     if not JS_IsObject(val):
       if not JS_IsException(val):
         JS_ThrowTypeError(ctx, "dictionary is not an object")
-      return err()
+      return fjErr
     # Note: following in-place construction is an optimization documented in the
     # manual.
     res = T(toFree: JSDictToFreeAux(ctx: ctx))
@@ -465,31 +469,31 @@ macro fromJSDictBody(ctx: JSContext; val: JSValueConst; res, t: typed) =
       `convertStmts`
     if missing != nil:
       JS_ThrowTypeError(ctx, "missing field %s", missing)
-      return err()
-    return ok()
+      return fjErr
+    return fjOk
 
 # For some reason, the compiler can't deal with this.
 proc fromJS*[T: JSDict](ctx: JSContext; val: JSValueConst; res: var T):
-    Opt[void] =
+    FromJSResult =
   fromJSDictBody(ctx, val, res, T)
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBuffer):
-    Opt[void] =
+    FromJSResult =
   var len {.noinit.}: csize_t
   let p = JS_GetArrayBuffer(ctx, len, val)
   if p == nil:
-    return err()
+    return fjErr
   res = JSArrayBuffer(len: len, p: cast[ptr UncheckedArray[uint8]](p))
-  return ok()
+  fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
-    Opt[void] =
+    FromJSResult =
   var offset {.noinit.}: csize_t
   var nmemb {.noinit.}: csize_t
   var nsize {.noinit.}: csize_t
   let jsbuf = JS_GetTypedArrayBuffer(ctx, val, offset, nmemb, nsize)
   if JS_IsException(jsbuf):
-    return err()
+    return fjErr
   var abuf: JSArrayBuffer
   ?ctx.fromJSFree(jsbuf, abuf)
   res = JSArrayBufferView(
@@ -499,41 +503,41 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSArrayBufferView):
     nsize: nsize,
     t: JS_GetTypedArrayType(val)
   )
-  return ok()
+  fjOk
 
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var JSValueConst):
-    Opt[void] =
+    FromJSResult =
   res = val
-  return ok()
+  fjOk
 
 const JS_ATOM_TAG_INT = 1u32 shl 31
 
 proc JS_IsNumber*(v: JSAtom): JS_BOOL =
   return (uint32(v) and JS_ATOM_TAG_INT) != 0
 
-proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): Opt[void] =
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var JSAtom): FromJSResult =
   res = atom
-  return ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; atom: JSAtom; res: var uint32): Opt[void] =
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var uint32): FromJSResult =
   if JS_IsNumber(atom):
     res = uint32(atom) and (not JS_ATOM_TAG_INT)
-    return ok()
-  return err()
+    return fjOk
+  fjErr
 
-proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): Opt[void] =
+proc fromJS*(ctx: JSContext; atom: JSAtom; res: var string): FromJSResult =
   var len: csize_t
   let cs = JS_AtomToCStringLen(ctx, addr len, atom)
   if cs == nil:
-    return err()
+    return fjErr
   if len > csize_t(int.high):
     JS_FreeCString(ctx, cs)
     JS_ThrowRangeError(ctx, "string length out of bounds")
-    return err()
+    return fjErr
   res = newString(int(len))
   if len > 0:
     copyMem(addr res[0], cast[pointer](cs), len)
   JS_FreeCString(ctx, cs)
-  return ok()
+  fjOk
 
 {.pop.} # raises: []

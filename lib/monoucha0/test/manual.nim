@@ -3,10 +3,10 @@ import std/posix
 import std/strutils
 import std/unittest
 
-import monoucha/fromjs
+import results
+
 import monoucha/javascript
-import monoucha/optshim
-import monoucha/tojs
+import monoucha/jserror
 
 test "Hello, world":
   let rt = newJSRuntime()
@@ -20,17 +20,6 @@ test "Hello, world":
   ctx.free()
   rt.free()
 
-proc evalConvert[T](ctx: JSContext; code: string;
-    file = "<input>"): Result[T, string] =
-  let val = ctx.eval(code, file)
-  defer: JS_FreeValue(ctx, val) # unref result before returning
-  var res: T
-  if ctx.fromJS(val, res).isErr:
-    # Conversion failed; return the exception message.
-    return err(ctx.getExceptionMsg())
-  # All ok! Return the converted object.
-  return ok(res)
-
 test "Error handling":
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
@@ -38,7 +27,7 @@ test "Error handling":
   let res = ctx.eval(code, "<test>")
   check JS_IsException(res)
   const ex = """
-ReferenceError: abcd is not defined
+ReferenceError: 'abcd' is not defined
     at <eval> (<test>:1:1)
 """
   check ctx.getExceptionMsg() == ex

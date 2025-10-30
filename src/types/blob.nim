@@ -9,11 +9,10 @@ import io/packetreader
 import io/packetwriter
 import io/timeout
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
-import types/opt
 
 type
   DeallocFun = proc(opaque, p: pointer) {.nimcall, raises: [].}

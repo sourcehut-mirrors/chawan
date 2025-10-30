@@ -15,10 +15,9 @@ import std/strutils
 
 import chame/tags
 import monoucha/fromjs
-import monoucha/javascript
 import monoucha/quickjs
 import monoucha/tojs
-import types/opt
+import types/jsopt
 import utils/twtstr
 
 # create a static enum compatible with chame/tags
@@ -373,39 +372,39 @@ proc contains*(a: openArray[CAtom]; b: StaticAtom): bool =
 proc contains*(a: openArray[StaticAtom]; b: CAtom): bool =
   b.toStaticAtom() in a
 
-proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CAtom): FromJSResult =
   if JS_IsNull(val):
     res = CAtomNull
   else:
     var len: csize_t
     let cs = JS_ToCStringLen(ctx, len, val)
     if cs == nil:
-      return err()
+      return fjErr
     if len > csize_t(int.high):
       JS_FreeCString(ctx, cs)
       JS_ThrowRangeError(ctx, "string length out of bounds")
-      return err()
+      return fjErr
     {.push overflowChecks: off.}
     let H = cast[int](len) - 1
     {.pop.}
     res = cs.toOpenArray(0, H).toAtom()
     JS_FreeCString(ctx, cs)
-  ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSAtom; res: var CAtom): FromJSResult =
   if val == JS_ATOM_NULL:
     res = CAtomNull
   else:
     var s: string
     ?ctx.fromJS(val, s)
     res = s.toAtom()
-  ok()
+  fjOk
 
-proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): Opt[void] =
+proc fromJS*(ctx: JSContext; val: JSAtom; res: var StaticAtom): FromJSResult =
   var ca: CAtom
   ?ctx.fromJS(val, ca)
   res = ca.toStaticAtom()
-  ok()
+  fjOk
 
 proc toJS*(ctx: JSContext; atom: CAtom): JSValue =
   if atom == CAtomNull:

@@ -37,8 +37,9 @@ import io/promise
 import io/timeout
 import local/select
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
 import monoucha/jsregex
+import monoucha/jsutils
 import monoucha/libregexp
 import monoucha/quickjs
 import monoucha/tojs
@@ -49,6 +50,7 @@ import types/blob
 import types/cell
 import types/color
 import types/formdata
+import types/jsopt
 import types/opt
 import types/refstring
 import types/url
@@ -1861,7 +1863,8 @@ proc markURL*(bc: BufferContext; schemes: seq[string]) {.proxy.} =
       buf &= '|'
     buf &= scheme
   buf &= r"):(//[\w%:.-]+)?[\w/@%:.~-]*\??[\w%:~.=&-]*#?[\w:~.=-]*[\w/~=-]"
-  let regex = compileRegex(buf, {LRE_FLAG_GLOBAL}).get
+  var regex: Regex
+  doAssert compileRegex(buf, {LRE_FLAG_GLOBAL}, regex)
   # Dummy element for the fragment parsing algorithm. We can't just use parent
   # there, because e.g. plaintext would not parse the text correctly.
   let html = bc.document.newHTMLElement(TAG_DIV)

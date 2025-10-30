@@ -19,7 +19,8 @@ import html/script
 import io/chafile
 import io/dynstream
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jspropenumlist
 import monoucha/jsregex
 import monoucha/jsutils
@@ -213,8 +214,8 @@ proc `$`*(p: ChaPathResolved): lent string =
   string(p)
 
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var ChaPathResolved):
-    Opt[void] =
-  return ctx.fromJS(val, string(res))
+    FromJSResult =
+  ctx.fromJS(val, string(res))
 
 proc toJS*(ctx: JSContext; cookie: CookieMode): JSValue =
   case cookie

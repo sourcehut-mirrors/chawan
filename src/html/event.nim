@@ -6,11 +6,13 @@ import html/catom
 import html/script
 import io/timeout
 import monoucha/fromjs
-import monoucha/javascript
+import monoucha/jsbind
+import monoucha/jsnull
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
+import types/jsopt
 import types/opt
 import utils/twtstr
 
@@ -281,14 +283,14 @@ proc mark(rt: JSRuntime; this: MessageEvent; markFun: JS_MarkFunc) {.jsmark.} =
 # SubmitEvent
 type EventTargetHTMLElement* = distinct EventTarget
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetHTMLElement):
-    Opt[void] =
+    FromJSResult =
   var res0: EventTarget
   ?ctx.fromJS(val, res0)
   if not res0.isHTMLElementImpl():
     JS_ThrowTypeError(ctx, "HTMLElement expected")
-    return err()
+    return fjErr
   res = EventTargetHTMLElement(res0)
-  ok()
+  fjOk
 
 type SubmitEventInit* = object of EventInit
   submitter* {.jsdefault.}: EventTargetHTMLElement
@@ -305,14 +307,14 @@ proc newSubmitEvent*(ctype: CAtom; eventInit = SubmitEventInit()): SubmitEvent
 # UIEvent
 type EventTargetWindow* = distinct EventTarget
 proc fromJS(ctx: JSContext; val: JSValueConst; res: var EventTargetWindow):
-    Opt[void] =
+    FromJSResult =
   var res0: EventTarget
   ?ctx.fromJS(val, res0)
   if not res0.isWindowImpl():
     JS_ThrowTypeError(ctx, "Window expected")
-    return err()
+    return fjErr
   res = EventTargetWindow(res0)
-  ok()
+  fjOk
 
 type UIEventInit = object of EventInit
   view* {.jsdefault.}: EventTargetWindow
@@ -423,12 +425,12 @@ proc invoke(ctx: JSContext; listener: EventListener; event: Event): JSValue =
     # Apparently it's a bad idea to call a function that can then delete
     # the reference it was called from (hence the dup).
     let callback = JS_DupValue(ctx, listener.callback)
-    ret = JS_CallFree(ctx, callback, jsTarget, 1, jsEvent.toJSValueArray())
+    ret = ctx.callFree(callback, jsTarget, jsEvent)
   else:
     assert JS_IsObject(listener.callback)
     ret = JS_GetPropertyStr(ctx, listener.callback, "handleEvent")
     if not JS_IsException(ret):
-      ret = JS_CallFree(ctx, ret, jsTarget, 1, jsEvent.toJSValueArray())
+      ret = ctx.callFree(ret, jsTarget, jsEvent)
   JS_FreeValue(ctx, jsTarget)
   JS_FreeValue(ctx, jsEvent)
   return ret
@@ -461,9 +463,7 @@ proc addEventListener0(ctx: JSContext; target: EventTarget; ctype: CAtom;
         return
       let jsTarget = ctx.toJS(target)
       let jsCapture = ctx.toJS(capture)
-      let argv = [callback, jsCapture]
-      let fun = JS_Call(ctx, funFun, jsTarget, 2, argv.toJSValueConstArray())
-      JS_FreeValue(ctx, funFun)
+      let fun = ctx.callFree(funFun, jsTarget, callback, jsCapture)
       JS_FreeValue(ctx, jsTarget)
       JS_FreeValue(ctx, jsCapture)
       if not JS_IsException(fun):
@@ -592,8 +592,7 @@ proc eventReflectSet0*(ctx: JSContext; target: EventTarget;
 proc eventReflectSet*(ctx: JSContext; this, val: JSValueConst; magic: cint):
     JSValue {.cdecl.} =
   var target: EventTarget
-  if ctx.fromJS(this, target).isErr:
-    return JS_EXCEPTION
+  ?ctx.fromJS(this, target)
   return ctx.eventReflectSet0(target, val, magic, eventReflectSet,
     EventReflectMap[magic])
 
@@ -763,7 +762,7 @@ proc abort(ctx: JSContext; this: AbortController; reason: JSValueConst): JSValue
     signal.reason = ctx.toSignalReason(reason)
     #TODO dependent signals
     for step in signal.abortSteps:
-      let res = JS_Call(ctx, step, JS_UNDEFINED, 0, nil)
+      let res = ctx.call(step, JS_UNDEFINED)
       if JS_IsException(res):
         return res
       JS_FreeValue(ctx, res)
