@@ -3,8 +3,7 @@
 <div id=x>Fail</div>
 <script src=asserts.js></script>
 <script>
-function testNumberLiterals()
-{
+function testNumberLiterals() {
     assertEquals(0.1.a, undefined);
     assertEquals(0x1.a, undefined);
     assertEquals(0b1.a, undefined);
@@ -12,5 +11,6 @@ function testNumberLiterals()
     assertEquals(0o1.a, undefined);
     assertThrows('0.a', SyntaxError);
 }
+testNumberLiterals()
 document.getElementById("x").textContent = "Success";
 </script>

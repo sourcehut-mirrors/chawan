@@ -5,8 +5,10 @@ function assert(x, msg) {
 }
 
 function assertThrows(fun, error) {
-	if (typeof fun == "string")
-		fun = () => eval(fun);
+	if (typeof fun == "string") {
+		const x = fun;
+		fun = () => eval(x);
+	}
 	if (!(fun instanceof Function))
 		throw new TypeError("error expected to be Function");
 	let me;
