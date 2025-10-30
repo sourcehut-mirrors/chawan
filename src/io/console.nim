@@ -3,30 +3,27 @@
 import io/chafile
 import monoucha/fromjs
 import monoucha/javascript
+import monoucha/jsopaque
 import monoucha/quickjs
 import monoucha/tojs
 import types/opt
 import utils/twtstr
 
 type Console* = ref object
-  err: ChaFile
-  clearFun: proc() {.raises: [].}
-  showFun: proc() {.raises: [].}
-  hideFun: proc() {.raises: [].}
-
-jsDestructor(Console)
+  err*: ChaFile
+  clearFun*: proc() {.raises: [].}
+  showFun*: proc() {.raises: [].}
+  hideFun*: proc() {.raises: [].}
 
 # Forward declarations
 proc flush*(console: Console)
 
-proc newConsole*(err: ChaFile; clearFun: proc() = nil; showFun: proc() = nil;
-    hideFun: proc() = nil): Console =
-  return Console(
-    err: err,
-    clearFun: clearFun,
-    showFun: showFun,
-    hideFun: hideFun
-  )
+# Forward declaration hacks
+# set in html/env
+var getConsoleImpl*: proc(ctx: JSContext): Console {.nimcall, raises: [].}
+
+proc newConsole*(err: ChaFile): Console =
+  return Console(err: err)
 
 proc setStream*(console: Console; file: ChaFile) =
   discard console.err.close()
@@ -50,53 +47,67 @@ proc log*(console: Console; ss: varargs[string]) =
 proc error*(console: Console; ss: varargs[string]) =
   console.log(ss)
 
-proc log*(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
-    Opt[void] {.jsfunc.} =
+proc jsConsoleLog(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let console = ctx.getConsoleImpl()
   var buf = ""
-  for i, val in ss:
+  let H = argc - 1
+  for i, val in argv.toOpenArray(0, H):
     var res: string
-    ?ctx.fromJS(val, res)
+    if ctx.fromJS(val, res).isErr:
+      return JS_EXCEPTION
     buf &= res
-    if i != ss.high:
+    if i != H:
       buf &= ' '
   buf &= '\n'
   console.write(buf)
   console.flush()
-  ok()
+  return JS_UNDEFINED
 
-proc clear(console: Console) {.jsfunc.} =
+proc jsConsoleClear(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let console = ctx.getConsoleImpl()
   if console.clearFun != nil:
     console.clearFun()
+  return JS_UNDEFINED
 
-# For now, these are the same as log().
-proc debug(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
-    Opt[void] {.jsfunc.} =
-  return log(ctx, console, ss)
-
-proc error(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
-    Opt[void] {.jsfunc.} =
-  return log(ctx, console, ss)
-
-proc info(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
-    Opt[void] {.jsfunc.} =
-  return log(ctx, console, ss)
-
-proc warn(ctx: JSContext; console: Console; ss: varargs[JSValueConst]):
-    Opt[void] {.jsfunc.} =
-  return log(ctx, console, ss)
-
-proc show(console: Console) {.jsfunc.} =
+proc jsConsoleShow(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let console = ctx.getConsoleImpl()
   if console.showFun != nil:
     console.showFun()
+  return JS_UNDEFINED
 
-proc hide(console: Console) {.jsfunc.} =
+proc jsConsoleHide(ctx: JSContext; this: JSValueConst; argc: cint;
+    argv: JSValueConstArray): JSValue {.cdecl.} =
+  let console = ctx.getConsoleImpl()
   if console.hideFun != nil:
     console.hideFun()
+  return JS_UNDEFINED
+
+let jsConsoleFuncs {.global.} = [
+    JS_CFUNC_DEF("log", 0, jsConsoleLog),
+    # For now, these are the same as log().
+    JS_CFUNC_DEF("debug", 0, jsConsoleLog),
+    JS_CFUNC_DEF("error", 0, jsConsoleLog),
+    JS_CFUNC_DEF("info", 0, jsConsoleLog),
+    JS_CFUNC_DEF("warn", 0, jsConsoleLog),
+    JS_CFUNC_DEF("show", 0, jsConsoleShow),
+    JS_CFUNC_DEF("hide", 0, jsConsoleHide),
+    JS_CFUNC_DEF("clear", 0, jsConsoleClear),
+    JS_PROP_STRING_DEF("[Symbol.toStringTag]", "console", JS_PROP_CONFIGURABLE),
+]
 
 proc addConsoleModule*(ctx: JSContext) =
-  #TODO console should not have a prototype
-  # "For historical reasons, console is lowercased."
-  ctx.registerType(Console, nointerface = true, name = "console")
+  # console doesn't really look like other WebIDL interfaces; it's just an
+  # object with a couple functions assigned.
+  let console = JS_NewObject(ctx)
+  if JS_IsException(console):
+    return
+  let fp = cast[JSCFunctionListP](unsafeAddr jsConsoleFuncs[0])
+  if JS_SetPropertyFunctionList(ctx, console, fp, cint(jsConsoleFuncs.len)) < 0:
+    return
+  discard ctx.definePropertyCW(ctx.getOpaque().global, "console", console)
 
 proc flush*(console: Console) =
   discard console.err.flush()

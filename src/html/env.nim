@@ -289,9 +289,6 @@ proc clearTimeout(window: Window; id: int32) {.jsfunc.} =
 proc clearInterval(window: Window; id: int32) {.jsfunc.} =
   window.clearTimeout(id)
 
-proc console*(window: Window): Console {.jsrfget.} =
-  return window.internalConsole
-
 proc screenX(window: Window): int {.jsrfget.} = 0
 proc screenY(window: Window): int {.jsrfget.} = 0
 proc screenLeft(window: Window): int {.jsrfget.} = 0
@@ -489,6 +486,9 @@ proc rejectionHandler(ctx: JSContext; promise, reason: JSValueConst;
     window.console.error("Unhandled promise in document", $window.document.url,
       s)
 
+proc getConsole(ctx: JSContext): Console =
+  ctx.getGlobal().console
+
 proc addScripting*(window: Window) =
   let rt = newJSRuntime()
   let ctx = rt.newJSContext()
@@ -536,7 +536,7 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
     url: URL; urandom: PosixStream; imageTypes: Table[string, string];
     userAgent, referrer, contentType: string): Window =
   let window = Window(
-    internalConsole: newConsole(cast[ChaFile](stderr)),
+    console: newConsole(cast[ChaFile](stderr)),
     navigator: Navigator(plugins: PluginArray(), mimeTypes: MimeTypeArray()),
     loader: loader,
     settings: EnvironmentSettings(
@@ -569,5 +569,6 @@ proc newWindow*(scripting: ScriptingMode; images, styling, autofocus: bool;
 fetchImpl = fetch0
 storeJSImpl = storeJS0
 fetchJSImpl = fetchJS0
+getConsoleImpl = getConsole
 
 {.pop.} # raises: []

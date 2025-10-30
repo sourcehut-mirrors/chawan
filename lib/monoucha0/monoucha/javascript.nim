@@ -325,14 +325,14 @@ proc newCtorFunFromParentClass(ctx: JSContext; ctor: JSCFunction;
       ctx.getOpaque().ctors[int(parent)], 0)
   return JS_NewCFunction2(ctx, ctor, className, 0, ctorType, 0)
 
-# On exception, this returns JS_INVALID_CLASS_ID, but doesn't undo the
-# changes to the global object.
+# On exception, this returns JS_INVALID_CLASS_ID, but doesn't undo changes
+# to the global object.
+#TODO it probably should
 proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     ctor: JSCFunction; funcs: JSFunctionList; parent: JSClassID;
-    asglobal, nointerface: bool; ctorType: JSCFunctionEnum;
-    finalizer: JSFinalizerFunction; namespace: JSValueConst;
-    unforgeable, staticfuns: JSFunctionList; dtor: BoundRefDestructor):
-    JSClassID {.discardable.} =
+    asglobal: bool; ctorType: JSCFunctionEnum; finalizer: JSFinalizerFunction;
+    namespace: JSValueConst; unforgeable, staticfuns: JSFunctionList;
+    dtor: BoundRefDestructor): JSClassID {.discardable.} =
   let rt = JS_GetRuntime(ctx)
   var res: uint32
   discard JS_NewClassID(res)
@@ -403,16 +403,13 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
   ctxOpaque.ctors[res] = JS_DupValue(ctx, jctor)
   when defined(gcDestructors):
     rtOpaque.classes[res].dtor = dtor
-  if not nointerface:
-    let target = if JS_IsNull(namespace):
-      JSValueConst(ctxOpaque.global)
-    else:
-      namespace
-    if JS_DefinePropertyValueStr(ctx, target, cdef.class_name, jctor,
-        JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
-      return JS_INVALID_CLASS_ID
+  let target = if JS_IsNull(namespace):
+    JSValueConst(ctxOpaque.global)
   else:
-    JS_FreeValue(ctx, jctor)
+    namespace
+  if JS_DefinePropertyValueStr(ctx, target, cdef.class_name, jctor,
+      JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
+    return JS_INVALID_CLASS_ID
   return res
 
 type
@@ -1509,8 +1506,7 @@ else:
 
 macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     asglobal: static bool = false; globalparent: static bool = false;
-    nointerface = false; name: static string = "";
-    hasExtraGetSet: static bool = false;
+    name: static string = ""; hasExtraGetSet: static bool = false;
     extraGetSet: static openArray[TabGetSet] = []; namespace = JS_NULL):
     JSClassID =
   var stmts = newStmtList()
@@ -1555,8 +1551,8 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
     let uflist {.global, inject.}: array[`uflen`, JSCFunctionListEntry] =
       `uflist0`
     `ctx`.newJSClass(classDef, getTypePtr(`t`), `sctr`, flist, `parent`,
-      cast[bool](`global`), `nointerface`, cast[JSCFunctionEnum](`ctorType`),
-      `finFun`, `namespace`, uflist, sflist, mncGetDtor(`t`))
+      cast[bool](`global`), cast[JSCFunctionEnum](`ctorType`), `finFun`,
+      `namespace`, uflist, sflist, mncGetDtor(`t`))
   )
   stmts.add(newBlockStmt(endstmts))
   return stmts

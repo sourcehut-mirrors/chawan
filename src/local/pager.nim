@@ -208,7 +208,7 @@ type
 jsDestructor(Pager)
 
 # Forward declarations
-proc addConsole(pager: Pager; interactive: bool): Console
+proc addConsole(pager: Pager; interactive: bool)
 proc alert*(pager: Pager; msg: string)
 proc askMailcap(pager: Pager; container: Container; ostream: PosixStream;
   contentType: string; i: int; response: Response; sx: int)
@@ -550,7 +550,8 @@ proc normalizeModuleName(ctx: JSContext; baseName, name: cstringConst;
   return js_strdup(ctx, name)
 
 proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
-    alerts: seq[string]; loader: FileLoader; loaderPid: int): Pager =
+    alerts: seq[string]; loader: FileLoader; loaderPid: int;
+    console: Console): Pager =
   let tab = Tab()
   let pager = Pager(
     alive: true,
@@ -567,7 +568,8 @@ proc newPager*(config: Config; forkserver: ForkServer; ctx: JSContext;
     cookieJars: newCookieJarMap(),
     tabHead: tab,
     tab: tab,
-    consoleCacheId: -1
+    consoleCacheId: -1,
+    console: console
   )
   pager.timeouts = newTimeoutState(pager.jsctx, evalJSFree, pager)
   JS_SetModuleLoaderFunc(pager.jsrt, normalizeModuleName, loadJSModule, nil)
@@ -1011,7 +1013,7 @@ proc run*(pager: Pager; pages: openArray[string]; contentType: string;
     pager.alert("Failed to query DA1, please set display.query-da1 = false")
   for st in SurfaceType:
     pager.clear(st)
-  pager.console = pager.addConsole(istream != nil)
+  pager.addConsole(istream != nil)
   if pager.config.start.startupScript != "":
     let ps = newPosixStream(pager.config.start.startupScript)
     let s = if ps != nil:
@@ -2343,20 +2345,21 @@ proc clearConsole(pager: Pager) =
     pager.pinned.console = console
     pager.addTab(console)
 
-proc addConsole(pager: Pager; interactive: bool): Console =
+proc addConsole(pager: Pager; interactive: bool) =
   if interactive and pager.config.start.consoleBuffer:
     if f := pager.addConsoleFile():
       discard f.writeLine("Type (M-c) console.hide() to return to buffer mode.")
       discard f.flush()
-      let clearFun = proc() =
+      pager.console.clearFun = proc() =
         pager.clearConsole()
-      let showFun = proc() =
+      pager.console.showFun = proc() =
         pager.showConsole()
-      let hideFun = proc() =
+      pager.console.hideFun = proc() =
         pager.hideConsole()
-      return newConsole(f, clearFun, showFun, hideFun)
+      pager.console.err = f
+      return
     pager.alert("Failed to open temp file for console")
-  return newConsole(cast[ChaFile](stderr))
+  pager.console.err = cast[ChaFile](stderr)
 
 proc command(pager: Pager) {.jsfunc.} =
   pager.setLineEdit(lmCommand)

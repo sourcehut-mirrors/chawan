@@ -44,9 +44,6 @@ type
 proc config(client: Client): Config {.jsfget.} =
   return client.pager.config
 
-proc console(client: Client): Console {.jsrfget.} =
-  return client.pager.console
-
 proc suspend(ctx: JSContext; client: Client): JSValue {.jsfunc.} =
   if client.pager.term.quit().isErr:
     return ctx.jsQuit(client.pager, 1)
@@ -161,7 +158,9 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
   let jsrt = JS_GetRuntime(jsctx)
   let clientPid = getCurrentProcessId()
   let loader = newFileLoader(clientPid, loaderStream)
-  let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid)
+  let console = newConsole(cast[ChaFile](stderr))
+  let pager = newPager(config, forkserver, jsctx, warnings, loader, loaderPid,
+    console)
   let client = Client(
     jsrt: jsrt,
     jsctx: jsctx,
@@ -169,6 +168,7 @@ proc newClient*(config: Config; forkserver: ForkServer; loaderPid: int;
     crypto: Crypto(urandom: urandom),
     pager: pager,
     timeouts: pager.timeouts,
+    console: console,
     settings: EnvironmentSettings(
       scripting: smApp,
       attrsp: addr pager.term.attrs,

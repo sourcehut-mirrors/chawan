@@ -139,7 +139,7 @@ type
     wwmDataset, wwmAttributes
 
   Window* = ref object of EventTarget
-    internalConsole*: Console
+    console*: Console
     navigator* {.jsget.}: Navigator
     screen* {.jsget.}: Screen
     history* {.jsget.}: History
@@ -1124,9 +1124,6 @@ proc getWindow*(ctx: JSContext): Window =
   var window: Window
   doAssert ctx.fromJSFree(global, window).isOk
   return window
-
-proc console(window: Window): Console =
-  return window.internalConsole
 
 proc setWeak(ctx: JSContext; wwm: WindowWeakMap; key, val: JSValue): Opt[void] =
   let global = ctx.getGlobal()

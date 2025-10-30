@@ -247,7 +247,7 @@ type
     getset: JSCFunctionListEntryGetSet
     alias: JSCFunctionListEntryAlias
     prop_list: JSCFunctionListEntryPropList
-    str: cstring # pure ASCII or UTF-8 encoded
+    str: cstring
     i32: int32
     i64: int64
     f64: cdouble
@@ -414,9 +414,9 @@ template JS_CGETSET_DEF_NOCONF*(n: string; fgetter: JSGetterFunction;
                            get: JSCFunctionType(getter: fgetter),
                            set: JSCFunctionType(setter: fsetter))))
 
-template JS_CGETSET_MAGIC_DEF*(n: string; fgetter, fsetter: typed;
+template JS_CGETSET_MAGIC_DEF*(n: cstring; fgetter, fsetter: typed;
     m: int16): JSCFunctionListEntry =
-  JSCFunctionListEntry(name: cstring(n),
+  JSCFunctionListEntry(name: n,
                        prop_flags: JS_PROP_CONFIGURABLE,
                        def_type: JS_DEF_CGETSET_MAGIC,
                        magic: m,
@@ -424,6 +424,14 @@ template JS_CGETSET_MAGIC_DEF*(n: string; fgetter, fsetter: typed;
                          getset: JSCFunctionListEntryGetSet(
                            get: JSCFunctionType(getter_magic: fgetter),
                            set: JSCFunctionType(setter_magic: fsetter))))
+
+template JS_PROP_STRING_DEF*(n, cstr: cstring; f: cint):
+    JSCFunctionListEntry =
+  JSCFunctionListEntry(name: n,
+                       prop_flags: f,
+                       def_type: JS_DEF_PROP_STRING,
+                       magic: 0,
+                       u: JSCFunctionListEntryU(str: cstr))
 
 {.push header: qjsheader, importc.}
 
