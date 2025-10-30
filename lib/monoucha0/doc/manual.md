@@ -1,11 +1,8 @@
 # Monoucha manual
 
-**IMPORTANT**: currently, Monoucha only works correctly with refc, ergo you
-*must* to put `--mm:refc` in your `nim.cfg`. ORC cannot deal with Monoucha's
-GC-related hacks, and if you use ORC, you will run into memory errors on larger
-projects.
-
-I hope to fix this in the future. For now, please use refc.
+**Warning**: currently, Monoucha only works correctly with refc.
+Using Monoucha with ORC may result in memory leaks.  See the
+[readme](../README.md) for details.
 
 ## Table of Contents
 
@@ -43,7 +40,7 @@ the low-level details.  You will in many cases have to use QuickJS APIs
 directly to achieve something; Monoucha only provides abstractions to APIs
 where doing something manually would be tedious and/or error-prone.
 
-Also note that Monoucha is *not* complete, and neither is QuickJS-NG.
+Also note that Monoucha is *not* complete, and neither is QuickJS.
 Documented interfaces may break at any new release.  Please pin a specific
 version if you need a stable API.
 
@@ -501,12 +498,6 @@ previous versions.)
 object that was not bound to a JS value is finalized.  (An object is bound
 to a JS value if toJS is called on it; this happens whenever you return a
 Nim object from a function bound to JS.)
-
-WARNING 2: like Nim `=destroy`, this pragma is very easy to misuse.
-In particular, make sure to **NEVER ALLOCATE** in a `.jsfin` finalizer,
-because this [breaks](https://github.com/nim-lang/Nim/issues/4851) Nim refc.
-(I don't know if this problem is still present in ORC, but at the moment
-Monoucha does not work with ORC anyway.)
 
 Example:
 

@@ -25,7 +25,7 @@ Table of contents:
 * [tinfl](#tinfl)
 * [JebP](#jebp)
 * [NanoSVG](#nanosvg)
-* [QuickJS-NG](#quickjs-ng)
+* [QuickJS](#quickjs)
 * [GNU Unifont](#gnu-unifont)
 
 ## Chawan
@@ -125,21 +125,22 @@ misrepresented as being the original software.
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-## QuickJS-NG
+## QuickJS
 
 Note that our vendored copy is not identical to upstream, as we include some
 patches for integration of the QuickJS and Nim runtimes.
 
-Special thanks to zamfofex, Bo Yao, Nick Vatamaniuc and Saúl Ibarra Corretgé
-for their patches which we used in the past.
+Also note that we include some patches from QuickJS-NG, maintained by Ben
+Noordhuis and Saúl Ibarra Corretgé.
+
+Special thanks to zamfofex, Bo Yao and Nick Vatamaniuc for their patches
+which we used in the past.
 
 ```
-The MIT License (MIT)
+QuickJS Javascript Engine
 
-Copyright (c) 2017-2024 Fabrice Bellard
-Copyright (c) 2017-2024 Charlie Gordon
-Copyright (c) 2023-2025 Ben Noordhuis
-Copyright (c) 2023-2025 Saúl Ibarra Corretgé
+Copyright (c) 2017-2025 Fabrice Bellard
+Copyright (c) 2017-2025 Charlie Gordon
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
