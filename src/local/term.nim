@@ -629,6 +629,16 @@ proc approximateANSIColor(term: Terminal; rgb, termDefault: RGBColor):
 # Return a fgcolor contrasted to the background by the minimum configured
 # contrast.
 proc correctContrast(term: Terminal; bgcolor, fgcolor: CellColor): CellColor =
+  if bgcolor.t == ctRGB and fgcolor.t == ctRGB:
+    # Both foreground and background are RGB, so presumably it was set by
+    # the website itself.  Correcting the foreground's contrast may be
+    # counter-productive in this case, because many "spoiler text"
+    # implementations just set the foreground and background to the same
+    # color.
+    # Of course, it's still a problem if we fail to parse only a certain
+    # box's background color, but that should be rare enough (hopefully a
+    # website would at least use a consistent color syntax...)
+    return fgcolor
   let contrast = term.config.display.minimumContrast
   let cfgcolor = fgcolor
   let bgcolor = term.getRGB(bgcolor, term.defaultBackground)

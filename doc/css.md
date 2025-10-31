@@ -263,9 +263,9 @@ adjusts the foreground color so that text remains readable even if the
 terminal background does not match this expectation.  (The exact
 algorithm is unspecified and subject to change.)
 
-This unfortunately breaks spoiler mechanisms that rely on "black on
-black" text not being visible.  The issue disappears when `visibility:
-hidden` is applied to the text as well.
+To avoid breaking spoiler mechanisms that rely on "black on black" text,
+color correction is not invoked on cells that have an RGB color (typically
+specified by the author.)
 
 ### Borders
 

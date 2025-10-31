@@ -41,6 +41,8 @@ UI changes
 * fixed flash of unstyled content and removed blank screen on page load
 * moved all commands in `cmd.pager` and `cmd.buffer` into `cmd`
 * binding keys no longer requires `cmd.` prefix for built-in commands
+* color contrast correction is no longer invoked on cells that do not use
+  the terminal theme for foreground or background
 ---
 Misc changes
 * history, cookies, etc. are now saved in XDG_DATA_HOME for XDG basedir users

@@ -345,10 +345,9 @@ color so that text remains readable even if the terminal background does
 not match this expectation.
 (The exact algorithm is unspecified and subject to change.)
 .PP
-This unfortunately breaks spoiler mechanisms that rely on \(lqblack on
-black\(rq text not being visible.
-The issue disappears when \f[CR]visibility: hidden\f[R] is applied to
-the text as well.
+To avoid breaking spoiler mechanisms that rely on \(lqblack on black\(rq
+text, color correction is not invoked on cells that have an RGB color
+(typically specified by the author.)
 .SS Borders
 CSS borders are difficult to accurately display on a cell\-based
 display.
