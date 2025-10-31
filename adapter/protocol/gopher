@@ -36,7 +36,6 @@ EOF
 	query=$(printf '%s\n' "${MAPPED_URI_QUERY##*=}" | \
 		sed 's/\+/ /g' | "$CHA_LIBEXEC_DIR"/urldec)
 	tab='	'
-	"$CHA_LIBEXEC_DIR"/nc -m "$msg$LF" "$MAPPED_URI_HOST" "${MAPPED_URI_PORT:-70}" <<EOF
-$path${query:+"$tab"}${query##*=}
-EOF
+	printf '%s\r\n' "$path${query:+"$tab"}${query##*=}" | \
+		"$CHA_LIBEXEC_DIR"/nc -m "$msg$LF" "$MAPPED_URI_HOST" "${MAPPED_URI_PORT:-70}"
 fi
