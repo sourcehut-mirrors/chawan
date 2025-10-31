@@ -647,7 +647,10 @@ nextHist = '() => line.nextHist()'
 openEditor = '''
 () => {
 	const res = pager.openEditor(line.text);
-	if (res != null)
+	if (res != null) {
+		line.end();
+		line.clear();
 		line.write(res);
+	}
 }
 '''
