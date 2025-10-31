@@ -24,8 +24,8 @@ assertEquals(window.getComputedStyle(y, "").textAlign, "right");
 const charSize = parseInt(window.getComputedStyle(y).marginLeft);
 assertEquals(y.getBoundingClientRect().width, charSize * 4);
 y.remove();
-assertEquals(window.getComputedStyle(y, "").textAlign, "start");
+assertEquals(window.getComputedStyle(y, "").textAlign, "");
 y.style.textAlign = "center";
-assertEquals(window.getComputedStyle(y, "").textAlign, "center");
+assertEquals(window.getComputedStyle(y, "").textAlign, "");
 document.getElementById("x").textContent = "Success";
 </script>

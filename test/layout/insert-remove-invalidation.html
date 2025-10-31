@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<style>
+#x > #z:nth-child(2n+1) { color: red }
+#x > #y { color: green }
+#x > #z:nth-child(2n) { color: green }
+</style>
+<script src=../asserts.js></script>
+<div id=x>
+<div id=y>test 1</div>
+<div id=z>test 2</div>
+</div>
+<script>
+const x = document.getElementById("x"),
+	y = document.getElementById("y"),
+	z = document.getElementById("z");
+y.remove();
+assertEquals(window.getComputedStyle(y).color, "")
+assertEquals(window.getComputedStyle(z).color, "rgb(255, 0, 0)")
+y.getBoundingClientRect();
+z.getBoundingClientRect();
+x.insertBefore(y, z);
+</script>

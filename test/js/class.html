@@ -8,6 +8,8 @@ const classes = ["a", "b", "c"];
 let cl = div.classList;
 for (let i = 0; i < classes.length; ++i)
 	assertEquals(cl[i], classes[i]);
+cl.remove("a");
+assertEquals(div.getAttribute("class"), "b c");
 const classes2 = ["x", "y", "z"];
 div.setAttribute("class", classes2.join(' '));
 let i = 0;

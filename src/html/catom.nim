@@ -46,7 +46,6 @@ macro makeStaticAtom =
       satCharset = "charset"
       satChecked = "checked"
       satClass = "class"
-      satClassList = "classList"
       satClassName = "className"
       satClick = "click"
       satColor = "color"

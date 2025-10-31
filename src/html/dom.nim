@@ -669,6 +669,7 @@ proc applyStyleDependencies*(element: Element; depends: DependencyInfo)
 proc baseURL*(document: Document): URL
 proc documentElement*(document: Document): Element
 proc invalidateCollections(document: Document)
+proc isConnected(node: Node): bool
 proc lastChild*(node: Node): Node
 proc parseURL0*(document: Document; s: string): URL
 proc parseURL*(document: Document; s: string): Opt[URL]
@@ -1525,6 +1526,8 @@ proc performMicrotaskCheckpoint*(window: Window) =
 
 proc getComputedStyle0*(ctx: JSContext; window: Window; element: Element;
     pseudoElt: JSValueConst): Opt[CSSStyleDeclaration] =
+  if not element.isConnected():
+    return ok(newCSSStyleDeclaration(nil, ""))
   var pseudo = peNone
   if not JS_IsUndefined(pseudoElt):
     # This isn't what the spec says, but it seems to be what others do.
@@ -1955,7 +1958,7 @@ proc clone(node: Node; document = none(Document); deep = false): Node =
       element.prefix)
     x.id = element.id
     x.name = element.name
-    x.classList = x.newDOMTokenList(satClassList)
+    x.classList = x.newDOMTokenList(satClass)
     x.attrs = element.attrs
     #TODO namespaced attrs?
     # Cloning steps
@@ -4273,7 +4276,8 @@ proc parseColor(element: Element; s: string): Opt[ARGBColor] =
     of cctARGB: return ok(color.argb)
     of cctCurrent:
       let window = element.document.window
-      if window != nil and window.settings.scripting == smApp:
+      if window != nil and window.settings.scripting == smApp and
+          element.isConnected():
         element.ensureStyle()
         if element.computed{"color"}.t == cctARGB:
           return ok(element.computed{"color"}.argb)
@@ -4632,7 +4636,7 @@ proc newElement*(document: Document; localName, namespaceURI, prefix: CAtom):
   element.namespaceURI = namespaceURI
   element.prefix = prefix
   element.internalNext = document
-  element.classList = element.newDOMTokenList(satClassList)
+  element.classList = element.newDOMTokenList(satClass)
   element.internalElIndex = -1
   element.custom = if localName.isValidCustomElementName():
     cesUndefined
