@@ -6,7 +6,7 @@ import std/strutils
 
 import lcgi
 
-import monoucha/jsregex
+import utils/lrewrap
 import monoucha/libregexp
 
 proc parseSection(query: string): tuple[page, section: string] =

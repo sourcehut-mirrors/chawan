@@ -19,7 +19,6 @@ import local/select
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsnull
-import monoucha/jsregex
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -36,6 +35,7 @@ import types/opt
 import types/referrer
 import types/url
 import types/winattrs
+import utils/lrewrap
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr

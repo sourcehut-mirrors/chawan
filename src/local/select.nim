@@ -2,10 +2,10 @@
 
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsregex
 import monoucha/quickjs
 import monoucha/tojs
 import types/cell
+import utils/lrewrap
 import utils/luwrap
 import utils/strwidth
 import utils/twtstr

@@ -34,7 +34,6 @@ import local/term
 import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsnull
-import monoucha/jsregex
 import monoucha/jstypes
 import monoucha/jsutils
 import monoucha/libregexp
@@ -55,9 +54,9 @@ import types/jsopt
 import types/opt
 import types/url
 import types/winattrs
+import utils/lrewrap
 import utils/luwrap
 import utils/myposix
-import utils/regexutils
 import utils/strwidth
 import utils/twtstr
 

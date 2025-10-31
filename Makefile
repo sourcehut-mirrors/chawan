@@ -157,7 +157,7 @@ unicode_gen:
 	$(OBJDIR)/gencharwidth > res/charwidth_gen.nim~
 	mv res/charwidth_gen.nim~ res/charwidth_gen.nim
 
-$(OUTDIR_CGI_BIN)/man: $(lcgi) lib/monoucha0/monoucha/jsregex.nim \
+$(OUTDIR_CGI_BIN)/man: $(lcgi) src/utils/lrewrap.nim \
 	lib/monoucha0/monoucha/libregexp.nim \
 	lib/monoucha0/monoucha/qjs/libregexp.* \
 	lib/monoucha0/monoucha/qjs/libunicode.* \

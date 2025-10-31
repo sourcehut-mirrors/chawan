@@ -22,7 +22,6 @@ import monoucha/fromjs
 import monoucha/jsbind
 import monoucha/jsnull
 import monoucha/jspropenumlist
-import monoucha/jsregex
 import monoucha/jsutils
 import monoucha/quickjs
 import monoucha/tojs
@@ -32,8 +31,8 @@ import types/color
 import types/jscolor
 import types/opt
 import types/url
+import utils/lrewrap
 import utils/myposix
-import utils/regexutils
 import utils/twtstr
 
 type
@@ -86,7 +85,7 @@ type
 
   SearchConfig = ref object
     wrap* {.jsgetset.}: bool
-    ignoreCase* {.jsgetset.}: Option[bool]
+    ignoreCase* {.jsgetset.}: RegexCase
 
   StatusConfig = ref object
     showCursorPosition* {.jsgetset.}: bool
@@ -378,6 +377,8 @@ proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var Regex; v: TomlValue;
   k: string): Err[string]
+proc parseConfigValue(ctx: var ConfigParser; x: var RegexCase; v: TomlValue;
+  k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var URL; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var JSValueFunction;
@@ -621,6 +622,17 @@ proc parseConfigValue[T: enum](ctx: var ConfigParser; x: var T; v: TomlValue;
   if e.isErr:
     return err(k & ": invalid value '" & v.s & "'")
   x = e.get
+  ok()
+
+proc parseConfigValue(ctx: var ConfigParser; x: var RegexCase; v: TomlValue;
+    k: string): Err[string] =
+  ?typeCheck(v, {tvtBoolean, tvtString}, k)
+  if v.t == tvtBoolean:
+    x = if v.b: rcIgnore else: rcStrict
+  else: # string
+    if v.s != "auto":
+      return err(k & ": invalid value '" & v.s & "'")
+    x = rcSmart
   ok()
 
 proc parseConfigValue[T](ctx: var ConfigParser; x: var set[T]; v: TomlValue;
