@@ -5530,6 +5530,9 @@ proc inputString*(input: HTMLInputElement): RefString =
   else:
     return input.internalValue
 
+proc select(ctx: JSContext; input: HTMLInputElement) {.jsfunc.} =
+  ctx.focus(input)
+
 # <label>
 proc control*(label: HTMLLabelElement): FormAssociatedElement {.jsfget.} =
   let f = label.attr(satFor)
