@@ -1,0 +1,24 @@
+#!/bin/sh
+: 'Nightfall express protocol handler.  See:
+=> nex://nightfall.city/nex/info/specification.txt
+Usage (replace ~/.chawan with ~/.config/chawan if you prefer XDG):
+* put nex binary in ~/.chawan/cgi-bin
+* put in ~/.chawan/urimethodmap
+nex: /cgi-bin/nex
+* put in ~/.chawan/auto.mailcap
+text/x-nex; "$CHA_CGI_DIR"/nex html; x-htmloutput
+* enjoy'
+
+if test "$1" = html
+then	printf '<!DOCTYPE html><pre>'
+	sed \
+'/=>/!s/</\&lt;/g;/=>/!s/>/\&gt;/g;s/"/\&quot;/g;s@^=> \([^ 	]*\)@<a href="\1">\1</a>@g'
+else	printf '%s\n' "$MAPPED_URI_PATH" | \
+	"$CHA_LIBEXEC_DIR"/nc "$MAPPED_URI_HOST" "${MAPPED_URI_PORT:-1900}" | {
+	case $MAPPED_URI_PATH in
+	*/)	printf 'Content-Type: text/x-nex\n\n';;
+	*)	printf '\n';;
+	esac
+	cat
+}
+fi

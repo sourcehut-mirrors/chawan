@@ -57,6 +57,13 @@ designed to handle file downloads, not web browsing.
 
 A `magnet:` URL handler. It can forward magnet links to transmission.
 
+### [nex](nex)
+
+A `nex:` URL handler and directory parser.
+
+Note: this does not have an installer.  Follow the instructions in the
+file's header.
+
 ### [stbir2](stbir2/)
 
 By default, Chawan uses stb_image_resize for resizing images, but there
