@@ -1213,7 +1213,7 @@ for a description of the API, please see:
 [The API documentation](api.md).
 <!-- MANON -->
 <!-- MANON
-The API documentation at **cha-api**(5).
+The API documentation at **cha-api**(7).
 MANOFF -->
 
 Examples:
@@ -1290,7 +1290,7 @@ Brave Search, but this may change in the future.</td>
 <tr>
 <td><kbd>M-u</kbd></td>
 <td>`dupeBuffer`</td>
-<td>Duplicate the current buffer by loading its source to a new buffer.</td>
+<td>Duplicate the current buffer by forking its content process.</td>
 </tr>
 
 <tr>
