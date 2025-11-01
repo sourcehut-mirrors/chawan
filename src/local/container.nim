@@ -757,6 +757,8 @@ proc setCursorY(container: Container; y: int; refresh = true) {.jsfunc.} =
   container.restoreCursorX()
   if refresh:
     container.sendCursorPosition()
+    # cursor moved, trigger status so the status is recomputed
+    container.triggerEvent(cetStatus)
 
 proc setCursorXY*(container: Container; x, y: int; refresh = true) {.jsfunc.} =
   container.setCursorY(y, refresh)
