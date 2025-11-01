@@ -11,10 +11,6 @@ type
     len*: uint32
     ctx: JSContext
 
-  JSPropertyEnumWrapper* = object
-    is_enumerable: bool
-    name: string
-
 proc newJSPropertyEnumList*(ctx: JSContext; size: uint32): JSPropertyEnumList =
   let p = if size != 0:
     js_malloc(ctx, csize_t(sizeof(JSPropertyEnum)) * csize_t(size))
