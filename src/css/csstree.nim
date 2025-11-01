@@ -651,7 +651,6 @@ proc buildInnerBox(ctx: TreeContext; frame: TreeFrame; cached: CSSBox;
   var keepLayout = true
   for child in frame.children:
     let next = if cachedIt != nil: cachedIt.next else: nil
-    let cached = child.takeCache(cachedIt)
     let childBox = ctx.build(cached, child, forceZ, root = false)
     childBox.parent = box
     if last != nil:
@@ -763,6 +762,7 @@ proc buildOuterBox(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
 
 proc build(ctx: TreeContext; cached: CSSBox; styledNode: StyledNode;
     forceZ, root: bool): CSSBox =
+  let cached = styledNode.takeCache(cached)
   case styledNode.t
   of stElement:
     return ctx.buildOuterBox(cached, styledNode, forceZ, root)
