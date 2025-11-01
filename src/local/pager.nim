@@ -3410,9 +3410,10 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
       if pager.alertState == pasLoadInfo:
         pager.alertState = pasNormal
       pager.queueStatusUpdate()
-  of cetReadLine:
+  of cetReadLine, cetReadPassword:
     if container == pager.container:
-      pager.setLineEdit(lmBuffer, event.value, event.password, event.prompt)
+      pager.setLineEdit(lmBuffer, event.value, event.t == cetReadPassword,
+        event.prompt)
   of cetReadArea:
     if container == pager.container:
       var s = event.tvalue
@@ -3423,29 +3424,35 @@ proc handleEvent0(pager: Pager; container: Container; event: ContainerEvent) =
   of cetReadFile:
     if container == pager.container:
       pager.setLineEdit(lmBufferFile, "")
-  of cetOpen:
-    let url = event.request.url
+  of cetOpen, cetSave:
+    let request = event.request
+    let contentType = event.contentType
+    let save = event.t == cetSave
+    let url = request.url
     let sameScheme = container.url.scheme == url.scheme
-    if event.request.httpMethod != hmGet and not sameScheme and
+    if request.httpMethod != hmGet and not sameScheme and
         not (container.url.schemeType in {stHttp, stHttps} and
           url.schemeType in {stHttp, stHttps}):
       pager.alert("Blocked cross-scheme POST: " & $url)
       return
     #TODO this is horrible UX, async actions shouldn't block input
     if pager.container != container or
-        not event.save and not container.isHoverURL(url):
+        not save and not container.isHoverURL(url):
       pager.ask("Open pop-up? " & $url).then(proc(x: bool) =
-        if x:
-          if not pager.gotoURLHash(event.request, container, event.save):
-            let container = pager.gotoURL(event.request, event.contentType,
-              referrer = pager.container, save = event.save)
-            pager.addContainer(container)
+        if x and not pager.gotoURLHash(request, container, save):
+          let container = pager.gotoURL(request, contentType,
+            referrer = container, save = save)
+          pager.addContainer(container)
       )
-    else:
-      if not pager.gotoURLHash(event.request, container, event.save):
-        let container = pager.gotoURL(event.request, event.contentType,
-          referrer = pager.container, save = event.save, url = event.url)
-        pager.addContainer(container)
+    elif not pager.gotoURLHash(request, container, save):
+      let container = pager.gotoURL(request, contentType, referrer = container,
+        save = save)
+      pager.addContainer(container)
+  of cetSaveSource:
+    let request = newRequest("cache:" & $container.cacheId)
+    let container = pager.gotoURL(request, "", referrer = pager.container,
+      save = true, url = container.url)
+    pager.addContainer(container)
   of cetStatus:
     if pager.container == container:
       pager.showAlerts()

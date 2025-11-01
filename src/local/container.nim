@@ -52,21 +52,19 @@ type
     setxsave: bool
 
   ContainerEventType* = enum
-    cetReadLine, cetReadArea, cetReadFile, cetOpen, cetSetLoadInfo, cetStatus,
-    cetAlert, cetLoaded, cetTitle, cetCancel, cetMetaRefresh
+    cetReadLine, cetReadPassword, cetReadArea, cetReadFile, cetOpen, cetSave,
+    cetSaveSource, cetSetLoadInfo, cetStatus, cetAlert, cetLoaded, cetTitle,
+    cetCancel, cetMetaRefresh
 
   ContainerEvent* = ref object
     case t*: ContainerEventType
-    of cetReadLine:
+    of cetReadLine, cetReadPassword:
       prompt*: string
       value*: string
-      password*: bool
     of cetReadArea:
       tvalue*: string
-    of cetOpen:
-      save*: bool
+    of cetOpen, cetSave:
       request*: Request
-      url*: URL
       contentType*: string
     of cetAlert:
       msg*: string
@@ -219,7 +217,7 @@ jsDestructor(Container)
 # Forward declarations
 proc cursorLastLine*(container: Container)
 proc find*(container: Container; dir: NavDirection): Container
-proc onclick(container: Container; res: ClickResult; save: bool)
+proc onclick(container: Container; res: ClickResult)
 proc triggerEvent(container: Container; t: ContainerEventType)
 proc updateCursor(container: Container)
 proc sendCursorPosition*(container: Container): EmptyPromise {.discardable.}
@@ -1627,8 +1625,13 @@ proc onReadLine(container: Container; rl: ReadLineResult) =
     container.triggerEvent(ContainerEvent(
       t: cetReadLine,
       prompt: rl.prompt,
-      value: rl.value,
-      password: rl.hide
+      value: rl.value
+    ))
+  of rltPassword:
+    container.triggerEvent(ContainerEvent(
+      t: cetReadPassword,
+      prompt: rl.prompt,
+      value: rl.value
     ))
   of rltArea:
     container.triggerEvent(ContainerEvent(
@@ -1779,7 +1782,7 @@ proc reshape(container: Container): EmptyPromise {.jsfunc.} =
 proc selectFinish(opaque: RootRef; select: Select) =
   let container = Container(opaque)
   container.iface.select(select.selected).then(proc(res: ClickResult) =
-    container.onclick(res, save = false)
+    container.onclick(res)
   )
   container.select = nil
   container.queueDraw()
@@ -1796,15 +1799,14 @@ proc displaySelect(container: Container; selectResult: SelectResult) =
     container
   )
 
-proc onclick(container: Container; res: ClickResult; save: bool) =
+proc onclick(container: Container; res: ClickResult) =
   if res.open != nil:
     container.triggerEvent(ContainerEvent(
       t: cetOpen,
       request: res.open,
-      save: save,
       contentType: res.contentType
     ))
-  if res.select != nil and not save and res.select.options.len > 0:
+  if res.select != nil and res.select.options.len > 0:
     container.displaySelect(res.select)
   if res.readline != nil:
     container.onReadLine(res.readline)
@@ -1814,7 +1816,7 @@ proc click*(container: Container; n = 1) {.jsfunc.} =
   if container.iface == nil:
     return
   container.iface.click(container.cursorx, container.cursory, n)
-    .then(proc(res: ClickResult) = container.onclick(res, save = false))
+    .then(proc(res: ClickResult) = container.onclick(res))
 
 proc contextMenu*(container: Container): Promise[bool] {.jsfunc.} =
   if container.iface == nil:
@@ -1825,17 +1827,19 @@ proc saveLink*(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
   container.iface.click(container.cursorx, container.cursory, 1)
-    .then(proc(res: ClickResult) = container.onclick(res, save = true))
+    .then(proc(res: ClickResult) =
+      if res.open != nil:
+        container.triggerEvent(ContainerEvent(
+          t: cetSave,
+          request: res.open,
+          contentType: res.contentType
+        ))
+    )
 
 proc saveSource*(container: Container) {.jsfunc.} =
   if container.iface == nil:
     return
-  container.triggerEvent(ContainerEvent(
-    t: cetOpen,
-    request: newRequest("cache:" & $container.cacheId),
-    save: true,
-    url: container.url
-  ))
+  container.triggerEvent(cetSaveSource)
 
 proc windowChange*(container: Container; attrs: WindowAttributes) =
   container.width = attrs.width

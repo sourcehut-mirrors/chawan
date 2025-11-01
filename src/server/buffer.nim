@@ -174,11 +174,10 @@ type
     nimcall, raises: [].}
 
   ReadLineType* = enum
-    rltText, rltArea, rltFile
+    rltText, rltPassword, rltArea, rltFile
 
   ReadLineResult* = ref object
     t*: ReadLineType
-    hide*: bool
     prompt*: string
     value*: string
 
@@ -1671,9 +1670,9 @@ proc click(bc: BufferContext; input: HTMLInputElement): ClickResult =
       prompt &= " (" & input.attr(satMin) & ".." & input.attr(satMax) & ")"
     bc.setFocus(input)
     return ClickResult(readline: ReadLineResult(
+      t: if input.inputType == itPassword: rltPassword else: rltText,
       prompt: prompt & ": ",
-      value: input.value,
-      hide: input.inputType == itPassword
+      value: input.value
     ))
 
 proc click(bc: BufferContext; clickable: Element): ClickResult =
