@@ -605,7 +605,7 @@ proc cleanup(pager: Pager) =
         # program has already spammed this nonsense into $HOME so whatever.
         discard mkdir(cstring($pager.config.external.tmpdir), 0o700)
       if hist.write($pager.config.external.historyFile).isErr:
-        if not hasConfigDir:
+        if hasConfigDir:
           # History is enabled by default, so do not print the error
           # message if no config dir exists.
           pager.alert("failed to save history")
