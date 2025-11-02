@@ -50,6 +50,7 @@ import types/referrer
 import types/refstring
 import types/url
 import types/winattrs
+import utils/dtoawrap
 import utils/strwidth
 import utils/twtstr
 
@@ -5365,7 +5366,7 @@ proc toBlob(ctx: JSContext; this: HTMLCanvasElement; callback: JSValueConst;
   if (var quality = quality.get(-1); 0 <= quality and quality <= 1):
     quality *= 99
     quality += 1
-    headers.add("Cha-Image-Quality", $quality)
+    headers.add("Cha-Image-Quality", dtoa(quality))
   # callback will go out of scope when we return, so capture a new reference.
   let callback = JS_DupValue(ctx, callback)
   let window = this.document.window

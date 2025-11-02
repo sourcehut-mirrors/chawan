@@ -14,6 +14,7 @@ import types/color
 import types/opt
 import types/refstring
 import types/winattrs
+import utils/dtoawrap
 import utils/twtstr
 
 export CSSPropertyType
@@ -613,11 +614,13 @@ proc `$`*(length: CSSLength): string =
     return "auto"
   result = ""
   if length.perc != 0:
-    result &= $length.perc & "%"
+    result.addDouble(length.perc)
+    result &= '%'
   if length.npx != 0:
     if result.len > 0:
       result &= " + "
-    result &= $length.npx & "px"
+    result.addDouble(length.npx)
+    result &= '%'
   if result.len == 0:
     result &= '0'
 
@@ -670,8 +673,8 @@ proc serialize(val: CSSValue): string =
 proc serialize(val: CSSValueHWord; t: CSSValueType): string =
   case t
   of cvtInteger: return $val.integer
-  of cvtNumber: return $val.number
-  of cvtLineWidth: return $val.lineWidth & "px"
+  of cvtNumber: return dtoa(val.number)
+  of cvtLineWidth: return dtoa(val.lineWidth) & "px"
   else:
     assert false
     return ""

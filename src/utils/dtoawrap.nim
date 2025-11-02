@@ -17,3 +17,19 @@ proc parseFloat64*(s: cstring): float64 =
   if i < s.len:
     return NaN
   return res
+
+proc addDouble*(s: var string; d: float64) =
+  let d = cdouble(d)
+  let m = js_dtoa_max_len(d, 10, 0, JS_DTOA_FORMAT_FREE)
+  let olen = s.len
+  # Note: this relies on Nim strings having a NUL term by default (because
+  # js_dtoa writes one).
+  s.setLen(olen + int(m))
+  var tmp: JSDTOATempMem
+  let n = js_dtoa(cast[cstring](addr s[olen]), d, 10, 0, JS_DTOA_FORMAT_FREE,
+    tmp)
+  s.setLen(olen + int(n))
+
+proc dtoa*(d: float64): string =
+  result = ""
+  result.addDouble(d)

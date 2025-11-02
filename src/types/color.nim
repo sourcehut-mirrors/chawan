@@ -4,6 +4,7 @@ import std/algorithm
 import std/strutils
 
 import types/opt
+import utils/dtoawrap
 import utils/twtstr
 
 type
@@ -308,7 +309,9 @@ proc serialize*(c: ARGBColor): string =
     res.pushHex(c.b)
     return move(res)
   let a = float64(c.a) / 255
-  return "rgba(" & $c.r & ", " & $c.g & ", " & $c.b & ", " & $a & ")"
+  result = "rgba(" & $c.r & ", " & $c.g & ", " & $c.b & ", "
+  result.addDouble(a)
+  result &= ')'
 
 proc `$`*(c: ARGBColor): string =
   return c.serialize()

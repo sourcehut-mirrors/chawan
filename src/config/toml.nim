@@ -110,7 +110,7 @@ proc `$`*(val: TomlValue): string =
   of tvtInteger:
     result = $val.i
   of tvtFloat:
-    result = $val.f
+    result = dtoa(val.f)
   of tvtBoolean:
     result = $val.b
   of tvtTable:

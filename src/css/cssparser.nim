@@ -459,18 +459,18 @@ proc `$`*(tok: CSSToken): string =
     if ctfInteger in tok.flags:
       $tok.inum
     else:
-      $tok.fnum
+      dtoa(tok.fnum)
   of cttDimension:
     var s = if ctfInteger in tok.flags:
       $tok.inum
     else:
-      $tok.fnum
+      dtoa(tok.fnum)
     if tok.dt == cdtUnknown:
       s &= tok.s
     else:
       s &= $tok.dt
     move(s)
-  of cttPercentage: $tok.fnum & '%'
+  of cttPercentage: dtoa(tok.fnum) & '%'
   of cttWhitespace: " "
   of cttSemicolon: ";\n"
   of cttRbrace: "}\n"
