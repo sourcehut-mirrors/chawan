@@ -2394,7 +2394,6 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
       pager.container.popCursorPos()
       pager.container.clearSearchHighlights()
       pager.container.redraw = true
-      pager.isearchpromise = newResolvedPromise()
     of lesEdit:
       if lineedit.news != "":
         pager.iregex = pager.compileSearchRegex(lineedit.news)
@@ -2421,8 +2420,7 @@ proc updateReadLineISearch(pager: Pager; linemode: LineMode) =
         pager.container.sendCursorPosition()
       pager.container.clearSearchHighlights()
       pager.container.redraw = true
-      pager.isearchpromise = newResolvedPromise()
-    return nil
+    return newResolvedPromise()
   )
 
 proc saveTo(pager: Pager; data: LineDataDownload; path: string) =
