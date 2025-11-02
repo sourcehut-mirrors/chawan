@@ -64,7 +64,7 @@ proc sread*(r: var PacketReader; blob: var Blob) =
   r.sread(blob.size)
   if blob.size > 0:
     let buffer = alloc(blob.size)
-    r.readData(blob.buffer, blob.size)
+    r.readData(buffer, blob.size)
     blob.buffer = buffer
     blob.deallocFun = deallocBlob
 

@@ -21,7 +21,6 @@ import server/loaderiface
 import server/request
 import server/response
 import types/blob
-import types/formdata
 import types/jsopt
 import types/opt
 import types/url
@@ -315,35 +314,20 @@ proc send(ctx: JSContext; this: XMLHttpRequest; body: JSValueConst = JS_NULL):
     credentialsMode = credentialsMode)
   if not JS_IsNull(body):
     var document: Document = nil
-    var formData: FormData = nil
-    if ctx.fromJS(body, document).isOk:
+    let contentType = if ctx.fromJS(body, document).isOk:
       request.body = RequestBody(
         t: rbtString,
         s: document.serializeFragment().toValidUTF8() # replace surrogates
       )
-    elif ctx.fromJS(body, formData).isOk:
-      request.body = RequestBody(
-        t: rbtMultipart,
-        multipart: formData
-      )
-    #TODO elif blob, urlsearchparams, buffersource
-    # actually we could just merge this with request constructor's
-    # BodyInit if we had "extract". (it's almost the same, except for
-    # the latter allowing ReadableStream)
-    else:
-      var s: string
-      ?ctx.fromJS(body, s)
-      request.body = RequestBody(
-        t: rbtString,
-        s: move(s)
-      )
-    if "Content-Type" in this.headers:
-      if request.body.t == rbtString:
+      "text/html;charset=UTF-8"
+    else: #TODO XML
+      var init: BodyInit
+      ?ctx.fromJS(body, init)
+      init.safeExtract(request.body)
+    if not request.headers.addIfNotFoundCheck("Content-Type", contentType):
+      # author already set a content type
+      if request.body.t == rbtString or document != nil:
         request.headers["Content-Type"].setContentTypeAttr("charset", "UTF-8")
-    elif document != nil:
-      request.headers["Content-Type"] = "text/html;charset=UTF-8"
-    elif formData != nil:
-      request.headers["Content-Type"] = formData.getContentType()
   let jsRequest = JSRequest(
     #TODO unsafe request flag, client, use-url-credentials, initiator type
     request: request,

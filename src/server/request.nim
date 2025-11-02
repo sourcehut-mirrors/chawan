@@ -63,7 +63,7 @@ type
       window*: EnvironmentSettings
 
   RequestBodyType* = enum
-    rbtNone, rbtString, rbtMultipart, rbtOutput, rbtCache
+    rbtNone, rbtString, rbtBlob, rbtMultipart, rbtOutput, rbtCache
 
   RequestBody* = object
     case t*: RequestBodyType
@@ -77,6 +77,8 @@ type
       outputId*: int
     of rbtCache:
       cacheId*: int
+    of rbtBlob:
+      blob*: Blob
 
   Request* = ref object
     httpMethod*: HttpMethod
@@ -104,6 +106,7 @@ proc swrite*(w: var PacketWriter; o: RequestBody) =
   case o.t
   of rbtNone: discard
   of rbtString: w.swrite(o.s)
+  of rbtBlob: w.swrite(o.blob)
   of rbtMultipart: w.swrite(o.multipart)
   of rbtOutput: w.swrite(o.outputId)
   of rbtCache: w.swrite(o.cacheId)
@@ -115,6 +118,7 @@ proc sread*(r: var PacketReader; o: var RequestBody) =
   case t
   of rbtNone: discard
   of rbtString: r.sread(o.s)
+  of rbtBlob: r.sread(o.blob)
   of rbtMultipart: r.sread(o.multipart)
   of rbtOutput: r.sread(o.outputId)
   of rbtCache: r.sread(o.cacheId)
@@ -123,6 +127,7 @@ proc contentLength*(body: RequestBody): int =
   case body.t
   of rbtNone: return 0
   of rbtString: return body.s.len
+  of rbtBlob: return body.blob.size
   of rbtMultipart: return body.multipart.calcLength()
   of rbtOutput: return 0
   of rbtCache: return 0
@@ -190,11 +195,12 @@ proc createPotentialCORSRequest*(url: URL; destination: RequestDestination;
 
 type
   BodyInitType = enum
-    bitBlob, bitFormData, bitUrlSearchParams, bitString
+    bitNull, bitBlob, bitFormData, bitUrlSearchParams, bitString
 
-  BodyInit = object
+  BodyInit* = object
     #TODO ReadableStream, BufferSource
     case t: BodyInitType
+    of bitNull: discard
     of bitBlob:
       blob: Blob
     of bitFormData:
@@ -202,35 +208,55 @@ type
     of bitUrlSearchParams:
       searchParams: URLSearchParams
     of bitString:
-      str: string
+      s: string
 
   RequestInit* = object of JSDict
     `method`* {.jsdefault.}: Option[HttpMethod] #TODO aliasing in dicts
-    headers* {.jsdefault.}: Option[HeadersInit]
-    body* {.jsdefault.}: Option[BodyInit]
+    headers* {.jsdefault.}: HeadersInit
+    body* {.jsdefault.}: BodyInit
     referrer* {.jsdefault.}: Option[string]
     referrerPolicy* {.jsdefault.}: Option[ReferrerPolicy]
     credentials* {.jsdefault.}: Option[CredentialsMode]
     mode* {.jsdefault.}: Option[RequestMode]
     window* {.jsdefault: JS_UNDEFINED.}: JSValueConst
 
-proc fromJS(ctx: JSContext; val: JSValueConst; res: var BodyInit):
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var BodyInit):
     FromJSResult =
-  if not JS_IsUndefined(val) and not JS_IsNull(val):
-    res = BodyInit(t: bitFormData)
-    if ctx.fromJS(val, res.formData).isOk:
-      return fjOk
-    res = BodyInit(t: bitBlob)
-    if ctx.fromJS(val, res.blob).isOk:
-      return fjOk
-    res = BodyInit(t: bitUrlSearchParams)
-    if ctx.fromJS(val, res.searchParams).isOk:
-      return fjOk
-    res = BodyInit(t: bitString)
-    if ctx.fromJS(val, res.str).isOk:
-      return fjOk
-  JS_ThrowTypeError(ctx, "invalid body init type")
-  fjErr
+  if JS_IsNull(val):
+    res = BodyInit(t: bitNull)
+    return fjOk
+  res = BodyInit(t: bitFormData)
+  if ctx.fromJS(val, res.formData).isOk:
+    return fjOk
+  res = BodyInit(t: bitBlob)
+  if ctx.fromJS(val, res.blob).isOk:
+    return fjOk
+  res = BodyInit(t: bitUrlSearchParams)
+  if ctx.fromJS(val, res.searchParams).isOk:
+    return fjOk
+  res = BodyInit(t: bitString)
+  ctx.fromJS(val, res.s)
+
+# Returns the content type
+proc extract*(init: BodyInit; body: var RequestBody): string =
+  case init.t
+  of bitNull: return ""
+  of bitFormData:
+    body = RequestBody(t: rbtMultipart, multipart: init.formData)
+    return init.formData.getContentType()
+  of bitString:
+    body = RequestBody(t: rbtString, s: init.s)
+    return "text/plain;charset=UTF-8"
+  of bitUrlSearchParams:
+    body = RequestBody(t: rbtString, s: $init.searchParams)
+    return "application/x-www-form-urlencoded;charset=UTF-8"
+  of bitBlob:
+    body = RequestBody(t: rbtBlob, blob: init.blob)
+    return init.blob.ctype
+
+proc safeExtract*(init: BodyInit; body: var RequestBody): string =
+  #TODO check for ReadableStream once we have it
+  init.extract(body)
 
 proc newRequest*(ctx: JSContext; resource: JSValueConst;
     init = RequestInit(window: JS_UNDEFINED)): Opt[JSRequest] {.jsctor.} =
@@ -272,19 +298,13 @@ proc newRequest*(ctx: JSContext; resource: JSValueConst;
   #TODO referrer
   if init.`method`.isSome:
     httpMethod = init.`method`.get
-  if init.body.isSome:
-    let ibody = init.body.get
-    case ibody.t
-    of bitFormData:
-      body = RequestBody(t: rbtMultipart, multipart: ibody.formData)
-    of bitString:
-      body = RequestBody(t: rbtString, s: ibody.str)
-    else: discard #TODO
-    if httpMethod in {hmGet, hmHead}:
-      JS_ThrowTypeError(ctx, "HEAD or GET requests cannot have a body")
-      return err()
-  if init.headers.isSome:
-    ?ctx.fill(headers, init.headers.get)
+  if init.body.t != bitNull and httpMethod in {hmGet, hmHead}:
+    JS_ThrowTypeError(ctx, "HEAD or GET requests cannot have a body")
+    return err()
+  ?ctx.fill(headers, init.headers)
+  let contentType = init.body.extract(body)
+  if contentType != "":
+    headers.addIfNotFound("Content-Type", contentType)
   if init.credentials.isSome:
     credentials = init.credentials.get
   if init.mode.isSome:

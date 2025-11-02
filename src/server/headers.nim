@@ -6,7 +6,6 @@ import std/strutils
 
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsnull
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -46,7 +45,7 @@ iterator allPairs*(headers: Headers): tuple[name, value: lent string] =
   for (name, value) in headers.list:
     yield (name, value)
 
-proc fromJS(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var HeadersInit):
     FromJSResult =
   var headers: Headers
   if ctx.fromJS(val, headers).isOk:
@@ -192,6 +191,14 @@ proc addIfNotFound*(headers: Headers; name, value: string) =
   if not headers.contains(name, n):
     headers.list.insert((name, value), n)
 
+# returns true if added, false otherwise
+proc addIfNotFoundCheck*(headers: Headers; name, value: string): bool =
+  let n = headers.lowerBound(name)
+  if not headers.contains(name, n):
+    headers.list.insert((name, value), n)
+    return true
+  false
+
 proc get(this: Headers; name: string; n: int): string =
   var s = ""
   for it in this.list.toOpenArray(n, this.list.high):
@@ -278,11 +285,13 @@ proc newHeaders*(guard: HeaderGuard; list: openArray[(string, string)]):
   headers.list.sort(proc(a, b: HTTPHeader): int = cmpIgnoreCase(a.name, b.name))
   return headers
 
-proc newHeaders(ctx: JSContext; obj = none(HeadersInit)): Opt[Headers]
-    {.jsctor.} =
+proc newHeaders(ctx: JSContext; jsInit: JSValueConst = JS_UNDEFINED):
+    Opt[Headers] {.jsctor.} =
   let headers = newHeaders(hgNone)
-  if obj.isSome:
-    ?ctx.fill(headers, obj.get)
+  if not JS_IsUndefined(jsInit):
+    var init: HeadersInit
+    ?ctx.fromJS(jsInit, init)
+    ?ctx.fill(headers, init)
   ok(headers)
 
 proc clone*(headers: Headers): Headers =

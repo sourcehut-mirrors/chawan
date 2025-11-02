@@ -42,6 +42,7 @@ import server/connectionerror
 import server/headers
 import server/loaderiface
 import server/request
+import types/blob
 import types/formdata
 import types/opt
 import types/url
@@ -1040,7 +1041,7 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
       ctx.rejectHandle(handle, ceCGIOutputHandleNotFound)
       ctx.close(handle)
       return
-  if request.body.t in {rbtString, rbtMultipart, rbtOutput} or
+  if request.body.t in {rbtString, rbtBlob, rbtMultipart, rbtOutput} or
       request.body.t == rbtCache and istream2 != nil:
     var pipefdRead: array[2, cint] # parent -> child
     if pipe(pipefdRead) == -1:
@@ -1088,6 +1089,9 @@ proc loadCGI(ctx: var LoaderContext; client: ClientHandle; handle: InputHandle;
     case request.body.t
     of rbtString:
       ostream.write(request.body.s)
+      ostream.sclose()
+    of rbtBlob:
+      ostream.write(request.body.blob.toOpenArray())
       ostream.sclose()
     of rbtMultipart:
       let boundary = request.body.multipart.boundary

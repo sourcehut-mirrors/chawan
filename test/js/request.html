@@ -1,0 +1,11 @@
+<!doctype html>
+<title>Headers object test</title>
+<div id=x>Fail</div>
+<script src=asserts.js></script>
+<script>
+const url = "https://example.org";
+assertThrows(() => new Request(url, {headers: null}), TypeError);
+assertThrows(() => new Request(url, {body: "test"}), TypeError);
+new Request(url, {body: null}); /* this is OK, body init is null */
+document.getElementById("x").textContent = "Success";
+</script>

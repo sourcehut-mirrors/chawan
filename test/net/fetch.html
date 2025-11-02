@@ -4,11 +4,21 @@
 <div id=x>Fail</div>
 <script src=asserts.js></script>
 <script type=module>
-const res = await fetch("/utf16-bom.css");
-const s = await res.text();
 const x = document.getElementById("x");
-assertEquals(window.getComputedStyle(x).textAlign, "right");
-assertEquals(s.length, 53);
-x.style.textAlign = "left";
+{
+	const res = await fetch("/utf16-bom.css");
+	const s = await res.text();
+	assertEquals(window.getComputedStyle(x).textAlign, "right");
+	assertEquals(s.length, 53);
+	x.style.textAlign = "left";
+}
+{
+	const file = new File(["test"], "name");
+	const req = new Request("/headers", {method: "POST", body: file});
+	const res = await fetch(req);
+	const s = await res.text();
+	const cl = s.split('\n').find(x => x.startsWith("content-length"));
+	assertEquals(cl, "content-length: 4");
+}
 x.textContent = "Success";
 </script>

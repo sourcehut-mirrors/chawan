@@ -14,5 +14,6 @@ assertEquals(x.get("hi"), "world");
 assertEquals(x.get("Hi"), "world");
 assertEquals(x.get("hI"), "world");
 assertEquals(x.get("test"), "test, a, b");
+assertThrows(() => new Headers(null), TypeError);
 document.getElementById("x").textContent = "Success";
 </script>
