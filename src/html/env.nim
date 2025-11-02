@@ -389,7 +389,7 @@ proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
     media: $mqlist
   )
 
-proc postMessage(ctx: JSContext; window: Window; value: JSValueConst): Err[void]
+proc postMessage(ctx: JSContext; window: Window; value: JSValueConst): Opt[void]
     {.jsfunc.} =
   #TODO structuredClone...
   let value = JS_JSONStringify(ctx, value, JS_UNDEFINED, JS_UNDEFINED)

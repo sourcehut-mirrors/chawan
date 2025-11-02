@@ -153,7 +153,7 @@ proc getBoolFeature(feature: MediaFeatureType): Opt[MediaQuery] =
   else:
     return err()
 
-proc skipBlanksCheckHas(parser: var MediaQueryParser): Err[void] =
+proc skipBlanksCheckHas(parser: var MediaQueryParser): Opt[void] =
   parser.skipBlanks()
   if parser.has():
     return ok()

@@ -3,7 +3,6 @@
 import std/algorithm
 import std/macros
 import std/math
-import std/options
 import std/strutils
 import std/tables
 

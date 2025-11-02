@@ -1,6 +1,5 @@
 {.push raises: [].}
 
-import std/options
 import std/os
 
 import monoucha/fromjs
@@ -33,8 +32,7 @@ type
 
   ChaPathResult[T] = Result[T, ChaPathError]
 
-proc unquote(p: string; starti: var int; terminal: Option[char]):
-    ChaPathResult[string]
+proc unquote(p: string; starti: var int; terminal: char): ChaPathResult[string]
 proc stateCurlyStart(ctx: var UnquoteContext; c: char): ChaPathResult[void]
 
 proc stateNormal(ctx: var UnquoteContext; c: char) =
@@ -212,16 +210,16 @@ proc flushCurlyExpand(ctx: var UnquoteContext; word: string):
 proc stateCurlyExpand(ctx: var UnquoteContext; c: char): ChaPathResult[void] =
   # ${ident:-[word], ${ident:=[word], ${ident:?[word], ${ident:+[word]
   # word must be unquoted too.
-  let word = ?unquote(ctx.p, ctx.i, some('}'))
+  let word = ?unquote(ctx.p, ctx.i, '}')
   return ctx.flushCurlyExpand(word)
 
-proc unquote(p: string; starti: var int; terminal: Option[char]):
+proc unquote(p: string; starti: var int; terminal: char):
     ChaPathResult[string] =
   var ctx = UnquoteContext(p: p, i: starti)
   while ctx.i < p.len:
     let c = p[ctx.i]
     if ctx.state in {usNormal, usTilde, usDollar, usIdent} and
-        terminal.isSome and terminal.get == c:
+        terminal != '\0' and terminal == c:
       break
     case ctx.state
     of usNormal: ctx.stateNormal(c)
@@ -248,7 +246,7 @@ proc unquote(p: string; starti: var int; terminal: Option[char]):
 
 proc unquote(p: string): ChaPathResult[string] =
   var dummy = 0
-  return unquote(p, dummy, none(char))
+  return unquote(p, dummy, '\0')
 
 proc toJS*(ctx: JSContext; p: ChaPath): JSValue =
   toJS(ctx, $p)
