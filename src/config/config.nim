@@ -15,6 +15,7 @@ import config/mimetypes
 import config/toml
 import config/urimethodmap
 import css/cssparser
+import css/cssvalues
 import html/script
 import io/chafile
 import io/dynstream
@@ -142,7 +143,7 @@ type
     imageMode* {.jsgetset.}: Option[ImageMode]
     sixelColors* {.jsgetset.}: Option[int32]
     altScreen* {.jsgetset.}: Option[bool]
-    highlightColor* {.jsgetset.}: ARGBColor
+    highlightColor* {.jsgetset.}: CSSColor
     highlightMarks* {.jsgetset.}: bool
     doubleWidthAmbiguous* {.jsgetset.}: bool
     minimumContrast* {.jsgetset.}: int32
@@ -361,7 +362,7 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue[T](ctx: var ConfigParser; x: var Option[T]; v: TomlValue;
   k: string): Err[string]
-proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
+proc parseConfigValue(ctx: var ConfigParser; x: var CSSColor; v: TomlValue;
   k: string): Err[string]
 proc parseConfigValue(ctx: var ConfigParser; x: var RGBColor; v: TomlValue;
   k: string): Err[string]
@@ -574,11 +575,12 @@ proc parseConfigValue(ctx: var ConfigParser; x: var CookieMode; v: TomlValue;
     return err(k & ": unknown cookie mode '" & v.s & "'")
   ok()
 
-proc parseConfigValue(ctx: var ConfigParser; x: var ARGBColor; v: TomlValue;
+proc parseConfigValue(ctx: var ConfigParser; x: var CSSColor; v: TomlValue;
     k: string): Err[string] =
   ?typeCheck(v, tvtString, k)
-  let c = parseARGBColor(v.s)
-  if c.isErr:
+  var ctx = initCSSParser(v.s)
+  let c = ctx.parseColor()
+  if c.isErr or ctx.has() or c.get.t == cctCurrent:
     return err(k & ": invalid color '" & v.s & "'")
   x = c.get
   ok()

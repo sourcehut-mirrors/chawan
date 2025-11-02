@@ -2,6 +2,8 @@
 
 import std/strutils
 
+import css/cssparser
+import css/cssvalues
 import monoucha/fromjs
 import monoucha/quickjs
 import monoucha/tojs
@@ -44,6 +46,11 @@ proc toJS*(ctx: JSContext; rgba: ARGBColor): JSValue =
   res.pushHex(rgba.a)
   return toJS(ctx, res)
 
+proc toJS*(ctx: JSContext; c: CSSColor): JSValue =
+  if c.t == cctARGB:
+    return ctx.toJS(c.argb())
+  return ctx.toJS($c)
+
 proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor):
     FromJSResult =
   if JS_IsNumber(val):
@@ -57,5 +64,21 @@ proc fromJS*(ctx: JSContext; val: JSValueConst; res: var ARGBColor):
     return fjOk
   JS_ThrowTypeError(ctx, "unrecognized color")
   fjErr
+
+proc fromJS*(ctx: JSContext; val: JSValueConst; res: var CSSColor):
+    FromJSResult =
+  var argb: ARGBColor
+  if ctx.fromJS(val, argb).isOk:
+    res = cssColor(argb)
+    return fjOk
+  var s: string
+  ?ctx.fromJS(val, s)
+  var p = initCSSParser(s)
+  let c = p.parseColor()
+  if c.isErr or p.has():
+    JS_ThrowTypeError(ctx, "invalid color %s", cstring(s))
+    return fjErr
+  res = c.get
+  fjOk
 
 {.pop.} # raises: []

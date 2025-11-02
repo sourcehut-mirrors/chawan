@@ -1409,7 +1409,7 @@ proc draw(pager: Pager): Opt[void] =
   if container != nil:
     if container.redraw:
       let hlcolor = if pager.attrs.colorMode != cmMonochrome:
-        cellColor(pager.config.display.highlightColor.rgb)
+        pager.config.display.highlightColor.cellColor()
       else:
         defaultColor
       container.drawLines(pager.display.grid, hlcolor)
