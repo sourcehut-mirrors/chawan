@@ -12,8 +12,8 @@ scripting = 'app'
 [display]
 columns = 80
 lines = 24
-pixels-per-column = 9
-pixels-per-line = 18
+pixels-per-column = 10
+pixels-per-line = 20
 force-columns = true
 force-lines = true
 force-pixels-per-column = true

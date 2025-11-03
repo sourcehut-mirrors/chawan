@@ -1309,8 +1309,8 @@ proc loadResource(window: Window; link: HTMLLinkElement) =
     let media = link.attr(satMedia)
     var applies = true
     if media != "":
-      let cvals = parseComponentValues(media)
-      let media = parseMediaQueryList(cvals, window.settings.attrsp)
+      var ctx = initCSSParser(media)
+      let media = ctx.parseMediaQueryList(window.settings.attrsp)
       applies = media.applies(addr window.settings)
     inc window.remoteSheetNum
     let p = window.loadSheet(link, url).then(proc(res: LoadSheetResult) =

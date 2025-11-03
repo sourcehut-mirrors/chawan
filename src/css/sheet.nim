@@ -306,7 +306,8 @@ proc addAtRule(sheet: CSSStylesheet; atrule: CSSAtRule; base: URL;
       ?ctx.skipBlanksCheckDone()
       sheet.importList.add(CSSImport(url: url, layer: layer))
   of cartMedia:
-    let query = parseMediaQueryList(atrule.prelude, sheet.settings.attrsp)
+    var ctx = initCSSParser(atrule.prelude)
+    let query = ctx.parseMediaQueryList(sheet.settings.attrsp)
     if query.applies(sheet.settings):
       var ctx = initCSSParser(atrule.oblock)
       sheet.addRules(ctx, topLevel = false, base = nil, origin, layer)

@@ -375,17 +375,17 @@ proc getComputedStyle(ctx: JSContext; window: Window; element: Element;
   return ctx.getComputedStyle0(window, element, pseudoElt)
 
 type MediaQueryList = ref object of EventTarget
-  media: string
-  matches: bool
+  media {.jsget.}: string
+  matches {.jsget.}: bool
   #TODO onchange
 
 jsDestructor(MediaQueryList)
 
 proc matchMedia(window: Window; s: string): MediaQueryList {.jsfunc.} =
-  let cvals = parseComponentValues(s)
-  let mqlist = parseMediaQueryList(cvals, window.settings.scriptAttrsp)
+  var ctx = initCSSParser(s)
+  let mqlist = ctx.parseMediaQueryList(window.settings.scriptAttrsp)
   return MediaQueryList(
-    matches: mqlist.applies(addr window.settings),
+    matches: mqlist.appliesScript(addr window.settings),
     media: $mqlist
   )
 

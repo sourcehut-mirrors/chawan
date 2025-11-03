@@ -614,13 +614,21 @@ proc `$`*(length: CSSLength): string =
     return "auto"
   result = ""
   if length.perc != 0:
-    result.addDouble(length.perc)
+    result.addDouble(length.perc * 100)
     result &= '%'
   if length.npx != 0:
-    if result.len > 0:
-      result &= " + "
-    result.addDouble(length.npx)
-    result &= '%'
+    let calc = result.len > 0
+    var npx = length.npx
+    if calc:
+      if length.npx > 0:
+        result &= " + "
+      else:
+        npx = -npx
+        result &= " - "
+    result.addDouble(npx)
+    result &= "px"
+    if calc:
+      result = "calc(" & result & ')'
   if result.len == 0:
     result &= '0'
 

@@ -11,6 +11,8 @@ const y = document.getElementById("y");
 assertEquals(y.style.cssText, "color: red; display: inline;");
 assertEquals(window.getComputedStyle(y).cssText, "");
 assertEquals(window.getComputedStyle(y, "::before").color, "red");
+assert(window.matchMedia("(grid: 1)").matches);
+assert(window.matchMedia("(width = 720px)").matches);
 y.remove();
 document.getElementById("x").textContent = "Success";
 </script>

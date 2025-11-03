@@ -110,7 +110,7 @@ proc `$`(mq: MediaQuery): string =
   case mq.t
   of mctMedia: return $mq.media
   of mctFeature: return $mq.feature
-  of mctNot: return "not (" & $mq.n
+  of mctNot: return "not (" & $mq.n & ")"
   of mctOr: return "(" & $mq.left & ") or (" & $mq.right & ")"
   of mctAnd: return "(" & $mq.left & ") or (" & $mq.right & ")"
 
@@ -387,20 +387,25 @@ proc parseMediaQuery(parser: var MediaQueryParser): Opt[MediaQuery] =
       return parser.parseMediaAnd(res, noor = true)
   return err()
 
-proc parseMediaQueryList*(toks: seq[CSSToken]; attrs: ptr WindowAttributes):
+proc parseMediaQueryList*(ctx: var CSSParser; attrs: ptr WindowAttributes):
     seq[MediaQuery] =
   result = @[]
-  for list in toks.parseCommaSepComponentValues():
-    var parser = MediaQueryParser(ctx: initCSSParser(list), attrs: attrs)
+  while ctx.has():
+    var s: seq[CSSToken] = @[]
+    discard ctx.addUntil(cttComma, s)
+    var parser = MediaQueryParser(ctx: initCSSParserSink(s), attrs: attrs)
     if query := parser.parseMediaQuery():
       result.add(query)
     else:
       # sadly, the standard doesn't let us skip this :/
+      #TODO but it seems Blink does something else nevertheless o_0
       let all = MediaQuery(t: mctMedia, media: mtAll)
       result.add(MediaQuery(t: mctNot, n: all))
 
 type
-  MediaApplyContext = ptr EnvironmentSettings
+  MediaApplyContext = object
+    env: ptr EnvironmentSettings
+    attrsp: ptr WindowAttributes
 
 proc appliesLR(feature: MediaFeature; n: float32): bool =
   let a = feature.lengthrange.s.a
@@ -434,11 +439,13 @@ proc applies(ctx: MediaApplyContext; feature: MediaFeature): bool =
     return feature.appliesLR(float32(ctx.attrsp.heightPx))
   of mftScripting:
     case feature.ms
-    of msNone: return ctx.scripting == smFalse
-    of msInitialOnly: return ctx.scripting != smFalse and ctx.headless == hmDump
-    of msEnabled: return ctx.scripting != smFalse and ctx.headless != hmDump
+    of msNone: return ctx.env.scripting == smFalse
+    of msInitialOnly:
+      return ctx.env.scripting != smFalse and ctx.env.headless == hmDump
+    of msEnabled:
+      return ctx.env.scripting != smFalse and ctx.env.headless != hmDump
   of mftContentType:
-    return ctx.contentType.equalsIgnoreCase(feature.a)
+    return ctx.env.contentType.equalsIgnoreCase(feature.a)
 
 proc applies(ctx: MediaApplyContext; mq: MediaQuery): bool =
   case mq.t
@@ -454,7 +461,12 @@ proc applies(ctx: MediaApplyContext; mqlist: seq[MediaQuery]): bool =
       return true
   return false
 
-proc applies*(mqlist: seq[MediaQuery]; ctx: MediaApplyContext): bool =
+proc applies*(mqlist: seq[MediaQuery]; env: ptr EnvironmentSettings): bool =
+  let ctx = MediaApplyContext(env: env, attrsp: env.attrsp)
+  return ctx.applies(mqlist)
+
+proc appliesScript*(mqlist: seq[MediaQuery]; env: ptr EnvironmentSettings): bool =
+  let ctx = MediaApplyContext(env: env, attrsp: env.scriptAttrsp)
   return ctx.applies(mqlist)
 
 {.pop.} # raises: []

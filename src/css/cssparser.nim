@@ -998,7 +998,7 @@ proc addComponentValue(ctx: var CSSParser; toks: var seq[CSSToken]) =
       if t == pair:
         break
 
-proc addUntil(ctx: var CSSParser; tt: CSSTokenType; toks: var seq[CSSToken]):
+proc addUntil*(ctx: var CSSParser; tt: CSSTokenType; toks: var seq[CSSToken]):
     Opt[CSSToken] =
   while ctx.has():
     if ctx.peekTokenType() == tt:
@@ -1174,24 +1174,6 @@ proc consumeImports*(ctx: var CSSParser): seq[CSSAtRule] =
       result.add(rule)
     else:
       break
-
-proc nextCommaSepComponentValue(toks: openArray[CSSToken]; s: var seq[CSSToken];
-    i: var int): bool =
-  s = @[]
-  while i < toks.len:
-    var tok = toks[i]
-    inc i
-    if tok.t == cttComma:
-      break
-    s.add(move(tok))
-  return s.len > 0
-
-iterator parseCommaSepComponentValues*(toks: openArray[CSSToken]):
-    seq[CSSToken] =
-  var i = 0
-  var s: seq[CSSToken]
-  while toks.nextCommaSepComponentValue(s, i):
-    yield move(s)
 
 type AnBIdent = enum
   abiOdd = "odd"
