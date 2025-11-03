@@ -269,13 +269,11 @@ proc toJS*[T](ctx: JSContext; promise: Promise[T]): JSValue =
     let catch = ctx.fetchJS(ncatch)
     if not JS_IsException(x):
       if not JS_IsUninitialized(resolve):
-        JS_FreeValue(ctx, JS_Call(ctx, resolve, JS_UNDEFINED, 1,
-          x.toJSValueArray()))
+        JS_FreeValue(ctx, ctx.call(resolve, JS_UNDEFINED, x))
     else:
       if not JS_IsUninitialized(catch):
         let ex = JS_GetException(ctx)
-        JS_FreeValue(ctx, JS_Call(ctx, catch, JS_UNDEFINED, 1,
-          ex.toJSValueArray()))
+        JS_FreeValue(ctx, ctx.call(catch, JS_UNDEFINED, ex))
         JS_FreeValue(ctx, ex)
     JS_FreeValue(ctx, x)
     JS_FreeValue(ctx, resolve)
