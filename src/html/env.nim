@@ -499,16 +499,13 @@ proc addScripting*(window: Window) =
   window.importMapsAllowed = true
   window.timeouts = newTimeoutState(ctx, evalJSFree, window)
   JS_SetHostPromiseRejectionTracker(rt, rejectionHandler, nil)
-  let performance = JS_NewAtom(ctx, cstringConst("performance"))
   let jsWindow = JS_GetGlobalObject(ctx)
   let weakMap = JS_GetPropertyStr(ctx, jsWindow, "WeakMap")
   for it in window.weakMap.mitems:
     it = JS_CallConstructor(ctx, weakMap, 0, nil)
     doAssert not JS_IsException(it)
   JS_FreeValue(ctx, weakMap)
-  doAssert JS_DeleteProperty(ctx, jsWindow, performance, 0) == 1
   JS_FreeValue(ctx, jsWindow)
-  JS_FreeAtom(ctx, performance)
   JS_SetModuleLoaderFunc(rt, normalizeModuleName, loadJSModule, nil)
   window.performance = newPerformance(window.settings.scripting)
   if window.settings.scripting == smApp:
