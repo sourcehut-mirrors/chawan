@@ -22,11 +22,14 @@ const utf8 = new TextEncoder().encode("a Ā 𐀀 文 🦄")
 const b64utf8 = bytesToBase64(utf8);
 assertEquals(b64utf8, "YSDEgCDwkICAIOaWhyDwn6aE")
 const dec = new TextDecoder();
+assertEquals(dec.encoding, "utf-8")
 const bytes = base64ToBytes(b64utf8);
 const a = [];
 let res = "";
-for (const c of bytes)
+for (const c of bytes) {
+	assertThrows(() => dec.decode(null), TypeError);
 	res += dec.decode(c, {stream: true});
+}
 res += dec.decode();
 assertEquals(res, "a Ā 𐀀 文 🦄");
 document.getElementById("success").textContent = "Success";

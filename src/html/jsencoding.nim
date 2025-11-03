@@ -1,10 +1,7 @@
-import std/options
-
 import chagashi/charset
 import chagashi/decoder
 import monoucha/fromjs
 import monoucha/jsbind
-import monoucha/jsnull
 import monoucha/jstypes
 import monoucha/quickjs
 import monoucha/tojs
@@ -15,7 +12,7 @@ type
   JSTextEncoder = ref object
 
   JSTextDecoder = ref object
-    encoding: Charset
+    encoding {.jsget.}: Charset
     ignoreBOM {.jsget.}: bool
     errorMode: DecoderErrorMode
     stream: bool
@@ -51,14 +48,16 @@ type TextDecodeOptions = object of JSDict
 
 #TODO AllowSharedBufferSource
 proc decode(ctx: JSContext; this: JSTextDecoder;
-    input = none(JSArrayBufferView); options = TextDecodeOptions()): JSValue
-    {.jsfunc.} =
+    jsInput: JSValueConst = JS_UNDEFINED; options = TextDecodeOptions()):
+    JSValue {.jsfunc.} =
+  var input: JSArrayBufferView
+  if not JS_IsUndefined(jsInput):
+    ?ctx.fromJS(jsInput, input)
   if not this.stream:
     this.tdctx = initTextDecoderContext(this.encoding, this.errorMode)
     this.bomSeen = false
   this.stream = options.stream
-  if input.isSome:
-    let input = input.get
+  if not JS_IsUndefined(jsInput):
     let H = int(input.abuf.len) - 1
     var oq = ""
     let stream = this.stream
@@ -70,13 +69,10 @@ proc decode(ctx: JSContext; this: JSTextDecoder;
     return JS_NewStringLen(ctx, cstring(oq), csize_t(oq.len))
   return JS_NewString(ctx, "")
 
-proc jencoding(this: JSTextDecoder): string {.jsfget: "encoding".} =
-  return $this.encoding
-
 proc newTextEncoder(): JSTextEncoder {.jsctor.} =
   return JSTextEncoder()
 
-proc jencoding(this: JSTextEncoder): string {.jsfget: "encoding".} =
+proc encoding(this: JSTextEncoder): string {.jsfget.} =
   return "utf-8"
 
 proc deallocWrap(rt: JSRuntime; opaque, p: pointer) {.cdecl.} =
