@@ -7,7 +7,6 @@ import quickjs
 type
   JSSymbolRef* = enum
     jsyIterator = "iterator"
-    jsyToStringTag = "toStringTag"
 
   JSStrRef* = enum
     jstDone = "done"
@@ -89,12 +88,22 @@ proc getOpaque*(ctx: JSContext): JSContextOpaque =
 proc getOpaque*(rt: JSRuntime): JSRuntimeOpaque =
   return cast[JSRuntimeOpaque](JS_GetRuntimeOpaque(rt))
 
-proc isGlobal*(ctx: JSContext; class: JSClassID): bool =
-  return ctx.getOpaque().gclass == class
-
 proc getOpaque*(val: JSValue): pointer =
   if JS_VALUE_GET_TAG(val) == JS_TAG_OBJECT:
     return JS_GetOpaque(val, JS_GetClassID(val))
   return nil
+
+proc setUnforgeable*(ctx: JSContext; val: JSValueConst; class: JSClassID):
+    bool =
+  let rtOpaque = JS_GetRuntime(ctx).getOpaque()
+  let iclass = int(class)
+  if iclass < rtOpaque.classes.len and
+      rtOpaque.classes[iclass].unforgeable.len > 0:
+    let ufp0 = addr rtOpaque.classes[iclass].unforgeable[0]
+    let ufp = cast[JSCFunctionListP](ufp0)
+    if JS_SetPropertyFunctionList(ctx, val, ufp,
+        cint(rtOpaque.classes[iclass].unforgeable.len)) == -1:
+      return false
+  true
 
 {.pop.} # raises

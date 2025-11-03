@@ -17,6 +17,7 @@ function bytesToBase64(bytes) {
 	return btoa(binString);
 }
 
+assertEquals(new TextEncoder() + "", "[object TextEncoder]");
 assertEquals(new TextEncoder().encode("").length, 0);
 const utf8 = new TextEncoder().encode("a Ā 𐀀 文 🦄")
 const b64utf8 = bytesToBase64(utf8);

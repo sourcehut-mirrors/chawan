@@ -215,6 +215,13 @@ proc defineConsts*(ctx: JSContext; classid: JSClassID; consts: typedesc[enum]):
   JS_FreeValue(ctx, proto)
   res
 
+proc setPropertyFunctionList*(ctx: JSContext; val: JSValueConst;
+    funcs: openArray[JSCFunctionListEntry]): bool =
+  if funcs.len == 0:
+    return true
+  let fp = cast[JSCFunctionListP](unsafeAddr funcs[0])
+  return JS_SetPropertyFunctionList(ctx, val, fp, cint(funcs.len)) != -1
+
 proc identity(ctx: JSContext; this_val: JSValueConst; argc: cint;
     argv: JSValueConstArray; magic: cint; func_data: JSValueConstArray): JSValue
     {.cdecl.} =

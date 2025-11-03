@@ -53,16 +53,9 @@ template `?`(res: FromJSResult) =
   if res == fjErr:
     return fjErr
 
-proc isInstanceOf*(ctx: JSContext; val: JSValueConst; tclassid: JSClassID):
-    bool =
-  let ctxOpaque = ctx.getOpaque()
+proc isInstanceOf(ctx: JSContext; classid, tclassid: JSClassID): bool =
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
-  var classid = JS_GetClassID(val)
-  if classid == JS_CLASS_OBJECT:
-    let p0 = JS_VALUE_GET_PTR(ctxOpaque.global)
-    let p1 = JS_VALUE_GET_PTR(val)
-    if p0 == p1:
-      classid = ctxOpaque.gclass
+  var classid = classid
   var found = false
   while true:
     if classid == tclassid:
@@ -346,19 +339,19 @@ proc fromJS(ctx: JSContext; val: JSValueConst; nimt: pointer; res: var pointer):
     if not JS_IsException(val):
       JS_ThrowTypeError(ctx, "value is not an object")
     return fjErr
-  let p = JS_GetOpaque(val, JS_GetClassID(val))
+  let ctxOpaque = ctx.getOpaque()
+  var classid: JSClassID
+  var p: pointer
+  if JS_VALUE_GET_PTR(ctxOpaque.global) != JS_VALUE_GET_PTR(val):
+    p = JS_GetAnyOpaque(val, classid)
+  else:
+    classid = ctxOpaque.gclass
+    p = ctxOpaque.globalObj
   let rtOpaque = JS_GetRuntime(ctx).getOpaque()
   let tclassid = rtOpaque.typemap.getOrDefault(nimt, JS_CLASS_OBJECT)
-  if p == nil or not ctx.isInstanceOf(val, tclassid):
-    let proto = JS_GetClassProto(ctx, tclassid)
-    let name = JS_GetProperty(ctx, proto,
-      ctx.getOpaque().symRefs[jsyToStringTag])
-    JS_FreeValue(ctx, proto)
-    let cs = JS_ToCString(ctx, name)
-    if cs != nil:
-      JS_ThrowTypeError(ctx, "%s expected", cs)
-      JS_FreeCString(ctx, cs)
-    JS_FreeValue(ctx, name)
+  if p == nil or not ctx.isInstanceOf(classid, tclassid):
+    # dumb way to invoke JS_ThrowTypeErrorInvalidClass
+    discard JS_GetOpaque2(ctx, JS_UNDEFINED, tclassid)
     return fjErr
   res = p
   fjOk

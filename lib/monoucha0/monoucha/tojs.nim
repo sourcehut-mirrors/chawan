@@ -180,14 +180,8 @@ proc toJSP0(ctx: JSContext; p, tp, toRef: pointer; ctor: JSValueConst):
     return jsObj
   # We are constructing a new JS object, so we must add unforgeable properties
   # here.
-  let iclass = int(class)
-  if iclass < rtOpaque.classes.len and
-      rtOpaque.classes[iclass].unforgeable.len > 0:
-    let ufp0 = addr rtOpaque.classes[iclass].unforgeable[0]
-    let ufp = cast[JSCFunctionListP](ufp0)
-    if JS_SetPropertyFunctionList(ctx, jsObj, ufp,
-        cint(rtOpaque.classes[iclass].unforgeable.len)) == -1:
-      return JS_EXCEPTION
+  if not ctx.setUnforgeable(jsObj, class):
+    return JS_EXCEPTION
   rtOpaque.plist[p] = JS_VALUE_GET_PTR(jsObj)
   JS_SetOpaque(jsObj, p)
   GC_ref(cast[RootRef](toRef))

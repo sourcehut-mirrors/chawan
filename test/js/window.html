@@ -8,6 +8,7 @@ const desc = Object.getOwnPropertyDescriptor(window, "window");
 assert(desc.enumerable, "window must be enumerable");
 assert(!desc.configurable, "window must not be configurable");
 assertEquals(window.history.state, null);
+assert(Object.getOwnPropertyNames(window).includes("atob"));
 window.localStorage.setItem("a", "x");
 window.localStorage["b"] = "y";
 assertEquals(window.localStorage["b"], "y")

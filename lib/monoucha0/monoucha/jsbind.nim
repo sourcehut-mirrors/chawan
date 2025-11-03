@@ -252,7 +252,6 @@ proc setGlobal*[T](ctx: JSContext; obj: T) =
   let ctxOpaque = ctx.getOpaque()
   let opaque = cast[pointer](obj)
   rtOpaque.plist[opaque] = JS_VALUE_GET_PTR(ctxOpaque.global)
-  JS_SetOpaque(ctxOpaque.global, opaque)
   GC_ref(obj)
   ctxOpaque.globalObj = opaque
 
@@ -272,10 +271,6 @@ proc addClassUnforgeableAndFinalizer(ctx: JSContext; proto: JSValueConst;
     merged.add(rtOpaque.classes[int(parent)].unforgeable)
   if merged.len > 0:
     rtOpaque.classes[int(classid)].unforgeable = move(merged)
-    let ufp0 = addr rtOpaque.classes[int(classid)].unforgeable[0]
-    let ufp = cast[JSCFunctionListP](ufp0)
-    if JS_SetPropertyFunctionList(ctx, proto, ufp, cint(merged.len)) == -1:
-      return false
   var fins: seq[JSFinalizerFunction] = @[]
   if finalizer != nil:
     fins.add(finalizer)
@@ -320,11 +315,6 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     rtOpaque.classes.setLen(int(res) + 1)
   rtOpaque.classes[res].parent = parent
   let proto = ctx.newProtoFromParentClass(parent)
-  if funcs.len > 0:
-    let fp = cast[JSCFunctionListP](unsafeAddr funcs[0])
-    if JS_SetPropertyFunctionList(ctx, proto, fp, cint(funcs.len)) == -1:
-      JS_FreeValue(ctx, proto)
-      return JS_INVALID_CLASS_ID
   #TODO check if this is an indexed property getter
   if cdef.exotic != nil and cdef.exotic.get_own_property != nil:
     let val = JS_DupValue(ctx, ctxOpaque.valRefs[jsvArrayPrototypeValues])
@@ -332,15 +322,6 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     if ctx.defineProperty(proto, itSym, val) == dprException:
       JS_FreeValue(ctx, proto)
       return JS_INVALID_CLASS_ID
-  let news = JS_NewAtomString(ctx, cdef.class_name)
-  if JS_IsException(news):
-    JS_FreeValue(ctx, proto)
-    return JS_INVALID_CLASS_ID
-  if ctx.definePropertyC(proto, ctxOpaque.symRefs[jsyToStringTag],
-      JS_DupValue(ctx, news)) == dprException:
-    JS_FreeValue(ctx, news)
-    JS_FreeValue(ctx, proto)
-    return JS_INVALID_CLASS_ID
   JS_SetClassProto(ctx, res, proto)
   if not ctx.addClassUnforgeableAndFinalizer(proto, res, parent, unforgeable,
       finalizer):
@@ -349,42 +330,32 @@ proc newJSClass*(ctx: JSContext; cdef: JSClassDefConst; nimt: pointer;
     let global = ctxOpaque.global
     assert ctxOpaque.gclass == 0
     ctxOpaque.gclass = res
-    if ctx.definePropertyC(global, ctxOpaque.symRefs[jsyToStringTag],
-        news) == dprException:
-      JS_FreeValue(ctx, proto)
-      return JS_INVALID_CLASS_ID
-    if JS_SetPrototype(ctx, global, proto) != 1:
-      JS_FreeValue(ctx, proto)
-      return JS_INVALID_CLASS_ID
     # Global already exists, so set unforgeable functions here
-    if rtOpaque.classes[int(res)].unforgeable.len > 0:
-      let ufp0 = addr rtOpaque.classes[int(res)].unforgeable[0]
-      let ufp = cast[JSCFunctionListP](ufp0)
-      if JS_SetPropertyFunctionList(ctx, global, ufp,
-          cint(rtOpaque.classes[int(res)].unforgeable.len)) == -1:
-        JS_FreeValue(ctx, proto)
-        return JS_INVALID_CLASS_ID
+    if JS_SetPrototype(ctx, global, proto) != 1 or
+        not ctx.setPropertyFunctionList(global, funcs) or
+        not ctx.setUnforgeable(global, res):
+      return JS_INVALID_CLASS_ID
   else:
-    JS_FreeValue(ctx, news)
+    if not ctx.setPropertyFunctionList(proto, funcs):
+      return JS_INVALID_CLASS_ID
   let jctor = ctx.newCtorFunFromParentClass(ctor, cdef.class_name, parent,
     ctorType)
-  if staticfuns.len > 0:
-    let fp = cast[JSCFunctionListP](unsafeAddr staticfuns[0])
-    if JS_SetPropertyFunctionList(ctx, jctor, fp, cint(staticfuns.len)) == -1:
-      return JS_INVALID_CLASS_ID
+  if not ctx.setPropertyFunctionList(jctor, staticfuns):
+    JS_FreeValue(ctx, jctor)
+    return JS_INVALID_CLASS_ID
   JS_SetConstructor(ctx, jctor, proto)
   if ctxOpaque.ctors.len <= int(res):
     ctxOpaque.ctors.setLen(int(res) + 1)
-  ctxOpaque.ctors[res] = JS_DupValue(ctx, jctor)
-  when defined(gcDestructors):
-    rtOpaque.classes[res].dtor = dtor
   let target = if JS_IsNull(namespace):
     JSValueConst(ctxOpaque.global)
   else:
     namespace
-  if JS_DefinePropertyValueStr(ctx, target, cdef.class_name, jctor,
-      JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
+  if JS_DefinePropertyValueStr(ctx, target, cdef.class_name,
+      JS_DupValue(ctx, jctor), JS_PROP_CONFIGURABLE or JS_PROP_WRITABLE) == -1:
     return JS_INVALID_CLASS_ID
+  ctxOpaque.ctors[res] = jctor
+  when defined(gcDestructors):
+    rtOpaque.classes[res].dtor = dtor
   return res
 
 type
@@ -419,6 +390,7 @@ type
     tabStatic: NimNode # array of static function table
     ctorFun: NimNode # constructor ident
     ctorType: JSCFunctionEnum # JS_CFUNC_constructor or [...]constructor_or_func
+    hasTag: bool
     getset: Table[string, (NimNode, NimNode, BoundFunctionFlag)] # name -> value
     propGetOwnFun: NimNode # custom own get function ident
     propGetFun: NimNode # custom get function ident
@@ -1487,8 +1459,15 @@ macro registerType*(ctx: JSContext; t: typed; parent: JSClassID = 0;
   var info = BoundFunctions.getOrDefault(t.strVal)
   if info == nil:
     info = newRegistryInfo(t)
+    if name != "":
+      info.name = name
   if name != "":
     info.name = name
+  if not info.hasTag:
+    let tag = info.name
+    info.tabFuns.add(quote do:
+      JS_PROP_STRING_DEF("[Symbol.toStringTag]", `tag`, JS_PROP_CONFIGURABLE))
+    info.hasTag = true
   if not asglobal:
     info.dfin = quote do: jsCheckDestroy
     if info.tname notin jsDtors:
